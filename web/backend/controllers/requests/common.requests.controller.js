@@ -1998,6 +1998,28 @@ export async function getAllRequests(req, res) {
                 ? normalizeWorksheetRequestForResponse(r)
                 : normalizeRequestForResponse(r),
             ]);
+            // 불완전가공 기공소 전달 사진은 비공개 버킷이라 조회용 서명 URL을 붙인다.
+            const labPhotos = normalized?.rnd?.unmachinableLabPhotos;
+            if (isWorksheetView && Array.isArray(labPhotos) && labPhotos.length) {
+              const signedPhotos = await Promise.all(
+                labPhotos.map(async (photo) => {
+                  const s3Key = String(photo?.s3Key || "").trim();
+                  if (!s3Key) return photo;
+                  try {
+                    return {
+                      ...photo,
+                      viewUrl: await getSignedUrlForS3Key(s3Key, 900),
+                    };
+                  } catch {
+                    return photo;
+                  }
+                }),
+              );
+              normalized.rnd = {
+                ...normalized.rnd,
+                unmachinableLabPhotos: signedPhotos,
+              };
+            }
             return {
               ...normalized,
               shippingPriority,

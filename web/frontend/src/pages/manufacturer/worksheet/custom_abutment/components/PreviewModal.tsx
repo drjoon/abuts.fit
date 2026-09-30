@@ -118,6 +118,7 @@ import {
   type UnmachinableLabNoticePayload,
 } from "./UnmachinableLabNoticeFields";
 import { UnmachinableReasonPanel } from "./UnmachinableReasonPanel";
+import { UnmachinableProcessedNotice } from "./UnmachinableProcessedNotice";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 import {
@@ -3364,6 +3365,10 @@ export const PreviewModal = ({
               </button>
             </div>
           </div>
+
+          {isUnmachinable ? (
+            <UnmachinableProcessedNotice req={activeReq as ManufacturerRequest | null} />
+          ) : null}
 
           <RequestInfoSummary
             className="shrink-0 max-md:landscape:max-h-[28vh] max-md:landscape:overflow-y-auto"

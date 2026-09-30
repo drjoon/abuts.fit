@@ -1,6 +1,7 @@
 // 불완전가공 입력 — 프리뷰 위에 띄우는 별도 모달 본문.
 // 사유는 칩으로 고르고, 문구 수정·삭제는 「관리」에서만 연다.
 import { useState, type Ref } from "react";
+import { Check } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -44,6 +45,13 @@ export function UnmachinableReasonPanel({
   const [manageOpen, setManageOpen] = useState(false);
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const [notice, setNotice] = useState({ hasPhoto: false, hasMessage: false });
+
+  const missing: string[] = [];
+  if (!selected.length) missing.push("사유");
+  if (packing && !notice.hasPhoto) missing.push("사진");
+  if (packing && !notice.hasMessage) missing.push("메시지");
+  const ready = missing.length === 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
@@ -51,11 +59,11 @@ export function UnmachinableReasonPanel({
         <div className="min-w-0">
           <div className="text-sm font-semibold text-accent-strong">불완전가공</div>
           <p className="mt-0.5 text-[11px] leading-5 text-slate-600">
-            해당 사유를 눌러 선택합니다.
-            <br />
             {packing
-              ? "사진과 메시지는 기공소에 전달되고, 출고는 이어집니다."
+              ? "사유·사진·메시지를 기공소에 전달합니다."
               : "선택한 사유가 R&D 불완전가공에 기록됩니다."}
+            <br />
+            {packing ? "출고는 그대로 이어집니다." : "사유는 여러 개 고를 수 있습니다."}
           </p>
         </div>
         <button
@@ -83,6 +91,13 @@ export function UnmachinableReasonPanel({
         }
       >
         <div className="flex min-h-0 flex-col overflow-hidden border-slate-200 border-b md:border-b-0 md:border-r">
+          <div className="flex shrink-0 items-center gap-2 px-3 pt-3 text-[11px] font-semibold text-slate-700">
+            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-accent-strong text-[10px] text-white">
+              1
+            </span>
+            {manageOpen ? "사유 문구 관리" : "사유 선택"}
+            {!manageOpen ? <span className="text-destructive">*</span> : null}
+          </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
             {manageOpen ? (
               <div className="space-y-1.5">
@@ -168,14 +183,15 @@ export function UnmachinableReasonPanel({
                       key={reason}
                       type="button"
                       aria-pressed={isSelected}
-                      className={`max-w-full rounded-full border px-3 py-1.5 text-left text-xs leading-5 ${
+                      className={`inline-flex max-w-full items-start gap-1.5 rounded-full border px-3 py-1.5 text-left text-xs leading-5 ${
                         isSelected
                           ? "border-primary-strong bg-primary-soft text-primary-strong"
                           : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
                       }`}
                       onClick={() => onToggle(reason)}
                     >
-                      {reason}
+                      {isSelected ? <Check className="mt-1 h-3 w-3 shrink-0" /> : null}
+                      <span className="min-w-0 break-words">{reason}</span>
                     </button>
                   );
                 })}
@@ -210,16 +226,26 @@ export function UnmachinableReasonPanel({
 
         {packing ? (
           <div className="min-h-0 overflow-y-auto p-3">
-            <UnmachinableLabNoticeFields ref={labNoticeRef} resetKey={resetKey} />
+            <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold text-slate-700">
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-accent-strong text-[10px] text-white">
+                2
+              </span>
+              기공소에 전달
+            </div>
+            <UnmachinableLabNoticeFields
+              ref={labNoticeRef}
+              resetKey={resetKey}
+              onStateChange={setNotice}
+            />
           </div>
         ) : null}
       </div>
 
       <div className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-200 px-3 py-2">
-        <span className="text-[11px] text-slate-500">
-          {selected.length
-            ? `${selected.length}개 선택됨`
-            : "사유를 1개 이상 선택하세요"}
+        <span className={`text-[11px] ${ready ? "text-slate-500" : "text-accent-strong"}`}>
+          {ready
+            ? `사유 ${selected.length}개 선택됨`
+            : `${missing.join("·")}을(를) 입력하세요`}
         </span>
         <div className="flex items-center gap-2">
           <Button
@@ -235,10 +261,10 @@ export function UnmachinableReasonPanel({
             type="button"
             size="sm"
             className="bg-accent-strong hover:bg-accent-strong"
-            disabled={saving || selected.length === 0}
+            disabled={saving || !ready}
             onClick={onSubmit}
           >
-            {saving ? "처리 중..." : packing ? "기공소에 전달" : "확인"}
+            {saving ? "전달 중..." : packing ? "기공소에 전달" : "확인"}
           </Button>
         </div>
       </div>

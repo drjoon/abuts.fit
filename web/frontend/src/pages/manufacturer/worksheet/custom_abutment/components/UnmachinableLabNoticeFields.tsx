@@ -65,14 +65,21 @@ const imageFileToCanvas = async (file: File) => {
 
 export const UnmachinableLabNoticeFields = forwardRef<
   UnmachinableLabNoticeHandle,
-  { resetKey: string }
->(function UnmachinableLabNoticeFields({ resetKey }, ref) {
+  {
+    resetKey: string;
+    onStateChange?: (state: { hasPhoto: boolean; hasMessage: boolean }) => void;
+  }
+>(function UnmachinableLabNoticeFields({ resetKey, onStateChange }, ref) {
   const paint = useViewPaint({ open: true, resetKey });
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    onStateChange?.({ hasPhoto: Boolean(photoFile), hasMessage: Boolean(message.trim()) });
+  }, [message, onStateChange, photoFile]);
 
   useEffect(() => {
     if (!photoFile) {
@@ -127,13 +134,17 @@ export const UnmachinableLabNoticeFields = forwardRef<
   };
 
   return (
-    <div className="space-y-2 rounded-md border border-accent-muted bg-white px-2 py-2">
-      <div className="text-[11px] font-semibold text-slate-700">문제 부위 사진</div>
-      <p className="text-[11px] leading-5 text-slate-600">
-        사진을 올리고 문제 부위를 페인트로 표시합니다.
-        <br />
-        메시지와 함께 기공소에 전달되고, 출고는 그대로 진행됩니다.
-      </p>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[11px] font-semibold text-slate-700">
+          문제 부위 사진 <span className="text-destructive">*</span>
+        </div>
+        {photoFile ? (
+          <span className="text-[11px] text-slate-500">
+            페인트로 문제 부위를 표시하세요
+          </span>
+        ) : null}
+      </div>
       <div className="flex flex-wrap gap-1.5">
         <Button
           type="button"
@@ -205,12 +216,23 @@ export const UnmachinableLabNoticeFields = forwardRef<
           ) : null}
         </div>
       ) : (
-        <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-6 text-center text-[11px] text-slate-500">
-          가공 부위를 촬영해 올려 주세요.
-        </div>
+        <button
+          type="button"
+          className="flex w-full flex-col items-center gap-1 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-8 text-center text-[11px] text-slate-500 hover:border-accent-muted hover:bg-accent-soft/40"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <Camera className="h-5 w-5 text-slate-400" />
+          <span>가공 부위 사진을 올려 주세요</span>
+          <span className="text-slate-400">눌러서 파일 선택</span>
+        </button>
       )}
       <label className="block space-y-1">
-        <span className="text-[11px] font-semibold text-slate-700">기공소 메시지</span>
+        <span className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
+          <span>
+            기공소 메시지 <span className="text-destructive">*</span>
+          </span>
+          <span className="font-normal text-slate-400">{message.length}/1000</span>
+        </span>
         <textarea
           value={message}
           onChange={(event) => setMessage(String(event.target.value || "").slice(0, 1000))}
