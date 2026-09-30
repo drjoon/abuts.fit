@@ -343,6 +343,22 @@ export interface DeadlineInfo {
   badgeClass: string;
 }
 
+/**
+ * 불완전가공 건이 이미 출고됐거나 출고시간(예정일 16:00 KST)이 지났으면 true.
+ * 이런 건은 R&D-불완전가공에만 남기고 세척.패킹·포장.발송·추적관리에서는 제거한다.
+ */
+export const isUnmachinableShipGone = (
+  req?: ManufacturerRequest | null,
+): boolean => {
+  if (!req || !(req as any)?.rnd?.unmachinableAt) return false;
+  const shippedAt = (req as any)?.deliveryInfoRef?.shippedAt;
+  if (shippedAt) return true;
+  const ymd = (req as any)?.timeline?.estimatedShipYmd;
+  if (!ymd) return false;
+  const info = getDeadlineInfo(null, ymd);
+  return info != null && info.remainingMs <= 0;
+};
+
 export const getReviewStageKeyByTab = (opts: {
   stage?: string;
   isCamStage: boolean;

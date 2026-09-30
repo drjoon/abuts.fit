@@ -64,6 +64,7 @@ import {
   getReviewStageKeyByTab,
   isAnySampleRequest,
   isRndSampleRequest,
+  isUnmachinableShipGone,
   getWorksheetStageFilterForTab,
   PRODUCT_MODE,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
@@ -954,6 +955,8 @@ export const RequestPage = ({
       if (isDoneRndSample || (isUnmachinable && !keepsUnmachinableOnTab)) {
         return false;
       }
+      // 출고했거나 출고시간이 지난 불완전가공 건은 R&D-불완전가공에만 남긴다.
+      if (isUnmachinableShipGone(req)) return false;
 
       if (filterRequests) {
         return filterRequests(req);

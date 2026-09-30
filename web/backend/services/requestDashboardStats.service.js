@@ -4,6 +4,7 @@
 // - web/backend/server.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // change-log:
+// - 2026-09-30: 세척.패킹 헤더 카운트 — 출고했거나 출고시간(16:00 KST)이 지난 불완전가공은 제외.
 // - 2026-09-02: 추적관리 워크시트 헤더 카운트 — TrackingPage 노출/기간 SSOT(trackingWorksheet*).
 // - 2026-08-27: 진행(inProgress*) — 준비 배지와 동일하게 PTX 디자인 미완료·레거시 design mode 제외.
 // - 2026-08-25: 준비(requestCount) — PTX 디자인 미완료도 제외(가공작업 카드 productModeNe SSOT와 일치).
@@ -433,6 +434,88 @@ export async function getTrackingWorksheetDashboardCounts({
   };
 }
 
+/** 출고예정일 16:00 KST가 지났으면 true. 날짜가 없으면 false. */
+function buildEstimatedShipDeadlinePassedExpr() {
+  return {
+    $let: {
+      vars: {
+        ymd: {
+          $substrCP: [
+            {
+              $trim: {
+                input: { $ifNull: ["$timeline.estimatedShipYmd", ""] },
+              },
+            },
+            0,
+            10,
+          ],
+        },
+        todayYmd: {
+          $dateToString: {
+            format: "%Y-%m-%d",
+            date: "$$NOW",
+            timezone: "Asia/Seoul",
+          },
+        },
+        kstHour: {
+          $hour: { date: "$$NOW", timezone: "Asia/Seoul" },
+        },
+      },
+      in: {
+        $and: [
+          { $gte: [{ $strLenCP: "$$ymd" }, 10] },
+          {
+            $or: [
+              { $lt: ["$$ymd", "$$todayYmd"] },
+              {
+                $and: [
+                  { $eq: ["$$ymd", "$$todayYmd"] },
+                  { $gte: ["$$kstHour", 16] },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+}
+
+/**
+ * 세척.패킹에 남은 불완전가공 중, 출고예정일은 안 지났지만 이미 출고한 건.
+ * 출고시간이 지난 건은 packingCount 집계에서 이미 뺀다.
+ */
+async function countUnmachinablePackingShippedEarly(match) {
+  const rows = await Request.aggregate([
+    {
+      $match: {
+        ...match,
+        manufacturerStage: "세척.패킹",
+        "rnd.unmachinableAt": { $exists: true, $nin: [null, ""] },
+        deliveryInfoRef: { $ne: null },
+      },
+    },
+    {
+      $addFields: {
+        shipDeadlinePassed: buildEstimatedShipDeadlinePassedExpr(),
+      },
+    },
+    { $match: { shipDeadlinePassed: { $ne: true } } },
+    {
+      $lookup: {
+        from: "deliveryinfos",
+        localField: "deliveryInfoRef",
+        foreignField: "_id",
+        as: "deliveryDoc",
+        pipeline: [{ $project: { shippedAt: 1 } }],
+      },
+    },
+    { $match: { "deliveryDoc.0.shippedAt": { $type: "date" } } },
+    { $count: "count" },
+  ]);
+  return Number(rows?.[0]?.count ?? 0) || 0;
+}
+
 function buildDashboardShippingBoxKeyExpr() {
   return {
     $let: {
@@ -484,6 +567,7 @@ export async function getAssignedLikeDashboardSummary({
     trackingBoxesAgg,
     rndCountAgg,
     trackingWorksheetCounts,
+    unmachinablePackingShippedEarly,
   ] = await Promise.all([
       Request.aggregate([
         { $match: match },
@@ -610,7 +694,26 @@ export async function getAssignedLikeDashboardSummary({
             },
             packingCount: {
               $sum: {
-                $cond: [{ $eq: ["$normalizedStage", "packing"] }, 1, 0],
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$normalizedStage", "packing"] },
+                      // 출고시간이 지난 불완전가공은 R&D-불완전가공에만 남긴다.
+                      {
+                        $not: [
+                          {
+                            $and: [
+                              buildHasMeaningfulValueExpr("$rnd.unmachinableAt"),
+                              buildEstimatedShipDeadlinePassedExpr(),
+                            ],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
               },
             },
             shippingCount: {
@@ -739,6 +842,7 @@ export async function getAssignedLikeDashboardSummary({
       trackingWorksheetCustomStart,
       trackingWorksheetCustomEnd,
     }),
+    countUnmachinablePackingShippedEarly(match),
   ]);
 
   const statsResult = statsAgg?.[0];
@@ -763,7 +867,11 @@ export async function getAssignedLikeDashboardSummary({
     requestCount: Number(statsResult?.requestCount ?? 0) || 0,
     camCount: Number(statsResult?.camCount ?? 0) || 0,
     machiningCount: Number(statsResult?.machiningCount ?? 0) || 0,
-    packingCount: Number(statsResult?.packingCount ?? 0) || 0,
+    packingCount: Math.max(
+      0,
+      (Number(statsResult?.packingCount ?? 0) || 0) -
+        (Number(unmachinablePackingShippedEarly) || 0),
+    ),
     shippingCount: Number(statsResult?.shippingCount ?? 0) || 0,
     shippingBoxes: Number(shippingBoxesAgg?.[0]?.count ?? 0) || 0,
     rndCount: Number(rndCountAgg?.[0]?.count ?? 0) || 0,

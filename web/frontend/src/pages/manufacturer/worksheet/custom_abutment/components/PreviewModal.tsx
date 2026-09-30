@@ -114,10 +114,10 @@ import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebounc
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { RequestInfoSummary } from "./RequestInfoSummary";
 import {
-  UnmachinableLabNoticeFields,
   type UnmachinableLabNoticeHandle,
   type UnmachinableLabNoticePayload,
 } from "./UnmachinableLabNoticeFields";
+import { UnmachinableReasonPanel } from "./UnmachinableReasonPanel";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 import {
@@ -631,10 +631,6 @@ export const PreviewModal = ({
   const [customReasonLibrary, setCustomReasonLibrary] = useState<string[]>(
     [...UNMACHINABLE_REASON_PRESETS],
   );
-  const [customReasonEditIndex, setCustomReasonEditIndex] = useState<number | null>(
-    null,
-  );
-  const [customReasonEditDraft, setCustomReasonEditDraft] = useState("");
   const [selectedReasonValues, setSelectedReasonValues] = useState<string[]>([]);
   const [guidedFinishLineMode, setGuidedFinishLineMode] = useState(false);
   /** FL 편집 세션 내 반자동/수동. 기본 반자동. */
@@ -2832,11 +2828,14 @@ export const PreviewModal = ({
 
 
   return (
+    <>
     <Dialog
       open={open}
       onOpenChange={(next) => {
         // 승인/롤백 처리 중에는 우상단 X·Esc·오버레이로 닫지 않는다.
         if (!next && approveBusy) return;
+        // 불완전가공 모달이 위에 있을 때는 프리뷰를 닫지 않는다.
+        if (!next && unmachinableEditorOpen) return;
         onOpenChange(next);
       }}
     >
@@ -3418,193 +3417,6 @@ export const PreviewModal = ({
               activeReq as ManufacturerRequest | null,
             )}
           />
-
-          {unmachinableEditorOpen && (
-            <div className="shrink-0 rounded-lg border border-accent-muted bg-accent-soft/70 p-2 space-y-2 max-h-[34vh] overflow-y-auto">
-              <div className="text-xs font-semibold text-accent-strong">불완전가공 사유 입력</div>
-              {currentReviewStageKey === "packing" ? (
-                <UnmachinableLabNoticeFields
-                  ref={labNoticeRef}
-                  resetKey={String(activeReq?._id || "")}
-                />
-              ) : null}
-
-              <div className="space-y-1.5 rounded-md border border-accent-muted bg-white/80 p-1.5">
-                {customReasonLibrary.map((reason, idx) => {
-                  const selected = selectedReasonValues.includes(reason);
-                  return (
-                    <div
-                      key={`${reason}-${idx}`}
-                      className="flex items-center gap-1 rounded border border-slate-200 bg-white p-1"
-                    >
-                      {customReasonEditIndex === idx ? (
-                        <>
-                          <input
-                            value={customReasonEditDraft}
-                            onChange={(e) =>
-                              setCustomReasonEditDraft(
-                                String(e.target.value || "").slice(0, 500),
-                              )
-                            }
-                            className="flex-1 h-7 rounded border border-slate-200 px-2 text-xs"
-                          />
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="h-7 px-2 text-xs"
-                            onClick={() => {
-                              const next = customReasonEditDraft.trim();
-                              if (!next) return;
-                              setReasonLibraryWithSync((prev) => {
-                                const clone = [...prev];
-                                clone[idx] = next;
-                                return Array.from(new Set(clone));
-                              });
-                              setSelectedReasonValues((prev) => {
-                                const filtered = prev.filter((item) => item !== reason);
-                                return filtered.includes(next)
-                                  ? filtered
-                                  : [...filtered, next];
-                              });
-                              setCustomReasonEditIndex(null);
-                              setCustomReasonEditDraft("");
-                            }}
-                          >
-                            저장
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2 text-xs"
-                            onClick={() => {
-                              setCustomReasonEditIndex(null);
-                              setCustomReasonEditDraft("");
-                            }}
-                          >
-                            취소
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            className={`flex-1 text-left text-xs rounded px-2 h-7 ${
-                              selected
-                                ? "bg-primary-soft text-primary-strong border border-primary-muted"
-                                : "text-slate-700 hover:bg-slate-50"
-                            }`}
-                            onClick={() => toggleReasonSelection(reason)}
-                          >
-                            {reason}
-                          </button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2 text-xs"
-                            onClick={() => {
-                              setCustomReasonEditIndex(idx);
-                              setCustomReasonEditDraft(reason);
-                            }}
-                          >
-                            수정
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                            onClick={() => {
-                              setReasonLibraryWithSync((prev) =>
-                                prev.filter((_, i) => i !== idx),
-                              );
-                              setSelectedReasonValues((prev) =>
-                                prev.filter((item) => item !== reason),
-                              );
-                            }}
-                          >
-                            삭제
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
-
-                <div className="flex items-center gap-1 rounded border border-dashed border-slate-300 bg-slate-50 p-1">
-                  <input
-                    value={unmachinableReasonDraft}
-                    onChange={(e) =>
-                      setUnmachinableReasonDraft(
-                        String(e.target.value || "").slice(0, 500),
-                      )
-                    }
-                    placeholder="새 사유 입력"
-                    className="flex-1 h-7 rounded border border-slate-200 px-2 text-xs bg-white"
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    disabled={unmachinableSaving || !unmachinableReasonDraft.trim()}
-                    onClick={() => {
-                      addCustomReasonToLibrary(unmachinableReasonDraft);
-                      setUnmachinableReasonDraft("");
-                    }}
-                  >
-                    추가
-                  </Button>
-                </div>
-              </div>
-
-              <div className="rounded-md border border-accent-muted bg-white px-2 py-2">
-                <div className="text-[11px] font-semibold text-slate-700 mb-1">
-                  선택된 사유 ({selectedReasonValues.length})
-                </div>
-                {selectedReasonValues.length ? (
-                  <div className="flex flex-wrap gap-1">
-                    {selectedReasonValues.map((reason) => (
-                      <Badge
-                        key={`selected-reason-${reason}`}
-                        variant="outline"
-                        className="text-[11px] border-accent-muted bg-accent-soft text-accent-strong"
-                      >
-                        {reason}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-[11px] text-slate-500">선택된 사유가 없습니다.</div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={unmachinableSaving}
-                  onClick={() => setUnmachinableEditorOpen(false)}
-                >
-                  취소
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="bg-accent-strong hover:bg-accent-strong"
-                  disabled={unmachinableSaving}
-                  onClick={() => void handleSubmitUnmachinable()}
-                >
-                  {unmachinableSaving
-                    ? "처리 중..."
-                    : currentReviewStageKey === "packing"
-                      ? "기공소에 전달"
-                      : "확인"}
-                </Button>
-              </div>
-            </div>
-          )}
 
           {previewLoading ? (
             <div className="rounded-lg border border-dashed p-8 flex flex-col items-center gap-2 text-sm text-slate-500">
@@ -4623,6 +4435,72 @@ export const PreviewModal = ({
         />
       </DialogContent>
     </Dialog>
+    <Dialog
+      open={open && unmachinableEditorOpen}
+      onOpenChange={(next) => {
+        if (!next && unmachinableSaving) return;
+        setUnmachinableEditorOpen(next);
+      }}
+    >
+      <DialogContent
+        className={cn(
+          "z-[120] flex h-[min(86dvh,820px)] max-h-[min(92dvh,860px)] flex-col gap-0 overflow-hidden p-0",
+          currentReviewStageKey === "packing"
+            ? "w-[min(56rem,calc(100vw-2rem))] max-w-[min(56rem,calc(100vw-2rem))] sm:max-w-[min(56rem,calc(100vw-2rem))] sm:p-0"
+            : "w-[min(40rem,calc(100vw-2rem))] max-w-[min(40rem,calc(100vw-2rem))] sm:max-w-[min(40rem,calc(100vw-2rem))] sm:p-0",
+        )}
+        overlayClassName="z-[120] bg-black/45"
+        onPointerDownOutside={(event) => {
+          if (unmachinableSaving) event.preventDefault();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (unmachinableSaving) event.preventDefault();
+        }}
+      >
+        <DialogTitle className="sr-only">불완전가공</DialogTitle>
+        <DialogDescription className="sr-only">
+          불완전가공 사유를 선택하는 창입니다.
+        </DialogDescription>
+        <UnmachinableReasonPanel
+          packing={currentReviewStageKey === "packing"}
+          labNoticeRef={labNoticeRef}
+          resetKey={String(activeReq?._id || "")}
+          reasons={customReasonLibrary}
+          selected={selectedReasonValues}
+          onToggle={toggleReasonSelection}
+          onRename={(index, previous, next) => {
+            setReasonLibraryWithSync((prev) => {
+              const clone = [...prev];
+              clone[index] = next;
+              return Array.from(new Set(clone));
+            });
+            setSelectedReasonValues((prev) => {
+              const filtered = prev.filter((item) => item !== previous);
+              return filtered.includes(next) ? filtered : [...filtered, next];
+            });
+          }}
+          onDelete={(index, reason) => {
+            setReasonLibraryWithSync((prev) => prev.filter((_, i) => i !== index));
+            setSelectedReasonValues((prev) => prev.filter((item) => item !== reason));
+          }}
+          draft={unmachinableReasonDraft}
+          onDraftChange={setUnmachinableReasonDraft}
+          onAdd={() => {
+            const next = unmachinableReasonDraft.trim();
+            if (!next) return;
+            addCustomReasonToLibrary(next);
+            setSelectedReasonValues((prev) =>
+              prev.includes(next) ? prev : [...prev, next],
+            );
+            setUnmachinableReasonDraft("");
+          }}
+          saving={unmachinableSaving}
+          onCancel={() => setUnmachinableEditorOpen(false)}
+          onSubmit={() => void handleSubmitUnmachinable()}
+        />
+      </DialogContent>
+    </Dialog>
+    </>
   );
 };
 

@@ -10,6 +10,7 @@ import {
   getDiameterBucketIndex,
   stageOrder,
   isRndSampleRequest,
+  isUnmachinableShipGone,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { shouldShowRequestInIncludeCompleted } from "@/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering";
 import { type DiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
@@ -393,8 +394,9 @@ export const usePackingWorksheetData = ({
   const currentStageOrder = stageOrder[currentStageForTab] ?? 0;
 
   const filteredBase = useMemo(() => {
+    // 출고했거나 출고시간이 지난 불완전가공 건은 R&D-불완전가공에만 남긴다.
     const isDoneRndSample = (req: ManufacturerRequest) =>
-      isRndSampleRequest(req);
+      isRndSampleRequest(req) || isUnmachinableShipGone(req);
 
     if (showCompleted) {
       return requests.filter(

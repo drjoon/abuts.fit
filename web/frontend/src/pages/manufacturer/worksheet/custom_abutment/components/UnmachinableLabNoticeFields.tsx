@@ -194,7 +194,7 @@ export const UnmachinableLabNoticeFields = forwardRef<
             <img
               src={photoUrl}
               alt="불완전가공 사진"
-              className="max-h-56 max-w-full object-contain"
+              className="max-h-[min(42vh,24rem)] max-w-full object-contain"
             />
             <ViewPaintSurface {...viewPaintSurfaceProps(paint)} />
           </div>

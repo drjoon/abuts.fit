@@ -26,6 +26,7 @@ import {
   deriveStageForFilter,
   isAnySampleRequest,
   isRndSampleRequest,
+  isUnmachinableShipGone,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { shouldShowRequestInIncludeCompleted } from "@/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering";
 import { WorksheetCardGrid } from "../../components/WorksheetCardGrid";
@@ -233,6 +234,8 @@ export const PackingPageContent = ({
       const isDoneRndSample = isRndSampleRequest(req);
       // 불완전가공이어도 세척.패킹에 남겨 출고를 이어 간다.
       if (isDoneRndSample) return false;
+      // 출고했거나 출고시간이 지난 불완전가공 건은 R&D-불완전가공에만 남긴다.
+      if (isUnmachinableShipGone(req)) return false;
       if (showCompleted) {
         return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
       }
@@ -937,7 +940,7 @@ export const PackingPageContent = ({
       const latestFilteredAndSorted = latestList
         .filter((req) => {
           const isDoneRndSample = isRndSampleRequest(req);
-          if (isDoneRndSample) return false;
+          if (isDoneRndSample || isUnmachinableShipGone(req)) return false;
           if (showCompleted) {
             return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
           }
