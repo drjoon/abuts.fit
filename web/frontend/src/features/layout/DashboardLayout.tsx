@@ -27,7 +27,7 @@ import {
   DASHBOARD_WORK_OUTER_PAD_CLASS,
 } from "@/shared/ui/dashboardChrome";
 
-// - 2026-09-30: 전폭 기공의뢰가 아닌 대시보드 상단에 공지 1줄.
+// - 2026-09-30: 전폭 기공의뢰가 아닌 대시보드는 공지를 작업영역 위에 겹침.
 // - 2026-09-26: 작업 스캔 저장 소켓은 읽지 않음 배지를 다시 조회하지 않는다.
 // - 2026-09-26: 기공소 기공의뢰 하위 — 어벗츠 하청 → 어벗츠로부터.
 // - 2026-09-25: 로그인 셸 로고(사이드·모바일 헤더) 클릭 시 랜딩 `/`.
@@ -1974,9 +1974,9 @@ export const DashboardLayout = () => {
               </div>
             )}
           <div className="flex-1 min-h-0 bg-gradient-to-br from-gray-50 to-primary-soft">
-            <div className="flex flex-col h-full">
+            <div className="relative flex h-full flex-col">
               {isLabReceiveWorkArea || isPracticeOralScanWorkArea ? null : (
-                <DashboardNoticeAlert className="px-3 pt-3 lg:px-4 lg:pt-4" />
+                <DashboardNoticeAlert className="right-3 top-2 lg:right-4" />
               )}
               {(isManufacturer && isEquipmentRoute) || isWorksheetRoute ? (
                 <div className="sticky top-0 z-10 border-b border-border bg-background/80">

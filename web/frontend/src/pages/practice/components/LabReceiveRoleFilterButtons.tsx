@@ -3,10 +3,12 @@
  * 원청(직접 수행) 토글은 두지 않는다. 직접 수행 건은 항상 목록에 남긴다.
  * 기본은 협력·하청 모두 표시. 클릭하면 해당 구분만 캘린더·목록에서 뺀다.
  * 협력·하청 건은 목록·캘린더·상세에 역할 뱃지. 원청 직접 수행은 뱃지 없음.
+ * - 2026-09-30: 2xl 미만 — 협력·하청은 아이콘+건수.
  * - 2026-09-27: 보철 업로드 작업완료 「완료」뱃지. 판정은 isPracticeRecentFinishedBadgeStatus.
  * - 2026-09-27: 상단 필터 왼쪽 협력·하청. 원청 토글 없음. 미배정 하청은 알림.
  * - 2026-09-27: 원청·하청 양쪽 목록·상세에 협력/하청 뱃지.
  */
+import { Handshake, Share2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
@@ -233,13 +235,20 @@ export function LabReceiveRoleFilterButtons({
                   variant="outline"
                   className={cn(
                     "cursor-pointer whitespace-nowrap",
+                    "inline-flex items-center gap-1",
                     compact ? "h-8 gap-1 px-2 text-xs" : "h-8 px-2.5 text-xs",
                     shown
                       ? "border-foreground/25 bg-foreground/5 text-foreground"
                       : "border-dashed text-muted-foreground opacity-60",
                   )}
                 >
-                  {item.label} {count}
+                  {item.key === "subcontract" ? (
+                    <Share2 className="h-3.5 w-3.5 shrink-0 2xl:hidden" aria-hidden />
+                  ) : item.key === "cooperation" ? (
+                    <Handshake className="h-3.5 w-3.5 shrink-0 2xl:hidden" aria-hidden />
+                  ) : null}
+                  <span className="hidden 2xl:inline">{item.label}</span>{" "}
+                  {count}
                 </Badge>
               </button>
             </TooltipTrigger>

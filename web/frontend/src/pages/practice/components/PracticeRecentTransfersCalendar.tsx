@@ -7,6 +7,7 @@
  * - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
  * - web/frontend/src/shared/date/kst.ts
  * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
+ * - 2026-09-30: 2xl 미만 — 주문일·도착일·캘린더·목록은 아이콘만.
  * - 2026-09-27: 완료 톤=isPracticeRecentFinishedBadgeStatus. 목록·주간 칩 「완료」뱃지.
  * - 2026-09-20: 기공소 바구니 번호표(basketTag) — 목록·주간 칩에 표시.
  * - 2026-08-28: 요일 헤더에 스크롤바 폭 패딩 동기화 + custom-scrollbar(빈 레일 열·railRef 제거).
@@ -85,6 +86,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  CalendarCheck,
   CalendarDays,
   ChevronDown,
   ChevronLeft,
@@ -1891,13 +1893,14 @@ export function PracticeRecentTransfersCalendar({
               <Badge
                 variant="outline"
                 className={cn(
-                  "cursor-pointer leading-snug tracking-normal",
+                  "inline-flex cursor-pointer items-center gap-1 leading-snug tracking-normal",
                   dateKey === "orderDate"
                     ? "border-primary/70 bg-primary-soft text-primary-strong"
                     : "hover:bg-muted/40",
                 )}
               >
-                주문일
+                <CalendarDays className="h-3.5 w-3.5 shrink-0 2xl:hidden" aria-hidden />
+                <span className="hidden 2xl:inline">주문일</span>
               </Badge>
             </button>
             <button
@@ -1911,13 +1914,14 @@ export function PracticeRecentTransfersCalendar({
                 variant="outline"
                 className={cn(
                   // leading-none+작은 글씨에서 「치과도착일」이 「치과의사착일」로 오인되는 경우 방지
-                  "cursor-pointer leading-snug tracking-normal",
+                  "inline-flex cursor-pointer items-center gap-1 leading-snug tracking-normal",
                   dateKey === "arrivalDate"
                     ? "border-primary/70 bg-primary-soft text-primary-strong"
                     : "hover:bg-muted/40",
                 )}
               >
-                도착일
+                <CalendarCheck className="h-3.5 w-3.5 shrink-0 2xl:hidden" aria-hidden />
+                <span className="hidden 2xl:inline">도착일</span>
               </Badge>
             </button>
             </div>
@@ -1939,7 +1943,7 @@ export function PracticeRecentTransfersCalendar({
                 onClick={() => onViewModeChange("calendar")}
               >
                 <CalendarDays className="h-3.5 w-3.5" />
-                캘린더
+                <span className="hidden 2xl:inline">캘린더</span>
               </button>
               <button
                 type="button"
@@ -1954,7 +1958,7 @@ export function PracticeRecentTransfersCalendar({
                 onClick={() => onViewModeChange("list")}
               >
                 <List className="h-3.5 w-3.5" />
-                목록
+                <span className="hidden 2xl:inline">목록</span>
               </button>
             </div>
           </div>

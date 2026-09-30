@@ -4,7 +4,7 @@
  * 완료 건수는 isPracticeRecentFinishedBadgeStatus. 작업완료이고 어벗 뱃지가 없을 때.
  * 클릭=미확인·미처리 우선으로 해당 상태 건을 하나씩 연다.
  * 캘린더·목록 칩 빨간 숫자=미확인(채팅)만. 빨간 테두리=미처리(작업큐)만(채팅만은 테두리 없음).
- * 2026-09-20: xl 미만 — 아이콘+숫자만(라벨·「건」숨김). 툴팁에 전체 안내.
+ * 2026-09-30: 2xl 미만 — 아이콘+숫자만(라벨·「건」숨김). 툴팁에 전체 안내.
  * 2026-09-20: className으로 flex-nowrap 넘기면 한 줄 유지(기공의뢰수신 헤더).
  * 2026-09-14: 북마크는 헤더 버튼(배지 행에서 분리).
  * 2026-09-14: 북마크 배지(전기간 순회). 클릭=북마크 컬렉션 순회.
@@ -81,7 +81,7 @@ type PracticeStatusFilterBadgesProps = {
   hideNestedUnread?: boolean;
   compact?: boolean;
   /**
-   * true면 xl 미만에서 아이콘+숫자만(라벨·접미사 숨김).
+   * true면 2xl 미만에서 아이콘+숫자만(라벨·접미사 숨김).
    * 기공의뢰수신처럼 가로가 좁을 때 한 줄 유지.
    */
   iconAtNarrow?: boolean;
@@ -138,7 +138,7 @@ export function PracticeStatusFilterBadges({
                   "relative shrink-0 rounded-full",
                   withGap &&
                     (iconAtNarrow
-                      ? cn("ml-2 xl:ml-5", WIDE_CLUSTER_SEPARATOR_CLASS)
+                      ? cn("ml-2 2xl:ml-5", WIDE_CLUSTER_SEPARATOR_CLASS)
                       : cn("ml-5", WIDE_CLUSTER_SEPARATOR_CLASS)),
                   !canNavigate && "cursor-default",
                 )}
@@ -157,8 +157,8 @@ export function PracticeStatusFilterBadges({
                     compact && "h-8 text-xs",
                     iconAtNarrow
                       ? compact
-                        ? "gap-1 px-2 xl:px-2.5"
-                        : "gap-1 px-2 xl:px-3"
+                        ? "gap-1 px-2 2xl:px-2.5"
+                        : "gap-1 px-2 2xl:px-3"
                       : compact
                         ? "px-2.5"
                         : null,
@@ -171,7 +171,7 @@ export function PracticeStatusFilterBadges({
                     ) : null}
                     <span
                       className={cn(
-                        iconAtNarrow && "hidden xl:inline",
+                        iconAtNarrow && "hidden 2xl:inline",
                       )}
                     >
                       {item.label}
@@ -181,7 +181,7 @@ export function PracticeStatusFilterBadges({
                       {queueCount}
                       {countSuffix ? (
                         <span
-                          className={cn(iconAtNarrow && "hidden xl:inline")}
+                          className={cn(iconAtNarrow && "hidden 2xl:inline")}
                         >
                           {countSuffix}
                         </span>

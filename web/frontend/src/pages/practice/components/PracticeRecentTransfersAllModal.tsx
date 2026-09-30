@@ -37,7 +37,7 @@
  * - 2026-08-28: 모바일 — 검색을 상태뱃지(리메이크) 오른쪽 같은 줄로 옮겨 헤더 줄 수 축소.
  * - 2026-08-28: 검색↔신규의뢰 안내 위치 교환 — 안내=헤더, 검색=캘린더 툴바.
  * - 2026-09-07: 오늘(KST) 포함 셀 클릭 → 신규 의뢰(도착일).
- * - 2026-09-30: 페이지형 기공의뢰 헤더 아래에 공지 1줄.
+ * - 2026-09-30: 페이지형 기공의뢰 공지는 헤더 줄에 겹쳐 높이를 늘리지 않음.
  * - 2026-09-07: 헤더 「도착일 클릭 신규의뢰」안내 문구 제거.
  * - 2026-09-07: 다단계 다음 도착일 미지정(+1일~) 헤더 alert(기공소 미확인 바와 동일 패턴).
  * - 2026-08-31: calendarRefreshNonce — 전송 직후 소켓 없이도 캘린더 구간 재조회.
@@ -956,6 +956,7 @@ export function PracticeRecentTransfersAllModal({
               {headerActions}
             </div>
           ) : null}
+          {isPage ? <DashboardNoticeAlert placement="inline" /> : null}
         </div>
       )}
     </div>
@@ -972,7 +973,6 @@ export function PracticeRecentTransfersAllModal({
                 : "px-6 py-3",
           )}
         >
-          {isPage ? <DashboardNoticeAlert className="mb-2 shrink-0" /> : null}
           {loading ? (
             isMobile ? (
               <div className="space-y-2.5">

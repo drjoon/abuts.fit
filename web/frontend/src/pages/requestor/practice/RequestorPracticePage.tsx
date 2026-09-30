@@ -1,5 +1,5 @@
 // related files:
-// - 2026-09-30: 기공의뢰수신 헤더 아래에 공지 1줄.
+// - 2026-09-30: 공지는 미처리 안내 바로 옆. 2xl 미만 헤더 뱃지·버튼은 아이콘.
 // - 2026-09-29: 작업시작 클릭 시 보철 업로드 요구 건은 적립 조건 확인 모달(다시 보지 않기).
 // - 2026-09-29: 작업 파일 「폴더 열기」 — 작업 스캔·어벗 디자인·보철물을 같은 케이스 폴더에 받고 연다.
 // - 2026-09-28: 프리뷰 다운로드(의뢰 파일·작업 스캔)도 「폴더 열기」와 같은 케이스 폴더에 받는다.
@@ -8760,13 +8760,13 @@ export function RequestorPracticeReceivePage({
               ? "px-2"
               : "w-8 px-0"
             : count === 0
-              ? "w-8 px-0 xl:w-auto xl:px-3"
-              : "px-2 xl:px-3",
+              ? "w-8 px-0 2xl:w-auto 2xl:px-3"
+              : "px-2 2xl:px-3",
           count > 0 && "border-sky-300 bg-sky-50/80",
         )}
         iconClassName="h-3.5 w-3.5"
         showLabel={!iconOnly}
-        labelClassName="hidden xl:inline"
+        labelClassName="hidden 2xl:inline"
         withTooltip={!iconOnly}
       />
     );
@@ -8902,7 +8902,10 @@ export function RequestorPracticeReceivePage({
 
   const transferSearchAndBadges = isMobile ? (
     <div className="flex flex-col items-center gap-2">
-      {labUnreadNotice}
+      <div className="flex max-w-full flex-nowrap items-center justify-center gap-1.5">
+        {labUnreadNotice}
+        <DashboardNoticeAlert placement="inline" />
+      </div>
       <div className="flex flex-nowrap items-center justify-center gap-1.5">
         {labMobileHeaderActionButtons}
         <DemoModeBadge className="shrink-0" />
@@ -8910,8 +8913,12 @@ export function RequestorPracticeReceivePage({
       {labMobileStatusBadges}
     </div>
   ) : (
-    <div className={WIDE_CLUSTER_ROW_CLASS}>
+    <div className="flex w-full min-w-0 flex-nowrap items-center gap-2">
       {labUnreadNotice}
+      <DashboardNoticeAlert
+        placement="inline"
+        className="min-w-0 max-w-none flex-1 shrink 2xl:max-w-none"
+      />
       <PracticeStatusFilterBadges
         className="shrink-0 flex-nowrap justify-end gap-1.5"
         items={labStatusFilterBadgeItems}
@@ -9491,8 +9498,8 @@ export function RequestorPracticeReceivePage({
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         {showDesignQueue && !showTransfers ? (
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
-            <DashboardNoticeAlert />
-            <div className="flex flex-wrap items-center justify-end gap-3">
+            <div className="flex flex-nowrap items-center justify-end gap-3">
+              <DashboardNoticeAlert placement="inline" />
               <PeriodFilter
                 value={period}
                 onChange={setPeriod}
@@ -9523,7 +9530,6 @@ export function RequestorPracticeReceivePage({
               <div className={DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS}>
                 {transferSearchAndBadges}
               </div>
-              <DashboardNoticeAlert className="pb-1" />
             </div>
             <div
               className={cn(
