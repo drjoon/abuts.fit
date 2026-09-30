@@ -526,7 +526,7 @@ type Props = {
   onMeshesReady?: (info: { deformed: boolean; restore: boolean }) => void;
   /** 돌리기·이동·줌·시점 전환이 멈추면. */
   onViewSettled?: () => void;
-  /** 이 임플란트 치아의 스캔바디 윗면 가장자리에 점 3개를 찍는다. */
+  /** 이 임플란트 치아의 스캔바디 위를 한 점 찍으면 그 자리에서 찾는다. */
   scanbodyPickTooth?: string | null;
   onScanbodyPicks?: (count: number) => void;
   /** 이 치아의 마진 시작점을 스캔 위에서 한 번 찍는다. 그 자리부터 다시 검출한다. */
@@ -6179,17 +6179,19 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   };
   saveImageRef.current = onSaveImage;
 
-  /** 치아 추정 중심 주변의 지대치 악 스캔 정점(월드). 로드·배치가 같으면 다시 모으지 않는다. */
-  const nearbyScanPoints = (tooth: string) => {
+  /** 치아 추정 중심, 또는 찍은 점 주변의 지대치 악 스캔 정점(월드). */
+  const nearbyScanPoints = (tooth: string, seed?: THREE.Vector3 | null) => {
     const place = placementsRef.current.find((row) => row.toothNumber === tooth);
     if (!place) return null;
-    const c = place.center;
-    const cacheKey = `${loadVersion}:${tooth}:${c.x.toFixed(3)},${c.y.toFixed(3)},${c.z.toFixed(3)}`;
+    const origin = seed ?? place.center;
+    const cacheKey = seed
+      ? `${loadVersion}:${tooth}:seed:${origin.x.toFixed(2)},${origin.y.toFixed(2)},${origin.z.toFixed(2)}`
+      : `${loadVersion}:${tooth}:${place.center.x.toFixed(3)},${place.center.y.toFixed(3)},${place.center.z.toFixed(3)}`;
     const cache = nearbyScanRef.current;
     const hit = cache.get(cacheKey);
     if (hit) return { place, ...hit };
     const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
-    const reach = Math.max(place.radius * 1.5, 9 / unit);
+    const reach = seed ? Math.max(place.radius * 2.2, 14 / unit) : Math.max(place.radius * 1.5, 9 / unit);
     const reach2 = reach * reach;
     groupRef.current?.updateWorldMatrix(true, true);
     const out: number[] = [];
@@ -6205,7 +6207,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       normalMatrix.getNormalMatrix(entry.mesh.matrixWorld);
       for (let i = 0; i < pos.count; i += 1) {
         point.fromBufferAttribute(pos, i).applyMatrix4(entry.mesh.matrixWorld);
-        if (point.distanceToSquared(c) > reach2) continue;
+        if (point.distanceToSquared(origin) > reach2) continue;
         out.push(point.x, point.y, point.z);
         if (nor) {
           normal.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
@@ -6447,14 +6449,14 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     });
   };
 
-  const fitScanbodyOnScan = (tooth: string, radiusMm: number) => {
-    const near = nearbyScanPoints(tooth);
+  const fitScanbodyOnScan = (tooth: string, radiusMm: number, seed?: THREE.Vector3 | null) => {
+    const near = nearbyScanPoints(tooth, seed);
     if (!near || near.points.length < 90) return null;
     const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
     const n = toothAxisDir(tooth);
     const r = radiusMm / unit;
     const data = near.points;
-    const center = near.place.center.clone();
+    const center = (seed ?? near.place.center).clone();
     const d = new THREE.Vector3();
     const flat = new THREE.Vector3();
     let top = 0;
@@ -6501,21 +6503,22 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     tooth,
     candidates,
     current,
+    seed?: THREE.Vector3 | null,
   ) => {
     if (candidates.length === 0) return null;
-    const near = nearbyScanPoints(tooth);
+    const near = nearbyScanPoints(tooth, seed);
     if (!near || near.points.length < 90) return null;
     const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
     const right = frameRef.current?.right ?? new THREE.Vector3(1, 0, 0);
     const extents = candidates.map((row) => meshExtent(row.mesh.positions));
     let axis: THREE.Vector3;
     let top: THREE.Vector3;
-    if (current?.aligned) {
+    if (current?.aligned && !seed) {
       const pose = implantPose(near.place, toothAxisDir(tooth), current);
       axis = pose.axis;
       top = pose.top;
     } else {
-      const fit = fitScanbodyOnScan(tooth, extents[0]!.radiusMm);
+      const fit = fitScanbodyOnScan(tooth, extents[0]!.radiusMm, seed);
       if (!fit) return null;
       axis = new THREE.Vector3(...fit.axis).normalize();
       top = near.place.center.clone().add(new THREE.Vector3(...fit.offset));
@@ -6593,8 +6596,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       .map((entry) => entry.mesh);
     const hit = raycaster.intersectObjects(meshes, false)[0];
     if (!hit) return;
-    const points = scanbodyPickRef.current.points;
-    points.push(hit.point.clone());
+    const point = hit.point.clone();
+    clearScanbodyMarks();
     if (!scanbodyMarksRef.current) {
       scanbodyMarksRef.current = new THREE.Group();
       scene.add(scanbodyMarksRef.current);
@@ -6603,39 +6606,66 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       new THREE.SphereGeometry(Math.max(place.radius * 0.05, 0.15), 12, 10),
       new THREE.MeshBasicMaterial({ color: 0xef4444, depthTest: false }),
     );
-    mark.position.copy(hit.point);
+    mark.position.copy(point);
     mark.renderOrder = 20;
     scanbodyMarksRef.current.add(mark);
-    onScanbodyPicksRef.current?.(points.length);
-    if (points.length < 3) return;
-    const [a, b, c] = points as [THREE.Vector3, THREE.Vector3, THREE.Vector3];
-    const ab = b.clone().sub(a);
-    const ac = c.clone().sub(a);
-    const normal = new THREE.Vector3().crossVectors(ab, ac);
-    const n2 = normal.lengthSq();
+    onScanbodyPicksRef.current?.(1);
+    const shape = designEditRef.current?.scanbodies[tooth];
+    const radiusMm = shape?.radiusMm ?? 2.4;
+    const seeded = fitScanbodyOnScan(tooth, radiusMm, point);
+    const axis = seeded
+      ? seeded.axis
+      : ([toothAxisDir(tooth).x, toothAxisDir(tooth).y, toothAxisDir(tooth).z] as [number, number, number]);
+    const offset = seeded
+      ? seeded.offset
+      : ([point.x - place.center.x, point.y - place.center.y, point.z - place.center.z] as [
+          number,
+          number,
+          number,
+        ]);
+    const edit = designEditRef.current?.edits[tooth]?.implant;
+    const mesh = shape?.mesh;
+    const meshFit =
+      mesh && seeded
+        ? fitScanbodyMeshOnScan(
+            tooth,
+            [{ key: edit?.scanbodyKey || "order", mesh }],
+            {
+              on: true,
+              libraryId: edit?.libraryId ?? null,
+              orderOverride: edit?.orderOverride === true,
+              screwHole: edit?.screwHole === true,
+              aligned: true,
+              axis,
+              offset,
+              fitMm: seeded.fitMm,
+              rotDeg: edit?.rotDeg ?? 0,
+              scanbodyKey: edit?.scanbodyKey ?? null,
+            },
+            point,
+          )
+        : null;
     clearScanbodyMarks();
     onScanbodyPicksRef.current?.(0);
-    if (n2 < 1e-10) return;
-    const center = a
-      .clone()
-      .add(
-        new THREE.Vector3()
-          .crossVectors(normal, ab)
-          .multiplyScalar(ac.lengthSq())
-          .add(new THREE.Vector3().crossVectors(ac, normal).multiplyScalar(ab.lengthSq()))
-          .multiplyScalar(1 / (2 * n2)),
-      );
-    const axis = normal.normalize();
-    if (axis.dot(toothAxisDir(tooth)) < 0) axis.negate();
-    const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
-    const radiusMm = designEditRef.current?.scanbodies[tooth]?.radiusMm ?? 2.4;
-    const offset = center.clone().sub(place.center);
+    if (meshFit) {
+      onDesignGestureRef.current?.({
+        type: "scanbody-fit",
+        tooth,
+        axis: meshFit.axis,
+        offset: meshFit.offset,
+        fitMm: meshFit.fitMm,
+        rotDeg: meshFit.rotDeg,
+        scanbodyKey: meshFit.key === "order" ? null : meshFit.key,
+      });
+      return;
+    }
     onDesignGestureRef.current?.({
       type: "scanbody-fit",
       tooth,
-      axis: [axis.x, axis.y, axis.z],
-      offset: [offset.x, offset.y, offset.z],
-      fitMm: Math.round(Math.abs(center.distanceTo(a) * unit - radiusMm) * 1000) / 1000,
+      axis,
+      offset,
+      fitMm: seeded?.fitMm ?? null,
+      scanbodyKey: null,
     });
   };
   const fitScanbodyRef = useRef(fitScanbodyOnScan);

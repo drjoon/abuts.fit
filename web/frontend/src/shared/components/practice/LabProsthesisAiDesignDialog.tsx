@@ -678,6 +678,20 @@ function orderSpecLines(tooth: LabProsthesisAiTooth) {
   return { implant, scanbody };
 }
 
+/** 치과 의뢰 스캔바디(직경·높이 mm). 라이브러리 형상이 없을 때 이 크기의 원기둥을 겹친다. */
+function orderScanbodyShape(
+  order: LabProsthesisAiTooth["scanbodyOrder"],
+): { radiusMm: number; heightMm: number } | null {
+  if (!order) return null;
+  const diameter = Number(order.diameter.replace(",", "."));
+  const height = Number(order.height.replace(",", "."));
+  if (!Number.isFinite(diameter) || diameter <= 0) return null;
+  return {
+    radiusMm: diameter / 2,
+    heightMm: Number.isFinite(height) && height > 0 ? height : 10,
+  };
+}
+
 function centerGuideLabel(mode: WorkSessionCenterGuide): string {
   if (mode === "center") return "중앙선";
   if (mode === "grid") return "모눈종이";
@@ -1841,7 +1855,9 @@ function LabProsthesisAiDesignDialog({
         continue;
       }
       const id = implant?.libraryId;
-      out[tooth.toothNumber] = scanbodyShapeOf(id ? (libraryById.get(id) ?? null) : null);
+      const base = scanbodyShapeOf(id ? (libraryById.get(id) ?? null) : null);
+      const ordered = orderScanbodyShape(tooth.scanbodyOrder);
+      out[tooth.toothNumber] = ordered ? { ...base, ...ordered } : base;
     }
     return out;
   }, [edits, libraryById, plan.teeth, scanbodyCandidates, scanbodyMeshes]);
@@ -1856,7 +1872,7 @@ function LabProsthesisAiDesignDialog({
   const activeScanbodyLabel = (() => {
     const rows = activeNumber ? (scanbodyCandidates[activeNumber]?.rows ?? []) : [];
     const row = rows.find((r) => r.key === activeImplant?.scanbodyKey) ?? rows[0];
-    return row?.label ?? null;
+    return row?.label ?? (activeTooth ? orderSpecLines(activeTooth).scanbody : "") ?? null;
   })();
   const prepBackTransparent = Boolean(activeNumber && edits[activeNumber]?.margin.showBack);
   const meshEditOn = meshEdit != null;
@@ -2383,7 +2399,7 @@ function LabProsthesisAiDesignDialog({
           <>
             치아 교합면을 화면 가운데에 두고 삽입축을 잡은 뒤 다시 누르세요.
             <br />
-            그래도 안 되면 점 3개 정렬을 쓰세요.
+            그래도 안 되면 스캔바디 위를 한 점 찍으세요.
           </>
         ),
         variant: "destructive",
@@ -2431,7 +2447,7 @@ function LabProsthesisAiDesignDialog({
             <>
               평균 거리 {fit.fitMm.toFixed(3)} mm입니다. 의뢰의 임플란트·스캔바디가 맞는지 확인하세요.
               <br />
-              점 3개 정렬로 위치를 잡은 뒤 자동 맞춤을 다시 누르면 그 위치에서 다시 맞춥니다.
+              점을 한 번 찍은 뒤 자동 맞춤을 다시 누르면 그 위치에서 다시 맞춥니다.
             </>
           ),
           variant: "destructive",
@@ -2461,7 +2477,11 @@ function LabProsthesisAiDesignDialog({
         ),
       });
     }
-    if (quiet && rows.length === 0) return false;
+    if (quiet && rows.length === 0 && !orderScanbodyShape(
+      plan.teeth.find((row) => row.toothNumber === toothNumber)?.scanbodyOrder ?? null,
+    )) {
+      return false;
+    }
     const fit = viewerRef.current?.fitScanbody(toothNumber, shape.radiusMm) ?? null;
     if (!fit) {
       if (!quiet) notFound();
@@ -2483,14 +2503,18 @@ function LabProsthesisAiDesignDialog({
         if (!tooth.implant) continue;
         const number = tooth.toothNumber;
         const implant = edits[number]?.implant;
-        if (!implant?.on || implant.aligned || !implant.libraryId) continue;
+        if (!implant?.on || implant.aligned) continue;
         const entry = scanbodyCandidates[number];
         const rows = entry?.orderedKey
           ? (entry.rows ?? []).filter((row) => row.key === entry.orderedKey)
           : (entry?.rows ?? []);
-        if (rows.length === 0) continue;
-        if (rows.some((row) => !scanbodyMeshes[row.key])) continue;
-        const triedKey = `${number}:${rows.map((row) => row.key).join(",")}`;
+        const orderShape = orderScanbodyShape(tooth.scanbodyOrder);
+        if (rows.length === 0 && !orderShape) continue;
+        if (!implant.libraryId && !orderShape) continue;
+        if (rows.length > 0 && rows.some((row) => !scanbodyMeshes[row.key])) continue;
+        const triedKey = rows.length
+          ? `${number}:${rows.map((row) => row.key).join(",")}`
+          : `${number}:order:${tooth.scanbodyOrder?.diameter ?? ""}:${tooth.scanbodyOrder?.height ?? ""}`;
         if (scanbodyAutoTried.current.has(triedKey)) continue;
         if (fitScanbodyAutoRef.current(number, true)) scanbodyAutoTried.current.add(triedKey);
         else pending = true;
@@ -5292,7 +5316,7 @@ function LabProsthesisAiDesignDialog({
                   <dt className="text-white/70">서브타입</dt>
                   <dd>{activeLibrary?.type || "-"}</dd>
                   <dt className="text-white/70">형상</dt>
-                  <dd>{activeScanbodyLabel ?? "원기둥 근사"}</dd>
+                  <dd>{activeScanbodyLabel || "원기둥 근사"}</dd>
                 </dl>
               </div>
             ) : null}
@@ -7134,16 +7158,9 @@ function DesignViewerChrome({
                                     <Cylinder className="h-3.5 w-3.5 shrink-0" />
                                     스캔바디
                                   </span>
-                                  <div className="min-w-0">
-                                    <p className="text-xs leading-relaxed text-foreground">
-                                      {scan || spec.scanbody || "지정 없음"}
-                                    </p>
-                                    {scan && spec.scanbody && scan !== spec.scanbody ? (
-                                      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                                        의뢰 {spec.scanbody}
-                                      </p>
-                                    ) : null}
-                                  </div>
+                                  <p className="min-w-0 text-xs leading-relaxed text-foreground">
+                                    {spec.scanbody || scan || "지정 없음"}
+                                  </p>
                                 </div>
                               </div>
                             );

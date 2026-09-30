@@ -1045,14 +1045,12 @@ export function LabProsthesisModifyPanel({
                     disabled={!scanbody.libraryLabel}
                     onClick={scanbody.onTogglePick}
                   >
-                    {scanbody.picking ? `점 ${scanbody.picks}/3` : "점 3개 정렬"}
+                    {scanbody.picking ? "점을 찍으세요" : "점 찍기"}
                   </Button>
                 </span>
               </TooltipTrigger>
               <TooltipContent side="right" className="z-[520]">
-                스캔바디 윗면 가장자리를 세 곳 찍습니다.
-                <br />
-                세 점이 지나는 원으로 축과 중심을 잡습니다.
+                스캔바디 위를 한 점 찍으면 그 자리에서 찾습니다.
               </TooltipContent>
             </Tooltip>
           </div>
