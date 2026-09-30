@@ -83,6 +83,10 @@
 // - 2026-09-30: 임플란트·스캔바디는 치과 의뢰를 먼저 쓴다. 의뢰와 다르게 바꾸면 확인 뒤에만 반영한다.
 // - 2026-09-30: 상악·하악 표시는 파일명 역할 그대로다. 치관으로 역할을 바꾸거나 그 초안 메시를 다시 열지 않는다.
 // - 2026-09-30: 설정 → 단축키·마우스. 어벗츠(기본)·exocad·3Shape 프리셋과 직접 설정. 단축키는 프로필을 따른다.
+// - 2026-10-01: 재료·임플란트·스캔바디는 치아 정보 헤더 톱니 모달에서 본다. 싱글 크라운 삽입축은 맨 왼쪽. 스크류홀은 아이콘.
+// - 2026-10-01: 치아 정보 체크 아이콘 툴팁은 마진을 잡았는지, 확인했는지를 말한다.
+// - 2026-10-01: 치아 정보 모달의 재료는 제목 줄, 브리지 왼쪽. 치과에서 넘어온 재료·라이브러리는 바꾸지 않는다.
+// - 2026-10-01: 스캔바디 라이브러리 형상은 스캔이 열리면 맞춤이 없는 임플란트에 자동으로 겹친다.
 import {
   createContext,
   useCallback,
@@ -92,9 +96,11 @@ import {
   useMemo,
   useRef,
   useState,
+  cloneElement,
   type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactElement,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -647,6 +653,15 @@ function nextCenterGuide(mode: WorkSessionCenterGuide): WorkSessionCenterGuide {
   if (mode === "off") return "center";
   if (mode === "center") return "grid";
   return "off";
+}
+
+function implantWithManufacturer(manufacturer: string, name: string) {
+  const maker = manufacturer.trim();
+  if (!maker || !name || name === "지정 없음") return name;
+  const head = name.split("/")[0]?.trim() ?? "";
+  if (head.localeCompare(maker, undefined, { sensitivity: "accent" }) === 0) return name;
+  if (name.toLowerCase().startsWith(maker.toLowerCase())) return name;
+  return `${maker} ${name}`;
 }
 
 function orderSpecLines(tooth: LabProsthesisAiTooth) {
@@ -1766,7 +1781,8 @@ function LabProsthesisAiDesignDialog({
         };
         continue;
       }
-      const linked = scanbodyCandidatesFor(scanbodyCatalog.libraries, libraryId);
+      const library = libraryId ? (libraryById.get(libraryId) ?? null) : null;
+      const linked = scanbodyCandidatesFor(scanbodyCatalog.libraries, libraryId, library);
       const rows = linked.map((row) => ({
         key: row.s3Key,
         label: `${row.kitName} · ${row.name}`,
@@ -1788,7 +1804,7 @@ function LabProsthesisAiDesignDialog({
       };
     }
     return out;
-  }, [edits, plan.teeth, scanbodyCatalog]);
+  }, [edits, libraryById, plan.teeth, scanbodyCatalog]);
   const scanbodyCandidateKeys = Object.values(scanbodyCandidates)
     .flatMap((entry) => entry.rows.map((row) => row.key))
     .sort()
@@ -1995,7 +2011,8 @@ function LabProsthesisAiDesignDialog({
             tooth.implant,
           );
         const nextLibraryId = kept ? current.implant.libraryId : libraryId;
-        const linked = scanbodyCandidatesFor(scanbodyCatalog.libraries, nextLibraryId).map((row) => ({
+        const library = nextLibraryId ? (libraryById.get(nextLibraryId) ?? null) : null;
+        const linked = scanbodyCandidatesFor(scanbodyCatalog.libraries, nextLibraryId, library).map((row) => ({
           key: row.s3Key,
           label: `${row.kitName} ${row.name} ${row.systemName}`,
         }));
@@ -2274,6 +2291,14 @@ function LabProsthesisAiDesignDialog({
   };
 
   const pickImplantLibrary = (toothNumber: string, library: ImplantLibrary) => {
+    if (implantLibraryNeedsOrderConfirm(toothNumber, library)) {
+      setLibraryConfirm({ toothNumber, library });
+      return;
+    }
+    applyImplantLibrary(toothNumber, library, false);
+  };
+
+  const implantLibraryNeedsOrderConfirm = (toothNumber: string, library: ImplantLibrary) => {
     const tooth = plan.teeth.find((row) => row.toothNumber === toothNumber);
     const template = tooth
       ? abutmentTemplateFor(scanbodyCatalog.templates, tooth.simpleAbutment)
@@ -2294,11 +2319,47 @@ function LabProsthesisAiDesignDialog({
         tooth?.implant?.brand ||
         tooth?.scanbodyOrder?.manufacturer,
     );
-    if (specified && !follows) {
-      setLibraryConfirm({ toothNumber, library });
-      return;
+    return specified && !follows;
+  };
+
+  const orderLibraryIdOf = (toothNumber: string) => {
+    const tooth = plan.teeth.find((row) => row.toothNumber === toothNumber);
+    if (!tooth?.implant) return null;
+    const template = abutmentTemplateFor(scanbodyCatalog.templates, tooth.simpleAbutment);
+    if (template) return `template:${template.id}`;
+    return matchImplantLibrary(implantLibraries, tooth.implant)?.id ?? null;
+  };
+
+  const scanbodyForLibrary = (toothNumber: string, libraryId: string | null) => {
+    const tooth = plan.teeth.find((row) => row.toothNumber === toothNumber);
+    if (!tooth) return null;
+    const savedId = edits[toothNumber]?.implant.libraryId ?? null;
+    if (libraryId === savedId) {
+      const rows = scanbodyCandidates[toothNumber]?.rows ?? [];
+      const key = edits[toothNumber]?.implant.scanbodyKey;
+      const row = rows.find((item) => item.key === key) ?? (key ? null : rows[0]);
+      if (row?.label) return row.label;
     }
-    applyImplantLibrary(toothNumber, library, false);
+    if (tooth.simpleAbutment && (!libraryId || libraryId.startsWith("template:"))) {
+      const template = abutmentTemplateFor(scanbodyCatalog.templates, tooth.simpleAbutment);
+      if (template) return `${template.kind} ${template.diameter}${template.height}`;
+    }
+    const library = libraryId ? (libraryById.get(libraryId) ?? null) : null;
+    const linked = scanbodyCandidatesFor(scanbodyCatalog.libraries, libraryId, library);
+    const ordered = matchOrderedScanbody(
+      linked.map((row) => ({
+        key: row.s3Key,
+        label: `${row.kitName} ${row.name} ${row.systemName}`,
+      })),
+      tooth.scanbodyOrder,
+    );
+    const matched = linked.find((row) => row.s3Key === ordered) ?? linked[0];
+    if (matched) return `${matched.kitName} · ${matched.name}`;
+    if (tooth.simpleAbutment) {
+      const simple = tooth.simpleAbutment;
+      return [simple.kind, simple.diameter, simple.height].filter(Boolean).join(" ");
+    }
+    return orderSpecLines(tooth).scanbody || null;
   };
 
   const toggleImplantFavorite = (id: string) => {
@@ -2309,9 +2370,11 @@ function LabProsthesisAiDesignDialog({
     });
   };
 
-  const fitScanbodyAuto = (toothNumber: string) => {
+  const scanbodyAutoTried = useRef(new Set<string>());
+
+  const fitScanbodyAuto = (toothNumber: string, quiet = false) => {
     const shape = scanbodies[toothNumber];
-    if (!shape) return;
+    if (!shape) return false;
     setScanbodyPickTooth(null);
     const notFound = () =>
       toast({
@@ -2335,8 +2398,10 @@ function LabProsthesisAiDesignDialog({
       return mesh ? [{ key: row.key, mesh }] : [];
     });
     if (rows.length > 0 && loaded.length < rows.length) {
-      toast({ title: "스캔바디 형상을 받는 중입니다.", description: "잠시 후 다시 누르세요." });
-      return;
+      if (!quiet) {
+        toast({ title: "스캔바디 형상을 받는 중입니다.", description: "잠시 후 다시 누르세요." });
+      }
+      return false;
     }
     if (loaded.length > 0) {
       const fit =
@@ -2346,8 +2411,8 @@ function LabProsthesisAiDesignDialog({
           editsRef.current[toothNumber]?.implant ?? null,
         ) ?? null;
       if (!fit) {
-        notFound();
-        return;
+        if (!quiet) notFound();
+        return false;
       }
       onDesignGesture({
         type: "scanbody-fit",
@@ -2372,10 +2437,10 @@ function LabProsthesisAiDesignDialog({
           variant: "destructive",
         });
       }
-      return;
+      return true;
     }
     const simple = plan.teeth.find((row) => row.toothNumber === toothNumber)?.simpleAbutment;
-    if (entry?.missingTemplate && simple) {
+    if (entry?.missingTemplate && simple && !quiet) {
       // 올렸지만 관리자 검토·검사 중인 템플릿은 아직 쓸 수 없다(형상을 받지 않는다).
       const reviewing = scanbodyCatalog.templateUploads.some(
         (row) =>
@@ -2396,16 +2461,60 @@ function LabProsthesisAiDesignDialog({
         ),
       });
     }
+    if (quiet && rows.length === 0) return false;
     const fit = viewerRef.current?.fitScanbody(toothNumber, shape.radiusMm) ?? null;
     if (!fit) {
-      notFound();
-      return;
+      if (!quiet) notFound();
+      return false;
     }
     onDesignGesture({ type: "scanbody-fit", tooth: toothNumber, ...fit });
     queueSaveWorkRef.current();
+    return true;
   };
+  const fitScanbodyAutoRef = useRef(fitScanbodyAuto);
+  fitScanbodyAutoRef.current = fitScanbodyAuto;
+
+  /** 저장된 맞춤이 없는 임플란트는 라이브러리 형상을 받는 대로 스캔에 겹친다. */
+  useEffect(() => {
+    if (!open || workDocStamp === 0 || busy || scanbodyPickTooth) return;
+    const attempt = () => {
+      let pending = false;
+      for (const tooth of plan.teeth) {
+        if (!tooth.implant) continue;
+        const number = tooth.toothNumber;
+        const implant = edits[number]?.implant;
+        if (!implant?.on || implant.aligned || !implant.libraryId) continue;
+        const entry = scanbodyCandidates[number];
+        const rows = entry?.orderedKey
+          ? (entry.rows ?? []).filter((row) => row.key === entry.orderedKey)
+          : (entry?.rows ?? []);
+        if (rows.length === 0) continue;
+        if (rows.some((row) => !scanbodyMeshes[row.key])) continue;
+        const triedKey = `${number}:${rows.map((row) => row.key).join(",")}`;
+        if (scanbodyAutoTried.current.has(triedKey)) continue;
+        if (fitScanbodyAutoRef.current(number, true)) scanbodyAutoTried.current.add(triedKey);
+        else pending = true;
+      }
+      return pending;
+    };
+    if (!attempt()) return;
+    const timer = window.setTimeout(attempt, 800);
+    return () => window.clearTimeout(timer);
+  }, [
+    busy,
+    edits,
+    open,
+    plan.teeth,
+    scanbodyCandidates,
+    scanbodyMeshes,
+    scanbodyPickTooth,
+    workDocStamp,
+  ]);
 
   const resetScanbody = (toothNumber: string) => {
+    for (const key of scanbodyAutoTried.current) {
+      if (key.startsWith(`${toothNumber}:`)) scanbodyAutoTried.current.delete(key);
+    }
     setScanbodyPickTooth(null);
     patchImplant(
       toothNumber,
@@ -5046,7 +5155,6 @@ function LabProsthesisAiDesignDialog({
               onSetInsertion={startAiming}
               onToggleInfo={() => setToothInfoOpen((open) => !open)}
               onConfirmMargin={confirmMargin}
-              onApplyPreset={applyPresetToTooth}
               onGenerateTooth={(toothNumber) => void runGenerate([toothNumber])}
               onGenerateSpan={(span) => void runGenerate([...span])}
               onAssembleSpan={setSpanAssembled}
@@ -5054,14 +5162,11 @@ function LabProsthesisAiDesignDialog({
               libraryLabel={(toothNumber) => {
                 const id = edits[toothNumber]?.implant.libraryId;
                 const library = id ? libraryById.get(id) : null;
-                if (library) return library.label || library.manufacturer;
-                return scanbodyCandidates[toothNumber]?.rows[0]?.label ?? null;
+                if (!library) return null;
+                return library.label || library.manufacturer;
               }}
-              onPickLibrary={(toothNumber) => {
-                setSelectedTooth(toothNumber);
-                setToothCardFor(null);
-                setLibraryPickerFor(toothNumber);
-              }}
+              libraryIdOf={(toothNumber) => edits[toothNumber]?.implant.libraryId ?? null}
+              scanbodyForLibrary={scanbodyForLibrary}
               scans={scans}
               scanShown={scanShown}
               fileState={fileState}
@@ -5847,42 +5952,70 @@ function DraggablePanelHeader({
   children: ReactNode;
 }) {
   const drag = useContext(PanelDragContext);
-  const button = (
-    <button
-      type="button"
+  const toggle = (event: ReactMouseEvent) => {
+    if (!drag) {
+      onToggle();
+      return;
+    }
+    drag.onClick(event, onToggle);
+  };
+  const chevron = (
+    <ChevronDown
       className={cn(
-        "flex cursor-grab touch-none select-none items-center justify-between gap-2 text-left active:cursor-grabbing",
-        aside ? "min-w-0 flex-1" : "w-full",
-        !aside && className,
+        "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+        open ? "rotate-180" : "",
       )}
-      aria-expanded={open}
-      title="끌어 옮기면 가장자리에 붙습니다"
+    />
+  );
+  if (!aside) {
+    return (
+      <button
+        type="button"
+        className={cn(
+          "flex w-full cursor-grab touch-none select-none items-center justify-between gap-2 text-left active:cursor-grabbing",
+          className,
+        )}
+        aria-expanded={open}
+        title="끌어 옮기면 가장자리에 붙습니다"
+        onPointerDown={drag?.onPointerDown}
+        onPointerMove={drag?.onPointerMove}
+        onPointerUp={drag?.onPointerUp}
+        onPointerCancel={drag?.onPointerCancel}
+        onClick={toggle}
+      >
+        <span className="min-w-0 flex-1">{children}</span>
+        {chevron}
+      </button>
+    );
+  }
+  return (
+    <div
+      className={cn("flex w-full items-center gap-0.5", className)}
       onPointerDown={drag?.onPointerDown}
       onPointerMove={drag?.onPointerMove}
       onPointerUp={drag?.onPointerUp}
       onPointerCancel={drag?.onPointerCancel}
-      onClick={(event) => {
-        if (!drag) {
-          onToggle();
-          return;
-        }
-        drag.onClick(event, onToggle);
-      }}
     >
-      <span className="min-w-0 flex-1">{children}</span>
-      <ChevronDown
-        className={cn(
-          "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-          open ? "rotate-180" : "",
-        )}
-      />
-    </button>
-  );
-  if (!aside) return button;
-  return (
-    <div className={cn("flex items-center", className)}>
-      {button}
-      {aside}
+      <button
+        type="button"
+        className="flex min-w-0 cursor-grab touch-none select-none items-center text-left active:cursor-grabbing"
+        aria-expanded={open}
+        title="끌어 옮기면 가장자리에 붙습니다"
+        onClick={toggle}
+      >
+        <span className="min-w-0">{children}</span>
+      </button>
+      <div onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+        {aside}
+      </div>
+      <button
+        type="button"
+        className="ml-auto inline-flex h-6 w-6 shrink-0 cursor-grab items-center justify-center text-muted-foreground"
+        aria-label={open ? "접기" : "펼치기"}
+        onClick={toggle}
+      >
+        {chevron}
+      </button>
     </div>
   );
 }
@@ -6041,6 +6174,16 @@ function AiDesignChatPanel({
   );
 }
 
+/** 스크류홀. 바깥 고리와 뚫린 속. */
+function ScrewHoleIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" strokeWidth="2" />
+      <circle cx="12" cy="12" r="2.25" fill="currentColor" />
+    </svg>
+  );
+}
+
 function DesignViewerChrome({
   teeth,
   activeTooth,
@@ -6064,7 +6207,6 @@ function DesignViewerChrome({
   onSetInsertion,
   onToggleInfo,
   onConfirmMargin,
-  onApplyPreset,
   onGenerateTooth,
   onGenerateSpan,
   onAssembleSpan,
@@ -6091,7 +6233,8 @@ function DesignViewerChrome({
   toothPose,
   onToothPose,
   libraryLabel,
-  onPickLibrary,
+  libraryIdOf,
+  scanbodyForLibrary,
   onToggleScrewHole,
   cavityKinds,
   crownShells,
@@ -6100,7 +6243,8 @@ function DesignViewerChrome({
   /** 뷰어가 맞춘 크라운에서 잰 가장 얇은 외면(mm). */
   crownShells: Record<string, number>;
   libraryLabel: (toothNumber: string) => string | null;
-  onPickLibrary: (toothNumber: string) => void;
+  libraryIdOf: (toothNumber: string) => string | null;
+  scanbodyForLibrary: (toothNumber: string, libraryId: string | null) => string | null;
   onToggleScrewHole: (toothNumber: string, on: boolean) => void;
   teeth: LabProsthesisAiTooth[];
   activeTooth: LabProsthesisAiTooth | null;
@@ -6125,7 +6269,6 @@ function DesignViewerChrome({
   onSetInsertion: (toothNumbers: readonly string[]) => void;
   onToggleInfo: () => void;
   onConfirmMargin: (toothNumber: string) => void;
-  onApplyPreset: (toothNumber: string, presetId: string) => void;
   onGenerateTooth: (toothNumber: string) => void;
   onGenerateSpan: (span: readonly string[]) => void;
   onAssembleSpan: (span: readonly string[], assembled: boolean) => void;
@@ -6152,10 +6295,31 @@ function DesignViewerChrome({
   toothPose: PanelPose | null;
   onToothPose: (pose: PanelPose) => void;
 }) {
+  const [orderInfoOpen, setOrderInfoOpen] = useState(false);
   const spans = insertionSpansByOwner(teeth);
   const toothActionClass =
     "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md disabled:opacity-50";
   const iconClass = "h-3.5 w-3.5";
+  const toothTipClass = "z-[520] bg-background text-base leading-snug text-foreground";
+  const iconTip = (
+    text: ReactNode,
+    node: ReactElement<{ className?: string; disabled?: boolean }>,
+  ) => {
+    const disabled = node.props.disabled === true;
+    const child = disabled
+      ? cloneElement(node, { className: cn(node.props.className, "pointer-events-none") })
+      : node;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">{child}</span>
+        </TooltipTrigger>
+        <TooltipContent side="left" className={toothTipClass}>
+          {text}
+        </TooltipContent>
+      </Tooltip>
+    );
+  };
 
   const axisState = (span: readonly string[]) => {
     const spanKey = insertionAxisKey(span);
@@ -6197,7 +6361,20 @@ function DesignViewerChrome({
     const axisOn = axisState(span);
     const spanKey = insertionAxisKey(span);
     const highlighted = Boolean(highlightInsertionKey && spanKey === highlightInsertionKey);
-    return (
+    return iconTip(
+      shared ? (
+        <>
+          화면을 돌려 브리지 전체의 삽입축을 맞춥니다.
+          <br />
+          가운데 뱃지에서 확정합니다.
+        </>
+      ) : (
+        <>
+          화면을 돌려 삽입축을 맞춥니다.
+          <br />
+          가운데 뱃지에서 확정합니다.
+        </>
+      ),
       <button
         type="button"
         className={cn(
@@ -6206,11 +6383,6 @@ function DesignViewerChrome({
           !canSetInsertion && "opacity-50",
           highlighted && "practice-tooth-guide-pulse",
         )}
-        title={
-          shared
-            ? "화면을 돌려 브리지 전체의 삽입축을 맞춘 뒤 가운데 뱃지에서 확정합니다"
-            : "화면을 돌려 삽입축을 맞춘 뒤 가운데 뱃지에서 확정합니다"
-        }
         aria-label={shared ? "브리지 삽입축" : "삽입축"}
         aria-pressed={axisOn}
         data-coach={spanKey ? `axis:${spanKey}` : undefined}
@@ -6218,7 +6390,7 @@ function DesignViewerChrome({
         onClick={() => onSetInsertion(span)}
       >
         <Crosshair className={iconClass} />
-      </button>
+      </button>,
     );
   };
 
@@ -6249,123 +6421,127 @@ function DesignViewerChrome({
     const edit = edits[number];
     const thin = toothThin(number);
     const undercut = toothUndercut(number);
-    const statusTitle = made
-      ? "생성됨"
-      : edit?.pontic.on
-        ? null
-        : review === "detected" || review === "confirmed"
-          ? "검출됨"
-          : null;
+    const marginFound = !made && !edit?.pontic.on && (review === "detected" || review === "confirmed");
+    const marginTip =
+      review === "confirmed"
+        ? "마진을 확인했습니다."
+        : cavityKinds[number]
+          ? "와동 마진을 잡았습니다."
+          : "마진선을 잡았습니다.";
     return (
       <>
-        {statusTitle ? (
-          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground" title={statusTitle}>
-            {made ? <Sparkles className={iconClass} /> : <Check className={iconClass} />}
-          </span>
+        {made ? iconTip(
+          "생성됨",
+          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground">
+            <Sparkles className={iconClass} />
+          </span>,
         ) : null}
-        {thin ? (
+        {marginFound ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground"
+                aria-label={
+                  review === "detected" ? `${marginTip} 확인한 뒤 생성하세요.` : marginTip
+                }
+              >
+                <Check className={iconClass} />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="left" className={toothTipClass}>
+              {marginTip}
+              {review === "detected" ? (
+                <>
+                  <br />
+                  확인한 뒤 생성하세요.
+                </>
+              ) : null}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
+        {thin ? iconTip(
+          "최소 두께 미달",
           <button
             type="button"
             className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-destructive"
-            title="최소 두께 미달"
             aria-label="최소 두께"
             onClick={() => onSelectTooth(number)}
           >
             <TriangleAlert className={iconClass} />
-          </button>
+          </button>,
         ) : null}
-        {undercut > 0 ? (
+        {undercut > 0 ? iconTip(
+          <>
+            와동 벽 {undercut}곳이 삽입축과 평행하거나 언더컷입니다.
+            <br />
+            권장 테이퍼 {CAVITY_TAPER_RECOMMENDED}
+          </>,
           <button
             type="button"
             className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-destructive"
-            title={`와동 벽 ${undercut}곳이 삽입축과 평행하거나 언더컷입니다. 권장 테이퍼 ${CAVITY_TAPER_RECOMMENDED}`}
             aria-label="언더컷"
             onClick={() => onSelectTooth(number)}
           >
             <TriangleAlert className={iconClass} />
-          </button>
+          </button>,
         ) : null}
       </>
     );
   };
 
-  /**
-   * 생성 전 디자인 프리셋. 치아 유형에 맞는 열(크라운·인레이온레이·임플란트)을 복사한다.
-   * 브리지는 스팬 전체에 같은 프리셋을 건다. 커넥터 최소 면적도 그 재료를 따른다.
-   */
-  const presetSelect = (members: readonly LabProsthesisAiTooth[], label: string) => {
-    const open = members.filter(
-      (tooth) => tooth.designable && generated[tooth.toothNumber] !== true,
-    );
-    const lead = open[0];
-    if (!lead) return null;
-    const inner = toothEdit(lead.toothNumber).inner;
-    const value = inner.presetId === "" ? caseDefaultPresetId : (inner.presetId ?? "custom");
-    const listed = designLibrary.presets.some((row) => row.id === value);
-    return (
-      <select
-        className="h-6 w-auto max-w-full shrink-0 rounded-md border bg-background px-1 text-[10px]"
-        aria-label={`${label} 디자인 프리셋`}
-        title="내면 파라미터 프리셋"
-        value={value}
-        onChange={(event) => {
-          const next = event.target.value;
-          for (const tooth of open) onApplyPreset(tooth.toothNumber, next);
-        }}
-      >
-        {designLibrary.presets.map((row) => (
-          <option key={row.id} value={row.id}>
-            {presetDisplayName(row.name)}
-          </option>
-        ))}
-        {!listed ? (
-          <option value={value} disabled>
-            {value === "custom" ? "직접 조정" : presetDisplayName(inner.presetName || "지운 프리셋")}
-          </option>
-        ) : null}
-      </select>
-    );
+  const presetValue = (tooth: LabProsthesisAiTooth) => {
+    const inner = toothEdit(tooth.toothNumber).inner;
+    return inner.presetId === "" ? caseDefaultPresetId : (inner.presetId ?? "custom");
+  };
+
+  const presetLabel = (tooth: LabProsthesisAiTooth) => {
+    const value = presetValue(tooth);
+    const inner = toothEdit(tooth.toothNumber).inner;
+    const row = designLibrary.presets.find((item) => item.id === value);
+    if (row) return presetDisplayName(row.name);
+    if (value === "custom") return "직접 조정";
+    return presetDisplayName(inner.presetName || "지운 프리셋");
   };
 
   const generateButton = (tooth: LabProsthesisAiTooth) => {
     if (generated[tooth.toothNumber] === true) {
-      return (
+      return iconTip(
+        "생성한 보철을 지웁니다",
         <button
           type="button"
           className={cn(toothActionClass, "text-muted-foreground hover:bg-muted")}
-          title="생성한 보철을 지웁니다"
           aria-label="삭제"
           onClick={() => onClearTooth(tooth.toothNumber)}
         >
           <Trash2 className={iconClass} />
-        </button>
+        </button>,
       );
     }
     if (!tooth.designable) {
-      return (
+      return iconTip(
+        "생성",
         <button
           type="button"
           className={cn(toothActionClass, "bg-primary text-primary-foreground")}
-          title="생성"
           aria-label="생성"
           disabled
         >
           <Sparkles className={iconClass} />
-        </button>
+        </button>,
       );
     }
     if (toothEdit(tooth.toothNumber).pontic.on) {
-      return (
+      return iconTip(
+        "생성",
         <button
           type="button"
           className={cn(toothActionClass, "bg-primary text-primary-foreground")}
-          title="생성"
           aria-label="생성"
           disabled={generating}
           onClick={() => onGenerateTooth(tooth.toothNumber)}
         >
           <Sparkles className={iconClass} />
-        </button>
+        </button>,
       );
     }
     const review = marginReview[tooth.toothNumber] ?? "none";
@@ -6379,80 +6555,84 @@ function DesignViewerChrome({
           : null
       : null;
     if (review === "detected" && !deleted && !implantBlock) {
-      return (
+      return iconTip(
+        "마진을 확인합니다",
         <button
           type="button"
           className={cn(toothActionClass, "bg-primary text-primary-foreground")}
-          title="마진을 확인합니다"
           aria-label="마진 확인"
           data-coach="margin-confirm"
           onClick={() => onConfirmMargin(tooth.toothNumber)}
         >
           <Check className={iconClass} />
-        </button>
+        </button>,
       );
     }
     const ready = review === "confirmed" && !deleted && !implantBlock;
-    return (
+    const blocked = implantBlock ?? `${implant ? "EPL" : "마진"}을 확인한 뒤에 생성합니다.`;
+    return iconTip(
+      ready ? "생성" : blocked,
       <button
         type="button"
         className={cn(toothActionClass, "bg-primary text-primary-foreground")}
         disabled={generating || !ready}
         data-coach={ready ? "generate" : undefined}
-        title={
-          ready
-            ? "생성"
-            : (implantBlock ?? `${implant ? "EPL" : "마진"}을 확인한 뒤에 생성합니다.`)
-        }
         aria-label="생성"
         onClick={() => onGenerateTooth(tooth.toothNumber)}
       >
         <Sparkles className={iconClass} />
-      </button>
+      </button>,
     );
   };
 
   const implantBits = (tooth: LabProsthesisAiTooth) => {
     if (!tooth.implant) return null;
     const implant = toothEdit(tooth.toothNumber).implant;
-    const label = libraryLabel(tooth.toothNumber);
-    const spec = orderSpecLines(tooth);
-    const orderText = [spec.implant, spec.scanbody].filter(Boolean).join(" · ");
     return (
       <>
-        <button
-          type="button"
-          className={cn(
-            toothActionClass,
-            "border",
-            label
-              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-700"
-              : "border-destructive/50 bg-destructive/10 text-destructive",
-          )}
-          title={label ?? (orderText ? `치과 의뢰: ${orderText}` : "임플란트 라이브러리를 고릅니다.")}
-          aria-label={label ?? "라이브러리"}
-          data-coach={`library:${tooth.toothNumber}`}
-          onClick={() => onPickLibrary(tooth.toothNumber)}
-        >
-          <Library className={iconClass} />
-        </button>
-        {implant.aligned ? (
-          <span
-            className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground"
-            title="정렬됨"
-          >
+        {implant.aligned ? iconTip(
+          "정렬됨",
+          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground">
             <Check className={iconClass} />
-          </span>
+          </span>,
         ) : null}
-        <span title="스크류홀">
-          <Checkbox
-            className="h-3.5 w-3.5"
-            checked={implant.screwHole}
-            onCheckedChange={(checked) => onToggleScrewHole(tooth.toothNumber, checked === true)}
+        {iconTip(
+          "스크류홀",
+          <button
+            type="button"
+            className={cn(
+              toothActionClass,
+              "border",
+              implant.screwHole
+                ? "border-amber-500/50 bg-amber-500/15 text-amber-700"
+                : "border-border text-muted-foreground",
+            )}
             aria-label={`#${tooth.toothNumber} 스크류홀`}
-          />
-        </span>
+            aria-pressed={implant.screwHole}
+            onClick={() => onToggleScrewHole(tooth.toothNumber, !implant.screwHole)}
+          >
+            <ScrewHoleIcon className={iconClass} />
+          </button>,
+        )}
       </>
+    );
+  };
+
+  const singleToothRow = (tooth: LabProsthesisAiTooth) => {
+    const span = insertionSpanForTooth(teeth, tooth.toothNumber);
+    const axisOn = axisState(span);
+    return (
+      <div className="flex items-center gap-2 py-0.5">
+        <div className="flex w-6 shrink-0 items-center justify-center">
+          {span.length > 0 ? insertionButton(span, false) : null}
+        </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
+          {nameButton(tooth, axisOn)}
+          {statusBits(tooth)}
+          {implantBits(tooth)}
+          {generateButton(tooth)}
+        </div>
+      </div>
     );
   };
 
@@ -6465,7 +6645,12 @@ function DesignViewerChrome({
       span.every(
         (number) => number === tooth.toothNumber || toothEdit(number).pontic.on,
       );
-    return (
+    return iconTip(
+      lastAbutment
+        ? "브리지에는 지대치가 하나 이상 있어야 합니다."
+        : pontic
+          ? "지대치로 바꾸면 마진을 다시 검출합니다."
+          : "폰틱은 마진 없이 기저면으로 치조정에 얹습니다.",
       <button
         type="button"
         className={cn(
@@ -6476,19 +6661,12 @@ function DesignViewerChrome({
             : "border-sky-500/50 bg-sky-500/10 text-sky-700",
         )}
         disabled={lastAbutment}
-        title={
-          lastAbutment
-            ? "브리지에는 지대치가 하나 이상 있어야 합니다."
-            : pontic
-              ? "지대치로 바꾸면 마진을 다시 검출합니다."
-              : "폰틱은 마진 없이 기저면으로 치조정에 얹습니다."
-        }
         aria-label={pontic ? "폰틱" : "지대치"}
         aria-pressed={pontic}
         onClick={() => onTogglePontic(tooth.toothNumber)}
       >
         {pontic ? <Spline className={iconClass} /> : <CircleDot className={iconClass} />}
-      </button>
+      </button>,
     );
   };
 
@@ -6520,21 +6698,23 @@ function DesignViewerChrome({
           {label}
         </span>
         {allMade ? (
-          assembled ? (
-            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-primary" title="조립됨">
+          assembled ? iconTip(
+            "조립됨",
+            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-primary">
               <Link2 className={iconClass} />
-            </span>
-          ) : (
-            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-accent-foreground" title="조립 전">
+            </span>,
+          ) : iconTip(
+            "조립 전",
+            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-accent-foreground">
               <TriangleAlert className={iconClass} />
-            </span>
+            </span>,
           )
         ) : null}
-        {allMade && weak ? (
+        {allMade && weak ? iconTip(
+          "커넥터 약함",
           <button
             type="button"
             className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-destructive"
-            title="커넥터 약함"
             aria-label="커넥터 약함"
             onClick={() => {
               const lead = members[0];
@@ -6542,22 +6722,24 @@ function DesignViewerChrome({
             }}
           >
             <TriangleAlert className={iconClass} />
-          </button>
+          </button>,
         ) : null}
-        {presetSelect(members, `브리지 ${label}`)}
-        {!allMade ? (
+        {!allMade ? iconTip(
+          spanReady ? "브리지 생성" : "지대치 마진을 모두 확인한 뒤 생성합니다.",
           <button
             type="button"
             className={cn(toothActionClass, "bg-primary text-primary-foreground")}
             disabled={generating || !spanReady}
-            title={spanReady ? "브리지 생성" : "지대치 마진을 모두 확인한 뒤 생성합니다."}
             aria-label="브리지 생성"
             onClick={() => onGenerateSpan(pending.map((tooth) => tooth.toothNumber))}
           >
             <Sparkles className={iconClass} />
-          </button>
+          </button>,
         ) : null}
-        {allMade ? (
+        {allMade ? iconTip(
+          assembled
+            ? "크라운이나 커넥터를 고치려면 분리합니다."
+            : "커넥터로 브리지를 한 덩어리로 잇습니다.",
           <button
             type="button"
             className={cn(
@@ -6566,16 +6748,11 @@ function DesignViewerChrome({
                 ? "bg-destructive text-destructive-foreground"
                 : "bg-primary text-primary-foreground",
             )}
-            title={
-              assembled
-                ? "크라운이나 커넥터를 고치려면 분리합니다."
-                : "커넥터로 브리지를 한 덩어리로 잇습니다."
-            }
             aria-label={assembled ? "분리" : "조립"}
             onClick={() => onAssembleSpan(span, !assembled)}
           >
             {assembled ? <Unlink className={iconClass} /> : <Link2 className={iconClass} />}
-          </button>
+          </button>,
         ) : null}
       </div>
     );
@@ -6656,6 +6833,16 @@ function DesignViewerChrome({
     );
   });
 
+  const clinicBlocks = toothInfoBlocks(
+    (["upper", "lower", "other"] as const).flatMap((arch) =>
+      teeth.filter((tooth) => toothArchGroup(tooth.toothNumber) === arch),
+    ),
+    spans,
+  ).filter((block) => {
+    const members = block.kind === "bridge" ? block.members : [block.tooth];
+    return members.some((tooth) => tooth.designable || Boolean(tooth.implant));
+  });
+
   return (
     <>
       <style>
@@ -6675,6 +6862,17 @@ function DesignViewerChrome({
               open={toothInfoOpen}
               onToggle={onToggleInfo}
               className="px-2.5 py-2"
+              aside={iconTip(
+                "재료·임플란트·스캔바디",
+                <button
+                  type="button"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label="재료·임플란트·스캔바디"
+                  onClick={() => setOrderInfoOpen(true)}
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                </button>,
+              )}
             >
               <span className="font-semibold text-foreground">치아 정보</span>
             </DraggablePanelHeader>
@@ -6782,22 +6980,12 @@ function DesignViewerChrome({
                                 </li>
                               );
                             }
-                            const tooth = block.tooth;
-                            const span = insertionSpanForTooth(teeth, tooth.toothNumber);
-                            const axisOn = axisState(span);
                             return (
                               <li
-                                key={`${tooth.toothNumber}-${tooth.prosthesisType}`}
+                                key={`${block.tooth.toothNumber}-${block.tooth.prosthesisType}`}
                                 className="py-1"
                               >
-                                <div className="flex flex-wrap items-center gap-1 py-0.5">
-                                  {nameButton(tooth, axisOn)}
-                                  {statusBits(tooth)}
-                                  {implantBits(tooth)}
-                                  {presetSelect([tooth], `#${tooth.toothNumber}`)}
-                                  {span.length > 0 ? insertionButton(span, false) : null}
-                                  {generateButton(tooth)}
-                                </div>
+                                {singleToothRow(block.tooth)}
                               </li>
                             );
                           })}
@@ -6815,22 +7003,12 @@ function DesignViewerChrome({
                         spans,
                       ).map((block) => {
                         if (block.kind !== "single") return null;
-                        const tooth = block.tooth;
-                        const span = insertionSpanForTooth(teeth, tooth.toothNumber);
-                        const axisOn = axisState(span);
                         return (
                           <li
-                            key={`${tooth.toothNumber}-${tooth.prosthesisType}`}
+                            key={`${block.tooth.toothNumber}-${block.tooth.prosthesisType}`}
                             className="py-1"
                           >
-                            <div className="flex flex-wrap items-center gap-1 py-0.5">
-                              {nameButton(tooth, axisOn)}
-                              {statusBits(tooth)}
-                              {implantBits(tooth)}
-                              {presetSelect([tooth], `#${tooth.toothNumber}`)}
-                              {span.length > 0 ? insertionButton(span, false) : null}
-                              {generateButton(tooth)}
-                            </div>
+                            {singleToothRow(block.tooth)}
                           </li>
                         );
                       })}
@@ -6857,6 +7035,129 @@ function DesignViewerChrome({
           </div>
         ) : null}
       </SnapFrame>
+
+      <Dialog open={orderInfoOpen} onOpenChange={setOrderInfoOpen}>
+        <DialogContent
+          overlayClassName="z-[560]"
+          className="z-[561] flex max-h-[min(40rem,calc(100dvh-4rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl sm:p-0"
+        >
+          <DialogHeader className="px-5 pb-3 pt-5 text-left">
+            <DialogTitle>치아 정보</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
+            {clinicBlocks.length === 0 ? (
+              <p className="text-sm text-muted-foreground">표시할 재료와 라이브러리가 없습니다.</p>
+            ) : (
+              <div className="space-y-3">
+                {clinicBlocks.map((block) => {
+                  const members = block.kind === "bridge" ? block.members : [block.tooth];
+                  const ordered = sortByArch(members.map((tooth) => tooth.toothNumber));
+                  const heading =
+                    block.kind === "bridge"
+                      ? `${ordered[0]}–${ordered[ordered.length - 1]}`
+                      : `#${members[0]?.toothNumber ?? ""}`;
+                  const lead = members.find((tooth) => tooth.designable) ?? null;
+                  const implants = members.filter((tooth) => tooth.implant);
+                  const material = lead ? presetLabel(lead) : "";
+                  const typeLabel = [
+                    ...new Set(
+                      members.map((tooth) => tooth.prosthesisType.trim()).filter(Boolean),
+                    ),
+                  ].join(" · ");
+                  const bridgeTone = typeLabel === "브리지";
+                  const crownTone = typeLabel === "크라운";
+                  return (
+                    <section
+                      key={`${heading}-${ordered.join("-")}`}
+                      className={cn(
+                        "overflow-hidden rounded-xl border",
+                        bridgeTone && "border-sky-500/30 bg-sky-500/[0.06]",
+                        crownTone && "border-amber-500/30 bg-amber-500/[0.06]",
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "flex items-center gap-2 px-3 py-2",
+                          bridgeTone
+                            ? "bg-sky-500/15"
+                            : crownTone
+                              ? "bg-amber-500/15"
+                              : "bg-muted/40",
+                        )}
+                      >
+                        <h3 className="min-w-0 text-sm font-semibold text-foreground">{heading}</h3>
+                        <span className="ml-auto inline-flex w-fit shrink-0 items-center gap-2 whitespace-nowrap">
+                          {material ? (
+                            <span className="w-fit whitespace-nowrap text-xs text-foreground">{material}</span>
+                          ) : null}
+                          {typeLabel ? (
+                            <span
+                              className={cn(
+                                "w-fit rounded-full bg-background px-2 py-0.5 text-[11px] font-medium",
+                                bridgeTone && "text-sky-800 dark:text-sky-200",
+                                crownTone && "text-amber-800 dark:text-amber-200",
+                                !bridgeTone && !crownTone && "text-foreground",
+                              )}
+                            >
+                              {typeLabel}
+                            </span>
+                          ) : null}
+                        </span>
+                      </div>
+                      {implants.length > 0 ? (
+                        <div className="space-y-3 px-3 py-3">
+                          {implants.map((tooth) => {
+                            const spec = orderSpecLines(tooth);
+                            const libraryId = libraryIdOf(tooth.toothNumber);
+                            const picked = libraryLabel(tooth.toothNumber);
+                            const scan = scanbodyForLibrary(tooth.toothNumber, libraryId);
+                            return (
+                              <div
+                                key={tooth.toothNumber}
+                                className="space-y-2 rounded-lg border bg-muted/20 p-2.5"
+                              >
+                                {members.length > 1 ? (
+                                  <p className="text-xs font-semibold text-foreground">#{tooth.toothNumber}</p>
+                                ) : null}
+                                <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-x-2 gap-y-2">
+                                  <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                                    <Library className="h-3.5 w-3.5 shrink-0" />
+                                    임플란트
+                                  </span>
+                                  <p className="min-w-0 text-xs leading-relaxed text-foreground">
+                                    {implantWithManufacturer(
+                                      tooth.implant?.manufacturer ?? "",
+                                      picked || spec.implant || "지정 없음",
+                                    )}
+                                  </p>
+                                  <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                                    <Cylinder className="h-3.5 w-3.5 shrink-0" />
+                                    스캔바디
+                                  </span>
+                                  <div className="min-w-0">
+                                    <p className="text-xs leading-relaxed text-foreground">
+                                      {scan || spec.scanbody || "지정 없음"}
+                                    </p>
+                                    {scan && spec.scanbody && scan !== spec.scanbody ? (
+                                      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                                        의뢰 {spec.scanbody}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </section>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {thinTeeth.length > 0 || undercutTeeth.length > 0 || unassembledSpan ? (
         <div className="absolute bottom-16 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5">

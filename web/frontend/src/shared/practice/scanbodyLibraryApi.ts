@@ -481,28 +481,65 @@ export type ScanbodyCandidate = {
 export function scanbodyCandidatesFor(
   libraries: readonly ScanbodyLibraryRow[],
   catalogId: string | null,
+  hint?: { manufacturer: string; brand: string; family: string; type: string } | null,
 ): ScanbodyCandidate[] {
-  if (!catalogId) return [];
+  const pushKit = (
+    out: ScanbodyCandidate[],
+    seen: Set<string>,
+    lib: ScanbodyLibraryRow,
+    kit: ScanbodyLibraryKit,
+  ) => {
+    const parts = new Map(lib.parts.map((part) => [part.partId, part]));
+    for (const id of kit.scanAbutmentPartIds) {
+      const part = parts.get(id);
+      if (!part || seen.has(part.s3Key)) continue;
+      seen.add(part.s3Key);
+      out.push({
+        s3Key: part.s3Key,
+        name: part.name,
+        kitName: kit.name,
+        systemName: lib.systemName,
+        scope: lib.scope,
+      });
+    }
+  };
+
   const out: ScanbodyCandidate[] = [];
   const seen = new Set<string>();
   const sorted = [...libraries].sort((a, b) => scopeRank(a.scope) - scopeRank(b.scope));
-  for (const lib of sorted) {
-    const parts = new Map(lib.parts.map((part) => [part.partId, part]));
-    for (const kit of lib.kits) {
-      if (!kit.catalogIds.includes(catalogId)) continue;
-      for (const id of kit.scanAbutmentPartIds) {
-        const part = parts.get(id);
-        if (!part || seen.has(part.s3Key)) continue;
-        seen.add(part.s3Key);
-        out.push({
-          s3Key: part.s3Key,
-          name: part.name,
-          kitName: kit.name,
-          systemName: lib.systemName,
-          scope: lib.scope,
-        });
+  if (catalogId) {
+    for (const lib of sorted) {
+      for (const kit of lib.kits) {
+        if (!kit.catalogIds.includes(catalogId)) continue;
+        pushKit(out, seen, lib, kit);
       }
     }
+  }
+  if (out.length > 0 || !hint) return out;
+
+  const token = (value: string) => value.toLowerCase().replace(/\s+/g, " ").trim();
+  const maker = token(hint.manufacturer);
+  const brand = token(hint.brand);
+  const family = token(hint.family);
+  const type = token(hint.type);
+  let best = 0;
+  const ranked: Array<{ lib: ScanbodyLibraryRow; kit: ScanbodyLibraryKit; score: number }> = [];
+  for (const lib of sorted) {
+    for (const kit of lib.kits) {
+      const blob = token(`${lib.systemName} ${kit.name}`);
+      const makerHit = Boolean(maker && blob.includes(maker));
+      const brandHit = Boolean(brand && blob.includes(brand));
+      if (!makerHit && !brandHit) continue;
+      let score = (makerHit ? 2 : 0) + (brandHit ? 2 : 0);
+      if (family && blob.includes(family)) score += 1;
+      if (type && blob.includes(type)) score += 1;
+      if (score > best) best = score;
+      ranked.push({ lib, kit, score });
+    }
+  }
+  for (const row of ranked) {
+    if (row.score !== best) continue;
+    pushKit(out, seen, row.lib, row.kit);
   }
   return out;
 }

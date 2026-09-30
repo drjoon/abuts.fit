@@ -6,7 +6,7 @@
 // - web/frontend/src/shared/components/practice/LabInnerParamFields.tsx
 // - web/frontend/src/shared/components/practice/LabProsthesisAiDesignDialog.tsx
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Copy, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -99,6 +99,7 @@ export function LabDesignPresetDialog({
   };
   const selected =
     draft.presets.find((row) => row.id === selectedId) ?? draft.presets[0] ?? null;
+  const nameRef = useRef<HTMLInputElement>(null);
 
   const patchSelected = (patch: (preset: DesignPreset) => DesignPreset) => {
     if (!selected) return;
@@ -175,6 +176,10 @@ export function LabDesignPresetDialog({
       <DialogContent
         className="z-[500] flex h-[min(92vh,40rem)] w-[min(96vw,64rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:w-[min(96vw,64rem)] sm:max-w-none sm:p-0"
         overlayClassName="z-[500]"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          nameRef.current?.focus();
+        }}
       >
         <DialogHeader className="shrink-0 border-b py-3 pl-5 pr-12 text-left">
           <DialogTitle className="text-base">디자인 프리셋</DialogTitle>
@@ -247,6 +252,7 @@ export function LabDesignPresetDialog({
             <section className="min-w-0 flex-1 overflow-y-auto px-5 py-4">
               <div className="flex items-center gap-2">
                 <Input
+                  ref={nameRef}
                   className="h-8 max-w-xs text-sm font-semibold"
                   value={selected.name}
                   maxLength={40}

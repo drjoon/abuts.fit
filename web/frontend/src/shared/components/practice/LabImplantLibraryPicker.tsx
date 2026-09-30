@@ -21,6 +21,7 @@ type Props = {
   onPick: (library: ImplantLibrary) => void;
   onToggleFavorite: (id: string) => void;
   onClose: () => void;
+  className?: string;
 };
 
 type Mode = "company" | "search" | "favorite";
@@ -36,6 +37,7 @@ export function LabImplantLibraryPicker({
   onPick,
   onToggleFavorite,
   onClose,
+  className,
 }: Props) {
   const current = libraries.find((row) => row.id === value) ?? null;
   const manufacturers = useMemo(
@@ -95,7 +97,7 @@ export function LabImplantLibraryPicker({
   );
 
   return (
-    <div className="w-72 rounded-lg border bg-background/95 p-3 text-sm shadow-lg">
+    <div className={cn("w-72 rounded-lg border bg-background/95 p-3 text-sm shadow-lg", className)}>
       <div className="mb-2 flex items-center justify-between">
         <p className="font-semibold text-foreground">#{toothNumber} 임플란트 라이브러리</p>
         <button
