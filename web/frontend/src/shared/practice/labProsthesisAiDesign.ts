@@ -536,5 +536,8 @@ export function formatProsthesisAiToothLabel(tooth: LabProsthesisAiTooth): strin
   if (tooth.prosthesisType !== "브리지" || tooth.linkedTeeth.length === 0) {
     return base;
   }
-  return `${base} (${sortByArch(tooth.linkedTeeth).join(", ")})`;
+  const span = sortByArch([tooth.toothNumber, ...tooth.linkedTeeth]);
+  const range =
+    span.length > 1 ? `${span[0]}-${span[span.length - 1]}` : tooth.toothNumber;
+  return `${base} · ${range}`;
 }

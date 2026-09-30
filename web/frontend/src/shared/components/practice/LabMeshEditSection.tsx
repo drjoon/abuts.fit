@@ -3,11 +3,10 @@
 // - 2026-09-30: 발치 탭. 치아를 눌러 고르고 경계를 고친 뒤 적용하면 지우고 발치와를 메운다.
 
 import type { ReactNode } from "react";
-import { X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import {
@@ -20,8 +19,43 @@ import {
   type ScanMeshEditStatus,
 } from "@/shared/practice/scanMeshEdit";
 
-const SWITCH_CLASS =
-  "h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4";
+/** 단계 패널의 하위 메뉴. 셰브론으로 접고, 같은 단계에서는 하나만 연다. */
+export function StageSubsection({
+  title,
+  open,
+  onOpen,
+  children,
+  coach,
+  className,
+}: {
+  title: string;
+  open: boolean;
+  onOpen: (on: boolean) => void;
+  children: ReactNode;
+  coach?: string;
+  className?: string;
+}) {
+  return (
+    <section className={cn("space-y-2", className)} data-coach={coach}>
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-3 text-left text-xs font-semibold text-foreground"
+        aria-expanded={open}
+        onClick={() => onOpen(!open)}
+      >
+        {title}
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-180",
+          )}
+          aria-hidden
+        />
+      </button>
+      {open ? children : null}
+    </section>
+  );
+}
 
 const TABS: ReadonlyArray<{ id: MeshEditTab; label: string; tip: ReactNode }> = [
   {
@@ -187,16 +221,25 @@ export function MeshEditSection({
     <section className="space-y-2" data-coach="mesh-edit">
       <Tooltip>
         <TooltipTrigger asChild>
-          <label className="flex items-center justify-between gap-3 text-xs font-semibold text-foreground">
-            메시 편집
-            <Switch
-              checked={edit != null}
+          <span className="flex min-w-0">
+            <button
+              type="button"
               disabled={disabled}
-              onCheckedChange={onToggle}
+              className="flex w-full items-center justify-between gap-3 text-left text-xs font-semibold text-foreground disabled:opacity-50"
+              aria-expanded={edit != null}
               aria-label="메시 편집"
-              className={SWITCH_CLASS}
-            />
-          </label>
+              onClick={() => onToggle(edit == null)}
+            >
+              메시 편집
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                  edit != null && "rotate-180",
+                )}
+                aria-hidden
+              />
+            </button>
+          </span>
         </TooltipTrigger>
         <TooltipContent side="right" className="z-[520]">
           디자인 전에 스캔을 정리하면 생성이 깔끔해집니다.

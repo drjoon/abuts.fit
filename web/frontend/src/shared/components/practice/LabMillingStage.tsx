@@ -17,6 +17,7 @@ import * as THREE from "three";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Download, Loader2, Paperclip, Shuffle } from "lucide-react";
 
+import { StageSubsection } from "@/shared/components/practice/LabMeshEditSection";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
@@ -543,6 +544,7 @@ export function LabMillingPanel({ milling }: { milling: LabMillingState }) {
   const selectedPlacement =
     selected?.placement && !selected.placement.excluded ? selected.placement : null;
   const zLimit = selectedShape ? Math.max(0, zLimitMm(selectedShape.part, milling.thicknessMm)) : 0;
+  const [millingFold, setMillingFold] = useState<"disk" | "pin" | "prosthesis" | null>("disk");
   const [shrinkDraft, setShrinkDraft] = useState(
     settings.shrinkFactor != null ? String(settings.shrinkFactor) : "",
   );
@@ -551,14 +553,15 @@ export function LabMillingPanel({ milling }: { milling: LabMillingState }) {
   }, [settings.shrinkFactor]);
 
   return (
-    <section className="space-y-3" data-coach="milling-settings">
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold text-foreground">디스크</p>
-          <span className="text-[11px] tabular-nums text-muted-foreground">
-            Ø {MILLING_DISC_DIAMETER_MM} mm
-          </span>
-        </div>
+    <section className="space-y-5" data-coach="milling-settings">
+      <StageSubsection
+        title="디스크"
+        open={millingFold === "disk"}
+        onOpen={(on) => setMillingFold(on ? "disk" : null)}
+      >
+        <p className="text-right text-[11px] tabular-nums text-muted-foreground">
+          Ø {MILLING_DISC_DIAMETER_MM} mm
+        </p>
         <div className="grid grid-cols-3 gap-1">
           {MILLING_DISC_MATERIALS.map((m) => (
             <Button
@@ -609,7 +612,6 @@ export function LabMillingPanel({ milling }: { milling: LabMillingState }) {
             ? `권장 ${milling.recommended} mm (위·아래 ${MILLING_SKIN_MM} mm 여유)`
             : "가장 두꺼운 디스크보다 높은 보철이 있습니다."}
         </p>
-      </div>
 
       <div className="space-y-2">
         <NumberRow
@@ -627,11 +629,14 @@ export function LabMillingPanel({ milling }: { milling: LabMillingState }) {
           onChange={(edgeMm) => milling.patchSettings({ edgeMm })}
         />
       </div>
+      </StageSubsection>
 
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold text-foreground">핀</p>
-          <div className="flex items-center gap-1">
+      <StageSubsection
+        title="핀"
+        open={millingFold === "pin"}
+        onOpen={(on) => setMillingFold(on ? "pin" : null)}
+      >
+        <div className="flex items-center justify-end gap-1">
             <Button
               type="button"
               size="sm"
@@ -656,7 +661,6 @@ export function LabMillingPanel({ milling }: { milling: LabMillingState }) {
               +
             </Button>
           </div>
-        </div>
         {settings.pinCount > 0 ? (
           <>
             <NumberRow
@@ -693,7 +697,6 @@ export function LabMillingPanel({ milling }: { milling: LabMillingState }) {
             </Tooltip>
           </>
         ) : null}
-      </div>
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-2 text-xs font-medium">
@@ -741,10 +744,14 @@ export function LabMillingPanel({ milling }: { milling: LabMillingState }) {
           켜면 디스크 중심을 기준으로 키워 냅니다.
         </p>
       </div>
+      </StageSubsection>
 
-      <div className="space-y-1">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold text-foreground">보철</p>
+      <StageSubsection
+        title="보철"
+        open={millingFold === "prosthesis"}
+        onOpen={(on) => setMillingFold(on ? "prosthesis" : null)}
+      >
+        <div className="flex justify-end">
           <Button
             type="button"
             size="sm"
@@ -795,7 +802,6 @@ export function LabMillingPanel({ milling }: { milling: LabMillingState }) {
             );
           })}
         </ul>
-      </div>
 
       {selectedShape && selectedPlacement && milling.selectedId ? (
         <div className="space-y-2 rounded-md bg-muted px-2.5 py-2">
@@ -824,6 +830,7 @@ export function LabMillingPanel({ milling }: { milling: LabMillingState }) {
           </p>
         </div>
       ) : null}
+      </StageSubsection>
 
       <div className="flex gap-1">
         {milling.attach ? (

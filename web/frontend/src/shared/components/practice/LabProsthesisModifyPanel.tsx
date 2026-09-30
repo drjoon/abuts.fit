@@ -1,4 +1,5 @@
 // 기공소 AI 보철 — 마진·삽입·내면·형상·훅·컷백·홀·커넥터 조작.
+// - 2026-10-01: 스캔바디 맞춤은 스캔 단계, 메시 편집 아래.
 
 import { Fragment, useState, type ReactNode } from "react";
 import { TriangleAlert } from "lucide-react";
@@ -66,6 +67,7 @@ import {
   fitDistanceRgb,
   type CrownIntaglioInfo,
 } from "@/shared/components/practice/labProsthesisEditLayer";
+import { StageSubsection } from "@/shared/components/practice/LabMeshEditSection";
 import { LabRefineControls } from "@/shared/components/practice/LabRefineControls";
 import { cn } from "@/shared/ui/cn";
 
@@ -78,7 +80,6 @@ export type ScanbodyControls = {
   picks: number;
   onPickLibrary: () => void;
   onAutoFit: () => void;
-  onRotate: (deltaDeg: number) => void;
   onTogglePick: () => void;
   onReset: () => void;
   onApply: () => void;
@@ -140,10 +141,12 @@ type Props = {
   onFocusView: (on: boolean) => void;
   sculptBrush: SculptBrush;
   onSculptBrush: (next: SculptBrush) => void;
-  scanbody: ScanbodyControls | null;
   /** 형상 도구 단계(변형·외면·맞춤). */
   refineTab: RefineTab;
   onRefineTab: (tab: RefineTab) => void;
+  /** 같은 단계의 다른 하위 메뉴와 같이, 하나만 연다. */
+  open: boolean;
+  onOpen: (on: boolean) => void;
   /** 뷰어가 맞춘 이 크라운에서 잰 가장 얇은 외면. 맞춤이 없으면 null. */
   crownShellMm: number | null;
   /** 뷰어가 지대치 스캔에서 이 크라운 내면을 만든 결과. 아직 없으면 null. */
@@ -845,6 +848,118 @@ function CutbackControls({
   );
 }
 
+/** 스캔 단계 — 메시 편집 아래. 고른 임플란트 치아의 라이브러리를 스캔에 맞춘다. */
+export function ScanbodyAlignSection({
+  scanbody,
+  toothLabel,
+  open,
+  onOpen,
+}: {
+  scanbody: ScanbodyControls;
+  toothLabel: string | null;
+  open: boolean;
+  onOpen: (on: boolean) => void;
+}) {
+  return (
+    <StageSubsection title="스캔바디" open={open} onOpen={onOpen} coach="scanbody">
+      {toothLabel ? (
+        <p className="text-[11px] text-muted-foreground">{toothLabel}</p>
+      ) : null}
+      <Row label="라이브러리">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 w-full justify-start truncate px-2 text-[11px]"
+          data-coach="implant-library"
+          onClick={scanbody.onPickLibrary}
+        >
+          {scanbody.libraryLabel ?? "라이브러리 고르기"}
+        </Button>
+      </Row>
+      <div className="space-y-1">
+        <div
+          className="h-2 rounded-sm"
+          style={{ background: FIT_LEGEND }}
+          aria-label="스캔바디 거리 -0.1mm부터 +0.1mm"
+        />
+        <div className="flex justify-between text-[10px] tabular-nums text-muted-foreground">
+          <span>-0.1</span>
+          <span>0</span>
+          <span>+0.1</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="flex min-w-0">
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 w-full text-[11px]"
+                disabled={!scanbody.libraryLabel}
+                data-coach="scanbody-fit"
+                onClick={scanbody.onAutoFit}
+              >
+                자동 맞춤
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="z-[520]">
+            스캔바디 윗면과 옆면을 찾아 라이브러리를 맞춥니다.
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="flex min-w-0">
+              <Button
+                type="button"
+                size="sm"
+                variant={scanbody.picking ? "default" : "outline"}
+                className="h-7 w-full text-[11px]"
+                disabled={!scanbody.libraryLabel}
+                onClick={scanbody.onTogglePick}
+              >
+                {scanbody.picking ? "점을 찍으세요" : "점 찍기"}
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="z-[520]">
+            스캔바디 위를 한 점 찍으면 그 자리에서 찾습니다.
+          </TooltipContent>
+        </Tooltip>
+      </div>
+      {scanbody.aligned ? (
+        <p className="text-[11px] font-medium text-foreground">
+          평균 거리 {scanbody.fitMm == null ? "-" : `${scanbody.fitMm.toFixed(3)} mm`}
+        </p>
+      ) : null}
+      <div className="grid grid-cols-2 gap-1">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 text-[11px]"
+          disabled={!scanbody.aligned}
+          onClick={scanbody.onReset}
+        >
+          초기화
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          className="h-7 text-[11px]"
+          disabled={!scanbody.aligned}
+          data-coach="scanbody-apply"
+          onClick={scanbody.onApply}
+        >
+          적용
+        </Button>
+      </div>
+    </StageSubsection>
+  );
+}
+
 function Row({
   label,
   value,
@@ -905,9 +1020,10 @@ export function LabProsthesisModifyPanel({
   onFocusView,
   sculptBrush,
   onSculptBrush,
-  scanbody,
   refineTab,
   onRefineTab,
+  open,
+  onOpen,
   crownShellMm,
   intaglio,
   onViewFit,
@@ -941,13 +1057,12 @@ export function LabProsthesisModifyPanel({
   const marginStep = Number.isFinite(parsedStep)
     ? Math.min(MARGIN_STEP_MAX, Math.max(MARGIN_STEP_MIN, Math.round(parsedStep * 100) / 100))
     : DEFAULT_MARGIN_STEP;
-  const tools = MODIFY_TOOLS.filter((item) => item.id !== "scanbody" || scanbody);
+  const tools = MODIFY_TOOLS.filter((item) => item.id !== "scanbody");
   const connectorRow =
     connectors.find((row) => row.from === connectorFrom) ?? connectors[0] ?? null;
 
   return (
-    <section className="space-y-2">
-      <p className="text-xs font-semibold text-foreground">수정</p>
+    <StageSubsection title="수정" open={open} onOpen={onOpen}>
       {toothLabel ? (
         <p className="text-[11px] text-muted-foreground">{toothLabel}</p>
       ) : null}
@@ -987,126 +1102,6 @@ export function LabProsthesisModifyPanel({
           ),
         )}
       </div>
-
-      {tool === "scanbody" && scanbody ? (
-        <div className="space-y-2">
-          <Row label="라이브러리">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 w-full justify-start truncate px-2 text-[11px]"
-              data-coach="implant-library"
-              onClick={scanbody.onPickLibrary}
-            >
-              {scanbody.libraryLabel ?? "라이브러리 고르기"}
-            </Button>
-          </Row>
-          <div className="space-y-1">
-            <div
-              className="h-2 rounded-sm"
-              style={{ background: FIT_LEGEND }}
-              aria-label="스캔바디 거리 -0.1mm부터 +0.1mm"
-            />
-            <div className="flex justify-between text-[10px] tabular-nums text-muted-foreground">
-              <span>-0.1</span>
-              <span>0</span>
-              <span>+0.1</span>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="flex min-w-0">
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-7 w-full text-[11px]"
-                    disabled={!scanbody.libraryLabel}
-                    data-coach="scanbody-fit"
-                    onClick={scanbody.onAutoFit}
-                  >
-                    자동 맞춤
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="right" className="z-[520]">
-                스캔바디 윗면과 옆면을 찾아 라이브러리를 맞춥니다.
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="flex min-w-0">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={scanbody.picking ? "default" : "outline"}
-                    className="h-7 w-full text-[11px]"
-                    disabled={!scanbody.libraryLabel}
-                    onClick={scanbody.onTogglePick}
-                  >
-                    {scanbody.picking ? "점을 찍으세요" : "점 찍기"}
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="right" className="z-[520]">
-                스캔바디 위를 한 점 찍으면 그 자리에서 찾습니다.
-              </TooltipContent>
-            </Tooltip>
-          </div>
-          <Row label="회전" value={`${Math.round(((edit.implant.rotDeg % 360) + 360) % 360)}°`}>
-            <div className="grid grid-cols-2 gap-1">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-7 text-[11px]"
-                disabled={!scanbody.libraryLabel}
-                onClick={() => scanbody.onRotate(-60)}
-              >
-                -60°
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-7 text-[11px]"
-                disabled={!scanbody.libraryLabel}
-                onClick={() => scanbody.onRotate(60)}
-              >
-                +60°
-              </Button>
-            </div>
-          </Row>
-          {scanbody.aligned ? (
-            <p className="text-[11px] font-medium text-foreground">
-              평균 거리 {scanbody.fitMm == null ? "-" : `${scanbody.fitMm.toFixed(3)} mm`}
-            </p>
-          ) : null}
-          <div className="grid grid-cols-2 gap-1">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 text-[11px]"
-              disabled={!scanbody.aligned}
-              onClick={scanbody.onReset}
-            >
-              초기화
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="h-7 text-[11px]"
-              disabled={!scanbody.aligned}
-              data-coach="scanbody-apply"
-              onClick={scanbody.onApply}
-            >
-              적용
-            </Button>
-          </div>
-        </div>
-      ) : null}
 
       {tool === "margin" && edit.pontic.on ? (
         <p className="text-[11px] leading-relaxed text-muted-foreground">
@@ -1619,6 +1614,6 @@ export function LabProsthesisModifyPanel({
           ) : null}
         </div>
       ) : null}
-    </section>
+    </StageSubsection>
   );
 }

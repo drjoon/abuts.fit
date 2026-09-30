@@ -87,6 +87,10 @@
 // - 2026-10-01: 치아 정보 체크 아이콘 툴팁은 마진을 잡았는지, 확인했는지를 말한다.
 // - 2026-10-01: 치아 정보 모달의 재료는 제목 줄, 브리지 왼쪽. 치과에서 넘어온 재료·라이브러리는 바꾸지 않는다.
 // - 2026-10-01: 스캔바디 라이브러리 형상은 스캔이 열리면 맞춤이 없는 임플란트에 자동으로 겹친다.
+// - 2026-10-01: 스캔바디 맞춤은 디자인 도구에서 빼 스캔 단계 메시 편집 아래에 둔다.
+// - 2026-10-01: 단계 하위 메뉴는 셰브론 아코디언이다. 하나를 열면 같은 단계의 나머지는 닫힌다.
+// - 2026-10-01: 치아를 눌러도 번호·유형을 다시 고르지 않는다. 치과 의뢰 치식 그대로 진행한다.
+//   스캔바디 제목의 브리지 범위는 고른 치아와 상관없이 악궁 순서다.
 import {
   createContext,
   useCallback,
@@ -212,6 +216,7 @@ import {
 } from "@/shared/components/practice/OralScanOverlayViewer";
 import {
   LabProsthesisModifyPanel,
+  ScanbodyAlignSection,
   type ConnectorRow,
   type ScanbodyControls,
 } from "@/shared/components/practice/LabProsthesisModifyPanel";
@@ -342,7 +347,7 @@ import {
   type ScanMeshEdit,
   type ScanMeshEditStatus,
 } from "@/shared/practice/scanMeshEdit";
-import { MeshEditSection } from "@/shared/components/practice/LabMeshEditSection";
+import { MeshEditSection, StageSubsection } from "@/shared/components/practice/LabMeshEditSection";
 import {
   LabMillingDiscView,
   LabMillingPanel,
@@ -944,6 +949,11 @@ function LabProsthesisAiDesignDialog({
   const [exportOpen, setExportOpen] = useState(false);
   const [exportBusy, setExportBusy] = useState<DesignExportBusy>(null);
   const [alignKind, setAlignKind] = useState<"auto" | "points" | "occlusion" | null>(null);
+  const [scanFold, setScanFold] = useState<"align" | "mesh" | "scanbody" | null>("align");
+  const alignOpen = scanFold === "align";
+  const scanbodyOpen = scanFold === "scanbody";
+  const [modelOpen, setModelOpen] = useState(true);
+  const [designFold, setDesignFold] = useState<"modify" | "occlusal" | null>("modify");
   const [occlusionArch, setOcclusionArch] = useState<"upper" | "lower">("lower");
   const [occlusionMode, setOcclusionMode] = useState<OralScanOcclusionAdjust["mode"]>("vertical");
   const [occlusionMm, setOcclusionMm] = useState(0);
@@ -1876,45 +1886,46 @@ function LabProsthesisAiDesignDialog({
   })();
   const prepBackTransparent = Boolean(activeNumber && edits[activeNumber]?.margin.showBack);
   const meshEditOn = meshEdit != null;
-  const designEdit = useMemo(
-    () =>
-      stage === "scan" && (!marginShown || meshEditOn)
-        ? null
-        : {
-            tool: modifyTool,
-            refineTab,
-            marginMode,
-            brush: editBrush,
-            edits,
-            generated,
-            activeTooth: activeNumber,
-            bridges,
-            prepBackTransparent,
-            showMargin: marginShown,
-            sculptBrush,
-            scanbodies,
-            showScrewPath: screwPathShown,
-            cavityKinds,
-          },
-    [
-      activeNumber,
-      bridges,
-      cavityKinds,
-      editBrush,
+  const designEdit = useMemo(() => {
+    const spec = {
+      tool: modifyTool,
+      refineTab,
+      marginMode,
+      brush: editBrush,
       edits,
       generated,
-      marginMode,
-      marginShown,
-      meshEditOn,
-      modifyTool,
+      activeTooth: activeNumber,
+      bridges,
       prepBackTransparent,
-      refineTab,
-      scanbodies,
-      screwPathShown,
+      showMargin: marginShown,
       sculptBrush,
-      stage,
-    ],
-  );
+      scanbodies: stage === "scan" && !scanbodyOpen ? {} : scanbodies,
+      showScrewPath: screwPathShown,
+      cavityKinds,
+    };
+    if (stage !== "scan") return spec;
+    if (marginShown && !meshEditOn) return spec;
+    if (!scanbodyOpen || Object.keys(scanbodies).length === 0) return null;
+    return { ...spec, tool: "scanbody" as const, showMargin: false, generated: {} };
+  }, [
+    activeNumber,
+    bridges,
+    cavityKinds,
+    editBrush,
+    edits,
+    generated,
+    marginMode,
+    marginShown,
+    meshEditOn,
+    modifyTool,
+    prepBackTransparent,
+    refineTab,
+    scanbodies,
+    scanbodyOpen,
+    screwPathShown,
+    sculptBrush,
+    stage,
+  ]);
   /** 마진을 잡은 지대치. 뷰어가 이 마진으로 다이를 자른다. */
   const dieMargins = useMemo(() => {
     const out: Record<string, ToothDesignEdit["margin"]> = {};
@@ -2550,7 +2561,11 @@ function LabProsthesisAiDesignDialog({
   const applyScanbody = (toothNumber: string) => {
     setScanbodyPickTooth(null);
     setModifyTool("margin");
+    setStage("margin");
     setMarginShown(true);
+    setAlignKind(null);
+    setAlignArch(null);
+    if (canUndercut) setUndercutMap(true);
     runMarginDetect([toothNumber]);
   };
 
@@ -2633,8 +2648,6 @@ function LabProsthesisAiDesignDialog({
             setLibraryPickerFor(activeNumber);
           },
           onAutoFit: () => fitScanbodyAuto(activeNumber),
-          onRotate: (delta) =>
-            patchImplant(activeNumber, { rotDeg: activeImplant.rotDeg + delta }),
           onTogglePick: () => {
             setScanbodyPicks(0);
             setScanbodyPickTooth((prev) => (prev === activeNumber ? null : activeNumber));
@@ -2963,8 +2976,12 @@ function LabProsthesisAiDesignDialog({
     if (next !== "scan") {
       setAlignKind(null);
       setAlignArch(null);
+      setScanbodyPickTooth(null);
     }
-    if (next === "margin") runMarginDetect(marginToothNumbersRef.current);
+    if (next === "margin") {
+      if (designFold === "occlusal") setDesignFold("modify");
+      runMarginDetect(marginToothNumbersRef.current);
+    }
     if (next === "scan" || next === "model" || next === "milling") return;
     if (canUndercut) setUndercutMap(true);
     if (next === "design" && canContact) setContactMap(true);
@@ -3022,6 +3039,20 @@ function LabProsthesisAiDesignDialog({
     setAlignKind(null);
     setAlignArch(null);
     setMeshEdit((prev) => prev ?? { ...DEFAULT_SCAN_MESH_EDIT });
+  };
+
+  const selectScanFold = (next: "align" | "mesh" | "scanbody" | null) => {
+    const prev = scanFold;
+    if (prev === next) return;
+    setScanFold(next);
+    if (prev === "align" && next !== "align") {
+      viewerRef.current?.cancelAlign();
+      setAlignKind(null);
+      setAlignArch(null);
+    }
+    if (prev === "scanbody" && next !== "scanbody") setScanbodyPickTooth(null);
+    if (next === "mesh") toggleMeshEdit(true);
+    else if (prev === "mesh") toggleMeshEdit(false);
   };
 
   const patchMeshEdit = (patch: Partial<ScanMeshEdit>) => {
@@ -4143,7 +4174,7 @@ function LabProsthesisAiDesignDialog({
               onSelectTooth={(toothNumber) => {
                 showTooth(toothNumber);
                 setLibraryPickerFor(null);
-                setToothCardFor(toothNumber);
+                setToothCardFor(null);
               }}
               connectorChips={viewerConnectorChips}
               onSelectConnector={(from) => {
@@ -4509,7 +4540,7 @@ function LabProsthesisAiDesignDialog({
                   <span className="font-semibold text-foreground">단계</span>
                 </DraggablePanelHeader>
                 {modifyPanelOpen ? (
-                  <div className="min-h-0 space-y-3 overflow-y-auto px-3.5 py-2.5">
+                  <div className="min-h-0 space-y-5 overflow-y-auto px-3.5 py-2.5">
                     <section className="space-y-2">
                       <div className="grid grid-cols-5 gap-1">
                         {DESIGN_STAGES.map((item) => (
@@ -4532,9 +4563,14 @@ function LabProsthesisAiDesignDialog({
                       </div>
                     </section>
                     {stage === "model" ? (
-                      <section className="space-y-2.5" data-coach="model-settings">
+                      <StageSubsection
+                        title="모델 종류"
+                        open={modelOpen}
+                        onOpen={(on) => setModelOpen(on)}
+                        coach="model-settings"
+                        className="space-y-2.5"
+                      >
                         <div className="space-y-1">
-                          <p className="text-xs font-semibold text-foreground">모델 종류</p>
                           {MODEL_KINDS.map((kind) => (
                             <label
                               key={kind.id}
@@ -4633,12 +4669,15 @@ function LabProsthesisAiDesignDialog({
                             ))}
                           </ul>
                         ) : null}
-                      </section>
+                      </StageSubsection>
                     ) : null}
                     {stage === "milling" ? <LabMillingPanel milling={milling} /> : null}
                     {stage === "scan" ? (
-                      <section className="space-y-2">
-                        <p className="text-xs font-semibold text-foreground">모델 정렬</p>
+                      <StageSubsection
+                        title="모델 정렬"
+                        open={alignOpen}
+                        onOpen={(on) => selectScanFold(on ? "align" : null)}
+                      >
                         <div className="grid grid-cols-3 gap-1">
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -4913,14 +4952,14 @@ function LabProsthesisAiDesignDialog({
                             ) : null}
                           </>
                         ) : null}
-                      </section>
+                      </StageSubsection>
                     ) : null}
                     {stage === "scan" ? (
                       <MeshEditSection
                         edit={meshEdit}
                         status={meshEditStatus}
                         disabled={entries.length === 0 || alignLocked || busy}
-                        onToggle={toggleMeshEdit}
+                        onToggle={(on) => selectScanFold(on ? "mesh" : null)}
                         onPatch={patchMeshEdit}
                         onApply={applyMeshEdit}
                         onInvert={() => viewerRef.current?.meshEditInvert()}
@@ -4933,6 +4972,16 @@ function LabProsthesisAiDesignDialog({
                         onExtract={(action) => viewerRef.current?.meshEditExtract(action)}
                       />
                     ) : null}
+                    {stage === "scan" && scanbodyControls ? (
+                      <ScanbodyAlignSection
+                        scanbody={scanbodyControls}
+                        open={scanbodyOpen}
+                        onOpen={(on) => selectScanFold(on ? "scanbody" : null)}
+                        toothLabel={
+                          activeTooth ? formatProsthesisAiToothLabel(activeTooth) : null
+                        }
+                      />
+                    ) : null}
                     {stage === "margin" || stage === "design" ? (
                       <LabProsthesisModifyPanel
                         tool={modifyTool}
@@ -4940,22 +4989,21 @@ function LabProsthesisAiDesignDialog({
                           setModifyTool(next);
                           setEditBrush(next === "cutback" ? "plus" : "none");
                           setHoleNote("");
-                          if (next !== "scanbody") setScanbodyPickTooth(null);
-                          if (next === "margin" || next === "insertion" || next === "scanbody") {
-                            onStage("margin");
-                          } else onStage("design");
+                          if (next === "margin" || next === "insertion") onStage("margin");
+                          else onStage("design");
                         }}
                         sculptBrush={sculptBrush}
                         onSculptBrush={setSculptBrush}
                         refineTab={refineTab}
                         onRefineTab={setRefineTab}
+                        open={designFold === "modify"}
+                        onOpen={(on) => setDesignFold(on ? "modify" : null)}
                         crownShellMm={activeNumber ? (crownShells[activeNumber] ?? null) : null}
                         intaglio={activeNumber ? (intaglios[activeNumber] ?? null) : null}
                         onViewFit={() => {
                           setColorMap((prev) => ({ ...prev, on: true, mode: "fit" }));
                           setMarginShown(true);
                         }}
-                        scanbody={scanbodyControls}
                         marginMode={marginMode}
                         onMarginMode={setMarginMode}
                         brush={editBrush}
@@ -5057,8 +5105,11 @@ function LabProsthesisAiDesignDialog({
                       />
                     ) : null}
                     {stage === "design" ? (
-                      <section className="space-y-2">
-                        <p className="text-xs font-semibold text-foreground">교합</p>
+                      <StageSubsection
+                        title="교합"
+                        open={designFold === "occlusal"}
+                        onOpen={(on) => setDesignFold(on ? "occlusal" : null)}
+                      >
                         <label className="flex items-center justify-between gap-3 text-xs font-medium">
                           접촉
                           <Switch
@@ -5128,7 +5179,7 @@ function LabProsthesisAiDesignDialog({
                             </TooltipContent>
                           </Tooltip>
                         </div>
-                      </section>
+                      </StageSubsection>
                     ) : null}
                   </div>
                 ) : null}
@@ -5301,7 +5352,7 @@ function LabProsthesisAiDesignDialog({
                 {marginHint.body}
               </div>
             ) : null}
-            {stage !== "scan" && modifyTool === "scanbody" && activeTooth?.implant && activeImplant ? (
+            {stage === "scan" && scanbodyOpen && activeTooth?.implant && activeImplant ? (
               <div className="pointer-events-none absolute bottom-14 left-1/2 z-10 -translate-x-1/2 rounded-md bg-slate-700/85 px-3 py-2 text-[11px] text-white shadow-sm">
                 <p className="font-semibold">선택한 임플란트 라이브러리</p>
                 <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
