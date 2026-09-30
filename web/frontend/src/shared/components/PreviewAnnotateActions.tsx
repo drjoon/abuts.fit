@@ -1,6 +1,6 @@
 // 3D·이미지 프리뷰 공통 헤더 기능. 페인트, 칼라 매핑.
 // 의뢰 파일 프리뷰와 작업 스캔 프리뷰가 같은 모양·동작을 쓴다.
-// - 2026-09-30: 채팅 첨부는 썸네일로 남고, 「AI에게」는 프리뷰의 AI 패널로 넘긴다. 패널에 페인트 아이콘.
+// - 2026-09-30: 프리뷰에는 「AI에게」와 오른쪽 아래 AI 채팅을 두지 않는다. 채팅 첨부는 썸네일로 남긴다.
 // - 2026-09-29: 페인트를 켜면 뷰 위에 도구 막대(도형·글자·되돌리기, 이미지 저장·채팅 첨부). 헤더에는 페인트 토글만.
 // related files:
 // - web/frontend/src/shared/components/ModelPreviewDialog.tsx
@@ -9,7 +9,6 @@
 // - web/frontend/src/shared/components/practice/ViewPaintToolbar.tsx
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 import { Pencil } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -69,7 +68,7 @@ export function PreviewPaintControls({
 
 /**
  * 표시 레이어와 도구 막대. 채팅 첨부는 현재 뷰에 표시를 겹친 PNG를 입력에 넣고,
- * 같은 이미지를 막대 위 썸네일로 남긴다. 「AI에게」는 이 프리뷰의 AI 패널로 넘긴다.
+ * 같은 이미지를 막대 위 썸네일로 남긴다. 프리뷰에는 AI 전달·AI 채팅을 두지 않는다.
  */
 export function PreviewPaintLayer({
   paint,
@@ -89,14 +88,6 @@ export function PreviewPaintLayer({
   onReorderChatFiles?: (files: File[]) => void;
 }) {
   const { toast } = useToast();
-  const [aiShots, setAiShots] = useState<Array<{ id: string; url: string }>>([]);
-  const aiShotsRef = useRef(aiShots);
-  aiShotsRef.current = aiShots;
-  useEffect(() => {
-    return () => {
-      for (const shot of aiShotsRef.current) URL.revokeObjectURL(shot.url);
-    };
-  }, []);
   const composite = async () => {
     const base = captureCanvas();
     return base ? ((await paint.paintRef.current?.compositePng(base)) ?? null) : null;
@@ -114,12 +105,6 @@ export function PreviewPaintLayer({
     toast({ title: "채팅 첨부되었습니다", duration: 2000 });
     return file;
   };
-  const sendToAi = async () => {
-    const blob = await composite();
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    setAiShots((prev) => [...prev, { id: `${Date.now().toString(36)}-${prev.length}`, url }].slice(-12));
-  };
   return (
     <>
       <ViewPaintSurface key={surfaceKey} {...viewPaintSurfaceProps(paint)} />
@@ -131,23 +116,7 @@ export function PreviewPaintLayer({
             onAttachChat={onAttachChatFile ? attach : undefined}
             onRemoveChatFile={onRemoveChatFile}
             onReorderChatFiles={onReorderChatFiles}
-            onSendToAi={() => void sendToAi()}
           />
-        </div>
-      ) : null}
-      {aiShots.length > 0 ? (
-        <div className="pointer-events-auto absolute bottom-4 right-3 z-30 flex w-[min(16rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-lg border bg-background/95 text-sm shadow-md">
-          <div className="flex items-center gap-1.5 border-b px-2.5 py-2 font-semibold text-foreground">
-            <Pencil className="h-4 w-4" />
-            AI
-          </div>
-          <div className="max-h-48 space-y-2 overflow-y-auto p-2">
-            {aiShots.map((shot, index) => (
-              <div key={shot.id} className="ml-4 rounded-md bg-primary/10 p-1.5">
-                <img src={shot.url} alt={`페인트 표시 ${index + 1}`} className="max-h-24 w-full rounded object-contain" />
-              </div>
-            ))}
-          </div>
         </div>
       ) : null}
     </>
