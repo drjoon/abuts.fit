@@ -1,4 +1,5 @@
 // 3D·이미지 뷰 위에 표시를 그린다. 다시 열면 비운다.
+// - 2026-09-30: 표시마다 (1)(2) 순번. X로 그 순번만 지운다. 저장·첨부 이미지에도 순번을 넣는다.
 // - 2026-09-29: 펜·화살표·사각형·원·점·글자. 도형은 뷰 비율 좌표로 두고 크기가 바뀌면 다시 그린다. 되돌리기.
 // related files:
 // - web/frontend/src/shared/components/practice/ViewPaintToolbar.tsx
@@ -11,6 +12,8 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { X } from "lucide-react";
+
 import { cn } from "@/shared/ui/cn";
 
 export const VIEW_PAINT_COLORS = [
@@ -189,6 +192,41 @@ function drawShape(
   ctx.fill();
 }
 
+/** 순번 뱃지가 붙는 점. 화살표는 촉, 사각형·원은 위쪽 모서리. */
+function shapeAnchor(shape: PaintShape): Point {
+  if (shape.kind === "pen") {
+    return shape.points[shape.points.length - 1] ?? { x: 0.5, y: 0.5 };
+  }
+  if (shape.kind === "dot" || shape.kind === "text") return shape.at;
+  if (shape.kind === "arrow") return shape.to;
+  return {
+    x: Math.max(shape.from.x, shape.to.x),
+    y: Math.min(shape.from.y, shape.to.y),
+  };
+}
+
+/** 저장·첨부에 겹치는 순번. 화면의 X는 HTML이라 여기 넣지 않는다. */
+function drawMarkLabel(
+  ctx: CanvasRenderingContext2D,
+  index: number,
+  anchor: Point,
+  w: number,
+  h: number,
+  scale: number,
+) {
+  const label = `(${index + 1})`;
+  ctx.save();
+  ctx.font = `700 ${12 * scale}px system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif`;
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = 4 * scale;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "rgba(255,255,255,0.95)";
+  ctx.strokeText(label, anchor.x * w + 10 * scale, anchor.y * h - 12 * scale);
+  ctx.fillStyle = "#111827";
+  ctx.fillText(label, anchor.x * w + 10 * scale, anchor.y * h - 12 * scale);
+  ctx.restore();
+}
+
 type Props = {
   enabled: boolean;
   tool: ViewPaintTool;
@@ -212,6 +250,7 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
     const inputRef = useRef<HTMLInputElement | null>(null);
     const shapesRef = useRef<PaintShape[]>([]);
     const draftRef = useRef<PaintShape | null>(null);
+    const [marks, setMarks] = useState<Point[]>([]);
     const [textDraft, setTextDraft] = useState<TextDraft | null>(null);
     const textDraftRef = useRef(textDraft);
     textDraftRef.current = textDraft;
@@ -247,7 +286,13 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       const before = shapesRef.current.length;
       shapesRef.current = next;
       redraw();
+      setMarks(next.map((shape) => shapeAnchor(shape)));
       if (before !== next.length) onShapesChangeRef.current?.(next.length);
+    };
+
+    const removeAt = (index: number) => {
+      if (index < 0 || index >= shapesRef.current.length) return;
+      setShapes(shapesRef.current.filter((_, shapeIndex) => shapeIndex !== index));
     };
 
     const commitText = () => {
@@ -297,9 +342,10 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
           ctx.drawImage(base, 0, 0);
           const cssWidth = canvasRef.current?.getBoundingClientRect().width ?? 0;
           const scale = (cssWidth > 0 ? out.width / cssWidth : 1) * uiScale();
-          for (const shape of shapesRef.current) {
+          shapesRef.current.forEach((shape, index) => {
             drawShape(ctx, shape, out.width, out.height, scale);
-          }
+            drawMarkLabel(ctx, index, shapeAnchor(shape), out.width, out.height, scale);
+          });
           out.toBlob((blob) => resolve(blob), "image/png");
         }),
     }));
@@ -508,6 +554,36 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
             onBlur={commitText}
           />
         ) : null}
+        {marks.map((mark, index) => (
+          <div
+            key={`mark-${index}-${shapesRef.current.length}`}
+            className="pointer-events-auto absolute z-[9] flex items-center gap-0.5 rounded-full border border-slate-300 bg-white/95 py-0.5 pl-1.5 pr-0.5 text-[0.6875rem] font-semibold leading-none text-slate-900 shadow-sm"
+            style={{
+              left: `${mark.x * 100}%`,
+              top: `${mark.y * 100}%`,
+              transform: mark.y < 0.08 ? "translate(0.35rem, 0.25rem)" : "translate(0.35rem, -1.35rem)",
+            }}
+          >
+            <span>({index + 1})</span>
+            <button
+              type="button"
+              className="grid h-4 w-4 place-items-center rounded-full text-slate-500 hover:bg-destructive-soft hover:text-destructive"
+              aria-label={`${index + 1}번 표시 지우기`}
+              title={`${index + 1}번 표시 지우기`}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                removeAt(index);
+              }}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        ))}
       </>
     );
   },

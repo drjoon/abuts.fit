@@ -59,6 +59,7 @@ import type { ToothDesignEdit } from "@/shared/practice/labProsthesisModify";
 import { MeshUnionError, meshUnionErrorMessage, unionTriangleSoups } from "@/shared/practice/meshUnion";
 import { encodeBinaryStl } from "@/shared/files/stlBinaryWrite";
 import { ScreenSpaceOrbitControls } from "@/shared/three/screenSpaceOrbitControls";
+import { getDesignOrbitMouse } from "@/shared/practice/labDesignControls";
 import { cn } from "@/shared/ui/cn";
 
 type RowState =
@@ -973,6 +974,7 @@ export function LabMillingDiscView({
     const controls = new ScreenSpaceOrbitControls(camera, renderer.domElement, {
       rotateSpeed: 1,
       zoomSpeed: 1.1,
+      mouse: getDesignOrbitMouse,
     });
     const disc = new THREE.Group();
     const parts = new THREE.Group();

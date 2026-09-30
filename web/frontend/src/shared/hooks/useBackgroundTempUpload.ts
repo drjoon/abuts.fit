@@ -218,6 +218,26 @@ export function useBackgroundTempUpload(options: Options) {
     [forgetFile],
   );
 
+  /** 페인트 썸네일 순서를 첨부 목록의 같은 칸에 다시 놓는다. */
+  const orderItems = useCallback((orderedIds: string[]) => {
+    if (!orderedIds.length) return;
+    setItems((prev) => {
+      const byId = new Map(prev.map((item) => [item.id, item]));
+      const ranked = orderedIds
+        .map((id) => byId.get(id))
+        .filter((item): item is BackgroundUploadItem => Boolean(item));
+      if (ranked.length === 0) return prev;
+      const rankSet = new Set(ranked.map((item) => item.id));
+      let cursor = 0;
+      return prev.map((item) => {
+        if (!rankSet.has(item.id)) return item;
+        const next = ranked[cursor];
+        cursor += 1;
+        return next ?? item;
+      });
+    });
+  }, []);
+
   const retryItem = useCallback(
     (id: string) => {
       const target = itemsRef.current.find((item) => item.id === id);
@@ -293,6 +313,7 @@ export function useBackgroundTempUpload(options: Options) {
       items,
       addFiles,
       removeItem,
+      orderItems,
       retryItem,
       clear,
       ensureUploaded,
@@ -307,6 +328,7 @@ export function useBackgroundTempUpload(options: Options) {
       isUploading,
       items,
       removeItem,
+      orderItems,
       retryItem,
     ],
   );

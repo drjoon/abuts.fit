@@ -1,4 +1,5 @@
 // 기공소 채팅 헤더 — 작업시작 오른쪽 AI.
+// - 2026-09-30: AI 디자인 헤더는 원래 높이. 닫기 X는 헤더 세로 가운데.
 // - 2026-09-29: 모델 정렬 공유 — 서버 정렬 기록(workScanAlignment)으로 정렬 완료를 열고, 저장 때 archAligned를 남긴다.
 //   열려 있는 동안 작업 중 표시를 보내 자동 정렬 잡이 작업 스캔을 바꾸지 못하게 한다.
 //   자동 정렬 잡이 만든 스캔보다 올리지 못한 초안이 이긴다.
@@ -81,6 +82,7 @@
 // - 2026-09-30: 가이드 기본은 모눈종이. 저장값이 있으면 그 토글을 그대로 연다.
 // - 2026-09-30: 임플란트·스캔바디는 치과 의뢰를 먼저 쓴다. 의뢰와 다르게 바꾸면 확인 뒤에만 반영한다.
 // - 2026-09-30: 상악·하악 표시는 파일명 역할 그대로다. 치관으로 역할을 바꾸거나 그 초안 메시를 다시 열지 않는다.
+// - 2026-09-30: 설정 → 단축키·마우스. 어벗츠(기본)·exocad·3Shape 프리셋과 직접 설정. 단축키는 프로필을 따른다.
 import {
   createContext,
   useCallback,
@@ -122,6 +124,7 @@ import {
   Trash2,
   TriangleAlert,
   Unlink,
+  X,
 } from "lucide-react";
 
 import {
@@ -141,6 +144,7 @@ import { DEFAULT_COLOR_MAP, type ColorMapState } from "@/shared/practice/labColo
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -269,6 +273,7 @@ import {
   writeWorkSession,
   parseViewToggles,
   writeWorkSessionDocument,
+  toPersistedAiChat,
   type AiDesignChatTurn,
   type WorkDraftMesh,
   type WorkSessionAxis,
@@ -339,6 +344,14 @@ import {
 } from "@/shared/components/practice/LabMillingStage";
 import { EMPTY_MILLING_DOCUMENT, type MillingDocument } from "@/shared/practice/labMilling";
 import { LabDesignPresetDialog } from "@/shared/components/practice/LabDesignPresetDialog";
+import { LabDesignControlsDialog } from "@/shared/components/practice/LabDesignControlsDialog";
+import {
+  DESIGN_CONTROL_PRESETS,
+  getDesignControls,
+  matchDesignKey,
+  useDesignControlPrefs,
+  type DesignKeyAction,
+} from "@/shared/practice/labDesignControls";
 import {
   compareArch,
   fdiToothDigits,
@@ -428,6 +441,8 @@ type LabProsthesisAiDesignButtonProps = {
   onWorkingScansPersisted?: (data: WorkingScansPersisted) => void;
   /** 표시가 입혀진 현재 뷰를 채팅 첨부로 넘긴다. */
   onAttachChatFile?: (file: File) => void;
+  onRemoveChatFile?: (file: File) => void;
+  onReorderChatFiles?: (files: File[]) => void;
   caseHeader?: LabProsthesisAiCaseHeader | null;
   /** 채팅 헤더와 같은 바구니 번호표 */
   basketTag?: LabProsthesisAiBasketTag | null;
@@ -527,6 +542,8 @@ export function LabProsthesisAiDesignButton({
   workScanAlignment,
   onWorkingScansPersisted,
   onAttachChatFile,
+  onRemoveChatFile,
+  onReorderChatFiles,
   caseHeader,
   basketTag,
   caseNav,
@@ -569,6 +586,8 @@ export function LabProsthesisAiDesignButton({
         workScanAlignment={workScanAlignment}
         onWorkingScansPersisted={onWorkingScansPersisted}
         onAttachChatFile={onAttachChatFile}
+        onRemoveChatFile={onRemoveChatFile}
+        onReorderChatFiles={onReorderChatFiles}
         caseHeader={caseHeader}
         basketTag={basketTag}
       />
@@ -682,6 +701,8 @@ function LabProsthesisAiDesignDialog({
   workScanAlignment,
   onWorkingScansPersisted,
   onAttachChatFile,
+  onRemoveChatFile,
+  onReorderChatFiles,
   caseHeader,
   basketTag,
   caseNav,
@@ -915,6 +936,8 @@ function LabProsthesisAiDesignDialog({
   const [autoSave, setAutoSave] = useState(storedAutoSave);
   const [textZoom, setTextZoom] = useState(storedTextZoom);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
+  const controlPrefs = useDesignControlPrefs();
   const [zoomOpen, setZoomOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -1040,6 +1063,10 @@ function LabProsthesisAiDesignDialog({
       setStoneParts([]);
       setStoneBuiltSig("");
       setCaseNote("");
+      for (const turn of aiChatRef.current) {
+        if (turn.paintImageUrl) URL.revokeObjectURL(turn.paintImageUrl);
+      }
+      aiChatRef.current = [];
       setAiChat([]);
       setChatDraft("");
       setChatOpen(true);
@@ -2681,14 +2708,45 @@ function LabProsthesisAiDesignDialog({
     queueSaveWorkRef.current();
   };
 
+  const commitAiChat = (next: AiDesignChatTurn[]) => {
+    const clipped = next.slice(-40);
+    for (const turn of next.slice(0, next.length - clipped.length)) {
+      if (turn.paintImageUrl) URL.revokeObjectURL(turn.paintImageUrl);
+    }
+    aiChatRef.current = clipped;
+    setAiChat(clipped);
+    queueSaveWorkRef.current();
+  };
+
+  const removeAiChatTurn = (index: number) => {
+    const current = aiChatRef.current;
+    const turn = current[index];
+    if (!turn) return;
+    if (turn.paintImageUrl) URL.revokeObjectURL(turn.paintImageUrl);
+    commitAiChat(current.filter((_, row) => row !== index));
+  };
+
   const sendAiChat = () => {
     const text = chatDraft.trim().slice(0, 2000);
     if (!text) return;
-    const next = [...aiChatRef.current, { role: "user" as const, text }].slice(-40);
-    aiChatRef.current = next;
-    setAiChat(next);
+    commitAiChat([...aiChatRef.current, { role: "user", text }]);
     setChatDraft("");
-    queueSaveWorkRef.current();
+  };
+
+  const sendPaintToAi = () => {
+    const surface = paint.paintRef.current;
+    const base = viewerRef.current?.captureCanvas();
+    if (!surface || !base) return;
+    void surface.compositePng(base).then((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      commitAiChat([
+        ...aiChatRef.current,
+        { role: "user", text: "페인트 표시", fromPaint: true, paintImageUrl: url },
+      ]);
+      setPanelsHidden(false);
+      setChatOpen(true);
+    });
   };
 
   /** 인레이·온레이는 와동 테두리를 바로 다시 잡고, 나머지는 시작점을 찍게 한다. */
@@ -3217,7 +3275,7 @@ function LabProsthesisAiDesignDialog({
       modelSettings: modelSettingsRef.current,
       milling: millingDocRef.current,
       note: caseNoteRef.current,
-      aiChat: aiChatRef.current,
+      aiChat: toPersistedAiChat(aiChatRef.current),
       toothOverrides: toothOverridesRef.current,
       insertionAxes: axes,
       archAligned: archAlignedRef.current,
@@ -3452,27 +3510,107 @@ function LabProsthesisAiDesignDialog({
   redoWorkRef.current = redoWork;
   finishStrokeRef.current = finishDesignStroke;
 
+  const toggleMarginShown = () => {
+    const next = !marginShown;
+    setMarginShown(next);
+    if (next) {
+      setStage("margin");
+      setModifyTool("margin");
+      setAlignKind(null);
+      setAlignArch(null);
+    }
+  };
+  const toggleColorMap = () => {
+    if (colorMap.on) {
+      setColorMap((prev) => ({ ...prev, on: false }));
+      return;
+    }
+    const anyIntaglio = Object.values(intaglios).some((row) => row.status === "ok");
+    let mode = colorMap.mode;
+    if (mode === "fit" && !anyIntaglio) mode = "contact";
+    if (mode === "contact" && !canContact) mode = "thickness";
+    setColorMap({ ...colorMap, on: true, mode });
+    setMarginShown(true);
+    setStage("design");
+  };
+  const toggleUndercut = () => {
+    if (!canUndercut || insertionAxisVisible) return;
+    setUndercutMap((on) => !on);
+  };
+
+  const runShortcut = (action: DesignKeyAction) => {
+    const viewer = viewerRef.current;
+    switch (action) {
+      case "undo":
+        return undoWorkRef.current();
+      case "redo":
+        return redoWorkRef.current();
+      case "viewFit":
+        return viewer?.setView("fit");
+      case "viewHome":
+        return viewer?.resetHomeView();
+      case "viewOcclusal":
+        return viewer?.setView("occlusal");
+      case "viewBuccal":
+        return viewer?.setView("buccal");
+      case "viewLingual":
+        return viewer?.setView("lingual");
+      case "toggleScanColor":
+        if (scans.length > 0) setColorMapping((on) => !on);
+        return;
+      case "toggleMargin":
+        return toggleMarginShown();
+      case "toggleGrid":
+        return setCenterGuide((mode) => nextCenterGuide(mode));
+      case "toggleColorMap":
+        return toggleColorMap();
+      case "toggleInsertion":
+        return setInsertionShown((on) => !on);
+      case "toggleUndercut":
+        return toggleUndercut();
+      case "sculptAdd":
+        return setSculptBrush((prev) => ({ ...prev, shape: "add" }));
+      case "sculptRemove":
+        return setSculptBrush((prev) => ({ ...prev, shape: "remove" }));
+      case "sculptSmooth":
+        return setSculptBrush((prev) => ({ ...prev, shape: "smooth" }));
+      case "sculptFlatten":
+        return setSculptBrush((prev) => ({ ...prev, shape: "flatten" }));
+      case "sculptInflate":
+        return setSculptBrush((prev) => ({ ...prev, shape: "inflate" }));
+    }
+  };
+  const runShortcutRef = useRef(runShortcut);
+  runShortcutRef.current = runShortcut;
+  /** 단축키를 받지 않는 때. 조작 설정 창은 전부, 겹친 창·페인트·밀링 화면은 실행 취소·다시 실행만 받는다. */
+  const shortcutPausedRef = useRef({ all: false, view: false });
+  shortcutPausedRef.current = {
+    all: controlsOpen,
+    view: presetDialog != null || exportOpen || paint.paintOn || stage === "milling",
+  };
+
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
       const target = event.target;
       if (
-        target instanceof HTMLElement &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable)
+        event.isComposing ||
+        (target instanceof HTMLElement &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.tagName === "SELECT" ||
+            target.isContentEditable))
       ) {
         return;
       }
-      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
-      const key = event.key.toLowerCase();
-      if (key === "z" && !event.shiftKey) {
-        event.preventDefault();
-        undoWorkRef.current();
-      } else if ((key === "z" && event.shiftKey) || key === "y") {
-        event.preventDefault();
-        redoWorkRef.current();
-      }
+      const action = matchDesignKey(getDesignControls().keys, event);
+      if (!action) return;
+      const history = action === "undo" || action === "redo";
+      const paused = shortcutPausedRef.current;
+      if (paused.all || (!history && paused.view)) return;
+      event.preventDefault();
+      if (event.repeat && !history) return;
+      runShortcutRef.current(action);
     };
     const onUp = () => finishStrokeRef.current();
     window.addEventListener("keydown", onKey);
@@ -3589,16 +3727,13 @@ function LabProsthesisAiDesignDialog({
 
   const attachPaintToChat = () => {
     const surface = paint.paintRef.current;
-    if (!onAttachChatFile || !surface) return;
+    if (!onAttachChatFile || !surface) return null;
     const base = viewerRef.current?.captureCanvas();
-    if (!base) return;
-    void surface.compositePng(base).then((blob) => {
-      if (!blob) return;
-      onAttachChatFile(
-        new File([blob], paintNoteFileName("작업"), {
-          type: "image/png",
-        }),
-      );
+    if (!base) return null;
+    return surface.compositePng(base).then((blob) => {
+      if (!blob) return null;
+      const file = new File([blob], paintNoteFileName("작업"), { type: "image/png" });
+      onAttachChatFile(file);
       toast({
         title: "채팅에 첨부했습니다.",
         description: (
@@ -3609,7 +3744,7 @@ function LabProsthesisAiDesignDialog({
           </>
         ),
       });
-      closeAfterChatAttachRef.current();
+      return file;
     });
   };
 
@@ -3622,8 +3757,7 @@ function LabProsthesisAiDesignDialog({
           "duration-0 data-[state=open]:animate-none data-[state=closed]:animate-none",
         )}
         overlayClassName="z-[475]"
-        closeClassName="right-2 top-2 z-20 flex h-10 w-10 items-center justify-center rounded-md bg-destructive text-destructive-foreground opacity-100 shadow-sm hover:bg-destructive/90 hover:opacity-100"
-        closeIconClassName="h-7 w-7"
+        hideClose
         onInteractOutside={(event) => {
           const target = event.target;
           if (
@@ -3799,6 +3933,23 @@ function LabProsthesisAiDesignDialog({
                     className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
                   />
                 </label>
+                <div className="flex items-center justify-between gap-4 whitespace-nowrap border-t pt-3">
+                  <span className="text-xs font-semibold text-foreground">단축키·마우스</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => {
+                      setSettingsOpen(false);
+                      setControlsOpen(true);
+                    }}
+                  >
+                    {controlPrefs.profile === "custom"
+                      ? "직접 설정"
+                      : DESIGN_CONTROL_PRESETS[controlPrefs.profile].label}
+                  </Button>
+                </div>
                 <section className="border-t pt-3">
                   <div className="mb-1.5 flex items-center justify-between gap-2">
                     <span className="text-xs font-semibold text-foreground">디자인 프리셋</span>
@@ -3838,6 +3989,12 @@ function LabProsthesisAiDesignDialog({
               </PopoverContent>
             </Popover>
           </div>
+          <DialogClose
+            className="absolute right-2 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-md bg-destructive text-destructive-foreground opacity-100 shadow-sm hover:bg-destructive/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            aria-label="닫기"
+          >
+            <X className="h-7 w-7" />
+          </DialogClose>
         </DialogHeader>
 
         <div ref={bindWorkArea} className="relative min-h-0 min-w-0 flex-1">
@@ -3993,8 +4150,12 @@ function LabProsthesisAiDesignDialog({
               <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center">
                 <ViewPaintToolbar
                   paint={paint}
+                  twoRow
                   onSaveImage={saveViewImage}
                   onAttachChat={onAttachChatFile ? attachPaintToChat : undefined}
+                  onRemoveChatFile={onRemoveChatFile}
+                  onReorderChatFiles={onReorderChatFiles}
+                  onSendToAi={sendPaintToAi}
                 />
               </div>
             ) : null}
@@ -4035,10 +4196,7 @@ function LabProsthesisAiDesignDialog({
                 aria-label="언더컷"
                 aria-pressed={paintUndercut}
                 disabled={!canUndercut}
-                onClick={() => {
-                  if (!canUndercut || insertionAxisVisible) return;
-                  setUndercutMap((on) => !on);
-                }}
+                onClick={toggleUndercut}
               >
                 <TriangleAlert />
                 {workWide ? <span>언더컷</span> : null}
@@ -4051,16 +4209,7 @@ function LabProsthesisAiDesignDialog({
                 title="마진"
                 aria-label="마진"
                 aria-pressed={marginShown}
-                onClick={() => {
-                  const next = !marginShown;
-                  setMarginShown(next);
-                  if (next) {
-                    setStage("margin");
-                    setModifyTool("margin");
-                    setAlignKind(null);
-                    setAlignArch(null);
-                  }
-                }}
+                onClick={toggleMarginShown}
               >
                 <Spline />
                 {workWide ? <span>마진</span> : null}
@@ -4171,19 +4320,7 @@ function LabProsthesisAiDesignDialog({
                   title="칼라맵"
                   aria-label="칼라맵"
                   aria-pressed={colorMap.on}
-                  onClick={() => {
-                    if (colorMap.on) {
-                      setColorMap((prev) => ({ ...prev, on: false }));
-                      return;
-                    }
-                    const anyIntaglio = Object.values(intaglios).some((row) => row.status === "ok");
-                    let mode = colorMap.mode;
-                    if (mode === "fit" && !anyIntaglio) mode = "contact";
-                    if (mode === "contact" && !canContact) mode = "thickness";
-                    setColorMap({ ...colorMap, on: true, mode });
-                    setMarginShown(true);
-                    setStage("design");
-                  }}
+                  onClick={toggleColorMap}
                 >
                   <Rainbow />
                   {workWide ? <span>칼라맵</span> : null}
@@ -4207,15 +4344,20 @@ function LabProsthesisAiDesignDialog({
               pose={panelPose.chat ?? null}
               onPose={(pose) => movePanel("chat", pose)}
               anchorClass="bottom-3 right-3"
-              className="pointer-events-none flex w-[min(18rem,calc(100%-1.5rem))] flex-col"
+              resizable
+              contentOpen={chatOpen}
+              className="pointer-events-none flex max-w-[calc(100%-1.5rem)] flex-col"
             >
               <AiDesignChatPanel
                 open={chatOpen}
+                paintOn={paint.paintOn}
                 draft={chatDraft}
                 turns={aiChat}
                 onToggle={() => setChatOpen((open) => !open)}
+                onTogglePaint={() => paint.setPaintOn((on) => !on)}
                 onDraft={setChatDraft}
                 onSend={sendAiChat}
+                onRemoveTurn={removeAiChatTurn}
               />
             </SnapFrame>
             <SnapFrame
@@ -5111,6 +5253,7 @@ function LabProsthesisAiDesignDialog({
           clinicName={clinicKey || null}
           initialPresetId={presetDialog?.presetId ?? null}
         />
+        <LabDesignControlsDialog open={controlsOpen} onOpenChange={setControlsOpen} />
         <DesignExportDialog
           open={exportOpen}
           onOpenChange={setExportOpen}
@@ -5408,6 +5551,20 @@ type PanelDragBind = {
 };
 
 const PanelDragContext = createContext<PanelDragBind | null>(null);
+const PanelFillContext = createContext(false);
+
+type ResizeEdge = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
+
+const RESIZE_HANDLES: { edge: ResizeEdge; className: string }[] = [
+  { edge: "n", className: "left-2 right-2 top-0 h-1.5 cursor-ns-resize" },
+  { edge: "s", className: "bottom-0 left-2 right-2 h-1.5 cursor-ns-resize" },
+  { edge: "w", className: "bottom-2 left-0 top-2 w-1.5 cursor-ew-resize" },
+  { edge: "e", className: "bottom-2 right-0 top-2 w-1.5 cursor-ew-resize" },
+  { edge: "nw", className: "left-0 top-0 h-3 w-3 cursor-nwse-resize" },
+  { edge: "ne", className: "right-0 top-0 h-3 w-3 cursor-nesw-resize" },
+  { edge: "sw", className: "bottom-0 left-0 h-3 w-3 cursor-nesw-resize" },
+  { edge: "se", className: "bottom-0 right-0 h-3 w-3 cursor-nwse-resize" },
+];
 
 function SnapFrame({
   boundsRef,
@@ -5415,6 +5572,8 @@ function SnapFrame({
   onPose,
   anchorClass,
   className,
+  resizable,
+  contentOpen = true,
   children,
 }: {
   boundsRef: RefObject<HTMLElement | null>;
@@ -5422,6 +5581,10 @@ function SnapFrame({
   onPose: (pose: PanelPose) => void;
   anchorClass: string;
   className?: string;
+  /** 가장자리를 끌어 너비·높이를 바꾼다. */
+  resizable?: boolean;
+  /** 접히면 높이는 내용만큼, 펼치면 조절한 높이를 유지한다. */
+  contentOpen?: boolean;
   children: ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -5435,15 +5598,26 @@ function SnapFrame({
   const skipClickRef = useRef(false);
   const [dragging, setDragging] = useState(false);
   const [box, setBox] = useState<{ left: number; top: number } | null>(null);
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const resizeRef = useRef<null | {
+    edge: ResizeEdge;
+    x: number;
+    y: number;
+    l: number;
+    t: number;
+    w: number;
+    h: number;
+    moved: boolean;
+  }>(null);
   const onPoseRef = useRef(onPose);
   onPoseRef.current = onPose;
 
   useLayoutEffect(() => {
+    if (dragging) return;
     if (!pose) {
       setBox(null);
       return;
     }
-    if (dragging) return;
     const bounds = boundsRef.current;
     const panel = panelRef.current;
     if (!bounds || !panel) return;
@@ -5533,6 +5707,93 @@ function SnapFrame({
     };
   }, [boundsRef]);
 
+  const onResizeDown = (edge: ResizeEdge) => (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    const bounds = boundsRef.current?.getBoundingClientRect();
+    const panel = panelRef.current?.getBoundingClientRect();
+    if (!bounds || !panel) return;
+    resizeRef.current = {
+      edge,
+      x: event.clientX,
+      y: event.clientY,
+      l: panel.left - bounds.left,
+      t: panel.top - bounds.top,
+      w: panel.width,
+      h: panel.height,
+      moved: false,
+    };
+    setDragging(true);
+    setBox({ left: panel.left - bounds.left, top: panel.top - bounds.top });
+    setSize({ w: panel.width, h: panel.height });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const onResizeMove = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = resizeRef.current;
+    const boundsEl = boundsRef.current;
+    if (!drag || !boundsEl) return;
+    const bounds = boundsEl.getBoundingClientRect();
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    if (!drag.moved && Math.hypot(dx, dy) < 2) return;
+    drag.moved = true;
+    const root = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const minW = 16 * root;
+    const minH = 10 * root;
+    const { edge } = panelMetrics();
+    let left = drag.l;
+    let top = drag.t;
+    let width = drag.w;
+    let height = drag.h;
+    const growWest = drag.edge.includes("w");
+    const growEast = drag.edge.includes("e");
+    const growNorth = drag.edge.includes("n");
+    const growSouth = drag.edge.includes("s");
+    if (growEast) width = drag.w + dx;
+    if (growWest) {
+      width = drag.w - dx;
+      left = drag.l + dx;
+    }
+    if (growSouth) height = drag.h + dy;
+    if (growNorth) {
+      height = drag.h - dy;
+      top = drag.t + dy;
+    }
+    width = Math.min(Math.max(width, minW), bounds.width - edge * 2);
+    height = Math.min(Math.max(height, minH), bounds.height - edge * 2);
+    if (growWest) left = drag.l + (drag.w - width);
+    if (growNorth) top = drag.t + (drag.h - height);
+    left = Math.min(Math.max(left, edge), bounds.width - width - edge);
+    top = Math.min(Math.max(top, edge), bounds.height - height - edge);
+    setBox({ left, top });
+    setSize({ w: width, h: height });
+  };
+
+  const onResizeUp = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = resizeRef.current;
+    resizeRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (!drag?.moved) {
+      setDragging(false);
+      return;
+    }
+    const bounds = boundsRef.current?.getBoundingClientRect();
+    const panel = panelRef.current?.getBoundingClientRect();
+    setDragging(false);
+    if (!bounds || !panel) return;
+    const { edge, snap } = panelMetrics();
+    const next = {
+      x: snapAxis(panel.left - bounds.left, bounds.width, panel.width, edge, snap),
+      y: snapAxis(panel.top - bounds.top, bounds.height, panel.height, edge, snap),
+    };
+    requestAnimationFrame(() => onPoseRef.current(next));
+  };
+
+  const sized = size != null && contentOpen;
+
   return (
     <div
       ref={panelRef}
@@ -5541,11 +5802,33 @@ function SnapFrame({
         dragging && "z-30",
         !box && anchorClass,
         box && !dragging && "transition-[left,top] duration-200 ease-out",
+        resizable && !size && "w-[min(18rem,calc(100%-1.5rem))]",
         className,
       )}
-      style={box ? { left: box.left, top: box.top, right: "auto", bottom: "auto" } : undefined}
+      style={{
+        ...(box ? { left: box.left, top: box.top, right: "auto", bottom: "auto" } : {}),
+        ...(size ? { width: size.w, height: sized ? size.h : undefined } : {}),
+      }}
     >
-      <PanelDragContext.Provider value={bind}>{children}</PanelDragContext.Provider>
+      <PanelFillContext.Provider value={sized}>
+        <PanelDragContext.Provider value={bind}>{children}</PanelDragContext.Provider>
+      </PanelFillContext.Provider>
+      {resizable
+        ? RESIZE_HANDLES.map((handle) => (
+            <div
+              key={handle.edge}
+              role="separator"
+              tabIndex={0}
+              aria-label="채팅 패널 크기"
+              aria-orientation={handle.edge === "n" || handle.edge === "s" ? "horizontal" : handle.edge === "e" || handle.edge === "w" ? "vertical" : undefined}
+              className={cn("pointer-events-auto absolute z-10", handle.className)}
+              onPointerDown={onResizeDown(handle.edge)}
+              onPointerMove={onResizeMove}
+              onPointerUp={onResizeUp}
+              onPointerCancel={onResizeUp}
+            />
+          ))
+        : null}
     </div>
   );
 }
@@ -5554,20 +5837,23 @@ function DraggablePanelHeader({
   open,
   onToggle,
   className,
+  aside,
   children,
 }: {
   open: boolean;
   onToggle: () => void;
   className?: string;
+  aside?: ReactNode;
   children: ReactNode;
 }) {
   const drag = useContext(PanelDragContext);
-  return (
+  const button = (
     <button
       type="button"
       className={cn(
-        "flex w-full cursor-grab touch-none select-none items-center justify-between gap-2 text-left active:cursor-grabbing",
-        className,
+        "flex cursor-grab touch-none select-none items-center justify-between gap-2 text-left active:cursor-grabbing",
+        aside ? "min-w-0 flex-1" : "w-full",
+        !aside && className,
       )}
       aria-expanded={open}
       title="끌어 옮기면 가장자리에 붙습니다"
@@ -5592,57 +5878,114 @@ function DraggablePanelHeader({
       />
     </button>
   );
+  if (!aside) return button;
+  return (
+    <div className={cn("flex items-center", className)}>
+      {button}
+      {aside}
+    </div>
+  );
 }
 
 function AiDesignChatPanel({
   open,
+  paintOn,
   draft,
   turns,
   onToggle,
+  onTogglePaint,
   onDraft,
   onSend,
+  onRemoveTurn,
 }: {
   open: boolean;
+  paintOn: boolean;
   draft: string;
   turns: readonly AiDesignChatTurn[];
   onToggle: () => void;
+  onTogglePaint: () => void;
   onDraft: (value: string) => void;
   onSend: () => void;
+  onRemoveTurn: (index: number) => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
+  const fill = useContext(PanelFillContext);
   useEffect(() => {
     if (!open) return;
     endRef.current?.scrollIntoView({ block: "end" });
   }, [open, turns.length]);
+  let imageNo = 0;
   return (
-    <div className="pointer-events-auto flex w-full flex-col overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
+    <div
+      className={cn(
+        "pointer-events-auto flex w-full min-h-0 flex-col overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm",
+        fill && "h-full",
+      )}
+    >
       <DraggablePanelHeader
         open={open}
         onToggle={onToggle}
-        className={cn("shrink-0 px-2.5 py-2", open && "border-b")}
+        className={cn("shrink-0 px-2.5", open && "border-b")}
       >
-        <span className="inline-flex items-center gap-1.5 font-semibold text-foreground">
+        <span className="inline-flex items-center gap-1.5 py-2 font-semibold text-foreground">
           <MessageSquare className="h-4 w-4" />
           AI
         </span>
       </DraggablePanelHeader>
       {open ? (
         <>
-          <div className="max-h-[11rem] min-h-[9rem] space-y-2 overflow-y-auto px-2.5 py-2">
+          <div
+            className={cn(
+              "min-h-0 space-y-2 overflow-y-auto px-2.5 py-2",
+              fill ? "flex-1" : "max-h-[11rem] min-h-[9rem]",
+            )}
+          >
             {turns.length === 0 ? (
               <p className="text-xs text-muted-foreground">AI에게 디자인 명령해주세요.</p>
             ) : (
-              turns.map((turn, index) => (
-                <p
+              turns.map((turn, index) => {
+                const shotNo = turn.paintImageUrl ? ++imageNo : 0;
+                return (
+                <div
                   key={`${turn.role}-${index}`}
                   className={cn(
-                    "whitespace-pre-wrap break-words rounded-md px-2 py-1.5 text-xs text-foreground",
+                    "rounded-md px-2 py-1.5 text-xs text-foreground",
                     turn.role === "user" ? "ml-4 bg-primary/10" : "mr-4 bg-muted",
                   )}
                 >
-                  {turn.text}
-                </p>
-              ))
+                  {turn.fromPaint ? (
+                    <p className="mb-1 inline-flex items-center gap-1 font-medium text-primary">
+                      <Pencil className="h-3.5 w-3.5" />
+                      페인트
+                    </p>
+                  ) : null}
+                  {turn.paintImageUrl ? (
+                    <div className="relative mb-1">
+                      <span className="absolute left-1 top-1 rounded bg-background/95 px-1 text-[0.65rem] font-semibold tabular-nums leading-4 shadow-sm">
+                        ({shotNo})
+                      </span>
+                      <button
+                        type="button"
+                        className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-background/95 text-foreground shadow-sm hover:bg-destructive hover:text-destructive-foreground [&_svg]:size-3"
+                        aria-label={`${shotNo}번 첨부 지우기`}
+                        title="이 이미지 지우기"
+                        onClick={() => onRemoveTurn(index)}
+                      >
+                        <X />
+                      </button>
+                      <img
+                        src={turn.paintImageUrl}
+                        alt={`첨부 ${shotNo}`}
+                        className="max-h-28 w-full rounded object-contain"
+                      />
+                    </div>
+                  ) : null}
+                  {turn.fromPaint && turn.text === "페인트 표시" ? null : (
+                    <p className="whitespace-pre-wrap break-words">{turn.text}</p>
+                  )}
+                </div>
+                );
+              })
             )}
             <div ref={endRef} />
           </div>
@@ -5653,6 +5996,19 @@ function AiDesignChatPanel({
               onSend();
             }}
           >
+            <button
+              type="button"
+              className={cn(
+                "grid h-8 w-8 shrink-0 place-items-center rounded-full [&_svg]:size-4",
+                paintOn ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted",
+              )}
+              aria-label="페인트"
+              aria-pressed={paintOn}
+              title="페인트"
+              onClick={onTogglePaint}
+            >
+              <Pencil />
+            </button>
             <textarea
               className="max-h-24 min-h-8 flex-1 resize-none rounded-md border bg-background px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary"
               rows={1}

@@ -263,6 +263,7 @@ import type {
 } from "@/shared/practice/practiceTransferFeeQuote";
 import { Progress } from "@/components/ui/progress";
 import type { BackgroundUploadItem } from "@/shared/hooks/useBackgroundTempUpload";
+import { toTempUploadFileKey } from "@/shared/hooks/useFilePreUpload";
 import {
   Tooltip,
   TooltipContent,
@@ -747,6 +748,8 @@ type PracticeTransferDetailChatDialogProps = {
   chatBottomRef: RefObject<HTMLDivElement | null>;
   chatAttachedFiles: BackgroundUploadItem[];
   onRemoveAttachedChatFile: (id: string) => void;
+  /** 페인트 썸네일 순서를 채팅 첨부에 맞춘다. */
+  onReorderAttachedChatFiles?: (orderedIds: string[]) => void;
   onRetryAttachedChatFile?: (id: string) => void;
   onAttachChatFiles: (files: File[]) => void;
   /**
@@ -949,6 +952,7 @@ export function PracticeTransferDetailChatDialog({
   chatBottomRef,
   chatAttachedFiles,
   onRemoveAttachedChatFile,
+  onReorderAttachedChatFiles,
   onRetryAttachedChatFile,
   onAttachChatFiles,
   onAttachRequestFiles,
@@ -2665,6 +2669,13 @@ export function PracticeTransferDetailChatDialog({
       {reacceptButtonLabel}
     </Button>
   ) : null;
+  const detachPaintChatFile = (file: File) => {
+    onRemoveAttachedChatFile(toTempUploadFileKey(file));
+  };
+  const reorderPaintChatFiles = onReorderAttachedChatFiles
+    ? (files: File[]) =>
+        onReorderAttachedChatFiles(files.map((file) => toTempUploadFileKey(file)))
+    : undefined;
   const labAiDesignButton =
     operateLabWork && feeViewer === "lab" && labAiDesignAllowed ? (
       <LabProsthesisAiDesignButton
@@ -2684,6 +2695,8 @@ export function PracticeTransferDetailChatDialog({
         onAttachChatFile={
           onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined
         }
+        onRemoveChatFile={detachPaintChatFile}
+        onReorderChatFiles={reorderPaintChatFiles}
         caseHeader={{
           primary: caseIdentityStrip?.primary,
           dates: identityDateLabel,
@@ -4010,6 +4023,8 @@ export function PracticeTransferDetailChatDialog({
                                 ? (file) => onAttachChatFiles([file])
                                 : undefined
                             }
+                            onRemoveChatFile={detachPaintChatFile}
+                            onReorderChatFiles={reorderPaintChatFiles}
                             onOpenAttachment={(file) =>
                               void onDownloadChatAttachment({
                                 fileId: file.fileId,
@@ -4208,6 +4223,8 @@ export function PracticeTransferDetailChatDialog({
           : undefined
       }
       onAttachChatFile={onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined}
+      onRemoveChatFile={detachPaintChatFile}
+      onReorderChatFiles={reorderPaintChatFiles}
       caseInfo={previewCaseInfo}
     />
   );
@@ -4228,6 +4245,8 @@ export function PracticeTransferDetailChatDialog({
         for (const file of picked) await onDownloadTransferFile(file);
       }}
       onAttachChatFile={onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined}
+      onRemoveChatFile={detachPaintChatFile}
+      onReorderChatFiles={reorderPaintChatFiles}
     />
   );
 

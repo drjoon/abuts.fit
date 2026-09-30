@@ -65,6 +65,8 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
   onDownload,
   downloadBusy = false,
   onAttachChatFile,
+  onRemoveChatFile,
+  onReorderChatFiles,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -78,6 +80,8 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
   downloadBusy?: boolean;
   /** 표시가 입혀진 현재 뷰를 채팅 첨부로 넘긴다. */
   onAttachChatFile?: (file: File) => void;
+  onRemoveChatFile?: (file: File) => void;
+  onReorderChatFiles?: (files: File[]) => void;
 }) {
   const parts = useMemo(() => workScanModelParts(files), [files]);
   const partsKey = parts.map((part) => part.key).join("|");
@@ -287,6 +291,8 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
               captureCanvas={() => viewerRef.current?.captureCanvas() ?? null}
               fileName={heading}
               onAttachChatFile={onAttachChatFile}
+              onRemoveChatFile={onRemoveChatFile}
+              onReorderChatFiles={onReorderChatFiles}
             />
           ) : null}
           <Button

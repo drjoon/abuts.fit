@@ -109,6 +109,8 @@ export type ModelPreviewDialogProps = {
   onConfirm?: () => void | Promise<void>;
   /** 표시가 입혀진 현재 뷰를 채팅 첨부로 넘긴다. */
   onAttachChatFile?: (file: File) => void;
+  onRemoveChatFile?: (file: File) => void;
+  onReorderChatFiles?: (files: File[]) => void;
   /** 제목 아래 한 줄. 어느 의뢰의 파일인지(치과·기공소·환자·치아·날짜). */
   caseInfo?: ReactNode;
 };
@@ -134,6 +136,8 @@ export function ModelPreviewDialog({
   confirmBusy = false,
   onConfirm,
   onAttachChatFile,
+  onRemoveChatFile,
+  onReorderChatFiles,
   caseInfo,
 }: ModelPreviewDialogProps) {
   const isImage = kind === "image";
@@ -369,6 +373,8 @@ export function ModelPreviewDialog({
                 captureCanvas={captureViewCanvas}
                 fileName={fileName}
                 onAttachChatFile={onAttachChatFile}
+                onRemoveChatFile={onRemoveChatFile}
+                onReorderChatFiles={onReorderChatFiles}
               />
             ) : null}
           </div>

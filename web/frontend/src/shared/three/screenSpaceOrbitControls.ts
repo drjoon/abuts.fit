@@ -2,13 +2,83 @@ import * as THREE from "three";
 
 // change-log:
 // - 2026-09-14: OrthographicCamera 지원 — 줌은 camera.zoom, 패닝 스케일 ortho 분기.
+// - 2026-09-30: 마우스 버튼 매핑(`mouse`) — 회전·이동·드래그 확대·클릭 회전 중심. 왼쪽+오른쪽 동시 누름 지원.
 type ScreenSpaceOrbitControlsEvent = "start" | "change" | "end";
 
 type ScreenSpaceOrbitControlsListener = () => void;
 
-type DragMode = "none" | "rotate" | "pan";
+export type OrbitDragMode = "none" | "rotate" | "pan" | "zoom";
 
 type OrbitCamera = THREE.PerspectiveCamera | THREE.OrthographicCamera;
+
+export type OrbitMouseButton = "left" | "middle" | "right" | "left+right";
+export type OrbitModifier = "none" | "shift" | "ctrl" | "alt";
+export type OrbitGesture = { button: OrbitMouseButton; mod: OrbitModifier };
+export type OrbitMouseAction = "rotate" | "pan" | "zoom" | "pivot";
+
+export type OrbitMouseBindings = Record<OrbitMouseAction, OrbitGesture[]> & {
+  /** 켜면 휠을 내릴 때 확대한다. */
+  invertWheel: boolean;
+};
+
+/** 어벗츠 기본. 왼쪽 회전, 오른쪽·휠 버튼·Shift+왼쪽 이동. */
+export const DEFAULT_ORBIT_MOUSE: OrbitMouseBindings = {
+  rotate: [{ button: "left", mod: "none" }],
+  pan: [
+    { button: "right", mod: "none" },
+    { button: "middle", mod: "none" },
+    { button: "left", mod: "shift" },
+  ],
+  zoom: [],
+  pivot: [],
+  invertWheel: false,
+};
+
+/** 누른 버튼 비트(`buttons`)를 제스처 버튼으로. 두 개 넘게 누르면 null. */
+function orbitButtonOf(event: PointerEvent | MouseEvent): OrbitMouseButton | null {
+  let bits = event.buttons;
+  if (!bits && event.type !== "pointermove") {
+    bits = event.button === 0 ? 1 : event.button === 1 ? 4 : event.button === 2 ? 2 : 0;
+  }
+  if (bits === 1) return "left";
+  if (bits === 2) return "right";
+  if (bits === 4) return "middle";
+  if (bits === 3) return "left+right";
+  return null;
+}
+
+function orbitModifierOf(event: PointerEvent | MouseEvent): OrbitModifier | "many" {
+  const mods: OrbitModifier[] = [];
+  if (event.ctrlKey || event.metaKey) mods.push("ctrl");
+  if (event.shiftKey) mods.push("shift");
+  if (event.altKey) mods.push("alt");
+  if (mods.length === 0) return "none";
+  return mods.length === 1 ? mods[0] : "many";
+}
+
+/**
+ * 이 이벤트에 걸린 동작. 수식키가 정확히 같은 제스처가 먼저다.
+ * 없으면 수식키 없는 제스처로 본다(예: Ctrl+왼쪽도 왼쪽 회전).
+ */
+export function matchOrbitGesture(
+  bindings: OrbitMouseBindings,
+  event: PointerEvent | MouseEvent,
+  actions: readonly OrbitMouseAction[],
+): OrbitMouseAction | null {
+  const button = orbitButtonOf(event);
+  if (!button) return null;
+  const mod = orbitModifierOf(event);
+  for (const action of actions) {
+    if (bindings[action].some((row) => row.button === button && row.mod === mod)) return action;
+  }
+  if (mod === "none") return null;
+  for (const action of actions) {
+    if (bindings[action].some((row) => row.button === button && row.mod === "none")) return action;
+  }
+  return null;
+}
+
+const DRAG_ACTIONS = ["rotate", "pan", "zoom"] as const;
 
 export type ScreenSpaceOrbitControlsOptions = {
   rotateSpeed?: number;
@@ -20,13 +90,15 @@ export type ScreenSpaceOrbitControlsOptions = {
   /** Orthographic only — clamp camera.zoom */
   minZoom?: number;
   maxZoom?: number;
+  /** 누를 때마다 읽는다. 없으면 어벗츠 기본. */
+  mouse?: () => OrbitMouseBindings;
 };
 
 /**
  * Dental preview orbit — screen-space axes (no world-up lock):
  * - Horizontal drag: rotate around screen Y (camera local up) → keeps current horizon level
  * - Vertical drag: rotate around screen X (camera local right)
- * - Pan: middle / right / Shift+left drag (screen-space)
+ * - Buttons come from `mouse` (default: left rotate, middle/right/Shift+left pan)
  * - Orthographic zoom: camera.zoom (distance does not change apparent size)
  *
  * World Z turntable is intentionally not used: scan PLY axes often disagree with
@@ -43,6 +115,8 @@ export class ScreenSpaceOrbitControls {
   maxDistance: number;
   minZoom: number;
   maxZoom: number;
+  /** 회전 중심 클릭에서 화면 아래 면 좌표. 없으면 회전 중심 클릭을 무시한다. */
+  pickPivot: ((event: PointerEvent) => THREE.Vector3 | null) | null = null;
 
   /**
    * True if the last completed pointer gesture moved the camera (rotate/pan).
@@ -52,6 +126,7 @@ export class ScreenSpaceOrbitControls {
 
   private readonly camera: OrbitCamera;
   private readonly domElement: HTMLElement;
+  private readonly mouse: () => OrbitMouseBindings;
   private readonly offset = new THREE.Vector3();
   private readonly screenRight = new THREE.Vector3();
   private readonly screenUp = new THREE.Vector3();
@@ -64,35 +139,43 @@ export class ScreenSpaceOrbitControls {
 
   private radius = 10;
 
-  private dragMode: DragMode = "none";
+  private dragMode: OrbitDragMode = "none";
+  private started = false;
   private disposed = false;
   private activePointerId: number | null = null;
+  private activeButtons = 0;
+  private pivotArmed = false;
+  private readonly downPointer = new THREE.Vector2();
   private lastPointer = new THREE.Vector2();
 
   private readonly onPointerDown = (event: PointerEvent) => {
     if (this.disposed) return;
+    if (this.activePointerId !== null && event.pointerId !== this.activePointerId) return;
 
-    const mode = this.resolveDragMode(event);
-    if (mode === "none") return;
-
-    this.syncFromCamera();
-    this.activePointerId = event.pointerId;
-    this.dragMode = mode;
-    this.lastGestureMoved = false;
-    this.lastPointer.set(event.clientX, event.clientY);
-    this.domElement.setPointerCapture(event.pointerId);
-    this.dispatch("start");
-    event.preventDefault();
+    const mode = this.dragModeFor(event);
+    const pivot =
+      event.pointerType !== "touch" &&
+      this.pickPivot != null &&
+      matchOrbitGesture(this.mouse(), event, ["pivot"]) === "pivot";
+    if (mode === "none" && !pivot) return;
+    this.begin(event, mode, pivot);
   };
 
   private readonly onPointerMove = (event: PointerEvent) => {
-    if (
-      this.disposed ||
-      this.dragMode === "none" ||
-      this.activePointerId === null ||
-      event.pointerId !== this.activePointerId
-    ) {
+    if (this.disposed) return;
+    if (this.activePointerId === null) {
+      // 화면 동작이 없는 버튼(예: exocad 왼쪽)을 누른 채 다른 버튼을 더 누른 경우.
+      if (event.pointerType !== "mouse" || event.buttons === 0) return;
+      const mode = this.dragModeFor(event);
+      if (mode !== "none") this.begin(event, mode, false);
       return;
+    }
+    if (event.pointerId !== this.activePointerId) return;
+    // 드래그 중 두 번째 버튼을 누르거나 떼면 pointermove로만 온다.
+    if (event.pointerType === "mouse" && event.buttons !== this.activeButtons) {
+      this.activeButtons = event.buttons;
+      const next = event.buttons !== 0 ? this.dragModeFor(event) : "none";
+      if (next !== "none") this.setMode(next);
     }
 
     const deltaX = event.clientX - this.lastPointer.x;
@@ -100,12 +183,21 @@ export class ScreenSpaceOrbitControls {
     this.lastPointer.set(event.clientX, event.clientY);
     if (deltaX === 0 && deltaY === 0) return;
 
+    if (
+      Math.abs(event.clientX - this.downPointer.x) + Math.abs(event.clientY - this.downPointer.y) >=
+      4
+    ) {
+      this.pivotArmed = false;
+    }
+    if (this.dragMode === "none") return;
     if (Math.abs(deltaX) + Math.abs(deltaY) >= 2) {
       this.lastGestureMoved = true;
     }
 
     if (this.dragMode === "pan") {
       this.panFromScreenDelta(deltaX, deltaY);
+    } else if (this.dragMode === "zoom") {
+      this.zoomBy(Math.exp((deltaY * this.zoomSpeed) / 200));
     } else {
       this.rotateFromScreenDelta(deltaX, deltaY);
     }
@@ -117,49 +209,34 @@ export class ScreenSpaceOrbitControls {
     if (this.activePointerId === null || event.pointerId !== this.activePointerId) {
       return;
     }
+    const pivot = this.pivotArmed && !this.lastGestureMoved;
     this.dragMode = "none";
     this.activePointerId = null;
+    this.activeButtons = 0;
+    this.pivotArmed = false;
     try {
       this.domElement.releasePointerCapture(event.pointerId);
     } catch {
       // noop
     }
-    this.dispatch("end");
+    if (pivot) this.pivotAt(event);
+    if (this.started) {
+      this.started = false;
+      this.dispatch("end");
+    }
   };
 
   private readonly onWheel = (event: WheelEvent) => {
     if (this.disposed) return;
     event.preventDefault();
     this.syncFromCamera();
-    const scale = Math.exp((event.deltaY * this.zoomSpeed) / 100);
-
-    if (this.isOrthographic()) {
-      // Ortho: apparent size comes from frustum/zoom, not camera distance.
-      this.camera.zoom = THREE.MathUtils.clamp(
-        this.camera.zoom / scale,
-        this.minZoom,
-        this.maxZoom,
-      );
-      this.camera.updateProjectionMatrix();
-    } else {
-      this.radius = THREE.MathUtils.clamp(
-        this.radius * scale,
-        this.minDistance,
-        this.maxDistance,
-      );
-      this.offset.subVectors(this.camera.position, this.target);
-      if (this.offset.lengthSq() < 1e-16) {
-        this.offset.set(0, -1, 0);
-      }
-      this.offset.setLength(this.radius);
-      this.camera.position.copy(this.target).add(this.offset);
-      this.camera.lookAt(this.target);
-    }
+    const sign = this.mouse().invertWheel ? -1 : 1;
+    this.zoomBy(Math.exp((sign * event.deltaY * this.zoomSpeed) / 100));
     this.dispatch("change");
   };
 
   private readonly onContextMenu = (event: Event) => {
-    // Right-drag pan uses button 2; block the browser menu.
+    // Right-drag uses button 2; block the browser menu.
     event.preventDefault();
   };
 
@@ -170,6 +247,7 @@ export class ScreenSpaceOrbitControls {
   ) {
     this.camera = camera;
     this.domElement = domElement;
+    this.mouse = options.mouse ?? (() => DEFAULT_ORBIT_MOUSE);
     this.rotateSpeed = options.rotateSpeed ?? 1;
     this.zoomSpeed = options.zoomSpeed ?? 1;
     this.panSpeed = options.panSpeed ?? 1;
@@ -205,6 +283,15 @@ export class ScreenSpaceOrbitControls {
     this.listeners.get(type)?.delete(listener);
   }
 
+  /** 이 누름이 화면 드래그(회전·이동·확대)인지. 편집 도구가 오른쪽 클릭을 미룰지 정한다. */
+  dragModeFor(event: PointerEvent | MouseEvent): OrbitDragMode {
+    if ((event as PointerEvent).pointerType === "touch") return "rotate";
+    const action = matchOrbitGesture(this.mouse(), event, DRAG_ACTIONS);
+    if (!action || action === "pivot") return "none";
+    if (action === "pan" && !this.enablePan) return "none";
+    return action;
+  }
+
   syncFromCamera() {
     this.radius = Math.max(
       this.camera.position.distanceTo(this.target),
@@ -227,22 +314,71 @@ export class ScreenSpaceOrbitControls {
     this.listeners.clear();
   }
 
-  private isOrthographic(): this is {
-    camera: THREE.OrthographicCamera;
-  } {
-    return (this.camera as THREE.OrthographicCamera).isOrthographicCamera === true;
+  private begin(event: PointerEvent, mode: OrbitDragMode, pivot: boolean) {
+    this.syncFromCamera();
+    this.activePointerId = event.pointerId;
+    this.activeButtons = event.buttons;
+    this.pivotArmed = pivot;
+    this.lastGestureMoved = false;
+    this.downPointer.set(event.clientX, event.clientY);
+    this.lastPointer.set(event.clientX, event.clientY);
+    try {
+      this.domElement.setPointerCapture(event.pointerId);
+    } catch {
+      // noop
+    }
+    this.setMode(mode);
+    event.preventDefault();
   }
 
-  private resolveDragMode(event: PointerEvent): DragMode {
-    // Middle or right → pan. Shift+left → pan. Left → rotate.
-    if (event.button === 1 || event.button === 2) {
-      return this.enablePan ? "pan" : "none";
+  private setMode(mode: OrbitDragMode) {
+    this.dragMode = mode;
+    if (mode !== "none" && !this.started) {
+      this.started = true;
+      this.dispatch("start");
     }
-    if (event.button === 0) {
-      if (event.shiftKey && this.enablePan) return "pan";
-      return "rotate";
+  }
+
+  private orthographic(): THREE.OrthographicCamera | null {
+    const camera = this.camera as THREE.OrthographicCamera;
+    return camera.isOrthographicCamera === true ? camera : null;
+  }
+
+  /** scale > 1 이면 멀어진다. */
+  private zoomBy(scale: number) {
+    const ortho = this.orthographic();
+    if (ortho) {
+      // Ortho: apparent size comes from frustum/zoom, not camera distance.
+      ortho.zoom = THREE.MathUtils.clamp(ortho.zoom / scale, this.minZoom, this.maxZoom);
+      ortho.updateProjectionMatrix();
+      return;
     }
-    return "none";
+    this.radius = THREE.MathUtils.clamp(
+      this.radius * scale,
+      this.minDistance,
+      this.maxDistance,
+    );
+    this.offset.subVectors(this.camera.position, this.target);
+    if (this.offset.lengthSq() < 1e-16) {
+      this.offset.set(0, -1, 0);
+    }
+    this.offset.setLength(this.radius);
+    this.camera.position.copy(this.target).add(this.offset);
+    this.camera.lookAt(this.target);
+  }
+
+  /** 누른 면을 화면 가운데·회전 중심으로. 방향·줌은 그대로다. */
+  private pivotAt(event: PointerEvent) {
+    const point = this.pickPivot?.(event);
+    if (!point) return;
+    this.offset.subVectors(point, this.target);
+    this.target.copy(point);
+    this.camera.position.add(this.offset);
+    this.camera.lookAt(this.target);
+    this.syncFromCamera();
+    this.dispatch("start");
+    this.dispatch("change");
+    this.dispatch("end");
   }
 
   private rotateFromScreenDelta(deltaX: number, deltaY: number) {
@@ -280,13 +416,10 @@ export class ScreenSpaceOrbitControls {
   private panFromScreenDelta(deltaX: number, deltaY: number) {
     const elementHeight = Math.max(this.domElement.clientHeight, 1);
     let panScale: number;
-    if (this.isOrthographic()) {
+    const ortho = this.orthographic();
+    if (ortho) {
       // Match three.js OrbitControls orthographic pan (world units per pixel).
-      panScale =
-        ((this.camera.top - this.camera.bottom) /
-          this.camera.zoom /
-          elementHeight) *
-        this.panSpeed;
+      panScale = ((ortho.top - ortho.bottom) / ortho.zoom / elementHeight) * this.panSpeed;
     } else {
       // Match three.js OrbitControls perspective pan scale (screen-space).
       const perspective = this.camera as THREE.PerspectiveCamera;

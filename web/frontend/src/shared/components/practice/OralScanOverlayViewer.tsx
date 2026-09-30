@@ -14,6 +14,7 @@
 // - 2026-09-26: 열릴 때 화면 중심은 모델 중심이다. 삽입축은 사용자가 맞춘 화면 중앙으로 잡는다.
 // - 2026-09-26: 양악이면 악궁 사이가 교합면이고, 한쪽만 있으면 바운딩박스에서 아이보리색 치아가 몰린 축에 수직으로 본다.
 // - 2026-09-30: 위쪽은 상악 중심. 역할은 파일 그대로 둔다. 치관으로 상·하악을 맞바꾸지 않는다.
+// - 2026-09-30: 마우스는 조작 프로필(labDesignControls)을 따른다. 오른쪽이 화면 조작이면 오른쪽 클릭 편집은 끌지 않고 뗄 때 실행한다.
 // - 2026-09-26: 삽입축을 잡으면 치아·잇몸 색이 갈라지는 곳을 마진으로 잡는다.
 // - 2026-09-26: 마진은 기본 원보다 바깥을, 삽입축으로 스캔 면에 붙여 잡는다.
 // - 2026-09-26: 바이트와 상·하악이 어긋나면 바이트에 맞춰 움직이고, 교합면 중심에 원점을 둔다.
@@ -46,6 +47,7 @@ import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRe
 
 import type { WorkSessionCenterGuide } from "@/shared/practice/labProsthesisWorkDraft";
 import { ScreenSpaceOrbitControls } from "@/shared/three/screenSpaceOrbitControls";
+import { getDesignOrbitMouse } from "@/shared/practice/labDesignControls";
 import {
   disposeBackFaceShell,
   syncBackFaceShell,
@@ -3088,7 +3090,9 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     groupRef.current = group;
 
     camera.lookAt(0, 0, 0);
-    const controls = new ScreenSpaceOrbitControls(camera, renderer.domElement);
+    const controls = new ScreenSpaceOrbitControls(camera, renderer.domElement, {
+      mouse: getDesignOrbitMouse,
+    });
     controls.target.set(0, 0, 0);
     controls.syncFromCamera();
     controlsRef.current = controls;
@@ -3251,6 +3255,17 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       raycaster.params.Line = { threshold: Math.max(fitRadiusRef.current * 0.02, 0.35) };
       raycaster.setFromCamera(ndc, camera);
     };
+
+    controls.pickPivot = (event) => {
+      aim(event);
+      const meshes = loadedRef.current
+        .filter((entry) => entry.mesh.visible)
+        .map((entry) => entry.mesh);
+      return raycaster.intersectObjects(meshes, false)[0]?.point.clone() ?? null;
+    };
+
+    /** 오른쪽이 화면 조작일 때 미룬 오른쪽 클릭 편집. 끌지 않고 떼면 실행한다. */
+    let pendingRight: { x: number; y: number; run: () => void } | null = null;
 
     const toothFrame = (tooth: string) => {
       const place = placementsRef.current.find((row) => row.toothNumber === tooth);
@@ -3512,11 +3527,23 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       const brush = designEditRef.current.brush;
       const send = onDesignGestureRef.current;
       if (!send) return;
+      pendingRight = null;
+      const deferRight = event.button === 2 && controls.dragModeFor(event) !== "none";
+      /** false면 미뤘다. 이 누름은 화면 조작으로 넘긴다. */
+      const secondary = (run: () => void) => {
+        if (!deferRight) {
+          run();
+          return true;
+        }
+        pendingRight = { x: event.clientX, y: event.clientY, run };
+        return false;
+      };
 
       if (hit.tag.kind === "insertion" && tool === "insertion" && event.button === 0) {
         drag = { kind: "insertion", key: hit.tag.key, at: 0 };
       } else if (hit.tag.kind === "margin" && event.button === 2) {
-        send({ type: "margin-remove", tooth: hit.tag.tooth, index: hit.tag.index });
+        const { tooth, index } = hit.tag;
+        if (!secondary(() => send({ type: "margin-remove", tooth, index }))) return;
       } else if (hit.tag.kind === "margin" && event.button === 0 && tool === "margin") {
         drag = { kind: "margin", tooth: hit.tag.tooth, index: hit.tag.index, at: 0 };
       } else if (hit.tag.kind === "margin-line" && event.button === 0 && tool === "margin") {
@@ -3562,14 +3589,16 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           },
         };
       } else if (hit.tag.kind === "hook" && event.button === 2) {
-        send({ type: "hook-remove", tooth: hit.tag.tooth, index: hit.tag.index });
+        const { tooth, index } = hit.tag;
+        if (!secondary(() => send({ type: "hook-remove", tooth, index }))) return;
       } else if (hit.tag.kind === "hook" && event.button === 0) {
         drag = { kind: "hook", tooth: hit.tag.tooth, index: hit.tag.index };
       } else if (
         (hit.tag.kind === "hole" || hit.tag.kind === "hole-tip") &&
         (event.button === 2 || brush === "erase")
       ) {
-        send({ type: "hole-remove", tooth: hit.tag.tooth });
+        const { tooth } = hit.tag;
+        if (!secondary(() => send({ type: "hole-remove", tooth }))) return;
       } else if (hit.tag.kind === "hole-tip" && event.button === 0) {
         drag = { kind: "hole-tip", tooth: hit.tag.tooth, end: hit.tag.end };
       } else if (hit.tag.kind === "hole" && event.button === 0) {
@@ -3604,9 +3633,13 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           return;
         }
       } else if (hit.tag.kind === "crown" && event.button === 2 && tool === "refine") {
-        const placed = planePoint(hit.tag.tooth);
-        if (!placed) return;
-        sculptAt(hit.tag.tooth, placed.angle, true);
+        const { tooth } = hit.tag;
+        const invertAt = () => {
+          const placed = planePoint(tooth);
+          if (placed) sculptAt(tooth, placed.angle, true);
+        };
+        if (!deferRight && !planePoint(tooth)) return;
+        if (!secondary(invertAt)) return;
       } else {
         return;
       }
@@ -3757,6 +3790,17 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       event.stopPropagation();
     };
 
+    const runPendingRight = (event: PointerEvent) => {
+      const pending = pendingRight;
+      pendingRight = null;
+      if (!pending || event.type !== "pointerup" || event.button !== 2) return;
+      if (controls.lastGestureMoved) return;
+      if (Math.hypot(event.clientX - pending.x, event.clientY - pending.y) > 6) return;
+      if (!designEditRef.current) return;
+      aim(event);
+      pending.run();
+    };
+
     const onEditContext = (event: Event) => {
       if (!designEditRef.current) return;
       aim(event as PointerEvent);
@@ -3771,6 +3815,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     renderer.domElement.addEventListener("pointerup", endEditDrag, true);
     renderer.domElement.addEventListener("pointercancel", endEditDrag, true);
     renderer.domElement.addEventListener("contextmenu", onEditContext, true);
+    renderer.domElement.addEventListener("pointerup", runPendingRight);
+    renderer.domElement.addEventListener("pointercancel", runPendingRight);
 
     // 칼라맵 마우스 값. 크라운 위에서 가장 가까운 정점의 mm 값을 커서 옆에 띄운다.
     const probeLabel = document.createElement("div");
@@ -4044,6 +4090,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       renderer.domElement.removeEventListener("pointerup", endEditDrag, true);
       renderer.domElement.removeEventListener("pointercancel", endEditDrag, true);
       renderer.domElement.removeEventListener("contextmenu", onEditContext, true);
+      renderer.domElement.removeEventListener("pointerup", runPendingRight);
+      renderer.domElement.removeEventListener("pointercancel", runPendingRight);
       renderer.domElement.removeEventListener("pointermove", onProbeMove);
       renderer.domElement.removeEventListener("pointerleave", hideProbe);
       window.cancelAnimationFrame(probeRaf);

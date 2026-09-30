@@ -69,10 +69,14 @@ export type WorkSessionCenterGuide = "off" | "center" | "grid";
 /** 상악·하악 스캔을 바이트에 맞춘 모델 정렬 여부. 스캔에 없는 악은 항상 완료로 본다. */
 export type WorkSessionArchAligned = { upper: boolean; lower: boolean };
 
-/** AI 디자인 채팅 한 줄. */
+/** AI 디자인 채팅 한 줄. `paintImageUrl`은 이 탭에서만 쓰고 문서에는 넣지 않는다. */
 export type AiDesignChatTurn = {
   role: "user" | "assistant";
   text: string;
+  /** 페인트 「AI에게」로 넘긴 화면. */
+  fromPaint?: boolean;
+  /** 이 탭의 페인트 화면. 문서를 저장할 때 뺀다. */
+  paintImageUrl?: string;
 };
 
 export function parseAiDesignChat(value: unknown): AiDesignChatTurn[] {
@@ -86,10 +90,20 @@ export function parseAiDesignChat(value: unknown): AiDesignChatTurn[] {
       .trim()
       .slice(0, 2000);
     if (!text) continue;
-    out.push({ role, text });
+    const fromPaint = (row as { fromPaint?: unknown }).fromPaint === true;
+    out.push(fromPaint ? { role, text, fromPaint: true } : { role, text });
     if (out.length >= 40) break;
   }
   return out;
+}
+
+/** 작업 문서에 남길 채팅. 페인트 이미지 주소는 빼 둔다. */
+export function toPersistedAiChat(turns: readonly AiDesignChatTurn[]): AiDesignChatTurn[] {
+  return turns.map((turn) =>
+    turn.fromPaint
+      ? { role: turn.role, text: turn.text, fromPaint: true }
+      : { role: turn.role, text: turn.text },
+  );
 }
 
 /** 작업영역 위 토글. 모달을 닫을 때 문서에 남긴다. */

@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // change-log:
+// - 2026-09-30: 「어벗츠생산」 줄을 누르면 공정 단계 도표.
 // - 2026-09-30: 줄은 「어벗츠생산 - 24(대기)」. 업로드 전은 대기, 업로드 후는 준비.
 // - 2026-09-16: 후속(지르) 행은 안내 치아번호에서 제외(임시치아 CA 중복 방지).
 // - 2026-09-12: 가공 치아 호박색·클릭=리메이크 · (전체리메이크). 툴팁 문장 줄바꿈.
@@ -22,7 +23,7 @@
 // - 2026-08-23: 채팅 높이 확보 — 치아 상세를 한 줄(인라인)로 압축.
 // - 2026-08-21: 미제공 CA 안내 문구 단문화(INTRO/OUTRO).
 // - 2026-08-21: 미제공 CA 안내 — 치아·임플란트 상세 + 기공소 자체 처리 문구.
-import { Fragment, type MouseEvent, type ReactNode } from "react";
+import { Fragment, useState, type MouseEvent, type ReactNode } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -56,6 +57,11 @@ import {
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import { cn } from "@/shared/ui/cn";
+import {
+  AbutmentProductionStageDialog,
+  abutmentProductionStageId,
+  type AbutmentProductionStageId,
+} from "@/shared/components/practice/AbutmentProductionStageDialog";
 
 /** 생산의뢰 완료 줄 — 준비/가공/혼재 */
 export type LabPendingAbutsCancelAffinity =
@@ -383,6 +389,7 @@ export function LabPendingAbutmentGuide({
   abutmentToothStages = null,
   className,
 }: LabPendingAbutmentGuideProps) {
+  const [stageOpen, setStageOpen] = useState(false);
   const pendingRows = listPendingRows(toothWorks);
   const abutsRows = listAbutsOrderRows(toothWorks);
   if (pendingRows.length === 0 && abutsRows.length === 0) return null;
@@ -407,6 +414,26 @@ export function LabPendingAbutmentGuide({
     ordered,
     cancelAffinity,
   );
+  const stageTeeth = new Map<AbutmentProductionStageId, string[]>();
+  for (const row of abutsRows) {
+    const tooth = String(row.toothNumber || "").trim();
+    if (!tooth) continue;
+    const uploaded = struckTeeth.has(tooth);
+    const pastReady = pastReadyTeeth.has(tooth);
+    const raw = abutmentToothStages
+      ? !uploaded && !pastReady
+        ? "대기"
+        : abutmentToothStages.get(tooth) || (pastReady ? "가공" : "준비")
+      : !uploaded
+        ? "대기"
+        : pastReady
+          ? "가공"
+          : "준비";
+    const id = abutmentProductionStageId(raw);
+    const list = stageTeeth.get(id) ?? [];
+    list.push(tooth);
+    stageTeeth.set(id, list);
+  }
 
   const cancelAllSuffix =
     cancelAffinity === "ready" &&
@@ -487,7 +514,21 @@ export function LabPendingAbutmentGuide({
   const abutsLine =
     abutsRows.length > 0 ? (
       <div className="flex w-full min-w-0 items-center gap-2">
-        <div className="min-w-0 flex-1">{abutsGuideLine}</div>
+        <div
+          className="min-w-0 flex-1 cursor-pointer rounded-sm hover:bg-amber-100/70 dark:hover:bg-amber-950/40"
+          role="button"
+          tabIndex={0}
+          aria-haspopup="dialog"
+          title="공정 단계를 봅니다"
+          onClick={() => setStageOpen(true)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            setStageOpen(true);
+          }}
+        >
+          {abutsGuideLine}
+        </div>
         {abutsTrailing ? (
           <div className="ml-auto shrink-0">{abutsTrailing}</div>
         ) : null}
@@ -518,6 +559,13 @@ export function LabPendingAbutmentGuide({
     <div className={cn("w-full max-w-full space-y-0.5", className)}>
       {pendingLine}
       {abutsLine}
+      {abutsRows.length > 0 ? (
+        <AbutmentProductionStageDialog
+          open={stageOpen}
+          onOpenChange={setStageOpen}
+          teethByStage={stageTeeth}
+        />
+      ) : null}
     </div>
   );
 }

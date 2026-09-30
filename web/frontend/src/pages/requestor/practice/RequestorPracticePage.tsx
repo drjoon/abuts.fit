@@ -10174,6 +10174,7 @@ export function RequestorPracticeReceivePage({
         chatBottomRef={chatBottomRef}
         chatAttachedFiles={chatUploads.items}
         onRemoveAttachedChatFile={chatUploads.removeItem}
+        onReorderAttachedChatFiles={chatUploads.orderItems}
         onRetryAttachedChatFile={chatUploads.retryItem}
         onAttachChatFiles={handleAttachChatFiles}
         onAttachRequestFiles={handleAttachRequestFiles}
