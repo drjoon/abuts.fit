@@ -68,6 +68,7 @@ Notes:
   - SSOT: `src/shared/settlement/settlementUi.tsx`, `CreditLedgerModal.tsx`,
     `CreditStatisticsTab.tsx`, `.cursor/rules/ui-summary-cards.mdc`.
 - Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.
+- 모바일 PC 안내 (로그인 후 1회): 가로 768px 미만이고 로그인된 경우에만 확인 모달. 로그인·가입·비밀번호·OAuth 화면에서는 띄우지 않는다. `localStorage` `abutsfit:mobile-pc-optimized-notice:v1`=`seen` 이면 다시 띄우지 않는다. SSOT: `src/features/layout/MobilePcOptimizedNotice.tsx`.
 - 의뢰 취소 정책 SSOT: **준비 단계에서만** 취소 가능(불완전가공 판정 예외 유지). 레거시 '의뢰/CAM 단계 취소' 문구·판정 금지.
   - UI: `RequestorRecentRequestsCard` 취소 버튼/툴팁, `RequestorDashboardPage` 실패 토스트, `PricingPolicyDialog` 6절,
     `RequestorAbutmentPageHeader`+`PastRequestsModal`(건별·체크박스 일괄 취소, 취소 후 목록 모달 유지)

@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppLayout } from "@/features/layout/AppLayout";
 import { CookieConsentBanner } from "@/features/layout/CookieConsentBanner";
+import { MobilePcOptimizedNotice } from "@/features/layout/MobilePcOptimizedNotice";
 import { ScrollToTop } from "@/features/layout/ScrollToTop";
 import { LoadingScreen } from "@/shared/ui/feedback/LoadingScreen";
 import {
@@ -40,6 +41,7 @@ import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPa
 // - web/frontend/src/pages/admin/AdminFinancePage.tsx
 // - web/frontend/src/pages/admin/AdminSettingsHubPage.tsx
 // change-log:
+// - 2026-09-30: 로그인 후 모바일 1회 — PC 최적화 안내 확인 모달.
 // - 2026-09-28: 쿠키 동의 배너 — 문구 너비에 맞추고 가용 영역 중앙.
 // - 2026-09-26: 하단 쿠키 동의 배너 — 동의 후 localStorage로 재노출 생략.
 // - 2026-09-23: 관리자 설정 평탄 탭 — /settings·/partners 구 URL을 account|business|platform… 로 전달.
@@ -1145,6 +1147,7 @@ const App = () => {
               </Routes>
             </Suspense>
             <CookieConsentBanner />
+            <MobilePcOptimizedNotice />
             <NewChatWidget />
           </AppLayout>
         </BrowserRouter>

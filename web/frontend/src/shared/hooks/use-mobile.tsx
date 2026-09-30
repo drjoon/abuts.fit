@@ -2,6 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/features/layout/MobilePcOptimizedNotice.tsx
 import * as React from "react";
 
 const MOBILE_BREAKPOINT = 768;
