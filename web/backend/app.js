@@ -314,6 +314,7 @@ import designDeadlineRoutes from "./modules/devops/designDeadline.routes.js";
 import storeRoutes from "./modules/store/store.routes.js";
 import eventRoutes from "./modules/events/event.routes.js";
 import caseShareRoutes from "./modules/caseShares/caseShare.routes.js";
+import noticeRoutes from "./modules/notices/notice.routes.js";
 
 // 라우트 설정
 app.use("/api/system", systemRoutes);
@@ -322,6 +323,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/requests/drafts", draftRequestRoutes);
 app.use("/api/requests", requestRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/notices", noticeRoutes);
 app.use("/api/machines", machineRoutes);
 app.use("/api/bridge-store", bridgeStoreRoutes);
 app.use("/api/support", supportRoutes);

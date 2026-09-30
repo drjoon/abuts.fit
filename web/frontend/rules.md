@@ -234,7 +234,7 @@ Notes:
   - 검증된 디자이너 지정: `DesignerAssignmentTab` / `BusinessAnchor.designAccessEnabled`(디자인 큐). API·게이트 유지, 파트너 탭 UI에서는 제거
   - 딜러사 없을 때 분배: 설정된 딜러사 분배비의 절반→제조사, 나머지 절반→어벗츠 (백엔드 `resolveRatesWithoutSalesman`와 동일 미리보기)
   - 관리자 대시보드/소통
-  - `src/pages/admin/dashboard/AdminDashboardPage.tsx`
+  - `src/pages/admin/dashboard/AdminDashboardPage.tsx` — 공지 관리 카드(`NoticeAdminCard`). 대상 치과·기공소·딜러·영업팀·기공본부팀(복수). 제목은 대상 대시보드 1줄 alert, 클릭 시 내용·이미지 모달(`DashboardNoticeAlert`). 전폭 기공의뢰(발신·수신·기공본부)는 헤더 아래, 그 외 대시보드는 작업영역 위.
   - `src/pages/admin/support/AdminChatManagement.tsx`
   - `src/pages/admin/support/AdminSmsPage.tsx` (로컬 SMS 템플릿 CRUD·사업자/사용자 휴대폰 수신자 선택)
 - 역할별 정산

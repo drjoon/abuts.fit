@@ -24,6 +24,7 @@
 // - web/frontend/src/shared/noOrderAlerts/NoOrderAlertBanner.tsx
 // - 2026-09-05: 신규 보철물(기공수가) 요청 카드.
 // - 2026-09-05: 추가요청 승인(지정 기공소/전체) · 반려.
+// - 2026-09-30: 공지 관리 카드 — 대상 대시보드 1줄 alert.
 // - 2026-09-13: 3·6개월 무주문 의뢰자 알람 배너.
 import { useEffect, useMemo, useState } from "react";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
@@ -53,6 +54,7 @@ import {
   NoOrderAlertBanner,
   useNoOrderAlerts,
 } from "@/shared/noOrderAlerts";
+import { NoticeAdminCard } from "@/pages/admin/dashboard/NoticeAdminCard";
 import {
   Users,
   FileText,
@@ -2250,6 +2252,8 @@ export const AdminDashboardPage = () => {
               data={noOrderAlertsData}
               loading={noOrderAlertsLoading}
             />
+
+            <NoticeAdminCard />
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {/* 카드1: 진행 / 완료 */}

@@ -48,6 +48,15 @@ import {
   saveHappyCallMemoDraft,
   addHappyCallCompletionMemo,
 } from "../../controllers/admin/admin.dashboard.controller.js";
+import {
+  addAdminDashboardNoticeImage,
+  createAdminDashboardNotice,
+  deleteAdminDashboardNotice,
+  listAdminDashboardNotices,
+  removeAdminDashboardNoticeImage,
+  updateAdminDashboardNotice,
+} from "../../controllers/dashboardNotice.controller.js";
+import { s3Upload } from "../../utils/s3.utils.js";
 import { getAdminNoOrderAlerts } from "../../controllers/admin/admin.noOrderAlerts.controller.js";
 import {
   listHexVerificationInProgress,
@@ -324,6 +333,16 @@ router.post("/requests/fix-business-anchor-id", fixMissingBusinessAnchorId);
 router.get("/dashboard", getDashboardStats);
 router.get("/dashboard/growth-detail", getAdminPlatformGrowthDetail);
 router.get("/no-order-alerts", getAdminNoOrderAlerts);
+router.get("/notices", listAdminDashboardNotices);
+router.post("/notices", createAdminDashboardNotice);
+router.patch("/notices/:id", updateAdminDashboardNotice);
+router.delete("/notices/:id", deleteAdminDashboardNotice);
+router.post(
+  "/notices/:id/images",
+  s3Upload.single("image"),
+  addAdminDashboardNoticeImage,
+);
+router.delete("/notices/:id/images", removeAdminDashboardNoticeImage);
 router.get("/dashboard/happy-call/completions", listHappyCallCompletions);
 router.post("/dashboard/happy-call/memo", saveHappyCallMemoDraft);
 router.post("/dashboard/happy-call/complete", completeHappyCall);

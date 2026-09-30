@@ -1,4 +1,5 @@
 // related files:
+// - 2026-09-30: 기공의뢰수신 헤더 아래에 공지 1줄.
 // - 2026-09-29: 작업시작 클릭 시 보철 업로드 요구 건은 적립 조건 확인 모달(다시 보지 않기).
 // - 2026-09-29: 작업 파일 「폴더 열기」 — 작업 스캔·어벗 디자인·보철물을 같은 케이스 폴더에 받고 연다.
 // - 2026-09-28: 프리뷰 다운로드(의뢰 파일·작업 스캔)도 「폴더 열기」와 같은 케이스 폴더에 받는다.
@@ -283,6 +284,7 @@ import {
 } from "@/shared/hooks/useBackgroundTempUpload";
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { cn } from "@/shared/ui/cn";
+import { DashboardNoticeAlert } from "@/shared/notices/DashboardNoticeAlert";
 import { WIDE_CLUSTER_ROW_CLASS } from "@/shared/ui/contentMeasuredChrome";
 import {
   DASHBOARD_FULL_BLEED_GUTTER_CLASS,
@@ -9489,6 +9491,7 @@ export function RequestorPracticeReceivePage({
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         {showDesignQueue && !showTransfers ? (
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+            <DashboardNoticeAlert />
             <div className="flex flex-wrap items-center justify-end gap-3">
               <PeriodFilter
                 value={period}
@@ -9520,6 +9523,7 @@ export function RequestorPracticeReceivePage({
               <div className={DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS}>
                 {transferSearchAndBadges}
               </div>
+              <DashboardNoticeAlert className="pb-1" />
             </div>
             <div
               className={cn(

@@ -312,6 +312,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
       출고예정(`bulkShippingSnapshot`)을 함께 재계산. `GET /api/requests/my/bulk-shipping`은
       `waitForBulkShippingSnapshotRefreshForAnchorId` 후 스냅샷을 반환(당일 예전 건수 재캐시 금지).
   - 관리자 대시보드 진입: `controllers/admin/admin.dashboard.controller.js`
+  - 대시보드 공지: `models/dashboardNotice.model.js` + `controllers/dashboardNotice.controller.js`
+    - 대상 `practice`(치과) · `lab`(기공소) · `dealer`(딜러) · `salesTeam`(영업팀) · `labHq`(기공본부=internalLab·labTeam). 복수.
+    - 관리자 `GET/POST /api/admin/notices`, `PATCH/DELETE /api/admin/notices/:id`, 이미지 `POST/DELETE .../images`.
+    - 대상자 `GET /api/notices/active`. 시드 `ship-holiday-2026-10-09`(택배 휴무, 종료 2026-10-09 23:59 KST). 코드가 있으면 다시 쓰지 않음.
   - 관리자 문자 템플릿 SSOT: `models/adminSmsTemplate.model.js` + `controllers/admin/adminSms.controller.js`
     - `GET/POST /api/admin/sms/templates`, `PUT/DELETE /api/admin/sms/templates/:id`, `POST /api/admin/sms/templates/sync-kakao`
     - 목록 조회 시 팝빌 알림톡 형식 기본 템플릿 7종 시드(#{변수}/강조표기, seedVersion) + 빈 코드는 팝빌 승인 템플릿명 자동매칭/env(`POPBILL_ATS_*`)로 연결
