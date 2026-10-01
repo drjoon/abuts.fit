@@ -34,8 +34,8 @@ import {
   headObjectSizeInS3,
   putObjectToS3,
 } from "../utils/s3.utils.js";
-import { SCANBODY_UPLOAD_LIMITS } from "./scanbodyLibraryImport.service.js";
-import { MESH_FILE_PATTERN, LIBRARY_SHAPE_PATTERN } from "../utils/scanbodyGeometry.js";
+import { SCANBODY_UPLOAD_LIMITS, libraryFromCanonicalStl } from "./scanbodyLibraryImport.service.js";
+import { MESH_FILE_PATTERN, LIBRARY_SHAPE_PATTERN, ScanbodyInputError } from "../utils/scanbodyGeometry.js";
 
 export const SCANBODY_S3_PREFIX = "scanbody-library";
 const QUARANTINE_PREFIX = `${SCANBODY_S3_PREFIX}/quarantine/`;
@@ -204,6 +204,7 @@ function parseSpecMeta(raw) {
     height: field(raw?.height, 20),
     axis: axis === "auto" ? "" : axis,
     platformEnd: platformEnd === "auto" ? "" : platformEnd,
+    localGenerated: raw?.localGenerated === true,
   };
   if (!spec.maker) throw new ApiError(400, "스캔바디 제조사를 입력해 주세요.");
   if (!spec.diameter) throw new ApiError(400, "직경을 입력해 주세요.");
@@ -214,8 +215,8 @@ function parseSpecMeta(raw) {
 export async function createScanbodyUpload({ ownerAnchorId, userId, fileName, size, manufacturer, meshMeta, specMeta }) {
   const name = String(fileName || "").trim().slice(0, 200);
   const parsedSpecMeta = specMeta != null ? parseSpecMeta(specMeta) : null;
-  if (parsedSpecMeta && !/\.(stp|step|stl|dcm)$/i.test(name)) {
-    throw new ApiError(400, "스캔바디 생성은 STEP(.stp·.step), STL, DCM 파일만 받습니다.");
+  if (parsedSpecMeta?.localGenerated && !/\.stl$/i.test(name)) {
+    throw new ApiError(400, "생성 결과는 STL만 올릴 수 있습니다.");
   }
   const maker = parsedSpecMeta ? parsedSpecMeta.maker : String(manufacturer || "").trim().slice(0, 60);
   const isOrderMesh = !parsedSpecMeta && MESH_FILE_PATTERN.test(name) && meshMeta != null;
@@ -822,13 +823,21 @@ async function processUpload(job) {
 
   let parsed;
   try {
-    parsed = await parseInWorker(
-      buffer,
-      job.fileName,
-      job.meshMeta ? { ...job.meshMeta, manufacturer: job.manufacturer } : null,
-      job.specMeta || null,
-    );
+    if (job.specMeta?.localGenerated) {
+      const built = libraryFromCanonicalStl(buffer, job.specMeta);
+      parsed = { ok: true, libraries: built.libraries, notes: built.notes };
+    } else {
+      parsed = await parseInWorker(
+        buffer,
+        job.fileName,
+        job.meshMeta ? { ...job.meshMeta, manufacturer: job.manufacturer } : null,
+        job.specMeta || null,
+      );
+    }
   } catch (error) {
+    if (error instanceof ScanbodyInputError) {
+      return finish(job._id, "rejected", { sha256, message: error.message }, quarantineKey);
+    }
     console.error("[scanbody-upload] worker failed", { jobId: String(job._id), error: error?.message });
     return finish(job._id, "failed", { sha256, message: "파일을 해석하지 못했습니다. 나눠서 다시 올려 주세요." }, quarantineKey);
   }

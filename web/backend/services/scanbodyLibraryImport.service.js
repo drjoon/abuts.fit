@@ -649,6 +649,71 @@ export async function parseScanbodySpec(buffer, fileName, spec) {
   return { libraries: [lib], notes: [] };
 }
 
+/**
+ * 브라우저가 만든 모델 STL(플랫폼 원점·+Y). 다시 맞추지 않고 이 바이트를 S3에, 스펙은 MongoDB에 둔다.
+ */
+export function libraryFromCanonicalStl(buffer, spec) {
+  const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+  if (bytes.length < 84) throw new ScanbodyInputError("생성한 STL 형식이 올바르지 않습니다.");
+  const count = bytes.readUInt32LE(80);
+  if (count < 4 || bytes.length !== 84 + count * 50) {
+    throw new ScanbodyInputError("생성한 STL 형식이 올바르지 않습니다.");
+  }
+  if (!bytes.subarray(0, 40).toString("ascii").startsWith("abuts scanbody model mm")) {
+    throw new ScanbodyInputError("생성한 STL이 아닙니다.");
+  }
+  const maker = text(spec?.maker, 60);
+  const diameter = text(spec?.diameter, 20);
+  const height = text(spec?.height, 20);
+  if (!maker) throw new ScanbodyInputError("스캔바디 제조사가 없습니다.");
+  if (!diameter) throw new ScanbodyInputError("직경이 없습니다.");
+  if (!height) throw new ScanbodyInputError("높이가 없습니다.");
+  const implantManufacturer = text(spec?.implantManufacturer, 60);
+  const brand = text(spec?.brand, 60);
+  const kitSpec = `${diameter}*${height}`;
+  const hash = canonicalStlHash(bytes);
+  const part = {
+    name: kitSpec,
+    hash,
+    stl: bytes,
+    diameterMm: labeledMm(diameter),
+    heightMm: labeledMm(height),
+  };
+  const seen = new Set();
+  const systemName = [maker, implantManufacturer, brand]
+    .filter((bit) => {
+      const key = makerKey(bit);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join(" ");
+  return {
+    libraries: [
+      {
+        source: "generated",
+        systemName,
+        fileNames: [`${kitSpec}.stl`],
+        containerVersions: [],
+        implantManufacturer,
+        brand,
+        implantType: "",
+        parts: [part],
+        kits: [
+          {
+            kitId: `gen:${kitSpec}`,
+            name: kitSpec,
+            spec: kitSpec,
+            code: kitSpec,
+            scanAbutmentPartIds: [hash],
+          },
+        ],
+      },
+    ],
+    notes: [],
+  };
+}
+
 function notFound(notes) {
   const detail = notes.slice(0, 2).join(" ");
   return new ScanbodyInputError(

@@ -435,6 +435,8 @@ export type ScanbodySpecInput = {
   axis: "auto" | "x" | "y" | "z";
   /** 플랫폼(임플란트 접촉) 쪽 끝. auto는 더 가는 쪽. */
   platformEnd: "auto" | "min" | "max";
+  /** 브라우저가 맞춘 모델 STL이면 서버는 다시 해석하지 않는다. */
+  localGenerated?: boolean;
 };
 
 /**

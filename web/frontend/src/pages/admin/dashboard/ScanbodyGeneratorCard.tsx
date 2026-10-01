@@ -1,16 +1,15 @@
 // 관리자 대시보드 — 어벗츠 스캔바디 생성기.
-// 제조사 세 개와 직경(열)·높이(행) 표. 칸에 STEP·STL·DCM을 떨어뜨린다.
+// 스캔바디 제조사와 직경(열)·높이(행) 표. 칸에 STEP·STL·DCM을 떨어뜨린다.
 // 파일명에 직경*높이가 있으면 그 머리글을 만들고 칸에 넣는다.
 // related files:
 // - web/frontend/src/shared/practice/scanbodyLibraryApi.ts
 // - web/backend/services/scanbodyLibraryImport.service.js (parseScanbodySpec)
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Loader2, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   uploadScanbodySpecAndWait,
@@ -18,6 +17,8 @@ import {
   type ScanbodySpecInput,
 } from "@/shared/practice/scanbodyLibraryApi";
 import { cn } from "@/shared/ui/cn";
+import { loadScanbodyGeneratorDraft, saveScanbodyGeneratorDraft } from "./scanbodyGeneratorDraft";
+import { generateScanbodyStl } from "./scanbodyLocalGenerate";
 
 const SHAPE_PATTERN = /\.(stp|step|stl|dcm)$/i;
 /** 파일명 안의 `4.5*10`·`4.5xH`. 앞에 다른 글자가 있어도 된다. */
@@ -80,6 +81,56 @@ function placeSize(values: string[], size: string) {
   return { values: next, index: next.length - 1 };
 }
 
+/** 빈 칸은 맨 뒤. 숫자는 작은 값부터, 글자는 그다음. */
+function compareSizeLabel(a: string, b: string) {
+  const rank = (value: string) => {
+    const raw = value.trim().replace(",", ".");
+    if (!raw) return { group: 2, n: 0, text: "" };
+    const n = Number(raw);
+    if (Number.isFinite(n)) return { group: 0, n, text: raw.toLowerCase() };
+    return { group: 1, n: 0, text: raw.toLowerCase() };
+  };
+  const x = rank(a);
+  const y = rank(b);
+  if (x.group !== y.group) return x.group - y.group;
+  if (x.group === 0 && x.n !== y.n) return x.n - y.n;
+  return x.text.localeCompare(y.text, "en");
+}
+
+function sortGrid(grid: Grid): Grid {
+  const order = (values: string[]) =>
+    values
+      .map((value, index) => ({ value, index }))
+      .sort((a, b) => compareSizeLabel(a.value, b.value) || a.index - b.index);
+  const cols = order(grid.diameters);
+  const rows = order(grid.heights);
+  const colAt = new Map(cols.map((item, index) => [item.index, index]));
+  const rowAt = new Map(rows.map((item, index) => [item.index, index]));
+  const cells: Record<string, File> = {};
+  for (const [key, file] of Object.entries(grid.cells)) {
+    const [col, row] = key.split(":").map(Number);
+    cells[cellKey(colAt.get(col) ?? col, rowAt.get(row) ?? row)] = file;
+  }
+  return {
+    diameters: cols.map((item) => item.value),
+    heights: rows.map((item) => item.value),
+    cells,
+  };
+}
+
+function fileLabel(name: string) {
+  return name.replace(/\.(stp|step|stl|dcm)$/i, "");
+}
+
+function axesInOrder(grid: Grid, ordered: Grid) {
+  return (
+    ordered.diameters.length === grid.diameters.length &&
+    ordered.heights.length === grid.heights.length &&
+    ordered.diameters.every((value, index) => value === grid.diameters[index]) &&
+    ordered.heights.every((value, index) => value === grid.heights[index])
+  );
+}
+
 function reindex(cells: Record<string, File>, dropCol: number | null, dropRow: number | null) {
   const next: Record<string, File> = {};
   for (const [key, file] of Object.entries(cells)) {
@@ -96,15 +147,52 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [maker, setMaker] = useState("");
-  const [implantManufacturer, setImplantManufacturer] = useState("");
-  const [brand, setBrand] = useState("");
   const [grid, setGrid] = useState<Grid>(EMPTY_GRID);
   const [over, setOver] = useState<string | null>(null);
   const [modalOver, setModalOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [query, setQuery] = useState("");
+  const [draftReady, setDraftReady] = useState(false);
+  const editingHeader = useRef(false);
+  const touched = useRef(false);
+  const ordered = sortGrid(grid);
+  if (!editingHeader.current && !axesInOrder(grid, ordered)) {
+    setGrid(ordered);
+  }
+  const view = editingHeader.current ? grid : ordered;
   const { catalog, loaded, reload } = useScanbodyCatalog(open);
+
+  useEffect(() => {
+    let cancel = false;
+    void loadScanbodyGeneratorDraft()
+      .then((draft) => {
+        if (cancel || !draft || touched.current) return;
+        if (!draft.maker && Object.keys(draft.cells).length === 0) return;
+        setMaker(draft.maker);
+        setGrid({ diameters: draft.diameters, heights: draft.heights, cells: draft.cells });
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancel) setDraftReady(true);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    const timer = window.setTimeout(() => {
+      void saveScanbodyGeneratorDraft({
+        maker,
+        diameters: grid.diameters,
+        heights: grid.heights,
+        cells: grid.cells,
+      }).catch(() => undefined);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [draftReady, maker, grid]);
 
   const generated = useMemo(
     () =>
@@ -177,6 +265,7 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
   };
 
   const ingest = (dropped: File[], target: { col: number; row: number } | null) => {
+    touched.current = true;
     const steps = dropped.filter((file) => SHAPE_PATTERN.test(file.name));
     if (steps.length === 0) {
       toast({ title: "STEP, STL, DCM 파일을 떨어뜨려 주세요.", variant: "destructive" });
@@ -202,7 +291,7 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
       }
       leftover.push(file.name);
     }
-    setGrid({ diameters, heights, cells });
+    setGrid(sortGrid({ diameters, heights, cells }));
     if (leftover.length > 0) {
       toast({
         title: "칸을 찾지 못한 파일이 있습니다.",
@@ -224,18 +313,30 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
     }
     setBusy(true);
     try {
+      setStatus("이 브라우저에 저장하는 중…");
+      await saveScanbodyGeneratorDraft({
+        maker: maker.trim(),
+        diameters: grid.diameters,
+        heights: grid.heights,
+        cells: grid.cells,
+      });
       for (const [index, job] of jobs.entries()) {
         const prefix = jobs.length > 1 ? `${index + 1}/${jobs.length} ` : "";
+        setStatus(`${prefix}만드는 중…`);
+        const stl = new File([await generateScanbodyStl(job.file)], `${job.diameter}*${job.height}.stl`, {
+          type: "model/stl",
+        });
         const spec: ScanbodySpecInput = {
           maker: maker.trim(),
-          implantManufacturer: implantManufacturer.trim(),
-          brand: brand.trim(),
+          implantManufacturer: "",
+          brand: "",
           diameter: job.diameter,
           height: job.height,
           axis: "auto",
           platformEnd: "auto",
+          localGenerated: true,
         };
-        const row = await uploadScanbodySpecAndWait(job.file, spec, (text) => setStatus(`${prefix}${text}`));
+        const row = await uploadScanbodySpecAndWait(stl, spec, (text) => setStatus(`${prefix}${text}`));
         if (row.status !== "done") {
           toast({
             title: "스캔바디를 만들지 못했습니다.",
@@ -246,7 +347,14 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
         }
       }
       toast({ title: `스캔바디 ${jobs.length}개를 만들었습니다.` });
-      setGrid((prev) => ({ ...prev, cells: {} }));
+      const cleared = { ...grid, cells: {} as Record<string, File> };
+      setGrid(cleared);
+      await saveScanbodyGeneratorDraft({
+        maker: maker.trim(),
+        diameters: grid.diameters,
+        heights: grid.heights,
+        cells: {},
+      });
       reload();
     } catch (error) {
       toast({
@@ -309,48 +417,36 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
             <DialogTitle className="text-base">어벗츠 스캔바디 생성기</DialogTitle>
           </DialogHeader>
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-hidden sm:grid-cols-2">
-          <div className="min-h-0 space-y-4 overflow-y-auto px-1 pr-2">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="space-y-1">
-              <Label className="text-xs">스캔바디 제조사</Label>
-              <Input className="h-9" value={maker} disabled={busy} onChange={(e) => setMaker(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">임플란트 제조사</Label>
-              <Input
-                className="h-9"
-                value={implantManufacturer}
-                disabled={busy}
-                onChange={(e) => setImplantManufacturer(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">임플란트 브랜드</Label>
-              <Input className="h-9" value={brand} disabled={busy} onChange={(e) => setBrand(e.target.value)} />
-            </div>
-          </div>
-
-          <div className="overflow-x-auto px-0.5 pb-1">
-            <table className="w-full border-separate border-spacing-1.5 text-xs">
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-hidden sm:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
+          <div className="flex min-h-0 min-w-0 flex-col pr-2">
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 pt-2">
+          <div className="min-w-0 pl-2 pt-2">
+            <table className="w-full table-fixed border-separate border-spacing-3 text-xs">
               <thead>
                 <tr>
-                  <th className="w-24" />
-                  {grid.diameters.map((diameter, col) => (
-                    <th key={`d-${col}`} className="min-w-[4.25rem] font-normal">
-                      <div className="flex items-center gap-1">
+                  <th className="w-[4.5rem]" />
+                  {view.diameters.map((diameter, col) => (
+                    <th key={`d-${col}`} className="min-w-0 font-normal">
+                      <div className="group relative min-w-0">
                         <Input
-                          className="h-8 px-2 text-xs"
+                          className="h-8 min-w-0 rounded-lg border-slate-200 bg-white px-4 text-center text-xs tabular-nums shadow-none"
                           value={diameter}
                           disabled={busy}
                           aria-label={`직경 ${col + 1}`}
                           placeholder="직경"
+                          onFocus={() => {
+                            editingHeader.current = true;
+                          }}
+                          onBlur={() => {
+                            editingHeader.current = false;
+                            setGrid((prev) => sortGrid(prev));
+                          }}
                           onChange={(e) => setHeader("diameters", col, e.target.value)}
                         />
-                        {grid.diameters.length > 1 ? (
+                        {view.diameters.length > 1 ? (
                           <button
                             type="button"
-                            className="text-slate-400 hover:text-slate-700"
+                            className="pointer-events-none absolute right-1 top-1/2 z-10 inline-flex h-4 w-4 -translate-y-1/2 items-center justify-center text-red-500 opacity-0 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
                             disabled={busy}
                             aria-label="직경 열 지우기"
                             onClick={() => removeColumn(col)}
@@ -364,7 +460,7 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
                   <th className="w-8">
                     <button
                       type="button"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-slate-500 hover:bg-slate-50"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50"
                       disabled={busy}
                       aria-label="직경 열 추가"
                       onClick={addColumn}
@@ -375,22 +471,29 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
                 </tr>
               </thead>
               <tbody>
-                {grid.heights.map((height, row) => (
+                {view.heights.map((height, row) => (
                   <tr key={`h-${row}`}>
-                    <th className="font-normal">
-                      <div className="flex items-center gap-1">
+                    <th className="min-w-0 font-normal">
+                      <div className="group relative min-w-0">
                         <Input
-                          className="h-8 px-2 text-xs"
+                          className="h-8 min-w-0 rounded-lg border-slate-200 bg-white px-4 text-center text-xs tabular-nums shadow-none"
                           value={height}
                           disabled={busy}
                           aria-label={`높이 ${row + 1}`}
                           placeholder="높이"
+                          onFocus={() => {
+                            editingHeader.current = true;
+                          }}
+                          onBlur={() => {
+                            editingHeader.current = false;
+                            setGrid((prev) => sortGrid(prev));
+                          }}
                           onChange={(e) => setHeader("heights", row, e.target.value)}
                         />
-                        {grid.heights.length > 1 ? (
+                        {view.heights.length > 1 ? (
                           <button
                             type="button"
-                            className="text-slate-400 hover:text-slate-700"
+                            className="pointer-events-none absolute right-1 top-1/2 z-10 inline-flex h-4 w-4 -translate-y-1/2 items-center justify-center text-red-500 opacity-0 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
                             disabled={busy}
                             aria-label="높이 행 지우기"
                             onClick={() => removeRow(row)}
@@ -400,16 +503,18 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
                         ) : null}
                       </div>
                     </th>
-                    {grid.diameters.map((_, col) => {
+                    {view.diameters.map((_, col) => {
                       const key = cellKey(col, row);
-                      const file = grid.cells[key];
+                      const file = view.cells[key];
                       return (
                         <td key={key}>
                           <div
                             className={cn(
-                              "flex h-12 items-center justify-center rounded-md border border-dashed px-1.5 text-center text-[11px]",
-                              file ? "border-slate-300 bg-white text-slate-800" : "border-slate-300 bg-slate-50 text-slate-400",
-                              over === key && "border-sky-400 bg-sky-50 text-sky-700",
+                              "group relative flex h-10 items-center justify-center rounded-lg border px-1.5 text-center text-[11px] transition-colors",
+                              file
+                                ? "border-sky-200 bg-sky-50 pr-5 font-medium text-slate-800"
+                                : "border-dashed border-slate-200 bg-white text-slate-400",
+                              over === key && "border-sky-400 bg-sky-100 text-sky-700",
                             )}
                             onDragOver={(e) => {
                               e.preventDefault();
@@ -426,24 +531,27 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
                             }}
                           >
                             {file ? (
-                              <span className="flex min-w-0 items-center gap-1">
-                                <span className="truncate">{file.name}</span>
+                              <>
+                                <span className="min-w-0 truncate" title={file.name}>
+                                  {fileLabel(file.name)}
+                                </span>
                                 <button
                                   type="button"
-                                  className="shrink-0 text-slate-400 hover:text-slate-700"
+                                  className="pointer-events-none absolute right-1 top-1/2 z-10 inline-flex h-4 w-4 -translate-y-1/2 items-center justify-center text-red-500 opacity-0 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
                                   disabled={busy}
                                   aria-label="파일 빼기"
-                                  onClick={() =>
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     setGrid((prev) => {
                                       const cells = { ...prev.cells };
                                       delete cells[key];
                                       return { ...prev, cells };
-                                    })
-                                  }
+                                    });
+                                  }}
                                 >
                                   <X className="h-3.5 w-3.5" />
                                 </button>
-                              </span>
+                              </>
                             ) : (
                               "드롭"
                             )}
@@ -458,7 +566,7 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
                   <th className="text-left">
                     <button
                       type="button"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border text-slate-500 hover:bg-slate-50"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50"
                       disabled={busy}
                       aria-label="높이 행 추가"
                       onClick={addRow}
@@ -470,9 +578,21 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
               </tbody>
             </table>
           </div>
+          </div>
 
-          <div className="flex items-center justify-end gap-3">
-            {busy && status ? <span className="text-xs text-muted-foreground">{status}</span> : null}
+          <div className="flex shrink-0 items-center justify-end gap-2 px-1.5 pb-1.5 pt-4">
+            {busy && status ? <span className="min-w-0 truncate text-xs text-muted-foreground">{status}</span> : null}
+            <Input
+              className="h-8 w-44 rounded-lg border-slate-200 shadow-none"
+              value={maker}
+              disabled={busy}
+              placeholder="스캔바디 제조사"
+              aria-label="스캔바디 제조사"
+              onChange={(e) => {
+                touched.current = true;
+                setMaker(e.target.value);
+              }}
+            />
             <Button size="sm" disabled={busy || jobs.length === 0} onClick={() => void submit()}>
               {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Box className="mr-1.5 h-4 w-4" />}
               {busy ? "만드는 중…" : "스캔바디 만들기"}
@@ -480,13 +600,13 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
           </div>
           </div>
 
-          <section className="flex min-h-0 flex-col gap-3 overflow-hidden border-t p-1 pt-4 sm:border-l sm:border-t-0 sm:pl-8 sm:pt-1">
+          <section className="flex min-h-0 flex-col gap-3 overflow-hidden rounded-2xl bg-slate-50 p-4">
             <div className="flex shrink-0 items-center justify-between gap-3">
               <h3 className="shrink-0 text-sm font-semibold text-slate-900">
                 등록된 스캔바디{loaded ? ` · ${generated.length}개` : ""}
               </h3>
               <Input
-                className="h-8 w-44"
+                className="h-8 w-40 rounded-lg border-slate-200 bg-white shadow-none"
                 value={query}
                 placeholder="검색"
                 aria-label="등록된 스캔바디 검색"
@@ -496,7 +616,7 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
             {loaded && visible.length > 0 ? (
               <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto">
                 {visible.map((lib) => (
-                  <li key={lib.id} className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs">
+                  <li key={lib.id} className="rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 text-xs shadow-sm">
                     <div className="font-medium text-slate-900">{lib.systemName}</div>
                     <div className="mt-0.5 text-[11px] text-muted-foreground">
                       {lib.kits.map((kit) => kit.spec || kit.name).filter(Boolean).join(", ")}
