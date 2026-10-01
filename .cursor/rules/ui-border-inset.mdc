@@ -1,0 +1,32 @@
+---
+description: Scroll and overflow clip borders unless a little extra padding is left inside the clip.
+globs: web/frontend/**/*.{tsx,ts}
+alwaysApply: true
+---
+
+# 경계가 잘리지 않게 여백 (강제)
+
+## Policy
+
+- `overflow-auto`·`overflow-hidden`·스크롤 안의 입력·카드·링·그림자는 **클립 가장자리에 붙이지 않는다**.
+- 스크롤 영역 **안쪽**에 여백을 조금 더 둔다. 테두리·그림자가 잘리지 않을 만큼이면 된다.
+- 여백은 스크롤 내용 쪽에 둔다. 밖 패딩만 있고 스크롤 박스가 밀착이면 위·아래·옆 경계가 잘린다.
+
+## Do / Don't
+
+```tsx
+// ❌ BAD — 카드 테두리가 스크롤 가장자리에서 잘림
+<ul className="overflow-y-auto">
+  <li className="rounded-xl border shadow-sm" />
+</ul>
+
+// ✅ GOOD — 스크롤 안쪽에 여백
+<ul className="overflow-y-auto px-1.5 py-1.5">
+  <li className="rounded-xl border shadow-sm" />
+</ul>
+```
+
+## SSOT
+
+- `.cursor/rules/ui-border-inset.mdc`
+- `web/frontend/rules.md` — 경계 여백

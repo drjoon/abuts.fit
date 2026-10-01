@@ -72,6 +72,8 @@ const scanbodyLibrarySchema = new mongoose.Schema(
     /** 올린 파일 이름들(연도별 호환 파일을 여러 개 올려도 한 라이브러리). */
     fileNames: { type: [String], default: [] },
     containerVersions: { type: [String], default: [] },
+    /** 생성기에서 받은 스캔바디 제품명. 제조사와 함께 라이브러리 이름이 된다. */
+    productName: { type: String, default: "" },
     /**
      * 올릴 때 받은 제조사 이름(의뢰의 스캔바디 제조사, 예: 지오메디).
      * 3Shape 시스템 이름은 코드(ISR_LS 등)라 제조사를 알 수 없다.

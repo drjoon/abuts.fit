@@ -6,6 +6,7 @@ const VERSION = 1;
 
 export type ScanbodyGeneratorDraft = {
   maker: string;
+  productName: string;
   diameters: string[];
   heights: string[];
   cells: Record<string, File>;
@@ -20,6 +21,7 @@ type StoredFile = {
 
 type StoredDraft = {
   maker: string;
+  productName?: string;
   diameters: string[];
   heights: string[];
   files: StoredFile[];
@@ -49,6 +51,7 @@ export async function saveScanbodyGeneratorDraft(draft: ScanbodyGeneratorDraft):
   }
   const record: StoredDraft = {
     maker: draft.maker,
+    productName: draft.productName,
     diameters: draft.diameters,
     heights: draft.heights,
     files,
@@ -77,6 +80,7 @@ export async function loadScanbodyGeneratorDraft(): Promise<ScanbodyGeneratorDra
   }
   return {
     maker: record.maker ?? "",
+    productName: record.productName ?? "",
     diameters: record.diameters?.length ? record.diameters : ["", "", ""],
     heights: record.heights?.length ? record.heights : ["", "", ""],
     cells,

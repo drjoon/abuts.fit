@@ -158,6 +158,7 @@ function libraryView(req, doc, names = new Map(), base = null) {
     fileNames: doc.fileNames || [],
     containerVersions: doc.containerVersions || [],
     manufacturers: doc.manufacturers || [],
+    productName: doc.productName || "",
     implantManufacturer: doc.implantManufacturer || "",
     brand: doc.brand || "",
     implantType: doc.implantType || "",
@@ -401,9 +402,38 @@ export const updateScanbodyVisibility = asyncHandler(async (req, res) => {
   return res.status(200).json(new ApiResponse(200, libraryView(req, doc.toObject(), names)));
 });
 
+// PATCH /api/scanbody-libraries/:id/generated  { specs: ["10*M"] }
+// 생성기에서 뺀 규격은 남기지 않는다.
+export const retainGeneratedScanbodyKits = asyncHandler(async (req, res) => {
+  if (!isAdmin(req)) throw new ApiError(403, "관리자만 할 수 있습니다.");
+  const doc = await ScanbodyLibrary.findById(req.params.id);
+  if (!doc) throw new ApiError(404, "라이브러리를 찾을 수 없습니다.");
+  if (!canEdit(req, doc)) throw new ApiError(403, "삭제 권한이 없습니다.");
+  if (doc.source !== "generated") throw new ApiError(400, "생성된 스캔바디만 고칠 수 있습니다.");
+  const keep = new Set(
+    (Array.isArray(req.body?.specs) ? req.body.specs : [])
+      .map((spec) => String(spec || "").trim())
+      .filter(Boolean)
+      .slice(0, 200),
+  );
+  doc.kits = doc.kits
+    .filter((kit) => keep.has(kit.spec) || keep.has(String(kit.kitId || "").replace(/^gen:/, "")))
+    .map((kit) => (kit.toObject ? kit.toObject() : kit));
+  const used = new Set(doc.kits.flatMap((kit) => kit.scanAbutmentPartIds || []));
+  doc.parts = doc.parts
+    .filter((part) => used.has(part.partId) || used.has(part.hash))
+    .map((part) => (part.toObject ? part.toObject() : part));
+  doc.markModified("kits");
+  doc.markModified("parts");
+  doc.contentUpdatedAt = new Date();
+  await doc.save();
+  const names = await ownerNames(req, [doc]);
+  return res.status(200).json(new ApiResponse(200, libraryView(req, doc.toObject(), names)));
+});
+
 // DELETE /api/scanbody-libraries/:id
 export const deleteScanbodyLibrary = asyncHandler(async (req, res) => {
-  const doc = await ScanbodyLibrary.findById(req.params.id).lean();
+  const doc = await ScanbodyLibrary.findById(req.params.id).select("ownerAnchorId isPublic forkOf").lean();
   if (!doc) throw new ApiError(404, "라이브러리를 찾을 수 없습니다.");
   if (!canEdit(req, doc)) {
     throw new ApiError(

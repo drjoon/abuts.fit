@@ -1,5 +1,5 @@
 // 관리자 대시보드 — 어벗츠 스캔바디 생성기.
-// 스캔바디 제조사와 직경(열)·높이(행) 표. 칸에 STEP·STL·DCM을 떨어뜨린다.
+// 스캔바디 제조사·제품명과 직경(열)·높이(행) 표. 칸에 STEP·STL·DCM을 떨어뜨린다.
 // 파일명에 직경*높이가 있으면 그 머리글을 만들고 칸에 넣는다.
 // related files:
 // - web/frontend/src/shared/practice/scanbodyLibraryApi.ts
@@ -12,8 +12,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
+  deleteScanbodyLibrary,
+  fetchScanbodyPartFile,
+  retainGeneratedScanbodyKits,
   uploadScanbodySpecAndWait,
   useScanbodyCatalog,
+  type ScanbodyLibraryRow,
   type ScanbodySpecInput,
 } from "@/shared/practice/scanbodyLibraryApi";
 import { cn } from "@/shared/ui/cn";
@@ -36,6 +40,12 @@ type Grid = {
 const EMPTY_GRID: Grid = { diameters: [...BLANK], heights: [...BLANK], cells: {} };
 
 const cellKey = (col: number, row: number) => `${col}:${row}`;
+
+function kitSpecMatches(spec: string, diameter: string, height: string) {
+  const cut = spec.indexOf("*");
+  if (cut <= 0) return false;
+  return sameSize(spec.slice(0, cut), diameter) && sameSize(spec.slice(cut + 1), height);
+}
 
 function sameSize(a: string, b: string) {
   const x = a.trim().toLowerCase();
@@ -147,12 +157,16 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [maker, setMaker] = useState("");
+  const [productName, setProductName] = useState("");
   const [grid, setGrid] = useState<Grid>(EMPTY_GRID);
   const [over, setOver] = useState<string | null>(null);
   const [modalOver, setModalOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [query, setQuery] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingMaker, setEditingMaker] = useState("");
+  const [editingProduct, setEditingProduct] = useState("");
   const [draftReady, setDraftReady] = useState(false);
   const editingHeader = useRef(false);
   const touched = useRef(false);
@@ -161,15 +175,16 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
     setGrid(ordered);
   }
   const view = editingHeader.current ? grid : ordered;
-  const { catalog, loaded, reload } = useScanbodyCatalog(open);
+  const { catalog, setCatalog, loaded, reload } = useScanbodyCatalog(open);
 
   useEffect(() => {
     let cancel = false;
     void loadScanbodyGeneratorDraft()
       .then((draft) => {
         if (cancel || !draft || touched.current) return;
-        if (!draft.maker && Object.keys(draft.cells).length === 0) return;
+        if (!draft.maker && !draft.productName && Object.keys(draft.cells).length === 0) return;
         setMaker(draft.maker);
+        setProductName(draft.productName);
         setGrid({ diameters: draft.diameters, heights: draft.heights, cells: draft.cells });
       })
       .catch(() => undefined)
@@ -186,13 +201,14 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
     const timer = window.setTimeout(() => {
       void saveScanbodyGeneratorDraft({
         maker,
+        productName,
         diameters: grid.diameters,
         heights: grid.heights,
         cells: grid.cells,
       }).catch(() => undefined);
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [draftReady, maker, grid]);
+  }, [draftReady, maker, productName, grid]);
 
   const generated = useMemo(
     () =>
@@ -208,6 +224,7 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
     return generated.filter((lib) =>
       [
         lib.systemName,
+        lib.productName,
         lib.implantManufacturer,
         lib.brand,
         ...(lib.manufacturers ?? []),
@@ -300,10 +317,120 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
     }
   };
 
+  const openRegistered = async (lib: ScanbodyLibraryRow) => {
+    if (busy) return;
+    setBusy(true);
+    setStatus("불러오는 중…");
+    touched.current = true;
+    try {
+      let diameters: string[] = [];
+      let heights: string[] = [];
+      const pending: Array<{ diameter: string; height: string; key: string }> = [];
+      for (const kit of lib.kits) {
+        const spec = (kit.spec || kit.name || "").trim();
+        const cut = spec.indexOf("*");
+        if (cut <= 0) continue;
+        const diameter = spec.slice(0, cut).trim();
+        const height = spec.slice(cut + 1).trim();
+        if (!diameter || !height) continue;
+        const col = placeSize(diameters, diameter);
+        const row = placeSize(heights, height);
+        diameters = col.values;
+        heights = row.values;
+        const partId = kit.scanAbutmentPartIds?.[0];
+        const part = lib.parts.find((item) => item.partId === partId || item.hash === partId);
+        if (part?.s3Key) pending.push({ diameter, height, key: part.s3Key });
+      }
+      const files = await Promise.all(
+        pending.map((item) => fetchScanbodyPartFile(item.key, `${item.diameter}*${item.height}.stl`)),
+      );
+      const cells: Record<string, File> = {};
+      pending.forEach((item, index) => {
+        const col = diameters.findIndex((value) => sameSize(value, item.diameter));
+        const row = heights.findIndex((value) => sameSize(value, item.height));
+        if (col >= 0 && row >= 0 && files[index]) cells[cellKey(col, row)] = files[index];
+      });
+      while (diameters.length < 3) diameters.push("");
+      while (heights.length < 3) heights.push("");
+      const product = (lib.productName || "").trim();
+      const listedMaker = (lib.manufacturers ?? []).map((name) => name.trim()).find(Boolean) || "";
+      const makerName =
+        listedMaker ||
+        (product && lib.systemName.endsWith(` ${product}`)
+          ? lib.systemName.slice(0, -(product.length + 1)).trim()
+          : lib.systemName);
+      setMaker(makerName);
+      setProductName(product);
+      setEditingId(lib.id);
+      setEditingMaker(makerName);
+      setEditingProduct(product);
+      setGrid(sortGrid({ diameters, heights, cells }));
+    } catch (error) {
+      toast({
+        title: "스캔바디를 열지 못했습니다.",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
+
+  const resetForm = () => {
+    if (busy) return;
+    touched.current = true;
+    setMaker("");
+    setProductName("");
+    setEditingId(null);
+    setEditingMaker("");
+    setEditingProduct("");
+    setGrid({ diameters: [...BLANK], heights: [...BLANK], cells: {} });
+    void saveScanbodyGeneratorDraft({
+      maker: "",
+      productName: "",
+      diameters: [...BLANK],
+      heights: [...BLANK],
+      cells: {},
+    }).catch(() => undefined);
+  };
+
+  const removeRegistered = (lib: ScanbodyLibraryRow) => {
+    setCatalog((prev) => ({
+      ...prev,
+      libraries: prev.libraries.filter((row) => row.id !== lib.id),
+    }));
+    if (editingId === lib.id) {
+      setEditingId(null);
+      setEditingMaker("");
+      setEditingProduct("");
+    }
+    void deleteScanbodyLibrary(lib.id)
+      .then(() => {
+        toast({ title: "스캔바디를 지웠습니다." });
+      })
+      .catch((error) => {
+        setCatalog((prev) =>
+          prev.libraries.some((row) => row.id === lib.id)
+            ? prev
+            : { ...prev, libraries: [lib, ...prev.libraries] },
+        );
+        toast({
+          title: "스캔바디를 지우지 못했습니다.",
+          description: error instanceof Error ? error.message : undefined,
+          variant: "destructive",
+        });
+      });
+  };
+
   const submit = async () => {
     if (busy || jobs.length === 0) return;
     if (!maker.trim()) {
       toast({ title: "스캔바디 제조사를 입력해 주세요.", variant: "destructive" });
+      return;
+    }
+    if (!productName.trim()) {
+      toast({ title: "스캔바디 제품명을 입력해 주세요.", variant: "destructive" });
       return;
     }
     const missing = jobs.find((job) => !job.diameter || !job.height);
@@ -316,18 +443,37 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
       setStatus("이 브라우저에 저장하는 중…");
       await saveScanbodyGeneratorDraft({
         maker: maker.trim(),
+        productName: productName.trim(),
         diameters: grid.diameters,
         heights: grid.heights,
         cells: grid.cells,
       });
-      for (const [index, job] of jobs.entries()) {
-        const prefix = jobs.length > 1 ? `${index + 1}/${jobs.length} ` : "";
+      const makerName = maker.trim();
+      const product = productName.trim();
+      const existing = generated.find((lib) => {
+        const sameProduct = (lib.productName || "").trim() === product;
+        const sameMaker = (lib.manufacturers ?? []).some((name) => name.trim() === makerName);
+        return sameProduct && sameMaker;
+      });
+      const pending = existing
+        ? jobs.filter(
+            (job) =>
+              !existing.kits.some((kit) => kitSpecMatches(kit.spec || kit.name || "", job.diameter, job.height)),
+          )
+        : jobs;
+      if (pending.length === 0) {
+        toast({ title: "이미 등록된 스캔바디입니다." });
+        return;
+      }
+      for (const [index, job] of pending.entries()) {
+        const prefix = pending.length > 1 ? `${index + 1}/${pending.length} ` : "";
         setStatus(`${prefix}만드는 중…`);
         const stl = new File([await generateScanbodyStl(job.file)], `${job.diameter}*${job.height}.stl`, {
           type: "model/stl",
         });
         const spec: ScanbodySpecInput = {
           maker: maker.trim(),
+          productName: productName.trim(),
           implantManufacturer: "",
           brand: "",
           diameter: job.diameter,
@@ -346,11 +492,22 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
           return;
         }
       }
-      toast({ title: `스캔바디 ${jobs.length}개를 만들었습니다.` });
+      if (editingId && editingMaker === maker.trim() && editingProduct === productName.trim()) {
+        setStatus("규격을 맞추는 중…");
+        await retainGeneratedScanbodyKits(
+          editingId,
+          jobs.map((job) => `${job.diameter}*${job.height}`),
+        );
+      }
+      toast({ title: `스캔바디 ${pending.length}개를 만들었습니다.` });
+      setEditingId(null);
+      setEditingMaker("");
+      setEditingProduct("");
       const cleared = { ...grid, cells: {} as Record<string, File> };
       setGrid(cleared);
       await saveScanbodyGeneratorDraft({
         maker: maker.trim(),
+        productName: productName.trim(),
         diameters: grid.diameters,
         heights: grid.heights,
         cells: {},
@@ -580,10 +737,10 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
           </div>
           </div>
 
-          <div className="flex shrink-0 items-center justify-end gap-2 px-1.5 pb-1.5 pt-4">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 px-1.5 pb-1.5 pt-4">
             {busy && status ? <span className="min-w-0 truncate text-xs text-muted-foreground">{status}</span> : null}
             <Input
-              className="h-8 w-44 rounded-lg border-slate-200 shadow-none"
+              className="h-8 w-40 rounded-lg border-slate-200 shadow-none"
               value={maker}
               disabled={busy}
               placeholder="스캔바디 제조사"
@@ -593,6 +750,20 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
                 setMaker(e.target.value);
               }}
             />
+            <Input
+              className="h-8 w-40 rounded-lg border-slate-200 shadow-none"
+              value={productName}
+              disabled={busy}
+              placeholder="스캔바디 제품명"
+              aria-label="스캔바디 제품명"
+              onChange={(e) => {
+                touched.current = true;
+                setProductName(e.target.value);
+              }}
+            />
+            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={resetForm}>
+              초기화
+            </Button>
             <Button size="sm" disabled={busy || jobs.length === 0} onClick={() => void submit()}>
               {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Box className="mr-1.5 h-4 w-4" />}
               {busy ? "만드는 중…" : "스캔바디 만들기"}
@@ -614,13 +785,40 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
               />
             </div>
             {loaded && visible.length > 0 ? (
-              <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+              <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto px-1.5 py-1.5">
                 {visible.map((lib) => (
-                  <li key={lib.id} className="rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 text-xs shadow-sm">
-                    <div className="font-medium text-slate-900">{lib.systemName}</div>
-                    <div className="mt-0.5 text-[11px] text-muted-foreground">
-                      {lib.kits.map((kit) => kit.spec || kit.name).filter(Boolean).join(", ")}
-                    </div>
+                  <li
+                    key={lib.id}
+                    className={cn(
+                      "group relative rounded-xl border border-slate-200/80 bg-white text-xs shadow-sm",
+                      editingId === lib.id && "ring-1 ring-sky-300",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      className="w-full px-3 py-2.5 pr-8 text-left"
+                      disabled={busy}
+                      onClick={() => void openRegistered(lib)}
+                    >
+                      <div className="font-medium text-slate-900">{lib.productName?.trim() || lib.systemName}</div>
+                      <div className="mt-0.5 text-[11px] text-muted-foreground">
+                        {[
+                          lib.productName?.trim() ? lib.manufacturers?.[0] : "",
+                          lib.kits.map((kit) => kit.spec || kit.name).filter(Boolean).join(", "),
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 z-10 inline-flex h-4 w-4 -translate-y-1/2 items-center justify-center text-red-500 hover:text-red-600"
+                      disabled={busy}
+                      aria-label="스캔바디 지우기"
+                      onClick={() => void removeRegistered(lib)}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
                   </li>
                 ))}
               </ul>

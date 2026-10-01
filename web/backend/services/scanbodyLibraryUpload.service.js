@@ -8,6 +8,7 @@
 //    기공소 업로드는 여기까지 통과하면 관리자 검토 없이 공용(isPublic)이 된다. 관리자는 내리기만 한다.
 // 검사 대기는 서버 타이머와 브라우저 폴링(GET) 둘 다 진행시킨다. 처리 시작은 상태 전환으로 한 번만 잡는다.
 // SCANBODY_MALWARE_SCAN=guardduty|off (기본: production만 guardduty).
+// specMeta.localGenerated(생성기 STL)는 검사를 건너뛴다. STEP·STL·DCM 원본은 서버에 올라오지 않는다.
 // related files:
 // - web/backend/models/scanbodyLibraryUpload.model.js
 // - web/backend/services/scanbodyLibraryImport.worker.js
@@ -198,6 +199,7 @@ function parseSpecMeta(raw) {
   if (!SPEC_PLATFORM_ENDS.has(platformEnd)) throw new ApiError(400, "플랫폼 끝 선택이 올바르지 않습니다.");
   const spec = {
     maker: field(raw?.maker, 60),
+    productName: field(raw?.productName, 60),
     implantManufacturer: field(raw?.implantManufacturer, 60),
     brand: field(raw?.brand, 60),
     diameter: field(raw?.diameter, 20),
@@ -207,6 +209,7 @@ function parseSpecMeta(raw) {
     localGenerated: raw?.localGenerated === true,
   };
   if (!spec.maker) throw new ApiError(400, "스캔바디 제조사를 입력해 주세요.");
+  if (!spec.productName) throw new ApiError(400, "스캔바디 제품명을 입력해 주세요.");
   if (!spec.diameter) throw new ApiError(400, "직경을 입력해 주세요.");
   if (!spec.height) throw new ApiError(400, "높이를 입력해 주세요.");
   return spec;
@@ -237,7 +240,9 @@ export async function createScanbodyUpload({ ownerAnchorId, userId, fileName, si
     createdAt: { $gte: new Date(Date.now() - 3600 * 1000) },
   });
   if (recent >= HOURLY_UPLOAD_LIMIT) throw new ApiError(429, "업로드가 너무 많습니다. 한 시간 뒤 다시 올려 주세요.");
-  if (scanbodyMalwareScanMode() === "guardduty") await assertDailyScanBudget(declaredSize);
+  if (scanbodyMalwareScanMode() === "guardduty" && !parsedSpecMeta?.localGenerated) {
+    await assertDailyScanBudget(declaredSize);
+  }
 
   const _id = new Types.ObjectId();
   const quarantineKey = `${QUARANTINE_PREFIX}${_id}.bin`;
@@ -282,7 +287,8 @@ export async function completeScanbodyUpload(job) {
     { new: true },
   ).lean();
   if (!next) return ScanbodyLibraryUpload.findById(job._id).lean();
-  if (scanbodyMalwareScanMode() === "off") return advanceScanbodyUpload(next);
+  // 생성기는 브라우저가 만든 STL이다. STEP·STL·DCM 원본은 서버로 오지 않는다.
+  if (scanbodyMalwareScanMode() === "off" || next.specMeta?.localGenerated) return advanceScanbodyUpload(next);
   watch(String(next._id));
   return next;
 }
@@ -303,7 +309,7 @@ export async function advanceScanbodyUpload(jobOrId) {
   }
 
   let scanStatus = "SKIPPED";
-  if (scanbodyMalwareScanMode() === "guardduty") {
+  if (scanbodyMalwareScanMode() === "guardduty" && !job.specMeta?.localGenerated) {
     let tags = {};
     try {
       tags = await getObjectTagsFromS3(job.quarantineKey);
@@ -539,6 +545,7 @@ function libraryNeedsWrite(doc, lib, keys, manufacturer, ownerAnchorId) {
   if (manufacturer && !(doc.manufacturers || []).includes(manufacturer)) return true;
   if (lib.implantManufacturer && !doc.implantManufacturer) return true;
   if (lib.brand && !doc.brand) return true;
+  if (lib.productName && !doc.productName) return true;
   if (lib.implantType && !doc.implantType) return true;
   const kitsForMeta = new Map((doc.kits || []).map((kit) => [kit.kitId, kit]));
   if (lib.kits.some((kit) => kit.spec && !(kitsForMeta.get(kit.kitId)?.spec))) return true;
@@ -616,6 +623,7 @@ async function mergeLibrary({ ownerAnchorId, userId, lib, keys, manufacturer }) 
       if (makers.length) doc.manufacturers = union(doc.manufacturers, makers);
       if (lib.implantManufacturer && !doc.implantManufacturer) doc.implantManufacturer = lib.implantManufacturer;
       if (lib.brand && !doc.brand) doc.brand = lib.brand;
+      if (lib.productName && !doc.productName) doc.productName = lib.productName;
       if (lib.implantType && !doc.implantType) doc.implantType = lib.implantType;
       doc.uploadedBy = userId;
       // 악성코드 검사와 형상 재생성을 통과했으니 관리자 검토 없이 모두가 쓴다. 관리자가 내린 것·사본은 그대로 둔다.
@@ -647,6 +655,7 @@ function newLibraryDoc({ ownerAnchorId, userId, lib, keys, manufacturer }) {
     fileNames: [...(lib.fileNames || [])],
     containerVersions: [...(lib.containerVersions || [])].sort(),
     manufacturers: [...new Set([manufacturer, lib.implantManufacturer].filter(Boolean))],
+    productName: lib.productName || "",
     implantManufacturer: lib.implantManufacturer || "",
     brand: lib.brand || "",
     implantType: lib.implantType || "",

@@ -87,6 +87,8 @@ export type ScanbodyLibraryRow = {
   fileNames: string[];
   /** AI 디자인에서 의뢰 스캔바디 때문에 올릴 때 받은 제조사 이름. */
   manufacturers?: string[];
+  /** 생성기에서 받은 스캔바디 제품명. */
+  productName?: string;
   /** 파일에 있던 임플란트 제조사·브랜드·연결. */
   implantManufacturer?: string;
   brand?: string;
@@ -423,6 +425,8 @@ export async function uploadScanbodyMeshAndWait(
 export type ScanbodySpecInput = {
   /** 스캔바디 제조사. 예: 지오메디 */
   maker: string;
+  /** 스캔바디 제품명. */
+  productName: string;
   /** 임플란트 제조사. 예: OSSTEM */
   implantManufacturer: string;
   /** 임플란트 브랜드. 예: TS3 */
@@ -599,6 +603,28 @@ export async function deleteScanbodyLibrary(id: string) {
   const res = await apiFetch({ path: `${BASE}/${id}`, method: "DELETE" });
   if (!res.ok) return fail(res, "라이브러리를 지우지 못했습니다.");
   invalidateApiGetCache(BASE);
+}
+
+/** 생성기에서 남긴 규격만 둔다. */
+export async function retainGeneratedScanbodyKits(id: string, specs: string[]) {
+  const res = await apiFetch({
+    path: `${BASE}/${id}/generated`,
+    method: "PATCH",
+    jsonBody: { specs },
+  });
+  if (!res.ok) return fail(res, "스캔바디 규격을 맞추지 못했습니다.");
+  invalidateApiGetCache(BASE);
+}
+
+/** 저장된 STL을 편집 칸에 넣을 파일로 받는다. */
+export async function fetchScanbodyPartFile(s3Key: string, fileName: string): Promise<File> {
+  const res = await apiFetch({
+    path: `${BASE}/file?key=${encodeURIComponent(s3Key)}`,
+    skipCache: true,
+  });
+  if (!res.ok) return fail(res, "스캔바디 형상을 받지 못했습니다.");
+  const buffer = await res.raw.arrayBuffer();
+  return new File([buffer], fileName, { type: "model/stl" });
 }
 
 /** 파일 이름 `6M.DCM` → 직경 6, 높이 M. */

@@ -595,6 +595,19 @@ export function parseScanbodyMesh(buffer, fileName, meta) {
  * DME에서 쓸만한 구조(임플란트 제조사·브랜드·연결 타입·키트 규격·코드)만 가져온다. 형상은 모델 좌표(플랫폼 원점, +Y 축) STL이다.
  * 같은 스캔바디 제조사·임플란트 제조사·브랜드는 한 라이브러리로 합치고, 직경*높이는 키트가 된다.
  */
+/** 생성기 라이브러리 이름. 스캔바디 제조사와 제품명이 다르면 둘을 모두 넣는다. */
+function generatedSystemName(maker, productName, implantManufacturer, brand) {
+  const seen = new Set();
+  return [maker, productName, implantManufacturer, brand]
+    .filter((bit) => {
+      const key = makerKey(bit);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join(" ");
+}
+
 /** 머리글이 숫자면 그 값을 부품 치수로 쓴다. 문자 규격은 형상에서 잰 값에 맡긴다. */
 function labeledMm(value) {
   const n = Number(String(value ?? "").trim().replace(",", "."));
@@ -607,9 +620,11 @@ export async function parseScanbodySpec(buffer, fileName, spec) {
     throw new ScanbodyInputError("STEP(.stp·.step), STL, DCM 파일만 생성할 수 있습니다.");
   }
   const maker = text(spec?.maker, 60);
+  const productName = text(spec?.productName, 60);
   const diameter = text(spec?.diameter, 20);
   const height = text(spec?.height, 20);
   if (!maker) throw new ScanbodyInputError("스캔바디 제조사가 없습니다.");
+  if (!productName) throw new ScanbodyInputError("스캔바디 제품명이 없습니다.");
   if (!diameter) throw new ScanbodyInputError("직경이 없습니다.");
   if (!height) throw new ScanbodyInputError("높이가 없습니다.");
   const implantManufacturer = text(spec?.implantManufacturer, 60);
@@ -625,15 +640,7 @@ export async function parseScanbodySpec(buffer, fileName, spec) {
     ...canonicalPart(aligned),
   };
 
-  const seen = new Set();
-  const systemName = [maker, implantManufacturer, brand]
-    .filter((bit) => {
-      const key = makerKey(bit);
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .join(" ");
+  const systemName = generatedSystemName(maker, productName, implantManufacturer, brand);
   const kitId = `gen:${kitSpec}`;
   const lib = {
     source: "generated",
@@ -642,6 +649,7 @@ export async function parseScanbodySpec(buffer, fileName, spec) {
     containerVersions: [],
     parts: new Map([[part.hash, part]]),
     kits: new Map([[kitId, { kitId, name: kitSpec, spec: kitSpec, code: kitSpec, scanAbutmentPartIds: [part.hash] }]]),
+    productName,
     implantManufacturer,
     brand,
     implantType: "",
@@ -663,9 +671,11 @@ export function libraryFromCanonicalStl(buffer, spec) {
     throw new ScanbodyInputError("생성한 STL이 아닙니다.");
   }
   const maker = text(spec?.maker, 60);
+  const productName = text(spec?.productName, 60);
   const diameter = text(spec?.diameter, 20);
   const height = text(spec?.height, 20);
   if (!maker) throw new ScanbodyInputError("스캔바디 제조사가 없습니다.");
+  if (!productName) throw new ScanbodyInputError("스캔바디 제품명이 없습니다.");
   if (!diameter) throw new ScanbodyInputError("직경이 없습니다.");
   if (!height) throw new ScanbodyInputError("높이가 없습니다.");
   const implantManufacturer = text(spec?.implantManufacturer, 60);
@@ -679,15 +689,7 @@ export function libraryFromCanonicalStl(buffer, spec) {
     diameterMm: labeledMm(diameter),
     heightMm: labeledMm(height),
   };
-  const seen = new Set();
-  const systemName = [maker, implantManufacturer, brand]
-    .filter((bit) => {
-      const key = makerKey(bit);
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .join(" ");
+  const systemName = generatedSystemName(maker, productName, implantManufacturer, brand);
   return {
     libraries: [
       {
@@ -695,6 +697,7 @@ export function libraryFromCanonicalStl(buffer, spec) {
         systemName,
         fileNames: [`${kitSpec}.stl`],
         containerVersions: [],
+        productName,
         implantManufacturer,
         brand,
         implantType: "",

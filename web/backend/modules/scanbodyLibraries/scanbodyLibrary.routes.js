@@ -29,6 +29,7 @@ router.get("/blocklist", controller.listUploadBlocklist);
 router.delete("/blocklist/:id", controller.unblockUploader);
 router.patch("/:id/kits/:kitId", controller.updateScanbodyKit);
 router.patch("/:id/visibility", controller.updateScanbodyVisibility);
+router.patch("/:id/generated", controller.retainGeneratedScanbodyKits);
 router.post("/:id/rebase", controller.rebaseScanbodyLibrary);
 router.delete("/:id", controller.deleteScanbodyLibrary);
 
