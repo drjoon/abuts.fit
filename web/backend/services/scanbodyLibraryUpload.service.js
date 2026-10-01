@@ -355,7 +355,8 @@ function parseInWorker(buffer, fileName, meshMeta) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./scanbodyLibraryImport.worker.js", import.meta.url), {
       workerData: { buffer, fileName, meshMeta },
-      resourceLimits: { maxOldGenerationSizeMb: 2048 },
+      // t4g.small(2GB). 200MB 묶음을 풀 만큼만 두고, 넘치면 워커만 죽는다.
+      resourceLimits: { maxOldGenerationSizeMb: 1024 },
     });
     const timer = setTimeout(() => {
       void worker.terminate();

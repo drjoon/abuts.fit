@@ -34,13 +34,14 @@ import {
 } from "../utils/scanbodyLibraryIdentity.js";
 
 export const SCANBODY_UPLOAD_LIMITS = {
-  // 브라우저가 25MB 안팎으로 나눠 올린다. 한 폴더·한 .dme가 큰 제조사 배포본도 받게 넉넉히 둔다.
-  maxUploadBytes: 1024 * 1024 * 1024,
+  // 웹 인스턴스는 t4g.small(2GB)이다. 한 묶음을 메모리에 올려 풀면 프로세스가 멈추므로 200MB까지만 받는다.
+  // 브라우저는 25MB 안팎으로 나눠 올린다. 한 파일이 200MB를 넘으면 나눠 다시 올린다.
+  maxUploadBytes: 200 * 1024 * 1024,
   maxBundleEntries: 5000,
   maxDmeEntries: 3000,
   maxEntryBytes: 64 * 1024 * 1024,
-  // 업로드 한도와 같으면 1GB짜리 묶음은 풀다 걸린다. .dme 안 .dcm은 이미 압축돼 풀어도 거의 그대로다.
-  maxTotalBytes: 2048 * 1024 * 1024,
+  // .dme 안 .dcm은 이미 압축돼 풀어도 거의 그대로다. 해제 합계는 업로드의 두 배만 잡아 워커가 머신을 쓰지 않게 한다.
+  maxTotalBytes: 400 * 1024 * 1024,
   maxXmlBytes: 32 * 1024 * 1024,
 };
 

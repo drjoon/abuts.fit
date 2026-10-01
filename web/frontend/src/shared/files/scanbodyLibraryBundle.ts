@@ -21,6 +21,8 @@ export type ScanbodyUploadBundle = {
 };
 
 const BUNDLE_BYTES = 25 * 1024 * 1024;
+/** 서버 `SCANBODY_UPLOAD_LIMITS.maxUploadBytes`. 웹 인스턴스(2GB)가 한 묶음을 메모리에 올릴 수 있는 크기. */
+const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 /** GuardDuty 압축 한 개 검사 한도(문서 1,000개, 안쪽 압축 포함)보다 여유 있게. */
 const SCAN_FILES = 800;
 const MAX_NESTED_ZIP_BYTES = 1536 * 1024 * 1024;
@@ -279,5 +281,13 @@ export async function buildScanbodyUploadBundles(
 
   const skipped = files.filter((file) => /\.(sdfa|ipflib)$/i.test(file.name)).length;
   if (skipped > 0) notes.push(`암호화된 형상(.sdfa·.ipflib) ${skipped}개는 읽을 수 없어 뺐습니다.`);
-  return { bundles, notes };
+  const accepted: ScanbodyUploadBundle[] = [];
+  for (const bundle of bundles) {
+    if (bundle.blob.size > MAX_UPLOAD_BYTES) {
+      notes.push(`${bundle.label}은 200MB를 넘습니다. 나눠서 다시 올려 주세요.`);
+      continue;
+    }
+    accepted.push(bundle);
+  }
+  return { bundles: accepted, notes };
 }

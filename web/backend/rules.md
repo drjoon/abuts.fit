@@ -173,7 +173,7 @@
 - 규격 메타데이터 축적: 의뢰 생성·리메이크·규격 수정 때 치아별 스캔바디·심플 규격을 `ScanbodySpecDemand`(key `type|제조사|직경|높이`, 심플어벗·심플밀링은 높이 비움)에 쌓는다. 임플란트(제조사·브랜드·패밀리·타입별 치아 수), 의뢰·치과·기공소 id, 첫·최근 의뢰 시각이 쌓인다. `transferIds: {$ne}` upsert라 같은 의뢰는 한 번만 센다. 응답 후 실행하고, 실패해도 의뢰에 영향은 없다. 이전 의뢰는 `backfill-scanbody-spec-demand.js`(pending-migrations)로 채운다.
 - 관리자 대시보드 「라이브러리가 없는 스캔바디」: `GET /demand`. 쌓인 규격 중 공용 형상이 없는 것을 최근 순으로 보인다(판정은 AI 디자인과 같다). 등록 완료 때도 `scanbody:demand-updated`를 관리자에게 보낸다.
 - 관리자 목록은 제조사(지오메디 등)와 심플 종류(심플어벗 등)를 각각 한 장으로 묶고, 공용 형상이 없는 규격을 `specs`에 둔다. 제조사를 찾을 수 없을 때만 `PATCH /demand/lab-request {keys, requested}`로 그 카드의 규격 전부를 「기공소에 요청」한다. 카탈로그(`GET /`)의 `labUploadRequestKeys`에 든 규격만 AI 디자인이 업로드 버튼·토스트를 보인다(프론트 `scanbodySpecKey`가 서버 key와 같아야 한다). 나머지는 「어벗츠가 준비하고 있습니다」 안내만 한다.
-- 한 파일 최대 1GB, 풀어서 합계 최대 2GB(`SCANBODY_UPLOAD_LIMITS`). 브라우저가 25MB 안팎으로 나눠 올리므로 1GB는 큰 `.dme` 하나를 그대로 올릴 때만 닿는다.
+- 한 파일 최대 200MB, 풀어서 합계 최대 400MB(`SCANBODY_UPLOAD_LIMITS`). 웹은 t4g.small(2GB)이라 그보다 큰 묶음은 메모리에 올리지 않고 거절한다. 브라우저는 25MB 안팎으로 나눠 올린다. 워커 힙은 1024MB.
 - 배포 전: 버킷 격리 prefix에 GuardDuty Malware Protection for S3를 켜고, 서버 IAM에 `s3:GetObjectTagging`을 준다. 켜기 전에는 `SCANBODY_MALWARE_SCAN=off`로만 테스트한다.
 - SSOT: `services/scanbodyLibraryUpload.service.js`, `services/scanbodyLibraryImport.service.js`, `utils/safeUnzip.js`, `utils/scanbodyGeometry.js`.
 
