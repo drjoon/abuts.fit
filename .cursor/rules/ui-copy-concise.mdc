@@ -1,0 +1,35 @@
+---
+description: UI copy stays short and says each fact once. Drop repeated amounts, dates, and explanations.
+alwaysApply: true
+---
+
+# UI copy — 간단·명료, 중복 금지 (강제)
+
+## Policy
+
+- 화면 문구는 **짧게** 쓴다. 한 문장에 사실 하나.
+- **같은 내용은 한 번만** 말한다. 제목·카드·표에 있는 금액, 기간, 당사자, 요율, 건수를 아래 문단에 다시 적지 않는다.
+- 숫자·날짜는 카드나 표에 두고, 문단은 **거기에 없는 조건**만 적는다.
+- 문장이 길면 `.cursor/rules/ui-copy-line-break.mdc` 대로 문장 단위 `<br />`.
+
+## Do / Don't
+
+```tsx
+// ❌ BAD — 카드와 문단이 같은 금액
+<Stat label="월 개발·운영비" value="5,500,000원" />
+<p>월 개발·운영비는 5,500,000원(부가세 포함)입니다.</p>
+
+// ✅ GOOD — 금액은 카드, 문단은 카드에 없는 조건
+<Stat label="월 개발·운영비" value="5,500,000원" />
+<p>
+  매월 말일에 지급합니다.
+  <br />
+  휴일이면 직전 영업일입니다.
+</p>
+```
+
+## SSOT
+
+- `.cursor/rules/ui-copy-concise.mdc`
+- `.cursor/rules/ui-copy-line-break.mdc`
+- `web/frontend/rules.md` — UI copy

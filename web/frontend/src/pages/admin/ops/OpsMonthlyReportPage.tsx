@@ -2,9 +2,11 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/backend/controllers/admin/opsMonthlyReport.controller.js
+// - .cursor/rules/ui-copy-concise.mdc
+// - 2026-10-01: 인쇄는 본문을 body로 옮겨 전 페이지가 나오게 함. 약정·집계 문구는 한 번만.
 // - 2026-10-01: 계약 개정 — 최초 기간 정액 개발·운영비, 연장 기간 사용료 전 항목 5%·월 최소 550만 원.
 // - 2026-09-30: 관리자·개발운영(메이븐) 월간 운영보고서.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -94,6 +96,13 @@ type OpsReport = {
   };
 };
 
+type DailyDisplay =
+  | { kind: "day"; ymd: string; accessUsers: number; transfersCreated: number }
+  | { kind: "idle"; from: string; to: string; days: number };
+
+const SUBJECTS_SHOWN = 8;
+const PRINT_ROOT_ID = "ops-report-print-root";
+
 function won(amount: number) {
   return `${new Intl.NumberFormat("ko-KR").format(amount)}원`;
 }
@@ -131,8 +140,6 @@ function ymdLabel(ymd: string) {
   return `${year}년 ${Number(month)}월 ${Number(day)}일`;
 }
 
-const SUBJECTS_SHOWN = 8;
-
 function periodLabel(period: OpsReport["period"]) {
   const [year, month] = period.month.split("-");
   const startDay = period.startYmd.slice(8);
@@ -140,14 +147,169 @@ function periodLabel(period: OpsReport["period"]) {
   return `${year}년 ${Number(month)}월 (${Number(startDay)}일 ~ ${Number(endDay)}일)`;
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+/** 접속·접수가 없는 연속 날짜는 한 줄로 묶는다. */
+function compressDaily(rows: DailyRow[]): DailyDisplay[] {
+  const out: DailyDisplay[] = [];
+  let idleFrom = "";
+  let idleTo = "";
+  let idleCount = 0;
+  const flush = () => {
+    if (!idleFrom) return;
+    if (idleCount === 1) {
+      out.push({ kind: "day", ymd: idleFrom, accessUsers: 0, transfersCreated: 0 });
+    } else {
+      out.push({ kind: "idle", from: idleFrom, to: idleTo, days: idleCount });
+    }
+    idleFrom = "";
+    idleTo = "";
+    idleCount = 0;
+  };
+  for (const row of rows) {
+    if (row.accessUsers === 0 && row.transfersCreated === 0) {
+      if (!idleFrom) idleFrom = row.ymd;
+      idleTo = row.ymd;
+      idleCount += 1;
+    } else {
+      flush();
+      out.push({ kind: "day", ...row });
+    }
+  }
+  flush();
+  return out;
+}
+
+function Lines({ items }: { items: string[] }) {
+  if (!items.length) return null;
   return (
-    <div className="rounded-lg border border-slate-200 px-3 py-2">
+    <p className="text-sm leading-6 text-slate-600">
+      {items.map((line, index) => (
+        <span key={`${index}-${line}`}>
+          {index > 0 ? <br /> : null}
+          {line}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+function Stat({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return (
+    <div className="ops-stat rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-slate-200/80">
       <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-0.5 text-sm font-semibold text-slate-900">{value}</p>
+      <p className="mt-1 text-sm font-semibold tabular-nums leading-5 text-slate-900">{value}</p>
+      {detail ? <p className="mt-0.5 text-xs leading-5 text-slate-500">{detail}</p> : null}
     </div>
   );
 }
+
+function Section({
+  index,
+  title,
+  children,
+}: {
+  index: string;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="ops-section overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+      <header className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 sm:px-5">
+        <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-md bg-slate-100 px-1.5 text-xs font-semibold tabular-nums text-slate-600">
+          {index}
+        </span>
+        <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+      </header>
+      <div className="space-y-4 p-4 sm:p-5">{children}</div>
+    </section>
+  );
+}
+
+function TableShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="overflow-x-auto rounded-xl ring-1 ring-slate-200/80">
+      <table className="w-full border-collapse text-sm">{children}</table>
+    </div>
+  );
+}
+
+const thClass = "px-3 py-2 text-left text-xs font-medium text-slate-500";
+const tdClass = "border-t border-slate-100 px-3 py-2 align-top text-slate-800";
+
+function contractNotes(contract: OpsReport["contract"]) {
+  const phase =
+    contract.feePhase === "firstTerm"
+      ? ["이번 달은 최초 기간입니다.", "정액만 지급하고, 사용료는 없습니다."]
+      : contract.feePhase === "extension"
+        ? ["이번 달은 연장 기간입니다.", "사용료만 지급하고, 정액은 없습니다."]
+        : ["이번 달은 계약 전입니다."];
+  return [
+    ...phase,
+    `만료 ${contract.nonRenewalNoticeMonths}개월 전까지 서면으로 알리지 않으면 ${contract.autoRenewYears}년씩 이어집니다.`,
+    "지급일이 휴일이면 직전 영업일입니다.",
+    "클라우드 요금은 당월 대가에 포함됩니다.",
+    "서버를 늘리거나 사용량이 크게 늘면 추가 비용은 따로 협의합니다.",
+    `계약이 끝나면 ${contract.transitionMonths}개월은 같은 조건으로 이어집니다.`,
+  ];
+}
+
+function usageNotes(contract: OpsReport["contract"]) {
+  return [
+    `연장 뒤에는 판매 항목 모두 정산 기준금액의 ${contract.usageFeeRatePercent}%입니다.`,
+    "부가세가 포함됩니다.",
+    `월 ${won(contract.usageFeeMonthlyMinimumInclusive)}보다 적으면 그 금액을 냅니다.`,
+    "기준금액은 판매금액(부가세 제외, 취소·환불 차감)에서 협력 매입 전액과 하청 매입의 90%를 뺀 금액입니다.",
+    "협력은 갑의 몫이 없고, 하청은 갑이 10%만 갖습니다.",
+    "크레딧은 실제 사용 시점에 봅니다.",
+    "전월 금액은 매월 10일까지 알립니다.",
+    "세금계산서 뒤 말일까지 지급합니다.",
+  ];
+}
+
+const PRINT_STYLE = `
+@media print {
+  @page { size: A4 portrait; margin: 12mm 14mm; }
+  html.ops-printing,
+  html.ops-printing body {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  html.ops-printing body > *:not(#${PRINT_ROOT_ID}) {
+    display: none !important;
+  }
+  #${PRINT_ROOT_ID} {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  #${PRINT_ROOT_ID} .ops-section,
+  #${PRINT_ROOT_ID} header.ops-sheet-head {
+    overflow: visible !important;
+    box-shadow: none !important;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+  #${PRINT_ROOT_ID} h2,
+  #${PRINT_ROOT_ID} .ops-section > header {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  #${PRINT_ROOT_ID} tr,
+  #${PRINT_ROOT_ID} .ops-stat {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  #${PRINT_ROOT_ID} thead {
+    display: table-header-group;
+  }
+}
+`;
 
 export default function OpsMonthlyReportPage() {
   const { token } = useAuthStore();
@@ -173,6 +335,54 @@ export default function OpsMonthlyReportPage() {
   });
 
   const report = query.data;
+  const dailyRows = useMemo(
+    () => (report ? compressDaily(report.daily) : []),
+    [report],
+  );
+  const sameUsageRate = Boolean(
+    report?.contract.usageFees.length &&
+      report.contract.usageFees.every(
+        (row) => row.ratePercent === report.contract.usageFeeRatePercent,
+      ),
+  );
+
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.setAttribute("data-ops-print", "1");
+    style.textContent = PRINT_STYLE;
+    document.head.appendChild(style);
+
+    let previousTitle = "";
+    const mountPrintRoot = () => {
+      const source = document.getElementById("ops-monthly-report");
+      if (!source) return;
+      document.getElementById(PRINT_ROOT_ID)?.remove();
+      const host = document.createElement("div");
+      host.id = PRINT_ROOT_ID;
+      host.appendChild(source.cloneNode(true));
+      document.body.appendChild(host);
+      document.documentElement.classList.add("ops-printing");
+      previousTitle = document.title;
+      const title = source.getAttribute("data-print-title");
+      if (title) document.title = title;
+    };
+    const unmountPrintRoot = () => {
+      document.getElementById(PRINT_ROOT_ID)?.remove();
+      document.documentElement.classList.remove("ops-printing");
+      if (previousTitle) {
+        document.title = previousTitle;
+        previousTitle = "";
+      }
+    };
+    window.addEventListener("beforeprint", mountPrintRoot);
+    window.addEventListener("afterprint", unmountPrintRoot);
+    return () => {
+      window.removeEventListener("beforeprint", mountPrintRoot);
+      window.removeEventListener("afterprint", unmountPrintRoot);
+      unmountPrintRoot();
+      style.remove();
+    };
+  }, []);
 
   return (
     <AdminPageShell
@@ -197,21 +407,6 @@ export default function OpsMonthlyReportPage() {
         </div>
       }
     >
-      <style>{`
-        @media print {
-          body * { visibility: hidden !important; }
-          #ops-monthly-report, #ops-monthly-report * { visibility: visible !important; }
-          #ops-monthly-report {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            background: white;
-          }
-          .ops-report-no-print { display: none !important; }
-        }
-      `}</style>
-
       {query.isLoading ? (
         <p className="text-sm text-slate-500">보고서를 불러오는 중입니다.</p>
       ) : null}
@@ -226,45 +421,41 @@ export default function OpsMonthlyReportPage() {
       {report ? (
         <article
           id="ops-monthly-report"
-          className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 sm:p-6"
+          data-print-title={report.title}
+          className="ops-sheet space-y-4 text-slate-900"
         >
-          <header className="space-y-2 border-b border-slate-200 pb-4">
-            <h1 className="text-xl font-semibold">{report.title}</h1>
-            <p className="text-sm leading-6">
-              {report.contract.providerName}이 개발·운영하고 소유한 플랫폼을{" "}
-              {report.contract.clientName}이 전속 사용합니다.
+          <header className="ops-sheet-head space-y-2 rounded-2xl border border-slate-200/80 bg-white px-4 py-4 shadow-sm sm:px-5">
+            <h1 className="text-xl font-semibold tracking-tight">{report.title}</h1>
+            <p className="text-sm leading-6 text-slate-600">
+              {periodLabel(report.period)}
               <br />
-              이 보고서는 해당 월의 서버 운영 기록과 개발 투입 공수를 정리한
-              자료입니다.
+              서버 운영·개발 투입 기록입니다.
               <br />
-              을은 개발 투입 공수와 작업 내역을 개발 완료 보고서로 정리하여
-              다음 달 10일까지 갑에게 제출합니다.
+              다음 달 10일까지 제출합니다.
             </p>
-            <p className="text-sm text-slate-600">
-              보고 기간 {periodLabel(report.period)}
-              <br />
-              조회 {report.viewer ? `${report.viewer.side} ${report.viewer.name}` : "당사자"}
+            <p className="text-sm leading-6 text-slate-500">
+              {report.viewer
+                ? `${report.viewer.side} ${report.viewer.name}`
+                : "당사자"}
               {" · "}
-              조회 시각 {formatKstDateTime(report.generatedAt)}
+              {formatKstDateTime(report.generatedAt)}
+              {report.period.inProgress ? (
+                <>
+                  <br />
+                  이 달은 아직 진행 중입니다. 조회 시각까지 집계했습니다.
+                </>
+              ) : null}
             </p>
-            {report.period.inProgress ? (
-              <p className="text-sm text-slate-600">
-                이번 달은 아직 끝나지 않았습니다.
-                <br />
-                아래 수치는 조회 시각까지 남은 기록입니다.
-              </p>
-            ) : null}
           </header>
 
-          <section className="space-y-3">
-            <h2 className="text-base font-semibold">1. 약정</h2>
+          <Section index="1" title="약정">
             <div className="grid gap-2 sm:grid-cols-2">
               <Stat
-                label={`${report.contract.clientRole} (전속 사용)`}
+                label={`${report.contract.clientRole} · 전속 사용`}
                 value={report.contract.clientName}
               />
               <Stat
-                label={`${report.contract.providerRole} (소유·운영)`}
+                label={`${report.contract.providerRole} · 소유·운영`}
                 value={report.contract.providerName}
               />
               <Stat
@@ -273,272 +464,164 @@ export default function OpsMonthlyReportPage() {
               />
               <Stat
                 label="월 개발·운영비"
-                value={`${won(report.contract.monthlyFeeInclusive)} (부가세 포함)`}
+                value={won(report.contract.monthlyFeeInclusive)}
+                detail={`공급가액 ${won(report.contract.monthlyFeeSupply)} · 부가세 ${won(report.contract.monthlyFeeVat)}`}
               />
               <Stat
-                label="공급가액"
-                value={won(report.contract.monthlyFeeSupply)}
-              />
-              <Stat label="부가세" value={won(report.contract.monthlyFeeVat)} />
-              <Stat
-                label="최초 기간 개발·운영비"
-                value={`${won(report.contract.firstTermFeeInclusive)} / ${report.contract.paymentCount}회`}
+                label="최초 기간 합계"
+                value={won(report.contract.firstTermFeeInclusive)}
+                detail={`${count(report.contract.paymentCount)}회`}
               />
               <Stat
-                label="지급기일"
-                value={`${ymdLabel(report.contract.firstPaymentYmd)} ~ ${ymdLabel(report.contract.lastPaymentYmd)}`}
+                label="지급"
+                value="매월 말일"
+                detail={`${ymdLabel(report.contract.firstPaymentYmd)} ~ ${ymdLabel(report.contract.lastPaymentYmd)}`}
               />
             </div>
-            {report.contract.feePhase === "firstTerm" ? (
-              <p className="text-sm leading-6">
-                이 보고 월은 최초 계약기간입니다.
-                <br />
-                정액 개발·운영비를 지급하고, 플랫폼 사용료는 지급하지 않습니다.
-              </p>
-            ) : null}
-            {report.contract.feePhase === "extension" ? (
-              <p className="text-sm leading-6">
-                이 보고 월은 연장 기간입니다.
-                <br />
-                플랫폼 사용료를 지급하고, 정액 개발·운영비는 지급하지 않습니다.
-              </p>
-            ) : null}
-            {report.contract.feePhase === "before" ? (
-              <p className="text-sm leading-6">
-                이 보고 월은 최초 계약기간 전입니다.
-              </p>
-            ) : null}
-            <p className="text-sm leading-6">
-              최초 계약기간은 {report.contract.termYears}년입니다.
-              <br />
-              만료 {report.contract.nonRenewalNoticeMonths}개월 전까지 서면으로
-              갱신하지 않겠다고 통지하지 않으면 {report.contract.autoRenewYears}
-              년씩 연장됩니다.
-              <br />
-              연장 기간에는 제7조의 플랫폼 사용료가 적용되고, 제6조의 정액
-              개발·운영비는 적용되지 않습니다.
-              <br />
-              월 개발·운영비는 {won(report.contract.monthlyFeeInclusive)}
-              (부가세 포함)이며, 최초 계약기간의 서버 운영과 지속적 개선·개발의
-              대가입니다.
-              <br />
-              매월 말일에 지급하고, 그 날이 은행 휴무일이면 직전 영업일에
-              지급합니다.
-              <br />
-              클라우드 이용료는 이 개발·운영비에 포함되며 을이 부담합니다.
-              <br />
-              갑의 요청으로 서버를 늘리거나 이용량이 크게 늘면, 추가 비용은 따로
-              협의합니다.
-              <br />
-              계약이 끝나면 종료일 다음날부터 {report.contract.transitionMonths}
-              개월은 전환 기간입니다.
-              <br />
-              전환 기간에도 종료 직전에 적용되던 대금을 같은 조건으로
-              지급합니다.
-            </p>
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-slate-500">
-                  <th className="py-1.5 pr-3 font-medium">판매 항목</th>
-                  <th className="py-1.5 font-medium">
-                    플랫폼 사용료 요율 (연장 기간)
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.contract.usageFees.map((row) => (
-                  <tr key={row.item} className="border-b border-slate-100">
-                    <td className="py-1.5 pr-3">{row.item}</td>
-                    <td className="py-1.5">{row.ratePercent}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="text-sm leading-6">
-              플랫폼 사용료는 연장 기간에 지급합니다.
-              <br />
-              요율은 모든 판매 항목에 대하여 정산 기준금액의{" "}
-              {report.contract.usageFeeRatePercent}%이며, 부가세가 포함된
-              금액입니다.
-              <br />
-              전속 사용, 지속적인 기능 업데이트, 서버 운영의 대가입니다.
-              <br />
-              산정액이 월{" "}
-              {won(report.contract.usageFeeMonthlyMinimumInclusive)}(부가세
-              포함)에 미달하면, 그 금액을 월 최소 사용료로 지급합니다.
-              <br />
-              정산 기준금액은 판매금액(부가세 제외, 취소·환불 차감)에서 협력
-              매입액 전액과 하청 매입액의 90%를 뺀 금액입니다.
-              <br />
-              협력 매입액은 치과로부터 받은 금액 전체를 협력 기공소에 지급하여
-              갑의 몫이 없는 거래입니다.
-              <br />
-              하청 매입액의 90%는 갑이 10%만 수수료로 취하는 거래에서 갑의
-              몫이 아닌 부분입니다.
-              <br />
-              금액은 관리자 대시보드 재무-정산에서 판매 항목별로 산정합니다.
-              <br />
-              크레딧 등 선불은 충전 시점이 아니라 실제 사용(차감)된 시점에
-              봅니다.
-              <br />
-              갑은 매월 10일까지 전월 판매 항목별 정산 기준금액(관리자 정산
-              화면 출력본을 포함)을 을에게 알립니다.
-              <br />
-              을은 세금계산서를 발행하고, 갑은 그 달 말일까지 사용료를
-              지급합니다.
-              <br />
-              연장 기간의 클라우드 이용료는 플랫폼 사용료에 포함되며 을이
-              부담합니다.
-            </p>
-          </section>
+            <Lines items={contractNotes(report.contract)} />
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-slate-500">연장 기간 사용료</p>
+              {sameUsageRate ? (
+                <p className="text-sm text-slate-800">
+                  {report.contract.usageFees.map((row) => row.item).join(" · ")}
+                </p>
+              ) : (
+                <TableShell>
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className={thClass}>판매 항목</th>
+                      <th className={thClass}>요율</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.contract.usageFees.map((row) => (
+                      <tr key={row.item}>
+                        <td className={tdClass}>{row.item}</td>
+                        <td className={`${tdClass} tabular-nums`}>{row.ratePercent}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </TableShell>
+              )}
+              <Lines items={usageNotes(report.contract)} />
+            </div>
+          </Section>
 
-          <section className="space-y-3">
-            <h2 className="text-base font-semibold">2. 당월 서비스 가동</h2>
+          <Section index="2" title="이번 달 가동">
             <div className="grid gap-2 sm:grid-cols-3">
               <Stat label="접속 계정" value={`${count(report.service.distinctUsers)}명`} />
               <Stat label="접속이 있던 날" value={`${count(report.service.activeDays)}일`} />
               <Stat label="신규 가입" value={`${count(report.service.newUsers)}명`} />
-              <Stat label="기공의뢰 접수" value={`${count(report.transfers.created)}건`} />
+              <Stat label="기공의뢰" value={`${count(report.transfers.created)}건`} />
               <Stat label="작업시작" value={`${count(report.transfers.workStarted)}건`} />
               <Stat label="작업취소" value={`${count(report.transfers.workCanceled)}건`} />
             </div>
             {report.service.usersByRole.length ? (
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-slate-500">
-                    <th className="py-1.5 pr-3 font-medium">역할</th>
-                    <th className="py-1.5 pr-3 font-medium">접속 계정</th>
-                    <th className="py-1.5 font-medium">접속 일수</th>
+              <TableShell>
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className={thClass}>역할</th>
+                    <th className={thClass}>접속 계정</th>
+                    <th className={thClass}>접속 일수</th>
                   </tr>
                 </thead>
                 <tbody>
                   {report.service.usersByRole.map((row) => (
-                    <tr key={row.role || "none"} className="border-b border-slate-100">
-                      <td className="py-1.5 pr-3">
+                    <tr key={row.role || "none"}>
+                      <td className={tdClass}>
                         {row.role ? getAppUserRoleLabel(row.role) : "미분류"}
                       </td>
-                      <td className="py-1.5 pr-3">{count(row.users)}</td>
-                      <td className="py-1.5">{count(row.userDays)}</td>
+                      <td className={`${tdClass} tabular-nums`}>{count(row.users)}</td>
+                      <td className={`${tdClass} tabular-nums`}>{count(row.userDays)}</td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </TableShell>
             ) : (
               <p className="text-sm text-slate-600">이 달에 접속 기록이 없습니다.</p>
             )}
-          </section>
+          </Section>
 
-          <section className="space-y-3">
-            <h2 className="text-base font-semibold">3. 수행 업무 요약</h2>
-            <p className="text-sm leading-6 text-slate-600">
-              아래는 플랫폼이 해당 월에 남긴 서버 운영 기록입니다.
-              <br />
-              개발 투입 공수는 다음 절에 커밋으로 계산해 적습니다.
-            </p>
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-slate-500">
-                  <th className="w-28 py-1.5 pr-3 font-medium">구분</th>
-                  <th className="py-1.5 font-medium">내용</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.work.map((row) => (
-                  <tr key={row.category} className="border-b border-slate-100 align-top">
-                    <td className="py-2 pr-3 font-medium">{row.category}</td>
-                    <td className="py-2 leading-6">
-                      {row.lines.map((line, index) => (
-                        <span key={line}>
-                          {index > 0 ? <br /> : null}
-                          {line}
-                        </span>
-                      ))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <Section index="3" title="서버 운영">
+            <div className="grid gap-2 sm:grid-cols-3">
+              <Stat label="로그인 성공" value={`${count(report.security.loginSuccess)}건`} />
+              <Stat label="로그인 실패" value={`${count(report.security.loginFailed)}건`} />
+              <Stat label="고위험" value={`${count(report.security.highOrCritical)}건`} />
+              <Stat label="차단" value={`${count(report.security.blocked)}건`} />
+              <Stat label="백업 성공" value={`${count(report.backup.completed)}건`} />
+              <Stat label="백업 실패" value={`${count(report.backup.failed)}건`} />
+              <Stat label="백업 건너뜀" value={`${count(report.backup.skipped)}건`} />
+              <Stat label="관리자 작업" value={`${count(report.maintenance.adminActions)}건`} />
+              <Stat label="파일 저장" value={`${count(report.filesUploaded)}건`} />
+              <Stat label="메일" value={`${count(report.channels.mailSent)}건`} />
+              <Stat label="문자" value={`${count(report.channels.smsSent)}건`} />
+            </div>
             {report.backup.lastCompletedAt ? (
               <p className="text-sm text-slate-600">
-                당월 마지막 백업 성공 {formatKstDateTime(report.backup.lastCompletedAt)}
+                마지막 백업 {formatKstDateTime(report.backup.lastCompletedAt)}
               </p>
             ) : null}
             {report.maintenance.topActions.length ? (
               <p className="text-sm leading-6 text-slate-600">
-                관리자 작업 상위:{" "}
+                관리자 작업{" "}
                 {report.maintenance.topActions
                   .map((row) => `${row.action} ${count(row.count)}건`)
                   .join(", ")}
               </p>
             ) : null}
-          </section>
+          </Section>
 
-          <section className="space-y-3">
-            <h2 className="text-base font-semibold">4. 개발 투입</h2>
+          <Section index="4" title="개발 투입">
             {report.development.available ? (
               <>
-                <p className="text-sm leading-6">
-                  투입 시간은 출퇴근 기록이 아니라 커밋 간격으로 추정한
-                  값입니다.
-                  <br />
-                  같은 작성자의 커밋이 {report.development.sessionGapMinutes / 60}시간 안에
-                  이어지면 한 작업입니다.
-                  <br />
-                  작업 시간은 첫 커밋과 마지막 커밋 사이에, 첫 커밋 앞{" "}
-                  {report.development.leadMinutes}분을 더한 시간입니다.
-                  <br />
-                  커밋이 하나인 작업은 {report.development.leadMinutes}분입니다.
-                  <br />
-                  자정을 넘긴 작업은 마지막 커밋의 날짜에 넣습니다.
-                  <br />
-                  1인일은 8시간입니다.
-                  <br />
-                  {report.development.source === "github"
-                    ? "이 서버에는 git 기록이 없어 GitHub의 같은 저장소 커밋으로 계산했습니다."
-                    : "이 서버의 git 기록으로 계산했습니다."}
-                </p>
+                <Lines
+                  items={[
+                    "출퇴근이 아니라 커밋 간격으로 추정합니다.",
+                    `${report.development.sessionGapMinutes / 60}시간 안에 이어지면 한 작업이고, 앞에 ${report.development.leadMinutes}분을 더합니다.`,
+                    `커밋이 하나면 ${report.development.leadMinutes}분입니다.`,
+                    "1인일은 8시간입니다.",
+                    "자정을 넘기면 마지막 커밋 날짜에 넣습니다.",
+                    report.development.source === "github"
+                      ? "이 서버에 git 기록이 없어 GitHub 커밋으로 계산했습니다."
+                      : "이 서버의 git 기록으로 계산했습니다.",
+                  ]}
+                />
                 <div className="grid gap-2 sm:grid-cols-3">
-                  <Stat
-                    label="추정 투입"
-                    value={effortLabel(report.development.minutes)}
-                  />
+                  <Stat label="추정 투입" value={effortLabel(report.development.minutes)} />
                   <Stat label="커밋" value={`${count(report.development.commits)}건`} />
                   <Stat label="작업" value={`${count(report.development.sessions)}건`} />
                 </div>
                 {report.development.authors.length ? (
-                  <table className="w-full border-collapse text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-left text-slate-500">
-                        <th className="py-1.5 pr-3 font-medium">작성자</th>
-                        <th className="py-1.5 pr-3 font-medium">커밋</th>
-                        <th className="py-1.5 pr-3 font-medium">작업</th>
-                        <th className="py-1.5 font-medium">투입</th>
+                  <TableShell>
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className={thClass}>작성자</th>
+                        <th className={thClass}>커밋</th>
+                        <th className={thClass}>작업</th>
+                        <th className={thClass}>투입</th>
                       </tr>
                     </thead>
                     <tbody>
                       {report.development.authors.map((row) => (
-                        <tr
-                          key={`${row.name}-${row.commits}-${row.minutes}`}
-                          className="border-b border-slate-100"
-                        >
-                          <td className="py-1.5 pr-3">{row.name}</td>
-                          <td className="py-1.5 pr-3">{count(row.commits)}</td>
-                          <td className="py-1.5 pr-3">{count(row.sessions)}</td>
-                          <td className="py-1.5">{effortLabel(row.minutes)}</td>
+                        <tr key={`${row.name}-${row.commits}-${row.minutes}`}>
+                          <td className={tdClass}>{row.name}</td>
+                          <td className={`${tdClass} tabular-nums`}>{count(row.commits)}</td>
+                          <td className={`${tdClass} tabular-nums`}>{count(row.sessions)}</td>
+                          <td className={tdClass}>{effortLabel(row.minutes)}</td>
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </TableShell>
                 ) : (
                   <p className="text-sm text-slate-600">이 달에 개발 커밋이 없습니다.</p>
                 )}
                 {report.development.days.length ? (
-                  <table className="w-full border-collapse text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-left text-slate-500">
-                        <th className="py-1.5 pr-3 font-medium">일자</th>
-                        <th className="py-1.5 pr-3 font-medium">투입</th>
-                        <th className="py-1.5 font-medium">작업 내역</th>
+                  <TableShell>
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className={thClass}>일자</th>
+                        <th className={thClass}>투입</th>
+                        <th className={thClass}>작업 내역</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -546,14 +629,16 @@ export default function OpsMonthlyReportPage() {
                         const shown = row.subjects.slice(0, SUBJECTS_SHOWN);
                         const rest = row.subjects.length - shown.length;
                         return (
-                          <tr key={row.ymd} className="border-b border-slate-100 align-top">
-                            <td className="whitespace-nowrap py-2 pr-3">{row.ymd}</td>
-                            <td className="whitespace-nowrap py-2 pr-3">
+                          <tr key={row.ymd}>
+                            <td className={`${tdClass} whitespace-nowrap tabular-nums`}>
+                              {row.ymd}
+                            </td>
+                            <td className={`${tdClass} whitespace-nowrap`}>
                               {effortLabel(row.minutes)}
                               <br />
                               커밋 {count(row.commits)}건
                             </td>
-                            <td className="py-2 leading-6">
+                            <td className={`${tdClass} leading-6`}>
                               {shown.map((subject, index) => (
                                 <span key={`${row.ymd}-${index}`}>
                                   {index > 0 ? <br /> : null}
@@ -571,54 +656,64 @@ export default function OpsMonthlyReportPage() {
                         );
                       })}
                     </tbody>
-                  </table>
+                  </TableShell>
                 ) : null}
               </>
             ) : (
-              <p className="text-sm leading-6">
+              <p className="text-sm leading-6 text-slate-600">
                 이 달의 커밋 기록을 읽지 못해 투입 시간을 계산하지 못했습니다.
               </p>
             )}
-          </section>
+          </Section>
 
-          <section className="space-y-3">
-            <h2 className="text-base font-semibold">5. 일자별 기록</h2>
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-slate-500">
-                  <th className="py-1.5 pr-3 font-medium">일자</th>
-                  <th className="py-1.5 pr-3 font-medium">접속 계정</th>
-                  <th className="py-1.5 font-medium">접수 의뢰</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.daily.map((row) => (
-                  <tr key={row.ymd} className="border-b border-slate-100">
-                    <td className="py-1 pr-3">{row.ymd}</td>
-                    <td className="py-1 pr-3">{count(row.accessUsers)}</td>
-                    <td className="py-1">{count(row.transfersCreated)}</td>
+          <Section index="5" title="날짜별 기록">
+            {dailyRows.every((row) => row.kind === "idle") ? (
+              <p className="text-sm text-slate-600">이 달에 접속과 접수가 없습니다.</p>
+            ) : (
+              <TableShell>
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className={thClass}>일자</th>
+                    <th className={thClass}>접속 계정</th>
+                    <th className={thClass}>접수 의뢰</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+                </thead>
+                <tbody>
+                  {dailyRows.map((row) =>
+                    row.kind === "idle" ? (
+                      <tr key={`${row.from}-${row.to}`}>
+                        <td className={`${tdClass} tabular-nums`}>
+                          {ymdLabel(row.from)} ~ {ymdLabel(row.to)}
+                        </td>
+                        <td className={tdClass} colSpan={2}>
+                          {count(row.days)}일은 접속·접수가 없습니다.
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={row.ymd}>
+                        <td className={`${tdClass} tabular-nums`}>{row.ymd}</td>
+                        <td className={`${tdClass} tabular-nums`}>{count(row.accessUsers)}</td>
+                        <td className={`${tdClass} tabular-nums`}>
+                          {count(row.transfersCreated)}
+                        </td>
+                      </tr>
+                    ),
+                  )}
+                </tbody>
+              </TableShell>
+            )}
+          </Section>
 
-          <section className="space-y-2 border-t border-slate-200 pt-4 text-sm leading-6">
-            <h2 className="text-base font-semibold">6. 이 보고서 밖에 보관할 원본</h2>
-            <p>
-              세금계산서와 개발·운영비·플랫폼 사용료 입금 내역은 별도 원본으로
-              보관합니다.
-              <br />
-              플랫폼 사용료의 정산 기준금액은 관리자 대시보드 재무-정산 화면
-              출력본을 따릅니다.
-              <br />
-              클라우드 사업자 청구서와 결제 전표도 이 수치로 대신하지 않습니다.
-              <br />
-              그 청구서 원본은 을 명의로 보관하고, 갑이 요청하면 제시합니다.
-              <br />
-              국세 관련 증빙은 통상 5년 보관합니다.
-            </p>
-          </section>
+          <Section index="6" title="따로 보관">
+            <Lines
+              items={[
+                "세금계산서, 입금 내역, 클라우드 청구서는 이 보고서로 대신하지 않습니다.",
+                "사용료 기준은 관리자 재무-정산 화면입니다.",
+                "청구서 원본은 을이 보관하고, 요청하면 보여 줍니다.",
+                "국세 증빙은 5년 보관합니다.",
+              ]}
+            />
+          </Section>
         </article>
       ) : null}
     </AdminPageShell>
