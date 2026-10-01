@@ -453,6 +453,105 @@ export function trianglesFromObj(buffer) {
 }
 
 export const MESH_FILE_PATTERN = /\.(dcm|stl|ply|obj)$/i;
+/** 라이브러리 묶음으로 받는 형상. STEP(.stp·.step)은 면을 만들어 읽는다. */
+export const LIBRARY_SHAPE_PATTERN = /\.(dcm|stl|stp|step)$/i;
+
+let occtPromise;
+
+/** STEP(.stp·.step) → 삼각형 좌표(9개씩). 단위는 보통 mm. */
+export async function trianglesFromStep(buffer) {
+  if (buffer.length > MAX_XML_BYTES) fail("형상 파일이 너무 큽니다.");
+  if (!occtPromise) {
+    const { createRequire } = await import("module");
+    const require = createRequire(import.meta.url);
+    occtPromise = require("occt-import-js")();
+  }
+  const occt = await occtPromise;
+  const result = occt.ReadStepFile(new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.length), null);
+  if (!result?.success) fail("STEP 형상을 읽지 못했습니다.");
+  const tris = [];
+  for (const mesh of result.meshes ?? []) {
+    const pos = mesh.attributes?.position?.array;
+    const idx = mesh.index?.array;
+    if (!pos?.length) continue;
+    if (idx?.length) {
+      for (let i = 0; i + 2 < idx.length; i += 3) {
+        for (const id of [idx[i], idx[i + 1], idx[i + 2]]) {
+          const at = id * 3;
+          tris.push(pos[at], pos[at + 1], pos[at + 2]);
+        }
+        if (tris.length > MAX_TRIANGLES * 9) fail("면이 너무 많습니다.");
+      }
+    } else {
+      for (let i = 0; i < pos.length; i += 1) tris.push(pos[i]);
+      if (tris.length > MAX_TRIANGLES * 9) fail("면이 너무 많습니다.");
+    }
+  }
+  if (tris.length < 36) fail("STEP에 면이 없습니다.");
+  return Float32Array.from(tris);
+}
+
+/**
+ * 제조사 STL·STEP은 긴 축을 임플란트 축으로, 더 가는 쪽을 플랫폼으로 둔다.
+ * 결과 좌표는 플랫폼 원점·+Y 축이다.
+ */
+export function alignScanbodyToModel(triangles) {
+  const count = triangles.length / 3;
+  if (!Number.isInteger(count) || count < 4) fail("형상 면이 너무 적습니다.");
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  const mid = [0, 0, 0];
+  for (let i = 0; i < triangles.length; i += 3) {
+    for (let k = 0; k < 3; k += 1) {
+      const x = triangles[i + k];
+      if (!Number.isFinite(x)) fail("형상 좌표가 올바르지 않습니다.");
+      if (x < min[k]) min[k] = x;
+      if (x > max[k]) max[k] = x;
+      mid[k] += x;
+    }
+  }
+  for (let k = 0; k < 3; k += 1) mid[k] /= count;
+  const ext = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
+  const span = Math.max(...ext);
+  if (!(span > 0)) fail("형상 크기가 없습니다.");
+  const scale = span < 0.5 ? 1000 : span > 2000 ? 0.001 : 1;
+  let axisIndex = 0;
+  if (ext[1] >= ext[0] && ext[1] >= ext[2]) axisIndex = 1;
+  else if (ext[2] >= ext[0] && ext[2] >= ext[1]) axisIndex = 2;
+  const low = min[axisIndex];
+  const high = max[axisIndex];
+  const band = Math.max((high - low) * 0.2, span * 1e-4);
+  let lowR = 0;
+  let highR = 0;
+  let lowN = 0;
+  let highN = 0;
+  for (let i = 0; i < triangles.length; i += 3) {
+    const along = triangles[i + axisIndex];
+    let radial = 0;
+    for (let k = 0; k < 3; k += 1) {
+      if (k === axisIndex) continue;
+      const d = triangles[i + k] - mid[k];
+      radial += d * d;
+    }
+    radial = Math.sqrt(radial);
+    if (along <= low + band) {
+      lowR += radial;
+      lowN += 1;
+    } else if (along >= high - band) {
+      highR += radial;
+      highN += 1;
+    }
+  }
+  const platformAtLow = lowR / Math.max(lowN, 1) <= highR / Math.max(highN, 1);
+  const axis = [0, 0, 0];
+  axis[axisIndex] = platformAtLow ? 1 : -1;
+  const origin = [mid[0], mid[1], mid[2]];
+  origin[axisIndex] = platformAtLow ? low : high;
+  const scaled = scale === 1 ? triangles : Float32Array.from(triangles, (value) => value * scale);
+  const originScaled = origin.map((value) => value * scale);
+  const ref = axisIndex === 0 ? [0, 1, 0] : [1, 0, 0];
+  return frameToModel(scaled, { origin: originScaled, axis, ref });
+}
 
 /** 확장자로 형상 파일(.dcm·.stl·.ply·.obj)을 읽는다. */
 export function trianglesFromMeshFile(buffer, fileName) {
@@ -462,6 +561,13 @@ export function trianglesFromMeshFile(buffer, fileName) {
   if (ext === "ply") return trianglesFromPly(buffer);
   if (ext === "obj") return trianglesFromObj(buffer);
   fail(".dcm·.stl·.ply·.obj 형상만 읽을 수 있습니다.");
+}
+
+/** 라이브러리로 받는 형상(.dcm·.stl·.stp). STEP은 비동기. */
+export async function trianglesFromLibraryShape(buffer, fileName) {
+  const ext = String(fileName || "").toLowerCase().split(".").pop();
+  if (ext === "stp" || ext === "step") return trianglesFromStep(buffer);
+  return trianglesFromMeshFile(buffer, fileName);
 }
 
 /** 스캔 좌표 형상을 플랫폼 원점(origin)으로 옮긴 뒤 모델 좌표로 돌린다. */

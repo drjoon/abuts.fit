@@ -516,7 +516,7 @@ export function ScanbodyLibraryManager() {
         });
       }
       if (bundles.length === 0) {
-        throw new Error("올릴 라이브러리가 없습니다. 3Shape .dme 파일이나 exocad 라이브러리 폴더를 골라 주세요.");
+        throw new Error("올릴 라이브러리가 없습니다. .dme, .zip, .dcm, .stl, .stp 파일을 골라 주세요.");
       }
     } catch (error) {
       toast({
@@ -769,7 +769,9 @@ export function ScanbodyLibraryManager() {
           <div>
             <CardTitle className="text-base">스캔바디 라이브러리</CardTitle>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              3Shape .dme 파일이나 exocad 라이브러리 폴더(또는 .zip)를 올립니다.
+              3Shape .dme, exocad 폴더(또는 .zip), 스캔바디 형상(.dcm·.stl·.stp)을 올립니다.
+              <br />
+              파일에 들어 있는 임플란트와 규격을 모두 등록합니다.
               <br />
               악성코드 검사와 형상 검증을 거친 뒤 등록됩니다.
               <br />
@@ -795,7 +797,7 @@ export function ScanbodyLibraryManager() {
           <input
             ref={fileInput}
             type="file"
-            accept=".dme,.zip"
+            accept=".dme,.zip,.dcm,.stl,.stp,.step"
             multiple
             className="hidden"
             onChange={(event) => {

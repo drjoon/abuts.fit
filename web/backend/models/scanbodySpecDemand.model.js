@@ -1,6 +1,7 @@
 // 치과 의뢰에 들어온 스캔바디·심플 규격을 쌓는다(AI 디자인 공개 전부터). 관리자가 보고 제조사에서 받아 등록한다.
 // key = type|maker|diameter|height. 심플어벗·심플밀링은 직경만 맞으면 쓰니 height를 비우고 들어온 높이는 heights에 모은다.
-// 기공소에는 기본으로 업로드를 요구하지 않는다. 시장에서 거의 안 쓰는 규격만 관리자가 labUploadRequested로 표시한다.
+// 관리자 목록은 같은 제조사·심플 종류를 한 장으로 묶어 없는 규격을 같이 보여 주고, 기공소 요청도 그 규격을 한 번에 켠다.
+// 기공소에는 기본으로 업로드를 요구하지 않는다. 제조사를 찾을 수 없는 규격만 관리자가 labUploadRequested로 표시한다.
 // related files:
 // - web/backend/services/scanbodyDemand.service.js
 // - web/backend/scripts/db/backfill-scanbody-spec-demand.js

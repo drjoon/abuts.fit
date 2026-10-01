@@ -448,25 +448,38 @@ export async function rebaseScanbodyLibrary(id: string): Promise<ScanbodyLibrary
   return res.data.data;
 }
 
-export type ScanbodyDemandRow = {
+export type ScanbodyDemandSpec = {
   key: string;
+  diameter: string;
+  height: string;
+  /** 심플어벗·심플밀링은 직경 하나에 높이를 모은다. */
+  heights: string[];
+};
+
+export type ScanbodyDemandRow = {
+  /** 카드 id. `library|제조사` 또는 `template|종류`. */
+  key: string;
+  /** 기공소 요청에 같이 켜는 저장 key. 카드 안 규격 전부. */
+  keys: string[];
   /** library: 제조사 스캔바디 라이브러리, template: 심플어벗·심플밀링·심플힐링 템플릿. */
   type: "library" | "template";
   maker: string;
   diameter: string;
   height: string;
-  /** 심플어벗·심플밀링은 직경으로 묶고, 의뢰에 들어온 높이를 모은다. */
+  /** 라이브러리·단일 규격에 모인 높이. 심플 템플릿 묶음은 specs를 본다. */
   heights: string[];
+  /** 이 카드에 들어 있는, 아직 없는 규격. */
+  specs: ScanbodyDemandSpec[];
   teethCount: number;
   transferCount: number;
-  /** 이 규격을 의뢰한 치과·받은 기공소 수. 적으면 시장에서 거의 안 쓰는 것일 수 있다. */
+  /** 이 규격을 의뢰한 치과·받은 기공소 수. */
   practiceCount: number;
   labCount: number;
   /** 같이 의뢰된 임플란트(많은 순 3개). */
   implants: { manufacturer: string; brand: string; family: string; type: string; count: number }[];
   firstAt: string;
   latestAt: string;
-  /** 관리자가 기공소에 올려 달라고 표시했다. */
+  /** 카드 안 규격이 모두 기공소 요청이면 true. */
   labUploadRequested: boolean;
 };
 
@@ -477,12 +490,12 @@ export async function fetchScanbodyDemand(): Promise<ScanbodyDemandRow[]> {
   return res.data?.data ?? [];
 }
 
-/** 관리자: 이 규격은 기공소에 올려 달라고 한다(또는 거둔다). */
-export async function setScanbodyDemandLabRequest(key: string, requested: boolean) {
+/** 관리자: 이 카드 안 규격 전부를 기공소에 올려 달라고 한다(또는 거둔다). */
+export async function setScanbodyDemandLabRequest(keys: string[], requested: boolean) {
   const res = await apiFetch({
     path: `${BASE}/demand/lab-request`,
     method: "PATCH",
-    jsonBody: { key, requested },
+    jsonBody: { keys, requested },
   });
   if (!res.ok) return fail(res, "기공소 요청을 바꾸지 못했습니다.");
   invalidateApiGetCache(BASE);

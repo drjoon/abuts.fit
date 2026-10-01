@@ -1,5 +1,6 @@
 // 치과 의뢰에 들어온 스캔바디·심플 규격과 임플란트를 쌓고(ScanbodySpecDemand), 공용 형상이 없는 것을 관리자에게 보인다.
-// 관리자가 제조사에서 받아 등록하는 것이 기본이다. 기공소에는 관리자가 표시한 규격(labUploadRequested)만 올려 달라고 한다.
+// 관리자가 제조사에 접촉해 받아 등록하는 것이 기본이다. 제조사를 찾을 수 없는 규격만 관리자가 표시하면(labUploadRequested) 기공소에 올려 달라고 한다.
+// 저장은 규격(key)마다 하고, 관리자 목록에서는 제조사·심플 종류 한 장으로 묶어 빠뜨린 규격을 같이 보인다.
 // 판정은 AI 디자인과 같다(scanbodyLibraryApi.ts orderedScanbodyCandidates·abutmentTemplateFor·orderTemplateSpec·scanbodySpecKey).
 // 기공소 자기 것(공용 아님)·사본은 세지 않는다. 모두가 쓰는 공용이 목표다.
 // related files:
@@ -174,9 +175,140 @@ function topImplants(implants) {
     }));
 }
 
+const HEIGHT_RANK = { S: 0, M: 1, L: 2, XL: 3 };
+
+function sortHeights(heights) {
+  return [...new Set((heights || []).filter(Boolean))].sort(
+    (a, b) => (HEIGHT_RANK[a] ?? 9) - (HEIGHT_RANK[b] ?? 9) || String(a).localeCompare(String(b)),
+  );
+}
+
+function specView(row) {
+  return {
+    key: row.key,
+    diameter: row.diameter || "",
+    height: row.height || "",
+    heights: sortHeights(row.heights),
+  };
+}
+
+function mergeImplants(rows) {
+  const map = new Map();
+  for (const row of rows) {
+    for (const [field, implant] of Object.entries(row.implants || {})) {
+      if (!implant?.manufacturer) continue;
+      const prev = map.get(field) ?? {
+        manufacturer: implant.manufacturer,
+        brand: implant.brand || "",
+        family: implant.family || "",
+        type: implant.type || "",
+        count: 0,
+      };
+      prev.count += implant.count || 0;
+      map.set(field, prev);
+    }
+  }
+  return topImplants(Object.fromEntries(map));
+}
+
+function aggregateDemand(rows) {
+  const transferIds = new Set();
+  const practiceIds = new Set();
+  const labIds = new Set();
+  let teeth = 0;
+  let firstAt = null;
+  let lastAt = null;
+  for (const row of rows) {
+    teeth += row.teethCount || 0;
+    for (const id of row.transferIds || []) transferIds.add(String(id));
+    for (const id of row.practiceAnchorIds || []) practiceIds.add(String(id));
+    for (const id of row.labAnchorIds || []) labIds.add(String(id));
+    if (row.firstAt && (!firstAt || row.firstAt < firstAt)) firstAt = row.firstAt;
+    if (row.lastAt && (!lastAt || row.lastAt > lastAt)) lastAt = row.lastAt;
+  }
+  return {
+    teethCount: teeth,
+    transferCount: transferIds.size,
+    practiceCount: practiceIds.size,
+    labCount: labIds.size,
+    firstAt,
+    lastAt,
+  };
+}
+
+function demandCard(row, extras) {
+  return {
+    key: extras.key,
+    keys: extras.keys,
+    type: row.type,
+    maker: row.maker,
+    diameter: extras.diameter,
+    height: extras.height,
+    heights: extras.heights,
+    specs: extras.specs,
+    teethCount: extras.teethCount,
+    transferCount: extras.transferCount,
+    practiceCount: extras.practiceCount,
+    labCount: extras.labCount,
+    implants: extras.implants,
+    firstAt: extras.firstAt,
+    latestAt: extras.latestAt,
+    labUploadRequested: extras.labUploadRequested,
+  };
+}
+
+function specSort(a, b) {
+  const da = Number(String(a.diameter).replace(",", "."));
+  const db = Number(String(b.diameter).replace(",", "."));
+  const aNum = Number.isFinite(da);
+  const bNum = Number.isFinite(db);
+  if (aNum !== bNum) return aNum ? -1 : 1;
+  if (aNum && da !== db) return da - db;
+  if (!aNum && a.diameter !== b.diameter) return a.diameter.localeCompare(b.diameter, "ko");
+  const ha = Number(String(a.height).replace(",", "."));
+  const hb = Number(String(b.height).replace(",", "."));
+  if (Number.isFinite(ha) && Number.isFinite(hb) && ha !== hb) return ha - hb;
+  const rank = (HEIGHT_RANK[a.height] ?? 9) - (HEIGHT_RANK[b.height] ?? 9);
+  if (rank) return rank;
+  return a.height.localeCompare(b.height) || a.key.localeCompare(b.key);
+}
+
+/** 제조사 라이브러리·심플 템플릿 모두 이름 한 장으로 묶고, 없는 규격은 specs에 둔다. */
+function groupDemandCards(rows) {
+  const buckets = new Map();
+  for (const row of rows) {
+    const groupKey = `${row.type}|${row.maker}`;
+    const bucket = buckets.get(groupKey) ?? [];
+    bucket.push(row);
+    buckets.set(groupKey, bucket);
+  }
+  const cards = [...buckets.values()].map((bucket) => {
+    const stats = aggregateDemand(bucket);
+    const specs = bucket.map(specView).sort(specSort);
+    return {
+      sortAt: stats.lastAt ? new Date(stats.lastAt).getTime() : 0,
+      view: demandCard(bucket[0], {
+        key: `${bucket[0].type}|${bucket[0].maker}`,
+        keys: bucket.map((row) => row.key),
+        diameter: "",
+        height: "",
+        heights: [],
+        specs,
+        implants: mergeImplants(bucket),
+        labUploadRequested: bucket.every((row) => row.labUploadRequested),
+        latestAt: stats.lastAt,
+        ...stats,
+      }),
+    };
+  });
+  cards.sort((a, b) => b.sortAt - a.sortAt);
+  return cards.map((card) => card.view);
+}
+
 /**
  * 쌓인 규격 중 공용 형상이 없는 것. 최근 의뢰가 먼저.
- * practiceCount·labCount는 관리자가 「시장에서 거의 안 쓰는 것」을 고를 때 본다.
+ * 제조사·심플 종류마다 한 장이고, specs가 아직 없는 규격이다. 하나라도 등록되면 그 규격만 빠진다.
+ * practiceCount·labCount는 관리자가 제조사를 못 찾아 기공소에 넘길지 볼 때 쓴다.
  */
 export async function listScanbodyDemand() {
   const shared = { forkOf: null, $or: [{ ownerAnchorId: null }, { isPublic: true }] };
@@ -187,40 +319,29 @@ export async function listScanbodyDemand() {
       .lean(),
     AbutmentTemplate.find(shared).select({ kind: 1, diameter: 1, height: 1 }).lean(),
   ]);
-  return specs
-    .filter((row) => (row.type === "template" ? !hasTemplate(templates, row) : !hasLibraryShape(libraries, row)))
-    .map((row) => ({
-      key: row.key,
-      type: row.type,
-      maker: row.maker,
-      diameter: row.diameter,
-      height: row.height,
-      heights: row.heights || [],
-      teethCount: row.teethCount || 0,
-      transferCount: (row.transferIds || []).length,
-      practiceCount: (row.practiceAnchorIds || []).length,
-      labCount: (row.labAnchorIds || []).length,
-      implants: topImplants(row.implants),
-      firstAt: row.firstAt,
-      latestAt: row.lastAt,
-      labUploadRequested: Boolean(row.labUploadRequested),
-    }));
+  const missing = specs.filter((row) =>
+    row.type === "template" ? !hasTemplate(templates, row) : !hasLibraryShape(libraries, row),
+  );
+  return groupDemandCards(missing);
 }
 
-/** 관리자: 이 규격은 기공소에 올려 달라고 한다(또는 거둔다). */
-export async function setLabUploadRequested(key, requested, adminId) {
-  const doc = await ScanbodySpecDemand.findOneAndUpdate(
-    { key },
+/** 관리자: 이 카드 안 규격 전부를 기공소에 올려 달라고 한다(또는 거둔다). */
+export async function setLabUploadRequested(keys, requested, adminId) {
+  const list = [...new Set((Array.isArray(keys) ? keys : [keys]).map((key) => text(key)).filter(Boolean))];
+  if (list.length === 0) return null;
+  const on = Boolean(requested);
+  const result = await ScanbodySpecDemand.updateMany(
+    { key: { $in: list } },
     {
       $set: {
-        labUploadRequested: Boolean(requested),
-        labUploadRequestedAt: requested ? new Date() : null,
-        labUploadRequestedBy: requested ? adminId : null,
+        labUploadRequested: on,
+        labUploadRequestedAt: on ? new Date() : null,
+        labUploadRequestedBy: on ? adminId : null,
       },
     },
-    { new: true },
-  ).lean();
-  return doc ? { key: doc.key, labUploadRequested: doc.labUploadRequested } : null;
+  );
+  if (!result.matchedCount) return null;
+  return { keys: list, labUploadRequested: on };
 }
 
 /** 기공소 AI 디자인: 업로드를 요청한 규격 key. 나머지는 「어벗츠가 준비 중」으로만 보인다. */

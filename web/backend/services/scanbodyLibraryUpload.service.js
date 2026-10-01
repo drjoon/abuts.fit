@@ -34,7 +34,7 @@ import {
   putObjectToS3,
 } from "../utils/s3.utils.js";
 import { SCANBODY_UPLOAD_LIMITS } from "./scanbodyLibraryImport.service.js";
-import { MESH_FILE_PATTERN } from "../utils/scanbodyGeometry.js";
+import { MESH_FILE_PATTERN, LIBRARY_SHAPE_PATTERN } from "../utils/scanbodyGeometry.js";
 
 export const SCANBODY_S3_PREFIX = "scanbody-library";
 const QUARANTINE_PREFIX = `${SCANBODY_S3_PREFIX}/quarantine/`;
@@ -188,13 +188,14 @@ function parseMeshMeta(raw) {
 export async function createScanbodyUpload({ ownerAnchorId, userId, fileName, size, manufacturer, meshMeta }) {
   const name = String(fileName || "").trim().slice(0, 200);
   const maker = String(manufacturer || "").trim().slice(0, 60);
-  const isMesh = MESH_FILE_PATTERN.test(name);
-  if (!isMesh && !/\.(dme|zip)$/i.test(name)) {
-    throw new ApiError(400, ".dme·.zip(exocad 폴더) 또는 형상 파일(.dcm·.stl·.ply·.obj)만 올릴 수 있습니다.");
+  const isOrderMesh = MESH_FILE_PATTERN.test(name) && meshMeta != null;
+  const isLibraryFile = /\.(dme|zip)$/i.test(name) || LIBRARY_SHAPE_PATTERN.test(name);
+  if (!isOrderMesh && !isLibraryFile) {
+    throw new ApiError(400, ".dme·.zip·.dcm·.stl·.stp 또는 의뢰 형상 파일만 올릴 수 있습니다.");
   }
-  if (isMesh && !maker) throw new ApiError(400, "형상 파일 한 개는 AI 디자인의 의뢰 스캔바디에서 올려 주세요.");
-  const parsedMeshMeta = isMesh ? parseMeshMeta(meshMeta) : null;
-  const maxBytes = isMesh ? SCANBODY_UPLOAD_LIMITS.maxEntryBytes : SCANBODY_UPLOAD_LIMITS.maxUploadBytes;
+  if (isOrderMesh && !maker) throw new ApiError(400, "형상 파일 한 개는 AI 디자인의 의뢰 스캔바디에서 올려 주세요.");
+  const parsedMeshMeta = isOrderMesh ? parseMeshMeta(meshMeta) : null;
+  const maxBytes = isOrderMesh || LIBRARY_SHAPE_PATTERN.test(name) ? SCANBODY_UPLOAD_LIMITS.maxEntryBytes : SCANBODY_UPLOAD_LIMITS.maxUploadBytes;
   const declaredSize = Number(size);
   if (!Number.isFinite(declaredSize) || declaredSize <= 0) throw new ApiError(400, "파일 크기가 올바르지 않습니다.");
   if (declaredSize > maxBytes) {

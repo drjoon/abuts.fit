@@ -238,10 +238,12 @@ export const listScanbodyDemandHandler = asyncHandler(async (req, res) => {
   return res.status(200).json(new ApiResponse(200, await listScanbodyDemand()));
 });
 
-// PATCH /api/scanbody-libraries/demand/lab-request  { key, requested } — 관리자: 기공소에 올려 달라고 하기
+// PATCH /api/scanbody-libraries/demand/lab-request  { key|keys, requested } — 관리자: 기공소에 올려 달라고 하기
 export const setScanbodyDemandLabRequest = asyncHandler(async (req, res) => {
   assertAdmin(req);
-  const row = await setLabUploadRequested(text(req.body?.key, 300), req.body?.requested === true, req.user._id);
+  const raw = Array.isArray(req.body?.keys) && req.body.keys.length > 0 ? req.body.keys : [req.body?.key];
+  const keys = [...new Set(raw.map((key) => text(key, 300)).filter(Boolean))].slice(0, 40);
+  const row = await setLabUploadRequested(keys, req.body?.requested === true, req.user._id);
   if (!row) throw new ApiError(404, "규격을 찾을 수 없습니다.");
   return res.status(200).json(new ApiResponse(200, row));
 });

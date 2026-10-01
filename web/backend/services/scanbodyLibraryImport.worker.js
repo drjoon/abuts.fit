@@ -38,7 +38,7 @@ try {
   const buffer = Buffer.from(workerData.buffer.buffer, workerData.buffer.byteOffset, workerData.buffer.length);
   const { libraries, notes } = workerData.meshMeta
     ? parseScanbodyMesh(buffer, workerData.fileName, workerData.meshMeta)
-    : parseScanbodyBundle(buffer, workerData.fileName);
+    : await parseScanbodyBundle(buffer, workerData.fileName);
   const transfer = [];
   const rows = libraries.map((lib) => ({
     source: lib.source,

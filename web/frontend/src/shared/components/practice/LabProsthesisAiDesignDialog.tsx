@@ -2887,9 +2887,9 @@ function LabProsthesisAiDesignDialog({
       lines: [
         `치과가 지정한 ${spec} 스캔바디는 시장에서 드물어 어벗츠가 구하기 어렵습니다.`,
         "쓰던 라이브러리를 올려 주세요.",
-        "3Shape .dme, exocad 폴더(또는 .zip), 스캔한 형상 한 개(.dcm·.stl·.ply·.obj)를 받습니다.",
+        "3Shape .dme, exocad 폴더(또는 .zip), 스캔바디 형상(.dcm·.stl·.stp)을 받습니다.",
       ],
-      accept: `.dme,.zip,${MESH_FILE_ACCEPT}`,
+      accept: `.dme,.zip,.stp,.step,${MESH_FILE_ACCEPT}`,
       multiple: true,
       allowFolder: true,
       buttonLabel: `${maker} 라이브러리 올리기`,

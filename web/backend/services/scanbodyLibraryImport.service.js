@@ -2,7 +2,9 @@
 // - 3Shape `.dme`(ZIP): Materials.xml의 임플란트 시스템·키트·스캔바디(.dcm).
 // - exocad: config.xml(ImplantLibraryEntry)의 타입별 스캔바디 STL(MarkerFilename)과 축.
 // - 형상 한 개(.dcm·.stl·.ply·.obj): 기공소 스캔·다른 CAD 내보내기. 축은 브라우저가 계산해 보낸다(parseScanbodyMesh).
+// - 제조사 형상(.stl·.stp·.step·.dcm) 여러 개: 파일마다 규격 하나로 모두 등록한다. 축은 긴 방향·가는 쪽을 플랫폼으로 잡는다.
 // 형상은 좌표·면만 꺼내 모델 좌표 이진 STL로 새로 만든다(scanbodyGeometry.js). 스캔바디만 저장한다.
+// 제조사 묶음은 임플란트·규격이 모두 들어 있다. 의뢰에 나온 규격만 고르지 않고 파일 안 스캔바디를 전부 등록한다.
 // `.dme`는 묶음 안에서 한 단계만 푼다. 그 밖의 중첩 압축과 .sdfa·.ipflib(암호화)은 풀지 않는다.
 // related files:
 // - web/backend/utils/safeUnzip.js
@@ -12,11 +14,14 @@ import { XMLParser } from "fast-xml-parser";
 import { isZip, normalizeEntryName, safeUnzip } from "../utils/safeUnzip.js";
 import {
   ScanbodyInputError,
+  LIBRARY_SHAPE_PATTERN,
+  alignScanbodyToModel,
   canonicalStlHash,
   encodeCanonicalStl,
   frameToModel,
   transformToModel,
   trianglesFromHps,
+  trianglesFromLibraryShape,
   trianglesFromMeshFile,
   trianglesFromStl,
 } from "../utils/scanbodyGeometry.js";
@@ -109,6 +114,24 @@ const refId = (value) => {
   const v = text(value, 300);
   return v && v !== "_NULL_" ? v : null;
 };
+
+/** 키트 XML의 속성·목록에 적힌 부품 id. 스캔바디가 아닌 것은 나중에 걸러진다. */
+function refCandidates(obj) {
+  const ids = [];
+  const props = objectProps(obj);
+  for (const [name, value] of Object.entries(props)) {
+    if (name === "Name" || name === "InRecycleBin" || name === "ItemID" || name === "CreatorSiteID") continue;
+    const id = refId(value);
+    if (id) ids.push(id);
+  }
+  for (const list of obj.List ?? []) {
+    for (const row of list.String ?? []) {
+      const id = refId(row?.["@_value"]);
+      if (id) ids.push(id);
+    }
+  }
+  return ids;
+}
 const itemKey = (p) => `${p.CreatorSiteID ?? ""}_${p.ItemID ?? ""}`;
 const cadPath = (path) =>
   normalizeEntryName(String(path || "").replace(/^:[A-Z]+:/i, "")).toLowerCase();
@@ -140,7 +163,9 @@ function parseDmeFiles(files, fileName, notes) {
 
   const systems = new Map(byType("TDM_Item_ImplantSystem").map((p) => [itemKey(p), text(p.Name)]));
   const rawParts = new Map(byType("TDM_Item_ImplantSystemPart").map((p) => [itemKey(p), p]));
-  const rawKits = byType("TDM_Item_AbutmentKit");
+  const rawKitObjects = objects.filter(
+    (obj) => obj["@_type"] === "TDM_Item_AbutmentKit" && objectProps(obj).InRecycleBin !== "True",
+  );
   const extras = byType("TDM_Item_AbutmentKitImplantPartExtraRelation");
 
   const dcmByPath = new Map([...files.keys()].filter((n) => /\.dcm$/i.test(n)).map((n) => [n.toLowerCase(), n]));
@@ -154,6 +179,7 @@ function parseDmeFiles(files, fileName, notes) {
   };
 
   const partCache = new Map();
+  const attached = new Set();
   const loadScanPart = (partId) => {
     if (!partId) return null;
     if (partCache.has(partId)) return partCache.get(partId);
@@ -176,13 +202,7 @@ function parseDmeFiles(files, fileName, notes) {
     return part;
   };
 
-  const out = new Map();
-  for (const raw of rawKits) {
-    const kitItem = itemKey(raw);
-    const implantId = refId(raw.ImplantID);
-    const systemId = implantId ? rawParts.get(implantId)?.ImplantSystemID : undefined;
-    const systemName =
-      (systemId && systems.get(systemId)) || [...systems.values()][0] || stripExt(fileName);
+  const ensureLib = (out, systemName) => {
     const lib = out.get(systemName) ?? {
       source: "3shape",
       systemName,
@@ -192,20 +212,63 @@ function parseDmeFiles(files, fileName, notes) {
       kits: new Map(),
     };
     out.set(systemName, lib);
+    return lib;
+  };
 
+  const putKit = (lib, kit) => {
+    if (kit.scanAbutmentPartIds.length === 0) return;
+    const partsKey = kit.scanAbutmentPartIds.join(",");
+    for (const row of lib.kits.values()) {
+      if (row.scanAbutmentPartIds.join(",") === partsKey) return;
+    }
+    let kitId = kit.kitId || `kit:${lib.kits.size}`;
+    let n = 2;
+    while (lib.kits.has(kitId)) {
+      kitId = `${kit.kitId || "kit"}#${n}`;
+      n += 1;
+    }
+    lib.kits.set(kitId, { ...kit, kitId });
+  };
+
+  const out = new Map();
+  for (const obj of rawKitObjects) {
+    const raw = objectProps(obj);
+    const kitItem = itemKey(raw);
+    const implantId = refId(raw.ImplantID);
+    const systemId = implantId ? rawParts.get(implantId)?.ImplantSystemID : undefined;
+    const systemName =
+      (systemId && systems.get(systemId)) || [...systems.values()][0] || stripExt(fileName);
+    const lib = ensureLib(out, systemName);
     const scanIds = [
-      refId(raw.ScanAbutmentID),
+      ...refCandidates(obj),
       ...extras.filter((row) => row.AbutmentKitID === kitItem).map((row) => refId(row.PartID)),
     ].filter(Boolean);
     const name = text(raw.Name);
-    const kit = { kitId: name || kitItem, name, scanAbutmentPartIds: [] };
+    const kit = { kitId: kitItem, name: name || kitItem, scanAbutmentPartIds: [] };
     for (const id of scanIds) {
       const part = loadScanPart(id);
       if (!part) continue;
+      attached.add(id);
       lib.parts.set(part.hash, part);
       if (!kit.scanAbutmentPartIds.includes(part.hash)) kit.scanAbutmentPartIds.push(part.hash);
     }
-    if (!lib.kits.has(kit.kitId)) lib.kits.set(kit.kitId, kit);
+    putKit(lib, kit);
+  }
+
+  // 키트 기본 스캔바디 말고, 파일에 들어 있는 다른 직경·높이도 남긴다.
+  for (const [partId, raw] of rawParts) {
+    if (attached.has(partId) || PART_CLASS[raw.PartClass] !== "scanAbutment") continue;
+    const part = loadScanPart(partId);
+    if (!part) continue;
+    const systemId = refId(raw.ImplantSystemID);
+    const systemName = (systemId && systems.get(systemId)) || [...systems.values()][0] || stripExt(fileName);
+    const lib = ensureLib(out, systemName);
+    lib.parts.set(part.hash, part);
+    putKit(lib, {
+      kitId: `part:${partId}`,
+      name: part.name || partId,
+      scanAbutmentPartIds: [part.hash],
+    });
   }
   return [...out.values()];
 }
@@ -262,7 +325,7 @@ function parseExocadEntry(configName, files, fileName, notes) {
   for (const type of entry.TypeConfig?.ImplantTypeConfig ?? []) {
     const typeKeyword = text(type.Keyword) || text(type.DisplayInformation);
     const kit = {
-      kitId: `${keyword}:${typeKeyword}`,
+      kitId: [dir, keyword, typeKeyword].filter(Boolean).join(":"),
       name: text(type.DisplayInformation) || typeKeyword,
       scanAbutmentPartIds: [],
     };
@@ -294,17 +357,89 @@ function mergeInto(merged, lib) {
     return;
   }
   for (const [hash, part] of lib.parts) prev.parts.set(hash, part);
-  for (const [id, kit] of lib.kits) prev.kits.set(id, kit);
+  for (const [id, kit] of lib.kits) {
+    const prevKit = prev.kits.get(id);
+    if (!prevKit) {
+      prev.kits.set(id, kit);
+      continue;
+    }
+    for (const partId of kit.scanAbutmentPartIds) {
+      if (!prevKit.scanAbutmentPartIds.includes(partId)) prevKit.scanAbutmentPartIds.push(partId);
+    }
+  }
   prev.fileNames = [...new Set([...prev.fileNames, ...lib.fileNames])];
   prev.containerVersions = [...new Set([...prev.containerVersions, ...lib.containerVersions])].sort();
 }
 
 /**
- * 업로드 묶음을 해석한다. 단일 `.dme`, `.dme` 여러 개를 담은 ZIP, exocad 폴더 ZIP을 받는다.
- * @returns {{ libraries: Array<{ source, systemName, fileNames, containerVersions, parts: Map<hash,{name,hash,stl}>, kits: Map<kitId,{kitId,name,scanAbutmentPartIds}> }>, notes: string[] }}
+ * 파일 이름마다 스캔바디 하나. .stl·.dcm·.stp를 축을 맞춰 모두 등록한다.
+ * config.xml 옆의 .stl은 exocad 키트라 여기 넣지 않는다.
  */
-export function parseScanbodyBundle(buffer, fileName) {
+async function meshLibrary(entries, label, notes) {
+  const parts = new Map();
+  const kits = new Map();
+  const fileNames = [];
+  for (const { name, bytes } of entries) {
+    const partName = text(stripExt(baseName(name)) || "스캔바디", 80);
+    try {
+      const raw = await trianglesFromLibraryShape(toBuffer(bytes), name);
+      const part = { name: partName, ...canonicalPart(alignScanbodyToModel(raw)) };
+      parts.set(part.hash, part);
+      let kitId = partName;
+      let n = 2;
+      while (kits.has(kitId)) {
+        kitId = `${partName}#${n}`;
+        n += 1;
+      }
+      kits.set(kitId, { kitId, name: partName, scanAbutmentPartIds: [part.hash] });
+      fileNames.push(baseName(name));
+    } catch (error) {
+      if (!(error instanceof ScanbodyInputError)) throw error;
+      notes.push(`${baseName(name)}: ${error.message}`);
+    }
+  }
+  if (kits.size === 0) return null;
+  const dirs = new Set(entries.map((entry) => dirName(entry.name)).filter(Boolean));
+  let systemName = "스캔바디";
+  if (dirs.size === 1) {
+    const leaf = [...dirs][0].split("/").filter(Boolean).pop();
+    if (leaf) systemName = text(leaf, 80);
+  } else {
+    const base = stripExt(baseName(label));
+    if (base && !/^scanbody-meshes/i.test(base)) systemName = text(base, 80);
+  }
+  return {
+    source: "scan",
+    systemName,
+    fileNames,
+    containerVersions: [],
+    parts,
+    kits,
+  };
+}
+
+function dirHasConfig(name, files) {
+  const dir = dirName(name).toLowerCase();
+  const config = `${dir ? `${dir}/` : ""}config.xml`;
+  for (const key of files.keys()) if (key.toLowerCase() === config) return true;
+  return false;
+}
+
+/**
+ * 업로드 묶음을 해석한다. `.dme`, `.zip`, `.stl`, `.stp`, `.dcm`.
+ * @returns {Promise<{ libraries: Array<{ source, systemName, fileNames, containerVersions, parts: Map, kits: Map }>, notes: string[] }>}
+ */
+export async function parseScanbodyBundle(buffer, fileName) {
   if (buffer.length > SCANBODY_UPLOAD_LIMITS.maxUploadBytes) throw new ScanbodyInputError("파일이 너무 큽니다.");
+  if (!isZip(buffer)) {
+    const notes = [];
+    if (!LIBRARY_SHAPE_PATTERN.test(fileName)) throw notFound(notes);
+    const lib = await meshLibrary([{ name: fileName, bytes: buffer }], fileName, notes);
+    if (!lib) throw notFound(notes);
+    const libraries = finalize([lib]);
+    if (libraries.length === 0) throw notFound(notes);
+    return { libraries, notes };
+  }
   const budget = { remaining: SCANBODY_UPLOAD_LIMITS.maxTotalBytes };
   const notes = [];
   const { files, ignored } = safeUnzip(buffer, {
@@ -312,7 +447,7 @@ export function parseScanbodyBundle(buffer, fileName) {
       /\.dme$/i.test(name) ||
       /(^|\/)materials\.xml$/i.test(name) ||
       /(^|\/)config\.xml$/i.test(name) ||
-      /\.(dcm|stl)$/i.test(name),
+      LIBRARY_SHAPE_PATTERN.test(name),
     maxEntries: SCANBODY_UPLOAD_LIMITS.maxBundleEntries,
     maxEntryBytes: SCANBODY_UPLOAD_LIMITS.maxEntryBytes,
     budget,
@@ -343,7 +478,7 @@ export function parseScanbodyBundle(buffer, fileName) {
     }
     files.delete(name);
   }
-  // 같은 이름의 키트는 최신 Dental System 파일 것을 쓴다.
+  // 버전 파일은 오래된 것부터 합친다. 같은 키트는 형상을 더하고, 다른 규격은 빼지 않는다.
   const newest = (lib) => lib.containerVersions.at(-1) ?? "";
   dmeLibs.sort((a, b) => newest(a).localeCompare(newest(b)));
   for (const lib of dmeLibs) mergeInto(merged, lib);
@@ -356,6 +491,17 @@ export function parseScanbodyBundle(buffer, fileName) {
       if (!(error instanceof ScanbodyInputError)) throw error;
       notes.push(error.message);
     }
+  }
+
+  const meshEntries = [];
+  for (const [name, bytes] of files) {
+    if (!LIBRARY_SHAPE_PATTERN.test(name)) continue;
+    if (/\.stl$/i.test(name) && dirHasConfig(name, files)) continue;
+    meshEntries.push({ name, bytes });
+  }
+  if (meshEntries.length > 0) {
+    const lib = await meshLibrary(meshEntries, fileName, notes);
+    if (lib) mergeInto(merged, lib);
   }
 
   const encrypted = ignored.filter((name) => /\.(sdfa|ipflib)$/i.test(name)).length;
