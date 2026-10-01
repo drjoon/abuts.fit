@@ -525,13 +525,18 @@ export async function setScanbodyDemandLabRequest(keys: string[], requested: boo
  */
 export function scanbodySpecKey(order: { manufacturer: string; diameter: string; height: string }) {
   const maker = order.manufacturer.trim();
-  const diameter = order.diameter.trim();
+  // 숫자 규격은 `9`와 `9.0`을 같게 본다. 서버 normSize와 같게 유지한다.
+  const norm = (value: string) => {
+    const raw = value.trim().replace(",", ".");
+    return /^\d+(\.\d+)?$/.test(raw) ? String(Number(raw)) : value.trim();
+  };
+  const diameter = norm(order.diameter);
   const isTemplate = (SIMPLE_ABUTMENT_KINDS as readonly string[]).includes(maker) || maker === SIMPLE_HEALING_KIND;
   const height = (SIMPLE_ABUTMENT_KINDS as readonly string[]).includes(maker)
     ? ""
     : isTemplate
       ? order.height.trim().toUpperCase()
-      : order.height.trim();
+      : norm(order.height);
   return [isTemplate ? "template" : "library", maker, diameter, height].join("|");
 }
 

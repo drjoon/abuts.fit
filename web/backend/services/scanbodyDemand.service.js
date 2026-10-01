@@ -21,6 +21,17 @@ const DIAMETER_TOL_MM = 0.25;
 const HEIGHT_TOL_MM = 0.4;
 const text = (value) => String(value ?? "").trim();
 const num = (value) => Number(text(value).replace(",", "."));
+/** 숫자 규격은 같은 값이면 같은 글자로 맞춘다(`4.5/9`와 `4.5/9.0`, `4.50`). 숫자가 아니면 그대로. 프론트 scanbodySpecKey와 같게 유지한다. */
+const normSize = (value) => {
+  const raw = text(value).replace(",", ".");
+  return /^\d+(\.\d+)?$/.test(raw) ? String(Number(raw)) : text(value);
+};
+/** 예전에 `9.0`으로 쌓인 key도 `9`와 같은 규격으로 본다. */
+const normalizeSpecKey = (key) => {
+  const [type, maker, diameter, height, ...rest] = String(key).split("|");
+  if (height === undefined || rest.length) return String(key);
+  return [type, maker, normSize(diameter), normSize(height)].join("|");
+};
 const idOf = (value) => (value && Types.ObjectId.isValid(String(value)) ? new Types.ObjectId(String(value)) : null);
 
 function hasLibraryShape(libraries, { maker, diameter, height }) {
@@ -56,8 +67,8 @@ function demandOf(work) {
   if (!DESIGNABLE_TYPES.has(text(work?.prosthesisType) || "크라운")) return null;
   if (work?.customAbutment !== true && !text(work?.implantManufacturer)) return null;
   const maker = text(work?.abutmentManufacturer);
-  const diameter = text(work?.abutmentDiameter);
-  const rawHeight = text(work?.abutmentHeight);
+  const diameter = normSize(work?.abutmentDiameter);
+  const rawHeight = normSize(work?.abutmentHeight);
   if (!maker) return null;
   const isTemplate = SIMPLE_ABUTMENT_KINDS.has(maker) || maker === SIMPLE_HEALING_KIND;
   if (isTemplate && !diameter) return null;
@@ -199,6 +210,44 @@ function mergeImplants(rows) {
   return topImplants(Object.fromEntries(map));
 }
 
+/** 숫자만 다른 표기(`9`·`9.0`)로 따로 쌓인 규격 행을 한 행으로 합친다. */
+function mergeEquivalentSpecs(rows) {
+  const merged = new Map();
+  for (const row of rows) {
+    const key = normalizeSpecKey(row.key);
+    const prev = merged.get(key);
+    if (!prev) {
+      merged.set(key, {
+        ...row,
+        key,
+        diameter: normSize(row.diameter),
+        height: row.type === "template" ? row.height : normSize(row.height),
+        rawKeys: [row.key],
+        transferIds: [...(row.transferIds || [])],
+        practiceAnchorIds: [...(row.practiceAnchorIds || [])],
+        labAnchorIds: [...(row.labAnchorIds || [])],
+        heights: [...(row.heights || [])],
+        implants: { ...(row.implants || {}) },
+      });
+      continue;
+    }
+    prev.rawKeys.push(row.key);
+    prev.teethCount = (prev.teethCount || 0) + (row.teethCount || 0);
+    prev.transferIds.push(...(row.transferIds || []));
+    prev.practiceAnchorIds.push(...(row.practiceAnchorIds || []));
+    prev.labAnchorIds.push(...(row.labAnchorIds || []));
+    prev.heights.push(...(row.heights || []));
+    for (const [field, implant] of Object.entries(row.implants || {})) {
+      const cur = prev.implants[field];
+      prev.implants[field] = cur ? { ...cur, count: (cur.count || 0) + (implant.count || 0) } : implant;
+    }
+    if (row.firstAt && (!prev.firstAt || row.firstAt < prev.firstAt)) prev.firstAt = row.firstAt;
+    if (row.lastAt && (!prev.lastAt || row.lastAt > prev.lastAt)) prev.lastAt = row.lastAt;
+    prev.labUploadRequested = Boolean(prev.labUploadRequested && row.labUploadRequested);
+  }
+  return [...merged.values()];
+}
+
 function aggregateDemand(rows) {
   const transferIds = new Set();
   const practiceIds = new Set();
@@ -277,7 +326,7 @@ function groupDemandCards(rows) {
       sortAt: stats.lastAt ? new Date(stats.lastAt).getTime() : 0,
       view: demandCard(bucket[0], {
         key: `${bucket[0].type}|${bucket[0].maker}`,
-        keys: bucket.map((row) => row.key),
+        keys: bucket.flatMap((row) => row.rawKeys || [row.key]),
         diameter: "",
         height: "",
         heights: [],
@@ -318,7 +367,7 @@ export async function listScanbodyDemand() {
       .lean(),
     AbutmentTemplate.find(shared).select({ kind: 1, diameter: 1, height: 1 }).lean(),
   ]);
-  const missing = specs.filter((row) =>
+  const missing = mergeEquivalentSpecs(specs).filter((row) =>
     row.type === "template" ? !hasTemplate(templates, row) : !hasLibraryShape(libraries, row),
   );
   return groupDemandCards(missing);
@@ -346,5 +395,5 @@ export async function setLabUploadRequested(keys, requested, adminId) {
 /** 기공소 AI 디자인: 업로드를 요청한 규격 key. 나머지는 「어벗츠가 준비 중」으로만 보인다. */
 export async function listLabUploadRequestKeys() {
   const rows = await ScanbodySpecDemand.find({ labUploadRequested: true }).select({ key: 1 }).lean();
-  return rows.map((row) => row.key);
+  return [...new Set(rows.flatMap((row) => [row.key, normalizeSpecKey(row.key)]))];
 }
