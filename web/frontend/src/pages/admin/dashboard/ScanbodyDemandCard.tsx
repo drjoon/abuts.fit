@@ -33,6 +33,7 @@ import {
 } from "@/shared/practice/scanbodyLibraryApi";
 import {
   groupRegisteredLibraries,
+  libraryMatchesMaker,
   splitScanbodyCode,
   type RegisteredLibraryGroup,
 } from "@/shared/practice/scanbodyLibraryIdentity";
@@ -306,6 +307,20 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
     [catalog.libraries],
   );
   const libraryGroups = useMemo(() => groupRegisteredLibraries(libraries), [libraries]);
+  const attachedGroupKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const row of rows) {
+      if (row.type !== "library") continue;
+      for (const group of libraryGroups) {
+        if (group.libs.some((lib) => libraryMatchesMaker(lib, row.maker))) keys.add(group.key);
+      }
+    }
+    return keys;
+  }, [rows, libraryGroups]);
+  const looseGroups = useMemo(
+    () => libraryGroups.filter((group) => !attachedGroupKeys.has(group.key)),
+    [libraryGroups, attachedGroupKeys],
+  );
   const templates = useMemo(() => templateGroups(catalog.templates), [catalog.templates]);
   const registeredCount = libraries.length + templates.length;
 
@@ -426,6 +441,14 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
               <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {rows.map((row) => {
                   const specs = row.specs?.length ? row.specs : [];
+                  const attached =
+                    row.type === "library"
+                      ? libraryGroups.filter(
+                          (group) =>
+                            attachedGroupKeys.has(group.key) &&
+                            group.libs.some((lib) => libraryMatchesMaker(lib, row.maker)),
+                        )
+                      : [];
                   return (
                     <li
                       key={row.key}
@@ -447,6 +470,19 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
                         </div>
                         {row.implants.length > 0 ? (
                           <div className="text-[11px] text-muted-foreground">임플란트 {implantLabel(row)}</div>
+                        ) : null}
+                        {attached.length > 0 ? (
+                          <div className="mt-2 space-y-1.5 border-t border-slate-200 pt-2">
+                            {attached.map((group) => {
+                              const { chips } = groupChipList(group);
+                              return (
+                                <div key={group.key}>
+                                  <div className="font-medium text-slate-800">{group.title}</div>
+                                  <SpecChips chips={chips} tone="slate" />
+                                </div>
+                              );
+                            })}
+                          </div>
                         ) : null}
                       </div>
                       <Button
@@ -479,7 +515,7 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
               <p className="text-xs text-muted-foreground">등록된 라이브러리·템플릿이 없습니다.</p>
             ) : (
               <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {libraryGroups.map((group) => {
+                {looseGroups.map((group) => {
                   const latest = group.libs.reduce((max, lib) => (lib.updatedAt > max ? lib.updatedAt : max), "");
                   const kits = group.libs.reduce((sum, lib) => sum + lib.kits.length, 0);
                   const parts = group.libs.reduce((sum, lib) => sum + lib.parts.length, 0);

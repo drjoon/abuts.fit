@@ -5,7 +5,11 @@
 // - web/frontend/src/shared/components/practice/ScanbodyLibraryManager.tsx
 // - web/frontend/src/shared/practice/scanbodyLibraryApi.ts
 
-const SPEC_CODE = /^([A-Za-z][A-Za-z0-9]*?)_((?:LL|LS|CMFit)(?:_H\d+(?:\.\d+)?)?|H\d+(?:\.\d+)?)$/;
+// 연결 코드는 숫자로 시작할 수 있다(지오메디 `3IC60_LL_H40`). 서버 `scanbodyLibraryIdentity.js`와 같게 둔다.
+const SPEC_CODE = /^((?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]+?)_((?:LL|LS|CMFit)(?:_H\d+(?:\.\d+)?)?|H\d+(?:\.\d+)?)$/;
+
+/** 폴더에 제조사가 없을 때, 지오메디 카탈로그 연결 코드(3ICM·3ICR·3ICW·3IC60)면 지오메디로 본다. */
+const GEOMEDI_CONNECTION = /^3IC(?:M|R|W|\d{2})$/i;
 
 const MAKER_ALIAS_GROUPS = [
   ["osstem", "오스템", "오스템us", "osstemus"],
@@ -50,10 +54,12 @@ export type LibraryIdentity = {
 /** 저장된 메타가 있으면 그것을 쓰고, 없으면 시스템 코드에서 연결·규격을 나눈다. */
 export function identityOfLibrary(lib: LibraryIdentitySource): LibraryIdentity {
   const code = splitScanbodyCode(lib.systemName);
-  const manufacturer = (lib.implantManufacturer || "").trim();
   const brand = (lib.brand || "").trim();
   const storedType = (lib.implantType || "").trim();
-  const implantType = storedType || (code.spec ? code.family : "");
+  const family = code.spec ? code.family : "";
+  let manufacturer = (lib.implantManufacturer || "").trim();
+  if (!manufacturer && GEOMEDI_CONNECTION.test(family)) manufacturer = "지오메디";
+  const implantType = storedType || family;
   const title =
     [manufacturer, brand, implantType].filter(Boolean).join(" ") || (code.spec ? code.family : lib.systemName.trim()) || "스캔바디";
   const groupKey = [makerKey(manufacturer), makerKey(brand), makerKey(code.spec ? code.family : title)].join("|");
@@ -104,21 +110,31 @@ function aliasGroup(key: string) {
   return MAKER_ALIAS_GROUPS.find((group) => group.some((alias) => makerKey(alias) === key));
 }
 
+function labelHits(label: string, key: string, aliasKeys: Set<string> | null) {
+  const parts = label
+    .split(/[\s·./_\\-]+/)
+    .map(makerKey)
+    .filter(Boolean);
+  const tokens = parts.length > 0 ? parts : [makerKey(label)];
+  return tokens.some((token) => token === key || Boolean(aliasKeys?.has(token)));
+}
+
 /** 의뢰 스캔바디 제조사가 이 라이브러리의 제조사·브랜드·코드와 맞는지. */
 export function libraryMatchesMaker(lib: LibraryIdentitySource, maker: string) {
   const key = makerKey(maker);
   if (!key) return false;
+  const identity = identityOfLibrary(lib);
   const labels = [
     ...(lib.manufacturers ?? []),
     lib.implantManufacturer,
     lib.brand,
     lib.implantManufacturer && lib.brand ? `${lib.implantManufacturer} ${lib.brand}` : "",
     lib.systemName,
+    identity.manufacturer,
+    identity.title,
     ...(lib.fileNames ?? []),
   ].filter((label): label is string => Boolean(label && label.trim()));
-  if (labels.some((label) => makerKey(label) === key)) return true;
   const group = aliasGroup(key);
-  if (!group) return false;
-  const keys = new Set(group.map((alias) => makerKey(alias)));
-  return labels.some((label) => keys.has(makerKey(label)));
+  const aliasKeys = group ? new Set(group.map((alias) => makerKey(alias))) : null;
+  return labels.some((label) => labelHits(label, key, aliasKeys));
 }

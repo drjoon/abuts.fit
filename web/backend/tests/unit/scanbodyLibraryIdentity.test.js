@@ -15,6 +15,9 @@ describe("splitScanbodyCode", () => {
     expect(splitScanbodyCode("BG41_CMFit").spec).toBe("CMFit");
     expect(splitScanbodyCode("BG37_LS").family).toBe("BG37");
     expect(splitScanbodyCode("C13_H55")).toEqual({ family: "C13", spec: "H55", code: "C13_H55" });
+    expect(splitScanbodyCode("3IC60_CMFit")).toEqual({ family: "3IC60", spec: "CMFit", code: "3IC60_CMFit" });
+    expect(splitScanbodyCode("3ICM_LL_H40").spec).toBe("LL H40");
+    expect(splitScanbodyCode("3ICR_LS").family).toBe("3ICR");
   });
 
   test("사람 이름과 규격이 없는 코드는 그대로 둔다", () => {
@@ -36,6 +39,16 @@ describe("describeLibrary", () => {
     expect(row.title).toBe("OSSTEM US BG41");
     expect(row.groupKey).toBe(describeLibrary({ systemName: "BG41_LS", filePath: "OSSTEM/US/BG41_LS.dme" }).groupKey);
     expect(row.groupKey).not.toBe(describeLibrary({ systemName: "BG37_LS", filePath: "OSSTEM/US/BG37_LS.dme" }).groupKey);
+  });
+
+  test("숫자로 시작하는 지오메디 연결은 규격만 달라도 한 묶음이고 제조사는 지오메디다", () => {
+    const cm = describeLibrary({ systemName: "3IC60_CMFit" });
+    const ll = describeLibrary({ systemName: "3IC60_LL_H40" });
+    expect(cm.manufacturer).toBe("지오메디");
+    expect(cm.implantType).toBe("3IC60");
+    expect(cm.title).toBe("지오메디 3IC60");
+    expect(cm.groupKey).toBe(ll.groupKey);
+    expect(cm.groupKey).not.toBe(describeLibrary({ systemName: "3ICM_LS" }).groupKey);
   });
 
   test("메타가 없으면 같은 연결의 규격만 같은 묶음이 된다", () => {
@@ -84,6 +97,12 @@ describe("libraryMatchesMaker", () => {
     };
     expect(libraryMatchesMaker(lib, "오스템US")).toBe(true);
     expect(libraryMatchesMaker(lib, "지오메디")).toBe(false);
+  });
+
+  test("코드만 있는 지오메디 연결은 의뢰 제조사 지오메디와 맞다", () => {
+    const lib = { systemName: "3IC60_LL_H40", manufacturers: [], fileNames: ["3IC60_LL_H40.dme"] };
+    expect(libraryMatchesMaker(lib, "지오메디")).toBe(true);
+    expect(libraryMatchesMaker(lib, "오스템")).toBe(false);
   });
 });
 

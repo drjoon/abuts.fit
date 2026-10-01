@@ -5,8 +5,12 @@
 // - web/backend/services/scanbodyLibraryImport.service.js
 // - web/frontend/src/shared/practice/scanbodyLibraryIdentity.ts
 
+// 연결 코드는 숫자로 시작할 수 있다(지오메디 `3IC60_LL_H40`). 접미사만 규격이다.
 const SPEC_CODE =
-  /^([A-Za-z][A-Za-z0-9]*?)_((?:LL|LS|CMFit)(?:_H\d+(?:\.\d+)?)?|H\d+(?:\.\d+)?)$/;
+  /^((?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]+?)_((?:LL|LS|CMFit)(?:_H\d+(?:\.\d+)?)?|H\d+(?:\.\d+)?)$/;
+
+/** 폴더에 제조사가 없을 때, 지오메디 카탈로그 연결 코드(3ICM·3ICR·3ICW·3IC60)면 지오메디로 본다. */
+const GEOMEDI_CONNECTION = /^3IC(?:M|R|W|\d{2})$/i;
 
 const SKIP_DIR = new Set([
   "library",
@@ -92,10 +96,11 @@ export function describeLibrary({ systemName, filePath = "", meta = null }) {
   const codeName = clip(baseFile(systemName), 200);
   const code = splitScanbodyCode(codeName);
   const fromPath = pathIdentity(filePath);
-  const manufacturer = clip(meta?.manufacturer) || fromPath.manufacturer;
   const brand = clip(meta?.brand) || fromPath.brand;
   const folderType = clip(meta?.type) || fromPath.typeFolder;
   const connection = code.spec ? code.family : "";
+  let manufacturer = clip(meta?.manufacturer) || fromPath.manufacturer;
+  if (!manufacturer && GEOMEDI_CONNECTION.test(connection)) manufacturer = "지오메디";
   let implantType = connection || folderType;
   let title = codeName || "스캔바디";
   if (code.spec) {
@@ -150,6 +155,15 @@ export function metaFromSystemProps(props) {
 
 function aliasGroup(key) {
   return MAKER_ALIAS_GROUPS.find((group) => group.some((alias) => makerKey(alias) === key)) ?? null;
+}
+
+function labelHits(label, key, aliasKeys) {
+  const parts = String(label)
+    .split(/[\s·./_\\-]+/)
+    .map(makerKey)
+    .filter(Boolean);
+  const tokens = parts.length > 0 ? parts : [makerKey(label)];
+  return tokens.some((token) => token === key || aliasKeys?.has(token));
 }
 
 function kitRows(kits) {
@@ -240,17 +254,26 @@ export function collapseParsedLibraries(libraries, filePath = "", fileMeta = nul
 export function libraryMatchesMaker(lib, maker) {
   const key = makerKey(maker);
   if (!key) return false;
+  const described = describeLibrary({
+    systemName: lib?.systemName || "",
+    filePath: (lib?.fileNames || []).find((name) => String(name).includes("/")) || "",
+    meta: {
+      manufacturer: lib?.implantManufacturer || "",
+      brand: lib?.brand || "",
+      type: lib?.implantType || "",
+    },
+  });
   const labels = [
     ...(lib?.manufacturers || []),
     lib?.implantManufacturer,
     lib?.brand,
     lib?.implantManufacturer && lib?.brand ? `${lib.implantManufacturer} ${lib.brand}` : "",
     lib?.systemName,
+    described.manufacturer,
+    described.title,
     ...(lib?.fileNames || []),
   ].filter(Boolean);
-  if (labels.some((label) => makerKey(label) === key)) return true;
   const group = aliasGroup(key);
-  if (!group) return false;
-  const groupKeys = new Set(group.map((alias) => makerKey(alias)));
-  return labels.some((label) => groupKeys.has(makerKey(label)));
+  const aliasKeys = group ? new Set(group.map((alias) => makerKey(alias))) : null;
+  return labels.some((label) => labelHits(label, key, aliasKeys));
 }
