@@ -20,6 +20,7 @@ import { gzip } from "zlib";
 import { Worker } from "worker_threads";
 import { Types } from "mongoose";
 import ScanbodyLibrary from "../models/scanbodyLibrary.model.js";
+import { splitScanbodyCode } from "../utils/scanbodyLibraryIdentity.js";
 import ScanbodyLibraryUpload from "../models/scanbodyLibraryUpload.model.js";
 import AbutmentTemplateUpload from "../models/abutmentTemplateUpload.model.js";
 import { ApiError } from "../utils/ApiError.js";
@@ -452,6 +453,9 @@ export async function scanbodyLibraryForkFor(ownerAnchorId, source) {
       fileNames: plain.fileNames || [],
       containerVersions: plain.containerVersions || [],
       manufacturers: plain.manufacturers || [],
+      implantManufacturer: plain.implantManufacturer || "",
+      brand: plain.brand || "",
+      implantType: plain.implantType || "",
       parts: plain.parts || [],
       kits: plain.kits || [],
       contentUpdatedAt: plain.contentUpdatedAt ?? null,
@@ -500,6 +504,11 @@ function libraryNeedsWrite(doc, lib, keys, manufacturer, ownerAnchorId) {
   };
   if (grows(doc.fileNames, lib.fileNames) || grows(doc.containerVersions, lib.containerVersions)) return true;
   if (manufacturer && !(doc.manufacturers || []).includes(manufacturer)) return true;
+  if (lib.implantManufacturer && !doc.implantManufacturer) return true;
+  if (lib.brand && !doc.brand) return true;
+  if (lib.implantType && !doc.implantType) return true;
+  const kitsForMeta = new Map((doc.kits || []).map((kit) => [kit.kitId, kit]));
+  if (lib.kits.some((kit) => kit.spec && !(kitsForMeta.get(kit.kitId)?.spec))) return true;
   const takenDown = Boolean(doc.reviewedAt) && !doc.isPublic;
   return Boolean(ownerAnchorId && !doc.forkOf && !takenDown && !doc.isPublic);
 }
@@ -561,6 +570,8 @@ async function mergeLibrary({ ownerAnchorId, userId, lib, keys, manufacturer }) 
           basePartId: null,
           blankPartId: null,
           catalogIds: kits.get(kit.kitId)?.catalogIds ?? [],
+          spec: kit.spec || kits.get(kit.kitId)?.spec || "",
+          code: kit.code || kits.get(kit.kitId)?.code || "",
         });
       }
       const union = (a, b) => [...new Set([...(a || []), ...(b || [])].filter(Boolean))];
@@ -568,7 +579,11 @@ async function mergeLibrary({ ownerAnchorId, userId, lib, keys, manufacturer }) 
       doc.kits = [...kits.values()];
       doc.fileNames = union(doc.fileNames, lib.fileNames);
       doc.containerVersions = union(doc.containerVersions, lib.containerVersions).sort();
-      if (manufacturer) doc.manufacturers = union(doc.manufacturers, [manufacturer]);
+      const makers = [manufacturer, lib.implantManufacturer].filter(Boolean);
+      if (makers.length) doc.manufacturers = union(doc.manufacturers, makers);
+      if (lib.implantManufacturer && !doc.implantManufacturer) doc.implantManufacturer = lib.implantManufacturer;
+      if (lib.brand && !doc.brand) doc.brand = lib.brand;
+      if (lib.implantType && !doc.implantType) doc.implantType = lib.implantType;
       doc.uploadedBy = userId;
       // 악성코드 검사와 형상 재생성을 통과했으니 관리자 검토 없이 모두가 쓴다. 관리자가 내린 것·사본은 그대로 둔다.
       const takenDown = Boolean(doc.reviewedAt) && !doc.isPublic;
@@ -598,7 +613,10 @@ function newLibraryDoc({ ownerAnchorId, userId, lib, keys, manufacturer }) {
     source: lib.source,
     fileNames: [...(lib.fileNames || [])],
     containerVersions: [...(lib.containerVersions || [])].sort(),
-    manufacturers: manufacturer ? [manufacturer] : [],
+    manufacturers: [...new Set([manufacturer, lib.implantManufacturer].filter(Boolean))],
+    implantManufacturer: lib.implantManufacturer || "",
+    brand: lib.brand || "",
+    implantType: lib.implantType || "",
     parts: lib.parts.map((part) => ({
       partId: part.hash,
       name: part.name,
@@ -619,11 +637,62 @@ function newLibraryDoc({ ownerAnchorId, userId, lib, keys, manufacturer }) {
       basePartId: null,
       blankPartId: null,
       catalogIds: [],
+      spec: kit.spec || "",
+      code: kit.code || "",
     })),
     contentUpdatedAt: new Date(),
     isPublic: Boolean(ownerAnchorId),
     uploadedBy: userId,
   };
+}
+
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** 예전 코드 한 건(`BG41_LS`)을 방금 저장한 묶음에 넣고 지운다. 제조사·브랜드가 다르면 건드리지 않는다. */
+async function absorbLegacyCodes(doc) {
+  const family = String(doc.implantType || "").trim();
+  if (!family || !doc._id) return;
+  const pattern = new RegExp(
+    `^${escapeRegex(family)}_(?:(?:LL|LS|CMFit)(?:_H\\d+(?:\\.\\d+)?)?|H\\d+(?:\\.\\d+)?)$`,
+  );
+  const siblings = await ScanbodyLibrary.find({
+    ownerAnchorId: doc.ownerAnchorId ?? null,
+    forkOf: doc.forkOf ?? null,
+    _id: { $ne: doc._id },
+    systemName: pattern,
+  });
+  const same = siblings.filter((row) => {
+    if (row.implantManufacturer && doc.implantManufacturer && row.implantManufacturer !== doc.implantManufacturer) return false;
+    if (row.brand && doc.brand && row.brand !== doc.brand) return false;
+    return true;
+  });
+  if (same.length === 0) return;
+  const union = (a, b) => [...new Set([...(a || []), ...(b || [])].filter(Boolean))];
+  const parts = new Map((doc.parts || []).map((part) => [part.partId, part.toObject?.() ?? part]));
+  const kits = new Map((doc.kits || []).map((kit) => [kit.kitId, kit.toObject?.() ?? kit]));
+  for (const sibling of same) {
+    const code = splitScanbodyCode(sibling.systemName);
+    for (const part of sibling.parts || []) parts.set(part.partId, part.toObject?.() ?? part);
+    for (const kit of sibling.kits || []) {
+      const plain = kit.toObject?.() ?? kit;
+      const withCode = {
+        ...plain,
+        spec: plain.spec || code.spec,
+        code: plain.code || code.code,
+        name: plain.spec || code.spec || plain.name,
+      };
+      const prev = [...kits.values()].find((row) => row.code && row.code === withCode.code) || kits.get(withCode.kitId);
+      if (!prev) kits.set(withCode.kitId, withCode);
+      else if ((withCode.catalogIds || []).length > (prev.catalogIds || []).length) prev.catalogIds = withCode.catalogIds;
+    }
+    doc.fileNames = union(doc.fileNames, sibling.fileNames);
+    doc.containerVersions = union(doc.containerVersions, sibling.containerVersions).sort();
+    doc.manufacturers = union(doc.manufacturers, sibling.manufacturers);
+  }
+  doc.parts = [...parts.values()];
+  doc.kits = [...kits.values()];
+  await doc.save();
+  await ScanbodyLibrary.deleteMany({ _id: { $in: same.map((row) => row._id) } });
 }
 
 function librarySummary(doc, lib) {
@@ -695,9 +764,14 @@ async function saveParsedLibraries({ ownerAnchorId, userId, libraries, keys, man
   await mergeRows(sequential);
   if (!freshInserted) await mergeRows(fresh);
 
-  return libraries.map((lib) => {
+  const saved = libraries.map((lib) => {
     const doc = byName.get(lib.systemName);
     if (!doc) throw new Error(`library was not saved: ${lib.systemName}`);
+    return doc;
+  });
+  for (const doc of saved) await absorbLegacyCodes(doc);
+  return libraries.map((lib) => {
+    const doc = byName.get(lib.systemName);
     return librarySummary(doc, lib);
   });
 }

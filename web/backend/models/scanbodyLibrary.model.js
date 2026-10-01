@@ -48,6 +48,10 @@ const kitSchema = new mongoose.Schema(
     blankPartId: { type: String, default: null },
     /** 임플란트 카탈로그 `implantLibraryId`(제조사|시스템|계열|타입). */
     catalogIds: { type: [String], default: [] },
+    /** 라이브러리 코드에서 뗀 규격. 예: `LL H55`, `LS`, `CMFit`. */
+    spec: { type: String, default: "" },
+    /** 파일에 있던 원래 코드. 예: `C1W_LL_H55`. */
+    code: { type: String, default: "" },
   },
   { _id: false },
 );
@@ -72,6 +76,12 @@ const scanbodyLibrarySchema = new mongoose.Schema(
      * 3Shape 시스템 이름은 코드(ISR_LS 등)라 제조사를 알 수 없다.
      */
     manufacturers: { type: [String], default: [] },
+    /** 파일 경로·XML에 있던 임플란트 제조사. 예: OSSTEM. */
+    implantManufacturer: { type: String, default: "" },
+    /** 임플란트 브랜드. 예: US, TS3. */
+    brand: { type: String, default: "" },
+    /** 연결·타입. 규격 접미사를 뺀 코드. 예: BG41, C1W. */
+    implantType: { type: String, default: "" },
     parts: { type: [partSchema], default: [] },
     kits: { type: [kitSchema], default: [] },
     /**

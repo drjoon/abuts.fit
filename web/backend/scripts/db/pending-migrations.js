@@ -30,6 +30,11 @@ const MIGRATIONS = [
     script: "backfill-scanbody-spec-demand.js",
     note: "지금까지의 의뢰에서 스캔바디·심플 규격과 임플란트를 쌓아 관리자 대시보드에 보인다.",
   },
+  {
+    id: "2026-10-01-scanbody-library-groups",
+    script: "migrate-scanbody-library-groups.js",
+    note: "규격만 다른 스캔바디 라이브러리 코드를 제조사·브랜드·연결 한 묶음으로 합친다.",
+  },
 ];
 
 const here = path.dirname(fileURLToPath(import.meta.url));

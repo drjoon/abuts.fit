@@ -55,6 +55,7 @@ import {
   type TemplateKind,
   type UploadBlockRow,
 } from "@/shared/practice/scanbodyLibraryApi";
+import { groupRegisteredLibraries, splitScanbodyCode } from "@/shared/practice/scanbodyLibraryIdentity";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import { cn } from "@/shared/ui/cn";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -682,8 +683,8 @@ export function ScanbodyLibraryManager() {
     }
   };
 
-  const removeLibrary = async (lib: ScanbodyLibraryRow) => {
-    if (!window.confirm(`${lib.systemName} 라이브러리를 지울까요?`)) return;
+  const removeLibrary = async (lib: ScanbodyLibraryRow, confirmed = false) => {
+    if (!confirmed && !window.confirm(`${lib.systemName} 라이브러리를 지울까요?`)) return;
     setCatalog((prev) => ({ ...prev, libraries: prev.libraries.filter((row) => row.id !== lib.id) }));
     try {
       await deleteScanbodyLibrary(lib.id);
@@ -741,13 +742,23 @@ export function ScanbodyLibraryManager() {
       if (isAdmin && adminFilter === "review" && !(lib.scope === "lab" && !lib.isPublic)) return false;
       if (isAdmin && adminFilter === "shared" && lib.scope === "lab" && !lib.isPublic) return false;
       if (!q) return true;
-      return (
-        lib.systemName.toLowerCase().includes(q) ||
-        lib.ownerName.toLowerCase().includes(q) ||
-        lib.kits.some((kit) => kit.name.toLowerCase().includes(q))
-      );
+      const blob = [
+        lib.systemName,
+        lib.ownerName,
+        lib.implantManufacturer,
+        lib.brand,
+        lib.implantType,
+        ...(lib.manufacturers ?? []),
+        ...lib.kits.flatMap((kit) => [kit.name, kit.spec, kit.code]),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return blob.includes(q);
     });
   }, [catalog.libraries, query, isAdmin, adminFilter]);
+
+  const groups = useMemo(() => groupRegisteredLibraries(filtered), [filtered]);
 
   const templatesByKind = TEMPLATE_KINDS.map((kind) => ({
     kind,
@@ -772,6 +783,8 @@ export function ScanbodyLibraryManager() {
               3Shape .dme, exocad 폴더(또는 .zip), 스캔바디 형상(.dcm·.stl·.stp)을 올립니다.
               <br />
               파일에 들어 있는 임플란트와 규격을 모두 등록합니다.
+              <br />
+              제조사·임플란트 브랜드·타입이 있으면 같이 남기고, 규격만 다른 코드는 한 묶음으로 보입니다.
               <br />
               악성코드 검사와 형상 검증을 거친 뒤 등록됩니다.
               <br />
@@ -869,7 +882,7 @@ export function ScanbodyLibraryManager() {
                 setQuery(event.target.value);
                 setLimit(PAGE);
               }}
-              placeholder="시스템·키트 이름으로 찾기"
+              placeholder="제조사·브랜드·타입·규격으로 찾기"
               className="h-8 text-xs"
             />
             {isAdmin ? (
@@ -897,17 +910,44 @@ export function ScanbodyLibraryManager() {
             </p>
           ) : (
             <>
-              {filtered.slice(0, limit).map((lib) => {
-                const open = expanded.has(lib.id);
-                const partName = new Map(lib.parts.map((part) => [part.partId, part.name]));
-                const unlinked = lib.kits.filter((kit) => kit.catalogIds.length === 0).length;
+              {groups.slice(0, limit).map((group) => {
+                const head = group.libs[0]!;
+                const open = expanded.has(group.key);
+                const kitCount = group.libs.reduce((sum, row) => sum + row.kits.length, 0);
+                const partCount = group.libs.reduce((sum, row) => sum + row.parts.length, 0);
+                const unlinked = group.libs.reduce(
+                  (sum, row) => sum + row.kits.filter((kit) => kit.catalogIds.length === 0).length,
+                  0,
+                );
+                const specs = [
+                  ...new Set(
+                    group.libs.flatMap((row) =>
+                      row.kits.map(
+                        (kit) =>
+                          kit.spec?.trim() ||
+                          splitScanbodyCode(kit.name).spec ||
+                          splitScanbodyCode(row.systemName).spec ||
+                          kit.name,
+                      ),
+                    ),
+                  ),
+                ].filter(Boolean);
+                const partName = new Map(group.libs.flatMap((row) => row.parts.map((part) => [part.partId, part.name] as const)));
+                const source = head.source;
+                const versions = [...new Set(group.libs.flatMap((row) => row.containerVersions))].filter(Boolean);
+                const meta =
+                  group.manufacturer || group.brand
+                    ? [group.manufacturer && `제조사 ${group.manufacturer}`, group.brand && `브랜드 ${group.brand}`, group.implantType && `타입 ${group.implantType}`]
+                        .filter(Boolean)
+                        .join(" · ")
+                    : "";
                 return (
-                  <div key={lib.id} className="rounded-lg border p-3">
+                  <div key={group.key} className="rounded-lg border p-3">
                     <div className="flex items-start justify-between gap-2">
                       <button
                         type="button"
                         className="flex min-w-0 flex-1 items-start gap-1.5 text-left"
-                        onClick={() => toggleExpanded(lib.id)}
+                        onClick={() => toggleExpanded(group.key)}
                       >
                         {open ? (
                           <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -916,64 +956,76 @@ export function ScanbodyLibraryManager() {
                         )}
                         <span className="min-w-0">
                           <span className="flex flex-wrap items-center gap-1.5">
-                            <span className="truncate text-sm font-semibold">{lib.systemName}</span>
-                            <ScopeBadge scope={lib.scope} isAdmin={isAdmin} />
-                            {lib.scope === "lab" && lib.isPublic ? (
+                            <span className="truncate text-sm font-semibold">{group.title}</span>
+                            <ScopeBadge scope={head.scope} isAdmin={isAdmin} />
+                            {head.scope === "lab" && head.isPublic ? (
                               <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
                                 공용
                               </span>
                             ) : null}
-                            {lib.forkOf ? (
+                            {head.forkOf ? (
                               <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700">
                                 공용 사본
                               </span>
                             ) : null}
-                            {lib.forkBehind ? (
+                            {group.libs.some((row) => row.forkBehind) ? (
                               <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
                                 새 공용 있음
                               </span>
                             ) : null}
                           </span>
                           <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                            {lib.source === "exocad"
-                              ? "exocad"
-                              : lib.source === "scan"
-                                ? "형상 파일"
-                                : `3Shape ${lib.containerVersions.join(", ")}`.trim()}
-                            {" · "}키트 {lib.kits.length}개 · 스캔바디 {lib.parts.length}개
+                            {source === "exocad" ? "exocad" : source === "scan" ? "형상 파일" : `3Shape ${versions.join(", ")}`.trim()}
+                            {specs.length > 0 ? ` · ${specs.slice(0, 8).join(" · ")}${specs.length > 8 ? ` 외 ${specs.length - 8}` : ""}` : ""}
+                            {" · "}키트 {kitCount}개 · 스캔바디 {partCount}개
                             {unlinked > 0 ? ` · 임플란트 미연결 ${unlinked}개` : ""}
-                            {isAdmin && lib.ownerName ? ` · ${lib.ownerName}` : ""}
+                            {meta ? ` · ${meta}` : ""}
+                            {isAdmin && head.ownerName ? ` · ${head.ownerName}` : ""}
                           </span>
                         </span>
                       </button>
                       <div className="flex shrink-0 items-center gap-1">
-                        {isAdmin && lib.scope === "lab" ? (
+                        {isAdmin && head.scope === "lab" ? (
                           <Button
                             size="sm"
                             variant="outline"
                             className="h-7 px-2 text-[11px]"
-                            onClick={() => void togglePublic(lib)}
+                            onClick={() => {
+                              for (const row of group.libs) void togglePublic(row);
+                            }}
                           >
-                            {lib.isPublic ? "공용에서 내리기" : "공용으로 올리기"}
+                            {group.libs.every((row) => row.isPublic) ? "공용에서 내리기" : "공용으로 올리기"}
                           </Button>
                         ) : null}
-                        {lib.forkBehind && lib.canEdit ? (
+                        {group.libs.some((row) => row.forkBehind && row.canEdit) ? (
                           <Button
                             size="sm"
                             variant="outline"
                             className="h-7 px-2 text-[11px]"
-                            onClick={() => void updateFork(lib)}
+                            onClick={() => {
+                              for (const row of group.libs) if (row.forkBehind && row.canEdit) void updateFork(row);
+                            }}
                           >
                             업데이트
                           </Button>
                         ) : null}
-                        {lib.canEdit ? (
+                        {group.libs.some((row) => row.canEdit) ? (
                           <Button
                             size="icon"
                             variant="ghost"
                             className="h-7 w-7"
                             aria-label="라이브러리 지우기"
-                            onClick={() => void removeLibrary(lib)}
+                            onClick={() => {
+                              if (group.libs.length === 1) {
+                                const only = group.libs[0];
+                                if (!only) return;
+                                if (!window.confirm(`${group.title} 라이브러리를 지울까요?`)) return;
+                                void removeLibrary(only, true);
+                                return;
+                              }
+                              if (!window.confirm(`${group.title} 묶음 ${group.libs.length}개를 지울까요?`)) return;
+                              for (const row of group.libs) void removeLibrary(row, true);
+                            }}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -982,12 +1034,20 @@ export function ScanbodyLibraryManager() {
                     </div>
                     {open ? (
                       <ul className="mt-2 space-y-1.5">
-                        {lib.kits.map((kit) => {
+                        {group.libs.flatMap((lib) => lib.kits.map((kit) => {
                           const picking = pickerFor?.libraryId === lib.id && pickerFor.kitId === kit.kitId;
+                          const specLabel =
+                            kit.spec?.trim() ||
+                            splitScanbodyCode(kit.name).spec ||
+                            splitScanbodyCode(lib.systemName).spec;
+                          const codeLabel = kit.code || (specLabel && lib.systemName !== specLabel ? lib.systemName : "");
                           return (
-                            <li key={kit.kitId} className="relative rounded-md bg-muted/40 px-2.5 py-2">
+                            <li key={`${lib.id}:${kit.kitId}`} className="relative rounded-md bg-muted/40 px-2.5 py-2">
                               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                <span className="text-xs font-medium">{kit.name}</span>
+                                <span className="text-xs font-medium">{specLabel || kit.name}</span>
+                                {codeLabel && codeLabel !== specLabel ? (
+                                  <span className="text-[11px] text-muted-foreground">{codeLabel}</span>
+                                ) : null}
                                 <span className="text-[11px] text-muted-foreground">
                                   스캔바디{" "}
                                   {kit.scanAbutmentPartIds.map((id) => partName.get(id) ?? id).join(" · ") || "없음"}
@@ -1065,15 +1125,15 @@ export function ScanbodyLibraryManager() {
                               ) : null}
                             </li>
                           );
-                        })}
+                        }))}
                       </ul>
                     ) : null}
                   </div>
                 );
               })}
-              {filtered.length > limit ? (
+              {groups.length > limit ? (
                 <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => setLimit((n) => n + PAGE)}>
-                  더 보기 ({filtered.length - limit}개 남음)
+                  더 보기 ({groups.length - limit}개 남음)
                 </Button>
               ) : null}
             </>

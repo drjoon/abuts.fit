@@ -31,6 +31,11 @@ import {
   type ScanbodyLibraryRow,
   type ScanbodyUploadRow,
 } from "@/shared/practice/scanbodyLibraryApi";
+import {
+  groupRegisteredLibraries,
+  splitScanbodyCode,
+  type RegisteredLibraryGroup,
+} from "@/shared/practice/scanbodyLibraryIdentity";
 import { cn } from "@/shared/ui/cn";
 
 const POLL_MS = 60_000;
@@ -90,23 +95,46 @@ function librarySourceLabel(lib: ScanbodyLibraryRow) {
   return versions ? `3Shape ${versions}` : "3Shape";
 }
 
-function libraryChips(lib: ScanbodyLibraryRow) {
-  const scanIds = new Set(lib.kits.flatMap((kit) => kit.scanAbutmentPartIds));
-  const measured = lib.parts.filter(
-    (part) => part.diameterMm != null && (scanIds.size === 0 || scanIds.has(part.partId)),
-  );
+function partSize(lib: ScanbodyLibraryRow, partId: string) {
+  const part = lib.parts.find((row) => row.partId === partId);
+  if (!part || part.diameterMm == null) return "";
+  return part.heightMm != null ? `${trimMm(part.diameterMm)}/${trimMm(part.heightMm)}` : trimMm(part.diameterMm);
+}
+
+function kitSpecLabel(lib: ScanbodyLibraryRow, kit: ScanbodyLibraryRow["kits"][number]) {
+  if (kit.spec?.trim()) return kit.spec.trim();
+  const fromName = splitScanbodyCode(kit.name).spec;
+  if (fromName) return fromName;
+  const fromCode = splitScanbodyCode(kit.code || "").spec;
+  if (fromCode) return fromCode;
+  const fromLib = splitScanbodyCode(lib.systemName).spec;
+  if (fromLib) return fromLib;
+  return kit.name.trim();
+}
+
+function groupChipList(group: RegisteredLibraryGroup<ScanbodyLibraryRow>) {
+  const rows: Array<{ label: string; size: string }> = [];
+  for (const lib of group.libs) {
+    const kits = lib.kits.length > 0 ? lib.kits : [{ kitId: lib.id, name: lib.systemName, spec: "", code: "", implantPartId: null, scanAbutmentPartIds: [], screwPartId: null, basePartId: null, blankPartId: null, catalogIds: [] }];
+    for (const kit of kits) {
+      const size = kit.scanAbutmentPartIds.map((id) => partSize(lib, id)).find(Boolean) || "";
+      rows.push({ label: kitSpecLabel(lib, kit), size });
+    }
+  }
+  const sizes = new Set(rows.map((row) => row.size).filter(Boolean));
+  const sharedSize = sizes.size === 1 ? [...sizes][0] : "";
   const chips = [
     ...new Set(
-      measured
-        .map((part) => {
-          if (part.diameterMm == null) return "";
-          return part.heightMm != null ? `${trimMm(part.diameterMm)}/${trimMm(part.heightMm)}` : trimMm(part.diameterMm);
+      rows
+        .map((row) => {
+          if (!row.label) return row.size;
+          if (!row.size || row.size === sharedSize) return row.label;
+          return `${row.label} ${row.size}`;
         })
         .filter(Boolean),
     ),
   ].sort(chipSort);
-  if (chips.length > 0) return chips;
-  return lib.kits.map((kit) => kit.name).filter(Boolean);
+  return { chips, sharedSize };
 }
 
 function templateGroups(rows: readonly AbutmentTemplateRow[]) {
@@ -277,6 +305,7 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
     () => [...catalog.libraries].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [catalog.libraries],
   );
+  const libraryGroups = useMemo(() => groupRegisteredLibraries(libraries), [libraries]);
   const templates = useMemo(() => templateGroups(catalog.templates), [catalog.templates]);
   const registeredCount = libraries.length + templates.length;
 
@@ -441,7 +470,7 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
             <h3 className="text-sm font-semibold text-slate-900">
               등록됨
               {catalogLoaded
-                ? ` · 라이브러리 ${libraries.length}개 · 템플릿 ${catalog.templates.length}개`
+                ? ` · 묶음 ${libraryGroups.length} · 라이브러리 ${libraries.length}개 · 템플릿 ${catalog.templates.length}개`
                 : ""}
             </h3>
             {!catalogLoaded ? (
@@ -450,25 +479,39 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
               <p className="text-xs text-muted-foreground">등록된 라이브러리·템플릿이 없습니다.</p>
             ) : (
               <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {libraries.map((lib) => (
-                  <li key={lib.id} className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-xs">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-medium text-slate-900">{lib.systemName || "스캔바디 라이브러리"}</span>
-                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
-                        {lib.scope === "public" ? "어벗츠 공용" : "기공소"}
-                      </span>
-                    </div>
-                    <SpecChips chips={libraryChips(lib)} tone="slate" />
-                    <div className="mt-1 text-[11px] text-muted-foreground">
-                      {librarySourceLabel(lib)} · 키트 {lib.kits.length}개 · 스캔바디 {lib.parts.length}개 · 최근{" "}
-                      {lib.updatedAt ? kstTime.format(new Date(lib.updatedAt)) : "-"}
-                    </div>
-                    {lib.manufacturers && lib.manufacturers.length > 0 ? (
-                      <div className="text-[11px] text-muted-foreground">제조사 {lib.manufacturers.join(" · ")}</div>
-                    ) : null}
-                    {lib.ownerName ? <div className="text-[11px] text-muted-foreground">{lib.ownerName}</div> : null}
-                  </li>
-                ))}
+                {libraryGroups.map((group) => {
+                  const latest = group.libs.reduce((max, lib) => (lib.updatedAt > max ? lib.updatedAt : max), "");
+                  const kits = group.libs.reduce((sum, lib) => sum + lib.kits.length, 0);
+                  const parts = group.libs.reduce((sum, lib) => sum + lib.parts.length, 0);
+                  const { chips, sharedSize } = groupChipList(group);
+                  const sources = [...new Set(group.libs.map(librarySourceLabel))];
+                  const owners = [...new Set(group.libs.map((lib) => lib.ownerName).filter(Boolean))];
+                  const scopes = [...new Set(group.libs.map((lib) => lib.scope))];
+                  const meta =
+                    group.manufacturer || group.brand
+                      ? [group.manufacturer && `제조사 ${group.manufacturer}`, group.brand && `브랜드 ${group.brand}`, group.implantType && `타입 ${group.implantType}`]
+                          .filter(Boolean)
+                          .join(" · ")
+                      : "";
+                  return (
+                    <li key={group.key} className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-xs">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-medium text-slate-900">{group.title}</span>
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                          {scopes.length === 1 && scopes[0] === "public" ? "어벗츠 공용" : scopes.length === 1 ? "기공소" : "혼합"}
+                        </span>
+                      </div>
+                      <SpecChips chips={chips} tone="slate" />
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        {sources.join(" · ")}
+                        {sharedSize ? ` · ${sharedSize}` : ""} · 키트 {kits}개 · 스캔바디 {parts}개 · 최근{" "}
+                        {latest ? kstTime.format(new Date(latest)) : "-"}
+                      </div>
+                      {meta ? <div className="text-[11px] text-muted-foreground">{meta}</div> : null}
+                      {owners.length > 0 ? <div className="text-[11px] text-muted-foreground">{owners.join(" · ")}</div> : null}
+                    </li>
+                  );
+                })}
                 {templates.map((group) => (
                   <li key={group.kind} className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-xs">
                     <div className="flex flex-wrap items-center gap-1.5">

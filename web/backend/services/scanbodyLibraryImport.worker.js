@@ -45,7 +45,14 @@ try {
     systemName: lib.systemName,
     fileNames: lib.fileNames,
     containerVersions: lib.containerVersions,
-    kits: [...lib.kits.values()],
+    implantManufacturer: lib.implantManufacturer || "",
+    brand: lib.brand || "",
+    implantType: lib.implantType || "",
+    kits: [...lib.kits.values()].map((kit) => ({
+      ...kit,
+      spec: kit.spec || "",
+      code: kit.code || "",
+    })),
     parts: [...lib.parts.values()].map((part) => {
       const stl = new Uint8Array(part.stl);
       const extent = stlExtentMm(stl);

@@ -19,6 +19,7 @@ import {
   type ScanbodyMesh,
 } from "@/shared/practice/scanbodyRegistration";
 import type { LabSimpleAbutmentSpec } from "@/shared/practice/labProsthesisAiDesign";
+import { libraryMatchesMaker } from "@/shared/practice/scanbodyLibraryIdentity";
 import { SIMPLE_ABUTMENT_KINDS, SIMPLE_HEALING_KIND } from "@/shared/practice/transferMemo";
 
 const BASE = "/api/scanbody-libraries";
@@ -58,6 +59,10 @@ export type ScanbodyLibraryKit = {
   basePartId: string | null;
   blankPartId: string | null;
   catalogIds: string[];
+  /** 규격 접미사. 예: `LL H55`. */
+  spec?: string;
+  /** 파일에 있던 코드. 예: `C1W_LL_H55`. */
+  code?: string;
 };
 
 export type ScanbodyLibraryRow = {
@@ -82,6 +87,10 @@ export type ScanbodyLibraryRow = {
   fileNames: string[];
   /** AI 디자인에서 의뢰 스캔바디 때문에 올릴 때 받은 제조사 이름. */
   manufacturers?: string[];
+  /** 파일에 있던 임플란트 제조사·브랜드·연결. */
+  implantManufacturer?: string;
+  brand?: string;
+  implantType?: string;
   containerVersions: string[];
   parts: ScanbodyLibraryPart[];
   kits: ScanbodyLibraryKit[];
@@ -801,9 +810,22 @@ export function scanbodyCandidatesFor(
   const ranked: Array<{ lib: ScanbodyLibraryRow; kit: ScanbodyLibraryKit; score: number }> = [];
   for (const lib of sorted) {
     for (const kit of lib.kits) {
-      const blob = token(`${lib.systemName} ${kit.name}`);
-      const makerHit = Boolean(maker && blob.includes(maker));
-      const brandHit = Boolean(brand && blob.includes(brand));
+      const blob = token(
+        [
+          lib.systemName,
+          kit.name,
+          kit.spec,
+          kit.code,
+          lib.implantManufacturer,
+          lib.brand,
+          lib.implantType,
+          ...(lib.manufacturers ?? []),
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+      const makerHit = Boolean(maker && (blob.includes(maker) || libraryMatchesMaker(lib, hint.manufacturer)));
+      const brandHit = Boolean(brand && (blob.includes(brand) || token(lib.brand || "") === brand));
       if (!makerHit && !brandHit) continue;
       let score = (makerHit ? 2 : 0) + (brandHit ? 2 : 0);
       if (family && blob.includes(family)) score += 1;
@@ -817,23 +839,6 @@ export function scanbodyCandidatesFor(
     pushKit(out, seen, row.lib, row.kit);
   }
   return out;
-}
-
-/** 의뢰 제조사 이름(한글) → 라이브러리 시스템·파일 이름에 나오는 표기. */
-const SCANBODY_MAKER_ALIASES: Record<string, readonly string[]> = {
-  지오메디: ["geomedi", "geo_", "geo "],
-};
-
-const makerKey = (value: string) => value.toLowerCase().replace(/[\s·.-]+/g, "");
-
-/** 이 라이브러리가 의뢰 스캔바디 제조사 것인지. 올릴 때 받은 제조사 이름이 먼저, 없으면 파일·시스템 이름. */
-function libraryMatchesMaker(lib: ScanbodyLibraryRow, maker: string) {
-  const key = makerKey(maker);
-  if (!key) return false;
-  if ((lib.manufacturers ?? []).some((row) => makerKey(row) === key)) return true;
-  const blob = `${lib.systemName} ${lib.fileNames.join(" ")}`.toLowerCase();
-  const aliases = SCANBODY_MAKER_ALIASES[maker.trim()] ?? [];
-  return blob.replace(/\s+/g, "").includes(key) || aliases.some((alias) => blob.includes(alias));
 }
 
 const SCANBODY_DIAMETER_TOL_MM = 0.25;

@@ -4,7 +4,7 @@
 //   용량과 함께 안쪽 파일 수(SCAN_FILES)로도 나눈다. 작게 나누면 검사도 병렬로 빨리 끝난다.
 //   해석에 쓰는 Materials.xml·.dcm만 표준 zip으로 다시 묶어 올린다. 나머지 항목과 비표준 ZIP64는 검사 한도를 넘겨
 //   파일은 올라가도 등록이 거절된다.
-//   제조사 배포 .zip 안의 .dme도 꺼내 같이 묶는다.
+//   제조사 배포 .zip 안의 .dme도 폴더 경로를 유지한 채 꺼내 묶는다. LibraryImportInfo.xml은 제조사 메타라 같이 올린다.
 // - exocad: config.xml과 .stl만 넣는다(.sdfa 등 암호화 형상은 서버도 못 읽어서 뺀다).
 //   .zip은 안쪽 zip까지 3단계 열어 같은 파일만 꺼낸다. config.xml 폴더 단위로 나눠 묶는다.
 // - 제조사 형상(.dcm·.stl·.stp·.step): config.xml 없는 파일은 한 개면 그대로, 여러 개면 zip으로 올린다.
@@ -126,7 +126,7 @@ async function entriesFromZip(
     const name = entry.name.replace(/\\/g, "/");
     if (entry.dir || name.startsWith("__MACOSX/")) continue;
     if (/\.dme$/i.test(name)) {
-      out.dmes.push({ path: leafName(name), data: await entry.async("uint8array") });
+      out.dmes.push({ path: name, data: await entry.async("uint8array") });
     } else if (wanted(name)) {
       out.exocad.push({ path: `${prefix}/${name}`, data: await entry.async("uint8array") });
     } else if (looseShape(name)) {
@@ -167,8 +167,9 @@ async function slimDmePieces(source: Entry, notes: string[]): Promise<Array<Entr
     const entry = opened.files[key]!;
     const name = entry.name.replace(/\\/g, "/");
     if (entry.dir || name.startsWith("__MACOSX/")) continue;
-    if (/(^|\/)materials\.xml$/i.test(name)) materials.push({ path: name, data: await entry.async("uint8array") });
-    else if (/\.dcm$/i.test(name)) meshes.push({ path: name, data: await entry.async("uint8array") });
+    if (/(^|\/)materials\.xml$/i.test(name) || /(^|\/)libraryimportinfo\.xml$/i.test(name)) {
+      materials.push({ path: name, data: await entry.async("uint8array") });
+    } else if (/\.dcm$/i.test(name)) meshes.push({ path: name, data: await entry.async("uint8array") });
   }
   const label = leafName(source.path);
   if (materials.length === 0) {
@@ -187,7 +188,7 @@ async function slimDmePieces(source: Entry, notes: string[]): Promise<Array<Entr
     Math.max(1, SCAN_FILES - materials.length),
     Math.max(1, BUNDLE_BYTES - materialBytes),
   );
-  const base = label.replace(/\.dme$/i, "") || "library";
+  const base = source.path.replace(/\.dme$/i, "") || label.replace(/\.dme$/i, "") || "library";
   const pieces: Array<Entry & { files: number }> = [];
   for (const [i, group] of groups.entries()) {
     pieces.push({
@@ -214,7 +215,7 @@ export async function buildScanbodyUploadBundles(
     .map((file) => ({ path: relPath(file), data: file }));
   const dmes: Entry[] = files
     .filter((file) => /\.dme$/i.test(file.name))
-    .map((file) => ({ path: file.name, data: file }));
+    .map((file) => ({ path: relPath(file), data: file }));
   for (const file of files.filter((row) => /\.zip$/i.test(row.name))) {
     const found = await entriesFromZip(file, file.name, relPath(file).replace(/\.zip$/i, ""), notes);
     entries.push(...found.exocad);

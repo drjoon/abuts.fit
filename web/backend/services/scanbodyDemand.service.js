@@ -12,28 +12,16 @@ import ScanbodySpecDemand from "../models/scanbodySpecDemand.model.js";
 import ScanbodyLibrary from "../models/scanbodyLibrary.model.js";
 import AbutmentTemplate from "../models/abutmentTemplate.model.js";
 import { emitAppEventToRoles } from "../socket.js";
+import { libraryMatchesMaker } from "../utils/scanbodyLibraryIdentity.js";
 
 const DESIGNABLE_TYPES = new Set(["크라운", "인레이", "온레이", "브리지"]);
 const SIMPLE_ABUTMENT_KINDS = new Set(["심플어벗", "심플밀링"]);
 const SIMPLE_HEALING_KIND = "심플힐링";
 const DIAMETER_TOL_MM = 0.25;
 const HEIGHT_TOL_MM = 0.4;
-/** 프론트 SCANBODY_MAKER_ALIASES와 같이 고친다. */
-const MAKER_ALIASES = { 지오메디: ["geomedi", "geo_", "geo "] };
-
 const text = (value) => String(value ?? "").trim();
-const makerKey = (value) => value.toLowerCase().replace(/[\s·.-]+/g, "");
 const num = (value) => Number(text(value).replace(",", "."));
 const idOf = (value) => (value && Types.ObjectId.isValid(String(value)) ? new Types.ObjectId(String(value)) : null);
-
-function libraryMatchesMaker(lib, maker) {
-  const key = makerKey(maker);
-  if (!key) return false;
-  if ((lib.manufacturers || []).some((row) => makerKey(row) === key)) return true;
-  const blob = `${lib.systemName} ${(lib.fileNames || []).join(" ")}`.toLowerCase();
-  const aliases = MAKER_ALIASES[maker.trim()] ?? [];
-  return blob.replace(/\s+/g, "").includes(key) || aliases.some((alias) => blob.includes(alias));
-}
 
 function hasLibraryShape(libraries, { maker, diameter, height }) {
   const d = num(diameter);
@@ -315,7 +303,18 @@ export async function listScanbodyDemand() {
   const [specs, libraries, templates] = await Promise.all([
     ScanbodySpecDemand.find({}).sort({ lastAt: -1 }).limit(500).lean(),
     ScanbodyLibrary.find(shared)
-      .select({ systemName: 1, fileNames: 1, manufacturers: 1, "parts.partId": 1, "parts.diameterMm": 1, "parts.heightMm": 1, "kits.scanAbutmentPartIds": 1 })
+      .select({
+        systemName: 1,
+        fileNames: 1,
+        manufacturers: 1,
+        implantManufacturer: 1,
+        brand: 1,
+        implantType: 1,
+        "parts.partId": 1,
+        "parts.diameterMm": 1,
+        "parts.heightMm": 1,
+        "kits.scanAbutmentPartIds": 1,
+      })
       .lean(),
     AbutmentTemplate.find(shared).select({ kind: 1, diameter: 1, height: 1 }).lean(),
   ]);

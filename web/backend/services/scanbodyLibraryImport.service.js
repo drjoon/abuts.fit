@@ -25,6 +25,13 @@ import {
   trianglesFromMeshFile,
   trianglesFromStl,
 } from "../utils/scanbodyGeometry.js";
+import {
+  collapseParsedLibraries,
+  describeLibrary,
+  harvestLibraryMeta,
+  metaFromSystemProps,
+  splitScanbodyCode,
+} from "../utils/scanbodyLibraryIdentity.js";
 
 export const SCANBODY_UPLOAD_LIMITS = {
   // 브라우저가 25MB 안팎으로 나눠 올린다. 한 폴더·한 .dme가 큰 제조사 배포본도 받게 넉넉히 둔다.
@@ -138,7 +145,10 @@ const cadPath = (path) =>
 
 function parseDme(bytes, fileName, budget, notes) {
   const { files } = safeUnzip(bytes, {
-    want: (name) => /(^|\/)materials\.xml$/i.test(name) || /\.dcm$/i.test(name),
+    want: (name) =>
+      /(^|\/)materials\.xml$/i.test(name) ||
+      /(^|\/)libraryimportinfo\.xml$/i.test(name) ||
+      /\.dcm$/i.test(name),
     maxEntries: SCANBODY_UPLOAD_LIMITS.maxDmeEntries,
     maxEntryBytes: SCANBODY_UPLOAD_LIMITS.maxEntryBytes,
     budget,
@@ -161,7 +171,25 @@ function parseDmeFiles(files, fileName, notes) {
       .map(objectProps)
       .filter((p) => p.InRecycleBin !== "True");
 
-  const systems = new Map(byType("TDM_Item_ImplantSystem").map((p) => [itemKey(p), text(p.Name)]));
+  const systemProps = new Map(byType("TDM_Item_ImplantSystem").map((p) => [itemKey(p), p]));
+  const namedObjects = new Map();
+  for (const obj of objects) {
+    const type = String(obj["@_type"] || "");
+    if (!/Manufacturer|Company|Supplier/i.test(type)) continue;
+    const props = objectProps(obj);
+    namedObjects.set(itemKey(props), props);
+  }
+  const systemMeta = (props) => {
+    const linked = props?.ManufacturerID ? namedObjects.get(refId(props.ManufacturerID)) : null;
+    const fromLink = linked ? metaFromSystemProps(linked) : {};
+    const own = metaFromSystemProps(props);
+    if (!own.manufacturer && linked?.Name) fromLink.manufacturer = text(linked.Name, 80);
+    return {
+      manufacturer: own.manufacturer || fromLink.manufacturer || "",
+      brand: own.brand || fromLink.brand || "",
+      type: own.type || fromLink.type || "",
+    };
+  };
   const rawParts = new Map(byType("TDM_Item_ImplantSystemPart").map((p) => [itemKey(p), p]));
   const rawKitObjects = objects.filter(
     (obj) => obj["@_type"] === "TDM_Item_AbutmentKit" && objectProps(obj).InRecycleBin !== "True",
@@ -202,7 +230,7 @@ function parseDmeFiles(files, fileName, notes) {
     return part;
   };
 
-  const ensureLib = (out, systemName) => {
+  const ensureLib = (out, systemName, meta) => {
     const lib = out.get(systemName) ?? {
       source: "3shape",
       systemName,
@@ -210,7 +238,9 @@ function parseDmeFiles(files, fileName, notes) {
       containerVersions: containerVersion ? [containerVersion] : [],
       parts: new Map(),
       kits: new Map(),
+      meta: meta || {},
     };
+    if (meta?.manufacturer && !lib.meta?.manufacturer) lib.meta = { ...lib.meta, ...meta };
     out.set(systemName, lib);
     return lib;
   };
@@ -236,9 +266,9 @@ function parseDmeFiles(files, fileName, notes) {
     const kitItem = itemKey(raw);
     const implantId = refId(raw.ImplantID);
     const systemId = implantId ? rawParts.get(implantId)?.ImplantSystemID : undefined;
-    const systemName =
-      (systemId && systems.get(systemId)) || [...systems.values()][0] || stripExt(fileName);
-    const lib = ensureLib(out, systemName);
+    const system = (systemId && systemProps.get(systemId)) || [...systemProps.values()][0] || null;
+    const systemName = text(system?.Name) || stripExt(baseName(fileName));
+    const lib = ensureLib(out, systemName, systemMeta(system));
     const scanIds = [
       ...refCandidates(obj),
       ...extras.filter((row) => row.AbutmentKitID === kitItem).map((row) => refId(row.PartID)),
@@ -261,8 +291,9 @@ function parseDmeFiles(files, fileName, notes) {
     const part = loadScanPart(partId);
     if (!part) continue;
     const systemId = refId(raw.ImplantSystemID);
-    const systemName = (systemId && systems.get(systemId)) || [...systems.values()][0] || stripExt(fileName);
-    const lib = ensureLib(out, systemName);
+    const system = (systemId && systemProps.get(systemId)) || [...systemProps.values()][0] || null;
+    const systemName = text(system?.Name) || stripExt(baseName(fileName));
+    const lib = ensureLib(out, systemName, systemMeta(system));
     lib.parts.set(part.hash, part);
     putKit(lib, {
       kitId: `part:${partId}`,
@@ -270,7 +301,9 @@ function parseDmeFiles(files, fileName, notes) {
       scanAbutmentPartIds: [part.hash],
     });
   }
-  return [...out.values()];
+  const infoName = [...files.keys()].find((name) => /(^|\/)libraryimportinfo\.xml$/i.test(name));
+  const info = infoName ? harvestLibraryMeta(parseXml(files.get(infoName), infoName)) : {};
+  return collapseParsedLibraries([...out.values()], fileName, info);
 }
 
 // ─── exocad config.xml ─────────────────────────────────────────
@@ -289,7 +322,10 @@ function parseExocadEntry(configName, files, fileName, notes) {
   const axis = vec(entry.AxisOcclusal) ?? [0, 0, 1];
   const entryRef = vec(entry.AxisAsymmetric) ?? [1, 0, 0];
   const keyword = text(entry.Keyword) || baseName(dir) || stripExt(fileName);
-  const systemName = text(entry.DisplayInformation) || keyword;
+  const display = text(entry.DisplayInformation) || keyword;
+  const xml = harvestLibraryMeta(entry);
+  const identity = describeLibrary({ systemName: display, filePath: configName, meta: xml });
+  const systemName = identity.title;
 
   const byLower = new Map([...files.keys()].map((name) => [name.toLowerCase(), name]));
   const partCache = new Map();
@@ -321,12 +357,19 @@ function parseExocadEntry(configName, files, fileName, notes) {
     containerVersions: [],
     parts: new Map(),
     kits: new Map(),
+    implantManufacturer: identity.manufacturer,
+    brand: identity.brand,
+    implantType: identity.implantType,
   };
   for (const type of entry.TypeConfig?.ImplantTypeConfig ?? []) {
     const typeKeyword = text(type.Keyword) || text(type.DisplayInformation);
+    const typeName = text(type.DisplayInformation) || typeKeyword;
+    const typeCode = splitScanbodyCode(typeKeyword || typeName);
     const kit = {
       kitId: [dir, keyword, typeKeyword].filter(Boolean).join(":"),
-      name: text(type.DisplayInformation) || typeKeyword,
+      name: typeCode.spec || typeName,
+      spec: identity.spec || typeCode.spec || "",
+      code: [keyword, typeKeyword].filter(Boolean).join("_"),
       scanAbutmentPartIds: [],
     };
     for (const sub of type.SubtypeConfig?.ImplantSubtypeConfig ?? []) {
@@ -369,6 +412,9 @@ function mergeInto(merged, lib) {
   }
   prev.fileNames = [...new Set([...prev.fileNames, ...lib.fileNames])];
   prev.containerVersions = [...new Set([...prev.containerVersions, ...lib.containerVersions])].sort();
+  if (!prev.implantManufacturer) prev.implantManufacturer = lib.implantManufacturer || "";
+  if (!prev.brand) prev.brand = lib.brand || "";
+  if (!prev.implantType) prev.implantType = lib.implantType || "";
 }
 
 /**
@@ -408,13 +454,17 @@ async function meshLibrary(entries, label, notes) {
     const base = stripExt(baseName(label));
     if (base && !/^scanbody-meshes/i.test(base)) systemName = text(base, 80);
   }
+  const identity = describeLibrary({ systemName, filePath: entries[0]?.name || label });
   return {
     source: "scan",
-    systemName,
+    systemName: identity.manufacturer || identity.brand ? identity.title : systemName,
     fileNames,
     containerVersions: [],
     parts,
     kits,
+    implantManufacturer: identity.manufacturer,
+    brand: identity.brand,
+    implantType: identity.implantType,
   };
 }
 
@@ -471,7 +521,7 @@ export async function parseScanbodyBundle(buffer, fileName) {
       continue;
     }
     try {
-      dmeLibs.push(...parseDme(bytes, baseName(name), budget, notes));
+      dmeLibs.push(...parseDme(bytes, name, budget, notes));
     } catch (error) {
       if (!(error instanceof ScanbodyInputError)) throw error;
       notes.push(error.message);

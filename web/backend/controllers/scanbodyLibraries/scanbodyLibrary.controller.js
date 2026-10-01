@@ -158,6 +158,9 @@ function libraryView(req, doc, names = new Map(), base = null) {
     fileNames: doc.fileNames || [],
     containerVersions: doc.containerVersions || [],
     manufacturers: doc.manufacturers || [],
+    implantManufacturer: doc.implantManufacturer || "",
+    brand: doc.brand || "",
+    implantType: doc.implantType || "",
     parts: (doc.parts || []).map((part) => ({
       partId: part.partId,
       name: part.name,
@@ -178,6 +181,8 @@ function libraryView(req, doc, names = new Map(), base = null) {
       basePartId: kit.basePartId,
       blankPartId: kit.blankPartId,
       catalogIds: kit.catalogIds || [],
+      spec: kit.spec || "",
+      code: kit.code || "",
     })),
     updatedAt: doc.updatedAt,
   };
@@ -368,6 +373,9 @@ export const rebaseScanbodyLibrary = asyncHandler(async (req, res) => {
   doc.fileNames = union(base.fileNames, doc.fileNames);
   doc.containerVersions = union(base.containerVersions, doc.containerVersions).sort();
   doc.manufacturers = union(doc.manufacturers, base.manufacturers);
+  if (!doc.implantManufacturer) doc.implantManufacturer = base.implantManufacturer || "";
+  if (!doc.brand) doc.brand = base.brand || "";
+  if (!doc.implantType) doc.implantType = base.implantType || "";
   doc.contentUpdatedAt = base.contentUpdatedAt ?? new Date();
   doc.forkBaseContentAt = base.contentUpdatedAt ?? new Date();
   await doc.save();
