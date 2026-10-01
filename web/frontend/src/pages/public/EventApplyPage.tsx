@@ -332,7 +332,7 @@ export default function EventApplyPage() {
   });
 
   const isSimpleway = slug === SIMPLEWAY_SAMPLE_SLUG;
-  const canApply = event?.status !== "closed";
+  const canApply = event?.status === "open";
   const signupHref = eventApplySignupHref(slug);
   const practiceUser = isPracticeApplicant(user);
   const prefill = useMemo(
@@ -537,7 +537,7 @@ export default function EventApplyPage() {
     );
   }
 
-  if (error || !event) {
+  if (error || !event || event.status === "draft") {
     return (
       <PublicPageLayout
         plain
@@ -546,7 +546,9 @@ export default function EventApplyPage() {
         <Card className={PUBLIC_CARD_CLASS}>
           <CardContent className="space-y-3 py-10 text-center">
             <p className="text-sm text-slate-600">
-              {error || "이벤트를 찾을 수 없습니다."}
+              {event?.status === "draft"
+                ? "이벤트를 찾을 수 없습니다."
+                : error || "이벤트를 찾을 수 없습니다."}
             </p>
             <Button asChild variant="outline">
               <Link to="/#events">목록으로</Link>

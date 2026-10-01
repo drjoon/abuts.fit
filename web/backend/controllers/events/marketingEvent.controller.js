@@ -408,13 +408,13 @@ export async function listPublicEvents(req, res) {
   }
 }
 
-/** GET /api/events/:slug — 초안/마감도 미리보기 가능 */
+/** GET /api/events/:slug — 모집 중·마감만. 초안은 없는 행사로 응답 */
 export async function getPublicEvent(req, res) {
   try {
     await ensureDefaultMarketingEvents();
     const slug = trimStr(req.params.slug, 80).toLowerCase();
     const doc = await MarketingEvent.findOne({ slug }).lean();
-    if (!doc) {
+    if (!doc || doc.status === "draft") {
       return res.status(404).json({
         success: false,
         message: "이벤트를 찾을 수 없습니다.",
@@ -457,13 +457,19 @@ export async function suggestEventPlaces(req, res) {
   }
 }
 
-/** POST /api/events/:slug/applications — draft|open 접수, closed만 거절 */
+/** POST /api/events/:slug/applications — 모집 중만 접수. 초안은 없는 행사 */
 export async function applyToEvent(req, res) {
   try {
     await ensureDefaultMarketingEvents();
     const slug = trimStr(req.params.slug, 80).toLowerCase();
     const event = await MarketingEvent.findOne({ slug }).lean();
-    if (!event || event.status === "closed") {
+    if (!event || event.status === "draft") {
+      return res.status(404).json({
+        success: false,
+        message: "이벤트를 찾을 수 없습니다.",
+      });
+    }
+    if (event.status !== "open") {
       return res.status(404).json({
         success: false,
         message: "이벤트를 찾을 수 없거나 신청이 마감되었습니다.",

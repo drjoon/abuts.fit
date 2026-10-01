@@ -36,7 +36,8 @@ export function GriboEventToolbarAlert({
       .then((res) => {
         if (cancelled) return;
         const status = res.event?.status;
-        if (status === "closed" && !res.applied) {
+        // 초안은 미공개. 마감은 이미 신청한 치과만 「신청 완료」를 남긴다.
+        if (status === "draft" || (status === "closed" && !res.applied)) {
           setVisible(false);
           return;
         }
