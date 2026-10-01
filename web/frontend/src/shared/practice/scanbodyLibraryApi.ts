@@ -82,7 +82,7 @@ export type ScanbodyLibraryRow = {
   /** 관리자 화면에서만 채워진다. */
   ownerName: string;
   /** scan: 기공소가 스캔하거나 다른 CAD에서 내보낸 형상 한 개. */
-  source: "3shape" | "exocad" | "scan";
+  source: "3shape" | "exocad" | "scan" | "generated";
   systemName: string;
   fileNames: string[];
   /** AI 디자인에서 의뢰 스캔바디 때문에 올릴 때 받은 제조사 이름. */
@@ -399,6 +399,59 @@ export async function uploadScanbodyMeshAndWait(
         height: order.height.trim().replace(",", "."),
       },
     },
+  });
+  if (!created.ok || !created.data?.data) return fail(created, "업로드를 시작하지 못했습니다.");
+  const { upload, uploadUrl, fields } = created.data.data;
+  await postToS3(uploadUrl, fields, file, (ratio) => onStatus(`올리는 중 ${Math.round(ratio * 100)}%`));
+  const done = await apiFetch<{ data: ScanbodyUploadRow }>({
+    path: `${BASE}/uploads/${upload.id}/complete`,
+    method: "POST",
+  });
+  if (!done.ok || !done.data?.data) return fail(done, "업로드를 마치지 못했습니다.");
+  let row = done.data.data;
+  const started = Date.now();
+  while (!isUploadFinished(row.status) && Date.now() - started < UPLOAD_WAIT_MS) {
+    onStatus(libraryRegisterStatus([row]));
+    await new Promise((resolve) => window.setTimeout(resolve, UPLOAD_POLL_MS));
+    row = (await fetchScanbodyUploads([row.id]))[0] ?? row;
+  }
+  invalidateApiGetCache(BASE);
+  return row;
+}
+
+/** 스캔바디 생성기 입력. DME에서 가져온 구조(임플란트 제조사·브랜드·연결 타입·키트 규격)만 남겼다. */
+export type ScanbodySpecInput = {
+  /** 스캔바디 제조사. 예: 지오메디 */
+  maker: string;
+  /** 임플란트 제조사. 예: OSSTEM */
+  implantManufacturer: string;
+  /** 임플란트 브랜드. 예: TS3 */
+  brand: string;
+  /** 표 열 머리글. 숫자·문자. 예: 4.5 */
+  diameter: string;
+  /** 표 행 머리글. 숫자·문자. 예: 10, H */
+  height: string;
+  /** 임플란트 축. auto는 가장 긴 방향. */
+  axis: "auto" | "x" | "y" | "z";
+  /** 플랫폼(임플란트 접촉) 쪽 끝. auto는 더 가는 쪽. */
+  platformEnd: "auto" | "min" | "max";
+};
+
+/**
+ * 관리자 스캔바디 생성기: STEP(.stp·.step), STL, DCM 한 개와 스펙으로 AI 디자인용 라이브러리를 만든다.
+ * 서버가 면을 플랫폼 원점·+Y 축 STL로 저장하고, 스펙은 라이브러리·키트에 붙인다.
+ */
+export async function uploadScanbodySpecAndWait(
+  file: File,
+  spec: ScanbodySpecInput,
+  onStatus: (text: string) => void,
+): Promise<ScanbodyUploadRow> {
+  const created = await apiFetch<{
+    data: { upload: ScanbodyUploadRow; uploadUrl: string; fields: Record<string, string> };
+  }>({
+    path: `${BASE}/uploads`,
+    method: "POST",
+    jsonBody: { fileName: file.name, size: file.size, specMeta: spec },
   });
   if (!created.ok || !created.data?.data) return fail(created, "업로드를 시작하지 못했습니다.");
   const { upload, uploadUrl, fields } = created.data.data;

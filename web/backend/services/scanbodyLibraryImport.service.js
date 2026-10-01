@@ -29,6 +29,7 @@ import {
   collapseParsedLibraries,
   describeLibrary,
   harvestLibraryMeta,
+  makerKey,
   metaFromSystemProps,
   splitScanbodyCode,
 } from "../utils/scanbodyLibraryIdentity.js";
@@ -585,6 +586,65 @@ export function parseScanbodyMesh(buffer, fileName, meta) {
     containerVersions: [],
     parts: new Map([[part.hash, part]]),
     kits: new Map([[kitId, { kitId, name: kitId, scanAbutmentPartIds: [part.hash] }]]),
+  };
+  return { libraries: [lib], notes: [] };
+}
+
+/**
+ * 스캔바디 생성기: 제조사 STEP(.stp·.step) 한 개 + 스펙 메타데이터 → 라이브러리 한 개·키트 한 개.
+ * DME에서 쓸만한 구조(임플란트 제조사·브랜드·연결 타입·키트 규격·코드)만 가져온다. 형상은 모델 좌표(플랫폼 원점, +Y 축) STL이다.
+ * 같은 스캔바디 제조사·임플란트 제조사·브랜드는 한 라이브러리로 합치고, 직경*높이는 키트가 된다.
+ */
+/** 머리글이 숫자면 그 값을 부품 치수로 쓴다. 문자 규격은 형상에서 잰 값에 맡긴다. */
+function labeledMm(value) {
+  const n = Number(String(value ?? "").trim().replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+}
+
+export async function parseScanbodySpec(buffer, fileName, spec) {
+  if (buffer.length > SCANBODY_UPLOAD_LIMITS.maxEntryBytes) throw new ScanbodyInputError("파일이 너무 큽니다.");
+  if (!/\.(stp|step|stl|dcm)$/i.test(fileName)) {
+    throw new ScanbodyInputError("STEP(.stp·.step), STL, DCM 파일만 생성할 수 있습니다.");
+  }
+  const maker = text(spec?.maker, 60);
+  const diameter = text(spec?.diameter, 20);
+  const height = text(spec?.height, 20);
+  if (!maker) throw new ScanbodyInputError("스캔바디 제조사가 없습니다.");
+  if (!diameter) throw new ScanbodyInputError("직경이 없습니다.");
+  if (!height) throw new ScanbodyInputError("높이가 없습니다.");
+  const implantManufacturer = text(spec?.implantManufacturer, 60);
+  const brand = text(spec?.brand, 60);
+  const kitSpec = `${diameter}*${height}`;
+
+  const raw = await trianglesFromLibraryShape(buffer, fileName);
+  const aligned = alignScanbodyToModel(raw, { axis: spec?.axis, platformEnd: spec?.platformEnd });
+  const part = {
+    name: kitSpec,
+    diameterMm: labeledMm(diameter),
+    heightMm: labeledMm(height),
+    ...canonicalPart(aligned),
+  };
+
+  const seen = new Set();
+  const systemName = [maker, implantManufacturer, brand]
+    .filter((bit) => {
+      const key = makerKey(bit);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join(" ");
+  const kitId = `gen:${kitSpec}`;
+  const lib = {
+    source: "generated",
+    systemName,
+    fileNames: [baseName(fileName)],
+    containerVersions: [],
+    parts: new Map([[part.hash, part]]),
+    kits: new Map([[kitId, { kitId, name: kitSpec, spec: kitSpec, code: kitSpec, scanAbutmentPartIds: [part.hash] }]]),
+    implantManufacturer,
+    brand,
+    implantType: "",
   };
   return { libraries: [lib], notes: [] };
 }

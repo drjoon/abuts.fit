@@ -294,6 +294,8 @@ async function findOwnUpload(req) {
 // meshMeta: 형상 한 개(.dcm·.stl·.ply·.obj)일 때 { frame, diameter, height }. manufacturer가 있어야 한다.
 export const createLibraryUpload = asyncHandler(async (req, res) => {
   const { ownerAnchorId } = await resolveOwner(req);
+  // specMeta는 스캔바디 생성기(STEP + 스펙)로 관리자 대시보드에서만 쓴다.
+  if (req.body?.specMeta != null) assertAdmin(req);
   await assertNotBlocked(req);
   const { job, uploadUrl, fields } = await createScanbodyUpload({
     ownerAnchorId,
@@ -302,6 +304,7 @@ export const createLibraryUpload = asyncHandler(async (req, res) => {
     size: req.body?.size,
     manufacturer: text(req.body?.manufacturer, 60),
     meshMeta: req.body?.meshMeta,
+    specMeta: req.body?.specMeta,
   });
   return res.status(201).json(new ApiResponse(201, { upload: uploadView(job), uploadUrl, fields }));
 });

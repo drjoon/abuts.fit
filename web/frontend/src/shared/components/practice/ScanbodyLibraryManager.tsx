@@ -975,7 +975,7 @@ export function ScanbodyLibraryManager() {
                             ) : null}
                           </span>
                           <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                            {source === "exocad" ? "exocad" : source === "scan" ? "형상 파일" : `3Shape ${versions.join(", ")}`.trim()}
+                            {source === "exocad" ? "exocad" : source === "scan" ? "형상 파일" : source === "generated" ? "어벗츠 생성" : `3Shape ${versions.join(", ")}`.trim()}
                             {specs.length > 0 ? ` · ${specs.slice(0, 8).join(" · ")}${specs.length > 8 ? ` 외 ${specs.length - 8}` : ""}` : ""}
                             {" · "}키트 {kitCount}개 · 스캔바디 {partCount}개
                             {unlinked > 0 ? ` · 임플란트 미연결 ${unlinked}개` : ""}

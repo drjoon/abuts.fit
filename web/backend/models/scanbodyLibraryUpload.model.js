@@ -33,6 +33,8 @@ const scanbodyLibraryUploadSchema = new mongoose.Schema(
     manufacturer: { type: String, default: "" },
     /** 형상 한 개(.dcm·.stl·.ply·.obj)를 올렸으면 브라우저가 계산한 축과 의뢰 규격. { frame, diameter, height } */
     meshMeta: { type: mongoose.Schema.Types.Mixed, default: null },
+    /** 관리자 스캔바디 생성기: STEP 한 개 + 스펙. { maker, implantManufacturer, brand, diameter, height, axis, platformEnd } */
+    specMeta: { type: mongoose.Schema.Types.Mixed, default: null },
     declaredSize: { type: Number, default: 0 },
     size: { type: Number, default: 0 },
     sha256: { type: String, default: "" },

@@ -67,7 +67,8 @@ const scanbodyLibrarySchema = new mongoose.Schema(
     /** 3Shape ImplantSystem Name 또는 exocad DisplayInformation. 같은 소유자 안에서 이 값으로 합친다. */
     systemName: { type: String, required: true, trim: true },
     /** scan: 기공소가 스캔하거나 다른 CAD에서 내보낸 형상 한 개(.dcm·.stl·.ply·.obj). */
-    source: { type: String, enum: ["3shape", "exocad", "scan"], default: "3shape" },
+    /** generated: 관리자 스캔바디 생성기(STEP + 스펙 메타데이터). */
+    source: { type: String, enum: ["3shape", "exocad", "scan", "generated"], default: "3shape" },
     /** 올린 파일 이름들(연도별 호환 파일을 여러 개 올려도 한 라이브러리). */
     fileNames: { type: [String], default: [] },
     containerVersions: { type: [String], default: [] },

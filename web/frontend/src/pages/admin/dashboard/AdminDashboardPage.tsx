@@ -56,6 +56,7 @@ import {
 } from "@/shared/noOrderAlerts";
 import { NoticeAdminCard } from "@/pages/admin/dashboard/NoticeAdminCard";
 import { ScanbodyDemandCard } from "@/pages/admin/dashboard/ScanbodyDemandCard";
+import { ScanbodyGeneratorCard } from "@/pages/admin/dashboard/ScanbodyGeneratorCard";
 import {
   Users,
   FileText,
@@ -2244,13 +2245,14 @@ export const AdminDashboardPage = () => {
               </Card>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <NoOrderAlertBanner
                 className="h-full"
                 data={noOrderAlertsData}
                 loading={noOrderAlertsLoading}
               />
               <ScanbodyDemandCard />
+              <ScanbodyGeneratorCard />
               <NoticeAdminCard className="h-full lg:col-span-2" />
             </div>
 

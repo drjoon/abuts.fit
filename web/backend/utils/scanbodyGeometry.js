@@ -495,7 +495,7 @@ export async function trianglesFromStep(buffer) {
  * 제조사 STL·STEP은 긴 축을 임플란트 축으로, 더 가는 쪽을 플랫폼으로 둔다.
  * 결과 좌표는 플랫폼 원점·+Y 축이다.
  */
-export function alignScanbodyToModel(triangles) {
+export function alignScanbodyToModel(triangles, options = {}) {
   const count = triangles.length / 3;
   if (!Number.isInteger(count) || count < 4) fail("형상 면이 너무 적습니다.");
   const min = [Infinity, Infinity, Infinity];
@@ -518,6 +518,9 @@ export function alignScanbodyToModel(triangles) {
   let axisIndex = 0;
   if (ext[1] >= ext[0] && ext[1] >= ext[2]) axisIndex = 1;
   else if (ext[2] >= ext[0] && ext[2] >= ext[1]) axisIndex = 2;
+  // 스펙 생성기에서 관리자가 고른 축(x·y·z)이 있으면 긴 방향 추정보다 우선한다.
+  const forcedAxis = ["x", "y", "z"].indexOf(String(options.axis || "").toLowerCase());
+  if (forcedAxis >= 0) axisIndex = forcedAxis;
   const low = min[axisIndex];
   const high = max[axisIndex];
   const band = Math.max((high - low) * 0.2, span * 1e-4);
@@ -542,7 +545,9 @@ export function alignScanbodyToModel(triangles) {
       highN += 1;
     }
   }
-  const platformAtLow = lowR / Math.max(lowN, 1) <= highR / Math.max(highN, 1);
+  let platformAtLow = lowR / Math.max(lowN, 1) <= highR / Math.max(highN, 1);
+  if (options.platformEnd === "min") platformAtLow = true;
+  else if (options.platformEnd === "max") platformAtLow = false;
   const axis = [0, 0, 0];
   axis[axisIndex] = platformAtLow ? 1 : -1;
   const origin = [mid[0], mid[1], mid[2]];

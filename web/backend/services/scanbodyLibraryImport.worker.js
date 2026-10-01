@@ -3,7 +3,7 @@
 // - web/backend/services/scanbodyLibraryImport.service.js
 // - web/backend/services/scanbodyLibraryUpload.service.js
 import { parentPort, workerData } from "worker_threads";
-import { parseScanbodyBundle, parseScanbodyMesh } from "./scanbodyLibraryImport.service.js";
+import { parseScanbodyBundle, parseScanbodyMesh, parseScanbodySpec } from "./scanbodyLibraryImport.service.js";
 import { ScanbodyInputError } from "../utils/scanbodyGeometry.js";
 
 /**
@@ -36,9 +36,11 @@ function stlExtentMm(stl) {
 
 try {
   const buffer = Buffer.from(workerData.buffer.buffer, workerData.buffer.byteOffset, workerData.buffer.length);
-  const { libraries, notes } = workerData.meshMeta
-    ? parseScanbodyMesh(buffer, workerData.fileName, workerData.meshMeta)
-    : await parseScanbodyBundle(buffer, workerData.fileName);
+  const { libraries, notes } = workerData.specMeta
+    ? await parseScanbodySpec(buffer, workerData.fileName, workerData.specMeta)
+    : workerData.meshMeta
+      ? parseScanbodyMesh(buffer, workerData.fileName, workerData.meshMeta)
+      : await parseScanbodyBundle(buffer, workerData.fileName);
   const transfer = [];
   const rows = libraries.map((lib) => ({
     source: lib.source,
@@ -57,7 +59,13 @@ try {
       const stl = new Uint8Array(part.stl);
       const extent = stlExtentMm(stl);
       transfer.push(stl.buffer);
-      return { name: part.name, hash: part.hash, stl, ...extent };
+      return {
+        name: part.name,
+        hash: part.hash,
+        stl,
+        diameterMm: part.diameterMm ?? extent.diameterMm,
+        heightMm: part.heightMm ?? extent.heightMm,
+      };
     }),
   }));
   parentPort.postMessage({ ok: true, libraries: rows, notes }, transfer);

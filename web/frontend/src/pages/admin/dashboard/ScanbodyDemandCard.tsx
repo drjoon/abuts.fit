@@ -93,6 +93,7 @@ function chipSort(a: string, b: string) {
 function librarySourceLabel(lib: ScanbodyLibraryRow) {
   if (lib.source === "exocad") return "exocad";
   if (lib.source === "scan") return "형상 파일";
+  if (lib.source === "generated") return "어벗츠 생성";
   const versions = lib.containerVersions.filter(Boolean).join(", ");
   return versions ? `3Shape ${versions}` : "3Shape";
 }
@@ -384,7 +385,7 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
         }}
       >
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">라이브러리 없는 스캔바디</CardTitle>
+          <CardTitle className="text-sm font-medium">타사 스캔바디</CardTitle>
           <Boxes className={cn("h-4 w-4", hasRows ? "text-amber-600" : "text-muted-foreground")} />
         </CardHeader>
         <CardContent className="space-y-2">

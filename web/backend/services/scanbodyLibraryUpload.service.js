@@ -186,10 +186,39 @@ function parseMeshMeta(raw) {
   return { frame, diameter, height };
 }
 
-export async function createScanbodyUpload({ ownerAnchorId, userId, fileName, size, manufacturer, meshMeta }) {
+const SPEC_AXES = new Set(["", "auto", "x", "y", "z"]);
+const SPEC_PLATFORM_ENDS = new Set(["", "auto", "min", "max"]);
+
+/** 스캔바디 생성기 스펙(관리자 전용). 문자열 길이·선택지만 확인하고 의미 검증은 해석 단계에서 한다. */
+function parseSpecMeta(raw) {
+  const field = (value, max) => String(value ?? "").trim().slice(0, max);
+  const axis = field(raw?.axis, 8).toLowerCase();
+  const platformEnd = field(raw?.platformEnd, 8).toLowerCase();
+  if (!SPEC_AXES.has(axis)) throw new ApiError(400, "축 선택이 올바르지 않습니다.");
+  if (!SPEC_PLATFORM_ENDS.has(platformEnd)) throw new ApiError(400, "플랫폼 끝 선택이 올바르지 않습니다.");
+  const spec = {
+    maker: field(raw?.maker, 60),
+    implantManufacturer: field(raw?.implantManufacturer, 60),
+    brand: field(raw?.brand, 60),
+    diameter: field(raw?.diameter, 20),
+    height: field(raw?.height, 20),
+    axis: axis === "auto" ? "" : axis,
+    platformEnd: platformEnd === "auto" ? "" : platformEnd,
+  };
+  if (!spec.maker) throw new ApiError(400, "스캔바디 제조사를 입력해 주세요.");
+  if (!spec.diameter) throw new ApiError(400, "직경을 입력해 주세요.");
+  if (!spec.height) throw new ApiError(400, "높이를 입력해 주세요.");
+  return spec;
+}
+
+export async function createScanbodyUpload({ ownerAnchorId, userId, fileName, size, manufacturer, meshMeta, specMeta }) {
   const name = String(fileName || "").trim().slice(0, 200);
-  const maker = String(manufacturer || "").trim().slice(0, 60);
-  const isOrderMesh = MESH_FILE_PATTERN.test(name) && meshMeta != null;
+  const parsedSpecMeta = specMeta != null ? parseSpecMeta(specMeta) : null;
+  if (parsedSpecMeta && !/\.(stp|step|stl|dcm)$/i.test(name)) {
+    throw new ApiError(400, "스캔바디 생성은 STEP(.stp·.step), STL, DCM 파일만 받습니다.");
+  }
+  const maker = parsedSpecMeta ? parsedSpecMeta.maker : String(manufacturer || "").trim().slice(0, 60);
+  const isOrderMesh = !parsedSpecMeta && MESH_FILE_PATTERN.test(name) && meshMeta != null;
   const isLibraryFile = /\.(dme|zip)$/i.test(name) || LIBRARY_SHAPE_PATTERN.test(name);
   if (!isOrderMesh && !isLibraryFile) {
     throw new ApiError(400, ".dme·.zip·.dcm·.stl·.stp 또는 의뢰 형상 파일만 올릴 수 있습니다.");
@@ -221,6 +250,7 @@ export async function createScanbodyUpload({ ownerAnchorId, userId, fileName, si
       fileName: name,
       manufacturer: maker,
       meshMeta: parsedMeshMeta,
+      specMeta: parsedSpecMeta,
       declaredSize,
       quarantineKey,
     }),
@@ -351,10 +381,10 @@ function watch(jobId, delay = 3000) {
   tick(delay);
 }
 
-function parseInWorker(buffer, fileName, meshMeta) {
+function parseInWorker(buffer, fileName, meshMeta, specMeta = null) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./scanbodyLibraryImport.worker.js", import.meta.url), {
-      workerData: { buffer, fileName, meshMeta },
+      workerData: { buffer, fileName, meshMeta, specMeta },
       // t4g.small(2GB). 200MB 묶음을 풀 만큼만 두고, 넘치면 워커만 죽는다.
       resourceLimits: { maxOldGenerationSizeMb: 1024 },
     });
@@ -796,6 +826,7 @@ async function processUpload(job) {
       buffer,
       job.fileName,
       job.meshMeta ? { ...job.meshMeta, manufacturer: job.manufacturer } : null,
+      job.specMeta || null,
     );
   } catch (error) {
     console.error("[scanbody-upload] worker failed", { jobId: String(job._id), error: error?.message });
