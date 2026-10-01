@@ -78,6 +78,7 @@ import {
   PreviewPaintLayer,
   usePreviewPaint,
 } from "@/shared/components/PreviewAnnotateActions";
+import { ViewGestureHint } from "@/shared/components/ViewGestureHint";
 
 export type ModelPreviewKind = "model" | "image";
 
@@ -149,7 +150,7 @@ export function ModelPreviewDialog({
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const viewerRef = useRef<StlPreviewViewerHandle | null>(null);
   const imageRef = useRef<ZoomableImagePreviewHandle | null>(null);
-  const paint = usePreviewPaint({ open, resetKey: fileName });
+  const paint = usePreviewPaint({ open, resetKey: fileName, initiallyOn: !isImage });
   const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
   const canAnnotate = (isImage ? Boolean(imageUrl) : Boolean(file)) && !loading;
   const showNav = previewCount > 1 && previewIndex >= 0;
@@ -367,6 +368,16 @@ export function ModelPreviewDialog({
             ) : !loading ? (
               <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
                 미리볼 파일이 없습니다.
+              </div>
+            ) : null}
+            {!isImage ? (
+              <div
+                className={cn(
+                  "pointer-events-none absolute inset-x-0 z-30 flex justify-center px-3",
+                  showNav ? "bottom-14" : "bottom-3",
+                )}
+              >
+                <ViewGestureHint />
               </div>
             ) : null}
             {canAnnotate ? (

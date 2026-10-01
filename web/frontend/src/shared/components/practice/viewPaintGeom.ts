@@ -376,6 +376,7 @@ export function shapeHitPx(
   const box = projectBox(shape, project);
   if (!box) return Infinity;
   const corners = [box.au, box.ab, box.bu, box.ba].map(toPx);
+  if (insideShape(shape.kind, px, py, corners)) return 0;
   if (shape.kind === "arrow") {
     return distToSeg(px, py, corners[0].x, corners[0].y, corners[2].x, corners[2].y);
   }
@@ -424,6 +425,65 @@ function clampSpan(value: number, origin: number, minSpan: number) {
 function squareEnd(fixed: number, moving: number, other: number) {
   const side = Math.max(Math.abs(moving - fixed), Math.abs(other));
   return fixed + Math.sign(moving - fixed || 1) * side;
+}
+
+/** 드래그로 표시를 평행이동한다. start는 드래그를 시작한 사본. */
+export function moveShape(
+  shape: PaintShape,
+  start: PaintShape,
+  shift: { du: number; dv: number } | { dx: number; dy: number },
+) {
+  if ("du" in shift) {
+    if (!shape.pose || !start.pose) return;
+    shape.pose = {
+      ...start.pose,
+      origin: posePoint(start.pose, shift.du, shift.dv),
+    };
+    return;
+  }
+  const { dx, dy } = shift;
+  if (shape.kind === "pen" && start.kind === "pen") {
+    shape.points = start.points.map((point) => ({ x: point.x + dx, y: point.y + dy }));
+    return;
+  }
+  if (
+    (shape.kind === "arrow" || shape.kind === "rect" || shape.kind === "ellipse") &&
+    start.kind === shape.kind
+  ) {
+    shape.from = { x: start.from.x + dx, y: start.from.y + dy };
+    shape.to = { x: start.to.x + dx, y: start.to.y + dy };
+    return;
+  }
+  if ((shape.kind === "dot" || shape.kind === "text") && start.kind === shape.kind) {
+    shape.at = { x: start.at.x + dx, y: start.at.y + dy };
+  }
+}
+
+function insideShape(
+  kind: "rect" | "ellipse" | "arrow",
+  px: number,
+  py: number,
+  corners: ScreenPoint[],
+) {
+  const [au, ab, , ba] = corners;
+  if (!au || !ab || !ba) return false;
+  const ux = ab.x - au.x;
+  const uy = ab.y - au.y;
+  const vx = ba.x - au.x;
+  const vy = ba.y - au.y;
+  const det = ux * vy - uy * vx;
+  if (Math.abs(det) < 1e-6) return false;
+  const dx = px - au.x;
+  const dy = py - au.y;
+  const alpha = (dx * vy - dy * vx) / det;
+  const beta = (ux * dy - uy * dx) / det;
+  if (kind === "arrow") return false;
+  if (kind === "ellipse") {
+    const s = (alpha - 0.5) / 0.5;
+    const t = (beta - 0.5) / 0.5;
+    return s * s + t * t <= 1;
+  }
+  return alpha >= 0 && alpha <= 1 && beta >= 0 && beta <= 1;
 }
 
 /** 드래그로 표시 크기를 바꾼다. start는 드래그를 시작한 사본. */

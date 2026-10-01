@@ -1,5 +1,5 @@
 // 3D·이미지 뷰 위에 표시를 그린다. 다시 열면 비운다.
-// - 2026-10-01: 표시는 화면과 나란한 평면에 그린 그대로 둔다. 오른쪽 드래그는 회전, 휠 버튼은 이동.
+// - 2026-10-01: 표시 본체를 끌면 평행이동. 모서리는 크기.
 // - 2026-10-01: 표시는 모서리로 크기를 바꾼다. 3D 뷰에서는 모델에 붙어 화면을 돌리면 같이 돈다.
 // - 2026-09-30: 표시마다 (1)(2) 순번. X로 그 순번만 지운다. 저장·첨부 이미지에도 순번을 넣는다.
 // - 2026-09-29: 펜·화살표·사각형·원·점·글자. 도형은 뷰 비율 좌표로 두고 크기가 바뀌면 다시 그린다. 되돌리기.
@@ -27,6 +27,7 @@ import {
   cloneShape,
   dotRadius,
   intersectPlane,
+  moveShape,
   posePoint,
   refreshShapeScreen,
   resizeShape,
@@ -252,6 +253,7 @@ type TextDraft = {
 };
 
 type ResizeDrag = { index: number; id: string; start: PaintShape };
+type MoveDrag = { index: number; start: PaintShape; x: number; y: number; world: Vec3 | null };
 
 function roundKey(value: number) {
   return Math.round(value * 10000);
@@ -273,6 +275,7 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
     enabledRef.current = enabled;
     const selectedRef = useRef<number | null>(null);
     const resizeRef = useRef<ResizeDrag | null>(null);
+    const moveRef = useRef<MoveDrag | null>(null);
     const viewDragRef = useRef<{
       pointerId: number;
       x: number;
@@ -407,6 +410,7 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       setTextDraft(null);
       selectedRef.current = null;
       resizeRef.current = null;
+      moveRef.current = null;
       setShapes([]);
     };
 
@@ -530,6 +534,7 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       commitText();
       draftRef.current = null;
       resizeRef.current = null;
+      moveRef.current = null;
       redraw();
       publishOverlay();
       // commitText·redraw는 ref만 읽는다.
@@ -645,6 +650,30 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       publishOverlay();
     };
 
+    const applyMove = (clientX: number, clientY: number) => {
+      const drag = moveRef.current;
+      if (!drag) return;
+      const shape = shapesRef.current[drag.index];
+      const point = pointAt(clientX, clientY);
+      if (!shape || !point) return;
+      const start = drag.start;
+      const current = spaceRef.current;
+      if (start.pose && current) {
+        const ray = current.ray(clientX, clientY);
+        const world = ray ? intersectPlane(ray, start.pose) : null;
+        if (world && drag.world) {
+          const from = toUV(start.pose, drag.world);
+          const to = toUV(start.pose, world);
+          moveShape(shape, start, { du: to.u - from.u, dv: to.v - from.v });
+        }
+      } else {
+        moveShape(shape, start, { dx: point.x - drag.x, dy: point.y - drag.y });
+      }
+      syncInk();
+      redraw();
+      publishOverlay();
+    };
+
     const fontPx = textSize(width);
 
     return (
@@ -668,12 +697,7 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
           onPointerDown={(event) => {
             if (!enabled) return;
             if (event.button !== 0 && spaceRef.current) {
-              const action =
-                event.button === 2 && !event.shiftKey
-                  ? "rotate"
-                  : event.button === 1 || event.button === 2
-                    ? "pan"
-                    : null;
+              const action = event.button === 2 ? "rotate" : event.button === 1 ? "pan" : null;
               if (!action) return;
               event.preventDefault();
               event.currentTarget.setPointerCapture(event.pointerId);
@@ -696,7 +720,16 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
               const hit = hitIndexAt(event.clientX, event.clientY);
               if (hit != null) {
                 event.preventDefault();
+                const shape = shapesRef.current[hit];
                 selectedRef.current = hit;
+                const current = spaceRef.current;
+                const ray = shape?.pose && current ? current.ray(event.clientX, event.clientY) : null;
+                const world = shape?.pose && ray ? intersectPlane(ray, shape.pose) : null;
+                canvas.setPointerCapture(event.pointerId);
+                canvas.style.cursor = "grabbing";
+                moveRef.current = shape
+                  ? { index: hit, start: cloneShape(shape), x: at.x, y: at.y, world }
+                  : null;
                 publishOverlay();
                 return;
               }
@@ -785,10 +818,21 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
               }
               return;
             }
+            if (moveRef.current) {
+              applyMove(event.clientX, event.clientY);
+              return;
+            }
             const draft = draftRef.current;
-            if (!draft) return;
             const point = pointAt(event.clientX, event.clientY);
             if (!point) return;
+            if (!draft) {
+              const canvasEl = canvasRef.current;
+              if (canvasEl) {
+                canvasEl.style.cursor =
+                  hitIndexAt(event.clientX, event.clientY) != null ? "move" : "";
+              }
+              return;
+            }
             const at = { x: point.x, y: point.y };
             const current = spaceRef.current;
             if (draft.pose && current && draft.ink) {
@@ -841,6 +885,12 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
               spaceRef.current?.view({ type: "end" });
               return;
             }
+            if (moveRef.current) {
+              moveRef.current = null;
+              const canvas = canvasRef.current;
+              if (canvas) canvas.style.cursor = "";
+              return;
+            }
             const draft = draftRef.current;
             if (!draft) return;
             draftRef.current = null;
@@ -866,6 +916,7 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
               viewDragRef.current = null;
               spaceRef.current?.view({ type: "end" });
             }
+            moveRef.current = null;
             draftRef.current = null;
             syncInk();
             redraw();

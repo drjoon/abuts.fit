@@ -149,7 +149,7 @@ export const DESIGN_CONTROL_PRESETS: Record<
 > = {
   abuts: {
     label: "어벗츠",
-    hint: "왼쪽 드래그 회전, 오른쪽·휠 버튼·Shift+왼쪽 드래그 이동.",
+    hint: "왼쪽 드래그 그리기, 오른쪽 드래그 회전, 휠 버튼 드래그 이동, 휠 확대·축소.",
     controls: { keys: ABUTS_KEYS, mouse: DEFAULT_ORBIT_MOUSE },
   },
   exocad: {

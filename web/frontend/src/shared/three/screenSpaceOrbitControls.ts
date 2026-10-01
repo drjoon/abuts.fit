@@ -22,14 +22,10 @@ export type OrbitMouseBindings = Record<OrbitMouseAction, OrbitGesture[]> & {
   invertWheel: boolean;
 };
 
-/** 어벗츠 기본. 왼쪽 회전, 오른쪽·휠 버튼·Shift+왼쪽 이동. */
+/** 어벗츠 기본. 오른쪽 드래그 회전, 휠 버튼 드래그 이동. 휠은 확대·축소. 왼쪽은 그리기. */
 export const DEFAULT_ORBIT_MOUSE: OrbitMouseBindings = {
-  rotate: [{ button: "left", mod: "none" }],
-  pan: [
-    { button: "right", mod: "none" },
-    { button: "middle", mod: "none" },
-    { button: "left", mod: "shift" },
-  ],
+  rotate: [{ button: "right", mod: "none" }],
+  pan: [{ button: "middle", mod: "none" }],
   zoom: [],
   pivot: [],
   invertWheel: false,

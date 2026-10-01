@@ -41,10 +41,19 @@ const PAINT_TOOLS: Array<{ id: ViewPaintTool; label: string; hint: string; icon:
 
 const WIDTH_LABEL = ["얇게", "보통", "굵게"] as const;
 
-/** 닫히면 표시를 지우고 끈다. `resetKey`가 바뀌어도(다른 파일·의뢰) 지우고 끈다. */
-export function useViewPaint({ open, resetKey }: { open: boolean; resetKey: string }) {
+/** 닫히면 표시를 지우고 끈다. `resetKey`가 바뀌어도(다른 파일·의뢰) 지우고 처음 상태로 돌린다. */
+export function useViewPaint({
+  open,
+  resetKey,
+  initiallyOn = false,
+}: {
+  open: boolean;
+  resetKey: string;
+  /** 프리뷰·AI 디자인은 왼쪽 드래그가 그리기라 켜 둔다. */
+  initiallyOn?: boolean;
+}) {
   const paintRef = useRef<ViewPaintHandle | null>(null);
-  const [paintOn, setPaintOn] = useState(false);
+  const [paintOn, setPaintOn] = useState(initiallyOn);
   const [tool, setTool] = useState<ViewPaintTool>("pen");
   const [color, setColor] = useState<string>(VIEW_PAINT_COLORS[0]);
   const [width, setWidth] = useState<number>(VIEW_PAINT_WIDTHS[1]);
@@ -52,16 +61,16 @@ export function useViewPaint({ open, resetKey }: { open: boolean; resetKey: stri
 
   useEffect(() => {
     if (open) return;
-    setPaintOn(false);
+    setPaintOn(initiallyOn);
     paintRef.current?.clear();
     setCount(0);
-  }, [open]);
+  }, [initiallyOn, open]);
 
   useEffect(() => {
-    setPaintOn(false);
+    setPaintOn(initiallyOn);
     paintRef.current?.clear();
     setCount(0);
-  }, [resetKey]);
+  }, [initiallyOn, resetKey]);
 
   return {
     paintRef,

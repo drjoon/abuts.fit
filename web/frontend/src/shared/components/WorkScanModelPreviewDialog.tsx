@@ -38,6 +38,7 @@ import {
   PreviewPaintLayer,
   usePreviewPaint,
 } from "@/shared/components/PreviewAnnotateActions";
+import { ViewGestureHint } from "@/shared/components/ViewGestureHint";
 import type { ViewPaintSpace } from "@/shared/components/practice/viewPaintSpace";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
@@ -90,7 +91,7 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
   const [loads, setLoads] = useState<Record<string, LoadState>>({});
   const [hidden, setHidden] = useState<Record<string, boolean>>({});
   const [colorMapping, setColorMapping] = useState(true);
-  const paint = usePreviewPaint({ open, resetKey: partsKey });
+  const paint = usePreviewPaint({ open, resetKey: partsKey, initiallyOn: true });
   const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
   const heading = title || "작업 모델";
 
@@ -303,6 +304,9 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
               onReorderChatFiles={onReorderChatFiles}
             />
           ) : null}
+          <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-3">
+            <ViewGestureHint />
+          </div>
           <Button
             type="button"
             size="sm"

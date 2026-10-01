@@ -263,6 +263,7 @@ import {
   useViewPaint,
   viewPaintSurfaceProps,
 } from "@/shared/components/practice/ViewPaintToolbar";
+import { ViewGestureHint } from "@/shared/components/ViewGestureHint";
 import {
   buildLabProsthesisAiPlan,
   isOralScanMeshName,
@@ -849,7 +850,7 @@ function LabProsthesisAiDesignDialog({
   const [entries, setEntries] = useState<OralScanOverlaySource[]>([]);
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const [colorMapping, setColorMapping] = useState(true);
-  const paint = useViewPaint({ open, resetKey: String(transferId || "") });
+  const paint = useViewPaint({ open, resetKey: String(transferId || ""), initiallyOn: true });
   const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
   const [, setHasScanColor] = useState(false);
   const [ghostOn, setGhostOn] = useState(false);
@@ -4584,10 +4585,11 @@ function LabProsthesisAiDesignDialog({
             ) : null}
             <ViewPaintSurface
               {...viewPaintSurfaceProps(paint)}
+              enabled={paint.paintOn && stage !== "milling"}
               space={stage === "milling" ? null : paintSpace}
             />
-            {paint.paintOn ? (
-              <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center">
+            <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex flex-col items-center gap-2 px-3">
+              {paint.paintOn && stage !== "milling" ? (
                 <ViewPaintToolbar
                   paint={paint}
                   twoRow
@@ -4597,8 +4599,9 @@ function LabProsthesisAiDesignDialog({
                   onReorderChatFiles={onReorderChatFiles}
                   onSendToAi={sendPaintToAi}
                 />
-              </div>
-            ) : null}
+              ) : null}
+              <ViewGestureHint />
+            </div>
             <div
               className={cn(
                 "pointer-events-none absolute left-1/2 top-3 z-10 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-1.5",
