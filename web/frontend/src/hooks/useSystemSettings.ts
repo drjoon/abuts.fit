@@ -8,6 +8,7 @@
 // - 2026-08-22: 환봉 생산 기본값을 CNC와 동일(1.5만/2.5만)로.
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/shared/api/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
 import {
   ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
@@ -80,6 +81,8 @@ export interface CreditSettings {
   customAbutmentLaunchEventProductionPrice?: number;
   /** 현재 유효 생산가(이벤트/정상) */
   effectiveProductionPrice?: number;
+  /** 정책 안내 취소선. 의뢰자 특별가가 덮기 전의 플랫폼 정상가 */
+  listProductionPrice?: number;
   customAbutmentPricingTier?: "event" | "regular";
   /** FM덴탈 월정액 배송(원). 0이면 가입 불가 */
   fmDentalMonthlyShippingFee?: number;
@@ -144,12 +147,16 @@ export interface SystemSettingsData {
 }
 
 export const useSystemSettings = () => {
+  const settingsScopeId = useAuthStore(
+    (s) => s.user?.businessAnchorId || s.user?.id || "",
+  );
   return useQuery({
-    queryKey: ["credit-settings"],
+    queryKey: ["credit-settings", settingsScopeId],
     queryFn: async () => {
       const res = await apiFetch<CreditSettingsApiResponse>({
         path: "/api/credits/settings",
         method: "GET",
+        skipCache: true,
       });
       if (!res.ok) {
         throw new Error("크레딧 설정 조회 실패");
@@ -326,6 +333,12 @@ export const useSystemSettings = () => {
         ),
         customAbutmentPricingTier:
           raw.customAbutmentPricingTier === "regular" ? "regular" : "event",
+        listProductionPrice: Math.max(
+          0,
+          Number(
+            raw.listProductionPrice ?? abutmentPrices.membershipProductionPrice,
+          ) || 0,
+        ),
         fmDentalMonthlyShippingFee: Math.max(
           0,
           Number(
@@ -337,9 +350,9 @@ export const useSystemSettings = () => {
       return { creditSettings } as SystemSettingsData;
     },
     retry: false,
-    staleTime: 5 * 60 * 1000,
-    // 실패(429) 쿼리는 stale로 남아 포커스·재연결마다 다시 칠 수 있다.
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    // 가격 안내는 메모리에 남겨 두지 않고 서버 설정을 다시 읽는다.
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 };

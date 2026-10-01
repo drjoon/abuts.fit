@@ -3,6 +3,7 @@
 // - 2026-09-26: 기공소 정책 — 플랫폼 사용료·영업 수수료 안내를 단축.
 // - 2026-09-23: 런칭 이벤트 중 — 정상가 취소선 + 이벤트가 · 「이벤트 중」.
 // - 2026-09-23: FM덴탈 월정액 가입 — 기공소만(치과 제외).
+// - 2026-10-01: 취소선은 플랫폼 정상가. 열 때 서버 설정을 다시 읽음.
 // - 2026-10-01: 런칭 이벤트 1.3만 / 정상가 1.5만.
 // - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만 · FM덴탈 월정액 배송 선택.
 // - 2026-09-24: 딜러「의뢰자 정책」variant=requestor — 단가·출고 + 기공소 플랫폼 사용료(~~2%~~→0%).
@@ -215,6 +216,10 @@ export const PricingPolicyDialog = ({
   const showFmJoin = isLab && variant === 'default';
   const { data: systemSettings, refetch: refetchSystemSettings } =
     useSystemSettings();
+  useEffect(() => {
+    if (!open) return;
+    void refetchSystemSettings();
+  }, [open, refetchSystemSettings]);
   const {
     windowInfo: labFeeWindow,
     refresh: refreshLabFeeWindow,
@@ -224,10 +229,16 @@ export const PricingPolicyDialog = ({
   void dealershipEventPct;
   void dealershipEventEnabled;
   const credit = systemSettings?.creditSettings;
+  const platformRegularPrice = Math.max(
+    0,
+    Number(
+      credit?.listProductionPrice ??
+        credit?.membershipProductionPrice ??
+        ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+    ) || ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+  );
   const launchResolved = resolveCustomAbutmentProductionPriceForAt(new Date(), {
-    membershipProductionPrice:
-      credit?.membershipProductionPrice ??
-      ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+    membershipProductionPrice: platformRegularPrice,
     customAbutmentLaunchEventEnabled: credit?.customAbutmentLaunchEventEnabled,
     customAbutmentLaunchEventStartedAt: credit?.customAbutmentLaunchEventStartedAt,
     customAbutmentLaunchEventEndedAt: credit?.customAbutmentLaunchEventEndedAt,
@@ -235,13 +246,7 @@ export const PricingPolicyDialog = ({
       credit?.customAbutmentLaunchEventProductionPrice ??
       ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
   });
-  const regularPrice = Math.max(
-    0,
-    Number(
-      credit?.membershipProductionPrice ??
-        ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
-    ) || ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
-  );
+  const regularPrice = platformRegularPrice;
   const eventPrice = Math.max(
     0,
     Number(

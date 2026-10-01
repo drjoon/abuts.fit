@@ -411,6 +411,7 @@ export async function getPublicCreditSettings(req, res) {
       creditSettings = { ...creditSettings };
       delete creditSettings.specialRequestorPrices;
     }
+    res.set("Cache-Control", "private, no-store");
     res.status(200).json({
       success: true,
       data: {

@@ -8,6 +8,7 @@
 // change-log:
 // - 2026-09-24: 딜러십 월 매출 누진 구간(dealershipCommissionTiers).
 // - 2026-09-23: 런칭 이벤트 on/off 변경 예약(내일 0시 KST).
+// - 2026-10-01: 정책 안내 취소선은 의뢰자 특별가와 분리한 플랫폼 정상가(listProductionPrice).
 // - 2026-10-01: 런칭 이벤트 1.3만 / 정상가 1.5만.
 // - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만 · FM덴탈 월정액 배송 설정.
 // - 2026-09-20: 의뢰자 BA 판매가 오버라이드. 없으면 플랫폼 판매가. 매입가=그 판매가의 50%.
@@ -1254,8 +1255,13 @@ export async function loadCreditSettingsDefaults(options = {}) {
       ? options.preloadedDoc
       : await loadCachedGlobalCreditSettingsDoc();
   const base = normalizeLoadedCreditSettings(doc?.creditSettings || {});
+  // 정책 안내 취소선. 의뢰자 특별가가 membership*를 덮기 전의 플랫폼 정상가.
+  const listProductionPrice = Math.max(
+    0,
+    Math.round(Number(base.membershipProductionPrice) || 0),
+  );
   const requestorOrgId = options?.requestorOrgId;
-  if (!requestorOrgId) return base;
+  if (!requestorOrgId) return { ...base, listProductionPrice };
 
   const id = String(requestorOrgId || "").trim();
   let requestorKind = null;
@@ -1280,6 +1286,7 @@ export async function loadCreditSettingsDefaults(options = {}) {
   const picked = pickAbutsAbutmentCreditPrices(overridden);
   return {
     ...overridden,
+    listProductionPrice,
     minCreditForRequest: picked.productionPrice,
     designFee: picked.designFeePerTooth,
     abutmentPricingTier: "membership",
