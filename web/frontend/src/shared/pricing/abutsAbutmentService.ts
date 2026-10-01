@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - .cursor/rules/design-fee.mdc
 // change-log:
+// - 2026-10-01: 런칭 이벤트 1.3만 / 정상가 1.5만.
 // - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만. resolveCustomAbutmentProductionPriceForAt.
 // - 2026-08-22: 환봉 생산가 미설정(0)·폴백을 CNC 고시 생산가와 동일하게.
 // - 2026-08-22: 치과 멤버십/일반 이중가 제거. 청구·안내는 membership* 단일 고시. pricingTier 분기 삭제.
@@ -20,10 +21,10 @@
 /**
  * 커스텀어벗 청구·안내 단가 SSOT (플랫폼 고시).
  * 설정 키는 레거시명 `membership*` 유지. `regular*` 는 관리자 딜러분배용(청구 분기 없음).
- * 런칭 이벤트 중=`customAbutmentLaunchEventProductionPrice`(기본 1만).
+ * 런칭 이벤트 중=`customAbutmentLaunchEventProductionPrice`(기본 1.3만).
  */
-export const ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE = 13_000;
-export const ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE = 10_000;
+export const ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE = 15_000;
+export const ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE = 13_000;
 export const ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE = 25_000;
 
 /** @deprecated 청구 단일가. MEMBERSHIP_PRODUCTION 과 동일(레거시 일반가 2만 폐기). */

@@ -88,8 +88,8 @@ export interface CreditSettings {
 export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   minCreditForRequest: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   shippingFee: 3500,
-  manufacturerRequestUnitPrice: 6500,
-  manufacturerRemakeUnitPrice: 6500,
+  manufacturerRequestUnitPrice: 7500,
+  manufacturerRemakeUnitPrice: 7500,
   devopsRequestUnitPrice: 775,
   salesmanRequestUnitPrice: 2325,
   manufacturerShippingUnitPrice: 3500,

@@ -4,6 +4,7 @@
 // - web/backend/utils/creditSettingsDefaults.js
 // - web/backend/services/practiceTransferBilling.service.js
 // change-log:
+// - 2026-10-01: 런칭 이벤트 1.3만 / 정상가 1.5만.
 // - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만. resolveCustomAbutmentProductionPriceForAt.
 // - 2026-08-22: 환봉 생산가 미설정(0)·폴백을 CNC 고시 생산가와 동일하게.
 // - 2026-08-22: 치과 멤버십/일반 이중가 제거. 청구는 membership* 단일 고시. pricingTier 분기 삭제.
@@ -16,10 +17,10 @@
  * 커스텀어벗 청구 단가 SSOT (플랫폼 고시).
  * DB/설정 키는 레거시명 `membership*` 을 유지한다(마이그레이션 없음).
  * `regular*` 는 관리자「멤버/일반」딜러 유무 분배 키이며 치과 청구에 쓰지 않는다.
- * 런칭 이벤트 중 판매가=`customAbutmentLaunchEventProductionPrice`(기본 10,000).
+ * 런칭 이벤트 중 판매가=`customAbutmentLaunchEventProductionPrice`(기본 13,000).
  */
-export const ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE = 13_000;
-export const ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE = 10_000;
+export const ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE = 15_000;
+export const ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE = 13_000;
 export const ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE = 25_000;
 
 /** @deprecated 청구 단일가. MEMBERSHIP_PRODUCTION 과 동일(레거시 일반가 2만 폐기). */

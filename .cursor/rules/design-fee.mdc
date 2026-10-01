@@ -12,7 +12,7 @@ alwaysApply: false
 - `design_custom_abutment`·`membershipDesignAndProductionPrice`(옛 2.5만)·`price.designFee` 가산은 **레거시 문서 읽기 전용**. 신규 쓰기·청구 분기 없음.
 - 기공의뢰(PTX) CA 디자인: **수주 기공소** 담당. 치과 청구=`labFeeSchedule` 커스텀어벗 수가. 기공소→어벗츠=플랫폼 생산가.
 - PTX 식별: `partnerBilling.relatedPracticeTransferId` + `labDesignedAbutment` (`isPtxLabDesignedAbutmentRequest`).
-- 단가 SSOT: `creditSettings.membershipProductionPrice`(기본 **15,000**). 신속=`expressFee`(기본 **+2,000**, 건당). 배송비 별도·박스당.
+- 단가 SSOT: `creditSettings.membershipProductionPrice`(정상가 기본 **15,000**). 런칭 이벤트=`customAbutmentLaunchEventProductionPrice`(기본 **13,000**). 신속=`expressFee`(기본 **+2,000**, 건당). 배송비 별도·박스당.
 - CNC 관리자「멤버/일반」·`regular*`는 **딜러 유무 분배**용. 청구 이중가와 무관.
 - 설정 UI: 관리자 **플랫폼 설정 → 커스텀어벗** (생산 고시). 디자인+생산 카드는 레거시/분배용만.
 
