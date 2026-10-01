@@ -35,7 +35,7 @@ export function initializeSocket(server) {
       if (!decodedId) {
         return next(new Error("사용자를 찾을 수 없습니다."));
       }
-      const user = await User.findById(decodedId).select("-password");
+      const user = await User.findById(decodedId).select("-password").lean();
 
       if (!user) {
         return next(new Error("사용자를 찾을 수 없습니다."));

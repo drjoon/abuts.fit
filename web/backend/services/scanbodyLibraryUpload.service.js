@@ -379,7 +379,7 @@ const gzipAsync = promisify(gzip);
 const PART_PUT_LIMIT = 24;
 let partPutActive = 0;
 const partPutQueue = [];
-/** 같은 프로세스에서 같은 해시는 한 번만 올린다. 키는 내용 주소라 다시 써도 바이트가 같다. */
+/** 같은 해시를 동시에 올리는 경우만 한 작업으로 묶는다. 끝나면 형상 버퍼를 붙잡지 않게 뺀다. */
 const partStoreInflight = new Map();
 
 function acquirePartPut() {
@@ -412,13 +412,15 @@ async function mapLimit(items, limit, fn) {
 }
 
 async function storePart(part) {
-  const pending = partStoreInflight.get(part.hash);
+  const hash = part.hash;
+  const pending = partStoreInflight.get(hash);
   if (pending) return pending;
-  const s3Key = `${SCANBODY_S3_PREFIX}/${part.hash}.stl`;
+  const stl = part.stl;
+  const s3Key = `${SCANBODY_S3_PREFIX}/${hash}.stl`;
   const task = (async () => {
     await acquirePartPut();
     try {
-      const body = await gzipAsync(Buffer.from(part.stl));
+      const body = await gzipAsync(Buffer.isBuffer(stl) ? stl : Buffer.from(stl));
       await putObjectToS3(s3Key, body, {
         contentType: "model/stl",
         contentEncoding: "gzip",
@@ -428,12 +430,11 @@ async function storePart(part) {
       releasePartPut();
     }
   })();
-  partStoreInflight.set(part.hash, task);
+  partStoreInflight.set(hash, task);
   try {
     return await task;
-  } catch (error) {
-    partStoreInflight.delete(part.hash);
-    throw error;
+  } finally {
+    if (partStoreInflight.get(hash) === task) partStoreInflight.delete(hash);
   }
 }
 

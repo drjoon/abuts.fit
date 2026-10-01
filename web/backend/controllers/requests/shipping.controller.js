@@ -647,11 +647,13 @@ export async function getShippingMailboxSummary(req, res) {
 
     const etag = buildEtagFromPayload(payload);
     const ttlMs = resolveMailboxSummaryCacheTtlMs();
+    if (mailboxSummaryCache.has(cacheKey)) mailboxSummaryCache.delete(cacheKey);
     mailboxSummaryCache.set(cacheKey, {
       payload,
       etag,
       expiresAt: Date.now() + ttlMs,
     });
+    pruneMailboxSummaryCache();
 
     applyMailboxSummaryCacheHeaders(res, etag, ttlMs);
     if (!forceRefresh && isNotModified(req, etag)) {
@@ -912,10 +914,12 @@ export async function getShippingMailboxRequests(req, res) {
       requests,
     };
 
+    if (mailboxRequestsCache.has(cacheKey)) mailboxRequestsCache.delete(cacheKey);
     mailboxRequestsCache.set(cacheKey, {
       payload,
       expiresAt: Date.now() + resolveMailboxRequestsCacheTtlMs(),
     });
+    pruneMailboxRequestsCache();
 
     console.info("[shipping][mailbox-requests][perf]", {
       cache: "miss-built",

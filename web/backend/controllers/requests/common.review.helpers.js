@@ -108,6 +108,7 @@ import {
 } from "./signupFreeTest.utils.js";
 import { retainMailboxOnShippingEnter } from "./mailbox.utils.js";
 import { applyPracticeShippingReceiverSnapshotToRequest } from "../../utils/shippingReceiver.utils.js";
+import { observeTimestampMap } from "../../utils/boundedTtlMap.js";
 
 const SHIPPING_FEE_SUPPLY_FALLBACK = 3500;
 
@@ -1722,6 +1723,7 @@ export async function healMissingExpressSurchargesForBusiness({
 }
 
 const EXPRESS_SURCHARGE_HEAL_COOLDOWN_MS = 60 * 1000;
+const EXPRESS_SURCHARGE_HEAL_MAX_ANCHORS = 2000;
 const lastExpressSurchargeHealAtByAnchor = new Map();
 
 /**
@@ -1731,10 +1733,17 @@ const lastExpressSurchargeHealAtByAnchor = new Map();
 export function scheduleHealMissingExpressSurchargesForBusiness(args) {
   const key = String(args?.businessAnchorId || "").trim();
   if (!key) return;
-  const now = Date.now();
-  const last = lastExpressSurchargeHealAtByAnchor.get(key) || 0;
-  if (now - last < EXPRESS_SURCHARGE_HEAL_COOLDOWN_MS) return;
-  lastExpressSurchargeHealAtByAnchor.set(key, now);
+  if (
+    !observeTimestampMap(
+      lastExpressSurchargeHealAtByAnchor,
+      key,
+      Date.now(),
+      EXPRESS_SURCHARGE_HEAL_COOLDOWN_MS,
+      EXPRESS_SURCHARGE_HEAL_MAX_ANCHORS,
+    )
+  ) {
+    return;
+  }
   setTimeout(() => {
     void healMissingExpressSurchargesForBusiness(args).catch((err) => {
       console.error("[CREDIT_SPEND] scheduled heal failed", {

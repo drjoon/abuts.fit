@@ -29,36 +29,29 @@ import {
   normalizeRequestStageLabel,
 } from "./utils.js";
 import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
+import { getTtlMapValue, setTtlMapValue } from "../../utils/boundedTtlMap.js";
 
+const BUSINESS_DAY_MEMO_MAX_ENTRIES = 2000;
 const __cache = new Map();
 const __inFlight = new Map();
 const memo = async ({ key, ttlMs, fn }) => {
-  const now = Date.now();
-  const hit = __cache.get(key);
-  if (hit && typeof hit.expiresAt === "number" && hit.expiresAt > now) {
-    return hit.value;
-  }
+  const hit = getTtlMapValue(__cache, key);
+  if (hit != null) return hit;
 
   const existing = __inFlight.get(key);
-  if (existing) {
-    return existing;
-  }
+  if (existing) return existing;
 
   const promise = Promise.resolve()
     .then(fn)
-    .then((value) => {
-      __cache.set(key, { value, expiresAt: now + ttlMs });
-      return value;
-    })
     .finally(() => {
-      if (__inFlight.get(key) === promise) {
-        __inFlight.delete(key);
-      }
+      if (__inFlight.get(key) === promise) __inFlight.delete(key);
     });
 
   __inFlight.set(key, promise);
   const value = await promise;
-  __cache.set(key, { value, expiresAt: now + ttlMs });
+  if (value != null) {
+    setTtlMapValue(__cache, key, value, ttlMs, BUSINESS_DAY_MEMO_MAX_ENTRIES);
+  }
   return value;
 };
 

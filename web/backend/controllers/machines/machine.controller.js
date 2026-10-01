@@ -3,6 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 import "../../bootstrap/env.js";
+import { observeTimestampMap } from "../../utils/boundedTtlMap.js";
 
 // 브리지 서비스 기본 URL 및 Hi-Link CNC 엔드포인트
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
@@ -11,6 +12,7 @@ const CNC_BRIDGE_BASE =
   (BRIDGE_BASE ? `${BRIDGE_BASE}/api/cnc` : null);
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
 const CONTROL_COOLDOWN_MS = 5000;
+const CONTROL_COOLDOWN_MAX_ENTRIES = 500;
 const lastControlCall = new Map();
 const lastRawReadCall = new Map();
 
@@ -817,15 +819,20 @@ async function sendControl(uid, action, res) {
     // 체크에 실패해도 제어 명령 자체는 계속 진행한다.
   }
   const key = `${uid}:${action}`;
-  const now = Date.now();
-  const last = lastControlCall.get(key) || 0;
-  if (now - last < CONTROL_COOLDOWN_MS) {
+  if (
+    !observeTimestampMap(
+      lastControlCall,
+      key,
+      Date.now(),
+      CONTROL_COOLDOWN_MS,
+      CONTROL_COOLDOWN_MAX_ENTRIES,
+    )
+  ) {
     return res.status(429).json({
       result: -1,
       message: "control command is temporarily rate-limited",
     });
   }
-  lastControlCall.set(key, now);
 
   try {
     const isStart = action === "start";
@@ -1542,9 +1549,15 @@ export async function callRawProxy(req, res) {
       READ_TYPES.includes(dataType)
     ) {
       const key = `${uid || ""}:${dataType}`;
-      const now = Date.now();
-      const last = lastRawReadCall.get(key) || 0;
-      if (now - last < CONTROL_COOLDOWN_MS) {
+      if (
+        !observeTimestampMap(
+          lastRawReadCall,
+          key,
+          Date.now(),
+          CONTROL_COOLDOWN_MS,
+          CONTROL_COOLDOWN_MAX_ENTRIES,
+        )
+      ) {
         // 과도 호출 추적을 위해 uid/dataType 및 payload 일부를 로깅한다.
         try {
           const payloadPreview = req.body?.payload
@@ -1572,7 +1585,6 @@ export async function callRawProxy(req, res) {
           message: "raw read request is temporarily rate-limited",
         });
       }
-      lastRawReadCall.set(key, now);
     }
 
     const payload = {

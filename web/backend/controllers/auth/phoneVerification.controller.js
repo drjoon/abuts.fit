@@ -3,9 +3,17 @@
 // - web/backend/app.js
 // - web/backend/server.js
 import { sendNotificationViaQueue } from "../../utils/notificationQueue.js";
+import { pruneTtlMap } from "../../utils/boundedTtlMap.js";
 
 const verificationCodes = new Map();
 const CODE_EXPIRY_MS = 5 * 60 * 1000;
+const VERIFICATION_CODE_MAX_ENTRIES = 500;
+
+function rememberVerificationCode(phone, entry) {
+  if (verificationCodes.has(phone)) verificationCodes.delete(phone);
+  verificationCodes.set(phone, entry);
+  pruneTtlMap(verificationCodes, VERIFICATION_CODE_MAX_ENTRIES);
+}
 
 function generateVerificationCode() {
   return String(Math.floor(1000 + Math.random() * 9000));
@@ -41,7 +49,7 @@ export async function sendVerificationCode(req, res) {
     const code = generateVerificationCode();
     const expiresAt = Date.now() + CODE_EXPIRY_MS;
 
-    verificationCodes.set(cleanedPhone, {
+    rememberVerificationCode(cleanedPhone, {
       code,
       expiresAt,
       attempts: 0,
@@ -137,6 +145,7 @@ export async function verifyCode(req, res) {
     }
 
     const cleanedPhone = cleanPhoneNumber(phone);
+    pruneTtlMap(verificationCodes, VERIFICATION_CODE_MAX_ENTRIES);
     const stored = verificationCodes.get(cleanedPhone);
 
     if (!stored) {

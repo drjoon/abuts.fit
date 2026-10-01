@@ -8,6 +8,7 @@
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
+// - 2026-10-01: 조직 스코프 캐시는 만료·상한으로 걷는다.
 // - 2026-09-14: 리메이크 매칭 창 90→180일(REMAKE_POLICY_WINDOW_DAYS).
 // - 2026-09-12: 리메이크 매칭 — implantBrand 조건 제거(정책: 동일 치과·환자·치식·창). forceRemakePricing.
 // - 2026-09-09: 커스텀어벗 리메이크 — 월 3건 무료 폐지, 건당 고정 10,000원(remake_fixed_10000).
@@ -47,6 +48,7 @@ import {
   loadCreditSettingsDefaults,
   resolveCustomAbutmentRequestUnitPrice,
 } from "../../utils/creditSettingsDefaults.js";
+import { getTtlMapValue, setTtlMapValue } from "../../utils/boundedTtlMap.js";
 export {
   addKoreanBusinessDays,
   getTodayYmdInKst,
@@ -86,28 +88,24 @@ export const SHIPPING_WORKFLOW_LABELS = {
   [SHIPPING_WORKFLOW_CODES.ERROR]: "에러",
 };
 
+const ORG_SCOPE_CACHE_MAX_ENTRIES = 2000;
+
 const __requestorOrgScopeCache = new Map();
 const __requestorOrgScopeInFlight = new Map();
 const __manufacturerOrgScopeCache = new Map();
 const __manufacturerOrgScopeInFlight = new Map();
 
-const getRequestorOrgScopeCached = (key) => {
-  const hit = __requestorOrgScopeCache.get(key);
-  if (!hit) return null;
-  if (typeof hit.expiresAt !== "number" || hit.expiresAt <= Date.now()) {
-    __requestorOrgScopeCache.delete(key);
-    return null;
-  }
-  return hit.value;
-};
+const getRequestorOrgScopeCached = (key) =>
+  getTtlMapValue(__requestorOrgScopeCache, key);
 
-const setRequestorOrgScopeCached = (key, value, ttlMs) => {
-  __requestorOrgScopeCache.set(key, {
+const setRequestorOrgScopeCached = (key, value, ttlMs) =>
+  setTtlMapValue(
+    __requestorOrgScopeCache,
+    key,
     value,
-    expiresAt: Date.now() + ttlMs,
-  });
-  return value;
-};
+    ttlMs,
+    ORG_SCOPE_CACHE_MAX_ENTRIES,
+  );
 
 const withRequestorOrgScopeInFlight = async (key, factory) => {
   const existing = __requestorOrgScopeInFlight.get(key);
@@ -125,23 +123,17 @@ const withRequestorOrgScopeInFlight = async (key, factory) => {
   return promise;
 };
 
-const getManufacturerOrgScopeCached = (key) => {
-  const hit = __manufacturerOrgScopeCache.get(key);
-  if (!hit) return null;
-  if (typeof hit.expiresAt !== "number" || hit.expiresAt <= Date.now()) {
-    __manufacturerOrgScopeCache.delete(key);
-    return null;
-  }
-  return hit.value;
-};
+const getManufacturerOrgScopeCached = (key) =>
+  getTtlMapValue(__manufacturerOrgScopeCache, key);
 
-const setManufacturerOrgScopeCached = (key, value, ttlMs) => {
-  __manufacturerOrgScopeCache.set(key, {
+const setManufacturerOrgScopeCached = (key, value, ttlMs) =>
+  setTtlMapValue(
+    __manufacturerOrgScopeCache,
+    key,
     value,
-    expiresAt: Date.now() + ttlMs,
-  });
-  return value;
-};
+    ttlMs,
+    ORG_SCOPE_CACHE_MAX_ENTRIES,
+  );
 
 const withManufacturerOrgScopeInFlight = async (key, factory) => {
   const existing = __manufacturerOrgScopeInFlight.get(key);

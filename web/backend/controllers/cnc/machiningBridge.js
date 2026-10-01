@@ -61,7 +61,7 @@ import {
   inferDiameterGroupFromValue,
 } from "./distribution.utils.js";
 import { toKstYmd } from "../../utils/krBusinessDays.js";
-import { observeTimestampMap } from "../../utils/boundedTtlMap.js";
+import { getTtlMapValue, observeTimestampMap, setTtlMapValue } from "../../utils/boundedTtlMap.js";
 
 const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
 const STARTED_EMIT_TTL_MS = 30 * 1000;
@@ -862,24 +862,21 @@ async function fetchMachineAlarmsFromBridge(machineId) {
 }
 
 const LAST_COMPLETED_CACHE_TTL_MS = 3_000;
+const LAST_COMPLETED_CACHE_MAX_ENTRIES = 4;
 const __lastCompletedCache = new Map();
 
 function getLastCompletedCache(key) {
-  const hit = __lastCompletedCache.get(key);
-  if (!hit) return null;
-  if (Number(hit.expiresAt || 0) <= Date.now()) {
-    __lastCompletedCache.delete(key);
-    return null;
-  }
-  return hit.payload;
+  return getTtlMapValue(__lastCompletedCache, key);
 }
 
 function setLastCompletedCache(key, payload) {
-  __lastCompletedCache.set(key, {
+  return setTtlMapValue(
+    __lastCompletedCache,
+    key,
     payload,
-    expiresAt: Date.now() + LAST_COMPLETED_CACHE_TTL_MS,
-  });
-  return payload;
+    LAST_COMPLETED_CACHE_TTL_MS,
+    LAST_COMPLETED_CACHE_MAX_ENTRIES,
+  );
 }
 
 export async function getLastCompletedMachiningMap(req, res) {

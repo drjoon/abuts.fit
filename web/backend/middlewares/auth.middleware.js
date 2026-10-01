@@ -26,6 +26,14 @@ const setCachedAuthUser = (userId, user) =>
     AUTH_USER_CACHE_MAX_ENTRIES,
   );
 
+/** 문서 변경 추적을 캐시에 남기지 않는다. `id`는 Mongoose virtual과 같게 둔다. */
+const loadAuthUser = async (userId) => {
+  const user = await User.findById(userId).select("-password").lean();
+  if (!user) return null;
+  if (user._id != null) user.id = String(user._id);
+  return user;
+};
+
 /** 계정 상태 변경 직후 즉시 반영이 필요할 때 호출 */
 export const invalidateAuthUserCache = (userId) => {
   if (!userId) return;
@@ -99,7 +107,7 @@ export const authenticate = async (req, res, next) => {
     // 사용자 정보 조회 (폴링 엔드포인트 공통 병목: 짧은 TTL 캐시)
     let user = getCachedAuthUser(userId);
     if (!user) {
-      user = await User.findById(userId).select("-password");
+      user = await loadAuthUser(userId);
       if (user) setCachedAuthUser(userId, user);
     }
 
@@ -152,7 +160,7 @@ export const authenticateOptional = async (req, res, next) => {
     if (!userId || Array.isArray(userId)) return next();
     let user = getCachedAuthUser(userId);
     if (!user) {
-      user = await User.findById(userId).select("-password");
+      user = await loadAuthUser(userId);
       if (user) setCachedAuthUser(userId, user);
     }
     if (user && user.active) req.user = user;
