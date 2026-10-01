@@ -57,6 +57,25 @@ function pack<T>(items: readonly T[], size: (item: T) => number, limit = BUNDLE_
 }
 
 /**
+ * ZIP64 끝 레코드가 있는데 일반 끝 레코드(EOCD) 값을 0xFFFF로 채우지 않은 zip(GeoMedi 3Shape 등)을
+ * JSZip 3.10은 ZIP64로 보지 않고 끝 레코드 길이만큼 오프셋을 밀어 읽어 항목이 0개가 된다.
+ * EOCD 바로 앞에 ZIP64 locator가 있으면 디스크 번호를 0xFFFF로 바꿔 ZIP64 경로로 읽게 한다.
+ */
+function markZip64Eocd(bytes: Uint8Array): Uint8Array {
+  const sig = (at: number, b3: number, b4: number) =>
+    bytes[at] === 0x50 && bytes[at + 1] === 0x4b && bytes[at + 2] === b3 && bytes[at + 3] === b4;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 0xffff); i -= 1) {
+    if (!sig(i, 5, 6)) continue;
+    if (i >= 20 && sig(i - 20, 6, 7)) {
+      bytes[i + 4] = 0xff;
+      bytes[i + 5] = 0xff;
+    }
+    break;
+  }
+  return bytes;
+}
+
+/**
  * 제조사가 배포한 zip 안의 exocad 파일(config.xml·.stl)과 3Shape .dme.
  * 제조사 zip은 zip 안에 zip을 넣어 배포하기도 해서(GeoMedi exocad) 안쪽 zip도 MAX_ZIP_DEPTH까지 연다.
  */
@@ -75,7 +94,7 @@ async function entriesFromZip(
   const { default: JSZip } = await import("jszip");
   let zip: InstanceType<typeof JSZip>;
   try {
-    zip = await JSZip.loadAsync(await data.arrayBuffer());
+    zip = await JSZip.loadAsync(markZip64Eocd(new Uint8Array(await data.arrayBuffer())));
   } catch {
     notes.push(`${label}: 열지 못했습니다.`);
     return out;
