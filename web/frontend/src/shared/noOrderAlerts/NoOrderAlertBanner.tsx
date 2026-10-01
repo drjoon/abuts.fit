@@ -66,7 +66,6 @@ export function NoOrderAlertBanner({
             <div className="mt-0.5 text-xs text-muted-foreground sm:text-sm">
               3개월 {count3m.toLocaleString()}건 · 6개월{" "}
               {count6m.toLocaleString()}건
-              <span className="ml-1 text-muted-foreground/80">· 목록 보기</span>
             </div>
           </div>
         </div>

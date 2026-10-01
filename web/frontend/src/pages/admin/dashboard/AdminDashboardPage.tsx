@@ -1304,12 +1304,6 @@ export const AdminDashboardPage = () => {
   const prosthesisFeeItemRequestDismissed = Number(
     prosthesisFeeItemRequestStats.dismissed || 0,
   );
-  const prosthesisFeeItemRequestTotal =
-    Number(prosthesisFeeItemRequestStats.total || 0) ||
-    prosthesisFeeItemRequestPending +
-      prosthesisFeeItemRequestApproved +
-      prosthesisFeeItemRequestAdopted +
-      prosthesisFeeItemRequestDismissed;
   const prosthesisFeeItemRequestStatRows = [
     {
       key: "pending" as const,
@@ -1332,13 +1326,6 @@ export const AdminDashboardPage = () => {
       count: prosthesisFeeItemRequestDismissed,
     },
   ];
-  const prosthesisFeeItemRequestMaxCount = Math.max(
-    1,
-    prosthesisFeeItemRequestPending,
-    prosthesisFeeItemRequestApproved,
-    prosthesisFeeItemRequestAdopted,
-    prosthesisFeeItemRequestDismissed,
-  );
   const filteredProsthesisFeeItemRequestItems =
     prosthesisFeeItemRequestItems.filter((item) => {
       if (prosthesisFeeItemRequestFilter === "all") return true;
@@ -2125,7 +2112,6 @@ export const AdminDashboardPage = () => {
         topSection={undefined}
         stats={
           <>
-            <ScanbodyDemandCard />
             {/* 플랫폼 성장 KPI */}
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-5">
               <Card
@@ -2250,12 +2236,15 @@ export const AdminDashboardPage = () => {
               </Card>
             </div>
 
-            <NoOrderAlertBanner
-              data={noOrderAlertsData}
-              loading={noOrderAlertsLoading}
-            />
-
-            <NoticeAdminCard />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <NoOrderAlertBanner
+                className="h-full"
+                data={noOrderAlertsData}
+                loading={noOrderAlertsLoading}
+              />
+              <ScanbodyDemandCard />
+              <NoticeAdminCard className="h-full lg:col-span-2" />
+            </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {/* 카드1: 진행 / 완료 */}
@@ -2376,37 +2365,70 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
 
-              {/* 카드8: 지연 위험 요약 */}
+              {/* 카드5-3b: 신규 보철물(기공수가) 요청 */}
               <Card className="app-glass-card app-glass-card--lg h-full">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">지연 위험 요약</CardTitle>
-                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium">
+                    신규 보철물 요청
+                  </CardTitle>
+                  <Layers className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <button
                     type="button"
                     className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
-                    onClick={() => setRiskSummaryDialogOpen(true)}
+                    onClick={() => {
+                      setProsthesisFeeItemRequestFilter("all");
+                      setProsthesisFeeItemRequestDialogOpen(true);
+                    }}
                   >
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                      <span>지연 가능 의뢰: {riskWarningCount.toLocaleString()}건</span>
-                      <span>지연 확정 의뢰: {riskDelayedCount.toLocaleString()}건</span>
-                      <span>
-                        묶음 정시: {riskNormalOnTimeRate.toLocaleString()}%
-                        {riskNormalEvaluatedCount > 0
-                          ? ` (${riskNormalEvaluatedCount.toLocaleString()}건)`
-                          : ""}
-                      </span>
-                      <span>
-                        신속 정시: {riskExpressOnTimeRate.toLocaleString()}%
-                        {riskExpressEvaluatedCount > 0
-                          ? ` (${riskExpressEvaluatedCount.toLocaleString()}건)`
-                          : ""}
-                      </span>
+                    <div className="space-y-1.5">
+                      {prosthesisFeeItemRequestStatRows.map((row) => {
+                        const isPending = row.key === "pending";
+                        const isApproved = row.key === "approved";
+                        return (
+                          <div
+                            key={row.key}
+                            className="flex items-center justify-between text-[11px]"
+                          >
+                            <span className="text-muted-foreground">{row.label}</span>
+                            <span
+                              className={`font-semibold ${
+                                isPending
+                                  ? "text-amber-800"
+                                  : isApproved
+                                    ? "text-sky-800"
+                                    : "text-primary-strong"
+                              }`}
+                            >
+                              {row.count.toLocaleString()}건
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div className="mt-1 text-[11px] text-muted-foreground">
-                      클릭하면 지연 위험 상세 내역을 확인할 수 있습니다.
-                    </div>
+                    {prosthesisFeeItemRequestPending > 0 ? (
+                      <div className="mt-2 space-y-1">
+                        {prosthesisFeeItemRequestItems
+                          .filter((item) => item.status === "pending")
+                          .slice(0, 3)
+                          .map((item) => (
+                            <div
+                              key={String(item.id || `${item.nameKey}-${item.createdAt}`)}
+                              className="truncate text-[11px] text-slate-700"
+                            >
+                              {String(item.name || "-")}
+                              <span className="text-muted-foreground">
+                                {" "}
+                                · {String(item.practiceName || "-")}
+                                {formatProsthesisFeeItemRequestLabs(item)
+                                  ? ` → ${formatProsthesisFeeItemRequestLabs(item)}`
+                                  : ""}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    ) : null}
                   </button>
                 </CardContent>
               </Card>
@@ -2511,93 +2533,36 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
 
-              {/* 카드5-3b: 신규 보철물(기공수가) 요청 */}
+              {/* 카드8: 지연 위험 요약 */}
               <Card className="app-glass-card app-glass-card--lg h-full">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    신규 보철물 요청
-                  </CardTitle>
-                  <Layers className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium">지연 위험 요약</CardTitle>
+                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <button
                     type="button"
                     className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
-                    onClick={() => {
-                      setProsthesisFeeItemRequestFilter("all");
-                      setProsthesisFeeItemRequestDialogOpen(true);
-                    }}
+                    onClick={() => setRiskSummaryDialogOpen(true)}
                   >
-                    <div className="space-y-2">
-                      {prosthesisFeeItemRequestStatRows.map((row) => {
-                        const ratio = Math.max(
-                          0,
-                          Math.min(
-                            1,
-                            row.count / prosthesisFeeItemRequestMaxCount,
-                          ),
-                        );
-                        const isPending = row.key === "pending";
-                        const isApproved = row.key === "approved";
-                        return (
-                          <div key={row.key} className="space-y-1 py-0.5">
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="text-muted-foreground">{row.label}</span>
-                              <span
-                                className={`font-semibold ${
-                                  isPending
-                                    ? "text-amber-800"
-                                    : isApproved
-                                      ? "text-sky-800"
-                                      : "text-primary-strong"
-                                }`}
-                              >
-                                {row.count.toLocaleString()}건
-                              </span>
-                            </div>
-                            <div className="h-2 w-full rounded bg-slate-100 overflow-hidden">
-                              <div
-                                className={`h-full rounded ${
-                                  isPending
-                                    ? "bg-amber-500"
-                                    : isApproved
-                                      ? "bg-sky-500"
-                                      : "bg-primary"
-                                }`}
-                                style={{ width: `${ratio * 100}%` }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                      <span>지연 가능 의뢰: {riskWarningCount.toLocaleString()}건</span>
+                      <span>지연 확정 의뢰: {riskDelayedCount.toLocaleString()}건</span>
+                      <span>
+                        묶음 정시: {riskNormalOnTimeRate.toLocaleString()}%
+                        {riskNormalEvaluatedCount > 0
+                          ? ` (${riskNormalEvaluatedCount.toLocaleString()}건)`
+                          : ""}
+                      </span>
+                      <span>
+                        신속 정시: {riskExpressOnTimeRate.toLocaleString()}%
+                        {riskExpressEvaluatedCount > 0
+                          ? ` (${riskExpressEvaluatedCount.toLocaleString()}건)`
+                          : ""}
+                      </span>
                     </div>
-                    <div className="mt-2 space-y-1">
-                      {prosthesisFeeItemRequestItems
-                        .filter((item) => item.status === "pending")
-                        .slice(0, 3)
-                        .map((item) => (
-                          <div
-                            key={String(item.id || `${item.nameKey}-${item.createdAt}`)}
-                            className="truncate text-[11px] text-slate-700"
-                          >
-                            {String(item.name || "-")}
-                            <span className="text-muted-foreground">
-                              {" "}
-                              · {String(item.practiceName || "-")}
-                              {formatProsthesisFeeItemRequestLabs(item)
-                                ? ` → ${formatProsthesisFeeItemRequestLabs(item)}`
-                                : ""}
-                            </span>
-                          </div>
-                        ))}
-                      {prosthesisFeeItemRequestPending === 0 ? (
-                        <div className="text-[11px] text-muted-foreground">
-                          대기 중인 요청이 없습니다.
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="mt-2 text-[11px] text-muted-foreground">
-                      총 {prosthesisFeeItemRequestTotal.toLocaleString()}건 · 클릭 시 목록
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      클릭하면 지연 위험 상세 내역을 확인할 수 있습니다.
                     </div>
                   </button>
                 </CardContent>

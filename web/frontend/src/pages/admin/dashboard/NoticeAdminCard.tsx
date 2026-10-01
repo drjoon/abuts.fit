@@ -22,6 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { apiFetch, invalidateApiGetCache } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
+import { cn } from "@/shared/ui/cn";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   NOTICE_AUDIENCE_OPTIONS,
@@ -52,6 +53,8 @@ type Draft = {
   endsAt: string;
   images: DashboardNotice["images"];
 };
+
+const CARD_ITEMS = 2;
 
 const EMPTY_DRAFT: Draft = {
   title: "",
@@ -104,10 +107,11 @@ function formatKstRange(item: DashboardNotice) {
   return "게시 중";
 }
 
-export function NoticeAdminCard() {
+export function NoticeAdminCard({ className }: { className?: string }) {
   const token = useAuthStore((s) => s.token);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [listOpen, setListOpen] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
@@ -269,71 +273,107 @@ export function NoticeAdminCard() {
     await refresh();
   };
 
+  const renderItem = (item: DashboardNotice, compact: boolean) => (
+    <li
+      key={item.id}
+      className={
+        compact
+          ? "flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white/70 px-2.5 py-1.5"
+          : "flex items-start justify-between gap-2 rounded-md border border-slate-200 bg-white/70 px-3 py-2"
+      }
+    >
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-slate-900">{item.title}</p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+          {item.audiences.map(noticeAudienceLabel).join(" · ") || "대상 없음"}
+          {" · "}
+          {formatKstRange(item)}
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-0.5">
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7"
+          aria-label="공지 수정"
+          onClick={() => openEdit(item)}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+          aria-label="공지 삭제"
+          onClick={() => setDeleteTarget(item)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </li>
+  );
+
+  const preview = items.slice(0, CARD_ITEMS);
+
   return (
     <>
-      <Card className="app-glass-card app-glass-card--lg">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">공지 관리</CardTitle>
-          <Megaphone className="h-4 w-4 text-muted-foreground" />
+      <Card className={cn("app-glass-card app-glass-card--lg", className)}>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+          <CardTitle className="flex items-center gap-1.5 text-sm font-medium">
+            <Megaphone className="h-4 w-4 text-muted-foreground" />
+            공지 관리
+            {items.length > 0 ? (
+              <span className="text-xs font-normal text-muted-foreground">{items.length}건</span>
+            ) : null}
+          </CardTitle>
+          <div className="flex items-center gap-1">
+            {items.length > CARD_ITEMS ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={() => setListOpen(true)}
+              >
+                전체 보기
+              </Button>
+            ) : null}
+            <Button type="button" size="sm" className="h-7 px-2.5 text-xs" onClick={openCreate}>
+              새 공지
+            </Button>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-xs text-muted-foreground">
-            대상 대시보드 상단에 제목 한 줄이 보입니다.
-            <br />
-            클릭하면 내용과 이미지를 볼 수 있습니다.
-          </p>
-          <Button type="button" size="sm" onClick={openCreate}>
-            새 공지
-          </Button>
+        <CardContent>
           {isLoading ? (
             <p className="text-xs text-muted-foreground">불러오는 중…</p>
           ) : items.length === 0 ? (
             <p className="text-xs text-muted-foreground">등록된 공지가 없습니다.</p>
           ) : (
-            <ul className="space-y-2">
-              {items.map((item) => (
-                <li
-                  key={item.id}
-                  className="flex items-start justify-between gap-2 rounded-md border border-slate-200 bg-white/70 px-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-slate-900">
-                      {item.title}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {item.audiences.map(noticeAudienceLabel).join(" · ") || "대상 없음"}
-                      {" · "}
-                      {formatKstRange(item)}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8"
-                      aria-label="공지 수정"
-                      onClick={() => openEdit(item)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      aria-label="공지 삭제"
-                      onClick={() => setDeleteTarget(item)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <ul className="space-y-1.5">{preview.map((item) => renderItem(item, true))}</ul>
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={listOpen} onOpenChange={setListOpen}>
+        <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>공지 {items.length}건</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            대상 대시보드 상단에 제목 한 줄이 보입니다.
+            <br />
+            클릭하면 내용과 이미지를 볼 수 있습니다.
+          </p>
+          <ul className="space-y-2">{items.map((item) => renderItem(item, false))}</ul>
+          <DialogFooter>
+            <Button type="button" size="sm" onClick={openCreate}>
+              새 공지
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={Boolean(draft)}

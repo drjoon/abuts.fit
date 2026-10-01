@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-01: 「스캔바디」탭 제거 → 관리자 대시보드 스캔바디 카드 모달(ScanbodyDemandCard).
 // - 2026-09-27: 「스캔바디」탭 — AI 디자인 공용 스캔바디 라이브러리(.dme)·심플어벗 템플릿.
 // - 2026-09-23: 플랫폼 탭 제거 → 재무「설정」(/dashboard/finance?tab=settings).
 // - 2026-09-23: 최상단을 계정·사업자·플랫폼·임직원·알림으로 평탄화. 사업영역 제거. 플랫폼은 사업자 오른쪽.
@@ -19,18 +20,11 @@ import { AccountTab } from "@/features/settings/tabs/AccountTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
-import { ScanbodyLibraryManager } from "@/shared/components/practice/ScanbodyLibraryManager";
-import { User, Users, Bell, Building2, Boxes } from "lucide-react";
+import { User, Users, Bell, Building2 } from "lucide-react";
 
-type TabKey = "account" | "business" | "staff" | "scanbody" | "notifications";
+type TabKey = "account" | "business" | "staff" | "notifications";
 
-const TOP_TABS: TabKey[] = [
-  "account",
-  "business",
-  "staff",
-  "scanbody",
-  "notifications",
-];
+const TOP_TABS: TabKey[] = ["account", "business", "staff", "notifications"];
 
 function resolveTopTab(raw: string | null, accountTab: string | null): TabKey {
   // 구 북마크: ?tab=account&accountTab=business → business
@@ -75,12 +69,6 @@ export const AdminSettingsPage = ({
         content: <StaffTab userData={user} businessTypeOverride="admin" />,
       },
       {
-        key: "scanbody",
-        label: "스캔바디",
-        icon: Boxes,
-        content: <ScanbodyLibraryManager />,
-      },
-      {
         key: "notifications",
         label: "알림",
         icon: Bell,
@@ -93,7 +81,7 @@ export const AdminSettingsPage = ({
   // 구 accountTab / partners URL을 평탄 탭으로 승격
   useEffect(() => {
     const raw = searchParams.get("tab");
-    if (raw === "platform") return;
+    if (raw === "platform" || raw === "scanbody") return;
     const legacyAccountTab = searchParams.get("accountTab");
     const needsPartnersFix = raw === "partners";
     const needsAccountTabFix = Boolean(legacyAccountTab);
@@ -128,6 +116,9 @@ export const AdminSettingsPage = ({
     next.set("tab", "settings");
     return <Navigate to={`/dashboard/finance?${next.toString()}`} replace />;
   }
+
+  // 구 설정·스캔바디 → 대시보드 스캔바디 카드
+  if (rawTab === "scanbody") return <Navigate to="/dashboard" replace />;
 
   return (
     <SettingsScaffold
