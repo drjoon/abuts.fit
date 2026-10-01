@@ -29,7 +29,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import { useNavigate } from "react-router-dom";
-import { usePeriodStore } from "@/store/usePeriodStore";
+import { appendDashboardPeriodParams, usePeriodStore } from "@/store/usePeriodStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -593,7 +593,15 @@ export const AdminDashboardPage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { period, setPeriod } = usePeriodStore();
+  const { period, setPeriod, customStartDate, customEndDate } = usePeriodStore();
+  const periodQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    appendDashboardPeriodParams(params, period, {
+      customStartDate,
+      customEndDate,
+    });
+    return params.toString();
+  }, [period, customStartDate, customEndDate]);
   const {
     data: noOrderAlertsData,
     isLoading: noOrderAlertsLoading,
@@ -734,7 +742,7 @@ export const AdminDashboardPage = () => {
   };
 
   const { data: riskSummaryResponse, refetch: refetchRiskSummary } = useQuery({
-    queryKey: ["admin-dashboard-risk-summary", period],
+    queryKey: ["admin-dashboard-risk-summary", period, customStartDate, customEndDate],
     enabled: Boolean(token) && user?.role === "admin",
     staleTime: 60 * 1000,
     queryFn: async () => {
@@ -743,7 +751,7 @@ export const AdminDashboardPage = () => {
 
       try {
         const res = await apiFetch<ApiEnvelope<RiskSummaryData>>({
-          path: `/api/requests/dashboard-risk-summary?period=${period}`,
+          path: `/api/requests/dashboard-risk-summary?${periodQuery}`,
           method: "GET",
           token,
           signal: controller.signal,
@@ -765,7 +773,7 @@ export const AdminDashboardPage = () => {
   });
 
   const { data: adminDashboardResponse, refetch: refetchAdminDashboard } = useQuery({
-    queryKey: ["admin-dashboard-page", period],
+    queryKey: ["admin-dashboard-page", period, customStartDate, customEndDate],
     enabled: Boolean(token) && user?.role === "admin",
     staleTime: 60 * 1000,
     queryFn: async () => {
@@ -774,7 +782,7 @@ export const AdminDashboardPage = () => {
 
       try {
         const res = await apiFetch<ApiEnvelope<AdminDashboardResponseData>>({
-          path: `/api/admin/dashboard?period=${encodeURIComponent(period)}`,
+          path: `/api/admin/dashboard?${periodQuery}`,
           method: "GET",
           token,
           signal: controller.signal,
@@ -1431,7 +1439,7 @@ export const AdminDashboardPage = () => {
     };
 
     queryClient.setQueryData(
-      ["admin-dashboard-page", period],
+      ["admin-dashboard-page", period, customStartDate, customEndDate],
       (prev: ApiEnvelope<AdminDashboardResponseData> | undefined) => {
         if (!prev?.data?.practiceTransferStats) return prev;
         const stats = prev.data.practiceTransferStats;
@@ -1489,12 +1497,12 @@ export const AdminDashboardPage = () => {
     if (!token || user?.role !== "admin") return;
     try {
       const res = await apiFetch<ApiEnvelope<AdminDashboardResponseData>>({
-        path: `/api/admin/dashboard?period=${encodeURIComponent(period)}&fresh=1`,
+        path: `/api/admin/dashboard?${periodQuery}&fresh=1`,
         method: "GET",
         token,
       });
       if (!res.ok || !res.data?.success) return;
-      queryClient.setQueryData(["admin-dashboard-page", period], res.data);
+      queryClient.setQueryData(["admin-dashboard-page", period, customStartDate, customEndDate], res.data);
     } catch {
       void refetchAdminDashboard();
     }
@@ -1518,7 +1526,7 @@ export const AdminDashboardPage = () => {
     const nextName = String(name || "").trim();
     if (!id || !nextName) return;
     queryClient.setQueryData(
-      ["admin-dashboard-page", period],
+      ["admin-dashboard-page", period, customStartDate, customEndDate],
       (prev: ApiEnvelope<AdminDashboardResponseData> | undefined) => {
         if (!prev?.data) return prev;
         const stats = (

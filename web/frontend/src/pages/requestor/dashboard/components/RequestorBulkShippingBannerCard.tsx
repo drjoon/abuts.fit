@@ -116,18 +116,24 @@ type Props = {
   onRefresh?: () => void;
   /** 대시보드 기간 필터. 오늘 출고/대기 내역을 createdAt 기준으로 좁힌다. */
   period?: PeriodFilterValue;
+  customStartDate?: string;
+  customEndDate?: string;
   /** true면 카드 chrome은 유지하고 "오늘 출고 예정" 수치 영역만 스켈레톤 처리 */
   loading?: boolean;
   /** headerButton: 카드 없이 헤더용 [출고예정 x건] + 기존 모달 */
   variant?: "card" | "headerButton";
 };
 
-const periodToShippingSummaryDays = (period: PeriodFilterValue): number => {
-  if (period === "90d") return 90;
-  if (period === "30d") return 30;
+const periodToShippingSummaryDays = (
+  period: PeriodFilterValue,
+  customStartDate = "",
+  customEndDate = "",
+): number => {
+  if (!customStartDate && !customEndDate && period === "90d") return 90;
+  if (!customStartDate && !customEndDate && period === "30d") return 30;
   const range = periodToRange(period, {
-    customStartDate: "",
-    customEndDate: "",
+    customStartDate,
+    customEndDate,
   });
   const startMs = new Date(range.startDate).getTime();
   const endMs = new Date(range.endDate).getTime();
@@ -140,14 +146,18 @@ const periodToShippingSummaryDays = (period: PeriodFilterValue): number => {
 const isCreatedAtInPeriod = (
   createdAt: unknown,
   period: PeriodFilterValue,
-  options?: { includeMissing?: boolean },
+  options?: {
+    includeMissing?: boolean;
+    customStartDate?: string;
+    customEndDate?: string;
+  },
 ): boolean => {
   if (!createdAt) return Boolean(options?.includeMissing);
   const createdMs = new Date(createdAt as string | Date).getTime();
   if (!Number.isFinite(createdMs)) return Boolean(options?.includeMissing);
   const range = periodToRange(period, {
-    customStartDate: "",
-    customEndDate: "",
+    customStartDate: options?.customStartDate ?? "",
+    customEndDate: options?.customEndDate ?? "",
   });
   const startMs = new Date(range.startDate).getTime();
   const endMs = new Date(range.endDate).getTime();
@@ -225,7 +235,9 @@ export const RequestorBulkShippingBannerCard = ({
   onOpenBulkModal,
   bulkData,
   onRefresh,
-  period = "30d",
+  period = "calendarMonth",
+  customStartDate = "",
+  customEndDate = "",
   loading = false,
   variant = "card",
 }: Props) => {
@@ -241,11 +253,15 @@ export const RequestorBulkShippingBannerCard = ({
   const [todayBoxDialogOpen, setTodayBoxDialogOpen] = useState(false);
 
   const canAccessShippingSummary = user?.role === "requestor";
-  const shippingSummaryDays = periodToShippingSummaryDays(period);
+  const shippingSummaryDays = periodToShippingSummaryDays(
+    period,
+    customStartDate,
+    customEndDate,
+  );
 
   const { data: shippingSummaryData, isLoading: isShippingSummaryLoading } =
     useQuery({
-      queryKey: ["requestor-shipping-packages-summary", period, shippingSummaryDays],
+      queryKey: ["requestor-shipping-packages-summary", period, customStartDate, customEndDate, shippingSummaryDays],
       enabled: Boolean(token && canAccessShippingSummary),
       queryFn: async () => {
         const params = new URLSearchParams();
@@ -284,13 +300,17 @@ export const RequestorBulkShippingBannerCard = ({
         Array.isArray((it as any).requests) ? (it as any).requests : [],
       )
       .filter((req: ShippingPackageSummaryRequest) =>
-        isCreatedAtInPeriod(req?.createdAt, period, { includeMissing: false }),
+        isCreatedAtInPeriod(req?.createdAt, period, {
+          includeMissing: false,
+          customStartDate,
+          customEndDate,
+        }),
       );
 
     return {
       todayRequests: todayRequests ?? [],
     };
-  }, [period, shippingSummaryData]);
+  }, [period, customStartDate, customEndDate, shippingSummaryData]);
 
   const [originalBulkEtaById, setOriginalBulkEtaById] = useState<
     Record<string, string | null>
@@ -308,10 +328,14 @@ export const RequestorBulkShippingBannerCard = ({
       .filter(Boolean)
       // 스냅샷 재계산 전 createdAt 없는 레거시 항목은 유지
       .filter((it) =>
-        isCreatedAtInPeriod(it?.createdAt, period, { includeMissing: true }),
+        isCreatedAtInPeriod(it?.createdAt, period, {
+          includeMissing: true,
+          customStartDate,
+          customEndDate,
+        }),
       );
     setItems(next);
-  }, [bulkData, period]);
+  }, [bulkData, period, customStartDate, customEndDate]);
 
   const hasAnyEta = useMemo(() => {
     return items.some((it) => Boolean(it.estimatedShipYmd));

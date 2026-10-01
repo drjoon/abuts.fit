@@ -33,7 +33,9 @@ import {
 import {
   getRequestorDashboardSummarySnapshot,
   recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId,
+  recomputeSingleRequestorDashboardSummarySnapshot,
 } from "../../services/requestorDashboardSummarySnapshot.service.js";
+import { createdAtFilterFromHeaderPeriod } from "../../utils/dateRange.js";
 import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
 import { resolveQuotedPriceWithExtras } from "./designPrice.utils.js";
 import {
@@ -181,11 +183,29 @@ const getRequestEstimatedShipYmd = ({ request, fallbackMap }) => {
   return fallbackMap.get(seed.key) || seed.createdYmd;
 };
 
+const readDashboardPeriodQuery = (query) => {
+  const period = String(query?.period || "30d").trim() || "30d";
+  const customStart = String(query?.customStart || "").trim();
+  const customEnd = String(query?.customEnd || "").trim();
+  const hasCustom = Boolean(customStart && customEnd);
+  return {
+    period,
+    customStart,
+    customEnd,
+    hasCustom,
+    token: hasCustom ? `${period}:${customStart}:${customEnd}` : period,
+  };
+};
+
 /**
  * 기간 파라미터에 따른 createdAt 필터 생성
- * 지원 값: 7d, 30d, 90d, lastMonth, thisMonth, all(기본값 30d)
+ * 지원 값: 7d, 30d, 90d, lastMonth, thisMonth, calendarMonth, rollingMonth, all
+ * customStart/customEnd(KST YMD)가 있으면 그 구간이 프리셋보다 우선한다.
  */
-const buildDateFilter = (period) => {
+const buildDateFilter = (period, override) => {
+  const headerFilter = createdAtFilterFromHeaderPeriod(period, override);
+  if (headerFilter) return headerFilter;
+
   const now = new Date();
 
   // all 또는 잘못된 값이면 필터 없음
@@ -255,6 +275,8 @@ const buildRequestorVisibleRequestGuard = () => ({
 const loadLiveRequestorInProgressStageCounts = async ({
   businessAnchorId,
   period,
+  customStart,
+  customEnd,
 }) => {
   const anchorId = String(businessAnchorId || "").trim();
   if (!Types.ObjectId.isValid(anchorId)) {
@@ -271,7 +293,7 @@ const loadLiveRequestorInProgressStageCounts = async ({
     {
       $match: {
         businessAnchorId: new Types.ObjectId(anchorId),
-        ...buildDateFilter(period),
+        ...buildDateFilter(period, { customStart, customEnd }),
         manufacturerStage: {
           $in: [
             "준비",
@@ -472,8 +494,9 @@ export async function getUnmachinableOverview(req, res) {
       });
     }
 
-    const period = String(req.query?.period || "30d").trim() || "30d";
-    const dateFilter = buildDateFilter(period);
+    const range = readDashboardPeriodQuery(req.query);
+    const { period } = range;
+    const dateFilter = buildDateFilter(period, range);
 
     const limitRaw = Number(req.query?.limit || 8);
     const limit = Number.isFinite(limitRaw)
@@ -905,7 +928,8 @@ export async function forceRefreshMyDashboardSummary(req, res) {
 
 export async function getMyDashboardCardsSummary(req, res) {
   try {
-    const { period = "30d" } = req.query;
+    const range = readDashboardPeriodQuery(req.query);
+    const { period } = range;
     const userId = req.user?._id?.toString();
     const debug =
       process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
@@ -926,15 +950,17 @@ export async function getMyDashboardCardsSummary(req, res) {
     // in-flight refresh 대기 제거: 제출 직후 2s+ 블로킹 방지.
     // 스냅샷은 upsert stale-while-revalidate, FE는 request:stage-changed로 재조회.
 
-    const cardsInFlightKey = `dashboard-cards-summary-inflight:${String(userId || "")}:${businessAnchorId}:${period}`;
+    const cardsInFlightKey = `dashboard-cards-summary-inflight:${String(userId || "")}:${businessAnchorId}:${range.token}`;
 
-    let summarySnapshot = await getRequestorDashboardSummarySnapshot({
-      businessAnchorId,
-      periodKey: period,
-    });
+    let summarySnapshot = range.hasCustom
+      ? null
+      : await getRequestorDashboardSummarySnapshot({
+          businessAnchorId,
+          periodKey: period,
+        });
 
     // 스냅샷이 없을 때만 1회 재계산해서 채운다.
-    if (!summarySnapshot) {
+    if (!range.hasCustom && !summarySnapshot) {
       const recomputedSnapshots =
         await recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(
           businessAnchorId,
@@ -949,12 +975,14 @@ export async function getMyDashboardCardsSummary(req, res) {
       ? new Date(summarySnapshot.computedAt).getTime()
       : 0;
     // v3: practiceTransferStats(기공 행) 포함
-    const cardsCacheKey = `dashboard-cards-summary:v3:${String(userId || "")}:${businessAnchorId}:${period}:${snapshotComputedAtMs}`;
+    const cardsCacheKey = `dashboard-cards-summary:v4:${String(userId || "")}:${businessAnchorId}:${range.token}:${snapshotComputedAtMs}`;
 
     const loadPracticeTransferStats = () =>
       getPracticeTransferDashboardStats({
         businessAnchorId,
         period,
+        customStart: range.customStart,
+        customEnd: range.customEnd,
       }).catch((err) => {
         console.warn(
           "[getMyDashboardCardsSummary] practiceTransferStats failed",
@@ -967,6 +995,8 @@ export async function getMyDashboardCardsSummary(req, res) {
       loadLiveRequestorInProgressStageCounts({
         businessAnchorId,
         period,
+        customStart: range.customStart,
+        customEnd: range.customEnd,
       }).catch((err) => {
         console.warn(
           "[getMyDashboardCardsSummary] live in-progress counts failed",
@@ -1015,6 +1045,15 @@ export async function getMyDashboardCardsSummary(req, res) {
     }
 
     const responseData = await withRequestPerfInFlight(cardsInFlightKey, async () => {
+      if (range.hasCustom) {
+        summarySnapshot = await recomputeSingleRequestorDashboardSummarySnapshot({
+          businessAnchorId,
+          periodKey: period,
+          customStart: range.customStart,
+          customEnd: range.customEnd,
+          persist: false,
+        });
+      }
       const snapshotStats = summarySnapshot?.stats || null;
       const [practiceTransferStats, liveInProgressCounts] = await Promise.all([
         loadPracticeTransferStats(),
@@ -1084,7 +1123,8 @@ export async function getMyDashboardCardsSummary(req, res) {
 
 export async function getMyDashboardSummary(req, res) {
   try {
-    const { period = "30d" } = req.query;
+    const range = readDashboardPeriodQuery(req.query);
+    const { period } = range;
     const userId = req.user?._id?.toString();
     const debug =
       process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
@@ -1107,7 +1147,7 @@ export async function getMyDashboardSummary(req, res) {
 
     const summaryInFlightKey = `dashboard-summary-inflight:${String(
       userId || "",
-    )}:${businessAnchorId}:${period}`;
+    )}:${businessAnchorId}:${range.token}`;
 
     const responseData = await withRequestPerfInFlight(
       summaryInFlightKey,
@@ -1116,16 +1156,18 @@ export async function getMyDashboardSummary(req, res) {
           ? { businessAnchorId: new Types.ObjectId(businessAnchorId) }
           : buildRequestorOrgFilter(req);
 
-        const dateFilter = buildDateFilter(period);
+        const dateFilter = buildDateFilter(period, range);
 
-        let summarySnapshot = await getRequestorDashboardSummarySnapshot({
-          businessAnchorId,
-          periodKey: period,
-        });
+        let summarySnapshot = range.hasCustom
+          ? null
+          : await getRequestorDashboardSummarySnapshot({
+              businessAnchorId,
+              periodKey: period,
+            });
 
         // 스냅샷이 없을 때만 1회 재계산해서 채운다.
         // (매 요청 재계산 금지: 리프레시 응답 지연 방지)
-        if (!summarySnapshot) {
+        if (!range.hasCustom && !summarySnapshot) {
           const recomputedSnapshots =
             await recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(
               businessAnchorId,
@@ -1140,13 +1182,23 @@ export async function getMyDashboardSummary(req, res) {
           ? new Date(summarySnapshot.computedAt).getTime()
           : 0;
         // v3: recentRequests에도 period dateFilter를 적용 (이번달 등에서 기간 밖 건 미표시)
-        const summaryCacheKey = `dashboard-summary:v3:${String(userId || "")}:${businessAnchorId}:${period}:${summarySnapshotComputedAtMs}`;
+        const summaryCacheKey = `dashboard-summary:v4:${String(userId || "")}:${businessAnchorId}:${range.token}:${summarySnapshotComputedAtMs}`;
 
         if (!debug) {
           const cachedSummary = getRequestPerfCacheValue(summaryCacheKey);
           if (cachedSummary) {
             return cachedSummary;
           }
+        }
+
+        if (range.hasCustom) {
+          summarySnapshot = await recomputeSingleRequestorDashboardSummarySnapshot({
+            businessAnchorId,
+            periodKey: period,
+            customStart: range.customStart,
+            customEnd: range.customEnd,
+            persist: false,
+          });
         }
 
         const riskRequestFilter = {
@@ -1224,7 +1276,7 @@ export async function getMyDashboardSummary(req, res) {
             .limit(10)
             .lean(),
           getDashboardRiskSummaryData({
-            cacheKey: `dashboard-risk-summary:requestor:v3:${businessAnchorId}:${String(period)}`,
+            cacheKey: `dashboard-risk-summary:requestor:v4:${businessAnchorId}:${range.token}`,
             riskRequestFilter,
             onTimeRequestFilter,
             debug,
@@ -1645,11 +1697,12 @@ export async function getMyDashboardSummary(req, res) {
 
 export async function getDashboardRiskSummary(req, res) {
   try {
-    const { period = "30d" } = req.query;
+    const range = readDashboardPeriodQuery(req.query);
+    const { period } = range;
     const debug =
       process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
 
-    const dateFilter = buildDateFilter(period);
+    const dateFilter = buildDateFilter(period, range);
 
     const baseFilter = {
       ...dateFilter,
@@ -1693,7 +1746,7 @@ export async function getDashboardRiskSummary(req, res) {
           ? String(req.user?.businessAnchorId || req.user?._id || "").trim()
           : "admin";
     const riskData = await getDashboardRiskSummaryData({
-      cacheKey: `dashboard-risk-summary:v3:${role}:${cacheScope}:${String(period)}`,
+      cacheKey: `dashboard-risk-summary:v4:${role}:${cacheScope}:${range.token}`,
       riskRequestFilter: filter,
       onTimeRequestFilter,
       debug,

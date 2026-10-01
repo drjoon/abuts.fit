@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-01: 헤더 기본은 이번 달(1일~말일)·한 달(지난달 같은 날~오늘). 저장값 30일 계열은 한 달, 이번달은 이번 달로 승격.
 // - 2026-09-21: 지난달(lastMonth) 유지 — 정산 프리셋(이번달·지난달)과 공유 스토어 정합.
 // - 2026-08-23: periodToRangeQueryBounds — API용 KST YMD from/to (ISO + 타임존 URL 이슈 회피).
 // - 2026-08-20: 저장된 90일 선택은 30일로 승격(대시보드 기본 프리셋).
@@ -10,8 +11,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
-import { isPeriodFilterValue } from "@/shared/ui/periodFilterValues";
-import { toKstYmd } from "@/shared/date/kst";
+import { isPeriodFilterValue, HEADER_DEFAULT_PERIOD } from "@/shared/ui/periodFilterValues";
+import { kstAddCivilMonths, kstEndOfMonth, toKstYmd } from "@/shared/date/kst";
 
 interface PeriodState {
   period: PeriodFilterValue;
@@ -25,7 +26,7 @@ interface PeriodState {
 export const usePeriodStore = create<PeriodState>()(
   persist(
     (set) => ({
-      period: "30d",
+      period: HEADER_DEFAULT_PERIOD,
       customStartDate: "",
       customEndDate: "",
       setPeriod: (period) => set({ period }),
@@ -42,11 +43,17 @@ export const usePeriodStore = create<PeriodState>()(
       }),
       merge: (persisted, current) => {
         const raw = (persisted || {}) as Partial<PeriodState>;
-        const nextPeriod = isPeriodFilterValue(raw.period)
-          ? raw.period === "90d" || raw.period === "180d"
-            ? "30d"
-            : raw.period
-          : current.period;
+        const stored = isPeriodFilterValue(raw.period) ? raw.period : null;
+        const nextPeriod = !stored
+          ? current.period
+          : stored === "7d" ||
+              stored === "30d" ||
+              stored === "90d" ||
+              stored === "180d"
+            ? "rollingMonth"
+            : stored === "thisMonth"
+              ? "calendarMonth"
+              : stored;
         return {
           ...current,
           ...raw,
@@ -153,6 +160,36 @@ export const periodToRange = (
   const thisMonthStart = makeUtcFromKst(year, month, 1, 0, 0, 0, 0);
   const todayEnd = makeUtcFromKst(year, month, day, 23, 59, 59, 999);
 
+  if (period === "rollingMonth") {
+    const todayYmd = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const startYmd = kstAddCivilMonths(todayYmd, -1);
+    const startParts = String(startYmd || "").split("-").map(Number);
+    const [sy, sm, sd] = startParts;
+    if (!sy || !sm || !sd) {
+      return {
+        startDate: makeUtcFromKst(year, month, day, 0, 0, 0, 0).toISOString(),
+        endDate: todayEnd.toISOString(),
+      };
+    }
+    return {
+      startDate: makeUtcFromKst(sy, sm, sd, 0, 0, 0, 0).toISOString(),
+      endDate: todayEnd.toISOString(),
+    };
+  }
+
+  if (period === "calendarMonth") {
+    const monthStartYmd = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-01`;
+    const endYmd = kstEndOfMonth(monthStartYmd);
+    const [ey, em, ed] = String(endYmd || "").split("-").map(Number);
+    return {
+      startDate: thisMonthStart.toISOString(),
+      endDate:
+        ey && em && ed
+          ? makeUtcFromKst(ey, em, ed, 23, 59, 59, 999).toISOString()
+          : todayEnd.toISOString(),
+    };
+  }
+
   if (period === "thisMonth") {
     // 미도래 일자(월말까지 빈 행)를 만들지 않도록 오늘은 포함·미래는 제외
     return {
@@ -207,4 +244,24 @@ export const appendPeriodQueryParams = (
   if (bounds.fromYmd) params.set("from", bounds.fromYmd);
   if (bounds.toYmd) params.set("to", bounds.toYmd);
   params.set("period", bounds.period);
+};
+
+/** 헤더 기간 조회. 프리셋은 period만, 화살표·달력 구간은 customStart/customEnd(KST YMD). */
+export const appendDashboardPeriodParams = (
+  params: URLSearchParams,
+  period: PeriodFilterValue,
+  options?: { customStartDate?: string; customEndDate?: string },
+) => {
+  params.set("period", period);
+  const start = String(options?.customStartDate || "").trim();
+  const end = String(options?.customEndDate || "").trim();
+  if (!start || !end) return;
+  params.set("customStart", start <= end ? start : end);
+  params.set("customEnd", start <= end ? end : start);
+  const range = periodToRange(period, {
+    customStartDate: start,
+    customEndDate: end,
+  });
+  if (range?.startDate) params.set("startDate", range.startDate);
+  if (range?.endDate) params.set("endDate", range.endDate);
 };

@@ -146,7 +146,7 @@ Notes:
   - `src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx`
   - `src/pages/requestor/new_request/utils/patientGroups.ts` (구강스캔 자동묶음·파일크기 분류)
   - `src/pages/requestor/new_request/hooks/usePatientFileGroups.ts`
-  - `src/shared/components/RequestorWorkspaceHeader.tsx` (대시보드 기간 필터+알림)
+  - `src/shared/components/RequestorWorkspaceHeader.tsx` (대시보드 기간 필터: 이번 달=1일~말일, 한 달=지난달 같은 날~오늘. 좌우 화살표는 고른 단위로 이동. 정산·가공통계처럼 프리셋이 따로인 화면은 그대로)
   - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx` (치과 헤더 `[정책 안내]`만)
   - `src/pages/requestor/dashboard/components/RequestorDashboardStatsCards.tsx` (치과 행 라벨=구강스캔/어벗디자인)
   - `src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx` (완료 내역 버튼)

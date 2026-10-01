@@ -27,11 +27,14 @@ import {
   modelFileBasename,
 } from "@/shared/files/modelPreviewFile";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { appendDashboardPeriodParams } from "@/store/usePeriodStore";
 import { cn } from "@/shared/ui/cn";
 import { RESPONSIVE } from "@/shared/ui/responsive";
 
 type Props = {
   period: PeriodFilterValue;
+  customStartDate?: string;
+  customEndDate?: string;
   count: number;
 };
 
@@ -57,13 +60,18 @@ const InfoRow = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 
-export const RequestorUnmachinableHost = ({ period, count }: Props) => {
+export const RequestorUnmachinableHost = ({
+  period,
+  customStartDate = "",
+  customEndDate = "",
+  count,
+}: Props) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const overviewQueryKey = useMemo(
-    () => ["requestor-unmachinable-overview", period],
-    [period],
+    () => ["requestor-unmachinable-overview", period, customStartDate, customEndDate],
+    [period, customStartDate, customEndDate],
   );
 
   const [open, setOpen] = useState(false);
@@ -92,8 +100,14 @@ export const RequestorUnmachinableHost = ({ period, count }: Props) => {
   const { data: overviewResponse, isLoading } = useQuery({
     queryKey: overviewQueryKey,
     queryFn: async () => {
+      const params = new URLSearchParams();
+      appendDashboardPeriodParams(params, period, {
+        customStartDate,
+        customEndDate,
+      });
+      params.set("limit", "100");
       const res = await apiFetch<any>({
-        path: `/api/requests/unmachinable-overview?period=${period}&limit=100`,
+        path: `/api/requests/unmachinable-overview?${params.toString()}`,
         method: "GET",
         token,
       });

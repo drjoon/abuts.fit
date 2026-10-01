@@ -15,6 +15,7 @@
 import Request from "../models/request.model.js";
 import ShippingPackage from "../models/shippingPackage.model.js";
 import { getTodayYmdInKst } from "../utils/krBusinessDays.js";
+import { resolveHeaderMonthPeriodRange } from "../utils/dateRange.js";
 import { UNMACHINABLE_SHIP_CONTINUE_STAGES } from "./unmachinableShipPath.js";
 
 function buildHasMeaningfulValueExpr(fieldPath) {
@@ -206,6 +207,11 @@ export function buildTrackingWorksheetPeriodRange({
     if (!Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime())) {
       return { startDate, endDate };
     }
+  }
+
+  const headerRange = resolveHeaderMonthPeriodRange(period);
+  if (headerRange) {
+    return { startDate: headerRange.start, endDate: headerRange.end };
   }
 
   const todayYmd = getTodayYmdInKst();

@@ -50,6 +50,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { HEADER_DEFAULT_PERIOD } from "@/shared/ui/periodFilterValues";
 import { periodToRange } from "@/store/usePeriodStore";
 import { toKstYmd } from "@/shared/date/kst";
 import { formatImplantDisplay } from "@/utils/implant";
@@ -261,7 +262,7 @@ export const PastRequestsModal = ({
   );
 
   const [period, setPeriod] = useState<PeriodFilterValue>(
-    initialPeriod || "30d",
+    initialPeriod || HEADER_DEFAULT_PERIOD,
   );
   const [q, setQ] = useState("");
   const [customStartDate, setCustomStartDate] = useState("");
@@ -286,7 +287,7 @@ export const PastRequestsModal = ({
   );
 
   const resetFilters = () => {
-    setPeriod("30d");
+    setPeriod(HEADER_DEFAULT_PERIOD);
     setQ("");
     setCustomStartDate("");
     setCustomEndDate("");

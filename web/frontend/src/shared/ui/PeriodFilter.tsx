@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-01: 기본 프리셋은 이번 달·한 달. 화살표는 달력 월(1일~말일) 또는 한 달(지난달 같은 날~그날) 단위.
 // - 2026-09-21: 정산 프리셋은 SETTLEMENT_PERIOD_PRESETS(이번달·지난달). 기본(대시보드 등)은 30일·이번달.
 // - 2026-08-20: 기본 프리셋은 30일·이번달만. 90일·지난달은 표시하지 않음.
 // - 2026-08-20: useStoreCustomRange=false여도 로컬 커스텀 기간으로 달력·chevron을 켠다.
@@ -27,8 +28,15 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/shared/ui/cn";
 import type { PeriodFilterValue } from "@/shared/ui/periodFilterValues";
+import { HEADER_PERIOD_PRESETS } from "@/shared/ui/periodFilterValues";
 import { periodToRange, usePeriodStore } from "@/store/usePeriodStore";
-import { toKstYmd, ymdToKstDate, kstAddCivilMonths } from "@/shared/date/kst";
+import {
+  toKstYmd,
+  ymdToKstDate,
+  kstAddCivilMonths,
+  kstEndOfMonth,
+  kstStartOfMonth,
+} from "@/shared/date/kst";
 
 export type { PeriodFilterValue } from "@/shared/ui/periodFilterValues";
 
@@ -41,13 +49,13 @@ type Props = {
   onClearCustomRange?: () => void;
   /** false면 전역 스토어 커스텀 날짜를 쓰지 않음 (로컬 period 전용) */
   useStoreCustomRange?: boolean;
-  /** 표시할 프리셋. 미지정 시 30일·이번달 */
+  /** 표시할 프리셋. 미지정 시 이번 달·한 달 */
   presets?: PeriodFilterValue[];
   label?: string;
   className?: string;
 };
 
-const DEFAULT_PRESET_PERIODS: PeriodFilterValue[] = ["30d", "thisMonth"];
+const DEFAULT_PRESET_PERIODS: PeriodFilterValue[] = HEADER_PERIOD_PRESETS;
 
 const labelMap: Record<PeriodFilterValue, string> = {
   "7d": "7일",
@@ -56,6 +64,8 @@ const labelMap: Record<PeriodFilterValue, string> = {
   "180d": "180일",
   thisMonth: "이번달",
   lastMonth: "지난달",
+  calendarMonth: "이번 달",
+  rollingMonth: "한 달",
 };
 
 const formatRangeLabel = (startYmd: string, endYmd: string) => {
@@ -168,6 +178,26 @@ export const PeriodFilter = ({
 
   const handleShiftMonths = (delta: number) => {
     if (!setCustom) return;
+    if (value === "calendarMonth") {
+      const monthAnchor =
+        kstStartOfMonth(appliedRange.startYmd) || appliedRange.startYmd;
+      const shifted = kstAddCivilMonths(monthAnchor, delta);
+      const start = kstStartOfMonth(shifted);
+      const end = kstEndOfMonth(shifted);
+      if (!start || !end) return;
+      setCustom({ startDate: start, endDate: end });
+      return;
+    }
+    if (value === "rollingMonth") {
+      const end = kstAddCivilMonths(appliedRange.endYmd, delta);
+      const start = end ? kstAddCivilMonths(end, -1) : null;
+      if (!start || !end) return;
+      setCustom({
+        startDate: start <= end ? start : end,
+        endDate: start <= end ? end : start,
+      });
+      return;
+    }
     const start = kstAddCivilMonths(appliedRange.startYmd, delta);
     const end = kstAddCivilMonths(appliedRange.endYmd, delta);
     if (!start || !end) return;
@@ -199,9 +229,12 @@ export const PeriodFilter = ({
     appliedRange.endYmd,
   );
 
+  const headerMode =
+    value === "calendarMonth" || value === "rollingMonth";
+
   const rangeTriggerClassName = cn(
     "inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-[11px] leading-none transition-colors",
-    hasCustomRange || open
+    (hasCustomRange && !headerMode) || open
       ? "bg-primary text-primary-foreground"
       : "bg-background text-muted-foreground hover:bg-muted",
   );
@@ -305,7 +338,8 @@ export const PeriodFilter = ({
           onClick={() => handlePresetClick(k)}
           className={cn(
             "whitespace-nowrap rounded-md px-2.5 py-1.5 text-[11px] leading-none transition-colors",
-            !hasCustomRange && value === k
+            (!headerMode && !hasCustomRange && value === k) ||
+            (headerMode && value === k)
               ? "bg-primary text-primary-foreground"
               : "bg-background text-muted-foreground hover:bg-muted",
           )}

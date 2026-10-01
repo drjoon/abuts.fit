@@ -1333,7 +1333,7 @@ export const PracticeFileTransferPage = ({
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const isMobileViewport = useIsMobile();
-  const { period } = usePeriodStore();
+  const { period, customStartDate, customEndDate } = usePeriodStore();
   const { toast } = useToast();
   const authToken = useAuthStore((s) => s.token);
   const authUser = useAuthStore((s) => s.user);
@@ -4493,8 +4493,12 @@ export const PracticeFileTransferPage = ({
   ]);
 
   const periodAndSearchFilteredRequests = useMemo(
-    () => filterRequestsByPeriodAndSearch(recentRequests, period, ""),
-    [recentRequests, period],
+    () =>
+      filterRequestsByPeriodAndSearch(recentRequests, period, "", {
+        customStartDate,
+        customEndDate,
+      }),
+    [recentRequests, period, customStartDate, customEndDate],
   );
 
   const filteredRecentRequests = useMemo(

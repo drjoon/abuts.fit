@@ -17,6 +17,7 @@ import { resolveLeadDaysWithSameDayCutoff } from "../controllers/requests/produc
 import { resolveEffectiveShippingMode } from "../controllers/requests/shippingPriority.utils.js";
 import { resolveQuotedPriceWithExtras } from "../controllers/requests/designPrice.utils.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
+import { createdAtFilterFromHeaderPeriod } from "../utils/dateRange.js";
 import { UNMACHINABLE_SHIP_CONTINUE_STAGES } from "./unmachinableShipPath.js";
 
 /**
@@ -65,7 +66,10 @@ const buildEstimatedShipFallbackSeed = ({ createdAt, createdYmd }) => {
   };
 };
 
-const buildDateFilter = (period) => {
+const buildDateFilter = (period, override) => {
+  const headerFilter = createdAtFilterFromHeaderPeriod(period, override);
+  if (headerFilter) return headerFilter;
+
   const now = new Date();
 
   if (!period || period === "all") return {};
@@ -145,9 +149,12 @@ const getRequestEstimatedShipYmd = ({ request, fallbackMap }) => {
   return fallbackMap.get(seed.key) || seed.createdYmd;
 };
 
-const recomputeSingleRequestorDashboardSummarySnapshot = async ({
+export const recomputeSingleRequestorDashboardSummarySnapshot = async ({
   businessAnchorId,
   periodKey,
+  customStart = "",
+  customEnd = "",
+  persist = true,
 }) => {
   const anchorId = String(businessAnchorId || "").trim();
   if (!Types.ObjectId.isValid(anchorId)) return null;
@@ -159,7 +166,10 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
   const requestFilter = {
     businessAnchorId: new Types.ObjectId(anchorId),
   };
-  const dateFilter = buildDateFilter(normalizedPeriodKey);
+  const dateFilter = buildDateFilter(normalizedPeriodKey, {
+    customStart,
+    customEnd,
+  });
   const nonSampleGuard = buildNonSampleRequestGuard();
 
   const [statsResult, shippingPackageRows, recentRequestsResult] =
@@ -640,26 +650,28 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
     };
   });
 
-  const snapshotBusinessAnchorId = new Types.ObjectId(anchorId);
-  await RequestorDashboardSummarySnapshot.findOneAndUpdate(
-    {
-      businessAnchorId: snapshotBusinessAnchorId,
-      ymd,
-      periodKey: normalizedPeriodKey,
-    },
-    {
-      $set: {
+  if (persist !== false) {
+    const snapshotBusinessAnchorId = new Types.ObjectId(anchorId);
+    await RequestorDashboardSummarySnapshot.findOneAndUpdate(
+      {
         businessAnchorId: snapshotBusinessAnchorId,
         ymd,
         periodKey: normalizedPeriodKey,
-        stats: snapshotStats,
-        manufacturingSummary,
-        recentRequests: recentRequestsData,
-        computedAt: new Date(),
       },
+      {
+        $set: {
+          businessAnchorId: snapshotBusinessAnchorId,
+          ymd,
+          periodKey: normalizedPeriodKey,
+          stats: snapshotStats,
+          manufacturingSummary,
+          recentRequests: recentRequestsData,
+          computedAt: new Date(),
+        },
     },
-    { upsert: true },
-  );
+      { upsert: true },
+    );
+  }
 
   return {
     businessAnchorId: anchorId,
@@ -673,7 +685,15 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
 
 export const recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId =
   async (businessAnchorId) => {
-    const periods = ["7d", "30d", "90d", "thisMonth", "lastMonth"];
+    const periods = [
+      "7d",
+      "30d",
+      "90d",
+      "thisMonth",
+      "lastMonth",
+      "calendarMonth",
+      "rollingMonth",
+    ];
     const results = await Promise.all(
       periods.map((periodKey) =>
         recomputeSingleRequestorDashboardSummarySnapshot({

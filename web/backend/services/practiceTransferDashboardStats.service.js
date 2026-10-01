@@ -18,10 +18,14 @@ import {
   toPracticeTransferDashboardBucket,
 } from "../utils/practiceTransferStage.js";
 import { mapAbutmentDeliveryByTransferDocs } from "./practiceTransferProduction.service.js";
+import { createdAtFilterFromHeaderPeriod } from "../utils/dateRange.js";
 import { toKstYmd } from "../controllers/requests/utils.js";
 
 export { emptyPracticeTransferDashboardStats };
-const buildCreatedAtDateFilter = (period) => {
+const buildCreatedAtDateFilter = (period, override) => {
+  const headerFilter = createdAtFilterFromHeaderPeriod(period, override);
+  if (headerFilter) return headerFilter;
+
   const now = new Date();
   const normalized = String(period || "30d").trim() || "30d";
 
@@ -117,6 +121,8 @@ export async function getPracticeTransferDashboardStats({
   businessAnchorId,
   period = "30d",
   kind = null,
+  customStart = "",
+  customEnd = "",
 } = {}) {
   const empty = emptyPracticeTransferDashboardStats();
   const anchorId = String(businessAnchorId || "").trim();
@@ -152,7 +158,7 @@ export async function getPracticeTransferDashboardStats({
 
   if (!ownershipScope) return empty;
 
-  const dateFilter = buildCreatedAtDateFilter(period);
+  const dateFilter = buildCreatedAtDateFilter(period, { customStart, customEnd });
   const docs = await PracticeTransfer.find({
     $and: [ownershipScope, dateFilter],
   })

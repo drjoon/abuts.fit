@@ -26,6 +26,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { HEADER_DEFAULT_PERIOD } from "@/shared/ui/periodFilterValues";
+import { appendDashboardPeriodParams } from "@/store/usePeriodStore";
 import { cn } from "@/shared/ui/cn";
 import { RESPONSIVE } from "@/shared/ui/responsive";
 import {
@@ -148,7 +150,9 @@ export const RequestorDashboardPage = () => {
   } = useOutletContext<DashboardOutletContext>();
   const { data: systemSettings } = useSystemSettings();
 
-  const [period, setPeriod] = useState<PeriodFilterValue>("30d");
+  const [period, setPeriod] = useState<PeriodFilterValue>(HEADER_DEFAULT_PERIOD);
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
   const [editingRequest, setEditingRequest] =
     useState<EditingRequestState>(null);
   const [editingDescription, setEditingDescription] = useState("");
@@ -197,25 +201,29 @@ export const RequestorDashboardPage = () => {
     () => [
       "requestor-dashboard-summary-page",
       period,
+      customStartDate,
+      customEndDate,
       String(user?.id || ""),
       String(user?.businessAnchorId || ""),
     ],
-    [period, user],
+    [period, customStartDate, customEndDate, user],
   );
 
   const cardsSummaryQueryKey = useMemo(
     () => [
       "requestor-dashboard-cards-summary",
       period,
+      customStartDate,
+      customEndDate,
       String(user?.id || ""),
       String(user?.businessAnchorId || ""),
     ],
-    [period, user],
+    [period, customStartDate, customEndDate, user],
   );
 
   const unmachinableOverviewQueryKey = useMemo(
-    () => ["requestor-unmachinable-overview", period],
-    [period],
+    () => ["requestor-unmachinable-overview", period, customStartDate, customEndDate],
+    [period, customStartDate, customEndDate],
   );
 
   // change-log: 2026-08-03 - '의뢰' -> '준비' display normalization for requestor dashboard groups
@@ -503,9 +511,10 @@ export const RequestorDashboardPage = () => {
     queryKey: summaryQueryKey,
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (period) {
-        params.set("period", period);
-      }
+      appendDashboardPeriodParams(params, period, {
+        customStartDate,
+        customEndDate,
+      });
       const res = await apiFetch<any>({
         path: `/api/requests/my/dashboard-summary?${params.toString()}`,
         method: "GET",
@@ -533,9 +542,10 @@ export const RequestorDashboardPage = () => {
     queryKey: cardsSummaryQueryKey,
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (period) {
-        params.set("period", period);
-      }
+      appendDashboardPeriodParams(params, period, {
+        customStartDate,
+        customEndDate,
+      });
       const res = await apiFetch<any>({
         path: `/api/requests/my/dashboard-cards-summary?${params.toString()}`,
         method: "GET",
@@ -592,8 +602,14 @@ export const RequestorDashboardPage = () => {
   } = useQuery({
     queryKey: unmachinableOverviewQueryKey,
     queryFn: async () => {
+      const params = new URLSearchParams();
+      appendDashboardPeriodParams(params, period, {
+        customStartDate,
+        customEndDate,
+      });
+      params.set("limit", "100");
       const res = await apiFetch<any>({
-        path: `/api/requests/unmachinable-overview?period=${period}&limit=100`,
+        path: `/api/requests/unmachinable-overview?${params.toString()}`,
         method: "GET",
         token,
       });
@@ -2033,6 +2049,16 @@ export const RequestorDashboardPage = () => {
           <RequestorWorkspaceHeader
             period={period}
             onPeriodChange={setPeriod}
+            customStartDate={customStartDate}
+            customEndDate={customEndDate}
+            onCustomRangeChange={({ startDate, endDate }) => {
+              setCustomStartDate(startDate);
+              setCustomEndDate(endDate);
+            }}
+            onClearCustomRange={() => {
+              setCustomStartDate("");
+              setCustomEndDate("");
+            }}
           >
             <RequestorPolicyRemakeHeader />
             {unmachinableAlertCount > 0 && (
@@ -2068,6 +2094,8 @@ export const RequestorDashboardPage = () => {
                 bulkData={bulkData}
                 loading={isBulkSectionLoading}
                 period={period}
+                customStartDate={customStartDate}
+                customEndDate={customEndDate}
                 onRefresh={() => {
                   refetchBulk();
                 }}

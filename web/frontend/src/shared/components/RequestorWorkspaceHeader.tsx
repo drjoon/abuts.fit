@@ -25,6 +25,10 @@ export type RequestorWorkspaceHeaderProps = {
   /** 제공 시에만 기간 필터 표시 */
   period?: PeriodFilterValue;
   onPeriodChange?: (period: PeriodFilterValue) => void;
+  customStartDate?: string;
+  customEndDate?: string;
+  onCustomRangeChange?: (range: { startDate: string; endDate: string }) => void;
+  onClearCustomRange?: () => void;
   /** 필터 뒤에 붙는 추가 액션 (예: 정책 안내, 불완전가공 알림) */
   children?: ReactNode;
   className?: string;
@@ -33,6 +37,10 @@ export type RequestorWorkspaceHeaderProps = {
 export const RequestorWorkspaceHeader = ({
   period,
   onPeriodChange,
+  customStartDate,
+  customEndDate,
+  onCustomRangeChange,
+  onClearCustomRange,
   children,
   className,
 }: RequestorWorkspaceHeaderProps) => {
@@ -46,6 +54,10 @@ export const RequestorWorkspaceHeader = ({
           value={period}
           onChange={onPeriodChange}
           useStoreCustomRange={false}
+          customStartDate={customStartDate}
+          customEndDate={customEndDate}
+          onCustomRangeChange={onCustomRangeChange}
+          onClearCustomRange={onClearCustomRange}
           className="shrink-0"
         />
       )}

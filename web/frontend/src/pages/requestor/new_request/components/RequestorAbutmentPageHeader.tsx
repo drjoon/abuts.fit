@@ -54,6 +54,8 @@ import { DemoModeBadge } from "@/shared/demo/DemoModeBadge";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import { cn } from "@/shared/ui/cn";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { HEADER_DEFAULT_PERIOD } from "@/shared/ui/periodFilterValues";
+import { appendDashboardPeriodParams } from "@/store/usePeriodStore";
 import {
   PRACTICE_TRANSFER_CANCEL_FROM_ABUTS_MESSAGE,
   isPracticeTransferLinkedRequest,
@@ -117,7 +119,9 @@ export const RequestorAbutmentPageHeader = ({
     : "진행중";
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [period, setPeriod] = useState<PeriodFilterValue>("30d");
+  const [period, setPeriod] = useState<PeriodFilterValue>(HEADER_DEFAULT_PERIOD);
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
   const isInProgressControlled = typeof inProgressOpenProp === "boolean";
   const [inProgressOpenUncontrolled, setInProgressOpenUncontrolled] =
     useState(false);
@@ -143,17 +147,22 @@ export const RequestorAbutmentPageHeader = ({
     () => [
       "requestor-dashboard-cards-summary",
       period,
+      customStartDate,
+      customEndDate,
       String(user?.id || ""),
       String(user?.businessAnchorId || ""),
     ],
-    [period, user],
+    [period, customStartDate, customEndDate, user],
   );
 
   const { data: cardsSummaryResponse } = useQuery({
     queryKey: cardsSummaryQueryKey,
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (period) params.set("period", period);
+      appendDashboardPeriodParams(params, period, {
+        customStartDate,
+        customEndDate,
+      });
       const res = await apiFetch<any>({
         path: `/api/requests/my/dashboard-cards-summary?${params.toString()}`,
         method: "GET",
@@ -625,12 +634,27 @@ export const RequestorAbutmentPageHeader = ({
 
   return (
     <>
-      <RequestorWorkspaceHeader period={period} onPeriodChange={setPeriod}>
+      <RequestorWorkspaceHeader
+        period={period}
+        onPeriodChange={setPeriod}
+        customStartDate={customStartDate}
+        customEndDate={customEndDate}
+        onCustomRangeChange={({ startDate, endDate }) => {
+          setCustomStartDate(startDate);
+          setCustomEndDate(endDate);
+        }}
+        onClearCustomRange={() => {
+          setCustomStartDate("");
+          setCustomEndDate("");
+        }}
+      >
         {policyAndInProgressActions}
         <RequestorBulkShippingBannerCard
           variant="headerButton"
           bulkData={bulkData}
           period={period}
+          customStartDate={customStartDate}
+          customEndDate={customEndDate}
           onRefresh={() => {
             void refetchBulk();
           }}
@@ -645,7 +669,12 @@ export const RequestorAbutmentPageHeader = ({
         >
           완료 내역 {pastCount.toLocaleString()}건
         </Button>
-        <RequestorUnmachinableHost period={period} count={unmachinableCount} />
+        <RequestorUnmachinableHost
+          period={period}
+          customStartDate={customStartDate}
+          customEndDate={customEndDate}
+          count={unmachinableCount}
+        />
         <DemoModeBadge className="shrink-0 sm:ml-auto" />
       </RequestorWorkspaceHeader>
 
