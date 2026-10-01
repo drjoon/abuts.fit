@@ -22,6 +22,8 @@ import { cn } from "@/shared/ui/cn";
 const SHAPE_PATTERN = /\.(stp|step|stl|dcm)$/i;
 /** 파일명 안의 `4.5*10`·`4.5xH`. 앞에 다른 글자가 있어도 된다. */
 const SIZE_NAME = /(?:^|[^A-Za-z0-9.])([A-Za-z0-9.]+)\s*[*×xX]\s*([A-Za-z0-9.]+)(?:[^A-Za-z0-9.]|$)/;
+/** `10M.dcm`·`6M.DCM` — 직경 숫자 뒤에 높이 글자가 바로 붙는다. */
+const GLUED_SIZE = /(?:^|[^A-Za-z0-9.])(\d+(?:\.\d+)?)\s*([A-Za-z]{1,2})(?:[^A-Za-z0-9.]|$)/;
 const BLANK = ["", "", ""];
 
 type Grid = {
@@ -43,13 +45,20 @@ function sameSize(a: string, b: string) {
   return Number.isFinite(nx) && Number.isFinite(ny) && nx === ny;
 }
 
-/** 파일명 `4.5*10.stl`·`OSSTEM_4.5xH.stp` → 직경·높이. 이 값으로 표 머리글을 만든다. */
+/** 파일명 `4.5*10.stl`·`OSSTEM_4.5xH.stp`·`10M.dcm` → 직경·높이. 이 값으로 표 머리글을 만든다. */
 function sizeFromFileName(name: string) {
   const base = name.replace(/\.(stp|step|stl|dcm)$/i, "").trim();
-  const match = SIZE_NAME.exec(base);
-  if (!match) return null;
-  const diameter = match[1]!;
-  const height = match[2]!;
+  const separated = SIZE_NAME.exec(base);
+  if (separated) {
+    const diameter = separated[1]!;
+    const height = separated[2]!;
+    if (diameter.length > 20 || height.length > 20) return null;
+    return { diameter, height };
+  }
+  const glued = GLUED_SIZE.exec(base);
+  if (!glued) return null;
+  const diameter = glued[1]!;
+  const height = glued[2]!.toUpperCase();
   if (diameter.length > 20 || height.length > 20) return null;
   return { diameter, height };
 }
@@ -91,6 +100,7 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
   const [brand, setBrand] = useState("");
   const [grid, setGrid] = useState<Grid>(EMPTY_GRID);
   const [over, setOver] = useState<string | null>(null);
+  const [modalOver, setModalOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [query, setQuery] = useState("");
@@ -275,14 +285,33 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
       </Card>
 
       <Dialog open={open} onOpenChange={(next) => !busy && setOpen(next)}>
-        <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-6xl">
-          <DialogHeader className="shrink-0 pr-8">
+        <DialogContent
+          className={cn(
+            "flex max-h-[85vh] flex-col gap-6 overflow-hidden sm:max-w-6xl sm:p-8",
+            modalOver && "bg-sky-50/50",
+          )}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setModalOver(true);
+          }}
+          onDragLeave={(e) => {
+            if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+            setModalOver(false);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setModalOver(false);
+            setOver(null);
+            ingest(Array.from(e.dataTransfer.files), null);
+          }}
+        >
+          <DialogHeader className="shrink-0 pr-10">
             <DialogTitle className="text-base">어벗츠 스캔바디 생성기</DialogTitle>
           </DialogHeader>
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden sm:grid-cols-2">
-          <div className="min-h-0 space-y-3 overflow-y-auto pr-1">
-          <div className="grid grid-cols-1 gap-2">
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-hidden sm:grid-cols-2">
+          <div className="min-h-0 space-y-4 overflow-y-auto px-1 pr-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1">
               <Label className="text-xs">스캔바디 제조사</Label>
               <Input className="h-9" value={maker} disabled={busy} onChange={(e) => setMaker(e.target.value)} />
@@ -302,17 +331,7 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
             </div>
           </div>
 
-          <div
-            className="overflow-x-auto"
-            onDragOver={(e) => {
-              e.preventDefault();
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              setOver(null);
-              ingest(Array.from(e.dataTransfer.files), null);
-            }}
-          >
+          <div className="overflow-x-auto px-0.5 pb-1">
             <table className="w-full border-separate border-spacing-1.5 text-xs">
               <thead>
                 <tr>
@@ -401,6 +420,7 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
                             onDrop={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
+                              setModalOver(false);
                               setOver(null);
                               ingest(Array.from(e.dataTransfer.files), { col, row });
                             }}
@@ -460,17 +480,19 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
           </div>
           </div>
 
-          <section className="flex min-h-0 flex-col gap-2 overflow-hidden border-t pt-3 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
-            <h3 className="text-sm font-semibold text-slate-900">
-              등록된 스캔바디{loaded ? ` · ${generated.length}개` : ""}
-            </h3>
-            <Input
-              className="h-9"
-              value={query}
-              placeholder="검색"
-              aria-label="등록된 스캔바디 검색"
-              onChange={(e) => setQuery(e.target.value)}
-            />
+          <section className="flex min-h-0 flex-col gap-3 overflow-hidden border-t p-1 pt-4 sm:border-l sm:border-t-0 sm:pl-8 sm:pt-1">
+            <div className="flex shrink-0 items-center justify-between gap-3">
+              <h3 className="shrink-0 text-sm font-semibold text-slate-900">
+                등록된 스캔바디{loaded ? ` · ${generated.length}개` : ""}
+              </h3>
+              <Input
+                className="h-8 w-44"
+                value={query}
+                placeholder="검색"
+                aria-label="등록된 스캔바디 검색"
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
             {loaded && visible.length > 0 ? (
               <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto">
                 {visible.map((lib) => (
