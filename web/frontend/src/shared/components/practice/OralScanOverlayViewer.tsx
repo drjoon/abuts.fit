@@ -150,8 +150,10 @@ import {
 } from "@/shared/practice/crownAdapt";
 import {
   bestRigid,
+  isScanbodyMatch,
   meshExtent,
   registerScanbody,
+  searchScanbody,
   type ScanbodyMesh,
 } from "@/shared/practice/scanbodyRegistration";
 import {
@@ -321,7 +323,8 @@ export type OralScanOverlayHandle = {
   ) => { axis: [number, number, number]; offset: [number, number, number]; fitMm: number | null } | null;
   /**
    * 실제 스캔바디·심플어벗 형상 후보를 스캔에 ICP로 맞추고 가장 잘 맞는 것을 고른다.
-   * 초기 위치는 이미 맞춘 자세, 없으면 원기둥 맞춤. 축·윗면·헥스 방향(rotDeg)을 돌려준다.
+   * 이미 맞춘 자세가 있으면 거기서 다시 맞춘다. 없으면 치아 자리의 삽입축 둘레에서 스캔바디 윗면을 찾는다.
+   * 이미 맞춘 옆 임플란트 자리는 건너뛴다. `matched`는 형상이 실제로 겹쳤는지(오차·윗면 덮임).
    */
   fitScanbodyMesh: (
     toothNumber: string,
@@ -334,6 +337,7 @@ export type OralScanOverlayHandle = {
     rotDeg: number;
     fitMm: number;
     topCoverage: number;
+    matched: boolean;
   } | null;
   /** 찍어 둔 스캔바디 점을 지운다. */
   clearScanbodyPicks: () => void;
@@ -6499,60 +6503,76 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     };
   };
 
-  const fitScanbodyMeshOnScan: OralScanOverlayHandle["fitScanbodyMesh"] = (
-    tooth,
-    candidates,
-    current,
+  const fitScanbodyMeshOnScan = (
+    tooth: string,
+    candidates: Parameters<OralScanOverlayHandle["fitScanbodyMesh"]>[1],
+    current: Parameters<OralScanOverlayHandle["fitScanbodyMesh"]>[2],
     seed?: THREE.Vector3 | null,
-  ) => {
+  ): ReturnType<OralScanOverlayHandle["fitScanbodyMesh"]> => {
     if (candidates.length === 0) return null;
     const near = nearbyScanPoints(tooth, seed);
     if (!near || near.points.length < 90) return null;
     const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
     const right = frameRef.current?.right ?? new THREE.Vector3(1, 0, 0);
     const extents = candidates.map((row) => meshExtent(row.mesh.positions));
-    let axis: THREE.Vector3;
-    let top: THREE.Vector3;
-    if (current?.aligned && !seed) {
-      const pose = implantPose(near.place, toothAxisDir(tooth), current);
-      axis = pose.axis;
-      top = pose.top;
-    } else {
-      const fit = fitScanbodyOnScan(tooth, extents[0]!.radiusMm, seed);
-      if (!fit) return null;
-      axis = new THREE.Vector3(...fit.axis).normalize();
-      top = near.place.center.clone().add(new THREE.Vector3(...fit.offset));
-    }
-    const center = near.place.center;
+    const center = (seed ?? near.place.center).clone();
     const target = new Float32Array(near.points.length);
     for (let i = 0; i < near.points.length; i += 3) {
       target[i] = (near.points[i]! - center.x) * unit;
       target[i + 1] = (near.points[i + 1]! - center.y) * unit;
       target[i + 2] = (near.points[i + 2]! - center.z) * unit;
     }
-    const topMm = top.clone().sub(center).multiplyScalar(unit);
-    const refDir = new THREE.Vector3(1, 0, 0).applyQuaternion(
-      basisQuaternion(axis, right).multiply(
-        new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(0, 1, 0),
-          ((current?.aligned ? current.rotDeg : 0) * Math.PI) / 180,
-        ),
-      ),
-    );
     let index = -1;
     let result: ReturnType<typeof registerScanbody> = null;
-    for (let i = 0; i < candidates.length; i += 1) {
-      const origin = topMm.clone().addScaledVector(axis, -extents[i]!.topMm);
-      const next = registerScanbody({
-        model: candidates[i]!.mesh.positions,
+    if (current?.aligned && !seed) {
+      const { axis, top } = implantPose(near.place, toothAxisDir(tooth), current);
+      const topMm = top.clone().sub(center).multiplyScalar(unit);
+      const refDir = new THREE.Vector3(1, 0, 0).applyQuaternion(
+        basisQuaternion(axis, right).multiply(
+          new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(0, 1, 0),
+            (current.rotDeg * Math.PI) / 180,
+          ),
+        ),
+      );
+      for (let i = 0; i < candidates.length; i += 1) {
+        const origin = topMm.clone().addScaledVector(axis, -extents[i]!.topMm);
+        const next = registerScanbody({
+          model: candidates[i]!.mesh.positions,
+          target,
+          axis: [axis.x, axis.y, axis.z],
+          origin: [origin.x, origin.y, origin.z],
+          ref: [refDir.x, refDir.y, refDir.z],
+        });
+        if (next && (!result || next.score < result.score)) {
+          index = i;
+          result = next;
+        }
+      }
+    } else {
+      // 브리지처럼 스캔바디가 붙어 있으면 옆 자리가 먼저 걸린다. 이미 맞춘 같은 악 임플란트 윗면은 뺀다.
+      const exclude: Array<[number, number, number]> = [];
+      const edits = designEditRef.current?.edits ?? {};
+      for (const other of placementsRef.current) {
+        if (other.toothNumber === tooth || other.arch !== near.place.arch) continue;
+        const implant = edits[other.toothNumber]?.implant;
+        if (!implant?.on || !implant.aligned) continue;
+        const otherTop = implantPose(other, toothAxisDir(other.toothNumber), implant).top;
+        const rel = otherTop.sub(center).multiplyScalar(unit);
+        exclude.push([rel.x, rel.y, rel.z]);
+      }
+      const axis = toothAxisDir(tooth);
+      const hit = searchScanbody({
+        models: candidates.map((row) => row.mesh.positions),
         target,
         axis: [axis.x, axis.y, axis.z],
-        origin: [origin.x, origin.y, origin.z],
-        ref: [refDir.x, refDir.y, refDir.z],
+        ref: [right.x, right.y, right.z],
+        searchMm: seed ? 3 : Math.max(5, Math.min(8, near.place.radius * unit)),
+        exclude,
       });
-      if (next && (!result || next.score < result.score)) {
-        index = i;
-        result = next;
+      if (hit) {
+        index = hit.index;
+        result = hit.result;
       }
     }
     if (!result || index < 0) return null;
@@ -6571,6 +6591,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       rotDeg: Math.round(((Math.atan2(-modelX.z, modelX.x) * 180) / Math.PI) * 10) / 10,
       fitMm: Math.round(result.rmsMm * 1000) / 1000,
       topCoverage: result.topCoverage,
+      matched: isScanbodyMatch(result),
     };
   };
 
@@ -6625,26 +6646,9 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         ]);
     const edit = designEditRef.current?.edits[tooth]?.implant;
     const mesh = shape?.mesh;
-    const meshFit =
-      mesh && seeded
-        ? fitScanbodyMeshOnScan(
-            tooth,
-            [{ key: edit?.scanbodyKey || "order", mesh }],
-            {
-              on: true,
-              libraryId: edit?.libraryId ?? null,
-              orderOverride: edit?.orderOverride === true,
-              screwHole: edit?.screwHole === true,
-              aligned: true,
-              axis,
-              offset,
-              fitMm: seeded.fitMm,
-              rotDeg: edit?.rotDeg ?? 0,
-              scanbodyKey: edit?.scanbodyKey ?? null,
-            },
-            point,
-          )
-        : null;
+    const meshFit = mesh
+      ? fitScanbodyMeshOnScan(tooth, [{ key: edit?.scanbodyKey || "order", mesh }], null, point)
+      : null;
     clearScanbodyMarks();
     onScanbodyPicksRef.current?.(0);
     if (meshFit) {

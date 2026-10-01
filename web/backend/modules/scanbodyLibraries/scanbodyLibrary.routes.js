@@ -22,6 +22,7 @@ router.post("/templates/uploads/:uploadId/approve", controller.approveTemplateUp
 router.post("/templates/uploads/:uploadId/reject", controller.rejectTemplateUploadHandler);
 router.get("/templates/reviews", controller.listTemplateReviews);
 router.delete("/templates/:id", controller.deleteAbutmentTemplate);
+router.patch("/templates/:id/visibility", controller.updateTemplateVisibility);
 router.get("/blocklist", controller.listUploadBlocklist);
 router.delete("/blocklist/:id", controller.unblockUploader);
 router.patch("/:id/kits/:kitId", controller.updateScanbodyKit);

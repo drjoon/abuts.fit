@@ -1,7 +1,9 @@
 // 기공소 AI 디자인 — 스캔바디 라이브러리·심플어벗 템플릿 등록과 조회.
-// 관리자가 올리면 공용(ownerAnchorId=null), 기공소가 올리면 그 기공소 것. 관리자가 검토해 isPublic으로 승격한다.
+// 관리자가 올리면 공용(ownerAnchorId=null), 기공소가 올리면 그 기공소 것.
+// 기공소 라이브러리·템플릿은 검사·해석을 통과하면 바로 isPublic(관리자 검토 없음). 관리자는 내리기만 한다.
+// 공용은 다른 기공소가 쓰고 있어 기공소가 직접 고치거나 지우지 않는다. 고치면 그 기공소 사본(forkOf)이 생긴다.
 // 라이브러리 업로드는 S3 격리 → GuardDuty 검사 → 서버 해석·형상 재생성(scanbodyLibraryUpload.service.js).
-// 템플릿 .dcm은 S3 보류 → 관리자 검토(열어 보기·폐기) → 격리·검사 → 워커 해석(abutmentTemplateUpload.service.js).
+// 템플릿 .dcm은 S3 격리 → GuardDuty 검사 → 워커 해석(abutmentTemplateUpload.service.js).
 // 원본은 저장하지 않고 좌표·면으로 새로 만든 STL만 둔다. 악성 업로더는 차단 목록(uploadBlocklist)으로 막는다.
 // related files:
 // - web/backend/models/scanbodyLibrary.model.js
@@ -33,6 +35,7 @@ import {
   advanceScanbodyUpload,
   completeScanbodyUpload,
   createScanbodyUpload,
+  scanbodyLibraryForkFor,
   uploadView,
 } from "../../services/scanbodyLibraryUpload.service.js";
 import {
@@ -95,6 +98,21 @@ function canEdit(req, doc) {
   return isOwn(req, doc) && !doc.isPublic;
 }
 
+/** 공용(어벗츠·다른 기공소·우리가 올려 공용이 된 것)을 기공소가 고치면 그 기공소 사본을 고친다. */
+function canCopyEdit(req, doc) {
+  return !isAdmin(req) && Boolean(viewerAnchorId(req)) && !canEdit(req, doc) && !doc.forkOf;
+}
+
+/** 이 기공소가 사본을 둔 공용 원본은 목록에서 뺀다(사본이 대신 보인다). */
+function withoutForkedOriginals(req, docs) {
+  if (isAdmin(req)) return docs;
+  const anchorId = String(viewerAnchorId(req) || "");
+  const forked = new Set(
+    docs.filter((doc) => doc.forkOf && String(doc.ownerAnchorId) === anchorId).map((doc) => String(doc.forkOf)),
+  );
+  return forked.size > 0 ? docs.filter((doc) => !forked.has(String(doc._id))) : docs;
+}
+
 /** 보는 사람 기준: 자기 기공소 것만 "lab", 나머지(어벗츠·승격)는 "public". 관리자는 소유 기준. */
 function scopeOf(req, doc) {
   if (isAdmin(req)) return doc.ownerAnchorId ? "lab" : "public";
@@ -115,13 +133,16 @@ function libraryView(req, doc, names = new Map()) {
     id: String(doc._id),
     scope: scopeOf(req, doc),
     canEdit: canEdit(req, doc),
+    canCopyEdit: canCopyEdit(req, doc),
     isPublic: Boolean(doc.isPublic),
+    forkOf: doc.forkOf ? String(doc.forkOf) : null,
     ownerAnchorId: isAdmin(req) ? owner : null,
     ownerName: owner ? (names.get(owner) ?? "") : "",
     source: doc.source || "3shape",
     systemName: doc.systemName,
     fileNames: doc.fileNames || [],
     containerVersions: doc.containerVersions || [],
+    manufacturers: doc.manufacturers || [],
     parts: (doc.parts || []).map((part) => ({
       partId: part.partId,
       name: part.name,
@@ -130,6 +151,8 @@ function libraryView(req, doc, names = new Map()) {
       hash: part.hash,
       s3Key: part.s3Key,
       size: part.size,
+      diameterMm: part.diameterMm ?? null,
+      heightMm: part.heightMm ?? null,
     })),
     kits: (doc.kits || []).map((kit) => ({
       kitId: kit.kitId,
@@ -151,6 +174,8 @@ function templateView(req, doc, names = new Map()) {
     id: String(doc._id),
     scope: scopeOf(req, doc),
     canEdit: canEdit(req, doc),
+    isPublic: Boolean(doc.isPublic),
+    forkOf: doc.forkOf ? String(doc.forkOf) : null,
     ownerName: owner ? (names.get(owner) ?? "") : "",
     kind: doc.kind,
     diameter: doc.diameter,
@@ -178,9 +203,9 @@ export const listScanbodyLibraries = asyncHandler(async (req, res) => {
   const names = await ownerNames(req, [...libraries, ...templates]);
   return res.status(200).json(
     new ApiResponse(200, {
-      libraries: libraries.map((doc) => libraryView(req, doc, names)),
-      // 등록이 끝난 템플릿만. 검토·검사 중인 건은 templateUploads로만 보이고 AI 디자인에 쓰지 않는다.
-      templates: templates.map((doc) => templateView(req, doc, names)),
+      libraries: withoutForkedOriginals(req, libraries).map((doc) => libraryView(req, doc, names)),
+      // 등록이 끝난 템플릿만. 검사 중인 건은 templateUploads로만 보이고 AI 디자인에 쓰지 않는다.
+      templates: withoutForkedOriginals(req, templates).map((doc) => templateView(req, doc, names)),
       templateUploads,
     }),
   );
@@ -223,7 +248,7 @@ async function findOwnUpload(req) {
   return job;
 }
 
-// POST /api/scanbody-libraries/uploads  { fileName, size }
+// POST /api/scanbody-libraries/uploads  { fileName, size, manufacturer? }
 export const createLibraryUpload = asyncHandler(async (req, res) => {
   const { ownerAnchorId } = await resolveOwner(req);
   await assertNotBlocked(req);
@@ -232,6 +257,7 @@ export const createLibraryUpload = asyncHandler(async (req, res) => {
     userId: req.user._id,
     fileName: req.body?.fileName,
     size: req.body?.size,
+    manufacturer: text(req.body?.manufacturer, 60),
   });
   return res.status(201).json(new ApiResponse(201, { upload: uploadView(job), uploadUrl, fields }));
 });
@@ -257,10 +283,16 @@ export const listLibraryUploads = asyncHandler(async (req, res) => {
 });
 
 // PATCH /api/scanbody-libraries/:id/kits/:kitId  { catalogIds }
+// 공용 라이브러리는 이 기공소 사본을 만들어 고친다. 응답은 사본이다(id가 바뀐다).
 export const updateScanbodyKit = asyncHandler(async (req, res) => {
-  const doc = await ScanbodyLibrary.findById(req.params.id);
-  if (!doc) throw new ApiError(404, "라이브러리를 찾을 수 없습니다.");
-  if (!canEdit(req, doc)) throw new ApiError(403, "수정 권한이 없습니다.");
+  const source = await ScanbodyLibrary.findOne({ _id: req.params.id, ...visibleFilter(req) });
+  if (!source) throw new ApiError(404, "라이브러리를 찾을 수 없습니다.");
+  let doc = source;
+  if (canCopyEdit(req, source)) {
+    doc = await scanbodyLibraryForkFor(new Types.ObjectId(viewerAnchorId(req)), source);
+  } else if (!canEdit(req, source)) {
+    throw new ApiError(403, "수정 권한이 없습니다.");
+  }
   const kit = doc.kits.find((row) => row.kitId === req.params.kitId);
   if (!kit) throw new ApiError(404, "키트를 찾을 수 없습니다.");
   const raw = Array.isArray(req.body?.catalogIds) ? req.body.catalogIds : [];
@@ -270,7 +302,8 @@ export const updateScanbodyKit = asyncHandler(async (req, res) => {
   return res.status(200).json(new ApiResponse(200, libraryView(req, doc.toObject(), names)));
 });
 
-// PATCH /api/scanbody-libraries/:id/visibility  { isPublic } — 관리자 검토
+// PATCH /api/scanbody-libraries/:id/visibility  { isPublic } — 관리자 내리기·다시 올리기
+// 내린 기록(reviewedAt)이 남아 있으면 기공소가 다시 올려도 공용으로 돌아가지 않는다.
 export const updateScanbodyVisibility = asyncHandler(async (req, res) => {
   if (!isAdmin(req)) throw new ApiError(403, "관리자만 공용으로 올리거나 내릴 수 있습니다.");
   const doc = await ScanbodyLibrary.findById(req.params.id);
@@ -278,8 +311,8 @@ export const updateScanbodyVisibility = asyncHandler(async (req, res) => {
   if (!doc.ownerAnchorId) throw new ApiError(400, "어벗츠 공용 라이브러리입니다.");
   const isPublic = req.body?.isPublic === true;
   doc.isPublic = isPublic;
-  doc.reviewedBy = isPublic ? req.user._id : null;
-  doc.reviewedAt = isPublic ? new Date() : null;
+  doc.reviewedBy = req.user._id;
+  doc.reviewedAt = new Date();
   await doc.save();
   const names = await ownerNames(req, [doc]);
   return res.status(200).json(new ApiResponse(200, libraryView(req, doc.toObject(), names)));
@@ -289,7 +322,14 @@ export const updateScanbodyVisibility = asyncHandler(async (req, res) => {
 export const deleteScanbodyLibrary = asyncHandler(async (req, res) => {
   const doc = await ScanbodyLibrary.findById(req.params.id).lean();
   if (!doc) throw new ApiError(404, "라이브러리를 찾을 수 없습니다.");
-  if (!canEdit(req, doc)) throw new ApiError(403, "삭제 권한이 없습니다.");
+  if (!canEdit(req, doc)) {
+    throw new ApiError(
+      403,
+      doc.isPublic || !doc.ownerAnchorId
+        ? "공용 라이브러리는 다른 기공소도 써서 지울 수 없습니다. 문제가 있으면 어벗츠에 알려 주세요."
+        : "삭제 권한이 없습니다.",
+    );
+  }
   await ScanbodyLibrary.deleteOne({ _id: doc._id });
   return res.status(200).json(new ApiResponse(200, { id: String(doc._id) }));
 });
@@ -440,9 +480,30 @@ export const unblockUploader = asyncHandler(async (req, res) => {
 export const deleteAbutmentTemplate = asyncHandler(async (req, res) => {
   const doc = await AbutmentTemplate.findById(req.params.id).lean();
   if (!doc) throw new ApiError(404, "템플릿을 찾을 수 없습니다.");
-  if (!canEdit(req, doc)) throw new ApiError(403, "삭제 권한이 없습니다.");
+  if (!canEdit(req, doc)) {
+    throw new ApiError(
+      403,
+      doc.isPublic || !doc.ownerAnchorId
+        ? "공용 템플릿은 다른 기공소도 써서 지울 수 없습니다. 문제가 있으면 어벗츠에 알려 주세요."
+        : "삭제 권한이 없습니다.",
+    );
+  }
   await AbutmentTemplate.deleteOne({ _id: doc._id });
   return res.status(200).json(new ApiResponse(200, { id: String(doc._id) }));
+});
+
+// PATCH /api/scanbody-libraries/templates/:id/visibility  { isPublic } — 관리자 내리기·다시 올리기
+export const updateTemplateVisibility = asyncHandler(async (req, res) => {
+  if (!isAdmin(req)) throw new ApiError(403, "관리자만 공용으로 올리거나 내릴 수 있습니다.");
+  const doc = await AbutmentTemplate.findById(req.params.id);
+  if (!doc) throw new ApiError(404, "템플릿을 찾을 수 없습니다.");
+  if (!doc.ownerAnchorId) throw new ApiError(400, "어벗츠 공용 템플릿입니다.");
+  doc.isPublic = req.body?.isPublic === true;
+  doc.reviewedBy = req.user._id;
+  doc.reviewedAt = new Date();
+  await doc.save();
+  const names = await ownerNames(req, [doc]);
+  return res.status(200).json(new ApiResponse(200, templateView(req, doc.toObject(), names)));
 });
 
 // GET /api/scanbody-libraries/file?key=scanbody-library/<hash>.stl

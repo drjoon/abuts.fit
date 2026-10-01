@@ -19,7 +19,8 @@ import {
 } from "../utils/scanbodyGeometry.js";
 
 export const SCANBODY_UPLOAD_LIMITS = {
-  maxUploadBytes: 150 * 1024 * 1024,
+  // 브라우저가 25MB 안팎으로 나눠 올린다. 한 폴더·한 .dme가 큰 제조사 배포본도 받게 넉넉히 둔다.
+  maxUploadBytes: 600 * 1024 * 1024,
   maxBundleEntries: 5000,
   maxDmeEntries: 3000,
   maxEntryBytes: 64 * 1024 * 1024,

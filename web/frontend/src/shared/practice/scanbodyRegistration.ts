@@ -310,6 +310,53 @@ export function icp(args: {
   return { pose, ...evaluate(args.model, args.grid, pose, args.maxDist, args.topY) };
 }
 
+type TargetGrids = { coarse: PointGrid; mid: PointGrid; fine: PointGrid };
+
+function targetGrids(target: Float32Array): TargetGrids {
+  return {
+    coarse: new PointGrid(voxelDownsample(target, 0.3), 1.5),
+    mid: new PointGrid(voxelDownsample(target, 0.15), 0.8),
+    fine: new PointGrid(voxelDownsample(target, 0.06), 0.4),
+  };
+}
+
+type PreparedModel = { coarse: Float32Array; full: Float32Array; topY: number };
+
+function prepareModel(positions: Float32Array): PreparedModel {
+  const full = samplePoints(positions, 1500);
+  let maxY = -Infinity;
+  let minY = Infinity;
+  for (let i = 1; i < full.length; i += 3) {
+    maxY = Math.max(maxY, full[i]!);
+    minY = Math.min(minY, full[i]!);
+  }
+  return { coarse: samplePoints(positions, 400), full, topY: maxY - (maxY - minY) * 0.35 };
+}
+
+function coarseFits(model: PreparedModel, grids: TargetGrids, base: Mat3, origin: Vec3, seeds: number) {
+  const out: IcpResult[] = [];
+  for (let k = 0; k < seeds; k += 1) {
+    const r = mul(base, rotY((k / seeds) * Math.PI * 2));
+    out.push(
+      icp({ model: model.coarse, grid: grids.coarse, init: { r, t: origin }, maxDist: 1.5, iterations: 15, topY: model.topY }),
+    );
+  }
+  return out.sort((a, b) => a.score - b.score);
+}
+
+function refineFit(model: PreparedModel, grids: TargetGrids, start: RigidPose): IcpResult {
+  const mid = icp({ model: model.full, grid: grids.mid, init: start, maxDist: 0.8, iterations: 20, topY: model.topY });
+  return icp({
+    model: model.full,
+    grid: grids.fine,
+    init: mid.pose,
+    maxDist: 0.4,
+    iterations: 30,
+    topY: model.topY,
+    trim: 0.9,
+  });
+}
+
 /**
  * 축 둘레 회전 여러 개에서 시작해 가장 잘 맞는 자세를 고른다.
  * axis·origin은 원기둥 맞춤이나 점 3개로 잡은 초기값(mm, target과 같은 좌표).
@@ -323,49 +370,206 @@ export function registerScanbody(args: {
   seeds?: number;
 }): IcpResult | null {
   if (args.model.length < 36 || args.target.length < 90) return null;
-  const coarseGrid = new PointGrid(voxelDownsample(args.target, 0.3), 1.5);
-  const midGrid = new PointGrid(voxelDownsample(args.target, 0.15), 0.8);
-  const fineGrid = new PointGrid(voxelDownsample(args.target, 0.06), 0.4);
-  const coarseModel = samplePoints(args.model, 400);
-  const model = samplePoints(args.model, 1500);
-  let maxY = -Infinity;
-  let minY = Infinity;
-  for (let i = 1; i < model.length; i += 3) {
-    maxY = Math.max(maxY, model[i]!);
-    minY = Math.min(minY, model[i]!);
-  }
-  const topY = maxY - (maxY - minY) * 0.35;
-  const base = basisRotation(args.axis, args.ref);
-  const seeds = args.seeds ?? 12;
-  const coarse: IcpResult[] = [];
-  for (let k = 0; k < seeds; k += 1) {
-    const r = mul(base, rotY((k / seeds) * Math.PI * 2));
-    coarse.push(
-      icp({
-        model: coarseModel,
-        grid: coarseGrid,
-        init: { r, t: args.origin },
-        maxDist: 1.5,
-        iterations: 15,
-        topY,
-      }),
-    );
-  }
-  coarse.sort((a, b) => a.score - b.score);
+  const grids = targetGrids(args.target);
+  const model = prepareModel(args.model);
+  const coarse = coarseFits(model, grids, basisRotation(args.axis, args.ref), args.origin, args.seeds ?? 12);
   let best: IcpResult | null = null;
   for (const start of coarse.slice(0, 3)) {
-    const mid = icp({ model, grid: midGrid, init: start.pose, maxDist: 0.8, iterations: 20, topY });
-    const fine = icp({
-      model,
-      grid: fineGrid,
-      init: mid.pose,
-      maxDist: 0.4,
-      iterations: 30,
-      topY,
-      trim: 0.9,
-    });
+    const fine = refineFit(model, grids, start.pose);
     if (!best || fine.score < best.score) best = fine;
   }
+  return best;
+}
+
+/** 형상이 맞았다고 볼 정합 오차·윗면 덮임. 다른 형상이면 0.13 mm 넘게 벌어진다. */
+export const SCANBODY_MATCH_RMS_MM = 0.1;
+export const SCANBODY_MATCH_COVERAGE = 0.8;
+
+export const isScanbodyMatch = (fit: Pick<IcpResult, "rmsMm" | "topCoverage">) =>
+  fit.rmsMm <= SCANBODY_MATCH_RMS_MM && fit.topCoverage >= SCANBODY_MATCH_COVERAGE;
+
+/** 형상 축(model +Y)이 삽입축과 벌어진 각도. */
+export function poseTiltDeg(pose: RigidPose, axis: Vec3) {
+  const a = norm(axis);
+  const y = norm(poseColumn(pose, 1));
+  return (Math.acos(Math.min(1, Math.max(-1, dot(a, y)))) * 180) / Math.PI;
+}
+
+export type ScanbodySearchHit = {
+  /** models 번호. */
+  index: number;
+  result: IcpResult;
+  /** 형상 윗면 가운데(target 좌표). */
+  top: Vec3;
+};
+
+/** 축에 수직인 높이 지도에서 높은 곳부터 2.5 mm 간격 후보(탐색 원점에서 가까운 순). */
+export function scanbodyTopCandidates(args: {
+  target: Float32Array;
+  axis: Vec3;
+  searchMm: number;
+  exclude?: readonly Vec3[];
+}) {
+  const axis = norm(args.axis);
+  const e1 = norm(Math.abs(axis[2]) < 0.9 ? cross(axis, [0, 0, 1]) : cross(axis, [1, 0, 0]));
+  const e2 = cross(axis, e1);
+  const cell = 0.5;
+  const half = args.searchMm + 2;
+  const size = Math.ceil((2 * half) / cell);
+  const heights = new Float32Array(size * size).fill(-Infinity);
+  for (let i = 0; i < args.target.length; i += 3) {
+    const p: Vec3 = [args.target[i]!, args.target[i + 1]!, args.target[i + 2]!];
+    const gx = Math.floor((dot(p, e1) + half) / cell);
+    const gy = Math.floor((dot(p, e2) + half) / cell);
+    if (gx < 0 || gy < 0 || gx >= size || gy >= size) continue;
+    const k = gy * size + gx;
+    const h = dot(p, axis);
+    if (h > heights[k]!) heights[k] = h;
+  }
+  const excluded = (args.exclude ?? []).map((p) => [dot(p, e1), dot(p, e2)] as const);
+  const cells: Array<{ gx: number; gy: number; h: number }> = [];
+  for (let gy = 0; gy < size; gy += 1) {
+    for (let gx = 0; gx < size; gx += 1) {
+      const h = heights[gy * size + gx]!;
+      if (!Number.isFinite(h)) continue;
+      const u = (gx + 0.5) * cell - half;
+      const v = (gy + 0.5) * cell - half;
+      if (Math.hypot(u, v) > args.searchMm) continue;
+      if (excluded.some(([eu, ev]) => Math.hypot(u - eu, v - ev) < 3)) continue;
+      cells.push({ gx, gy, h });
+    }
+  }
+  // 높은 곳부터 2.5 mm 안에 하나씩. 윗면이 축에서 기울면 가장 높은 점은 가장자리라, 그 둘레 윗면(1.8 mm 안)의 가운데를 쓴다.
+  cells.sort((a, b) => b.h - a.h);
+  const peaks: Array<{ u: number; v: number; h: number; d: number }> = [];
+  const plateau = Math.ceil(3 / cell);
+  for (const c of cells) {
+    if (peaks.length >= 24) break;
+    const u0 = (c.gx + 0.5) * cell - half;
+    const v0 = (c.gy + 0.5) * cell - half;
+    if (peaks.some((p) => Math.hypot(p.u - u0, p.v - v0) < 2.5)) continue;
+    let su = 0;
+    let sv = 0;
+    let n = 0;
+    for (let dy = -plateau; dy <= plateau; dy += 1) {
+      for (let dx = -plateau; dx <= plateau; dx += 1) {
+        const x = c.gx + dx;
+        const y = c.gy + dy;
+        if (x < 0 || y < 0 || x >= size || y >= size || Math.hypot(dx, dy) * cell > 3) continue;
+        if (heights[y * size + x]! < c.h - 1.8) continue;
+        su += (x + 0.5) * cell - half;
+        sv += (y + 0.5) * cell - half;
+        n += 1;
+      }
+    }
+    const u = su / n;
+    const v = sv / n;
+    peaks.push({ u, v, h: c.h, d: Math.hypot(u, v) });
+  }
+  peaks.sort((a, b) => a.d - b.d);
+  return peaks.map((peak) => {
+    const guess: Vec3 = [
+      e1[0] * peak.u + e2[0] * peak.v + axis[0] * peak.h,
+      e1[1] * peak.u + e2[1] * peak.v + axis[1] * peak.h,
+      e1[2] * peak.u + e2[2] * peak.v + axis[2] * peak.h,
+    ];
+    return { ...fitTopPlateau(args.target, guess, axis), distanceMm: peak.d };
+  });
+}
+
+/**
+ * 봉우리 둘레 윗면 점으로 평면을 맞춰 그 스캔바디의 축과 윗면 가운데를 잡는다.
+ * 임플란트는 삽입축과 20° 넘게 벌어지기도 해서, 삽입축 그대로 ICP를 시작하면 엉뚱한 곳으로 수렴한다.
+ */
+function fitTopPlateau(target: Float32Array, guess: Vec3, axis: Vec3): { top: Vec3; axis: Vec3 } {
+  let center = guess;
+  let n = axis;
+  for (let iter = 0; iter < 3; iter += 1) {
+    const rows: Vec3[] = [];
+    let maxH = -Infinity;
+    for (let i = 0; i < target.length; i += 3) {
+      const d = sub([target[i]!, target[i + 1]!, target[i + 2]!], center);
+      const h = dot(d, n);
+      if (h < -2.5 || h > 2.5) continue;
+      if (Math.hypot(...sub(d, scale(n, h))) > 2.4) continue;
+      rows.push(d);
+      if (h > maxH) maxH = h;
+    }
+    const top = rows.filter((d) => dot(d, n) >= maxH - (iter === 0 ? 1.8 : 1));
+    if (top.length < 12) break;
+    const c: Vec3 = [0, 0, 0];
+    for (const d of top) for (let k = 0; k < 3; k += 1) c[k] += d[k]! / top.length;
+    const cov = new Array(9).fill(0);
+    for (const d of top) {
+      const e = sub(d, c);
+      for (let a = 0; a < 3; a += 1) for (let b = 0; b < 3; b += 1) cov[a * 3 + b] += e[a]! * e[b]!;
+    }
+    const { values, vector } = jacobiEigen(cov, 3);
+    let least = 0;
+    for (let k = 1; k < 3; k += 1) if (values[k]! < values[least]!) least = k;
+    let normal = norm(vector(least) as Vec3);
+    if (dot(normal, axis) < 0) normal = scale(normal, -1);
+    // 윗면이 아니라 옆면을 잡았으면(삽입축과 45° 넘게) 버린다.
+    if (dot(normal, axis) < Math.cos(Math.PI / 4)) break;
+    n = normal;
+    center = [center[0] + c[0], center[1] + c[1], center[2] + c[2]];
+  }
+  return { top: center, axis: n };
+}
+
+/**
+ * 삽입축 근처에서 스캔바디를 찾는다. 축에 수직인 높이 지도의 봉우리를 후보로 잡고,
+ * 후보마다 라이브러리 형상을 ICP로 대 본 뒤 가장 잘 맞는 자리를 고른다.
+ * 스캔바디가 잇몸에 묻혀 조금만 드러나도 형상이 맞는 곳을 고른다. 안 맞으면 null(점 찍기로 넘긴다).
+ * target은 탐색 원점 기준 mm, axis는 교합 쪽. exclude는 이미 맞춘 스캔바디 윗면(같은 좌표).
+ */
+export function searchScanbody(args: {
+  models: readonly Float32Array[];
+  target: Float32Array;
+  axis: Vec3;
+  ref: Vec3;
+  searchMm: number;
+  exclude?: readonly Vec3[];
+  maxTiltDeg?: number;
+}): ScanbodySearchHit | null {
+  if (args.models.length === 0 || args.target.length < 90) return null;
+  const axis = norm(args.axis);
+  const e1 = norm(Math.abs(axis[2]) < 0.9 ? cross(axis, [0, 0, 1]) : cross(axis, [1, 0, 0]));
+  const e2 = cross(axis, e1);
+  const excluded = (args.exclude ?? []).map((p) => [dot(p, e1), dot(p, e2)] as const);
+  const peaks = scanbodyTopCandidates(args);
+  const grids = targetGrids(args.target);
+  const models = args.models.map((positions) => ({ prepared: prepareModel(positions), topMm: meshExtent(positions).topMm }));
+  const maxTilt = args.maxTiltDeg ?? 30;
+  // 거친 ICP 점수는 자리를 가리지 못한다(어디서나 비슷하다). 자리마다 정밀 ICP까지 대 본다.
+  // 형상이 맞은 자리 중 탐색 원점에 가장 가까운 것. 옆 스캔바디가 더 잘 맞아도 가까운 쪽이 그 치아다.
+  let best: ScanbodySearchHit | null = null;
+  let match: (ScanbodySearchHit & { distance: number }) | null = null;
+  for (const peak of peaks.slice(0, 10)) {
+    if (match && peak.distanceMm > match.distance + 2) break;
+    const peakBase = basisRotation(peak.axis, args.ref);
+    if (poseTiltDeg({ r: peakBase, t: [0, 0, 0] }, axis) > maxTilt) continue;
+    models.forEach((model, index) => {
+      const origin = sub(peak.top, scale(peak.axis, model.topMm));
+      const fits = coarseFits(model.prepared, grids, peakBase, origin, 6).filter(
+        (row) => poseTiltDeg(row.pose, axis) <= maxTilt,
+      );
+      for (const fit of fits.slice(0, 2)) {
+        const result = refineFit(model.prepared, grids, fit.pose);
+        if (poseTiltDeg(result.pose, axis) > maxTilt) continue;
+        const top = applyPose(result.pose, 0, model.topMm, 0);
+        const distance = Math.hypot(dot(top, e1), dot(top, e2));
+        if (distance > args.searchMm + 1) continue;
+        if (excluded.some(([eu, ev]) => Math.hypot(dot(top, e1) - eu, dot(top, e2) - ev) < 3)) continue;
+        const hit = { index, result, top };
+        if (!best || result.score < best.result.score) best = hit;
+        if (isScanbodyMatch(result) && (!match || distance < match.distance - 1 || (distance < match.distance + 1 && result.score < match.result.score))) {
+          match = { ...hit, distance };
+        }
+      }
+    });
+  }
+  if (match) return { index: match.index, result: match.result, top: match.top };
   return best;
 }
 

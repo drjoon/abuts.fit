@@ -5,6 +5,7 @@
 //    NO_THREATS_FOUND만 연다. 위협·검사 불가는 거절하고 원본을 지운다. 위협이면 올린 사용자를 차단 목록에 넣는다.
 // 3) 워커 스레드가 압축을 제한 안에서 풀고 형상을 새로 만든다(scanbodyLibraryImport.service.js).
 // 4) 형상은 해시 키(gzip)로 저장하고, 같은 소유자·시스템 이름의 라이브러리에 합친다.
+//    기공소 업로드는 여기까지 통과하면 관리자 검토 없이 공용(isPublic)이 된다. 관리자는 내리기만 한다.
 // 검사 대기는 서버 타이머와 브라우저 폴링(GET) 둘 다 진행시킨다. 처리 시작은 상태 전환으로 한 번만 잡는다.
 // SCANBODY_MALWARE_SCAN=guardduty|off (기본: production만 guardduty).
 // related files:
@@ -161,8 +162,9 @@ export async function assertDailyScanBudget(declaredSize) {
   }
 }
 
-export async function createScanbodyUpload({ ownerAnchorId, userId, fileName, size }) {
+export async function createScanbodyUpload({ ownerAnchorId, userId, fileName, size, manufacturer }) {
   const name = String(fileName || "").trim().slice(0, 200);
+  const maker = String(manufacturer || "").trim().slice(0, 60);
   if (!/\.(dme|zip)$/i.test(name)) throw new ApiError(400, ".dme 또는 .zip 파일만 올릴 수 있습니다.");
   const declaredSize = Number(size);
   if (!Number.isFinite(declaredSize) || declaredSize <= 0) throw new ApiError(400, "파일 크기가 올바르지 않습니다.");
@@ -181,7 +183,15 @@ export async function createScanbodyUpload({ ownerAnchorId, userId, fileName, si
   const contentType = "application/octet-stream";
   const [{ url, fields }, job] = await Promise.all([
     createUploadPost(quarantineKey, { contentType, contentLength: declaredSize, slackBytes: POST_SLACK_BYTES }),
-    ScanbodyLibraryUpload.create({ _id, ownerAnchorId, uploadedBy: userId, fileName: name, declaredSize, quarantineKey }),
+    ScanbodyLibraryUpload.create({
+      _id,
+      ownerAnchorId,
+      uploadedBy: userId,
+      fileName: name,
+      manufacturer: maker,
+      declaredSize,
+      quarantineKey,
+    }),
   ]);
   return { job, uploadUrl: url, fields };
 }
@@ -354,11 +364,59 @@ async function storePart(part) {
   return s3Key;
 }
 
-async function mergeLibrary({ ownerAnchorId, userId, lib, keys }) {
+/**
+ * 공용 라이브러리를 이 기공소가 고칠 때 쓰는 사본. 있으면 그것, 없으면 원본을 복사해 만든다.
+ * 사본은 그 기공소만 보고 공용으로 올라가지 않는다. 원본을 쓰는 다른 기공소는 영향이 없다.
+ */
+export async function scanbodyLibraryForkFor(ownerAnchorId, source) {
+  const existing = await ScanbodyLibrary.findOne({ ownerAnchorId, forkOf: source._id });
+  if (existing) return existing;
+  const plain = source.toObject?.() ?? source;
+  try {
+    return await ScanbodyLibrary.create({
+      ownerAnchorId,
+      forkOf: plain._id,
+      systemName: plain.systemName,
+      source: plain.source,
+      fileNames: plain.fileNames || [],
+      containerVersions: plain.containerVersions || [],
+      manufacturers: plain.manufacturers || [],
+      parts: plain.parts || [],
+      kits: plain.kits || [],
+      isPublic: false,
+    });
+  } catch (error) {
+    if (error?.code !== 11000) throw error;
+    return ScanbodyLibrary.findOne({ ownerAnchorId, forkOf: source._id });
+  }
+}
+
+/** 올린 묶음이 기존 키트의 스캔바디 구성을 바꾸는지. 새 키트·새 형상·치수 보강만이면 false. */
+function changesExistingKits(doc, lib) {
+  const kits = new Map((doc.kits || []).map((kit) => [kit.kitId, kit]));
+  return lib.kits.some((kit) => {
+    const old = kits.get(kit.kitId);
+    return Boolean(old) && (old.scanAbutmentPartIds || []).join(",") !== kit.scanAbutmentPartIds.join(",");
+  });
+}
+
+/**
+ * 합칠 대상. 기공소가 올린 공용 라이브러리를 다시 올려 기존 키트가 바뀌면(또는 이미 사본이 있으면) 그 기공소 사본에 합친다.
+ * 새 키트·형상만 늘면 공용 원본에 합친다(다른 기공소가 쓰던 키트는 그대로).
+ */
+async function mergeTarget(ownerAnchorId, lib) {
+  const base = await ScanbodyLibrary.findOne({ ownerAnchorId, systemName: lib.systemName, forkOf: null });
+  if (!base) return new ScanbodyLibrary({ ownerAnchorId, systemName: lib.systemName, source: lib.source });
+  if (!ownerAnchorId || !base.isPublic) return base;
+  const fork = await ScanbodyLibrary.findOne({ ownerAnchorId, forkOf: base._id });
+  if (fork) return fork;
+  return changesExistingKits(base, lib) ? scanbodyLibraryForkFor(ownerAnchorId, base) : base;
+}
+
+async function mergeLibrary({ ownerAnchorId, userId, lib, keys, manufacturer }) {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      const existing = await ScanbodyLibrary.findOne({ ownerAnchorId, systemName: lib.systemName });
-      const doc = existing ?? new ScanbodyLibrary({ ownerAnchorId, systemName: lib.systemName, source: lib.source });
+      const doc = await mergeTarget(ownerAnchorId, lib);
       const parts = new Map((doc.parts || []).map((part) => [part.partId, part.toObject?.() ?? part]));
       for (const part of lib.parts) {
         parts.set(part.hash, {
@@ -369,6 +427,8 @@ async function mergeLibrary({ ownerAnchorId, userId, lib, keys }) {
           hash: part.hash,
           s3Key: keys.get(part.hash),
           size: part.stl.length,
+          diameterMm: part.diameterMm ?? null,
+          heightMm: part.heightMm ?? null,
         });
       }
       const kits = new Map((doc.kits || []).map((kit) => [kit.kitId, kit.toObject?.() ?? kit]));
@@ -389,13 +449,11 @@ async function mergeLibrary({ ownerAnchorId, userId, lib, keys }) {
       doc.kits = [...kits.values()];
       doc.fileNames = union(doc.fileNames, lib.fileNames);
       doc.containerVersions = union(doc.containerVersions, lib.containerVersions).sort();
+      if (manufacturer) doc.manufacturers = union(doc.manufacturers, [manufacturer]);
       doc.uploadedBy = userId;
-      // 공용으로 올린 기공소 라이브러리가 바뀌면 다시 검토받는다.
-      if (ownerAnchorId && doc.isPublic) {
-        doc.isPublic = false;
-        doc.reviewedBy = null;
-        doc.reviewedAt = null;
-      }
+      // 악성코드 검사와 형상 재생성을 통과했으니 관리자 검토 없이 모두가 쓴다. 관리자가 내린 것·사본은 그대로 둔다.
+      const takenDown = Boolean(doc.reviewedAt) && !doc.isPublic;
+      if (ownerAnchorId && !doc.forkOf && !takenDown) doc.isPublic = true;
       await doc.save();
       return doc;
     } catch (error) {
@@ -442,7 +500,13 @@ async function processUpload(job) {
     });
     const libraries = [];
     await mapLimit(parsed.libraries, 4, async (lib) => {
-      const doc = await mergeLibrary({ ownerAnchorId: job.ownerAnchorId, userId: job.uploadedBy, lib, keys });
+      const doc = await mergeLibrary({
+        ownerAnchorId: job.ownerAnchorId,
+        userId: job.uploadedBy,
+        lib,
+        keys,
+        manufacturer: job.manufacturer || "",
+      });
       libraries.push({
         libraryId: doc._id,
         systemName: lib.systemName,

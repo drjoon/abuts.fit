@@ -1,7 +1,8 @@
 // 스캔바디 라이브러리 업로드 묶음. 해석은 서버가 하고, 브라우저는 필요한 파일만 골라 ZIP으로 묶는다.
 // - 3Shape `.dme`: 한 개면 그대로, 여러 개면 25MB 안팎으로 묶는다(이미 압축돼 STORE).
+//   제조사 배포 .zip 안의 .dme도 꺼내 같이 묶는다.
 // - exocad: config.xml과 .stl만 넣는다(.sdfa 등 암호화 형상은 서버도 못 읽어서 뺀다).
-//   폴더 안 .zip은 한 단계만 열어 같은 파일만 꺼낸다. config.xml 폴더 단위로 나눠 묶는다.
+//   .zip은 안쪽 zip까지 3단계 열어 같은 파일만 꺼낸다. config.xml 폴더 단위로 나눠 묶는다.
 // 서버는 이 규칙을 믿지 않고 다시 검사한다(scanbodyLibraryImport.service.js).
 // related files:
 // - web/frontend/src/shared/practice/scanbodyLibraryApi.ts
@@ -15,7 +16,8 @@ export type ScanbodyUploadBundle = {
 };
 
 const BUNDLE_BYTES = 25 * 1024 * 1024;
-const MAX_NESTED_ZIP_BYTES = 400 * 1024 * 1024;
+const MAX_NESTED_ZIP_BYTES = 1536 * 1024 * 1024;
+const MAX_ZIP_DEPTH = 3;
 
 type Entry = { path: string; data: Blob };
 
@@ -54,26 +56,49 @@ function pack<T>(items: readonly T[], size: (item: T) => number, limit = BUNDLE_
   return out;
 }
 
-async function exocadEntriesFromZip(file: File, notes: string[]): Promise<Entry[]> {
-  if (file.size > MAX_NESTED_ZIP_BYTES) {
-    notes.push(`${file.name}: 너무 커서 건너뛰었습니다. 풀어서 폴더로 올려 주세요.`);
-    return [];
+/**
+ * 제조사가 배포한 zip 안의 exocad 파일(config.xml·.stl)과 3Shape .dme.
+ * 제조사 zip은 zip 안에 zip을 넣어 배포하기도 해서(GeoMedi exocad) 안쪽 zip도 MAX_ZIP_DEPTH까지 연다.
+ */
+async function entriesFromZip(
+  data: Blob,
+  label: string,
+  prefix: string,
+  notes: string[],
+  depth = 1,
+): Promise<{ exocad: Entry[]; dmes: Entry[] }> {
+  const out = { exocad: [] as Entry[], dmes: [] as Entry[] };
+  if (data.size > MAX_NESTED_ZIP_BYTES) {
+    notes.push(`${label}: 너무 커서 건너뛰었습니다. 풀어서 폴더로 올려 주세요.`);
+    return out;
   }
   const { default: JSZip } = await import("jszip");
   let zip: InstanceType<typeof JSZip>;
   try {
-    zip = await JSZip.loadAsync(await file.arrayBuffer());
+    zip = await JSZip.loadAsync(await data.arrayBuffer());
   } catch {
-    notes.push(`${file.name}: 열지 못했습니다.`);
-    return [];
+    notes.push(`${label}: 열지 못했습니다.`);
+    return out;
   }
-  const prefix = relPath(file).replace(/\.zip$/i, "");
-  const out: Entry[] = [];
   for (const key of Object.keys(zip.files)) {
     const entry = zip.files[key]!;
     const name = entry.name.replace(/\\/g, "/");
-    if (entry.dir || !wanted(name)) continue;
-    out.push({ path: `${prefix}/${name}`, data: await entry.async("blob") });
+    if (entry.dir || name.startsWith("__MACOSX/")) continue;
+    if (/\.dme$/i.test(name)) {
+      out.dmes.push({ path: name.slice(name.lastIndexOf("/") + 1), data: await entry.async("blob") });
+    } else if (wanted(name)) {
+      out.exocad.push({ path: `${prefix}/${name}`, data: await entry.async("blob") });
+    } else if (/\.zip$/i.test(name) && depth < MAX_ZIP_DEPTH) {
+      const inner = await entriesFromZip(
+        await entry.async("blob"),
+        `${label}/${name}`,
+        `${prefix}/${name.replace(/\.zip$/i, "")}`,
+        notes,
+        depth + 1,
+      );
+      out.exocad.push(...inner.exocad);
+      out.dmes.push(...inner.dmes);
+    }
   }
   return out;
 }
@@ -85,28 +110,29 @@ export async function buildScanbodyUploadBundles(
   const notes: string[] = [];
   const bundles: ScanbodyUploadBundle[] = [];
 
-  const dmes = files.filter((file) => /\.dme$/i.test(file.name));
-  if (dmes.length === 1) {
-    bundles.push({ fileName: dmes[0]!.name, blob: dmes[0]!, label: dmes[0]!.name });
-  } else if (dmes.length > 1) {
-    const groups = pack(dmes, (file) => file.size);
-    for (const [i, group] of groups.entries()) {
-      bundles.push({
-        fileName: `3shape-${i + 1}.zip`,
-        blob: await zipEntries(
-          group.map((file) => ({ path: file.name, data: file })),
-          false,
-        ),
-        label: `3Shape .dme ${group.length}개${groups.length > 1 ? ` (${i + 1}/${groups.length})` : ""}`,
-      });
-    }
-  }
-
   const entries: Entry[] = files
     .filter((file) => wanted(relPath(file)))
     .map((file) => ({ path: relPath(file), data: file }));
+  const dmes: Entry[] = files
+    .filter((file) => /\.dme$/i.test(file.name))
+    .map((file) => ({ path: file.name, data: file }));
   for (const file of files.filter((row) => /\.zip$/i.test(row.name))) {
-    entries.push(...(await exocadEntriesFromZip(file, notes)));
+    const found = await entriesFromZip(file, file.name, relPath(file).replace(/\.zip$/i, ""), notes);
+    entries.push(...found.exocad);
+    dmes.push(...found.dmes);
+  }
+
+  if (dmes.length === 1) {
+    bundles.push({ fileName: dmes[0]!.path, blob: dmes[0]!.data, label: dmes[0]!.path });
+  } else if (dmes.length > 1) {
+    const groups = pack(dmes, (entry) => entry.data.size);
+    for (const [i, group] of groups.entries()) {
+      bundles.push({
+        fileName: `3shape-${i + 1}.zip`,
+        blob: await zipEntries(group, false),
+        label: `3Shape .dme ${group.length}개${groups.length > 1 ? ` (${i + 1}/${groups.length})` : ""}`,
+      });
+    }
   }
   const configDirs = new Set(
     entries.filter((entry) => /(^|\/)config\.xml$/i.test(entry.path)).map((entry) => dirOf(entry.path)),

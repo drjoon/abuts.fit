@@ -29,6 +29,8 @@ const scanbodyLibraryUploadSchema = new mongoose.Schema(
     },
     uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
     fileName: { type: String, required: true },
+    /** AI 디자인에서 의뢰 스캔바디 때문에 올렸으면 그 제조사. 라이브러리에 붙여 후보를 찾는다. */
+    manufacturer: { type: String, default: "" },
     declaredSize: { type: Number, default: 0 },
     size: { type: Number, default: 0 },
     sha256: { type: String, default: "" },

@@ -1,8 +1,8 @@
-// 스캔바디 라이브러리(3Shape .dme · exocad)·심플어벗 템플릿 등록. 관리자=어벗츠 공용, 기공소=자체 추가 등록.
-// 라이브러리는 S3 격리 → 악성코드 검사 → 서버 해석 순으로 등록되고, 진행 상태를 폴링해 보여 준다.
-// 기공소 라이브러리는 그 기공소만 쓰고, 관리자가 검토해 공용으로 올리거나 내린다.
-// 기공소 템플릿 .dcm은 S3 보류 → 관리자 검토(열어 보기·폐기) → 검사·해석 뒤에만 등록된다. 관리자는 차단 목록도 여기서 본다.
-// AI 디자인은 의뢰의 임플란트 사양·심플어벗 규격으로 여기서 자동으로 고른다.
+// 스캔바디 라이브러리(3Shape .dme · exocad)·심플 템플릿(심플어벗·심플밀링·심플힐링) 등록. 관리자=어벗츠 공용, 기공소=자체 추가 등록.
+// 라이브러리·템플릿은 S3 격리 → 악성코드 검사 → 서버 해석 순으로 등록되고, 진행 상태를 폴링해 보여 준다.
+// 기공소가 올린 것은 검사·해석을 통과하면 바로 공용이다. 관리자는 문제 있는 것을 내린다. 관리자는 차단 목록도 여기서 본다.
+// 기공소가 공용 라이브러리를 고치면 그 기공소 사본(forkOf)에 저장해 다른 기공소에 영향을 주지 않는다.
+// AI 디자인은 의뢰의 임플란트·스캔바디 사양·심플 규격으로 여기서 자동으로 고른다.
 // related files:
 // - web/frontend/src/shared/practice/scanbodyLibraryApi.ts
 // - web/frontend/src/shared/files/scanbodyLibraryBundle.ts
@@ -36,7 +36,9 @@ import {
   isUploadFinished,
   parseTemplateFileName,
   rejectTemplateUpload,
+  setAbutmentTemplatePublic,
   setScanbodyLibraryPublic,
+  TEMPLATE_KINDS,
   unblockUploader,
   updateScanbodyKit,
   uploadAbutmentTemplate,
@@ -48,9 +50,9 @@ import {
   type LibraryScope,
   type ScanbodyLibraryRow,
   type ScanbodyUploadRow,
+  type TemplateKind,
   type UploadBlockRow,
 } from "@/shared/practice/scanbodyLibraryApi";
-import { SIMPLE_ABUTMENT_KINDS, type SimpleAbutmentKind } from "@/shared/practice/transferMemo";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import { cn } from "@/shared/ui/cn";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -438,7 +440,7 @@ export function ScanbodyLibraryManager() {
   const [adminFilter, setAdminFilter] = useState<AdminFilter>("all");
   const [limit, setLimit] = useState(PAGE);
   const [pickerFor, setPickerFor] = useState<{ libraryId: string; kitId: string } | null>(null);
-  const [templateKind, setTemplateKind] = useState<SimpleAbutmentKind>(SIMPLE_ABUTMENT_KINDS[0]);
+  const [templateKind, setTemplateKind] = useState<TemplateKind>(TEMPLATE_KINDS[0]);
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const templateInput = useRef<HTMLInputElement>(null);
@@ -579,7 +581,7 @@ export function ScanbodyLibraryManager() {
         const row = await uploadAbutmentTemplate(file, { kind: templateKind, ...spec });
         replaceTemplateUploads([row]);
         if (row.status === "done") reload();
-        else if (row.status === "pending_review") queued += 1;
+        else if (isTemplateUploadActive(row.status)) queued += 1;
       } catch (error) {
         failed.push(`${file.name}: ${error instanceof Error ? error.message : "실패"}`);
       }
@@ -590,7 +592,7 @@ export function ScanbodyLibraryManager() {
         title: `템플릿 ${queued}개를 올렸습니다.`,
         description: (
           <>
-            관리자 검토와 악성코드 검사가 끝나면 등록됩니다.
+            악성코드 검사가 끝나면 바로 등록됩니다.
             <br />
             그 전에는 AI 디자인에 쓰지 않습니다.
           </>
@@ -620,7 +622,27 @@ export function ScanbodyLibraryManager() {
       kits: lib.kits.map((kit) => (kit.kitId === kitId ? { ...kit, catalogIds } : kit)),
     });
     try {
-      replaceLibrary(await updateScanbodyKit(lib.id, kitId, catalogIds));
+      const saved = await updateScanbodyKit(lib.id, kitId, catalogIds);
+      if (saved.id === lib.id) {
+        replaceLibrary(saved);
+      } else {
+        // 공용 라이브러리를 고쳐 우리 기공소 사본이 생겼다. 목록에서 원본 대신 사본을 보인다.
+        setCatalog((prev) => ({
+          ...prev,
+          libraries: [...prev.libraries.filter((row) => row.id !== lib.id && row.id !== saved.id), saved],
+        }));
+        setExpanded((prev) => new Set(prev).add(saved.id));
+        toast({
+          title: "우리 기공소 사본에 저장했습니다.",
+          description: (
+            <>
+              공용 라이브러리는 다른 기공소도 써서 그대로 둡니다.
+              <br />
+              사본을 지우면 공용 라이브러리로 돌아갑니다.
+            </>
+          ),
+        });
+      }
     } catch (error) {
       replaceLibrary(lib);
       toast({
@@ -650,6 +672,7 @@ export function ScanbodyLibraryManager() {
     setCatalog((prev) => ({ ...prev, libraries: prev.libraries.filter((row) => row.id !== lib.id) }));
     try {
       await deleteScanbodyLibrary(lib.id);
+      if (lib.forkOf) reload();
     } catch (error) {
       setCatalog((prev) => ({ ...prev, libraries: [...prev.libraries, lib] }));
       toast({
@@ -660,10 +683,25 @@ export function ScanbodyLibraryManager() {
     }
   };
 
+  const toggleTemplatePublic = async (row: AbutmentTemplateRow) => {
+    replaceTemplate({ ...row, isPublic: !row.isPublic });
+    try {
+      replaceTemplate(await setAbutmentTemplatePublic(row.id, !row.isPublic));
+    } catch (error) {
+      replaceTemplate(row);
+      toast({
+        title: "공용 설정을 바꾸지 못했습니다.",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    }
+  };
+
   const removeTemplate = async (row: AbutmentTemplateRow) => {
     setCatalog((prev) => ({ ...prev, templates: prev.templates.filter((t) => t.id !== row.id) }));
     try {
       await deleteAbutmentTemplate(row.id);
+      if (row.forkOf) reload();
     } catch (error) {
       replaceTemplate(row);
       toast({
@@ -696,7 +734,7 @@ export function ScanbodyLibraryManager() {
     });
   }, [catalog.libraries, query, isAdmin, adminFilter]);
 
-  const templatesByKind = SIMPLE_ABUTMENT_KINDS.map((kind) => ({
+  const templatesByKind = TEMPLATE_KINDS.map((kind) => ({
     kind,
     rows: catalog.templates
       .filter((row) => row.kind === kind)
@@ -723,10 +761,18 @@ export function ScanbodyLibraryManager() {
                 <>
                   관리자가 올린 라이브러리는 어벗츠 공용입니다.
                   <br />
-                  기공소 라이브러리는 검토한 뒤 공용으로 올립니다.
+                  기공소 라이브러리도 검사를 통과하면 바로 공용이 됩니다.
+                  <br />
+                  문제가 있으면 공용에서 내리세요.
                 </>
               ) : (
-                "올린 라이브러리는 우리 기공소에서 바로 쓰고, 어벗츠가 검토하면 공용이 됩니다."
+                <>
+                  검사를 통과한 라이브러리는 바로 모든 기공소가 씁니다.
+                  <br />
+                  공용 라이브러리의 임플란트 연결을 고치면 우리 기공소 사본에만 저장됩니다.
+                  <br />
+                  다른 기공소가 쓰는 공용 원본은 바뀌지 않습니다.
+                </>
               )}
             </p>
           </div>
@@ -819,7 +865,7 @@ export function ScanbodyLibraryManager() {
                 }}
               >
                 <option value="all">전체</option>
-                <option value="review">검토 대기</option>
+                <option value="review">공용에서 내린 것</option>
                 <option value="shared">공용</option>
               </select>
             ) : null}
@@ -856,7 +902,12 @@ export function ScanbodyLibraryManager() {
                             <ScopeBadge scope={lib.scope} isAdmin={isAdmin} />
                             {lib.scope === "lab" && lib.isPublic ? (
                               <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
-                                공용 승격
+                                공용
+                              </span>
+                            ) : null}
+                            {lib.forkOf ? (
+                              <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700">
+                                공용 사본
                               </span>
                             ) : null}
                           </span>
@@ -915,7 +966,7 @@ export function ScanbodyLibraryManager() {
                                       className="inline-flex items-center gap-1 rounded bg-background px-1.5 py-0.5 text-[11px] ring-1 ring-border"
                                     >
                                       {implantLabel.get(id) ?? id}
-                                      {lib.canEdit ? (
+                                      {lib.canEdit || lib.canCopyEdit ? (
                                         <button
                                           type="button"
                                           aria-label="연결 해제"
@@ -934,7 +985,7 @@ export function ScanbodyLibraryManager() {
                                     </span>
                                   ))
                                 )}
-                                {lib.canEdit ? (
+                                {lib.canEdit || lib.canCopyEdit ? (
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -996,15 +1047,17 @@ export function ScanbodyLibraryManager() {
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
           <div>
-            <CardTitle className="text-base">심플어벗 템플릿</CardTitle>
+            <CardTitle className="text-base">심플 템플릿</CardTitle>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              3Shape 스캐너로 찍은 심플어벗 .dcm 파일을 올립니다.
+              3Shape 스캐너로 찍은 심플어벗·심플밀링·심플힐링 .dcm 파일을 올립니다.
               <br />
-              파일 이름 6M은 직경 6, 높이 M으로 읽고, 의뢰의 종류·직경으로 자동으로 고릅니다.
+              파일 이름 6M은 직경 6, 높이 M으로 읽고, 의뢰의 종류·직경·높이로 자동으로 고릅니다.
+              <br />
+              심플힐링은 스캔바디로, 심플어벗·심플밀링은 직접어벗으로 맞춥니다.
               {isAdmin ? null : (
                 <>
                   <br />
-                  관리자 검토와 악성코드 검사를 거친 뒤 등록됩니다.
+                  악성코드 검사를 통과하면 바로 공용으로 등록됩니다.
                 </>
               )}
             </p>
@@ -1012,11 +1065,11 @@ export function ScanbodyLibraryManager() {
           <div className="flex shrink-0 items-center gap-1.5">
             <select
               className="h-8 rounded-md border bg-background px-2 text-xs"
-              aria-label="심플어벗 종류"
+              aria-label="템플릿 종류"
               value={templateKind}
-              onChange={(event) => setTemplateKind(event.target.value as SimpleAbutmentKind)}
+              onChange={(event) => setTemplateKind(event.target.value as TemplateKind)}
             >
-              {SIMPLE_ABUTMENT_KINDS.map((kind) => (
+              {TEMPLATE_KINDS.map((kind) => (
                 <option key={kind} value={kind}>
                   {kind}
                 </option>
@@ -1096,11 +1149,31 @@ export function ScanbodyLibraryManager() {
                         <td>{row.heightMm.toFixed(2)} mm</td>
                         <td>
                           <ScopeBadge scope={row.scope} isAdmin={isAdmin} />
+                          {row.scope === "lab" && row.isPublic ? (
+                            <span className="ml-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                              공용
+                            </span>
+                          ) : null}
+                          {row.forkOf ? (
+                            <span className="ml-1 rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700">
+                              공용 사본
+                            </span>
+                          ) : null}
                           {isAdmin && row.ownerName ? (
                             <span className="ml-1 text-[11px] text-muted-foreground">{row.ownerName}</span>
                           ) : null}
                         </td>
-                        <td className="text-right">
+                        <td className="whitespace-nowrap text-right">
+                          {isAdmin && row.scope === "lab" ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-[11px]"
+                              onClick={() => void toggleTemplatePublic(row)}
+                            >
+                              {row.isPublic ? "공용에서 내리기" : "공용으로 올리기"}
+                            </Button>
+                          ) : null}
                           {row.canEdit ? (
                             <Button
                               size="icon"

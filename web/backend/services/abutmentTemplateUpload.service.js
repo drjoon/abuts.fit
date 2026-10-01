@@ -1,10 +1,9 @@
-// 심플어벗 템플릿(.dcm) 업로드 흐름(보안). 원본은 API 서버를 거치지 않고, 관리자가 열기 전에는 읽지 않는다.
-// 1) 브라우저가 .dcm에서 축·치수(meta)를 계산해 보내고, 크기가 고정된 presigned POST로 보류 경로(hold)에 올린다.
-// 2) complete → pending_review. 관리자가 「열어 보기」하면 격리 경로(quarantine)로 복사하고 보류본은 지운다.
-//    GuardDuty Malware Protection은 격리 prefix만 보호한다. 보류 prefix는 보호 밖이라 검사 비용이 들지 않는다.
-// 3) GuardDuty 태그 NO_THREATS_FOUND만 연다. 위협이면 거절·원본 삭제·올린 사용자 차단.
-// 4) 워커 스레드가 시간·메모리 제한 안에서 해석해 STL을 새로 만들고 AbutmentTemplate을 등록한다. 원본은 지운다.
-// 관리자가 올린 건은 격리 경로로 바로 올라가 검토 없이 검사로 간다.
+// 심플어벗·심플힐링 템플릿(.dcm) 업로드 흐름(보안). 원본은 API 서버를 거치지 않는다.
+// 1) 브라우저가 .dcm에서 축·치수(meta)를 계산해 보내고, 크기가 고정된 presigned POST로 격리 경로(quarantine)에 올린다.
+// 2) GuardDuty 태그 NO_THREATS_FOUND만 연다. 위협이면 거절·원본 삭제·올린 사용자 차단.
+// 3) 워커 스레드가 시간·메모리 제한 안에서 해석해 STL을 새로 만들고 AbutmentTemplate을 등록한다. 원본은 지운다.
+// 관리자 검토 없이 등록한다. 기공소 템플릿은 바로 공용이고, 관리자는 문제 있는 것을 내린다.
+// 예전 흐름(보류 경로 hold → 관리자 「열어 보기」)으로 남은 pending_review 건은 approve/reject로 마저 처리한다.
 // related files:
 // - web/backend/models/abutmentTemplateUpload.model.js
 // - web/backend/models/abutmentTemplate.model.js
@@ -39,12 +38,11 @@ import {
 } from "./scanbodyLibraryUpload.service.js";
 import { blockUploader } from "./uploadBlocklist.service.js";
 
-const HOLD_PREFIX = `${SCANBODY_S3_PREFIX}/hold/`;
 const QUARANTINE_PREFIX = `${SCANBODY_S3_PREFIX}/quarantine/`;
 export const TEMPLATE_MAX_UPLOAD_BYTES = 30 * 1024 * 1024;
 const POST_SLACK_BYTES = 16 * 1024;
 const HOURLY_UPLOAD_LIMIT = 30;
-/** 관리자 검토 대기열을 한 기공소가 채우지 못하게 한다. */
+/** 검사·해석 대기열을 한 기공소가 채우지 못하게 한다. */
 const PENDING_PER_OWNER_LIMIT = 40;
 const RESERVATION_MS = 20 * 60 * 1000;
 const REVIEW_EXPIRE_MS = 30 * 24 * 3600 * 1000;
@@ -170,22 +168,21 @@ export async function createTemplateUpload({ ownerAnchorId, userId, uploaderAnch
       ? 0
       : AbutmentTemplateUpload.countDocuments({
           ownerAnchorId,
-          status: { $in: ["uploading", "pending_review"] },
+          status: { $in: ["uploading", "scanning", "processing"] },
         }),
   ]);
   if (recent >= HOURLY_UPLOAD_LIMIT) throw new ApiError(429, "업로드가 너무 많습니다. 한 시간 뒤 다시 올려 주세요.");
   if (pending >= PENDING_PER_OWNER_LIMIT) {
-    throw new ApiError(429, "검토를 기다리는 템플릿이 많습니다. 검토가 끝난 뒤 다시 올려 주세요.");
+    throw new ApiError(429, "검사 중인 템플릿이 많습니다. 끝난 뒤 다시 올려 주세요.");
   }
-  // 관리자 업로드는 바로 검사하므로 오늘 검사 예산을 지금 확인한다.
-  if (isAdmin && scanbodyMalwareScanMode() === "guardduty") await assertDailyScanBudget(declaredSize);
+  if (scanbodyMalwareScanMode() === "guardduty") await assertDailyScanBudget(declaredSize);
 
   const _id = new Types.ObjectId();
   const quarantineKey = `${QUARANTINE_PREFIX}${_id}.bin`;
-  const holdKey = isAdmin ? "" : `${HOLD_PREFIX}${_id}.bin`;
+  const holdKey = "";
   const contentType = "application/octet-stream";
   const [{ url, fields }, job] = await Promise.all([
-    createUploadPost(holdKey || quarantineKey, {
+    createUploadPost(quarantineKey, {
       contentType,
       contentLength: declaredSize,
       slackBytes: POST_SLACK_BYTES,
@@ -200,7 +197,7 @@ export async function createTemplateUpload({ ownerAnchorId, userId, uploaderAnch
       meta: parsedMeta,
       holdKey,
       quarantineKey,
-      autoApproved: Boolean(isAdmin),
+      autoApproved: true,
     }),
   ]);
   return { job, uploadUrl: url, fields };
@@ -498,8 +495,14 @@ async function processTemplateUpload(job) {
       await putObjectToS3(s3Key, gzipSync(stl), { contentType: "model/stl", contentEncoding: "gzip" });
     }
     const { kind, diameter, height, frame, marginHeightMm, maxDiameterMm, heightMm } = job.meta;
+    const ownerAnchorId = job.ownerAnchorId ?? null;
+    const spec = { ownerAnchorId, kind, diameter, height };
+    const base = await AbutmentTemplate.findOne({ ...spec, forkOf: null }).lean();
+    // 올린 기공소의 공용 템플릿은 다른 기공소가 쓰고 있다. 다시 올리면 그 기공소 사본만 바꾼다.
+    const forkOf = ownerAnchorId && base?.isPublic ? base._id : null;
+    const takenDown = Boolean(base?.reviewedAt) && !base?.isPublic;
     const template = await AbutmentTemplate.findOneAndUpdate(
-      { ownerAnchorId: job.ownerAnchorId ?? null, kind, diameter, height },
+      { ...spec, forkOf },
       {
         $set: {
           fileName: job.fileName,
@@ -511,6 +514,7 @@ async function processTemplateUpload(job) {
           maxDiameterMm,
           heightMm,
           uploadedBy: job.uploadedBy ?? null,
+          ...(ownerAnchorId && !forkOf && !takenDown ? { isPublic: true } : {}),
         },
       },
       { upsert: true, new: true, setDefaultsOnInsert: true },

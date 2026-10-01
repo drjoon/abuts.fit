@@ -1,7 +1,7 @@
 // 기공소 AI 보철 — 마진·삽입·내면·형상·훅·컷백·홀·커넥터 조작.
 // - 2026-10-01: 스캔바디 맞춤은 스캔 단계, 메시 편집 아래.
 
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useRef, useState, type ReactNode } from "react";
 import { TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -83,6 +83,17 @@ export type ScanbodyControls = {
   onTogglePick: () => void;
   onReset: () => void;
   onApply: () => void;
+  /** 의뢰가 지정한 스캔바디 라이브러리·심플어벗 템플릿이 서버에 없다. 여기서 바로 올린다. */
+  missingLibrary?: {
+    /** 무엇이 없는지·무엇을 올리는지. 문장마다 줄을 바꾼다. */
+    lines: string[];
+    accept: string;
+    multiple: boolean;
+    buttonLabel: string;
+    /** 올리는 중이면 진행 문구. */
+    status: string | null;
+    onUpload: (files: File[]) => void;
+  } | null;
 };
 
 const DEFAULT_MARGIN_STEP = 0.1;
@@ -848,6 +859,51 @@ function CutbackControls({
   );
 }
 
+function MissingScanbodyLibrary({
+  lines,
+  accept,
+  multiple,
+  buttonLabel,
+  status,
+  onUpload,
+}: NonNullable<ScanbodyControls["missingLibrary"]>) {
+  const input = useRef<HTMLInputElement>(null);
+  return (
+    <div className="space-y-1.5 rounded-md border border-amber-300 bg-amber-50 p-2 text-[11px] leading-relaxed text-amber-900">
+      <p>
+        {[...lines, "악성코드 검사를 통과하면 바로 등록되고 자동으로 맞춥니다."].map((line, index) => (
+          <Fragment key={line}>
+            {index > 0 ? <br /> : null}
+            {line}
+          </Fragment>
+        ))}
+      </p>
+      <input
+        ref={input}
+        type="file"
+        accept={accept}
+        multiple={multiple}
+        className="hidden"
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? []);
+          event.target.value = "";
+          if (files.length > 0) onUpload(files);
+        }}
+      />
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className="h-7 w-full bg-white text-[11px]"
+        disabled={Boolean(status)}
+        onClick={() => input.current?.click()}
+      >
+        {status ?? buttonLabel}
+      </Button>
+    </div>
+  );
+}
+
 /** 스캔 단계 — 메시 편집 아래. 고른 임플란트 치아의 라이브러리를 스캔에 맞춘다. */
 export function ScanbodyAlignSection({
   scanbody,
@@ -864,6 +920,9 @@ export function ScanbodyAlignSection({
     <StageSubsection title="스캔바디" open={open} onOpen={onOpen} coach="scanbody">
       {toothLabel ? (
         <p className="text-[11px] text-muted-foreground">{toothLabel}</p>
+      ) : null}
+      {scanbody.missingLibrary ? (
+        <MissingScanbodyLibrary {...scanbody.missingLibrary} />
       ) : null}
       <div className="space-y-1">
         <div

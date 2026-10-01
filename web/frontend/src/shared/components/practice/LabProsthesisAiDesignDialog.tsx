@@ -237,8 +237,14 @@ import {
   loadScanbodyGeometry,
   loadTemplateModel,
   matchOrderedScanbody,
+  orderTemplateSpec,
+  orderedScanbodyCandidates,
   scanbodyCandidatesFor,
+  templateSpecLabel,
+  uploadScanbodyFilesAndWait,
+  uploadTemplateFileAndWait,
   useScanbodyCatalog,
+  type TemplateSpec,
 } from "@/shared/practice/scanbodyLibraryApi";
 import { meshExtent, type ScanbodyMesh } from "@/shared/practice/scanbodyRegistration";
 import {
@@ -776,9 +782,14 @@ function LabProsthesisAiDesignDialog({
     () => buildImplantLibraries(implantConnections),
     [implantConnections],
   );
-  const { catalog: scanbodyCatalog } = useScanbodyCatalog(
+  const {
+    catalog: scanbodyCatalog,
+    loaded: scanbodyCatalogLoaded,
+    reload: reloadScanbodyCatalog,
+  } = useScanbodyCatalog(
     open && plan.teeth.some((tooth) => tooth.implant),
   );
+  const [scanbodyUploadStatus, setScanbodyUploadStatus] = useState<string | null>(null);
   const [scanbodyMeshes, setScanbodyMeshes] = useState<Record<string, ScanbodyMesh>>({});
   const filesRef = useRef(listedScanFiles);
   filesRef.current = listedScanFiles;
@@ -1767,12 +1778,18 @@ function LabProsthesisAiDesignDialog({
     () => new Map(implantLibraries.map((row) => [row.id, row])),
     [implantLibraries],
   );
-  /** 치아별 실제 형상 후보. 심플어벗 의뢰면 규격 템플릿, 아니면 임플란트에 연결된 키트 스캔바디. */
+  /**
+   * 치아별 실제 형상 후보. 직접어벗 심플어벗·심플밀링과 스캔바디 심플힐링은 규격 템플릿.
+   * 치과가 스캔바디 제조사·치수를 지정했으면 그 제조사 라이브러리에서 치수로, 아니면 임플란트에 연결된 키트 스캔바디.
+   */
   const scanbodyCandidates = useMemo(() => {
     const out: Record<
       string,
       {
-        missingTemplate: boolean;
+        /** 의뢰 규격 템플릿이 서버에 없다. 값은 그 규격. */
+        missingTemplate: TemplateSpec | null;
+        /** 의뢰 스캔바디 제조사 라이브러리가 서버에 없다. 값은 제조사 이름. */
+        missingLibraryMaker: string | null;
         orderedKey: string | null;
         rows: Array<{
           key: string;
@@ -1786,11 +1803,13 @@ function LabProsthesisAiDesignDialog({
       if (!tooth.implant) continue;
       const libraryId = edits[tooth.toothNumber]?.implant.libraryId ?? null;
       const orderOverride = edits[tooth.toothNumber]?.implant.orderOverride === true;
-      const useTemplate = Boolean(tooth.simpleAbutment) && (!orderOverride || libraryId?.startsWith("template:"));
+      const templateSpec = orderTemplateSpec(tooth);
+      const useTemplate = Boolean(templateSpec) && (!orderOverride || libraryId?.startsWith("template:"));
       if (useTemplate) {
-        const template = abutmentTemplateFor(scanbodyCatalog.templates, tooth.simpleAbutment);
+        const template = abutmentTemplateFor(scanbodyCatalog.templates, templateSpec);
         out[tooth.toothNumber] = {
-          missingTemplate: !template,
+          missingTemplate: !template && scanbodyCatalogLoaded ? templateSpec : null,
+          missingLibraryMaker: null,
           orderedKey: template ? `template:${template.id}` : null,
           rows: template
             ? [
@@ -1805,6 +1824,23 @@ function LabProsthesisAiDesignDialog({
         };
         continue;
       }
+      const ordered = orderOverride
+        ? null
+        : orderedScanbodyCandidates(scanbodyCatalog.libraries, tooth.scanbodyOrder);
+      if (ordered && ordered.rows.length > 0) {
+        out[tooth.toothNumber] = {
+          missingTemplate: null,
+          missingLibraryMaker: null,
+          orderedKey: ordered.orderedKey,
+          rows: ordered.rows.map((row) => ({
+            key: row.s3Key,
+            label: `${row.systemName} · ${row.name}`,
+            marginHeightMm: null,
+            load: () => loadScanbodyGeometry(row.s3Key),
+          })),
+        };
+        continue;
+      }
       const library = libraryId ? (libraryById.get(libraryId) ?? null) : null;
       const linked = scanbodyCandidatesFor(scanbodyCatalog.libraries, libraryId, library);
       const rows = linked.map((row) => ({
@@ -1814,7 +1850,11 @@ function LabProsthesisAiDesignDialog({
         load: () => loadScanbodyGeometry(row.s3Key),
       }));
       out[tooth.toothNumber] = {
-        missingTemplate: false,
+        missingTemplate: null,
+        missingLibraryMaker:
+          scanbodyCatalogLoaded && ordered?.missingLibrary && rows.length === 0
+            ? (tooth.scanbodyOrder?.manufacturer.trim() ?? null)
+            : null,
         orderedKey: orderOverride
           ? null
           : matchOrderedScanbody(
@@ -1828,7 +1868,29 @@ function LabProsthesisAiDesignDialog({
       };
     }
     return out;
-  }, [edits, libraryById, plan.teeth, scanbodyCatalog]);
+  }, [edits, libraryById, plan.teeth, scanbodyCatalog, scanbodyCatalogLoaded]);
+  const missingShapeLabel = (() => {
+    for (const entry of Object.values(scanbodyCandidates)) {
+      if (entry.missingLibraryMaker) return `${entry.missingLibraryMaker} 스캔바디 라이브러리`;
+      if (entry.missingTemplate) return `${templateSpecLabel(entry.missingTemplate)} 템플릿`;
+    }
+    return null;
+  })();
+  const missingShapeNotified = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open || !missingShapeLabel || missingShapeNotified.current === missingShapeLabel) return;
+    missingShapeNotified.current = missingShapeLabel;
+    toast({
+      title: `${missingShapeLabel}가 필요합니다.`,
+      description: (
+        <>
+          치과가 의뢰에 지정한 형상이 아직 서버에 없습니다.
+          <br />
+          스캔 단계 → 스캔바디에서 파일을 올려 주세요.
+        </>
+      ),
+    });
+  }, [missingShapeLabel, open, toast]);
   const scanbodyCandidateKeys = Object.values(scanbodyCandidates)
     .flatMap((entry) => entry.rows.map((row) => row.key))
     .sort()
@@ -1851,8 +1913,12 @@ function LabProsthesisAiDesignDialog({
     for (const tooth of plan.teeth) {
       if (!tooth.implant) continue;
       const implant = edits[tooth.toothNumber]?.implant;
-      const rows = scanbodyCandidates[tooth.toothNumber]?.rows ?? [];
-      const row = rows.find((r) => r.key === implant?.scanbodyKey) ?? rows[0];
+      const entry = scanbodyCandidates[tooth.toothNumber];
+      const rows = entry?.rows ?? [];
+      const row =
+        rows.find((r) => r.key === implant?.scanbodyKey) ??
+        rows.find((r) => r.key === entry?.orderedKey) ??
+        rows[0];
       const mesh = row ? scanbodyMeshes[row.key] : undefined;
       if (row && mesh) {
         const extent = meshExtent(mesh.positions);
@@ -2012,8 +2078,9 @@ function LabProsthesisAiDesignDialog({
           changed = true;
           continue;
         }
-        const template = abutmentTemplateFor(scanbodyCatalog.templates, tooth.simpleAbutment);
-        const catalogsReady = tooth.simpleAbutment
+        const templateSpec = orderTemplateSpec(tooth);
+        const template = abutmentTemplateFor(scanbodyCatalog.templates, templateSpec);
+        const catalogsReady = templateSpec
           ? scanbodyCatalog.templates.length > 0
           : implantLibraries.length > 0;
         if (!catalogsReady) {
@@ -2327,9 +2394,8 @@ function LabProsthesisAiDesignDialog({
 
   const implantLibraryNeedsOrderConfirm = (toothNumber: string, library: ImplantLibrary) => {
     const tooth = plan.teeth.find((row) => row.toothNumber === toothNumber);
-    const template = tooth
-      ? abutmentTemplateFor(scanbodyCatalog.templates, tooth.simpleAbutment)
-      : null;
+    const templateSpec = tooth ? orderTemplateSpec(tooth) : null;
+    const template = abutmentTemplateFor(scanbodyCatalog.templates, templateSpec);
     const orderId = template
       ? `template:${template.id}`
       : tooth
@@ -2338,10 +2404,10 @@ function LabProsthesisAiDesignDialog({
     const follows =
       library.id === orderId ||
       (tooth?.implant
-        ? implantLibraryFollowsOrder(library, tooth.implant) && !tooth.simpleAbutment
+        ? implantLibraryFollowsOrder(library, tooth.implant) && !templateSpec
         : false);
     const specified = Boolean(
-      tooth?.simpleAbutment ||
+      templateSpec ||
         tooth?.implant?.manufacturer ||
         tooth?.implant?.brand ||
         tooth?.scanbodyOrder?.manufacturer,
@@ -2352,7 +2418,7 @@ function LabProsthesisAiDesignDialog({
   const orderLibraryIdOf = (toothNumber: string) => {
     const tooth = plan.teeth.find((row) => row.toothNumber === toothNumber);
     if (!tooth?.implant) return null;
-    const template = abutmentTemplateFor(scanbodyCatalog.templates, tooth.simpleAbutment);
+    const template = abutmentTemplateFor(scanbodyCatalog.templates, orderTemplateSpec(tooth));
     if (template) return `template:${template.id}`;
     return matchImplantLibrary(implantLibraries, tooth.implant)?.id ?? null;
   };
@@ -2367,8 +2433,9 @@ function LabProsthesisAiDesignDialog({
       const row = rows.find((item) => item.key === key) ?? (key ? null : rows[0]);
       if (row?.label) return row.label;
     }
-    if (tooth.simpleAbutment && (!libraryId || libraryId.startsWith("template:"))) {
-      const template = abutmentTemplateFor(scanbodyCatalog.templates, tooth.simpleAbutment);
+    const templateSpec = orderTemplateSpec(tooth);
+    if (templateSpec && (!libraryId || libraryId.startsWith("template:"))) {
+      const template = abutmentTemplateFor(scanbodyCatalog.templates, templateSpec);
       if (template) return `${template.kind} ${template.diameter}${template.height}`;
     }
     const library = libraryId ? (libraryById.get(libraryId) ?? null) : null;
@@ -2382,9 +2449,8 @@ function LabProsthesisAiDesignDialog({
     );
     const matched = linked.find((row) => row.s3Key === ordered) ?? linked[0];
     if (matched) return `${matched.kitName} · ${matched.name}`;
-    if (tooth.simpleAbutment) {
-      const simple = tooth.simpleAbutment;
-      return [simple.kind, simple.diameter, simple.height].filter(Boolean).join(" ");
+    if (templateSpec) {
+      return [templateSpec.kind, templateSpec.diameter, templateSpec.height].filter(Boolean).join(" ");
     }
     return orderSpecLines(tooth).scanbody || null;
   };
@@ -2399,9 +2465,10 @@ function LabProsthesisAiDesignDialog({
 
   const scanbodyAutoTried = useRef(new Set<string>());
 
-  const fitScanbodyAuto = (toothNumber: string, quiet = false) => {
+  /** `wait`: 형상을 받는 중. `miss`: 삽입축 둘레에서 못 찾아 점찍기를 요청했다. */
+  const fitScanbodyAuto = (toothNumber: string, quiet = false): "done" | "wait" | "miss" => {
     const shape = scanbodies[toothNumber];
-    if (!shape) return false;
+    if (!shape) return "wait";
     setScanbodyPickTooth(null);
     const notFound = () =>
       toast({
@@ -2415,6 +2482,24 @@ function LabProsthesisAiDesignDialog({
         ),
         variant: "destructive",
       });
+    const requestPick = () => {
+      if (stage === "scan") {
+        showTooth(toothNumber);
+        if (scanFold !== "scanbody") selectScanFold("scanbody");
+        setScanbodyPicks(0);
+        setScanbodyPickTooth(toothNumber);
+      }
+      toast({
+        title: `#${toothNumber} 스캔바디를 삽입축 근처에서 찾지 못했습니다.`,
+        description: (
+          <>
+            스캔에서 #{toothNumber} 스캔바디 윗면을 한 번 찍어 주세요.
+            <br />
+            찍은 자리에서 라이브러리 형상을 다시 맞춥니다.
+          </>
+        ),
+      });
+    };
     const entry = scanbodyCandidates[toothNumber];
     const preferred = entry?.orderedKey;
     const rows = preferred
@@ -2428,18 +2513,14 @@ function LabProsthesisAiDesignDialog({
       if (!quiet) {
         toast({ title: "스캔바디 형상을 받는 중입니다.", description: "잠시 후 다시 누르세요." });
       }
-      return false;
+      return "wait";
     }
     if (loaded.length > 0) {
-      const fit =
-        viewerRef.current?.fitScanbodyMesh(
-          toothNumber,
-          loaded,
-          editsRef.current[toothNumber]?.implant ?? null,
-        ) ?? null;
-      if (!fit) {
-        if (!quiet) notFound();
-        return false;
+      const current = editsRef.current[toothNumber]?.implant ?? null;
+      const fit = viewerRef.current?.fitScanbodyMesh(toothNumber, loaded, current) ?? null;
+      if (!fit || (!fit.matched && !current?.aligned)) {
+        requestPick();
+        return "miss";
       }
       onDesignGesture({
         type: "scanbody-fit",
@@ -2464,24 +2545,26 @@ function LabProsthesisAiDesignDialog({
           variant: "destructive",
         });
       }
-      return true;
+      return "done";
     }
-    const simple = plan.teeth.find((row) => row.toothNumber === toothNumber)?.simpleAbutment;
-    if (entry?.missingTemplate && simple && !quiet) {
-      // 올렸지만 관리자 검토·검사 중인 템플릿은 아직 쓸 수 없다(형상을 받지 않는다).
-      const reviewing = scanbodyCatalog.templateUploads.some(
+    const missing = entry?.missingTemplate;
+    if (missing && !quiet) {
+      // 올렸지만 검사 중인 템플릿은 아직 쓸 수 없다(형상을 받지 않는다).
+      const scanning = scanbodyCatalog.templateUploads.some(
         (row) =>
-          row.kind === simple.kind &&
-          Number(row.diameter) === Number(simple.diameter) &&
-          (row.status === "pending_review" || row.status === "scanning" || row.status === "processing"),
+          row.kind === missing.kind &&
+          Number(row.diameter) === Number(missing.diameter) &&
+          (row.status === "scanning" || row.status === "processing"),
       );
       toast({
-        title: reviewing ? "심플어벗 템플릿이 관리자 검토 대기 중입니다." : "맞는 심플어벗 템플릿이 없습니다.",
+        title: scanning
+          ? `${templateSpecLabel(missing)} 템플릿을 검사하는 중입니다.`
+          : `${templateSpecLabel(missing)} 템플릿이 없습니다.`,
         description: (
           <>
-            {reviewing
-              ? `${simple.kind} 직경 ${simple.diameter} 템플릿은 검토·검사가 끝나야 씁니다.`
-              : `설정 → 스캔바디에서 ${simple.kind} 직경 ${simple.diameter} 템플릿을 등록하세요.`}
+            {scanning
+              ? "악성코드 검사가 끝나면 그 형상으로 다시 맞춥니다."
+              : "스캔바디 칸에서 3Shape 스캐너로 찍은 .dcm 파일을 올려 주세요."}
             <br />
             지금은 원기둥으로 맞춥니다.
           </>
@@ -2491,23 +2574,27 @@ function LabProsthesisAiDesignDialog({
     if (quiet && rows.length === 0 && !orderScanbodyShape(
       plan.teeth.find((row) => row.toothNumber === toothNumber)?.scanbodyOrder ?? null,
     )) {
-      return false;
+      return "wait";
     }
     const fit = viewerRef.current?.fitScanbody(toothNumber, shape.radiusMm) ?? null;
     if (!fit) {
-      if (!quiet) notFound();
-      return false;
+      if (quiet) requestPick();
+      else notFound();
+      return "miss";
     }
     onDesignGesture({ type: "scanbody-fit", tooth: toothNumber, ...fit });
     queueSaveWorkRef.current();
-    return true;
+    return "done";
   };
   const fitScanbodyAutoRef = useRef(fitScanbodyAuto);
   fitScanbodyAutoRef.current = fitScanbodyAuto;
 
-  /** 저장된 맞춤이 없는 임플란트는 라이브러리 형상을 받는 대로 스캔에 겹친다. */
+  /**
+   * 저장된 맞춤이 없는 임플란트는 라이브러리 형상을 받는 대로 스캔에 겹친다.
+   * 한 번에 한 치아. 맞춘 결과가 edits에 들어간 뒤 다음 치아가 그 자리를 건너뛴다(브리지).
+   */
   useEffect(() => {
-    if (!open || workDocStamp === 0 || busy || scanbodyPickTooth) return;
+    if (!open || workDocStamp === 0 || busy || scanbodyPickTooth || !scanbodyCatalogLoaded) return;
     const attempt = () => {
       let pending = false;
       for (const tooth of plan.teeth) {
@@ -2516,6 +2603,8 @@ function LabProsthesisAiDesignDialog({
         const implant = edits[number]?.implant;
         if (!implant?.on || implant.aligned) continue;
         const entry = scanbodyCandidates[number];
+        // 지정 스캔바디 라이브러리·템플릿을 올리면 그 형상으로 맞춘다. 그 전에 원기둥으로 맞춰 두지 않는다.
+        if (entry?.missingLibraryMaker || entry?.missingTemplate) continue;
         const rows = entry?.orderedKey
           ? (entry.rows ?? []).filter((row) => row.key === entry.orderedKey)
           : (entry?.rows ?? []);
@@ -2527,8 +2616,13 @@ function LabProsthesisAiDesignDialog({
           ? `${number}:${rows.map((row) => row.key).join(",")}`
           : `${number}:order:${tooth.scanbodyOrder?.diameter ?? ""}:${tooth.scanbodyOrder?.height ?? ""}`;
         if (scanbodyAutoTried.current.has(triedKey)) continue;
-        if (fitScanbodyAutoRef.current(number, true)) scanbodyAutoTried.current.add(triedKey);
-        else pending = true;
+        const outcome = fitScanbodyAutoRef.current(number, true);
+        if (outcome === "wait") {
+          pending = true;
+          continue;
+        }
+        scanbodyAutoTried.current.add(triedKey);
+        return false;
       }
       return pending;
     };
@@ -2541,6 +2635,7 @@ function LabProsthesisAiDesignDialog({
     open,
     plan.teeth,
     scanbodyCandidates,
+    scanbodyCatalogLoaded,
     scanbodyMeshes,
     scanbodyPickTooth,
     workDocStamp,
@@ -2633,6 +2728,121 @@ function LabProsthesisAiDesignDialog({
     }
   };
 
+  /** 의뢰에 지정된 스캔바디 제조사 라이브러리를 AI 디자인 안에서 올린다. 등록되면 카탈로그를 다시 받아 자동 맞춤이 이어진다. */
+  const uploadOrderScanbodyLibrary = async (maker: string, files: File[]) => {
+    if (scanbodyUploadStatus) return;
+    setScanbodyUploadStatus("준비 중…");
+    try {
+      const { rows, notes } = await uploadScanbodyFilesAndWait(files, maker, setScanbodyUploadStatus);
+      const done = rows.filter((row) => row.status === "done");
+      const failed = rows.filter((row) => row.status === "rejected" || row.status === "failed");
+      if (done.length > 0) reloadScanbodyCatalog();
+      if (failed.length > 0 || done.length === 0) {
+        toast({
+          title: done.length > 0 ? "일부 파일은 등록하지 못했습니다." : "라이브러리를 등록하지 못했습니다.",
+          description: (
+            <>
+              {(failed.length > 0 ? failed.map((row) => `${row.fileName}: ${row.message}`) : ["검사가 아직 끝나지 않았습니다. 설정 → 스캔바디에서 확인하세요."]).map(
+                (line) => (
+                  <span key={line} className="block">
+                    {line}
+                  </span>
+                ),
+              )}
+            </>
+          ),
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: `${maker} 라이브러리를 등록했습니다.`,
+          description: (
+            <>
+              의뢰 스캔바디 치수에 맞는 형상으로 자동 맞춤을 시작합니다.
+              {notes.length > 0 ? (
+                <>
+                  <br />
+                  {notes[0]}
+                </>
+              ) : null}
+            </>
+          ),
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "라이브러리를 올리지 못했습니다.",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setScanbodyUploadStatus(null);
+    }
+  };
+
+  /** 의뢰 규격 템플릿(.dcm)을 AI 디자인 안에서 올린다. 등록되면 카탈로그를 다시 받아 자동 맞춤이 이어진다. */
+  const uploadOrderTemplate = async (spec: TemplateSpec, file: File) => {
+    if (scanbodyUploadStatus) return;
+    setScanbodyUploadStatus("준비 중…");
+    try {
+      const row = await uploadTemplateFileAndWait(file, spec, setScanbodyUploadStatus);
+      if (row.status === "done") {
+        reloadScanbodyCatalog();
+        toast({
+          title: `${templateSpecLabel(spec)} 템플릿을 등록했습니다.`,
+          description: "그 형상으로 자동 맞춤을 시작합니다.",
+        });
+      } else {
+        toast({
+          title: "템플릿을 등록하지 못했습니다.",
+          description: row.message || "검사가 아직 끝나지 않았습니다. 설정 → 스캔바디에서 확인하세요.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "템플릿을 올리지 못했습니다.",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setScanbodyUploadStatus(null);
+    }
+  };
+
+  const missingShapePrompt = (toothNumber: string): ScanbodyControls["missingLibrary"] => {
+    const entry = scanbodyCandidates[toothNumber];
+    const template = entry?.missingTemplate;
+    if (template) {
+      return {
+        lines: [
+          `의뢰한 ${templateSpecLabel(template)} 템플릿이 아직 없습니다.`,
+          "3Shape 스캐너로 찍은 .dcm 파일 하나를 올려 주세요.",
+        ],
+        accept: ".dcm",
+        multiple: false,
+        buttonLabel: `${templateSpecLabel(template)} .dcm 올리기`,
+        status: scanbodyUploadStatus,
+        onUpload: (files) => void uploadOrderTemplate(template, files[0]!),
+      };
+    }
+    const maker = entry?.missingLibraryMaker;
+    if (!maker) return null;
+    const order = plan.teeth.find((row) => row.toothNumber === toothNumber)?.scanbodyOrder;
+    const size = [order?.diameter, order?.height].filter(Boolean).join("/");
+    return {
+      lines: [
+        `치과가 지정한 ${maker}${size ? ` ${size}` : ""} 스캔바디 라이브러리가 아직 없습니다.`,
+        "제조사에서 받은 .dme 또는 .zip 파일을 올려 주세요.",
+      ],
+      accept: ".dme,.zip",
+      multiple: true,
+      buttonLabel: `${maker} 라이브러리 올리기`,
+      status: scanbodyUploadStatus,
+      onUpload: (files) => void uploadOrderScanbodyLibrary(maker, files),
+    };
+  };
+
   const scanbodyControls: ScanbodyControls | null =
     activeNumber && activeImplant
       ? {
@@ -2654,6 +2864,7 @@ function LabProsthesisAiDesignDialog({
           },
           onReset: () => resetScanbody(activeNumber),
           onApply: () => applyScanbody(activeNumber),
+          missingLibrary: missingShapePrompt(activeNumber),
         }
       : null;
 
@@ -5410,7 +5621,7 @@ function LabProsthesisAiDesignDialog({
                         defaultManufacturer={tooth.implant.manufacturer}
                         orderLabel={[spec.implant, spec.scanbody].filter(Boolean).join(" · ")}
                         orderLibraryId={
-                          tooth.simpleAbutment
+                          orderTemplateSpec(tooth)
                             ? null
                             : (matchImplantLibrary(implantLibraries, tooth.implant)?.id ?? null)
                         }
