@@ -40,6 +40,7 @@ import { cancelHanjinPickupForReset } from "./shipping.Hanjin.controller.js";
 import { triggerPricingSnapshotForBusinessAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { ensureShippingFeeSpendOnMailboxPickup } from "./common.review.helpers.js";
 import { getTodayYmdInKst } from "../../utils/krBusinessDays.js";
+import { pruneTtlMap, resolveMaxEntries } from "../../utils/boundedTtlMap.js";
 
 function resolveShippingBoxKey(requestDoc) {
   const shippingPackageId = String(requestDoc?.shippingPackageId || "").trim();
@@ -163,24 +164,10 @@ function resolveMailboxSummaryCacheTtlMs() {
 }
 
 function pruneMailboxSummaryCache() {
-  const now = Date.now();
-  for (const [key, entry] of mailboxSummaryCache.entries()) {
-    if (!entry || Number(entry.expiresAt || 0) <= now) {
-      mailboxSummaryCache.delete(key);
-    }
-  }
-
-  const maxEntries = Number.isFinite(MAILBOX_SUMMARY_CACHE_MAX_ENTRIES)
-    ? Math.max(10, Math.floor(MAILBOX_SUMMARY_CACHE_MAX_ENTRIES))
-    : 200;
-
-  if (mailboxSummaryCache.size <= maxEntries) return;
-
-  const overflow = mailboxSummaryCache.size - maxEntries;
-  const keys = Array.from(mailboxSummaryCache.keys());
-  for (let i = 0; i < overflow; i += 1) {
-    mailboxSummaryCache.delete(keys[i]);
-  }
+  pruneTtlMap(
+    mailboxSummaryCache,
+    resolveMaxEntries(MAILBOX_SUMMARY_CACHE_MAX_ENTRIES, 200, 10),
+  );
 }
 
 function resolveMailboxRequestsCacheTtlMs() {
@@ -190,24 +177,10 @@ function resolveMailboxRequestsCacheTtlMs() {
 }
 
 function pruneMailboxRequestsCache() {
-  const now = Date.now();
-  for (const [key, entry] of mailboxRequestsCache.entries()) {
-    if (!entry || Number(entry.expiresAt || 0) <= now) {
-      mailboxRequestsCache.delete(key);
-    }
-  }
-
-  const maxEntries = Number.isFinite(MAILBOX_REQUESTS_CACHE_MAX_ENTRIES)
-    ? Math.max(20, Math.floor(MAILBOX_REQUESTS_CACHE_MAX_ENTRIES))
-    : 300;
-
-  if (mailboxRequestsCache.size <= maxEntries) return;
-
-  const overflow = mailboxRequestsCache.size - maxEntries;
-  const keys = Array.from(mailboxRequestsCache.keys());
-  for (let i = 0; i < overflow; i += 1) {
-    mailboxRequestsCache.delete(keys[i]);
-  }
+  pruneTtlMap(
+    mailboxRequestsCache,
+    resolveMaxEntries(MAILBOX_REQUESTS_CACHE_MAX_ENTRIES, 300, 20),
+  );
 }
 
 function buildMailboxRequestsCacheKey(req, mailboxAddress) {

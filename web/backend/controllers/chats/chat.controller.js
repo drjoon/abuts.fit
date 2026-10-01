@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-01: 채팅 응답 캐시는 만료·상한으로 걷는다.
 // - 2026-09-18: HTTP 메시지 전송·읽음 시 관리자 chat unread 배지 증감.
 // - 2026-09-07: chat:message-created 페이로드에 파트너 앵커(실시간 FAB unread용).
 // - 2026-09-07: 기공소↔치과 파트너 DM(의뢰건 무관) — partner-counterparts / partner-room.
@@ -51,27 +52,17 @@ import {
 } from "../../utils/partnerChat.util.js";
 import { emitAppEventToUser, emitToUser } from "../../socket.js";
 import { emitAdminCommBadgeToUser } from "../../services/adminCommBadge.service.js";
+import { getTtlMapValue, setTtlMapValue } from "../../utils/boundedTtlMap.js";
+
+const CHAT_PERF_CACHE_MAX_ENTRIES = 500;
 
 const __chatPerfCache = new Map();
 const __chatInFlight = new Map();
 
-const getChatPerfCacheValue = (key) => {
-  const hit = __chatPerfCache.get(key);
-  if (!hit) return null;
-  if (typeof hit.expiresAt !== "number" || hit.expiresAt <= Date.now()) {
-    __chatPerfCache.delete(key);
-    return null;
-  }
-  return hit.value;
-};
+const getChatPerfCacheValue = (key) => getTtlMapValue(__chatPerfCache, key);
 
-const setChatPerfCacheValue = (key, value, ttlMs) => {
-  __chatPerfCache.set(key, {
-    value,
-    expiresAt: Date.now() + ttlMs,
-  });
-  return value;
-};
+const setChatPerfCacheValue = (key, value, ttlMs) =>
+  setTtlMapValue(__chatPerfCache, key, value, ttlMs, CHAT_PERF_CACHE_MAX_ENTRIES);
 
 const withChatInFlight = async (key, factory) => {
   const existing = __chatInFlight.get(key);

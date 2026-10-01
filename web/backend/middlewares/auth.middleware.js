@@ -9,27 +9,22 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import { Types } from "mongoose";
 import { resolveDesignAccessForUser } from "../utils/designAccess.js";
 import { voidRecordUserAccessDay } from "../services/userAccess.service.js";
+import { getTtlMapValue, setTtlMapValue } from "../utils/boundedTtlMap.js";
 
 const AUTH_USER_CACHE_TTL_MS = 30 * 1000;
+const AUTH_USER_CACHE_MAX_ENTRIES = 2000;
 const __authUserCache = new Map();
 
-const getCachedAuthUser = (userId) => {
-  const hit = __authUserCache.get(String(userId));
-  if (!hit) return null;
-  if (hit.expiresAt <= Date.now()) {
-    __authUserCache.delete(String(userId));
-    return null;
-  }
-  return hit.user;
-};
+const getCachedAuthUser = (userId) => getTtlMapValue(__authUserCache, String(userId));
 
-const setCachedAuthUser = (userId, user) => {
-  __authUserCache.set(String(userId), {
+const setCachedAuthUser = (userId, user) =>
+  setTtlMapValue(
+    __authUserCache,
+    String(userId),
     user,
-    expiresAt: Date.now() + AUTH_USER_CACHE_TTL_MS,
-  });
-  return user;
-};
+    AUTH_USER_CACHE_TTL_MS,
+    AUTH_USER_CACHE_MAX_ENTRIES,
+  );
 
 /** 계정 상태 변경 직후 즉시 반영이 필요할 때 호출 */
 export const invalidateAuthUserCache = (userId) => {

@@ -22,6 +22,7 @@ import {
 } from "./business.address.util.js";
 import { findBusinessByAnchors } from "./business.find.util.js";
 import { buildOrgBusinessTypeQuery } from "../../utils/orgBusinessType.util.js";
+import { getTtlMapValue, setTtlMapValue } from "../../utils/boundedTtlMap.js";
 import {
   updateMyBusiness,
   getMyAutoMatchParticipation,
@@ -250,9 +251,10 @@ export async function updateBusinessShippingAddress(req, res) {
   }
 }
 
-// 성능 최적화: getMyBusiness 캐시 (TTL 30초)
+// 성능 최적화: getMyBusiness 캐시 (TTL 30초, 상한)
 const __getMyBusinessCache = new Map();
 const GET_MY_BUSINESS_CACHE_TTL = 30 * 1000;
+const GET_MY_BUSINESS_CACHE_MAX_ENTRIES = 500;
 
 function getMyBusinessCacheKey(userId, businessType) {
   return `${userId}:${businessType}`;
@@ -284,9 +286,9 @@ export async function getMyBusiness(req, res) {
 
     // 캐시 확인
     const cacheKey = getMyBusinessCacheKey(req.user._id, businessType);
-    const cached = __getMyBusinessCache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < GET_MY_BUSINESS_CACHE_TTL) {
-      return res.json(cached.data);
+    const cached = getTtlMapValue(__getMyBusinessCache, cacheKey);
+    if (cached) {
+      return res.json(cached);
     }
 
     const freshUser = await User.findById(req.user._id)
@@ -698,10 +700,13 @@ export async function getMyBusiness(req, res) {
       }
     }
 
-    __getMyBusinessCache.set(cacheKey, {
-      ts: Date.now(),
-      data: responseData,
-    });
+    setTtlMapValue(
+      __getMyBusinessCache,
+      cacheKey,
+      responseData,
+      GET_MY_BUSINESS_CACHE_TTL,
+      GET_MY_BUSINESS_CACHE_MAX_ENTRIES,
+    );
 
     return res.json(responseData);
   } catch (error) {

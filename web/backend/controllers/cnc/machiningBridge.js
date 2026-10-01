@@ -61,11 +61,14 @@ import {
   inferDiameterGroupFromValue,
 } from "./distribution.utils.js";
 import { toKstYmd } from "../../utils/krBusinessDays.js";
+import { observeTimestampMap } from "../../utils/boundedTtlMap.js";
 
 const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
 const STARTED_EMIT_TTL_MS = 30 * 1000;
+const STARTED_EMIT_CACHE_MAX_ENTRIES = 2000;
 const startedEmitCache = new Map();
 const MACHINING_TICK_LOG_WINDOW_MS = 60 * 1000;
+const MACHINING_TICK_LOG_CACHE_MAX_ENTRIES = 2000;
 const machiningTickLogCache = new Map();
 const AUTO_NEXT_PRIMARY_PENDING_LIMIT = 20;
 const AUTO_NEXT_FALLBACK_PENDING_LIMIT = 100;
@@ -119,12 +122,13 @@ function shouldLogMachiningTick({
     bridgePath,
     phase: phaseKey,
   });
-  const last = machiningTickLogCache.get(key) || 0;
-  if (nowMs - last >= MACHINING_TICK_LOG_WINDOW_MS) {
-    machiningTickLogCache.set(key, nowMs);
-    return true;
-  }
-  return false;
+  return observeTimestampMap(
+    machiningTickLogCache,
+    key,
+    nowMs,
+    MACHINING_TICK_LOG_WINDOW_MS,
+    MACHINING_TICK_LOG_CACHE_MAX_ENTRIES,
+  );
 }
 
 function isMachineOnlineStatus(status) {
@@ -679,12 +683,13 @@ export async function triggerNextAutoMachiningManually(req, res) {
 }
 
 function shouldEmitStarted(key) {
-  const now = Date.now();
-  const last = startedEmitCache.get(key);
-  if (typeof last === "number" && now - last < STARTED_EMIT_TTL_MS)
-    return false;
-  startedEmitCache.set(key, now);
-  return true;
+  return observeTimestampMap(
+    startedEmitCache,
+    key,
+    Date.now(),
+    STARTED_EMIT_TTL_MS,
+    STARTED_EMIT_CACHE_MAX_ENTRIES,
+  );
 }
 
 function normalizeBridgePath(raw) {

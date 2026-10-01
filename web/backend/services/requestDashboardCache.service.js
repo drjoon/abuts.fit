@@ -2,28 +2,21 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/utils/boundedTtlMap.js
+import { getTtlMapValue, setTtlMapValue } from "../utils/boundedTtlMap.js";
+
+const REQUEST_PERF_CACHE_MAX_ENTRIES = 1000;
+const BULK_SHIPPING_CACHE_MAX_ENTRIES = 300;
+
 const __requestPerfCache = new Map();
 const __requestInFlight = new Map();
 const __bulkShippingCache = new Map();
 const __bulkShippingInFlight = new Map();
 
-const getMapCacheValue = (store, key) => {
-  const hit = store.get(key);
-  if (!hit) return null;
-  if (typeof hit.expiresAt !== "number" || hit.expiresAt <= Date.now()) {
-    store.delete(key);
-    return null;
-  }
-  return hit.value;
-};
+const getMapCacheValue = (store, key) => getTtlMapValue(store, key);
 
-const setMapCacheValue = (store, key, value, ttlMs) => {
-  store.set(key, {
-    value,
-    expiresAt: Date.now() + ttlMs,
-  });
-  return value;
-};
+const setMapCacheValue = (store, key, value, ttlMs, maxEntries) =>
+  setTtlMapValue(store, key, value, ttlMs, maxEntries);
 
 const withMapInFlight = async (store, key, factory) => {
   const existing = store.get(key);
@@ -62,7 +55,13 @@ const invalidateMapKeysByBusinessAnchorId = (store, businessAnchorId) => {
 export const getRequestPerfCacheValue = (key) =>
   getMapCacheValue(__requestPerfCache, key);
 export const setRequestPerfCacheValue = (key, value, ttlMs) =>
-  setMapCacheValue(__requestPerfCache, key, value, ttlMs);
+  setMapCacheValue(
+    __requestPerfCache,
+    key,
+    value,
+    ttlMs,
+    REQUEST_PERF_CACHE_MAX_ENTRIES,
+  );
 export const deleteRequestPerfCacheValue = (key) => {
   const normalized = String(key || "").trim();
   if (!normalized) return false;
@@ -99,7 +98,13 @@ export const withRequestPerfInFlight = (key, factory) =>
 export const getBulkShippingCacheValue = (key) =>
   getMapCacheValue(__bulkShippingCache, key);
 export const setBulkShippingCacheValue = (key, value, ttlMs) =>
-  setMapCacheValue(__bulkShippingCache, key, value, ttlMs);
+  setMapCacheValue(
+    __bulkShippingCache,
+    key,
+    value,
+    ttlMs,
+    BULK_SHIPPING_CACHE_MAX_ENTRIES,
+  );
 export const withBulkShippingInFlight = (key, factory) =>
   withMapInFlight(__bulkShippingInFlight, key, factory);
 

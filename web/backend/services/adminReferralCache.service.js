@@ -2,20 +2,17 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/utils/boundedTtlMap.js
+import { getTtlMapValue, setTtlMapValue } from "../utils/boundedTtlMap.js";
+
 const ADMIN_REFERRAL_CACHE_TTL_MS = 5 * 60 * 1000; // 5분 (성능 최적화)
+const ADMIN_REFERRAL_CACHE_MAX_ENTRIES = 80;
 
 const __adminReferralCache = new Map();
 const __adminReferralInFlight = new Map();
 
 export function getAdminReferralCache(key) {
-  const hit = __adminReferralCache.get(key);
-  if (!hit) return null;
-  const ttl = hit.ttl || ADMIN_REFERRAL_CACHE_TTL_MS;
-  if (Date.now() - hit.ts > ttl) {
-    __adminReferralCache.delete(key);
-    return null;
-  }
-  return hit.value;
+  return getTtlMapValue(__adminReferralCache, key);
 }
 
 export function setAdminReferralCache(
@@ -23,7 +20,13 @@ export function setAdminReferralCache(
   value,
   ttlMs = ADMIN_REFERRAL_CACHE_TTL_MS,
 ) {
-  __adminReferralCache.set(key, { ts: Date.now(), value, ttl: ttlMs });
+  setTtlMapValue(
+    __adminReferralCache,
+    key,
+    value,
+    ttlMs,
+    ADMIN_REFERRAL_CACHE_MAX_ENTRIES,
+  );
 }
 
 export async function withAdminReferralInFlight(key, factory) {

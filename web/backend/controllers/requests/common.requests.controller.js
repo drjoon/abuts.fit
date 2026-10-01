@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-01: GET /my 목록 캐시는 만료·상한으로 걷는다.
 // - 2026-09-16: 관리자 모니터링 R&D·불완전가공 탭(rndDone/rndUnmachinable) 허용.
 // - 2026-09-16: 관리자 모니터링에서 불완전가공(rnd.unmachinableAt) 제외 + CNC완료 stuck 힐.
 // - 2026-09-09: 관리자 헥스 확정 후에도 제조사 updateRndHexRotation 허용(의뢰 단위 보정). 신규 시드만 확정값 우선.
@@ -40,6 +41,12 @@
 // - web/frontend/src/shared/components/PastRequestsModal.tsx
 // - web/backend/rules.md
 import mongoose, { Types } from "mongoose";
+import {
+  getTtlMapValue,
+  pruneTtlMap,
+  resolveMaxEntries,
+  setTtlMapValue,
+} from "../../utils/boundedTtlMap.js";
 import path from "path";
 import { createHash } from "crypto";
 import Request from "../../models/request.model.js";
@@ -120,6 +127,8 @@ const ESPRIT_BASE =
 const PRACTICE_TRANSFER_CANCEL_FROM_ABUTS_MESSAGE =
   "치과 기공의뢰로 들어온 건은 어벗츠로의뢰에서 취소할 수 없습니다. 기공의뢰수신에서 작업취소해 주세요.";
 
+const MY_REQUESTS_CACHE_MAX_ENTRIES = 300;
+
 const __myRequestsCache = new Map();
 const __myRequestsInFlight = new Map();
 const __trackingWorksheetCache = new Map();
@@ -138,23 +147,10 @@ const resolveTrackingWorksheetCacheTtlMs = () => {
 };
 
 const pruneTrackingWorksheetCache = () => {
-  const now = Date.now();
-  for (const [key, entry] of __trackingWorksheetCache.entries()) {
-    if (!entry || Number(entry.expiresAt || 0) <= now) {
-      __trackingWorksheetCache.delete(key);
-    }
-  }
-
-  const maxEntries = Number.isFinite(TRACKING_WORKSHEET_CACHE_MAX_ENTRIES)
-    ? Math.max(50, Math.floor(TRACKING_WORKSHEET_CACHE_MAX_ENTRIES))
-    : 300;
-
-  if (__trackingWorksheetCache.size <= maxEntries) return;
-  const overflow = __trackingWorksheetCache.size - maxEntries;
-  const keys = Array.from(__trackingWorksheetCache.keys());
-  for (let i = 0; i < overflow; i += 1) {
-    __trackingWorksheetCache.delete(keys[i]);
-  }
+  pruneTtlMap(
+    __trackingWorksheetCache,
+    resolveMaxEntries(TRACKING_WORKSHEET_CACHE_MAX_ENTRIES, 300, 50),
+  );
 };
 
 const buildTrackingWorksheetEtag = (payload) => {
@@ -205,23 +201,16 @@ const isTrackingWorksheetNotModified = (req, etag) => {
   return Boolean(ifNoneMatch && etag && ifNoneMatch === etag);
 };
 
-const getMyRequestsCacheValue = (key) => {
-  const hit = __myRequestsCache.get(key);
-  if (!hit) return null;
-  if (typeof hit.expiresAt !== "number" || hit.expiresAt <= Date.now()) {
-    __myRequestsCache.delete(key);
-    return null;
-  }
-  return hit.value;
-};
+const getMyRequestsCacheValue = (key) => getTtlMapValue(__myRequestsCache, key);
 
-const setMyRequestsCacheValue = (key, value, ttlMs) => {
-  __myRequestsCache.set(key, {
+const setMyRequestsCacheValue = (key, value, ttlMs) =>
+  setTtlMapValue(
+    __myRequestsCache,
+    key,
     value,
-    expiresAt: Date.now() + ttlMs,
-  });
-  return value;
-};
+    ttlMs,
+    MY_REQUESTS_CACHE_MAX_ENTRIES,
+  );
 
 export const clearMyRequestsCache = () => {
   __myRequestsCache.clear();

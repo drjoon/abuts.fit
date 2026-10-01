@@ -4,6 +4,7 @@
 // - web/backend/server.js
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
+import { getTtlMapValue, setTtlMapValue } from "../../utils/boundedTtlMap.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { assertBusinessRole } from "../businesses/businessRole.util.js";
 import s3Utils, { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
@@ -494,9 +495,9 @@ const sanitizeParsedFilenames = (items, originalFilenames) => {
 };
 
 // 파일명 분석 결과 캐시 (동일 filenames에 대한 중복 호출 방지)
-// key: JSON.stringify(sorted filenames), value: { data, createdAt }
 const parseFilenamesCache = new Map();
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30분
+const PARSE_FILENAMES_CACHE_MAX_ENTRIES = 200;
 
 const getCacheKey = (filenames) => {
   const sorted = [...filenames].sort();
@@ -504,23 +505,21 @@ const getCacheKey = (filenames) => {
 };
 
 const getCachedResult = (filenames) => {
-  const key = getCacheKey(filenames);
-  const cached = parseFilenamesCache.get(key);
+  const cached = getTtlMapValue(parseFilenamesCache, getCacheKey(filenames));
   if (!cached) return null;
 
-  const now = Date.now();
-  if (now - cached.createdAt > CACHE_TTL_MS) {
-    parseFilenamesCache.delete(key);
-    return null;
-  }
-
   console.log("[AI] parseFilenames: cache hit", { count: filenames.length });
-  return cached.data;
+  return cached;
 };
 
 const setCachedResult = (filenames, data) => {
-  const key = getCacheKey(filenames);
-  parseFilenamesCache.set(key, { data, createdAt: Date.now() });
+  setTtlMapValue(
+    parseFilenamesCache,
+    getCacheKey(filenames),
+    data,
+    CACHE_TTL_MS,
+    PARSE_FILENAMES_CACHE_MAX_ENTRIES,
+  );
 };
 
 export async function parseFilenames(req, res) {

@@ -6,6 +6,7 @@
 // - web/backend/controllers/requests/designClaim.controller.js
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
+// - 2026-10-01: 디자인 접근 캐시는 만료·상한으로 걷는다.
 // - 2026-09-27: PTX 디자인 claim/handoff — 원청(target)뿐 아니라 수행 기공소(assignee, 협력·하청)도 허용.
 // - 2026-09-02: canClaimOrHandoffDesignRequest — 호출측이 넘긴 transferTargetLabAnchorId면 재조회 생략.
 // - 2026-08-15: PTX 수락 판정 — Request.businessAnchorId 또는 transfer.targetLabAnchorId.
@@ -13,8 +14,10 @@
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import PracticeTransfer from "../models/practiceTransfer.model.js";
 import { canLabOperatePracticeTransferWork } from "./practiceTransferAutoMatchCore.js";
+import { getTtlMapValue, setTtlMapValue } from "./boundedTtlMap.js";
 
 const DESIGN_ACCESS_CACHE_TTL_MS = 30 * 1000;
+const DESIGN_ACCESS_CACHE_MAX_ENTRIES = 1000;
 const __designAccessCache = new Map();
 
 export const isDesignAccessEnabled = (anchor) =>
@@ -36,9 +39,9 @@ export const resolveDesignAccessForUser = async (user) => {
   if (!anchorId) return false;
 
   const cacheKey = String(anchorId);
-  const hit = __designAccessCache.get(cacheKey);
-  if (hit && hit.expiresAt > Date.now()) {
-    return Boolean(hit.enabled);
+  const hit = getTtlMapValue(__designAccessCache, cacheKey);
+  if (hit && typeof hit.enabled === "boolean") {
+    return hit.enabled;
   }
 
   const anchor = await BusinessAnchor.findById(anchorId)
@@ -49,10 +52,13 @@ export const resolveDesignAccessForUser = async (user) => {
     String(anchor?.businessType || "") === "requestor" &&
     isDesignAccessEnabled(anchor);
 
-  __designAccessCache.set(cacheKey, {
-    enabled,
-    expiresAt: Date.now() + DESIGN_ACCESS_CACHE_TTL_MS,
-  });
+  setTtlMapValue(
+    __designAccessCache,
+    cacheKey,
+    { enabled },
+    DESIGN_ACCESS_CACHE_TTL_MS,
+    DESIGN_ACCESS_CACHE_MAX_ENTRIES,
+  );
   return enabled;
 };
 
