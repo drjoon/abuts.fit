@@ -32,6 +32,7 @@ import {
   DASHBOARD_WORK_OUTER_PAD_CLASS,
 } from "@/shared/ui/dashboardChrome";
 
+// - 2026-10-01: 설정 사이드 배지는 기본 기공수가 검토를 세지 않는다. 그 수는 재무에 붙는다.
 // - 2026-09-30: 공지는 헤더의 필터와 버튼 사이. 자리가 없으면 작업영역 상단 줄.
 // - 2026-09-26: 작업 스캔 저장 소켓은 읽지 않음 배지를 다시 조회하지 않는다.
 // - 2026-09-26: 기공소 기공의뢰 하위 — 어벗츠 하청 → 어벗츠로부터.
@@ -1593,7 +1594,7 @@ export const DashboardLayout = () => {
         const labTransferUnread = requestorKind === "lab" ? transferUnread : 0;
         return adminCommBadge + labTransferUnread + chatUnread;
       }
-      if (path === "/dashboard/admin-settings" && user.role === "admin") {
+      if (path === "/dashboard/finance" && user.role === "admin") {
         return adminCommBadge + Math.max(0, abutsFeePendingCount);
       }
       if (path === "/dashboard/store-admin" && user.role === "admin") {

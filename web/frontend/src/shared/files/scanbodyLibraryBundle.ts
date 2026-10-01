@@ -2,6 +2,8 @@
 // - 3Shape `.dme`: 한 개면 그대로, 여러 개면 25MB 안팎으로 묶는다(이미 압축돼 STORE).
 //   .dme도 zip이라 GuardDuty가 안쪽 파일까지 센다. 묶음 하나의 파일 수가 한도를 넘으면 UNSUPPORTED로 거절되니
 //   용량과 함께 안쪽 파일 수(SCAN_FILES)로도 나눈다. 작게 나누면 검사도 병렬로 빨리 끝난다.
+//   해석에 쓰는 Materials.xml·.dcm만 표준 zip으로 다시 묶어 올린다. 나머지 항목과 비표준 ZIP64는 검사 한도를 넘겨
+//   파일은 올라가도 등록이 거절된다.
 //   제조사 배포 .zip 안의 .dme도 꺼내 같이 묶는다.
 // - exocad: config.xml과 .stl만 넣는다(.sdfa 등 암호화 형상은 서버도 못 읽어서 뺀다).
 //   .zip은 안쪽 zip까지 3단계 열어 같은 파일만 꺼낸다. config.xml 폴더 단위로 나눠 묶는다.
@@ -24,7 +26,9 @@ const SCAN_FILES = 800;
 const MAX_NESTED_ZIP_BYTES = 1536 * 1024 * 1024;
 const MAX_ZIP_DEPTH = 3;
 
-type Entry = { path: string; data: Blob };
+type Entry = { path: string; data: Blob | Uint8Array };
+
+const byteSize = (data: Blob | Uint8Array) => (data instanceof Uint8Array ? data.byteLength : data.size);
 
 const relPath = (file: File) =>
   (file.webkitRelativePath || file.name).replace(/\\/g, "/").replace(/^\/+/, "");
@@ -45,7 +49,13 @@ async function zipEntries(entries: readonly Entry[], compress: boolean): Promise
 }
 
 /** 크기·파일 수 합이 한도를 넘지 않게 순서대로 나눈다. 하나가 한도보다 크면 혼자 간다. */
-function pack<T>(items: readonly T[], size: (item: T) => number, count: (item: T) => number): T[][] {
+function pack<T>(
+  items: readonly T[],
+  size: (item: T) => number,
+  count: (item: T) => number,
+  maxFiles = SCAN_FILES,
+  maxBytes = BUNDLE_BYTES,
+): T[][] {
   const out: T[][] = [];
   let cur: T[] = [];
   let bytes = 0;
@@ -53,7 +63,7 @@ function pack<T>(items: readonly T[], size: (item: T) => number, count: (item: T
   for (const item of items) {
     const n = size(item);
     const c = count(item);
-    if (cur.length > 0 && (bytes + n > BUNDLE_BYTES || files + c > SCAN_FILES)) {
+    if (cur.length > 0 && (bytes + n > maxBytes || files + c > maxFiles)) {
       out.push(cur);
       cur = [];
       bytes = 0;
@@ -65,17 +75,6 @@ function pack<T>(items: readonly T[], size: (item: T) => number, count: (item: T
   }
   if (cur.length > 0) out.push(cur);
   return out;
-}
-
-/** zip(.dme) 안 항목 수. 끝 레코드에서 읽고, 못 읽으면 한도만큼으로 봐서 혼자 묶이게 한다. */
-async function zipEntryCount(data: Blob): Promise<number> {
-  const tail = new Uint8Array(await data.slice(Math.max(0, data.size - 22 - 0xffff)).arrayBuffer());
-  for (let i = tail.length - 22; i >= 0; i -= 1) {
-    if (tail[i] !== 0x50 || tail[i + 1] !== 0x4b || tail[i + 2] !== 5 || tail[i + 3] !== 6) continue;
-    const total = tail[i + 10]! | (tail[i + 11]! << 8);
-    return total === 0xffff ? SCAN_FILES : total + 1;
-  }
-  return SCAN_FILES;
 }
 
 /**
@@ -102,21 +101,22 @@ function markZip64Eocd(bytes: Uint8Array): Uint8Array {
  * 제조사 zip은 zip 안에 zip을 넣어 배포하기도 해서(GeoMedi exocad) 안쪽 zip도 MAX_ZIP_DEPTH까지 연다.
  */
 async function entriesFromZip(
-  data: Blob,
+  data: Blob | Uint8Array,
   label: string,
   prefix: string,
   notes: string[],
   depth = 1,
 ): Promise<{ exocad: Entry[]; dmes: Entry[]; meshes: Entry[] }> {
   const out = { exocad: [] as Entry[], dmes: [] as Entry[], meshes: [] as Entry[] };
-  if (data.size > MAX_NESTED_ZIP_BYTES) {
+  if (byteSize(data) > MAX_NESTED_ZIP_BYTES) {
     notes.push(`${label}: 너무 커서 건너뛰었습니다. 풀어서 폴더로 올려 주세요.`);
     return out;
   }
   const { default: JSZip } = await import("jszip");
   let zip: InstanceType<typeof JSZip>;
   try {
-    zip = await JSZip.loadAsync(markZip64Eocd(new Uint8Array(await data.arrayBuffer())));
+    const bytes = data instanceof Uint8Array ? data : new Uint8Array(await data.arrayBuffer());
+    zip = await JSZip.loadAsync(markZip64Eocd(bytes));
   } catch {
     notes.push(`${label}: 열지 못했습니다.`);
     return out;
@@ -126,14 +126,14 @@ async function entriesFromZip(
     const name = entry.name.replace(/\\/g, "/");
     if (entry.dir || name.startsWith("__MACOSX/")) continue;
     if (/\.dme$/i.test(name)) {
-      out.dmes.push({ path: leafName(name), data: await entry.async("blob") });
+      out.dmes.push({ path: leafName(name), data: await entry.async("uint8array") });
     } else if (wanted(name)) {
-      out.exocad.push({ path: `${prefix}/${name}`, data: await entry.async("blob") });
+      out.exocad.push({ path: `${prefix}/${name}`, data: await entry.async("uint8array") });
     } else if (looseShape(name)) {
-      out.meshes.push({ path: `${prefix}/${name}`, data: await entry.async("blob") });
+      out.meshes.push({ path: `${prefix}/${name}`, data: await entry.async("uint8array") });
     } else if (/\.zip$/i.test(name) && depth < MAX_ZIP_DEPTH) {
       const inner = await entriesFromZip(
-        await entry.async("blob"),
+        await entry.async("uint8array"),
         `${label}/${name}`,
         `${prefix}/${name.replace(/\.zip$/i, "")}`,
         notes,
@@ -145,6 +145,58 @@ async function entriesFromZip(
     }
   }
   return out;
+}
+
+/**
+ * .dme에서 등록에 쓰는 Materials.xml·.dcm만 남긴 표준 zip. 한 .dme의 파일 수가 검사 한도를 넘으면
+ * Materials.xml을 각 조각에 넣고 나눈다. 조각의 files는 안쪽 항목 수다.
+ */
+async function slimDmePieces(source: Entry, notes: string[]): Promise<Array<Entry & { files: number }>> {
+  const { default: JSZip } = await import("jszip");
+  let opened: InstanceType<typeof JSZip>;
+  try {
+    const raw = source.data instanceof Uint8Array ? source.data : new Uint8Array(await source.data.arrayBuffer());
+    opened = await JSZip.loadAsync(markZip64Eocd(raw));
+  } catch {
+    notes.push(`${leafName(source.path)}: 열지 못했습니다.`);
+    return [];
+  }
+  const materials: Entry[] = [];
+  const meshes: Entry[] = [];
+  for (const key of Object.keys(opened.files)) {
+    const entry = opened.files[key]!;
+    const name = entry.name.replace(/\\/g, "/");
+    if (entry.dir || name.startsWith("__MACOSX/")) continue;
+    if (/(^|\/)materials\.xml$/i.test(name)) materials.push({ path: name, data: await entry.async("uint8array") });
+    else if (/\.dcm$/i.test(name)) meshes.push({ path: name, data: await entry.async("uint8array") });
+  }
+  const label = leafName(source.path);
+  if (materials.length === 0) {
+    notes.push(`${label}: Materials.xml이 없습니다.`);
+    return [];
+  }
+  if (meshes.length === 0) {
+    notes.push(`${label}: 스캔바디 형상(.dcm)이 없습니다.`);
+    return [];
+  }
+  const materialBytes = materials.reduce((sum, entry) => sum + byteSize(entry.data), 0);
+  const groups = pack(
+    meshes,
+    (entry) => byteSize(entry.data),
+    () => 1,
+    Math.max(1, SCAN_FILES - materials.length),
+    Math.max(1, BUNDLE_BYTES - materialBytes),
+  );
+  const base = label.replace(/\.dme$/i, "") || "library";
+  const pieces: Array<Entry & { files: number }> = [];
+  for (const [i, group] of groups.entries()) {
+    pieces.push({
+      path: groups.length === 1 ? `${base}.dme` : `${base}-${i + 1}.dme`,
+      data: await zipEntries([...materials, ...group], false),
+      files: materials.length + group.length,
+    });
+  }
+  return pieces;
 }
 
 /** 고른 파일(또는 폴더)을 업로드 묶음으로 만든다. */
@@ -170,14 +222,16 @@ export async function buildScanbodyUploadBundles(
     meshes.push(...found.meshes);
   }
 
-  if (dmes.length === 1) {
-    bundles.push({ fileName: dmes[0]!.path, blob: dmes[0]!.data, label: dmes[0]!.path });
-  } else if (dmes.length > 1) {
-    const counts = new Map(await Promise.all(dmes.map(async (entry) => [entry, await zipEntryCount(entry.data)] as const)));
+  const slimDmes: Array<Entry & { files: number }> = [];
+  for (const dme of dmes) slimDmes.push(...(await slimDmePieces(dme, notes)));
+  if (slimDmes.length === 1) {
+    const one = slimDmes[0]!;
+    bundles.push({ fileName: one.path, blob: one.data, label: one.path });
+  } else if (slimDmes.length > 1) {
     const groups = pack(
-      dmes,
-      (entry) => entry.data.size,
-      (entry) => counts.get(entry) ?? SCAN_FILES,
+      slimDmes,
+      (entry) => byteSize(entry.data),
+      (entry) => entry.files + 1,
     );
     for (const [i, group] of groups.entries()) {
       bundles.push({
@@ -194,7 +248,7 @@ export async function buildScanbodyUploadBundles(
     const groups = [...configDirs].sort().map((dir) => entries.filter((entry) => dirOf(entry.path) === dir));
     const packs = pack(
       groups,
-      (group) => group.reduce((n, entry) => n + entry.data.size, 0),
+      (group) => group.reduce((n, entry) => n + byteSize(entry.data), 0),
       (group) => group.length,
     );
     for (const [i, group] of packs.entries()) {
@@ -212,7 +266,7 @@ export async function buildScanbodyUploadBundles(
     const one = meshes[0]!;
     bundles.push({ fileName: leafName(one.path), blob: one.data, label: leafName(one.path) });
   } else if (meshes.length > 0) {
-    const groups = pack(meshes, (entry) => entry.data.size, () => 1);
+    const groups = pack(meshes, (entry) => byteSize(entry.data), () => 1);
     for (const [i, group] of groups.entries()) {
       bundles.push({
         fileName: `scanbody-meshes-${i + 1}.zip`,

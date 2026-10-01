@@ -159,6 +159,7 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
   const [listOpen, setListOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState("");
+  const [uploadReport, setUploadReport] = useState<string[]>([]);
   const zipInput = useRef<HTMLInputElement>(null);
   const known = useRef<Set<string> | null>(null);
   const { catalog, loaded: catalogLoaded, reload: reloadCatalog } = useScanbodyCatalog(listOpen);
@@ -220,44 +221,32 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
     setListOpen(true);
     setUploading(true);
     setUploadStatus("압축 파일을 읽는 중…");
+    setUploadReport([]);
     try {
       const { rows: uploaded, notes } = await uploadScanbodyFilesAndWait(zips, "", setUploadStatus);
-      if (notes.length > 0) {
-        toast({
-          title: "일부 파일은 올리지 않습니다.",
-          description: (
-            <>
-              {notes.map((line) => (
-                <span key={line} className="block">
-                  {line}
-                </span>
-              ))}
-            </>
-          ),
-        });
-      }
       const failed = uploaded.filter((row) => row.status !== "done");
       const registered = uploaded
         .filter((row) => row.status === "done")
         .reduce((sum, row) => sum + row.libraries.length, 0);
+      const report = [
+        ...notes,
+        ...failed.map(uploadFailLine),
+        ...(registered > 0 ? [`라이브러리 ${registered}개를 등록했습니다.`] : []),
+        ...(failed.length === 0 && registered === 0 ? ["압축 파일에서 등록된 라이브러리가 없습니다."] : []),
+      ];
+      setUploadReport(report);
       if (failed.length > 0) {
         toast({
           title: "일부 압축 파일을 등록하지 못했습니다.",
-          description: (
-            <>
-              {failed.map((row) => (
-                <span key={row.id} className="block">
-                  {uploadFailLine(row)}
-                </span>
-              ))}
-            </>
-          ),
+          description: failed.map(uploadFailLine).join(" "),
           variant: "destructive",
         });
       } else if (registered > 0) {
         toast({ title: `라이브러리 ${registered}개를 등록했습니다.` });
+      } else if (notes.length > 0) {
+        toast({ title: "일부 파일은 올리지 않습니다.", description: notes.join(" ") });
       } else {
-        toast({ title: "압축 파일을 올렸습니다." });
+        toast({ title: "압축 파일에서 등록된 라이브러리가 없습니다." });
       }
       reloadCatalog();
       void load();
@@ -350,6 +339,13 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
             <div>
               <DialogTitle className="text-base">스캔바디 라이브러리 · 템플릿</DialogTitle>
               {uploadStatus ? <p className="mt-1 text-xs text-muted-foreground">{uploadStatus}</p> : null}
+              {uploadReport.length > 0 ? (
+                <ul className="mt-2 space-y-0.5 text-xs text-slate-700">
+                  {uploadReport.map((line, index) => (
+                    <li key={`${index}-${line}`}>{line}</li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
             <Button size="sm" className="shrink-0" disabled={uploading} onClick={pickZip}>
               {uploading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Upload className="mr-1.5 h-4 w-4" />}
