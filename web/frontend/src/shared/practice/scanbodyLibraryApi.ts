@@ -314,8 +314,17 @@ export async function fetchScanbodyUploads(ids: readonly string[] = []): Promise
   return res.data?.data ?? [];
 }
 
-const UPLOAD_POLL_MS = 4000;
+const UPLOAD_POLL_MS = 1500;
 const UPLOAD_WAIT_MS = 25 * 60 * 1000;
+
+/** 검사 중이면 그대로 두고, 등록 중이고 파일이 여러 개면 끝난 비율을 붙여 진행 막대가 움직이게 한다. */
+function libraryRegisterStatus(rows: readonly ScanbodyUploadRow[]): string {
+  if (rows.some((row) => row.status === "scanning")) return "악성코드 검사 중…";
+  if (rows.length <= 1) return "라이브러리 등록 중…";
+  const done = rows.filter((row) => isUploadFinished(row.status)).length;
+  const pct = Math.round((done / rows.length) * 100);
+  return `라이브러리 등록 중 (${done}/${rows.length}) ${pct}%`;
+}
 
 /**
  * 고른 파일을 묶어 올리고 검사·등록이 끝날 때까지 기다린다(AI 디자인 안에서 올릴 때).
@@ -345,7 +354,7 @@ export async function uploadScanbodyFilesAndWait(
   }
   const started = Date.now();
   while (rows.some((row) => !isUploadFinished(row.status)) && Date.now() - started < UPLOAD_WAIT_MS) {
-    onStatus(rows.some((row) => row.status === "scanning") ? "악성코드 검사 중…" : "라이브러리 등록 중…");
+    onStatus(libraryRegisterStatus(rows));
     await new Promise((resolve) => window.setTimeout(resolve, UPLOAD_POLL_MS));
     const next = await fetchScanbodyUploads(rows.map((row) => row.id));
     const byId = new Map(next.map((row) => [row.id, row]));
@@ -393,7 +402,7 @@ export async function uploadScanbodyMeshAndWait(
   let row = done.data.data;
   const started = Date.now();
   while (!isUploadFinished(row.status) && Date.now() - started < UPLOAD_WAIT_MS) {
-    onStatus(row.status === "scanning" ? "악성코드 검사 중…" : "라이브러리 등록 중…");
+    onStatus(libraryRegisterStatus([row]));
     await new Promise((resolve) => window.setTimeout(resolve, UPLOAD_POLL_MS));
     row = (await fetchScanbodyUploads([row.id]))[0] ?? row;
   }

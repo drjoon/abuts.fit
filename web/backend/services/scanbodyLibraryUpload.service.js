@@ -4,7 +4,7 @@
 // 2) GuardDuty Malware Protection for S3가 검사해 GuardDutyMalwareScanStatus 태그를 붙인다.
 //    NO_THREATS_FOUND만 연다. 위협·검사 불가는 거절하고 원본을 지운다. 위협이면 올린 사용자를 차단 목록에 넣는다.
 // 3) 워커 스레드가 압축을 제한 안에서 풀고 형상을 새로 만든다(scanbodyLibraryImport.service.js).
-// 4) 형상은 해시 키(gzip)로 저장하고, 같은 소유자·시스템 이름의 라이브러리에 합친다.
+// 4) 형상은 해시 키(gzip)로 병렬 저장하고, 새 시스템은 한 번에 넣는다. 이미 있는 시스템만 합친다.
 //    기공소 업로드는 여기까지 통과하면 관리자 검토 없이 공용(isPublic)이 된다. 관리자는 내리기만 한다.
 // 검사 대기는 서버 타이머와 브라우저 폴링(GET) 둘 다 진행시킨다. 처리 시작은 상태 전환으로 한 번만 잡는다.
 // SCANBODY_MALWARE_SCAN=guardduty|off (기본: production만 guardduty).
@@ -15,7 +15,8 @@
 // - web/backend/services/uploadBlocklist.service.js
 // - web/backend/controllers/scanbodyLibraries/scanbodyLibrary.controller.js
 import crypto from "crypto";
-import { gzipSync } from "zlib";
+import { promisify } from "util";
+import { gzip } from "zlib";
 import { Worker } from "worker_threads";
 import { Types } from "mongoose";
 import ScanbodyLibrary from "../models/scanbodyLibrary.model.js";
@@ -30,7 +31,6 @@ import {
   getObjectTagsFromS3,
   createUploadPost,
   headObjectSizeInS3,
-  objectExistsInS3,
   putObjectToS3,
 } from "../utils/s3.utils.js";
 import { SCANBODY_UPLOAD_LIMITS } from "./scanbodyLibraryImport.service.js";
@@ -372,6 +372,31 @@ function parseInWorker(buffer, fileName, meshMeta) {
   });
 }
 
+const gzipAsync = promisify(gzip);
+/** 여러 업로드가 동시에 형상을 넣어도 이 수만큼만 네트워크에 올린다. */
+const PART_PUT_LIMIT = 24;
+let partPutActive = 0;
+const partPutQueue = [];
+/** 같은 프로세스에서 같은 해시는 한 번만 올린다. 키는 내용 주소라 다시 써도 바이트가 같다. */
+const partStoreInflight = new Map();
+
+function acquirePartPut() {
+  if (partPutActive < PART_PUT_LIMIT) {
+    partPutActive += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => partPutQueue.push(resolve));
+}
+
+function releasePartPut() {
+  partPutActive -= 1;
+  const next = partPutQueue.shift();
+  if (next) {
+    partPutActive += 1;
+    next();
+  }
+}
+
 async function mapLimit(items, limit, fn) {
   let index = 0;
   const run = async () => {
@@ -385,14 +410,29 @@ async function mapLimit(items, limit, fn) {
 }
 
 async function storePart(part) {
+  const pending = partStoreInflight.get(part.hash);
+  if (pending) return pending;
   const s3Key = `${SCANBODY_S3_PREFIX}/${part.hash}.stl`;
-  if (!(await objectExistsInS3(s3Key))) {
-    await putObjectToS3(s3Key, gzipSync(Buffer.from(part.stl)), {
-      contentType: "model/stl",
-      contentEncoding: "gzip",
-    });
+  const task = (async () => {
+    await acquirePartPut();
+    try {
+      const body = await gzipAsync(Buffer.from(part.stl));
+      await putObjectToS3(s3Key, body, {
+        contentType: "model/stl",
+        contentEncoding: "gzip",
+      });
+      return s3Key;
+    } finally {
+      releasePartPut();
+    }
+  })();
+  partStoreInflight.set(part.hash, task);
+  try {
+    return await task;
+  } catch (error) {
+    partStoreInflight.delete(part.hash);
+    throw error;
   }
-  return s3Key;
 }
 
 /**
@@ -433,6 +473,37 @@ function changesExistingKits(doc, lib) {
   });
 }
 
+/** 합친 뒤 문서가 달라지는지. 같은 파일을 다시 올리면 false라 저장을 건너뛴다. */
+function libraryNeedsWrite(doc, lib, keys, manufacturer, ownerAnchorId) {
+  if (doc.isNew || changesContent(doc, lib)) return true;
+  const parts = new Map((doc.parts || []).map((part) => [part.partId, part]));
+  if (
+    lib.parts.some((part) => {
+      const old = parts.get(part.hash);
+      if (!old) return true;
+      return (
+        old.name !== part.name ||
+        old.s3Key !== keys.get(part.hash) ||
+        (old.diameterMm ?? null) !== (part.diameterMm ?? null) ||
+        (old.heightMm ?? null) !== (part.heightMm ?? null) ||
+        old.size !== part.stl.length
+      );
+    })
+  ) {
+    return true;
+  }
+  const kits = new Map((doc.kits || []).map((kit) => [kit.kitId, kit]));
+  if (lib.kits.some((kit) => kits.get(kit.kitId)?.name !== kit.name)) return true;
+  const grows = (current, extra) => {
+    const before = new Set((current || []).filter(Boolean));
+    return (extra || []).some((item) => item && !before.has(item));
+  };
+  if (grows(doc.fileNames, lib.fileNames) || grows(doc.containerVersions, lib.containerVersions)) return true;
+  if (manufacturer && !(doc.manufacturers || []).includes(manufacturer)) return true;
+  const takenDown = Boolean(doc.reviewedAt) && !doc.isPublic;
+  return Boolean(ownerAnchorId && !doc.forkOf && !takenDown && !doc.isPublic);
+}
+
 /** 올린 묶음에 새 형상·새 키트가 있거나 기존 키트 구성이 바뀌는지. 같은 파일을 다시 올리면 false. */
 function changesContent(doc, lib) {
   const partIds = new Set((doc.parts || []).map((part) => part.partId));
@@ -463,6 +534,7 @@ async function mergeLibrary({ ownerAnchorId, userId, lib, keys, manufacturer }) 
   for (let attempt = 0; ; attempt += 1) {
     try {
       const doc = await mergeTarget(ownerAnchorId, lib);
+      if (!libraryNeedsWrite(doc, lib, keys, manufacturer, ownerAnchorId)) return doc;
       if (doc.isNew || changesContent(doc, lib)) doc.contentUpdatedAt = new Date();
       const parts = new Map((doc.parts || []).map((part) => [part.partId, part.toObject?.() ?? part]));
       for (const part of lib.parts) {
@@ -510,8 +582,129 @@ async function mergeLibrary({ ownerAnchorId, userId, lib, keys, manufacturer }) 
   }
 }
 
+function duplicateKeyOnly(error) {
+  const rows = error?.writeErrors;
+  if (Array.isArray(rows) && rows.length > 0) {
+    return rows.every((row) => Number(row?.code ?? row?.err?.code) === 11000);
+  }
+  return Number(error?.code) === 11000;
+}
+
+function newLibraryDoc({ ownerAnchorId, userId, lib, keys, manufacturer }) {
+  return {
+    ownerAnchorId: ownerAnchorId ?? null,
+    forkOf: null,
+    systemName: lib.systemName,
+    source: lib.source,
+    fileNames: [...(lib.fileNames || [])],
+    containerVersions: [...(lib.containerVersions || [])].sort(),
+    manufacturers: manufacturer ? [manufacturer] : [],
+    parts: lib.parts.map((part) => ({
+      partId: part.hash,
+      name: part.name,
+      partClass: "scanAbutment",
+      format: "stl",
+      hash: part.hash,
+      s3Key: keys.get(part.hash),
+      size: part.stl.length,
+      diameterMm: part.diameterMm ?? null,
+      heightMm: part.heightMm ?? null,
+    })),
+    kits: lib.kits.map((kit) => ({
+      kitId: kit.kitId,
+      name: kit.name,
+      implantPartId: null,
+      scanAbutmentPartIds: kit.scanAbutmentPartIds,
+      screwPartId: null,
+      basePartId: null,
+      blankPartId: null,
+      catalogIds: [],
+    })),
+    contentUpdatedAt: new Date(),
+    isPublic: Boolean(ownerAnchorId),
+    uploadedBy: userId,
+  };
+}
+
+function librarySummary(doc, lib) {
+  return {
+    libraryId: doc._id,
+    systemName: lib.systemName,
+    source: lib.source,
+    kitCount: lib.kits.length,
+    partCount: lib.parts.length,
+  };
+}
+
+/**
+ * 없는 시스템은 한 번에 넣고, 이미 있는 이름·한 묶음 안의 같은 이름만 기존 합치기를 탄다.
+ * 동시에 같은 이름이 들어가면 그 건만 합치기로 넘긴다.
+ */
+async function saveParsedLibraries({ ownerAnchorId, userId, libraries, keys, manufacturer }) {
+  const names = [...new Set(libraries.map((lib) => lib.systemName))];
+  const existingRows =
+    names.length === 0
+      ? []
+      : await ScanbodyLibrary.find({
+          ownerAnchorId: ownerAnchorId ?? null,
+          forkOf: null,
+          systemName: { $in: names },
+        })
+          .select("systemName")
+          .lean();
+  const existing = new Set(existingRows.map((row) => row.systemName));
+  const counts = new Map();
+  for (const lib of libraries) counts.set(lib.systemName, (counts.get(lib.systemName) ?? 0) + 1);
+  const fresh = [];
+  const sequential = [];
+  for (const lib of libraries) {
+    if (existing.has(lib.systemName) || counts.get(lib.systemName) > 1) sequential.push(lib);
+    else fresh.push(lib);
+  }
+
+  const byName = new Map();
+  const mergeRows = (rows) =>
+    mapLimit(rows, 8, async (lib) => {
+      byName.set(
+        lib.systemName,
+        await mergeLibrary({
+          ownerAnchorId,
+          userId,
+          lib,
+          keys,
+          manufacturer,
+        }),
+      );
+    });
+
+  let freshInserted = true;
+  if (fresh.length > 0) {
+    try {
+      const inserted = await ScanbodyLibrary.insertMany(
+        fresh.map((lib) => newLibraryDoc({ ownerAnchorId, userId, lib, keys, manufacturer })),
+        { ordered: false },
+      );
+      fresh.forEach((lib, index) => {
+        if (inserted[index]) byName.set(lib.systemName, inserted[index]);
+      });
+    } catch (error) {
+      if (!duplicateKeyOnly(error)) throw error;
+      freshInserted = false;
+    }
+  }
+  await mergeRows(sequential);
+  if (!freshInserted) await mergeRows(fresh);
+
+  return libraries.map((lib) => {
+    const doc = byName.get(lib.systemName);
+    if (!doc) throw new Error(`library was not saved: ${lib.systemName}`);
+    return librarySummary(doc, lib);
+  });
+}
+
 async function processUpload(job) {
   const quarantineKey = job.quarantineKey;
+  const started = Date.now();
   let buffer;
   try {
     buffer = await getObjectBufferFromS3(quarantineKey);
@@ -542,31 +735,33 @@ async function processUpload(job) {
     );
   }
 
+  const parsedAt = Date.now();
   try {
     const unique = new Map();
     for (const lib of parsed.libraries) for (const part of lib.parts) unique.set(part.hash, part);
     const keys = new Map();
-    await mapLimit([...unique.values()], 8, async (part) => {
-      keys.set(part.hash, await storePart(part));
-    });
-    const libraries = [];
-    await mapLimit(parsed.libraries, 4, async (lib) => {
-      const doc = await mergeLibrary({
-        ownerAnchorId: job.ownerAnchorId,
-        userId: job.uploadedBy,
-        lib,
-        keys,
-        manufacturer: job.manufacturer || "",
-      });
-      libraries.push({
-        libraryId: doc._id,
-        systemName: lib.systemName,
-        source: lib.source,
-        kitCount: lib.kits.length,
-        partCount: lib.parts.length,
-      });
+    await Promise.all(
+      [...unique.values()].map(async (part) => {
+        keys.set(part.hash, await storePart(part));
+      }),
+    );
+    const storedAt = Date.now();
+    const libraries = await saveParsedLibraries({
+      ownerAnchorId: job.ownerAnchorId,
+      userId: job.uploadedBy,
+      libraries: parsed.libraries,
+      keys,
+      manufacturer: job.manufacturer || "",
     });
     libraries.sort((a, b) => a.systemName.localeCompare(b.systemName));
+    console.log("[scanbody-upload] registered", {
+      jobId: String(job._id),
+      parts: unique.size,
+      libraries: libraries.length,
+      readParseMs: parsedAt - started,
+      storeMs: storedAt - parsedAt,
+      saveMs: Date.now() - storedAt,
+    });
     emitAppEventToRoles(["admin"], "scanbody:demand-updated", { at: new Date().toISOString() });
     return finish(
       job._id,

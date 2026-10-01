@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Boxes, Loader2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -127,6 +128,14 @@ function templateGroups(rows: readonly AbutmentTemplateRow[]) {
       const owners = [...new Set(sorted.map((row) => row.ownerName).filter(Boolean))];
       return { kind, chips, count: sorted.length, latest, owners };
     });
+}
+
+/** 상태 문구의 `45%`를 진행 막대 값으로 떼고, 문구에서는 뺀다. */
+function uploadProgress(text: string): { label: string; percent: number | null } {
+  const match = text.match(/(\d+)\s*%/);
+  const value = match ? Number(match[1]) : NaN;
+  const percent = Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : null;
+  return { label: text.replace(/\s*\d+\s*%/, "").trim(), percent };
 }
 
 function uploadFailLine(row: ScanbodyUploadRow) {
@@ -272,6 +281,7 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
   const registeredCount = libraries.length + templates.length;
 
   const pickZip = () => zipInput.current?.click();
+  const progress = uploadStatus ? uploadProgress(uploadStatus) : null;
 
   return (
     <>
@@ -335,19 +345,43 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
 
       <Dialog open={listOpen} onOpenChange={setListOpen}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-6xl">
-          <DialogHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pr-6">
-            <div>
-              <DialogTitle className="text-base">스캔바디 라이브러리 · 템플릿</DialogTitle>
-              {uploadStatus ? <p className="mt-1 text-xs text-muted-foreground">{uploadStatus}</p> : null}
+          <DialogHeader className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 space-y-0 pr-8 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+            <DialogTitle className="text-base sm:justify-self-start">스캔바디 라이브러리 · 템플릿</DialogTitle>
+            <div className="col-span-2 flex flex-col items-center gap-1.5 sm:col-span-1 sm:col-start-2">
+              <p className="text-center text-xs leading-relaxed text-muted-foreground">
+                제조사에 접촉해서 라이브러리를 받아서 올리세요.
+                <br />
+                제조사를 찾을 수 없는 경우 「기공소에 요청」을 누르면 의뢰받은 기공소가 올립니다.
+              </p>
+              {progress ? (
+                <div className="flex w-full max-w-sm items-center justify-center gap-2">
+                  {progress.label ? (
+                    <p className="shrink-0 text-xs text-muted-foreground">{progress.label}</p>
+                  ) : null}
+                  {progress.percent != null ? (
+                    <>
+                      <Progress value={progress.percent} className="h-1.5 w-28" aria-label="업로드 진행률" />
+                      <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
+                        {progress.percent}%
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
               {uploadReport.length > 0 ? (
-                <ul className="mt-2 space-y-0.5 text-xs text-slate-700">
+                <ul className="max-w-md space-y-0.5 text-center text-xs text-slate-700">
                   {uploadReport.map((line, index) => (
                     <li key={`${index}-${line}`}>{line}</li>
                   ))}
                 </ul>
               ) : null}
             </div>
-            <Button size="sm" className="shrink-0" disabled={uploading} onClick={pickZip}>
+            <Button
+              size="sm"
+              className="col-start-2 row-start-1 shrink-0 justify-self-end sm:col-start-3"
+              disabled={uploading}
+              onClick={pickZip}
+            >
               {uploading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Upload className="mr-1.5 h-4 w-4" />}
               {uploading ? "올리는 중…" : "압축 파일 올리기"}
             </Button>
@@ -358,11 +392,6 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
               <h3 className="text-sm font-semibold text-slate-900">
                 미등록 {rows.length}종 · 의뢰 {transfers}건
               </h3>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                제조사에 접촉해서 라이브러리를 받아서 올리세요.
-                <br />
-                제조사를 찾을 수 없는 경우 「기공소에 요청」을 누르면 의뢰받은 기공소가 올립니다.
-              </p>
             </div>
             {hasRows ? (
               <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
