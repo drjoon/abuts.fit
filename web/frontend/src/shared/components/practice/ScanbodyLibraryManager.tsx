@@ -7,7 +7,7 @@
 // - web/frontend/src/shared/practice/scanbodyLibraryApi.ts
 // - web/frontend/src/shared/files/scanbodyLibraryBundle.ts
 // - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
-// - web/frontend/src/pages/admin/dashboard/ScanbodyDemandCard.tsx (관리자: 대시보드 스캔바디 카드 서브 모달)
+// - web/frontend/src/pages/admin/dashboard/ScanbodyDemandCard.tsx (관리자 대시보드는 이 화면 대신 압축 파일만 올린다)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, FolderUp, Link2, Loader2, Trash2, Upload, X } from "lucide-react";

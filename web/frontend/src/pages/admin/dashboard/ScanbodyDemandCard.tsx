@@ -1,14 +1,14 @@
 // 관리자 대시보드 — 의뢰에 쌓인 스캔바디·심플 규격 중 공용 형상이 없는 것(임플란트·치과·기공소 수와 함께).
 // 치과가 의뢰를 보내면 서버가 쌓은 뒤 scanbody:demand-updated를 보내 바로 다시 센다. 새 규격이 생기면 토스트로도 알린다.
-// 카드는 요약만 보이고, 클릭하면 전체 목록 모달(2열), 「라이브러리 올리기」는 라이브러리·템플릿 관리 서브 모달을 연다.
+// 카드는 요약만 보이고, 클릭하면 전체 목록 모달(미등록 카드 아래 등록된 라이브러리·템플릿).
+// 「압축 파일 올리기」는 .zip만 고른다. 관리 모달은 열지 않는다.
 // 제조사(지오메디 등)와 심플 종류는 각각 한 장에 없는 규격을 여러 개 넣고, 「기공소에 요청」은 그 규격을 한 번에 올린다.
 // 제조사에 접촉해 받아 등록하는 것이 기본이다. 제조사를 찾을 수 없을 때만 기공소 AI 디자인에 올리기 버튼이 뜬다.
 // related files:
 // - web/backend/services/scanbodyDemand.service.js
-// - web/frontend/src/shared/practice/scanbodyLibraryApi.ts (fetchScanbodyDemand)
-// - web/frontend/src/shared/components/practice/ScanbodyLibraryManager.tsx
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Boxes, Upload } from "lucide-react";
+// - web/frontend/src/shared/practice/scanbodyLibraryApi.ts
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Boxes, Loader2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -17,13 +17,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ScanbodyLibraryManager } from "@/shared/components/practice/ScanbodyLibraryManager";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import {
+  TEMPLATE_KINDS,
   fetchScanbodyDemand,
   setScanbodyDemandLabRequest,
+  uploadScanbodyFilesAndWait,
+  useScanbodyCatalog,
+  type AbutmentTemplateRow,
   type ScanbodyDemandRow,
+  type ScanbodyLibraryRow,
+  type ScanbodyUploadRow,
 } from "@/shared/practice/scanbodyLibraryApi";
 import { cn } from "@/shared/ui/cn";
 
@@ -66,12 +71,97 @@ function implantLabel(row: ScanbodyDemandRow) {
     .join(" · ");
 }
 
+function trimMm(value: number) {
+  return String(Math.round(value * 100) / 100);
+}
+
+function chipSort(a: string, b: string) {
+  const da = Number(a.split(/[/(]/)[0]);
+  const db = Number(b.split(/[/(]/)[0]);
+  if (Number.isFinite(da) && Number.isFinite(db) && da !== db) return da - db;
+  return a.localeCompare(b, "ko");
+}
+
+function librarySourceLabel(lib: ScanbodyLibraryRow) {
+  if (lib.source === "exocad") return "exocad";
+  if (lib.source === "scan") return "형상 파일";
+  const versions = lib.containerVersions.filter(Boolean).join(", ");
+  return versions ? `3Shape ${versions}` : "3Shape";
+}
+
+function libraryChips(lib: ScanbodyLibraryRow) {
+  const scanIds = new Set(lib.kits.flatMap((kit) => kit.scanAbutmentPartIds));
+  const measured = lib.parts.filter(
+    (part) => part.diameterMm != null && (scanIds.size === 0 || scanIds.has(part.partId)),
+  );
+  const chips = [
+    ...new Set(
+      measured
+        .map((part) => {
+          if (part.diameterMm == null) return "";
+          return part.heightMm != null ? `${trimMm(part.diameterMm)}/${trimMm(part.heightMm)}` : trimMm(part.diameterMm);
+        })
+        .filter(Boolean),
+    ),
+  ].sort(chipSort);
+  if (chips.length > 0) return chips;
+  return lib.kits.map((kit) => kit.name).filter(Boolean);
+}
+
+function templateGroups(rows: readonly AbutmentTemplateRow[]) {
+  const buckets = new Map<string, AbutmentTemplateRow[]>();
+  for (const row of rows) {
+    const bucket = buckets.get(row.kind) ?? [];
+    bucket.push(row);
+    buckets.set(row.kind, bucket);
+  }
+  const order = new Map(TEMPLATE_KINDS.map((kind, index) => [kind, index]));
+  return [...buckets.entries()]
+    .sort((a, b) => (order.get(a[0] as (typeof TEMPLATE_KINDS)[number]) ?? 99) - (order.get(b[0] as (typeof TEMPLATE_KINDS)[number]) ?? 99))
+    .map(([kind, specs]) => {
+      const sorted = [...specs].sort(
+        (a, b) => Number(a.diameter) - Number(b.diameter) || a.height.localeCompare(b.height),
+      );
+      const chips = [...new Set(sorted.map((row) => (row.height ? `${row.diameter} (${row.height})` : row.diameter)))];
+      const latest = sorted.reduce((max, row) => (row.updatedAt > max ? row.updatedAt : max), "");
+      const owners = [...new Set(sorted.map((row) => row.ownerName).filter(Boolean))];
+      return { kind, chips, count: sorted.length, latest, owners };
+    });
+}
+
+function uploadFailLine(row: ScanbodyUploadRow) {
+  const reason = row.message || (row.status === "rejected" ? "거절" : "등록이 끝나지 않았습니다.");
+  return `${row.fileName}: ${reason}`;
+}
+
+function SpecChips({ chips, tone }: { chips: readonly string[]; tone: "amber" | "slate" }) {
+  if (chips.length === 0) return null;
+  return (
+    <ul className="mt-1.5 flex flex-wrap gap-1">
+      {chips.map((chip) => (
+        <li
+          key={chip}
+          className={cn(
+            "rounded px-1.5 py-0.5 text-[11px] font-medium",
+            tone === "amber" ? "bg-amber-50 text-amber-900" : "bg-slate-100 text-slate-700",
+          )}
+        >
+          {chip}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function ScanbodyDemandCard({ className }: { className?: string }) {
   const { toast } = useToast();
   const [rows, setRows] = useState<ScanbodyDemandRow[]>([]);
   const [listOpen, setListOpen] = useState(false);
-  const [managerOpen, setManagerOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState("");
+  const zipInput = useRef<HTMLInputElement>(null);
   const known = useRef<Set<string> | null>(null);
+  const { catalog, loaded: catalogLoaded, reload: reloadCatalog } = useScanbodyCatalog(listOpen);
 
   const load = useCallback(async () => {
     try {
@@ -121,11 +211,93 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
     }
   };
 
+  const onZipFiles = async (files: File[]) => {
+    const zips = files.filter((file) => /\.zip$/i.test(file.name));
+    if (zips.length === 0) {
+      toast({ title: "압축 파일(.zip)을 골라 주세요.", variant: "destructive" });
+      return;
+    }
+    setListOpen(true);
+    setUploading(true);
+    setUploadStatus("압축 파일을 읽는 중…");
+    try {
+      const { rows: uploaded, notes } = await uploadScanbodyFilesAndWait(zips, "", setUploadStatus);
+      if (notes.length > 0) {
+        toast({
+          title: "일부 파일은 올리지 않습니다.",
+          description: (
+            <>
+              {notes.map((line) => (
+                <span key={line} className="block">
+                  {line}
+                </span>
+              ))}
+            </>
+          ),
+        });
+      }
+      const failed = uploaded.filter((row) => row.status !== "done");
+      const registered = uploaded
+        .filter((row) => row.status === "done")
+        .reduce((sum, row) => sum + row.libraries.length, 0);
+      if (failed.length > 0) {
+        toast({
+          title: "일부 압축 파일을 등록하지 못했습니다.",
+          description: (
+            <>
+              {failed.map((row) => (
+                <span key={row.id} className="block">
+                  {uploadFailLine(row)}
+                </span>
+              ))}
+            </>
+          ),
+          variant: "destructive",
+        });
+      } else if (registered > 0) {
+        toast({ title: `라이브러리 ${registered}개를 등록했습니다.` });
+      } else {
+        toast({ title: "압축 파일을 올렸습니다." });
+      }
+      reloadCatalog();
+      void load();
+    } catch (error) {
+      toast({
+        title: "압축 파일을 올리지 못했습니다.",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setUploading(false);
+      setUploadStatus("");
+    }
+  };
+
   const transfers = rows.reduce((sum, row) => sum + row.transferCount, 0);
   const hasRows = rows.length > 0;
+  const libraries = useMemo(
+    () => [...catalog.libraries].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    [catalog.libraries],
+  );
+  const templates = useMemo(() => templateGroups(catalog.templates), [catalog.templates]);
+  const registeredCount = libraries.length + templates.length;
+
+  const pickZip = () => zipInput.current?.click();
 
   return (
     <>
+      <input
+        ref={zipInput}
+        type="file"
+        accept=".zip,application/zip"
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? []);
+          event.target.value = "";
+          void onZipFiles(files);
+        }}
+      />
       <Card
         className={cn(
           "app-glass-card app-glass-card--lg h-full cursor-pointer transition hover:bg-slate-50/60",
@@ -159,14 +331,16 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
             size="sm"
             variant="outline"
             className="h-7 w-full bg-white text-[11px]"
+            disabled={uploading}
             onClick={(e) => {
               e.stopPropagation();
-              setManagerOpen(true);
+              pickZip();
             }}
           >
-            <Upload className="mr-1 h-3.5 w-3.5" />
-            라이브러리 올리기
+            {uploading ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1 h-3.5 w-3.5" />}
+            {uploading ? "올리는 중…" : "압축 파일 올리기"}
           </Button>
+          {uploadStatus && !listOpen ? <p className="text-[11px] text-muted-foreground">{uploadStatus}</p> : null}
         </CardContent>
       </Card>
 
@@ -174,88 +348,122 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-6xl">
           <DialogHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pr-6">
             <div>
-              <DialogTitle className="text-base">
-                라이브러리가 없는 스캔바디 {rows.length}종 · 의뢰 {transfers}건
-              </DialogTitle>
+              <DialogTitle className="text-base">스캔바디 라이브러리 · 템플릿</DialogTitle>
+              {uploadStatus ? <p className="mt-1 text-xs text-muted-foreground">{uploadStatus}</p> : null}
+            </div>
+            <Button size="sm" className="shrink-0" disabled={uploading} onClick={pickZip}>
+              {uploading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Upload className="mr-1.5 h-4 w-4" />}
+              {uploading ? "올리는 중…" : "압축 파일 올리기"}
+            </Button>
+          </DialogHeader>
+
+          <section className="space-y-3">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                미등록 {rows.length}종 · 의뢰 {transfers}건
+              </h3>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 제조사에 접촉해서 라이브러리를 받아서 올리세요.
                 <br />
                 제조사를 찾을 수 없는 경우 「기공소에 요청」을 누르면 의뢰받은 기공소가 올립니다.
               </p>
             </div>
-            <Button size="sm" className="shrink-0" onClick={() => setManagerOpen(true)}>
-              <Upload className="mr-1.5 h-4 w-4" />
-              라이브러리 올리기
-            </Button>
-          </DialogHeader>
-          {hasRows ? (
-            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {rows.map((row) => {
-                const specs = row.specs?.length ? row.specs : [];
-                return (
-                  <li
-                    key={row.key}
-                    className="flex flex-col justify-between gap-2 rounded-md border border-amber-200 bg-white px-3 py-2.5 text-xs"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="font-medium text-slate-900">{cardTitle(row)}</span>
-                        {row.labUploadRequested ? (
-                          <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700">
-                            기공소에 요청함
-                          </span>
+            {hasRows ? (
+              <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {rows.map((row) => {
+                  const specs = row.specs?.length ? row.specs : [];
+                  return (
+                    <li
+                      key={row.key}
+                      className="flex flex-col justify-between gap-2 rounded-md border border-amber-200 bg-white px-3 py-2.5 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-medium text-slate-900">{cardTitle(row)}</span>
+                          {row.labUploadRequested ? (
+                            <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700">
+                              기공소에 요청함
+                            </span>
+                          ) : null}
+                        </div>
+                        <SpecChips chips={specs.map((spec) => specBits(spec, row.type))} tone="amber" />
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          의뢰 {row.transferCount}건 · 치아 {row.teethCount}개 · 치과 {row.practiceCount}곳 · 기공소{" "}
+                          {row.labCount}곳 · 최근 {row.latestAt ? kstTime.format(new Date(row.latestAt)) : "-"}
+                        </div>
+                        {row.implants.length > 0 ? (
+                          <div className="text-[11px] text-muted-foreground">임플란트 {implantLabel(row)}</div>
                         ) : null}
                       </div>
-                      {specs.length > 0 ? (
-                        <ul className="mt-1.5 flex flex-wrap gap-1">
-                          {specs.map((spec) => (
-                            <li
-                              key={spec.key}
-                              className="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-900"
-                            >
-                              {specBits(spec, row.type)}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : null}
-                      <div className="mt-1 text-[11px] text-muted-foreground">
-                        의뢰 {row.transferCount}건 · 치아 {row.teethCount}개 · 치과 {row.practiceCount}곳 · 기공소{" "}
-                        {row.labCount}곳 · 최근 {row.latestAt ? kstTime.format(new Date(row.latestAt)) : "-"}
-                      </div>
-                      {row.implants.length > 0 ? (
-                        <div className="text-[11px] text-muted-foreground">임플란트 {implantLabel(row)}</div>
-                      ) : null}
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 shrink-0 self-start bg-white px-2 text-[11px]"
-                      onClick={() => void toggleLabRequest(row)}
-                    >
-                      {row.labUploadRequested ? "요청 거두기" : "기공소에 요청"}
-                    </Button>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="text-xs text-muted-foreground">라이브러리가 없는 스캔바디 의뢰가 없습니다.</p>
-          )}
-        </DialogContent>
-      </Dialog>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 shrink-0 self-start bg-white px-2 text-[11px]"
+                        onClick={() => void toggleLabRequest(row)}
+                      >
+                        {row.labUploadRequested ? "요청 거두기" : "기공소에 요청"}
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground">라이브러리가 없는 스캔바디 의뢰가 없습니다.</p>
+            )}
+          </section>
 
-      <Dialog
-        open={managerOpen}
-        onOpenChange={(next) => {
-          setManagerOpen(next);
-          if (!next) void load();
-        }}
-      >
-        <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-base">스캔바디 라이브러리 · 템플릿</DialogTitle>
-          </DialogHeader>
-          <ScanbodyLibraryManager />
+          <section className="space-y-3 border-t pt-4">
+            <h3 className="text-sm font-semibold text-slate-900">
+              등록됨
+              {catalogLoaded
+                ? ` · 라이브러리 ${libraries.length}개 · 템플릿 ${catalog.templates.length}개`
+                : ""}
+            </h3>
+            {!catalogLoaded ? (
+              <p className="text-xs text-muted-foreground">등록된 데이터를 불러오는 중입니다.</p>
+            ) : registeredCount === 0 ? (
+              <p className="text-xs text-muted-foreground">등록된 라이브러리·템플릿이 없습니다.</p>
+            ) : (
+              <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {libraries.map((lib) => (
+                  <li key={lib.id} className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-xs">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-medium text-slate-900">{lib.systemName || "스캔바디 라이브러리"}</span>
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                        {lib.scope === "public" ? "어벗츠 공용" : "기공소"}
+                      </span>
+                    </div>
+                    <SpecChips chips={libraryChips(lib)} tone="slate" />
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      {librarySourceLabel(lib)} · 키트 {lib.kits.length}개 · 스캔바디 {lib.parts.length}개 · 최근{" "}
+                      {lib.updatedAt ? kstTime.format(new Date(lib.updatedAt)) : "-"}
+                    </div>
+                    {lib.manufacturers && lib.manufacturers.length > 0 ? (
+                      <div className="text-[11px] text-muted-foreground">제조사 {lib.manufacturers.join(" · ")}</div>
+                    ) : null}
+                    {lib.ownerName ? <div className="text-[11px] text-muted-foreground">{lib.ownerName}</div> : null}
+                  </li>
+                ))}
+                {templates.map((group) => (
+                  <li key={group.kind} className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-xs">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-medium text-slate-900">{group.kind} 템플릿</span>
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                        템플릿
+                      </span>
+                    </div>
+                    <SpecChips chips={group.chips} tone="slate" />
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      {group.count}개 · 최근 {group.latest ? kstTime.format(new Date(group.latest)) : "-"}
+                    </div>
+                    {group.owners.length > 0 ? (
+                      <div className="text-[11px] text-muted-foreground">{group.owners.join(" · ")}</div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </DialogContent>
       </Dialog>
     </>
