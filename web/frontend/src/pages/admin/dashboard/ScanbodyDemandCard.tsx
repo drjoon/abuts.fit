@@ -33,6 +33,7 @@ import {
 } from "@/shared/practice/scanbodyLibraryApi";
 import {
   groupRegisteredLibraries,
+  isPriorityMakerLibrary,
   libraryMatchesMaker,
   splitScanbodyCode,
   type RegisteredLibraryGroup,
@@ -323,6 +324,30 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
   );
   const templates = useMemo(() => templateGroups(catalog.templates), [catalog.templates]);
   const registeredCount = libraries.length + templates.length;
+  const [query, setQuery] = useState("");
+  const [showRest, setShowRest] = useState(false);
+  const [openAttached, setOpenAttached] = useState<Set<string>>(new Set());
+  const { priorityGroups, restGroups } = useMemo(() => {
+    const priority: typeof looseGroups = [];
+    const rest: typeof looseGroups = [];
+    for (const group of looseGroups) {
+      (group.libs.some(isPriorityMakerLibrary) ? priority : rest).push(group);
+    }
+    return { priorityGroups: priority, restGroups: rest };
+  }, [looseGroups]);
+  const restLibCount = restGroups.reduce((sum, group) => sum + group.libs.length, 0);
+  const needle = query.trim().toLowerCase();
+  const visibleGroups = useMemo(() => {
+    if (needle) {
+      return looseGroups.filter((group) =>
+        [group.title, ...group.libs.flatMap((lib) => [lib.systemName, ...lib.kits.map((kit) => kit.name)])]
+          .join(" ")
+          .toLowerCase()
+          .includes(needle),
+      );
+    }
+    return showRest ? [...priorityGroups, ...restGroups] : priorityGroups;
+  }, [needle, looseGroups, priorityGroups, restGroups, showRest]);
 
   const pickZip = () => zipInput.current?.click();
   const progress = uploadStatus ? uploadProgress(uploadStatus) : null;
@@ -473,7 +498,22 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
                         ) : null}
                         {attached.length > 0 ? (
                           <div className="mt-2 space-y-1.5 border-t border-slate-200 pt-2">
-                            {attached.map((group) => {
+                            <button
+                              type="button"
+                              className="text-[11px] text-sky-700 hover:underline"
+                              onClick={() =>
+                                setOpenAttached((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(row.key)) next.delete(row.key);
+                                  else next.add(row.key);
+                                  return next;
+                                })
+                              }
+                            >
+                              등록된 {row.maker} {attached.length}묶음 · {attached.reduce((s, g) => s + g.libs.length, 0)}개{" "}
+                              {openAttached.has(row.key) ? "접기" : "보기"}
+                            </button>
+                            {(openAttached.has(row.key) ? attached : []).map((group) => {
                               const { chips } = groupChipList(group);
                               return (
                                 <div key={group.key}>
@@ -514,8 +554,31 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
             ) : registeredCount === 0 ? (
               <p className="text-xs text-muted-foreground">등록된 라이브러리·템플릿이 없습니다.</p>
             ) : (
+              <>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="제조사·코드 검색"
+                  className="h-7 w-56 rounded-md border border-slate-200 px-2 text-xs"
+                />
+                {!needle && restGroups.length > 0 ? (
+                  <>
+                    <span className="text-muted-foreground">
+                      그 외 {restGroups.length}묶음 · {restLibCount}개 숨김
+                    </span>
+                    <button
+                      type="button"
+                      className="text-sky-700 hover:underline"
+                      onClick={() => setShowRest((v) => !v)}
+                    >
+                      {showRest ? "접기" : "펼치기"}
+                    </button>
+                  </>
+                ) : null}
+              </div>
               <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {looseGroups.map((group) => {
+                {visibleGroups.map((group) => {
                   const latest = group.libs.reduce((max, lib) => (lib.updatedAt > max ? lib.updatedAt : max), "");
                   const kits = group.libs.reduce((sum, lib) => sum + lib.kits.length, 0);
                   const parts = group.libs.reduce((sum, lib) => sum + lib.parts.length, 0);
@@ -566,6 +629,7 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
                   </li>
                 ))}
               </ul>
+              </>
             )}
           </section>
         </DialogContent>

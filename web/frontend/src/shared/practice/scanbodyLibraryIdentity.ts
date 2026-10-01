@@ -119,6 +119,17 @@ function labelHits(label: string, key: string, aliasKeys: Set<string> | null) {
   return tokens.some((token) => token === key || Boolean(aliasKeys?.has(token)));
 }
 
+/** 먼저 보여 줄 주력 제조사(시스템에 등록된 임플란트 제조사). 지오메디 같은 카탈로그 묶음은 뺀다. */
+const PRIORITY_MAKERS = ["osstem", "neobiotech", "dentium", "dio", "megagen", "dentis"] as const;
+
+/** 라이브러리가 주력 제조사 것이면 true. 나머지는 화면에서 개수만 보이고 검색 때 찾는다. */
+export function isPriorityMakerLibrary(lib: LibraryIdentitySource) {
+  return PRIORITY_MAKERS.some((maker) => {
+    const label = MAKER_ALIAS_GROUPS.find((group) => group[0] === maker)?.[1] ?? maker;
+    return libraryMatchesMaker(lib, label) || libraryMatchesMaker(lib, maker);
+  });
+}
+
 /** 의뢰 스캔바디 제조사가 이 라이브러리의 제조사·브랜드·코드와 맞는지. */
 export function libraryMatchesMaker(lib: LibraryIdentitySource, maker: string) {
   const key = makerKey(maker);
