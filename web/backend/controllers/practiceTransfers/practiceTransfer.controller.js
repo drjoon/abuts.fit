@@ -1,4 +1,5 @@
 import { Types } from "mongoose";
+import { notifyScanbodyDemand } from "../../services/scanbodyDemand.service.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import PracticeTransferDraft from "../../models/practiceTransferDraft.model.js";
 import { purgeStalePracticeTransferDrafts } from "../../utils/practiceTransferDraft.util.js";
@@ -3799,6 +3800,7 @@ export async function createPracticeTransfer(req, res) {
     }
 
     schedulePracticeScanAlignment(transferDoc._id, { newUpload: true });
+    notifyScanbodyDemand(transferDoc, toothWorksRaw);
     res.status(201).json({
       success: true,
       message:
@@ -6088,6 +6090,7 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
     };
     if (typesChanged || specsChanged) {
       setPayload.toothWorks = nextToothWorks;
+      notifyScanbodyDemand(doc, nextToothWorks);
     }
     if (typesChanged) {
       setPayload.billing = nextBilling;
@@ -7100,6 +7103,7 @@ export async function remakePracticeTransfers(req, res) {
         },
       });
       schedulePracticeScanAlignment(transferDoc._id, { newUpload: true });
+      notifyScanbodyDemand(transferDoc, toothWorks);
 
       const targetLabAnchorIdText = String(targetLabAnchorId || "").trim();
       if (targetLabAnchorIdText) {

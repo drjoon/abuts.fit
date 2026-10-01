@@ -285,6 +285,196 @@ export function trianglesFromStl(buffer) {
   return Float32Array.from(values);
 }
 
+const PLY_TYPES = {
+  char: [1, "readInt8"],
+  int8: [1, "readInt8"],
+  uchar: [1, "readUInt8"],
+  uint8: [1, "readUInt8"],
+  short: [2, "readInt16"],
+  int16: [2, "readInt16"],
+  ushort: [2, "readUInt16"],
+  uint16: [2, "readUInt16"],
+  int: [4, "readInt32"],
+  int32: [4, "readInt32"],
+  uint: [4, "readUInt32"],
+  uint32: [4, "readUInt32"],
+  float: [4, "readFloat"],
+  float32: [4, "readFloat"],
+  double: [8, "readDouble"],
+  float64: [8, "readDouble"],
+};
+
+function plyType(name) {
+  const type = PLY_TYPES[name];
+  if (!type) fail(`PLY 형식(${name})을 읽을 수 없습니다.`);
+  return type;
+}
+
+/** PLY(ASCII·이진) → 삼각형 좌표(9개씩). 다각형 면은 부채꼴로 나눈다. */
+export function trianglesFromPly(buffer) {
+  const headEnd = buffer.indexOf("end_header", 0, "latin1");
+  if (headEnd < 0 || headEnd > 64 * 1024) fail("PLY 형식이 올바르지 않습니다.");
+  const bodyStart = buffer.indexOf(0x0a, headEnd) + 1;
+  const lines = buffer.subarray(0, headEnd).toString("latin1").split(/\r?\n/);
+  if (lines[0]?.trim() !== "ply") fail("PLY 형식이 올바르지 않습니다.");
+  let format = "";
+  const elements = [];
+  for (const line of lines) {
+    const t = line.trim().split(/\s+/);
+    if (t[0] === "format") format = t[1];
+    else if (t[0] === "element") {
+      const count = Number(t[2]);
+      if (!Number.isInteger(count) || count < 0 || count > MAX_VERTICES * 4) fail("PLY 요소 개수가 올바르지 않습니다.");
+      elements.push({ name: t[1], count, props: [] });
+    }
+    else if (t[0] === "property" && elements.length) {
+      const el = elements[elements.length - 1];
+      if (t[1] === "list") el.props.push({ name: t[4], list: true, countType: plyType(t[2]), type: plyType(t[3]) });
+      else el.props.push({ name: t[2], list: false, type: plyType(t[1]) });
+    }
+  }
+  if (!["ascii", "binary_little_endian", "binary_big_endian"].includes(format)) fail("PLY 형식이 올바르지 않습니다.");
+  const vertexEl = elements.find((el) => el.name === "vertex");
+  const faceEl = elements.find((el) => el.name === "face");
+  if (!vertexEl || !faceEl) fail("PLY에 꼭짓점·면이 없습니다.");
+  if (vertexEl.count > MAX_VERTICES) fail("꼭짓점이 너무 많습니다.");
+  const xyz = ["x", "y", "z"].map((name) => vertexEl.props.findIndex((p) => p.name === name && !p.list));
+  if (xyz.some((i) => i < 0)) fail("PLY 꼭짓점에 x·y·z가 없습니다.");
+  const faceProp = faceEl.props.findIndex((p) => p.list && /^vertex_ind(ex|ices)$/.test(p.name));
+  if (faceProp < 0) fail("PLY 면에 vertex_indices가 없습니다.");
+
+  const verts = new Float32Array(vertexEl.count * 3);
+  const tris = [];
+  const pushFace = (ids) => {
+    for (let k = 1; k + 1 < ids.length; k += 1) {
+      for (const id of [ids[0], ids[k], ids[k + 1]]) {
+        if (!(id >= 0 && id < vertexEl.count)) fail("PLY 면 번호가 범위를 벗어납니다.");
+        tris.push(verts[id * 3], verts[id * 3 + 1], verts[id * 3 + 2]);
+      }
+      if (tris.length > MAX_TRIANGLES * 9) fail("면이 너무 많습니다.");
+    }
+  };
+
+  if (format === "ascii") {
+    const tokens = buffer.subarray(bodyStart).toString("latin1").split(/\s+/).filter(Boolean);
+    let at = 0;
+    const next = () => {
+      if (at >= tokens.length) fail("PLY 데이터가 짧습니다.");
+      return Number(tokens[at++]);
+    };
+    for (const el of elements) {
+      for (let r = 0; r < el.count; r += 1) {
+        const ids = [];
+        el.props.forEach((p, pi) => {
+          if (p.list) {
+            const n = next();
+            for (let k = 0; k < n; k += 1) {
+              const v = next();
+              if (el === faceEl && pi === faceProp) ids.push(v);
+            }
+          } else {
+            const v = next();
+            if (el === vertexEl) {
+              const c = xyz.indexOf(pi);
+              if (c >= 0) verts[r * 3 + c] = v;
+            }
+          }
+        });
+        if (el === faceEl) pushFace(ids);
+      }
+    }
+  } else {
+    const suffix = format === "binary_little_endian" ? "LE" : "BE";
+    const read = ([size, fn], off) => {
+      if (off + size > buffer.length) fail("PLY 데이터가 짧습니다.");
+      return size === 1 ? buffer[fn](off) : buffer[`${fn}${suffix}`](off);
+    };
+    let off = bodyStart;
+    for (const el of elements) {
+      for (let r = 0; r < el.count; r += 1) {
+        const ids = [];
+        el.props.forEach((p, pi) => {
+          if (p.list) {
+            const n = read(p.countType, off);
+            off += p.countType[0];
+            for (let k = 0; k < n; k += 1) {
+              const v = read(p.type, off);
+              off += p.type[0];
+              if (el === faceEl && pi === faceProp) ids.push(v);
+            }
+          } else {
+            const v = read(p.type, off);
+            off += p.type[0];
+            if (el === vertexEl) {
+              const c = xyz.indexOf(pi);
+              if (c >= 0) verts[r * 3 + c] = v;
+            }
+          }
+        });
+        if (el === faceEl) pushFace(ids);
+      }
+    }
+  }
+  if (tris.length === 0) fail("PLY에 면이 없습니다.");
+  return Float32Array.from(tris);
+}
+
+/** OBJ(텍스트) → 삼각형 좌표(9개씩). v·f만 읽고 다각형 면은 부채꼴로 나눈다. */
+export function trianglesFromObj(buffer) {
+  if (buffer.length > MAX_XML_BYTES * 2) fail("형상 파일이 너무 큽니다.");
+  const verts = [];
+  const tris = [];
+  for (const raw of buffer.toString("latin1").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith("v ")) {
+      const t = line.split(/\s+/);
+      verts.push([Number(t[1]), Number(t[2]), Number(t[3])]);
+      if (verts.length > MAX_VERTICES) fail("꼭짓점이 너무 많습니다.");
+    } else if (line.startsWith("f ")) {
+      const ids = line
+        .split(/\s+/)
+        .slice(1)
+        .map((tok) => {
+          const n = Number.parseInt(tok.split("/")[0], 10);
+          return n < 0 ? verts.length + n : n - 1;
+        });
+      for (let k = 1; k + 1 < ids.length; k += 1) {
+        for (const id of [ids[0], ids[k], ids[k + 1]]) {
+          const v = verts[id];
+          if (!v) fail("OBJ 면 번호가 범위를 벗어납니다.");
+          tris.push(v[0], v[1], v[2]);
+        }
+        if (tris.length > MAX_TRIANGLES * 9) fail("면이 너무 많습니다.");
+      }
+    }
+  }
+  if (tris.length === 0) fail("OBJ에 면이 없습니다.");
+  return Float32Array.from(tris);
+}
+
+export const MESH_FILE_PATTERN = /\.(dcm|stl|ply|obj)$/i;
+
+/** 확장자로 형상 파일(.dcm·.stl·.ply·.obj)을 읽는다. */
+export function trianglesFromMeshFile(buffer, fileName) {
+  const ext = String(fileName || "").toLowerCase().split(".").pop();
+  if (ext === "dcm") return trianglesFromHps(buffer);
+  if (ext === "stl") return trianglesFromStl(buffer);
+  if (ext === "ply") return trianglesFromPly(buffer);
+  if (ext === "obj") return trianglesFromObj(buffer);
+  fail(".dcm·.stl·.ply·.obj 형상만 읽을 수 있습니다.");
+}
+
+/** 스캔 좌표 형상을 플랫폼 원점(origin)으로 옮긴 뒤 모델 좌표로 돌린다. */
+export function frameToModel(triangles, { origin, axis, ref }) {
+  const moved = new Float32Array(triangles.length);
+  for (let i = 0; i < triangles.length; i += 3) {
+    moved[i] = triangles[i] - origin[0];
+    moved[i + 1] = triangles[i + 1] - origin[1];
+    moved[i + 2] = triangles[i + 2] - origin[2];
+  }
+  return transformToModel(moved, axis, ref);
+}
+
 /** 좌표 → 모델 좌표. y=임플란트 축, x=기준 방향(축에 직교화), z=x×y. */
 export function transformToModel(triangles, axis, ref) {
   const norm = (v) => {

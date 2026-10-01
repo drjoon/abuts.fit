@@ -1,7 +1,7 @@
 // 기공소 AI 보철 — 마진·삽입·내면·형상·훅·컷백·홀·커넥터 조작.
 // - 2026-10-01: 스캔바디 맞춤은 스캔 단계, 메시 편집 아래.
 
-import { Fragment, useRef, useState, type ReactNode } from "react";
+import { Fragment, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -89,10 +89,13 @@ export type ScanbodyControls = {
     lines: string[];
     accept: string;
     multiple: boolean;
+    /** exocad 라이브러리 폴더를 통째로 고르는 버튼을 같이 둔다. */
+    allowFolder?: boolean;
     buttonLabel: string;
     /** 올리는 중이면 진행 문구. */
     status: string | null;
-    onUpload: (files: File[]) => void;
+    /** null이면 안내만 한다(어벗츠가 준비 중). */
+    onUpload: ((files: File[]) => void) | null;
   } | null;
 };
 
@@ -863,11 +866,30 @@ function MissingScanbodyLibrary({
   lines,
   accept,
   multiple,
+  allowFolder,
   buttonLabel,
   status,
   onUpload,
 }: NonNullable<ScanbodyControls["missingLibrary"]>) {
   const input = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
+  const pick = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length > 0) onUpload?.(files);
+  };
+  if (!onUpload) {
+    return (
+      <p className="rounded-md border border-sky-200 bg-sky-50 p-2 text-[11px] leading-relaxed text-sky-900">
+        {lines.map((line, index) => (
+          <Fragment key={line}>
+            {index > 0 ? <br /> : null}
+            {line}
+          </Fragment>
+        ))}
+      </p>
+    );
+  }
   return (
     <div className="space-y-1.5 rounded-md border border-amber-300 bg-amber-50 p-2 text-[11px] leading-relaxed text-amber-900">
       <p>
@@ -884,22 +906,41 @@ function MissingScanbodyLibrary({
         accept={accept}
         multiple={multiple}
         className="hidden"
-        onChange={(event) => {
-          const files = Array.from(event.target.files ?? []);
-          event.target.value = "";
-          if (files.length > 0) onUpload(files);
-        }}
+        onChange={pick}
       />
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className="h-7 w-full bg-white text-[11px]"
-        disabled={Boolean(status)}
-        onClick={() => input.current?.click()}
-      >
-        {status ?? buttonLabel}
-      </Button>
+      {allowFolder ? (
+        <input
+          ref={folderInput}
+          type="file"
+          multiple
+          className="hidden"
+          {...({ webkitdirectory: "" } as Record<string, string>)}
+          onChange={pick}
+        />
+      ) : null}
+      <div className="flex gap-1.5">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 min-w-0 flex-1 bg-white text-[11px]"
+          disabled={Boolean(status)}
+          onClick={() => input.current?.click()}
+        >
+          {status ?? buttonLabel}
+        </Button>
+        {allowFolder && !status ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 shrink-0 bg-white text-[11px]"
+            onClick={() => folderInput.current?.click()}
+          >
+            exocad 폴더
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }

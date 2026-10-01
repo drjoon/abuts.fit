@@ -1,4 +1,4 @@
-// 스캔바디 라이브러리(3Shape .dme · exocad)·심플어벗 템플릿 API와 AI 디자인용 선택 규칙.
+// 스캔바디 라이브러리(3Shape .dme · exocad · 형상 한 개)·심플어벗 템플릿 API와 AI 디자인용 선택 규칙.
 // 같은 사양이 여러 곳에 있으면 기공소 자체 등록(사본 포함) → 공용 순으로 쓴다.
 // 라이브러리 업로드: 묶음 → presigned POST(S3 격리) → complete → 서버가 악성코드 검사·해석 → 폴링.
 // 템플릿 업로드: 축·치수 계산 → presigned POST(S3 격리) → complete → 검사·해석 → templates에 등록(관리자 검토 없음).
@@ -68,11 +68,16 @@ export type ScanbodyLibraryRow = {
   canCopyEdit?: boolean;
   /** 공용 원본을 고친 우리 기공소 사본이면 원본 id. */
   forkOf?: string | null;
+  /** 사본을 만든 뒤 공용 원본에 새 키트·형상이 올라왔다. 업데이트하면 연결은 두고 형상만 새 공용으로 바꾼다. */
+  forkBehind?: boolean;
+  /** 새 공용 시각. 「나중에」를 이 값으로 기억해 다음 버전에 다시 묻는다. */
+  baseContentUpdatedAt?: string | null;
   /** 기공소 라이브러리가 검사를 통과해 공용이 됐다(관리자가 내리면 false). */
   isPublic: boolean;
   /** 관리자 화면에서만 채워진다. */
   ownerName: string;
-  source: "3shape" | "exocad";
+  /** scan: 기공소가 스캔하거나 다른 CAD에서 내보낸 형상 한 개. */
+  source: "3shape" | "exocad" | "scan";
   systemName: string;
   fileNames: string[];
   /** AI 디자인에서 의뢰 스캔바디 때문에 올릴 때 받은 제조사 이름. */
@@ -175,9 +180,11 @@ export type ScanbodyCatalog = {
   templates: AbutmentTemplateRow[];
   /** 내 템플릿 업로드 중 검토·검사 중이거나 최근에 거절·실패한 것. */
   templateUploads: AbutmentTemplateUploadRow[];
+  /** 관리자가 기공소에 올려 달라고 표시한 규격 key(scanbodySpecKey). 나머지는 어벗츠가 준비한다. */
+  labUploadRequestKeys: string[];
 };
 
-const EMPTY: ScanbodyCatalog = { libraries: [], templates: [], templateUploads: [] };
+const EMPTY: ScanbodyCatalog = { libraries: [], templates: [], templateUploads: [], labUploadRequestKeys: [] };
 
 async function fail(res: { data: unknown }, fallback: string): Promise<never> {
   const message = (res.data as { message?: unknown } | null)?.message;
@@ -202,7 +209,16 @@ export function useScanbodyCatalog(enabled = true) {
       .then((res) => {
         if (cancelled || !res.ok) return;
         const data = res.data?.data;
-        setCatalog(data ? { ...EMPTY, ...data, templateUploads: data.templateUploads ?? [] } : EMPTY);
+        setCatalog(
+          data
+            ? {
+                ...EMPTY,
+                ...data,
+                templateUploads: data.templateUploads ?? [],
+                labUploadRequestKeys: data.labUploadRequestKeys ?? [],
+              }
+            : EMPTY,
+        );
         setLoaded(true);
       })
       .finally(() => {
@@ -339,6 +355,52 @@ export async function uploadScanbodyFilesAndWait(
   return { rows, notes: built.notes };
 }
 
+/**
+ * 기공소가 스캔하거나 다른 CAD에서 내보낸 스캔바디 형상 한 개(.dcm·.stl·.ply·.obj)를 의뢰 규격으로 올리고 기다린다.
+ * 축·플랫폼은 템플릿과 같은 방법으로 계산한다(스캔 맨 아래가 플랫폼). 서버가 원본에서 형상을 다시 읽는다.
+ */
+export async function uploadScanbodyMeshAndWait(
+  file: File,
+  order: { manufacturer: string; diameter: string; height: string },
+  onStatus: (text: string) => void,
+): Promise<ScanbodyUploadRow> {
+  onStatus("형상을 읽는 중…");
+  const frame = computeAbutmentTemplateFrame(await loadMeshFile(file));
+  const created = await apiFetch<{
+    data: { upload: ScanbodyUploadRow; uploadUrl: string; fields: Record<string, string> };
+  }>({
+    path: `${BASE}/uploads`,
+    method: "POST",
+    jsonBody: {
+      fileName: file.name,
+      size: file.size,
+      manufacturer: order.manufacturer,
+      meshMeta: {
+        frame: { origin: frame.origin, axis: frame.axis, ref: frame.ref },
+        diameter: order.diameter.trim().replace(",", "."),
+        height: order.height.trim().replace(",", "."),
+      },
+    },
+  });
+  if (!created.ok || !created.data?.data) return fail(created, "업로드를 시작하지 못했습니다.");
+  const { upload, uploadUrl, fields } = created.data.data;
+  await postToS3(uploadUrl, fields, file, (ratio) => onStatus(`올리는 중 ${Math.round(ratio * 100)}%`));
+  const done = await apiFetch<{ data: ScanbodyUploadRow }>({
+    path: `${BASE}/uploads/${upload.id}/complete`,
+    method: "POST",
+  });
+  if (!done.ok || !done.data?.data) return fail(done, "업로드를 마치지 못했습니다.");
+  let row = done.data.data;
+  const started = Date.now();
+  while (!isUploadFinished(row.status) && Date.now() - started < UPLOAD_WAIT_MS) {
+    onStatus(row.status === "scanning" ? "악성코드 검사 중…" : "라이브러리 등록 중…");
+    await new Promise((resolve) => window.setTimeout(resolve, UPLOAD_POLL_MS));
+    row = (await fetchScanbodyUploads([row.id]))[0] ?? row;
+  }
+  invalidateApiGetCache(BASE);
+  return row;
+}
+
 /** 관리자: 기공소 템플릿을 공용에서 내리거나 다시 올린다. */
 export async function setAbutmentTemplatePublic(id: string, isPublic: boolean): Promise<AbutmentTemplateRow> {
   const res = await apiFetch<{ data: AbutmentTemplateRow }>({
@@ -378,6 +440,70 @@ export async function updateScanbodyKit(
   return res.data.data;
 }
 
+/** 우리 기공소 사본을 새 공용으로 업데이트한다. 임플란트 연결과 사본에만 있는 키트는 남는다. */
+export async function rebaseScanbodyLibrary(id: string): Promise<ScanbodyLibraryRow> {
+  const res = await apiFetch<{ data: ScanbodyLibraryRow }>({ path: `${BASE}/${id}/rebase`, method: "POST" });
+  if (!res.ok || !res.data?.data) return fail(res, "라이브러리를 업데이트하지 못했습니다.");
+  invalidateApiGetCache(BASE);
+  return res.data.data;
+}
+
+export type ScanbodyDemandRow = {
+  key: string;
+  /** library: 제조사 스캔바디 라이브러리, template: 심플어벗·심플밀링·심플힐링 템플릿. */
+  type: "library" | "template";
+  maker: string;
+  diameter: string;
+  height: string;
+  /** 심플어벗·심플밀링은 직경으로 묶고, 의뢰에 들어온 높이를 모은다. */
+  heights: string[];
+  teethCount: number;
+  transferCount: number;
+  /** 이 규격을 의뢰한 치과·받은 기공소 수. 적으면 시장에서 거의 안 쓰는 것일 수 있다. */
+  practiceCount: number;
+  labCount: number;
+  /** 같이 의뢰된 임플란트(많은 순 3개). */
+  implants: { manufacturer: string; brand: string; family: string; type: string; count: number }[];
+  firstAt: string;
+  latestAt: string;
+  /** 관리자가 기공소에 올려 달라고 표시했다. */
+  labUploadRequested: boolean;
+};
+
+/** 관리자: 의뢰에 쌓인 규격 중 공용 라이브러리·템플릿이 없는 것(최근 의뢰 먼저). */
+export async function fetchScanbodyDemand(): Promise<ScanbodyDemandRow[]> {
+  const res = await apiFetch<{ data: ScanbodyDemandRow[] }>({ path: `${BASE}/demand`, skipCache: true });
+  if (!res.ok) return fail(res, "라이브러리 요청 목록을 받지 못했습니다.");
+  return res.data?.data ?? [];
+}
+
+/** 관리자: 이 규격은 기공소에 올려 달라고 한다(또는 거둔다). */
+export async function setScanbodyDemandLabRequest(key: string, requested: boolean) {
+  const res = await apiFetch({
+    path: `${BASE}/demand/lab-request`,
+    method: "PATCH",
+    jsonBody: { key, requested },
+  });
+  if (!res.ok) return fail(res, "기공소 요청을 바꾸지 못했습니다.");
+  invalidateApiGetCache(BASE);
+}
+
+/**
+ * 의뢰 스캔바디 규격 key. 서버 scanbodyDemand.service.js demandOf와 같게 만든다.
+ * 심플어벗·심플밀링은 직경만 맞으면 쓰니 높이를 비운다.
+ */
+export function scanbodySpecKey(order: { manufacturer: string; diameter: string; height: string }) {
+  const maker = order.manufacturer.trim();
+  const diameter = order.diameter.trim();
+  const isTemplate = (SIMPLE_ABUTMENT_KINDS as readonly string[]).includes(maker) || maker === SIMPLE_HEALING_KIND;
+  const height = (SIMPLE_ABUTMENT_KINDS as readonly string[]).includes(maker)
+    ? ""
+    : isTemplate
+      ? order.height.trim().toUpperCase()
+      : order.height.trim();
+  return [isTemplate ? "template" : "library", maker, diameter, height].join("|");
+}
+
 export async function deleteScanbodyLibrary(id: string) {
   const res = await apiFetch({ path: `${BASE}/${id}`, method: "DELETE" });
   if (!res.ok) return fail(res, "라이브러리를 지우지 못했습니다.");
@@ -391,8 +517,36 @@ export function parseTemplateFileName(name: string): { diameter: string; height:
   return { diameter: m[1]!, height: (m[2] ?? "").toUpperCase() };
 }
 
+/** 서버가 읽는 형상 파일. 3Shape .dcm, exocad·다른 CAD의 .stl·.ply·.obj. */
+export const MESH_FILE_ACCEPT = ".dcm,.stl,.ply,.obj";
+export const isMeshFileName = (name: string) => /\.(dcm|stl|ply|obj)$/i.test(name);
+
+/** 형상 파일 → 같은 좌표 꼭짓점을 합친 인덱스 메시(축 계산에 열린 경계가 필요하다). */
+export async function loadMeshFile(file: File): Promise<ScanbodyMesh> {
+  if (/\.dcm$/i.test(file.name)) {
+    const mesh = await parseHpsDcmMeshData(await file.arrayBuffer());
+    return { positions: mesh.positions, indices: mesh.indices };
+  }
+  if (!isMeshFileName(file.name)) throw new Error(".dcm·.stl·.ply·.obj 파일만 올릴 수 있습니다.");
+  const [{ parseModelPreview }, { mergeVertices }] = await Promise.all([
+    import("@/shared/files/modelPreviewFile"),
+    import("three/examples/jsm/utils/BufferGeometryUtils.js"),
+  ]);
+  const { geometry } = await parseModelPreview(file);
+  for (const name of Object.keys(geometry.attributes)) if (name !== "position") geometry.deleteAttribute(name);
+  const merged = mergeVertices(geometry, 1e-5);
+  const positions = Float32Array.from(merged.getAttribute("position").array as ArrayLike<number>);
+  const index = merged.getIndex();
+  const indices = index
+    ? Uint32Array.from(index.array as ArrayLike<number>)
+    : Uint32Array.from({ length: positions.length / 3 }, (_, i) => i);
+  geometry.dispose();
+  merged.dispose();
+  return { positions, indices };
+}
+
 /**
- * 템플릿 .dcm: 축·치수는 브라우저가 계산해 보내고, 원본은 presigned POST로 S3 격리 경로에 올린다.
+ * 템플릿 형상(.dcm·.stl·.ply·.obj): 축·치수는 브라우저가 계산해 보내고, 원본은 presigned POST로 S3 격리 경로에 올린다.
  * 악성코드 검사·해석을 통과하면 관리자 검토 없이 등록된다.
  */
 export async function uploadAbutmentTemplate(
@@ -400,7 +554,7 @@ export async function uploadAbutmentTemplate(
   spec: TemplateSpec,
   onProgress: (ratio: number) => void = () => undefined,
 ): Promise<AbutmentTemplateUploadRow> {
-  const mesh = await parseHpsDcmMeshData(await file.arrayBuffer());
+  const mesh = await loadMeshFile(file);
   const frame = computeAbutmentTemplateFrame(mesh);
   const created = await apiFetch<{
     data: { upload: AbutmentTemplateUploadRow; uploadUrl: string; fields: Record<string, string> };
@@ -431,7 +585,7 @@ export async function uploadAbutmentTemplate(
   return done.data.data;
 }
 
-/** 의뢰 규격 템플릿 .dcm 하나를 올리고 검사·등록이 끝날 때까지 기다린다(AI 디자인 안에서 올릴 때). */
+/** 의뢰 규격 템플릿 형상 하나를 올리고 검사·등록이 끝날 때까지 기다린다(AI 디자인 안에서 올릴 때). */
 export async function uploadTemplateFileAndWait(
   file: File,
   spec: TemplateSpec,

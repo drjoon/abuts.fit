@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LabImplantLibraryPicker } from "@/shared/components/practice/LabImplantLibraryPicker";
+import { ScanbodyLibraryUpdatePrompt } from "@/shared/components/practice/ScanbodyLibraryUpdatePrompt";
 import { buildScanbodyUploadBundles } from "@/shared/files/scanbodyLibraryBundle";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
@@ -28,6 +29,7 @@ import {
   approveTemplateUpload,
   deleteAbutmentTemplate,
   deleteScanbodyLibrary,
+  rebaseScanbodyLibrary,
   fetchScanbodyUploads,
   fetchTemplateReviews,
   fetchTemplateUploads,
@@ -667,6 +669,19 @@ export function ScanbodyLibraryManager() {
     }
   };
 
+  const updateFork = async (lib: ScanbodyLibraryRow) => {
+    try {
+      replaceLibrary(await rebaseScanbodyLibrary(lib.id));
+      toast({ title: `${lib.systemName} 라이브러리를 업데이트했습니다.` });
+    } catch (error) {
+      toast({
+        title: "라이브러리를 업데이트하지 못했습니다.",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    }
+  };
+
   const removeLibrary = async (lib: ScanbodyLibraryRow) => {
     if (!window.confirm(`${lib.systemName} 라이브러리를 지울까요?`)) return;
     setCatalog((prev) => ({ ...prev, libraries: prev.libraries.filter((row) => row.id !== lib.id) }));
@@ -748,12 +763,13 @@ export function ScanbodyLibraryManager() {
 
   return (
     <div className="space-y-5">
+      {isAdmin ? null : <ScanbodyLibraryUpdatePrompt libraries={catalog.libraries} onUpdated={replaceLibrary} />}
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
           <div>
             <CardTitle className="text-base">스캔바디 라이브러리</CardTitle>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              3Shape .dme 파일이나 exocad 라이브러리 폴더를 올립니다.
+              3Shape .dme 파일이나 exocad 라이브러리 폴더(또는 .zip)를 올립니다.
               <br />
               악성코드 검사와 형상 검증을 거친 뒤 등록됩니다.
               <br />
@@ -910,9 +926,18 @@ export function ScanbodyLibraryManager() {
                                 공용 사본
                               </span>
                             ) : null}
+                            {lib.forkBehind ? (
+                              <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                                새 공용 있음
+                              </span>
+                            ) : null}
                           </span>
                           <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                            {lib.source === "exocad" ? "exocad" : `3Shape ${lib.containerVersions.join(", ")}`.trim()}
+                            {lib.source === "exocad"
+                              ? "exocad"
+                              : lib.source === "scan"
+                                ? "형상 파일"
+                                : `3Shape ${lib.containerVersions.join(", ")}`.trim()}
                             {" · "}키트 {lib.kits.length}개 · 스캔바디 {lib.parts.length}개
                             {unlinked > 0 ? ` · 임플란트 미연결 ${unlinked}개` : ""}
                             {isAdmin && lib.ownerName ? ` · ${lib.ownerName}` : ""}
@@ -928,6 +953,16 @@ export function ScanbodyLibraryManager() {
                             onClick={() => void togglePublic(lib)}
                           >
                             {lib.isPublic ? "공용에서 내리기" : "공용으로 올리기"}
+                          </Button>
+                        ) : null}
+                        {lib.forkBehind && lib.canEdit ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-[11px]"
+                            onClick={() => void updateFork(lib)}
+                          >
+                            업데이트
                           </Button>
                         ) : null}
                         {lib.canEdit ? (

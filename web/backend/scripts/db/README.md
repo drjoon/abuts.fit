@@ -7,6 +7,17 @@
 
 ## 실행
 
+- **배포·셋업 때 DB마다 남은 마이그레이션 (먼저 이것)**:
+  `node scripts/db/pending-migrations.js`로 남은 목록을 보고 `--apply`로 모두 돌린다. 기록은 그 DB의 `dbmigrations`에 남는다.
+  운영에 꼭 돌려야 하는 새 스크립트는 이 파일의 `MIGRATIONS` 끝에 붙인다.
+
+```bash
+cd web/backend && \
+ ENV_FILE=prod.env NODE_ENV=production ABUTS_DB_FORCE=true \
+ node scripts/db/pending-migrations.js          # 목록
+# ... node scripts/db/pending-migrations.js --apply
+```
+
 - **로컬 agent / one-off 스크립트 DB**: `MONGODB_URI_TEST` (`abuts_fit_test`).
   `ENV_FILE=local.env NODE_ENV=test` (+ Atlas 쓰기 시 `ABUTS_DB_FORCE=true`).
   SSOT: `.cursor/rules/mongodb-uri-test.mdc`, `backend/rules.md` §0.

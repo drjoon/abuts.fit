@@ -62,7 +62,8 @@ const scanbodyLibrarySchema = new mongoose.Schema(
     },
     /** 3Shape ImplantSystem Name 또는 exocad DisplayInformation. 같은 소유자 안에서 이 값으로 합친다. */
     systemName: { type: String, required: true, trim: true },
-    source: { type: String, enum: ["3shape", "exocad"], default: "3shape" },
+    /** scan: 기공소가 스캔하거나 다른 CAD에서 내보낸 형상 한 개(.dcm·.stl·.ply·.obj). */
+    source: { type: String, enum: ["3shape", "exocad", "scan"], default: "3shape" },
     /** 올린 파일 이름들(연도별 호환 파일을 여러 개 올려도 한 라이브러리). */
     fileNames: { type: [String], default: [] },
     containerVersions: { type: [String], default: [] },
@@ -83,6 +84,10 @@ const scanbodyLibrarySchema = new mongoose.Schema(
      * 공용 원본은 다른 기공소가 쓰고 있어 기공소가 직접 고치지 않는다.
      */
     forkOf: { type: mongoose.Schema.Types.ObjectId, ref: "ScanbodyLibrary", default: null },
+    /** 업로드로 키트·형상이 바뀐 시각(제조사 새 버전 등). 임플란트 연결만 고친 것은 넣지 않는다. */
+    contentUpdatedAt: { type: Date, default: null },
+    /** 사본을 만들 때 원본의 contentUpdatedAt. 원본이 그 뒤에 바뀌면 기공소에 「새 공용」을 알린다. */
+    forkBaseContentAt: { type: Date, default: null },
     reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     reviewedAt: { type: Date, default: null },
     uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },

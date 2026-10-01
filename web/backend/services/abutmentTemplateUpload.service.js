@@ -1,4 +1,4 @@
-// 심플어벗·심플힐링 템플릿(.dcm) 업로드 흐름(보안). 원본은 API 서버를 거치지 않는다.
+// 심플어벗·심플힐링 템플릿(.dcm·.stl·.ply·.obj) 업로드 흐름(보안). 원본은 API 서버를 거치지 않는다.
 // 1) 브라우저가 .dcm에서 축·치수(meta)를 계산해 보내고, 크기가 고정된 presigned POST로 격리 경로(quarantine)에 올린다.
 // 2) GuardDuty 태그 NO_THREATS_FOUND만 연다. 위협이면 거절·원본 삭제·올린 사용자 차단.
 // 3) 워커 스레드가 시간·메모리 제한 안에서 해석해 STL을 새로 만들고 AbutmentTemplate을 등록한다. 원본은 지운다.
@@ -20,6 +20,7 @@ import AbutmentTemplateUpload from "../models/abutmentTemplateUpload.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import User from "../models/user.model.js";
 import { ApiError } from "../utils/ApiError.js";
+import { emitAppEventToRoles } from "../socket.js";
 import {
   copyObjectInS3,
   createUploadPost,
@@ -37,6 +38,7 @@ import {
   scanbodyMalwareScanMode,
 } from "./scanbodyLibraryUpload.service.js";
 import { blockUploader } from "./uploadBlocklist.service.js";
+import { MESH_FILE_PATTERN } from "../utils/scanbodyGeometry.js";
 
 const QUARANTINE_PREFIX = `${SCANBODY_S3_PREFIX}/quarantine/`;
 export const TEMPLATE_MAX_UPLOAD_BYTES = 30 * 1024 * 1024;
@@ -152,7 +154,7 @@ export async function templateReviewViews(jobs) {
 
 export async function createTemplateUpload({ ownerAnchorId, userId, uploaderAnchorId, isAdmin, fileName, size, meta }) {
   const name = text(fileName, 200);
-  if (!/\.dcm$/i.test(name)) throw new ApiError(400, ".dcm 파일만 올릴 수 있습니다.");
+  if (!MESH_FILE_PATTERN.test(name)) throw new ApiError(400, ".dcm·.stl·.ply·.obj 파일만 올릴 수 있습니다.");
   const declaredSize = Number(size);
   if (!Number.isFinite(declaredSize) || declaredSize <= 0) throw new ApiError(400, "파일 크기가 올바르지 않습니다.");
   if (declaredSize > TEMPLATE_MAX_UPLOAD_BYTES) {
@@ -435,11 +437,11 @@ function watch(jobId, delay = 3000) {
   tick(delay);
 }
 
-/** .dcm → STL. 시간을 넘기거나 메모리 한도에 걸리면 워커를 끊는다. */
-function decodeInWorker(buffer) {
+/** 형상 파일 → STL. 시간을 넘기거나 메모리 한도에 걸리면 워커를 끊는다. */
+function decodeInWorker(buffer, fileName) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./abutmentTemplateImport.worker.js", import.meta.url), {
-      workerData: { buffer },
+      workerData: { buffer, fileName },
       resourceLimits: { maxOldGenerationSizeMb: 768, maxYoungGenerationSizeMb: 64 },
     });
     let settled = false;
@@ -473,7 +475,7 @@ async function processTemplateUpload(job) {
 
   let decoded;
   try {
-    decoded = await decodeInWorker(buffer);
+    decoded = await decodeInWorker(buffer, job.fileName);
   } catch (error) {
     console.error("[template-upload] worker failed", { jobId: String(job._id), error: error?.message });
     return finish(job._id, "failed", { sha256, message: "형상을 해석하지 못했습니다(시간·메모리 한도)." }, key);
@@ -519,6 +521,7 @@ async function processTemplateUpload(job) {
       },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     ).lean();
+    emitAppEventToRoles(["admin"], "scanbody:demand-updated", { at: new Date().toISOString() });
     return finish(job._id, "done", { sha256, templateId: template._id, message: "" }, key);
   } catch (error) {
     console.error("[template-upload] store failed", { jobId: String(job._id), error: error?.message });

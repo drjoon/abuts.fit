@@ -49,6 +49,11 @@ import {
   templateUploadView,
 } from "../../services/abutmentTemplateUpload.service.js";
 import { assertUploaderNotBlocked } from "../../services/uploadBlocklist.service.js";
+import {
+  listLabUploadRequestKeys,
+  listScanbodyDemand,
+  setLabUploadRequested,
+} from "../../services/scanbodyDemand.service.js";
 
 const isAdmin = (req) => req.user?.role === "admin";
 
@@ -127,7 +132,14 @@ async function ownerNames(req, docs) {
   return new Map(anchors.map((row) => [String(row._id), String(row.name || "")]));
 }
 
-function libraryView(req, doc, names = new Map()) {
+/** 사본을 만든 뒤 공용 원본에 새 키트·형상이 올라왔는지(제조사 새 버전 등). */
+function isForkBehind(doc, base) {
+  if (!doc.forkOf || !base?.contentUpdatedAt) return false;
+  const baseline = doc.forkBaseContentAt || doc.createdAt;
+  return !baseline || new Date(base.contentUpdatedAt) > new Date(baseline);
+}
+
+function libraryView(req, doc, names = new Map(), base = null) {
   const owner = doc.ownerAnchorId ? String(doc.ownerAnchorId) : null;
   return {
     id: String(doc._id),
@@ -136,6 +148,9 @@ function libraryView(req, doc, names = new Map()) {
     canCopyEdit: canCopyEdit(req, doc),
     isPublic: Boolean(doc.isPublic),
     forkOf: doc.forkOf ? String(doc.forkOf) : null,
+    forkBehind: isForkBehind(doc, base),
+    /** 새 공용 시각. 기공소가 「나중에」를 누르면 이 값으로 기억해 다음 버전에 다시 묻는다. */
+    baseContentUpdatedAt: doc.forkOf && base?.contentUpdatedAt ? base.contentUpdatedAt : null,
     ownerAnchorId: isAdmin(req) ? owner : null,
     ownerName: owner ? (names.get(owner) ?? "") : "",
     source: doc.source || "3shape",
@@ -195,20 +210,40 @@ function templateView(req, doc, names = new Map()) {
 // GET /api/scanbody-libraries
 export const listScanbodyLibraries = asyncHandler(async (req, res) => {
   const filter = visibleFilter(req);
-  const [libraries, templates, templateUploads] = await Promise.all([
+  const [libraries, templates, templateUploads, labUploadRequestKeys] = await Promise.all([
     ScanbodyLibrary.find(filter).sort({ systemName: 1 }).lean(),
     AbutmentTemplate.find(filter).sort({ kind: 1, diameter: 1, height: 1 }).lean(),
     listOwnTemplateUploads(req),
+    listLabUploadRequestKeys(),
   ]);
   const names = await ownerNames(req, [...libraries, ...templates]);
+  const libraryById = new Map(libraries.map((doc) => [String(doc._id), doc]));
   return res.status(200).json(
     new ApiResponse(200, {
-      libraries: withoutForkedOriginals(req, libraries).map((doc) => libraryView(req, doc, names)),
+      libraries: withoutForkedOriginals(req, libraries).map((doc) =>
+        libraryView(req, doc, names, doc.forkOf ? libraryById.get(String(doc.forkOf)) : null),
+      ),
       // 등록이 끝난 템플릿만. 검사 중인 건은 templateUploads로만 보이고 AI 디자인에 쓰지 않는다.
       templates: withoutForkedOriginals(req, templates).map((doc) => templateView(req, doc, names)),
       templateUploads,
+      // 관리자가 기공소에 올려 달라고 표시한 규격. 나머지는 AI 디자인에서 「어벗츠가 준비 중」으로만 보인다.
+      labUploadRequestKeys,
     }),
   );
+});
+
+// GET /api/scanbody-libraries/demand — 관리자: 의뢰에 쌓인 규격 중 공용 형상이 없는 것
+export const listScanbodyDemandHandler = asyncHandler(async (req, res) => {
+  assertAdmin(req);
+  return res.status(200).json(new ApiResponse(200, await listScanbodyDemand()));
+});
+
+// PATCH /api/scanbody-libraries/demand/lab-request  { key, requested } — 관리자: 기공소에 올려 달라고 하기
+export const setScanbodyDemandLabRequest = asyncHandler(async (req, res) => {
+  assertAdmin(req);
+  const row = await setLabUploadRequested(text(req.body?.key, 300), req.body?.requested === true, req.user._id);
+  if (!row) throw new ApiError(404, "규격을 찾을 수 없습니다.");
+  return res.status(200).json(new ApiResponse(200, row));
 });
 
 function ownerFilter(ownerAnchorId) {
@@ -248,7 +283,8 @@ async function findOwnUpload(req) {
   return job;
 }
 
-// POST /api/scanbody-libraries/uploads  { fileName, size, manufacturer? }
+// POST /api/scanbody-libraries/uploads  { fileName, size, manufacturer?, meshMeta? }
+// meshMeta: 형상 한 개(.dcm·.stl·.ply·.obj)일 때 { frame, diameter, height }. manufacturer가 있어야 한다.
 export const createLibraryUpload = asyncHandler(async (req, res) => {
   const { ownerAnchorId } = await resolveOwner(req);
   await assertNotBlocked(req);
@@ -258,6 +294,7 @@ export const createLibraryUpload = asyncHandler(async (req, res) => {
     fileName: req.body?.fileName,
     size: req.body?.size,
     manufacturer: text(req.body?.manufacturer, 60),
+    meshMeta: req.body?.meshMeta,
   });
   return res.status(201).json(new ApiResponse(201, { upload: uploadView(job), uploadUrl, fields }));
 });
@@ -300,6 +337,39 @@ export const updateScanbodyKit = asyncHandler(async (req, res) => {
   await doc.save();
   const names = await ownerNames(req, [doc]);
   return res.status(200).json(new ApiResponse(200, libraryView(req, doc.toObject(), names)));
+});
+
+// POST /api/scanbody-libraries/:id/rebase — 우리 사본을 새 공용으로 업데이트
+// 공용에 있는 키트는 새 형상으로 바꾸고, 사본에서 고친 임플란트 연결은 남긴다. 사본에만 있는 키트도 남긴다.
+export const rebaseScanbodyLibrary = asyncHandler(async (req, res) => {
+  const doc = await ScanbodyLibrary.findById(req.params.id);
+  if (!doc || !doc.forkOf || !isOwn(req, doc)) throw new ApiError(404, "우리 기공소 사본을 찾을 수 없습니다.");
+  const base = await ScanbodyLibrary.findOne({ _id: doc.forkOf, ...visibleFilter(req) }).lean();
+  if (!base) throw new ApiError(404, "공용 라이브러리를 찾을 수 없습니다.");
+  const ownKits = new Map((doc.kits || []).map((kit) => [kit.kitId, kit.toObject?.() ?? kit]));
+  const baseKitIds = new Set((base.kits || []).map((kit) => kit.kitId));
+  const kits = [
+    ...(base.kits || []).map((kit) => ({
+      ...kit,
+      catalogIds: ownKits.get(kit.kitId)?.catalogIds ?? kit.catalogIds ?? [],
+    })),
+    ...[...ownKits.values()].filter((kit) => !baseKitIds.has(kit.kitId)),
+  ];
+  const used = new Set(kits.flatMap((kit) => kit.scanAbutmentPartIds || []));
+  const parts = new Map();
+  for (const part of [...(doc.parts || []).map((row) => row.toObject?.() ?? row), ...(base.parts || [])]) {
+    if (used.has(part.partId)) parts.set(part.partId, part);
+  }
+  const union = (a, b) => [...new Set([...(a || []), ...(b || [])].filter(Boolean))];
+  doc.kits = kits;
+  doc.parts = [...parts.values()];
+  doc.fileNames = union(base.fileNames, doc.fileNames);
+  doc.containerVersions = union(base.containerVersions, doc.containerVersions).sort();
+  doc.manufacturers = union(doc.manufacturers, base.manufacturers);
+  doc.contentUpdatedAt = base.contentUpdatedAt ?? new Date();
+  doc.forkBaseContentAt = base.contentUpdatedAt ?? new Date();
+  await doc.save();
+  return res.status(200).json(new ApiResponse(200, libraryView(req, doc.toObject(), new Map(), base)));
 });
 
 // PATCH /api/scanbody-libraries/:id/visibility  { isPublic } — 관리자 내리기·다시 올리기

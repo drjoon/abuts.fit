@@ -55,6 +55,7 @@ import {
   useNoOrderAlerts,
 } from "@/shared/noOrderAlerts";
 import { NoticeAdminCard } from "@/pages/admin/dashboard/NoticeAdminCard";
+import { ScanbodyDemandCard } from "@/pages/admin/dashboard/ScanbodyDemandCard";
 import {
   Users,
   FileText,
@@ -2124,6 +2125,7 @@ export const AdminDashboardPage = () => {
         topSection={undefined}
         stats={
           <>
+            <ScanbodyDemandCard />
             {/* 플랫폼 성장 KPI */}
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-5">
               <Card

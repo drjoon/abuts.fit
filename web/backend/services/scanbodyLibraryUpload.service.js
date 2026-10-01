@@ -22,6 +22,7 @@ import ScanbodyLibrary from "../models/scanbodyLibrary.model.js";
 import ScanbodyLibraryUpload from "../models/scanbodyLibraryUpload.model.js";
 import AbutmentTemplateUpload from "../models/abutmentTemplateUpload.model.js";
 import { ApiError } from "../utils/ApiError.js";
+import { emitAppEventToRoles } from "../socket.js";
 import { blockUploader } from "./uploadBlocklist.service.js";
 import {
   deleteFileFromS3,
@@ -33,6 +34,7 @@ import {
   putObjectToS3,
 } from "../utils/s3.utils.js";
 import { SCANBODY_UPLOAD_LIMITS } from "./scanbodyLibraryImport.service.js";
+import { MESH_FILE_PATTERN } from "../utils/scanbodyGeometry.js";
 
 export const SCANBODY_S3_PREFIX = "scanbody-library";
 const QUARANTINE_PREFIX = `${SCANBODY_S3_PREFIX}/quarantine/`;
@@ -162,14 +164,41 @@ export async function assertDailyScanBudget(declaredSize) {
   }
 }
 
-export async function createScanbodyUpload({ ownerAnchorId, userId, fileName, size, manufacturer }) {
+function vec3(value) {
+  if (!Array.isArray(value) || value.length !== 3) return null;
+  const out = value.map(Number);
+  return out.every((v) => Number.isFinite(v) && Math.abs(v) <= 2000) ? out : null;
+}
+
+/** 형상 한 개 업로드: 브라우저가 계산한 축과 의뢰 규격. 원본은 아직 열지 않았으니 범위만 확인한다. */
+function parseMeshMeta(raw) {
+  const frame = {
+    origin: vec3(raw?.frame?.origin),
+    axis: vec3(raw?.frame?.axis),
+    ref: vec3(raw?.frame?.ref),
+  };
+  if (!frame.origin || !frame.axis || !frame.ref) throw new ApiError(400, "스캔바디 축 정보가 없습니다.");
+  const diameter = String(raw?.diameter ?? "").trim().slice(0, 10);
+  const height = String(raw?.height ?? "").trim().slice(0, 10);
+  if (diameter && !/^\d+(\.\d+)?$/.test(diameter)) throw new ApiError(400, "직경이 올바르지 않습니다.");
+  if (height && !/^[A-Za-z0-9.]{1,6}$/.test(height)) throw new ApiError(400, "높이가 올바르지 않습니다.");
+  return { frame, diameter, height };
+}
+
+export async function createScanbodyUpload({ ownerAnchorId, userId, fileName, size, manufacturer, meshMeta }) {
   const name = String(fileName || "").trim().slice(0, 200);
   const maker = String(manufacturer || "").trim().slice(0, 60);
-  if (!/\.(dme|zip)$/i.test(name)) throw new ApiError(400, ".dme 또는 .zip 파일만 올릴 수 있습니다.");
+  const isMesh = MESH_FILE_PATTERN.test(name);
+  if (!isMesh && !/\.(dme|zip)$/i.test(name)) {
+    throw new ApiError(400, ".dme·.zip(exocad 폴더) 또는 형상 파일(.dcm·.stl·.ply·.obj)만 올릴 수 있습니다.");
+  }
+  if (isMesh && !maker) throw new ApiError(400, "형상 파일 한 개는 AI 디자인의 의뢰 스캔바디에서 올려 주세요.");
+  const parsedMeshMeta = isMesh ? parseMeshMeta(meshMeta) : null;
+  const maxBytes = isMesh ? SCANBODY_UPLOAD_LIMITS.maxEntryBytes : SCANBODY_UPLOAD_LIMITS.maxUploadBytes;
   const declaredSize = Number(size);
   if (!Number.isFinite(declaredSize) || declaredSize <= 0) throw new ApiError(400, "파일 크기가 올바르지 않습니다.");
-  if (declaredSize > SCANBODY_UPLOAD_LIMITS.maxUploadBytes) {
-    throw new ApiError(400, `파일이 너무 큽니다(최대 ${SCANBODY_UPLOAD_LIMITS.maxUploadBytes / 1024 / 1024}MB).`);
+  if (declaredSize > maxBytes) {
+    throw new ApiError(400, `파일이 너무 큽니다(최대 ${maxBytes / 1024 / 1024}MB).`);
   }
   const recent = await ScanbodyLibraryUpload.countDocuments({
     uploadedBy: userId,
@@ -189,6 +218,7 @@ export async function createScanbodyUpload({ ownerAnchorId, userId, fileName, si
       uploadedBy: userId,
       fileName: name,
       manufacturer: maker,
+      meshMeta: parsedMeshMeta,
       declaredSize,
       quarantineKey,
     }),
@@ -319,10 +349,10 @@ function watch(jobId, delay = 3000) {
   tick(delay);
 }
 
-function parseInWorker(buffer, fileName) {
+function parseInWorker(buffer, fileName, meshMeta) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./scanbodyLibraryImport.worker.js", import.meta.url), {
-      workerData: { buffer, fileName },
+      workerData: { buffer, fileName, meshMeta },
       resourceLimits: { maxOldGenerationSizeMb: 2048 },
     });
     const timer = setTimeout(() => {
@@ -383,6 +413,8 @@ export async function scanbodyLibraryForkFor(ownerAnchorId, source) {
       manufacturers: plain.manufacturers || [],
       parts: plain.parts || [],
       kits: plain.kits || [],
+      contentUpdatedAt: plain.contentUpdatedAt ?? null,
+      forkBaseContentAt: plain.contentUpdatedAt ?? plain.updatedAt ?? new Date(),
       isPublic: false,
     });
   } catch (error) {
@@ -398,6 +430,19 @@ function changesExistingKits(doc, lib) {
     const old = kits.get(kit.kitId);
     return Boolean(old) && (old.scanAbutmentPartIds || []).join(",") !== kit.scanAbutmentPartIds.join(",");
   });
+}
+
+/** 올린 묶음에 새 형상·새 키트가 있거나 기존 키트 구성이 바뀌는지. 같은 파일을 다시 올리면 false. */
+function changesContent(doc, lib) {
+  const partIds = new Set((doc.parts || []).map((part) => part.partId));
+  const kits = new Map((doc.kits || []).map((kit) => [kit.kitId, kit]));
+  return (
+    lib.parts.some((part) => !partIds.has(part.hash)) ||
+    lib.kits.some((kit) => {
+      const old = kits.get(kit.kitId);
+      return !old || (old.scanAbutmentPartIds || []).join(",") !== kit.scanAbutmentPartIds.join(",");
+    })
+  );
 }
 
 /**
@@ -417,6 +462,7 @@ async function mergeLibrary({ ownerAnchorId, userId, lib, keys, manufacturer }) 
   for (let attempt = 0; ; attempt += 1) {
     try {
       const doc = await mergeTarget(ownerAnchorId, lib);
+      if (doc.isNew || changesContent(doc, lib)) doc.contentUpdatedAt = new Date();
       const parts = new Map((doc.parts || []).map((part) => [part.partId, part.toObject?.() ?? part]));
       for (const part of lib.parts) {
         parts.set(part.hash, {
@@ -476,7 +522,11 @@ async function processUpload(job) {
 
   let parsed;
   try {
-    parsed = await parseInWorker(buffer, job.fileName);
+    parsed = await parseInWorker(
+      buffer,
+      job.fileName,
+      job.meshMeta ? { ...job.meshMeta, manufacturer: job.manufacturer } : null,
+    );
   } catch (error) {
     console.error("[scanbody-upload] worker failed", { jobId: String(job._id), error: error?.message });
     return finish(job._id, "failed", { sha256, message: "파일을 해석하지 못했습니다. 나눠서 다시 올려 주세요." }, quarantineKey);
@@ -516,6 +566,7 @@ async function processUpload(job) {
       });
     });
     libraries.sort((a, b) => a.systemName.localeCompare(b.systemName));
+    emitAppEventToRoles(["admin"], "scanbody:demand-updated", { at: new Date().toISOString() });
     return finish(
       job._id,
       "done",

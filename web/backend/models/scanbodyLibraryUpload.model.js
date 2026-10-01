@@ -31,6 +31,8 @@ const scanbodyLibraryUploadSchema = new mongoose.Schema(
     fileName: { type: String, required: true },
     /** AI 디자인에서 의뢰 스캔바디 때문에 올렸으면 그 제조사. 라이브러리에 붙여 후보를 찾는다. */
     manufacturer: { type: String, default: "" },
+    /** 형상 한 개(.dcm·.stl·.ply·.obj)를 올렸으면 브라우저가 계산한 축과 의뢰 규격. { frame, diameter, height } */
+    meshMeta: { type: mongoose.Schema.Types.Mixed, default: null },
     declaredSize: { type: Number, default: 0 },
     size: { type: Number, default: 0 },
     sha256: { type: String, default: "" },

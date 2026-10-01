@@ -243,9 +243,14 @@ import {
   templateSpecLabel,
   uploadScanbodyFilesAndWait,
   uploadTemplateFileAndWait,
+  uploadScanbodyMeshAndWait,
+  scanbodySpecKey,
+  isMeshFileName,
+  MESH_FILE_ACCEPT,
   useScanbodyCatalog,
   type TemplateSpec,
 } from "@/shared/practice/scanbodyLibraryApi";
+import { ScanbodyLibraryUpdatePrompt } from "@/shared/components/practice/ScanbodyLibraryUpdatePrompt";
 import { meshExtent, type ScanbodyMesh } from "@/shared/practice/scanbodyRegistration";
 import {
   ViewPaintSurface,
@@ -1869,10 +1874,21 @@ function LabProsthesisAiDesignDialog({
     }
     return out;
   }, [edits, libraryById, plan.teeth, scanbodyCatalog, scanbodyCatalogLoaded]);
+  /** 기공소에 올려 달라고 할 형상. 관리자가 표시한 규격만(나머지는 어벗츠가 준비한다). */
   const missingShapeLabel = (() => {
-    for (const entry of Object.values(scanbodyCandidates)) {
-      if (entry.missingLibraryMaker) return `${entry.missingLibraryMaker} 스캔바디 라이브러리`;
-      if (entry.missingTemplate) return `${templateSpecLabel(entry.missingTemplate)} 템플릿`;
+    const requested = new Set(scanbodyCatalog.labUploadRequestKeys);
+    for (const [toothNumber, entry] of Object.entries(scanbodyCandidates)) {
+      const order = plan.teeth.find((row) => row.toothNumber === toothNumber)?.scanbodyOrder;
+      if (entry.missingLibraryMaker && order && requested.has(scanbodySpecKey(order))) {
+        return `${entry.missingLibraryMaker} 스캔바디 라이브러리`;
+      }
+      const template = entry.missingTemplate;
+      if (
+        template &&
+        requested.has(scanbodySpecKey({ manufacturer: template.kind, diameter: template.diameter, height: template.height }))
+      ) {
+        return `${templateSpecLabel(template)} 템플릿`;
+      }
     }
     return null;
   })();
@@ -2728,12 +2744,22 @@ function LabProsthesisAiDesignDialog({
     }
   };
 
-  /** 의뢰에 지정된 스캔바디 제조사 라이브러리를 AI 디자인 안에서 올린다. 등록되면 카탈로그를 다시 받아 자동 맞춤이 이어진다. */
-  const uploadOrderScanbodyLibrary = async (maker: string, files: File[]) => {
+  /**
+   * 의뢰에 지정된 스캔바디 라이브러리를 AI 디자인 안에서 올린다. 등록되면 카탈로그를 다시 받아 자동 맞춤이 이어진다.
+   * .dme·.zip·exocad 폴더는 라이브러리로, 형상 한 개(.dcm·.stl·.ply·.obj)는 의뢰 규격 키트로 등록한다.
+   */
+  const uploadOrderScanbodyLibrary = async (
+    order: { manufacturer: string; diameter: string; height: string },
+    files: File[],
+  ) => {
     if (scanbodyUploadStatus) return;
+    const maker = order.manufacturer;
     setScanbodyUploadStatus("준비 중…");
     try {
-      const { rows, notes } = await uploadScanbodyFilesAndWait(files, maker, setScanbodyUploadStatus);
+      const single = files.length === 1 && isMeshFileName(files[0]!.name) ? files[0]! : null;
+      const { rows, notes } = single
+        ? { rows: [await uploadScanbodyMeshAndWait(single, order, setScanbodyUploadStatus)], notes: [] as string[] }
+        : await uploadScanbodyFilesAndWait(files, maker, setScanbodyUploadStatus);
       const done = rows.filter((row) => row.status === "done");
       const failed = rows.filter((row) => row.status === "rejected" || row.status === "failed");
       if (done.length > 0) reloadScanbodyCatalog();
@@ -2780,7 +2806,7 @@ function LabProsthesisAiDesignDialog({
     }
   };
 
-  /** 의뢰 규격 템플릿(.dcm)을 AI 디자인 안에서 올린다. 등록되면 카탈로그를 다시 받아 자동 맞춤이 이어진다. */
+  /** 의뢰 규격 템플릿 형상(.dcm·.stl·.ply·.obj)을 AI 디자인 안에서 올린다. 등록되면 카탈로그를 다시 받아 자동 맞춤이 이어진다. */
   const uploadOrderTemplate = async (spec: TemplateSpec, file: File) => {
     if (scanbodyUploadStatus) return;
     setScanbodyUploadStatus("준비 중…");
@@ -2810,18 +2836,34 @@ function LabProsthesisAiDesignDialog({
     }
   };
 
+  /**
+   * 의뢰 규격 형상이 없을 때 안내. 기본은 어벗츠가 제조사에서 받아 등록하니 기공소에 올려 달라고 하지 않는다.
+   * 관리자가 「시장에서 거의 안 쓰는 것」으로 표시한 규격(labUploadRequestKeys)만 올리기 버튼을 보인다.
+   */
   const missingShapePrompt = (toothNumber: string): ScanbodyControls["missingLibrary"] => {
     const entry = scanbodyCandidates[toothNumber];
     const template = entry?.missingTemplate;
+    const requested = new Set(scanbodyCatalog.labUploadRequestKeys);
     if (template) {
+      const label = templateSpecLabel(template);
+      if (!requested.has(scanbodySpecKey({ manufacturer: template.kind, diameter: template.diameter, height: template.height }))) {
+        return {
+          lines: [`의뢰한 ${label} 템플릿을 어벗츠가 준비하고 있습니다.`, "등록되면 자동으로 맞춥니다."],
+          accept: "",
+          multiple: false,
+          buttonLabel: "",
+          status: null,
+          onUpload: null,
+        };
+      }
       return {
         lines: [
-          `의뢰한 ${templateSpecLabel(template)} 템플릿이 아직 없습니다.`,
-          "3Shape 스캐너로 찍은 .dcm 파일 하나를 올려 주세요.",
+          `의뢰한 ${label} 템플릿은 어벗츠가 구하기 어렵습니다.`,
+          "쓰던 형상 파일(.dcm·.stl·.ply·.obj) 하나를 올려 주세요.",
         ],
-        accept: ".dcm",
+        accept: MESH_FILE_ACCEPT,
         multiple: false,
-        buttonLabel: `${templateSpecLabel(template)} .dcm 올리기`,
+        buttonLabel: `${templateSpecLabel(template)} 형상 올리기`,
         status: scanbodyUploadStatus,
         onUpload: (files) => void uploadOrderTemplate(template, files[0]!),
       };
@@ -2830,16 +2872,33 @@ function LabProsthesisAiDesignDialog({
     if (!maker) return null;
     const order = plan.teeth.find((row) => row.toothNumber === toothNumber)?.scanbodyOrder;
     const size = [order?.diameter, order?.height].filter(Boolean).join("/");
+    const spec = `${maker}${size ? ` ${size}` : ""}`;
+    if (!requested.has(scanbodySpecKey({ manufacturer: maker, diameter: order?.diameter ?? "", height: order?.height ?? "" }))) {
+      return {
+        lines: [`치과가 지정한 ${spec} 스캔바디는 어벗츠가 제조사에서 받아 등록하고 있습니다.`, "등록되면 자동으로 맞춥니다."],
+        accept: "",
+        multiple: false,
+        buttonLabel: "",
+        status: null,
+        onUpload: null,
+      };
+    }
     return {
       lines: [
-        `치과가 지정한 ${maker}${size ? ` ${size}` : ""} 스캔바디 라이브러리가 아직 없습니다.`,
-        "제조사에서 받은 .dme 또는 .zip 파일을 올려 주세요.",
+        `치과가 지정한 ${spec} 스캔바디는 시장에서 드물어 어벗츠가 구하기 어렵습니다.`,
+        "쓰던 라이브러리를 올려 주세요.",
+        "3Shape .dme, exocad 폴더(또는 .zip), 스캔한 형상 한 개(.dcm·.stl·.ply·.obj)를 받습니다.",
       ],
-      accept: ".dme,.zip",
+      accept: `.dme,.zip,${MESH_FILE_ACCEPT}`,
       multiple: true,
+      allowFolder: true,
       buttonLabel: `${maker} 라이브러리 올리기`,
       status: scanbodyUploadStatus,
-      onUpload: (files) => void uploadOrderScanbodyLibrary(maker, files),
+      onUpload: (files) =>
+        void uploadOrderScanbodyLibrary(
+          { manufacturer: maker, diameter: order?.diameter ?? "", height: order?.height ?? "" },
+          files,
+        ),
     };
   };
 
@@ -5654,6 +5713,14 @@ function LabProsthesisAiDesignDialog({
           onDownload={(selection) => void downloadExport(selection)}
           onAttach={onAttachChatFile ? (selection) => void attachExport(selection) : null}
         />
+        {open ? (
+          <ScanbodyLibraryUpdatePrompt
+            libraries={scanbodyCatalog.libraries}
+            onUpdated={() => reloadScanbodyCatalog()}
+            overlayClassName="z-[560]"
+            className="z-[561]"
+          />
+        ) : null}
         {libraryConfirm
           ? (() => {
               const tooth = plan.teeth.find((row) => row.toothNumber === libraryConfirm.toothNumber);

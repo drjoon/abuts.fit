@@ -12,6 +12,8 @@ router.use(authenticate);
 
 router.get("/", controller.listScanbodyLibraries);
 router.get("/file", controller.downloadScanbodyGeometry);
+router.get("/demand", controller.listScanbodyDemandHandler);
+router.patch("/demand/lab-request", controller.setScanbodyDemandLabRequest);
 router.get("/uploads", controller.listLibraryUploads);
 router.post("/uploads", controller.createLibraryUpload);
 router.post("/uploads/:uploadId/complete", controller.completeLibraryUpload);
@@ -27,6 +29,7 @@ router.get("/blocklist", controller.listUploadBlocklist);
 router.delete("/blocklist/:id", controller.unblockUploader);
 router.patch("/:id/kits/:kitId", controller.updateScanbodyKit);
 router.patch("/:id/visibility", controller.updateScanbodyVisibility);
+router.post("/:id/rebase", controller.rebaseScanbodyLibrary);
 router.delete("/:id", controller.deleteScanbodyLibrary);
 
 export default router;

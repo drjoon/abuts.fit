@@ -1,6 +1,7 @@
 // 업로드 묶음(ZIP) → 스캔바디 라이브러리 초안. DB·S3를 건드리지 않는 순수 해석 단계.
 // - 3Shape `.dme`(ZIP): Materials.xml의 임플란트 시스템·키트·스캔바디(.dcm).
 // - exocad: config.xml(ImplantLibraryEntry)의 타입별 스캔바디 STL(MarkerFilename)과 축.
+// - 형상 한 개(.dcm·.stl·.ply·.obj): 기공소 스캔·다른 CAD 내보내기. 축은 브라우저가 계산해 보낸다(parseScanbodyMesh).
 // 형상은 좌표·면만 꺼내 모델 좌표 이진 STL로 새로 만든다(scanbodyGeometry.js). 스캔바디만 저장한다.
 // `.dme`는 묶음 안에서 한 단계만 푼다. 그 밖의 중첩 압축과 .sdfa·.ipflib(암호화)은 풀지 않는다.
 // related files:
@@ -13,18 +14,21 @@ import {
   ScanbodyInputError,
   canonicalStlHash,
   encodeCanonicalStl,
+  frameToModel,
   transformToModel,
   trianglesFromHps,
+  trianglesFromMeshFile,
   trianglesFromStl,
 } from "../utils/scanbodyGeometry.js";
 
 export const SCANBODY_UPLOAD_LIMITS = {
   // 브라우저가 25MB 안팎으로 나눠 올린다. 한 폴더·한 .dme가 큰 제조사 배포본도 받게 넉넉히 둔다.
-  maxUploadBytes: 600 * 1024 * 1024,
+  maxUploadBytes: 1024 * 1024 * 1024,
   maxBundleEntries: 5000,
   maxDmeEntries: 3000,
   maxEntryBytes: 64 * 1024 * 1024,
-  maxTotalBytes: 1024 * 1024 * 1024,
+  // 업로드 한도와 같으면 1GB짜리 묶음은 풀다 걸린다. .dme 안 .dcm은 이미 압축돼 풀어도 거의 그대로다.
+  maxTotalBytes: 2048 * 1024 * 1024,
   maxXmlBytes: 32 * 1024 * 1024,
 };
 
@@ -362,6 +366,30 @@ export function parseScanbodyBundle(buffer, fileName) {
   const libraries = finalize([...merged.values()]);
   if (libraries.length === 0) throw notFound(notes);
   return { libraries, notes };
+}
+
+/**
+ * 기공소가 스캔하거나 다른 CAD에서 내보낸 스캔바디 형상 한 개(.dcm·.stl·.ply·.obj).
+ * 축·플랫폼(frame)은 브라우저가 템플릿과 같은 방법으로 계산해 보낸다. 형상은 서버가 원본에서 다시 읽는다.
+ * 의뢰 제조사·규격을 키트 이름으로 둔다(같은 규격을 다시 올리면 그 키트를 바꾼다).
+ */
+export function parseScanbodyMesh(buffer, fileName, meta) {
+  if (buffer.length > SCANBODY_UPLOAD_LIMITS.maxEntryBytes) throw new ScanbodyInputError("파일이 너무 큽니다.");
+  const maker = text(meta?.manufacturer, 60);
+  if (!maker) throw new ScanbodyInputError("스캔바디 제조사가 없습니다.");
+  const triangles = frameToModel(trianglesFromMeshFile(buffer, fileName), meta.frame);
+  const part = { name: stripExt(baseName(fileName)), ...canonicalPart(triangles) };
+  const size = [text(meta?.diameter, 10), text(meta?.height, 10)].filter(Boolean).join("/");
+  const kitId = `${maker} ${size}`.trim();
+  const lib = {
+    source: "scan",
+    systemName: `${maker} 스캔바디`,
+    fileNames: [fileName],
+    containerVersions: [],
+    parts: new Map([[part.hash, part]]),
+    kits: new Map([[kitId, { kitId, name: kitId, scanAbutmentPartIds: [part.hash] }]]),
+  };
+  return { libraries: [lib], notes: [] };
 }
 
 function notFound(notes) {
