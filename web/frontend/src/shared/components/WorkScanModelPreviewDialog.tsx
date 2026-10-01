@@ -1,5 +1,7 @@
 // 작업 스캔(상악·하악·바이트)을 한 모델로 연다. 파일 좌표 그대로 겹치고 악별로 켜고 끈다.
 // change-log:
+// - 2026-10-01: 페인트는 열 때 꺼 둔다. 날짜는 의뢰 업로드 날.
+// - 2026-10-01: 헤더 날짜 팝오버. 기본은 가장 최근 날짜의 상악·하악.
 // - 2026-09-29: 채팅 첨부는 페인트 도구 막대 안으로. 헤더에는 악 토글·페인트·다운로드만.
 // - 2026-09-29: 제목 아래 케이스 정보(caseInfo) — 채팅 헤더와 같은 점·치과/기공소·환자·치아·날짜.
 // - 2026-09-28: 다운로드는 파일 목록을 한 번에 넘긴다. 채팅 상세가 케이스 폴더에 저장한다.
@@ -31,6 +33,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   PREVIEW_HEADER_BUTTON_CLASS,
   keepOpenOnToastInteract,
   PreviewColorMappingToggle,
@@ -43,6 +50,8 @@ import type { ViewPaintSpace } from "@/shared/components/practice/viewPaintSpace
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import {
+  hiddenKeysForWorkScanDate,
+  workScanDateGroups,
   workScanModelParts,
   workScanModelTitle,
   type WorkScanModelFile,
@@ -86,28 +95,42 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
   onReorderChatFiles?: (files: File[]) => void;
 }) {
   const parts = useMemo(() => workScanModelParts(files), [files]);
+  const dateGroups = useMemo(() => workScanDateGroups(parts), [parts]);
   const partsKey = parts.map((part) => part.key).join("|");
   const viewerRef = useRef<CaseLayerViewerHandle | null>(null);
   const [loads, setLoads] = useState<Record<string, LoadState>>({});
-  const [hidden, setHidden] = useState<Record<string, boolean>>({});
+  const [dateKey, setDateKey] = useState<string | null>(null);
+  const [hidden, setHidden] = useState<Record<string, boolean> | null>(null);
+  const [dateMenuOpen, setDateMenuOpen] = useState(false);
   const [colorMapping, setColorMapping] = useState(true);
-  const paint = usePreviewPaint({ open, resetKey: partsKey, initiallyOn: true });
+  const paint = usePreviewPaint({ open, resetKey: partsKey, initiallyOn: false });
   const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
   const heading = title || "작업 모델";
+  const activeDateKey =
+    dateKey && dateGroups.some((group) => group.key === dateKey)
+      ? dateKey
+      : (dateGroups[0]?.key ?? "");
+  const activeGroup = dateGroups.find((group) => group.key === activeDateKey) ?? null;
+  const activeParts = activeGroup?.parts ?? [];
+  const defaultHidden = useMemo(
+    () => hiddenKeysForWorkScanDate(parts, activeDateKey),
+    [activeDateKey, parts],
+  );
+  const hiddenMap = hidden ?? defaultHidden;
+
+  const selectDate = (next: string) => {
+    setDateKey(next);
+    setHidden(hiddenKeysForWorkScanDate(parts, next));
+    setDateMenuOpen(false);
+  };
 
   useEffect(() => {
     if (!open || !authToken) return;
     const ac = new AbortController();
     setColorMapping(true);
-    // 처음엔 상악·하악만 켠다. 바이트는 헤더에서 켠다.
-    const hasJaw = parts.some((part) => part.role !== "bite");
-    setHidden(
-      hasJaw
-        ? Object.fromEntries(
-            parts.filter((part) => part.role === "bite").map((part) => [part.key, true]),
-          )
-        : {},
-    );
+    setDateKey(null);
+    setHidden(null);
+    setDateMenuOpen(false);
     setLoads(
       Object.fromEntries(parts.map((part) => [part.key, { status: "loading", progress: 0 }])),
     );
@@ -153,10 +176,10 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
     for (const part of parts) {
       const state = loads[part.key];
       if (state?.status !== "ready") continue;
-      out.push({ id: part.key, file: state.file, tone: "scan", visible: !hidden[part.key] });
+      out.push({ id: part.key, file: state.file, tone: "scan", visible: !hiddenMap[part.key] });
     }
     return out;
-  }, [hidden, loads, parts]);
+  }, [hiddenMap, loads, parts]);
 
   const loading = parts.filter((part) => loads[part.key]?.status === "loading");
   const progress =
@@ -193,7 +216,9 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
         <DropdownMenuContent align="end" className="z-[460]">
           {parts.map((part) => (
             <DropdownMenuItem key={part.key} onClick={() => void onDownload([part.file])}>
-              <span className="font-medium">{part.label}</span>
+              <span className="font-medium">
+                {dateGroups.length > 1 ? `${part.dateLabel} ${part.label}` : part.label}
+              </span>
               <span className="ml-2 max-w-[14rem] truncate text-xs text-muted-foreground">
                 {part.file.fileName}
               </span>
@@ -216,7 +241,13 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
           RESPONSIVE.dialogContentFull,
         )}
         overlayClassName="z-[445]"
-        onInteractOutside={keepOpenOnToastInteract}
+        onInteractOutside={(event) => {
+          keepOpenOnToastInteract(event);
+          const target = event.target;
+          if (target instanceof Element && target.closest("[data-work-scan-date]")) {
+            event.preventDefault();
+          }
+        }}
       >
         <DialogHeader className="shrink-0 flex-row flex-wrap items-center justify-between gap-2 space-y-0 border-b bg-muted/50 py-2 pl-4 pr-14 text-left sm:pl-5 sm:pr-14">
           <div className="min-w-0 flex-1">
@@ -230,9 +261,51 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
             <div className="mr-3 flex items-center gap-1.5">
-              {parts.map((part) => {
+              {dateGroups.length > 1 ? (
+                <Popover open={dateMenuOpen} onOpenChange={setDateMenuOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className={PREVIEW_HEADER_BUTTON_CLASS}
+                      aria-label="스캔 날짜"
+                    >
+                      {activeGroup?.label || "날짜"}
+                      <ChevronDown className="opacity-70" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="end"
+                    data-work-scan-date=""
+                    className="z-[460] w-auto min-w-[11rem] p-1"
+                    onOpenAutoFocus={(event) => event.preventDefault()}
+                  >
+                    {dateGroups.map((group) => {
+                      const selected = group.key === activeDateKey;
+                      return (
+                        <button
+                          key={group.key || "none"}
+                          type="button"
+                          className={cn(
+                            "flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent",
+                            selected && "bg-accent font-medium",
+                          )}
+                          onClick={() => selectDate(group.key)}
+                        >
+                          <span>{group.label}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {group.parts.length}개
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </PopoverContent>
+                </Popover>
+              ) : null}
+              {activeParts.map((part) => {
                 const state = loads[part.key];
-                const shown = !hidden[part.key];
+                const shown = !hiddenMap[part.key];
                 return (
                   <Button
                     key={part.key}
@@ -244,12 +317,13 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
                     title={
                       state?.status === "error"
                         ? state.message
-                        : shown
-                          ? `${part.label} 숨기기`
-                          : `${part.label} 보기`
+                        : `${part.file.fileName} · ${shown ? "숨기기" : "보기"}`
                     }
                     onClick={() =>
-                      setHidden((prev) => ({ ...prev, [part.key]: !prev[part.key] }))
+                      setHidden((prev) => {
+                        const base = prev ?? hiddenKeysForWorkScanDate(parts, activeDateKey);
+                        return { ...base, [part.key]: !base[part.key] };
+                      })
                     }
                   >
                     {state?.status === "loading" ? (

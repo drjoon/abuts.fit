@@ -1,6 +1,7 @@
 // 기공소 채팅 — 주문 치아와 확정된 스캔 역할로 보철 디자인 계획을 만든다.
 
 import { scanKindToken } from "@/shared/files/modelPreviewFile";
+import { clusterPracticeTransferFileWaves } from "@/shared/practice/practiceTransferFileWaves";
 import { sortByArch } from "@/shared/practice/toothArchOrder";
 
 export type LabOralScanRole = "upper" | "lower" | "bite" | "other";
@@ -347,50 +348,140 @@ function oralScanSetByConfirmed(setBy: string | null | undefined): boolean {
   return setBy === "lab" || setBy === "practice";
 }
 
+export type OralScanReviewWave = {
+  label: string;
+  upper: number;
+  lower: number;
+  unknownCount: number;
+};
+
+export type OralScanReview = {
+  keys: Set<string>;
+  unknownCount: number;
+  /** s3 키 → 그 파일이 속한 업로드 안의 같은 역할 개수. */
+  roleCountByKey: Map<string, number>;
+  /** 그 업로드 안에서 겹치거나 역할을 못 나눈 묶음만. */
+  waves: OralScanReviewWave[];
+};
+
 /**
- * 기공소가 아직 확정하지 않았고, 파일명만으로 역할을 정하기 어려운 파일.
- * 바이트가 둘(BiteScan·BiteScan2)인 경우는 보통 스캔이라 제외한다.
- * 상악·하악이 겹치거나 그 외로 남은 파일을 반환한다.
+ * 노란 표시는 업로드 묶음(첫·두 번째…) 안에서만 센다.
+ * 다른 묶음의 상악·하악과는 겹치지 않는다.
+ * 묶음 안에서도 바이트가 둘인 경우는 보통 스캔이라 제외한다.
+ * 같은 묶음에서 상악·하악이 겹치거나, 파일명으로 역할을 못 나눈 파일을 반환한다.
  */
-export function ambiguousOralScanFileKeys(
+export function summarizeOralScanReview(
   files: ReadonlyArray<{
     s3Key?: string | null;
     fileName?: string | null;
     scanRole?: string | null;
     scanRoleSetBy?: string | null;
+    uploadBatchId?: string | null;
+    uploadedAt?: string | null;
   }>,
-): Set<string> {
-  const rows = files
-    .filter((file) => !isAbutsWorkScanFileName(String(file.fileName || "")))
-    .map((file) => {
-      const key = String(file.s3Key || "").trim();
-      const role = resolveOralScanRole({
-        fileName: file.fileName,
-        scanRole: file.scanRole,
-      });
-      return {
-        key,
-        role,
-        confirmed: oralScanSetByConfirmed(file.scanRoleSetBy),
-      };
-    })
-    .filter((row) => row.key && row.role);
-  const counts = { upper: 0, lower: 0 };
-  for (const row of rows) {
-    if (row.role === "upper" || row.role === "lower") counts[row.role] += 1;
+): OralScanReview {
+  const listed = files.filter(
+    (file) => !isAbutsWorkScanFileName(String(file.fileName || "")),
+  );
+  const waves = clusterPracticeTransferFileWaves(
+    listed.map((file) => ({
+      id: String(file.s3Key || file.fileName || ""),
+      fileName: String(file.fileName || ""),
+      size: 0,
+      s3Key: String(file.s3Key || "").trim(),
+      uploadBatchId: file.uploadBatchId,
+      uploadedAt: file.uploadedAt,
+    })),
+  );
+  const byKey = new Map<
+    string,
+    { role: LabOralScanRole; confirmed: boolean }
+  >();
+  for (const file of listed) {
+    const key = String(file.s3Key || "").trim();
+    const role = resolveOralScanRole({
+      fileName: file.fileName,
+      scanRole: file.scanRole,
+    });
+    if (!key || !role) continue;
+    byKey.set(key, {
+      role,
+      confirmed: oralScanSetByConfirmed(file.scanRoleSetBy),
+    });
   }
-  const ambiguous = new Set<string>();
-  for (const row of rows) {
-    if (!row.role || row.confirmed) continue;
-    if (row.role === "other") ambiguous.add(row.key);
-    if (
-      (row.role === "upper" || row.role === "lower") &&
-      counts[row.role] > 1
-    ) {
-      ambiguous.add(row.key);
+  const keys = new Set<string>();
+  const roleCountByKey = new Map<string, number>();
+  let unknownCount = 0;
+  const flaggedWaves: OralScanReviewWave[] = [];
+  for (const wave of waves) {
+    const rows = wave.files
+      .map((file) => {
+        const row = byKey.get(file.s3Key);
+        return row ? { key: file.s3Key, ...row } : null;
+      })
+      .filter((row): row is { key: string; role: LabOralScanRole; confirmed: boolean } =>
+        Boolean(row),
+      );
+    const counts = { upper: 0, lower: 0 };
+    for (const row of rows) {
+      if (row.role === "upper" || row.role === "lower") counts[row.role] += 1;
+    }
+    let waveUnknown = 0;
+    let flagged = false;
+    for (const row of rows) {
+      const count =
+        row.role === "upper" || row.role === "lower" ? counts[row.role] : 1;
+      roleCountByKey.set(row.key, count);
+      if (row.confirmed) continue;
+      if (row.role === "other") {
+        keys.add(row.key);
+        waveUnknown += 1;
+        unknownCount += 1;
+        flagged = true;
+      }
+      if (
+        (row.role === "upper" || row.role === "lower") &&
+        counts[row.role] > 1
+      ) {
+        keys.add(row.key);
+        flagged = true;
+      }
+    }
+    if (flagged) {
+      flaggedWaves.push({
+        label: wave.label,
+        upper: counts.upper,
+        lower: counts.lower,
+        unknownCount: waveUnknown,
+      });
     }
   }
-  return ambiguous;
+  return { keys, unknownCount, roleCountByKey, waves: flaggedWaves };
+}
+
+export function ambiguousOralScanFileKeys(
+  files: Parameters<typeof summarizeOralScanReview>[0],
+): Set<string> {
+  return summarizeOralScanReview(files).keys;
+}
+
+/** 노란 스캔 안내. 업로드 묶음마다 한 문장, 문장마다 한 줄. */
+export function oralScanReviewBannerLines(review: OralScanReview): string[] {
+  if (review.keys.size === 0) return [];
+  const lines: string[] = [];
+  for (const wave of review.waves) {
+    const bits: string[] = [];
+    if (wave.upper > 1) bits.push(`상악 ${wave.upper}개`);
+    if (wave.lower > 1) bits.push(`하악 ${wave.lower}개`);
+    if (bits.length > 0) {
+      lines.push(`${wave.label}에 ${bits.join(", ")}가 있습니다.`);
+    }
+    if (wave.unknownCount > 0) {
+      lines.push(`${wave.label}에 파일명으로 역할을 못 나눈 파일이 있습니다.`);
+    }
+  }
+  lines.push("고르면 노란 표시가 꺼집니다.");
+  return lines;
 }
 
 function normalizeToothNumber(value: unknown): string {

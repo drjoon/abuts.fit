@@ -18,6 +18,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-10-01: 노란 스캔 — 업로드 묶음 안에서만 상악·하악이 겹치면 표시한다.
 // - 2026-10-01: 어벗츠기공소 채팅 헤더 AI 버튼 — 협력·하청·자체 수행 모두 표시.
 // - 2026-09-30: 파일 목록 갱신만으로 모델·썸네일 다운로드를 끊지 않는다.
 // - 2026-09-29: 채팅 헤더 — 커스텀어벗 배송 한 줄(한진 현황만).
@@ -280,8 +281,11 @@ import { ModelPreviewDialog, type ModelPreviewKind } from "@/shared/components/M
 import { WorkScanModelPreviewDialog } from "@/shared/components/WorkScanModelPreviewDialog";
 import type { WorkScanAlignment } from "@/shared/practice/workScanAlignment";
 import {
+  hiddenKeysForWorkScanDate,
+  workScanDateGroups,
   workScanModelParts,
   workScanModelTitle,
+  withWorkScanSourceDates,
 } from "@/shared/practice/workScanModel";
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
 import { StlPreviewThumbnail } from "@/features/requests/components/StlPreviewThumbnail";
@@ -325,7 +329,8 @@ import {
 } from "@/shared/components/practice/LabProsthesisAiDesignDialog";
 import {
   ORAL_SCAN_ROLE_OPTIONS,
-  ambiguousOralScanFileKeys,
+  oralScanReviewBannerLines,
+  summarizeOralScanReview,
   isAbutsWorkScanFileName,
   isOralScanMeshName,
   isOralScanRole,
@@ -2941,9 +2946,11 @@ export function PracticeTransferDetailChatDialog({
     designFileList.length > 0 ||
     resultFileList.length > 0;
   const requestFileWaves = clusterPracticeTransferFileWaves(requestFilesShown);
-  const ambiguousScanKeys = onChangeRequestScanRole
-    ? ambiguousOralScanFileKeys(files)
-    : new Set<string>();
+  const scanReview = onChangeRequestScanRole
+    ? summarizeOralScanReview(requestFilesShown)
+    : null;
+  const ambiguousScanKeys = scanReview?.keys ?? new Set<string>();
+  const scanReviewLines = scanReview ? oralScanReviewBannerLines(scanReview) : [];
   const trashedFileList = Array.isArray(trashedFiles) ? trashedFiles : [];
   /** 휴지통에 파일이 있을 때만 썸네일 끝 타일 표시 */
   const showRequestFileTrash =
@@ -2988,6 +2995,17 @@ export function PracticeTransferDetailChatDialog({
       Boolean(onChangeRequestScanRole) &&
       isOralScanMeshName(file.fileName) &&
       ambiguousScanKeys.has(busyKey);
+    const namedReview =
+      scanRole === "upper" || scanRole === "lower" ? scanRole : null;
+    const namedReviewCount = namedReview
+      ? (scanReview?.roleCountByKey.get(busyKey) ?? 0)
+      : 0;
+    const reviewRoleLabel = namedReview ? oralScanRoleLabel(namedReview) : "";
+    const reviewHint =
+      namedReview && namedReviewCount > 1
+        ? `${reviewRoleLabel}이 ${namedReviewCount}개입니다. 이 파일이 맞으면 ${reviewRoleLabel}을 고르세요.`
+        : "파일명으로 역할을 못 나눴습니다. 상악·하악·바이트를 고르세요.";
+    const reviewBadge = reviewRoleLabel || "확인";
 
     return (
       <div
@@ -3086,8 +3104,8 @@ export function PracticeTransferDetailChatDialog({
           <button
             type="button"
             className="absolute left-1 top-1 z-10 rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm"
-            title="이 표시를 누르면 역할 목록이 열립니다."
-            aria-label={`${file.fileName} 역할 선택`}
+            title={reviewHint}
+            aria-label={`${file.fileName} ${reviewBadge} 확정`}
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -3097,7 +3115,7 @@ export function PracticeTransferDetailChatDialog({
               if (trigger instanceof HTMLButtonElement) trigger.click();
             }}
           >
-            확인
+            {reviewBadge}
           </button>
         ) : null}
         {keyPrefix.startsWith("request") && isMesh && scanRole ? (
@@ -3125,12 +3143,14 @@ export function PracticeTransferDetailChatDialog({
                   aria-label={`${file.fileName} 스캔 역할`}
                   title={
                     scanRoleNeedsReview
-                      ? "이 목록에서 역할을 고르면 노란 표시가 꺼집니다."
+                      ? reviewHint
                       : `${file.fileName} 스캔 역할`
                   }
                 >
                   <SelectValue
-                    placeholder={scanRoleNeedsReview ? "역할 선택" : "선택"}
+                    placeholder={
+                      scanRoleNeedsReview ? reviewRoleLabel || "역할 선택" : "선택"
+                    }
                   />
                 </SelectTrigger>
                 <SelectContent className="min-w-[7.5rem]">
@@ -3152,13 +3172,18 @@ export function PracticeTransferDetailChatDialog({
     );
   };
 
-  /** 작업 스캔은 상악·하악·바이트가 한 모델이다. 타일 하나로 보이고 한꺼번에 연다. */
+  /** 작업 스캔 타일은 가장 최근 날짜의 상악·하악만 그린다. */
   const renderWorkScanModelTile = (list: PracticeTransferDialogFileItem[]) => {
-    const thumbs = workScanModelParts(list)
+    const dated = withWorkScanSourceDates(list, requestFilesShown);
+    const parts = workScanModelParts(dated);
+    const latestKey = workScanDateGroups(parts)[0]?.key ?? "";
+    const hidden = hiddenKeysForWorkScanDate(parts, latestKey);
+    const shown = parts.filter((part) => !hidden[part.key]);
+    const thumbs = shown
       .map((part) => modelThumbFiles[part.key])
       .filter((file): file is File => Boolean(file));
     const [thumbFirst, ...thumbRest] = thumbs;
-    const thumbReady = thumbs.length === list.length;
+    const thumbReady = shown.length > 0 && thumbs.length === shown.length;
     const name = workScanModelTitle(list);
     return (
       <div className="relative min-w-0 overflow-hidden rounded-md border bg-slate-50">
@@ -3166,7 +3191,7 @@ export function PracticeTransferDetailChatDialog({
           type="button"
           onClick={() => setWorkModelOpen(true)}
           disabled={!authToken}
-          title="클릭하여 상악·하악·바이트를 함께 3D 미리보기"
+          title="클릭하여 최근 날짜의 상악·하악을 3D 미리보기"
           className="flex w-full flex-col items-stretch text-left disabled:opacity-60 disabled:pointer-events-none"
         >
           <div
@@ -3771,11 +3796,14 @@ export function PracticeTransferDetailChatDialog({
                     {requestFilesDownloadLockedReason}
                   </p>
                 ) : null}
-                {ambiguousScanKeys.size > 0 ? (
+                {scanReviewLines.length > 0 ? (
                   <p className="rounded-md bg-amber-100 px-3 py-2 text-xs font-medium leading-relaxed text-amber-950">
-                    확인을 누르거나, 썸네일 아래 목록에서 역할을 고르세요.
-                    <br />
-                    상악·하악·바이트를 고르면 노란 표시가 꺼집니다.
+                    {scanReviewLines.map((line, lineIndex) => (
+                      <span key={line}>
+                        {lineIndex > 0 ? <br /> : null}
+                        {line}
+                      </span>
+                    ))}
                   </p>
                 ) : null}
                 {requestFilesShown.length ||
@@ -4254,7 +4282,7 @@ export function PracticeTransferDetailChatDialog({
     <WorkScanModelPreviewDialog
       open={workModelOpen}
       onOpenChange={setWorkModelOpen}
-      files={workScanFileList}
+      files={withWorkScanSourceDates(workScanFileList, requestFilesShown)}
       authToken={authToken}
       title={workScanFilesLabel}
       caseInfo={previewCaseInfo}
