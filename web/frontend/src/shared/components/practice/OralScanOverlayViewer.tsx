@@ -1,4 +1,5 @@
 // 기공소 AI 보철 — 상악·하악·바이트를 저장된 좌표 그대로 겹쳐 본다.
+// - 2026-10-01: onPaintSpace — 페인트 표시를 스캔에 붙인다. 화면을 돌리면 같이 돈다.
 // - 2026-09-26: 지대치는 불투명, 대합·바이트는 투명. 기본 뷰는 화면에 맞춘다.
 // - 2026-09-26: 교합면·협측·설측, 대합 접촉 색, 삽입 방향 언더컷.
 // - 2026-09-26: 열릴 때 의뢰 치아 교합면을 화면 중앙에 둔다. 치아번호 뱃지는 그 좌표에 붙는다.
@@ -43,6 +44,11 @@ import {
   useState,
 } from "react";
 import * as THREE from "three";
+import {
+  createViewPaintSpace,
+  notifyViewPaint,
+  type ViewPaintSpace,
+} from "@/shared/components/practice/viewPaintSpace";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 
 import type { WorkSessionCenterGuide } from "@/shared/practice/labProsthesisWorkDraft";
@@ -544,6 +550,8 @@ type Props = {
   onCrownShells?: (shells: Record<string, number>) => void;
   /** 지운 마진을 새로 찍는 중인 점 수. 닫거나 그만두면 0. */
   onMarginTraceProgress?: (count: number) => void;
+  /** 페인트가 스캔 표면에 붙도록. 씬이 준비되면 넘기고, 닫히면 null. */
+  onPaintSpace?: (space: ViewPaintSpace | null) => void;
   className?: string;
 };
 
@@ -2467,6 +2475,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       onHoleIssues,
       onCrownShells,
       onMarginTraceProgress,
+      onPaintSpace,
       className,
     },
     ref,
@@ -2480,6 +2489,9 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<ScreenSpaceOrbitControls | null>(null);
   const groupRef = useRef<THREE.Group | null>(null);
+  const onPaintSpaceRef = useRef(onPaintSpace);
+  onPaintSpaceRef.current = onPaintSpace;
+  const paintListenersRef = useRef(new Set<() => void>());
   const loadedRef = useRef<LoadedMesh[]>([]);
   const fitRadiusRef = useRef(40);
   const fitExtentRef = useRef({ halfW: 40, halfH: 40 });
@@ -3092,6 +3104,34 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     const group = new THREE.Group();
     scene.add(group);
     groupRef.current = group;
+    const paintTargets = () => {
+      const found: THREE.Object3D[] = [];
+      const add = (root: THREE.Object3D | null) => {
+        root?.traverse((obj) => {
+          const mesh = obj as THREE.Mesh;
+          if (!mesh.isMesh || !mesh.visible || mesh.userData.viewPaint) return;
+          const material = mesh.material;
+          const list = Array.isArray(material) ? material : [material];
+          if (list.some((entry) => entry && entry.depthTest === false)) return;
+          found.push(mesh);
+        });
+      };
+      add(groupRef.current);
+      add(editLayerRef.current);
+      return found;
+    };
+    const paintListeners = paintListenersRef.current;
+    if (onPaintSpaceRef.current) {
+      onPaintSpaceRef.current(
+        createViewPaintSpace({
+          getCamera: () => cameraRef.current,
+          getRenderer: () => rendererRef.current,
+          getParent: () => groupRef.current,
+          getTargets: paintTargets,
+          listeners: paintListeners,
+        }),
+      );
+    }
 
     camera.lookAt(0, 0, 0);
     const controls = new ScreenSpaceOrbitControls(camera, renderer.domElement, {
@@ -3169,6 +3209,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       placeViewLight(rightKey, 52, 24, 34);
       placeViewLight(rightLow, 44, -30, 22);
       placeViewLight(rightFront, 20, 6, 72);
+      if (paintListeners.size > 0) notifyViewPaint(paintListeners);
       renderer.render(scene, camera);
       labelRenderer.render(scene, camera);
       const guide = guideCanvasRef.current;
@@ -4103,6 +4144,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     meshEditCtl.setSpec(meshEditRef.current ?? null);
 
     return () => {
+      paintListeners.clear();
+      onPaintSpaceRef.current?.(null);
       meshEditCtl.dispose();
       meshEditCtlRef.current = null;
       window.clearTimeout(viewTimerRef.current);

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-01: onPaintSpace — 페인트 표시를 모델에 붙인다. 화면을 돌리면 같이 돈다.
 // - 2026-09-28: fitToView — 프리뷰의 「화면 맞춤」. 칼라 매핑 토글은 PreviewColorMappingToggle 공용.
 // - 2026-09-23: FL 반자동/수동 — ridge 스냅·호버 고스트·시드 1클릭 전둘레 추적.
 // - 2026-09-17: 수동 픽 — 더블클릭→드래그 없는 한 번 클릭(오빗과 구분). crosshair 커서.
@@ -46,6 +47,11 @@
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import * as THREE from "three";
 import { ScreenSpaceOrbitControls } from "@/shared/three/screenSpaceOrbitControls";
+import {
+  createViewPaintSpace,
+  notifyViewPaint,
+  type ViewPaintSpace,
+} from "@/shared/components/practice/viewPaintSpace";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
@@ -123,6 +129,8 @@ type Props = {
   lotEngravingTarget?: "hex" | "post" | null;
   /** 스캔 칼라 매핑 토글 표시. 기본 true(칼라 있는 파일만 노출). */
   showColorMappingToggle?: boolean;
+  /** 페인트가 메시 표면에 붙도록. 씬이 준비되면 넘기고, 닫히면 null. */
+  onPaintSpace?: (space: ViewPaintSpace | null) => void;
 };
 
 export type StlPreviewViewerHandle = {
@@ -161,6 +169,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       lotEngravingHexMode = null,
       lotEngravingTarget = "hex",
       showColorMappingToggle = true,
+      onPaintSpace,
     },
     ref,
   ) {
@@ -235,6 +244,9 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
   const [colorMappingEnabled, setColorMappingEnabled] = useState(true);
   const previewTextureRef = useRef<THREE.Texture | null>(null);
   const applyCameraFitRef = useRef<(() => void) | null>(null);
+  const onPaintSpaceRef = useRef(onPaintSpace);
+  onPaintSpaceRef.current = onPaintSpace;
+  const paintListenersRef = useRef(new Set<() => void>());
   const hasScanColorRef = useRef(false);
   const colorMappingEnabledRef = useRef(true);
   colorMappingEnabledRef.current = colorMappingEnabled;
@@ -682,6 +694,21 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     const modelPivot = new THREE.Group();
     scene.add(modelPivot);
     modelPivotRef.current = modelPivot;
+    const paintListeners = paintListenersRef.current;
+    if (onPaintSpaceRef.current) {
+      onPaintSpaceRef.current(
+        createViewPaintSpace({
+          getCamera: () => cameraRef.current,
+          getRenderer: () => rendererRef.current,
+          getParent: () => modelPivotRef.current,
+          getTargets: () => {
+            const mesh = meshRef.current;
+            return mesh && mesh.visible ? [mesh] : [];
+          },
+          listeners: paintListeners,
+        }),
+      );
+    }
 
     const controls = new ScreenSpaceOrbitControls(camera, renderer.domElement);
 
@@ -2432,6 +2459,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       viewToward.copy(camera.position).sub(controls.target);
       if (viewToward.lengthSq() < 1e-8) viewToward.set(0, 0, 1);
       else viewToward.normalize();
+      if (paintListeners.size > 0) notifyViewPaint(paintListeners);
       placeViewLight(rightKey, 52, 24, 34);
       placeViewLight(rightLow, 44, -30, 22);
       placeViewLight(rightFront, 20, 6, 72);
@@ -2443,6 +2471,8 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     return () => {
       cancelled = true;
       cancelAnimationFrame(frameId);
+      paintListeners.clear();
+      onPaintSpaceRef.current?.(null);
       try {
         if (pickPointerDownHandlerRef.current) {
           renderer.domElement.removeEventListener(

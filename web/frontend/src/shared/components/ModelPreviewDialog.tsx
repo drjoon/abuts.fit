@@ -32,6 +32,7 @@
 // - web/frontend/src/shared/components/PreviewAnnotateActions.tsx
 // - web/frontend/src/shared/components/WorkScanModelPreviewDialog.tsx
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { ViewPaintSpace } from "@/shared/components/practice/viewPaintSpace";
 import {
   ChevronDown,
   ChevronLeft,
@@ -149,6 +150,7 @@ export function ModelPreviewDialog({
   const viewerRef = useRef<StlPreviewViewerHandle | null>(null);
   const imageRef = useRef<ZoomableImagePreviewHandle | null>(null);
   const paint = usePreviewPaint({ open, resetKey: fileName });
+  const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
   const canAnnotate = (isImage ? Boolean(imageUrl) : Boolean(file)) && !loading;
   const showNav = previewCount > 1 && previewIndex >= 0;
   const indexLabel = showNav ? `${previewIndex + 1} / ${previewCount}` : "";
@@ -348,6 +350,7 @@ export function ModelPreviewDialog({
                   companionFiles={companionFiles}
                   showOverlay={false}
                   showGrid={false}
+                  onPaintSpace={setPaintSpace}
                   className="absolute inset-0 h-full min-h-0 w-full"
                 />
                 <Button
@@ -372,6 +375,7 @@ export function ModelPreviewDialog({
                 surfaceKey={fileName}
                 captureCanvas={captureViewCanvas}
                 fileName={fileName}
+                space={isImage ? null : paintSpace}
                 onAttachChatFile={onAttachChatFile}
                 onRemoveChatFile={onRemoveChatFile}
                 onReorderChatFiles={onReorderChatFiles}

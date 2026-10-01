@@ -1,8 +1,12 @@
 // 3D·이미지 뷰 위에 표시를 그린다. 다시 열면 비운다.
+// - 2026-10-01: 표시는 모서리로 크기를 바꾼다. 3D 뷰에서는 모델에 붙어 화면을 돌리면 같이 돈다.
 // - 2026-09-30: 표시마다 (1)(2) 순번. X로 그 순번만 지운다. 저장·첨부 이미지에도 순번을 넣는다.
 // - 2026-09-29: 펜·화살표·사각형·원·점·글자. 도형은 뷰 비율 좌표로 두고 크기가 바뀌면 다시 그린다. 되돌리기.
 // related files:
 // - web/frontend/src/shared/components/practice/ViewPaintToolbar.tsx
+// - web/frontend/src/shared/components/practice/viewPaintGeom.ts
+// - web/frontend/src/shared/components/practice/viewPaintInk.ts
+// - web/frontend/src/shared/components/practice/viewPaintSpace.ts
 // - web/frontend/src/shared/components/PreviewAnnotateActions.tsx
 import {
   forwardRef,
@@ -13,8 +17,37 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { X } from "lucide-react";
+import type { Group } from "three";
 
 import { cn } from "@/shared/ui/cn";
+import {
+  HANDLE_HIT,
+  TEXT_FONT,
+  cloneShape,
+  dotRadius,
+  intersectPlane,
+  posePoint,
+  refreshShapeScreen,
+  resizeShape,
+  shapeHandles,
+  shapeHitPx,
+  shapeLabelPoint,
+  textSize,
+  toUV,
+  type InkScale,
+  type PaintShape,
+  type Pose,
+  type ResizeHandle,
+  type ScreenPoint,
+  type Vec3,
+} from "@/shared/components/practice/viewPaintGeom";
+import {
+  createPaintInkGroup,
+  disposePaintObject,
+  syncPaintInk,
+  syncPaintInkResolution,
+} from "@/shared/components/practice/viewPaintInk";
+import type { ViewPaintSpace } from "@/shared/components/practice/viewPaintSpace";
 
 export const VIEW_PAINT_COLORS = [
   "#e11d48",
@@ -73,25 +106,6 @@ export type ViewPaintHandle = {
   compositePng: (base: HTMLCanvasElement) => Promise<Blob | null>;
 };
 
-/** 뷰 너비·높이에 대한 비율(0..1). */
-type Point = { x: number; y: number };
-
-type PaintShape =
-  | { kind: "pen"; color: string; width: number; points: Point[] }
-  | { kind: "arrow" | "rect" | "ellipse"; color: string; width: number; from: Point; to: Point }
-  | { kind: "dot"; color: string; width: number; at: Point }
-  | { kind: "text"; color: string; width: number; at: Point; text: string };
-
-const TEXT_FONT = "600 {size}px system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif";
-
-function textSize(width: number) {
-  return 12 + width * 2;
-}
-
-function dotRadius(width: number) {
-  return 3 + width * 1.5;
-}
-
 /** 넓은 화면 루트 확대(`--ui-scale`)만큼 선·글자도 키운다. */
 function uiScale() {
   const root = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
@@ -106,7 +120,7 @@ function drawShape(
   h: number,
   scale: number,
 ) {
-  const px = (p: Point) => ({ x: p.x * w, y: p.y * h });
+  const px = (p: ScreenPoint) => ({ x: p.x * w, y: p.y * h });
   ctx.strokeStyle = shape.color;
   ctx.fillStyle = shape.color;
   ctx.lineWidth = shape.width * scale;
@@ -124,8 +138,12 @@ function drawShape(
   }
   if (shape.kind === "dot") {
     const at = px(shape.at);
+    const radius =
+      shape.radius != null && !shape.pose
+        ? shape.radius * (scale / Math.max(uiScale(), 1e-6))
+        : dotRadius(shape.width) * scale;
     ctx.beginPath();
-    ctx.arc(at.x, at.y, dotRadius(shape.width) * scale, 0, Math.PI * 2);
+    ctx.arc(at.x, at.y, radius, 0, Math.PI * 2);
     ctx.fill();
     ctx.lineWidth = 1.5 * scale;
     ctx.strokeStyle = "#ffffff";
@@ -134,7 +152,8 @@ function drawShape(
   }
   if (shape.kind === "text") {
     const at = px(shape.at);
-    ctx.font = TEXT_FONT.replace("{size}", String(textSize(shape.width) * scale));
+    const size = textSize(shape.width) * (shape.scale ?? 1) * scale;
+    ctx.font = TEXT_FONT.replace("{size}", String(size));
     ctx.textBaseline = "top";
     ctx.lineWidth = 3 * scale;
     ctx.strokeStyle = "rgba(255,255,255,0.9)";
@@ -180,36 +199,17 @@ function drawShape(
   ctx.stroke();
   ctx.beginPath();
   ctx.moveTo(to.x, to.y);
-  ctx.lineTo(
-    to.x - Math.cos(angle - spread) * head,
-    to.y - Math.sin(angle - spread) * head,
-  );
-  ctx.lineTo(
-    to.x - Math.cos(angle + spread) * head,
-    to.y - Math.sin(angle + spread) * head,
-  );
+  ctx.lineTo(to.x - Math.cos(angle - spread) * head, to.y - Math.sin(angle - spread) * head);
+  ctx.lineTo(to.x - Math.cos(angle + spread) * head, to.y - Math.sin(angle + spread) * head);
   ctx.closePath();
   ctx.fill();
-}
-
-/** 순번 뱃지가 붙는 점. 화살표는 촉, 사각형·원은 위쪽 모서리. */
-function shapeAnchor(shape: PaintShape): Point {
-  if (shape.kind === "pen") {
-    return shape.points[shape.points.length - 1] ?? { x: 0.5, y: 0.5 };
-  }
-  if (shape.kind === "dot" || shape.kind === "text") return shape.at;
-  if (shape.kind === "arrow") return shape.to;
-  return {
-    x: Math.max(shape.from.x, shape.to.x),
-    y: Math.min(shape.from.y, shape.to.y),
-  };
 }
 
 /** 저장·첨부에 겹치는 순번. 화면의 X는 HTML이라 여기 넣지 않는다. */
 function drawMarkLabel(
   ctx: CanvasRenderingContext2D,
   index: number,
-  anchor: Point,
+  anchor: ScreenPoint,
   w: number,
   h: number,
   scale: number,
@@ -232,6 +232,8 @@ type Props = {
   tool: ViewPaintTool;
   color: string;
   width: number;
+  /** 3D 뷰. 있으면 표시가 모델에 붙는다. 이미지 프리뷰는 없다. */
+  space?: ViewPaintSpace | null;
   /** 그려진 표시 개수가 바뀔 때마다. */
   onShapesChange?: (count: number) => void;
   /** 페인트를 켠 채 Esc를 누르면. 대화상자 닫기보다 먼저 받는다. */
@@ -239,18 +241,41 @@ type Props = {
   className?: string;
 };
 
-type TextDraft = { at: Point; left: number; top: number; value: string };
+type TextDraft = {
+  at: ScreenPoint;
+  left: number;
+  top: number;
+  value: string;
+  pose?: Pose;
+  ink?: InkScale;
+};
+
+type ResizeDrag = { index: number; id: string; start: PaintShape };
+
+function roundKey(value: number) {
+  return Math.round(value * 10000);
+}
 
 export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
   function ViewPaintSurface(
-    { enabled, tool, color, width, onShapesChange, onEscape, className },
+    { enabled, tool, color, width, space = null, onShapesChange, onEscape, className },
     ref,
   ) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const inputRef = useRef<HTMLInputElement | null>(null);
     const shapesRef = useRef<PaintShape[]>([]);
     const draftRef = useRef<PaintShape | null>(null);
-    const [marks, setMarks] = useState<Point[]>([]);
+    const inkRef = useRef<Group | null>(null);
+    const spaceRef = useRef(space);
+    spaceRef.current = space;
+    const enabledRef = useRef(enabled);
+    enabledRef.current = enabled;
+    const selectedRef = useRef<number | null>(null);
+    const resizeRef = useRef<ResizeDrag | null>(null);
+    const overlayKeyRef = useRef("");
+    const [marks, setMarks] = useState<(ScreenPoint | null)[]>([]);
+    const [handles, setHandles] = useState<ResizeHandle[]>([]);
+    const [selected, setSelected] = useState<number | null>(null);
     const [textDraft, setTextDraft] = useState<TextDraft | null>(null);
     const textDraftRef = useRef(textDraft);
     textDraftRef.current = textDraft;
@@ -260,6 +285,10 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
     onEscapeRef.current = onEscape;
     const styleRef = useRef({ color, width });
     styleRef.current = { color, width };
+    const toolRef = useRef(tool);
+    toolRef.current = tool;
+
+    const project = (point: Vec3) => spaceRef.current?.project(point) ?? null;
 
     const cssScale = () => {
       const canvas = canvasRef.current;
@@ -268,6 +297,9 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       return perCss * uiScale();
     };
 
+    /** 모델에 붙인 표시는 3D 씬에만 그린다. 화면 캔버스에 다시 겹치지 않는다. */
+    const drawsOnCanvas = (shape: PaintShape) => !shape.pose;
+
     const redraw = () => {
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
@@ -275,23 +307,65 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       const scale = cssScale();
       for (const shape of shapesRef.current) {
+        if (!drawsOnCanvas(shape)) continue;
         drawShape(ctx, shape, canvas.width, canvas.height, scale);
       }
-      if (draftRef.current) {
+      if (draftRef.current && drawsOnCanvas(draftRef.current)) {
         drawShape(ctx, draftRef.current, canvas.width, canvas.height, scale);
       }
+    };
+    const redrawRef = useRef(redraw);
+    redrawRef.current = redraw;
+
+    const syncInk = () => {
+      const group = inkRef.current;
+      const current = spaceRef.current;
+      if (!group || !current) return;
+      const list = draftRef.current
+        ? [...shapesRef.current, draftRef.current]
+        : shapesRef.current;
+      syncPaintInk(group, list, current.viewSize());
+    };
+
+    const publishOverlay = () => {
+      const current = spaceRef.current;
+      const projector = current ? (point: Vec3) => current.project(point) : null;
+      if (projector) {
+        for (const shape of shapesRef.current) refreshShapeScreen(shape, projector);
+        if (draftRef.current) refreshShapeScreen(draftRef.current, projector);
+      }
+      const nextMarks = shapesRef.current.map((shape) => shapeLabelPoint(shape, projector));
+      const index = selectedRef.current;
+      const shape = index != null ? shapesRef.current[index] : null;
+      const nextHandles =
+        enabledRef.current && shape ? shapeHandles(shape, projector) : [];
+      const key = [
+        nextMarks.map((mark) => (mark ? `${roundKey(mark.x)},${roundKey(mark.y)}` : "-")).join(";"),
+        nextHandles.map((handle) => `${handle.id}:${roundKey(handle.x)},${roundKey(handle.y)}`).join(";"),
+        String(index),
+        enabledRef.current ? "1" : "0",
+      ].join("|");
+      if (key === overlayKeyRef.current) return;
+      overlayKeyRef.current = key;
+      setMarks(nextMarks);
+      setHandles(nextHandles);
+      setSelected(index);
     };
 
     const setShapes = (next: PaintShape[]) => {
       const before = shapesRef.current.length;
       shapesRef.current = next;
       redraw();
-      setMarks(next.map((shape) => shapeAnchor(shape)));
+      syncInk();
+      publishOverlay();
       if (before !== next.length) onShapesChangeRef.current?.(next.length);
     };
 
     const removeAt = (index: number) => {
       if (index < 0 || index >= shapesRef.current.length) return;
+      const current = selectedRef.current;
+      if (current === index) selectedRef.current = null;
+      else if (current != null && current > index) selectedRef.current = current - 1;
       setShapes(shapesRef.current.filter((_, shapeIndex) => shapeIndex !== index));
     };
 
@@ -302,16 +376,30 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       setTextDraft(null);
       const text = draft.value.trim();
       if (!text) return;
-      setShapes([
+      const next: PaintShape[] = [
         ...shapesRef.current,
-        { kind: "text", ...styleRef.current, at: draft.at, text },
-      ]);
+        {
+          kind: "text",
+          ...styleRef.current,
+          at: draft.at,
+          text,
+          pose: draft.pose,
+          ink: draft.ink,
+          au: 0,
+          av: 0,
+          scale: 1,
+        },
+      ];
+      selectedRef.current = next.length - 1;
+      setShapes(next);
     };
 
     const clear = () => {
       draftRef.current = null;
       textDraftRef.current = null;
       setTextDraft(null);
+      selectedRef.current = null;
+      resizeRef.current = null;
       setShapes([]);
     };
 
@@ -321,7 +409,11 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
         setTextDraft(null);
         return;
       }
-      setShapes(shapesRef.current.slice(0, -1));
+      const next = shapesRef.current.slice(0, -1);
+      if (selectedRef.current != null && selectedRef.current >= next.length) {
+        selectedRef.current = next.length > 0 ? next.length - 1 : null;
+      }
+      setShapes(next);
     };
 
     useImperativeHandle(ref, () => ({
@@ -331,6 +423,11 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       compositePng: (base) =>
         new Promise((resolve) => {
           commitText();
+          const current = spaceRef.current;
+          const projector = current ? (point: Vec3) => current.project(point) : null;
+          if (projector) {
+            for (const shape of shapesRef.current) refreshShapeScreen(shape, projector);
+          }
           const out = document.createElement("canvas");
           out.width = base.width;
           out.height = base.height;
@@ -343,8 +440,11 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
           const cssWidth = canvasRef.current?.getBoundingClientRect().width ?? 0;
           const scale = (cssWidth > 0 ? out.width / cssWidth : 1) * uiScale();
           shapesRef.current.forEach((shape, index) => {
-            drawShape(ctx, shape, out.width, out.height, scale);
-            drawMarkLabel(ctx, index, shapeAnchor(shape), out.width, out.height, scale);
+            if (drawsOnCanvas(shape)) {
+              drawShape(ctx, shape, out.width, out.height, scale);
+            }
+            const anchor = shapeLabelPoint(shape, projector);
+            if (anchor) drawMarkLabel(ctx, index, anchor, out.width, out.height, scale);
           });
           out.toBlob((blob) => resolve(blob), "image/png");
         }),
@@ -362,21 +462,49 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
         if (canvas.width === w && canvas.height === h) return;
         canvas.width = w;
         canvas.height = h;
-        redraw();
+        redrawRef.current();
       };
       const observer = new ResizeObserver(fit);
       observer.observe(parent);
       fit();
       return () => observer.disconnect();
-      // redraw는 ref만 읽는다.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+      if (!space) {
+        redrawRef.current();
+        publishOverlay();
+        return;
+      }
+      const group = createPaintInkGroup();
+      inkRef.current = group;
+      const detach = space.attach(group);
+      syncInk();
+      redrawRef.current();
+      const unsub = space.subscribe(() => {
+        const current = inkRef.current;
+        if (!current || current.children.length === 0) {
+          if (!shapesRef.current.some((shape) => shape.pose) && !draftRef.current?.pose) return;
+        }
+        if (current) syncPaintInkResolution(current, space.viewSize());
+        publishOverlay();
+      });
+      publishOverlay();
+      return () => {
+        unsub();
+        detach();
+        disposePaintObject(group);
+        if (inkRef.current === group) inkRef.current = null;
+      };
+    }, [space]);
 
     useEffect(() => {
       if (enabled) return;
       commitText();
       draftRef.current = null;
+      resizeRef.current = null;
       redraw();
+      publishOverlay();
       // commitText·redraw는 ref만 읽는다.
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [enabled]);
@@ -423,20 +551,20 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [enabled]);
 
-    const pointOf = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const pointAt = (clientX: number, clientY: number) => {
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect || rect.width <= 0 || rect.height <= 0) return null;
       return {
-        x: (event.clientX - rect.left) / rect.width,
-        y: (event.clientY - rect.top) / rect.height,
-        left: event.clientX - rect.left,
-        top: event.clientY - rect.top,
+        x: (clientX - rect.left) / rect.width,
+        y: (clientY - rect.top) / rect.height,
+        left: clientX - rect.left,
+        top: clientY - rect.top,
         rect,
       };
     };
 
     /** Shift를 누르면 사각형·원을 정사각형·정원으로. */
-    const constrain = (from: Point, to: Point, rect: DOMRect, square: boolean): Point => {
+    const constrain = (from: ScreenPoint, to: ScreenPoint, rect: DOMRect, square: boolean): ScreenPoint => {
       if (!square) return to;
       const dx = (to.x - from.x) * rect.width;
       const dy = (to.y - from.y) * rect.height;
@@ -445,6 +573,49 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
         x: from.x + (Math.sign(dx) || 1) * (size / rect.width),
         y: from.y + (Math.sign(dy) || 1) * (size / rect.height),
       };
+    };
+
+    const hitIndexAt = (clientX: number, clientY: number) => {
+      const point = pointAt(clientX, clientY);
+      const canvas = canvasRef.current?.getBoundingClientRect();
+      if (!point || !canvas) return null;
+      const projector = spaceRef.current ? (next: Vec3) => spaceRef.current?.project(next) ?? null : null;
+      for (let index = shapesRef.current.length - 1; index >= 0; index -= 1) {
+        const distance = shapeHitPx(
+          shapesRef.current[index],
+          point.x,
+          point.y,
+          canvas.width,
+          canvas.height,
+          projector,
+        );
+        if (distance <= HANDLE_HIT) return index;
+      }
+      return null;
+    };
+
+    const applyResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = resizeRef.current;
+      if (!drag) return;
+      const shape = shapesRef.current[drag.index];
+      const point = pointAt(event.clientX, event.clientY);
+      if (!shape || !point) return;
+      const current = spaceRef.current;
+      const ray = shape.pose && current ? current.ray(event.clientX, event.clientY) : null;
+      const world = shape.pose && ray ? intersectPlane(ray, shape.pose) : null;
+      const minWorld = current ? current.worldPerPixel(shape.pose?.origin ?? { x: 0, y: 0, z: 0 }) * 6 : 1e-4;
+      resizeShape(
+        shape,
+        drag.start,
+        drag.id,
+        { x: point.x, y: point.y, world },
+        event.shiftKey,
+        minWorld,
+        { width: point.rect.width, height: point.rect.height },
+      );
+      syncInk();
+      redraw();
+      publishOverlay();
     };
 
     const fontPx = textSize(width);
@@ -464,12 +635,28 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
           )}
           onPointerDown={(event) => {
             if (!enabled || event.button !== 0) return;
-            const point = pointOf(event);
+            const point = pointAt(event.clientX, event.clientY);
             const canvas = canvasRef.current;
             if (!point || !canvas) return;
             const at = { x: point.x, y: point.y };
+            const currentTool = toolRef.current;
+            if (currentTool !== "text") {
+              const hit = hitIndexAt(event.clientX, event.clientY);
+              if (hit != null) {
+                event.preventDefault();
+                selectedRef.current = hit;
+                publishOverlay();
+                return;
+              }
+            }
             const style = styleRef.current;
-            if (tool === "text") {
+            const current = spaceRef.current;
+            const surface = current?.pick(event.clientX, event.clientY) ?? null;
+            const ink: InkScale | undefined =
+              surface && current
+                ? { px: current.worldPerPixel(surface.point) * uiScale(), lift: current.surfaceLift() }
+                : undefined;
+            if (currentTool === "text") {
               event.preventDefault();
               commitText();
               setTextDraft({
@@ -477,30 +664,115 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
                 left: point.left,
                 top: point.top,
                 value: "",
+                pose: surface?.pose,
+                ink,
               });
               return;
             }
-            if (tool === "dot") {
-              setShapes([...shapesRef.current, { kind: "dot", ...style, at }]);
+            if (currentTool === "dot") {
+              const next: PaintShape[] = [
+                ...shapesRef.current,
+                surface && ink
+                  ? {
+                      kind: "dot",
+                      ...style,
+                      at,
+                      pose: surface.pose,
+                      au: 0,
+                      av: 0,
+                      radius: dotRadius(style.width) * ink.px,
+                      ink,
+                    }
+                  : { kind: "dot", ...style, at },
+              ];
+              selectedRef.current = next.length - 1;
+              setShapes(next);
               return;
             }
+            selectedRef.current = null;
+            publishOverlay();
             canvas.setPointerCapture(event.pointerId);
             draftRef.current =
-              tool === "pen"
-                ? { kind: "pen", ...style, points: [at] }
-                : { kind: tool, ...style, from: at, to: at };
+              surface && ink
+                ? currentTool === "pen"
+                  ? {
+                      kind: "pen",
+                      ...style,
+                      points: [at],
+                      pose: surface.pose,
+                      samples: [{ u: 0, v: 0, lift: 0 }],
+                      ink,
+                    }
+                  : {
+                      kind: currentTool,
+                      ...style,
+                      from: at,
+                      to: at,
+                      pose: surface.pose,
+                      au: 0,
+                      av: 0,
+                      bu: 0,
+                      bv: 0,
+                      ink,
+                    }
+                : currentTool === "pen"
+                  ? { kind: "pen", ...style, points: [at] }
+                  : { kind: currentTool, ...style, from: at, to: at };
             redraw();
+            syncInk();
           }}
           onPointerMove={(event) => {
             const draft = draftRef.current;
             if (!draft) return;
-            const point = pointOf(event);
+            const point = pointAt(event.clientX, event.clientY);
             if (!point) return;
             const at = { x: point.x, y: point.y };
+            const current = spaceRef.current;
+            if (draft.pose && current && draft.ink) {
+              if (draft.kind === "pen" && draft.samples) {
+                const hit = current.pick(event.clientX, event.clientY);
+                const ray = current.ray(event.clientX, event.clientY);
+                const world = hit?.point ?? (ray ? intersectPlane(ray, draft.pose) : null);
+                if (world) {
+                  draft.samples.push(toUV(draft.pose, world));
+                  const screen = current.project(world);
+                  if (screen) draft.points.push(screen);
+                }
+              } else if (
+                (draft.kind === "arrow" || draft.kind === "rect" || draft.kind === "ellipse") &&
+                draft.pose
+              ) {
+                const ray = current.ray(event.clientX, event.clientY);
+                const world = ray ? intersectPlane(ray, draft.pose) : null;
+                if (world) {
+                  let uv = toUV(draft.pose, world);
+                  if (event.shiftKey && draft.kind !== "arrow") {
+                    const side = Math.max(Math.abs(uv.u), Math.abs(uv.v));
+                    uv = {
+                      u: (Math.sign(uv.u) || 1) * side,
+                      v: (Math.sign(uv.v) || 1) * side,
+                      lift: 0,
+                    };
+                  }
+                  draft.bu = uv.u;
+                  draft.bv = uv.v;
+                  const screen = current.project(posePoint(draft.pose, uv.u, uv.v));
+                  if (screen) draft.to = screen;
+                }
+              }
+              syncInk();
+              redraw();
+              return;
+            }
             if (draft.kind === "pen") {
               draft.points.push(at);
             } else if (draft.kind === "arrow" || draft.kind === "rect" || draft.kind === "ellipse") {
-              draft.to = constrain(draft.from, at, point.rect, event.shiftKey && draft.kind !== "arrow");
+              draft.to = constrain(
+                draft.from,
+                at,
+                point.rect,
+                event.shiftKey && draft.kind !== "arrow",
+              );
             }
             redraw();
           }}
@@ -517,13 +789,17 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
                 (draft.to.y - draft.from.y) * rect.height,
               ) < 4
             ) {
+              syncInk();
               redraw();
               return;
             }
-            setShapes([...shapesRef.current, draft]);
+            const next = [...shapesRef.current, draft];
+            selectedRef.current = next.length - 1;
+            setShapes(next);
           }}
           onPointerCancel={() => {
             draftRef.current = null;
+            syncInk();
             redraw();
           }}
         />
@@ -554,36 +830,80 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
             onBlur={commitText}
           />
         ) : null}
-        {marks.map((mark, index) => (
-          <div
-            key={`mark-${index}-${shapesRef.current.length}`}
-            className="pointer-events-auto absolute z-[9] flex items-center gap-0.5 rounded-full border border-slate-300 bg-white/95 py-0.5 pl-1.5 pr-0.5 text-[0.6875rem] font-semibold leading-none text-slate-900 shadow-sm"
-            style={{
-              left: `${mark.x * 100}%`,
-              top: `${mark.y * 100}%`,
-              transform: mark.y < 0.08 ? "translate(0.35rem, 0.25rem)" : "translate(0.35rem, -1.35rem)",
-            }}
-          >
-            <span>({index + 1})</span>
-            <button
-              type="button"
-              className="grid h-4 w-4 place-items-center rounded-full text-slate-500 hover:bg-destructive-soft hover:text-destructive"
-              aria-label={`${index + 1}번 표시 지우기`}
-              title={`${index + 1}번 표시 지우기`}
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
+        {marks.map((mark, index) =>
+          mark ? (
+            <div
+              key={`mark-${index}`}
+              className="pointer-events-auto absolute z-[9] flex items-center gap-0.5 rounded-full border border-slate-300 bg-white/95 py-0.5 pl-1.5 pr-0.5 text-[0.6875rem] font-semibold leading-none text-slate-900 shadow-sm"
+              style={{
+                left: `${mark.x * 100}%`,
+                top: `${mark.y * 100}%`,
+                transform: mark.y < 0.08 ? "translate(0.35rem, 0.25rem)" : "translate(0.35rem, -1.35rem)",
               }}
-              onClick={(event) => {
+              onPointerDown={(event) => {
+                if (!enabled || event.button !== 0) return;
                 event.preventDefault();
                 event.stopPropagation();
-                removeAt(index);
+                selectedRef.current = index;
+                publishOverlay();
               }}
             >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        ))}
+              <span>({index + 1})</span>
+              <button
+                type="button"
+                className="grid h-4 w-4 place-items-center rounded-full text-slate-500 hover:bg-destructive-soft hover:text-destructive"
+                aria-label={`${index + 1}번 표시 지우기`}
+                title={`${index + 1}번 표시 지우기`}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  removeAt(index);
+                }}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ) : null,
+        )}
+        {enabled
+          ? handles.map((handle) => (
+              <div
+                key={`${selected ?? "x"}-${handle.id}`}
+                aria-label="크기 조정"
+                title="드래그해서 크기 조정"
+                className="absolute z-[10] h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-[2px] border border-slate-900 bg-white shadow-sm"
+                style={{
+                  left: `${handle.x * 100}%`,
+                  top: `${handle.y * 100}%`,
+                  cursor: handle.cursor,
+                }}
+                onPointerDown={(event) => {
+                  if (event.button !== 0 || selectedRef.current == null) return;
+                  const shape = shapesRef.current[selectedRef.current];
+                  if (!shape) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  resizeRef.current = {
+                    index: selectedRef.current,
+                    id: handle.id,
+                    start: cloneShape(shape),
+                  };
+                }}
+                onPointerMove={applyResize}
+                onPointerUp={() => {
+                  resizeRef.current = null;
+                }}
+                onPointerCancel={() => {
+                  resizeRef.current = null;
+                }}
+              />
+            ))
+          : null}
       </>
     );
   },

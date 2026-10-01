@@ -38,6 +38,7 @@ import {
   PreviewPaintLayer,
   usePreviewPaint,
 } from "@/shared/components/PreviewAnnotateActions";
+import type { ViewPaintSpace } from "@/shared/components/practice/viewPaintSpace";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import {
@@ -90,6 +91,7 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
   const [hidden, setHidden] = useState<Record<string, boolean>>({});
   const [colorMapping, setColorMapping] = useState(true);
   const paint = usePreviewPaint({ open, resetKey: partsKey });
+  const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
   const heading = title || "작업 모델";
 
   useEffect(() => {
@@ -270,7 +272,12 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
         </DialogHeader>
         <div className="relative min-h-0 flex-1">
           {open ? (
-            <CaseLayerViewer ref={viewerRef} layers={layers} colorMapping={colorMapping} />
+            <CaseLayerViewer
+              ref={viewerRef}
+              layers={layers}
+              colorMapping={colorMapping}
+              onPaintSpace={setPaintSpace}
+            />
           ) : null}
           {layers.length > 0 ? (
             <PreviewColorMappingToggle checked={colorMapping} onCheckedChange={setColorMapping} />
@@ -290,6 +297,7 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
               surfaceKey={partsKey}
               captureCanvas={() => viewerRef.current?.captureCanvas() ?? null}
               fileName={heading}
+              space={paintSpace}
               onAttachChatFile={onAttachChatFile}
               onRemoveChatFile={onRemoveChatFile}
               onReorderChatFiles={onReorderChatFiles}

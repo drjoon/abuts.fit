@@ -257,6 +257,7 @@ import {
   downloadBlobFile,
   paintNoteFileName,
 } from "@/shared/components/practice/ViewPaintSurface";
+import type { ViewPaintSpace } from "@/shared/components/practice/viewPaintSpace";
 import {
   ViewPaintToolbar,
   useViewPaint,
@@ -849,6 +850,7 @@ function LabProsthesisAiDesignDialog({
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const [colorMapping, setColorMapping] = useState(true);
   const paint = useViewPaint({ open, resetKey: String(transferId || "") });
+  const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
   const [, setHasScanColor] = useState(false);
   const [ghostOn, setGhostOn] = useState(false);
   const [marginShown, setMarginShown] = useState(false);
@@ -4327,7 +4329,7 @@ function LabProsthesisAiDesignDialog({
               className="relative h-8 w-8 px-0 [&_svg]:!size-3.5"
               aria-pressed={paint.paintOn}
               aria-label="페인트"
-              title="페인트 — 화면에 표시를 그려 이미지 저장·채팅 첨부"
+              title="페인트 — 모델 위에 표시. 모서리로 크기 조정. 화면을 돌리면 같이 움직입니다"
               onClick={() => paint.setPaintOn((on) => !on)}
             >
               <Pencil />
@@ -4435,6 +4437,7 @@ function LabProsthesisAiDesignDialog({
             <OralScanOverlayViewer
               ref={viewerRef}
               items={viewerItems}
+              onPaintSpace={setPaintSpace}
               visible={visible}
               colorMapping={colorMapping}
               ghostOpacity={ghostOn ? GHOST_OPACITY_ON : 1}
@@ -4579,7 +4582,10 @@ function LabProsthesisAiDesignDialog({
             {stage === "milling" ? (
               <LabMillingDiscView milling={milling} className="absolute inset-0 z-[5]" />
             ) : null}
-            <ViewPaintSurface {...viewPaintSurfaceProps(paint)} />
+            <ViewPaintSurface
+              {...viewPaintSurfaceProps(paint)}
+              space={stage === "milling" ? null : paintSpace}
+            />
             {paint.paintOn ? (
               <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center">
                 <ViewPaintToolbar

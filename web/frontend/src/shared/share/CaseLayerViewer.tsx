@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/share/CaseShareViewer.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/three/screenSpaceOrbitControls.ts
+// - 2026-10-01: onPaintSpace — 페인트 표시를 모델에 붙인다. 화면을 돌리면 같이 돈다.
 // - 2026-09-28: captureCanvas(페인트 합성)·colorMapping(스캔 칼라 끄기). 의뢰 파일 프리뷰와 같은 기능.
 // - 2026-09-28: 화면 맞춤은 보이는 메시의 꼭짓점을 화면에 투영해 가로·세로에 꽉 차게 맞춘다.
 // - 2026-09-28: 케이스 공유 뷰어 — 디자인·스캔 여러 메시를 파일 좌표 그대로 겹치고 레이어별로 켜고 끈다.
@@ -15,6 +16,11 @@ import {
 } from "@/shared/files/modelPreviewFile";
 import { disposeBackFaceShell, syncBackFaceShell } from "@/shared/three/backFaceShell";
 import { ScreenSpaceOrbitControls } from "@/shared/three/screenSpaceOrbitControls";
+import {
+  createViewPaintSpace,
+  notifyViewPaint,
+  type ViewPaintSpace,
+} from "@/shared/components/practice/viewPaintSpace";
 import { cn } from "@/shared/ui/cn";
 
 export type CaseLayerTone = "prosthesis" | "abutment" | "scan";
@@ -38,6 +44,8 @@ type CaseLayerViewerProps = {
   /** false면 스캔 레이어의 칼라·텍스처를 끄고 기본 틴트로 그린다. */
   colorMapping?: boolean;
   onLayerError?: (id: string, message: string) => void;
+  /** 페인트가 메시 표면에 붙도록. 씬이 준비되면 넘기고, 닫히면 null. */
+  onPaintSpace?: (space: ViewPaintSpace | null) => void;
   className?: string;
 };
 
@@ -86,7 +94,7 @@ function designMaterial(tone: CaseLayerTone): THREE.MeshStandardMaterial {
 }
 
 export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewerProps>(
-  function CaseLayerViewer({ layers, colorMapping = true, onLayerError, className }, ref) {
+  function CaseLayerViewer({ layers, colorMapping = true, onLayerError, onPaintSpace, className }, ref) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -102,6 +110,9 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
     onLayerErrorRef.current = onLayerError;
     const colorMappingRef = useRef(colorMapping);
     colorMappingRef.current = colorMapping;
+    const onPaintSpaceRef = useRef(onPaintSpace);
+    onPaintSpaceRef.current = onPaintSpace;
+    const paintListenersRef = useRef(new Set<() => void>());
 
     const fitToView = () => {
       const camera = cameraRef.current;
@@ -231,9 +242,11 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       const observer = new ResizeObserver(resize);
       observer.observe(container);
 
+      const paintListeners = paintListenersRef.current;
       let raf = 0;
       const tick = () => {
         raf = requestAnimationFrame(tick);
+        if (paintListeners.size > 0) notifyViewPaint(paintListeners);
         renderer.render(scene, camera);
       };
       tick();
@@ -242,10 +255,24 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       cameraRef.current = camera;
       rendererRef.current = renderer;
       controlsRef.current = controls;
+      if (onPaintSpaceRef.current) {
+        onPaintSpaceRef.current(
+          createViewPaintSpace({
+            getCamera: () => cameraRef.current,
+            getRenderer: () => rendererRef.current,
+            getParent: () => sceneRef.current,
+            getTargets: () =>
+              [...meshesRef.current.values()].filter((mesh) => mesh.visible && !mesh.userData.viewPaint),
+            listeners: paintListeners,
+          }),
+        );
+      }
 
       const meshes = meshesRef.current;
       return () => {
         cancelAnimationFrame(raf);
+        paintListeners.clear();
+        onPaintSpaceRef.current?.(null);
         observer.disconnect();
         controls.dispose();
         for (const mesh of meshes.values()) disposeLayerMesh(mesh);

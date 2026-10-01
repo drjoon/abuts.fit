@@ -1,5 +1,6 @@
 // 3D·이미지 프리뷰 공통 헤더 기능. 페인트, 칼라 매핑.
 // 의뢰 파일 프리뷰와 작업 스캔 프리뷰가 같은 모양·동작을 쓴다.
+// - 2026-10-01: 3D 프리뷰 페인트는 모델에 붙는다. 같은 ViewPaintSurface를 AI 디자인도 쓴다.
 // - 2026-09-30: 프리뷰에는 「AI에게」와 오른쪽 아래 AI 채팅을 두지 않는다. 채팅 첨부는 썸네일로 남긴다.
 // - 2026-09-29: 페인트를 켜면 뷰 위에 도구 막대(도형·글자·되돌리기, 이미지 저장·채팅 첨부). 헤더에는 페인트 토글만.
 // related files:
@@ -23,6 +24,7 @@ import {
   viewPaintSurfaceProps,
   type ViewPaintState,
 } from "@/shared/components/practice/ViewPaintToolbar";
+import type { ViewPaintSpace } from "@/shared/components/practice/viewPaintSpace";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 
@@ -58,7 +60,7 @@ export function PreviewPaintControls({
       aria-pressed={paintOn}
       aria-label="페인트"
       onClick={() => setPaintOn((on) => !on)}
-      title="화면 위에 표시를 그립니다"
+      title="모델 위에 표시를 그립니다. 모서리를 끌어 크기를 바꿉니다."
     >
       <Pencil />
       <span className="hidden sm:inline">페인트</span>
@@ -75,6 +77,7 @@ export function PreviewPaintLayer({
   surfaceKey,
   captureCanvas,
   fileName,
+  space = null,
   onAttachChatFile,
   onRemoveChatFile,
   onReorderChatFiles,
@@ -83,6 +86,8 @@ export function PreviewPaintLayer({
   surfaceKey: string;
   captureCanvas: () => HTMLCanvasElement | null;
   fileName: string;
+  /** 3D 프리뷰. 이미지 프리뷰는 null. */
+  space?: ViewPaintSpace | null;
   onAttachChatFile?: (file: File) => void;
   onRemoveChatFile?: (file: File) => void;
   onReorderChatFiles?: (files: File[]) => void;
@@ -107,7 +112,7 @@ export function PreviewPaintLayer({
   };
   return (
     <>
-      <ViewPaintSurface key={surfaceKey} {...viewPaintSurfaceProps(paint)} />
+      <ViewPaintSurface key={surfaceKey} {...viewPaintSurfaceProps(paint)} space={space} />
       {paint.paintOn ? (
         <div className="pointer-events-none absolute inset-x-0 top-3 z-30 flex justify-center">
           <ViewPaintToolbar
