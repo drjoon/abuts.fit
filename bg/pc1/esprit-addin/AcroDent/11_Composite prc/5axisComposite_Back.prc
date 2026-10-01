@@ -27,17 +27,17 @@ BEGIN_OPERATION; 507; 5Axis_Composite; 0;
    ArcAngle; 3303; 30;  CAPTION; 원호 각도; SOURCE; 0; TECHCODETYPE; 2;
    ExtensionDistance; 6836; 0;  CAPTION; 확장; SOURCE; 0; TECHCODETYPE; 2;
    MaximumX; 3385; 100;  HIDDEN; CAPTION; 최대 X|X 최대, 최대; SOURCE; 0; TECHCODETYPE; 2;
-   EntryMovesType; 3300; 12;  CAPTION; 접근 타입; SOURCE; 6; TECHCODETYPE; 431;
+   EntryMovesType; 3300; 13;  CAPTION; 접근 타입; SOURCE; 6; TECHCODETYPE; 431;
    RampHeight; 3382; 2;  HIDDEN; CAPTION; 램프 높이; SOURCE; 0; TECHCODETYPE; 2;
    StartPointX; 3393; 0;  HIDDEN; CAPTION; 시작 지점 X|시작 지점 X, Y; SOURCE; 0; TECHCODETYPE; 2;
    HelixDiameter; 3390; 10;  HIDDEN; CAPTION; 헬릭스 직경; SOURCE; 0; TECHCODETYPE; 2;
    TiltingAngle; 6600; 0;  HIDDEN; CAPTION; 기울기 각도; SOURCE; 0; TECHCODETYPE; 2;
    MaximumY; 3387; 100;  HIDDEN; CAPTION; 최대 Y|Y 최대, 최대; SOURCE; 0; TECHCODETYPE; 2;
-   ArcRadius; 3302; 5;  CAPTION; 원호 반경; SOURCE; 0; TECHCODETYPE; 2;
+   ArcRadius; 3302; 3;  CAPTION; 원호 반경; SOURCE; 0; TECHCODETYPE; 2;
    TangentRampAngle; 6835; 0;  CAPTION; 램프각도; SOURCE; 0; TECHCODETYPE; 2;
    MinimumX; 3384; 0;  HIDDEN; CAPTION; 최소 X|X 최소, 최대; SOURCE; 0; TECHCODETYPE; 2;
    RampAngle; 3381; 20;  HIDDEN; CAPTION; 램프각도; SOURCE; 0; TECHCODETYPE; 2;
-   TangentDistance; 3446; 0;  CAPTION; 접선 거리; SOURCE; 0; TECHCODETYPE; 2;
+   TangentDistance; 3446; 1;  CAPTION; 접선 거리; SOURCE; 0; TECHCODETYPE; 2;
    PredefinedPoints; 3395; ;  HIDDEN; CAPTION; 미리 정의된 점; SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 3395;;
 		:
@@ -48,7 +48,7 @@ BEGIN_OPERATION; 507; 5Axis_Composite; 0;
    MinimumY; 3386; 0;  HIDDEN; CAPTION; 최소 Y|Y 최소, 최대; SOURCE; 0; TECHCODETYPE; 2;
    VerticalDistance; 3301; 2;  CAPTION; 수직 거리; SOURCE; 0; TECHCODETYPE; 2;
    BEGIN_EXPRESSION
-     3300; 12
+     3300; 13
    END_EXPRESSION
 	BEGIN_ATTRIBUTES
 	END_ATTRIBUTES
@@ -149,7 +149,7 @@ BEGIN_OPERATION; 507; 5Axis_Composite; 0;
    TrailingDistance; 713; 0;  CAPTION; 트레일링거리; SOURCE; 1; TECHCODETYPE; 2;
    ThreadAngle; 6884; 0;  HIDDEN; CAPTION; 나사 각도; SOURCE; 0; TECHCODETYPE; 2;
    BEGIN_SUB_TECHNOLOGY; 6833; 714; CAPTION; 5 Axis Exit Moves; SOURCE; 2; TECHCODETYPE; 410;
-   ExitMovesType; 6834; 1;  CAPTION; 5 축 나가기 이동; SOURCE; 0; TECHCODETYPE; 563;
+   ExitMovesType; 6834; 13;  CAPTION; 5 축 나가기 이동; SOURCE; 0; TECHCODETYPE; 563;
    ReferenceDepthOfCut; 1768; 5;  CAPTION; 참조 가공 깊이; SOURCE; 0; TECHCODETYPE; 2;
    MinimumRampWidth; 3383; 10;  HIDDEN; CAPTION; 최소 램프 폭; SOURCE; 0; TECHCODETYPE; 2;
    EndPointY; 3394; 0;  HIDDEN; CAPTION; 엔드 포인트 Y|엔드포인트 X,Y; SOURCE; 0; TECHCODETYPE; 2;
@@ -163,11 +163,11 @@ BEGIN_OPERATION; 507; 5Axis_Composite; 0;
    HelixDiameter; 3390; 10;  HIDDEN; CAPTION; 헬릭스 직경; SOURCE; 0; TECHCODETYPE; 2;
    TiltingAngle; 6600; 0;  HIDDEN; CAPTION; 기울기 각도; SOURCE; 0; TECHCODETYPE; 2;
    MaximumY; 3387; 100;  HIDDEN; CAPTION; 최대 Y|Y 최대, 최대; SOURCE; 0; TECHCODETYPE; 2;
-   ArcRadius; 3302; 5;  HIDDEN; CAPTION; 원호 반경; SOURCE; 0; TECHCODETYPE; 2;
+   ArcRadius; 3302; 3;  HIDDEN; CAPTION; 원호 반경; SOURCE; 0; TECHCODETYPE; 2;
    TangentRampAngle; 6835; 0;  HIDDEN; CAPTION; 램프각도; SOURCE; 0; TECHCODETYPE; 2;
    MinimumX; 3384; 0;  HIDDEN; CAPTION; 최소 X|X 최소, 최대; SOURCE; 0; TECHCODETYPE; 2;
    RampAngle; 3381; 20;  HIDDEN; CAPTION; 램프각도; SOURCE; 0; TECHCODETYPE; 2;
-   TangentDistance; 3446; 0;  HIDDEN; CAPTION; 접선 거리; SOURCE; 0; TECHCODETYPE; 2;
+   TangentDistance; 3446; 1;  HIDDEN; CAPTION; 접선 거리; SOURCE; 0; TECHCODETYPE; 2;
    PredefinedPoints; 3395; ;  HIDDEN; CAPTION; 미리 정의된 점; SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 3395;;
 		:
