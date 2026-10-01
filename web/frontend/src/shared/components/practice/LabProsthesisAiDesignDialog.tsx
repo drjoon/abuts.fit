@@ -4329,7 +4329,7 @@ function LabProsthesisAiDesignDialog({
               className="relative h-8 w-8 px-0 [&_svg]:!size-3.5"
               aria-pressed={paint.paintOn}
               aria-label="페인트"
-              title="페인트 — 모델 위에 표시. 모서리로 크기 조정. 화면을 돌리면 같이 움직입니다"
+              title="페인트. 왼쪽은 그리기, 오른쪽은 화면 회전, 휠 버튼은 이동입니다."
               onClick={() => paint.setPaintOn((on) => !on)}
             >
               <Pencil />
@@ -6496,7 +6496,7 @@ function AiDesignChatPanel({
               )}
               aria-label="페인트"
               aria-pressed={paintOn}
-              title="페인트"
+              title="페인트. 왼쪽은 그리기, 오른쪽은 화면 회전입니다."
               onClick={onTogglePaint}
             >
               <Pencil />

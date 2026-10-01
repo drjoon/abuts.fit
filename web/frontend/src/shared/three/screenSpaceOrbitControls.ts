@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 // change-log:
 // - 2026-09-14: OrthographicCamera 지원 — 줌은 camera.zoom, 패닝 스케일 ortho 분기.
+// - 2026-10-01: beginExternal·dragBy·zoomByWheel — 페인트가 왼쪽을 쓰는 동안 화면 조작.
 // - 2026-09-30: 마우스 버튼 매핑(`mouse`) — 회전·이동·드래그 확대·클릭 회전 중심. 왼쪽+오른쪽 동시 누름 지원.
 type ScreenSpaceOrbitControlsEvent = "start" | "change" | "end";
 
@@ -299,6 +300,44 @@ export class ScreenSpaceOrbitControls {
     );
   }
 
+  /** 다른 레이어가 왼쪽 버튼을 쓰는 동안 같은 회전·이동을 시작한다. */
+  beginExternal() {
+    if (this.disposed) return;
+    this.syncFromCamera();
+    if (!this.started) {
+      this.started = true;
+      this.dispatch("start");
+    }
+  }
+
+  endExternal() {
+    if (this.disposed || !this.started) return;
+    this.started = false;
+    this.dispatch("end");
+  }
+
+  dragBy(mode: Exclude<OrbitDragMode, "none">, deltaX: number, deltaY: number) {
+    if (this.disposed) return;
+    this.syncFromCamera();
+    if (mode === "pan") {
+      if (!this.enablePan) return;
+      this.panFromScreenDelta(deltaX, deltaY);
+    } else if (mode === "zoom") {
+      this.zoomBy(Math.exp((deltaY * this.zoomSpeed) / 200));
+    } else {
+      this.rotateFromScreenDelta(deltaX, deltaY);
+    }
+    this.dispatch("change");
+  }
+
+  zoomByWheel(deltaY: number) {
+    if (this.disposed) return;
+    this.syncFromCamera();
+    const sign = this.mouse().invertWheel ? -1 : 1;
+    this.zoomBy(Math.exp((sign * deltaY * this.zoomSpeed) / 100));
+    this.dispatch("change");
+  }
+
   update() {}
 
   dispose() {
@@ -447,4 +486,22 @@ export class ScreenSpaceOrbitControls {
       listener();
     }
   }
+}
+
+export type ExternalViewGesture =
+  | { type: "start" }
+  | { type: "end" }
+  | { type: "zoom"; dy: number }
+  | { type: "move"; action: "rotate" | "pan"; dx: number; dy: number };
+
+/** 페인트 레이어가 넘긴 화면 조작. */
+export function applyExternalView(
+  controls: ScreenSpaceOrbitControls | null,
+  gesture: ExternalViewGesture,
+) {
+  if (!controls) return;
+  if (gesture.type === "start") controls.beginExternal();
+  else if (gesture.type === "end") controls.endExternal();
+  else if (gesture.type === "zoom") controls.zoomByWheel(gesture.dy);
+  else controls.dragBy(gesture.action, gesture.dx, gesture.dy);
 }

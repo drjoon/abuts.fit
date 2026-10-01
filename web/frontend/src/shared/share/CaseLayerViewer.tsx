@@ -15,7 +15,7 @@ import {
   parseModelPreview,
 } from "@/shared/files/modelPreviewFile";
 import { disposeBackFaceShell, syncBackFaceShell } from "@/shared/three/backFaceShell";
-import { ScreenSpaceOrbitControls } from "@/shared/three/screenSpaceOrbitControls";
+import { ScreenSpaceOrbitControls, applyExternalView } from "@/shared/three/screenSpaceOrbitControls";
 import {
   createViewPaintSpace,
   notifyViewPaint,
@@ -264,6 +264,7 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
             getTargets: () =>
               [...meshesRef.current.values()].filter((mesh) => mesh.visible && !mesh.userData.viewPaint),
             listeners: paintListeners,
+            onView: (gesture) => applyExternalView(controls, gesture),
           }),
         );
       }

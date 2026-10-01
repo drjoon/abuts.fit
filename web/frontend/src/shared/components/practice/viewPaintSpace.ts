@@ -1,5 +1,6 @@
 // 3D 뷰가 페인트에 넘기는 화면↔모델 변환.
 // 좌표는 attach한 부모의 로컬이다. 카메라를 돌리면 그 자리에 남는다.
+// 그린 표시는 그릴 때의 화면과 나란한 평면(법선이 화면을 향함)에 둔다.
 // related files: viewPaintGeom.ts, viewPaintInk.ts, ViewPaintSurface.tsx
 import * as THREE from "three";
 
@@ -12,8 +13,15 @@ export type ViewPaintHit = {
 
 export type ViewPaintRay = { origin: Vec3; direction: Vec3 };
 
+/** 페인트가 왼쪽을 그리는 동안 화면을 돌리고 옮긴다. */
+export type ViewPaintView =
+  | { type: "start" }
+  | { type: "end" }
+  | { type: "zoom"; dy: number }
+  | { type: "move"; action: "rotate" | "pan"; dx: number; dy: number };
+
 export type ViewPaintSpace = {
-  /** 모델 표면. 빈 곳이면 null. */
+  /** 그릴 때의 화면 평면. 닿은 곳이 깊이다. */
   pick: (clientX: number, clientY: number) => ViewPaintHit | null;
   /** 부모 로컬 광선. */
   ray: (clientX: number, clientY: number) => ViewPaintRay | null;
@@ -24,6 +32,8 @@ export type ViewPaintSpace = {
   viewSize: () => { width: number; height: number };
   attach: (object: THREE.Object3D) => () => void;
   subscribe: (listener: () => void) => () => void;
+  /** 왼쪽 그리기와 겹치지 않게 화면을 돌린다. */
+  view: (gesture: ViewPaintView) => void;
 };
 
 export function notifyViewPaint(listeners: Set<() => void>) {
@@ -40,13 +50,20 @@ export function createViewPaintSpace(opts: {
   getParent: () => THREE.Object3D | null;
   getTargets: () => THREE.Object3D[];
   listeners: Set<() => void>;
+  onView?: (gesture: ViewPaintView) => void;
 }): ViewPaintSpace {
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const inv = new THREE.Matrix4();
   const tmp = new THREE.Vector3();
-  const tmp2 = new THREE.Vector3();
-  const tmp3 = new THREE.Vector3();
+  const camRight = new THREE.Vector3();
+  const camUp = new THREE.Vector3();
+  const towardCamera = new THREE.Vector3();
+  const localPoint = new THREE.Vector3();
+  const bounds = new THREE.Box3();
+  const center = new THREE.Vector3();
+  const rayOrigin = new THREE.Vector3();
+  const rayDir = new THREE.Vector3();
 
   const view = () => {
     const camera = opts.getCamera();
@@ -106,10 +123,24 @@ export function createViewPaintSpace(opts: {
     return worldH / cssH;
   };
 
+  /** 화면 오른쪽·위와, 카메라를 향하는 법선. 부모 로컬. */
+  const screenAxes = (current: NonNullable<ReturnType<typeof view>>) => {
+    camRight.setFromMatrixColumn(current.camera.matrixWorld, 0).transformDirection(inv);
+    towardCamera.setFromMatrixColumn(current.camera.matrixWorld, 2).transformDirection(inv);
+    if (camRight.lengthSq() < 1e-8 || towardCamera.lengthSq() < 1e-8) return false;
+    towardCamera.normalize();
+    camRight.addScaledVector(towardCamera, -camRight.dot(towardCamera));
+    if (camRight.lengthSq() < 1e-8) return false;
+    camRight.normalize();
+    // 카메라 +Z(컬럼 2)는 화면 밖, 관측자 쪽. towardCamera × right = 화면 위.
+    camUp.crossVectors(towardCamera, camRight).normalize();
+    return true;
+  };
+
   return {
     pick: (clientX, clientY) => {
       const current = view();
-      if (!current) return null;
+      if (!current || !screenAxes(current)) return null;
       ndc.set(
         ((clientX - current.rect.left) / current.rect.width) * 2 - 1,
         -((clientY - current.rect.top) / current.rect.height) * 2 + 1,
@@ -123,35 +154,49 @@ export function createViewPaintSpace(opts: {
         const list = Array.isArray(material) ? material : [material];
         return list.every((entry) => entry && entry.depthTest !== false);
       });
-      if (!hit?.face) return null;
-      const localPoint = hit.point.clone().applyMatrix4(inv);
-      const worldNormal = hit.face.normal
-        .clone()
-        .transformDirection(hit.object.matrixWorld);
-      current.camera.getWorldPosition(tmp);
-      if (worldNormal.dot(tmp.sub(hit.point)) < 0) worldNormal.negate();
-      const localNormal = worldNormal.clone().transformDirection(inv);
-      if (localNormal.lengthSq() < 1e-12) return null;
-      localNormal.normalize();
-      const camRight = tmp2
-        .setFromMatrixColumn(current.camera.matrixWorld, 0)
-        .transformDirection(inv);
-      const camUp = tmp3.setFromMatrixColumn(current.camera.matrixWorld, 1).transformDirection(inv);
-      const axisU = camRight.clone().sub(localNormal.clone().multiplyScalar(camRight.dot(localNormal)));
-      if (axisU.lengthSq() < 1e-8) axisU.crossVectors(camUp, localNormal);
-      if (axisU.lengthSq() < 1e-8) return null;
-      axisU.normalize();
-      const axisV = localNormal.clone().cross(axisU).normalize();
-      if (axisV.dot(camUp) < 0) {
-        axisV.negate();
-        axisU.negate();
+      if (hit) {
+        localPoint.copy(hit.point).applyMatrix4(inv);
+      } else {
+        bounds.makeEmpty();
+        let any = false;
+        for (const obj of targets) {
+          const mesh = obj as THREE.Mesh;
+          if (!mesh.isMesh) continue;
+          bounds.expandByObject(mesh);
+          any = true;
+        }
+        if (!any || bounds.isEmpty()) return null;
+        let best = -Infinity;
+        const min = bounds.min;
+        const max = bounds.max;
+        for (const x of [min.x, max.x]) {
+          for (const y of [min.y, max.y]) {
+            for (const z of [min.z, max.z]) {
+              tmp.set(x, y, z).applyMatrix4(inv);
+              const score = tmp.dot(towardCamera);
+              if (score > best) {
+                best = score;
+                center.copy(tmp);
+              }
+            }
+          }
+        }
+        rayOrigin.copy(raycaster.ray.origin).applyMatrix4(inv);
+        rayDir.copy(raycaster.ray.direction).transformDirection(inv);
+        if (rayDir.lengthSq() < 1e-12) return null;
+        rayDir.normalize();
+        const denom = towardCamera.dot(rayDir);
+        if (Math.abs(denom) < 1e-8) return null;
+        const t = towardCamera.dot(tmp.copy(center).sub(rayOrigin)) / denom;
+        if (t < 0) return null;
+        localPoint.copy(rayOrigin).addScaledVector(rayDir, t);
       }
       const point = toVec(localPoint);
       const pose: Pose = {
         origin: point,
-        normal: toVec(localNormal),
-        axisU: toVec(axisU),
-        axisV: toVec(axisV),
+        normal: toVec(towardCamera),
+        axisU: toVec(camRight),
+        axisV: toVec(camUp),
       };
       return { point, pose };
     },
@@ -189,6 +234,9 @@ export function createViewPaintSpace(opts: {
       return () => {
         opts.listeners.delete(listener);
       };
+    },
+    view: (gesture) => {
+      opts.onView?.(gesture);
     },
   };
 }

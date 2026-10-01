@@ -1,4 +1,5 @@
 // 3D·이미지 뷰 위에 표시를 그린다. 다시 열면 비운다.
+// - 2026-10-01: 표시는 화면과 나란한 평면에 그린 그대로 둔다. 오른쪽 드래그는 회전, 휠 버튼은 이동.
 // - 2026-10-01: 표시는 모서리로 크기를 바꾼다. 3D 뷰에서는 모델에 붙어 화면을 돌리면 같이 돈다.
 // - 2026-09-30: 표시마다 (1)(2) 순번. X로 그 순번만 지운다. 저장·첨부 이미지에도 순번을 넣는다.
 // - 2026-09-29: 펜·화살표·사각형·원·점·글자. 도형은 뷰 비율 좌표로 두고 크기가 바뀌면 다시 그린다. 되돌리기.
@@ -272,6 +273,12 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
     enabledRef.current = enabled;
     const selectedRef = useRef<number | null>(null);
     const resizeRef = useRef<ResizeDrag | null>(null);
+    const viewDragRef = useRef<{
+      pointerId: number;
+      x: number;
+      y: number;
+      action: "rotate" | "pan";
+    } | null>(null);
     const overlayKeyRef = useRef("");
     const [marks, setMarks] = useState<(ScreenPoint | null)[]>([]);
     const [handles, setHandles] = useState<ResizeHandle[]>([]);
@@ -499,7 +506,27 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
     }, [space]);
 
     useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas || !enabled || !space) return;
+      const onWheel = (event: WheelEvent) => {
+        event.preventDefault();
+        spaceRef.current?.view({ type: "zoom", dy: event.deltaY });
+      };
+      const onMenu = (event: Event) => event.preventDefault();
+      canvas.addEventListener("wheel", onWheel, { passive: false });
+      canvas.addEventListener("contextmenu", onMenu);
+      return () => {
+        canvas.removeEventListener("wheel", onWheel);
+        canvas.removeEventListener("contextmenu", onMenu);
+      };
+    }, [enabled, space]);
+
+    useEffect(() => {
       if (enabled) return;
+      if (viewDragRef.current) {
+        viewDragRef.current = null;
+        spaceRef.current?.view({ type: "end" });
+      }
       commitText();
       draftRef.current = null;
       resizeRef.current = null;
@@ -633,8 +660,33 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
                 : "cursor-crosshair",
             className,
           )}
+          title={
+            enabled && space
+              ? "왼쪽은 그리기. 오른쪽은 화면 회전. 휠 버튼은 이동."
+              : undefined
+          }
           onPointerDown={(event) => {
-            if (!enabled || event.button !== 0) return;
+            if (!enabled) return;
+            if (event.button !== 0 && spaceRef.current) {
+              const action =
+                event.button === 2 && !event.shiftKey
+                  ? "rotate"
+                  : event.button === 1 || event.button === 2
+                    ? "pan"
+                    : null;
+              if (!action) return;
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              viewDragRef.current = {
+                pointerId: event.pointerId,
+                x: event.clientX,
+                y: event.clientY,
+                action,
+              };
+              spaceRef.current.view({ type: "start" });
+              return;
+            }
+            if (event.button !== 0) return;
             const point = pointAt(event.clientX, event.clientY);
             const canvas = canvasRef.current;
             if (!point || !canvas) return;
@@ -722,6 +774,17 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
             syncInk();
           }}
           onPointerMove={(event) => {
+            const viewDrag = viewDragRef.current;
+            if (viewDrag && event.pointerId === viewDrag.pointerId) {
+              const dx = event.clientX - viewDrag.x;
+              const dy = event.clientY - viewDrag.y;
+              viewDrag.x = event.clientX;
+              viewDrag.y = event.clientY;
+              if (dx !== 0 || dy !== 0) {
+                spaceRef.current?.view({ type: "move", action: viewDrag.action, dx, dy });
+              }
+              return;
+            }
             const draft = draftRef.current;
             if (!draft) return;
             const point = pointAt(event.clientX, event.clientY);
@@ -729,36 +792,32 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
             const at = { x: point.x, y: point.y };
             const current = spaceRef.current;
             if (draft.pose && current && draft.ink) {
+              const ray = current.ray(event.clientX, event.clientY);
+              const world = ray ? intersectPlane(ray, draft.pose) : null;
               if (draft.kind === "pen" && draft.samples) {
-                const hit = current.pick(event.clientX, event.clientY);
-                const ray = current.ray(event.clientX, event.clientY);
-                const world = hit?.point ?? (ray ? intersectPlane(ray, draft.pose) : null);
                 if (world) {
                   draft.samples.push(toUV(draft.pose, world));
                   const screen = current.project(world);
                   if (screen) draft.points.push(screen);
                 }
               } else if (
+                world &&
                 (draft.kind === "arrow" || draft.kind === "rect" || draft.kind === "ellipse") &&
                 draft.pose
               ) {
-                const ray = current.ray(event.clientX, event.clientY);
-                const world = ray ? intersectPlane(ray, draft.pose) : null;
-                if (world) {
-                  let uv = toUV(draft.pose, world);
-                  if (event.shiftKey && draft.kind !== "arrow") {
-                    const side = Math.max(Math.abs(uv.u), Math.abs(uv.v));
-                    uv = {
-                      u: (Math.sign(uv.u) || 1) * side,
-                      v: (Math.sign(uv.v) || 1) * side,
-                      lift: 0,
-                    };
-                  }
-                  draft.bu = uv.u;
-                  draft.bv = uv.v;
-                  const screen = current.project(posePoint(draft.pose, uv.u, uv.v));
-                  if (screen) draft.to = screen;
+                let uv = toUV(draft.pose, world);
+                if (event.shiftKey && draft.kind !== "arrow") {
+                  const side = Math.max(Math.abs(uv.u), Math.abs(uv.v));
+                  uv = {
+                    u: (Math.sign(uv.u) || 1) * side,
+                    v: (Math.sign(uv.v) || 1) * side,
+                    lift: 0,
+                  };
                 }
+                draft.bu = uv.u;
+                draft.bv = uv.v;
+                const screen = current.project(posePoint(draft.pose, uv.u, uv.v));
+                if (screen) draft.to = screen;
               }
               syncInk();
               redraw();
@@ -776,7 +835,12 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
             }
             redraw();
           }}
-          onPointerUp={() => {
+          onPointerUp={(event) => {
+            if (viewDragRef.current?.pointerId === event.pointerId) {
+              viewDragRef.current = null;
+              spaceRef.current?.view({ type: "end" });
+              return;
+            }
             const draft = draftRef.current;
             if (!draft) return;
             draftRef.current = null;
@@ -797,7 +861,11 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
             selectedRef.current = next.length - 1;
             setShapes(next);
           }}
-          onPointerCancel={() => {
+          onPointerCancel={(event) => {
+            if (viewDragRef.current?.pointerId === event.pointerId) {
+              viewDragRef.current = null;
+              spaceRef.current?.view({ type: "end" });
+            }
             draftRef.current = null;
             syncInk();
             redraw();

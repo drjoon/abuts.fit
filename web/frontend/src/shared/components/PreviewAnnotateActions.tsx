@@ -60,7 +60,7 @@ export function PreviewPaintControls({
       aria-pressed={paintOn}
       aria-label="페인트"
       onClick={() => setPaintOn((on) => !on)}
-      title="모델 위에 표시를 그립니다. 모서리를 끌어 크기를 바꿉니다."
+      title="왼쪽 드래그로 표시를 그립니다. 오른쪽 드래그는 화면 회전, 휠 버튼은 이동입니다."
     >
       <Pencil />
       <span className="hidden sm:inline">페인트</span>

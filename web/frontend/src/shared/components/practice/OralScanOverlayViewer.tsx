@@ -52,7 +52,7 @@ import {
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 
 import type { WorkSessionCenterGuide } from "@/shared/practice/labProsthesisWorkDraft";
-import { ScreenSpaceOrbitControls } from "@/shared/three/screenSpaceOrbitControls";
+import { ScreenSpaceOrbitControls, applyExternalView } from "@/shared/three/screenSpaceOrbitControls";
 import { getDesignOrbitMouse } from "@/shared/practice/labDesignControls";
 import {
   disposeBackFaceShell,
@@ -3121,6 +3121,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       return found;
     };
     const paintListeners = paintListenersRef.current;
+    let orbit: ScreenSpaceOrbitControls | null = null;
     if (onPaintSpaceRef.current) {
       onPaintSpaceRef.current(
         createViewPaintSpace({
@@ -3129,6 +3130,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           getParent: () => groupRef.current,
           getTargets: paintTargets,
           listeners: paintListeners,
+          onView: (gesture) => applyExternalView(orbit, gesture),
         }),
       );
     }
@@ -3137,6 +3139,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     const controls = new ScreenSpaceOrbitControls(camera, renderer.domElement, {
       mouse: getDesignOrbitMouse,
     });
+    orbit = controls;
     controls.target.set(0, 0, 0);
     controls.syncFromCamera();
     controlsRef.current = controls;

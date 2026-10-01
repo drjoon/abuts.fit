@@ -46,7 +46,7 @@
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import * as THREE from "three";
-import { ScreenSpaceOrbitControls } from "@/shared/three/screenSpaceOrbitControls";
+import { ScreenSpaceOrbitControls, applyExternalView } from "@/shared/three/screenSpaceOrbitControls";
 import {
   createViewPaintSpace,
   notifyViewPaint,
@@ -695,6 +695,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     scene.add(modelPivot);
     modelPivotRef.current = modelPivot;
     const paintListeners = paintListenersRef.current;
+    let orbit: ScreenSpaceOrbitControls | null = null;
     if (onPaintSpaceRef.current) {
       onPaintSpaceRef.current(
         createViewPaintSpace({
@@ -706,11 +707,13 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
             return mesh && mesh.visible ? [mesh] : [];
           },
           listeners: paintListeners,
+          onView: (gesture) => applyExternalView(orbit, gesture),
         }),
       );
     }
 
     const controls = new ScreenSpaceOrbitControls(camera, renderer.domElement);
+    orbit = controls;
 
     const viewRight = new THREE.Vector3();
     const viewUp = new THREE.Vector3();

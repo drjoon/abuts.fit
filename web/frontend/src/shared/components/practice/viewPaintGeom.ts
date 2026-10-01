@@ -5,7 +5,7 @@ export type Vec3 = { x: number; y: number; z: number };
 
 export type ScreenPoint = { x: number; y: number };
 
-/** 모델 좌표의 평면. origin은 표면에 두고, axisU·axisV는 그릴 때의 화면 오른쪽·위. */
+/** 그릴 때의 화면 평면. origin은 닿은 곳, normal은 카메라 쪽, axisU·axisV는 화면 오른쪽·위. */
 export type Pose = {
   origin: Vec3;
   normal: Vec3;

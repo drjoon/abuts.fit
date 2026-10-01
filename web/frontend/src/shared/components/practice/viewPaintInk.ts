@@ -1,4 +1,4 @@
-// 페인트 표시를 모델 좌표의 3D 객체로 만든다. 카메라가 돌면 같이 돈다.
+// 페인트 표시를 화면과 나란한 3D 평면으로 만든다. 카메라가 돌면 같이 돈다.
 // related files: viewPaintGeom.ts, viewPaintSpace.ts, ViewPaintSurface.tsx
 import * as THREE from "three";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
@@ -53,7 +53,7 @@ function lineOf(points: Vec3[], color: string, widthPx: number, size: { width: n
   const material = new LineMaterial({
     color: new THREE.Color(color).getHex(),
     linewidth: Math.max(widthPx, 1),
-    depthTest: true,
+    depthTest: false,
     depthWrite: false,
     transparent: true,
     toneMapped: false,
@@ -80,7 +80,7 @@ function lifted(
 function basic(color: string) {
   return new THREE.MeshBasicMaterial({
     color: new THREE.Color(color),
-    depthTest: true,
+    depthTest: false,
     depthWrite: false,
     toneMapped: false,
     side: THREE.DoubleSide,
