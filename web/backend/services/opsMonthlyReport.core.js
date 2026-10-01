@@ -2,7 +2,7 @@
 // - web/backend/services/opsMonthlyReport.service.js
 // - web/backend/tests/unit/opsMonthlyReport.test.js
 // 플랫폼 전속 사용 및 서버 운영 계약 (2026-09-01 ~ 2027-08-31).
-// 월 운영비는 제6조 서버 운영 대가. 전속 사용·기능 업데이트는 제7조 사용료.
+// 최초 계약기간의 정액 개발·운영비는 제6조. 연장 기간의 플랫폼 사용료는 제7조.
 // 개발 투입 공수는 제5조 제4항. 커밋 간격으로 추정한다.
 
 export const OPS_CONTRACT = {
@@ -15,21 +15,36 @@ export const OPS_CONTRACT = {
   termYears: 1,
   autoRenewYears: 1,
   nonRenewalNoticeMonths: 3,
-  /** 부가세 포함 월 운영비 (원). 제6조. */
+  /** 제16조. 종료일 다음날부터 같은 조건으로 쓰는 개월 수. */
+  transitionMonths: 6,
+  /** 부가세 포함 월 개발·운영비 (원). 제6조. 최초 계약기간만. */
   monthlyFeeInclusive: 5_500_000,
-  /** 최초 계약기간 운영비 합계 (부가세 포함, 원) */
+  /** 최초 계약기간 개발·운영비 합계 (부가세 포함, 원) */
   firstTermFeeInclusive: 66_000_000,
   paymentCount: 12,
   firstPaymentYmd: "2026-09-30",
   lastPaymentYmd: "2027-08-31",
-  scope: "서버 운영",
-  /** 제7조. 요율은 정산 기준금액 대비, 산정액에 부가세가 포함된 금액. */
+  scope: "서버 운영 및 지속적 개발",
+  /** 제7조. 연장 기간만. 모든 판매 항목 동일 요율. 산정액에 부가세가 포함된다. */
+  usageFeeRatePercent: 5,
+  /** 연장 기간 월 최소 사용료 (부가세 포함, 원). 산정액이 이 금액에 미달하면 이 금액을 지급. */
+  usageFeeMonthlyMinimumInclusive: 5_500_000,
+  usageFeeAppliesDuringFirstTerm: false,
+  fixedFeeAppliesDuringExtension: false,
   usageFees: [
-    { item: "스토어(기성품)", ratePercent: 10 },
+    { item: "스토어(기성품)", ratePercent: 5 },
     { item: "커스텀 어벗먼트", ratePercent: 5 },
-    { item: "기공 서비스(기공사업부)", ratePercent: 10 },
+    { item: "기공 서비스(기공사업부)", ratePercent: 5 },
   ],
 };
+
+/** 보고 월에 적용되는 대가. 최초 기간은 정액, 그 다음부터는 사용료. */
+export function contractFeePhase(startYmd) {
+  const ymd = String(startYmd || "");
+  if (ymd < OPS_CONTRACT.termStartYmd) return "before";
+  if (ymd > OPS_CONTRACT.termEndYmd) return "extension";
+  return "firstTerm";
+}
 
 /** 같은 작성자의 커밋 간격이 이 값 이하면 한 작업. 각 작업의 첫 커밋 앞에 준비 시간을 더한다. */
 export const DEV_EFFORT_RULE = {
@@ -398,7 +413,13 @@ export function assembleOpsMonthlyReport({ bounds, now, stats }) {
       paymentCount: OPS_CONTRACT.paymentCount,
       firstPaymentYmd: OPS_CONTRACT.firstPaymentYmd,
       lastPaymentYmd: OPS_CONTRACT.lastPaymentYmd,
+      transitionMonths: OPS_CONTRACT.transitionMonths,
+      usageFeeRatePercent: OPS_CONTRACT.usageFeeRatePercent,
+      usageFeeMonthlyMinimumInclusive: OPS_CONTRACT.usageFeeMonthlyMinimumInclusive,
+      usageFeeAppliesDuringFirstTerm: OPS_CONTRACT.usageFeeAppliesDuringFirstTerm,
+      fixedFeeAppliesDuringExtension: OPS_CONTRACT.fixedFeeAppliesDuringExtension,
       usageFees: OPS_CONTRACT.usageFees,
+      feePhase: contractFeePhase(bounds.startYmd),
     },
     period: {
       month: bounds.month,

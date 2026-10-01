@@ -2,6 +2,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/backend/controllers/admin/opsMonthlyReport.controller.js
+// - 2026-10-01: 계약 개정 — 최초 기간 정액 개발·운영비, 연장 기간 사용료 전 항목 5%·월 최소 550만 원.
 // - 2026-09-30: 관리자·개발운영(메이븐) 월간 운영보고서.
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -42,7 +43,11 @@ type OpsReport = {
     paymentCount: number;
     firstPaymentYmd: string;
     lastPaymentYmd: string;
+    transitionMonths: number;
+    usageFeeRatePercent: number;
+    usageFeeMonthlyMinimumInclusive: number;
     usageFees: UsageFee[];
+    feePhase: "before" | "firstTerm" | "extension";
   };
   period: {
     month: string;
@@ -226,11 +231,14 @@ export default function OpsMonthlyReportPage() {
           <header className="space-y-2 border-b border-slate-200 pb-4">
             <h1 className="text-xl font-semibold">{report.title}</h1>
             <p className="text-sm leading-6">
-              {report.contract.providerName}이 개발·소유한 플랫폼을{" "}
+              {report.contract.providerName}이 개발·운영하고 소유한 플랫폼을{" "}
               {report.contract.clientName}이 전속 사용합니다.
               <br />
               이 보고서는 해당 월의 서버 운영 기록과 개발 투입 공수를 정리한
               자료입니다.
+              <br />
+              을은 개발 투입 공수와 작업 내역을 개발 완료 보고서로 정리하여
+              다음 달 10일까지 갑에게 제출합니다.
             </p>
             <p className="text-sm text-slate-600">
               보고 기간 {periodLabel(report.period)}
@@ -264,7 +272,7 @@ export default function OpsMonthlyReportPage() {
                 value={`${ymdLabel(report.contract.termStartYmd)} ~ ${ymdLabel(report.contract.termEndYmd)}`}
               />
               <Stat
-                label="약정 월 운영비"
+                label="월 개발·운영비"
                 value={`${won(report.contract.monthlyFeeInclusive)} (부가세 포함)`}
               />
               <Stat
@@ -273,7 +281,7 @@ export default function OpsMonthlyReportPage() {
               />
               <Stat label="부가세" value={won(report.contract.monthlyFeeVat)} />
               <Stat
-                label="최초 기간 운영비"
+                label="최초 기간 개발·운영비"
                 value={`${won(report.contract.firstTermFeeInclusive)} / ${report.contract.paymentCount}회`}
               />
               <Stat
@@ -281,26 +289,60 @@ export default function OpsMonthlyReportPage() {
                 value={`${ymdLabel(report.contract.firstPaymentYmd)} ~ ${ymdLabel(report.contract.lastPaymentYmd)}`}
               />
             </div>
+            {report.contract.feePhase === "firstTerm" ? (
+              <p className="text-sm leading-6">
+                이 보고 월은 최초 계약기간입니다.
+                <br />
+                정액 개발·운영비를 지급하고, 플랫폼 사용료는 지급하지 않습니다.
+              </p>
+            ) : null}
+            {report.contract.feePhase === "extension" ? (
+              <p className="text-sm leading-6">
+                이 보고 월은 연장 기간입니다.
+                <br />
+                플랫폼 사용료를 지급하고, 정액 개발·운영비는 지급하지 않습니다.
+              </p>
+            ) : null}
+            {report.contract.feePhase === "before" ? (
+              <p className="text-sm leading-6">
+                이 보고 월은 최초 계약기간 전입니다.
+              </p>
+            ) : null}
             <p className="text-sm leading-6">
-              계약 기간은 {report.contract.termYears}년입니다.
+              최초 계약기간은 {report.contract.termYears}년입니다.
               <br />
               만료 {report.contract.nonRenewalNoticeMonths}개월 전까지 서면으로
-              갱신하지 않겠다고 통지하지 않으면, 같은 조건으로{" "}
-              {report.contract.autoRenewYears}년씩 연장됩니다.
+              갱신하지 않겠다고 통지하지 않으면 {report.contract.autoRenewYears}
+              년씩 연장됩니다.
               <br />
-              월 운영비는 {won(report.contract.monthlyFeeInclusive)}
-              (부가세 포함)이며, 서버 운영 용역의 대가입니다.
+              연장 기간에는 제7조의 플랫폼 사용료가 적용되고, 제6조의 정액
+              개발·운영비는 적용되지 않습니다.
+              <br />
+              월 개발·운영비는 {won(report.contract.monthlyFeeInclusive)}
+              (부가세 포함)이며, 최초 계약기간의 서버 운영과 지속적 개선·개발의
+              대가입니다.
               <br />
               매월 말일에 지급하고, 그 날이 은행 휴무일이면 직전 영업일에
               지급합니다.
               <br />
-              클라우드 이용료는 이 운영비에 포함되며 을이 부담합니다.
+              클라우드 이용료는 이 개발·운영비에 포함되며 을이 부담합니다.
+              <br />
+              갑의 요청으로 서버를 늘리거나 이용량이 크게 늘면, 추가 비용은 따로
+              협의합니다.
+              <br />
+              계약이 끝나면 종료일 다음날부터 {report.contract.transitionMonths}
+              개월은 전환 기간입니다.
+              <br />
+              전환 기간에도 종료 직전에 적용되던 대금을 같은 조건으로
+              지급합니다.
             </p>
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-slate-500">
                   <th className="py-1.5 pr-3 font-medium">판매 항목</th>
-                  <th className="py-1.5 font-medium">플랫폼 사용료 요율</th>
+                  <th className="py-1.5 font-medium">
+                    플랫폼 사용료 요율 (연장 기간)
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -313,13 +355,40 @@ export default function OpsMonthlyReportPage() {
               </tbody>
             </table>
             <p className="text-sm leading-6">
-              플랫폼 사용료는 정산 기준금액에 위 요율을 곱한 금액이며, 부가세가
-              포함된 금액입니다.
+              플랫폼 사용료는 연장 기간에 지급합니다.
               <br />
-              전속 사용과 지속적인 기능 업데이트의 대가입니다.
+              요율은 모든 판매 항목에 대하여 정산 기준금액의{" "}
+              {report.contract.usageFeeRatePercent}%이며, 부가세가 포함된
+              금액입니다.
               <br />
-              갑은 매월 10일까지 전월 정산 기준금액을 을에게 알리고, 그 달
-              말일까지 사용료를 지급합니다.
+              전속 사용, 지속적인 기능 업데이트, 서버 운영의 대가입니다.
+              <br />
+              산정액이 월{" "}
+              {won(report.contract.usageFeeMonthlyMinimumInclusive)}(부가세
+              포함)에 미달하면, 그 금액을 월 최소 사용료로 지급합니다.
+              <br />
+              정산 기준금액은 판매금액(부가세 제외, 취소·환불 차감)에서 협력
+              매입액 전액과 하청 매입액의 90%를 뺀 금액입니다.
+              <br />
+              협력 매입액은 치과로부터 받은 금액 전체를 협력 기공소에 지급하여
+              갑의 몫이 없는 거래입니다.
+              <br />
+              하청 매입액의 90%는 갑이 10%만 수수료로 취하는 거래에서 갑의
+              몫이 아닌 부분입니다.
+              <br />
+              금액은 관리자 대시보드 재무-정산에서 판매 항목별로 산정합니다.
+              <br />
+              크레딧 등 선불은 충전 시점이 아니라 실제 사용(차감)된 시점에
+              봅니다.
+              <br />
+              갑은 매월 10일까지 전월 판매 항목별 정산 기준금액(관리자 정산
+              화면 출력본을 포함)을 을에게 알립니다.
+              <br />
+              을은 세금계산서를 발행하고, 갑은 그 달 말일까지 사용료를
+              지급합니다.
+              <br />
+              연장 기간의 클라우드 이용료는 플랫폼 사용료에 포함되며 을이
+              부담합니다.
             </p>
           </section>
 
@@ -537,12 +606,15 @@ export default function OpsMonthlyReportPage() {
           <section className="space-y-2 border-t border-slate-200 pt-4 text-sm leading-6">
             <h2 className="text-base font-semibold">6. 이 보고서 밖에 보관할 원본</h2>
             <p>
-              세금계산서와 운영비·플랫폼 사용료 입금 내역은 별도 원본으로
+              세금계산서와 개발·운영비·플랫폼 사용료 입금 내역은 별도 원본으로
               보관합니다.
               <br />
-              플랫폼 사용료의 정산 기준금액은 관리자 정산 화면 출력본을 따릅니다.
+              플랫폼 사용료의 정산 기준금액은 관리자 대시보드 재무-정산 화면
+              출력본을 따릅니다.
               <br />
               클라우드 사업자 청구서와 결제 전표도 이 수치로 대신하지 않습니다.
+              <br />
+              그 청구서 원본은 을 명의로 보관하고, 갑이 요청하면 제시합니다.
               <br />
               국세 관련 증빙은 통상 5년 보관합니다.
             </p>

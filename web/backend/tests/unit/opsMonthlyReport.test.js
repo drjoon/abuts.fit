@@ -4,6 +4,7 @@ import {
   OPS_CONTRACT,
   assembleOpsMonthlyReport,
   buildWorkSummary,
+  contractFeePhase,
   estimateDevEffort,
   formatEffortMinutes,
   kstMonthBounds,
@@ -14,7 +15,7 @@ import {
 } from "../../services/opsMonthlyReport.core.js";
 
 describe("ops monthly report contract", () => {
-  test("월 운영비 550만원은 공급가액 500만원과 부가세 50만원이다", () => {
+  test("월 개발·운영비 550만원은 공급가액 500만원과 부가세 50만원이다", () => {
     expect(splitVatInclusive(OPS_CONTRACT.monthlyFeeInclusive)).toEqual({
       inclusive: 5_500_000,
       supply: 5_000_000,
@@ -25,11 +26,20 @@ describe("ops monthly report contract", () => {
     expect(OPS_CONTRACT.termEndYmd).toBe("2027-08-31");
     expect(OPS_CONTRACT.autoRenewYears).toBe(1);
     expect(OPS_CONTRACT.nonRenewalNoticeMonths).toBe(3);
+    expect(OPS_CONTRACT.transitionMonths).toBe(6);
     expect(OPS_CONTRACT.firstTermFeeInclusive).toBe(66_000_000);
     expect(OPS_CONTRACT.paymentCount).toBe(12);
+    expect(OPS_CONTRACT.usageFeeAppliesDuringFirstTerm).toBe(false);
+    expect(OPS_CONTRACT.fixedFeeAppliesDuringExtension).toBe(false);
+    expect(OPS_CONTRACT.usageFeeRatePercent).toBe(5);
+    expect(OPS_CONTRACT.usageFeeMonthlyMinimumInclusive).toBe(5_500_000);
     expect(OPS_CONTRACT.usageFees.map((row) => row.ratePercent)).toEqual([
-      10, 5, 10,
+      5, 5, 5,
     ]);
+    expect(contractFeePhase("2026-08-01")).toBe("before");
+    expect(contractFeePhase("2026-09-01")).toBe("firstTerm");
+    expect(contractFeePhase("2027-08-01")).toBe("firstTerm");
+    expect(contractFeePhase("2027-09-01")).toBe("extension");
   });
 
   test("조회 주체는 갑 어벗츠 또는 을 메이븐이다", () => {
@@ -114,6 +124,8 @@ describe("activity fold", () => {
       },
     });
     expect(report.contract.monthlyFeeInclusive).toBe(5_500_000);
+    expect(report.contract.feePhase).toBe("firstTerm");
+    expect(report.contract.usageFeeRatePercent).toBe(5);
     expect(report.period.inProgress).toBe(false);
     expect(report.daily).toHaveLength(30);
     expect(report.daily[2]).toEqual({
