@@ -5,7 +5,7 @@
 // - web/frontend/src/pages/practice/PracticeTransferCaseViewPage.tsx
 // - web/frontend/src/shared/components/PreviewAnnotateActions.tsx
 // - web/frontend/src/shared/components/WorkScanModelPreviewDialog.tsx
-// - 2026-10-03: 의뢰 차수 묶음·최신만 선로드·페인트·칼라 매핑(작업열기 프리뷰와 같음).
+// - 2026-10-03: 의뢰 차수 묶음·전체 선로드 후 보이기만 전환·페인트·칼라 매핑(작업열기 프리뷰와 같음).
 // - 2026-09-28: 케이스 3D 공유 화면 — 왼쪽 뷰어, 오른쪽 케이스·파일 묶음(눈 아이콘으로 켜고 끔).
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Eye, EyeOff, Loader2, Maximize2 } from "lucide-react";
@@ -288,12 +288,14 @@ export function CaseShareViewer({
     [loadCompanions],
   );
 
+  // 작업열기 날짜 전환과 같다: 전부 받아 두고, 의뢰 전환은 보이기만 바꾼다.
+  // 지금 보이는 파일을 먼저 시작한다.
   useEffect(() => {
-    for (const group of groups) {
-      for (const item of group.items) {
-        if (visible[item.file.fileKey]) ensureLoaded(item.file);
-      }
+    const all = groups.flatMap((group) => group.items);
+    for (const item of all) {
+      if (visible[item.file.fileKey]) ensureLoaded(item.file);
     }
+    for (const item of all) ensureLoaded(item.file);
   }, [ensureLoaded, groups, visible]);
 
   const layers = useMemo<CaseLayerModel[]>(() => {
