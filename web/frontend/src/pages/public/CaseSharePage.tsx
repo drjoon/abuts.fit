@@ -2,6 +2,7 @@
 // - web/backend/modules/caseShares/caseShare.routes.js
 // - web/frontend/src/shared/share/CaseShareViewer.tsx
 // - web/frontend/src/App.tsx
+// - 2026-10-03: 공유 파일은 IndexedDB에 캐시해 다시 열 때 받지 않는다.
 // - 2026-09-28: 공유 링크(/share/case/:token) — 공개 범위에 따라 비로그인·지정 계정·관계자가 3D 케이스를 본다.
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -9,15 +10,21 @@ import { Loader2 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { Button } from "@/components/ui/button";
 import { formatKstDateTimeToKo } from "@/shared/date/kst";
+import { getFileBlob, setFileBlob } from "@/shared/files/fileBlobCache";
 import {
   CaseShareViewer,
   type CaseShareFileLoader,
 } from "@/shared/share/CaseShareViewer";
 import {
   caseShareVisibilityLabel,
+  type CaseShareFile,
   type CaseShareView,
 } from "@/shared/share/caseShareTypes";
 import { useAuthStore } from "@/store/useAuthStore";
+
+function caseShareBlobCacheKey(token: string, file: CaseShareFile): string {
+  return `case-share:${token}:${file.fileKey}:${Number(file.size) || 0}`;
+}
 
 type PageState =
   | { status: "loading" }
@@ -138,12 +145,25 @@ export default function CaseSharePage() {
   }, [authToken, shareToken]);
 
   const loadFile = useCallback<CaseShareFileLoader>(
-    (file, onProgress) =>
-      fetchBlobWithStreamProgress(
+    async (file, onProgress) => {
+      const cacheKey = caseShareBlobCacheKey(shareToken, file);
+      try {
+        const cached = await getFileBlob(cacheKey);
+        if (cached) {
+          onProgress?.(100);
+          return cached;
+        }
+      } catch {
+        // 캐시 실패해도 네트워크로 받는다.
+      }
+      const blob = await fetchBlobWithStreamProgress(
         `/api/case-shares/${encodeURIComponent(shareToken)}/files/${encodeURIComponent(file.fileKey)}`,
         authToken ? { Authorization: `Bearer ${authToken}` } : {},
         onProgress,
-      ),
+      );
+      void setFileBlob(cacheKey, blob).catch(() => {});
+      return blob;
+    },
     [authToken, shareToken],
   );
 
