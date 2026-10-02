@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
 // - web/frontend/src/App.tsx
 // change-log:
+// - 2026-10-03: 치과(practice·requestor practice)도 전체 알림 prefs로 채팅음 게이트.
 // - 2026-10-03: 치과별 mute 제거(전체 알림 prefs만).
 // - 2026-09-08: 미확인 의뢰음과 동일 플레이어(중복 재생 방지).
 // - 2026-09-07: 전역 채팅 알림음 — chat:message-created · remote-support:chat.
@@ -33,6 +34,21 @@ const isLabUser = (user: {
   if (role === "internalLab") return true;
   if (role === "requestor") {
     return normalizeRequestorKind(user.requestorKind) === "lab";
+  }
+  return false;
+};
+
+/** 헤더 설정 팝오버「전체 알림」prefs를 쓰는 역할 */
+const usesLabReceiveSoundPrefs = (user: {
+  role?: string | null;
+  requestorKind?: string | null;
+} | null): boolean => {
+  if (!user) return false;
+  if (isLabUser(user)) return true;
+  const role = String(user.role || "").trim();
+  if (role === "practice") return true;
+  if (role === "requestor") {
+    return normalizeRequestorKind(user.requestorKind) === "practice";
   }
   return false;
 };
@@ -109,7 +125,7 @@ export function useChatMessageSound() {
       if (!shouldPlayChatSound(roomId)) return;
       if (isChatSoundViewingTarget(roomId)) return;
 
-      if (isLabUser(user as any) && !shouldPlayLabReceiveSound()) return;
+      if (usesLabReceiveSoundPrefs(user as any) && !shouldPlayLabReceiveSound()) return;
 
       playChatNotifySound({
         title: "새 채팅",

@@ -4,8 +4,10 @@
  * - web/frontend/src/shared/practice/labReceiveSoundPrefs.ts
  * - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+ * - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
  * - web/frontend/src/pages/practice/components/LabReceiveUnreadNotice.tsx
  * change-log:
+ * - 2026-10-03: 치과 발신 헤더에서도 재사용(보기·전체 알림).
  * - 2026-10-03: 캘린더·목록 보기 전환을 팝오버로 이동.
  * - 2026-10-03: 치과별 mute 제거 — 전체 알림 스위치만.
  * - 2026-10-03: 헤더 데모 뱃지 왼쪽 — 전체 on/off.

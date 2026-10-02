@@ -6,7 +6,7 @@
  * - 상단: 기간필터 + 요약(좌 2x2) + 최근 의뢰(우)
  * - 하단: 스캔 전송 섹션이 남은 영역을 채움
  * - 최근 전송 카드 클릭 시 의뢰 정보 + 기공소 채팅 모달 제공
- * - 2026-10-03: 헤더 설정 — requestor 치과는 /dashboard/settings (practice만 /practice/settings).
+ * - 2026-10-03: 헤더 설정 — 기공소와 같은 보기·알림 팝오버(페이지 이동 제거).
  * - 2026-10-03: 헤더 오른쪽 끝 — 북마크·휴지통·설정은 항상 아이콘만(그 순서).
  * - 2026-09-30: 헤더 줄이 좁으면 북마크·신규주문·리메이크·임시저장·휴지통은 아이콘(+숫자).
  *
@@ -175,7 +175,6 @@ import {
   Check,
   Download,
   Plus,
-  Settings,
   Repeat,
   Pencil,
   X,
@@ -326,6 +325,8 @@ import {
   isLeakedGuideTourDemoDraft,
 } from "@/shared/guideTour/guideTourOralPrefill";
 import { PracticeRecentTransfersAllModal } from "@/pages/practice/components/PracticeRecentTransfersAllModal";
+import { LabReceiveAlarmSettingsButton } from "@/shared/components/practice/LabReceiveAlarmSettingsButton";
+import type { LabReceiveCalendarViewMode } from "@/shared/practice/labReceiveCalendarViewMode";
 import {
   type PracticeTransferPanelDockSide,
 } from "@/shared/practice/labReceiveCalendarWeekGrid";
@@ -9782,8 +9783,12 @@ export const PracticeFileTransferPage = ({
     );
   };
 
-  /** 오른쪽 끝 — 북마크·휴지통·설정(항상 아이콘). */
-  const practiceHeaderUtilityButtons = (opts?: { mobile?: boolean }) => {
+  /** 오른쪽 끝 — 북마크·휴지통·설정 팝오버(항상 아이콘). */
+  const practiceHeaderUtilityButtons = (opts?: {
+    mobile?: boolean;
+    viewMode?: LabReceiveCalendarViewMode;
+    onViewModeChange?: (mode: LabReceiveCalendarViewMode) => void;
+  }) => {
     const mobile = Boolean(opts?.mobile);
     const iconBtn = mobile
       ? "h-9 w-9 shrink-0 rounded-full border-slate-200 bg-white p-0 shadow-sm"
@@ -9828,23 +9833,11 @@ export const PracticeFileTransferPage = ({
       </Button>
     );
     const settingsButton = (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
+      <LabReceiveAlarmSettingsButton
         className={iconBtn}
-        aria-label="설정"
-        title="설정"
-        onClick={() =>
-          navigate(
-            authUser?.role === "practice"
-              ? "/practice/settings"
-              : "/dashboard/settings",
-          )
-        }
-      >
-        <Settings className="h-4 w-4 shrink-0" />
-      </Button>
+        viewMode={opts?.viewMode}
+        onViewModeChange={opts?.onViewModeChange}
+      />
     );
     if (mobile) {
       return (
@@ -9864,18 +9857,16 @@ export const PracticeFileTransferPage = ({
             휴지통
           </TooltipContent>
         </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>{settingsButton}</TooltipTrigger>
-          <TooltipContent side="bottom" className="text-xs">
-            설정
-          </TooltipContent>
-        </Tooltip>
+        {settingsButton}
       </>
     );
   };
 
   /** 메인 헤더 — 신규주문·리메이크·임시저장 + 오른쪽 끝 북마크·휴지통·설정(+PC 데모). */
-  const practiceMobileHeaderActionButtons = (
+  const practiceMobileHeaderActionButtons = (opts?: {
+    viewMode?: LabReceiveCalendarViewMode;
+    onViewModeChange?: (mode: LabReceiveCalendarViewMode) => void;
+  }) => (
     <>
       <Button
         type="button"
@@ -9945,7 +9936,11 @@ export const PracticeFileTransferPage = ({
           </Badge>
         ) : null}
       </Button>
-      {practiceHeaderUtilityButtons({ mobile: true })}
+      {practiceHeaderUtilityButtons({
+        mobile: true,
+        viewMode: opts?.viewMode,
+        onViewModeChange: opts?.onViewModeChange,
+      })}
     </>
   );
 
@@ -9982,7 +9977,10 @@ export const PracticeFileTransferPage = ({
   const mobileOverlayDialogStyle =
     mobileActionOverlayTopStyle(mobileOverlayTopPx);
 
-  const calendarHeaderActions = (
+  const calendarHeaderActions = (opts?: {
+    viewMode?: LabReceiveCalendarViewMode;
+    onViewModeChange?: (mode: LabReceiveCalendarViewMode) => void;
+  }) => (
     <div
       className="flex flex-nowrap items-center gap-1.5 sm:gap-2"
       data-guide-tour={
@@ -9993,7 +9991,10 @@ export const PracticeFileTransferPage = ({
     >
       {isMobile ? (
         <div className="flex w-full flex-nowrap items-center justify-center gap-1.5">
-          {practiceMobileHeaderActionButtons}
+          {practiceMobileHeaderActionButtons({
+            viewMode: opts?.viewMode,
+            onViewModeChange: opts?.onViewModeChange,
+          })}
         </div>
       ) : (
         <>
@@ -10093,7 +10094,10 @@ export const PracticeFileTransferPage = ({
               임시저장 — 기공소 전송 전 작성 중 의뢰
             </TooltipContent>
           </Tooltip>
-          {practiceHeaderUtilityButtons()}
+          {practiceHeaderUtilityButtons({
+            viewMode: opts?.viewMode,
+            onViewModeChange: opts?.onViewModeChange,
+          })}
           <DemoModeBadge />
         </>
       )}
@@ -10620,7 +10624,7 @@ export const PracticeFileTransferPage = ({
               className="fixed inset-x-0 top-0 z-[330] border-b border-slate-200 bg-slate-100/95 px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]"
             >
               <div className="mx-auto flex w-full max-w-full flex-nowrap items-center justify-center gap-1.5 overflow-x-auto">
-                {practiceMobileHeaderActionButtons}
+                {practiceMobileHeaderActionButtons()}
               </div>
             </div>,
             document.body,
