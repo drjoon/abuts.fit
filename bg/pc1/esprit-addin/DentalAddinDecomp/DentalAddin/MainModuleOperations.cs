@@ -1607,7 +1607,7 @@ namespace DentalAddin
                         rangeMaxX = Math.Min(xMax, splitline2 + FrontTurnEndPastBoundaryMm);
                         break;
                     case "BACK" when TryResolveSafeSplitBackZoneX("TurningOp BACK", out double safeZoneEndX):
-                        // Safe split(Middle_Turn): Middle_Rough 끝(Xk)보다 2.5 더 깎고 퇴출. 헥스 너머 연장·45도 퇴출은 BACK2(Back_Turn)로 미룬다.
+                        // Safe split(Middle_Turn): Middle_Rough 끝(Xk)보다 2.2 더 깎고 퇴출. 헥스 너머 연장·45도 퇴출은 BACK2(Back_Turn)로 미룬다.
                         rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
                         rangeMaxX = safeZoneEndX + SafeSplitTurnPastRoughMm;
                         break;

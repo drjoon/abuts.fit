@@ -1751,14 +1751,14 @@ namespace DentalAddin
         // 대책: Back을 피니시라인 하단(FL min_z) 부시쪽에서 끊어 Front → Middle → Back 3구간으로 가공한다.
         //   Middle (region BACK)  : Middle_Finish [Splitline_2-0.8 ~ Xk]
         //                           Middle_Rough  [Splitline_2-roughR ~ Xk]  (D4 반경이 D1.2 반경을 덮으므로 Finish와 같은 끝)
-        //                           Middle_Turn   [FrontPointX ~ Xk+2.5]     (D4 러프가 원소재를 물지 않게 반경 2.0+칩 여유)
+        //                           Middle_Turn   [FrontPointX ~ Xk+2.2]     (D4 러프가 원소재를 물지 않게 반경 2.0+칩 0.2)
         //   Back   (region BACK2) : Back_Turn [Xk ~ xMax+exit] (기존 Back_Turn 끝 형상 유지)
         //                           Back_Rough [Xk-roughR ~ BackPointX]
         //                           Back_Finish [Xk-0.8 ~ BackPointX]
-        //   Xk = (BackPointX - FL min_z) + 0.5  (마진 띠 전체가 Middle_Finish 한 번에 들어가고, seam은 커프 쪽)
+        //   Xk = (BackPointX - FL min_z) + 0.2  (마진 띠 전체가 Middle_Finish 한 번에 들어가고, seam은 커프 쪽)
         // Middle_Turn 끝이 BackPointX + 1.5를 넘으면(커프가 짧음) Xk를 마진 쪽으로 당기지 않고 분할을 포기한다.
         private const string SafeSplitEnableEnv = "ABUTS_SAFE_SPLIT_ENABLE";
-        private const double SafeSplitBackZonePastFinishLineMinMm = 0.5;
+        private const double SafeSplitBackZonePastFinishLineMinMm = 0.2;
 
         // 인접 Finish 겹침(mm). 선행 끝은 경계에 두고, 다음 공정 시작만 이만큼 tip 쪽(X-)으로 당긴다.
         // = D1.2 직경의 2/3 = 0.8. 선행 끝을 경계 너머로 연장하면 치은 쪽 D1.2 크로스가 깨진다.
@@ -1767,7 +1767,7 @@ namespace DentalAddin
         //   Back_Finish   끝 = BackPointX            (더 이어질 Finish 없음)
         private const double FinishAdjacentOverlapMm = 1.2 * 2.0 / 3.0;
         private const double SafeSplitMinBackZoneMm = 1.5;
-        internal const double SafeSplitTurnPastRoughMm = 2.5;
+        internal const double SafeSplitTurnPastRoughMm = 2.2;
         private const double SafeSplitMaxTurnPastBackPointMm = 1.5;
 
         private static bool IsSafeSplitEnabledByRequest()
