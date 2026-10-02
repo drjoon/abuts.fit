@@ -87,7 +87,7 @@ type PracticeStatusFilterBadgesProps = {
   iconAtNarrow?: boolean;
   /**
    * true면 뷰포트 2xl 대신 헤더 줄의 data-wide.
-   * 조상 group/practice-hdr 가 넓을 때만 문구를 보여 공지 자리를 남긴다.
+   * 조상 group/practice-hdr 가 라벨을 담을 때만 문구를 보여 준다.
    */
   labelsWhenHeaderWide?: boolean;
   className?: string;
