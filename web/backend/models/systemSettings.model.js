@@ -331,6 +331,23 @@ const systemSettingsSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: null,
     },
+    // 가공 화면 더미 제품. 소재 직경 그룹(6·8·10·12·14)마다 로트로 고른 requestId.
+    // related: controllers/cnc/dummyProduct.js
+    dummyMachiningProducts: {
+      type: [
+        {
+          diameterGroup: { type: String, default: "" },
+          requestId: { type: String, default: "" },
+          selectedAt: { type: Date, default: null },
+          selectedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null,
+          },
+        },
+      ],
+      default: [],
+    },
   },
   {
     timestamps: true,

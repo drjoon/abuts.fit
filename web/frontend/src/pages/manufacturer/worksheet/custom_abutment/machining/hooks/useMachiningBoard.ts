@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-10-02: refreshProductionQueues를 보드에서 호출할 수 있게 반환.
 // - 2026-08-30: stopNowPlayingMachining — 브리지 stop + machining/cancel, canceled 소켓 반영.
 // - 2026-08-29: CAM 생성 중단 소켓/커스텀 이벤트 — ncPreload CANCELLED·블러 해제.
 // - 2026-08-29: 예약 관리 열린 동안 큐 NC 메타 변경 시 playlistJobs 동기화.
@@ -2518,6 +2519,7 @@ export const useMachiningBoard = ({
     clearMachiningAlerts,
     expressRebalanceAlert,
     clearExpressRebalanceAlert,
+    refreshProductionQueues,
     token,
   };
 };

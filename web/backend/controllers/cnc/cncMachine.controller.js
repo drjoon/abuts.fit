@@ -55,6 +55,13 @@ import {
   updateDummySettings,
   updateDummyEnabledBulk,
 } from "../../controllers/cnc/dummy.js";
+import {
+  getDummyMachiningProduct,
+  searchDummyMachiningProducts,
+  selectDummyMachiningProduct,
+  clearDummyMachiningProduct,
+  enqueueDummyMachiningProduct,
+} from "../../controllers/cnc/dummyProduct.js";
 import { initializeMachines } from "../../controllers/cnc/dev.js";
 import {
   recordMachiningCompleteForBridge,
@@ -112,6 +119,11 @@ export {
   cancelScheduledMaterialChange,
   updateDummySettings,
   updateDummyEnabledBulk,
+  getDummyMachiningProduct,
+  searchDummyMachiningProducts,
+  selectDummyMachiningProduct,
+  clearDummyMachiningProduct,
+  enqueueDummyMachiningProduct,
   initializeMachines,
   getLastCompletedMachiningMap,
   getCompletedMachiningRecords,

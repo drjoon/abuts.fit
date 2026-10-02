@@ -133,6 +133,8 @@ export type MachineQueueCardProps = {
   lastCompleted?: LastCompletedMachining | null;
   nowPlayingHint?: NowPlayingHint | null;
   onOpenCompleted?: (machineId: string, machineName?: string) => void;
+  /** 저장된 직경 더미를 Next Up 첫 칸에 넣기 */
+  onOpenDummyMachining?: () => void;
   onOpenMaterial?: () => void;
   onOpenMachineInfo?: () => void;
   onOpenQueueManager?: () => void;

@@ -1050,6 +1050,8 @@ const requestSchema = new mongoose.Schema(
         ref: "CncMachine",
       },
       queuePosition: Number, // 해당 장비 큐에서의 위치
+      // 더미 가공 확인 시 Next Up 맨 앞. 가공중·완료면 정렬에서 무시한다.
+      dummyNextUpPinnedAt: Date,
       machiningQty: {
         type: Number,
         default: 1,

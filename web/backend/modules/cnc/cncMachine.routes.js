@@ -141,6 +141,33 @@ router.patch(
   cncMachineController.updateDummyEnabledBulk,
 );
 
+// 가공 화면 더미 제품 (제조사, 관리자). :machineId 보다 앞에 둔다.
+router.get(
+  "/dummy-product",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.getDummyMachiningProduct,
+);
+router.get(
+  "/dummy-product/search",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.searchDummyMachiningProducts,
+);
+router.put(
+  "/dummy-product",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.selectDummyMachiningProduct,
+);
+router.delete(
+  "/dummy-product",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.clearDummyMachiningProduct,
+);
+router.post(
+  "/dummy-product/enqueue",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.enqueueDummyMachiningProduct,
+);
+
 // 더미 가공 on/off (단일 장비)
 router.patch(
   "/:machineId/dummy/enabled",

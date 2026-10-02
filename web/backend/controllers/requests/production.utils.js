@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-02: dummyNextUpPinnedAt은 가공중 다음 맨 앞(Next Up 첫 칸).
 // - 2026-08-19: 제출 시 동일 직경/모드 생산스케줄을 memo로 재사용.
 // - 2026-08-13: manufacturerLeadTimes를 인자로 받아 제출 트랜잭션 안 재조회를 생략.
 // - 2026-08-11: 묶음 당일출고 회귀 가드. lead 계산·스케줄 모두 접수 YMD 초과를 강제.
@@ -38,6 +39,7 @@ import {
   normalizeDiameterGroupValue,
   isMachiningQueueStageValue,
   isMachiningInProgress,
+  isMachiningCompleted,
 } from "../cnc/distribution.utils.js";
 import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
 
@@ -579,10 +581,26 @@ export function getMachiningQueuePolicyRank(requestLike) {
  * 가공 큐 정렬 SSOT.
  * 가공중 → 정책 순위(아노/신속) → queuePosition → 발송예정 → requestId
  */
+function isWaitingDummyNextUpPin(row) {
+  if (!row?.productionSchedule?.dummyNextUpPinnedAt) return false;
+  if (isMachiningInProgress(row)) return false;
+  if (isMachiningCompleted(row)) return false;
+  return true;
+}
+
 export function compareMachiningQueueOrder(a, b) {
   const aRunning = isMachiningInProgress(a);
   const bRunning = isMachiningInProgress(b);
   if (aRunning !== bRunning) return aRunning ? -1 : 1;
+
+  const aPin = isWaitingDummyNextUpPin(a);
+  const bPin = isWaitingDummyNextUpPin(b);
+  if (aPin !== bPin) return aPin ? -1 : 1;
+  if (aPin && bPin) {
+    const at = new Date(a.productionSchedule.dummyNextUpPinnedAt).getTime();
+    const bt = new Date(b.productionSchedule.dummyNextUpPinnedAt).getTime();
+    if (at !== bt) return bt - at;
+  }
 
   const aRank = getMachiningQueuePolicyRank(a);
   const bRank = getMachiningQueuePolicyRank(b);
@@ -626,7 +644,7 @@ export async function placeRequestAtPolicyQueuePosition({
     manufacturerStage: "가공",
     "productionSchedule.assignedMachine": mid,
   }).select(
-    "_id requestId productionSchedule.queuePosition productionSchedule.machiningRecord caseInfos.anodizingEnabled shippingMode finalShipping.mode originalShipping.mode",
+    "_id requestId productionSchedule.queuePosition productionSchedule.dummyNextUpPinnedAt productionSchedule.machiningRecord caseInfos.anodizingEnabled shippingMode finalShipping.mode originalShipping.mode",
   );
   if (session) findQuery = findQuery.session(session);
   const queueRows = await findQuery.lean();

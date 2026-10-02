@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-10-02: Now Playing 경과시간 — tabular-nums·줄바꿈 없음. 초마다 숫자 폭이 바뀌며 헤더가 접히던 현상.
+// - 2026-10-02: 카드 상단 배정 스위치 왼쪽 더미 가공 아이콘.
 // - 2026-09-17: Complete 슬롯 — 출고시간(마감) 뱃지 숨김(hideDeadline).
 // - 2026-09-12: Next Up CAM 오버레이 — 블러 제거·옅은 틴트+반투명「작업중/작업중지」(준비 탭과 동일).
 // - 2026-09-11: Complete 슬롯 — 포장.발송·추적관리 건은 준비 롤백/재승인 비활성.
@@ -21,7 +22,7 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/cnc/production.js
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Disc, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -119,6 +120,7 @@ export const MachineQueueCard = ({
   onOpenMaterial,
   onOpenMachineInfo,
   onOpenQueueManager,
+  onOpenDummyMachining,
   onOpenTemperature,
   onOpenToolStatus,
   onOpenSettings,
@@ -580,6 +582,18 @@ export const MachineQueueCard = ({
           </div>
 
           <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              className="inline-flex h-5 w-5 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+              title="더미 가공"
+              aria-label="더미 가공"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenDummyMachining?.();
+              }}
+            >
+              <Disc className="h-3.5 w-3.5" />
+            </button>
             <span className="text-[11px] font-semibold text-slate-500">
               배정
             </span>

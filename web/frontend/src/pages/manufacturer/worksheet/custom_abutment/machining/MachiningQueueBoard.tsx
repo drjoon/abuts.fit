@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-02: 더미설정은 직경별 저장. 장비 카드 더미 가공은 Next Up 첫 칸에 넣는다.
 // - 2026-08-30: Now Playing X → 가공 중단(브리지 stop + cancel).
 // - 2026-08-30: 상단 CNC Alert 뱃지 클릭 시 알람 상세 모달 표시.
 // - 2026-08-29: BG 완료 후 열린 프리뷰 — NC/filled만 선택 무효화 후 갱신(STL 불필요 재다운로드 방지).
@@ -74,6 +75,10 @@ import { MachiningRequestLabel } from "./components/MachiningRequestLabel";
 import { ExpressRebalanceAlertModal } from "./components/ExpressRebalanceAlertModal";
 import { MachiningAlertModal } from "./components/MachiningAlertModal";
 import { MachiningPriorityRulesModal } from "./components/MachiningPriorityRulesModal";
+import {
+  DummyMachiningModal,
+  DummyNextUpConfirm,
+} from "./components/DummyMachiningModal";
 import { buildLabelExtraProps } from "./utils/label";
 import { PreviewModal } from "@/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal";
 import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
@@ -138,6 +143,24 @@ const resolveMachineMaterialDiameter = (machine: MaterialLikeMachine): number | 
 
   if (!Number.isFinite(numeric) || numeric <= 0) return null;
   return Number(numeric.toFixed(3));
+};
+
+const materialDiameterGroup = (machine: MaterialLikeMachine): string => {
+  const rawGroup = String(machine?.currentMaterial?.diameterGroup || "").trim();
+  if (rawGroup.includes("+")) return "12";
+  let numeric = Number.parseFloat(rawGroup.replace(/[^0-9.]/g, ""));
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    const rawDia = machine?.currentMaterial?.diameter;
+    numeric = Number.isFinite(rawDia)
+      ? Number(rawDia)
+      : Number.parseFloat(String(rawDia || "").replace(/[^0-9.]/g, ""));
+  }
+  if (!Number.isFinite(numeric) || numeric <= 0) return "";
+  if (numeric <= 6) return "6";
+  if (numeric <= 8) return "8";
+  if (numeric <= 10) return "10";
+  if (numeric <= 12) return "12";
+  return "14";
 };
 
 const resolveMachineActionLevel = (
@@ -407,12 +430,19 @@ export const MachiningQueueBoard = ({
     clearMachiningAlerts,
     expressRebalanceAlert,
     clearExpressRebalanceAlert,
+    refreshProductionQueues,
   } = board;
 
   const [expressRebalanceModalOpen, setExpressRebalanceModalOpen] =
     useState(false);
   const [machiningAlertModalOpen, setMachiningAlertModalOpen] = useState(false);
   const [priorityRulesModalOpen, setPriorityRulesModalOpen] = useState(false);
+  const [dummyModalOpen, setDummyModalOpen] = useState(false);
+  const [dummyConfirm, setDummyConfirm] = useState<{
+    machineId: string;
+    machineName: string;
+    diameterGroup: string;
+  } | null>(null);
   const lastAutoOpenedExpressRebalanceIdRef = useRef<string>("");
 
   useEffect(() => {
@@ -1895,6 +1925,14 @@ export const MachiningQueueBoard = ({
 
           <button
             type="button"
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            onClick={() => setDummyModalOpen(true)}
+            title="소재 직경별 더미 저장"
+          >
+            더미설정
+          </button>
+          <button
+            type="button"
             className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             onClick={() => setPriorityRulesModalOpen(true)}
             title="가공 우선순위 룰 보기"
@@ -2041,6 +2079,13 @@ export const MachiningQueueBoard = ({
               }}
               onToggleRequestAssign={(next) => {
                 void updateMachineRequestAssign(m.uid, next);
+              }}
+              onOpenDummyMachining={() => {
+                setDummyConfirm({
+                  machineId: m.uid,
+                  machineName: String(m.name || m.uid || "").trim(),
+                  diameterGroup: materialDiameterGroup(m),
+                });
               }}
               machineStatus={mergedStatus}
               statusRefreshing={statusRefreshing}
@@ -2834,6 +2879,26 @@ export const MachiningQueueBoard = ({
         open={priorityRulesModalOpen}
         onOpenChange={setPriorityRulesModalOpen}
         token={token}
+      />
+
+      <DummyMachiningModal
+        open={dummyModalOpen}
+        onOpenChange={setDummyModalOpen}
+        token={token}
+      />
+
+      <DummyNextUpConfirm
+        open={dummyConfirm != null}
+        onOpenChange={(open) => {
+          if (!open) setDummyConfirm(null);
+        }}
+        token={token}
+        machineId={dummyConfirm?.machineId || ""}
+        machineName={dummyConfirm?.machineName || ""}
+        diameterGroup={dummyConfirm?.diameterGroup || ""}
+        onEnqueued={() => {
+          void refreshProductionQueues();
+        }}
       />
 
       {PinModal}
