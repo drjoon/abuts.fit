@@ -263,7 +263,7 @@ import {
   useViewPaint,
   viewPaintSurfaceProps,
 } from "@/shared/components/practice/ViewPaintToolbar";
-import { ViewGestureHint } from "@/shared/components/ViewGestureHint";
+import { VIEW_GESTURE_HINT_LAYER_CLASS, ViewGestureHint } from "@/shared/components/ViewGestureHint";
 import {
   buildLabProsthesisAiPlan,
   isOralScanMeshName,
@@ -4588,8 +4588,8 @@ function LabProsthesisAiDesignDialog({
               enabled={paint.paintOn && stage !== "milling"}
               space={stage === "milling" ? null : paintSpace}
             />
-            <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex flex-col items-center gap-2 px-3">
-              {paint.paintOn && stage !== "milling" ? (
+            {paint.paintOn && stage !== "milling" ? (
+              <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-3">
                 <ViewPaintToolbar
                   paint={paint}
                   twoRow
@@ -4599,9 +4599,8 @@ function LabProsthesisAiDesignDialog({
                   onReorderChatFiles={onReorderChatFiles}
                   onSendToAi={sendPaintToAi}
                 />
-              ) : null}
-              <ViewGestureHint />
-            </div>
+              </div>
+            ) : null}
             <div
               className={cn(
                 "pointer-events-none absolute left-1/2 top-3 z-10 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-1.5",
@@ -5701,6 +5700,9 @@ function LabProsthesisAiDesignDialog({
                   );
                 })()
               : null}
+            <div className={cn(VIEW_GESTURE_HINT_LAYER_CLASS, "z-[90]")}>
+              <ViewGestureHint storageKey="abuts.viewGestureHint.aiDesign.v2.dismissed" />
+            </div>
           </div>
         <LabDesignPresetDialog
           open={presetDialog != null}

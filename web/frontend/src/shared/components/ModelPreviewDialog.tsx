@@ -78,7 +78,7 @@ import {
   PreviewPaintLayer,
   usePreviewPaint,
 } from "@/shared/components/PreviewAnnotateActions";
-import { ViewGestureHint } from "@/shared/components/ViewGestureHint";
+import { VIEW_GESTURE_HINT_LAYER_CLASS, ViewGestureHint } from "@/shared/components/ViewGestureHint";
 
 export type ModelPreviewKind = "model" | "image";
 
@@ -371,12 +371,7 @@ export function ModelPreviewDialog({
               </div>
             ) : null}
             {!isImage ? (
-              <div
-                className={cn(
-                  "pointer-events-none absolute inset-x-0 z-30 flex justify-center px-3",
-                  showNav ? "bottom-14" : "bottom-3",
-                )}
-              >
+              <div className={VIEW_GESTURE_HINT_LAYER_CLASS}>
                 <ViewGestureHint />
               </div>
             ) : null}

@@ -45,7 +45,7 @@ import {
   PreviewPaintLayer,
   usePreviewPaint,
 } from "@/shared/components/PreviewAnnotateActions";
-import { ViewGestureHint } from "@/shared/components/ViewGestureHint";
+import { VIEW_GESTURE_HINT_LAYER_CLASS, ViewGestureHint } from "@/shared/components/ViewGestureHint";
 import type { ViewPaintSpace } from "@/shared/components/practice/viewPaintSpace";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
@@ -378,7 +378,7 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
               onReorderChatFiles={onReorderChatFiles}
             />
           ) : null}
-          <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-3">
+          <div className={VIEW_GESTURE_HINT_LAYER_CLASS}>
             <ViewGestureHint />
           </div>
           <Button
