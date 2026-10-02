@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-10-01: GET /my 목록 캐시는 만료·상한으로 걷는다.
+// - 2026-10-01: 추적관리 워크시트 검색(q)에 로트번호·의뢰번호·환자·치과·송장을 포함한다.
 // - 2026-09-16: 관리자 모니터링 R&D·불완전가공 탭(rndDone/rndUnmachinable) 허용.
 // - 2026-09-16: 관리자 모니터링에서 불완전가공(rnd.unmachinableAt) 제외 + CNC완료 stuck 힐.
 // - 2026-09-09: 관리자 헥스 확정 후에도 제조사 updateRndHexRotation 허용(의뢰 단위 보정). 신규 시드만 확정값 우선.
@@ -157,6 +158,75 @@ const buildTrackingWorksheetEtag = (payload) => {
   const raw = JSON.stringify(payload || {});
   const hash = createHash("sha1").update(raw).digest("hex");
   return `W/"tracking-worksheet-${hash}"`;
+};
+
+const escapeWorksheetSearchRegex = (value) =>
+  String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const splitWorksheetSearchTerms = (raw) =>
+  String(raw || "")
+    .trim()
+    .split(/\s+/)
+    .map((term) => term.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+
+/**
+ * 추적관리 헤더 검색. 각 단어는 AND, 단어 안에서는 로트·의뢰·이름·송장 OR.
+ * 로트번호(CAYYMMDD-AAC)의 각인 3글자도 value 부분 일치로 찾는다.
+ */
+const buildTrackingWorksheetSearchGuard = async (rawQuery) => {
+  const terms = splitWorksheetSearchTerms(rawQuery);
+  if (!terms.length) return null;
+
+  const termGuards = await Promise.all(
+    terms.map(async (term) => {
+      const regex = new RegExp(escapeWorksheetSearchRegex(term), "i");
+      const or = [
+        { "lotNumber.value": regex },
+        { "lotNumber.material": regex },
+        { "screwTracking.lotNumber": regex },
+        { requestId: regex },
+        { mailboxAddress: regex },
+        { referenceIds: regex },
+        { assignedMachine: regex },
+        { "caseInfos.patientName": regex },
+        { "caseInfos.clinicName": regex },
+        { "caseInfos.tooth": regex },
+      ];
+
+      const [users, deliveries] = await Promise.all([
+        User.find({
+          $or: [
+            { name: regex },
+            { business: regex },
+            { phoneNumber: regex },
+            { "practiceProfile.clinicName": regex },
+          ],
+        })
+          .select("_id")
+          .limit(200)
+          .lean(),
+        DeliveryInfo.find({ trackingNumber: regex })
+          .select("_id")
+          .limit(200)
+          .lean(),
+      ]);
+
+      if (users.length) {
+        or.push({ requestor: { $in: users.map((user) => user._id) } });
+      }
+      if (deliveries.length) {
+        or.push({
+          deliveryInfoRef: { $in: deliveries.map((row) => row._id) },
+        });
+      }
+
+      return { $or: or };
+    }),
+  );
+
+  return termGuards.length === 1 ? termGuards[0] : { $and: termGuards };
 };
 
 const resolveTrackingWorksheetCacheKey = ({ req, page, limit }) => {
@@ -1549,6 +1619,17 @@ export async function getAllRequests(req, res) {
           excludePracticeRouteGuard,
         ],
       };
+    }
+
+    // 추적관리 검색은 불러온 페이지가 아니라 전체 의뢰에서 로트번호까지 맞춘다.
+    if (isTrackingWorksheetRequest) {
+      const searchGuard = await buildTrackingWorksheetSearchGuard(req.query.q);
+      if (searchGuard) {
+        filter =
+          filter && Object.keys(filter).length > 0
+            ? { $and: [filter, searchGuard] }
+            : searchGuard;
+      }
     }
 
     // 추적관리 워크시트도 샘플 의뢰를 일반 의뢰와 동일하게 노출한다.

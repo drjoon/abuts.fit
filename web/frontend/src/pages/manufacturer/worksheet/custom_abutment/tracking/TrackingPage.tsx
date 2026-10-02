@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-01: 헤더 검색을 서버로 넘겨 로트번호(각인 3글자 포함)를 전체 추적관리에서 찾는다. 카드에 로트 표시.
 // - 2026-09-02: 택배/배송 컬럼별 스크롤·페이지네이션, 기간 필터 SSOT(periodToRange) 적용.
 // - 2026-09-02: 추적관리 스크롤·무한 로드 — 공용 스크롤 컨테이너·sentinel·fillHeight 복구.
 // - 2026-08-29: 재제작(count-update) 시 전체 목록 리셋 금지 — 펼침/페이지 유지, 관련 stage만 soft refresh.
@@ -94,6 +95,17 @@ const formatYmd = (d?: string) => {
   const dt = new Date(s);
   if (Number.isNaN(dt.getTime())) return "-";
   return toKstYmd(dt) || "-";
+};
+
+const lotShortCodeOf = (req: { lotNumber?: { value?: string | null } | null }) => {
+  const raw = String(req?.lotNumber?.value || "")
+    .trim()
+    .toUpperCase();
+  if (!raw) return "";
+  const tail = raw.includes("-")
+    ? raw.slice(raw.lastIndexOf("-") + 1)
+    : raw.slice(-3);
+  return tail.replace(/[^A-Z]/g, "").slice(-3);
 };
 
 const normalizeLotNumberLabel = (req: ManufacturerRequest) => {
@@ -232,6 +244,17 @@ export const TrackingInquiryPage = () => {
     worksheetSearch: string;
     showCompleted: boolean;
   }>();
+  const worksheetSearchLower = String(worksheetSearch || "")
+    .trim()
+    .toLowerCase();
+  const [debouncedWorksheetSearch, setDebouncedWorksheetSearch] =
+    useState(worksheetSearchLower);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedWorksheetSearch(worksheetSearchLower);
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [worksheetSearchLower]);
 
   const [tab, setTab] = useState<InquiryTab>("shipping");
   const [visibleCount, setVisibleCount] = useState(12);
@@ -289,6 +312,7 @@ export const TrackingInquiryPage = () => {
   const [remakeSourceRequest, setRemakeSourceRequest] =
     useState<ManufacturerRequest | null>(null);
   const fetchSequenceRef = useRef(0);
+  const nextPageTimerRef = useRef<number | null>(null);
   // Network pagination per stage (tracking)
   const PAGE_LIMIT = 50;
   const pageRef = useRef(1);
@@ -339,6 +363,9 @@ export const TrackingInquiryPage = () => {
       url.searchParams.set("rndDone", "0");
       // backend tracking worksheet 캐시 키 분기용(발송 방식 SSOT를 shippingWorkflow.manualDeliveryMethods로 통일)
       url.searchParams.set("trackingProjectionV", "6");
+      if (debouncedWorksheetSearch) {
+        url.searchParams.set("q", debouncedWorksheetSearch);
+      }
       const res = await fetch(url.pathname + url.search, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-cache",
@@ -351,7 +378,7 @@ export const TrackingInquiryPage = () => {
         ? (body.data.requests as ManufacturerRequest[])
         : [];
     },
-    [token],
+    [debouncedWorksheetSearch, token],
   );
 
   const runTrackingFetch = useCallback(
@@ -406,14 +433,37 @@ export const TrackingInquiryPage = () => {
     [fetchTrackingPage, getStableRequestKey, token, toast],
   );
 
+  const fetchNextPageRef = useRef<() => Promise<void>>(async () => {});
   const fetchNextPage = useCallback(async () => {
     if (isFetchingPageRef.current || !hasMoreRef.current) return;
     const now = Date.now();
-    if (now - lastFetchTimeRef.current < 500) return;
+    const elapsed = now - lastFetchTimeRef.current;
+    if (elapsed < 500) {
+      if (nextPageTimerRef.current != null) return;
+      nextPageTimerRef.current = window.setTimeout(() => {
+        nextPageTimerRef.current = null;
+        void fetchNextPageRef.current();
+      }, 500 - elapsed);
+      return;
+    }
+    if (nextPageTimerRef.current != null) {
+      window.clearTimeout(nextPageTimerRef.current);
+      nextPageTimerRef.current = null;
+    }
     lastFetchTimeRef.current = now;
     pageRef.current += 1;
     await runTrackingFetch({ silent: true, append: true });
   }, [runTrackingFetch]);
+  fetchNextPageRef.current = fetchNextPage;
+
+  useEffect(() => {
+    return () => {
+      if (nextPageTimerRef.current != null) {
+        window.clearTimeout(nextPageTimerRef.current);
+        nextPageTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -580,7 +630,11 @@ export const TrackingInquiryPage = () => {
   useEffect(() => {
     if (!token) return;
 
-    // initial load or token change → reset paging
+    if (nextPageTimerRef.current != null) {
+      window.clearTimeout(nextPageTimerRef.current);
+      nextPageTimerRef.current = null;
+    }
+    // initial load, token, or search change → reset paging
     pageRef.current = 1;
     hasMoreRef.current = true;
     lastFetchTimeRef.current = 0;
@@ -633,9 +687,6 @@ export const TrackingInquiryPage = () => {
     },
   });
 
-  const worksheetSearchLower = String(worksheetSearch || "")
-    .trim()
-    .toLowerCase();
   const searchTerms = useMemo(
     () =>
       worksheetSearchLower
@@ -703,6 +754,8 @@ export const TrackingInquiryPage = () => {
           lotMaterial +
           " " +
           lotValue +
+          " " +
+          lotShortCodeOf(r) +
           " " +
           normalizeLotNumberLabel(r) +
           " " +
@@ -2150,6 +2203,15 @@ export const TrackingInquiryPage = () => {
                             selectedRecallRequestIds.has(id),
                           );
                         const firstRequest = requests[0] || {};
+                        const lotShortLabels = Array.from(
+                          new Set(
+                            requests
+                              .map((req: ManufacturerRequest) =>
+                                lotShortCodeOf(req),
+                              )
+                              .filter(Boolean),
+                          ),
+                        ).join(" · ");
                         const mailboxCode = String(
                           box.mailboxAddress || box.boxKey || "",
                         ).trim();
@@ -2252,6 +2314,14 @@ export const TrackingInquiryPage = () => {
                                   {summaryDate || "-"}
                                 </span>
                               </div>
+                              {lotShortLabels ? (
+                                <div
+                                  className="mt-1 truncate text-xs font-semibold tracking-wide text-gray-800"
+                                  title={lotShortLabels}
+                                >
+                                  {lotShortLabels}
+                                </div>
+                              ) : null}
                             </div>
 
                             {isExpanded && (
@@ -2377,8 +2447,15 @@ export const TrackingInquiryPage = () => {
                                                     }}
                                                   />
                                                 )}
-                                                <div className="font-medium">
-                                                  {req.requestId || "-"}
+                                                <div className="font-medium flex items-center gap-2">
+                                                  <span>
+                                                    {req.requestId || "-"}
+                                                  </span>
+                                                  {lotShortCodeOf(req) ? (
+                                                    <span className="inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-slate-700">
+                                                      {lotShortCodeOf(req)}
+                                                    </span>
+                                                  ) : null}
                                                 </div>
                                               </div>
                                               <div className="flex items-start gap-1">
