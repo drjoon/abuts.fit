@@ -8,6 +8,7 @@
  * - web/frontend/src/shared/date/kst.ts
  * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
  * - 2026-09-30: 연결 화살표 클릭 → 연결된 날짜의 의뢰를 채팅에 연다.
+ * - 2026-10-03: 주문·도착·검색을 월 선택 바로 오른쪽. 숨길 요일·toolbarMiddle은 그 옆/끝.
  * - 2026-10-03: showViewModeToggle — 기공소는 헤더 설정 팝오버로 옮김.
  * - 2026-10-03: 주문·도착 뱃지(라벨 「주문」「도착」)를 검색·협력 왼쪽. 캘린더·목록은 아이콘.
  * - 2026-09-30: 2xl 미만 — 주문일·도착일·캘린더·목록은 아이콘만.
@@ -899,7 +900,7 @@ type PracticeRecentTransfersCalendarProps = {
   onDeleteItem?: (item: PracticeCalendarChipItem) => void;
   /** 오늘(KST) 포함·이후 날짜 셀 빈 영역 클릭. 과거는 호출하지 않음. */
   onSelectFutureDay?: (ymd: string) => void;
-  /** 검색 입력 바로 왼쪽. 어벗츠기공소 원청·협력·하청 표시 토글. */
+  /** 검색 입력 바로 왼쪽. 신규 하청 알림 등. */
   searchLeading?: ReactNode;
   /** 「주문일」뱃지 왼쪽 — 전송 검색(헤더와 위치 교환) */
   search?: string;
@@ -1809,7 +1810,7 @@ export function PracticeRecentTransfersCalendar({
         : {})}
     >
       <div className="flex min-h-8 flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
-        <div className="flex items-center justify-between gap-2 md:justify-start">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <div className="flex items-center gap-1">
             <Button
               type="button"
@@ -1841,109 +1842,6 @@ export function PracticeRecentTransfersCalendar({
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-          {showViewModeToggle ? (
-            <div
-              className="flex items-center rounded-md border border-slate-200 bg-white p-0.5 md:hidden"
-              role="group"
-              aria-label="보기 전환"
-            >
-              <button
-                type="button"
-                className={cn(
-                  "inline-flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium",
-                  viewMode === "calendar"
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "text-slate-600 hover:bg-slate-50",
-                )}
-                aria-pressed={viewMode === "calendar"}
-                aria-label="캘린더"
-                title="캘린더"
-                onClick={() => onViewModeChange("calendar")}
-              >
-                <CalendarDays className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                className={cn(
-                  "inline-flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium",
-                  viewMode === "list"
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "text-slate-600 hover:bg-slate-50",
-                )}
-                aria-pressed={viewMode === "list"}
-                aria-label="목록"
-                title="목록"
-                onClick={() => onViewModeChange("list")}
-              >
-                <List className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ) : null}
-        </div>
-        {!isListMode ? (
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex h-7 items-center gap-1 rounded-md bg-background px-2 text-[11px] text-slate-700 ring-1 ring-inset ring-border hover:bg-muted/40"
-                aria-label={
-                  hiddenWeekdaySummary
-                    ? `숨길 요일, 현재 ${hiddenWeekdaySummary}`
-                    : "숨길 요일"
-                }
-              >
-                <span>숨길 요일</span>
-                {hiddenWeekdaySummary ? (
-                  <span className="tabular-nums text-muted-foreground">
-                    {hiddenWeekdaySummary}
-                  </span>
-                ) : null}
-                <ChevronDown className="h-3 w-3 opacity-70" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent
-              align="start"
-              className="w-auto p-2"
-              sideOffset={6}
-              onOpenAutoFocus={(e) => e.preventDefault()}
-            >
-              <div className="mb-1.5 px-0.5 text-[11px] text-muted-foreground">
-                캘린더에서 숨길 요일을 선택하세요.
-              </div>
-              <div className="flex flex-wrap items-center gap-1">
-                {LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS.map(({ dow, label }) => (
-                  <button
-                    key={`hide-${dow}`}
-                    type="button"
-                    className={cn(
-                      "h-7 min-w-7 rounded-md px-1.5 text-[11px] tabular-nums",
-                      hidden.has(dow)
-                        ? "bg-muted text-muted-foreground line-through"
-                        : "bg-background text-slate-700 ring-1 ring-inset ring-border hover:bg-muted/40",
-                    )}
-                    aria-pressed={hidden.has(dow)}
-                    title={
-                      hidden.has(dow)
-                        ? `${label}요일 표시`
-                        : `${label}요일 숨김`
-                    }
-                    onClick={() => toggleHiddenDow(dow)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
-        ) : null}
-        <div
-          className={cn(
-            "flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center md:w-auto",
-            toolbarMiddle
-              ? "md:mx-2 md:min-w-0 md:flex-1 md:justify-center"
-              : "sm:justify-end md:ml-auto",
-          )}
-        >
           <div className={WIDE_CLUSTER_ROW_CLASS}>
             <div className="flex items-center gap-1.5">
               <button
@@ -2053,7 +1951,101 @@ export function PracticeRecentTransfersCalendar({
               </div>
             ) : null}
           </div>
+          {showViewModeToggle ? (
+            <div
+              className="flex items-center rounded-md border border-slate-200 bg-white p-0.5 md:hidden"
+              role="group"
+              aria-label="보기 전환"
+            >
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium",
+                  viewMode === "calendar"
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-50",
+                )}
+                aria-pressed={viewMode === "calendar"}
+                aria-label="캘린더"
+                title="캘린더"
+                onClick={() => onViewModeChange("calendar")}
+              >
+                <CalendarDays className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium",
+                  viewMode === "list"
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-50",
+                )}
+                aria-pressed={viewMode === "list"}
+                aria-label="목록"
+                title="목록"
+                onClick={() => onViewModeChange("list")}
+              >
+                <List className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : null}
         </div>
+        {!isListMode ? (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex h-7 items-center gap-1 rounded-md bg-background px-2 text-[11px] text-slate-700 ring-1 ring-inset ring-border hover:bg-muted/40"
+                aria-label={
+                  hiddenWeekdaySummary
+                    ? `숨길 요일, 현재 ${hiddenWeekdaySummary}`
+                    : "숨길 요일"
+                }
+              >
+                <span>숨길 요일</span>
+                {hiddenWeekdaySummary ? (
+                  <span className="tabular-nums text-muted-foreground">
+                    {hiddenWeekdaySummary}
+                  </span>
+                ) : null}
+                <ChevronDown className="h-3 w-3 opacity-70" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              className="w-auto p-2"
+              sideOffset={6}
+              onOpenAutoFocus={(e) => e.preventDefault()}
+            >
+              <div className="mb-1.5 px-0.5 text-[11px] text-muted-foreground">
+                캘린더에서 숨길 요일을 선택하세요.
+              </div>
+              <div className="flex flex-wrap items-center gap-1">
+                {LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS.map(({ dow, label }) => (
+                  <button
+                    key={`hide-${dow}`}
+                    type="button"
+                    className={cn(
+                      "h-7 min-w-7 rounded-md px-1.5 text-[11px] tabular-nums",
+                      hidden.has(dow)
+                        ? "bg-muted text-muted-foreground line-through"
+                        : "bg-background text-slate-700 ring-1 ring-inset ring-border hover:bg-muted/40",
+                    )}
+                    aria-pressed={hidden.has(dow)}
+                    title={
+                      hidden.has(dow)
+                        ? `${label}요일 표시`
+                        : `${label}요일 숨김`
+                    }
+                    onClick={() => toggleHiddenDow(dow)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        ) : null}
         {toolbarMiddle ? (
           <div className="flex min-w-0 shrink-0 items-center md:ml-auto md:max-w-sm lg:max-w-md">
             {toolbarMiddle}

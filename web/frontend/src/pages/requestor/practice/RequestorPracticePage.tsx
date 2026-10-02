@@ -1,4 +1,5 @@
 // related files:
+// - 2026-10-03: 수신 툴바 — 주문·도착·검색을 월 선택 오른쪽. 협력·하청 필터 뱃지 제거(목록·칩 역할 뱃지는 유지).
 // - 2026-10-03: 수신 헤더 — 북마크·생산중·설정·데모는 오른쪽 끝(ml-auto).
 // - 2026-10-03: 수신 헤더 — 캘린더·목록은 설정 팝오버. 상태·역할은 라벨. 북마크·생산중·주문/도착은 툴바.
 // - 2026-09-30: 공지는 미처리 안내 바로 옆. 2xl 미만 헤더 뱃지·버튼은 아이콘.
@@ -484,10 +485,7 @@ import {
 import {
   isUnclaimedSubcontractPoolTransfer,
   LabReceiveRoleBadge,
-  LabReceiveRoleFilterButtons,
-  labReceiveRoleOfTransfer,
   resolveLabReceiveRoleMarker,
-  type LabReceiveRoleFilterKey,
 } from "@/pages/practice/components/LabReceiveRoleFilterButtons";
 import { LabReceiveSubcontractPoolAlert } from "@/pages/practice/components/LabReceiveSubcontractPoolAlert";
 import { RequestorAbutmentPageHeader } from "@/pages/requestor/new_request/components/RequestorAbutmentPageHeader";
@@ -877,12 +875,6 @@ export function RequestorPracticeReceivePage({
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const viewerIsPrimeLab = String(user?.role || "").trim() === "internalLab";
-  const [roleVisible, setRoleVisible] = useState<
-    Record<LabReceiveRoleFilterKey, boolean>
-  >({ prime: true, cooperation: true, subcontract: true });
-  const toggleReceiveRole = (key: LabReceiveRoleFilterKey) => {
-    setRoleVisible((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
   const badgeClearedTransferIds = useAuthStore(
     (s) => s.user?.practiceStatusBadgeClearedTransferIds,
   );
@@ -2628,21 +2620,6 @@ export function RequestorPracticeReceivePage({
     platformGuideTour.stepId,
   ]);
 
-  const roleFilterCounts = useMemo(() => {
-    const counts: Record<LabReceiveRoleFilterKey, number> = {
-      prime: 0,
-      cooperation: 0,
-      subcontract: 0,
-    };
-    for (const transfer of searchedTransfers) {
-      if (!viewerIsPrimeLab && isUnclaimedSubcontractPoolTransfer(transfer)) {
-        continue;
-      }
-      counts[labReceiveRoleOfTransfer(transfer)] += 1;
-    }
-    return counts;
-  }, [searchedTransfers, viewerIsPrimeLab]);
-
   const unclaimedSubcontractTransfers = useMemo(
     () =>
       viewerIsPrimeLab
@@ -2654,15 +2631,11 @@ export function RequestorPracticeReceivePage({
   );
 
   const baseFilteredTransfers = useMemo(() => {
-    return searchedTransfers.filter((transfer) => {
-      if (!viewerIsPrimeLab && isUnclaimedSubcontractPoolTransfer(transfer)) {
-        return false;
-      }
-      const role = labReceiveRoleOfTransfer(transfer);
-      if (role === "prime") return true;
-      return roleVisible[role] !== false;
-    });
-  }, [roleVisible, searchedTransfers, viewerIsPrimeLab]);
+    if (viewerIsPrimeLab) return searchedTransfers;
+    return searchedTransfers.filter(
+      (transfer) => !isUnclaimedSubcontractPoolTransfer(transfer),
+    );
+  }, [searchedTransfers, viewerIsPrimeLab]);
 
   const guideTourWantsReceiveDetail =
     platformGuideTour.kind === "lab" &&
@@ -8986,15 +8959,6 @@ export function RequestorPracticeReceivePage({
     </>
   );
 
-  const labRoleFilterButtons = (
-    <LabReceiveRoleFilterButtons
-      visible={roleVisible}
-      counts={roleFilterCounts}
-      onToggle={toggleReceiveRole}
-      compact
-    />
-  );
-
   const subcontractPoolAlert = viewerIsPrimeLab ? null : (
     <LabReceiveSubcontractPoolAlert
       transfers={unclaimedSubcontractTransfers}
@@ -9098,7 +9062,6 @@ export function RequestorPracticeReceivePage({
             >
               <div className="flex shrink-0 items-center gap-1.5 px-1 py-1">
                 {subcontractPoolAlert}
-                {labRoleFilterButtons}
                 <div className="relative w-2/3 min-w-0 shrink-0">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -9352,12 +9315,7 @@ export function RequestorPracticeReceivePage({
                 }
               }}
               search={search}
-              searchLeading={
-                <>
-                  {subcontractPoolAlert}
-                  {labRoleFilterButtons}
-                </>
-              }
+              searchLeading={subcontractPoolAlert}
               onSearchChange={setSearch}
               searchPlaceholder="환자명, 치과명, 치아번호"
               hiddenWeekdays={calendarHiddenWeekdays}
