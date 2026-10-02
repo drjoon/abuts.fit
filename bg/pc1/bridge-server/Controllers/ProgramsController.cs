@@ -87,18 +87,6 @@ namespace HiLinkBridgeWebApi48.Controllers
                         processedLen = (processed ?? string.Empty).Length;
                         processedBytes = Encoding.ASCII.GetByteCount(processed ?? string.Empty);
 
-                        if (processedBytes > 512000)
-                        {
-                            BridgeShared.JobResults[jobId] = new JobResult
-                            {
-                                JobId = jobId,
-                                Status = "FAILED",
-                                Result = new { success = false, message = $"program too large (bytes={processedBytes}, limit=512000)" },
-                                CreatedAtUtc = DateTime.UtcNow
-                            };
-                            return;
-                        }
-
                         if (!BridgeShared.UploadProgramDataBlocking(machineId, headType, slotNo, processed, req?.isNew ?? true, out var usedMode, out var upErr))
                         {
                             Console.WriteLine($"[SmartUpload] jobId={jobId} failed: {upErr}");

@@ -9,7 +9,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
@@ -98,8 +97,6 @@ namespace HiLinkBridgeWebApi48
             usedMode = null; error = null;
             try
             {
-                var bytes = Encoding.ASCII.GetByteCount(processed ?? string.Empty);
-                if (bytes > 512000) { error = $"program too large (bytes={bytes}, limit=512000)"; return false; }
                 if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp)) { error = errUp; return false; }
                 var info = new UpdateMachineProgramInfo { headType = headType, programNo = (short)slotNo, programData = processed, isNew = isNew };
                 var busyWaitMaxMs2 = 20000;
