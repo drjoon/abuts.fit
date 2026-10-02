@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-03: STL 뷰어에 ViewGestureHint(화면 조작) 표시 — 의뢰 프리뷰와 동일.
+// - 2026-10-03: 의뢰 프리뷰처럼 전체 화면. 기본 X 제거, 헤더 박스 오른쪽 끝에 큰 닫기 버튼.
 // - 2026-09-30: 세척.패킹 불완전가공 — 사진·페인트·메시지를 기공소에 전달하고 출고는 유지.
 // - 2026-09-30: Wide Split 기본값 ON. caseInfos.safeSplitEnabled가 false일 때만 꺼짐.
 // - 2026-09-28: FL 바로 왼쪽 Re(커프 재디자인) — 70°보다 누운 커프를 피니시라인-0.2mm~커넥션 상단 G2 곡선(70° 이내)으로. 커프 확인 건은 빨간 강조.
@@ -66,7 +68,7 @@
 // - web/backend/controllers/rhino/rhino.controller.js
 // - web/backend/modules/rhino/rhino.routes.js
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -121,6 +123,10 @@ import { UnmachinableReasonPanel } from "./UnmachinableReasonPanel";
 import { UnmachinableProcessedNotice } from "./UnmachinableProcessedNotice";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
+import {
+  VIEW_GESTURE_HINT_LAYER_CLASS,
+  ViewGestureHint,
+} from "@/shared/components/ViewGestureHint";
 import {
   HEX_ROTATION_MISSING_MODE_TOAST,
   HEX_VERIFICATION_MISSING_IMPLANT_MANUFACTURER,
@@ -2841,11 +2847,11 @@ export const PreviewModal = ({
       }}
     >
       <DialogContent
+        hideClose
         className={cn(
           // Dialog 기본 sm:max-w-lg를 반드시 sm: 접두로 덮어쓴다(미지정 시 PC도 ~512px).
           RESPONSIVE.dialogContentPreview,
-          // 우상단 기본 닫기(X)와 헤더 컨트롤이 겹치지 않도록 여유.
-          "flex flex-col overflow-hidden gap-3 p-3 pr-10 sm:gap-4 sm:p-6 sm:pr-12",
+          "flex flex-col gap-3 overflow-hidden p-3 sm:gap-4 sm:p-4",
           shouldShowUnmachinableWarning ||
             isUnmachinable ||
             isFinishLineCaptureBad
@@ -3363,6 +3369,25 @@ export const PreviewModal = ({
               >
                 →
               </button>
+
+              <button
+                type="button"
+                className={cn(
+                  "ml-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-background shadow-md transition hover:bg-foreground/85 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  approveBusy && "cursor-not-allowed opacity-50",
+                )}
+                disabled={approveBusy}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (approveBusy || unmachinableEditorOpen) return;
+                  onOpenChange(false);
+                }}
+                aria-label="닫기"
+                title="닫기"
+              >
+                <X className="h-5 w-5 stroke-[2.5]" />
+              </button>
             </div>
           </div>
 
@@ -3429,7 +3454,12 @@ export const PreviewModal = ({
               <div>STL 불러오는 중...</div>
             </div>
           ) : (
-            <div className="grid flex-1 min-h-0 grid-cols-1 gap-3 overflow-y-auto max-md:landscape:grid-cols-2 max-md:landscape:gap-2 max-md:landscape:overflow-hidden md:grid-cols-2 md:gap-4 md:overflow-hidden">
+            <div className="relative grid flex-1 min-h-0 grid-cols-1 gap-3 overflow-y-auto max-md:landscape:grid-cols-2 max-md:landscape:gap-2 max-md:landscape:overflow-hidden md:grid-cols-2 md:gap-4 md:overflow-hidden">
+              {(leftViewer && !isNcStage) || rightViewer ? (
+                <div className={VIEW_GESTURE_HINT_LAYER_CLASS}>
+                  <ViewGestureHint />
+                </div>
+              ) : null}
               <div
                 className={`border rounded-lg p-2.5 sm:p-3 space-y-2 flex flex-col overflow-hidden min-h-[min(48vh,420px)] max-md:landscape:min-h-0 md:min-h-0 ${
                   isFinishLineCaptureBad && isCamStage

@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/ModelPreviewDialog.tsx
 // - web/frontend/src/shared/components/WorkScanModelPreviewDialog.tsx
 // - web/frontend/src/shared/components/practice/LabProsthesisAiDesignDialog.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 import { useState } from "react";
 import { Move, Pencil, RotateCw, ZoomIn } from "lucide-react";
 
