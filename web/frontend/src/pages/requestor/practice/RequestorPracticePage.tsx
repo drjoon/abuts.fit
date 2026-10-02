@@ -1,4 +1,5 @@
 // related files:
+// - 2026-10-03: 수신 헤더 — 북마크·생산중·설정·데모는 오른쪽 끝(ml-auto).
 // - 2026-10-03: 수신 헤더 — 캘린더·목록은 설정 팝오버. 상태·역할은 라벨. 북마크·생산중·주문/도착은 툴바.
 // - 2026-09-30: 공지는 미처리 안내 바로 옆. 2xl 미만 헤더 뱃지·버튼은 아이콘.
 // - 2026-09-29: 작업시작 클릭 시 보철 업로드 요구 건은 적립 조건 확인 모달(다시 보지 않기).
@@ -9044,25 +9045,23 @@ export function RequestorPracticeReceivePage({
         className={DASHBOARD_NOTICE_HEADER_CLASS}
       />
       <PracticeStatusFilterBadges
-        className="shrink-0 flex-nowrap justify-end gap-1.5"
+        className="shrink-0 flex-nowrap gap-1.5"
         items={labStatusFilterBadgeItems}
         onUnreadNavigate={navigateNextUnreadForStatus}
         gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}
         countSuffix="건"
         compact
         alwaysLabeled
-        trailing={
-          <span className="contents">
-            {bookmarkNavigateButton()}
-            {labAbutmentInProgressTrigger}
-          </span>
-        }
       />
-      <LabReceiveAlarmSettingsButton
-        viewMode={viewMode}
-        onViewModeChange={handleViewModeChange}
-      />
-      <DemoModeBadge className="shrink-0" />
+      <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-1.5">
+        {bookmarkNavigateButton()}
+        {labAbutmentInProgressTrigger}
+        <LabReceiveAlarmSettingsButton
+          viewMode={viewMode}
+          onViewModeChange={handleViewModeChange}
+        />
+        <DemoModeBadge className="shrink-0" />
+      </div>
     </div>
   );
 
