@@ -31,6 +31,7 @@ import {
   MACHINING_ASSIGN_STAGE_SET,
   MACHINING_QUEUE_STAGE_SET,
   EXCLUDE_UNMACHINABLE_FILTER,
+  EXCLUDE_IDLE_DUMMY_SAMPLE_FILTER,
   normalizeDiameterGroupValue,
   inferCurrentMaterialDiameter,
   inferDiameterGroupFromValue,
@@ -158,6 +159,7 @@ export async function rebalanceProductionQueuesInternal({
   let requests = await Request.find({
     manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
     ...EXCLUDE_UNMACHINABLE_FILTER,
+    ...EXCLUDE_IDLE_DUMMY_SAMPLE_FILTER,
     ...scope.requestFilter,
   })
     .select(
@@ -416,6 +418,7 @@ export async function getProductionQueues(req, res) {
       Request.find({
         manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
         ...EXCLUDE_UNMACHINABLE_FILTER,
+        ...EXCLUDE_IDLE_DUMMY_SAMPLE_FILTER,
         ...scope.requestFilter,
       })
         .select(queueSelect)

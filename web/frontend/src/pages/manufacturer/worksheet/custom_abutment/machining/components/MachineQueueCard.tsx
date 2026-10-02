@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-10-02: Now Playing 경과시간 — tabular-nums·줄바꿈 없음. 초마다 숫자 폭이 바뀌며 헤더가 접히던 현상.
+// - 2026-10-02: 더미 가공 아이콘은 아래 원형 버튼과 같은 크기다.
 // - 2026-10-02: 카드 상단 배정 스위치 왼쪽 더미 가공 아이콘.
 // - 2026-09-17: Complete 슬롯 — 출고시간(마감) 뱃지 숨김(hideDeadline).
 // - 2026-09-12: Next Up CAM 오버레이 — 블러 제거·옅은 틴트+반투명「작업중/작업중지」(준비 탭과 동일).
@@ -584,7 +585,7 @@ export const MachineQueueCard = ({
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              className="inline-flex h-5 w-5 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/80 text-slate-700 shadow-sm transition-colors hover:bg-white hover:text-slate-900"
               title="더미 가공"
               aria-label="더미 가공"
               onClick={(e) => {

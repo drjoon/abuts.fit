@@ -155,6 +155,16 @@ const materialDiameterGroup = (machine: MaterialLikeMachine): string => {
       ? Number(rawDia)
       : Number.parseFloat(String(rawDia || "").replace(/[^0-9.]/g, ""));
   }
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    const firstGroup =
+      Array.isArray(machine?.maxModelDiameterGroups) &&
+      machine.maxModelDiameterGroups.length > 0
+        ? machine.maxModelDiameterGroups[0]
+        : null;
+    if (firstGroup != null) {
+      numeric = Number.parseFloat(String(firstGroup).replace(/[^0-9.]/g, ""));
+    }
+  }
   if (!Number.isFinite(numeric) || numeric <= 0) return "";
   if (numeric <= 6) return "6";
   if (numeric <= 8) return "8";

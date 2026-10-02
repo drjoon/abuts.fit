@@ -1,4 +1,17 @@
 // change-log:
+// - 2026-10-02: 갤러리는 끝까지 스크롤하면 다음 3개를 이어 붙인다.
+// - 2026-10-02: 갤러리 좌우 화살표로 3개씩 다음 페이지를 불러온다.
+// - 2026-10-02: 더미설정 모달은 내용 높이만큼 열어 세로 스크롤을 없앤다.
+// - 2026-10-02: 환자 줄에 치아번호를 붙이고, 썸네일 오른쪽 여백과 제거 X를 키운다.
+// - 2026-10-02: 썸네일·로트 코드·가공 시간은 카드 오른쪽 끝에 둔다.
+// - 2026-10-02: 치과 정보는 기공소·치과·환자·치아번호를 라벨과 함께 보여 준다.
+// - 2026-10-02: 더미를 골라도 아래 추천 갤러리는 그대로 둔다.
+// - 2026-10-02: 환자 정보는 기공소/환자/치과/치아를 한 줄로만 보여 준다.
+// - 2026-10-02: 가공 시간은 로트 코드 아래에 굵게 둔다.
+// - 2026-10-02: 환자는 기공소/환자/치과/치아 한 줄. 썸네일에 닿으면 줄바꿈.
+// - 2026-10-02: 로트 문장은 빼고 각인 3글자를 썸네일 아래에 굵게 둔다.
+// - 2026-10-02: 더미 카드에 기공소명을 표시한다.
+// - 2026-10-02: 썸네일은 환자 정보 오른쪽에 둔다.
 // - 2026-10-02: 더미 카드에 로트번호와 환자 정보를 다시 표시한다.
 // - 2026-10-02: 추천 갤러리는 카드 2.5장만 보이게 한다.
 // - 2026-10-02: 로트 검색창은 직경 번호 오른쪽 같은 줄에 둔다.
@@ -20,7 +33,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
 // - web/backend/controllers/cnc/dummyProduct.js
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -71,7 +84,7 @@ type ConfirmProps = {
 };
 
 const SELECTED_CARD_CLASS = "w-full max-w-[32rem]";
-const SEARCH_CARD_CLASS = "w-[19rem] shrink-0 snap-start";
+const SEARCH_CARD_CLASS = "w-max min-w-[19rem] shrink-0 snap-start";
 const SEARCH_PAGE_SIZE = 3;
 
 function authHeaders(token: string): HeadersInit {
@@ -93,13 +106,36 @@ function joinParts(parts: Array<string | null | undefined>): string {
     .join(" / ");
 }
 
-function patientLabel(item: DummyProduct): string {
-  const caseInfos = item.caseInfos;
-  return joinParts([
-    caseInfos?.clinicName,
-    caseInfos?.patientName,
-    caseInfos?.tooth != null ? String(caseInfos.tooth) : "",
-  ]);
+function FieldLine({
+  label,
+  value,
+  compact,
+}: {
+  label: string;
+  value: string;
+  compact: boolean;
+}) {
+  return (
+    <p
+      className={`whitespace-nowrap ${
+        compact ? "text-[12px]" : "text-[13px]"
+      }`}
+    >
+      <span className="mr-1.5 text-[10px] font-semibold tracking-wide text-slate-400">
+        {label}
+      </span>
+      <span className="font-medium text-slate-800">{value || "-"}</span>
+    </p>
+  );
+}
+
+function lotShortCode(value?: string | null): string {
+  const raw = String(value || "").trim().toUpperCase();
+  if (!raw) return "";
+  const tail = raw.includes("-")
+    ? raw.slice(raw.lastIndexOf("-") + 1)
+    : raw.slice(-3);
+  return tail.replace(/[^A-Z]/g, "").slice(-3);
 }
 
 function implantLabel(item: DummyProduct): string {
@@ -152,41 +188,26 @@ function ProductSummary({
   item: DummyProduct;
   compact?: boolean;
 }) {
-  const patient = patientLabel(item);
-  const lot = String(item.lotNumber || "").trim();
+  const caseInfos = item.caseInfos;
+  const lab =
+    String(item.requestor?.business || "").trim() ||
+    String(item.requestor?.name || "").trim();
+  const clinic = String(caseInfos?.clinicName || "").trim();
+  const patient = String(caseInfos?.patientName || "").trim();
+  const tooth =
+    caseInfos?.tooth != null ? String(caseInfos.tooth).trim() : "";
+  const patientLine = [patient, tooth].filter(Boolean).join(" ");
+  const code = lotShortCode(item.lotNumber);
   const line = implantLabel(item);
   const geometry = geometryLabel(item);
   const machiningTime = formatMachiningTime(item.durationSeconds);
   return (
-    <div
-      className={
-        compact
-          ? "flex min-w-0 flex-col gap-2"
-          : "flex min-w-0 items-start gap-3"
-      }
-    >
-      <div
-        className={`shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100 ${
-          compact ? "h-16 w-16" : "h-[72px] w-[72px]"
-        }`}
-      >
-        <FilledStlCardThumbnail request={asThumbnailRequest(item)} />
-      </div>
-      <div className="min-w-0">
+    <div className="flex w-full items-start justify-between gap-3">
+      <div className="shrink-0 space-y-0.5">
+        <FieldLine label="기공소" value={lab} compact={compact} />
+        <FieldLine label="치과" value={clinic} compact={compact} />
+        <FieldLine label="환자" value={patientLine} compact={compact} />
         <p className="text-[10px] font-semibold tracking-wide text-slate-400">
-          환자
-        </p>
-        <p
-          className={`whitespace-nowrap font-medium text-slate-800 ${
-            compact ? "text-[12px]" : "text-[13px]"
-          }`}
-        >
-          {patient || "-"}
-        </p>
-        <p className="mt-0.5 whitespace-nowrap text-[11px] text-slate-500">
-          로트 {lot || "-"}
-        </p>
-        <p className="mt-1.5 text-[10px] font-semibold tracking-wide text-slate-400">
           임플란트
         </p>
         <p
@@ -197,16 +218,30 @@ function ProductSummary({
           {line || "-"}
         </p>
         {geometry ? (
-          <p className="mt-0.5 whitespace-nowrap text-[11px] tabular-nums text-slate-500">
+          <p className="whitespace-nowrap text-[11px] tabular-nums text-slate-500">
             {geometry}
           </p>
         ) : null}
-        {machiningTime ? (
-          <p className="mt-0.5 whitespace-nowrap text-[11px] font-semibold tabular-nums text-sky-700">
-            가공 {machiningTime}
-          </p>
-        ) : null}
       </div>
+      <div className="ml-auto mr-2 flex shrink-0 flex-col items-center gap-1">
+          <div
+            className={`overflow-hidden rounded-md border border-slate-200 bg-slate-100 ${
+              compact ? "h-16 w-16" : "h-[72px] w-[72px]"
+            }`}
+          >
+            <FilledStlCardThumbnail request={asThumbnailRequest(item)} />
+          </div>
+          {code ? (
+            <p className="text-xs font-bold tracking-wide text-slate-900">
+              {code}
+            </p>
+          ) : null}
+          {machiningTime ? (
+            <p className="text-xs font-bold tabular-nums text-sky-700">
+              {machiningTime}
+            </p>
+          ) : null}
+        </div>
     </div>
   );
 }
@@ -261,18 +296,22 @@ export function DummyMachiningModal({
   const [clearing, setClearing] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLLIElement>(null);
+  const loadingMoreRef = useRef(false);
   const nextSkipRef = useRef(0);
   const hasMoreRef = useRef(false);
-  const loadingMoreRef = useRef(false);
   const queryKeyRef = useRef("");
 
-  const openGroup = (next: string) => {
-    setGroup(next);
-    setLotQuery("");
+  const resetGallery = () => {
     setResults([]);
     setSearched(false);
     setHasMore(false);
     setNextSkip(0);
+  };
+
+  const openGroup = (next: string) => {
+    setGroup(next);
+    setLotQuery("");
+    resetGallery();
   };
 
   useEffect(() => {
@@ -280,10 +319,7 @@ export function DummyMachiningModal({
     let cancelled = false;
     setGroup("");
     setLotQuery("");
-    setResults([]);
-    setSearched(false);
-    setHasMore(false);
-    setNextSkip(0);
+    resetGallery();
     setLoading(true);
     void (async () => {
       try {
@@ -368,59 +404,80 @@ export function DummyMachiningModal({
     loadingMoreRef.current = loadingMore;
   }, [nextSkip, hasMore, loadingMore]);
 
+  const loadMore = async () => {
+    if (loadingMoreRef.current || searching || !token || !group || !hasMoreRef.current) {
+      return;
+    }
+    const lot = lotQuery.trim();
+    const key = `${group}|${lot}`;
+    const skip = nextSkipRef.current;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const page = await fetchDummyPage({
+        token,
+        lot,
+        diameterGroup: group,
+        skip,
+      });
+      if (queryKeyRef.current !== key) return;
+      setResults((prev) => {
+        const seen = new Set(prev.map((item) => item.requestId));
+        const extra = page.items.filter((item) => !seen.has(item.requestId));
+        return extra.length ? [...prev, ...extra] : prev;
+      });
+      const more = Boolean(page.hasMore) && page.items.length > 0;
+      hasMoreRef.current = more;
+      nextSkipRef.current = page.nextSkip;
+      setHasMore(more);
+      setNextSkip(page.nextSkip);
+    } catch (error) {
+      if (queryKeyRef.current !== key) return;
+      hasMoreRef.current = false;
+      setHasMore(false);
+      toast({
+        title: "검색 실패",
+        description:
+          error instanceof Error ? error.message : "검색에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  };
+
   useEffect(() => {
     const root = scrollerRef.current;
     const target = sentinelRef.current;
     if (!open || !token || !group || !root || !target || !hasMore || searching) {
       return;
     }
-    const lot = lotQuery.trim();
-    if (!lot) return;
-    const key = `${group}|${lot}`;
     const io = new IntersectionObserver(
       (entries) => {
         if (!entries.some((entry) => entry.isIntersecting)) return;
-        if (loadingMoreRef.current || !hasMoreRef.current) return;
-        if (queryKeyRef.current !== key) return;
-        const skip = nextSkipRef.current;
-        loadingMoreRef.current = true;
-        setLoadingMore(true);
-        void (async () => {
-          try {
-            const page = await fetchDummyPage({
-              token,
-              lot,
-              diameterGroup: group,
-              skip,
-            });
-            if (queryKeyRef.current !== key) return;
-            setResults((prev) => {
-              const seen = new Set(prev.map((item) => item.requestId));
-              const extra = page.items.filter((item) => !seen.has(item.requestId));
-              return extra.length ? [...prev, ...extra] : prev;
-            });
-            setHasMore(page.hasMore);
-            setNextSkip(page.nextSkip);
-          } catch (error) {
-            if (queryKeyRef.current !== key) return;
-            setHasMore(false);
-            toast({
-              title: "검색 실패",
-              description:
-                error instanceof Error ? error.message : "검색에 실패했습니다.",
-              variant: "destructive",
-            });
-          } finally {
-            loadingMoreRef.current = false;
-            setLoadingMore(false);
-          }
-        })();
+        void loadMore();
       },
-      { root, rootMargin: "0px 64px 0px 0px", threshold: 0.1 },
+      { root, rootMargin: "0px 80px 0px 0px", threshold: 0.1 },
     );
     io.observe(target);
     return () => io.disconnect();
   }, [open, token, group, lotQuery, hasMore, searching, loadingMore, results.length, toast]);
+
+  const scrollGallery = (direction: -1 | 1) => {
+    const root = scrollerRef.current;
+    if (!root) return;
+    const nearEnd =
+      root.scrollLeft + root.clientWidth >= root.scrollWidth - 24;
+    if (direction > 0 && nearEnd) {
+      void loadMore();
+      return;
+    }
+    root.scrollBy({
+      left: direction * Math.max(root.clientWidth * 0.8, 160),
+      behavior: "smooth",
+    });
+  };
 
   const current = saved.find((row) => row.diameterGroup === group) || null;
   const product = current?.product || null;
@@ -451,9 +508,6 @@ export function DummyMachiningModal({
           { diameterGroup: group, product: nextProduct, missingRequestId: null },
         ];
       });
-      setLotQuery("");
-      setResults([]);
-      setSearched(false);
       toast({ title: `Ø${group} 더미를 저장했습니다.` });
     } catch (error) {
       toast({
@@ -499,7 +553,7 @@ export function DummyMachiningModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className={`flex max-h-[85vh] flex-col gap-0 overflow-hidden rounded-2xl border border-slate-200/80 p-0 sm:p-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)] ${
+        className={`flex flex-col gap-0 overflow-hidden rounded-2xl border border-slate-200/80 p-0 sm:p-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)] ${
           group ? "sm:max-w-[54rem]" : "sm:max-w-[24rem]"
         }`}
       >
@@ -516,7 +570,7 @@ export function DummyMachiningModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
+        <div className="min-w-0 px-5 py-4 sm:px-6">
           {loading ? (
             <p className="py-8 text-center text-sm text-slate-500">로딩…</p>
           ) : (
@@ -555,17 +609,17 @@ export function DummyMachiningModal({
                 <>
                   {product || current?.missingRequestId ? (
                     <div
-                      className={`${SELECTED_CARD_CLASS} relative mx-auto rounded-2xl border border-slate-200/80 bg-white py-3 pl-3 pr-9 shadow-[0_8px_24px_rgba(15,23,42,0.06)]`}
+                      className="relative mx-auto w-full max-w-[28rem] rounded-2xl border border-sky-200 bg-sky-50 py-3 pl-3 pr-12 shadow-[0_12px_28px_rgba(14,116,144,0.16)]"
                     >
                       <button
                         type="button"
                         title="더미 제거"
                         aria-label="더미 제거"
                         disabled={clearing}
-                        className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-500 hover:bg-slate-200 hover:text-slate-900 disabled:opacity-50"
+                        className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-200 hover:text-slate-900 disabled:opacity-50"
                         onClick={() => void clearProduct()}
                       >
-                        <X className="h-3.5 w-3.5" />
+                        <X className="h-5 w-5" />
                       </button>
                       {product ? (
                         <ProductSummary item={product} />
@@ -578,63 +632,89 @@ export function DummyMachiningModal({
                   ) : (
                     <p className="text-center text-sm text-slate-500">더미가 없습니다.</p>
                   )}
-                  <div
-                    ref={scrollerRef}
-                    className="mx-auto w-[calc(2.5*19rem+1.5rem)] max-w-full min-w-0 snap-x snap-mandatory overflow-x-auto py-1.5"
-                  >
-                    {searching ? (
-                      <p className="py-6 text-center text-sm text-slate-500">
-                        검색 중…
-                      </p>
-                    ) : results.length > 0 ? (
-                      <ul className="flex w-max gap-3">
-                        {results
-                          .filter((item) => item.diameterFits !== false)
-                          .map((item) => {
-                            const selected =
-                              product?.requestId === item.requestId;
-                            const busy = selectingId === item.requestId;
-                            return (
-                              <li
-                                key={item._id || item.requestId}
-                                className={`${SEARCH_CARD_CLASS} app-glass-card flex flex-col gap-2 rounded-2xl px-3 py-3`}
-                              >
-                                <ProductSummary item={item} compact />
-                                <button
-                                  type="button"
-                                  disabled={Boolean(selectingId) || selected}
-                                  className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
-                                  onClick={() =>
-                                    void selectProduct(item.requestId)
-                                  }
-                                >
-                                  {selected
-                                    ? "선택됨"
-                                    : busy
-                                      ? "저장 중…"
-                                      : "선택"}
-                                </button>
-                              </li>
-                            );
-                          })}
-                        <li
-                          ref={sentinelRef}
-                          className="w-px shrink-0 snap-none self-stretch"
-                          aria-hidden
-                        />
-                        {loadingMore ? (
-                          <li className="flex w-16 shrink-0 items-center text-[11px] text-slate-500">
-                            불러오는 중…
-                          </li>
-                        ) : null}
-                      </ul>
-                    ) : searched ? (
-                      <p className="py-6 text-center text-sm text-slate-500">
-                        {lotQuery.trim()
-                          ? "이 직경에 맞는 제품이 없습니다."
-                          : "이 직경에 추천할 제품이 없습니다."}
-                      </p>
+                  <div className="relative mx-auto w-[calc(2.5*19rem+1.5rem)] max-w-full">
+                    {results.length > 0 ? (
+                      <>
+                        <button
+                          type="button"
+                          title="이전"
+                          aria-label="이전"
+                          disabled={loadingMore}
+                          className="absolute left-0 top-1/2 z-10 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md hover:bg-slate-50 disabled:opacity-30"
+                          onClick={() => scrollGallery(-1)}
+                        >
+                          <ChevronLeft className="h-5 w-5" />
+                        </button>
+                        <button
+                          type="button"
+                          title="다음"
+                          aria-label="다음"
+                          disabled={loadingMore || searching}
+                          className="absolute right-0 top-1/2 z-10 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md hover:bg-slate-50 disabled:opacity-30"
+                          onClick={() => scrollGallery(1)}
+                        >
+                          <ChevronRight className="h-5 w-5" />
+                        </button>
+                      </>
                     ) : null}
+                    <div
+                      ref={scrollerRef}
+                      className="min-w-0 snap-x snap-mandatory overflow-x-auto px-10 py-1.5"
+                    >
+                      {searching ? (
+                        <p className="py-6 text-center text-sm text-slate-500">
+                          검색 중…
+                        </p>
+                      ) : results.length > 0 ? (
+                        <ul className="flex w-max gap-3">
+                          {results
+                            .filter((item) => item.diameterFits !== false)
+                            .map((item) => {
+                              const selected =
+                                product?.requestId === item.requestId;
+                              const busy = selectingId === item.requestId;
+                              return (
+                                <li
+                                  key={item._id || item.requestId}
+                                  className={`${SEARCH_CARD_CLASS} app-glass-card flex flex-col gap-2 rounded-2xl px-3 py-3`}
+                                >
+                                  <ProductSummary item={item} compact />
+                                  <button
+                                    type="button"
+                                    disabled={Boolean(selectingId) || selected}
+                                    className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                                    onClick={() =>
+                                      void selectProduct(item.requestId)
+                                    }
+                                  >
+                                    {selected
+                                      ? "선택됨"
+                                      : busy
+                                        ? "저장 중…"
+                                        : "선택"}
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          <li
+                            ref={sentinelRef}
+                            className="w-px shrink-0 snap-none self-stretch"
+                            aria-hidden
+                          />
+                          {loadingMore ? (
+                            <li className="flex w-16 shrink-0 items-center text-[11px] text-slate-500">
+                              불러오는 중…
+                            </li>
+                          ) : null}
+                        </ul>
+                      ) : searched ? (
+                        <p className="py-6 text-center text-sm text-slate-500">
+                          {lotQuery.trim()
+                            ? "이 직경에 맞는 제품이 없습니다."
+                            : "이 직경에 추천할 제품이 없습니다."}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
                 </>
               ) : null}
@@ -658,6 +738,7 @@ export function DummyNextUpConfirm({
   const { toast } = useToast();
   const [product, setProduct] = useState<DummyProduct | null>(null);
   const [missing, setMissing] = useState(false);
+  const [otherGroups, setOtherGroups] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -666,6 +747,7 @@ export function DummyNextUpConfirm({
       if (open && !diameterGroup) {
         setProduct(null);
         setMissing(false);
+        setOtherGroups([]);
         setLoading(false);
       }
       return;
@@ -674,6 +756,7 @@ export function DummyNextUpConfirm({
     setLoading(true);
     setProduct(null);
     setMissing(false);
+    setOtherGroups([]);
     void (async () => {
       try {
         const res = await fetch("/api/cnc-machines/dummy-product", {
@@ -684,11 +767,25 @@ export function DummyNextUpConfirm({
           throw new Error(body?.message || "더미 제품을 불러오지 못했습니다.");
         }
         if (cancelled) return;
-        const row = (Array.isArray(body?.data?.items) ? body.data.items : []).find(
-          (item: SavedDummy) => item?.diameterGroup === diameterGroup,
+        const items: SavedDummy[] = Array.isArray(body?.data?.items)
+          ? body.data.items
+          : [];
+        const wanted = String(diameterGroup || "").trim();
+        const row = items.find(
+          (item) => String(item?.diameterGroup || "").trim() === wanted,
         );
         setProduct(row?.product || null);
         setMissing(Boolean(row?.missingRequestId) && !row?.product);
+        setOtherGroups(
+          items
+            .filter(
+              (item) =>
+                item?.product &&
+                String(item.diameterGroup || "").trim() &&
+                String(item.diameterGroup || "").trim() !== wanted,
+            )
+            .map((item) => String(item.diameterGroup).trim()),
+        );
       } catch (error) {
         if (cancelled) return;
         toast({
@@ -747,7 +844,7 @@ export function DummyNextUpConfirm({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden rounded-2xl border border-slate-200/80 p-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)] sm:max-w-[48rem]">
+      <DialogContent className="flex flex-col gap-0 overflow-hidden rounded-2xl border border-slate-200/80 p-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)] sm:max-w-[36rem] sm:p-0">
         <DialogHeader className="shrink-0 border-b border-slate-100 px-5 py-4">
           <DialogTitle className="text-lg font-bold tracking-tight text-slate-900">
             더미 가공
@@ -762,27 +859,35 @@ export function DummyNextUpConfirm({
           ) : !diameterGroup ? (
             <p className="py-6 text-sm text-slate-500">소재 직경이 없습니다.</p>
           ) : product ? (
-            <div className="space-y-3">
-              <div
-                className={`${SELECTED_CARD_CLASS} rounded-xl border border-slate-200 bg-slate-50 px-3 py-3`}
-              >
+            <div className="mx-auto w-full max-w-[28rem] space-y-3">
+              <div className="rounded-2xl border border-sky-200 bg-sky-50 px-3 py-3 shadow-[0_12px_28px_rgba(14,116,144,0.16)]">
                 <ProductSummary item={product} />
               </div>
-              {product.manufacturerStage === "가공" ? (
-                <p className="text-xs text-slate-600">
-                  확인하면 Next Up 첫 번째로 넣습니다.
-                </p>
-              ) : (
-                <p className="text-xs text-destructive">
-                  가공 단계가 아니라 Next Up에 넣을 수 없습니다.
-                </p>
-              )}
+              <p className="text-center text-xs text-slate-600">
+                {canEnqueue ? (
+                  "확인하면 Next Up 첫 번째로 넣습니다."
+                ) : (
+                  <>
+                    더미는 저장되어 있습니다.
+                    <br />
+                    가공 단계가 아니라 Next Up에 넣을 수 없습니다.
+                  </>
+                )}
+              </p>
             </div>
           ) : (
-            <p className="py-6 text-sm text-slate-500">
-              {missing
-                ? "저장된 더미 제품을 찾지 못했습니다."
-                : `Ø${diameterGroup} 더미가 없습니다.`}
+            <p className="py-6 text-center text-sm text-slate-500">
+              {missing ? (
+                "저장된 더미 제품을 찾지 못했습니다."
+              ) : otherGroups.length ? (
+                <>
+                  이 장비는 Ø{diameterGroup}입니다.
+                  <br />
+                  더미는 Ø{otherGroups.join(", Ø")}에 있습니다.
+                </>
+              ) : (
+                `Ø${diameterGroup} 더미가 없습니다.`
+              )}
             </p>
           )}
         </div>

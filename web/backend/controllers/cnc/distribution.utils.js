@@ -22,6 +22,14 @@ export const MACHINING_QUEUE_STAGE_SET = [...MACHINING_STAGE_ALIASES];
 // 일반 작업 큐에 절대 노출되면 안 된다. Request.find 조건에 이 필터를 반드시 함께 사용한다.
 export const EXCLUDE_UNMACHINABLE_FILTER = { "rnd.unmachinableAt": null };
 
+// 대기 중인 더미 복사본은 가공 대기열에 넣지 않는다. Next Up으로 불러온 건만 남긴다.
+export const EXCLUDE_IDLE_DUMMY_SAMPLE_FILTER = {
+  $or: [
+    { source: { $ne: "dummy_sample" } },
+    { "productionSchedule.dummyNextUpPinnedAt": { $type: "date" } },
+  ],
+};
+
 export function normalizeMachiningStageValue(value) {
   const raw = String(value || "").trim();
   return raw === "가공" ? "가공" : "";

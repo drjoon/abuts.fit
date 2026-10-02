@@ -5,6 +5,9 @@
 // - web/backend/controllers/requests/production.utils.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/DummyMachiningModal.tsx
 // change-log:
+// - 2026-10-02: 저장한 더미는 가공 단계 복사본으로 보관하고 대기열·카운터에서 뺀다.
+// - 2026-10-02: 추천도 로트 검색과 같이 3개씩 다음 페이지를 넘긴다.
+// - 2026-10-02: 더미 검색에 기공소명을 실어 보낸다.
 // - 2026-10-02: 더미 후보는 가공 5분 이상만 남긴다.
 // - 2026-10-02: 로트 없이도 직경별 가공이 가장 짧은 3개를 추천한다.
 // - 2026-10-02: 더미 검색은 가공 시간이 짧은 순. 시간은 기록에서 읽는다.
@@ -16,8 +19,10 @@ import Request from "../../models/request.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
 import MachiningRecord from "../../models/machiningRecord.model.js";
+import User from "../../models/user.model.js";
 import {
   EXCLUDE_UNMACHINABLE_FILTER,
+  EXCLUDE_IDLE_DUMMY_SAMPLE_FILTER,
   inferCurrentMaterialDiameter,
   inferDiameterGroupFromValue,
   inferMaterialDiameterGroup,
@@ -34,10 +39,13 @@ const DUMMY_PRODUCT_SELECT = [
   "lotNumber",
   "assignedMachine",
   "manufacturerStage",
+  "source",
+  "requestCategory",
   "createdAt",
   "rnd.unmachinableAt",
   "productionSchedule.assignedMachine",
   "productionSchedule.machiningRecord",
+  "productionSchedule.machiningProgress.elapsedSeconds",
   "caseInfos.clinicName",
   "caseInfos.patientName",
   "caseInfos.tooth",
@@ -182,6 +190,142 @@ async function findRequestByRequestId(requestId) {
     .lean();
 }
 
+function dummyLotTail(lotValue) {
+  const raw = String(lotValue || "").trim().toUpperCase();
+  const tail = raw.includes("-")
+    ? raw.slice(raw.lastIndexOf("-") + 1)
+    : raw.slice(-3);
+  const letters = tail.replace(/[^A-Z]/g, "").slice(-3);
+  return letters || "DMY";
+}
+
+function kstYyMmDd() {
+  const ymd = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "2-digit",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  return ymd.replace(/-/g, "");
+}
+
+async function uniqueDummyLot(sourceLot) {
+  const tail = dummyLotTail(sourceLot);
+  const ymd = kstYyMmDd();
+  for (let i = 0; i < 12; i += 1) {
+    const code =
+      i === 0 ? tail : `${tail.slice(0, 2)}${String.fromCharCode(65 + (i % 26))}`;
+    const value = `DY${ymd}-${code}`;
+    const exists = await Request.exists({ "lotNumber.value": value });
+    if (!exists) return value;
+  }
+  return `DY${ymd}-${Date.now().toString(36).slice(-3).toUpperCase()}`;
+}
+
+async function createDummySample(source, userId) {
+  const sourceId = String(source?.requestId || "").trim();
+  const full = await Request.findOne({ requestId: sourceId }).lean();
+  if (!full) return null;
+  if (String(full.source || "") === "dummy_sample") return full;
+  const duration = resolveDurationSeconds(
+    null,
+    full?.productionSchedule?.machiningProgress,
+  );
+  const fromRecord = await MachiningRecord.findById(
+    full?.productionSchedule?.machiningRecord,
+  )
+    .select("durationSeconds elapsedSeconds startedAt completedAt")
+    .lean();
+  const elapsed = resolveDurationSeconds(fromRecord, full?.productionSchedule?.machiningProgress) || duration;
+  const lotValue = await uniqueDummyLot(full?.lotNumber?.value);
+  const caseInfos = full.caseInfos ? { ...full.caseInfos } : {};
+  delete caseInfos._id;
+  const requestorId = full.requestor?._id || full.requestor;
+  const copy = new Request({
+    caseInfos,
+    requestor: requestorId,
+    businessAnchorId: full.businessAnchorId || null,
+    caManufacturer: userId || full.caManufacturer || null,
+    manufacturerStage: "가공",
+    source: "dummy_sample",
+    requestCategory: "dummy_sample",
+    price: {
+      amount: 0,
+      baseAmount: 0,
+      discountAmount: 0,
+      currency: "KRW",
+      rule: "dummy_sample",
+      paidAmount: 0,
+      bonusAmount: 0,
+    },
+    originalShipping: { mode: "normal", requestedAt: new Date() },
+    finalShipping: { mode: "normal", updatedAt: new Date() },
+    shippingMode: "normal",
+    paymentStatus: "결제전",
+    lotNumber: {
+      material: full.lotNumber?.material || null,
+      value: lotValue,
+    },
+    productionSchedule: {
+      assignedMachine: null,
+      queuePosition: null,
+      machiningQty: 1,
+      diameter: Number(full?.caseInfos?.maxDiameter) || null,
+      diameterGroup: inferDiameterGroupFromValue(Number(full?.caseInfos?.maxDiameter)),
+      machiningProgress: elapsed > 0 ? { elapsedSeconds: elapsed } : undefined,
+      dummySampleSourceRequestId: sourceId,
+    },
+  });
+  await copy.save();
+  return copy.toObject();
+}
+
+async function retireDummySample(requestId) {
+  const id = String(requestId || "").trim();
+  if (!id) return;
+  const doc = await Request.findOne({ requestId: id, source: "dummy_sample" });
+  if (!doc || isMachiningInProgress(doc)) return;
+  doc.manufacturerStage = "취소";
+  doc.set("productionSchedule.dummyNextUpPinnedAt", null);
+  doc.set("productionSchedule.assignedMachine", null);
+  doc.set("assignedMachine", null);
+  await doc.save();
+}
+
+async function materializeSavedRow(row, userId) {
+  const requestId = String(row?.requestId || "").trim();
+  if (!requestId) return row;
+  const doc = await Request.findOne({ requestId }).select("source requestId").lean();
+  if (!doc) return row;
+  if (String(doc.source || "") === "dummy_sample") return row;
+  const copy = await createDummySample(doc, userId);
+  if (!copy?.requestId) return row;
+  return {
+    ...row,
+    requestId: String(copy.requestId),
+  };
+}
+
+async function materializeSavedRows(rows, userId) {
+  const next = [];
+  let changed = false;
+  for (const row of rows) {
+    const materialized = await materializeSavedRow(row, userId);
+    if (String(materialized?.requestId || "") !== String(row?.requestId || "")) {
+      changed = true;
+    }
+    next.push(materialized);
+  }
+  if (changed) {
+    await SystemSettings.findOneAndUpdate(
+      { key: "global" },
+      { $set: { dummyMachiningProducts: next } },
+      { upsert: true },
+    );
+  }
+  return next;
+}
+
 async function readSavedRows() {
   const settings = await SystemSettings.findOne({ key: "global" })
     .select({ dummyMachiningProducts: 1 })
@@ -197,6 +341,7 @@ async function renumberMachineQueue(machineId) {
   const rows = await Request.find({
     manufacturerStage: "가공",
     ...EXCLUDE_UNMACHINABLE_FILTER,
+    ...EXCLUDE_IDLE_DUMMY_SAMPLE_FILTER,
     "productionSchedule.assignedMachine": mid,
   })
     .select(
@@ -219,7 +364,10 @@ async function renumberMachineQueue(machineId) {
 
 export async function getDummyMachiningProduct(req, res) {
   try {
-    const rows = await readSavedRows();
+    const rows = await materializeSavedRows(
+      await readSavedRows(),
+      req.user?._id || null,
+    );
     const items = [];
     for (const row of rows) {
       const diameterGroup = normalizeGroup(row?.diameterGroup);
@@ -246,7 +394,6 @@ export async function searchDummyMachiningProducts(req, res) {
   try {
     const lot = String(req.query?.lot || "").trim();
     const diameterGroup = normalizeGroup(req.query?.diameterGroup);
-    const recommend = !lot;
     if (!lot && !diameterGroup) {
       return res.json({
         success: true,
@@ -263,6 +410,7 @@ export async function searchDummyMachiningProducts(req, res) {
     const docs = await Request.aggregate([
       {
         $match: {
+          source: { $ne: "dummy_sample" },
           ...(regex ? { "lotNumber.value": regex } : {}),
           ...(band ? { "caseInfos.maxDiameter": band } : {}),
         },
@@ -355,15 +503,28 @@ export async function searchDummyMachiningProducts(req, res) {
         },
       },
       { $sort: { _durationSortKey: 1, createdAt: -1, _id: -1 } },
-      { $skip: recommend ? 0 : skip },
-      { $limit: recommend ? SEARCH_PAGE_SIZE : SEARCH_PAGE_SIZE + 1 },
+      { $skip: skip },
+      { $limit: SEARCH_PAGE_SIZE + 1 },
     ]);
     const pageDocs = Array.isArray(docs) ? docs : [];
-    const hasMore = recommend
-      ? false
-      : pageDocs.length > SEARCH_PAGE_SIZE;
-    const items = pageDocs
-      .slice(0, SEARCH_PAGE_SIZE)
+    const hasMore = pageDocs.length > SEARCH_PAGE_SIZE;
+    const page = pageDocs.slice(0, SEARCH_PAGE_SIZE);
+    const requestorIds = page
+      .map((doc) => String(doc?.requestor?._id || doc?.requestor || "").trim())
+      .filter(Boolean);
+    if (requestorIds.length) {
+      const users = await User.find({ _id: { $in: requestorIds } })
+        .select("name business")
+        .lean();
+      const byId = new Map(users.map((user) => [String(user._id), user]));
+      for (const doc of page) {
+        const user = byId.get(
+          String(doc?.requestor?._id || doc?.requestor || ""),
+        );
+        if (user) doc.requestor = user;
+      }
+    }
+    const items = page
       .filter((doc) => !diameterGroup || fitsDiameterGroup(doc, diameterGroup))
       .map((doc) => toDummyProductDto(doc))
       .filter(Boolean);
@@ -415,6 +576,20 @@ export async function selectDummyMachiningProduct(req, res) {
     }
 
     const current = await readSavedRows();
+    const previous = current.find(
+      (row) => normalizeGroup(row?.diameterGroup) === diameterGroup,
+    );
+    const copy = await createDummySample(doc, req.user?._id || null);
+    if (!copy?.requestId) {
+      return res.status(500).json({
+        success: false,
+        message: "더미 복사본을 만들지 못했습니다.",
+      });
+    }
+    const previousId = String(previous?.requestId || "").trim();
+    if (previousId && previousId !== String(copy.requestId)) {
+      await retireDummySample(previousId);
+    }
     const nextRows = current
       .filter((row) => normalizeGroup(row?.diameterGroup) !== diameterGroup)
       .map((row) => ({
@@ -426,7 +601,7 @@ export async function selectDummyMachiningProduct(req, res) {
       .filter((row) => row.diameterGroup && row.requestId);
     nextRows.push({
       diameterGroup,
-      requestId,
+      requestId: String(copy.requestId),
       selectedAt: new Date(),
       selectedBy: req.user?._id || null,
     });
@@ -437,9 +612,13 @@ export async function selectDummyMachiningProduct(req, res) {
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
 
+    const savedCopy = await findRequestByRequestId(copy.requestId);
     return res.json({
       success: true,
-      data: { diameterGroup, product: toDummyProductDto(doc) },
+      data: {
+        diameterGroup,
+        product: toDummyProductDto(savedCopy || copy),
+      },
     });
   } catch (error) {
     console.error("selectDummyMachiningProduct failed", error);
@@ -520,7 +699,11 @@ export async function enqueueDummyMachiningProduct(req, res) {
       });
     }
 
-    const saved = (await readSavedRows()).find(
+    const rows = await materializeSavedRows(
+      await readSavedRows(),
+      req.user?._id || null,
+    );
+    const saved = rows.find(
       (row) => normalizeGroup(row?.diameterGroup) === diameterGroup,
     );
     const requestId = String(saved?.requestId || "").trim();

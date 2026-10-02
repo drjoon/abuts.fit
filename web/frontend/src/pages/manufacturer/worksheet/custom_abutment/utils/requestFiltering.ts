@@ -176,6 +176,11 @@ export function filterRequestsByStage(
     Boolean(req.rnd?.unmachinableAt);
 
   const passExternalFilter = (req: ManufacturerRequest) => {
+    const source = String((req as { source?: string }).source || "");
+    const category = String(
+      (req as { requestCategory?: string }).requestCategory || "",
+    );
+    if (source === "dummy_sample" || category === "dummy_sample") return false;
     if (!filterRequests) return true;
     try {
       return filterRequests(req);

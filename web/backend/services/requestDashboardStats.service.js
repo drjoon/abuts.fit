@@ -117,6 +117,10 @@ export function buildDashboardNormalizedStageExpr() {
         $switch: {
           branches: [
             {
+              case: { $eq: ["$source", "dummy_sample"] },
+              then: "other",
+            },
+            {
               // 세척.패킹 이후 판정은 출고 단계를 유지하고, R&D 건수는 unmachinableAt으로 따로 센다.
               case: {
                 $and: [

@@ -14,6 +14,7 @@ export const REQUEST_CATEGORY_VALUES = [
   "order",
   "rnd_sample",
   "copied_sample",
+  "dummy_sample",
 ];
 
 const MANUFACTURER_HEX_PLUS_MODES = new Set(["STL모델+", "헥스30+"]);
@@ -620,7 +621,7 @@ const requestSchema = new mongoose.Schema(
     // 의뢰 출처 구분 (내부 샘플/테스트용 의뢰 식별)
     source: {
       type: String,
-      enum: ["normal", "manufacturer_sample"],
+      enum: ["normal", "manufacturer_sample", "dummy_sample"],
       default: "normal",
       index: true,
     },
@@ -1353,7 +1354,9 @@ requestSchema.pre("save", function (next) {
     this.requestCategory = "order";
   }
 
-  if (sourceRaw === "manufacturer_sample") {
+  if (sourceRaw === "dummy_sample") {
+    this.requestCategory = "dummy_sample";
+  } else if (sourceRaw === "manufacturer_sample") {
     this.requestCategory = this.rnd?.doneAt ? "rnd_sample" : "copied_sample";
   } else if (sourceRaw === "normal" && this.requestCategory !== "order") {
     this.requestCategory = "order";

@@ -34,6 +34,7 @@ import {
   MACHINING_ASSIGN_STAGE_SET,
   MACHINING_QUEUE_STAGE_SET,
   EXCLUDE_UNMACHINABLE_FILTER,
+  EXCLUDE_IDLE_DUMMY_SAMPLE_FILTER,
 } from "./distribution.utils.js";
 
 export const CAM_RETRY_BATCH_LIMIT = Number(
@@ -586,6 +587,7 @@ export async function getProductionQueuesHandler(req, res) {
     const requests = await Request.find({
       manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
       ...EXCLUDE_UNMACHINABLE_FILTER,
+      ...EXCLUDE_IDLE_DUMMY_SAMPLE_FILTER,
     })
       .select(
         "requestId manufacturerStage productionSchedule caseInfos timeline shippingMode finalShipping originalShipping",
