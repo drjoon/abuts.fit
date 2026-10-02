@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 // change-log:
+// - 2026-10-02: 가공 시작·RUNNING tick은 이전 가공기록 포인터가 있어도 현재 RUNNING 기록으로 다시 연결한다.
 // - 2026-09-16: last-completed — CNC 완료+stage 가공 stuck은 세척.패킹 힐 후 Complete 유지(재가공 스킵과 구분).
 // - 2026-09-11: CNC start/complete가 포장.발송·추적관리 건을 가공/세척.패킹으로 회귀시키지 않음. last-completed에 manufacturerStage 포함.
 // - 2026-08-26: 가공기록에 의뢰 라벨 스냅샷. 샘플 삭제 후에도 완료 목록 라벨 유지.
@@ -1849,9 +1850,6 @@ export async function recordMachiningStartForBridge(req, res) {
       if (!existing?.productionSchedule?.actualMachiningStart) {
         update.$set["productionSchedule.actualMachiningStart"] = startedAt;
       }
-      if (record?._id && !existing?.productionSchedule?.machiningRecord) {
-        update.$set["productionSchedule.machiningRecord"] = record._id;
-      }
 
       // 이미 세척.패킹·포장.발송·추적관리로 넘어간 건은 CNC start 이벤트로 가공 단계로 회귀시키지 않는다.
       if (canEnterMachiningStage) {
@@ -1862,6 +1860,14 @@ export async function recordMachiningStartForBridge(req, res) {
         applyStatusMapping(stageCarrier, "가공");
         update.$set["manufacturerStage"] = stageCarrier.manufacturerStage;
         update.$set["status"] = stageCarrier.status;
+        if (record?._id) {
+          const linkedId = existing?.productionSchedule?.machiningRecord
+            ? String(existing.productionSchedule.machiningRecord)
+            : "";
+          if (linkedId !== String(record._id)) {
+            update.$set["productionSchedule.machiningRecord"] = record._id;
+          }
+        }
       } else {
         console.warn(
           "[bridge:machining:start] skip stage regression",
@@ -2226,6 +2232,7 @@ export async function recordMachiningTickForBridge(req, res) {
       const existing = await Request.findOne({ requestId }).select({
         productionSchedule: 1,
         requestId: 1,
+        manufacturerStage: 1,
       });
 
       const update = {
@@ -2247,8 +2254,20 @@ export async function recordMachiningTickForBridge(req, res) {
         update.$set["productionSchedule.actualMachiningStart"] = startedAt;
       }
 
-      if (record?._id && !existing?.productionSchedule?.machiningRecord) {
-        update.$set["productionSchedule.machiningRecord"] = record._id;
+      const tickStage = String(existing?.manufacturerStage || "").trim();
+      const canPointRunningRecord =
+        !tickStage || tickStage === "준비" || tickStage === "가공";
+      const liveTick =
+        phaseUpper === "RUNNING" ||
+        phaseUpper === "STARTED" ||
+        phaseUpper === "PROCESSING";
+      if (record?._id && canPointRunningRecord && liveTick) {
+        const linkedId = existing?.productionSchedule?.machiningRecord
+          ? String(existing.productionSchedule.machiningRecord)
+          : "";
+        if (linkedId !== String(record._id)) {
+          update.$set["productionSchedule.machiningRecord"] = record._id;
+        }
       }
 
       await Request.updateOne({ requestId }, update);
@@ -2260,6 +2279,7 @@ export async function recordMachiningTickForBridge(req, res) {
         machineId: mid,
         jobId: jobId || null,
         requestId: requestId || "",
+        bridgePath: bridgePathRaw || null,
         phase: phase || null,
         percent,
         message: message || null,

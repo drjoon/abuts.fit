@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-10-02: 시작 소켓을 놓쳐도 RUNNING tick·큐 재조회로 Now Playing을 맞춘다. 이전 건 완료가 다음 건 힌트를 지우지 않음.
 // - 2026-10-02: refreshProductionQueues를 보드에서 호출할 수 있게 반환.
 // - 2026-08-30: stopNowPlayingMachining — 브리지 stop + machining/cancel, canceled 소켓 반영.
 // - 2026-08-29: CAM 생성 중단 소켓/커스텀 이벤트 — ncPreload CANCELLED·블러 해제.
@@ -107,6 +108,91 @@ const EXPRESS_REBALANCE_ALERT_DISMISSED_KEY =
 const EXPRESS_REBALANCE_ALERT_DISMISSED_LIMIT = 30;
 const GHOST_HINT_CLEAR_GRACE_SECONDS = 8;
 const GHOST_HINT_SWEEP_INTERVAL_MS = 2000;
+const QUEUE_RECONCILE_INTERVAL_MS = 8000;
+const LIVE_MACHINING_PHASES = new Set(["RUNNING", "STARTED", "PROCESSING"]);
+
+const normalizeBridgePathForMatch = (raw: unknown) =>
+  String(raw || "")
+    .trim()
+    .replace(/^nc\//i, "")
+    .replace(/\.(nc|stl)$/i, "")
+    .toLowerCase();
+
+const hintMatchesMachiningEvent = (
+  hint: NowPlayingHint | null | undefined,
+  data: { requestId?: unknown; jobId?: unknown } | null | undefined,
+) => {
+  if (!hint) return true;
+  const rid = String(data?.requestId || "").trim();
+  const jid = String(data?.jobId || "").trim();
+  const hintRid = String(hint.requestId || "").trim();
+  const hintJid = String(hint.jobId || "").trim();
+  if (!rid && !jid) return true;
+  const requestKnown = Boolean(rid && hintRid);
+  const jobKnown = Boolean(jid && hintJid);
+  if (!requestKnown && !jobKnown) return true;
+  const requestAgrees = !requestKnown || rid === hintRid;
+  const jobAgrees = !jobKnown || jid === hintJid;
+  return requestAgrees && jobAgrees;
+};
+
+const queueItemMatchesHint = (
+  item: QueueItem,
+  hint: {
+    requestId?: string | null;
+    jobId?: string | null;
+    bridgePath?: string | null;
+  },
+) => {
+  const hintRid = String(hint.requestId || "").trim();
+  const rid = String(item?.requestId || "").trim();
+  if (hintRid && rid && rid === hintRid) return true;
+  const hintJid = String(hint.jobId || "").trim();
+  const jid = String(
+    item?.machiningRecord &&
+      typeof item.machiningRecord === "object" &&
+      "jobId" in item.machiningRecord
+      ? (item.machiningRecord as { jobId?: unknown }).jobId
+      : (item as { jobId?: unknown; id?: unknown }).jobId ||
+          (item as { id?: unknown }).id ||
+          "",
+  ).trim();
+  if (hintJid && jid && jid === hintJid) return true;
+  const hintPath = normalizeBridgePathForMatch(hint.bridgePath);
+  const itemPath = normalizeBridgePathForMatch(
+    item?.ncFile?.filePath ||
+      (item as { bridgePath?: unknown }).bridgePath ||
+      "",
+  );
+  return Boolean(hintPath && itemPath && hintPath === itemPath);
+};
+
+const patchQueueListRunning = (
+  list: QueueItem[],
+  hint: NowPlayingHint,
+): QueueItem[] | null => {
+  const idx = list.findIndex((item) => queueItemMatchesHint(item, hint));
+  if (idx < 0) return null;
+  if (isQueueItemRunning(list[idx])) return null;
+  const next = list.slice();
+  const item = next[idx];
+  const prevRec =
+    item?.machiningRecord && typeof item.machiningRecord === "object"
+      ? item.machiningRecord
+      : null;
+  next[idx] = {
+    ...item,
+    machiningRecord: {
+      ...(prevRec || {}),
+      status: "RUNNING",
+      startedAt: hint.startedAt,
+      completedAt: null,
+      machineId: hint.machineId,
+      jobId: hint.jobId,
+    },
+  } as QueueItem;
+  return next;
+};
 
 const getExpressRebalanceAlertIdentity = (
   alert: ExpressRebalanceAlertState | null | undefined,
@@ -509,6 +595,10 @@ export const useMachiningBoard = ({
   const [nowPlayingHintMap, setNowPlayingHintMap] = useState<
     Record<string, NowPlayingHint>
   >({});
+  const nowPlayingHintMapRef = useRef(nowPlayingHintMap);
+  useEffect(() => {
+    nowPlayingHintMapRef.current = nowPlayingHintMap;
+  }, [nowPlayingHintMap]);
 
   const reconcileMachiningTimersFromQueues = useCallback((map: QueueMap) => {
     const nextBases: Record<string, number> = {};
@@ -584,13 +674,10 @@ export const useMachiningBoard = ({
       const merged: Record<string, NowPlayingHint> = { ...prev, ...nextHintsFromQueues };
       for (const mid of Object.keys(prev)) {
         if (nextHintsFromQueues[mid]) continue;
-        const hintRid = String(prev[mid]?.requestId || "").trim();
+        const hint = prev[mid];
         const list = Array.isArray(map?.[mid]) ? map[mid] : [];
         const stillPresent =
-          !!hintRid &&
-          list.some(
-            (it: any) => String(it?.requestId || "").trim() === hintRid,
-          );
+          !!hint && list.some((it) => queueItemMatchesHint(it, hint));
         if (!stillPresent) {
           delete merged[mid];
           delete machiningElapsedBaseRef.current[mid];
@@ -1635,24 +1722,52 @@ export const useMachiningBoard = ({
     // 화면 리로드/모달 재마운트 없이 큐/런타임 상태만 갱신한다.
     initializeSocket(token);
 
+    const rememberNowPlaying = (data: any, elapsedSeconds: number | null) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid) return;
+      const hint: NowPlayingHint = {
+        machineId: mid,
+        jobId: data?.jobId != null ? String(data.jobId).trim() : null,
+        requestId:
+          data?.requestId != null ? String(data.requestId).trim() : null,
+        bridgePath:
+          data?.bridgePath != null ? String(data.bridgePath).trim() : null,
+        startedAt: String(data?.startedAt || new Date().toISOString()),
+      };
+      setNowPlayingHintMap((prev) => {
+        const existing = prev[mid];
+        if (
+          existing &&
+          String(existing.requestId || "") === String(hint.requestId || "") &&
+          String(existing.jobId || "") === String(hint.jobId || "") &&
+          String(existing.bridgePath || "") === String(hint.bridgePath || "")
+        ) {
+          return prev;
+        }
+        return { ...prev, [mid]: hint };
+      });
+      setQueueMap((prev) => {
+        const list = Array.isArray(prev?.[mid]) ? prev[mid] : [];
+        const patched = patchQueueListRunning(list, hint);
+        if (!patched) return prev;
+        return { ...prev, [mid]: patched };
+      });
+      if (elapsedSeconds == null) {
+        machiningElapsedBaseRef.current[mid] = Date.now();
+        setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: -1 }));
+        return;
+      }
+      machiningElapsedBaseRef.current[mid] = Date.now() - elapsedSeconds * 1000;
+      setMachiningElapsedSecondsMap((prev) => ({
+        ...prev,
+        [mid]: elapsedSeconds,
+      }));
+    };
+
     const offStarted = onCncMachiningStarted((data: any) => {
       const mid = String(data?.machineId || "").trim();
       if (!mid) return;
-      setNowPlayingHintMap((prev) => ({
-        ...prev,
-        [mid]: {
-          machineId: mid,
-          jobId: data?.jobId != null ? String(data.jobId).trim() : null,
-          requestId:
-            data?.requestId != null ? String(data.requestId).trim() : null,
-          bridgePath:
-            data?.bridgePath != null ? String(data.bridgePath).trim() : null,
-          startedAt: String(data?.startedAt || new Date().toISOString()),
-        },
-      }));
-      // Set to -1 to indicate "just started, waiting for tick"
-      machiningElapsedBaseRef.current[mid] = Date.now();
-      setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: -1 }));
+      rememberNowPlaying(data, null);
     });
 
     const offTick = onCncMachiningTick((data: any) => {
@@ -1694,6 +1809,15 @@ export const useMachiningBoard = ({
         });
       }
 
+      if (LIVE_MACHINING_PHASES.has(phase)) {
+        const secLive =
+          typeof data?.elapsedSeconds === "number" && data.elapsedSeconds >= 0
+            ? Math.floor(data.elapsedSeconds)
+            : 0;
+        rememberNowPlaying(data, secLive);
+        return;
+      }
+
       const sec =
         typeof data?.elapsedSeconds === "number" && data.elapsedSeconds >= 0
           ? Math.floor(data.elapsedSeconds)
@@ -1717,11 +1841,26 @@ export const useMachiningBoard = ({
       // (기존의 단순 낙관적 업데이트는 병원/환자명 등이 누락되는 문제가 있었음)
       void refreshLastCompletedFromServer();
 
-      setNowPlayingHintMap((prev) => {
-        const next = { ...prev };
-        delete next[mid];
-        return next;
-      });
+      const clearCurrent =
+        hintMatchesMachiningEvent(nowPlayingHintMapRef.current?.[mid], data);
+      if (clearCurrent) {
+        setNowPlayingHintMap((prev) => {
+          if (
+            !hintMatchesMachiningEvent(prev[mid], data)
+          ) {
+            return prev;
+          }
+          const next = { ...prev };
+          delete next[mid];
+          return next;
+        });
+        delete machiningElapsedBaseRef.current[mid];
+        setMachiningElapsedSecondsMap((prev) => {
+          const next = { ...prev };
+          delete next[mid];
+          return next;
+        });
+      }
 
       // 큐에서 완료된 건을 제거하여 상단 카운터 자동 갱신
       setQueueMap((prev) => {
@@ -1741,18 +1880,21 @@ export const useMachiningBoard = ({
         return next;
       });
 
-      delete machiningElapsedBaseRef.current[mid];
-      setMachiningElapsedSecondsMap((prev) => {
-        const next = { ...prev };
-        delete next[mid];
-        return next;
-      });
-
       void refreshProductionQueues();
     });
 
-    const clearMachiningRuntimeState = (mid: string) => {
+    const clearMachiningRuntimeState = (
+      mid: string,
+      data?: { requestId?: unknown; jobId?: unknown },
+    ) => {
+      if (
+        data &&
+        !hintMatchesMachiningEvent(nowPlayingHintMapRef.current?.[mid], data)
+      ) {
+        return;
+      }
       setNowPlayingHintMap((prev) => {
+        if (data && !hintMatchesMachiningEvent(prev[mid], data)) return prev;
         const next = { ...prev };
         delete next[mid];
         return next;
@@ -1770,7 +1912,7 @@ export const useMachiningBoard = ({
       const mid = String(data?.machineId || "").trim();
       if (!mid) return;
 
-      clearMachiningRuntimeState(mid);
+      clearMachiningRuntimeState(mid, data);
 
       const errorCode = data?.errorCode != null ? String(data.errorCode) : "";
       if (errorCode === "CNC_USER_STOP") {
@@ -1817,7 +1959,7 @@ export const useMachiningBoard = ({
     const offCanceled = onCncMachiningCanceled((data: any) => {
       const mid = String(data?.machineId || "").trim();
       if (!mid) return;
-      clearMachiningRuntimeState(mid);
+      clearMachiningRuntimeState(mid, data);
       void refreshProductionQueues();
       void refreshLastCompletedFromServer();
     });
@@ -1826,7 +1968,7 @@ export const useMachiningBoard = ({
       const mid = String(data?.machineId || "").trim();
       if (!mid) return;
 
-      clearMachiningRuntimeState(mid);
+      clearMachiningRuntimeState(mid, data);
 
       const alarms = Array.isArray(data?.alarms) ? data.alarms : [];
       const alarmText = alarms.length
@@ -1921,6 +2063,7 @@ export const useMachiningBoard = ({
         .map((m) => String(m?.uid || "").trim())
         .filter(Boolean);
       await refreshStatuses({ token, uids });
+      void refreshProductionQueues();
       setStatusRefreshedAt(new Date().toLocaleTimeString());
     } catch (e: any) {
       setStatusRefreshError(e?.message || "status proxy failed");
@@ -1928,7 +2071,7 @@ export const useMachiningBoard = ({
     } finally {
       setStatusRefreshing(false);
     }
-  }, [machines, refreshStatuses, token]);
+  }, [machines, refreshProductionQueues, refreshStatuses, token]);
 
   useEffect(() => {
     if (!token) return;
@@ -1936,6 +2079,23 @@ export const useMachiningBoard = ({
 
     void refreshMachineStatuses();
   }, [machines, refreshMachineStatuses, token]);
+
+  useEffect(() => {
+    if (!token) return;
+    const refreshIfVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshProductionQueues();
+    };
+    const id = window.setInterval(
+      refreshIfVisible,
+      QUEUE_RECONCILE_INTERVAL_MS,
+    );
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
+  }, [refreshProductionQueues, token]);
 
   const lastRefreshAtRef = useRef(0);
   const handleBoardClickCapture = useCallback(

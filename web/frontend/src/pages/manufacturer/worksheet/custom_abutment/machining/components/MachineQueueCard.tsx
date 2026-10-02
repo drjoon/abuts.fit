@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-02: Now Playing 매칭에 machiningRecord.jobId를 포함한다.
 // - 2026-10-02: Now Playing 경과시간 — tabular-nums·줄바꿈 없음. 초마다 숫자 폭이 바뀌며 헤더가 접히던 현상.
 // - 2026-10-02: 더미 가공 아이콘은 아래 원형 버튼과 같은 크기다.
 // - 2026-10-02: 카드 상단 배정 스위치 왼쪽 더미 가공 아이콘.
@@ -158,7 +159,9 @@ export const MachineQueueCard = ({
         ? items.findIndex((j: any) => {
             const rid = String(j?.requestId || "").trim();
             if (hintRid && rid && rid === hintRid) return true;
-            const jid = String(j?.jobId || j?.id || "").trim();
+            const jid = String(
+              j?.jobId || j?.id || j?.machiningRecord?.jobId || "",
+            ).trim();
             if (hintJid && jid && jid === hintJid) return true;
             const bp = String(
               j?.ncFile?.filePath || j?.bridgePath || "",
