@@ -37,7 +37,7 @@
  * - 2026-08-28: 모바일 — 검색을 상태뱃지(리메이크) 오른쪽 같은 줄로 옮겨 헤더 줄 수 축소.
  * - 2026-08-28: 검색↔신규의뢰 안내 위치 교환 — 안내=헤더, 검색=캘린더 툴바.
  * - 2026-09-07: 오늘(KST) 포함 셀 클릭 → 신규 의뢰(도착일).
- * - 2026-10-02: 헤더에 여유가 있으면 뱃지·버튼은 아이콘+라벨. 넘치면 아이콘.
+ * - 2026-10-02: 헤더 뱃지·버튼은 기본 아이콘+라벨. 줄이 840px 미만일 때만 아이콘.
  * - 2026-09-30: 헤더가 문구+공지를 같이 못 담으면 뱃지·버튼은 아이콘. 공지는 그 사이 폭에서 줄임.
  * - 2026-09-07: 헤더 「도착일 클릭 신규의뢰」안내 문구 제거.
  * - 2026-09-07: 다단계 다음 도착일 미지정(+1일~) 헤더 alert(기공소 미확인 바와 동일 패턴).
@@ -264,11 +264,8 @@ export function PracticeRecentTransfersAllModal({
   const isMobile = useIsMobile();
   const forceCloseRef = useRef(false);
   const headerRowRef = useRef<HTMLDivElement | null>(null);
-  /** 헤더 줄이 문구를 담으면 라벨. 넘치면 아이콘만. */
-  const [headerLabelsWide, setHeaderLabelsWide] = useState(false);
-  const headerLabelsBlockedWidthRef = useRef(0);
-  /** 아이콘 모드에서 잰 필요 폭. 공지가 빠지면 다시 라벨을 시도한다. */
-  const headerLabelsIconUsedRef = useRef<number | null>(null);
+  /** 기본은 라벨. 헤더 줄이 이보다 좁을 때만 아이콘. */
+  const [headerLabelsWide, setHeaderLabelsWide] = useState(true);
   const storedCalendarDateKey = useAuthStore(
     (s) => s.user?.labReceiveCalendarDateKey,
   );
@@ -331,95 +328,19 @@ export function PracticeRecentTransfersAllModal({
     if (isMobile || !open) return;
     const el = headerRowRef.current;
     if (!el) return;
-
-    const OVERFLOW_PX = 8;
-    const SPARE_TO_EXPAND_PX = 24;
-    const RETRY_GROW_PX = 24;
-
-    const boxNodes = (node: Element): HTMLElement[] => {
-      const out: HTMLElement[] = [];
-      for (const child of Array.from(node.children)) {
-        if (!(child instanceof HTMLElement)) continue;
-        if (getComputedStyle(child).display === "contents") {
-          out.push(...boxNodes(child));
-        } else {
-          out.push(child);
-        }
-      }
-      return out;
-    };
-
-    const measureUsed = () => {
-      const style = getComputedStyle(el);
-      const gap = Number.parseFloat(style.columnGap) || 0;
-      const boxes = boxNodes(el);
-      let used = 0;
-      boxes.forEach((box, index) => {
-        const boxStyle = getComputedStyle(box);
-        const grow = Number.parseFloat(boxStyle.flexGrow) || 0;
-        if (grow > 0) {
-          const min = Number.parseFloat(boxStyle.minWidth);
-          used += Number.isFinite(min) ? min : 0;
-        } else {
-          used += box.getBoundingClientRect().width;
-        }
-        if (index > 0) used += gap;
-      });
-      return used;
-    };
-
-    const innerWidth = () => {
-      const style = getComputedStyle(el);
-      const pad =
-        (Number.parseFloat(style.paddingLeft) || 0) +
-        (Number.parseFloat(style.paddingRight) || 0);
-      return Math.max(0, el.clientWidth - pad);
-    };
-
+    const ICON_ONLY_BELOW_PX = 840;
     const apply = () => {
-      const width = innerWidth();
+      const width = el.clientWidth;
       if (width <= 0) return;
-      const used = measureUsed();
-      const overflow = used > width + OVERFLOW_PX;
-      if (headerLabelsWide) {
-        if (overflow) {
-          headerLabelsBlockedWidthRef.current = width;
-          headerLabelsIconUsedRef.current = null;
-          setHeaderLabelsWide(false);
-        }
-        return;
-      }
-      if (headerLabelsIconUsedRef.current == null) {
-        headerLabelsIconUsedRef.current = used;
-      } else if (used < headerLabelsIconUsedRef.current - RETRY_GROW_PX) {
-        headerLabelsIconUsedRef.current = used;
-        headerLabelsBlockedWidthRef.current = 0;
-      }
-      const spare = width - used;
-      const blocked = headerLabelsBlockedWidthRef.current;
-      const canTry = blocked === 0 || width > blocked + RETRY_GROW_PX;
-      if (canTry && spare > SPARE_TO_EXPAND_PX) setHeaderLabelsWide(true);
+      const next = width >= ICON_ONLY_BELOW_PX;
+      setHeaderLabelsWide((prev) => (prev === next ? prev : next));
     };
-
     apply();
     if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => apply());
-    const watch = () => {
-      ro.disconnect();
-      ro.observe(el);
-      for (const box of boxNodes(el)) ro.observe(box);
-    };
-    watch();
-    const mo = new MutationObserver(() => {
-      watch();
-      apply();
-    });
-    mo.observe(el, { childList: true, subtree: true, characterData: true });
-    return () => {
-      ro.disconnect();
-      mo.disconnect();
-    };
-  }, [headerLabelsWide, isMobile, open]);
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isMobile, open]);
 
   const handleCursorChange = useCallback((ymd: string) => {
     setCursorYmd(ymd);
