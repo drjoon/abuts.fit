@@ -18,6 +18,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-10-03: 어벗·보철 클릭도 의뢰·작업 스캔과 같은 겹침 프리뷰로 연다(컨펌만 단건 유지).
 // - 2026-10-01: 노란 스캔 — 업로드 묶음 안에서만 상악·하악이 겹치면 표시한다.
 // - 2026-10-01: 어벗츠기공소 채팅 헤더 AI 버튼 — 협력·하청·자체 수행 모두 표시.
 // - 2026-09-30: 파일 목록 갱신만으로 모델·썸네일 다운로드를 끊지 않는다.
@@ -1894,13 +1895,21 @@ export function PracticeTransferDetailChatDialog({
         String(
           file.fileName || (kind === "image" ? "image" : "model.stl"),
         ).trim() || (kind === "image" ? "image" : "model.stl");
-      const isRequestFile =
-        s3Key !== "" &&
-        !isAbutsWorkScanFileName(file.fileName) &&
-        (files || []).some((f) => String(f.s3Key || "").trim() === s3Key);
-      if (isRequestFile && authToken) {
-        setRequestPreview({ initialKey: s3Key });
-        return;
+      // 컨펌 CTA는 단건 ModelPreviewDialog. 그 외 의뢰·작업·어벗·보철은 겹침 프리뷰.
+      const useCluster =
+        Boolean(authToken && s3Key) && !confirmPreviewSessionRef.current;
+      if (useCluster) {
+        const matches = (list: PracticeTransferDialogFileItem[] | undefined) =>
+          (list || []).some((f) => String(f.s3Key || "").trim() === s3Key);
+        if (
+          matches(files) ||
+          matches(workScanFiles) ||
+          matches(designFiles) ||
+          matches(resultFiles)
+        ) {
+          setRequestPreview({ initialKey: s3Key });
+          return;
+        }
       }
       if (!authToken || !s3Key) {
         toast({
@@ -2064,7 +2073,7 @@ export function PracticeTransferDetailChatDialog({
         }
       }
     },
-    [authToken, collectImageThumbFiles, files, toast],
+    [authToken, collectImageThumbFiles, designFiles, files, resultFiles, toast, workScanFiles],
   );
 
   const handleFileRowClick = useCallback(
@@ -4346,15 +4355,20 @@ export function PracticeTransferDetailChatDialog({
         }}
         files={requestFilesShown}
         workFiles={withWorkScanSourceDates(workScanFileList, requestFilesShown)}
+        designFiles={designFileList}
+        resultFiles={resultFileList}
         initialKey={requestPreview?.initialKey}
         authToken={authToken}
         caseInfo={previewCaseInfo}
         downloadBusy={previewDownloadBusy || workScanDownloadBusy}
         onDownload={async (picked) => {
           const keys = new Set(picked.map((p) => p.s3Key));
-          const originals = [...requestFilesShown, ...workScanFileList].filter(
-            (f) => keys.has(f.s3Key),
-          );
+          const originals = [
+            ...requestFilesShown,
+            ...workScanFileList,
+            ...designFileList,
+            ...resultFileList,
+          ].filter((f) => keys.has(f.s3Key));
           if (onSaveFilesToCaseFolder) {
             await onSaveFilesToCaseFolder(originals);
             return;
