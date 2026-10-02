@@ -50,6 +50,7 @@ import {
   syncPaintInkResolution,
 } from "@/shared/components/practice/viewPaintInk";
 import type { ViewPaintSpace } from "@/shared/components/practice/viewPaintSpace";
+import { trackpadPanDelta } from "@/shared/three/screenSpaceOrbitControls";
 
 export const VIEW_PAINT_COLORS = [
   "#e11d48",
@@ -514,6 +515,12 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       if (!canvas || !enabled || !space) return;
       const onWheel = (event: WheelEvent) => {
         event.preventDefault();
+        if (viewDragRef.current) return;
+        const pan = trackpadPanDelta(event);
+        if (pan) {
+          spaceRef.current?.view({ type: "move", action: "pan", dx: pan.dx, dy: pan.dy });
+          return;
+        }
         spaceRef.current?.view({ type: "zoom", dy: event.deltaY });
       };
       const onMenu = (event: Event) => event.preventDefault();
@@ -691,7 +698,7 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
           )}
           title={
             enabled && space
-              ? "왼쪽은 그리기. 오른쪽은 화면 회전. 휠 버튼은 이동."
+              ? "왼쪽은 그리기. 두 손가락 드래그는 회전. 두 손가락 스크롤·휠 버튼은 이동."
               : undefined
           }
           onPointerDown={(event) => {

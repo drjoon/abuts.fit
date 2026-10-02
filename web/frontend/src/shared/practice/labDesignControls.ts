@@ -94,7 +94,7 @@ export const DESIGN_KEY_GROUPS: Array<{
 export const ORBIT_MOUSE_ROWS: Array<{ id: OrbitMouseAction; label: string; hint: string }> = [
   { id: "rotate", label: "회전", hint: "누른 채 끕니다." },
   { id: "pan", label: "이동", hint: "누른 채 끕니다." },
-  { id: "zoom", label: "확대·축소", hint: "누른 채 위아래로 끕니다. 휠은 항상 확대·축소입니다." },
+  { id: "zoom", label: "확대·축소", hint: "누른 채 위아래로 끕니다." },
   { id: "pivot", label: "회전 중심", hint: "누른 자리를 화면 가운데·회전 중심으로 둡니다." },
 ];
 

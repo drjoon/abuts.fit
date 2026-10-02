@@ -221,6 +221,12 @@ export function LabDesignControlsDialog({ open, onOpenChange }: Props) {
                 아래에서 하나라도 바꾸면 이 프리셋을 복사한 직접 설정이 됩니다.
               </>
             )}
+            <br />
+            두 손가락 드래그는 화면 회전입니다.
+            <br />
+            두 손가락 스크롤은 이동합니다.
+            <br />
+            마우스 휠과 핀치는 확대·축소입니다.
           </p>
         </div>
         <div className="flex min-h-0 flex-1">

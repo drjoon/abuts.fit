@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button";
 import { CONTENT_MEASURED_CHROME_CLASS } from "@/shared/ui/contentMeasuredChrome";
 import { cn } from "@/shared/ui/cn";
 
-/** v2: 예전 그만보기는 무시한다. 치과·기공소가 새 안내를 다시 본다. */
-const STORAGE_KEY = "abuts.viewGestureHint.v2.dismissed";
+/** v3: 트랙패드 두 손가락 이동을 다시 보여 준다. */
+const STORAGE_KEY = "abuts.viewGestureHint.v3.dismissed";
 
 function dismissedForever(storageKey: string) {
   try {
@@ -56,11 +56,13 @@ export function ViewGestureHint({
       <p className="px-5 py-3 text-sm font-medium leading-relaxed text-foreground">
         왼쪽 드래그: 그리기
         <br />
-        오른쪽 드래그: 화면 회전
+        오른쪽·두 손가락 드래그: 화면 회전
         <br />
         휠 버튼 드래그: 이동
         <br />
-        휠: 확대·축소
+        두 손가락 스크롤: 이동
+        <br />
+        마우스 휠·핀치: 확대·축소
       </p>
       <div className="flex items-center justify-center gap-2 border-t border-yellow-200 px-4 py-2.5">
         <Button

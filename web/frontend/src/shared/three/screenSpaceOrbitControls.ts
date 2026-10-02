@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 // change-log:
+// - 2026-10-02: 트랙패드 두 손가락 스크롤은 이동. 핀치·마우스 휠은 확대·축소.
 // - 2026-09-14: OrthographicCamera 지원 — 줌은 camera.zoom, 패닝 스케일 ortho 분기.
 // - 2026-10-01: beginExternal·dragBy·zoomByWheel — 페인트가 왼쪽을 쓰는 동안 화면 조작.
 // - 2026-09-30: 마우스 버튼 매핑(`mouse`) — 회전·이동·드래그 확대·클릭 회전 중심. 왼쪽+오른쪽 동시 누름 지원.
@@ -22,7 +23,7 @@ export type OrbitMouseBindings = Record<OrbitMouseAction, OrbitGesture[]> & {
   invertWheel: boolean;
 };
 
-/** 어벗츠 기본. 오른쪽 드래그 회전, 휠 버튼 드래그 이동. 휠은 확대·축소. 왼쪽은 그리기. */
+/** 어벗츠 기본. 오른쪽 드래그 회전, 휠 버튼 드래그 이동. 휠·핀치는 확대·축소. 왼쪽은 그리기. */
 export const DEFAULT_ORBIT_MOUSE: OrbitMouseBindings = {
   rotate: [{ button: "right", mod: "none" }],
   pan: [{ button: "middle", mod: "none" }],
@@ -76,6 +77,67 @@ export function matchOrbitGesture(
 }
 
 const DRAG_ACTIONS = ["rotate", "pan", "zoom"] as const;
+
+type LegacyWheelEvent = WheelEvent & {
+  wheelDeltaY?: number;
+  /** 자연 스크롤이면 true. 휠 델타는 손가락과 반대다. */
+  webkitDirectionInvertedFromDevice?: boolean;
+};
+
+/** 트랙패드 연속 이벤트 간격. 이보다 긴 간격의 노치는 마우스 휠이다. */
+const TRACKPAD_STREAM_MS = 48;
+let lastWheelAt = -Infinity;
+let lastWheelWasTrackpad = false;
+
+/** 한 칸의 마우스 휠. 가로 성분이 있거나 자잘한 픽셀이면 트랙패드다. */
+function isDiscreteMouseWheel(event: WheelEvent): boolean {
+  if (event.deltaX !== 0) return false;
+  if (event.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) return true;
+  const absY = Math.abs(event.deltaY);
+  if (absY === 0) return false;
+  if (Number.isInteger(event.deltaY) && absY >= 100 && (absY % 100 === 0 || absY % 120 === 0)) {
+    return true;
+  }
+  const legacy = (event as LegacyWheelEvent).wheelDeltaY;
+  if (typeof legacy !== "number" || legacy === 0 || event.deltaY === 0) return false;
+  if (Math.abs(legacy) % 120 !== 0) return false;
+  // Safari 마우스: deltaY는 작은 정수, wheelDeltaY는 ±120. 트랙패드 비율은 약 3이다.
+  const ratio = Math.abs(legacy / event.deltaY);
+  return ratio >= 20 && absY <= 16 && Number.isInteger(event.deltaY);
+}
+
+/** 손가락이 움직인 부호. 자연 스크롤은 휠 델타를 뒤집는다. */
+function fingerSign(event: LegacyWheelEvent): number {
+  if (event.webkitDirectionInvertedFromDevice === true) return -1;
+  if (event.webkitDirectionInvertedFromDevice === false) return 1;
+  if (typeof navigator !== "undefined" && /Mac|iP(hone|ad)/.test(navigator.userAgent)) return -1;
+  return 1;
+}
+
+/**
+ * 트랙패드 두 손가락 스크롤을 화면 이동 픽셀로.
+ * 핀치(ctrl)와 마우스 휠이면 null — 호출하는 쪽이 확대·축소한다.
+ */
+export function trackpadPanDelta(event: WheelEvent): { dx: number; dy: number } | null {
+  if (event.ctrlKey) return null;
+  const now = event.timeStamp || (typeof performance !== "undefined" ? performance.now() : Date.now());
+  const gap = now - lastWheelAt;
+  lastWheelAt = now;
+  if (gap > 200) lastWheelWasTrackpad = false;
+
+  const trackpad = isDiscreteMouseWheel(event)
+    ? lastWheelWasTrackpad && gap < TRACKPAD_STREAM_MS
+    : event.deltaMode === WheelEvent.DOM_DELTA_PIXEL;
+  lastWheelWasTrackpad = trackpad;
+  if (!trackpad) return null;
+
+  // 화면은 손가락과 반대로 움직인다.
+  const sign = -fingerSign(event as LegacyWheelEvent);
+  const dx = sign * event.deltaX;
+  const dy = sign * event.deltaY;
+  if (dx === 0 && dy === 0) return null;
+  return { dx, dy };
+}
 
 export type ScreenSpaceOrbitControlsOptions = {
   rotateSpeed?: number;
@@ -226,7 +288,15 @@ export class ScreenSpaceOrbitControls {
   private readonly onWheel = (event: WheelEvent) => {
     if (this.disposed) return;
     event.preventDefault();
+    // 두 손가락 드래그(오른쪽 버튼)는 회전이다. 그 동안의 휠은 이동·확대에 쓰지 않는다.
+    if (this.activePointerId !== null) return;
     this.syncFromCamera();
+    const pan = trackpadPanDelta(event);
+    if (pan && this.enablePan) {
+      this.panFromScreenDelta(pan.dx, pan.dy);
+      this.dispatch("change");
+      return;
+    }
     const sign = this.mouse().invertWheel ? -1 : 1;
     this.zoomBy(Math.exp((sign * event.deltaY * this.zoomSpeed) / 100));
     this.dispatch("change");
