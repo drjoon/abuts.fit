@@ -990,7 +990,10 @@ namespace DentalAddin
             // - 후행(Finish_Back) 시작 = SharedFinishSplitX - 1피치(retentionGroove→StepIncrement)
             // 중요: safeBFirstMax로 seam을 당기지 않는다. 당기면 Splitline_2/Front_Rough/Back_Rough와 어긋난다.
             double finishOverlapMm = GetFinishAdjacentOverlapMm();
-            const double aEndOffsetFromSplitMm = 0.0;
+            // Front_Finish 끝을 Splitline_2보다 FinishEndExtensionBeyondNextStartMm(0.8mm) 더 깎는다.
+            // 다음 Finish(Middle/Back)는 Splitline_2 - 1피치에서 시작하므로, 그 진입이 이미 깎인 면 위에서 시작된다.
+            // A_PHASE(Front_Finish)에만 적용. 끝점이 splitX인 다른 경로(단일 Finish)는 연장하지 않는다.
+            double aEndOffsetFromSplitMm = explicitAPhase ? FinishEndExtensionBeyondNextStartMm : 0.0;
             double bStartOffsetFromSplitMm = -finishOverlapMm;
             const double compositeEndOffsetFromBackPointMm = 0.0;
 
@@ -1002,11 +1005,14 @@ namespace DentalAddin
                 // Middle_Finish 끝 = Xk, Back_Finish 시작 = Xk - 1피치 (Front/Back seam과 같은 겹침 규칙)
                 if (explicitB2Phase)
                 {
+                    // Back_Finish 시작 = Xk - 1피치. 끝은 더 이어질 Finish가 없어 연장하지 않는다.
                     finishBackStartX = safeSplitBackZoneX - finishOverlapMm;
                 }
                 else
                 {
-                    finishBackEndX = safeSplitBackZoneX;
+                    // Middle_Finish 끝 = Xk + 0.8mm. Back_Finish(Xk-1피치 시작) 진입이 깎인 면 위에서 시작된다.
+                    // Middle_Turn은 Xk+2.5까지 깎아 두므로 연장 구간 소재는 이미 제거되어 있다.
+                    finishBackEndX = safeSplitBackZoneX + FinishEndExtensionBeyondNextStartMm;
                 }
                 DentalLogger.Log($"Composite2SplitLine2 - safe split {(explicitB2Phase ? "Back_Finish" : "Middle_Finish")}: X[{finishBackStartX:F3}~{finishBackEndX:F3}], Xk={safeSplitBackZoneX:F3}");
             }
@@ -1756,6 +1762,13 @@ namespace DentalAddin
         // Middle_Turn 끝이 BackPointX + 1.5를 넘으면(커프가 짧음) Xk를 마진 쪽으로 당기지 않고 분할을 포기한다.
         private const string SafeSplitEnableEnv = "ABUTS_SAFE_SPLIT_ENABLE";
         private const double SafeSplitBackZonePastFinishLineMinMm = 0.5;
+
+        // 선행 Finish 끝을 다음 Finish 시작점보다 더 깎는 연장량(mm).
+        // = Finish 공구 직경 D1.2의 2/3 = 0.8. 다음 구간 진입 흠집을 줄이기 위한 값.
+        //   Front_Finish  끝 = Splitline_2 + 이 값   (Middle/Back_Finish는 Splitline_2 - 1피치에서 시작)
+        //   Middle_Finish 끝 = Xk + 이 값            (Back_Finish는 Xk - 1피치에서 시작)
+        //   Back_Finish   끝 = 연장 없음             (더 이어질 Finish 구간이 없음)
+        private const double FinishEndExtensionBeyondNextStartMm = 1.2 * 2.0 / 3.0;
         private const double SafeSplitMinBackZoneMm = 1.5;
         internal const double SafeSplitTurnPastRoughMm = 2.5;
         private const double SafeSplitMaxTurnPastBackPointMm = 1.5;
