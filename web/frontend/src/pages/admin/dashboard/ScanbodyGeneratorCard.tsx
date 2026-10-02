@@ -4,7 +4,7 @@
 // related files:
 // - web/frontend/src/shared/practice/scanbodyLibraryApi.ts
 // - web/backend/services/scanbodyLibraryImport.service.js (parseScanbodySpec)
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Box, Loader2, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -153,7 +153,44 @@ function reindex(cells: Record<string, File>, dropCol: number | null, dropRow: n
   return next;
 }
 
-export function ScanbodyGeneratorCard({ className }: { className?: string }) {
+function GeneratorFrame({
+  embedded,
+  open,
+  busy,
+  modalOver,
+  onOpenChange,
+  children,
+}: {
+  embedded: boolean;
+  open: boolean;
+  busy: boolean;
+  modalOver: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}) {
+  if (embedded) return <div className="flex min-w-0 flex-col gap-4">{children}</div>;
+  return (
+    <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
+      <DialogContent
+        className={cn(
+          "flex max-h-[85vh] flex-col gap-6 overflow-hidden sm:max-w-6xl sm:p-8",
+          modalOver && "bg-sky-50/50",
+        )}
+      >
+        {children}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function ScanbodyGeneratorCard({
+  className,
+  embedded = false,
+}: {
+  className?: string;
+  /** 간접어벗 모달 안. 카드·다이얼로그 없이 생성기만. */
+  embedded?: boolean;
+}) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [maker, setMaker] = useState("");
@@ -175,7 +212,7 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
     setGrid(ordered);
   }
   const view = editingHeader.current ? grid : ordered;
-  const { catalog, setCatalog, loaded, reload } = useScanbodyCatalog(open);
+  const { catalog, setCatalog, loaded, reload } = useScanbodyCatalog(embedded || open);
 
   useEffect(() => {
     let cancel = false;
@@ -527,6 +564,7 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
 
   return (
     <>
+      {embedded ? null : (
       <Card
         className={cn("app-glass-card app-glass-card--lg h-full cursor-pointer transition hover:bg-slate-50/60", className)}
         role="button"
@@ -548,35 +586,38 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
           <p className="text-xs text-muted-foreground">직경·높이 표에 STEP·STL·DCM</p>
         </CardContent>
       </Card>
+      )}
 
-      <Dialog open={open} onOpenChange={(next) => !busy && setOpen(next)}>
-        <DialogContent
-          className={cn(
-            "flex max-h-[85vh] flex-col gap-6 overflow-hidden sm:max-w-6xl sm:p-8",
-            modalOver && "bg-sky-50/50",
-          )}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setModalOver(true);
-          }}
-          onDragLeave={(e) => {
-            if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-            setModalOver(false);
-          }}
-          onDrop={(e) => {
-            e.preventDefault();
-            setModalOver(false);
-            setOver(null);
-            ingest(Array.from(e.dataTransfer.files), null);
-          }}
-        >
+      <GeneratorFrame embedded={embedded} open={open} busy={busy} modalOver={modalOver} onOpenChange={(next) => !busy && setOpen(next)}>
+          {embedded ? <h3 className="text-sm font-semibold text-slate-900">어벗츠 스캔바디</h3> : (
           <DialogHeader className="shrink-0 pr-10">
             <DialogTitle className="text-base">어벗츠 스캔바디 생성기</DialogTitle>
           </DialogHeader>
+          )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-hidden sm:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
-          <div className="flex min-h-0 min-w-0 flex-col pr-2">
-          <div className="min-h-0 flex-1 overflow-y-auto px-2 pt-2">
+          <div
+            className={cn(
+              embedded
+                ? "flex min-w-0 flex-col gap-4"
+                : "grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-hidden sm:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]",
+            )}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setModalOver(true);
+            }}
+            onDragLeave={(e) => {
+              if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+              setModalOver(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setModalOver(false);
+              setOver(null);
+              ingest(Array.from(e.dataTransfer.files), null);
+            }}
+          >
+          <div className={cn("flex min-w-0 flex-col", !embedded && "min-h-0 pr-2")}>
+          <div className={cn("px-2 pt-2", !embedded && "min-h-0 flex-1 overflow-y-auto")}>
           <div className="min-w-0 pl-2 pt-2">
             <table className="w-full table-fixed border-separate border-spacing-3 text-xs">
               <thead>
@@ -771,7 +812,7 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
           </div>
           </div>
 
-          <section className="flex min-h-0 flex-col gap-3 overflow-hidden rounded-2xl bg-slate-50 p-4">
+          <section className={cn("flex flex-col gap-3 rounded-2xl bg-slate-50 p-4", !embedded && "min-h-0 overflow-hidden")}>
             <div className="flex shrink-0 items-center justify-between gap-3">
               <h3 className="shrink-0 text-sm font-semibold text-slate-900">
                 등록된 스캔바디{loaded ? ` · ${generated.length}개` : ""}
@@ -785,7 +826,7 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
               />
             </div>
             {loaded && visible.length > 0 ? (
-              <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto px-1.5 py-1.5">
+              <ul className={cn("space-y-2 px-1.5 py-1.5", !embedded && "min-h-0 flex-1 overflow-y-auto")}>
                 {visible.map((lib) => (
                   <li
                     key={lib.id}
@@ -825,8 +866,7 @@ export function ScanbodyGeneratorCard({ className }: { className?: string }) {
             ) : null}
           </section>
           </div>
-        </DialogContent>
-      </Dialog>
+      </GeneratorFrame>
     </>
   );
 }

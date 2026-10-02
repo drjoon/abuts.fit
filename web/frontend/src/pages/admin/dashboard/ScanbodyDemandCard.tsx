@@ -7,7 +7,7 @@
 // related files:
 // - web/backend/services/scanbodyDemand.service.js
 // - web/frontend/src/shared/practice/scanbodyLibraryApi.ts
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Boxes, Loader2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -193,7 +193,38 @@ function SpecChips({ chips, tone }: { chips: readonly string[]; tone: "amber" | 
   );
 }
 
-export function ScanbodyDemandCard({ className }: { className?: string }) {
+function DemandFrame({
+  embedded,
+  open,
+  onOpenChange,
+  children,
+}: {
+  embedded: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}) {
+  if (embedded) return <div className="flex min-h-0 flex-col gap-4">{children}</div>;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-6xl">{children}</DialogContent>
+    </Dialog>
+  );
+}
+export function ScanbodyDemandCard({
+  className,
+  embedded = false,
+  notifyNew = true,
+  queuedZip = null,
+  onQueuedZipHandled,
+}: {
+  className?: string;
+  /** 간접어벗 모달 안. 카드·다이얼로그 없이 목록만. */
+  embedded?: boolean;
+  notifyNew?: boolean;
+  queuedZip?: File[] | null;
+  onQueuedZipHandled?: () => void;
+}) {
   const { toast } = useToast();
   const [rows, setRows] = useState<ScanbodyDemandRow[]>([]);
   const [listOpen, setListOpen] = useState(false);
@@ -202,13 +233,13 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
   const [uploadReport, setUploadReport] = useState<string[]>([]);
   const zipInput = useRef<HTMLInputElement>(null);
   const known = useRef<Set<string> | null>(null);
-  const { catalog, loaded: catalogLoaded, reload: reloadCatalog } = useScanbodyCatalog(listOpen);
+  const { catalog, loaded: catalogLoaded, reload: reloadCatalog } = useScanbodyCatalog(embedded || listOpen);
 
   const load = useCallback(async () => {
     try {
       const next = await fetchScanbodyDemand();
       const prev = known.current;
-      if (prev) {
+      if (prev && notifyNew) {
         const fresh = next.filter((row) => demandKeys(row).some((key) => !prev.has(key)));
         if (fresh.length > 0) {
           toast({
@@ -222,7 +253,7 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
     } catch {
       // 다음 폴링에서 다시 받는다.
     }
-  }, [toast]);
+  }, [notifyNew, toast]);
 
   useEffect(() => {
     void load();
@@ -302,6 +333,16 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
     }
   };
 
+  const uploadZipRef = useRef(onZipFiles);
+  uploadZipRef.current = onZipFiles;
+  const handledZip = useRef<File[] | null>(null);
+  useEffect(() => {
+    if (!queuedZip?.length || handledZip.current === queuedZip) return;
+    handledZip.current = queuedZip;
+    onQueuedZipHandled?.();
+    void uploadZipRef.current(queuedZip);
+  }, [onQueuedZipHandled, queuedZip]);
+
   const transfers = rows.reduce((sum, row) => sum + row.transferCount, 0);
   const hasRows = rows.length > 0;
   const libraries = useMemo(
@@ -367,6 +408,7 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
           void onZipFiles(files);
         }}
       />
+      {embedded ? null : (
       <Card
         className={cn(
           "app-glass-card app-glass-card--lg h-full cursor-pointer transition hover:bg-slate-50/60",
@@ -412,13 +454,25 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
           {uploadStatus && !listOpen ? <p className="text-[11px] text-muted-foreground">{uploadStatus}</p> : null}
         </CardContent>
       </Card>
+      )}
 
-      <Dialog open={listOpen} onOpenChange={setListOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-6xl">
-          <DialogHeader className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 space-y-0 pr-8 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
-            <DialogTitle className="text-base sm:justify-self-start">스캔바디 라이브러리 · 템플릿</DialogTitle>
-            <div className="col-span-2 flex flex-col items-center gap-1.5 sm:col-span-1 sm:col-start-2">
-              <p className="text-center text-xs leading-relaxed text-muted-foreground">
+      <DemandFrame embedded={embedded} open={listOpen} onOpenChange={setListOpen}>
+          <DialogHeader className={cn(
+            "space-y-0",
+            embedded
+              ? "flex flex-col items-stretch gap-2"
+              : "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 pr-8 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]",
+          )}>
+            {embedded ? (
+              <h3 className="text-sm font-semibold text-slate-900">타사 스캔바디</h3>
+            ) : (
+              <DialogTitle className="text-base sm:justify-self-start">스캔바디 라이브러리 · 템플릿</DialogTitle>
+            )}
+            <div className={cn(
+              "flex flex-col gap-1.5",
+              embedded ? "items-start" : "col-span-2 items-center sm:col-span-1 sm:col-start-2",
+            )}>
+              <p className={cn("text-xs leading-relaxed text-muted-foreground", !embedded && "text-center")}>
                 제조사에 접촉해서 라이브러리를 받아서 올리세요.
                 <br />
                 제조사를 찾을 수 없는 경우 「기공소에 요청」을 누르면 의뢰받은 기공소가 올립니다.
@@ -448,7 +502,7 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
             </div>
             <Button
               size="sm"
-              className="col-start-2 row-start-1 shrink-0 justify-self-end sm:col-start-3"
+              className={cn("shrink-0", embedded ? "self-start" : "col-start-2 row-start-1 justify-self-end sm:col-start-3")}
               disabled={uploading}
               onClick={pickZip}
             >
@@ -464,7 +518,7 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
               </h3>
             </div>
             {hasRows ? (
-              <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <ul className={cn("grid grid-cols-1 gap-3", !embedded && "sm:grid-cols-2")}>
                 {rows.map((row) => {
                   const specs = row.specs?.length ? row.specs : [];
                   const attached =
@@ -578,7 +632,7 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
                   </>
                 ) : null}
               </div>
-              <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <ul className={cn("grid grid-cols-1 gap-3", !embedded && "sm:grid-cols-2")}>
                 {visibleGroups.map((group) => {
                   const latest = group.libs.reduce((max, lib) => (lib.updatedAt > max ? lib.updatedAt : max), "");
                   const kits = group.libs.reduce((sum, lib) => sum + lib.kits.length, 0);
@@ -633,8 +687,7 @@ export function ScanbodyDemandCard({ className }: { className?: string }) {
               </>
             )}
           </section>
-        </DialogContent>
-      </Dialog>
+      </DemandFrame>
     </>
   );
 }
