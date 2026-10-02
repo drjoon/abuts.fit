@@ -2961,10 +2961,11 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       )}
     >
       <div ref={containerRef} className="absolute inset-0 h-full w-full" />
-      {showColorMappingToggle && hasScanColor && !error ? (
+      {showColorMappingToggle && !error ? (
         <PreviewColorMappingToggle
-          checked={colorMappingEnabled}
+          checked={hasScanColor && colorMappingEnabled}
           onCheckedChange={setColorMappingEnabled}
+          disabled={!hasScanColor}
         />
       ) : null}
       {shouldBlockSceneForMetadata && (

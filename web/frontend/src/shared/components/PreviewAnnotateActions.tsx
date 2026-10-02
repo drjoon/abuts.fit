@@ -45,9 +45,11 @@ export type PreviewPaintState = ViewPaintState;
 export function PreviewPaintControls({
   paint,
   disabled,
+  className,
 }: {
   paint: PreviewPaintState;
   disabled?: boolean;
+  className?: string;
 }) {
   const { paintOn, setPaintOn } = paint;
   return (
@@ -55,7 +57,11 @@ export function PreviewPaintControls({
       type="button"
       size="sm"
       variant={paintOn ? "default" : "outline"}
-      className={cn(PREVIEW_HEADER_BUTTON_CLASS, "mr-3")}
+      className={cn(
+        PREVIEW_HEADER_BUTTON_CLASS,
+        className ?? "mr-3",
+        paintOn && "!bg-primary !text-primary-foreground hover:!bg-primary/90",
+      )}
       disabled={disabled}
       aria-pressed={paintOn}
       aria-label="페인트"
@@ -132,26 +138,35 @@ export function PreviewColorMappingToggle({
   checked,
   onCheckedChange,
   className,
+  disabled = false,
 }: {
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
   className?: string;
+  /** 스캔 칼라가 없는 파일(STL 등). 토글은 보이되 누를 수 없다. */
+  disabled?: boolean;
 }) {
   return (
     <label
       className={cn(
-        "absolute left-3 top-3 z-20 flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white/95 px-2.5 py-1.5 text-[11px] font-medium text-slate-800 shadow-sm sm:text-xs",
+        "absolute left-3 top-3 z-20 flex h-8 items-center gap-2 rounded-md border border-slate-200 bg-white/95 px-2.5 text-xs font-medium text-slate-800 shadow-sm",
+        disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer",
         className,
       )}
-      title="스캔 칼라(텍스처·버텍스 컬러) 표시"
+      title={
+        disabled
+          ? "이 파일에는 스캔 칼라가 없습니다"
+          : "스캔 칼라(텍스처·버텍스 컬러) 표시"
+      }
     >
       <Switch
         checked={checked}
         onCheckedChange={onCheckedChange}
+        disabled={disabled}
         className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
-        aria-label="칼라 매핑"
+        aria-label="스캔색"
       />
-      칼라 매핑
+      스캔색
     </label>
   );
 }

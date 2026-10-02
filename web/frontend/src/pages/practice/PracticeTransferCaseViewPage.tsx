@@ -6,7 +6,7 @@
 // - 2026-09-28: 플랫폼 내 케이스 3D 화면(/cases/:transferKey) — 치과·원청·협력·하청 참여자 전용.
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Loader2, Share2 } from "lucide-react";
+import { ExternalLink, Loader2, Share2 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { Button } from "@/components/ui/button";
 import { request } from "@/shared/api/apiClient";
@@ -84,7 +84,11 @@ export default function PracticeTransferCaseViewPage() {
   if (state.status === "error") {
     return (
       <div className="flex h-[100dvh] flex-col items-center justify-center gap-4 px-6 text-center">
-        <AbutsLogo variant="light" iconClassName="h-9 w-9" wordmarkClassName="text-lg" />
+        <AbutsLogo
+          variant="light"
+          iconClassName="h-9 w-9"
+          wordmarkClassName="text-lg"
+        />
         <p className="text-sm text-muted-foreground">{state.message}</p>
       </div>
     );
@@ -97,16 +101,29 @@ export default function PracticeTransferCaseViewPage() {
         view={state.view}
         loadFile={loadFile}
         headerActions={
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1.5 px-2 text-xs"
-            onClick={() => setShareOpen(true)}
-          >
-            <Share2 className="h-3.5 w-3.5" />
-            공유
-          </Button>
+          <>
+            <Button
+              asChild
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 px-2 text-xs"
+            >
+              <a href="/" target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="h-3.5 w-3.5" />
+                어벗츠로 이동
+              </a>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 px-2 text-xs"
+              onClick={() => setShareOpen(true)}
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              공유
+            </Button>
+          </>
         }
         footer="이 의뢰에 참여한 치과·기공소만 보는 화면입니다."
       />

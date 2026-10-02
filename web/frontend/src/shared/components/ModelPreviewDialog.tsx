@@ -65,7 +65,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/shared/ui/cn";
-import { RESPONSIVE } from "@/shared/ui/responsive";
+import { AbutsLogo } from "@/components/branding/AbutsLogo";
+import {
+  ResizablePanelHandle,
+  useResizablePanelWidth,
+} from "@/shared/components/ResizablePanelHandle";
 import {
   DCM_DOWNLOAD_FORMAT_OPTIONS,
   isDcmFileName,
@@ -78,7 +82,10 @@ import {
   PreviewPaintLayer,
   usePreviewPaint,
 } from "@/shared/components/PreviewAnnotateActions";
-import { VIEW_GESTURE_HINT_LAYER_CLASS, ViewGestureHint } from "@/shared/components/ViewGestureHint";
+import {
+  VIEW_GESTURE_HINT_LAYER_CLASS,
+  ViewGestureHint,
+} from "@/shared/components/ViewGestureHint";
 
 export type ModelPreviewKind = "model" | "image";
 
@@ -142,15 +149,21 @@ export function ModelPreviewDialog({
   onReorderChatFiles,
   caseInfo,
 }: ModelPreviewDialogProps) {
+  const panel = useResizablePanelWidth("abuts.modelPreviewPanelWidth.v1");
   const isImage = kind === "image";
   const isDcm = isDcmFileName(fileName);
   const title =
-    String(fileName || "").trim() || (isImage ? "이미지 미리보기" : "3D 미리보기");
+    String(fileName || "").trim() ||
+    (isImage ? "이미지 미리보기" : "3D 미리보기");
   const pct = Math.max(0, Math.min(100, Number(progress) || 0));
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const viewerRef = useRef<StlPreviewViewerHandle | null>(null);
   const imageRef = useRef<ZoomableImagePreviewHandle | null>(null);
-  const paint = usePreviewPaint({ open, resetKey: fileName, initiallyOn: !isImage });
+  const paint = usePreviewPaint({
+    open,
+    resetKey: fileName,
+    initiallyOn: false,
+  });
   const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
   const canAnnotate = (isImage ? Boolean(imageUrl) : Boolean(file)) && !loading;
   const showNav = previewCount > 1 && previewIndex >= 0;
@@ -162,8 +175,8 @@ export function ModelPreviewDialog({
 
   const captureViewCanvas = () =>
     isImage
-      ? imageRef.current?.captureCanvas() ?? null
-      : viewerRef.current?.captureCanvas() ?? null;
+      ? (imageRef.current?.captureCanvas() ?? null)
+      : (viewerRef.current?.captureCanvas() ?? null);
 
   const renderDownloadControl = (opts?: {
     className?: string;
@@ -287,35 +300,15 @@ export function ModelPreviewDialog({
       <DialogContent
         // Above floating transfer (z-300/410) and guide-tour coach (z-440).
         className={cn(
-          "z-[450] flex h-[94dvh] max-h-[94dvh] flex-col gap-0 overflow-hidden p-0 sm:h-[94dvh] sm:max-h-[94dvh] sm:gap-0 sm:p-0",
-          RESPONSIVE.dialogContentFull,
+          "z-[450] flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 outline-none focus:outline-none focus-visible:outline-none sm:h-[100dvh] sm:max-h-[100dvh] sm:w-screen sm:max-w-none sm:gap-0 sm:rounded-none sm:p-0",
         )}
         overlayClassName="z-[445]"
+        closeClassName="right-3 top-3 z-40 flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-background opacity-100 shadow-md hover:bg-foreground/85 focus:ring-0 focus:ring-offset-0"
+        closeIconClassName="h-5 w-5 stroke-[2.5]"
         onInteractOutside={keepOpenOnToastInteract}
       >
-        <DialogHeader className="shrink-0 flex-row flex-wrap items-center justify-between gap-2 space-y-0 border-b bg-muted/50 py-2 pl-4 pr-14 text-left sm:pl-5 sm:pr-14">
-          <div className="min-w-0 flex-1">
-            <DialogTitle className="truncate text-left text-sm font-medium sm:text-base">
-              {title}
-              {indexLabel ? (
-                <span className="ml-2 text-xs font-normal text-muted-foreground sm:text-sm">
-                  {indexLabel}
-                </span>
-              ) : null}
-            </DialogTitle>
-            {caseInfo ? <div className="mt-0.5 min-w-0">{caseInfo}</div> : null}
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-            <PreviewPaintControls paint={paint} disabled={!canAnnotate || confirmBusy} />
-            {renderDownloadControl()}
-          </div>
-          <DialogDescription className="sr-only">
-            {isImage ? "이미지 미리보기" : "3D 모델 미리보기"}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="flex min-h-0 flex-1 px-3 py-3 sm:px-4">
-          <div className="relative min-h-0 w-full flex-1 overflow-hidden rounded-xl border bg-muted/50">
+        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+          <div className="relative min-h-[55dvh] min-w-0 flex-1 overflow-hidden bg-muted/50 md:min-h-0">
             {loading ? (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/80 px-6">
                 <p className="text-sm text-muted-foreground">
@@ -326,6 +319,19 @@ export function ModelPreviewDialog({
             ) : null}
 
             {navButtons}
+
+            <div
+              className={cn(
+                "absolute left-3 z-20",
+                isImage ? "top-3" : "top-14",
+              )}
+            >
+              <PreviewPaintControls
+                paint={paint}
+                disabled={!canAnnotate || confirmBusy}
+                className="bg-white/95 text-xs shadow-sm"
+              />
+            </div>
 
             {isImage ? (
               <>
@@ -357,12 +363,12 @@ export function ModelPreviewDialog({
                 <Button
                   type="button"
                   size="sm"
-                  variant="secondary"
-                  className="absolute bottom-4 left-4 z-20 h-8 gap-1.5 bg-white/90 shadow-sm"
+                  variant="outline"
+                  className="absolute bottom-4 left-4 z-20 h-8 gap-1.5 bg-white/95 px-2.5 text-xs shadow-sm"
                   onClick={() => viewerRef.current?.fitToView()}
                 >
                   <Maximize2 className="h-3.5 w-3.5" />
-                  화면 맞춤
+                  뷰리셋
                 </Button>
               </>
             ) : !loading ? (
@@ -387,7 +393,59 @@ export function ModelPreviewDialog({
                 onReorderChatFiles={onReorderChatFiles}
               />
             ) : null}
+            <AbutsLogo
+              variant="light"
+              className="pointer-events-none absolute bottom-4 right-4 z-10 opacity-80"
+              iconClassName="h-7 w-7"
+              wordmarkClassName="text-base"
+            />
           </div>
+          <aside
+            className="relative flex max-h-[45dvh] w-full shrink-0 flex-col border-t bg-card md:max-h-none md:w-[var(--panel-w)] md:border-l md:border-t-0"
+            style={panel.style}
+          >
+            <ResizablePanelHandle panel={panel} />
+            <DialogHeader className="space-y-0 border-b bg-muted/50 py-3 pl-4 pr-4 text-left sm:pl-4 sm:pr-4">
+              <DialogTitle className="flex min-h-10 items-center pr-12 text-left text-sm font-semibold">
+                의뢰 파일
+              </DialogTitle>
+              {caseInfo ? (
+                <div className="mt-0.5 min-w-0 [&_*]:!max-w-full [&_*]:!flex-wrap [&_*]:!overflow-visible [&_*]:!text-clip [&_*]:!whitespace-normal">
+                  {caseInfo}
+                </div>
+              ) : null}
+              <DialogDescription className="sr-only">
+                {isImage ? "이미지 미리보기" : "3D 모델 미리보기"}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex items-center justify-between border-b bg-muted/30 px-4 py-2">
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-semibold text-muted-foreground">
+                  파일
+                </p>
+                {renderDownloadControl({ className: "h-7 px-2 text-xs" })}
+              </div>
+              {indexLabel ? (
+                <span className="text-xs text-muted-foreground">
+                  {indexLabel}
+                </span>
+              ) : null}
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+              <div className="flex flex-col items-start gap-1">
+                <p className="px-1 text-xs font-semibold text-muted-foreground">
+                  의뢰 파일
+                </p>
+                <div className="w-[92%] rounded-2xl rounded-tl-sm border bg-muted/60 px-3 py-2">
+                  <p className="break-all text-[0.8125rem]" title={title}>
+                    {title}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </aside>
         </div>
 
         {showConfirm && confirmText ? (

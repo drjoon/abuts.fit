@@ -277,6 +277,7 @@ import {
   ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
   ORAL_SCAN_REQUIRED_FROM_PRACTICE,
 } from "@/shared/practice/oralScanRequirement";
+import { RequestFilesPreviewDialog } from "@/shared/components/RequestFilesPreviewDialog";
 import { ModelPreviewDialog, type ModelPreviewKind } from "@/shared/components/ModelPreviewDialog";
 import { WorkScanModelPreviewDialog } from "@/shared/components/WorkScanModelPreviewDialog";
 import type { WorkScanAlignment } from "@/shared/practice/workScanAlignment";
@@ -1058,6 +1059,10 @@ export function PracticeTransferDetailChatDialog({
   const [rearrivalDraft, setRearrivalDraft] = useState<Date | undefined>(undefined);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [workModelOpen, setWorkModelOpen] = useState(false);
+  /** 의뢰 파일 전체 프리뷰. initialKey는 처음 연 파일. */
+  const [requestPreview, setRequestPreview] = useState<{
+    initialKey: string;
+  } | null>(null);
   const [scrollEdge, setScrollEdge] = useState<"top" | "bottom" | "middle">("top");
   const scrollBodyRef = useRef<HTMLDivElement | null>(null);
   const didInitialScrollRef = useRef(false);
@@ -1821,6 +1826,7 @@ export function PracticeTransferDetailChatDialog({
   }, [previewMeta, previewableFiles]);
 
   const resetPreview = useCallback(() => {
+    setRequestPreview(null);
     previewAbortRef.current?.abort();
     previewAbortRef.current = null;
     setPreviewOpen(false);
@@ -1843,6 +1849,14 @@ export function PracticeTransferDetailChatDialog({
       const fileName =
         String(file.fileName || (kind === "image" ? "image" : "model.stl")).trim() ||
         (kind === "image" ? "image" : "model.stl");
+      const isRequestFile =
+        s3Key !== "" &&
+        !isAbutsWorkScanFileName(file.fileName) &&
+        (files || []).some((f) => String(f.s3Key || "").trim() === s3Key);
+      if (isRequestFile && authToken) {
+        setRequestPreview({ initialKey: s3Key });
+        return;
+      }
       if (!authToken || !s3Key) {
         toast({
           title: "미리보기 실패",
@@ -2006,7 +2020,7 @@ export function PracticeTransferDetailChatDialog({
         }
       }
     },
-    [authToken, collectImageThumbFiles, toast],
+    [authToken, collectImageThumbFiles, files, toast],
   );
 
   const handleFileRowClick = useCallback(
@@ -2229,21 +2243,23 @@ export function PracticeTransferDetailChatDialog({
     summaryItemValue(summaryItems, PRACTICE_ABUTMENT_PROGRESS_FIELD_LABEL),
   );
   const previewCaseInfo = caseIdentityStrip ? (
-    <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-      {caseIdentityStrip.dotColor || caseIdentityStrip.colorKey ? (
-        <CalendarLabColorDot
-          color={
-            caseIdentityStrip.dotColor ||
-            calendarGroupDotColor(caseIdentityStrip.colorKey || "-")
-          }
-          style={caseIdentityStrip.dotStyle || "filled"}
-        />
-      ) : null}
-      <span className="min-w-0 truncate">
-        <span className="font-medium text-foreground">{caseIdentityStrip.primary}</span>
-        {identityDateLabel ? ` · ${identityDateLabel}` : ""}
-      </span>
-    </p>
+    <div className="min-w-0 text-xs text-muted-foreground">
+      <p className="flex min-w-0 items-center gap-1.5">
+        {caseIdentityStrip.dotColor || caseIdentityStrip.colorKey ? (
+          <CalendarLabColorDot
+            color={
+              caseIdentityStrip.dotColor ||
+              calendarGroupDotColor(caseIdentityStrip.colorKey || "-")
+            }
+            style={caseIdentityStrip.dotStyle || "filled"}
+          />
+        ) : null}
+        <span className="min-w-0 truncate font-medium text-foreground">
+          {caseIdentityStrip.primary}
+        </span>
+      </p>
+      {identityDateLabel ? <p className="mt-0.5">{identityDateLabel}</p> : null}
+    </div>
   ) : null;
   const chartToothWorks = useMemo(
     () => (Array.isArray(toothWorks) ? toothWorks : []),
@@ -4226,6 +4242,30 @@ export function PracticeTransferDetailChatDialog({
   );
 
   const modelPreview = (
+    <>
+    <RequestFilesPreviewDialog
+      open={requestPreview !== null}
+      onOpenChange={(next) => {
+        if (!next) setRequestPreview(null);
+      }}
+      files={requestFilesShown}
+      initialKey={requestPreview?.initialKey}
+      authToken={authToken}
+      caseInfo={previewCaseInfo}
+      downloadBusy={previewDownloadBusy}
+      onDownload={async (picked) => {
+        const keys = new Set(picked.map((p) => p.s3Key));
+        const originals = requestFilesShown.filter((f) => keys.has(f.s3Key));
+        if (onSaveFilesToCaseFolder) {
+          await onSaveFilesToCaseFolder(originals);
+          return;
+        }
+        for (const file of originals) await onDownloadTransferFile(file);
+      }}
+      onAttachChatFile={onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined}
+      onRemoveChatFile={detachPaintChatFile}
+      onReorderChatFiles={reorderPaintChatFiles}
+    />
     <ModelPreviewDialog
       open={previewOpen}
       onOpenChange={(next) => {
@@ -4277,6 +4317,7 @@ export function PracticeTransferDetailChatDialog({
       onReorderChatFiles={reorderPaintChatFiles}
       caseInfo={previewCaseInfo}
     />
+    </>
   );
   const workScanModelPreview = (
     <WorkScanModelPreviewDialog

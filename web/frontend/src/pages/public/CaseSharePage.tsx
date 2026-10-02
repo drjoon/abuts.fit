@@ -6,7 +6,7 @@
 // - 2026-09-28: 공유 링크(/share/case/:token) — 공개 범위에 따라 비로그인·지정 계정·관계자가 3D 케이스를 본다.
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { ExternalLink, Loader2 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { Button } from "@/components/ui/button";
 import { formatKstDateTimeToKo } from "@/shared/date/kst";
@@ -62,7 +62,10 @@ async function fetchBlobWithStreamProgress(
   });
 }
 
-function errorCopy(status: number, reason: string): { title: string; message: string } {
+function errorCopy(
+  status: number,
+  reason: string,
+): { title: string; message: string } {
   if (reason === "expired") {
     return {
       title: "유효 기간이 지난 링크입니다.",
@@ -76,7 +79,10 @@ function errorCopy(status: number, reason: string): { title: string; message: st
     };
   }
   if (reason === "removed") {
-    return { title: "삭제된 의뢰입니다.", message: "더 이상 볼 수 없는 케이스입니다." };
+    return {
+      title: "삭제된 의뢰입니다.",
+      message: "더 이상 볼 수 없는 케이스입니다.",
+    };
   }
   if (reason === "login_required") {
     return {
@@ -123,20 +129,28 @@ export default function CaseSharePage() {
     setState({ status: "loading" });
     void (async () => {
       try {
-        const res = await fetch(`/api/case-shares/${encodeURIComponent(shareToken)}`, {
-          cache: "no-store",
-          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-        });
+        const res = await fetch(
+          `/api/case-shares/${encodeURIComponent(shareToken)}`,
+          {
+            cache: "no-store",
+            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+          },
+        );
         const body = await res.json().catch(() => null);
         if (cancelled) return;
         if (!res.ok || !body?.data) {
           const reason = String(body?.reason || "");
-          setState({ status: "error", reason, ...errorCopy(res.status, reason) });
+          setState({
+            status: "error",
+            reason,
+            ...errorCopy(res.status, reason),
+          });
           return;
         }
         setState({ status: "ready", view: body.data as CaseShareView });
       } catch {
-        if (!cancelled) setState({ status: "error", reason: "", ...errorCopy(0, "") });
+        if (!cancelled)
+          setState({ status: "error", reason: "", ...errorCopy(0, "") });
       }
     })();
     return () => {
@@ -182,12 +196,18 @@ export default function CaseSharePage() {
   if (state.status === "error") {
     return (
       <div className="flex h-[100dvh] flex-col items-center justify-center gap-4 px-6 text-center">
-        <AbutsLogo variant="light" iconClassName="h-9 w-9" wordmarkClassName="text-lg" />
+        <AbutsLogo
+          variant="light"
+          iconClassName="h-9 w-9"
+          wordmarkClassName="text-lg"
+        />
         <div>
           <p className="text-base font-semibold">{state.title}</p>
           <p className="mt-1 text-sm text-muted-foreground">{state.message}</p>
           {state.reason === "not_allowed" && userEmail ? (
-            <p className="mt-1 text-xs text-muted-foreground">지금 계정: {userEmail}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              지금 계정: {userEmail}
+            </p>
           ) : null}
         </div>
         {state.reason === "login_required" ? (
@@ -215,9 +235,23 @@ export default function CaseSharePage() {
     <CaseShareViewer
       view={state.view}
       loadFile={loadFile}
+      headerActions={
+        <Button
+          asChild
+          size="sm"
+          variant="outline"
+          className="h-7 gap-1.5 px-2 text-xs"
+        >
+          <a href="/" target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="h-3.5 w-3.5" />
+            어벗츠로 이동
+          </a>
+        </Button>
+      }
       footer={
         <>
-          {caseShareVisibilityLabel(state.view.visibility)} · 읽기 전용 공유 화면입니다.
+          {caseShareVisibilityLabel(state.view.visibility)} · 읽기 전용 공유
+          화면입니다.
           <br />
           {state.view.expiresAt
             ? `${formatKstDateTimeToKo(state.view.expiresAt)}까지 볼 수 있습니다.`
