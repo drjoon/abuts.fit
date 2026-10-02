@@ -67,7 +67,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const string CompositePrcBEnv = "ABUTS_COMPOSITE_PRC_B";
 
         // Legacy: ABUTS_COMPOSITE_STEP_INCREMENT_A/B.
-        // 현행 SSOT는 ABUTS_RETENTION_GROOVE(none→0.12, deep→0.20)이며 STEP_INCREMENT_* env는 쓰지 않는다.
+        // 현행 SSOT는 ABUTS_RETENTION_GROOVE(none→5axisComposite_Front.prc StepIncrement, deep→0.20)이며 STEP_INCREMENT_* env는 쓰지 않는다.
         public const string CompositeStepIncrementAEnv = "ABUTS_COMPOSITE_STEP_INCREMENT_A";
         public const string CompositeStepIncrementBEnv = "ABUTS_COMPOSITE_STEP_INCREMENT_B";
 

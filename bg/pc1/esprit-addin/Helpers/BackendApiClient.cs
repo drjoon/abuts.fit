@@ -392,8 +392,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember(Name = "manufacturerHexRotation")] public string manufacturerHexRotation { get; set; }
             // Rhino frontPoint [x,y,z] — tip 폴백만. tip SSOT는 taperGuide.zEnd(=bbox.max.z).
             [DataMember(Name = "frontPoint")] public double[] frontPoint { get; set; }
-            // 유지홈 옵션 ("none"|"deep", legacy "shallow" 허용) —
-            // 5axisComposite_A.prc StepIncrement 오버라이드에 사용.
+            // 유지홈 옵션 ("none"|"deep") —
+            // none: 5axisComposite_Front.prc StepIncrement 그대로. deep: Finish_Front 0.20.
             [DataMember] public string retentionGroove { get; set; }
             // PreviewModal「Wide Split」: FL 하단에서 끊어 Front/Middle/Back 3구간. 미수신(null) 시 OFF.
             // DataContractJsonSerializer는 누락 bool을 false로 채우므로 nullable로 받는다.

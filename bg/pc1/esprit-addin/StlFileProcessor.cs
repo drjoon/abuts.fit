@@ -125,7 +125,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // 주의: Rhino와 Esprit의 회전 부호 기준이 달라, Esprit 적용 시 부호를 반전해 사용한다.
         // canonical "STL모델대로"/"헥스30도회전" 모두 STL모델대로 기준 회전에 반영한다.
         private double? _backendHexRotationAppliedDeg;
-        // 유지홈(retentionGroove) — request-meta none/deep 필수. Finish_Front StepIncrement SSOT.
+        // 유지홈(retentionGroove) — request-meta none/deep 필수.
+        // Finish_Front StepIncrement: none=5axisComposite_Front.prc 그대로, deep=0.20.
         // Finish 인접 겹침(0.8mm)은 retentionGroove와 별개.
         private string _backendRetentionGroove;
         public string FaceHoleProcessFilePath { get; set; }
@@ -318,7 +319,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         {
                             throw new InvalidOperationException($"request-meta 응답에 lotNumber가 없습니다. requestId={requestId}");
                         }
-                        // 유지홈(retentionGroove) SSOT — 백엔드 none/deep만 허용. Finish_Front StepIncrement에 사용.
+                        // 유지홈(retentionGroove) SSOT — 백엔드 none/deep만 허용.
+                        // Finish_Front StepIncrement: none=5axisComposite_Front.prc, deep=0.20.
                         _backendRetentionGroove = RequireBackendRetentionGrooveOrThrow(
                             requestMeta.retentionGroove,
                             requestId);
@@ -701,7 +703,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             // - canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
             // - legacy: "0" | "30" (하위호환 입력)
             [DataMember] public string manufacturerHexRotation { get; set; }
-            // 유지홈(retentionGroove) — Finish_Front(legacy A env 경로) StepIncrement
+            // 유지홈(retentionGroove) — Finish_Front StepIncrement. none=5axisComposite_Front.prc, deep=0.20.
             // 값을 의뢰별로 덮어쓰기 위한 필드. rules.md §7.4.1 참조.
             [DataMember] public string retentionGroove { get; set; }
             [DataMember] public RequestMetaFinishLine finishLine { get; set; }
@@ -1131,7 +1133,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 TryApplyCompositeSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ);
                 TryApplyTwoPhaseSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ, twoPhase);
                 TryApplyBackRoughModeByFinishLineMinZ(finishLineMinZ);
-                // 유지홈(none/deep) → ABUTS_RETENTION_GROOVE. StepIncrement는 MainModuleComposite가 groove로 직접 적용.
+                // 유지홈(none/deep) → ABUTS_RETENTION_GROOVE.
+                // StepIncrement: none은 5axisComposite_Front.prc 그대로, deep만 MainModuleComposite가 0.20.
                 TryApplyRetentionGrooveToStepIncrementEnv();
 
                 AppLogger.Log("DentalAddin: Emerge 실행 시작 - IGS 서피스 Merge 및 Translate");
@@ -2004,8 +2007,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // 유지홈(retentionGroove) SSOT — 백엔드 none/deep만 허용.
         // Finish_Front StepIncrement는 ABUTS_RETENTION_GROOVE 를 본다. Finish 겹침(0.8mm)은 별개.
         // ABUTS_COMPOSITE_STEP_INCREMENT_A 는 사용하지 않는다.
-        //   none → 0.12, deep → 0.20
-        // Finish_Back(B) StepIncrement는 PRC 기본(0.08) 유지.
+        //   none → 5axisComposite_Front.prc StepIncrement 그대로
+        //   deep → 0.20
+        // Finish_Back(B) StepIncrement는 PRC 기본 유지.
         private const string RetentionGrooveMissingMessage =
             "유지홈(retentionGroove)이 백엔드에서 전달되지 않았습니다. none 또는 deep이 필요합니다.";
 
@@ -2066,7 +2070,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
 
             AppLogger.Log(
-                $"DentalAddin: retentionGroove 적용 - groove={normalizedGroove} (ABUTS_RETENTION_GROOVE; STEP_INCREMENT_A 미사용)");
+                $"DentalAddin: retentionGroove 적용 - groove={normalizedGroove} (none=5axisComposite_Front.prc StepIncrement, deep=0.20; STEP_INCREMENT_A 미사용)");
         }
 
         private void TryApplyCompositeFirstPassPercentEnv(string tooth)

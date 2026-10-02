@@ -1353,7 +1353,8 @@ namespace DentalAddin
         }
 
         // retentionGroove(백엔드 none/deep) → Finish_Front StepIncrement.
-        // ABUTS_COMPOSITE_STEP_INCREMENT_A 는 읽지 않는다. Finish_Back(B)는 PRC 기본 유지.
+        // none: 5axisComposite_Front.prc StepIncrement를 덮어쓰지 않는다.
+        // deep: 0.20. ABUTS_COMPOSITE_STEP_INCREMENT_A 는 읽지 않는다. Finish_Back(B)는 PRC 기본 유지.
         private static void TrySetCompositeStepIncrement(TechLatheMill5xComposite op, string label)
         {
             if (op == null)
@@ -1366,7 +1367,13 @@ namespace DentalAddin
                 return;
             }
 
-            double stepIncrement = ResolveFinishFrontStepIncrementMmFromRetentionGroove();
+            if (!TryResolveFinishFrontStepIncrementOverrideMm(out double stepIncrement))
+            {
+                DentalLogger.Log(
+                    $"Composite2SplitLine2 - A StepIncrement: 5axisComposite_Front.prc 유지 (retentionGroove=none, current={TryFormatCompositeStepIncrement(op)})");
+                return;
+            }
+
             try
             {
                 op.GetType().InvokeMember(
@@ -1376,7 +1383,7 @@ namespace DentalAddin
                     op,
                     new object[] { stepIncrement },
                     CultureInfo.InvariantCulture);
-                DentalLogger.Log($"Composite2SplitLine2 - A StepIncrement={stepIncrement.ToString("0.###", CultureInfo.InvariantCulture)} 적용 (retentionGroove→직접, PRC 파일 무변경)");
+                DentalLogger.Log($"Composite2SplitLine2 - A StepIncrement={stepIncrement.ToString("0.###", CultureInfo.InvariantCulture)} 적용 (retentionGroove=deep)");
             }
             catch (Exception ex)
             {
@@ -1385,11 +1392,12 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// 백엔드 retentionGroove(ABUTS_RETENTION_GROOVE) → Finish_Front StepIncrement(mm).
-        /// none→0.12, deep→0.20. 그 외/미지정은 예외.
+        /// 백엔드 retentionGroove(ABUTS_RETENTION_GROOVE) → Finish_Front StepIncrement 오버라이드.
+        /// none → false (5axisComposite_Front.prc StepIncrement 그대로). deep → 0.20. 그 외/미지정은 예외.
         /// </summary>
-        private static double ResolveFinishFrontStepIncrementMmFromRetentionGroove()
+        private static bool TryResolveFinishFrontStepIncrementOverrideMm(out double stepIncrementMm)
         {
+            stepIncrementMm = 0.0;
             string groove = (GetEnvString("ABUTS_RETENTION_GROOVE") ?? string.Empty).Trim().ToLowerInvariant();
             if (groove == "없음") groove = "none";
             if (groove == "있음") groove = "deep";
@@ -1397,14 +1405,39 @@ namespace DentalAddin
             switch (groove)
             {
                 case "none":
-                    return 0.12;
+                    return false;
                 case "deep":
-                    return 0.20;
+                    stepIncrementMm = 0.20;
+                    return true;
                 default:
                     string shown = string.IsNullOrWhiteSpace(groove) ? "<empty>" : groove;
                     throw new InvalidOperationException(
                         $"유지홈(retentionGroove)이 백엔드에서 전달되지 않았습니다. none 또는 deep이 필요합니다. (received='{shown}')");
             }
+        }
+
+        private static string TryFormatCompositeStepIncrement(TechLatheMill5xComposite op)
+        {
+            try
+            {
+                object current = op.GetType().InvokeMember(
+                    "StepIncrement",
+                    BindingFlags.GetProperty,
+                    null,
+                    op,
+                    null,
+                    CultureInfo.InvariantCulture);
+                if (current is IConvertible convertible)
+                {
+                    return convertible.ToDouble(CultureInfo.InvariantCulture).ToString("0.###", CultureInfo.InvariantCulture);
+                }
+            }
+            catch (Exception ex)
+            {
+                return $"<read-failed:{ex.GetType().Name}>";
+            }
+
+            return "<unknown>";
         }
 
         private static void TryTouchCompositeMaximumLinkDistanceOnTechnology(TechLatheMill5xComposite op, string label)
@@ -2873,14 +2906,15 @@ namespace DentalAddin
         // X=-Z 이므로 Z+1mm ≡ X-1mm.
         private const double SharedFinishSplitOffsetFromFinishLineTopMm = -1.0;
 
-        // Finish Front/Back PRC Back 기본 StepIncrement는 5axisComposite_Back.prc(0.08). Front는 retentionGroove로 강제.
+        // Finish Front/Back PRC. Back 기본 StepIncrement는 5axisComposite_Back.prc.
+        // Front none은 5axisComposite_Front.prc StepIncrement 유지, deep만 0.20.
         private static double GetRoughAdjacentOverlapMm()
         {
             return GetActiveRoughToolRadiusMm();
         }
 
         // Finish 인접 겹침 = D1.2 직경 2/3 (0.8mm). 다음 Finish 시작만 경계에서 tip 쪽으로 당긴다.
-        // StepIncrement(retentionGroove none/deep)와 별개다.
+        // StepIncrement(retentionGroove none=Front PRC, deep=0.20)와 별개다.
         private static double GetFinishAdjacentOverlapMm()
         {
             return FinishAdjacentOverlapMm;

@@ -83,7 +83,7 @@
     - Middle 끝 = `Xk`, Back 시작 = `Xk − 0.8`
     - 선행 끝은 경계 너머로 연장하지 않는다. 치은 쪽 D1.2 크로스가 깨진다.
     - `GetFinishAdjacentOverlapMm()` = `0.8`. StepIncrement와 별개.
-    - StepIncrement SSOT: 백엔드 `retentionGroove` (`none`→`0.12`, `deep`→`0.20`) via `ABUTS_RETENTION_GROOVE`
+    - StepIncrement SSOT: 백엔드 `retentionGroove` (`none`→`5axisComposite_Front.prc` StepIncrement 그대로, `deep`→`0.20`) via `ABUTS_RETENTION_GROOVE`
     - `ABUTS_COMPOSITE_STEP_INCREMENT_A` **미사용**. none/deep 미수신 시 NC 중단 + 프론트 토스트
   - Turn: **`Front_Turn` 끝 = `Splitline_2 + 2.5mm`** (Back 방향 X+)
     - 구현: `MainModuleOperations.TryPrepareTurningRegionRange` (`FRONT` → `rangeMaxX`)
@@ -113,7 +113,7 @@
 - 인접 후행 시작:
   - `Back_Rough` 시작 = `Splitline_2 - roughRadius` (D4→2.0)
   - `Finish_Back` / Middle 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()` (`0.8`, tip 쪽)
-    - StepIncrement: `ResolveFinishFrontStepIncrementMmFromRetentionGroove()` (`none`→0.12, `deep`→0.20). 겹침과 별개.
+    - StepIncrement: `TryResolveFinishFrontStepIncrementOverrideMm()` (`none`→`5axisComposite_Front.prc` 그대로, `deep`→0.20). 겹침과 별개.
     - `StlFileProcessor.RequireBackendRetentionGrooveOrThrow` — none/deep만 허용, 미수신 시 예외
     - 실패 보고: `NotifyBackendFailure` → `/bg/register-file` status=failed → `request:async-action-failed` 토스트
 - 좌표 변환 (`EspritHttpServer`: `FrontPointX = -FrontPoint.z`):
@@ -128,7 +128,7 @@
   - Rough: `frontEnd = splitline2`(기본) / wide 시 `Front_Face` end, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle은 wide 시만
   - Finish: `Finish_Front` 끝 = `SharedFinishSplitX`, 다음 Finish 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()` (`0.8`)
   - Middle 끝 = `Xk`, `Back_Finish` 시작 = `Xk - 0.8`
-  - Finish_Front StepIncrement도 동일 groove 매핑으로 COM SetProperty (`TrySetCompositeStepIncrement`)
+  - Finish_Front StepIncrement: `none`은 `5axisComposite_Front.prc` 값 유지, `deep`만 COM SetProperty 0.20 (`TrySetCompositeStepIncrement`)
   - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
   - 금지: 선행 Finish 끝을 경계 너머로 연장, `ABUTS_COMPOSITE_STEP_INCREMENT_A` 의존, `Splitline_2<=5mm`에서 `Middle_Turn`/`Middle_Rough` 생성, `Back + Z - stlTopZ` 구식 변환 (FL 하방 침범)
 
