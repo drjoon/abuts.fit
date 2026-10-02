@@ -1508,7 +1508,7 @@ export const PracticeFileTransferPage = ({
   >({});
   const resetIntakeFormAfterTransferRef = useRef<() => Promise<void>>(async () => {});
   // 한글 음절 사이 composition 공백을 넘기도록 여유. 200ms면 r/rh 같은 중간값이 저장됨.
-  const FORM_AUTOSAVE_DEBOUNCE_MS = 900;
+  const FORM_AUTOSAVE_DEBOUNCE_MS = 2500;
   const FORM_AUTOSAVE_IME_RETRY_MS = 120;
   const imeComposingRef = useRef(false);
   /** draftId 없는 동시 POST가 각각 새 draft를 만들지 않도록 upsert를 직렬화한다. */
