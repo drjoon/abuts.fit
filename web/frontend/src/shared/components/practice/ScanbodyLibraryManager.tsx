@@ -7,7 +7,8 @@
 // - web/frontend/src/shared/practice/scanbodyLibraryApi.ts
 // - web/frontend/src/shared/files/scanbodyLibraryBundle.ts
 // - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
-// - web/frontend/src/pages/admin/dashboard/ScanbodyDemandCard.tsx (관리자 대시보드는 이 화면 대신 압축 파일만 올린다)
+// - web/frontend/src/pages/admin/dashboard/ScanbodyDemandCard.tsx (관리자 대시보드 스캔바디는 압축 파일)
+// - web/frontend/src/pages/admin/dashboard/DirectAbutmentSettingsCard.tsx (관리자 대시보드 심플어벗 모델)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, FolderUp, Link2, Loader2, Trash2, Upload, X } from "lucide-react";

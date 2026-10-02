@@ -49,9 +49,17 @@ export default defineConfig(({ mode }) => {
       Boolean,
     ),
     resolve: {
-      alias: {
-        "@": path.resolve(__dirname, "src"),
-      },
+      alias: [
+        { find: "@", replacement: path.resolve(__dirname, "src") },
+        // rhino3dm 패키지 main은 Node용 CJS. 브라우저 청크는 ESM과 wasm URL을 쓴다.
+        {
+          find: /^rhino3dm$/,
+          replacement: path.resolve(__dirname, "node_modules/rhino3dm/rhino3dm.module.js"),
+        },
+      ],
+    },
+    optimizeDeps: {
+      exclude: ["rhino3dm"],
     },
     build: {
       rollupOptions: {

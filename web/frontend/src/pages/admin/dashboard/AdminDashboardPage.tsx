@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-10-02: 직접어벗 설정 카드 — 심플어벗 3D 모델. 직접 입력은 기공소.
 // - 2026-08-25: ExoCAD 헥스 확인 목록에 디자인 소프트웨어(+버전) 표시.
 // - 2026-08-25: ExoCAD 헥스 확인 확정 → 미확인 되돌리기 버튼.
 // - 2026-08-24: 미처리 통신 카드 제거 후 뒤 카드를 끌어올려 4열 유지.
@@ -56,6 +57,7 @@ import {
 } from "@/shared/noOrderAlerts";
 import { NoticeAdminCard } from "@/pages/admin/dashboard/NoticeAdminCard";
 import { ScanbodyDemandCard } from "@/pages/admin/dashboard/ScanbodyDemandCard";
+import { DirectAbutmentSettingsCard } from "@/pages/admin/dashboard/DirectAbutmentSettingsCard";
 import { ScanbodyGeneratorCard } from "@/pages/admin/dashboard/ScanbodyGeneratorCard";
 import {
   Users,
@@ -2245,13 +2247,14 @@ export const AdminDashboardPage = () => {
               </Card>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
               <NoOrderAlertBanner
                 className="h-full"
                 data={noOrderAlertsData}
                 loading={noOrderAlertsLoading}
               />
               <ScanbodyDemandCard />
+              <DirectAbutmentSettingsCard />
               <ScanbodyGeneratorCard />
               <NoticeAdminCard className="h-full lg:col-span-2" />
             </div>
