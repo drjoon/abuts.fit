@@ -63,6 +63,9 @@
   - `utils/creditRealtime.js`
 - 실시간 소켓 공통
   - `socket.js`
+- 기공소 PC 헬퍼 알람
+  - `services/labHelperAlarm.service.js` — `emitAppEventToUser`에서 enqueue
+  - `modules/labHelper/labHelper.routes.js` — `GET /api/lab-helper/alarms/wait`
 
 ## 1. 구조
 

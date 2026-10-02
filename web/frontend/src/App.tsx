@@ -23,6 +23,7 @@ import { loadRulesFromBackend } from "@/shared/filename/filenameRules";
 import { useSocket } from "@/shared/hooks/useSocket";
 import { useChatMessageSound } from "@/shared/hooks/useChatMessageSound";
 import { useLabReceiveUnreadSound } from "@/shared/hooks/useLabReceiveUnreadSound";
+import { useLabHelperAlarmSession } from "@/shared/hooks/useLabHelperAlarmSession";
 import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 // related files:
@@ -536,6 +537,7 @@ const App = () => {
   useSocket();
   useChatMessageSound();
   useLabReceiveUnreadSound();
+  useLabHelperAlarmSession();
 
   // 앱 시작 시 백엔드에서 파일명 파싱 룰 로드
   useEffect(() => {

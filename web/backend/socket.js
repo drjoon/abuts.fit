@@ -10,6 +10,10 @@ import User from "./models/user.model.js";
 import ChatRoom from "./models/chatRoom.model.js";
 import Chat from "./models/chat.model.js";
 import RemoteSupportSession from "./models/remoteSupport/remoteSupportSession.model.js";
+import {
+  enqueueLabHelperAlarm,
+  labHelperAlarmFromAppEvent,
+} from "./services/labHelperAlarm.service.js";
 
 let io;
 
@@ -475,6 +479,14 @@ export function emitAppEventToUser(userId, type, data) {
     data: data ?? null,
     timestamp: new Date(),
   });
+  try {
+    const alarm = labHelperAlarmFromAppEvent(evtType, data, {
+      recipientUserId: userId,
+    });
+    if (alarm) enqueueLabHelperAlarm(userId, alarm);
+  } catch (err) {
+    console.warn("[labHelperAlarm] enqueue failed", err?.message || err);
+  }
 }
 
 export function emitAppEventToRoles(roles, type, data) {

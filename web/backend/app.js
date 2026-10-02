@@ -259,6 +259,10 @@ const limiter = rateLimit({
     if (req.path.startsWith("/requests/my")) {
       return true;
     }
+    // 기공소 PC 헬퍼 장기 폴링
+    if (req.path.startsWith("/lab-helper/")) {
+      return true;
+    }
 
     return false;
   },
@@ -316,6 +320,7 @@ import storeRoutes from "./modules/store/store.routes.js";
 import eventRoutes from "./modules/events/event.routes.js";
 import caseShareRoutes from "./modules/caseShares/caseShare.routes.js";
 import noticeRoutes from "./modules/notices/notice.routes.js";
+import labHelperRoutes from "./modules/labHelper/labHelper.routes.js";
 
 // 라우트 설정
 app.use("/api/system", systemRoutes);
@@ -350,6 +355,7 @@ app.use("/api/chats", chatRoutes);
 app.use("/api/practice/transfers", practiceTransferRoutes);
 app.use("/api/case-shares", caseShareRoutes);
 app.use("/api/lab-trading-partners", labTradingPartnerRoutes);
+app.use("/api/lab-helper", labHelperRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/manufacturer", manufacturerRoutes);
 app.use("/api/cnc-machines", cncMachineRoutes);

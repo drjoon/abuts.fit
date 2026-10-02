@@ -5,7 +5,7 @@
 ## 0) 문서 목적
 
 - 기공소 PC의 **어벗츠 연결 프로그램 v3**(Windows·Mac). 웹이 PC 폴더에 파일을 풀어 두고 탐색기·Finder로 열 수 있게 하는 통로다.
-- 하는 일은 셋뿐이다: 작업 폴더 지정, 케이스 폴더 확인·저장, 케이스 폴더 열기.
+- 하는 일: 작업 폴더 지정, 케이스 폴더 확인·저장, 케이스 폴더 열기, **v4 PC 알람**(웹 숨김·브라우저 종료 시 OS 알림음).
 - **디자인 SW(3Shape·exocad)는 실행하지 않는다.** 두 SW 모두 명령줄 인자로 주문(케이스)을 등록할 수 없다(2026-09 조사). 기공소는 케이스 폴더에서 스캔을 가져온다.
 - Windows와 Mac은 **같은 HTTP API·같은 이름 규칙**을 쓴다. 한쪽을 바꾸면 다른 쪽도 바꾼다.
 
@@ -63,7 +63,12 @@ bind `127.0.0.1:8010`(Windows TcpListener — HttpListener URL 예약은 관리�
 | POST | `/cases/check` | `{workFolder, caseFolder, files:[{name,size}]}` → `folder`, `exists`, `missing` |
 | PUT | `/cases/file?workFolder&caseFolder&name` | 파일 저장(최대 4GB). 쿼리의 `+`는 공백 |
 | POST | `/cases/reveal` | `{workFolder, caseFolder}` → 탐색기·Finder로 열기 |
+| POST | `/notify` | `{title?, body?}` → OS 알림음(+ balloon/알림). v4 |
+| POST | `/session` | `{apiOrigin, token, prefs, browserAlive}` → 브라우저 종료 후 `GET {apiOrigin}/api/lab-helper/alarms/wait` 폴링. v4 |
+| POST | `/session/clear` | 로그아웃 시 세션 제거. v4 |
 | POST | `/shutdown` | 재설치용 종료 |
+
+- 웹 `LAB_HELPER_MIN_VERSION`(폴더열기)=3, `LAB_HELPER_ALARM_MIN_VERSION`=4. 알람 API는 version≥4일 때만 호출한다.
 
 ## 5) 파일 · 빌드
 
@@ -72,10 +77,11 @@ bind `127.0.0.1:8010`(Windows TcpListener — HttpListener URL 예약은 관리�
 | `win/Program.cs` | 진입: 설치(기본) / `--serve` / `--uninstall`. 설치 폴더에서 실행되면 serve |
 | `win/Installer.cs` | 동의·복사·레지스트리·v2 정리·연결 확인·제거 |
 | `win/HttpServer.cs` | HTTP·CORS·라우팅 |
+| `win/Notify.cs` | v4 PC 알람(소리·balloon·session·폴링) |
 | `win/CaseFolder.cs` | 이름 정리·확인·쓰기 |
 | `win/WinShell.cs` | 탐색기 열기·앞으로, 폴더 고르기 창 |
 | `win/Config.cs` | `config.json`·`helper.log` |
-| `mac/AbutsLabHelper.swift` | Mac 전부(설치·LaunchAgent·HTTP·케이스 폴더·Finder·폴더 고르기) |
+| `mac/AbutsLabHelper.swift` | Mac 전부(설치·LaunchAgent·HTTP·케이스 폴더·Finder·폴더 고르기·v4 알람) |
 
 ```bash
 bg/lab-cad-helper/win/build.sh   # .NET SDK 8+ → AbutsLabHelperSetup.exe (.NET Framework 4.8, 약 30KB)

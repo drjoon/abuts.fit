@@ -1,8 +1,10 @@
 // change-log:
+// - 2026-10-03: v4 — PC 알람(/notify·/session) + 브라우저 종료 시 API 장기 폴링.
 // - 2026-09-27: v3 — Windows 전용 exe 하나. 실행하면 동의 한 번으로 설치(관리자 권한 없음),
 //   이후 로그인 때마다 창 없이 127.0.0.1:8010에서 대기. 케이스 폴더 저장·확인·폴더 열기만 한다.
 // related files:
 // - bg/lab-cad-helper/win/HttpServer.cs
+// - bg/lab-cad-helper/win/Notify.cs
 // - bg/lab-cad-helper/win/Installer.cs
 // - bg/lab-cad-helper/rules.md
 // - web/frontend/src/shared/files/labHelperClient.ts
@@ -15,7 +17,7 @@ namespace Abuts.LabHelper
 {
     internal static class Program
     {
-        public const int Version = 3;
+        public const int Version = 4;
         public const int Port = 8010;
         public const string Title = "어벗츠 연결 프로그램";
 

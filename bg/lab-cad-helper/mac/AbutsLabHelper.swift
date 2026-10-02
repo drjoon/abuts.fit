@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-03: v4 — PC 알람(/notify·/session) + 브라우저 종료 시 API 장기 폴링.
 // - 2026-09-27: v3 — Windows 연결 프로그램과 같은 동작·API. 앱 하나를 열면 「설치할까요?」 한 번 → 사용자 폴더에 복사,
 //   LaunchAgent로 로그인 때마다 보이지 않게 실행. 케이스 폴더 확인·저장·Finder로 열기만 한다.
 // - 2026-09-27: macOS 헬퍼 v2 — Windows lab-cad-helper.ps1과 같은 HTTP API(127.0.0.1:8010).
@@ -11,7 +12,7 @@ import AppKit
 import Foundation
 import Network
 
-let helperVersion = 3
+let helperVersion = 4
 let helperPort: UInt16 = 8010
 let agentLabel = "fit.abuts.labhelper"
 let appTitle = "어벗츠 연결 프로그램"
@@ -90,6 +91,157 @@ final class Config {
 
   var allowOrigin: String {
     lock.lock(); defer { lock.unlock() }; return _allowOrigin
+  }
+}
+
+// MARK: - PC 알람 (v4)
+
+final class AlarmSession {
+  static let shared = AlarmSession()
+  private let lock = NSLock()
+  private var apiOrigin = ""
+  private var token = ""
+  private var enabled = true
+  private var muted = Set<String>()
+  private var browserAlive = false
+  private var lastHeartbeat = Date.distantPast
+  private var pollStarted = false
+
+  static let heartbeatExpire: TimeInterval = 60
+  static let pollWaitSec = 25
+  static let soundDebounce: TimeInterval = 0.9
+
+  func apply(_ body: [String: Any]) {
+    lock.lock()
+    if let origin = (body["apiOrigin"] as? String)?.trimmingCharacters(in: .whitespaces), !origin.isEmpty {
+      var next = origin
+      while next.hasSuffix("/") { next = String(next.dropLast()) }
+      apiOrigin = next
+    }
+    if let t = (body["token"] as? String)?.trimmingCharacters(in: .whitespaces), !t.isEmpty {
+      token = t
+    }
+    if let prefs = body["prefs"] as? [String: Any] {
+      if let en = prefs["enabled"] as? Bool { enabled = en }
+      else if let en = prefs["enabled"] as? NSNumber { enabled = en.boolValue }
+      muted = Set((prefs["mutedPracticeIds"] as? [Any] ?? []).compactMap {
+        let s = "\($0)".trimmingCharacters(in: .whitespaces)
+        return s.isEmpty ? nil : s
+      })
+    }
+    if let alive = body["browserAlive"] as? Bool {
+      browserAlive = alive
+    } else if let alive = body["browserAlive"] as? NSNumber {
+      browserAlive = alive.boolValue
+    }
+    lastHeartbeat = Date()
+    let startPoll = !pollStarted
+    if startPoll { pollStarted = true }
+    lock.unlock()
+    if startPoll { AlarmPoller.start() }
+  }
+
+  func clear() {
+    lock.lock()
+    apiOrigin = ""
+    token = ""
+    browserAlive = false
+    lastHeartbeat = .distantPast
+    lock.unlock()
+  }
+
+  func shouldPoll() -> Bool {
+    lock.lock(); defer { lock.unlock() }
+    if apiOrigin.isEmpty || token.isEmpty { return false }
+    if !browserAlive { return true }
+    return Date().timeIntervalSince(lastHeartbeat) > AlarmSession.heartbeatExpire
+  }
+
+  func snapshot() -> (apiOrigin: String, token: String, enabled: Bool, muted: Set<String>) {
+    lock.lock(); defer { lock.unlock() }
+    return (apiOrigin, token, enabled, muted)
+  }
+
+  func isPracticeMuted(_ practiceId: String) -> Bool {
+    let id = practiceId.trimmingCharacters(in: .whitespaces)
+    lock.lock(); defer { lock.unlock() }
+    if !enabled { return true }
+    if id.isEmpty { return false }
+    return muted.contains(id)
+  }
+}
+
+enum AlarmNotify {
+  private static let lock = NSLock()
+  private static var lastPlayed = Date.distantPast
+
+  static func play(title: String, body: String) {
+    lock.lock()
+    let now = Date()
+    if now.timeIntervalSince(lastPlayed) < AlarmSession.soundDebounce {
+      lock.unlock()
+      return
+    }
+    lastPlayed = now
+    lock.unlock()
+    NSSound.beep()
+    DispatchQueue.main.async {
+      let n = NSUserNotification()
+      n.title = title.isEmpty ? appTitle : title
+      n.informativeText = body.isEmpty ? "새 알림" : body
+      n.soundName = NSUserNotificationDefaultSoundName
+      NSUserNotificationCenter.default.deliver(n)
+    }
+  }
+}
+
+enum AlarmPoller {
+  static func start() {
+    DispatchQueue.global(qos: .utility).async {
+      while true {
+        if !AlarmSession.shared.shouldPoll() {
+          Thread.sleep(forTimeInterval: 2)
+          continue
+        }
+        let snap = AlarmSession.shared.snapshot()
+        if !snap.enabled || snap.apiOrigin.isEmpty || snap.token.isEmpty {
+          Thread.sleep(forTimeInterval: 2)
+          continue
+        }
+        if let alarm = waitOnce(apiOrigin: snap.apiOrigin, token: snap.token) {
+          let practiceId = "\(alarm["practiceBusinessAnchorId"] ?? "")".trimmingCharacters(in: .whitespaces)
+          if AlarmSession.shared.isPracticeMuted(practiceId) { continue }
+          let title = "\(alarm["title"] ?? "")"
+          let body = "\(alarm["body"] ?? "")"
+          AlarmNotify.play(title: title, body: body)
+        } else {
+          Thread.sleep(forTimeInterval: 0.5)
+        }
+      }
+    }
+  }
+
+  private static func waitOnce(apiOrigin: String, token: String) -> [String: Any]? {
+    let urlStr = "\(apiOrigin)/api/lab-helper/alarms/wait?wait=\(AlarmSession.pollWaitSec)"
+    guard let url = URL(string: urlStr) else { return nil }
+    var req = URLRequest(url: url, timeoutInterval: TimeInterval(AlarmSession.pollWaitSec + 10))
+    req.httpMethod = "GET"
+    req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    req.setValue("application/json", forHTTPHeaderField: "Accept")
+    req.setValue("AbutsLabHelper/\(helperVersion)", forHTTPHeaderField: "User-Agent")
+    let sem = DispatchSemaphore(value: 0)
+    var result: [String: Any]?
+    URLSession.shared.dataTask(with: req) { data, response, _ in
+      defer { sem.signal() }
+      guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+            let data = data,
+            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            (obj["ok"] as? Bool) != false,
+            let alarm = obj["alarm"] as? [String: Any] else { return }
+      result = alarm
+    }.resume()
+    _ = sem.wait(timeout: .now() + .seconds(AlarmSession.pollWaitSec + 15))
+    return result
   }
 }
 
@@ -427,6 +579,20 @@ final class HttpConnection {
         }
         return
       }
+    case ("POST", "/notify"):
+      let b = jsonBody()
+      let title = b["title"] as? String ?? ""
+      var text = b["body"] as? String ?? ""
+      if text.isEmpty { text = b["message"] as? String ?? "" }
+      respond(200, ["ok": true])
+      AlarmNotify.play(title: title, body: text)
+      return
+    case ("POST", "/session"):
+      AlarmSession.shared.apply(jsonBody())
+      return respond(200, ["ok": true])
+    case ("POST", "/session/clear"):
+      AlarmSession.shared.clear()
+      return respond(200, ["ok": true])
     case ("POST", "/shutdown"):
       respond(200, ["ok": true])
       log("shutdown")

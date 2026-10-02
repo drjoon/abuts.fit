@@ -56,6 +56,10 @@ function buildNormalizedQueryKey(req) {
  * - key: requester + method + path + normalized query(GET)
  */
 export function requestFloodBlocker(req, res, next) {
+  // 기공소 PC 헬퍼 장기 폴링 — 반복 차단에서 제외
+  if (String(req.path || "").startsWith("/lab-helper/")) {
+    return next();
+  }
   const now = Date.now();
   const requester = resolveRequesterId(req);
   const queryKey = buildNormalizedQueryKey(req);

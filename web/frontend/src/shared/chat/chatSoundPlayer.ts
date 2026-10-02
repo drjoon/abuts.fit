@@ -2,9 +2,13 @@
 // - web/frontend/src/shared/chat/chatSoundPrefs.ts
 // - web/frontend/src/shared/hooks/useChatMessageSound.ts
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
+// - web/frontend/src/shared/files/labHelperClient.ts
 // change-log:
+// - 2026-10-03: 탭 숨김 시 헬퍼 PC 알람(/notify). 보이면 브라우저 Audio.
 // - 2026-09-08: 미확인 의뢰 도착음도 동일 플레이어 사용(채팅과 중복 방지).
 // - 2026-09-07: 채팅 알림음 재생(부드러운 완료음) + AudioContext unlock.
+
+import { notifyLabHelperAlarm } from "@/shared/files/labHelperClient";
 
 const SOUND_URL = "/sounds/chat-notify.mp3";
 /** 채팅·미확인 의뢰가 거의 동시에 올 때 한 번만 울리기 */
@@ -64,12 +68,34 @@ export const bindChatSoundUnlockOnGesture = () => {
   window.addEventListener("keydown", once, true);
 };
 
-export const playChatNotifySound = () => {
+export type PlayChatNotifySoundOpts = {
+  title?: string;
+  body?: string;
+};
+
+export const playChatNotifySound = (opts?: PlayChatNotifySoundOpts) => {
   if (typeof window === "undefined") return;
   const now = Date.now();
   if (now - lastPlayedAt < MIN_INTERVAL_MS) return;
   lastPlayedAt = now;
 
+  const hidden = typeof document !== "undefined" && document.hidden;
+  if (hidden) {
+    void notifyLabHelperAlarm({
+      title: opts?.title || "어벗츠",
+      body: opts?.body || "새 알림",
+    }).then((ok) => {
+      if (ok) return;
+      // 헬퍼 없으면 브라우저 Audio로라도 시도
+      playBrowserChatSound();
+    });
+    return;
+  }
+
+  playBrowserChatSound();
+};
+
+const playBrowserChatSound = () => {
   const audio = getAudio();
   if (!audio) return;
 
@@ -81,10 +107,12 @@ export const playChatNotifySound = () => {
         // autoplay blocked — wait for next gesture unlock
         unlocked = false;
         bindChatSoundUnlockOnGesture();
+        void notifyLabHelperAlarm({ title: "어벗츠", body: "새 알림" });
       });
     }
   } catch {
     unlocked = false;
     bindChatSoundUnlockOnGesture();
+    void notifyLabHelperAlarm({ title: "어벗츠", body: "새 알림" });
   }
 };

@@ -1,8 +1,10 @@
 // change-log:
+// - 2026-10-03: v4 — POST /notify · /session · /session/clear (PC 알람).
 // - 2026-09-27: v3 HTTP API — health, 작업 폴더(조회·지정·고르기), 케이스 폴더(확인·파일 저장·열기), shutdown.
 //   TcpListener로 직접 받는다(HttpListener는 URL 예약에 관리자 권한이 필요).
 // related files:
 // - bg/lab-cad-helper/win/CaseFolder.cs
+// - bg/lab-cad-helper/win/Notify.cs
 // - web/frontend/src/shared/files/labHelperClient.ts
 using System;
 using System.Collections.Generic;
@@ -274,6 +276,28 @@ namespace Abuts.LabHelper
                     Explorer.Reveal(folder);
                     return;
                 }
+                case "POST /notify":
+                {
+                    var body = ReadJson(req);
+                    var title = Str(body, "title");
+                    var text = Str(body, "body");
+                    if (string.IsNullOrEmpty(text)) text = Str(body, "message");
+                    SendJson(ns, 200, origin, Ok(new Dictionary<string, object>()));
+                    AlarmNotify.Play(title, text);
+                    return;
+                }
+                case "POST /session":
+                {
+                    var body = ReadJson(req);
+                    AlarmSession.Apply(body);
+                    SendJson(ns, 200, origin, Ok(new Dictionary<string, object>()));
+                    return;
+                }
+                case "POST /session/clear":
+                    DrainBody(req);
+                    AlarmSession.Clear();
+                    SendJson(ns, 200, origin, Ok(new Dictionary<string, object>()));
+                    return;
                 case "POST /shutdown":
                     SendJson(ns, 200, origin, Ok(new Dictionary<string, object>()));
                     Log.Write("shutdown");

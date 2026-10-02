@@ -1,4 +1,5 @@
 // related files:
+// - 2026-10-03: 수신 헤더 — 상태 뱃지는 치과처럼 라벨. 북마크·생산중·캘린더/목록만 아이콘.
 // - 2026-09-30: 공지는 미처리 안내 바로 옆. 2xl 미만 헤더 뱃지·버튼은 아이콘.
 // - 2026-09-29: 작업시작 클릭 시 보철 업로드 요구 건은 적립 조건 확인 모달(다시 보지 않기).
 // - 2026-09-29: 작업 파일 「폴더 열기」 — 작업 스캔·어벗 디자인·보철물을 같은 케이스 폴더에 받고 연다.
@@ -491,6 +492,7 @@ import { LabReceiveSubcontractPoolAlert } from "@/pages/practice/components/LabR
 import { RequestorAbutmentPageHeader } from "@/pages/requestor/new_request/components/RequestorAbutmentPageHeader";
 import { LabReceiveUnreadNotice } from "@/pages/practice/components/LabReceiveUnreadNotice";
 import { LabReceiveFeeScheduleNotice } from "@/pages/practice/components/LabReceiveFeeScheduleNotice";
+import { LabReceiveAlarmSettingsButton } from "@/shared/components/practice/LabReceiveAlarmSettingsButton";
 import {
   labFeeSettingsFromAcceptPath,
   LAB_FEE_UNCONFIGURED_REASON,
@@ -1005,6 +1007,9 @@ export function RequestorPracticeReceivePage({
     ReceivedPracticeTransfer[]
   >([]);
   const bookmarkNavigateLastIdRef = useRef("");
+  const headerRowRef = useRef<HTMLDivElement | null>(null);
+  /** 기본은 라벨. 헤더 줄이 이보다 좁을 때만 아이콘(치과와 동일). */
+  const [headerLabelsWide, setHeaderLabelsWide] = useState(true);
   /** 열 때 스크롤 힌트(detail=위, chat=아래). 미지정 시 채팅 유무로 결정 */
   const [dialogInitialPanelTab, setDialogInitialPanelTab] = useState<
     "detail" | "chat" | undefined
@@ -3198,6 +3203,19 @@ export function RequestorPracticeReceivePage({
       };
     });
     return assignCalendarRainbowDotColors(entries);
+  }, [sortedFilteredTransfers]);
+  const labAlarmPracticeOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const transfer of sortedFilteredTransfers) {
+      const id = String(transfer.practiceBusinessAnchorId || "").trim();
+      if (!id) continue;
+      const name =
+        transfer.matchingMode === "auto"
+          ? "자동 매칭"
+          : String(transfer.practice?.businessName || "").trim() || "치과";
+      if (!map.has(id)) map.set(id, name);
+    }
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
   }, [sortedFilteredTransfers]);
   const selectedTransferCaseIdentity = useMemo(() => {
     if (!selectedTransfer) return null;
@@ -8831,8 +8849,26 @@ export function RequestorPracticeReceivePage({
     ],
   );
 
-  const bookmarkNavigateButton = (opts?: { iconOnly?: boolean }) => {
-    const iconOnly = Boolean(opts?.iconOnly);
+  useLayoutEffect(() => {
+    if (isMobile) return;
+    const el = headerRowRef.current;
+    if (!el) return;
+    const ICON_ONLY_BELOW_PX = 840;
+    const apply = () => {
+      const width = el.clientWidth;
+      if (width <= 0) return;
+      const next = width >= ICON_ONLY_BELOW_PX;
+      setHeaderLabelsWide((prev) => (prev === next ? prev : next));
+    };
+    apply();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isMobile]);
+
+  /** 북마크는 항상 아이콘(+건수). */
+  const bookmarkNavigateButton = () => {
     const count = bookmarkItems.length;
     return (
       <PracticeTransferBookmarkNavigateButton
@@ -8847,19 +8883,12 @@ export function RequestorPracticeReceivePage({
         }}
         buttonClassName={cn(
           "h-8 shrink-0 gap-1 text-xs",
-          iconOnly
-            ? count > 0
-              ? "px-2"
-              : "w-8 px-0"
-            : count === 0
-              ? "w-8 px-0 2xl:w-auto 2xl:px-3"
-              : "px-2 2xl:px-3",
+          count > 0 ? "px-2" : "w-8 px-0",
           count > 0 && "border-sky-300 bg-sky-50/80",
         )}
         iconClassName="h-3.5 w-3.5"
-        showLabel={!iconOnly}
-        labelClassName="hidden 2xl:inline"
-        withTooltip={!iconOnly}
+        showLabel={false}
+        withTooltip={!isMobile}
       />
     );
   };
@@ -8925,10 +8954,11 @@ export function RequestorPracticeReceivePage({
   );
   const labMobileSheet = Boolean(isMobile && mobileOverlayDialogStyle);
 
+  /** 생산중은 항상 아이콘(+건수). */
   const labAbutmentInProgressTrigger = (
     <RequestorAbutmentPageHeader
       variant="policyInProgress"
-      iconOnly={isMobile}
+      iconOnly
       inProgressOpen={abutmentInProgressOpen}
       onInProgressOpenChange={openLabAbutmentInProgress}
       renderInProgressModal={false}
@@ -8959,7 +8989,7 @@ export function RequestorPracticeReceivePage({
 
   const labMobileHeaderActionButtons = (
     <>
-      {bookmarkNavigateButton({ iconOnly: true })}
+      {bookmarkNavigateButton()}
       {labAbutmentInProgressTrigger}
     </>
   );
@@ -9003,12 +9033,17 @@ export function RequestorPracticeReceivePage({
       </div>
       <div className="flex flex-nowrap items-center justify-center gap-1.5">
         {labMobileHeaderActionButtons}
+        <LabReceiveAlarmSettingsButton practices={labAlarmPracticeOptions} />
         <DemoModeBadge className="shrink-0" />
       </div>
       {labMobileStatusBadges}
     </div>
   ) : (
-    <div className="flex w-full min-w-0 flex-nowrap items-center gap-2">
+    <div
+      ref={headerRowRef}
+      data-wide={headerLabelsWide ? "true" : "false"}
+      className="group/practice-hdr flex w-full min-w-0 flex-nowrap items-center gap-2 overflow-hidden"
+    >
       {labUnreadNotice}
       <DashboardNoticeAlert
         placement="inline"
@@ -9021,19 +9056,15 @@ export function RequestorPracticeReceivePage({
         gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}
         countSuffix="건"
         compact
-        iconAtNarrow
+        labelsWhenHeaderWide
         trailing={
           <span className="contents">
             {bookmarkNavigateButton()}
-            <RequestorAbutmentPageHeader
-              variant="policyInProgress"
-              inProgressOpen={abutmentInProgressOpen}
-              onInProgressOpenChange={openLabAbutmentInProgress}
-              renderInProgressModal={false}
-            />
+            {labAbutmentInProgressTrigger}
           </span>
         }
       />
+      <LabReceiveAlarmSettingsButton practices={labAlarmPracticeOptions} />
       <DemoModeBadge className="shrink-0" />
     </div>
   );

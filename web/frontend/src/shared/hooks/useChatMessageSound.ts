@@ -3,13 +3,16 @@
 // - web/frontend/src/shared/chat/chatSoundPlayer.ts
 // - web/frontend/src/shared/chat/chatSoundViewing.ts
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
+// - web/frontend/src/shared/practice/labReceiveSoundPrefs.ts
 // - web/frontend/src/App.tsx
 // change-log:
+// - 2026-10-03: 기공소 채팅 — 치과별 mute(relatedPracticeAnchorId).
 // - 2026-09-08: 미확인 의뢰음과 동일 플레이어(중복 재생 방지).
 // - 2026-09-07: 전역 채팅 알림음 — chat:message-created · remote-support:chat.
 
 import { useMemo } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
+import { normalizeRequestorKind } from "@/shared/business/requestorCapabilities";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import {
   remoteSupportChatSoundTarget,
@@ -20,6 +23,20 @@ import {
   playChatNotifySound,
 } from "@/shared/chat/chatSoundPlayer";
 import { isChatSoundViewingTarget } from "@/shared/chat/chatSoundViewing";
+import { shouldPlayLabReceiveSound } from "@/shared/practice/labReceiveSoundPrefs";
+
+const isLabUser = (user: {
+  role?: string | null;
+  requestorKind?: string | null;
+} | null): boolean => {
+  if (!user) return false;
+  const role = String(user.role || "").trim();
+  if (role === "internalLab") return true;
+  if (role === "requestor") {
+    return normalizeRequestorKind(user.requestorKind) === "lab";
+  }
+  return false;
+};
 
 const myIdSet = (user: {
   id?: string;
@@ -66,7 +83,7 @@ export function useChatMessageSound() {
         const target = remoteSupportChatSoundTarget(sessionId);
         if (!shouldPlayChatSound(target)) return;
         if (isChatSoundViewingTarget(target)) return;
-        playChatNotifySound();
+        playChatNotifySound({ title: "원격지원", body: "새 메시지가 도착했습니다." });
         return;
       }
 
@@ -93,7 +110,17 @@ export function useChatMessageSound() {
       if (!shouldPlayChatSound(roomId)) return;
       if (isChatSoundViewingTarget(roomId)) return;
 
-      playChatNotifySound();
+      if (isLabUser(user as any)) {
+        const practiceId = String(
+          data.relatedPracticeAnchorId || data.practiceBusinessAnchorId || "",
+        ).trim();
+        if (!shouldPlayLabReceiveSound(practiceId || null)) return;
+      }
+
+      playChatNotifySound({
+        title: "새 채팅",
+        body: "새 메시지가 도착했습니다.",
+      });
     },
   });
 }

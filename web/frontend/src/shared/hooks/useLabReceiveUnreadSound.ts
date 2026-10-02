@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/hooks/useChatMessageSound.ts
 // - web/frontend/src/App.tsx
 // change-log:
+// - 2026-10-03: 치과별 mute + 헬퍼 알람 문구.
 // - 2026-09-08: 기공의뢰수신 미확인 도착 알림음(practice:transfer-created).
 //   채팅 알림과 동일 플레이어·최소 간격으로 중복 재생 방지.
 
@@ -45,10 +46,30 @@ export function useLabReceiveUnreadSound() {
     eventTypes: ["practice:transfer-created"],
     requireVisible: false,
     deferWhenEditing: false,
-    onMatch: () => {
+    onMatch: (evt) => {
       bindChatSoundUnlockOnGesture();
-      if (!shouldPlayLabReceiveSound()) return;
-      playChatNotifySound();
+      const data =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as Record<string, unknown>)
+          : {};
+      const practiceId = String(
+        data.practiceBusinessAnchorId || data.practiceAnchorId || "",
+      ).trim();
+      if (!shouldPlayLabReceiveSound(practiceId || null)) return;
+      const clinic = String(
+        data.practiceName ||
+          data.clinicName ||
+          (data.practice &&
+          typeof data.practice === "object" &&
+          (data.practice as { businessName?: string }).businessName) ||
+          "",
+      ).trim();
+      const patient = String(data.patientName || "").trim();
+      const body = [clinic || "치과", patient].filter(Boolean).join(" · ");
+      playChatNotifySound({
+        title: "새 기공의뢰",
+        body: body || "새 기공의뢰가 도착했습니다.",
+      });
     },
   });
 }

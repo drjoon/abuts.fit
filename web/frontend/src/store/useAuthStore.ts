@@ -824,6 +824,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
           // ignore
         }
       }
+      void import("@/shared/files/labHelperClient")
+        .then((m) => m.clearLabHelperAlarmSession())
+        .catch(() => undefined);
       set({
         user: null,
         isAuthenticated: false,

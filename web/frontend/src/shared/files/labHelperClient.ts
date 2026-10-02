@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-03: v4 PC 알람 — notify/session (폴더열기 MIN_VERSION은 3 유지, 알람은 version>=4).
 // - 2026-09-29: Chrome 「로컬 네트워크 액세스」 권한 창이 떠 있으면 답할 때까지 기다린다
 //   (0.5초에 끊으면 설치돼 있어도 없는 것으로 보여 설치 안내·브라우저 저장만 반복).
 // - 2026-09-27: Mac 연결 프로그램 v3 — Windows와 같은 API. OS별 설치본(Windows exe, Mac .app zip).
@@ -13,7 +14,10 @@
 // - web/frontend/src/shared/components/LabWorkFolderDialog.tsx
 
 const HELPER_BASE = "http://127.0.0.1:8010";
+/** 폴더열기·케이스 저장에 필요한 최소 버전 */
 export const LAB_HELPER_MIN_VERSION = 3;
+/** PC 알람(/notify·/session)에 필요한 최소 버전 */
+export const LAB_HELPER_ALARM_MIN_VERSION = 4;
 const INSTALLED_KEY = "abuts.labHelperInstalled";
 const WORK_FOLDER_KEY = "abuts.labWorkFolder";
 
@@ -89,6 +93,34 @@ export type LabHelperHealth = {
   workFolder?: string;
   workFolderExists?: boolean;
 };
+
+export type LabHelperAlarmPrefsPayload = {
+  enabled: boolean;
+  mutedPracticeIds: string[];
+};
+
+export type LabHelperAlarmSessionPayload = {
+  apiOrigin: string;
+  token: string;
+  prefs: LabHelperAlarmPrefsPayload;
+  browserAlive: boolean;
+};
+
+/** 헬퍼가 백엔드에 직접 붙을 때 쓰는 origin(끝에 /api 없음). */
+export function resolveLabHelperApiOrigin(): string {
+  const envRaw = String(
+    (import.meta.env.VITE_DEV_API_TARGET as string) ||
+      (import.meta.env.VITE_API_URL as string) ||
+      "",
+  ).trim();
+  const stripApi = (url: string) =>
+    url.replace(/\/+$/, "").replace(/\/api$/i, "");
+  if (import.meta.env.DEV && envRaw) return stripApi(envRaw);
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
+  }
+  return "https://abuts.fit";
+}
 
 export class LabHelperError extends Error {
   code: string;
@@ -296,4 +328,62 @@ export async function putLabHelperCaseFile(
 export async function revealLabHelperCase(ref: LabHelperCaseRef): Promise<string> {
   const res = await helperJson<{ folder?: string }>("/cases/reveal", ref);
   return String(res.folder || "");
+}
+
+async function helperAlarmJson(path: string, body: unknown): Promise<boolean> {
+  try {
+    const res = await fetch(`${HELPER_BASE}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    });
+    if (!res.ok) return false;
+    const data = (await res.json().catch(() => null)) as { ok?: boolean } | null;
+    return Boolean(data?.ok !== false);
+  } catch {
+    return false;
+  }
+}
+
+/** v4 헬퍼에 OS 알림음. 없거나 구버전이면 false(조용히 실패). */
+export async function notifyLabHelperAlarm(opts?: {
+  title?: string;
+  body?: string;
+}): Promise<boolean> {
+  if (!labHelperOs()) return false;
+  const health = await pingOnce(400);
+  if (!health || Number(health.version || 0) < LAB_HELPER_ALARM_MIN_VERSION) {
+    return false;
+  }
+  return helperAlarmJson("/notify", {
+    title: String(opts?.title || "").trim(),
+    body: String(opts?.body || "").trim(),
+  });
+}
+
+/** 로그인·heartbeat·설정 변경 시 헬퍼에 세션 동기화(브라우저 종료 후 폴링용). */
+export async function syncLabHelperAlarmSession(
+  payload: LabHelperAlarmSessionPayload,
+): Promise<boolean> {
+  if (!labHelperOs()) return false;
+  const health = await pingOnce(400);
+  if (!health || Number(health.version || 0) < LAB_HELPER_ALARM_MIN_VERSION) {
+    return false;
+  }
+  return helperAlarmJson("/session", {
+    apiOrigin: String(payload.apiOrigin || "").trim(),
+    token: String(payload.token || "").trim(),
+    prefs: {
+      enabled: payload.prefs?.enabled !== false,
+      mutedPracticeIds: Array.isArray(payload.prefs?.mutedPracticeIds)
+        ? payload.prefs.mutedPracticeIds.map(String).filter(Boolean)
+        : [],
+    },
+    browserAlive: Boolean(payload.browserAlive),
+  });
+}
+
+export async function clearLabHelperAlarmSession(): Promise<boolean> {
+  if (!labHelperOs()) return false;
+  return helperAlarmJson("/session/clear", {});
 }
