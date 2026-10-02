@@ -1,8 +1,10 @@
 // change-log:
+// - 2026-10-03: 이미 설치된 PC는 확인 창 없이 바로 갱신(--silent-update / 재실행).
 // - 2026-09-27: v3 설치·제거. 사용자 폴더(%LOCALAPPDATA%\Abuts\LabHelper)와 HKCU에만 쓴다.
 //   예전 PowerShell 헬퍼(LabCadHelper·시작프로그램 바로가기)는 설치 때 정리한다.
 // related files:
 // - bg/lab-cad-helper/win/Program.cs
+// - bg/lab-cad-helper/win/AutoUpdate.cs
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -58,17 +60,23 @@ namespace Abuts.LabHelper
             }
         }
 
-        public static int Install()
+        /// <summary>처음 설치는 확인 창. 이미 설치됐거나 silent면 창 없이 덮어쓴다.</summary>
+        public static int Install(bool silent = false)
         {
-            var answer = MessageBox.Show(
-                "어벗츠 연결 프로그램을 설치할까요?\r\n\r\n" +
-                "「작업열기」를 누르면 의뢰 파일을 작업 폴더에 저장하고 폴더를 열어 줍니다.\r\n" +
-                "관리자 권한 없이 이 PC 사용자에게만 설치되고, 화면에 보이지 않게 켜져 있습니다.",
-                Program.Title,
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question,
-                MessageBoxDefaultButton.Button1);
-            if (answer != DialogResult.Yes) return 0;
+            var already = File.Exists(InstalledExe);
+            var quiet = silent || already;
+            if (!quiet)
+            {
+                var answer = MessageBox.Show(
+                    "어벗츠 연결 프로그램을 설치할까요?\r\n\r\n" +
+                    "「작업열기」를 누르면 의뢰 파일을 작업 폴더에 저장하고 폴더를 열어 줍니다.\r\n" +
+                    "관리자 권한 없이 이 PC 사용자에게만 설치되고, 화면에 보이지 않게 켜져 있습니다.",
+                    Program.Title,
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question,
+                    MessageBoxDefaultButton.Button1);
+                if (answer != DialogResult.Yes) return 0;
+            }
 
             StopRunningHelper();
             RemoveLegacyHelper();
@@ -110,14 +118,17 @@ namespace Abuts.LabHelper
             });
 
             var ok = WaitForHealth(8000);
-            Log.Write("install ok=" + ok);
-            MessageBox.Show(
-                ok
-                    ? "설치가 끝났습니다.\r\n\r\n브라우저로 돌아가면 이어서 저장합니다."
-                    : "설치는 됐지만 연결 확인에 실패했습니다.\r\n\r\nPC를 다시 시작하거나, 보안 프로그램이 막았는지 확인해 주세요.",
-                Program.Title,
-                MessageBoxButtons.OK,
-                ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            Log.Write("install ok=" + ok + " quiet=" + quiet);
+            if (!quiet)
+            {
+                MessageBox.Show(
+                    ok
+                        ? "설치가 끝났습니다.\r\n\r\n브라우저로 돌아가면 이어서 저장합니다."
+                        : "설치는 됐지만 연결 확인에 실패했습니다.\r\n\r\nPC를 다시 시작하거나, 보안 프로그램이 막았는지 확인해 주세요.",
+                    Program.Title,
+                    MessageBoxButtons.OK,
+                    ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            }
             return ok ? 0 : 3;
         }
 

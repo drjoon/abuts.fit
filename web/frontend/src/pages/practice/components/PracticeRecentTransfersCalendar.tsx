@@ -8,6 +8,8 @@
  * - web/frontend/src/shared/date/kst.ts
  * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
  * - 2026-09-30: 연결 화살표 클릭 → 연결된 날짜의 의뢰를 채팅에 연다.
+ * - 2026-10-03: showViewModeToggle — 기공소는 헤더 설정 팝오버로 옮김.
+ * - 2026-10-03: 주문·도착 뱃지(라벨 「주문」「도착」)를 검색·협력 왼쪽. 캘린더·목록은 아이콘.
  * - 2026-09-30: 2xl 미만 — 주문일·도착일·캘린더·목록은 아이콘만.
  * - 2026-09-27: 완료 톤=isPracticeRecentFinishedBadgeStatus. 목록·주간 칩 「완료」뱃지.
  * - 2026-09-20: 기공소 바구니 번호표(basketTag) — 목록·주간 칩에 표시.
@@ -881,6 +883,11 @@ type PracticeRecentTransfersCalendarProps = {
   viewMode: LabReceiveCalendarViewMode;
   onViewModeChange: (mode: LabReceiveCalendarViewMode) => void;
   /**
+   * false면 툴바의 캘린더·목록 토글을 숨긴다.
+   * 기공소 수신은 헤더 설정 팝오버로 옮긴다.
+   */
+  showViewModeToggle?: boolean;
+  /**
    * 캘린더 silent refetch 창. 창 안만 교체하고 창 밖 칩은 캐시 유지 —
    * 위로 스크롤해 위쪽이 패치될 때 아래(이미 본) 주 높이 붕괴를 막음.
    */
@@ -1078,6 +1085,7 @@ export function PracticeRecentTransfersCalendar({
   onDateKeyChange,
   viewMode,
   onViewModeChange,
+  showViewModeToggle = true,
   dataYmdRange = null,
   onSelectItem,
   onDeleteItem,
@@ -1833,42 +1841,44 @@ export function PracticeRecentTransfersCalendar({
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-          <div
-            className="flex items-center rounded-md border border-slate-200 bg-white p-0.5 md:hidden"
-            role="group"
-            aria-label="보기 전환"
-          >
-            <button
-              type="button"
-              className={cn(
-                "inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium",
-                viewMode === "calendar"
-                  ? "bg-slate-900 text-white shadow-sm"
-                  : "text-slate-600 hover:bg-slate-50",
-              )}
-              aria-pressed={viewMode === "calendar"}
-              title="캘린더"
-              onClick={() => onViewModeChange("calendar")}
+          {showViewModeToggle ? (
+            <div
+              className="flex items-center rounded-md border border-slate-200 bg-white p-0.5 md:hidden"
+              role="group"
+              aria-label="보기 전환"
             >
-              <CalendarDays className="h-3.5 w-3.5" />
-              캘린더
-            </button>
-            <button
-              type="button"
-              className={cn(
-                "inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium",
-                viewMode === "list"
-                  ? "bg-slate-900 text-white shadow-sm"
-                  : "text-slate-600 hover:bg-slate-50",
-              )}
-              aria-pressed={viewMode === "list"}
-              title="목록"
-              onClick={() => onViewModeChange("list")}
-            >
-              <List className="h-3.5 w-3.5" />
-              목록
-            </button>
-          </div>
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium",
+                  viewMode === "calendar"
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-50",
+                )}
+                aria-pressed={viewMode === "calendar"}
+                aria-label="캘린더"
+                title="캘린더"
+                onClick={() => onViewModeChange("calendar")}
+              >
+                <CalendarDays className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium",
+                  viewMode === "list"
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-50",
+                )}
+                aria-pressed={viewMode === "list"}
+                aria-label="목록"
+                title="목록"
+                onClick={() => onViewModeChange("list")}
+              >
+                <List className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : null}
         </div>
         {!isListMode ? (
           <Popover>
@@ -1934,113 +1944,114 @@ export function PracticeRecentTransfersCalendar({
               : "sm:justify-end md:ml-auto",
           )}
         >
-          {searchLeading || onSearchChange ? (
-            <div className="flex min-w-0 items-center gap-1.5">
-              {searchLeading}
-          {onSearchChange ? (
-            <div className="relative w-2/3 max-w-full shrink-0 md:w-[10.667rem] lg:w-48">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search ?? ""}
-                onChange={(e) => onSearchChange(e.target.value)}
-                className="h-9 w-full truncate pl-9 pr-8"
-                placeholder={searchPlaceholder}
-                title={searchPlaceholder}
-              />
-              {(search ?? "").trim() ? (
-                <button
-                  type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  onClick={() => onSearchChange("")}
-                  aria-label="검색어 지우기"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-            </div>
-          ) : null}
           <div className={WIDE_CLUSTER_ROW_CLASS}>
             <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              className="rounded-full"
-              title="주문일"
-              aria-label="주문일"
-              onClick={() => onDateKeyChange("orderDate")}
-            >
-              <Badge
-                variant="outline"
-                className={cn(
-                  "inline-flex cursor-pointer items-center gap-1 leading-snug tracking-normal",
-                  dateKey === "orderDate"
-                    ? "border-primary/70 bg-primary-soft text-primary-strong"
-                    : "hover:bg-muted/40",
-                )}
-              >
-                <CalendarDays className="h-3.5 w-3.5 shrink-0 2xl:hidden" aria-hidden />
-                <span className="hidden 2xl:inline">주문일</span>
-              </Badge>
-            </button>
-            <button
-              type="button"
-              className="rounded-full"
-              title="치과도착일"
-              aria-label="치과도착일"
-              onClick={() => onDateKeyChange("arrivalDate")}
-            >
-              <Badge
-                variant="outline"
-                className={cn(
-                  // leading-none+작은 글씨에서 「치과도착일」이 「치과의사착일」로 오인되는 경우 방지
-                  "inline-flex cursor-pointer items-center gap-1 leading-snug tracking-normal",
-                  dateKey === "arrivalDate"
-                    ? "border-primary/70 bg-primary-soft text-primary-strong"
-                    : "hover:bg-muted/40",
-                )}
-              >
-                <CalendarCheck className="h-3.5 w-3.5 shrink-0 2xl:hidden" aria-hidden />
-                <span className="hidden 2xl:inline">도착일</span>
-              </Badge>
-            </button>
-            </div>
-            <div
-              className="hidden items-center rounded-md border border-slate-200 bg-white p-0.5 md:flex"
-              role="group"
-              aria-label="보기 전환"
-            >
               <button
                 type="button"
-                className={cn(
-                  "inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium",
-                  viewMode === "calendar"
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "text-slate-600 hover:bg-slate-50",
-                )}
-                aria-pressed={viewMode === "calendar"}
-                title="캘린더"
-                onClick={() => onViewModeChange("calendar")}
+                className="rounded-full"
+                title="치과주문일"
+                aria-label="치과주문일"
+                onClick={() => onDateKeyChange("orderDate")}
               >
-                <CalendarDays className="h-3.5 w-3.5" />
-                <span className="hidden 2xl:inline">캘린더</span>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "inline-flex h-7 cursor-pointer items-center gap-1 px-2 leading-snug tracking-normal",
+                    dateKey === "orderDate"
+                      ? "border-primary/70 bg-primary-soft text-primary-strong"
+                      : "hover:bg-muted/40",
+                  )}
+                >
+                  <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  <span>주문</span>
+                </Badge>
               </button>
               <button
                 type="button"
-                className={cn(
-                  "inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium",
-                  viewMode === "list"
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "text-slate-600 hover:bg-slate-50",
-                )}
-                aria-pressed={viewMode === "list"}
-                title="목록"
-                onClick={() => onViewModeChange("list")}
+                className="rounded-full"
+                title="치과도착일"
+                aria-label="치과도착일"
+                onClick={() => onDateKeyChange("arrivalDate")}
               >
-                <List className="h-3.5 w-3.5" />
-                <span className="hidden 2xl:inline">목록</span>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "inline-flex h-7 cursor-pointer items-center gap-1 px-2 leading-snug tracking-normal",
+                    dateKey === "arrivalDate"
+                      ? "border-primary/70 bg-primary-soft text-primary-strong"
+                      : "hover:bg-muted/40",
+                  )}
+                >
+                  <CalendarCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  <span>도착</span>
+                </Badge>
               </button>
             </div>
+            {searchLeading || onSearchChange ? (
+              <div className="flex min-w-0 items-center gap-1.5">
+                {searchLeading}
+                {onSearchChange ? (
+                  <div className="relative w-2/3 max-w-full shrink-0 md:w-[10.667rem] lg:w-48">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={search ?? ""}
+                      onChange={(e) => onSearchChange(e.target.value)}
+                      className="h-9 w-full truncate pl-9 pr-8"
+                      placeholder={searchPlaceholder}
+                      title={searchPlaceholder}
+                    />
+                    {(search ?? "").trim() ? (
+                      <button
+                        type="button"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        onClick={() => onSearchChange("")}
+                        aria-label="검색어 지우기"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {showViewModeToggle ? (
+              <div
+                className="hidden items-center rounded-md border border-slate-200 bg-white p-0.5 md:flex"
+                role="group"
+                aria-label="보기 전환"
+              >
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium",
+                    viewMode === "calendar"
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-50",
+                  )}
+                  aria-pressed={viewMode === "calendar"}
+                  aria-label="캘린더"
+                  title="캘린더"
+                  onClick={() => onViewModeChange("calendar")}
+                >
+                  <CalendarDays className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium",
+                    viewMode === "list"
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-50",
+                  )}
+                  aria-pressed={viewMode === "list"}
+                  aria-label="목록"
+                  title="목록"
+                  onClick={() => onViewModeChange("list")}
+                >
+                  <List className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
         {toolbarMiddle ? (

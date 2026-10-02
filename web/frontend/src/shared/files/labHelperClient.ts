@@ -18,6 +18,8 @@ const HELPER_BASE = "http://127.0.0.1:8010";
 export const LAB_HELPER_MIN_VERSION = 3;
 /** PC 알람(/notify·/session)에 필요한 최소 버전 */
 export const LAB_HELPER_ALARM_MIN_VERSION = 4;
+/** 배포 중인 최신 연결 프로그램 버전(구버전이면 자동 갱신 유도) */
+export const LAB_HELPER_CURRENT_VERSION = 5;
 const INSTALLED_KEY = "abuts.labHelperInstalled";
 const WORK_FOLDER_KEY = "abuts.labWorkFolder";
 
@@ -96,7 +98,6 @@ export type LabHelperHealth = {
 
 export type LabHelperAlarmPrefsPayload = {
   enabled: boolean;
-  mutedPracticeIds: string[];
 };
 
 export type LabHelperAlarmSessionPayload = {
@@ -220,6 +221,20 @@ export async function waitForLabHelper(signal: AbortSignal): Promise<LabHelperHe
   while (!signal.aborted) {
     const health = await pingOnce(await pingTimeout(600));
     if (health) return health;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return null;
+}
+
+/** 업데이트 안내 창 — 최소 버전 이상 health가 올 때까지 기다린다. */
+export async function waitForLabHelperMinVersion(
+  signal: AbortSignal,
+  minVersion: number,
+): Promise<LabHelperHealth | null> {
+  const min = Math.max(1, Number(minVersion) || 1);
+  while (!signal.aborted) {
+    const health = await pingOnce(await pingTimeout(600));
+    if (health && Number(health.version || 0) >= min) return health;
     await new Promise((r) => setTimeout(r, 1000));
   }
   return null;
@@ -375,9 +390,6 @@ export async function syncLabHelperAlarmSession(
     token: String(payload.token || "").trim(),
     prefs: {
       enabled: payload.prefs?.enabled !== false,
-      mutedPracticeIds: Array.isArray(payload.prefs?.mutedPracticeIds)
-        ? payload.prefs.mutedPracticeIds.map(String).filter(Boolean)
-        : [],
     },
     browserAlive: Boolean(payload.browserAlive),
   });
@@ -386,4 +398,27 @@ export async function syncLabHelperAlarmSession(
 export async function clearLabHelperAlarmSession(): Promise<boolean> {
   if (!labHelperOs()) return false;
   return helperAlarmJson("/session/clear", {});
+}
+
+export function startLabHelperInstallerDownload(os: LabHelperOs) {
+  const installer = labHelperInstaller(os);
+  try {
+    const a = document.createElement("a");
+    a.href = installer.href;
+    a.download = installer.fileName;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch {
+    // ignore
+  }
+}
+
+/** 연결 프로그램이 떠 있는데 CURRENT 미만이면 true. 안내 모달용. */
+export async function needsLabHelperUpdate(): Promise<boolean> {
+  if (!labHelperOs()) return false;
+  const health = await probeLabHelper();
+  if (!health) return false;
+  return Number(health.version || 0) < LAB_HELPER_CURRENT_VERSION;
 }

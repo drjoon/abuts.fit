@@ -24,6 +24,7 @@ import { useSocket } from "@/shared/hooks/useSocket";
 import { useChatMessageSound } from "@/shared/hooks/useChatMessageSound";
 import { useLabReceiveUnreadSound } from "@/shared/hooks/useLabReceiveUnreadSound";
 import { useLabHelperAlarmSession } from "@/shared/hooks/useLabHelperAlarmSession";
+import { LabHelperUpdatePrompt } from "@/shared/components/LabHelperUpdatePrompt";
 import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 // related files:
@@ -570,6 +571,7 @@ const App = () => {
           <Toaster />
           <Sonner />
           <UiTextZoomShortcuts />
+          <LabHelperUpdatePrompt />
           <AppLayout>
             <Suspense fallback={<LoadingScreen />}>
               <Routes>

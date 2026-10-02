@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-03: v5 — version.json 자동 갱신(--silent-update).
 // - 2026-10-03: v4 — PC 알람(/notify·/session) + 브라우저 종료 시 API 장기 폴링.
 // - 2026-09-27: v3 — Windows 연결 프로그램과 같은 동작·API. 앱 하나를 열면 「설치할까요?」 한 번 → 사용자 폴더에 복사,
 //   LaunchAgent로 로그인 때마다 보이지 않게 실행. 케이스 폴더 확인·저장·Finder로 열기만 한다.
@@ -12,7 +13,7 @@ import AppKit
 import Foundation
 import Network
 
-let helperVersion = 4
+let helperVersion = 5
 let helperPort: UInt16 = 8010
 let agentLabel = "fit.abuts.labhelper"
 let appTitle = "어벗츠 연결 프로그램"
@@ -727,7 +728,8 @@ func alert(_ message: String, _ info: String, buttons: [String], style: NSAlert.
   return a.runModal().rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
 }
 
-func install() -> Int32 {
+func install(silent: Bool = false) -> Int32 {
+  let quiet = silent || fm.fileExists(atPath: installedApp.path)
   do {
     stopRunningHelper()
     try fm.createDirectory(at: supportDir, withIntermediateDirectories: true)
@@ -742,7 +744,9 @@ func install() -> Int32 {
     }
   } catch {
     log("install failed: \(error)")
-    _ = alert("설치 중 문제가 생겼습니다.", error.localizedDescription, buttons: ["확인"], style: .critical)
+    if !quiet {
+      _ = alert("설치 중 문제가 생겼습니다.", error.localizedDescription, buttons: ["확인"], style: .critical)
+    }
     return 1
   }
   var ok = false
@@ -753,13 +757,95 @@ func install() -> Int32 {
     }
     Thread.sleep(forTimeInterval: 0.25)
   }
-  log("install ok=\(ok)")
+  log("install ok=\(ok) quiet=\(quiet)")
+  if quiet { return ok ? 0 : 3 }
   if ok {
     _ = alert("설치가 끝났습니다.", "브라우저로 돌아가면 이어서 저장합니다.", buttons: ["확인"])
     return 0
   }
   _ = alert("설치는 됐지만 연결 확인에 실패했습니다.", "Mac을 다시 시작한 뒤 다시 시도해 주세요.", buttons: ["확인"], style: .warning)
   return 3
+}
+
+/// serve 중 원격 version.json이 더 높으면 zip을 받아 조용히 교체한다.
+func startAutoUpdate() {
+  DispatchQueue.global(qos: .utility).async {
+    Thread.sleep(forTimeInterval: 8)
+    let origins: [String] = {
+      var list: [String] = []
+      let snap = AlarmSession.shared.snapshot()
+      if !snap.apiOrigin.isEmpty { list.append(snap.apiOrigin) }
+      list.append(contentsOf: ["https://abuts.fit", "https://www.abuts.fit"])
+      return list
+    }()
+    for origin in origins {
+      if autoUpdateOnce(from: origin) { return }
+    }
+  }
+}
+
+func autoUpdateOnce(from origin: String) -> Bool {
+  let metaURL = URL(string: "\(origin)/downloads/lab-helper/version.json")!
+  var metaReq = URLRequest(url: metaURL, timeoutInterval: 8)
+  metaReq.setValue("AbutsLabHelper/\(helperVersion)", forHTTPHeaderField: "User-Agent")
+  let sem = DispatchSemaphore(value: 0)
+  var metaData: Data?
+  URLSession.shared.dataTask(with: metaReq) { data, response, _ in
+    if let http = response as? HTTPURLResponse, http.statusCode == 200 { metaData = data }
+    sem.signal()
+  }.resume()
+  _ = sem.wait(timeout: .now() + 12)
+  guard let data = metaData,
+        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+    return false
+  }
+  let remote: Int
+  if let n = obj["version"] as? Int { remote = n }
+  else if let n = obj["version"] as? NSNumber { remote = n.intValue }
+  else if let s = obj["version"] as? String, let n = Int(s) { remote = n }
+  else { return false }
+  if remote <= helperVersion {
+    log("auto-update up-to-date local=\(helperVersion) remote=\(remote)")
+    return true
+  }
+  var path = "/downloads/lab-helper/AbutsLabHelper-mac.zip"
+  if let mac = obj["mac"] as? [String: Any],
+     let p = mac["path"] as? String, !p.isEmpty {
+    path = p.hasPrefix("/") ? p : "/\(p)"
+  }
+  let downloadURL = path.hasPrefix("http")
+    ? URL(string: path)!
+    : URL(string: origin + path)!
+  log("auto-update download \(downloadURL.absoluteString)")
+  var fileReq = URLRequest(url: downloadURL, timeoutInterval: 120)
+  fileReq.setValue("AbutsLabHelper/\(helperVersion)", forHTTPHeaderField: "User-Agent")
+  let sem2 = DispatchSemaphore(value: 0)
+  var zipURL: URL?
+  URLSession.shared.downloadTask(with: fileReq) { url, response, _ in
+    defer { sem2.signal() }
+    guard let url = url, let http = response as? HTTPURLResponse, http.statusCode == 200 else { return }
+    let dest = fm.temporaryDirectory.appendingPathComponent("AbutsLabHelper-mac.zip")
+    try? fm.removeItem(at: dest)
+    try? fm.copyItem(at: url, to: dest)
+    zipURL = dest
+  }.resume()
+  _ = sem2.wait(timeout: .now() + 130)
+  guard let zip = zipURL else { return false }
+  let extractDir = fm.temporaryDirectory.appendingPathComponent("AbutsLabHelperUpdate", isDirectory: true)
+  try? fm.removeItem(at: extractDir)
+  try? fm.createDirectory(at: extractDir, withIntermediateDirectories: true)
+  guard run("/usr/bin/unzip", ["-o", zip.path, "-d", extractDir.path]) == 0 else { return false }
+  // zip 안 「어벗츠 연결.app」
+  let appName = "어벗츠 연결.app"
+  let newApp = extractDir.appendingPathComponent(appName)
+  guard fm.fileExists(atPath: newApp.path) else {
+    log("auto-update: app missing in zip")
+    return false
+  }
+  // 설치본 교체: 새 바이너리에서 --silent-update 실행
+  let updater = newApp.appendingPathComponent("Contents/MacOS/AbutsLabHelper")
+  _ = run(updater.path, ["--silent-update"])
+  exit(0)
 }
 
 func uninstall() -> Int32 {
@@ -776,12 +862,18 @@ func runInstaller() -> Int32 {
   let installed = fm.fileExists(atPath: installedApp.path)
   let info = "「작업열기」를 누르면 의뢰 파일을 작업 폴더에 저장하고 폴더를 열어 줍니다.\n"
     + "관리자 암호 없이 이 사용자에게만 설치되고, 화면에 보이지 않게 켜져 있습니다."
-  let choice = installed
-    ? alert("어벗츠 연결 프로그램이 이미 설치돼 있습니다.", info, buttons: ["다시 설치", "취소", "삭제"])
-    : alert("어벗츠 연결 프로그램을 설치할까요?", info, buttons: ["설치", "취소"])
+  if installed {
+    // 수동으로 설치본을 열면 다시 설치(조용히)·삭제. 자동 갱신은 --silent-update.
+    let choice = alert("어벗츠 연결 프로그램이 이미 설치돼 있습니다.", info, buttons: ["다시 설치", "취소", "삭제"])
+    switch choice {
+    case 0: return install(silent: true)
+    case 2: return uninstall()
+    default: return 0
+    }
+  }
+  let choice = alert("어벗츠 연결 프로그램을 설치할까요?", info, buttons: ["설치", "취소"])
   switch choice {
   case 0: return install()
-  case 2: return uninstall()
   default: return 0
   }
 }
@@ -813,6 +905,7 @@ func serve() -> Never {
     switch st {
     case .ready:
       log("serve v\(helperVersion)")
+      startAutoUpdate()
     case .failed(let err):
       log("listener failed: \(err) — already running?")
       exit(0)
@@ -833,6 +926,9 @@ if args.contains("--serve") || isRunningFromInstallDir() {
 } else if args.contains("--uninstall") {
   _ = NSApplication.shared
   exit(uninstall())
+} else if args.contains("--silent-update") {
+  _ = NSApplication.shared
+  exit(install(silent: true))
 } else {
   exit(runInstaller())
 }

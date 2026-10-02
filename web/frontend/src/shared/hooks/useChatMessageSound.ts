@@ -3,16 +3,14 @@
 // - web/frontend/src/shared/chat/chatSoundPlayer.ts
 // - web/frontend/src/shared/chat/chatSoundViewing.ts
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
-// - web/frontend/src/shared/practice/labReceiveSoundPrefs.ts
 // - web/frontend/src/App.tsx
 // change-log:
-// - 2026-10-03: 기공소 채팅 — 치과별 mute(relatedPracticeAnchorId).
+// - 2026-10-03: 치과별 mute 제거(전체 알림 prefs만).
 // - 2026-09-08: 미확인 의뢰음과 동일 플레이어(중복 재생 방지).
 // - 2026-09-07: 전역 채팅 알림음 — chat:message-created · remote-support:chat.
 
 import { useMemo } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
-import { normalizeRequestorKind } from "@/shared/business/requestorCapabilities";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import {
   remoteSupportChatSoundTarget,
@@ -24,6 +22,7 @@ import {
 } from "@/shared/chat/chatSoundPlayer";
 import { isChatSoundViewingTarget } from "@/shared/chat/chatSoundViewing";
 import { shouldPlayLabReceiveSound } from "@/shared/practice/labReceiveSoundPrefs";
+import { normalizeRequestorKind } from "@/shared/business/requestorCapabilities";
 
 const isLabUser = (user: {
   role?: string | null;
@@ -110,12 +109,7 @@ export function useChatMessageSound() {
       if (!shouldPlayChatSound(roomId)) return;
       if (isChatSoundViewingTarget(roomId)) return;
 
-      if (isLabUser(user as any)) {
-        const practiceId = String(
-          data.relatedPracticeAnchorId || data.practiceBusinessAnchorId || "",
-        ).trim();
-        if (!shouldPlayLabReceiveSound(practiceId || null)) return;
-      }
+      if (isLabUser(user as any) && !shouldPlayLabReceiveSound()) return;
 
       playChatNotifySound({
         title: "새 채팅",

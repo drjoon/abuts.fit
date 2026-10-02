@@ -1,5 +1,5 @@
 // related files:
-// - 2026-10-03: 수신 헤더 — 상태 뱃지는 치과처럼 라벨. 북마크·생산중·캘린더/목록만 아이콘.
+// - 2026-10-03: 수신 헤더 — 캘린더·목록은 설정 팝오버. 상태·역할은 라벨. 북마크·생산중·주문/도착은 툴바.
 // - 2026-09-30: 공지는 미처리 안내 바로 옆. 2xl 미만 헤더 뱃지·버튼은 아이콘.
 // - 2026-09-29: 작업시작 클릭 시 보철 업로드 요구 건은 적립 조건 확인 모달(다시 보지 않기).
 // - 2026-09-29: 작업 파일 「폴더 열기」 — 작업 스캔·어벗 디자인·보철물을 같은 케이스 폴더에 받고 연다.
@@ -3203,19 +3203,6 @@ export function RequestorPracticeReceivePage({
       };
     });
     return assignCalendarRainbowDotColors(entries);
-  }, [sortedFilteredTransfers]);
-  const labAlarmPracticeOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const transfer of sortedFilteredTransfers) {
-      const id = String(transfer.practiceBusinessAnchorId || "").trim();
-      if (!id) continue;
-      const name =
-        transfer.matchingMode === "auto"
-          ? "자동 매칭"
-          : String(transfer.practice?.businessName || "").trim() || "치과";
-      if (!map.has(id)) map.set(id, name);
-    }
-    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
   }, [sortedFilteredTransfers]);
   const selectedTransferCaseIdentity = useMemo(() => {
     if (!selectedTransfer) return null;
@@ -8850,10 +8837,14 @@ export function RequestorPracticeReceivePage({
   );
 
   useLayoutEffect(() => {
-    if (isMobile) return;
+    if (isMobile) {
+      setHeaderLabelsWide(false);
+      return;
+    }
     const el = headerRowRef.current;
     if (!el) return;
-    const ICON_ONLY_BELOW_PX = 840;
+    /** 치과보다 조금 낮게 — 기공소도 최대한 라벨(의뢰·작업시작…) 유지. */
+    const ICON_ONLY_BELOW_PX = 640;
     const apply = () => {
       const width = el.clientWidth;
       if (width <= 0) return;
@@ -9033,7 +9024,10 @@ export function RequestorPracticeReceivePage({
       </div>
       <div className="flex flex-nowrap items-center justify-center gap-1.5">
         {labMobileHeaderActionButtons}
-        <LabReceiveAlarmSettingsButton practices={labAlarmPracticeOptions} />
+        <LabReceiveAlarmSettingsButton
+          viewMode={viewMode}
+          onViewModeChange={handleViewModeChange}
+        />
         <DemoModeBadge className="shrink-0" />
       </div>
       {labMobileStatusBadges}
@@ -9056,7 +9050,7 @@ export function RequestorPracticeReceivePage({
         gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}
         countSuffix="건"
         compact
-        labelsWhenHeaderWide
+        alwaysLabeled
         trailing={
           <span className="contents">
             {bookmarkNavigateButton()}
@@ -9064,7 +9058,10 @@ export function RequestorPracticeReceivePage({
           </span>
         }
       />
-      <LabReceiveAlarmSettingsButton practices={labAlarmPracticeOptions} />
+      <LabReceiveAlarmSettingsButton
+        viewMode={viewMode}
+        onViewModeChange={handleViewModeChange}
+      />
       <DemoModeBadge className="shrink-0" />
     </div>
   );
@@ -9293,6 +9290,7 @@ export function RequestorPracticeReceivePage({
               onDateKeyChange={handleCalendarDateKeyChange}
               viewMode={viewMode}
               onViewModeChange={handleViewModeChange}
+              showViewModeToggle={false}
               dataYmdRange={calendarYmdRange}
               onSelectItem={(item, ctx) => {
                 const transfer = calendarTransferById.get(item.id);

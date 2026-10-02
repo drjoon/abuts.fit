@@ -38,10 +38,7 @@ const pushSession = (token: string, browserAlive: boolean) => {
   void syncLabHelperAlarmSession({
     apiOrigin: resolveLabHelperApiOrigin(),
     token,
-    prefs: {
-      enabled: prefs.enabled,
-      mutedPracticeIds: prefs.mutedPracticeIds,
-    },
+    prefs: { enabled: prefs.enabled },
     browserAlive,
   });
 };

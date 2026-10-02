@@ -6,6 +6,7 @@
  * - 상단: 기간필터 + 요약(좌 2x2) + 최근 의뢰(우)
  * - 하단: 스캔 전송 섹션이 남은 영역을 채움
  * - 최근 전송 카드 클릭 시 의뢰 정보 + 기공소 채팅 모달 제공
+ * - 2026-10-03: 헤더 오른쪽 끝 — 북마크·휴지통·설정은 항상 아이콘만(그 순서).
  * - 2026-09-30: 헤더 줄이 좁으면 북마크·신규주문·리메이크·임시저장·휴지통은 아이콘(+숫자).
  *
  * related files:
@@ -9758,9 +9759,8 @@ export const PracticeFileTransferPage = ({
           count > 0 && "border-sky-300 bg-sky-50/90",
         )
       : cn(
-          "h-9 shrink-0 gap-1 px-2 group-data-[wide=true]/practice-hdr:gap-1.5 group-data-[wide=true]/practice-hdr:px-3",
-          count === 0 &&
-            "w-9 px-0 group-data-[wide=true]/practice-hdr:w-auto group-data-[wide=true]/practice-hdr:px-3",
+          "h-9 shrink-0 gap-1",
+          count === 0 ? "w-9 px-0" : "px-2",
           count > 0 && "border-sky-300 bg-sky-50/80",
         );
     return (
@@ -9775,17 +9775,101 @@ export const PracticeFileTransferPage = ({
           }
         }}
         buttonClassName={className}
-        showLabel={!mobile}
-        labelClassName="hidden group-data-[wide=true]/practice-hdr:inline"
+        showLabel={false}
         withTooltip={!mobile}
       />
     );
   };
 
-  /** 메인 헤더 — 북마크·신규주문·리메이크·임시저장·휴지통(+PC 데모). */
+  /** 오른쪽 끝 — 북마크·휴지통·설정(항상 아이콘). */
+  const practiceHeaderUtilityButtons = (opts?: { mobile?: boolean }) => {
+    const mobile = Boolean(opts?.mobile);
+    const iconBtn = mobile
+      ? "h-9 w-9 shrink-0 rounded-full border-slate-200 bg-white p-0 shadow-sm"
+      : "h-9 w-9 shrink-0 px-0";
+    const trashBtn = mobile
+      ? cn(
+          "h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white shadow-sm",
+          trashGroupedTransfers.length === 0 ? "w-9 p-0" : "px-2",
+        )
+      : cn(
+          "h-9 shrink-0 gap-1",
+          trashGroupedTransfers.length === 0 ? "w-9 px-0" : "px-2",
+        );
+    const trashBadge = trashGroupedTransfers.length > 0 ? (
+      <Badge
+        variant="secondary"
+        className="h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none"
+      >
+        {trashGroupedTransfers.length}
+      </Badge>
+    ) : null;
+    const trashButton = (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className={trashBtn}
+        aria-label={
+          trashGroupedTransfers.length > 0
+            ? `휴지통 ${trashGroupedTransfers.length}건`
+            : "휴지통"
+        }
+        title="휴지통"
+        onClick={() => {
+          dismissPracticeOverlaysForAction("trash");
+          setTrashOpen(true);
+          void loadRecentRequests({ silent: true });
+        }}
+      >
+        <Trash2 className="h-4 w-4 shrink-0" />
+        {trashBadge}
+      </Button>
+    );
+    const settingsButton = (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className={iconBtn}
+        aria-label="설정"
+        title="설정"
+        onClick={() => navigate("/practice/settings")}
+      >
+        <Settings className="h-4 w-4 shrink-0" />
+      </Button>
+    );
+    if (mobile) {
+      return (
+        <>
+          {bookmarkNavigateButton({ mobile: true })}
+          {trashButton}
+          {settingsButton}
+        </>
+      );
+    }
+    return (
+      <>
+        {bookmarkNavigateButton()}
+        <Tooltip>
+          <TooltipTrigger asChild>{trashButton}</TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            휴지통
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>{settingsButton}</TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            설정
+          </TooltipContent>
+        </Tooltip>
+      </>
+    );
+  };
+
+  /** 메인 헤더 — 신규주문·리메이크·임시저장 + 오른쪽 끝 북마크·휴지통·설정(+PC 데모). */
   const practiceMobileHeaderActionButtons = (
     <>
-      {bookmarkNavigateButton({ mobile: true })}
       <Button
         type="button"
         variant="outline"
@@ -9854,36 +9938,7 @@ export const PracticeFileTransferPage = ({
           </Badge>
         ) : null}
       </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className={cn(
-          "h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white shadow-sm",
-          trashGroupedTransfers.length === 0 ? "w-9 p-0" : "px-2",
-        )}
-        aria-label={
-          trashGroupedTransfers.length > 0
-            ? `휴지통 ${trashGroupedTransfers.length}건`
-            : "휴지통"
-        }
-        title="휴지통"
-        onClick={() => {
-          dismissPracticeOverlaysForAction("trash");
-          setTrashOpen(true);
-          void loadRecentRequests({ silent: true });
-        }}
-      >
-        <Trash2 className="h-4 w-4 shrink-0" />
-        {trashGroupedTransfers.length > 0 ? (
-          <Badge
-            variant="secondary"
-            className="h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none"
-          >
-            {trashGroupedTransfers.length}
-          </Badge>
-        ) : null}
-      </Button>
+      {practiceHeaderUtilityButtons({ mobile: true })}
     </>
   );
 
@@ -9935,7 +9990,6 @@ export const PracticeFileTransferPage = ({
         </div>
       ) : (
         <>
-          {bookmarkNavigateButton()}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -10032,46 +10086,7 @@ export const PracticeFileTransferPage = ({
               임시저장 — 기공소 전송 전 작성 중 의뢰
             </TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className={cn(
-                  "h-9 shrink-0 gap-1 px-2 group-data-[wide=true]/practice-hdr:gap-1.5 group-data-[wide=true]/practice-hdr:px-3",
-                  trashGroupedTransfers.length === 0 &&
-                    "w-9 px-0 group-data-[wide=true]/practice-hdr:w-auto group-data-[wide=true]/practice-hdr:px-3",
-                )}
-                aria-label={
-                  trashGroupedTransfers.length > 0
-                    ? `휴지통 ${trashGroupedTransfers.length}건`
-                    : "휴지통"
-                }
-                onClick={() => {
-                  dismissPracticeOverlaysForAction("trash");
-                  setTrashOpen(true);
-                  void loadRecentRequests({ silent: true });
-                }}
-              >
-                <Trash2 className="h-4 w-4 shrink-0" />
-                <span className="hidden group-data-[wide=true]/practice-hdr:inline">
-                  휴지통
-                </span>
-                {trashGroupedTransfers.length > 0 ? (
-                  <Badge
-                    variant="secondary"
-                    className="h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none"
-                  >
-                    {trashGroupedTransfers.length}
-                  </Badge>
-                ) : null}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              휴지통
-            </TooltipContent>
-          </Tooltip>
+          {practiceHeaderUtilityButtons()}
           <DemoModeBadge />
         </>
       )}

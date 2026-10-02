@@ -1,0 +1,11 @@
+{
+  "version": 5,
+  "windows": {
+    "path": "/downloads/lab-helper/AbutsLabHelperSetup.exe",
+    "fileName": "어벗츠연결_설치.exe"
+  },
+  "mac": {
+    "path": "/downloads/lab-helper/AbutsLabHelper-mac.zip",
+    "fileName": "어벗츠연결_설치_Mac.zip"
+  }
+}

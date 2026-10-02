@@ -57,7 +57,7 @@ bind `127.0.0.1:8010`(Windows TcpListener — HttpListener URL 예약은 관리�
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
-| GET | `/health` | `version`(3), `os`(`windows`/`mac`), `workFolder`, `workFolderExists` |
+| GET | `/health` | `version`(5), `os`(`windows`/`mac`), `workFolder`, `workFolderExists` |
 | GET/POST | `/work-folder` | 조회 / `{path}` 확인 후 저장 |
 | POST | `/work-folder/pick` | 폴더 고르기 창(브라우저 위) |
 | POST | `/cases/check` | `{workFolder, caseFolder, files:[{name,size}]}` → `folder`, `exists`, `missing` |
@@ -68,7 +68,8 @@ bind `127.0.0.1:8010`(Windows TcpListener — HttpListener URL 예약은 관리�
 | POST | `/session/clear` | 로그아웃 시 세션 제거. v4 |
 | POST | `/shutdown` | 재설치용 종료 |
 
-- 웹 `LAB_HELPER_MIN_VERSION`(폴더열기)=3, `LAB_HELPER_ALARM_MIN_VERSION`=4. 알람 API는 version≥4일 때만 호출한다.
+- 웹 `LAB_HELPER_MIN_VERSION`(폴더열기)=3, `LAB_HELPER_ALARM_MIN_VERSION`=4, `LAB_HELPER_CURRENT_VERSION`=5. 알람 API는 version≥4일 때만 호출한다.
+- **자동 갱신(v5+)**: serve 중 `version.json`을 보고 원격이 더 높으면 설치본을 받아 `--silent-update`로 교체. 이미 설치된 PC에서 설치 파일을 열면 확인 창 없이 덮어쓴다. 구버전은 웹 `LabHelperUpdateDialog`로 파일 받기 + 「열어서 설치」를 짧게 안내한다.
 
 ## 5) 파일 · 빌드
 
@@ -78,6 +79,7 @@ bind `127.0.0.1:8010`(Windows TcpListener — HttpListener URL 예약은 관리�
 | `win/Installer.cs` | 동의·복사·레지스트리·v2 정리·연결 확인·제거 |
 | `win/HttpServer.cs` | HTTP·CORS·라우팅 |
 | `win/Notify.cs` | v4 PC 알람(소리·balloon·session·폴링) |
+| `win/AutoUpdate.cs` | v5 version.json 자동 갱신 |
 | `win/CaseFolder.cs` | 이름 정리·확인·쓰기 |
 | `win/WinShell.cs` | 탐색기 열기·앞으로, 폴더 고르기 창 |
 | `win/Config.cs` | `config.json`·`helper.log` |

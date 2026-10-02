@@ -4,6 +4,7 @@
  * 완료 건수는 isPracticeRecentFinishedBadgeStatus. 작업완료이고 어벗 뱃지가 없을 때.
  * 클릭=미확인·미처리 우선으로 해당 상태 건을 하나씩 연다.
  * 캘린더·목록 칩 빨간 숫자=미확인(채팅)만. 빨간 테두리=미처리(작업큐)만(채팅만은 테두리 없음).
+ * 2026-10-03: alwaysLabeled — 헤더 폭과 무관하게 아이콘+라벨(기공소 수신).
  * 2026-09-30: 2xl 미만 — 아이콘+숫자만(라벨·「건」숨김). 툴팁에 전체 안내.
  * 2026-09-20: className으로 flex-nowrap 넘기면 한 줄 유지(기공의뢰수신 헤더).
  * 2026-09-14: 북마크는 헤더 버튼(배지 행에서 분리).
@@ -90,6 +91,11 @@ type PracticeStatusFilterBadgesProps = {
    * 조상 group/practice-hdr 가 840px 이상일 때 문구를 보여 준다.
    */
   labelsWhenHeaderWide?: boolean;
+  /**
+   * true면 폭과 무관하게 아이콘+라벨+숫자.
+   * 기공소 수신처럼 라벨을 기본으로 둘 때.
+   */
+  alwaysLabeled?: boolean;
   className?: string;
 };
 
@@ -103,14 +109,17 @@ export function PracticeStatusFilterBadges({
   compact = false,
   iconAtNarrow = false,
   labelsWhenHeaderWide = false,
+  alwaysLabeled = false,
   className,
 }: PracticeStatusFilterBadgesProps) {
-  const showIcons = iconAtNarrow || labelsWhenHeaderWide;
-  const labelHiddenClass = labelsWhenHeaderWide
-    ? "hidden group-data-[wide=true]/practice-hdr:inline"
-    : iconAtNarrow
-      ? "hidden 2xl:inline"
-      : "";
+  const showIcons = alwaysLabeled || iconAtNarrow || labelsWhenHeaderWide;
+  const labelHiddenClass = alwaysLabeled
+    ? ""
+    : labelsWhenHeaderWide
+      ? "hidden group-data-[wide=true]/practice-hdr:inline"
+      : iconAtNarrow
+        ? "hidden 2xl:inline"
+        : "";
   const gapKeySet = new Set(gapBeforeKeys || []);
   return (
     <div
@@ -150,12 +159,14 @@ export function PracticeStatusFilterBadges({
                   "relative shrink-0 rounded-full",
                   withGap &&
                     (showIcons
-                      ? cn(
-                          labelsWhenHeaderWide
-                            ? "ml-2 group-data-[wide=true]/practice-hdr:ml-5"
-                            : "ml-2 2xl:ml-5",
-                          WIDE_CLUSTER_SEPARATOR_CLASS,
-                        )
+                      ? alwaysLabeled
+                        ? cn("ml-5", WIDE_CLUSTER_SEPARATOR_CLASS)
+                        : cn(
+                            labelsWhenHeaderWide
+                              ? "ml-2 group-data-[wide=true]/practice-hdr:ml-5"
+                              : "ml-2 2xl:ml-5",
+                            WIDE_CLUSTER_SEPARATOR_CLASS,
+                          )
                       : cn("ml-5", WIDE_CLUSTER_SEPARATOR_CLASS)),
                   !canNavigate && "cursor-default",
                 )}
@@ -174,12 +185,16 @@ export function PracticeStatusFilterBadges({
                     compact && "h-8 text-xs",
                     showIcons
                       ? compact
-                        ? labelsWhenHeaderWide
-                          ? "gap-1 px-2 group-data-[wide=true]/practice-hdr:px-2.5"
-                          : "gap-1 px-2 2xl:px-2.5"
-                        : labelsWhenHeaderWide
-                          ? "gap-1 px-2 group-data-[wide=true]/practice-hdr:px-3"
-                          : "gap-1 px-2 2xl:px-3"
+                        ? alwaysLabeled
+                          ? "gap-1 px-2.5"
+                          : labelsWhenHeaderWide
+                            ? "gap-1 px-2 group-data-[wide=true]/practice-hdr:px-2.5"
+                            : "gap-1 px-2 2xl:px-2.5"
+                        : alwaysLabeled
+                          ? "gap-1 px-3"
+                          : labelsWhenHeaderWide
+                            ? "gap-1 px-2 group-data-[wide=true]/practice-hdr:px-3"
+                            : "gap-1 px-2 2xl:px-3"
                       : compact
                         ? "px-2.5"
                         : null,

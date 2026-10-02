@@ -4,7 +4,7 @@
 // - web/frontend/src/shared/hooks/useChatMessageSound.ts
 // - web/frontend/src/App.tsx
 // change-log:
-// - 2026-10-03: 치과별 mute + 헬퍼 알람 문구.
+// - 2026-10-03: 치과별 mute 제거. 헬퍼 알람 문구.
 // - 2026-09-08: 기공의뢰수신 미확인 도착 알림음(practice:transfer-created).
 //   채팅 알림과 동일 플레이어·최소 간격으로 중복 재생 방지.
 
@@ -48,14 +48,11 @@ export function useLabReceiveUnreadSound() {
     deferWhenEditing: false,
     onMatch: (evt) => {
       bindChatSoundUnlockOnGesture();
+      if (!shouldPlayLabReceiveSound()) return;
       const data =
         evt?.data && typeof evt.data === "object"
           ? (evt.data as Record<string, unknown>)
           : {};
-      const practiceId = String(
-        data.practiceBusinessAnchorId || data.practiceAnchorId || "",
-      ).trim();
-      if (!shouldPlayLabReceiveSound(practiceId || null)) return;
       const clinic = String(
         data.practiceName ||
           data.clinicName ||

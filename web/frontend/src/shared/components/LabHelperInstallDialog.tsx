@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-03: 「잘 안 되면」 아코디언 제거. Mac은 3단계(완료 → 그래도 열기)만.
+// - 2026-10-03: Mac 「열지 않음」→ 완료 → 시스템 설정 「그래도 열기」.
 // - 2026-09-29: 열면 먼저 연결 확인 — 이미 떠 있으면 설치 파일을 다시 받지 않고 바로 이어간다.
 //   Chrome 「로컬 네트워크 액세스」를 막았으면 허용 안내를 보인다.
 // - 2026-09-28: 안내 단순화 — 3단계 한 줄씩, 누를 버튼은 칩으로. 예시 그림·부연 문단 제거. 다시 받기는 1단계 옆.
@@ -143,14 +145,18 @@ export function LabHelperInstallDialog({ open, onResolved }: LabHelperInstallDia
           </p>
         ) : null}
 
-        <ol className="space-y-1.5 px-5 pb-4 text-sm">
+        <ol className="space-y-2 px-5 pb-4 text-sm">
           {isMac ? (
             <>
               <Step n={1} aside={redownload}>
-                받은 파일 열고 <b>어벗츠 연결</b> 더블클릭
+                받은 zip을 풀고 <b>어벗츠 연결</b>을 실행합니다.
               </Step>
               <Step n={2}>
-                경고 창에서 <Key>완료</Key>
+                「열지 않음」 창이 뜨면 <Key>완료</Key>만 누릅니다.
+                <br />
+                <span className="text-xs text-muted-foreground">
+                  <Key>휴지통으로 이동</Key>은 누르지 마세요.
+                </span>
               </Step>
               <Step n={3}>
                 <Button asChild size="sm" variant="outline" className="mr-1.5 h-7 px-2 align-middle text-xs">
@@ -159,7 +165,7 @@ export function LabHelperInstallDialog({ open, onResolved }: LabHelperInstallDia
                     설정 열기
                   </a>
                 </Button>
-                맨 아래 <Key>그래도 열기</Key> → 암호
+                맨 아래 <Key>그래도 열기</Key> → 암호 → <Key>열기</Key>
               </Step>
             </>
           ) : (
@@ -176,18 +182,6 @@ export function LabHelperInstallDialog({ open, onResolved }: LabHelperInstallDia
             브라우저가 물으면 <Key>허용</Key>
           </Step>
         </ol>
-
-        <p className="-mt-2 px-5 pb-4 text-xs text-muted-foreground">
-          {isMac ? (
-            <>
-              macOS 14 이하: 앱을 Control+클릭 → <Key>열기</Key>
-            </>
-          ) : (
-            <>
-              파란 경고 창이 뜨면 <Key>추가 정보</Key> → <Key>실행</Key>
-            </>
-          )}
-        </p>
 
         <div
           className={cn(
