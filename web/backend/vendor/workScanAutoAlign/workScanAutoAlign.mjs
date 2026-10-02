@@ -15267,11 +15267,35 @@ function computeMeshNormalVoting(geometry) {
   if (sumN.lengthSq() > 1e-6) sumN.normalize();
   return sumN;
 }
+function spanUnitsToMm(points, mean) {
+  let radius = 0;
+  for (const p of points) {
+    radius = Math.max(radius, Math.hypot(p[0] - mean.x, p[1] - mean.y, p[2] - mean.z));
+  }
+  if (radius > 0 && radius < 5) return 1e3;
+  if (radius > 400) return 1e-3;
+  return 1;
+}
+function crownDirection(mesh) {
+  const pts = samplePositions(mesh.geometry, 2500);
+  const mean = meanVec(pts);
+  if (!mean) return null;
+  const border = extractBoundaryVertices(mesh.geometry);
+  let toCrown = new Vector3();
+  if (border.length >= 20) {
+    const borderMean = meanVec(border);
+    if (borderMean) toCrown.subVectors(mean, borderMean);
+  }
+  if (toCrown.lengthSq() < 1e-4) toCrown = computeMeshNormalVoting(mesh.geometry);
+  if (toCrown.lengthSq() < 1e-4) return null;
+  return toCrown.normalize();
+}
 function estimateDentalFrame(loaded) {
   const upperPts = [];
   const lowerPts = [];
   const archPts = [];
-  let singleArchRole = null;
+  let upperMesh = null;
+  let lowerMesh = null;
   let singleMesh = null;
   for (const entry of loaded) {
     if (entry.role !== "upper" && entry.role !== "lower") continue;
@@ -15279,12 +15303,10 @@ function estimateDentalFrame(loaded) {
     archPts.push(...pts);
     if (entry.role === "upper") {
       upperPts.push(...pts);
-      singleArchRole = "upper";
-      singleMesh = entry;
+      upperMesh = entry;
     } else {
       lowerPts.push(...pts);
-      singleArchRole = "lower";
-      singleMesh = entry;
+      lowerMesh = entry;
     }
   }
   if (archPts.length < 30) {
@@ -15299,24 +15321,22 @@ function estimateDentalFrame(loaded) {
   const upperC = meanVec(upperPts);
   const lowerC = meanVec(lowerPts);
   const mean = meanVec(archPts);
+  const both = upperPts.length >= 30 && lowerPts.length >= 30;
+  const toMm = spanUnitsToMm(archPts, mean);
   let up = new Vector3();
-  if (upperC && lowerC && upperC.distanceTo(lowerC) > 2) {
-    up.subVectors(upperC, lowerC);
+  if (both && upperC && lowerC) {
+    const delta = upperC.clone().sub(lowerC);
+    if (delta.length() * toMm >= 3) up.copy(delta);
   }
   if (up.lengthSq() < 1e-4) {
     up = smallestPcaAxis(archPts, mean);
-    if (singleMesh) {
-      const bPts = extractBoundaryVertices(singleMesh.geometry);
-      let toCrown = new Vector3();
-      if (bPts.length >= 20) {
-        const bMean = meanVec(bPts);
-        toCrown.subVectors(mean, bMean);
-      }
-      if (toCrown.lengthSq() < 1e-4) {
-        toCrown = computeMeshNormalVoting(singleMesh.geometry);
-      }
-      if (toCrown.lengthSq() > 1e-4) {
-        const expectedUp = singleArchRole === "upper" ? toCrown.clone().negate() : toCrown.clone();
+    if (both && upperC && lowerC && upperC.distanceToSquared(lowerC) > 1e-8) {
+      if (up.dot(upperC.clone().sub(lowerC)) < 0) up.negate();
+    } else {
+      const single = upperMesh ?? lowerMesh ?? singleMesh;
+      const crown = single ? crownDirection(single) : null;
+      if (crown) {
+        const expectedUp = upperMesh && !lowerMesh ? crown.clone().negate() : crown;
         if (up.dot(expectedUp) < 0) up.negate();
       }
     }
