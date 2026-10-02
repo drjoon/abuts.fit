@@ -6,6 +6,7 @@
 // related files:
 // - web/frontend/src/shared/components/ModelPreviewDialog.tsx
 // - web/frontend/src/shared/components/WorkScanModelPreviewDialog.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/shared/components/practice/ViewPaintSurface.tsx
 // - web/frontend/src/shared/components/practice/ViewPaintToolbar.tsx
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx

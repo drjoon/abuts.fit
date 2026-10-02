@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-03: 제조사 프리뷰 STL은 스캔색 스위치 숨김(showColorMappingToggle=false).
+// - 2026-10-03: STL 뷰어에 페인트(표시·이미지 저장). filled 쪽 우선, FL/FP 편집 중에는 끔.
 // - 2026-10-03: STL 뷰어에 ViewGestureHint(화면 조작) 표시 — 의뢰 프리뷰와 동일.
 // - 2026-10-03: 의뢰 프리뷰처럼 전체 화면. 기본 X 제거, 헤더 박스 오른쪽 끝에 큰 닫기 버튼.
 // - 2026-09-30: 세척.패킹 불완전가공 — 사진·페인트·메시지를 기공소에 전달하고 출고는 유지.
@@ -90,8 +92,17 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
+import {
+  StlPreviewViewer,
+  type StlPreviewViewerHandle,
+} from "@/features/requests/components/StlPreviewViewer";
 import { useStlMetadata } from "@/features/requests/hooks/useStlMetadata";
+import {
+  PreviewPaintControls,
+  PreviewPaintLayer,
+  usePreviewPaint,
+} from "@/shared/components/PreviewAnnotateActions";
+import type { ViewPaintSpace } from "@/shared/components/practice/viewPaintSpace";
 import { lotSerialFromLotNumberValue } from "@/features/requests/utils/lotEngraving";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -652,6 +663,8 @@ export const PreviewModal = ({
     number[][] | null
   >(null);
   const screwLotAutoAssignAttemptedRef = useRef<Set<string>>(new Set());
+  const paintViewerRef = useRef<StlPreviewViewerHandle | null>(null);
+  const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
   const [guidedFinishLineSubmitting, setGuidedFinishLineSubmitting] = useState(false);
   const [guidedFinishLineOverridePoints, setGuidedFinishLineOverridePoints] =
     useState<number[][] | null>(null);
@@ -1158,6 +1171,23 @@ export const PreviewModal = ({
     setTrackingRightTab("nc");
   }, [open, stage, isCamStage, isMachiningStage, activeReq?._id]);
 
+  const paint = usePreviewPaint({
+    open,
+    resetKey: [
+      String(requestId || ""),
+      stage,
+      isCamStage ? "cam" : "",
+      isMachiningStage ? "machining" : "",
+    ].join("|"),
+    initiallyOn: false,
+  });
+
+  useEffect(() => {
+    if (guidedFinishLineMode || guidedFrontPointMode) {
+      paint.setPaintOn(false);
+    }
+  }, [guidedFinishLineMode, guidedFrontPointMode, paint.setPaintOn]);
+
   if (!activeReq && !open) return null;
 
   const handleRecalculateMetadata = async () => {
@@ -1463,6 +1493,44 @@ export const PreviewModal = ({
   const rightViewer =
     !isCamStage && !isStageFileStage ? previewFiles.cam : null;
   const guideViewerFile = isCamStage ? filledViewer : rightViewer;
+  // 페인트는 filled(가이드) 쪽 우선. 없으면 왼쪽 STL.
+  const paintViewerSide: "left" | "right" | null = rightViewer
+    ? "right"
+    : leftViewer && !isNcStage
+      ? "left"
+      : null;
+  const canAnnotate = Boolean(paintViewerSide) && !previewLoading;
+  const paintControlsDisabled =
+    !canAnnotate ||
+    guidedFinishLineMode ||
+    guidedFrontPointMode ||
+    approveBusy;
+  const paintFileName =
+    paintViewerSide === "right" ? String(rightTitle || "preview") : String(leftTitle || "preview");
+  const paintSurfaceKey = `${String(requestId || "")}-${paintViewerSide || "none"}`;
+  const renderPaintOverlay = (side: "left" | "right") => {
+    if (paintViewerSide !== side) return null;
+    return (
+      <>
+        <div className="absolute left-3 top-3 z-20">
+          <PreviewPaintControls
+            paint={paint}
+            disabled={paintControlsDisabled}
+            className="bg-white/95 text-xs shadow-sm"
+          />
+        </div>
+        {canAnnotate ? (
+          <PreviewPaintLayer
+            paint={paint}
+            surfaceKey={paintSurfaceKey}
+            captureCanvas={() => paintViewerRef.current?.captureCanvas() ?? null}
+            fileName={paintFileName}
+            space={paintSpace}
+          />
+        ) : null}
+      </>
+    );
+  };
 
   const onUploadRight = (file: File) => {
     if (isStageFileStage) {
@@ -3756,12 +3824,14 @@ export const PreviewModal = ({
                     readOnly
                   />
                 ) : isCamStage && leftViewer ? (
-                  <div className="flex-1 min-h-0 rounded-md border border-slate-200 overflow-hidden">
+                  <div className="relative flex-1 min-h-0 overflow-hidden rounded-md border border-slate-200">
                     <StlPreviewViewer
+                      ref={paintViewerSide === "left" ? paintViewerRef : undefined}
                       file={leftViewer}
                       requestId={requestId}
                       metadata={viewerStlMetadata}
                       showOverlay={true}
+                      showColorMappingToggle={false}
                       forceFilled
                       showLotEngraving={showLotEngraving}
                       lotSerialCode={lotSerialCode}
@@ -3794,22 +3864,32 @@ export const PreviewModal = ({
                           ? handleUndoGuidedFrontPoint
                           : handleUndoGuidedFinishLinePoint
                       }
+                      onPaintSpace={
+                        paintViewerSide === "left" ? setPaintSpace : undefined
+                      }
                     />
+                    {renderPaintOverlay("left")}
                   </div>
                 ) : leftViewer ? (
-                  <div className="flex-1 min-h-0 rounded-md border border-slate-200 overflow-hidden">
+                  <div className="relative flex-1 min-h-0 overflow-hidden rounded-md border border-slate-200">
                     <StlPreviewViewer
+                      ref={paintViewerSide === "left" ? paintViewerRef : undefined}
                       file={leftViewer}
                       requestId={requestId}
                       metadata={viewerStlMetadata}
                       showOverlay={true}
+                      showColorMappingToggle={false}
                       showLotEngraving={showLotEngraving}
                       lotSerialCode={lotSerialCode}
                       lotEngravingNcText={previewNcText}
                       lotEngravingHexMode={manufacturerHexRotationDraft}
                       lotEngravingTarget={lotEngravingTargetDraft}
                       finishLinePoints={finishLinePoints}
+                      onPaintSpace={
+                        paintViewerSide === "left" ? setPaintSpace : undefined
+                      }
                     />
+                    {renderPaintOverlay("left")}
                   </div>
                 ) : (
                   <div className="h-[300px] flex items-center justify-center text-xs text-slate-500">
@@ -4385,12 +4465,14 @@ export const PreviewModal = ({
                     readOnly
                   />
                 ) : rightViewer ? (
-                  <div className="flex-1 min-h-0 rounded-md border border-slate-200 overflow-hidden">
+                  <div className="relative flex-1 min-h-0 overflow-hidden rounded-md border border-slate-200">
                     <StlPreviewViewer
+                      ref={paintViewerSide === "right" ? paintViewerRef : undefined}
                       file={rightViewer}
                       requestId={requestId}
                       metadata={viewerStlMetadata}
                       showOverlay={true}
+                      showColorMappingToggle={false}
                       forceFilled
                       showLotEngraving={showLotEngraving}
                       lotSerialCode={lotSerialCode}
@@ -4423,7 +4505,11 @@ export const PreviewModal = ({
                           ? handleUndoGuidedFrontPoint
                           : handleUndoGuidedFinishLinePoint
                       }
+                      onPaintSpace={
+                        paintViewerSide === "right" ? setPaintSpace : undefined
+                      }
                     />
+                    {renderPaintOverlay("right")}
                   </div>
                 ) : (
                   <div className="h-[300px] flex items-center justify-center text-xs text-slate-500">
