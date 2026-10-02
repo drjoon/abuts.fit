@@ -1,5 +1,6 @@
 // 의뢰·작업 스캔·어벗·보철을 한 번에 띄운다. 3D는 같은 좌표로 겹치고, 사진은 오른쪽 패널에서 연다.
 // change-log:
+// - 2026-10-03: 투명도·스캔색을 localStorage에 저장. 의뢰를 바꿔도 같은 값 적용.
 // - 2026-10-03: 클러스터별 표시/숨김을 localStorage에 저장. 다른 묶음 갔다 와도 복원.
 // - 2026-10-03: 투명도 슬라이더→뷰리셋 오른쪽. 기본 0(불투명), 올릴수록 보철 투명.
 // - 2026-10-03: 어벗·보철 클러스터 통합(어벗 & 보철). 보철 기본 불투명+투명도 슬라이더.
@@ -133,6 +134,8 @@ const ALL_CLUSTERS: ItemCluster[] = ["request", "workScan", "design"];
 
 /** 보철 투명도 슬라이더 기본(0=불투명). 0~100. material.opacity = 1 - t/100 */
 const DEFAULT_PROSTHESIS_TRANSPARENCY = 0;
+/** 스캔 칼라 기본 ON. 모든 의뢰에 공통. */
+const DEFAULT_COLOR_MAPPING = true;
 
 const LAYER_PREFS_STORAGE_KEY = "abuts.requestFilesPreview.layerPrefs.v1";
 
@@ -140,8 +143,16 @@ type LayerPrefs = {
   v: 1;
   /** 클러스터별로 마지막으로 켜 두었던 파일 키(s3Key 등). */
   byCluster: Partial<Record<ItemCluster, string[]>>;
+  /** 보철 투명도 0~100. 의뢰 공통. */
   prosthesisTransparency?: number;
+  /** 스캔 칼라 ON/OFF. 의뢰 공통. */
+  colorMapping?: boolean;
 };
+
+function clampTransparency(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.min(100, Math.max(0, value));
+}
 
 function loadLayerPrefs(): LayerPrefs {
   try {
@@ -158,13 +169,13 @@ function loadLayerPrefs(): LayerPrefs {
         byCluster[cluster] = keys.map(String).filter(Boolean);
       }
     }
-    const t = parsed.prosthesisTransparency;
     return {
       v: 1,
       byCluster,
-      prosthesisTransparency:
-        typeof t === "number" && Number.isFinite(t)
-          ? Math.min(100, Math.max(0, t))
+      prosthesisTransparency: clampTransparency(parsed.prosthesisTransparency),
+      colorMapping:
+        typeof parsed.colorMapping === "boolean"
+          ? parsed.colorMapping
           : undefined,
     };
   } catch {
@@ -476,7 +487,9 @@ export function RequestFilesPreviewDialog({
   const [hidden, setHidden] = useState<Record<string, boolean>>({});
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [shownImageKey, setShownImageKey] = useState<string | null>(null);
-  const [colorMapping, setColorMapping] = useState(true);
+  const [colorMapping, setColorMapping] = useState(
+    () => loadLayerPrefs().colorMapping ?? DEFAULT_COLOR_MAPPING,
+  );
   const [prosthesisTransparency, setProsthesisTransparency] = useState(
     () => loadLayerPrefs().prosthesisTransparency ?? DEFAULT_PROSTHESIS_TRANSPARENCY,
   );
@@ -520,9 +533,9 @@ export function RequestFilesPreviewDialog({
     if (!open || !authToken) return;
     const ac = new AbortController();
     const urls: string[] = [];
-    setColorMapping(true);
     const prefs = loadLayerPrefs();
     layerPrefsRef.current = prefs;
+    setColorMapping(prefs.colorMapping ?? DEFAULT_COLOR_MAPPING);
     setProsthesisTransparency(
       prefs.prosthesisTransparency ?? DEFAULT_PROSTHESIS_TRANSPARENCY,
     );
@@ -684,14 +697,16 @@ export function RequestFilesPreviewDialog({
     persistActiveClusterVisibility(hidden);
   }, [hidden, models, open]);
 
+  // 투명도·스캔색은 의뢰와 무관하게 공통 저장.
   useEffect(() => {
     if (!open) return;
     layerPrefsRef.current = {
       ...layerPrefsRef.current,
       prosthesisTransparency,
+      colorMapping,
     };
     saveLayerPrefs(layerPrefsRef.current);
-  }, [open, prosthesisTransparency]);
+  }, [open, prosthesisTransparency, colorMapping]);
 
   const layers = useMemo<CaseLayerModel[]>(() => {
     const out: CaseLayerModel[] = [];
