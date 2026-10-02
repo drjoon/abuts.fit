@@ -6,6 +6,7 @@
  * - 상단: 기간필터 + 요약(좌 2x2) + 최근 의뢰(우)
  * - 하단: 스캔 전송 섹션이 남은 영역을 채움
  * - 최근 전송 카드 클릭 시 의뢰 정보 + 기공소 채팅 모달 제공
+ * - 2026-10-03: 헤더 설정 — requestor 치과는 /dashboard/settings (practice만 /practice/settings).
  * - 2026-10-03: 헤더 오른쪽 끝 — 북마크·휴지통·설정은 항상 아이콘만(그 순서).
  * - 2026-09-30: 헤더 줄이 좁으면 북마크·신규주문·리메이크·임시저장·휴지통은 아이콘(+숫자).
  *
@@ -9834,7 +9835,13 @@ export const PracticeFileTransferPage = ({
         className={iconBtn}
         aria-label="설정"
         title="설정"
-        onClick={() => navigate("/practice/settings")}
+        onClick={() =>
+          navigate(
+            authUser?.role === "practice"
+              ? "/practice/settings"
+              : "/dashboard/settings",
+          )
+        }
       >
         <Settings className="h-4 w-4 shrink-0" />
       </Button>
