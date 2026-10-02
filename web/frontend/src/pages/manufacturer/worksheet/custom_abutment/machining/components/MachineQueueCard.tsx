@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-02: Now Playing 경과시간 — tabular-nums·줄바꿈 없음. 초마다 숫자 폭이 바뀌며 헤더가 접히던 현상.
 // - 2026-09-17: Complete 슬롯 — 출고시간(마감) 뱃지 숨김(hideDeadline).
 // - 2026-09-12: Next Up CAM 오버레이 — 블러 제거·옅은 틴트+반투명「작업중/작업중지」(준비 탭과 동일).
 // - 2026-09-11: Complete 슬롯 — 포장.발송·추적관리 건은 준비 롤백/재승인 비활성.
@@ -931,20 +932,20 @@ export const MachineQueueCard = ({
             }}
           >
             <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
-              <div className="min-w-0 flex flex-wrap items-center gap-1.5">
+              <div className="flex shrink-0 items-center gap-1.5">
                 <span className="uppercase tracking-wide text-slate-400">
                   {MACHINING_SECTION_LABELS.nowPlaying}
                 </span>
                 {nowPlayingAnodizingOff ? (
                   <span
-                    className={`${chipSm} border-destructive-muted bg-destructive-soft text-destructive`}
+                    className={`${chipSm} shrink-0 border-destructive-muted bg-destructive-soft text-destructive`}
                   >
                     아노 X
                   </span>
                 ) : null}
                 {headPreloadBadge}
                 {elapsedLabel ? (
-                  <span className="font-bold text-slate-800">
+                  <span className="whitespace-nowrap font-bold tabular-nums text-slate-800">
                     {elapsedLabel}
                   </span>
                 ) : null}
