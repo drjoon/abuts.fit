@@ -3,9 +3,13 @@
 // - web/backend/modules/labHelper/labHelper.routes.js
 // - bg/lab-cad-helper/win/Notify.cs
 // change-log:
+// - 2026-10-03: 대기자 없을 때 큐는 짧게만 — 브라우저 활성 중 쌓인 옛 알람 폭주 방지.
 // - 2026-10-03: 기공소 헬퍼 PC 알람 — 유저별 wait queue. 브라우저 종료 후에도 헬퍼가 장기 폴링.
 
+/** 대기자 있을 때 포함 상한 */
 const MAX_QUEUE = 20;
+/** 폴링 공백(수백 ms)용. 브라우저가 알람을 처리할 때는 대기자가 없어 여기만 쌓인다. */
+const MAX_QUEUE_WITHOUT_WAITER = 2;
 const DEFAULT_WAIT_MS = 25_000;
 const MAX_WAIT_MS = 30_000;
 
@@ -24,7 +28,9 @@ const getBucket = (userId) => {
 };
 
 const trimQueue = (bucket) => {
-  while (bucket.queue.length > MAX_QUEUE) bucket.queue.shift();
+  const max =
+    bucket.waiters.length > 0 ? MAX_QUEUE : MAX_QUEUE_WITHOUT_WAITER;
+  while (bucket.queue.length > max) bucket.queue.shift();
 };
 
 const deliver = (bucket, alarm) => {

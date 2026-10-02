@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-10-03: v5 — version.json 자동 갱신(--silent-update).
+// - 2026-10-03: v6 — 401/403 백오프·URL 캐시 무시. 탭 숨김 폴링은 웹 session.browserAlive.
 // - 2026-10-03: v4 — PC 알람(/notify·/session) + 브라우저 종료 시 API 장기 폴링.
 // - 2026-09-27: v3 — Windows 연결 프로그램과 같은 동작·API. 앱 하나를 열면 「설치할까요?」 한 번 → 사용자 폴더에 복사,
 //   LaunchAgent로 로그인 때마다 보이지 않게 실행. 케이스 폴더 확인·저장·Finder로 열기만 한다.
@@ -13,7 +14,7 @@ import AppKit
 import Foundation
 import Network
 
-let helperVersion = 5
+let helperVersion = 6
 let helperPort: UInt16 = 8010
 let agentLabel = "fit.abuts.labhelper"
 let appTitle = "어벗츠 연결 프로그램"
@@ -209,7 +210,13 @@ enum AlarmPoller {
           Thread.sleep(forTimeInterval: 2)
           continue
         }
-        if let alarm = waitOnce(apiOrigin: snap.apiOrigin, token: snap.token) {
+        let waited = waitOnce(apiOrigin: snap.apiOrigin, token: snap.token)
+        if waited.status == 401 || waited.status == 403 {
+          // 잘못된·만료 토큰 — 브라우저 세션 갱신까지 대기(스팸 방지).
+          Thread.sleep(forTimeInterval: 15)
+          continue
+        }
+        if let alarm = waited.alarm {
           let practiceId = "\(alarm["practiceBusinessAnchorId"] ?? "")".trimmingCharacters(in: .whitespaces)
           if AlarmSession.shared.isPracticeMuted(practiceId) { continue }
           let title = "\(alarm["title"] ?? "")"
@@ -222,19 +229,24 @@ enum AlarmPoller {
     }
   }
 
-  private static func waitOnce(apiOrigin: String, token: String) -> [String: Any]? {
+  private static func waitOnce(apiOrigin: String, token: String) -> (alarm: [String: Any]?, status: Int) {
     let urlStr = "\(apiOrigin)/api/lab-helper/alarms/wait?wait=\(AlarmSession.pollWaitSec)"
-    guard let url = URL(string: urlStr) else { return nil }
+    guard let url = URL(string: urlStr) else { return (nil, 0) }
     var req = URLRequest(url: url, timeoutInterval: TimeInterval(AlarmSession.pollWaitSec + 10))
     req.httpMethod = "GET"
+    req.cachePolicy = .reloadIgnoringLocalCacheData
     req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     req.setValue("application/json", forHTTPHeaderField: "Accept")
+    req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
     req.setValue("AbutsLabHelper/\(helperVersion)", forHTTPHeaderField: "User-Agent")
     let sem = DispatchSemaphore(value: 0)
     var result: [String: Any]?
+    var status = 0
     URLSession.shared.dataTask(with: req) { data, response, _ in
       defer { sem.signal() }
-      guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+      guard let http = response as? HTTPURLResponse else { return }
+      status = http.statusCode
+      guard status == 200,
             let data = data,
             let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             (obj["ok"] as? Bool) != false,
@@ -242,7 +254,7 @@ enum AlarmPoller {
       result = alarm
     }.resume()
     _ = sem.wait(timeout: .now() + .seconds(AlarmSession.pollWaitSec + 15))
-    return result
+    return (result, status)
   }
 }
 

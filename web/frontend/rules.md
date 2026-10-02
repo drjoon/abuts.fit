@@ -19,7 +19,7 @@
 - UI copy 간결·중복 금지(강제): 문구는 짧게, 카드·표에 있는 금액·기간·건수는 문단에 다시 쓰지 않는다 — `.cursor/rules/ui-copy-concise.mdc`
 - 영업 방문 주체 카피(강제): **영업 담당자** (not 담당 영업자) — `.cursor/rules/sales-rep-copy.mdc`
 - 기공소 작업 폴더(강제): 채팅 「작업열기」·「다운로드」는 의뢰·디자인·보철 파일 전부를 작업 폴더 안 케이스 폴더(`buildLabCaseFolderName` = `YYYYMMDD_치과명-환자명-치아번호`)에 **풀어서** 저장한다(`useS3FileDownload.saveToLabWorkFolder`). 순서: 연결 프로그램 v3+(Windows·Mac, `labHelperClient.ts`)가 있으면 저장 후 탐색기·Finder로 폴더 열기 → 없는 Windows·Mac은 브라우저와 무관하게 `LabHelperInstallDialog`(OS별 설치 파일 자동 받기, 연결되면 이어서 저장; 닫으면 Chrome·Edge는 `showDirectoryPicker` 핸들(`labWorkFolder.ts`), Firefox·Safari는 케이스 폴더 이름 zip으로 저장하고 다시 묻지 않음) → 설치할 수 없는 기기는 폴더 핸들 또는 zip. 「작업열기」는 이미 받은 케이스면 받지 않고 폴더만 연다(`reuseSaved`), 「다운로드」는 다시 받는다. 버튼은 「저장 중 N%」 + 하단 진행 막대(`labSaveProgress`). 디자인 SW 실행·주문 등록은 하지 않는다(3Shape·exocad 모두 인자 등록 불가). 연결 프로그램: `bg/lab-cad-helper/rules.md`.
-- 기공소 PC 알람(강제): 탭 숨김·브라우저 종료 시에도 의뢰·채팅 알람은 연결 프로그램 v4+(`notify`·`session` + `GET /api/lab-helper/alarms/wait`)로 OS 알림음. prefs=`labReceiveSoundPrefs`(전체 on/off). 헤더 설정=`LabReceiveAlarmSettingsButton`(데모 뱃지 왼쪽). 구버전은 `LabHelperUpdatePrompt` 모달로 설치 안내, v5+는 `version.json` 자동 갱신. SSOT: `labHelperClient.ts`, `LabHelperUpdateDialog.tsx`, `bg/lab-cad-helper/rules.md`.
+- 기공소 PC 알람(강제): 탭 숨김·브라우저 종료 시에도 의뢰·채팅 알람은 연결 프로그램 v4+(`notify`·`session` + `GET /api/lab-helper/alarms/wait`)로 OS 알림음. 보이는 탭만 `browserAlive` — 숨김·후면은 헬퍼 폴링. prefs=`labReceiveSoundPrefs`(전체 on/off). 헤더 설정=`LabReceiveAlarmSettingsButton`. 구버전은 `LabHelperUpdatePrompt` 모달로 설치 안내, v5+는 `version.json` 자동 갱신(현재 v6). SSOT: `labHelperClient.ts`, `LabHelperUpdateDialog.tsx`, `bg/lab-cad-helper/rules.md`.
 - 최근 변경 목록 파일: `web/frontend/modified_prep_stage_changes_2026-08-03.txt` (작업 공정 변경 이력, 프론트 표시 레벨)
 
 Notes:

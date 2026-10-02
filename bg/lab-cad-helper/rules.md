@@ -68,8 +68,8 @@ bind `127.0.0.1:8010`(Windows TcpListener — HttpListener URL 예약은 관리�
 | POST | `/session/clear` | 로그아웃 시 세션 제거. v4 |
 | POST | `/shutdown` | 재설치용 종료 |
 
-- 웹 `LAB_HELPER_MIN_VERSION`(폴더열기)=3, `LAB_HELPER_ALARM_MIN_VERSION`=4, `LAB_HELPER_CURRENT_VERSION`=5. 알람 API는 version≥4일 때만 호출한다.
-- **자동 갱신(v5+)**: serve 중 `version.json`을 보고 원격이 더 높으면 설치본을 받아 `--silent-update`로 교체. 이미 설치된 PC에서 설치 파일을 열면 확인 창 없이 덮어쓴다. 구버전은 웹 `LabHelperUpdateDialog`로 파일 받기 + 「열어서 설치」를 짧게 안내한다.
+- 웹 `LAB_HELPER_MIN_VERSION`(폴더열기)=3, `LAB_HELPER_ALARM_MIN_VERSION`=4, `LAB_HELPER_CURRENT_VERSION`=6. 알람 API는 version≥4일 때만 호출한다.
+- **자동 갱신(v5+)**: serve 중 `version.json`을 보고 원격이 더 높으면 설치본을 받아 `--silent-update`로 교체. 이미 설치된 PC에서 설치 파일을 열면 확인 창 없이 덮어쓴다. 구버전은 웹 `LabHelperUpdateDialog`로 파일 받기 + 「열어서 설치」를 짧게 안내한다. v6: 탭 숨김 시 폴링·401 백오프·캐시 무시.
 
 ## 5) 파일 · 빌드
 

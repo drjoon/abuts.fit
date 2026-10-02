@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-03: v6 — 401/403 백오프·Cache-Control no-cache(빈 wait 304 방지).
 // - 2026-10-03: v4 PC 알람 — SystemSounds + tray balloon. 세션·장기 폴링으로 브라우저 종료 후에도 울림.
 // related files:
 // - bg/lab-cad-helper/win/HttpServer.cs
@@ -238,7 +239,15 @@ namespace Abuts.LabHelper
                         Thread.Sleep(2000);
                         continue;
                     }
-                    var alarm = WaitOnce(apiOrigin, token);
+                    int status;
+                    var alarm = WaitOnce(apiOrigin, token, out status);
+                    if (status == 401 || status == 403)
+                    {
+                        // 잘못된·만료 토큰 — 브라우저 세션 갱신까지 대기(스팸 방지).
+                        Log.Write("poll auth " + status);
+                        Thread.Sleep(15000);
+                        continue;
+                    }
                     if (alarm == null)
                     {
                         Thread.Sleep(500);
@@ -266,8 +275,9 @@ namespace Abuts.LabHelper
             }
         }
 
-        private static Dictionary<string, object> WaitOnce(string apiOrigin, string token)
+        private static Dictionary<string, object> WaitOnce(string apiOrigin, string token, out int statusCode)
         {
+            statusCode = 0;
             var url = apiOrigin + "/api/lab-helper/alarms/wait?wait=" + AlarmSession.PollWaitSec;
             HttpWebRequest req;
             try
@@ -284,13 +294,16 @@ namespace Abuts.LabHelper
             req.Headers[HttpRequestHeader.Authorization] = "Bearer " + token;
             req.Accept = "application/json";
             req.UserAgent = "AbutsLabHelper/" + Program.Version;
+            // 장기 폴링은 캐시하면 안 됨(동일 빈 응답 304).
+            req.Headers[HttpRequestHeader.CacheControl] = "no-cache";
             try
             {
                 using (var res = (HttpWebResponse)req.GetResponse())
                 using (var stream = res.GetResponseStream())
                 using (var reader = new StreamReader(stream ?? Stream.Null, Encoding.UTF8))
                 {
-                    if ((int)res.StatusCode != 200) return null;
+                    statusCode = (int)res.StatusCode;
+                    if (statusCode != 200) return null;
                     var text = reader.ReadToEnd();
                     if (string.IsNullOrWhiteSpace(text)) return null;
                     var map = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(text);
@@ -309,7 +322,11 @@ namespace Abuts.LabHelper
             catch (WebException wex)
             {
                 var res = wex.Response as HttpWebResponse;
-                if (res != null && (int)res.StatusCode == 204) return null;
+                if (res != null)
+                {
+                    statusCode = (int)res.StatusCode;
+                    if (statusCode == 204) return null;
+                }
                 return null;
             }
         }

@@ -2,6 +2,7 @@
 // - web/backend/services/labHelperAlarm.service.js
 // - web/backend/modules/labHelper/labHelper.routes.js
 // change-log:
+// - 2026-10-03: wait 응답 no-store·ETag 제거(빈 응답 304로 알람 유실 방지).
 // - 2026-10-03: 헬퍼 PC 알람 장기 폴링(wait).
 
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
@@ -17,9 +18,20 @@ const canUseLabHelperAlarm = (user) => {
   return false;
 };
 
+const applyWaitNoCacheHeaders = (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  // Express fresh/ETag가 동일 빈 본문을 304로 바꾸면 헬퍼가 본문을 못 읽는다.
+  if (req?.headers) {
+    delete req.headers["if-none-match"];
+    delete req.headers["if-modified-since"];
+  }
+};
+
 /** GET /api/lab-helper/alarms/wait?wait=25 */
 export async function waitLabHelperAlarm(req, res) {
   try {
+    applyWaitNoCacheHeaders(req, res);
     if (!canUseLabHelperAlarm(req.user)) {
       return res.status(403).json({
         success: false,
@@ -44,12 +56,14 @@ export async function waitLabHelperAlarm(req, res) {
     res.setTimeout((waitSec + 15) * 1000);
 
     const alarm = await waitForLabHelperAlarm(userId, waitSec * 1000);
+    applyWaitNoCacheHeaders(req, res);
     if (!alarm) {
       return res.status(200).json({ ok: true, alarm: null });
     }
     return res.status(200).json({ ok: true, alarm });
   } catch (error) {
     console.warn("[labHelperAlarm] wait failed", error?.message || error);
+    applyWaitNoCacheHeaders(req, res);
     return res.status(500).json({
       success: false,
       ok: false,
