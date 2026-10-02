@@ -35,6 +35,8 @@ import {
   resolveSubcontractFeeRate,
   normalizeDealershipCommissionTiers,
   DEALERSHIP_ACTIVE_COMMISSION_RATE,
+  clampDealershipCommissionRate,
+  normalizeDealershipCommissionRateLog,
 } from "../../services/creditRevenuePolicy.service.js";
 import { normalizeConfiguredRushFeeMultiplier } from "../../utils/practiceTransferRush.js";
 
@@ -64,23 +66,6 @@ function sanitizeSharePercent(value) {
 /** 딜러십 기본 요율(레거시 필드). */
 const DEALERSHIP_BASE_COMMISSION_RATE = 0.1;
 
-function snapRateToOptions(value, options, fallback) {
-  const n = Number(value);
-  const list = Array.isArray(options) && options.length ? options : [fallback];
-  if (!Number.isFinite(n) || n < 0) return null;
-  const clamped = Math.min(1, n);
-  let best = list[0];
-  let bestDist = Number.POSITIVE_INFINITY;
-  for (const option of list) {
-    const dist = Math.abs(option - clamped);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = option;
-    }
-  }
-  return best;
-}
-
 function sanitizeBaseCommissionRate(value) {
   if (value === undefined) return null;
   return DEALERSHIP_BASE_COMMISSION_RATE;
@@ -89,7 +74,7 @@ function sanitizeBaseCommissionRate(value) {
 function sanitizeActiveCommissionRate(value) {
   if (value === undefined) return undefined;
   if (value === null || value === "") return null;
-  return DEALERSHIP_ACTIVE_COMMISSION_RATE;
+  return clampDealershipCommissionRate(value);
 }
 
 function sanitizeEventCommissionRate(value) {
@@ -1273,6 +1258,36 @@ export async function updateCreditSettings(req, res) {
     }
 
     const existing = await SystemSettings.findOne({ key: "global" }).lean();
+    const prevCredit = existing?.creditSettings || {};
+    if (sanitized.salesmanSharePercent != null) {
+      const rate = clampDealershipCommissionRate(
+        Number(sanitized.salesmanSharePercent) / 100,
+      );
+      const prev = clampDealershipCommissionRate(
+        prevCredit.dealershipActiveCommissionRate ??
+          prevCredit.dealershipEventCommissionRate ??
+          DEALERSHIP_ACTIVE_COMMISSION_RATE,
+      );
+      sanitized.dealershipActiveCommissionRate = rate;
+      sanitized.dealershipEventCommissionRate = rate;
+      sanitized.dealershipEventCommissionEnabled = true;
+      sanitized.dealershipRateChangeScheduledAt = null;
+      sanitized.dealershipRateChangeScheduledRate = null;
+      if (Math.abs(prev - rate) > 0.000001) {
+        const log = normalizeDealershipCommissionRateLog(
+          prevCredit.dealershipCommissionRateLog,
+          prev,
+        );
+        sanitized.dealershipCommissionRateLog = [
+          ...log,
+          { effectiveFrom: new Date(), rate },
+        ];
+      }
+    }
+    if (sanitized.storeSalesmanSharePercent != null) {
+      sanitized.storeDealerRateChangeScheduledAt = null;
+      sanitized.storeDealerRateChangeScheduledRate = null;
+    }
     // 이벤트 on/off 토글 시 유치 창 자동 보정(명시 날짜가 없을 때).
     // on: endedAt 해제. startedAt 없으면 null 유지 → 진행 중엔 전원 이벤트 요율.
     // off: endedAt=now. startedAt 없으면 과거 기본 시작일로 채워 기존 유치 고객은 이벤트 요율 유지.

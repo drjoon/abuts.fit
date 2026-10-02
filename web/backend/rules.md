@@ -1013,7 +1013,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 수익 분배 계산 SSOT는 `services/creditRevenuePolicy.service.js`를 사용합니다.
     - 런타임 적재(`controllers/requests/common.review.helpers.js`)와 이관 스크립트는 동일 함수를 공유해 분배 정책 드리프트를 금지합니다.
     - 제조사 = 고정 공급가(어벗 1개당 / 배송 박스당). 잔여 = 소비 공급가 − 제조사 공급가 → 딜러사·개발운영사·어벗츠 상대비율(`BusinessAnchor.payoutRates`의 salesman/devops/admin). 딜러사 없으면 salesman 몫을 admin에 가산. 잔여 분배율은 추후 별도 확정.
-    - **딜러십 파트너 조건**: 영업 수수료=심플웨이 매출액 대비 **10%** · 커스텀어벗 매출액 대비 **20%** · **기공 제외**(배송비·월정액 제외). **유치 시점 요율 고정**(BA `dealershipCommissionRate`). **90일 무주문이면 소개 코드 리셋**(누구든 다시 영업 가능). 재유치 시 당시 요율 스탬프. `resolveDealershipRateForAcquiredAt` · 관리자「플랫폼 설정 · 분배 비율」딜러십. (루트 `rules.md` §2.3).
+    - **딜러십 파트너 조건**: 영업 수수료=분배 비율의 딜러%(기본 심플웨이 **10%** · 커스텀어벗 **20%**, 변경은 즉시 신규 유치·잔여 분배에 적용) · **기공 제외**(배송비·월정액 제외). **유치 시점 요율 고정**(BA `dealershipCommissionRate`). **90일 무주문이면 소개 코드 리셋**(누구든 다시 영업 가능). 재유치 시 당시 요율 스탬프. `resolveDealershipRateForAcquiredAt` · 관리자「플랫폼 설정 · 분배 비율」딜러십. (루트 `rules.md` §2.3).
     - 기공의뢰 수수료: 기공소 플랫폼 사용료 **2%**(`directPlatformFeeRate`, 협력·하청 공통. 이벤트 중 `directPlatformFeeEnabled=false`로 면제 0%. 어벗츠기공본부 수행은 항상 면제). **하청** `subcontractFeeRate`(기본 **10%**) + 사용료. 학습 이용 동의는 요율과 무관. 어벗츠기공본부는 항상 학습에 포함. · 월 참여 `autoMatchMonthlyFee`(**정책 0원**) — 관리자 플랫폼 설정「인증 기공소」. 루트 `rules.md` §2.3.
     - `machining_spend`+`express_surcharge`: 제조사 단가 1회만(`manufacturerUnitApplied` / 기존 의뢰 유니크와 정합).
 

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-02: 분배 비율 딜러% 입력·즉시 적용. 그 외 비율은 내일 예약.
 // - 2026-09-24: 분배 비율 탭에 딜러십 월 매출 누진 구간 UI 마운트.
 // - 2026-09-23: 런칭 이벤트 on/off — 즉시 적용(분배 비율 예약과 분리).
 // - 2026-09-23: 런칭 이벤트 on/off — 내일부터 예약 적용(분배 비율과 동일).
@@ -106,7 +107,6 @@ import {
   Zap,
 } from "lucide-react";
 import { AdminRoundBarAbutmentTab } from "@/pages/admin/system/AdminRoundBarAbutmentTab";
-import { AdminDealershipSettingsTab } from "@/features/settings/tabs/AdminDealershipSettingsTab";
 import { cn } from "@/shared/ui/cn";
 import { kstAddCivilDays, toKstYmd } from "@/shared/date/kst";
 
@@ -266,22 +266,13 @@ function abutsShareFromParts(
   );
 }
 
-/** 커스텀어벗 딜러 분배·수수료 요율은 20% 고정. */
+/** 커스텀어벗 딜러 분배 기본값. */
 const DEALER_RATE_PCT = 20;
-/** 심플웨이(스토어) 딜러 분배는 매출액 대비 10% 고정. */
+/** 스토어 딜러 분배 기본값. */
 const STORE_DEALER_RATE_PCT = 10;
-type DealerRatePct = typeof DEALER_RATE_PCT;
-type StoreDealerRatePct = typeof STORE_DEALER_RATE_PCT;
 
-function snapDealerPct(
-  _value?: number,
-  _fallback: DealerRatePct = DEALER_RATE_PCT,
-): DealerRatePct {
-  return DEALER_RATE_PCT;
-}
-
-function snapStoreDealerPct(_value?: number): StoreDealerRatePct {
-  return STORE_DEALER_RATE_PCT;
+function readDealerSharePercent(value: unknown, fallback: number): number {
+  return clampSharePercent(Number(value), fallback);
 }
 
 /** 딜러 요율 변경 예약 — 내일 0시(KST). */
@@ -291,7 +282,19 @@ function tomorrowKstIsoStart(): string {
   return `${tomorrow}T00:00:00+09:00`;
 }
 
-function buildDealerSchedulePayload(pendingPct: DealerRatePct | null) {
+function dealerPercentRoom(manufacturerPercent: number, devopsPercent: number) {
+  return Math.max(0, 100 - manufacturerPercent - devopsPercent);
+}
+
+function applyDealerPercentNow(nextPercent: number, roomA: number, roomB: number, fallback: number) {
+  return Math.min(
+    readDealerSharePercent(nextPercent, fallback),
+    roomA,
+    roomB,
+  );
+}
+
+function buildDealerSchedulePayload(pendingPct: number | null) {
   if (pendingPct == null) {
     return {
       dealershipRateChangeScheduledAt: null as string | null,
@@ -426,17 +429,6 @@ function ShareChangePendingBadge({ show }: { show: boolean }) {
     <span className="text-[12px] font-medium text-amber-700">
       내일부터 변경 적용
     </span>
-  );
-}
-
-function DealerRateFixed({ pct }: { pct: number }) {
-  return (
-    <div
-      aria-label="딜러 분배율"
-      className="flex h-9 w-full items-center justify-center rounded-xl bg-slate-100/80 text-sm font-semibold tabular-nums text-slate-900"
-    >
-      {pct}%
-    </div>
   );
 }
 
@@ -777,11 +769,14 @@ function buildSharePercentSavePayload(
   const synced = syncComputedPartyFields(settings);
   return {
     manufacturerSharePercent: synced.manufacturerSharePercent,
-    salesmanSharePercent: DEALER_RATE_PCT,
+    salesmanSharePercent: readDealerSharePercent(
+      synced.salesmanSharePercent,
+      DEALER_RATE_PCT,
+    ),
     devopsSharePercent: synced.devopsSharePercent,
     abutsSharePercent: abutsShareFromParts(
       synced.manufacturerSharePercent,
-      DEALER_RATE_PCT,
+      readDealerSharePercent(synced.salesmanSharePercent, DEALER_RATE_PCT),
       synced.devopsSharePercent,
     ),
     regularManufacturerSharePercent: 0,
@@ -793,11 +788,17 @@ function buildSharePercentSavePayload(
       synced.regularDevopsSharePercent,
     ),
     storeManufacturerSharePercent: synced.storeManufacturerSharePercent,
-    storeSalesmanSharePercent: STORE_DEALER_RATE_PCT,
+    storeSalesmanSharePercent: readDealerSharePercent(
+      synced.storeSalesmanSharePercent,
+      STORE_DEALER_RATE_PCT,
+    ),
     storeDevopsSharePercent: synced.storeDevopsSharePercent,
     storeAbutsSharePercent: abutsShareFromParts(
       synced.storeManufacturerSharePercent,
-      STORE_DEALER_RATE_PCT,
+      readDealerSharePercent(
+        synced.storeSalesmanSharePercent,
+        STORE_DEALER_RATE_PCT,
+      ),
       synced.storeDevopsSharePercent,
     ),
     labBizSharePercent: synced.labBizSharePercent,
@@ -927,6 +928,7 @@ function SharePercentRow({
   previousAbutsPercent,
   disabled,
   onManufacturerChange,
+  onDealerChange,
   onDevopsChange,
 }: {
   idPrefix: string;
@@ -940,6 +942,7 @@ function SharePercentRow({
   previousAbutsPercent: number;
   disabled?: boolean;
   onManufacturerChange: (next: number) => void;
+  onDealerChange: (next: number) => void;
   onDevopsChange: (next: number) => void;
 }) {
   return (
@@ -954,30 +957,14 @@ function SharePercentRow({
           disabled={disabled}
           onChange={onManufacturerChange}
         />
-        <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <Label
-              htmlFor={`${idPrefix}-dealer`}
-              className="min-w-0 text-sm font-medium text-slate-800"
-            >
-              딜러
-            </Label>
-            <span
-              className={
-                Math.abs(previousDealerPercent - dealerSelectPct) > 0.0001
-                  ? "shrink-0 text-xs font-semibold tabular-nums tracking-tight text-amber-700"
-                  : "shrink-0 text-xs font-medium tabular-nums tracking-tight text-slate-400"
-              }
-              title="변경 전(현재 적용)"
-            >
-              {previousDealerPercent.toLocaleString("ko-KR", {
-                maximumFractionDigits: 1,
-              })}
-              %
-            </span>
-          </div>
-          <DealerRateFixed pct={dealerSelectPct} />
-        </div>
+        <PercentField
+          id={`${idPrefix}-dealer`}
+          label="딜러"
+          value={dealerSelectPct}
+          previousPercent={previousDealerPercent}
+          disabled={disabled}
+          onChange={onDealerChange}
+        />
         <PercentField
           id={`${idPrefix}-devops`}
           label="개발운영사"
@@ -1858,7 +1845,7 @@ export const AdminCreditSettingsTab = ({
     [applySettingsUpdate, scheduleSharePercentSave],
   );
 
-  /** 커스텀어벗: 제조사·딜러·개발운영 변경은 내일부터 예약. */
+  /** 커스텀어벗: 제조사·개발운영은 내일부터. 딜러는 즉시. */
   const [effectiveManufacturerPct, setEffectiveManufacturerPct] = useState(
     DEFAULT_MANUFACTURER_PURCHASE_PERCENT,
   );
@@ -1868,12 +1855,8 @@ export const AdminCreditSettingsTab = ({
   /** 런칭 이벤트 on/off — 즉시 적용. */
   const [pendingLaunchEventEnabled, setPendingLaunchEventEnabled] =
     useState(true);
-  const [effectiveDealerPct, setEffectiveDealerPct] = useState<DealerRatePct>(
-    snapDealerPct(MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman),
-  );
-  const [pendingDealerPct, setPendingDealerPct] = useState<DealerRatePct>(
-    snapDealerPct(MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman),
-  );
+  const [effectiveDealerPct, setEffectiveDealerPct] = useState(DEALER_RATE_PCT);
+  const [pendingDealerPct, setPendingDealerPct] = useState(DEALER_RATE_PCT);
   const [effectiveDevopsPct, setEffectiveDevopsPct] = useState(
     MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
   );
@@ -1886,9 +1869,9 @@ export const AdminCreditSettingsTab = ({
   const [pendingStoreManufacturerPct, setPendingStoreManufacturerPct] =
     useState(DEFAULT_MANUFACTURER_PURCHASE_PERCENT);
   const [effectiveStoreDealerPct, setEffectiveStoreDealerPct] =
-    useState<StoreDealerRatePct>(snapStoreDealerPct());
+    useState(STORE_DEALER_RATE_PCT);
   const [pendingStoreDealerPct, setPendingStoreDealerPct] =
-    useState<StoreDealerRatePct>(snapStoreDealerPct());
+    useState(STORE_DEALER_RATE_PCT);
   const [effectiveStoreDevopsPct, setEffectiveStoreDevopsPct] = useState(
     MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
   );
@@ -1966,15 +1949,11 @@ export const AdminCreditSettingsTab = ({
     if (!hydratedRef.current || !token || loading) return;
     const manufacturerPending =
       pendingManufacturerRef.current !== effectiveManufacturerRef.current;
-    const dealerPending =
-      pendingDealerRef.current !== effectiveDealerRef.current;
     const devopsPending =
       pendingDevopsRef.current !== effectiveDevopsRef.current;
     const storeManufacturerPending =
       pendingStoreManufacturerRef.current !==
       effectiveStoreManufacturerRef.current;
-    const storeDealerPending =
-      pendingStoreDealerRef.current !== effectiveStoreDealerRef.current;
     const storeDevopsPending =
       pendingStoreDevopsRef.current !== effectiveStoreDevopsRef.current;
     const labBizPending =
@@ -1988,18 +1967,14 @@ export const AdminCreditSettingsTab = ({
       ...buildManufacturerSchedulePayload(
         manufacturerPending ? pendingManufacturerRef.current : null,
       ),
-      ...buildDealerSchedulePayload(
-        dealerPending ? pendingDealerRef.current : null,
-      ),
+      ...buildDealerSchedulePayload(null),
       ...buildDevopsSchedulePayload(
         devopsPending ? pendingDevopsRef.current : null,
       ),
       ...buildStoreManufacturerSchedulePayload(
         storeManufacturerPending ? pendingStoreManufacturerRef.current : null,
       ),
-      ...buildStoreDealerSchedulePayload(
-        storeDealerPending ? pendingStoreDealerRef.current : null,
-      ),
+      ...buildStoreDealerSchedulePayload(null),
       ...buildStoreDevopsSchedulePayload(
         storeDevopsPending ? pendingStoreDevopsRef.current : null,
       ),
@@ -2098,6 +2073,86 @@ export const AdminCreditSettingsTab = ({
       persistShareSchedules();
     },
     [persistShareSchedules],
+  );
+
+  const applyCustomDealerShareNow = useCallback(
+    (nextPercent: number) => {
+      const liveMfr = readManufacturerSharePercent(
+        settingsRef.current.manufacturerSharePercent,
+      );
+      const liveDevops = clampSharePercent(
+        settingsRef.current.devopsSharePercent,
+        MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+      );
+      const next = applyDealerPercentNow(
+        nextPercent,
+        dealerPercentRoom(
+          pendingManufacturerRef.current,
+          pendingDevopsRef.current,
+        ),
+        dealerPercentRoom(liveMfr, liveDevops),
+        DEALER_RATE_PCT,
+      );
+      setPendingDealerPct(next);
+      setEffectiveDealerPct(next);
+      pendingDealerRef.current = next;
+      effectiveDealerRef.current = next;
+      applySettingsUpdate((prev) => {
+        const mfr = readManufacturerSharePercent(prev.manufacturerSharePercent);
+        const devops = clampSharePercent(
+          prev.devopsSharePercent,
+          MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+        );
+        const dealer = Math.min(next, dealerPercentRoom(mfr, devops));
+        return syncComputedPartyFields({
+          ...prev,
+          salesmanSharePercent: dealer,
+          abutsSharePercent: abutsShareFromParts(mfr, dealer, devops),
+        });
+      });
+      persistShareSchedules();
+    },
+    [applySettingsUpdate, persistShareSchedules],
+  );
+
+  const applyStoreDealerShareNow = useCallback(
+    (nextPercent: number) => {
+      const liveMfr = readManufacturerSharePercent(
+        settingsRef.current.storeManufacturerSharePercent,
+      );
+      const liveDevops = clampSharePercent(
+        settingsRef.current.storeDevopsSharePercent,
+        MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+      );
+      const next = applyDealerPercentNow(
+        nextPercent,
+        dealerPercentRoom(
+          pendingStoreManufacturerRef.current,
+          pendingStoreDevopsRef.current,
+        ),
+        dealerPercentRoom(liveMfr, liveDevops),
+        STORE_DEALER_RATE_PCT,
+      );
+      setPendingStoreDealerPct(next);
+      setEffectiveStoreDealerPct(next);
+      pendingStoreDealerRef.current = next;
+      effectiveStoreDealerRef.current = next;
+      applySettingsUpdate((prev) => {
+        const mfr = readManufacturerSharePercent(prev.storeManufacturerSharePercent);
+        const devops = clampSharePercent(
+          prev.storeDevopsSharePercent,
+          MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+        );
+        const dealer = Math.min(next, dealerPercentRoom(mfr, devops));
+        return syncComputedPartyFields({
+          ...prev,
+          storeSalesmanSharePercent: dealer,
+          storeAbutsSharePercent: abutsShareFromParts(mfr, dealer, devops),
+        });
+      });
+      persistShareSchedules();
+    },
+    [applySettingsUpdate, persistShareSchedules],
   );
 
   const scheduleLabBizShareChange = useCallback(
@@ -2290,34 +2345,12 @@ export const AdminCreditSettingsTab = ({
           .customAbutmentLaunchEventEnabled !== false;
       setPendingLaunchEventEnabled(effectiveLaunch);
 
-      const eventRate = Number(
-        (data as { dealershipEventCommissionRate?: number })
-          .dealershipEventCommissionRate,
-      );
-      const eventOn =
-        (data as { dealershipEventCommissionEnabled?: boolean })
-          .dealershipEventCommissionEnabled !== false;
-      const fromShare = Number(normalized.salesmanSharePercent);
-      const fromEvent = eventOn
-        ? Math.round((Number.isFinite(eventRate) ? eventRate : 0.2) * 100)
-        : 10;
-      const effective = snapDealerPct(
-        Number.isFinite(fromShare) && fromShare > 0 ? fromShare : fromEvent,
+      const effective = readDealerSharePercent(
+        normalized.salesmanSharePercent,
+        DEALER_RATE_PCT,
       );
       setEffectiveDealerPct(effective);
-
-      const scheduledRate = Number(
-        (data as { dealershipRateChangeScheduledRate?: number | null })
-          .dealershipRateChangeScheduledRate,
-      );
-      const scheduledAt = (
-        data as { dealershipRateChangeScheduledAt?: string | Date | null }
-      ).dealershipRateChangeScheduledAt;
-      if (scheduledAt && Number.isFinite(scheduledRate) && scheduledRate > 0) {
-        setPendingDealerPct(snapDealerPct(Math.round(scheduledRate * 100)));
-      } else {
-        setPendingDealerPct(effective);
-      }
+      setPendingDealerPct(effective);
 
       const effectiveDevops = clampSharePercent(
         normalized.devopsSharePercent,
@@ -2374,24 +2407,12 @@ export const AdminCreditSettingsTab = ({
         setPendingStoreManufacturerPct(storeEffectiveMfr);
       }
 
-      const storeEffective = snapStoreDealerPct();
-      setEffectiveStoreDealerPct(storeEffective);
-      const storeScheduledRate = Number(
-        (data as { storeDealerRateChangeScheduledRate?: number | null })
-          .storeDealerRateChangeScheduledRate,
+      const storeEffective = readDealerSharePercent(
+        normalized.storeSalesmanSharePercent,
+        STORE_DEALER_RATE_PCT,
       );
-      const storeScheduledAt = (
-        data as { storeDealerRateChangeScheduledAt?: string | Date | null }
-      ).storeDealerRateChangeScheduledAt;
-      if (
-        storeScheduledAt &&
-        Number.isFinite(storeScheduledRate) &&
-        storeScheduledRate > 0
-      ) {
-        setPendingStoreDealerPct(snapStoreDealerPct());
-      } else {
-        setPendingStoreDealerPct(storeEffective);
-      }
+      setEffectiveStoreDealerPct(storeEffective);
+      setPendingStoreDealerPct(storeEffective);
 
       const storeEffectiveDevops = clampSharePercent(
         normalized.storeDevopsSharePercent,
@@ -2645,7 +2666,9 @@ export const AdminCreditSettingsTab = ({
                   <>
                     배송비 제외.
                     <br />
-                    변경 사항은 내일부터 적용
+                    딜러는 변경 즉시 적용됩니다.
+                    <br />
+                    그 외는 내일부터 적용됩니다.
                   </>
                 }
                 trailing={
@@ -2682,6 +2705,7 @@ export const AdminCreditSettingsTab = ({
                   )}
                   disabled={loading}
                   onManufacturerChange={scheduleStoreManufacturerShareChange}
+                  onDealerChange={applyStoreDealerShareNow}
                   onDevopsChange={scheduleStoreDevopsShareChange}
                 />
                 <SharePercentRow
@@ -2708,6 +2732,7 @@ export const AdminCreditSettingsTab = ({
                   )}
                   disabled={loading}
                   onManufacturerChange={scheduleManufacturerShareChange}
+                  onDealerChange={applyCustomDealerShareNow}
                   onDevopsChange={scheduleDevopsShareChange}
                 />
                 <LabSharePercentRow
@@ -2737,8 +2762,6 @@ export const AdminCreditSettingsTab = ({
             </CardContent>
           </Card>
         ) : null}
-
-        {showShareRates ? <AdminDealershipSettingsTab /> : null}
 
         {showCustomAbut ? (
           <>

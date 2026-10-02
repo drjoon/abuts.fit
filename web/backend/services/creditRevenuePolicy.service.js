@@ -57,29 +57,22 @@ export const DEFAULT_DEALERSHIP_COMMISSION_TIERS = Object.freeze([
   Object.freeze({ upToAmount: null, rate: 0.1 }),
 ]);
 
-function snapToOptions(raw, options, fallback) {
+function clampDealershipRate(
+  raw,
+  fallback = DEALERSHIP_ACTIVE_COMMISSION_RATE,
+) {
   const n = Number(raw);
-  const list = Array.isArray(options) && options.length ? options : [fallback];
   if (!Number.isFinite(n) || n < 0) return fallback;
-  const clamped = Math.min(1, n);
-  let best = list[0];
-  let bestDist = Number.POSITIVE_INFINITY;
-  for (const option of list) {
-    const dist = Math.abs(option - clamped);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = option;
-    }
-  }
-  return best;
+  return Math.min(1, Math.round(n * 10000) / 10000);
 }
 
 function snapDealershipActiveRate(raw) {
-  return snapToOptions(
-    raw,
-    DEALERSHIP_COMMISSION_RATE_OPTIONS,
-    DEALERSHIP_ACTIVE_COMMISSION_RATE,
-  );
+  return clampDealershipRate(raw);
+}
+
+/** 신규 유치에 찍는 딜러십 요율. 0~1, 소수 4자리. */
+export function clampDealershipCommissionRate(raw) {
+  return clampDealershipRate(raw);
 }
 
 function snapDealershipBaseRate(_raw) {
@@ -124,13 +117,16 @@ export function normalizeDealershipCommissionRateLog(rawLog, activeRate) {
 
 /**
  * 딜러십 영업 수수료 정책.
- * - activeRate: 신규 유치(가입·재귀속) 요율은 20% 고정
- * - 15%·10% 인하 예약은 적용하지 않는다
+ * - activeRate: 커스텀어벗 딜러 분배%와 같은 신규 유치 요율. 설정 변경은 즉시.
  * - 이미 유치한 의뢰자의 스탬프(BA.dealershipCommissionRate)는 그대로 읽는다
  * - 90일(약 3개월) 무주문 리셋 후 재유치 시 그 당시 activeRate를 새로 스탬프
  */
 export function resolveDealershipCommissionPolicy(creditSettings = {}) {
-  const activeRate = DEALERSHIP_ACTIVE_COMMISSION_RATE;
+  const activeRate = clampDealershipRate(
+    creditSettings?.dealershipActiveCommissionRate ??
+      creditSettings?.dealershipEventCommissionRate ??
+      DEALERSHIP_ACTIVE_COMMISSION_RATE,
+  );
   const baseRate = snapDealershipBaseRate(
     creditSettings?.dealershipBaseCommissionRate,
   );
