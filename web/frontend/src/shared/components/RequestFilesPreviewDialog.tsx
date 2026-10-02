@@ -1,5 +1,7 @@
-// 의뢰 파일 전체를 한 번에 띄운다. 3D 스캔은 같은 좌표로 겹치고, 사진은 아래 썸네일 갤러리에서 연다.
+// 의뢰·작업 파일을 한 번에 띄운다. 3D는 같은 좌표로 겹치고, 사진은 오른쪽 패널에서 연다.
 // change-log:
+// - 2026-10-03: 작업 스캔도 같이 로드. 패널은 의뢰 파일·작업 파일 말풍선.
+// - 2026-10-03: 아래 썸네일 갤러리 제거. 파일 선택은 오른쪽 패널만.
 // - 2026-10-03: 신설. 파일 1개씩 열고 좌우 화살표로 넘기던 의뢰 파일 프리뷰를 작업 스캔 프리뷰 구조로 바꿈.
 // related files:
 // - web/frontend/src/shared/components/WorkScanModelPreviewDialog.tsx
@@ -8,12 +10,10 @@
 // - web/frontend/src/shared/share/CaseLayerViewer.tsx
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  Box,
   ChevronDown,
   Download,
   Eye,
   EyeOff,
-  Image as ImageIcon,
   Loader2,
   Maximize2,
 } from "lucide-react";
@@ -67,7 +67,11 @@ import {
   type ZoomableImagePreviewHandle,
 } from "@/shared/components/ZoomableImagePreview";
 import type { ViewPaintSpace } from "@/shared/components/practice/viewPaintSpace";
-import { resolveOralScanRole } from "@/shared/practice/labProsthesisAiDesign";
+import {
+  isAbutsWorkScanFileName,
+  preferWorkingOralScanFiles,
+  resolveOralScanRole,
+} from "@/shared/practice/labProsthesisAiDesign";
 import {
   CaseLayerViewer,
   type CaseLayerModel,
@@ -89,6 +93,7 @@ type Item = {
   file: RequestPreviewFile;
   kind: "model" | "image";
   roleLabel: string;
+  cluster: "request" | "work";
 };
 
 type LoadState =
@@ -146,13 +151,42 @@ function EyeToggle({
   );
 }
 
+function toItems(
+  list: readonly RequestPreviewFile[],
+  cluster: "request" | "work",
+): Item[] {
+  const out: Item[] = [];
+  for (const file of list) {
+    const kind = kindOf(file.fileName);
+    if (!kind || !String(file.s3Key || "").trim()) continue;
+    const role = resolveOralScanRole({
+      fileName: file.fileName,
+      scanRole: file.scanRole,
+    });
+    out.push({
+      key: itemKey(file),
+      file,
+      kind,
+      cluster,
+      roleLabel:
+        kind === "image"
+          ? "사진"
+          : cluster === "work"
+            ? ROLE_LABEL[role || ""] || "작업"
+            : (role && ROLE_LABEL[role]) || "3D",
+    });
+  }
+  return out;
+}
+
 export function RequestFilesPreviewDialog({
   open,
   onOpenChange,
   files,
+  workFiles = [],
   initialKey,
   authToken,
-  title = "의뢰 파일",
+  title,
   caseInfo,
   onDownload,
   downloadBusy = false,
@@ -163,6 +197,8 @@ export function RequestFilesPreviewDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   files: readonly RequestPreviewFile[];
+  /** 작업 스캔(상악·하악·바이트 DCM 등). 있으면 같이 로드한다. */
+  workFiles?: readonly RequestPreviewFile[];
   /** 처음에 열 파일(사진이면 바로 그 사진). 없으면 3D 겹침. */
   initialKey?: string | null;
   authToken?: string | null;
@@ -175,26 +211,25 @@ export function RequestFilesPreviewDialog({
   onReorderChatFiles?: (files: File[]) => void;
 }) {
   const items = useMemo<Item[]>(() => {
-    const out: Item[] = [];
-    for (const file of files) {
-      const kind = kindOf(file.fileName);
-      if (!kind || !String(file.s3Key || "").trim()) continue;
-      const role = resolveOralScanRole({
-        fileName: file.fileName,
-        scanRole: file.scanRole,
-      });
-      out.push({
-        key: itemKey(file),
-        file,
-        kind,
-        roleLabel:
-          kind === "image" ? "사진" : (role && ROLE_LABEL[role]) || "3D",
-      });
+    const request = toItems(files, "request").filter(
+      (item) => !isAbutsWorkScanFileName(item.file.fileName),
+    );
+    const work = toItems(workFiles, "work");
+    const seen = new Set(request.map((i) => i.key));
+    const out = [...request];
+    for (const item of work) {
+      if (seen.has(item.key)) continue;
+      seen.add(item.key);
+      out.push(item);
     }
     return out;
-  }, [files]);
+  }, [files, workFiles]);
+  const heading =
+    title || (items.some((i) => i.cluster === "work") ? "케이스" : "의뢰 파일");
   const itemsKey = items.map((i) => i.key).join("|");
   const models = items.filter((i) => i.kind === "model");
+  const requestItems = items.filter((i) => i.cluster === "request");
+  const workItems = items.filter((i) => i.cluster === "work");
 
   const viewerRef = useRef<CaseLayerViewerHandle | null>(null);
   const imageRef = useRef<ZoomableImagePreviewHandle | null>(null);
@@ -234,13 +269,25 @@ export function RequestFilesPreviewDialog({
         ]),
       ),
     );
+    const preferred = new Set(
+      preferWorkingOralScanFiles(
+        models.map((m) => ({
+          fileKey: m.key,
+          fileName: m.file.fileName,
+          scanRole: m.file.scanRole,
+          uploadedAt: m.file.uploadedAt,
+        })),
+      ).map((f) => f.fileKey),
+    );
     const startHidden: Record<string, boolean> = {};
     for (const m of models) {
       const role = resolveOralScanRole({
         fileName: m.file.fileName,
         scanRole: m.file.scanRole,
       });
-      startHidden[m.key] = role === "bite";
+      const show =
+        (role === "upper" || role === "lower") && preferred.has(m.key);
+      startHidden[m.key] = !show;
     }
     setHidden(startHidden);
     const wanted = initialKeyRef.current;
@@ -451,141 +498,86 @@ export function RequestFilesPreviewDialog({
         onInteractOutside={keepOpenOnToastInteract}
       >
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <div className="flex min-h-[55dvh] min-w-0 flex-1 flex-col md:min-h-0">
-            <div className="relative min-h-0 flex-1 overflow-hidden bg-muted/50">
-              {open ? (
-                <CaseLayerViewer
-                  ref={viewerRef}
-                  layers={layers}
-                  colorMapping={colorMapping}
-                  onPaintSpace={setPaintSpace}
-                />
-              ) : null}
-              {showingImage && shownImageKey ? (
-                <div className="absolute inset-0 z-10 bg-muted">
-                  <ZoomableImagePreview
-                    ref={imageRef}
-                    src={imageUrls[shownImageKey]}
-                    alt={shownImage?.file.fileName || "사진"}
-                    fill
-                  />
-                </div>
-              ) : null}
-              <div className="absolute left-3 top-3 z-20 flex flex-col items-start gap-2">
-                <PreviewColorMappingToggle
-                  checked={colorMapping}
-                  onCheckedChange={setColorMapping}
-                  disabled={showingImage || layers.length === 0}
-                  className="static"
-                />
-                <PreviewPaintControls
-                  paint={paint}
-                  disabled={!canAnnotate}
-                  className="bg-white/95 text-xs shadow-sm"
+          <div className="relative min-h-[55dvh] min-w-0 flex-1 overflow-hidden bg-muted/50 md:min-h-0">
+            {open ? (
+              <CaseLayerViewer
+                ref={viewerRef}
+                layers={layers}
+                colorMapping={colorMapping}
+                onPaintSpace={setPaintSpace}
+              />
+            ) : null}
+            {showingImage && shownImageKey ? (
+              <div className="absolute inset-0 z-10 bg-muted">
+                <ZoomableImagePreview
+                  ref={imageRef}
+                  src={imageUrls[shownImageKey]}
+                  alt={shownImage?.file.fileName || "사진"}
+                  fill
                 />
               </div>
-              {pending.length > 0 ? (
-                <div className="pointer-events-none absolute left-1/2 top-4 z-20 w-56 -translate-x-1/2 rounded-md bg-black/55 px-3 py-2 text-xs text-white">
-                  <p className="flex items-center gap-2">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    파일 {pending.length}개 불러오는 중
-                  </p>
-                  <Progress value={progress} className="mt-1.5 h-1" />
-                </div>
-              ) : null}
-              {canAnnotate ? (
-                <PreviewPaintLayer
-                  paint={paint}
-                  surfaceKey={showingImage ? shownImageKey || "" : itemsKey}
-                  captureCanvas={() =>
-                    showingImage
-                      ? (imageRef.current?.captureCanvas() ?? null)
-                      : (viewerRef.current?.captureCanvas() ?? null)
-                  }
-                  fileName={shownImage?.file.fileName || title}
-                  space={showingImage ? null : paintSpace}
-                  onAttachChatFile={onAttachChatFile}
-                  onRemoveChatFile={onRemoveChatFile}
-                  onReorderChatFiles={onReorderChatFiles}
-                />
-              ) : null}
-              {!showingImage ? (
-                <div className={VIEW_GESTURE_HINT_LAYER_CLASS}>
-                  <ViewGestureHint />
-                </div>
-              ) : null}
-              {!showingImage ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="absolute bottom-4 left-4 z-20 h-8 gap-1.5 bg-white/95 px-2.5 text-xs shadow-sm"
-                  onClick={() => viewerRef.current?.fitToView()}
-                >
-                  <Maximize2 className="h-3.5 w-3.5" />
-                  뷰리셋
-                </Button>
-              ) : null}
-              <AbutsLogo
-                variant="light"
-                className="pointer-events-none absolute bottom-4 right-4 z-10 opacity-80"
-                iconClassName="h-7 w-7"
-                wordmarkClassName="text-base"
+            ) : null}
+            <div className="absolute left-3 top-3 z-20 flex flex-col items-start gap-2">
+              <PreviewColorMappingToggle
+                checked={colorMapping}
+                onCheckedChange={setColorMapping}
+                disabled={showingImage || layers.length === 0}
+                className="static"
+              />
+              <PreviewPaintControls
+                paint={paint}
+                disabled={!canAnnotate}
+                className="bg-white/95 text-xs shadow-sm"
               />
             </div>
-
-            <div
-              className="shrink-0 border-t bg-card px-3 py-2"
-              aria-label="의뢰 파일 갤러리"
-            >
-              <ul className="flex gap-2 overflow-x-auto px-1.5 py-1.5">
-                {items.map((item) => {
-                  const state = loads[item.key];
-                  const active =
-                    item.kind === "image"
-                      ? shownImageKey === item.key
-                      : !showingImage && !hidden[item.key];
-                  const url = imageUrls[item.key];
-                  return (
-                    <li key={item.key} className="shrink-0">
-                      <button
-                        type="button"
-                        className={cn(
-                          "relative flex h-16 w-20 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-lg border bg-muted/60 text-muted-foreground transition-shadow hover:shadow-md",
-                          active && "border-primary ring-2 ring-primary/50",
-                        )}
-                        title={item.file.fileName}
-                        onClick={() => selectItem(item)}
-                      >
-                        {item.kind === "image" && url ? (
-                          <img
-                            src={url}
-                            alt={item.file.fileName}
-                            className="absolute inset-0 h-full w-full object-cover"
-                          />
-                        ) : state?.status === "loading" ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : item.kind === "image" ? (
-                          <ImageIcon className="h-5 w-5" />
-                        ) : (
-                          <Box className="h-5 w-5" />
-                        )}
-                        <span
-                          className={cn(
-                            "relative text-[0.6875rem] font-medium",
-                            item.kind === "image" && url
-                              ? "absolute bottom-0 left-0 right-0 bg-black/55 py-0.5 text-center text-white"
-                              : "",
-                          )}
-                        >
-                          {item.roleLabel}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
+            {pending.length > 0 ? (
+              <div className="pointer-events-none absolute left-1/2 top-4 z-20 w-56 -translate-x-1/2 rounded-md bg-black/55 px-3 py-2 text-xs text-white">
+                <p className="flex items-center gap-2">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  파일 {pending.length}개 불러오는 중
+                </p>
+                <Progress value={progress} className="mt-1.5 h-1" />
+              </div>
+            ) : null}
+            {canAnnotate ? (
+              <PreviewPaintLayer
+                paint={paint}
+                surfaceKey={showingImage ? shownImageKey || "" : itemsKey}
+                captureCanvas={() =>
+                  showingImage
+                    ? (imageRef.current?.captureCanvas() ?? null)
+                    : (viewerRef.current?.captureCanvas() ?? null)
+                }
+                fileName={shownImage?.file.fileName || heading}
+                space={showingImage ? null : paintSpace}
+                onAttachChatFile={onAttachChatFile}
+                onRemoveChatFile={onRemoveChatFile}
+                onReorderChatFiles={onReorderChatFiles}
+              />
+            ) : null}
+            {!showingImage ? (
+              <div className={VIEW_GESTURE_HINT_LAYER_CLASS}>
+                <ViewGestureHint />
+              </div>
+            ) : null}
+            {!showingImage ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="absolute bottom-4 left-4 z-20 h-8 gap-1.5 bg-white/95 px-2.5 text-xs shadow-sm"
+                onClick={() => viewerRef.current?.fitToView()}
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+                뷰리셋
+              </Button>
+            ) : null}
+            <AbutsLogo
+              variant="light"
+              className="pointer-events-none absolute bottom-4 right-4 z-10 opacity-80"
+              iconClassName="h-7 w-7"
+              wordmarkClassName="text-base"
+            />
           </div>
 
           <aside
@@ -595,7 +587,7 @@ export function RequestFilesPreviewDialog({
             <ResizablePanelHandle panel={panel} />
             <DialogHeader className="space-y-0 border-b bg-muted/50 py-3 pl-4 pr-4 text-left sm:pl-4 sm:pr-4">
               <DialogTitle className="flex min-h-10 items-center pr-12 text-left text-sm font-semibold">
-                {title}
+                {heading}
               </DialogTitle>
               {caseInfo ? (
                 <div className="mt-0.5 min-w-0 [&_*]:!max-w-full [&_*]:!flex-wrap [&_*]:!overflow-visible [&_*]:!text-clip [&_*]:!whitespace-normal">
@@ -603,8 +595,8 @@ export function RequestFilesPreviewDialog({
                 </div>
               ) : null}
               <DialogDescription className="sr-only">
-                의뢰 파일의 3D 스캔을 같은 좌표로 겹쳐 보고, 사진은 아래
-                갤러리에서 엽니다.
+                의뢰·작업 파일의 3D 스캔을 같은 좌표로 겹쳐 보고, 사진은 오른쪽
+                패널에서 엽니다.
               </DialogDescription>
             </DialogHeader>
 
@@ -629,81 +621,131 @@ export function RequestFilesPreviewDialog({
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-              <div className="flex flex-col items-start gap-1">
-                <p className="px-1 text-xs font-semibold text-muted-foreground">
-                  의뢰 파일
-                </p>
-                <ul className="flex w-[92%] flex-col divide-y rounded-2xl rounded-tl-sm border bg-muted/60 px-3 py-0.5">
-                  {items.map((item) => {
-                    const state = loads[item.key];
-                    const on =
-                      item.kind === "image"
-                        ? shownImageKey === item.key
-                        : !hidden[item.key];
+              <ul className="flex flex-col gap-2">
+                {[
+                  {
+                    cluster: "request" as const,
+                    label: "의뢰 파일",
+                    list: requestItems,
+                  },
+                  {
+                    cluster: "work" as const,
+                    label: "작업 파일",
+                    list: workItems,
+                  },
+                ]
+                  .filter((group) => group.list.length > 0)
+                  .map((group) => {
+                    const keys = group.list
+                      .filter((item) => item.kind === "model")
+                      .map((item) => item.key);
+                    const clusterOn =
+                      !showingImage && keys.some((key) => !hidden[key]);
                     return (
                       <li
-                        key={item.key}
-                        className="flex items-center gap-2 py-1.5"
+                        key={group.cluster}
+                        className="flex flex-col items-start gap-1"
                       >
-                        <button
-                          type="button"
-                          className="min-w-0 flex-1 text-left"
-                          onClick={() => selectItem(item)}
-                        >
-                          <p
-                            className="truncate text-[0.8125rem]"
-                            title={item.file.fileName}
-                          >
-                            {item.file.fileName}
+                        <div className="flex w-full items-center justify-between gap-2 pl-1">
+                          <p className="text-xs font-semibold text-muted-foreground">
+                            {group.label}
                           </p>
-                          {state?.status === "error" ? (
-                            <p
-                              className="truncate text-xs text-destructive"
-                              title={state.message}
-                            >
-                              {state.message}
-                            </p>
-                          ) : item.file.uploadedAt ? (
-                            <p className="text-xs text-muted-foreground">
-                              {formatKstDateTimeToKo(item.file.uploadedAt)}
-                            </p>
+                          {keys.length > 0 ? (
+                            <EyeToggle
+                              on={clusterOn}
+                              label={`${group.label} ${clusterOn ? "숨기기" : "보기"}`}
+                              onClick={() =>
+                                setModelsShown(keys, !clusterOn || showingImage)
+                              }
+                            />
                           ) : null}
-                        </button>
-                        {state?.status === "loading" ? (
-                          <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            {Math.round(state.progress)}%
-                          </span>
-                        ) : (
-                          <span className="shrink-0 whitespace-nowrap rounded bg-white/80 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary-strong">
-                            {item.roleLabel}
-                          </span>
-                        )}
-                        <EyeToggle
-                          on={on && !(item.kind === "model" && showingImage)}
-                          label={on ? "숨기기" : "보기"}
-                          disabled={state?.status !== "ready"}
-                          onClick={() => {
-                            if (item.kind === "image") {
-                              selectItem(item);
-                              return;
-                            }
-                            if (showingImage) {
-                              setShownImageKey(null);
-                              setHidden((prev) => ({
-                                ...prev,
-                                [item.key]: false,
-                              }));
-                              return;
-                            }
-                            setModelsShown([item.key], !on);
-                          }}
-                        />
+                        </div>
+                        <ul
+                          className={cn(
+                            "flex flex-col divide-y rounded-2xl border px-3 py-0.5",
+                            group.cluster === "work"
+                              ? "w-full rounded-tr-sm border-primary/30 bg-primary-soft divide-primary/15"
+                              : "w-[92%] rounded-tl-sm bg-muted/60",
+                          )}
+                        >
+                          {group.list.map((item) => {
+                            const state = loads[item.key];
+                            const on =
+                              item.kind === "image"
+                                ? shownImageKey === item.key
+                                : !hidden[item.key];
+                            return (
+                              <li
+                                key={item.key}
+                                className="flex items-center gap-2 py-1.5"
+                              >
+                                <button
+                                  type="button"
+                                  className="min-w-0 flex-1 text-left"
+                                  onClick={() => selectItem(item)}
+                                >
+                                  <p
+                                    className="truncate text-[0.8125rem]"
+                                    title={item.file.fileName}
+                                  >
+                                    {item.file.fileName}
+                                  </p>
+                                  {state?.status === "error" ? (
+                                    <p
+                                      className="truncate text-xs text-destructive"
+                                      title={state.message}
+                                    >
+                                      {state.message}
+                                    </p>
+                                  ) : item.file.uploadedAt ? (
+                                    <p className="text-xs text-muted-foreground">
+                                      {formatKstDateTimeToKo(
+                                        item.file.uploadedAt,
+                                      )}
+                                    </p>
+                                  ) : null}
+                                </button>
+                                {state?.status === "loading" ? (
+                                  <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    {Math.round(state.progress)}%
+                                  </span>
+                                ) : (
+                                  <span className="shrink-0 whitespace-nowrap rounded bg-white/80 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary-strong">
+                                    {item.roleLabel}
+                                  </span>
+                                )}
+                                <EyeToggle
+                                  on={
+                                    on &&
+                                    !(item.kind === "model" && showingImage)
+                                  }
+                                  label={on ? "숨기기" : "보기"}
+                                  disabled={state?.status !== "ready"}
+                                  onClick={() => {
+                                    if (item.kind === "image") {
+                                      selectItem(item);
+                                      return;
+                                    }
+                                    if (showingImage) {
+                                      setShownImageKey(null);
+                                      setHidden((prev) => ({
+                                        ...prev,
+                                        [item.key]: false,
+                                      }));
+                                      return;
+                                    }
+                                    setModelsShown([item.key], !on);
+                                  }}
+                                />
+                              </li>
+                            );
+                          })}
+                        </ul>
                       </li>
                     );
                   })}
-                </ul>
-              </div>
+              </ul>
             </div>
           </aside>
         </div>

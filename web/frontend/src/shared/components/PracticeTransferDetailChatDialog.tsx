@@ -243,7 +243,10 @@ import {
   ChatSoundGlobalToggle,
   useRegisterChatSoundViewing,
 } from "@/shared/chat/ChatSoundControls";
-import { ChatComposer, type RequestPickItem } from "@/features/chat/components/ChatComposer";
+import {
+  ChatComposer,
+  type RequestPickItem,
+} from "@/features/chat/components/ChatComposer";
 import { ChatMessageBubble } from "@/features/chat/components/ChatMessageBubble";
 import { buildChatReactionUserNameById } from "@/features/chat/components/chatReactions";
 import { type ReplyToMessage } from "@/features/chat/components/MessageReply";
@@ -256,9 +259,7 @@ import {
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 import { usePracticeTransferPanelLayout } from "@/shared/components/practice/usePracticeTransferPanelLayout";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
-import {
-  type ToothWorkSelection,
-} from "@/shared/practice/transferMemo";
+import { type ToothWorkSelection } from "@/shared/practice/transferMemo";
 import { toothArchFromNumber } from "@/shared/practice/labFeeSchedule";
 import type {
   PracticeTransferFeeQuote,
@@ -278,8 +279,10 @@ import {
   ORAL_SCAN_REQUIRED_FROM_PRACTICE,
 } from "@/shared/practice/oralScanRequirement";
 import { RequestFilesPreviewDialog } from "@/shared/components/RequestFilesPreviewDialog";
-import { ModelPreviewDialog, type ModelPreviewKind } from "@/shared/components/ModelPreviewDialog";
-import { WorkScanModelPreviewDialog } from "@/shared/components/WorkScanModelPreviewDialog";
+import {
+  ModelPreviewDialog,
+  type ModelPreviewKind,
+} from "@/shared/components/ModelPreviewDialog";
 import type { WorkScanAlignment } from "@/shared/practice/workScanAlignment";
 import {
   hiddenKeysForWorkScanDate,
@@ -359,9 +362,7 @@ import {
   clusterPracticeTransferFileWaves,
   formatPracticeUploadWaveTime,
 } from "@/shared/practice/practiceTransferFileWaves";
-import {
-  PracticeTransferFileDropTarget,
-} from "@/shared/components/practice/PracticeTransferFileDropTarget";
+import { PracticeTransferFileDropTarget } from "@/shared/components/practice/PracticeTransferFileDropTarget";
 import {
   dataTransferHasFiles,
   extractDroppedFiles,
@@ -389,7 +390,9 @@ import {
 } from "@/shared/practice/practiceNextArrivalReminder";
 
 function isImagePreviewExt(ext: string): boolean {
-  return PRACTICE_TRANSFER_IMAGE_EXTENSIONS.has(String(ext || "").toLowerCase());
+  return PRACTICE_TRANSFER_IMAGE_EXTENSIONS.has(
+    String(ext || "").toLowerCase(),
+  );
 }
 
 function mimeTypeForImageFileName(name: string): string {
@@ -415,10 +418,16 @@ function fileTypeLabel(fileName: string): string {
   return ext ? ext.toUpperCase() : "FILE";
 }
 
-function fileFromPreviewBlob(blob: Blob, fileName: string, kind: ModelPreviewKind): File {
+function fileFromPreviewBlob(
+  blob: Blob,
+  fileName: string,
+  kind: ModelPreviewKind,
+): File {
   if (kind === "model") return fileFromModelBlob(blob, fileName);
   const name = String(fileName || "image").trim() || "image";
-  const blobType = String(blob?.type || "").trim().toLowerCase();
+  const blobType = String(blob?.type || "")
+    .trim()
+    .toLowerCase();
   const type =
     blobType && blobType !== "application/octet-stream"
       ? blob.type
@@ -578,7 +587,9 @@ type PracticeTransferDetailChatDialogProps = {
   toothWorksKey?: string;
   feeQuote?: PracticeTransferFeeQuote | null;
   /** 동일 PTX 리메이크 청구 이력(치과·기공소 인지) */
-  remakeCharges?: import("@/shared/practice/practiceTransferLabReceive").PracticeTransferRemakeCharge[] | null;
+  remakeCharges?:
+    | import("@/shared/practice/practiceTransferLabReceive").PracticeTransferRemakeCharge[]
+    | null;
   skipJig?: boolean;
   feeViewer?: PracticeTransferFeeQuoteViewer;
   /**
@@ -739,8 +750,7 @@ type PracticeTransferDetailChatDialogProps = {
    * 함수면 `releaseAction`(작업취소)을 버튼 행 trailing에 넣을 수 있다.
    */
   acceptedWorkActions?:
-    | ReactNode
-    | ((slots: { releaseAction: ReactNode | null }) => ReactNode);
+    ReactNode | ((slots: { releaseAction: ReactNode | null }) => ReactNode);
   /** 수락 후 창 전체 드롭존(기공의뢰수신). 안내 배너 클릭·드래그로 파일창 */
   workFileDrop?: PracticeTransferWorkFileDropConfig | null;
   chatLoading: boolean;
@@ -772,9 +782,13 @@ type PracticeTransferDetailChatDialogProps = {
    */
   onAttachRequestFiles?: (files: File[]) => void;
   /** 의뢰 파일 타일 X — s3Key로 휴지통 이동 */
-  onRemoveRequestFile?: (file: PracticeTransferDialogFileItem) => void | Promise<void>;
+  onRemoveRequestFile?: (
+    file: PracticeTransferDialogFileItem,
+  ) => void | Promise<void>;
   /** 휴지통 → 의뢰 파일 복원 */
-  onRestoreRequestFile?: (file: PracticeTransferDialogFileItem) => void | Promise<void>;
+  onRestoreRequestFile?: (
+    file: PracticeTransferDialogFileItem,
+  ) => void | Promise<void>;
   /** 휴지통 전체 복원(한 요청) */
   onRestoreAllRequestFiles?: () => void | Promise<void>;
   /** 의뢰 파일 업로드 중(타일 그리드에 표시) */
@@ -829,8 +843,12 @@ type PracticeTransferDetailChatDialogProps = {
   prosthesisFollowUpPending?: boolean;
   cancelProsthesisFollowUpBusy?: boolean;
   modifyProsthesisFollowUpBusy?: boolean;
-  prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[] | null;
-  prosthesisFeeStages?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFeeStageRecord[] | null;
+  prosthesisFollowUps?:
+    | import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[]
+    | null;
+  prosthesisFeeStages?:
+    | import("@/shared/practice/prosthesisFollowUp").ProsthesisFeeStageRecord[]
+    | null;
   /**
    * 캘린더 칩 단계 포커스 — 치식·이번 단계 견적.
    * `-1` 원 임시치아, `0..n` followUpIndex, 미지정 시 원 임시치아(-1).
@@ -1044,26 +1062,24 @@ export function PracticeTransferDetailChatDialog({
     platformGuideTour.kind === "lab" &&
     platformGuideTour.active &&
     platformGuideTour.stepId === "lab_accept";
-  const {
-    layout,
-    minimized,
-    maximized,
-    beginResize,
-    dockRight,
-  } = usePracticeTransferPanelLayout();
+  const { layout, minimized, maximized, beginResize, dockRight } =
+    usePracticeTransferPanelLayout();
   const resolvedInitialPanelTab: "detail" | "chat" | null =
     initialPanelTab === "detail" || initialPanelTab === "chat"
       ? initialPanelTab
       : null;
   const [rearrivalOpen, setRearrivalOpen] = useState(false);
-  const [rearrivalDraft, setRearrivalDraft] = useState<Date | undefined>(undefined);
+  const [rearrivalDraft, setRearrivalDraft] = useState<Date | undefined>(
+    undefined,
+  );
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [workModelOpen, setWorkModelOpen] = useState(false);
-  /** 의뢰 파일 전체 프리뷰. initialKey는 처음 연 파일. */
+  /** 의뢰·작업 파일 전체 프리뷰. initialKey는 처음 연 파일. */
   const [requestPreview, setRequestPreview] = useState<{
     initialKey: string;
   } | null>(null);
-  const [scrollEdge, setScrollEdge] = useState<"top" | "bottom" | "middle">("top");
+  const [scrollEdge, setScrollEdge] = useState<"top" | "bottom" | "middle">(
+    "top",
+  );
   const scrollBodyRef = useRef<HTMLDivElement | null>(null);
   const didInitialScrollRef = useRef(false);
   const openedWithoutMessagesRef = useRef(false);
@@ -1081,7 +1097,14 @@ export function PracticeTransferDetailChatDialog({
     if (!open || isMobile || isInline) return;
     // floating — 오른쪽 사이드 패널
     dockRight();
-  }, [open, isMobile, isInline, preferredDockSide, preferredDockNonce, dockRight]);
+  }, [
+    open,
+    isMobile,
+    isInline,
+    preferredDockSide,
+    preferredDockNonce,
+    dockRight,
+  ]);
 
   const updateScrollEdge = useCallback(() => {
     const el = scrollBodyRef.current;
@@ -1162,8 +1185,7 @@ export function PracticeTransferDetailChatDialog({
     }
 
     const preferStageDetailTop =
-      feeStageFocusIndex != null &&
-      Number.isFinite(Number(feeStageFocusIndex));
+      feeStageFocusIndex != null && Number.isFinite(Number(feeStageFocusIndex));
     const preferBottom = switchedWhileLoaded
       ? false
       : resolvedInitialPanelTab === "chat"
@@ -1284,7 +1306,8 @@ export function PracticeTransferDetailChatDialog({
 
   const nextStageSegments = useMemo(() => {
     const plans = normalizeLabRequestStagePlans(labRequestStagePlans);
-    if (plans.length === 0) return [] as Array<{ archLabel: string; text: string }>;
+    if (plans.length === 0)
+      return [] as Array<{ archLabel: string; text: string }>;
 
     const archByType = new Map<string, Set<"upper" | "lower">>();
     for (const row of toothWorks || []) {
@@ -1298,7 +1321,11 @@ export function PracticeTransferDetailChatDialog({
       archByType.set(key, set);
     }
 
-    type Seg = { arch: "upper" | "lower" | "none"; archLabel: string; text: string };
+    type Seg = {
+      arch: "upper" | "lower" | "none";
+      archLabel: string;
+      text: string;
+    };
     const segs: Seg[] = [];
     for (const plan of plans) {
       const next = nextStageOfPlan(plan);
@@ -1342,7 +1369,8 @@ export function PracticeTransferDetailChatDialog({
         : null,
     [currentArrivalYmd, labRequestStagePlans, onAppendArrival],
   );
-  const nextArrivalAttention = isPracticeNextArrivalAttention(nextArrivalReminder);
+  const nextArrivalAttention =
+    isPracticeNextArrivalAttention(nextArrivalReminder);
   const nextArrivalTooltip =
     getPracticeNextArrivalReminderTooltip(nextArrivalReminder);
 
@@ -1533,7 +1561,13 @@ export function PracticeTransferDetailChatDialog({
     append(designFiles, false);
     append(resultFiles, false);
     return out;
-  }, [designFiles, files, requestFilesDownloadLocked, resultFiles, workScanFiles]);
+  }, [
+    designFiles,
+    files,
+    requestFilesDownloadLocked,
+    resultFiles,
+    workScanFiles,
+  ]);
 
   const collectModelThumbFiles = useCallback(() => {
     const out: PracticeTransferDialogFileItem[] = [];
@@ -1556,7 +1590,13 @@ export function PracticeTransferDetailChatDialog({
     append(designFiles, false);
     append(resultFiles, false);
     return out;
-  }, [designFiles, files, requestFilesDownloadLocked, resultFiles, workScanFiles]);
+  }, [
+    designFiles,
+    files,
+    requestFilesDownloadLocked,
+    resultFiles,
+    workScanFiles,
+  ]);
 
   const collectImageThumbFilesRef = useRef(collectImageThumbFiles);
   collectImageThumbFilesRef.current = collectImageThumbFiles;
@@ -1673,7 +1713,10 @@ export function PracticeTransferDetailChatDialog({
           }
           return;
         }
-        fileThumbUrlsRef.current = { ...fileThumbUrlsRef.current, [s3Key]: url };
+        fileThumbUrlsRef.current = {
+          ...fileThumbUrlsRef.current,
+          [s3Key]: url,
+        };
         setFileThumbUrls({ ...fileThumbUrlsRef.current });
       },
     });
@@ -1688,7 +1731,8 @@ export function PracticeTransferDetailChatDialog({
     if (!open || !fileModelThumbKey || !authToken) return;
     const modelFiles = collectModelThumbFilesRef.current();
     if (!modelFiles.length) {
-      if (Object.keys(modelThumbFilesRef.current).length > 0) clearModelThumbs();
+      if (Object.keys(modelThumbFilesRef.current).length > 0)
+        clearModelThumbs();
       return;
     }
 
@@ -1847,8 +1891,9 @@ export function PracticeTransferDetailChatDialog({
     async (file: PracticeTransferDialogFileItem, kind: ModelPreviewKind) => {
       const s3Key = String(file.s3Key || "").trim();
       const fileName =
-        String(file.fileName || (kind === "image" ? "image" : "model.stl")).trim() ||
-        (kind === "image" ? "image" : "model.stl");
+        String(
+          file.fileName || (kind === "image" ? "image" : "model.stl"),
+        ).trim() || (kind === "image" ? "image" : "model.stl");
       const isRequestFile =
         s3Key !== "" &&
         !isAbutsWorkScanFileName(file.fileName) &&
@@ -1900,8 +1945,7 @@ export function PracticeTransferDetailChatDialog({
           for (const item of imageItems) {
             const key = String(item.s3Key || "").trim();
             if (!key) continue;
-            const name =
-              String(item.fileName || "image").trim() || "image";
+            const name = String(item.fileName || "image").trim() || "image";
             try {
               const imgBlob = await fetchS3BlobCached({
                 s3Key: key,
@@ -2157,8 +2201,7 @@ export function PracticeTransferDetailChatDialog({
       downloadingFileKeys.includes(previewBusyKey));
   const previewCount = previewableFiles.length;
   const canPreviewPrev = previewIndex > 0;
-  const canPreviewNext =
-    previewIndex >= 0 && previewIndex < previewCount - 1;
+  const canPreviewNext = previewIndex >= 0 && previewIndex < previewCount - 1;
   const previewMetaIsConfirmWorkFile = useMemo(() => {
     if (!previewMeta || !showProductionConfirm) return false;
     const key = s3DownloadBusyKey(previewMeta);
@@ -2171,8 +2214,8 @@ export function PracticeTransferDetailChatDialog({
   }, [designFiles, previewMeta, resultFiles, showProductionConfirm]);
   const previewShowsConfirm = Boolean(
     showProductionConfirm &&
-      onConfirmProduction &&
-      previewMetaIsConfirmWorkFile,
+    onConfirmProduction &&
+    previewMetaIsConfirmWorkFile,
   );
 
   const caseIdentityStrip = useMemo(() => {
@@ -2338,7 +2381,7 @@ export function PracticeTransferDetailChatDialog({
   /** 작업취소 후 수락이 풀렸지만 채팅은 이어갈 때 */
   const showReacceptBar =
     operateLabWork && Boolean(onAccept) && !accepted && workCanceled;
-    /** 수락 직후: 수락 버튼 자리에 작업취소(어벗 가공·도착일 차단 시 숨김) */
+  /** 수락 직후: 수락 버튼 자리에 작업취소(어벗 가공·도착일 차단 시 숨김) */
   const showReleaseBar =
     operateLabWork &&
     Boolean(onRelease) &&
@@ -2482,7 +2525,10 @@ export function PracticeTransferDetailChatDialog({
   const workFileDropUploadPercent =
     typeof workFileDrop?.uploadProgressPercent === "number" &&
     Number.isFinite(workFileDrop.uploadProgressPercent)
-      ? Math.max(0, Math.min(100, Math.round(workFileDrop.uploadProgressPercent)))
+      ? Math.max(
+          0,
+          Math.min(100, Math.round(workFileDrop.uploadProgressPercent)),
+        )
       : null;
   const workFileDropUploadLabel = String(
     workFileDrop?.uploadProgressLabel || "",
@@ -2660,43 +2706,44 @@ export function PracticeTransferDetailChatDialog({
       </TooltipProvider>
     ) : null;
   // 원청은 작업시작과 하청 중 하나만 한다. 하청 풀을 열어 두면 작업시작 대신 「하청 취소」만 둔다.
-  const acceptBarPrimaryActions = showAcceptBar && onCloseSubcontract ? (
-    <Button
-      type="button"
-      size="sm"
-      variant="secondary"
-      onClick={() => void onCloseSubcontract()}
-      disabled={closeSubcontractBusy}
-    >
-      {closeSubcontractBusy ? "취소 중..." : "하청 취소"}
-    </Button>
-  ) : showAcceptBar ? (
-    <>
-      {onOpenSubcontract ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          onClick={() => void onOpenSubcontract()}
-          disabled={acceptBusy || openSubcontractBusy}
-        >
-          {openSubcontractBusy ? "전환 중..." : "하청 전환"}
-        </Button>
-      ) : null}
+  const acceptBarPrimaryActions =
+    showAcceptBar && onCloseSubcontract ? (
       <Button
         type="button"
         size="sm"
-        className={cn(
-          "h-8 min-w-[5.5rem]",
-          guideTourPulseAcceptActions && "practice-tooth-guide-pulse",
-        )}
-        onClick={() => void onAccept?.()}
-        disabled={acceptDisabled}
+        variant="secondary"
+        onClick={() => void onCloseSubcontract()}
+        disabled={closeSubcontractBusy}
       >
-        {acceptButtonLabel}
+        {closeSubcontractBusy ? "취소 중..." : "하청 취소"}
       </Button>
-    </>
-  ) : null;
+    ) : showAcceptBar ? (
+      <>
+        {onOpenSubcontract ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => void onOpenSubcontract()}
+            disabled={acceptBusy || openSubcontractBusy}
+          >
+            {openSubcontractBusy ? "전환 중..." : "하청 전환"}
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          size="sm"
+          className={cn(
+            "h-8 min-w-[5.5rem]",
+            guideTourPulseAcceptActions && "practice-tooth-guide-pulse",
+          )}
+          onClick={() => void onAccept?.()}
+          disabled={acceptDisabled}
+        >
+          {acceptButtonLabel}
+        </Button>
+      </>
+    ) : null;
   const reacceptBarPrimaryAction = showReacceptBar ? (
     <Button
       type="button"
@@ -2712,7 +2759,9 @@ export function PracticeTransferDetailChatDialog({
   };
   const reorderPaintChatFiles = onReorderAttachedChatFiles
     ? (files: File[]) =>
-        onReorderAttachedChatFiles(files.map((file) => toTempUploadFileKey(file)))
+        onReorderAttachedChatFiles(
+          files.map((file) => toTempUploadFileKey(file)),
+        )
     : undefined;
   const labAiDesignButton =
     internalLabAiDesign ||
@@ -2954,7 +3003,9 @@ export function PracticeTransferDetailChatDialog({
     downloadAllBusy ||
     downloadAllWorkFilesBusy ||
     openInCadBusy ||
-    workScanFileList.some((file) => downloadingFileKeys.includes(s3DownloadBusyKey(file)));
+    workScanFileList.some((file) =>
+      downloadingFileKeys.includes(s3DownloadBusyKey(file)),
+    );
   const designFileList = Array.isArray(designFiles) ? designFiles : [];
   const resultFileList = Array.isArray(resultFiles) ? resultFiles : [];
   const showWorkFilesSection =
@@ -2966,7 +3017,9 @@ export function PracticeTransferDetailChatDialog({
     ? summarizeOralScanReview(requestFilesShown)
     : null;
   const ambiguousScanKeys = scanReview?.keys ?? new Set<string>();
-  const scanReviewLines = scanReview ? oralScanReviewBannerLines(scanReview) : [];
+  const scanReviewLines = scanReview
+    ? oralScanReviewBannerLines(scanReview)
+    : [];
   const trashedFileList = Array.isArray(trashedFiles) ? trashedFiles : [];
   /** 휴지통에 파일이 있을 때만 썸네일 끝 타일 표시 */
   const showRequestFileTrash =
@@ -3165,13 +3218,19 @@ export function PracticeTransferDetailChatDialog({
                 >
                   <SelectValue
                     placeholder={
-                      scanRoleNeedsReview ? reviewRoleLabel || "역할 선택" : "선택"
+                      scanRoleNeedsReview
+                        ? reviewRoleLabel || "역할 선택"
+                        : "선택"
                     }
                   />
                 </SelectTrigger>
                 <SelectContent className="min-w-[7.5rem]">
                   {ORAL_SCAN_ROLE_OPTIONS.map((role) => (
-                    <SelectItem key={role} value={role} className="py-1.5 text-xs">
+                    <SelectItem
+                      key={role}
+                      value={role}
+                      className="py-1.5 text-xs"
+                    >
                       {oralScanRoleLabel(role)}
                     </SelectItem>
                   ))}
@@ -3205,7 +3264,7 @@ export function PracticeTransferDetailChatDialog({
       <div className="relative min-w-0 overflow-hidden rounded-md border bg-slate-50">
         <button
           type="button"
-          onClick={() => setWorkModelOpen(true)}
+          onClick={() => setRequestPreview({ initialKey: "" })}
           disabled={!authToken}
           title="클릭하여 최근 날짜의 상악·하악을 3D 미리보기"
           className="flex w-full flex-col items-stretch text-left disabled:opacity-60 disabled:pointer-events-none"
@@ -3341,11 +3400,7 @@ export function PracticeTransferDetailChatDialog({
           </p>
         </button>
       </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        side="top"
-        className="z-[400] w-80 p-3"
-      >
+      <PopoverContent align="end" side="top" className="z-[400] w-80 p-3">
         <div className="mb-2 flex items-center justify-between gap-2">
           <p className="text-xs font-semibold text-foreground">
             휴지통{" "}
@@ -3365,9 +3420,7 @@ export function PracticeTransferDetailChatDialog({
               onClick={() => void onRestoreAllRequestFiles()}
             >
               <RotateCcw className="h-3 w-3" />
-              {restoringRequestFileKeys.length > 0
-                ? "복원 중…"
-                : "전체 복원"}
+              {restoringRequestFileKeys.length > 0 ? "복원 중…" : "전체 복원"}
             </Button>
           ) : null}
         </div>
@@ -3379,9 +3432,7 @@ export function PracticeTransferDetailChatDialog({
           <div className="custom-scrollbar max-h-64 space-y-2 overflow-y-auto">
             {trashedFileList.map((file) => {
               const key = String(file.s3Key || file.id || "").trim();
-              const busy = key
-                ? restoringRequestFileKeys.includes(key)
-                : false;
+              const busy = key ? restoringRequestFileKeys.includes(key) : false;
               return (
                 <div
                   key={`trash:${key || file.fileName}`}
@@ -3421,926 +3472,956 @@ export function PracticeTransferDetailChatDialog({
   );
 
   const panelBody = (
-        <PracticeTransferFileDropTarget
-          fileInputId={
-            workFileDrop?.fileInputId || "practice-transfer-unified-drop"
-          }
-          onFiles={handleChatTabDropFiles}
-          disabled={
-            workFileDropActive
-              ? true
-              : !unifiedFileDropActive
-          }
-          showDefaultUi={false}
-          fillHeight
-          accept={
-            workFileDropActive
-              ? PRACTICE_TRANSFER_STL_ACCEPT
-              : undefined
-          }
-          acceptedHint={
-            workFileDropActive
-              ? workFileDrop?.dropHint || "어벗 STL"
-              : requestFileAttachActive
-                ? "3D → 의뢰 파일 · 이미지 → 선택"
-                : "사진·파일"
-          }
-          filterFiles={(files) => files}
-          className="flex min-h-0 flex-1 flex-col"
-          activeClassName="ring-2 ring-inset ring-primary bg-primary-soft/25"
-        >
-          {({ isDragActive }) => (
-            <>
-              {pageWorkDropActive && workFileDropActive
-                ? createPortal(
-                    <div
-                      className="pointer-events-none fixed inset-0 z-[500] flex flex-col items-center justify-center gap-2 bg-primary/15 px-6 backdrop-blur-[2px]"
-                      aria-hidden
-                    >
-                      <div className="rounded-full bg-primary-soft p-4 text-primary-strong shadow-md">
-                        <UploadCloud className="h-10 w-10" />
-                      </div>
-                      <p className="text-base font-semibold text-primary-strong">
-                        어벗 STL을 놓아 업로드
-                      </p>
-                      <p className="max-w-sm text-center text-sm text-slate-700">
-                        {workFileDrop?.dropHint ||
-                          workFileDropGuideDetail ||
-                          LAB_RECEIVE_ABUTMENT_UPLOAD_HINT}
-                      </p>
-                    </div>,
-                    document.body,
-                  )
-                : null}
-              {!workFileDropActive &&
-              isDragActive &&
-              unifiedFileDropActive ? (
+    <PracticeTransferFileDropTarget
+      fileInputId={
+        workFileDrop?.fileInputId || "practice-transfer-unified-drop"
+      }
+      onFiles={handleChatTabDropFiles}
+      disabled={workFileDropActive ? true : !unifiedFileDropActive}
+      showDefaultUi={false}
+      fillHeight
+      accept={workFileDropActive ? PRACTICE_TRANSFER_STL_ACCEPT : undefined}
+      acceptedHint={
+        workFileDropActive
+          ? workFileDrop?.dropHint || "어벗 STL"
+          : requestFileAttachActive
+            ? "3D → 의뢰 파일 · 이미지 → 선택"
+            : "사진·파일"
+      }
+      filterFiles={(files) => files}
+      className="flex min-h-0 flex-1 flex-col"
+      activeClassName="ring-2 ring-inset ring-primary bg-primary-soft/25"
+    >
+      {({ isDragActive }) => (
+        <>
+          {pageWorkDropActive && workFileDropActive
+            ? createPortal(
                 <div
-                  className="pointer-events-none absolute inset-0 z-[305] flex flex-col items-center justify-center gap-2 rounded-md bg-primary/10 px-6 backdrop-blur-[2px]"
+                  className="pointer-events-none fixed inset-0 z-[500] flex flex-col items-center justify-center gap-2 bg-primary/15 px-6 backdrop-blur-[2px]"
                   aria-hidden
                 >
-                  <div className="rounded-full bg-primary-soft p-3 text-primary-strong shadow-sm">
-                    <UploadCloud className="h-8 w-8" />
+                  <div className="rounded-full bg-primary-soft p-4 text-primary-strong shadow-md">
+                    <UploadCloud className="h-10 w-10" />
                   </div>
-                  <p className="text-sm font-semibold text-primary-strong">
-                    {requestFileAttachActive
-                      ? "파일을 놓아 첨부"
-                      : "사진·파일을 놓아 첨부"}
+                  <p className="text-base font-semibold text-primary-strong">
+                    어벗 STL을 놓아 업로드
                   </p>
-                  <p className="text-center text-xs text-muted-foreground">
-                    {requestFileAttachActive
-                      ? "3D → 의뢰 파일 · 이미지 → 의뢰 파일/채팅 선택 · 그 외 → 채팅"
-                      : "채팅에 보낼 파일을 여기에 놓으세요"}
+                  <p className="max-w-sm text-center text-sm text-slate-700">
+                    {workFileDrop?.dropHint ||
+                      workFileDropGuideDetail ||
+                      LAB_RECEIVE_ABUTMENT_UPLOAD_HINT}
                   </p>
-                </div>
-              ) : null}
-
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          {!minimized ? (
-          <>
-          <div className="shrink-0">
-          <div className="flex items-center justify-between gap-3 border-b bg-slate-50 px-5 py-2.5">
-              <div className="min-w-0 flex-1">
-                {caseIdentityStrip ? (
-                  <>
-                    <div className="flex min-w-0 items-center gap-1">
-                      <p className="flex min-w-0 flex-1 items-center gap-1.5 text-sm font-semibold text-foreground">
-                        {caseIdentityStrip.dotColor ||
-                        caseIdentityStrip.colorKey ? (
-                          <CalendarLabColorDot
-                            color={
-                              caseIdentityStrip.dotColor ||
-                              calendarGroupDotColor(
-                                caseIdentityStrip.colorKey || "-",
-                              )
-                            }
-                            style={caseIdentityStrip.dotStyle || "filled"}
-                          />
-                        ) : null}
-                        <span className="min-w-0 truncate">
-                          {caseIdentityStrip.primary}
-                        </span>
-                        {caseIdentityStrip.statusBadgeLabel === "완료" ? (
-                          <PracticeCalendarFinishedBadge size="detail" />
-                        ) : null}
-                        {caseIdentityStrip.receiveRole ? (
-                          <LabReceiveRoleBadge
-                            marker={caseIdentityStrip.receiveRole}
-                            size="detail"
-                            showPeer={
-                              caseIdentityStrip.receiveRole.peer.trim() !==
-                              AUTO_MATCH_IDENTITY_LABEL
-                            }
-                          />
-                        ) : null}
-                      </p>
-                      {identityChromeActions}
-                    </div>
-                    {renderIdentityDateRow("mt-0.5")}
-                    {renderCustomAbutmentShippingLine()}
-                  </>
-                ) : (
-                  <>
-                    <div className="flex min-w-0 items-center gap-1">
-                      <p className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
-                        {title}
-                      </p>
-                      {identityChromeActions}
-                    </div>
-                    {renderIdentityDateRow("mt-0.5")}
-                    {renderCustomAbutmentShippingLine()}
-                  </>
-                )}
+                </div>,
+                document.body,
+              )
+            : null}
+          {!workFileDropActive && isDragActive && unifiedFileDropActive ? (
+            <div
+              className="pointer-events-none absolute inset-0 z-[305] flex flex-col items-center justify-center gap-2 rounded-md bg-primary/10 px-6 backdrop-blur-[2px]"
+              aria-hidden
+            >
+              <div className="rounded-full bg-primary-soft p-3 text-primary-strong shadow-sm">
+                <UploadCloud className="h-8 w-8" />
               </div>
-              {chatHeaderAction || !isInline ? (
-                <div className="flex shrink-0 items-center gap-1" data-no-drag>
-                  {chatHeaderAction}
-                  {!isInline ? (
-                    <button
-                      type="button"
-                      className={cn(
-                        "inline-flex items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:bg-slate-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
-                        isMobile ? "h-10 w-10" : "h-9 w-9",
-                      )}
-                      aria-label="닫기"
-                      title="닫기"
-                      onClick={() => onOpenChange(false)}
-                    >
-                      <X
-                        className="h-5 w-5"
-                        strokeWidth={2.25}
-                      />
-                      <span className="sr-only">Close</span>
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
+              <p className="text-sm font-semibold text-primary-strong">
+                {requestFileAttachActive
+                  ? "파일을 놓아 첨부"
+                  : "사진·파일을 놓아 첨부"}
+              </p>
+              <p className="text-center text-xs text-muted-foreground">
+                {requestFileAttachActive
+                  ? "3D → 의뢰 파일 · 이미지 → 의뢰 파일/채팅 선택 · 그 외 → 채팅"
+                  : "채팅에 보낼 파일을 여기에 놓으세요"}
+              </p>
             </div>
+          ) : null}
 
-              {renderHeaderActionRow()}
-
-              {nextStageSegments.length > 0 ? (
-                <div className="border-b bg-muted/25">
-                  <div className="flex flex-wrap items-center gap-2 px-4 py-2 sm:px-5">
-                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                      <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        다음 공정
-                      </span>
-                      {nextStageSegments.map((seg, idx) => (
-                        <span
-                          key={`${seg.archLabel}:${seg.text}:${idx}`}
-                          className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/80 bg-background px-2 py-0.5 text-xs leading-snug text-foreground"
-                        >
-                          {seg.archLabel ? (
-                            <span className="shrink-0 font-semibold text-primary">
-                              {seg.archLabel}
-                            </span>
-                          ) : null}
-                          <span className="min-w-0 truncate">{seg.text}</span>
-                        </span>
-                      ))}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {!minimized ? (
+              <>
+                <div className="shrink-0">
+                  <div className="flex items-center justify-between gap-3 border-b bg-slate-50 px-5 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      {caseIdentityStrip ? (
+                        <>
+                          <div className="flex min-w-0 items-center gap-1">
+                            <p className="flex min-w-0 flex-1 items-center gap-1.5 text-sm font-semibold text-foreground">
+                              {caseIdentityStrip.dotColor ||
+                              caseIdentityStrip.colorKey ? (
+                                <CalendarLabColorDot
+                                  color={
+                                    caseIdentityStrip.dotColor ||
+                                    calendarGroupDotColor(
+                                      caseIdentityStrip.colorKey || "-",
+                                    )
+                                  }
+                                  style={caseIdentityStrip.dotStyle || "filled"}
+                                />
+                              ) : null}
+                              <span className="min-w-0 truncate">
+                                {caseIdentityStrip.primary}
+                              </span>
+                              {caseIdentityStrip.statusBadgeLabel === "완료" ? (
+                                <PracticeCalendarFinishedBadge size="detail" />
+                              ) : null}
+                              {caseIdentityStrip.receiveRole ? (
+                                <LabReceiveRoleBadge
+                                  marker={caseIdentityStrip.receiveRole}
+                                  size="detail"
+                                  showPeer={
+                                    caseIdentityStrip.receiveRole.peer.trim() !==
+                                    AUTO_MATCH_IDENTITY_LABEL
+                                  }
+                                />
+                              ) : null}
+                            </p>
+                            {identityChromeActions}
+                          </div>
+                          {renderIdentityDateRow("mt-0.5")}
+                          {renderCustomAbutmentShippingLine()}
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex min-w-0 items-center gap-1">
+                            <p className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
+                              {title}
+                            </p>
+                            {identityChromeActions}
+                          </div>
+                          {renderIdentityDateRow("mt-0.5")}
+                          {renderCustomAbutmentShippingLine()}
+                        </>
+                      )}
                     </div>
-                  </div>
-                </div>
-              ) : null}
-          </div>
-
-              {summaryBanner ? (
-                <div className="shrink-0 border-b px-5 py-2">{summaryBanner}</div>
-              ) : null}
-
-              {showAcceptBar &&
-              (hasPendingLabCustomAbutment ||
-                hasAbutsCustomAbutment ||
-                oralScanAttachMode === "practice_required" ||
-                acceptBarHint) ? (
-                <div
-                  className="shrink-0 border-b bg-muted/40 px-5 py-2"
-                >
-                  <div className="min-w-0 space-y-1">
-                    {acceptBarHint ? (
-                      <div className="text-xs leading-relaxed text-muted-foreground">
-                        {acceptBarHint}
+                    {chatHeaderAction || !isInline ? (
+                      <div
+                        className="flex shrink-0 items-center gap-1"
+                        data-no-drag
+                      >
+                        {chatHeaderAction}
+                        {!isInline ? (
+                          <button
+                            type="button"
+                            className={cn(
+                              "inline-flex items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:bg-slate-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                              isMobile ? "h-10 w-10" : "h-9 w-9",
+                            )}
+                            aria-label="닫기"
+                            title="닫기"
+                            onClick={() => onOpenChange(false)}
+                          >
+                            <X className="h-5 w-5" strokeWidth={2.25} />
+                            <span className="sr-only">Close</span>
+                          </button>
+                        ) : null}
                       </div>
                     ) : null}
-                    {hasPendingLabCustomAbutment ||
-                    hasAbutsCustomAbutment ? (
-                      <LabPendingAbutmentGuide
-                        toothWorks={toothWorks}
-                        mixedWithAbuts={hasAbutsCustomAbutment}
-                      />
-                    ) : null}
-                    {oralScanAttachMode === "practice_required" ? (
-                      <p className="text-xs text-destructive leading-relaxed">
-                        {ORAL_SCAN_REQUIRED_FROM_PRACTICE}
-                      </p>
-                    ) : null}
                   </div>
-                </div>
-              ) : null}
 
-              {showReacceptBar ? (
-                <div className="shrink-0 border-b bg-muted/40 px-5 py-2">
-                  <p className="text-xs text-muted-foreground">
-                    작업이 취소된 상태입니다. 채팅은 이어갈 수 있고, 다시 작업시작하면
-                    작업을 진행할 수 있습니다.
-                  </p>
-                </div>
-              ) : null}
+                  {renderHeaderActionRow()}
 
-              {showReleaseBar ? (
-                <div className="shrink-0 border-b bg-muted/40 px-5 py-2 flex flex-col gap-1.5">
-                  {resolvedAcceptedWorkActions ? (
+                  {nextStageSegments.length > 0 ? (
+                    <div className="border-b bg-muted/25">
+                      <div className="flex flex-wrap items-center gap-2 px-4 py-2 sm:px-5">
+                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            다음 공정
+                          </span>
+                          {nextStageSegments.map((seg, idx) => (
+                            <span
+                              key={`${seg.archLabel}:${seg.text}:${idx}`}
+                              className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/80 bg-background px-2 py-0.5 text-xs leading-snug text-foreground"
+                            >
+                              {seg.archLabel ? (
+                                <span className="shrink-0 font-semibold text-primary">
+                                  {seg.archLabel}
+                                </span>
+                              ) : null}
+                              <span className="min-w-0 truncate">
+                                {seg.text}
+                              </span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                {summaryBanner ? (
+                  <div className="shrink-0 border-b px-5 py-2">
+                    {summaryBanner}
+                  </div>
+                ) : null}
+
+                {showAcceptBar &&
+                (hasPendingLabCustomAbutment ||
+                  hasAbutsCustomAbutment ||
+                  oralScanAttachMode === "practice_required" ||
+                  acceptBarHint) ? (
+                  <div className="shrink-0 border-b bg-muted/40 px-5 py-2">
+                    <div className="min-w-0 space-y-1">
+                      {acceptBarHint ? (
+                        <div className="text-xs leading-relaxed text-muted-foreground">
+                          {acceptBarHint}
+                        </div>
+                      ) : null}
+                      {hasPendingLabCustomAbutment || hasAbutsCustomAbutment ? (
+                        <LabPendingAbutmentGuide
+                          toothWorks={toothWorks}
+                          mixedWithAbuts={hasAbutsCustomAbutment}
+                        />
+                      ) : null}
+                      {oralScanAttachMode === "practice_required" ? (
+                        <p className="text-xs text-destructive leading-relaxed">
+                          {ORAL_SCAN_REQUIRED_FROM_PRACTICE}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
+                {showReacceptBar ? (
+                  <div className="shrink-0 border-b bg-muted/40 px-5 py-2">
+                    <p className="text-xs text-muted-foreground">
+                      작업이 취소된 상태입니다. 채팅은 이어갈 수 있고, 다시
+                      작업시작하면 작업을 진행할 수 있습니다.
+                    </p>
+                  </div>
+                ) : null}
+
+                {showReleaseBar ? (
+                  <div className="shrink-0 border-b bg-muted/40 px-5 py-2 flex flex-col gap-1.5">
+                    {resolvedAcceptedWorkActions ? (
+                      <div className="flex min-w-0 w-full flex-col gap-1.5">
+                        {resolvedAcceptedWorkActions}
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-xs text-muted-foreground">
+                          작업시작한 의뢰입니다. 작업취소하면 작업시작이
+                          해제됩니다.
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {renderProsthesisFollowUpLabStartButton()}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : null}
+
+                {!showReleaseBar &&
+                accepted &&
+                !workCanceled &&
+                resolvedAcceptedWorkActions ? (
+                  <div className="shrink-0 border-b bg-muted/40 px-5 py-2">
                     <div className="flex min-w-0 w-full flex-col gap-1.5">
                       {resolvedAcceptedWorkActions}
                     </div>
-                  ) : (
-                    <>
-                      <p className="text-xs text-muted-foreground">
-                        작업시작한 의뢰입니다. 작업취소하면 작업시작이 해제됩니다.
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {renderProsthesisFollowUpLabStartButton()}
-                      </div>
-                    </>
-                  )}
-                </div>
-              ) : null}
-
-              {!showReleaseBar &&
-              accepted &&
-              !workCanceled &&
-              resolvedAcceptedWorkActions ? (
-                <div className="shrink-0 border-b bg-muted/40 px-5 py-2">
-                  <div className="flex min-w-0 w-full flex-col gap-1.5">
-                    {resolvedAcceptedWorkActions}
                   </div>
-                </div>
-              ) : null}
-
-              {!showReleaseBar &&
-              accepted &&
-              !workCanceled &&
-              !resolvedAcceptedWorkActions &&
-              prosthesisFollowUpWorkPending ? (
-                <div className="shrink-0 border-b bg-muted/40 px-5 py-2">
-                  {renderProsthesisFollowUpLabStartButton()}
-                </div>
-              ) : null}
-
-          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-guide-tour="lab_chat">
-            <div
-              ref={scrollBodyRef}
-              onScroll={updateScrollEdge}
-              className={cn(
-                "custom-scrollbar relative z-[1] flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain transition-opacity",
-                workFileDropActive &&
-                  !workFileDropUploading &&
-                  "opacity-80",
-              )}
-            >
-              <div className="shrink-0 space-y-5 px-5 py-3 text-sm">
-              {/* 치과·기공소 액션은 헤더 3줄 — 채팅 스크롤 CTA 없음 */}
-              {Array.isArray(chartToothWorks) && chartToothWorks.length > 0 ? (
-                <section className="space-y-2.5">
-                  <h3 className="text-[13px] font-semibold text-foreground">
-                    치식 · 보철물
-                  </h3>
-                  <PracticeToothWorkChartReadOnly
-                    key={toothWorksKey || "tooth-works"}
-                    toothWorks={chartToothWorks}
-                    feeToothWorks={
-                      Array.isArray(toothWorks) ? toothWorks : undefined
-                    }
-                    feeQuote={feeQuote}
-                    feeViewer={feeViewer}
-                    labAnchorId={labAnchorId}
-                    skipJig={skipJig}
-                    labEffectiveStars={labEffectiveStars}
-                    prosthesisFollowUps={prosthesisFollowUps}
-                    prosthesisFeeStages={prosthesisFeeStages}
-                    feeStageFocusIndex={feeStageFocusIndex}
-                    feeStageKey={feeStageKey}
-                  />
-                  <PracticeRemakeChargesStrip remakeCharges={remakeCharges} />
-                </section>
-              ) : remakeCharges && remakeCharges.length > 0 ? (
-                <section>
-                  <PracticeRemakeChargesStrip remakeCharges={remakeCharges} />
-                </section>
-              ) : null}
-
-              {hasMeaningfulMemo ? (
-                <section className="space-y-2.5">
-                  <h3 className="text-[13px] font-semibold text-foreground">
-                    의뢰 메모
-                  </h3>
-                  <p className="custom-scrollbar max-h-48 overflow-y-auto rounded-md bg-muted/40 px-3 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words text-foreground">
-                    {memo}
-                  </p>
-                </section>
-              ) : null}
-
-              <section className="space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-[13px] font-semibold text-foreground">
-                    {filesLabel}{" "}
-                    <span className="font-normal text-muted-foreground">
-                      ({requestFilesShown.length + requestFilePendingUploads.length}개)
-                    </span>
-                  </h3>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    {canOpenInDesignSoftware ? (
-                      renderOpenWorkButton()
-                    ) : requestFilesShown.length > 0 ? (
-                      files.some((f) => isDcmFileName(f.fileName)) ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={
-                                downloadAllBusy ||
-                                downloadAllWorkFilesBusy ||
-                                openInCadBusy ||
-                                requestFilesDownloadLocked
-                              }
-                              className={cn("relative overflow-hidden tabular-nums", downloadAllBusy && "disabled:opacity-100")}
-                            >
-                              {downloadAllLabel}
-                              <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
-                              <ButtonProgressBar percent={downloadAllBusy ? downloadAllProgress : null} />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="z-[400]">
-                            {DCM_DOWNLOAD_FORMAT_OPTIONS.map((opt) => (
-                              <DropdownMenuItem
-                                key={opt.value}
-                                onClick={() =>
-                                  void onDownloadAllFiles({ dcmFormat: opt.value })
-                                }
-                              >
-                                {opt.label}
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => void onDownloadAllFiles()}
-                          disabled={
-                            downloadAllBusy ||
-                            downloadAllWorkFilesBusy ||
-                            openInCadBusy ||
-                            requestFilesDownloadLocked
-                          }
-                          className={cn("relative overflow-hidden tabular-nums", downloadAllBusy && "disabled:opacity-100")}
-                        >
-                          {downloadAllLabel}
-                          <ButtonProgressBar percent={downloadAllBusy ? downloadAllProgress : null} />
-                        </Button>
-                      )
-                    ) : null}
-                  </div>
-                </div>
-                {requestFilesDownloadLocked && requestFilesShown.length > 0 ? (
-                  <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-200">
-                    {requestFilesDownloadLockedReason}
-                  </p>
                 ) : null}
-                {scanReviewLines.length > 0 ? (
-                  <p className="rounded-md bg-amber-100 px-3 py-2 text-xs font-medium leading-relaxed text-amber-950">
-                    {scanReviewLines.map((line, lineIndex) => (
-                      <span key={line}>
-                        {lineIndex > 0 ? <br /> : null}
-                        {line}
-                      </span>
-                    ))}
-                  </p>
+
+                {!showReleaseBar &&
+                accepted &&
+                !workCanceled &&
+                !resolvedAcceptedWorkActions &&
+                prosthesisFollowUpWorkPending ? (
+                  <div className="shrink-0 border-b bg-muted/40 px-5 py-2">
+                    {renderProsthesisFollowUpLabStartButton()}
+                  </div>
                 ) : null}
-                {requestFilesShown.length ||
-                requestFilePendingUploads.length ||
-                showRequestFileTrash ? (
-                  <div className="space-y-3">
-                    {requestFileWaves.map((wave, waveIndex) => {
-                      const timeLabel = formatPracticeUploadWaveTime(
-                        wave.uploadedAt,
-                      );
-                      const isLastWave =
-                        waveIndex === requestFileWaves.length - 1 &&
-                        requestFilePendingUploads.length === 0;
-                      return (
-                        <div key={wave.batchId} className="space-y-1.5">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <p className="text-[12px] font-medium text-slate-700">
-                              {wave.label}
-                              <span className="ml-1.5 font-normal text-muted-foreground">
-                                ({wave.files.length}개)
-                              </span>
-                            </p>
-                            {timeLabel ? (
-                              <p className="shrink-0 text-[11px] text-muted-foreground">
-                                {timeLabel}
-                              </p>
-                            ) : null}
-                          </div>
-                          <div className="grid grid-cols-4 gap-2">
-                            {wave.files.map((file, idx) =>
-                              renderFileTile(
-                                file,
-                                idx,
-                                `request:${wave.batchId}`,
-                                requestFilesDownloadLocked,
-                              ),
-                            )}
-                            {isLastWave && showRequestFileTrash
-                              ? renderRequestFileTrashTile()
-                              : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {requestFilePendingUploads.length > 0 ? (
-                      <div className="space-y-1.5">
-                        <p className="text-[12px] font-medium text-slate-700">
-                          업로드 중
-                          <span className="ml-1.5 font-normal text-muted-foreground">
-                            ({requestFilePendingUploads.length}개)
-                          </span>
-                        </p>
-                        <div className="grid grid-cols-4 gap-2">
-                          {requestFilePendingUploads.map((item) =>
-                            renderPendingRequestFileTile(item),
-                          )}
-                          {showRequestFileTrash
-                            ? renderRequestFileTrashTile()
-                            : null}
-                        </div>
-                      </div>
-                    ) : null}
-                    {!requestFileWaves.length &&
-                    !requestFilePendingUploads.length &&
-                    showRequestFileTrash ? (
-                      <div className="grid grid-cols-4 gap-2">
-                        {renderRequestFileTrashTile()}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : oralScanAttachMode === "practice_required" ? (
-                  <p className="text-sm leading-relaxed text-destructive">
-                    {ORAL_SCAN_REQUIRED_FROM_PRACTICE}
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">파일 없음</p>
-                )}
-              </section>
 
-              {showWorkFilesSection ? (
-                <section className="space-y-3 border-t border-border/70 pt-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-[13px] font-semibold text-foreground">
-                      {workFilesLabel}
-                    </h3>
-                    {onOpenWorkFilesFolder ? (
-                      renderOpenWorkFilesButton()
-                    ) : onDownloadAllWorkFiles ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0"
-                        onClick={() => void onDownloadAllWorkFiles()}
-                        disabled={downloadAllWorkFilesBusy || downloadAllBusy}
-                      >
-                        {downloadAllWorkFilesBusy
-                          ? "다운로드 중..."
-                          : "전체 다운로드"}
-                      </Button>
-                    ) : null}
-                  </div>
-                  {workScanFileList.length > 0 ? (
-                    <div className="space-y-1.5">
-                      <p className="text-[13px] text-muted-foreground">
-                        {workScanFilesLabel}
-                      </p>
-                      <div className="grid grid-cols-4 gap-2">
-                        {renderWorkScanModelTile(workScanFileList)}
-                      </div>
-                    </div>
-                  ) : null}
-                  {designFileList.length > 0 ? (
-                    <div className="space-y-1.5">
-                      <p className="text-[13px] text-muted-foreground">
-                        {designFilesLabel}{" "}
-                        <span>({designFileList.length}개)</span>
-                      </p>
-                      <div className="grid grid-cols-4 gap-2">
-                        {designFileList.map((file, idx) =>
-                          renderFileTile(file, idx, "design"),
-                        )}
-                      </div>
-                    </div>
-                  ) : null}
-                  {resultFileList.length > 0 ? (
-                    <div className="space-y-1.5">
-                      <p className="text-[13px] text-muted-foreground">
-                        {resultFilesLabel}{" "}
-                        <span>({resultFileList.length}개)</span>
-                      </p>
-                      <div className="grid grid-cols-4 gap-2">
-                        {resultFileList.map((file, idx) =>
-                          renderFileTile(file, idx, "result"),
-                        )}
-                      </div>
-                    </div>
-                  ) : null}
-                </section>
-              ) : null}
-
-              {showProductionConfirm && onConfirmProduction ? (
-                <div className="rounded-md border border-primary/30 bg-primary-soft/40 p-3">
-                  <p className="text-sm text-primary-strong">
-                    {productionConfirmTitle}
-                  </p>
-                  <Button
-                    type="button"
-                    className="mt-2"
-                    disabled={productionConfirmBusy}
-                    onClick={handleConfirmPanelClick}
+                <div
+                  className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                  data-guide-tour="lab_chat"
+                >
+                  <div
+                    ref={scrollBodyRef}
+                    onScroll={updateScrollEdge}
+                    className={cn(
+                      "custom-scrollbar relative z-[1] flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain transition-opacity",
+                      workFileDropActive &&
+                        !workFileDropUploading &&
+                        "opacity-80",
+                    )}
                   >
-                    {productionConfirmBusy
-                      ? "처리 중..."
-                      : confirmPreviewTarget
-                        ? `미리보기 · ${productionConfirmButtonLabel}`
-                        : productionConfirmButtonLabel}
-                  </Button>
-                </div>
-              ) : null}
-              </div>
-
-              <div
-                className="flex min-h-full flex-1 flex-col border-t border-border/70"
-                {...(workFileDropActive
-                  ? { "data-guide-tour": "lab_design" }
-                  : {})}
-              >
-                  {workFileDropUploading ? (
-                    <div
-                      className="pointer-events-none z-[2] shrink-0 border-b border-primary/25 bg-primary px-5 py-2.5 text-primary-foreground"
-                      role="status"
-                      aria-live="polite"
-                    >
-                      <div className="mx-auto flex w-full max-w-sm flex-col gap-1.5">
-                        <div className="flex items-center justify-between gap-2 text-xs">
-                          <span className="truncate font-medium">
-                            {workFileDropUploadLabel || "업로드 중…"}
-                          </span>
-                          <span className="shrink-0 tabular-nums opacity-90">
-                            {workFileDropUploadPercent}%
-                          </span>
-                        </div>
-                        <Progress
-                          value={workFileDropUploadPercent}
-                          className="h-1.5 bg-primary-foreground/25 [&>div]:bg-primary-foreground"
-                        />
-                      </div>
-                    </div>
-                  ) : null}
-
-                    <div className="flex w-full min-w-0 max-w-full flex-1 flex-col space-y-2 px-5 py-2">
-                      {chatLoading ? (
-                        <div className="flex flex-1 items-center justify-center py-4 text-center text-xs text-muted-foreground">
-                          채팅을 불러오는 중입니다...
-                        </div>
-                      ) : null}
-
-                      {!chatLoading && visibleChatError ? (
-                        <div className="flex min-h-[12rem] flex-1 items-center justify-center py-4">
-                          <p className="text-center text-xs text-muted-foreground">
-                            {visibleChatError}
-                          </p>
-                        </div>
-                      ) : null}
-
-                      {!chatLoading &&
-                      !visibleChatError &&
-                      chatMessages.length === 0 ? (
-                        <div className="flex flex-1 items-center justify-center py-4 text-center text-sm text-muted-foreground">
-                          아직 메시지가 없습니다.
-                        </div>
-                      ) : null}
-
-                      {visibleChatMessages.map((message) => {
-                        const senderId = String(
-                          message.sender?._id || "",
-                        ).trim();
-                        // 의뢰 파일로 올린 3D만 채팅 버블에서 숨김 — 이미지는 채팅 첨부로 남을 수 있음
-                        const chatOnlyAttachments = Array.isArray(
-                          message.attachments,
-                        )
-                          ? message.attachments.filter(
-                              (file) =>
-                                !isPracticeTransferModelFileName(
-                                  String(file?.fileName || ""),
-                                ),
-                            )
-                          : [];
-                        const messageForBubble =
-                          chatOnlyAttachments.length ===
-                          (message.attachments?.length || 0)
-                            ? message
-                            : { ...message, attachments: chatOnlyAttachments };
-                        return (
-                          <ChatMessageBubble
-                            key={message._id}
-                            message={messageForBubble}
-                            isMine={isMyMessage(senderId)}
-                            currentUserId={currentUserId}
-                            authToken={authToken}
-                            formatTime={formatChatTime}
-                            formatFileSize={formatFileSize}
-                            showSenderName
-                            compact
-                            reactionUserNameById={reactionUserNameById}
-                            practiceTransferLabAnchorId={labAnchorId}
-                            cooperationPerformerLabName={cooperationPerformerLabName}
-                            practiceTransferProsthesisFollowUps={prosthesisFollowUps}
-                            practiceTransferToothWorks={toothWorks}
-                            practiceTransferFeeQuote={feeQuote}
-                            practiceTransferProsthesisFeeStages={
-                              prosthesisFeeStages
-                            }
-                            onCancelRemakeCharge={onCancelRemakeCharge}
-                            onSelectLinkedYmd={onSelectLinkedYmd}
-                            remakeChargeCancelBusy={remakeChargeCancelBusy}
-                            activeRemakeChargeIndexes={activeRemakeChargeIndexes}
-                            downloadingFileKeys={downloadingFileKeys}
-                            downloadProgressByKey={downloadProgressByKey}
-                            onReply={onReplyToMessage}
-                            onToggleReaction={onToggleReaction}
-                            onDeleteMessage={onDeleteMessage}
-                            onOpenRequestId={onOpenRequestId}
-                            onAttachChatFile={
-                              onAttachChatFiles
-                                ? (file) => onAttachChatFiles([file])
-                                : undefined
-                            }
-                            onRemoveChatFile={detachPaintChatFile}
-                            onReorderChatFiles={reorderPaintChatFiles}
-                            onOpenAttachment={(file) =>
-                              void onDownloadChatAttachment({
-                                fileId: file.fileId,
-                                fileName: file.fileName,
-                                fileSize: Number(file.fileSize || 0),
-                                s3Key: String(file.s3Key || ""),
-                                s3Url: String(file.s3Url || ""),
-                              })
-                            }
-                          />
-                        );
-                      })}
-
-                      {!chatLoading &&
-                      !visibleChatError &&
-                      prosthesisFollowUpComplete &&
-                      shouldShowConfirmedFollowUpProsthesis(toothWorks) ? (
-                        <div className="relative z-[2] mt-2 w-full min-w-0 max-w-full px-1 text-left">
-                          <p className="mb-1.5 text-center text-[11px] font-medium text-foreground">
-                            {feeViewer === "lab"
-                              ? "확정 보철 · 확정 기공비"
-                              : "확정 보철 · 최종 기공비"}
-                          </p>
+                    <div className="shrink-0 space-y-5 px-5 py-3 text-sm">
+                      {/* 치과·기공소 액션은 헤더 3줄 — 채팅 스크롤 CTA 없음 */}
+                      {Array.isArray(chartToothWorks) &&
+                      chartToothWorks.length > 0 ? (
+                        <section className="space-y-2.5">
+                          <h3 className="text-[13px] font-semibold text-foreground">
+                            치식 · 보철물
+                          </h3>
                           <PracticeToothWorkChartReadOnly
-                            toothWorks={listCompletedFollowUpToothWorks(
-                              toothWorks,
-                            )}
+                            key={toothWorksKey || "tooth-works"}
+                            toothWorks={chartToothWorks}
                             feeToothWorks={
                               Array.isArray(toothWorks) ? toothWorks : undefined
                             }
-                            showHeader={false}
-                            labAnchorId={labAnchorId}
+                            feeQuote={feeQuote}
                             feeViewer={feeViewer}
+                            labAnchorId={labAnchorId}
                             skipJig={skipJig}
                             labEffectiveStars={labEffectiveStars}
-                            confirmedFeeLabel={
-                              feeViewer === "lab" ? "확정 기공비" : "최종 기공비"
-                            }
-                            showFinalFee
-                            enlargeOverlayClassName="z-[350]"
-                            enlargeDialogClassName="z-[360]"
-                            className="border-0 bg-transparent p-0 shadow-none"
+                            prosthesisFollowUps={prosthesisFollowUps}
+                            prosthesisFeeStages={prosthesisFeeStages}
+                            feeStageFocusIndex={feeStageFocusIndex}
+                            feeStageKey={feeStageKey}
                           />
+                          <PracticeRemakeChargesStrip
+                            remakeCharges={remakeCharges}
+                          />
+                        </section>
+                      ) : remakeCharges && remakeCharges.length > 0 ? (
+                        <section>
+                          <PracticeRemakeChargesStrip
+                            remakeCharges={remakeCharges}
+                          />
+                        </section>
+                      ) : null}
+
+                      {hasMeaningfulMemo ? (
+                        <section className="space-y-2.5">
+                          <h3 className="text-[13px] font-semibold text-foreground">
+                            의뢰 메모
+                          </h3>
+                          <p className="custom-scrollbar max-h-48 overflow-y-auto rounded-md bg-muted/40 px-3 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words text-foreground">
+                            {memo}
+                          </p>
+                        </section>
+                      ) : null}
+
+                      <section className="space-y-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="text-[13px] font-semibold text-foreground">
+                            {filesLabel}{" "}
+                            <span className="font-normal text-muted-foreground">
+                              (
+                              {requestFilesShown.length +
+                                requestFilePendingUploads.length}
+                              개)
+                            </span>
+                          </h3>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            {canOpenInDesignSoftware ? (
+                              renderOpenWorkButton()
+                            ) : requestFilesShown.length > 0 ? (
+                              files.some((f) => isDcmFileName(f.fileName)) ? (
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={
+                                        downloadAllBusy ||
+                                        downloadAllWorkFilesBusy ||
+                                        openInCadBusy ||
+                                        requestFilesDownloadLocked
+                                      }
+                                      className={cn(
+                                        "relative overflow-hidden tabular-nums",
+                                        downloadAllBusy &&
+                                          "disabled:opacity-100",
+                                      )}
+                                    >
+                                      {downloadAllLabel}
+                                      <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
+                                      <ButtonProgressBar
+                                        percent={
+                                          downloadAllBusy
+                                            ? downloadAllProgress
+                                            : null
+                                        }
+                                      />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent
+                                    align="end"
+                                    className="z-[400]"
+                                  >
+                                    {DCM_DOWNLOAD_FORMAT_OPTIONS.map((opt) => (
+                                      <DropdownMenuItem
+                                        key={opt.value}
+                                        onClick={() =>
+                                          void onDownloadAllFiles({
+                                            dcmFormat: opt.value,
+                                          })
+                                        }
+                                      >
+                                        {opt.label}
+                                      </DropdownMenuItem>
+                                    ))}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => void onDownloadAllFiles()}
+                                  disabled={
+                                    downloadAllBusy ||
+                                    downloadAllWorkFilesBusy ||
+                                    openInCadBusy ||
+                                    requestFilesDownloadLocked
+                                  }
+                                  className={cn(
+                                    "relative overflow-hidden tabular-nums",
+                                    downloadAllBusy && "disabled:opacity-100",
+                                  )}
+                                >
+                                  {downloadAllLabel}
+                                  <ButtonProgressBar
+                                    percent={
+                                      downloadAllBusy
+                                        ? downloadAllProgress
+                                        : null
+                                    }
+                                  />
+                                </Button>
+                              )
+                            ) : null}
+                          </div>
+                        </div>
+                        {requestFilesDownloadLocked &&
+                        requestFilesShown.length > 0 ? (
+                          <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-200">
+                            {requestFilesDownloadLockedReason}
+                          </p>
+                        ) : null}
+                        {scanReviewLines.length > 0 ? (
+                          <p className="rounded-md bg-amber-100 px-3 py-2 text-xs font-medium leading-relaxed text-amber-950">
+                            {scanReviewLines.map((line, lineIndex) => (
+                              <span key={line}>
+                                {lineIndex > 0 ? <br /> : null}
+                                {line}
+                              </span>
+                            ))}
+                          </p>
+                        ) : null}
+                        {requestFilesShown.length ||
+                        requestFilePendingUploads.length ||
+                        showRequestFileTrash ? (
+                          <div className="space-y-3">
+                            {requestFileWaves.map((wave, waveIndex) => {
+                              const timeLabel = formatPracticeUploadWaveTime(
+                                wave.uploadedAt,
+                              );
+                              const isLastWave =
+                                waveIndex === requestFileWaves.length - 1 &&
+                                requestFilePendingUploads.length === 0;
+                              return (
+                                <div key={wave.batchId} className="space-y-1.5">
+                                  <div className="flex items-baseline justify-between gap-2">
+                                    <p className="text-[12px] font-medium text-slate-700">
+                                      {wave.label}
+                                      <span className="ml-1.5 font-normal text-muted-foreground">
+                                        ({wave.files.length}개)
+                                      </span>
+                                    </p>
+                                    {timeLabel ? (
+                                      <p className="shrink-0 text-[11px] text-muted-foreground">
+                                        {timeLabel}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                  <div className="grid grid-cols-4 gap-2">
+                                    {wave.files.map((file, idx) =>
+                                      renderFileTile(
+                                        file,
+                                        idx,
+                                        `request:${wave.batchId}`,
+                                        requestFilesDownloadLocked,
+                                      ),
+                                    )}
+                                    {isLastWave && showRequestFileTrash
+                                      ? renderRequestFileTrashTile()
+                                      : null}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {requestFilePendingUploads.length > 0 ? (
+                              <div className="space-y-1.5">
+                                <p className="text-[12px] font-medium text-slate-700">
+                                  업로드 중
+                                  <span className="ml-1.5 font-normal text-muted-foreground">
+                                    ({requestFilePendingUploads.length}개)
+                                  </span>
+                                </p>
+                                <div className="grid grid-cols-4 gap-2">
+                                  {requestFilePendingUploads.map((item) =>
+                                    renderPendingRequestFileTile(item),
+                                  )}
+                                  {showRequestFileTrash
+                                    ? renderRequestFileTrashTile()
+                                    : null}
+                                </div>
+                              </div>
+                            ) : null}
+                            {!requestFileWaves.length &&
+                            !requestFilePendingUploads.length &&
+                            showRequestFileTrash ? (
+                              <div className="grid grid-cols-4 gap-2">
+                                {renderRequestFileTrashTile()}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : oralScanAttachMode === "practice_required" ? (
+                          <p className="text-sm leading-relaxed text-destructive">
+                            {ORAL_SCAN_REQUIRED_FROM_PRACTICE}
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            파일 없음
+                          </p>
+                        )}
+                      </section>
+
+                      {showWorkFilesSection ? (
+                        <section className="space-y-3 border-t border-border/70 pt-4">
+                          <div className="flex items-center justify-between gap-2">
+                            <h3 className="text-[13px] font-semibold text-foreground">
+                              {workFilesLabel}
+                            </h3>
+                            {onOpenWorkFilesFolder ? (
+                              renderOpenWorkFilesButton()
+                            ) : onDownloadAllWorkFiles ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="shrink-0"
+                                onClick={() => void onDownloadAllWorkFiles()}
+                                disabled={
+                                  downloadAllWorkFilesBusy || downloadAllBusy
+                                }
+                              >
+                                {downloadAllWorkFilesBusy
+                                  ? "다운로드 중..."
+                                  : "전체 다운로드"}
+                              </Button>
+                            ) : null}
+                          </div>
+                          {workScanFileList.length > 0 ? (
+                            <div className="space-y-1.5">
+                              <p className="text-[13px] text-muted-foreground">
+                                {workScanFilesLabel}
+                              </p>
+                              <div className="grid grid-cols-4 gap-2">
+                                {renderWorkScanModelTile(workScanFileList)}
+                              </div>
+                            </div>
+                          ) : null}
+                          {designFileList.length > 0 ? (
+                            <div className="space-y-1.5">
+                              <p className="text-[13px] text-muted-foreground">
+                                {designFilesLabel}{" "}
+                                <span>({designFileList.length}개)</span>
+                              </p>
+                              <div className="grid grid-cols-4 gap-2">
+                                {designFileList.map((file, idx) =>
+                                  renderFileTile(file, idx, "design"),
+                                )}
+                              </div>
+                            </div>
+                          ) : null}
+                          {resultFileList.length > 0 ? (
+                            <div className="space-y-1.5">
+                              <p className="text-[13px] text-muted-foreground">
+                                {resultFilesLabel}{" "}
+                                <span>({resultFileList.length}개)</span>
+                              </p>
+                              <div className="grid grid-cols-4 gap-2">
+                                {resultFileList.map((file, idx) =>
+                                  renderFileTile(file, idx, "result"),
+                                )}
+                              </div>
+                            </div>
+                          ) : null}
+                        </section>
+                      ) : null}
+
+                      {showProductionConfirm && onConfirmProduction ? (
+                        <div className="rounded-md border border-primary/30 bg-primary-soft/40 p-3">
+                          <p className="text-sm text-primary-strong">
+                            {productionConfirmTitle}
+                          </p>
+                          <Button
+                            type="button"
+                            className="mt-2"
+                            disabled={productionConfirmBusy}
+                            onClick={handleConfirmPanelClick}
+                          >
+                            {productionConfirmBusy
+                              ? "처리 중..."
+                              : confirmPreviewTarget
+                                ? `미리보기 · ${productionConfirmButtonLabel}`
+                                : productionConfirmButtonLabel}
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div
+                      className="flex min-h-full flex-1 flex-col border-t border-border/70"
+                      {...(workFileDropActive
+                        ? { "data-guide-tour": "lab_design" }
+                        : {})}
+                    >
+                      {workFileDropUploading ? (
+                        <div
+                          className="pointer-events-none z-[2] shrink-0 border-b border-primary/25 bg-primary px-5 py-2.5 text-primary-foreground"
+                          role="status"
+                          aria-live="polite"
+                        >
+                          <div className="mx-auto flex w-full max-w-sm flex-col gap-1.5">
+                            <div className="flex items-center justify-between gap-2 text-xs">
+                              <span className="truncate font-medium">
+                                {workFileDropUploadLabel || "업로드 중…"}
+                              </span>
+                              <span className="shrink-0 tabular-nums opacity-90">
+                                {workFileDropUploadPercent}%
+                              </span>
+                            </div>
+                            <Progress
+                              value={workFileDropUploadPercent}
+                              className="h-1.5 bg-primary-foreground/25 [&>div]:bg-primary-foreground"
+                            />
+                          </div>
                         </div>
                       ) : null}
 
-                      <div ref={chatBottomRef} />
+                      <div className="flex w-full min-w-0 max-w-full flex-1 flex-col space-y-2 px-5 py-2">
+                        {chatLoading ? (
+                          <div className="flex flex-1 items-center justify-center py-4 text-center text-xs text-muted-foreground">
+                            채팅을 불러오는 중입니다...
+                          </div>
+                        ) : null}
+
+                        {!chatLoading && visibleChatError ? (
+                          <div className="flex min-h-[12rem] flex-1 items-center justify-center py-4">
+                            <p className="text-center text-xs text-muted-foreground">
+                              {visibleChatError}
+                            </p>
+                          </div>
+                        ) : null}
+
+                        {!chatLoading &&
+                        !visibleChatError &&
+                        chatMessages.length === 0 ? (
+                          <div className="flex flex-1 items-center justify-center py-4 text-center text-sm text-muted-foreground">
+                            아직 메시지가 없습니다.
+                          </div>
+                        ) : null}
+
+                        {visibleChatMessages.map((message) => {
+                          const senderId = String(
+                            message.sender?._id || "",
+                          ).trim();
+                          // 의뢰 파일로 올린 3D만 채팅 버블에서 숨김 — 이미지는 채팅 첨부로 남을 수 있음
+                          const chatOnlyAttachments = Array.isArray(
+                            message.attachments,
+                          )
+                            ? message.attachments.filter(
+                                (file) =>
+                                  !isPracticeTransferModelFileName(
+                                    String(file?.fileName || ""),
+                                  ),
+                              )
+                            : [];
+                          const messageForBubble =
+                            chatOnlyAttachments.length ===
+                            (message.attachments?.length || 0)
+                              ? message
+                              : {
+                                  ...message,
+                                  attachments: chatOnlyAttachments,
+                                };
+                          return (
+                            <ChatMessageBubble
+                              key={message._id}
+                              message={messageForBubble}
+                              isMine={isMyMessage(senderId)}
+                              currentUserId={currentUserId}
+                              authToken={authToken}
+                              formatTime={formatChatTime}
+                              formatFileSize={formatFileSize}
+                              showSenderName
+                              compact
+                              reactionUserNameById={reactionUserNameById}
+                              practiceTransferLabAnchorId={labAnchorId}
+                              cooperationPerformerLabName={
+                                cooperationPerformerLabName
+                              }
+                              practiceTransferProsthesisFollowUps={
+                                prosthesisFollowUps
+                              }
+                              practiceTransferToothWorks={toothWorks}
+                              practiceTransferFeeQuote={feeQuote}
+                              practiceTransferProsthesisFeeStages={
+                                prosthesisFeeStages
+                              }
+                              onCancelRemakeCharge={onCancelRemakeCharge}
+                              onSelectLinkedYmd={onSelectLinkedYmd}
+                              remakeChargeCancelBusy={remakeChargeCancelBusy}
+                              activeRemakeChargeIndexes={
+                                activeRemakeChargeIndexes
+                              }
+                              downloadingFileKeys={downloadingFileKeys}
+                              downloadProgressByKey={downloadProgressByKey}
+                              onReply={onReplyToMessage}
+                              onToggleReaction={onToggleReaction}
+                              onDeleteMessage={onDeleteMessage}
+                              onOpenRequestId={onOpenRequestId}
+                              onAttachChatFile={
+                                onAttachChatFiles
+                                  ? (file) => onAttachChatFiles([file])
+                                  : undefined
+                              }
+                              onRemoveChatFile={detachPaintChatFile}
+                              onReorderChatFiles={reorderPaintChatFiles}
+                              onOpenAttachment={(file) =>
+                                void onDownloadChatAttachment({
+                                  fileId: file.fileId,
+                                  fileName: file.fileName,
+                                  fileSize: Number(file.fileSize || 0),
+                                  s3Key: String(file.s3Key || ""),
+                                  s3Url: String(file.s3Url || ""),
+                                })
+                              }
+                            />
+                          );
+                        })}
+
+                        {!chatLoading &&
+                        !visibleChatError &&
+                        prosthesisFollowUpComplete &&
+                        shouldShowConfirmedFollowUpProsthesis(toothWorks) ? (
+                          <div className="relative z-[2] mt-2 w-full min-w-0 max-w-full px-1 text-left">
+                            <p className="mb-1.5 text-center text-[11px] font-medium text-foreground">
+                              {feeViewer === "lab"
+                                ? "확정 보철 · 확정 기공비"
+                                : "확정 보철 · 최종 기공비"}
+                            </p>
+                            <PracticeToothWorkChartReadOnly
+                              toothWorks={listCompletedFollowUpToothWorks(
+                                toothWorks,
+                              )}
+                              feeToothWorks={
+                                Array.isArray(toothWorks)
+                                  ? toothWorks
+                                  : undefined
+                              }
+                              showHeader={false}
+                              labAnchorId={labAnchorId}
+                              feeViewer={feeViewer}
+                              skipJig={skipJig}
+                              labEffectiveStars={labEffectiveStars}
+                              confirmedFeeLabel={
+                                feeViewer === "lab"
+                                  ? "확정 기공비"
+                                  : "최종 기공비"
+                              }
+                              showFinalFee
+                              enlargeOverlayClassName="z-[350]"
+                              enlargeDialogClassName="z-[360]"
+                              className="border-0 bg-transparent p-0 shadow-none"
+                            />
+                          </div>
+                        ) : null}
+
+                        <div ref={chatBottomRef} />
+                      </div>
+                      <div className="h-2" />
                     </div>
-                <div className="h-2" />
-              </div>
-            </div>
+                  </div>
 
-            <div
-              className={cn(
-                "pointer-events-none absolute inset-x-0 z-[20] flex justify-center px-3 transition-all duration-300 ease-out",
-                scrollEdge === "top"
-                  ? "bottom-[4.75rem] translate-y-0 opacity-100"
-                  : "bottom-[4rem] translate-y-2 opacity-0",
-              )}
-            >
-              <button
-                type="button"
-                data-no-drag
-                className={cn(
-                  "inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/80 bg-background/95 text-foreground shadow-md backdrop-blur-sm transition-transform duration-300",
-                  scrollEdge === "top"
-                    ? "pointer-events-auto scale-100"
-                    : "pointer-events-none scale-95",
-                )}
-                onClick={scrollToProgressBottom}
-                aria-label="아래로 이동"
-                title="아래로 이동"
-                tabIndex={scrollEdge === "top" ? 0 : -1}
-              >
-                <ArrowDown className="h-3.5 w-3.5 animate-bounce" />
-              </button>
-            </div>
-            <div
-              className={cn(
-                "pointer-events-none absolute inset-x-0 z-[20] flex justify-center px-3 transition-all duration-300 ease-out",
-                scrollEdge === "bottom"
-                  ? "top-3 translate-y-0 opacity-100"
-                  : "top-0 -translate-y-2 opacity-0",
-              )}
-            >
-              <button
-                type="button"
-                data-no-drag
-                className={cn(
-                  "inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/80 bg-background/95 text-foreground shadow-md backdrop-blur-sm transition-transform duration-300",
-                  scrollEdge === "bottom"
-                    ? "pointer-events-auto scale-100"
-                    : "pointer-events-none scale-95",
-                )}
-                onClick={scrollToDetailTop}
-                aria-label="위로 이동"
-                title="위로 이동"
-                tabIndex={scrollEdge === "bottom" ? 0 : -1}
-              >
-                <ArrowUp className="h-3.5 w-3.5 animate-bounce" />
-              </button>
-            </div>
+                  <div
+                    className={cn(
+                      "pointer-events-none absolute inset-x-0 z-[20] flex justify-center px-3 transition-all duration-300 ease-out",
+                      scrollEdge === "top"
+                        ? "bottom-[4.75rem] translate-y-0 opacity-100"
+                        : "bottom-[4rem] translate-y-2 opacity-0",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      data-no-drag
+                      className={cn(
+                        "inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/80 bg-background/95 text-foreground shadow-md backdrop-blur-sm transition-transform duration-300",
+                        scrollEdge === "top"
+                          ? "pointer-events-auto scale-100"
+                          : "pointer-events-none scale-95",
+                      )}
+                      onClick={scrollToProgressBottom}
+                      aria-label="아래로 이동"
+                      title="아래로 이동"
+                      tabIndex={scrollEdge === "top" ? 0 : -1}
+                    >
+                      <ArrowDown className="h-3.5 w-3.5 animate-bounce" />
+                    </button>
+                  </div>
+                  <div
+                    className={cn(
+                      "pointer-events-none absolute inset-x-0 z-[20] flex justify-center px-3 transition-all duration-300 ease-out",
+                      scrollEdge === "bottom"
+                        ? "top-3 translate-y-0 opacity-100"
+                        : "top-0 -translate-y-2 opacity-0",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      data-no-drag
+                      className={cn(
+                        "inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/80 bg-background/95 text-foreground shadow-md backdrop-blur-sm transition-transform duration-300",
+                        scrollEdge === "bottom"
+                          ? "pointer-events-auto scale-100"
+                          : "pointer-events-none scale-95",
+                      )}
+                      onClick={scrollToDetailTop}
+                      aria-label="위로 이동"
+                      title="위로 이동"
+                      tabIndex={scrollEdge === "bottom" ? 0 : -1}
+                    >
+                      <ArrowUp className="h-3.5 w-3.5 animate-bounce" />
+                    </button>
+                  </div>
 
-                <div className="shrink-0">
-                  <ChatComposer
-                    draft={chatDraft}
-                    onDraftChange={onChangeChatDraft}
-                    onSend={() => void onSendChatMessage()}
-                    placeholder={composerPlaceholder}
-                    disabled={inputDisabled}
-                    isSending={sendDisabled}
-                    pendingUploads={chatAttachedFiles}
-                    onPickFiles={routePickedOrDroppedFiles}
-                    onRemovePendingFile={onRemoveAttachedChatFile}
-                    onRetryPendingFile={onRetryAttachedChatFile}
-                    requestPicks={requestPicks}
-                    requestPicksLoading={requestPicksLoading}
-                    onRequestPicksNeeded={onRequestPicksNeeded}
-                    onInsertRequestId={
-                      Array.isArray(requestPicks) ? () => undefined : undefined
-                    }
-                    replyTo={replyTo}
-                    onCancelReply={onCancelReply}
-                    compact
-                  />
+                  <div className="shrink-0">
+                    <ChatComposer
+                      draft={chatDraft}
+                      onDraftChange={onChangeChatDraft}
+                      onSend={() => void onSendChatMessage()}
+                      placeholder={composerPlaceholder}
+                      disabled={inputDisabled}
+                      isSending={sendDisabled}
+                      pendingUploads={chatAttachedFiles}
+                      onPickFiles={routePickedOrDroppedFiles}
+                      onRemovePendingFile={onRemoveAttachedChatFile}
+                      onRetryPendingFile={onRetryAttachedChatFile}
+                      requestPicks={requestPicks}
+                      requestPicksLoading={requestPicksLoading}
+                      onRequestPicksNeeded={onRequestPicksNeeded}
+                      onInsertRequestId={
+                        Array.isArray(requestPicks)
+                          ? () => undefined
+                          : undefined
+                      }
+                      replyTo={replyTo}
+                      onCancelReply={onCancelReply}
+                      compact
+                    />
+                  </div>
                 </div>
+              </>
+            ) : null}
           </div>
-          </>
+
+          {!minimized && !maximized && !isMobile && !isInline ? (
+            <div
+              data-no-drag
+              className="absolute bottom-0 left-0 top-0 z-30 w-1.5 cursor-ew-resize touch-none hover:bg-primary/15"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+                beginResize("w", e.clientX, e.clientY);
+              }}
+            />
           ) : null}
-
-        </div>
-
-
-        {!minimized && !maximized && !isMobile && !isInline ? (
-          <div
-            data-no-drag
-            className="absolute bottom-0 left-0 top-0 z-30 w-1.5 cursor-ew-resize touch-none hover:bg-primary/15"
-            onPointerDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-              beginResize("w", e.clientX, e.clientY);
-            }}
-          />
-        ) : null}
-            </>
-          )}
-        </PracticeTransferFileDropTarget>
+        </>
+      )}
+    </PracticeTransferFileDropTarget>
   );
 
   const modelPreview = (
     <>
-    <RequestFilesPreviewDialog
-      open={requestPreview !== null}
-      onOpenChange={(next) => {
-        if (!next) setRequestPreview(null);
-      }}
-      files={requestFilesShown}
-      initialKey={requestPreview?.initialKey}
-      authToken={authToken}
-      caseInfo={previewCaseInfo}
-      downloadBusy={previewDownloadBusy}
-      onDownload={async (picked) => {
-        const keys = new Set(picked.map((p) => p.s3Key));
-        const originals = requestFilesShown.filter((f) => keys.has(f.s3Key));
-        if (onSaveFilesToCaseFolder) {
-          await onSaveFilesToCaseFolder(originals);
-          return;
+      <RequestFilesPreviewDialog
+        open={requestPreview !== null}
+        onOpenChange={(next) => {
+          if (!next) setRequestPreview(null);
+        }}
+        files={requestFilesShown}
+        workFiles={withWorkScanSourceDates(workScanFileList, requestFilesShown)}
+        initialKey={requestPreview?.initialKey}
+        authToken={authToken}
+        caseInfo={previewCaseInfo}
+        downloadBusy={previewDownloadBusy || workScanDownloadBusy}
+        onDownload={async (picked) => {
+          const keys = new Set(picked.map((p) => p.s3Key));
+          const originals = [...requestFilesShown, ...workScanFileList].filter(
+            (f) => keys.has(f.s3Key),
+          );
+          if (onSaveFilesToCaseFolder) {
+            await onSaveFilesToCaseFolder(originals);
+            return;
+          }
+          for (const file of originals) await onDownloadTransferFile(file);
+        }}
+        onAttachChatFile={
+          onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined
         }
-        for (const file of originals) await onDownloadTransferFile(file);
-      }}
-      onAttachChatFile={onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined}
-      onRemoveChatFile={detachPaintChatFile}
-      onReorderChatFiles={reorderPaintChatFiles}
-    />
-    <ModelPreviewDialog
-      open={previewOpen}
-      onOpenChange={(next) => {
-        if (!next) {
-          confirmPreviewSessionRef.current = false;
-          resetPreview();
-          return;
+        onRemoveChatFile={detachPaintChatFile}
+        onReorderChatFiles={reorderPaintChatFiles}
+      />
+      <ModelPreviewDialog
+        open={previewOpen}
+        onOpenChange={(next) => {
+          if (!next) {
+            confirmPreviewSessionRef.current = false;
+            resetPreview();
+            return;
+          }
+          setPreviewOpen(true);
+        }}
+        kind={previewKind}
+        fileName={previewMeta?.fileName || ""}
+        file={previewFile}
+        textureFile={previewTextureFile}
+        companionFiles={previewCompanionFiles}
+        loading={previewLoading}
+        progress={previewProgress}
+        downloadBusy={previewDownloadBusy}
+        onDownload={
+          previewMeta
+            ? (opts) =>
+                void (onSaveFilesToCaseFolder
+                  ? onSaveFilesToCaseFolder([previewMeta], {
+                      dcmFormat: opts?.dcmFormat,
+                    })
+                  : onDownloadTransferFile(previewMeta, {
+                      dcmFormat: opts?.dcmFormat,
+                    }))
+            : undefined
         }
-        setPreviewOpen(true);
-      }}
-      kind={previewKind}
-      fileName={previewMeta?.fileName || ""}
-      file={previewFile}
-      textureFile={previewTextureFile}
-      companionFiles={previewCompanionFiles}
-      loading={previewLoading}
-      progress={previewProgress}
-      downloadBusy={previewDownloadBusy}
-      onDownload={
-        previewMeta
-          ? (opts) =>
-              void (onSaveFilesToCaseFolder
-                ? onSaveFilesToCaseFolder([previewMeta], { dcmFormat: opts?.dcmFormat })
-                : onDownloadTransferFile(previewMeta, { dcmFormat: opts?.dcmFormat }))
-          : undefined
-      }
-      previewIndex={previewIndex}
-      previewCount={previewCount}
-      onPrev={
-        canPreviewPrev ? () => goPreviewRelative(-1) : undefined
-      }
-      onNext={
-        canPreviewNext ? () => goPreviewRelative(1) : undefined
-      }
-      confirmMessage={
-        previewShowsConfirm ? productionConfirmTitle : undefined
-      }
-      confirmLabel={
-        previewShowsConfirm ? productionConfirmButtonLabel : undefined
-      }
-      confirmBusy={previewShowsConfirm ? productionConfirmBusy : false}
-      onConfirm={
-        previewShowsConfirm
-          ? () => void handleConfirmFromPreview()
-          : undefined
-      }
-      onAttachChatFile={onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined}
-      onRemoveChatFile={detachPaintChatFile}
-      onReorderChatFiles={reorderPaintChatFiles}
-      caseInfo={previewCaseInfo}
-    />
+        previewIndex={previewIndex}
+        previewCount={previewCount}
+        onPrev={canPreviewPrev ? () => goPreviewRelative(-1) : undefined}
+        onNext={canPreviewNext ? () => goPreviewRelative(1) : undefined}
+        confirmMessage={
+          previewShowsConfirm ? productionConfirmTitle : undefined
+        }
+        confirmLabel={
+          previewShowsConfirm ? productionConfirmButtonLabel : undefined
+        }
+        confirmBusy={previewShowsConfirm ? productionConfirmBusy : false}
+        onConfirm={
+          previewShowsConfirm
+            ? () => void handleConfirmFromPreview()
+            : undefined
+        }
+        onAttachChatFile={
+          onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined
+        }
+        onRemoveChatFile={detachPaintChatFile}
+        onReorderChatFiles={reorderPaintChatFiles}
+        caseInfo={previewCaseInfo}
+      />
     </>
   );
-  const workScanModelPreview = (
-    <WorkScanModelPreviewDialog
-      open={workModelOpen}
-      onOpenChange={setWorkModelOpen}
-      files={withWorkScanSourceDates(workScanFileList, requestFilesShown)}
-      authToken={authToken}
-      title={workScanFilesLabel}
-      caseInfo={previewCaseInfo}
-      downloadBusy={workScanDownloadBusy}
-      onDownload={async (picked) => {
-        if (onSaveFilesToCaseFolder) {
-          await onSaveFilesToCaseFolder(picked);
-          return;
-        }
-        for (const file of picked) await onDownloadTransferFile(file);
-      }}
-      onAttachChatFile={onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined}
-      onRemoveChatFile={detachPaintChatFile}
-      onReorderChatFiles={reorderPaintChatFiles}
-    />
-  );
-
   const pendingImageCount = pendingImageFiles?.length || 0;
   const imageAttachChoiceDialog = (
     <AlertDialog
@@ -4359,7 +4440,8 @@ export function PracticeTransferDetailChatDialog({
             {pendingImageCount > 1
               ? `${pendingImageCount}개 이미지`
               : "1개 이미지"}
-            를 의뢰 파일(케이스 자료)로 둘지, 채팅 대화에 첨부할지 선택해 주세요.
+            를 의뢰 파일(케이스 자료)로 둘지, 채팅 대화에 첨부할지 선택해
+            주세요.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter className="flex-row gap-2 sm:justify-stretch sm:space-x-0">
@@ -4399,7 +4481,9 @@ export function PracticeTransferDetailChatDialog({
       return (
         <>
           <div className="flex h-full min-h-0 w-full flex-col items-center justify-center gap-2 rounded-md border bg-background px-6 text-center shadow-sm">
-            <p className="text-sm font-medium text-slate-700">의뢰를 선택하세요</p>
+            <p className="text-sm font-medium text-slate-700">
+              의뢰를 선택하세요
+            </p>
             <p className="text-xs leading-relaxed text-muted-foreground">
               왼쪽 목록·캘린더에서 건을 누르면
               <br />
@@ -4407,7 +4491,6 @@ export function PracticeTransferDetailChatDialog({
             </p>
           </div>
           {modelPreview}
-          {workScanModelPreview}
           {imageAttachChoiceDialog}
         </>
       );
@@ -4425,7 +4508,6 @@ export function PracticeTransferDetailChatDialog({
           {panelBody}
         </div>
         {modelPreview}
-        {workScanModelPreview}
         {imageAttachChoiceDialog}
       </>
     );
@@ -4436,46 +4518,45 @@ export function PracticeTransferDetailChatDialog({
 
   return (
     <>
-    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
-      <DialogContent
-        hideOverlay
-        hideClose
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        onPointerDownOutside={(e) => e.preventDefault()}
-        onInteractOutside={(e) => e.preventDefault()}
-        onFocusOutside={(e) => e.preventDefault()}
-        style={{
-          position: "fixed",
-          left: layout.x,
-          top: floatingTop,
-          width: layout.w,
-          height: floatingH,
-          maxWidth: "none",
-          maxHeight: floatingH,
-          transform: "none",
-          pointerEvents: "auto",
-        }}
-        className={cn(
-          "pointer-events-auto relative flex flex-col gap-0 overflow-hidden border border-r-0 bg-background p-0 duration-0",
-          isMobile ? "rounded-lg" : "rounded-l-lg rounded-r-none",
-          guideTourElevate ? "z-[410]" : "z-[300]",
-          "shadow-[-12px_0_40px_-12px_rgba(15,23,42,0.28),-4px_0_16px_rgba(15,23,42,0.12)]",
-          "translate-x-0 translate-y-0",
-          "w-auto max-w-none sm:w-auto sm:max-w-none sm:p-0",
-          "data-[state=open]:animate-none data-[state=closed]:animate-none",
-        )}
-        data-guide-tour="lab_detail"
-      >
-        <DialogTitle className="sr-only">{title}</DialogTitle>
-        <DialogDescription className="sr-only">
-          기공의뢰 상세 및 채팅
-        </DialogDescription>
-        {panelBody}
-      </DialogContent>
-    </Dialog>
-    {modelPreview}
-    {workScanModelPreview}
-    {imageAttachChoiceDialog}
+      <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
+        <DialogContent
+          hideOverlay
+          hideClose
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+          onFocusOutside={(e) => e.preventDefault()}
+          style={{
+            position: "fixed",
+            left: layout.x,
+            top: floatingTop,
+            width: layout.w,
+            height: floatingH,
+            maxWidth: "none",
+            maxHeight: floatingH,
+            transform: "none",
+            pointerEvents: "auto",
+          }}
+          className={cn(
+            "pointer-events-auto relative flex flex-col gap-0 overflow-hidden border border-r-0 bg-background p-0 duration-0",
+            isMobile ? "rounded-lg" : "rounded-l-lg rounded-r-none",
+            guideTourElevate ? "z-[410]" : "z-[300]",
+            "shadow-[-12px_0_40px_-12px_rgba(15,23,42,0.28),-4px_0_16px_rgba(15,23,42,0.12)]",
+            "translate-x-0 translate-y-0",
+            "w-auto max-w-none sm:w-auto sm:max-w-none sm:p-0",
+            "data-[state=open]:animate-none data-[state=closed]:animate-none",
+          )}
+          data-guide-tour="lab_detail"
+        >
+          <DialogTitle className="sr-only">{title}</DialogTitle>
+          <DialogDescription className="sr-only">
+            기공의뢰 상세 및 채팅
+          </DialogDescription>
+          {panelBody}
+        </DialogContent>
+      </Dialog>
+      {modelPreview}
+      {imageAttachChoiceDialog}
     </>
   );
 }
