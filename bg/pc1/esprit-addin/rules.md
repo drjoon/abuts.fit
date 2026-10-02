@@ -78,8 +78,12 @@
 - 인접 툴패스:
   - Rough: **선행 끝 = 경계 정확**, **후행 시작 = 경계 tip쪽(그림 왼쪽, X-) 공구 반경**
     - `GetRoughAdjacentOverlapMm()` = 활성 rough 반경 (D4→`2.0`, `ROUGH_20` D2→`1.0`)
-  - Finish: **Front 끝 = `Splitline_2`**, **Back 시작 = `Splitline_2` − 1피치**
-    - 피치 SSOT: 백엔드 `retentionGroove` (`none`→`0.12`, `deep`→`0.20`) via `ABUTS_RETENTION_GROOVE`
+  - Finish: **선행 끝 = 경계**, **후행 시작 = 경계 − 0.8mm** (D1.2 직경 2/3, tip 쪽 X−)
+    - Front 끝 = `Splitline_2`, Middle/Back 시작 = `Splitline_2 − 0.8`
+    - Middle 끝 = `Xk`, Back 시작 = `Xk − 0.8`
+    - 선행 끝은 경계 너머로 연장하지 않는다. 치은 쪽 D1.2 크로스가 깨진다.
+    - `GetFinishAdjacentOverlapMm()` = `0.8`. StepIncrement와 별개.
+    - StepIncrement SSOT: 백엔드 `retentionGroove` (`none`→`0.12`, `deep`→`0.20`) via `ABUTS_RETENTION_GROOVE`
     - `ABUTS_COMPOSITE_STEP_INCREMENT_A` **미사용**. none/deep 미수신 시 NC 중단 + 프론트 토스트
   - Turn: **`Front_Turn` 끝 = `Splitline_2 + 2.5mm`** (Back 방향 X+)
     - 구현: `MainModuleOperations.TryPrepareTurningRegionRange` (`FRONT` → `rangeMaxX`)
@@ -92,7 +96,7 @@
 - 순서: `Front_Turn → Front_Rough → Front_Face → Front_Finish → Middle_Turn → Middle_Rough → Middle_Finish → Back_Turn → Back_Rough → Back_Finish → Connection`
   - 내부 region 코드는 Middle=`BACK`, Back=`BACK2`(T05·레이어·경계 로직 공유). 표시명만 바뀐다.
   - Middle_Finish·Middle_Rough 끝 `Xk` (D4 반경이 D1.2를 덮으므로 같은 끝 OK), Middle_Turn 끝 `Xk+2.5` (D4 반경 2.0+칩)
-  - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX]`(경계 `RoughBoundryBack2`), Back_Finish `[Xk-1피치 ~ BackPointX]`(`B2_PHASE`)
+  - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX]`(경계 `RoughBoundryBack2`), Back_Finish `[Xk-0.8 ~ BackPointX]`(`B2_PHASE`)
 - Middle_Turn 끝(`Xk+2.5`)은 **클램프하지 않는다**. 줄이면 D4 러프가 원소재를 물고, Xk를 당기면 seam이 마진으로 들어간다.
 - 포기 조건(기존 단일 Back 유지): FL min_z 없음, `Xk < Splitline_2+1.5`, Middle_Turn 끝 > `BackPointX+1.5` (= 치은 파트 FL min_z < 1.5mm). 로그 `SafeSplit[...]`.
 - 원칙: Turn은 Rough 끝보다 D4 반경+칩(2.5) 이상 더 깎는다. Rough와 Finish(D1.2)는 같은 끝이어도 된다.
@@ -108,8 +112,8 @@
   - `SharedFinishSplitX = finishLineTopX - 1.0` (tip 쪽 1mm, Z+1 ≡ X-1)
 - 인접 후행 시작:
   - `Back_Rough` 시작 = `Splitline_2 - roughRadius` (D4→2.0)
-  - `Finish_Back` 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()`
-    - 피치: `ResolveFinishFrontStepIncrementMmFromRetentionGroove()` (`none`→0.12, `deep`→0.20)
+  - `Finish_Back` / Middle 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()` (`0.8`, tip 쪽)
+    - StepIncrement: `ResolveFinishFrontStepIncrementMmFromRetentionGroove()` (`none`→0.12, `deep`→0.20). 겹침과 별개.
     - `StlFileProcessor.RequireBackendRetentionGrooveOrThrow` — none/deep만 허용, 미수신 시 예외
     - 실패 보고: `NotifyBackendFailure` → `/bg/register-file` status=failed → `request:async-action-failed` 토스트
 - 좌표 변환 (`EspritHttpServer`: `FrontPointX = -FrontPoint.z`):
@@ -122,10 +126,11 @@
 - 구현:
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
   - Rough: `frontEnd = splitline2`(기본) / wide 시 `Front_Face` end, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle은 wide 시만
-  - Finish: `Finish_Front` 끝 = `SharedFinishSplitX`, `Finish_Back` 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()`
+  - Finish: `Finish_Front` 끝 = `SharedFinishSplitX`, 다음 Finish 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()` (`0.8`)
+  - Middle 끝 = `Xk`, `Back_Finish` 시작 = `Xk - 0.8`
   - Finish_Front StepIncrement도 동일 groove 매핑으로 COM SetProperty (`TrySetCompositeStepIncrement`)
   - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
-  - 금지: `ABUTS_COMPOSITE_STEP_INCREMENT_A` 의존, Finish_Back의 D1.2 반경 앞당김, 고정 0.5mm 겹침, `Splitline_2<=5mm`에서 `Middle_Turn`/`Middle_Rough` 생성, `Back + Z - stlTopZ` 구식 변환 (FL 하방 침범)
+  - 금지: 선행 Finish 끝을 경계 너머로 연장, `ABUTS_COMPOSITE_STEP_INCREMENT_A` 의존, `Splitline_2<=5mm`에서 `Middle_Turn`/`Middle_Rough` 생성, `Back + Z - stlTopZ` 구식 변환 (FL 하방 침범)
 
 ### 4.4 Finish none 처리
 

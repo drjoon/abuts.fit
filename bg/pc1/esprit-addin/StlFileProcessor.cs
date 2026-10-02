@@ -125,7 +125,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // 주의: Rhino와 Esprit의 회전 부호 기준이 달라, Esprit 적용 시 부호를 반전해 사용한다.
         // canonical "STL모델대로"/"헥스30도회전" 모두 STL모델대로 기준 회전에 반영한다.
         private double? _backendHexRotationAppliedDeg;
-        // 유지홈(retentionGroove) — request-meta none/deep 필수. Finish StepIncrement·Back 겹침 SSOT.
+        // 유지홈(retentionGroove) — request-meta none/deep 필수. Finish_Front StepIncrement SSOT.
+        // Finish 인접 겹침(0.8mm)은 retentionGroove와 별개.
         private string _backendRetentionGroove;
         public string FaceHoleProcessFilePath { get; set; }
         public string ConnectionMachiningProcessFilePath { get; set; }
@@ -317,7 +318,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         {
                             throw new InvalidOperationException($"request-meta 응답에 lotNumber가 없습니다. requestId={requestId}");
                         }
-                        // 유지홈(retentionGroove) SSOT — 백엔드 none/deep만 허용. StepIncrement·Finish_Back 겹침에 사용.
+                        // 유지홈(retentionGroove) SSOT — 백엔드 none/deep만 허용. Finish_Front StepIncrement에 사용.
                         _backendRetentionGroove = RequireBackendRetentionGrooveOrThrow(
                             requestMeta.retentionGroove,
                             requestId);
@@ -2001,7 +2002,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         }
 
         // 유지홈(retentionGroove) SSOT — 백엔드 none/deep만 허용.
-        // Finish_Front StepIncrement / Finish_Back 1피치 겹침은 ABUTS_RETENTION_GROOVE 를 본다.
+        // Finish_Front StepIncrement는 ABUTS_RETENTION_GROOVE 를 본다. Finish 겹침(0.8mm)은 별개.
         // ABUTS_COMPOSITE_STEP_INCREMENT_A 는 사용하지 않는다.
         //   none → 0.12, deep → 0.20
         // Finish_Back(B) StepIncrement는 PRC 기본(0.08) 유지.
