@@ -1,4 +1,5 @@
 // related files:
+// - 2026-10-04: 역할이 다른 창의 openTransfer는 URL ba로 대상 탭만 찾고 이 창은 바꾸지 않음.
 // - 2026-10-03: 알림 보기 — 역할이 다른 창의 openTransfer는 수신함 탭으로 넘긴다.
 // - 2026-10-03: 수신 헤더 — 북마크·생산중·설정·데모는 오른쪽 끝(ml-auto).
 // - 2026-10-03: 수신 헤더 — 캘린더·목록은 설정 팝오버. 상태·역할은 라벨. 북마크·생산중·주문/도착은 툴바.
@@ -675,8 +676,12 @@ export default function RequestorPracticePage() {
     const openId = String(searchParams.get("openTransfer") || "").trim();
     const intended =
       modeParam === "receive" || modeParam === "send" ? modeParam : null;
+    // publish가 ba를 이 계정으로 덮기 전에 URL의 대상 ba를 쓴다.
+    const targetBa = String(searchParams.get("ba") || "").trim();
     if (openId && intended && intended !== desired) {
-      openPracticeTransferAlert(openId, intended);
+      openPracticeTransferAlert(openId, intended, targetBa || undefined, {
+        localFallback: false,
+      });
     }
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set("mode", desired);

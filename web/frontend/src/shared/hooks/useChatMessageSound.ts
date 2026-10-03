@@ -3,8 +3,10 @@
 // - web/frontend/src/shared/chat/chatSoundPlayer.ts
 // - web/frontend/src/shared/chat/chatSoundViewing.ts
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
+// - web/frontend/src/shared/practice/practiceTransferAlertNotify.ts
 // - web/frontend/src/App.tsx
 // change-log:
+// - 2026-10-04: 백그라운드는 헬퍼 OS 토스트, 포커스는 alert 토스트(practiceTransferAlertNotify).
 // - 2026-10-04: 채팅 알림 보기에 ba(계정) 전달.
 // - 2026-10-03: 다른 창을 보고 있으면 채팅 토스트·보기. 포커스된 같은 방만 생략.
 // - 2026-10-03: 로그인 시 AudioContext unlock 바인딩.
@@ -13,7 +15,7 @@
 // - 2026-09-08: 미확인 의뢰음과 동일 플레이어(중복 재생 방지).
 // - 2026-09-07: 전역 채팅 알림음 — chat:message-created · remote-support:chat.
 
-import { createElement, useEffect, useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import {
@@ -27,14 +29,11 @@ import {
 import { isChatSoundViewingTarget } from "@/shared/chat/chatSoundViewing";
 import { shouldPlayLabReceiveSound } from "@/shared/practice/labReceiveSoundPrefs";
 import { normalizeRequestorKind } from "@/shared/business/requestorCapabilities";
-import { toast } from "@/shared/hooks/use-toast";
-import { ToastAction } from "@/components/ui/toast";
 import {
-  openPracticeTransferAlert,
-  practiceTransferAlertHref,
   resolvePracticeTransferAlertAccountId,
   type PracticeTransferAlertMode,
 } from "@/shared/practice/openPracticeTransferChat";
+import { notifyPracticeTransferAlert } from "@/shared/practice/practiceTransferAlertNotify";
 
 const isLabUser = (user: {
   role?: string | null;
@@ -152,31 +151,12 @@ export function useChatMessageSound() {
       const ba = resolvePracticeTransferAlertAccountId();
       const snippet = String(message?.content || "").trim();
       const body = snippet || "새 메시지가 도착했습니다.";
-      playChatNotifySound({
+      notifyPracticeTransferAlert({
         title: "새 채팅",
         body,
-        href: transferId ? practiceTransferAlertHref(transferId, mode, ba) : "",
-      });
-      toast({
-        title: "새 채팅",
-        description: body,
-        duration: 8000,
-        onClick: transferId
-          ? () => openPracticeTransferAlert(transferId, mode, ba)
-          : undefined,
-        action: transferId
-          ? createElement(
-              ToastAction,
-              {
-                altText: "보기",
-                onClick: (e) => {
-                  e.stopPropagation();
-                  openPracticeTransferAlert(transferId, mode, ba);
-                },
-              },
-              "보기",
-            )
-          : undefined,
+        transferId,
+        mode,
+        accountId: ba,
       });
     },
   });

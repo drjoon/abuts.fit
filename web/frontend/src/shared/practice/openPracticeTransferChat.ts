@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
 // change-log:
+// - 2026-10-04: localFallback=false — 역할이 다른 창은 수신함 탭만 찾고 이 창 URL을 바꾸지 않음.
 // - 2026-10-04: ba(사업자 앵커)로 BroadcastChannel·URL 매칭 — 다른 치과 창이 알림 보기를 가로채지 않음.
 // - 2026-10-03: 보기 → 헬퍼 /open-href로 수신함 창을 앞으로. BroadcastChannel은 같은 프로필 보조.
 // - 2026-10-03: BroadcastChannel — 보기 클릭 시 수신함 탭이 포커스·채팅 오픈(치과 창에서 열리지 않음).
@@ -208,6 +209,14 @@ export const subscribePracticeTransferAlert = (
   };
 };
 
+export type OpenPracticeTransferAlertOptions = {
+  /**
+   * true(기본): 대상 탭을 못 찾으면 이 창에서 연다.
+   * false: 역할이 다른 창(치과에 수신 URL 등) — 헬퍼·BroadcastChannel만, 이 창 URL은 유지.
+   */
+  localFallback?: boolean;
+};
+
 /**
  * 같은 원점·같은 계정(ba)의 수신함/발신함 탭이 있으면 그쪽에서 채팅을 연다.
  * 계정 탭이 ack하면 헬퍼 open-href는 건너뛴다(다른 치과 탭을 앞으로 올리지 않음).
@@ -216,11 +225,13 @@ export const openPracticeTransferAlert = (
   transferId: string,
   mode: PracticeTransferAlertMode,
   accountId?: string,
+  options?: OpenPracticeTransferAlertOptions,
 ) => {
   const id = String(transferId || "").trim();
   const ba = String(accountId || resolvePracticeTransferAlertAccountId()).trim();
   const path = practiceTransferAlertPath(id, mode, ba);
   if (!id || !path) return;
+  const localFallback = options?.localFallback !== false;
 
   const href = practiceTransferAlertHref(id, mode, ba);
   const ch = alertChannel();
@@ -251,6 +262,7 @@ export const openPracticeTransferAlert = (
         ch?.removeEventListener("message", onAck);
         ch?.close();
         if (acked || focused) return;
+        if (!localFallback) return;
         applyOpenHere(id, mode, ba);
       }, 120);
     });

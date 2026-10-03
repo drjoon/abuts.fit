@@ -1,4 +1,6 @@
 // - 2026-10-04: v10 — POST /open-privacy-settings (Gatekeeper 「그래도 열기」용 시스템 설정).
+// - 2026-10-04: v12 — OS 알림을 커스텀 플로팅 토스트(보기 버튼)로. NSUserNotification 대체.
+// - 2026-10-04: v11 — open-href: JS 주입 실패 시 기존 탭 URL 폴백·ba 미확인 탭은 mode로 매칭.
 // - 2026-10-04: v9 — 세션 businessAnchorId·open-href ba 매칭(다른 치과 탭 가로채기 방지).
 // - 2026-10-03: v8 — 계정별 세션·폴링. 치과 창이 기공소 세션을 덮어쓰지 않음.
 // - 2026-10-03: 알림 보기 — 탭 URL을 바꾸지 않고 채팅 이벤트만 주입(새로고침 방지).
@@ -15,8 +17,9 @@
 import AppKit
 import Foundation
 import Network
+import QuartzCore
 
-let helperVersion = 10
+let helperVersion = 12
 /** macOS 13+ 「개인정보 보호 및 보안」 */
 let macPrivacySettingsURL =
   "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
@@ -215,6 +218,172 @@ final class AlarmSession {
   }
 }
 
+/// 화면 오른쪽 위 커스텀 알림 토스트(브라우저 밖·다른 사이트에서도 보임).
+final class AlarmToastController: NSObject {
+  static let shared = AlarmToastController()
+
+  private var panel: NSPanel?
+  private var titleLabel: NSTextField?
+  private var bodyLabel: NSTextField?
+  private var href = ""
+  private var dismissWork: DispatchWorkItem?
+  private let brand = NSColor(srgbRed: 0.231, green: 0.510, blue: 0.965, alpha: 1)
+
+  func show(title: String, body: String, href: String) {
+    DispatchQueue.main.async {
+      self.present(
+        title: title.isEmpty ? "어벗츠" : title,
+        body: body.isEmpty ? "새 알림" : body,
+        href: href
+      )
+    }
+  }
+
+  private func present(title: String, body: String, href: String) {
+    dismissWork?.cancel()
+    self.href = href.trimmingCharacters(in: .whitespaces)
+    if panel == nil { buildPanel() }
+    titleLabel?.stringValue = title
+    bodyLabel?.stringValue = body
+    guard let panel else { return }
+    position(panel)
+    panel.alphaValue = 0
+    panel.orderFrontRegardless()
+    NSAnimationContext.runAnimationGroup { ctx in
+      ctx.duration = 0.22
+      ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+      panel.animator().alphaValue = 1
+    }
+    let work = DispatchWorkItem { [weak self] in self?.hide() }
+    dismissWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: work)
+  }
+
+  private func hide() {
+    dismissWork?.cancel()
+    dismissWork = nil
+    guard let panel, panel.isVisible else { return }
+    NSAnimationContext.runAnimationGroup({ ctx in
+      ctx.duration = 0.18
+      panel.animator().alphaValue = 0
+    }, completionHandler: {
+      panel.orderOut(nil)
+    })
+  }
+
+  @objc private func openChat() {
+    let link = href
+    hide()
+    if !link.isEmpty {
+      _ = AlarmNotify.openHref(link, fallbackNew: true)
+    }
+  }
+
+  @objc private func dismissClick() {
+    hide()
+  }
+
+  private func buildPanel() {
+    let width: CGFloat = 360
+    let height: CGFloat = 92
+    let panel = NSPanel(
+      contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+      styleMask: [.borderless, .nonactivatingPanel],
+      backing: .buffered,
+      defer: false
+    )
+    panel.level = .statusBar
+    panel.isFloatingPanel = true
+    panel.hidesOnDeactivate = false
+    panel.isOpaque = false
+    panel.backgroundColor = .clear
+    panel.hasShadow = true
+    panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+
+    let root = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+    root.wantsLayer = true
+    root.layer?.cornerRadius = 16
+    root.layer?.masksToBounds = true
+    root.layer?.backgroundColor = NSColor.white.cgColor
+    root.layer?.borderWidth = 1
+    root.layer?.borderColor = brand.withAlphaComponent(0.28).cgColor
+
+    let accent = NSView(frame: NSRect(x: 0, y: 0, width: 5, height: height))
+    accent.wantsLayer = true
+    accent.layer?.backgroundColor = brand.cgColor
+    root.addSubview(accent)
+
+    let badge = NSView(frame: NSRect(x: 18, y: 28, width: 36, height: 36))
+    badge.wantsLayer = true
+    badge.layer?.cornerRadius = 10
+    badge.layer?.backgroundColor = brand.cgColor
+    let mark = NSTextField(labelWithString: "A")
+    mark.font = NSFont.systemFont(ofSize: 16, weight: .bold)
+    mark.textColor = .white
+    mark.alignment = .center
+    mark.frame = badge.bounds
+    badge.addSubview(mark)
+    root.addSubview(badge)
+
+    let title = NSTextField(labelWithString: "")
+    title.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+    title.textColor = NSColor(srgbRed: 0.11, green: 0.16, blue: 0.25, alpha: 1)
+    title.lineBreakMode = .byTruncatingTail
+    title.frame = NSRect(x: 64, y: 52, width: 196, height: 20)
+    root.addSubview(title)
+    titleLabel = title
+
+    let body = NSTextField(labelWithString: "")
+    body.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+    body.textColor = NSColor(srgbRed: 0.39, green: 0.45, blue: 0.55, alpha: 1)
+    body.lineBreakMode = .byTruncatingTail
+    body.frame = NSRect(x: 64, y: 30, width: 196, height: 18)
+    root.addSubview(body)
+    bodyLabel = body
+
+    let viewBtn = NSButton(frame: NSRect(x: 268, y: 30, width: 56, height: 32))
+    viewBtn.title = "보기"
+    viewBtn.bezelStyle = .rounded
+    viewBtn.isBordered = false
+    viewBtn.wantsLayer = true
+    viewBtn.layer?.cornerRadius = 8
+    viewBtn.layer?.backgroundColor = brand.cgColor
+    viewBtn.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+    viewBtn.contentTintColor = .white
+    viewBtn.target = self
+    viewBtn.action = #selector(openChat)
+    // 버튼 글자색 — attributed
+    let attrs: [NSAttributedString.Key: Any] = [
+      .foregroundColor: NSColor.white,
+      .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+    ]
+    viewBtn.attributedTitle = NSAttributedString(string: "보기", attributes: attrs)
+    root.addSubview(viewBtn)
+
+    let close = NSButton(frame: NSRect(x: 330, y: 62, width: 22, height: 22))
+    close.bezelStyle = .inline
+    close.isBordered = false
+    close.title = "✕"
+    close.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+    close.contentTintColor = NSColor(srgbRed: 0.55, green: 0.58, blue: 0.64, alpha: 1)
+    close.target = self
+    close.action = #selector(dismissClick)
+    root.addSubview(close)
+
+    panel.contentView = root
+    self.panel = panel
+  }
+
+  private func position(_ panel: NSPanel) {
+    guard let screen = NSScreen.main else { return }
+    let visible = screen.visibleFrame
+    let size = panel.frame.size
+    let x = visible.maxX - size.width - 16
+    let y = visible.maxY - size.height - 16
+    panel.setFrameOrigin(NSPoint(x: x, y: y))
+  }
+}
+
 enum AlarmNotify {
   private static let lock = NSLock()
   private static var lastPlayed = Date.distantPast
@@ -260,16 +429,7 @@ enum AlarmNotify {
     } else {
       NSSound.beep()
     }
-    DispatchQueue.main.async {
-      NSUserNotificationCenter.default.delegate = AlarmNotifCenter.shared
-      let n = NSUserNotification()
-      n.title = title.isEmpty ? appTitle : title
-      n.informativeText = body.isEmpty ? "새 알림" : body
-      n.soundName = nil
-      let link = href.trimmingCharacters(in: .whitespaces)
-      if !link.isEmpty { n.userInfo = ["href": link] }
-      NSUserNotificationCenter.default.deliver(n)
-    }
+    AlarmToastController.shared.show(title: title, body: body, href: href)
   }
 
   private static func jxaStringLiteral(_ s: String) -> String {
@@ -355,12 +515,15 @@ enum AlarmNotify {
       if (wantBa) {
         var tabBa = extractQuery(u, "ba");
         if (!tabBa) tabBa = readAccountBa(tabs[ti]);
+        // ba가 읽히면 반드시 일치. 못 읽으면 mode·host 매칭만으로 진행(주입 실패 대비).
         if (tabBa && tabBa !== wantBa) return false;
-        if (!tabBa) return false;
       }
       var injected = false;
       try { injected = injectOpen(tabs[ti], target); } catch (eInj) {}
-      if (!injected) return false;
+      if (!injected) {
+        // Chrome Apple Event JS가 막혀도 이미 연 수신함/발신함 탭으로 연다.
+        try { tabs[ti].url = target; } catch (eUrl) { return false; }
+      }
       activate(w, ti);
       return true;
     }

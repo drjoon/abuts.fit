@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/practice/openPracticeTransferChat.ts
 // - web/frontend/src/App.tsx
 // change-log:
+// - 2026-10-04: practiceTransferAlertNotify — 백그라운드 OS 토스트 / 포커스 alert 토스트.
 // - 2026-10-04: 알림 보기 ba(계정) 전달 — 다른 치과 창이 가로채지 않음.
 // - 2026-10-03: 보기 → 수신함 탭 BroadcastChannel. App은 Router 밖.
 // - 2026-10-03: App은 Router 밖 — useNavigate 제거(location.assign).
@@ -14,25 +15,18 @@
 // - 2026-09-08: 기공의뢰수신 미확인 도착 알림음(practice:transfer-created).
 //   채팅 알림과 동일 플레이어·최소 간격으로 중복 재생 방지.
 
-import { createElement, useEffect } from "react";
+import { useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { normalizeRequestorKind } from "@/shared/business/requestorCapabilities";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { shouldPlayLabReceiveSound } from "@/shared/practice/labReceiveSoundPrefs";
+import { bindChatSoundUnlockOnGesture } from "@/shared/chat/chatSoundPlayer";
 import {
-  bindChatSoundUnlockOnGesture,
-  playChatNotifySound,
-} from "@/shared/chat/chatSoundPlayer";
-import { toast } from "@/shared/hooks/use-toast";
-import { ToastAction } from "@/components/ui/toast";
-import {
-  openPracticeTransferAlert,
-  practiceTransferAlertHref,
   publishPracticeTransferAlertAccount,
-  resolvePracticeTransferAlertAccountId,
   subscribePracticeTransferAlert,
   type PracticeTransferAlertMode,
 } from "@/shared/practice/openPracticeTransferChat";
+import { notifyPracticeTransferAlert } from "@/shared/practice/practiceTransferAlertNotify";
 
 type SoundUser = {
   role?: string | null;
@@ -78,43 +72,6 @@ const practiceAlertCopy = (
     return { title: "작업완료", body: "기공 작업이 완료되었습니다." };
   }
   return { title: "작업 파일", body: "작업 파일이 도착했습니다." };
-};
-
-const notifyTransferAlert = ({
-  title,
-  body,
-  transferId,
-  mode,
-}: {
-  title: string;
-  body: string;
-  transferId: string;
-  mode: PracticeTransferAlertMode;
-}) => {
-  const ba = resolvePracticeTransferAlertAccountId();
-  const href = practiceTransferAlertHref(transferId, mode, ba);
-  playChatNotifySound({ title, body, href });
-  toast({
-    title,
-    description: body,
-    duration: 8000,
-    onClick: transferId
-      ? () => openPracticeTransferAlert(transferId, mode, ba)
-      : undefined,
-    action: transferId
-      ? createElement(
-          ToastAction,
-          {
-            altText: "보기",
-            onClick: (e) => {
-              e.stopPropagation();
-              openPracticeTransferAlert(transferId, mode, ba);
-            },
-          },
-          "보기",
-        )
-      : undefined,
-  });
 };
 
 /**
@@ -178,7 +135,7 @@ export function useLabReceiveUnreadSound() {
         ).trim();
         const patient = String(data.patientName || "").trim();
         const body = [clinic || "치과", patient].filter(Boolean).join(" · ");
-        notifyTransferAlert({
+        notifyPracticeTransferAlert({
           title: "새 기공의뢰",
           body: body || "새 기공의뢰가 도착했습니다.",
           transferId: String(data.transferId || "").trim(),
@@ -192,7 +149,7 @@ export function useLabReceiveUnreadSound() {
       const action = String(data.action || "").trim();
       if (!PRACTICE_ALERT_ACTIONS.has(action)) return;
       const copy = practiceAlertCopy(action);
-      notifyTransferAlert({
+      notifyPracticeTransferAlert({
         ...copy,
         transferId: String(data.transferId || "").trim(),
         mode,

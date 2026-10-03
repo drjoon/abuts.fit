@@ -1,3 +1,4 @@
+// - 2026-10-04: alert 변형 — 채팅·의뢰 시스템 알림(브랜드 액센트·부드러운 카드).
 // - 2026-10-03: 토스트 뷰포트 오른쪽 위. 클릭 가능한 알림 토스트.
 // related files:
 // - web/frontend/rules.md
@@ -34,6 +35,8 @@ const toastVariants = cva(
     variants: {
       variant: {
         default: "border-2 border-primary bg-background text-foreground",
+        alert:
+          "gap-3 rounded-2xl border border-primary/20 bg-white/95 p-4 pr-10 text-foreground shadow-[0_12px_40px_-12px_rgba(37,99,235,0.35)] ring-1 ring-black/5 backdrop-blur-md dark:bg-slate-950/95",
         destructive:
           "destructive group border-destructive bg-destructive text-destructive-foreground",
       },

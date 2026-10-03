@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: v12 — 커스텀 플로팅 토스트(보기)로 balloon 대체.
 // - 2026-10-04: v9 — 세션 BusinessAnchorId를 알림 href ba=에 넣음.
 // - 2026-10-03: v6 — 401/403 백오프·Cache-Control no-cache(빈 wait 304 방지).
 // - 2026-10-03: v4 PC 알람 — SystemSounds + tray balloon. 세션·장기 폴링으로 브라우저 종료 후에도 울림.
@@ -224,7 +225,6 @@ namespace Abuts.LabHelper
     {
         private static readonly object Gate = new object();
         private static long _lastPlayedMs;
-        private static NotifyIcon _tray;
 
         public static void Play(string title, string body, string href = "")
         {
@@ -242,7 +242,7 @@ namespace Abuts.LabHelper
             {
                 Log.Write("sound: " + ex.Message);
             }
-            ShowBalloon(title, body, href);
+            ShowToast(title, body, href);
         }
 
         public static string HrefFrom(
@@ -279,31 +279,152 @@ namespace Abuts.LabHelper
             return "";
         }
 
-        private static string _pendingHref = "";
+        private static Form _toastForm;
+        private static System.Windows.Forms.Timer _toastTimer;
 
-        private static void ShowBalloon(string title, string body, string href)
+        private static void ShowToast(string title, string body, string href)
         {
             try
             {
                 Ui.Invoke(() =>
                 {
-                    EnsureTray();
-                    _pendingHref = (href ?? "").Trim();
-                    var t = string.IsNullOrEmpty(title) ? Program.Title : title;
-                    var b = string.IsNullOrEmpty(body) ? "새 알림" : body;
-                    _tray.BalloonTipTitle = t.Length > 60 ? t.Substring(0, 60) : t;
-                    _tray.BalloonTipText = b.Length > 240 ? b.Substring(0, 240) : b;
-                    _tray.BalloonTipIcon = ToolTipIcon.Info;
-                    _tray.Visible = true;
-                    _tray.ShowBalloonTip(4000);
+                    PresentToast(
+                        string.IsNullOrEmpty(title) ? "어벗츠" : title,
+                        string.IsNullOrEmpty(body) ? "새 알림" : body,
+                        (href ?? "").Trim());
                     return 0;
                 });
             }
             catch (Exception ex)
             {
-                Log.Write("balloon: " + ex.Message);
+                Log.Write("toast: " + ex.Message);
             }
         }
+
+        private static void PresentToast(string title, string body, string href)
+        {
+            if (_toastTimer != null)
+            {
+                _toastTimer.Stop();
+                _toastTimer.Dispose();
+                _toastTimer = null;
+            }
+            if (_toastForm != null)
+            {
+                try { _toastForm.Close(); } catch { }
+                _toastForm = null;
+            }
+
+            var brand = Color.FromArgb(59, 130, 246);
+            var form = new Form
+            {
+                FormBorderStyle = FormBorderStyle.None,
+                ShowInTaskbar = false,
+                TopMost = true,
+                StartPosition = FormStartPosition.Manual,
+                Size = new Size(360, 92),
+                BackColor = Color.White,
+                Padding = new Padding(0),
+            };
+            form.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, form.Width + 1, form.Height + 1, 16, 16));
+
+            var accent = new Panel
+            {
+                BackColor = brand,
+                Dock = DockStyle.Left,
+                Width = 5,
+            };
+            form.Controls.Add(accent);
+
+            var badge = new Label
+            {
+                Text = "A",
+                Font = new Font("Segoe UI", 11f, FontStyle.Bold),
+                ForeColor = Color.White,
+                BackColor = brand,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Size = new Size(36, 36),
+                Location = new Point(18, 28),
+            };
+            form.Controls.Add(badge);
+
+            var titleLbl = new Label
+            {
+                Text = title,
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(30, 41, 59),
+                AutoEllipsis = true,
+                Location = new Point(64, 24),
+                Size = new Size(196, 22),
+            };
+            form.Controls.Add(titleLbl);
+
+            var bodyLbl = new Label
+            {
+                Text = body,
+                Font = new Font("Segoe UI", 9f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(100, 116, 139),
+                AutoEllipsis = true,
+                Location = new Point(64, 48),
+                Size = new Size(196, 20),
+            };
+            form.Controls.Add(bodyLbl);
+
+            var viewBtn = new Button
+            {
+                Text = "보기",
+                Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+                ForeColor = Color.White,
+                BackColor = brand,
+                FlatStyle = FlatStyle.Flat,
+                Size = new Size(56, 32),
+                Location = new Point(268, 30),
+                Cursor = Cursors.Hand,
+            };
+            viewBtn.FlatAppearance.BorderSize = 0;
+            viewBtn.Click += (_, __) =>
+            {
+                try { form.Close(); } catch { }
+                OpenHref(href);
+            };
+            form.Controls.Add(viewBtn);
+
+            var closeBtn = new Button
+            {
+                Text = "✕",
+                Font = new Font("Segoe UI", 8f),
+                ForeColor = Color.FromArgb(148, 163, 184),
+                BackColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Size = new Size(22, 22),
+                Location = new Point(330, 8),
+                Cursor = Cursors.Hand,
+            };
+            closeBtn.FlatAppearance.BorderSize = 0;
+            closeBtn.Click += (_, __) =>
+            {
+                try { form.Close(); } catch { }
+            };
+            form.Controls.Add(closeBtn);
+
+            var wa = Screen.PrimaryScreen.WorkingArea;
+            form.Location = new Point(wa.Right - form.Width - 16, wa.Top + 16);
+            form.Show();
+            _toastForm = form;
+
+            _toastTimer = new System.Windows.Forms.Timer { Interval = 8000 };
+            _toastTimer.Tick += (_, __) =>
+            {
+                _toastTimer.Stop();
+                try { form.Close(); } catch { }
+            };
+            _toastTimer.Start();
+        }
+
+        [System.Runtime.InteropServices.DllImport("gdi32.dll", SetLastError = true)]
+        private static extern IntPtr CreateRoundRectRgn(
+            int nLeftRect, int nTopRect, int nRightRect, int nBottomRect,
+            int nWidthEllipse, int nHeightEllipse);
 
         internal static void OpenHref(string raw)
         {
@@ -321,18 +442,6 @@ namespace Abuts.LabHelper
             {
                 Log.Write("open href: " + ex.Message);
             }
-        }
-
-        private static void EnsureTray()
-        {
-            if (_tray != null) return;
-            _tray = new NotifyIcon
-            {
-                Icon = SystemIcons.Application,
-                Text = Program.Title,
-                Visible = false,
-            };
-            _tray.BalloonTipClicked += (_, __) => OpenHref(_pendingHref);
         }
     }
 
