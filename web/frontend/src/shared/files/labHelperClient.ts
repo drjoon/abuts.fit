@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: v9 세션 businessAnchorId — open-href가 같은 계정 탭만 연다.
 // - 2026-10-03: v8 계정별 헬퍼 세션 — 치과·기공소 동시 폴링. /notify는 health ping 생략.
 // - 2026-10-03: v7 POST /open-href — 알림 보기가 수신함 탭을 앞으로.
 // - 2026-10-03: /notify health ping — 로컬 네트워크 권한 대기(400ms면 헬퍼 있어도 실패).
@@ -22,7 +23,7 @@ export const LAB_HELPER_MIN_VERSION = 3;
 /** PC 알람(/notify·/session)에 필요한 최소 버전 */
 export const LAB_HELPER_ALARM_MIN_VERSION = 4;
 /** 배포 중인 최신 연결 프로그램 버전(구버전이면 자동 갱신 유도) */
-export const LAB_HELPER_CURRENT_VERSION = 8;
+export const LAB_HELPER_CURRENT_VERSION = 9;
 const INSTALLED_KEY = "abuts.labHelperInstalled";
 const WORK_FOLDER_KEY = "abuts.labWorkFolder";
 
@@ -111,6 +112,8 @@ export type LabHelperAlarmSessionPayload = {
   browserAlive: boolean;
   /** 알림 보기 URL — 치과 발신함 / 기공소 수신함 */
   alertMode?: "send" | "receive";
+  /** 로그인 계정 businessAnchorId — open-href가 같은 계정 탭만 고름 */
+  businessAnchorId?: string;
 };
 
 /** 헬퍼가 백엔드에 직접 붙을 때 쓰는 origin(끝에 /api 없음). */
@@ -419,6 +422,7 @@ export async function syncLabHelperAlarmSession(
     },
     browserAlive: Boolean(payload.browserAlive),
     alertMode: payload.alertMode === "send" ? "send" : "receive",
+    businessAnchorId: String(payload.businessAnchorId || "").trim(),
   });
 }
 

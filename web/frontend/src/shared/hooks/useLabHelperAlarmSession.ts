@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/practice/labReceiveSoundPrefs.ts
 // - web/frontend/src/App.tsx
 // change-log:
+// - 2026-10-04: 세션에 businessAnchorId — 헬퍼 open-href가 같은 계정 탭만 연다.
 // - 2026-10-03: 치과도 헬퍼 세션(alertMode=send). 포커스 없으면 browserAlive=false.
 // - 2026-10-03: 로그아웃만 해당 토큰 clear — 다른 창 계정의 세션을 지우지 않음.
 // - 2026-10-03: 탭 숨김·후면에서 browserAlive=false — 헬퍼가 alarms/wait 폴링(백그라운드 소켓 무음 방지).
@@ -67,6 +68,7 @@ const pushSession = (
   token: string,
   browserAlive: boolean,
   alertMode: "send" | "receive",
+  businessAnchorId: string,
 ) => {
   const prefs = getLabReceiveSoundPrefs();
   void syncLabHelperAlarmSession({
@@ -76,6 +78,7 @@ const pushSession = (
     prefs: { enabled: prefs.enabled },
     browserAlive,
     alertMode,
+    businessAnchorId,
   });
 };
 
@@ -88,6 +91,10 @@ export function useLabHelperAlarmSession() {
   const enabled =
     Boolean(token && isAuthenticated) && canSyncLabHelperAlarm(user as any);
   const alertMode = alertModeForUser(user as any);
+  const businessAnchorId = String(
+    (user as { businessAnchorId?: string | null } | null)?.businessAnchorId ||
+      "",
+  ).trim();
   const lastTokenRef = useRef("");
 
   useEffect(() => {
@@ -100,18 +107,19 @@ export function useLabHelperAlarmSession() {
 
     lastTokenRef.current = token;
     const sync = () => {
-      pushSession(token, isBrowserTabAlive(), alertMode);
+      pushSession(token, isBrowserTabAlive(), alertMode, businessAnchorId);
     };
 
     sync();
     const timer = window.setInterval(sync, HEARTBEAT_MS);
 
-    const onPrefs = () => pushSession(token, isBrowserTabAlive(), alertMode);
+    const onPrefs = () =>
+      pushSession(token, isBrowserTabAlive(), alertMode, businessAnchorId);
     const onVisibility = () => {
-      pushSession(token, isBrowserTabAlive(), alertMode);
+      pushSession(token, isBrowserTabAlive(), alertMode, businessAnchorId);
     };
     const onPageHide = () => {
-      pushSession(token, false, alertMode);
+      pushSession(token, false, alertMode, businessAnchorId);
     };
 
     window.addEventListener(LAB_RECEIVE_SOUND_PREFS_CHANGED_EVENT, onPrefs);
@@ -127,7 +135,7 @@ export function useLabHelperAlarmSession() {
       window.removeEventListener("focus", onVisibility);
       window.removeEventListener("blur", onVisibility);
       window.removeEventListener("pagehide", onPageHide);
-      pushSession(token, false, alertMode);
+      pushSession(token, false, alertMode, businessAnchorId);
     };
-  }, [enabled, token, alertMode]);
+  }, [enabled, token, alertMode, businessAnchorId]);
 }

@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/practice/openPracticeTransferChat.ts
 // - web/frontend/src/App.tsx
 // change-log:
+// - 2026-10-04: 알림 보기 ba(계정) 전달 — 다른 치과 창이 가로채지 않음.
 // - 2026-10-03: 보기 → 수신함 탭 BroadcastChannel. App은 Router 밖.
 // - 2026-10-03: App은 Router 밖 — useNavigate 제거(location.assign).
 // - 2026-10-03: 토스트 클릭 → 해당 의뢰 상세. 오른쪽 위.
@@ -27,6 +28,8 @@ import { ToastAction } from "@/components/ui/toast";
 import {
   openPracticeTransferAlert,
   practiceTransferAlertHref,
+  publishPracticeTransferAlertAccount,
+  resolvePracticeTransferAlertAccountId,
   subscribePracticeTransferAlert,
   type PracticeTransferAlertMode,
 } from "@/shared/practice/openPracticeTransferChat";
@@ -88,14 +91,15 @@ const notifyTransferAlert = ({
   transferId: string;
   mode: PracticeTransferAlertMode;
 }) => {
-  const href = practiceTransferAlertHref(transferId, mode);
+  const ba = resolvePracticeTransferAlertAccountId();
+  const href = practiceTransferAlertHref(transferId, mode, ba);
   playChatNotifySound({ title, body, href });
   toast({
     title,
     description: body,
     duration: 8000,
     onClick: transferId
-      ? () => openPracticeTransferAlert(transferId, mode)
+      ? () => openPracticeTransferAlert(transferId, mode, ba)
       : undefined,
     action: transferId
       ? createElement(
@@ -104,7 +108,7 @@ const notifyTransferAlert = ({
             altText: "보기",
             onClick: (e) => {
               e.stopPropagation();
-              openPracticeTransferAlert(transferId, mode);
+              openPracticeTransferAlert(transferId, mode, ba);
             },
           },
           "보기",
@@ -135,10 +139,18 @@ export function useLabReceiveUnreadSound() {
     bindChatSoundUnlockOnGesture();
   }, [enabled]);
 
+  const accountId = String(
+    (user as { businessAnchorId?: string | null } | null)?.businessAnchorId ||
+      (user as { _id?: string | null } | null)?._id ||
+      (user as { id?: string | null } | null)?.id ||
+      "",
+  ).trim();
+
   useEffect(() => {
     if (!enabled) return;
-    return subscribePracticeTransferAlert(mode);
-  }, [enabled, mode]);
+    publishPracticeTransferAlertAccount(mode, accountId);
+    return subscribePracticeTransferAlert(mode, undefined, accountId);
+  }, [enabled, mode, accountId]);
 
   useAppEventListener({
     enabled,

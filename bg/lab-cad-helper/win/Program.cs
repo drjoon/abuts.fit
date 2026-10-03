@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: v9 — 세션 businessAnchorId를 알림 href에 포함.
 // - 2026-10-03: v8 — 치과·기공소 세션을 동시에 폴링(포커스 없는 창도 OS 알림).
 // - 2026-10-03: v5 — version.json 자동 갱신(--silent-update).
 // - 2026-10-03: v4 — PC 알람(/notify·/session) + 브라우저 종료 시 API 장기 폴링.
@@ -20,7 +21,7 @@ namespace Abuts.LabHelper
 {
     internal static class Program
     {
-        public const int Version = 8;
+        public const int Version = 9;
         public const int Port = 8010;
         public const string Title = "어벗츠 연결 프로그램";
 

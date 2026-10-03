@@ -1,3 +1,4 @@
+// - 2026-10-04: v9 — 세션 businessAnchorId·open-href ba 매칭(다른 치과 탭 가로채기 방지).
 // - 2026-10-03: v8 — 계정별 세션·폴링. 치과 창이 기공소 세션을 덮어쓰지 않음.
 // - 2026-10-03: 알림 보기 — 탭 URL을 바꾸지 않고 채팅 이벤트만 주입(새로고침 방지).
 // - 2026-10-03: v6 — 401/403 백오프·URL 캐시 무시. 탭 숨김 폴링은 웹 session.browserAlive.
@@ -14,7 +15,7 @@ import AppKit
 import Foundation
 import Network
 
-let helperVersion = 8
+let helperVersion = 9
 let helperPort: UInt16 = 8010
 let agentLabel = "fit.abuts.labhelper"
 let appTitle = "어벗츠 연결 프로그램"
@@ -114,6 +115,7 @@ final class AlarmSession {
     var browserAlive = false
     var lastHeartbeat = Date.distantPast
     var alertMode = "receive"
+    var businessAnchorId = ""
   }
 
   static let heartbeatExpire: TimeInterval = 60
@@ -146,6 +148,9 @@ final class AlarmSession {
     if let mode = (body["alertMode"] as? String)?.trimmingCharacters(in: .whitespaces).lowercased(),
        mode == "send" || mode == "receive" {
       row.alertMode = mode
+    }
+    if let ba = (body["businessAnchorId"] as? String)?.trimmingCharacters(in: .whitespaces), !ba.isEmpty {
+      row.businessAnchorId = ba
     }
     if let prefs = body["prefs"] as? [String: Any] {
       if let en = prefs["enabled"] as? Bool { row.enabled = en }
@@ -210,14 +215,27 @@ enum AlarmNotify {
   private static let lock = NSLock()
   private static var lastPlayed = Date.distantPast
 
-  static func href(from alarm: [String: Any], appOrigin: String, alertMode: String = "receive") -> String {
+  static func href(
+    from alarm: [String: Any],
+    appOrigin: String,
+    alertMode: String = "receive",
+    businessAnchorId: String = ""
+  ) -> String {
     let tid = "\(alarm["transferId"] ?? "")".trimmingCharacters(in: .whitespaces)
     var origin = appOrigin.trimmingCharacters(in: .whitespaces)
     while origin.hasSuffix("/") { origin = String(origin.dropLast()) }
     if !tid.isEmpty, !origin.isEmpty {
       let mode = alertMode == "send" ? "send" : "receive"
       let enc = tid.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? tid
-      return "\(origin)/dashboard/practice-transfers?mode=\(mode)&openTransfer=\(enc)"
+      let ba = businessAnchorId.trimmingCharacters(in: .whitespaces)
+      let baQ: String
+      if ba.isEmpty {
+        baQ = ""
+      } else {
+        let baEnc = ba.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ba
+        baQ = "&ba=\(baEnc)"
+      }
+      return "\(origin)/dashboard/practice-transfers?mode=\(mode)&openTransfer=\(enc)\(baQ)"
     }
     return "\(alarm["href"] ?? "")".trimmingCharacters(in: .whitespaces)
   }
@@ -262,10 +280,17 @@ enum AlarmNotify {
   static func focusExistingBrowserTab(_ href: String) -> Bool {
     let target = jxaStringLiteral(href)
     let source = """
+    function extractQuery(s, key) {
+      var m = String(s || "").match(new RegExp("[?&]" + key + "=([^&]*)"));
+      if (!m) return "";
+      try { return decodeURIComponent(String(m[1] || "").replace(/\\+/g, " ")); } catch (e) {
+        return String(m[1] || "");
+      }
+    }
     function tabMatches(u, target) {
       u = String(u || "");
       target = String(target || "");
-      if (u.indexOf("practice-transfers") < 0 && u.indexOf("mode=receive") < 0) return false;
+      if (u.indexOf("practice-transfers") < 0 && u.indexOf("mode=receive") < 0 && u.indexOf("/practice/dashboard") < 0) return false;
       function hostOf(s) {
         try { return String(s.split("/")[2] || ""); } catch (e) { return ""; }
       }
@@ -273,6 +298,11 @@ enum AlarmNotify {
         return h.replace("127.0.0.1", "localhost").replace("[::1]", "localhost");
       }
       if (normHost(hostOf(u)) !== normHost(hostOf(target))) return false;
+      var wantBa = extractQuery(target, "ba");
+      if (wantBa) {
+        var tabBa = extractQuery(u, "ba");
+        if (tabBa && tabBa !== wantBa) return false;
+      }
       var wantReceive = target.indexOf("mode=receive") !== -1;
       var wantSend = target.indexOf("mode=send") !== -1;
       if (wantReceive) return u.indexOf("mode=send") === -1;
@@ -285,21 +315,50 @@ enum AlarmNotify {
       }
       return true;
     }
-    function extractOpenTransfer(target) {
-      var m = String(target || "").match(/[?&]openTransfer=([^&]*)/);
-      if (!m) return "";
-      try { return decodeURIComponent(String(m[1] || "").replace(/\\+/g, " ")); } catch (e) {
-        return String(m[1] || "");
-      }
+    function readAccountBa(tab) {
+      var js = "(function(){try{var a=window.__ABUTS_ALARM_ACCOUNT__;return a&&a.ba?String(a.ba):'';}catch(e){return '';}})();";
+      try {
+        var r = tab.execute({ javascript: js });
+        return String(r || "");
+      } catch (e1) {}
+      try {
+        var r2 = tab.execute(js);
+        return String(r2 || "");
+      } catch (e2) {}
+      return "";
     }
     function injectOpen(tab, target) {
-      var id = extractOpenTransfer(target);
+      var id = extractQuery(target, "openTransfer");
       if (!id || id === "null" || id === "undefined") return false;
       var mode = String(target).indexOf("mode=send") !== -1 ? "send" : "receive";
-      var js = "(function(){var id=" + JSON.stringify(id) + ";var mode=" + JSON.stringify(mode) + ";var href=" + JSON.stringify(target) + ";try{var path=String(location.pathname||'');if(path.indexOf('practice-transfers')>=0||path.indexOf('/practice/dashboard')>=0){var u=new URL(location.href);u.searchParams.set('mode',mode);history.replaceState({},'',u.pathname+u.search);window.dispatchEvent(new CustomEvent('abuts:practice-transfer:open',{detail:{transferId:id,panel:'chat'}}));}else{location.assign(href);}}catch(e){location.assign(href);}})();";
-      try { tab.execute({ javascript: js }); return true; } catch (e1) {}
-      try { tab.execute(js); return true; } catch (e2) {}
+      var ba = extractQuery(target, "ba");
+      var js = "(function(){var id=" + JSON.stringify(id) + ";var mode=" + JSON.stringify(mode) + ";var ba=" + JSON.stringify(ba) + ";var href=" + JSON.stringify(target) + ";try{var acc=window.__ABUTS_ALARM_ACCOUNT__;if(ba&&acc&&acc.ba&&String(acc.ba)!==String(ba))return 'skip';var path=String(location.pathname||'');if(path.indexOf('practice-transfers')>=0||path.indexOf('/practice/dashboard')>=0){var u=new URL(location.href);u.searchParams.set('mode',mode);u.searchParams.set('openTransfer',id);if(ba)u.searchParams.set('ba',ba);history.replaceState({},'',u.pathname+u.search);window.dispatchEvent(new CustomEvent('abuts:practice-transfer:open',{detail:{transferId:id,panel:'chat'}}));return 'ok';}location.assign(href);return 'ok';}catch(e){try{location.assign(href);return 'ok';}catch(e2){return 'fail';}}})();";
+      try {
+        var r = tab.execute({ javascript: js });
+        return String(r || "") !== "skip";
+      } catch (e1) {}
+      try {
+        var r2 = tab.execute(js);
+        return String(r2 || "") !== "skip";
+      } catch (e2) {}
       return false;
+    }
+    function tryFocusTab(tabs, w, ti, target, activate) {
+      var u = "";
+      try { u = tabs[ti].url(); } catch (e) { return false; }
+      if (!tabMatches(u, target)) return false;
+      var wantBa = extractQuery(target, "ba");
+      if (wantBa) {
+        var tabBa = extractQuery(u, "ba");
+        if (!tabBa) tabBa = readAccountBa(tabs[ti]);
+        if (tabBa && tabBa !== wantBa) return false;
+        if (!tabBa) return false;
+      }
+      var injected = false;
+      try { injected = injectOpen(tabs[ti], target); } catch (eInj) {}
+      if (!injected) return false;
+      activate(w, ti);
+      return true;
     }
     function tryChromeFamily(name, target) {
       var app = Application(name);
@@ -309,18 +368,11 @@ enum AlarmNotify {
         var w = wins[wi];
         var tabs = w.tabs();
         for (var ti = 0; ti < tabs.length; ti++) {
-          var u = "";
-          try { u = tabs[ti].url(); } catch (e) { continue; }
-          if (!tabMatches(u, target)) continue;
-          var injected = false;
-          try { injected = injectOpen(tabs[ti], target); } catch (eInj) {}
-          if (!injected) {
-            try { tabs[ti].url = target; } catch (e2) {}
-          }
-          try { w.activeTabIndex = ti + 1; } catch (e3) {}
-          try { app.activate(); } catch (e4) {}
-          try { w.index = 1; } catch (e5) {}
-          return true;
+          if (tryFocusTab(tabs, w, ti, target, function(win, idx) {
+            try { win.activeTabIndex = idx + 1; } catch (e3) {}
+            try { app.activate(); } catch (e4) {}
+            try { win.index = 1; } catch (e5) {}
+          })) return true;
         }
       }
       return false;
@@ -333,18 +385,11 @@ enum AlarmNotify {
         var w = wins[wi];
         var tabs = w.tabs();
         for (var ti = 0; ti < tabs.length; ti++) {
-          var u = "";
-          try { u = tabs[ti].url(); } catch (e) { continue; }
-          if (!tabMatches(u, target)) continue;
-          var injectedS = false;
-          try { injectedS = injectOpen(tabs[ti], target); } catch (eInjS) {}
-          if (!injectedS) {
-            try { tabs[ti].url = target; } catch (e2) {}
-          }
-          try { w.currentTab = tabs[ti]; } catch (e3) {}
-          try { app.activate(); } catch (e4) {}
-          try { w.index = 1; } catch (e5) {}
-          return true;
+          if (tryFocusTab(tabs, w, ti, target, function(win, idx) {
+            try { win.currentTab = tabs[idx]; } catch (e3) {}
+            try { app.activate(); } catch (e4) {}
+            try { win.index = 1; } catch (e5) {}
+          })) return true;
         }
       }
       return false;
@@ -444,7 +489,12 @@ enum AlarmPoller {
           AlarmNotify.play(
             title: title,
             body: body,
-            href: AlarmNotify.href(from: alarm, appOrigin: snap.appOrigin, alertMode: snap.alertMode)
+            href: AlarmNotify.href(
+              from: alarm,
+              appOrigin: snap.appOrigin,
+              alertMode: snap.alertMode,
+              businessAnchorId: snap.businessAnchorId
+            )
           )
         } else {
           Thread.sleep(forTimeInterval: 0.5)

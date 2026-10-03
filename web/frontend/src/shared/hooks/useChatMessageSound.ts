@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
 // - web/frontend/src/App.tsx
 // change-log:
+// - 2026-10-04: 채팅 알림 보기에 ba(계정) 전달.
 // - 2026-10-03: 다른 창을 보고 있으면 채팅 토스트·보기. 포커스된 같은 방만 생략.
 // - 2026-10-03: 로그인 시 AudioContext unlock 바인딩.
 // - 2026-10-03: 치과(practice·requestor practice)도 전체 알림 prefs로 채팅음 게이트.
@@ -31,6 +32,7 @@ import { ToastAction } from "@/components/ui/toast";
 import {
   openPracticeTransferAlert,
   practiceTransferAlertHref,
+  resolvePracticeTransferAlertAccountId,
   type PracticeTransferAlertMode,
 } from "@/shared/practice/openPracticeTransferChat";
 
@@ -147,19 +149,20 @@ export function useChatMessageSound() {
       const mode: PracticeTransferAlertMode = isLabUser(user as any)
         ? "receive"
         : "send";
+      const ba = resolvePracticeTransferAlertAccountId();
       const snippet = String(message?.content || "").trim();
       const body = snippet || "새 메시지가 도착했습니다.";
       playChatNotifySound({
         title: "새 채팅",
         body,
-        href: transferId ? practiceTransferAlertHref(transferId, mode) : "",
+        href: transferId ? practiceTransferAlertHref(transferId, mode, ba) : "",
       });
       toast({
         title: "새 채팅",
         description: body,
         duration: 8000,
         onClick: transferId
-          ? () => openPracticeTransferAlert(transferId, mode)
+          ? () => openPracticeTransferAlert(transferId, mode, ba)
           : undefined,
         action: transferId
           ? createElement(
@@ -168,7 +171,7 @@ export function useChatMessageSound() {
                 altText: "보기",
                 onClick: (e) => {
                   e.stopPropagation();
-                  openPracticeTransferAlert(transferId, mode);
+                  openPracticeTransferAlert(transferId, mode, ba);
                 },
               },
               "보기",

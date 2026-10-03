@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: v9 — 세션 BusinessAnchorId를 알림 href ba=에 넣음.
 // - 2026-10-03: v6 — 401/403 백오프·Cache-Control no-cache(빈 wait 304 방지).
 // - 2026-10-03: v4 PC 알람 — SystemSounds + tray balloon. 세션·장기 폴링으로 브라우저 종료 후에도 울림.
 // related files:
@@ -28,6 +29,7 @@ namespace Abuts.LabHelper
         public bool BrowserAlive;
         public long LastHeartbeatTicks;
         public string AlertMode = "receive";
+        public string BusinessAnchorId = "";
     }
 
     internal static class AlarmSession
@@ -75,6 +77,8 @@ namespace Abuts.LabHelper
                 }
                 var mode = Str(body, "alertMode").ToLowerInvariant();
                 if (mode == "send" || mode == "receive") row.AlertMode = mode;
+                var ba = Str(body, "businessAnchorId");
+                if (!string.IsNullOrEmpty(ba)) row.BusinessAnchorId = ba;
 
                 object prefsObj;
                 if (body.TryGetValue("prefs", out prefsObj) && prefsObj is Dictionary<string, object>)
@@ -149,6 +153,7 @@ namespace Abuts.LabHelper
                         BrowserAlive = found.BrowserAlive,
                         LastHeartbeatTicks = found.LastHeartbeatTicks,
                         AlertMode = found.AlertMode,
+                        BusinessAnchorId = found.BusinessAnchorId,
                     };
                     return true;
                 }
@@ -240,7 +245,11 @@ namespace Abuts.LabHelper
             ShowBalloon(title, body, href);
         }
 
-        public static string HrefFrom(Dictionary<string, object> alarm, string appOrigin, string alertMode)
+        public static string HrefFrom(
+            Dictionary<string, object> alarm,
+            string appOrigin,
+            string alertMode,
+            string businessAnchorId = "")
         {
             if (alarm == null) return "";
             object tidObj;
@@ -253,7 +262,14 @@ namespace Abuts.LabHelper
             if (!string.IsNullOrEmpty(tid) && !string.IsNullOrEmpty(origin))
             {
                 var mode = (alertMode ?? "").Trim() == "send" ? "send" : "receive";
-                return origin + "/dashboard/practice-transfers?mode=" + mode + "&openTransfer=" + Uri.EscapeDataString(tid);
+                var href = origin + "/dashboard/practice-transfers?mode=" + mode
+                    + "&openTransfer=" + Uri.EscapeDataString(tid);
+                var ba = (businessAnchorId ?? "").Trim();
+                if (!string.IsNullOrEmpty(ba))
+                {
+                    href += "&ba=" + Uri.EscapeDataString(ba);
+                }
+                return href;
             }
             object hrefObj;
             if (alarm.TryGetValue("href", out hrefObj) && hrefObj != null)
@@ -369,7 +385,10 @@ namespace Abuts.LabHelper
                     object t, b;
                     if (alarm.TryGetValue("title", out t) && t != null) title = Convert.ToString(t);
                     if (alarm.TryGetValue("body", out b) && b != null) body = Convert.ToString(b);
-                    AlarmNotify.Play(title, body, AlarmNotify.HrefFrom(alarm, snap.AppOrigin, snap.AlertMode));
+                    AlarmNotify.Play(
+                        title,
+                        body,
+                        AlarmNotify.HrefFrom(alarm, snap.AppOrigin, snap.AlertMode, snap.BusinessAnchorId));
                 }
                 catch (Exception ex)
                 {
