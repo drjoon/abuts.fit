@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-03: chat:message-created에 의뢰 transferId(보기 링크).
 // - 2026-10-01: 채팅 응답 캐시는 만료·상한으로 걷는다.
 // - 2026-09-18: HTTP 메시지 전송·읽음 시 관리자 chat unread 배지 증감.
 // - 2026-09-07: chat:message-created 페이로드에 파트너 앵커(실시간 FAB unread용).
@@ -106,6 +107,13 @@ const invalidateChatPerfForUsers = (userIds) => {
 /** 기공소 변경 등 — 다른 컨트롤러에서 채팅방 목록 캐시 무효화 */
 export { invalidateChatPerfForUsers };
 
+const resolvePracticeTransferCode = async (relatedId) => {
+  const id = String(relatedId || "").trim();
+  if (!id || !Types.ObjectId.isValid(id)) return "";
+  const doc = await PracticeTransfer.findById(id).select({ transferId: 1 }).lean();
+  return String(doc?.transferId || "").trim();
+};
+
 const emitChatMessageCreated = ({
   participantIds,
   senderId,
@@ -114,6 +122,7 @@ const emitChatMessageCreated = ({
   relatedPracticeTransferId,
   relatedLabAnchorId = null,
   relatedPracticeAnchorId = null,
+  transferId = null,
 }) => {
   const ids = (Array.isArray(participantIds) ? participantIds : [])
     .map((id) => String(id || "").trim())
@@ -129,6 +138,7 @@ const emitChatMessageCreated = ({
     relatedLabAnchorId: String(relatedLabAnchorId || "").trim() || null,
     relatedPracticeAnchorId:
       String(relatedPracticeAnchorId || "").trim() || null,
+    transferId: String(transferId || "").trim() || null,
     message: message || null,
     timestamp: new Date().toISOString(),
   };
@@ -1940,6 +1950,7 @@ export async function sendChatMessage(req, res) {
       relatedPracticeTransferId: room.relatedPracticeTransferId,
       relatedLabAnchorId: room.relatedLabAnchorId,
       relatedPracticeAnchorId: room.relatedPracticeAnchorId,
+      transferId: await resolvePracticeTransferCode(room.relatedPracticeTransferId),
     });
 
     // 관리자 채널 채팅 unread — HTTP 전송 경로(위젯·어드민 UI) 배지 반영

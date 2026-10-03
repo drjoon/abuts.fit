@@ -92,6 +92,7 @@ bg/lab-cad-helper/mac/build.sh   # Xcode CLT → AbutsLabHelper-mac.zip (유니�
 ```
 
 - 버전을 올리면 Windows `Program.Version`·csproj `Version`·`app.manifest`, Mac `helperVersion`·`build.sh` Info.plist, 웹 `LAB_HELPER_MIN_VERSION`을 함께 바꾼다.
+- v7: `POST /open-href` `{ href }` — 이미 열린 기공의뢰 탭을 앞으로. Mac은 Chrome 수신함(`mode=receive`) 탭을 찾고, 웹 알림 **보기**가 호출한다.
 
 ## 6) 레거시
 

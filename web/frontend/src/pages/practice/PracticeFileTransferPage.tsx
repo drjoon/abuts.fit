@@ -6,7 +6,7 @@
  * - 상단: 기간필터 + 요약(좌 2x2) + 최근 의뢰(우)
  * - 하단: 스캔 전송 섹션이 남은 영역을 채움
  * - 최근 전송 카드 클릭 시 의뢰 정보 + 기공소 채팅 모달 제공
- * - 2026-10-03: 헤더 설정 — 기공소와 같은 보기·알림 팝오버(페이지 이동 제거).
+ * - 2026-10-03: 알림 보기 — 목록에 없어도 의뢰를 불러 채팅을 연다.
  * - 2026-10-03: 헤더 오른쪽 끝 — 북마크·휴지통·설정은 항상 아이콘만(그 순서).
  * - 2026-09-30: 헤더 줄이 좁으면 북마크·신규주문·리메이크·임시저장·휴지통은 아이콘(+숫자).
  *
@@ -1394,6 +1394,9 @@ export const PracticeFileTransferPage = ({
     useState<RecentTransferItem | null>(null);
   const [labRejectedRetargetBusy, setLabRejectedRetargetBusy] = useState(false);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [alertOpenPanelTab, setAlertOpenPanelTab] = useState<
+    "chat" | "detail" | null
+  >(null);
   const [detailSlotEl, setDetailSlotEl] = useState<HTMLDivElement | null>(null);
   const [panelPreferredDockSide, setPanelPreferredDockSide] =
     useState<PracticeTransferPanelDockSide | null>(null);
@@ -5849,10 +5852,16 @@ export const PracticeFileTransferPage = ({
       fromTrash?: boolean;
       returnToAllModal?: boolean;
       preferredDockSide?: PracticeTransferPanelDockSide | null;
+      panel?: "chat" | "detail";
     },
   ) => {
     const fromTrash = Boolean(options?.fromTrash);
     const returnToAllModal = Boolean(options?.returnToAllModal);
+    setAlertOpenPanelTab(
+      options?.panel === "chat" || options?.panel === "detail"
+        ? options.panel
+        : null,
+    );
     // 최근의뢰(전체보기)에서 연 경우 — 전체보기는 유지하고 플로팅 상세만 독립 운영
     returnToAllModalRef.current = returnToAllModal;
     const openedTransferId = String(transfer.transferId || "").trim();
@@ -5933,7 +5942,7 @@ export const PracticeFileTransferPage = ({
   };
 
   const openTransferWorkStatusById = useCallback(
-    (transferIdRaw: string) => {
+    (transferIdRaw: string, panel: "chat" | "detail" = "chat") => {
       const transferId = String(transferIdRaw || "").trim();
       if (!transferId) return;
       const transfer =
@@ -5947,8 +5956,11 @@ export const PracticeFileTransferPage = ({
           (row) => String(row.transferId || "").trim() === transferId,
         ) ||
         null;
+      const openFound = (row: RecentTransferItem) => {
+        void handleOpenTransferDialog(row, { panel });
+      };
       if (transfer) {
-        void handleOpenTransferDialog(transfer);
+        openFound(transfer);
         return;
       }
       const matchedRequests = recentRequests.filter(
@@ -5957,17 +5969,59 @@ export const PracticeFileTransferPage = ({
       if (matchedRequests.length) {
         const [item] = groupPracticeRecentRequests(matchedRequests, chatRooms);
         if (item) {
-          void handleOpenTransferDialog(item);
+          openFound(item);
           return;
         }
       }
-      toast({
-        title: "의뢰건을 찾을 수 없습니다",
-        description: transferId,
-        variant: "destructive",
-      });
+      if (!authToken) {
+        toast({
+          title: "의뢰건을 찾을 수 없습니다",
+          description: transferId,
+          variant: "destructive",
+        });
+        return;
+      }
+      void (async () => {
+        const qs = new URLSearchParams({ transferId, limit: "8" });
+        const res = await apiFetch<unknown>({
+          path: `/api/practice/transfers/my?${qs.toString()}`,
+          method: "GET",
+          token: authToken,
+        });
+        if (!res.ok) {
+          toast({
+            title: "의뢰건을 찾을 수 없습니다",
+            description: transferId,
+            variant: "destructive",
+          });
+          return;
+        }
+        const body = res.data;
+        const data =
+          body && typeof body === "object" && "data" in (body as object)
+            ? (body as { data?: unknown }).data
+            : body;
+        const list =
+          data &&
+          typeof data === "object" &&
+          Array.isArray((data as { requests?: unknown[] }).requests)
+            ? ((data as { requests: unknown[] }).requests ?? [])
+            : [];
+        const mapped = mapMyPracticeTransferApiRows(list);
+        const [item] = groupPracticeRecentRequests(mapped, chatRooms);
+        if (!item) {
+          toast({
+            title: "의뢰건을 찾을 수 없습니다",
+            description: transferId,
+            variant: "destructive",
+          });
+          return;
+        }
+        openFound(item);
+      })();
     },
     [
+      authToken,
       bookmarkedTransferCache,
       chatRooms,
       draftGroupedTransfers,
@@ -6195,7 +6249,8 @@ export const PracticeFileTransferPage = ({
           : {};
       const transferId = String(detail.transferId || "").trim();
       if (!transferId) return;
-      openTransferWorkStatusById(transferId);
+      const panel = detail.panel === "detail" ? "detail" : "chat";
+      openTransferWorkStatusById(transferId, panel);
     };
     window.addEventListener(OPEN_PRACTICE_TRANSFER_CHAT_EVENT, onOpen);
     return () => {
@@ -6206,29 +6261,11 @@ export const PracticeFileTransferPage = ({
   useEffect(() => {
     const transferId = String(searchParams.get("openTransfer") || "").trim();
     if (!transferId) return;
-    const found =
-      groupedTransfers.some(
-        (row) => String(row.transferId || "").trim() === transferId,
-      ) ||
-      draftGroupedTransfers.some(
-        (row) => String(row.transferId || "").trim() === transferId,
-      ) ||
-      recentRequests.some(
-        (row) => String(row.transferId || "").trim() === transferId,
-      );
-    if (!found) return;
-    openTransferWorkStatusById(transferId);
+    openTransferWorkStatusById(transferId, "chat");
     const next = new URLSearchParams(searchParams);
     next.delete("openTransfer");
     setSearchParams(next, { replace: true });
-  }, [
-    draftGroupedTransfers,
-    groupedTransfers,
-    openTransferWorkStatusById,
-    recentRequests,
-    searchParams,
-    setSearchParams,
-  ]);
+  }, [openTransferWorkStatusById, searchParams, setSearchParams]);
 
   const resolvePracticeTransferChatRoom = useCallback(
     async (transferIdRaw: string, resolveSeq: number) => {
@@ -11762,10 +11799,11 @@ export const PracticeFileTransferPage = ({
                   : null
           }
           initialPanelTab={
-            selectedTransfer?.focusFollowUpIndex != null &&
+            alertOpenPanelTab ||
+            (selectedTransfer?.focusFollowUpIndex != null &&
             Number(selectedTransfer.focusFollowUpIndex) < 0
               ? "detail"
-              : undefined
+              : undefined)
           }
           orderDate={selectedTransfer?.orderDate || null}
           arrivalDate={selectedTransfer?.arrivalDate || null}

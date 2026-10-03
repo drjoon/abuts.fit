@@ -33,10 +33,12 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
   <key>CFBundleDisplayName</key><string>어벗츠 연결</string>
   <key>CFBundleExecutable</key><string>AbutsLabHelper</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>6.0.0</string>
-  <key>CFBundleVersion</key><string>6</string>
+  <key>CFBundleShortVersionString</key><string>7.0.0</string>
+  <key>CFBundleVersion</key><string>7</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>LSUIElement</key><true/>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>알림에서 보기를 누르면 이미 열린 기공소 브라우저 탭으로 이동합니다.</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>

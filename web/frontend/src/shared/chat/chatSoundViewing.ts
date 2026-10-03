@@ -3,7 +3,7 @@
 // - web/frontend/src/shared/hooks/useChatMessageSound.ts
 // - web/frontend/src/features/chat/components/NewChatWidget.tsx
 // change-log:
-// - 2026-09-07: 보고 있는 채팅방 등록 — 해당 방 알림음 생략.
+// - 2026-10-03: 다른 창을 보고 있으면(포커스 없음) 열람 중이어도 알림음.
 
 const viewingTargets = new Set<string>();
 
@@ -23,5 +23,11 @@ export const setChatSoundViewingTarget = (
 export const isChatSoundViewingTarget = (targetId: string): boolean => {
   const id = normalize(targetId);
   if (!id) return false;
-  return viewingTargets.has(id);
+  if (!viewingTargets.has(id)) return false;
+  if (typeof document === "undefined") return false;
+  if (document.hidden) return false;
+  if (typeof document.hasFocus === "function" && !document.hasFocus()) {
+    return false;
+  }
+  return true;
 };

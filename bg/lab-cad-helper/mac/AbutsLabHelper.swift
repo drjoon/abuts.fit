@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-10-03: v5 — version.json 자동 갱신(--silent-update).
+// - 2026-10-03: 알림 보기 — 탭 URL을 바꾸지 않고 채팅 이벤트만 주입(새로고침 방지).
 // - 2026-10-03: v6 — 401/403 백오프·URL 캐시 무시. 탭 숨김 폴링은 웹 session.browserAlive.
 // - 2026-10-03: v4 — PC 알람(/notify·/session) + 브라우저 종료 시 API 장기 폴링.
 // - 2026-09-27: v3 — Windows 연결 프로그램과 같은 동작·API. 앱 하나를 열면 「설치할까요?」 한 번 → 사용자 폴더에 복사,
@@ -14,7 +14,7 @@ import AppKit
 import Foundation
 import Network
 
-let helperVersion = 6
+let helperVersion = 7
 let helperPort: UInt16 = 8010
 let agentLabel = "fit.abuts.labhelper"
 let appTitle = "어벗츠 연결 프로그램"
@@ -102,6 +102,7 @@ final class AlarmSession {
   static let shared = AlarmSession()
   private let lock = NSLock()
   private var apiOrigin = ""
+  private var appOrigin = ""
   private var token = ""
   private var enabled = true
   private var muted = Set<String>()
@@ -119,6 +120,11 @@ final class AlarmSession {
       var next = origin
       while next.hasSuffix("/") { next = String(next.dropLast()) }
       apiOrigin = next
+    }
+    if let origin = (body["appOrigin"] as? String)?.trimmingCharacters(in: .whitespaces), !origin.isEmpty {
+      var next = origin
+      while next.hasSuffix("/") { next = String(next.dropLast()) }
+      appOrigin = next
     }
     if let t = (body["token"] as? String)?.trimmingCharacters(in: .whitespaces), !t.isEmpty {
       token = t
@@ -146,6 +152,7 @@ final class AlarmSession {
   func clear() {
     lock.lock()
     apiOrigin = ""
+    appOrigin = ""
     token = ""
     browserAlive = false
     lastHeartbeat = .distantPast
@@ -159,9 +166,9 @@ final class AlarmSession {
     return Date().timeIntervalSince(lastHeartbeat) > AlarmSession.heartbeatExpire
   }
 
-  func snapshot() -> (apiOrigin: String, token: String, enabled: Bool, muted: Set<String>) {
+  func snapshot() -> (apiOrigin: String, appOrigin: String, token: String, enabled: Bool, muted: Set<String>) {
     lock.lock(); defer { lock.unlock() }
-    return (apiOrigin, token, enabled, muted)
+    return (apiOrigin, appOrigin, token, enabled, muted)
   }
 
   func isPracticeMuted(_ practiceId: String) -> Bool {
@@ -177,7 +184,18 @@ enum AlarmNotify {
   private static let lock = NSLock()
   private static var lastPlayed = Date.distantPast
 
-  static func play(title: String, body: String) {
+  static func href(from alarm: [String: Any], appOrigin: String) -> String {
+    let direct = "\(alarm["href"] ?? "")".trimmingCharacters(in: .whitespaces)
+    if !direct.isEmpty { return direct }
+    let tid = "\(alarm["transferId"] ?? "")".trimmingCharacters(in: .whitespaces)
+    var origin = appOrigin.trimmingCharacters(in: .whitespaces)
+    while origin.hasSuffix("/") { origin = String(origin.dropLast()) }
+    if tid.isEmpty || origin.isEmpty { return "" }
+    let enc = tid.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? tid
+    return "\(origin)/dashboard/practice-transfers?mode=receive&openTransfer=\(enc)"
+  }
+
+  static func play(title: String, body: String, href: String = "") {
     lock.lock()
     let now = Date()
     if now.timeIntervalSince(lastPlayed) < AlarmSession.soundDebounce {
@@ -186,14 +204,190 @@ enum AlarmNotify {
     }
     lastPlayed = now
     lock.unlock()
-    NSSound.beep()
+    if let tink = NSSound(contentsOfFile: "/System/Library/Sounds/Tink.aiff", byReference: true) {
+      tink.play()
+    } else if let glass = NSSound(contentsOfFile: "/System/Library/Sounds/Glass.aiff", byReference: true) {
+      glass.play()
+    } else {
+      NSSound.beep()
+    }
     DispatchQueue.main.async {
+      NSUserNotificationCenter.default.delegate = AlarmNotifCenter.shared
       let n = NSUserNotification()
       n.title = title.isEmpty ? appTitle : title
       n.informativeText = body.isEmpty ? "새 알림" : body
-      n.soundName = NSUserNotificationDefaultSoundName
+      n.soundName = nil
+      let link = href.trimmingCharacters(in: .whitespaces)
+      if !link.isEmpty { n.userInfo = ["href": link] }
       NSUserNotificationCenter.default.deliver(n)
     }
+  }
+
+  private static func jxaStringLiteral(_ s: String) -> String {
+    let escaped = s
+      .replacingOccurrences(of: "\\", with: "\\\\")
+      .replacingOccurrences(of: "\"", with: "\\\"")
+    return "\"\(escaped)\""
+  }
+
+  /// 앞창이 치과여도, 이미 열린 기공소 수신함(또는 치과 발신함) 탭을 찾아 그 URL로 연다.
+  @discardableResult
+  static func focusExistingBrowserTab(_ href: String) -> Bool {
+    let target = jxaStringLiteral(href)
+    let source = """
+    function tabMatches(u, target) {
+      u = String(u || "");
+      target = String(target || "");
+      if (u.indexOf("practice-transfers") < 0 && u.indexOf("mode=receive") < 0) return false;
+      function hostOf(s) {
+        try { return String(s.split("/")[2] || ""); } catch (e) { return ""; }
+      }
+      function normHost(h) {
+        return h.replace("127.0.0.1", "localhost").replace("[::1]", "localhost");
+      }
+      if (normHost(hostOf(u)) !== normHost(hostOf(target))) return false;
+      var wantReceive = target.indexOf("mode=receive") !== -1;
+      var wantSend = target.indexOf("mode=send") !== -1;
+      if (wantReceive) return u.indexOf("mode=send") === -1;
+      if (wantSend) {
+        if (u.indexOf("mode=receive") !== -1) return false;
+        if (u.indexOf("practice-transfers") !== -1) return true;
+        if (u.indexOf("/practice/dashboard") !== -1) return true;
+        if (u.indexOf("/dashboard/new-request") !== -1) return true;
+        return u.indexOf("mode=send") !== -1;
+      }
+      return true;
+    }
+    function extractOpenTransfer(target) {
+      var m = String(target || "").match(/[?&]openTransfer=([^&]*)/);
+      if (!m) return "";
+      try { return decodeURIComponent(String(m[1] || "").replace(/\\+/g, " ")); } catch (e) {
+        return String(m[1] || "");
+      }
+    }
+    function injectOpen(tab, target) {
+      var id = extractOpenTransfer(target);
+      if (!id || id === "null" || id === "undefined") return false;
+      var mode = String(target).indexOf("mode=send") !== -1 ? "send" : "receive";
+      var js = "(function(){var id=" + JSON.stringify(id) + ";var mode=" + JSON.stringify(mode) + ";var href=" + JSON.stringify(target) + ";try{var path=String(location.pathname||'');if(path.indexOf('practice-transfers')>=0||path.indexOf('/practice/dashboard')>=0){var u=new URL(location.href);u.searchParams.set('mode',mode);history.replaceState({},'',u.pathname+u.search);window.dispatchEvent(new CustomEvent('abuts:practice-transfer:open',{detail:{transferId:id,panel:'chat'}}));}else{location.assign(href);}}catch(e){location.assign(href);}})();";
+      try { tab.execute({ javascript: js }); return true; } catch (e1) {}
+      try { tab.execute(js); return true; } catch (e2) {}
+      return false;
+    }
+    function tryChromeFamily(name, target) {
+      var app = Application(name);
+      if (!app.running()) return false;
+      var wins = app.windows();
+      for (var wi = 0; wi < wins.length; wi++) {
+        var w = wins[wi];
+        var tabs = w.tabs();
+        for (var ti = 0; ti < tabs.length; ti++) {
+          var u = "";
+          try { u = tabs[ti].url(); } catch (e) { continue; }
+          if (!tabMatches(u, target)) continue;
+          var injected = false;
+          try { injected = injectOpen(tabs[ti], target); } catch (eInj) {}
+          if (!injected) {
+            try { tabs[ti].url = target; } catch (e2) {}
+          }
+          try { w.activeTabIndex = ti + 1; } catch (e3) {}
+          try { app.activate(); } catch (e4) {}
+          try { w.index = 1; } catch (e5) {}
+          return true;
+        }
+      }
+      return false;
+    }
+    function trySafari(target) {
+      var app = Application("Safari");
+      if (!app.running()) return false;
+      var wins = app.windows();
+      for (var wi = 0; wi < wins.length; wi++) {
+        var w = wins[wi];
+        var tabs = w.tabs();
+        for (var ti = 0; ti < tabs.length; ti++) {
+          var u = "";
+          try { u = tabs[ti].url(); } catch (e) { continue; }
+          if (!tabMatches(u, target)) continue;
+          var injectedS = false;
+          try { injectedS = injectOpen(tabs[ti], target); } catch (eInjS) {}
+          if (!injectedS) {
+            try { tabs[ti].url = target; } catch (e2) {}
+          }
+          try { w.currentTab = tabs[ti]; } catch (e3) {}
+          try { app.activate(); } catch (e4) {}
+          try { w.index = 1; } catch (e5) {}
+          return true;
+        }
+      }
+      return false;
+    }
+    var target = \(target);
+    var found = false;
+    var names = ["Google Chrome", "Google Chrome Canary", "Chromium", "Microsoft Edge", "Brave Browser", "Arc"];
+    for (var i = 0; i < names.length; i++) {
+      try { if (tryChromeFamily(names[i], target)) found = true; } catch (e) {}
+      if (found) break;
+    }
+    if (!found) {
+      try { if (trySafari(target)) found = true; } catch (e) {}
+    }
+    found;
+    """
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+    proc.arguments = ["-l", "JavaScript", "-e", source]
+    let out = Pipe()
+    proc.standardOutput = out
+    let err = Pipe()
+    proc.standardError = err
+    do {
+      try proc.run()
+      proc.waitUntilExit()
+    } catch {
+      log("open-href osascript: \(error.localizedDescription)")
+      return false
+    }
+    let data = out.fileHandleForReading.readDataToEndOfFile()
+    let text = String(data: data, encoding: .utf8)?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased() ?? ""
+    let errText = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let ok = proc.terminationStatus == 0 && text.contains("true")
+    if !ok {
+      log("open-href jxa fail status=\(proc.terminationStatus) out=\(text) err=\(errText)")
+    }
+    return ok
+  }
+
+  /// 수신함 탭을 앞으로. 못 찾으면 fallbackNew일 때만 앞창 브라우저로 연다.
+  @discardableResult
+  static func openHref(_ raw: String, fallbackNew: Bool = true) -> Bool {
+    let href = raw.trimmingCharacters(in: .whitespaces)
+    guard let url = URL(string: href), let scheme = url.scheme?.lowercased() else { return false }
+    guard scheme == "http" || scheme == "https" else { return false }
+    if focusExistingBrowserTab(href) { return true }
+    if fallbackNew { NSWorkspace.shared.open(url) }
+    return false
+  }
+}
+
+final class AlarmNotifCenter: NSObject, NSUserNotificationCenterDelegate {
+  static let shared = AlarmNotifCenter()
+
+  func userNotificationCenter(_ center: NSUserNotificationCenter, didActivate notification: NSUserNotification) {
+    switch notification.activationType {
+    case .contentsClicked, .actionButtonClicked:
+      let href = (notification.userInfo?["href"] as? String) ?? ""
+      AlarmNotify.openHref(href)
+    default:
+      break
+    }
+  }
+
+  func userNotificationCenter(_ center: NSUserNotificationCenter, shouldPresent notification: NSUserNotification) -> Bool {
+    true
   }
 }
 
@@ -221,7 +415,7 @@ enum AlarmPoller {
           if AlarmSession.shared.isPracticeMuted(practiceId) { continue }
           let title = "\(alarm["title"] ?? "")"
           let body = "\(alarm["body"] ?? "")"
-          AlarmNotify.play(title: title, body: body)
+          AlarmNotify.play(title: title, body: body, href: AlarmNotify.href(from: alarm, appOrigin: snap.appOrigin))
         } else {
           Thread.sleep(forTimeInterval: 0.5)
         }
@@ -598,8 +792,12 @@ final class HttpConnection {
       var text = b["body"] as? String ?? ""
       if text.isEmpty { text = b["message"] as? String ?? "" }
       respond(200, ["ok": true])
-      AlarmNotify.play(title: title, body: text)
+      AlarmNotify.play(title: title, body: text, href: "\(b["href"] as? String ?? "")")
       return
+    case ("POST", "/open-href"):
+      let href = "\(jsonBody()["href"] as? String ?? "")"
+      let focused = AlarmNotify.openHref(href, fallbackNew: false)
+      return respond(200, ["ok": true, "focused": focused])
     case ("POST", "/session"):
       AlarmSession.shared.apply(jsonBody())
       return respond(200, ["ok": true])

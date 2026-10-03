@@ -43,6 +43,7 @@ import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPa
 // - web/frontend/src/pages/admin/AdminFinancePage.tsx
 // - web/frontend/src/pages/admin/AdminSettingsHubPage.tsx
 // change-log:
+// - 2026-10-03: 치과 role=practice도 기공의뢰서 URL(`/dashboard/practice-transfers`)로 알림 보기가 열리게.
 // - 2026-09-30: 로그인 후 모바일 1회 — PC 최적화 안내 확인 모달.
 // - 2026-09-28: 쿠키 동의 배너 — 문구 너비에 맞추고 가용 영역 중앙.
 // - 2026-09-26: 하단 쿠키 동의 배너 — 동의 후 localStorage로 재노출 생략.
@@ -683,7 +684,7 @@ const App = () => {
                   <Route
                     path="practice-transfers"
                     element={
-                      <RoleProtectedRoute roles={["requestor"]}>
+                      <RoleProtectedRoute roles={["requestor", "practice"]}>
                         <RequestorPracticePage />
                       </RoleProtectedRoute>
                     }

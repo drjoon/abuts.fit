@@ -47,7 +47,7 @@ const deliver = (bucket, alarm) => {
 /**
  * 헬퍼 알람 후보를 유저 큐에 넣는다.
  * @param {string} userId
- * @param {{ type: string, practiceBusinessAnchorId?: string|null, title?: string, body?: string }} alarm
+ * @param {{ type: string, practiceBusinessAnchorId?: string|null, transferId?: string|null, title?: string, body?: string }} alarm
  */
 export function enqueueLabHelperAlarm(userId, alarm) {
   const bucket = getBucket(userId);
@@ -58,6 +58,7 @@ export function enqueueLabHelperAlarm(userId, alarm) {
     type,
     practiceBusinessAnchorId:
       String(alarm?.practiceBusinessAnchorId || "").trim() || null,
+    transferId: String(alarm?.transferId || "").trim() || null,
     title: String(alarm?.title || "").trim() || "어벗츠",
     body: String(alarm?.body || "").trim() || "새 알림",
     at: new Date().toISOString(),
@@ -123,6 +124,7 @@ export function labHelperAlarmFromAppEvent(type, data, { recipientUserId } = {})
     return {
       type: evt,
       practiceBusinessAnchorId: practiceId || null,
+      transferId: String(payload.transferId || "").trim() || null,
       title: "새 기공의뢰",
       body: bodyParts.length ? bodyParts.join(" · ") : "새 기공의뢰가 도착했습니다.",
     };
@@ -145,11 +147,13 @@ export function labHelperAlarmFromAppEvent(type, data, { recipientUserId } = {})
     const practiceId = String(
       payload.relatedPracticeAnchorId || payload.practiceBusinessAnchorId || "",
     ).trim();
+    const snippet = String(message?.content || "").trim();
     return {
       type: evt,
       practiceBusinessAnchorId: practiceId || null,
+      transferId: String(payload.transferId || "").trim() || null,
       title: "새 채팅",
-      body: "새 메시지가 도착했습니다.",
+      body: snippet ? snippet.slice(0, 80) : "새 메시지가 도착했습니다.",
     };
   }
 

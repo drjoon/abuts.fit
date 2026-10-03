@@ -312,6 +312,7 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - 2026-09-12: GET /my toVirtualRequestRows — files[]·trashedFiles(의뢰 파일 휴지통) 포함.
 // - 2026-09-12: request-files — uploadBatchId·uploadedAt 웨이브 스탬프(시점별 클러스터).
 // - 2026-09-12: request-files append/remove — 상세 패널 드롭·클립으로 의뢰 파일(3D·이미지) 추가·삭제.
+// - 2026-10-03: 협력 생성 — practice:transfer-created를 수행 기공소(assignee)에도 emit(알림음).
 // - 2026-09-29: remake — 협력·하청 원의뢰의 수행 기공소(assignee)·수가 앵커를 리메이크에 승계.
 // - 2026-09-29: GET /received — abutmentToothStages(치아별 제조사 공정) enrich.
 // - 2026-09-12: GET /received 캘린더도 abutmentPastReadyTeeth enrich(리프레시 후 준비 취소선 오표시 방지).
@@ -2243,6 +2244,31 @@ const emitPracticeTransferEventToRequestorUsers = async ({
   }
 };
 
+/** 원청(target) + 수행 기공소(assignee). 협력·하청은 둘이 다름 — 수행 쪽에 알림음·수신함 갱신. */
+const emitPracticeTransferEventToLabAnchors = async ({
+  labAnchorIds,
+  type,
+  payload,
+}) => {
+  const ids = [
+    ...new Set(
+      (Array.isArray(labAnchorIds) ? labAnchorIds : [labAnchorIds])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (!ids.length) return;
+  await Promise.all(
+    ids.map((id) =>
+      emitPracticeTransferEventToRequestorUsers({
+        targetLabAnchorId: id,
+        type,
+        payload,
+      }),
+    ),
+  );
+};
+
 const emitPracticeTransferEventToPracticeUsers = async ({
   practiceBusinessAnchorId,
   type,
@@ -3887,8 +3913,8 @@ export async function createPracticeTransfer(req, res) {
             emitPoolCreated: emitAutoMatchPoolCreated,
           });
         } else {
-          await emitPracticeTransferEventToRequestorUsers({
-            targetLabAnchorId,
+          await emitPracticeTransferEventToLabAnchors({
+            labAnchorIds: [targetLabAnchorId, assigneeLabAnchorId],
             type: "practice:transfer-created",
             payload,
           });
@@ -4577,10 +4603,10 @@ export async function updatePracticeTransferContent(req, res) {
               emitPoolCreated: emitAutoMatchPoolCreated,
             }),
           );
-        } else if (targetLabAnchorId) {
+        } else if (targetLabAnchorId || assigneeLabAnchorId) {
           jobs.push(
-            emitPracticeTransferEventToRequestorUsers({
-              targetLabAnchorId,
+            emitPracticeTransferEventToLabAnchors({
+              labAnchorIds: [targetLabAnchorId, assigneeLabAnchorId],
               type: "practice:transfer-updated",
               payload: realtimePayload,
             }),
@@ -7142,21 +7168,11 @@ export async function remakePracticeTransfers(req, res) {
         payload: realtimePayload,
         extraUserIds: [req.user?._id, source.practiceUserId].filter(Boolean),
       });
-      await Promise.all(
-        [
-          ...new Set(
-            [targetLabAnchorId, assigneeLabAnchorId]
-              .map((id) => String(id || "").trim())
-              .filter(Boolean),
-          ),
-        ].map((labId) =>
-          emitPracticeTransferEventToRequestorUsers({
-            targetLabAnchorId: labId,
-            type: "practice:transfer-created",
-            payload: realtimePayload,
-          }),
-        ),
-      );
+      await emitPracticeTransferEventToLabAnchors({
+        labAnchorIds: [targetLabAnchorId, assigneeLabAnchorId],
+        type: "practice:transfer-created",
+        payload: realtimePayload,
+      });
 
       const feeTotal = Math.max(
         0,
@@ -7258,9 +7274,11 @@ export async function getMyPracticeTransfers(req, res) {
     }
 
     const transferMongoIds = parseTransferMongoIdsQuery(req.query);
-    const calendarRange = transferMongoIds
-      ? null
-      : parsePracticeTransferCalendarRangeQuery(req.query);
+    const transferIdFilter = String(req.query?.transferId || "").trim();
+    const calendarRange =
+      transferMongoIds || transferIdFilter
+        ? null
+        : parsePracticeTransferCalendarRangeQuery(req.query);
     const page = Math.max(1, Number(req.query?.page || 1));
     const limit = Math.min(200, Math.max(1, Number(req.query?.limit || 100)));
     const skip = (page - 1) * limit;
@@ -7280,6 +7298,16 @@ export async function getMyPracticeTransfers(req, res) {
       })
         .sort({ createdAt: -1, _id: -1 })
         .lean();
+    } else if (transferIdFilter) {
+      const idFilter = buildTransferIdFilter(transferIdFilter);
+      fetched = idFilter
+        ? await PracticeTransfer.find({
+            $and: [baseFilter, idFilter],
+          })
+            .sort({ createdAt: -1, _id: -1 })
+            .limit(8)
+            .lean()
+        : [];
     } else {
       fetched = await fetchOwnedPracticeTransfersPage({
         scope: baseFilter,
@@ -7293,8 +7321,8 @@ export async function getMyPracticeTransfers(req, res) {
         calendarRange,
       });
     }
-    const hasMore = calendarRange || transferMongoIds ? false : fetched.length > limit;
-    const docs = calendarRange || transferMongoIds
+    const hasMore = calendarRange || transferMongoIds || transferIdFilter ? false : fetched.length > limit;
+    const docs = calendarRange || transferMongoIds || transferIdFilter
       ? fetched
       : hasMore
         ? fetched.slice(0, limit)
@@ -7993,9 +8021,11 @@ export async function getReceivedPracticeTransfers(req, res) {
     }
 
     const transferMongoIds = parseTransferMongoIdsQuery(req.query);
-    const calendarRange = transferMongoIds
-      ? null
-      : parsePracticeTransferCalendarRangeQuery(req.query);
+    const transferIdFilter = String(req.query?.transferId || "").trim();
+    const calendarRange =
+      transferMongoIds || transferIdFilter
+        ? null
+        : parsePracticeTransferCalendarRangeQuery(req.query);
     const page = Math.max(1, Number(req.query?.page || 1));
     const limit = Math.min(200, Math.max(1, Number(req.query?.limit || 10)));
     const skip = (page - 1) * limit;
@@ -8027,6 +8057,9 @@ export async function getReceivedPracticeTransfers(req, res) {
       ? buildPracticeTransferCalendarDateRangeFilter(calendarRange)
       : null;
     const attentionFilter = buildLabReceiveAttentionFilter(labAnchorId);
+    const idFilter = transferIdFilter
+      ? buildTransferIdFilter(transferIdFilter)
+      : null;
     const listScope = transferMongoIds
       ? {
           $and: [
@@ -8035,6 +8068,14 @@ export async function getReceivedPracticeTransfers(req, res) {
             { _id: { $in: transferMongoIds } },
           ],
         }
+      : idFilter
+        ? {
+            $and: [
+              scope,
+              practiceTransferNotDeletedMongoFilter(),
+              idFilter,
+            ],
+          }
       : calendarFilter
         ? {
             $and: [
@@ -8052,8 +8093,8 @@ export async function getReceivedPracticeTransfers(req, res) {
       createdAt: -1,
       _id: -1,
     });
-    if (transferMongoIds) {
-      // full fields for bookmark hydrate
+    if (transferMongoIds || transferIdFilter) {
+      // full fields for bookmark·알림 보기 hydrate
     } else if (calendarRange) {
       listQuery
         .select(PRACTICE_TRANSFER_CALENDAR_LIST_SELECT)

@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-03: v7 POST /open-href — 알림 보기가 수신함 탭을 앞으로.
+// - 2026-10-03: /notify health ping — 로컬 네트워크 권한 대기(400ms면 헬퍼 있어도 실패).
 // - 2026-10-03: v4 PC 알람 — notify/session (폴더열기 MIN_VERSION은 3 유지, 알람은 version>=4).
 // - 2026-09-29: Chrome 「로컬 네트워크 액세스」 권한 창이 떠 있으면 답할 때까지 기다린다
 //   (0.5초에 끊으면 설치돼 있어도 없는 것으로 보여 설치 안내·브라우저 저장만 반복).
@@ -19,7 +21,7 @@ export const LAB_HELPER_MIN_VERSION = 3;
 /** PC 알람(/notify·/session)에 필요한 최소 버전 */
 export const LAB_HELPER_ALARM_MIN_VERSION = 4;
 /** 배포 중인 최신 연결 프로그램 버전(구버전이면 자동 갱신 유도) */
-export const LAB_HELPER_CURRENT_VERSION = 6;
+export const LAB_HELPER_CURRENT_VERSION = 7;
 const INSTALLED_KEY = "abuts.labHelperInstalled";
 const WORK_FOLDER_KEY = "abuts.labWorkFolder";
 
@@ -102,6 +104,7 @@ export type LabHelperAlarmPrefsPayload = {
 
 export type LabHelperAlarmSessionPayload = {
   apiOrigin: string;
+  appOrigin?: string;
   token: string;
   prefs: LabHelperAlarmPrefsPayload;
   browserAlive: boolean;
@@ -364,16 +367,39 @@ async function helperAlarmJson(path: string, body: unknown): Promise<boolean> {
 export async function notifyLabHelperAlarm(opts?: {
   title?: string;
   body?: string;
+  href?: string;
 }): Promise<boolean> {
   if (!labHelperOs()) return false;
-  const health = await pingOnce(400);
+  const health = await pingOnce(await pingTimeout(1200));
   if (!health || Number(health.version || 0) < LAB_HELPER_ALARM_MIN_VERSION) {
     return false;
   }
-  return helperAlarmJson("/notify", {
+    return helperAlarmJson("/notify", {
     title: String(opts?.title || "").trim(),
     body: String(opts?.body || "").trim(),
+    href: String(opts?.href || "").trim(),
   });
+}
+
+/** 알림 보기 — 이미 열린 수신함/발신함 브라우저 탭을 앞으로. 헬퍼 없거나 탭을 못 찾으면 false. */
+export async function openLabHelperHref(href: string): Promise<boolean> {
+  const link = String(href || "").trim();
+  if (!link || !labHelperOs()) return false;
+  try {
+    const res = await fetch(`${HELPER_BASE}/open-href`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ href: link }),
+    });
+    if (!res.ok) return false;
+    const data = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      focused?: boolean;
+    } | null;
+    return Boolean(data?.ok !== false && data?.focused);
+  } catch {
+    return false;
+  }
 }
 
 /** 로그인·heartbeat·설정 변경 시 헬퍼에 세션 동기화(브라우저 종료 후 폴링용). */
@@ -381,12 +407,13 @@ export async function syncLabHelperAlarmSession(
   payload: LabHelperAlarmSessionPayload,
 ): Promise<boolean> {
   if (!labHelperOs()) return false;
-  const health = await pingOnce(400);
+  const health = await pingOnce(await pingTimeout(1200));
   if (!health || Number(health.version || 0) < LAB_HELPER_ALARM_MIN_VERSION) {
     return false;
   }
   return helperAlarmJson("/session", {
     apiOrigin: String(payload.apiOrigin || "").trim(),
+    appOrigin: String(payload.appOrigin || "").trim(),
     token: String(payload.token || "").trim(),
     prefs: {
       enabled: payload.prefs?.enabled !== false,

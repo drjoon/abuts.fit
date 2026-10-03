@@ -9,6 +9,7 @@
  * - web/frontend/src/shared/practice/labReceivePendingWorkPriority.ts
  * - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
  * change-log:
+ * - 2026-10-03: 알림 켜면 미리듣기.
  * - 2026-09-28: 가로폭은 CONTENT_MEASURED_CHROME_CLASS. flex-1로 헤더를 채우지 않음.
  * - 2026-09-20: 메시지 칩 항상 표시·truncate — 헤더 남는 폭만큼 사용.
  * - 2026-09-20: xl 미만 — 칩 라벨 숨김(아이콘·건수·순회만).
@@ -41,6 +42,7 @@ import {
   setLabReceiveSoundEnabled,
   type LabReceiveSoundPrefs,
 } from "@/shared/practice/labReceiveSoundPrefs";
+import { playChatNotifySound } from "@/shared/chat/chatSoundPlayer";
 
 export type LabReceiveUnreadNoticeItem = {
   id: string;
@@ -286,7 +288,17 @@ export function LabReceiveUnreadNotice({
               !soundEnabled && "text-red-800/55",
             )}
             aria-label={soundLabel}
-            onClick={() => setLabReceiveSoundEnabled(!soundEnabled)}
+            onClick={() => {
+              const next = !soundEnabled;
+              setLabReceiveSoundEnabled(next);
+              if (next) {
+                playChatNotifySound({
+                  force: true,
+                  title: "알림음",
+                  body: "알림음이 켜졌습니다.",
+                });
+              }
+            }}
           >
             <SoundIcon className="h-4 w-4" />
           </Button>

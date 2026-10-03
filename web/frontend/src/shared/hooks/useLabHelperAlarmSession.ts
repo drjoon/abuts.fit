@@ -43,6 +43,7 @@ const pushSession = (token: string, browserAlive: boolean) => {
   const prefs = getLabReceiveSoundPrefs();
   void syncLabHelperAlarmSession({
     apiOrigin: resolveLabHelperApiOrigin(),
+    appOrigin: window.location.origin,
     token,
     prefs: { enabled: prefs.enabled },
     browserAlive,

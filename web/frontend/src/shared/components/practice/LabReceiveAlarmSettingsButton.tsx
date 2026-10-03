@@ -7,6 +7,7 @@
  * - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
  * - web/frontend/src/pages/practice/components/LabReceiveUnreadNotice.tsx
  * change-log:
+ * - 2026-10-03: 전체 알림 켜면 미리듣기(제스처로 AudioContext unlock).
  * - 2026-10-03: 치과 발신 헤더에서도 재사용(보기·전체 알림).
  * - 2026-10-03: 캘린더·목록 보기 전환을 팝오버로 이동.
  * - 2026-10-03: 치과별 mute 제거 — 전체 알림 스위치만.
@@ -33,6 +34,7 @@ import {
   setLabReceiveSoundEnabled,
   type LabReceiveSoundPrefs,
 } from "@/shared/practice/labReceiveSoundPrefs";
+import { playChatNotifySound } from "@/shared/chat/chatSoundPlayer";
 import type { LabReceiveCalendarViewMode } from "@/shared/practice/labReceiveCalendarViewMode";
 
 type LabReceiveAlarmSettingsButtonProps = {
@@ -145,7 +147,16 @@ export function LabReceiveAlarmSettingsButton({
           </div>
           <Switch
             checked={globalOn}
-            onCheckedChange={(checked) => setLabReceiveSoundEnabled(checked)}
+            onCheckedChange={(checked) => {
+              setLabReceiveSoundEnabled(checked);
+              if (checked) {
+                playChatNotifySound({
+                  force: true,
+                  title: "알림음",
+                  body: "알림음이 켜졌습니다.",
+                });
+              }
+            }}
             aria-label="전체 알림"
           />
         </div>

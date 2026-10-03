@@ -1,5 +1,5 @@
 // related files:
-// - 2026-10-03: 수신 툴바 — 주문·도착·검색을 월 선택 오른쪽. 협력·하청 필터 뱃지 제거(목록·칩 역할 뱃지는 유지).
+// - 2026-10-03: 알림 보기 — 역할이 다른 창의 openTransfer는 수신함 탭으로 넘긴다.
 // - 2026-10-03: 수신 헤더 — 북마크·생산중·설정·데모는 오른쪽 끝(ml-auto).
 // - 2026-10-03: 수신 헤더 — 캘린더·목록은 설정 팝오버. 상태·역할은 라벨. 북마크·생산중·주문/도착은 툴바.
 // - 2026-09-30: 공지는 미처리 안내 바로 옆. 2xl 미만 헤더 뱃지·버튼은 아이콘.
@@ -323,6 +323,7 @@ import {
 } from "@/shared/components/practice/LabBasketTagToolbar";
 import {
   OPEN_PRACTICE_TRANSFER_CHAT_EVENT,
+  openPracticeTransferAlert,
   type OpenPracticeTransferChatDetail,
 } from "@/shared/practice/openPracticeTransferChat";
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
@@ -671,8 +672,17 @@ export default function RequestorPracticePage() {
     if (loading) return;
     const desired = kind === "lab" ? "receive" : "send";
     if (modeParam === desired) return;
+    const openId = String(searchParams.get("openTransfer") || "").trim();
+    const intended =
+      modeParam === "receive" || modeParam === "send" ? modeParam : null;
+    if (openId && intended && intended !== desired) {
+      openPracticeTransferAlert(openId, intended);
+    }
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set("mode", desired);
+    if (openId && intended && intended !== desired) {
+      nextParams.delete("openTransfer");
+    }
     setSearchParams(nextParams, { replace: true });
   }, [kind, loading, modeParam, searchParams, setSearchParams]);
 
@@ -7517,16 +7527,23 @@ export function RequestorPracticeReceivePage({
   const openTransferWorkStatusById = useCallback(
     (transferIdRaw: string, panel: "chat" | "detail" = "chat") => {
       const transferId = String(transferIdRaw || "").trim();
-      if (!transferId) return;
+      if (!transferId || transferId === "null" || transferId === "undefined") {
+        return;
+      }
+      const matches = (row: ReceivedPracticeTransfer) => {
+        const a = String(row.transferId || "").trim();
+        const b = String(row._id || "").trim();
+        return a === transferId || b === transferId;
+      };
       const transfer =
-        transfers.find(
-          (row) => String(row.transferId || "").trim() === transferId,
-        ) ||
-        bookmarkedTransferCache.find(
-          (row) => String(row.transferId || "").trim() === transferId,
-        ) ||
+        transfers.find(matches) ||
+        bookmarkedTransferCache.find(matches) ||
         null;
-      if (!transfer) {
+      if (transfer) {
+        void openTransferDialog(transfer, { panel });
+        return;
+      }
+      if (!token) {
         toast({
           title: "의뢰건을 찾을 수 없습니다",
           description: transferId,
@@ -7534,9 +7551,44 @@ export function RequestorPracticeReceivePage({
         });
         return;
       }
-      void openTransferDialog(transfer, { panel });
+      void (async () => {
+        const qs = new URLSearchParams({ transferId, limit: "8" });
+        const res = await apiFetch<unknown>({
+          path: `/api/practice/transfers/received?${qs.toString()}`,
+          method: "GET",
+          token,
+        });
+        if (!res.ok) {
+          toast({
+            title: "의뢰건을 찾을 수 없습니다",
+            description: transferId,
+            variant: "destructive",
+          });
+          return;
+        }
+        const parsed = parseTransfersBody(res.data);
+        const mapped = mapTransferRows(parsed.transfers);
+        const found = mapped.find(matches) || mapped[0] || null;
+        if (!found) {
+          toast({
+            title: "의뢰건을 찾을 수 없습니다",
+            description: transferId,
+            variant: "destructive",
+          });
+          return;
+        }
+        void openTransferDialog(found, { panel });
+      })();
     },
-    [bookmarkedTransferCache, openTransferDialog, toast, transfers],
+    [
+      bookmarkedTransferCache,
+      mapTransferRows,
+      openTransferDialog,
+      parseTransfersBody,
+      toast,
+      token,
+      transfers,
+    ],
   );
 
   const bookmarkedIdSet = useMemo(
@@ -7752,17 +7804,14 @@ export function RequestorPracticeReceivePage({
 
   useEffect(() => {
     const transferId = String(searchParams.get("openTransfer") || "").trim();
-    if (!transferId) return;
-    if (
-      !transfers.some((row) => String(row.transferId || "").trim() === transferId)
-    ) {
+    if (!transferId || transferId === "null" || transferId === "undefined") {
       return;
     }
     openTransferWorkStatusById(transferId, "chat");
     const next = new URLSearchParams(searchParams);
     next.delete("openTransfer");
     setSearchParams(next, { replace: true });
-  }, [openTransferWorkStatusById, searchParams, setSearchParams, transfers]);
+  }, [openTransferWorkStatusById, searchParams, setSearchParams]);
 
   const handleDownload = useCallback(
     async (

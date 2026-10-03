@@ -22,6 +22,7 @@ namespace Abuts.LabHelper
     {
         private static readonly object Gate = new object();
         private static string _apiOrigin = "";
+        private static string _appOrigin = "";
         private static string _token = "";
         private static bool _enabled = true;
         private static HashSet<string> _muted = new HashSet<string>(StringComparer.Ordinal);
@@ -42,6 +43,11 @@ namespace Abuts.LabHelper
                 if (!string.IsNullOrEmpty(origin))
                 {
                     _apiOrigin = origin.Trim().TrimEnd('/');
+                }
+                var appOrigin = Str(body, "appOrigin");
+                if (!string.IsNullOrEmpty(appOrigin))
+                {
+                    _appOrigin = appOrigin.Trim().TrimEnd('/');
                 }
                 var token = Str(body, "token");
                 if (!string.IsNullOrEmpty(token)) _token = token;
@@ -67,6 +73,7 @@ namespace Abuts.LabHelper
             lock (Gate)
             {
                 _apiOrigin = "";
+                _appOrigin = "";
                 _token = "";
                 _browserAlive = false;
                 _lastHeartbeatTicks = 0;
@@ -86,6 +93,7 @@ namespace Abuts.LabHelper
 
         public static void Snapshot(
             out string apiOrigin,
+            out string appOrigin,
             out string token,
             out bool enabled,
             out HashSet<string> muted)
@@ -93,6 +101,7 @@ namespace Abuts.LabHelper
             lock (Gate)
             {
                 apiOrigin = _apiOrigin;
+                appOrigin = _appOrigin;
                 token = _token;
                 enabled = _enabled;
                 muted = new HashSet<string>(_muted, StringComparer.Ordinal);
@@ -162,7 +171,7 @@ namespace Abuts.LabHelper
         private static long _lastPlayedMs;
         private static NotifyIcon _tray;
 
-        public static void Play(string title, string body)
+        public static void Play(string title, string body, string href = "")
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             lock (Gate)
@@ -178,16 +187,39 @@ namespace Abuts.LabHelper
             {
                 Log.Write("sound: " + ex.Message);
             }
-            ShowBalloon(title, body);
+            ShowBalloon(title, body, href);
         }
 
-        private static void ShowBalloon(string title, string body)
+        public static string HrefFrom(Dictionary<string, object> alarm, string appOrigin)
+        {
+            if (alarm == null) return "";
+            object hrefObj;
+            if (alarm.TryGetValue("href", out hrefObj) && hrefObj != null)
+            {
+                var href = Convert.ToString(hrefObj).Trim();
+                if (!string.IsNullOrEmpty(href)) return href;
+            }
+            object tidObj;
+            var tid = "";
+            if (alarm.TryGetValue("transferId", out tidObj) && tidObj != null)
+            {
+                tid = Convert.ToString(tidObj).Trim();
+            }
+            var origin = (appOrigin ?? "").Trim().TrimEnd('/');
+            if (string.IsNullOrEmpty(tid) || string.IsNullOrEmpty(origin)) return "";
+            return origin + "/dashboard/practice-transfers?mode=receive&openTransfer=" + Uri.EscapeDataString(tid);
+        }
+
+        private static string _pendingHref = "";
+
+        private static void ShowBalloon(string title, string body, string href)
         {
             try
             {
                 Ui.Invoke(() =>
                 {
                     EnsureTray();
+                    _pendingHref = (href ?? "").Trim();
                     var t = string.IsNullOrEmpty(title) ? Program.Title : title;
                     var b = string.IsNullOrEmpty(body) ? "새 알림" : body;
                     _tray.BalloonTipTitle = t.Length > 60 ? t.Substring(0, 60) : t;
@@ -204,6 +236,24 @@ namespace Abuts.LabHelper
             }
         }
 
+        internal static void OpenHref(string raw)
+        {
+            var href = (raw ?? "").Trim();
+            if (string.IsNullOrEmpty(href)) return;
+            Uri uri;
+            if (!Uri.TryCreate(href, UriKind.Absolute, out uri)) return;
+            var scheme = (uri.Scheme ?? "").ToLowerInvariant();
+            if (scheme != "http" && scheme != "https") return;
+            try
+            {
+                System.Diagnostics.Process.Start(href);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("open href: " + ex.Message);
+            }
+        }
+
         private static void EnsureTray()
         {
             if (_tray != null) return;
@@ -213,6 +263,7 @@ namespace Abuts.LabHelper
                 Text = Program.Title,
                 Visible = false,
             };
+            _tray.BalloonTipClicked += (_, __) => OpenHref(_pendingHref);
         }
     }
 
@@ -230,10 +281,11 @@ namespace Abuts.LabHelper
                         continue;
                     }
                     string apiOrigin;
+                    string appOrigin;
                     string token;
                     bool enabled;
                     HashSet<string> muted;
-                    AlarmSession.Snapshot(out apiOrigin, out token, out enabled, out muted);
+                    AlarmSession.Snapshot(out apiOrigin, out appOrigin, out token, out enabled, out muted);
                     if (!enabled || string.IsNullOrEmpty(apiOrigin) || string.IsNullOrEmpty(token))
                     {
                         Thread.Sleep(2000);
@@ -265,7 +317,7 @@ namespace Abuts.LabHelper
                     object t, b;
                     if (alarm.TryGetValue("title", out t) && t != null) title = Convert.ToString(t);
                     if (alarm.TryGetValue("body", out b) && b != null) body = Convert.ToString(b);
-                    AlarmNotify.Play(title, body);
+                    AlarmNotify.Play(title, body, AlarmNotify.HrefFrom(alarm, appOrigin));
                 }
                 catch (Exception ex)
                 {

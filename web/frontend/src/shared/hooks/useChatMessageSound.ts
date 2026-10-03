@@ -5,12 +5,14 @@
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
 // - web/frontend/src/App.tsx
 // change-log:
+// - 2026-10-03: 다른 창을 보고 있으면 채팅 토스트·보기. 포커스된 같은 방만 생략.
+// - 2026-10-03: 로그인 시 AudioContext unlock 바인딩.
 // - 2026-10-03: 치과(practice·requestor practice)도 전체 알림 prefs로 채팅음 게이트.
 // - 2026-10-03: 치과별 mute 제거(전체 알림 prefs만).
 // - 2026-09-08: 미확인 의뢰음과 동일 플레이어(중복 재생 방지).
 // - 2026-09-07: 전역 채팅 알림음 — chat:message-created · remote-support:chat.
 
-import { useMemo } from "react";
+import { createElement, useEffect, useMemo } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import {
@@ -24,6 +26,12 @@ import {
 import { isChatSoundViewingTarget } from "@/shared/chat/chatSoundViewing";
 import { shouldPlayLabReceiveSound } from "@/shared/practice/labReceiveSoundPrefs";
 import { normalizeRequestorKind } from "@/shared/business/requestorCapabilities";
+import { toast } from "@/shared/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
+import {
+  openPracticeTransferAlert,
+  type PracticeTransferAlertMode,
+} from "@/shared/practice/openPracticeTransferChat";
 
 const isLabUser = (user: {
   role?: string | null;
@@ -71,9 +79,15 @@ const myIdSet = (user: {
 export function useChatMessageSound() {
   const { user, isAuthenticated, token } = useAuthStore();
   const myIds = useMemo(() => myIdSet(user as any), [user]);
+  const enabled = Boolean(token && isAuthenticated);
+
+  useEffect(() => {
+    if (!enabled) return;
+    bindChatSoundUnlockOnGesture();
+  }, [enabled]);
 
   useAppEventListener({
-    enabled: Boolean(token && isAuthenticated),
+    enabled,
     eventTypes: ["chat:message-created", "remote-support:chat"],
     requireVisible: false,
     deferWhenEditing: false,
@@ -111,6 +125,7 @@ export function useChatMessageSound() {
         data.message && typeof data.message === "object"
           ? (data.message as {
               messageKind?: string;
+              content?: string;
               sender?: { _id?: string };
             })
           : null;
@@ -127,9 +142,33 @@ export function useChatMessageSound() {
 
       if (usesLabReceiveSoundPrefs(user as any) && !shouldPlayLabReceiveSound()) return;
 
-      playChatNotifySound({
+      const transferId = String(data.transferId || "").trim();
+      const mode: PracticeTransferAlertMode = isLabUser(user as any)
+        ? "receive"
+        : "send";
+      const snippet = String(message?.content || "").trim();
+      const body = snippet || "새 메시지가 도착했습니다.";
+      playChatNotifySound({ title: "새 채팅", body });
+      toast({
         title: "새 채팅",
-        body: "새 메시지가 도착했습니다.",
+        description: body,
+        duration: 8000,
+        onClick: transferId
+          ? () => openPracticeTransferAlert(transferId, mode)
+          : undefined,
+        action: transferId
+          ? createElement(
+              ToastAction,
+              {
+                altText: "보기",
+                onClick: (e) => {
+                  e.stopPropagation();
+                  openPracticeTransferAlert(transferId, mode);
+                },
+              },
+              "보기",
+            )
+          : undefined,
       });
     },
   });

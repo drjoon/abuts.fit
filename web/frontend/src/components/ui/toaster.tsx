@@ -2,6 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+import { cn } from "@/shared/ui/cn";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   Toast,
@@ -23,10 +24,16 @@ export function Toaster() {
         description,
         action,
         duration,
+        className,
         ...props
       }) {
         return (
-          <Toast key={id} duration={duration} {...props}>
+          <Toast
+            key={id}
+            duration={duration}
+            className={cn(props.onClick ? "cursor-pointer" : undefined, className)}
+            {...props}
+          >
             <div className="grid gap-1">
               {title && <ToastTitle>{title}</ToastTitle>}
               {description && (
