@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: v10 POST /open-privacy-settings — Mac 시스템 설정을 헬퍼가 연다.
 // - 2026-10-04: v9 세션 businessAnchorId — open-href가 같은 계정 탭만 연다.
 // - 2026-10-03: v8 계정별 헬퍼 세션 — 치과·기공소 동시 폴링. /notify는 health ping 생략.
 // - 2026-10-03: v7 POST /open-href — 알림 보기가 수신함 탭을 앞으로.
@@ -16,14 +17,17 @@
 // - web/frontend/src/shared/files/useS3FileDownload.ts
 // - web/frontend/src/shared/components/LabHelperInstallDialog.tsx
 // - web/frontend/src/shared/components/LabWorkFolderDialog.tsx
+// - web/frontend/src/shared/components/MacPrivacySettingsOpenButton.tsx
 
 const HELPER_BASE = "http://127.0.0.1:8010";
 /** 폴더열기·케이스 저장에 필요한 최소 버전 */
 export const LAB_HELPER_MIN_VERSION = 3;
 /** PC 알람(/notify·/session)에 필요한 최소 버전 */
 export const LAB_HELPER_ALARM_MIN_VERSION = 4;
+/** Mac 시스템 설정 열기(/open-privacy-settings)에 필요한 최소 버전 */
+export const LAB_HELPER_PRIVACY_SETTINGS_MIN_VERSION = 10;
 /** 배포 중인 최신 연결 프로그램 버전(구버전이면 자동 갱신 유도) */
-export const LAB_HELPER_CURRENT_VERSION = 9;
+export const LAB_HELPER_CURRENT_VERSION = 10;
 const INSTALLED_KEY = "abuts.labHelperInstalled";
 const WORK_FOLDER_KEY = "abuts.labWorkFolder";
 
@@ -399,6 +403,27 @@ export async function openLabHelperHref(href: string): Promise<boolean> {
       focused?: boolean;
     } | null;
     return Boolean(data?.ok !== false && data?.focused);
+  } catch {
+    return false;
+  }
+}
+
+/** Mac Gatekeeper 「그래도 열기」용 시스템 설정. v10+ 헬퍼만. 없거나 구버전이면 false. */
+export async function openLabHelperPrivacySettings(): Promise<boolean> {
+  if (labHelperOs() !== "mac") return false;
+  try {
+    const health = await pingOnce(await pingTimeout(800));
+    if (!health || Number(health.version || 0) < LAB_HELPER_PRIVACY_SETTINGS_MIN_VERSION) {
+      return false;
+    }
+    const res = await fetch(`${HELPER_BASE}/open-privacy-settings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json().catch(() => null)) as { ok?: boolean } | null;
+    return Boolean(data?.ok !== false);
   } catch {
     return false;
   }

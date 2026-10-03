@@ -1,3 +1,4 @@
+// - 2026-10-04: v10 — POST /open-privacy-settings (Gatekeeper 「그래도 열기」용 시스템 설정).
 // - 2026-10-04: v9 — 세션 businessAnchorId·open-href ba 매칭(다른 치과 탭 가로채기 방지).
 // - 2026-10-03: v8 — 계정별 세션·폴링. 치과 창이 기공소 세션을 덮어쓰지 않음.
 // - 2026-10-03: 알림 보기 — 탭 URL을 바꾸지 않고 채팅 이벤트만 주입(새로고침 방지).
@@ -15,7 +16,10 @@ import AppKit
 import Foundation
 import Network
 
-let helperVersion = 9
+let helperVersion = 10
+/** macOS 13+ 「개인정보 보호 및 보안」 */
+let macPrivacySettingsURL =
+  "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
 let helperPort: UInt16 = 8010
 let agentLabel = "fit.abuts.labhelper"
 let appTitle = "어벗츠 연결 프로그램"
@@ -878,6 +882,13 @@ final class HttpConnection {
       let href = "\(jsonBody()["href"] as? String ?? "")"
       let focused = AlarmNotify.openHref(href, fallbackNew: false)
       return respond(200, ["ok": true, "focused": focused])
+    case ("POST", "/open-privacy-settings"):
+      respond(200, ["ok": true])
+      DispatchQueue.main.async {
+        guard let url = URL(string: macPrivacySettingsURL) else { return }
+        NSWorkspace.shared.open(url)
+      }
+      return
     case ("POST", "/session"):
       AlarmSession.shared.apply(jsonBody())
       return respond(200, ["ok": true])

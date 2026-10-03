@@ -21,7 +21,7 @@ namespace Abuts.LabHelper
 {
     internal static class Program
     {
-        public const int Version = 9;
+        public const int Version = 10;
         public const int Port = 8010;
         public const string Title = "어벗츠 연결 프로그램";
 

@@ -1,25 +1,38 @@
 // change-log:
-// - 2026-10-04: Mac 「설정 열기」— x-apple 프로토콜(브라우저 확인창) 대신 ConfirmDialog 안내.
+// - 2026-10-04: 헬퍼 v10+면 컨펌 없이 바로 시스템 설정. 없으면 ConfirmDialog 수동 안내(프로토콜 안 씀).
 // related files:
 // - web/frontend/src/shared/components/LabHelperInstallDialog.tsx
 // - web/frontend/src/shared/components/LabHelperUpdateDialog.tsx
+// - web/frontend/src/shared/files/labHelperClient.ts
 // - web/frontend/src/features/support/components/ConfirmDialog.tsx
 import { useCallback, useState } from "react";
 import { Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { openLabHelperPrivacySettings } from "@/shared/files/labHelperClient";
 
 type MacPrivacySettingsOpenButtonProps = {
   className?: string;
 };
 
-/** Mac Gatekeeper 「그래도 열기」경로 안내. 브라우저 프로토콜 확인창을 띄우지 않는다. */
+/** Mac Gatekeeper 「그래도 열기」. 헬퍼가 있으면 바로 열고, 없으면 수동 경로만 안내한다. */
 export function MacPrivacySettingsOpenButton({
   className,
 }: MacPrivacySettingsOpenButtonProps) {
-  const [open, setOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const close = useCallback(() => setOpen(false), []);
+  const closeGuide = useCallback(() => setGuideOpen(false), []);
+
+  const onClick = useCallback(() => {
+    if (busy) return;
+    setBusy(true);
+    void openLabHelperPrivacySettings()
+      .then((ok) => {
+        if (!ok) setGuideOpen(true);
+      })
+      .finally(() => setBusy(false));
+  }, [busy]);
 
   return (
     <>
@@ -28,13 +41,14 @@ export function MacPrivacySettingsOpenButton({
         size="sm"
         variant="outline"
         className={className ?? "mr-1.5 h-7 px-2 align-middle text-xs"}
-        onClick={() => setOpen(true)}
+        disabled={busy}
+        onClick={onClick}
       >
         <Settings className="mr-1 h-3.5 w-3.5" />
         설정 열기
       </Button>
       <ConfirmDialog
-        open={open}
+        open={guideOpen}
         title="시스템 설정에서 「그래도 열기」"
         description={
           <>
@@ -48,8 +62,8 @@ export function MacPrivacySettingsOpenButton({
         showCancel={false}
         showCloseButton
         closeOnBackdrop
-        onCancel={close}
-        onConfirm={close}
+        onCancel={closeGuide}
+        onConfirm={closeGuide}
       />
     </>
   );
