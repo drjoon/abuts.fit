@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/share/CaseShareViewer.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/three/screenSpaceOrbitControls.ts
+// - 2026-10-03: 어벗 적합이 끝나면 뷰를 다시 맞춘다.
 // - 2026-10-03: 치식 라벨은 어벗 로컬 중심에 붙여 seating·펼침과 같이 움직인다.
 // - 2026-10-03: 히트맵 구간 — 관통·0.01·0.02·0.03·0.05·0.1·0.2mm.
 // - 2026-10-03: 맞추는 중 중단 버튼. 중단 후 자동으로 다시 맞추지 않는다.
@@ -638,7 +639,9 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
           publishSeatProgress();
           if (!sceneRef.current || seatCancelGenRef.current !== jobGen) return;
           assemble();
-          if (!userMovedRef.current) fitToView();
+          // 맞추는 동안 화면을 돌렸어도 적합 결과 기준으로 다시 맞춘다.
+          userMovedRef.current = false;
+          fitToView();
         })
         .catch((error) => {
           seatJobsRef.current.delete(jobKey);
