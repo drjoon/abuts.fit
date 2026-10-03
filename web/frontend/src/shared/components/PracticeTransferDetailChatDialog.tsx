@@ -4359,6 +4359,7 @@ export function PracticeTransferDetailChatDialog({
         resultFiles={resultFileList}
         initialKey={requestPreview?.initialKey}
         authToken={authToken}
+        transferKey={shareTransferKey || transferId}
         caseInfo={previewCaseInfo}
         downloadBusy={previewDownloadBusy || workScanDownloadBusy}
         onDownload={async (picked) => {

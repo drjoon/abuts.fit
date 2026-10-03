@@ -1,12 +1,15 @@
-// 어벗을 보철(크라운·브리지)에 꽂는다.
+// 어벗을 보철(크라운·브리지) 내면에 꽂는다. 보철은 파일 좌표 그대로 두고 어벗만 옮긴다.
 // 바이트에 악궁을 붙이듯 자세 가설(보철 삽입축·포스트 방향·치식 좌석·축 회전)을 세우고,
 // 각각 trimmed ICP로 맞춘 뒤 포스트가 내면에 닿고 벽을 뚫지 않는 자세를 고른다.
+// 브리지는 어벗마다 다른 좌석을 배정한다. 결과에 편차(통계·꼭짓점별 거리)를 붙인다.
 // related files:
 // - web/frontend/src/shared/share/CaseLayerViewer.tsx
 // - web/frontend/src/shared/practice/scanbodyRegistration.ts
 // - web/frontend/src/shared/practice/biteRegistration.ts
 // - web/frontend/src/shared/filename/parseFilename.ts
 // change-log:
+// - 2026-10-03: 보철 고정, 어벗을 옮긴다. 어벗별 편차를 같이 돌려준다(확인 후 자세만 저장).
+// - 2026-10-03: 어벗은 고정, 보철을 옮긴다. 브리지는 어벗 전부로 같이 맞춘다. 진행률을 알리며 비동기로 푼다.
 // - 2026-10-03: 바이트식 가설 탐색으로 교체. 축 부호·기울기를 풀고, 브리지 치식은 범위로 펼친다.
 // - 2026-10-03: 브리지 좌석은 치식 순서로 고른다. 반경만 보면 이웃 리테이너에 꽂힌다.
 // - 2026-10-03: ICP 타깃은 보철 내면만. FL→좌석 중심을 다시 고정한다.
@@ -44,7 +47,7 @@ export type ProsthesisSeat = {
   unit: number;
 };
 
-/** 어벗 메시 로컬 → 보철 좌표 seating 자세. */
+/** 강체 자세. world = R · p + t */
 export type AbutmentSeatPose = {
   position: THREE.Vector3;
   quaternion: THREE.Quaternion;
@@ -661,8 +664,10 @@ type SeatHypothesis = {
  * 보철 삽입축(3축) × 어벗 포스트 방향(±) × 치식 좌석 × 축 회전 시드.
  * 맞춘 뒤 내면 덮임·관통으로 고른다.
  */
+type AbutPosts = Record<1 | -1, { post: Float32Array; probe: Float32Array }>;
+
 function seatHypotheses(
-  abutPos: Float32Array,
+  posts: AbutPosts,
   crownGeometry: THREE.BufferGeometry,
   crownPos: Float32Array,
   crown: CrownSurface,
@@ -677,10 +682,6 @@ function seatHypotheses(
   const bridge = slot ? slot.units > 1 : seatRegions(box, spanAxis).length > 1;
   const abutAxis = axisVec(ring.axis);
   const fl: Vec3 = [ring.center.x, ring.center.y, ring.center.z];
-  const posts = {
-    1: sampleAbutPost(abutPos, ring, 1, 500),
-    [-1]: sampleAbutPost(abutPos, ring, -1, 500),
-  } as Record<1 | -1, { post: Float32Array; probe: Float32Array }>;
   const out: SeatHypothesis[] = [];
   let groupCount = 0;
   for (const insertAxis of AXIS_COMPONENTS) {
@@ -726,11 +727,6 @@ function seatHypotheses(
   return out;
 }
 
-const SEAT_POSE_CACHE = new WeakMap<
-  THREE.BufferGeometry,
-  WeakMap<THREE.BufferGeometry, Map<string, AbutmentSeatPose | null>>
->();
-
 export type AbutmentSeatPoseOptions = {
   /** 어벗 파일 치식. 브리지에서 좌석 짝을 고를 때 쓴다. */
   abutTooth?: string;
@@ -746,7 +742,32 @@ const POLISH_ROUNDS = 24;
 const PROBE_SEED_STRIDE = 3;
 const BASINS_PER_GROUP = 3;
 const FINALISTS = 3;
+/** 피니시라인 중심이 이보다 가까우면 같은 좌석이다. */
+const SAME_SEAT_MM = 2.5;
+/** 이 점수 이상이면 잘 맞은 자리. 모든 어벗이 여기 못 미치면 포스트 축 기준으로 다시 찾는다. */
+const GOOD_SEAT_SCORE = 0.6;
+/** 제자리(항등) 후보 가산점. 다듬은 후보가 잡음만큼 높아도 저장한 자리를 지킨다. */
+const IDENTITY_BONUS = 0.05;
+/** 좌석 배정에서 어벗마다 보는 후보 수. */
+const MAX_ASSIGN_CANDIDATES = 5;
 const GROUP_RMS_SLACK_MM = 0.25;
+/** 이 시간마다 화면에 차례를 넘긴다. 진행 막대가 멈추지 않게. */
+const YIELD_MS = 24;
+
+/** 진행률 0~1. */
+export type SeatProgress = (ratio: number) => void;
+
+class Pacer {
+  private last = performance.now();
+  constructor(private readonly onProgress?: SeatProgress) {}
+
+  async report(ratio: number) {
+    this.onProgress?.(Math.min(1, Math.max(0, ratio)));
+    if (performance.now() - this.last < YIELD_MS) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    this.last = performance.now();
+  }
+}
 
 /** 같은 자리로 수렴한 자세. */
 function samePose(a: RigidPose, b: RigidPose): boolean {
@@ -762,27 +783,123 @@ function rotationGapDeg(a: Mat3, b: Mat3): number {
   return (Math.acos(Math.max(-1, Math.min(1, (trace - 1) / 2))) * 180) / Math.PI;
 }
 
-/**
- * 어벗을 보철 좌석에 꽂을 자세(회전+이동). 이미 맞거나 맞는 자리를 못 찾으면 null.
- * 메시 로컬(위치·회전 0) 기준. world = R · p + t
- */
-export function computeAbutmentSeatPose(
-  abutGeometry: THREE.BufferGeometry,
-  crownGeometry: THREE.BufferGeometry,
-  opts?: AbutmentSeatPoseOptions,
-): AbutmentSeatPose | null {
-  const cacheKey = `${opts?.abutTooth ?? ""}|${opts?.crownTooth ?? ""}`;
-  const cached = SEAT_POSE_CACHE.get(abutGeometry)?.get(crownGeometry)?.get(cacheKey);
-  if (cached !== undefined) {
-    return cached
-      ? { position: cached.position.clone(), quaternion: cached.quaternion.clone() }
-      : null;
-  }
-  const pose = solveSeatPose(abutGeometry, crownGeometry, opts);
-  rememberSeatPose(abutGeometry, crownGeometry, cacheKey, pose);
-  return pose
-    ? { position: pose.position.clone(), quaternion: pose.quaternion.clone() }
+export type ProsthesisSeatAbutment = {
+  geometry: THREE.BufferGeometry;
+  /** 어벗 파일 치식. */
+  tooth?: string;
+};
+
+/** 어벗↔보철 편차(mm·비율). 포스트 쪽 꼭짓점 기준. */
+export type SeatDeviation = {
+  /** 틈(+) 평균. */
+  meanMm: number;
+  /** 부호 거리 중앙값. */
+  medianMm: number;
+  /** |거리| 90%. */
+  p90Mm: number;
+  maxGapMm: number;
+  maxPenetrationMm: number;
+  /** 보철 내면에 0.2mm 안으로 닿은 비율. */
+  contact: number;
+  /** 보철 재료 안으로 들어간 비율. */
+  penetration: number;
+};
+
+export type AbutmentSeat = {
+  /** 어벗 메시 자세(어벗 로컬 → 보철 파일 좌표). 이미 제자리면 null. */
+  pose: AbutmentSeatPose | null;
+  deviation: SeatDeviation;
+  /** 꼭짓점별 보철 표면까지 부호 거리(mm). +는 틈, −는 관통, 멀면 NaN. */
+  vertexDistances: Float32Array;
+};
+
+export type ProsthesisSeatResult = {
+  /** 어벗별 결과. 좌석을 못 찾은 어벗은 null(파일 좌표 그대로). */
+  abutments: Array<AbutmentSeat | null>;
+};
+
+type CrownSeatEntry = {
+  abuts: THREE.BufferGeometry[];
+  key: string;
+  promise: Promise<ProsthesisSeatResult | null>;
+  done?: ProsthesisSeatResult | null;
+};
+
+const CROWN_SEAT_CACHE = new WeakMap<THREE.BufferGeometry, CrownSeatEntry[]>();
+
+function clonePose(pose: AbutmentSeatPose | null): AbutmentSeatPose | null {
+  return pose ? { position: pose.position.clone(), quaternion: pose.quaternion.clone() } : null;
+}
+
+function cloneResult(result: ProsthesisSeatResult | null): ProsthesisSeatResult | null {
+  return result
+    ? {
+        abutments: result.abutments.map((a) =>
+          a ? { ...a, pose: clonePose(a.pose), deviation: { ...a.deviation } } : null,
+        ),
+      }
     : null;
+}
+
+function crownSeatKey(abutments: ProsthesisSeatAbutment[], crownTooth: string) {
+  return `${crownTooth}|${abutments.map((a) => a.tooth ?? "").join(",")}`;
+}
+
+function findCrownSeatEntry(
+  crownGeometry: THREE.BufferGeometry,
+  abutments: ProsthesisSeatAbutment[],
+  crownTooth: string,
+): CrownSeatEntry | undefined {
+  const key = crownSeatKey(abutments, crownTooth);
+  return CROWN_SEAT_CACHE.get(crownGeometry)?.find(
+    (e) =>
+      e.key === key &&
+      e.abuts.length === abutments.length &&
+      e.abuts.every((g, i) => g === abutments[i]!.geometry),
+  );
+}
+
+/** 이미 맞춘 결과. 아직 안 맞췄거나 맞추는 중이면 undefined. */
+export function peekAbutmentSeats(
+  crownGeometry: THREE.BufferGeometry,
+  abutments: ProsthesisSeatAbutment[],
+  crownTooth = "",
+): ProsthesisSeatResult | null | undefined {
+  const entry = findCrownSeatEntry(crownGeometry, abutments, crownTooth);
+  if (!entry || entry.done === undefined) return undefined;
+  return cloneResult(entry.done);
+}
+
+/**
+ * 어벗을 보철에 꽂는다. 보철 파일 좌표는 그대로 두고 어벗만 옮긴다.
+ * 짝 어벗이 여럿(브리지)이면 좌석을 나눠 배정한다. 어느 좌석에도 맞지 않으면 null.
+ */
+export function computeAbutmentSeats(
+  crownGeometry: THREE.BufferGeometry,
+  abutments: ProsthesisSeatAbutment[],
+  crownTooth = "",
+  onProgress?: SeatProgress,
+): Promise<ProsthesisSeatResult | null> {
+  const found = findCrownSeatEntry(crownGeometry, abutments, crownTooth);
+  if (found) return found.promise.then(cloneResult);
+  const entry: CrownSeatEntry = {
+    abuts: abutments.map((a) => a.geometry),
+    key: crownSeatKey(abutments, crownTooth),
+    promise: solveAbutmentSeats(crownGeometry, abutments, crownTooth, onProgress).then(
+      (result) => {
+        entry.done = result;
+        return result;
+      },
+      () => {
+        entry.done = null;
+        return null;
+      },
+    ),
+  };
+  const list = CROWN_SEAT_CACHE.get(crownGeometry) ?? [];
+  list.push(entry);
+  CROWN_SEAT_CACHE.set(crownGeometry, list);
+  return entry.promise.then(cloneResult);
 }
 
 /**
@@ -790,7 +907,7 @@ export function computeAbutmentSeatPose(
  * 더 못 나아지면 보폭을 줄인다.
  */
 function polishSeat(
-  h: SeatHypothesis,
+  h: { post: Float32Array; probe: Float32Array },
   pose: RigidPose,
   fit: SeatFit,
   crown: CrownSurface,
@@ -863,22 +980,38 @@ function centroid3(points: Float32Array): Vec3 {
   return [x / n, y / n, z / n];
 }
 
-function solveSeatPose(
+type AbutCandidate = {
+  pose: RigidPose;
+  fit: SeatFit;
+  /** 어벗 피니시라인 중심이 놓인 보철 좌표. 좌석 구분에 쓴다. */
+  fl: Vec3;
+};
+
+/**
+ * 어벗 하나를 보철에 꽂는 자세 후보(어벗 좌표 → 보철 좌표). 점수 높은 순.
+ * pace(0~1)로 진행을 알리고 틈틈이 화면에 차례를 넘긴다.
+ */
+async function abutmentCandidates(
   abutGeometry: THREE.BufferGeometry,
   crownGeometry: THREE.BufferGeometry,
-  opts?: AbutmentSeatPoseOptions,
-): AbutmentSeatPose | null {
+  crownPos: Float32Array,
+  crown: CrownSurface,
+  opts: AbutmentSeatPoseOptions,
+  pace: (ratio: number) => Promise<void>,
+): Promise<{ posts: AbutPosts; candidates: AbutCandidate[] } | null> {
   const ring = estimateAbutmentFinishRing(abutGeometry);
   const abutPos = readPositions(abutGeometry);
-  const crownPos = readPositions(crownGeometry);
-  if (!ring || !abutPos || !crownPos) return null;
-  const crown = buildCrownSurface(crownGeometry);
-  if (!crown) return null;
-  const hypotheses = seatHypotheses(abutPos, crownGeometry, crownPos, crown, ring, opts, SEEDS);
+  if (!ring || !abutPos) return null;
+  const posts: AbutPosts = {
+    1: sampleAbutPost(abutPos, ring, 1, 500),
+    [-1]: sampleAbutPost(abutPos, ring, -1, 500),
+  };
+  const hypotheses = seatHypotheses(posts, crownGeometry, crownPos, crown, ring, opts, SEEDS);
   if (hypotheses.length === 0) return null;
 
   type Coarse = { h: SeatHypothesis; pose: RigidPose; rmsMm: number; rank: number };
-  const coarseFit = (h: SeatHypothesis): Coarse => {
+  let coarseDone = 0;
+  const coarseFit = async (h: SeatHypothesis): Promise<Coarse> => {
     const fit = icp({
       model: samplePoints(h.post, 240),
       grid: h.grids.coarse,
@@ -889,6 +1022,8 @@ function solveSeatPose(
       trim: 0.8,
     });
     const pen = scoreSeat(h.post, h.probe, fit.pose, crown).penetration;
+    coarseDone += 1;
+    await pace((coarseDone / hypotheses.length) * 0.4);
     return { h, pose: fit.pose, rmsMm: fit.rmsMm, rank: fit.rmsMm + pen };
   };
 
@@ -898,7 +1033,7 @@ function solveSeatPose(
   for (const h of hypotheses) {
     if (h.seed % PROBE_SEED_STRIDE !== 0) continue;
     const list = groups.get(h.group) ?? [];
-    list.push(coarseFit(h));
+    list.push(await coarseFit(h));
     groups.set(h.group, list);
   }
   const groupBest = (list: Coarse[]) => Math.min(...list.map((r) => r.rmsMm));
@@ -909,7 +1044,7 @@ function solveSeatPose(
       continue;
     }
     for (const h of hypotheses) {
-      if (h.group === group && h.seed % PROBE_SEED_STRIDE !== 0) list.push(coarseFit(h));
+      if (h.group === group && h.seed % PROBE_SEED_STRIDE !== 0) list.push(await coarseFit(h));
     }
   }
 
@@ -924,7 +1059,8 @@ function solveSeatPose(
     basins.push(...picked);
   }
 
-  const refined = basins.map((start) => {
+  const refined: Array<{ h: SeatHypothesis; pose: RigidPose; fit: SeatFit }> = [];
+  for (const [k, start] of basins.entries()) {
     const mid = icp({
       model: start.h.post,
       grid: start.h.grids.mid,
@@ -943,58 +1079,436 @@ function solveSeatPose(
       topY: -1e9,
       trim: 0.9,
     });
-    return { h: start.h, pose: fine.pose, fit: scoreSeat(start.h.post, start.h.probe, fine.pose, crown) };
-  });
+    refined.push({
+      h: start.h,
+      pose: fine.pose,
+      fit: scoreSeat(start.h.post, start.h.probe, fine.pose, crown),
+    });
+    await pace(0.4 + ((k + 1) / basins.length) * 0.3);
+  }
   refined.sort((a, b) => b.fit.score - a.fit.score);
 
-  // ICP는 거리만 줄이고 관통은 벌하지 않는다. 상위 둘을 점수(덮임 − 관통)로 직접 다듬어 가른다.
+  // ICP는 거리만 줄이고 관통은 벌하지 않는다. 상위 몇 개를 점수(덮임 − 관통)로 직접 다듬어 가른다.
+  // 브리지는 어벗끼리 좌석을 나눠야 하니, 좌석마다 가장 나은 자세도 하나씩 남긴다.
+  const fl: Vec3 = [ring.center.x, ring.center.y, ring.center.z];
+  const flOf = (pose: RigidPose) => applyPose(pose, fl[0], fl[1], fl[2]);
   const finalists: typeof refined = [];
   for (const row of refined) {
     if (finalists.some((f) => samePose(f.pose, row.pose))) continue;
     finalists.push(row);
     if (finalists.length >= FINALISTS) break;
   }
-  let best: { pose: RigidPose; fit: SeatFit } | null = null;
-  for (const start of finalists) {
+  for (const row of refined) {
+    const at = flOf(row.pose);
+    const seatTaken = finalists.some((f) => dist3(flOf(f.pose), at) < SAME_SEAT_MM);
+    if (!seatTaken && row.fit.score >= MIN_SEAT_SCORE) finalists.push(row);
+  }
+  const candidates: AbutCandidate[] = [];
+  for (const [k, start] of finalists.entries()) {
     const polished = polishSeat(start.h, start.pose, start.fit, crown);
-    if (!best || polished.fit.score > best.fit.score) best = polished;
+    candidates.push({ ...polished, fl: flOf(polished.pose) });
+    await pace(0.7 + ((k + 1) / finalists.length) * 0.3);
+  }
+  candidates.sort((a, b) => b.fit.score - a.fit.score);
+  return { posts, candidates };
+}
+
+function dist3(a: Vec3, b: Vec3) {
+  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+}
+
+function rigidToMatrix(pose: RigidPose): THREE.Matrix4 {
+  const { position, quaternion } = rigidToThree(pose);
+  return new THREE.Matrix4().compose(position, quaternion, new THREE.Vector3(1, 1, 1));
+}
+
+function matrixToPose(matrix: THREE.Matrix4): AbutmentSeatPose {
+  const position = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  matrix.decompose(position, quaternion, new THREE.Vector3());
+  return { position, quaternion };
+}
+
+/** 치식 순서. 브리지 라벨에 없는 어벗은 뒤로. */
+function toothOrder(abutments: ProsthesisSeatAbutment[], crownTooth: string): number[] {
+  const teeth = expandToothLabel(crownTooth);
+  const rank = (i: number) => {
+    const at = teeth.indexOf(String(abutments[i]!.tooth || "").trim());
+    return at < 0 ? teeth.length + i : at;
+  };
+  return abutments.map((_, i) => i).sort((a, b) => rank(a) - rank(b));
+}
+
+/**
+ * 어벗마다 후보 하나씩(또는 없음) 골라 점수 합이 가장 큰 배정. 두 어벗이 한 좌석에 들어가면 안 된다.
+ */
+function assignSeats(lists: AbutCandidate[][]): Array<AbutCandidate | null> {
+  let best: { total: number; picks: Array<AbutCandidate | null> } = {
+    total: -Infinity,
+    picks: lists.map(() => null),
+  };
+  const picks: Array<AbutCandidate | null> = [];
+  const walk = (i: number, total: number) => {
+    if (i === lists.length) {
+      if (total > best.total) best = { total, picks: [...picks] };
+      return;
+    }
+    for (const c of lists[i]!) {
+      if (picks.some((p) => p && dist3(p.fl, c.fl) < SAME_SEAT_MM)) continue;
+      picks.push(c);
+      walk(i + 1, total + c.fit.score);
+      picks.pop();
+    }
+    picks.push(null);
+    walk(i + 1, total);
+    picks.pop();
+  };
+  walk(0, 0);
+  return best.picks;
+}
+
+function transpose3(m: Mat3): Mat3 {
+  return [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
+}
+
+/**
+ * 보철을 좌석 찾기에 맞는 자세로 돌리는 회전(행 = 새 x·y·z). z는 삽입축, x는 그에 수직인 면에서
+ * 보철이 가장 긴 방향(브리지 스팬)이다.
+ */
+function canonicalFrame(positions: Float32Array, insertAxis: Vec3): Mat3 {
+  const z = norm3(insertAxis);
+  const ref: Vec3 = Math.abs(z[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const u = norm3(cross3(z, ref));
+  const v = cross3(z, u);
+  let su = 0;
+  let sv = 0;
+  const n = positions.length / 3;
+  for (let i = 0; i < positions.length; i += 3) {
+    const p: Vec3 = [positions[i]!, positions[i + 1]!, positions[i + 2]!];
+    su += dot3(p, u);
+    sv += dot3(p, v);
+  }
+  su /= n;
+  sv /= n;
+  let cuu = 0;
+  let cvv = 0;
+  let cuv = 0;
+  for (let i = 0; i < positions.length; i += 3) {
+    const p: Vec3 = [positions[i]!, positions[i + 1]!, positions[i + 2]!];
+    const a = dot3(p, u) - su;
+    const b = dot3(p, v) - sv;
+    cuu += a * a;
+    cvv += b * b;
+    cuv += a * b;
+  }
+  const theta = 0.5 * Math.atan2(2 * cuv, cuu - cvv);
+  const x = norm3([
+    u[0] * Math.cos(theta) + v[0] * Math.sin(theta),
+    u[1] * Math.cos(theta) + v[1] * Math.sin(theta),
+    u[2] * Math.cos(theta) + v[2] * Math.sin(theta),
+  ]);
+  const y = cross3(z, x);
+  return [x[0], x[1], x[2], y[0], y[1], y[2], z[0], z[1], z[2]];
+}
+
+const IDENTITY_POSE: RigidPose = { r: IDENTITY, t: [0, 0, 0] };
+
+/** 3×3 대칭 행렬에서 가장 작은 고윳값의 고유벡터(야코비). */
+function smallestEigenvector(m: number[][]): Vec3 {
+  const a = m.map((row) => [...row]);
+  const v = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ];
+  for (let sweep = 0; sweep < 24; sweep += 1) {
+    let off = 0;
+    for (let p = 0; p < 3; p += 1) for (let q = p + 1; q < 3; q += 1) off += a[p]![q]! ** 2;
+    if (off < 1e-14) break;
+    for (let p = 0; p < 3; p += 1) {
+      for (let q = p + 1; q < 3; q += 1) {
+        if (Math.abs(a[p]![q]!) < 1e-15) continue;
+        const theta = (a[q]![q]! - a[p]![p]!) / (2 * a[p]![q]!);
+        const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+        const c = 1 / Math.sqrt(t * t + 1);
+        const sn = t * c;
+        for (let k = 0; k < 3; k += 1) {
+          const akp = a[k]![p]!;
+          const akq = a[k]![q]!;
+          a[k]![p] = c * akp - sn * akq;
+          a[k]![q] = sn * akp + c * akq;
+        }
+        for (let k = 0; k < 3; k += 1) {
+          const apk = a[p]![k]!;
+          const aqk = a[q]![k]!;
+          a[p]![k] = c * apk - sn * aqk;
+          a[q]![k] = sn * apk + c * aqk;
+        }
+        for (let k = 0; k < 3; k += 1) {
+          const vkp = v[k]![p]!;
+          const vkq = v[k]![q]!;
+          v[k]![p] = c * vkp - sn * vkq;
+          v[k]![q] = sn * vkp + c * vkq;
+        }
+      }
+    }
+  }
+  let min = 0;
+  for (let i = 1; i < 3; i += 1) if (a[i]![i]! < a[min]![min]!) min = i;
+  return norm3([v[0]![min]!, v[1]![min]!, v[2]![min]!]);
+}
+
+type MeasuredSeat = {
+  fit: SeatFit;
+  fl: Vec3;
+  /** 그 리테이너 내면 벽에서 잰 삽입축(보철 좌표). */
+  cavityAxis: Vec3;
+};
+
+/**
+ * 어벗을 pose로 보철에 댔을 때의 맞춤과, 포스트에 닿은 보철 내면 벽 법선으로 잰 삽입축.
+ * 벽 법선은 삽입축에 수직이다. 잘 맞지 않으면 null.
+ */
+function measureSeat(
+  abutGeometry: THREE.BufferGeometry,
+  crown: CrownSurface,
+  pose: RigidPose,
+): MeasuredSeat | null {
+  const ring = estimateAbutmentFinishRing(abutGeometry);
+  const pos = readPositions(abutGeometry);
+  if (!ring || !pos) return null;
+  let best: { sign: 1 | -1; fit: SeatFit } | null = null;
+  for (const sign of [1, -1] as const) {
+    const { post, probe } = sampleAbutPost(pos, ring, sign, 500);
+    const fit = scoreSeat(post, probe, pose, crown);
+    if (!best || fit.score > best.fit.score) best = { sign, fit };
   }
   if (!best || best.fit.score < MIN_SEAT_SCORE) return null;
 
-  const pose = rigidToThree(best.pose);
-  const angleDeg = (pose.quaternion.angleTo(new THREE.Quaternion()) * 180) / Math.PI;
-  if (pose.position.length() < ALREADY_SEATED_MM && angleDeg < ALREADY_SEATED_DEG) return null;
-  return pose;
+  const local = sampleAbutPost(pos, ring, best.sign, 6000).post;
+  const post = new Float32Array(local.length);
+  for (let i = 0; i < local.length; i += 3) {
+    post.set(applyPose(pose, local[i]!, local[i + 1]!, local[i + 2]!), i);
+  }
+  const fl = applyPose(pose, ring.center.x, ring.center.y, ring.center.z);
+  const postGrid = new PointGrid(post, 0.5);
+  const pts = crown.probe.points;
+  const nrm = crown.probeNormals;
+  const touching: Vec3[] = [];
+  for (let i = 0; i < pts.length; i += 3) {
+    if (postGrid.nearest(pts[i]!, pts[i + 1]!, pts[i + 2]!, 0.35) < 0) continue;
+    touching.push([nrm[i]!, nrm[i + 1]!, nrm[i + 2]!]);
+  }
+  if (touching.length < 60) return null;
+  const c = centroid3(post);
+  let axis = norm3([c[0] - fl[0], c[1] - fl[1], c[2] - fl[2]]);
+  for (let iter = 0; iter < 5; iter += 1) {
+    const m = [
+      [0, 0, 0],
+      [0, 0, 0],
+      [0, 0, 0],
+    ];
+    let n = 0;
+    for (const v of touching) {
+      if (Math.abs(dot3(v, axis)) > 0.7) continue;
+      for (let r = 0; r < 3; r += 1) for (let k = 0; k < 3; k += 1) m[r]![k] += v[r]! * v[k]!;
+      n += 1;
+    }
+    if (n < 40) break;
+    const next = smallestEigenvector(m);
+    axis = dot3(next, axis) < 0 ? (next.map((x) => -x) as Vec3) : next;
+  }
+  return { fit: best.fit, fl, cavityAxis: axis };
 }
 
-function rememberSeatPose(
-  abutGeometry: THREE.BufferGeometry,
+async function solveAbutmentSeats(
   crownGeometry: THREE.BufferGeometry,
-  key: string,
-  pose: AbutmentSeatPose | null,
-) {
-  let byCrown = SEAT_POSE_CACHE.get(abutGeometry);
-  if (!byCrown) {
-    byCrown = new WeakMap();
-    SEAT_POSE_CACHE.set(abutGeometry, byCrown);
+  abutments: ProsthesisSeatAbutment[],
+  crownTooth: string,
+  onProgress?: SeatProgress,
+): Promise<ProsthesisSeatResult | null> {
+  const crownPos = readPositions(crownGeometry);
+  if (!crownPos || abutments.length === 0) return null;
+  const crown = buildCrownSurface(crownGeometry);
+  if (!crown) return null;
+  const pacer = new Pacer(onProgress);
+  await pacer.report(0);
+
+  const lists: AbutCandidate[][] = abutments.map(() => []);
+  const runPass = async (
+    geometry: THREE.BufferGeometry,
+    surface: CrownSurface,
+    toCrown: Mat3 | null,
+    from: number,
+    to: number,
+  ) => {
+    const pos = readPositions(geometry)!;
+    const share = (to - from) / abutments.length;
+    for (const [i, abut] of abutments.entries()) {
+      const result = await abutmentCandidates(
+        abut.geometry,
+        geometry,
+        pos,
+        surface,
+        { abutTooth: abut.tooth, crownTooth },
+        (ratio) => pacer.report(from + share * (i + ratio)),
+      );
+      for (const c of result?.candidates ?? []) {
+        if (c.fit.score < MIN_SEAT_SCORE) continue;
+        lists[i]!.push(
+          toCrown
+            ? {
+                pose: {
+                  r: mulMat3(toCrown, c.pose.r),
+                  t: applyRot(toCrown, c.pose.t),
+                },
+                fit: c.fit,
+                fl: applyRot(toCrown, c.fl),
+              }
+            : c,
+        );
+      }
+    }
+  };
+
+  // 좌석 찾기는 보철 삽입축이 파일 축과 나란할 때 가장 잘 맞는다. 기공소 원본은 대개 나란하지만 조금씩 기울고,
+  // 어벗에 맞춰 저장한 보철은 어벗 좌표라 더 기운다. 그래서 한 번 찾은 자리에서 내면 벽으로 삽입축을 재고,
+  // 그 축을 z로 돌린 보철에서 다시 찾는다. 저장한 보철이면 기준 어벗은 제자리(항등)에 꽂혀 있다.
+  const order = toothOrder(abutments, crownTooth);
+  let reference: MeasuredSeat | null = null;
+  for (const i of order) {
+    const atIdentity = measureSeat(abutments[i]!.geometry, crown, IDENTITY_POSE);
+    if (!atIdentity || atIdentity.fit.score < GOOD_SEAT_SCORE) continue;
+    lists[i]!.push({
+      pose: IDENTITY_POSE,
+      fit: { ...atIdentity.fit, score: atIdentity.fit.score + IDENTITY_BONUS },
+      fl: atIdentity.fl,
+    });
+    reference ??= atIdentity;
   }
-  let byKey = byCrown.get(crownGeometry);
-  if (!byKey) {
-    byKey = new Map();
-    byCrown.set(crownGeometry, byKey);
+  await runPass(crownGeometry, crown, null, 0, 0.5);
+  for (const i of order) {
+    if (reference) break;
+    const best = lists[i]![0] && [...lists[i]!].sort((a, b) => b.fit.score - a.fit.score)[0];
+    if (best) reference = measureSeat(abutments[i]!.geometry, crown, best.pose);
   }
-  byKey.set(
-    key,
-    pose ? { position: pose.position.clone(), quaternion: pose.quaternion.clone() } : null,
-  );
+  if (reference) {
+    const toCanon = canonicalFrame(crownPos, reference.cavityAxis);
+    const rotated = crownGeometry.clone();
+    rotated.applyMatrix4(
+      new THREE.Matrix4().set(
+        toCanon[0], toCanon[1], toCanon[2], 0,
+        toCanon[3], toCanon[4], toCanon[5], 0,
+        toCanon[6], toCanon[7], toCanon[8], 0,
+        0, 0, 0, 1,
+      ),
+    );
+    rotated.computeBoundingBox();
+    const rotatedSurface = buildCrownSurface(rotated);
+    if (rotatedSurface) {
+      await runPass(rotated, rotatedSurface, transpose3(toCanon), 0.5, 1);
+    }
+    rotated.dispose();
+  }
+  for (const list of lists) {
+    list.sort((a, b) => b.fit.score - a.fit.score);
+    list.splice(MAX_ASSIGN_CANDIDATES);
+  }
+  await pacer.report(1);
+  const picks = assignSeats(lists);
+  if (!picks.some(Boolean)) return null;
+  return {
+    abutments: picks.map((pick, i) => {
+      if (!pick) return null;
+      const toCrown = rigidToThree(pick.pose);
+      const angleDeg = (toCrown.quaternion.angleTo(new THREE.Quaternion()) * 180) / Math.PI;
+      const inPlace = toCrown.position.length() < ALREADY_SEATED_MM && angleDeg < ALREADY_SEATED_DEG;
+      const pose = inPlace ? IDENTITY_POSE : pick.pose;
+      const measured = seatDeviation(abutments[i]!.geometry, crown, pose);
+      if (!measured) return null;
+      return { pose: inPlace ? null : toCrown, ...measured };
+    }),
+  };
 }
 
-/** @deprecated seating은 computeAbutmentSeatPose 사용. */
-export function computeAbutmentSeatOffset(
+/**
+ * 어벗을 pose로 댔을 때 꼭짓점마다 보철 표면까지 부호 거리(점-면). 통계는 포스트 쪽 꼭짓점만 본다.
+ */
+function seatDeviation(
   abutGeometry: THREE.BufferGeometry,
-  crownGeometry: THREE.BufferGeometry,
-): THREE.Vector3 | null {
-  return computeAbutmentSeatPose(abutGeometry, crownGeometry)?.position ?? null;
+  crown: CrownSurface,
+  pose: RigidPose,
+): { deviation: SeatDeviation; vertexDistances: Float32Array } | null {
+  const ring = estimateAbutmentFinishRing(abutGeometry);
+  const pos = readPositions(abutGeometry);
+  if (!ring || !pos) return null;
+  let sign: 1 | -1 = 1;
+  let bestScore = -Infinity;
+  for (const s of [1, -1] as const) {
+    const { post, probe } = sampleAbutPost(pos, ring, s, 500);
+    const { score } = scoreSeat(post, probe, pose, crown);
+    if (score > bestScore) {
+      bestScore = score;
+      sign = s;
+    }
+  }
+  const [a0, a1] = radialAxes(ring.axis);
+  const flA = ring.center.getComponent(ring.axis);
+  const c0 = ring.center.getComponent(a0);
+  const c1 = ring.center.getComponent(a1);
+  const pts = crown.probe.points;
+  const nrm = crown.probeNormals;
+  const distances = new Float32Array(pos.length / 3).fill(Number.NaN);
+  const post: number[] = [];
+  let postTotal = 0;
+  let contact = 0;
+  let inside = 0;
+  for (let i = 0, v = 0; i < pos.length; i += 3, v += 1) {
+    const p = applyPose(pose, pos[i]!, pos[i + 1]!, pos[i + 2]!);
+    const j = crown.probe.nearest(p[0], p[1], p[2], 0.6);
+    const isPost =
+      (pos[i + ring.axis]! - flA) * sign > 0.25 &&
+      Math.hypot(pos[i + a0]! - c0, pos[i + a1]! - c1) >= ring.radius * 0.5;
+    if (isPost) postTotal += 1;
+    if (j < 0) continue;
+    const d =
+      (p[0] - pts[j * 3]!) * nrm[j * 3]! +
+      (p[1] - pts[j * 3 + 1]!) * nrm[j * 3 + 1]! +
+      (p[2] - pts[j * 3 + 2]!) * nrm[j * 3 + 2]!;
+    distances[v] = d;
+    if (!isPost) continue;
+    post.push(d);
+    if (Math.abs(d) < COVER_MM) contact += 1;
+    if (d < -PENETRATE_MM) inside += 1;
+  }
+  if (post.length === 0) return null;
+  const sorted = [...post].sort((x, y) => x - y);
+  const abs = post.map(Math.abs).sort((x, y) => x - y);
+  const gaps = post.filter((d) => d > 0);
+  return {
+    vertexDistances: distances,
+    deviation: {
+      meanMm: gaps.length ? gaps.reduce((x, y) => x + y, 0) / gaps.length : 0,
+      medianMm: sorted[Math.floor(sorted.length / 2)]!,
+      p90Mm: abs[Math.floor(abs.length * 0.9)]!,
+      maxGapMm: Math.max(0, sorted[sorted.length - 1]!),
+      maxPenetrationMm: Math.max(0, -sorted[0]!),
+      contact: contact / Math.max(postTotal, 1),
+      penetration: inside / Math.max(postTotal, 1),
+    },
+  };
+}
+
+/** 자세를 행 우선 4×4로. 서버·뷰어가 메시 좌표에 그대로 곱한다. */
+export function rowMajorToSeatPose(matrix: readonly number[]): AbutmentSeatPose {
+  const m = new THREE.Matrix4().fromArray(matrix as number[]).transpose();
+  return matrixToPose(m);
+}
+
+/** 자세 → 행 우선 4×4. */
+export function seatPoseToRowMajor(pose: AbutmentSeatPose): number[] {
+  const m = new THREE.Matrix4().compose(pose.position, pose.quaternion, new THREE.Vector3(1, 1, 1));
+  return m.clone().transpose().toArray();
 }
 
 /** 파일명의 치식 토큰. 브리지는 `46-47`. */

@@ -1,5 +1,6 @@
 // 의뢰·작업 스캔·어벗·보철을 한 번에 띄운다. 3D는 같은 좌표로 겹치고, 사진은 오른쪽 패널에서 연다.
 // change-log:
+// - 2026-10-03: 어벗을 보철에 맞춘 자세를 확인받아 의뢰에 저장(transferKey). 파일은 그대로, 자세만.
 // - 2026-10-03: 투명도·스캔색을 localStorage에 저장. 의뢰를 바꿔도 같은 값 적용.
 // - 2026-10-03: 클러스터별 표시/숨김을 localStorage에 저장. 다른 묶음 갔다 와도 복원.
 // - 2026-10-03: 안내 — 어벗은 짝 보철 피니시라인에 꽂아 같이 옮김.
@@ -58,6 +59,7 @@ import {
   peekPlyHeaderInfo,
   resolveCompanionTextureFileName,
 } from "@/shared/files/modelPreviewFile";
+import { request } from "@/shared/api/apiClient";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import {
@@ -91,7 +93,10 @@ import {
   type CaseLayerModel,
   type CaseLayerTone,
   type CaseLayerViewerHandle,
+  type CaseSeatDecision,
+  type CaseSeatRecord,
 } from "@/shared/share/CaseLayerViewer";
+import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 
 export type RequestPreviewFile = {
@@ -104,6 +109,12 @@ export type RequestPreviewFile = {
 };
 
 type ItemCluster = "request" | "workScan" | "design";
+
+type AbutmentSeatRow = {
+  abutmentS3Key: string;
+  prosthesisS3Key: string;
+  matrix: number[] | null;
+};
 
 type Item = {
   key: string;
@@ -408,6 +419,7 @@ export function RequestFilesPreviewDialog({
   resultFiles = [],
   initialKey,
   authToken,
+  transferKey,
   title,
   caseInfo,
   onDownload,
@@ -428,6 +440,8 @@ export function RequestFilesPreviewDialog({
   /** 처음에 열 파일(사진이면 바로 그 사진). 없으면 3D 겹침. */
   initialKey?: string | null;
   authToken?: string | null;
+  /** 의뢰 _id 또는 transferId. 있으면 어벗을 보철에 맞춘 자세를 확인받아 저장한다. */
+  transferKey?: string | null;
   title?: string;
   caseInfo?: ReactNode;
   onDownload?: (files: RequestPreviewFile[]) => void | Promise<void>;
@@ -470,6 +484,28 @@ export function RequestFilesPreviewDialog({
     ] as const
   ).filter((group) => group.list.length > 0);
 
+  const { toast } = useToast();
+  const seatTransferKey = transferKey && authToken ? String(transferKey).trim() : "";
+  /** 저장된 어벗 자세. 받기 전에는 null이라 맞추지 않는다. */
+  const [seatRows, setSeatRows] = useState<AbutmentSeatRow[] | null>(null);
+  useEffect(() => {
+    setSeatRows(null);
+    if (!open || !seatTransferKey) return;
+    let alive = true;
+    void request<{ data?: { seats?: AbutmentSeatRow[] } }>({
+      path: `/api/practice/transfers/${encodeURIComponent(seatTransferKey)}/abutment-seats`,
+      method: "GET",
+      token: authToken,
+      skipCache: true,
+    }).then((res) => {
+      if (!alive) return;
+      const seats = res.ok ? res.data?.data?.seats : null;
+      setSeatRows(Array.isArray(seats) ? seats : []);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [open, seatTransferKey, authToken, itemsKey]);
   const viewerRef = useRef<CaseLayerViewerHandle | null>(null);
   const imageRef = useRef<ZoomableImagePreviewHandle | null>(null);
   const panel = useResizablePanelWidth("abuts.requestFilesPanelWidth.v1");
@@ -726,6 +762,43 @@ export function RequestFilesPreviewDialog({
   }, [hidden, modelFiles, models]);
 
   const pending = items.filter((i) => loads[i.key]?.status === "loading");
+  const designPending =
+    (Boolean(seatTransferKey) && seatRows === null) ||
+    designItems.some(
+      (i) => i.kind === "model" && (!loads[i.key] || loads[i.key]?.status === "loading"),
+    );
+  const storedSeats = useMemo<CaseSeatRecord[] | undefined>(() => {
+    if (!seatRows) return undefined;
+    const idOf = new Map(models.map((m) => [m.file.s3Key, m.key]));
+    return seatRows.flatMap((row) => {
+      const abutmentId = idOf.get(row.abutmentS3Key);
+      const prosthesisId = idOf.get(row.prosthesisS3Key);
+      return abutmentId && prosthesisId ? [{ abutmentId, prosthesisId, matrix: row.matrix }] : [];
+    });
+  }, [models, seatRows]);
+  const saveSeatDecision = async (decision: CaseSeatDecision): Promise<boolean> => {
+    const keyOf = (id: string) => models.find((m) => m.key === id)?.file.s3Key || "";
+    const prosthesisS3Key = keyOf(decision.prosthesisId);
+    const abutments = decision.abutments.map((a) => ({
+      s3Key: keyOf(a.id),
+      matrix: a.matrix,
+      deviation: a.deviation,
+    }));
+    if (!seatTransferKey || !authToken || !prosthesisS3Key) return false;
+    const res = await request<{ data?: { seats?: AbutmentSeatRow[] } }>({
+      path: `/api/practice/transfers/${encodeURIComponent(seatTransferKey)}/abutment-seats`,
+      method: "POST",
+      token: authToken,
+      jsonBody: { prosthesisS3Key, confirmed: decision.confirmed, abutments },
+    });
+    const seats = res.data?.data?.seats;
+    if (res.ok && Array.isArray(seats)) {
+      setSeatRows(seats);
+      return true;
+    }
+    toast({ title: "어벗 위치를 저장하지 못했습니다", variant: "destructive", duration: 3000 });
+    return false;
+  };
   const progress =
     pending.length > 0
       ? pending.reduce((sum, i) => {
@@ -1019,6 +1092,9 @@ export function RequestFilesPreviewDialog({
                 colorMapping={colorMapping}
                 prosthesisTransparency={prosthesisTransparency}
                 onPaintSpace={setPaintSpace}
+                designPending={designPending}
+                storedSeats={storedSeats}
+                onSeatDecision={seatTransferKey ? saveSeatDecision : undefined}
               />
             ) : null}
             {showingImage && shownImageKey ? (
@@ -1138,7 +1214,7 @@ export function RequestFilesPreviewDialog({
               <DialogDescription className="sr-only">
                 의뢰 파일·작업 스캔·어벗·보철을 같은 좌표로 겹쳐 보고,
                 사진은 오른쪽 패널에서 엽니다. 스캔과 디자인은 배타로 켜고,
-                보철은 펼치며 어벗은 짝 보철 피니시라인에 꽂아 같이 옮깁니다. 보철 투명도는
+                보철은 파일 좌표에 두고 어벗을 옮겨 꽂은 뒤 편차를 보고 확인합니다. 보철이 여럿이면 펼칩니다. 보철 투명도는
                 왼쪽 슬라이더로 조절합니다.
               </DialogDescription>
             </DialogHeader>

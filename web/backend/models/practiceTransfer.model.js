@@ -249,6 +249,15 @@ const practiceTransferSchema = new mongoose.Schema(
         type: [practiceTransferFileSchema],
         default: [],
       },
+      /**
+       * 프리뷰에서 어벗을 보철에 맞춘 자세. 어벗·보철 파일은 그대로 두고 여기만 저장한다.
+       * { abutmentS3Key, prosthesisS3Key, status confirmed|rejected, matrix(행 우선 4×4, rejected면 null),
+       *   deviation, decidedAt, decidedBy, decidedSide }. 두 파일 키가 지금 파일과 같을 때만 쓴다.
+       */
+      abutmentSeats: {
+        type: [mongoose.Schema.Types.Mixed],
+        default: undefined,
+      },
       /** 기공소 AI 작업 스캔(상악·하악·바이트 DCM). 채팅「작업 파일」. 단계 판정에 쓰지 않는다. */
       labWorkScanFiles: {
         type: [practiceTransferFileSchema],

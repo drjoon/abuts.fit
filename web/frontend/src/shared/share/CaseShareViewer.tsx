@@ -391,6 +391,13 @@ export function CaseShareViewer({
     (s) => s.status === "loading",
   ).length;
   const canAnnotate = layers.some((layer) => layer.visible);
+  const designPending = groups.some((group) =>
+    group.items.some((item) => {
+      if (layerTone(item.file) === "scan") return false;
+      const state = loadState[item.file.fileKey];
+      return !state || state.status === "loading";
+    }),
+  );
 
   return (
     <div className="flex h-[100dvh] w-full flex-col bg-background md:flex-row">
@@ -400,6 +407,7 @@ export function CaseShareViewer({
           layers={layers}
           colorMapping={colorMapping}
           onPaintSpace={setPaintSpace}
+          designPending={designPending}
           onLayerError={(id, message) =>
             setLoadState((prev) => ({
               ...prev,

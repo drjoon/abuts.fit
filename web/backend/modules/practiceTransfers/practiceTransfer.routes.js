@@ -83,6 +83,10 @@ import {
   listPracticeTransferShareLinks,
   updatePracticeTransferShareLink,
 } from "../../controllers/practiceTransfers/practiceTransferShare.controller.js";
+import {
+  listPracticeTransferAbutmentSeats,
+  savePracticeTransferAbutmentSeat,
+} from "../../controllers/practiceTransfers/practiceTransferAbutmentSeat.controller.js";
 
 const router = express.Router();
 const caseShareAuth = authorize(["practice", "requestor", "internalLab", "admin"]);
@@ -376,6 +380,20 @@ router.delete(
   authenticate,
   caseShareAuth,
   deletePracticeTransferShareLink,
+);
+
+// 프리뷰에서 어벗을 보철에 맞춘 자세(확인·거절). 파일은 그대로 두고 메타데이터만. 참여자 판정은 컨트롤러.
+router.get(
+  "/:transferId/abutment-seats",
+  authenticate,
+  caseShareAuth,
+  listPracticeTransferAbutmentSeats,
+);
+router.post(
+  "/:transferId/abutment-seats",
+  authenticate,
+  caseShareAuth,
+  savePracticeTransferAbutmentSeat,
 );
 
 router.post(

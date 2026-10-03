@@ -2,6 +2,8 @@
 // - web/frontend/src/shared/share/CaseShareViewer.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/three/screenSpaceOrbitControls.ts
+// - 2026-10-03: 보철은 파일 좌표 고정, 어벗을 옮겨 꽂는다. 편차 히트맵과 함께 확인받고, 확인·거절은 onSeatDecision으로 저장(storedSeats로 복원).
+// - 2026-10-03: 맞추는 동안 가운데 진행 막대.
 // - 2026-10-03: 브리지 seating은 치식으로 좌석을 고른다(이웃 리테이너 오삽입 방지).
 // - 2026-10-03: 어벗 seating을 스캔바디·바이트와 같은 trimmed ICP로 맞춘다.
 // - 2026-10-03: 어벗 seating에 피니시라인 방위각 회전을 포함한다.
@@ -15,8 +17,11 @@
 // - 2026-09-28: captureCanvas(페인트 합성)·colorMapping(스캔 칼라 끄기). 의뢰 파일 프리뷰와 같은 기능.
 // - 2026-09-28: 화면 맞춤은 보이는 메시의 꼭짓점을 화면에 투영해 가로·세로에 꽉 차게 맞춘다.
 // - 2026-09-28: 케이스 공유 뷰어 — 디자인·스캔 여러 메시를 파일 좌표 그대로 겹치고 레이어별로 켜고 끈다.
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 import * as THREE from "three";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import {
   applyScanColorToneMapping,
   createModelPreviewMaterial,
@@ -31,9 +36,16 @@ import {
   type ViewPaintSpace,
 } from "@/shared/components/practice/viewPaintSpace";
 import {
-  computeAbutmentSeatPose,
+  computeAbutmentSeats,
+  peekAbutmentSeats,
+  rowMajorToSeatPose,
+  seatPoseToRowMajor,
   toothLabelFromMeshName,
   toothLabelsOverlap,
+  type AbutmentSeat,
+  type AbutmentSeatPose,
+  type ProsthesisSeatAbutment,
+  type SeatDeviation,
 } from "@/shared/share/seatAbutmentToProsthesis";
 import { cn } from "@/shared/ui/cn";
 
@@ -45,6 +57,19 @@ export type CaseLayerModel = {
   companionFiles?: File[];
   tone: CaseLayerTone;
   visible: boolean;
+};
+
+/** 저장된 어벗 자세. matrix null이면 파일 좌표 그대로. */
+export type CaseSeatRecord = {
+  abutmentId: string;
+  prosthesisId: string;
+  matrix: number[] | null;
+};
+
+export type CaseSeatDecision = {
+  prosthesisId: string;
+  confirmed: boolean;
+  abutments: Array<{ id: string; matrix: number[] | null; deviation: SeatDeviation | null }>;
 };
 
 export type CaseLayerViewerHandle = {
@@ -62,11 +87,19 @@ type CaseLayerViewerProps = {
   onLayerError?: (id: string, message: string) => void;
   /** 페인트가 메시 표면에 붙도록. 씬이 준비되면 넘기고, 닫히면 null. */
   onPaintSpace?: (space: ViewPaintSpace | null) => void;
+  /** 어벗·보철 파일을 아직 받는 중. 다 받은 뒤에 맞춰야 기준 어벗이 흔들리지 않는다. */
+  designPending?: boolean;
+  /** 이미 확인·거절한 어벗 자세(레이어 id 기준). 있으면 다시 맞추지 않는다. */
+  storedSeats?: CaseSeatRecord[];
+  /** 맞춘 결과를 확인·거절했을 때. false를 돌려주면 다시 묻는다. 없으면 확인 없이 미리보기만. */
+  onSeatDecision?: (decision: CaseSeatDecision) => Promise<boolean>;
   className?: string;
 };
 
 const TEXTURE_KEY = "previewTexture";
 const TONE_KEY = "layerTone";
+const LAYER_ID_KEY = "layerId";
+const HEAT_KEY = "seatHeat";
 
 function scanTexture(mesh: THREE.Mesh): THREE.Texture | null {
   return (mesh.userData[TEXTURE_KEY] as THREE.Texture | undefined) ?? null;
@@ -149,24 +182,75 @@ function refreshPieceBox(piece: DesignPiece) {
   piece.box.getSize(piece.size);
 }
 
+/** 확인 중인 보철은 안쪽 어벗이 보이게 이만큼은 비친다. */
+const REVIEW_CROWN_OPACITY = 0.35;
+const HEAT_BASE = new THREE.Color(0xb9bec6);
+const HEAT_BANDS: Array<{ max: number; color: THREE.Color; label: string }> = [
+  { max: -0.08, color: new THREE.Color(0x3b82f6), label: "관통" },
+  { max: 0.05, color: new THREE.Color(0x22c55e), label: "≤0.05" },
+  { max: 0.1, color: new THREE.Color(0xeab308), label: "≤0.1" },
+  { max: 0.2, color: new THREE.Color(0xf97316), label: "≤0.2" },
+  { max: Infinity, color: new THREE.Color(0xef4444), label: ">0.2mm" },
+];
+
+function heatColor(d: number): THREE.Color {
+  if (Number.isNaN(d)) return HEAT_BASE;
+  return (HEAT_BANDS.find((b) => d <= b.max) ?? HEAT_BANDS[HEAT_BANDS.length - 1]!).color;
+}
+
+function setHeatMap(mesh: THREE.Mesh, distances: Float32Array | null) {
+  if (mesh.userData[HEAT_KEY] === distances) return;
+  mesh.userData[HEAT_KEY] = distances;
+  const mat = mesh.material as THREE.MeshStandardMaterial;
+  if (!distances) {
+    if (!mat.vertexColors) return;
+    mat.vertexColors = false;
+    mat.color.setHex(0xb9bec6);
+    mesh.geometry.deleteAttribute("color");
+  } else {
+    const colors = new Float32Array(distances.length * 3);
+    distances.forEach((d, i) => heatColor(d).toArray(colors, i * 3));
+    mesh.geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    mat.vertexColors = true;
+    mat.color.setHex(0xffffff);
+  }
+  mat.needsUpdate = true;
+  syncBackFaceShell(mesh);
+}
+
+function layerIdOf(mesh: THREE.Mesh): string {
+  return String(mesh.userData[LAYER_ID_KEY] ?? "");
+}
+
+/** 보철 하나에 짝지은 어벗들의 화면 자세. 아직 모르면 null(파일 좌표). */
+type SeatResolver = (crown: THREE.Mesh, paired: THREE.Mesh[]) => Array<AbutmentSeatPose | null> | null;
+
+type SeatReview = {
+  crownId: string;
+  crown: THREE.Mesh;
+  paired: THREE.Mesh[];
+  seats: Array<AbutmentSeat | null>;
+};
+
 /**
- * 보철은 옆으로 펼친다. 어벗은 짝 보철 피니시라인에 꽂은 뒤
- * 같은 펼침 이동을 따라간다. 스캔은 손대지 않는다.
+ * 짝 어벗을 보철에 꽂고(보철은 파일 좌표 그대로), 보철이 둘 이상이면 옆으로 펼친다.
+ * 어벗 자세는 resolveSeat가 정한다. 스캔은 손대지 않는다.
  */
 function syncDesignAssembly(
   meshes: Iterable<THREE.Mesh>,
-  prosthesisTransparency: number,
+  crownOpacity: (crown: THREE.Mesh) => number,
+  resolveSeat: SeatResolver,
 ): boolean {
-  const pieces: DesignPiece[] = [];
+  // 숨긴 어벗도 짝·좌석 배정에는 넣는다. 켜고 끌 때마다 좌석 배정이 바뀌면 안 된다.
+  const all: DesignPiece[] = [];
   for (const mesh of meshes) {
-    if (!mesh.visible) continue;
     const tone = layerToneOf(mesh);
     if (tone !== "abutment" && tone !== "prosthesis") continue;
     mesh.position.set(0, 0, 0);
     mesh.quaternion.identity();
     mesh.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(mesh);
-    pieces.push({
+    all.push({
       mesh,
       tone,
       box,
@@ -175,17 +259,16 @@ function syncDesignAssembly(
     });
   }
 
-  const crowns = pieces.filter((p) => p.tone === "prosthesis");
-  const abuts = pieces.filter((p) => p.tone === "abutment");
-  const assemble = crowns.length > 0 && abuts.length > 0;
+  const allCrowns = all.filter((p) => p.tone === "prosthesis");
+  const allAbuts = all.filter((p) => p.tone === "abutment");
 
   // 치식 포함 우선, 아니면 겹침·중심 거리로 보철↔어벗 짝.
   const abutToCrown = new Map<THREE.Mesh, THREE.Mesh>();
-  for (const abut of abuts) {
+  for (const abut of allAbuts) {
     const abutTooth = toothLabelFromMeshName(abut.mesh.name);
     let best: DesignPiece | null = null;
     let bestScore = Infinity;
-    for (const crown of crowns) {
+    for (const crown of allCrowns) {
       const crownTooth = toothLabelFromMeshName(crown.mesh.name);
       const toothHit = toothLabelsOverlap(abutTooth, crownTooth);
       const dist = abut.center.distanceTo(crown.center);
@@ -200,37 +283,36 @@ function syncDesignAssembly(
     if (best) abutToCrown.set(abut.mesh, best.mesh);
   }
 
-  // 피니시라인 중심·방위각을 보철 좌석에 맞춰 어벗만 강체 이동.
   const basePosition = new Map<THREE.Mesh, THREE.Vector3>();
   const baseQuaternion = new Map<THREE.Mesh, THREE.Quaternion>();
-  for (const crown of crowns) {
-    basePosition.set(crown.mesh, new THREE.Vector3());
-    baseQuaternion.set(crown.mesh, new THREE.Quaternion());
+  const setBase = (mesh: THREE.Mesh, pose: AbutmentSeatPose | null) => {
+    basePosition.set(mesh, pose ? pose.position : new THREE.Vector3());
+    baseQuaternion.set(mesh, pose ? pose.quaternion : new THREE.Quaternion());
+    mesh.position.copy(basePosition.get(mesh)!);
+    mesh.quaternion.copy(baseQuaternion.get(mesh)!);
+  };
+  for (const crown of allCrowns) {
+    const paired = allAbuts
+      .filter((a) => abutToCrown.get(a.mesh) === crown.mesh)
+      .sort((a, b) => String(a.mesh.name).localeCompare(String(b.mesh.name)));
+    setBase(crown.mesh, null);
+    for (const a of paired) setBase(a.mesh, null);
+    if (paired.length === 0) continue;
+    const poses = resolveSeat(
+      crown.mesh,
+      paired.map((a) => a.mesh),
+    );
+    if (poses) paired.forEach((a, i) => setBase(a.mesh, poses[i] ?? null));
   }
-  for (const abut of abuts) {
-    const crownMesh = abutToCrown.get(abut.mesh);
-    let base = new THREE.Vector3();
-    let quat = new THREE.Quaternion();
-    if (crownMesh) {
-      const pose = computeAbutmentSeatPose(
-        abut.mesh.geometry,
-        crownMesh.geometry,
-        {
-          abutTooth: toothLabelFromMeshName(abut.mesh.name),
-          crownTooth: toothLabelFromMeshName(crownMesh.name),
-        },
-      );
-      if (pose) {
-        base = pose.position;
-        quat = pose.quaternion;
-      }
-    }
-    basePosition.set(abut.mesh, base);
-    baseQuaternion.set(abut.mesh, quat);
-    abut.mesh.position.copy(base);
-    abut.mesh.quaternion.copy(quat);
-    refreshPieceBox(abut);
+  for (const abut of allAbuts) {
+    if (!basePosition.has(abut.mesh)) setBase(abut.mesh, null);
   }
+
+  const pieces = all.filter((p) => p.mesh.visible);
+  for (const piece of pieces) refreshPieceBox(piece);
+  const crowns = pieces.filter((p) => p.tone === "prosthesis");
+  const abuts = pieces.filter((p) => p.tone === "abutment");
+  const assemble = crowns.length > 0 && abuts.length > 0;
 
   const units = crowns.map((crown) => {
     const members = [
@@ -297,11 +379,10 @@ function syncDesignAssembly(
     }
   }
 
-  const prosthesisOpacity = transparencyToOpacity(prosthesisTransparency);
-  for (const piece of crowns) {
-    applyProsthesisOpacity(piece.mesh, prosthesisOpacity);
+  for (const piece of allCrowns) {
+    applyProsthesisOpacity(piece.mesh, crownOpacity(piece.mesh));
   }
-  for (const mesh of abuts) {
+  for (const mesh of allAbuts) {
     mesh.mesh.renderOrder = 1;
   }
   return units.length >= 2 || assemble;
@@ -314,9 +395,26 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
     prosthesisTransparency = 0,
     onLayerError,
     onPaintSpace,
+    designPending = false,
+    storedSeats,
+    onSeatDecision,
     className,
   }, ref) {
     const containerRef = useRef<HTMLDivElement | null>(null);
+    /** 맞추는 중인 보철별 진행률(0~1). */
+    const seatJobsRef = useRef(new Map<string, number>());
+    const [seatPercent, setSeatPercent] = useState<number | null>(null);
+    const designPendingRef = useRef(designPending);
+    designPendingRef.current = designPending;
+    const storedSeatsRef = useRef(storedSeats);
+    storedSeatsRef.current = storedSeats;
+    const onSeatDecisionRef = useRef(onSeatDecision);
+    onSeatDecisionRef.current = onSeatDecision;
+    /** 저장 응답 전에도 바로 반영하는 확인·거절. 키 `어벗id|보철id`. */
+    const decisionsRef = useRef(new Map<string, number[] | null>());
+    const reviewRef = useRef<SeatReview | null>(null);
+    const [review, setReview] = useState<SeatReview | null>(null);
+    const [deciding, setDeciding] = useState(false);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -414,6 +512,131 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
     };
 
     useImperativeHandle(ref, () => ({ fitToView, captureCanvas }));
+
+    const publishSeatProgress = () => {
+      const jobs = [...seatJobsRef.current.values()];
+      const next =
+        jobs.length === 0
+          ? null
+          : Math.round((jobs.reduce((a, b) => a + b, 0) / jobs.length) * 100);
+      setSeatPercent((prev) => (prev === next ? prev : next));
+    };
+
+    const designLoading = () =>
+      designPendingRef.current ||
+      [...loadingRef.current].some((id) => {
+        const tone = layersRef.current.find((l) => l.id === id)?.tone;
+        return tone === "abutment" || tone === "prosthesis";
+      });
+
+    const requestSeat = (
+      crown: THREE.Mesh,
+      abutments: ProsthesisSeatAbutment[],
+      crownTooth: string,
+    ) => {
+      const jobKey = [crown.geometry.uuid, ...abutments.map((a) => a.geometry.uuid)].join("|");
+      if (seatJobsRef.current.has(jobKey)) return;
+      seatJobsRef.current.set(jobKey, 0);
+      publishSeatProgress();
+      void computeAbutmentSeats(crown.geometry, abutments, crownTooth, (ratio) => {
+        if (!seatJobsRef.current.has(jobKey)) return;
+        seatJobsRef.current.set(jobKey, ratio);
+        publishSeatProgress();
+      }).then(() => {
+        seatJobsRef.current.delete(jobKey);
+        publishSeatProgress();
+        if (!sceneRef.current) return;
+        assemble();
+        if (!userMovedRef.current) fitToView();
+      });
+    };
+
+    const storedMatrix = (abutId: string, crownId: string): number[] | null | undefined => {
+      const key = `${abutId}|${crownId}`;
+      if (decisionsRef.current.has(key)) return decisionsRef.current.get(key);
+      const row = storedSeatsRef.current?.find(
+        (r) => r.abutmentId === abutId && r.prosthesisId === crownId,
+      );
+      return row ? row.matrix : undefined;
+    };
+
+    const assemble = () => {
+      const proposals: SeatReview[] = [];
+      const resolveSeat: SeatResolver = (crown, paired) => {
+        const crownId = layerIdOf(crown);
+        const stored = paired.map((a) => storedMatrix(layerIdOf(a), crownId));
+        if (stored.every((m) => m !== undefined)) {
+          return stored.map((m) => (m ? rowMajorToSeatPose(m) : null));
+        }
+        const inputs: ProsthesisSeatAbutment[] = paired.map((a) => ({
+          geometry: a.geometry,
+          tooth: toothLabelFromMeshName(a.name),
+        }));
+        const crownTooth = toothLabelFromMeshName(crown.name);
+        const result = peekAbutmentSeats(crown.geometry, inputs, crownTooth);
+        if (result === undefined) {
+          if (!designLoading()) requestSeat(crown, inputs, crownTooth);
+          return null;
+        }
+        if (!result) return null;
+        if (onSeatDecisionRef.current) {
+          proposals.push({ crownId, crown, paired, seats: result.abutments });
+        }
+        return result.abutments.map((a) => a?.pose ?? null);
+      };
+      const reviewCrownOpacity = (crown: THREE.Mesh) => {
+        const base = transparencyToOpacity(prosthesisTransparencyRef.current);
+        return reviewRef.current?.crown === crown ? Math.min(base, REVIEW_CROWN_OPACITY) : base;
+      };
+      const assembled = syncDesignAssembly(
+        meshesRef.current.values(),
+        reviewCrownOpacity,
+        resolveSeat,
+      );
+      const prev = reviewRef.current;
+      // 같은 보철을 보고 있으면 그대로 둔다. 매번 맨 앞 것으로 바뀌면 카드가 튄다.
+      const keep =
+        prev && proposals.some((p) => p.crownId === prev.crownId && p.crown === prev.crown);
+      const next =
+        (keep ? prev : null) ??
+        proposals.sort((x, y) => x.crown.name.localeCompare(y.crown.name))[0] ??
+        null;
+      reviewRef.current = next;
+      for (const mesh of meshesRef.current.values()) {
+        const tone = layerToneOf(mesh);
+        if (tone === "prosthesis") applyProsthesisOpacity(mesh, reviewCrownOpacity(mesh));
+        if (tone !== "abutment") continue;
+        const i = next ? next.paired.indexOf(mesh) : -1;
+        setHeatMap(mesh, i >= 0 ? (next!.seats[i]?.vertexDistances ?? null) : null);
+      }
+      setReview(next);
+      return assembled;
+    };
+
+    const decideSeat = async (confirmed: boolean) => {
+      const current = reviewRef.current;
+      const save = onSeatDecisionRef.current;
+      if (!current || !save || deciding) return;
+      const abutments = current.paired.map((mesh, i) => {
+        const seat = current.seats[i];
+        return {
+          id: layerIdOf(mesh),
+          matrix: confirmed && seat?.pose ? seatPoseToRowMajor(seat.pose) : null,
+          deviation: confirmed ? (seat?.deviation ?? null) : null,
+        };
+      });
+      const keys = abutments.map((a) => `${a.id}|${current.crownId}`);
+      abutments.forEach((a, i) => decisionsRef.current.set(keys[i]!, a.matrix));
+      setDeciding(true);
+      assemble();
+      const ok = await save({ prosthesisId: current.crownId, confirmed, abutments }).catch(
+        () => false,
+      );
+      setDeciding(false);
+      if (ok || !sceneRef.current) return;
+      for (const key of keys) decisionsRef.current.delete(key);
+      assemble();
+    };
 
     useEffect(() => {
       const container = containerRef.current;
@@ -553,6 +776,7 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
             const mesh = new THREE.Mesh(geometry, material);
             mesh.name = layer.file.name || layer.id;
             mesh.userData[TONE_KEY] = layer.tone;
+            mesh.userData[LAYER_ID_KEY] = layer.id;
             if (layer.tone === "scan") mesh.userData[TEXTURE_KEY] = parsed.texture;
             mesh.renderOrder = layer.tone === "scan" ? 0 : 1;
             syncBackFaceShell(mesh);
@@ -568,23 +792,23 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
             mesh.visible = latest.visible;
             sceneRef.current.add(mesh);
             meshes.set(layer.id, mesh);
-            syncDesignAssembly(
-              meshes.values(),
-              prosthesisTransparencyRef.current,
-            );
+            loadingRef.current.delete(layer.id);
+            assemble();
             if (!userMovedRef.current && mesh.visible) fitToView();
           } catch (error) {
             onLayerErrorRef.current?.(
               layer.id,
               error instanceof Error ? error.message : "3D 파일을 읽지 못했습니다.",
             );
+            loadingRef.current.delete(layer.id);
+            if (sceneRef.current) assemble();
           } finally {
             loadingRef.current.delete(layer.id);
           }
         })();
       }
 
-      syncDesignAssembly(meshes.values(), prosthesisTransparencyRef.current);
+      assemble();
       if (
         !userMovedRef.current &&
         visibilityChanged &&
@@ -592,15 +816,33 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       ) {
         fitToView();
       }
+      // assemble·fitToView는 ref만 읽는다.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [layers]);
+
+    useEffect(() => {
+      if (designPending || !sceneRef.current) return;
+      assemble();
+      if (!userMovedRef.current) fitToView();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [designPending]);
 
     useEffect(() => {
       const opacity = transparencyToOpacity(prosthesisTransparency);
       for (const mesh of meshesRef.current.values()) {
         if (layerToneOf(mesh) !== "prosthesis") continue;
-        applyProsthesisOpacity(mesh, opacity);
+        applyProsthesisOpacity(
+          mesh,
+          reviewRef.current?.crown === mesh ? Math.min(opacity, REVIEW_CROWN_OPACITY) : opacity,
+        );
       }
     }, [prosthesisTransparency]);
+
+    useEffect(() => {
+      if (!sceneRef.current || designPending) return;
+      assemble();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [storedSeats]);
 
     useEffect(() => {
       const renderer = rendererRef.current;
@@ -620,10 +862,87 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
     }, [colorMapping]);
 
     return (
-      <div
-        ref={containerRef}
-        className={cn("absolute inset-0 overflow-hidden", className)}
-      />
+      <div className={cn("absolute inset-0 overflow-hidden", className)}>
+        <div ref={containerRef} className="absolute inset-0" />
+        {seatPercent !== null ? (
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+            <div className="w-64 rounded-lg bg-black/60 px-4 py-3 text-xs text-white shadow-md">
+              <p className="flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                보철을 어벗에 맞추는 중
+                <span className="ml-auto tabular-nums">{seatPercent}%</span>
+              </p>
+              <Progress value={seatPercent} className="mt-2 h-1.5" />
+            </div>
+          </div>
+        ) : null}
+        {review && seatPercent === null ? (
+          <SeatReviewCard review={review} deciding={deciding} onDecide={decideSeat} />
+        ) : null}
+      </div>
     );
   },
 );
+
+const pct = (v: number) => `${Math.round(v * 100)}%`;
+const mm = (v: number) => `${v.toFixed(2)}mm`;
+
+function SeatReviewCard({
+  review,
+  deciding,
+  onDecide,
+}: {
+  review: SeatReview;
+  deciding: boolean;
+  onDecide: (confirmed: boolean) => void;
+}) {
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-3">
+      <div className="pointer-events-auto w-fit min-w-[16rem] max-w-[min(100%,36rem)] rounded-lg border bg-white/95 px-4 py-3 text-xs shadow-md">
+        <p className="text-sm font-semibold">어벗 위치 확인</p>
+        <p className="mt-0.5 text-muted-foreground">
+          {toothLabelFromMeshName(review.crown.name) || review.crown.name}
+        </p>
+        <ul className="mt-2 space-y-1">
+          {review.paired.map((mesh, i) => {
+            const seat = review.seats[i];
+            const tooth = toothLabelFromMeshName(mesh.name) || mesh.name;
+            if (!seat) {
+              return (
+                <li key={mesh.uuid} className="text-muted-foreground">
+                  {tooth} · 자리를 못 찾음
+                </li>
+              );
+            }
+            const d = seat.deviation;
+            return (
+              <li key={mesh.uuid} className="tabular-nums">
+                <span className="font-medium">{tooth}</span> · 접촉 {pct(d.contact)} · 중앙{" "}
+                {mm(d.medianMm)} · 최대 틈 {mm(d.maxGapMm)} · 관통 {mm(d.maxPenetrationMm)}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] text-muted-foreground">
+          {HEAT_BANDS.map((b) => (
+            <span key={b.label} className="flex items-center gap-1">
+              <span
+                className="h-2 w-2 rounded-sm"
+                style={{ backgroundColor: `#${b.color.getHexString()}` }}
+              />
+              {b.label}
+            </span>
+          ))}
+        </div>
+        <div className="mt-3 flex justify-end gap-2">
+          <Button size="sm" variant="outline" disabled={deciding} onClick={() => onDecide(false)}>
+            안 맞음
+          </Button>
+          <Button size="sm" disabled={deciding} onClick={() => onDecide(true)}>
+            맞음 · 저장
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
