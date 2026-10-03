@@ -13986,6 +13986,9 @@ class BinaryReader {
     this.pos += 4;
     return v >>> 0;
   }
+  remaining() {
+    return Math.max(0, this.data.length - this.pos);
+  }
 }
 function decodeBase64(text) {
   const cleaned = String(text || "").replace(/\s+/g, "");
@@ -14390,17 +14393,39 @@ function parseTextureCoords(data, vertexCount, indices) {
         for (const cornerIdx of corners) writeUv(cornerIdx, u2, v);
       }
     } else {
+      let uvCount = flag === 255 ? corners.length : flag;
+      let sharedRecover = false;
       if (flag !== 255 && flag !== corners.length) {
-        throw new Error(
-          `UV flag mismatch at vertex ${vertexIdx}: flag=${flag}, corners=${corners.length}`
-        );
+        const remaining = reader.remaining();
+        if (corners.length > 0 && corners.length * 4 === remaining) {
+          uvCount = corners.length;
+        } else if (remaining === 4 && corners.length > 0) {
+          sharedRecover = true;
+          uvCount = 1;
+        } else {
+          throw new Error(
+            `UV flag mismatch at vertex ${vertexIdx}: flag=${flag}, corners=${corners.length}`
+          );
+        }
       }
-      const sorted = [...corners].sort((a2, b2) => Math.floor(a2 / 3) - Math.floor(b2 / 3));
-      for (const cornerIdx of sorted) {
+      if (sharedRecover) {
         const compressed = reader.readUint32();
         if (compressed !== NO_UV_MARKER) {
           const [u2, v] = decompressTextureCoord(compressed);
-          writeUv(cornerIdx, u2, v);
+          for (const cornerIdx of corners) writeUv(cornerIdx, u2, v);
+        }
+      } else {
+        const sorted = [...corners].sort(
+          (a2, b2) => Math.floor(a2 / 3) - Math.floor(b2 / 3)
+        );
+        for (let i = 0; i < uvCount; i += 1) {
+          const compressed = reader.readUint32();
+          const cornerIdx = sorted[i];
+          if (cornerIdx == null) continue;
+          if (compressed !== NO_UV_MARKER) {
+            const [u2, v] = decompressTextureCoord(compressed);
+            writeUv(cornerIdx, u2, v);
+          }
         }
       }
     }

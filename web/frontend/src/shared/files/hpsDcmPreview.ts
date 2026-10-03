@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-03: TRIOS CE 상악 UV 마지막 정점 flag 불일치 시 스트림 길이로 복구 — 텍스처 베이크 실패→검은 VertexColorSet 폴백 수정.
 // - 2026-09-17: VertexColorSet도 R/B 스왑 — BiteScan(텍스처 없음)이 보라색이던 문제.
 // - 2026-09-17: 텍스처 베이크 시 R/B 스왑(hpsdecode와 동일) — DCM 치은이 보라색으로 보이던 문제.
 // - 2026-09-14: CE Blowfish PADDING.NONE — NULL이 블록 패딩 0을 swap 전에 잘라 BiteScan Adler 실패.
@@ -61,6 +62,10 @@ class BinaryReader {
       (this.data[this.pos + 3]! << 24);
     this.pos += 4;
     return v >>> 0;
+  }
+
+  remaining() {
+    return Math.max(0, this.data.length - this.pos);
   }
 }
 
@@ -578,17 +583,43 @@ function parseTextureCoords(
         for (const cornerIdx of corners) writeUv(cornerIdx, u, v);
       }
     } else {
+      // Flag = 0xFF or exact corner count → one UV per connected face (face order).
+      // TRIOS CE 상악 등에서 마지막 정점 flag가 깨진 채(예: 68) corners*4 바이트만
+      // 남은 경우가 있다. 스트림이 코너 수와 맞으면 코너 수를 쓰고, UV 1개만 남으면
+      // shared(flag=1)로 복구한다. mid-stream 불일치는 그대로 실패.
+      let uvCount = flag === 0xff ? corners.length : flag;
+      let sharedRecover = false;
       if (flag !== 0xff && flag !== corners.length) {
-        throw new Error(
-          `UV flag mismatch at vertex ${vertexIdx}: flag=${flag}, corners=${corners.length}`,
-        );
+        const remaining = reader.remaining();
+        if (corners.length > 0 && corners.length * 4 === remaining) {
+          uvCount = corners.length;
+        } else if (remaining === 4 && corners.length > 0) {
+          sharedRecover = true;
+          uvCount = 1;
+        } else {
+          throw new Error(
+            `UV flag mismatch at vertex ${vertexIdx}: flag=${flag}, corners=${corners.length}`,
+          );
+        }
       }
-      const sorted = [...corners].sort((a, b) => Math.floor(a / 3) - Math.floor(b / 3));
-      for (const cornerIdx of sorted) {
+      if (sharedRecover) {
         const compressed = reader.readUint32();
         if (compressed !== NO_UV_MARKER) {
           const [u, v] = decompressTextureCoord(compressed);
-          writeUv(cornerIdx, u, v);
+          for (const cornerIdx of corners) writeUv(cornerIdx, u, v);
+        }
+      } else {
+        const sorted = [...corners].sort(
+          (a, b) => Math.floor(a / 3) - Math.floor(b / 3),
+        );
+        for (let i = 0; i < uvCount; i += 1) {
+          const compressed = reader.readUint32();
+          const cornerIdx = sorted[i];
+          if (cornerIdx == null) continue;
+          if (compressed !== NO_UV_MARKER) {
+            const [u, v] = decompressTextureCoord(compressed);
+            writeUv(cornerIdx, u, v);
+          }
         }
       }
     }
