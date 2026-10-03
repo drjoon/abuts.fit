@@ -1,3 +1,4 @@
+// - 2026-10-04: v13 — open-href: ba 필수 매칭·계정 탭 2차 탐색. 토스트 보기는 ba 있을 때 앞창 새 탭 금지.
 // - 2026-10-04: v10 — POST /open-privacy-settings (Gatekeeper 「그래도 열기」용 시스템 설정).
 // - 2026-10-04: v12 — OS 알림을 커스텀 플로팅 토스트(보기 버튼)로. NSUserNotification 대체.
 // - 2026-10-04: v11 — open-href: JS 주입 실패 시 기존 탭 URL 폴백·ba 미확인 탭은 mode로 매칭.
@@ -19,7 +20,7 @@ import Foundation
 import Network
 import QuartzCore
 
-let helperVersion = 12
+let helperVersion = 13
 /** macOS 13+ 「개인정보 보호 및 보안」 */
 let macPrivacySettingsURL =
   "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
@@ -275,7 +276,9 @@ final class AlarmToastController: NSObject {
     let link = href
     hide()
     if !link.isEmpty {
-      _ = AlarmNotify.openHref(link, fallbackNew: true)
+      // ba= 있으면 그 계정 탭만. 못 찾으면 앞창(다른 계정)에 새 탭을 열지 않음.
+      let hasBa = link.range(of: "ba=") != nil
+      _ = AlarmNotify.openHref(link, fallbackNew: !hasBa)
     }
   }
 
@@ -451,25 +454,29 @@ enum AlarmNotify {
         return String(m[1] || "");
       }
     }
-    function tabMatches(u, target) {
+    function hostOf(s) {
+      try { return String(s.split("/")[2] || ""); } catch (e) { return ""; }
+    }
+    function normHost(h) {
+      return String(h || "").replace("127.0.0.1", "localhost").replace("[::1]", "localhost");
+    }
+    function sameHost(u, target) {
+      return normHost(hostOf(u)) === normHost(hostOf(target));
+    }
+    function isListPath(u) {
+      u = String(u || "");
+      return u.indexOf("practice-transfers") >= 0 || u.indexOf("/practice/dashboard") >= 0;
+    }
+    function modeOk(u, target) {
       u = String(u || "");
       target = String(target || "");
-      if (u.indexOf("practice-transfers") < 0 && u.indexOf("mode=receive") < 0 && u.indexOf("/practice/dashboard") < 0) return false;
-      function hostOf(s) {
-        try { return String(s.split("/")[2] || ""); } catch (e) { return ""; }
-      }
-      function normHost(h) {
-        return h.replace("127.0.0.1", "localhost").replace("[::1]", "localhost");
-      }
-      if (normHost(hostOf(u)) !== normHost(hostOf(target))) return false;
-      var wantBa = extractQuery(target, "ba");
-      if (wantBa) {
-        var tabBa = extractQuery(u, "ba");
-        if (tabBa && tabBa !== wantBa) return false;
-      }
       var wantReceive = target.indexOf("mode=receive") !== -1;
       var wantSend = target.indexOf("mode=send") !== -1;
-      if (wantReceive) return u.indexOf("mode=send") === -1;
+      if (wantReceive) {
+        if (u.indexOf("mode=send") !== -1) return false;
+        if (u.indexOf("mode=receive") !== -1) return true;
+        return isListPath(u);
+      }
       if (wantSend) {
         if (u.indexOf("mode=receive") !== -1) return false;
         if (u.indexOf("practice-transfers") !== -1) return true;
@@ -477,7 +484,7 @@ enum AlarmNotify {
         if (u.indexOf("/dashboard/new-request") !== -1) return true;
         return u.indexOf("mode=send") !== -1;
       }
-      return true;
+      return isListPath(u);
     }
     function readAccountBa(tab) {
       var js = "(function(){try{var a=window.__ABUTS_ALARM_ACCOUNT__;return a&&a.ba?String(a.ba):'';}catch(e){return '';}})();";
@@ -491,43 +498,73 @@ enum AlarmNotify {
       } catch (e2) {}
       return "";
     }
+    function resolveTabBa(tab, u) {
+      var tabBa = extractQuery(u, "ba");
+      if (tabBa) return tabBa;
+      return readAccountBa(tab);
+    }
+    // ok | skip(다른 계정) | fail(JS 불가)
     function injectOpen(tab, target) {
       var id = extractQuery(target, "openTransfer");
-      if (!id || id === "null" || id === "undefined") return false;
+      if (!id || id === "null" || id === "undefined") return "fail";
       var mode = String(target).indexOf("mode=send") !== -1 ? "send" : "receive";
       var ba = extractQuery(target, "ba");
       var js = "(function(){var id=" + JSON.stringify(id) + ";var mode=" + JSON.stringify(mode) + ";var ba=" + JSON.stringify(ba) + ";var href=" + JSON.stringify(target) + ";try{var acc=window.__ABUTS_ALARM_ACCOUNT__;if(ba&&acc&&acc.ba&&String(acc.ba)!==String(ba))return 'skip';var path=String(location.pathname||'');if(path.indexOf('practice-transfers')>=0||path.indexOf('/practice/dashboard')>=0){var u=new URL(location.href);u.searchParams.set('mode',mode);u.searchParams.set('openTransfer',id);if(ba)u.searchParams.set('ba',ba);history.replaceState({},'',u.pathname+u.search);window.dispatchEvent(new CustomEvent('abuts:practice-transfer:open',{detail:{transferId:id,panel:'chat'}}));return 'ok';}location.assign(href);return 'ok';}catch(e){try{location.assign(href);return 'ok';}catch(e2){return 'fail';}}})();";
       try {
-        var r = tab.execute({ javascript: js });
-        return String(r || "") !== "skip";
+        var r = String(tab.execute({ javascript: js }) || "");
+        if (r === "ok" || r === "skip") return r;
       } catch (e1) {}
       try {
-        var r2 = tab.execute(js);
-        return String(r2 || "") !== "skip";
+        var r2 = String(tab.execute(js) || "");
+        if (r2 === "ok" || r2 === "skip") return r2;
       } catch (e2) {}
-      return false;
+      return "fail";
     }
-    function tryFocusTab(tabs, w, ti, target, activate) {
-      var u = "";
-      try { u = tabs[ti].url(); } catch (e) { return false; }
-      if (!tabMatches(u, target)) return false;
-      var wantBa = extractQuery(target, "ba");
-      if (wantBa) {
-        var tabBa = extractQuery(u, "ba");
-        if (!tabBa) tabBa = readAccountBa(tabs[ti]);
-        // ba가 읽히면 반드시 일치. 못 읽으면 mode·host 매칭만으로 진행(주입 실패 대비).
-        if (tabBa && tabBa !== wantBa) return false;
+    function activateChrome(app, win, idx) {
+      try { win.activeTabIndex = idx + 1; } catch (e3) {}
+      try { app.activate(); } catch (e4) {}
+      try { win.index = 1; } catch (e5) {}
+    }
+    function activateSafari(app, win, tabs, idx) {
+      try { win.currentTab = tabs[idx]; } catch (e3) {}
+      try { app.activate(); } catch (e4) {}
+      try { win.index = 1; } catch (e5) {}
+    }
+    function openOnTab(tab, target, onActivate) {
+      var result = "fail";
+      try { result = injectOpen(tab, target); } catch (eInj) { result = "fail"; }
+      if (result === "skip") return false;
+      if (result !== "ok") {
+        // JS 막힘·계정 미게시 — URL ba로 이미 고른 탭이면 이동
+        try { tab.url = target; } catch (eUrl) { return false; }
       }
-      var injected = false;
-      try { injected = injectOpen(tabs[ti], target); } catch (eInj) {}
-      if (!injected) {
-        // Chrome Apple Event JS가 막혀도 이미 연 수신함/발신함 탭으로 연다.
-        try { tabs[ti].url = target; } catch (eUrl) { return false; }
-      }
-      activate(w, ti);
+      onActivate();
       return true;
     }
-    function tryChromeFamily(name, target) {
+    // 1차: 수신함/발신함 URL + ba 일치. ba가 있으면 URL·계정 JS로 반드시 확인.
+    function tryListTab(tabs, w, ti, target, onActivate) {
+      var u = "";
+      try { u = tabs[ti].url(); } catch (e) { return false; }
+      if (!sameHost(u, target) || !isListPath(u) || !modeOk(u, target)) return false;
+      var wantBa = extractQuery(target, "ba");
+      if (wantBa) {
+        var tabBa = resolveTabBa(tabs[ti], u);
+        if (tabBa !== wantBa) return false;
+      }
+      return openOnTab(tabs[ti], target, onActivate);
+    }
+    // 2차: 목록이 아니어도 같은 계정(__ABUTS_ALARM_ACCOUNT__) 탭이면 그쪽으로 연다.
+    function tryAccountTab(tabs, w, ti, target, onActivate) {
+      var wantBa = extractQuery(target, "ba");
+      if (!wantBa) return false;
+      var u = "";
+      try { u = tabs[ti].url(); } catch (e) { return false; }
+      if (!sameHost(u, target)) return false;
+      var tabBa = resolveTabBa(tabs[ti], u);
+      if (tabBa !== wantBa) return false;
+      return openOnTab(tabs[ti], target, onActivate);
+    }
+    function scanChrome(name, target, pass) {
       var app = Application(name);
       if (!app.running()) return false;
       var wins = app.windows();
@@ -535,16 +572,19 @@ enum AlarmNotify {
         var w = wins[wi];
         var tabs = w.tabs();
         for (var ti = 0; ti < tabs.length; ti++) {
-          if (tryFocusTab(tabs, w, ti, target, function(win, idx) {
-            try { win.activeTabIndex = idx + 1; } catch (e3) {}
-            try { app.activate(); } catch (e4) {}
-            try { win.index = 1; } catch (e5) {}
-          })) return true;
+          var act = (function(win, idx) {
+            return function() { activateChrome(app, win, idx); };
+          })(w, ti);
+          if (pass === 1) {
+            if (tryListTab(tabs, w, ti, target, act)) return true;
+          } else {
+            if (tryAccountTab(tabs, w, ti, target, act)) return true;
+          }
         }
       }
       return false;
     }
-    function trySafari(target) {
+    function scanSafari(target, pass) {
       var app = Application("Safari");
       if (!app.running()) return false;
       var wins = app.windows();
@@ -552,24 +592,28 @@ enum AlarmNotify {
         var w = wins[wi];
         var tabs = w.tabs();
         for (var ti = 0; ti < tabs.length; ti++) {
-          if (tryFocusTab(tabs, w, ti, target, function(win, idx) {
-            try { win.currentTab = tabs[idx]; } catch (e3) {}
-            try { app.activate(); } catch (e4) {}
-            try { win.index = 1; } catch (e5) {}
-          })) return true;
+          var act = (function(win, tabsArr, idx) {
+            return function() { activateSafari(app, win, tabsArr, idx); };
+          })(w, tabs, ti);
+          if (pass === 1) {
+            if (tryListTab(tabs, w, ti, target, act)) return true;
+          } else {
+            if (tryAccountTab(tabs, w, ti, target, act)) return true;
+          }
         }
       }
       return false;
     }
     var target = \(target);
-    var found = false;
     var names = ["Google Chrome", "Google Chrome Canary", "Chromium", "Microsoft Edge", "Brave Browser", "Arc"];
-    for (var i = 0; i < names.length; i++) {
-      try { if (tryChromeFamily(names[i], target)) found = true; } catch (e) {}
-      if (found) break;
-    }
-    if (!found) {
-      try { if (trySafari(target)) found = true; } catch (e) {}
+    var found = false;
+    for (var pass = 1; pass <= 2 && !found; pass++) {
+      for (var i = 0; i < names.length; i++) {
+        try { if (scanChrome(names[i], target, pass)) { found = true; break; } } catch (e) {}
+      }
+      if (!found) {
+        try { if (scanSafari(target, pass)) found = true; } catch (e) {}
+      }
     }
     found;
     """
@@ -619,7 +663,8 @@ final class AlarmNotifCenter: NSObject, NSUserNotificationCenterDelegate {
     switch notification.activationType {
     case .contentsClicked, .actionButtonClicked:
       let href = (notification.userInfo?["href"] as? String) ?? ""
-      AlarmNotify.openHref(href)
+      let hasBa = href.range(of: "ba=") != nil
+      _ = AlarmNotify.openHref(href, fallbackNew: !hasBa)
     default:
       break
     }

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: v13 — 버전 맞춤(Mac open-href ba 매칭). Windows는 탭 탐색 없음·FE 가드.
 // - 2026-10-04: v12 — 커스텀 플로팅 토스트(보기)로 balloon 대체.
 // - 2026-10-04: v9 — 세션 BusinessAnchorId를 알림 href ba=에 넣음.
 // - 2026-10-03: v6 — 401/403 백오프·Cache-Control no-cache(빈 wait 304 방지).

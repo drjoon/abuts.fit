@@ -6,6 +6,7 @@
  * - 상단: 기간필터 + 요약(좌 2x2) + 최근 의뢰(우)
  * - 하단: 스캔 전송 섹션이 남은 영역을 채움
  * - 최근 전송 카드 클릭 시 의뢰 정보 + 기공소 채팅 모달 제공
+ * - 2026-10-04: 수신(mode=receive)·다른 계정 ba의 openTransfer는 무시(기공소 탭으로).
  * - 2026-10-03: 알림 보기 — 목록에 없어도 의뢰를 불러 채팅을 연다.
  * - 2026-10-03: 헤더 오른쪽 끝 — 북마크·휴지통·설정은 항상 아이콘만(그 순서).
  * - 2026-09-30: 헤더 줄이 좁으면 북마크·신규주문·리메이크·임시저장·휴지통은 아이콘(+숫자).
@@ -356,6 +357,7 @@ import {
 import { buildPracticeSenderTransferDetailModel } from "@/shared/practice/practiceSenderTransferDetailModel";
 import {
   OPEN_PRACTICE_TRANSFER_CHAT_EVENT,
+  resolvePracticeTransferAlertAccountId,
   type OpenPracticeTransferChatDetail,
 } from "@/shared/practice/openPracticeTransferChat";
 import {
@@ -6261,6 +6263,12 @@ export const PracticeFileTransferPage = ({
   useEffect(() => {
     const transferId = String(searchParams.get("openTransfer") || "").trim();
     if (!transferId) return;
+    // 기공소 수신 URL·다른 계정 ba는 치과 발신함에서 열지 않음
+    const mode = String(searchParams.get("mode") || "").trim();
+    if (mode === "receive") return;
+    const ba = String(searchParams.get("ba") || "").trim();
+    const myBa = resolvePracticeTransferAlertAccountId();
+    if (ba && myBa && ba !== myBa) return;
     openTransferWorkStatusById(transferId, "chat");
     const next = new URLSearchParams(searchParams);
     next.delete("openTransfer");

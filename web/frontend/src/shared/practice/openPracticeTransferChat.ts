@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
 // change-log:
+// - 2026-10-04: applyOpenHere — URL ba가 이 계정과 다르면 열지 않음.
 // - 2026-10-04: localFallback=false — 역할이 다른 창은 수신함 탭만 찾고 이 창 URL을 바꾸지 않음.
 // - 2026-10-04: ba(사업자 앵커)로 BroadcastChannel·URL 매칭 — 다른 치과 창이 알림 보기를 가로채지 않음.
 // - 2026-10-03: 보기 → 헬퍼 /open-href로 수신함 창을 앞으로. BroadcastChannel은 같은 프로필 보조.
@@ -158,8 +159,11 @@ const applyOpenHere = (
   mode: PracticeTransferAlertMode,
   accountId?: string,
 ) => {
+  const myBa = resolvePracticeTransferAlertAccountId();
+  const ba = String(accountId || myBa).trim();
+  // 다른 계정 URL이 이 창에 떨어지면 채팅을 열지 않음
+  if (ba && myBa && ba !== myBa) return;
   focusThisWindow();
-  const ba = String(accountId || resolvePracticeTransferAlertAccountId()).trim();
   const path = practiceTransferAlertPath(transferId, mode, ba);
   const onList =
     window.location.pathname.startsWith("/dashboard/practice-transfers") ||

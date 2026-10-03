@@ -1,4 +1,5 @@
 // related files:
+// - 2026-10-04: 역할이 다른 openTransfer는 자식 마운트 전에 넘김 — 치과 창에 채팅이 열리지 않음.
 // - 2026-10-04: 역할이 다른 창의 openTransfer는 URL ba로 대상 탭만 찾고 이 창은 바꾸지 않음.
 // - 2026-10-03: 알림 보기 — 역할이 다른 창의 openTransfer는 수신함 탭으로 넘긴다.
 // - 2026-10-03: 수신 헤더 — 북마크·생산중·설정·데모는 오른쪽 끝(ml-auto).
@@ -325,6 +326,7 @@ import {
 import {
   OPEN_PRACTICE_TRANSFER_CHAT_EVENT,
   openPracticeTransferAlert,
+  resolvePracticeTransferAlertAccountId,
   type OpenPracticeTransferChatDetail,
 } from "@/shared/practice/openPracticeTransferChat";
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
@@ -669,30 +671,44 @@ export default function RequestorPracticePage() {
   } = useRequestorBusinessAccess();
   const modeParam = searchParams.get("mode");
 
+  const desiredMode = kind === "lab" ? "receive" : "send";
+  const openId = String(searchParams.get("openTransfer") || "").trim();
+  const intendedMode =
+    modeParam === "receive" || modeParam === "send" ? modeParam : null;
+  // publish가 ba를 이 계정으로 덮기 전에 URL의 대상 ba를 쓴다.
+  const targetBa = String(searchParams.get("ba") || "").trim();
+  const wrongRoleOpen = Boolean(
+    !loading && openId && intendedMode && intendedMode !== desiredMode,
+  );
+
   useEffect(() => {
     if (loading) return;
-    const desired = kind === "lab" ? "receive" : "send";
-    if (modeParam === desired) return;
-    const openId = String(searchParams.get("openTransfer") || "").trim();
-    const intended =
-      modeParam === "receive" || modeParam === "send" ? modeParam : null;
-    // publish가 ba를 이 계정으로 덮기 전에 URL의 대상 ba를 쓴다.
-    const targetBa = String(searchParams.get("ba") || "").trim();
-    if (openId && intended && intended !== desired) {
-      openPracticeTransferAlert(openId, intended, targetBa || undefined, {
+    if (modeParam === desiredMode && !wrongRoleOpen) return;
+    if (wrongRoleOpen) {
+      openPracticeTransferAlert(openId, intendedMode!, targetBa || undefined, {
         localFallback: false,
       });
     }
     const nextParams = new URLSearchParams(searchParams);
-    nextParams.set("mode", desired);
-    if (openId && intended && intended !== desired) {
+    nextParams.set("mode", desiredMode);
+    if (wrongRoleOpen) {
       nextParams.delete("openTransfer");
     }
     setSearchParams(nextParams, { replace: true });
-  }, [kind, loading, modeParam, searchParams, setSearchParams]);
+  }, [
+    desiredMode,
+    intendedMode,
+    loading,
+    modeParam,
+    openId,
+    searchParams,
+    setSearchParams,
+    targetBa,
+    wrongRoleOpen,
+  ]);
 
-  if (loading) {
-    // kind 확정 전: 사이드메뉴 mode 힌트로 발신/수신 스켈레톤 선택
+  if (loading || wrongRoleOpen) {
+    // kind 확정 전·역할 불일치 openTransfer 전달 중: 자식이 채팅을 열지 않게 스켈레톤
     const hintMode =
       modeParam === "receive" || modeParam === "send"
         ? modeParam
@@ -7812,6 +7828,12 @@ export function RequestorPracticeReceivePage({
     if (!transferId || transferId === "null" || transferId === "undefined") {
       return;
     }
+    // 발신(치과) URL·다른 계정 ba는 이 수신함에서 열지 않음
+    const mode = String(searchParams.get("mode") || "").trim();
+    if (mode === "send") return;
+    const ba = String(searchParams.get("ba") || "").trim();
+    const myBa = resolvePracticeTransferAlertAccountId();
+    if (ba && myBa && ba !== myBa) return;
     openTransferWorkStatusById(transferId, "chat");
     const next = new URLSearchParams(searchParams);
     next.delete("openTransfer");
