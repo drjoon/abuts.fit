@@ -2,6 +2,9 @@
 // - web/frontend/src/shared/share/CaseShareViewer.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/three/screenSpaceOrbitControls.ts
+// - 2026-10-03: 어벗 seating을 스캔바디·바이트와 같은 trimmed ICP로 맞춘다.
+// - 2026-10-03: 어벗 seating에 피니시라인 방위각 회전을 포함한다.
+// - 2026-10-03: 어벗은 보철 피니시라인(내면 좌석)에 맞춰 꽂은 뒤, 보철 펼침을 같이 따른다.
 // - 2026-10-03: 보철 투명도 0=완전 불투명·100=완전 투명(SSOT).
 // - 2026-10-03: 보철 기본 불투명. prosthesisOpacity로 투명도 조절.
 // - 2026-10-03: 보철은 펼치고, 어벗은 원본 좌표로 짝 맞춰 같은 이동. 크라운 반투명.
@@ -26,6 +29,11 @@ import {
   notifyViewPaint,
   type ViewPaintSpace,
 } from "@/shared/components/practice/viewPaintSpace";
+import {
+  computeAbutmentSeatPose,
+  toothLabelFromMeshName,
+  toothLabelsOverlap,
+} from "@/shared/share/seatAbutmentToProsthesis";
 import { cn } from "@/shared/ui/cn";
 
 export type CaseLayerTone = "prosthesis" | "abutment" | "scan";
@@ -133,9 +141,16 @@ function applyProsthesisOpacity(mesh: THREE.Mesh, opacity: number) {
   mat.needsUpdate = true;
 }
 
+function refreshPieceBox(piece: DesignPiece) {
+  piece.mesh.updateMatrixWorld(true);
+  piece.box.setFromObject(piece.mesh);
+  piece.box.getCenter(piece.center);
+  piece.box.getSize(piece.size);
+}
+
 /**
- * 보철은 옆으로 펼친다. 어벗은 원본 좌표로 가장 가까운(겹치는) 보철에 짝 지어
- * 같은 이동을 적용해 크라운에 꽂힌 채로 따라간다. 스캔은 손대지 않는다.
+ * 보철은 옆으로 펼친다. 어벗은 짝 보철 피니시라인에 꽂은 뒤
+ * 같은 펼침 이동을 따라간다. 스캔은 손대지 않는다.
  */
 function syncDesignAssembly(
   meshes: Iterable<THREE.Mesh>,
@@ -147,6 +162,7 @@ function syncDesignAssembly(
     const tone = layerToneOf(mesh);
     if (tone !== "abutment" && tone !== "prosthesis") continue;
     mesh.position.set(0, 0, 0);
+    mesh.quaternion.identity();
     mesh.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(mesh);
     pieces.push({
@@ -162,21 +178,53 @@ function syncDesignAssembly(
   const abuts = pieces.filter((p) => p.tone === "abutment");
   const assemble = crowns.length > 0 && abuts.length > 0;
 
-  // 원본 좌표: 겹침 우선, 아니면 중심 거리로 보철↔어벗 짝.
+  // 치식 포함 우선, 아니면 겹침·중심 거리로 보철↔어벗 짝.
   const abutToCrown = new Map<THREE.Mesh, THREE.Mesh>();
   for (const abut of abuts) {
+    const abutTooth = toothLabelFromMeshName(abut.mesh.name);
     let best: DesignPiece | null = null;
     let bestScore = Infinity;
     for (const crown of crowns) {
+      const crownTooth = toothLabelFromMeshName(crown.mesh.name);
+      const toothHit = toothLabelsOverlap(abutTooth, crownTooth);
       const dist = abut.center.distanceTo(crown.center);
       const intersects = abut.box.intersectsBox(crown.box);
-      const score = intersects ? dist * 0.01 : dist + crown.size.length() * 0.5;
+      let score = intersects ? dist * 0.01 : dist + crown.size.length() * 0.5;
+      if (toothHit) score *= 0.001;
       if (score < bestScore) {
         bestScore = score;
         best = crown;
       }
     }
     if (best) abutToCrown.set(abut.mesh, best.mesh);
+  }
+
+  // 피니시라인 중심·방위각을 보철 좌석에 맞춰 어벗만 강체 이동.
+  const basePosition = new Map<THREE.Mesh, THREE.Vector3>();
+  const baseQuaternion = new Map<THREE.Mesh, THREE.Quaternion>();
+  for (const crown of crowns) {
+    basePosition.set(crown.mesh, new THREE.Vector3());
+    baseQuaternion.set(crown.mesh, new THREE.Quaternion());
+  }
+  for (const abut of abuts) {
+    const crownMesh = abutToCrown.get(abut.mesh);
+    let base = new THREE.Vector3();
+    let quat = new THREE.Quaternion();
+    if (crownMesh) {
+      const pose = computeAbutmentSeatPose(
+        abut.mesh.geometry,
+        crownMesh.geometry,
+      );
+      if (pose) {
+        base = pose.position;
+        quat = pose.quaternion;
+      }
+    }
+    basePosition.set(abut.mesh, base);
+    baseQuaternion.set(abut.mesh, quat);
+    abut.mesh.position.copy(base);
+    abut.mesh.quaternion.copy(quat);
+    refreshPieceBox(abut);
   }
 
   const units = crowns.map((crown) => {
@@ -195,7 +243,7 @@ function syncDesignAssembly(
     };
   });
 
-  // 보철이 2개 이상이면 펼친다. 어벗만 있으면 원본 유지.
+  // 보철이 2개 이상이면 펼친다. 어벗만 있으면 seating만 유지.
   if (units.length >= 2) {
     units.sort(
       (a, b) =>
@@ -210,18 +258,21 @@ function syncDesignAssembly(
         ...units.map((u) => Math.max(u.size.x, u.size.y, u.size.z, 1e-3)),
       ) * PROSTHESIS_GAP_RATIO;
     let cursor = 0;
-    const deltaByMesh = new Map<THREE.Mesh, THREE.Vector3>();
+    const spreadByMesh = new Map<THREE.Mesh, THREE.Vector3>();
     for (const unit of units) {
       const halfW = Math.max(unit.size.x / 2, 1e-3);
       const target = new THREE.Vector3(cursor + halfW, 0, 0);
       const delta = target.sub(unit.center);
       for (const member of unit.members) {
-        deltaByMesh.set(member.mesh, delta.clone());
+        spreadByMesh.set(member.mesh, delta.clone());
       }
       cursor += unit.size.x + gap;
     }
-    for (const [mesh, delta] of deltaByMesh) {
-      mesh.position.copy(delta);
+    for (const [mesh, spread] of spreadByMesh) {
+      const base = basePosition.get(mesh) ?? new THREE.Vector3();
+      const quat = baseQuaternion.get(mesh) ?? new THREE.Quaternion();
+      mesh.quaternion.copy(quat);
+      mesh.position.copy(base).add(spread);
     }
     // 펼친 줄 가운데를 원점으로.
     const row = new THREE.Box3();
@@ -233,7 +284,7 @@ function syncDesignAssembly(
     }
     if (!row.isEmpty()) {
       const rowCenter = row.getCenter(new THREE.Vector3());
-      for (const mesh of deltaByMesh.keys()) {
+      for (const mesh of spreadByMesh.keys()) {
         mesh.position.x -= rowCenter.x;
         mesh.position.y -= rowCenter.y;
         mesh.position.z -= rowCenter.z;
