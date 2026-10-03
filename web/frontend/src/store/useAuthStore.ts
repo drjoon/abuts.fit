@@ -814,6 +814,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
       set({ user: next });
     },
     logout: () => {
+      const helperToken = String(get().token || "").trim();
       // 다른 탭 세션이 localStorage에 있으면 지우지 않는다 (stale 탭 로그아웃로 활성 세션 로그아웃 방지).
       if (!isMemoryAuthStale(get().token)) {
         try {
@@ -824,9 +825,11 @@ export const useAuthStore = create<AuthState>((set, get) => {
           // ignore
         }
       }
-      void import("@/shared/files/labHelperClient")
-        .then((m) => m.clearLabHelperAlarmSession())
-        .catch(() => undefined);
+      if (helperToken) {
+        void import("@/shared/files/labHelperClient")
+          .then((m) => m.clearLabHelperAlarmSession(helperToken))
+          .catch(() => undefined);
+      }
       set({
         user: null,
         isAuthenticated: false,

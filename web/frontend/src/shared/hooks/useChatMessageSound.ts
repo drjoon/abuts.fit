@@ -30,6 +30,7 @@ import { toast } from "@/shared/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import {
   openPracticeTransferAlert,
+  practiceTransferAlertHref,
   type PracticeTransferAlertMode,
 } from "@/shared/practice/openPracticeTransferChat";
 
@@ -148,7 +149,11 @@ export function useChatMessageSound() {
         : "send";
       const snippet = String(message?.content || "").trim();
       const body = snippet || "새 메시지가 도착했습니다.";
-      playChatNotifySound({ title: "새 채팅", body });
+      playChatNotifySound({
+        title: "새 채팅",
+        body,
+        href: transferId ? practiceTransferAlertHref(transferId, mode) : "",
+      });
       toast({
         title: "새 채팅",
         description: body,

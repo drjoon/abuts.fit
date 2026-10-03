@@ -302,10 +302,12 @@ namespace Abuts.LabHelper
                     return;
                 }
                 case "POST /session/clear":
-                    DrainBody(req);
-                    AlarmSession.Clear();
+                {
+                    var body = ReadJson(req);
+                    AlarmSession.Clear(Str(body, "token"));
                     SendJson(ns, 200, origin, Ok(new Dictionary<string, object>()));
                     return;
+                }
                 case "POST /shutdown":
                     SendJson(ns, 200, origin, Ok(new Dictionary<string, object>()));
                     Log.Write("shutdown");

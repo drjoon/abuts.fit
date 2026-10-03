@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-10-03: v7 — POST /open-href.
+// - 2026-10-03: v8 — 치과·기공소 세션을 동시에 폴링(포커스 없는 창도 OS 알림).
 // - 2026-10-03: v5 — version.json 자동 갱신(--silent-update).
 // - 2026-10-03: v4 — PC 알람(/notify·/session) + 브라우저 종료 시 API 장기 폴링.
 // - 2026-09-27: v3 — Windows 전용 exe 하나. 실행하면 동의 한 번으로 설치(관리자 권한 없음),
@@ -20,7 +20,7 @@ namespace Abuts.LabHelper
 {
     internal static class Program
     {
-        public const int Version = 7;
+        public const int Version = 8;
         public const int Port = 8010;
         public const string Title = "어벗츠 연결 프로그램";
 

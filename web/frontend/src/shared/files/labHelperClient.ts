@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-03: v8 계정별 헬퍼 세션 — 치과·기공소 동시 폴링. /notify는 health ping 생략.
 // - 2026-10-03: v7 POST /open-href — 알림 보기가 수신함 탭을 앞으로.
 // - 2026-10-03: /notify health ping — 로컬 네트워크 권한 대기(400ms면 헬퍼 있어도 실패).
 // - 2026-10-03: v4 PC 알람 — notify/session (폴더열기 MIN_VERSION은 3 유지, 알람은 version>=4).
@@ -21,7 +22,7 @@ export const LAB_HELPER_MIN_VERSION = 3;
 /** PC 알람(/notify·/session)에 필요한 최소 버전 */
 export const LAB_HELPER_ALARM_MIN_VERSION = 4;
 /** 배포 중인 최신 연결 프로그램 버전(구버전이면 자동 갱신 유도) */
-export const LAB_HELPER_CURRENT_VERSION = 7;
+export const LAB_HELPER_CURRENT_VERSION = 8;
 const INSTALLED_KEY = "abuts.labHelperInstalled";
 const WORK_FOLDER_KEY = "abuts.labWorkFolder";
 
@@ -108,6 +109,8 @@ export type LabHelperAlarmSessionPayload = {
   token: string;
   prefs: LabHelperAlarmPrefsPayload;
   browserAlive: boolean;
+  /** 알림 보기 URL — 치과 발신함 / 기공소 수신함 */
+  alertMode?: "send" | "receive";
 };
 
 /** 헬퍼가 백엔드에 직접 붙을 때 쓰는 origin(끝에 /api 없음). */
@@ -370,11 +373,7 @@ export async function notifyLabHelperAlarm(opts?: {
   href?: string;
 }): Promise<boolean> {
   if (!labHelperOs()) return false;
-  const health = await pingOnce(await pingTimeout(1200));
-  if (!health || Number(health.version || 0) < LAB_HELPER_ALARM_MIN_VERSION) {
-    return false;
-  }
-    return helperAlarmJson("/notify", {
+  return helperAlarmJson("/notify", {
     title: String(opts?.title || "").trim(),
     body: String(opts?.body || "").trim(),
     href: String(opts?.href || "").trim(),
@@ -419,12 +418,15 @@ export async function syncLabHelperAlarmSession(
       enabled: payload.prefs?.enabled !== false,
     },
     browserAlive: Boolean(payload.browserAlive),
+    alertMode: payload.alertMode === "send" ? "send" : "receive",
   });
 }
 
-export async function clearLabHelperAlarmSession(): Promise<boolean> {
+export async function clearLabHelperAlarmSession(token?: string): Promise<boolean> {
   if (!labHelperOs()) return false;
-  return helperAlarmJson("/session/clear", {});
+  return helperAlarmJson("/session/clear", {
+    token: String(token || "").trim(),
+  });
 }
 
 export function startLabHelperInstallerDownload(os: LabHelperOs) {

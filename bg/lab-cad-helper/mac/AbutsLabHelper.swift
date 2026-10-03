@@ -1,4 +1,4 @@
-// change-log:
+// - 2026-10-03: v8 — 계정별 세션·폴링. 치과 창이 기공소 세션을 덮어쓰지 않음.
 // - 2026-10-03: 알림 보기 — 탭 URL을 바꾸지 않고 채팅 이벤트만 주입(새로고침 방지).
 // - 2026-10-03: v6 — 401/403 백오프·URL 캐시 무시. 탭 숨김 폴링은 웹 session.browserAlive.
 // - 2026-10-03: v4 — PC 알람(/notify·/session) + 브라우저 종료 시 API 장기 폴링.
@@ -14,7 +14,7 @@ import AppKit
 import Foundation
 import Network
 
-let helperVersion = 7
+let helperVersion = 8
 let helperPort: UInt16 = 8010
 let agentLabel = "fit.abuts.labhelper"
 let appTitle = "어벗츠 연결 프로그램"
@@ -101,82 +101,108 @@ final class Config {
 final class AlarmSession {
   static let shared = AlarmSession()
   private let lock = NSLock()
-  private var apiOrigin = ""
-  private var appOrigin = ""
-  private var token = ""
-  private var enabled = true
-  private var muted = Set<String>()
-  private var browserAlive = false
-  private var lastHeartbeat = Date.distantPast
-  private var pollStarted = false
+  private let maxRows = 8
+  private var rows: [String: Row] = [:]
+  private var pollKeys = Set<String>()
+
+  struct Row {
+    var apiOrigin = ""
+    var appOrigin = ""
+    var token = ""
+    var enabled = true
+    var muted = Set<String>()
+    var browserAlive = false
+    var lastHeartbeat = Date.distantPast
+    var alertMode = "receive"
+  }
 
   static let heartbeatExpire: TimeInterval = 60
   static let pollWaitSec = 25
   static let soundDebounce: TimeInterval = 0.9
 
+  static func tokenKey(_ token: String) -> String {
+    let t = token.trimmingCharacters(in: .whitespaces)
+    if t.count <= 48 { return t }
+    return String(t.prefix(24)) + String(t.suffix(24))
+  }
+
   func apply(_ body: [String: Any]) {
+    let t = (body["token"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+    guard !t.isEmpty else { return }
+    let key = Self.tokenKey(t)
     lock.lock()
+    var row = rows[key] ?? Row()
+    row.token = t
     if let origin = (body["apiOrigin"] as? String)?.trimmingCharacters(in: .whitespaces), !origin.isEmpty {
       var next = origin
       while next.hasSuffix("/") { next = String(next.dropLast()) }
-      apiOrigin = next
+      row.apiOrigin = next
     }
     if let origin = (body["appOrigin"] as? String)?.trimmingCharacters(in: .whitespaces), !origin.isEmpty {
       var next = origin
       while next.hasSuffix("/") { next = String(next.dropLast()) }
-      appOrigin = next
+      row.appOrigin = next
     }
-    if let t = (body["token"] as? String)?.trimmingCharacters(in: .whitespaces), !t.isEmpty {
-      token = t
+    if let mode = (body["alertMode"] as? String)?.trimmingCharacters(in: .whitespaces).lowercased(),
+       mode == "send" || mode == "receive" {
+      row.alertMode = mode
     }
     if let prefs = body["prefs"] as? [String: Any] {
-      if let en = prefs["enabled"] as? Bool { enabled = en }
-      else if let en = prefs["enabled"] as? NSNumber { enabled = en.boolValue }
-      muted = Set((prefs["mutedPracticeIds"] as? [Any] ?? []).compactMap {
+      if let en = prefs["enabled"] as? Bool { row.enabled = en }
+      else if let en = prefs["enabled"] as? NSNumber { row.enabled = en.boolValue }
+      row.muted = Set((prefs["mutedPracticeIds"] as? [Any] ?? []).compactMap {
         let s = "\($0)".trimmingCharacters(in: .whitespaces)
         return s.isEmpty ? nil : s
       })
     }
     if let alive = body["browserAlive"] as? Bool {
-      browserAlive = alive
+      row.browserAlive = alive
     } else if let alive = body["browserAlive"] as? NSNumber {
-      browserAlive = alive.boolValue
+      row.browserAlive = alive.boolValue
     }
-    lastHeartbeat = Date()
-    let startPoll = !pollStarted
-    if startPoll { pollStarted = true }
+    row.lastHeartbeat = Date()
+    rows[key] = row
+    if rows.count > maxRows {
+      let drop = rows
+        .filter { $0.key != key }
+        .min { $0.value.lastHeartbeat < $1.value.lastHeartbeat }?
+        .key
+      if let drop = drop { rows.removeValue(forKey: drop) }
+    }
+    let startPoll = !pollKeys.contains(key)
+    if startPoll { pollKeys.insert(key) }
     lock.unlock()
-    if startPoll { AlarmPoller.start() }
+    if startPoll { AlarmPoller.start(key: key) }
   }
 
-  func clear() {
+  func clear(_ token: String = "") {
+    let t = token.trimmingCharacters(in: .whitespaces)
     lock.lock()
-    apiOrigin = ""
-    appOrigin = ""
-    token = ""
-    browserAlive = false
-    lastHeartbeat = .distantPast
+    if t.isEmpty {
+      rows.removeAll()
+    } else {
+      rows.removeValue(forKey: Self.tokenKey(t))
+    }
     lock.unlock()
   }
 
-  func shouldPoll() -> Bool {
+  func shouldPoll(_ key: String) -> Bool {
     lock.lock(); defer { lock.unlock() }
-    if apiOrigin.isEmpty || token.isEmpty { return false }
-    if !browserAlive { return true }
-    return Date().timeIntervalSince(lastHeartbeat) > AlarmSession.heartbeatExpire
+    guard let row = rows[key] else { return false }
+    if !row.enabled || row.apiOrigin.isEmpty || row.token.isEmpty { return false }
+    if !row.browserAlive { return true }
+    return Date().timeIntervalSince(row.lastHeartbeat) > AlarmSession.heartbeatExpire
   }
 
-  func snapshot() -> (apiOrigin: String, appOrigin: String, token: String, enabled: Bool, muted: Set<String>) {
+  func snapshot(_ key: String) -> Row? {
     lock.lock(); defer { lock.unlock() }
-    return (apiOrigin, appOrigin, token, enabled, muted)
+    return rows[key]
   }
 
-  func isPracticeMuted(_ practiceId: String) -> Bool {
-    let id = practiceId.trimmingCharacters(in: .whitespaces)
+  func firstApiOrigin() -> String {
     lock.lock(); defer { lock.unlock() }
-    if !enabled { return true }
-    if id.isEmpty { return false }
-    return muted.contains(id)
+    for row in rows.values where !row.apiOrigin.isEmpty { return row.apiOrigin }
+    return ""
   }
 }
 
@@ -184,15 +210,16 @@ enum AlarmNotify {
   private static let lock = NSLock()
   private static var lastPlayed = Date.distantPast
 
-  static func href(from alarm: [String: Any], appOrigin: String) -> String {
-    let direct = "\(alarm["href"] ?? "")".trimmingCharacters(in: .whitespaces)
-    if !direct.isEmpty { return direct }
+  static func href(from alarm: [String: Any], appOrigin: String, alertMode: String = "receive") -> String {
     let tid = "\(alarm["transferId"] ?? "")".trimmingCharacters(in: .whitespaces)
     var origin = appOrigin.trimmingCharacters(in: .whitespaces)
     while origin.hasSuffix("/") { origin = String(origin.dropLast()) }
-    if tid.isEmpty || origin.isEmpty { return "" }
-    let enc = tid.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? tid
-    return "\(origin)/dashboard/practice-transfers?mode=receive&openTransfer=\(enc)"
+    if !tid.isEmpty, !origin.isEmpty {
+      let mode = alertMode == "send" ? "send" : "receive"
+      let enc = tid.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? tid
+      return "\(origin)/dashboard/practice-transfers?mode=\(mode)&openTransfer=\(enc)"
+    }
+    return "\(alarm["href"] ?? "")".trimmingCharacters(in: .whitespaces)
   }
 
   static func play(title: String, body: String, href: String = "") {
@@ -392,30 +419,33 @@ final class AlarmNotifCenter: NSObject, NSUserNotificationCenterDelegate {
 }
 
 enum AlarmPoller {
-  static func start() {
+  static func start(key: String) {
     DispatchQueue.global(qos: .utility).async {
       while true {
-        if !AlarmSession.shared.shouldPoll() {
+        if !AlarmSession.shared.shouldPoll(key) {
           Thread.sleep(forTimeInterval: 2)
           continue
         }
-        let snap = AlarmSession.shared.snapshot()
-        if !snap.enabled || snap.apiOrigin.isEmpty || snap.token.isEmpty {
+        guard let snap = AlarmSession.shared.snapshot(key),
+              snap.enabled, !snap.apiOrigin.isEmpty, !snap.token.isEmpty else {
           Thread.sleep(forTimeInterval: 2)
           continue
         }
         let waited = waitOnce(apiOrigin: snap.apiOrigin, token: snap.token)
         if waited.status == 401 || waited.status == 403 {
-          // 잘못된·만료 토큰 — 브라우저 세션 갱신까지 대기(스팸 방지).
           Thread.sleep(forTimeInterval: 15)
           continue
         }
         if let alarm = waited.alarm {
           let practiceId = "\(alarm["practiceBusinessAnchorId"] ?? "")".trimmingCharacters(in: .whitespaces)
-          if AlarmSession.shared.isPracticeMuted(practiceId) { continue }
+          if !practiceId.isEmpty, snap.muted.contains(practiceId) { continue }
           let title = "\(alarm["title"] ?? "")"
           let body = "\(alarm["body"] ?? "")"
-          AlarmNotify.play(title: title, body: body, href: AlarmNotify.href(from: alarm, appOrigin: snap.appOrigin))
+          AlarmNotify.play(
+            title: title,
+            body: body,
+            href: AlarmNotify.href(from: alarm, appOrigin: snap.appOrigin, alertMode: snap.alertMode)
+          )
         } else {
           Thread.sleep(forTimeInterval: 0.5)
         }
@@ -802,7 +832,8 @@ final class HttpConnection {
       AlarmSession.shared.apply(jsonBody())
       return respond(200, ["ok": true])
     case ("POST", "/session/clear"):
-      AlarmSession.shared.clear()
+      let t = "\(jsonBody()["token"] as? String ?? "")"
+      AlarmSession.shared.clear(t)
       return respond(200, ["ok": true])
     case ("POST", "/shutdown"):
       respond(200, ["ok": true])
@@ -983,8 +1014,8 @@ func startAutoUpdate() {
     Thread.sleep(forTimeInterval: 8)
     let origins: [String] = {
       var list: [String] = []
-      let snap = AlarmSession.shared.snapshot()
-      if !snap.apiOrigin.isEmpty { list.append(snap.apiOrigin) }
+      let origin = AlarmSession.shared.firstApiOrigin()
+      if !origin.isEmpty { list.append(origin) }
       list.append(contentsOf: ["https://abuts.fit", "https://www.abuts.fit"])
       return list
     }()

@@ -53,12 +53,7 @@ namespace Abuts.LabHelper
                 // older defaults
             }
 
-            string apiOrigin;
-            string appOrigin;
-            string token;
-            bool enabled;
-            System.Collections.Generic.HashSet<string> muted;
-            AlarmSession.Snapshot(out apiOrigin, out appOrigin, out token, out enabled, out muted);
+            var apiOrigin = AlarmSession.FirstApiOrigin();
 
             var origins = new System.Collections.Generic.List<string>();
             if (!string.IsNullOrEmpty(apiOrigin)) origins.Add(apiOrigin.TrimEnd('/'));

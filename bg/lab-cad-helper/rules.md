@@ -64,12 +64,13 @@ bind `127.0.0.1:8010`(Windows TcpListener — HttpListener URL 예약은 관리�
 | PUT | `/cases/file?workFolder&caseFolder&name` | 파일 저장(최대 4GB). 쿼리의 `+`는 공백 |
 | POST | `/cases/reveal` | `{workFolder, caseFolder}` → 탐색기·Finder로 열기 |
 | POST | `/notify` | `{title?, body?}` → OS 알림음(+ balloon/알림). v4 |
-| POST | `/session` | `{apiOrigin, token, prefs, browserAlive}` → 브라우저 종료 후 `GET {apiOrigin}/api/lab-helper/alarms/wait` 폴링. v4 |
-| POST | `/session/clear` | 로그아웃 시 세션 제거. v4 |
+| POST | `/session` | `{apiOrigin, appOrigin?, token, prefs, browserAlive, alertMode?}` — 토큰별로 세션 유지. 포커스 없는 계정만 `alarms/wait` 폴링. v4, 다중 세션 v8 |
+| POST | `/session/clear` | `{token?}` 해당 계정만 제거. token 없으면 전부 삭제. v4 |
+| POST | `/open-href` | `{ href }` — 이미 열린 기공의뢰 탭을 앞으로. v7 |
 | POST | `/shutdown` | 재설치용 종료 |
 
-- 웹 `LAB_HELPER_MIN_VERSION`(폴더열기)=3, `LAB_HELPER_ALARM_MIN_VERSION`=4, `LAB_HELPER_CURRENT_VERSION`=6. 알람 API는 version≥4일 때만 호출한다.
-- **자동 갱신(v5+)**: serve 중 `version.json`을 보고 원격이 더 높으면 설치본을 받아 `--silent-update`로 교체. 이미 설치된 PC에서 설치 파일을 열면 확인 창 없이 덮어쓴다. 구버전은 웹 `LabHelperUpdateDialog`로 파일 받기 + 「열어서 설치」를 짧게 안내한다. v6: 탭 숨김 시 폴링·401 백오프·캐시 무시.
+- 웹 `LAB_HELPER_MIN_VERSION`(폴더열기)=3, `LAB_HELPER_ALARM_MIN_VERSION`=4, `LAB_HELPER_CURRENT_VERSION`=8. 알람 API는 version≥4일 때만 호출한다.
+- **자동 갱신(v5+)**: serve 중 `version.json`을 보고 원격이 더 높으면 설치본을 받아 `--silent-update`로 교체. 이미 설치된 PC에서 설치 파일을 열면 확인 창 없이 덮어쓴다. 구버전은 웹 `LabHelperUpdateDialog`로 파일 받기 + 「열어서 설치」를 짧게 안내한다. v6: 탭 숨김 시 폴링·401 백오프·캐시 무시. v8: 치과·기공소 JWT를 동시에 들고, 포커스 없는 쪽만 OS 알림.
 
 ## 5) 파일 · 빌드
 
@@ -91,8 +92,9 @@ bg/lab-cad-helper/mac/build.sh   # Xcode CLT → AbutsLabHelper-mac.zip (유니�
 # Mac 서명·공증: MAC_SIGN_IDENTITY="Developer ID Application: …" MAC_NOTARY_PROFILE=… bg/lab-cad-helper/mac/build.sh
 ```
 
-- 버전을 올리면 Windows `Program.Version`·csproj `Version`·`app.manifest`, Mac `helperVersion`·`build.sh` Info.plist, 웹 `LAB_HELPER_MIN_VERSION`을 함께 바꾼다.
-- v7: `POST /open-href` `{ href }` — 이미 열린 기공의뢰 탭을 앞으로. Mac은 Chrome 수신함(`mode=receive`) 탭을 찾고, 웹 알림 **보기**가 호출한다.
+- 버전을 올리면 Windows `Program.Version`·csproj `Version`·`app.manifest`, Mac `helperVersion`·`build.sh` Info.plist, 웹 `LAB_HELPER_CURRENT_VERSION`을 함께 바꾼다.
+- v7: `POST /open-href` `{ href }` — 이미 열린 기공의뢰 탭을 앞으로. Mac은 Chrome 수신함/발신함 탭을 찾고, 웹 알림 **보기**가 호출한다.
+- v8: 헬퍼 세션이 계정(JWT)마다 따로 있다. 치과 창이 기공소 세션을 덮어쓰지 않고, 포커스 없는 치과도 OS 알림을 받는다.
 
 ## 6) 레거시
 

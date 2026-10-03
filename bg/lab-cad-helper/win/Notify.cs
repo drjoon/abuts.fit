@@ -18,134 +18,184 @@ using System.Windows.Forms;
 
 namespace Abuts.LabHelper
 {
+    internal sealed class AlarmSessionRow
+    {
+        public string ApiOrigin = "";
+        public string AppOrigin = "";
+        public string Token = "";
+        public bool Enabled = true;
+        public HashSet<string> Muted = new HashSet<string>(StringComparer.Ordinal);
+        public bool BrowserAlive;
+        public long LastHeartbeatTicks;
+        public string AlertMode = "receive";
+    }
+
     internal static class AlarmSession
     {
         private static readonly object Gate = new object();
-        private static string _apiOrigin = "";
-        private static string _appOrigin = "";
-        private static string _token = "";
-        private static bool _enabled = true;
-        private static HashSet<string> _muted = new HashSet<string>(StringComparer.Ordinal);
-        private static bool _browserAlive;
-        private static long _lastHeartbeatTicks;
-        private static bool _pollRunning;
+        private static readonly Dictionary<string, AlarmSessionRow> Rows =
+            new Dictionary<string, AlarmSessionRow>(StringComparer.Ordinal);
+        private static readonly HashSet<string> Pollers = new HashSet<string>(StringComparer.Ordinal);
+        private const int MaxRows = 8;
 
         public const int HeartbeatExpireMs = 60000;
         public const int PollWaitSec = 25;
         public const int SoundDebounceMs = 900;
 
+        public static string TokenKey(string token)
+        {
+            var t = (token ?? "").Trim();
+            if (t.Length <= 48) return t;
+            return t.Substring(0, 24) + t.Substring(t.Length - 24);
+        }
+
         public static void Apply(Dictionary<string, object> body)
         {
             if (body == null) return;
+            var token = Str(body, "token");
+            if (string.IsNullOrEmpty(token)) return;
+            var key = TokenKey(token);
             lock (Gate)
             {
+                AlarmSessionRow row;
+                if (!Rows.TryGetValue(key, out row) || row == null)
+                {
+                    row = new AlarmSessionRow();
+                }
+                row.Token = token;
                 var origin = Str(body, "apiOrigin");
                 if (!string.IsNullOrEmpty(origin))
                 {
-                    _apiOrigin = origin.Trim().TrimEnd('/');
+                    row.ApiOrigin = origin.Trim().TrimEnd('/');
                 }
                 var appOrigin = Str(body, "appOrigin");
                 if (!string.IsNullOrEmpty(appOrigin))
                 {
-                    _appOrigin = appOrigin.Trim().TrimEnd('/');
+                    row.AppOrigin = appOrigin.Trim().TrimEnd('/');
                 }
-                var token = Str(body, "token");
-                if (!string.IsNullOrEmpty(token)) _token = token;
+                var mode = Str(body, "alertMode").ToLowerInvariant();
+                if (mode == "send" || mode == "receive") row.AlertMode = mode;
 
                 object prefsObj;
                 if (body.TryGetValue("prefs", out prefsObj) && prefsObj is Dictionary<string, object>)
                 {
-                    ApplyPrefs((Dictionary<string, object>)prefsObj);
+                    ApplyPrefs(row, (Dictionary<string, object>)prefsObj);
                 }
 
                 object aliveObj;
                 if (body.TryGetValue("browserAlive", out aliveObj) && aliveObj != null)
                 {
-                    _browserAlive = IsTruthy(aliveObj);
+                    row.BrowserAlive = IsTruthy(aliveObj);
                 }
-                _lastHeartbeatTicks = DateTime.UtcNow.Ticks;
+                row.LastHeartbeatTicks = DateTime.UtcNow.Ticks;
+                Rows[key] = row;
+                if (Rows.Count > MaxRows)
+                {
+                    string drop = null;
+                    var oldest = long.MaxValue;
+                    foreach (var kv in Rows)
+                    {
+                        if (kv.Key == key) continue;
+                        if (kv.Value.LastHeartbeatTicks < oldest)
+                        {
+                            oldest = kv.Value.LastHeartbeatTicks;
+                            drop = kv.Key;
+                        }
+                    }
+                    if (!string.IsNullOrEmpty(drop)) Rows.Remove(drop);
+                }
             }
-            EnsurePoller();
+            EnsurePoller(key);
         }
 
-        public static void Clear()
+        public static void Clear(string token)
         {
             lock (Gate)
             {
-                _apiOrigin = "";
-                _appOrigin = "";
-                _token = "";
-                _browserAlive = false;
-                _lastHeartbeatTicks = 0;
+                var t = (token ?? "").Trim();
+                if (string.IsNullOrEmpty(t)) Rows.Clear();
+                else Rows.Remove(TokenKey(t));
             }
         }
 
-        public static bool ShouldPoll()
+        public static bool ShouldPoll(string key)
         {
             lock (Gate)
             {
-                if (string.IsNullOrEmpty(_apiOrigin) || string.IsNullOrEmpty(_token)) return false;
-                if (!_browserAlive) return true;
-                var ageMs = (DateTime.UtcNow.Ticks - _lastHeartbeatTicks) / TimeSpan.TicksPerMillisecond;
+                AlarmSessionRow row;
+                if (!Rows.TryGetValue(key, out row) || row == null) return false;
+                if (!row.Enabled || string.IsNullOrEmpty(row.ApiOrigin) || string.IsNullOrEmpty(row.Token))
+                    return false;
+                if (!row.BrowserAlive) return true;
+                var ageMs = (DateTime.UtcNow.Ticks - row.LastHeartbeatTicks) / TimeSpan.TicksPerMillisecond;
                 return ageMs > HeartbeatExpireMs;
             }
         }
 
-        public static void Snapshot(
-            out string apiOrigin,
-            out string appOrigin,
-            out string token,
-            out bool enabled,
-            out HashSet<string> muted)
+        public static bool TrySnapshot(string key, out AlarmSessionRow row)
         {
             lock (Gate)
             {
-                apiOrigin = _apiOrigin;
-                appOrigin = _appOrigin;
-                token = _token;
-                enabled = _enabled;
-                muted = new HashSet<string>(_muted, StringComparer.Ordinal);
+                AlarmSessionRow found;
+                if (Rows.TryGetValue(key, out found) && found != null)
+                {
+                    row = new AlarmSessionRow
+                    {
+                        ApiOrigin = found.ApiOrigin,
+                        AppOrigin = found.AppOrigin,
+                        Token = found.Token,
+                        Enabled = found.Enabled,
+                        Muted = new HashSet<string>(found.Muted, StringComparer.Ordinal),
+                        BrowserAlive = found.BrowserAlive,
+                        LastHeartbeatTicks = found.LastHeartbeatTicks,
+                        AlertMode = found.AlertMode,
+                    };
+                    return true;
+                }
             }
+            row = null;
+            return false;
         }
 
-        public static bool IsPracticeMuted(string practiceId)
+        public static string FirstApiOrigin()
         {
-            var id = (practiceId ?? "").Trim();
             lock (Gate)
             {
-                if (!_enabled) return true;
-                if (string.IsNullOrEmpty(id)) return false;
-                return _muted.Contains(id);
+                foreach (var kv in Rows)
+                {
+                    if (!string.IsNullOrEmpty(kv.Value.ApiOrigin)) return kv.Value.ApiOrigin;
+                }
             }
+            return "";
         }
 
-        private static void ApplyPrefs(Dictionary<string, object> prefs)
+        private static void ApplyPrefs(AlarmSessionRow row, Dictionary<string, object> prefs)
         {
             object en;
             if (prefs.TryGetValue("enabled", out en) && en != null)
             {
-                _enabled = IsTruthy(en);
+                row.Enabled = IsTruthy(en);
             }
             object mutedObj;
-            _muted = new HashSet<string>(StringComparer.Ordinal);
+            row.Muted = new HashSet<string>(StringComparer.Ordinal);
             if (prefs.TryGetValue("mutedPracticeIds", out mutedObj) && mutedObj is System.Collections.IEnumerable)
             {
                 foreach (var item in (System.Collections.IEnumerable)mutedObj)
                 {
                     var id = Convert.ToString(item ?? "").Trim();
-                    if (!string.IsNullOrEmpty(id)) _muted.Add(id);
+                    if (!string.IsNullOrEmpty(id)) row.Muted.Add(id);
                 }
             }
         }
 
-        private static void EnsurePoller()
+        private static void EnsurePoller(string key)
         {
             lock (Gate)
             {
-                if (_pollRunning) return;
-                _pollRunning = true;
+                if (Pollers.Contains(key)) return;
+                Pollers.Add(key);
             }
-            var t = new Thread(AlarmPoller.Loop) { IsBackground = true, Name = "alarm-poll" };
+            var t = new Thread(() => AlarmPoller.Loop(key)) { IsBackground = true, Name = "alarm-poll" };
             t.Start();
         }
 
@@ -190,15 +240,9 @@ namespace Abuts.LabHelper
             ShowBalloon(title, body, href);
         }
 
-        public static string HrefFrom(Dictionary<string, object> alarm, string appOrigin)
+        public static string HrefFrom(Dictionary<string, object> alarm, string appOrigin, string alertMode)
         {
             if (alarm == null) return "";
-            object hrefObj;
-            if (alarm.TryGetValue("href", out hrefObj) && hrefObj != null)
-            {
-                var href = Convert.ToString(hrefObj).Trim();
-                if (!string.IsNullOrEmpty(href)) return href;
-            }
             object tidObj;
             var tid = "";
             if (alarm.TryGetValue("transferId", out tidObj) && tidObj != null)
@@ -206,8 +250,17 @@ namespace Abuts.LabHelper
                 tid = Convert.ToString(tidObj).Trim();
             }
             var origin = (appOrigin ?? "").Trim().TrimEnd('/');
-            if (string.IsNullOrEmpty(tid) || string.IsNullOrEmpty(origin)) return "";
-            return origin + "/dashboard/practice-transfers?mode=receive&openTransfer=" + Uri.EscapeDataString(tid);
+            if (!string.IsNullOrEmpty(tid) && !string.IsNullOrEmpty(origin))
+            {
+                var mode = (alertMode ?? "").Trim() == "send" ? "send" : "receive";
+                return origin + "/dashboard/practice-transfers?mode=" + mode + "&openTransfer=" + Uri.EscapeDataString(tid);
+            }
+            object hrefObj;
+            if (alarm.TryGetValue("href", out hrefObj) && hrefObj != null)
+            {
+                return Convert.ToString(hrefObj).Trim();
+            }
+            return "";
         }
 
         private static string _pendingHref = "";
@@ -269,33 +322,32 @@ namespace Abuts.LabHelper
 
     internal static class AlarmPoller
     {
-        public static void Loop()
+        public static void Loop(string key)
         {
             while (true)
             {
                 try
                 {
-                    if (!AlarmSession.ShouldPoll())
+                    if (!AlarmSession.ShouldPoll(key))
                     {
                         Thread.Sleep(2000);
                         continue;
                     }
-                    string apiOrigin;
-                    string appOrigin;
-                    string token;
-                    bool enabled;
-                    HashSet<string> muted;
-                    AlarmSession.Snapshot(out apiOrigin, out appOrigin, out token, out enabled, out muted);
-                    if (!enabled || string.IsNullOrEmpty(apiOrigin) || string.IsNullOrEmpty(token))
+                    AlarmSessionRow snap;
+                    if (!AlarmSession.TrySnapshot(key, out snap) || snap == null)
+                    {
+                        Thread.Sleep(2000);
+                        continue;
+                    }
+                    if (!snap.Enabled || string.IsNullOrEmpty(snap.ApiOrigin) || string.IsNullOrEmpty(snap.Token))
                     {
                         Thread.Sleep(2000);
                         continue;
                     }
                     int status;
-                    var alarm = WaitOnce(apiOrigin, token, out status);
+                    var alarm = WaitOnce(snap.ApiOrigin, snap.Token, out status);
                     if (status == 401 || status == 403)
                     {
-                        // 잘못된·만료 토큰 — 브라우저 세션 갱신까지 대기(스팸 방지).
                         Log.Write("poll auth " + status);
                         Thread.Sleep(15000);
                         continue;
@@ -311,13 +363,13 @@ namespace Abuts.LabHelper
                     {
                         practiceId = Convert.ToString(pid).Trim();
                     }
-                    if (AlarmSession.IsPracticeMuted(practiceId)) continue;
+                    if (!string.IsNullOrEmpty(practiceId) && snap.Muted.Contains(practiceId)) continue;
                     var title = "";
                     var body = "";
                     object t, b;
                     if (alarm.TryGetValue("title", out t) && t != null) title = Convert.ToString(t);
                     if (alarm.TryGetValue("body", out b) && b != null) body = Convert.ToString(b);
-                    AlarmNotify.Play(title, body, AlarmNotify.HrefFrom(alarm, appOrigin));
+                    AlarmNotify.Play(title, body, AlarmNotify.HrefFrom(alarm, snap.AppOrigin, snap.AlertMode));
                 }
                 catch (Exception ex)
                 {
