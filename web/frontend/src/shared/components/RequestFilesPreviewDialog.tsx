@@ -1,5 +1,6 @@
 // 의뢰·작업 스캔·어벗·보철을 한 번에 띄운다. 3D는 같은 좌표로 겹치고, 사진은 오른쪽 패널에서 연다.
 // change-log:
+// - 2026-10-03: 처음엔 활성 클러스터만 받아 보여주고, 다른 묶음은 클릭 때 S3→IndexedDB 캐시. 클러스터 전환 시 뷰 리셋.
 // - 2026-10-03: 어벗을 보철에 맞춘 자세를 확인받아 의뢰에 저장(transferKey). 파일은 그대로, 자세만.
 // - 2026-10-03: 투명도·스캔색을 localStorage에 저장. 의뢰를 바꿔도 같은 값 적용.
 // - 2026-10-03: 클러스터별 표시/숨김을 localStorage에 저장. 다른 묶음 갔다 와도 복원.
@@ -533,6 +534,17 @@ export function RequestFilesPreviewDialog({
   const initialKeyRef = useRef(initialKey);
   initialKeyRef.current = initialKey;
   const layerPrefsRef = useRef<LayerPrefs>(loadLayerPrefs());
+  /** 프리뷰 세션(열림) 동안의 fetch 취소. */
+  const loadAbortRef = useRef<AbortController | null>(null);
+  /** 이미 받기 시작한 파일 키. 클러스터를 다시 켜도 중복 fetch 안 함. */
+  const startedKeysRef = useRef(new Set<string>());
+  /** PLY/OBJ 텍스처용. state와 같이 갱신해 모델 로드가 기다리지 않게 한다. */
+  const imageFilesRef = useRef<Record<string, File>>({});
+  const imageUrlsRef = useRef<string[]>([]);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const authTokenRef = useRef(authToken);
+  authTokenRef.current = authToken;
 
   const expandCluster = (cluster: ItemCluster) => {
     setCollapsed((prev) =>
@@ -565,55 +577,36 @@ export function RequestFilesPreviewDialog({
     saveLayerPrefs(layerPrefsRef.current);
   };
 
-  // 열 때마다 전부 불러온다. 사진을 먼저 받아 두면 PLY 텍스처로도 쓴다.
-  useEffect(() => {
-    if (!open || !authToken) return;
-    const ac = new AbortController();
-    const urls: string[] = [];
-    const prefs = loadLayerPrefs();
-    layerPrefsRef.current = prefs;
-    setColorMapping(prefs.colorMapping ?? DEFAULT_COLOR_MAPPING);
-    setProsthesisTransparency(
-      prefs.prosthesisTransparency ?? DEFAULT_PROSTHESIS_TRANSPARENCY,
-    );
-    setModelFiles({});
-    setImageFiles({});
-    setImageUrls({});
-    setLoads(
-      Object.fromEntries(
-        items.map((i) => [
-          i.key,
-          { status: "loading", progress: 0 } as LoadState,
-        ]),
-      ),
-    );
-    const wanted = initialKeyRef.current;
-    const active = pickInitialCluster(models, wanted);
-    const startHidden = buildExclusiveHidden(
-      models,
-      active,
-      wanted,
-      prefs.byCluster,
-    );
-    setHidden(startHidden);
-    persistActiveClusterVisibility(startHidden);
-    setCollapsed(
-      Object.fromEntries(
-        ALL_CLUSTERS.map((cluster) => {
-          const keys = models
-            .filter((m) => m.cluster === cluster)
-            .map((m) => m.key);
-          if (keys.length === 0) return [cluster, true];
-          const anyOn = keys.some((key) => !startHidden[key]);
-          return [cluster, !anyOn];
-        }),
-      ),
-    );
-    setShownImageKey(
-      wanted && items.some((i) => i.key === wanted && i.kind === "image")
-        ? wanted
-        : null,
-    );
+  const scheduleViewReset = () => {
+    // hidden/layers가 반영된 뒤에 맞춘다. userMoved는 바로 지워 두어 이후 메시 로드도 따라온다.
+    viewerRef.current?.resetView();
+    requestAnimationFrame(() => {
+      viewerRef.current?.resetView();
+    });
+  };
+
+  /** 지정 키만 S3→IndexedDB 캐시로 받는다. 이미 시작한 키는 건너뛴다. */
+  const ensureItemsLoaded = (keys: readonly string[]) => {
+    const token = authTokenRef.current;
+    const ac = loadAbortRef.current;
+    if (!token || !ac || ac.signal.aborted) return;
+    const wanted = new Set(keys.filter(Boolean));
+    if (wanted.size === 0) return;
+    const list = itemsRef.current.filter((item) => wanted.has(item.key));
+    if (list.length === 0) return;
+
+    const toStart = list.filter((item) => !startedKeysRef.current.has(item.key));
+    if (toStart.length === 0) return;
+    for (const item of toStart) startedKeysRef.current.add(item.key);
+
+    setLoads((prev) => {
+      const next = { ...prev };
+      for (const item of toStart) {
+        if (next[item.key]?.status === "ready") continue;
+        next[item.key] = { status: "loading", progress: 0 };
+      }
+      return next;
+    });
 
     const setProgress = (key: string, progress: number) =>
       setLoads((prev) =>
@@ -638,32 +631,57 @@ export function RequestFilesPreviewDialog({
       fetchS3BlobCached({
         s3Key: item.file.s3Key,
         fileName: item.file.fileName,
-        token: authToken,
+        token,
         buildUrl: buildS3ProxyDownloadUrl,
         signal: ac.signal,
         onProgress: (progress) => setProgress(item.key, progress),
       });
 
-    const imagePromises = items
-      .filter((i) => i.kind === "image")
-      .map(async (item) => {
-        try {
-          const blob = await fetchBlob(item);
-          if (ac.signal.aborted) return null;
-          const file = fileFromImageBlob(blob, item.file.fileName);
-          const url = URL.createObjectURL(file);
-          urls.push(url);
-          setImageFiles((prev) => ({ ...prev, [item.key]: file }));
-          setImageUrls((prev) => ({ ...prev, [item.key]: url }));
-          setLoads((prev) => ({ ...prev, [item.key]: { status: "ready" } }));
-          return { item, file };
-        } catch (error) {
-          fail(item.key, error);
-          return null;
-        }
-      });
+    const loadImage = async (item: Item) => {
+      if (imageFilesRef.current[item.key]) {
+        return { item, file: imageFilesRef.current[item.key] };
+      }
+      try {
+        const blob = await fetchBlob(item);
+        if (ac.signal.aborted) return null;
+        const file = fileFromImageBlob(blob, item.file.fileName);
+        const url = URL.createObjectURL(file);
+        imageUrlsRef.current.push(url);
+        imageFilesRef.current = { ...imageFilesRef.current, [item.key]: file };
+        setImageFiles((prev) => ({ ...prev, [item.key]: file }));
+        setImageUrls((prev) => ({ ...prev, [item.key]: url }));
+        setLoads((prev) => ({ ...prev, [item.key]: { status: "ready" } }));
+        return { item, file };
+      } catch (error) {
+        fail(item.key, error);
+        return null;
+      }
+    };
 
-    for (const item of models) {
+    const imagesToLoad = list.filter((i) => i.kind === "image");
+    const modelsToLoad = list.filter((i) => i.kind === "model");
+    // PLY/OBJ 텍스처는 보통 의뢰 사진. 모델 묶음을 받을 때 사진도 같이 받는다.
+    const needsTextureCompanions = modelsToLoad.some((m) => {
+      const ext = getModelExtLower(m.file.fileName);
+      return ext === ".ply" || ext === ".obj";
+    });
+    if (needsTextureCompanions) {
+      for (const item of itemsRef.current) {
+        if (item.kind !== "image") continue;
+        if (startedKeysRef.current.has(item.key)) continue;
+        startedKeysRef.current.add(item.key);
+        imagesToLoad.push(item);
+        setLoads((prev) =>
+          prev[item.key]?.status === "ready"
+            ? prev
+            : { ...prev, [item.key]: { status: "loading", progress: 0 } },
+        );
+      }
+    }
+
+    const imagePromises = imagesToLoad.map((item) => loadImage(item));
+
+    for (const item of modelsToLoad) {
       void (async () => {
         try {
           const blob = await fetchBlob(item);
@@ -701,9 +719,80 @@ export function RequestFilesPreviewDialog({
         }
       })();
     }
+  };
+
+  /** 이 묶음에서 켤 파일(+사진)만 받는다. 숨긴 악·이전 날짜는 눈 아이콘 때. */
+  const ensureClusterLoaded = (
+    cluster: ItemCluster,
+    nextHidden?: Record<string, boolean>,
+  ) => {
+    const hide = nextHidden;
+    const keys = itemsRef.current
+      .filter((item) => {
+        if (item.cluster !== cluster) return false;
+        if (item.kind === "image") return true;
+        if (hide) return !hide[item.key];
+        return true;
+      })
+      .map((item) => item.key);
+    ensureItemsLoaded(keys);
+  };
+
+  // 열 때 활성 클러스터만 먼저 받는다. 나머지는 묶음 클릭 때.
+  useEffect(() => {
+    if (!open || !authToken) return;
+    const ac = new AbortController();
+    loadAbortRef.current = ac;
+    startedKeysRef.current = new Set();
+    imageFilesRef.current = {};
+    for (const url of imageUrlsRef.current) URL.revokeObjectURL(url);
+    imageUrlsRef.current = [];
+    const prefs = loadLayerPrefs();
+    layerPrefsRef.current = prefs;
+    setColorMapping(prefs.colorMapping ?? DEFAULT_COLOR_MAPPING);
+    setProsthesisTransparency(
+      prefs.prosthesisTransparency ?? DEFAULT_PROSTHESIS_TRANSPARENCY,
+    );
+    setModelFiles({});
+    setImageFiles({});
+    setImageUrls({});
+    setLoads({});
+    const wanted = initialKeyRef.current;
+    const active = pickInitialCluster(models, wanted);
+    const startHidden = buildExclusiveHidden(
+      models,
+      active,
+      wanted,
+      prefs.byCluster,
+    );
+    setHidden(startHidden);
+    persistActiveClusterVisibility(startHidden);
+    setCollapsed(
+      Object.fromEntries(
+        ALL_CLUSTERS.map((cluster) => {
+          const keys = models
+            .filter((m) => m.cluster === cluster)
+            .map((m) => m.key);
+          if (keys.length === 0) return [cluster, true];
+          const anyOn = keys.some((key) => !startHidden[key]);
+          return [cluster, !anyOn];
+        }),
+      ),
+    );
+    const initialImage =
+      wanted && items.some((i) => i.key === wanted && i.kind === "image")
+        ? wanted
+        : null;
+    setShownImageKey(initialImage);
+
+    if (active) ensureClusterLoaded(active, startHidden);
+    if (initialImage) ensureItemsLoaded([initialImage]);
+
     return () => {
       ac.abort();
-      for (const url of urls) URL.revokeObjectURL(url);
+      if (loadAbortRef.current === ac) loadAbortRef.current = null;
+      for (const url of imageUrlsRef.current) URL.revokeObjectURL(url);
+      imageUrlsRef.current = [];
     };
     // items는 itemsKey가 같으면 같은 파일이다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -762,11 +851,19 @@ export function RequestFilesPreviewDialog({
   }, [hidden, modelFiles, models]);
 
   const pending = items.filter((i) => loads[i.key]?.status === "loading");
+  // 화면에 켜진 어벗·보철만 본다. 아직 안 받은 다른 묶음 때문에 seating을 막지 않는다.
+  const designShown = designItems.some(
+    (i) => i.kind === "model" && !hidden[i.key],
+  );
   const designPending =
-    (Boolean(seatTransferKey) && seatRows === null) ||
-    designItems.some(
-      (i) => i.kind === "model" && (!loads[i.key] || loads[i.key]?.status === "loading"),
-    );
+    designShown &&
+    ((Boolean(seatTransferKey) && seatRows === null) ||
+      designItems.some(
+        (i) =>
+          i.kind === "model" &&
+          !hidden[i.key] &&
+          loads[i.key]?.status !== "ready",
+      ));
   const storedSeats = useMemo<CaseSeatRecord[] | undefined>(() => {
     if (!seatRows) return undefined;
     const idOf = new Map(models.map((m) => [m.file.s3Key, m.key]));
@@ -839,15 +936,16 @@ export function RequestFilesPreviewDialog({
       collapseCluster(cluster);
       return;
     }
-    setHidden(
-      buildExclusiveHidden(
-        models,
-        cluster,
-        null,
-        layerPrefsRef.current.byCluster,
-      ),
+    const nextHidden = buildExclusiveHidden(
+      models,
+      cluster,
+      null,
+      layerPrefsRef.current.byCluster,
     );
+    ensureClusterLoaded(cluster, nextHidden);
+    setHidden(nextHidden);
     expandCluster(cluster);
+    scheduleViewReset();
   };
 
   const setModelVisibleExclusive = (item: Item, on: boolean) => {
@@ -870,21 +968,26 @@ export function RequestFilesPreviewDialog({
       });
       return;
     }
-    setHidden((prev) => {
-      const sameClusterActive = models.some(
-        (m) => m.cluster === item.cluster && !prev[m.key],
-      );
-      if (sameClusterActive) {
-        return { ...prev, [item.key]: false };
-      }
-      return buildExclusiveHidden(
-        models,
-        item.cluster,
-        item.key,
-        layerPrefsRef.current.byCluster,
-      );
-    });
+    ensureItemsLoaded([item.key]);
+    const sameClusterActive = models.some(
+      (m) => m.cluster === item.cluster && !hidden[m.key],
+    );
+    if (sameClusterActive) {
+      setHidden((prev) => ({ ...prev, [item.key]: false }));
+      expandCluster(item.cluster);
+      return;
+    }
+    const nextHidden = buildExclusiveHidden(
+      models,
+      item.cluster,
+      item.key,
+      layerPrefsRef.current.byCluster,
+    );
+    ensureClusterLoaded(item.cluster, nextHidden);
+    ensureItemsLoaded([item.key]);
+    setHidden(nextHidden);
     expandCluster(item.cluster);
+    scheduleViewReset();
   };
 
   const anyModelShown = models.some((m) => !hidden[m.key]);
@@ -894,6 +997,7 @@ export function RequestFilesPreviewDialog({
 
   const selectItem = (item: Item) => {
     if (item.kind === "image") {
+      ensureItemsLoaded([item.key]);
       setShownImageKey((cur) => (cur === item.key ? null : item.key));
       return;
     }
@@ -1004,7 +1108,7 @@ export function RequestFilesPreviewDialog({
                   <EyeToggle
                     on={on && !(item.kind === "model" && showingImage)}
                     label={on ? "숨기기" : "보기"}
-                    disabled={state?.status !== "ready"}
+                    disabled={state?.status === "loading"}
                     onClick={() => {
                       if (item.kind === "image") {
                         selectItem(item);
@@ -1157,7 +1261,7 @@ export function RequestFilesPreviewDialog({
                   size="sm"
                   variant="outline"
                   className="h-8 gap-1.5 bg-white/95 px-2.5 text-xs shadow-sm"
-                  onClick={() => viewerRef.current?.fitToView()}
+                  onClick={() => viewerRef.current?.resetView()}
                 >
                   <Maximize2 className="h-3.5 w-3.5" />
                   뷰리셋

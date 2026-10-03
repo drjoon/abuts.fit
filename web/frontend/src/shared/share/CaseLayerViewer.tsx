@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/share/CaseShareViewer.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/three/screenSpaceOrbitControls.ts
+// - 2026-10-03: resetView — 사용자 조작을 잊고 보이는 메시에 다시 맞춘다(클러스터 전환용).
 // - 2026-10-03: 어벗 적합이 끝나면 뷰를 다시 맞춘다.
 // - 2026-10-03: 치식 라벨은 어벗 로컬 중심에 붙여 seating·펼침과 같이 움직인다.
 // - 2026-10-03: 히트맵 구간 — 관통·0.01·0.02·0.03·0.05·0.1·0.2mm.
@@ -82,6 +83,8 @@ export type CaseSeatDecision = {
 
 export type CaseLayerViewerHandle = {
   fitToView: () => void;
+  /** 카메라 조작을 잊고 보이는 메시에 맞춘다. 클러스터를 바꿀 때 쓴다. */
+  resetView: () => void;
   /** 표시를 겹치기 위한 현재 프레임 캔버스. */
   captureCanvas: () => HTMLCanvasElement | null;
 };
@@ -585,6 +588,11 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       controls.syncFromCamera();
     };
 
+    const resetView = () => {
+      userMovedRef.current = false;
+      fitToView();
+    };
+
     const captureCanvas = () => {
       const renderer = rendererRef.current;
       const scene = sceneRef.current;
@@ -594,7 +602,7 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       return renderer.domElement;
     };
 
-    useImperativeHandle(ref, () => ({ fitToView, captureCanvas }));
+    useImperativeHandle(ref, () => ({ fitToView, resetView, captureCanvas }));
 
     const publishSeatProgress = () => {
       const jobs = [...seatJobsRef.current.values()];
