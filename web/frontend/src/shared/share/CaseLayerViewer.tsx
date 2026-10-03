@@ -2,6 +2,11 @@
 // - web/frontend/src/shared/share/CaseShareViewer.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/three/screenSpaceOrbitControls.ts
+// - 2026-10-03: 치식 라벨은 어벗 로컬 중심에 붙여 seating·펼침과 같이 움직인다.
+// - 2026-10-03: 히트맵 구간 — 관통·0.01·0.02·0.03·0.05·0.1·0.2mm.
+// - 2026-10-03: 맞추는 중 중단 버튼. 중단 후 자동으로 다시 맞추지 않는다.
+// - 2026-10-03: 어벗 치아 번호(파일명 치식)를 CSS2D 라벨로 붙인다.
+// - 2026-10-03: 진행 문구 — 어벗을 보철에 맞추는 중(알고리즘과 동일).
 // - 2026-10-03: 보철은 파일 좌표 고정, 어벗을 옮겨 꽂는다. 편차 히트맵과 함께 확인받고, 확인·거절은 onSeatDecision으로 저장(storedSeats로 복원).
 // - 2026-10-03: 맞추는 동안 가운데 진행 막대.
 // - 2026-10-03: 브리지 seating은 치식으로 좌석을 고른다(이웃 리테이너 오삽입 방지).
@@ -20,6 +25,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import * as THREE from "three";
+import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -37,6 +43,7 @@ import {
 } from "@/shared/components/practice/viewPaintSpace";
 import {
   computeAbutmentSeats,
+  isSeatCancelled,
   peekAbutmentSeats,
   rowMajorToSeatPose,
   seatPoseToRowMajor,
@@ -100,6 +107,7 @@ const TEXTURE_KEY = "previewTexture";
 const TONE_KEY = "layerTone";
 const LAYER_ID_KEY = "layerId";
 const HEAT_KEY = "seatHeat";
+const TOOTH_LABEL_KEY = "toothLabel";
 
 function scanTexture(mesh: THREE.Mesh): THREE.Texture | null {
   return (mesh.userData[TEXTURE_KEY] as THREE.Texture | undefined) ?? null;
@@ -109,7 +117,75 @@ function layerToneOf(mesh: THREE.Mesh): CaseLayerTone {
   return (mesh.userData[TONE_KEY] as CaseLayerTone | undefined) || "scan";
 }
 
+function clearToothLabel(mesh: THREE.Mesh) {
+  const label = mesh.userData[TOOTH_LABEL_KEY] as CSS2DObject | undefined;
+  if (!label) return;
+  label.element.remove();
+  mesh.remove(label);
+  mesh.userData[TOOTH_LABEL_KEY] = undefined;
+}
+
+/** 메시 기하만으로 월드 AABB. 치식 라벨·백페이스 자식을 넣지 않는다. */
+function meshWorldBox(mesh: THREE.Mesh, target = new THREE.Box3()): THREE.Box3 {
+  mesh.updateMatrixWorld(true);
+  if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+  const local = mesh.geometry.boundingBox;
+  if (!local || local.isEmpty()) return target.makeEmpty();
+  return target.copy(local).applyMatrix4(mesh.matrixWorld);
+}
+
+/**
+ * 어벗 기하 로컬 중심에 치식 라벨을 둔다.
+ * 월드로 다시 계산하지 않아 seating·펼침 때 메시와 같이 움직인다.
+ */
+function placeToothLabel(mesh: THREE.Mesh, label: CSS2DObject) {
+  if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+  const box = mesh.geometry.boundingBox;
+  if (!box || box.isEmpty()) {
+    label.position.set(0, 0, 0);
+    return;
+  }
+  box.getCenter(label.position);
+}
+
+/** 어벗 메시에 파일명 치식 라벨을 붙인다. 없으면 제거. */
+function syncToothLabel(mesh: THREE.Mesh) {
+  clearToothLabel(mesh);
+  if (layerToneOf(mesh) !== "abutment") return;
+  const tooth = toothLabelFromMeshName(mesh.name);
+  if (!tooth) return;
+  const tag = document.createElement("div");
+  tag.textContent = tooth;
+  tag.style.cssText = [
+    "pointer-events:none",
+    "user-select:none",
+    "border-radius:0.375rem",
+    "background:rgba(15,23,42,0.78)",
+    "color:#fff",
+    "font:600 11px/1.2 ui-sans-serif,system-ui,sans-serif",
+    "padding:0.2rem 0.4rem",
+    "white-space:nowrap",
+  ].join(";");
+  const label = new CSS2DObject(tag);
+  label.center.set(0.5, 0.5);
+  mesh.add(label);
+  mesh.userData[TOOTH_LABEL_KEY] = label;
+  placeToothLabel(mesh, label);
+}
+
+function refreshToothLabels(meshes: Iterable<THREE.Mesh>) {
+  for (const mesh of meshes) {
+    const label = mesh.userData[TOOTH_LABEL_KEY] as CSS2DObject | undefined;
+    if (!label) {
+      syncToothLabel(mesh);
+      continue;
+    }
+    placeToothLabel(mesh, label);
+  }
+}
+
 function disposeLayerMesh(mesh: THREE.Mesh) {
+  clearToothLabel(mesh);
   disposeBackFaceShell(mesh);
   mesh.geometry.dispose();
   const mat = mesh.material as THREE.MeshStandardMaterial;
@@ -176,8 +252,7 @@ function applyProsthesisOpacity(mesh: THREE.Mesh, opacity: number) {
 }
 
 function refreshPieceBox(piece: DesignPiece) {
-  piece.mesh.updateMatrixWorld(true);
-  piece.box.setFromObject(piece.mesh);
+  meshWorldBox(piece.mesh, piece.box);
   piece.box.getCenter(piece.center);
   piece.box.getSize(piece.size);
 }
@@ -186,11 +261,13 @@ function refreshPieceBox(piece: DesignPiece) {
 const REVIEW_CROWN_OPACITY = 0.35;
 const HEAT_BASE = new THREE.Color(0xb9bec6);
 const HEAT_BANDS: Array<{ max: number; color: THREE.Color; label: string }> = [
-  { max: -0.08, color: new THREE.Color(0x3b82f6), label: "관통" },
-  { max: 0.05, color: new THREE.Color(0x22c55e), label: "≤0.05" },
-  { max: 0.1, color: new THREE.Color(0xeab308), label: "≤0.1" },
-  { max: 0.2, color: new THREE.Color(0xf97316), label: "≤0.2" },
-  { max: Infinity, color: new THREE.Color(0xef4444), label: ">0.2mm" },
+  { max: -1e-9, color: new THREE.Color(0x3b82f6), label: "관통" },
+  { max: 0.01, color: new THREE.Color(0x22c55e), label: "≤0.01" },
+  { max: 0.02, color: new THREE.Color(0x84cc16), label: "≤0.02" },
+  { max: 0.03, color: new THREE.Color(0xc4e017), label: "≤0.03" },
+  { max: 0.05, color: new THREE.Color(0xeab308), label: "≤0.05" },
+  { max: 0.1, color: new THREE.Color(0xf97316), label: "≤0.1" },
+  { max: 0.2, color: new THREE.Color(0xef4444), label: "≤0.2" },
 ];
 
 function heatColor(d: number): THREE.Color {
@@ -248,8 +325,7 @@ function syncDesignAssembly(
     if (tone !== "abutment" && tone !== "prosthesis") continue;
     mesh.position.set(0, 0, 0);
     mesh.quaternion.identity();
-    mesh.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(mesh);
+    const box = meshWorldBox(mesh);
     all.push({
       mesh,
       tone,
@@ -385,6 +461,7 @@ function syncDesignAssembly(
   for (const mesh of allAbuts) {
     mesh.mesh.renderOrder = 1;
   }
+  refreshToothLabels(allAbuts.map((a) => a.mesh));
   return units.length >= 2 || assemble;
 }
 
@@ -403,6 +480,10 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
     const containerRef = useRef<HTMLDivElement | null>(null);
     /** 맞추는 중인 보철별 진행률(0~1). */
     const seatJobsRef = useRef(new Map<string, number>());
+    /** 중단 시 올라간다. 돌고 있는 작업이 cancelled를 본다. */
+    const seatCancelGenRef = useRef(0);
+    /** 중단한 jobKey. 자동으로 다시 맞추지 않는다. */
+    const seatSuppressedRef = useRef(new Set<string>());
     const [seatPercent, setSeatPercent] = useState<number | null>(null);
     const designPendingRef = useRef(designPending);
     designPendingRef.current = designPending;
@@ -418,6 +499,7 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+    const labelRendererRef = useRef<CSS2DRenderer | null>(null);
     const controlsRef = useRef<ScreenSpaceOrbitControls | null>(null);
     const meshesRef = useRef(new Map<string, THREE.Mesh>());
     const loadingRef = useRef(new Set<string>());
@@ -535,20 +617,45 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       crownTooth: string,
     ) => {
       const jobKey = [crown.geometry.uuid, ...abutments.map((a) => a.geometry.uuid)].join("|");
+      if (seatSuppressedRef.current.has(jobKey)) return;
       if (seatJobsRef.current.has(jobKey)) return;
+      const jobGen = seatCancelGenRef.current;
       seatJobsRef.current.set(jobKey, 0);
       publishSeatProgress();
-      void computeAbutmentSeats(crown.geometry, abutments, crownTooth, (ratio) => {
-        if (!seatJobsRef.current.has(jobKey)) return;
-        seatJobsRef.current.set(jobKey, ratio);
-        publishSeatProgress();
-      }).then(() => {
-        seatJobsRef.current.delete(jobKey);
-        publishSeatProgress();
-        if (!sceneRef.current) return;
-        assemble();
-        if (!userMovedRef.current) fitToView();
-      });
+      void computeAbutmentSeats(
+        crown.geometry,
+        abutments,
+        crownTooth,
+        (ratio) => {
+          if (!seatJobsRef.current.has(jobKey)) return;
+          seatJobsRef.current.set(jobKey, ratio);
+          publishSeatProgress();
+        },
+        () => seatCancelGenRef.current !== jobGen,
+      )
+        .then(() => {
+          seatJobsRef.current.delete(jobKey);
+          publishSeatProgress();
+          if (!sceneRef.current || seatCancelGenRef.current !== jobGen) return;
+          assemble();
+          if (!userMovedRef.current) fitToView();
+        })
+        .catch((error) => {
+          seatJobsRef.current.delete(jobKey);
+          publishSeatProgress();
+          if (isSeatCancelled(error)) return;
+          console.info("[case-layer] seat failed", error);
+        });
+    };
+
+    const cancelSeat = () => {
+      if (seatJobsRef.current.size === 0) return;
+      for (const key of seatJobsRef.current.keys()) {
+        seatSuppressedRef.current.add(key);
+      }
+      seatCancelGenRef.current += 1;
+      seatJobsRef.current.clear();
+      publishSeatProgress();
     };
 
     const storedMatrix = (abutId: string, crownId: string): number[] | null | undefined => {
@@ -667,6 +774,12 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       renderer.domElement.style.position = "absolute";
       renderer.domElement.style.inset = "0";
 
+      const labelRenderer = new CSS2DRenderer();
+      labelRenderer.domElement.style.position = "absolute";
+      labelRenderer.domElement.style.inset = "0";
+      labelRenderer.domElement.style.pointerEvents = "none";
+      container.appendChild(labelRenderer.domElement);
+
       const controls = new ScreenSpaceOrbitControls(camera, renderer.domElement, {
         rotateSpeed: 1,
         zoomSpeed: 1.1,
@@ -681,6 +794,7 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
         renderer.setSize(w, h, false);
         renderer.domElement.style.width = "100%";
         renderer.domElement.style.height = "100%";
+        labelRenderer.setSize(w, h);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
       };
@@ -694,12 +808,14 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
         raf = requestAnimationFrame(tick);
         if (paintListeners.size > 0) notifyViewPaint(paintListeners);
         renderer.render(scene, camera);
+        labelRenderer.render(scene, camera);
       };
       tick();
 
       sceneRef.current = scene;
       cameraRef.current = camera;
       rendererRef.current = renderer;
+      labelRendererRef.current = labelRenderer;
       controlsRef.current = controls;
       if (onPaintSpaceRef.current) {
         onPaintSpaceRef.current(
@@ -726,9 +842,11 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
         meshes.clear();
         renderer.dispose();
         renderer.domElement.remove();
+        labelRenderer.domElement.remove();
         sceneRef.current = null;
         cameraRef.current = null;
         rendererRef.current = null;
+        labelRendererRef.current = null;
         controlsRef.current = null;
       };
     }, []);
@@ -780,6 +898,7 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
             if (layer.tone === "scan") mesh.userData[TEXTURE_KEY] = parsed.texture;
             mesh.renderOrder = layer.tone === "scan" ? 0 : 1;
             syncBackFaceShell(mesh);
+            syncToothLabel(mesh);
             if (!sceneRef.current) {
               disposeLayerMesh(mesh);
               return;
@@ -866,13 +985,24 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
         <div ref={containerRef} className="absolute inset-0" />
         {seatPercent !== null ? (
           <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
-            <div className="w-64 rounded-lg bg-black/60 px-4 py-3 text-xs text-white shadow-md">
+            <div className="pointer-events-auto w-64 rounded-lg bg-black/60 px-4 py-3 text-xs text-white shadow-md">
               <p className="flex items-center gap-2">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                보철을 어벗에 맞추는 중
+                어벗을 보철에 맞추는 중
                 <span className="ml-auto tabular-nums">{seatPercent}%</span>
               </p>
               <Progress value={seatPercent} className="mt-2 h-1.5" />
+              <div className="mt-2 flex justify-end">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 bg-white/90 px-2.5 text-[11px] text-foreground hover:bg-white"
+                  onClick={cancelSeat}
+                >
+                  중단
+                </Button>
+              </div>
             </div>
           </div>
         ) : null}

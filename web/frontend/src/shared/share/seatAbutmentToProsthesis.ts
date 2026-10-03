@@ -8,6 +8,7 @@
 // - web/frontend/src/shared/practice/biteRegistration.ts
 // - web/frontend/src/shared/filename/parseFilename.ts
 // change-log:
+// - 2026-10-03: 맞추는 중 취소(cancelled). 캐시에 실패로 남기지 않아 다시 맞출 수 있다.
 // - 2026-10-03: 보철 고정, 어벗을 옮긴다. 어벗별 편차를 같이 돌려준다(확인 후 자세만 저장).
 // - 2026-10-03: 어벗은 고정, 보철을 옮긴다. 브리지는 어벗 전부로 같이 맞춘다. 진행률을 알리며 비동기로 푼다.
 // - 2026-10-03: 바이트식 가설 탐색으로 교체. 축 부호·기울기를 풀고, 브리지 치식은 범위로 펼친다.
@@ -29,6 +30,18 @@ import {
   type RigidPose,
   type Vec3,
 } from "@/shared/practice/scanbodyRegistration";
+
+/** 사용자가 맞추기를 멈췄을 때. 캐시에 실패로 남기지 않는다. */
+export class SeatCancelledError extends Error {
+  constructor() {
+    super("seat-cancelled");
+    this.name = "SeatCancelledError";
+  }
+}
+
+export function isSeatCancelled(error: unknown): boolean {
+  return error instanceof SeatCancelledError || (error as { name?: string } | null)?.name === "SeatCancelledError";
+}
 
 export type FinishRing = {
   /** 링 중심(메시 로컬). */
@@ -759,13 +772,18 @@ export type SeatProgress = (ratio: number) => void;
 
 class Pacer {
   private last = performance.now();
-  constructor(private readonly onProgress?: SeatProgress) {}
+  constructor(
+    private readonly onProgress?: SeatProgress,
+    private readonly cancelled?: () => boolean,
+  ) {}
 
   async report(ratio: number) {
+    if (this.cancelled?.()) throw new SeatCancelledError();
     this.onProgress?.(Math.min(1, Math.max(0, ratio)));
     if (performance.now() - this.last < YIELD_MS) return;
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     this.last = performance.now();
+    if (this.cancelled?.()) throw new SeatCancelledError();
   }
 }
 
@@ -859,6 +877,26 @@ function findCrownSeatEntry(
   );
 }
 
+function dropCrownSeatEntry(
+  crownGeometry: THREE.BufferGeometry,
+  abutments: ProsthesisSeatAbutment[],
+  crownTooth: string,
+) {
+  const list = CROWN_SEAT_CACHE.get(crownGeometry);
+  if (!list) return;
+  const key = crownSeatKey(abutments, crownTooth);
+  const next = list.filter(
+    (e) =>
+      !(
+        e.key === key &&
+        e.abuts.length === abutments.length &&
+        e.abuts.every((g, i) => g === abutments[i]!.geometry)
+      ),
+  );
+  if (next.length === 0) CROWN_SEAT_CACHE.delete(crownGeometry);
+  else CROWN_SEAT_CACHE.set(crownGeometry, next);
+}
+
 /** 이미 맞춘 결과. 아직 안 맞췄거나 맞추는 중이면 undefined. */
 export function peekAbutmentSeats(
   crownGeometry: THREE.BufferGeometry,
@@ -873,24 +911,30 @@ export function peekAbutmentSeats(
 /**
  * 어벗을 보철에 꽂는다. 보철 파일 좌표는 그대로 두고 어벗만 옮긴다.
  * 짝 어벗이 여럿(브리지)이면 좌석을 나눠 배정한다. 어느 좌석에도 맞지 않으면 null.
+ * cancelled가 true가 되면 SeatCancelledError로 멈추고 캐시에 남기지 않는다.
  */
 export function computeAbutmentSeats(
   crownGeometry: THREE.BufferGeometry,
   abutments: ProsthesisSeatAbutment[],
   crownTooth = "",
   onProgress?: SeatProgress,
+  cancelled?: () => boolean,
 ): Promise<ProsthesisSeatResult | null> {
   const found = findCrownSeatEntry(crownGeometry, abutments, crownTooth);
   if (found) return found.promise.then(cloneResult);
   const entry: CrownSeatEntry = {
     abuts: abutments.map((a) => a.geometry),
     key: crownSeatKey(abutments, crownTooth),
-    promise: solveAbutmentSeats(crownGeometry, abutments, crownTooth, onProgress).then(
+    promise: solveAbutmentSeats(crownGeometry, abutments, crownTooth, onProgress, cancelled).then(
       (result) => {
         entry.done = result;
         return result;
       },
-      () => {
+      (error) => {
+        if (isSeatCancelled(error)) {
+          dropCrownSeatEntry(crownGeometry, abutments, crownTooth);
+          throw error;
+        }
         entry.done = null;
         return null;
       },
@@ -1326,12 +1370,13 @@ async function solveAbutmentSeats(
   abutments: ProsthesisSeatAbutment[],
   crownTooth: string,
   onProgress?: SeatProgress,
+  cancelled?: () => boolean,
 ): Promise<ProsthesisSeatResult | null> {
   const crownPos = readPositions(crownGeometry);
   if (!crownPos || abutments.length === 0) return null;
   const crown = buildCrownSurface(crownGeometry);
   if (!crown) return null;
-  const pacer = new Pacer(onProgress);
+  const pacer = new Pacer(onProgress, cancelled);
   await pacer.report(0);
 
   const lists: AbutCandidate[][] = abutments.map(() => []);
