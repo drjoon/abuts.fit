@@ -6,6 +6,8 @@
 // - web/frontend/src/shared/practice/biteRegistration.ts
 // - web/frontend/src/shared/filename/parseFilename.ts
 // change-log:
+// - 2026-10-03: 브리지 좌석은 치식 순서로 고른다. 반경만 보면 이웃 리테이너에 꽂힌다.
+// - 2026-10-03: ICP 타깃은 보철 내면만. FL→좌석 중심을 다시 고정한다.
 // - 2026-10-03: seating을 스캔바디 ICP 파이프라인으로 교체(삽입축 시드 + trimmed ICP).
 // - 2026-10-03: 삽입축 회전 — 어벗 외면↔보철 내면 맞춤(주) + FL 링 위상(보조).
 // - 2026-10-03: FL 링 방위각 프로파일로 삽입축 회전까지 맞춘다.
@@ -310,23 +312,82 @@ export function findProsthesisSeats(
   return seats;
 }
 
-function pickSeat(seats: ProsthesisSeat[], targetRadius: number): ProsthesisSeat | null {
+/** 치식 라벨을 개별 치아 번호로. `46-47` → ["46","47"]. */
+function toothParts(label: string): string[] {
+  const t = label.trim();
+  if (!t) return [];
+  if (t.includes("-")) {
+    return t
+      .split("-")
+      .map((p) => p.trim())
+      .filter(Boolean);
+  }
+  return [t];
+}
+
+function seatRadiusScore(seat: ProsthesisSeat, targetRadius: number): number {
+  const gap = seat.radius - targetRadius;
+  // 시멘트 갭으로 좌석이 조금 큰 편이 맞다. 어벗보다 작은 좌석은 강하게 버린다.
+  const undersize = gap < -0.05 ? Math.abs(gap) * 40 : 0;
+  const oversize = gap > 0.45 ? (gap - 0.45) * 8 : 0;
+  const ideal = Math.abs(gap - 0.08);
+  return seat.score / (1 + ideal * 6 + undersize + oversize);
+}
+
+function pickSeatByRadius(
+  seats: ProsthesisSeat[],
+  targetRadius: number,
+): ProsthesisSeat | null {
   if (seats.length === 0) return null;
-  const close = seats.filter(
-    (seat) => Math.abs(seat.radius - targetRadius) <= 0.25,
-  );
-  const pool = close.length > 0 ? close : seats;
-  let best = pool[0]!;
+  let best = seats[0]!;
   let bestScore = -Infinity;
-  for (const seat of pool) {
-    const radiusGap = Math.abs(seat.radius - targetRadius);
-    const score = seat.score / (1 + radiusGap * 12);
+  for (const seat of seats) {
+    const score = seatRadiusScore(seat, targetRadius);
     if (score > bestScore) {
       bestScore = score;
       best = seat;
     }
   }
   return best;
+}
+
+/**
+ * 브리지 좌석 선택. 치식이 있으면 아치 순서(스팬 축)로 짝 짓고,
+ * 방향(어느 끝이 작은 치식인지)은 반경 점수로 고른다.
+ */
+function pickSeat(
+  seats: ProsthesisSeat[],
+  targetRadius: number,
+  opts?: { abutTooth?: string; crownTooth?: string },
+): ProsthesisSeat | null {
+  if (seats.length === 0) return null;
+  if (seats.length === 1) return seats[0]!;
+
+  const abutTooth = String(opts?.abutTooth || "").trim();
+  const crownParts = toothParts(String(opts?.crownTooth || ""));
+  const toothIdx = abutTooth ? crownParts.indexOf(abutTooth) : -1;
+
+  if (toothIdx >= 0 && crownParts.length === seats.length) {
+    const spanAxis = longestAxis(
+      (() => {
+        const box = new THREE.Box3();
+        for (const seat of seats) box.expandByPoint(seat.center);
+        return box.getSize(new THREE.Vector3());
+      })(),
+    );
+    const sorted = [...seats].sort(
+      (a, b) =>
+        a.center.getComponent(spanAxis) - b.center.getComponent(spanAxis),
+    );
+    const forward = sorted[toothIdx]!;
+    const reverse = sorted[sorted.length - 1 - toothIdx]!;
+    return seatRadiusScore(forward, targetRadius) >=
+      seatRadiusScore(reverse, targetRadius)
+      ? forward
+      : reverse;
+  }
+
+  return pickSeatByRadius(seats, targetRadius);
 }
 
 /** FL 근처~포스트 쪽 어벗 외면. 스크류 홀은 뺀다. */
@@ -348,12 +409,18 @@ function sampleAbutModel(positions: Float32Array, ring: FinishRing): Float32Arra
   return samplePoints(new Float32Array(out), 1200);
 }
 
-/** 브리지에서 해당 좌석 근처만 타깃으로. */
+/** 브리지에서 해당 좌석의 내면(중심을 향하는 법선)만 타깃으로. */
 function sampleCrownTarget(
   positions: Float32Array,
+  normals: Float32Array | null,
   seat: ProsthesisSeat,
+  insertAxis: 0 | 1 | 2,
 ): Float32Array {
-  const keepR = Math.max(seat.radius * 2.6, 6);
+  const [a0, a1] = radialAxes(insertAxis);
+  const sc0 = seat.center.getComponent(a0);
+  const sc1 = seat.center.getComponent(a1);
+  const scA = seat.center.getComponent(insertAxis);
+  const keepR = Math.max(seat.radius * 2.2, 5);
   const keepR2 = keepR * keepR;
   const out: number[] = [];
   for (let i = 0; i < positions.length; i += 3) {
@@ -361,10 +428,34 @@ function sampleCrownTarget(
     const dy = positions[i + 1]! - seat.center.y;
     const dz = positions[i + 2]! - seat.center.z;
     if (dx * dx + dy * dy + dz * dz > keepR2) continue;
+    const along = positions[i + insertAxis]! - scA;
+    if (along < -0.8 || along > 3.8) continue;
+    const rdx = positions[i + a0]! - sc0;
+    const rdy = positions[i + a1]! - sc1;
+    const rr = Math.hypot(rdx, rdy);
+    if (rr < seat.radius * 0.55 || rr > seat.radius * 1.35) continue;
+    if (normals && normals.length === positions.length) {
+      const invX = -rdx / rr;
+      const invY = -rdy / rr;
+      const facing = normals[i + a0]! * invX + normals[i + a1]! * invY;
+      if (facing < 0.2) continue;
+    }
     out.push(positions[i]!, positions[i + 1]!, positions[i + 2]!);
   }
-  if (out.length < 200) return voxelDownsample(positions, 0.2);
-  return voxelDownsample(new Float32Array(out), 0.15);
+  if (out.length < 120) {
+    // 내면 필터가 너무 빡하면 좌석 근처 전체로 완화.
+    const loose: number[] = [];
+    for (let i = 0; i < positions.length; i += 3) {
+      const dx = positions[i]! - seat.center.x;
+      const dy = positions[i + 1]! - seat.center.y;
+      const dz = positions[i + 2]! - seat.center.z;
+      if (dx * dx + dy * dy + dz * dz > keepR2) continue;
+      loose.push(positions[i]!, positions[i + 1]!, positions[i + 2]!);
+    }
+    if (loose.length < 200) return voxelDownsample(positions, 0.2);
+    return voxelDownsample(new Float32Array(loose), 0.15);
+  }
+  return voxelDownsample(new Float32Array(out), 0.12);
 }
 
 function applyRot(r: Mat3, v: Vec3): Vec3 {
@@ -495,6 +586,13 @@ const SEAT_POSE_CACHE = new WeakMap<
   WeakMap<THREE.BufferGeometry, AbutmentSeatPose | null>
 >();
 
+export type AbutmentSeatPoseOptions = {
+  /** 어벗 파일 치식. 브리지에서 좌석 짝을 고를 때 쓴다. */
+  abutTooth?: string;
+  /** 보철 파일 치식(`46-47`). */
+  crownTooth?: string;
+};
+
 /**
  * 어벗을 보철 좌석에 꽂을 자세(회전+이동). 이미 맞으면 null.
  * 메시 로컬(위치·회전 0) 기준. world = R · p + t
@@ -502,38 +600,45 @@ const SEAT_POSE_CACHE = new WeakMap<
 export function computeAbutmentSeatPose(
   abutGeometry: THREE.BufferGeometry,
   crownGeometry: THREE.BufferGeometry,
+  opts?: AbutmentSeatPoseOptions,
 ): AbutmentSeatPose | null {
-  const cached = SEAT_POSE_CACHE.get(abutGeometry)?.get(crownGeometry);
-  if (cached !== undefined) {
-    return cached
-      ? {
-          position: cached.position.clone(),
-          quaternion: cached.quaternion.clone(),
-        }
-      : null;
+  // 치식 옵션이 바뀌면 다른 좌석이 될 수 있어, 캐시는 치식 없을 때만.
+  const cacheable = !opts?.abutTooth && !opts?.crownTooth;
+  if (cacheable) {
+    const cached = SEAT_POSE_CACHE.get(abutGeometry)?.get(crownGeometry);
+    if (cached !== undefined) {
+      return cached
+        ? {
+            position: cached.position.clone(),
+            quaternion: cached.quaternion.clone(),
+          }
+        : null;
+    }
   }
 
   const ring = estimateAbutmentFinishRing(abutGeometry);
   if (!ring) {
-    rememberSeatPose(abutGeometry, crownGeometry, null);
+    if (cacheable) rememberSeatPose(abutGeometry, crownGeometry, null);
     return null;
   }
   const seats = findProsthesisSeats(crownGeometry, ring.radius, ring.axis);
-  const seat = pickSeat(seats, ring.radius);
+  const seat = pickSeat(seats, ring.radius, opts);
   if (!seat) {
-    rememberSeatPose(abutGeometry, crownGeometry, null);
+    if (cacheable) rememberSeatPose(abutGeometry, crownGeometry, null);
     return null;
   }
 
   const abutPos = readPositions(abutGeometry);
   const crownPos = readPositions(crownGeometry);
   if (!abutPos || !crownPos) {
-    rememberSeatPose(abutGeometry, crownGeometry, null);
+    if (cacheable) rememberSeatPose(abutGeometry, crownGeometry, null);
     return null;
   }
+  if (!crownGeometry.getAttribute("normal")) crownGeometry.computeVertexNormals();
+  const crownNormals = readNormals(crownGeometry);
 
   const model = sampleAbutModel(abutPos, ring);
-  const target = sampleCrownTarget(crownPos, seat);
+  const target = sampleCrownTarget(crownPos, crownNormals, seat, ring.axis);
   const t0: Vec3 = [
     seat.center.x - ring.center.x,
     seat.center.y - ring.center.y,
@@ -549,13 +654,27 @@ export function computeAbutmentSeatPose(
       seeds: 24,
     }) ?? { r: IDENTITY, t: t0 };
 
-  const pose = rigidToThree(fitted);
+  // 트위스트만 남긴 뒤 FL 중심을 좌석에 다시 고정(ICP 평행이동 드리프트 제거).
+  const axis = axisVec(ring.axis);
+  const twisted = twistOnlyPose(fitted, axis);
+  const fl = ring.center;
+  const rotatedFl = applyRot(twisted.r, [fl.x, fl.y, fl.z]);
+  const locked: RigidPose = {
+    r: twisted.r,
+    t: [
+      seat.center.x - rotatedFl[0],
+      seat.center.y - rotatedFl[1],
+      seat.center.z - rotatedFl[2],
+    ],
+  };
+
+  const pose = rigidToThree(locked);
   const angleDeg = (pose.quaternion.angleTo(new THREE.Quaternion()) * 180) / Math.PI;
   if (pose.position.length() < ALREADY_SEATED_MM && angleDeg < ALREADY_SEATED_DEG) {
-    rememberSeatPose(abutGeometry, crownGeometry, null);
+    if (cacheable) rememberSeatPose(abutGeometry, crownGeometry, null);
     return null;
   }
-  rememberSeatPose(abutGeometry, crownGeometry, pose);
+  if (cacheable) rememberSeatPose(abutGeometry, crownGeometry, pose);
   return {
     position: pose.position.clone(),
     quaternion: pose.quaternion.clone(),
@@ -601,13 +720,6 @@ export function toothLabelsOverlap(abutLabel: string, crownLabel: string): boole
   const a = abutLabel.trim();
   const c = crownLabel.trim();
   if (!a || !c) return false;
-  const parts = (label: string) => {
-    if (label.includes("-")) {
-      const [lo, hi] = label.split("-");
-      return [String(lo || "").trim(), String(hi || "").trim()].filter(Boolean);
-    }
-    return [label];
-  };
-  const crown = new Set(parts(c));
-  return parts(a).some((t) => crown.has(t));
+  const crown = new Set(toothParts(c));
+  return toothParts(a).some((t) => crown.has(t));
 }

@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/share/CaseShareViewer.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/three/screenSpaceOrbitControls.ts
+// - 2026-10-03: 브리지 seating은 치식으로 좌석을 고른다(이웃 리테이너 오삽입 방지).
 // - 2026-10-03: 어벗 seating을 스캔바디·바이트와 같은 trimmed ICP로 맞춘다.
 // - 2026-10-03: 어벗 seating에 피니시라인 방위각 회전을 포함한다.
 // - 2026-10-03: 어벗은 보철 피니시라인(내면 좌석)에 맞춰 꽂은 뒤, 보철 펼침을 같이 따른다.
@@ -214,6 +215,10 @@ function syncDesignAssembly(
       const pose = computeAbutmentSeatPose(
         abut.mesh.geometry,
         crownMesh.geometry,
+        {
+          abutTooth: toothLabelFromMeshName(abut.mesh.name),
+          crownTooth: toothLabelFromMeshName(crownMesh.name),
+        },
       );
       if (pose) {
         base = pose.position;
