@@ -850,15 +850,20 @@ export const NewChatWidget = () => {
       const content = text || (attachments.length ? "파일 첨부" : "");
       if (!content.trim()) return;
 
+      const replyId = replyTo?._id || null;
+      // 낙관적 전송: 입력은 바로 비우고, 말풍선은 sendMessage가 즉시 붙인다.
+      setDraft("");
+      setReplyTo(null);
+      chatUploads.clear();
+
       const sent = await sendMessage(content, attachments, {
-        replyTo: replyTo?._id || null,
+        replyTo: replyId,
       });
       if (sent) {
-        setDraft("");
-        setReplyTo(null);
-        chatUploads.clear();
         setRoom((prev) => (prev ? { ...prev, unreadCount: 0 } : prev));
         if (threadKind === "support") setSupportUnread(0);
+      } else {
+        setDraft(content);
       }
     } catch (e: any) {
       toast({

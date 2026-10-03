@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: sendChatMessage — 저장·populate 후 즉시 응답, emit·배지는 응답 후.
 // - 2026-10-03: chat:message-created에 의뢰 transferId(보기 링크).
 // - 2026-10-01: 채팅 응답 캐시는 만료·상한으로 걷는다.
 // - 2026-09-18: HTTP 메시지 전송·읽음 시 관리자 chat unread 배지 증감.
@@ -1923,55 +1924,84 @@ export async function sendChatMessage(req, res) {
     await newMessage.save();
 
     const now = new Date();
-    await ChatRoom.updateOne(
-      { _id: roomId },
-      { $set: { lastMessageAt: now } },
-    );
+    const [populatedMessage] = await Promise.all([
+      populateChatMessageRelations(
+        Chat.findById(newMessage._id).select(CHAT_MESSAGE_LIST_SELECT),
+      ).lean(),
+      ChatRoom.updateOne(
+        { _id: roomId },
+        { $set: { lastMessageAt: now } },
+      ),
+    ]);
 
-    const populatedMessage = await populateChatMessageRelations(
-      Chat.findById(newMessage._id).select(CHAT_MESSAGE_LIST_SELECT),
-    ).lean();
-
-    const participantIds = Array.isArray(room.participants)
-      ? room.participants.map((id) => String(id || "").trim()).filter(Boolean)
-      : [];
-    const recipientIds = await resolveChatEventRecipientUserIds(
-      roomRecipientArgs(room, participantIds),
-    );
-
-    invalidateChatPerfForUsers(recipientIds);
-    invalidateChatPerfCacheByPrefix(`room-messages:${String(roomId)}:`);
-
-    emitChatMessageCreated({
-      participantIds: recipientIds,
-      senderId: userId,
-      roomId,
-      message: populatedMessage,
-      relatedPracticeTransferId: room.relatedPracticeTransferId,
-      relatedLabAnchorId: room.relatedLabAnchorId,
-      relatedPracticeAnchorId: room.relatedPracticeAnchorId,
-      transferId: await resolvePracticeTransferCode(room.relatedPracticeTransferId),
-    });
-
-    // 관리자 채널 채팅 unread — HTTP 전송 경로(위젯·어드민 UI) 배지 반영
-    if (userRole !== "admin" && recipientIds.length) {
-      const adminParticipants = await User.find({
-        _id: { $in: recipientIds },
-        role: "admin",
-      })
-        .select("_id")
-        .lean();
-      for (const admin of adminParticipants) {
-        emitAdminCommBadgeToUser(admin._id, "chat", 1);
-      }
-    }
-
+    // Critical path만 응답. emit·수신자 해석·관리자 배지는 이후.
     res.status(201).json({
       success: true,
       data: populatedMessage,
       message: "메시지가 성공적으로 전송되었습니다.",
     });
+
+    const roomSnapshot = {
+      relatedPracticeTransferId: room.relatedPracticeTransferId,
+      relatedLabAnchorId: room.relatedLabAnchorId,
+      relatedPracticeAnchorId: room.relatedPracticeAnchorId,
+      participants: room.participants,
+    };
+
+    void (async () => {
+      try {
+        const participantIds = Array.isArray(roomSnapshot.participants)
+          ? roomSnapshot.participants
+              .map((id) => String(id || "").trim())
+              .filter(Boolean)
+          : [];
+        const [recipientIds, transferId] = await Promise.all([
+          resolveChatEventRecipientUserIds(
+            roomRecipientArgs(roomSnapshot, participantIds),
+          ),
+          resolvePracticeTransferCode(roomSnapshot.relatedPracticeTransferId),
+        ]);
+
+        invalidateChatPerfForUsers(recipientIds);
+        invalidateChatPerfCacheByPrefix(`room-messages:${String(roomId)}:`);
+
+        emitChatMessageCreated({
+          participantIds: recipientIds,
+          senderId: userId,
+          roomId,
+          message: populatedMessage,
+          relatedPracticeTransferId: roomSnapshot.relatedPracticeTransferId,
+          relatedLabAnchorId: roomSnapshot.relatedLabAnchorId,
+          relatedPracticeAnchorId: roomSnapshot.relatedPracticeAnchorId,
+          transferId,
+        });
+
+        if (userRole !== "admin" && recipientIds.length) {
+          const adminParticipants = await User.find({
+            _id: { $in: recipientIds },
+            role: "admin",
+          })
+            .select("_id")
+            .lean();
+          for (const admin of adminParticipants) {
+            emitAdminCommBadgeToUser(admin._id, "chat", 1);
+          }
+        }
+      } catch (sideErr) {
+        console.error(
+          "[chat] sendChatMessage side effects failed:",
+          sideErr?.message || sideErr,
+        );
+      }
+    })();
   } catch (error) {
+    if (res.headersSent) {
+      console.error(
+        "[chat] sendChatMessage after response:",
+        error?.message || error,
+      );
+      return;
+    }
     res.status(500).json({
       success: false,
       message: "메시지 전송 중 오류가 발생했습니다.",

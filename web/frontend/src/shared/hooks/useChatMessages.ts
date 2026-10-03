@@ -5,12 +5,17 @@
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/modules/chat/chat.routes.js
 // - web/backend/controllers/chats/chat.controller.js
+// change-log:
+// - 2026-10-04: 메시지 전송 낙관적 UI — API(~1.5s) 전에 말풍선 즉시 표시.
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { ChatMessage } from "./useChatRooms";
+
+const isOptimisticMessageId = (id: unknown) =>
+  String(id || "").startsWith("optimistic:");
 
 interface UseChatMessagesOptions {
   roomId?: string;
@@ -254,6 +259,78 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
       if (!token || !roomId) return null;
       if (!normalizedContent && normalizedAttachments.length === 0) return null;
 
+      const senderId = String(
+        user?.id || (user as { _id?: string } | null)?._id || "",
+      ).trim();
+      if (!senderId) return null;
+
+      const nowIso = new Date().toISOString();
+      const optimisticId = `optimistic:${Date.now()}:${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      const attachmentRows = normalizedAttachments.map((row) => ({
+        fileId: row.fileId,
+        fileName: row.fileName,
+        fileType: row.fileType,
+        fileSize: row.fileSize,
+        s3Key: row.s3Key,
+        s3Url: row.s3Url,
+        uploadedAt: nowIso,
+      }));
+
+      let optimisticReplyTo: ChatMessage["replyTo"] = replyToId;
+      setMessages((prev) => {
+        if (replyToId) {
+          const target = prev.find((m) => String(m._id) === replyToId);
+          if (target) {
+            optimisticReplyTo = {
+              _id: String(target._id),
+              content: String(target.content || ""),
+              sender: target.sender
+                ? {
+                    _id: String(target.sender._id || ""),
+                    name: String(target.sender.name || ""),
+                    role: String(target.sender.role || ""),
+                  }
+                : null,
+            };
+          }
+        }
+
+        const optimistic: ChatMessage = {
+          _id: optimisticId,
+          roomId: String(roomId),
+          sender: {
+            _id: senderId,
+            name: String(user?.name || "").trim() || "나",
+            role: String(user?.role || "").trim(),
+          },
+          messageKind: "user",
+          content:
+            normalizedContent ||
+            (attachmentRows.length ? "파일 첨부" : ""),
+          attachments: attachmentRows,
+          replyTo: optimisticReplyTo,
+          reactions: [],
+          readBy: [{ userId: senderId, readAt: nowIso }],
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        };
+
+        const next = [...prev, optimistic];
+        writeCachedMessages(
+          String(roomId || "").trim(),
+          userCacheId,
+          next,
+          pagination,
+        );
+        return next;
+      });
+      setPagination((prev) => ({
+        ...prev,
+        total: Math.max(0, Number(prev.total || 0) + 1),
+      }));
+
       try {
         const res = await apiFetch<{
           success: boolean;
@@ -271,19 +348,47 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
         });
 
         if (res.ok && res.data?.success) {
+          const confirmed = res.data.data;
           setMessages((prev) => {
-            const next = res.data!.data;
-            if (!next?._id) return prev;
-            if (prev.some((m) => String(m._id) === String(next._id))) return prev;
-            const merged = [...prev, next];
-            writeCachedMessages(String(roomId || "").trim(), userCacheId, merged, pagination);
+            if (!confirmed?._id) {
+              return prev.filter((m) => String(m._id) !== optimisticId);
+            }
+            const withoutOptimistic = prev.filter(
+              (m) =>
+                String(m._id) !== optimisticId &&
+                String(m._id) !== String(confirmed._id),
+            );
+            const merged = sortMessagesChronologically([
+              ...withoutOptimistic,
+              confirmed,
+            ]);
+            writeCachedMessages(
+              String(roomId || "").trim(),
+              userCacheId,
+              merged,
+              pagination,
+            );
             return merged;
           });
-          return res.data.data;
+          return confirmed;
         }
 
         throw new Error(res.data?.message || "메시지 전송에 실패했습니다.");
       } catch (e: unknown) {
+        setMessages((prev) => {
+          const next = prev.filter((m) => String(m._id) !== optimisticId);
+          writeCachedMessages(
+            String(roomId || "").trim(),
+            userCacheId,
+            next,
+            pagination,
+          );
+          return next;
+        });
+        setPagination((prev) => ({
+          ...prev,
+          total: Math.max(0, Number(prev.total || 0) - 1),
+        }));
         toast({
           title: "전송 실패",
           description: e instanceof Error ? e.message : "메시지 전송 중 오류가 발생했습니다.",
@@ -292,7 +397,7 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
         return null;
       }
     },
-    [pagination, roomId, toast, token, userCacheId],
+    [pagination, roomId, toast, token, user, userCacheId],
   );
 
   const toggleReaction = useCallback(
@@ -492,8 +597,36 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
       const isMine = senderId ? myIdCandidates.has(senderId) : false;
 
       setMessages((prev) => {
-        if (prev.some((m) => String(m._id) === String(messageRaw._id))) return prev;
-        const next = sortMessagesChronologically([...prev, messageRaw]);
+        if (prev.some((m) => String(m._id) === String(messageRaw._id))) {
+          // 확인된 id가 오면 같은 내용의 낙관적 행만 걷어낸다.
+          if (!isMine) return prev;
+          const cleaned = prev.filter(
+            (m) =>
+              String(m._id) === String(messageRaw._id) ||
+              !isOptimisticMessageId(m._id) ||
+              String(m.content || "") !== String(messageRaw.content || ""),
+          );
+          if (cleaned.length === prev.length) return prev;
+          writeCachedMessages(
+            String(roomId || "").trim(),
+            userCacheId,
+            cleaned,
+            pagination,
+          );
+          return cleaned;
+        }
+
+        const withoutOptimistic = isMine
+          ? prev.filter(
+              (m) =>
+                !isOptimisticMessageId(m._id) ||
+                String(m.content || "") !== String(messageRaw.content || ""),
+            )
+          : prev;
+        const next = sortMessagesChronologically([
+          ...withoutOptimistic,
+          messageRaw,
+        ]);
         writeCachedMessages(String(roomId || "").trim(), userCacheId, next, pagination);
         return next;
       });

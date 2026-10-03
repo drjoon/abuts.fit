@@ -374,6 +374,7 @@ export function ChatMessageBubble({
   const senderName = String(message.sender?.name || "알 수 없음").trim();
   const myId = String(currentUserId || "").trim();
   const isSystem = String(message.messageKind || "").trim() === "system";
+  const isPending = String(message._id || "").startsWith("optimistic:");
   const replyPreview = normalizeReplyTo(message);
   const reactionGroups = useMemo(
     () => groupReactions(message.reactions, myId),
@@ -381,9 +382,13 @@ export function ChatMessageBubble({
   );
 
   const canDelete =
-    isMine && !isSystem && typeof onDeleteMessage === "function";
+    isMine &&
+    !isSystem &&
+    !isPending &&
+    typeof onDeleteMessage === "function";
   const canInteract =
     !isSystem &&
+    !isPending &&
     (typeof onReply === "function" ||
       typeof onToggleReaction === "function" ||
       canDelete);
@@ -771,8 +776,9 @@ export function ChatMessageBubble({
       <div
         id={chatMessageDomId(String(message._id || ""))}
         className={cn(
-          "group flex w-full min-w-0 scroll-mt-4 rounded-lg transition-[box-shadow,background-color]",
+          "group flex w-full min-w-0 scroll-mt-4 rounded-lg transition-[box-shadow,background-color,opacity]",
           isMine ? "justify-end" : "justify-start",
+          isPending && "opacity-70",
         )}
       >
         <div

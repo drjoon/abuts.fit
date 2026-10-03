@@ -363,13 +363,17 @@ export function DesignRequestTransferView({
         }
       }
 
+      const replyId = chatReplyTo?._id || null;
+      // 낙관적 전송: 입력은 바로 비우고, 말풍선은 sendMessage가 즉시 붙인다.
+      setChatDraft("");
+      setChatReplyTo(null);
+      chatUploads.clear();
+
       const sent = await sendMessage(text, attachments, {
-        replyTo: chatReplyTo?._id || null,
+        replyTo: replyId,
       });
-      if (sent) {
-        setChatDraft("");
-        setChatReplyTo(null);
-        chatUploads.clear();
+      if (!sent) {
+        setChatDraft(text);
       }
     } catch (error) {
       toast({

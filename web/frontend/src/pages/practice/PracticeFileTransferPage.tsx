@@ -6365,15 +6365,18 @@ export const PracticeFileTransferPage = ({
         }
       }
 
-      const sent = await sendMessage(
-        content || (attachments.length ? "파일 첨부" : ""),
-        attachments,
-        { replyTo: chatReplyTo?._id || null },
-      );
-      if (sent) {
-        setChatDraft("");
-        setChatReplyTo(null);
-        chatUploads.clear();
+      const textToSend = content || (attachments.length ? "파일 첨부" : "");
+      const replyId = chatReplyTo?._id || null;
+      // 낙관적 전송: 입력은 바로 비우고, 말풍선은 sendMessage가 즉시 붙인다.
+      setChatDraft("");
+      setChatReplyTo(null);
+      chatUploads.clear();
+
+      const sent = await sendMessage(textToSend, attachments, {
+        replyTo: replyId,
+      });
+      if (!sent) {
+        setChatDraft(content);
       }
     } catch (error) {
       toast({
