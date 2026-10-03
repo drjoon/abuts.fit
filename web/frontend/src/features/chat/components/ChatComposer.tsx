@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferMobileOralPhotoIntake.tsx
 // - web/frontend/src/features/chat/components/NewChatWidget.tsx
 // change-log:
+// - 2026-10-04: onActivate — 입력 포커스 시(헬퍼 설치 안내 등).
 // - 2026-09-15: 의뢰건 불러오기 — native title → Radix Tooltip(600ms)로 첨부·사진찍기와 동일.
 // - 2026-09-13: compact — 전송 버튼을 입력창 오른쪽(도구 줄 위)으로 올려 글로벌 채팅 FAB와 겹침 방지.
 // - 2026-09-12: 의뢰건 선택 목록 requestId 중복 제거(/my 파일별 가상 row).
@@ -96,6 +97,8 @@ type Props = {
   compact?: boolean;
   /** $ 버튼 오른쪽(메모·평가 아이콘 등) */
   toolbarExtra?: ReactNode;
+  /** 입력창 포커스(헬퍼 설치 안내 등) */
+  onActivate?: () => void;
   className?: string;
 };
 
@@ -119,6 +122,7 @@ export const ChatComposer = (props: Props) => {
     onCancelReply,
     compact = false,
     toolbarExtra = null,
+    onActivate,
     className,
   } = props;
 
@@ -445,6 +449,7 @@ export const ChatComposer = (props: Props) => {
               onDraftChange(e.target.value);
               setCursor(e.target.selectionStart ?? e.target.value.length);
             }}
+            onFocus={() => onActivate?.()}
             onClick={syncCursor}
             onKeyUp={syncCursor}
             onSelect={syncCursor}
@@ -474,6 +479,7 @@ export const ChatComposer = (props: Props) => {
             onDraftChange(e.target.value);
             setCursor(e.target.selectionStart ?? e.target.value.length);
           }}
+          onFocus={() => onActivate?.()}
           onClick={syncCursor}
           onKeyUp={syncCursor}
           onSelect={syncCursor}

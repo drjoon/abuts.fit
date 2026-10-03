@@ -7,6 +7,7 @@
 // - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
 // - web/frontend/src/features/chat/components/MessageReply.tsx
 // - web/frontend/src/features/chat/components/ChatComposer.tsx
+// - web/frontend/src/shared/hooks/useLabHelperInstallPrompt.tsx
 // - web/frontend/src/features/chat/components/NewChatWidget.tsx
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/ModelPreviewDialog.tsx
@@ -18,6 +19,8 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// change-log:
+// - 2026-10-04: 채팅 입력 포커스 — 헬퍼 미설치·구버전이면 설치/업데이트 안내.
 // - 2026-10-03: 어벗·보철 클릭도 의뢰·작업 스캔과 같은 겹침 프리뷰로 연다(컨펌만 단건 유지).
 // - 2026-10-01: 노란 스캔 — 업로드 묶음 안에서만 상악·하악이 겹치면 표시한다.
 // - 2026-10-01: 어벗츠기공소 채팅 헤더 AI 버튼 — 협력·하청·자체 수행 모두 표시.
@@ -323,6 +326,7 @@ import {
 } from "@/pages/practice/components/LabReceiveRoleFilterButtons";
 import { AUTO_MATCH_IDENTITY_LABEL } from "@/shared/practice/autoMatchIdentity";
 import { useToast } from "@/shared/hooks/use-toast";
+import { useLabHelperInstallPrompt } from "@/shared/hooks/useLabHelperInstallPrompt";
 import {
   isPendingRoundBarAbutment,
   isSimpleAbutmentModeForFee,
@@ -1049,6 +1053,8 @@ export function PracticeTransferDetailChatDialog({
   preferredDockNonce = 0,
 }: PracticeTransferDetailChatDialogProps) {
   const { toast } = useToast();
+  const { promptFromChatInput, dialogs: labHelperInstallDialogs } =
+    useLabHelperInstallPrompt();
   const viewerRole = useAuthStore((s) => s.user?.role);
   const internalLabAiDesign =
     feeViewer === "lab" && String(viewerRole || "").trim() === "internalLab";
@@ -4321,6 +4327,7 @@ export function PracticeTransferDetailChatDialog({
                       }
                       replyTo={replyTo}
                       onCancelReply={onCancelReply}
+                      onActivate={() => void promptFromChatInput()}
                       compact
                     />
                   </div>
@@ -4507,6 +4514,7 @@ export function PracticeTransferDetailChatDialog({
           </div>
           {modelPreview}
           {imageAttachChoiceDialog}
+          {labHelperInstallDialogs}
         </>
       );
     }
@@ -4524,6 +4532,7 @@ export function PracticeTransferDetailChatDialog({
         </div>
         {modelPreview}
         {imageAttachChoiceDialog}
+        {labHelperInstallDialogs}
       </>
     );
   }
@@ -4572,6 +4581,7 @@ export function PracticeTransferDetailChatDialog({
       </Dialog>
       {modelPreview}
       {imageAttachChoiceDialog}
+      {labHelperInstallDialogs}
     </>
   );
 }

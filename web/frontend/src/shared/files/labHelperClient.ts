@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: resolveLabHelperPresence — 미설치·구버전·정상 (설정·채팅 설치 안내).
 // - 2026-10-04: v10 POST /open-privacy-settings — Mac 시스템 설정을 헬퍼가 연다.
 // - 2026-10-04: v9 세션 businessAnchorId — open-href가 같은 계정 탭만 연다.
 // - 2026-10-03: v8 계정별 헬퍼 세션 — 치과·기공소 동시 폴링. /notify는 health ping 생략.
@@ -475,8 +476,18 @@ export function startLabHelperInstallerDownload(os: LabHelperOs) {
 
 /** 연결 프로그램이 떠 있는데 CURRENT 미만이면 true. 안내 모달용. */
 export async function needsLabHelperUpdate(): Promise<boolean> {
-  if (!labHelperOs()) return false;
-  const health = await probeLabHelper();
-  if (!health) return false;
-  return Number(health.version || 0) < LAB_HELPER_CURRENT_VERSION;
+  return (await resolveLabHelperPresence()) === "outdated";
+}
+
+/** 설치·업데이트 안내용. wake면 Windows 꺼진 헬퍼를 깨운 뒤 본다. */
+export type LabHelperPresence = "unsupported" | "missing" | "outdated" | "ready";
+
+export async function resolveLabHelperPresence(opts?: {
+  wake?: boolean;
+}): Promise<LabHelperPresence> {
+  if (!labHelperOs()) return "unsupported";
+  const health = opts?.wake ? await findLabHelper() : await probeLabHelper();
+  if (!health) return "missing";
+  if (Number(health.version || 0) < LAB_HELPER_CURRENT_VERSION) return "outdated";
+  return "ready";
 }

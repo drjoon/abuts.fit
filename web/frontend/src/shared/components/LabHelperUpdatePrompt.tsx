@@ -1,10 +1,11 @@
 /**
- * 기공소 로그인 시 연결 프로그램이 구버전이면 업데이트 안내 모달.
+ * 기공소·치과 로그인 시 연결 프로그램이 구버전이면 업데이트 안내 모달.
  * related files:
  * - web/frontend/src/shared/components/LabHelperUpdateDialog.tsx
  * - web/frontend/src/shared/hooks/useLabHelperAlarmSession.ts
  * - web/frontend/src/App.tsx
  * change-log:
+ * - 2026-10-04: 치과(practice)도 구버전 안내(PC 알림).
  * - 2026-10-03: zip만 받지 말고 설치 안내 모달.
  */
 import { useEffect, useState } from "react";
@@ -20,8 +21,10 @@ const canPromptLabHelperUpdate = (user: {
   if (!user) return false;
   const role = String(user.role || "").trim();
   if (role === "internalLab") return true;
+  if (role === "practice") return true;
   if (role === "requestor") {
-    return normalizeRequestorKind(user.requestorKind) === "lab";
+    const kind = normalizeRequestorKind(user.requestorKind);
+    return kind === "lab" || kind === "practice";
   }
   return false;
 };
