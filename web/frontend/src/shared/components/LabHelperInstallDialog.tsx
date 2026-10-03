@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: Mac 「설정 열기」— 프로토콜 링크 대신 ConfirmDialog(`MacPrivacySettingsOpenButton`).
 // - 2026-10-03: 「잘 안 되면」 아코디언 제거. Mac은 3단계(완료 → 그래도 열기)만.
 // - 2026-10-03: Mac 「열지 않음」→ 완료 → 시스템 설정 「그래도 열기」.
 // - 2026-09-29: 열면 먼저 연결 확인 — 이미 떠 있으면 설치 파일을 다시 받지 않고 바로 이어간다.
@@ -11,6 +12,7 @@
 // related files:
 // - web/frontend/src/shared/files/labHelperClient.ts
 // - web/frontend/src/shared/files/useS3FileDownload.ts
+// - web/frontend/src/shared/components/MacPrivacySettingsOpenButton.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { MacPrivacySettingsOpenButton } from "@/shared/components/MacPrivacySettingsOpenButton";
 import {
   labHelperInstaller,
   labHelperOs,
@@ -29,7 +32,7 @@ import {
   type LabHelperInstaller,
 } from "@/shared/files/labHelperClient";
 import { cn } from "@/shared/ui/cn";
-import { CheckCircle2, FolderOpen, Loader2, Settings } from "lucide-react";
+import { CheckCircle2, FolderOpen, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 type LabHelperInstallDialogProps = {
@@ -47,9 +50,6 @@ function startInstallerDownload(installer: LabHelperInstaller) {
   a.click();
   a.remove();
 }
-
-/** macOS 13+ 「개인정보 보호 및 보안」. 브라우저가 「시스템 설정을 열까요?」를 한 번 묻는다. */
-const MAC_PRIVACY_SETTINGS_URL = "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension";
 
 /** 화면에서 눌러야 할 버튼 이름 */
 function Key({ children }: { children: ReactNode }) {
@@ -159,13 +159,8 @@ export function LabHelperInstallDialog({ open, onResolved }: LabHelperInstallDia
                 </span>
               </Step>
               <Step n={3}>
-                <Button asChild size="sm" variant="outline" className="mr-1.5 h-7 px-2 align-middle text-xs">
-                  <a href={MAC_PRIVACY_SETTINGS_URL}>
-                    <Settings className="mr-1 h-3.5 w-3.5" />
-                    설정 열기
-                  </a>
-                </Button>
-                맨 아래 <Key>그래도 열기</Key> → 암호 → <Key>열기</Key>
+                <MacPrivacySettingsOpenButton />
+                후 <Key>그래도 열기</Key>
               </Step>
             </>
           ) : (

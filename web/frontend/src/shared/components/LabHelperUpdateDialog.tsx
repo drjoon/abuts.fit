@@ -5,12 +5,13 @@
  * - web/frontend/src/shared/files/labHelperClient.ts
  * - web/frontend/src/shared/components/LabHelperUpdatePrompt.tsx
  * change-log:
+ * - 2026-10-04: Mac 「설정 열기」— 프로토콜 링크 대신 ConfirmDialog(`MacPrivacySettingsOpenButton`).
  * - 2026-10-03: 아코디언·제목 아래 안내 문구 제거. Mac은 3단계(완료 → 그래도 열기)만.
  * - 2026-10-03: Mac Gatekeeper — 완료 후 시스템 설정 「그래도 열기」.
  * - 2026-10-03: zip/exe만 받지 말고 열어서 설치하라고 짧게 안내.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { CheckCircle2, Download, Loader2, RefreshCw, Settings } from "lucide-react";
+import { CheckCircle2, Download, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { MacPrivacySettingsOpenButton } from "@/shared/components/MacPrivacySettingsOpenButton";
 import {
   LAB_HELPER_CURRENT_VERSION,
   labHelperInstaller,
@@ -32,10 +34,6 @@ type LabHelperUpdateDialogProps = {
   open: boolean;
   onResolved: (updated: boolean) => void;
 };
-
-/** macOS 13+ 「개인정보 보호 및 보안」 */
-const MAC_PRIVACY_SETTINGS_URL =
-  "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension";
 
 function Key({ children }: { children: ReactNode }) {
   return (
@@ -145,18 +143,8 @@ export function LabHelperUpdateDialog({ open, onResolved }: LabHelperUpdateDialo
                 </span>
               </Step>
               <Step n={3}>
-                <Button
-                  asChild
-                  size="sm"
-                  variant="outline"
-                  className="mr-1.5 h-7 px-2 align-middle text-xs"
-                >
-                  <a href={MAC_PRIVACY_SETTINGS_URL}>
-                    <Settings className="mr-1 h-3.5 w-3.5" />
-                    설정 열기
-                  </a>
-                </Button>
-                맨 아래 <Key>그래도 열기</Key> → 암호 → <Key>열기</Key>
+                <MacPrivacySettingsOpenButton />
+                후 <Key>그래도 열기</Key>
               </Step>
             </>
           ) : (
