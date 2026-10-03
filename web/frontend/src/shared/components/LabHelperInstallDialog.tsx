@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: Mac 2단계 — 휴지통 안내 삭제, 「완료」만 → 「완료」를.
 // - 2026-10-04: Mac 「설정 열기」— 프로토콜 링크 대신 ConfirmDialog(`MacPrivacySettingsOpenButton`).
 // - 2026-10-03: 「잘 안 되면」 아코디언 제거. Mac은 3단계(완료 → 그래도 열기)만.
 // - 2026-10-03: Mac 「열지 않음」→ 완료 → 시스템 설정 「그래도 열기」.
@@ -152,11 +153,7 @@ export function LabHelperInstallDialog({ open, onResolved }: LabHelperInstallDia
                 받은 zip을 풀고 <b>어벗츠 연결</b>을 실행합니다.
               </Step>
               <Step n={2}>
-                「열지 않음」 창이 뜨면 <Key>완료</Key>만 누릅니다.
-                <br />
-                <span className="text-xs text-muted-foreground">
-                  <Key>휴지통으로 이동</Key>은 누르지 마세요.
-                </span>
+                「열지 않음」 창이 뜨면 <Key>완료</Key>를 누릅니다.
               </Step>
               <Step n={3}>
                 <MacPrivacySettingsOpenButton />

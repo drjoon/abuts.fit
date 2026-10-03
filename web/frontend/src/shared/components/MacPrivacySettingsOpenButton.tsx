@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 「설정 열기」— primary 파란 + bg-primary 명시(CTA 강조).
 // - 2026-10-04: 「설정 열기」클릭 가능 CTA — outline → primary(파란).
 // - 2026-10-04: 헬퍼 v10+면 컨펌 없이 바로 시스템 설정. 없으면 ConfirmDialog 수동 안내(프로토콜 안 씀).
 // related files:
@@ -11,6 +12,7 @@ import { Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { openLabHelperPrivacySettings } from "@/shared/files/labHelperClient";
+import { cn } from "@/shared/ui/cn";
 
 type MacPrivacySettingsOpenButtonProps = {
   className?: string;
@@ -41,7 +43,10 @@ export function MacPrivacySettingsOpenButton({
         type="button"
         size="sm"
         variant="default"
-        className={className ?? "mr-1.5 h-7 px-2 align-middle text-xs"}
+        className={cn(
+          "mr-1.5 h-7 bg-primary px-2 align-middle text-xs text-primary-foreground hover:bg-primary/90",
+          className,
+        )}
         disabled={busy}
         onClick={onClick}
       >
