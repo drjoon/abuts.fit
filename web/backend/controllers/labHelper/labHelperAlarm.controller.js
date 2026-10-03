@@ -2,18 +2,22 @@
 // - web/backend/services/labHelperAlarm.service.js
 // - web/backend/modules/labHelper/labHelper.routes.js
 // change-log:
+// - 2026-10-04: 치과(practice)도 wait 허용 — FE useLabHelperAlarmSession과 동일.
 // - 2026-10-03: wait 응답 no-store·ETag 제거(빈 응답 304로 알람 유실 방지).
 // - 2026-10-03: 헬퍼 PC 알람 장기 폴링(wait).
 
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { waitForLabHelperAlarm } from "../../services/labHelperAlarm.service.js";
 
+/** FE `canSyncLabHelperAlarm`과 동일 — 기공소·치과 PC 헬퍼 알람. */
 const canUseLabHelperAlarm = (user) => {
   if (!user) return false;
   const role = String(user.role || "").trim();
   if (role === "internalLab") return true;
+  if (role === "practice") return true;
   if (role === "requestor") {
-    return normalizeRequestorKind(user.requestorKind) === "lab";
+    const kind = normalizeRequestorKind(user.requestorKind);
+    return kind === "lab" || kind === "practice";
   }
   return false;
 };
@@ -36,7 +40,7 @@ export async function waitLabHelperAlarm(req, res) {
       return res.status(403).json({
         success: false,
         ok: false,
-        message: "기공소 계정만 사용할 수 있습니다.",
+        message: "기공소·치과 계정만 사용할 수 있습니다.",
       });
     }
     const userId = String(req.user?._id || req.user?.id || "").trim();
