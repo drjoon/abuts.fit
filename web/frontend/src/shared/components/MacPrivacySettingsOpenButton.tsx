@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 「설정 열기」클릭 가능 CTA — outline → primary(파란).
 // - 2026-10-04: 헬퍼 v10+면 컨펌 없이 바로 시스템 설정. 없으면 ConfirmDialog 수동 안내(프로토콜 안 씀).
 // related files:
 // - web/frontend/src/shared/components/LabHelperInstallDialog.tsx
@@ -39,7 +40,7 @@ export function MacPrivacySettingsOpenButton({
       <Button
         type="button"
         size="sm"
-        variant="outline"
+        variant="default"
         className={className ?? "mr-1.5 h-7 px-2 align-middle text-xs"}
         disabled={busy}
         onClick={onClick}
