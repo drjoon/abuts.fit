@@ -1418,9 +1418,9 @@ export function LabProsthesisModifyPanel({
               </span>
             </TooltipTrigger>
             <TooltipContent side="right" className="z-[520]">
-              화면을 돌리면 삽입축이 화면과 수직으로 따라옵니다.
+              화면을 맞춘 뒤 아래에서 설정합니다.
               <br />
-              가운데 뱃지에서 확정합니다.
+              취소하면 이전 축으로 돌아갑니다.
             </TooltipContent>
           </Tooltip>
           <p className="text-[11px] text-muted-foreground">

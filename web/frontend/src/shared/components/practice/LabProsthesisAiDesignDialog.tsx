@@ -91,6 +91,7 @@
 // - 2026-10-01: 단계 하위 메뉴는 셰브론 아코디언이다. 하나를 열면 같은 단계의 나머지는 닫힌다.
 // - 2026-10-01: 치아를 눌러도 번호·유형을 다시 고르지 않는다. 치과 의뢰 치식 그대로 진행한다.
 //   스캔바디 제목의 브리지 범위는 고른 치아와 상관없이 악궁 순서다.
+// - 2026-10-04: 「삽입축 설정」이 바로 잡고, 확정·취소는 없다. 다시 잡으려면 치아 정보 아이콘을 누른다.
 import {
   createContext,
   useCallback,
@@ -850,7 +851,7 @@ function LabProsthesisAiDesignDialog({
   const [entries, setEntries] = useState<OralScanOverlaySource[]>([]);
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const [colorMapping, setColorMapping] = useState(true);
-  const paint = useViewPaint({ open, resetKey: String(transferId || ""), initiallyOn: true });
+  const paint = useViewPaint({ open, resetKey: String(transferId || ""), initiallyOn: false });
   const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
   const [, setHasScanColor] = useState(false);
   const [ghostOn, setGhostOn] = useState(false);
@@ -920,9 +921,11 @@ function LabProsthesisAiDesignDialog({
   );
   const [insertionKeys, setInsertionKeys] = useState<string[]>([]);
   const [insertionShown, setInsertionShown] = useState(false);
+  /** 뱃지로 잡은 뒤, 치아 정보 아이콘으로 다시 잡으라고 안내하는 스팬. */
+  const [axisChangeHintKey, setAxisChangeHintKey] = useState("");
   /**
-   * 화면을 돌려 삽입축을 맞추는 중인 보철. 멈출 때마다 미리보기 축을 다시 잡고, 확정해야 저장한다.
-   * `before`는 시작 전 축 전체. 취소·저장 때 이것을 쓴다.
+   * 치아 정보 아이콘으로 다시 잡는 중. 멈출 때마다 미리보기만 하고, 설정에서 저장한다.
+   * `before`는 시작 전 축. 취소 때 되돌린다.
    */
   const [aiming, setAiming] = useState<{
     span: string[];
@@ -1148,6 +1151,8 @@ function LabProsthesisAiDesignDialog({
       setDropScanId(null);
       setInsertionKeys([]);
       setInsertionShown(false);
+      setAxisChangeHintKey("");
+      aimingRef.current = null;
       setAiming(null);
       setCenterGuide("grid");
       restoreGhostVisibleRef.current = false;
@@ -3535,12 +3540,25 @@ function LabProsthesisAiDesignDialog({
     queueSaveWorkRef.current();
   };
 
+  /** 지금 화면으로 삽입축을 잡고 저장한다. */
+  const captureInsertion = (toothNumbers: readonly string[]) => {
+    const viewer = viewerRef.current;
+    const key = insertionAxisKey(toothNumbers);
+    if (!viewer || !key) return;
+    setInsertionShown(true);
+    setCenterGuide((mode) => (mode === "off" ? "center" : mode));
+    setToothInfoOpen(true);
+    if (viewer.setInsertionFromView(toothNumbers) !== true) return;
+    insertionTaken(toothNumbers);
+    setAxisChangeHintKey(key);
+  };
+
   const endAiming = () => {
     aimingRef.current = null;
     setAiming(null);
   };
 
-  /** 삽입축 맞추기를 시작한다. 지금 화면으로 바로 미리보기를 잡는다. */
+  /** 치아 정보 아이콘 — 미리보기로 맞추고 아래에서 설정·취소한다. */
   const startAiming = (toothNumbers: readonly string[]) => {
     const viewer = viewerRef.current;
     const key = insertionAxisKey(toothNumbers);
@@ -3551,8 +3569,10 @@ function LabProsthesisAiDesignDialog({
     const next = { span: [...toothNumbers], before };
     aimingRef.current = next;
     setAiming(next);
+    setAxisChangeHintKey("");
     setInsertionShown(true);
     setCenterGuide((mode) => (mode === "off" ? "center" : mode));
+    setToothInfoOpen(true);
     viewer.setInsertionFromView(toothNumbers, { preview: true });
   };
 
@@ -3628,13 +3648,28 @@ function LabProsthesisAiDesignDialog({
   const viewedWizardStep = wizardSteps[activeWizardIndex] ?? null;
   const viewedAxisKey =
     viewedWizardStep?.kind === "axis" ? insertionAxisKey(viewedWizardStep.span) : "";
-  /** 아직 삽입축을 안 잡은 보철. 작업영역 가운데 뱃지로 잡게 한다. */
+  /** 아직 삽입축을 안 잡은 보철. 작업영역 아래 뱃지로 잡게 한다. */
   const pendingAxisSpan =
     viewedWizardStep?.kind === "axis" && viewedAxisKey && !insertionKeys.includes(viewedAxisKey)
       ? viewedWizardStep.span
       : null;
-  const axisBadgeSpan = aiming?.span ?? pendingAxisSpan;
+  const [axisPulseKey, setAxisPulseKey] = useState("");
+  const highlightInsertionKey = axisPulseKey;
   const insertionKeysSeenRef = useRef(insertionKeys);
+
+  useEffect(() => {
+    const key = pendingAxisSpan ? viewedAxisKey : axisChangeHintKey;
+    if (!key) {
+      setAxisPulseKey("");
+      return;
+    }
+    setAxisPulseKey(key);
+    const timer = window.setTimeout(() => {
+      setAxisPulseKey("");
+      if (!pendingAxisSpan) setAxisChangeHintKey("");
+    }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [pendingAxisSpan, viewedAxisKey, axisChangeHintKey]);
 
   /** 스캔을 열면 저장된 축이 없는 첫 보철을 교합면으로 보여 준다. 삽입축 설정 뱃지가 그 위에 뜬다. */
   const showMissingAxis = (savedKeys: readonly string[]) => {
@@ -4502,6 +4537,7 @@ function LabProsthesisAiDesignDialog({
               onInsertionAxisChange={(active) => {
                 if (active) return;
                 setInsertionKeys([]);
+                setAxisChangeHintKey("");
                 endAiming();
               }}
               onInsertionAxisAimed={(toothNumbers) => {
@@ -5498,7 +5534,7 @@ function LabProsthesisAiDesignDialog({
               panelsShown={panelsShown}
               toothInfoOpen={toothInfoOpen}
               insertionKeys={insertionKeys}
-              highlightInsertionKey={viewedAxisKey}
+              highlightInsertionKey={highlightInsertionKey}
               canSetInsertion={entries.length > 0}
               onSelectTooth={showTooth}
               hiddenTeeth={hiddenTeeth}
@@ -5568,25 +5604,25 @@ function LabProsthesisAiDesignDialog({
             {!busy &&
             stage !== "milling" &&
             entries.length > 0 &&
-            axisBadgeSpan &&
+            (aiming || pendingAxisSpan || axisChangeHintKey) &&
             !toothCardFor &&
             !libraryPickerFor ? (
-              <div className="absolute left-1/2 top-[calc(50%+4.5rem)] z-10 flex -translate-x-1/2 flex-col items-center gap-1">
-                <div className="flex items-center gap-1 rounded-full border bg-background/95 p-1 shadow-md">
-                  <span className="px-2 text-xs font-semibold tabular-nums">
-                    {axisBadgeSpan.length > 1
-                      ? `브리지 ${axisBadgeSpan[0]}-${axisBadgeSpan[axisBadgeSpan.length - 1]}`
-                      : `#${axisBadgeSpan[0]}`}
-                  </span>
-                  {aiming ? (
-                    <>
+              <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1">
+                {aiming ? (
+                  <>
+                    <div className="flex items-center gap-1 rounded-full border bg-background/95 p-1 shadow-md">
+                      <span className="px-2 text-xs font-semibold tabular-nums">
+                        {aiming.span.length > 1
+                          ? `브리지 ${aiming.span[0]}-${aiming.span[aiming.span.length - 1]}`
+                          : `#${aiming.span[0]}`}
+                      </span>
                       <Button
                         type="button"
                         size="sm"
                         className="h-7 rounded-full px-3 text-xs"
                         onClick={confirmAiming}
                       >
-                        삽입축 확정
+                        설정
                       </Button>
                       <Button
                         type="button"
@@ -5597,27 +5633,45 @@ function LabProsthesisAiDesignDialog({
                       >
                         취소
                       </Button>
-                    </>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-7 rounded-full px-3 text-xs"
-                      onClick={() => startAiming(axisBadgeSpan)}
-                    >
-                      삽입축 설정
-                    </Button>
-                  )}
-                </div>
-                {aiming ? (
+                    </div>
+                    <p className="rounded-md bg-slate-700/85 px-2 py-1 text-center text-[11px] leading-relaxed text-white">
+                      중앙선에 대상치 가운데를 맞추고
+                      <br />
+                      교합면에 수직으로 보도록 하세요.
+                      <br />
+                      화면을 멈추면 삽입축과 언더컷이 따라옵니다.
+                    </p>
+                  </>
+                ) : pendingAxisSpan ? (
+                  <>
+                    <div className="flex items-center gap-1 rounded-full border bg-background/95 p-1 shadow-md">
+                      <span className="px-2 text-xs font-semibold tabular-nums">
+                        {pendingAxisSpan.length > 1
+                          ? `브리지 ${pendingAxisSpan[0]}-${pendingAxisSpan[pendingAxisSpan.length - 1]}`
+                          : `#${pendingAxisSpan[0]}`}
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-7 rounded-full px-3 text-xs"
+                        onClick={() => captureInsertion(pendingAxisSpan)}
+                      >
+                        삽입축 설정
+                      </Button>
+                    </div>
+                    <p className="rounded-md bg-slate-700/85 px-2 py-1 text-center text-[11px] leading-relaxed text-white">
+                      중앙선에 대상치 가운데를 맞추고
+                      <br />
+                      교합면에 수직으로 보도록 하세요.
+                      <br />
+                      맞으면 삽입축 설정을 누르세요.
+                    </p>
+                  </>
+                ) : (
                   <p className="rounded-md bg-slate-700/85 px-2 py-1 text-center text-[11px] leading-relaxed text-white">
-                    중앙선에 대상치 가운데를 맞추고
-                    <br />
-                    교합면에 수직으로 보도록 하세요.
-                    <br />
-                    화면을 멈추면 삽입축과 언더컷이 따라옵니다.
+                    삽입축을 바꾸려면 치아 정보의 삽입축 아이콘을 누르세요.
                   </p>
-                ) : null}
+                )}
               </div>
             ) : null}
             {marginHint && !paint.paintOn && stage !== "milling" ? (
@@ -6726,19 +6780,9 @@ function DesignViewerChrome({
     const spanKey = insertionAxisKey(span);
     const highlighted = Boolean(highlightInsertionKey && spanKey === highlightInsertionKey);
     return iconTip(
-      shared ? (
-        <>
-          화면을 돌려 브리지 전체의 삽입축을 맞춥니다.
-          <br />
-          가운데 뱃지에서 확정합니다.
-        </>
-      ) : (
-        <>
-          화면을 돌려 삽입축을 맞춥니다.
-          <br />
-          가운데 뱃지에서 확정합니다.
-        </>
-      ),
+      shared
+        ? "누르면 아래에서 브리지 삽입축을 다시 잡습니다."
+        : "누르면 아래에서 삽입축을 다시 잡습니다.",
       <button
         type="button"
         className={cn(

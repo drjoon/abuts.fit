@@ -49,7 +49,7 @@ export function useViewPaint({
 }: {
   open: boolean;
   resetKey: string;
-  /** 프리뷰·AI 디자인은 왼쪽 드래그가 그리기라 켜 둔다. */
+  /** 프리뷰는 끌 수 있다. AI 디자인은 기본 끔. */
   initiallyOn?: boolean;
 }) {
   const paintRef = useRef<ViewPaintHandle | null>(null);
