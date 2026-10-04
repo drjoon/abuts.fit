@@ -112,6 +112,12 @@ import {
   type ProsthesisDesignEdit,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
+import {
+  snapMarginPick,
+  traceMarginPicks,
+  traceMarginSegment,
+  type MarginCloudPoint,
+} from "@/shared/practice/marginSemiTrace";
 import { encodeBinaryStl } from "@/shared/files/stlBinaryWrite";
 import { unionTriangleSoups } from "@/shared/practice/meshUnion";
 import {
@@ -285,6 +291,8 @@ export type OralScanOverlayHandle = {
   exportCamera: () => WorkSessionView | null;
   /** 저장한 카메라를 그대로 둔다. 뷰 저장은 부르지 않는다. */
   restoreCamera: (view: WorkSessionView) => void;
+  /** 마진 재설정 중 찍은 점을 모두 버리고 처음부터 다시 찍게 한다. */
+  resetMarginTrace: () => void;
   /**
    * 커넥터 자리에서 양쪽 치아의 인접면을 본 단면 보기.
    * 커넥터 메시는 빼고 그린다. 치아 위치를 모르면 null.
@@ -549,6 +557,8 @@ type Props = {
   onCrownShells?: (shells: Record<string, number>) => void;
   /** 지운 마진을 새로 찍는 중인 점 수. 닫거나 그만두면 0. */
   onMarginTraceProgress?: (count: number) => void;
+  /** 우클릭·Esc로 재설정을 끝낸다. */
+  onMarginTraceCancel?: () => void;
   /** 페인트가 스캔 표면에 붙도록. 씬이 준비되면 넘기고, 닫히면 null. */
   onPaintSpace?: (space: ViewPaintSpace | null) => void;
   className?: string;
@@ -2455,6 +2465,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       onHoleIssues,
       onCrownShells,
       onMarginTraceProgress,
+      onMarginTraceCancel,
       onPaintSpace,
       className,
     },
@@ -2664,18 +2675,36 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const crownAdaptCacheRef = useRef(new Map<string, CachedCrown>());
   const onMarginTraceProgressRef = useRef(onMarginTraceProgress);
   onMarginTraceProgressRef.current = onMarginTraceProgress;
+  const onMarginTraceCancelRef = useRef(onMarginTraceCancel);
+  onMarginTraceCancelRef.current = onMarginTraceCancel;
   /** 마진을 지운 뒤 찍는 점(월드). 시작점을 다시 누르면 닫는다. */
-  const marginTraceRef = useRef<{ tooth: string | null; points: THREE.Vector3[] }>({
+  const marginTraceRef = useRef<{
+    tooth: string | null;
+    points: THREE.Vector3[];
+    /** 찍은 점 사이 자동 중간점. seg는 앞쪽 찍은 점 번호. */
+    subs: Array<{ point: THREE.Vector3; seg: number; list: THREE.Vector3[]; k: number }>;
+    /** 찍은 점 쌍마다 한 번 만든 중간점. 끌어 옮긴 값을 그대로 유지한다. */
+    segs: Array<{ a: THREE.Vector3; b: THREE.Vector3; subs: THREE.Vector3[] }>;
+    cloud: { samples: MarginCloudPoint[]; worlds: THREE.Vector3[]; base: number } | null;
+    cloudTooth: string | null;
+    cloudVersion: number;
+  }>({
     tooth: null,
     points: [],
+    subs: [],
+    segs: [],
+    cloud: null,
+    cloudTooth: null,
+    cloudVersion: -1,
   });
   const marginSketchRef = useRef<THREE.Group | null>(null);
   const marginTraceApiRef = useRef<{
     active: () => string | null;
     click: (raycaster: THREE.Raycaster) => void;
     undo: () => void;
+    cancel: () => void;
     sync: () => void;
-  }>({ active: () => null, click: () => {}, undo: () => {}, sync: () => {} });
+  }>({ active: () => null, click: () => {}, undo: () => {}, cancel: () => {}, sync: () => {} });
   const scanSurfaceHitRef = useRef<
     (raycaster: THREE.Raycaster, tooth: string) => THREE.Vector3 | null
   >(() => null);
@@ -4090,14 +4119,135 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     renderer.domElement.addEventListener("pointerup", onScanbodyPointerUp);
 
     let marginDown: { x: number; y: number; button: number } | null = null;
+    /** 재설정 중 이미 찍은 점을 끄는 동안. */
+    let traceDrag: {
+      index: number;
+      sub?: { list: THREE.Vector3[]; k: number };
+      x: number;
+      y: number;
+      moved: boolean;
+      at: number;
+    } | null = null;
+    const traceProject = new THREE.Vector3();
+    /** 앞 점과 1mm 안에 있는 찍은 점은 정리한다. */
+    const pruneTracePoints = () => {
+      const trace = marginTraceRef.current;
+      const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+      const min = 1 / unit;
+      const kept: THREE.Vector3[] = [];
+      for (const point of trace.points) {
+        const prev = kept[kept.length - 1];
+        if (prev && prev.distanceTo(point) < min) continue;
+        kept.push(point);
+      }
+      if (kept.length > 1 && kept[kept.length - 1]!.distanceTo(kept[0]!) < min) kept.pop();
+      if (kept.length === trace.points.length) return;
+      trace.points = kept;
+      drawMarginSketchRef.current(trace.points, false);
+      onMarginTraceProgressRef.current?.(trace.points.length);
+    };
+    const nearTracePoint = (event: PointerEvent) => {
+      if (!marginTraceApiRef.current.active()) return -1;
+      const rect = renderer.domElement.getBoundingClientRect();
+      let best = -1;
+      let bestDist = 12;
+      const trace = marginTraceRef.current;
+      const all = [...trace.points, ...trace.subs.map((sub) => sub.point)];
+      all.forEach((point, index) => {
+        traceProject.copy(point).project(camera);
+        const sx = rect.left + ((traceProject.x + 1) / 2) * rect.width;
+        const sy = rect.top + ((1 - traceProject.y) / 2) * rect.height;
+        const dist = Math.hypot(event.clientX - sx, event.clientY - sy);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = index;
+        }
+      });
+      return best;
+    };
     const onMarginPickDown = (event: PointerEvent) => {
       if (!marginSeedPickRef.current && !marginTraceApiRef.current.active()) return;
       if (event.button !== 0 && event.button !== 2) return;
       marginDown = { x: event.clientX, y: event.clientY, button: event.button };
+      if (event.button === 0) {
+        const index = nearTracePoint(event);
+        const trace = marginTraceRef.current;
+        // 중간점은 찍은 점으로 바꾸지 않고 그대로 끌어 옮긴다.
+        const sub = index >= trace.points.length ? trace.subs[index - trace.points.length] : undefined;
+        if (index >= 0) {
+          traceDrag = {
+            index,
+            sub: sub ? { list: sub.list, k: sub.k } : undefined,
+            x: event.clientX,
+            y: event.clientY,
+            moved: false,
+            at: 0,
+          };
+          try {
+            renderer.domElement.setPointerCapture(event.pointerId);
+          } catch {
+            // noop
+          }
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }
+      }
+    };
+    const onMarginPickMove = (event: PointerEvent) => {
+      const drag = traceDrag;
+      if (!drag) return;
+      if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 5) {
+        event.stopImmediatePropagation();
+        return;
+      }
+      drag.moved = true;
+      event.stopImmediatePropagation();
+      const now = performance.now();
+      if (now - drag.at < SURFACE_PICK_MS) return;
+      drag.at = now;
+      const tooth = marginTraceRef.current.tooth;
+      if (!tooth) return;
+      aim(event);
+      const cloud = marginTraceCloud(tooth);
+      const place = placementsRef.current.find((row) => row.toothNumber === tooth);
+      // 커서에 가장 가까운 스캔 꼭짓점으로 옮긴다(면 위 보장). 광선이 면에 닿으면 그 근처 꼭짓점을 우선한다.
+      const hit = scanSurfaceHitRef.current(raycaster, tooth);
+      let point: THREE.Vector3 | null = null;
+      if (cloud) {
+        let bestDist = Infinity;
+        const limit = place ? place.radius * 0.25 : Infinity;
+        for (const world of cloud.worlds) {
+          const dist = hit ? world.distanceTo(hit) : raycaster.ray.distanceToPoint(world);
+          if (dist < bestDist && dist < limit) {
+            bestDist = dist;
+            point = world;
+          }
+        }
+        if (point) point = point.clone();
+      }
+      if (!point) point = hit;
+      if (!point) return;
+      if (drag.sub) drag.sub.list[drag.sub.k] = point;
+      else marginTraceRef.current.points[drag.index] = point;
+      drawMarginSketchRef.current(marginTraceRef.current.points, false);
     };
     const onMarginPickUp = (event: PointerEvent) => {
       const start = marginDown;
       marginDown = null;
+      const drag = traceDrag;
+      traceDrag = null;
+      if (drag) {
+        try {
+          renderer.domElement.releasePointerCapture(event.pointerId);
+        } catch {
+          // noop
+        }
+        if (drag.moved) {
+          if (!drag.sub) pruneTracePoints();
+          event.stopImmediatePropagation();
+          return;
+        }
+      }
       if (!start || start.button !== event.button) return;
       if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) return;
       aim(event);
@@ -4110,11 +4260,34 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         }
         return;
       }
-      if (event.button === 2) marginTraceApiRef.current.undo();
-      else marginTraceApiRef.current.click(raycaster);
+      if (event.button === 2) {
+        // 우클릭은 누른 자리의 찍은 점을 지운다. 중간점은 자동이라 지우지 않는다.
+        const trace = marginTraceRef.current;
+        const hit = nearTracePoint(event);
+        if (hit >= 0 && hit < trace.points.length) {
+          trace.points.splice(hit, 1);
+          drawMarginSketchRef.current(trace.points, false);
+          onMarginTraceProgressRef.current?.(trace.points.length);
+        }
+        return;
+      }
+      // 이미 찍은 점을 눌렀다면 새 점으로 찍지 않는다(시작점은 3점 이상이면 닫기).
+      const near = nearTracePoint(event);
+      if (near > 0 || near >= 0 && near >= marginTraceRef.current.points.length) return;
+      if (near === 0 && marginTraceRef.current.points.length < 3) return;
+      marginTraceApiRef.current.click(raycaster);
     };
-    renderer.domElement.addEventListener("pointerdown", onMarginPickDown);
-    renderer.domElement.addEventListener("pointerup", onMarginPickUp);
+    renderer.domElement.addEventListener("pointermove", onMarginPickMove, true);
+    const onMarginTraceKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (!marginTraceApiRef.current.active()) return;
+      event.stopPropagation();
+      event.preventDefault();
+      onMarginTraceCancelRef.current?.();
+    };
+    window.addEventListener("keydown", onMarginTraceKey, true);
+    renderer.domElement.addEventListener("pointerdown", onMarginPickDown, true);
+    renderer.domElement.addEventListener("pointerup", onMarginPickUp, true);
 
     const meshEditCtl = new ScanMeshEditController({
       dom: renderer.domElement,
@@ -4168,8 +4341,10 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       renderer.domElement.removeEventListener("pointercancel", onOcclusionUp, true);
       renderer.domElement.removeEventListener("pointerdown", onScanbodyPointerDown);
       renderer.domElement.removeEventListener("pointerup", onScanbodyPointerUp);
-      renderer.domElement.removeEventListener("pointerdown", onMarginPickDown);
-      renderer.domElement.removeEventListener("pointerup", onMarginPickUp);
+      window.removeEventListener("keydown", onMarginTraceKey, true);
+      renderer.domElement.removeEventListener("pointermove", onMarginPickMove, true);
+      renderer.domElement.removeEventListener("pointerdown", onMarginPickDown, true);
+      renderer.domElement.removeEventListener("pointerup", onMarginPickUp, true);
       controls.removeEventListener("start", cancelSnap);
       controls.removeEventListener("change", onControlChange);
       controls.dispose();
@@ -6024,6 +6199,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           bottom: camera.bottom,
         };
       },
+      resetMarginTrace: () => marginTraceApiRef.current.cancel(),
       restoreCamera: (view) => {
         const camera = cameraRef.current;
         const controls = controlsRef.current;
@@ -6313,6 +6489,104 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     };
   };
 
+  /** 두 찍은 점 사이 0.4mm 간격 중간점. 한 번 만들면 그 쌍이 그대로인 동안 재사용한다. */
+  const marginTraceSegment = (
+    cloud: NonNullable<typeof marginTraceRef.current.cloud>,
+    tooth: string,
+    from: THREE.Vector3,
+    to: THREE.Vector3,
+  ): THREE.Vector3[] => {
+    const trace = marginTraceRef.current;
+    const cached = trace.segs.find((row) => row.a === from && row.b === to);
+    if (cached) return cached.subs;
+    const subs: THREE.Vector3[] = [];
+    trace.segs.push({ a: from, b: to, subs });
+    const a = marginSampleAtRef.current(tooth, from);
+    const b = marginSampleAtRef.current(tooth, to);
+    if (!a || !b) return subs;
+    const chord = to.clone().sub(from);
+    const chordLenSq = chord.lengthSq();
+    if (chordLenSq < 1e-12) return subs;
+    // 두 점 사이 진행 방향(from→to)으로만 이어 가운데가 뒤로 꺾이지 않게 한다.
+    const raw: THREE.Vector3[] = [from];
+    let lastProg = 0;
+    for (const mid of traceMarginSegment(cloud.samples, a, b, cloud.base)) {
+      if (mid.index < 0) continue;
+      const world = cloud.worlds[mid.index]!;
+      const prog = world.clone().sub(from).dot(chord);
+      if (prog <= lastProg) continue;
+      if (prog >= chordLenSq) continue;
+      raw.push(world);
+      lastProg = prog;
+    }
+    raw.push(to);
+    const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+    const step = 0.4 / unit;
+    const snapR = step * 0.55;
+    let carried = 0;
+    let last = from;
+    lastProg = 0;
+    const snapForward = (spot: THREE.Vector3) => {
+      const minProg = lastProg + step * 0.2 * Math.sqrt(chordLenSq);
+      let best = spot;
+      let bestDist = snapR;
+      for (const world of cloud.worlds) {
+        const prog = world.clone().sub(from).dot(chord);
+        if (prog <= minProg || prog >= chordLenSq) continue;
+        const dist = world.distanceTo(spot);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = world;
+        }
+      }
+      return best.clone();
+    };
+    for (let k = 1; k < raw.length; k += 1) {
+      const p0 = raw[k - 1]!;
+      const p1 = raw[k]!;
+      const len = p0.distanceTo(p1);
+      let at = step - carried;
+      while (at < len) {
+        const world = snapForward(p0.clone().lerp(p1, at / len));
+        const prog = world.clone().sub(from).dot(chord);
+        if (
+          prog > lastProg &&
+          world.distanceTo(last) > step * 0.4 &&
+          world.distanceTo(to) > step * 0.4
+        ) {
+          subs.push(world);
+          last = world;
+          lastProg = prog;
+        }
+        at += step;
+      }
+      carried = len - (at - step);
+    }
+    return subs;
+  };
+
+  /** 찍은 점 사이를 스캔 능선을 따라 잇는 미리보기 곡선. 직선 대신 메시 형상을 따른다. */
+  const marginTraceCurve = (points: readonly THREE.Vector3[]) => {
+    const trace = marginTraceRef.current;
+    const tooth = trace.tooth;
+    const cloud = tooth ? marginTraceCloud(tooth) : null;
+    trace.subs = [];
+    if (!tooth || !cloud || points.length < 2) return points.slice();
+    const out: THREE.Vector3[] = [points[0]!];
+    const used: typeof trace.segs = [];
+    for (let i = 1; i < points.length; i += 1) {
+      const list = marginTraceSegment(cloud, tooth, points[i - 1]!, points[i]!);
+      used.push(trace.segs.find((row) => row.subs === list)!);
+      list.forEach((point, k) => {
+        out.push(point);
+        trace.subs.push({ point, seg: i - 1, list, k });
+      });
+      out.push(points[i]!);
+    }
+    // 더는 쓰지 않는 쌍은 버린다(마지막→처음 닫는 쌍은 닫을 때 새로 만든다).
+    trace.segs = used;
+    return out;
+  };
   drawMarginSketchRef.current = (points, closed) => {
     const scene = sceneRef.current;
     const prev = marginSketchRef.current;
@@ -6324,31 +6598,49 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     if (!scene || points.length === 0) return;
     const tooth = marginTraceRef.current.tooth ?? designEditRef.current?.activeTooth;
     const place = placementsRef.current.find((row) => row.toothNumber === tooth);
-    const size = Math.max((place?.radius ?? 4) * 0.045, 0.15);
+    const size = Math.max((place?.radius ?? 4) * 0.042, 0.12);
     const group = new THREE.Group();
     group.name = "margin-sketch";
     const tracing = marginTraceRef.current.points.length > 0;
+    const curve = points.length > 1 && tracing ? marginTraceCurve(points) : points;
+    if (!tracing) marginTraceRef.current.subs = [];
     if (tracing) {
-      points.forEach((point, index) => {
+      const addDot = (point: THREE.Vector3, radius: number, color: number, order: number) => {
         const dot = new THREE.Mesh(
-          new THREE.SphereGeometry(index === 0 ? size * 1.6 : size, 10, 8),
-          new THREE.MeshBasicMaterial({
-            color: index === 0 ? 0xf59e0b : 0x14b8a6,
-            depthTest: false,
-          }),
+          new THREE.SphereGeometry(radius, 10, 8),
+          new THREE.MeshBasicMaterial({ color, depthTest: false }),
         );
         dot.position.copy(point);
-        dot.renderOrder = 21;
+        dot.renderOrder = order;
         group.add(dot);
+      };
+      for (const sub of marginTraceRef.current.subs) addDot(sub.point, size * 0.55, 0x5eead4, 21);
+      points.forEach((point, index) => {
+        addDot(point, index === 0 ? size * 1.5 : size, index === 0 ? 0xf59e0b : 0x14b8a6, 22);
       });
     }
-    if (points.length > 1) {
-      const geometry = new THREE.BufferGeometry().setFromPoints(points);
-      const material = new THREE.LineBasicMaterial({ color: 0x14b8a6, depthTest: false });
-      const line = closed ? new THREE.LineLoop(geometry, material) : new THREE.Line(geometry, material);
-      line.renderOrder = 20;
-      line.frustumCulled = false;
-      group.add(line);
+    if (curve.length > 1) {
+      const path: THREE.Vector3[] = [];
+      for (const point of curve) {
+        const prev = path[path.length - 1];
+        if (prev && prev.distanceToSquared(point) <= 1e-10) continue;
+        path.push(point);
+      }
+      if (path.length > 1) {
+        const tube = new THREE.Mesh(
+          new THREE.TubeGeometry(
+            new THREE.CatmullRomCurve3(path, closed, "centripetal"),
+            Math.min(Math.max(path.length * 2, 8), 1600),
+            size * 0.4,
+            6,
+            closed,
+          ),
+          new THREE.MeshBasicMaterial({ color: 0x14b8a6, depthTest: false }),
+        );
+        tube.renderOrder = 20;
+        tube.frustumCulled = false;
+        group.add(tube);
+      }
     }
     scene.add(group);
     marginSketchRef.current = group;
@@ -6357,7 +6649,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const marginTraceTooth = () => {
     const spec = designEditRef.current;
     const tooth = spec?.activeTooth;
-    if (!spec || !tooth || spec.tool !== "margin" || !spec.showMargin) return null;
+    if (!spec || !tooth || spec.tool !== "margin" || !spec.showMargin || !spec.marginReset) return null;
     if (marginSeedPickRef.current) return null;
     const edit = spec.edits[tooth];
     if (!edit || !edit.margin.deleted || edit.pontic.on) return null;
@@ -6367,8 +6659,42 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     const trace = marginTraceRef.current;
     const had = trace.points.length > 0;
     trace.points = [];
+    trace.subs = [];
+    trace.segs = [];
+    trace.cloud = null;
     drawMarginSketchRef.current([], false);
     if (had) onMarginTraceProgressRef.current?.(0);
+  };
+  /** 추적 중인 치아 둘레 스캔 꼭짓점을 마진 좌표로. 치아마다 한 번만 만든다. */
+  const marginTraceCloud = (tooth: string) => {
+    const trace = marginTraceRef.current;
+    if (trace.cloud && trace.cloudTooth === tooth && trace.cloudVersion === loadVersion) {
+      return trace.cloud;
+    }
+    const near = nearbyScanPoints(tooth);
+    if (!near) return null;
+    const samples: MarginCloudPoint[] = [];
+    const worlds: THREE.Vector3[] = [];
+    const data = near.points;
+    const normals = near.normals;
+    const axis = toothAxisDir(tooth);
+    for (let i = 0; i < data.length; i += 3) {
+      const world = new THREE.Vector3(data[i]!, data[i + 1]!, data[i + 2]!);
+      const sample = marginSampleAtRef.current(tooth, world);
+      if (!sample) continue;
+      const nx = normals[i] ?? 0;
+      const ny = normals[i + 1] ?? 0;
+      const nz = normals[i + 2] ?? 0;
+      const hasNormal = nx * nx + ny * ny + nz * nz > 1e-6;
+      const flat = hasNormal ? Math.abs(nx * axis.x + ny * axis.y + nz * axis.z) : 0.5;
+      samples.push({ ...sample, flat });
+      worlds.push(world);
+    }
+    const cloud = { samples, worlds, base: near.place.radius * 0.78 };
+    trace.cloud = cloud;
+    trace.cloudTooth = tooth;
+    trace.cloudVersion = loadVersion;
+    return cloud;
   };
   marginTraceApiRef.current = {
     active: marginTraceTooth,
@@ -6388,20 +6714,51 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         trace.points.length >= 3 &&
         raycaster.ray.distanceToPoint(first) < place.radius * 0.12
       ) {
-        const samples = trace.points.flatMap((point) => {
-          const sample = marginSampleAtRef.current(tooth, point);
-          return sample ? [sample] : [];
-        });
+        const cloud = marginTraceCloud(tooth);
+        // 화면에 보이는 곡선(찍은 점과 중간점, 끌어 옮긴 값 포함)을 그대로 마진으로 쓴다.
+        const n = trace.points.length;
+        const samples: MarginSample[] = [];
+        for (let i = 0; i < n; i += 1) {
+          const from = trace.points[i]!;
+          const to = trace.points[(i + 1) % n]!;
+          const chain = [from, ...(cloud ? marginTraceSegment(cloud, tooth, from, to) : [])];
+          for (const world of chain) {
+            const sample = marginSampleAtRef.current(tooth, world);
+            if (sample) samples.push(sample);
+          }
+        }
         resetMarginTrace();
         onDesignGestureRef.current?.({ type: "margin-trace", tooth, samples });
         return;
       }
-      const point = scanSurfaceHitRef.current(raycaster, tooth);
-      if (!point) return;
+      const cloud = marginTraceCloud(tooth);
+      let hit = scanSurfaceHitRef.current(raycaster, tooth);
+      if (!hit && cloud && place) {
+        // 광선이 면에 안 닿아도 클릭선에 가장 가까운 스캔 꼭짓점으로 찍는다.
+        const limit = place.radius * 0.12;
+        let bestDist = limit;
+        for (const world of cloud.worlds) {
+          const dist = raycaster.ray.distanceToPoint(world);
+          if (dist < bestDist) {
+            bestDist = dist;
+            hit = world.clone();
+          }
+        }
+      }
+      if (!hit) return;
+      let point = hit;
+      const pick = marginSampleAtRef.current(tooth, hit);
+      if (cloud && pick) {
+        const snapped = snapMarginPick(cloud.samples, pick, cloud.base);
+        if (snapped >= 0) point = cloud.worlds[snapped]!.clone();
+      }
+      const minGap = 1 / (unitToMmRef.current > 0 ? unitToMmRef.current : 1);
+      if (trace.points.some((existing) => existing.distanceTo(point) < minGap)) return;
       trace.points.push(point);
       drawMarginSketchRef.current(trace.points, false);
       onMarginTraceProgressRef.current?.(trace.points.length);
     },
+    cancel: () => resetMarginTrace(),
     undo: () => {
       const trace = marginTraceRef.current;
       if (!marginTraceTooth() || trace.points.length === 0) return;
@@ -6413,6 +6770,17 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       const tooth = marginTraceTooth();
       const trace = marginTraceRef.current;
       if (tooth && tooth === trace.tooth) return;
+      // 재설정을 잠시 멈춘 동안(마진이 지워진 채)은 찍은 점을 그대로 둔다.
+      const spec = designEditRef.current;
+      const paused = spec?.activeTooth;
+      if (
+        paused &&
+        trace.points.length > 0 &&
+        trace.tooth === paused &&
+        spec?.edits[paused]?.margin.deleted
+      ) {
+        return;
+      }
       resetMarginTrace();
       trace.tooth = tooth;
     },

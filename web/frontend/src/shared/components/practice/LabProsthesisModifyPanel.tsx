@@ -109,6 +109,8 @@ type Props = {
   onTool: (tool: ModifyTool) => void;
   /** 마진 점을 끌어 옮기는 편집 중인지. */
   marginEditOn: boolean;
+  /** 재설정을 잠시 멈춘 상태. 마진편집을 누르면 찍어 둔 점에서 이어 찍는다. */
+  marginResetPaused: boolean;
   onMarginEdit: () => void;
   /** 삽입축·치아색·잇몸색으로 마진을 자동 검출한다. */
   onAutoDetect: () => void;
@@ -128,7 +130,8 @@ type Props = {
   holeIssue: string | null;
   onViewHoleAxis: () => void;
   /** 다시 검출 시작점을 찍는 중. */
-  onClearMargin: () => void;
+  marginResetOn: boolean;
+  onMarginReset: () => void;
   onRemoveHook: () => void;
   /** 기공소 디자인 프리셋. 내면 도구에서 복사한다. */
   designPresets: DesignPreset[];
@@ -1070,6 +1073,7 @@ export function LabProsthesisModifyPanel({
   part,
   onTool,
   marginEditOn,
+  marginResetPaused,
   onMarginEdit,
   onAutoDetect,
   axisReady,
@@ -1084,7 +1088,8 @@ export function LabProsthesisModifyPanel({
   holeNote,
   holeIssue,
   onViewHoleAxis,
-  onClearMargin,
+  marginResetOn,
+  onMarginReset,
   onRemoveHook,
   designPresets,
   onOpenPresets,
@@ -1262,17 +1267,26 @@ export function LabProsthesisModifyPanel({
                 <Button
                   type="button"
                   size="sm"
-                  variant="outline"
+                  variant={marginResetOn ? "default" : "outline"}
                   className="h-7 px-1 text-[11px]"
-                  onClick={onClearMargin}
+                  aria-pressed={marginResetOn}
+                  onClick={onMarginReset}
                 >
-                  {marginWord}삭제
+                  재설정
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right" className="z-[520]">
-                {marginWord}을 지우고 새로 잡습니다.
+                기존 {marginWord}을 지우고 새로 잡습니다.
                 <br />
-                시작점부터 점을 찍고, 시작점을 다시 누르면 닫힙니다.
+                {marginWord} 위를 왼쪽 클릭으로 찍고, 시작점을 다시 누르면 닫힙니다.
+                <br />
+                점 사이는 스캔 형상을 따라 매끄럽게 이어집니다.
+                <br />
+                점을 우클릭하면 그 점을 지웁니다.
+                <br />
+                Esc는 찍은 점을 둔 채 멈추고, 마진편집을 누르면 그 점에서 이어 찍습니다.
+                <br />
+                재설정을 다시 누르면 끝내고 이전 마진으로 돌립니다.
               </TooltipContent>
             </Tooltip>
             <Tooltip>
@@ -1283,14 +1297,16 @@ export function LabProsthesisModifyPanel({
                   variant={marginEditOn ? "default" : "outline"}
                   className="h-7 px-1 text-[11px]"
                   aria-pressed={marginEditOn}
-                  disabled={edit.margin.deleted}
+                  disabled={(edit.margin.deleted && !marginResetPaused) || marginResetOn}
                   onClick={onMarginEdit}
                 >
                   {marginWord}편집
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right" className="z-[520]">
-                점을 끌어 스캔 면 위로 옮깁니다.
+                점을 끌어 옮깁니다.
+                <br />
+                이웃 점이 함께 따라와 뾰족함을 줄입니다.
                 <br />
                 선을 누르면 점을 더하고, 점을 우클릭하면 지웁니다.
               </TooltipContent>

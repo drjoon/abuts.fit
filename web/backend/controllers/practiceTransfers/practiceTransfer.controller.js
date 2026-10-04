@@ -10068,6 +10068,98 @@ export async function appendReceivedPracticeTransferWorkScanFiles(req, res) {
   }
 }
 
+const WORK_SESSION_MAX_BYTES = 900 * 1024;
+
+/**
+ * 기공소 — AI 디자인 작업 문서(마진·삽입축·카메라·화면 토글 등)를 이 의뢰건에 남긴다.
+ * related: PUT /api/practice/transfers/received/:transferId/work-session
+ */
+export async function saveReceivedPracticeTransferWorkSession(req, res) {
+  try {
+    const labAnchorId = String(req.user?.businessAnchorId || "").trim();
+    const filter = buildTransferLookupFilter(req.params?.transferId);
+    if (!filter || !labAnchorId) {
+      return res.status(400).json({ success: false, message: "의뢰 ID가 필요합니다." });
+    }
+    const document = req.body?.document;
+    if (!document || typeof document !== "object" || Array.isArray(document)) {
+      return res.status(400).json({ success: false, message: "작업 문서가 필요합니다." });
+    }
+    const json = JSON.stringify(document);
+    if (Buffer.byteLength(json, "utf8") > WORK_SESSION_MAX_BYTES) {
+      return res.status(413).json({ success: false, message: "작업 문서가 너무 큽니다." });
+    }
+    const doc = await PracticeTransfer.findOne(filter)
+      .select({ ...PRACTICE_TRANSFER_CASE_VIEW_SELECT, autoMatch: 1 })
+      .lean();
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+    if (!canLabUsePracticeTransferAiDesign(doc, labAnchorId)) {
+      return res.status(403).json({ success: false, message: "작업 문서를 저장할 수 없습니다." });
+    }
+    const savedAt = Number(document.savedAt) || Date.now();
+    await PracticeTransfer.updateOne(
+      { _id: doc._id },
+      {
+        $set: {
+          "production.workSession": {
+            document,
+            savedAt,
+            userId: req.user?._id,
+            labAnchorId,
+          },
+        },
+      },
+      { timestamps: false },
+    );
+    return res.status(200).json({ success: true, data: { savedAt } });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "작업 문서를 저장하지 못했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+/**
+ * 기공소 — 남겨 둔 AI 디자인 작업 문서를 읽는다. 없으면 document가 null.
+ * related: GET /api/practice/transfers/received/:transferId/work-session
+ */
+export async function getReceivedPracticeTransferWorkSession(req, res) {
+  try {
+    const labAnchorId = String(req.user?.businessAnchorId || "").trim();
+    const filter = buildTransferLookupFilter(req.params?.transferId);
+    if (!filter || !labAnchorId) {
+      return res.status(400).json({ success: false, message: "의뢰 ID가 필요합니다." });
+    }
+    const doc = await PracticeTransfer.findOne(filter)
+      .select({ ...PRACTICE_TRANSFER_CASE_VIEW_SELECT, autoMatch: 1, "production.workSession": 1 })
+      .lean();
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+    if (!canLabUsePracticeTransferAiDesign(doc, labAnchorId)) {
+      return res.status(200).json({ success: true, data: { document: null, savedAt: 0 } });
+    }
+    const session = doc.production?.workSession;
+    return res.status(200).json({
+      success: true,
+      data: {
+        document: session?.document ?? null,
+        savedAt: Number(session?.savedAt) || 0,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "작업 문서를 불러오지 못했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
 /**
  * 기공소 — AI 디자인이 열려 있음을 알린다. 열 때·1분마다 active=true, 닫고 저장한 뒤 false.
  * 표시가 살아 있는 동안 자동 정렬 잡이 작업 스캔을 바꾸지 않는다.

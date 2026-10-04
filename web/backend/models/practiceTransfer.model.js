@@ -280,6 +280,8 @@ const practiceTransferSchema = new mongoose.Schema(
        * at이 TTL 안이면 자동 정렬 잡이 작업 스캔을 바꾸지 않는다.
        */
       workScanEditing: { type: mongoose.Schema.Types.Mixed, default: undefined },
+      /** AI 디자인 작업 문서(마진·삽입축·카메라·토글 등). 스캔 파일과 별개로 이 의뢰건에 남긴다. */
+      workSession: { type: mongoose.Schema.Types.Mixed, default: undefined },
       /**
        * 치아별 CA STL 업로드 횟수. cancel로 designFiles를 비워도 유지.
        * 2회차부터 리메이크(치과 CA 리메이크비 + 기공소→어벗츠 1만) 적용.

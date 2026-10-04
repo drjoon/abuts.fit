@@ -60,6 +60,8 @@ import {
   appendReceivedPracticeTransferRequestFiles,
   appendReceivedPracticeTransferWorkScanFiles,
   setReceivedPracticeTransferWorkScanEditing,
+  saveReceivedPracticeTransferWorkSession,
+  getReceivedPracticeTransferWorkSession,
   setReceivedPracticeTransferScanRole,
   removeReceivedPracticeTransferRequestFiles,
   restoreReceivedPracticeTransferRequestFiles,
@@ -219,6 +221,20 @@ router.post(
   authenticate,
   receiveAuth,
   appendReceivedPracticeTransferWorkScanFiles,
+);
+
+router.put(
+  "/received/:transferId/work-session",
+  authenticate,
+  receiveAuth,
+  saveReceivedPracticeTransferWorkSession,
+);
+
+router.get(
+  "/received/:transferId/work-session",
+  authenticate,
+  receiveAuth,
+  getReceivedPracticeTransferWorkSession,
 );
 
 router.post(

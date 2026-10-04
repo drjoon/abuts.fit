@@ -297,6 +297,7 @@ import {
   assignNewerDraftFiles,
   dropWorkDraftRoles,
   newerDraftRoles,
+  parseWorkSessionDocument,
   readWorkDraft,
   stampWorkDraftSavedAt,
   writeWorkDraftMeshes,
@@ -951,6 +952,13 @@ function LabProsthesisAiDesignDialog({
   const restoreGhostVisibleRef = useRef(false);
   const [modifyTool, setModifyTool] = useState<ModifyTool>("margin");
   const [marginEditOn, setMarginEditOn] = useState(false);
+  /** 재설정 모드. 켜 있는 동안 마진 위를 찍어 새로 잡는다. */
+  const [marginResetOn, setMarginResetOn] = useState(false);
+  const marginResetBackupRef = useRef<{
+    tooth: string;
+    margin: ToothDesignEdit["margin"];
+    review: MarginReview;
+  } | null>(null);
   /** 다시 검출: 이 치아의 마진 시작점을 스캔에서 찍는 중. */
   const [marginTracePoints, setMarginTracePoints] = useState(0);
   const [marginUndercut, setMarginUndercut] = useState<{ tooth: string | null; count: number }>({
@@ -1242,42 +1250,61 @@ function LabProsthesisAiDesignDialog({
         try {
           const draft = await readWorkDraft(caseId);
           if (ac.signal.aborted) return;
+          // 이 의뢰건에 남겨 둔 작업 문서(마진·삽입축·카메라 등). 브라우저 초안보다 새것이면 그것을 쓴다.
+          let sessionDoc = draft?.document ?? null;
+          try {
+            const remote = await apiFetch({
+              path: `/api/practice/transfers/received/${encodeURIComponent(caseId)}/work-session`,
+              method: "GET",
+              token: authToken,
+              skipCache: true,
+            });
+            if (remote.ok) {
+              const server = parseWorkSessionDocument(unwrapApiData(remote.data).document);
+              if (server && (!sessionDoc || server.savedAt > sessionDoc.savedAt)) {
+                sessionDoc = server;
+              }
+            }
+          } catch {
+            // 서버 문서가 없어도 브라우저 초안으로 연다.
+          }
+          if (ac.signal.aborted) return;
           const assigned =
             draft?.document?.jawFileBind === 1
               ? assignNewerDraftFiles(sources, draft, serverWorkScanAt())
               : { byId: new Map<string, File>(), roles: [] as WorkScanRole[] };
           localFiles = assigned.byId;
           pendingDraftRolesRef.current = new Set(assigned.roles);
-          if (draft?.document) {
-            editsRef.current = draft.document.edits;
-            generatedRef.current = draft.document.generated;
-            marginReviewRef.current = draft.document.marginReview;
-            designScopeRef.current = draft.document.designScope;
-            modelSettingsRef.current = draft.document.modelSettings;
-            millingDocRef.current = draft.document.milling;
-            caseNoteRef.current = draft.document.note;
-            aiChatRef.current = draft.document.aiChat;
-            toothOverridesRef.current = draft.document.toothOverrides;
-            archAlignedRef.current = draft.document.archAligned;
-            sessionDocRef.current = draft.document;
-            lastDocSigRef.current = workDocumentSignature(draft.document);
-            setEdits(draft.document.edits);
-            setGenerated(draft.document.generated);
-            setMarginReview(draft.document.marginReview);
-            setDesignScope(draft.document.designScope);
-            setModelSettings(draft.document.modelSettings);
-            setMillingDoc(draft.document.milling);
-            setCaseNote(draft.document.note);
-            setAiChat(draft.document.aiChat);
-            setToothOverrides(draft.document.toothOverrides);
-            setArchAligned(draft.document.archAligned);
-            if (draft.document.insertionAxes.length > 0) {
-              const keys = draft.document.insertionAxes.map((axis) => axis.key);
+          if (sessionDoc) {
+            editsRef.current = sessionDoc.edits;
+            generatedRef.current = sessionDoc.generated;
+            marginReviewRef.current = sessionDoc.marginReview;
+            designScopeRef.current = sessionDoc.designScope;
+            modelSettingsRef.current = sessionDoc.modelSettings;
+            millingDocRef.current = sessionDoc.milling;
+            caseNoteRef.current = sessionDoc.note;
+            aiChatRef.current = sessionDoc.aiChat;
+            toothOverridesRef.current = sessionDoc.toothOverrides;
+            archAlignedRef.current = sessionDoc.archAligned;
+            sessionDocRef.current = sessionDoc;
+            lastDocSigRef.current = workDocumentSignature(sessionDoc);
+            setEdits(sessionDoc.edits);
+            setGenerated(sessionDoc.generated);
+            setMarginReview(sessionDoc.marginReview);
+            setDesignScope(sessionDoc.designScope);
+            setModelSettings(sessionDoc.modelSettings);
+            setMillingDoc(sessionDoc.milling);
+            setCaseNote(sessionDoc.note);
+            setAiChat(sessionDoc.aiChat);
+            setToothOverrides(sessionDoc.toothOverrides);
+            setArchAligned(sessionDoc.archAligned);
+            if (sessionDoc.insertionAxes.length > 0) {
+              const keys = sessionDoc.insertionAxes.map((axis) => axis.key);
               insertionKeysRef.current = keys;
               setInsertionKeys(keys);
               setInsertionShown(true);
             }
-            const toggles = parseViewToggles(draft.document.viewToggles);
+            const toggles = parseViewToggles(sessionDoc.viewToggles);
             if (toggles) {
               setInsertionShown(toggles.insertion);
               setUndercutMap(toggles.undercut);
@@ -1544,7 +1571,7 @@ function LabProsthesisAiDesignDialog({
   const marginHint: { warn: boolean; body: ReactNode } | null =
     marginEditing && !toothAxisReady(activeNumber)
       ? { warn: true, body: <>삽입축을 먼저 잡으세요.</> }
-      : marginEditing && activeEdit.margin.deleted
+      : marginEditing && marginResetOn
         ? {
             warn: false,
             body:
@@ -1558,7 +1585,9 @@ function LabProsthesisAiDesignDialog({
                 <>
                   시작점을 찍고 마진을 따라 점을 찍습니다.
                   <br />
-                  시작점을 다시 누르면 닫힙니다. 우클릭은 마지막 점을 지웁니다.
+                  시작점을 다시 누르면 닫힙니다.
+                  <br />
+                  점 우클릭은 삭제, Esc는 멈춤입니다.
                 </>
               ),
           }
@@ -1989,6 +2018,7 @@ function LabProsthesisAiDesignDialog({
       refineTab,
       marginMode: "point" as const,
       marginEdit: marginEditOn,
+      marginReset: marginResetOn,
       brush: editBrush,
       edits,
       generated,
@@ -2013,6 +2043,7 @@ function LabProsthesisAiDesignDialog({
     edits,
     generated,
     marginEditOn,
+    marginResetOn,
     marginShown,
     meshEditOn,
     modifyTool,
@@ -2337,6 +2368,10 @@ function LabProsthesisAiDesignDialog({
       return;
     }
     beginEditUndo();
+    if (gesture.type === "margin-trace") {
+      marginResetBackupRef.current = null;
+      setMarginResetOn(false);
+    }
     if (
       gesture.type === "margin" ||
       gesture.type === "margin-insert" ||
@@ -3203,6 +3238,9 @@ function LabProsthesisAiDesignDialog({
       return;
     }
     beginEditUndo();
+    marginResetBackupRef.current = null;
+    setMarginResetOn(false);
+    viewerRef.current?.resetMarginTrace();
     setEdits((prev) => ({ ...prev, [toothNumber]: next }));
     setMarginReview((prev) => ({ ...prev, [toothNumber]: "detected" }));
     setMarginEditOn(false);
@@ -3210,8 +3248,61 @@ function LabProsthesisAiDesignDialog({
     queueSaveWorkRef.current();
   };
 
+  /** 재설정을 끄고, 아직 닫지 못했으면 이전 마진으로 되돌린다. */
+  const cancelMarginReset = () => {
+    const backup = marginResetBackupRef.current;
+    marginResetBackupRef.current = null;
+    setMarginResetOn(false);
+    viewerRef.current?.resetMarginTrace();
+    if (!backup) return;
+    setEdits((prev) => {
+      const current = prev[backup.tooth];
+      if (!current) return prev;
+      return { ...prev, [backup.tooth]: { ...current, margin: backup.margin } };
+    });
+    setMarginReview((prev) => ({ ...prev, [backup.tooth]: backup.review }));
+  };
+  const cancelMarginResetRef = useRef(cancelMarginReset);
+  cancelMarginResetRef.current = cancelMarginReset;
+
+  /** Esc·우클릭: 재설정을 멈추되 찍은 점은 그대로 둔다. 찍은 점이 없으면 이전 마진으로 되돌린다. */
+  const marginTracePointsRef = useRef(0);
+  marginTracePointsRef.current = marginTracePoints;
+  const pauseMarginReset = () => {
+    if (marginTracePointsRef.current > 0) setMarginResetOn(false);
+    else cancelMarginReset();
+  };
+  const pauseMarginResetRef = useRef(pauseMarginReset);
+  pauseMarginResetRef.current = pauseMarginReset;
+  const marginResetPaused =
+    !marginResetOn && marginTracePoints > 0 && activeEdit.margin.deleted;
+
+  const toggleMarginReset = (toothNumber: string) => {
+    if (marginResetOn) {
+      cancelMarginReset();
+      return;
+    }
+    const current = editsRef.current[toothNumber] ?? createToothDesignEdit();
+    marginResetBackupRef.current = {
+      tooth: toothNumber,
+      margin: current.margin,
+      review: marginReviewRef.current[toothNumber] ?? "none",
+    };
+    beginEditUndo();
+    setEdits((prev) => {
+      const base = prev[toothNumber] ?? createToothDesignEdit();
+      return { ...prev, [toothNumber]: { ...base, margin: { ...base.margin, deleted: true } } };
+    });
+    setMarginReview((prev) => ({ ...prev, [toothNumber]: "none" }));
+    setMarginEditOn(false);
+    setMarginResetOn(true);
+    viewerRef.current?.resetMarginTrace();
+    queueSaveWorkRef.current();
+  };
+
   useEffect(() => {
     setMarginEditOn(false);
+    if (marginResetBackupRef.current) cancelMarginResetRef.current();
   }, [activeNumber, modifyTool, stage]);
 
   const confirmMargin = (toothNumber: string) => {
@@ -3840,6 +3931,41 @@ function LabProsthesisAiDesignDialog({
     };
   }, []);
 
+  /** 작업 문서를 이 의뢰건에도 남긴다. 연속 변경은 한 번으로 모아 보낸다. */
+  const serverSyncRef = useRef<{ timer: number; doc: WorkSessionDocument | null; id: string }>({
+    timer: 0,
+    doc: null,
+    id: "",
+  });
+  const authTokenRef = useRef(authToken);
+  authTokenRef.current = authToken;
+  const sendWorkSession = useCallback(() => {
+    const pending = serverSyncRef.current;
+    window.clearTimeout(pending.timer);
+    pending.timer = 0;
+    const document = pending.doc;
+    const token = authTokenRef.current;
+    pending.doc = null;
+    if (!document || !pending.id || !token) return;
+    void apiFetch({
+      path: `/api/practice/transfers/received/${encodeURIComponent(pending.id)}/work-session`,
+      method: "PUT",
+      token,
+      jsonBody: { document },
+    }).catch(() => null);
+  }, []);
+  const syncWorkSessionToServer = useCallback(
+    (id: string, document: WorkSessionDocument) => {
+      const pending = serverSyncRef.current;
+      pending.id = id;
+      pending.doc = document;
+      window.clearTimeout(pending.timer);
+      pending.timer = window.setTimeout(sendWorkSession, 1200);
+    },
+    [sendWorkSession],
+  );
+  useEffect(() => () => sendWorkSession(), [sendWorkSession]);
+
   const flushWorkDraft = useCallback(() => {
     if (!autoSaveRef.current) return Promise.resolve();
     const id = String(transferId || "").trim();
@@ -3858,8 +3984,9 @@ function LabProsthesisAiDesignDialog({
       if (meshes.length > 0 && sig) lastDraftSigRef.current = sig;
       lastDocSigRef.current = docSig;
       sessionDocRef.current = document;
+      syncWorkSessionToServer(id, document);
     });
-  }, [currentWorkDocument, enqueueDraft, transferId]);
+  }, [currentWorkDocument, enqueueDraft, syncWorkSessionToServer, transferId]);
 
   const queueSaveWork = useCallback(() => {
     if (!autoSaveRef.current) return;
@@ -4597,6 +4724,7 @@ function LabProsthesisAiDesignDialog({
                 )
               }
               onMarginTraceProgress={setMarginTracePoints}
+              onMarginTraceCancel={() => pauseMarginResetRef.current()}
               contactMap={
                 contactMap ||
                 (occlusionOn && canContact) ||
@@ -5435,7 +5563,11 @@ function LabProsthesisAiDesignDialog({
                           setMarginShown(true);
                         }}
                         marginEditOn={marginEditOn}
-                        onMarginEdit={() => setMarginEditOn((on) => !on)}
+                        marginResetPaused={marginResetPaused}
+                        onMarginEdit={() => {
+                          if (marginResetPaused) setMarginResetOn(true);
+                          else setMarginEditOn((on) => !on);
+                        }}
                         onAutoDetect={() => {
                           if (activeNumber) autoDetectMargin(activeNumber);
                         }}
@@ -5495,22 +5627,9 @@ function LabProsthesisAiDesignDialog({
                         onViewHoleAxis={() => {
                           if (activeNumber) viewerRef.current?.viewHoleAxis(activeNumber);
                         }}
-                        onClearMargin={() => {
-                          if (!activeNumber) return;
-                          beginEditUndo();
-                          const current = edits[activeNumber] ?? createToothDesignEdit();
-                          setEdits((prev) => ({
-                            ...prev,
-                            [activeNumber]: {
-                              ...current,
-                              margin: { ...current.margin, deleted: true },
-                            },
-                          }));
-                          setMarginReview((prev) => ({
-                            ...prev,
-                            [activeNumber]: "none",
-                          }));
-                          queueSaveWorkRef.current();
+                        marginResetOn={marginResetOn}
+                        onMarginReset={() => {
+                          if (activeNumber) toggleMarginReset(activeNumber);
                         }}
                         onRemoveHook={() => {
                           if (!activeNumber) return;

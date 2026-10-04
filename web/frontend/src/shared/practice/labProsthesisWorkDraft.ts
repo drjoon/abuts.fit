@@ -306,6 +306,11 @@ function documentOf(row: unknown): WorkSessionDocument | null {
   };
 }
 
+/** 서버에 남긴 작업 문서를 읽는다. 형식이 맞지 않으면 null. */
+export function parseWorkSessionDocument(value: unknown): WorkSessionDocument | null {
+  return documentOf({ document: value });
+}
+
 /** 예전 문서는 종류(`modelKind`)만 있다. */
 function modelSettingsOf(body: object): ModelSettings {
   const row = body as { modelSettings?: unknown; modelKind?: unknown };

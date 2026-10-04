@@ -229,7 +229,10 @@ export function marginWorldPoints(args: {
   const base = args.place.radius * 0.78;
   const extra = args.margin.offsetMm / unit;
   return args.margin.radii.map((ratio, index) => {
-    const angle = marginPointAngle(index, args.margin.radii.length);
+    const angle =
+      args.margin.angles?.length === args.margin.radii.length
+        ? args.margin.angles[index]!
+        : marginPointAngle(index, args.margin.radii.length);
     const radial = base * ratio + extra;
     const axial = args.margin.depths?.[index] ?? 0;
     return new THREE.Vector3(Math.cos(angle) * radial, axial, Math.sin(angle) * radial)
@@ -1641,7 +1644,7 @@ export function buildProsthesisEditLayer(args: {
       points.forEach((local, index) => {
         const issue = onUndercut[index] ? "undercut" : cavityTaperIssue(taper[index]);
         const dot = new THREE.Mesh(
-          new THREE.SphereGeometry(Math.max(place.radius * 0.045, 0.15), 10, 8),
+          new THREE.SphereGeometry(Math.max(place.radius * 0.042, 0.12), 10, 8),
           new THREE.MeshBasicMaterial({
             color:
               issue === "undercut"
@@ -1660,9 +1663,15 @@ export function buildProsthesisEditLayer(args: {
         root.add(dot);
       });
       if (points.length > 2) {
-        const line = new THREE.LineLoop(
-          new THREE.BufferGeometry().setFromPoints(points),
-          new THREE.LineBasicMaterial({
+        const line = new THREE.Mesh(
+          new THREE.TubeGeometry(
+            new THREE.CatmullRomCurve3(points, true, "centripetal"),
+            Math.min(Math.max(points.length * 2, 24), 800),
+            Math.max(place.radius * 0.042, 0.12) * 0.4,
+            6,
+            true,
+          ),
+          new THREE.MeshBasicMaterial({
             color: active ? MARGIN : 0x94a3b8,
             depthTest: false,
           }),

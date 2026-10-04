@@ -62,7 +62,7 @@ function lineOf(points: Vec3[], color: string, widthPx: number, size: { width: n
   const line = new Line2(geometry, material);
   line.userData.viewPaint = true;
   line.computeLineDistances();
-  line.renderOrder = 8;
+  line.renderOrder = 40;
   return line;
 }
 
@@ -156,7 +156,7 @@ export function buildPaintObject(
     );
     const headMesh = new THREE.Mesh(geometry, basic(shape.color));
     headMesh.userData.viewPaint = true;
-    headMesh.renderOrder = 8;
+    headMesh.renderOrder = 40;
     group.add(headMesh);
     return group;
   }
@@ -166,7 +166,7 @@ export function buildPaintObject(
     const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 18, 14), basic(shape.color));
     mesh.position.set(at.x, at.y, at.z);
     mesh.userData.viewPaint = true;
-    mesh.renderOrder = 8;
+    mesh.renderOrder = 40;
     return mesh;
   }
   if (shape.kind !== "text") return null;
@@ -212,7 +212,7 @@ function textPlane(shape: Extract<PaintShape, { kind: "text" }>, _size: { width:
   const center = add(add(at, mul(shape.pose.axisU, worldW / 2)), mul(shape.pose.axisV, -worldH / 2));
   mesh.position.set(center.x, center.y, center.z);
   mesh.userData.viewPaint = true;
-  mesh.renderOrder = 8;
+  mesh.renderOrder = 40;
   return mesh;
 }
 
