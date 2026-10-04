@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-05: 플랫폼 섹션 배경 교차 — 용어 파랑, 시작하기 파랑. 기공소 오퍼 배경은 그대로.
+// - 2026-10-05: 플랫폼 extras·audiences 제거. glance·stories·pipeline·credit만 렌더.
 // - 2026-10-05: 플랫폼에 커스텀어벗 플로우·하나의 크레딧 섹션. 오퍼 slug 변경 시 섹션 레일 재수집.
 // - 2026-10-05: 어벗츠기공소 오퍼 — 구강스캔 스토리 섹션을 장점 다음에 끼움.
 // - 2026-10-04: 플랫폼(`offer.platform`) 전용 히어로·섹션 추가. 심플웨이 photo 히어로는 레거시 분기만 유지.
@@ -62,9 +64,7 @@ import {
   LabStoriesSection,
 } from "./LabOfferSections";
 import {
-  PlatformAudienceSection,
   PlatformCreditSection,
-  PlatformExtrasSection,
   PlatformFaqSection,
   PlatformGlanceSection,
   PlatformOfferHero,
@@ -321,11 +321,20 @@ function GlanceSection({ glance }: { glance: OfferGlance }) {
   );
 }
 
-function GlossarySection({ glossary }: { glossary: OfferGlossary }) {
+function GlossarySection({
+  glossary,
+  band,
+}: {
+  glossary: OfferGlossary;
+  band?: boolean;
+}) {
   return (
     <section
       data-rail-label="용어"
-      className={cn("bg-white", landingSectionY.bandTight)}
+      className={cn(
+        band ? SKY.band : "bg-white",
+        landingSectionY.bandTight,
+      )}
     >
       <div className={landingContent}>
         <LandingReveal className={cn(landingProse, "text-center")}>
@@ -1398,10 +1407,8 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
         <>
           <PlatformGlanceSection glance={offer.platform.glance} />
           <PlatformStoriesSection stories={offer.platform.stories} />
-          <PlatformExtrasSection extras={offer.platform.extras} />
           <PlatformPipelineSection pipeline={offer.platform.pipeline} />
           <PlatformCreditSection credit={offer.platform.credit} />
-          <PlatformAudienceSection audiences={offer.platform.audiences} />
         </>
       ) : null}
 
@@ -1559,7 +1566,9 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
         </section>
       ) : null}
 
-      {offer.glossary ? <GlossarySection glossary={offer.glossary} /> : null}
+      {offer.glossary ? (
+        <GlossarySection glossary={offer.glossary} band={!!offer.platform} />
+      ) : null}
       {offer.platform ? <PlatformFaqSection faq={offer.platform.faq} /> : null}
       {offer.lab ? <LabFaqSection faq={offer.lab.faq} /> : null}
 
@@ -1568,7 +1577,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
         data-rail-label="시작하기"
         className={cn(
           "scroll-mt-20",
-          offer.lab || offer.platform ? "bg-white" : SKY.band,
+          offer.lab ? "bg-white" : SKY.band,
         )}
       >
         <div

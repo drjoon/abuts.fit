@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: 중복 섹션 통폐합 — extras·audiences 제거. 크레딧/CNC는 credit·pipeline, 대상은 glance에 통합.
 // - 2026-10-05: 커스텀어벗 플로우·하나의 크레딧 섹션을 기공소 오퍼에서 이 페이지로 이동.
 // - 2026-10-05: CNC 카드 — 어벗 STL 업로드만으로 애크로덴트 CNC 생산이 시작된다는 설명.
 // - 2026-10-04: 장점 카피 — 익명 강조 제거. 진행 가시성·스캔/작업물·채팅 중심으로.
@@ -56,12 +57,6 @@ export type PlatformStory = {
   image: { src: string; alt: string };
 };
 
-export type PlatformExtraReason = {
-  icon: PlatformIconKey;
-  title: string;
-  body: string[];
-};
-
 export type PlatformFlowStep = {
   icon: PlatformIconKey;
   title: string;
@@ -99,17 +94,6 @@ export type PlatformOfferExtras = {
     title: string;
     lead: string[];
     items: PlatformStory[];
-  };
-  extras: {
-    eyebrow: string;
-    title: string;
-    lead: string[];
-    items: PlatformExtraReason[];
-  };
-  audiences: {
-    eyebrow: string;
-    title: string;
-    lead: string[];
   };
   pipeline: {
     eyebrow: string;
@@ -161,10 +145,11 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
   },
 
   glance: {
-    eyebrow: "WHY ABUTS PLATFORM",
-    title: "치과와 기공소, 각자 써야 하는 이유.",
+    eyebrow: "FOR PRACTICE · LAB",
+    title: "치과와 기공소, 각자 필요한 화면.",
     lead: [
-      "보내는 쪽과 받는 쪽, 가장 크게 달라지는 점만 꼽았습니다.",
+      "보내는 쪽과 받는 쪽이 같은 케이스를 봅니다.",
+      "역할에 맞게 달라지는 점만 꼽았습니다.",
     ],
     items: [
       {
@@ -172,8 +157,8 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
         label: "FOR PRACTICE · 치과",
         title: "거래 기공소를 골라 의뢰",
         body: [
-          "거래하던 협력 기공소로도, 어벗츠기공소로도 의뢰합니다.",
-          "진행 상태와 작업물은 전화 없이 목록에서 확인합니다.",
+          "협력 기공소로도, 어벗츠기공소로도 의뢰합니다.",
+          "진행·작업물·출고는 전화 없이 목록에서 확인합니다.",
         ],
         tags: ["협력 기공소", "어벗츠기공소", "상태 보드"],
       },
@@ -234,46 +219,6 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
     ],
   },
 
-  extras: {
-    eyebrow: "MORE REASONS",
-    title: "행정은 어벗츠가, 생산까지 한 번에.",
-    lead: ["협력 기공소든 어벗츠기공소든, 같은 방식으로 처리됩니다."],
-    items: [
-      {
-        icon: "credit",
-        title: "크레딧으로 결제",
-        body: [
-          "기공·커스텀어벗·스토어를 같은 크레딧으로 씁니다.",
-          "선결제금은 어벗츠 계좌로 입금됩니다.",
-        ],
-      },
-      {
-        icon: "board",
-        title: "정산·계산서는 어벗츠에서",
-        body: [
-          "치과, 기공소 모두 일일이 의뢰 내역을 확인할 필요 없습니다.",
-          "특히 기공소는 치과별 정산 및 계산서 발행까지 자동으로 처리됩니다.",
-        ],
-      },
-      {
-        icon: "cnc",
-        title: "디자인에서 CNC 생산까지",
-        body: [
-          "어벗 STL을 업로드하기만 하면 자동으로 애크로덴트의 CNC 커스텀어벗 생산이 시작됩니다.",
-        ],
-      },
-    ],
-  },
-
-  audiences: {
-    eyebrow: "FOR PRACTICE · LAB",
-    title: "치과와 기공소, 각자 필요한 화면.",
-    lead: [
-      "보내는 쪽과 받는 쪽이 같은 케이스를 봅니다.",
-      "역할만 다를 뿐입니다.",
-    ],
-  },
-
   pipeline: {
     eyebrow: "CUSTOM ABUTMENT FLOW",
     title: "커스텀어벗, 의뢰부터 납품까지 한 줄로.",
@@ -301,10 +246,10 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
 
   credit: {
     eyebrow: "ONE CREDIT",
-    title: "충전은 한 번, 결제는 어디서나.",
+    title: "충전은 한 번, 결제·정산은 어벗츠에서.",
     lead: [
-      "기공·커스텀어벗·스토어 기성품을 하나의 크레딧으로 결제합니다.",
-      "잔액과 사용 내역도 한곳에서 봅니다.",
+      "기공·커스텀어벗·스토어를 하나의 크레딧으로 결제합니다.",
+      "선결제금은 어벗츠 계좌로 입금되고, 정산·계산서도 한곳에서 처리됩니다.",
     ],
     hubLabel: "크레딧",
     hubNote: "거래 선수금",
@@ -335,7 +280,10 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
       {
         icon: "settle",
         title: "기공소는 정산과 상계",
-        body: ["정산으로 쌓인 기공크레딧으로 어벗 주문도 결제할 수 있습니다."],
+        body: [
+          "치과별 정산·계산서 발행까지 자동으로 처리됩니다.",
+          "정산으로 쌓인 기공크레딧으로 어벗 주문도 결제할 수 있습니다.",
+        ],
       },
     ],
     notice: "크레딧은 선불페이가 아닌 B2B 거래 선수금(예치금)입니다.",

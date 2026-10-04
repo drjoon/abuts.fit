@@ -1,6 +1,8 @@
 // change-log:
+// - 2026-10-05: 통폐합 후 섹션 배경 — 대상 파랑, 화면 하양, 커스텀어벗 파랑, 크레딧 하양, FAQ 하양.
+// - 2026-10-05: extras·audiences 섹션 제거. glance·stories·pipeline·credit·FAQ만 유지.
 // - 2026-10-05: 커스텀어벗 플로우·하나의 크레딧 섹션을 기공소 오퍼에서 이동. HOW IT WORKS 4단계는 플로우로 대체.
-// - 2026-10-04: 플랫폼 오퍼 전용 섹션 — 스테이지 히어로 · 장점 glance · UI 캡처 스토리 · 추가 이유 · 대상 · 단계 · FAQ.
+// - 2026-10-04: 플랫폼 오퍼 전용 섹션 — 스테이지 히어로 · 장점 glance · UI 캡처 스토리 · 단계 · FAQ.
 // related files:
 // - web/frontend/src/features/landing/LandingOfferPage.tsx
 // - web/frontend/src/features/landing/platformOfferContent.ts
@@ -41,8 +43,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
 import {
-  landingAudienceLab,
-  landingAudiencePractice,
   landingContent,
   landingProse,
   landingSectionY,
@@ -214,7 +214,7 @@ export function PlatformOfferHero({
   );
 }
 
-/** 히어로 직후 — 장점 3카드. */
+/** 히어로 직후 — 치과/기공소 장점. */
 export function PlatformGlanceSection({
   glance,
 }: {
@@ -223,7 +223,7 @@ export function PlatformGlanceSection({
   return (
     <section
       id="after-hero"
-      data-rail-label="장점"
+      data-rail-label="대상"
       className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
     >
       <div className={landingContent}>
@@ -351,142 +351,6 @@ export function PlatformStoriesSection({
   );
 }
 
-/** 지정 기공소 · 크레딧 · CNC. */
-export function PlatformExtrasSection({
-  extras,
-}: {
-  extras: PlatformOfferExtras["extras"];
-}) {
-  return (
-    <section
-      data-rail-label="더보기"
-      className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
-    >
-      <div className={landingContent}>
-        <LandingReveal className={cn(landingProse, "text-center")}>
-          <SectionEyebrow>{extras.eyebrow}</SectionEyebrow>
-          <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>{extras.title}</h2>
-          <Lines lines={extras.lead} className={cn("mt-2.5", TYPO.lead)} />
-        </LandingReveal>
-        <ul className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-3 lg:gap-4">
-          {extras.items.map((item, index) => {
-            const Icon = ICONS[item.icon];
-            return (
-              <LandingReveal as="li" key={item.title} delay={index * 80}>
-                <LandingSpotlightCard
-                  className={cn(SKY.card, "h-full bg-white px-4 py-5 sm:px-5")}
-                >
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#eef6ff] text-[#2563eb]">
-                    <Icon className="h-4 w-4" aria-hidden />
-                  </span>
-                  <h3 className={cn("mt-3 text-base font-semibold sm:text-lg", SKY.ink)}>
-                    {item.title}
-                  </h3>
-                  <Lines lines={item.body} className={cn("mt-2", TYPO.body)} />
-                </LandingSpotlightCard>
-              </LandingReveal>
-            );
-          })}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
-/** 치과 / 기공소 대상 카드. */
-export function PlatformAudienceSection({
-  audiences,
-}: {
-  audiences: PlatformOfferExtras["audiences"];
-}) {
-  const cards = [
-    { copy: landingAudiencePractice, icon: Building2, tone: "practice" as const },
-    { copy: landingAudienceLab, icon: Factory, tone: "lab" as const },
-  ];
-
-  return (
-    <section
-      data-rail-label="대상"
-      className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
-    >
-      <div className={landingContent}>
-        <LandingReveal className={cn(landingProse, "text-center")}>
-          <SectionEyebrow>{audiences.eyebrow}</SectionEyebrow>
-          <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>{audiences.title}</h2>
-          <Lines lines={audiences.lead} className={cn("mt-2.5", TYPO.lead)} />
-        </LandingReveal>
-
-        <ul className="mt-8 grid gap-4 sm:mt-10 lg:grid-cols-2">
-          {cards.map(({ copy, icon: Icon, tone }, index) => {
-            const isPractice = tone === "practice";
-            return (
-              <LandingReveal as="li" key={copy.id} delay={index * 100}>
-                <LandingSpotlightCard
-                  className={cn(
-                    "flex h-full flex-col overflow-hidden border bg-white",
-                    isPractice ? "border-sky-200/80" : "border-emerald-200/80",
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "border-b px-5 py-5",
-                      isPractice
-                        ? "border-sky-100 bg-gradient-to-br from-sky-50 via-white to-white"
-                        : "border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-white",
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={cn(
-                          "flex h-11 w-11 items-center justify-center rounded-2xl text-white",
-                          isPractice ? "bg-sky-600" : "bg-emerald-600",
-                        )}
-                      >
-                        <Icon className="h-5 w-5" />
-                      </span>
-                      <span
-                        className={cn(
-                          "rounded-full px-2.5 py-0.5 text-[13px] font-semibold",
-                          isPractice
-                            ? "bg-sky-100 text-sky-800"
-                            : "bg-emerald-100 text-emerald-800",
-                        )}
-                      >
-                        {copy.shortLabel}
-                      </span>
-                    </div>
-                    <h3 className={cn("mt-3 text-base font-semibold sm:text-lg", SKY.ink)}>
-                      {copy.headline}
-                    </h3>
-                    <p className={cn("mt-1.5", TYPO.body)}>{copy.subheadline}</p>
-                  </div>
-                  <ul className="space-y-2 px-5 py-5">
-                    {copy.landingBenefits.map((benefit) => (
-                      <li key={benefit} className="flex items-start gap-2.5">
-                        <span
-                          className={cn(
-                            "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full",
-                            isPractice
-                              ? "bg-sky-100 text-sky-700"
-                              : "bg-emerald-100 text-emerald-700",
-                          )}
-                        >
-                          <Check className="h-3 w-3" strokeWidth={3} />
-                        </span>
-                        <span className={TYPO.body}>{benefit}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </LandingSpotlightCard>
-              </LandingReveal>
-            );
-          })}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
 /** 커스텀어벗 연동 — 5단계 플로우(진입 시 라인이 차오르고 점이 순서대로 켜진다). */
 export function PlatformPipelineSection({
   pipeline,
@@ -497,7 +361,7 @@ export function PlatformPipelineSection({
     <section
       id="custom-abutment"
       data-rail-label="커스텀어벗"
-      className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
+      className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
     >
       <div className={landingContent}>
         <LandingReveal className={cn(landingProse, "text-center")}>
@@ -602,7 +466,7 @@ export function PlatformCreditSection({
     <section
       id="credit"
       data-rail-label="크레딧"
-      className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
+      className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
     >
       <div className={landingContent}>
         <LandingReveal className={cn(landingProse, "text-center")}>

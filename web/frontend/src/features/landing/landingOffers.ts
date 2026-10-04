@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: 플랫폼 extras·audiences 제거(glance·credit·pipeline에 통합).
 // - 2026-10-05: 커스텀어벗 플로우·하나의 크레딧 섹션은 플랫폼(`/offer/platform`).
 // - 2026-10-05: 어벗츠기공소 오퍼를 구강스캔 특화 · AI 검수로 재구성. FIT TOGETHER 제외.
 // - 2026-09-30: 기공서비스 스토리 카피 「3D 스캔」→「구강 스캔」.
