@@ -36,18 +36,6 @@ export const SIMPLEWAY_SAMPLE_KIT = [
     spec: "",
     note: "그립 헥스 드라이버",
   },
-  {
-    id: "scanbar",
-    name: "어벗츠 스캔바",
-    spec: "",
-    note: "구강스캔 인식 향상",
-  },
-  {
-    id: "package-500",
-    name: "어벗츠 패키지",
-    spec: "",
-    note: "올인원 500 패키지",
-  },
 ] as const;
 
 export const SIMPLEWAY_SAMPLE_EXTRAS = [

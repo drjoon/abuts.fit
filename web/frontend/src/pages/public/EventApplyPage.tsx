@@ -39,7 +39,6 @@ import {
 } from "@/shared/events/eventsApi";
 import {
   GRIBO_HERO_EYEBROW,
-  SIMPLEWAY_DEALER_HELP,
   SIMPLEWAY_EVENT_HEADLINE,
   SIMPLEWAY_HERO_SUB_LINES,
   SIMPLEWAY_SAMPLE_EXTRAS,
@@ -217,7 +216,7 @@ function KitSection() {
           <Package className="hidden h-8 w-8 text-sky-500/80 sm:block" />
         </LandingReveal>
 
-        <ul className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,4fr)_minmax(0,2fr)_minmax(0,2fr)_minmax(0,2fr)]">
+        <ul className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           {SIMPLEWAY_SAMPLE_KIT.map((item, i) => (
             <LandingReveal as="li" key={item.id} delay={i * 90}>
               <LandingSpotlightCard className="group relative h-full overflow-hidden rounded-3xl border border-slate-200/90 bg-gradient-to-b from-white to-[#f4f7fb] p-6">
@@ -587,10 +586,8 @@ export default function EventApplyPage() {
     );
   }
 
-  const dealerHelp =
-    event.formConfig.dealerHelpText ||
-    (isSimpleway ? SIMPLEWAY_DEALER_HELP : "");
-  const showDealer = isSimpleway || event.formConfig.requireDealer;
+  const dealerHelp = event.formConfig.dealerHelpText || "";
+  const showDealer = event.formConfig.requireDealer;
 
   return (
     <PublicPageLayout
@@ -700,7 +697,7 @@ export default function EventApplyPage() {
                     </CardTitle>
                     <div className="flex gap-2 rounded-2xl border border-sky-100 bg-sky-50/80 px-3 py-2.5 text-sm leading-relaxed text-sky-900">
                       <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
-                      <p>사용 중이면 스캔바 등 디지털 지원을 안내합니다.</p>
+                      <p>힐링 스캔 라이브러리 지원 안내</p>
                     </div>
                   </CardHeader>
                   <CardContent>
