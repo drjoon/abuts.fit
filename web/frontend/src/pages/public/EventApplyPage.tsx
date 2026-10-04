@@ -216,7 +216,7 @@ function KitSection() {
           <Package className="hidden h-8 w-8 text-sky-500/80 sm:block" />
         </LandingReveal>
 
-        <ul className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <ul className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
           {SIMPLEWAY_SAMPLE_KIT.map((item, i) => (
             <LandingReveal as="li" key={item.id} delay={i * 90}>
               <LandingSpotlightCard className="group relative h-full overflow-hidden rounded-3xl border border-slate-200/90 bg-gradient-to-b from-white to-[#f4f7fb] p-6">
@@ -697,7 +697,7 @@ export default function EventApplyPage() {
                     </CardTitle>
                     <div className="flex gap-2 rounded-2xl border border-sky-100 bg-sky-50/80 px-3 py-2.5 text-sm leading-relaxed text-sky-900">
                       <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
-                      <p>힐링 스캔 라이브러리 지원 안내</p>
+                      <p>그립.스캔 어벗, 힐링 및 스캔바와 그립 드라이버 소개</p>
                     </div>
                   </CardHeader>
                   <CardContent>
