@@ -1,29 +1,24 @@
 // related files:
 // - web/frontend/src/shared/demo/useDemoMode.ts
 // - web/frontend/src/shared/demo/demoModeCopy.ts
-// - web/frontend/src/features/support/components/ConfirmDialog.tsx
+// - web/frontend/src/shared/demo/DemoConversionDialog.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
+// change-log:
+// - 2026-10-04: 전환 요청 다이얼로그를 DemoConversionDialog(기공소 직접 지급 확인)로 교체. 전환 대기 라벨.
 import { useState } from "react";
-import { AlertTriangle, ArrowRightLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
-import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { cn } from "@/shared/ui/cn";
-import { toast } from "sonner";
+import { DemoConversionDialog } from "./DemoConversionDialog";
 import {
-  DEMO_MODE_EXIT_CONFIRM_LABEL,
-  DEMO_MODE_EXIT_TITLE,
-  DEMO_MODE_EXIT_WARNING,
   formatDemoModeBadgeAriaLabel,
   formatDemoModeBadgeLabel,
   resolveCreditLedgerDemoNoticeBody,
-  resolveDemoModeExitBody,
 } from "./demoModeCopy";
 import { useDemoMode } from "./useDemoMode";
 
@@ -34,17 +29,19 @@ type Props = {
 };
 
 export function DemoModeBadge({ className, onExited }: Props) {
-  const { demoMode, daysRemaining, loading, exiting, exitDemoMode } =
+  const { demoMode, daysRemaining, conversionPending, loading, refresh } =
     useDemoMode();
-  const { kind } = useRequestorBusinessAccess();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (loading || !demoMode) return null;
 
-  const badgeLabel = formatDemoModeBadgeLabel(daysRemaining);
-  const ariaLabel = formatDemoModeBadgeAriaLabel(daysRemaining);
-  const noticeBody = resolveCreditLedgerDemoNoticeBody(kind);
-  const exitBody = resolveDemoModeExitBody(kind);
+  const badgeLabel = conversionPending
+    ? "전환 대기"
+    : formatDemoModeBadgeLabel(daysRemaining);
+  const ariaLabel = conversionPending
+    ? "실사용 전환 대기"
+    : formatDemoModeBadgeAriaLabel(daysRemaining);
+  const noticeBody = resolveCreditLedgerDemoNoticeBody("practice");
 
   return (
     <>
@@ -76,49 +73,12 @@ export function DemoModeBadge({ className, onExited }: Props) {
         </TooltipContent>
       </Tooltip>
 
-      <ConfirmDialog
+      <DemoConversionDialog
         open={confirmOpen}
-        title={DEMO_MODE_EXIT_TITLE}
-        panelClassName="max-w-sm"
-        description={
-          <div className="space-y-3">
-            <div className="flex gap-3 rounded-xl border border-slate-200/90 bg-slate-50 px-3.5 py-3.5">
-              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary-strong">
-                <ArrowRightLeft className="h-4 w-4" aria-hidden />
-              </div>
-              <p className="min-w-0 text-sm leading-relaxed text-slate-700">
-                {exitBody}
-              </p>
-            </div>
-            <div className="flex gap-2.5 rounded-xl border border-amber-200/90 bg-amber-50 px-3.5 py-3">
-              <AlertTriangle
-                className="mt-0.5 h-4 w-4 shrink-0 text-amber-600"
-                aria-hidden
-              />
-              <p className="min-w-0 text-sm leading-relaxed text-amber-950/85">
-                {DEMO_MODE_EXIT_WARNING}
-              </p>
-            </div>
-          </div>
-        }
-        confirmLabel={DEMO_MODE_EXIT_CONFIRM_LABEL}
-        cancelLabel="취소"
-        confirmTone="primary"
-        busy={exiting}
-        onCancel={() => {
-          if (!exiting) setConfirmOpen(false);
-        }}
-        onConfirm={async () => {
-          const ok = await exitDemoMode();
-          if (ok) {
-            setConfirmOpen(false);
-            toast.success(
-              "전환 입금 대기로 설정되었습니다. 충전 탭에서 입금해 주세요.",
-            );
-            onExited?.();
-          } else {
-            toast.error("전환 대기 설정에 실패했습니다. 잠시 후 다시 시도해 주세요.");
-          }
+        onClose={() => setConfirmOpen(false)}
+        onRequested={() => {
+          void refresh();
+          onExited?.();
         }}
       />
     </>

@@ -4889,12 +4889,12 @@ export async function adminExitBusinessDemoMode(req, res) {
     return res.json({
       success: true,
       data: {
-        demoMode: true,
+        demoMode: !result?.completed,
         conversionPending: Boolean(result?.conversionPending),
+        completed: Boolean(result?.completed),
         alreadyExited: Boolean(result?.alreadyExited),
         alreadyPending: Boolean(result?.alreadyPending),
-        minTotal: result?.minTotal ?? null,
-        quote: result?.quote || null,
+        labs: result?.labs || [],
       },
     });
   } catch (error) {

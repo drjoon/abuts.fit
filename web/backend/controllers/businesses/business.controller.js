@@ -34,7 +34,8 @@ import {
 import {
   beginDemoConversionPending,
   enableDemoModeAndGrantCreditIfEligible,
-  maybeAutoExitDemoModeIfExhausted,
+  isDemoModeExpired,
+  isPracticeRequestorAnchor,
   resolveDemoModeExpiresAt,
 } from "./business.demoMode.util.js";
 import { applyReferralCodeToUnownedRequestor } from "../../services/referralOwnershipReset.service.js";
@@ -581,7 +582,15 @@ export async function getMyBusiness(req, res) {
             : false,
         ...abutsLabCertifiedPayload(anchor),
         demoMode:
-          businessType === "requestor" ? Boolean(anchor?.demoMode) : false,
+          businessType === "requestor" &&
+          isPracticeRequestorAnchor(anchor) &&
+          Boolean(anchor?.demoMode),
+        demoModeExpired:
+          businessType === "requestor" &&
+          isPracticeRequestorAnchor(anchor) &&
+          Boolean(anchor?.demoMode) &&
+          !anchor?.demoModeExitedAt &&
+          isDemoModeExpired(anchor?.demoModeStartedAt),
         demoModeStartedAt:
           businessType === "requestor"
             ? anchor?.demoModeStartedAt || null
@@ -669,34 +678,6 @@ export async function getMyBusiness(req, res) {
         }
       } catch (e) {
         console.error("[BusinessAnchor] demo mode enable/heal failed", e);
-      }
-      if (responseData.data.demoMode) {
-        try {
-          const autoPending = await maybeAutoExitDemoModeIfExhausted({
-            businessAnchorId: anchor._id,
-            userId: req.user._id,
-          });
-          if (
-            autoPending &&
-            !autoPending.alreadyExited &&
-            autoPending.conversionPending
-          ) {
-            invalidateMyBusinessCache(anchor._id);
-            responseData.data.conversionPending = true;
-            responseData.data.conversionPendingAt =
-              responseData.data.conversionPendingAt || new Date();
-            responseData.data.conversionPendingReason =
-              autoPending.reason || "데모 기간 만료";
-            if (autoPending.minTotal != null) {
-              responseData.data.conversionMinTotal = autoPending.minTotal;
-            }
-            if (autoPending.quote) {
-              responseData.data.conversionQuote = autoPending.quote;
-            }
-          }
-        } catch (e) {
-          console.error("[BusinessAnchor] demo conversion pending failed", e);
-        }
       }
     }
 
@@ -1937,14 +1918,15 @@ export async function exitMyDemoMode(req, res) {
     return res.json({
       success: true,
       data: {
-        demoMode: true,
-        conversionPending: true,
+        demoMode: !result?.completed,
+        conversionPending: !result?.completed,
+        completed: Boolean(result?.completed),
         alreadyExited: Boolean(result?.alreadyExited),
         alreadyPending: Boolean(result?.alreadyPending),
-        minTotal: result?.minTotal ?? null,
-        quote: result?.quote || null,
-        message:
-          "전환 입금이 확인되면 실사용으로 전환됩니다. 충전 탭에서 최소 금액을 입금해 주세요.",
+        labs: result?.labs || [],
+        message: result?.completed
+          ? "실사용으로 전환되었습니다. 신규 의뢰는 충전 후 가능합니다."
+          : "기공소에 미정산 기공비를 직접 지급해 주세요. 기공소가 지급을 확인하면 실사용으로 전환됩니다.",
       },
     });
   } catch (error) {

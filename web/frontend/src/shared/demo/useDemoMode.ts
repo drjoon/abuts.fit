@@ -1,12 +1,11 @@
 // related files:
 // - web/frontend/src/shared/demo/DemoModeBadge.tsx
+// - web/frontend/src/shared/demo/DemoConversionPromptModal.tsx
 // - web/frontend/src/shared/demo/demoModeCopy.ts
 // - web/backend/modules/businesses/business.routes.js
 // - web/backend/controllers/businesses/business.demoMode.util.js
 // change-log:
-// - 2026-09-05: 유료 크레딧(CHARGE_PAID) 지급 시 데모→실사용 자동 전환.
-// - 2026-09-12: 뱃지 표시「N일」(aria/툴팁은「데모 N일 남음」).
-// - 2026-09-05: demoModeStartedAt/ExpiresAt → 남은 일수(데모 N일 남음).
+// - 2026-10-04: 치과 전용 90일 데모. expired/conversionPending 노출, 전환은 기공소 직접지급 확인 후 완료.
 // - 2026-08-26: apiFetch 응답 언랩 수정 — res.data.data.demoMode (뱃지 미표시 원인).
 import { useCallback, useEffect, useState } from "react";
 import { request } from "@/shared/api/apiClient";
@@ -22,175 +21,159 @@ type DemoModePayload = {
   demoMode?: boolean;
   demoModeStartedAt?: string | null;
   demoModeExpiresAt?: string | null;
+  conversionPending?: boolean;
+  requestorKind?: string | null;
 };
 
-type DemoModeState = {
+type DemoSnapshot = {
   demoMode: boolean;
   daysRemaining: number | null;
+  expired: boolean;
+  conversionPending: boolean;
+};
+
+export type DemoConversionLab = {
+  labAnchorId: string;
+  labName: string;
+  amount: number;
+  isAbutsLab: boolean;
+  status: "PENDING" | "CONFIRMED";
+};
+
+export type RequestDemoConversionResult = {
+  ok: boolean;
+  completed: boolean;
+  labs: DemoConversionLab[];
+};
+
+type DemoModeState = DemoSnapshot & {
   loading: boolean;
   exiting: boolean;
   refresh: () => Promise<void>;
-  exitDemoMode: () => Promise<boolean>;
+  requestConversion: () => Promise<RequestDemoConversionResult>;
 };
 
-let cachedDemoMode: boolean | null = null;
-let cachedDaysRemaining: number | null = null;
+const EMPTY: DemoSnapshot = {
+  demoMode: false,
+  daysRemaining: null,
+  expired: false,
+  conversionPending: false,
+};
+
+let cachedSnapshot: DemoSnapshot | null = null;
 let cachedAnchorId: string | null = null;
 
 function readDemoPayload(body: {
   data?: DemoModePayload;
-  demoMode?: boolean;
-  demoModeStartedAt?: string | null;
-  demoModeExpiresAt?: string | null;
-}): { demoMode: boolean; daysRemaining: number | null } {
+} & DemoModePayload): DemoSnapshot {
   const payload = body.data || body;
-  const demoMode = Boolean(payload?.demoMode);
-  if (!demoMode) return { demoMode: false, daysRemaining: null };
+  // 데모는 치과 전용. 기공소는 항상 비활성.
+  if (!payload?.demoMode || payload?.requestorKind === "lab") return EMPTY;
   const daysRemaining = resolveDemoModeDaysRemaining({
     startedAt: payload?.demoModeStartedAt,
     expiresAt: payload?.demoModeExpiresAt,
     durationDays: DEMO_MODE_DURATION_DAYS,
   });
-  return { demoMode, daysRemaining };
+  return {
+    demoMode: true,
+    daysRemaining,
+    expired: daysRemaining != null && daysRemaining <= 0,
+    conversionPending: Boolean(payload?.conversionPending),
+  };
 }
 
 export function useDemoMode(): DemoModeState {
   const businessAnchorId = useAuthStore((s) => s.user?.businessAnchorId);
   const role = useAuthStore((s) => s.user?.role);
-  const [demoMode, setDemoMode] = useState(() => {
-    if (
-      businessAnchorId &&
-      cachedAnchorId === String(businessAnchorId) &&
-      cachedDemoMode != null
-    ) {
-      return cachedDemoMode;
-    }
-    return false;
-  });
-  const [daysRemaining, setDaysRemaining] = useState<number | null>(() => {
-    if (
-      businessAnchorId &&
-      cachedAnchorId === String(businessAnchorId) &&
-      cachedDemoMode
-    ) {
-      return cachedDaysRemaining;
-    }
-    return null;
-  });
+
+  const [snapshot, setSnapshot] = useState<DemoSnapshot>(() =>
+    businessAnchorId &&
+    cachedAnchorId === String(businessAnchorId) &&
+    cachedSnapshot
+      ? cachedSnapshot
+      : EMPTY,
+  );
   const [loading, setLoading] = useState(true);
   const [exiting, setExiting] = useState(false);
 
-  const applyPayload = useCallback(
-    (body: {
-      data?: DemoModePayload;
-      demoMode?: boolean;
-      demoModeStartedAt?: string | null;
-      demoModeExpiresAt?: string | null;
-    }) => {
-      const next = readDemoPayload(body);
-      setDemoMode(next.demoMode);
-      setDaysRemaining(next.daysRemaining);
-      cachedDemoMode = next.demoMode;
-      cachedDaysRemaining = next.daysRemaining;
+  const applySnapshot = useCallback(
+    (next: DemoSnapshot) => {
+      setSnapshot(next);
+      cachedSnapshot = next;
       cachedAnchorId = businessAnchorId ? String(businessAnchorId) : null;
     },
     [businessAnchorId],
   );
 
   const refresh = useCallback(async () => {
-    if (!businessAnchorId) {
-      setDemoMode(false);
-      setDaysRemaining(null);
-      setLoading(false);
-      cachedDemoMode = false;
-      cachedDaysRemaining = null;
-      cachedAnchorId = null;
-      return;
-    }
-    if (role !== "requestor" && role !== "practice") {
-      setDemoMode(false);
-      setDaysRemaining(null);
+    if (!businessAnchorId || (role !== "requestor" && role !== "practice")) {
+      applySnapshot(EMPTY);
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const res = await request<{
-        success?: boolean;
-        data?: DemoModePayload;
-      }>({
+      const res = await request<{ success?: boolean; data?: DemoModePayload }>({
         path: "/api/businesses/me?businessType=requestor",
         method: "GET",
       });
-      applyPayload(res.data || {});
+      applySnapshot(readDemoPayload(res.data || {}));
     } catch {
       try {
         const bal = await request<{
           success?: boolean;
           data?: DemoModePayload;
-        }>({
-          path: "/api/credits/balance",
-          method: "GET",
-        });
-        applyPayload(bal.data || {});
+        }>({ path: "/api/credits/balance", method: "GET" });
+        applySnapshot(readDemoPayload(bal.data || {}));
       } catch {
-        setDemoMode(false);
-        setDaysRemaining(null);
+        applySnapshot(EMPTY);
       }
     } finally {
       setLoading(false);
     }
-  }, [applyPayload, businessAnchorId, role]);
+  }, [applySnapshot, businessAnchorId, role]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  // 유료 입금 등으로 서버가 데모 종료하면 잔액 이벤트로 뱃지·라벨을 즉시 갱신
+  // 기공소 확인으로 전환이 끝나면 잔액 이벤트로 뱃지·모달 상태를 즉시 갱신
   useAppEventListener({
     eventTypes: ["credit:balance-updated"],
-    enabled: Boolean(businessAnchorId) && demoMode,
+    enabled: Boolean(businessAnchorId) && snapshot.demoMode,
     onMatch: (evt) => {
       if (!isCreditEventForBusiness(evt, businessAnchorId)) return;
       void refresh();
     },
   });
 
-  const exitDemoMode = useCallback(async () => {
-    setExiting(true);
-    try {
-      const res = await request<{
-        success?: boolean;
-        data?: {
-          demoMode?: boolean;
-          conversionPending?: boolean;
-          alreadyExited?: boolean;
+  const requestConversion =
+    useCallback(async (): Promise<RequestDemoConversionResult> => {
+      setExiting(true);
+      try {
+        const res = await request<{
+          success?: boolean;
+          data?: { completed?: boolean; labs?: DemoConversionLab[] };
+        }>({
+          path: "/api/businesses/me/exit-demo",
+          method: "POST",
+        });
+        if (!res.ok || !res.data?.success) {
+          return { ok: false, completed: false, labs: [] };
+        }
+        const payload = res.data.data || {};
+        await refresh();
+        return {
+          ok: true,
+          completed: Boolean(payload.completed),
+          labs: payload.labs || [],
         };
-      }>({
-        path: "/api/businesses/me/exit-demo",
-        method: "POST",
-      });
-      if (!res.ok || !res.data?.success) return false;
-      const payload = res.data.data || {};
-      // 전환 입금 대기: 데모 유지. 입금 확정 시에만 demoMode OFF.
-      if (payload.alreadyExited || payload.demoMode === false) {
-        setDemoMode(false);
-        setDaysRemaining(null);
-        cachedDemoMode = false;
-        cachedDaysRemaining = null;
-      } else {
-        setDemoMode(true);
-        cachedDemoMode = true;
-        void refresh();
+      } catch {
+        return { ok: false, completed: false, labs: [] };
+      } finally {
+        setExiting(false);
       }
-      cachedAnchorId = businessAnchorId ? String(businessAnchorId) : null;
-      return true;
-    } catch {
-      return false;
-    } finally {
-      setExiting(false);
-    }
-  }, [businessAnchorId, refresh]);
+    }, [refresh]);
 
-  return { demoMode, daysRemaining, loading, exiting, refresh, exitDemoMode };
+  return { ...snapshot, loading, exiting, refresh, requestConversion };
 }

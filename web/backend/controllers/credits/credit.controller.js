@@ -20,7 +20,10 @@ import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
-import { resolveDemoModeExpiresAt } from "../businesses/business.demoMode.util.js";
+import {
+  isDemoModeExpired,
+  resolveDemoModeExpiresAt,
+} from "../businesses/business.demoMode.util.js";
 import {
   normalizeRequestorKind,
   resolveRequestorProfile,
@@ -213,6 +216,8 @@ async function getBalanceBreakdown(scope, requestorKindHint) {
     ),
     // 기공크레딧: 적립·월정산 경로 분리. 주문 차감 시 무료 다음·유료 이전 상계.
     settlementCredit,
+    // 데모 치과에서 적립된 기공크레딧(정산·인출 제외, 치과가 전환 시 직접 지급).
+    demoSettlementCredit: Number(snapshot?.demoSettlementCredit || 0),
     requestorKind: kind,
     showSettlementCredit: isLab,
   };
@@ -231,14 +236,26 @@ export async function getMyCreditBalance(req, res) {
   const balanceData = await getBalanceBreakdown(scope, req.user?.requestorKind);
 
   const anchor = await BusinessAnchor.findById(scope.businessAnchorId)
-    .select({ demoMode: 1, demoModeExitedAt: 1, demoModeStartedAt: 1 })
+    .select({
+      demoMode: 1,
+      demoModeExitedAt: 1,
+      demoModeStartedAt: 1,
+      conversionPendingAt: 1,
+    })
     .lean();
+  const demoActive =
+    balanceData.requestorKind !== "lab" &&
+    Boolean(anchor?.demoMode) &&
+    !anchor?.demoModeExitedAt;
 
   return res.json({
     success: true,
     data: {
       ...balanceData,
-      demoMode: Boolean(anchor?.demoMode),
+      demoMode: demoActive,
+      demoModeExpired:
+        demoActive && isDemoModeExpired(anchor?.demoModeStartedAt),
+      conversionPending: demoActive && Boolean(anchor?.conversionPendingAt),
       demoModeStartedAt: anchor?.demoModeStartedAt || null,
       demoModeExpiresAt:
         resolveDemoModeExpiresAt(anchor?.demoModeStartedAt) || null,

@@ -33,6 +33,7 @@ import {
 import { isFmDentalShippingActiveForAnchor } from "./fmDentalShippingSubscription.service.js";
 import {
   allowsDemoFreeRequestOverdraft,
+  getDemoOrderBlock,
   excludeDemoFreeRequestFromBalance,
   resolveDemoFreeRequestReserveCap,
 } from "../controllers/businesses/business.demoMode.util.js";
@@ -531,6 +532,14 @@ async function postOneRequestHold({
         businessAnchorId: requestorAnchorId,
         session,
       });
+
+  const demoOrderBlock = await getDemoOrderBlock(requestorAnchorId);
+  if (demoOrderBlock) {
+    const err = new Error(demoOrderBlock.message);
+    err.statusCode = 403;
+    err.payload = { reason: demoOrderBlock.reason };
+    throw err;
+  }
 
   const demoFreeRequestReserveCap =
     await resolveDemoFreeRequestReserveCap(requestorAnchorId);

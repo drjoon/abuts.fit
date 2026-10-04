@@ -9,7 +9,6 @@
 // - web/backend/jobs/hourlyRequestBackupWorker.js
 // - web/backend/jobs/dummyCncWorker.js
 // - web/backend/jobs/practiceTransferArrivalAutoCompleteWorker.js
-// - web/backend/jobs/demoModeExpiryWorker.js
 // - web/backend/jobs/dailyReferralOwnershipResetWorker.js
 // - web/backend/jobs/workScanAutoAlignWorker.js
 import { createServer } from "http";
@@ -31,7 +30,6 @@ import { startMonthlySettlementBatchWorker } from "./jobs/monthlySettlementBatch
 import { startLabAutoMatchParticipationBillingWorker } from "./jobs/labAutoMatchParticipationBillingWorker.js";
 import { startFmDentalShippingBillingWorker } from "./jobs/fmDentalShippingBillingWorker.js";
 import { startPracticeTransferArrivalAutoCompleteWorker } from "./jobs/practiceTransferArrivalAutoCompleteWorker.js";
-import { startDemoModeExpiryWorker } from "./jobs/demoModeExpiryWorker.js";
 import { startDailyReferralOwnershipResetWorker } from "./jobs/dailyReferralOwnershipResetWorker.js";
 import { startWorkScanAutoAlignWorker } from "./jobs/workScanAutoAlignWorker.js";
 import { startAbutmentStlShadowWorker } from "./jobs/abutmentStlShadowWorker.js";
@@ -154,7 +152,6 @@ dbReady
     startLabAutoMatchParticipationBillingWorker();
     startFmDentalShippingBillingWorker();
     startPracticeTransferArrivalAutoCompleteWorker();
-    startDemoModeExpiryWorker();
     startDailyReferralOwnershipResetWorker();
     startWorkScanAutoAlignWorker();
     startAbutmentStlShadowWorker();

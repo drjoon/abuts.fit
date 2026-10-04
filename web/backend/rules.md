@@ -310,7 +310,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 멀티 인스턴스 백엔드에서는 워커 중복 실행 방지를 위해 Mongo 기반 분산락 SSOT를 사용합니다.
     - 공통 락 유틸: `utils/distributedJobLock.js`
     - 적용 워커: `services/reviewApprovalQueue.service.js`, `controllers/requests/shipping.TrackingPoller.js`, `jobs/dummyCncWorker.js`, `jobs/dailyReferralSnapshotWorker.js`
-  - 의뢰자 데모 모드: 가입 시 `demoMode`만 ON·크레딧 **0원**. **가상 잔고** — `allowFreeRequestOverdraft`(전환 대기 `conversionPendingAt`이면 잠금). **`CHARGE_PAID` 직후 `applyDemoConversionWaterfallAfterPaidCharge`**(이용분 청산·기공소 Lab→Abuts 상계·잔액 선수금) → `exitDemoModeAfterConversionPaid`. 만료/수동/관리자 `exit-demo`는 `beginDemoConversionPending`(부채 유지). 무료 `DEMO_DEBT_RESET` 종료 폐기. 데모·전환 대기 기공소 `LAB_SETTLEMENT` 인출/월배치 동결. SSOT: `services/demoConversion.service.js`, `business.demoMode.util.js`, `GET /api/credits/conversion-quote`.
+  - 치과 데모 모드(90일, 기공소 데모 없음): 가입 시 `demoMode`만 ON·크레딧 **0원**·가상 잔고(만료/전환 대기 시 overdraft 잠금). 만료 후 미전환이면 `getDemoOrderBlock`으로 `createPracticeTransfer`·`holdRequestCredit` 차단. 전환은 `requestDemoConversion`(기공소별 직접 지급 확인, 협력=수행 기공소 승인·하청/자체=어벗츠기공소 승인(`classifyPracticeCreditOwner`)) -> `finalizeDemoConversion`(부채 리셋·데모 종료·기공소 ADJUST). 데모 치과 적립분은 `computeLabDemoSettlementCredit`로 `settlementCredit`에서 제외(`demoSettlementCredit`). API: `GET /api/credits/conversion-quote`, `GET /api/credits/lab-demo-conversions`, `POST /api/credits/lab-demo-conversions/:invoiceId/confirm`. SSOT: `services/demoConversion.service.js`, `services/labDemoCredit.service.js`.
 
 - 가격/리퍼럴 rolling 스냅샷:
   - 일일 재계산 워커: `jobs/dailyReferralSnapshotWorker.js`
@@ -848,12 +848,13 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 신규 `signup_free_test_2` 가격 배정 중단(`getSignupFreeTestQuota` remaining 0)
     - 기존 의뢰의 hold skip·0원 commit·「가입 테스트」라벨만 레거시 유지
     - 대체: 치과·기공소 데모 모드(`allowFreeRequestOverdraft`) + 관리자 수동 무료크레딧
-  - 데모 모드(치과·기공소, 강제):
-    - 가입 시 0원·가상 잔고 마이너스 허용(치과=기공비, 기공소=어벗츠 생산·배송)
-    - **전환 입금 워터폴**: CHARGE_PAID → 이용분 청산(+치과면 기공소 상계/정산크레딧) → 잔액 선수금 → 데모 OFF
-    - 30일 만료/수동/관리자: `conversionPending`(부채 유지·overdraft 잠금). 무료 부채 리셋 종료 금지
-    - 하한 = 이용분 + 1유닛(유닛 올림). `GET /api/credits/conversion-quote`
-    - SSOT: `demoConversion.service.js` · `business.demoMode.util.js`
+  - 데모 모드(치과 전용, 강제):
+    - 가입 시 0원·가상 잔고 마이너스 허용(치과 전용, 기공비)
+    - **전환**: 치과 요청 -> 기공소 직접 지급 확인 -> 부채 리셋·데모 OFF·기공소 ADJUST. 이후 충전(선결제) 필요
+    - 90일 만료 후 미전환: 신규 의뢰 차단. 전환 요청 후 기공소 직접 지급 확인 대기(`conversionPending`)
+    - 입금 하한 없음. 협력은 수행 기공소, 하청·자체는 어벗츠기공소(internalLab)가 지급 확인. `GET /api/credits/conversion-quote`
+    - SSOT: `demoConversion.service.js` · `labDemoCredit.service.js` · `business.demoMode.util.js`
+
 ### 웹소켓 업데이트 표준 (무플리커 + 부하완화)
 
   - 웹소켓 실시간 업데이트 발행/수신 SSOT:

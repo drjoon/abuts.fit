@@ -15,6 +15,7 @@ import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import LedgerLine from "../models/ledgerLine.model.js";
 import LedgerJournal from "../models/ledgerJournal.model.js";
 import { deleteGeneralLedgerCommitJournal } from "./generalLedger.service.js";
+import { computeLabDemoSettlementCredit } from "./labDemoCredit.service.js";
 
 function normalizeAnchorObjectId(businessAnchorId) {
   const raw = String(businessAnchorId || "").trim();
@@ -182,7 +183,26 @@ export async function computeBusinessCreditBalanceFromLedger({
   const freeRequestCredit = Math.round(freeRequest);
   const freeShippingCredit = Math.max(0, Math.round(freeShipping));
   const freeCredit = freeRequestCredit + freeShippingCredit;
-  const settlementCredit = Math.max(0, Math.round(settlement));
+  // 데모 치과에서 적립된 기공크레딧은 정산·인출·주문 차감에서 제외(치과가 전환 시 직접 지급).
+  let demoSettlementCredit = 0;
+  if (Math.round(settlement) > 0) {
+    try {
+      demoSettlementCredit = await computeLabDemoSettlementCredit(
+        anchorObjectId,
+        { session },
+      );
+    } catch (e) {
+      console.error(
+        "[creditBalance] lab demo settlement credit failed",
+        String(anchorObjectId),
+        e?.message || e,
+      );
+    }
+  }
+  const settlementCredit = Math.max(
+    0,
+    Math.round(settlement) - demoSettlementCredit,
+  );
   const balance = paidCredit + freeCredit;
 
   return {
@@ -191,6 +211,7 @@ export async function computeBusinessCreditBalanceFromLedger({
     freeShippingCredit,
     freeCredit,
     settlementCredit,
+    demoSettlementCredit,
     balance,
     spendableBalance: balance + settlementCredit,
   };
@@ -232,6 +253,7 @@ export async function getBusinessCreditBalanceSnapshot({
   const freeShippingCredit = Number(glBalance?.freeShippingCredit || 0);
   const freeCredit = Number(glBalance?.freeCredit || 0);
   const settlementCredit = Number(glBalance?.settlementCredit || 0);
+  const demoSettlementCredit = Number(glBalance?.demoSettlementCredit || 0);
   const balance = Number(glBalance?.balance || 0);
 
   return {
@@ -241,6 +263,7 @@ export async function getBusinessCreditBalanceSnapshot({
     freeShippingCredit,
     freeCredit,
     settlementCredit,
+    demoSettlementCredit,
     balance,
     spendableBalance: Number(
       glBalance?.spendableBalance ?? balance + settlementCredit,

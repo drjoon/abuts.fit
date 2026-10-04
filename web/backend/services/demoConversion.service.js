@@ -1,35 +1,23 @@
 // related files:
 // - web/backend/controllers/businesses/business.demoMode.util.js
 // - web/backend/models/conversionInvoice.model.js
-// - web/backend/utils/creditChargeUnit.js
+// - web/backend/services/labDemoCredit.service.js
+// - web/backend/controllers/credits/conversionInvoice.controller.js
 // change-log:
-// - 2026-09-10: 전환 견적에 suggestedTotal(이용분+1/3·100만 반올림) 포함.
-// - 2026-09-09: 데모→실사용 전환 워터폴(이용분 청산·기공소 상계/순지급·잔액 선수금).
+// - 2026-10-04: 입금 워터폴 폐기. 치과 전환 = 기공소 직접 지급 확인. 협력=수행 기공소 승인, 하청·어벗츠 자체=어벗츠기공소 승인.
 import mongoose from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import ConversionInvoice from "../models/conversionInvoice.model.js";
-import PracticeTransfer from "../models/practiceTransfer.model.js";
-import Request from "../models/request.model.js";
-import LedgerLine from "../models/ledgerLine.model.js";
-import { getBusinessCreditBalanceSnapshot } from "./creditBalance.service.js";
 import { postGeneralLedgerJournal } from "./generalLedger.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../utils/creditRealtime.js";
+import { aggregatePracticeLabCredits } from "./labDemoCredit.service.js";
 import {
-  resolveCreditChargeUnit,
-} from "../utils/creditChargeUnit.js";
-import { normalizeRequestorKind } from "../utils/requestorCapabilities.js";
-import {
-  assertChargeMeetsConversionMinimum,
-  resolveConversionMinTotal,
-  resolveDemoChargeSuggestion,
-  roundWon,
-} from "../utils/demoConversionMath.js";
-
-export {
-  assertChargeMeetsConversionMinimum,
-  resolveConversionMinTotal,
-  resolveDemoChargeSuggestion,
-};
+  exitDemoModeAfterConversionPaid,
+  isDemoModeExpired,
+  isPracticeRequestorAnchor,
+  resetDemoFreeRequestDebtToZero,
+  resolveDemoModeExpiresAt,
+} from "../controllers/businesses/business.demoMode.util.js";
 
 function toObjectId(value) {
   const raw = String(value || "").trim();
@@ -37,628 +25,84 @@ function toObjectId(value) {
   return new mongoose.Types.ObjectId(raw);
 }
 
-async function resolveKind(businessAnchorId, anchorDoc) {
-  const anchor =
-    anchorDoc ||
-    (await BusinessAnchor.findById(businessAnchorId)
-      .select({ requestorKind: 1, requestorCapabilities: 1 })
-      .lean());
-  const kind = normalizeRequestorKind(anchor?.requestorKind);
-  if (kind === "practice" || kind === "lab") return kind;
-  const caps = anchor?.requestorCapabilities || {};
-  if (caps.lab && !caps.practice) return "lab";
-  if (caps.practice) return "practice";
-  return "lab";
+function httpError(message, statusCode) {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  return err;
 }
 
-/**
- * 데모 기간 PTX의 기공비·연결 Request 기준 Lab→Abuts 소비를 기공소별로 집계.
- */
-async function aggregatePracticeLabRemittances({
-  practiceAnchorId,
-  periodStart,
-  periodEnd,
-}) {
-  const practiceId = toObjectId(practiceAnchorId);
-  if (!practiceId) return [];
+const PRACTICE_ANCHOR_SELECT = {
+  businessType: 1,
+  name: 1,
+  requestorKind: 1,
+  requestorCapabilities: 1,
+  demoMode: 1,
+  demoModeStartedAt: 1,
+  demoModeExitedAt: 1,
+  conversionPendingAt: 1,
+};
 
-  const timeFilter = {};
-  if (periodStart) timeFilter.$gte = new Date(periodStart);
-  if (periodEnd) timeFilter.$lte = new Date(periodEnd);
-
-  const transfers = await PracticeTransfer.find({
-    practiceBusinessAnchorId: practiceId,
-    ...(Object.keys(timeFilter).length
-      ? {
-          $or: [
-            { "billing.heldAt": timeFilter },
-            { createdAt: timeFilter },
-          ],
-        }
-      : {}),
-  })
-    .select({
-      _id: 1,
-      targetLabAnchorId: 1,
-      "billing.labFeeTotal": 1,
-      "billing.heldLabTotal": 1,
-      "billing.labSettlementAmount": 1,
-      "billing.labSettledAt": 1,
-      "production.relatedRequestIds": 1,
-    })
-    .lean();
-
-  if (!transfers.length) return [];
-
-  const byLab = new Map();
-  const allTransferIds = [];
-  for (const t of transfers) {
-    const labId = String(t.targetLabAnchorId || "").trim();
-    if (!labId) continue;
-    allTransferIds.push(t._id);
-    const labFee = roundWon(
-      Math.max(
-        Number(t.billing?.labFeeTotal || 0),
-        Number(t.billing?.heldLabTotal || 0),
-        Number(t.billing?.labSettlementAmount || 0),
-      ),
-    );
-    const row = byLab.get(labId) || {
-      labAnchorId: t.targetLabAnchorId,
-      labFee: 0,
-      practiceTransferIds: [],
-      requestIds: [],
-    };
-    row.labFee += labFee;
-    row.practiceTransferIds.push(t._id);
-    for (const rid of t.production?.relatedRequestIds || []) {
-      if (rid) row.requestIds.push(rid);
-    }
-    byLab.set(labId, row);
-  }
-
-  const linkedRequests = await Request.find({
-    "partnerBilling.relatedPracticeTransferId": { $in: allTransferIds },
-  })
-    .select({ _id: 1, "partnerBilling.relatedPracticeTransferId": 1 })
-    .lean();
-
-  const transferToRequests = new Map();
-  for (const req of linkedRequests) {
-    const ptxId = String(
-      req?.partnerBilling?.relatedPracticeTransferId || "",
-    ).trim();
-    if (!ptxId) continue;
-    if (!transferToRequests.has(ptxId)) transferToRequests.set(ptxId, []);
-    transferToRequests.get(ptxId).push(req._id);
-  }
-
-  for (const row of byLab.values()) {
-    const reqSet = new Set(row.requestIds.map((id) => String(id)));
-    for (const ptxId of row.practiceTransferIds) {
-      for (const rid of transferToRequests.get(String(ptxId)) || []) {
-        reqSet.add(String(rid));
-      }
-    }
-    row.requestIds = [...reqSet]
-      .filter((id) => mongoose.Types.ObjectId.isValid(id))
-      .map((id) => new mongoose.Types.ObjectId(id));
-  }
-
-  const remittances = [];
-  for (const row of byLab.values()) {
-    let labToAbuts = 0;
-    if (row.requestIds.length) {
-      const spend = await LedgerLine.aggregate([
-        {
-          $match: {
-            ownerId: row.labAnchorId,
-            amount: { $lt: 0 },
-            refId: { $in: row.requestIds },
-            accountCode: {
-              $in: [
-                "REQ_FREE_REQUEST_CREDIT",
-                "REQ_FREE_SHIPPING_CREDIT",
-                "REQ_PAID_CREDIT",
-                "LAB_SETTLEMENT_CREDIT",
-              ],
-            },
-          },
-        },
-        { $group: { _id: null, total: { $sum: "$amount" } } },
-      ]);
-      labToAbuts = roundWon(-Number(spend?.[0]?.total || 0));
-    }
-    labToAbuts = Math.min(labToAbuts, row.labFee);
-    const labNet = Math.max(0, row.labFee - labToAbuts);
-    remittances.push({
-      labAnchorId: row.labAnchorId,
-      labFee: row.labFee,
-      labToAbuts,
-      labNet,
-      practiceTransferIds: row.practiceTransferIds,
-      requestIds: row.requestIds,
-    });
-  }
-
-  return remittances;
-}
-
-/**
- * 전환 견적(하한·라인). 입금 생성·UI·워터폴 SSOT.
- */
-export async function computeDemoConversionQuote(businessAnchorId) {
+async function loadPracticeAnchor(businessAnchorId) {
   const anchorId = toObjectId(businessAnchorId);
-  if (!anchorId) {
-    const err = new Error("사업자 정보가 없습니다.");
-    err.statusCode = 400;
-    throw err;
-  }
-
+  if (!anchorId) throw httpError("사업자 정보가 없습니다.", 400);
   const anchor = await BusinessAnchor.findById(anchorId)
-    .select({
-      businessType: 1,
-      requestorKind: 1,
-      requestorCapabilities: 1,
-      demoMode: 1,
-      demoModeStartedAt: 1,
-      demoModeExitedAt: 1,
-      conversionPendingAt: 1,
-    })
+    .select(PRACTICE_ANCHOR_SELECT)
     .lean();
-  if (!anchor || String(anchor.businessType || "") !== "requestor") {
-    const err = new Error("의뢰자 사업자만 전환 견적을 계산할 수 있습니다.");
-    err.statusCode = 400;
-    throw err;
+  if (!anchor) throw httpError("사업자를 찾을 수 없습니다.", 404);
+  if (
+    String(anchor.businessType || "") !== "requestor" ||
+    !isPracticeRequestorAnchor(anchor)
+  ) {
+    throw httpError("치과만 실사용 전환할 수 있습니다.", 400);
   }
+  return { anchorId, anchor };
+}
 
-  const kind = await resolveKind(anchorId, anchor);
-  const unit = resolveCreditChargeUnit(kind);
-  const snapshot = await getBusinessCreditBalanceSnapshot({
-    businessAnchorId: anchorId,
-  });
-  const freeRequest = Math.round(Number(snapshot?.freeRequestCredit || 0));
-  const balance = Math.round(Number(snapshot?.balance || 0));
-  // 무료 의뢰 부채 + 표시 잔액(음수) 중 큰 쪽 — UI 소비량과 제안이 어긋나지 않게.
-  const demoDebt = Math.max(
-    freeRequest < 0 ? -freeRequest : 0,
-    balance < 0 ? -balance : 0,
+/**
+ * 기공소별 직접 지급 행.
+ * - 협력: 수행 기공소만 승인(어벗츠기공본부는 gross 경유라 행 없음).
+ * - 하청·어벗츠 자체: 어벗츠기공소(원청, internalLab) 승인 필요.
+ */
+async function buildLabRows(practiceAnchorId, previousRows = []) {
+  const credits = await aggregatePracticeLabCredits(practiceAnchorId);
+  if (!credits.length) return [];
+  const labs = await BusinessAnchor.find({
+    _id: { $in: credits.map((row) => row.labAnchorId) },
+  })
+    .select({ name: 1 })
+    .lean();
+  const labById = new Map(labs.map((lab) => [String(lab._id), lab]));
+  const prevById = new Map(
+    (previousRows || []).map((row) => [String(row.labAnchorId), row]),
   );
-  const periodStart = anchor.demoModeStartedAt || null;
-  const periodEnd = new Date();
 
-  if (kind === "lab") {
-    const prepaidMin = unit;
-    const minTotal = resolveConversionMinTotal({
-      demoDebt,
-      prepaidMin,
-      chargeUnit: unit,
-    });
-    const { alpha: suggestedAlpha, suggestedTotal } =
-      resolveDemoChargeSuggestion({
-        demoDebt,
-        chargeUnit: unit,
-        minTotal,
-      });
+  return credits.map((row) => {
+    const lab = labById.get(String(row.labAnchorId));
+    const prev = prevById.get(String(row.labAnchorId));
+    const confirmed = prev?.status === "CONFIRMED";
     return {
-      kind: "lab",
-      demoMode: Boolean(anchor.demoMode) && !anchor.demoModeExitedAt,
-      conversionPending: Boolean(anchor.conversionPendingAt),
-      periodStart,
-      periodEnd,
-      demoDebt,
-      abutsUsage: demoDebt,
-      practiceToLabTotal: 0,
-      prepaidMin,
-      minTotal,
-      suggestedAlpha,
-      suggestedTotal,
-      chargeUnit: unit,
-      labRemittances: [],
-      freeRequestCredit: freeRequest,
-      settlementCredit: Math.round(Number(snapshot?.settlementCredit || 0)),
+      labAnchorId: row.labAnchorId,
+      labName: String(lab?.name || "").trim(),
+      amount: row.amount,
+      isAbutsLab: row.isAbutsLab,
+      status: confirmed ? "CONFIRMED" : "PENDING",
+      autoConfirmed: false,
+      confirmedAt: prev?.confirmedAt || null,
+      confirmedByUserId: prev?.confirmedByUserId || null,
     };
-  }
-
-  const labRemittances = await aggregatePracticeLabRemittances({
-    practiceAnchorId: anchorId,
-    periodStart,
-    periodEnd,
   });
-  const practiceToLabTotal = labRemittances.reduce(
-    (sum, row) => sum + roundWon(row.labFee),
-    0,
-  );
-  // ① = 데모 부채 중 기공비로 설명되지 않는 분(어벗츠 직접 이용). 부채가 더 작으면 0.
-  const abutsUsage = Math.max(0, demoDebt - practiceToLabTotal);
-  const prepaidMin = unit;
-  const minTotal = resolveConversionMinTotal({
-    demoDebt,
-    prepaidMin,
-    chargeUnit: unit,
-  });
-  const { alpha: suggestedAlpha, suggestedTotal } =
-    resolveDemoChargeSuggestion({
-      demoDebt,
-      chargeUnit: unit,
-      minTotal,
-    });
-
-  return {
-    kind: "practice",
-    demoMode: Boolean(anchor.demoMode) && !anchor.demoModeExitedAt,
-    conversionPending: Boolean(anchor.conversionPendingAt),
-    periodStart,
-    periodEnd,
-    demoDebt,
-    abutsUsage,
-    practiceToLabTotal,
-    prepaidMin,
-    minTotal,
-    suggestedAlpha,
-    suggestedTotal,
-    chargeUnit: unit,
-    labRemittances,
-    freeRequestCredit: freeRequest,
-    settlementCredit: Math.round(Number(snapshot?.settlementCredit || 0)),
-  };
 }
 
-/**
- * PENDING ConversionInvoice upsert (만료·수동 전환 대기).
- */
-export async function ensureConversionInvoicePending({
-  businessAnchorId,
-  reason = "",
-  quote: quoteInput = null,
-} = {}) {
-  const anchorId = toObjectId(businessAnchorId);
-  if (!anchorId) return null;
-
-  const quote = quoteInput || (await computeDemoConversionQuote(anchorId));
-  const existing = await ConversionInvoice.findOne({
-    businessAnchorId: anchorId,
-    status: "PENDING",
-  })
-    .sort({ createdAt: -1 })
-    .lean();
-
-  const payload = {
-    requestorKind: quote.kind,
-    periodStart: quote.periodStart,
-    periodEnd: quote.periodEnd,
-    abutsUsage: quote.abutsUsage,
-    practiceToLabTotal: quote.practiceToLabTotal,
-    demoDebt: quote.demoDebt,
-    prepaidMin: quote.prepaidMin,
-    minTotal: quote.minTotal,
-    labRemittances: quote.labRemittances || [],
-    reason: String(reason || "").trim(),
-    quoteSnapshot: quote,
-  };
-
-  if (existing?._id) {
-    await ConversionInvoice.updateOne({ _id: existing._id }, { $set: payload });
-    return ConversionInvoice.findById(existing._id).lean();
-  }
-
-  const created = await ConversionInvoice.create({
-    businessAnchorId: anchorId,
-    status: "PENDING",
-    ...payload,
-  });
-  return created.toObject ? created.toObject() : created;
-}
-
-/**
- * 유료 잔고로 데모 freeRequest 부채 청산 (용서 리셋 아님).
- */
-async function settleDemoDebtFromPaidCredit({
-  businessAnchorId,
-  userId,
-  debtAmount,
-  chargeOrderId,
-} = {}) {
-  const debt = roundWon(debtAmount);
-  if (debt <= 0) return { settled: 0, journalId: null };
-
-  const glResult = await postGeneralLedgerJournal({
-    idempotencyKey: `gl:demo_conversion_debt:${String(businessAnchorId)}:${String(chargeOrderId || "none")}`,
-    eventType: "ADJUST",
-    businessAnchorId,
-    refType: "DEMO_CONVERSION",
-    refId: chargeOrderId || businessAnchorId,
-    createdBy: userId || null,
-    meta: {
-      memo: "실사용 전환 — 데모 이용분 정산(선수금→부채 청산)",
-      source: "demo_conversion_debt_settle",
-      debt,
-    },
-    lines: [
-      {
-        accountCode: "REQ_PAID_CREDIT",
-        ownerRole: "requestor",
-        ownerId: businessAnchorId,
-        amount: -debt,
-        amountExcludingVat: -debt,
-        vatAmount: 0,
-        amountIncludingVat: -debt,
-        creditKind: "PAID",
-        refType: "DEMO_CONVERSION",
-        refId: chargeOrderId || businessAnchorId,
-        meta: { source: "demo_conversion_debt_settle" },
-      },
-      {
-        accountCode: "REQ_FREE_REQUEST_CREDIT",
-        ownerRole: "requestor",
-        ownerId: businessAnchorId,
-        amount: debt,
-        amountExcludingVat: debt,
-        vatAmount: 0,
-        amountIncludingVat: debt,
-        creditKind: "FREE_REQUEST",
-        refType: "DEMO_CONVERSION",
-        refId: chargeOrderId || businessAnchorId,
-        meta: { source: "demo_conversion_debt_settle" },
-      },
-    ],
-  });
-
-  return { settled: debt, journalId: glResult?.journalId || null };
-}
-
-/**
- * 치과 전환: 기공소 정산크레딧에서 ②-a(Lab→Abuts)만큼 차감하고 기공소 데모 부채를 같은 금액 청산.
- * 남는 정산크레딧 = ②-b (월정산 파이프 유지).
- */
-async function applyPracticeLabRemittanceOffsets({
-  practiceAnchorId,
-  remittances,
-  chargeOrderId,
-  userId,
-} = {}) {
-  const results = [];
-  for (const row of remittances || []) {
-    const labId = toObjectId(row.labAnchorId);
-    const labToAbuts = roundWon(row.labToAbuts);
-    if (!labId || labToAbuts <= 0) {
-      results.push({
-        labAnchorId: row.labAnchorId,
-        labToAbuts: 0,
-        clawedSettlement: 0,
-        clearedLabDebt: 0,
-      });
-      continue;
-    }
-
-    const labSnap = await getBusinessCreditBalanceSnapshot({
-      businessAnchorId: labId,
-    });
-    const settlementBal = Math.max(
-      0,
-      Math.round(Number(labSnap?.settlementCredit || 0)),
-    );
-    const freeRequest = Math.round(Number(labSnap?.freeRequestCredit || 0));
-    const labDebt = freeRequest < 0 ? -freeRequest : 0;
-    const clawSettlement = Math.min(labToAbuts, settlementBal);
-    const clearDebt = Math.min(labToAbuts, labDebt);
-
-    const lines = [];
-    if (clawSettlement > 0) {
-      lines.push({
-        accountCode: "LAB_SETTLEMENT_CREDIT",
-        ownerRole: "requestor",
-        ownerId: labId,
-        amount: -clawSettlement,
-        amountExcludingVat: -clawSettlement,
-        vatAmount: 0,
-        amountIncludingVat: -clawSettlement,
-        creditKind: "SETTLEMENT",
-        refType: "DEMO_CONVERSION",
-        refId: chargeOrderId || practiceAnchorId,
-        meta: {
-          source: "demo_conversion_lab_to_abuts_offset",
-          practiceAnchorId: String(practiceAnchorId),
-        },
-      });
-    }
-    if (clearDebt > 0) {
-      lines.push({
-        accountCode: "REQ_FREE_REQUEST_CREDIT",
-        ownerRole: "requestor",
-        ownerId: labId,
-        amount: clearDebt,
-        amountExcludingVat: clearDebt,
-        vatAmount: 0,
-        amountIncludingVat: clearDebt,
-        creditKind: "FREE_REQUEST",
-        refType: "DEMO_CONVERSION",
-        refId: chargeOrderId || practiceAnchorId,
-        meta: {
-          source: "demo_conversion_lab_debt_clear",
-          practiceAnchorId: String(practiceAnchorId),
-        },
-      });
-    }
-
-    // 정산 차감과 부채 청산 금액이 다르면 플랫폼 잔여(어벗츠 수취)로 균형.
-    // claw > clear: 어벗츠가 정산에서 가져감(부채 없던 분).
-    // clear > claw: 이미 정산 없는 부채를 전환 입금으로 탕감(practice 입금 경제효과).
-    const imbalance = clawSettlement - clearDebt;
-    if (imbalance !== 0 && lines.length) {
-      // 단선 저널 균형은 동일 owner 합이 0일 필요 없음(멀티 계정). 플랫폼 REV는 생략(정산/부채만).
-    }
-
-    if (lines.length) {
-      await postGeneralLedgerJournal({
-        idempotencyKey: `gl:demo_conversion_lab_offset:${String(practiceAnchorId)}:${String(labId)}:${String(chargeOrderId || "none")}`,
-        eventType: "ADJUST",
-        businessAnchorId: labId,
-        refType: "DEMO_CONVERSION",
-        refId: chargeOrderId || practiceAnchorId,
-        createdBy: userId || null,
-        meta: {
-          memo: "실사용 전환 — 치과 입금 경유 Lab→Abuts 상계",
-          source: "demo_conversion_lab_offset",
-          practiceAnchorId: String(practiceAnchorId),
-          labFee: roundWon(row.labFee),
-          labToAbuts,
-          labNet: roundWon(row.labNet),
-          clawSettlement,
-          clearDebt,
-        },
-        lines,
-      });
-      void emitCreditBalanceUpdatedToBusiness({
-        businessAnchorId: labId,
-        balanceDelta: clearDebt - clawSettlement,
-        reason: "demo_conversion_lab_offset",
-        refId: chargeOrderId || practiceAnchorId,
-        forceEmit: true,
-      }).catch(() => {});
-    }
-
-    results.push({
-      labAnchorId: labId,
-      labToAbuts,
-      clawedSettlement: clawSettlement,
-      clearedLabDebt: clearDebt,
-      labNet: roundWon(row.labNet),
-    });
-  }
-  return results;
-}
-
-/**
- * CHARGE_PAID 직후: 워터폴 적용 + 데모 종료(부채 용서 리셋 없음).
- */
-export async function applyDemoConversionWaterfallAfterPaidCharge({
-  businessAnchorId,
-  chargeOrderId,
-  chargeAmount,
-  userId,
-  reason = "유료 크레딧 입금",
-} = {}) {
-  const anchorId = toObjectId(businessAnchorId);
-  if (!anchorId) return null;
-
-  const { getDemoModeState, exitDemoModeAfterConversionPaid } = await import(
-    "../controllers/businesses/business.demoMode.util.js"
-  );
-  const state = await getDemoModeState(anchorId);
-  if (!state.demoMode || state.demoModeExitedAt) {
-    return { skipped: true, reason: "not_in_demo" };
-  }
-
-  const quote = await computeDemoConversionQuote(anchorId);
-  const amount = roundWon(chargeAmount);
-  try {
-    assertChargeMeetsConversionMinimum(amount, quote);
-  } catch (err) {
-    console.error(
-      "[demoConversion] charge below conversion minimum after match",
-      String(anchorId),
-      amount,
-      quote?.minTotal,
-      err?.message || err,
-    );
-    // 입금은 이미 매칭됨 — 부채만이라도 청산하고 종료. 선수금 하한 미달은 운영 로그.
-  }
-
-  const invoice = await ensureConversionInvoicePending({
-    businessAnchorId: anchorId,
-    reason,
-    quote,
-  });
-
-  const { settled, journalId: debtJournalId } =
-    await settleDemoDebtFromPaidCredit({
-      businessAnchorId: anchorId,
-      userId,
-      debtAmount: quote.demoDebt,
-      chargeOrderId,
-    });
-
-  let remittanceResults = [];
-  if (quote.kind === "practice" && (quote.labRemittances || []).length) {
-    remittanceResults = await applyPracticeLabRemittanceOffsets({
-      practiceAnchorId: anchorId,
-      remittances: quote.labRemittances,
-      chargeOrderId,
-      userId,
-    });
-  }
-
-  const prepaidCredited = Math.max(0, amount - settled);
-
-  if (invoice?._id) {
-    await ConversionInvoice.updateOne(
-      { _id: invoice._id },
-      {
-        $set: {
-          status: "PAID",
-          paidAt: new Date(),
-          paidChargeAmount: amount,
-          prepaidCredited,
-          chargeOrderId: chargeOrderId || null,
-          quoteSnapshot: { ...quote, remittanceResults },
-        },
-      },
-    );
-  }
-
-  const exitResult = await exitDemoModeAfterConversionPaid({
-    businessAnchorId: anchorId,
-    userId,
-    reason,
-    chargeOrderId,
-  });
-
-  void emitCreditBalanceUpdatedToBusiness({
-    businessAnchorId: anchorId,
-    balanceDelta: 0,
-    reason: "demo_conversion_waterfall",
-    refId: chargeOrderId || anchorId,
-    forceEmit: true,
-  }).catch(() => {});
-
-  return {
-    skipped: false,
-    quote,
-    settled,
-    prepaidCredited,
-    debtJournalId,
-    remittanceResults,
-    exitResult,
-    invoiceId: invoice?._id || null,
-  };
-}
-
-/**
- * 데모 기공소 정산 지급 동결 여부.
- */
-export async function shouldFreezeLabSettlementPayout(businessAnchorId) {
-  const anchorId = toObjectId(businessAnchorId);
-  if (!anchorId) return false;
-  const anchor = await BusinessAnchor.findById(anchorId)
-    .select({
-      demoMode: 1,
-      demoModeExitedAt: 1,
-      conversionPendingAt: 1,
-      requestorKind: 1,
-      requestorCapabilities: 1,
-    })
-    .lean();
-  if (!anchor) return false;
-  const kind = await resolveKind(anchorId, anchor);
-  if (kind !== "lab") return false;
-  if (anchor.demoMode && !anchor.demoModeExitedAt) return true;
-  if (anchor.conversionPendingAt && !anchor.demoModeExitedAt) return true;
-  const open = await ConversionInvoice.exists({
-    businessAnchorId: anchorId,
-    status: "PENDING",
-  });
-  return Boolean(open);
+function toInvoiceConfirmations(rows) {
+  return rows.map((row) => ({
+    labAnchorId: row.labAnchorId,
+    labName: row.labName,
+    amount: row.amount,
+    status: row.status,
+    autoConfirmed: Boolean(row.autoConfirmed),
+    confirmedAt: row.confirmedAt || null,
+    confirmedByUserId: row.confirmedByUserId || null,
+  }));
 }
 
 export async function getLatestConversionInvoice(businessAnchorId) {
@@ -667,4 +111,365 @@ export async function getLatestConversionInvoice(businessAnchorId) {
   return ConversionInvoice.findOne({ businessAnchorId: anchorId })
     .sort({ createdAt: -1 })
     .lean();
+}
+
+/**
+ * 전환 견적: 기공소별 직접 지급액과 확인 상태. 입금 하한은 없다.
+ */
+export async function computeDemoConversionQuote(businessAnchorId) {
+  const { anchorId, anchor } = await loadPracticeAnchor(businessAnchorId);
+  const pendingInvoice = await ConversionInvoice.findOne({
+    businessAnchorId: anchorId,
+    status: "PENDING",
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const rows = await buildLabRows(
+    anchorId,
+    pendingInvoice?.labConfirmations || [],
+  );
+  const directTotal = rows
+    .reduce((sum, row) => sum + row.amount, 0);
+
+  const demoMode = Boolean(anchor.demoMode) && !anchor.demoModeExitedAt;
+  return {
+    kind: "practice",
+    demoMode,
+    conversionPending: demoMode && Boolean(anchor.conversionPendingAt),
+    expired: demoMode && isDemoModeExpired(anchor.demoModeStartedAt),
+    demoModeStartedAt: anchor.demoModeStartedAt || null,
+    demoModeExpiresAt: resolveDemoModeExpiresAt(anchor.demoModeStartedAt),
+    labs: rows,
+    directTotal,
+    invoiceId: pendingInvoice?._id || null,
+  };
+}
+
+/**
+ * 치과 전환 요청. 승인 대상 기공소(협력 수행 기공소, 하청·자체 건의 어벗츠기공소)의 지급 확인을 기다린다.
+ * 승인할 행이 없으면 즉시 전환한다.
+ */
+export async function requestDemoConversion({
+  businessAnchorId,
+  userId,
+  reason = "실사용 전환 요청",
+} = {}) {
+  const { anchorId, anchor } = await loadPracticeAnchor(businessAnchorId);
+  if (anchor.demoModeExitedAt || !anchor.demoMode) {
+    return {
+      demoMode: false,
+      conversionPending: false,
+      completed: true,
+      alreadyExited: true,
+      labs: [],
+    };
+  }
+
+  const existing = await ConversionInvoice.findOne({
+    businessAnchorId: anchorId,
+    status: "PENDING",
+  }).sort({ createdAt: -1 });
+  const alreadyPending = Boolean(existing);
+
+  const rows = await buildLabRows(anchorId, existing?.labConfirmations || []);
+  const confirmations = toInvoiceConfirmations(rows);
+  const directTotal = rows
+    .reduce((sum, row) => sum + row.amount, 0);
+
+  let invoice = existing;
+  const payload = {
+    requestorKind: "practice",
+    periodStart: anchor.demoModeStartedAt || null,
+    periodEnd: new Date(),
+    practiceToLabTotal: directTotal,
+    labConfirmations: confirmations,
+    reason: String(reason || "").trim(),
+  };
+  if (invoice) {
+    invoice.set(payload);
+    await invoice.save();
+  } else {
+    invoice = await ConversionInvoice.create({
+      businessAnchorId: anchorId,
+      status: "PENDING",
+      ...payload,
+    });
+  }
+
+  await BusinessAnchor.updateOne(
+    { _id: anchorId, demoModeExitedAt: null },
+    {
+      $set: {
+        conversionPendingAt: anchor.conversionPendingAt || new Date(),
+        conversionPendingReason: String(reason || "").trim(),
+      },
+    },
+  );
+
+  const pendingRows = rows.filter((row) => row.status === "PENDING");
+  if (pendingRows.length === 0) {
+    const result = await finalizeDemoConversion({
+      invoiceId: invoice._id,
+      userId,
+    });
+    return {
+      demoMode: false,
+      conversionPending: false,
+      completed: true,
+      alreadyPending,
+      invoiceId: invoice._id,
+      labs: rows,
+      result,
+    };
+  }
+
+  if (!alreadyPending) {
+    for (const row of pendingRows) {
+      void emitCreditBalanceUpdatedToBusiness({
+        businessAnchorId: row.labAnchorId,
+        balanceDelta: 0,
+        reason: "demo_conversion_requested",
+        refId: invoice._id,
+        forceEmit: true,
+      }).catch(() => {});
+    }
+  }
+  void emitCreditBalanceUpdatedToBusiness({
+    businessAnchorId: anchorId,
+    balanceDelta: 0,
+    reason: "demo_conversion_pending",
+    refId: invoice._id,
+    forceEmit: true,
+  }).catch(() => {});
+
+  return {
+    demoMode: true,
+    conversionPending: true,
+    completed: false,
+    alreadyPending,
+    invoiceId: invoice._id,
+    labs: rows,
+    directTotal,
+  };
+}
+
+/**
+ * 기공소 대기 중인 전환 요청(미정산 잔액 직접 수령 확인).
+ */
+export async function listPendingConversionsForLab(labAnchorId) {
+  const labId = toObjectId(labAnchorId);
+  if (!labId) return [];
+  const invoices = await ConversionInvoice.find({
+    status: "PENDING",
+    labConfirmations: {
+      $elemMatch: { labAnchorId: labId, status: "PENDING" },
+    },
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+  if (!invoices.length) return [];
+  const practices = await BusinessAnchor.find({
+    _id: { $in: invoices.map((inv) => inv.businessAnchorId) },
+  })
+    .select({ name: 1 })
+    .lean();
+  const nameById = new Map(practices.map((p) => [String(p._id), p.name]));
+  return invoices.map((inv) => {
+    const mine = inv.labConfirmations.find(
+      (row) => String(row.labAnchorId) === String(labId),
+    );
+    return {
+      invoiceId: inv._id,
+      practiceAnchorId: inv.businessAnchorId,
+      practiceName: String(nameById.get(String(inv.businessAnchorId)) || ""),
+      amount: Number(mine?.amount || 0),
+      requestedAt: inv.createdAt,
+    };
+  });
+}
+
+/**
+ * 기공소 지급 완료 확인. 모든 확인이 모이면 치과를 실사용으로 전환한다.
+ */
+export async function confirmLabDirectPayment({
+  invoiceId,
+  labAnchorId,
+  userId,
+} = {}) {
+  const invId = toObjectId(invoiceId);
+  const labId = toObjectId(labAnchorId);
+  if (!invId || !labId) throw httpError("요청 정보가 올바르지 않습니다.", 400);
+
+  const updated = await ConversionInvoice.findOneAndUpdate(
+    {
+      _id: invId,
+      status: "PENDING",
+      labConfirmations: {
+        $elemMatch: { labAnchorId: labId, status: "PENDING" },
+      },
+    },
+    {
+      $set: {
+        "labConfirmations.$.status": "CONFIRMED",
+        "labConfirmations.$.confirmedAt": new Date(),
+        "labConfirmations.$.confirmedByUserId": userId || null,
+      },
+    },
+    { new: true },
+  ).lean();
+  if (!updated) {
+    throw httpError("확인할 전환 요청이 없습니다.", 404);
+  }
+
+  const allConfirmed = (updated.labConfirmations || []).every(
+    (row) => row.status === "CONFIRMED",
+  );
+  let completed = false;
+  if (allConfirmed) {
+    const result = await finalizeDemoConversion({
+      invoiceId: invId,
+      userId,
+    });
+    completed = Boolean(result?.finalized);
+  } else {
+    void emitCreditBalanceUpdatedToBusiness({
+      businessAnchorId: updated.businessAnchorId,
+      balanceDelta: 0,
+      reason: "demo_conversion_lab_confirmed",
+      refId: invId,
+      forceEmit: true,
+    }).catch(() => {});
+  }
+  return { completed, invoiceId: invId };
+}
+
+/**
+ * 전환 확정: 부채 리셋 → 데모 종료 → 기공소별 직접 수령분을 기공크레딧에서 차감(ADJUST).
+ * 차감하지 않으면 어벗츠가 직접 지급된 금액을 다시 정산하게 된다.
+ */
+export async function finalizeDemoConversion({ invoiceId, userId } = {}) {
+  const invId = toObjectId(invoiceId);
+  if (!invId) return { finalized: false };
+
+  // 동시 확인 경합: 먼저 PAID로 바꾼 쪽만 진행.
+  const claimed = await ConversionInvoice.findOneAndUpdate(
+    { _id: invId, status: "PENDING" },
+    { $set: { status: "PAID", paidAt: new Date() } },
+    { new: true },
+  ).lean();
+  if (!claimed) return { finalized: false, reason: "already_finalized" };
+
+  const practiceId = claimed.businessAnchorId;
+  try {
+    const credits = await aggregatePracticeLabCredits(practiceId);
+
+    await resetDemoFreeRequestDebtToZero({
+      businessAnchorId: practiceId,
+      userId,
+      reason: "실사용 전환 — 기공소 직접 지급 확인",
+      idempotencySuffix: `conv:${String(invId)}`,
+    });
+    await exitDemoModeAfterConversionPaid({
+      businessAnchorId: practiceId,
+      userId,
+      reason: "기공소 직접 지급 확인 완료",
+    });
+
+    const journals = [];
+    for (const row of credits) {
+      const posted = await postGeneralLedgerJournal({
+        idempotencyKey: `gl:demo_conversion_lab_direct:${String(practiceId)}:${String(row.labAnchorId)}:${String(invId)}`,
+        eventType: "ADJUST",
+        businessAnchorId: row.labAnchorId,
+        refType: "DEMO_CONVERSION",
+        refId: invId,
+        createdBy: userId || null,
+        meta: {
+          memo: "실사용 전환 — 치과가 기공소에 직접 지급한 데모 기공비",
+          source: "demo_conversion_lab_direct_payment",
+          practiceAnchorId: String(practiceId),
+          amount: row.amount,
+        },
+        lines: [
+          {
+            accountCode: "LAB_SETTLEMENT_CREDIT",
+            ownerRole: "requestor",
+            ownerId: row.labAnchorId,
+            amount: -row.amount,
+            amountExcludingVat: -row.amount,
+            vatAmount: 0,
+            amountIncludingVat: -row.amount,
+            creditKind: "SETTLEMENT",
+            refType: "DEMO_CONVERSION",
+            refId: invId,
+            meta: {
+              source: "demo_conversion_lab_direct_payment",
+              practiceAnchorId: String(practiceId),
+            },
+          },
+        ],
+      });
+      journals.push({
+        labAnchorId: String(row.labAnchorId),
+        amount: row.amount,
+        journalId: posted?.journalId || null,
+      });
+      void emitCreditBalanceUpdatedToBusiness({
+        businessAnchorId: row.labAnchorId,
+        balanceDelta: 0,
+        reason: "demo_conversion_settled",
+        refId: invId,
+        forceEmit: true,
+      }).catch(() => {});
+    }
+
+    await ConversionInvoice.updateOne(
+      { _id: invId },
+      {
+        $set: {
+          paidChargeAmount: credits.reduce((s, r) => s + r.amount, 0),
+          quoteSnapshot: { settled: journals },
+        },
+      },
+    );
+
+    try {
+      const { invalidateMyBusinessCache } = await import(
+        "../controllers/businesses/business.controller.js"
+      );
+      invalidateMyBusinessCache(practiceId);
+    } catch (cacheErr) {
+      console.warn("[demoConversion] cache invalidate failed", cacheErr?.message);
+    }
+    void emitCreditBalanceUpdatedToBusiness({
+      businessAnchorId: practiceId,
+      balanceDelta: 0,
+      reason: "demo_conversion_completed",
+      refId: invId,
+      forceEmit: true,
+    }).catch(() => {});
+
+    return { finalized: true, settled: journals };
+  } catch (error) {
+    console.error(
+      "[demoConversion] finalize failed",
+      String(invId),
+      error?.message || error,
+    );
+    // 재시도 가능하도록 되돌린다(저널은 idempotencyKey로 멱등).
+    await ConversionInvoice.updateOne(
+      { _id: invId },
+      { $set: { status: "PENDING", paidAt: null } },
+    ).catch(() => {});
+    throw error;
+  }
+}
+
+/**
+ * 기공소 데모 모드는 폐지됐다. 데모 치과 적립분은 잔액 집계에서 이미 제외되므로 동결할 필요가 없다.
+ * @deprecated 호환용 — 항상 false.
+ */
+export async function shouldFreezeLabSettlementPayout() {
+  return false;
 }

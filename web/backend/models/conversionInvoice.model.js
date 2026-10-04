@@ -30,6 +30,37 @@ const labRemittanceSchema = new mongoose.Schema(
   { _id: false },
 );
 
+/**
+ * 기공소별 직접 지급 확인.
+ * amount = 치과가 기공소에 직접 지급할 미정산 기공비(데모 크레딧).
+ * autoConfirmed = 어벗츠기공소(원청) 몫은 확인 없이 정산 완료.
+ */
+const labConfirmationSchema = new mongoose.Schema(
+  {
+    labAnchorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BusinessAnchor",
+      required: true,
+    },
+    labName: { type: String, default: "" },
+    amount: { type: Number, default: 0, min: 0 },
+    status: {
+      type: String,
+      enum: ["PENDING", "CONFIRMED"],
+      default: "PENDING",
+    },
+    autoConfirmed: { type: Boolean, default: false },
+    confirmedAt: { type: Date, default: null },
+    confirmedByUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    settlementJournalId: { type: String, default: "" },
+  },
+  { _id: false },
+);
+
 const conversionInvoiceSchema = new mongoose.Schema(
   {
     businessAnchorId: {
@@ -61,6 +92,7 @@ const conversionInvoiceSchema = new mongoose.Schema(
     prepaidMin: { type: Number, default: 0, min: 0 },
     minTotal: { type: Number, default: 0, min: 0 },
     labRemittances: { type: [labRemittanceSchema], default: [] },
+    labConfirmations: { type: [labConfirmationSchema], default: [] },
     chargeOrderId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ChargeOrder",

@@ -214,6 +214,8 @@ import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { useChatRooms } from "@/shared/hooks/useChatRooms";
 import { isCreditEventForBusiness } from "@/shared/realtime/creditBalanceEvent";
 import { useDemoMode } from "@/shared/demo/useDemoMode";
+import { DemoConversionPromptModal } from "@/shared/demo/DemoConversionPromptModal";
+import { LabDemoConversionConfirmModal } from "@/shared/demo/LabDemoConversionConfirmModal";
 import {
   AccountSwitcherMenuSection,
   AccountSwitchPasswordDialog,
@@ -1766,6 +1768,13 @@ export const DashboardLayout = () => {
         ready={!requestorAccessLoading || user.role === "internalLab"}
       />
       {labPayoutBankbookRemindDialog}
+      {user.role === "requestor" && requestorKind === "practice" ? (
+        <DemoConversionPromptModal />
+      ) : null}
+      {(user.role === "requestor" && requestorKind === "lab") ||
+      user.role === "internalLab" ? (
+        <LabDemoConversionConfirmModal />
+      ) : null}
       <div className="flex h-dvh overflow-hidden">
         <div
           className={cn(

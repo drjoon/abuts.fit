@@ -8,7 +8,10 @@
 export const DEMO_CREDIT_AMOUNT = 0;
 
 /** 데모 모드 유효기간(일). 백엔드 DEMO_MODE_DURATION_DAYS 와 동기. */
-export const DEMO_MODE_DURATION_DAYS = 30;
+export const DEMO_MODE_DURATION_DAYS = 90;
+
+/** 만료 N일 전부터 하루 1회 실사용 전환 유도 모달. */
+export const DEMO_MODE_PROMPT_DAYS_BEFORE = 7;
 
 /** @deprecated Prefer formatDemoModeBadgeLabel(daysRemaining). */
 export const DEMO_MODE_BADGE_LABEL = "데모";
@@ -68,13 +71,13 @@ export function formatDemoModeBadgeAriaLabel(
 export const DEMO_MODE_EXIT_TITLE = "실사용 전환할까요?";
 
 const DEMO_MODE_EXIT_BODY_PRACTICE =
-  "데모 기간 이용료를 넉넉히 입금하시면 어벗츠·기공소 정산 후 남는 금액은 선수금(유료 크레딧)이 됩니다.";
+  "데모 기간의 미정산 기공비는 기공소에 직접 지급해 주세요. 기공소가 지급을 확인하면 실사용으로 전환됩니다.";
 
 const DEMO_MODE_EXIT_BODY_LAB =
   "데모 기간 이용료를 넉넉히 입금하시면 어벗츠 정산 후 남는 금액은 선수금(유료 크레딧)이 됩니다.";
 
 export const DEMO_MODE_EXIT_WARNING =
-  "전환 후 데모로 되돌릴 수 없으며, 입금 확인 후 실사용 전환됩니다.";
+  "전환 후 데모로 되돌릴 수 없습니다. 신규 의뢰는 충전(선결제) 후 가능합니다.";
 
 export function resolveDemoModeExitBody(kind?: DemoRequestorKind): string {
   return kind === "lab" ? DEMO_MODE_EXIT_BODY_LAB : DEMO_MODE_EXIT_BODY_PRACTICE;
@@ -108,7 +111,37 @@ export function resolveDemoModeExitDescriptionLines(
 export const DEMO_MODE_EXIT_DESCRIPTION =
   DEMO_MODE_EXIT_DESCRIPTION_LINES.join("\n");
 
-export const DEMO_MODE_EXIT_CONFIRM_LABEL = "전환하기";
+export const DEMO_MODE_EXIT_CONFIRM_LABEL = "전환 요청";
+
+/** 7일 전부터 하루 1회 전환 유도 모달. */
+export const DEMO_MODE_PROMPT_TITLE = "실사용으로 전환하세요";
+
+export function resolveDemoModePromptLines(
+  daysRemaining: number | null,
+): readonly string[] {
+  if (daysRemaining != null && daysRemaining <= 0) {
+    return [
+      "데모 기간이 끝났습니다.",
+      "실사용으로 전환하면 신규 의뢰를 다시 보낼 수 있습니다.",
+    ];
+  }
+  return [
+    `데모가 ${daysRemaining ?? DEMO_MODE_PROMPT_DAYS_BEFORE}일 남았습니다.`,
+    "종료 후에는 실사용 전환 전까지 신규 의뢰를 보낼 수 없습니다.",
+  ];
+}
+
+export const DEMO_MODE_PROMPT_CONFIRM_LABEL = "전환 요청";
+export const DEMO_MODE_PROMPT_LATER_LABEL = "나중에";
+
+/** 전환 완료 후 충전 안내. */
+export const DEMO_MODE_CONVERTED_TOAST_TITLE = "실사용으로 전환되었습니다";
+export const DEMO_MODE_CONVERTED_TOAST_DESCRIPTION =
+  "신규 의뢰는 선결제(충전)가 필요합니다. 충전 페이지로 이동합니다.";
+
+/** 전환 요청 후 기공소 확인 대기. */
+export const DEMO_MODE_PENDING_TOAST =
+  "기공소에 미정산 기공비를 직접 지급해 주세요. 기공소가 확인하면 전환됩니다.";
 
 /** 충전 탭 — 데모 중 유료 충전 요청 전 확인(전환 모달과 동일 본문). */
 export const DEMO_MODE_CHARGE_EXIT_TITLE = "전환 입금할까요?";
@@ -149,7 +182,7 @@ export function resolveDemoModeChargeExitDescriptionLines(
 export const DEMO_MODE_CHARGE_EXIT_CONFIRM_LABEL = "입금 요청하기";
 
 const CREDIT_LEDGER_DEMO_NOTICE_BODY_PRACTICE =
-  "데모는 가상 잔고로 운영됩니다. 이용료를 넉넉히 입금하면 어벗츠·기공소 정산 후 남는 금액이 선수금이 되고 실사용으로 전환됩니다.";
+  "데모는 가상 잔고로 90일간 무제한 이용할 수 있습니다. 실사용 전환 시 미정산 기공비는 기공소에 직접 지급합니다.";
 
 const CREDIT_LEDGER_DEMO_NOTICE_BODY_LAB =
   "데모는 가상 잔고로 운영됩니다. 이용료를 넉넉히 입금하면 정산 후 남는 금액이 선수금이 되고 실사용으로 전환됩니다. 데모·전환 대기 중 기공크레딧 인출은 동결됩니다.";
@@ -167,7 +200,7 @@ export function resolveCreditLedgerDemoNoticeBody(
 }
 
 const CREDIT_LEDGER_DEMO_BALANCE_HINT_PRACTICE =
-  "데모 모드 · 가상 잔고입니다. 입금 확인 후 정산 잔액이 선수금이 됩니다.";
+  "데모 모드 · 가상 잔고입니다. 실사용 전환 시 기공소에 직접 지급합니다.";
 
 const CREDIT_LEDGER_DEMO_BALANCE_HINT_LAB =
   "데모 모드 · 가상 잔고입니다. 입금 확인 후 정산 잔액이 선수금이 됩니다. 기공크레딧 인출은 동결됩니다.";
@@ -211,7 +244,7 @@ export const CREDIT_LEDGER_CHARGE_DETAIL_TITLE = "충전 내역";
 
 /** 정산 충전 카드 — 데모 모드 툴팁(유료/선수금 아님). */
 export const CREDIT_LEDGER_DEMO_CHARGE_HINT =
-  "데모 중 가상 잔고 충전 합계입니다. 전환 입금이 확인되면 실사용으로 전환됩니다.";
+  "데모 중 가상 잔고 충전 합계입니다.";
 
 /** @deprecated Prefer CREDIT_LEDGER_CHARGE_LABEL. */
 export const CREDIT_LEDGER_DEMO_CHARGE_LABEL = CREDIT_LEDGER_CHARGE_LABEL;
@@ -234,7 +267,7 @@ export const PTX_CA_INSUFFICIENT_CREDIT_REASON = "insufficient_credit_for_ptx_ca
 
 /** FAQ·도움말 공통 — 데모/무료 크레딧 안내. */
 export const DEMO_MODE_FREE_CREDIT_FAQ_ANSWER =
-  "아니요. 가입 환영 무료 크레딧은 없습니다. 30일 데모(가상 잔고·마이너스 허용)로 체험할 수 있고, 이용료를 입금해 정산하면 남는 금액이 선수금이 되며 실사용으로 전환됩니다.";
+  "아니요. 가입 환영 무료 크레딧은 없습니다. 90일 데모(가상 잔고·마이너스 허용)로 체험할 수 있고, 실사용 전환 시 미정산 기공비는 기공소에 직접 지급합니다. 이후 신규 의뢰는 충전(선결제)이 필요합니다.";
 
 export const DEMO_MODE_ONBOARDING_HINT =
-  "가입 후 30일 데모(가상 잔고)로 체험할 수 있어요. 이용료 입금·정산 후 남는 금액이 선수금이 되고 실사용으로 전환됩니다.";
+  "가입 후 90일 데모(가상 잔고)로 체험할 수 있어요. 실사용 전환 시 미정산 기공비는 기공소에 직접 지급합니다.";

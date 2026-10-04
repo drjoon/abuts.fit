@@ -50,7 +50,6 @@ import {
   DEMO_MODE_CHARGE_EXIT_WARNING,
   resolveDemoModeChargeExitBody,
 } from "@/shared/demo/demoModeCopy";
-import { useDemoMode } from "@/shared/demo/useDemoMode";
 
 type Props = {
   userData: {
@@ -199,7 +198,8 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
   const { kind: accessKind } = useRequestorBusinessAccess();
-  const { demoMode } = useDemoMode();
+  // 충전은 데모 상태와 무관한 일반 선결제다(전환은 기공소 직접 지급 확인으로 처리).
+  const demoMode = false as boolean;
   const [demoChargeConfirmOpen, setDemoChargeConfirmOpen] = useState(false);
   const [conversionMinTotal, setConversionMinTotal] = useState<number | null>(
     null,

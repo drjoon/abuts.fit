@@ -13,6 +13,7 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
+import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 
 /**
  * 레거시 데모 크레딧 초기 충전액(원). 신규 가입은 미지급(0원 시작).
@@ -21,10 +22,19 @@ import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.s
 export const DEMO_CREDIT_AMOUNT = 1_000_000;
 
 /** 데모 모드 유효기간(일). startedAt 기준 경과 시 전환 입금 대기로 잠금. */
-export const DEMO_MODE_DURATION_DAYS = 30;
+export const DEMO_MODE_DURATION_DAYS = 90;
 
 const DEMO_GRANT_TYPE = "DEMO_CREDIT";
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** 치과(practice) 사업자 여부. 기공소(lab)는 데모 대상이 아니다. */
+export function isPracticeRequestorAnchor(anchor) {
+  const kind = normalizeRequestorKind(anchor?.requestorKind);
+  if (kind === "practice") return true;
+  if (kind === "lab") return false;
+  const caps = anchor?.requestorCapabilities || {};
+  return Boolean(caps.practice) && !caps.lab;
+}
 
 /** @param {Date|string|null|undefined} startedAt */
 export function isDemoModeExpired(startedAt, now = new Date()) {
@@ -67,6 +77,8 @@ export async function enableDemoModeAndGrantCreditIfEligible({
   const anchor = await BusinessAnchor.findById(businessAnchorId)
     .select({
       businessType: 1,
+      requestorKind: 1,
+      requestorCapabilities: 1,
       demoMode: 1,
       demoModeExitedAt: 1,
       demoModeStartedAt: 1,
@@ -75,6 +87,17 @@ export async function enableDemoModeAndGrantCreditIfEligible({
   if (!anchor) return null;
   if (String(anchor.businessType || "") !== "requestor") return null;
   if (anchor.demoModeExitedAt) return null;
+
+  // 데모는 치과 전용. 기공소는 데모 모드를 두지 않는다(잔여 플래그는 해제).
+  if (!isPracticeRequestorAnchor(anchor)) {
+    if (anchor.demoMode) {
+      await BusinessAnchor.updateOne(
+        { _id: businessAnchorId },
+        { $set: { demoMode: false } },
+      );
+    }
+    return null;
+  }
 
   const now = new Date();
   if (!anchor.demoMode) {
@@ -272,8 +295,8 @@ export async function resetDemoFreeRequestDebtToZero({
 }
 
 /**
- * 만료·수동 전환: 실사용 종료가 아니라 전환 입금 대기.
- * 부채 유지, overdraft 잠금, ConversionInvoice PENDING.
+ * 치과 실사용 전환 요청(수동·관리자). 기공소별 미정산 기공비를 직접 지급받고 확인하면 전환된다.
+ * 어벗츠기공소(원청) 몫은 자동 정산 완료. 확인할 기공소가 없으면 즉시 전환.
  */
 export async function beginDemoConversionPending({
   businessAnchorId,
@@ -285,95 +308,17 @@ export async function beginDemoConversionPending({
     err.statusCode = 400;
     throw err;
   }
-
-  const pendingReason = String(reason || "").trim() || "실사용 전환 대기";
-  const anchor = await BusinessAnchor.findById(businessAnchorId)
-    .select({
-      businessType: 1,
-      demoMode: 1,
-      demoModeExitedAt: 1,
-      conversionPendingAt: 1,
-    })
-    .lean();
-  if (!anchor) {
-    const err = new Error("사업자를 찾을 수 없습니다.");
-    err.statusCode = 404;
-    throw err;
-  }
-  if (String(anchor.businessType || "") !== "requestor") {
-    const err = new Error("의뢰자 사업자만 실사용 전환할 수 있습니다.");
-    err.statusCode = 400;
-    throw err;
-  }
-  if (anchor.demoModeExitedAt || !anchor.demoMode) {
-    return {
-      demoMode: false,
-      conversionPending: false,
-      alreadyExited: true,
-      reason: pendingReason,
-    };
-  }
-
-  const now = new Date();
-  const alreadyPending = Boolean(anchor.conversionPendingAt);
-  if (!alreadyPending) {
-    await BusinessAnchor.updateOne(
-      { _id: businessAnchorId, demoModeExitedAt: null },
-      {
-        $set: {
-          conversionPendingAt: now,
-          conversionPendingReason: pendingReason,
-        },
-      },
-    );
-  } else {
-    await BusinessAnchor.updateOne(
-      { _id: businessAnchorId },
-      { $set: { conversionPendingReason: pendingReason } },
-    );
-  }
-
-  let quote = null;
-  let invoice = null;
-  try {
-    const {
-      computeDemoConversionQuote,
-      ensureConversionInvoicePending,
-    } = await import("../../services/demoConversion.service.js");
-    quote = await computeDemoConversionQuote(businessAnchorId);
-    invoice = await ensureConversionInvoicePending({
-      businessAnchorId,
-      reason: pendingReason,
-      quote,
-    });
-  } catch (e) {
-    console.error(
-      "[demoMode] conversion invoice on pending failed",
-      String(businessAnchorId),
-      e?.message || e,
-    );
-  }
-
-  void emitCreditBalanceUpdatedToBusiness({
+  const pendingReason = String(reason || "").trim() || "실사용 전환 요청";
+  const { requestDemoConversion } = await import(
+    "../../services/demoConversion.service.js"
+  );
+  return requestDemoConversion({
     businessAnchorId,
-    balanceDelta: 0,
-    reason: "demo_conversion_pending",
-    refId: businessAnchorId,
-    forceEmit: true,
-  }).catch(() => {});
-
-  void userId;
-  return {
-    demoMode: true,
-    conversionPending: true,
-    alreadyExited: false,
-    alreadyPending,
+    userId,
     reason: pendingReason,
-    minTotal: quote?.minTotal ?? null,
-    quote,
-    invoiceId: invoice?._id || null,
-  };
+  });
 }
+
 
 /**
  * @deprecated 무료 종료 금지. beginDemoConversionPending 사용.
@@ -489,81 +434,12 @@ export async function exitDemoModeAfterConversionPaid({
 }
 
 /**
- * 유료 크레딧(CHARGE_PAID) 지급 직후 — 전환 워터폴 적용.
+ * @deprecated 충전은 데모 상태를 바꾸지 않는다. 전환은 기공소 직접지급 확인으로만 완료된다.
  */
-export async function exitDemoModeAfterPaidCreditGrant({
-  businessAnchorId,
-  userId,
-  reason = "유료 크레딧 입금",
-  chargeOrderId = null,
-  chargeAmount = null,
-} = {}) {
-  if (!businessAnchorId) return null;
-  try {
-    const state = await getDemoModeState(businessAnchorId);
-    if (!state.demoMode || state.demoModeExitedAt) return null;
-
-    const { applyDemoConversionWaterfallAfterPaidCharge } = await import(
-      "../../services/demoConversion.service.js"
-    );
-
-    let amount = Number(chargeAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      if (chargeOrderId) {
-        const ChargeOrder = (await import("../../models/chargeOrder.model.js"))
-          .default;
-        const order = await ChargeOrder.findById(chargeOrderId)
-          .select({ supplyAmount: 1, amountTotal: 1 })
-          .lean();
-        amount = Math.round(
-          Number(order?.supplyAmount || order?.amountTotal || 0),
-        );
-      }
-    }
-
-    const result = await applyDemoConversionWaterfallAfterPaidCharge({
-      businessAnchorId,
-      chargeOrderId,
-      chargeAmount: amount,
-      userId,
-      reason,
-    });
-
-    try {
-      const { invalidateMyBusinessCache } = await import(
-        "./business.controller.js"
-      );
-      invalidateMyBusinessCache(businessAnchorId);
-    } catch (cacheErr) {
-      console.warn(
-        "[demoMode] invalidate cache after paid charge failed",
-        String(businessAnchorId),
-        cacheErr?.message || cacheErr,
-      );
-    }
-
-    void emitCreditBalanceUpdatedToBusiness({
-      businessAnchorId,
-      balanceDelta: 0,
-      reason: "demo_exit_on_paid_charge",
-      refId: chargeOrderId || businessAnchorId,
-      forceEmit: true,
-    }).catch((e) => {
-      console.warn(
-        "[demoMode] emit after paid-charge exit failed",
-        e?.message || e,
-      );
-    });
-    return result;
-  } catch (e) {
-    console.error(
-      "[demoMode] exit on paid credit grant failed",
-      String(businessAnchorId),
-      e?.message || e,
-    );
-    return null;
-  }
+export async function exitDemoModeAfterPaidCreditGrant() {
+  return null;
 }
+
 
 export async function getDemoModeState(businessAnchorId) {
   if (!businessAnchorId) {
@@ -593,41 +469,48 @@ export async function getDemoModeState(businessAnchorId) {
 
 /**
  * 데모 중 가상 잔고 overdraft 허용.
- * 전환 입금 대기(conversionPending)면 잠금.
+ * 만료 또는 전환 요청 대기(conversionPending)면 잠금.
  */
 export async function allowsDemoFreeRequestOverdraft(businessAnchorId) {
   const state = await getDemoModeState(businessAnchorId);
   if (!state?.demoMode || state?.demoModeExitedAt) return false;
   if (state?.conversionPendingAt) return false;
+  if (isDemoModeExpired(state.demoModeStartedAt)) return false;
   return true;
 }
 
 /**
- * 데모 모드에서 무료의뢰 버킷 중 "데모 예약분" 상한(원).
- * 유효기간이 지났으면 전환 대기로 잠금 후 0.
+ * 신규 주문 차단 사유. 데모 만료(미전환) 또는 전환 요청 대기 중이면 차단.
+ * @returns {Promise<null|{reason: string, message: string}>}
  */
+export async function getDemoOrderBlock(businessAnchorId) {
+  if (!businessAnchorId) return null;
+  const state = await getDemoModeState(businessAnchorId);
+  if (!state?.demoMode || state?.demoModeExitedAt) return null;
+  if (state.conversionPendingAt) {
+    return {
+      reason: "conversion_pending",
+      message:
+        "실사용 전환 확인 대기 중입니다. 기공소 지급 확인이 끝나면 신규 의뢰가 가능합니다.",
+    };
+  }
+  if (isDemoModeExpired(state.demoModeStartedAt)) {
+    return {
+      reason: "demo_expired",
+      message:
+        "데모 기간이 끝났습니다. 실사용으로 전환하면 신규 의뢰가 가능합니다.",
+    };
+  }
+  return null;
+}
+
+/** 데모 예약분 상한: 신규 가입은 데모 크레딧을 지급하지 않으므로 레거시 grant만 반영. */
 export async function resolveDemoFreeRequestReserveCap(businessAnchorId) {
   if (!businessAnchorId) return 0;
   const state = await getDemoModeState(businessAnchorId);
   if (!state.demoMode || state.demoModeExitedAt) return 0;
-
-  if (isDemoModeExpired(state.demoModeStartedAt)) {
-    try {
-      await beginDemoConversionPending({
-        businessAnchorId,
-        reason: "데모 기간 만료",
-      });
-    } catch (e) {
-      console.error(
-        "[demoMode] expiry pending in reserveCap failed",
-        String(businessAnchorId),
-        e?.message || e,
-      );
-    }
-    return 0;
-  }
-
   if (state.conversionPendingAt) return 0;
+  if (isDemoModeExpired(state.demoModeStartedAt)) return 0;
 
   const anchor = await BusinessAnchor.findById(businessAnchorId)
     .select({ businessNumberNormalized: 1, metadata: 1 })
@@ -659,68 +542,7 @@ export function excludeDemoFreeRequestFromBalance(balance, demoReserveCap) {
   };
 }
 
-/**
- * 데모 기간 만료 → 전환 입금 대기(부채 유지).
- */
-export async function maybeAutoExitDemoModeIfExhausted({
-  businessAnchorId,
-  userId,
-} = {}) {
-  if (!businessAnchorId) return null;
-
-  const state = await getDemoModeState(businessAnchorId);
-  if (!state.demoMode || state.demoModeExitedAt) return null;
-
-  if (isDemoModeExpired(state.demoModeStartedAt)) {
-    return beginDemoConversionPending({
-      businessAnchorId,
-      userId,
-      reason: "데모 기간 만료",
-    });
-  }
-
+/** @deprecated 만료는 자동 전환 대기로 바꾸지 않는다(신규 주문만 차단). */
+export async function maybeAutoExitDemoModeIfExhausted() {
   return null;
-}
-
-/**
- * 만료된 데모 모드 → 전환 입금 대기 일괄.
- */
-export async function exitExpiredDemoModesBatch({ limit = 200 } = {}) {
-  const cutoff = new Date(
-    Date.now() - DEMO_MODE_DURATION_DAYS * MS_PER_DAY,
-  );
-  const batchLimit = Math.max(
-    1,
-    Math.min(1000, Math.round(Number(limit) || 200)),
-  );
-  const anchors = await BusinessAnchor.find({
-    businessType: "requestor",
-    demoMode: true,
-    demoModeExitedAt: null,
-    conversionPendingAt: null,
-    demoModeStartedAt: { $ne: null, $lte: cutoff },
-  })
-    .select({ _id: 1 })
-    .limit(batchLimit)
-    .lean();
-
-  let exited = 0;
-  let errors = 0;
-  for (const row of anchors) {
-    try {
-      const result = await beginDemoConversionPending({
-        businessAnchorId: row._id,
-        reason: "데모 기간 만료",
-      });
-      if (result && !result.alreadyExited && !result.alreadyPending) exited += 1;
-    } catch (e) {
-      errors += 1;
-      console.error(
-        "[demoMode] expiry pending failed",
-        String(row?._id || ""),
-        e?.message || e,
-      );
-    }
-  }
-  return { scanned: anchors.length, exited, errors };
 }

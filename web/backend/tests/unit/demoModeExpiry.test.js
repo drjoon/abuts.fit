@@ -4,6 +4,7 @@ import {
   DEMO_MODE_DURATION_DAYS,
   resolveDemoModeExpiresAt,
   isDemoModeExpired,
+  isPracticeRequestorAnchor,
 } from "../../controllers/businesses/business.demoMode.util.js";
 
 describe("demo mode expiry helpers", () => {
@@ -24,5 +25,17 @@ describe("demo mode expiry helpers", () => {
     );
     expect(isDemoModeExpired(started, mid)).toBe(false);
     expect(isDemoModeExpired(started, after)).toBe(true);
+  });
+
+  test("demo duration is 90 days", () => {
+    expect(DEMO_MODE_DURATION_DAYS).toBe(90);
+  });
+
+  test("demo applies to practice only (lab has no demo mode)", () => {
+    expect(isPracticeRequestorAnchor({ requestorKind: "practice" })).toBe(true);
+    expect(isPracticeRequestorAnchor({ requestorKind: "lab" })).toBe(false);
+    expect(
+      isPracticeRequestorAnchor({ requestorCapabilities: { lab: true } }),
+    ).toBe(false);
   });
 });

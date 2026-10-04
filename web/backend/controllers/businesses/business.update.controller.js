@@ -197,9 +197,7 @@ export async function ensureBusinessAnchor({
         referredByAnchorId: referredByAnchorId || null,
         defaultReferralAnchorId: referredByAnchorId || null,
         referralAssignedAt: referredByAnchorId ? new Date() : null,
-        ...(businessType === "requestor"
-          ? { demoMode: true, demoModeStartedAt: new Date() }
-          : {}),
+        // 데모는 치과 전용: 종류를 아는 enableDemoModeAndGrantCreditIfEligible 에서만 켠다.
       },
     },
     {
@@ -1061,7 +1059,7 @@ export async function updateMyBusiness(req, res) {
           owners: [],
           members: [req.user._id],
           status: verificationResult?.verified ? "verified" : "active",
-          ...(businessType === "requestor"
+          ...(businessType === "requestor" && createdKind === "practice"
             ? { demoMode: true, demoModeStartedAt: new Date() }
             : {}),
           ...createdPersist,

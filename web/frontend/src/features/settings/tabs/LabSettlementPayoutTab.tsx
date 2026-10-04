@@ -254,6 +254,10 @@ export const LabSettlementPayoutTab = () => {
   const [snapLoading, setSnapLoading] = useState(false);
   const [snapItems, setSnapItems] = useState<LabDailySnapshotRow[]>([]);
   const [settlementCredit, setSettlementCredit] = useState(0);
+  const [demoSettlementCredit, setDemoSettlementCredit] = useState(0);
+  const [demoPractices, setDemoPractices] = useState<
+    { practiceName: string; amount: number }[]
+  >([]);
 
   const loading = snapLoading || payoutLoading;
 
@@ -261,7 +265,7 @@ export const LabSettlementPayoutTab = () => {
     if (!token) return;
     try {
       const res = await request<{
-        data?: { settlementCredit?: number };
+        data?: { settlementCredit?: number; demoSettlementCredit?: number };
       }>({
         path: "/api/credits/balance",
         method: "GET",
@@ -269,6 +273,22 @@ export const LabSettlementPayoutTab = () => {
       });
       if (!res.ok) return;
       setSettlementCredit(Number(res.data?.data?.settlementCredit || 0));
+      const demoTotal = Number(res.data?.data?.demoSettlementCredit || 0);
+      setDemoSettlementCredit(demoTotal);
+      if (demoTotal > 0) {
+        const demoRes = await request<{
+          data?: { demoPractices?: { practiceName: string; amount: number }[] };
+        }>({
+          path: "/api/credits/lab-demo-conversions",
+          method: "GET",
+          token,
+        });
+        if (demoRes.ok) {
+          setDemoPractices(demoRes.data?.data?.demoPractices || []);
+        }
+      } else {
+        setDemoPractices([]);
+      }
     } catch {
       // ignore — summary card stays at last known value
     }
@@ -566,6 +586,25 @@ export const LabSettlementPayoutTab = () => {
                 </div>
               }
             />
+            {demoSettlementCredit > 0 ? (
+              <SettlementStatCard
+                compact
+                className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
+                label="데모 크레딧"
+                value={demoSettlementCredit}
+                hint="데모 치과"
+                hintTooltip={`데모 치과의 미정산 기공비입니다. 치과가 실사용 전환 시 직접 지급하며, 정산·지급 대상이 아닙니다.${
+                  demoPractices.length
+                    ? ` ${demoPractices
+                        .map(
+                          (row) =>
+                            `${row.practiceName || "치과"} ${formatWon(row.amount)}`,
+                        )
+                        .join(" · ")}`
+                    : ""
+                }`}
+              />
+            ) : null}
             <SettlementStatCard
               compact
               className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}

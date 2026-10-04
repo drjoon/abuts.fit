@@ -116,38 +116,8 @@ export async function createChargeOrder(req, res) {
     return res.status(400).json({ success: false, message: validated.message });
   }
 
-  let conversionQuote = null;
-  try {
-    const { getDemoModeState } = await import(
-      "../businesses/business.demoMode.util.js"
-    );
-    const demoState = await getDemoModeState(businessAnchorId);
-    if (demoState?.demoMode && !demoState?.demoModeExitedAt) {
-      const {
-        computeDemoConversionQuote,
-        assertChargeMeetsConversionMinimum,
-      } = await import("../../services/demoConversion.service.js");
-      conversionQuote = await computeDemoConversionQuote(businessAnchorId);
-      assertChargeMeetsConversionMinimum(
-        validated.supplyAmount,
-        conversionQuote,
-      );
-    }
-  } catch (convErr) {
-    if (convErr?.code === "CONVERSION_MIN_NOT_MET" || convErr?.statusCode === 400) {
-      return res.status(400).json({
-        success: false,
-        message: convErr.message,
-        code: convErr.code || "CONVERSION_MIN_NOT_MET",
-        minTotal: convErr.minTotal,
-        conversionQuote: convErr.quote || conversionQuote,
-      });
-    }
-    console.warn(
-      "[createChargeOrder] conversion min check failed",
-      convErr?.message || convErr,
-    );
-  }
+  // 데모 전환은 기공소 직접 지급 확인으로 처리한다(충전 하한 없음).
+  const conversionQuote = null;
 
   const supplyAmount = validated.supplyAmount;
   // 크레딧 충전은 부가세 없이 공급가 전액 입금
