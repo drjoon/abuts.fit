@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 치과·기공소 카탈로그 분리. Grip Driver는 치과만.
 // - 2026-10-04: 패키지 할인 안내 제거 — 단일가.
 // - 2026-10-04: Abutment 4종 + Grip Driver만 노출. 키트·패키지·기타 단품 제거.
 // - 2026-09-13: 상단 안내 — 500만 패키지 구매 시 pkg 가격.
@@ -16,8 +17,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import {
-  STORE_CATEGORIES,
-  getStoreProductById,
+  getStoreCategoriesForAudience,
+  getStoreProductByIdForAudience,
   type StoreProduct,
 } from "@/shared/store/storeCatalog";
 import { StoreProductCard } from "@/pages/requestor/store/StoreProductCard";
@@ -29,9 +30,6 @@ import {
 } from "@/shared/notices/DashboardNoticeAlert";
 import { useStorePackagePricing, applyStoreCatalogPrices } from "@/shared/store/useStorePackagePricing";
 
-const abutment = STORE_CATEGORIES.find((c) => c.id === "abutment")!;
-const parts = STORE_CATEGORIES.find((c) => c.id === "parts")!;
-
 function ProductRow({
   labels,
   products,
@@ -39,6 +37,7 @@ function ProductRow({
   labels: string[];
   products: StoreProduct[];
 }) {
+  if (products.length === 0) return null;
   return (
     <section className="space-y-2.5">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-border/70 pb-1.5">
@@ -68,17 +67,17 @@ export default function RequestorStorePage() {
   const { priceByProductId } = useStorePackagePricing();
   const cartQty = useStoreCartStore((s) =>
     s.lines.reduce((n, l) => {
-      if (!getStoreProductById(l.productId)) return n;
+      if (!getStoreProductByIdForAudience(l.productId, kind)) return n;
       return n + l.qty;
     }, 0),
   );
 
-  const abutmentProducts = abutment.products.map((p) =>
-    applyStoreCatalogPrices(p, priceByProductId),
-  );
-  const partProducts = parts.products.map((p) =>
-    applyStoreCatalogPrices(p, priceByProductId),
-  );
+  const categories = getStoreCategoriesForAudience(kind).map((category) => ({
+    ...category,
+    products: category.products.map((p) =>
+      applyStoreCatalogPrices(p, priceByProductId),
+    ),
+  }));
 
   if (!loading && kind !== "practice" && kind !== "lab") {
     return <Navigate to="/dashboard/credits" replace />;
@@ -112,8 +111,13 @@ export default function RequestorStorePage() {
         </header>
 
         <div className="space-y-6 sm:space-y-8">
-          <ProductRow labels={["Abutment"]} products={abutmentProducts} />
-          <ProductRow labels={["Grip Driver"]} products={partProducts} />
+          {categories.map((category) => (
+            <ProductRow
+              key={category.id}
+              labels={[category.label]}
+              products={category.products}
+            />
+          ))}
         </div>
       </div>
     </div>

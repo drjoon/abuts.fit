@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 카탈로그·주문 — practice/lab 판매 대상 분리(Grip Driver=치과만).
 // - 2026-10-04: 패키지 할인 제거 — 카탈로그·주문은 단일 판매가.
 // - 2026-09-23: 배송비=상품 10만원↑무료·미만 3,500. 기공물 동봉(lab_bundle) 폐지. 치과·기공소 스토어.
 // - 2026-09-13: 주문 생성·결제·취소 후 관리자 스토어 사이드바 배지 emit.
@@ -26,7 +27,8 @@ import { splitInclusiveVat } from "../../utils/storeVat.js";
 import {
   getStoreProductName,
   getStoreProductPriceInclusive,
-  listStoreProductIds,
+  isStoreProductAvailableForAudience,
+  listStoreProductIdsForAudience,
   resolveStoreUnitPriceInclusive,
 } from "../../constants/storeCatalog.js";
 import { STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT } from "../../constants/ledgerTaxLanes.js";
@@ -101,7 +103,7 @@ async function assertRequestorStoreAccess(req, businessAnchorId) {
   return kind;
 }
 
-function buildOrderItems(rawItems) {
+function buildOrderItems(rawItems, audience) {
   if (!Array.isArray(rawItems) || rawItems.length === 0) {
     const err = new Error("장바구니 항목이 없습니다.");
     err.statusCode = 400;
@@ -113,6 +115,13 @@ function buildOrderItems(rawItems) {
     const productId = String(raw?.productId || "").trim();
     const qty = Math.max(0, Math.round(Number(raw?.qty || 0)));
     if (!productId || qty <= 0) continue;
+    if (!isStoreProductAvailableForAudience(productId, audience)) {
+      const err = new Error(
+        `이 계정 유형에서는 구매할 수 없는 상품입니다: ${getStoreProductName(productId)}`,
+      );
+      err.statusCode = 400;
+      throw err;
+    }
     const unit = resolveStoreUnitPriceInclusive(productId);
     if (unit == null) {
       const err = new Error(`알 수 없는 상품: ${productId}`);
@@ -214,7 +223,7 @@ export async function getStoreCatalog(req, res) {
         message: "사업자 정보가 없습니다.",
       });
     }
-    await assertRequestorStoreAccess(req, businessAnchorId);
+    const audience = await assertRequestorStoreAccess(req, businessAnchorId);
 
     const [inventory, defaultShipping] = await Promise.all([
       getInventoryMap(),
@@ -223,18 +232,21 @@ export async function getStoreCatalog(req, res) {
         businessAnchorId,
       }),
     ]);
-    const products = listStoreProductIds().map((productId) => ({
-      productId,
-      name: getStoreProductName(productId),
-      listPriceInclusive: getStoreProductPriceInclusive(productId),
-      unitPriceInclusive: resolveStoreUnitPriceInclusive(productId),
-      qtyAvailable: inventory[productId]?.available ?? 0,
-      qtyOnHand: inventory[productId]?.qtyOnHand ?? 0,
-    }));
+    const products = listStoreProductIdsForAudience(audience).map(
+      (productId) => ({
+        productId,
+        name: getStoreProductName(productId),
+        listPriceInclusive: getStoreProductPriceInclusive(productId),
+        unitPriceInclusive: resolveStoreUnitPriceInclusive(productId),
+        qtyAvailable: inventory[productId]?.available ?? 0,
+        qtyOnHand: inventory[productId]?.qtyOnHand ?? 0,
+      }),
+    );
 
     return res.json({
       success: true,
       data: {
+        audience,
         products,
         taxNote: "과세 · 부가세 포함",
         shippingPolicy: {
@@ -269,9 +281,9 @@ export async function createStoreOrder(req, res) {
         message: "사업자 정보가 없습니다.",
       });
     }
-    await assertRequestorStoreAccess(req, businessAnchorId);
+    const audience = await assertRequestorStoreAccess(req, businessAnchorId);
 
-    const built = buildOrderItems(req.body?.items);
+    const built = buildOrderItems(req.body?.items, audience);
     const totals = applyStoreShippingToOrderTotals(built);
     const items = built.items;
     const {

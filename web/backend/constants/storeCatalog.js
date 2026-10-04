@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 판매 대상 — practice/lab 분리. Grip Driver는 치과만.
 // - 2026-10-04: 패키지 할인(pkg가) 폐지 — 단일 판매가만. 레거시 pkg 상수/헬퍼는 미사용.
 // - 2026-10-04: 신규 판매 SKU — Abutment 4종 + Grip Driver만. 키트·패키지·기타 단품은 NAMES만 유지(과거 주문).
 // - 2026-09-19: 판매·구성 재동기 — Surgical 154/pkg 121, Prosthetic 110/pkg 88, Abutment 1.65/pkg 1.32×60. 풀패키지 구성합 660만·판매가 500만. 단품=제조×2.
@@ -62,18 +63,50 @@ export function packageInclusiveFromList(listInclusive) {
   return by500 <= list ? by500 : list;
 }
 
+/** 스토어 판매 대상(의뢰자 kind). */
+export const STORE_AUDIENCES = Object.freeze(["practice", "lab"]);
+
 /**
  * 판매가(부가세 포함) 기본값.
- * 신규 판매·재고 SSOT: Abutment 4종 + Grip Driver.
+ * 신규 판매·재고 SSOT: Abutment 4종 + Grip Driver(치과만).
  * 레거시 SKU는 NAMES만 유지(과거 주문 표시).
  */
 export const STORE_PRODUCT_INCLUSIVE_PRICES = Object.freeze({
-  "hex-driver": 44_000, // Grip Driver · mfg 2.2만 ×2
+  "hex-driver": 44_000, // Grip Driver · mfg 2.2만 ×2 · practice only
   "simple-abutment-2": 16_500,
   "simple-healing-2": 16_500,
   "simple-abutment": 16_500,
   "simple-healing": 16_500,
 });
+
+/**
+ * productId → 구매 가능 대상.
+ * 재고·단가는 공유, 노출·주문만 audience로 가른다.
+ */
+export const STORE_PRODUCT_AUDIENCES = Object.freeze({
+  "hex-driver": Object.freeze(["practice"]),
+  "simple-abutment-2": Object.freeze(["practice", "lab"]),
+  "simple-healing-2": Object.freeze(["practice", "lab"]),
+  "simple-abutment": Object.freeze(["practice", "lab"]),
+  "simple-healing": Object.freeze(["practice", "lab"]),
+});
+
+export function normalizeStoreAudience(raw) {
+  const k = String(raw || "").trim();
+  return k === "practice" || k === "lab" ? k : null;
+}
+
+export function getStoreProductAudiences(productId) {
+  const key = String(productId || "").trim();
+  const list = STORE_PRODUCT_AUDIENCES[key];
+  return Array.isArray(list) ? list : [];
+}
+
+export function isStoreProductAvailableForAudience(productId, audience) {
+  const kind = normalizeStoreAudience(audience);
+  if (!kind) return false;
+  return getStoreProductAudiences(productId).includes(kind);
+}
 
 /** pkg가 기본값. 어벗은 고시가, Grip Driver는 packageInclusiveFromList. */
 export const STORE_PRODUCT_PACKAGE_INCLUSIVE_PRICES = Object.freeze({
@@ -132,6 +165,15 @@ export function getStorePriceOverrides() {
 
 export function listStoreProductIds() {
   return Object.keys(STORE_PRODUCT_INCLUSIVE_PRICES);
+}
+
+/** 해당 대상(치과/기공소)에 판매하는 productId 목록. */
+export function listStoreProductIdsForAudience(audience) {
+  const kind = normalizeStoreAudience(audience);
+  if (!kind) return [];
+  return listStoreProductIds().filter((productId) =>
+    isStoreProductAvailableForAudience(productId, kind),
+  );
 }
 
 export function getStoreProductPriceInclusive(productId) {

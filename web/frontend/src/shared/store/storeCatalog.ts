@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 판매 대상 — practice/lab 분리. Grip Driver는 치과만.
 // - 2026-10-04: 패키지 할인(pkg가) 폐지 — 단일 판매가만.
 // - 2026-10-04: 판매 노출 — Abutment 4종 + Grip Driver만. 키트·패키지·기타 단품 제거.
 // - 2026-09-19: 판매·구성 재동기 — Surgical 154/pkg 121, Prosthetic 110/pkg 88(Grip Driver×5·Scan bar×4), Abutment 1.65/pkg 1.32×60. 풀패키지 구성합 660만·판매가 500만. 단품=제조×2.
@@ -61,8 +62,44 @@ export type StoreCategory = {
   products: StoreProduct[];
 };
 
+/** 스토어 판매 대상(의뢰자 kind). 백엔드 storeCatalog.js 와 동기. */
+export type StoreAudience = "practice" | "lab";
+
+export const STORE_AUDIENCES = ["practice", "lab"] as const;
+
 /**
- * 치과·기공소 스토어 카탈로그.
+ * productId → 구매 가능 대상.
+ * Grip Driver는 치과만. Abutment 4종은 치과·기공소.
+ */
+export const STORE_PRODUCT_AUDIENCES: Record<string, readonly StoreAudience[]> =
+  {
+    "hex-driver": ["practice"],
+    "simple-abutment-2": ["practice", "lab"],
+    "simple-healing-2": ["practice", "lab"],
+    "simple-abutment": ["practice", "lab"],
+    "simple-healing": ["practice", "lab"],
+  };
+
+export function normalizeStoreAudience(
+  raw?: string | null,
+): StoreAudience | null {
+  const k = String(raw || "").trim();
+  return k === "practice" || k === "lab" ? k : null;
+}
+
+export function isStoreProductAvailableForAudience(
+  productId: string | undefined,
+  audience: string | null | undefined,
+): boolean {
+  if (!productId) return false;
+  const kind = normalizeStoreAudience(audience);
+  if (!kind) return false;
+  return (STORE_PRODUCT_AUDIENCES[productId] || []).includes(kind);
+}
+
+/**
+ * 전체 카탈로그 정의(관리자·공통).
+ * 고객 노출은 getStoreCategoriesForAudience 사용.
  * Abutment 4종 + Grip Driver. 이미지·명칭: acrodent.com 기준.
  */
 export const STORE_CATEGORIES: StoreCategory[] = [
@@ -263,12 +300,40 @@ export function getStoreProductById(productId: string | undefined) {
   );
 }
 
+/** 대상(치과/기공소)에 판매하는 상품만. */
+export function getStoreProductByIdForAudience(
+  productId: string | undefined,
+  audience: string | null | undefined,
+) {
+  const product = getStoreProductById(productId);
+  if (!product) return undefined;
+  const catalogId = getStoreOptionParentId(product.id) ?? product.id;
+  if (!isStoreProductAvailableForAudience(catalogId, audience)) {
+    return undefined;
+  }
+  return product;
+}
+
 export function getStoreCategoryForProduct(productId: string | undefined) {
   if (!productId) return undefined;
   const displayId = getStoreOptionParentId(productId) ?? productId;
   return STORE_CATEGORIES.find((category) =>
     category.products.some((product) => product.id === displayId),
   );
+}
+
+/** 대상별 카테고리(빈 카테고리 제외). */
+export function getStoreCategoriesForAudience(
+  audience: string | null | undefined,
+): StoreCategory[] {
+  const kind = normalizeStoreAudience(audience);
+  if (!kind) return [];
+  return STORE_CATEGORIES.map((category) => ({
+    ...category,
+    products: category.products.filter((product) =>
+      isStoreProductAvailableForAudience(product.id, kind),
+    ),
+  })).filter((category) => category.products.length > 0);
 }
 
 /** 판매가(부가세 포함). 단일가. */

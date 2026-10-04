@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 상품·클러스터 — practice/lab audience 분리.
 // - 2026-10-04: 재고 목록에서 pkg가 필드 제거(단일 판매가).
 // - 2026-09-13: GET package-buyers — 이름·사업자번호 검색 + ON 목록.
 // - 2026-09-13: DELETE 상품 — 관리자 재고 목록 숨김(hiddenProductIds).
@@ -29,6 +30,7 @@ import {
   getStoreProductPackagePriceInclusive,
   getStoreProductPriceInclusive,
   listStoreProductIds,
+  listStoreProductIdsForAudience,
 } from "../../constants/storeCatalog.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { setStorePackageBuyer } from "../../utils/storePackagePricing.js";
@@ -40,6 +42,7 @@ import {
   getOrSeedStoreProductClusterLayout,
   hideStoreProductFromAdmin,
   resetStoreProductClusterLayout,
+  resolveStoreClusterLayoutKey,
   saveStoreProductClusterLayout,
 } from "../../utils/storeProductClusterLayout.js";
 import {
@@ -91,14 +94,20 @@ async function writeAuditLog({ req, action, refType, refId, details }) {
 
 export async function adminListStoreInventory(req, res) {
   try {
+    const audience = resolveStoreClusterLayoutKey(
+      req.query?.audience ?? req.query?.requestorKind,
+    );
     await ensureStoreInventorySeeded();
     const [map, layout] = await Promise.all([
       getInventoryMap(),
-      getOrSeedStoreProductClusterLayout(),
+      getOrSeedStoreProductClusterLayout(audience),
     ]);
     const hidden = new Set(layout.hiddenProductIds || []);
+    const audienceIds = new Set(listStoreProductIdsForAudience(audience));
     const rows = listStoreProductIds()
-      .filter((productId) => !hidden.has(productId))
+      .filter(
+        (productId) => !hidden.has(productId) && audienceIds.has(productId),
+      )
       .map((productId) => {
         const defaults = getCatalogDefaultPrices(productId);
         return {
@@ -114,6 +123,7 @@ export async function adminListStoreInventory(req, res) {
     return res.json({
       success: true,
       data: rows,
+      audience,
       clusters: layout.clusters,
       hiddenProductIds: layout.hiddenProductIds || [],
     });
@@ -125,10 +135,13 @@ export async function adminListStoreInventory(req, res) {
   }
 }
 
-/** GET /api/admin/store/product-clusters */
+/** GET /api/admin/store/product-clusters?audience=practice|lab */
 export async function adminGetStoreProductClusters(req, res) {
   try {
-    const layout = await getOrSeedStoreProductClusterLayout();
+    const audience = resolveStoreClusterLayoutKey(
+      req.query?.audience ?? req.query?.requestorKind,
+    );
+    const layout = await getOrSeedStoreProductClusterLayout(audience);
     return res.json({ success: true, data: layout });
   } catch (error) {
     return res.status(500).json({
@@ -138,14 +151,17 @@ export async function adminGetStoreProductClusters(req, res) {
   }
 }
 
-/** PUT /api/admin/store/product-clusters */
+/** PUT /api/admin/store/product-clusters { audience, clusters | reset } */
 export async function adminPutStoreProductClusters(req, res) {
   try {
     const body = req.body || {};
+    const audience = resolveStoreClusterLayoutKey(
+      body.audience ?? req.query?.audience ?? req.query?.requestorKind,
+    );
     const reset = body.reset === true;
     const layout = reset
-      ? await resetStoreProductClusterLayout()
-      : await saveStoreProductClusterLayout(body.clusters);
+      ? await resetStoreProductClusterLayout(audience)
+      : await saveStoreProductClusterLayout(body.clusters, audience);
     await writeAuditLog({
       req,
       action: reset
@@ -154,7 +170,8 @@ export async function adminPutStoreProductClusters(req, res) {
       refType: "StoreProductClusterLayout",
       refId: null,
       details: {
-        key: "default",
+        key: audience,
+        audience,
         clusterCount: layout.clusters.length,
         reset,
       },
@@ -173,13 +190,20 @@ export async function adminPutStoreProductClusters(req, res) {
 export async function adminHideStoreProduct(req, res) {
   try {
     const productId = String(req.params?.productId || "").trim();
-    const layout = await hideStoreProductFromAdmin(productId);
+    const audience = resolveStoreClusterLayoutKey(
+      req.query?.audience ?? req.body?.audience,
+    );
+    const layout = await hideStoreProductFromAdmin(productId, audience);
     await writeAuditLog({
       req,
       action: "STORE_PRODUCT_HIDE",
       refType: "StoreProductClusterLayout",
       refId: null,
-      details: { productId, hiddenProductIds: layout.hiddenProductIds },
+      details: {
+        productId,
+        audience,
+        hiddenProductIds: layout.hiddenProductIds,
+      },
     });
     return res.json({ success: true, data: layout });
   } catch (error) {

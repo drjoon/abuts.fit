@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 장바구니 — 대상(치과/기공소)에 없는 상품 제외.
 // - 2026-10-04: 패키지 할인 제거 — 단일 판매가.
 // - 2026-09-23: 배송비=10만원↑무료·미만 3,500. 기공물 동봉 UI 폐지.
 // - 2026-09-13: 500만 패키지 동시 담기 시 장바구니 pkg 단가.
@@ -24,7 +25,10 @@ import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { loadBusinessMeCached } from "@/shared/components/business/settings/business/businessMeCache";
-import { getStoreProductById, resolveStoreUnitPriceInclusive } from "@/shared/store/storeCatalog";
+import {
+  getStoreProductByIdForAudience,
+  resolveStoreUnitPriceInclusive,
+} from "@/shared/store/storeCatalog";
 import {
   applyStoreCatalogPrices,
   useStorePackagePricing,
@@ -99,7 +103,7 @@ export default function RequestorStoreCartPage() {
   const rows = useMemo(() => {
     return lines
       .map((line) => {
-        const base = getStoreProductById(line.productId);
+        const base = getStoreProductByIdForAudience(line.productId, kind);
         if (!base) return null;
         const product = applyStoreCatalogPrices(base, priceByProductId);
         if (product.listPriceInclusive == null) return null;
@@ -111,12 +115,12 @@ export default function RequestorStoreCartPage() {
       })
       .filter(Boolean) as Array<{
       line: { productId: string; qty: number };
-      product: NonNullable<ReturnType<typeof getStoreProductById>>;
+      product: NonNullable<ReturnType<typeof getStoreProductByIdForAudience>>;
       unit: number;
       lineTotal: number;
       split: { supply: number; vat: number; total: number };
     }>;
-  }, [lines, priceByProductId]);
+  }, [lines, priceByProductId, kind]);
 
   const goodsTotal = useMemo(
     () => rows.reduce((s, r) => s + r.lineTotal, 0),

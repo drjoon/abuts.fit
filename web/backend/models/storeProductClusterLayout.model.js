@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: key — practice|lab (레거시 default는 유틸에서 practice로 승격).
 // - 2026-09-13: 관리자 스토어 상품 클러스터 배치 싱글톤.
 // related files:
 // - web/backend/constants/storeProductClusters.js
@@ -19,11 +20,12 @@ const clusterSchema = new mongoose.Schema(
 
 const storeProductClusterLayoutSchema = new mongoose.Schema(
   {
+    /** practice | lab (레거시 default 허용). */
     key: {
       type: String,
       required: true,
       unique: true,
-      default: "default",
+      default: "practice",
       trim: true,
       index: true,
     },

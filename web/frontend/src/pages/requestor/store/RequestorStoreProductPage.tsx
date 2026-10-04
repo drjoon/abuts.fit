@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 대상(치과/기공소)에 없는 상품은 스토어로 리다이렉트.
 // - 2026-09-13: 상단은 이름·블러브·가격·옵션·담기만. 설명·스펙은 하단 컨텐츠.
 // - 2026-09-13: Kit Case 등 옵션 필수 선택 후 담기.
 // - 2026-09-13: acrodent 상세 OCR 텍스트·순수 이미지 블록 렌더.
@@ -19,7 +20,7 @@ import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusine
 import {
   getStoreCategoryForProduct,
   getStoreOptionParentId,
-  getStoreProductById,
+  getStoreProductByIdForAudience,
   resolveStoreUnitPriceInclusive,
   type StoreProduct,
 } from "@/shared/store/storeCatalog";
@@ -42,7 +43,7 @@ export default function RequestorStoreProductPage() {
 
   const optionParentId = getStoreOptionParentId(productId);
   const displayProductId = optionParentId ?? productId;
-  const baseProduct = getStoreProductById(displayProductId);
+  const baseProduct = getStoreProductByIdForAudience(displayProductId, kind);
   const rich = getStoreProductContent(displayProductId);
   const product = baseProduct
     ? applyStoreCatalogPrices(baseProduct, priceByProductId)
@@ -61,9 +62,9 @@ export default function RequestorStoreProductPage() {
       setSelectedOptionId(productId);
       return;
     }
-    const parent = getStoreProductById(displayProductId);
+    const parent = getStoreProductByIdForAudience(displayProductId, kind);
     setSelectedOptionId(parent?.options?.[0]?.id ?? null);
-  }, [productId, optionParentId, displayProductId]);
+  }, [productId, optionParentId, displayProductId, kind]);
 
   const selectedOption = useMemo(() => {
     if (!product?.options?.length) return null;
@@ -105,8 +106,12 @@ export default function RequestorStoreProductPage() {
     return <Navigate to="/dashboard/credits" replace />;
   }
 
-  if (!product || !category || !pricedForDisplay) {
+  if (!loading && (!product || !category || !pricedForDisplay)) {
     return <Navigate to="/dashboard/store" replace />;
+  }
+
+  if (!product || !category || !pricedForDisplay) {
+    return null;
   }
 
   const requiresOption = Boolean(product.options?.length);

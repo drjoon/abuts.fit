@@ -974,7 +974,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 장부: `STORE_SALE` / `REV_STORE_TAXABLE` — 스토어 결제 확정 시 기록. **전액 어벗츠(admin, amount=포함가). 딜러/제조 분배 없음.** 면세 기공과 분리.
   - 스토어 결제: 크레딧(유료) 또는 B-plan 입금 → 재고 차감 → `STORE_SALE` → `fulfillmentStatus=READY`. **건별 과세 draft 없음**(월말 합산). 출고 `SHIPPED`·배송완료 `DELIVERED`. 구현: `storeSale.service.js`, `modules/store/store.routes.js`. 치과·기공소(의뢰자) 이용.
   - **스토어 배송비**: 상품(부가세 포함) 합계 **10만원 이상 무료**, 미만 **₩3,500(부가세 포함)**. 기공물 동봉(`lab_bundle`, 치과 기공소 우회 무료 배송) **폐지**. SSOT: `constants/storeShipping.js`.
-  - 스토어 단가: 판매 SKU는 Abutment 4종 + Grip Driver. **단일 판매가**(패키지 할인 없음). `storeCatalog.js`.
+  - 스토어 단가: 판매 SKU는 Abutment 4종(공통) + Grip Driver(치과만). **단일 판매가**(패키지 할인 없음). 대상 SSOT `STORE_PRODUCT_AUDIENCES` · 관리자 클러스터는 `practice`/`lab` 키. `storeCatalog.js` · `storeProductClusterLayout.js`.
   - 장바구니 합치기 금지: 한 체크아웃에 기공+스토어 금지. 같은 선수금 잔액으로 각각 결제는 허용.
   - 팝빌: `POPBILL_IS_TEST=false`(prod)면 실홈택스 발행. local/test는 `true`.
   - 크레딧은 선불전자지급수단이 아니라 **B2B 거래 선수금/예치금**(계약 물품·용역만). 충전 화면·FAQ·약관·입금 확인에 동일 용어.

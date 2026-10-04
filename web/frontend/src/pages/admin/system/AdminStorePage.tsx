@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 상품·클러스터 — 치과/기공소 각각 구성. Grip Driver는 치과만.
 // - 2026-10-04: 패키지 구매자 탭·pkg가 입력 제거(단일 판매가).
 // - 2026-10-04: 기본 클러스터 — Abutment 4종 + Grip Driver만.
 // - 2026-09-13: 패키지 검색 — 입력 즉시(150ms) 자동 조회.
@@ -154,34 +155,54 @@ type StoreProductCluster = {
   compositionHint?: string;
 };
 
+type StoreAudience = "practice" | "lab";
+
+const STORE_AUDIENCE_LABEL: Record<StoreAudience, string> = {
+  practice: "치과",
+  lab: "기공소",
+};
+
+const ABUTMENT_CLUSTER: StoreProductCluster = {
+  id: "abutment",
+  label: "Abutment",
+  parentProductId: null,
+  childProductIds: [
+    "simple-abutment-2",
+    "simple-healing-2",
+    "simple-abutment",
+    "simple-healing",
+  ],
+  compositionHint: "SimpleAbutment-Hex/NonHex · SimpleHealing-Hex/NonHex",
+};
+
+const GRIP_DRIVER_CLUSTER: StoreProductCluster = {
+  id: "grip-driver",
+  label: "Grip Driver",
+  parentProductId: null,
+  childProductIds: ["hex-driver"],
+  compositionHint: "Hand S·M·L · Handpiece M·L",
+};
+
 /** FE fallback — BE `storeProductClusters.js` 시드와 동일. */
-const DEFAULT_STORE_PRODUCT_CLUSTERS: StoreProductCluster[] = [
-  {
-    id: "abutment",
-    label: "Abutment",
-    parentProductId: null,
-    childProductIds: [
-      "simple-abutment-2",
-      "simple-healing-2",
-      "simple-abutment",
-      "simple-healing",
-    ],
-    compositionHint: "SimpleAbutment-Hex/NonHex · SimpleHealing-Hex/NonHex",
-  },
-  {
-    id: "grip-driver",
-    label: "Grip Driver",
-    parentProductId: null,
-    childProductIds: ["hex-driver"],
-    compositionHint: "Hand S·M·L · Handpiece M·L",
-  },
-];
+const DEFAULT_STORE_PRODUCT_CLUSTERS_BY_AUDIENCE: Record<
+  StoreAudience,
+  StoreProductCluster[]
+> = {
+  practice: [ABUTMENT_CLUSTER, GRIP_DRIVER_CLUSTER],
+  lab: [ABUTMENT_CLUSTER],
+};
 
 function cloneClusters(clusters: StoreProductCluster[]): StoreProductCluster[] {
   return clusters.map((c) => ({
     ...c,
     childProductIds: [...c.childProductIds],
   }));
+}
+
+function defaultClustersForAudience(
+  audience: StoreAudience,
+): StoreProductCluster[] {
+  return cloneClusters(DEFAULT_STORE_PRODUCT_CLUSTERS_BY_AUDIENCE[audience]);
 }
 
 /** 모든 클러스터에서 productId 제거(부모면 parent 해제). */
@@ -292,10 +313,11 @@ function orderMatchesFilter(order: StoreOrder, filter: OrderFilter) {
 
 export default function AdminStorePage() {
   const [tab, setTab] = useState("orders");
+  const [storeAudience, setStoreAudience] = useState<StoreAudience>("practice");
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [orders, setOrders] = useState<StoreOrder[]>([]);
   const [clusterLayout, setClusterLayout] = useState<StoreProductCluster[]>(
-    () => cloneClusters(DEFAULT_STORE_PRODUCT_CLUSTERS),
+    () => defaultClustersForAudience("practice"),
   );
   const [productDrafts, setProductDrafts] = useState<
     Record<string, ProductDraft>
@@ -312,7 +334,7 @@ export default function AdminStorePage() {
   const [editingClusterLabel, setEditingClusterLabel] = useState("");
   const [orderBusyId, setOrderBusyId] = useState<string | null>(null);
   const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
-  const load = useCallback(async () => {
+  const load = useCallback(async (audience: StoreAudience = storeAudience) => {
     setBusy(true);
     try {
       const [invRes, ordRes] = await Promise.all([
@@ -320,8 +342,9 @@ export default function AdminStorePage() {
           success: boolean;
           data?: InventoryRow[];
           clusters?: StoreProductCluster[];
+          audience?: StoreAudience;
         }>({
-          path: "/api/admin/store/inventory",
+          path: `/api/admin/store/inventory?audience=${encodeURIComponent(audience)}`,
         }),
         apiFetch<{ success: boolean; data?: StoreOrder[] }>({
           path: "/api/admin/store/orders",
@@ -334,6 +357,8 @@ export default function AdminStorePage() {
       const clusters = invRes.data?.clusters;
       if (Array.isArray(clusters) && clusters.length > 0) {
         setClusterLayout(cloneClusters(clusters));
+      } else {
+        setClusterLayout(defaultClustersForAudience(audience));
       }
       // 서버 유효가가 SSOT — 새로고침 시 로컬 draft를 덮어쓴다(만원 표시).
       setProductDrafts(() => {
@@ -351,11 +376,11 @@ export default function AdminStorePage() {
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [storeAudience]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load(storeAudience);
+  }, [load, storeAudience]);
 
   // 초기 []로 사이드바 배지를 0으로 덮지 않음(로드 완료 후만 동기화).
   useEffect(() => {
@@ -425,8 +450,8 @@ export default function AdminStorePage() {
         path: "/api/admin/store/product-clusters",
         method: "PUT",
         jsonBody: opts?.reset
-          ? { reset: true }
-          : { clusters: next },
+          ? { reset: true, audience: storeAudience }
+          : { clusters: next, audience: storeAudience },
       });
       if (!res.ok || !res.data?.success) {
         setClusterLayout(prev);
@@ -472,7 +497,7 @@ export default function AdminStorePage() {
         message?: string;
         data?: { clusters?: StoreProductCluster[] };
       }>({
-        path: `/api/admin/store/products/${encodeURIComponent(productId)}`,
+        path: `/api/admin/store/products/${encodeURIComponent(productId)}?audience=${encodeURIComponent(storeAudience)}`,
         method: "DELETE",
       });
       if (!res.ok || !res.data?.success) {
@@ -524,7 +549,7 @@ export default function AdminStorePage() {
   }
 
   function resetClustersToDefault() {
-    void persistClusterLayout(cloneClusters(DEFAULT_STORE_PRODUCT_CLUSTERS), {
+    void persistClusterLayout(defaultClustersForAudience(storeAudience), {
       reset: true,
     });
   }
@@ -1289,11 +1314,27 @@ export default function AdminStorePage() {
           </TabsContent>
 
           <TabsContent value="products" className="mt-0 space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  ["practice", STORE_AUDIENCE_LABEL.practice],
+                  ["lab", STORE_AUDIENCE_LABEL.lab],
+                ] as const
+              ).map(([key, label]) => (
+                <CreditFilterChip
+                  key={key}
+                  active={storeAudience === key}
+                  onClick={() => setStoreAudience(key)}
+                >
+                  {label}
+                </CreditFilterChip>
+              ))}
+            </div>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <CreditSectionHeader
                 icon={Boxes}
-                title="상품 · 가격 · 재고"
-                description="핸들로 드래그해 클러스터·순서를 바꿉니다. 가격은 만원(소수 2자리). 배치는 관리자 공통 저장."
+                title={`${STORE_AUDIENCE_LABEL[storeAudience]} · 상품 · 가격 · 재고`}
+                description="핸들로 드래그해 클러스터·순서를 바꿉니다. 가격·재고는 공유, 배치는 치과·기공소별로 저장합니다."
               />
               <div className="flex flex-wrap gap-1.5">
                 <Button
