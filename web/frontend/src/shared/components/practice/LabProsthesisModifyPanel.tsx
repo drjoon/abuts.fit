@@ -110,6 +110,8 @@ const FIT_LEGEND = `linear-gradient(90deg, ${[-0.1, -0.05, 0, 0.05, 0.1]
   .join(", ")})`;
 
 type Props = {
+  /** prepare: 마진·삽입축. design: 내면 이후. */
+  part: "prepare" | "design";
   onTool: (tool: ModifyTool) => void;
   marginMode: MarginEditMode;
   onMarginMode: (mode: MarginEditMode) => void;
@@ -122,7 +124,6 @@ type Props = {
   cavityKind: CavityKind | null;
   generated: boolean;
   isBridge: boolean;
-  canMatchInsertion: boolean;
   holeNote: string;
   /** 뷰어가 잰 홀 검사 결과. 통과면 null. */
   holeIssue: string | null;
@@ -134,7 +135,6 @@ type Props = {
   undercutShown: boolean;
   canUndercut: boolean;
   onUndercut: (on: boolean) => void;
-  onMatchInsertion: () => void;
   onRemoveHook: () => void;
   /** 기공소 디자인 프리셋. 내면 도구에서 복사한다. */
   designPresets: DesignPreset[];
@@ -1069,6 +1069,7 @@ function Row({
 }
 
 export function LabProsthesisModifyPanel({
+  part,
   onTool,
   marginMode,
   onMarginMode,
@@ -1080,7 +1081,6 @@ export function LabProsthesisModifyPanel({
   cavityKind,
   generated,
   isBridge,
-  canMatchInsertion,
   holeNote,
   holeIssue,
   onViewHoleAxis,
@@ -1090,7 +1090,6 @@ export function LabProsthesisModifyPanel({
   undercutShown,
   canUndercut,
   onUndercut,
-  onMatchInsertion,
   onRemoveHook,
   designPresets,
   onOpenPresets,
@@ -1149,8 +1148,13 @@ export function LabProsthesisModifyPanel({
     onOpenTool(on ? id : null);
   };
 
+  const prepare = part === "prepare";
+  const design = part === "design";
+
   return (
     <>
+      {prepare ? (
+      <>
       <StageSubsection
         title={marginWord}
         open={openTool === "margin"}
@@ -1372,35 +1376,19 @@ export function LabProsthesisModifyPanel({
         onOpen={openFold("insertion")}
         coach="tool-insertion"
       >
-        <div className="space-y-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="flex min-w-0">
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-7 w-full text-[11px]"
-                  disabled={!canMatchInsertion}
-                  onClick={onMatchInsertion}
-                >
-                  화면 각도로 맞추기
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="right" className="z-[520]">
-              화면을 맞춘 뒤 아래에서 설정합니다.
-              <br />
-              취소하면 이전 축으로 돌아갑니다.
-            </TooltipContent>
-          </Tooltip>
-          <p className="text-[11px] text-muted-foreground">
-            화살표 끝을 끌면 직접 기울입니다.
-            <br />
-            끄는 동안 언더컷 색이 바로 바뀝니다.
-          </p>
-        </div>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          작업 영역에서 치아 번호를 고르고
+          <br />
+          화면 가운데에 그 치아를 놓습니다.
+          <br />
+          화면 아래 삽입축 설정을 누르세요.
+        </p>
       </StageSubsection>
+      </>
+      ) : null}
 
+      {design ? (
+      <>
       <StageSubsection
         title="내면"
         open={openTool === "inner"}
@@ -1704,6 +1692,8 @@ export function LabProsthesisModifyPanel({
           )}
         </div>
       </StageSubsection>
+      </>
+      ) : null}
     </>
   );
 }

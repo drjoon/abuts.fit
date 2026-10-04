@@ -95,6 +95,7 @@
 // - 2026-10-04: 한 번 잡은 뒤에는 화면을 돌려도 설정 모드로 돌아가지 않는다. 아이콘을 눌러야 다시 맞춘다.
 // - 2026-10-04: 패널 접기 셰브론은 붙은 가장자리 쪽으로 연다. 치아 정보 제목·셰브론 클릭이 드래그에 먹히지 않게 한다.
 // - 2026-10-04: 작업 패널. 상단은 스캔·디자인·모델·출력. 마진은 디자인 안. 수정은 마진·삽입축·내면·형상·훅·컷백·홀·커넥터 아코디언. 치아 라벨은 치아 정보 뱃지로.
+// - 2026-10-04: 스캔에서 메시 편집은 바이트 정렬 중에도 연다. 접힘과 편집 상태를 맞춘다.
 import {
   createContext,
   useCallback,
@@ -538,9 +539,8 @@ function isOpposingOrBite(
 }
 
 const DESIGN_STAGES: Array<{ id: DesignStage; label: string }> = [
-  { id: "scan", label: "스캔" },
+  { id: "scan", label: "준비" },
   { id: "design", label: "디자인" },
-  { id: "model", label: "모델" },
   { id: "milling", label: "출력" },
 ];
 
@@ -1172,6 +1172,8 @@ function LabProsthesisAiDesignDialog({
       setAlignArch(null);
       setAlignPicks({ model: 0, bite: 0 });
       setAlignBusy(false);
+      setScanFold("align");
+      setMeshEdit(null);
       setOcclusionMode("vertical");
       setOcclusionMm(0);
       setArchAligned({ upper: false, lower: false });
@@ -1527,7 +1529,7 @@ function LabProsthesisAiDesignDialog({
     ? (edits[activeNumber] ?? createToothDesignEdit())
     : createToothDesignEdit();
   const marginEditing =
-    stage !== "scan" &&
+    (stage !== "scan" || scanFold === null) &&
     modifyTool === "margin" &&
     marginShown &&
     activeNumber != null &&
@@ -2686,10 +2688,8 @@ function LabProsthesisAiDesignDialog({
 
   const applyScanbody = (toothNumber: string) => {
     setScanbodyPickTooth(null);
-    setModifyTool("margin");
-    setStage("design");
-    setDesignFold("margin");
-    setMarginShown(true);
+    setStage("scan");
+    openPrepareTool("margin", false);
     setAlignKind(null);
     setAlignArch(null);
     if (canUndercut) setUndercutMap(true);
@@ -3259,14 +3259,32 @@ function LabProsthesisAiDesignDialog({
 
   const onStage = (next: DesignStage) => {
     setStage(next);
-    setMarginShown(next === "design");
+    setMarginShown(
+      next === "design" ||
+        (next === "scan" &&
+          scanFold === null &&
+          (designFold === "margin" || designFold === "insertion")),
+    );
     if (next !== "scan") {
       setAlignKind(null);
       setAlignArch(null);
       setScanbodyPickTooth(null);
+    } else if (scanFold === "mesh") {
+      toggleMeshEdit(true);
     }
     if (next === "design") {
-      if (designFold == null || designFold === "occlusal") setDesignFold("margin");
+      if (modifyTool === "margin" || modifyTool === "insertion" || modifyTool === "scanbody") {
+        setModifyTool("inner");
+      }
+      if (
+        designFold == null ||
+        designFold === "occlusal" ||
+        designFold === "margin" ||
+        designFold === "insertion" ||
+        designFold === "scanbody"
+      ) {
+        setDesignFold("inner");
+      }
       runMarginDetect(marginToothNumbersRef.current);
     }
     if (next === "scan" || next === "model" || next === "milling") return;
@@ -3330,16 +3348,41 @@ function LabProsthesisAiDesignDialog({
 
   const selectScanFold = (next: "align" | "mesh" | "scanbody" | null) => {
     const prev = scanFold;
-    if (prev === next) return;
-    setScanFold(next);
-    if (prev === "align" && next !== "align") {
-      viewerRef.current?.cancelAlign();
-      setAlignKind(null);
-      setAlignArch(null);
+    if (prev !== next) {
+      setScanFold(next);
+      if (next !== null) {
+        // 마진·삽입축을 닫고 스캔 도구를 연다. 스캔바디 표시는 마진 표시가 꺼져야 한다.
+        setDesignFold((fold) => (fold === "margin" || fold === "insertion" ? null : fold));
+        setMarginShown(false);
+      }
+      if (prev === "align" && next !== "align") {
+        viewerRef.current?.cancelAlign();
+        setAlignKind(null);
+        setAlignArch(null);
+      }
+      if (prev === "scanbody" && next !== "scanbody") setScanbodyPickTooth(null);
     }
-    if (prev === "scanbody" && next !== "scanbody") setScanbodyPickTooth(null);
-    if (next === "mesh") toggleMeshEdit(true);
-    else if (prev === "mesh") toggleMeshEdit(false);
+    if (next === "mesh") {
+      viewerRef.current?.cancelAlign();
+      toggleMeshEdit(true);
+    } else {
+      toggleMeshEdit(false);
+    }
+  };
+
+  /** 준비 단계 아래쪽 마진·삽입축 접이를 연다. 스캔 접이는 닫는다. */
+  const openPrepareTool = (tool: "margin" | "insertion", detect = true) => {
+    selectScanFold(null);
+    setModifyTool(tool);
+    setEditBrush("none");
+    setHoleNote("");
+    setDesignFold(tool);
+    setAlignKind(null);
+    setAlignArch(null);
+    if (!marginShown) {
+      setMarginShown(true);
+      if (detect) runMarginDetect(marginToothNumbersRef.current);
+    }
   };
 
   const patchMeshEdit = (patch: Partial<ScanMeshEdit>) => {
@@ -3405,6 +3448,16 @@ function LabProsthesisAiDesignDialog({
     if (alignKind) setMeshEdit(null);
   }, [alignKind]);
 
+  useEffect(() => {
+    if (stage !== "scan" || !open) {
+      setMeshEdit(null);
+      return;
+    }
+    if (scanFold === "mesh") {
+      setMeshEdit((prev) => prev ?? { ...DEFAULT_SCAN_MESH_EDIT });
+    }
+  }, [open, scanFold, stage]);
+
   const noExtractTeeth = meshEditStatus.teeth.length === 0;
   useEffect(() => {
     if (!noExtractTeeth) return;
@@ -3412,10 +3465,6 @@ function LabProsthesisAiDesignDialog({
       prev?.tab === "extract" && prev.extractTool === "brush" ? { ...prev, extractTool: "pick" } : prev,
     );
   }, [noExtractTeeth]);
-
-  useEffect(() => {
-    if (stage !== "scan" || !open) setMeshEdit(null);
-  }, [open, stage]);
 
   const runAutoAlign = async () => {
     const before = viewerRef.current?.changedScanSignature() ?? "";
@@ -3678,6 +3727,16 @@ function LabProsthesisAiDesignDialog({
     !insertionKeysRef.current.includes(viewedAxisKey)
       ? viewedWizardStep.span
       : null;
+  /** 준비 단계 삽입축 접이가 열려 있으면 고른 치아(브리지는 스팬)로 바로 잡는다. */
+  const prepareAxisSpan =
+    stage === "scan" &&
+    scanFold === null &&
+    designFold === "insertion" &&
+    activeNumber &&
+    bridgeSpan.length > 0
+      ? bridgeSpan
+      : null;
+  const axisButtonSpan = pendingAxisSpan ?? prepareAxisSpan;
   const [axisPulseKey, setAxisPulseKey] = useState("");
   const highlightInsertionKey = axisPulseKey;
   const insertionKeysSeenRef = useRef(insertionKeys);
@@ -4012,11 +4071,13 @@ function LabProsthesisAiDesignDialog({
     const next = !marginShown;
     setMarginShown(next);
     if (next) {
-      setStage("design");
-      setModifyTool("margin");
-      setDesignFold("margin");
-      setAlignKind(null);
-      setAlignArch(null);
+      if (stage === "scan" || stage === "model" || stage === "milling") {
+        setStage("scan");
+        openPrepareTool("margin", false);
+      } else {
+        setAlignKind(null);
+        setAlignArch(null);
+      }
     }
   };
   const toggleColorMap = () => {
@@ -4886,25 +4947,17 @@ function LabProsthesisAiDesignDialog({
                 {modifyPanelOpen ? (
                   <div className="min-h-0 space-y-5 overflow-y-auto px-3.5 py-2.5">
                     <section className="space-y-2">
-                      <div className="grid grid-cols-4 gap-1">
+                      <div className="grid grid-cols-3 gap-1">
                         {DESIGN_STAGES.map((item) => (
                           <Button
                             key={item.id}
                             type="button"
                             size="sm"
-                            variant={stage === item.id ? "default" : "outline"}
+                            variant={stage === item.id || (item.id === "milling" && stage === "model") ? "default" : "outline"}
                             className="h-7 px-1 text-[11px]"
                             data-coach={`stage-${item.id}`}
                             onClick={() => {
                               onStage(item.id);
-                              if (item.id === "design") {
-                                setModifyTool((prev) =>
-                                  prev === "scanbody" ? "margin" : prev,
-                                );
-                                setDesignFold((prev) =>
-                                  prev && prev !== "occlusal" ? prev : "margin",
-                                );
-                              }
                             }}
                           >
                             {item.label}
@@ -4912,11 +4965,14 @@ function LabProsthesisAiDesignDialog({
                         ))}
                       </div>
                     </section>
-                    {stage === "model" ? (
+                    {stage === "model" || stage === "milling" ? (
                       <StageSubsection
-                        title="모델 종류"
-                        open={modelOpen}
-                        onOpen={(on) => setModelOpen(on)}
+                        title="모델"
+                        open={stage === "model" && modelOpen}
+                        onOpen={(on) => {
+                          setModelOpen(on);
+                          if (on) setStage("model");
+                        }}
                         coach="model-settings"
                         className="space-y-2.5"
                       >
@@ -5021,7 +5077,13 @@ function LabProsthesisAiDesignDialog({
                         ) : null}
                       </StageSubsection>
                     ) : null}
-                    {stage === "milling" ? <LabMillingPanel milling={milling} /> : null}
+                    {stage === "model" || stage === "milling" ? (
+                      <LabMillingPanel
+                        milling={milling}
+                        active={stage === "milling"}
+                        onActivate={() => setStage("milling")}
+                      />
+                    ) : null}
                     {stage === "scan" ? (
                       <StageSubsection
                         title="모델 정렬"
@@ -5310,7 +5372,7 @@ function LabProsthesisAiDesignDialog({
                       <MeshEditSection
                         edit={meshEdit}
                         status={meshEditStatus}
-                        disabled={entries.length === 0 || alignLocked || busy}
+                        disabled={entries.length === 0}
                         onToggle={(on) => selectScanFold(on ? "mesh" : null)}
                         onPatch={patchMeshEdit}
                         onApply={applyMeshEdit}
@@ -5334,9 +5396,14 @@ function LabProsthesisAiDesignDialog({
                         }
                       />
                     ) : null}
-                    {stage === "design" ? (
+                    {stage === "scan" || stage === "design" ? (
                       <LabProsthesisModifyPanel
+                        part={stage === "scan" ? "prepare" : "design"}
                         onTool={(next) => {
+                          if (stage === "scan" && (next === "margin" || next === "insertion")) {
+                            openPrepareTool(next);
+                            return;
+                          }
                           setModifyTool(next);
                           setEditBrush(next === "cutback" ? "plus" : "none");
                           setHoleNote("");
@@ -5347,9 +5414,19 @@ function LabProsthesisAiDesignDialog({
                         refineTab={refineTab}
                         onRefineTab={setRefineTab}
                         openTool={
-                          designFold && designFold !== "occlusal" ? designFold : null
+                          stage === "scan"
+                            ? scanFold === null && (designFold === "margin" || designFold === "insertion")
+                              ? designFold
+                              : null
+                            : designFold && designFold !== "occlusal"
+                              ? designFold
+                              : null
                         }
                         onOpenTool={(next) => {
+                          if (stage === "scan" && (next === "margin" || next === "insertion")) {
+                            openPrepareTool(next);
+                            return;
+                          }
                           if (next) {
                             setModifyTool(next);
                             setEditBrush(next === "cutback" ? "plus" : "none");
@@ -5411,7 +5488,6 @@ function LabProsthesisAiDesignDialog({
                           activeNumber ? generated[activeNumber] === true : false
                         }
                         isBridge={isBridgeSpan}
-                        canMatchInsertion={entries.length > 0 && bridgeSpan.length > 0}
                         holeNote={holeNote}
                         holeIssue={activeNumber ? (holeIssues[activeNumber] ?? null) : null}
                         onViewHoleAxis={() => {
@@ -5440,12 +5516,6 @@ function LabProsthesisAiDesignDialog({
                             [activeNumber]: "none",
                           }));
                           queueSaveWorkRef.current();
-                        }}
-                        onMatchInsertion={() => {
-                          if (bridgeSpan.length === 0) return;
-                          startAiming(bridgeSpan);
-                          setModifyTool("insertion");
-                          setDesignFold("insertion");
                         }}
                         onRemoveHook={() => {
                           if (!activeNumber) return;
@@ -5652,7 +5722,7 @@ function LabProsthesisAiDesignDialog({
             {!busy &&
             stage !== "milling" &&
             entries.length > 0 &&
-            (aiming || pendingAxisSpan || axisChangeHintKey) &&
+            (aiming || axisButtonSpan || axisChangeHintKey) &&
             !toothCardFor &&
             !libraryPickerFor ? (
               <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1">
@@ -5690,19 +5760,19 @@ function LabProsthesisAiDesignDialog({
                       화면을 멈추면 삽입축과 언더컷이 따라옵니다.
                     </p>
                   </>
-                ) : pendingAxisSpan ? (
+                ) : axisButtonSpan ? (
                   <>
                     <div className="flex items-center gap-1 rounded-full border bg-background/95 p-1 shadow-md">
                       <span className="px-2 text-xs font-semibold tabular-nums">
-                        {pendingAxisSpan.length > 1
-                          ? `브리지 ${pendingAxisSpan[0]}-${pendingAxisSpan[pendingAxisSpan.length - 1]}`
-                          : `#${pendingAxisSpan[0]}`}
+                        {axisButtonSpan.length > 1
+                          ? `브리지 ${axisButtonSpan[0]}-${axisButtonSpan[axisButtonSpan.length - 1]}`
+                          : `#${axisButtonSpan[0]}`}
                       </span>
                       <Button
                         type="button"
                         size="sm"
                         className="h-7 rounded-full px-3 text-xs"
-                        onClick={() => captureInsertion(pendingAxisSpan)}
+                        onClick={() => captureInsertion(axisButtonSpan)}
                       >
                         삽입축 설정
                       </Button>
@@ -5717,7 +5787,7 @@ function LabProsthesisAiDesignDialog({
                   </>
                 ) : (
                   <p className="rounded-md bg-slate-700/85 px-2 py-1 text-center text-[11px] leading-relaxed text-white">
-                    삽입축을 바꾸려면 치아 정보의 삽입축 아이콘을 누르세요.
+                    삽입축을 바꾸려면 준비의 삽입축에서 치아를 고르세요.
                   </p>
                 )}
               </div>
@@ -6845,33 +6915,6 @@ function DesignViewerChrome({
     </>
   );
 
-  const insertionButton = (span: readonly string[], shared: boolean) => {
-    const axisOn = axisState(span);
-    const spanKey = insertionAxisKey(span);
-    const highlighted = Boolean(highlightInsertionKey && spanKey === highlightInsertionKey);
-    return iconTip(
-      shared
-        ? "누르면 아래에서 브리지 삽입축을 다시 잡습니다."
-        : "누르면 아래에서 삽입축을 다시 잡습니다.",
-      <button
-        type="button"
-        className={cn(
-          toothActionClass,
-          "bg-primary text-primary-foreground",
-          !canSetInsertion && "opacity-50",
-          highlighted && "practice-tooth-guide-pulse",
-        )}
-        aria-label={shared ? "브리지 삽입축" : "삽입축"}
-        aria-pressed={axisOn}
-        data-coach={spanKey ? `axis:${spanKey}` : undefined}
-        disabled={!canSetInsertion}
-        onClick={() => onSetInsertion(span)}
-      >
-        <Crosshair className={iconClass} />
-      </button>,
-    );
-  };
-
   const toothEdit = (toothNumber: string) =>
     edits[toothNumber] ?? createToothDesignEdit();
 
@@ -7101,9 +7144,6 @@ function DesignViewerChrome({
     const axisOn = axisState(span);
     return (
       <div className="flex items-center gap-2 py-0.5">
-        <div className="flex w-6 shrink-0 items-center justify-center">
-          {span.length > 0 ? insertionButton(span, false) : null}
-        </div>
         <div className="flex min-w-0 flex-wrap items-center gap-1">
           {nameButton(tooth, axisOn)}
           {statusBits(tooth)}
@@ -7423,9 +7463,6 @@ function DesignViewerChrome({
                                 <li key={`bridge-${block.span.join("-")}`} className="py-1">
                                   {bridgeHeader(block.span, members)}
                                   <div className="flex items-stretch gap-2">
-                                    <div className="flex w-6 shrink-0 items-center justify-center">
-                                      {insertionButton(block.span, true)}
-                                    </div>
                                     <div className="relative min-w-0">
                                       {members.length > 1 ? (
                                         <span

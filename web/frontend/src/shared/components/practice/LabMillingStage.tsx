@@ -537,14 +537,24 @@ function rowStatus(entry: LabMillingRow): { text: string; tone: "muted" | "warn"
   return { text: `높이 ${s.shape.part.heightMm.toFixed(1)}mm${guessed}`, tone: guessed ? "warn" : "muted" };
 }
 
-export function LabMillingPanel({ milling }: { milling: LabMillingState }) {
+export function LabMillingPanel({
+  milling,
+  active = true,
+  onActivate,
+}: {
+  milling: LabMillingState;
+  /** false면 접이를 모두 닫아 둔다. 접이를 열면 onActivate로 알린다. */
+  active?: boolean;
+  onActivate?: () => void;
+}) {
   const { settings } = milling;
   const selected = milling.rows.find((r) => r.row.id === milling.selectedId) ?? null;
   const selectedShape = selected?.state.kind === "ready" ? selected.state.shape : null;
   const selectedPlacement =
     selected?.placement && !selected.placement.excluded ? selected.placement : null;
   const zLimit = selectedShape ? Math.max(0, zLimitMm(selectedShape.part, milling.thicknessMm)) : 0;
-  const [millingFold, setMillingFold] = useState<"disk" | "pin" | "prosthesis" | null>("disk");
+  const [foldState, setMillingFold] = useState<"disk" | "pin" | "prosthesis" | null>("disk");
+  const millingFold = active ? foldState : null;
   const [shrinkDraft, setShrinkDraft] = useState(
     settings.shrinkFactor != null ? String(settings.shrinkFactor) : "",
   );
@@ -557,7 +567,10 @@ export function LabMillingPanel({ milling }: { milling: LabMillingState }) {
       <StageSubsection
         title="디스크"
         open={millingFold === "disk"}
-        onOpen={(on) => setMillingFold(on ? "disk" : null)}
+        onOpen={(on) => {
+          setMillingFold(on ? "disk" : null);
+          if (on) onActivate?.();
+        }}
       >
         <p className="text-right text-[11px] tabular-nums text-muted-foreground">
           Ø {MILLING_DISC_DIAMETER_MM} mm
@@ -634,7 +647,10 @@ export function LabMillingPanel({ milling }: { milling: LabMillingState }) {
       <StageSubsection
         title="핀"
         open={millingFold === "pin"}
-        onOpen={(on) => setMillingFold(on ? "pin" : null)}
+        onOpen={(on) => {
+          setMillingFold(on ? "pin" : null);
+          if (on) onActivate?.();
+        }}
       >
         <div className="flex items-center justify-end gap-1">
             <Button
@@ -749,7 +765,10 @@ export function LabMillingPanel({ milling }: { milling: LabMillingState }) {
       <StageSubsection
         title="보철"
         open={millingFold === "prosthesis"}
-        onOpen={(on) => setMillingFold(on ? "prosthesis" : null)}
+        onOpen={(on) => {
+          setMillingFold(on ? "prosthesis" : null);
+          if (on) onActivate?.();
+        }}
       >
         <div className="flex justify-end">
           <Button
