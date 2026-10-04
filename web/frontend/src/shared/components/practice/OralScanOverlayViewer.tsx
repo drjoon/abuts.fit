@@ -18,14 +18,14 @@
 // - 2026-09-30: 마우스는 조작 프로필(labDesignControls)을 따른다. 오른쪽이 화면 조작이면 오른쪽 클릭 편집은 끌지 않고 뗄 때 실행한다.
 // - 2026-09-26: 삽입축을 잡으면 치아·잇몸 색이 갈라지는 곳을 마진으로 잡는다.
 // - 2026-09-26: 마진은 기본 원보다 바깥을, 삽입축으로 스캔 면에 붙여 잡는다.
-// - 2026-09-26: 바이트와 상·하악이 어긋나면 바이트에 맞춰 움직이고, 교합면 중심에 원점을 둔다.
+// - 2026-09-26: 바이트 맞춤은 준비·모델 정렬의 자동·반자동에서만 한다. 열 때·역할 변경에는 돌리지 않는다.
 // - 2026-09-26: 수동 정렬은 고른 악과 바이트만 좌우로 두고, 점 3개씩으로 근처 대응점을 잡아 붙인다.
 // - 2026-09-26: 수동 정렬의 두 모델은 화면 가운데에 좁은 간격으로 나란히 둔다.
 // - 2026-09-26: 화면 오른쪽·앞쪽에 방향광을 더해 악궁 양쪽이 같이 밝다.
 // - 2026-09-26: 바이트에 맞추는 중 취소하면 좌표를 바꾸지 않고 이전 위치로 둔다.
 // - 2026-09-26: 바뀐 스캔의 짧은 지문을 좌표 사본 없이 낸다.
 // - 2026-09-26: 카메라 각도·위치·줌이 바뀌면 알리고, 저장한 뷰를 다시 깐다.
-// - 2026-09-26: 바이트 맞춤은 연 파일과 좌표가 다르면 작업 DCM이다. 작업 DCM은 맞춤을 다시 하지 않는다.
+// - 2026-09-26: 바이트 맞춤으로 좌표가 바뀌면 작업 DCM이다.
 // - 2026-09-27: 정중앙은 모눈까지. 2mm는 옅은 점선, 10mm는 더 진하고, 가운데는 더 굵다.
 // - 2026-09-27: 뷰를 줄이면 모델 배율은 처음 맞춘 그대로 두고 좌우를 자른다.
 // - 2026-09-27: 마진을 교합면에서 0.75mm 넓혀 삽입축으로 내려 다이를 자른다. 다이 보기는 다이가 있는 악 스캔을 숨긴다.
@@ -70,10 +70,7 @@ import {
   SCAN_COLOR_PREVIEW_BACKGROUND,
 } from "@/shared/files/modelPreviewFile";
 import { linearColorsToSrgbBytes } from "@/shared/files/hpsDcmWrite";
-import {
-  isAbutsWorkScanFileName,
-  type LabOralScanRole,
-} from "@/shared/practice/labProsthesisAiDesign";
+import { type LabOralScanRole } from "@/shared/practice/labProsthesisAiDesign";
 import type {
   WorkSessionAxis,
   WorkSessionView,
@@ -522,7 +519,7 @@ type Props = {
   onAlignFailed?: () => void;
   /** 맞추는 중 취소. 점과 좌표는 그대로 둔다. */
   onAlignCancelled?: () => void;
-  /** 바이트 맞춤(불러올 때·역할 변경·자동·반자동)이 도는 동안 true. 부모는 이동안 편집·저장을 막는다. */
+  /** 바이트 맞춤(자동·반자동)이 도는 동안 true. 부모는 이동안 편집·저장을 막는다. */
   onAligningChange?: (aligning: boolean) => void;
   /** 수동 교합. 이 악만 움직인다. 없으면 평소 뷰. */
   occlusionAdjust?: OralScanOcclusionAdjust | null;
@@ -620,12 +617,6 @@ type SavedCameraView = {
 
 const alignPoseScale = new THREE.Vector3();
 
-const ROLE_COLOR: Record<LabOralScanRole, number> = {
-  upper: 0x3b82f6,
-  lower: 0xe39a3c,
-  bite: 0x14b8a6,
-  other: 0x94a3b8,
-};
 /** 스캔 원본 색을 껐을 때 악 모델 한 가지 파랑. */
 const MODEL_BLUE = 0x3b82f6;
 
@@ -1085,23 +1076,6 @@ function positionsDiffer(
   return false;
 }
 
-/** 상악·하악·바이트가 모두 저장된 작업 DCM이면 맞춤이 이미 들어 있다. */
-function jawsAlreadyStored(
-  sources: readonly { role: string; fileName: string }[],
-): boolean {
-  let arch = false;
-  let bite = false;
-  for (const source of sources) {
-    if (source.role !== "upper" && source.role !== "lower" && source.role !== "bite") {
-      continue;
-    }
-    if (!isAbutsWorkScanFileName(source.fileName)) return false;
-    if (source.role === "bite") bite = true;
-    else arch = true;
-  }
-  return arch && bite;
-}
-
 function jawEntries(loaded: readonly LoadedMesh[]) {
   return loaded.filter(
     (entry): entry is LoadedMesh & { role: WorkingScanMesh["role"] } =>
@@ -1177,21 +1151,6 @@ function exportScanMeshes(
     });
   }
   return out;
-}
-
-function restoreBasePositions(entry: LoadedMesh) {
-  const pos = entry.geometry.getAttribute("position");
-  const base = entry.basePositions;
-  if (!pos || base.length !== pos.count * 3) return;
-  for (let i = 0; i < pos.count; i += 1) {
-    pos.setXYZ(i, base[i * 3] ?? 0, base[i * 3 + 1] ?? 0, base[i * 3 + 2] ?? 0);
-  }
-  pos.needsUpdate = true;
-  entry.geometry.computeVertexNormals();
-  entry.geometry.computeBoundingBox();
-  entry.dist = null;
-  entry.align = null;
-  entry.analysisColor = null;
 }
 
 type AnalysisLook = {
@@ -2767,7 +2726,6 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   cancelAlignRef.current = () => {
     alignCancelGenRef.current += 1;
   };
-  const layoutGenRef = useRef(0);
 
   /** 중단 후 「이 자세 유지 / 원래대로」를 기다리는 중. */
   const [alignStopAsk, setAlignStopAsk] = useState(false);
@@ -4312,7 +4270,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     viewArmedRef.current = false;
     window.clearTimeout(viewTimerRef.current);
     let cancelled = false;
-    const gen = ++layoutGenRef.current;
+    startAlignJob();
+    setAligning(false);
 
     const clearGroup = () => {
       for (const entry of loadedRef.current) {
@@ -4410,62 +4369,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         const nextRole = latestRoles.get(entry.id);
         if (nextRole) entry.role = nextRole;
       }
-      const storedWork = jawsAlreadyStored(itemsRef.current);
-      let seated = false;
-      if (storedWork) {
-        seated = estimateDentalFrame(loaded) != null;
-      } else {
-        setAligning(true);
-        const job = startAlignJob();
-        // 맞추는 과정을 보이도록 역할 색으로 먼저 올린다. loadedRef는 끝난 뒤에 넘긴다.
-        for (const entry of loaded) {
-          const mat = createModelPreviewMaterial(entry.geometry, entry.texture, {
-            colorMapping: false,
-          });
-          mat.side = THREE.DoubleSide;
-          mat.color.set(ROLE_COLOR[entry.role]);
-          const prev = entry.mesh.material;
-          for (const old of Array.isArray(prev) ? prev : [prev]) old.dispose();
-          entry.mesh.material = mat;
-          group.add(entry.mesh);
-        }
-        group.position.set(0, 0, 0);
-        const box = new THREE.Box3().setFromObject(group);
-        if (!box.isEmpty()) {
-          group.position.sub(box.getCenter(new THREE.Vector3()));
-          fitRadiusRef.current = Math.max(box.getBoundingSphere(new THREE.Sphere()).radius, 1);
-          const fit = measureMeshFit(loaded, group.position, HOME_DIR, HOME_UP);
-          fitExtentRef.current = { halfW: fit.halfW, halfH: fit.halfH };
-          fitTargetRef.current.copy(fit.target);
-          applyFitFrustum();
-          frameCamera(HOME_DIR, HOME_UP, false);
-        }
-        let outcome: BiteAlignOutcome | null = null;
-        try {
-          outcome = await runBiteAlign(
-            loaded,
-            job,
-            () => cancelled || gen !== layoutGenRef.current,
-          );
-        } catch (error) {
-          console.info("[oral-scan] bite-fit failed", error);
-        }
-        if (cancelled || gen !== layoutGenRef.current) {
-          for (const entry of loaded) {
-            group.remove(entry.mesh);
-            const mat = entry.mesh.material;
-            for (const old of Array.isArray(mat) ? mat : [mat]) old.dispose();
-            releaseSceneGeometry(entry.geometry);
-            releaseSceneTexture(entry.texture);
-          }
-          return;
-        }
-        const userStopped = outcome?.stop === "revert";
-        const frame = userStopped ? null : estimateDentalFrame(loaded);
-        if (frame) reseatOcclusalOrigin(loaded, frame);
-        seated = Boolean(frame);
-        if (alignEpochRef.current === job.epoch) setAligning(false);
-      }
+      const seated = estimateDentalFrame(loaded) != null;
       for (const entry of loaded) group.add(entry.mesh);
       loadedRef.current = loaded;
       if (manualRef.current.arch) layoutSplitRef.current(manualRef.current.arch);
@@ -5080,43 +4984,15 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       changed = true;
     }
     if (!changed) return;
-    const gen = ++layoutGenRef.current;
+    startAlignJob();
+    setAligning(false);
     for (const entry of loaded) {
       const next = byId.get(entry.id);
       if (next) entry.role = next;
     }
-    if (jawsAlreadyStored(itemsRef.current)) {
-      placeLoadedRef.current(estimateDentalFrame(loaded) != null);
-      bumpAnalysisRef.current();
-      setLoadVersion((version) => version + 1);
-      return;
-    }
-    for (const entry of loaded) restoreBasePositions(entry);
-    const job = startAlignJob();
-    setAligning(true);
-    void (async () => {
-      try {
-        const outcome = await runBiteAlign(loaded, job, () => gen !== layoutGenRef.current);
-        if (gen !== layoutGenRef.current || alignEpochRef.current !== job.epoch) return;
-        const userStopped = outcome.stop === "revert";
-        const seated = estimateDentalFrame(loaded);
-        if (seated && !userStopped) reseatOcclusalOrigin(loaded, seated);
-        if (manualRef.current.arch) layoutSplitRef.current(manualRef.current.arch);
-        else placeLoadedRef.current(Boolean(seated));
-        bumpAnalysisRef.current();
-        setLoadVersion((version) => version + 1);
-        if (!userStopped) {
-          onMeshesReadyRef.current?.({
-            deformed: dirtyScanRoles(loaded).size > 0,
-            restore: false,
-          });
-        }
-      } finally {
-        if (gen === layoutGenRef.current && alignEpochRef.current === job.epoch) {
-          setAligning(false);
-        }
-      }
-    })();
+    placeLoadedRef.current(estimateDentalFrame(loaded) != null);
+    bumpAnalysisRef.current();
+    setLoadVersion((version) => version + 1);
   }, [roleKey]);
 
   useEffect(() => {
