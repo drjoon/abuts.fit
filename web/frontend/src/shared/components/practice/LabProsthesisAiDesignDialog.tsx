@@ -92,6 +92,7 @@
 // - 2026-10-01: 치아를 눌러도 번호·유형을 다시 고르지 않는다. 치과 의뢰 치식 그대로 진행한다.
 //   스캔바디 제목의 브리지 범위는 고른 치아와 상관없이 악궁 순서다.
 // - 2026-10-04: 「삽입축 설정」이 바로 잡고, 확정·취소는 없다. 다시 잡으려면 치아 정보 아이콘을 누른다.
+// - 2026-10-04: 한 번 잡은 뒤에는 화면을 돌려도 설정 모드로 돌아가지 않는다. 아이콘을 눌러야 다시 맞춘다.
 // - 2026-10-04: 패널 접기 셰브론은 붙은 가장자리 쪽으로 연다. 치아 정보 제목·셰브론 클릭이 드래그에 먹히지 않게 한다.
 import {
   createContext,
@@ -933,7 +934,8 @@ function LabProsthesisAiDesignDialog({
     before: WorkSessionAxis[];
   } | null>(null);
   const aimingRef = useRef(aiming);
-  aimingRef.current = aiming;
+  const insertionKeysRef = useRef(insertionKeys);
+  insertionKeysRef.current = insertionKeys;
   const [centerGuide, setCenterGuide] = useState<WorkSessionCenterGuide>("grid");
   const viewTogglesRef = useRef<WorkSessionViewToggles>({
     insertion: false,
@@ -1151,6 +1153,7 @@ function LabProsthesisAiDesignDialog({
       setDragScanId(null);
       setDropScanId(null);
       setInsertionKeys([]);
+      insertionKeysRef.current = [];
       setInsertionShown(false);
       setAxisChangeHintKey("");
       aimingRef.current = null;
@@ -1266,7 +1269,9 @@ function LabProsthesisAiDesignDialog({
             setToothOverrides(draft.document.toothOverrides);
             setArchAligned(draft.document.archAligned);
             if (draft.document.insertionAxes.length > 0) {
-              setInsertionKeys(draft.document.insertionAxes.map((axis) => axis.key));
+              const keys = draft.document.insertionAxes.map((axis) => axis.key);
+              insertionKeysRef.current = keys;
+              setInsertionKeys(keys);
               setInsertionShown(true);
             }
             const toggles = parseViewToggles(draft.document.viewToggles);
@@ -3540,10 +3545,19 @@ function LabProsthesisAiDesignDialog({
     });
   };
 
+  const endAiming = () => {
+    aimingRef.current = null;
+    setAiming(null);
+  };
+
   const insertionTaken = (toothNumbers: readonly string[]) => {
     const key = insertionAxisKey(toothNumbers);
     if (!key) return;
-    setInsertionKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
+    const next = insertionKeysRef.current.includes(key)
+      ? insertionKeysRef.current
+      : [...insertionKeysRef.current, key];
+    insertionKeysRef.current = next;
+    setInsertionKeys(next);
     setInsertionShown(true);
     applyAimedDetections(toothNumbers);
     queueSaveWorkRef.current();
@@ -3554,17 +3568,13 @@ function LabProsthesisAiDesignDialog({
     const viewer = viewerRef.current;
     const key = insertionAxisKey(toothNumbers);
     if (!viewer || !key) return;
+    endAiming();
     setInsertionShown(true);
     setCenterGuide((mode) => (mode === "off" ? "center" : mode));
     setToothInfoOpen(true);
     if (viewer.setInsertionFromView(toothNumbers) !== true) return;
     insertionTaken(toothNumbers);
     setAxisChangeHintKey(key);
-  };
-
-  const endAiming = () => {
-    aimingRef.current = null;
-    setAiming(null);
   };
 
   /** 치아 정보 아이콘 — 미리보기로 맞추고 아래에서 설정·취소한다. */
@@ -3659,7 +3669,10 @@ function LabProsthesisAiDesignDialog({
     viewedWizardStep?.kind === "axis" ? insertionAxisKey(viewedWizardStep.span) : "";
   /** 아직 삽입축을 안 잡은 보철. 작업영역 아래 뱃지로 잡게 한다. */
   const pendingAxisSpan =
-    viewedWizardStep?.kind === "axis" && viewedAxisKey && !insertionKeys.includes(viewedAxisKey)
+    viewedWizardStep?.kind === "axis" &&
+    viewedAxisKey &&
+    !insertionKeys.includes(viewedAxisKey) &&
+    !insertionKeysRef.current.includes(viewedAxisKey)
       ? viewedWizardStep.span
       : null;
   const [axisPulseKey, setAxisPulseKey] = useState("");
@@ -3682,9 +3695,10 @@ function LabProsthesisAiDesignDialog({
 
   /** 스캔을 열면 저장된 축이 없는 첫 보철을 교합면으로 보여 준다. 삽입축 설정 뱃지가 그 위에 뜬다. */
   const showMissingAxis = (savedKeys: readonly string[]) => {
+    const known = new Set([...savedKeys, ...insertionKeysRef.current]);
     const lead = insertionWizardSpans.find((span) => {
       const key = insertionAxisKey(span);
-      return Boolean(key && !savedKeys.includes(key));
+      return Boolean(key && !known.has(key));
     });
     if (lead?.[0]) showTooth(lead[0]);
   };
@@ -4545,7 +4559,6 @@ function LabProsthesisAiDesignDialog({
               onScanColorChange={setHasScanColor}
               onInsertionAxisChange={(active) => {
                 if (active) return;
-                setInsertionKeys([]);
                 setAxisChangeHintKey("");
                 endAiming();
               }}
@@ -4617,7 +4630,9 @@ function LabProsthesisAiDesignDialog({
                   const axes = saved?.insertionAxes ?? [];
                   if (axes.length > 0) {
                     viewerRef.current?.restoreInsertionAxes(axes);
-                    setInsertionKeys(axes.map((axis) => axis.key));
+                    const keys = axes.map((axis) => axis.key);
+                    insertionKeysRef.current = keys;
+                    setInsertionKeys(keys);
                   }
                   if (saved?.camera) viewerRef.current?.restoreCamera(saved.camera);
                   showMissingAxis(axes.map((axis) => axis.key));
