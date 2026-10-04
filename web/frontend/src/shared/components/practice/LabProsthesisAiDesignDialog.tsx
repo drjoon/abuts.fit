@@ -92,6 +92,7 @@
 // - 2026-10-01: 치아를 눌러도 번호·유형을 다시 고르지 않는다. 치과 의뢰 치식 그대로 진행한다.
 //   스캔바디 제목의 브리지 범위는 고른 치아와 상관없이 악궁 순서다.
 // - 2026-10-04: 「삽입축 설정」이 바로 잡고, 확정·취소는 없다. 다시 잡으려면 치아 정보 아이콘을 누른다.
+// - 2026-10-04: 패널 접기 셰브론은 붙은 가장자리 쪽으로 연다. 치아 정보 제목·셰브론 클릭이 드래그에 먹히지 않게 한다.
 import {
   createContext,
   useCallback,
@@ -6086,6 +6087,14 @@ type PanelDragBind = {
 
 const PanelDragContext = createContext<PanelDragBind | null>(null);
 const PanelFillContext = createContext(false);
+/** 본문이 헤더 아래로 늘어나면 true, 아래 가장자리에 붙어 위로 늘어나면 false. */
+const PanelExpandDownContext = createContext(true);
+
+function panelExpandsDown(pose: PanelPose | null, anchorClass: string) {
+  if (pose?.y === "end") return false;
+  if (pose == null && /(^|\s)bottom-/.test(anchorClass)) return false;
+  return true;
+}
 
 type ResizeEdge = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
 
@@ -6327,6 +6336,12 @@ function SnapFrame({
   };
 
   const sized = size != null && contentOpen;
+  let expandDown = panelExpandsDown(pose, anchorClass);
+  if (box && boundsRef.current && panelRef.current) {
+    const { edge, snap } = panelMetrics();
+    const height = boundsRef.current.getBoundingClientRect().height;
+    expandDown = snapAxis(box.top, height, panelRef.current.offsetHeight, edge, snap) !== "end";
+  }
 
   return (
     <div
@@ -6345,7 +6360,9 @@ function SnapFrame({
       }}
     >
       <PanelFillContext.Provider value={sized}>
-        <PanelDragContext.Provider value={bind}>{children}</PanelDragContext.Provider>
+        <PanelExpandDownContext.Provider value={expandDown}>
+          <PanelDragContext.Provider value={bind}>{children}</PanelDragContext.Provider>
+        </PanelExpandDownContext.Provider>
       </PanelFillContext.Provider>
       {resizable
         ? RESIZE_HANDLES.map((handle) => (
@@ -6381,6 +6398,7 @@ function DraggablePanelHeader({
   children: ReactNode;
 }) {
   const drag = useContext(PanelDragContext);
+  const expandDown = useContext(PanelExpandDownContext);
   const toggle = (event: ReactMouseEvent) => {
     if (!drag) {
       onToggle();
@@ -6392,10 +6410,17 @@ function DraggablePanelHeader({
     <ChevronDown
       className={cn(
         "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-        open ? "rotate-180" : "",
+        open === expandDown ? "rotate-180" : "",
       )}
+      aria-hidden
     />
   );
+  const dragBind = {
+    onPointerDown: drag?.onPointerDown,
+    onPointerMove: drag?.onPointerMove,
+    onPointerUp: drag?.onPointerUp,
+    onPointerCancel: drag?.onPointerCancel,
+  };
   if (!aside) {
     return (
       <button
@@ -6406,10 +6431,7 @@ function DraggablePanelHeader({
         )}
         aria-expanded={open}
         title="끌어 옮기면 가장자리에 붙습니다"
-        onPointerDown={drag?.onPointerDown}
-        onPointerMove={drag?.onPointerMove}
-        onPointerUp={drag?.onPointerUp}
-        onPointerCancel={drag?.onPointerCancel}
+        {...dragBind}
         onClick={toggle}
       >
         <span className="min-w-0 flex-1">{children}</span>
@@ -6419,32 +6441,33 @@ function DraggablePanelHeader({
   }
   return (
     <div
-      className={cn("flex w-full items-center gap-0.5", className)}
-      onPointerDown={drag?.onPointerDown}
-      onPointerMove={drag?.onPointerMove}
-      onPointerUp={drag?.onPointerUp}
-      onPointerCancel={drag?.onPointerCancel}
+      role="button"
+      tabIndex={0}
+      className={cn(
+        "flex w-full cursor-grab touch-none select-none items-center gap-0.5 text-left active:cursor-grabbing",
+        className,
+      )}
+      aria-expanded={open}
+      title="끌어 옮기면 가장자리에 붙습니다"
+      {...dragBind}
+      onClick={toggle}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        onToggle();
+      }}
     >
-      <button
-        type="button"
-        className="flex min-w-0 cursor-grab touch-none select-none items-center text-left active:cursor-grabbing"
-        aria-expanded={open}
-        title="끌어 옮기면 가장자리에 붙습니다"
-        onClick={toggle}
+      <span className="min-w-0">{children}</span>
+      <div
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
       >
-        <span className="min-w-0">{children}</span>
-      </button>
-      <div onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
         {aside}
       </div>
-      <button
-        type="button"
-        className="ml-auto inline-flex h-6 w-6 shrink-0 cursor-grab items-center justify-center text-muted-foreground"
-        aria-label={open ? "접기" : "펼치기"}
-        onClick={toggle}
-      >
+      <span className="ml-auto inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground">
         {chevron}
-      </button>
+      </span>
     </div>
   );
 }
