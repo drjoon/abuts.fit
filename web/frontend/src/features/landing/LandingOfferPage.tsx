@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-05: 플랫폼에 커스텀어벗 플로우·하나의 크레딧 섹션. 오퍼 slug 변경 시 섹션 레일 재수집.
+// - 2026-10-05: 어벗츠기공소 오퍼 — 구강스캔 스토리 섹션을 장점 다음에 끼움.
 // - 2026-10-04: 플랫폼(`offer.platform`) 전용 히어로·섹션 추가. 심플웨이 photo 히어로는 레거시 분기만 유지.
 // - 2026-09-29: 심플웨이 히어로는 블루프린트 격자·직경 색 오로라·시차 링(SimpleWayHeroFx), 기공서비스는 스캔 점군(LabScanField) — 랜딩 파티클과 겹치지 않게.
 // - 2026-09-29: 기공서비스(`offer.lab`)는 전용 섹션(LabOfferSections)을 히어로 직후에 끼우고 FAQ·흰 CTA 밴드로 마무리.
@@ -55,18 +57,18 @@ import { LANDING_HERO_POSTER, LANDING_HERO_VIDEO } from "./landingAssets";
 import {
   LabAdvantagesSection,
   LabAiDesignSection,
-  LabCreditSection,
   LabFaqSection,
   LabOfferHero,
-  LabPipelineSection,
+  LabStoriesSection,
 } from "./LabOfferSections";
 import {
   PlatformAudienceSection,
+  PlatformCreditSection,
   PlatformExtrasSection,
   PlatformFaqSection,
   PlatformGlanceSection,
   PlatformOfferHero,
-  PlatformStepsSection,
+  PlatformPipelineSection,
   PlatformStoriesSection,
 } from "./PlatformOfferSections";
 import { LandingMagnetic } from "./LandingMagnetic";
@@ -1196,7 +1198,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
   return (
     <div className="bg-white text-slate-900">
       <LandingScrollProgress />
-      <LandingSectionRail />
+      <LandingSectionRail key={offer.slug} />
       {offer.hero === "brand" && offer.platform ? (
         <PlatformOfferHero
           hero={offer.platform.hero}
@@ -1397,17 +1399,17 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
           <PlatformGlanceSection glance={offer.platform.glance} />
           <PlatformStoriesSection stories={offer.platform.stories} />
           <PlatformExtrasSection extras={offer.platform.extras} />
+          <PlatformPipelineSection pipeline={offer.platform.pipeline} />
+          <PlatformCreditSection credit={offer.platform.credit} />
           <PlatformAudienceSection audiences={offer.platform.audiences} />
-          <PlatformStepsSection steps={offer.platform.steps} />
         </>
       ) : null}
 
       {offer.lab ? (
         <>
           <LabAdvantagesSection advantages={offer.lab.advantages} />
+          <LabStoriesSection stories={offer.lab.stories} />
           <LabAiDesignSection ai={offer.lab.ai} />
-          <LabPipelineSection pipeline={offer.lab.pipeline} />
-          <LabCreditSection credit={offer.lab.credit} />
         </>
       ) : null}
 

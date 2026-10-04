@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-05: 장점 카피 — 구강스캔 도입 도움·호흡, AI는 전부가 아님.
+// - 2026-10-05: 구강스캔 특화 · 맞춤 소통 · AI+검수 축으로 리팩터. 생성 이미지 3컷.
 // - 2026-09-30: 커스텀어벗 장점 카드 카피 — 업로드 시 CNC 자동 생산, 심플웨이 규격 호환.
 // - 2026-09-30: 기공서비스 카피 「3D 스캔」→「구강 스캔」(장점 카드·FAQ).
 // - 2026-09-29: 기공서비스 오퍼 리팩터 — AI 디자인 · 스토어/기공 하나의 크레딧 · 플랫폼 · 커스텀어벗 연동을 장점으로 재구성.
@@ -12,33 +14,25 @@
 //
 // `/offer/lab` 전용 섹션 카피. 금액은 적지 않는다(단가 SSOT는 관리자 설정·PricingPolicyDialog).
 // 문장 배열은 한 칸 = 한 문장 = 한 줄(`<br />`).
-import { LANDING_CUSTOM_TRACKING } from "./landingAssets";
+import {
+  LANDING_LAB_AI_REVIEW,
+  LANDING_LAB_COLLAB_SUPPORT,
+  LANDING_LAB_ORAL_SCAN,
+} from "./landingAssets";
 
 export type LabIconKey =
   | "ai"
-  | "credit"
-  | "platform"
-  | "custom"
   | "align"
   | "axis"
   | "margin"
   | "scanbody"
   | "crown"
   | "check"
-  | "request"
-  | "start"
   | "design"
-  | "cnc"
-  | "ship"
-  | "lab"
-  | "store"
-  | "infinity"
-  | "refund"
-  | "receipt"
-  | "settle"
-  | "preset"
   | "save"
-  | "chat";
+  | "chat"
+  | "phone"
+  | "video";
 
 export type LabAdvantage = {
   icon: LabIconKey;
@@ -48,23 +42,17 @@ export type LabAdvantage = {
   tags: string[];
 };
 
+export type LabStory = {
+  name: string;
+  line: string;
+  body: string[];
+  image: { src: string; alt: string };
+};
+
 export type LabStep = {
   icon: LabIconKey;
   title: string;
   line: string;
-};
-
-export type LabCreditSpoke = {
-  icon: LabIconKey;
-  label: string;
-  line: string;
-  tag: string;
-};
-
-export type LabCreditFact = {
-  icon: LabIconKey;
-  title: string;
-  body: string[];
 };
 
 export type LabOfferExtras = {
@@ -80,30 +68,18 @@ export type LabOfferExtras = {
     lead: string[];
     items: LabAdvantage[];
   };
+  stories: {
+    eyebrow: string;
+    title: string;
+    lead: string[];
+    items: LabStory[];
+  };
   ai: {
     eyebrow: string;
     title: string[];
     lead: string[];
     steps: LabStep[];
     points: Array<{ icon: LabIconKey; title: string; line: string }>;
-  };
-  pipeline: {
-    eyebrow: string;
-    title: string;
-    lead: string[];
-    steps: LabStep[];
-    image: { src: string; alt: string };
-    notes: string[];
-  };
-  credit: {
-    eyebrow: string;
-    title: string;
-    lead: string[];
-    hubLabel: string;
-    hubNote: string;
-    spokes: LabCreditSpoke[];
-    facts: LabCreditFact[];
-    notice: string;
   };
   faq: {
     eyebrow: string;
@@ -119,71 +95,107 @@ export type LabOfferExtras = {
 
 export const LAB_OFFER_EXTRAS: LabOfferExtras = {
   hero: {
-    title: ["AI 디자인부터", "커스텀어벗 납품까지"],
+    title: ["구강스캔에 진심인 치과와", "맞습니다."],
     body: [
-      "스캔만 올리면 디자인·생산·배송이 이어지고,",
-      "스토어와 같은 크레딧으로 결제합니다.",
+      "어벗츠기공소는 구강스캔 의뢰에 특화되어 있습니다.",
+      "스캔 데이터가 쌓일수록, 더 잘 맞는 보철을 만듭니다.",
     ],
-    hud: "AI SCAN",
+    hud: "ORAL SCAN",
   },
 
   advantages: {
     eyebrow: "WHY ABUTS LAB",
-    title: "어벗츠기공소를 고르는 네 가지 이유.",
+    title: "기존 기공소와 다른 세 가지.",
     lead: [
-      "기능을 늘어놓지 않았습니다.",
-      "치과 의뢰가 막힘없이 끝나는 데 필요한 것만 담았습니다.",
+      "구강스캔 데이터 경험을 쌓았습니다.",
+      "시작하는 치과에도, 이미 잘 쓰는 치과에도 맞춥니다.",
     ],
     items: [
       {
+        icon: "align",
+        label: "ORAL SCAN",
+        title: "구강스캔 의뢰에 특화",
+        body: [
+          "어벗츠기공소는 구강스캔 데이터 경험을 쌓았습니다.",
+          "구강스캔 도입을 꺼려하시는 치과에 도움을 드릴 수 있습니다.",
+          "이미 구강스캔을 잘 쓰시는 치과는 호흡이 잘 맞습니다.",
+        ],
+        tags: ["구강스캔", "도입 도움", "호흡"],
+      },
+      {
+        icon: "chat",
+        label: "FIT TOGETHER",
+        title: "맞는 보철을 위해 같이 봅니다",
+        body: [
+          "채팅·전화·원격으로 교합과 마진을 맞춥니다.",
+          "더 잘 맞는 보철을 위해 할 수 있는 일을 합니다.",
+        ],
+        tags: ["채팅", "전화", "원격 지원"],
+      },
+      {
         icon: "ai",
-        label: "AI-POWERED 디자인",
-        title: "의뢰서에서 바로 시작하는 AI 디자인",
+        label: "AI DESIGN",
+        title: "AI 디자인을 지향합니다",
         body: [
-          "스캔 정렬·삽입축·마진·스캔바디를 자동으로 잡습니다.",
-          "기공사는 확인하고 다듬기만 합니다.",
+          "아직 AI가 모든 일을 하지 않습니다.",
+          "사람의 검수와 수작업이 필요합니다만,",
+          "치과와의 시간이 쌓일수록 작업 결과가 정확하고 빨라집니다.",
         ],
-        tags: ["스캔 정렬", "삽입축", "마진", "스캔바디"],
+        tags: ["검수", "수작업", "경험 축적"],
+      },
+    ],
+  },
+
+  stories: {
+    eyebrow: "HOW WE WORK",
+    title: "구강스캔, 소통, AI가 한 흐름입니다.",
+    lead: ["시작하는 치과에도, 이미 잘 쓰는 치과에도 맞춥니다."],
+    items: [
+      {
+        name: "구강스캔 의뢰에 특화",
+        line: "스캔 데이터를 다루는 경험이 많습니다.",
+        body: [
+          "구강스캔 도입을 꺼려하시는 치과에 도움을 드릴 수 있습니다.",
+          "이미 구강스캔을 잘 쓰시는 치과는 호흡이 잘 맞습니다.",
+        ],
+        image: {
+          src: LANDING_LAB_ORAL_SCAN,
+          alt: "구강스캐너와 3D 악궁 스캔",
+        },
       },
       {
-        icon: "credit",
-        label: "ONE CREDIT",
-        title: "스토어도 기공도, 하나의 크레딧",
+        name: "맞는 보철을 위해 같이 맞춥니다",
+        line: "채팅, 전화, 원격 지원으로 이어갑니다.",
         body: [
-          "기공·커스텀어벗·스토어 기성품을",
-          "같은 크레딧으로 결제합니다.",
+          "화면을 보며 교합과 형태를 바로 이야기합니다.",
+          "한 번에 끝나지 않아도, 맞을 때까지 같이 봅니다.",
         ],
-        tags: ["기공", "커스텀어벗", "스토어"],
+        image: {
+          src: LANDING_LAB_COLLAB_SUPPORT,
+          alt: "치과와 기공소가 화면을 공유하며 보철을 맞추는 모습",
+        },
       },
       {
-        icon: "platform",
-        label: "SMART PLATFORM",
-        title: "의뢰서 한 장에 모두 담깁니다",
+        name: "AI가 잡고, 사람이 확인합니다",
+        line: "아직 AI가 모든 일을 하지 않습니다.",
         body: [
-          "스캔·요청·채팅·도착일이 한 화면에 남습니다.",
-          "구강 스캔이 없어도 의뢰할 수 있습니다.",
+          "사람의 검수와 수작업이 필요합니다만,",
+          "치과와의 시간이 쌓일수록 작업 결과가 정확하고 빨라집니다.",
         ],
-        tags: ["진행 상황", "의뢰서 채팅", "도착일"],
-      },
-      {
-        icon: "custom",
-        label: "CUSTOM ABUTMENT",
-        title: "디자인을 올리면 곧 생산",
-        body: [
-          "어벗 디자인이 업로드되면 애크로덴트 CNC 자동 생산이 시작됩니다.",
-          "심플웨이 규격도 당연히 호환됩니다.",
-        ],
-        tags: ["애크로덴트 CNC", "심플웨이", "묶음 배송"],
+        image: {
+          src: LANDING_LAB_AI_REVIEW,
+          alt: "AI 디자인 화면을 기공사가 검수하는 모습",
+        },
       },
     ],
   },
 
   ai: {
     eyebrow: "AI DESIGN",
-    title: ["의뢰서 값 그대로,", "디자인이 시작됩니다."],
+    title: ["의뢰서 값으로 시작하고,", "사람이 마칩니다."],
     lead: [
       "환자·임플란트·보철·스캔은 의뢰서에 이미 있습니다.",
-      "다시 입력하지 않고 그대로 디자인에 연결합니다.",
+      "AI가 초안을 잡고, 기공사가 검수하고 다듬습니다.",
     ],
     steps: [
       {
@@ -213,94 +225,27 @@ export const LAB_OFFER_EXTRAS: LabOfferExtras = {
       },
       {
         icon: "check",
-        title: "확인 · 밀링",
-        line: "언더컷·교합 접촉·두께를 확인하고 밀링 디스크 배치까지 마칩니다.",
+        title: "검수 · 밀링",
+        line: "언더컷·교합·두께를 사람이 확인하고 밀링 배치까지 마칩니다.",
       },
     ],
     points: [
       {
-        icon: "preset",
-        title: "기공소 디자인 프리셋",
-        line: "재료·두께·시멘트 갭을 저장해 치과별 기본값으로 씁니다.",
+        icon: "check",
+        title: "사람의 검수",
+        line: "AI 초안을 기공사가 보고 맞는지 확인합니다.",
+      },
+      {
+        icon: "design",
+        title: "필요한 수작업",
+        line: "마진·교합처럼 아직 손이 가는 구간이 있습니다.",
       },
       {
         icon: "save",
-        title: "자동 저장",
-        line: "작업은 자동으로 저장되고, 닫았다 열어도 이어집니다.",
-      },
-      {
-        icon: "chat",
-        title: "채팅으로 바로 전달",
-        line: "그림으로 표시해 채팅에 첨부하면 치과가 바로 확인합니다.",
+        title: "쌓이는 경험",
+        line: "치과와의 시간이 쌓일수록 작업 결과가 정확하고 빨라집니다.",
       },
     ],
-  },
-
-  pipeline: {
-    eyebrow: "CUSTOM ABUTMENT FLOW",
-    title: "커스텀어벗, 의뢰부터 납품까지 한 줄로.",
-    lead: [
-      "디자인을 올리는 순간 생산이 시작됩니다.",
-      "치과 도착일에서 거꾸로 출고일을 잡아 일정도 맞춥니다.",
-    ],
-    steps: [
-      { icon: "request", title: "의뢰", line: "치과가 스캔과 요청을 보냅니다." },
-      { icon: "start", title: "작업시작", line: "기공소가 받아 작업을 시작합니다." },
-      { icon: "design", title: "디자인", line: "어벗 디자인을 마치고 올립니다." },
-      {
-        icon: "cnc",
-        title: "CNC 생산",
-        line: "업로드하면 애크로덴트 생산이 자동으로 시작됩니다.",
-      },
-      { icon: "ship", title: "납품", line: "어벗과 보철이 함께 치과로 나갑니다." },
-    ],
-    image: { src: LANDING_CUSTOM_TRACKING, alt: "커스텀어벗 CNC 추적관리" },
-    notes: [
-      "단계별 진행이 의뢰서에 그대로 표시됩니다.",
-      "같은 치과로 가는 건은 묶음 배송으로 모읍니다.",
-    ],
-  },
-
-  credit: {
-    eyebrow: "ONE CREDIT",
-    title: "충전은 한 번, 결제는 어디서나.",
-    lead: [
-      "기공·커스텀어벗·스토어 기성품을 하나의 크레딧으로 결제합니다.",
-      "잔액과 사용 내역도 한곳에서 봅니다.",
-    ],
-    hubLabel: "크레딧",
-    hubNote: "거래 선수금",
-    spokes: [
-      { icon: "lab", label: "기공", line: "치과 기공의뢰", tag: "면세" },
-      { icon: "custom", label: "커스텀어벗", line: "디자인·생산 대금", tag: "면세" },
-      { icon: "store", label: "스토어", line: "심플웨이 등 기성품", tag: "과세" },
-    ],
-    facts: [
-      {
-        icon: "infinity",
-        title: "사용기한 없음",
-        body: ["충전한 크레딧에는 유효기간이 없습니다."],
-      },
-      {
-        icon: "refund",
-        title: "미사용 잔액 환불",
-        body: ["쓰지 않은 유료 크레딧은 요청 시 전액 환불됩니다."],
-      },
-      {
-        icon: "receipt",
-        title: "사용분 월합 계산서",
-        body: [
-          "충전 때는 발행하지 않고, 사용분을 월합으로 발행합니다.",
-          "기공·어벗은 면세 계산서, 스토어는 과세 세금계산서로 나눕니다.",
-        ],
-      },
-      {
-        icon: "settle",
-        title: "기공소는 정산과 상계",
-        body: ["정산으로 쌓인 기공크레딧으로 어벗 주문도 결제할 수 있습니다."],
-      },
-    ],
-    notice: "크레딧은 선불페이가 아닌 B2B 거래 선수금(예치금)입니다.",
   },
 
   faq: {
@@ -311,49 +256,44 @@ export const LAB_OFFER_EXTRAS: LabOfferExtras = {
         q: "어벗츠기공소는 한마디로 뭔가요?",
         a: [
           "어벗츠가 운영하는 기공소입니다.",
-          "의뢰 한 번으로 AI 디자인, 커스텀어벗 생산, 배송, 크레딧 결제까지 이어집니다.",
+          "구강스캔 의뢰에 특화되어 있고, AI 디자인과 커스텀어벗 납품까지 이어집니다.",
         ],
       },
       {
-        q: "AI 디자인은 무엇을 해 주나요?",
+        q: "기존 기공소와 무엇이 다른가요?",
         a: [
-          "의뢰서의 임플란트·보철·스캔 값을 그대로 받아 스캔 정렬, 삽입축, 마진, 스캔바디 매칭을 자동으로 잡습니다.",
-          "기공사가 확인하고 다듬어 보철을 완성합니다.",
+          "어벗츠기공소는 구강스캔 데이터 경험을 쌓았습니다.",
+          "도입을 꺼려하시는 치과에도 도움을 드립니다.",
+          "이미 잘 쓰시는 치과와는 호흡이 맞습니다.",
         ],
       },
       {
-        q: "크레딧은 스토어에서도 쓸 수 있나요?",
+        q: "러버모델(석고모델)도 받나요?",
         a: [
-          "네. 크레딧(거래 선수금)은 기공·커스텀어벗·스토어 기성품 대금에 함께 씁니다.",
-          "선불페이가 아니며, 쓰지 않은 유료 크레딧은 요청 시 환불됩니다.",
+          "러버모델은 거래하던 협력 기공소로 보내는 것이 맞습니다.",
+          "어벗츠기공소는 구강스캔 의뢰에 집중합니다.",
         ],
       },
       {
-        q: "계산서는 어떻게 발행되나요?",
+        q: "보철이 잘 안 맞으면 어떻게 하나요?",
         a: [
-          "충전할 때는 발행하지 않습니다.",
-          "사용한 금액을 월합으로 면세 계산서(기공·어벗)와 과세 세금계산서(스토어)로 나눠 어벗츠가 치과에 발행합니다.",
+          "채팅·전화·원격 지원으로 화면을 보며 맞춥니다.",
+          "더 잘 맞는 보철을 위해 할 수 있는 일을 합니다.",
         ],
       },
       {
-        q: "커스텀어벗은 어떻게 만들어지나요?",
+        q: "AI 디자인은 완전 자동인가요?",
         a: [
-          "기공소가 디자인을 업로드하면 애크로덴트 CNC 생산이 자동으로 시작됩니다.",
-          "완성된 어벗은 보철과 함께 치과로 나갑니다.",
-        ],
-      },
-      {
-        q: "구강 스캔이 없어도 의뢰할 수 있나요?",
-        a: [
-          "네. 스캔이 없거나 사진만 있어도 전송됩니다.",
-          "러버인상(석고모델) 의뢰도 같은 방식으로 보낼 수 있습니다.",
+          "아직 AI가 모든 일을 하지 않습니다.",
+          "사람의 검수와 수작업이 필요합니다만,",
+          "치과와의 시간이 쌓일수록 작업 결과가 정확하고 빨라집니다.",
         ],
       },
       {
         q: "거래하던 기공소와도 쓸 수 있나요?",
         a: [
-          "네. 거래하던 기공소는 협력 기공소로 그대로 이용하고, 어벗츠기공소에도 의뢰할 수 있습니다.",
-          "두 곳 모두 플랫폼 사용에 제한이 없고, 지정한 기공소의 수가로 진행됩니다.",
+          "네. 거래하던 기공소는 협력 기공소로 그대로 이용합니다.",
+          "구강스캔 의뢰는 어벗츠기공소에도 보낼 수 있습니다.",
         ],
       },
     ],
@@ -361,10 +301,10 @@ export const LAB_OFFER_EXTRAS: LabOfferExtras = {
 
   closing: {
     eyebrow: "START ABUTS LAB",
-    title: "AI 디자인과 하나의 크레딧, 지금 시작하세요.",
+    title: "구강스캔에 진심이라면, 여기서 맞춥니다.",
     body: [
-      "스캔을 올리면 디자인·생산·배송이 이어집니다.",
-      "도입이 궁금하시면 상담으로 안내해 드립니다.",
+      "채팅·전화·원격으로 맞는 보철을 만듭니다.",
+      "케이스가 쌓일수록 AI 디자인도 정확하고 빨라집니다.",
     ],
   },
 };

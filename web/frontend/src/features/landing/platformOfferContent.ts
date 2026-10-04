@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: 커스텀어벗 플로우·하나의 크레딧 섹션을 기공소 오퍼에서 이 페이지로 이동.
 // - 2026-10-05: CNC 카드 — 어벗 STL 업로드만으로 애크로덴트 CNC 생산이 시작된다는 설명.
 // - 2026-10-04: 장점 카피 — 익명 강조 제거. 진행 가시성·스캔/작업물·채팅 중심으로.
 // - 2026-10-04: `/offer/platform` 전용 카피 — 스캔/작업물 확인·채팅 소통 장점 + 실제 UI 캡처 3컷.
@@ -7,10 +8,12 @@
 // - web/frontend/src/features/landing/PlatformOfferSections.tsx
 // - web/frontend/src/features/landing/landingAssets.ts
 // - web/frontend/src/features/landing/landingTheme.ts
+// - web/frontend/src/shared/legal/creditPrepaidCopy.ts (크레딧 정의·환불·계산서 SSOT)
 //
 // `/offer/platform` 전용 섹션 카피. 금액은 적지 않는다.
 // 문장 배열은 한 칸 = 한 문장 = 한 줄(`<br />`).
 import {
+  LANDING_CUSTOM_TRACKING,
   LANDING_PLATFORM_INBOX_CHAT,
   LANDING_PLATFORM_SCAN_CHAT,
   LANDING_PLATFORM_WORK_VIEWER,
@@ -25,7 +28,18 @@ export type PlatformIconKey =
   | "cnc"
   | "board"
   | "practice"
-  | "lab";
+  | "lab"
+  | "request"
+  | "start"
+  | "design"
+  | "ship"
+  | "custom"
+  | "store"
+  | "labFee"
+  | "infinity"
+  | "refund"
+  | "receipt"
+  | "settle";
 
 export type PlatformAdvantage = {
   icon: PlatformIconKey;
@@ -48,9 +62,23 @@ export type PlatformExtraReason = {
   body: string[];
 };
 
-export type PlatformStep = {
+export type PlatformFlowStep = {
+  icon: PlatformIconKey;
   title: string;
-  body: string;
+  line: string;
+};
+
+export type PlatformCreditSpoke = {
+  icon: PlatformIconKey;
+  label: string;
+  line: string;
+  tag: string;
+};
+
+export type PlatformCreditFact = {
+  icon: PlatformIconKey;
+  title: string;
+  body: string[];
 };
 
 export type PlatformOfferExtras = {
@@ -83,11 +111,23 @@ export type PlatformOfferExtras = {
     title: string;
     lead: string[];
   };
-  steps: {
+  pipeline: {
     eyebrow: string;
     title: string;
     lead: string[];
-    items: PlatformStep[];
+    steps: PlatformFlowStep[];
+    image: { src: string; alt: string };
+    notes: string[];
+  };
+  credit: {
+    eyebrow: string;
+    title: string;
+    lead: string[];
+    hubLabel: string;
+    hubNote: string;
+    spokes: PlatformCreditSpoke[];
+    facts: PlatformCreditFact[];
+    notice: string;
   };
   glossary: {
     title: string;
@@ -234,28 +274,71 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
     ],
   },
 
-  steps: {
-    eyebrow: "HOW IT WORKS",
-    title: "의뢰부터 납품까지, 네 단계.",
-    lead: ["케이스에 필요한 과정만 짧게 이어 두었습니다."],
-    items: [
+  pipeline: {
+    eyebrow: "CUSTOM ABUTMENT FLOW",
+    title: "커스텀어벗, 의뢰부터 납품까지 한 줄로.",
+    lead: [
+      "디자인을 올리는 순간 생산이 시작됩니다.",
+      "치과 도착일에서 거꾸로 출고일을 잡아 일정도 맞춥니다.",
+    ],
+    steps: [
+      { icon: "request", title: "의뢰", line: "치과가 스캔과 요청을 보냅니다." },
+      { icon: "start", title: "작업시작", line: "기공소가 받아 작업을 시작합니다." },
+      { icon: "design", title: "디자인", line: "어벗 디자인을 마치고 올립니다." },
       {
-        title: "구강스캔·의뢰 등록",
-        body: "치과가 스캔과 요청을 플랫폼으로 보냅니다.",
+        icon: "cnc",
+        title: "CNC 생산",
+        line: "업로드하면 애크로덴트 생산이 자동으로 시작됩니다.",
+      },
+      { icon: "ship", title: "납품", line: "어벗과 보철이 함께 치과로 나갑니다." },
+    ],
+    image: { src: LANDING_CUSTOM_TRACKING, alt: "커스텀어벗 CNC 추적관리" },
+    notes: [
+      "단계별 진행이 의뢰서에 그대로 표시됩니다.",
+      "같은 치과로 가는 건은 묶음 배송으로 모읍니다.",
+    ],
+  },
+
+  credit: {
+    eyebrow: "ONE CREDIT",
+    title: "충전은 한 번, 결제는 어디서나.",
+    lead: [
+      "기공·커스텀어벗·스토어 기성품을 하나의 크레딧으로 결제합니다.",
+      "잔액과 사용 내역도 한곳에서 봅니다.",
+    ],
+    hubLabel: "크레딧",
+    hubNote: "거래 선수금",
+    spokes: [
+      { icon: "labFee", label: "기공", line: "치과 기공의뢰", tag: "면세" },
+      { icon: "custom", label: "커스텀어벗", line: "디자인·생산 대금", tag: "면세" },
+      { icon: "store", label: "스토어", line: "심플웨이 등 기성품", tag: "과세" },
+    ],
+    facts: [
+      {
+        icon: "infinity",
+        title: "사용기한 없음",
+        body: ["충전한 크레딧에는 유효기간이 없습니다."],
       },
       {
-        title: "기공소 작업·소통",
-        body: "기공소가 확인하고, 이슈는 그 케이스 채팅에서 나눕니다.",
+        icon: "refund",
+        title: "미사용 잔액 환불",
+        body: ["쓰지 않은 유료 크레딧은 요청 시 전액 환불됩니다."],
       },
       {
-        title: "커스텀어벗",
-        body: "어벗 STL을 올리면 애크로덴트 CNC 생산이 시작됩니다.",
+        icon: "receipt",
+        title: "사용분 월합 계산서",
+        body: [
+          "충전 때는 발행하지 않고, 사용분을 월합으로 발행합니다.",
+          "기공·어벗은 면세 계산서, 스토어는 과세 세금계산서로 나눕니다.",
+        ],
       },
       {
-        title: "검수·납품",
-        body: "작업물을 확인하고 치과로 납품합니다.",
+        icon: "settle",
+        title: "기공소는 정산과 상계",
+        body: ["정산으로 쌓인 기공크레딧으로 어벗 주문도 결제할 수 있습니다."],
       },
     ],
+    notice: "크레딧은 선불페이가 아닌 B2B 거래 선수금(예치금)입니다.",
   },
 
   glossary: {
@@ -331,8 +414,21 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
         q: "기공비 결제와 계산서는 어떻게 되나요?",
         a: [
           "크레딧 선결제금은 어벗츠 계좌로 입금됩니다.",
-          "치과, 기공소 모두 일일이 의뢰 내역을 확인할 필요 없습니다.",
-          "특히 기공소는 치과별 정산 및 계산서 발행까지 자동으로 처리됩니다.",
+          "충전할 때는 발행하지 않고, 사용한 금액을 월합으로 면세 계산서(기공·어벗)와 과세 세금계산서(스토어)로 나눕니다.",
+        ],
+      },
+      {
+        q: "크레딧은 스토어에서도 쓸 수 있나요?",
+        a: [
+          "네. 크레딧(거래 선수금)은 기공·커스텀어벗·스토어 기성품 대금에 함께 씁니다.",
+          "선불페이가 아니며, 쓰지 않은 유료 크레딧은 요청 시 환불됩니다.",
+        ],
+      },
+      {
+        q: "커스텀어벗은 어떻게 만들어지나요?",
+        a: [
+          "기공소가 디자인을 업로드하면 애크로덴트 CNC 생산이 자동으로 시작됩니다.",
+          "완성된 어벗은 보철과 함께 치과로 나갑니다.",
         ],
       },
     ],

@@ -84,6 +84,11 @@ export const LANDING_SW_CHECK_KIT = "/landing/simpleway/check-kit.jpg";
 export const LANDING_SW_PROSTHETIC_KIT = "/landing/simpleway/prosthetic-kit.jpg";
 export const LANDING_SW_GUIDE_HOW_TO = "/landing/simpleway/guide-how-to.jpg";
 
+/** `/offer/lab` — 구강스캔 특화 · 맞춤 소통 · AI 검수 */
+export const LANDING_LAB_ORAL_SCAN = "/landing/lab-offer-oral-scan.jpg";
+export const LANDING_LAB_COLLAB_SUPPORT = "/landing/lab-offer-collab-support.jpg";
+export const LANDING_LAB_AI_REVIEW = "/landing/lab-offer-ai-review.jpg";
+
 /** 플랫폼 화면. 이름·기공소·금액은 가림 */
 export const LANDING_PLATFORM_REQUEST = "/landing/platform-request.jpg";
 export const LANDING_PLATFORM_BOARD = "/landing/platform-board.jpg";

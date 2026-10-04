@@ -1,5 +1,6 @@
 // change-log:
-// - 2026-10-04: 메뉴 심플웨이 → 플랫폼(`/offer/platform`). 장점·실제 UI 캡처는 `platformOfferContent.ts`.
+// - 2026-10-05: 커스텀어벗 플로우·하나의 크레딧 섹션은 플랫폼(`/offer/platform`).
+// - 2026-10-05: 어벗츠기공소 오퍼를 구강스캔 특화 · 맞춤 소통 · AI 검수로 재구성.
 // - 2026-09-30: 기공서비스 스토리 카피 「3D 스캔」→「구강 스캔」.
 // - 2026-09-29: 기공서비스(lab) 오퍼를 AI 디자인 · 하나의 크레딧 · 플랫폼 · 커스텀어벗 연동 중심으로 재구성.
 // related files:
@@ -238,12 +239,12 @@ export const landingOffers: LandingOffer[] = [
   {
     slug: "lab",
     navLabel: "어벗츠기공소",
-    punch: "AI 디자인부터 커스텀어벗 납품까지",
+    punch: "구강스캔 의뢰에 특화된 기공소",
     heroEyebrow: "ABUTS LAB",
-    heroTitle: "AI 디자인부터 커스텀어벗 납품까지",
+    heroTitle: "구강스캔에 진심인 치과와 맞습니다",
     heroBody: LAB_OFFER_EXTRAS.hero.body,
-    line: "의뢰 한 번으로 디자인·생산·배송·결제까지 이어집니다.",
-    lead: "스캔을 올리면, 보철과 맞춤 어벗까지 한 번에.",
+    line: "스캔 데이터가 쌓일수록, 더 잘 맞는 보철을 만듭니다.",
+    lead: "구강스캔에 진심인 치과와 맞춥니다.",
     hero: "brand",
     tile: WAVEON_PARTNERSHIP_TILE,
     cta: { kind: "start", label: "의뢰하기" },
@@ -254,7 +255,15 @@ export const landingOffers: LandingOffer[] = [
       items: [
         {
           term: "AI 디자인",
-          line: "의뢰서 값으로 정렬·삽입축·마진·스캔바디를 자동으로 잡는 디자인 도구예요.",
+          line: "의뢰서 값으로 초안을 잡고, 기공사가 검수·다듬는 디자인 도구예요.",
+        },
+        {
+          term: "구강스캔",
+          line: "구강스캐너로 찍은 3D 데이터예요. 어벗츠기공소는 이 의뢰에 특화되어 있어요.",
+        },
+        {
+          term: "러버모델",
+          line: "석고모델 케이스예요. 기존 기공소가 받고, 어벗츠기공소는 구강스캔에 집중해요.",
         },
         {
           term: "커스텀어벗",
@@ -262,7 +271,7 @@ export const landingOffers: LandingOffer[] = [
         },
         {
           term: "어벗츠기공소",
-          line: "어벗츠가 운영하는 기공소예요. 치과는 협력 기공소 대신 이곳에도 의뢰할 수 있어요.",
+          line: "어벗츠가 운영하는 기공소예요. 구강스캔 의뢰와 AI 디자인을 맡아요.",
         },
         {
           term: "크레딧(거래 선수금)",

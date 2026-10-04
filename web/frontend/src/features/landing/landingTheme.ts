@@ -239,14 +239,14 @@ export const landingHomeBusinessTabs = [
     id: "custom" as const,
     label: "어벗츠기공소",
     eyebrow: "ABUTS LAB",
-    title: "구강스캔 데이터를 빠르고 정확하게 전달",
+    title: "구강스캔 의뢰에 특화된 기공소",
     body: [
-      "기성 어벗 뿐만 아니라 커스텀 어벗도 자유롭게 선택하실 수 있습니다.",
-      "구강스캔 데이터와 의뢰 내용을 어벗츠 플랫폼으로 전달해 어벗츠기공소에 바로 의뢰할 수 있습니다.",
+      "구강스캔 도입을 꺼려하시는 치과에도 도움을 드립니다.",
+      "이미 잘 쓰시는 치과와는 호흡이 맞습니다.",
     ],
     cta: "어벗츠기공소 자세히 보기",
     href: "/offer/lab",
-    image: { src: "/landing/waveon/hero.jpg", alt: "커스텀어벗 검수" },
+    image: { src: "/landing/lab-offer-oral-scan.jpg", alt: "구강스캐너와 3D 스캔" },
   },
   {
     id: "lab" as const,
