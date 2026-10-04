@@ -148,7 +148,7 @@ function WorkflowGallery() {
         <div
           className={cn(
             "relative aspect-[16/10] overflow-hidden sm:aspect-[16/8] lg:aspect-auto lg:min-h-[24rem] min-[1600px]:min-h-[28rem] min-[1920px]:min-h-[34rem]",
-            slide.id === "simple-way" ? "bg-white" : "bg-[#071937]",
+            slide.id === "platform" ? "bg-[#f4f7fb]" : "bg-[#071937]",
           )}
           onPointerDown={(event) => {
             if (event.button !== 0) return;
@@ -185,8 +185,8 @@ function WorkflowGallery() {
 
           {slides.map((item, itemIndex) => {
             const active = itemIndex === index;
-            const diagram = item.id === "simple-way";
-            const zoom = !diagram;
+            const uiShot = item.id === "platform";
+            const zoom = !uiShot;
             return (
               <img
                 key={item.id}
@@ -194,8 +194,8 @@ function WorkflowGallery() {
                 alt={active ? item.image.alt : ""}
                 className={cn(
                   "absolute max-w-none object-center transition-opacity duration-700",
-                  diagram
-                    ? "left-0 top-1/2 h-auto w-full -translate-y-1/2"
+                  uiShot
+                    ? "inset-0 h-full w-full object-cover object-top"
                     : "inset-0 h-full w-full object-cover",
                   active ? "opacity-100" : "opacity-0",
                   active && !reduced && zoom && "workflow-gallery-zoom",
@@ -422,7 +422,7 @@ export function LandingHome() {
           )}
         >
           <LandingReveal className="max-w-lg">
-            <SectionEyebrow>START SIMPLE WAY</SectionEyebrow>
+            <SectionEyebrow>START WITH ABUTS</SectionEyebrow>
             <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>
               {landingHome.ctaBandTitle}
             </h2>

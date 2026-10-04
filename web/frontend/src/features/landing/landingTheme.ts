@@ -51,15 +51,15 @@ export const landingIdentity = {
   eyebrow: "치과 ↔ 기공소 ↔ 어벗츠",
   brandLine: "abuts.fit",
   oneLiner:
-    "심플웨이로 시작하는 정확한 임플란트 워크플로우 — 치과·기공소·제조사를 하나의 흐름으로",
-  body: "식립부터 어벗 선택, 커스텀어벗 제작과 납품까지. 의뢰·디자인·생산·납품이 같은 플랫폼에서 이어집니다.",
+    "치과·기공소·제조사를 하나의 흐름으로 잇는 임플란트 워크플로우 플랫폼",
+  body: "의뢰·스캔·작업물·채팅부터 커스텀어벗 제작과 납품까지. 같은 플랫폼에서 이어집니다.",
   identity:
-    "임플란트 수술·기공·생산을 연결하는 워크플로우 플랫폼. 심플웨이에서 커스텀어벗·기공 협업까지 한 흐름으로 이어집니다.",
+    "임플란트 기공·생산을 연결하는 워크플로우 플랫폼. 의뢰부터 커스텀어벗·기공 협업까지 한 흐름으로 이어집니다.",
   vision:
     "치과와 기공소가 각자의 전문성에 집중하면서도, 같은 케이스를 정확히 협업하는 통합 임플란트 워크플로우.",
   manufacturerNote: "커스텀 어벗먼트 CNC 제조는 (주)애크로덴트가 담당합니다.",
   pitch30s:
-    "어벗츠.핏은 심플웨이로 시작해 식립·어벗 선택부터 커스텀어벗 제작·납품까지, 치과·기공소·애크로덴트 생산을 하나의 플랫폼으로 연결합니다.",
+    "어벗츠.핏은 치과·기공소·애크로덴트 생산을 하나의 플랫폼으로 연결합니다. 의뢰·스캔·채팅부터 커스텀어벗 제작·납품까지 이어집니다.",
 } as const;
 
 export const whyAbutsPoints = [
@@ -178,18 +178,18 @@ export const landingSky = {
 export const landingSkyWashClass =
   "bg-[radial-gradient(ellipse_at_20%_0%,rgba(56,189,248,0.18),transparent_55%),radial-gradient(ellipse_at_90%_10%,rgba(37,99,235,0.14),transparent_50%),linear-gradient(180deg,#f8fafc_0%,#eef4fb_55%,#ffffff_100%)]";
 
-/** `/` 히어로. 메뉴는 심플웨이 · 기공서비스. 이벤트는 `#events`. */
+/** `/` 히어로. 메뉴는 플랫폼 · 기공서비스. 이벤트는 `#events`. */
 export const landingHome = {
   heroEyebrow: "DENTAL IMPLANT WORKFLOW",
   heroTitle: ["어벗츠가 제공하는", "간단 명료한 워크플로우"],
-  heroBody: "식립부터 어벗 선택, 기공 의뢰와 납품까지.",
+  heroBody: "의뢰부터 스캔·채팅, 기공과 납품까지.",
   heroSupport: "치과·기공소·제조사를 하나의 흐름으로 연결합니다.",
 
   ctaStart: "시작하기",
   browseEyebrow: "ABUTS WORKFLOW",
-  browseHeading: "식립부터 보철까지, 하나의 흐름으로.",
+  browseHeading: "의뢰부터 납품까지, 하나의 흐름으로.",
   browseLead:
-    "심플웨이와 어벗츠 플랫폼이 임플란트 수술·기공·생산의 단계를 더 명확하게 연결합니다.",
+    "어벗츠 플랫폼이 임플란트 기공·생산의 단계를 더 명확하게 연결합니다.",
   whyEyebrow: "WHY ABUTS.FIT",
   whyHeading: "케이스의 모든 단계를 연결합니다.",
   whyLead:
@@ -202,15 +202,15 @@ export const landingHome = {
   stepsHeading: "커스텀어벗은 이렇게 완성됩니다.",
   stepsLead:
     "치과의 스캔 데이터부터 기공 디자인, 생산과 납품까지 케이스에 필요한 과정을 연결합니다.",
-  storiesHeading: "수술부터 납품까지, 끊기지 않게.",
+  storiesHeading: "의뢰부터 납품까지, 끊기지 않게.",
   storiesLead:
-    "심플웨이로 준비하고, 플랫폼에서 의뢰·디자인·생산을 이어갑니다.",
+    "플랫폼에서 의뢰·확인·소통·생산을 이어갑니다.",
   faqEyebrow: "FAQ",
   faqHeading: "자주 묻는 질문",
   eventsHeading: "진행 중인 행사",
   ctaBandTitle: "통합된 임플란트 워크플로우를 시작하세요.",
   ctaBandBody: [
-    "심플웨이 도입부터 치과·기공소 협업, 커스텀어벗 기공서비스까지 필요한 방향을 함께 안내해 드립니다.",
+    "치과·기공소 협업부터 커스텀어벗 기공서비스까지 필요한 방향을 함께 안내해 드립니다.",
   ],
   ctaConsult: "상담 신청하기",
   /** 히어로 CTA — 가입이 아니라 다음 섹션으로 스크롤 (하단 `#contact`에서 가입) */
@@ -220,18 +220,19 @@ export const landingHome = {
 /** `/` 비즈니스 탭 (Waveon business) */
 export const landingHomeBusinessTabs = [
   {
-    id: "simple-way" as const,
-    label: "심플웨이",
-    eyebrow: "SIMPLEWAY",
-    title: "직관적인 수술과 보철",
+    id: "platform" as const,
+    label: "플랫폼",
+    eyebrow: "ABUTS PLATFORM",
+    title: "의뢰·스캔·채팅이 한 화면으로",
     body: [
-      "심플웨이 시스템 기반으로 이상적인 위치에 임플란트를 식립하고, 케이스에 맞는 어벗을 선택해 보철 단계를 편하게 준비합니다.",
+      "스캔과 작업물을 언제든 확인하고, 진행이 한눈에 보입니다.",
+      "케이스 채팅으로 기공소와 바로 소통합니다.",
     ],
-    cta: "심플웨이 자세히 보기",
-    href: "/offer/simple-way",
+    cta: "플랫폼 자세히 보기",
+    href: "/offer/platform",
     image: {
-      src: "/landing/simpleway-sequence.jpg",
-      alt: "심플웨이 수술 순서",
+      src: "/landing/platform-inbox-chat.jpg",
+      alt: "기공의뢰 목록과 채팅",
     },
   },
   {
@@ -269,8 +270,8 @@ export const landingHomeBusinessTabs = [
 export const landingHomePainPoints = [
   {
     step: "01",
-    title: "수술과 보철 사이의 복잡한 판단",
-    body: "심플웨이는 임플란트 식립과 어벗 선택을 직관적으로 연결해 다음 단계를 편하게 준비하도록 돕습니다.",
+    title: "흩어진 확인과 반복 문의",
+    body: "스캔·작업물·진행이 한곳에 있으면 “어디까지 됐지?” 문의가 줄어듭니다.",
   },
   {
     step: "02",
@@ -314,8 +315,8 @@ export const landingHomeWhy = [
 export const landingHomeWorkflow = [
   {
     step: "01",
-    title: "직관적인 수술 준비",
-    body: "심플웨이를 통해 이상적인 식립 위치와 어벗 선택을 간결한 흐름으로 준비합니다.",
+    title: "명확한 의뢰 전달",
+    body: "스캔과 요청을 플랫폼으로 보내 기공소가 필요한 정보를 한눈에 확인합니다.",
   },
   {
     step: "02",
@@ -352,8 +353,8 @@ export const landingHomeSteps = [
 /** `/` FAQ */
 export const landingHomeFaq = [
   {
-    q: "심플웨이는 무엇인가요?",
-    a: "심플웨이는 임플란트 수술에서 사용하는 툴과 재료입니다. 직관적인 제품 구성으로 이상적인 식립 위치를 준비하고, 케이스에 맞는 어벗 선택과 보철 진행을 편하게 돕습니다.",
+    q: "어벗츠 플랫폼은 무엇인가요?",
+    a: "치과와 기공소가 기공 의뢰·스캔·작업물·채팅을 한곳에서 이어가는 워크플로우입니다. 진행을 묻지 않아도 같은 화면에서 확인할 수 있습니다.",
   },
   {
     q: "기성 어벗과 커스텀어벗은 어떻게 선택하나요?",
@@ -384,17 +385,17 @@ export type LandingHomeStory = {
 
 export const landingHomeStories: LandingHomeStory[] = [
   {
-    title: "직관적인 수술과 보철",
-    line: "심플웨이 툴과 재료로 식립과 어벗 선택을 이어갑니다.",
+    title: "의뢰·스캔·채팅이 한 화면으로",
+    line: "확인하고, 그리고, 바로 물어봅니다.",
     body: [
-      "심플웨이 시스템 기반으로 이상적인 위치에 임플란트를 식립하고, 케이스에 맞는 어벗을 선택해 보철 단계를 편하게 준비합니다.",
-      "수술과 보철 사이의 복잡한 판단을 더 직관적인 흐름으로 줄입니다.",
+      "스캔과 작업물을 같은 뷰어에서 엽니다.",
+      "표시한 그림을 채팅에 붙여 기공소와 바로 소통합니다.",
     ],
     image: {
-      src: "/landing/waveon/workflow.jpg",
-      alt: "임플란트 어벗·보철 구성",
+      src: "/landing/platform-scan-chat.jpg",
+      alt: "구강 스캔 뷰어와 채팅 첨부",
     },
-    href: "/offer/simple-way",
+    href: "/offer/platform",
   },
   {
     title: "흩어진 데이터와 의뢰를 한곳으로",

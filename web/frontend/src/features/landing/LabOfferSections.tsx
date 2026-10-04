@@ -1,6 +1,6 @@
 // change-log:
 // - 2026-09-29: 기공서비스 오퍼 전용 섹션 신설 — 히어로(파티클) · 장점 4 · AI 디자인 · 커스텀어벗 플로우 · 하나의 크레딧 · FAQ.
-//   랜딩(`LandingHome`)·심플웨이와 같은 토큰/이펙트(Reveal · SpotlightCard · Magnetic · ParticleField · ScrollCue)만 쓴다.
+//   랜딩(`LandingHome`)·플랫폼과 같은 토큰/이펙트(Reveal · SpotlightCard · Magnetic · ParticleField · ScrollCue)만 쓴다.
 // related files:
 // - web/frontend/src/features/landing/LandingOfferPage.tsx
 // - web/frontend/src/features/landing/labOfferContent.ts
@@ -470,14 +470,14 @@ export function LabPipelineSection({
                 ))}
               </ul>
               <Link
-                to="/offer/simple-way"
+                to="/offer/platform"
                 className={cn(
                   "mt-6 inline-flex items-center gap-1 self-start underline-offset-4 hover:underline",
                   TYPO.link,
                   SKY.accentStrong,
                 )}
               >
-                심플웨이와 이어서 보기
+                플랫폼 자세히 보기
                 <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             </LandingSpotlightCard>

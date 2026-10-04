@@ -89,6 +89,10 @@ export const LANDING_PLATFORM_REQUEST = "/landing/platform-request.jpg";
 export const LANDING_PLATFORM_BOARD = "/landing/platform-board.jpg";
 export const LANDING_PLATFORM_LEDGER = "/landing/platform-ledger.jpg";
 export const LANDING_PLATFORM_STATS = "/landing/platform-stats.jpg";
+/** `/offer/platform` 장점 — 공개용으로 개인정보를 가린 실제 UI 캡처 */
+export const LANDING_PLATFORM_WORK_VIEWER = "/landing/platform-work-viewer.jpg";
+export const LANDING_PLATFORM_SCAN_CHAT = "/landing/platform-scan-chat.jpg";
+export const LANDING_PLATFORM_INBOX_CHAT = "/landing/platform-inbox-chat.jpg";
 
 /** 제품 개발 사례 합성용 */
 export const LANDING_CASE_ABUTMENT = "/store/acrodent/simple-abutment-2.jpg";

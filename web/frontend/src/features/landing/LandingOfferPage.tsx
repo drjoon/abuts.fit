@@ -1,8 +1,10 @@
 // change-log:
+// - 2026-10-04: 플랫폼(`offer.platform`) 전용 히어로·섹션 추가. 심플웨이 photo 히어로는 레거시 분기만 유지.
 // - 2026-09-29: 심플웨이 히어로는 블루프린트 격자·직경 색 오로라·시차 링(SimpleWayHeroFx), 기공서비스는 스캔 점군(LabScanField) — 랜딩 파티클과 겹치지 않게.
 // - 2026-09-29: 기공서비스(`offer.lab`)는 전용 섹션(LabOfferSections)을 히어로 직후에 끼우고 FAQ·흰 CTA 밴드로 마무리.
 // related files:
 // - web/frontend/src/features/landing/LabOfferSections.tsx
+// - web/frontend/src/features/landing/PlatformOfferSections.tsx
 // - web/frontend/src/pages/public/OfferPage.tsx
 // - web/frontend/src/features/landing/landingOffers.ts
 // - web/frontend/src/features/landing/OfferVisual.tsx
@@ -58,6 +60,15 @@ import {
   LabOfferHero,
   LabPipelineSection,
 } from "./LabOfferSections";
+import {
+  PlatformAudienceSection,
+  PlatformExtrasSection,
+  PlatformFaqSection,
+  PlatformGlanceSection,
+  PlatformOfferHero,
+  PlatformStepsSection,
+  PlatformStoriesSection,
+} from "./PlatformOfferSections";
 import { LandingMagnetic } from "./LandingMagnetic";
 import { LandingReveal } from "./LandingReveal";
 import { LandingScrollCue } from "./LandingScrollCue";
@@ -1186,7 +1197,19 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
     <div className="bg-white text-slate-900">
       <LandingScrollProgress />
       <LandingSectionRail />
-      {offer.hero === "brand" && offer.lab ? (
+      {offer.hero === "brand" && offer.platform ? (
+        <PlatformOfferHero
+          hero={offer.platform.hero}
+          eyebrow={heroEyebrow}
+          startLabel={offer.cta?.label ?? landingHome.ctaStart}
+          consultLabel={landingHome.ctaConsult}
+          onStart={() => {
+            if (offer.cta) onBuy(offer.cta);
+            else goStart();
+          }}
+          onConsult={() => navigate("/contact")}
+        />
+      ) : offer.hero === "brand" && offer.lab ? (
         <LabOfferHero
           hero={offer.lab.hero}
           eyebrow={heroEyebrow}
@@ -1369,6 +1392,16 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
         </section>
       )}
 
+      {offer.platform ? (
+        <>
+          <PlatformGlanceSection glance={offer.platform.glance} />
+          <PlatformStoriesSection stories={offer.platform.stories} />
+          <PlatformExtrasSection extras={offer.platform.extras} />
+          <PlatformAudienceSection audiences={offer.platform.audiences} />
+          <PlatformStepsSection steps={offer.platform.steps} />
+        </>
+      ) : null}
+
       {offer.lab ? (
         <>
           <LabAdvantagesSection advantages={offer.lab.advantages} />
@@ -1392,9 +1425,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
         >
           <div className={landingContent}>
             <LandingReveal className={cn(landingProse, "text-center")}>
-              <SectionEyebrow>
-                {offer.slug === "simple-way" ? "THE SIMPLE WAY" : "OVERVIEW"}
-              </SectionEyebrow>
+              <SectionEyebrow>OVERVIEW</SectionEyebrow>
               <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>{offer.lead}</h2>
               <p className={cn("mt-2.5", TYPO.lead)}>{offer.line}</p>
             </LandingReveal>
@@ -1527,12 +1558,16 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       ) : null}
 
       {offer.glossary ? <GlossarySection glossary={offer.glossary} /> : null}
+      {offer.platform ? <PlatformFaqSection faq={offer.platform.faq} /> : null}
       {offer.lab ? <LabFaqSection faq={offer.lab.faq} /> : null}
 
       <section
         id="contact"
         data-rail-label="시작하기"
-        className={cn("scroll-mt-20", offer.lab ? "bg-white" : SKY.band)}
+        className={cn(
+          "scroll-mt-20",
+          offer.lab || offer.platform ? "bg-white" : SKY.band,
+        )}
       >
         <div
           className={cn(
@@ -1542,13 +1577,20 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
         >
           <LandingReveal className="max-w-lg">
             <SectionEyebrow>
-              {offer.lab?.closing.eyebrow ?? "START SIMPLE WAY"}
+              {offer.platform?.closing.eyebrow ??
+                offer.lab?.closing.eyebrow ??
+                "START WITH ABUTS"}
             </SectionEyebrow>
             <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>
-              {offer.lab?.closing.title ?? landingHome.ctaBandTitle}
+              {offer.platform?.closing.title ??
+                offer.lab?.closing.title ??
+                landingHome.ctaBandTitle}
             </h2>
             <Lines
-              lines={offer.lab?.closing.body ?? [...landingHome.ctaBandBody]}
+              lines={
+                offer.platform?.closing.body ??
+                offer.lab?.closing.body ?? [...landingHome.ctaBandBody]
+              }
               className={cn("mt-3", TYPO.lead)}
             />
           </LandingReveal>

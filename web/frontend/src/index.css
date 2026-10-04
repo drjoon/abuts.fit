@@ -834,7 +834,7 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
   }
 }
 
-/* ── 히어로별 고유 이펙트: 심플웨이(sw-*) · 기공서비스(lab-hero-*). 랜딩은 파티클 워드. ── */
+/* ── 히어로별 고유 이펙트: 플랫폼(pf-*) · 심플웨이 레거시(sw-*) · 기공서비스(lab-hero-*). 랜딩은 파티클 워드. ── */
 .sw-hero-grid {
   background-image:
     linear-gradient(to right, rgba(37, 99, 235, 0.09) 1px, transparent 1px),
@@ -915,16 +915,135 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
   50% { opacity: 0.55; box-shadow: 0 0 0 6px rgba(125, 211, 252, 0); }
 }
 
+/* 플랫폼 히어로 — 스테이지 레인·연결 펄스 (홈 파티클·랩 스캔과 분리) */
+.pf-hero-grid {
+  background-image:
+    linear-gradient(to right, rgba(125, 211, 252, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(125, 211, 252, 0.06) 1px, transparent 1px);
+  background-size: 48px 48px;
+  -webkit-mask-image: radial-gradient(ellipse at 50% 70%, #000 8%, transparent 70%);
+  mask-image: radial-gradient(ellipse at 50% 70%, #000 8%, transparent 70%);
+}
+
+.pf-orbit {
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  opacity: 0.55;
+}
+
+.pf-orbit-a {
+  animation: pf-orbit-drift 22s ease-in-out infinite alternate;
+}
+
+.pf-orbit-b {
+  animation: pf-orbit-drift 28s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes pf-orbit-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(1.5rem, -1rem, 0) scale(1.06); }
+}
+
+.pf-lane-fill {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(56, 189, 248, 0.15) 12%,
+    rgba(37, 99, 235, 0.85) 50%,
+    rgba(56, 189, 248, 0.15) 88%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: pf-lane-flow 4.8s linear infinite;
+}
+
+@keyframes pf-lane-flow {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+/* 한 사이클 6s: 패킷 5%→85% 이동, 노드는 통과 시점에 켜져 유지 후 리셋 */
+.pf-packet {
+  background: #7dd3fc;
+  box-shadow: 0 0 10px 2px rgba(56, 189, 248, 0.7);
+  animation: pf-packet-move 6s linear infinite;
+}
+
+@keyframes pf-packet-move {
+  0% { left: 0%; opacity: 0; }
+  5% { left: 0%; opacity: 1; }
+  85% { left: 100%; opacity: 1; }
+  92%, 100% { left: 100%; opacity: 0; }
+}
+
+.pf-node-dot {
+  background: rgba(125, 211, 252, 0.3);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+  animation: pf-node-lit 6s ease-out infinite;
+  animation-delay: calc((0.05 + var(--pf-i, 0) / 3 * 0.8) * 6s - 0.24s);
+}
+
+@keyframes pf-node-lit {
+  0% {
+    background: rgba(125, 211, 252, 0.3);
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+  }
+  4% {
+    background: #38bdf8;
+    box-shadow: 0 0 0 9px rgba(56, 189, 248, 0.25);
+  }
+  12%, 66% {
+    background: #38bdf8;
+    box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.25);
+  }
+  86%, 100% {
+    background: rgba(125, 211, 252, 0.3);
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+  }
+}
+
+.pf-done-ring {
+  border: 1px solid rgba(125, 211, 252, 0.9);
+  opacity: 0;
+  animation: pf-done-ring 6s ease-out infinite;
+  animation-delay: calc((0.05 + 0.8) * 6s - 0.24s);
+}
+
+@keyframes pf-done-ring {
+  0% { transform: scale(1); opacity: 0; }
+  4% { transform: scale(1); opacity: 0.9; }
+  24% { transform: scale(4.5); opacity: 0; }
+  100% { transform: scale(4.5); opacity: 0; }
+}
+
+.pf-live-dot {
+  animation: lab-live 1.6s ease-in-out infinite;
+}
+
+.pf-hero-frame {
+  transform: perspective(1200px) rotateY(-4deg) rotateX(2deg);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sw-orb,
   .sw-ring-spin,
   .sw-ring-spin-rev,
-  .lab-live-dot {
+  .lab-live-dot,
+  .pf-live-dot,
+  .pf-lane-fill,
+  .pf-node-dot,
+  .pf-packet,
+  .pf-done-ring,
+  .pf-orbit-a,
+  .pf-orbit-b {
     animation: none;
   }
 
   .sw-parallax,
   .sw-parallax-back {
+    transform: none;
+  }
+
+  .pf-hero-frame {
     transform: none;
   }
 }
