@@ -37,6 +37,7 @@
 // - 2026-09-27: 화살표를 끄는 동안 언더컷을 바로 칠한다. 삽입축은 수동으로만 잡는다. 미리보기(preview)는 스캔을 돌리지 않고 축·언더컷만 화면을 따라온다.
 // - 2026-09-28: 메시 편집(다듬기·구멍 메우기·조각). 모양이 바뀐 스캔은 새 지오메트리로 갈고, 정점마다 파일 좌표를 들고 작업 DCM으로 저장한다.
 // - 2026-10-04: 메시 브러시 픽킹은 뒷면 셸과 상관없이 양면.
+// - 2026-10-04: 접촉·언더컷은 삽입축을 정하기 전 뷰 회전(미리보기)에서만 바로 다시 칠한다. 축을 잡은 뒤 다듬기는 정점 값을 옮기기만 한다.
 import {
   forwardRef,
   useEffect,
@@ -1056,6 +1057,17 @@ function gatherRows(src: Float32Array | null, rows: ArrayLike<number>, size: num
   return out;
 }
 
+/** 메시를 줄이거나 메운 뒤 접촉·언더컷 정점 값을 같은 꼭짓점에 옮긴다. */
+function remapAnalysis(
+  entry: LoadedMesh,
+  origin: ArrayLike<number>,
+  prevDist: Float32Array | null,
+  prevAlign: Float32Array | null,
+) {
+  entry.dist = gatherRows(prevDist, origin, 1, Number.POSITIVE_INFINITY);
+  entry.align = gatherRows(prevAlign, origin, 1, 0);
+}
+
 function rememberPositions(entry: LoadedMesh) {
   entry.basePositions = captureBasePositions(entry.geometry);
 }
@@ -1676,9 +1688,15 @@ async function fillDesignAnalysis(
       continue;
     }
     const count = pos.count;
-    const dist = index ? new Float32Array(count) : null;
+    const existingDist = entry.dist;
+    const keepDist = Boolean(index && existingDist && existingDist.length === count);
+    const dist = index
+      ? keepDist && existingDist
+        ? existingDist
+        : new Float32Array(count)
+      : null;
     const align = (mine.length > 0 || insertion) && nor ? new Float32Array(count) : null;
-    if (dist) dist.fill(Infinity);
+    if (dist && !keepDist) dist.fill(Infinity);
     let budget = performance.now() + 6;
     for (let i = 0; i < count; i += 1) {
       if ((i & 511) === 0 && performance.now() > budget) {
@@ -1701,11 +1719,12 @@ async function fillDesignAnalysis(
             nor.getX(i) * dir.x + nor.getY(i) * dir.y + nor.getZ(i) * dir.z;
         }
       }
-      if (dist && index) {
+      if (dist && index && !keepDist) {
         dist[i] = index.nearest(pos.getX(i), pos.getY(i), pos.getZ(i));
       }
     }
     if (cancelled()) return;
+    if (pos.count !== count) continue;
     entry.dist = dist;
     entry.align = align;
   }
@@ -2733,6 +2752,10 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const saveImageRef = useRef<() => void>(() => {});
   const [parseNote, setParseNote] = useState("");
   const [loadVersion, setLoadVersion] = useState(0);
+  const [analysisTick, setAnalysisTick] = useState(0);
+  const bumpAnalysisRef = useRef(() => {});
+  bumpAnalysisRef.current = () => setAnalysisTick((tick) => tick + 1);
+  const analysisJobRef = useRef(0);
   const [analyzing, setAnalyzing] = useState(false);
   const [aligning, setAligning] = useState(false);
   useEffect(() => {
@@ -3844,6 +3867,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         if (!aimed || !lookRef.current.undercutMap || !repaintUndercutNow(aimed)) {
           for (const entry of loadedRef.current) entry.align = null;
         }
+        bumpAnalysisRef.current();
         setLoadVersion((value) => value + 1);
         if (aimed) onInsertionAxisAimedRef.current?.(aimed.toothNumbers);
       }
@@ -4323,6 +4347,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       setAnalyzing(false);
       setAligning(false);
       onScanColorChangeRef.current?.(false);
+      bumpAnalysisRef.current();
       setLoadVersion((v) => v + 1);
       return;
     }
@@ -4449,6 +4474,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       setParseNote(
         failed.length ? `열지 못했습니다: ${failed.join(", ")}` : "",
       );
+      bumpAnalysisRef.current();
       setLoadVersion((v) => v + 1);
       onMeshesReadyRef.current?.({
         deformed: dirtyScanRoles(loaded).size > 0,
@@ -4513,6 +4539,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     manualRef.current.skipLayout = true;
     placeLoadedRef.current(Boolean(seated));
     syncBadgesRef.current();
+    bumpAnalysisRef.current();
     setLoadVersion((value) => value + 1);
   };
 
@@ -4751,6 +4778,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         const seated = estimateDentalFrame(loaded);
         placeLoadedRef.current(Boolean(seated));
         syncBadgesRef.current();
+        bumpAnalysisRef.current();
         setLoadVersion((value) => value + 1);
         return false;
       }
@@ -4763,6 +4791,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       }
       placeLoadedRef.current(Boolean(seated));
       syncBadgesRef.current();
+      bumpAnalysisRef.current();
       setLoadVersion((value) => value + 1);
       return ok;
     } catch (error) {
@@ -4830,6 +4859,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       entry.analysisColor = null;
     }
     syncBadgesRef.current();
+    bumpAnalysisRef.current();
     setLoadVersion((value) => value + 1);
     occlusionLiveRef.current = false;
     onOcclusionEditRef.current?.("end");
@@ -4932,16 +4962,20 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       const entry = loadedRef.current.find((row) => row.id === id);
       if (!entry) return;
       const oldFile = entry.editedFileCoords ?? entry.filePositions;
+      const prevDist = entry.dist;
+      const prevAlign = entry.align;
       swapScanGeometry(entry, {
         positions: shape.positions,
         index: new THREE.BufferAttribute(shape.index, 1),
         color: shape.color ? new THREE.BufferAttribute(shape.color, 3) : null,
         uv: shape.uv ? new THREE.BufferAttribute(shape.uv, 2) : null,
       });
+      remapAnalysis(entry, shape.origin, prevDist, prevAlign);
       entry.editedFileCoords = gatherRows(oldFile, shape.origin, 3, Number.NaN);
       entry.basePositions = shape.positions.slice();
       entry.meshRevision += 1;
       occlusionBaseRef.current.delete(entry.id);
+      analysisJobRef.current += 1;
     },
     ensureIndexed: (id) => {
       const entry = loadedRef.current.find((row) => row.id === id);
@@ -4969,16 +5003,20 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         : null;
       const color = gatherRows(readAttrTriples(entry.scanColor), rows, 3);
       const nextUv = gatherRows(uvRows, rows, 2);
+      const prevDist = entry.dist;
+      const prevAlign = entry.align;
       swapScanGeometry(entry, {
         positions: gatherRows(positions, rows, 3)!,
         index: new THREE.BufferAttribute(nextIndex, 1),
         color: color ? new THREE.BufferAttribute(color, 3) : null,
         uv: nextUv ? new THREE.BufferAttribute(nextUv, 2) : null,
       });
+      remapAnalysis(entry, rows, prevDist, prevAlign);
       entry.filePositions = gatherRows(entry.filePositions, rows, 3)!;
       entry.basePositions = gatherRows(entry.basePositions, rows, 3)!;
       entry.editedFileCoords = gatherRows(entry.editedFileCoords, rows, 3, Number.NaN);
       occlusionBaseRef.current.delete(entry.id);
+      analysisJobRef.current += 1;
       restyleRef.current();
     },
     sculpted: (ids) => {
@@ -4988,11 +5026,9 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         if (!entry.editedFileCoords) entry.editedFileCoords = entry.filePositions;
         entry.basePositions = captureBasePositions(entry.geometry);
         entry.meshRevision += 1;
-        entry.dist = null;
-        entry.align = null;
-        entry.analysisColor = null;
         occlusionBaseRef.current.delete(entry.id);
       }
+      if (ids.length > 0) analysisJobRef.current += 1;
     },
     finish: () => {
       syncBadgesRef.current();
@@ -5051,6 +5087,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     }
     if (jawsAlreadyStored(itemsRef.current)) {
       placeLoadedRef.current(estimateDentalFrame(loaded) != null);
+      bumpAnalysisRef.current();
       setLoadVersion((version) => version + 1);
       return;
     }
@@ -5066,6 +5103,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         if (seated && !userStopped) reseatOcclusalOrigin(loaded, seated);
         if (manualRef.current.arch) layoutSplitRef.current(manualRef.current.arch);
         else placeLoadedRef.current(Boolean(seated));
+        bumpAnalysisRef.current();
         setLoadVersion((version) => version + 1);
         if (!userStopped) {
           onMeshesReadyRef.current?.({
@@ -5111,23 +5149,25 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       return;
     }
     let cancelled = false;
+    const job = analysisJobRef.current;
     setAnalyzing(true);
     void fillDesignAnalysis(
       loaded,
       prepArch,
       frame,
       unitToMmRef.current,
-      () => cancelled,
+      () => cancelled || job !== analysisJobRef.current,
       anchors,
     ).then(() => {
       if (cancelled) return;
       setAnalyzing(false);
+      if (job !== analysisJobRef.current) return;
       restyleRef.current();
     });
     return () => {
       cancelled = true;
     };
-  }, [prepArch, loadVersion, contactMap, undercutMap]);
+  }, [prepArch, analysisTick, contactMap, undercutMap]);
 
   useEffect(() => {
     const opacity = lookRef.current.ghostOpacity;
@@ -5713,11 +5753,34 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       },
     });
     insertionAxesRef.current = kept;
+    if (options?.preview) {
+      syncInsertionMarkerRef.current();
+      syncBadgesRef.current();
+      onInsertionAxisChangeRef.current?.(kept.length > 0);
+      if (lookRef.current.undercutMap) {
+        const anchors = anchorsFromAxes(
+          kept,
+          placementsRef.current,
+          groupRef.current?.position ?? new THREE.Vector3(),
+        );
+        let restyle = false;
+        for (const entry of loadedRef.current) {
+          const mine = anchors.filter((anchor) => anchor.arch === entry.role);
+          if (!fillUndercutAlign(entry, mine)) continue;
+          const material = entry.mesh.material as THREE.MeshStandardMaterial;
+          if (!material.vertexColors) restyle = true;
+          else paintAnalysisColors(entry, lookRef.current, unitToMmRef.current);
+        }
+        if (restyle) restyleRef.current();
+      }
+      return true;
+    }
     for (const entry of loadedRef.current) entry.align = null;
-    if (!options?.preview) turnWorldToViewRef.current();
+    turnWorldToViewRef.current();
     syncInsertionMarkerRef.current();
     syncBadgesRef.current();
     onInsertionAxisChangeRef.current?.(kept.length > 0);
+    bumpAnalysisRef.current();
     setLoadVersion((v) => v + 1);
     return true;
   };
@@ -6025,6 +6088,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         meshEditCtlRef.current?.refresh();
         restyleRef.current();
         syncBadgesRef.current();
+        bumpAnalysisRef.current();
         setLoadVersion((value) => value + 1);
       },
       meshEditApply: () => {
@@ -6138,6 +6202,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         syncInsertionMarkerRef.current();
         syncBadgesRef.current();
         onInsertionAxisChangeRef.current?.(restored.length > 0);
+        bumpAnalysisRef.current();
         setLoadVersion((value) => value + 1);
       },
       setInsertionFromView: (toothNumbers, options) =>
