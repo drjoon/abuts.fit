@@ -4,7 +4,7 @@
 // - web/frontend/src/shared/chat/chatSoundPlayer.ts
 // - web/frontend/src/shared/practice/openPracticeTransferChat.ts
 // change-log:
-// - 2026-10-04: 탭이 보이면(포커스 없어도) in-app 토스트. 숨김만 헬퍼 OS 토스트.
+// - 2026-10-04: 포커스 없으면 헬퍼 OS 토스트(옆 창·다른 앱). 포커스만 in-app.
 // - 2026-10-04: 포커스 토스트 = 전역 공통 default(두꺼운 primary 테두리). alert 변형 폐기.
 // - 2026-10-04: 백그라운드·다른 사이트는 헬퍼 OS 토스트만. 포커스 중은 in-app 토스트(보기).
 
@@ -20,12 +20,16 @@ import {
 } from "@/shared/practice/openPracticeTransferChat";
 
 /**
- * 탭이 완전히 숨겨진 경우만 true.
- * 치과·기공소 창을 나란히 두면 한쪽은 포커스가 없어도 보이므로 in-app 토스트를 띄운다.
+ * 숨김·포커스 없음 → 헬퍼 OS 토스트.
+ * 치과·기공소 창을 나란히 두면 포커스 없는 쪽은 페이지 안 토스트가 잘 안 보이므로 OS 토스트를 쓴다.
  */
 export const isPracticeTransferAlertBackgrounded = (): boolean => {
   if (typeof document === "undefined") return true;
-  return Boolean(document.hidden);
+  if (document.hidden) return true;
+  if (typeof document.hasFocus === "function" && !document.hasFocus()) {
+    return true;
+  }
+  return false;
 };
 
 type NotifyOpts = {
@@ -38,8 +42,8 @@ type NotifyOpts = {
 
 /**
  * 채팅·의뢰 알림.
- * - 보이는 탭: 브라우저음 + 전역 공통 토스트(보기) — 포커스 없어도 표시
- * - 숨긴 탭·다른 사이트: 연결 프로그램 OS 토스트(보기 → 채팅)
+ * - 포커스된 탭: 브라우저음 + 전역 공통 토스트(보기)
+ * - 숨김·옆 창·다른 앱: 연결 프로그램 OS 토스트(보기 → 채팅)
  */
 export const notifyPracticeTransferAlert = ({
   title,
@@ -60,7 +64,7 @@ export const notifyPracticeTransferAlert = ({
 
   playChatNotifySound({ title, body, href });
 
-  // 숨긴 탭은 헬퍼 플로팅 토스트만(페이지 안 토스트는 안 보임)
+  // 백그라운드는 헬퍼 플로팅 토스트만(페이지 안 토스트는 안 보임)
   if (isPracticeTransferAlertBackgrounded()) return;
 
   toast({
