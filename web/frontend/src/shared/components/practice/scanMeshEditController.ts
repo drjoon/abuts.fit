@@ -1,5 +1,6 @@
 // AI 디자인 스캔 단계 — 메시 편집 포인터·선택·오버레이.
 // - 2026-09-28: 다듬기는 브러시·올가미·조각으로 바로 지운다. 구멍은 테두리를 눌러 고르고 메운다. 조각은 끄는 동안 정점을 옮긴다.
+// - 2026-10-04: 고른 구멍은 테두리 띠와 맞닿은 면을 칠해 보더를 보여 준다.
 // - 2026-09-28: 브러시·조각은 스캔 위 왼쪽 끌기, 올가미는 화면 왼쪽 끌기. 왼쪽은 뷰 회전에 쓰지 않는다.
 // - 2026-10-04: 다듬기 브러시는 손을 떼면 테두리를 고르고 안쪽 구멍을 잇는다.
 // - 2026-09-30: 가상 발치. 치아를 누르면 경계를 찾고, 브러시·넓히기·좁히기로 고친 뒤 적용하면 지우고 발치와를 메운다.
@@ -122,10 +123,117 @@ const EXTRACT_CLOSE_MM = 0.4;
 /** 넓히기·좁히기 한 번. */
 const EXTRACT_GROW_MM = 0.3;
 const LOOP_RGB = 0xf97316;
-const LOOP_PICKED_RGB = 0x0891b2;
+const LOOP_PICKED_RGB = 0x22d3ee;
+const LOOP_PICKED_FILL_RGB = 0x0891b2;
+const LOOP_BORDER_MM = 0.22;
+const LOOP_PICKED_BORDER_MM = 0.48;
+const LOOP_LIFT_MM = 0.08;
 const CLICK_SLOP_PX = 6;
 const LOOP_PICK_PX = 14;
 const STROKE_MS = 24;
+
+function loopVertexNormal(
+  normals: THREE.BufferAttribute | undefined,
+  positions: Float32Array,
+  loop: BoundaryLoop,
+  at: number,
+): [number, number, number] {
+  const v = loop.verts[at]!;
+  if (normals) {
+    const nx = normals.getX(v);
+    const ny = normals.getY(v);
+    const nz = normals.getZ(v);
+    const len = Math.hypot(nx, ny, nz);
+    if (len > 1e-8) return [nx / len, ny / len, nz / len];
+  }
+  const n = loop.verts.length;
+  const prev = loop.verts[(at + n - 1) % n]!;
+  const next = loop.verts[(at + 1) % n]!;
+  const ax = positions[v * 3]! - positions[prev * 3]!;
+  const ay = positions[v * 3 + 1]! - positions[prev * 3 + 1]!;
+  const az = positions[v * 3 + 2]! - positions[prev * 3 + 2]!;
+  const bx = positions[next * 3]! - positions[v * 3]!;
+  const by = positions[next * 3 + 1]! - positions[v * 3 + 1]!;
+  const bz = positions[next * 3 + 2]! - positions[v * 3 + 2]!;
+  const nx = ay * bz - az * by;
+  const ny = az * bx - ax * bz;
+  const nz = ax * by - ay * bx;
+  const len = Math.hypot(nx, ny, nz);
+  if (len > 1e-8) return [nx / len, ny / len, nz / len];
+  return [0, 0, 1];
+}
+
+/** 구멍 테두리를 메시 쪽으로 깐 띠. 1px 선은 스캔에 묻혀서 안 보인다. */
+function holeBorderRibbon(
+  loop: BoundaryLoop,
+  positions: Float32Array,
+  normals: THREE.BufferAttribute | undefined,
+  width: number,
+  lift: number,
+): Float32Array {
+  const n = loop.verts.length;
+  const out = new Float32Array(n * 18);
+  const ox = new Float32Array(n);
+  const oy = new Float32Array(n);
+  const oz = new Float32Array(n);
+  const lx = new Float32Array(n);
+  const ly = new Float32Array(n);
+  const lz = new Float32Array(n);
+  for (let i = 0; i < n; i += 1) {
+    const prev = loop.verts[(i + n - 1) % n]!;
+    const next = loop.verts[(i + 1) % n]!;
+    const [nx, ny, nz] = loopVertexNormal(normals, positions, loop, i);
+    lx[i] = nx * lift;
+    ly[i] = ny * lift;
+    lz[i] = nz * lift;
+    const tx = positions[next * 3]! - positions[prev * 3]!;
+    const ty = positions[next * 3 + 1]! - positions[prev * 3 + 1]!;
+    const tz = positions[next * 3 + 2]! - positions[prev * 3 + 2]!;
+    let px = ny * tz - nz * ty;
+    let py = nz * tx - nx * tz;
+    let pz = nx * ty - ny * tx;
+    const plen = Math.hypot(px, py, pz);
+    if (plen > 1e-8) {
+      px /= plen;
+      py /= plen;
+      pz /= plen;
+    }
+    ox[i] = px * width;
+    oy[i] = py * width;
+    oz[i] = pz * width;
+  }
+  let o = 0;
+  const push = (x: number, y: number, z: number) => {
+    out[o] = x;
+    out[o + 1] = y;
+    out[o + 2] = z;
+    o += 3;
+  };
+  for (let i = 0; i < n; i += 1) {
+    const j = (i + 1) % n;
+    const a = loop.verts[i]!;
+    const b = loop.verts[j]!;
+    const a0x = positions[a * 3]! + lx[i]!;
+    const a0y = positions[a * 3 + 1]! + ly[i]!;
+    const a0z = positions[a * 3 + 2]! + lz[i]!;
+    const b0x = positions[b * 3]! + lx[j]!;
+    const b0y = positions[b * 3 + 1]! + ly[j]!;
+    const b0z = positions[b * 3 + 2]! + lz[j]!;
+    const a1x = a0x + ox[i]!;
+    const a1y = a0y + oy[i]!;
+    const a1z = a0z + oz[i]!;
+    const b1x = b0x + ox[j]!;
+    const b1y = b0y + oy[j]!;
+    const b1z = b0z + oz[j]!;
+    push(a0x, a0y, a0z);
+    push(b0x, b0y, b0z);
+    push(b1x, b1y, b1z);
+    push(a0x, a0y, a0z);
+    push(b1x, b1y, b1z);
+    push(a1x, a1y, a1z);
+  }
+  return out;
+}
 
 function disposeTree(root: THREE.Object3D) {
   root.traverse((obj) => {
@@ -1049,6 +1157,30 @@ export class ScanMeshEditController {
     state.loopLines = null;
   }
 
+  private loopRimTris(state: EntryState, loop: BoundaryLoop) {
+    const { index, tris, triStart } = state.topo;
+    const n = loop.verts.length;
+    const out: number[] = [];
+    const seen = new Uint8Array(Math.floor(index.length / 3));
+    for (let i = 0; i < n; i += 1) {
+      const a = loop.verts[i]!;
+      const b = loop.verts[(i + 1) % n]!;
+      for (let k = triStart[a]!; k < triStart[a + 1]!; k += 1) {
+        const t = tris[k]!;
+        if (seen[t]) continue;
+        const ia = index[t * 3]!;
+        const ib = index[t * 3 + 1]!;
+        const ic = index[t * 3 + 2]!;
+        if ((ia === a && ib === b) || (ib === a && ic === b) || (ic === a && ia === b)) {
+          seen[t] = 1;
+          out.push(t);
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
   private syncLoopLines(state: EntryState) {
     this.removeLoopLines(state);
     if (this.spec?.tab !== "fill") return;
@@ -1056,38 +1188,77 @@ export class ScanMeshEditController {
     if (loops.length === 0) return;
     const positions = state.position.array as Float32Array;
     const normals = state.geometry.getAttribute("normal") as THREE.BufferAttribute | undefined;
-    const lift = 0.04 / Math.max(this.host.unitToMm(), 1e-9);
+    const mm = 1 / Math.max(this.host.unitToMm(), 1e-9);
+    const lift = LOOP_LIFT_MM * mm;
     const group = new THREE.Group();
     group.userData.meshEditLoops = true;
-    group.renderOrder = 6;
+    group.renderOrder = 20;
+    const pickedTris: number[] = [];
     loops.forEach((loop, i) => {
-      const pts = new Float32Array(loop.verts.length * 3);
-      loop.verts.forEach((v, k) => {
-        const nx = normals ? normals.getX(v) : 0;
-        const ny = normals ? normals.getY(v) : 0;
-        const nz = normals ? normals.getZ(v) : 0;
-        pts[k * 3] = positions[v * 3]! + nx * lift;
-        pts[k * 3 + 1] = positions[v * 3 + 1]! + ny * lift;
-        pts[k * 3 + 2] = positions[v * 3 + 2]! + nz * lift;
-      });
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute("position", new THREE.BufferAttribute(pts, 3));
       const picked = state.pickedLoops.has(i);
-      const line = new THREE.LineLoop(
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(
+          holeBorderRibbon(
+            loop,
+            positions,
+            normals,
+            (picked ? LOOP_PICKED_BORDER_MM : LOOP_BORDER_MM) * mm,
+            lift,
+          ),
+          3,
+        ),
+      );
+      const ribbon = new THREE.Mesh(
         geometry,
-        new THREE.LineBasicMaterial({
+        new THREE.MeshBasicMaterial({
           color: picked ? LOOP_PICKED_RGB : LOOP_RGB,
-          depthTest: !picked,
+          side: THREE.DoubleSide,
+          depthTest: false,
+          depthWrite: false,
           transparent: true,
-          opacity: picked ? 1 : 0.95,
+          opacity: picked ? 1 : 0.88,
           toneMapped: false,
         }),
       );
-      line.renderOrder = picked ? 8 : 6;
-      line.frustumCulled = false;
-      line.raycast = () => {};
-      group.add(line);
+      ribbon.renderOrder = picked ? 22 : 20;
+      ribbon.frustumCulled = false;
+      ribbon.raycast = () => {};
+      group.add(ribbon);
+      if (picked) pickedTris.push(...this.loopRimTris(state, loop));
     });
+    if (pickedTris.length > 0) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", state.position);
+      const index = new Uint32Array(pickedTris.length * 3);
+      const src = state.topo.index;
+      pickedTris.forEach((t, at) => {
+        index[at * 3] = src[t * 3]!;
+        index[at * 3 + 1] = src[t * 3 + 1]!;
+        index[at * 3 + 2] = src[t * 3 + 2]!;
+      });
+      geometry.setIndex(new THREE.BufferAttribute(index, 1));
+      const fill = new THREE.Mesh(
+        geometry,
+        new THREE.MeshBasicMaterial({
+          color: LOOP_PICKED_FILL_RGB,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+          transparent: true,
+          opacity: 0.42,
+          polygonOffset: true,
+          polygonOffsetFactor: -6,
+          polygonOffsetUnits: -6,
+          toneMapped: false,
+        }),
+      );
+      fill.userData.sharedGeometry = true;
+      fill.renderOrder = 21;
+      fill.frustumCulled = false;
+      fill.raycast = () => {};
+      group.add(fill);
+    }
     state.mesh.add(group);
     state.loopLines = group;
   }
