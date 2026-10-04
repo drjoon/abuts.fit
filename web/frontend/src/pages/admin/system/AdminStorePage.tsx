@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-04: 패키지 구매자 탭·pkg가 입력 제거(단일 판매가).
+// - 2026-10-04: 기본 클러스터 — Abutment 4종 + Grip Driver만.
 // - 2026-09-13: 패키지 검색 — 입력 즉시(150ms) 자동 조회.
 // - 2026-09-13: 패키지 탭 — 유형 열 제거 · 검색/ON 2열 배치.
 // - 2026-09-13: 패키지 탭 — 이름·사업자번호 검색 + ON 목록.
@@ -27,14 +29,11 @@ import {
   RefreshCw,
   Trash2,
   Truck,
-  Wallet,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiFetch } from "@/shared/api/apiClient";
 import { formatKstDateTimeToKo } from "@/shared/date/kst";
@@ -61,30 +60,12 @@ import {
   summarizeOrderItems,
 } from "@/pages/requestor/store/storeOrderUi";
 
-type PackageBuyerRow = {
-  businessAnchorId: string;
-  name: string;
-  companyName?: string;
-  businessNumberNormalized?: string;
-  storePackageBuyer: boolean;
-  storePackageBuyerAt?: string | null;
-};
-
-function formatBizNo(raw?: string) {
-  const d = String(raw || "").replace(/\D/g, "");
-  if (d.length === 10) {
-    return `${d.slice(0, 3)}-${d.slice(3, 5)}-${d.slice(5)}`;
-  }
-  return raw || "—";
-}
 
 type InventoryRow = {
   productId: string;
   name: string;
   listPriceInclusive: number | null;
-  packagePriceInclusive?: number | null;
   defaultListPriceInclusive?: number | null;
-  defaultPackagePriceInclusive?: number | null;
   qtyOnHand: number;
   qtyReserved: number;
   qtyAvailable: number;
@@ -119,7 +100,6 @@ type StoreOrder = {
 
 type ProductDraft = {
   list: string;
-  pkg: string;
   qty: string;
 };
 
@@ -177,41 +157,6 @@ type StoreProductCluster = {
 /** FE fallback — BE `storeProductClusters.js` 시드와 동일. */
 const DEFAULT_STORE_PRODUCT_CLUSTERS: StoreProductCluster[] = [
   {
-    id: "full-package",
-    label: "500만 패키지",
-    parentProductId: "full-package",
-    childProductIds: [],
-    compositionHint: "키트 2종 + Abutment 4종 ×60",
-  },
-  {
-    id: "surgical-kit",
-    label: "Surgical Kit",
-    parentProductId: "surgical-kit",
-    childProductIds: [
-      "kit-case-surgical",
-      "initial-pen",
-      "pen",
-      "cup",
-      "check-pin",
-      "bone-shaper",
-    ],
-    compositionHint:
-      "Surgical 케이스 · Pen-Drill · Pen-Cup · SurgicalPin · BoneShaper",
-  },
-  {
-    id: "prosthetic-kit",
-    label: "Prosthetic Kit",
-    parentProductId: "prosthetic-kit",
-    childProductIds: [
-      "kit-case-prosthetic",
-      "gingival-shaper",
-      "hex-driver",
-      "torque-wrench",
-    ],
-    compositionHint:
-      "Prosthetic 케이스 · GingivalShaper(6·7·9) · Grip Driver(5) · Scan bar · Torque",
-  },
-  {
     id: "abutment",
     label: "Abutment",
     parentProductId: null,
@@ -222,6 +167,13 @@ const DEFAULT_STORE_PRODUCT_CLUSTERS: StoreProductCluster[] = [
       "simple-healing",
     ],
     compositionHint: "SimpleAbutment-Hex/NonHex · SimpleHealing-Hex/NonHex",
+  },
+  {
+    id: "grip-driver",
+    label: "Grip Driver",
+    parentProductId: null,
+    childProductIds: ["hex-driver"],
+    compositionHint: "Hand S·M·L · Handpiece M·L",
   },
 ];
 
@@ -360,13 +312,6 @@ export default function AdminStorePage() {
   const [editingClusterLabel, setEditingClusterLabel] = useState("");
   const [orderBusyId, setOrderBusyId] = useState<string | null>(null);
   const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
-  const [pkgBuyerQuery, setPkgBuyerQuery] = useState("");
-  const [pkgSearchRows, setPkgSearchRows] = useState<PackageBuyerRow[]>([]);
-  const [pkgSearchActive, setPkgSearchActive] = useState(false);
-  const [pkgOnRows, setPkgOnRows] = useState<PackageBuyerRow[]>([]);
-  const [pkgBuyerBusy, setPkgBuyerBusy] = useState(false);
-  const [pkgToggleId, setPkgToggleId] = useState<string | null>(null);
-
   const load = useCallback(async () => {
     setBusy(true);
     try {
@@ -396,7 +341,6 @@ export default function AdminStorePage() {
         for (const row of inv) {
           next[row.productId] = {
             list: wonToManwonDraft(row.listPriceInclusive),
-            pkg: wonToManwonDraft(row.packagePriceInclusive),
             qty: String(row.qtyOnHand),
           };
         }
@@ -594,7 +538,6 @@ export default function AdminStorePage() {
       ...prev,
       [productId]: {
         list: prev[productId]?.list ?? "",
-        pkg: prev[productId]?.pkg ?? "",
         qty: prev[productId]?.qty ?? "",
         [key]: value,
       },
@@ -619,20 +562,13 @@ export default function AdminStorePage() {
   async function saveProduct(row: InventoryRow) {
     const draft = productDrafts[row.productId] || {
       list: "",
-      pkg: "",
       qty: String(row.qtyOnHand),
     };
     const list = parseManwonInput(draft.list);
-    const pkg =
-      draft.pkg.trim() === "" ? null : parseManwonInput(draft.pkg);
     const qtyOnHand = Math.round(Number(draft.qty));
 
     if (list == null) {
       toast.error("판매가가 올바르지 않습니다. (만원, 소수 2자리)");
-      return;
-    }
-    if (draft.pkg.trim() !== "" && pkg == null) {
-      toast.error("pkg가가 올바르지 않습니다. (만원, 소수 2자리)");
       return;
     }
     if (!Number.isFinite(qtyOnHand) || qtyOnHand < 0) {
@@ -648,18 +584,14 @@ export default function AdminStorePage() {
           message?: string;
           data?: {
             listPriceInclusive: number | null;
-            packagePriceInclusive: number | null;
             defaultListPriceInclusive?: number | null;
-            defaultPackagePriceInclusive?: number | null;
           };
         }>({
           path: `/api/admin/store/products/${row.productId}/prices`,
           method: "PATCH",
           jsonBody: {
             listPriceInclusive: list,
-            ...(pkg == null
-              ? { clearPackage: true }
-              : { packagePriceInclusive: pkg }),
+            clearPackage: true,
           },
         }),
         apiFetch<{ success: boolean; message?: string }>({
@@ -680,20 +612,15 @@ export default function AdminStorePage() {
 
       const priceData = priceRes.data.data;
       const savedList = priceData?.listPriceInclusive ?? list;
-      const savedPkg = priceData?.packagePriceInclusive ?? pkg;
       setInventory((prev) =>
         prev.map((r) =>
           r.productId === row.productId
             ? {
                 ...r,
                 listPriceInclusive: savedList,
-                packagePriceInclusive: savedPkg,
                 defaultListPriceInclusive:
                   priceData?.defaultListPriceInclusive ??
                   r.defaultListPriceInclusive,
-                defaultPackagePriceInclusive:
-                  priceData?.defaultPackagePriceInclusive ??
-                  r.defaultPackagePriceInclusive,
                 qtyOnHand,
                 qtyAvailable: Math.max(0, qtyOnHand - r.qtyReserved),
               }
@@ -704,14 +631,10 @@ export default function AdminStorePage() {
         ...prev,
         [row.productId]: {
           list: wonToManwonDraft(savedList),
-          pkg: wonToManwonDraft(savedPkg),
           qty: String(qtyOnHand),
         },
       }));
-      toast.success(
-        `저장: 판매 ${formatManwonUi(savedList)}` +
-          (savedPkg != null ? ` · pkg ${formatManwonUi(savedPkg)}` : ""),
-      );
+      toast.success(`저장: 판매 ${formatManwonUi(savedList)}`);
     } catch {
       toast.error("저장 실패");
     } finally {
@@ -727,7 +650,6 @@ export default function AdminStorePage() {
         message?: string;
         data?: {
           listPriceInclusive: number | null;
-          packagePriceInclusive: number | null;
         };
       }>({
         path: `/api/admin/store/products/${row.productId}/prices`,
@@ -739,14 +661,12 @@ export default function AdminStorePage() {
         return;
       }
       const list = res.data.data?.listPriceInclusive;
-      const pkg = res.data.data?.packagePriceInclusive;
       setInventory((prev) =>
         prev.map((r) =>
           r.productId === row.productId
             ? {
                 ...r,
                 listPriceInclusive: list ?? null,
-                packagePriceInclusive: pkg ?? null,
               }
             : r,
         ),
@@ -755,14 +675,10 @@ export default function AdminStorePage() {
         ...prev,
         [row.productId]: {
           list: wonToManwonDraft(list),
-          pkg: wonToManwonDraft(pkg),
           qty: prev[row.productId]?.qty ?? String(row.qtyOnHand),
         },
       }));
-      toast.success(
-        `기본가 복원: ${formatManwonUi(list)}` +
-          (pkg != null ? ` · pkg ${formatManwonUi(pkg)}` : ""),
-      );
+      toast.success(`기본가 복원: ${formatManwonUi(list)}`);
     } catch {
       toast.error("기본가 복원 실패");
     } finally {
@@ -902,117 +818,6 @@ export default function AdminStorePage() {
     }
   }
 
-  async function loadPackageBuyerOnList() {
-    setPkgBuyerBusy(true);
-    try {
-      const res = await apiFetch<{
-        success: boolean;
-        data?: { items?: PackageBuyerRow[] };
-        message?: string;
-      }>({ path: "/api/admin/store/package-buyers?limit=200" });
-      if (!res.ok || !res.data?.success) {
-        toast.error(res.data?.message || "ON 목록 조회 실패");
-        return;
-      }
-      setPkgOnRows(res.data.data?.items || []);
-    } catch {
-      toast.error("패키지 ON 목록 조회 실패");
-    } finally {
-      setPkgBuyerBusy(false);
-    }
-  }
-
-  useEffect(() => {
-    const q = pkgBuyerQuery.trim();
-    if (!q) {
-      setPkgSearchActive(false);
-      setPkgSearchRows([]);
-      return;
-    }
-    setPkgSearchActive(true);
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const res = await apiFetch<{
-            success: boolean;
-            data?: { items?: PackageBuyerRow[] };
-            message?: string;
-          }>({
-            path: `/api/admin/store/package-buyers?q=${encodeURIComponent(q)}&limit=50`,
-          });
-          if (cancelled) return;
-          if (!res.ok || !res.data?.success) {
-            setPkgSearchRows([]);
-            return;
-          }
-          setPkgSearchRows(res.data.data?.items || []);
-        } catch {
-          if (!cancelled) setPkgSearchRows([]);
-        }
-      })();
-    }, 150);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [pkgBuyerQuery]);
-
-  async function togglePackageBuyerRow(
-    row: PackageBuyerRow,
-    enabled: boolean,
-  ) {
-    const id = row.businessAnchorId;
-    setPkgToggleId(id);
-    try {
-      const res = await apiFetch<{
-        success: boolean;
-        data?: {
-          businessAnchorId: string;
-          name: string;
-          storePackageBuyer: boolean;
-          storePackageBuyerAt?: string | null;
-        };
-        message?: string;
-      }>({
-        path: `/api/admin/store/package-buyer/${encodeURIComponent(id)}`,
-        method: "PATCH",
-        jsonBody: { enabled },
-      });
-      if (!res.ok || !res.data?.success || !res.data.data) {
-        toast.error(res.data?.message || "저장 실패");
-        return;
-      }
-      const next: PackageBuyerRow = {
-        ...row,
-        storePackageBuyer: Boolean(res.data.data.storePackageBuyer),
-        storePackageBuyerAt: res.data.data.storePackageBuyerAt ?? null,
-      };
-      setPkgSearchRows((prev) =>
-        prev.map((r) =>
-          r.businessAnchorId === id ? { ...r, ...next } : r,
-        ),
-      );
-      setPkgOnRows((prev) => {
-        if (enabled) {
-          const without = prev.filter((r) => r.businessAnchorId !== id);
-          return [next, ...without];
-        }
-        return prev.filter((r) => r.businessAnchorId !== id);
-      });
-      toast.success(enabled ? "패키지 단가 ON" : "패키지 단가 OFF");
-    } catch {
-      toast.error("저장 실패");
-    } finally {
-      setPkgToggleId(null);
-    }
-  }
-
-  useEffect(() => {
-    if (tab !== "package") return;
-    void loadPackageBuyerOnList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- tab enter only
-  }, [tab]);
 
   function renderInventoryPriceRow(
     row: InventoryRow,
@@ -1024,7 +829,6 @@ export default function AdminStorePage() {
   ) {
     const draft = productDrafts[row.productId] || {
       list: wonToManwonDraft(row.listPriceInclusive),
-      pkg: wonToManwonDraft(row.packagePriceInclusive),
       qty: String(row.qtyOnHand),
     };
     const low = row.qtyAvailable <= 5;
@@ -1120,33 +924,6 @@ export default function AdminStorePage() {
             </span>
           </div>
         </td>
-        <td className="px-3 py-2.5 align-top">
-          <div className="flex items-center gap-1">
-            <Input
-              className="h-8 w-[6.5rem] tabular-nums"
-              inputMode="decimal"
-              placeholder="없음"
-              value={draft.pkg}
-              onChange={(e) =>
-                patchProductDraft(row.productId, "pkg", e.target.value)
-              }
-              onBlur={() => {
-                if (draft.pkg.trim() === "") {
-                  patchProductDraft(row.productId, "pkg", "");
-                  return;
-                }
-                patchProductDraft(
-                  row.productId,
-                  "pkg",
-                  normalizeManwonDraft(draft.pkg),
-                );
-              }}
-            />
-            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-              만원
-            </span>
-          </div>
-        </td>
         <td
           className={cn(
             "px-3 py-2.5 align-middle tabular-nums",
@@ -1229,7 +1006,7 @@ export default function AdminStorePage() {
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground">
-              주문 풀필먼트 · 판매가/pkg가 · 재고 · 패키지 구매자
+              주문 풀필먼트 · 판매가 · 재고
             </p>
           </div>
           <Button
@@ -1284,9 +1061,6 @@ export default function AdminStorePage() {
             </TabsTrigger>
             <TabsTrigger value="products" className="rounded-lg px-4 text-sm">
               상품 · 재고
-            </TabsTrigger>
-            <TabsTrigger value="package" className="rounded-lg px-4 text-sm">
-              패키지 구매자
             </TabsTrigger>
           </TabsList>
 
@@ -1553,7 +1327,6 @@ export default function AdminStorePage() {
                       <tr>
                         <th className="px-3 py-2.5 font-medium">상품</th>
                         <th className="px-3 py-2.5 font-medium">판매가(만원)</th>
-                        <th className="px-3 py-2.5 font-medium">pkg가(만원)</th>
                         <th className="px-3 py-2.5 font-medium">가용</th>
                         <th className="px-3 py-2.5 font-medium">예약</th>
                         <th className="px-3 py-2.5 font-medium">보유</th>
@@ -1718,205 +1491,6 @@ export default function AdminStorePage() {
             )}
           </TabsContent>
 
-          <TabsContent value="package" className="mt-0 space-y-4">
-            <CreditSectionHeader
-              icon={Wallet}
-              title="패키지 구매자"
-              description="500만 패키지(full-package) 결제 확정 시 자동 ON. 이름·사업자번호로 찾아 수동 토글할 수 있습니다."
-            />
-            <div className="grid gap-4 lg:grid-cols-2">
-              <CreditPanel className="space-y-4 p-4">
-                <div className="space-y-1">
-                  <label className="text-[11px] text-muted-foreground">
-                    사업자 검색
-                  </label>
-                  <div className="relative">
-                    <Input
-                      className="h-9 pr-9 text-sm"
-                      value={pkgBuyerQuery}
-                      onChange={(e) => setPkgBuyerQuery(e.target.value)}
-                      placeholder="이름 · 상호 · 사업자번호 · BA ID"
-                      autoComplete="off"
-                    />
-                    {pkgBuyerQuery ? (
-                      <button
-                        type="button"
-                        className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                        aria-label="검색어 지우기"
-                        onClick={() => setPkgBuyerQuery("")}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-
-                {!pkgSearchActive ? (
-                  <p className="text-sm text-muted-foreground">
-                    입력하는 즉시 검색됩니다.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    <h3 className="text-sm font-medium">
-                      검색 결과
-                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                        {pkgSearchRows.length}건
-                      </span>
-                    </h3>
-                    {pkgSearchRows.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        일치하는 사업자가 없습니다.
-                      </p>
-                    ) : (
-                      <div className="overflow-x-auto rounded-xl border border-border/70">
-                        <table className="w-full text-left text-sm">
-                          <thead className="border-b bg-muted/40 text-[11px] text-muted-foreground">
-                            <tr>
-                              <th className="px-3 py-2 font-medium">사업자</th>
-                              <th className="px-3 py-2 font-medium">
-                                사업자번호
-                              </th>
-                              <th className="px-3 py-2 font-medium text-right">
-                                패키지 단가
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {pkgSearchRows.map((row) => (
-                              <tr
-                                key={row.businessAnchorId}
-                                className="border-b border-border/50 last:border-0"
-                              >
-                                <td className="px-3 py-2.5">
-                                  <div className="font-medium">
-                                    {row.name ||
-                                      row.companyName ||
-                                      "(이름 없음)"}
-                                  </div>
-                                  <div className="font-mono text-[10px] text-muted-foreground">
-                                    {row.businessAnchorId}
-                                  </div>
-                                </td>
-                                <td className="px-3 py-2.5 font-mono text-xs">
-                                  {formatBizNo(row.businessNumberNormalized)}
-                                </td>
-                                <td className="px-3 py-2.5">
-                                  <div className="flex items-center justify-end gap-2">
-                                    <Badge
-                                      variant={
-                                        row.storePackageBuyer
-                                          ? "default"
-                                          : "outline"
-                                      }
-                                      className="text-[10px]"
-                                    >
-                                      {row.storePackageBuyer ? "ON" : "OFF"}
-                                    </Badge>
-                                    <Switch
-                                      checked={row.storePackageBuyer}
-                                      disabled={
-                                        pkgToggleId === row.businessAnchorId
-                                      }
-                                      onCheckedChange={(checked) =>
-                                        void togglePackageBuyerRow(
-                                          row,
-                                          checked,
-                                        )
-                                      }
-                                    />
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </CreditPanel>
-
-              <CreditPanel className="space-y-3 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-sm font-medium">
-                    패키지 단가 ON
-                    <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                      {pkgOnRows.length}곳
-                    </span>
-                  </h3>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="h-7"
-                    disabled={pkgBuyerBusy}
-                    onClick={() => void loadPackageBuyerOnList()}
-                  >
-                    <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-                    새로고침
-                  </Button>
-                </div>
-                {pkgOnRows.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    현재 패키지 단가가 켜진 사업자가 없습니다.
-                  </p>
-                ) : (
-                  <div className="overflow-x-auto rounded-xl border border-border/70">
-                    <table className="w-full text-left text-sm">
-                      <thead className="border-b bg-muted/40 text-[11px] text-muted-foreground">
-                        <tr>
-                          <th className="px-3 py-2 font-medium">사업자</th>
-                          <th className="px-3 py-2 font-medium">적용 시각</th>
-                          <th className="px-3 py-2 font-medium text-right">
-                            적용
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pkgOnRows.map((row) => (
-                          <tr
-                            key={row.businessAnchorId}
-                            className="border-b border-border/50 last:border-0"
-                          >
-                            <td className="px-3 py-2.5">
-                              <div className="font-medium">
-                                {row.name ||
-                                  row.companyName ||
-                                  "(이름 없음)"}
-                              </div>
-                              <div className="text-[11px] text-muted-foreground">
-                                {formatBizNo(row.businessNumberNormalized)}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                              {row.storePackageBuyerAt
-                                ? formatKstDateTimeToKo(
-                                    row.storePackageBuyerAt,
-                                  )
-                                : "—"}
-                            </td>
-                            <td className="px-3 py-2.5">
-                              <div className="flex justify-end">
-                                <Switch
-                                  checked
-                                  disabled={
-                                    pkgToggleId === row.businessAnchorId
-                                  }
-                                  onCheckedChange={(checked) =>
-                                    void togglePackageBuyerRow(row, checked)
-                                  }
-                                />
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </CreditPanel>
-            </div>
-          </TabsContent>
         </Tabs>
       </div>
     </div>

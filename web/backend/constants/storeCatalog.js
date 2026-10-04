@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-04: 패키지 할인(pkg가) 폐지 — 단일 판매가만. 레거시 pkg 상수/헬퍼는 미사용.
+// - 2026-10-04: 신규 판매 SKU — Abutment 4종 + Grip Driver만. 키트·패키지·기타 단품은 NAMES만 유지(과거 주문).
 // - 2026-09-19: 판매·구성 재동기 — Surgical 154/pkg 121, Prosthetic 110/pkg 88, Abutment 1.65/pkg 1.32×60. 풀패키지 구성합 660만·판매가 500만. 단품=제조×2.
 // - 2026-09-14: 판매가표 재동기 — 풀패키지 Surgical+Prosthetic×1 + Abutment 4종×72(판매합 663.52만)·패키지 판매가 500만.
 // - 2026-09-14: 제조단가표 동기 — Surgical pkg 88만. Prosthetic 케이스 12.1·Gingival 4.4·Hex 3.3·Torque 8.8×2. 명칭 Hex/NonHex. Prosthetic 구성 GS×3·Driver S/M/L.
@@ -17,10 +19,10 @@
 // - web/backend/models/storeProductPrice.model.js
 // - rules.md §2.3
 
-/** 500만 패키지 상품 ID. 결제 확정 시 BA.storePackageBuyer ON. */
+/** 레거시 500만 패키지 상품 ID(신규 판매 없음). */
 export const STORE_FULL_PACKAGE_PRODUCT_ID = "full-package";
 
-/** 500만 패키지 판매가(부가세 포함). 카탈로그·안내 카피용. */
+/** 레거시 패키지 임계(미사용). */
 export const STORE_PACKAGE_PREPAID_THRESHOLD = 5_000_000;
 
 /**
@@ -62,44 +64,20 @@ export function packageInclusiveFromList(listInclusive) {
 
 /**
  * 판매가(부가세 포함) 기본값.
- * 키트·어벗: 판매가 고시. 단품: 제조단가(만원)×2.
- * 신규 판매·재고 SSOT. 레거시 SKU는 NAMES만 유지(과거 주문 표시).
+ * 신규 판매·재고 SSOT: Abutment 4종 + Grip Driver.
+ * 레거시 SKU는 NAMES만 유지(과거 주문 표시).
  */
 export const STORE_PRODUCT_INCLUSIVE_PRICES = Object.freeze({
-  "full-package": 6_600_000, // Surgical 154 + Prosthetic 110 + Abutment 4종×60×1.65
-  "surgical-kit": 1_540_000,
-  "prosthetic-kit": 1_100_000,
-  "kit-case-surgical": 242_000, // mfg 12.1만 ×2
-  "kit-case-prosthetic": 242_000, // mfg 12.1만 ×2
-  "initial-pen": 154_000, // Pen-Drill · mfg 7.7만 ×2
-  pen: 154_000, // mfg 7.7만 ×2
-  cup: 26_400, // Pen-Cup · mfg 1.32만 ×2
-  "check-pin": 66_000, // SurgicalPin · mfg 3.3만 ×2
-  "bone-shaper": 88_000, // mfg 4.4만 ×2
-  "gingival-shaper": 88_000, // mfg 4.4만 ×2
   "hex-driver": 44_000, // Grip Driver · mfg 2.2만 ×2
-  "torque-wrench": 198_000, // mfg 9.9만 ×2
   "simple-abutment-2": 16_500,
   "simple-healing-2": 16_500,
   "simple-abutment": 16_500,
   "simple-healing": 16_500,
 });
 
-/** pkg가 기본값. full-package·키트·어벗은 고시가, 단품은 packageInclusiveFromList. */
+/** pkg가 기본값. 어벗은 고시가, Grip Driver는 packageInclusiveFromList. */
 export const STORE_PRODUCT_PACKAGE_INCLUSIVE_PRICES = Object.freeze({
-  "full-package": 5_000_000,
-  "surgical-kit": 1_210_000,
-  "prosthetic-kit": 880_000,
-  "kit-case-surgical": packageInclusiveFromList(242_000),
-  "kit-case-prosthetic": packageInclusiveFromList(242_000),
-  "initial-pen": packageInclusiveFromList(154_000),
-  pen: packageInclusiveFromList(154_000),
-  cup: packageInclusiveFromList(26_400),
-  "check-pin": packageInclusiveFromList(66_000),
-  "bone-shaper": packageInclusiveFromList(88_000),
-  "gingival-shaper": packageInclusiveFromList(88_000),
   "hex-driver": packageInclusiveFromList(44_000),
-  "torque-wrench": packageInclusiveFromList(198_000),
   "simple-abutment-2": 13_200,
   "simple-healing-2": 13_200,
   "simple-abutment": 13_200,
@@ -176,18 +154,9 @@ export function getStoreProductPackagePriceInclusive(productId) {
   return Number.isFinite(price) ? price : null;
 }
 
-/**
- * 패키지 구매자면 pkg가(있을 때), 아니면 판매가.
- * full-package는 항상 패키지 판매가.
- */
-export function resolveStoreUnitPriceInclusive(productId, isPackageBuyer) {
-  const key = String(productId || "").trim();
-  const list = getStoreProductPriceInclusive(key);
-  if (list == null) return null;
-  const forcePkg = STORE_ALWAYS_PACKAGE_PRICE_IDS.has(key);
-  if (!isPackageBuyer && !forcePkg) return list;
-  const pkg = getStoreProductPackagePriceInclusive(key);
-  return pkg != null ? pkg : list;
+/** 판매가(부가세 포함). 단일가 — 패키지 할인 없음. */
+export function resolveStoreUnitPriceInclusive(productId) {
+  return getStoreProductPriceInclusive(productId);
 }
 
 export function getStoreProductName(productId) {

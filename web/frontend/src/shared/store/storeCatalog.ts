@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-04: 패키지 할인(pkg가) 폐지 — 단일 판매가만.
+// - 2026-10-04: 판매 노출 — Abutment 4종 + Grip Driver만. 키트·패키지·기타 단품 제거.
 // - 2026-09-19: 판매·구성 재동기 — Surgical 154/pkg 121, Prosthetic 110/pkg 88(Grip Driver×5·Scan bar×4), Abutment 1.65/pkg 1.32×60. 풀패키지 구성합 660만·판매가 500만. 단품=제조×2.
 // - 2026-09-14: 판매가표 재동기 — 풀패키지 Surgical+Prosthetic×1 + Abutment 4종×72(판매합 663.52만)·패키지 판매가 500만.
 // - 2026-09-14: 제조단가표 동기 — Surgical pkg 88만. Prosthetic 케이스 12.1·Gingival 4.4·Hex 3.3·Torque 8.8×2. Hex/NonHex 명칭. Prosthetic GS×3·Driver S/M/L.
@@ -24,7 +26,6 @@ export type StoreProductOption = {
   id: string;
   label: string;
   listPriceInclusive?: number | null;
-  packagePriceInclusive?: number | null;
 };
 
 export type StoreProduct = {
@@ -48,10 +49,6 @@ export type StoreProduct = {
   taxType?: "과세" | "면세";
   /** 부가세 포함 판매가(원). null이면 라벨만. */
   listPriceInclusive?: number | null;
-  /** 부가세 포함 pkg가(원). 패키지 구매자(500만 패키지 구매)에게 적용. */
-  packagePriceInclusive?: number | null;
-  /** true면 패키지 구매자 여부와 무관하게 pkg가(또는 패키지 판매가) 적용. */
-  alwaysUsePackagePrice?: boolean;
   /** 구매 전 필수 옵션(Kit Case 등). */
   options?: StoreProductOption[];
   /** 카드 가격을 최저가~ 로 표시. */
@@ -64,35 +61,9 @@ export type StoreCategory = {
   products: StoreProduct[];
 };
 
-/** 500만 패키지 판매가(부가세 포함). BA.storePackageBuyer는 full-package 결제 시 ON. */
-export const STORE_PACKAGE_PREPAID_THRESHOLD = 5_000_000;
-export const STORE_FULL_PACKAGE_PRODUCT_ID = "full-package";
-
-const KIT_CASE_SPECS: StoreProductSpec[] = [
-  { label: "포장단위", value: "1EA" },
-  { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-];
-
-/** Kit Case 단품 — Surgical·Prosthetic 모두 제조 12.1만 ×2. */
-export const KIT_CASE_OPTIONS: StoreProductOption[] = [
-  {
-    id: "kit-case-surgical",
-    label: "Surgical Kit Case",
-    listPriceInclusive: 242_000,
-    packagePriceInclusive: 198_000,
-  },
-  {
-    id: "kit-case-prosthetic",
-    label: "Prosthetic Kit Case",
-    listPriceInclusive: 242_000,
-    packagePriceInclusive: 198_000,
-  },
-];
-
 /**
- * 치과 스토어 카탈로그.
- * 1행 Abutment 4 · 2행 키트/패키지 · 3행 단품.
- * 이미지·명칭: acrodent.com 상품 페이지 기준 + 제조단가표 동기.
+ * 치과·기공소 스토어 카탈로그.
+ * Abutment 4종 + Grip Driver. 이미지·명칭: acrodent.com 기준.
  */
 export const STORE_CATEGORIES: StoreCategory[] = [
   {
@@ -170,212 +141,9 @@ export const STORE_CATEGORIES: StoreCategory[] = [
     ],
   },
   {
-    id: "kits",
-    label: "Kit",
-    products: [
-      {
-        id: "full-package",
-        name: "500만 패키지",
-        image: "/store/acrodent/full-package.jpg",
-        blurb: "키트 2종 + Abutment 240EA",
-        alwaysUsePackagePrice: true,
-        description:
-          "Surgical·Prosthetic Kit 각 1키트, SimpleAbutment·Healing Hex/NonHex 각 60EA. 구성 판매합 660만 → 패키지 판매가 500만.",
-        galleryImages: [
-          "/store/acrodent/full-package.jpg",
-          "/store/acrodent/initial-kit.jpg",
-          "/store/acrodent/prosthetic-kit.jpg",
-          "/store/acrodent/simple-abutment-2.jpg",
-          "/store/acrodent/simple-healing-2.jpg",
-          "/store/acrodent/simple-abutment.jpg",
-          "/store/acrodent/simple-healing.jpg",
-        ],
-        contentImages: [
-          "/store/detail/initial-kit-1.jpg",
-          "/store/detail/prosthetic-kit-1.jpg",
-          "/store/detail/simple-abutment-2-1.jpg",
-          "/store/detail/simple-healing-2-1.jpg",
-          "/store/detail/simple-abutment-1.jpg",
-          "/store/detail/simple-healing-1.jpg",
-        ],
-        specs: [
-          {
-            label: "구성",
-            value:
-              "Surgical Kit ×1, Prosthetic Kit ×1, SimpleAbutment-Hex ×60, SimpleHealing-Hex ×60, SimpleAbutment-NonHex ×60, SimpleHealing-NonHex ×60",
-          },
-          { label: "구성 판매합", value: "6,600,000원" },
-          { label: "패키지 판매가", value: "5,000,000원" },
-          { label: "포장단위", value: "1세트" },
-          { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-        ],
-      },
-      {
-        id: "surgical-kit",
-        name: "Surgical Kit",
-        image: "/store/acrodent/initial-kit.jpg",
-        blurb: "SurgicalPen · SurgicalPin · BoneShaper",
-        description:
-          "린데만 타입 SurgicalPen(Pen-Drill×2, Pen-Cup×5, 직경 2.3), SurgicalPin(CheckPin·BonePin), BoneShaper S/M 6종. 판매가 154만 · pkg 121만.",
-        galleryImages: [
-          "/store/acrodent/initial-kit.jpg",
-          "/store/acrodent/check-kit.jpg",
-          "/store/acrodent/pen.jpg",
-          "/store/acrodent/cup.jpg",
-          "/store/acrodent/check-pin.jpg",
-          "/store/acrodent/bone-shaper.jpg",
-        ],
-        contentImages: [
-          "/store/detail/initial-kit-1.jpg",
-          "/store/detail/check-kit-1.jpg",
-        ],
-        specs: [
-          {
-            label: "구성",
-            value:
-              "Pen-Drill×2, Pen-Cup×5, SurgicalPin×5, BoneShaper×6, Kit Case×1",
-          },
-          { label: "BoneShaper", value: "S6·7·9 & M6·7·9 (6종) · 팁 조금 길게" },
-          { label: "포장단위", value: "1키트" },
-          { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-        ],
-      },
-      {
-        id: "prosthetic-kit",
-        name: "Prosthetic Kit",
-        image: "/store/acrodent/prosthetic-kit.jpg",
-        blurb: "GingivalShaper · Grip Driver · Scan bar",
-        description:
-          "GingivalShaper 6·7·9(3종), Grip Driver Hand S/M/L·Handpiece M/L(5), Scan bar 8·16mm 각 2, Torque wrench. 판매가 110만 · pkg 88만.",
-        galleryImages: [
-          "/store/acrodent/prosthetic-kit.jpg",
-          "/store/acrodent/gingival-shaper.jpg",
-          "/store/acrodent/hex-driver.jpg",
-          "/store/acrodent/torque-wrench.jpg",
-        ],
-        contentImages: ["/store/detail/prosthetic-kit-1.jpg"],
-        specs: [
-          {
-            label: "구성",
-            value:
-              "GingivalShaper ×3, Grip Driver ×5, Scan bar ×4, Torque wrench ×1, Kit Case ×1",
-          },
-          {
-            label: "Grip Driver",
-            value: "Hand S·M·L, Handpiece M·L (5종)",
-          },
-          { label: "Scan bar", value: "8mm ×2, 16mm ×2" },
-          { label: "GingivalShaper", value: "6 · 7 · 9 (3종)" },
-          { label: "포장단위", value: "1키트" },
-          { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-        ],
-      },
-    ],
-  },
-  {
     id: "parts",
-    label: "단품",
+    label: "Grip Driver",
     products: [
-      {
-        id: "kit-case",
-        name: "Kit Case",
-        image: "/store/acrodent/kit-case.jpg",
-        blurb: "Surgical / Prosthetic · 2종",
-        description:
-          "시술 키트 수납용 케이스. Surgical·Prosthetic 모두 제조 12.1만 ×2 = 24.2만.",
-        galleryImages: ["/store/acrodent/kit-case.jpg"],
-        specs: KIT_CASE_SPECS,
-        options: KIT_CASE_OPTIONS,
-        priceFrom: true,
-      },
-      {
-        id: "initial-pen",
-        name: "SurgicalPen",
-        image: "/store/acrodent/initial-pen.jpg",
-        blurb: "린데만 타입 · 직경 2.3",
-        description:
-          "린데만 타입 Pen-Drill, 직경 2.3. 제조 7.7만 ×2 = 15.4만.",
-        galleryImages: ["/store/acrodent/initial-pen.jpg"],
-        contentImages: ["/store/detail/initial-pen-1.jpg"],
-        specs: [
-          { label: "타입", value: "린데만 타입, 직경 2.3" },
-          { label: "포장단위", value: "1EA" },
-          { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-        ],
-      },
-      {
-        id: "pen",
-        name: "Pen",
-        image: "/store/acrodent/pen.jpg",
-        blurb: "Lindemann Pen",
-        description: "acrodent Lindemann Pen-Drill. 제조 7.7만 ×2 = 15.4만.",
-        galleryImages: ["/store/acrodent/pen.jpg"],
-        contentImages: ["/store/detail/pen-1.jpg"],
-        specs: [
-          { label: "acrodent", value: "Lindemann Pen" },
-          { label: "포장단위", value: "1EA" },
-          { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-        ],
-      },
-      {
-        id: "cup",
-        name: "Cup",
-        image: "/store/acrodent/cup.jpg",
-        blurb: "Cup · 5종",
-        description: "Pen-Cup. 제조 1.32만 ×2 = 2.64만.",
-        galleryImages: ["/store/acrodent/cup.jpg"],
-        contentImages: ["/store/detail/cup-1.jpg"],
-        specs: [
-          { label: "acrodent", value: "Cup" },
-          { label: "포장단위", value: "1EA" },
-          { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-        ],
-      },
-      {
-        id: "check-pin",
-        name: "SurgicalPin",
-        image: "/store/acrodent/check-pin.jpg",
-        blurb: "CheckPin · BonePin · 5종",
-        description:
-          "CheckPin 타입에 BonePin 기능을 더한 SurgicalPin. 제조 3.3만 ×2 = 6.6만.",
-        galleryImages: ["/store/acrodent/check-pin.jpg"],
-        contentImages: ["/store/detail/check-pin-1.jpg"],
-        specs: [
-          { label: "역할", value: "CheckPin · BonePin" },
-          { label: "포장단위", value: "1EA" },
-          { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-        ],
-      },
-      {
-        id: "bone-shaper",
-        name: "BoneShaper",
-        image: "/store/acrodent/bone-shaper.jpg",
-        blurb: "BoneShaper · S/M 6종",
-        description:
-          "S6·7·9 및 M6·7·9 = 총 6종. 팁 조금 길게. 제조 4.4만 ×2 = 8.8만.",
-        galleryImages: ["/store/acrodent/bone-shaper.jpg"],
-        contentImages: ["/store/detail/bone-shaper-1.jpg"],
-        specs: [
-          { label: "구성", value: "S6·7·9, M6·7·9 (주문 시 사이즈 지정)" },
-          { label: "비고", value: "팁 조금 길게" },
-          { label: "포장단위", value: "1EA" },
-          { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-        ],
-      },
-      {
-        id: "gingival-shaper",
-        name: "GingivalShaper",
-        image: "/store/acrodent/gingival-shaper.jpg",
-        blurb: "GingivalShaper · 6·7·9",
-        description: "GingivalShaper 6·7·9 = 3종. 제조 4.4만 ×2 = 8.8만.",
-        galleryImages: ["/store/acrodent/gingival-shaper.jpg"],
-        contentImages: ["/store/detail/gingival-shaper-1.jpg"],
-        specs: [
-          { label: "구성", value: "6 · 7 · 9 (3종)" },
-          { label: "포장단위", value: "1EA" },
-          { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-        ],
-      },
       {
         id: "hex-driver",
         name: "Grip Driver",
@@ -388,20 +156,6 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         specs: [
           { label: "구성", value: "Hand S·M·L, Handpiece M·L (5종)" },
           { label: "용도", value: "어벗 체결" },
-          { label: "포장단위", value: "1EA" },
-          { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-        ],
-      },
-      {
-        id: "torque-wrench",
-        name: "Torque wrench",
-        image: "/store/acrodent/torque-wrench.jpg",
-        blurb: "Torque wrench",
-        description: "Torque wrench. 제조 9.9만 ×2 = 19.8만.",
-        galleryImages: ["/store/acrodent/torque-wrench.jpg"],
-        contentImages: ["/store/detail/torque-wrench-1.jpg"],
-        specs: [
-          { label: "acrodent", value: "Torque wrench" },
           { label: "포장단위", value: "1EA" },
           { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
         ],
@@ -424,100 +178,18 @@ export const STORE_SLIDES: StoreSlide[] = STORE_CATEGORIES.flatMap(
     })),
 );
 
-/** 판매가(부가세 포함). 백엔드 storeCatalog.js 와 동기. 단품=제조×2. */
+/** 판매가(부가세 포함). 백엔드 storeCatalog.js 와 동기. */
 const STORE_LIST_INCLUSIVE_PRICES: Record<string, number> = {
-  "full-package": 6_600_000, // Surgical 154 + Prosthetic 110 + Abutment 4종×60×1.65
-  "surgical-kit": 1_540_000,
-  "prosthetic-kit": 1_100_000,
-  "kit-case": 242_000,
-  "kit-case-surgical": 242_000, // mfg 12.1만 ×2
-  "kit-case-prosthetic": 242_000,
-  "initial-pen": 154_000, // Pen-Drill mfg 7.7만 ×2
-  pen: 154_000,
-  cup: 26_400, // Pen-Cup mfg 1.32만 ×2
-  "check-pin": 66_000, // SurgicalPin mfg 3.3만 ×2
-  "bone-shaper": 88_000, // mfg 4.4만 ×2
-  "gingival-shaper": 88_000, // mfg 4.4만 ×2
   "hex-driver": 44_000, // Grip Driver mfg 2.2만 ×2
-  "torque-wrench": 198_000, // mfg 9.9만 ×2
   "simple-abutment-2": 16_500,
   "simple-healing-2": 16_500,
   "simple-abutment": 16_500,
   "simple-healing": 16_500,
 };
 
-/**
- * pkg 포함가.
- * - 3만원 미만: 100원 단위(×0.8)
- * - 3만원 이상: 5500원 배수(부가세 포함 500원·공급가 정수)
- */
-const STORE_PACKAGE_PRICE_STEP = 5_500;
-const STORE_PACKAGE_PRICE_STEP_UNDER_30K = 100;
-
-function packageInclusiveFromList(listInclusive: number): number {
-  const floor = listInclusive * 0.8;
-  if (listInclusive < 30_000) {
-    let pkg =
-      Math.ceil(floor / STORE_PACKAGE_PRICE_STEP_UNDER_30K) *
-      STORE_PACKAGE_PRICE_STEP_UNDER_30K;
-    if (pkg >= listInclusive) {
-      pkg =
-        Math.floor(floor / STORE_PACKAGE_PRICE_STEP_UNDER_30K) *
-        STORE_PACKAGE_PRICE_STEP_UNDER_30K;
-    }
-    if (pkg <= 0) return listInclusive;
-    return pkg < listInclusive ? pkg : listInclusive;
-  }
-  const stepped =
-    (Math.floor(floor / STORE_PACKAGE_PRICE_STEP) + 1) * STORE_PACKAGE_PRICE_STEP;
-  if (stepped <= listInclusive) return stepped;
-  const by500 = (Math.floor(floor / 500) + 1) * 500;
-  return by500 <= listInclusive ? by500 : listInclusive;
-}
-
-/** pkg가(부가세 포함). BA.storePackageBuyer 또는 풀패키지 상시. */
-const STORE_PACKAGE_INCLUSIVE_PRICES: Record<string, number> = {
-  "full-package": 5_000_000,
-  "surgical-kit": 1_210_000,
-  "prosthetic-kit": 880_000,
-  "kit-case": packageInclusiveFromList(242_000),
-  "kit-case-surgical": packageInclusiveFromList(242_000),
-  "kit-case-prosthetic": packageInclusiveFromList(242_000),
-  "initial-pen": packageInclusiveFromList(154_000),
-  pen: packageInclusiveFromList(154_000),
-  cup: packageInclusiveFromList(26_400),
-  "check-pin": packageInclusiveFromList(66_000),
-  "bone-shaper": packageInclusiveFromList(88_000),
-  "gingival-shaper": packageInclusiveFromList(88_000),
-  "hex-driver": packageInclusiveFromList(44_000),
-  "torque-wrench": packageInclusiveFromList(198_000),
-  "simple-abutment-2": 13_200,
-  "simple-healing-2": 13_200,
-  "simple-abutment": 13_200,
-  "simple-healing": 13_200,
-};
-
 /** 타일 여백 보정 — 흰 배경 큰 상품일수록 확대. 어벗 4종은 원본(1). */
 const STORE_IMAGE_SCALES: Record<string, number> = {
-  "full-package": 1.22,
-  "surgical-kit": 1.22,
-  "initial-kit": 1.22,
-  "check-kit": 1.18,
-  "prosthetic-kit": 1.18,
-  "kit-case": 1.22,
-  "kit-case-surgical": 1.22,
-  "kit-case-initial": 1.22,
-  "kit-case-check": 1.22,
-  "kit-case-prosthetic": 1.22,
-  "initial-pen": 2.05,
-  pen: 1.12,
-  cup: 1.4,
-  "initial-pin": 1.55,
-  "check-pin": 1.55,
-  "bone-shaper": 1.28,
-  "gingival-shaper": 1.55,
   "hex-driver": 1.9,
-  "torque-wrench": 1.45,
 };
 
 function withStoreTaxDefaults(product: StoreProduct): StoreProduct {
@@ -527,10 +199,6 @@ function withStoreTaxDefaults(product: StoreProduct): StoreProduct {
       opt.listPriceInclusive !== undefined
         ? opt.listPriceInclusive
         : (STORE_LIST_INCLUSIVE_PRICES[opt.id] ?? null),
-    packagePriceInclusive:
-      opt.packagePriceInclusive !== undefined
-        ? opt.packagePriceInclusive
-        : (STORE_PACKAGE_INCLUSIVE_PRICES[opt.id] ?? null),
   }));
   return {
     ...product,
@@ -541,10 +209,6 @@ function withStoreTaxDefaults(product: StoreProduct): StoreProduct {
       product.listPriceInclusive !== undefined
         ? product.listPriceInclusive
         : (STORE_LIST_INCLUSIVE_PRICES[product.id] ?? null),
-    packagePriceInclusive:
-      product.packagePriceInclusive !== undefined
-        ? product.packagePriceInclusive
-        : (STORE_PACKAGE_INCLUSIVE_PRICES[product.id] ?? null),
   };
 }
 
@@ -571,7 +235,6 @@ const STORE_OPTION_PRODUCTS: StoreProduct[] = STORE_CATEGORIES.flatMap(
           galleryImages: product.galleryImages,
           specs: product.specs,
           listPriceInclusive: opt.listPriceInclusive,
-          packagePriceInclusive: opt.packagePriceInclusive,
         }),
       ),
     ),
@@ -608,19 +271,11 @@ export function getStoreCategoryForProduct(productId: string | undefined) {
   );
 }
 
-/** 패키지 구매자(또는 alwaysUsePackagePrice)면 pkg가, 아니면 판매가. */
+/** 판매가(부가세 포함). 단일가. */
 export function resolveStoreUnitPriceInclusive(
-  product: Pick<
-    StoreProduct,
-    "listPriceInclusive" | "packagePriceInclusive" | "alwaysUsePackagePrice"
-  >,
-  isPackageBuyer: boolean,
+  product: Pick<StoreProduct, "listPriceInclusive">,
 ): number | null {
-  const list = product.listPriceInclusive;
-  if (list == null) return null;
-  if (!isPackageBuyer && !product.alwaysUsePackagePrice) return list;
-  const pkg = product.packagePriceInclusive;
-  return pkg != null ? pkg : list;
+  return product.listPriceInclusive ?? null;
 }
 
 const CATEGORY_THEMES: Record<
@@ -632,47 +287,11 @@ const CATEGORY_THEMES: Record<
     progress: string;
   }
 > = {
-  package: {
-    glow: "bg-white/10",
-    accent: "text-white/90",
-    ring: "ring-white/15",
-    progress: "bg-white/70",
-  },
   abutment: {
     glow: "bg-primary/20",
     accent: "text-primary-glow",
     ring: "ring-primary/20",
     progress: "bg-primary",
-  },
-  "surgical-kit": {
-    glow: "bg-accent/15",
-    accent: "text-accent-glow",
-    ring: "ring-accent/20",
-    progress: "bg-accent",
-  },
-  "initial-kit": {
-    glow: "bg-accent/15",
-    accent: "text-accent-glow",
-    ring: "ring-accent/20",
-    progress: "bg-accent",
-  },
-  "check-kit": {
-    glow: "bg-amber-400/12",
-    accent: "text-amber-200",
-    ring: "ring-amber-400/15",
-    progress: "bg-amber-400",
-  },
-  "prosthetic-kit": {
-    glow: "bg-emerald-400/12",
-    accent: "text-emerald-300",
-    ring: "ring-emerald-400/15",
-    progress: "bg-emerald-400",
-  },
-  kits: {
-    glow: "bg-accent/15",
-    accent: "text-accent-glow",
-    ring: "ring-accent/20",
-    progress: "bg-accent",
   },
   parts: {
     glow: "bg-amber-400/12",

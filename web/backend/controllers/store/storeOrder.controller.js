@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 패키지 할인 제거 — 카탈로그·주문은 단일 판매가.
 // - 2026-09-23: 배송비=상품 10만원↑무료·미만 3,500. 기공물 동봉(lab_bundle) 폐지. 치과·기공소 스토어.
 // - 2026-09-13: 주문 생성·결제·취소 후 관리자 스토어 사이드바 배지 emit.
 // - 2026-09-13: 기공물 동봉=어벗츠 CA 제작 포함 + 1주일 이내(발송·도착).
@@ -24,11 +25,9 @@ import { generateStoreOrderDepositCode } from "../../utils/depositCode.utils.js"
 import { splitInclusiveVat } from "../../utils/storeVat.js";
 import {
   getStoreProductName,
-  getStoreProductPackagePriceInclusive,
   getStoreProductPriceInclusive,
   listStoreProductIds,
   resolveStoreUnitPriceInclusive,
-  STORE_PACKAGE_PREPAID_THRESHOLD,
 } from "../../constants/storeCatalog.js";
 import { STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT } from "../../constants/ledgerTaxLanes.js";
 import {
@@ -37,10 +36,6 @@ import {
   applyStoreShippingToOrderTotals,
 } from "../../constants/storeShipping.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
-import {
-  resolveStorePackageBuyer,
-  storeItemsIncludeFullPackage,
-} from "../../utils/storePackagePricing.js";
 import {
   cancelStoreOrderByUser,
   finalizeStoreSale,
@@ -106,7 +101,7 @@ async function assertRequestorStoreAccess(req, businessAnchorId) {
   return kind;
 }
 
-function buildOrderItems(rawItems, { isPackageBuyer = false } = {}) {
+function buildOrderItems(rawItems) {
   if (!Array.isArray(rawItems) || rawItems.length === 0) {
     const err = new Error("장바구니 항목이 없습니다.");
     err.statusCode = 400;
@@ -118,7 +113,7 @@ function buildOrderItems(rawItems, { isPackageBuyer = false } = {}) {
     const productId = String(raw?.productId || "").trim();
     const qty = Math.max(0, Math.round(Number(raw?.qty || 0)));
     if (!productId || qty <= 0) continue;
-    const unit = resolveStoreUnitPriceInclusive(productId, isPackageBuyer);
+    const unit = resolveStoreUnitPriceInclusive(productId);
     if (unit == null) {
       const err = new Error(`알 수 없는 상품: ${productId}`);
       err.statusCode = 400;
@@ -139,10 +134,7 @@ function buildOrderItems(rawItems, { isPackageBuyer = false } = {}) {
   let amountTotal = 0;
 
   for (const [productId, qty] of merged.entries()) {
-    const unitPriceInclusive = resolveStoreUnitPriceInclusive(
-      productId,
-      isPackageBuyer,
-    );
+    const unitPriceInclusive = resolveStoreUnitPriceInclusive(productId);
     const lineTotalInclusive = unitPriceInclusive * qty;
     const split = splitInclusiveVat(lineTotalInclusive);
     items.push({
@@ -224,23 +216,18 @@ export async function getStoreCatalog(req, res) {
     }
     await assertRequestorStoreAccess(req, businessAnchorId);
 
-    const [inventory, defaultShipping, packageBuyer] = await Promise.all([
+    const [inventory, defaultShipping] = await Promise.all([
       getInventoryMap(),
       resolveDefaultShipping({
         userId: req.user?._id,
         businessAnchorId,
       }),
-      resolveStorePackageBuyer(businessAnchorId),
     ]);
     const products = listStoreProductIds().map((productId) => ({
       productId,
       name: getStoreProductName(productId),
       listPriceInclusive: getStoreProductPriceInclusive(productId),
-      packagePriceInclusive: getStoreProductPackagePriceInclusive(productId),
-      unitPriceInclusive: resolveStoreUnitPriceInclusive(
-        productId,
-        packageBuyer.isPackageBuyer,
-      ),
+      unitPriceInclusive: resolveStoreUnitPriceInclusive(productId),
       qtyAvailable: inventory[productId]?.available ?? 0,
       qtyOnHand: inventory[productId]?.qtyOnHand ?? 0,
     }));
@@ -250,11 +237,6 @@ export async function getStoreCatalog(req, res) {
       data: {
         products,
         taxNote: "과세 · 부가세 포함",
-        packagePricing: {
-          threshold: STORE_PACKAGE_PREPAID_THRESHOLD,
-          isPackageBuyer: packageBuyer.isPackageBuyer,
-          storePackageBuyerAt: packageBuyer.storePackageBuyerAt,
-        },
         shippingPolicy: {
           feeInclusive: STORE_SHIPPING_FEE_INCLUSIVE,
           freeShippingThresholdInclusive:
@@ -289,12 +271,7 @@ export async function createStoreOrder(req, res) {
     }
     await assertRequestorStoreAccess(req, businessAnchorId);
 
-    const packageBuyer = await resolveStorePackageBuyer(businessAnchorId);
-    // 500만 패키지와 동시 담으면 같은 주문부터 pkg 단가.
-    const isPackageBuyer =
-      packageBuyer.isPackageBuyer ||
-      storeItemsIncludeFullPackage(req.body?.items);
-    const built = buildOrderItems(req.body?.items, { isPackageBuyer });
+    const built = buildOrderItems(req.body?.items);
     const totals = applyStoreShippingToOrderTotals(built);
     const items = built.items;
     const {

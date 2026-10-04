@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 패키지 구매자/pkg가 제거. 카탈로그 판매가 오버레이만.
 // - 2026-09-23: lab_bundle 동봉 자격 필드 제거(배송비=10만원 임계).
 // - 2026-09-13: catalog 동봉 가능·다음 치과 도착일.
 // - 2026-09-13: catalog products 단가 오버레이(관리자 가격 반영).
@@ -9,10 +10,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import {
-  STORE_PACKAGE_PREPAID_THRESHOLD,
-  type StoreProduct,
-} from "@/shared/store/storeCatalog";
+import type { StoreProduct } from "@/shared/store/storeCatalog";
 import {
   STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE,
   STORE_SHIPPING_FEE_INCLUSIVE,
@@ -20,13 +18,10 @@ import {
 
 export type StoreCatalogPriceRow = {
   listPriceInclusive: number | null;
-  packagePriceInclusive: number | null;
 };
 
 export type StorePackagePricingState = {
   loading: boolean;
-  isPackageBuyer: boolean;
-  packageThreshold: number;
   /** productId → 유효 단가(서버 카탈로그) */
   priceByProductId: Record<string, StoreCatalogPriceRow>;
   shippingFeeInclusive: number;
@@ -35,8 +30,6 @@ export type StorePackagePricingState = {
 
 const DEFAULT: StorePackagePricingState = {
   loading: true,
-  isPackageBuyer: false,
-  packageThreshold: STORE_PACKAGE_PREPAID_THRESHOLD,
   priceByProductId: {},
   shippingFeeInclusive: STORE_SHIPPING_FEE_INCLUSIVE,
   freeShippingThresholdInclusive: STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE,
@@ -44,7 +37,7 @@ const DEFAULT: StorePackagePricingState = {
 
 /**
  * GET /api/store/catalog.
- * SSOT: BusinessAnchor.storePackageBuyer + 서버 판매가/pkg가.
+ * SSOT: 서버 판매가(부가세 포함) + 배송 정책.
  */
 export function useStorePackagePricing(): StorePackagePricingState {
   const token = useAuthStore((s) => s.token);
@@ -63,12 +56,7 @@ export function useStorePackagePricing(): StorePackagePricingState {
         products?: Array<{
           productId?: string;
           listPriceInclusive?: number | null;
-          packagePriceInclusive?: number | null;
         }>;
-        packagePricing?: {
-          threshold?: number;
-          isPackageBuyer?: boolean;
-        };
         shippingPolicy?: {
           feeInclusive?: number;
           freeShippingThresholdInclusive?: number;
@@ -77,7 +65,6 @@ export function useStorePackagePricing(): StorePackagePricingState {
     }>({ path: "/api/store/catalog" })
       .then((res) => {
         if (cancelled) return;
-        const pkg = res.data?.data?.packagePricing;
         const ship = res.data?.data?.shippingPolicy;
         const priceByProductId: Record<string, StoreCatalogPriceRow> = {};
         for (const row of res.data?.data?.products || []) {
@@ -88,21 +75,10 @@ export function useStorePackagePricing(): StorePackagePricingState {
               row.listPriceInclusive == null
                 ? null
                 : Math.round(Number(row.listPriceInclusive)),
-            packagePriceInclusive:
-              row.packagePriceInclusive == null
-                ? null
-                : Math.round(Number(row.packagePriceInclusive)),
           };
         }
         setState({
           loading: false,
-          isPackageBuyer: Boolean(pkg?.isPackageBuyer),
-          packageThreshold: Math.max(
-            1,
-            Math.round(
-              Number(pkg?.threshold || STORE_PACKAGE_PREPAID_THRESHOLD),
-            ),
-          ),
           priceByProductId,
           shippingFeeInclusive: Math.max(
             0,
@@ -148,10 +124,6 @@ export function applyStoreCatalogPrices(
         optRow.listPriceInclusive !== undefined
           ? optRow.listPriceInclusive
           : opt.listPriceInclusive,
-      packagePriceInclusive:
-        optRow.packagePriceInclusive !== undefined
-          ? optRow.packagePriceInclusive
-          : opt.packagePriceInclusive,
     };
   });
   const next: StoreProduct = {
@@ -165,10 +137,6 @@ export function applyStoreCatalogPrices(
       row.listPriceInclusive !== undefined
         ? row.listPriceInclusive
         : next.listPriceInclusive,
-    packagePriceInclusive:
-      row.packagePriceInclusive !== undefined
-        ? row.packagePriceInclusive
-        : next.packagePriceInclusive,
   };
 }
 

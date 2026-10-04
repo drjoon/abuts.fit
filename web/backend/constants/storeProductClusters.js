@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: Abutment 4종 + Grip Driver만. 키트·패키지 클러스터 제거.
 // - 2026-09-19: 풀패키지 Abutment 4종×60. Prosthetic Grip Driver·Scan bar.
 // - 2026-09-14: 풀패키지 Surgical+Prosthetic×1 + Abutment 4종×72.
 // - 2026-09-14: 풀패키지 힌트 SA-Hex/SH-Hex · Abutment 표기 Hex/NonHex.
@@ -23,41 +24,6 @@
 /** 관리자 상품 테이블 기본 클러스터 (DB 시드). */
 export const STORE_DEFAULT_PRODUCT_CLUSTERS = Object.freeze([
   Object.freeze({
-    id: "full-package",
-    label: "500만 패키지",
-    parentProductId: "full-package",
-    childProductIds: Object.freeze([]),
-    compositionHint: "키트 2종 + Abutment 4종 ×60",
-  }),
-  Object.freeze({
-    id: "surgical-kit",
-    label: "Surgical Kit",
-    parentProductId: "surgical-kit",
-    childProductIds: Object.freeze([
-      "kit-case-surgical",
-      "initial-pen",
-      "pen",
-      "cup",
-      "check-pin",
-      "bone-shaper",
-    ]),
-    compositionHint:
-      "Surgical 케이스 · Pen-Drill · Pen-Cup · SurgicalPin · BoneShaper",
-  }),
-  Object.freeze({
-    id: "prosthetic-kit",
-    label: "Prosthetic Kit",
-    parentProductId: "prosthetic-kit",
-    childProductIds: Object.freeze([
-      "kit-case-prosthetic",
-      "gingival-shaper",
-      "hex-driver",
-      "torque-wrench",
-    ]),
-    compositionHint:
-      "Prosthetic 케이스 · GingivalShaper(6·7·9) · Grip Driver(5) · Scan bar · Torque",
-  }),
-  Object.freeze({
     id: "abutment",
     label: "Abutment",
     parentProductId: null,
@@ -68,6 +34,13 @@ export const STORE_DEFAULT_PRODUCT_CLUSTERS = Object.freeze([
       "simple-healing",
     ]),
     compositionHint: "SimpleAbutment-Hex/NonHex · SimpleHealing-Hex/NonHex",
+  }),
+  Object.freeze({
+    id: "grip-driver",
+    label: "Grip Driver",
+    parentProductId: null,
+    childProductIds: Object.freeze(["hex-driver"]),
+    compositionHint: "Hand S·M·L · Handpiece M·L",
   }),
 ]);
 

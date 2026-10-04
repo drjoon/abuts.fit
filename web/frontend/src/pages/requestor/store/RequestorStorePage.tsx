@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-04: 패키지 할인 안내 제거 — 단일가.
+// - 2026-10-04: Abutment 4종 + Grip Driver만 노출. 키트·패키지·기타 단품 제거.
 // - 2026-09-13: 상단 안내 — 500만 패키지 구매 시 pkg 가격.
 // - 2026-09-13: 기공물 동봉 안내를 스토어 메인에서 제거하고 장바구니로 이동.
 // - 2026-09-13: 3행 레이아웃 — Abutment4 / Kit4 / 단품.
@@ -15,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import {
   STORE_CATEGORIES,
+  getStoreProductById,
   type StoreProduct,
 } from "@/shared/store/storeCatalog";
 import { StoreProductCard } from "@/pages/requestor/store/StoreProductCard";
@@ -27,17 +30,14 @@ import {
 import { useStorePackagePricing, applyStoreCatalogPrices } from "@/shared/store/useStorePackagePricing";
 
 const abutment = STORE_CATEGORIES.find((c) => c.id === "abutment")!;
-const kits = STORE_CATEGORIES.find((c) => c.id === "kits")!;
 const parts = STORE_CATEGORIES.find((c) => c.id === "parts")!;
 
 function ProductRow({
   labels,
   products,
-  isPackageBuyer,
 }: {
   labels: string[];
   products: StoreProduct[];
-  isPackageBuyer: boolean;
 }) {
   return (
     <section className="space-y-2.5">
@@ -56,11 +56,7 @@ function ProductRow({
       </div>
       <div className="grid grid-cols-1 gap-2 max-sm:landscape:grid-cols-2 sm:grid-cols-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-4">
         {products.map((product) => (
-          <StoreProductCard
-            key={product.id}
-            product={product}
-            isPackageBuyer={isPackageBuyer}
-          />
+          <StoreProductCard key={product.id} product={product} />
         ))}
       </div>
     </section>
@@ -69,15 +65,15 @@ function ProductRow({
 
 export default function RequestorStorePage() {
   const { kind, loading } = useRequestorBusinessAccess();
-  const { isPackageBuyer, priceByProductId } = useStorePackagePricing();
+  const { priceByProductId } = useStorePackagePricing();
   const cartQty = useStoreCartStore((s) =>
-    s.lines.reduce((n, l) => n + l.qty, 0),
+    s.lines.reduce((n, l) => {
+      if (!getStoreProductById(l.productId)) return n;
+      return n + l.qty;
+    }, 0),
   );
 
   const abutmentProducts = abutment.products.map((p) =>
-    applyStoreCatalogPrices(p, priceByProductId),
-  );
-  const kitProducts = kits.products.map((p) =>
     applyStoreCatalogPrices(p, priceByProductId),
   );
   const partProducts = parts.products.map((p) =>
@@ -97,13 +93,6 @@ export default function RequestorStorePage() {
             <Badge variant="outline" className="text-[11px] font-normal">
               {STORE_PRICE_TAX_NOTE}
             </Badge>
-            {isPackageBuyer ? (
-              <Badge className="text-[11px] font-normal">패키지 단가</Badge>
-            ) : (
-              <span className="text-[11px] text-muted-foreground">
-                500만원 패키지 구매 시 pkg 가격 적용
-              </span>
-            )}
           </div>
           <DashboardNoticeAlert
             placement="inline"
@@ -123,21 +112,8 @@ export default function RequestorStorePage() {
         </header>
 
         <div className="space-y-6 sm:space-y-8">
-          <ProductRow
-            labels={["Abutment"]}
-            products={abutmentProducts}
-            isPackageBuyer={isPackageBuyer}
-          />
-          <ProductRow
-            labels={["패키지 · Kit"]}
-            products={kitProducts}
-            isPackageBuyer={isPackageBuyer}
-          />
-          <ProductRow
-            labels={["단품"]}
-            products={partProducts}
-            isPackageBuyer={isPackageBuyer}
-          />
+          <ProductRow labels={["Abutment"]} products={abutmentProducts} />
+          <ProductRow labels={["Grip Driver"]} products={partProducts} />
         </div>
       </div>
     </div>

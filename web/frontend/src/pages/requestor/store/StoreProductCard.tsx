@@ -8,13 +8,9 @@ import { StorePriceDisplay } from "@/pages/requestor/store/StorePriceDisplay";
 
 type StoreProductCardProps = {
   product: StoreProduct;
-  isPackageBuyer?: boolean;
 };
 
-export function StoreProductCard({
-  product,
-  isPackageBuyer = false,
-}: StoreProductCardProps) {
+export function StoreProductCard({ product }: StoreProductCardProps) {
   const scale = product.imageScale ?? 1;
   const inclusive = product.listPriceInclusive;
   const addItem = useStoreCartStore((s) => s.addItem);
@@ -62,11 +58,7 @@ export function StoreProductCard({
             {product.blurb}
           </p>
           {inclusive != null ? (
-            <StorePriceDisplay
-              product={product}
-              isPackageBuyer={isPackageBuyer}
-              className="pt-0.5"
-            />
+            <StorePriceDisplay product={product} className="pt-0.5" />
           ) : null}
         </Link>
         <div className="border-t border-border/60 px-3 py-2">

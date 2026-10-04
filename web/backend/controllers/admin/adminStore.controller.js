@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 재고 목록에서 pkg가 필드 제거(단일 판매가).
 // - 2026-09-13: GET package-buyers — 이름·사업자번호 검색 + ON 목록.
 // - 2026-09-13: DELETE 상품 — 관리자 재고 목록 숨김(hiddenProductIds).
 // - 2026-09-13: 감사로그 refId — ObjectId만 허용(클러스터 layout "default" 캐스트 오류 수정).
@@ -104,9 +105,7 @@ export async function adminListStoreInventory(req, res) {
           productId,
           name: getStoreProductName(productId),
           listPriceInclusive: getStoreProductPriceInclusive(productId),
-          packagePriceInclusive: getStoreProductPackagePriceInclusive(productId),
           defaultListPriceInclusive: defaults.listPriceInclusive,
-          defaultPackagePriceInclusive: defaults.packagePriceInclusive,
           qtyOnHand: map[productId]?.qtyOnHand ?? 0,
           qtyReserved: map[productId]?.qtyReserved ?? 0,
           qtyAvailable: map[productId]?.available ?? 0,

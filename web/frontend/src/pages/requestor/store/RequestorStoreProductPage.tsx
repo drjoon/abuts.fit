@@ -37,7 +37,7 @@ import { cn } from "@/shared/ui/cn";
 export default function RequestorStoreProductPage() {
   const { productId } = useParams<{ productId: string }>();
   const { kind, loading } = useRequestorBusinessAccess();
-  const { isPackageBuyer, priceByProductId } = useStorePackagePricing();
+  const { priceByProductId } = useStorePackagePricing();
   const addItem = useStoreCartStore((s) => s.addItem);
 
   const optionParentId = getStoreOptionParentId(productId);
@@ -80,7 +80,6 @@ export default function RequestorStoreProductPage() {
     return {
       ...product,
       listPriceInclusive: selectedOption.listPriceInclusive ?? null,
-      packagePriceInclusive: selectedOption.packagePriceInclusive ?? null,
       priceFrom: false,
     };
   }, [product, selectedOption]);
@@ -99,7 +98,7 @@ export default function RequestorStoreProductPage() {
     rich?.specs?.length ? rich.specs : (product?.specs ?? []);
   const scale = product?.imageScale ?? 1;
   const unitPrice = pricedForDisplay
-    ? resolveStoreUnitPriceInclusive(pricedForDisplay, isPackageBuyer)
+    ? resolveStoreUnitPriceInclusive(pricedForDisplay)
     : null;
 
   if (!loading && kind !== "practice" && kind !== "lab") {
@@ -179,11 +178,7 @@ export default function RequestorStoreProductPage() {
               ) : null}
               {pricedForDisplay.listPriceInclusive != null ? (
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 pt-0.5">
-                  <StorePriceDisplay
-                    product={pricedForDisplay}
-                    isPackageBuyer={isPackageBuyer}
-                    size="lg"
-                  />
+                  <StorePriceDisplay product={pricedForDisplay} size="lg" />
                   {unitPrice != null && unitPrice > 0 ? (
                     <span className="text-[11px] text-muted-foreground">
                       공급{" "}
@@ -204,7 +199,6 @@ export default function RequestorStoreProductPage() {
                     const optProduct: StoreProduct = {
                       ...product,
                       listPriceInclusive: opt.listPriceInclusive ?? null,
-                      packagePriceInclusive: opt.packagePriceInclusive ?? null,
                       priceFrom: false,
                     };
                     const selected = selectedOption?.id === opt.id;
@@ -221,11 +215,7 @@ export default function RequestorStoreProductPage() {
                         )}
                       >
                         <span className="font-medium">{opt.label}</span>
-                        <StorePriceDisplay
-                          product={optProduct}
-                          isPackageBuyer={isPackageBuyer}
-                          size="sm"
-                        />
+                        <StorePriceDisplay product={optProduct} size="sm" />
                       </button>
                     );
                   })}
