@@ -2,6 +2,7 @@
 // - 2026-09-30: 치아·잇몸 경계는 오목한 주름과 스캔 색(잇몸 붉은 기)으로 잡는다. random walker라 주름이 조금 끊겨도 새지 않는다.
 // - 2026-10-04: 치관 경계 아래·안쪽에 남는 잔존 치근·파절편을 같은 치아에 넣는다.
 // - 2026-10-04: 넓은 인접면 컨택으로 붙은 다른 치아는 목에서 잘라 누른 치아만 남긴다.
+// - 2026-10-04: 치아·잇몸 색(누른 곳보다 붉은지)으로 경계를 두고, 협측처럼 이어진 치아색은 넣는다.
 // related files:
 // - web/frontend/src/shared/practice/scanMeshEdit.ts
 // - web/frontend/src/shared/components/practice/scanMeshEditController.ts
@@ -9,7 +10,7 @@
 import type { MeshTopology } from "@/shared/practice/scanMeshEdit";
 
 /** 누른 곳에서 이 거리(측지) 안만 본다. 교합면 폭 + 치관 높이를 넘어야 큰 어금니가 다 담긴다. */
-export const EXTRACT_PATCH_RADIUS_MM = 22;
+export const EXTRACT_PATCH_RADIUS_MM = 26;
 /** 누른 곳 둘레는 치아로 고정한다. */
 const SOURCE_RADIUS_MM = 0.8;
 /** 치관 발치선에서 이만큼(측지)까지 치근을 더 담는다. */
@@ -30,8 +31,17 @@ const CURVATURE_SCALE_MM = 0.5;
 /** 이보다 오목하면(mm⁻¹) 경계로 본다. */
 const CONCAVE_START = 0.15;
 const CONCAVE_BETA = 10;
-/** 잇몸 붉은 기가 mm당 바뀌는 만큼 끊는다. */
-const GUM_BETA = 2.5;
+/** 잇몸 색이 mm당 바뀌는 만큼 끊는다. */
+const GUM_BETA = 4;
+/** 누른 치아보다 이만큼 더 붉으면(R−G) 잇몸으로 본다. */
+const GUM_RG_LO = 0.045;
+const GUM_RG_HI = 0.13;
+/** 이 이상이면 잇몸으로 고정한다. */
+const GUM_SINK = 0.58;
+/** 이 이하면 치아색으로 이어 간다. */
+const TOOTH_LIKE = 0.38;
+/** 치아색끼리 오목해도 협측으로 넘어갈 최소 가중치. */
+const TOOTH_EDGE_FLOOR = 0.18;
 const MIN_WEIGHT = 1e-6;
 const CG_MAX_ITER = 900;
 
@@ -300,26 +310,57 @@ function concavity(
   return out;
 }
 
-/** 잇몸 붉은 기(0–1). 색이 없으면 null. */
-function gumness(patch: Uint32Array, color: Float32Array | null, g: LocalGraph) {
+/** 잇몸일 정도(0–1). 누른 곳의 R−G를 기준으로, 더 붉으면 잇몸이다. 노란 치아가 잇몸으로 안 잡히게 G가 아니라 평균에서 빼지 않는다. */
+function gumness(patch: Uint32Array, color: Float32Array | null, g: LocalGraph, seedLocal = 0) {
   if (!color) return null;
   const m = patch.length;
+  const rg = new Float32Array(m);
+  for (let i = 0; i < m; i += 1) {
+    const v = patch[i]!;
+    rg[i] = color[v * 3]! - color[v * 3 + 1]!;
+  }
+  let seedRg = rg[seedLocal]!;
+  let seedN = 1;
+  for (let k = g.start[seedLocal]!; k < g.start[seedLocal + 1]!; k += 1) {
+    seedRg += rg[g.nbr[k]!]!;
+    seedN += 1;
+  }
+  seedRg /= seedN;
   const out = new Float32Array(m);
   let lo = Infinity;
   let hi = -Infinity;
   for (let i = 0; i < m; i += 1) {
-    const v = patch[i]!;
-    const r = color[v * 3]!;
-    const gg = color[v * 3 + 1]!;
-    const b = color[v * 3 + 2]!;
-    const red = r - (gg + b) / 2;
-    out[i] = smoothstep(0.08, 0.22, red);
+    out[i] = smoothstep(GUM_RG_LO, GUM_RG_HI, rg[i]! - seedRg);
     lo = Math.min(lo, out[i]!);
     hi = Math.max(hi, out[i]!);
   }
-  if (hi - lo < 0.2) return null;
+  if (hi - lo < 0.12) return null;
   smoothScalar(g, out, 2);
   return out;
+}
+
+/** 누른 곳에서 치아색으로 이어진 면(협측 포함)을 치아에 넣는다. 잇몸색에서 멈춘다. */
+function expandThroughToothColor(
+  g: LocalGraph,
+  field: Float32Array,
+  gum: Float32Array,
+  seedLocal: number,
+  blocked?: (i: number) => boolean,
+) {
+  const m = field.length;
+  const seen = new Uint8Array(m);
+  const stack = [seedLocal];
+  seen[seedLocal] = 1;
+  while (stack.length > 0) {
+    const i = stack.pop()!;
+    if (gum[i]! <= TOOTH_LIKE) field[i] = Math.max(field[i]!, 0.62);
+    for (let k = g.start[i]!; k < g.start[i + 1]!; k += 1) {
+      const j = g.nbr[k]!;
+      if (seen[j] || gum[j]! > TOOTH_LIKE || blocked?.(j)) continue;
+      seen[j] = 1;
+      stack.push(j);
+    }
+  }
 }
 
 /** 경계(sink=0)와 누른 곳(source=1)을 고정하고 조화 함수를 푼다. */
@@ -602,7 +643,7 @@ export function segmentTooth(args: {
   const edge = edgeCount > 0 ? edgeSum / edgeCount : 1;
 
   const concave = concavity(topo, g, patch, local, positions, unit, edge);
-  const gum = gumness(patch, color, g);
+  const gum = gumness(patch, color, g, 0);
   const w = new Float32Array(g.nbr.length);
   for (let i = 0; i < m; i += 1) {
     for (let k = g.start[i]!; k < g.start[i + 1]!; k += 1) {
@@ -612,6 +653,9 @@ export function segmentTooth(args: {
       if (gum) {
         const lenMm = Math.max(edgeLen(positions, patch[i]!, patch[j]!) * unit, 0.02);
         weight *= Math.exp((-GUM_BETA * Math.abs(gum[i]! - gum[j]!)) / lenMm);
+        if (gum[i]! <= TOOTH_LIKE && gum[j]! <= TOOTH_LIKE) {
+          weight = Math.max(weight, TOOTH_EDGE_FLOOR);
+        }
       }
       w[k] = Math.max(weight, MIN_WEIGHT);
     }
@@ -642,7 +686,11 @@ export function segmentTooth(args: {
     } else if (d <= sourceR) {
       fixed[i] = 1;
       x[i] = 1;
-    } else if (frontier) {
+    } else if (gum && gum[i]! >= GUM_SINK) {
+      fixed[i] = -1;
+      x[i] = 0;
+      sinks += 1;
+    } else if (frontier && (!gum || gum[i]! > TOOTH_LIKE)) {
       fixed[i] = -1;
       sinks += 1;
     }
@@ -668,7 +716,9 @@ export function segmentTooth(args: {
     const i = stack.pop()!;
     for (let k = g.start[i]!; k < g.start[i + 1]!; k += 1) {
       const j = g.nbr[k]!;
-      if (reached[j] || fixed[j] !== 0 || w[k]! < 0.1) continue;
+      if (reached[j] || fixed[j] !== 0) continue;
+      const toothEdge = gum && gum[i]! <= TOOTH_LIKE && gum[j]! <= TOOTH_LIKE;
+      if (!toothEdge && w[k]! < 0.1) continue;
       reached[j] = 1;
       x[j] = 1;
       stack.push(j);
@@ -676,6 +726,9 @@ export function segmentTooth(args: {
   }
 
   solveWalker(g, w, fixed, x);
+  if (gum) {
+    expandThroughToothColor(g, x, gum, 0, (i) => args.blocked?.(patch[i]!) === true);
+  }
   cleanField(g, x, 0, open);
   splitContactLeak(g, x, 0, edge, unit);
   includeResidualRoot({
@@ -853,12 +906,13 @@ export function includeResidualRoot(args: {
   const unit = Math.max(args.unitToMm, 1e-9);
   const m = patch.length;
   const g = localGraph(topo, patch, local);
+  const seed = args.seed ?? args.seg?.seed ?? patch[0]!;
   const basis = toothBasis(topo, positions, patch, local, field);
   if (!basis) return;
   let nx = basis[0]!;
   let ny = basis[1]!;
   let nz = basis[2]!;
-  const gum = gumness(patch, args.color, g);
+  const gum = gumness(patch, args.color, g, local[seed]! >= 0 ? local[seed]! : 0);
   const pts: Array<{ x: number; y: number }> = [];
   let ox = 0;
   let oy = 0;
@@ -886,7 +940,6 @@ export function includeResidualRoot(args: {
   ox /= border;
   oy /= border;
   oz /= border;
-  const seed = args.seed ?? args.seg?.seed ?? patch[0]!;
   if (
     (positions[seed * 3]! - ox) * nx +
       (positions[seed * 3 + 1]! - oy) * ny +
