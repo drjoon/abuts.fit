@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: 장점 — 기존 기공소와 다른 두 가지(구강스캔 특화 · AI 지향). FIT TOGETHER 제외.
 // - 2026-10-05: 장점 카피 — 구강스캔 도입 도움·호흡, AI는 전부가 아님.
 // - 2026-10-05: 구강스캔 특화 · 맞춤 소통 · AI+검수 축으로 리팩터. 생성 이미지 3컷.
 // - 2026-09-30: 커스텀어벗 장점 카드 카피 — 업로드 시 CNC 자동 생산, 심플웨이 규격 호환.
@@ -16,7 +17,6 @@
 // 문장 배열은 한 칸 = 한 문장 = 한 줄(`<br />`).
 import {
   LANDING_LAB_AI_REVIEW,
-  LANDING_LAB_COLLAB_SUPPORT,
   LANDING_LAB_ORAL_SCAN,
 } from "./landingAssets";
 
@@ -29,10 +29,7 @@ export type LabIconKey =
   | "crown"
   | "check"
   | "design"
-  | "save"
-  | "chat"
-  | "phone"
-  | "video";
+  | "save";
 
 export type LabAdvantage = {
   icon: LabIconKey;
@@ -105,7 +102,7 @@ export const LAB_OFFER_EXTRAS: LabOfferExtras = {
 
   advantages: {
     eyebrow: "WHY ABUTS LAB",
-    title: "기존 기공소와 다른 세 가지.",
+    title: "기존 기공소와 다른 두 가지.",
     lead: [
       "구강스캔 데이터 경험을 쌓았습니다.",
       "시작하는 치과에도, 이미 잘 쓰는 치과에도 맞춥니다.",
@@ -123,16 +120,6 @@ export const LAB_OFFER_EXTRAS: LabOfferExtras = {
         tags: ["구강스캔", "도입 도움", "호흡"],
       },
       {
-        icon: "chat",
-        label: "FIT TOGETHER",
-        title: "맞는 보철을 위해 같이 봅니다",
-        body: [
-          "채팅·전화·원격으로 교합과 마진을 맞춥니다.",
-          "더 잘 맞는 보철을 위해 할 수 있는 일을 합니다.",
-        ],
-        tags: ["채팅", "전화", "원격 지원"],
-      },
-      {
         icon: "ai",
         label: "AI DESIGN",
         title: "AI 디자인을 지향합니다",
@@ -148,7 +135,7 @@ export const LAB_OFFER_EXTRAS: LabOfferExtras = {
 
   stories: {
     eyebrow: "HOW WE WORK",
-    title: "구강스캔, 소통, AI가 한 흐름입니다.",
+    title: "구강스캔과 AI가 한 흐름입니다.",
     lead: ["시작하는 치과에도, 이미 잘 쓰는 치과에도 맞춥니다."],
     items: [
       {
@@ -161,18 +148,6 @@ export const LAB_OFFER_EXTRAS: LabOfferExtras = {
         image: {
           src: LANDING_LAB_ORAL_SCAN,
           alt: "구강스캐너와 3D 악궁 스캔",
-        },
-      },
-      {
-        name: "맞는 보철을 위해 같이 맞춥니다",
-        line: "채팅, 전화, 원격 지원으로 이어갑니다.",
-        body: [
-          "화면을 보며 교합과 형태를 바로 이야기합니다.",
-          "한 번에 끝나지 않아도, 맞을 때까지 같이 봅니다.",
-        ],
-        image: {
-          src: LANDING_LAB_COLLAB_SUPPORT,
-          alt: "치과와 기공소가 화면을 공유하며 보철을 맞추는 모습",
         },
       },
       {
@@ -262,9 +237,8 @@ export const LAB_OFFER_EXTRAS: LabOfferExtras = {
       {
         q: "기존 기공소와 무엇이 다른가요?",
         a: [
-          "어벗츠기공소는 구강스캔 데이터 경험을 쌓았습니다.",
-          "도입을 꺼려하시는 치과에도 도움을 드립니다.",
-          "이미 잘 쓰시는 치과와는 호흡이 맞습니다.",
+          "구강스캔 의뢰에 특화되어 있습니다.",
+          "AI 디자인을 지향하고, 사람이 검수합니다.",
         ],
       },
       {
@@ -272,13 +246,6 @@ export const LAB_OFFER_EXTRAS: LabOfferExtras = {
         a: [
           "러버모델은 거래하던 협력 기공소로 보내는 것이 맞습니다.",
           "어벗츠기공소는 구강스캔 의뢰에 집중합니다.",
-        ],
-      },
-      {
-        q: "보철이 잘 안 맞으면 어떻게 하나요?",
-        a: [
-          "채팅·전화·원격 지원으로 화면을 보며 맞춥니다.",
-          "더 잘 맞는 보철을 위해 할 수 있는 일을 합니다.",
         ],
       },
       {
@@ -303,7 +270,7 @@ export const LAB_OFFER_EXTRAS: LabOfferExtras = {
     eyebrow: "START ABUTS LAB",
     title: "구강스캔에 진심이라면, 여기서 맞춥니다.",
     body: [
-      "채팅·전화·원격으로 맞는 보철을 만듭니다.",
+      "구강스캔 의뢰에 특화되어 있습니다.",
       "케이스가 쌓일수록 AI 디자인도 정확하고 빨라집니다.",
     ],
   },

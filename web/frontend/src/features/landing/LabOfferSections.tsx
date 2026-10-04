@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: 장점 2(구강스캔 특화 · AI 지향) · 스토리 2. FIT TOGETHER 제외.
 // - 2026-10-05: 커스텀어벗 플로우·하나의 크레딧 섹션은 플랫폼 오퍼로 이동.
 // - 2026-10-05: 장점 3 · 생성 이미지 스토리 3 · AI는 검수·축적 카피. 히어로 스캔 점군 유지.
 // - 2026-09-29: 기공서비스 오퍼 전용 섹션 신설 — 히어로(파티클) · 장점 4 · AI 디자인 · 커스텀어벗 플로우 · 하나의 크레딧 · FAQ.
@@ -14,15 +15,12 @@ import {
   Crosshair,
   Crown,
   Layers,
-  MessageSquare,
-  Phone,
   PenTool,
   ScanLine,
   Save,
   ShieldCheck,
   Sparkles,
   Spline,
-  Video,
 } from "lucide-react";
 import {
   Accordion,
@@ -66,9 +64,6 @@ const ICONS: Record<LabIconKey, typeof ScanLine> = {
   check: ShieldCheck,
   design: PenTool,
   save: Save,
-  chat: MessageSquare,
-  phone: Phone,
-  video: Video,
 };
 
 /**
@@ -192,7 +187,7 @@ export function LabOfferHero({
   );
 }
 
-/** 히어로 직후 — 장점 3카드. */
+/** 히어로 직후 — 장점 2카드. */
 export function LabAdvantagesSection({
   advantages,
 }: {
@@ -211,7 +206,7 @@ export function LabAdvantagesSection({
           <Lines lines={advantages.lead} className={cn("mt-2.5", TYPO.lead)} />
         </LandingReveal>
 
-        <ul className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
+        <ul className="mx-auto mt-8 grid max-w-4xl gap-3 sm:mt-10 sm:grid-cols-2 lg:gap-4">
           {advantages.items.map((item, index) => {
             const Icon = ICONS[item.icon];
             return (
@@ -262,7 +257,7 @@ export function LabAdvantagesSection({
   );
 }
 
-/** 구강스캔 · 소통 · AI 검수 — 생성 이미지 스토리 3. */
+/** 구강스캔 · AI 검수 — 생성 이미지 스토리 2. */
 export function LabStoriesSection({
   stories,
 }: {
