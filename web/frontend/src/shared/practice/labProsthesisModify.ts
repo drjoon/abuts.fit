@@ -631,6 +631,8 @@ export type ProsthesisDesignEdit = {
   /** 형상 도구 단계. 변형 핸들은 변형 단계에서만 그린다. */
   refineTab?: RefineTab;
   marginMode: MarginEditMode;
+  /** 마진 점을 끌어 옮기는 편집 중. 아니면 점·선이 클릭을 받지 않는다. */
+  marginEdit?: boolean;
   brush: EditBrush;
   edits: Record<string, ToothDesignEdit>;
   generated: Record<string, boolean>;

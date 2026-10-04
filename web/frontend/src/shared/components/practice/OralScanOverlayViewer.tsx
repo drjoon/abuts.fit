@@ -3527,6 +3527,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
 
     const onEditPointerDown = (event: PointerEvent) => {
       if (!designEditRef.current) return;
+      // 시작점 찍는 중에는 마진 점·선·펜이 클릭을 가로채지 않는다.
+      if (marginSeedPickRef.current) return;
       aim(event);
       const spec = designEditRef.current;
       const penTooth = spec.activeTooth;
@@ -3579,6 +3581,11 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
 
       if (hit.tag.kind === "insertion" && tool === "insertion" && event.button === 0) {
         drag = { kind: "insertion", key: hit.tag.key, at: 0 };
+      } else if (
+        (hit.tag.kind === "margin" || hit.tag.kind === "margin-line") &&
+        !designEditRef.current.marginEdit
+      ) {
+        return;
       } else if (hit.tag.kind === "margin" && event.button === 2) {
         const { tooth, index } = hit.tag;
         if (!secondary(() => send({ type: "margin-remove", tooth, index }))) return;

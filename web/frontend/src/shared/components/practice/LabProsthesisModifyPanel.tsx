@@ -6,7 +6,6 @@ import { TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -18,7 +17,6 @@ import {
   CONNECTOR_SHAPES,
   CUTBACK_BRUSH_RANGE_MM,
   CUTBACK_DEPTH_RANGE_MM,
-  adjustMarginOffset,
   applyInnerParams,
   cutbackHasSelection,
   editCutbackSelection,
@@ -35,7 +33,6 @@ import {
   holeTiltDeg,
   innerParamsOf,
   type EditBrush,
-  type MarginEditMode,
   type ModifyTool,
   type RefineTab,
   type SculptBrush,
@@ -98,9 +95,6 @@ export type ScanbodyControls = {
   } | null;
 };
 
-const DEFAULT_MARGIN_STEP = 0.1;
-const MARGIN_STEP_MIN = 0.01;
-const MARGIN_STEP_MAX = 0.5;
 
 const FIT_LEGEND = `linear-gradient(90deg, ${[-0.1, -0.05, 0, 0.05, 0.1]
   .map((mm) => {
@@ -113,8 +107,13 @@ type Props = {
   /** prepare: 마진·삽입축. design: 내면 이후. */
   part: "prepare" | "design";
   onTool: (tool: ModifyTool) => void;
-  marginMode: MarginEditMode;
-  onMarginMode: (mode: MarginEditMode) => void;
+  /** 마진 점을 끌어 옮기는 편집 중인지. */
+  marginEditOn: boolean;
+  onMarginEdit: () => void;
+  /** 삽입축·치아색·잇몸색으로 마진을 자동 검출한다. */
+  onAutoDetect: () => void;
+  /** 이 치아의 삽입축을 잡았는지. 마진보다 먼저 잡아야 한다. */
+  axisReady: boolean;
   brush: EditBrush;
   onBrush: (brush: EditBrush) => void;
   edit: ToothDesignEdit;
@@ -128,13 +127,8 @@ type Props = {
   /** 뷰어가 잰 홀 검사 결과. 통과면 null. */
   holeIssue: string | null;
   onViewHoleAxis: () => void;
-  onRedetect: () => void;
   /** 다시 검출 시작점을 찍는 중. */
-  redetectPicking: boolean;
   onClearMargin: () => void;
-  undercutShown: boolean;
-  canUndercut: boolean;
-  onUndercut: (on: boolean) => void;
   onRemoveHook: () => void;
   /** 기공소 디자인 프리셋. 내면 도구에서 복사한다. */
   designPresets: DesignPreset[];
@@ -1075,8 +1069,10 @@ function Row({
 export function LabProsthesisModifyPanel({
   part,
   onTool,
-  marginMode,
-  onMarginMode,
+  marginEditOn,
+  onMarginEdit,
+  onAutoDetect,
+  axisReady,
   brush,
   onBrush,
   edit,
@@ -1088,12 +1084,7 @@ export function LabProsthesisModifyPanel({
   holeNote,
   holeIssue,
   onViewHoleAxis,
-  onRedetect,
-  redetectPicking,
   onClearMargin,
-  undercutShown,
-  canUndercut,
-  onUndercut,
   onRemoveHook,
   designPresets,
   onOpenPresets,
@@ -1143,11 +1134,6 @@ export function LabProsthesisModifyPanel({
     </Row>
   );
   const marginWord = implant ? "EPL" : "마진";
-  const [stepDraft, setStepDraft] = useState(DEFAULT_MARGIN_STEP.toFixed(2));
-  const parsedStep = Number(stepDraft);
-  const marginStep = Number.isFinite(parsedStep)
-    ? Math.min(MARGIN_STEP_MAX, Math.max(MARGIN_STEP_MIN, Math.round(parsedStep * 100) / 100))
-    : DEFAULT_MARGIN_STEP;
   const connectorRow =
     connectors.find((row) => row.from === connectorFrom) ?? connectors[0] ?? null;
   const openFold = (id: ModifyTool) => (on: boolean) => {
@@ -1163,11 +1149,53 @@ export function LabProsthesisModifyPanel({
       {prepare ? (
       <>
       <StageSubsection
+        title="삽입축"
+        open={openTool === "insertion"}
+        onOpen={openFold("insertion")}
+        coach="tool-insertion"
+      >
+        {insertionTeeth.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {insertionTeeth.map((tooth) => (
+              <Button
+                key={tooth.toothNumber}
+                type="button"
+                size="sm"
+                variant={insertionToothNumber === tooth.toothNumber ? "default" : "outline"}
+                className="h-7 min-w-7 px-2 text-[11px] tabular-nums"
+                aria-pressed={insertionToothNumber === tooth.toothNumber}
+                onClick={() => onPickInsertionTooth?.(tooth.toothNumber)}
+              >
+                #{tooth.label}
+              </Button>
+            ))}
+          </div>
+        ) : null}
+      </StageSubsection>
+
+      <StageSubsection
         title={marginWord}
         open={openTool === "margin"}
         onOpen={openFold("margin")}
         coach="tool-margin"
       >
+      {insertionTeeth.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {insertionTeeth.map((tooth) => (
+            <Button
+              key={tooth.toothNumber}
+              type="button"
+              size="sm"
+              variant={insertionToothNumber === tooth.toothNumber ? "default" : "outline"}
+              className="h-7 min-w-7 px-2 text-[11px] tabular-nums"
+              aria-pressed={insertionToothNumber === tooth.toothNumber}
+              onClick={() => onPickInsertionTooth?.(tooth.toothNumber)}
+            >
+              #{tooth.label}
+            </Button>
+          ))}
+        </div>
+      ) : null}
       {edit.pontic.on ? (
         <p className="text-[11px] leading-relaxed text-muted-foreground">
           폰틱은 지대치가 없어 마진을 잡지 않습니다.
@@ -1176,44 +1204,6 @@ export function LabProsthesisModifyPanel({
         </p>
       ) : (
         <div className="space-y-2">
-          <div className="grid grid-cols-2 gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={marginMode === "point" ? "default" : "outline"}
-                  className="h-7 text-[11px]"
-                  onClick={() => onMarginMode("point")}
-                >
-                  점 편집
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right" className="z-[520]">
-                점을 끌어 스캔 면 위로 옮깁니다.
-                <br />
-                선을 누르면 점을 더하고, 점을 우클릭하면 지웁니다.
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={marginMode === "pen" ? "default" : "outline"}
-                  className="h-7 text-[11px]"
-                  onClick={() => onMarginMode("pen")}
-                >
-                  펜
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right" className="z-[520]">
-                {marginWord}을 따라 끌면 그 구간을 다시 그립니다.
-                <br />
-                한 바퀴를 그리면 {marginWord} 전체를 바꿉니다.
-              </TooltipContent>
-            </Tooltip>
-          </div>
           {implant && !edit.implant.aligned ? (
             <p className="text-[11px] leading-relaxed text-destructive">
               스캔바디를 먼저 맞춥니다.
@@ -1221,11 +1211,16 @@ export function LabProsthesisModifyPanel({
               EPL은 맞춘 인터페이스 둘레에서 잡습니다.
             </p>
           ) : null}
+          {!axisReady ? (
+            <p className="text-[11px] leading-relaxed text-destructive">
+              삽입축을 먼저 잡습니다.
+            </p>
+          ) : null}
           <Row label={`${marginWord} 간격`} value={`${edit.margin.offsetMm.toFixed(2)} mm`}>
             <Slider
               min={-40}
-              max={60}
-              step={2}
+              max={600}
+              step={5}
               value={[Math.round(edit.margin.offsetMm * 100)]}
               onValueChange={([value]) =>
                 onEdit({
@@ -1236,93 +1231,28 @@ export function LabProsthesisModifyPanel({
               aria-label={`${marginWord} 간격`}
             />
           </Row>
-          <div className="flex items-center justify-between gap-2 text-xs font-medium">
-            <span>조정</span>
-            <span className="flex items-center gap-1">
-              <Input
-                type="number"
-                min={MARGIN_STEP_MIN}
-                max={MARGIN_STEP_MAX}
-                step={0.01}
-                value={stepDraft}
-                onChange={(event) => setStepDraft(event.target.value)}
-                onBlur={() => setStepDraft(marginStep.toFixed(2))}
-                className="h-7 w-16 px-1.5 text-right text-[11px] tabular-nums"
-                aria-label={`${marginWord} 조정 간격`}
-              />
-              <span className="text-muted-foreground">mm</span>
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-1">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 text-[11px]"
-              onClick={() => onEdit(adjustMarginOffset(edit, -marginStep))}
-              title={`${marginWord} 전체를 안쪽으로 ${marginStep.toFixed(2)}mm 줄입니다.`}
-            >
-              수축
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 text-[11px]"
-              onClick={() => onEdit(adjustMarginOffset(edit, marginStep))}
-              title={`${marginWord} 전체를 바깥쪽으로 ${marginStep.toFixed(2)}mm 넓힙니다.`}
-            >
-              확장
-            </Button>
-          </div>
-          {implant ? null : (
-            <div className="space-y-1 rounded-md border px-2 py-1.5 text-xs">
-              <label className="flex items-center justify-between gap-3">
-                <span className="font-medium text-foreground">언더컷 표시</span>
-                <Switch
-                  checked={undercutShown}
-                  disabled={!canUndercut}
-                  onCheckedChange={onUndercut}
-                  aria-label="언더컷 표시"
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3">
-                <span className="font-medium text-foreground">배면 투명</span>
-                <Switch
-                  checked={edit.margin.showBack}
-                  onCheckedChange={(checked) =>
-                    onEdit({
-                      ...edit,
-                      margin: { ...edit.margin, showBack: checked },
-                    })
-                  }
-                  aria-label="지대치 배면 투명"
-                />
-              </label>
-            </div>
-          )}
-          <div className="flex gap-1">
+          <div className="grid grid-cols-3 gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   type="button"
                   size="sm"
-                  variant={redetectPicking ? "default" : "outline"}
-                  className="h-7 flex-1 text-[11px]"
-                  aria-pressed={redetectPicking}
-                  onClick={onRedetect}
+                  variant="outline"
+                  className="h-7 px-1 text-[11px]"
+                  disabled={!axisReady}
+                  onClick={onAutoDetect}
                 >
-                  {redetectPicking ? "시작점 찍는 중" : "다시 검출"}
+                  자동검출
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right" className="z-[520]">
                 {cavity ? (
-                  "와동 테두리를 다시 잡습니다."
+                  "와동 테두리를 삽입축 기준으로 잡습니다."
                 ) : (
                   <>
-                    {marginWord} 위 시작점을 찍습니다.
+                    잡아 둔 삽입축과 치아색·잇몸색을 보고
                     <br />
-                    그 자리부터 {marginWord}을 다시 검출합니다.
+                    {marginWord}을 자동으로 잡습니다.
                   </>
                 )}
               </TooltipContent>
@@ -1333,16 +1263,36 @@ export function LabProsthesisModifyPanel({
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="h-7 flex-1 text-[11px]"
+                  className="h-7 px-1 text-[11px]"
                   onClick={onClearMargin}
                 >
-                  {marginWord} 삭제
+                  {marginWord}삭제
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right" className="z-[520]">
                 {marginWord}을 지우고 새로 잡습니다.
                 <br />
                 시작점부터 점을 찍고, 시작점을 다시 누르면 닫힙니다.
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={marginEditOn ? "default" : "outline"}
+                  className="h-7 px-1 text-[11px]"
+                  aria-pressed={marginEditOn}
+                  disabled={edit.margin.deleted}
+                  onClick={onMarginEdit}
+                >
+                  {marginWord}편집
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[520]">
+                점을 끌어 스캔 면 위로 옮깁니다.
+                <br />
+                선을 누르면 점을 더하고, 점을 우클릭하면 지웁니다.
               </TooltipContent>
             </Tooltip>
           </div>
@@ -1375,31 +1325,6 @@ export function LabProsthesisModifyPanel({
           ) : null}
         </div>
       )}
-      </StageSubsection>
-
-      <StageSubsection
-        title="삽입축"
-        open={openTool === "insertion"}
-        onOpen={openFold("insertion")}
-        coach="tool-insertion"
-      >
-        {insertionTeeth.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
-            {insertionTeeth.map((tooth) => (
-              <Button
-                key={tooth.toothNumber}
-                type="button"
-                size="sm"
-                variant={insertionToothNumber === tooth.toothNumber ? "default" : "outline"}
-                className="h-7 min-w-7 px-2 text-[11px] tabular-nums"
-                aria-pressed={insertionToothNumber === tooth.toothNumber}
-                onClick={() => onPickInsertionTooth?.(tooth.toothNumber)}
-              >
-                #{tooth.label}
-              </Button>
-            ))}
-          </div>
-        ) : null}
       </StageSubsection>
       </>
       ) : null}

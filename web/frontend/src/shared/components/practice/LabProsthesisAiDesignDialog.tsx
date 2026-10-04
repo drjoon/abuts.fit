@@ -334,7 +334,6 @@ import {
   type DesignGesture,
   type DesignScope,
   type EditBrush,
-  type MarginEditMode,
   type MarginReview,
   type ModelSettings,
   type ModifyTool,
@@ -951,9 +950,8 @@ function LabProsthesisAiDesignDialog({
   });
   const restoreGhostVisibleRef = useRef(false);
   const [modifyTool, setModifyTool] = useState<ModifyTool>("margin");
-  const [marginMode, setMarginMode] = useState<MarginEditMode>("point");
+  const [marginEditOn, setMarginEditOn] = useState(false);
   /** 다시 검출: 이 치아의 마진 시작점을 스캔에서 찍는 중. */
-  const [marginSeedPick, setMarginSeedPick] = useState<string | null>(null);
   const [marginTracePoints, setMarginTracePoints] = useState(0);
   const [marginUndercut, setMarginUndercut] = useState<{ tooth: string | null; count: number }>({
     tooth: null,
@@ -1165,8 +1163,7 @@ function LabProsthesisAiDesignDialog({
       setCenterGuide("grid");
       restoreGhostVisibleRef.current = false;
       setModifyTool("margin");
-      setMarginMode("point");
-      setMarginSeedPick(null);
+      setMarginEditOn(false);
       setMarginTracePoints(0);
       setEditBrush("none");
       setEdits({});
@@ -1531,6 +1528,13 @@ function LabProsthesisAiDesignDialog({
   const activeEdit = activeNumber
     ? (edits[activeNumber] ?? createToothDesignEdit())
     : createToothDesignEdit();
+  /** 이 치아의 삽입축을 잡았는지. 마진은 삽입축이 먼저다. */
+  const toothAxisReady = (toothNumber: string | null) => {
+    if (!toothNumber) return false;
+    const key = insertionAxisKey(insertionSpanForTooth(plan.teeth, toothNumber));
+    return Boolean(key && (insertionKeys.includes(key) || insertionKeysRef.current.includes(key)));
+  };
+
   const marginEditing =
     (stage !== "scan" || scanFold === null) &&
     modifyTool === "margin" &&
@@ -1538,17 +1542,8 @@ function LabProsthesisAiDesignDialog({
     activeNumber != null &&
     !activeEdit.pontic.on;
   const marginHint: { warn: boolean; body: ReactNode } | null =
-    marginEditing && marginSeedPick === activeNumber
-      ? {
-          warn: false,
-          body: (
-            <>
-              마진 위 시작점을 클릭합니다.
-              <br />
-              그 자리부터 마진을 다시 검출합니다. Esc로 취소합니다.
-            </>
-          ),
-        }
+    marginEditing && !toothAxisReady(activeNumber)
+      ? { warn: true, body: <>삽입축을 먼저 잡으세요.</> }
       : marginEditing && activeEdit.margin.deleted
         ? {
             warn: false,
@@ -1992,7 +1987,8 @@ function LabProsthesisAiDesignDialog({
     const spec = {
       tool: modifyTool,
       refineTab,
-      marginMode,
+      marginMode: "point" as const,
+      marginEdit: marginEditOn,
       brush: editBrush,
       edits,
       generated,
@@ -2016,7 +2012,7 @@ function LabProsthesisAiDesignDialog({
     editBrush,
     edits,
     generated,
-    marginMode,
+    marginEditOn,
     marginShown,
     meshEditOn,
     modifyTool,
@@ -2365,7 +2361,7 @@ function LabProsthesisAiDesignDialog({
     }
     setEdits((prev) => {
       const current = prev[gesture.tooth] ?? createToothDesignEdit();
-      const next = reduceDesignGesture(current, gesture, marginMode === "pen");
+      const next = reduceDesignGesture(current, gesture, false);
       return { ...prev, [gesture.tooth]: next };
     });
   };
@@ -3185,58 +3181,38 @@ function LabProsthesisAiDesignDialog({
     });
   };
 
-  /** 인레이·온레이는 와동 테두리를 바로 다시 잡고, 나머지는 시작점을 찍게 한다. */
-  const startMarginRedetect = (toothNumber: string) => {
-    if (!cavityKindsRef.current[toothNumber]) {
-      setMarginSeedPick((prev) => (prev === toothNumber ? null : toothNumber));
-      return;
-    }
-    beginEditUndo();
-    const detect = detectMargins([toothNumber]);
-    setEdits((prev) => ({
-      ...prev,
-      [toothNumber]: detect(toothNumber, prev[toothNumber] ?? createToothDesignEdit(), true)!,
-    }));
-    setMarginReview((prev) => ({ ...prev, [toothNumber]: "detected" }));
-    setMarginShown(true);
-    queueSaveWorkRef.current();
-  };
-
-  const redetectMarginFrom = (toothNumber: string, point: { x: number; y: number; z: number }) => {
-    const hit = viewerRef.current?.detectColorMargins([toothNumber], point)?.[0];
-    if (!hit) {
+  /** 잡아 둔 삽입축과 치아색·잇몸색·형상 경계로 마진을 자동 검출한다. */
+  const autoDetectMargin = (toothNumber: string) => {
+    if (!toothAxisReady(toothNumber)) {
       toast({
-        title: "그 자리에서 마진을 찾지 못했습니다.",
-        description: "지대치와 잇몸 경계 위를 다시 찍으세요.",
+        title: "삽입축을 먼저 잡으세요.",
+        description: "마진은 삽입축 방향으로 검출합니다.",
         variant: "destructive",
       });
       return;
     }
-    setMarginSeedPick(null);
+    const detect = detectMargins([toothNumber]);
+    const current = editsRef.current[toothNumber] ?? createToothDesignEdit();
+    const next = detect(toothNumber, current, false);
+    if (!next) {
+      toast({
+        title: "마진을 찾지 못했습니다.",
+        description: "삽입축을 다시 잡거나 마진 삭제 후 점을 찍어 그리세요.",
+        variant: "destructive",
+      });
+      return;
+    }
     beginEditUndo();
-    setEdits((prev) => {
-      const current = seedInnerPreset(prev[toothNumber] ?? createToothDesignEdit(), null);
-      return { ...prev, [toothNumber]: applyDetectedMargin(current, hit.radii, hit.depths) };
-    });
+    setEdits((prev) => ({ ...prev, [toothNumber]: next }));
     setMarginReview((prev) => ({ ...prev, [toothNumber]: "detected" }));
+    setMarginEditOn(false);
     setMarginShown(true);
     queueSaveWorkRef.current();
   };
 
   useEffect(() => {
-    setMarginSeedPick(null);
+    setMarginEditOn(false);
   }, [activeNumber, modifyTool, stage]);
-
-  useEffect(() => {
-    if (!marginSeedPick) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.stopPropagation();
-      setMarginSeedPick(null);
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [marginSeedPick]);
 
   const confirmMargin = (toothNumber: string) => {
     if (marginReviewRef.current[toothNumber] !== "detected") return;
@@ -4605,8 +4581,6 @@ function LabProsthesisAiDesignDialog({
               }}
               scanbodyPickTooth={scanbodyPickTooth}
               onScanbodyPicks={setScanbodyPicks}
-              marginSeedPickTooth={marginSeedPick}
-              onMarginSeedPick={redetectMarginFrom}
               onMarginUndercut={(tooth, count) =>
                 setMarginUndercut((prev) =>
                   prev.tooth === tooth && prev.count === count ? prev : { tooth, count },
@@ -5460,8 +5434,12 @@ function LabProsthesisAiDesignDialog({
                           setColorMap((prev) => ({ ...prev, on: true, mode: "fit" }));
                           setMarginShown(true);
                         }}
-                        marginMode={marginMode}
-                        onMarginMode={setMarginMode}
+                        marginEditOn={marginEditOn}
+                        onMarginEdit={() => setMarginEditOn((on) => !on)}
+                        onAutoDetect={() => {
+                          if (activeNumber) autoDetectMargin(activeNumber);
+                        }}
+                        axisReady={toothAxisReady(activeNumber)}
                         brush={editBrush}
                         onBrush={setEditBrush}
                         edit={activeEdit}
@@ -5517,13 +5495,6 @@ function LabProsthesisAiDesignDialog({
                         onViewHoleAxis={() => {
                           if (activeNumber) viewerRef.current?.viewHoleAxis(activeNumber);
                         }}
-                        onRedetect={() => {
-                          if (activeNumber) startMarginRedetect(activeNumber);
-                        }}
-                        redetectPicking={Boolean(activeNumber && marginSeedPick === activeNumber)}
-                        undercutShown={paintUndercut}
-                        canUndercut={canUndercut && !insertionAxisVisible}
-                        onUndercut={setUndercutMap}
                         onClearMargin={() => {
                           if (!activeNumber) return;
                           beginEditUndo();

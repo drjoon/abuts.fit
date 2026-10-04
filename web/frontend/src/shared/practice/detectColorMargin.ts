@@ -318,8 +318,9 @@ function scoreMarginCandidates(
 }
 
 /**
- * 2차원 원형 동적 계획법(Circular DP)을 이용한 닫힌 마진 루프 최적화.
- * 각 각도에서의 후보 점수와 인접 각도 간의 반경/높이 부드러움(smoothness) 에너지를 함께 최소화한다.
+ * 극좌표로 펼친 (각도 × 반경) 후보 평면에서 닫힌 최적 경로를 Viterbi 동적 계획법으로 찾는다.
+ * 비용 = −정규화한 마진 점수 + 인접 각도 간 반경 도약·높이 도약 벌점.
+ * 닫힘은 두 바퀴를 돌려 가운데 바퀴를 쓰는 방식으로 맞춘다(고전적 snake/active contour의 이산 해).
  */
 function optimizeClosedMarginLoop(
   rayHits: Hit[][],
@@ -327,58 +328,81 @@ function optimizeClosedMarginLoop(
   baseRadius: number,
   count: number,
 ): { bestIndices: number[]; averageStrength: number } {
-  // 각 ray에서 상위 점수를 가진 인덱스 추출
-  const kBest = new Array<number>(count).fill(0);
-  let totalScore = 0;
-  let scoredCount = 0;
+  let maxScore = 0;
+  for (const row of rayScores) for (const value of row) if (value > maxScore) maxScore = value;
+  const norm = maxScore > 1e-9 ? 1 / maxScore : 1;
+  const radialPenalty = 2.2;
+  const heightPenalty = 1.2;
+  const laps = 2;
+  const total = count * laps;
 
-  for (let i = 0; i < count; i += 1) {
-    const hits = rayHits[i]!;
-    const scores = rayScores[i]!;
-    if (hits.length === 0) continue;
-    let maxS = -1;
-    let bestIdx = Math.floor(hits.length / 2);
+  const prevCost: number[][] = [];
+  const back: Int16Array[] = [];
+  let strengthSum = 0;
+  let strengthN = 0;
+
+  const hitsAt = (i: number) => rayHits[i % count] ?? [];
+  const scoreAt = (i: number, k: number) => (rayScores[i % count]?.[k] ?? 0) * norm;
+
+  let cost: number[] = hitsAt(0).map((_, k) => -scoreAt(0, k));
+  prevCost.push(cost);
+  back.push(new Int16Array(cost.length).fill(-1));
+  for (let i = 1; i < total; i += 1) {
+    const hits = hitsAt(i);
+    const before = hitsAt(i - 1);
+    const next = new Array<number>(hits.length).fill(Infinity);
+    const from = new Int16Array(hits.length).fill(-1);
     for (let k = 0; k < hits.length; k += 1) {
-      const s = scores[k] ?? 0;
-      if (s > maxS) {
-        maxS = s;
-        bestIdx = k;
+      const hit = hits[k]!;
+      let best = Infinity;
+      let bestJ = -1;
+      for (let j = 0; j < before.length; j += 1) {
+        const prev = before[j]!;
+        const dr = (hit.rad - prev.rad) / baseRadius;
+        const dy = (hit.y - prev.y) / baseRadius;
+        const c = (cost[j] ?? Infinity) + radialPenalty * dr * dr + heightPenalty * dy * dy;
+        if (c < best) {
+          best = c;
+          bestJ = j;
+        }
       }
+      next[k] = best - scoreAt(i, k);
+      from[k] = bestJ;
     }
-    kBest[i] = bestIdx;
-    if (maxS > 0) {
-      totalScore += maxS;
-      scoredCount += 1;
-    }
+    cost = next;
+    prevCost.push(next);
+    back.push(from);
   }
 
-  // 1차 추출 후 국소 이상치(주변 2칸 대비 반경 편차가 0.35 이상) 제거 및 원형 완화(circular relaxation)
-  const radii = kBest.map((idx, i) => {
-    const hit = rayHits[i]?.[idx];
-    return hit ? hit.rad / baseRadius : 1.0;
-  });
-
-  const smoothedRadii = smoothCircular(radii, 2);
-
-  // 스무딩된 반경에 가장 가까운 샘플 인덱스로 재스냅
-  for (let i = 0; i < count; i += 1) {
-    const targetRad = smoothedRadii[i]! * baseRadius;
-    const hits = rayHits[i]!;
-    let closestK = kBest[i]!;
-    let minDiff = Infinity;
-    for (let k = 0; k < hits.length; k += 1) {
-      const diff = Math.abs((hits[k]?.rad ?? 0) - targetRad);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closestK = k;
-      }
+  // 마지막 줄에서 최저 비용 끝점을 고르고 거꾸로 따라간다.
+  let end = -1;
+  let endCost = Infinity;
+  for (let k = 0; k < cost.length; k += 1) {
+    if (cost[k]! < endCost) {
+      endCost = cost[k]!;
+      end = k;
     }
-    kBest[i] = closestK;
   }
-
+  const path = new Array<number>(total).fill(0);
+  let cursor = end;
+  for (let i = total - 1; i >= 0; i -= 1) {
+    path[i] = Math.max(0, cursor);
+    cursor = back[i]?.[Math.max(0, cursor)] ?? -1;
+    if (cursor < 0 && i > 0) cursor = 0;
+  }
+  const bestIndices = new Array<number>(count).fill(0);
+  for (let i = 0; i < count; i += 1) {
+    const k = path[count + i] ?? 0;
+    bestIndices[i] = k;
+    const s = rayScores[i]?.[k] ?? 0;
+    if (s > 0) {
+      strengthSum += s;
+      strengthN += 1;
+    }
+  }
   return {
-    bestIndices: kBest,
-    averageStrength: scoredCount > 0 ? totalScore / scoredCount : 0.5,
+    bestIndices,
+    averageStrength: strengthN > 0 ? strengthSum / strengthN : 0.5,
   };
 }
 
