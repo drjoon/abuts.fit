@@ -4,8 +4,8 @@
 // - web/frontend/src/shared/chat/chatSoundPlayer.ts
 // - web/frontend/src/shared/practice/openPracticeTransferChat.ts
 // change-log:
-// - 2026-10-04: alert 보기 버튼 — 소프트 필·호버.
-// - 2026-10-04: 백그라운드·다른 사이트는 헬퍼 OS 토스트만. 포커스 중은 예쁜 in-app alert 토스트.
+// - 2026-10-04: 포커스 토스트 = 전역 공통 default(두꺼운 primary 테두리). alert 변형 폐기.
+// - 2026-10-04: 백그라운드·다른 사이트는 헬퍼 OS 토스트만. 포커스 중은 in-app 토스트(보기).
 
 import { createElement } from "react";
 import { ToastAction } from "@/components/ui/toast";
@@ -38,7 +38,7 @@ type NotifyOpts = {
 
 /**
  * 채팅·의뢰 알림.
- * - 포커스된 탭: 브라우저음 + in-app alert 토스트(보기)
+ * - 포커스된 탭: 브라우저음 + 전역 공통 토스트(보기)
  * - 숨김·다른 사이트·다른 앱: 연결 프로그램 OS 토스트(보기 → 채팅)
  */
 export const notifyPracticeTransferAlert = ({
@@ -64,7 +64,6 @@ export const notifyPracticeTransferAlert = ({
   if (isPracticeTransferAlertBackgrounded()) return;
 
   toast({
-    variant: "alert",
     title,
     description: body,
     duration: 8000,
@@ -74,8 +73,6 @@ export const notifyPracticeTransferAlert = ({
           ToastAction,
           {
             altText: "보기",
-            className:
-              "h-8 shrink-0 rounded-full border border-sky-200/80 bg-sky-50/90 px-3.5 text-[0.8125rem] font-semibold text-sky-700 shadow-none hover:bg-sky-100 hover:text-sky-800",
             onClick: (e) => {
               e.stopPropagation();
               open();

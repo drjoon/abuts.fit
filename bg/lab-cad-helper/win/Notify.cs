@@ -2,6 +2,7 @@
 // - 2026-10-04: v15 — 플랫폼 alert 토스트 룩 + 알림음 샘플(soundId)·WAV 합성.
 // - 2026-10-04: v14 — PC 알람을 서버 WS(/api/lab-helper/alarms/ws)로. 롱폴링 제거.
 // - 2026-10-04: v13 — 버전 맞춤(Mac open-href ba 매칭). Windows는 탭 탐색 없음·FE 가드.
+// - 2026-10-04: v16 — 웹 전역 공통 default 토스트(border-2 primary)·A뱃지/액센트 제거.
 // - 2026-10-04: v12 — 커스텀 플로팅 토스트(보기)로 balloon 대체.
 // - 2026-10-04: v9 — 세션 BusinessAnchorId를 알림 href ba=에 넣음.
 // - 2026-10-03: v6 — 401/403 백오프·Cache-Control no-cache(빈 wait 304 방지).
@@ -516,13 +517,8 @@ namespace Abuts.LabHelper
                 _toastForm = null;
             }
 
-            // 웹 alert 토스트: soft sky card · 그라데이션 액센트 · soft 보기 버튼
-            var sky = Color.FromArgb(56, 189, 248);       // sky-400
-            var primary = Color.FromArgb(37, 99, 235);    // primary
-            var indigo = Color.FromArgb(99, 102, 241);    // indigo-500
-            var skySoft = Color.FromArgb(240, 249, 255);  // sky-50
-            var skyBorder = Color.FromArgb(186, 230, 253);
-            var skyText = Color.FromArgb(3, 105, 161);    // sky-700
+            // 웹 전역 공통 toast: border-2 primary · rounded-md · title/desc + 보기
+            var primary = Color.FromArgb(55, 130, 246); // hsl(217 91% 59%)
 
             var form = new Form
             {
@@ -530,114 +526,58 @@ namespace Abuts.LabHelper
                 ShowInTaskbar = false,
                 TopMost = true,
                 StartPosition = FormStartPosition.Manual,
-                Size = new Size(372, 96),
+                Size = new Size(360, 104),
                 BackColor = Color.White,
                 Padding = new Padding(0),
             };
-            form.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, form.Width + 1, form.Height + 1, 18, 18));
+            form.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, form.Width + 1, form.Height + 1, 6, 6));
             form.Paint += (_, e) =>
             {
-                using (var brush = new System.Drawing.Drawing2D.LinearGradientBrush(
-                    form.ClientRectangle,
-                    Color.White,
-                    skySoft,
-                    135f))
+                e.Graphics.Clear(Color.White);
+                using (var pen = new Pen(primary, 2f))
                 {
-                    e.Graphics.FillRectangle(brush, form.ClientRectangle);
-                }
-                using (var pen = new Pen(Color.FromArgb(180, skyBorder), 1f))
-                {
-                    e.Graphics.DrawRectangle(pen, 0, 0, form.Width - 1, form.Height - 1);
+                    e.Graphics.DrawRectangle(pen, 1, 1, form.Width - 3, form.Height - 3);
                 }
             };
-
-            var accent = new Panel
-            {
-                Dock = DockStyle.Left,
-                Width = 4,
-            };
-            accent.Paint += (_, e) =>
-            {
-                using (var brush = new System.Drawing.Drawing2D.LinearGradientBrush(
-                    accent.ClientRectangle,
-                    sky,
-                    indigo,
-                    90f))
-                {
-                    var blend = new System.Drawing.Drawing2D.ColorBlend(3);
-                    blend.Colors = new[] { sky, primary, indigo };
-                    blend.Positions = new[] { 0f, 0.5f, 1f };
-                    brush.InterpolationColors = blend;
-                    e.Graphics.FillRectangle(brush, accent.ClientRectangle);
-                }
-            };
-            form.Controls.Add(accent);
-
-            var badge = new Panel
-            {
-                Size = new Size(40, 40),
-                Location = new Point(16, 28),
-            };
-            badge.Paint += (_, e) =>
-            {
-                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                var rect = new Rectangle(0, 0, badge.Width - 1, badge.Height - 1);
-                using (var path = RoundedRect(rect, 14))
-                using (var brush = new System.Drawing.Drawing2D.LinearGradientBrush(
-                    rect, sky, primary, 135f))
-                {
-                    e.Graphics.FillPath(brush, path);
-                }
-                using (var font = new Font("Segoe UI", 11f, FontStyle.Bold))
-                using (var sf = new StringFormat
-                {
-                    Alignment = StringAlignment.Center,
-                    LineAlignment = StringAlignment.Center,
-                })
-                {
-                    e.Graphics.DrawString("A", font, Brushes.White, rect, sf);
-                }
-            };
-            form.Controls.Add(badge);
 
             var titleLbl = new Label
             {
                 Text = title,
-                Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(15, 23, 42),
-                BackColor = Color.Transparent,
+                BackColor = Color.White,
                 AutoEllipsis = true,
-                Location = new Point(66, 26),
-                Size = new Size(200, 22),
+                Location = new Point(22, 26),
+                Size = new Size(220, 22),
             };
             form.Controls.Add(titleLbl);
 
             var bodyLbl = new Label
             {
                 Text = body,
-                Font = new Font("Segoe UI", 8.75f, FontStyle.Regular),
+                Font = new Font("Segoe UI", 9f, FontStyle.Regular),
                 ForeColor = Color.FromArgb(100, 116, 139),
-                BackColor = Color.Transparent,
+                BackColor = Color.White,
                 AutoEllipsis = true,
-                Location = new Point(66, 50),
-                Size = new Size(200, 20),
+                Location = new Point(22, 52),
+                Size = new Size(220, 20),
             };
             form.Controls.Add(bodyLbl);
 
             var viewBtn = new Button
             {
                 Text = "보기",
-                Font = new Font("Segoe UI", 8.75f, FontStyle.Bold),
-                ForeColor = skyText,
-                BackColor = skySoft,
+                Font = new Font("Segoe UI", 9f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(15, 23, 42),
+                BackColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
                 Size = new Size(58, 32),
-                Location = new Point(276, 32),
+                Location = new Point(256, 36),
                 Cursor = Cursors.Hand,
             };
-            viewBtn.FlatAppearance.BorderColor = skyBorder;
+            viewBtn.FlatAppearance.BorderColor = Color.FromArgb(226, 232, 240);
             viewBtn.FlatAppearance.BorderSize = 1;
-            viewBtn.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, viewBtn.Width + 1, viewBtn.Height + 1, 16, 16));
+            viewBtn.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, viewBtn.Width + 1, viewBtn.Height + 1, 6, 6));
             viewBtn.Click += (_, __) =>
             {
                 try { form.Close(); } catch { }
@@ -648,12 +588,12 @@ namespace Abuts.LabHelper
             var closeBtn = new Button
             {
                 Text = "✕",
-                Font = new Font("Segoe UI", 8f),
+                Font = new Font("Segoe UI", 8.5f),
                 ForeColor = Color.FromArgb(148, 163, 184),
-                BackColor = Color.Transparent,
+                BackColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
                 Size = new Size(24, 24),
-                Location = new Point(340, 8),
+                Location = new Point(322, 10),
                 Cursor = Cursors.Hand,
             };
             closeBtn.FlatAppearance.BorderSize = 0;

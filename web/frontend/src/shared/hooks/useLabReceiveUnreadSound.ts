@@ -5,7 +5,7 @@
 // - web/frontend/src/shared/practice/openPracticeTransferChat.ts
 // - web/frontend/src/App.tsx
 // change-log:
-// - 2026-10-04: practiceTransferAlertNotify — 백그라운드 OS 토스트 / 포커스 alert 토스트.
+// - 2026-10-04: practiceTransferAlertNotify — 백그라운드 OS 토스트 / 포커스 전역 공통 토스트.
 // - 2026-10-04: 알림 보기 ba(계정) 전달 — 다른 치과 창이 가로채지 않음.
 // - 2026-10-03: 보기 → 수신함 탭 BroadcastChannel. App은 Router 밖.
 // - 2026-10-03: App은 Router 밖 — useNavigate 제거(location.assign).

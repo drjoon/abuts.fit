@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
 // change-log:
+// - 2026-10-04: 보기 — 이미 이 탭 목록이면 BroadcastChannel/헬퍼 없이 바로 채팅 오픈.
 // - 2026-10-04: applyOpenHere — URL ba가 이 계정과 다르면 열지 않음.
 // - 2026-10-04: localFallback=false — 역할이 다른 창은 수신함 탭만 찾고 이 창 URL을 바꾸지 않음.
 // - 2026-10-04: ba(사업자 앵커)로 BroadcastChannel·URL 매칭 — 다른 치과 창이 알림 보기를 가로채지 않음.
@@ -236,6 +237,20 @@ export const openPracticeTransferAlert = (
   const path = practiceTransferAlertPath(id, mode, ba);
   if (!id || !path) return;
   const localFallback = options?.localFallback !== false;
+  const myBa = resolvePracticeTransferAlertAccountId();
+  const onList =
+    window.location.pathname.startsWith("/dashboard/practice-transfers") ||
+    window.location.pathname.startsWith("/practice/dashboard");
+  // BroadcastChannel은 송신 탭에 전달되지 않음 — 이미 이 탭이면 바로 연다.
+  // localFallback=false(역할이 다른 창)는 헬퍼·다른 탭만 찾고 여기서 열지 않음.
+  if (
+    localFallback &&
+    onList &&
+    (!ba || !myBa || ba === myBa)
+  ) {
+    applyOpenHere(id, mode, ba);
+    return;
+  }
 
   const href = practiceTransferAlertHref(id, mode, ba);
   const ch = alertChannel();

@@ -6,7 +6,7 @@
 // - web/frontend/src/shared/practice/practiceTransferAlertNotify.ts
 // - web/frontend/src/App.tsx
 // change-log:
-// - 2026-10-04: 백그라운드는 헬퍼 OS 토스트, 포커스는 alert 토스트(practiceTransferAlertNotify).
+// - 2026-10-04: 백그라운드는 헬퍼 OS 토스트, 포커스는 전역 공통 토스트(practiceTransferAlertNotify).
 // - 2026-10-04: 채팅 알림 보기에 ba(계정) 전달.
 // - 2026-10-03: 다른 창을 보고 있으면 채팅 토스트·보기. 포커스된 같은 방만 생략.
 // - 2026-10-03: 로그인 시 AudioContext unlock 바인딩.

@@ -1,5 +1,4 @@
-// - 2026-10-04: alert 토스트 — 좌측 액센트·소프트 그라데이션·더 가벼운 액션.
-// - 2026-10-04: alert 변형 — 채팅·의뢰 시스템 알림(브랜드 액센트·부드러운 카드).
+// - 2026-10-04: alert 변형 제거 — 채팅·의뢰도 전역 공통 default(border-2 primary).
 // - 2026-10-03: 토스트 뷰포트 오른쪽 위. 클릭 가능한 알림 토스트.
 // related files:
 // - web/frontend/rules.md
@@ -36,8 +35,6 @@ const toastVariants = cva(
     variants: {
       variant: {
         default: "border-2 border-primary bg-background text-foreground",
-        alert:
-          "space-x-0 gap-0 overflow-hidden rounded-[1.15rem] border-0 bg-gradient-to-br from-white via-white to-sky-50/95 p-0 pr-0 text-foreground shadow-[0_18px_50px_-18px_rgba(37,99,235,0.42),0_8px_20px_-12px_rgba(15,23,42,0.18)] ring-1 ring-sky-200/70 backdrop-blur-xl dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:ring-sky-400/20",
         destructive:
           "destructive group border-destructive bg-destructive text-destructive-foreground",
       },
@@ -86,7 +83,7 @@ const ToastClose = React.forwardRef<
     ref={ref}
     className={cn(
       // 모바일은 hover가 없어 항상 보이게 한다.
-      "absolute right-1.5 top-1.5 rounded-full p-1.5 text-slate-400 opacity-100 transition-colors hover:bg-slate-900/5 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-300/60 group-[.destructive]:text-destructive/90 group-[.destructive]:hover:bg-white/10 group-[.destructive]:hover:text-destructive-soft group-[.destructive]:focus:ring-destructive/80 group-[.destructive]:focus:ring-offset-red-600",
+      "absolute right-2 top-2 rounded-md p-1 text-foreground/50 opacity-100 transition-opacity hover:text-foreground focus:outline-none focus:ring-2 group-[.destructive]:text-red-300 group-[.destructive]:hover:text-red-50 group-[.destructive]:focus:ring-red-400 group-[.destructive]:focus:ring-offset-red-600",
       className,
     )}
     toast-close=""
@@ -97,7 +94,7 @@ const ToastClose = React.forwardRef<
       onClick?.(e);
     }}
   >
-    <X className="h-3.5 w-3.5" />
+    <X className="h-4 w-4" />
   </ToastPrimitives.Close>
 ));
 ToastClose.displayName = ToastPrimitives.Close.displayName;

@@ -1,3 +1,4 @@
+// - 2026-10-04: v16 — OS 토스트를 웹 전역 공통 default(border-2 primary)에 맞춤.
 // - 2026-10-04: v15 — 플랫폼 alert 토스트 룩 + 알림음 샘플(soundId)·WAV 합성.
 // - 2026-10-04: v14 — PC 알람을 서버 WS(/api/lab-helper/alarms/ws)로. 롱폴링 제거.
 // - 2026-10-04: v13 — open-href: ba 필수 매칭·계정 탭 2차 탐색. 토스트 보기는 ba 있을 때 앞창 새 탭 금지.
@@ -22,7 +23,7 @@ import Foundation
 import Network
 import QuartzCore
 
-let helperVersion = 15
+let helperVersion = 16
 /** macOS 13+ 「개인정보 보호 및 보안」 */
 let macPrivacySettingsURL =
   "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
@@ -375,12 +376,8 @@ final class AlarmToastController: NSObject {
   private var bodyLabel: NSTextField?
   private var href = ""
   private var dismissWork: DispatchWorkItem?
-  private let sky = NSColor(srgbRed: 0.220, green: 0.741, blue: 0.973, alpha: 1) // sky-400
-  private let primary = NSColor(srgbRed: 0.145, green: 0.388, blue: 0.922, alpha: 1)
-  private let indigo = NSColor(srgbRed: 0.388, green: 0.400, blue: 0.945, alpha: 1)
-  private let skySoft = NSColor(srgbRed: 0.941, green: 0.976, blue: 1.0, alpha: 1)
-  private let skyBorder = NSColor(srgbRed: 0.729, green: 0.902, blue: 0.992, alpha: 1)
-  private let skyText = NSColor(srgbRed: 0.012, green: 0.412, blue: 0.631, alpha: 1)
+  /// 웹 전역 토스트 `--primary` hsl(217 91% 59%)
+  private let primary = NSColor(srgbRed: 0.216, green: 0.510, blue: 0.965, alpha: 1)
 
   func show(title: String, body: String, href: String) {
     DispatchQueue.main.async {
@@ -395,7 +392,6 @@ final class AlarmToastController: NSObject {
   private func present(title: String, body: String, href: String) {
     dismissWork?.cancel()
     self.href = href.trimmingCharacters(in: .whitespaces)
-    // 레이어/그라데이션을 매번 새로 그려 이전 룩이 남지 않게 한다.
     panel?.orderOut(nil)
     panel = nil
     buildPanel()
@@ -442,8 +438,9 @@ final class AlarmToastController: NSObject {
   }
 
   private func buildPanel() {
-    let width: CGFloat = 372
-    let height: CGFloat = 96
+    // 웹 공통 toast: border-2 primary · rounded-md · p-6 · title/desc + 보기
+    let width: CGFloat = 360
+    let height: CGFloat = 104
     let panel = NSPanel(
       contentRect: NSRect(x: 0, y: 0, width: width, height: height),
       styleMask: [.borderless, .nonactivatingPanel],
@@ -460,88 +457,51 @@ final class AlarmToastController: NSObject {
 
     let root = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
     root.wantsLayer = true
-    root.layer?.cornerRadius = 18
+    root.layer?.cornerRadius = 6
     root.layer?.masksToBounds = true
-    let bg = CAGradientLayer()
-    bg.colors = [
-      NSColor.white.cgColor,
-      skySoft.cgColor,
-    ]
-    bg.startPoint = CGPoint(x: 0, y: 1)
-    bg.endPoint = CGPoint(x: 1, y: 0)
-    bg.frame = root.bounds
-    bg.cornerRadius = 18
-    root.layer?.insertSublayer(bg, at: 0)
-    root.layer?.borderWidth = 1
-    root.layer?.borderColor = skyBorder.withAlphaComponent(0.7).cgColor
-
-    let accent = NSView(frame: NSRect(x: 0, y: 0, width: 4, height: height))
-    accent.wantsLayer = true
-    let accentGrad = CAGradientLayer()
-    accentGrad.colors = [sky.cgColor, primary.cgColor, indigo.cgColor]
-    accentGrad.startPoint = CGPoint(x: 0.5, y: 1)
-    accentGrad.endPoint = CGPoint(x: 0.5, y: 0)
-    accentGrad.frame = accent.bounds
-    accent.layer?.addSublayer(accentGrad)
-    root.addSubview(accent)
-
-    let badge = NSView(frame: NSRect(x: 16, y: 28, width: 40, height: 40))
-    badge.wantsLayer = true
-    badge.layer?.cornerRadius = 14
-    let badgeGrad = CAGradientLayer()
-    badgeGrad.colors = [sky.cgColor, primary.cgColor]
-    badgeGrad.startPoint = CGPoint(x: 0, y: 1)
-    badgeGrad.endPoint = CGPoint(x: 1, y: 0)
-    badgeGrad.frame = badge.bounds
-    badgeGrad.cornerRadius = 14
-    badge.layer?.addSublayer(badgeGrad)
-    let mark = NSTextField(labelWithString: "A")
-    mark.font = NSFont.systemFont(ofSize: 15, weight: .bold)
-    mark.textColor = .white
-    mark.alignment = .center
-    mark.frame = badge.bounds
-    badge.addSubview(mark)
-    root.addSubview(badge)
+    root.layer?.backgroundColor = NSColor.white.cgColor
+    root.layer?.borderWidth = 2
+    root.layer?.borderColor = primary.cgColor
 
     let title = NSTextField(labelWithString: "")
-    title.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+    title.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
     title.textColor = NSColor(srgbRed: 0.059, green: 0.090, blue: 0.165, alpha: 1)
     title.lineBreakMode = .byTruncatingTail
-    title.frame = NSRect(x: 66, y: 52, width: 200, height: 20)
+    title.frame = NSRect(x: 22, y: 56, width: 230, height: 22)
     root.addSubview(title)
     titleLabel = title
 
     let body = NSTextField(labelWithString: "")
-    body.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+    body.font = NSFont.systemFont(ofSize: 13, weight: .regular)
     body.textColor = NSColor(srgbRed: 0.392, green: 0.455, blue: 0.545, alpha: 1)
     body.lineBreakMode = .byTruncatingTail
-    body.frame = NSRect(x: 66, y: 30, width: 200, height: 18)
+    body.frame = NSRect(x: 22, y: 32, width: 230, height: 20)
     root.addSubview(body)
     bodyLabel = body
 
-    let viewBtn = NSButton(frame: NSRect(x: 276, y: 32, width: 58, height: 32))
+    let viewBtn = NSButton(frame: NSRect(x: 262, y: 36, width: 58, height: 32))
     viewBtn.bezelStyle = .rounded
     viewBtn.isBordered = false
     viewBtn.wantsLayer = true
-    viewBtn.layer?.cornerRadius = 16
-    viewBtn.layer?.backgroundColor = skySoft.cgColor
+    viewBtn.layer?.cornerRadius = 6
+    viewBtn.layer?.backgroundColor = NSColor.clear.cgColor
     viewBtn.layer?.borderWidth = 1
-    viewBtn.layer?.borderColor = skyBorder.cgColor
+    viewBtn.layer?.borderColor = NSColor(srgbRed: 0.89, green: 0.91, blue: 0.94, alpha: 1).cgColor
     viewBtn.target = self
     viewBtn.action = #selector(openChat)
     let attrs: [NSAttributedString.Key: Any] = [
-      .foregroundColor: skyText,
-      .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+      .foregroundColor: NSColor(srgbRed: 0.059, green: 0.090, blue: 0.165, alpha: 1),
+      .font: NSFont.systemFont(ofSize: 13, weight: .medium),
     ]
     viewBtn.attributedTitle = NSAttributedString(string: "보기", attributes: attrs)
     root.addSubview(viewBtn)
 
-    let close = NSButton(frame: NSRect(x: 340, y: 66, width: 24, height: 22))
+    let close = NSButton(frame: NSRect(x: 328, y: 72, width: 24, height: 22))
     close.bezelStyle = .inline
     close.isBordered = false
     close.title = "✕"
-    close.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-    close.contentTintColor = NSColor(srgbRed: 0.58, green: 0.64, blue: 0.72, alpha: 1)
+    close.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+    close.contentTintColor = NSColor(srgbRed: 0.45, green: 0.50, blue: 0.56, alpha: 1)
     close.target = self
     close.action = #selector(dismissClick)
     root.addSubview(close)

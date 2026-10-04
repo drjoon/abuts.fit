@@ -25,3 +25,4 @@ out/
 *.yarn.lock
 *.mp4
 *.zip
+!web/frontend/public/downloads/lab-helper/*.zip

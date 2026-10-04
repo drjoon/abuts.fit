@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: v16 — OS 토스트를 웹 전역 공통 default(border-2 primary)에 맞춤.
 // - 2026-10-04: v15 — 플랫폼 alert 토스트 룩 + 알림음 샘플(soundId).
 // - 2026-10-04: v14 — PC 알람을 서버 WS로(롱폴링 제거).
 // - 2026-10-04: v13 — Mac open-href ba 매칭과 버전 맞춤.
@@ -26,7 +27,7 @@ namespace Abuts.LabHelper
 {
     internal static class Program
     {
-        public const int Version = 15;
+        public const int Version = 16;
         public const int Port = 8010;
         public const string Title = "어벗츠 연결 프로그램";
 
