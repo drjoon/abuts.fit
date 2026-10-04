@@ -79,6 +79,17 @@ const DEMO_MODE_EXIT_BODY_LAB =
 export const DEMO_MODE_EXIT_WARNING =
   "전환 후 데모로 되돌릴 수 없습니다. 신규 의뢰는 충전(선결제) 후 가능합니다.";
 
+/** 전환 요청 후 — 기공소 지급 확인 대기 모달. */
+export const DEMO_MODE_PENDING_TITLE = "기공소 확인을 기다리고 있습니다";
+
+export const DEMO_MODE_PENDING_BODY_LINES = [
+  "실사용 전환을 요청했습니다.",
+  "기공소가 지급을 확인하면 전환됩니다.",
+] as const;
+
+export const DEMO_MODE_PENDING_NOTICE =
+  "미정산 기공비를 아직 지급하지 않았다면 기공소에 직접 지급해 주세요.";
+
 export function resolveDemoModeExitBody(kind?: DemoRequestorKind): string {
   return kind === "lab" ? DEMO_MODE_EXIT_BODY_LAB : DEMO_MODE_EXIT_BODY_PRACTICE;
 }
@@ -139,9 +150,13 @@ export const DEMO_MODE_CONVERTED_TOAST_TITLE = "실사용으로 전환되었습�
 export const DEMO_MODE_CONVERTED_TOAST_DESCRIPTION =
   "신규 의뢰는 선결제(충전)가 필요합니다. 충전 페이지로 이동합니다.";
 
-/** 전환 요청 후 기공소 확인 대기. */
+/** 전환 요청 직후 토스트. */
 export const DEMO_MODE_PENDING_TOAST =
   "기공소에 미정산 기공비를 직접 지급해 주세요. 기공소가 확인하면 전환됩니다.";
+
+/** 뱃지 툴팁 — 전환 대기. */
+export const DEMO_MODE_PENDING_BADGE_HINT =
+  "기공소의 지급 확인을 기다리고 있습니다.";
 
 /** 충전 탭 — 데모 중 유료 충전 요청 전 확인(전환 모달과 동일 본문). */
 export const DEMO_MODE_CHARGE_EXIT_TITLE = "전환 입금할까요?";

@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // change-log:
+// - 2026-10-04: 전환 대기 뱃지 툴팁·aria를 기공소 확인 대기로 구분.
 // - 2026-10-04: 전환 요청 다이얼로그를 DemoConversionDialog(기공소 직접 지급 확인)로 교체. 전환 대기 라벨.
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 import { DemoConversionDialog } from "./DemoConversionDialog";
 import {
+  DEMO_MODE_PENDING_BADGE_HINT,
   formatDemoModeBadgeAriaLabel,
   formatDemoModeBadgeLabel,
   resolveCreditLedgerDemoNoticeBody,
@@ -41,7 +43,12 @@ export function DemoModeBadge({ className, onExited }: Props) {
   const ariaLabel = conversionPending
     ? "실사용 전환 대기"
     : formatDemoModeBadgeAriaLabel(daysRemaining);
-  const noticeBody = resolveCreditLedgerDemoNoticeBody("practice");
+  const noticeBody = conversionPending
+    ? DEMO_MODE_PENDING_BADGE_HINT
+    : resolveCreditLedgerDemoNoticeBody("practice");
+  const clickHint = conversionPending
+    ? "클릭하면 기공소 확인 상태를 볼 수 있습니다."
+    : "클릭하면 실사용 전환을 확인할 수 있습니다.";
 
   return (
     <>
@@ -54,7 +61,11 @@ export function DemoModeBadge({ className, onExited }: Props) {
               className,
             )}
             onClick={() => setConfirmOpen(true)}
-            aria-label={`${ariaLabel} — 클릭하여 실사용 전환`}
+            aria-label={
+              conversionPending
+                ? `${ariaLabel} — 클릭하여 대기 상태 확인`
+                : `${ariaLabel} — 클릭하여 실사용 전환`
+            }
           >
             <Badge
               variant="outline"
@@ -67,9 +78,7 @@ export function DemoModeBadge({ className, onExited }: Props) {
         <TooltipContent side="bottom" className="max-w-xs text-left">
           <p className="text-xs font-medium text-foreground">{ariaLabel}</p>
           <p className="mt-1 text-xs leading-relaxed">{noticeBody}</p>
-          <p className="mt-1.5 text-[11px] text-muted-foreground">
-            클릭하면 실사용 전환을 확인할 수 있습니다.
-          </p>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">{clickHint}</p>
         </TooltipContent>
       </Tooltip>
 

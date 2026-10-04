@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/demo/useDemoMode.ts
 // - web/backend/services/demoConversion.service.js
 // change-log:
+// - 2026-10-04: 전환 대기 시 기공소 확인 대기 문구·단일 닫기. quote 전 hook pending 반영.
 // - 2026-10-04: 실사용 전환 = 기공소 직접 지급 확인. 완료 시 충전 페이지로 이동.
 import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Check, Clock } from "lucide-react";
@@ -17,6 +18,9 @@ import {
   DEMO_MODE_EXIT_CONFIRM_LABEL,
   DEMO_MODE_EXIT_TITLE,
   DEMO_MODE_EXIT_WARNING,
+  DEMO_MODE_PENDING_BODY_LINES,
+  DEMO_MODE_PENDING_NOTICE,
+  DEMO_MODE_PENDING_TITLE,
   DEMO_MODE_PENDING_TOAST,
   resolveDemoModeExitBody,
 } from "./demoModeCopy";
@@ -39,7 +43,11 @@ const CHARGE_PATH = "/dashboard/credits?tab=charge";
 
 export function DemoConversionDialog({ open, onClose, onRequested }: Props) {
   const navigate = useNavigate();
-  const { exiting, requestConversion } = useDemoMode();
+  const {
+    exiting,
+    requestConversion,
+    conversionPending: hookPending,
+  } = useDemoMode();
   const [quote, setQuote] = useState<QuoteData | null>(null);
 
   useEffect(() => {
@@ -62,21 +70,35 @@ export function DemoConversionDialog({ open, onClose, onRequested }: Props) {
   }, [open]);
 
   const labs = quote?.labs || [];
-  const pending = Boolean(quote?.conversionPending);
+  const pending =
+    quote != null ? Boolean(quote.conversionPending) : Boolean(hookPending);
 
   return (
     <ConfirmDialog
       open={open}
-      title={DEMO_MODE_EXIT_TITLE}
+      title={pending ? DEMO_MODE_PENDING_TITLE : DEMO_MODE_EXIT_TITLE}
       panelClassName="max-w-sm"
       description={
         <div className="space-y-3">
           <div className="flex gap-3 rounded-xl border border-slate-200/90 bg-slate-50 px-3.5 py-3.5">
             <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary-strong">
-              <ArrowRightLeft className="h-4 w-4" aria-hidden />
+              {pending ? (
+                <Clock className="h-4 w-4" aria-hidden />
+              ) : (
+                <ArrowRightLeft className="h-4 w-4" aria-hidden />
+              )}
             </div>
             <p className="min-w-0 text-sm leading-relaxed text-slate-700">
-              {resolveDemoModeExitBody("practice")}
+              {pending ? (
+                DEMO_MODE_PENDING_BODY_LINES.map((line, i) => (
+                  <span key={line}>
+                    {i > 0 ? <br /> : null}
+                    {line}
+                  </span>
+                ))
+              ) : (
+                resolveDemoModeExitBody("practice")
+              )}
             </p>
           </div>
 
@@ -92,18 +114,18 @@ export function DemoConversionDialog({ open, onClose, onRequested }: Props) {
                   </span>
                   <span className="flex shrink-0 items-center gap-1.5 tabular-nums text-slate-700">
                     <>
-                        {lab.amount.toLocaleString("ko-KR")}원
-                        {lab.status === "CONFIRMED" ? (
-                          <Check
-                            className="h-3.5 w-3.5 text-emerald-600"
-                            aria-label="지급 확인됨"
-                          />
-                        ) : pending ? (
-                          <Clock
-                            className="h-3.5 w-3.5 text-amber-600"
-                            aria-label="확인 대기"
-                          />
-                        ) : null}
+                      {lab.amount.toLocaleString("ko-KR")}원
+                      {lab.status === "CONFIRMED" ? (
+                        <Check
+                          className="h-3.5 w-3.5 text-emerald-600"
+                          aria-label="지급 확인됨"
+                        />
+                      ) : pending ? (
+                        <Clock
+                          className="h-3.5 w-3.5 text-amber-600"
+                          aria-label="확인 대기"
+                        />
+                      ) : null}
                     </>
                   </span>
                 </li>
@@ -117,13 +139,14 @@ export function DemoConversionDialog({ open, onClose, onRequested }: Props) {
               aria-hidden
             />
             <p className="min-w-0 text-sm leading-relaxed text-amber-950/85">
-              {DEMO_MODE_EXIT_WARNING}
+              {pending ? DEMO_MODE_PENDING_NOTICE : DEMO_MODE_EXIT_WARNING}
             </p>
           </div>
         </div>
       }
-      confirmLabel={pending ? "확인" : DEMO_MODE_EXIT_CONFIRM_LABEL}
-      cancelLabel={pending ? "닫기" : "취소"}
+      confirmLabel={pending ? "닫기" : DEMO_MODE_EXIT_CONFIRM_LABEL}
+      cancelLabel="취소"
+      showCancel={!pending}
       confirmTone="primary"
       busy={exiting}
       onCancel={() => {
