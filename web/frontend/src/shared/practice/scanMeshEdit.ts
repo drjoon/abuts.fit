@@ -2,6 +2,7 @@
 // - 2026-09-28: 디자인 전에 스캔 파편·구멍·거친 면을 정리한다. 결과는 작업 스캔으로 저장한다.
 // - 2026-09-30: 가상 발치. 뺄 치아를 지우고 발치와를 잇몸 곡면으로 메운다(virtualExtraction.ts).
 // - 2026-10-04: 다듬기 브러시는 걸친 면을 잘라 테두리를 고르고, 안쪽 구멍은 주변 면에 잇는다.
+// - 2026-10-04: 조각은 맞은 면을 반드시 움직이고, 올리기는 카메라 쪽으로 부푼다.
 // related files:
 // - web/frontend/src/shared/components/practice/OralScanOverlayViewer.tsx
 // - web/frontend/src/shared/components/practice/LabProsthesisAiDesignDialog.tsx
@@ -62,7 +63,8 @@ export type ExtractAction =
   | { kind: "remove"; key: string }
   | { kind: "grow" }
   | { kind: "shrink" }
-  | { kind: "restore" };
+  | { kind: "restore" }
+  | { kind: "clear" };
 
 export const DEFAULT_SCAN_MESH_EDIT: ScanMeshEdit = {
   tab: "trim",
@@ -98,7 +100,7 @@ export function sameScanMeshEditStatus(a: ScanMeshEditStatus, b: ScanMeshEditSta
 export const MESH_EDIT_BRUSH_RANGE_MM = { min: 0.5, max: 10 } as const;
 
 export const TRIM_TOOLS: ReadonlyArray<{ id: TrimTool; label: string; hint: string }> = [
-  { id: "brush", label: "브러시", hint: "칠한 면을 지우고, 남은 면은 매끄럽게 이어집니다." },
+  { id: "brush", label: "브러시", hint: "칠한 면을 지웁니다." },
   { id: "lasso", label: "올가미", hint: "끌어서 둘러싼 면을 지웁니다." },
 ];
 
@@ -435,6 +437,7 @@ function relaxMovable(
 
 /**
  * 고른 정점 안쪽 면은 지우고, 걸친 면은 잘라 테두리를 잇는다.
+ * field가 있으면 발치 경계처럼 0.5 등치선에서 자른다. 없으면 모서리 가운데다.
  * 지운 자리 테두리는 고르고, 안쪽에 난 구멍은 메울 수 있게 cutRim을 표시한다.
  * 지울 게 없으면 null.
  */
@@ -444,6 +447,8 @@ export function trimSelectedFair(args: {
   selected: Uint8Array;
   color: Float32Array | null;
   uv: Float32Array | null;
+  /** 정점마다 덮임(0–1). 0.5 이상이 안쪽. */
+  field?: Float32Array | null;
 }): {
   positions: Float32Array;
   index: Uint32Array;
@@ -452,16 +457,21 @@ export function trimSelectedFair(args: {
   origin: Int32Array;
   cutRim: Uint8Array;
 } | null {
-  const { positions, index, selected, color, uv } = args;
+  const { positions, index, selected, color, uv, field } = args;
   const vertexCount = Math.floor(positions.length / 3);
+  const value = (v: number) => {
+    if (field && v < field.length) return field[v]!;
+    return selected[v] ? 1 : 0;
+  };
+  const isInside = (v: number) => value(v) >= 0.5;
   const oldRim = new Uint8Array(vertexCount);
   for (let t = 0; t + 2 < index.length; t += 3) {
     const a = index[t]!;
     const b = index[t + 1]!;
     const c = index[t + 2]!;
-    const ia = selected[a] ? 1 : 0;
-    const ib = selected[b] ? 1 : 0;
-    const ic = selected[c] ? 1 : 0;
+    const ia = isInside(a);
+    const ib = isInside(b);
+    const ic = isInside(c);
     if (ia === ib && ib === ic) continue;
     if (!ia) oldRim[a] = 1;
     if (!ib) oldRim[b] = 1;
@@ -489,7 +499,11 @@ export function trimSelectedFair(args: {
     const key = ekey(a, b);
     const hit = edgeNew.get(key);
     if (hit != null) return hit;
-    const t = 0.5;
+    const fa = value(a);
+    const fb = value(b);
+    let t = (0.5 - fa) / (fb - fa || 1e-9);
+    if (t < 0.02) t = 0.02;
+    else if (t > 0.98) t = 0.98;
     const id = origin.length;
     edgeNew.set(key, id);
     origin.push(-1);
@@ -510,9 +524,9 @@ export function trimSelectedFair(args: {
     const v0 = index[t]!;
     const v1 = index[t + 1]!;
     const v2 = index[t + 2]!;
-    const i0 = Boolean(selected[v0]);
-    const i1 = Boolean(selected[v1]);
-    const i2 = Boolean(selected[v2]);
+    const i0 = isInside(v0);
+    const i1 = isInside(v1);
+    const i2 = isInside(v2);
     if (i0 && i1 && i2) {
       changed = true;
       continue;
@@ -859,6 +873,7 @@ export function verticesInBrush(
   center: readonly [number, number, number],
   facing: readonly [number, number, number],
   radius: number,
+  minDot = -0.2,
 ): number[] {
   const r2 = radius * radius;
   const [cx, cy, cz] = center;
@@ -874,7 +889,7 @@ export function verticesInBrush(
     if (normals) {
       const dot =
         normals[v * 3]! * facing[0] + normals[v * 3 + 1]! * facing[1] + normals[v * 3 + 2]! * facing[2];
-      if (dot < -0.2) continue;
+      if (dot < minDot) continue;
     }
     out.push(v);
   }
@@ -924,7 +939,8 @@ export function refreshNormals(
 
 /**
  * 조각 브러시 한 번. positions를 바로 고치고 움직인 정점 번호를 돌려준다.
- * 세기는 한 번에 브러시 반지름의 최대 6%를 옮긴다.
+ * 올리기·깎기는 한 번에 브러시 반지름의 최대 28%를 옮긴다.
+ * toward가 있으면 그쪽으로 면을 올린다(카메라 쪽). 스캔 와인딩이 반대여도 화면에서 부풀어 보이게.
  */
 export function sculptStamp(args: {
   topo: MeshTopology;
@@ -932,20 +948,33 @@ export function sculptStamp(args: {
   normals: Float32Array;
   center: readonly [number, number, number];
   facing: readonly [number, number, number];
+  /** 보이는 쪽으로 올리는 단위 벡터. 없으면 facing. */
+  toward?: readonly [number, number, number];
   radius: number;
   strength: number;
   tool: SculptTool;
+  /** 누른 삼각형 정점. 구 안에 정점이 없어도 면을 움직인다. */
+  seeds?: readonly number[];
 }): number[] {
   const { topo, positions, normals, center, facing, radius, tool } = args;
   const strength = Math.max(0, Math.min(1, args.strength));
-  const hit = verticesInBrush(positions, normals, center, facing, radius);
+  const count = Math.floor(positions.length / 3);
+  const hit = verticesInBrush(positions, normals, center, facing, radius, -0.6);
+  if (args.seeds) {
+    for (const v of args.seeds) {
+      if (v < 0 || v >= count || hit.includes(v)) continue;
+      hit.push(v);
+    }
+  }
   if (hit.length === 0) return hit;
   const r2 = radius * radius;
   const weights = hit.map((v) => {
     const dx = positions[v * 3]! - center[0];
     const dy = positions[v * 3 + 1]! - center[1];
     const dz = positions[v * 3 + 2]! - center[2];
-    return smoothFalloff(dx * dx + dy * dy + dz * dz, r2);
+    const d2 = dx * dx + dy * dy + dz * dz;
+    if (d2 > r2) return 0.4;
+    return smoothFalloff(d2, r2);
   });
   let ax = 0;
   let ay = 0;
@@ -965,11 +994,15 @@ export function sculptStamp(args: {
     wsum += w;
   });
   const alen = Math.hypot(ax, ay, az);
-  const n: [number, number, number] =
-    alen > 1e-12 ? [ax / alen, ay / alen, az / alen] : [facing[0], facing[1], facing[2]];
+  const pull = args.toward ?? facing;
+  let n: [number, number, number] =
+    alen > 1e-12 ? [ax / alen, ay / alen, az / alen] : [pull[0], pull[1], pull[2]];
+  if (n[0] * pull[0] + n[1] * pull[1] + n[2] * pull[2] < 0) {
+    n = [-n[0], -n[1], -n[2]];
+  }
 
   if (tool === "add" || tool === "remove") {
-    const step = radius * 0.06 * strength * (tool === "add" ? 1 : -1);
+    const step = radius * 0.28 * strength * (tool === "add" ? 1 : -1);
     hit.forEach((v, i) => {
       const s = step * weights[i]!;
       positions[v * 3] += n[0] * s;
@@ -996,7 +1029,7 @@ export function sculptStamp(args: {
     hit.forEach((v, i) => {
       const target = moves[i];
       if (!target) return;
-      const f = Math.min(1, strength * weights[i]!);
+      const f = Math.min(1, Math.max(0.2, strength) * weights[i]!);
       positions[v * 3] += (target[0] - positions[v * 3]!) * f;
       positions[v * 3 + 1] += (target[1] - positions[v * 3 + 1]!) * f;
       positions[v * 3 + 2] += (target[2] - positions[v * 3 + 2]!) * f;
@@ -1004,7 +1037,7 @@ export function sculptStamp(args: {
   } else if (wsum > 0) {
     const c = [px / wsum, py / wsum, pz / wsum] as const;
     hit.forEach((v, i) => {
-      const f = Math.min(1, strength * weights[i]! * 0.5);
+      const f = Math.min(1, Math.max(0.2, strength) * weights[i]!);
       const off =
         (positions[v * 3]! - c[0]) * n[0] +
         (positions[v * 3 + 1]! - c[1]) * n[1] +

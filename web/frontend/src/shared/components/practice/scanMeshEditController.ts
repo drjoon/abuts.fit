@@ -1,9 +1,11 @@
 // AI 디자인 스캔 단계 — 메시 편집 포인터·선택·오버레이.
 // - 2026-09-28: 다듬기는 브러시·올가미·조각으로 바로 지운다. 구멍은 테두리를 눌러 고르고 메운다. 조각은 끄는 동안 정점을 옮긴다.
+// - 2026-10-04: 조각 네 도구는 획을 잇고, 맞은 면도 움직이며, 카메라 쪽으로 올린다.
 // - 2026-10-04: 고른 구멍은 테두리 띠와 맞닿은 면을 칠해 보더를 보여 준다.
 // - 2026-09-28: 브러시·조각은 스캔 위 왼쪽 끌기, 올가미는 화면 왼쪽 끌기. 왼쪽은 뷰 회전에 쓰지 않는다.
-// - 2026-10-04: 다듬기 브러시는 손을 떼면 테두리를 고르고 안쪽 구멍을 잇는다.
+// - 2026-10-04: 다듬기 브러시는 발치 경계 브러시와 같이 획을 채워 칠한 면을 지운다.
 // - 2026-09-30: 가상 발치. 치아를 누르면 경계를 찾고, 브러시·넓히기·좁히기로 고친 뒤 적용하면 지우고 발치와를 메운다.
+// - 2026-10-04: 발치 적용 때 치관 아래 잔존 치근도 같이 지운다.
 // related files:
 // - web/frontend/src/shared/practice/scanMeshEdit.ts
 // - web/frontend/src/shared/practice/virtualExtraction.ts
@@ -18,7 +20,6 @@ import {
   refreshNormals,
   sculptStamp,
   trimSelected,
-  trimSelectedFair,
   verticesInBrush,
   vertexComponents,
   type BoundaryLoop,
@@ -32,10 +33,12 @@ import { withDoubleSidePick } from "@/shared/three/backFaceShell";
 import {
   closeMask,
   growToothField,
+  includeResidualRoot,
   maskComponentCount,
   maskRim,
   maskTouchesMeshBoundary,
   segmentTooth,
+  splitContactLeakOnSeg,
   toothBorderSegments,
   type ToothSegment,
 } from "@/shared/practice/virtualExtraction";
@@ -366,15 +369,20 @@ export class ScanMeshEditController {
     at: number;
     pending: PointerEvent | null;
     began: boolean;
+    /** 직전 포인터 화면 좌표. 획 사이를 채운다. */
+    last: { x: number; y: number } | null;
   } | null = null;
   private lasso: { pointerId: number; points: number[] } | null = null;
   private sculpt: {
     pointerId: number;
     id: string;
     at: number;
-    last: THREE.Vector3 | null;
+    last: { x: number; y: number } | null;
     pending: PointerEvent | null;
   } | null = null;
+  private readonly sculptView = new THREE.Vector3();
+  private readonly sculptInv = new THREE.Matrix4();
+  private readonly sculptNormal = new THREE.Matrix3();
   private toothSerial = 0;
   private activeTooth: string | null = null;
   private findTimer = 0;
@@ -521,6 +529,12 @@ export class ScanMeshEditController {
       this.emit();
       return;
     }
+    if (action.kind === "clear") {
+      this.activeTooth = null;
+      for (const state of this.states.values()) this.clearTeeth(state);
+      this.emit();
+      return;
+    }
     const found = this.findActiveTooth();
     if (!found) return;
     const { state, tooth } = found;
@@ -594,6 +608,23 @@ export class ScanMeshEditController {
     const shapes: Array<{ id: string; shape: ScanShapeEdit }> = [];
     let teeth = 0;
     for (const { target, state } of jobs) {
+      const positions0 = state.position.array as Float32Array;
+      const color0 = readTriple(target.scanColor);
+      for (const tooth of state.teeth) {
+        splitContactLeakOnSeg(state.topo, tooth.seg, unit);
+        includeResidualRoot({
+          topo: state.topo,
+          positions: positions0,
+          color: color0,
+          unitToMm: unit,
+          seg: tooth.seg,
+          blocked: (v) => {
+            const other = this.toothAt(state, v);
+            return other != null && other !== tooth;
+          },
+        });
+        splitContactLeakOnSeg(state.topo, tooth.seg, unit);
+      }
       const mask = this.teethMask(state);
       const edge =
         state.teeth.reduce((sum, row) => sum + row.seg.edge, 0) / Math.max(state.teeth.length, 1);
@@ -649,16 +680,8 @@ export class ScanMeshEditController {
     }
     if (jobs.length === 0) return { kind: "empty" };
     const shapes: Array<{ id: string; shape: ScanShapeEdit }> = [];
-    const fillInterior = this.spec?.trimTool === "brush";
     for (const { id, state } of jobs) {
-      const target = this.host.targets().find((row) => row.id === id);
-      const cut = trimSelectedFair({
-        positions: state.position.array as Float32Array,
-        index: state.topo.index,
-        selected: state.selected,
-        color: readTriple(target?.scanColor),
-        uv: readPair(state.geometry.getAttribute("uv")),
-      });
+      const cut = trimSelected(state.topo, state.selected);
       if (!cut) continue;
       if (cut.index.length === 0) {
         this.restoreTrimAll();
@@ -668,36 +691,17 @@ export class ScanMeshEditController {
         }
         return { kind: "whole" };
       }
-      let positions = cut.positions;
-      let nextIndex = cut.index;
-      let color = cut.color;
-      let uv = cut.uv;
-      if (fillInterior) {
-        const topo = buildTopology(nextIndex, positions.length / 3);
-        const loops = holeLoops(topo, positions, vertexComponents(topo).comp).filter((loop) => {
-          let onRim = 0;
-          for (const v of loop.verts) if (cut.cutRim[v]) onRim += 1;
-          return onRim * 2 >= loop.verts.length;
-        });
-        if (loops.length > 0) {
-          const patched = appendHoleFills({ positions, color, uv, index: nextIndex, loops });
-          if (patched.filled > 0) {
-            positions = patched.positions;
-            nextIndex = patched.index;
-            color = patched.color;
-            uv = patched.uv;
-          }
-        }
-      }
-      const origin = new Int32Array(positions.length / 3).fill(-1);
-      origin.set(cut.origin);
+      const target = this.host.targets().find((row) => row.id === id);
+      const positions = state.position.array as Float32Array;
+      const origin = new Int32Array(cut.keep.length);
+      origin.set(cut.keep);
       shapes.push({
         id,
         shape: {
-          positions,
-          index: nextIndex,
-          color,
-          uv,
+          positions: gather(positions, cut.keep, 3)!,
+          index: cut.index,
+          color: gather(readTriple(target?.scanColor), cut.keep, 3),
+          uv: gather(readPair(state.geometry.getAttribute("uv")), cut.keep, 2),
           origin,
         },
       });
@@ -998,7 +1002,7 @@ export class ScanMeshEditController {
       return hit;
     }
     if (hit) this.dropState(target.id);
-    if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
+    this.ensureFloatNormals(geometry);
     const indexArray = Uint32Array.from(index.array as ArrayLike<number>);
     const state: EntryState = {
       mesh: target.mesh,
@@ -1263,7 +1267,7 @@ export class ScanMeshEditController {
     state.loopLines = group;
   }
 
-  private aim(event: PointerEvent) {
+  private aim(event: { clientX: number; clientY: number }) {
     const camera = this.host.camera();
     if (!camera) return null;
     camera.updateMatrixWorld();
@@ -1286,7 +1290,7 @@ export class ScanMeshEditController {
     return null;
   }
 
-  private hitTargets(event: PointerEvent, onlyId?: string) {
+  private hitTargets(event: { clientX: number; clientY: number }, onlyId?: string) {
     if (!this.aim(event)) return null;
     const targets = this.host
       .targets()
@@ -1425,9 +1429,9 @@ export class ScanMeshEditController {
     this.emit();
   }
 
-  private paintTooth(event: PointerEvent) {
+  private paintTooth(at: { clientX: number; clientY: number }) {
     const spec = this.spec;
-    const found = this.hitTargets(event);
+    const found = this.hitTargets(at);
     if (!spec || !found) return;
     const state = this.stateOf(found.target);
     const tooth = state?.teeth.find((row) => row.key === this.activeTooth);
@@ -1444,6 +1448,8 @@ export class ScanMeshEditController {
       [facing.x, facing.y, facing.z],
       radius,
     );
+    const face = found.hit.face!;
+    for (const v of [face.a, face.b, face.c]) if (!picked.includes(v)) picked.push(v);
     const { field } = tooth.seg;
     const r2 = radius * radius;
     let changed = false;
@@ -1453,7 +1459,8 @@ export class ScanMeshEditController {
       const dx = positions[v * 3]! - local.x;
       const dy = positions[v * 3 + 1]! - local.y;
       const dz = positions[v * 3 + 2]! - local.z;
-      const t = Math.max(0, 1 - (dx * dx + dy * dy + dz * dz) / r2);
+      const fall = 1 - (dx * dx + dy * dy + dz * dz) / r2;
+      const t = Math.max(0, fall);
       const next =
         spec.selectMode === "add"
           ? Math.max(field[j]!, 0.5 + 0.5 * t * t)
@@ -1465,27 +1472,55 @@ export class ScanMeshEditController {
     if (changed) this.syncTeeth(state);
   }
 
+  private strokePoints(event: PointerEvent) {
+    const stroke = this.paint;
+    const from = stroke?.last ?? null;
+    const to = { x: event.clientX, y: event.clientY };
+    if (stroke) stroke.last = to;
+    const step = Math.max(1.5, this.brushRadius() / this.worldPerPx() / 3);
+    const dist = from ? Math.hypot(to.x - from.x, to.y - from.y) : 0;
+    const n = Math.min(64, Math.max(1, Math.ceil(dist / step)));
+    const out: Array<{ clientX: number; clientY: number }> = [];
+    for (let k = 1; k <= n; k += 1) {
+      const t = from ? k / n : 1;
+      out.push(
+        from
+          ? { clientX: from.x + (to.x - from.x) * t, clientY: from.y + (to.y - from.y) * t }
+          : { clientX: to.x, clientY: to.y },
+      );
+    }
+    return out;
+  }
+
   private paintAt(event: PointerEvent) {
     const spec = this.spec;
     if (!spec) return;
-    if (spec.tab === "extract") {
-      this.paintTooth(event);
-      return;
+    const extract = spec.tab === "extract";
+    for (const at of this.strokePoints(event)) {
+      if (extract) this.paintTooth(at);
+      else this.trimStampAt(at);
     }
-    const found = this.hitTargets(event);
+  }
+
+  private trimStampAt(at: { clientX: number; clientY: number }) {
+    const found = this.hitTargets(at);
     if (!found) return;
     const state = this.stateOf(found.target);
     if (!state) return;
     const local = found.target.mesh.worldToLocal(found.hit.point.clone());
     const facing = found.hit.face!.normal;
     const normals = state.geometry.getAttribute("normal") as THREE.BufferAttribute | undefined;
+    const positions = state.position.array as Float32Array;
+    const radius = this.brushRadius();
     const picked = verticesInBrush(
-      state.position.array as Float32Array,
+      positions,
       normals?.array instanceof Float32Array ? normals.array : null,
       [local.x, local.y, local.z],
       [facing.x, facing.y, facing.z],
-      this.brushRadius(),
+      radius,
     );
+    const face = found.hit.face!;
+    for (const v of [face.a, face.b, face.c]) if (!picked.includes(v)) picked.push(v);
     if (picked.length === 0) return;
     const changed = this.hideTrimVerts(state, picked);
     if (!changed) return;
@@ -1608,11 +1643,43 @@ export class ScanMeshEditController {
     this.emit();
   }
 
+  private ensureFloatNormals(geometry: THREE.BufferGeometry) {
+    const attr = geometry.getAttribute("normal");
+    if (
+      attr instanceof THREE.BufferAttribute &&
+      attr.array instanceof Float32Array &&
+      attr.itemSize === 3
+    ) {
+      return attr;
+    }
+    geometry.computeVertexNormals();
+    const next = geometry.getAttribute("normal");
+    return next instanceof THREE.BufferAttribute && next.array instanceof Float32Array ? next : null;
+  }
+
   private stampSculpt(event: PointerEvent) {
+    const stroke = this.sculpt;
+    if (!stroke) return;
+    const from = stroke.last;
+    const to = { x: event.clientX, y: event.clientY };
+    stroke.last = to;
+    const step = Math.max(1.5, this.brushRadius() / this.worldPerPx() / 3);
+    const dist = from ? Math.hypot(to.x - from.x, to.y - from.y) : 0;
+    const n = Math.min(64, Math.max(1, Math.ceil(dist / step)));
+    for (let k = 1; k <= n; k += 1) {
+      const t = from ? k / n : 1;
+      const at = from
+        ? { clientX: from.x + (to.x - from.x) * t, clientY: from.y + (to.y - from.y) * t }
+        : { clientX: to.x, clientY: to.y };
+      this.sculptStampAt(at);
+    }
+  }
+
+  private sculptStampAt(at: { clientX: number; clientY: number }) {
     const stroke = this.sculpt;
     const spec = this.spec;
     if (!stroke || !spec) return;
-    const found = this.hitTargets(event, stroke.id || undefined);
+    const found = this.hitTargets(at, stroke.id || undefined);
     if (!found) return;
     const state = this.stateOf(found.target);
     if (!state) return;
@@ -1620,23 +1687,35 @@ export class ScanMeshEditController {
       stroke.id = found.target.id;
       this.host.onBegin();
     }
+    const normals = this.ensureFloatNormals(state.geometry);
+    if (!normals) return;
     const local = found.target.mesh.worldToLocal(found.hit.point.clone());
-    const radius = this.brushRadius();
-    if (stroke.last && stroke.last.distanceTo(local) < radius * 0.2) return;
-    stroke.last = local;
-    const normals = state.geometry.getAttribute("normal") as THREE.BufferAttribute;
-    if (!(normals?.array instanceof Float32Array)) return;
-    const facing = found.hit.face!.normal;
+    const face = found.hit.face!;
+    const facing: [number, number, number] = [face.normal.x, face.normal.y, face.normal.z];
+    const toward: [number, number, number] = [facing[0], facing[1], facing[2]];
+    const camera = this.host.camera();
+    if (camera) {
+      found.target.mesh.updateWorldMatrix(true, false);
+      camera.getWorldDirection(this.sculptView);
+      this.sculptInv.copy(found.target.mesh.matrixWorld).invert();
+      this.sculptNormal.getNormalMatrix(this.sculptInv);
+      this.sculptView.applyMatrix3(this.sculptNormal).normalize();
+      toward[0] = -this.sculptView.x;
+      toward[1] = -this.sculptView.y;
+      toward[2] = -this.sculptView.z;
+    }
     const positions = state.position.array as Float32Array;
     const moved = sculptStamp({
       topo: state.topo,
       positions,
-      normals: normals.array,
+      normals: normals.array as Float32Array,
       center: [local.x, local.y, local.z],
-      facing: [facing.x, facing.y, facing.z],
-      radius,
+      facing,
+      toward,
+      radius: this.brushRadius(),
       strength: spec.strength,
       tool: spec.sculptTool,
+      seeds: [face.a, face.b, face.c],
     });
     if (moved.length === 0) return;
     refreshNormals(state.topo, positions, normals.array, moved);
@@ -1667,7 +1746,7 @@ export class ScanMeshEditController {
         this.grab(event);
         return;
       }
-      this.paint = { pointerId: event.pointerId, at: performance.now(), pending: null, began: false };
+      this.paint = { pointerId: event.pointerId, at: performance.now(), pending: null, began: false, last: null };
       this.grab(event);
       this.paintAt(event);
       return;
