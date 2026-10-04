@@ -112,15 +112,15 @@ Notes:
   - `src/pages/public/EventsPage.tsx` — `/events` → `/#events` 리다이렉트
   - `src/pages/public/EventApplyPage.tsx` — 행사 신청 (`/events/:slug`)
   - `src/pages/public/PlatformPage.tsx` — 레거시 `/platform` → `/offer/platform` 리다이렉트
-  - 메뉴: 플랫폼 · 기공서비스 (`landingOffers` 2개). 이벤트는 랜딩 `#events` (`LandingEventsSection`). 레거시 `/offer/simple-way`→플랫폼, `/offer/custom-abutment`→기공서비스.
+  - 메뉴: 플랫폼 · 어벗츠기공소 (`landingOffers` 2개). 이벤트는 랜딩 `#events` (`LandingEventsSection`). 레거시 `/offer/simple-way`→플랫폼, `/offer/custom-abutment`→어벗츠기공소.
   - `src/pages/public/AboutPage.tsx` — 레거시 `/about` → `/` 리다이렉트
   - `PublicPageLayout` 기본 `tone="light"` (랜딩·도움말·약관·문의 등 공개 안내 공통)
   - 카드/타이포 SSOT: `PUBLIC_CARD_CLASS` · `PUBLIC_PAGE_EYEBROW` · `PUBLIC_PAGE_TITLE` · `PUBLIC_PAGE_SUBTITLE`
   - 카피 SSOT: `src/features/landing/landingTheme.ts` · `landingOffers.ts` · `platformOfferContent.ts` · `labOfferContent.ts`
   - `LandingHome` · `LandingOfferPage` · `LandingPracticeWorkspacePreview` · `Footer`
-  - **히어로 이펙트는 페이지마다 다르다**: 랜딩=파티클 워드, 플랫폼=스테이지 레인·연결 펄스(`PlatformHeroFx.tsx`, css `pf-*`) + 실제 UI 캡처, 기공서비스=3D 스캔 점군(`LabScanField.tsx`). 심플웨이 블루프린트(`SimpleWayHeroFx` / `sw-*`)는 랜딩 메뉴에서 분리(레거시 코드만 유지). 새 중요 페이지도 기존 히어로 효과를 복제하지 않는다. `prefers-reduced-motion`이면 정지.
+  - **히어로 이펙트는 페이지마다 다르다**: 랜딩=파티클 워드, 플랫폼=스테이지 레인·연결 펄스(`PlatformHeroFx.tsx`, css `pf-*`) + 실제 UI 캡처, 어벗츠기공소=3D 스캔 점군(`LabScanField.tsx`). 심플웨이 블루프린트(`SimpleWayHeroFx` / `sw-*`)는 랜딩 메뉴에서 분리(레거시 코드만 유지). 새 중요 페이지도 기존 히어로 효과를 복제하지 않는다. `prefers-reduced-motion`이면 정지.
   - **플랫폼(`/offer/platform`)**: 히어로 왼쪽 카피 + 오른쪽 수신함 캡처(`hero: "brand"`, `PlatformOfferHero`+`PlatformHeroFx`). 장점 glance 3(진행 가시성·스캔/작업물·채팅) → 실제 UI 스토리 3컷(`platform-work-viewer`·`platform-scan-chat`·`platform-inbox-chat`) → 추가 이유 → 치과/기공소 대상 → How it works → 용어 → FAQ → 흰 CTA(`START WITH ABUTS`). 공개용 캡처의 개인정보 마스킹은 에셋 처리일 뿐 장점 카피로 쓰지 않는다. 전용 카피 SSOT=`platformOfferContent.ts`(`offer.platform`), 컴포넌트=`PlatformOfferSections.tsx`.
-  - **기공서비스(`/offer/lab`)**: 히어로는 왼쪽 카피 + 오른쪽 3D 스캔 점군 캔버스(`hero: "brand"`, `LabOfferHero`+`LabScanField`). 장점 4(AI 디자인·하나의 크레딧·플랫폼·커스텀어벗 연동) → AI 디자인(다크 밴드) → 커스텀어벗 플로우 → 크레딧 허브 → 용어 → FAQ → 흰 CTA 밴드. 전용 카피 SSOT=`labOfferContent.ts`(`offer.lab`), 컴포넌트=`LabOfferSections.tsx`, 이펙트 CSS=`index.css` `lab-*`. 본문 섹션은 랜딩과 같은 `LandingReveal`·`LandingSpotlightCard`·`LandingMagnetic`·`LandingParticleField`(AI 밴드 먼지)를 쓴다. 금액은 적지 않는다. 크레딧 카피는 「거래 선수금」·선불페이 아님·사용분 월합 계산서(면세/과세 분리)·미사용 잔액 환불(`creditPrepaidCopy.ts`와 일치)이며, 「미리 충전하는 방식이 아닙니다」류 옛 문구는 쓰지 않는다. 교차 링크는 `/offer/platform`.
+  - **어벗츠기공소(`/offer/lab`)**: 히어로는 왼쪽 카피 + 오른쪽 3D 스캔 점군 캔버스(`hero: "brand"`, `LabOfferHero`+`LabScanField`). 장점 4(AI 디자인·하나의 크레딧·플랫폼·커스텀어벗 연동) → AI 디자인(다크 밴드) → 커스텀어벗 플로우 → 크레딧 허브 → 용어 → FAQ → 흰 CTA 밴드. 전용 카피 SSOT=`labOfferContent.ts`(`offer.lab`), 컴포넌트=`LabOfferSections.tsx`, 이펙트 CSS=`index.css` `lab-*`. 본문 섹션은 랜딩과 같은 `LandingReveal`·`LandingSpotlightCard`·`LandingMagnetic`·`LandingParticleField`(AI 밴드 먼지)를 쓴다. 금액은 적지 않는다. 크레딧 카피는 「거래 선수금」·선불페이 아님·사용분 월합 계산서(면세/과세 분리)·미사용 잔액 환불(`creditPrepaidCopy.ts`와 일치)이며, 「미리 충전하는 방식이 아닙니다」류 옛 문구는 쓰지 않는다. 교차 링크는 `/offer/platform`.
   - 영업 피치 패널: `PlatformPitchPanel` + `platformPitchBlocks` (영업팀/딜러 — 공개 `/`에는 없음)
 - 공용 타입(역할 SSOT)
   - `src/shared/types/role.ts`

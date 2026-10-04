@@ -6,6 +6,8 @@
 // 플랫폼 히어로 — 의뢰가 치과에서 기공소로 흘러 납품까지 가는 한 사이클.
 // 홈 파티클 / 심플웨이 블루프린트 / 랩 스캔 점군과 다른 효과.
 
+import { PlatformNetworkField } from "./PlatformNetworkField";
+
 const STAGES = ["의뢰", "작업", "확인", "납품"] as const;
 
 /**
@@ -20,6 +22,7 @@ export function PlatformHeroFx() {
       className="pointer-events-none absolute inset-0 overflow-hidden"
     >
       <div className="pf-hero-grid absolute inset-0" />
+      <PlatformNetworkField />
       <div className="pf-orbit pf-orbit-a absolute -left-16 top-1/4 h-64 w-64 rounded-full" />
       <div className="pf-orbit pf-orbit-b absolute -right-20 bottom-0 h-80 w-80 rounded-full" />
 

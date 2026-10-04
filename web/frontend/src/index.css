@@ -834,7 +834,7 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
   }
 }
 
-/* ── 히어로별 고유 이펙트: 플랫폼(pf-*) · 심플웨이 레거시(sw-*) · 기공서비스(lab-hero-*). 랜딩은 파티클 워드. ── */
+/* ── 히어로별 고유 이펙트: 플랫폼(pf-*) · 심플웨이 레거시(sw-*) · 어벗츠기공소(lab-hero-*). 랜딩은 파티클 워드. ── */
 .sw-hero-grid {
   background-image:
     linear-gradient(to right, rgba(37, 99, 235, 0.09) 1px, transparent 1px),
@@ -896,7 +896,7 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
   to { transform: rotate(360deg); }
 }
 
-/* 기공서비스 히어로 — 블루프린트 격자와 상태 뱃지 점 */
+/* 어벗츠기공소 히어로 — 블루프린트 격자와 상태 뱃지 점 */
 .lab-hero-grid {
   background-image:
     linear-gradient(to right, rgba(125, 211, 252, 0.07) 1px, transparent 1px),
@@ -1048,7 +1048,7 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
   }
 }
 
-/* ── 기공서비스 오퍼(/offer/lab): AI 스캔 라인 · 단계 글로우 · 플로우 라인 · 크레딧 허브 링 ── */
+/* ── 어벗츠기공소 오퍼(/offer/lab): AI 스캔 라인 · 단계 글로우 · 플로우 라인 · 크레딧 허브 링 ── */
 @keyframes lab-scan-sweep {
   0% {
     top: 0;

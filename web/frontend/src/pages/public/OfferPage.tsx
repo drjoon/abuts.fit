@@ -13,7 +13,7 @@ import {
 } from "@/features/landing/landingOffers";
 import { PublicPageLayout } from "./components/PublicPageLayout";
 
-/** `/offer/:slug` — 헤더(플랫폼 · 기공서비스 · 이벤트)의 상세 설명 */
+/** `/offer/:slug` — 헤더(플랫폼 · 어벗츠기공소 · 이벤트)의 상세 설명 */
 const OfferPage = () => {
   const { slug } = useParams();
   const legacyTarget = slug ? LEGACY_OFFER_REDIRECTS[slug] : undefined;

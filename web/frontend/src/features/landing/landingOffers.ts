@@ -12,7 +12,7 @@
 // - web/frontend/src/features/landing/landingAssets.ts
 // - rules.md §1.5–§2.6 · web/frontend/rules.md (기공의뢰·정산·스토어)
 //
-// 메뉴: 플랫폼 · 기공서비스. 이벤트는 랜딩 `#events`.
+// 메뉴: 플랫폼 · 어벗츠기공소. 이벤트는 랜딩 `#events`.
 // `/` 카피 SSOT: landingTheme
 // 정가(판매가·배송비)는 스토어 SSOT: storeCatalog.ts
 import {
@@ -194,7 +194,7 @@ export type LandingOffer = {
     note?: string[];
   }>;
   glossary?: OfferGlossary;
-  /** 기공서비스 전용 섹션. `hero: "brand"` 와 함께 쓴다. */
+  /** 어벗츠기공소 전용 섹션. `hero: "brand"` 와 함께 쓴다. */
   lab?: LabOfferExtras;
   /** 플랫폼 전용 섹션. `hero: "brand"` 와 함께 쓴다. */
   platform?: PlatformOfferExtras;
@@ -237,9 +237,9 @@ export const landingOffers: LandingOffer[] = [
   },
   {
     slug: "lab",
-    navLabel: "기공서비스",
+    navLabel: "어벗츠기공소",
     punch: "AI 디자인부터 커스텀어벗 납품까지",
-    heroEyebrow: "LAB SERVICE",
+    heroEyebrow: "ABUTS LAB",
     heroTitle: "AI 디자인부터 커스텀어벗 납품까지",
     heroBody: LAB_OFFER_EXTRAS.hero.body,
     line: "의뢰 한 번으로 디자인·생산·배송·결제까지 이어집니다.",
@@ -261,16 +261,16 @@ export const landingOffers: LandingOffer[] = [
           line: "CAD로 디자인해 CNC로 깎는 환자 맞춤 어벗이에요.",
         },
         {
-          term: "어벗츠 기공실",
-          line: "어벗츠가 직접 운영하는 기공소예요.",
+          term: "어벗츠기공소",
+          line: "어벗츠가 운영하는 기공소예요. 치과는 협력 기공소 대신 이곳에도 의뢰할 수 있어요.",
         },
         {
           term: "크레딧(거래 선수금)",
           line: "기공·커스텀어벗·스토어를 함께 결제하는 예치금이에요. 선불페이가 아니에요.",
         },
         {
-          term: "지정 기공소",
-          line: "치과가 의뢰할 때 직접 고른 기공소예요. 그 기공소의 수가로 진행돼요.",
+          term: "협력 기공소",
+          line: "치과가 거래하던 기공소예요. 지정하면 그 기공소의 수가로 진행돼요.",
         },
         {
           term: "애크로덴트",

@@ -65,7 +65,7 @@ const ICONS: Record<PlatformIconKey, typeof Eye> = {
 
 /**
  * 히어로 — 스테이지 레인 FX + 실제 UI 스크린샷 스플릿.
- * 랜딩(파티클)·기공서비스(스캔 점군)와 다른 효과.
+ * 랜딩(파티클)·어벗츠기공소(스캔 점군)와 다른 효과.
  */
 export function PlatformOfferHero({
   hero,
@@ -208,7 +208,7 @@ export function PlatformGlanceSection({
           <Lines lines={glance.lead} className={cn("mt-2.5", TYPO.lead)} />
         </LandingReveal>
 
-        <ul className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-3 lg:gap-4">
+        <ul className="mx-auto mt-8 grid max-w-4xl gap-3 sm:mt-10 sm:grid-cols-2 lg:gap-4">
           {glance.items.map((item, index) => {
             const Icon = ICONS[item.icon];
             return (
@@ -507,7 +507,7 @@ export function PlatformStepsSection({
               SKY.accentStrong,
             )}
           >
-            기공서비스 이어서 보기
+            어벗츠기공소 이어서 보기
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </LandingReveal>

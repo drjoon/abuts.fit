@@ -178,7 +178,7 @@ export const landingSky = {
 export const landingSkyWashClass =
   "bg-[radial-gradient(ellipse_at_20%_0%,rgba(56,189,248,0.18),transparent_55%),radial-gradient(ellipse_at_90%_10%,rgba(37,99,235,0.14),transparent_50%),linear-gradient(180deg,#f8fafc_0%,#eef4fb_55%,#ffffff_100%)]";
 
-/** `/` 히어로. 메뉴는 플랫폼 · 기공서비스. 이벤트는 `#events`. */
+/** `/` 히어로. 메뉴는 플랫폼 · 어벗츠기공소. 이벤트는 `#events`. */
 export const landingHome = {
   heroEyebrow: "DENTAL IMPLANT WORKFLOW",
   heroTitle: ["어벗츠가 제공하는", "간단 명료한 워크플로우"],
@@ -210,7 +210,7 @@ export const landingHome = {
   eventsHeading: "진행 중인 행사",
   ctaBandTitle: "통합된 임플란트 워크플로우를 시작하세요.",
   ctaBandBody: [
-    "치과·기공소 협업부터 커스텀어벗 기공서비스까지 필요한 방향을 함께 안내해 드립니다.",
+    "협력 기공소와의 협업부터 어벗츠기공소의 커스텀어벗까지 필요한 방향을 함께 안내해 드립니다.",
   ],
   ctaConsult: "상담 신청하기",
   /** 히어로 CTA — 가입이 아니라 다음 섹션으로 스크롤 (하단 `#contact`에서 가입) */
@@ -237,14 +237,14 @@ export const landingHomeBusinessTabs = [
   },
   {
     id: "custom" as const,
-    label: "커스텀어벗 및 어벗츠기공",
-    eyebrow: "LAB SERVICE",
+    label: "어벗츠기공소",
+    eyebrow: "ABUTS LAB",
     title: "구강스캔 데이터를 빠르고 정확하게 전달",
     body: [
       "기성 어벗 뿐만 아니라 커스텀 어벗도 자유롭게 선택하실 수 있습니다.",
-      "구강스캔 데이터와 의뢰 내용을 어벗츠 플랫폼으로 전달해 기공서비스를 바로 시작할 수 있습니다.",
+      "구강스캔 데이터와 의뢰 내용을 어벗츠 플랫폼으로 전달해 어벗츠기공소에 바로 의뢰할 수 있습니다.",
     ],
-    cta: "기공서비스 자세히 보기",
+    cta: "어벗츠기공소 자세히 보기",
     href: "/offer/lab",
     image: { src: "/landing/waveon/hero.jpg", alt: "커스텀어벗 검수" },
   },
@@ -254,8 +254,8 @@ export const landingHomeBusinessTabs = [
     eyebrow: "LAB PARTNERSHIP",
     title: "기존 기공소와도 함께",
     body: [
-      "거래하시던 기공소를 소개해주세요.",
-      "플랫폼 가입시 어벗츠 기공서비스와 동일한 통합 서비스를 제공받으실 수 있습니다.",
+      "거래하시던 기공소는 협력 기공소로 그대로 이용하세요.",
+      "협력 기공소와 어벗츠기공소 모두 플랫폼 사용에 제한이 없습니다.",
     ],
     cta: "플랫폼 도입 상담",
     href: "/contact",
@@ -305,8 +305,8 @@ export const landingHomeWhy = [
     eyebrow: "CONNECTED PARTNERS",
     title: "기존 기공소와도 함께",
     body: [
-      "거래하시던 기공소를 소개해주세요.",
-      "플랫폼 가입시 어벗츠 기공서비스와 동일한 통합 서비스를 제공받으실 수 있습니다.",
+      "거래하시던 기공소는 협력 기공소로 그대로 이용하세요.",
+      "협력 기공소와 어벗츠기공소 모두 플랫폼 사용에 제한이 없습니다.",
     ],
   },
 ] as const;
@@ -358,7 +358,7 @@ export const landingHomeFaq = [
   },
   {
     q: "기성 어벗과 커스텀어벗은 어떻게 선택하나요?",
-    a: "기성 어벗으로 진행할 수 있는 케이스도 있으며, 환자별 조건에 따라 커스텀어벗이 필요한 경우에는 어벗츠 플랫폼을 통한 기공서비스를 이용할 수 있습니다.",
+    a: "기성 어벗으로 진행할 수 있는 케이스도 있으며, 환자별 조건에 따라 커스텀어벗이 필요한 경우에는 어벗츠기공소에 의뢰할 수 있습니다.",
   },
   {
     q: "치과는 스캔 데이터를 어떻게 전달하나요?",
@@ -366,7 +366,7 @@ export const landingHomeFaq = [
   },
   {
     q: "기존에 거래하던 기공소도 이용할 수 있나요?",
-    a: "네. 거래하시던 기공소를 소개해주세요. 플랫폼 가입시 어벗츠 기공서비스와 동일한 통합 서비스를 제공받으실 수 있습니다.",
+    a: "네. 거래하시던 기공소는 협력 기공소로 그대로 이용하고, 어벗츠기공소에도 의뢰할 수 있습니다. 두 곳 모두 플랫폼 사용에 제한이 없습니다.",
   },
   {
     q: "제조와 납품은 어떻게 진행되나요?",
@@ -417,8 +417,8 @@ export const landingHomeStories: LandingHomeStory[] = [
     body: [
       "디자인 완료 후 제조까지 하나의 흐름으로 이어져야 납기와 품질을 안정적으로 관리할 수 있습니다.",
       "커스텀어벗 디자인이 등록되면 애크로덴트 통합 생산 시스템으로 실시간 연결되어 가공이 이어집니다.",
-      "거래하시던 기공소를 소개해주세요.",
-      "플랫폼 가입시 어벗츠 기공서비스와 동일한 통합 서비스를 제공받으실 수 있습니다.",
+      "거래하시던 기공소는 협력 기공소로 그대로 이용하세요.",
+      "협력 기공소와 어벗츠기공소 모두 플랫폼 사용에 제한이 없습니다.",
     ],
     image: {
       src: "/landing/waveon/hero.jpg",
