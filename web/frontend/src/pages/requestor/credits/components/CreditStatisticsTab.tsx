@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 요약 카드 폭 SSOT(11.5rem) 맞춤. 최소폭 미만일 때만 가로 스크롤.
 // - 2026-09-28: 요약 카드는 고정 폭 묶음. 차트는 작업영역 폭.
 // - 2026-09-26: 기공소 수신 구역 제목 — 어벗츠 하청 → 어벗츠로부터.
 // - 2026-09-20: 보철 유형별 부제 — 금액=견적 라인, 건수=의뢰(유형) 기준 안내.
@@ -420,8 +421,10 @@ function SummaryCardsRow({
 }) {
   return (
     <div className="min-w-0 px-1 py-1.5 pb-2 sm:px-1.5">
-      <div className="mx-auto flex w-full max-w-full flex-col items-stretch gap-2 p-1 md:w-max md:flex-row md:items-stretch md:gap-2">
-        {children}
+      <div className="scroll-x-bar-top">
+        <div className="mx-auto flex w-full min-w-0 flex-col items-center gap-2 p-1 md:flex-row md:items-stretch md:justify-center md:gap-1.5">
+          {children}
+        </div>
       </div>
       <span className="sr-only">{cardCount}개 요약</span>
     </div>
@@ -431,13 +434,18 @@ function SummaryCardsRow({
 function SummarySkeleton({ cardCount }: { cardCount: number }) {
   return (
     <div className="min-w-0 px-1 py-1.5 pb-2 sm:px-1.5">
-      <div className="mx-auto flex w-full max-w-full flex-col items-stretch gap-2 p-1 md:w-max md:flex-row md:items-stretch md:gap-2">
-        {Array.from({ length: cardCount }).map((_, i) => (
-          <div
-            key={i}
-            className="min-h-[7.25rem] w-full shrink-0 animate-pulse rounded-2xl border border-border/60 bg-muted/30 sm:w-[16rem]"
-          />
-        ))}
+      <div className="scroll-x-bar-top">
+        <div className="mx-auto flex w-full min-w-0 flex-col items-stretch gap-2 p-1 md:flex-row md:items-stretch md:justify-center md:gap-1.5">
+          {Array.from({ length: cardCount }).map((_, i) => (
+            <div
+              key={i}
+              className={cn(
+                "min-h-[6.5rem] animate-pulse rounded-2xl border border-border/60 bg-muted/30 sm:min-h-[7.25rem]",
+                SETTLEMENT_STAT_CARD_WIDTH_CLASS,
+              )}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );

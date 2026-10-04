@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 내역 요약 스켈레톤 — 카드 11.5rem·연산 부호 폭 실 UI와 맞춤.
 // - 2026-10-04: 내역 필터 스켈레톤 — 결제(적립) 완료/보류 토글 버튼 2칸.
 // - 2026-09-20: 내역/지급 스켈레톤 — overflow 바깥 여백으로 카드 경계 클리핑 방지.
 // - 2026-09-20: 내역/지급 스켈레톤 요약 카드 — p-0.5(실 UI와 동일, overflow 클리핑 방지).
@@ -24,15 +25,15 @@ type RequestorCreditsPageSkeletonProps = {
 
 const EquationOperatorSkeleton = () => (
   <div
-    className="flex min-h-[6.5rem] w-9 shrink-0 items-center justify-center self-stretch sm:w-11"
+    className="flex min-h-[6.5rem] w-7 shrink-0 items-center justify-center self-stretch sm:min-h-[7.25rem] sm:w-8"
     aria-hidden
   >
-    <Skeleton className="h-6 w-4 rounded-sm sm:h-7 sm:w-5" />
+    <Skeleton className="h-5 w-3.5 rounded-sm sm:h-6 sm:w-4" />
   </div>
 );
 
 const BalanceCardSkeleton = () => (
-  <div className="flex min-h-[6.5rem] min-w-[9.5rem] flex-1 flex-col justify-center rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-3.5 shadow-sm sm:min-w-[10.5rem]">
+  <div className="flex min-h-[6.5rem] min-w-[9.5rem] max-w-[11.5rem] flex-1 basis-[11.5rem] flex-col justify-center rounded-2xl border border-slate-200/80 bg-white/80 px-3 py-3 shadow-sm sm:min-h-[7.25rem] sm:min-w-[10.5rem] sm:px-3.5 sm:py-3.5">
     <Skeleton className="mx-auto h-3.5 w-16" />
     <Skeleton className="mx-auto mt-2 h-7 w-28" />
   </div>
@@ -48,7 +49,7 @@ export const CreditLedgerTableSkeleton = ({
   <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
     <div className="px-1 py-1.5 sm:px-1.5">
       <div className="scroll-x-bar-top">
-        <div className="flex min-w-max items-stretch gap-1 p-1 sm:gap-1.5">
+        <div className="flex w-full min-w-0 items-stretch justify-center gap-1 p-1 sm:gap-1.5">
         <BalanceCardSkeleton />
         <EquationOperatorSkeleton />
         <BalanceCardSkeleton />

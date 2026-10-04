@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 요약 카드 폭 16rem→11.5rem. 최소폭 미만일 때만 가로 스크롤.
 // - 2026-08-31: SettlementStatCard value — ReactNode(실사용/데모 2줄 잔액).
 // - 2026-08-26: SettlementEquationOperator — = 색이 slate에 덮이지 않게 primary-strong 유지.
 // - 2026-08-23: SettlementPolicyDialog — flex 스크롤 + 하단 여백(pb-8).
@@ -31,15 +32,16 @@ import { cn } from "@/shared/ui/cn";
 import { formatWon } from "@/shared/settlement/affiliateVat";
 
 /**
- * 요약 카드 한 장. 작업영역이 넓어도 이 폭을 넘기지 않는다.
- * 2열·3열 그리드로 남은 칸을 채우지 말 것. 행은 SETTLEMENT_STAT_ROW_CLASS.
+ * 요약 카드 한 장. 선호 폭 11.5rem, 작업영역이 넓어도 max를 넘기지 않는다.
+ * 좁아지면 10.5rem(모바일 9.5rem)까지 줄고, 그 미만에서만 가로 스크롤.
+ * 행은 SETTLEMENT_STAT_ROW_CLASS. 2열·3열 그리드로 남은 칸을 채우지 말 것.
  */
 export const SETTLEMENT_STAT_CARD_WIDTH_CLASS =
-  "w-full shrink-0 sm:w-[16rem]";
+  "w-full min-w-[9.5rem] max-w-[11.5rem] flex-1 basis-[11.5rem] sm:min-w-[10.5rem]";
 
 /** 요약 카드 행. 가운데 묶음. 칸 비율로 늘리지 않는다. */
 export const SETTLEMENT_STAT_ROW_CLASS =
-  "mx-auto flex w-full max-w-full flex-wrap items-stretch justify-center gap-3";
+  "mx-auto flex w-full max-w-full flex-wrap items-stretch justify-center gap-2 sm:gap-3";
 
 export type SettlementStatTone = "default" | "primary";
 export type SettlementSortDirection = "asc" | "desc";
@@ -59,7 +61,7 @@ export function SettlementEquationOperator({
     <div
       className={cn(
         "flex shrink-0 items-center justify-center self-stretch",
-        "min-h-[7.25rem] w-9 sm:w-11",
+        "min-h-[6.5rem] w-7 sm:min-h-[7.25rem] sm:w-8",
         className,
       )}
       aria-hidden
@@ -69,10 +71,10 @@ export function SettlementEquationOperator({
           "select-none font-bold leading-none tabular-nums",
           // 부호별 색을 분리 — slate 가 primary/destructive 를 twMerge 로 덮지 않게.
           isEquals
-            ? "text-3xl text-primary-strong sm:text-4xl"
+            ? "text-2xl text-primary-strong sm:text-3xl"
             : isMinus
-              ? "text-2xl text-destructive sm:text-3xl"
-              : "text-2xl text-slate-400 sm:text-3xl",
+              ? "text-xl text-destructive sm:text-2xl"
+              : "text-xl text-slate-400 sm:text-2xl",
         )}
       >
         {symbol}
@@ -145,7 +147,7 @@ export function SettlementStatCard({
 
   const className = cn(
     "flex w-full flex-col justify-center rounded-2xl border shadow-sm transition-colors",
-    compact ? "min-h-0 px-3 py-2" : "min-h-[7.25rem] px-4 py-3.5",
+    compact ? "min-h-0 px-3 py-2" : "min-h-[6.5rem] px-3 py-3 sm:min-h-[7.25rem] sm:px-3.5 sm:py-3.5",
     highlight
       ? "border-primary-muted bg-primary-soft/40 ring-1 ring-primary-muted/70"
       : "border-slate-200/80 bg-white/80",
@@ -161,7 +163,7 @@ export function SettlementStatCard({
       <div
         className={cn(
           "text-center font-medium text-slate-500",
-          compact ? "text-xs" : "text-[13px]",
+          compact ? "text-xs" : "text-xs sm:text-[13px]",
         )}
       >
         {label}
@@ -169,7 +171,7 @@ export function SettlementStatCard({
       <div
         className={cn(
           "text-center font-semibold tabular-nums tracking-tight",
-          compact ? "mt-0.5 text-xl" : "mt-1 text-2xl sm:text-[1.65rem]",
+          compact ? "mt-0.5 text-xl" : "mt-1 text-xl sm:text-2xl",
           highlight ? "text-primary-strong" : "text-slate-900",
         )}
       >
