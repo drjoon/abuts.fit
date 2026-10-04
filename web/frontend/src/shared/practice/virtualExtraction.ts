@@ -1266,6 +1266,40 @@ export function maskTouchesMeshBoundary(topo: MeshTopology, mask: Uint8Array) {
   return false;
 }
 
+/**
+ * 스캔 바깥 테두리 둘레 rings겹은 발치 범위에서 뺀다. 테두리와 이어지면 발치와를 메울 수 없다.
+ * 뺀 정점 수를 돌려준다.
+ */
+export function trimMaskFromOuterBoundary(topo: MeshTopology, mask: Uint8Array, rings: number) {
+  const outer = outerBoundaryMask(topo);
+  const reached = new Uint8Array(topo.vertexCount);
+  let frontier: number[] = [];
+  for (let v = 0; v < topo.vertexCount; v += 1) {
+    if (!outer[v]) continue;
+    reached[v] = 1;
+    frontier.push(v);
+  }
+  let removed = 0;
+  for (let r = 0; r <= rings; r += 1) {
+    const next: number[] = [];
+    for (const v of frontier) {
+      if (mask[v]) {
+        mask[v] = 0;
+        removed += 1;
+      }
+      if (r === rings) continue;
+      for (let k = topo.nbrStart[v]!; k < topo.nbrStart[v + 1]!; k += 1) {
+        const u = topo.nbr[k]!;
+        if (reached[u]) continue;
+        reached[u] = 1;
+        next.push(u);
+      }
+    }
+    frontier = next;
+  }
+  return removed;
+}
+
 /** mask 둘레(지우지 않는 이웃 정점). */
 export function maskRim(topo: MeshTopology, mask: Uint8Array) {
   const rim = new Uint8Array(topo.vertexCount);

@@ -39,6 +39,7 @@ import {
   maskTouchesMeshBoundary,
   segmentTooth,
   splitContactLeakOnSeg,
+  trimMaskFromOuterBoundary,
   toothBorderSegments,
   type ToothSegment,
 } from "@/shared/practice/virtualExtraction";
@@ -123,6 +124,8 @@ const TOOTH_LINE_RGB = 0x22d3ee;
 const TOOTH_ACTIVE_LINE_RGB = 0x0369a1;
 /** 적용 때 경계를 이만큼 넓혔다 좁혀 톱니와 치아 사이 띠를 없앤다. */
 const EXTRACT_CLOSE_MM = 0.4;
+/** 스캔 가장자리에서 이만큼(겹)은 발치하지 않고 남긴다. */
+const EXTRACT_EDGE_KEEP_RINGS = 2;
 /** 넓히기·좁히기 한 번. */
 const EXTRACT_GROW_MM = 0.3;
 const LOOP_RGB = 0xf97316;
@@ -629,7 +632,10 @@ export class ScanMeshEditController {
       const edge =
         state.teeth.reduce((sum, row) => sum + row.seg.edge, 0) / Math.max(state.teeth.length, 1);
       closeMask(state.topo, mask, Math.max(1, Math.round(EXTRACT_CLOSE_MM / unit / Math.max(edge, 1e-9))));
+      // 스캔 가장자리에 닿은 부분은 남기고 나머지만 발치한다.
+      trimMaskFromOuterBoundary(state.topo, mask, EXTRACT_EDGE_KEEP_RINGS);
       if (maskTouchesMeshBoundary(state.topo, mask)) return { kind: "extractFailed", reason: "edge" };
+      if (!mask.some((on) => on === 1)) return { kind: "extractFailed", reason: "edge" };
       const sockets = maskComponentCount(state.topo, mask);
       const rim = maskRim(state.topo, mask);
       const cut = trimSelected(state.topo, mask);
