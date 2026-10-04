@@ -43,7 +43,7 @@ router.get("/conversion-quote", authorize(["requestor"]), getMyConversionQuote);
 router.get("/lab-demo-conversions", authorize(["requestor", "internalLab"]), getLabDemoConversions);
 router.post(
   "/lab-demo-conversions/:invoiceId/confirm",
-  authorize(["requestor", "internalLab"]),
+  authorize(["requestor"]),
   confirmLabDemoConversion,
 );
 router.get("/insights/spend", getMyCreditSpendInsights);

@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/demo/DemoConversionDialog.tsx
 // - web/backend/controllers/credits/conversionInvoice.controller.js
 // change-log:
+// - 2026-10-04: 확인 후에도 다른 기공소 대기가 있으면 미완료 토스트.
 // - 2026-10-04: 데모 치과 실사용 전환 요청 -> 기공소가 직접 지급 수령을 확인.
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -81,7 +82,10 @@ export function LabDemoConversionConfirmModal() {
       onConfirm={async () => {
         setBusy(true);
         try {
-          const res = await request({
+          const res = await request<{
+            success?: boolean;
+            data?: { completed?: boolean };
+          }>({
             path: `/api/credits/lab-demo-conversions/${encodeURIComponent(
               current.invoiceId,
             )}/confirm`,
@@ -91,7 +95,16 @@ export function LabDemoConversionConfirmModal() {
             toast.error("지급 확인에 실패했습니다. 잠시 후 다시 시도해 주세요.");
             return;
           }
-          toast.success("지급 완료를 확인했습니다.");
+          const completed = Boolean(res.data?.data?.completed);
+          if (completed) {
+            toast.success(
+              "지급 완료를 확인했습니다. 치과가 실사용으로 전환됩니다.",
+            );
+          } else {
+            toast.success(
+              "지급 완료를 확인했습니다. 어벗츠(관리자) 확인이 끝나면 전환됩니다.",
+            );
+          }
           setPending((prev) =>
             prev.filter((row) => row.invoiceId !== current.invoiceId),
           );

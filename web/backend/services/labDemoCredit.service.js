@@ -158,7 +158,7 @@ export async function computeLabDemoSettlementCredit(
 /**
  * 치과 입장: 직접 지급할 기공소별 금액(양수만).
  * 전환 시점 정산(ADJUST)과 기공소 데모 크레딧이 같은 숫자.
- * isAbutsLab=true 인 행은 어벗츠 승인이 필요하다.
+ * isAbutsLab=true 인 행은 관리자 대시보드 승인이 필요하다.
  */
 export async function aggregatePracticeLabCredits(
   practiceAnchorId,

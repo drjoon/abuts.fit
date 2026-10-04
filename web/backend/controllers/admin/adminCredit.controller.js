@@ -4858,6 +4858,54 @@ export async function adminGetAdminLedger(req, res) {
 }
 
 /**
+ * 관리자 — 어벗츠(하청·자체) 데모 전환 지급 확인 대기 목록.
+ * @route GET /api/admin/credits/demo-conversions
+ */
+export async function adminListDemoConversions(req, res) {
+  try {
+    const {
+      listPendingAbutsDemoConversions,
+    } = await import("../../services/demoConversion.service.js");
+    const pending = await listPendingAbutsDemoConversions();
+    return res.json({
+      success: true,
+      data: { pending },
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode) || 500;
+    console.error("adminListDemoConversions error:", error);
+    return res.status(status).json({
+      success: false,
+      message: error?.message || "데모 전환 대기 목록 조회에 실패했습니다.",
+    });
+  }
+}
+
+/**
+ * 관리자 — 어벗츠 몫 지급 완료 확인(하청·어벗츠 자체).
+ * @route POST /api/admin/credits/demo-conversions/:invoiceId/confirm
+ */
+export async function adminConfirmDemoConversion(req, res) {
+  try {
+    const {
+      confirmAbutsDemoConversion,
+    } = await import("../../services/demoConversion.service.js");
+    const result = await confirmAbutsDemoConversion({
+      invoiceId: req.params.invoiceId,
+      userId: req.user?._id,
+    });
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    const status = Number(error?.statusCode) || 500;
+    console.error("adminConfirmDemoConversion error:", error);
+    return res.status(status).json({
+      success: false,
+      message: error?.message || "데모 전환 지급 확인에 실패했습니다.",
+    });
+  }
+}
+
+/**
  * 관리자 — 의뢰자 데모 모드 전환 입금 대기로 잠금(부채 유지).
  * 실사용 종료는 전환 입금(CHARGE_PAID 워터폴) 확정 시에만.
  * @route POST /api/admin/credits/businesses/:id/exit-demo

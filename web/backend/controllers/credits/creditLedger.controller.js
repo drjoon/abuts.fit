@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: DEMO_CONVERSION 행 — meta.practiceAnchorId로 치과명 enrich(기공소 실사용 전환 한 줄).
 // - 2026-09-27: 원청 PTX 거래내역 — 지급한 협력·하청 기공소명(payoutLabName).
 // - 2026-09-23: PTX 거래내역 labName — 협력은「어벗츠 · 파트너」(원청 target만 쓰지 않음). 기공소는 치과명.
 // - 2026-09-20: CA 게이트 — 확정 정산·payout만 제외. 적립 보류 미러는 hold부터 노출.
@@ -634,6 +635,11 @@ export async function listMyCreditLedger(req, res) {
     skippedDemoSum,
     mapRow: (row, base) => {
       const uniqueKey = String(row?.uniqueKey || base.uniqueKey || "");
+      const metaPracticeAnchorId = String(
+        row?.meta?.practiceAnchorId ||
+          row?.journalDoc?.meta?.practiceAnchorId ||
+          "",
+      ).trim();
       return {
         ...base,
         uniqueKey,
@@ -665,6 +671,8 @@ export async function listMyCreditLedger(req, res) {
         practiceTransferAbutmentPending:
           row?.practiceTransferAbutmentPending ??
           base.practiceTransferAbutmentPending,
+        // 실사용 전환(DEMO_CONVERSION) — 기공소 행에 치과명 붙일 때 사용
+        demoConversionPracticeAnchorId: metaPracticeAnchorId || null,
       };
     },
   });
@@ -967,11 +975,14 @@ export async function listMyCreditLedger(req, res) {
   }
 
   const practiceAnchorIdsForLedger = [
-    ...new Set(
-      [...practiceTransferMetaById.values()]
+    ...new Set([
+      ...[...practiceTransferMetaById.values()]
         .map((m) => String(m?.practiceBusinessAnchorId || "").trim())
         .filter(Boolean),
-    ),
+      ...items
+        .map((it) => String(it?.demoConversionPracticeAnchorId || "").trim())
+        .filter(Boolean),
+    ]),
   ].filter((id) => mongoose.Types.ObjectId.isValid(id));
   const practiceNameByAnchorId = new Map();
   if (practiceAnchorIdsForLedger.length) {
@@ -1132,6 +1143,22 @@ export async function listMyCreditLedger(req, res) {
       return {
         ...it,
         freeReason,
+      };
+    }
+
+    const demoPracticeId = String(
+      it?.demoConversionPracticeAnchorId || "",
+    ).trim();
+    if (
+      (refType === "DEMO_CONVERSION" || refType === "DEMO_DEBT_RESET") &&
+      demoPracticeId
+    ) {
+      const practiceName =
+        practiceNameByAnchorId.get(demoPracticeId) || "";
+      return {
+        ...it,
+        practiceName,
+        clinicName: practiceName,
       };
     }
 

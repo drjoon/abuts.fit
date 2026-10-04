@@ -216,6 +216,7 @@ import { isCreditEventForBusiness } from "@/shared/realtime/creditBalanceEvent";
 import { useDemoMode } from "@/shared/demo/useDemoMode";
 import { DemoConversionPromptModal } from "@/shared/demo/DemoConversionPromptModal";
 import { LabDemoConversionConfirmModal } from "@/shared/demo/LabDemoConversionConfirmModal";
+import { AdminDemoConversionConfirmModal } from "@/shared/demo/AdminDemoConversionConfirmModal";
 import {
   AccountSwitcherMenuSection,
   AccountSwitchPasswordDialog,
@@ -1771,10 +1772,10 @@ export const DashboardLayout = () => {
       {user.role === "requestor" && requestorKind === "practice" ? (
         <DemoConversionPromptModal />
       ) : null}
-      {(user.role === "requestor" && requestorKind === "lab") ||
-      user.role === "internalLab" ? (
+      {user.role === "requestor" && requestorKind === "lab" ? (
         <LabDemoConversionConfirmModal />
       ) : null}
+      {user.role === "admin" ? <AdminDemoConversionConfirmModal /> : null}
       <div className="flex h-dvh overflow-hidden">
         <div
           className={cn(

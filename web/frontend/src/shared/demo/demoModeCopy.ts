@@ -87,6 +87,46 @@ export const DEMO_MODE_PENDING_BODY_LINES = [
   "기공소가 지급을 확인하면 전환됩니다.",
 ] as const;
 
+export type DemoPendingLabStatus = {
+  labName?: string;
+  isAbutsLab?: boolean;
+  status?: "PENDING" | "CONFIRMED" | string;
+};
+
+/** 대기 목록 표시명. 어벗츠 몫은 관리자 확인. */
+export function resolveDemoConversionLabDisplayName(
+  lab: DemoPendingLabStatus,
+): string {
+  if (lab.isAbutsLab) return "어벗츠(관리자)";
+  return String(lab.labName || "").trim() || "기공소";
+}
+
+/**
+ * 대기 모달 본문. 일부만 확인된 경우 남은 기공소를 명시한다.
+ */
+export function resolveDemoModePendingBodyLines(
+  labs: DemoPendingLabStatus[] = [],
+): readonly string[] {
+  const pendingLabs = labs.filter((lab) => lab.status !== "CONFIRMED");
+  const confirmedCount = labs.length - pendingLabs.length;
+  if (labs.length > 1 && confirmedCount > 0 && pendingLabs.length > 0) {
+    const names = pendingLabs
+      .map((lab) => resolveDemoConversionLabDisplayName(lab))
+      .join(", ");
+    return [
+      "실사용 전환을 요청했습니다.",
+      `${names} 확인이 끝나면 전환됩니다.`,
+    ];
+  }
+  if (pendingLabs.length === 1 && pendingLabs[0]?.isAbutsLab) {
+    return [
+      "실사용 전환을 요청했습니다.",
+      "어벗츠(관리자)가 지급을 확인하면 전환됩니다.",
+    ];
+  }
+  return DEMO_MODE_PENDING_BODY_LINES;
+}
+
 export const DEMO_MODE_PENDING_NOTICE =
   "미정산 기공비를 아직 지급하지 않았다면 기공소에 직접 지급해 주세요.";
 

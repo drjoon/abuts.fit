@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-10-04: 데모 전환 · 어벗츠 확인 카드(하청·자체 지급 확인).
 // - 2026-10-02: 간접어벗 카드 — 타사 스캔바디와 어벗츠 스캔바디를 한 모달로.
 // - 2026-10-02: 직접어벗 설정 카드 — 심플어벗 3D 모델. 직접 입력은 기공소.
 // - 2026-08-25: ExoCAD 헥스 확인 목록에 디자인 소프트웨어(+버전) 표시.
@@ -59,6 +60,7 @@ import {
 import { NoticeAdminCard } from "@/pages/admin/dashboard/NoticeAdminCard";
 import { DirectAbutmentSettingsCard } from "@/pages/admin/dashboard/DirectAbutmentSettingsCard";
 import { IndirectAbutmentCard } from "@/pages/admin/dashboard/IndirectAbutmentCard";
+import { AdminDemoConversionCard } from "@/pages/admin/dashboard/AdminDemoConversionCard";
 import {
   Users,
   FileText,
@@ -2322,6 +2324,10 @@ export const AdminDashboardPage = () => {
                   </button>
                 </CardContent>
               </Card>
+
+              <AdminDemoConversionCard
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
 
               {/* 카드3: ExoCAD 헥스 회전 확인 */}
               <Card className="app-glass-card app-glass-card--lg h-full">

@@ -3,14 +3,17 @@
 // - web/backend/models/conversionInvoice.model.js
 // - web/backend/services/labDemoCredit.service.js
 // - web/backend/controllers/credits/conversionInvoice.controller.js
+// - web/backend/controllers/admin/adminCredit.controller.js
 // change-log:
-// - 2026-10-04: 입금 워터폴 폐기. 치과 전환 = 기공소 직접 지급 확인. 협력=수행 기공소 승인, 하청·어벗츠 자체=어벗츠기공소 승인.
+// - 2026-10-04: 하청·어벗츠 자체(Abuts) 확인은 관리자 대시보드. 협력은 수행 기공소.
+// - 2026-10-04: 입금 워터폴 폐기. 치과 전환 = 기공소 직접 지급 확인. 협력=수행 기공소, 하청·자체=관리자.
 import mongoose from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import ConversionInvoice from "../models/conversionInvoice.model.js";
 import { postGeneralLedgerJournal } from "./generalLedger.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../utils/creditRealtime.js";
 import { aggregatePracticeLabCredits } from "./labDemoCredit.service.js";
+import { resolveInternalLabAnchor } from "../utils/practiceTransferAutoMatch.js";
 import {
   exitDemoModeAfterConversionPaid,
   isDemoModeExpired,
@@ -61,7 +64,7 @@ async function loadPracticeAnchor(businessAnchorId) {
 /**
  * 기공소별 직접 지급 행.
  * - 협력: 수행 기공소만 승인(어벗츠기공본부는 gross 경유라 행 없음).
- * - 하청·어벗츠 자체: 어벗츠기공소(원청, internalLab) 승인 필요.
+ * - 하청·어벗츠 자체: 어벗츠 몫 행 — 관리자 대시보드에서 확인.
  */
 async function buildLabRows(practiceAnchorId, previousRows = []) {
   const credits = await aggregatePracticeLabCredits(practiceAnchorId);
@@ -286,6 +289,30 @@ export async function listPendingConversionsForLab(labAnchorId) {
       amount: Number(mine?.amount || 0),
       requestedAt: inv.createdAt,
     };
+  });
+}
+
+/**
+ * 관리자 — 어벗츠(하청·자체) 몫 지급 확인 대기 목록.
+ */
+export async function listPendingAbutsDemoConversions() {
+  const abuts = await resolveInternalLabAnchor();
+  if (!abuts?._id) return [];
+  return listPendingConversionsForLab(abuts._id);
+}
+
+/**
+ * 관리자 — 어벗츠 몫 지급 완료 확인.
+ */
+export async function confirmAbutsDemoConversion({ invoiceId, userId } = {}) {
+  const abuts = await resolveInternalLabAnchor();
+  if (!abuts?._id) {
+    throw httpError("어벗츠기공소를 찾을 수 없습니다.", 409);
+  }
+  return confirmLabDirectPayment({
+    invoiceId,
+    labAnchorId: abuts._id,
+    userId,
   });
 }
 

@@ -1234,6 +1234,20 @@ function journalLookupAndTypeStages(
           $ifNull: ["$refType", { $ifNull: ["$journalDoc.refType", ""] }],
         },
         refId: { $ifNull: ["$refId", "$journalDoc.refId"] },
+        // 실사용 전환 ADJUST — 기공소 행에 치과명 연결
+        meta: {
+          $mergeObjects: [
+            { $ifNull: ["$meta", {}] },
+            {
+              practiceAnchorId: {
+                $ifNull: [
+                  "$meta.practiceAnchorId",
+                  { $ifNull: ["$journalDoc.meta.practiceAnchorId", null] },
+                ],
+              },
+            },
+          ],
+        },
       },
     },
     { $addFields: { type: creditLedgerRowTypeExpr() } },

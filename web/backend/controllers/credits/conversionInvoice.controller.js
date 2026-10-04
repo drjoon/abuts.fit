@@ -90,12 +90,19 @@ export async function getLabDemoConversions(req, res) {
 
 /**
  * 기공소: 치과로부터 직접 지급받았음을 확인.
+ * 어벗츠(internalLab) 몫은 관리자 대시보드(`/api/admin/credits/demo-conversions`)에서만 확인.
  * @route POST /api/credits/lab-demo-conversions/:invoiceId/confirm
  */
 export async function confirmLabDemoConversion(req, res) {
   try {
     const businessAnchorId = req.user?.businessAnchorId;
-    if (!["requestor", "internalLab"].includes(req.user?.role) || !businessAnchorId) {
+    if (req.user?.role === "internalLab") {
+      return res.status(403).json({
+        success: false,
+        message: "어벗츠 몫은 관리자 대시보드에서 확인해 주세요.",
+      });
+    }
+    if (req.user?.role !== "requestor" || !businessAnchorId) {
       return res.status(403).json({
         success: false,
         message: "기공소만 확인할 수 있습니다.",

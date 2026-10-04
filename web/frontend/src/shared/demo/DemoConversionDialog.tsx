@@ -4,14 +4,18 @@
 // - web/frontend/src/shared/demo/useDemoMode.ts
 // - web/backend/services/demoConversion.service.js
 // change-log:
+// - 2026-10-04: 대기 모달 — 기공소별 확인 상태·남은 승인 문구. quote를 잔액 이벤트로 갱신.
 // - 2026-10-04: 전환 대기 시 기공소 확인 대기 문구·단일 닫기. quote 전 hook pending 반영.
 // - 2026-10-04: 실사용 전환 = 기공소 직접 지급 확인. 완료 시 충전 페이지로 이동.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Check, Clock } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { request } from "@/shared/api/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
+import { isCreditEventForBusiness } from "@/shared/realtime/creditBalanceEvent";
 import {
   DEMO_MODE_CONVERTED_TOAST_DESCRIPTION,
   DEMO_MODE_CONVERTED_TOAST_TITLE,
@@ -22,7 +26,9 @@ import {
   DEMO_MODE_PENDING_NOTICE,
   DEMO_MODE_PENDING_TITLE,
   DEMO_MODE_PENDING_TOAST,
+  resolveDemoConversionLabDisplayName,
   resolveDemoModeExitBody,
+  resolveDemoModePendingBodyLines,
 } from "./demoModeCopy";
 import { useDemoMode, type DemoConversionLab } from "./useDemoMode";
 
@@ -43,35 +49,48 @@ const CHARGE_PATH = "/dashboard/credits?tab=charge";
 
 export function DemoConversionDialog({ open, onClose, onRequested }: Props) {
   const navigate = useNavigate();
+  const businessAnchorId = useAuthStore((s) => s.user?.businessAnchorId);
   const {
     exiting,
     requestConversion,
     conversionPending: hookPending,
+    refresh,
   } = useDemoMode();
   const [quote, setQuote] = useState<QuoteData | null>(null);
 
+  const loadQuote = useCallback(async () => {
+    try {
+      const res = await request<{ success?: boolean; data?: QuoteData }>({
+        path: "/api/credits/conversion-quote",
+        method: "GET",
+      });
+      if (res.ok) setQuote(res.data?.data || null);
+    } catch {
+      setQuote(null);
+    }
+  }, []);
+
   useEffect(() => {
     if (!open) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await request<{ success?: boolean; data?: QuoteData }>({
-          path: "/api/credits/conversion-quote",
-          method: "GET",
-        });
-        if (!cancelled && res.ok) setQuote(res.data?.data || null);
-      } catch {
-        if (!cancelled) setQuote(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
+    void loadQuote();
+  }, [open, loadQuote]);
+
+  useAppEventListener({
+    eventTypes: ["credit:balance-updated"],
+    enabled: open && Boolean(businessAnchorId),
+    onMatch: (evt) => {
+      if (!isCreditEventForBusiness(evt, businessAnchorId)) return;
+      void loadQuote();
+      void refresh();
+    },
+  });
 
   const labs = quote?.labs || [];
   const pending =
     quote != null ? Boolean(quote.conversionPending) : Boolean(hookPending);
+  const pendingBodyLines = pending
+    ? resolveDemoModePendingBodyLines(labs)
+    : null;
 
   return (
     <ConfirmDialog
@@ -89,7 +108,14 @@ export function DemoConversionDialog({ open, onClose, onRequested }: Props) {
               )}
             </div>
             <p className="min-w-0 text-sm leading-relaxed text-slate-700">
-              {pending ? (
+              {pending && pendingBodyLines ? (
+                pendingBodyLines.map((line, i) => (
+                  <span key={`${i}-${line}`}>
+                    {i > 0 ? <br /> : null}
+                    {line}
+                  </span>
+                ))
+              ) : pending ? (
                 DEMO_MODE_PENDING_BODY_LINES.map((line, i) => (
                   <span key={line}>
                     {i > 0 ? <br /> : null}
@@ -103,14 +129,23 @@ export function DemoConversionDialog({ open, onClose, onRequested }: Props) {
           </div>
 
           {labs.length > 0 ? (
-            <ul className="space-y-1.5 px-1.5 py-1.5 text-sm">
+            <ul className="max-h-48 space-y-1.5 overflow-y-auto px-1.5 py-1.5 text-sm">
               {labs.map((lab) => (
                 <li
                   key={lab.labAnchorId}
                   className="flex items-center justify-between gap-2 rounded-lg border border-slate-200/90 bg-white px-3 py-2"
                 >
                   <span className="min-w-0 truncate text-slate-800">
-                    {lab.labName || "기공소"}
+                    {resolveDemoConversionLabDisplayName(lab)}
+                    {lab.status === "CONFIRMED" ? (
+                      <span className="ml-1.5 text-[11px] font-medium text-emerald-700">
+                        확인
+                      </span>
+                    ) : pending ? (
+                      <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                        대기
+                      </span>
+                    ) : null}
                   </span>
                   <span className="flex shrink-0 items-center gap-1.5 tabular-nums text-slate-700">
                     <>

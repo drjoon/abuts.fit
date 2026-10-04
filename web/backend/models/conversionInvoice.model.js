@@ -33,7 +33,8 @@ const labRemittanceSchema = new mongoose.Schema(
 /**
  * 기공소별 직접 지급 확인.
  * amount = 치과가 기공소에 직접 지급할 미정산 기공비(데모 크레딧).
- * autoConfirmed = 어벗츠기공소(원청) 몫은 확인 없이 정산 완료.
+ * 협력=수행 기공소, 하청·어벗츠 자체=관리자 대시보드(어벗츠 몫) 승인.
+ * autoConfirmed = 예약 필드(현재 미사용 — 전부 수동 확인).
  */
 const labConfirmationSchema = new mongoose.Schema(
   {

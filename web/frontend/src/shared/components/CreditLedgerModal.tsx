@@ -1,4 +1,9 @@
 // change-log:
+// - 2026-10-04: 기공소 실사용 전환 행 — 치과명 / 기공소 지급. 보류·완료 구분선 유지.
+// - 2026-10-04: 기공소 내역 — 적립 보류/완료를 그룹으로 묶고 라벨 구분선 1개.
+// - 2026-10-04: 실사용 전환(DEMO_DEBT_RESET·DEMO_CONVERSION) 거래내역·확인 상태 표시.
+// - 2026-10-04: 기공소 내역 — 적립 완료/보류가 갈리는 행에 가로 구분선.
+// - 2026-10-04: 요약 수식 행 — 카드 최소폭까지 줄인 뒤, 그보다 좁을 때만 가로 스크롤.
 // - 2026-09-28: 요약 카드는 14rem 묶음. 넓은 화면에서 표만 작업영역 폭.
 // - 2026-09-27: 원청 거래내역 — 지급한 협력·하청 기공소 이름.
 // - 2026-09-27: 지급 완료·적립 완료 옆 완료 뱃지 제거(원청·하청). 기공 지급 상세는 매출·하청 수수료·지급.
@@ -102,7 +107,7 @@
 // - web/backend/controllers/credits/creditLedger.utils.js
 // - web/backend/controllers/admin/adminCredit.controller.js
 // - web/frontend/src/shared/components/AbutmentDesignLedgerDetailDialog.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { isCreditEventForBusiness } from "@/shared/realtime/creditBalanceEvent";
@@ -529,11 +534,29 @@ const resolvePracticeTransferTypeLabel = (isLabViewer: boolean) =>
 const resolveAbutmentDesignTypeLabel = (isLabViewer: boolean) =>
   isLabViewer ? LAB_ABUTS_REQUEST_TYPE_LABEL : ABUTMENT_DESIGN_TYPE_LABEL;
 
+/** 적립·지급 완료 여부로 경계선 그룹을 나눈다(보류·일부는 완료 전). */
+const isPracticeTransferPayoutSettled = (
+  status: PracticeTransferPayoutStatus | null | undefined,
+) => status === "settled";
+
+const isDemoConversionLedgerItem = (item: { refType?: string | null }) => {
+  const refType = String(item?.refType || "")
+    .trim()
+    .toUpperCase();
+  return refType === "DEMO_DEBT_RESET" || refType === "DEMO_CONVERSION";
+};
+
 const practiceTransferPayoutStatusLabel = (
   status: PracticeTransferPayoutStatus,
   isLabViewer = false,
   settlementSide: "earn" | "payout" | null = null,
+  opts: { demoConversion?: boolean } = {},
 ) => {
+  if (opts.demoConversion) {
+    if (status === "settled") return "확인 완료";
+    if (status === "partial") return "일부 확인";
+    return "확인 대기";
+  }
   if (status === "canceled") return "취소";
   if (settlementSide === "payout") {
     if (status === "settled") return "지급 완료";
@@ -706,6 +729,9 @@ const resolvePracticeTransferDisplayLabel = (
   // DEMO_CREDIT도 GL eventType은 CHARGE_FREE_REQUEST — 유형 배지만 데모로 구분
   if (String(item.refType || "").trim().toUpperCase() === "DEMO_CREDIT") {
     return "무료충전(데모)";
+  }
+  if (isDemoConversionLedgerItem(item)) {
+    return "실사용 전환";
   }
   return String(item.displayLabel || "").trim() || typeLabel(item.type);
 };
@@ -1896,15 +1922,17 @@ const groupLedgerItemsForDisplay = (
         item,
         resolvePracticeTransferRoute(item),
       ),
-      practiceTransferPayoutStatus: isStoreOrderLedgerItem(item)
-        ? item.type === "REFUND"
-          ? "canceled"
-          : "settled"
-        : resolvePracticeTransferPayoutStatus(
-            item,
-            undefined,
-            labShareOnly,
-          ),
+      practiceTransferPayoutStatus: isDemoConversionLedgerItem(item)
+        ? "settled"
+        : isStoreOrderLedgerItem(item)
+          ? item.type === "REFUND"
+            ? "canceled"
+            : "settled"
+          : resolvePracticeTransferPayoutStatus(
+              item,
+              undefined,
+              labShareOnly,
+            ),
       isPracticeTransfer: String(item.refType || "") === "PRACTICE_TRANSFER",
       ...emptyDisplayRowExtras,
       item,
@@ -1942,6 +1970,8 @@ const REF_TYPE_LABELS: Record<string, string> = {
   SHIPPING_FREE_CREDIT: "환영 무료크레딧",
   DEMO_CREDIT: "데모 크레딧",
   DEMO_CREDIT_EXIT: "데모 크레딧 회수",
+  DEMO_DEBT_RESET: "실사용 전환",
+  DEMO_CONVERSION: "실사용 전환",
   FREE_CREDIT_CANCEL: "무료크레딧 취소",
   CREDIT_RECONCILE: "잔액 조정",
   SEED_REQUESTOR_CHARGE: "시드 초기 충전",
@@ -2111,6 +2141,23 @@ const renderTransactionDetail = ({
           {reason || refTypeLabel(refType)}
         </span>
       </>
+    );
+  }
+
+  if (isDemoConversionLedgerItem(item)) {
+    if (isLabViewer) {
+      const practiceName =
+        String(item.practiceName || item.clinicName || "").trim() || "치과";
+      return (
+        <span className="text-[11px] leading-snug text-slate-700">
+          {practiceName} / 기공소 지급
+        </span>
+      );
+    }
+    return (
+      <span className="text-[11px] leading-snug text-slate-700">
+        실사용 전환 / 기공소 지급
+      </span>
     );
   }
 
@@ -2864,7 +2911,7 @@ export const CreditLedgerModal = ({
   };
 
   const sortedRows = useMemo(() => {
-    return [...filteredRows].sort((a, b) => {
+    const compare = (a: LedgerDisplayRow, b: LedgerDisplayRow) => {
       if (sort.key === "createdAt") {
         const av = new Date(a.createdAt || 0).getTime();
         const bv = new Date(b.createdAt || 0).getTime();
@@ -2896,8 +2943,24 @@ export const CreditLedgerModal = ({
       return sort.direction === "asc"
         ? av.localeCompare(bv, "ko")
         : bv.localeCompare(av, "ko");
-    });
-  }, [filteredRows, sort]);
+    };
+
+    const sorted = [...filteredRows].sort(compare);
+    // 기공소: 적립 보류·완료가 날짜순으로 섞이면 구분선이 여러 번 생긴다.
+    // 상태 그룹(보류→완료)으로 묶고 그룹 안에서만 정렬한다.
+    if (!isLabViewer) return sorted;
+    const pending = sorted.filter(
+      (row) =>
+        row.practiceTransferPayoutStatus != null &&
+        !isPracticeTransferPayoutSettled(row.practiceTransferPayoutStatus),
+    );
+    const settled = sorted.filter((row) =>
+      isPracticeTransferPayoutSettled(row.practiceTransferPayoutStatus),
+    );
+    const other = sorted.filter((row) => row.practiceTransferPayoutStatus == null);
+    if (pending.length === 0 || settled.length === 0) return sorted;
+    return [...pending, ...settled, ...other];
+  }, [filteredRows, isLabViewer, sort]);
 
   // 결제·적립 상태 필터 시 페이지가 비면 다음 페이지를 이어서 채운다.
   useEffect(() => {
@@ -3195,7 +3258,8 @@ export const CreditLedgerModal = ({
               <div className="px-1 py-1.5 sm:px-1.5">
                 {/* padding은 overflow(scroll-x-bar-top) 바깥 — 카드 border/shadow 클리핑 방지 */}
                 <div className="scroll-x-bar-top">
-                  <div className="mx-auto flex w-max max-w-full items-stretch gap-1.5 p-1 sm:gap-2">
+                  {/* w-full: 가용 폭까지 카드가 줄고, min-w 합이 넘칠 때만 가로 스크롤 */}
+                  <div className="mx-auto flex w-full min-w-0 items-stretch justify-center gap-1 p-1 sm:gap-1.5">
                   <SettlementStatCard
                     className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
                     label="현재 잔액"
@@ -3545,7 +3609,7 @@ export const CreditLedgerModal = ({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedRows.map((r) => {
+                {sortedRows.map((r, rowIndex) => {
                   const amount = Number(r.amount || 0);
                   const isMinus = amount < 0;
                   const spentPaid = Number(r.spentPaidAmount || 0);
@@ -3588,7 +3652,19 @@ export const CreditLedgerModal = ({
                   );
                   const canOpenAbutmentDetail = Boolean(r.isAbutmentDesign);
                   const payoutStatus = r.practiceTransferPayoutStatus;
-                  return (
+                  const prevPayoutStatus =
+                    rowIndex > 0
+                      ? sortedRows[rowIndex - 1]?.practiceTransferPayoutStatus
+                      : null;
+                  const showPayoutBoundary =
+                    isLabViewer &&
+                    rowIndex > 0 &&
+                    prevPayoutStatus != null &&
+                    payoutStatus != null &&
+                    !isPracticeTransferPayoutSettled(prevPayoutStatus) &&
+                    isPracticeTransferPayoutSettled(payoutStatus);
+                  const demoConversionRow = isDemoConversionLedgerItem(r.item);
+                  const rowNodes = (
                     <TableRow
                       key={r.key}
                       className={cn(
@@ -3753,6 +3829,7 @@ export const CreditLedgerModal = ({
                                 payoutStatus,
                                 isLabViewer,
                                 r.settlementSide,
+                                { demoConversion: demoConversionRow },
                               )}
                             </span>
                           </span>
@@ -3860,6 +3937,22 @@ export const CreditLedgerModal = ({
                         </div>
                       </TableCell>
                     </TableRow>
+                  );
+                  if (!showPayoutBoundary) return rowNodes;
+                  return (
+                    <Fragment key={`boundary-${r.key}`}>
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell
+                          colSpan={6}
+                          className="border-y border-slate-300 bg-slate-50/90 px-3 py-1.5 text-center"
+                        >
+                          <span className="text-[11px] font-medium tracking-wide text-slate-600">
+                            ↑ 적립 보류 · ↓ 적립 완료
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                      {rowNodes}
+                    </Fragment>
                   );
                 })}
 

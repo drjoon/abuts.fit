@@ -64,8 +64,9 @@
 - 실시간 소켓 공통
   - `socket.js`
 - 기공소·치과 PC 헬퍼 알람
-  - `services/labHelperAlarm.service.js` — `emitAppEventToUser`에서 enqueue
-  - `modules/labHelper/labHelper.routes.js` — `GET /api/lab-helper/alarms/wait` (internalLab·requestor lab/practice 허용)
+  - `services/labHelperAlarm.service.js` — `emitAppEventToUser`에서 enqueue → WS 구독자 push(우선), 없으면 레거시 wait 큐
+  - `services/labHelperAlarmWs.js` — `WS /api/lab-helper/alarms/ws` (Bearer, internalLab·requestor lab/practice)
+  - `modules/labHelper/labHelper.routes.js` — `GET /api/lab-helper/alarms/wait` 구버전 호환
 
 ## 1. 구조
 
@@ -310,7 +311,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 멀티 인스턴스 백엔드에서는 워커 중복 실행 방지를 위해 Mongo 기반 분산락 SSOT를 사용합니다.
     - 공통 락 유틸: `utils/distributedJobLock.js`
     - 적용 워커: `services/reviewApprovalQueue.service.js`, `controllers/requests/shipping.TrackingPoller.js`, `jobs/dummyCncWorker.js`, `jobs/dailyReferralSnapshotWorker.js`
-  - 치과 데모 모드(90일, 기공소 데모 없음): 가입 시 `demoMode`만 ON·크레딧 **0원**·가상 잔고(만료/전환 대기 시 overdraft 잠금). 만료 후 미전환이면 `getDemoOrderBlock`으로 `createPracticeTransfer`·`holdRequestCredit` 차단. 전환은 `requestDemoConversion`(기공소별 직접 지급 확인, 협력=수행 기공소 승인·하청/자체=어벗츠기공소 승인(`classifyPracticeCreditOwner`)) -> `finalizeDemoConversion`(부채 리셋·데모 종료·기공소 ADJUST). 데모 치과 적립분은 `computeLabDemoSettlementCredit`로 `settlementCredit`에서 제외(`demoSettlementCredit`). API: `GET /api/credits/conversion-quote`, `GET /api/credits/lab-demo-conversions`, `POST /api/credits/lab-demo-conversions/:invoiceId/confirm`. SSOT: `services/demoConversion.service.js`, `services/labDemoCredit.service.js`.
+  - 치과 데모 모드(90일, 기공소 데모 없음): 가입 시 `demoMode`만 ON·크레딧 **0원**·가상 잔고(만료/전환 대기 시 overdraft 잠금). 만료 후 미전환이면 `getDemoOrderBlock`으로 `createPracticeTransfer`·`holdRequestCredit` 차단. 전환은 `requestDemoConversion`(기공소별 직접 지급 확인, 협력=수행 기공소 승인·하청/자체=관리자 대시보드 어벗츠 몫 승인(`classifyPracticeCreditOwner`)) -> `finalizeDemoConversion`(부채 리셋·데모 종료·기공소 ADJUST). 데모 치과 적립분은 `computeLabDemoSettlementCredit`로 `settlementCredit`에서 제외(`demoSettlementCredit`). API: `GET /api/credits/conversion-quote`, `GET|POST /api/credits/lab-demo-conversions`(협력 기공소), `GET|POST /api/admin/credits/demo-conversions`(어벗츠 몫). SSOT: `services/demoConversion.service.js`, `services/labDemoCredit.service.js`.
 
 - 가격/리퍼럴 rolling 스냅샷:
   - 일일 재계산 워커: `jobs/dailyReferralSnapshotWorker.js`
@@ -852,7 +853,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 가입 시 0원·가상 잔고 마이너스 허용(치과 전용, 기공비)
     - **전환**: 치과 요청 -> 기공소 직접 지급 확인 -> 부채 리셋·데모 OFF·기공소 ADJUST. 이후 충전(선결제) 필요
     - 90일 만료 후 미전환: 신규 의뢰 차단. 전환 요청 후 기공소 직접 지급 확인 대기(`conversionPending`)
-    - 입금 하한 없음. 협력은 수행 기공소, 하청·자체는 어벗츠기공소(internalLab)가 지급 확인. `GET /api/credits/conversion-quote`
+    - 입금 하한 없음. 협력은 수행 기공소, 하청·자체 어벗츠 몫은 관리자 대시보드가 지급 확인. `GET /api/credits/conversion-quote` · `GET /api/admin/credits/demo-conversions`
     - SSOT: `demoConversion.service.js` · `labDemoCredit.service.js` · `business.demoMode.util.js`
 
 ### 웹소켓 업데이트 표준 (무플리커 + 부하완화)
