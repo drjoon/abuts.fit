@@ -190,18 +190,6 @@ export const landingHome = {
   browseHeading: "의뢰부터 납품까지, 하나의 흐름으로.",
   browseLead:
     "어벗츠 플랫폼이 임플란트 기공·생산의 단계를 더 명확하게 연결합니다.",
-  whyEyebrow: "WHY ABUTS.FIT",
-  whyHeading: "케이스의 모든 단계를 연결합니다.",
-  whyLead:
-    "치과의 의뢰, 기공소의 디자인, 애크로덴트의 생산과 납품까지 하나의 플랫폼 안에서 이어집니다.",
-  workflowEyebrow: "ONE CONNECTED WORKFLOW",
-  workflowHeading: "더 명확하게, 더 빠르게, 더 안정적으로.",
-  workflowLead:
-    "어벗츠 플랫폼은 치과와 기공소가 각자의 전문성에 집중하면서도 같은 케이스를 정확히 협업할 수 있도록 설계되었습니다.",
-  stepsEyebrow: "HOW IT WORKS",
-  stepsHeading: "커스텀어벗은 이렇게 완성됩니다.",
-  stepsLead:
-    "치과의 스캔 데이터부터 기공 디자인, 생산과 납품까지 케이스에 필요한 과정을 연결합니다.",
   storiesHeading: "의뢰부터 납품까지, 끊기지 않게.",
   storiesLead:
     "플랫폼에서 의뢰·확인·소통·생산을 이어갑니다.",
@@ -263,90 +251,6 @@ export const landingHomeBusinessTabs = [
       src: "/landing/waveon/partnership.jpg",
       alt: "치과·기공소 협업",
     },
-  },
-] as const;
-
-/** `/` 비즈니스 하단 이슈 3점 */
-export const landingHomePainPoints = [
-  {
-    step: "01",
-    title: "흩어진 확인과 반복 문의",
-    body: "스캔·작업물·진행이 한곳에 있으면 “어디까지 됐지?” 문의가 줄어듭니다.",
-  },
-  {
-    step: "02",
-    title: "흩어진 데이터와 의뢰 내용",
-    body: "스캔 데이터, 요청 사항, 케이스 정보가 분산되면 제작에 필요한 확인이 반복될 수 있습니다.",
-  },
-  {
-    step: "03",
-    title: "분리된 기공·생산 과정",
-    body: "디자인 완료 후 제조까지 하나의 흐름으로 이어져야 납기와 품질을 안정적으로 관리할 수 있습니다.",
-  },
-] as const;
-
-/** `/` WHY 밴드 — 문장 단위 body → UI에서 `<br />`(마침표 경계만). */
-export const landingHomeWhy = [
-  {
-    eyebrow: "SCAN TO REQUEST",
-    title: "구강스캔에서 의뢰까지",
-    body: [
-      "치과가 스캔 데이터와 요청 내용을 플랫폼으로 전달하면, 기공소는 필요한 정보를 한눈에 확인합니다.",
-    ],
-  },
-  {
-    eyebrow: "DESIGN TO PRODUCTION",
-    title: "디자인에서 생산까지",
-    body: [
-      "커스텀어벗 디자인이 등록되면 애크로덴트 통합 생산 시스템으로 실시간 연결되어 가공과 생산이 이어집니다.",
-    ],
-  },
-  {
-    eyebrow: "CONNECTED PARTNERS",
-    title: "기존 기공소와도 함께",
-    body: [
-      "거래하시던 기공소는 협력 기공소로 그대로 이용하세요.",
-      "협력 기공소와 어벗츠기공소 모두 플랫폼 사용에 제한이 없습니다.",
-    ],
-  },
-] as const;
-
-/** `/` 워크플로우 3단계 */
-export const landingHomeWorkflow = [
-  {
-    step: "01",
-    title: "명확한 의뢰 전달",
-    body: "스캔과 요청을 플랫폼으로 보내 기공소가 필요한 정보를 한눈에 확인합니다.",
-  },
-  {
-    step: "02",
-    title: "정확한 기공 협업",
-    body: "의뢰 내용과 이슈를 케이스 단위로 공유해 필요한 소통과 문제 해결을 이어갑니다.",
-  },
-  {
-    step: "03",
-    title: "통합된 생산과 납품",
-    body: "디자인 등록 후 통합 생산 시스템에서 실시간 가공하여 고품질 결과물을 납품합니다.",
-  },
-] as const;
-
-/** `/` HOW IT WORKS 4단계 */
-export const landingHomeSteps = [
-  {
-    title: "구강스캔·의뢰 등록",
-    body: "치과가 스캔 데이터와 케이스별 요청 사항을 어벗츠 플랫폼으로 빠르게 전달합니다.",
-  },
-  {
-    title: "기공소 작업·소통",
-    body: "기공소가 의뢰 내용을 확인하고, 이슈가 있으면 해당 케이스 안에서 치과와 소통합니다.",
-  },
-  {
-    title: "커스텀어벗",
-    body: "기공소가 커스텀 어벗 디자인을 플랫폼에 등록하면, 통합 시스템이 실시간 가공하여 납품합니다.",
-  },
-  {
-    title: "기공소 생산·납품",
-    body: "커스텀어벗과 기공물은 기공소의 최종 검수를 거쳐 최상의 상태로 납품합니다.",
   },
 ] as const;
 

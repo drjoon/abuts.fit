@@ -17,6 +17,7 @@ import {
   landingContent,
   landingHome,
   landingSectionY,
+  landingSky,
 } from "@/features/landing/landingTheme";
 import { cn } from "@/shared/ui/cn";
 
@@ -51,7 +52,7 @@ export function LandingEventsSection() {
   return (
     <section
       id="events"
-      className={cn("scroll-mt-20 bg-white", landingSectionY.band)}
+      className={cn("scroll-mt-20", landingSky.band, landingSectionY.band)}
     >
       <div className={landingContent}>
         <h2 className="text-2xl font-semibold tracking-tight text-[#0b2a5c] sm:text-[2rem]">

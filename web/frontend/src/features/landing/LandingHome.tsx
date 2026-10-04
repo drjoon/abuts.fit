@@ -21,7 +21,6 @@ import {
   landingHome,
   landingHomeBusinessTabs,
   landingHomeFaq,
-  landingHomeSteps,
   landingContent,
   landingProse,
   landingSectionY,
@@ -34,7 +33,6 @@ import { LandingMagnetic } from "./LandingMagnetic";
 import { LandingReveal } from "./LandingReveal";
 import { LandingScrollProgress } from "./LandingScrollProgress";
 import { LandingSectionRail, type LandingRailItem } from "./LandingSectionRail";
-import { LandingSpotlightCard } from "./LandingSpotlightCard";
 
 const TYPO = landingTypo;
 const SKY = landingSky;
@@ -44,7 +42,6 @@ const GALLERY_SLIDE_MS = 7000;
 const RAIL_ITEMS: LandingRailItem[] = [
   { id: "hero", label: "시작" },
   { id: "business", label: "워크플로우" },
-  { id: "process", label: "진행 절차" },
   { id: "events", label: "행사" },
   { id: "faq", label: "자주 묻는 질문" },
   { id: "contact", label: "시작하기" },
@@ -305,76 +302,12 @@ export function LandingHome() {
         </div>
       </section>
 
-      {/* 연결 가치 + 진행 절차 — Why/Workflow/Pain 중복을 한 섹션으로 */}
-      <section
-        id="process"
-        className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
-      >
-        <div className={landingContent}>
-          <LandingReveal className={cn(landingProse, "text-center")}>
-            <SectionEyebrow>{landingHome.stepsEyebrow}</SectionEyebrow>
-            <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>
-              {landingHome.whyHeading}
-            </h2>
-            <p className={cn("mt-2.5", TYPO.lead)}>{landingHome.stepsLead}</p>
-          </LandingReveal>
-
-          <LandingReveal className="relative mt-8 overflow-hidden rounded-2xl sm:mt-10">
-            <img
-              src="/landing/waveon/partnership.jpg"
-              alt="치과·기공소 디지털 협업"
-              className="h-[12rem] w-full object-cover object-center sm:h-[16rem] lg:h-[18rem] min-[1600px]:h-[22rem] min-[1920px]:h-[26rem]"
-            />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#071937]/45 via-sky-500/10 to-transparent" />
-          </LandingReveal>
-
-          <ol className="mt-6 grid gap-3 sm:mt-8 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
-            {landingHomeSteps.map((item, index) => (
-              <LandingReveal as="li" key={item.title} delay={index * 90}>
-                <LandingSpotlightCard
-                  className={cn(SKY.card, "h-full px-4 py-5 sm:px-5 sm:py-6")}
-                >
-                  <p className={cn("text-[13px] font-bold", SKY.accentStrong)}>
-                    {String(index + 1).padStart(2, "0")}
-                  </p>
-                  <h3
-                    className={cn(
-                      "mt-2 break-keep text-base font-semibold tracking-tight sm:text-lg",
-                      SKY.ink,
-                    )}
-                  >
-                    {item.title}
-                  </h3>
-                  <p className={cn("mt-2", TYPO.body)}>{item.body}</p>
-                </LandingSpotlightCard>
-              </LandingReveal>
-            ))}
-          </ol>
-
-          <LandingReveal className="mt-8 flex justify-center">
-            <LandingMagnetic>
-              <Button
-                type="button"
-                className={cn(
-                  "landing-btn h-10 px-6 text-[14px] font-semibold",
-                  SKY.pillGhost,
-                )}
-                onClick={() => navigate("/contact")}
-              >
-                플랫폼 도입 상담
-                <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-              </Button>
-            </LandingMagnetic>
-          </LandingReveal>
-        </div>
-      </section>
-
       <LandingEventsSection />
 
-      {/* FAQ — 행사(흰) 다음 파란 밴드 */}
+      {/* FAQ — 행사(파랑) 다음 흰 밴드 */}
       <section
         id="faq"
-        className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
+        className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
       >
         <div
           className={cn(
@@ -413,8 +346,8 @@ export function LandingHome() {
         </div>
       </section>
 
-      {/* CTA — FAQ(파랑) 다음 흰 밴드 */}
-      <section id="contact" className={cn("scroll-mt-20 bg-white")}>
+      {/* CTA — FAQ(흰) 다음 파란 밴드 */}
+      <section id="contact" className={cn("scroll-mt-20", SKY.band)}>
         <div
           className={cn(
             landingContent,
