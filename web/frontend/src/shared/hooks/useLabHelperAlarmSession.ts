@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/practice/labReceiveSoundPrefs.ts
 // - web/frontend/src/App.tsx
 // change-log:
+// - 2026-10-04: prefs.soundId를 헬퍼 세션에 동기화.
 // - 2026-10-04: 세션에 businessAnchorId — 헬퍼 open-href가 같은 계정 탭만 연다.
 // - 2026-10-03: 치과도 헬퍼 세션(alertMode=send). 포커스 없으면 browserAlive=false.
 // - 2026-10-03: 로그아웃만 해당 토큰 clear — 다른 창 계정의 세션을 지우지 않음.
@@ -76,7 +77,7 @@ const pushSession = (
     apiOrigin: resolveLabHelperApiOrigin(),
     appOrigin: window.location.origin,
     token,
-    prefs: { enabled: prefs.enabled },
+    prefs: { enabled: prefs.enabled, soundId: prefs.soundId },
     browserAlive,
     alertMode,
     businessAnchorId,

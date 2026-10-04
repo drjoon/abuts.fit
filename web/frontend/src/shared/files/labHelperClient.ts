@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: CURRENT_VERSION=15 — 플랫폼 alert 토스트 룩·알림음 샘플(soundId).
 // - 2026-10-04: CURRENT_VERSION=14 — PC 알람 서버 WS(롱폴링 제거).
 // - 2026-10-04: CURRENT_VERSION=13 — Mac open-href ba 필수 매칭·계정 탭 탐색.
 // - 2026-10-04: CURRENT_VERSION=12 — OS 커스텀 플로팅 알림 토스트.
@@ -32,7 +33,7 @@ export const LAB_HELPER_ALARM_MIN_VERSION = 4;
 /** Mac 시스템 설정 열기(/open-privacy-settings)에 필요한 최소 버전 */
 export const LAB_HELPER_PRIVACY_SETTINGS_MIN_VERSION = 10;
 /** 배포 중인 최신 연결 프로그램 버전(구버전이면 자동 갱신 유도) */
-export const LAB_HELPER_CURRENT_VERSION = 14;
+export const LAB_HELPER_CURRENT_VERSION = 15;
 const INSTALLED_KEY = "abuts.labHelperInstalled";
 const WORK_FOLDER_KEY = "abuts.labWorkFolder";
 
@@ -111,6 +112,8 @@ export type LabHelperHealth = {
 
 export type LabHelperAlarmPrefsPayload = {
   enabled: boolean;
+  /** 알림음 샘플 id (chime|sparkle|drop|bell|breeze) */
+  soundId?: string;
 };
 
 export type LabHelperAlarmSessionPayload = {
@@ -383,12 +386,14 @@ export async function notifyLabHelperAlarm(opts?: {
   title?: string;
   body?: string;
   href?: string;
+  soundId?: string;
 }): Promise<boolean> {
   if (!labHelperOs()) return false;
   return helperAlarmJson("/notify", {
     title: String(opts?.title || "").trim(),
     body: String(opts?.body || "").trim(),
     href: String(opts?.href || "").trim(),
+    soundId: String(opts?.soundId || "").trim(),
   });
 }
 
@@ -449,6 +454,7 @@ export async function syncLabHelperAlarmSession(
     token: String(payload.token || "").trim(),
     prefs: {
       enabled: payload.prefs?.enabled !== false,
+      soundId: String(payload.prefs?.soundId || "chime").trim() || "chime",
     },
     browserAlive: Boolean(payload.browserAlive),
     alertMode: payload.alertMode === "send" ? "send" : "receive",
@@ -467,7 +473,9 @@ export function startLabHelperInstallerDownload(os: LabHelperOs) {
   const installer = labHelperInstaller(os);
   try {
     const a = document.createElement("a");
-    a.href = installer.href;
+    // 브라우저·중간 캐시로 옛 zip을 받지 않게 버전을 붙인다.
+    const sep = installer.href.includes("?") ? "&" : "?";
+    a.href = `${installer.href}${sep}v=${LAB_HELPER_CURRENT_VERSION}`;
     a.download = installer.fileName;
     a.rel = "noopener";
     document.body.appendChild(a);

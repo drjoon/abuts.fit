@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: appOrigin(Vite) 우선·origin마다 낮은 remote면 다음을 본다(로컬이 prod보다 앞설 때).
 // - 2026-10-03: serve 중 version.json을 보고 새 설치본이면 --silent-update로 교체.
 // related files:
 // - bg/lab-cad-helper/win/Installer.cs
@@ -17,6 +18,8 @@ namespace Abuts.LabHelper
     {
         private static readonly string[] DefaultOrigins =
         {
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
             "https://abuts.fit",
             "https://www.abuts.fit",
         };
@@ -53,27 +56,44 @@ namespace Abuts.LabHelper
                 // older defaults
             }
 
+            var appOrigin = AlarmSession.FirstAppOrigin();
             var apiOrigin = AlarmSession.FirstApiOrigin();
 
             var origins = new System.Collections.Generic.List<string>();
-            if (!string.IsNullOrEmpty(apiOrigin)) origins.Add(apiOrigin.TrimEnd('/'));
-            foreach (var o in DefaultOrigins) origins.Add(o);
+            if (!string.IsNullOrEmpty(appOrigin)) origins.Add(appOrigin.TrimEnd('/'));
+            if (!string.IsNullOrEmpty(apiOrigin))
+            {
+                var api = apiOrigin.TrimEnd('/');
+                if (!origins.Contains(api)) origins.Add(api);
+            }
+            foreach (var o in DefaultOrigins)
+            {
+                if (!origins.Contains(o)) origins.Add(o);
+            }
 
+            var bestRemote = 0;
             foreach (var origin in origins)
             {
                 try
                 {
-                    if (TryUpdateFrom(origin)) return;
+                    int remote;
+                    if (TryUpdateFrom(origin, out remote)) return;
+                    if (remote > bestRemote) bestRemote = remote;
                 }
                 catch (Exception ex)
                 {
                     Log.Write("auto-update " + origin + ": " + ex.Message);
                 }
             }
+            if (bestRemote > 0)
+            {
+                Log.Write("auto-update up-to-date local=" + Program.Version + " bestRemote=" + bestRemote);
+            }
         }
 
-        private static bool TryUpdateFrom(string origin)
+        private static bool TryUpdateFrom(string origin, out int remote)
         {
+            remote = 0;
             var metaUrl = origin + "/downloads/lab-helper/version.json";
             var json = HttpGet(metaUrl, 8000);
             if (string.IsNullOrEmpty(json)) return false;
@@ -81,13 +101,9 @@ namespace Abuts.LabHelper
             if (map == null) return false;
             object verObj;
             if (!map.TryGetValue("version", out verObj) || verObj == null) return false;
-            int remote;
             if (!int.TryParse(Convert.ToString(verObj), out remote)) return false;
-            if (remote <= Program.Version)
-            {
-                Log.Write("auto-update up-to-date local=" + Program.Version + " remote=" + remote);
-                return true;
-            }
+            // 이 origin이 같거나 낮으면 다음 origin을 본다(로컬 Vite가 prod보다 앞설 수 있음).
+            if (remote <= Program.Version) return false;
 
             var path = "/downloads/lab-helper/AbutsLabHelperSetup.exe";
             object winObj;

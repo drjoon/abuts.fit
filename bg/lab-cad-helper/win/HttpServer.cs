@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-10-03: v7 — POST /open-href.
+// - 2026-10-04: v15 — /notify soundId 전달.
 // - 2026-10-03: v4 — POST /notify · /session · /session/clear (PC 알람).
 // - 2026-09-27: v3 HTTP API — health, 작업 폴더(조회·지정·고르기), 케이스 폴더(확인·파일 저장·열기), shutdown.
 //   TcpListener로 직접 받는다(HttpListener는 URL 예약에 관리자 권한이 필요).
@@ -284,7 +285,7 @@ namespace Abuts.LabHelper
                     var text = Str(body, "body");
                     if (string.IsNullOrEmpty(text)) text = Str(body, "message");
                     SendJson(ns, 200, origin, Ok(new Dictionary<string, object>()));
-                    AlarmNotify.Play(title, text, Str(body, "href"));
+                    AlarmNotify.Play(title, text, Str(body, "href"), Str(body, "soundId"));
                     return;
                 }
                 case "POST /open-href":

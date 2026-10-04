@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: v15 — 플랫폼 alert 토스트 룩 + 알림음 샘플(soundId)·WAV 합성.
 // - 2026-10-04: v14 — PC 알람을 서버 WS(/api/lab-helper/alarms/ws)로. 롱폴링 제거.
 // - 2026-10-04: v13 — 버전 맞춤(Mac open-href ba 매칭). Windows는 탭 탐색 없음·FE 가드.
 // - 2026-10-04: v12 — 커스텀 플로팅 토스트(보기)로 balloon 대체.
@@ -34,6 +35,7 @@ namespace Abuts.LabHelper
         public long LastHeartbeatTicks;
         public string AlertMode = "receive";
         public string BusinessAnchorId = "";
+        public string SoundId = "chime";
     }
 
     internal static class AlarmSession
@@ -158,6 +160,7 @@ namespace Abuts.LabHelper
                         LastHeartbeatTicks = found.LastHeartbeatTicks,
                         AlertMode = found.AlertMode,
                         BusinessAnchorId = found.BusinessAnchorId,
+                        SoundId = found.SoundId,
                     };
                     return true;
                 }
@@ -178,12 +181,41 @@ namespace Abuts.LabHelper
             return "";
         }
 
+        public static string FirstAppOrigin()
+        {
+            lock (Gate)
+            {
+                foreach (var kv in Rows)
+                {
+                    if (!string.IsNullOrEmpty(kv.Value.AppOrigin)) return kv.Value.AppOrigin;
+                }
+            }
+            return "";
+        }
+
+        public static string PreferredSoundId()
+        {
+            lock (Gate)
+            {
+                foreach (var kv in Rows)
+                {
+                    if (!string.IsNullOrEmpty(kv.Value.SoundId)) return kv.Value.SoundId;
+                }
+            }
+            return "chime";
+        }
+
         private static void ApplyPrefs(AlarmSessionRow row, Dictionary<string, object> prefs)
         {
             object en;
             if (prefs.TryGetValue("enabled", out en) && en != null)
             {
                 row.Enabled = IsTruthy(en);
+            }
+            object soundObj;
+            if (prefs.TryGetValue("soundId", out soundObj) && soundObj != null)
+            {
+                row.SoundId = AlarmSound.NormalizeId(Convert.ToString(soundObj));
             }
             object mutedObj;
             row.Muted = new HashSet<string>(StringComparer.Ordinal);
@@ -224,12 +256,182 @@ namespace Abuts.LabHelper
         }
     }
 
+    /// <summary>웹 chatNotifySounds.ts 와 같은 id·톤 스케치로 WAV 합성.</summary>
+    internal static class AlarmSound
+    {
+        private sealed class Note
+        {
+            public double Freq;
+            public double When;
+            public double Dur;
+            public double Peak;
+            public Note(double freq, double when, double dur, double peak)
+            {
+                Freq = freq;
+                When = when;
+                Dur = dur;
+                Peak = peak;
+            }
+        }
+
+        public static string NormalizeId(string raw)
+        {
+            var id = (raw ?? "").Trim().ToLowerInvariant();
+            if (id == "sparkle" || id == "drop" || id == "bell" || id == "breeze") return id;
+            return "chime";
+        }
+
+        private static Note[] NotesFor(string soundId)
+        {
+            switch (NormalizeId(soundId))
+            {
+                case "sparkle":
+                    return new[]
+                    {
+                        new Note(2093.0, 0, 0.09, 0.15),
+                        new Note(2637.02, 0.05, 0.11, 0.12),
+                        new Note(3135.96, 0.1, 0.22, 0.1),
+                    };
+                case "drop":
+                    return new[]
+                    {
+                        new Note(1174.66, 0, 0.2, 0.22),
+                        new Note(880.0, 0.11, 0.34, 0.1),
+                    };
+                case "bell":
+                    return new[]
+                    {
+                        new Note(1318.51, 0, 0.34, 0.17),
+                        new Note(1975.53, 0.02, 0.4, 0.11),
+                    };
+                case "breeze":
+                    return new[]
+                    {
+                        new Note(987.77, 0, 0.16, 0.13),
+                        new Note(1480.0, 0.08, 0.2, 0.15),
+                        new Note(1760.0, 0.17, 0.3, 0.1),
+                    };
+                default:
+                    return new[]
+                    {
+                        new Note(1567.98, 0, 0.15, 0.2),
+                        new Note(2349.32, 0.07, 0.28, 0.14),
+                    };
+            }
+        }
+
+        public static void Play(string soundId)
+        {
+            try
+            {
+                var wav = BuildWav(NotesFor(soundId));
+                var t = new Thread(() =>
+                {
+                    try
+                    {
+                        using (var ms = new MemoryStream(wav))
+                        using (var player = new SoundPlayer(ms))
+                        {
+                            player.PlaySync();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Write("sound play: " + ex.Message);
+                    }
+                })
+                { IsBackground = true, Name = "alarm-sound" };
+                t.Start();
+            }
+            catch (Exception ex)
+            {
+                Log.Write("sound: " + ex.Message);
+                try { SystemSounds.Asterisk.Play(); } catch { }
+            }
+        }
+
+        private static byte[] BuildWav(Note[] notes)
+        {
+            const int sampleRate = 44100;
+            var end = 0.05;
+            for (var i = 0; i < notes.Length; i++)
+            {
+                var e = notes[i].When + notes[i].Dur + 0.02;
+                if (e > end) end = e;
+            }
+            var count = (int)(end * sampleRate);
+            if (count < 1) count = 1;
+            var samples = new short[count];
+            for (var n = 0; n < notes.Length; n++)
+            {
+                var note = notes[n];
+                var start = (int)(note.When * sampleRate);
+                var len = (int)(note.Dur * sampleRate);
+                for (var i = 0; i < len; i++)
+                {
+                    var idx = start + i;
+                    if (idx < 0 || idx >= count) continue;
+                    var t = i / (double)sampleRate;
+                    var env = Math.Exp(-t * (4.2 / Math.Max(0.05, note.Dur)));
+                    var amp = note.Peak * env;
+                    var phase = 2.0 * Math.PI * note.Freq * t;
+                    var v = amp * (
+                        Math.Sin(phase) +
+                        0.18 * Math.Sin(phase * 2) +
+                        0.05 * Math.Sin(phase * 3));
+                    var mixed = samples[idx] / 32767.0 + v;
+                    if (mixed > 0.98) mixed = 0.98;
+                    if (mixed < -0.98) mixed = -0.98;
+                    samples[idx] = (short)(mixed * 32767.0);
+                }
+            }
+
+            var dataBytes = count * 2;
+            var wav = new byte[44 + dataBytes];
+            WriteAscii(wav, 0, "RIFF");
+            WriteInt32(wav, 4, 36 + dataBytes);
+            WriteAscii(wav, 8, "WAVE");
+            WriteAscii(wav, 12, "fmt ");
+            WriteInt32(wav, 16, 16);
+            WriteInt16(wav, 20, 1);
+            WriteInt16(wav, 22, 1);
+            WriteInt32(wav, 24, sampleRate);
+            WriteInt32(wav, 28, sampleRate * 2);
+            WriteInt16(wav, 32, 2);
+            WriteInt16(wav, 34, 16);
+            WriteAscii(wav, 36, "data");
+            WriteInt32(wav, 40, dataBytes);
+            Buffer.BlockCopy(samples, 0, wav, 44, dataBytes);
+            return wav;
+        }
+
+        private static void WriteAscii(byte[] buf, int offset, string s)
+        {
+            var bytes = Encoding.ASCII.GetBytes(s);
+            Buffer.BlockCopy(bytes, 0, buf, offset, bytes.Length);
+        }
+
+        private static void WriteInt16(byte[] buf, int offset, short v)
+        {
+            buf[offset] = (byte)(v & 0xff);
+            buf[offset + 1] = (byte)((v >> 8) & 0xff);
+        }
+
+        private static void WriteInt32(byte[] buf, int offset, int v)
+        {
+            buf[offset] = (byte)(v & 0xff);
+            buf[offset + 1] = (byte)((v >> 8) & 0xff);
+            buf[offset + 2] = (byte)((v >> 16) & 0xff);
+            buf[offset + 3] = (byte)((v >> 24) & 0xff);
+        }
+    }
+
     internal static class AlarmNotify
     {
         private static readonly object Gate = new object();
         private static long _lastPlayedMs;
 
-        public static void Play(string title, string body, string href = "")
+        public static void Play(string title, string body, string href = "", string soundId = "")
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             lock (Gate)
@@ -237,14 +439,10 @@ namespace Abuts.LabHelper
                 if (now - _lastPlayedMs < AlarmSession.SoundDebounceMs) return;
                 _lastPlayedMs = now;
             }
-            try
-            {
-                SystemSounds.Asterisk.Play();
-            }
-            catch (Exception ex)
-            {
-                Log.Write("sound: " + ex.Message);
-            }
+            var id = string.IsNullOrWhiteSpace(soundId)
+                ? AlarmSession.PreferredSoundId()
+                : AlarmSound.NormalizeId(soundId);
+            AlarmSound.Play(id);
             ShowToast(title, body, href);
         }
 
@@ -318,36 +516,87 @@ namespace Abuts.LabHelper
                 _toastForm = null;
             }
 
-            var brand = Color.FromArgb(59, 130, 246);
+            // 웹 alert 토스트: soft sky card · 그라데이션 액센트 · soft 보기 버튼
+            var sky = Color.FromArgb(56, 189, 248);       // sky-400
+            var primary = Color.FromArgb(37, 99, 235);    // primary
+            var indigo = Color.FromArgb(99, 102, 241);    // indigo-500
+            var skySoft = Color.FromArgb(240, 249, 255);  // sky-50
+            var skyBorder = Color.FromArgb(186, 230, 253);
+            var skyText = Color.FromArgb(3, 105, 161);    // sky-700
+
             var form = new Form
             {
                 FormBorderStyle = FormBorderStyle.None,
                 ShowInTaskbar = false,
                 TopMost = true,
                 StartPosition = FormStartPosition.Manual,
-                Size = new Size(360, 92),
+                Size = new Size(372, 96),
                 BackColor = Color.White,
                 Padding = new Padding(0),
             };
-            form.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, form.Width + 1, form.Height + 1, 16, 16));
+            form.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, form.Width + 1, form.Height + 1, 18, 18));
+            form.Paint += (_, e) =>
+            {
+                using (var brush = new System.Drawing.Drawing2D.LinearGradientBrush(
+                    form.ClientRectangle,
+                    Color.White,
+                    skySoft,
+                    135f))
+                {
+                    e.Graphics.FillRectangle(brush, form.ClientRectangle);
+                }
+                using (var pen = new Pen(Color.FromArgb(180, skyBorder), 1f))
+                {
+                    e.Graphics.DrawRectangle(pen, 0, 0, form.Width - 1, form.Height - 1);
+                }
+            };
 
             var accent = new Panel
             {
-                BackColor = brand,
                 Dock = DockStyle.Left,
-                Width = 5,
+                Width = 4,
+            };
+            accent.Paint += (_, e) =>
+            {
+                using (var brush = new System.Drawing.Drawing2D.LinearGradientBrush(
+                    accent.ClientRectangle,
+                    sky,
+                    indigo,
+                    90f))
+                {
+                    var blend = new System.Drawing.Drawing2D.ColorBlend(3);
+                    blend.Colors = new[] { sky, primary, indigo };
+                    blend.Positions = new[] { 0f, 0.5f, 1f };
+                    brush.InterpolationColors = blend;
+                    e.Graphics.FillRectangle(brush, accent.ClientRectangle);
+                }
             };
             form.Controls.Add(accent);
 
-            var badge = new Label
+            var badge = new Panel
             {
-                Text = "A",
-                Font = new Font("Segoe UI", 11f, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = brand,
-                TextAlign = ContentAlignment.MiddleCenter,
-                Size = new Size(36, 36),
-                Location = new Point(18, 28),
+                Size = new Size(40, 40),
+                Location = new Point(16, 28),
+            };
+            badge.Paint += (_, e) =>
+            {
+                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var rect = new Rectangle(0, 0, badge.Width - 1, badge.Height - 1);
+                using (var path = RoundedRect(rect, 14))
+                using (var brush = new System.Drawing.Drawing2D.LinearGradientBrush(
+                    rect, sky, primary, 135f))
+                {
+                    e.Graphics.FillPath(brush, path);
+                }
+                using (var font = new Font("Segoe UI", 11f, FontStyle.Bold))
+                using (var sf = new StringFormat
+                {
+                    Alignment = StringAlignment.Center,
+                    LineAlignment = StringAlignment.Center,
+                })
+                {
+                    e.Graphics.DrawString("A", font, Brushes.White, rect, sf);
+                }
             };
             form.Controls.Add(badge);
 
@@ -355,36 +604,40 @@ namespace Abuts.LabHelper
             {
                 Text = title,
                 Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(30, 41, 59),
+                ForeColor = Color.FromArgb(15, 23, 42),
+                BackColor = Color.Transparent,
                 AutoEllipsis = true,
-                Location = new Point(64, 24),
-                Size = new Size(196, 22),
+                Location = new Point(66, 26),
+                Size = new Size(200, 22),
             };
             form.Controls.Add(titleLbl);
 
             var bodyLbl = new Label
             {
                 Text = body,
-                Font = new Font("Segoe UI", 9f, FontStyle.Regular),
+                Font = new Font("Segoe UI", 8.75f, FontStyle.Regular),
                 ForeColor = Color.FromArgb(100, 116, 139),
+                BackColor = Color.Transparent,
                 AutoEllipsis = true,
-                Location = new Point(64, 48),
-                Size = new Size(196, 20),
+                Location = new Point(66, 50),
+                Size = new Size(200, 20),
             };
             form.Controls.Add(bodyLbl);
 
             var viewBtn = new Button
             {
                 Text = "보기",
-                Font = new Font("Segoe UI", 9f, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = brand,
+                Font = new Font("Segoe UI", 8.75f, FontStyle.Bold),
+                ForeColor = skyText,
+                BackColor = skySoft,
                 FlatStyle = FlatStyle.Flat,
-                Size = new Size(56, 32),
-                Location = new Point(268, 30),
+                Size = new Size(58, 32),
+                Location = new Point(276, 32),
                 Cursor = Cursors.Hand,
             };
-            viewBtn.FlatAppearance.BorderSize = 0;
+            viewBtn.FlatAppearance.BorderColor = skyBorder;
+            viewBtn.FlatAppearance.BorderSize = 1;
+            viewBtn.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, viewBtn.Width + 1, viewBtn.Height + 1, 16, 16));
             viewBtn.Click += (_, __) =>
             {
                 try { form.Close(); } catch { }
@@ -397,13 +650,14 @@ namespace Abuts.LabHelper
                 Text = "✕",
                 Font = new Font("Segoe UI", 8f),
                 ForeColor = Color.FromArgb(148, 163, 184),
-                BackColor = Color.White,
+                BackColor = Color.Transparent,
                 FlatStyle = FlatStyle.Flat,
-                Size = new Size(22, 22),
-                Location = new Point(330, 8),
+                Size = new Size(24, 24),
+                Location = new Point(340, 8),
                 Cursor = Cursors.Hand,
             };
             closeBtn.FlatAppearance.BorderSize = 0;
+            closeBtn.FlatAppearance.MouseOverBackColor = Color.FromArgb(15, 15, 23, 42);
             closeBtn.Click += (_, __) =>
             {
                 try { form.Close(); } catch { }
@@ -411,7 +665,7 @@ namespace Abuts.LabHelper
             form.Controls.Add(closeBtn);
 
             var wa = Screen.PrimaryScreen.WorkingArea;
-            form.Location = new Point(wa.Right - form.Width - 16, wa.Top + 16);
+            form.Location = new Point(wa.Right - form.Width - 20, wa.Top + 20);
             form.Show();
             _toastForm = form;
 
@@ -422,6 +676,18 @@ namespace Abuts.LabHelper
                 try { form.Close(); } catch { }
             };
             _toastTimer.Start();
+        }
+
+        private static System.Drawing.Drawing2D.GraphicsPath RoundedRect(Rectangle bounds, int radius)
+        {
+            var path = new System.Drawing.Drawing2D.GraphicsPath();
+            var d = radius * 2;
+            path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
+            path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
+            path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
+            path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
         }
 
         [System.Runtime.InteropServices.DllImport("gdi32.dll", SetLastError = true)]
@@ -588,7 +854,8 @@ namespace Abuts.LabHelper
                         AlarmNotify.Play(
                             title,
                             body,
-                            AlarmNotify.HrefFrom(alarm, latest.AppOrigin, latest.AlertMode, latest.BusinessAnchorId));
+                            AlarmNotify.HrefFrom(alarm, latest.AppOrigin, latest.AlertMode, latest.BusinessAnchorId),
+                            latest.SoundId);
                     }
                 }
                 finally

@@ -1,3 +1,4 @@
+// - 2026-10-04: v15 — 플랫폼 alert 토스트 룩 + 알림음 샘플(soundId)·WAV 합성.
 // - 2026-10-04: v14 — PC 알람을 서버 WS(/api/lab-helper/alarms/ws)로. 롱폴링 제거.
 // - 2026-10-04: v13 — open-href: ba 필수 매칭·계정 탭 2차 탐색. 토스트 보기는 ba 있을 때 앞창 새 탭 금지.
 // - 2026-10-04: v10 — POST /open-privacy-settings (Gatekeeper 「그래도 열기」용 시스템 설정).
@@ -21,7 +22,7 @@ import Foundation
 import Network
 import QuartzCore
 
-let helperVersion = 14
+let helperVersion = 15
 /** macOS 13+ 「개인정보 보호 및 보안」 */
 let macPrivacySettingsURL =
   "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
@@ -125,6 +126,7 @@ final class AlarmSession {
     var lastHeartbeat = Date.distantPast
     var alertMode = "receive"
     var businessAnchorId = ""
+    var soundId = "chime"
   }
 
   static let heartbeatExpire: TimeInterval = 60
@@ -163,6 +165,11 @@ final class AlarmSession {
     if let prefs = body["prefs"] as? [String: Any] {
       if let en = prefs["enabled"] as? Bool { row.enabled = en }
       else if let en = prefs["enabled"] as? NSNumber { row.enabled = en.boolValue }
+      if let sid = prefs["soundId"] as? String {
+        row.soundId = AlarmSound.normalizeId(sid)
+      } else if let sid = prefs["soundId"] {
+        row.soundId = AlarmSound.normalizeId("\(sid)")
+      }
       row.muted = Set((prefs["mutedPracticeIds"] as? [Any] ?? []).compactMap {
         let s = "\($0)".trimmingCharacters(in: .whitespaces)
         return s.isEmpty ? nil : s
@@ -218,9 +225,148 @@ final class AlarmSession {
     for row in rows.values where !row.apiOrigin.isEmpty { return row.apiOrigin }
     return ""
   }
+
+  /** 웹 프론트 origin — 로컬 Vite에 version.json·설치본이 있다. */
+  func firstAppOrigin() -> String {
+    lock.lock(); defer { lock.unlock() }
+    for row in rows.values where !row.appOrigin.isEmpty { return row.appOrigin }
+    return ""
+  }
+
+  func preferredSoundId() -> String {
+    lock.lock(); defer { lock.unlock() }
+    for row in rows.values where !row.soundId.isEmpty { return row.soundId }
+    return "chime"
+  }
 }
 
-/// 화면 오른쪽 위 커스텀 알림 토스트(브라우저 밖·다른 사이트에서도 보임).
+/// 웹 chatNotifySounds.ts 와 같은 id·톤 스케치로 WAV 합성.
+enum AlarmSound {
+  struct Note {
+    let freq: Double
+    let when: Double
+    let dur: Double
+    let peak: Double
+  }
+
+  static func normalizeId(_ raw: String) -> String {
+    let id = raw.trimmingCharacters(in: .whitespaces).lowercased()
+    switch id {
+    case "sparkle", "drop", "bell", "breeze": return id
+    default: return "chime"
+    }
+  }
+
+  private static func notes(for soundId: String) -> [Note] {
+    switch normalizeId(soundId) {
+    case "sparkle":
+      return [
+        Note(freq: 2093.0, when: 0, dur: 0.09, peak: 0.15),
+        Note(freq: 2637.02, when: 0.05, dur: 0.11, peak: 0.12),
+        Note(freq: 3135.96, when: 0.1, dur: 0.22, peak: 0.1),
+      ]
+    case "drop":
+      return [
+        Note(freq: 1174.66, when: 0, dur: 0.2, peak: 0.22),
+        Note(freq: 880.0, when: 0.11, dur: 0.34, peak: 0.1),
+      ]
+    case "bell":
+      return [
+        Note(freq: 1318.51, when: 0, dur: 0.34, peak: 0.17),
+        Note(freq: 1975.53, when: 0.02, dur: 0.4, peak: 0.11),
+      ]
+    case "breeze":
+      return [
+        Note(freq: 987.77, when: 0, dur: 0.16, peak: 0.13),
+        Note(freq: 1480.0, when: 0.08, dur: 0.2, peak: 0.15),
+        Note(freq: 1760.0, when: 0.17, dur: 0.3, peak: 0.1),
+      ]
+    default:
+      return [
+        Note(freq: 1567.98, when: 0, dur: 0.15, peak: 0.2),
+        Note(freq: 2349.32, when: 0.07, dur: 0.28, peak: 0.14),
+      ]
+    }
+  }
+
+  private static var playing: NSSound?
+
+  static func play(_ soundId: String) {
+    let wav = buildWav(notes(for: soundId))
+    if let sound = NSSound(data: wav) {
+      playing = sound
+      sound.play()
+      return
+    }
+    if let tink = NSSound(contentsOfFile: "/System/Library/Sounds/Tink.aiff", byReference: true) {
+      playing = tink
+      tink.play()
+    } else {
+      NSSound.beep()
+    }
+  }
+
+  private static func buildWav(_ notes: [Note]) -> Data {
+    let sampleRate = 44100
+    var end = 0.05
+    for note in notes {
+      end = max(end, note.when + note.dur + 0.02)
+    }
+    let count = max(1, Int(end * Double(sampleRate)))
+    var samples = [Int16](repeating: 0, count: count)
+    for note in notes {
+      let start = Int(note.when * Double(sampleRate))
+      let len = Int(note.dur * Double(sampleRate))
+      guard len > 0 else { continue }
+      for i in 0..<len {
+        let idx = start + i
+        guard idx >= 0, idx < count else { continue }
+        let t = Double(i) / Double(sampleRate)
+        let env = exp(-t * (4.2 / max(0.05, note.dur)))
+        let amp = note.peak * env
+        let phase = 2.0 * Double.pi * note.freq * t
+        let v = amp * (sin(phase) + 0.18 * sin(phase * 2) + 0.05 * sin(phase * 3))
+        var mixed = Double(samples[idx]) / 32767.0 + v
+        mixed = min(0.98, max(-0.98, mixed))
+        samples[idx] = Int16(mixed * 32767.0)
+      }
+    }
+    var data = Data()
+    data.append(contentsOf: Array("RIFF".utf8))
+    let dataBytes = count * 2
+    data.append(int32: Int32(36 + dataBytes))
+    data.append(contentsOf: Array("WAVE".utf8))
+    data.append(contentsOf: Array("fmt ".utf8))
+    data.append(int32: 16)
+    data.append(int16: 1)
+    data.append(int16: 1)
+    data.append(int32: Int32(sampleRate))
+    data.append(int32: Int32(sampleRate * 2))
+    data.append(int16: 2)
+    data.append(int16: 16)
+    data.append(contentsOf: Array("data".utf8))
+    data.append(int32: Int32(dataBytes))
+    for sample in samples {
+      var le = sample.littleEndian
+      Swift.withUnsafeBytes(of: &le) { data.append(contentsOf: $0) }
+    }
+    return data
+  }
+}
+
+private extension Data {
+  mutating func append(int16 value: Int16) {
+    var v = value.littleEndian
+    Swift.withUnsafeBytes(of: &v) { append(contentsOf: $0) }
+  }
+
+  mutating func append(int32 value: Int32) {
+    var v = value.littleEndian
+    Swift.withUnsafeBytes(of: &v) { append(contentsOf: $0) }
+  }
+}
+
+/// 화면 오른쪽 위 커스텀 알림 토스트(웹 alert 토스트와 같은 룩).
 final class AlarmToastController: NSObject {
   static let shared = AlarmToastController()
 
@@ -229,7 +375,12 @@ final class AlarmToastController: NSObject {
   private var bodyLabel: NSTextField?
   private var href = ""
   private var dismissWork: DispatchWorkItem?
-  private let brand = NSColor(srgbRed: 0.231, green: 0.510, blue: 0.965, alpha: 1)
+  private let sky = NSColor(srgbRed: 0.220, green: 0.741, blue: 0.973, alpha: 1) // sky-400
+  private let primary = NSColor(srgbRed: 0.145, green: 0.388, blue: 0.922, alpha: 1)
+  private let indigo = NSColor(srgbRed: 0.388, green: 0.400, blue: 0.945, alpha: 1)
+  private let skySoft = NSColor(srgbRed: 0.941, green: 0.976, blue: 1.0, alpha: 1)
+  private let skyBorder = NSColor(srgbRed: 0.729, green: 0.902, blue: 0.992, alpha: 1)
+  private let skyText = NSColor(srgbRed: 0.012, green: 0.412, blue: 0.631, alpha: 1)
 
   func show(title: String, body: String, href: String) {
     DispatchQueue.main.async {
@@ -244,7 +395,10 @@ final class AlarmToastController: NSObject {
   private func present(title: String, body: String, href: String) {
     dismissWork?.cancel()
     self.href = href.trimmingCharacters(in: .whitespaces)
-    if panel == nil { buildPanel() }
+    // 레이어/그라데이션을 매번 새로 그려 이전 룩이 남지 않게 한다.
+    panel?.orderOut(nil)
+    panel = nil
+    buildPanel()
     titleLabel?.stringValue = title
     bodyLabel?.stringValue = body
     guard let panel else { return }
@@ -288,8 +442,8 @@ final class AlarmToastController: NSObject {
   }
 
   private func buildPanel() {
-    let width: CGFloat = 360
-    let height: CGFloat = 92
+    let width: CGFloat = 372
+    let height: CGFloat = 96
     let panel = NSPanel(
       contentRect: NSRect(x: 0, y: 0, width: width, height: height),
       styleMask: [.borderless, .nonactivatingPanel],
@@ -306,23 +460,43 @@ final class AlarmToastController: NSObject {
 
     let root = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
     root.wantsLayer = true
-    root.layer?.cornerRadius = 16
+    root.layer?.cornerRadius = 18
     root.layer?.masksToBounds = true
-    root.layer?.backgroundColor = NSColor.white.cgColor
+    let bg = CAGradientLayer()
+    bg.colors = [
+      NSColor.white.cgColor,
+      skySoft.cgColor,
+    ]
+    bg.startPoint = CGPoint(x: 0, y: 1)
+    bg.endPoint = CGPoint(x: 1, y: 0)
+    bg.frame = root.bounds
+    bg.cornerRadius = 18
+    root.layer?.insertSublayer(bg, at: 0)
     root.layer?.borderWidth = 1
-    root.layer?.borderColor = brand.withAlphaComponent(0.28).cgColor
+    root.layer?.borderColor = skyBorder.withAlphaComponent(0.7).cgColor
 
-    let accent = NSView(frame: NSRect(x: 0, y: 0, width: 5, height: height))
+    let accent = NSView(frame: NSRect(x: 0, y: 0, width: 4, height: height))
     accent.wantsLayer = true
-    accent.layer?.backgroundColor = brand.cgColor
+    let accentGrad = CAGradientLayer()
+    accentGrad.colors = [sky.cgColor, primary.cgColor, indigo.cgColor]
+    accentGrad.startPoint = CGPoint(x: 0.5, y: 1)
+    accentGrad.endPoint = CGPoint(x: 0.5, y: 0)
+    accentGrad.frame = accent.bounds
+    accent.layer?.addSublayer(accentGrad)
     root.addSubview(accent)
 
-    let badge = NSView(frame: NSRect(x: 18, y: 28, width: 36, height: 36))
+    let badge = NSView(frame: NSRect(x: 16, y: 28, width: 40, height: 40))
     badge.wantsLayer = true
-    badge.layer?.cornerRadius = 10
-    badge.layer?.backgroundColor = brand.cgColor
+    badge.layer?.cornerRadius = 14
+    let badgeGrad = CAGradientLayer()
+    badgeGrad.colors = [sky.cgColor, primary.cgColor]
+    badgeGrad.startPoint = CGPoint(x: 0, y: 1)
+    badgeGrad.endPoint = CGPoint(x: 1, y: 0)
+    badgeGrad.frame = badge.bounds
+    badgeGrad.cornerRadius = 14
+    badge.layer?.addSublayer(badgeGrad)
     let mark = NSTextField(labelWithString: "A")
-    mark.font = NSFont.systemFont(ofSize: 16, weight: .bold)
+    mark.font = NSFont.systemFont(ofSize: 15, weight: .bold)
     mark.textColor = .white
     mark.alignment = .center
     mark.frame = badge.bounds
@@ -331,45 +505,43 @@ final class AlarmToastController: NSObject {
 
     let title = NSTextField(labelWithString: "")
     title.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-    title.textColor = NSColor(srgbRed: 0.11, green: 0.16, blue: 0.25, alpha: 1)
+    title.textColor = NSColor(srgbRed: 0.059, green: 0.090, blue: 0.165, alpha: 1)
     title.lineBreakMode = .byTruncatingTail
-    title.frame = NSRect(x: 64, y: 52, width: 196, height: 20)
+    title.frame = NSRect(x: 66, y: 52, width: 200, height: 20)
     root.addSubview(title)
     titleLabel = title
 
     let body = NSTextField(labelWithString: "")
     body.font = NSFont.systemFont(ofSize: 12, weight: .regular)
-    body.textColor = NSColor(srgbRed: 0.39, green: 0.45, blue: 0.55, alpha: 1)
+    body.textColor = NSColor(srgbRed: 0.392, green: 0.455, blue: 0.545, alpha: 1)
     body.lineBreakMode = .byTruncatingTail
-    body.frame = NSRect(x: 64, y: 30, width: 196, height: 18)
+    body.frame = NSRect(x: 66, y: 30, width: 200, height: 18)
     root.addSubview(body)
     bodyLabel = body
 
-    let viewBtn = NSButton(frame: NSRect(x: 268, y: 30, width: 56, height: 32))
-    viewBtn.title = "보기"
+    let viewBtn = NSButton(frame: NSRect(x: 276, y: 32, width: 58, height: 32))
     viewBtn.bezelStyle = .rounded
     viewBtn.isBordered = false
     viewBtn.wantsLayer = true
-    viewBtn.layer?.cornerRadius = 8
-    viewBtn.layer?.backgroundColor = brand.cgColor
-    viewBtn.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
-    viewBtn.contentTintColor = .white
+    viewBtn.layer?.cornerRadius = 16
+    viewBtn.layer?.backgroundColor = skySoft.cgColor
+    viewBtn.layer?.borderWidth = 1
+    viewBtn.layer?.borderColor = skyBorder.cgColor
     viewBtn.target = self
     viewBtn.action = #selector(openChat)
-    // 버튼 글자색 — attributed
     let attrs: [NSAttributedString.Key: Any] = [
-      .foregroundColor: NSColor.white,
+      .foregroundColor: skyText,
       .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
     ]
     viewBtn.attributedTitle = NSAttributedString(string: "보기", attributes: attrs)
     root.addSubview(viewBtn)
 
-    let close = NSButton(frame: NSRect(x: 330, y: 62, width: 22, height: 22))
+    let close = NSButton(frame: NSRect(x: 340, y: 66, width: 24, height: 22))
     close.bezelStyle = .inline
     close.isBordered = false
     close.title = "✕"
     close.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-    close.contentTintColor = NSColor(srgbRed: 0.55, green: 0.58, blue: 0.64, alpha: 1)
+    close.contentTintColor = NSColor(srgbRed: 0.58, green: 0.64, blue: 0.72, alpha: 1)
     close.target = self
     close.action = #selector(dismissClick)
     root.addSubview(close)
@@ -382,8 +554,8 @@ final class AlarmToastController: NSObject {
     guard let screen = NSScreen.main else { return }
     let visible = screen.visibleFrame
     let size = panel.frame.size
-    let x = visible.maxX - size.width - 16
-    let y = visible.maxY - size.height - 16
+    let x = visible.maxX - size.width - 20
+    let y = visible.maxY - size.height - 20
     panel.setFrameOrigin(NSPoint(x: x, y: y))
   }
 }
@@ -417,7 +589,7 @@ enum AlarmNotify {
     return "\(alarm["href"] ?? "")".trimmingCharacters(in: .whitespaces)
   }
 
-  static func play(title: String, body: String, href: String = "") {
+  static func play(title: String, body: String, href: String = "", soundId: String = "") {
     lock.lock()
     let now = Date()
     if now.timeIntervalSince(lastPlayed) < AlarmSession.soundDebounce {
@@ -426,13 +598,10 @@ enum AlarmNotify {
     }
     lastPlayed = now
     lock.unlock()
-    if let tink = NSSound(contentsOfFile: "/System/Library/Sounds/Tink.aiff", byReference: true) {
-      tink.play()
-    } else if let glass = NSSound(contentsOfFile: "/System/Library/Sounds/Glass.aiff", byReference: true) {
-      glass.play()
-    } else {
-      NSSound.beep()
-    }
+    let id = soundId.trimmingCharacters(in: .whitespaces).isEmpty
+      ? AlarmSession.shared.preferredSoundId()
+      : AlarmSound.normalizeId(soundId)
+    AlarmSound.play(id)
     AlarmToastController.shared.show(title: title, body: body, href: href)
   }
 
@@ -803,7 +972,8 @@ enum AlarmSocket {
           appOrigin: latest.appOrigin,
           alertMode: latest.alertMode,
           businessAnchorId: latest.businessAnchorId
-        )
+        ),
+        soundId: latest.soundId
       )
     }
     flag.stop()
@@ -1150,7 +1320,12 @@ final class HttpConnection {
       var text = b["body"] as? String ?? ""
       if text.isEmpty { text = b["message"] as? String ?? "" }
       respond(200, ["ok": true])
-      AlarmNotify.play(title: title, body: text, href: "\(b["href"] as? String ?? "")")
+      AlarmNotify.play(
+        title: title,
+        body: text,
+        href: "\(b["href"] as? String ?? "")",
+        soundId: "\(b["soundId"] as? String ?? "")"
+      )
       return
     case ("POST", "/open-href"):
       let href = "\(jsonBody()["href"] as? String ?? "")"
@@ -1349,15 +1524,53 @@ func startAutoUpdate() {
     Thread.sleep(forTimeInterval: 8)
     let origins: [String] = {
       var list: [String] = []
-      let origin = AlarmSession.shared.firstApiOrigin()
-      if !origin.isEmpty { list.append(origin) }
-      list.append(contentsOf: ["https://abuts.fit", "https://www.abuts.fit"])
+      // 로컬 개발은 Vite(appOrigin)에 새 zip이 있다. API origin만 보면 prod v가 낮아 갱신이 멈춘다.
+      let app = AlarmSession.shared.firstAppOrigin()
+      if !app.isEmpty { list.append(app) }
+      let api = AlarmSession.shared.firstApiOrigin()
+      if !api.isEmpty, api != app { list.append(api) }
+      // 세션 전에 auto-update가 돌 때도 로컬 Vite를 본다.
+      for o in [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://abuts.fit",
+        "https://www.abuts.fit",
+      ] where !list.contains(o) {
+        list.append(o)
+      }
       return list
     }()
+    var bestRemote = 0
     for origin in origins {
+      let remote = autoUpdateRemoteVersion(from: origin)
+      if remote > bestRemote { bestRemote = remote }
       if autoUpdateOnce(from: origin) { return }
     }
+    if bestRemote > 0 {
+      log("auto-update up-to-date local=\(helperVersion) bestRemote=\(bestRemote)")
+    }
   }
+}
+
+func autoUpdateRemoteVersion(from origin: String) -> Int {
+  let metaURL = URL(string: "\(origin)/downloads/lab-helper/version.json")!
+  var metaReq = URLRequest(url: metaURL, timeoutInterval: 8)
+  metaReq.setValue("AbutsLabHelper/\(helperVersion)", forHTTPHeaderField: "User-Agent")
+  let sem = DispatchSemaphore(value: 0)
+  var metaData: Data?
+  URLSession.shared.dataTask(with: metaReq) { data, response, _ in
+    if let http = response as? HTTPURLResponse, http.statusCode == 200 { metaData = data }
+    sem.signal()
+  }.resume()
+  _ = sem.wait(timeout: .now() + 12)
+  guard let data = metaData,
+        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+    return 0
+  }
+  if let n = obj["version"] as? Int { return n }
+  if let n = obj["version"] as? NSNumber { return n.intValue }
+  if let s = obj["version"] as? String, let n = Int(s) { return n }
+  return 0
 }
 
 func autoUpdateOnce(from origin: String) -> Bool {
@@ -1380,9 +1593,9 @@ func autoUpdateOnce(from origin: String) -> Bool {
   else if let n = obj["version"] as? NSNumber { remote = n.intValue }
   else if let s = obj["version"] as? String, let n = Int(s) { remote = n }
   else { return false }
+  // 이 origin이 같거나 낮으면 다음 origin을 본다(로컬 Vite가 prod보다 앞설 수 있음).
   if remote <= helperVersion {
-    log("auto-update up-to-date local=\(helperVersion) remote=\(remote)")
-    return true
+    return false
   }
   var path = "/downloads/lab-helper/AbutsLabHelper-mac.zip"
   if let mac = obj["mac"] as? [String: Any],

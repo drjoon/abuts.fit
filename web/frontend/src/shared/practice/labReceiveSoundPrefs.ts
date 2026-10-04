@@ -1,16 +1,26 @@
 // related files:
 // - web/frontend/src/shared/chat/chatSoundPlayer.ts
+// - web/frontend/src/shared/chat/chatNotifySounds.ts
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
 // - web/frontend/src/pages/practice/components/LabReceiveUnreadNotice.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveAlarmSettingsButton.tsx
 // change-log:
+// - 2026-10-04: soundId — 헤더 설정에서 알림음 샘플 선택.
 // - 2026-10-03: 치과별 mutedPracticeIds 제거 — 전체 on/off만.
 // - 2026-10-03: 전체 on/off + 치과별 mutedPracticeIds (헬퍼 PC 알람과 공유).
 // - 2026-09-08: 기공의뢰수신 미확인 도착 알림음 on/off (localStorage).
 
+import {
+  DEFAULT_CHAT_NOTIFY_SOUND_ID,
+  normalizeChatNotifySoundId,
+  type ChatNotifySoundId,
+} from "@/shared/chat/chatNotifySounds";
+
 export type LabReceiveSoundPrefs = {
   /** 전체 알림. 기본 true */
   enabled: boolean;
+  /** 알림음 샘플 id. 기본 chime */
+  soundId: ChatNotifySoundId;
 };
 
 const STORAGE_KEY = "abuts.fit.labReceiveSound.v1";
@@ -19,12 +29,14 @@ export const LAB_RECEIVE_SOUND_PREFS_CHANGED_EVENT =
 
 const DEFAULT_PREFS: LabReceiveSoundPrefs = {
   enabled: true,
+  soundId: DEFAULT_CHAT_NOTIFY_SOUND_ID,
 };
 
 const sanitize = (raw: unknown): LabReceiveSoundPrefs => {
   const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   return {
     enabled: obj.enabled === false ? false : true,
+    soundId: normalizeChatNotifySoundId(obj.soundId),
   };
 };
 
@@ -62,7 +74,20 @@ const persist = (next: LabReceiveSoundPrefs) => {
 export const setLabReceiveSoundEnabled = (
   enabled: boolean,
 ): LabReceiveSoundPrefs => {
-  const next = { enabled: Boolean(enabled) };
+  const cur = getLabReceiveSoundPrefs();
+  const next = { ...cur, enabled: Boolean(enabled) };
+  persist(next);
+  return next;
+};
+
+export const setLabReceiveSoundId = (
+  soundId: ChatNotifySoundId | string,
+): LabReceiveSoundPrefs => {
+  const cur = getLabReceiveSoundPrefs();
+  const next = {
+    ...cur,
+    soundId: normalizeChatNotifySoundId(soundId),
+  };
   persist(next);
   return next;
 };

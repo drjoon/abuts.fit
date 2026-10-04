@@ -5,6 +5,7 @@
  * - web/frontend/src/shared/files/labHelperClient.ts
  * - web/frontend/src/shared/components/LabHelperUpdatePrompt.tsx
  * change-log:
+ * - 2026-10-04: 대기 중 현재/필요 버전 표시(구버전이면 스피너만 도는 혼동 방지).
  * - 2026-10-04: Mac 2단계 — 휴지통 안내 삭제, 「완료」만 → 「완료」를.
  * - 2026-10-04: Mac 「설정 열기」— 프로토콜 링크 대신 ConfirmDialog(`MacPrivacySettingsOpenButton`).
  * - 2026-10-03: 아코디언·제목 아래 안내 문구 제거. Mac은 3단계(완료 → 그래도 열기)만.
@@ -63,14 +64,17 @@ export function LabHelperUpdateDialog({ open, onResolved }: LabHelperUpdateDialo
     [isMac],
   );
   const [done, setDone] = useState(false);
+  const [runningVersion, setRunningVersion] = useState<number | null>(null);
   const onResolvedRef = useRef(onResolved);
   onResolvedRef.current = onResolved;
 
   useEffect(() => {
     if (!open) return;
     setDone(false);
+    setRunningVersion(null);
     const ac = new AbortController();
     let timer = 0;
+    let poll = 0;
     const finish = () => {
       setDone(true);
       timer = window.setTimeout(() => onResolvedRef.current(true), 700);
@@ -78,11 +82,20 @@ export function LabHelperUpdateDialog({ open, onResolved }: LabHelperUpdateDialo
     void (async () => {
       const health = await probeLabHelper();
       if (ac.signal.aborted) return;
-      if (Number(health?.version || 0) >= LAB_HELPER_CURRENT_VERSION) {
+      const ver = Number(health?.version || 0);
+      if (ver > 0) setRunningVersion(ver);
+      if (ver >= LAB_HELPER_CURRENT_VERSION) {
         finish();
         return;
       }
       startLabHelperInstallerDownload(isMac ? "mac" : "windows");
+      poll = window.setInterval(() => {
+        void probeLabHelper().then((h) => {
+          if (ac.signal.aborted) return;
+          const v = Number(h?.version || 0);
+          if (v > 0) setRunningVersion(v);
+        });
+      }, 1500);
       const next = await waitForLabHelperMinVersion(
         ac.signal,
         LAB_HELPER_CURRENT_VERSION,
@@ -92,6 +105,7 @@ export function LabHelperUpdateDialog({ open, onResolved }: LabHelperUpdateDialo
     return () => {
       ac.abort();
       window.clearTimeout(timer);
+      window.clearInterval(poll);
     };
   }, [open, isMac]);
 
@@ -168,7 +182,15 @@ export function LabHelperUpdateDialog({ open, onResolved }: LabHelperUpdateDialo
           ) : (
             <>
               <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-              <span className="min-w-0 flex-1">설치되면 자동으로 닫힙니다</span>
+              <span className="min-w-0 flex-1">
+                설치되면 자동으로 닫힙니다
+                {runningVersion != null && runningVersion > 0 ? (
+                  <>
+                    <br />
+                    현재 v{runningVersion} · 필요 v{LAB_HELPER_CURRENT_VERSION}
+                  </>
+                ) : null}
+              </span>
               <Button
                 type="button"
                 variant="ghost"

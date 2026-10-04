@@ -2,12 +2,15 @@
  * 기공의뢰수신 — 헤더 설정 팝오버(보기 전환 · PC 알람 · 연결 프로그램).
  * related files:
  * - web/frontend/src/shared/practice/labReceiveSoundPrefs.ts
+ * - web/frontend/src/shared/chat/chatNotifySounds.ts
  * - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
  * - web/frontend/src/shared/hooks/useLabHelperInstallPrompt.tsx
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
  * - web/frontend/src/pages/practice/components/LabReceiveUnreadNotice.tsx
  * change-log:
+ * - 2026-10-04: 알림음 — 한 줄 항목 클릭 시 중첩 팝오버로 샘플 선택.
+ * - 2026-10-04: 알림음 샘플 선택·미리듣기.
  * - 2026-10-04: 연결 프로그램 설치·업데이트 항목.
  * - 2026-10-03: 전체 알림 켜면 미리듣기(제스처로 AudioContext unlock).
  * - 2026-10-03: 치과 발신 헤더에서도 재사용(보기·전체 알림).
@@ -16,7 +19,7 @@
  * - 2026-10-03: 헤더 데모 뱃지 왼쪽 — 전체 on/off.
  */
 import { useEffect, useState } from "react";
-import { CalendarDays, List, Settings } from "lucide-react";
+import { CalendarDays, ChevronDown, List, Settings, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -34,9 +37,14 @@ import {
   LAB_RECEIVE_SOUND_PREFS_CHANGED_EVENT,
   getLabReceiveSoundPrefs,
   setLabReceiveSoundEnabled,
+  setLabReceiveSoundId,
   type LabReceiveSoundPrefs,
 } from "@/shared/practice/labReceiveSoundPrefs";
 import { playChatNotifySound } from "@/shared/chat/chatSoundPlayer";
+import {
+  CHAT_NOTIFY_SOUND_OPTIONS,
+  type ChatNotifySoundId,
+} from "@/shared/chat/chatNotifySounds";
 import type { LabReceiveCalendarViewMode } from "@/shared/practice/labReceiveCalendarViewMode";
 import { useLabHelperInstallPrompt } from "@/shared/hooks/useLabHelperInstallPrompt";
 import {
@@ -75,6 +83,22 @@ function presenceActionLabel(presence: LabHelperPresence): string {
   return "설치";
 }
 
+const previewSound = (soundId: ChatNotifySoundId) => {
+  playChatNotifySound({
+    force: true,
+    soundId,
+    title: "알림음",
+    body: "미리듣기",
+  });
+};
+
+function soundLabel(soundId: ChatNotifySoundId): string {
+  return (
+    CHAT_NOTIFY_SOUND_OPTIONS.find((opt) => opt.id === soundId)?.label ||
+    CHAT_NOTIFY_SOUND_OPTIONS[0].label
+  );
+}
+
 export function LabReceiveAlarmSettingsButton({
   className,
   viewMode,
@@ -82,12 +106,17 @@ export function LabReceiveAlarmSettingsButton({
 }: LabReceiveAlarmSettingsButtonProps) {
   const prefs = useLabReceiveSoundPrefsState();
   const [open, setOpen] = useState(false);
+  const [soundOpen, setSoundOpen] = useState(false);
   const [presence, setPresence] = useState<LabHelperPresence | null>(null);
   const [presenceBusy, setPresenceBusy] = useState(false);
   const { promptFromSettings, dialogs } = useLabHelperInstallPrompt();
   const globalOn = prefs.enabled;
   const showViewMode = Boolean(onViewModeChange);
   const showHelper = supportsLabHelper();
+
+  useEffect(() => {
+    if (!open) setSoundOpen(false);
+  }, [open]);
 
   useEffect(() => {
     if (!open || !showHelper) return;
@@ -185,15 +214,85 @@ export function LabReceiveAlarmSettingsButton({
               onCheckedChange={(checked) => {
                 setLabReceiveSoundEnabled(checked);
                 if (checked) {
-                  playChatNotifySound({
-                    force: true,
-                    title: "알림음",
-                    body: "알림음이 켜졌습니다.",
-                  });
+                  previewSound(prefs.soundId);
                 }
               }}
               aria-label="전체 알림"
             />
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-3 py-2.5">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-slate-900">알림음</p>
+              <p className="text-xs text-slate-500">선택·미리듣기</p>
+            </div>
+            <Popover
+              open={soundOpen}
+              onOpenChange={(next) => {
+                if (!globalOn) return;
+                setSoundOpen(next);
+              }}
+              modal={false}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!globalOn}
+                  className="h-8 max-w-[9.5rem] shrink-0 gap-1 px-2 text-xs"
+                  aria-label="알림음 선택"
+                >
+                  <Volume2 className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden />
+                  <span className="min-w-0 truncate">{soundLabel(prefs.soundId)}</span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="end"
+                side="left"
+                sideOffset={8}
+                className="w-44 gap-0 overflow-hidden p-0"
+              >
+                <ul
+                  className="max-h-[13.5rem] space-y-0.5 overflow-y-auto px-1 py-1"
+                  role="listbox"
+                  aria-label="알림음 선택"
+                >
+                  {CHAT_NOTIFY_SOUND_OPTIONS.map((opt) => {
+                    const selected = prefs.soundId === opt.id;
+                    return (
+                      <li key={opt.id}>
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-medium transition-colors",
+                            selected
+                              ? "bg-sky-50 text-sky-800"
+                              : "text-slate-700 hover:bg-slate-50",
+                          )}
+                          onClick={() => {
+                            setLabReceiveSoundId(opt.id);
+                            previewSound(opt.id);
+                            setSoundOpen(false);
+                          }}
+                        >
+                          <span className="min-w-0 flex-1 truncate">{opt.label}</span>
+                          <Volume2
+                            className={cn(
+                              "h-3.5 w-3.5 shrink-0",
+                              selected ? "text-sky-600" : "text-slate-400",
+                            )}
+                            aria-hidden
+                          />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </PopoverContent>
+            </Popover>
           </div>
           {showHelper ? (
             <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-3 py-2.5">
