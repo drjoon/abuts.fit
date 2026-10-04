@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 적립(결제) 완료/보류 필터 — 셀렉트 대신 토글 버튼 2개(둘 다 켜면 보류↑·완료↓).
 // - 2026-10-04: 기공소 실사용 전환 행 — 치과명 / 기공소 지급. 보류·완료 구분선 유지.
 // - 2026-10-04: 기공소 내역 — 적립 보류/완료를 그룹으로 묶고 라벨 구분선 1개.
 // - 2026-10-04: 실사용 전환(DEMO_DEBT_RESET·DEMO_CONVERSION) 거래내역·확인 상태 표시.
@@ -226,8 +227,8 @@ type CreditLedgerType =
 
 type LedgerCreditKindFilter = "all" | "PAID" | "FREE" | "SETTLEMENT";
 type LedgerActionFilter = "all" | "CHARGE" | "SPEND" | "ADJUST";
-/** 결제·적립 진행 상태 필터(표시 뱃지와 동일) */
-type LedgerPayoutStatusFilter = "all" | "settled" | "hold";
+/** 결제·적립 진행 상태 필터(표시 뱃지와 동일). none=완료·보류 둘 다 끔 */
+type LedgerPayoutStatusFilter = "all" | "settled" | "hold" | "none";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -2880,10 +2881,25 @@ export const CreditLedgerModal = ({
     filter: LedgerPayoutStatusFilter,
   ) => {
     if (filter === "all") return true;
+    if (filter === "none") return !status || status === "canceled";
     if (!status || status === "canceled") return false;
     if (filter === "settled") return status === "settled";
     // 보류: 미완료(보류·일부)
     return status === "hold" || status === "partial";
+  };
+
+  const payoutSettledOn =
+    payoutStatus === "all" || payoutStatus === "settled";
+  const payoutHoldOn = payoutStatus === "all" || payoutStatus === "hold";
+
+  const setPayoutStatusToggles = (next: {
+    settled: boolean;
+    hold: boolean;
+  }) => {
+    if (next.settled && next.hold) setPayoutStatus("all");
+    else if (next.settled) setPayoutStatus("settled");
+    else if (next.hold) setPayoutStatus("hold");
+    else setPayoutStatus("none");
   };
 
   const filteredRows = useMemo(() => {
@@ -3457,28 +3473,45 @@ export const CreditLedgerModal = ({
               </Select>
             </div>
 
-            <div className="w-full min-w-0 sm:w-[130px]">
-              <Select
-                value={payoutStatus}
-                onValueChange={(v) =>
-                  setPayoutStatus(v as LedgerPayoutStatusFilter)
+            <div className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto">
+              <button
+                type="button"
+                aria-pressed={payoutSettledOn}
+                aria-label={isLabViewer ? "적립 완료" : "결제 완료"}
+                onClick={() =>
+                  setPayoutStatusToggles({
+                    settled: !payoutSettledOn,
+                    hold: payoutHoldOn,
+                  })
                 }
+                className={cn(
+                  "inline-flex h-9 flex-1 items-center justify-center rounded-xl border px-3 text-sm font-medium transition-colors sm:flex-none sm:min-w-[4.5rem]",
+                  payoutSettledOn
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50",
+                )}
               >
-                <SelectTrigger className="h-9 rounded-xl border-slate-200">
-                  <SelectValue placeholder="결제" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
-                    {isLabViewer ? "전체 적립" : "전체 결제"}
-                  </SelectItem>
-                  <SelectItem value="settled">
-                    {isLabViewer ? "적립 완료" : "결제 완료"}
-                  </SelectItem>
-                  <SelectItem value="hold">
-                    {isLabViewer ? "적립 보류" : "결제 보류"}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+                완료
+              </button>
+              <button
+                type="button"
+                aria-pressed={payoutHoldOn}
+                aria-label={isLabViewer ? "적립 보류" : "결제 보류"}
+                onClick={() =>
+                  setPayoutStatusToggles({
+                    settled: payoutSettledOn,
+                    hold: !payoutHoldOn,
+                  })
+                }
+                className={cn(
+                  "inline-flex h-9 flex-1 items-center justify-center rounded-xl border px-3 text-sm font-medium transition-colors sm:flex-none sm:min-w-[4.5rem]",
+                  payoutHoldOn
+                    ? "border-amber-200 bg-amber-50 text-amber-900"
+                    : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50",
+                )}
+              >
+                보류
+              </button>
             </div>
 
             <ImeSafeInput

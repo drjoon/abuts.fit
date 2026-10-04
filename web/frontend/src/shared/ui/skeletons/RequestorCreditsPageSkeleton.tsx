@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: 내역 필터 스켈레톤 — 결제(적립) 완료/보류 토글 버튼 2칸.
 // - 2026-09-20: 내역/지급 스켈레톤 — overflow 바깥 여백으로 카드 경계 클리핑 방지.
 // - 2026-09-20: 내역/지급 스켈레톤 요약 카드 — p-0.5(실 UI와 동일, overflow 클리핑 방지).
 // - 2026-09-20: 내역 필터 스켈레톤 — 결제(적립) 상태 Select 칸 추가.
@@ -65,7 +66,10 @@ export const CreditLedgerTableSkeleton = ({
     <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
       <Skeleton className="h-9 w-full rounded-xl sm:w-[130px]" />
       <Skeleton className="h-9 w-full rounded-xl sm:w-[130px]" />
-      <Skeleton className="h-9 w-full rounded-xl sm:w-[130px]" />
+      <div className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto">
+        <Skeleton className="h-9 flex-1 rounded-xl sm:w-[4.5rem] sm:flex-none" />
+        <Skeleton className="h-9 flex-1 rounded-xl sm:w-[4.5rem] sm:flex-none" />
+      </div>
       <Skeleton className="h-9 w-full rounded-xl sm:w-[280px]" />
       <Skeleton className="ml-auto h-9 w-full rounded-xl sm:w-56" />
     </div>
