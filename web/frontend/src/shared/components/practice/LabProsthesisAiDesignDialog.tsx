@@ -2352,6 +2352,7 @@ function LabProsthesisAiDesignDialog({
       !applyMarginTrace(
         editsRef.current[gesture.tooth] ?? createToothDesignEdit(),
         gesture.samples,
+        gesture.worlds,
       )
     ) {
       toast({

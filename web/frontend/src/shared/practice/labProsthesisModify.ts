@@ -406,8 +406,10 @@ export type ToothDesignEdit = {
   };
   margin: {
     radii: number[];
-    /** 점마다 삽입축 둘레 각도. 없으면 점을 등각으로 둔다. 재설정으로 닫은 곡선은 찍은 각도를 그대로 둔다. */
+    /** 점마다 삽입축 둘레 각도. 없으면 점을 등각으로 둔다. */
     angles?: number[];
+    /** 스캔 위 점 좌표(뷰어 월드). 있으면 표시는 이 점을 쓰고 원형 재구성은 하지 않는다. */
+    worlds?: Array<[number, number, number]>;
     /** 삽입축 방향 오프셋. 기하 단위. 0이면 치아 중심 평면. */
     depths: number[];
     offsetMm: number;
@@ -542,9 +544,14 @@ export type DesignHook = {
 export type MarginSample = { angle: number; radius: number; depth: number };
 
 export type DesignGesture =
-  | { type: "margin"; tooth: string; index: number; radius: number; depth?: number }
+  | { type: "margin"; tooth: string; index: number; radius: number; depth?: number; point?: [number, number, number] }
   | { type: "margin-stroke"; tooth: string; samples: MarginSample[] }
-  | { type: "margin-trace"; tooth: string; samples: MarginSample[] }
+  | {
+      type: "margin-trace";
+      tooth: string;
+      samples: MarginSample[];
+      worlds?: Array<[number, number, number]>;
+    }
   | { type: "margin-insert"; tooth: string; index: number; radius: number; depth?: number }
   | { type: "margin-remove"; tooth: string; index: number }
   | { type: "hook-add"; tooth: string; hook: DesignHook }
@@ -1051,6 +1058,7 @@ export function redetectMargin(edit: ToothDesignEdit): ToothDesignEdit {
       radii,
       depths: Array.from({ length: radii.length }, () => 0),
       angles: undefined,
+      worlds: undefined,
       offsetMm: 0,
       deleted: false,
       cavity: null,
@@ -1090,7 +1098,24 @@ function normalizeMargin(margin: ToothDesignEdit["margin"]): ToothDesignEdit["ma
     Array.isArray(rawAngles) && rawAngles.length === radii.length
       ? rawAngles.map((n) => (Number.isFinite(n) ? wrapTurn(n) : 0))
       : undefined;
-  return { ...margin, radii, depths, angles };
+  const rawWorlds = margin.worlds;
+  const worlds =
+    Array.isArray(rawWorlds) && rawWorlds.length === radii.length
+      ? rawWorlds.flatMap((row) => {
+          if (!Array.isArray(row) || row.length < 3) return [];
+          const x = Number(row[0]);
+          const y = Number(row[1]);
+          const z = Number(row[2]);
+          return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) ? [[x, y, z] as [number, number, number]] : [];
+        })
+      : undefined;
+  return {
+    ...margin,
+    radii,
+    depths,
+    angles,
+    worlds: worlds && worlds.length === radii.length ? worlds : undefined,
+  };
 }
 
 export function applyDetectedMargin(
@@ -1107,6 +1132,7 @@ export function applyDetectedMargin(
       radii: radii.slice(0, count),
       depths: depths.slice(0, count),
       angles: undefined,
+      worlds: undefined,
       offsetMm: 0,
       deleted: false,
       cavity: null,
@@ -1123,6 +1149,7 @@ export function applyMarginRadius(
   radius: number,
   pen: boolean,
   depth?: number,
+  point?: [number, number, number],
 ): ToothDesignEdit {
   const radii = edit.margin.radii.slice();
   const count = radii.length || MARGIN_POINT_COUNT;
@@ -1135,6 +1162,10 @@ export function applyMarginRadius(
   }
   const slot = ((index % count) + count) % count;
   const next = clamp(radius, MARGIN_RATIO_MIN, 2.85);
+  let worlds =
+    edit.margin.worlds?.length === count
+      ? edit.margin.worlds.map((row) => [row[0], row[1], row[2]] as [number, number, number])
+      : undefined;
   if (pen) {
     const paint = (at: number, weight: number) => {
       const key = ((at % count) + count) % count;
@@ -1145,19 +1176,28 @@ export function applyMarginRadius(
     paint(index + 1, 0.55);
     paint(index - 2, 0.22);
     paint(index + 2, 0.22);
-    return { ...edit, margin: { ...edit.margin, radii, depths, deleted: false } };
+    return { ...edit, margin: { ...edit.margin, radii, depths, worlds, deleted: false } };
   }
   // 끈 점을 따라 이웃 점도 코사인 감쇠로 같이 움직여 뾰족함을 줄인다.
   const dr = next - (radii[slot] ?? 1);
   const dd = hasDepth ? depth! - (depths?.[slot] ?? 0) : 0;
   const reach = Math.min(MARGIN_DRAG_REACH, Math.floor((count - 1) / 2));
+  const from = worlds?.[slot];
+  const dx = point && from ? point[0] - from[0] : 0;
+  const dy = point && from ? point[1] - from[1] : 0;
+  const dz = point && from ? point[2] - from[2] : 0;
   for (let k = -reach; k <= reach; k += 1) {
     const w = 0.5 * (1 + Math.cos((Math.PI * k) / (reach + 1)));
     const key = (((slot + k) % count) + count) % count;
     radii[key] = clamp((radii[key] ?? 1) + dr * w, MARGIN_RATIO_MIN, 2.85);
     if (hasDepth && depths) depths[key] = (depths[key] ?? 0) + dd * w;
+    if (worlds) {
+      const row = worlds[key]!;
+      worlds[key] = [row[0] + dx * w, row[1] + dy * w, row[2] + dz * w];
+    }
   }
-  return { ...edit, margin: { ...edit.margin, radii, depths, deleted: false } };
+  if (worlds && point) worlds[slot] = [point[0], point[1], point[2]];
+  return { ...edit, margin: { ...edit.margin, radii, depths, worlds, deleted: false } };
 }
 
 const TAU = Math.PI * 2;
@@ -1210,33 +1250,54 @@ function sampleAtAngle(path: readonly MarginSample[], target: number) {
 }
 
 /**
- * 시작점에서 찍어 시작점으로 닫은 마진. 찍은 점·중간점의 각도·반경·깊이를 그대로 둔다.
- * 등각으로 다시 나누지 않는다(그러면 자동검출과 같은 원형으로 바뀐다). 못 닫으면 null.
+ * 시작점에서 찍어 시작점으로 닫은 마진.
+ * 화면에 보이던 스캔 위 점(`worlds`)을 그대로 둔다. 극좌표로 다시 만들면 원형으로 바뀐다.
  */
 export function applyMarginTrace(
   edit: ToothDesignEdit,
   samples: readonly MarginSample[],
+  worlds?: ReadonlyArray<readonly [number, number, number]>,
 ): ToothDesignEdit | null {
+  const loopWorlds =
+    worlds && worlds.length >= 3
+      ? worlds.map((row) => [row[0], row[1], row[2]] as [number, number, number])
+      : null;
   const path = unwrapSamples(samples);
-  if (path.length < 3) return null;
-  const first = path[0]!;
-  const last = path[path.length - 1]!;
-  let closing = wrapTurn(first.angle) - wrapTurn(last.angle);
-  while (closing > Math.PI) closing -= TAU;
-  while (closing < -Math.PI) closing += TAU;
-  path.push({ ...first, angle: last.angle + closing });
-  const turn = path[path.length - 1]!.angle - first.angle;
-  if (Math.abs(Math.abs(turn) - TAU) > 0.5) return null;
-  const loop = path.slice(0, -1);
-  const radii = loop.map((sample) => clamp(sample.radius, MARGIN_RATIO_MIN, 2.85));
-  const depths = loop.map((sample) => sample.depth);
-  const angles = loop.map((sample) => wrapTurn(sample.angle));
+  if (!loopWorlds) {
+    if (path.length < 3) return null;
+    const first = path[0]!;
+    const last = path[path.length - 1]!;
+    let closing = wrapTurn(first.angle) - wrapTurn(last.angle);
+    while (closing > Math.PI) closing -= TAU;
+    while (closing < -Math.PI) closing += TAU;
+    path.push({ ...first, angle: last.angle + closing });
+    const turn = path[path.length - 1]!.angle - first.angle;
+    if (Math.abs(Math.abs(turn) - TAU) > 0.5) return null;
+  }
+  const loop = loopWorlds ? path.slice(0, loopWorlds.length) : path.slice(0, -1);
+  const count = loopWorlds?.length ?? loop.length;
+  if (count < 3) return null;
+  const radii = Array.from({ length: count }, (_, i) =>
+    clamp(loop[i]?.radius ?? samples[i]?.radius ?? 1, MARGIN_RATIO_MIN, 2.85),
+  );
+  const depths = Array.from({ length: count }, (_, i) => loop[i]?.depth ?? samples[i]?.depth ?? 0);
+  const angles = Array.from({ length: count }, (_, i) =>
+    wrapTurn(loop[i]?.angle ?? samples[i]?.angle ?? 0),
+  );
   const cavity = edit.margin.cavity
-    ? { ...edit.margin.cavity, taperDeg: Array.from({ length: radii.length }, () => NaN) }
+    ? { ...edit.margin.cavity, taperDeg: Array.from({ length: count }, () => NaN) }
     : edit.margin.cavity;
   return {
     ...edit,
-    margin: { ...edit.margin, radii, depths, angles, cavity, deleted: false },
+    margin: {
+      ...edit.margin,
+      radii,
+      depths,
+      angles,
+      worlds: loopWorlds ?? undefined,
+      cavity,
+      deleted: false,
+    },
   };
 }
 
@@ -1318,6 +1379,10 @@ export function removeMarginPoint(edit: ToothDesignEdit, index: number): ToothDe
     edit.margin.angles?.length === edit.margin.radii.length
       ? edit.margin.angles.filter(keep)
       : undefined;
+  const worlds =
+    edit.margin.worlds?.length === edit.margin.radii.length
+      ? edit.margin.worlds.filter(keep)
+      : undefined;
   return {
     ...edit,
     margin: {
@@ -1325,6 +1390,7 @@ export function removeMarginPoint(edit: ToothDesignEdit, index: number): ToothDe
       radii: edit.margin.radii.filter(keep),
       depths: (edit.margin.depths ?? []).filter(keep),
       angles,
+      worlds,
       cavity: spliceCavityTaper(edit.margin.cavity, (taper) =>
         taper.filter((_, slot) => slot !== index),
       ),
@@ -1357,13 +1423,26 @@ export function insertMarginPoint(
     let mid = shortestTurn(next - prev) / 2;
     angles.splice(at, 0, wrapTurn(prev + mid));
   }
+  const worlds =
+    edit.margin.worlds?.length === edit.margin.radii.length
+      ? edit.margin.worlds.map((row) => [row[0], row[1], row[2]] as [number, number, number])
+      : undefined;
+  if (worlds) {
+    const prev = worlds[(at - 1 + worlds.length) % worlds.length]!;
+    const next = worlds[at % worlds.length]!;
+    worlds.splice(at, 0, [
+      (prev[0] + next[0]) / 2,
+      (prev[1] + next[1]) / 2,
+      (prev[2] + next[2]) / 2,
+    ]);
+  }
   const cavity = spliceCavityTaper(edit.margin.cavity, (taper) => {
     taper.splice(at, 0, NaN);
     return taper;
   });
   return {
     ...edit,
-    margin: { ...edit.margin, radii, depths, angles, cavity, deleted: false },
+    margin: { ...edit.margin, radii, depths, angles, worlds, cavity, deleted: false },
   };
 }
 
@@ -1459,11 +1538,11 @@ export function reduceDesignGesture(
 ): ToothDesignEdit {
   switch (gesture.type) {
     case "margin":
-      return applyMarginRadius(edit, gesture.index, gesture.radius, pen, gesture.depth);
+      return applyMarginRadius(edit, gesture.index, gesture.radius, pen, gesture.depth, gesture.point);
     case "margin-stroke":
       return applyMarginStroke(edit, gesture.samples);
     case "margin-trace":
-      return applyMarginTrace(edit, gesture.samples) ?? edit;
+      return applyMarginTrace(edit, gesture.samples, gesture.worlds) ?? edit;
     case "margin-insert":
       return insertMarginPoint(edit, gesture.index, gesture.radius, gesture.depth);
     case "margin-remove":

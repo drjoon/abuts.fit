@@ -228,6 +228,9 @@ export function marginWorldPoints(args: {
   const quat = basisQuaternion(args.normal, args.right);
   const base = args.place.radius * 0.78;
   const extra = args.margin.offsetMm / unit;
+  if (args.margin.worlds && args.margin.worlds.length === args.margin.radii.length) {
+    return args.margin.worlds.map((row) => new THREE.Vector3(row[0], row[1], row[2]));
+  }
   return args.margin.radii.map((ratio, index) => {
     const angle =
       args.margin.angles?.length === args.margin.radii.length

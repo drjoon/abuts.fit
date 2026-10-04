@@ -3745,6 +3745,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
             index: drag.index,
             radius: sample.radius,
             depth: sample.depth,
+            point: [onScan.x, onScan.y, onScan.z],
           });
         } else {
           const placed = planePoint(drag.tooth);
@@ -6715,20 +6716,29 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         raycaster.ray.distanceToPoint(first) < place.radius * 0.12
       ) {
         const cloud = marginTraceCloud(tooth);
-        // 화면에 보이는 곡선(찍은 점과 중간점, 끌어 옮긴 값 포함)을 그대로 마진으로 쓴다.
+        // 화면에 보이는 스캔 위 점을 그대로 닫힌 마진으로 쓴다. 극좌표로 바꾸면 원형이 된다.
         const n = trace.points.length;
         const samples: MarginSample[] = [];
+        const worlds: Array<[number, number, number]> = [];
+        const pushWorld = (world: THREE.Vector3) => {
+          const prev = worlds[worlds.length - 1];
+          if (prev && Math.hypot(world.x - prev[0], world.y - prev[1], world.z - prev[2]) < 1e-6) {
+            return;
+          }
+          worlds.push([world.x, world.y, world.z]);
+          const sample = marginSampleAtRef.current(tooth, world);
+          if (sample) samples.push(sample);
+        };
         for (let i = 0; i < n; i += 1) {
           const from = trace.points[i]!;
           const to = trace.points[(i + 1) % n]!;
-          const chain = [from, ...(cloud ? marginTraceSegment(cloud, tooth, from, to) : [])];
-          for (const world of chain) {
-            const sample = marginSampleAtRef.current(tooth, world);
-            if (sample) samples.push(sample);
+          pushWorld(from);
+          if (cloud) {
+            for (const mid of marginTraceSegment(cloud, tooth, from, to)) pushWorld(mid);
           }
         }
         resetMarginTrace();
-        onDesignGestureRef.current?.({ type: "margin-trace", tooth, samples });
+        onDesignGestureRef.current?.({ type: "margin-trace", tooth, samples, worlds });
         return;
       }
       const cloud = marginTraceCloud(tooth);
