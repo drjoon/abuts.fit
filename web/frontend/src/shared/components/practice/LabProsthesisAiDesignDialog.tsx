@@ -94,6 +94,7 @@
 // - 2026-10-04: 「삽입축 설정」이 바로 잡고, 확정·취소는 없다. 다시 잡으려면 치아 정보 아이콘을 누른다.
 // - 2026-10-04: 한 번 잡은 뒤에는 화면을 돌려도 설정 모드로 돌아가지 않는다. 아이콘을 눌러야 다시 맞춘다.
 // - 2026-10-04: 패널 접기 셰브론은 붙은 가장자리 쪽으로 연다. 치아 정보 제목·셰브론 클릭이 드래그에 먹히지 않게 한다.
+// - 2026-10-04: 작업 패널. 상단은 스캔·디자인·모델·출력. 마진은 디자인 안. 수정은 마진·삽입축·내면·형상·훅·컷백·홀·커넥터 아코디언. 치아 라벨은 치아 정보 뱃지로.
 import {
   createContext,
   useCallback,
@@ -515,7 +516,8 @@ type WorkCloseSnapshot = {
   serverAt: ReadonlyMap<WorkScanRole, number>;
 };
 
-type DesignStage = "scan" | "margin" | "design" | "model" | "milling";
+type DesignStage = "scan" | "design" | "model" | "milling";
+type DesignFold = ModifyTool | "occlusal";
 
 type AlignWizardStep =
   | { kind: "axis"; span: string[]; page: number; pages: number }
@@ -537,10 +539,9 @@ function isOpposingOrBite(
 
 const DESIGN_STAGES: Array<{ id: DesignStage; label: string }> = [
   { id: "scan", label: "스캔" },
-  { id: "margin", label: "마진" },
   { id: "design", label: "디자인" },
   { id: "model", label: "모델" },
-  { id: "milling", label: "밀링" },
+  { id: "milling", label: "출력" },
 ];
 
 /** 다른 의뢰로 넘어간 직후. 버튼이 새로 그려져도 AI 창을 다시 연다. */
@@ -978,7 +979,7 @@ function LabProsthesisAiDesignDialog({
   const alignOpen = scanFold === "align";
   const scanbodyOpen = scanFold === "scanbody";
   const [modelOpen, setModelOpen] = useState(true);
-  const [designFold, setDesignFold] = useState<"modify" | "occlusal" | null>("modify");
+  const [designFold, setDesignFold] = useState<DesignFold | null>("margin");
   const [occlusionArch, setOcclusionArch] = useState<"upper" | "lower">("lower");
   const [occlusionMode, setOcclusionMode] = useState<OralScanOcclusionAdjust["mode"]>("vertical");
   const [occlusionMm, setOcclusionMm] = useState(0);
@@ -1609,7 +1610,7 @@ function LabProsthesisAiDesignDialog({
     });
   }
   const viewerConnectorChips: OralScanConnectorChip[] =
-    stage === "margin" || stage === "design"
+    stage === "design"
       ? bridges.flatMap((link) => {
           const edit = edits[link.from];
           if (!edit?.connector.linked || edit.connector.assembled) return [];
@@ -2686,7 +2687,8 @@ function LabProsthesisAiDesignDialog({
   const applyScanbody = (toothNumber: string) => {
     setScanbodyPickTooth(null);
     setModifyTool("margin");
-    setStage("margin");
+    setStage("design");
+    setDesignFold("margin");
     setMarginShown(true);
     setAlignKind(null);
     setAlignArch(null);
@@ -3135,6 +3137,7 @@ function LabProsthesisAiDesignDialog({
     });
     setModifyTool("refine");
     setStage("design");
+    setDesignFold("refine");
     queueSaveWorkRef.current();
   };
 
@@ -3256,19 +3259,19 @@ function LabProsthesisAiDesignDialog({
 
   const onStage = (next: DesignStage) => {
     setStage(next);
-    setMarginShown(next === "margin" || next === "design");
+    setMarginShown(next === "design");
     if (next !== "scan") {
       setAlignKind(null);
       setAlignArch(null);
       setScanbodyPickTooth(null);
     }
-    if (next === "margin") {
-      if (designFold === "occlusal") setDesignFold("modify");
+    if (next === "design") {
+      if (designFold == null || designFold === "occlusal") setDesignFold("margin");
       runMarginDetect(marginToothNumbersRef.current);
     }
     if (next === "scan" || next === "model" || next === "milling") return;
     if (canUndercut) setUndercutMap(true);
-    if (next === "design" && canContact) setContactMap(true);
+    if (canContact) setContactMap(true);
   };
 
   const hasUpperScan = scans.some((row) => row.role === "upper");
@@ -4009,8 +4012,9 @@ function LabProsthesisAiDesignDialog({
     const next = !marginShown;
     setMarginShown(next);
     if (next) {
-      setStage("margin");
+      setStage("design");
       setModifyTool("margin");
+      setDesignFold("margin");
       setAlignKind(null);
       setAlignArch(null);
     }
@@ -4514,6 +4518,7 @@ function LabProsthesisAiDesignDialog({
                 setLibraryPickerFor(null);
                 setConnectorFrom(from);
                 setModifyTool("connector");
+                setDesignFold("connector");
                 setEditBrush("none");
                 setHoleNote("");
                 setScanbodyPickTooth(null);
@@ -4876,12 +4881,12 @@ function LabProsthesisAiDesignDialog({
                   onToggle={() => setModifyPanelOpen((open) => !open)}
                   className={cn("shrink-0 gap-3 px-3.5 py-2.5", modifyPanelOpen && "border-b")}
                 >
-                  <span className="font-semibold text-foreground">단계</span>
+                  <span className="font-semibold text-foreground">작업</span>
                 </DraggablePanelHeader>
                 {modifyPanelOpen ? (
                   <div className="min-h-0 space-y-5 overflow-y-auto px-3.5 py-2.5">
                     <section className="space-y-2">
-                      <div className="grid grid-cols-5 gap-1">
+                      <div className="grid grid-cols-4 gap-1">
                         {DESIGN_STAGES.map((item) => (
                           <Button
                             key={item.id}
@@ -4892,8 +4897,14 @@ function LabProsthesisAiDesignDialog({
                             data-coach={`stage-${item.id}`}
                             onClick={() => {
                               onStage(item.id);
-                              if (item.id === "margin") setModifyTool("margin");
-                              if (item.id === "design") setModifyTool("refine");
+                              if (item.id === "design") {
+                                setModifyTool((prev) =>
+                                  prev === "scanbody" ? "margin" : prev,
+                                );
+                                setDesignFold((prev) =>
+                                  prev && prev !== "occlusal" ? prev : "margin",
+                                );
+                              }
                             }}
                           >
                             {item.label}
@@ -5323,22 +5334,31 @@ function LabProsthesisAiDesignDialog({
                         }
                       />
                     ) : null}
-                    {stage === "margin" || stage === "design" ? (
+                    {stage === "design" ? (
                       <LabProsthesisModifyPanel
-                        tool={modifyTool}
                         onTool={(next) => {
                           setModifyTool(next);
                           setEditBrush(next === "cutback" ? "plus" : "none");
                           setHoleNote("");
-                          if (next === "margin" || next === "insertion") onStage("margin");
-                          else onStage("design");
+                          setDesignFold(next);
                         }}
                         sculptBrush={sculptBrush}
                         onSculptBrush={setSculptBrush}
                         refineTab={refineTab}
                         onRefineTab={setRefineTab}
-                        open={designFold === "modify"}
-                        onOpen={(on) => setDesignFold(on ? "modify" : null)}
+                        openTool={
+                          designFold && designFold !== "occlusal" ? designFold : null
+                        }
+                        onOpenTool={(next) => {
+                          if (next) {
+                            setModifyTool(next);
+                            setEditBrush(next === "cutback" ? "plus" : "none");
+                            setHoleNote("");
+                            setDesignFold(next);
+                            return;
+                          }
+                          setDesignFold(null);
+                        }}
                         crownShellMm={activeNumber ? (crownShells[activeNumber] ?? null) : null}
                         intaglio={activeNumber ? (intaglios[activeNumber] ?? null) : null}
                         onViewFit={() => {
@@ -5425,6 +5445,7 @@ function LabProsthesisAiDesignDialog({
                           if (bridgeSpan.length === 0) return;
                           startAiming(bridgeSpan);
                           setModifyTool("insertion");
+                          setDesignFold("insertion");
                         }}
                         onRemoveHook={() => {
                           if (!activeNumber) return;

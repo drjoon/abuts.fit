@@ -18,7 +18,6 @@ import {
   CONNECTOR_SHAPES,
   CUTBACK_BRUSH_RANGE_MM,
   CUTBACK_DEPTH_RANGE_MM,
-  MODIFY_TOOLS,
   adjustMarginOffset,
   applyInnerParams,
   cutbackHasSelection,
@@ -67,7 +66,7 @@ import {
   fitDistanceRgb,
   type CrownIntaglioInfo,
 } from "@/shared/components/practice/labProsthesisEditLayer";
-import { StageSubsection, STAGE_NEST_CLASS } from "@/shared/components/practice/LabMeshEditSection";
+import { StageSubsection } from "@/shared/components/practice/LabMeshEditSection";
 import { LabRefineControls } from "@/shared/components/practice/LabRefineControls";
 import { cn } from "@/shared/ui/cn";
 
@@ -111,7 +110,6 @@ const FIT_LEGEND = `linear-gradient(90deg, ${[-0.1, -0.05, 0, 0.05, 0.1]
   .join(", ")})`;
 
 type Props = {
-  tool: ModifyTool;
   onTool: (tool: ModifyTool) => void;
   marginMode: MarginEditMode;
   onMarginMode: (mode: MarginEditMode) => void;
@@ -158,9 +156,9 @@ type Props = {
   /** 형상 도구 단계(변형·외면·맞춤). */
   refineTab: RefineTab;
   onRefineTab: (tab: RefineTab) => void;
-  /** 같은 단계의 다른 하위 메뉴와 같이, 하나만 연다. */
-  open: boolean;
-  onOpen: (on: boolean) => void;
+  /** 열린 수정 하위 메뉴. 없으면 모두 접힌다. */
+  openTool: ModifyTool | null;
+  onOpenTool: (tool: ModifyTool | null) => void;
   /** 뷰어가 맞춘 이 크라운에서 잰 가장 얇은 외면. 맞춤이 없으면 null. */
   crownShellMm: number | null;
   /** 뷰어가 지대치 스캔에서 이 크라운 내면을 만든 결과. 아직 없으면 null. */
@@ -1071,7 +1069,6 @@ function Row({
 }
 
 export function LabProsthesisModifyPanel({
-  tool,
   onTool,
   marginMode,
   onMarginMode,
@@ -1110,8 +1107,8 @@ export function LabProsthesisModifyPanel({
   onSculptBrush,
   refineTab,
   onRefineTab,
-  open,
-  onOpen,
+  openTool,
+  onOpenTool,
   crownShellMm,
   intaglio,
   onViewFit,
@@ -1145,62 +1142,28 @@ export function LabProsthesisModifyPanel({
   const marginStep = Number.isFinite(parsedStep)
     ? Math.min(MARGIN_STEP_MAX, Math.max(MARGIN_STEP_MIN, Math.round(parsedStep * 100) / 100))
     : DEFAULT_MARGIN_STEP;
-  const tools = MODIFY_TOOLS.filter((item) => item.id !== "scanbody");
   const connectorRow =
     connectors.find((row) => row.from === connectorFrom) ?? connectors[0] ?? null;
+  const openFold = (id: ModifyTool) => (on: boolean) => {
+    if (on) onTool(id);
+    onOpenTool(on ? id : null);
+  };
 
   return (
-    <StageSubsection title="수정" open={open} onOpen={onOpen}>
-      {toothLabel ? (
-        <p className="text-[11px] text-muted-foreground">{toothLabel}</p>
-      ) : null}
-      <div className="grid grid-cols-4 gap-1">
-        {tools.map((item) =>
-          item.id === "connector" && !isBridge ? (
-            <Tooltip key={item.id}>
-              <TooltipTrigger asChild>
-                <span className="flex min-w-0">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={tool === item.id ? "default" : "outline"}
-                    className="h-7 w-full px-1 text-[11px]"
-                    onClick={() => onTool(item.id)}
-                  >
-                    {item.label}
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="right" className="z-[520]">
-                브리지 스팬에서 조립합니다.
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <Button
-              key={item.id}
-              type="button"
-              size="sm"
-              variant={tool === item.id ? "default" : "outline"}
-              className="h-7 px-1 text-[11px]"
-              data-coach={`tool-${item.id}`}
-              onClick={() => onTool(item.id)}
-            >
-              {item.id === "margin" ? marginWord : item.label}
-            </Button>
-          ),
-        )}
-      </div>
-
-      <div className={cn("space-y-2", STAGE_NEST_CLASS)}>
-      {tool === "margin" && edit.pontic.on ? (
+    <>
+      <StageSubsection
+        title={marginWord}
+        open={openTool === "margin"}
+        onOpen={openFold("margin")}
+        coach="tool-margin"
+      >
+      {edit.pontic.on ? (
         <p className="text-[11px] leading-relaxed text-muted-foreground">
           폰틱은 지대치가 없어 마진을 잡지 않습니다.
           <br />
           기저면은 형상에서 고릅니다.
         </p>
-      ) : null}
-
-      {tool === "margin" && !edit.pontic.on ? (
+      ) : (
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-1">
             <Tooltip>
@@ -1400,9 +1363,15 @@ export function LabProsthesisModifyPanel({
             </div>
           ) : null}
         </div>
-      ) : null}
+      )}
+      </StageSubsection>
 
-      {tool === "insertion" ? (
+      <StageSubsection
+        title="삽입축"
+        open={openTool === "insertion"}
+        onOpen={openFold("insertion")}
+        coach="tool-insertion"
+      >
         <div className="space-y-2">
           <Tooltip>
             <TooltipTrigger asChild>
@@ -1430,10 +1399,15 @@ export function LabProsthesisModifyPanel({
             끄는 동안 언더컷 색이 바로 바뀝니다.
           </p>
         </div>
-      ) : null}
+      </StageSubsection>
 
-      {tool === "inner" ? (
-        edit.pontic.on ? (
+      <StageSubsection
+        title="내면"
+        open={openTool === "inner"}
+        onOpen={openFold("inner")}
+        coach="tool-inner"
+      >
+        {edit.pontic.on ? (
           <p className="text-[11px] text-muted-foreground">폰틱은 내면이 없습니다.</p>
         ) : (
           <InnerControls
@@ -1447,10 +1421,15 @@ export function LabProsthesisModifyPanel({
             intaglio={intaglio}
             onViewFit={onViewFit}
           />
-        )
-      ) : null}
+        )}
+      </StageSubsection>
 
-      {tool === "refine" ? (
+      <StageSubsection
+        title="형상"
+        open={openTool === "refine"}
+        onOpen={openFold("refine")}
+        coach="tool-refine"
+      >
         <LabRefineControls
           edit={edit}
           onEdit={onEdit}
@@ -1465,15 +1444,19 @@ export function LabProsthesisModifyPanel({
           sculptBrush={sculptBrush}
           onSculptBrush={onSculptBrush}
         />
-      ) : null}
+      </StageSubsection>
 
-      {tool === "hook" && cavity ? (
+      <StageSubsection
+        title="훅"
+        open={openTool === "hook"}
+        onOpen={openFold("hook")}
+        coach="tool-hook"
+      >
+      {cavity ? (
         <p className="text-[11px] leading-relaxed text-muted-foreground">
           인레이·온레이에는 훅을 붙이지 않습니다.
         </p>
-      ) : null}
-
-      {tool === "hook" && !cavity ? (
+      ) : (
         <div className="space-y-2">
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
             {[
@@ -1544,15 +1527,20 @@ export function LabProsthesisModifyPanel({
             </p>
           ) : null}
         </div>
-      ) : null}
+      )}
+      </StageSubsection>
 
-      {tool === "cutback" && cavity ? (
+      <StageSubsection
+        title="컷백"
+        open={openTool === "cutback"}
+        onOpen={openFold("cutback")}
+        coach="tool-cutback"
+      >
+      {cavity ? (
         <p className="text-[11px] leading-relaxed text-muted-foreground">
           인레이·온레이에는 컷백하지 않습니다.
         </p>
-      ) : null}
-
-      {tool === "cutback" && !cavity ? (
+      ) : (
         <CutbackControls
           edit={edit}
           onEdit={onEdit}
@@ -1566,9 +1554,16 @@ export function LabProsthesisModifyPanel({
             onBrush("sculpt");
           }}
         />
-      ) : null}
+      )}
+      </StageSubsection>
 
-      {tool === "hole" && implant ? (
+      <StageSubsection
+        title="홀"
+        open={openTool === "hole"}
+        onOpen={openFold("hole")}
+        coach="tool-hole"
+      >
+      {implant ? (
         <div className="space-y-2">
           <label className="flex items-center justify-between gap-3 text-xs font-medium">
             스크류홀
@@ -1601,15 +1596,11 @@ export function LabProsthesisModifyPanel({
             <p className="text-[11px] leading-relaxed text-destructive">{holeIssue}</p>
           ) : null}
         </div>
-      ) : null}
-
-      {tool === "hole" && !implant && edit.pontic.on ? (
+      ) : edit.pontic.on ? (
         <p className="text-[11px] leading-relaxed text-muted-foreground">
           폰틱에는 홀을 뚫지 않습니다.
         </p>
-      ) : null}
-
-      {tool === "hole" && !implant && !edit.pontic.on ? (
+      ) : (
         <div className="space-y-2">
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
             {[
@@ -1684,9 +1675,15 @@ export function LabProsthesisModifyPanel({
             <p className="text-[11px] leading-relaxed text-destructive">{holeMessage}</p>
           ) : null}
         </div>
-      ) : null}
+      )}
+      </StageSubsection>
 
-      {tool === "connector" ? (
+      <StageSubsection
+        title="커넥터"
+        open={openTool === "connector"}
+        onOpen={openFold("connector")}
+        coach="tool-connector"
+      >
         <div className="space-y-2">
           {isBridge && connectorRow ? (
             <ConnectorControls
@@ -1700,10 +1697,13 @@ export function LabProsthesisModifyPanel({
               focusView={focusView}
               onFocusView={onFocusView}
             />
-          ) : null}
+          ) : (
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              브리지 스팬에서 조립합니다.
+            </p>
+          )}
         </div>
-      ) : null}
-      </div>
-    </StageSubsection>
+      </StageSubsection>
+    </>
   );
 }

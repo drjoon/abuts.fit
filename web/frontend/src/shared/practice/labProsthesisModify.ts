@@ -33,7 +33,7 @@ export const HOOK_MAX_COUNT = 6;
 export const MODIFY_TOOLS = [
   { id: "scanbody", label: "스캔바디" },
   { id: "margin", label: "마진" },
-  { id: "insertion", label: "삽입" },
+  { id: "insertion", label: "삽입축" },
   { id: "inner", label: "내면" },
   { id: "refine", label: "형상" },
   { id: "hook", label: "훅" },
