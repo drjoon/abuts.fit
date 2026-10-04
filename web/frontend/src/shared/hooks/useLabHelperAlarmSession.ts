@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/practice/labReceiveSoundPrefs.ts
 // - web/frontend/src/App.tsx
 // change-log:
+// - 2026-10-04: browserAlive = 탭 visible(포커스 무관). 보이는 탭은 FE 토스트, 숨김만 헬퍼.
 // - 2026-10-04: prefs.soundId를 헬퍼 세션에 동기화.
 // - 2026-10-04: 세션에 businessAnchorId — 헬퍼 open-href가 같은 계정 탭만 연다.
 // - 2026-10-03: 치과도 헬퍼 세션(alertMode=send). 포커스 없으면 browserAlive=false.
@@ -56,14 +57,13 @@ const alertModeForUser = (user: {
   return "receive";
 };
 
-/** 보이는 탭이어도 다른 창을 보고 있으면 헬퍼 폴링(OS 알림). */
+/**
+ * 탭이 화면에 보이면 alive — FE가 in-app 토스트·음을 담당.
+ * 숨겨졌을 때만 헬퍼가 서버 WS로 OS 알림(옆 창 포커스 없음 ≠ 숨김).
+ */
 const isBrowserTabAlive = () => {
   if (typeof document === "undefined") return true;
-  if (document.hidden) return false;
-  if (typeof document.hasFocus === "function" && !document.hasFocus()) {
-    return false;
-  }
-  return true;
+  return !document.hidden;
 };
 
 const pushSession = (
@@ -86,7 +86,7 @@ const pushSession = (
 
 /**
  * 치과·기공소 로그인 중이면 헬퍼에 세션을 유지한다.
- * 포커스된 탭: FE 브라우저음·페이지 토스트. 숨김·다른 창: 헬퍼 OS 알림.
+ * 보이는 탭: FE 브라우저음·페이지 토스트. 숨긴 탭: 헬퍼 OS 알림.
  */
 export function useLabHelperAlarmSession() {
   const { user, isAuthenticated, token } = useAuthStore();

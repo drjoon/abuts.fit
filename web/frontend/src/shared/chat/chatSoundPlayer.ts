@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
 // - web/frontend/src/shared/files/labHelperClient.ts
 // change-log:
+// - 2026-10-04: 보이는 탭은 브라우저음(포커스 없어도). 숨긴 탭만 헬퍼 OS 토스트·음.
 // - 2026-10-04: 알림음 샘플 5종 + prefs.soundId. 산뜻한 톤 스케치.
 // - 2026-10-03: 탁한 mp3·주파수 스윕 대신 고음 두 음 차임(유리 종).
 // - 2026-10-03: HTMLAudio muted unlock 대신 AudioContext. 제스처 전에 헬퍼 /notify.
@@ -168,12 +169,9 @@ export const playChatNotifySound = (opts?: PlayChatNotifySoundOpts) => {
   lastPlayedAt = now;
 
   const soundId = resolveSoundId(opts);
+  // 탭이 완전히 숨겨졌을 때만 헬퍼 OS 토스트. 옆 창에 보이는 탭은 브라우저음+in-app 토스트.
   const hidden = typeof document !== "undefined" && document.hidden;
-  const unfocused =
-    typeof document !== "undefined" &&
-    typeof document.hasFocus === "function" &&
-    !document.hasFocus();
-  if (hidden || unfocused) {
+  if (hidden) {
     void notifyLabHelperAlarm(helperOpts(opts, soundId)).then((ok) => {
       if (ok) return;
       playBrowserChatSound(opts, soundId);
