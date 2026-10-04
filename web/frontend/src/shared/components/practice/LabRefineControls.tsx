@@ -29,6 +29,7 @@ import {
   cavityThicknessMm,
   type CavityKind,
 } from "@/shared/practice/labInlayDesign";
+import { STAGE_NEST_CLASS } from "@/shared/components/practice/LabMeshEditSection";
 import { cn } from "@/shared/ui/cn";
 
 const SWITCH_CLASS =
@@ -176,6 +177,7 @@ export function LabRefineControls({
         ))}
       </div>
 
+      <div className={cn("space-y-2", STAGE_NEST_CLASS)}>
       {current === "transform" ? (
         <div className="space-y-2">
           <Row label="크기" value={refine.scale.toFixed(2)}>
@@ -575,6 +577,7 @@ export function LabRefineControls({
           )}
         </div>
       ) : null}
+      </div>
     </div>
   );
 }

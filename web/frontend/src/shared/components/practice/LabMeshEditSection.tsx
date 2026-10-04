@@ -1,7 +1,7 @@
 // 기공소 AI 보철 — 스캔 단계 메시 편집. 다듬기·구멍 메우기·조각·가상 발치.
 // - 2026-09-28: 디자인 전에 스캔을 정리한다. 보이는 스캔만 편집하고, 바뀐 스캔은 작업 스캔으로 저장한다.
 // - 2026-09-30: 발치 탭. 치아를 눌러 고르고 경계를 고친 뒤 적용하면 지우고 발치와를 메운다.
-// - 2026-10-04: 왼쪽 드래그는 고르기, 화면 회전은 오른쪽.
+// - 2026-10-04: 왼쪽 드래그는 다듬기에서 바로 지우기, 화면 회전은 오른쪽.
 
 import type { ReactNode } from "react";
 import { ChevronDown, X } from "lucide-react";
@@ -19,6 +19,9 @@ import {
   type ScanMeshEdit,
   type ScanMeshEditStatus,
 } from "@/shared/practice/scanMeshEdit";
+
+/** 단계 제목 아래 세부 버튼·슬라이더. 좌우를 들여 제목과 구분한다. */
+export const STAGE_NEST_CLASS = "px-2";
 
 /** 단계 패널의 하위 메뉴. 셰브론으로 접고, 같은 단계에서는 하나만 연다. */
 export function StageSubsection({
@@ -53,7 +56,9 @@ export function StageSubsection({
           aria-hidden
         />
       </button>
-      {open ? children : null}
+      {open ? (
+        <div className={cn("space-y-2", STAGE_NEST_CLASS, className)}>{children}</div>
+      ) : null}
     </section>
   );
 }
@@ -64,9 +69,9 @@ const TABS: ReadonlyArray<{ id: MeshEditTab; label: string; tip: ReactNode }> = 
     label: "다듬기",
     tip: (
       <>
-        받침·파편·필요 없는 면을 골라 지웁니다.
+        받침·파편·필요 없는 면을 바로 지웁니다.
         <br />
-        왼쪽 드래그로 고르고, 오른쪽 드래그로 화면이 돕니다.
+        왼쪽 드래그로 지우고, 오른쪽 드래그로 화면이 돕니다.
       </>
     ),
   },
@@ -198,8 +203,6 @@ export function MeshEditSection({
   onToggle,
   onPatch,
   onApply,
-  onInvert,
-  onClear,
   onSelectLoose,
   onPickAllHoles,
   onExtract,
@@ -210,13 +213,10 @@ export function MeshEditSection({
   onToggle: (on: boolean) => void;
   onPatch: (patch: Partial<ScanMeshEdit>) => void;
   onApply: () => void;
-  onInvert: () => void;
-  onClear: () => void;
   onSelectLoose: () => void;
   onPickAllHoles: (on: boolean) => void;
   onExtract: (action: ExtractAction) => void;
 }) {
-  const hasSelection = status.selected > 0;
   const activeTooth = status.teeth.find((row) => row.active) ?? null;
   return (
     <section className="space-y-2" data-coach="mesh-edit">
@@ -249,7 +249,7 @@ export function MeshEditSection({
         </TooltipContent>
       </Tooltip>
       {edit ? (
-        <div className="space-y-2.5">
+        <div className={cn("space-y-2.5", STAGE_NEST_CLASS)}>
           <div className="grid grid-cols-4 gap-1">
             {TABS.map((tab) => (
               <TipButton
@@ -264,7 +264,7 @@ export function MeshEditSection({
           </div>
 
           {edit.tab === "trim" ? (
-            <div className="space-y-2">
+            <div className={cn("space-y-2", STAGE_NEST_CLASS)}>
               <div className="grid grid-cols-3 gap-1">
                 {TRIM_TOOLS.map((tool) => (
                   <TipButton
@@ -276,21 +276,12 @@ export function MeshEditSection({
                     {tool.label}
                   </TipButton>
                 ))}
-              </div>
-              <div className="grid grid-cols-2 gap-1">
                 <TipButton
-                  active={edit.selectMode === "add"}
-                  tip="칠하거나 둘러싼 곳을 선택에 더합니다."
-                  onClick={() => onPatch({ selectMode: "add" })}
+                  active={false}
+                  tip="가장 큰 덩어리만 남기고 떨어진 파편을 지웁니다."
+                  onClick={onSelectLoose}
                 >
-                  더하기
-                </TipButton>
-                <TipButton
-                  active={edit.selectMode === "remove"}
-                  tip="칠하거나 둘러싼 곳을 선택에서 뺍니다."
-                  onClick={() => onPatch({ selectMode: "remove" })}
-                >
-                  빼기
+                  떨어진 조각
                 </TipButton>
               </div>
               {edit.trimTool === "brush" ? (
@@ -300,27 +291,11 @@ export function MeshEditSection({
                   onChange={(mm) => onPatch({ trimBrushMm: mm })}
                 />
               ) : null}
-              <div className="grid grid-cols-3 gap-1">
-                <SmallButton onClick={onSelectLoose}>떨어진 조각</SmallButton>
-                <SmallButton onClick={onInvert}>반전</SmallButton>
-                <SmallButton disabled={!hasSelection} onClick={onClear}>
-                  비우기
-                </SmallButton>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                className="h-8 w-full text-xs"
-                disabled={!hasSelection}
-                onClick={onApply}
-              >
-                고른 면 지우기
-              </Button>
             </div>
           ) : null}
 
           {edit.tab === "fill" ? (
-            <div className="space-y-2">
+            <div className={cn("space-y-2", STAGE_NEST_CLASS)}>
               <p className="text-[11px] leading-relaxed text-muted-foreground">
                 {status.holes > 0 ? (
                   <>
@@ -359,7 +334,7 @@ export function MeshEditSection({
           ) : null}
 
           {edit.tab === "sculpt" ? (
-            <div className="space-y-2">
+            <div className={cn("space-y-2", STAGE_NEST_CLASS)}>
               <div className="grid grid-cols-4 gap-1">
                 {SCULPT_TOOLS.map((tool) => (
                   <TipButton
@@ -402,7 +377,7 @@ export function MeshEditSection({
           ) : null}
 
           {edit.tab === "extract" ? (
-            <div className="space-y-2">
+            <div className={cn("space-y-2", STAGE_NEST_CLASS)}>
               <div className="grid grid-cols-2 gap-1">
                 <TipButton
                   active={edit.extractTool === "pick"}

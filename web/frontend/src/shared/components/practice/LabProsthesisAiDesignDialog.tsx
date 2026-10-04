@@ -361,7 +361,7 @@ import {
   type ScanMeshEdit,
   type ScanMeshEditStatus,
 } from "@/shared/practice/scanMeshEdit";
-import { MeshEditSection, StageSubsection } from "@/shared/components/practice/LabMeshEditSection";
+import { MeshEditSection, StageSubsection, STAGE_NEST_CLASS } from "@/shared/components/practice/LabMeshEditSection";
 import {
   LabMillingDiscView,
   LabMillingPanel,
@@ -3340,10 +3340,18 @@ function LabProsthesisAiDesignDialog({
   const applyMeshEdit = () => {
     const result = viewerRef.current?.meshEditApply();
     if (!result) return;
+    notifyMeshEditResult(result);
+  };
+
+  const notifyMeshEditResult = (result: {
+    kind: string;
+    reason?: "edge" | "fill";
+    failed?: number;
+  }) => {
     if (result.kind === "whole") {
       toast({
         title: "스캔을 모두 지울 수는 없습니다.",
-        description: "남길 부분을 선택에서 빼세요.",
+        description: "남길 면이 있도록 지울 범위를 줄이세요.",
         variant: "destructive",
       });
       return;
@@ -3369,7 +3377,7 @@ function LabProsthesisAiDesignDialog({
       });
       return;
     }
-    if (result.kind === "filled" && result.failed > 0) {
+    if (result.kind === "filled" && (result.failed ?? 0) > 0) {
       toast({
         title: `구멍 ${result.failed}개를 메우지 못했습니다.`,
         description: (
@@ -4567,6 +4575,7 @@ function LabProsthesisAiDesignDialog({
                 )
               }
               onMeshEdit={onMeshEditPhase}
+              onMeshEditResult={notifyMeshEditResult}
               onAlignProgress={(picks) => {
                 setAlignPicks(picks);
                 if (picks.model >= 3 && picks.bite >= 3) {
@@ -5062,6 +5071,7 @@ function LabProsthesisAiDesignDialog({
                             </TooltipContent>
                           </Tooltip>
                         </div>
+                        <div className={cn("space-y-2", STAGE_NEST_CLASS)}>
                         {occlusionOn ? (
                           <div className="space-y-2">
                             <div className="grid grid-cols-2 gap-1">
@@ -5266,6 +5276,7 @@ function LabProsthesisAiDesignDialog({
                             ) : null}
                           </>
                         ) : null}
+                        </div>
                       </StageSubsection>
                     ) : null}
                     {stage === "scan" ? (
@@ -5276,11 +5287,11 @@ function LabProsthesisAiDesignDialog({
                         onToggle={(on) => selectScanFold(on ? "mesh" : null)}
                         onPatch={patchMeshEdit}
                         onApply={applyMeshEdit}
-                        onInvert={() => viewerRef.current?.meshEditInvert()}
-                        onClear={() => viewerRef.current?.meshEditClear()}
                         onSelectLoose={() => {
-                          if (viewerRef.current?.meshEditSelectLoose()) return;
-                          toast({ title: "떨어진 조각이 없습니다." });
+                          const result = viewerRef.current?.meshEditTrimLoose();
+                          if (!result || result.kind === "empty") {
+                            toast({ title: "떨어진 조각이 없습니다." });
+                          }
                         }}
                         onPickAllHoles={(on) => viewerRef.current?.meshEditPickAllHoles(on)}
                         onExtract={(action) => viewerRef.current?.meshEditExtract(action)}

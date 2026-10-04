@@ -1,4 +1,4 @@
-// 구강 스캔 메시 편집 — 다듬기(고른 면 지우기)·구멍 메우기·조각·가상 발치. three 없이 색인 메시로 계산한다.
+// 구강 스캔 메시 편집 — 다듬기(브러시·올가미·조각으로 바로 지우기)·구멍 메우기·조각·가상 발치. three 없이 색인 메시로 계산한다.
 // - 2026-09-28: 디자인 전에 스캔 파편·구멍·거친 면을 정리한다. 결과는 작업 스캔으로 저장한다.
 // - 2026-09-30: 가상 발치. 뺄 치아를 지우고 발치와를 잇몸 곡면으로 메운다(virtualExtraction.ts).
 // related files:
@@ -6,7 +6,7 @@
 // - web/frontend/src/shared/components/practice/LabProsthesisAiDesignDialog.tsx
 
 export type MeshEditTab = "trim" | "fill" | "sculpt" | "extract";
-export type TrimTool = "brush" | "lasso" | "piece";
+export type TrimTool = "brush" | "lasso";
 export type SelectMode = "add" | "remove";
 export type SculptTool = "add" | "remove" | "smooth" | "flatten";
 /** 가상 발치: 치아를 눌러 고르거나, 브러시로 경계를 고친다. */
@@ -97,9 +97,8 @@ export function sameScanMeshEditStatus(a: ScanMeshEditStatus, b: ScanMeshEditSta
 export const MESH_EDIT_BRUSH_RANGE_MM = { min: 0.5, max: 10 } as const;
 
 export const TRIM_TOOLS: ReadonlyArray<{ id: TrimTool; label: string; hint: string }> = [
-  { id: "brush", label: "브러시", hint: "스캔 위를 끌어 칠한 면을 고릅니다." },
-  { id: "lasso", label: "올가미", hint: "끌어서 둘러싼 면을 고릅니다." },
-  { id: "piece", label: "조각", hint: "누른 곳과 이어진 조각을 통째로 고릅니다." },
+  { id: "brush", label: "브러시", hint: "스캔 위를 끌어 칠한 면을 지웁니다." },
+  { id: "lasso", label: "올가미", hint: "끌어서 둘러싼 면을 지웁니다." },
 ];
 
 export const SCULPT_TOOLS: ReadonlyArray<{ id: SculptTool; label: string; hint: string }> = [

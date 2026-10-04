@@ -1,5 +1,5 @@
 // AI 디자인 스캔 단계 — 메시 편집 포인터·선택·오버레이.
-// - 2026-09-28: 다듬기는 브러시·올가미·조각으로 고르고 적용하면 지운다. 구멍은 테두리를 눌러 고르고 메운다. 조각은 끄는 동안 정점을 옮긴다.
+// - 2026-09-28: 다듬기는 브러시·올가미·조각으로 바로 지운다. 구멍은 테두리를 눌러 고르고 메운다. 조각은 끄는 동안 정점을 옮긴다.
 // - 2026-09-28: 브러시·조각은 스캔 위 왼쪽 끌기, 올가미는 화면 왼쪽 끌기. 왼쪽은 뷰 회전에 쓰지 않는다.
 // - 2026-10-04: 뒷면 셸(FrontSide) 스캔도 양면 픽킹.
 // - 2026-09-30: 가상 발치. 치아를 누르면 경계를 찾고, 브러시·넓히기·좁히기로 고친 뒤 적용하면 지우고 발치와를 메운다.
@@ -85,6 +85,9 @@ type Host = {
   replaceShape: (id: string, shape: ScanShapeEdit) => void;
   /** 조각 브러시를 뗐을 때. 정점은 이미 옮겨져 있다. */
   onSculpted: (ids: readonly string[]) => void;
+  /** 다듬기 획이 끝났을 때. 지웠든 되돌렸든 실행 취소를 닫는다. */
+  onCommitted: () => void;
+  onResult: (result: MeshEditApplyResult) => void;
 };
 
 type EntryState = {
@@ -103,6 +106,11 @@ type EntryState = {
   teeth: ExtractTooth[];
   toothOverlay: THREE.Mesh | null;
   toothLines: THREE.Group | null;
+  /** 다듬기 획 동안 숨긴 삼각형. 손을 떼면 정점을 줄인다. */
+  trimGone: Uint8Array | null;
+  trimSlot: Int32Array | null;
+  trimAt: Int32Array | null;
+  trimLive: number;
 };
 
 const TOOTH_RGB = 0x38bdf8;
@@ -112,7 +120,6 @@ const TOOTH_ACTIVE_LINE_RGB = 0x0369a1;
 const EXTRACT_CLOSE_MM = 0.4;
 /** 넓히기·좁히기 한 번. */
 const EXTRACT_GROW_MM = 0.3;
-const SELECT_RGB = 0x22d3ee;
 const LOOP_RGB = 0xf97316;
 const LOOP_PICKED_RGB = 0x0891b2;
 const CLICK_SLOP_PX = 6;
@@ -245,7 +252,12 @@ export class ScanMeshEditController {
   private readonly lassoSvg: SVGSVGElement;
   private readonly lassoPath: SVGPolylineElement;
   private down: { x: number; y: number; pointerId: number } | null = null;
-  private paint: { pointerId: number; at: number; pending: PointerEvent | null } | null = null;
+  private paint: {
+    pointerId: number;
+    at: number;
+    pending: PointerEvent | null;
+    began: boolean;
+  } | null = null;
   private lasso: { pointerId: number; points: number[] } | null = null;
   private sculpt: {
     pointerId: number;
@@ -254,7 +266,6 @@ export class ScanMeshEditController {
     last: THREE.Vector3 | null;
     pending: PointerEvent | null;
   } | null = null;
-  private flushTimer = 0;
   private toothSerial = 0;
   private activeTooth: string | null = null;
   private findTimer = 0;
@@ -301,7 +312,6 @@ export class ScanMeshEditController {
     dom.removeEventListener("pointerup", this.onUp, true);
     dom.removeEventListener("pointercancel", this.onUp, true);
     dom.removeEventListener("pointerleave", this.onLeave);
-    window.clearTimeout(this.flushTimer);
     window.clearTimeout(this.findTimer);
     for (const id of [...this.states.keys()]) this.dropState(id);
     this.ring.remove();
@@ -373,25 +383,9 @@ export class ScanMeshEditController {
     this.emit();
   }
 
-  invertSelection() {
-    for (const target of this.visibleTargets()) {
-      const state = this.stateOf(target);
-      if (!state) continue;
-      let count = 0;
-      for (let v = 0; v < state.selected.length; v += 1) {
-        const used = state.topo.triStart[v + 1]! > state.topo.triStart[v]!;
-        const on = used && !state.selected[v];
-        state.selected[v] = on ? 1 : 0;
-        if (on) count += 1;
-      }
-      state.selectedCount = count;
-      this.syncOverlay(state);
-    }
-    this.emit();
-  }
-
   clearAll() {
     for (const state of this.states.values()) {
+      this.restoreTrimPreview(state);
       this.clearSelection(state);
       this.clearTeeth(state);
       state.pickedLoops.clear();
@@ -434,8 +428,8 @@ export class ScanMeshEditController {
     this.emit();
   }
 
-  /** 스캔마다 가장 큰 조각을 빼고 떨어진 조각을 모두 고른다. */
-  selectLoosePieces() {
+  /** 스캔마다 가장 큰 조각을 빼고 떨어진 조각을 바로 지운다. */
+  trimLoosePieces(): MeshEditApplyResult {
     let any = false;
     for (const target of this.visibleTargets()) {
       const state = this.stateOf(target);
@@ -453,10 +447,11 @@ export class ScanMeshEditController {
         state.selectedCount += 1;
         any = true;
       }
-      this.syncOverlay(state);
     }
-    this.emit();
-    return any;
+    if (!any) return { kind: "empty" };
+    const result = this.applyTrim();
+    this.host.onResult(result);
+    return result;
   }
 
   pickAllHoles(on: boolean) {
@@ -474,7 +469,6 @@ export class ScanMeshEditController {
   apply(): MeshEditApplyResult {
     const spec = this.spec;
     if (!spec) return { kind: "empty" };
-    if (spec.tab === "trim") return this.applyTrim();
     if (spec.tab === "fill") return this.applyFill();
     if (spec.tab === "extract") return this.applyExtract();
     return { kind: "empty" };
@@ -538,7 +532,7 @@ export class ScanMeshEditController {
     return { kind: "extracted", teeth };
   }
 
-  private applyTrim(): MeshEditApplyResult {
+  private applyTrim(begun = false): MeshEditApplyResult {
     const jobs: Array<{ id: string; state: EntryState }> = [];
     for (const target of this.visibleTargets()) {
       const state = this.states.get(target.id);
@@ -549,7 +543,14 @@ export class ScanMeshEditController {
     for (const { id, state } of jobs) {
       const cut = trimSelected(state.topo, state.selected);
       if (!cut) continue;
-      if (cut.index.length === 0) return { kind: "whole" };
+      if (cut.index.length === 0) {
+        this.restoreTrimAll();
+        for (const row of jobs) {
+          row.state.selected.fill(0);
+          row.state.selectedCount = 0;
+        }
+        return { kind: "whole" };
+      }
       const target = this.host.targets().find((row) => row.id === id);
       const positions = state.position.array as Float32Array;
       const origin = new Int32Array(cut.keep.length);
@@ -565,13 +566,17 @@ export class ScanMeshEditController {
         },
       });
     }
-    if (shapes.length === 0) return { kind: "empty" };
-    this.host.onBegin();
+    if (shapes.length === 0) {
+      this.restoreTrimAll();
+      return { kind: "empty" };
+    }
+    if (!begun) this.host.onBegin();
     for (const { id, shape } of shapes) {
       this.dropState(id);
       this.host.replaceShape(id, shape);
     }
     this.emit();
+    this.host.onCommitted();
     return { kind: "trimmed", scans: shapes.length };
   }
 
@@ -629,11 +634,14 @@ export class ScanMeshEditController {
   }
 
   private cancelGestures() {
+    const began = Boolean(this.paint?.began && this.spec?.tab === "trim");
+    if (this.paint && this.spec?.tab === "trim") this.restoreTrimAll();
     this.down = null;
     this.paint = null;
     this.sculpt = null;
     this.lasso = null;
     this.lassoSvg.style.display = "none";
+    if (began) this.host.onCommitted();
   }
 
   /** 숨긴 스캔은 고르지도 지우지도 않는다. */
@@ -818,14 +826,6 @@ export class ScanMeshEditController {
     state.toothLines = group;
   }
 
-  private scheduleEmit() {
-    if (this.flushTimer) return;
-    this.flushTimer = window.setTimeout(() => {
-      this.flushTimer = 0;
-      this.emit();
-    }, 60);
-  }
-
   private dropState(id: string) {
     const state = this.states.get(id);
     if (!state) return;
@@ -863,8 +863,7 @@ export class ScanMeshEditController {
     }
     if (hit) this.dropState(target.id);
     if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
-    const indexArray =
-      index.array instanceof Uint32Array ? index.array : Uint32Array.from(index.array as ArrayLike<number>);
+    const indexArray = Uint32Array.from(index.array as ArrayLike<number>);
     const state: EntryState = {
       mesh: target.mesh,
       geometry,
@@ -881,6 +880,10 @@ export class ScanMeshEditController {
       teeth: [],
       toothOverlay: null,
       toothLines: null,
+      trimGone: null,
+      trimSlot: null,
+      trimAt: null,
+      trimLive: 0,
     };
     this.states.set(target.id, state);
     return state;
@@ -903,10 +906,100 @@ export class ScanMeshEditController {
   }
 
   private clearSelection(state: EntryState) {
+    this.restoreTrimPreview(state);
     if (state.selectedCount === 0) return;
     state.selected.fill(0);
     state.selectedCount = 0;
     this.syncOverlay(state);
+  }
+
+  private restoreTrimAll() {
+    for (const state of this.states.values()) this.restoreTrimPreview(state);
+  }
+
+  private restoreTrimPreview(state: EntryState) {
+    if (!state.trimGone) return;
+    const src = state.topo.index;
+    const dst = state.index.array;
+    for (let i = 0; i < src.length; i += 1) dst[i] = src[i]!;
+    state.index.needsUpdate = true;
+    state.geometry.setDrawRange(0, src.length);
+    state.trimGone = null;
+    state.trimSlot = null;
+    state.trimAt = null;
+    state.trimLive = 0;
+  }
+
+  private ensureTrimScratch(state: EntryState) {
+    if (state.trimGone) return;
+    const n = Math.floor(state.topo.index.length / 3);
+    const slot = new Int32Array(n);
+    const at = new Int32Array(n);
+    for (let i = 0; i < n; i += 1) {
+      slot[i] = i;
+      at[i] = i;
+    }
+    state.trimGone = new Uint8Array(n);
+    state.trimSlot = slot;
+    state.trimAt = at;
+    state.trimLive = n;
+  }
+
+  /** 고른 정점이 닿은 면을 당장 숨긴다. 스캔 전체가 없어지면 그 점은 건너뛴다. */
+  private hideTrimVerts(state: EntryState, verts: readonly number[]) {
+    this.ensureTrimScratch(state);
+    const gone = state.trimGone!;
+    const slot = state.trimSlot!;
+    const at = state.trimAt!;
+    const { tris, triStart } = state.topo;
+    const hide: number[] = [];
+    for (const v of verts) {
+      if (state.selected[v]) continue;
+      for (let i = triStart[v]!; i < triStart[v + 1]!; i += 1) {
+        const t = tris[i]!;
+        if (gone[t]) continue;
+        gone[t] = 2;
+        hide.push(t);
+      }
+    }
+    if (hide.length === 0) return false;
+    if (state.trimLive - hide.length <= 0) {
+      for (const t of hide) gone[t] = 0;
+      return false;
+    }
+    const meshIndex = state.index.array;
+    for (const t of hide) {
+      gone[t] = 1;
+      const from = slot[t]!;
+      const last = state.trimLive - 1;
+      if (from !== last) {
+        const other = at[last]!;
+        const a = from * 3;
+        const b = last * 3;
+        const ia = meshIndex[a]!;
+        const ib = meshIndex[a + 1]!;
+        const ic = meshIndex[a + 2]!;
+        meshIndex[a] = meshIndex[b]!;
+        meshIndex[a + 1] = meshIndex[b + 1]!;
+        meshIndex[a + 2] = meshIndex[b + 2]!;
+        meshIndex[b] = ia;
+        meshIndex[b + 1] = ib;
+        meshIndex[b + 2] = ic;
+        slot[other] = from;
+        at[from] = other;
+        slot[t] = last;
+        at[last] = t;
+      }
+      state.trimLive -= 1;
+    }
+    for (const v of verts) {
+      if (state.selected[v]) continue;
+      state.selected[v] = 1;
+      state.selectedCount += 1;
+    }
+    state.index.needsUpdate = true;
+    state.geometry.setDrawRange(0, state.trimLive * 3);
+    return true;
   }
 
   private removeOverlay(state: EntryState) {
@@ -918,55 +1011,7 @@ export class ScanMeshEditController {
   }
 
   private syncOverlay(state: EntryState) {
-    const show = this.spec?.tab === "trim" && state.selectedCount > 0;
-    if (!show) {
-      this.removeOverlay(state);
-      return;
-    }
-    const index = state.topo.index;
-    const sel = state.selected;
-    if (!state.overlay) {
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute("position", state.position);
-      geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(index.length), 1));
-      const mesh = new THREE.Mesh(
-        geometry,
-        new THREE.MeshBasicMaterial({
-          color: SELECT_RGB,
-          transparent: true,
-          opacity: 0.78,
-          side: THREE.DoubleSide,
-          depthWrite: false,
-          polygonOffset: true,
-          polygonOffsetFactor: -2,
-          polygonOffsetUnits: -2,
-          toneMapped: false,
-        }),
-      );
-      mesh.userData.sharedGeometry = true;
-      mesh.userData.meshEditOverlay = true;
-      mesh.renderOrder = 5;
-      mesh.frustumCulled = false;
-      mesh.raycast = () => {};
-      state.mesh.add(mesh);
-      state.overlay = mesh;
-    }
-    // 색인 버퍼는 한 번 잡아 두고 채운 길이만 그린다. 칠할 때마다 새로 만들면 GPU 버퍼가 쌓인다.
-    const attr = state.overlay.geometry.getIndex()!;
-    const out = attr.array as Uint32Array;
-    let count = 0;
-    for (let t = 0; t + 2 < index.length; t += 3) {
-      const a = index[t]!;
-      const b = index[t + 1]!;
-      const c = index[t + 2]!;
-      if (!sel[a] && !sel[b] && !sel[c]) continue;
-      out[count] = a;
-      out[count + 1] = b;
-      out[count + 2] = c;
-      count += 3;
-    }
-    attr.needsUpdate = true;
-    state.overlay.geometry.setDrawRange(0, count);
+    this.removeOverlay(state);
   }
 
   private removeLoopLines(state: EntryState) {
@@ -1242,37 +1287,13 @@ export class ScanMeshEditController {
       [facing.x, facing.y, facing.z],
       this.brushRadius(),
     );
-    const on = spec.selectMode === "add" ? 1 : 0;
-    let changed = false;
-    for (const v of picked) {
-      if (state.selected[v] === on) continue;
-      state.selected[v] = on;
-      state.selectedCount += on ? 1 : -1;
-      changed = true;
-    }
+    if (picked.length === 0) return;
+    const changed = this.hideTrimVerts(state, picked);
     if (!changed) return;
-    this.syncOverlay(state);
-    this.scheduleEmit();
-  }
-
-  private selectPiece(event: PointerEvent) {
-    const spec = this.spec;
-    if (!spec) return;
-    const found = this.hitTargets(event);
-    if (!found?.hit.face) return;
-    const state = this.stateOf(found.target);
-    if (!state) return;
-    const comps = this.compsOf(state);
-    const seed = comps.comp[found.hit.face.a] ?? -1;
-    if (seed < 0) return;
-    const on = spec.selectMode === "add" ? 1 : 0;
-    for (let v = 0; v < comps.comp.length; v += 1) {
-      if (comps.comp[v] !== seed || state.selected[v] === on) continue;
-      state.selected[v] = on;
-      state.selectedCount += on ? 1 : -1;
+    if (this.paint && !this.paint.began) {
+      this.paint.began = true;
+      this.host.onBegin();
     }
-    this.syncOverlay(state);
-    this.emit();
   }
 
   private finishLasso() {
@@ -1298,7 +1319,6 @@ export class ScanMeshEditController {
     camera.updateMatrixWorld();
     const view = new THREE.Vector3();
     camera.getWorldDirection(view);
-    const on = spec.selectMode === "add" ? 1 : 0;
     for (const target of this.host.targets()) {
       if (!target.mesh.visible) continue;
       const state = this.stateOf(target);
@@ -1314,7 +1334,6 @@ export class ScanMeshEditController {
       const positions = state.position.array as Float32Array;
       const normals = state.geometry.getAttribute("normal") as THREE.BufferAttribute | undefined;
       const nArr = normals?.array instanceof Float32Array ? normals.array : null;
-      let changed = false;
       for (let v = 0; v < state.position.count; v += 1) {
         if (nArr) {
           const dot =
@@ -1331,14 +1350,12 @@ export class ScanMeshEditController {
         const sy = ((1 - ny) / 2) * h;
         if (sx < minX || sx > maxX || sy < minY || sy > maxY) continue;
         if (!pointInPolygon(sx, sy, lasso.points)) continue;
-        if (state.selected[v] === on) continue;
-        state.selected[v] = on;
-        state.selectedCount += on ? 1 : -1;
-        changed = true;
+        if (state.selected[v]) continue;
+        state.selected[v] = 1;
+        state.selectedCount += 1;
       }
-      if (changed) this.syncOverlay(state);
     }
-    this.emit();
+    this.host.onResult(this.applyTrim());
   }
 
   private pickLoop(event: PointerEvent) {
@@ -1451,7 +1468,7 @@ export class ScanMeshEditController {
         this.grab(event);
         return;
       }
-      this.paint = { pointerId: event.pointerId, at: performance.now(), pending: null };
+      this.paint = { pointerId: event.pointerId, at: performance.now(), pending: null, began: false };
       this.grab(event);
       this.paintAt(event);
       return;
@@ -1532,9 +1549,26 @@ export class ScanMeshEditController {
       return;
     }
     if (this.paint && event.pointerId === this.paint.pointerId) {
+      const began = this.paint.began;
+      const trim = this.spec?.tab === "trim";
       this.release(event);
       this.paint = null;
-      this.emit();
+      if (trim) {
+        if (event.type === "pointercancel") {
+          this.restoreTrimAll();
+          for (const state of this.states.values()) {
+            state.selected.fill(0);
+            state.selectedCount = 0;
+          }
+          if (began) this.host.onCommitted();
+        } else {
+          const result = this.applyTrim(began);
+          if (result.kind !== "trimmed" && began) this.host.onCommitted();
+          if (result.kind === "whole" || result.kind === "trimmed") this.host.onResult(result);
+        }
+      } else {
+        this.emit();
+      }
       event.stopImmediatePropagation();
       return;
     }
@@ -1560,8 +1594,7 @@ export class ScanMeshEditController {
     const spec = this.spec;
     if (!start || !spec || event.pointerId !== start.pointerId || event.type === "pointercancel") return;
     if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > CLICK_SLOP_PX) return;
-    if (spec.tab === "trim" && spec.trimTool === "piece") this.selectPiece(event);
-    else if (spec.tab === "fill") this.pickLoop(event);
+    if (spec.tab === "fill") this.pickLoop(event);
     else if (spec.tab === "extract" && spec.extractTool === "pick") this.pickTooth(event);
   };
 

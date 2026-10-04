@@ -272,14 +272,12 @@ export type OralScanOverlayHandle = {
   captureJawPositions: () => JawSnapshot[];
   /** 저장해 둔 정점·메시 모양으로 되돌린다. 카메라는 그대로 둔다. */
   restoreJawPositions: (rows: ReadonlyArray<JawSnapshot>) => void;
-  /** 메시 편집 — 다듬기는 고른 면을 지우고, 구멍 메우기는 고른 구멍을 메운다. 발치는 치아를 지우고 발치와를 메운다. */
+  /** 메시 편집 — 구멍 메우기는 고른 구멍을 메운다. 발치는 치아를 지우고 발치와를 메운다. 다듬기는 끌거나 누르면 바로 지운다. */
   meshEditApply: () => MeshEditApplyResult;
   /** 가상 발치로 고른 치아를 고르거나 빼고, 경계를 넓히거나 좁힌다. */
   meshEditExtract: (action: ExtractAction) => void;
-  meshEditInvert: () => void;
-  meshEditClear: () => void;
-  /** 스캔마다 가장 큰 조각만 남기고 떨어진 조각을 고른다. 고른 게 없으면 false. */
-  meshEditSelectLoose: () => boolean;
+  /** 스캔마다 가장 큰 조각만 남기고 떨어진 조각을 지운다. */
+  meshEditTrimLoose: () => MeshEditApplyResult;
   meshEditPickAllHoles: (on: boolean) => void;
   /** 잡혀 있는 삽입축. 작업 문서에 넣는다. */
   exportInsertionAxes: () => WorkSessionAxis[];
@@ -534,6 +532,7 @@ type Props = {
   onMeshEditStatus?: (status: ScanMeshEditStatus) => void;
   /** 메시 편집으로 스캔을 바꾸기 직전(start)과 바꾼 뒤(end). */
   onMeshEdit?: (phase: "start" | "end") => void;
+  onMeshEditResult?: (result: MeshEditApplyResult) => void;
   /** 스캔을 화면에 올린 뒤. restore면 저장된 삽입축·카메라를 다시 깐다. */
   onMeshesReady?: (info: { deformed: boolean; restore: boolean }) => void;
   /** 돌리기·이동·줌·시점 전환이 멈추면. */
@@ -2467,6 +2466,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       meshEdit = null,
       onMeshEditStatus,
       onMeshEdit,
+      onMeshEditResult,
       onMeshesReady,
       onViewSettled,
       scanbodyPickTooth = null,
@@ -2630,6 +2630,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   onMeshEditStatusRef.current = onMeshEditStatus;
   const onMeshEditRef = useRef(onMeshEdit);
   onMeshEditRef.current = onMeshEdit;
+  const onMeshEditResultRef = useRef(onMeshEditResult);
+  onMeshEditResultRef.current = onMeshEditResult;
   const meshEditCtlRef = useRef<ScanMeshEditController | null>(null);
   const meshEditHostRef = useRef<{
     replaceShape: (id: string, shape: ScanShapeEdit) => void;
@@ -4144,6 +4146,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         meshEditHostRef.current.sculpted(ids);
         meshEditHostRef.current.finish();
       },
+      onCommitted: () => meshEditHostRef.current.finish(),
+      onResult: (result) => onMeshEditResultRef.current?.(result),
     });
     meshEditCtlRef.current = meshEditCtl;
     meshEditCtl.setSpec(meshEditRef.current ?? null);
@@ -6037,9 +6041,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         return result;
       },
       meshEditExtract: (action) => meshEditCtlRef.current?.extract(action),
-      meshEditInvert: () => meshEditCtlRef.current?.invertSelection(),
-      meshEditClear: () => meshEditCtlRef.current?.clearAll(),
-      meshEditSelectLoose: () => meshEditCtlRef.current?.selectLoosePieces() ?? false,
+      meshEditTrimLoose: () =>
+        meshEditCtlRef.current?.trimLoosePieces() ?? { kind: "empty" },
       meshEditPickAllHoles: (on) => meshEditCtlRef.current?.pickAllHoles(on),
       exportInsertionAxes: () =>
         insertionAxesRef.current.map((axis) => ({

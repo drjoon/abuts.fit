@@ -67,7 +67,7 @@ import {
   fitDistanceRgb,
   type CrownIntaglioInfo,
 } from "@/shared/components/practice/labProsthesisEditLayer";
-import { StageSubsection } from "@/shared/components/practice/LabMeshEditSection";
+import { StageSubsection, STAGE_NEST_CLASS } from "@/shared/components/practice/LabMeshEditSection";
 import { LabRefineControls } from "@/shared/components/practice/LabRefineControls";
 import { cn } from "@/shared/ui/cn";
 
@@ -1191,6 +1191,7 @@ export function LabProsthesisModifyPanel({
         )}
       </div>
 
+      <div className={cn("space-y-2", STAGE_NEST_CLASS)}>
       {tool === "margin" && edit.pontic.on ? (
         <p className="text-[11px] leading-relaxed text-muted-foreground">
           폰틱은 지대치가 없어 마진을 잡지 않습니다.
@@ -1702,6 +1703,7 @@ export function LabProsthesisModifyPanel({
           ) : null}
         </div>
       ) : null}
+      </div>
     </StageSubsection>
   );
 }
