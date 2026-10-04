@@ -478,7 +478,7 @@ export function MeshEditSection({
                 </>
               ) : null}
 
-              <div className="grid grid-cols-4 gap-1">
+              <div className="grid grid-cols-3 gap-1">
                 <SmallButton disabled={!activeTooth} onClick={() => onExtract({ kind: "grow" })}>
                   넓히기
                 </SmallButton>
@@ -487,12 +487,6 @@ export function MeshEditSection({
                 </SmallButton>
                 <SmallButton disabled={!activeTooth} onClick={() => onExtract({ kind: "restore" })}>
                   되돌리기
-                </SmallButton>
-                <SmallButton
-                  disabled={status.teeth.length === 0}
-                  onClick={() => onExtract({ kind: "clear" })}
-                >
-                  선택취소
                 </SmallButton>
               </div>
               <Button

@@ -10,7 +10,13 @@
 import type { MeshTopology } from "@/shared/practice/scanMeshEdit";
 
 /** 누른 곳에서 이 거리(측지) 안만 본다. 교합면 폭 + 치관 높이를 넘어야 큰 어금니가 다 담긴다. */
-export const EXTRACT_PATCH_RADIUS_MM = 26;
+export const EXTRACT_PATCH_RADIUS_MM = 16;
+/** 치아 한 개의 크기는 거의 정해져 있다(어금니 치관 폭 약 12mm, 높이 약 8mm). 중심에서 이 반지름(mm) 밖은 치아가 아니다. */
+const TOOTH_CAP_RADIUS_MM = 6;
+const TOOTH_CAP_ITERS = 4;
+const RECENTER_PASSES = 3;
+const RECENTER_MIN_MM = 0.8;
+const RECENTER_MAX_MM = 5;
 /** 누른 곳 둘레는 치아로 고정한다. */
 const SOURCE_RADIUS_MM = 0.8;
 /** 치관 발치선에서 이만큼(측지)까지 치근을 더 담는다. */
@@ -41,8 +47,10 @@ const GUM_SINK = 0.58;
 /** 이 이하면 치아색으로 이어 간다. */
 const TOOTH_LIKE = 0.38;
 /** 치아색끼리 오목해도 협측으로 넘어갈 최소 가중치. */
-const TOOTH_EDGE_FLOOR = 0.18;
+const TOOTH_EDGE_FLOOR = 0.02;
 const MIN_WEIGHT = 1e-6;
+/** 치아색 확장이 넘지 못하는 오목 장벽(인접 치아 사이 틈). */
+const EXPAND_BARRIER_MIN = 0.25;
 const CG_MAX_ITER = 900;
 
 export type ToothSegment = {
@@ -346,6 +354,7 @@ function expandThroughToothColor(
   gum: Float32Array,
   seedLocal: number,
   blocked?: (i: number) => boolean,
+  barrier?: Float32Array,
 ) {
   const m = field.length;
   const seen = new Uint8Array(m);
@@ -357,6 +366,7 @@ function expandThroughToothColor(
     for (let k = g.start[i]!; k < g.start[i + 1]!; k += 1) {
       const j = g.nbr[k]!;
       if (seen[j] || gum[j]! > TOOTH_LIKE || blocked?.(j)) continue;
+      if (barrier && barrier[k]! < EXPAND_BARRIER_MIN) continue;
       seen[j] = 1;
       stack.push(j);
     }
@@ -468,6 +478,67 @@ function cleanField(
       }
     }
     if (enclosed) for (const a of comp) field[a] = Math.max(field[a]!, 0.6);
+  }
+}
+
+/**
+ * 치아 크기 상한. 누른 곳에서 이어진 영역의 중심을 구해 그 둘레 구(球) 안만 남긴다.
+ * 중심은 구 안 영역의 무게중심으로 몇 번 옮겨, 누른 곳이 치아 가장자리여도 치아 가운데로 모인다.
+ */
+function capToothSize(
+  g: LocalGraph,
+  positions: Float32Array,
+  patch: Uint32Array,
+  field: Float32Array,
+  seedLocal: number,
+  unit: number,
+) {
+  const m = field.length;
+  const radius = TOOTH_CAP_RADIUS_MM / unit;
+  const px = (i: number, k: number) => positions[patch[i]! * 3 + k]!;
+  let cx = px(seedLocal, 0);
+  let cy = px(seedLocal, 1);
+  let cz = px(seedLocal, 2);
+  const inside = new Uint8Array(m);
+  const connect = (r2: number) => {
+    inside.fill(0);
+    const st = [seedLocal];
+    inside[seedLocal] = 1;
+    while (st.length > 0) {
+      const i = st.pop()!;
+      for (let k = g.start[i]!; k < g.start[i + 1]!; k += 1) {
+        const j = g.nbr[k]!;
+        if (inside[j] || field[j]! < 0.5) continue;
+        const dx = px(j, 0) - cx;
+        const dy = px(j, 1) - cy;
+        const dz = px(j, 2) - cz;
+        if (dx * dx + dy * dy + dz * dz > r2) continue;
+        inside[j] = 1;
+        st.push(j);
+      }
+    }
+  };
+  for (let it = 0; it < TOOTH_CAP_ITERS; it += 1) {
+    connect(radius * radius * 1.35);
+    let n = 0;
+    let sx = 0;
+    let sy = 0;
+    let sz = 0;
+    for (let i = 0; i < m; i += 1) {
+      if (!inside[i]) continue;
+      n += 1;
+      sx += px(i, 0);
+      sy += px(i, 1);
+      sz += px(i, 2);
+    }
+    if (n === 0) break;
+    cx = sx / n;
+    cy = sy / n;
+    cz = sz / n;
+  }
+  connect(radius * radius);
+  for (let i = 0; i < m; i += 1) {
+    if (field[i]! >= 0.5 && !inside[i]) field[i] = 0.3;
   }
 }
 
@@ -611,7 +682,7 @@ export function splitContactLeakOnSeg(topo: MeshTopology, seg: ToothSegment, uni
  * seed가 있는 치아를 찾는다. blocked(다른 치아로 이미 고른 정점)는 치아 밖으로 둔다.
  * 스캔이 너무 작거나 seed가 막혀 있으면 null.
  */
-export function segmentTooth(args: {
+function segmentToothOnce(args: {
   topo: MeshTopology;
   positions: Float32Array;
   color: Float32Array | null;
@@ -645,17 +716,20 @@ export function segmentTooth(args: {
   const concave = concavity(topo, g, patch, local, positions, unit, edge);
   const gum = gumness(patch, color, g, 0);
   const w = new Float32Array(g.nbr.length);
+  const barrier = new Float32Array(g.nbr.length);
   for (let i = 0; i < m; i += 1) {
     for (let k = g.start[i]!; k < g.start[i + 1]!; k += 1) {
       const j = g.nbr[k]!;
       const c = (concave[i]! + concave[j]!) / 2;
       let weight = Math.exp(-CONCAVE_BETA * Math.max(0, c - CONCAVE_START));
+      barrier[k] = weight;
       if (gum) {
         const lenMm = Math.max(edgeLen(positions, patch[i]!, patch[j]!) * unit, 0.02);
-        weight *= Math.exp((-GUM_BETA * Math.abs(gum[i]! - gum[j]!)) / lenMm);
+        let gumTerm = Math.exp((-GUM_BETA * Math.abs(gum[i]! - gum[j]!)) / lenMm);
         if (gum[i]! <= TOOTH_LIKE && gum[j]! <= TOOTH_LIKE) {
-          weight = Math.max(weight, TOOTH_EDGE_FLOOR);
+          gumTerm = Math.max(gumTerm, TOOTH_EDGE_FLOOR);
         }
+        weight *= gumTerm;
       }
       w[k] = Math.max(weight, MIN_WEIGHT);
     }
@@ -718,6 +792,7 @@ export function segmentTooth(args: {
       const j = g.nbr[k]!;
       if (reached[j] || fixed[j] !== 0) continue;
       const toothEdge = gum && gum[i]! <= TOOTH_LIKE && gum[j]! <= TOOTH_LIKE;
+      if (barrier[k]! < EXPAND_BARRIER_MIN) continue;
       if (!toothEdge && w[k]! < 0.1) continue;
       reached[j] = 1;
       x[j] = 1;
@@ -727,8 +802,9 @@ export function segmentTooth(args: {
 
   solveWalker(g, w, fixed, x);
   if (gum) {
-    expandThroughToothColor(g, x, gum, 0, (i) => args.blocked?.(patch[i]!) === true);
+    expandThroughToothColor(g, x, gum, 0, (i) => args.blocked?.(patch[i]!) === true, barrier);
   }
+  capToothSize(g, positions, patch, x, 0, unit);
   cleanField(g, x, 0, open);
   splitContactLeak(g, x, 0, edge, unit);
   includeResidualRoot({
@@ -743,6 +819,7 @@ export function segmentTooth(args: {
     blocked: args.blocked,
   });
   splitContactLeak(g, x, 0, edge, unit);
+  capToothSize(g, positions, patch, x, 0, unit);
   cleanField(g, x, 0, open);
 
   // 치아가 탐색 한계까지 닿았으면 경계를 못 찾고 샜을 수 있다.
@@ -786,6 +863,60 @@ export function segmentTooth(args: {
     edge,
     weak: regionCount < 30 || reachesLimit,
   };
+}
+
+/**
+ * 누른 곳이 치아 가장자리여도 같은 치아가 나오게, 찾은 영역의 중심으로 시작점을 옮겨 다시 찾는다.
+ * 치아 한 개 크기가 거의 정해져 있어 중심이 안정되면 어디를 눌러도 같은 영역으로 모인다.
+ */
+export function segmentTooth(args: Parameters<typeof segmentToothOnce>[0]): ToothSegment | null {
+  const unit = Math.max(args.unitToMm, 1e-9);
+  let seg = segmentToothOnce(args);
+  if (!seg) return null;
+  const pos = args.positions;
+  for (let pass = 0; pass < RECENTER_PASSES; pass += 1) {
+    let n = 0;
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    for (let i = 0; i < seg.patch.length; i += 1) {
+      if (seg.field[i]! < 0.5) continue;
+      const v = seg.patch[i]!;
+      n += 1;
+      cx += pos[v * 3]!;
+      cy += pos[v * 3 + 1]!;
+      cz += pos[v * 3 + 2]!;
+    }
+    if (n < 30) break;
+    cx /= n;
+    cy /= n;
+    cz /= n;
+    let best = -1;
+    let bestD = Infinity;
+    for (let i = 0; i < seg.patch.length; i += 1) {
+      if (seg.field[i]! < 0.5) continue;
+      const v = seg.patch[i]!;
+      const d = (pos[v * 3]! - cx) ** 2 + (pos[v * 3 + 1]! - cy) ** 2 + (pos[v * 3 + 2]! - cz) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = v;
+      }
+    }
+    if (best < 0 || best === seg.seed) break;
+    const ox = pos[args.seed * 3]! - pos[best * 3]!;
+    const oy = pos[args.seed * 3 + 1]! - pos[best * 3 + 1]!;
+    const oz = pos[args.seed * 3 + 2]! - pos[best * 3 + 2]!;
+    // 누른 곳에서 크게 벗어나면 이웃 치아로 옮겨 간 것이다.
+    if (Math.sqrt(ox * ox + oy * oy + oz * oz) * unit > RECENTER_MAX_MM) break;
+    const sx = pos[seg.seed * 3]! - pos[best * 3]!;
+    const sy = pos[seg.seed * 3 + 1]! - pos[best * 3 + 1]!;
+    const sz = pos[seg.seed * 3 + 2]! - pos[best * 3 + 2]!;
+    if (Math.sqrt(sx * sx + sy * sy + sz * sz) * unit < RECENTER_MIN_MM) break;
+    const next = segmentToothOnce({ ...args, seed: best });
+    if (!next) break;
+    seg = next;
+  }
+  return seg;
 }
 
 function toothBasis(topo: MeshTopology, positions: Float32Array, patch: Uint32Array, local: Int32Array, field: Float32Array) {
