@@ -256,7 +256,11 @@ export type BoundaryLoop = {
   comp: number;
 };
 
-function collectBoundaryLoops(topo: MeshTopology, positions: Float32Array, comp: Int32Array): BoundaryLoop[] {
+function collectBoundaryLoops(
+  topo: MeshTopology,
+  positions: Float32Array | null,
+  comp: Int32Array,
+): BoundaryLoop[] {
   const index = topo.index;
   const out = new Map<number, number[]>();
   for (let t = 0; t + 2 < index.length; t += 3) {
@@ -271,11 +275,13 @@ function collectBoundaryLoops(topo: MeshTopology, positions: Float32Array, comp:
   }
   const loops: BoundaryLoop[] = [];
   const len = (a: number, b: number) =>
-    Math.hypot(
-      positions[a * 3]! - positions[b * 3]!,
-      positions[a * 3 + 1]! - positions[b * 3 + 1]!,
-      positions[a * 3 + 2]! - positions[b * 3 + 2]!,
-    );
+    positions
+      ? Math.hypot(
+          positions[a * 3]! - positions[b * 3]!,
+          positions[a * 3 + 1]! - positions[b * 3 + 1]!,
+          positions[a * 3 + 2]! - positions[b * 3 + 2]!,
+        )
+      : 1;
   for (const [start, targets] of out) {
     while (targets.length > 0) {
       const verts = [start];
@@ -321,6 +327,22 @@ export function holeLoops(
   });
   const outer = new Set(longest.values());
   return loops.filter((loop, i) => !outer.has(i) && loop.verts.length <= FILL_HOLE_MAX_EDGES);
+}
+
+/** 조각마다 가장 긴 테두리(스캔 바깥). 안쪽 구멍·짧은 찢김은 넣지 않는다. */
+export function outerBoundaryMask(topo: MeshTopology) {
+  const { comp } = vertexComponents(topo);
+  const loops = collectBoundaryLoops(topo, null, comp);
+  const longest = new Map<number, number>();
+  loops.forEach((loop, i) => {
+    const prev = longest.get(loop.comp);
+    if (prev == null || loops[prev]!.length < loop.length) longest.set(loop.comp, i);
+  });
+  const out = new Uint8Array(topo.vertexCount);
+  for (const i of longest.values()) {
+    for (const v of loops[i]!.verts) out[v] = 1;
+  }
+  return out;
 }
 
 /**

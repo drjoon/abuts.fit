@@ -7,7 +7,7 @@
 // - web/frontend/src/shared/practice/scanMeshEdit.ts
 // - web/frontend/src/shared/components/practice/scanMeshEditController.ts
 
-import type { MeshTopology } from "@/shared/practice/scanMeshEdit";
+import { outerBoundaryMask, type MeshTopology } from "@/shared/practice/scanMeshEdit";
 
 /** 누른 곳에서 이 거리(측지) 안만 본다. 교합면 폭 + 치관 높이를 넘어야 큰 어금니가 다 담긴다. */
 export const EXTRACT_PATCH_RADIUS_MM = 16;
@@ -1257,15 +1257,11 @@ export function closeMask(topo: MeshTopology, mask: Uint8Array, rings: number) {
   for (let r = 0; r < rings; r += 1) step(0);
 }
 
-/** mask가 스캔 가장자리에 닿았는지. 닿으면 발치와가 바깥 테두리와 이어져 메울 수 없다. */
+/** mask가 스캔 바깥 테두리에 닿았는지. 안쪽 구멍은 발치와와 같이 메울 수 있어 막지 않는다. */
 export function maskTouchesMeshBoundary(topo: MeshTopology, mask: Uint8Array) {
+  const outer = outerBoundaryMask(topo);
   for (let v = 0; v < topo.vertexCount; v += 1) {
-    if (!mask[v]) continue;
-    for (let k = topo.nbrStart[v]!; k < topo.nbrStart[v + 1]!; k += 1) {
-      const u = topo.nbr[k]!;
-      if (!mask[u] && isMeshBoundary(topo, u)) return true;
-    }
-    if (isMeshBoundary(topo, v)) return true;
+    if (mask[v] && outer[v]) return true;
   }
   return false;
 }
