@@ -1,6 +1,7 @@
 // AI 디자인 스캔 단계 — 메시 편집 포인터·선택·오버레이.
 // - 2026-09-28: 다듬기는 브러시·올가미·조각으로 고르고 적용하면 지운다. 구멍은 테두리를 눌러 고르고 메운다. 조각은 끄는 동안 정점을 옮긴다.
-// - 2026-09-28: 빈 곳을 끌면 화면이 돈다. 올가미만 왼쪽 끌기를 쓴다.
+// - 2026-09-28: 브러시·조각은 스캔 위 왼쪽 끌기, 올가미는 화면 왼쪽 끌기. 왼쪽은 뷰 회전에 쓰지 않는다.
+// - 2026-10-04: 뒷면 셸(FrontSide) 스캔도 양면 픽킹.
 // - 2026-09-30: 가상 발치. 치아를 누르면 경계를 찾고, 브러시·넓히기·좁히기로 고친 뒤 적용하면 지우고 발치와를 메운다.
 // related files:
 // - web/frontend/src/shared/practice/scanMeshEdit.ts
@@ -25,6 +26,7 @@ import {
   type ScanMeshEdit,
   type ScanMeshEditStatus,
 } from "@/shared/practice/scanMeshEdit";
+import { withDoubleSidePick } from "@/shared/three/backFaceShell";
 import {
   closeMask,
   growToothField,
@@ -1020,6 +1022,7 @@ export class ScanMeshEditController {
   private aim(event: PointerEvent) {
     const camera = this.host.camera();
     if (!camera) return null;
+    camera.updateMatrixWorld();
     const rect = this.host.dom.getBoundingClientRect();
     this.ndc.set(
       ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1,
@@ -1029,19 +1032,29 @@ export class ScanMeshEditController {
     return camera;
   }
 
+  private resolveTarget(targets: MeshEditTarget[], obj: THREE.Object3D | null) {
+    let cur: THREE.Object3D | null = obj;
+    while (cur) {
+      const found = targets.find((row) => row.mesh === cur);
+      if (found) return found;
+      cur = cur.parent;
+    }
+    return null;
+  }
+
   private hitTargets(event: PointerEvent, onlyId?: string) {
     if (!this.aim(event)) return null;
     const targets = this.host
       .targets()
       .filter((row) => row.mesh.visible && (!onlyId || row.id === onlyId));
     if (targets.length === 0) return null;
-    const hits = this.raycaster.intersectObjects(
-      targets.map((row) => row.mesh),
-      false,
+    const meshes = targets.map((row) => row.mesh);
+    const hits = withDoubleSidePick(meshes, () =>
+      this.raycaster.intersectObjects(meshes, true),
     );
     const hit = hits[0];
     if (!hit || !hit.face) return null;
-    const target = targets.find((row) => row.mesh === hit.object);
+    const target = this.resolveTarget(targets, hit.object);
     if (!target) return null;
     return { target, hit };
   }
@@ -1383,10 +1396,14 @@ export class ScanMeshEditController {
     const stroke = this.sculpt;
     const spec = this.spec;
     if (!stroke || !spec) return;
-    const found = this.hitTargets(event, stroke.id);
+    const found = this.hitTargets(event, stroke.id || undefined);
     if (!found) return;
     const state = this.stateOf(found.target);
     if (!state) return;
+    if (!stroke.id) {
+      stroke.id = found.target.id;
+      this.host.onBegin();
+    }
     const local = found.target.mesh.worldToLocal(found.hit.point.clone());
     const radius = this.brushRadius();
     if (stroke.last && stroke.last.distanceTo(local) < radius * 0.2) return;
@@ -1415,8 +1432,6 @@ export class ScanMeshEditController {
     const spec = this.spec;
     if (!spec || event.button !== 0) return;
     if (event.shiftKey) return;
-    // 색인 없는 스캔은 여기서 색인 메시로 바뀐다. 광선 검사 전에 해 두어야 면 번호가 맞는다.
-    for (const target of this.host.targets()) this.stateOf(target);
     if (spec.tab === "trim" && spec.trimTool === "lasso") {
       const rect = this.host.dom.getBoundingClientRect();
       this.lasso = {
@@ -1431,8 +1446,9 @@ export class ScanMeshEditController {
     const extractBrush = spec.tab === "extract" && spec.extractTool === "brush";
     if ((spec.tab === "trim" && spec.trimTool === "brush") || extractBrush) {
       const found = this.hitTargets(event);
-      if (!found) return;
-      if (extractBrush && !this.states.get(found.target.id)?.teeth.some((row) => row.key === this.activeTooth)) {
+      if (found) this.stateOf(found.target);
+      if (extractBrush && found && !this.states.get(found.target.id)?.teeth.some((row) => row.key === this.activeTooth)) {
+        this.grab(event);
         return;
       }
       this.paint = { pointerId: event.pointerId, at: performance.now(), pending: null };
@@ -1442,16 +1458,17 @@ export class ScanMeshEditController {
     }
     if (spec.tab === "sculpt") {
       const found = this.hitTargets(event);
-      if (!found || !this.stateOf(found.target)) return;
-      this.host.onBegin();
+      const ready = found ? this.stateOf(found.target) : null;
       this.sculpt = {
         pointerId: event.pointerId,
-        id: found.target.id,
+        id: ready && found ? found.target.id : "",
         at: performance.now(),
         last: null,
         pending: null,
       };
       this.grab(event);
+      if (!found || !ready) return;
+      this.host.onBegin();
       this.stampSculpt(event);
       return;
     }
@@ -1525,6 +1542,10 @@ export class ScanMeshEditController {
       const id = this.sculpt.id;
       this.release(event);
       this.sculpt = null;
+      if (!id) {
+        event.stopImmediatePropagation();
+        return;
+      }
       const state = this.states.get(id);
       if (state) {
         state.geometry.computeBoundingBox();

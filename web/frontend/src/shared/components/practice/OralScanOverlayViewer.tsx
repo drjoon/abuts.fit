@@ -36,6 +36,7 @@
 // - 2026-09-27: 스캔바디·심플어벗 실제 형상을 ICP로 맞춘다(fitScanbodyMesh). 후보가 여럿이면 가장 잘 맞는 것.
 // - 2026-09-27: 화살표를 끄는 동안 언더컷을 바로 칠한다. 삽입축은 수동으로만 잡는다. 미리보기(preview)는 스캔을 돌리지 않고 축·언더컷만 화면을 따라온다.
 // - 2026-09-28: 메시 편집(다듬기·구멍 메우기·조각). 모양이 바뀐 스캔은 새 지오메트리로 갈고, 정점마다 파일 좌표를 들고 작업 DCM으로 저장한다.
+// - 2026-10-04: 메시 브러시 픽킹은 뒷면 셸과 상관없이 양면.
 import {
   forwardRef,
   useEffect,
@@ -58,6 +59,7 @@ import {
   disposeBackFaceShell,
   syncBackFaceShell,
   syncBackFaceShellGeometry,
+  withDoubleSidePick,
 } from "@/shared/three/backFaceShell";
 import {
   applyScanColorToneMapping,
@@ -6322,10 +6324,12 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       .map((entry) => entry.mesh);
     if (meshes.length === 0) return null;
     const reach = place.radius * 2.2;
-    for (const hit of raycaster.intersectObjects(meshes, false)) {
-      if (hit.point.distanceTo(place.center) <= reach) return hit.point.clone();
-    }
-    return null;
+    return withDoubleSidePick(meshes, () => {
+      for (const hit of raycaster.intersectObjects(meshes, false)) {
+        if (hit.point.distanceTo(place.center) <= reach) return hit.point.clone();
+      }
+      return null;
+    });
   };
 
   /** 월드 점을 그 치아 마진 좌표(각도·기본 고리 비율·축 깊이)로. `marginWorldPoints`의 역. */
