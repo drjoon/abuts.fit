@@ -4,6 +4,8 @@
 // - web/backend/modules/chat/chat.routes.js
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/frontend/src/App.tsx
+// change-log:
+// - 2026-10-04: morgan skip — lab-helper alarms/wait 롱폴링(25s) 로그 스팸 제외.
 import express, { json, urlencoded, static as staticMiddleware } from "express";
 import "./bootstrap/env.js";
 import rateLimit from "express-rate-limit";
@@ -142,7 +144,11 @@ const dbReady = connect(mongoUri, {
 
 const shouldSkipRequestLog = (req) => {
   const path = String(req?.originalUrl || req?.url || "").split("?")[0];
-  return path.startsWith("/api/cnc/machines/bridge/machining/tick/");
+  // CNC bridge tick · Lab Helper PC 알람 롱폴링 — 정상 동작인데 로그를 가득 채움.
+  return (
+    path.startsWith("/api/cnc/machines/bridge/machining/tick/") ||
+    path === "/api/lab-helper/alarms/wait"
+  );
 };
 
 // 기본 미들웨어

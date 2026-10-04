@@ -19,7 +19,7 @@
 - UI copy 간결·중복 금지(강제): 문구는 짧게, 카드·표에 있는 금액·기간·건수는 문단에 다시 쓰지 않는다 — `.cursor/rules/ui-copy-concise.mdc`
 - 영업 방문 주체 카피(강제): **영업 담당자** (not 담당 영업자) — `.cursor/rules/sales-rep-copy.mdc`
 - 기공소 작업 폴더(강제): 채팅 「작업열기」·「다운로드」는 의뢰·디자인·보철 파일 전부를 작업 폴더 안 케이스 폴더(`buildLabCaseFolderName` = `YYYYMMDD_치과명-환자명-치아번호`)에 **풀어서** 저장한다(`useS3FileDownload.saveToLabWorkFolder`). 순서: 연결 프로그램 v3+(Windows·Mac, `labHelperClient.ts`)가 있으면 저장 후 탐색기·Finder로 폴더 열기 → 없는 Windows·Mac은 브라우저와 무관하게 `LabHelperInstallDialog`(OS별 설치 파일 자동 받기, 연결되면 이어서 저장; 닫으면 Chrome·Edge는 `showDirectoryPicker` 핸들(`labWorkFolder.ts`), Firefox·Safari는 케이스 폴더 이름 zip으로 저장하고 다시 묻지 않음) → 설치할 수 없는 기기는 폴더 핸들 또는 zip. 「작업열기」는 이미 받은 케이스면 받지 않고 폴더만 연다(`reuseSaved`), 「다운로드」는 다시 받는다. 버튼은 「저장 중 N%」 + 하단 진행 막대(`labSaveProgress`). 디자인 SW 실행·주문 등록은 하지 않는다(3Shape·exocad 모두 인자 등록 불가). 연결 프로그램: `bg/lab-cad-helper/rules.md`.
-- 기공소·치과 PC 알람(강제): 탭 숨김·브라우저 종료·다른 창 포커스 시에도 의뢰·채팅 알람은 연결 프로그램 v4+(`notify`·계정별 `session` + `GET /api/lab-helper/alarms/wait`)로 OS 알림음. 포커스된 탭은 `AudioContext`(제스처 resume)로 브라우저음, 막히면 `/notify`. `browserAlive`는 포커스된 보이는 탭만 — 숨김·후면·다른 창은 헬퍼 폴링. 치과는 작업시작·완료·작업파일도 같은 플레이어. prefs=`labReceiveSoundPrefs`(전체 on/off, 켜면 미리듣기). 헤더 설정=`LabReceiveAlarmSettingsButton`(보기·전체 알림·**연결 프로그램 설치/업데이트**). 채팅 입력 포커스 시 미설치·구버전이면 `useLabHelperInstallPrompt`로 설치/업데이트 모달(탭 세션당 한 번). 구버전은 `LabHelperUpdatePrompt`(기공소·치과) 모달로도 안내, v5+는 `version.json` 자동 갱신(현재 v12). 알림 **보기**는 헬퍼 `POST /open-href`로 수신함/발신함 창을 앞으로(`ba=`·BroadcastChannel로 같은 계정만). Mac 「설정 열기」는 v10+ `POST /open-privacy-settings`(헬퍼 없으면 ConfirmDialog 수동 안내). SSOT: `labHelperClient.ts`, `useLabHelperInstallPrompt.tsx`, `LabHelperUpdateDialog.tsx`, `MacPrivacySettingsOpenButton.tsx`, `chatSoundPlayer.ts`, `bg/lab-cad-helper/rules.md`.
+- 기공소·치과 PC 알람(강제): 탭 숨김·브라우저 종료·다른 창 포커스 시에도 의뢰·채팅 알람은 연결 프로그램 v4+(`notify`·계정별 `session` + v14 `WS /api/lab-helper/alarms/ws`, 구버전 `GET /alarms/wait`)로 OS 알림음. 포커스된 탭은 `AudioContext`(제스처 resume)로 브라우저음, 막히면 `/notify`. `browserAlive`는 포커스된 보이는 탭만 — 숨김·후면·다른 창은 헬퍼 소켓 구독. 치과는 작업시작·완료·작업파일도 같은 플레이어. prefs=`labReceiveSoundPrefs`(전체 on/off, 켜면 미리듣기). 헤더 설정=`LabReceiveAlarmSettingsButton`(보기·전체 알림·**연결 프로그램 설치/업데이트**). 채팅 입력 포커스 시 미설치·구버전이면 `useLabHelperInstallPrompt`로 설치/업데이트 모달(탭 세션당 한 번). 구버전은 `LabHelperUpdatePrompt`(기공소·치과) 모달로도 안내, v5+는 `version.json` 자동 갱신(현재 v14). 알림 **보기**는 헬퍼 `POST /open-href`로 수신함/발신함 창을 앞으로(`ba=`·BroadcastChannel로 같은 계정만). Mac 「설정 열기」는 v10+ `POST /open-privacy-settings`(헬퍼 없으면 ConfirmDialog 수동 안내). SSOT: `labHelperClient.ts`, `useLabHelperInstallPrompt.tsx`, `LabHelperUpdateDialog.tsx`, `MacPrivacySettingsOpenButton.tsx`, `chatSoundPlayer.ts`, `bg/lab-cad-helper/rules.md`.
 - 최근 변경 목록 파일: `web/frontend/modified_prep_stage_changes_2026-08-03.txt` (작업 공정 변경 이력, 프론트 표시 레벨)
 
 Notes:
@@ -67,7 +67,7 @@ Notes:
   - 통계(치과): `충전 − 소비 | 의뢰건수`.
   - 통계(기공소): `어벗츠로부터`=`정산 적립 | 의뢰건수`, `어벗츠로 의뢰`=`충전 − 소비 | 의뢰건수`.
   - 데모/실사용 `usageScope`·2줄 집계는 쓰지 않는다(단일 장부). 데모 모드는 뱃지·잔고 힌트만.
-  - 가로폭은 작업영역을 나누지 않는다. `SETTLEMENT_STAT_CARD_WIDTH_CLASS`(16rem) + `SETTLEMENT_STAT_ROW_CLASS`(가운데 묶음). 기공소 지급·제조사·관리자·딜러·개발운영·내역·통계 공통.
+  - 가로폭은 작업영역을 나누지 않는다. `SETTLEMENT_STAT_CARD_WIDTH_CLASS`(선호 11.5rem, 최소 sm 10.5rem) + `SETTLEMENT_STAT_ROW_CLASS`(가운데 묶음). 최소폭 미만일 때만 가로 스크롤. 기공소 지급·제조사·관리자·딜러·개발운영·내역·통계 공통.
   - SSOT: `src/shared/settlement/settlementUi.tsx`, `CreditLedgerModal.tsx`,
     `CreditStatisticsTab.tsx`, `.cursor/rules/ui-summary-cards.mdc`.
 - Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.

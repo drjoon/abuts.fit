@@ -65,14 +65,14 @@ bind `127.0.0.1:8010`(Windows TcpListener — HttpListener URL 예약은 관리�
 | PUT | `/cases/file?workFolder&caseFolder&name` | 파일 저장(최대 4GB). 쿼리의 `+`는 공백 |
 | POST | `/cases/reveal` | `{workFolder, caseFolder}` → 탐색기·Finder로 열기 |
 | POST | `/notify` | `{title?, body?}` → OS 알림음(+ balloon/알림). v4 |
-| POST | `/session` | `{apiOrigin, appOrigin?, token, prefs, browserAlive, alertMode?, businessAnchorId?}` — 토큰별로 세션 유지. 포커스 없는 계정만 `alarms/wait` 폴링. v4, 다중 세션 v8, ba v9 |
+| POST | `/session` | `{apiOrigin, appOrigin?, token, prefs, browserAlive, alertMode?, businessAnchorId?}` — 토큰별로 세션 유지. 포커스 없는 계정만 서버 `WS /api/lab-helper/alarms/ws` 구독(v14+). 구버전은 `alarms/wait` 롱폴링. v4, 다중 세션 v8, ba v9 |
 | POST | `/session/clear` | `{token?}` 해당 계정만 제거. token 없으면 전부 삭제. v4 |
 | POST | `/open-href` | `{ href }` — 이미 열린 기공의뢰 탭을 앞으로. v7. v9는 `ba=`로 같은 계정 탭만. v11은 JS 주입 실패 시 URL 폴백. v13은 ba 필수·계정 탭 2차 탐색 |
 | POST | `/open-privacy-settings` | Mac — 개인정보 보호 및 보안(시스템 설정) 열기. v10 |
 | POST | `/shutdown` | 재설치용 종료 |
 
-- 웹 `LAB_HELPER_MIN_VERSION`(폴더열기)=3, `LAB_HELPER_ALARM_MIN_VERSION`=4, `LAB_HELPER_CURRENT_VERSION`=13. 알람 API는 version≥4일 때만 호출한다.
-- **자동 갱신(v5+)**: serve 중 `version.json`을 보고 원격이 더 높으면 설치본을 받아 `--silent-update`로 교체. 이미 설치된 PC에서 설치 파일을 열면 확인 창 없이 덮어쓴다. 구버전은 웹 `LabHelperUpdateDialog`로 파일 받기 + 「열어서 설치」를 짧게 안내한다. v6: 탭 숨김 시 폴링·401 백오프·캐시 무시. v8: 치과·기공소 JWT를 동시에 들고, 포커스 없는 쪽만 OS 알림. v9: `businessAnchorId`/`ba=`로 다른 치과 창이 알림 보기를 가로채지 않음. v10: Mac `POST /open-privacy-settings`. v11: open-href가 JS 주입 실패해도 기존 탭 URL로 연다. v12: OS 알림을 커스텀 플로팅 토스트(보기)로. v13: Mac open-href가 `ba=`를 필수로 맞추고, 목록이 아닌 같은 계정 탭도 찾으며, 토스트 보기는 대상 탭이 없으면 앞창에 새 탭을 열지 않음.
+- 웹 `LAB_HELPER_MIN_VERSION`(폴더열기)=3, `LAB_HELPER_ALARM_MIN_VERSION`=4, `LAB_HELPER_CURRENT_VERSION`=14. 알람 API는 version≥4일 때만 호출한다. v14+ PC 알람은 서버 WebSocket.
+- **자동 갱신(v5+)**: serve 중 `version.json`을 보고 원격이 더 높으면 설치본을 받아 `--silent-update`로 교체. 이미 설치된 PC에서 설치 파일을 열면 확인 창 없이 덮어쓴다. 구버전은 웹 `LabHelperUpdateDialog`로 파일 받기 + 「열어서 설치」를 짧게 안내한다. v6: 탭 숨김 시 폴링·401 백오프·캐시 무시. v8: 치과·기공소 JWT를 동시에 들고, 포커스 없는 쪽만 OS 알림. v9: `businessAnchorId`/`ba=`로 다른 치과 창이 알림 보기를 가로채지 않음. v10: Mac `POST /open-privacy-settings`. v11: open-href가 JS 주입 실패해도 기존 탭 URL로 연다. v12: OS 알림을 커스텀 플로팅 토스트(보기)로. v13: Mac open-href가 `ba=`를 필수로 맞추고, 목록이 아닌 같은 계정 탭도 찾으며, 토스트 보기는 대상 탭이 없으면 앞창에 새 탭을 열지 않음. v14: PC 알람 서버 WS push(롱폴링 제거).
 
 ## 5) 파일 · 빌드
 
@@ -81,7 +81,7 @@ bind `127.0.0.1:8010`(Windows TcpListener — HttpListener URL 예약은 관리�
 | `win/Program.cs` | 진입: 설치(기본) / `--serve` / `--uninstall`. 설치 폴더에서 실행되면 serve |
 | `win/Installer.cs` | 동의·복사·레지스트리·v2 정리·연결 확인·제거 |
 | `win/HttpServer.cs` | HTTP·CORS·라우팅 |
-| `win/Notify.cs` | v4 PC 알람(소리·balloon·session·폴링) |
+| `win/Notify.cs` | v4 PC 알람(소리·토스트·session·v14 WS) |
 | `win/AutoUpdate.cs` | v5 version.json 자동 갱신 |
 | `win/CaseFolder.cs` | 이름 정리·확인·쓰기 |
 | `win/WinShell.cs` | 탐색기 열기·앞으로, 폴더 고르기 창 |
@@ -102,6 +102,7 @@ bg/lab-cad-helper/mac/build.sh   # Xcode CLT → AbutsLabHelper-mac.zip (유니�
 - v11: Mac open-href — Apple Event JS 주입이 막혀도 기존 수신함/발신함 탭에 URL을 넣고, ba를 못 읽어도 mode·host가 맞으면 그 탭을 연다(앞창에 빈 탭이 생기지 않게).
 - v12: OS 알림 — Mac·Windows 커스텀 플로팅 토스트(브랜드 액센트·「보기」). 브라우저를 닫거나 다른 사이트를 볼 때도 화면 오른쪽 위에 뜨고, 보기로 해당 채팅 탭을 연다.
 - v13: Mac open-href — `ba=`가 있으면 URL·`__ABUTS_ALARM_ACCOUNT__`로 반드시 같은 계정만. 목록 탭 말고도 같은 계정 탭을 2차로 찾고, 토스트 「보기」는 대상이 없으면 앞창(다른 계정)에 새 탭을 열지 않는다.
+- v14: PC 알람 — `GET /alarms/wait` 롱폴링 대신 서버 `WS /api/lab-helper/alarms/ws`(Bearer) push.
 
 ## 6) 레거시
 

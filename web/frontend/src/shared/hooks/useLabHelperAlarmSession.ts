@@ -6,6 +6,7 @@
 // - 2026-10-04: 세션에 businessAnchorId — 헬퍼 open-href가 같은 계정 탭만 연다.
 // - 2026-10-03: 치과도 헬퍼 세션(alertMode=send). 포커스 없으면 browserAlive=false.
 // - 2026-10-03: 로그아웃만 해당 토큰 clear — 다른 창 계정의 세션을 지우지 않음.
+// - 2026-10-04: browserAlive=false 때 헬퍼가 서버 WS 구독(v14+; 구버전은 wait 폴링).
 // - 2026-10-03: 탭 숨김·후면에서 browserAlive=false — 헬퍼가 alarms/wait 폴링(백그라운드 소켓 무음 방지).
 // - 2026-10-03: 기공소 로그인 중 헬퍼에 JWT·prefs·heartbeat 동기화(창 닫힌 뒤 폴링).
 

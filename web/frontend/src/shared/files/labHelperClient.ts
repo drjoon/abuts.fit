@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: CURRENT_VERSION=14 — PC 알람 서버 WS(롱폴링 제거).
 // - 2026-10-04: CURRENT_VERSION=13 — Mac open-href ba 필수 매칭·계정 탭 탐색.
 // - 2026-10-04: CURRENT_VERSION=12 — OS 커스텀 플로팅 알림 토스트.
 // - 2026-10-04: CURRENT_VERSION=11 — Mac open-href 탭 URL 폴백.
@@ -31,7 +32,7 @@ export const LAB_HELPER_ALARM_MIN_VERSION = 4;
 /** Mac 시스템 설정 열기(/open-privacy-settings)에 필요한 최소 버전 */
 export const LAB_HELPER_PRIVACY_SETTINGS_MIN_VERSION = 10;
 /** 배포 중인 최신 연결 프로그램 버전(구버전이면 자동 갱신 유도) */
-export const LAB_HELPER_CURRENT_VERSION = 13;
+export const LAB_HELPER_CURRENT_VERSION = 14;
 const INSTALLED_KEY = "abuts.labHelperInstalled";
 const WORK_FOLDER_KEY = "abuts.labWorkFolder";
 

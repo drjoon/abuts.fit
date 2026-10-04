@@ -1,3 +1,4 @@
+// - 2026-10-04: v14 — PC 알람을 서버 WS(/api/lab-helper/alarms/ws)로. 롱폴링 제거.
 // - 2026-10-04: v13 — open-href: ba 필수 매칭·계정 탭 2차 탐색. 토스트 보기는 ba 있을 때 앞창 새 탭 금지.
 // - 2026-10-04: v10 — POST /open-privacy-settings (Gatekeeper 「그래도 열기」용 시스템 설정).
 // - 2026-10-04: v12 — OS 알림을 커스텀 플로팅 토스트(보기 버튼)로. NSUserNotification 대체.
@@ -20,7 +21,7 @@ import Foundation
 import Network
 import QuartzCore
 
-let helperVersion = 13
+let helperVersion = 14
 /** macOS 13+ 「개인정보 보호 및 보안」 */
 let macPrivacySettingsURL =
   "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
@@ -112,7 +113,7 @@ final class AlarmSession {
   private let lock = NSLock()
   private let maxRows = 8
   private var rows: [String: Row] = [:]
-  private var pollKeys = Set<String>()
+  private var socketKeys = Set<String>()
 
   struct Row {
     var apiOrigin = ""
@@ -127,7 +128,6 @@ final class AlarmSession {
   }
 
   static let heartbeatExpire: TimeInterval = 60
-  static let pollWaitSec = 25
   static let soundDebounce: TimeInterval = 0.9
 
   static func tokenKey(_ token: String) -> String {
@@ -182,10 +182,10 @@ final class AlarmSession {
         .key
       if let drop = drop { rows.removeValue(forKey: drop) }
     }
-    let startPoll = !pollKeys.contains(key)
-    if startPoll { pollKeys.insert(key) }
+    let startSocket = !socketKeys.contains(key)
+    if startSocket { socketKeys.insert(key) }
     lock.unlock()
-    if startPoll { AlarmPoller.start(key: key) }
+    if startSocket { AlarmSocket.start(key: key) }
   }
 
   func clear(_ token: String = "") {
@@ -199,7 +199,8 @@ final class AlarmSession {
     lock.unlock()
   }
 
-  func shouldPoll(_ key: String) -> Bool {
+  /** 포커스 없는 계정만 OS 알람 소켓을 유지한다. */
+  func shouldListen(_ key: String) -> Bool {
     lock.lock(); defer { lock.unlock() }
     guard let row = rows[key] else { return false }
     if !row.enabled || row.apiOrigin.isEmpty || row.token.isEmpty { return false }
@@ -675,11 +676,25 @@ final class AlarmNotifCenter: NSObject, NSUserNotificationCenterDelegate {
   }
 }
 
-enum AlarmPoller {
+enum AlarmSocket {
+  private static let pingInterval: TimeInterval = 20
+
+  private final class StopFlag {
+    private let lock = NSLock()
+    private var stopped = false
+    var isStopped: Bool {
+      lock.lock(); defer { lock.unlock() }
+      return stopped
+    }
+    func stop() {
+      lock.lock(); stopped = true; lock.unlock()
+    }
+  }
+
   static func start(key: String) {
     DispatchQueue.global(qos: .utility).async {
       while true {
-        if !AlarmSession.shared.shouldPoll(key) {
+        if !AlarmSession.shared.shouldListen(key) {
           Thread.sleep(forTimeInterval: 2)
           continue
         }
@@ -688,59 +703,110 @@ enum AlarmPoller {
           Thread.sleep(forTimeInterval: 2)
           continue
         }
-        let waited = waitOnce(apiOrigin: snap.apiOrigin, token: snap.token)
-        if waited.status == 401 || waited.status == 403 {
-          Thread.sleep(forTimeInterval: 15)
-          continue
-        }
-        if let alarm = waited.alarm {
-          let practiceId = "\(alarm["practiceBusinessAnchorId"] ?? "")".trimmingCharacters(in: .whitespaces)
-          if !practiceId.isEmpty, snap.muted.contains(practiceId) { continue }
-          let title = "\(alarm["title"] ?? "")"
-          let body = "\(alarm["body"] ?? "")"
-          AlarmNotify.play(
-            title: title,
-            body: body,
-            href: AlarmNotify.href(
-              from: alarm,
-              appOrigin: snap.appOrigin,
-              alertMode: snap.alertMode,
-              businessAnchorId: snap.businessAnchorId
-            )
-          )
-        } else {
-          Thread.sleep(forTimeInterval: 0.5)
-        }
+        runSession(key: key, snap: snap)
+        Thread.sleep(forTimeInterval: 0.5)
       }
     }
   }
 
-  private static func waitOnce(apiOrigin: String, token: String) -> (alarm: [String: Any]?, status: Int) {
-    let urlStr = "\(apiOrigin)/api/lab-helper/alarms/wait?wait=\(AlarmSession.pollWaitSec)"
-    guard let url = URL(string: urlStr) else { return (nil, 0) }
-    var req = URLRequest(url: url, timeoutInterval: TimeInterval(AlarmSession.pollWaitSec + 10))
-    req.httpMethod = "GET"
-    req.cachePolicy = .reloadIgnoringLocalCacheData
-    req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-    req.setValue("application/json", forHTTPHeaderField: "Accept")
-    req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+  private static func wsURL(apiOrigin: String) -> URL? {
+    var origin = apiOrigin.trimmingCharacters(in: .whitespaces)
+    while origin.hasSuffix("/") { origin = String(origin.dropLast()) }
+    if origin.hasPrefix("https://") {
+      origin = "wss://" + origin.dropFirst("https://".count)
+    } else if origin.hasPrefix("http://") {
+      origin = "ws://" + origin.dropFirst("http://".count)
+    } else {
+      return nil
+    }
+    return URL(string: origin + "/api/lab-helper/alarms/ws")
+  }
+
+  private static func runSession(key: String, snap: AlarmSession.Row) {
+    guard let url = wsURL(apiOrigin: snap.apiOrigin) else {
+      Thread.sleep(forTimeInterval: 3)
+      return
+    }
+    var req = URLRequest(url: url)
+    req.setValue("Bearer \(snap.token)", forHTTPHeaderField: "Authorization")
     req.setValue("AbutsLabHelper/\(helperVersion)", forHTTPHeaderField: "User-Agent")
-    let sem = DispatchSemaphore(value: 0)
-    var result: [String: Any]?
-    var status = 0
-    URLSession.shared.dataTask(with: req) { data, response, _ in
-      defer { sem.signal() }
-      guard let http = response as? HTTPURLResponse else { return }
-      status = http.statusCode
-      guard status == 200,
-            let data = data,
-            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            (obj["ok"] as? Bool) != false,
-            let alarm = obj["alarm"] as? [String: Any] else { return }
-      result = alarm
-    }.resume()
-    _ = sem.wait(timeout: .now() + .seconds(AlarmSession.pollWaitSec + 15))
-    return (result, status)
+    let session = URLSession(configuration: .default)
+    let task = session.webSocketTask(with: req)
+    task.resume()
+
+    let flag = StopFlag()
+    defer {
+      flag.stop()
+      task.cancel(with: .goingAway, reason: nil)
+      session.invalidateAndCancel()
+    }
+
+    DispatchQueue.global(qos: .utility).async {
+      var lastPing = Date()
+      while !flag.isStopped {
+        if !AlarmSession.shared.shouldListen(key) {
+          task.cancel(with: .goingAway, reason: nil)
+          break
+        }
+        guard let cur = AlarmSession.shared.snapshot(key),
+              cur.token == snap.token, cur.apiOrigin == snap.apiOrigin else {
+          task.cancel(with: .goingAway, reason: nil)
+          break
+        }
+        if Date().timeIntervalSince(lastPing) >= pingInterval {
+          task.send(.string(#"{"type":"ping"}"#)) { _ in }
+          lastPing = Date()
+        }
+        Thread.sleep(forTimeInterval: 0.5)
+      }
+    }
+
+    while !flag.isStopped {
+      let sem = DispatchSemaphore(value: 0)
+      var message: URLSessionWebSocketTask.Message?
+      var recvError: Error?
+      task.receive { result in
+        defer { sem.signal() }
+        switch result {
+        case .success(let msg): message = msg
+        case .failure(let err): recvError = err
+        }
+      }
+      _ = sem.wait(timeout: .distantFuture)
+      if let err = recvError {
+        log("alarm-ws recv: \(err.localizedDescription)")
+        break
+      }
+      guard let message = message else { break }
+      let text: String?
+      switch message {
+      case .string(let s): text = s
+      case .data(let d): text = String(data: d, encoding: .utf8)
+      @unknown default: text = nil
+      }
+      guard let text = text,
+            let data = text.data(using: .utf8),
+            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        continue
+      }
+      let type = "\(obj["type"] ?? "")".trimmingCharacters(in: .whitespaces)
+      if type == "ready" || type == "pong" { continue }
+      guard type == "alarm", let alarm = obj["alarm"] as? [String: Any] else { continue }
+      guard let latest = AlarmSession.shared.snapshot(key) else { break }
+      let practiceId = "\(alarm["practiceBusinessAnchorId"] ?? "")".trimmingCharacters(in: .whitespaces)
+      if !practiceId.isEmpty, latest.muted.contains(practiceId) { continue }
+      AlarmNotify.play(
+        title: "\(alarm["title"] ?? "")",
+        body: "\(alarm["body"] ?? "")",
+        href: AlarmNotify.href(
+          from: alarm,
+          appOrigin: latest.appOrigin,
+          alertMode: latest.alertMode,
+          businessAnchorId: latest.businessAnchorId
+        )
+      )
+    }
+    flag.stop()
   }
 }
 

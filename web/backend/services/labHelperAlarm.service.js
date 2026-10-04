@@ -1,39 +1,88 @@
 // related files:
 // - web/backend/socket.js
+// - web/backend/services/labHelperAlarmWs.js
 // - web/backend/modules/labHelper/labHelper.routes.js
 // - bg/lab-cad-helper/win/Notify.cs
 // change-log:
+// - 2026-10-04: WS 구독자 push 우선 — 신규 헬퍼는 롱폴링 대신 소켓.
 // - 2026-10-03: 대기자 없을 때 큐는 짧게만 — 브라우저 활성 중 쌓인 옛 알람 폭주 방지.
 // - 2026-10-03: 기공소 헬퍼 PC 알람 — 유저별 wait queue. 브라우저 종료 후에도 헬퍼가 장기 폴링.
 
-/** 대기자 있을 때 포함 상한 */
+import { normalizeRequestorKind } from "../utils/requestorCapabilities.js";
+
+/** 대기자 있을 때 포함 상한 (레거시 롱폴링) */
 const MAX_QUEUE = 20;
-/** 폴링 공백(수백 ms)용. 브라우저가 알람을 처리할 때는 대기자가 없어 여기만 쌓인다. */
+/** 폴링 공백(수백 ms)용. WS·대기자 없을 때만 짧게 쌓는다. */
 const MAX_QUEUE_WITHOUT_WAITER = 2;
 const DEFAULT_WAIT_MS = 25_000;
 const MAX_WAIT_MS = 30_000;
 
-/** @type {Map<string, { queue: object[], waiters: Array<{ resolve: Function, timer: NodeJS.Timeout }> }>} */
+/**
+ * @typedef {{
+ *   queue: object[],
+ *   waiters: Array<{ resolve: Function, timer: NodeJS.Timeout }>,
+ *   sockets: Set<import('ws').WebSocket>,
+ * }} LabHelperAlarmBucket
+ */
+
+/** @type {Map<string, LabHelperAlarmBucket>} */
 const byUser = new Map();
+
+/** FE·wait·WS 공통 — 기공소·치과 PC 헬퍼 알람. */
+export function canUseLabHelperAlarm(user) {
+  if (!user) return false;
+  const role = String(user.role || "").trim();
+  if (role === "internalLab") return true;
+  if (role === "practice") return true;
+  if (role === "requestor") {
+    const kind = normalizeRequestorKind(user.requestorKind);
+    return kind === "lab" || kind === "practice";
+  }
+  return false;
+}
 
 const getBucket = (userId) => {
   const id = String(userId || "").trim();
   if (!id) return null;
   let bucket = byUser.get(id);
   if (!bucket) {
-    bucket = { queue: [], waiters: [] };
+    bucket = { queue: [], waiters: [], sockets: new Set() };
     byUser.set(id, bucket);
   }
   return bucket;
 };
 
 const trimQueue = (bucket) => {
-  const max =
-    bucket.waiters.length > 0 ? MAX_QUEUE : MAX_QUEUE_WITHOUT_WAITER;
+  const hasLive =
+    bucket.waiters.length > 0 || (bucket.sockets && bucket.sockets.size > 0);
+  const max = hasLive ? MAX_QUEUE : MAX_QUEUE_WITHOUT_WAITER;
   while (bucket.queue.length > max) bucket.queue.shift();
 };
 
-const deliver = (bucket, alarm) => {
+const normalizeAlarm = (alarm) => {
+  const type = String(alarm?.type || "").trim();
+  if (!type) return null;
+  return {
+    type,
+    practiceBusinessAnchorId:
+      String(alarm?.practiceBusinessAnchorId || "").trim() || null,
+    transferId: String(alarm?.transferId || "").trim() || null,
+    title: String(alarm?.title || "").trim() || "어벗츠",
+    body: String(alarm?.body || "").trim() || "새 알림",
+    at: new Date().toISOString(),
+  };
+};
+
+const sendSocketJson = (ws, payload) => {
+  if (!ws || ws.readyState !== 1) return; // WebSocket.OPEN
+  try {
+    ws.send(JSON.stringify(payload));
+  } catch (err) {
+    console.warn("[labHelperAlarm] ws send failed", err?.message || err);
+  }
+};
+
+const deliverToWaitersOrQueue = (bucket, alarm) => {
   const waiter = bucket.waiters.shift();
   if (waiter) {
     clearTimeout(waiter.timer);
@@ -45,29 +94,63 @@ const deliver = (bucket, alarm) => {
 };
 
 /**
- * 헬퍼 알람 후보를 유저 큐에 넣는다.
+ * 헬퍼 알람 후보를 유저 큐/소켓에 넣는다.
+ * WS 구독자가 있으면 push, 없으면 레거시 롱폴링 대기/짧은 큐.
  * @param {string} userId
  * @param {{ type: string, practiceBusinessAnchorId?: string|null, transferId?: string|null, title?: string, body?: string }} alarm
  */
 export function enqueueLabHelperAlarm(userId, alarm) {
   const bucket = getBucket(userId);
   if (!bucket) return;
-  const type = String(alarm?.type || "").trim();
-  if (!type) return;
-  const row = {
-    type,
-    practiceBusinessAnchorId:
-      String(alarm?.practiceBusinessAnchorId || "").trim() || null,
-    transferId: String(alarm?.transferId || "").trim() || null,
-    title: String(alarm?.title || "").trim() || "어벗츠",
-    body: String(alarm?.body || "").trim() || "새 알림",
-    at: new Date().toISOString(),
-  };
-  deliver(bucket, row);
+  const row = normalizeAlarm(alarm);
+  if (!row) return;
+
+  if (bucket.sockets.size > 0) {
+    for (const ws of bucket.sockets) {
+      sendSocketJson(ws, { type: "alarm", ok: true, alarm: row });
+    }
+    return;
+  }
+
+  deliverToWaitersOrQueue(bucket, row);
 }
 
 /**
- * 최대 waitMs 동안 알람을 기다린다. 없으면 null.
+ * 헬퍼 WS 연결 등록. 큐에 쌓인 알람을 즉시 flush.
+ * @param {string} userId
+ * @param {import('ws').WebSocket} ws
+ */
+export function subscribeLabHelperAlarmSocket(userId, ws) {
+  const bucket = getBucket(userId);
+  if (!bucket || !ws) return;
+  bucket.sockets.add(ws);
+  while (bucket.queue.length > 0) {
+    const alarm = bucket.queue.shift();
+    sendSocketJson(ws, { type: "alarm", ok: true, alarm });
+  }
+}
+
+/**
+ * @param {string} userId
+ * @param {import('ws').WebSocket} ws
+ */
+export function unsubscribeLabHelperAlarmSocket(userId, ws) {
+  const id = String(userId || "").trim();
+  if (!id || !ws) return;
+  const bucket = byUser.get(id);
+  if (!bucket) return;
+  bucket.sockets.delete(ws);
+  if (
+    bucket.sockets.size === 0 &&
+    bucket.waiters.length === 0 &&
+    bucket.queue.length === 0
+  ) {
+    byUser.delete(id);
+  }
+}
+
+/**
+ * 최대 waitMs 동안 알람을 기다린다. 없으면 null. (레거시 헬퍼 롱폴링)
  * @param {string} userId
  * @param {number} [waitMs]
  * @returns {Promise<object|null>}

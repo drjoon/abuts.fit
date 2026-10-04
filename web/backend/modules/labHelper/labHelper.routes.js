@@ -3,6 +3,7 @@
 // - web/backend/services/labHelperAlarm.service.js
 // - web/backend/app.js
 // change-log:
+// - 2026-10-04: wait는 구버전 호환. 신규 헬퍼는 WS `/alarms/ws`.
 // - 2026-10-03: 기공소 PC 헬퍼 알람 wait API.
 
 import express from "express";

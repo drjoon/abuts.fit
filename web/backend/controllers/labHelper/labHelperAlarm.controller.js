@@ -2,25 +2,15 @@
 // - web/backend/services/labHelperAlarm.service.js
 // - web/backend/modules/labHelper/labHelper.routes.js
 // change-log:
+// - 2026-10-04: canUseLabHelperAlarm을 service로 공유(WS와 동일).
 // - 2026-10-04: 치과(practice)도 wait 허용 — FE useLabHelperAlarmSession과 동일.
 // - 2026-10-03: wait 응답 no-store·ETag 제거(빈 응답 304로 알람 유실 방지).
-// - 2026-10-03: 헬퍼 PC 알람 장기 폴링(wait).
+// - 2026-10-03: 헬퍼 PC 알람 장기 폴링(wait). 신규 헬퍼는 WS 사용 — wait는 구버전 호환.
 
-import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
-import { waitForLabHelperAlarm } from "../../services/labHelperAlarm.service.js";
-
-/** FE `canSyncLabHelperAlarm`과 동일 — 기공소·치과 PC 헬퍼 알람. */
-const canUseLabHelperAlarm = (user) => {
-  if (!user) return false;
-  const role = String(user.role || "").trim();
-  if (role === "internalLab") return true;
-  if (role === "practice") return true;
-  if (role === "requestor") {
-    const kind = normalizeRequestorKind(user.requestorKind);
-    return kind === "lab" || kind === "practice";
-  }
-  return false;
-};
+import {
+  canUseLabHelperAlarm,
+  waitForLabHelperAlarm,
+} from "../../services/labHelperAlarm.service.js";
 
 const applyWaitNoCacheHeaders = (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -32,7 +22,7 @@ const applyWaitNoCacheHeaders = (req, res) => {
   }
 };
 
-/** GET /api/lab-helper/alarms/wait?wait=25 */
+/** GET /api/lab-helper/alarms/wait?wait=25 — 구 헬퍼(v13 이하) 호환 */
 export async function waitLabHelperAlarm(req, res) {
   try {
     applyWaitNoCacheHeaders(req, res);

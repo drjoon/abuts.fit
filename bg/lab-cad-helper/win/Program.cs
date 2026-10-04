@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: v14 — PC 알람을 서버 WS로(롱폴링 제거).
 // - 2026-10-04: v13 — Mac open-href ba 매칭과 버전 맞춤.
 // - 2026-10-04: v12 — 커스텀 플로팅 알림 토스트.
 // - 2026-10-04: v11 — 버전 맞춤(Mac open-href 폴백과 동일 번호).
@@ -24,7 +25,7 @@ namespace Abuts.LabHelper
 {
     internal static class Program
     {
-        public const int Version = 13;
+        public const int Version = 14;
         public const int Port = 8010;
         public const string Title = "어벗츠 연결 프로그램";
 

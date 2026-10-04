@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-04: v14 — PC 알람을 서버 WS(/api/lab-helper/alarms/ws)로. 롱폴링 제거.
 // - 2026-10-04: v13 — 버전 맞춤(Mac open-href ba 매칭). Windows는 탭 탐색 없음·FE 가드.
 // - 2026-10-04: v12 — 커스텀 플로팅 토스트(보기)로 balloon 대체.
 // - 2026-10-04: v9 — 세션 BusinessAnchorId를 알림 href ba=에 넣음.
@@ -14,6 +15,7 @@ using System.Drawing;
 using System.IO;
 using System.Media;
 using System.Net;
+using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
@@ -39,11 +41,10 @@ namespace Abuts.LabHelper
         private static readonly object Gate = new object();
         private static readonly Dictionary<string, AlarmSessionRow> Rows =
             new Dictionary<string, AlarmSessionRow>(StringComparer.Ordinal);
-        private static readonly HashSet<string> Pollers = new HashSet<string>(StringComparer.Ordinal);
+        private static readonly HashSet<string> SocketLoops = new HashSet<string>(StringComparer.Ordinal);
         private const int MaxRows = 8;
 
         public const int HeartbeatExpireMs = 60000;
-        public const int PollWaitSec = 25;
         public const int SoundDebounceMs = 900;
 
         public static string TokenKey(string token)
@@ -111,7 +112,7 @@ namespace Abuts.LabHelper
                     if (!string.IsNullOrEmpty(drop)) Rows.Remove(drop);
                 }
             }
-            EnsurePoller(key);
+            EnsureSocketLoop(key);
         }
 
         public static void Clear(string token)
@@ -124,7 +125,8 @@ namespace Abuts.LabHelper
             }
         }
 
-        public static bool ShouldPoll(string key)
+        /** 포커스 없는 계정만 OS 알람 소켓을 유지한다. */
+        public static bool ShouldListen(string key)
         {
             lock (Gate)
             {
@@ -195,14 +197,14 @@ namespace Abuts.LabHelper
             }
         }
 
-        private static void EnsurePoller(string key)
+        private static void EnsureSocketLoop(string key)
         {
             lock (Gate)
             {
-                if (Pollers.Contains(key)) return;
-                Pollers.Add(key);
+                if (SocketLoops.Contains(key)) return;
+                SocketLoops.Add(key);
             }
-            var t = new Thread(() => AlarmPoller.Loop(key)) { IsBackground = true, Name = "alarm-poll" };
+            var t = new Thread(() => AlarmSocket.Loop(key)) { IsBackground = true, Name = "alarm-ws" };
             t.Start();
         }
 
@@ -446,15 +448,18 @@ namespace Abuts.LabHelper
         }
     }
 
-    internal static class AlarmPoller
+    internal static class AlarmSocket
     {
+        private const int PingIntervalMs = 20000;
+        private const int RecvBufferBytes = 8192;
+
         public static void Loop(string key)
         {
             while (true)
             {
                 try
                 {
-                    if (!AlarmSession.ShouldPoll(key))
+                    if (!AlarmSession.ShouldListen(key))
                     {
                         Thread.Sleep(2000);
                         continue;
@@ -470,97 +475,203 @@ namespace Abuts.LabHelper
                         Thread.Sleep(2000);
                         continue;
                     }
-                    int status;
-                    var alarm = WaitOnce(snap.ApiOrigin, snap.Token, out status);
-                    if (status == 401 || status == 403)
-                    {
-                        Log.Write("poll auth " + status);
-                        Thread.Sleep(15000);
-                        continue;
-                    }
-                    if (alarm == null)
-                    {
-                        Thread.Sleep(500);
-                        continue;
-                    }
-                    var practiceId = "";
-                    object pid;
-                    if (alarm.TryGetValue("practiceBusinessAnchorId", out pid) && pid != null)
-                    {
-                        practiceId = Convert.ToString(pid).Trim();
-                    }
-                    if (!string.IsNullOrEmpty(practiceId) && snap.Muted.Contains(practiceId)) continue;
-                    var title = "";
-                    var body = "";
-                    object t, b;
-                    if (alarm.TryGetValue("title", out t) && t != null) title = Convert.ToString(t);
-                    if (alarm.TryGetValue("body", out b) && b != null) body = Convert.ToString(b);
-                    AlarmNotify.Play(
-                        title,
-                        body,
-                        AlarmNotify.HrefFrom(alarm, snap.AppOrigin, snap.AlertMode, snap.BusinessAnchorId));
+                    RunSession(key, snap);
                 }
                 catch (Exception ex)
                 {
-                    Log.Write("poll: " + ex.Message);
+                    Log.Write("alarm-ws: " + ex.Message);
                     Thread.Sleep(3000);
                 }
             }
         }
 
-        private static Dictionary<string, object> WaitOnce(string apiOrigin, string token, out int statusCode)
+        private static void RunSession(string key, AlarmSessionRow snap)
         {
-            statusCode = 0;
-            var url = apiOrigin + "/api/lab-helper/alarms/wait?wait=" + AlarmSession.PollWaitSec;
-            HttpWebRequest req;
-            try
+            Uri uri;
+            if (!TryWsUri(snap.ApiOrigin, out uri))
             {
-                req = (HttpWebRequest)WebRequest.Create(url);
+                Thread.Sleep(3000);
+                return;
             }
-            catch
+
+            using (var ws = new ClientWebSocket())
             {
-                return null;
-            }
-            req.Method = "GET";
-            req.Timeout = (AlarmSession.PollWaitSec + 10) * 1000;
-            req.ReadWriteTimeout = (AlarmSession.PollWaitSec + 10) * 1000;
-            req.Headers[HttpRequestHeader.Authorization] = "Bearer " + token;
-            req.Accept = "application/json";
-            req.UserAgent = "AbutsLabHelper/" + Program.Version;
-            // 장기 폴링은 캐시하면 안 됨(동일 빈 응답 304).
-            req.Headers[HttpRequestHeader.CacheControl] = "no-cache";
-            try
-            {
-                using (var res = (HttpWebResponse)req.GetResponse())
-                using (var stream = res.GetResponseStream())
-                using (var reader = new StreamReader(stream ?? Stream.Null, Encoding.UTF8))
+                ws.Options.SetRequestHeader("Authorization", "Bearer " + snap.Token);
+                ws.Options.SetRequestHeader("User-Agent", "AbutsLabHelper/" + Program.Version);
+                try
                 {
-                    statusCode = (int)res.StatusCode;
-                    if (statusCode != 200) return null;
-                    var text = reader.ReadToEnd();
-                    if (string.IsNullOrWhiteSpace(text)) return null;
-                    var map = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(text);
-                    if (map == null) return null;
-                    object ok;
-                    if (map.TryGetValue("ok", out ok) && ok is bool && !(bool)ok) return null;
-                    object alarm;
-                    if (map.TryGetValue("alarm", out alarm) && alarm is Dictionary<string, object>)
+                    ws.ConnectAsync(uri, CancellationToken.None).GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    Log.Write("alarm-ws connect: " + ex.Message);
+                    Thread.Sleep(5000);
+                    return;
+                }
+
+                var ser = new JavaScriptSerializer();
+                var buffer = new byte[RecvBufferBytes];
+                var stopWatch = false;
+                var watcher = new Thread(() =>
+                {
+                    var lastPing = DateTime.UtcNow;
+                    while (!stopWatch && ws.State == WebSocketState.Open)
                     {
-                        return (Dictionary<string, object>)alarm;
+                        if (!AlarmSession.ShouldListen(key))
+                        {
+                            try { ws.Abort(); } catch { }
+                            break;
+                        }
+                        AlarmSessionRow cur;
+                        if (!AlarmSession.TrySnapshot(key, out cur) || cur == null
+                            || cur.Token != snap.Token || cur.ApiOrigin != snap.ApiOrigin)
+                        {
+                            try { ws.Abort(); } catch { }
+                            break;
+                        }
+                        if ((DateTime.UtcNow - lastPing).TotalMilliseconds >= PingIntervalMs)
+                        {
+                            SendText(ws, "{\"type\":\"ping\"}");
+                            lastPing = DateTime.UtcNow;
+                        }
+                        Thread.Sleep(500);
                     }
-                    // 빈 wait (timeout) — alarm 없음
-                    return null;
+                })
+                { IsBackground = true, Name = "alarm-ws-watch" };
+                watcher.Start();
+
+                try
+                {
+                    while (ws.State == WebSocketState.Open)
+                    {
+                        string text;
+                        if (!TryReceiveText(ws, buffer, out text)) break;
+                        if (string.IsNullOrWhiteSpace(text)) continue;
+
+                        Dictionary<string, object> map;
+                        try
+                        {
+                            map = ser.Deserialize<Dictionary<string, object>>(text);
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+                        if (map == null) continue;
+
+                        var type = "";
+                        object typeObj;
+                        if (map.TryGetValue("type", out typeObj) && typeObj != null)
+                            type = Convert.ToString(typeObj).Trim();
+
+                        if (type == "ready" || type == "pong") continue;
+                        if (type != "alarm") continue;
+
+                        object alarmObj;
+                        if (!map.TryGetValue("alarm", out alarmObj) || !(alarmObj is Dictionary<string, object>))
+                            continue;
+                        var alarm = (Dictionary<string, object>)alarmObj;
+
+                        AlarmSessionRow latest;
+                        if (!AlarmSession.TrySnapshot(key, out latest) || latest == null) break;
+                        var practiceId = "";
+                        object pid;
+                        if (alarm.TryGetValue("practiceBusinessAnchorId", out pid) && pid != null)
+                            practiceId = Convert.ToString(pid).Trim();
+                        if (!string.IsNullOrEmpty(practiceId) && latest.Muted.Contains(practiceId)) continue;
+
+                        var title = "";
+                        var body = "";
+                        object t, b;
+                        if (alarm.TryGetValue("title", out t) && t != null) title = Convert.ToString(t);
+                        if (alarm.TryGetValue("body", out b) && b != null) body = Convert.ToString(b);
+                        AlarmNotify.Play(
+                            title,
+                            body,
+                            AlarmNotify.HrefFrom(alarm, latest.AppOrigin, latest.AlertMode, latest.BusinessAnchorId));
+                    }
+                }
+                finally
+                {
+                    stopWatch = true;
+                    try
+                    {
+                        if (ws.State == WebSocketState.Open || ws.State == WebSocketState.CloseReceived)
+                        {
+                            ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None)
+                                .GetAwaiter().GetResult();
+                        }
+                    }
+                    catch
+                    {
+                        try { ws.Abort(); } catch { }
+                    }
                 }
             }
-            catch (WebException wex)
+
+            Thread.Sleep(500);
+        }
+
+        private static bool TryWsUri(string apiOrigin, out Uri uri)
+        {
+            uri = null;
+            var origin = (apiOrigin ?? "").Trim().TrimEnd('/');
+            if (string.IsNullOrEmpty(origin)) return false;
+            if (origin.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                origin = "wss://" + origin.Substring("https://".Length);
+            else if (origin.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+                origin = "ws://" + origin.Substring("http://".Length);
+            else
+                return false;
+            return Uri.TryCreate(origin + "/api/lab-helper/alarms/ws", UriKind.Absolute, out uri);
+        }
+
+        private static void SendText(ClientWebSocket ws, string text)
+        {
+            if (ws == null || ws.State != WebSocketState.Open) return;
+            var bytes = Encoding.UTF8.GetBytes(text ?? "");
+            try
             {
-                var res = wex.Response as HttpWebResponse;
-                if (res != null)
+                ws.SendAsync(
+                    new ArraySegment<byte>(bytes),
+                    WebSocketMessageType.Text,
+                    true,
+                    CancellationToken.None).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Log.Write("alarm-ws send: " + ex.Message);
+            }
+        }
+
+        /// <summary>한 텍스트 메시지. 감시 스레드가 Abort하면 false.</summary>
+        private static bool TryReceiveText(ClientWebSocket ws, byte[] buffer, out string text)
+        {
+            text = null;
+            if (ws == null || ws.State != WebSocketState.Open) return false;
+            using (var ms = new MemoryStream())
+            {
+                try
                 {
-                    statusCode = (int)res.StatusCode;
-                    if (statusCode == 204) return null;
+                    WebSocketReceiveResult result;
+                    do
+                    {
+                        result = ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None)
+                            .GetAwaiter().GetResult();
+                        if (result.MessageType == WebSocketMessageType.Close) return false;
+                        if (result.Count > 0) ms.Write(buffer, 0, result.Count);
+                    } while (!result.EndOfMessage);
+
+                    if (result.MessageType != WebSocketMessageType.Text) return true;
+                    text = Encoding.UTF8.GetString(ms.ToArray());
+                    return true;
                 }
-                return null;
+                catch (Exception ex)
+                {
+                    if (ws.State != WebSocketState.Open) return false;
+                    Log.Write("alarm-ws recv: " + ex.Message);
+                    return false;
+                }
             }
         }
     }

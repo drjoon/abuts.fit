@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/app.js
 // - web/backend/nodemon.json
+// - web/backend/services/labHelperAlarmWs.js
 // - web/backend/services/reviewApprovalQueue.service.js
 // - web/backend/controllers/requests/shipping.TrackingPoller.js
 // - web/backend/controllers/cnc/machiningBridge.js
@@ -11,11 +12,14 @@
 // - web/backend/jobs/practiceTransferArrivalAutoCompleteWorker.js
 // - web/backend/jobs/dailyReferralOwnershipResetWorker.js
 // - web/backend/jobs/workScanAutoAlignWorker.js
+// change-log:
+// - 2026-10-04: Lab Helper 알람 WS attach.
 import { createServer } from "http";
 import mongoose from "mongoose";
 import "./bootstrap/env.js";
 import app, { dbReady } from "./app.js";
 import { getIO, initializeSocket } from "./socket.js";
+import { attachLabHelperAlarmWs } from "./services/labHelperAlarmWs.js";
 import {
   warmupCache,
   startPeriodicCacheRefresh,
@@ -51,6 +55,8 @@ const server = createServer(app);
 
 // Socket.io 초기화
 initializeSocket(server);
+// Lab Helper PC 알람 (전용 WS — Socket.IO와 경로 분리)
+attachLabHelperAlarmWs(server);
 
 // 서버 시작 (DB 연결과 무관하게 우선 기동하여 EB 헬스체크/프로세스 트래킹을 통과)
 server.listen(PORT, () => {
