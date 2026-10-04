@@ -1,6 +1,7 @@
 // 구강 스캔 메시 편집 — 다듬기(브러시·올가미·조각으로 바로 지우기)·구멍 메우기·조각·가상 발치. three 없이 색인 메시로 계산한다.
 // - 2026-09-28: 디자인 전에 스캔 파편·구멍·거친 면을 정리한다. 결과는 작업 스캔으로 저장한다.
 // - 2026-09-30: 가상 발치. 뺄 치아를 지우고 발치와를 잇몸 곡면으로 메운다(virtualExtraction.ts).
+// - 2026-10-04: 다듬기 브러시는 걸친 면을 잘라 테두리를 고르고, 안쪽 구멍은 주변 면에 잇는다.
 // related files:
 // - web/frontend/src/shared/components/practice/OralScanOverlayViewer.tsx
 // - web/frontend/src/shared/components/practice/LabProsthesisAiDesignDialog.tsx
@@ -97,7 +98,7 @@ export function sameScanMeshEditStatus(a: ScanMeshEditStatus, b: ScanMeshEditSta
 export const MESH_EDIT_BRUSH_RANGE_MM = { min: 0.5, max: 10 } as const;
 
 export const TRIM_TOOLS: ReadonlyArray<{ id: TrimTool; label: string; hint: string }> = [
-  { id: "brush", label: "브러시", hint: "스캔 위를 끌어 칠한 면을 지웁니다." },
+  { id: "brush", label: "브러시", hint: "칠한 면을 지우고, 남은 면은 매끄럽게 이어집니다." },
   { id: "lasso", label: "올가미", hint: "끌어서 둘러싼 면을 지웁니다." },
 ];
 
@@ -253,15 +254,7 @@ export type BoundaryLoop = {
   comp: number;
 };
 
-/**
- * 열린 테두리 고리. 조각마다 가장 긴 고리(스캔 바깥 테두리)는 뺀다.
- * 고리를 이루지 못한 비다양체 테두리도 뺀다.
- */
-export function holeLoops(
-  topo: MeshTopology,
-  positions: Float32Array,
-  comp: Int32Array,
-): BoundaryLoop[] {
+function collectBoundaryLoops(topo: MeshTopology, positions: Float32Array, comp: Int32Array): BoundaryLoop[] {
   const index = topo.index;
   const out = new Map<number, number[]>();
   for (let t = 0; t + 2 < index.length; t += 3) {
@@ -306,6 +299,19 @@ export function holeLoops(
       loops.push({ verts: Uint32Array.from(verts), length, comp: comp[start] ?? -1 });
     }
   }
+  return loops;
+}
+
+/**
+ * 열린 테두리 고리. 조각마다 가장 긴 고리(스캔 바깥 테두리)는 뺀다.
+ * 고리를 이루지 못한 비다양체 테두리도 뺀다.
+ */
+export function holeLoops(
+  topo: MeshTopology,
+  positions: Float32Array,
+  comp: Int32Array,
+): BoundaryLoop[] {
+  const loops = collectBoundaryLoops(topo, positions, comp);
   const longest = new Map<number, number>();
   loops.forEach((loop, i) => {
     const prev = longest.get(loop.comp);
@@ -349,6 +355,213 @@ export function trimSelected(
     next[i] = remap[v]!;
   }
   return { index: next, keep: Uint32Array.from(keep) };
+}
+
+function mixAttr(src: Float32Array | null, a: number, b: number, size: number, t: number) {
+  if (!src) return null as number[] | null;
+  const out: number[] = [];
+  for (let k = 0; k < size; k += 1) {
+    out.push(src[a * size + k]! * (1 - t) + src[b * size + k]! * t);
+  }
+  return out;
+}
+
+function fairBoundaryLoops(
+  positions: Float32Array,
+  loops: readonly BoundaryLoop[],
+  movable: Uint8Array,
+  iters: number,
+  lambda: number,
+) {
+  const next = new Float32Array(positions.length);
+  for (let pass = 0; pass < iters; pass += 1) {
+    next.set(positions);
+    for (const loop of loops) {
+      const n = loop.verts.length;
+      if (n < 3) continue;
+      for (let i = 0; i < n; i += 1) {
+        const v = loop.verts[i]!;
+        if (!movable[v]) continue;
+        const p = loop.verts[(i + n - 1) % n]!;
+        const q = loop.verts[(i + 1) % n]!;
+        for (let k = 0; k < 3; k += 1) {
+          const mean = (positions[p * 3 + k]! + positions[q * 3 + k]!) * 0.5;
+          next[v * 3 + k] = positions[v * 3 + k]! + (mean - positions[v * 3 + k]!) * lambda;
+        }
+      }
+    }
+    positions.set(next);
+  }
+}
+
+function relaxMovable(
+  topo: MeshTopology,
+  positions: Float32Array,
+  movable: Uint8Array,
+  iters: number,
+  lambda: number,
+) {
+  const next = new Float32Array(positions.length);
+  for (let pass = 0; pass < iters; pass += 1) {
+    next.set(positions);
+    for (let v = 0; v < topo.vertexCount; v += 1) {
+      if (!movable[v]) continue;
+      const start = topo.nbrStart[v]!;
+      const end = topo.nbrStart[v + 1]!;
+      if (end <= start) continue;
+      let sx = 0;
+      let sy = 0;
+      let sz = 0;
+      let n = 0;
+      let last = -1;
+      for (let k = start; k < end; k += 1) {
+        const u = topo.nbr[k]!;
+        if (u === last) continue;
+        last = u;
+        sx += positions[u * 3]!;
+        sy += positions[u * 3 + 1]!;
+        sz += positions[u * 3 + 2]!;
+        n += 1;
+      }
+      if (n === 0) continue;
+      const inv = 1 / n;
+      next[v * 3] = positions[v * 3]! + (sx * inv - positions[v * 3]!) * lambda;
+      next[v * 3 + 1] = positions[v * 3 + 1]! + (sy * inv - positions[v * 3 + 1]!) * lambda;
+      next[v * 3 + 2] = positions[v * 3 + 2]! + (sz * inv - positions[v * 3 + 2]!) * lambda;
+    }
+    positions.set(next);
+  }
+}
+
+/**
+ * 고른 정점 안쪽 면은 지우고, 걸친 면은 잘라 테두리를 잇는다.
+ * 지운 자리 테두리는 고르고, 안쪽에 난 구멍은 메울 수 있게 cutRim을 표시한다.
+ * 지울 게 없으면 null.
+ */
+export function trimSelectedFair(args: {
+  positions: Float32Array;
+  index: Uint32Array;
+  selected: Uint8Array;
+  color: Float32Array | null;
+  uv: Float32Array | null;
+}): {
+  positions: Float32Array;
+  index: Uint32Array;
+  color: Float32Array | null;
+  uv: Float32Array | null;
+  origin: Int32Array;
+  cutRim: Uint8Array;
+} | null {
+  const { positions, index, selected, color, uv } = args;
+  const vertexCount = Math.floor(positions.length / 3);
+  const oldRim = new Uint8Array(vertexCount);
+  for (let t = 0; t + 2 < index.length; t += 3) {
+    const a = index[t]!;
+    const b = index[t + 1]!;
+    const c = index[t + 2]!;
+    const ia = selected[a] ? 1 : 0;
+    const ib = selected[b] ? 1 : 0;
+    const ic = selected[c] ? 1 : 0;
+    if (ia === ib && ib === ic) continue;
+    if (!ia) oldRim[a] = 1;
+    if (!ib) oldRim[b] = 1;
+    if (!ic) oldRim[c] = 1;
+  }
+  const remap = new Int32Array(vertexCount).fill(-1);
+  const origin: number[] = [];
+  const nextPos: number[] = [];
+  const nextColor: number[] = [];
+  const nextUv: number[] = [];
+  const takeOld = (v: number) => {
+    let id = remap[v]!;
+    if (id >= 0) return id;
+    id = origin.length;
+    remap[v] = id;
+    origin.push(v);
+    nextPos.push(positions[v * 3]!, positions[v * 3 + 1]!, positions[v * 3 + 2]!);
+    if (color) nextColor.push(color[v * 3]!, color[v * 3 + 1]!, color[v * 3 + 2]!);
+    if (uv) nextUv.push(uv[v * 2]!, uv[v * 2 + 1]!);
+    return id;
+  };
+  const edgeNew = new Map<number, number>();
+  const ekey = (a: number, b: number) => (a < b ? a * vertexCount + b : b * vertexCount + a);
+  const takeEdge = (a: number, b: number) => {
+    const key = ekey(a, b);
+    const hit = edgeNew.get(key);
+    if (hit != null) return hit;
+    const t = 0.5;
+    const id = origin.length;
+    edgeNew.set(key, id);
+    origin.push(-1);
+    nextPos.push(
+      positions[a * 3]! * (1 - t) + positions[b * 3]! * t,
+      positions[a * 3 + 1]! * (1 - t) + positions[b * 3 + 1]! * t,
+      positions[a * 3 + 2]! * (1 - t) + positions[b * 3 + 2]! * t,
+    );
+    const rgb = mixAttr(color, a, b, 3, t);
+    if (rgb) nextColor.push(rgb[0]!, rgb[1]!, rgb[2]!);
+    const st = mixAttr(uv, a, b, 2, t);
+    if (st) nextUv.push(st[0]!, st[1]!);
+    return id;
+  };
+  const nextIndex: number[] = [];
+  let changed = false;
+  for (let t = 0; t + 2 < index.length; t += 3) {
+    const v0 = index[t]!;
+    const v1 = index[t + 1]!;
+    const v2 = index[t + 2]!;
+    const i0 = Boolean(selected[v0]);
+    const i1 = Boolean(selected[v1]);
+    const i2 = Boolean(selected[v2]);
+    if (i0 && i1 && i2) {
+      changed = true;
+      continue;
+    }
+    if (!i0 && !i1 && !i2) {
+      nextIndex.push(takeOld(v0), takeOld(v1), takeOld(v2));
+      continue;
+    }
+    changed = true;
+    const src = [v0, v1, v2];
+    const inside = [i0, i1, i2];
+    const poly: number[] = [];
+    for (let k = 0; k < 3; k += 1) {
+      const a = src[k]!;
+      const b = src[(k + 1) % 3]!;
+      const ia = inside[k]!;
+      const ib = inside[(k + 1) % 3]!;
+      if (!ia) poly.push(takeOld(a));
+      if (ia !== ib) poly.push(takeEdge(a, b));
+    }
+    if (poly.length < 3) continue;
+    for (let k = 1; k + 1 < poly.length; k += 1) {
+      const a = poly[0]!;
+      const b = poly[k]!;
+      const c = poly[k + 1]!;
+      if (a === b || b === c || c === a) continue;
+      nextIndex.push(a, b, c);
+    }
+  }
+  if (!changed) return null;
+  const outPos = Float32Array.from(nextPos);
+  const outIndex = Uint32Array.from(nextIndex);
+  const outOrigin = Int32Array.from(origin);
+  const outColor = color ? Float32Array.from(nextColor) : null;
+  const outUv = uv ? Float32Array.from(nextUv) : null;
+  const cutRim = new Uint8Array(origin.length);
+  for (let v = 0; v < origin.length; v += 1) {
+    const old = outOrigin[v]!;
+    cutRim[v] = old < 0 || oldRim[old]! ? 1 : 0;
+  }
+  if (outIndex.length === 0) {
+    return { positions: outPos, index: outIndex, color: outColor, uv: outUv, origin: outOrigin, cutRim };
+  }
+  const topo = buildTopology(outIndex, origin.length);
+  const comps = vertexComponents(topo);
+  const loops = collectBoundaryLoops(topo, outPos, comps.comp);
+  fairBoundaryLoops(outPos, loops, cutRim, 18, 0.55);
+  relaxMovable(topo, outPos, cutRim, 10, 0.4);
+  return { positions: outPos, index: outIndex, color: outColor, uv: outUv, origin: outOrigin, cutRim };
 }
 
 type PatchVec = number[];

@@ -1,7 +1,7 @@
 // AI 디자인 스캔 단계 — 메시 편집 포인터·선택·오버레이.
 // - 2026-09-28: 다듬기는 브러시·올가미·조각으로 바로 지운다. 구멍은 테두리를 눌러 고르고 메운다. 조각은 끄는 동안 정점을 옮긴다.
 // - 2026-09-28: 브러시·조각은 스캔 위 왼쪽 끌기, 올가미는 화면 왼쪽 끌기. 왼쪽은 뷰 회전에 쓰지 않는다.
-// - 2026-10-04: 뒷면 셸(FrontSide) 스캔도 양면 픽킹.
+// - 2026-10-04: 다듬기 브러시는 손을 떼면 테두리를 고르고 안쪽 구멍을 잇는다.
 // - 2026-09-30: 가상 발치. 치아를 누르면 경계를 찾고, 브러시·넓히기·좁히기로 고친 뒤 적용하면 지우고 발치와를 메운다.
 // related files:
 // - web/frontend/src/shared/practice/scanMeshEdit.ts
@@ -17,6 +17,7 @@ import {
   refreshNormals,
   sculptStamp,
   trimSelected,
+  trimSelectedFair,
   verticesInBrush,
   vertexComponents,
   type BoundaryLoop,
@@ -540,8 +541,16 @@ export class ScanMeshEditController {
     }
     if (jobs.length === 0) return { kind: "empty" };
     const shapes: Array<{ id: string; shape: ScanShapeEdit }> = [];
+    const fillInterior = this.spec?.trimTool === "brush";
     for (const { id, state } of jobs) {
-      const cut = trimSelected(state.topo, state.selected);
+      const target = this.host.targets().find((row) => row.id === id);
+      const cut = trimSelectedFair({
+        positions: state.position.array as Float32Array,
+        index: state.topo.index,
+        selected: state.selected,
+        color: readTriple(target?.scanColor),
+        uv: readPair(state.geometry.getAttribute("uv")),
+      });
       if (!cut) continue;
       if (cut.index.length === 0) {
         this.restoreTrimAll();
@@ -551,17 +560,36 @@ export class ScanMeshEditController {
         }
         return { kind: "whole" };
       }
-      const target = this.host.targets().find((row) => row.id === id);
-      const positions = state.position.array as Float32Array;
-      const origin = new Int32Array(cut.keep.length);
-      origin.set(cut.keep);
+      let positions = cut.positions;
+      let nextIndex = cut.index;
+      let color = cut.color;
+      let uv = cut.uv;
+      if (fillInterior) {
+        const topo = buildTopology(nextIndex, positions.length / 3);
+        const loops = holeLoops(topo, positions, vertexComponents(topo).comp).filter((loop) => {
+          let onRim = 0;
+          for (const v of loop.verts) if (cut.cutRim[v]) onRim += 1;
+          return onRim * 2 >= loop.verts.length;
+        });
+        if (loops.length > 0) {
+          const patched = appendHoleFills({ positions, color, uv, index: nextIndex, loops });
+          if (patched.filled > 0) {
+            positions = patched.positions;
+            nextIndex = patched.index;
+            color = patched.color;
+            uv = patched.uv;
+          }
+        }
+      }
+      const origin = new Int32Array(positions.length / 3).fill(-1);
+      origin.set(cut.origin);
       shapes.push({
         id,
         shape: {
-          positions: gather(positions, cut.keep, 3)!,
-          index: cut.index,
-          color: gather(readTriple(target?.scanColor), cut.keep, 3),
-          uv: gather(readPair(state.geometry.getAttribute("uv")), cut.keep, 2),
+          positions,
+          index: nextIndex,
+          color,
+          uv,
           origin,
         },
       });
