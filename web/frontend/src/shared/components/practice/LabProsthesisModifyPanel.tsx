@@ -165,6 +165,10 @@ type Props = {
   intaglio: CrownIntaglioInfo | null;
   /** 칼라맵의 내면 간격 모드를 연다. */
   onViewFit: () => void;
+  /** 준비 삽입축. 작업 치아 뱃지. */
+  insertionTeeth?: Array<{ toothNumber: string; label: string }>;
+  insertionToothNumber?: string | null;
+  onPickInsertionTooth?: (toothNumber: string) => void;
 };
 
 export type ConnectorRow = {
@@ -1111,6 +1115,9 @@ export function LabProsthesisModifyPanel({
   crownShellMm,
   intaglio,
   onViewFit,
+  insertionTeeth = [],
+  insertionToothNumber = null,
+  onPickInsertionTooth,
 }: Props) {
   const implant = edit.implant.on;
   const cavity = implant || edit.pontic.on ? null : cavityKind;
@@ -1376,13 +1383,23 @@ export function LabProsthesisModifyPanel({
         onOpen={openFold("insertion")}
         coach="tool-insertion"
       >
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
-          작업 영역에서 치아 번호를 고르고
-          <br />
-          화면 가운데에 그 치아를 놓습니다.
-          <br />
-          화면 아래 삽입축 설정을 누르세요.
-        </p>
+        {insertionTeeth.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {insertionTeeth.map((tooth) => (
+              <Button
+                key={tooth.toothNumber}
+                type="button"
+                size="sm"
+                variant={insertionToothNumber === tooth.toothNumber ? "default" : "outline"}
+                className="h-7 min-w-7 px-2 text-[11px] tabular-nums"
+                aria-pressed={insertionToothNumber === tooth.toothNumber}
+                onClick={() => onPickInsertionTooth?.(tooth.toothNumber)}
+              >
+                #{tooth.label}
+              </Button>
+            ))}
+          </div>
+        ) : null}
       </StageSubsection>
       </>
       ) : null}

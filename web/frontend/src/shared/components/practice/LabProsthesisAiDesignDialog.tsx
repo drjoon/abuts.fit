@@ -981,6 +981,8 @@ function LabProsthesisAiDesignDialog({
   const scanbodyOpen = scanFold === "scanbody";
   const [modelOpen, setModelOpen] = useState(true);
   const [designFold, setDesignFold] = useState<DesignFold | null>("margin");
+  /** 준비 삽입축 접이에서 고른 스팬. 설정이 끝나면 비운다. */
+  const [prepareAxisArmedKey, setPrepareAxisArmedKey] = useState("");
   const [occlusionArch, setOcclusionArch] = useState<"upper" | "lower">("lower");
   const [occlusionMode, setOcclusionMode] = useState<OralScanOcclusionAdjust["mode"]>("vertical");
   const [occlusionMm, setOcclusionMm] = useState(0);
@@ -3380,6 +3382,12 @@ function LabProsthesisAiDesignDialog({
     setDesignFold(tool);
     setAlignKind(null);
     setAlignArch(null);
+    if (tool === "insertion") {
+      const span = insertionSpanForTooth(plan.teeth, activeNumber);
+      setPrepareAxisArmedKey(insertionAxisKey(span) || "");
+    } else {
+      setPrepareAxisArmedKey("");
+    }
     if (!marginShown) {
       setMarginShown(true);
       if (detect) runMarginDetect(marginToothNumbersRef.current);
@@ -3491,6 +3499,9 @@ function LabProsthesisAiDesignDialog({
   const showTooth = (toothNumber: string) => {
     setSelectedTooth(toothNumber);
     const span = insertionSpanForTooth(plan.teeth, toothNumber);
+    if (stage === "scan" && designFold === "insertion") {
+      setPrepareAxisArmedKey(insertionAxisKey(span) || "");
+    }
     const restored =
       span.length > 0 &&
       viewerRef.current?.restoreInsertionView(span) === true;
@@ -3627,7 +3638,9 @@ function LabProsthesisAiDesignDialog({
     setToothInfoOpen(true);
     if (viewer.setInsertionFromView(toothNumbers) !== true) return;
     insertionTaken(toothNumbers);
-    setAxisChangeHintKey(key);
+    setPrepareAxisArmedKey("");
+    setAxisChangeHintKey("");
+    setDesignFold((fold) => (fold === "insertion" ? null : fold));
   };
 
   /** 치아 정보 아이콘 — 미리보기로 맞추고 아래에서 설정·취소한다. */
@@ -3654,6 +3667,8 @@ function LabProsthesisAiDesignDialog({
     endAiming();
     if (viewerRef.current?.setInsertionFromView(current.span) !== true) return;
     insertionTaken(current.span);
+    setPrepareAxisArmedKey("");
+    setDesignFold((fold) => (fold === "insertion" ? null : fold));
   };
 
   const cancelAiming = () => {
@@ -3728,13 +3743,15 @@ function LabProsthesisAiDesignDialog({
     !insertionKeysRef.current.includes(viewedAxisKey)
       ? viewedWizardStep.span
       : null;
-  /** 준비 단계 삽입축 접이가 열려 있으면 고른 치아(브리지는 스팬)로 바로 잡는다. */
+  /** 준비 단계 삽입축 접이에서 치아를 고른 뒤, 설정 전까지만 버튼을 둔다. */
+  const prepareAxisKey = insertionAxisKey(bridgeSpan);
   const prepareAxisSpan =
     stage === "scan" &&
     scanFold === null &&
     designFold === "insertion" &&
-    activeNumber &&
-    bridgeSpan.length > 0
+    bridgeSpan.length > 0 &&
+    prepareAxisKey &&
+    prepareAxisArmedKey === prepareAxisKey
       ? bridgeSpan
       : null;
   const axisButtonSpan = pendingAxisSpan ?? prepareAxisSpan;
@@ -5484,6 +5501,12 @@ function LabProsthesisAiDesignDialog({
                             ? formatProsthesisAiToothLabel(activeTooth)
                             : null
                         }
+                        insertionTeeth={plan.teeth.map((tooth) => ({
+                          toothNumber: tooth.toothNumber,
+                          label: labToothBadgeLabel(tooth),
+                        }))}
+                        insertionToothNumber={activeNumber}
+                        onPickInsertionTooth={showTooth}
                         cavityKind={activeNumber ? (cavityKinds[activeNumber] ?? null) : null}
                         generated={
                           activeNumber ? generated[activeNumber] === true : false
