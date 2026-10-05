@@ -1,6 +1,7 @@
 // change-log:
-// - 2026-10-05: 제조 구간 = 어벗츠 40%를 뺀 뒤 딜러 구간을 뺀 나머지.
-// - 2026-10-05: 커스텀어벗 의뢰비 분배 — 딜러 1천~5천 누진 10~20% · 어벗츠 40% 또는 제조 44%.
+// - 2026-10-05: 어벗츠 고정 몫 40%.
+// - 2026-10-05: 제조 구간 = 어벗츠 고정을 뺀 뒤 딜러 구간을 뺀 나머지.
+// - 2026-10-05: 커스텀어벗 의뢰비 분배 — 딜러 1천~5천 누진 10~20% · 어벗츠 또는 제조 고정.
 export const CUSTOM_ABUTMENT_SALE_WON = 13_000;
 export const ABUTS_FIXED_SHARE_PCT = 40;
 export const MANUFACTURER_FIXED_SHARE_PCT = 44;
@@ -138,7 +139,7 @@ function withDevopsFromAbuts(
   };
 }
 
-/** 어벗츠 40% 고정. 나머지 60%를 제조·딜러 누진. */
+/** 어벗츠 고정. 나머지를 제조·딜러 누진. */
 export function splitAbutsFixedRow(qty: number): CustomAbutmentSplitRow {
   const saleWon = qty * CUSTOM_ABUTMENT_SALE_WON;
   const dealerWon = dealerWonForQty(qty);
