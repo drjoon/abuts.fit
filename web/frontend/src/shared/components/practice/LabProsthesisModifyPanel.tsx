@@ -1221,21 +1221,6 @@ export function LabProsthesisModifyPanel({
               삽입축을 먼저 잡습니다.
             </p>
           ) : null}
-          <Row label={`${marginWord} 간격`} value={`${edit.margin.offsetMm.toFixed(2)} mm`}>
-            <Slider
-              min={-40}
-              max={600}
-              step={5}
-              value={[Math.round(edit.margin.offsetMm * 100)]}
-              onValueChange={([value]) =>
-                onEdit({
-                  ...edit,
-                  margin: { ...edit.margin, offsetMm: (value ?? 0) / 100, deleted: false },
-                })
-              }
-              aria-label={`${marginWord} 간격`}
-            />
-          </Row>
           <div className="grid grid-cols-3 gap-1">
             <Tooltip>
               <TooltipTrigger asChild>

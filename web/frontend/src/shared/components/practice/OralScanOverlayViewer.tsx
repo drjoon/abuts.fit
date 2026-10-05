@@ -6490,7 +6490,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     };
   };
 
-  /** 두 찍은 점 사이 0.4mm 간격 중간점. 한 번 만들면 그 쌍이 그대로인 동안 재사용한다. */
+  /** 두 찍은 점 사이 1.2mm 간격 중간점. 한 번 만들면 그 쌍이 그대로인 동안 재사용한다. */
   const marginTraceSegment = (
     cloud: NonNullable<typeof marginTraceRef.current.cloud>,
     tooth: string,
@@ -6522,7 +6522,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     }
     raw.push(to);
     const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
-    const step = 0.4 / unit;
+    const step = 1.2 / unit;
     const snapR = step * 0.55;
     let carried = 0;
     let last = from;
