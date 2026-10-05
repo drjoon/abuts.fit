@@ -49,6 +49,7 @@
  * - 2026-09-10: 상태 표시 on/off 제거. 헤더=확인 큐(열면 감소), 칩=실제 채팅 unread만.
  * - 2026-09-12: PC 헤더 nowrap — 상태뱃지·액션 1줄(좁은 폭 overflow-x). 충분 폭이면 액션 라벨 표시.
  * - 2026-09-13: 캘린더/목록 커서(YMD) localStorage 복원 — 열기·릴로드 시 오늘로 리셋하지 않음.
+ * - 2026-10-06: headerActions에 hiddenWeekdays·onHiddenWeekdaysChange 전달(설정 팝오버).
  * - 2026-10-03: headerActions에 viewMode·onViewModeChange 전달. 캘린더 툴바 보기 토글 숨김(헤더 설정 팝오버).
  */
 import {
@@ -215,12 +216,14 @@ type PracticeRecentTransfersAllModalProps = {
   floatingDetailOpen?: boolean;
   /** 데스크톱 인라인 상세 — 캘린더가 마운트한 슬롯 DOM */
   onDetailSlotEl?: (el: HTMLDivElement | null) => void;
-  /** 헤더 우측 — 임시저장·휴지통·설정 팝오버 등. 함수면 보기 전환 API를 넘긴다. */
+  /** 헤더 우측 — 임시저장·휴지통·설정 팝오버 등. 함수면 보기·숨길 요일 API를 넘긴다. */
   headerActions?:
     | ReactNode
     | ((ctx: {
         viewMode: LabReceiveCalendarViewMode;
         onViewModeChange: (mode: LabReceiveCalendarViewMode) => void;
+        hiddenWeekdays: number[];
+        onHiddenWeekdaysChange: (next: number[]) => void;
       }) => ReactNode);
   /**
    * 캘린더 툴바 오른쪽 끝 — 어벗츠 출시 행사 CTA 등
@@ -362,14 +365,6 @@ export function PracticeRecentTransfersAllModal({
     [],
   );
 
-  const resolvedHeaderActions =
-    typeof headerActions === "function"
-      ? headerActions({
-          viewMode,
-          onViewModeChange: handleViewModeChange,
-        })
-      : headerActions;
-
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
     writeStoredRecentTransfersAllSearch(value);
@@ -439,6 +434,16 @@ export function PracticeRecentTransfersAllModal({
     },
     [setStoredHiddenWeekdays, token],
   );
+
+  const resolvedHeaderActions =
+    typeof headerActions === "function"
+      ? headerActions({
+          viewMode,
+          onViewModeChange: handleViewModeChange,
+          hiddenWeekdays,
+          onHiddenWeekdaysChange: handleHiddenWeekdaysChange,
+        })
+      : headerActions;
 
   const fetchCalendarTransfers = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -1246,7 +1251,6 @@ export function PracticeRecentTransfersAllModal({
                 searchPlaceholder="환자명, 기공소명, 치아번호"
                 toolbarMiddle={calendarToolbarMiddle}
                 hiddenWeekdays={hiddenWeekdays}
-                onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
                 alignEpoch={alignEpoch}
                 focusItemId={badgeFocusItemId}
                 focusItemYmd={badgeFocusItemYmd}

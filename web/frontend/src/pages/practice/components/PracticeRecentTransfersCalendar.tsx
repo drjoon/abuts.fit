@@ -7,9 +7,10 @@
  * - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
  * - web/frontend/src/shared/date/kst.ts
  * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
+ * - 2026-10-06: 숨길 요일 UI — 캘린더 툴바 → 헤더 설정(보기·캘린더 아래).
  * - 2026-10-06: 토·일·법정공휴일 일자 빨간 글자(미니월·주간·목록 헤더).
  * - 2026-09-30: 연결 화살표 클릭 → 연결된 날짜의 의뢰를 채팅에 연다.
- * - 2026-10-03: 주문·도착·검색을 월 선택 바로 오른쪽. 숨길 요일·toolbarMiddle은 그 옆/끝.
+ * - 2026-10-03: 주문·도착·검색을 월 선택 바로 오른쪽. toolbarMiddle은 그 옆/끝.
  * - 2026-10-03: showViewModeToggle — 기공소는 헤더 설정 팝오버로 옮김.
  * - 2026-10-03: 주문·도착 뱃지(라벨 「주문」「도착」)를 검색·협력 왼쪽. 캘린더·목록은 아이콘.
  * - 2026-09-30: 2xl 미만 — 주문일·도착일·캘린더·목록은 아이콘만.
@@ -93,7 +94,6 @@ import {
 import {
   CalendarCheck,
   CalendarDays,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Hexagon,
@@ -111,11 +111,6 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -913,8 +908,8 @@ type PracticeRecentTransfersCalendarProps = {
   searchPlaceholder?: string;
   /** 툴바 오른쪽 끝 슬롯 — 어벗츠 출시 행사 CTA 등 */
   toolbarMiddle?: ReactNode;
+  /** 숨길 요일(표시만). 변경 UI는 헤더 설정 팝오버 */
   hiddenWeekdays: number[];
-  onHiddenWeekdaysChange: (next: number[]) => void;
   alignEpoch?: number;
   /** 어벗 업로드 지연 칩 툴팁 — 치과=대기/문의 · 기공소(기본)=업로드 독촉 */
   abutmentUploadOverdueViewer?: PracticeAbutmentUploadOverdueViewer;
@@ -1112,7 +1107,6 @@ export function PracticeRecentTransfersCalendar({
   searchPlaceholder = "환자명, 기공소명, 치아번호",
   toolbarMiddle = null,
   hiddenWeekdays,
-  onHiddenWeekdaysChange,
   alignEpoch = 0,
   abutmentUploadOverdueViewer = "lab",
   guideTourTarget = null,
@@ -1700,20 +1694,6 @@ export function PracticeRecentTransfersCalendar({
     scrollToYmd(target, "smooth");
   };
 
-  const toggleHiddenDow = (dow: number) => {
-    const next = hidden.has(dow)
-      ? hiddenWeekdays.filter((d) => d !== dow)
-      : [...hiddenWeekdays, dow];
-    if (next.length >= 7) return;
-    onHiddenWeekdaysChange(next);
-  };
-
-  const hiddenWeekdaySummary = LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS.filter(
-    ({ dow }) => hidden.has(dow),
-  )
-    .map(({ label }) => label)
-    .join("·");
-
   const selectListItem = (item: PracticeCalendarChipItem, ymd: string) => {
     onSelectItem(item, {
       ymd,
@@ -2005,62 +1985,6 @@ export function PracticeRecentTransfersCalendar({
             </div>
           ) : null}
         </div>
-        {!isListMode ? (
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex h-7 items-center gap-1 rounded-md bg-background px-2 text-[11px] text-slate-700 ring-1 ring-inset ring-border hover:bg-muted/40"
-                aria-label={
-                  hiddenWeekdaySummary
-                    ? `숨길 요일, 현재 ${hiddenWeekdaySummary}`
-                    : "숨길 요일"
-                }
-              >
-                <span>숨길 요일</span>
-                {hiddenWeekdaySummary ? (
-                  <span className="tabular-nums text-muted-foreground">
-                    {hiddenWeekdaySummary}
-                  </span>
-                ) : null}
-                <ChevronDown className="h-3 w-3 opacity-70" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent
-              align="start"
-              className="w-auto p-2"
-              sideOffset={6}
-              onOpenAutoFocus={(e) => e.preventDefault()}
-            >
-              <div className="mb-1.5 px-0.5 text-[11px] text-muted-foreground">
-                캘린더에서 숨길 요일을 선택하세요.
-              </div>
-              <div className="flex flex-wrap items-center gap-1">
-                {LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS.map(({ dow, label }) => (
-                  <button
-                    key={`hide-${dow}`}
-                    type="button"
-                    className={cn(
-                      "h-7 min-w-7 rounded-md px-1.5 text-[11px] tabular-nums",
-                      hidden.has(dow)
-                        ? "bg-muted text-muted-foreground line-through"
-                        : "bg-background text-slate-700 ring-1 ring-inset ring-border hover:bg-muted/40",
-                    )}
-                    aria-pressed={hidden.has(dow)}
-                    title={
-                      hidden.has(dow)
-                        ? `${label}요일 표시`
-                        : `${label}요일 숨김`
-                    }
-                    onClick={() => toggleHiddenDow(dow)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
-        ) : null}
         {toolbarMiddle ? (
           <div className="flex min-w-0 shrink-0 items-center md:ml-auto md:max-w-sm lg:max-w-md">
             {toolbarMiddle}

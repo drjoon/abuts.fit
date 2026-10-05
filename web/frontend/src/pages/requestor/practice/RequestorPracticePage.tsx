@@ -9068,6 +9068,8 @@ export function RequestorPracticeReceivePage({
         <LabReceiveAlarmSettingsButton
           viewMode={viewMode}
           onViewModeChange={handleViewModeChange}
+          hiddenWeekdays={hiddenWeekdays}
+          onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
         />
         <DemoModeBadge className="shrink-0" />
       </div>
@@ -9099,6 +9101,8 @@ export function RequestorPracticeReceivePage({
         <LabReceiveAlarmSettingsButton
           viewMode={viewMode}
           onViewModeChange={handleViewModeChange}
+          hiddenWeekdays={hiddenWeekdays}
+          onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
         />
         <DemoModeBadge className="shrink-0" />
       </div>
@@ -9395,7 +9399,6 @@ export function RequestorPracticeReceivePage({
               onSearchChange={setSearch}
               searchPlaceholder="환자명, 치과명, 치아번호"
               hiddenWeekdays={calendarHiddenWeekdays}
-              onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
               alignEpoch={alignEpoch}
               focusItemId={badgeFocusItemId}
               focusItemYmd={badgeFocusItemYmd}

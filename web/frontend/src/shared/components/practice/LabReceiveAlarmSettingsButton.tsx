@@ -1,14 +1,16 @@
 /**
- * 기공의뢰수신 — 헤더 설정 팝오버(보기 전환 · PC 알람 · 연결 프로그램).
+ * 기공의뢰수신 — 헤더 설정 팝오버(보기 전환 · 숨길 요일 · PC 알람 · 연결 프로그램).
  * related files:
  * - web/frontend/src/shared/practice/labReceiveSoundPrefs.ts
  * - web/frontend/src/shared/chat/chatNotifySounds.ts
  * - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
+ * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
  * - web/frontend/src/shared/hooks/useLabHelperInstallPrompt.tsx
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
  * - web/frontend/src/pages/practice/components/LabReceiveUnreadNotice.tsx
  * change-log:
+ * - 2026-10-06: 숨길 요일 — 캘린더 툴바 → 보기·캘린더 선택 시 그 아래.
  * - 2026-10-04: 알림음 — 한 줄 항목 클릭 시 중첩 팝오버로 샘플 선택.
  * - 2026-10-04: 알림음 샘플 선택·미리듣기.
  * - 2026-10-04: 연결 프로그램 설치·업데이트 항목.
@@ -18,7 +20,7 @@
  * - 2026-10-03: 치과별 mute 제거 — 전체 알림 스위치만.
  * - 2026-10-03: 헤더 데모 뱃지 왼쪽 — 전체 on/off.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, ChevronDown, List, Settings, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +48,7 @@ import {
   type ChatNotifySoundId,
 } from "@/shared/chat/chatNotifySounds";
 import type { LabReceiveCalendarViewMode } from "@/shared/practice/labReceiveCalendarViewMode";
+import { LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS } from "@/shared/practice/labReceiveCalendarWeekGrid";
 import { useLabHelperInstallPrompt } from "@/shared/hooks/useLabHelperInstallPrompt";
 import {
   resolveLabHelperPresence,
@@ -57,6 +60,9 @@ type LabReceiveAlarmSettingsButtonProps = {
   className?: string;
   viewMode?: LabReceiveCalendarViewMode;
   onViewModeChange?: (mode: LabReceiveCalendarViewMode) => void;
+  /** 캘린더 보기일 때 보기 섹션 아래 — 숨길 요일 */
+  hiddenWeekdays?: number[];
+  onHiddenWeekdaysChange?: (next: number[]) => void;
 };
 
 function useLabReceiveSoundPrefsState(): LabReceiveSoundPrefs {
@@ -103,6 +109,8 @@ export function LabReceiveAlarmSettingsButton({
   className,
   viewMode,
   onViewModeChange,
+  hiddenWeekdays,
+  onHiddenWeekdaysChange,
 }: LabReceiveAlarmSettingsButtonProps) {
   const prefs = useLabReceiveSoundPrefsState();
   const [open, setOpen] = useState(false);
@@ -112,6 +120,15 @@ export function LabReceiveAlarmSettingsButton({
   const { promptFromSettings, dialogs } = useLabHelperInstallPrompt();
   const globalOn = prefs.enabled;
   const showViewMode = Boolean(onViewModeChange);
+  const showHiddenWeekdays =
+    showViewMode &&
+    viewMode === "calendar" &&
+    Array.isArray(hiddenWeekdays) &&
+    Boolean(onHiddenWeekdaysChange);
+  const hidden = useMemo(
+    () => new Set(hiddenWeekdays ?? []),
+    [hiddenWeekdays],
+  );
   const showHelper = supportsLabHelper();
 
   useEffect(() => {
@@ -133,6 +150,15 @@ export function LabReceiveAlarmSettingsButton({
       cancelled = true;
     };
   }, [open, showHelper]);
+
+  const toggleHiddenDow = (dow: number) => {
+    if (!onHiddenWeekdaysChange || !Array.isArray(hiddenWeekdays)) return;
+    const next = hidden.has(dow)
+      ? hiddenWeekdays.filter((d) => d !== dow)
+      : [...hiddenWeekdays, dow];
+    if (next.length >= 7) return;
+    onHiddenWeekdaysChange(next);
+  };
 
   return (
     <>
@@ -202,6 +228,40 @@ export function LabReceiveAlarmSettingsButton({
                   목록
                 </button>
               </div>
+              {showHiddenWeekdays ? (
+                <div className="mt-2.5">
+                  <p className="text-xs font-medium text-slate-700">숨길 요일</p>
+                  <div
+                    className="mt-1.5 flex flex-wrap items-center gap-1"
+                    role="group"
+                    aria-label="숨길 요일"
+                  >
+                    {LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS.map(
+                      ({ dow, label }) => (
+                        <button
+                          key={`hide-${dow}`}
+                          type="button"
+                          className={cn(
+                            "h-7 min-w-7 rounded-md px-1.5 text-[11px] tabular-nums",
+                            hidden.has(dow)
+                              ? "bg-muted text-muted-foreground line-through"
+                              : "bg-background text-slate-700 ring-1 ring-inset ring-border hover:bg-muted/40",
+                          )}
+                          aria-pressed={hidden.has(dow)}
+                          title={
+                            hidden.has(dow)
+                              ? `${label}요일 표시`
+                              : `${label}요일 숨김`
+                          }
+                          onClick={() => toggleHiddenDow(dow)}
+                        >
+                          {label}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
           <div className="flex items-center justify-between gap-3 px-3 py-2.5">

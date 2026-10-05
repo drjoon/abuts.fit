@@ -9836,6 +9836,8 @@ export const PracticeFileTransferPage = ({
     mobile?: boolean;
     viewMode?: LabReceiveCalendarViewMode;
     onViewModeChange?: (mode: LabReceiveCalendarViewMode) => void;
+    hiddenWeekdays?: number[];
+    onHiddenWeekdaysChange?: (next: number[]) => void;
   }) => {
     const mobile = Boolean(opts?.mobile);
     const iconBtn = mobile
@@ -9885,6 +9887,8 @@ export const PracticeFileTransferPage = ({
         className={iconBtn}
         viewMode={opts?.viewMode}
         onViewModeChange={opts?.onViewModeChange}
+        hiddenWeekdays={opts?.hiddenWeekdays}
+        onHiddenWeekdaysChange={opts?.onHiddenWeekdaysChange}
       />
     );
     if (mobile) {
@@ -9914,6 +9918,8 @@ export const PracticeFileTransferPage = ({
   const practiceMobileHeaderActionButtons = (opts?: {
     viewMode?: LabReceiveCalendarViewMode;
     onViewModeChange?: (mode: LabReceiveCalendarViewMode) => void;
+    hiddenWeekdays?: number[];
+    onHiddenWeekdaysChange?: (next: number[]) => void;
   }) => (
     <>
       <Button
@@ -9988,6 +9994,8 @@ export const PracticeFileTransferPage = ({
         mobile: true,
         viewMode: opts?.viewMode,
         onViewModeChange: opts?.onViewModeChange,
+        hiddenWeekdays: opts?.hiddenWeekdays,
+        onHiddenWeekdaysChange: opts?.onHiddenWeekdaysChange,
       })}
     </>
   );
@@ -10028,6 +10036,8 @@ export const PracticeFileTransferPage = ({
   const calendarHeaderActions = (opts?: {
     viewMode?: LabReceiveCalendarViewMode;
     onViewModeChange?: (mode: LabReceiveCalendarViewMode) => void;
+    hiddenWeekdays?: number[];
+    onHiddenWeekdaysChange?: (next: number[]) => void;
   }) => (
     <div
       className="flex flex-nowrap items-center gap-1.5 sm:gap-2"
@@ -10042,6 +10052,8 @@ export const PracticeFileTransferPage = ({
           {practiceMobileHeaderActionButtons({
             viewMode: opts?.viewMode,
             onViewModeChange: opts?.onViewModeChange,
+            hiddenWeekdays: opts?.hiddenWeekdays,
+            onHiddenWeekdaysChange: opts?.onHiddenWeekdaysChange,
           })}
         </div>
       ) : (
@@ -10145,6 +10157,8 @@ export const PracticeFileTransferPage = ({
           {practiceHeaderUtilityButtons({
             viewMode: opts?.viewMode,
             onViewModeChange: opts?.onViewModeChange,
+            hiddenWeekdays: opts?.hiddenWeekdays,
+            onHiddenWeekdaysChange: opts?.onHiddenWeekdaysChange,
           })}
           <DemoModeBadge />
         </>
