@@ -246,10 +246,10 @@ Notes:
   - 공통 UI: `src/shared/settlement/settlementUi.tsx` · VAT 카피 `src/shared/settlement/affiliateVat.ts` (의뢰자 크레딧/기공크레딧 최신 스타일)
   - 기공소/어벗츠기공소: 정산(`/dashboard/credits`)「지급」탭 — `LabSettlementPayoutTab.tsx`(기공크레딧 잔액·**월별** 적립/지급/상태(지급·계산서), 면세 계산서, max-w-4xl). 월 지급은 **다음 달 초 사용 유보 50만원** 제외 후 잔액만(`LAB_SETTLEMENT_PAYOUT_RESERVE_WON`). 통장 사본·입금 계좌는 설정>사업자(`PayoutAccountCard`, 기공소·딜러사 공통). 미등록 시 지급 진입·정산일 7일 전 일 1회 안내, 지급일까지 미등록이면 1개월 이월. 구 `/dashboard/payments`·`?tab=settlement`는 `?tab=payout`으로 호환.
   - 딜러(salesman): 설정>사업자에서 동일 `PayoutAccountCard`·위수탁 카드. 구 설정 `?tab=payment|payout` → 사업자.
-  - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·지급상태·금액·잔액·거래내역). 유형 열은 생략(모두 커스텀어벗 생산+배송비). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 **배송자 BA**(requestor businessAnchor·우편함)별. PTX는 치과명이 아니라 기공소 BA로 표기. 장부·미정산=부가세 포함가(어벗 1개당 매입가 기본 8,800, 리메이크 6,600). 무료 크레딧 결제 포함 약정 단가가 미정산으로 쌓이며 말일 일괄 지급(재가산 없음·세금계산서÷1.1). 정산규칙 모달은 플랫폼 설정 매입가·배송단가를 표시.
-  - 딜러: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 부가세 포함가 장부·미정산, 지급=잔액 그대로·세금계산서(÷1.1)
-  - 개발운영사: `src/pages/devops/DevopsPaymentsPage.tsx` — 부가세 포함가 장부·미정산, 지급=잔액 그대로·세금계산서(÷1.1)
-  - 관리자: `src/pages/admin/AdminPaymentsPage.tsx` — 스토어·커스텀어벗·기공사업부 + 관계사 잔여 분배(커스텀어벗)
+  - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·지급상태·금액·잔액·거래내역). 유형 열은 생략(모두 커스텀어벗 생산+배송비). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 **배송자 BA**(requestor businessAnchor·우편함)별. PTX는 치과명이 아니라 기공소 BA로 표기. 장부·미정산=부가세 포함가(어벗 1개당 매입가 기본 8,800, 리메이크 6,600). 무료 크레딧 결제 포함 약정 단가가 미정산으로 쌓이며 말일 일괄 지급(재가산 없음·세금계산서÷1.1). 정산규칙 모달은 딜러와 같은 칩·표(제조 44% 고정 / 어벗츠 40% 고정).
+  - 딜러: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 부가세 포함가 장부·미정산, 지급=잔액 그대로·세금계산서(÷1.1). 정산규칙=커스텀어벗 10~20% 누진 칩·표.
+  - 개발운영사: `src/pages/devops/DevopsPaymentsPage.tsx` — 부가세 포함가 장부·미정산, 지급=잔액 그대로·세금계산서(÷1.1). 정산규칙=커스텀어벗 의뢰비 5%(어벗츠 몫에서) 칩·표.
+  - 관리자: `src/pages/admin/AdminPaymentsPage.tsx` — 스토어·커스텀어벗·기공사업부 + 관계사 분배. 정산규칙 커스텀어벗=어벗츠 순몫 칩·표(40% 고정 순 35% / 제조 44% 고정).
 
 ## 1. 구조
 
@@ -539,6 +539,8 @@ Notes:
   - 가격 정책/대시보드: `PricingPolicyDialog` — 런칭 1.3만(+배송) / 정상 1.5만(+배송 또는 FM덴탈 월정액·기공소만). 신속 +2,000 · 배송 3,500. 의뢰자 변형에 **부가세 없음 · 면세**. 딜러는 판매가 기준(배송·월정액 제외).
   - 관리자 플랫폼 설정「커스텀어벗」: 커스텀어벗 가격(CNC·환봉 생산 단가) + 분배 비율. 지정 기공소 디자인·어벗츠 생산만. 치과 공급·디자인+생산 카드 없음.
   - 제조사 정산규칙: 딜러와 같은 칩·표(구간·누적). 상단 탭 제조 44% 고정 / 어벗츠 40% 고정. 배송은 박스당 매입가(표 밖). 리메이크·무료 크레딧도 약정 단가. 말일 일괄 지급·세금계산서.
+  - 어벗츠 정산규칙: 딜러·제조와 같은 칩·표. 상단 탭 어벗츠 40% 고정(순 35%) / 제조 44% 고정. 개발운영 5%는 어벗츠 몫(의뢰비 대비)에서 차감. 배송 제외. 어벗츠 순몫 면세 계산서.
+  - 개발운영사 정산규칙: 딜러와 같은 칩·표. 커스텀어벗 의뢰비 5%(어벗츠 몫에서). 제조·어벗츠 고정안과 무관. 기공·스토어·배송 제외. 세금계산서.
   - 관리자 고객향 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0). 제조사·딜러사·개발운영사 `AFFILIATE_TO_ABUTS` 과세.
 
 - 단일 SSOT 장부 UI 필드 계약(초안):
@@ -651,8 +653,8 @@ Notes:
     - (1) 스토어: `REV_STORE_TAXABLE`(`STORE_SALE`/`REFUND`) 포함가·공급·VAT + `shareRates.store`·planned 몫(설정 분배비율 참고)
     - (2) 커스텀어벗: 의뢰자 유료 소비 + 제조사 하청 + 잔여(`REV_SALESMAN`/`REV_DEVOPS`/`REV_ADMIN`, `REQUEST_SPEND_COMMIT`만) + `shareRates.customAbut`
     - (3) 기공사업부: `internalLab` 원청 gross(`practice_transfer_lab_share_gross`) − 하청 매입 + 하청 수수료 + `shareRates.labDivision`·planned 몫
-  - 카드 선택 시 해당 사업 상세. 커스텀어벗만「관계사 잔여 분배」(딜러·개발운영·어벗츠).
-  - 긴 안내는 `SettlementPolicyDialog`(정산규칙). 기간=`PeriodFilter`(KST).
+  - 카드 선택 시 해당 사업 상세. 커스텀어벗만「관계사 분배」(딜러·개발운영·어벗츠).
+  - 긴 안내는 `SettlementPolicyDialog`(정산규칙). 기간=`PeriodFilter`(KST). 커스텀어벗 탭=어벗츠 순몫 칩·표.
   - UI: `settlementUi` 요약 카드·수식 부호 + `creditPageUi` 패널/타일.
 
 - 어벗츠기공소(`internalLab`) UI SSOT:

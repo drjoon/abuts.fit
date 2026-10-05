@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: 어벗츠 순몫·개발운영 구간 필드.
 // - 2026-10-05: 어벗츠 고정 몫 40%.
 // - 2026-10-05: 제조 구간 = 어벗츠 고정을 뺀 뒤 딜러 구간을 뺀 나머지.
 // - 2026-10-05: 커스텀어벗 의뢰비 분배 — 딜러 1천~5천 누진 10~20% · 어벗츠 또는 제조 고정.
@@ -7,6 +8,8 @@ export const ABUTS_FIXED_SHARE_PCT = 40;
 export const MANUFACTURER_FIXED_SHARE_PCT = 44;
 /** 의뢰비 대비. 어벗츠 몫에서 차감. */
 export const DEVOPS_FROM_ABUTS_SHARE_PCT = 5;
+export const ABUTS_NET_FIXED_SHARE_PCT =
+  ABUTS_FIXED_SHARE_PCT - DEVOPS_FROM_ABUTS_SHARE_PCT;
 
 export type SplitMarginalBand = {
   fromQty: number;
@@ -27,6 +30,17 @@ export function manufacturerMarginalPctForDealerPct(dealerPct: number): number {
   return 100 - ABUTS_FIXED_SHARE_PCT - dealerPct;
 }
 
+export function abutsNetMarginalPctForDealerPctOnMfrFixed(
+  dealerPct: number,
+): number {
+  return (
+    100 -
+    MANUFACTURER_FIXED_SHARE_PCT -
+    dealerPct -
+    DEVOPS_FROM_ABUTS_SHARE_PCT
+  );
+}
+
 export const MANUFACTURER_MARGINAL_BANDS: ReadonlyArray<SplitMarginalBand> =
   DEALER_MARGINAL_BANDS.map((band) => ({
     ...band,
@@ -37,6 +51,24 @@ export const MANUFACTURER_FIXED_BANDS: ReadonlyArray<SplitMarginalBand> =
   DEALER_MARGINAL_BANDS.map((band) => ({
     ...band,
     pct: MANUFACTURER_FIXED_SHARE_PCT,
+  }));
+
+export const ABUTS_NET_FIXED_BANDS: ReadonlyArray<SplitMarginalBand> =
+  DEALER_MARGINAL_BANDS.map((band) => ({
+    ...band,
+    pct: ABUTS_NET_FIXED_SHARE_PCT,
+  }));
+
+export const ABUTS_NET_MFR_FIXED_BANDS: ReadonlyArray<SplitMarginalBand> =
+  DEALER_MARGINAL_BANDS.map((band) => ({
+    ...band,
+    pct: abutsNetMarginalPctForDealerPctOnMfrFixed(band.pct),
+  }));
+
+export const DEVOPS_FIXED_BANDS: ReadonlyArray<SplitMarginalBand> =
+  DEALER_MARGINAL_BANDS.map((band) => ({
+    ...band,
+    pct: DEVOPS_FROM_ABUTS_SHARE_PCT,
   }));
 
 export const CUSTOM_ABUTMENT_SPLIT_QTY_ROWS: readonly number[] = [
@@ -58,8 +90,12 @@ export type CustomAbutmentSplitRow = {
   abutsGrossWon: number;
   abutsGrossEffectivePct: number;
   devopsWon: number;
+  devopsMarginalPct: number;
+  devopsBandWon: number;
   abutsNetWon: number;
   abutsNetEffectivePct: number;
+  abutsNetMarginalPct: number;
+  abutsNetBandWon: number;
 };
 
 function dealerWonForQty(qty: number): number {
@@ -110,6 +146,7 @@ function withDevopsFromAbuts(
   dealerWon: number,
   abutsGrossWon: number,
   manufacturerMarginalPct: number,
+  abutsNetMarginalPct: number,
 ): CustomAbutmentSplitRow {
   const saleWon = qty * CUSTOM_ABUTMENT_SALE_WON;
   const devopsWon = Math.round(
@@ -119,6 +156,12 @@ function withDevopsFromAbuts(
   const band = dealerMarginalBandForQty(qty);
   const manufacturerUnitWon = Math.round(
     (CUSTOM_ABUTMENT_SALE_WON * manufacturerMarginalPct) / 100,
+  );
+  const devopsUnitWon = Math.round(
+    (CUSTOM_ABUTMENT_SALE_WON * DEVOPS_FROM_ABUTS_SHARE_PCT) / 100,
+  );
+  const abutsNetUnitWon = Math.round(
+    (CUSTOM_ABUTMENT_SALE_WON * abutsNetMarginalPct) / 100,
   );
   return {
     qty,
@@ -134,8 +177,12 @@ function withDevopsFromAbuts(
     abutsGrossWon,
     abutsGrossEffectivePct: pctOfSale(abutsGrossWon, qty),
     devopsWon,
+    devopsMarginalPct: DEVOPS_FROM_ABUTS_SHARE_PCT,
+    devopsBandWon: band.bandQty * devopsUnitWon,
     abutsNetWon,
     abutsNetEffectivePct: pctOfSale(abutsNetWon, qty),
+    abutsNetMarginalPct,
+    abutsNetBandWon: band.bandQty * abutsNetUnitWon,
   };
 }
 
@@ -152,6 +199,7 @@ export function splitAbutsFixedRow(qty: number): CustomAbutmentSplitRow {
     dealerWon,
     abutsGrossWon,
     manufacturerMarginalPctForDealerPct(band.pct),
+    ABUTS_NET_FIXED_SHARE_PCT,
   );
 }
 
@@ -163,12 +211,14 @@ export function splitManufacturerFixedRow(qty: number): CustomAbutmentSplitRow {
     (saleWon * MANUFACTURER_FIXED_SHARE_PCT) / 100,
   );
   const abutsGrossWon = saleWon - manufacturerWon - dealerWon;
+  const band = dealerMarginalBandForQty(qty);
   return withDevopsFromAbuts(
     qty,
     manufacturerWon,
     dealerWon,
     abutsGrossWon,
     MANUFACTURER_FIXED_SHARE_PCT,
+    abutsNetMarginalPctForDealerPctOnMfrFixed(band.pct),
   );
 }
 

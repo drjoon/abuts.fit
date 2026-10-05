@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: 정산규칙 — 딜러·제조와 같은 칩·표. 어벗츠 순(개발운영 5% 차감).
 // - 2026-10-05: 정산규칙 — 커스텀어벗 분배 표(구간·누적, 개발운영 5%는 어벗츠 몫에서).
 // - 2026-09-27: 기공사업부 정산 규칙 — 플랫폼 사용료 2%(이벤트 면제 취소선)·어벗츠기공소 항상 면제.
 // - 2026-09-26: 기공사업부 정산 규칙 — 플랫폼 사용료·영업 수수료 안내.
@@ -50,13 +51,19 @@ import {
 import {
   SettlementEquationOperator,
   SettlementPolicyDialog,
-  SettlementPolicySection,
+  SettlementPolicyFact,
   SETTLEMENT_STAT_CARD_WIDTH_CLASS,
   SETTLEMENT_STAT_ROW_CLASS,
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
 import { LabDirectPlatformFeeNotice } from "@/shared/settlement/LabDirectPlatformFeeNotice";
-import { CustomAbutmentAdminSplitTables } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
+import { CustomAbutmentAbutsSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
+import {
+  ABUTS_FIXED_SHARE_PCT,
+  DEVOPS_FROM_ABUTS_SHARE_PCT,
+  MANUFACTURER_FIXED_SHARE_PCT,
+} from "@/shared/settlement/customAbutmentSplitPolicy";
+import { DEALERSHIP_BAND_RANGE_LABEL } from "@/shared/sales/dealershipPolicyCopy";
 
 const HISTORY_MONTHS = 6;
 
@@ -938,7 +945,6 @@ export default function AdminPaymentsPage({
   const devopsUnpaidSplit = splitInclusiveVat(devopsUnpaidInclusive);
 
   const storeRates = shareRates?.store;
-  const customRates = shareRates?.customAbut;
   const labRates = shareRates?.labDivision;
 
   const labRevenue =
@@ -975,45 +981,93 @@ export default function AdminPaymentsPage({
             <SettlementPolicyDialog
               title="정산 규칙"
               description="스토어 · 커스텀어벗 · 기공사업부"
-              contentClassName="sm:max-w-6xl"
+              contentClassName="sm:max-w-3xl"
             >
-              <SettlementPolicySection title="스토어">
-                <p>
-                  기성품(심플웨이 등) 과세 매출입니다.
-                  <br />
-                  고객 표시는 부가세 포함가이며, 월말 합산 세금계산서입니다.
-                </p>
-                <p>
-                  분배는 재무 › 설정 › 분배비율(스토어) 기준입니다.
-                  <br />
-                  판매가 대비 제조사 · 딜러 · 개발운영 · 어벗츠 비율입니다.
-                </p>
-              </SettlementPolicySection>
-              <SettlementPolicySection title="커스텀어벗">
-                <CustomAbutmentAdminSplitTables />
-                <p>
-                  배송비는 분배 재원에서 제외합니다.
-                </p>
-              </SettlementPolicySection>
-              <SettlementPolicySection title="기공사업부">
-                <p>
-                  어벗츠기공소 기공료와 인증 기공소 하청 수수료입니다.
-                  <br />
-                  면세 · 계산서입니다.
-                </p>
-                <p>
-                  배송비를 선차감한 뒤 기공사업부 · 영업팀 · 개발운영 · 어벗츠
-                  비율로 분배합니다.
-                </p>
-                <p>
-                  <LabDirectPlatformFeeNotice feeRates={labDivision} />
-                  <br />
-                  어벗츠기공소 수행건은 항상 면제입니다.
-                  <br />
-                  요율은 작업시작 시점에 고정되며, 이후 설정 변경은 소급하지
-                  않습니다.
-                </p>
-              </SettlementPolicySection>
+              <Tabs defaultValue="customAbut" className="min-w-0 space-y-3">
+                <TabsList className="grid h-10 w-full grid-cols-3 rounded-xl bg-slate-100 p-1">
+                  <TabsTrigger value="store" className="rounded-lg text-xs sm:text-sm">
+                    스토어
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="customAbut"
+                    className="rounded-lg text-xs sm:text-sm"
+                  >
+                    커스텀어벗
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="labDivision"
+                    className="rounded-lg text-xs sm:text-sm"
+                  >
+                    기공사업부
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="store" className="mt-0 space-y-3">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <SettlementPolicyFact label="과세">
+                      기성품(심플웨이 등) 매출입니다.
+                      <br />
+                      고객 표시는 부가세 포함가입니다.
+                    </SettlementPolicyFact>
+                    <SettlementPolicyFact label="세금계산서">
+                      월말 합산 발행합니다.
+                      <br />
+                      커스텀어벗 계산서와 합치지 않습니다.
+                    </SettlementPolicyFact>
+                    <SettlementPolicyFact label="분배">
+                      재무 › 설정 › 분배비율(스토어)입니다.
+                      <br />
+                      판매가 대비 제조 · 딜러 · 개발운영 · 어벗츠입니다.
+                    </SettlementPolicyFact>
+                  </div>
+                </TabsContent>
+                <TabsContent value="customAbut" className="mt-0 space-y-4">
+                  <CustomAbutmentAbutsSplitTable />
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <SettlementPolicyFact label="개발운영">
+                      의뢰비 대비 {DEVOPS_FROM_ABUTS_SHARE_PCT}%입니다.
+                      <br />
+                      어벗츠 몫에서 뗍니다.
+                    </SettlementPolicyFact>
+                    <SettlementPolicyFact label="배송">
+                      분배 재원에서 제외합니다.
+                      <br />
+                      제조 매입은 박스당 단가입니다.
+                    </SettlementPolicyFact>
+                    <SettlementPolicyFact label="계산서">
+                      어벗츠 순몫은 면세입니다.
+                      <br />
+                      제조·딜러·개발운영은 세금계산서입니다.
+                    </SettlementPolicyFact>
+                    <SettlementPolicyFact label="딜러">
+                      {DEALERSHIP_BAND_RANGE_LABEL} 누진입니다.
+                      <br />
+                      기공 · 스토어는 이 표에 없습니다.
+                    </SettlementPolicyFact>
+                  </div>
+                </TabsContent>
+                <TabsContent value="labDivision" className="mt-0 space-y-3">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <SettlementPolicyFact label="면세">
+                      어벗츠기공소 기공료와 하청 수수료입니다.
+                      <br />
+                      계산서를 발행합니다.
+                    </SettlementPolicyFact>
+                    <SettlementPolicyFact label="분배">
+                      배송비를 먼저 뺍니다.
+                      <br />
+                      기공사업부 · 영업팀 · 개발운영 · 어벗츠 비율입니다.
+                    </SettlementPolicyFact>
+                    <SettlementPolicyFact label="사용료">
+                      <LabDirectPlatformFeeNotice feeRates={labDivision} />
+                    </SettlementPolicyFact>
+                    <SettlementPolicyFact label="적용">
+                      어벗츠기공소 수행건은 항상 면제입니다.
+                      <br />
+                      요율은 작업시작 시점에 고정됩니다.
+                    </SettlementPolicyFact>
+                  </div>
+                </TabsContent>
+              </Tabs>
             </SettlementPolicyDialog>
           </div>
         }
@@ -1056,17 +1110,14 @@ export default function AdminPaymentsPage({
                         manufacturerSummary?.periodBalanceAmount,
                       )}
                     </div>
-                    <ShareRateHint
-                      parts={[
-                        {
-                          label: "제조",
-                          pct: customRates?.manufacturerPercent,
-                        },
-                        { label: "딜러", pct: customRates?.salesmanPercent },
-                        { label: "개발", pct: customRates?.devopsPercent },
-                        { label: "어벗츠", pct: customRates?.abutsPercent },
-                      ]}
-                    />
+                    <div className="tabular-nums">
+                      제조 {MANUFACTURER_FIXED_SHARE_PCT}% · 어벗츠{" "}
+                      {ABUTS_FIXED_SHARE_PCT}%
+                    </div>
+                    <div className="tabular-nums">
+                      딜러 {DEALERSHIP_BAND_RANGE_LABEL} · 개발{" "}
+                      {DEVOPS_FROM_ABUTS_SHARE_PCT}%
+                    </div>
                   </div>
                 )
               }
@@ -1196,7 +1247,7 @@ export default function AdminPaymentsPage({
                   <CreditSectionHeader
                     icon={Factory}
                     title="커스텀어벗 · 생산·공급"
-                    description="고정 매입(제조사%) · 잔여 분배"
+                    description={`제조 ${MANUFACTURER_FIXED_SHARE_PCT}% 또는 어벗츠 ${ABUTS_FIXED_SHARE_PCT}% · 딜러 누진`}
                   />
                   <EquationRow
                     revenue={
@@ -1216,7 +1267,7 @@ export default function AdminPaymentsPage({
                             )}
                           </>
                         }
-                        hintTooltip="의뢰자 유료 소비(의뢰+배송). 잔여 분배는 배송 제외."
+                        hintTooltip="의뢰자 유료 소비(의뢰+배송). 분배는 배송 제외."
                         compact
                       />
                     }
@@ -1224,9 +1275,7 @@ export default function AdminPaymentsPage({
                       <SettlementStatCard
                         label="지출(하청)"
                         value={dash ?? manufacturerEarn}
-                        hint={`${pctLabel(
-                          customRates?.manufacturerPercent,
-                        )} · 미정산 ${formatWonWithUnit(
+                        hint={`${MANUFACTURER_FIXED_SHARE_PCT}% · 미정산 ${formatWonWithUnit(
                           manufacturerSummary?.periodBalanceAmount,
                         )}`}
                         hintTooltip={`단가 ${Number(
@@ -1243,23 +1292,19 @@ export default function AdminPaymentsPage({
                     }
                     distribution={
                       <SettlementStatCard
-                        label="분배(잔여)"
+                        label="분배"
                         value={
                           dash ?? Number(customAbut?.residualTotalSupply || 0)
                         }
-                        hint={`딜러 ${pctLabel(
-                          customRates?.salesmanPercent,
-                        )} · 개발 ${pctLabel(
-                          customRates?.devopsPercent,
-                        )} · 어벗츠 ${pctLabel(customRates?.abutsPercent)}`}
-                        hintTooltip="판매가 − 매입 공급가 잔여. 장부 실적(공급가)."
+                        hint={`딜러 ${DEALERSHIP_BAND_RANGE_LABEL} · 개발 ${DEVOPS_FROM_ABUTS_SHARE_PCT}% · 어벗츠 순`}
+                        hintTooltip="판매가 − 제조 매입 − 딜러. 개발운영은 어벗츠 몫에서 뺍니다."
                         compact
                       />
                     }
                   />
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <CreditStatTile
-                      label="딜러(잔여)"
+                      label="딜러"
                       value={formatWonWithUnit(
                         customAbut?.residualSalesmanSupply,
                       )}
@@ -1269,7 +1314,7 @@ export default function AdminPaymentsPage({
                       )}`}
                     />
                     <CreditStatTile
-                      label="개발운영(잔여)"
+                      label="개발운영"
                       value={formatWonWithUnit(
                         customAbut?.residualDevopsSupply,
                       )}
@@ -1278,7 +1323,7 @@ export default function AdminPaymentsPage({
                       )}`}
                     />
                     <CreditStatTile
-                      label="어벗츠(잔여)"
+                      label="어벗츠"
                       value={formatWonWithUnit(customAbut?.residualAdminSupply)}
                       hint={`면세 · ${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
                     />
@@ -1418,8 +1463,8 @@ export default function AdminPaymentsPage({
                 <div className="space-y-4 p-4">
                   <CreditSectionHeader
                     icon={HandCoins}
-                    title="관계사 잔여 분배"
-                    description="커스텀어벗 잔여 · 과세(제조·딜러·개발) / 면세(어벗츠)"
+                    title="관계사 분배"
+                    description="커스텀어벗 · 과세(제조·딜러·개발) / 면세(어벗츠)"
                     trailing={
                       <div className="relative w-full sm:w-[260px]">
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

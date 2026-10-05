@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: 개발운영 정산 규칙 — 딜러와 같은 칩·표. 의뢰비 5%(어벗츠 몫).
 // - 2026-10-05: 딜러 정산 규칙 모달 — 커스텀어벗만. 중복 안내 제거 · 칩·카드.
 // - 2026-10-05: 딜러 정산 규칙 — 커스텀어벗 구간·누적 분배비.
 // - 2026-09-27: 정산 카드 하단 — 20%·15%·10% 대신 심플웨이 10% · 커스텀어벗 20%.
@@ -16,7 +17,6 @@
 // - web/frontend/src/features/commission/useCommissionDashboard.ts
 // - web/frontend/src/shared/settlement/affiliateVat.ts
 import { useEffect, useMemo, useState } from "react";
-import { Landmark, Percent, CalendarClock } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
@@ -35,7 +35,6 @@ import { CommissionLedgerInline } from "@/shared/components/CommissionLedgerInli
 import {
   useCommissionDashboard,
   formatMoney,
-  formatCommissionRatePct,
   requestorKindLabel,
 } from "@/features/commission/useCommissionDashboard";
 import { ProductCommissionLines } from "@/features/commission/ProductCommissionLines";
@@ -52,12 +51,15 @@ import {
 import {
   SettlementPolicyDialog,
   SettlementPolicyFact,
-  SettlementPolicySection,
   SETTLEMENT_STAT_CARD_WIDTH_CLASS,
   SETTLEMENT_STAT_ROW_CLASS,
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
-import { CustomAbutmentDealerSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
+import {
+  CustomAbutmentDealerSplitTable,
+  CustomAbutmentDevopsSplitTable,
+} from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
+import { DEVOPS_FROM_ABUTS_SHARE_PCT } from "@/shared/settlement/customAbutmentSplitPolicy";
 
 export type CommissionPaymentsVariant = "salesman" | "devops";
 
@@ -87,7 +89,6 @@ export function CommissionPaymentsPage({
   const paidInclusive = Number(overview?.paidNetCommissionAmount || 0);
   const freeNet = Number(overview?.freeNetAmount || 0);
   const payableSplit = splitInclusiveVat(payableInclusive);
-  const ratePct = Math.round(Number(data?.commissionRate || 0) * 100);
   const payoutPolicy = isSalesman
     ? SETTLEMENT_VAT_POLICY.salesmanPayout
     : SETTLEMENT_VAT_POLICY.devopsPayout;
@@ -121,12 +122,15 @@ export function CommissionPaymentsPage({
             hint="부가세 포함"
             hintTooltip={`${payoutPolicy} 공급가 ${payableSplit.supply.toLocaleString("ko-KR")}원 · VAT ${payableSplit.vat.toLocaleString("ko-KR")}원`}
             footer={
-              isSalesman ? (
-                <ProductCommissionLines
-                  customAbutment={customAbutmentCommission}
-                  className="text-[11px] text-muted-foreground sm:text-xs"
-                />
-              ) : undefined
+              <ProductCommissionLines
+                customAbutment={customAbutmentCommission}
+                rateLabel={
+                  isSalesman
+                    ? undefined
+                    : `${DEVOPS_FROM_ABUTS_SHARE_PCT}%`
+                }
+                className="text-[11px] text-muted-foreground sm:text-xs"
+              />
             }
           />
           <SettlementStatCard
@@ -135,18 +139,17 @@ export function CommissionPaymentsPage({
             value={paidInclusive}
             selected={tab === "ledger"}
             onClick={() => setTab("ledger")}
-            hint={isSalesman ? SETTLEMENT_TAXABLE_INVOICE_LABEL : undefined}
+            hint={SETTLEMENT_TAXABLE_INVOICE_LABEL}
             footer={
-              isSalesman ? (
-                <ProductCommissionLines
-                  customAbutment={0}
-                  className="text-[11px] text-muted-foreground sm:text-xs"
-                />
-              ) : (
-                <div className="text-xs text-muted-foreground">
-                  {SETTLEMENT_TAXABLE_INVOICE_LABEL}
-                </div>
-              )
+              <ProductCommissionLines
+                customAbutment={0}
+                rateLabel={
+                  isSalesman
+                    ? undefined
+                    : `${DEVOPS_FROM_ABUTS_SHARE_PCT}%`
+                }
+                className="text-[11px] text-muted-foreground sm:text-xs"
+              />
             }
           />
           <SettlementStatCard
@@ -184,67 +187,53 @@ export function CommissionPaymentsPage({
               />
               <SettlementPolicyDialog
                 title={`${title} 규칙`}
-                description={
-                  isSalesman
-                    ? DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD
-                    : "잔여 분배 부가세 포함 · 세금계산서"
-                }
-                contentClassName={isSalesman ? "sm:max-w-3xl" : undefined}
+                description={DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD}
+                contentClassName="sm:max-w-3xl"
               >
-                {isSalesman ? (
-                  <div className="space-y-4">
+                <div className="space-y-4">
+                  {isSalesman ? (
                     <CustomAbutmentDealerSplitTable />
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <SettlementPolicyFact label="제외">
-                        기공 · 스토어 · 배송비 · 월정액
-                      </SettlementPolicyFact>
-                      <SettlementPolicyFact label="소개 코드">
-                        {REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면
-                        리셋됩니다.
-                        <br />
-                        {REFERRAL_OWNERSHIP_RESET_ANYONE_LINE}
-                      </SettlementPolicyFact>
-                      <SettlementPolicyFact label="세금계산서">
-                        지급은 잔액 그대로입니다.
-                        <br />
-                        ÷1.1로 공급가·세액을 나눕니다.
-                      </SettlementPolicyFact>
-                      <SettlementPolicyFact label="지급">
-                        사업자 단위 · 매월{" "}
-                        {Number(data?.payoutDayOfMonth || 1)}일
-                        <br />
-                        무료 의뢰·배송은 지급 대상이 아닙니다.
-                      </SettlementPolicyFact>
-                    </div>
+                  ) : (
+                    <CustomAbutmentDevopsSplitTable />
+                  )}
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {isSalesman ? (
+                      <>
+                        <SettlementPolicyFact label="제외">
+                          기공 · 스토어 · 배송비 · 월정액
+                        </SettlementPolicyFact>
+                        <SettlementPolicyFact label="소개 코드">
+                          {REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면
+                          리셋됩니다.
+                          <br />
+                          {REFERRAL_OWNERSHIP_RESET_ANYONE_LINE}
+                        </SettlementPolicyFact>
+                      </>
+                    ) : (
+                      <>
+                        <SettlementPolicyFact label="분배">
+                          의뢰비 대비 {DEVOPS_FROM_ABUTS_SHARE_PCT}%입니다.
+                          <br />
+                          어벗츠 몫에서 뗍니다.
+                        </SettlementPolicyFact>
+                        <SettlementPolicyFact label="제외">
+                          기공 · 스토어 · 배송비
+                        </SettlementPolicyFact>
+                      </>
+                    )}
+                    <SettlementPolicyFact label="세금계산서">
+                      지급은 잔액 그대로입니다.
+                      <br />
+                      ÷1.1로 공급가·세액을 나눕니다.
+                    </SettlementPolicyFact>
+                    <SettlementPolicyFact label="지급">
+                      사업자 단위 · 매월{" "}
+                      {Number(data?.payoutDayOfMonth || 1)}일
+                      <br />
+                      무료 의뢰·배송은 지급 대상이 아닙니다.
+                    </SettlementPolicyFact>
                   </div>
-                ) : (
-                  <>
-                    <SettlementPolicySection title="수수료율">
-                      <div className="flex gap-2.5">
-                        <Percent className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                        <p>
-                          잔여 분배 {ratePct}%. 정산은 사업자(
-                          `businessAnchorId`) 단위이며 매월{" "}
-                          {Number(data?.payoutDayOfMonth || 1)}일에 지급합니다.
-                        </p>
-                      </div>
-                    </SettlementPolicySection>
-                    <SettlementPolicySection title="부가세 · 세금계산서">
-                      <div className="flex gap-2.5">
-                        <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                        <p>{payoutPolicy}</p>
-                      </div>
-                    </SettlementPolicySection>
-                    <SettlementPolicySection title="무료 수익">
-                      <div className="flex gap-2.5">
-                        <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                        <p>
-                          무료 의뢰·배송 수익은 확인용이며 지급 대상이 아닙니다.
-                        </p>
-                      </div>
-                    </SettlementPolicySection>
-                  </>
-                )}
+                </div>
               </SettlementPolicyDialog>
             </div>
 
@@ -305,26 +294,19 @@ export function CommissionPaymentsPage({
                               {Number(org.monthOrderCount || 0).toLocaleString()}건
                             </span>
                           </div>
-                          {isSalesman ? (
-                            <ProductCommissionLines
-                              customAbutment={Number(
-                                org.monthCustomAbutmentCommissionAmount ??
-                                  org.monthCommissionAmount ??
-                                  0,
-                              )}
-                              className="pt-1 text-sm text-slate-900"
-                            />
-                          ) : (
-                            <div className="flex justify-between gap-3">
-                              <span className="text-muted-foreground">
-                                기간 수수료(
-                                {formatCommissionRatePct(org.commissionRate)})
-                              </span>
-                              <span className="font-semibold tabular-nums">
-                                {formatMoney(org.monthCommissionAmount)}원
-                              </span>
-                            </div>
-                          )}
+                          <ProductCommissionLines
+                            customAbutment={Number(
+                              org.monthCustomAbutmentCommissionAmount ??
+                                org.monthCommissionAmount ??
+                                0,
+                            )}
+                            rateLabel={
+                              isSalesman
+                                ? undefined
+                                : `${DEVOPS_FROM_ABUTS_SHARE_PCT}%`
+                            }
+                            className="pt-1 text-sm text-slate-900"
+                          />
                         </div>
                       </div>
                     );
