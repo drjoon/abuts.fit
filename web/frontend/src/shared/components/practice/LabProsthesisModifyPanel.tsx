@@ -404,15 +404,12 @@ function InnerControls({
 }) {
   const committed = innerParamsOf(edit);
   const [draft, setDraft] = useState<InnerParams>(committed);
-  const [blockOut, setBlockOut] = useState(edit.inner.blockOut);
   const [source, setSource] = useState<{ id: string; name: string } | null>(() =>
     edit.inner.presetId
       ? { id: edit.inner.presetId, name: edit.inner.presetName }
       : null,
   );
-  const dirty =
-    JSON.stringify(draft) !== JSON.stringify(committed) ||
-    blockOut !== edit.inner.blockOut;
+  const dirty = JSON.stringify(draft) !== JSON.stringify(committed);
   const set = (patch: Partial<InnerParams>) => {
     setDraft((prev) => ({ ...prev, ...patch }));
     setSource(null);
@@ -449,15 +446,6 @@ function InnerControls({
           </Fragment>
         ))}
       </div>
-      <label className="flex items-center gap-2 text-xs font-medium">
-        <Checkbox
-          className="h-3.5 w-3.5"
-          checked={blockOut}
-          onCheckedChange={(checked) => setBlockOut(checked === true)}
-          aria-label="블록아웃"
-        />
-        블록아웃
-      </label>
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="flex min-w-0">
@@ -468,7 +456,7 @@ function InnerControls({
               disabled={!dirty}
               onClick={() => {
                 const same = source && JSON.stringify(draft) === JSON.stringify(committed);
-                onEdit(applyInnerParams(edit, draft, kind, same ? source : null, blockOut));
+                onEdit(applyInnerParams(edit, draft, kind, same ? source : null));
               }}
             >
               적용

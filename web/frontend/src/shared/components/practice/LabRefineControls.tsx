@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -455,7 +454,6 @@ export function LabRefineControls({
             onFit={(occlusalFit) => setRefine({ occlusalFit })}
           />
           {cavity ? null : (
-            <>
           <ClearanceRow
             label="인접 간격"
             value={refine.proximalClearanceMm}
@@ -468,25 +466,6 @@ export function LabRefineControls({
             onTrim={(proximalTrim) => setRefine({ proximalTrim })}
             onFit={(proximalFit) => setRefine({ proximalFit })}
           />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <label className="flex items-center gap-2 text-xs font-medium">
-                <Checkbox
-                  checked={refine.proximalBlockOut}
-                  disabled={!generated || !refine.proximalTrim}
-                  onCheckedChange={(value) => setRefine({ proximalBlockOut: value === true })}
-                  aria-label="블록아웃"
-                />
-                블록아웃
-              </label>
-            </TooltipTrigger>
-            <TooltipContent side="right" className="z-[520]">
-              삽입 경로에 걸리는 인접치 언더컷까지 깎습니다.
-              <br />
-              인접 깎기를 켰을 때만 씁니다.
-            </TooltipContent>
-          </Tooltip>
-            </>
           )}
           {edit.pontic.on ? (
             <div className="space-y-2 border-t pt-2">
@@ -626,9 +605,19 @@ function ClearanceRow({
           onClick={() => onTrim(!trim)}
           tip={
             <>
-              {target}까지 {label}보다 가까운 면을 깎습니다.
-              <br />
-              음수 간격은 그만큼 겹치게 둡니다.
+              {target === "인접치" ? (
+                <>
+                  인접 간격보다 가까운 크라운 면을 깎습니다.
+                  <br />
+                  삽입 경로에 걸리지 않게 크라운만 옮깁니다.
+                </>
+              ) : (
+                <>
+                  {target}까지 {label}보다 가까운 면을 깎습니다.
+                  <br />
+                  음수 간격은 그만큼 겹치게 둡니다.
+                </>
+              )}
             </>
           }
         >

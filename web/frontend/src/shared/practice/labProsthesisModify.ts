@@ -190,7 +190,7 @@ export type ToothInner = Omit<InnerParams, "minThicknessMm"> & {
   presetName: string;
   /** 복사한 열. 치아 유형이 바뀌면 같은 프리셋의 그 유형 열로 다시 맞춘다. */
   kind: InnerKind;
-  /** 삽입축 기준 언더컷을 메워 내면이 걸리지 않게 한다. */
+  /** 삽입축 기준 언더컷은 내면 높이장에서 항상 메운다. */
   blockOut: boolean;
   /**
    * 내면을 지대치 스캔에서 실제 메시로 만든다. 항상 켠다.
@@ -252,7 +252,6 @@ export function applyInnerParams(
   params: InnerParams,
   kind: InnerKind,
   source: Pick<DesignPreset, "id" | "name"> | null,
-  blockOut = edit.inner.blockOut,
 ): ToothDesignEdit {
   const { minThicknessMm, ...inner } = params;
   const outer =
@@ -264,7 +263,7 @@ export function applyInnerParams(
       presetId: source?.id ?? null,
       presetName: source?.name ?? "",
       kind,
-      blockOut,
+      blockOut: true,
       intaglio: true,
     },
     refine: { ...edit.refine, minThicknessMm, ...(outer ?? {}) },
@@ -453,7 +452,7 @@ export type ToothDesignEdit = {
     proximalClearanceMm: number;
     proximalTrim: boolean;
     proximalFit: boolean;
-    /** 삽입 경로에 걸리는 인접치 언더컷까지 깎는다. */
+    /** 삽입 경로에 인접치가 걸리면 크라운을 옆으로 밀어 간격을 지킨다. */
     proximalBlockOut: boolean;
     /** 폰틱 기저면·크라운 경부에서 치은 스캔까지(mm). 음수는 누름. 크라운은 마진 아래로 내리지 않는다. */
     gingivalMm: number;
@@ -723,7 +722,7 @@ function normalizeToothInner(raw: unknown, minThicknessMm: number): ToothInner {
     presetId,
     presetName: typeof row.presetName === "string" ? row.presetName : "",
     kind: INNER_KINDS.some((item) => item.id === row.kind) ? (row.kind as InnerKind) : "crown",
-    blockOut: row.blockOut !== false,
+    blockOut: true,
     intaglio: true,
   };
 }
@@ -824,6 +823,7 @@ export function normalizeToothDesignEdit(raw: unknown): ToothDesignEdit {
     stretch: finiteTuple(rawRefine.stretch, 3, base.refine.stretch),
     offsetMm: finiteTuple(rawRefine.offsetMm, 2, base.refine.offsetMm),
     rotateDeg: Number(rawRefine.rotateDeg) || 0,
+    proximalBlockOut: true,
   };
   return {
     ...base,

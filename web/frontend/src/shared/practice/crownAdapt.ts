@@ -39,12 +39,12 @@ export type CrownAdaptInput = {
   unitToMm: number;
   opposing: ScanGrid | null;
   adjacent: ScanGrid | null;
-  /** 블록아웃용 인접치 기둥. */
+  /** 삽입 경로에서 인접치에 걸리지 않게 크라운을 옆으로 밀 때 쓰는 인접치 기둥. */
   adjacentColumns: ScanColumns | null;
   /** 폰틱은 치조정, 크라운은 마진 둘레 치은 기둥. */
   ridge: ScanColumns | null;
   occlusal: SurfaceAdapt;
-  proximal: SurfaceAdapt & { blockOut: boolean };
+  proximal: SurfaceAdapt;
   gingival: GingivalAdapt | null;
   /** 인접 보철과 떼어 두는 평면. 정점을 `normal·p <= offset` 쪽에 둔다. */
   discs?: DiscPlane[];
@@ -259,7 +259,7 @@ export function signedDistanceMm(
   return signedTo(grid.cloud, j, x, y, z).signed * unit;
 }
 
-/** 블록아웃 그림자 밖으로 나갈 때 보는 인접치 옆 거리(mm). 이보다 깊은 언더컷은 한 번에 못 뺀다. */
+/** 삽입 경로 그림자 밖으로 나갈 때 보는 인접치 옆 거리(mm). 이보다 깊은 언더컷은 한 번에 못 뺀다. */
 const BLOCK_OUT_REACH_MM = 1.2;
 
 /**
@@ -361,8 +361,8 @@ function blockOutVertices(
 /**
  * 크라운 정점을 대합·인접·치조정에 맞춘다.
  * 깎기는 목표 간격보다 가까운 정점을 스캔 법선 방향으로 밀어낸다. 늘리기는 크라운이 스캔을 보는
- * 정점만 FIT_REACH_MM 안에서 목표 간격까지 끌어온다. 블록아웃은 삽입 경로(축 위쪽)에 있는 인접치까지
- * 옆 간격을 지킨다. 치은 맞춤은 기둥 꼭대기에서 간격만큼 띄우고 floor 아래로는 내리지 않는다.
+ * 정점만 FIT_REACH_MM 안에서 목표 간격까지 끌어온다. 인접 깎기를 켜면 삽입 경로(축 위쪽)에
+ * 인접치가 걸리지 않게 크라운만 옆으로 민다. 치은 맞춤은 기둥 꼭대기에서 간격만큼 띄우고 floor 아래로는 내리지 않는다.
  * 디스크는 마지막에 평면 너머 정점을 평면까지 깎는다.
  */
 export function adaptCrownVertices(input: CrownAdaptInput): CrownAdaptResult {
@@ -433,7 +433,7 @@ export function adaptCrownVertices(input: CrownAdaptInput): CrownAdaptResult {
   }
 
   const columns = input.adjacentColumns;
-  if (columns && input.proximal.trim && input.proximal.blockOut) {
+  if (columns && input.proximal.trim) {
     blockOutVertices(columns, input.proximal.clearanceMm, unit, axis, pos, nor, count, move);
   }
 

@@ -957,7 +957,6 @@ function adaptCrownGeometry(args: {
         clearanceMm: refine.proximalClearanceMm,
         trim: refine.proximalTrim,
         fit: refine.proximalFit,
-        blockOut: refine.proximalBlockOut,
       },
       gingival,
       discs,
