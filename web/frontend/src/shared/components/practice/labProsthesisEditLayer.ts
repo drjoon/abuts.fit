@@ -29,6 +29,7 @@ import {
   type ColorMapValues,
 } from "@/shared/practice/labColorMap";
 import { fdiToothDigits } from "@/shared/practice/toothArchOrder";
+import { shapeToothMorphology } from "@/shared/practice/toothMorphology";
 import {
   contactColorRgb,
   type ContactPaintMode,
@@ -516,6 +517,7 @@ function makeCrownGeometry(
   edit: ToothDesignEdit,
   fine = false,
   anatomy: ToothAnatomyDirs | null = null,
+  tooth = "",
 ) {
   const theta = crownTheta(edit);
   const sphere = new THREE.SphereGeometry(
@@ -542,6 +544,8 @@ function makeCrownGeometry(
       pos.setZ(i, pos.getZ(i) * pinch);
     }
   }
+  // 치아 형태 라이브러리: 번호로 종류를 골라 기본 해부 형태를 입힌 뒤 수정값을 얹는다.
+  if (tooth) shapeToothMorphology(geometry, tooth, anatomy);
   shapeOcclusal(geometry, edit);
   shapeAnatomy(geometry, edit, anatomy);
   paintSculpt(geometry, edit);
@@ -1882,7 +1886,7 @@ export function buildProsthesisEditLayer(args: {
       crownOuterCount = cached.outerCount;
       args.onCrownShell?.(tooth, cached.shellMm);
     } else {
-      const shaped = makeCrownGeometry(edit, fine, anatomy);
+      const shaped = makeCrownGeometry(edit, fine, anatomy, tooth);
       const marginRatio = place.radius * 0.78;
       const adapted = adaptCrownGeometry({
         geometry: shaped,
