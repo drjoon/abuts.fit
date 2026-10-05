@@ -69,6 +69,7 @@ import {
   useSystemSettings,
 } from "@/hooks/useSystemSettings";
 import {
+  GUIDE_FACT_GRID_CLASS,
   SettlementPolicyDialog,
   SettlementPolicyFact,
   SettlementSortIcon,
@@ -941,7 +942,7 @@ export const ManufacturerPaymentPage = () => {
               >
                 <div className="space-y-4">
                   <CustomAbutmentManufacturerSplitTable />
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <div className={GUIDE_FACT_GRID_CLASS}>
                     <SettlementPolicyFact label="적립">
                       가공 승인 때 어벗 1개 기준입니다.
                       <br />

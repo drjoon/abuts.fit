@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/settlement/affiliateVat.ts
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
+// - 2026-10-06: 정산규칙 — fact 카드·짧은 문장. 공통 안내 모달 폭.
 // - 2026-09-28: 정산규칙 — 보철 적립은 작업시작이 아니라 디자인 파일 업로드(작업완료) 시.
 // - 2026-09-28: 통장 사본 안내 가로는 문구+여백. 카드는 가운데.
 // - 2026-09-28: 지급 표는 크레딧 작업영역 폭. 충전 폼만 읽기 폭.
@@ -39,12 +40,6 @@ import {
 } from "@/shared/ui/periodFilterValues";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import {
-  Building2,
-  CalendarClock,
-  HandCoins,
-  Landmark,
-} from "lucide-react";
-import {
   Table,
   TableBody,
   TableCell,
@@ -58,8 +53,9 @@ import {
   formatWon,
 } from "@/shared/settlement/affiliateVat";
 import {
+  GUIDE_FACT_GRID_CLASS,
   SettlementPolicyDialog,
-  SettlementPolicySection,
+  SettlementPolicyFact,
   SettlementSortIcon,
   SETTLEMENT_STAT_CARD_WIDTH_CLASS,
   SETTLEMENT_STAT_ROW_CLASS,
@@ -627,62 +623,42 @@ export const LabSettlementPayoutTab = () => {
               />
               <SettlementPolicyDialog
                 title="기공크레딧 정산 규칙"
-                description="적립 · 지급 · 계산서 기준"
+                description="적립 · 지급 · 계산서"
               >
-                <SettlementPolicySection title="적립">
-                  <div className="flex gap-2.5">
-                    <HandCoins className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p>
-                      보철은 디자인 파일을 올려 작업완료되면{" "}
-                      <span className="font-semibold text-slate-900">
-                        기공크레딧
-                      </span>
-                      으로 적립됩니다.
-                      <br />
-                      업로드 전에는 적립 보류로만 보이고 정산·지급에서
-                      빠집니다.
-                      <br />
-                      치과가 보철 작업물을 받지 않는 건은 업로드 없이
-                      작업시작(커스텀어벗은 STL 업로드) 시 적립됩니다.
-                      <br />
-                      {LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}
-                      <br />
-                      치과 무료 크레딧 결제분도 동일하며 비용은 플랫폼이
-                      부담합니다.
-                      <br />
-                      취소·롤백 시 해당 적립은 삭제됩니다.
-                    </p>
-                  </div>
-                </SettlementPolicySection>
-                <SettlementPolicySection title="사용 · 상계">
-                  <div className="flex gap-2.5">
-                    <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p>
-                      앱 내 주문 차감은{" "}
-                      <span className="font-semibold text-slate-900">
-                        무료 → 기공 → 유료
-                      </span>{" "}
-                      순입니다. 기공크레딧 사용분은 월 정산에서 상계됩니다.
-                    </p>
-                  </div>
-                </SettlementPolicySection>
-                <SettlementPolicySection title="월 지급">
-                  <div className="flex gap-2.5">
-                    <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p>
-                      KST 월별 집계 후 등록 계좌로 매월 자동 지급됩니다. 별도
-                      요청은 필요 없습니다.{" "}
-                      {LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE}{" "}
-                      {LAB_PAYOUT_BANKBOOK_DELAY_NOTICE}
-                    </p>
-                  </div>
-                </SettlementPolicySection>
-                <SettlementPolicySection title="면세 · 계산서">
-                  <div className="flex gap-2.5">
-                    <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p>{SETTLEMENT_VAT_POLICY.exempt}</p>
-                  </div>
-                </SettlementPolicySection>
+                <div className={GUIDE_FACT_GRID_CLASS}>
+                  <SettlementPolicyFact label="보철 적립">
+                    디자인 파일을 올려 작업완료되면 기공크레딧으로 적립합니다.
+                    <br />
+                    업로드 전에는 적립 보류이며 정산·지급에서 빠집니다.
+                  </SettlementPolicyFact>
+                  <SettlementPolicyFact label="작업물 미수령">
+                    치과가 보철을 받지 않는 건은 작업시작 시 적립합니다.
+                    <br />
+                    커스텀어벗은 STL 업로드 시점입니다.
+                  </SettlementPolicyFact>
+                  <SettlementPolicyFact label="커스텀어벗">
+                    {LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}
+                  </SettlementPolicyFact>
+                  <SettlementPolicyFact label="취소">
+                    취소·롤백 시 해당 적립은 삭제됩니다.
+                  </SettlementPolicyFact>
+                  <SettlementPolicyFact label="사용 · 상계">
+                    앱 내 차감 순서는 무료 → 기공 → 유료입니다.
+                    <br />
+                    기공크레딧 사용분은 월 정산에서 상계합니다.
+                  </SettlementPolicyFact>
+                  <SettlementPolicyFact label="월 지급">
+                    KST 월별 집계 후 등록 계좌로 매월 자동 지급합니다.
+                    <br />
+                    {LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE}
+                  </SettlementPolicyFact>
+                  <SettlementPolicyFact label="통장 사본">
+                    {LAB_PAYOUT_BANKBOOK_DELAY_NOTICE}
+                  </SettlementPolicyFact>
+                  <SettlementPolicyFact label="면세 · 계산서">
+                    {SETTLEMENT_VAT_POLICY.exempt}
+                  </SettlementPolicyFact>
+                </div>
               </SettlementPolicyDialog>
             </div>
 

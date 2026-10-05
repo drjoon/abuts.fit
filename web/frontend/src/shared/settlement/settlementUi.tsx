@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-06: 안내 모달 공통 크롬·fact 카드 톤. 기본 폭 sm:max-w-2xl.
 // - 2026-10-05: SettlementPolicyFact(정산 규칙 모달 짧은 카드).
 // - 2026-10-05: SettlementPolicyDialog contentClassName(넓은 분배 표).
 // - 2026-10-04: 요약 카드 폭 16rem→11.5rem. 최소폭 미만일 때만 가로 스크롤.
@@ -213,15 +214,35 @@ export function SettlementStatCard({
   return <div className={className}>{inner}</div>;
 }
 
+/** 정산규칙·정책안내 등 안내 모달 공통 셸 클래스. */
+export const GUIDE_DIALOG_CONTENT_CLASS =
+  "flex max-h-[85vh] flex-col gap-0 overflow-hidden border-slate-200/80 p-0 shadow-xl sm:max-w-3xl sm:rounded-2xl";
+
+export const GUIDE_DIALOG_HEADER_CLASS =
+  "shrink-0 space-y-1.5 border-b border-slate-100/90 bg-gradient-to-b from-slate-50/90 to-white px-5 pb-4 pt-6 sm:px-6";
+
+export const GUIDE_DIALOG_BODY_CLASS =
+  "min-h-0 flex-1 space-y-3 overflow-y-auto px-5 pt-5 pb-8 sm:px-6";
+
+/** 안내 모달 fact 카드 그리드. */
+export const GUIDE_FACT_GRID_CLASS = "grid gap-2.5 sm:grid-cols-2";
+
 export function SettlementPolicySection({
   title,
   children,
+  className,
 }: {
   title: string;
   children: ReactNode;
+  className?: string;
 }) {
   return (
-    <section className="rounded-xl bg-slate-50 px-4 py-3.5">
+    <section
+      className={cn(
+        "rounded-2xl border border-slate-200/70 bg-slate-50/70 px-4 py-3.5",
+        className,
+      )}
+    >
       <h3 className="text-sm font-semibold tracking-tight text-slate-900">
         {title}
       </h3>
@@ -235,16 +256,25 @@ export function SettlementPolicySection({
 export function SettlementPolicyFact({
   label,
   children,
+  className,
 }: {
   label: string;
   children: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 shadow-sm">
+    <div
+      className={cn(
+        "rounded-2xl border border-slate-200/80 bg-white px-3.5 py-3 shadow-sm ring-1 ring-slate-900/[0.02]",
+        className,
+      )}
+    >
       <div className="text-[11px] font-semibold tracking-tight text-slate-900">
         {label}
       </div>
-      <p className="mt-1 text-xs leading-relaxed text-slate-600">{children}</p>
+      <div className="mt-1.5 text-xs leading-relaxed text-slate-600">
+        {children}
+      </div>
     </div>
   );
 }
@@ -274,13 +304,8 @@ export function SettlementPolicyDialog({
           {triggerLabel}
         </Button>
       </DialogTrigger>
-      <DialogContent
-        className={cn(
-          "flex max-h-[85vh] max-w-lg flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl",
-          contentClassName,
-        )}
-      >
-        <DialogHeader className="shrink-0 border-b border-slate-100 px-4 pb-4 pt-6 sm:px-6">
+      <DialogContent className={cn(GUIDE_DIALOG_CONTENT_CLASS, contentClassName)}>
+        <DialogHeader className={GUIDE_DIALOG_HEADER_CLASS}>
           <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
             {title}
           </DialogTitle>
@@ -290,9 +315,7 @@ export function SettlementPolicyDialog({
             </DialogDescription>
           ) : null}
         </DialogHeader>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-5 pb-8 sm:px-6">
-          {children}
-        </div>
+        <div className={GUIDE_DIALOG_BODY_CLASS}>{children}</div>
       </DialogContent>
     </Dialog>
   );

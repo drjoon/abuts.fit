@@ -49,6 +49,7 @@ import {
   REFERRAL_OWNERSHIP_RESET_ANYONE_LINE,
 } from "@/shared/sales/dealershipPolicyCopy";
 import {
+  GUIDE_FACT_GRID_CLASS,
   SettlementPolicyDialog,
   SettlementPolicyFact,
   SETTLEMENT_STAT_CARD_WIDTH_CLASS,
@@ -196,7 +197,7 @@ export function CommissionPaymentsPage({
                   ) : (
                     <CustomAbutmentDevopsSplitTable />
                   )}
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <div className={GUIDE_FACT_GRID_CLASS}>
                     {isSalesman ? (
                       <>
                         <SettlementPolicyFact label="제외">

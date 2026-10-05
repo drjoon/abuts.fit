@@ -1,3 +1,4 @@
+// - 2026-10-06: 안내 모달 공통 크롬·fact 카드. 딜러·개발운영 문구 단축.
 // - 2026-10-05: 딜러십 정책 — 커스텀어벗 10~20% 누적 구간. 심플웨이 지급 없음.
 // - 2026-09-27: 딜러십 정책 — 심플웨이 10% · 커스텀어벗 20% · 기공 제외 · 소개 코드 리셋.
 // - 2026-09-26: 기공소 정책 — 수수료 제목·협력·하청 문장.
@@ -80,6 +81,14 @@ import {
 } from '@/shared/pricing/abutsAbutmentService';
 import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from '@/shared/settlement/labPayoutBankbook';
 import {
+  GUIDE_DIALOG_BODY_CLASS,
+  GUIDE_DIALOG_CONTENT_CLASS,
+  GUIDE_DIALOG_HEADER_CLASS,
+  GUIDE_FACT_GRID_CLASS,
+  SettlementPolicyFact,
+  SettlementPolicySection,
+} from '@/shared/settlement/settlementUi';
+import {
   DEALERSHIP_CUMULATIVE_BAND_LINE,
   REFERRAL_OWNERSHIP_RESET_ANYONE_LINE,
   REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
@@ -107,27 +116,6 @@ type Props = {
   /** @deprecated */
   dealershipEventEnabled?: boolean;
 };
-
-function PolicySection({
-  title,
-  children,
-  className = ''
-}: {
-  title: string;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <section className={`rounded-xl bg-slate-50 px-4 py-3.5 ${className}`}>
-      <h3 className='text-sm font-semibold tracking-tight text-slate-900'>
-        {title}
-      </h3>
-      <div className='mt-2.5 space-y-2 text-sm leading-relaxed text-slate-600'>
-        {children}
-      </div>
-    </section>
-  );
-}
 
 function PriceRow({
   label,
@@ -181,19 +169,6 @@ function PriceRow({
         </div>
       ) : null}
     </div>
-  );
-}
-
-function BulletList({ items }: { items: ReactNode[] }) {
-  return (
-    <ul className='space-y-1.5'>
-      {items.map((item, i) => (
-        <li key={i} className='flex gap-2'>
-          <span className='mt-2 h-1 w-1 shrink-0 rounded-full bg-slate-400' />
-          <span className='min-w-0'>{item}</span>
-        </li>
-      ))}
-    </ul>
   );
 }
 
@@ -398,8 +373,8 @@ export const PricingPolicyDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[34rem] sm:rounded-2xl'>
-        <DialogHeader className='shrink-0 border-b border-slate-100 px-6 pb-4 pt-6'>
+      <DialogContent className={GUIDE_DIALOG_CONTENT_CLASS}>
+        <DialogHeader className={GUIDE_DIALOG_HEADER_CLASS}>
           <DialogTitle className='text-xl font-semibold tracking-tight text-slate-900'>
             {title}
           </DialogTitle>
@@ -412,92 +387,53 @@ export const PricingPolicyDialog = ({
           )}
         </DialogHeader>
 
-        <div className='min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-8'>
+        <div className={GUIDE_DIALOG_BODY_CLASS}>
           {variant === 'salesman' ? (
-            <div className='space-y-3'>
-              <PolicySection title='영업 수수료'>
-                <p>
-                  커스텀어벗은{' '}
-                  <span className='font-semibold text-slate-900'>
-                    {DEALERSHIP_CUMULATIVE_BAND_LINE}
-                  </span>
-                  입니다.
-                  <br />
-                  기공·스토어·배송비·월정액은 수수료 산정에서 빠집니다.
-                  <br />
-                  {REFERRAL_OWNERSHIP_RESET_POLICY_LINE}
-                  <br />
-                  {REFERRAL_OWNERSHIP_RESET_ANYONE_LINE}
-                </p>
-                <BulletList
-                  items={[
-                    '대상: 커스텀어벗(런칭 1.3만 / 정상 1.5만)',
-                    '소개 관계: 의뢰자 가입 시 입력한 딜러 코드',
-                  ]}
-                />
-              </PolicySection>
-
-              <PolicySection title='배송비'>
-                <p>
-                  배송비는{' '}
-                  <span className='font-semibold text-slate-900'>
-                    수신자(치과 또는 기공소)
-                  </span>
-                  가 부담합니다. 런칭 이벤트는 박스당 배송비입니다. 정상가에서
-                  기공소는 박스당 또는 월정액 배송 중 선택할 수 있습니다.
-                  딜러 수수료 산정에서 배송비·월정액은 제외됩니다.
-                </p>
-              </PolicySection>
-
-              <PolicySection title='집계 및 지급'>
-                <BulletList
-                  items={[
-                    '매일 자정(KST 00:00) 사업자 기준으로 업데이트',
-                    <>
-                      지급 계좌는 <b className='text-slate-800'>설정 &gt; 결제</b>
-                      에서 관리
-                    </>,
-                    '정산 원장은 사이드바 정산 페이지에서 확인'
-                  ]}
-                />
-              </PolicySection>
+            <div className={GUIDE_FACT_GRID_CLASS}>
+              <SettlementPolicyFact label="영업 수수료">
+                커스텀어벗은 {DEALERSHIP_CUMULATIVE_BAND_LINE}입니다.
+                <br />
+                기공·스토어·배송비·월정액은 제외합니다.
+              </SettlementPolicyFact>
+              <SettlementPolicyFact label="소개 코드">
+                {REFERRAL_OWNERSHIP_RESET_POLICY_LINE}
+                <br />
+                {REFERRAL_OWNERSHIP_RESET_ANYONE_LINE}
+              </SettlementPolicyFact>
+              <SettlementPolicyFact label="배송비">
+                수신자(치과·기공소)가 부담합니다.
+                <br />
+                딜러 수수료 산정에서 배송비·월정액은 빠집니다.
+              </SettlementPolicyFact>
+              <SettlementPolicyFact label="집계 · 지급">
+                매일 자정(KST) 사업자 기준으로 업데이트합니다.
+                <br />
+                계좌는 설정 › 결제, 원장은 정산 페이지입니다.
+              </SettlementPolicyFact>
             </div>
           ) : variant === 'devops' ? (
-            <div className='space-y-3'>
-              <PolicySection title='분배 구조'>
-                <p>
-                  커스텀어벗 판매가에서 제조사 매입 공급가를 선차감한 뒤, 잔여를
-                  딜러·개발운영·어벗츠 비중으로 나눕니다. 개발운영사 몫은 지급 시
-                  부가세가 합산됩니다.
-                </p>
-                <p>
-                  딜러사 소개가 없으면 잔여를 개발운영·어벗츠(기본 20:80)로
-                  분배합니다.
-                </p>
-              </PolicySection>
-
-              <PolicySection title='화면 안내'>
-                <BulletList
-                  items={[
-                    '정산 예정액: 미지급 누적 금액',
-                    '지급 완료액: 지급 완료 누적 금액',
-                    '사업자 요약: 기간별 사업자 매출·주문·정산 요약',
-                    '정산 원장: 적립·정산·조정 내역'
-                  ]}
-                />
-              </PolicySection>
-
-              <PolicySection title='지급 계좌'>
-                <p>
-                  지급 계좌 정보는{' '}
-                  <b className='text-slate-800'>설정 &gt; 수익 분배</b>에서
-                  관리합니다.
-                </p>
-              </PolicySection>
+            <div className={GUIDE_FACT_GRID_CLASS}>
+              <SettlementPolicyFact label="분배 구조">
+                판매가에서 제조 매입을 뺀 뒤 딜러·개발운영·어벗츠로
+                나눕니다.
+                <br />
+                개발운영 몫은 지급 시 부가세가 합산됩니다.
+              </SettlementPolicyFact>
+              <SettlementPolicyFact label="딜러 없음">
+                딜러 소개가 없으면 잔여를 개발운영·어벗츠(기본 20:80)로
+                분배합니다.
+              </SettlementPolicyFact>
+              <SettlementPolicyFact label="화면">
+                정산 예정액·지급 완료액·사업자 요약·정산 원장으로
+                확인합니다.
+              </SettlementPolicyFact>
+              <SettlementPolicyFact label="지급 계좌">
+                설정 › 수익 분배에서 관리합니다.
+              </SettlementPolicyFact>
             </div>
           ) : (
             <div className='space-y-3'>
-              <section className='rounded-xl border border-slate-200 bg-white px-4 py-4'>
+              <section className='rounded-2xl border border-slate-200/80 bg-white px-4 py-4 shadow-sm ring-1 ring-slate-900/[0.02]'>
                 <div className='space-y-3'>
                   <PriceRow
                     label={
@@ -651,35 +587,25 @@ export const PricingPolicyDialog = ({
               </section>
 
               {isLab && !isRequestorPreview ? (
-                <PolicySection title='정산'>
-                  <p>{LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}</p>
-                </PolicySection>
+                <SettlementPolicyFact label="정산">
+                  {LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}
+                </SettlementPolicyFact>
               ) : null}
 
-              <PolicySection title='출고 방식'>
-                <div className='space-y-2.5'>
-                  <div className='rounded-lg border border-slate-200/80 bg-white px-3 py-2.5'>
-                    <div className='text-sm font-semibold text-slate-900'>
-                      묶음 출고
-                    </div>
-                    <p className='mt-1 text-xs leading-relaxed text-slate-600'>
-                      설정한 출고 요일 중 가장 빠른 날에 함께 출고합니다.
-                    </p>
-                  </div>
-                  <div className='rounded-lg border border-slate-200/80 bg-white px-3 py-2.5'>
-                    <div className='text-sm font-semibold text-slate-900'>
-                      신속 출고
-                    </div>
-                    <p className='mt-1 text-xs leading-relaxed text-slate-600'>
-                      영업일 12시 이전은 당일 16:00, 이후·휴일은 익영업일
-                      16:00 목표. 묶음보다 빠를 때만 선택 가능하며, 1개당 +
-                      {formatAbutsAbutmentServiceWon(expressFee)}이 추가됩니다.
-                    </p>
-                  </div>
-                </div>
-              </PolicySection>
+              <div className={GUIDE_FACT_GRID_CLASS}>
+                <SettlementPolicyFact label="묶음 출고">
+                  설정한 출고 요일 중 가장 빠른 날에 함께 출고합니다.
+                </SettlementPolicyFact>
+                <SettlementPolicyFact label="신속 출고">
+                  영업일 12시 이전은 당일 16:00, 이후·휴일은 익영업일
+                  16:00 목표입니다.
+                  <br />
+                  묶음보다 빠를 때만 선택 가능하며, 1개당 +
+                  {formatAbutsAbutmentServiceWon(expressFee)}입니다.
+                </SettlementPolicyFact>
+              </div>
 
-              <PolicySection title='출고 일정 (KST)'>
+              <SettlementPolicySection title='출고 일정 (KST)'>
                 <div className='grid gap-2 sm:grid-cols-3'>
                   {[
                     { time: '0시', desc: '당일 의뢰 접수 마감' },
@@ -688,7 +614,7 @@ export const PricingPolicyDialog = ({
                   ].map((row) => (
                     <div
                       key={row.time}
-                      className='rounded-lg border border-slate-200/80 bg-white px-3 py-2.5 text-center sm:text-left'
+                      className='rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 text-center shadow-sm sm:text-left'
                     >
                       <div className='text-base font-semibold tabular-nums text-slate-900'>
                         {row.time}
@@ -699,7 +625,7 @@ export const PricingPolicyDialog = ({
                     </div>
                   ))}
                 </div>
-              </PolicySection>
+              </SettlementPolicySection>
             </div>
           )}
         </div>

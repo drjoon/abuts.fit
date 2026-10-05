@@ -50,6 +50,7 @@ import {
   splitInclusiveVat,
 } from "@/shared/settlement/affiliateVat";
 import {
+  GUIDE_FACT_GRID_CLASS,
   SettlementEquationOperator,
   SettlementPolicyDialog,
   SettlementPolicyFact,
@@ -999,7 +1000,7 @@ export default function AdminPaymentsPage({
                   </TabsTrigger>
                 </TabsList>
                 <TabsContent value="store" className="mt-0 space-y-3">
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <div className={GUIDE_FACT_GRID_CLASS}>
                     <SettlementPolicyFact label="과세">
                       기성품(심플웨이 등) 매출입니다.
                       <br />
@@ -1019,7 +1020,7 @@ export default function AdminPaymentsPage({
                 </TabsContent>
                 <TabsContent value="customAbut" className="mt-0 space-y-4">
                   <CustomAbutmentAbutsSplitTable />
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <div className={GUIDE_FACT_GRID_CLASS}>
                     <SettlementPolicyFact label="개발운영">
                       의뢰비 대비 {DEVOPS_FROM_ABUTS_SHARE_PCT}%입니다.
                       <br />
@@ -1043,7 +1044,7 @@ export default function AdminPaymentsPage({
                   </div>
                 </TabsContent>
                 <TabsContent value="labDivision" className="mt-0 space-y-3">
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <div className={GUIDE_FACT_GRID_CLASS}>
                     <SettlementPolicyFact label="면세">
                       어벗츠기공소 기공료입니다.
                       <br />

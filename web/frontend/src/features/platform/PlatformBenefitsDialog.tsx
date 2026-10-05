@@ -3,6 +3,7 @@
 // - web/frontend/src/features/platform/PlatformBenefitsShareButtons.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx
 // - web/frontend/src/features/lab/LabPlatformBenefitsBanner.tsx
+// - 2026-10-06: 안내 모달 공통 크롬(정산규칙·정책안내와 동일).
 // - 2026-08-12: 기공소·치과 가입 이유 모달.
 // - 2026-08-14: 기공소 자동매칭 설정 링크.
 // - 2026-08-19: 설정-자동매칭 링크 제거.
@@ -21,6 +22,11 @@ import {
   type PlatformBenefitsVariant,
 } from "@/shared/platform/platformBenefitsContent";
 import { PlatformBenefitsShareButtons } from "@/features/platform/PlatformBenefitsShareButtons";
+import {
+  GUIDE_DIALOG_BODY_CLASS,
+  GUIDE_DIALOG_CONTENT_CLASS,
+  GUIDE_DIALOG_HEADER_CLASS,
+} from "@/shared/settlement/settlementUi";
 
 type Props = {
   open: boolean;
@@ -37,31 +43,31 @@ export const PlatformBenefitsDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl sm:rounded-2xl">
-        <DialogHeader className="shrink-0 space-y-2 border-b border-slate-100 px-6 pb-4 pt-6 text-left">
-          <DialogTitle className="text-xl tracking-tight">
+      <DialogContent className={GUIDE_DIALOG_CONTENT_CLASS}>
+        <DialogHeader className={GUIDE_DIALOG_HEADER_CLASS}>
+          <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
             {config.title}
           </DialogTitle>
-          <DialogDescription className="text-[15px] leading-relaxed text-slate-600">
+          <DialogDescription className="text-sm leading-relaxed text-slate-500">
             {config.description}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pt-5 pb-8">
+        <div className={GUIDE_DIALOG_BODY_CLASS}>
           {config.items.map((item, index) => {
             const Icon = item.icon;
             return (
               <section
                 key={item.title}
-                className="rounded-xl border border-slate-200/80 bg-slate-50/80 px-4 py-3.5"
+                className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm ring-1 ring-slate-900/[0.02]"
               >
                 <div className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-sky-700 ring-1 ring-sky-100">
+                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary-strong ring-1 ring-primary-muted/50">
                     <Icon className="h-4 w-4" />
                   </span>
                   <div className="min-w-0 flex-1 space-y-2">
                     <h3 className="flex items-baseline gap-2 text-[15px] font-semibold tracking-tight text-slate-900">
-                      <span className="tabular-nums text-sky-600">
+                      <span className="tabular-nums text-primary-strong">
                         {index + 1}.
                       </span>
                       {item.title}
@@ -74,7 +80,7 @@ export const PlatformBenefitsDialog = ({
                             key={`${item.title}-${pointIndex}`}
                             className="flex gap-2 text-sm leading-relaxed text-slate-600"
                           >
-                            <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-sky-400" />
+                            <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-primary-muted" />
                             <span className="min-w-0">
                               {point.text}
                               {point.link ? (
@@ -82,7 +88,7 @@ export const PlatformBenefitsDialog = ({
                                   {" "}
                                   <Link
                                     to={point.link.to}
-                                    className="font-medium text-sky-700 underline underline-offset-2 hover:text-sky-800"
+                                    className="font-medium text-primary-strong underline underline-offset-2 hover:opacity-90"
                                     onClick={() => onOpenChange(false)}
                                   >
                                     {point.link.label}
@@ -100,8 +106,8 @@ export const PlatformBenefitsDialog = ({
             );
           })}
 
-          <p className="flex items-start gap-2 rounded-xl border border-dashed border-sky-200 bg-sky-50/60 px-4 py-3 text-sm leading-relaxed text-slate-700">
-            <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+          <p className="flex items-start gap-2 rounded-2xl border border-dashed border-primary-muted/60 bg-primary-soft/40 px-4 py-3 text-sm leading-relaxed text-slate-700">
+            <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-primary-strong" />
             <span>{config.footerNote}</span>
           </p>
 
