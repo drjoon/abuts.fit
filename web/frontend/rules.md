@@ -43,6 +43,7 @@ Notes:
 - Tooltip (강제, 앱 전체):
   - 마우스 호버 툴팁은 **0.6초 지연** 후 표시 (`delayDuration={600}`).
   - **호버에서만** 연다. 버튼 클릭·포커스로 툴팁이 남지 않게 한다.
+  - **disabled 버튼도 툴팁** — `TooltipTrigger asChild`가 `disabled`/`aria-disabled` 자식을 span으로 감싸 `pointer-events-none`을 우회한다.
   - 가로폭은 **내용에 맞춤** (`w-max`), 좌우 여백 대칭 (`px-3`). 기본 상한
     `max-w-[min(100vw-2rem,20rem)]` — 표·긴 안내는 호출부에서만 `max-w` 완화.
   - 포털 z-index **`z-[400]`** (Popover/Dropdown/Select와 동일 밴드). 플로팅

@@ -13,10 +13,11 @@ alwaysApply: false
 - Default **`disableHoverableContent`**. Interactive panels (fee/ledger) pass `disableHoverableContent={false}` plus `pointer-events-auto` on content.
 - Do not force instant tooltips (`delayDuration={0}`) or other custom delays.
 - Portal layer is **`z-[400]`** (above floating transfer panel `z-[300]` and nested modals `z-[320]`). Do not lower with `z-[200]` overrides.
+- **Disabled triggers still show tooltips.** `TooltipTrigger asChild` wraps `disabled` / `aria-disabled` children in a span so `disabled:pointer-events-none` does not block hover. Do not omit tooltips on disabled buttons.
 
 ## SSOT
 
-- `web/frontend/src/components/ui/tooltip.tsx` — `TooltipProvider` default `delayDuration = 600`, content `z-[400]`
+- `web/frontend/src/components/ui/tooltip.tsx` — `TooltipProvider` default `delayDuration = 600`, content `z-[400]`, disabled-child wrap
 - `web/frontend/src/App.tsx` — root provider
 - `web/frontend/rules.md` — Tooltip section
 
@@ -30,7 +31,11 @@ alwaysApply: false
 // ❌ BAD — below floating panel (tooltip appears “missing”)
 <TooltipContent className="z-[200]">
 
-// ✅ GOOD — inherit app default (600ms, z-400)
+// ✅ GOOD — inherit app default (600ms, z-400); disabled Button still gets tooltip
 <TooltipProvider>
 <Tooltip>
+  <TooltipTrigger asChild>
+    <Button disabled>북마크</Button>
+  </TooltipTrigger>
+</Tooltip>
 ```
