@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: 정산규칙 — 커스텀어벗 분배 표(구간·누적, 개발운영 5%는 어벗츠 몫에서).
 // - 2026-09-27: 기공사업부 정산 규칙 — 플랫폼 사용료 2%(이벤트 면제 취소선)·어벗츠기공소 항상 면제.
 // - 2026-09-26: 기공사업부 정산 규칙 — 플랫폼 사용료·영업 수수료 안내.
 // - 2026-09-23: 제조사 월별=의뢰·배송 합산(마이그레이션 PAID fallback 오인 방지).
@@ -55,6 +56,7 @@ import {
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
 import { LabDirectPlatformFeeNotice } from "@/shared/settlement/LabDirectPlatformFeeNotice";
+import { CustomAbutmentAdminSplitTables } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
 
 const HISTORY_MONTHS = 6;
 
@@ -973,6 +975,7 @@ export default function AdminPaymentsPage({
             <SettlementPolicyDialog
               title="정산 규칙"
               description="스토어 · 커스텀어벗 · 기공사업부"
+              contentClassName="sm:max-w-6xl"
             >
               <SettlementPolicySection title="스토어">
                 <p>
@@ -987,15 +990,8 @@ export default function AdminPaymentsPage({
                 </p>
               </SettlementPolicySection>
               <SettlementPolicySection title="커스텀어벗">
+                <CustomAbutmentAdminSplitTables />
                 <p>
-                  기공소 디자인 → 애크로덴트 생산 → 치과 납품입니다.
-                  <br />
-                  매입가(부가세 포함)는 판매가 × 제조사 분배비율입니다.
-                </p>
-                <p>
-                  유료·무료와 무관하게 약정 단가를 지급하고, 잔여를 딜러 ·
-                  개발운영 · 어벗츠에 분배합니다.
-                  <br />
                   배송비는 분배 재원에서 제외합니다.
                 </p>
               </SettlementPolicySection>

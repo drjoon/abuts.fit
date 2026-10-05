@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: SettlementPolicyDialog contentClassName(넓은 분배 표).
 // - 2026-10-04: 요약 카드 폭 16rem→11.5rem. 최소폭 미만일 때만 가로 스크롤.
 // - 2026-08-31: SettlementStatCard value — ReactNode(실사용/데모 2줄 잔액).
 // - 2026-08-26: SettlementEquationOperator — = 색이 slate에 덮이지 않게 primary-strong 유지.
@@ -235,11 +236,13 @@ export function SettlementPolicyDialog({
   description,
   children,
   triggerLabel = "정산규칙",
+  contentClassName,
 }: {
   title: string;
   description?: string;
   children: ReactNode;
   triggerLabel?: string;
+  contentClassName?: string;
 }) {
   return (
     <Dialog>
@@ -253,7 +256,12 @@ export function SettlementPolicyDialog({
           {triggerLabel}
         </Button>
       </DialogTrigger>
-      <DialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl">
+      <DialogContent
+        className={cn(
+          "flex max-h-[85vh] max-w-lg flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl",
+          contentClassName,
+        )}
+      >
         <DialogHeader className="shrink-0 border-b border-slate-100 px-6 pb-4 pt-6">
           <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
             {title}

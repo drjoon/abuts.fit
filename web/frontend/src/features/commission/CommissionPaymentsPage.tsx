@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: 딜러 정산 규칙 — 커스텀어벗 구간·누적 분배비.
 // - 2026-09-27: 정산 카드 하단 — 20%·15%·10% 대신 심플웨이 10% · 커스텀어벗 20%.
 // - 2026-09-27: 딜러 정산 규칙 — 심플웨이 10% · 커스텀어벗 20% · 기공 제외 · 소개 코드 리셋.
 // - 2026-09-24: 딜러 정산 — 월 매출 누진 슬라이스 footer.
@@ -43,7 +44,6 @@ import {
   splitInclusiveVat,
 } from "@/shared/settlement/affiliateVat";
 import {
-  DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT,
   DEALERSHIP_SIMPLEWAY_COMMISSION_PCT,
   REFERRAL_OWNERSHIP_INACTIVE_DAYS,
   REFERRAL_OWNERSHIP_RESET_ANYONE_LINE,
@@ -56,6 +56,7 @@ import {
   SETTLEMENT_STAT_ROW_CLASS,
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
+import { CustomAbutmentDealerSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
 
 export type CommissionPaymentsVariant = "salesman" | "devops";
 
@@ -187,10 +188,16 @@ export function CommissionPaymentsPage({
                 title={`${title} 규칙`}
                 description={
                   isSalesman
-                    ? `심플웨이 매출액 대비 ${DEALERSHIP_SIMPLEWAY_COMMISSION_PCT}% · 커스텀어벗 매출액 대비 ${DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT}% · ${REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면 소개 코드 리셋 · 부가세 포함·세금계산서`
+                    ? `심플웨이 매출액 대비 ${DEALERSHIP_SIMPLEWAY_COMMISSION_PCT}% · 커스텀어벗 구간·누적 분배 · ${REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면 소개 코드 리셋 · 부가세 포함·세금계산서`
                     : "잔여 분배 부가세 포함 · 세금계산서"
                 }
+                contentClassName={isSalesman ? "sm:max-w-4xl" : undefined}
               >
+                {isSalesman ? (
+                  <SettlementPolicySection title="커스텀어벗 분배">
+                    <CustomAbutmentDealerSplitTable />
+                  </SettlementPolicySection>
+                ) : null}
                 <SettlementPolicySection title="수수료율">
                   <div className="flex gap-2.5">
                     <Percent className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
@@ -199,9 +206,6 @@ export function CommissionPaymentsPage({
                         <>
                           심플웨이 매출액 대비 수수료는{" "}
                           {DEALERSHIP_SIMPLEWAY_COMMISSION_PCT}%입니다.
-                          <br />
-                          커스텀어벗 매출액 대비 수수료는{" "}
-                          {DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT}%입니다.
                           <br />
                           배송비·월정액은 수수료 산정에서 빠집니다.
                           <br />

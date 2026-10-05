@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
+// - 2026-10-05: 정산규칙 — 의뢰비 1.3만 분배 표(제조 몫만, 어벗츠 40%·제조 44%).
 // - 2026-09-20: 정산규칙 — 리메이크도 일반 매입가(판매가의 50%).
 // - 2026-09-06: 미정산=부가세 포함가. 힌트「포함가·세금계산서」(지급 시 +VAT 제거).
 // - 2026-09-06: 오른쪽 요약 카드「지급 합계」→「전월 지급」(KST 전월 SETTLEMENT_PAYOUT).
@@ -84,6 +85,7 @@ import {
   SettlementStatCard,
   SettlementTableFrame,
 } from "@/shared/settlement/settlementUi";
+import { CustomAbutmentManufacturerSplitTables } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
 import {
   ManufacturerDailyLedgerDetailDialog,
   type ManufacturerDailyLedgerDetail,
@@ -424,10 +426,6 @@ export const ManufacturerPaymentPage = () => {
     ? period
     : SETTLEMENT_DEFAULT_PERIOD;
   const { data: systemSettings } = useSystemSettings();
-  const manufacturerRequestUnitPrice = Number(
-    systemSettings?.creditSettings?.manufacturerRequestUnitPrice ??
-      CREDIT_SETTINGS_DEFAULTS.manufacturerRequestUnitPrice,
-  );
   const manufacturerShippingUnitPrice = Number(
     systemSettings?.creditSettings?.manufacturerShippingUnitPrice ??
       CREDIT_SETTINGS_DEFAULTS.manufacturerShippingUnitPrice,
@@ -946,20 +944,21 @@ export const ManufacturerPaymentPage = () => {
               />
               <SettlementPolicyDialog
                 title="제조사 정산 규칙"
-                description="하청 고정단가 · 과세 · 세금계산서"
+                description="커스텀어벗 의뢰비 분배 · 과세 · 세금계산서"
+                contentClassName="sm:max-w-4xl"
               >
+                <SettlementPolicySection title="커스텀어벗 생산 몫">
+                  <CustomAbutmentManufacturerSplitTables />
+                </SettlementPolicySection>
                 <SettlementPolicySection title="가공 승인 적립 (하청)">
                   <div className="flex gap-2.5">
                     <HandCoins className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      어벗 1개당 매입가{" "}
-                      {formatWonWithUnit(manufacturerRequestUnitPrice)}
-                      (부가세 포함, 공급가{" "}
-                      {formatWonWithUnit(
-                        splitInclusiveVat(manufacturerRequestUnitPrice).supply,
-                      )}
-                      ). 리메이크도 같은 매입가를 지급합니다. 무료 크레딧 결제건을
-                      포함해 유료·무료 구분 없이 약정 단가를 지급합니다.
+                      위 표의 제조 몫(부가세 포함)을 어벗 1개 기준으로 적립합니다.
+                      <br />
+                      리메이크도 같습니다.
+                      <br />
+                      무료 크레딧 결제건도 약정 단가를 지급합니다.
                     </p>
                   </div>
                 </SettlementPolicySection>
