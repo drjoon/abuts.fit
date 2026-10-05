@@ -95,6 +95,7 @@
 // - 2026-10-04: 한 번 잡은 뒤에는 화면을 돌려도 설정 모드로 돌아가지 않는다. 아이콘을 눌러야 다시 맞춘다.
 // - 2026-10-04: 패널 접기 셰브론은 붙은 가장자리 쪽으로 연다. 치아 정보 제목·셰브론 클릭이 드래그에 먹히지 않게 한다.
 // - 2026-10-05: 작업 패널 단계 라벨. 출력 → 생산.
+// - 2026-10-05: 디자인 하위는 내면·형상·교합·훅·컷백·홀·커넥터. 보철 생성은 맨 위.
 // - 2026-10-04: 작업 패널. 상단은 스캔·디자인·모델·출력. 마진은 디자인 안. 수정은 마진·삽입축·내면·형상·훅·컷백·홀·커넥터 아코디언. 치아 라벨은 치아 정보 뱃지로.
 // - 2026-10-04: 스캔에서 메시 편집은 바이트 정렬 중에도 연다. 접힘과 편집 상태를 맞춘다.
 // - 2026-10-04: 바이트 맞춤은 준비·모델 정렬의 자동·반자동에서만 한다.
@@ -3177,6 +3178,48 @@ function LabProsthesisAiDesignDialog({
     queueSaveWorkRef.current();
   };
 
+  const toothGenerateBlock = (tooth: LabProsthesisAiTooth) => {
+    const edit = edits[tooth.toothNumber] ?? createToothDesignEdit();
+    if (tooth.implant) {
+      if (!edit.implant.libraryId) return "임플란트 라이브러리를 먼저 고릅니다.";
+      if (!edit.implant.aligned) return "스캔바디를 먼저 맞춥니다.";
+    }
+    if (!tooth.designable) return "이 치아는 생성할 수 없습니다.";
+    if (edit.pontic.on) return null;
+    if (edit.margin.deleted || (marginReview[tooth.toothNumber] ?? "none") !== "confirmed") {
+      return `${tooth.implant ? "EPL" : "마진"}을 확인한 뒤에 생성합니다.`;
+    }
+    return null;
+  };
+  const designGenerate = (() => {
+    if (generating) {
+      return { disabled: true, hint: "보철을 생성하는 중입니다.", run: () => {} };
+    }
+    if (!activeTooth || !activeNumber) {
+      return { disabled: true, hint: "치아를 고르세요.", run: () => {} };
+    }
+    if (isBridgeSpan && bridgeMembers.length > 1) {
+      const pending = bridgeMembers.filter((number) => generated[number] !== true);
+      if (pending.length > 0) {
+        const members = pending
+          .map((number) => plan.teeth.find((tooth) => tooth.toothNumber === number))
+          .filter((tooth): tooth is LabProsthesisAiTooth => tooth != null);
+        const blocked = members.map(toothGenerateBlock).find(Boolean) ?? null;
+        return {
+          disabled: blocked != null,
+          hint: blocked ?? "고른 브리지의 보철을 만듭니다.",
+          run: () => void runGenerate(pending),
+        };
+      }
+    }
+    const blocked = toothGenerateBlock(activeTooth);
+    return {
+      disabled: blocked != null,
+      hint: blocked ?? "고른 치아의 보철을 만듭니다.",
+      run: () => void runGenerate([activeNumber]),
+    };
+  })();
+
   const commitAiChat = (next: AiDesignChatTurn[]) => {
     const clipped = next.slice(-40);
     for (const turn of next.slice(0, next.length - clipped.length)) {
@@ -5540,13 +5583,16 @@ function LabProsthesisAiDesignDialog({
                             ? scanFold === null && (designFold === "margin" || designFold === "insertion")
                               ? designFold
                               : null
-                            : designFold && designFold !== "occlusal"
-                              ? designFold
-                              : null
+                            : designFold
                         }
                         onOpenTool={(next) => {
                           if (stage === "scan" && (next === "margin" || next === "insertion")) {
                             openPrepareTool(next);
+                            return;
+                          }
+                          if (next === "occlusal") {
+                            setEditBrush("none");
+                            setDesignFold("occlusal");
                             return;
                           }
                           if (next) {
@@ -5558,6 +5604,17 @@ function LabProsthesisAiDesignDialog({
                           }
                           setDesignFold(null);
                         }}
+                        contactMap={contactMap}
+                        onContactMap={setContactMap}
+                        canContact={canContact}
+                        occlusalGap={occlusalGap}
+                        onOcclusalGap={setOcclusalGap}
+                        contactMode={contactMode}
+                        onContactMode={setContactMode}
+                        generating={generating}
+                        generateDisabled={designGenerate.disabled}
+                        generateHint={designGenerate.hint}
+                        onGenerate={designGenerate.run}
                         crownShellMm={activeNumber ? (crownShells[activeNumber] ?? null) : null}
                         intaglio={activeNumber ? (intaglios[activeNumber] ?? null) : null}
                         marginEditOn={marginEditOn}
@@ -5645,83 +5702,6 @@ function LabProsthesisAiDesignDialog({
                           queueSaveWorkRef.current();
                         }}
                       />
-                    ) : null}
-                    {stage === "design" ? (
-                      <StageSubsection
-                        title="교합"
-                        open={designFold === "occlusal"}
-                        onOpen={(on) => setDesignFold(on ? "occlusal" : null)}
-                      >
-                        <label className="flex items-center justify-between gap-3 text-xs font-medium">
-                          접촉
-                          <Switch
-                            checked={contactMap}
-                            disabled={!canContact}
-                            onCheckedChange={setContactMap}
-                            aria-label="교합 접촉 표시"
-                            className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
-                          />
-                        </label>
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between text-xs font-medium">
-                            <span>교합 거리</span>
-                            <span className="tabular-nums text-muted-foreground">
-                              {occlusalGap.toFixed(2)} mm
-                            </span>
-                          </div>
-                          <Slider
-                            min={0}
-                            max={50}
-                            step={5}
-                            value={[Math.round(occlusalGap * 100)]}
-                            disabled={!canContact}
-                            onValueChange={([value]) =>
-                              setOcclusalGap((value ?? 10) / 100)
-                            }
-                            aria-label="교합 거리"
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-1">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="flex min-w-0">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant={contactMode === "cut" ? "default" : "outline"}
-                                  className="h-7 w-full px-2 text-[11px]"
-                                  onClick={() => setContactMode("cut")}
-                                >
-                                  절삭
-                                </Button>
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent side="right" className="z-[520]">
-                              목표보다 가까운 면은 붉고,
-                              <br />
-                              먼 면은 파랗습니다.
-                            </TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="flex min-w-0">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant={contactMode === "keep" ? "default" : "outline"}
-                                  className="h-7 w-full px-2 text-[11px]"
-                                  onClick={() => setContactMode("keep")}
-                                >
-                                  형태 유지
-                                </Button>
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent side="right" className="z-[520]">
-                              초록 폭을 넓혀 형태를 남깁니다.
-                            </TooltipContent>
-                          </Tooltip>
-                        </div>
-                      </StageSubsection>
                     ) : null}
                   </div>
                 ) : null}

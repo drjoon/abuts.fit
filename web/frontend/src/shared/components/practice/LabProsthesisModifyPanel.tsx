@@ -1,5 +1,6 @@
 // 기공소 AI 보철 — 마진·삽입·내면·형상·훅·컷백·홀·커넥터 조작.
 // - 2026-10-01: 스캔바디 맞춤은 스캔 단계, 메시 편집 아래.
+// - 2026-10-05: 디자인은 보철 생성, 그다음 내면·형상·교합·훅·컷백·홀·커넥터.
 
 import { Fragment, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { TriangleAlert } from "lucide-react";
@@ -44,6 +45,7 @@ import {
   designIsThin,
   type CavityKind,
 } from "@/shared/practice/labInlayDesign";
+import type { ContactPaintMode } from "@/shared/practice/oralScanDesignAnalysis";
 import {
   INNER_FIELDS,
   innerKindOf,
@@ -148,8 +150,19 @@ type Props = {
   refineTab: RefineTab;
   onRefineTab: (tab: RefineTab) => void;
   /** 열린 수정 하위 메뉴. 없으면 모두 접힌다. */
-  openTool: ModifyTool | null;
-  onOpenTool: (tool: ModifyTool | null) => void;
+  openTool: ModifyTool | "occlusal" | null;
+  onOpenTool: (tool: ModifyTool | "occlusal" | null) => void;
+  contactMap?: boolean;
+  onContactMap?: (on: boolean) => void;
+  canContact?: boolean;
+  occlusalGap?: number;
+  onOcclusalGap?: (mm: number) => void;
+  contactMode?: ContactPaintMode;
+  onContactMode?: (mode: ContactPaintMode) => void;
+  generating?: boolean;
+  generateDisabled?: boolean;
+  generateHint?: string;
+  onGenerate?: () => void;
   /** 뷰어가 맞춘 이 크라운에서 잰 가장 얇은 외면. 맞춤이 없으면 null. */
   crownShellMm: number | null;
   /** 뷰어가 지대치 스캔에서 이 크라운 내면을 만든 결과. 아직 없으면 null. */
@@ -927,6 +940,17 @@ export function LabProsthesisModifyPanel({
   onRefineTab,
   openTool,
   onOpenTool,
+  contactMap = false,
+  onContactMap,
+  canContact = false,
+  occlusalGap = 0.1,
+  onOcclusalGap,
+  contactMode = "cut",
+  onContactMode,
+  generating = false,
+  generateDisabled = true,
+  generateHint = "보철 생성",
+  onGenerate,
   crownShellMm,
   intaglio,
   insertionTeeth = [],
@@ -959,8 +983,8 @@ export function LabProsthesisModifyPanel({
   const marginWord = implant ? "EPL" : "마진";
   const connectorRow =
     connectors.find((row) => row.from === connectorFrom) ?? connectors[0] ?? null;
-  const openFold = (id: ModifyTool) => (on: boolean) => {
-    if (on) onTool(id);
+  const openFold = (id: ModifyTool | "occlusal") => (on: boolean) => {
+    if (on && id !== "occlusal") onTool(id);
     onOpenTool(on ? id : null);
   };
 
@@ -1150,6 +1174,25 @@ export function LabProsthesisModifyPanel({
 
       {design ? (
       <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="flex min-w-0">
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 w-full text-[11px]"
+              disabled={generateDisabled}
+              onClick={() => onGenerate?.()}
+              data-coach="generate"
+            >
+              {generating ? "처리 중…" : "보철 생성"}
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="right" className="z-[520]">
+          {generateHint}
+        </TooltipContent>
+      </Tooltip>
       <StageSubsection
         title="내면"
         open={openTool === "inner"}
@@ -1189,6 +1232,81 @@ export function LabProsthesisModifyPanel({
           sculptBrush={sculptBrush}
           onSculptBrush={onSculptBrush}
         />
+      </StageSubsection>
+
+      <StageSubsection
+        title="교합"
+        open={openTool === "occlusal"}
+        onOpen={openFold("occlusal")}
+        coach="tool-occlusal"
+      >
+        <label className="flex items-center justify-between gap-3 text-xs font-medium">
+          접촉
+          <Switch
+            checked={contactMap}
+            disabled={!canContact}
+            onCheckedChange={(on) => onContactMap?.(on === true)}
+            aria-label="교합 접촉 표시"
+            className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
+          />
+        </label>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs font-medium">
+            <span>교합 거리</span>
+            <span className="tabular-nums text-muted-foreground">
+              {occlusalGap.toFixed(2)} mm
+            </span>
+          </div>
+          <Slider
+            min={0}
+            max={50}
+            step={5}
+            value={[Math.round(occlusalGap * 100)]}
+            disabled={!canContact}
+            onValueChange={([value]) => onOcclusalGap?.((value ?? 10) / 100)}
+            aria-label="교합 거리"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="flex min-w-0">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={contactMode === "cut" ? "default" : "outline"}
+                  className="h-7 w-full px-2 text-[11px]"
+                  onClick={() => onContactMode?.("cut")}
+                >
+                  절삭
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="z-[520]">
+              목표보다 가까운 면은 붉고,
+              <br />
+              먼 면은 파랗습니다.
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="flex min-w-0">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={contactMode === "keep" ? "default" : "outline"}
+                  className="h-7 w-full px-2 text-[11px]"
+                  onClick={() => onContactMode?.("keep")}
+                >
+                  형태 유지
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="z-[520]">
+              초록 폭을 넓혀 형태를 남깁니다.
+            </TooltipContent>
+          </Tooltip>
+        </div>
       </StageSubsection>
 
       <StageSubsection
