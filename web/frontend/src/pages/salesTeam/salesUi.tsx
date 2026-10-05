@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/settlement/settlementUi.tsx
 // - web/frontend/src/components/ui/calendar.tsx
 // change-log:
+// - 2026-10-06: SalesDayPicker DayContent — 토·일·법정공휴일 일자 빨간 글자.
 // - 2026-09-21: 딜러 일일보고 열람 범위 안내 배너(대표·담당자만 / 어벗츠 불가).
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
@@ -25,6 +26,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/shared/ui/cn";
 import { kstStartOfMonth, toKstYmd, ymdToKstDate } from "@/shared/date/kst";
+import { CalendarRedLetterDayContent } from "@/components/ui/calendar";
 import { addDaysYmd } from "./salesDay";
 
 /** 딜러 일일보고 열람 정책 — BE `salesDailyReportAccess.js` 와 동기 */
@@ -594,15 +596,17 @@ export function SalesDayPicker({
               components={{
                 IconLeft: () => <ChevronLeft className="h-4 w-4" />,
                 IconRight: () => <ChevronRight className="h-4 w-4" />,
-                DayContent: ({ date }) => {
+                DayContent: ({ date, activeModifiers }) => {
                   const dayYmd = toKstYmd(date) || "";
                   const count = countsByYmd?.[dayYmd] || 0;
                   const isSelected = dayYmd === ymd;
-                  const dayNum = Number(dayYmd.slice(8, 10)) || date.getDate();
                   return (
                     <>
                       <span className="text-sm font-medium leading-none sm:text-[0.95rem]">
-                        {dayNum}
+                        <CalendarRedLetterDayContent
+                          date={date}
+                          activeModifiers={activeModifiers}
+                        />
                       </span>
                       <span
                         className={cn(

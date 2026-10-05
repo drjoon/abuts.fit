@@ -1,7 +1,9 @@
 // change-log:
+// - 2026-10-06: isKrCalendarRedLetterYmd — UI 달력 토·일·법정공휴일 빨간 글자.
 // - 2026-09-18: Nager.Date KR 공휴일 정적 목록(2025–2027). FE 영업일(kst)에서 주말과 함께 제외.
 // related files:
 // - web/frontend/src/shared/date/kst.ts
+// - web/frontend/src/components/ui/calendar.tsx
 // - web/backend/utils/krHolidays.static.js
 //
 // Source: https://date.nager.at/api/v3/PublicHolidays/{year}/KR
@@ -70,3 +72,29 @@ export function isKrPublicHolidayYmd(ymd?: string | null): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
   return KR_HOLIDAY_SET.has(raw);
 }
+
+/** civil YMD 요일 (0=일 … 6=토). kstYmdWeekday와 동일(순환 import 회피). */
+function ymdWeekdaySun0(ymd: string): number | null {
+  const parts = ymd.split("-").map(Number);
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n) || n <= 0)) {
+    return null;
+  }
+  const [y, m, d] = parts;
+  return new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
+}
+
+/** UI 달력 빨간 글자 — 토·일·한국 법정 공휴일. */
+export function isKrCalendarRedLetterYmd(ymd?: string | null): boolean {
+  const raw = String(ymd || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  if (isKrPublicHolidayYmd(raw)) return true;
+  const dow = ymdWeekdaySun0(raw);
+  return dow === 0 || dow === 6;
+}
+
+/** DayPicker·커스텀 달력 공통 — 토·일·법정공휴일 일자 글자색. */
+export const KR_CALENDAR_RED_DAY_TEXT_CLASSNAME = "text-red-600";
+
+/** @deprecated use KR_CALENDAR_RED_DAY_TEXT_CLASSNAME */
+export const KR_PUBLIC_HOLIDAY_DAY_TEXT_CLASSNAME =
+  KR_CALENDAR_RED_DAY_TEXT_CLASSNAME;

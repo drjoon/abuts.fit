@@ -7,6 +7,7 @@
  * - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
  * - web/frontend/src/shared/date/kst.ts
  * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
+ * - 2026-10-06: 토·일·법정공휴일 일자 빨간 글자(미니월·주간·목록 헤더).
  * - 2026-09-30: 연결 화살표 클릭 → 연결된 날짜의 의뢰를 채팅에 연다.
  * - 2026-10-03: 주문·도착·검색을 월 선택 바로 오른쪽. 숨길 요일·toolbarMiddle은 그 옆/끝.
  * - 2026-10-03: showViewModeToggle — 기공소는 헤더 설정 팝오버로 옮김.
@@ -136,6 +137,10 @@ import {
   toKstYmd,
   toKstYmdLoose,
 } from "@/shared/date/kst";
+import {
+  isKrCalendarRedLetterYmd,
+  KR_CALENDAR_RED_DAY_TEXT_CLASSNAME,
+} from "@/shared/date/krHolidays";
 import {
   isPracticeRecentAbutmentBadgeStatus,
   isPracticeRecentFinishedBadgeStatus,
@@ -1012,7 +1017,12 @@ function ListSideMonthCalendar({
         {LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS.map(({ dow, label }) => (
           <div
             key={`side-wd-${dow}`}
-            className="py-0.5 text-center text-[10px] font-medium text-muted-foreground"
+            className={cn(
+              "py-0.5 text-center text-[10px] font-medium",
+              dow === 0 || dow === 6
+                ? KR_CALENDAR_RED_DAY_TEXT_CLASSNAME
+                : "text-muted-foreground",
+            )}
           >
             {label}
           </div>
@@ -1020,6 +1030,7 @@ function ListSideMonthCalendar({
         {cells.map(({ ymd, inMonth }) => {
           const dayNum = Number(ymd.slice(-2));
           const isToday = ymd === todayYmd;
+          const isRedLetter = isKrCalendarRedLetterYmd(ymd);
           const isComposeDay = Boolean(todayYmd && ymd > todayYmd);
           const marked = markedYmds.has(ymd);
           const clickable = inMonth;
@@ -1047,7 +1058,11 @@ function ListSideMonthCalendar({
               className={cn(
                 "relative mx-auto flex h-7 w-7 items-center justify-center rounded-full text-[11px] tabular-nums",
                 !inMonth && "invisible",
-                inMonth && !isToday && "text-slate-700 hover:bg-slate-100",
+                inMonth &&
+                  !isToday &&
+                  (isRedLetter
+                    ? cn(KR_CALENDAR_RED_DAY_TEXT_CLASSNAME, "hover:bg-slate-100")
+                    : "text-slate-700 hover:bg-slate-100"),
                 isToday &&
                   "bg-primary font-semibold text-primary-foreground hover:bg-primary/90",
                 composeHint && !isToday && "hover:bg-primary-soft/80",
@@ -2147,6 +2162,7 @@ export function PracticeRecentTransfersCalendar({
               >
                 {agendaDays.map(({ ymd, items: dayItems }) => {
                   const isToday = ymd === todayYmd;
+                  const isRedLetter = isKrCalendarRedLetterYmd(ymd);
                   const { monthNum, dayNum, text: dateText } =
                     agendaDateLabel(ymd);
                   return (
@@ -2164,7 +2180,9 @@ export function PracticeRecentTransfersCalendar({
                             "text-[12px] leading-snug tabular-nums",
                             isToday
                               ? "font-semibold text-primary-strong"
-                              : "text-slate-600",
+                              : isRedLetter
+                                ? KR_CALENDAR_RED_DAY_TEXT_CLASSNAME
+                                : "text-slate-600",
                           )}
                           title={dateText}
                         >
@@ -2339,7 +2357,12 @@ export function PracticeRecentTransfersCalendar({
           {visibleColumns.map(({ dow, label }) => (
             <div
               key={`hdr-${dow}`}
-              className="border-b border-r bg-muted/40 px-1.5 py-1.5 text-center text-[11px] font-medium text-muted-foreground"
+              className={cn(
+                "border-b border-r bg-muted/40 px-1.5 py-1.5 text-center text-[11px] font-medium",
+                dow === 0 || dow === 6
+                  ? KR_CALENDAR_RED_DAY_TEXT_CLASSNAME
+                  : "text-muted-foreground",
+              )}
             >
               {label}
             </div>
@@ -2377,6 +2400,7 @@ export function PracticeRecentTransfersCalendar({
                 {visibleCells.map((day, visibleColumnIndex) => {
                   const dayItems = byDay.get(day.ymd) || [];
                   const isToday = day.ymd === todayYmd;
+                  const isRedLetter = isKrCalendarRedLetterYmd(day.ymd);
                   const isFutureDay = Boolean(
                     onSelectFutureDay && todayYmd && day.ymd >= todayYmd,
                   );
@@ -2427,9 +2451,11 @@ export function PracticeRecentTransfersCalendar({
                           "mb-1 shrink-0 text-right text-[11px] tabular-nums",
                           isToday
                             ? "font-semibold text-primary-strong"
-                            : inCaptionMonth
-                              ? "text-slate-700"
-                              : "text-muted-foreground",
+                            : isRedLetter
+                              ? KR_CALENDAR_RED_DAY_TEXT_CLASSNAME
+                              : inCaptionMonth
+                                ? "text-slate-700"
+                                : "text-muted-foreground",
                         )}
                       >
                         {monthNum}/{dayNum}
