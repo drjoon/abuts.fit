@@ -68,7 +68,7 @@
 // - 2026-09-29: 헤더 패널 닫기·열기는 오른쪽 설정 옆 아이콘만. 헤더 실행 취소·다시 실행 버튼 제거(단축키는 유지).
 // - 2026-09-29: 「밀링」 단계. 생성한 보철을 98.5mm 디스크에 배치하고 핀·소결 배율과 함께 디스크 좌표 STL로 낸다(LabMillingStage).
 // - 2026-09-29: 칼라맵. 작업영역 위 「칼라맵」 토글 아래 범위 막대에서 간섭(대합·인접)·두께·내면 간격을 고르고 범위(±0.1~1mm)를 바꾼다. 마우스 자리 값은 mm. 기존 「칼라」는 「스캔색」.
-//   크라운 내면은 지대치 스캔에서 실제 메시로 만들어 외면·STL에 붙인다(내면 도구의 「지대치에서 내면 생성」).
+//   크라운 내면은 지대치 스캔에서 실제 메시로 만들어 외면·STL에 붙인다.
 // - 2026-09-29: 표시는 치아 정보 안. 파일명은 툴팁. 메모 패널은 제거. 왼쪽은 AI 채팅. 범위(마진만·크라운까지·모델까지)는 없애고 단계만 연다.
 // - 2026-09-29: 스캔 묶음은 없애고 상악·바이트·하악 줄에 파일명을 붙인다. 끌어 역할을 맞바꾼다. 브리지 연결선은 치아 가운데에서 잇는다.
 // - 2026-09-30: 단계는 왼쪽 위(내용이 길어도 작업영역 높이까지). 치아 정보는 오른쪽 위, AI 채팅은 오른쪽 아래. 제목을 끌면 옮기고, 놓으면 가까운 가장자리에 여백을 두고 붙는다.
@@ -5559,10 +5559,6 @@ function LabProsthesisAiDesignDialog({
                         }}
                         crownShellMm={activeNumber ? (crownShells[activeNumber] ?? null) : null}
                         intaglio={activeNumber ? (intaglios[activeNumber] ?? null) : null}
-                        onViewFit={() => {
-                          setColorMap((prev) => ({ ...prev, on: true, mode: "fit" }));
-                          setMarginShown(true);
-                        }}
                         marginEditOn={marginEditOn}
                         marginResetPaused={marginResetPaused}
                         onMarginEdit={() => {
@@ -5647,8 +5643,6 @@ function LabProsthesisAiDesignDialog({
                           });
                           queueSaveWorkRef.current();
                         }}
-                        designPresets={designLibrary.presets}
-                        onOpenPresets={(presetId) => setPresetDialog({ presetId })}
                       />
                     ) : null}
                     {stage === "design" ? (

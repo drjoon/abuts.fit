@@ -8,11 +8,10 @@ import { useEffect, useState } from "react";
 
 import {
   clampInnerNumber,
-  INNER_METHODS,
-  materialsFor,
+  INNER_MATERIALS,
+  methodMaterialLabel,
   type InnerField,
   type InnerMaterial,
-  type InnerMethod,
   type InnerNumberKey,
 } from "@/shared/practice/labDesignPresets";
 import { cn } from "@/shared/ui/cn";
@@ -96,38 +95,12 @@ export function InnerNumberInput({
   );
 }
 
-export function InnerMethodSelect({
-  value,
-  onChange,
-  label,
-}: {
-  value: InnerMethod;
-  onChange: (method: InnerMethod) => void;
-  label: string;
-}) {
-  return (
-    <select
-      className="h-7 w-full min-w-0 rounded-md border bg-background px-1 text-[11px]"
-      aria-label={label}
-      value={value}
-      onChange={(event) => onChange(event.target.value as InnerMethod)}
-    >
-      {INNER_METHODS.map((row) => (
-        <option key={row.id} value={row.id}>
-          {row.label}
-        </option>
-      ))}
-    </select>
-  );
-}
-
+/** 가공 방식과 재료를 한 목록에서 고른다. 재료가 방식을 정한다. */
 export function InnerMaterialSelect({
-  method,
   value,
   onChange,
   label,
 }: {
-  method: InnerMethod;
   value: InnerMaterial;
   onChange: (material: InnerMaterial) => void;
   label: string;
@@ -139,9 +112,9 @@ export function InnerMaterialSelect({
       value={value}
       onChange={(event) => onChange(event.target.value as InnerMaterial)}
     >
-      {materialsFor(method).map((row) => (
+      {INNER_MATERIALS.map((row) => (
         <option key={row.id} value={row.id}>
-          {row.label}
+          {methodMaterialLabel(row.id)}
         </option>
       ))}
     </select>

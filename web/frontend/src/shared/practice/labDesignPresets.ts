@@ -244,6 +244,17 @@ export function materialLabel(material: InnerMaterial) {
   return INNER_MATERIALS.find((row) => row.id === material)?.label ?? material;
 }
 
+export function methodLabel(method: InnerMethod) {
+  return INNER_METHODS.find((row) => row.id === method)?.label ?? method;
+}
+
+/** 재료 한 줄 표시. 방식은 재료에 묶여 있다. */
+export function methodMaterialLabel(material: InnerMaterial) {
+  const row = INNER_MATERIALS.find((item) => item.id === material);
+  if (!row) return material;
+  return `${methodLabel(row.method)} · ${row.label}`;
+}
+
 export function clampInnerNumber(key: InnerNumberKey, value: number) {
   const field = INNER_FIELDS.find((row) => row.key === key)!;
   if (!Number.isFinite(value)) return field.min;
@@ -266,6 +277,15 @@ export function withMethod<T extends Pick<InnerParams, "method" | "material" | "
     material,
     toolRadiusMm: method === "print" ? 0 : row.toolRadiusMm || fallback,
   };
+}
+
+/** 재료를 고르면 그 재료의 가공 방식도 같이 맞춘다. */
+export function withMaterial<T extends Pick<InnerParams, "method" | "material" | "toolRadiusMm">>(
+  row: T,
+  material: InnerMaterial,
+): T {
+  const method = INNER_MATERIALS.find((item) => item.id === material)?.method ?? row.method;
+  return withMethod({ ...row, material }, method);
 }
 
 export function normalizeInnerParams(raw: unknown, fallback: InnerParams): InnerParams {

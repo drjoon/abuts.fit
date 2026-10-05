@@ -29,7 +29,7 @@ import {
   isBuiltinDesignPreset,
   newDesignPresetId,
   nextDesignPresetName,
-  withMethod,
+  withMaterial,
   type DesignPreset,
   type DesignPresetLibrary,
   type InnerKind,
@@ -39,7 +39,6 @@ import {
 import {
   HintLines,
   InnerMaterialSelect,
-  InnerMethodSelect,
   InnerNumberInput,
   InnerParamsDiagram,
 } from "@/shared/components/practice/LabInnerParamFields";
@@ -343,24 +342,13 @@ export function LabDesignPresetDialog({
                   </span>
                 ))}
 
-                <span className="text-xs font-medium">가공 방식</span>
-                {INNER_KINDS.map((kind) => (
-                  <InnerMethodSelect
-                    key={kind.id}
-                    label={`${kind.label} 가공 방식`}
-                    value={selected[kind.id].method}
-                    onChange={(method) => patchColumn(kind.id, (row) => withMethod(row, method))}
-                  />
-                ))}
-
                 <span className="text-xs font-medium">재료</span>
                 {INNER_KINDS.map((kind) => (
                   <InnerMaterialSelect
                     key={kind.id}
                     label={`${kind.label} 재료`}
-                    method={selected[kind.id].method}
                     value={selected[kind.id].material}
-                    onChange={(material) => patchColumn(kind.id, (row) => ({ ...row, material }))}
+                    onChange={(material) => patchColumn(kind.id, (row) => withMaterial(row, material))}
                   />
                 ))}
 

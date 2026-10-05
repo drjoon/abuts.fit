@@ -46,11 +46,8 @@ import {
 } from "@/shared/practice/labInlayDesign";
 import {
   INNER_FIELDS,
-  INNER_KINDS,
-  INNER_METHODS,
   innerKindOf,
-  withMethod,
-  type DesignPreset,
+  withMaterial,
   type InnerKind,
   type InnerParams,
 } from "@/shared/practice/labDesignPresets";
@@ -133,9 +130,6 @@ type Props = {
   marginResetOn: boolean;
   onMarginReset: () => void;
   onRemoveHook: () => void;
-  /** 기공소 디자인 프리셋. 내면 도구에서 복사한다. */
-  designPresets: DesignPreset[];
-  onOpenPresets: (presetId: string | null) => void;
   /** 이 브리지 스팬의 커넥터. 설정은 앞 치아(from) 수정값에 둔다. */
   connectors: ConnectorRow[];
   connectorFrom: string | null;
@@ -160,8 +154,6 @@ type Props = {
   crownShellMm: number | null;
   /** 뷰어가 지대치 스캔에서 이 크라운 내면을 만든 결과. 아직 없으면 null. */
   intaglio: CrownIntaglioInfo | null;
-  /** 칼라맵의 내면 간격 모드를 연다. */
-  onViewFit: () => void;
   /** 준비 삽입축. 작업 치아 뱃지. */
   insertionTeeth?: Array<{ toothNumber: string; label: string }>;
   insertionToothNumber?: string | null;
@@ -397,38 +389,30 @@ function ConnectorControls({
 
 /**
  * 내면 도구. 값은 이 패널 안에서만 고치고 「적용」을 눌러야 치아에 건다.
- * 프리셋에서 복사하면 그 프리셋의 이 치아 유형 열을 가져온다.
+ * 재료(가공 방식 포함)는 여기서만 고른다. 프리셋 복사는 치아 정보·헤더 설정에서 한다.
  */
 function InnerControls({
   edit,
   kind,
   generated,
-  presets,
   onEdit,
-  onOpenPresets,
-  intaglio,
-  onViewFit,
 }: {
   edit: ToothDesignEdit;
   kind: InnerKind;
   generated: boolean;
-  presets: DesignPreset[];
   onEdit: (next: ToothDesignEdit) => void;
-  onOpenPresets: (presetId: string | null) => void;
-  intaglio: CrownIntaglioInfo | null;
-  onViewFit: () => void;
 }) {
   const committed = innerParamsOf(edit);
   const [draft, setDraft] = useState<InnerParams>(committed);
   const [blockOut, setBlockOut] = useState(edit.inner.blockOut);
-  const [source, setSource] = useState<DesignPreset | null>(
-    () => presets.find((row) => row.id === edit.inner.presetId) ?? null,
+  const [source, setSource] = useState<{ id: string; name: string } | null>(() =>
+    edit.inner.presetId
+      ? { id: edit.inner.presetId, name: edit.inner.presetName }
+      : null,
   );
   const dirty =
     JSON.stringify(draft) !== JSON.stringify(committed) ||
-    blockOut !== edit.inner.blockOut ||
-    (source?.id ?? null) !== (edit.inner.presetId || null);
-  const kindLabel = INNER_KINDS.find((row) => row.id === kind)?.label ?? "";
+    blockOut !== edit.inner.blockOut;
   const set = (patch: Partial<InnerParams>) => {
     setDraft((prev) => ({ ...prev, ...patch }));
     setSource(null);
@@ -436,63 +420,15 @@ function InnerControls({
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2 text-[11px]">
-        <span className="text-muted-foreground">{kindLabel} 열</span>
-        <button
-          type="button"
-          className="font-medium text-primary hover:underline"
-          onClick={() => onOpenPresets(source?.id ?? edit.inner.presetId ?? null)}
-        >
-          프리셋 관리
-        </button>
-      </div>
-      <select
-        className="h-7 w-full rounded-md border bg-background px-1 text-[11px]"
-        aria-label="프리셋에서 복사"
-        value={source?.id ?? ""}
-        onChange={(event) => {
-          const preset = presets.find((row) => row.id === event.target.value);
-          if (!preset) return;
-          setDraft({ ...preset[kind] });
-          setSource(preset);
-        }}
-      >
-        <option value="" disabled>
-          {edit.inner.presetId === null || dirty ? "직접 조정" : "프리셋에서 복사"}
-        </option>
-        {presets.map((row) => (
-          <option key={row.id} value={row.id}>
-            {row.name}
-          </option>
-        ))}
-      </select>
-      <Row label="가공 방식">
-        <div className="grid grid-cols-2 gap-1">
-          {INNER_METHODS.map((method) => (
-            <Button
-              key={method.id}
-              type="button"
-              size="sm"
-              variant={draft.method === method.id ? "default" : "outline"}
-              className="h-7 px-1 text-[11px]"
-              onClick={() => {
-                setDraft((prev) => withMethod(prev, method.id));
-                setSource(null);
-              }}
-            >
-              {method.label}
-            </Button>
-          ))}
-        </div>
-      </Row>
-      <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] items-center gap-x-2 gap-y-1.5">
+      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2">
         <span className="text-xs font-medium">재료</span>
         <InnerMaterialSelect
           label="재료"
-          method={draft.method}
           value={draft.material}
-          onChange={(material) => set({ material })}
+          onChange={(material) => set(withMaterial(draft, material))}
         />
+      </div>
+      <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] items-center gap-x-2 gap-y-1.5">
         {INNER_FIELDS.map((field) => (
           <Fragment key={field.key}>
             <Tooltip>
@@ -522,33 +458,6 @@ function InnerControls({
         />
         블록아웃
       </label>
-      <div className="space-y-1.5 rounded-md border p-2">
-        <label className="flex items-center gap-2 text-xs font-medium">
-          <Checkbox
-            className="h-3.5 w-3.5"
-            checked={edit.inner.intaglio}
-            onCheckedChange={(checked) =>
-              onEdit({ ...edit, inner: { ...edit.inner, intaglio: checked === true } })
-            }
-            aria-label="지대치에서 내면 생성"
-          />
-          지대치에서 내면 생성
-        </label>
-        <p className="text-[11px] leading-snug text-muted-foreground">
-          <IntaglioStatus edit={edit} generated={generated} info={intaglio} />
-        </p>
-        {intaglio?.status === "ok" ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 w-full text-[11px]"
-            onClick={onViewFit}
-          >
-            내면 간격 보기
-          </Button>
-        ) : null}
-      </div>
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="flex min-w-0">
@@ -558,7 +467,7 @@ function InnerControls({
               className="h-7 w-full text-[11px]"
               disabled={!dirty}
               onClick={() => {
-                const same = source && JSON.stringify(source[kind]) === JSON.stringify(draft);
+                const same = source && JSON.stringify(draft) === JSON.stringify(committed);
                 onEdit(applyInnerParams(edit, draft, kind, same ? source : null, blockOut));
               }}
             >
@@ -573,82 +482,6 @@ function InnerControls({
         </TooltipContent>
       </Tooltip>
     </div>
-  );
-}
-
-/** 내면 생성 상태 안내. 문장마다 줄을 나눈다. */
-function IntaglioStatus({
-  edit,
-  generated,
-  info,
-}: {
-  edit: ToothDesignEdit;
-  generated: boolean;
-  info: CrownIntaglioInfo | null;
-}) {
-  if (!edit.inner.intaglio) {
-    return (
-      <>
-        끄면 외면만 그립니다.
-        <br />
-        위 숫자는 생성 크기 검토에만 씁니다.
-      </>
-    );
-  }
-  if (!generated || !info) {
-    return (
-      <>
-        보철을 생성하면 지대치 스캔에서 내면을 만듭니다.
-        <br />
-        위 간격·마진 두께가 그대로 들어갑니다.
-      </>
-    );
-  }
-  if (info.status === "ok") {
-    return (
-      <>
-        내면을 만들었습니다.
-        <br />
-        외면과 이어 내보내기에 함께 들어갑니다.
-        {info.minThicknessMm != null ? (
-          <>
-            <br />
-            가장 얇은 곳 {info.minThicknessMm.toFixed(2)}mm.
-          </>
-        ) : null}
-        {info.maxGapErrorMm != null && info.maxGapErrorMm > 0.15 ? (
-          <>
-            <br />
-            스캔 잡음·구멍으로 설계 간격에서 최대 {info.maxGapErrorMm.toFixed(2)}mm 벗어난 곳이 있습니다.
-          </>
-        ) : null}
-      </>
-    );
-  }
-  if (info.status === "sparse") {
-    return (
-      <>
-        지대치 스캔이 없거나 성겨 내면을 만들지 못했습니다.
-        <br />
-        외면만 그립니다.
-      </>
-    );
-  }
-  if (info.status === "margin") {
-    return (
-      <>
-        마진이 모자라 내면을 만들지 못했습니다.
-        <br />
-        마진을 먼저 잡아 주세요.
-      </>
-    );
-  }
-  return (
-    <>
-      이 보철은 내면 메시를 만들지 않습니다.
-      <br />
-      폰틱·임플란트·스크류홀 크라운은 외면만 그립니다.
-    </>
   );
 }
 
@@ -1091,8 +924,6 @@ export function LabProsthesisModifyPanel({
   marginResetOn,
   onMarginReset,
   onRemoveHook,
-  designPresets,
-  onOpenPresets,
   connectors,
   connectorFrom,
   onConnectorFrom,
@@ -1110,7 +941,6 @@ export function LabProsthesisModifyPanel({
   onOpenTool,
   crownShellMm,
   intaglio,
-  onViewFit,
   insertionTeeth = [],
   insertionToothNumber = null,
   onPickInsertionTooth,
@@ -1346,11 +1176,7 @@ export function LabProsthesisModifyPanel({
             edit={edit}
             kind={innerKind}
             generated={generated}
-            presets={designPresets}
             onEdit={onEdit}
-            onOpenPresets={onOpenPresets}
-            intaglio={intaglio}
-            onViewFit={onViewFit}
           />
         )}
       </StageSubsection>

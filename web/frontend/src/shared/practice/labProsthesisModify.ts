@@ -193,8 +193,8 @@ export type ToothInner = Omit<InnerParams, "minThicknessMm"> & {
   /** 삽입축 기준 언더컷을 메워 내면이 걸리지 않게 한다. */
   blockOut: boolean;
   /**
-   * 내면을 지대치 스캔에서 실제 메시로 만든다. 끄면 예전처럼 외면만 그린다.
-   * 켜도 지대치 스캔·마진이 없거나 폰틱·임플란트·인레이/온레이면 만들지 않는다.
+   * 내면을 지대치 스캔에서 실제 메시로 만든다. 항상 켠다.
+   * 지대치 스캔·마진이 없거나 폰틱·임플란트·인레이/온레이면 만들지 않는다.
    */
   intaglio: boolean;
 };
@@ -265,7 +265,7 @@ export function applyInnerParams(
       presetName: source?.name ?? "",
       kind,
       blockOut,
-      intaglio: edit.inner.intaglio,
+      intaglio: true,
     },
     refine: { ...edit.refine, minThicknessMm, ...(outer ?? {}) },
   };
@@ -724,7 +724,7 @@ function normalizeToothInner(raw: unknown, minThicknessMm: number): ToothInner {
     presetName: typeof row.presetName === "string" ? row.presetName : "",
     kind: INNER_KINDS.some((item) => item.id === row.kind) ? (row.kind as InnerKind) : "crown",
     blockOut: row.blockOut !== false,
-    intaglio: row.intaglio !== false,
+    intaglio: true,
   };
 }
 

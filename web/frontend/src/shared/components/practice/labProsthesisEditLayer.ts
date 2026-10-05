@@ -743,7 +743,7 @@ const INTAGLIO_RGB: [number, number, number] = [0.86, 0.82, 0.76];
  * 두께·접촉 색을 칠한다. `shellMm`는 맞춤을 켠 치아에서 잰 가장 얇은 외면. 맞춤이 없으면
  * null(수정값 추정을 쓴다). 크라운 경부 맞춤은 `cervical`(마진)이 있어야 하고 마진 아래로 내리지 않는다.
  *
- * `intaglio`를 켜고 지대치 스캔·마진이 있으면 지대치에서 실제 내면 메시를 만들어 외면에 이어 붙인다.
+ * 지대치 스캔·마진이 있으면 지대치에서 실제 내면 메시를 만들어 외면에 이어 붙인다.
  * 그때 외면은 내면에서 최소 두께 밖으로 밀리고, `shellMm`·두께 색은 그 내면에서 잰 실제 두께다.
  * 결과 지오메트리는 `[외면 + 테두리 띠]`(그룹 0)와 `[내면]`(그룹 1)로 나뉜다.
  */
@@ -780,12 +780,7 @@ function adaptCrownGeometry(args: {
   const cervical = !edit.pontic.on && refine.gingivalFit ? args.cervical : null;
   const rim = geometry.userData.rim as CrownRim | undefined;
   const wantIntaglio = Boolean(
-    args.intaglio &&
-      edit.inner.intaglio &&
-      !edit.pontic.on &&
-      rim &&
-      args.marginRing &&
-      args.cervical,
+    args.intaglio && !edit.pontic.on && rim && args.marginRing && args.cervical,
   );
   const scanAdapting =
     refine.occlusalTrim ||
