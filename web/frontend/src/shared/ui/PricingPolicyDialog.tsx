@@ -1,6 +1,7 @@
 // - 2026-10-05: 딜러십 정책 — 커스텀어벗 10~20% 누적 구간. 심플웨이 지급 없음.
 // - 2026-09-27: 딜러십 정책 — 심플웨이 10% · 커스텀어벗 20% · 기공 제외 · 소개 코드 리셋.
 // - 2026-09-26: 기공소 정책 — 수수료 제목·협력·하청 문장.
+// - 2026-10-05: 플랫폼 사용료·하청 수수료 안내 삭제(미부과).
 // - 2026-09-26: 기공소 정책 — 플랫폼 사용료·영업 수수료 안내를 단축.
 // - 2026-09-23: 런칭 이벤트 중 — 정상가 취소선 + 이벤트가 · 「이벤트 중」.
 // - 2026-09-23: FM덴탈 월정액 가입 — 기공소만(치과 제외).
@@ -78,8 +79,6 @@ import {
   resolveCustomAbutmentProductionPriceForAt
 } from '@/shared/pricing/abutsAbutmentService';
 import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from '@/shared/settlement/labPayoutBankbook';
-import { LabDirectPlatformFeeNotice } from '@/shared/settlement/LabDirectPlatformFeeNotice';
-import { useLabTradingPartnerWindow } from '@/shared/lab/useLabTradingPartnerWindow';
 import {
   DEALERSHIP_CUMULATIVE_BAND_LINE,
   REFERRAL_OWNERSHIP_RESET_ANYONE_LINE,
@@ -210,8 +209,6 @@ export const PricingPolicyDialog = ({
   const { kind } = useRequestorBusinessAccess();
   const isLab = kind === 'lab';
   const isRequestorPreview = variant === 'requestor';
-  /** 가격 안내(치과·기공소)와 딜러·영업팀 의뢰자 정책 */
-  const showLabFeeSection = variant === 'default' || isRequestorPreview;
   /** 월정액 가입 버튼은 기공소 본인만 */
   const showFmJoin = isLab && variant === 'default';
   const { data: systemSettings, refetch: refetchSystemSettings } =
@@ -220,10 +217,6 @@ export const PricingPolicyDialog = ({
     if (!open) return;
     void refetchSystemSettings();
   }, [open, refetchSystemSettings]);
-  const {
-    windowInfo: labFeeWindow,
-    refresh: refreshLabFeeWindow,
-  } = useLabTradingPartnerWindow();
   void dealershipActivePct;
   void dealershipBasePct;
   void dealershipEventPct;
@@ -300,12 +293,6 @@ export const PricingPolicyDialog = ({
     joinAllowed: false,
     busy: false,
   });
-
-  useEffect(() => {
-    if (!open) return;
-    void refetchSystemSettings();
-    if (isLab) void refreshLabFeeWindow();
-  }, [open, isLab, refetchSystemSettings, refreshLabFeeWindow]);
 
   useEffect(() => {
     if (!open || variant !== 'default' || !token || !isLab) return;
@@ -663,33 +650,10 @@ export const PricingPolicyDialog = ({
                 </div>
               </section>
 
-              {showLabFeeSection ? (
-                <>
-                  <PolicySection title='플랫폼 사용료 · 하청 수수료'>
-                    <p>
-                      <LabDirectPlatformFeeNotice
-                        feeRates={labFeeWindow?.feeRates}
-                      />
-                      {isRequestorPreview ? (
-                        <>
-                          <br />
-                          기공소 의뢰자에게 적용됩니다.
-                        </>
-                      ) : null}
-                      {isRequestorPreview || !isLab ? (
-                        <>
-                          <br />
-                          치과는 플랫폼 사용료가 없습니다.
-                        </>
-                      ) : null}
-                    </p>
-                  </PolicySection>
-                  {isLab && !isRequestorPreview ? (
-                    <PolicySection title='정산'>
-                      <p>{LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}</p>
-                    </PolicySection>
-                  ) : null}
-                </>
+              {isLab && !isRequestorPreview ? (
+                <PolicySection title='정산'>
+                  <p>{LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}</p>
+                </PolicySection>
               ) : null}
 
               <PolicySection title='출고 방식'>

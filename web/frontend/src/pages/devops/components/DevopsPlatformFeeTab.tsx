@@ -61,7 +61,7 @@ type Props = {
   className?: string;
 };
 
-/** 기공소 매칭 카드 안에 넣는 수수료 입력(자동 저장). */
+/** 기공소 매칭 카드 안에 넣는 수수료 입력(자동 저장). 2026-10-05부터 인증 탭에서 숨김. 재개 시 PracticeTransferAutoMatchTab에 다시 넣는다. */
 export const DevopsPlatformFeeTab = ({ className }: Props) => {
   const { toast } = useToast();
   const { token } = useAuthStore();

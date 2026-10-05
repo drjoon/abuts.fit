@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/admin/AdminPaymentsPage.tsx
 // - web/frontend/src/pages/devops/components/DevopsPlatformFeeTab.tsx
 // change-log:
+// - 2026-10-05: 화면 미노출(미부과). 컴포넌트는 재개용으로 유지.
 // - 2026-09-27: 플랫폼 사용료 2% 복원. 이벤트 중 ~~2%~~ → 면제(0%). 관리자 feeRates 그대로 받기.
 // - 2026-09-26: 수수료 안내 — 협력은 수수료 없이 전액, 하청은 영업 수수료를 제한 적립.
 // - 2026-09-26: 플랫폼 사용료·영업 수수료 안내를 기공소 정책과 같은 문장으로 통일.
@@ -69,7 +70,7 @@ export function LabDirectPlatformFeeRateLabel(opts: FeeOpts): ReactNode {
   );
 }
 
-/** 기공소 플랫폼 사용료(협력·하청 공통)·하청 영업 수수료 안내. */
+/** 기공소 플랫폼 사용료·하청 영업 수수료 안내. 2026-10-05부터 화면 미노출(미부과). 재개 시 정책 모달에 다시 연결. */
 export function LabDirectPlatformFeeNotice({
   suffix,
   ...opts

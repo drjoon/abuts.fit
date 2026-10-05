@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/business/settings/PayoutAccountCard.tsx
 // - web/backend/jobs/monthlySettlementBatchWorker.js
 // change-log:
+// - 2026-10-05: 플랫폼 사용료·하청 수수료 미부과. 안내 문구는 휴면(LabDirectPlatformFeeNotice).
 // - 2026-09-27: 플랫폼 사용료 2% 복원. 이벤트 기간 면제(0%) 평문·resolveLabFeeDisplay.
 // - 2026-09-26: 수수료 평문 — 협력은 수수료 없이 전액, 하청은 영업 수수료를 제한 적립.
 // - 2026-09-26: 플랫폼 사용료·하청 영업 수수료 평문 안내를 정책 문장과 맞춤.
@@ -10,6 +11,9 @@
 // - 2026-09-21: PAYOUT_ACCOUNT_CARD_ID 공통화(기공소·딜러사). LAB_* 별칭 유지.
 // - 2026-09-16: 기공소 통장사본·정산일(1일) 리마인드 헬퍼. 미등록 시 지급 1개월 이월 안내. 월 지급 유보 50만원 상수.
 import { toKstYmd } from "@/shared/date/kst";
+
+/** 백엔드 CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES 와 맞춤. 재개 시 true. */
+export const CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES = false;
 
 /** KST 월 정산일(기본 1일). 백엔드 SETTLEMENT_BATCH_DAY_OF_MONTH 와 맞춤. */
 export const LAB_SETTLEMENT_PAYOUT_DAY = Math.max(
@@ -158,7 +162,7 @@ export function resolveLabFeeDisplay(feeRates?: LabFeeRatesLike | null): {
   };
 }
 
-/** 플랫폼 사용료·하청 영업 수수료 안내(평문). UI는 LabDirectPlatformFeeNotice. */
+/** 플랫폼 사용료·하청 영업 수수료 안내(평문). UI는 미부과 기간 동안 노출하지 않음. */
 export function formatLabDirectPlatformFeeNotice(opts?: {
   /** false·없음 = 이벤트 면제 */
   enabled?: boolean;

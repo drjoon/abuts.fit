@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-10-05: 플랫폼 사용료·하청 수수료 미부과. 스냅샷이 있어도 차감 0.
 // - 2026-09-28: 보류 0원(HOLD 저널 없음) 건은 no_hold 대신 zero_lab_fee — settledAt 누락으로 결제 보류가 남던 문제.
 // - 2026-09-28: releasePracticeTransferLabShare skipSettlementGate(운영자 수동 정산 스크립트 전용).
 // - 2026-09-26: 학습 동의 변경 — 미완료 의뢰는 이번 건부터 플랫폼 수수료를 다시 맞춘다.
@@ -119,7 +120,9 @@ import {
   platformFeeArgsFromBilling,
   resolvePracticeTransferFeeRate,
   resolvePracticeTransferFeeRateForViewer,
-  resolvePracticeTransferPlatformFeeRate,
+  resolvePracticeTransferPlatformFeeRatePolicy,
+  effectivePracticeTransferFeeRate,
+  CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES,
   snapshottedPracticeTransferFeeRate,
   snapshottedPracticeTransferPlatformFeeRate,
   resolveManufacturerUnitApply,
@@ -2496,13 +2499,20 @@ async function computeAcceptedPracticeTransferFees({
     ...platformFeeArgsFromBilling(transfer?.billing),
   };
   const storedFeeRate = snapshottedPracticeTransferFeeRate(transfer?.billing);
-  const feeRateApplied = storedFeeRate ?? resolvePracticeTransferFeeRate(feeRateArgs);
+  const feeRateApplied = effectivePracticeTransferFeeRate(
+    storedFeeRate,
+    feeRateArgs,
+  );
   // 합계 요율만 박힌 예전 건은 사용료 몫을 새로 박지 않는다(정산 때 예전 규칙으로 나눈다).
-  const platformFeeRateApplied =
-    snapshottedPracticeTransferPlatformFeeRate(transfer?.billing) ??
-    (storedFeeRate == null
-      ? Math.min(feeRateApplied, resolvePracticeTransferPlatformFeeRate(feeRateArgs))
-      : null);
+  const platformFeeRateApplied = CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES
+    ? snapshottedPracticeTransferPlatformFeeRate(transfer?.billing) ??
+      (storedFeeRate == null
+        ? Math.min(
+            feeRateApplied,
+            resolvePracticeTransferPlatformFeeRatePolicy(feeRateArgs),
+          )
+        : null)
+    : 0;
   const { abutsRevenueAmount, labSettlementAmount } =
     splitPracticeTransferSettlement({
       labFeeTotal: fees.labFeeTotal,
@@ -5410,9 +5420,9 @@ export async function releasePracticeTransferRemakeChargeCredits({
     };
   }
 
-  const feeRateApplied =
-    snapshottedPracticeTransferFeeRate(transfer?.billing) ??
-    resolvePracticeTransferFeeRate({
+  const feeRateApplied = effectivePracticeTransferFeeRate(
+    snapshottedPracticeTransferFeeRate(transfer?.billing),
+    {
       matchingMode:
         String(transfer?.matchingMode || "").trim() === "auto"
           ? "auto"
@@ -5420,7 +5430,8 @@ export async function releasePracticeTransferRemakeChargeCredits({
       payoutRates,
       subcontracted: isSubcontractFeeApplicable(transfer),
       ...platformFeeArgsFromBilling(transfer?.billing),
-    });
+    },
+  );
   const platformFee = Math.max(
     0,
     Math.round(releaseAmount * Number(feeRateApplied || 0)),
@@ -5963,9 +5974,9 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
     };
   }
 
-  const feeRateApplied =
-    snapshottedPracticeTransferFeeRate(transfer?.billing) ??
-    resolvePracticeTransferFeeRate({
+  const feeRateApplied = effectivePracticeTransferFeeRate(
+    snapshottedPracticeTransferFeeRate(transfer?.billing),
+    {
       matchingMode:
         String(transfer?.matchingMode || "").trim() === "auto"
           ? "auto"
@@ -5973,7 +5984,8 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
       payoutRates,
       subcontracted: isSubcontractFeeApplicable(transfer),
       ...platformFeeArgsFromBilling(transfer?.billing),
-    });
+    },
+  );
   const platformFee = Math.max(
     0,
     Math.round(releaseAmount * Number(feeRateApplied || 0)),

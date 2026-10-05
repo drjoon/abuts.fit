@@ -189,20 +189,20 @@
   1. **스토어** — 기성품(심플웨이 등) 과세 매출. `STORE_SALE`/`REV_STORE_TAXABLE`. 포함가 전액 어벗츠 · 딜러/제조/개발운영 분배 없음 · 월말 세금계산서.
   2. **커스텀어벗** — 기공소 디자인 → 애크로덴트 생산 → 치과 납품. 매출=의뢰자 유료 소비, 지출=제조사 고정 하청, 잔여=딜러·개발운영·어벗츠 분배(배송 제외).
   3. **기공사업부** — 어벗츠기공소(`internalLab`)가 치과와 **직접 계약**(원청). 선수금·결제는 항상 어벗츠 서비스로 1차 결제 후 수행 기공소로 이체. 외부 수행은 두 종류:
-     - **협력**(`assigneeKind=cooperation`): 치과가 픽커에서 외부 기공소 직접 지정. **수가표·할증=수행 기공소**(치과↔지정과 동일). 정산만 어벗츠 gross→수행 매입. 플랫폼 사용료(정책 2%, 이벤트 중 면제 0%) 공제 후 이관. 치과 표시「어벗츠 · {파트너}」.
-     - **하청**(`assigneeKind=subcontract`): 치과가 어벗츠기공사업부 지정 후 하청 풀/클레임. **수가표·할증=어벗츠(원청).** `subcontractFeeRate`(기본 10%) + 플랫폼 사용료 매입 공제. 치과에는 하청 기공소 실명 비공개. 미배정 하청 풀(신규 하청)을 보는 기공소와, 작업을 맡은 하청 기공소는 원청과 같이 치과 실명·담당자를 본다. 배정이 끝난 뒤 그 외 기공소에는 치과가 비공개.
+     - **협력**(`assigneeKind=cooperation`): 치과가 픽커에서 외부 기공소 직접 지정. **수가표·할증=수행 기공소**(치과↔지정과 동일). 정산만 어벗츠 gross→수행 매입(플랫폼 사용료·하청 수수료 **미부과**, `CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES=false`). 치과 표시「어벗츠 · {파트너}」.
+     - **하청**(`assigneeKind=subcontract`): 치과가 어벗츠기공사업부 지정 후 하청 풀/클레임. **수가표·할증=어벗츠(원청).** 매입 공제 수수료는 미부과(휴면 정책 `subcontractFeeRate`+사용료는 `resolvePracticeTransferFeeRatePolicy`에 유지). 치과에는 하청 기공소 실명 비공개. 미배정 하청 풀(신규 하청)을 보는 기공소와, 작업을 맡은 하청 기공소는 원청과 같이 치과 실명·담당자를 본다. 배정이 끝난 뒤 그 외 기공소에는 치과가 비공개.
   - **신규 PTX SSOT(강제):** `targetLabAnchorId`=항상 `internalLab`. 치과 픽커 외부=`assigneeLabAnchorId` + `assigneeKind=cooperation`. 어벗츠만 선택 후 풀 클레임=`assigneeKind=subcontract`. 계약·결제·계산서=어벗츠→치과(`ABUTS_TO_CUSTOMER`). 수행 기공소 정산=기공소→어벗츠 매입(`AFFILIATE_TO_ABUTS`, 품목 협력/하청 기공비).
   - **원청 vs 수행(강제):** 원청(어벗츠기공소)은 치과와 직계약하는 법률·정산 주체이고, 동시에 기공도 한다. 어벗츠기공소로 들어온 주문은 원청이 직접 하거나 하청으로 넘긴다. 협력은 치과가 파트너를 지정한 건이다. 수신함은 세 종류를 모두 보여 주고, 어벗츠기공소 화면에서 원청·협력·하청 표시/숨김으로 거른다. 매출 크레딧은 원청에 잠깐 찍힌 뒤 수행 기공소 매입으로 넘어간다. **작업:** 협력은 수행 기공소만 하고 원청 화면에서는 작업 버튼(작업시작·취소·업로드)을 숨긴다. 채팅 헤더 AI 디자인은 어벗츠기공소가 협력·하청·자체 수행 모두에서 연다(`canLabUsePracticeTransferAiDesign`). 하청·자체 수행은 원청도 작업을 대신할 수 있다. **채팅:** 협력·하청 모두 원청이 치과·수행 기공소와 함께 참여한다. 생산비 크레딧·수취는 수행 기공소(`resolvePerformingLabAnchorId`). 수가표는 이와 별개다(협력=수행, 하청=원청 수가).
   - **PTX 수가·할증 앵커(강제, 정산과 분리):** 협력=`resolveFeeScheduleLabAnchorId`/`resolveLabFeeMultiplierLabAnchorId` → **assignee**. 하청·어벗츠 자체 → **prime(어벗츠)**. `isPracticeTransferSubcontracted`(prime≠assignee)만으로 협력 수가를 어벗츠에 두지 말 것. 생성 스냅샷 소급 금지. Cursor: `.cursor/rules/ptx-cooperation-fee-ssot.mdc`.
   - 가격 안내 UI(`PricingPolicyDialog`)는 커스텀 어벗 단가·출고 정책 안내용이며, 사업 축 정의와 혼용하지 않는다.
   - 관리자 정산 UI: `AdminPaymentsPage` 상단 3사업 축(선택형) · 집계 `GET /api/admin/credits/settlement-business-overview`(분배비율·planned 몫 포함). 분배 비율 설정: 재무 › 설정 › 분배비율. 사업영역(`/dashboard/partners`)은 팀원 배분.
 - **매칭 과금 SSOT(강제):**
-  - 한 줄: **기공소 플랫폼 사용료는 매출액의 2%(`directPlatformFeeRate`, 협력·하청 공통). 이벤트 기간에는 `directPlatformFeeEnabled=false`(기본)로 면제(0%)하고 UI는 ~~2%~~ → 면제(0%). 어벗츠기공소(`internalLab`) 수행은 항상 면제. 하청은 `subcontractFeeRate`(기본 10%) + 사용료. 학습 이용 동의는 요율과 무관. 요율은 작업시작 때 `billing.feeRateApplied`로 박히고 이후 스위치·요율 변경은 소급하지 않는다. 기공소 월 참여 0원.**
-  - 기공소(`lab`): 자동 매칭 **월 참여 수수료(`autoMatchMonthlyFee`)는 0원 고정(정책)**. 플랫폼 사용료는 `resolveLabPlatformFeeRate`(적용 off=0, 수행자 본부=0) → `resolvePracticeTransferFeeRate`(협력=사용료, 하청=10%+사용료, 레거시 자동매칭=0). 본부 여부는 `billing.internalPerformer` 스냅샷(작업시작·클레임) 또는 수행 기공소 `businessType`. `aiTrainingConsent`는 **기본 허용**이며 요율에 영향을 주지 않는다. 설정 「AI」탭·기공의뢰 「학습 이용」버튼·동의 모달은 없다. 안내는 약관·개인정보·서비스. 저장값이 `allowed: false`이고 확인된 건만 학습에서 뺀다. **어벗츠기공본부는 항상 동의한 것으로 보고 학습에 포함한다.** 하청은 `subcontractFeeRate`(기본 **10%**) + 플랫폼 사용료.
-  - 안내 SSOT: `LabDirectPlatformFeeNotice`(`feeRates` 그대로) — 기공소 정산 탭·정책 안내·자동 매칭 탭·관리자 정산 규칙. 공개 `TermsPage` 제9조④·제13조⑦⑧, `ServicePage` 수수료. 이벤트 종료(적용 on) 시 공개 페이지의 「현재 이벤트 기간」 문구와 취소선을 같이 걷는다.
+  - 한 줄: **기공소 플랫폼 사용료·하청 수수료는 미부과(`CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES=false`). 화면·약관·정책 안내에 요율을 쓰지 않는다. 하청 배정 구조는 유지. 휴면 정책은 `resolvePracticeTransferFeeRatePolicy`(사용료 2%·하청 10%+사용료, 이벤트 off=0, 본부 수행 0). 재개 시 스위치를 true. 기공소 월 참여 0원.**
+  - 기공소(`lab`): 자동 매칭 **월 참여 수수료(`autoMatchMonthlyFee`)는 0원 고정(정책)**. 공개 차감은 `resolvePracticeTransferFeeRate`=0. 휴면 계산은 `resolveLabPlatformFeeRate` → `resolvePracticeTransferFeeRatePolicy`. 본부 여부는 `billing.internalPerformer` 스냅샷 또는 수행 기공소 `businessType`. `aiTrainingConsent`는 **기본 허용**이며 요율에 영향을 주지 않는다. 설정 「AI」탭·기공의뢰 「학습 이용」버튼·동의 모달은 없다. 안내는 약관·개인정보·서비스. 저장값이 `allowed: false`이고 확인된 건만 학습에서 뺀다. **어벗츠기공본부는 항상 동의한 것으로 보고 학습에 포함한다.**
+  - 안내: 정책 모달·서비스 안내·약관·기공소 정산규칙·관리자 정산에서 플랫폼 사용료·하청 수수료 문구를 두지 않는다. 휴면 카피=`LabDirectPlatformFeeNotice`(미마운트).
   - 치과(`practice`): 커스텀어벗은 플랫폼 고시 단가(**단일가**, `membership*` 키)만. 월 구독·가입 90일 1만원·멤버십/일반 청구 분기 없음.
   - 유료 크레딧 사용처: 기공물·어벗 주문 대금. 기공소 매칭 월정·플랫폼 SaaS 과금에는 쓰지 않는다. 선수금은 어벗츠가 제공하는 서비스 대금으로 1차 결제 후 수행 기공소로 이체.
-  - 설정: 단가·신속비=`AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`. 하청 % · 플랫폼 사용료 적용 스위치(off=이벤트 면제)·% = `DevopsPlatformFeeTab` / `PATCH /api/admin/settings/platform-fees`.
+  - 설정: 단가·신속비=`AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`. 휴면 하청 % · 플랫폼 사용료=`DevopsPlatformFeeTab`(인증 탭에서 숨김) / `PATCH /api/admin/settings/platform-fees`.
 - 단일 SSOT 장부: `LedgerJournal` + `LedgerLine`(논리적으로 하나의 General Ledger)
 - 기존 분리 원장(`CreditLedger`, `ManufacturerCreditLedger`, `SalesmanLedger`, `AdminCreditLedger`)은
   **레거시로 간주하며 단계적 이관 후 삭제**한다. 이관 중 이중기록(dual-write) 금지.
@@ -216,7 +216,7 @@
   - **어벗 생산 분배**: 판매가(배송비 제외)에서 제조사 매입 공급가(기본 8,000=포함 8,800÷1.1)를 선차감하고, 잔여를 딜러/개발운영/어벗츠 비중(기본 딜러 포함 30:10:40 · 없으면 20:80)으로 분배. 제조사·개발운영사·딜러사 장부=포함가·지급=잔액 그대로. 특별주문가는 주체별 배분액. 설정 UI: 관리자「플랫폼 설정 · 커스텀어벗」가격·분배 비율 / 「사업영역」어벗사업. 제조사 박스당 배송 지급은 장부 출고 룰이며 사업영역 분배 UI에는 기재하지 않음.
   - **딜러십(salesman) 파트너 조건**: 영업 수수료=커스텀어벗 매출 대비 딜러%(1천 개 단위 **10~20%** 누진). **스토어(심플웨이)·기공 제외**(배송비·월정액 제외). 안내 카피=`dealershipPolicyCopy`. **이미 유치한 의뢰자는 유치(가입·재귀속) 당시 요율 유지**(`BusinessAnchor.dealershipCommissionRate` 스탬프 · `dealershipCommissionRateLog`). **90일 무주문이면 소개 코드 리셋**(누구든 다시 영업 가능, `referredByAnchorId` 해제). 리셋 후 재유치하면 당시 요율을 스탬프. 배송비=수신자(치과 또는 기공소) 부담. 관리자「플랫폼 설정 · 분배 비율」딜러십. `resolveDealershipRateForAcquiredAt`. 시계=`max(referralAssignedAt || BA.createdAt, 최근 Request.createdAt, 최근 소비 occurredAt)`, KST 일자. 코드 없이 가입하면 귀속은 비워 두고, 대표가 설정-사업자에서 영업자 코드를 등록한다(`POST /api/businesses/me/apply-referral`, 대표만). 잡=`jobs/dailyReferralOwnershipResetWorker.js`. 과거 `REV_SALESMAN` 불변.
   - **배송 분배**: 사업영역 분배 재원에서 제외. 매출에서 배송비를 먼저 차감한 나머지만 분배. 제조사 배송 매입가(부가세 포함)·고객 배송비 잔여는 출고 장부 흐름.
-  - **플랫폼 분배**: 하청 수수료(기본 10%)와 플랫폼 사용료(협력·하청 공통 2%, 이벤트 중 0, 본부 수행 0)를 어벗츠 90% / 개발운영사 10%(비율 수정 가능). 개발운영사 장부=포함가·지급=잔액 그대로.
+  - **플랫폼 분배**: 사용료·하청 수수료는 미부과(재원 0). 휴면 시 어벗츠 90% / 개발운영사 10%(비율 수정 가능). 개발운영사 장부=포함가·지급=잔액 그대로.
   - **기공(어벗츠기공소) 분배**: 내부기공소(기공사업부)에 배당된 건만, 배송비를 공통 지출로 먼저 차감한 뒤 나머지를 주체(role) 비율 → 주체 내 팀원 비율로 배분. 초기 주체 기공팀·영업팀·개발운영사. 설정 UI: 관리자「사업영역」기공사업.
   - 동일 의뢰 `machining_spend`+`express_surcharge`: 제조사 고정단가는 **어벗 개수×1회**만. express는 잔여 분배에만 포함.
   - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공(settlement 상계) → 유료** 순으로 차감

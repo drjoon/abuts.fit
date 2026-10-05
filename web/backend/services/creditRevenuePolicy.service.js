@@ -5,6 +5,7 @@
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
+// - 2026-10-05: 플랫폼 사용료·하청 수수료 미부과(`CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES=false`). 하청 배정 구조·정책 함수는 유지.
 // - 2026-09-27: 기공소 플랫폼 사용료 2% 복원(협력·하청 공통). 적용 off=이벤트 면제 0%. 어벗츠기공소 수행은 항상 면제. 학습 동의와 무관.
 // - 2026-09-24: 딜러십 — 신규 유치 요율(기본 20%)·예약 인하(15/10)·유치 시점 스탬프. 월 매출 누진 철회.
 // - 2026-09-24: 딜러십 영업 수수료 — 딜러 BA당 월 매출 누진 구간(기본 ≤5천만 20%/≤1억 15%/초과 10%).
@@ -902,6 +903,12 @@ export function resolveResidualRatesWithoutSalesman(configuredRates) {
 export const WITHOUT_SALESMAN_RATES = resolveRatesWithoutSalesman(WITH_SALESMAN_DEFAULT_RATES);
 
 export const DEFAULT_PLATFORM_FEE_RATE = 0.1;
+/**
+ * 기공소 플랫폼 사용료·하청 수수료 부과 여부.
+ * false = 미부과(화면·정산 차감 0). 하청 배정(`assigneeKind=subcontract`)은 유지.
+ * 재개 시 true 후 `resolvePracticeTransferFeeRatePolicy` 경로를 다시 탄다.
+ */
+export const CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES = false;
 /** 어벗츠 원청을 타 기공소가 하청 수행할 때 공제율(기본 10%, 수행 기공소 90%). */
 export const DEFAULT_SUBCONTRACT_FEE_RATE = 0.1;
 /** 기공소 플랫폼 사용료 정책 요율 2%(협력·하청 공통, 적용 on일 때). */
@@ -1006,7 +1013,8 @@ export function snapshottedPracticeTransferFeeRate(billing) {
  * - 레거시 자동매칭(하청 아님): 0.
  * 이미 billing.feeRateApplied에 박힌 건은 호출부에서 유지한다.
  */
-export function resolvePracticeTransferFeeRate({
+/** 저장 정책 요율(미부과 스위치와 무관). 재개 시 공개 resolver가 이 값을 쓴다. */
+export function resolvePracticeTransferFeeRatePolicy({
   matchingMode,
   payoutRates,
   subcontracted = false,
@@ -1023,11 +1031,23 @@ export function resolvePracticeTransferFeeRate({
   return platform;
 }
 
+export function resolvePracticeTransferFeeRate(args = {}) {
+  if (!CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES) return 0;
+  return resolvePracticeTransferFeeRatePolicy(args);
+}
+
+/** 스냅샷이 있어도 미부과면 0. 정산 해제·견적 공통. */
+export function effectivePracticeTransferFeeRate(storedRate, args) {
+  if (!CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES) return 0;
+  if (storedRate != null) return storedRate;
+  return resolvePracticeTransferFeeRatePolicy(args);
+}
+
 /**
  * 기공의뢰 수수료율 중 플랫폼 사용료 몫(하청 수수료 제외). 규칙은 resolvePracticeTransferFeeRate와 같다.
  * 사용료는 매출(플랫폼 수수료 저널), 하청 수수료는 원청 정산에 남는다.
  */
-export function resolvePracticeTransferPlatformFeeRate({
+export function resolvePracticeTransferPlatformFeeRatePolicy({
   matchingMode,
   payoutRates,
   subcontracted = false,
@@ -1037,6 +1057,17 @@ export function resolvePracticeTransferPlatformFeeRate({
   if (subcontracted) return platform;
   if (String(matchingMode || "").trim() === "auto") return 0;
   return platform;
+}
+
+export function resolvePracticeTransferPlatformFeeRate(args = {}) {
+  if (!CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES) return 0;
+  return resolvePracticeTransferPlatformFeeRatePolicy(args);
+}
+
+export function effectivePracticeTransferPlatformFeeRate(storedRate, args) {
+  if (!CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES) return 0;
+  if (storedRate != null) return storedRate;
+  return resolvePracticeTransferPlatformFeeRatePolicy(args);
 }
 
 /** 작업시작으로 박힌 플랫폼 사용료율. 없으면 null(스냅샷 전 또는 예전 건). */
@@ -1061,10 +1092,11 @@ export function resolvePracticeTransferFeeRateForViewer({
   aiTrainingConsent,
   billing,
 } = {}) {
+  if (!CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES) return 0;
   if (subcontracted && viewerIsPrimeContractor) return 0;
   const stored = snapshottedPracticeTransferFeeRate(billing);
   if (stored != null) return stored;
-  return resolvePracticeTransferFeeRate({
+  return resolvePracticeTransferFeeRatePolicy({
     matchingMode,
     payoutRates,
     subcontracted,

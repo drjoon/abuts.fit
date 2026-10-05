@@ -43,7 +43,6 @@ import {
   CalendarClock,
   HandCoins,
   Landmark,
-  Percent,
 } from "lucide-react";
 import {
   Table,
@@ -76,9 +75,7 @@ import {
   isLabPayoutReady,
   type LabPayoutAccountSnapshot,
 } from "@/shared/settlement/labPayoutBankbook";
-import { LabDirectPlatformFeeNotice } from "@/shared/settlement/LabDirectPlatformFeeNotice";
 import { useLabPayoutBankbookReminder } from "@/shared/settlement/useLabPayoutBankbookReminder";
-import { useLabTradingPartnerWindow } from "@/shared/lab/useLabTradingPartnerWindow";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
@@ -229,7 +226,6 @@ export const LabSettlementPayoutTab = () => {
   const { dialog: bankbookRemindDialog } = useLabPayoutBankbookReminder({
     forceOnMount: true,
   });
-  const { windowInfo: labFeeWindow } = useLabTradingPartnerWindow();
   const [payoutReady, setPayoutReady] = useState(true);
 
   const [view, setView] = useState<ViewMode>("all");
@@ -655,16 +651,6 @@ export const LabSettlementPayoutTab = () => {
                       부담합니다.
                       <br />
                       취소·롤백 시 해당 적립은 삭제됩니다.
-                    </p>
-                  </div>
-                </SettlementPolicySection>
-                <SettlementPolicySection title="플랫폼 사용료 · 하청 수수료">
-                  <div className="flex gap-2.5">
-                    <Percent className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p>
-                      <LabDirectPlatformFeeNotice
-                        feeRates={labFeeWindow?.feeRates}
-                      />
                     </p>
                   </div>
                 </SettlementPolicySection>

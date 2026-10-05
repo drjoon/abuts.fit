@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: 기공사업부 정산 규칙 — 플랫폼 사용료·하청 수수료 안내 삭제(미부과).
 // - 2026-10-05: 정산규칙 — 딜러·제조와 같은 칩·표. 어벗츠 순(개발운영 5% 차감).
 // - 2026-10-05: 정산규칙 — 커스텀어벗 분배 표(구간·누적, 개발운영 5%는 어벗츠 몫에서).
 // - 2026-09-27: 기공사업부 정산 규칙 — 플랫폼 사용료 2%(이벤트 면제 취소선)·어벗츠기공소 항상 면제.
@@ -56,7 +57,6 @@ import {
   SETTLEMENT_STAT_ROW_CLASS,
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
-import { LabDirectPlatformFeeNotice } from "@/shared/settlement/LabDirectPlatformFeeNotice";
 import { CustomAbutmentAbutsSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
 import {
   ABUTS_FIXED_SHARE_PCT,
@@ -930,9 +930,6 @@ export default function AdminPaymentsPage({
     periodRevenue: undefined,
   };
 
-  const subcontractFeePct = Math.round(
-    Number(labDivision?.subcontractFeeRate ?? 0.1) * 100,
-  );
   const salesmanUnpaidInclusive = roleFinanceRows.salesman.reduce(
     (sum, r) => sum + Number(r.wallet?.balanceAmountPeriod || 0),
     0,
@@ -1048,7 +1045,7 @@ export default function AdminPaymentsPage({
                 <TabsContent value="labDivision" className="mt-0 space-y-3">
                   <div className="grid gap-2 sm:grid-cols-2">
                     <SettlementPolicyFact label="면세">
-                      어벗츠기공소 기공료와 하청 수수료입니다.
+                      어벗츠기공소 기공료입니다.
                       <br />
                       계산서를 발행합니다.
                     </SettlementPolicyFact>
@@ -1056,14 +1053,6 @@ export default function AdminPaymentsPage({
                       배송비를 먼저 뺍니다.
                       <br />
                       기공사업부 · 영업팀 · 개발운영 · 어벗츠 비율입니다.
-                    </SettlementPolicyFact>
-                    <SettlementPolicyFact label="사용료">
-                      <LabDirectPlatformFeeNotice feeRates={labDivision} />
-                    </SettlementPolicyFact>
-                    <SettlementPolicyFact label="적용">
-                      어벗츠기공소 수행건은 항상 면제입니다.
-                      <br />
-                      요율은 작업시작 시점에 고정됩니다.
                     </SettlementPolicyFact>
                   </div>
                 </TabsContent>
@@ -1128,8 +1117,8 @@ export default function AdminPaymentsPage({
               value={dash ?? Number(labRevenue || 0)}
               selected={selectedAxis === "labDivision"}
               onClick={() => setSelectedAxis("labDivision")}
-              hint="원청 기공료 · 하청 매입 · 수수료"
-              hintTooltip="어벗츠기공소 원청 기공료(매출) − 하청 매입 = 분배 재원. 하청 수수료는 매입 공제분. 면세 계산서."
+              hint="원청 기공료 · 하청 매입"
+              hintTooltip="어벗츠기공소 원청 기공료(매출) − 하청 매입 = 분배 재원. 면세 계산서."
               footer={
                 isLoading ? null : (
                   <div className="space-y-0.5 text-[11px] leading-relaxed text-slate-500 sm:text-xs">
@@ -1139,9 +1128,7 @@ export default function AdminPaymentsPage({
                       매입{" "}
                       {formatWonWithUnit(
                         labDivision?.subcontractPurchaseAmount,
-                      )}{" "}
-                      · 수수료{" "}
-                      {formatWonWithUnit(labDivision?.subcontractFeeAmount)}
+                      )}
                     </div>
                     <ShareRateHint
                       parts={[
@@ -1363,7 +1350,7 @@ export default function AdminPaymentsPage({
                   <CreditSectionHeader
                     icon={FlaskConical}
                     title="기공사업부"
-                    description="기공료 · 하청 수수료 · 분배비율"
+                    description="기공료 · 분배비율"
                   />
                   <EquationRow
                     revenue={
@@ -1373,10 +1360,8 @@ export default function AdminPaymentsPage({
                         tone="primary"
                         hint={`기공료 ${formatWonWithUnit(
                           labDivision?.periodSettlementEarn,
-                        )} · 하청 ${formatWonWithUnit(
-                          labDivision?.subcontractFeeAmount,
                         )}`}
-                        hintTooltip={`${SETTLEMENT_EXEMPT_INVOICE_LABEL} · 하청 요율 ${subcontractFeePct}%`}
+                        hintTooltip={SETTLEMENT_EXEMPT_INVOICE_LABEL}
                         compact
                       />
                     }
@@ -1438,13 +1423,11 @@ export default function AdminPaymentsPage({
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <CreditStatTile
-                      label="하청 수수료"
+                      label="하청 매입"
                       value={formatWonWithUnit(
-                        labDivision?.subcontractFeeAmount,
+                        labDivision?.subcontractPurchaseAmount,
                       )}
-                      hint={`요율 ${subcontractFeePct}% · 해제 ${(
-                        labDivision?.subcontractFeeReleaseCount || 0
-                      ).toLocaleString()}건`}
+                      hint={`${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
                     />
                     <CreditStatTile
                       label="기공료 수취"

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: 플랫폼 사용료·하청 수수료 행 숨김(미부과).
 // - 2026-10-04: 적립(결제) 완료/보류 필터 — 셀렉트 대신 토글 버튼 2개(둘 다 켜면 보류↑·완료↓).
 // - 2026-10-04: 기공소 실사용 전환 행 — 치과명 / 기공소 지급. 보류·완료 구분선 유지.
 // - 2026-10-04: 기공소 내역 — 적립 보류/완료를 그룹으로 묶고 라벨 구분선 1개.
@@ -165,7 +166,7 @@ import {
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
 import { formatWon } from "@/shared/settlement/affiliateVat";
-import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from "@/shared/settlement/labPayoutBankbook";
+import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE, CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES } from "@/shared/settlement/labPayoutBankbook";
 import {
   Tooltip,
   TooltipContent,
@@ -2221,7 +2222,8 @@ function PracticeTransferLedgerFeeDialog({
   const quoteGross = detail ? quoteLabGrossWon(detail.quote) : 0;
   const receipt = Math.max(0, Math.round(Number(detail?.ledgerAmount || 0)));
   const earnReceiptDiffers = Boolean(
-    detail &&
+    CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES &&
+      detail &&
       isLabViewer &&
       !isPayout &&
       receipt > 0 &&
@@ -2248,7 +2250,7 @@ function PracticeTransferLedgerFeeDialog({
                 },
               ]
             : []),
-          ...(payoutFigures.fee > 0
+          ...(CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES && payoutFigures.fee > 0
             ? [
                 {
                   label: `수수료 ${formatFeeRatePct(

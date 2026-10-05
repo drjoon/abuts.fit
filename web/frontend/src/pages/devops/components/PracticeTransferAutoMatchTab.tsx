@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: 인증 카드에서 수수료 스트립 숨김(미부과). 파일은 유지.
 // - 2026-08-16: 인증 상태 단일 선택 · 뱃지 소형 rounded-md · 색감 정리.
 // - 2026-08-16: 인증 상태 5단 — 미신청/신청중/테스트중/인증/인증보류.
 // - 2026-08-16: 필터 상단 구분선·상태 뱃지 필터. 카드 테스트 드롭다운→상태 뱃지.
@@ -22,7 +23,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
-import { DevopsPlatformFeeTab } from "@/pages/devops/components/DevopsPlatformFeeTab";
+// 2026-10-05: 수수료 스트립 숨김. 재개 시 DevopsPlatformFeeTab 복구.
 import {
   ABUTS_LAB_CERT_STATUS_LABEL,
   type AbutsLabCertificationPublic,
@@ -441,7 +442,7 @@ export const PracticeTransferAutoMatchTab = () => {
           ) : null}
         </div>
 
-        <DevopsPlatformFeeTab />
+        {/* 2026-10-05: 플랫폼 사용료·하청 수수료 미부과. 재개 시 <DevopsPlatformFeeTab /> */}
 
         <div className="space-y-4 border-t border-slate-200/80 pt-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

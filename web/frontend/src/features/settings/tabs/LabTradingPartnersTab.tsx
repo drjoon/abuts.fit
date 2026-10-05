@@ -41,7 +41,6 @@ import { cn } from "@/shared/ui/cn";
 import { Separator } from "@/components/ui/separator";
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
 import { normalizeLabFeeMultiplier } from "@/shared/practice/labFeeSchedule";
-import { LabDirectPlatformFeeNotice } from "@/shared/settlement/LabDirectPlatformFeeNotice";
 
 type PartnerItem = {
   _id: string;
@@ -256,16 +255,6 @@ export const LabTradingPartnersTab = () => {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex gap-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-            <p className="text-[13px] leading-relaxed text-muted-foreground">
-              <LabDirectPlatformFeeNotice
-                feeRates={windowInfo?.feeRates}
-              />
-              <br />
-              거래 치과 소개는 아래에서 계속할 수 있습니다.
-            </p>
-          </div>
           <div className="flex gap-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
             <p className="text-[13px] leading-relaxed text-muted-foreground">

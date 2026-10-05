@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-10-05: 플랫폼 사용료·하청 수수료 표시 숨김(미부과).
 // - 2026-09-27: 장부 상세 — 자체 정산 요약이 있으면 열 소계·수수료 힌트를 숨긴다.
 // - 2026-09-26: 견적 ? 아이콘을 기공비 금액 바로 오른쪽으로.
 // - 2026-09-26: 기공소 「학습 이용」버튼·동의 모달 제거. 안내는 약관·개인정보.
@@ -108,6 +109,7 @@ import {
   LOWER_ARCH_TEETH,
   UPPER_ARCH_TEETH,
 } from "@/shared/practice/transferMemo";
+import { CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES } from "@/shared/settlement/labPayoutBankbook";
 
 function FeeQuoteHelpMark() {
   return (
@@ -1026,7 +1028,7 @@ export function PracticeTransferFeeEstimate({
       : confirmed
         ? String(confirmedFeeLabel || "").trim() || "확정 기공비"
         : "견적";
-  // 보철기공비 + 어벗 디자인+생산비 = 기공비. 지정·하청 수수료 차감 수령.
+  // 보철기공비 + 어벗 디자인+생산비 = 기공비. 수수료 차감 수령은 미부과 기간 동안 숨김.
   const computedLabNet = Math.max(
     0,
     amount - Math.round(amount * feeRateApplied),
@@ -1039,6 +1041,7 @@ export function PracticeTransferFeeEstimate({
     feeRateApplied > 0 && storedLabNet > 0 ? storedLabNet : computedLabNet;
   const platformFeeDisplay = Math.max(0, amount - labSettlementDisplay);
   const labSettlementDiffers =
+    CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES &&
     !hideLabSettlementHint &&
     isLab &&
     feeRateApplied > 0 &&
