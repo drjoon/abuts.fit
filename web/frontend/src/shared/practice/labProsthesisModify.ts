@@ -1191,12 +1191,14 @@ export function applyMarginRadius(
     const key = (((slot + k) % count) + count) % count;
     radii[key] = clamp((radii[key] ?? 1) + dr * w, MARGIN_RATIO_MIN, 2.85);
     if (hasDepth && depths) depths[key] = (depths[key] ?? 0) + dd * w;
-    if (worlds) {
+    if (worlds && point) {
       const row = worlds[key]!;
       worlds[key] = [row[0] + dx * w, row[1] + dy * w, row[2] + dz * w];
     }
   }
   if (worlds && point) worlds[slot] = [point[0], point[1], point[2]];
+  // 화면에는 worlds가 있으면 그걸 그린다. 월드 점 없이 비율만 바뀌면 점이 안 움직인다.
+  if (worlds && !point) worlds = undefined;
   return { ...edit, margin: { ...edit.margin, radii, depths, worlds, deleted: false } };
 }
 
