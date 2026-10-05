@@ -143,6 +143,7 @@ import {
   buildProsthesisEditLayer,
   connectorFrame,
   implantPose,
+  crownSideDir,
   screwHoleLine,
   type ScrewHoleLine,
   marginWorldPoints,
@@ -6876,7 +6877,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
 
   const toothAxisDir = (tooth: string) => {
     const axis = insertionAxesRef.current.find((row) => row.toothNumbers.includes(tooth));
-    return (axis?.dir ?? frameRef.current?.up ?? new THREE.Vector3(0, 0, 1)).clone().normalize();
+    // 크라운 쪽(교합 쪽)이 +. 삽입축은 치아 쪽을 향하므로 상악은 뒤집는다(`crownSideDir`).
+    return crownSideDir(tooth, axis?.dir, frameRef.current?.up ?? new THREE.Vector3(0, 0, 1));
   };
 
   const scanDistanceProbe: ScanDistanceProbe = (tooth, points, normals) => {

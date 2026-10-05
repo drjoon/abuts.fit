@@ -183,6 +183,26 @@ const CUTBACK_SELECT_RGB: [number, number, number] = [0.16, 0.86, 0.78];
 const INNER_GAP = 0x7dd3fc;
 const INNER_SEAL = 0xfacc15;
 
+/**
+ * 크라운 쪽(교합 쪽) 단위 방향. 크라운 꼭대기·마진 깊이·지대치 높이가 모두 이 방향을 +로 잰다.
+ * 삽입축 화살표는 치아(뿌리) 쪽을 향하고 `frame.up`은 위턱 쪽이라, 상악에서는 둘 다 크라운 반대다.
+ * 그대로 쓰면 상악 크라운이 뒤집혀 치은 안쪽에 생긴다. 악의 교합 방향과 반대면 뒤집는다.
+ * `dir`이 없으면 악의 교합 방향. 치아 번호를 못 읽으면 `dir ?? up`을 그대로 쓴다.
+ */
+export function crownSideDir(
+  tooth: string,
+  dir: THREE.Vector3 | null | undefined,
+  up: THREE.Vector3,
+): THREE.Vector3 {
+  const digits = fdiToothDigits(tooth);
+  const fallback = (dir && dir.lengthSq() > 1e-8 ? dir : up).clone().normalize();
+  if (!/^[1-4][1-8]$/.test(digits)) return fallback;
+  const occlusal = (/^[12]/.test(digits) ? up.clone().negate() : up.clone()).normalize();
+  if (!dir || dir.lengthSq() < 1e-8) return occlusal;
+  const out = dir.clone().normalize();
+  return out.dot(occlusal) < 0 ? out.negate() : out;
+}
+
 export function basisQuaternion(normal: THREE.Vector3, rightHint: THREE.Vector3) {
   const y = normal.clone().normalize();
   const x = rightHint.clone().addScaledVector(y, -rightHint.dot(y));
@@ -1181,6 +1201,10 @@ export function crownPose(
   right: THREE.Vector3,
   edit: ToothDesignEdit,
   unitToMm = 1,
+  /** 크라운 꼭대기가 닿아야 할 최소 높이(치아 중심에서 삽입축 방향, 월드 단위). 지대치보다 낮으면 묻힌다. */
+  minApex: number | null = null,
+  /** 열린 테두리가 덮어야 할 마진 최대 반지름(월드 단위). 마진보다 좁으면 크라운이 지대치보다 작다. */
+  minRadius: number | null = null,
 ): CrownPose {
   const unit = unitToMm > 0 ? unitToMm : 1;
   const frame = basisQuaternion(normal, right);
@@ -1194,13 +1218,26 @@ export function crownPose(
       ),
     );
   const scale = crownScale(edit);
-  const radius = place.radius * 0.86 * scale;
+  // 구 테두리 반지름은 적도의 약 0.97배다.
+  const radius = Math.max(
+    place.radius * 0.86 * scale,
+    minRadius != null && minRadius > 0 ? minRadius / 0.95 : 0,
+  );
   const baseHeight = place.radius * 0.62 * scale * (1 + edit.refine.cusp * 0.14);
   const baseWidth = radius;
   const baseDepth = radius * (1 + edit.refine.ridge * 0.12);
-  const height = baseHeight * stretch[1];
-  const lift =
+  let height = baseHeight * stretch[1];
+  let lift =
     edit.pontic.on && edit.pontic.base === "sanitary" ? height * 0.4 : height * 0.12;
+  if (minApex != null && minApex > 0) {
+    // 열린 테두리(마진) 높이는 그대로 두고 위쪽만 키운다. 교두 높이로 구 꼭대기 위 약 0.15h가 더 올라온다.
+    const rim = Math.cos(Math.PI * crownTheta(edit));
+    const need = (minApex - lift - rim * height) / (1 - rim + 0.15);
+    if (need > height) {
+      lift += -rim * (need - height);
+      height = need;
+    }
+  }
   const position = place.center
     .clone()
     .addScaledVector(normal.clone().normalize(), lift)
@@ -1217,6 +1254,28 @@ export function crownPose(
     baseHeight,
     baseDepth,
   };
+}
+
+/**
+ * 지대치 스캔 점의 삽입축 방향 최고 높이(치아 중심 기준, 월드 단위). 잡음에 흔들리지 않게 상위 1%를 버린다.
+ * 지대치 스캔이 없으면 null.
+ */
+function prepTopAlong(
+  prep: ScanCloud | null | undefined,
+  center: THREE.Vector3,
+  normal: THREE.Vector3,
+): number | null {
+  if (!prep || prep.points.length < 3) return null;
+  const axial: number[] = [];
+  for (let i = 0; i < prep.points.length; i += 3) {
+    axial.push(
+      (prep.points[i]! - center.x) * normal.x +
+        (prep.points[i + 1]! - center.y) * normal.y +
+        (prep.points[i + 2]! - center.z) * normal.z,
+    );
+  }
+  axial.sort((a, b) => a - b);
+  return axial[Math.min(axial.length - 1, Math.floor(axial.length * 0.99))] ?? null;
 }
 
 export const HOLE_THROUGH_ISSUE = "홀이 보철 안쪽과 바깥쪽을 모두 지나야 합니다.";
@@ -1612,11 +1671,8 @@ export function buildProsthesisEditLayer(args: {
   const up = args.frame?.up ?? new THREE.Vector3(0, 0, 1);
   const right = args.frame?.right ?? new THREE.Vector3(1, 0, 0);
   const byTooth = new Map(args.placements.map((row) => [row.toothNumber, row]));
-  const toothNormal = (tooth: string) => {
-    const normal = args.insertionByTooth.get(tooth)?.clone() ?? up.clone();
-    if (normal.lengthSq() < 1e-8) normal.copy(up);
-    return normal.normalize();
-  };
+  const toothNormal = (tooth: string) =>
+    crownSideDir(tooth, args.insertionByTooth.get(tooth), up);
   const discsByTooth = discPlanes({ ...args, byTooth, right, toothNormal, unit });
 
   for (const [tooth, edit] of Object.entries(args.spec.edits)) {
@@ -1813,7 +1869,23 @@ export function buildProsthesisEditLayer(args: {
       continue;
     }
 
-    const crownAt = crownPose(place, normal, right, edit, unit);
+    // 지대치보다 낮으면 크라운이 스캔 아래에 묻힌다. 지대치 최고점 + 최소 두께 위로 꼭대기를 맞춘다.
+    // 홀·임플란트·폰틱은 `screwHoleLine`이 스캔 없이 같은 자세를 쓰므로 제외한다.
+    const prepTop =
+      !edit.pontic.on && !edit.implant.on && !edit.hole.on && !edit.margin.deleted
+        ? prepTopAlong(args.adaptScan?.(tooth)?.prep, place.center, normal)
+        : null;
+    const crownAt = crownPose(
+      place,
+      normal,
+      right,
+      edit,
+      unit,
+      prepTop != null ? prepTop + edit.refine.minThicknessMm / unit : null,
+      prepTop != null && edit.margin.radii.length > 0
+        ? place.radius * 0.78 * Math.max(...edit.margin.radii) + edit.margin.offsetMm / unit
+        : null,
+    );
     const { width, height, depth } = crownAt;
     const crownQuat = crownAt.quat;
     const holeEditing = args.spec.tool === "hole" && active;
@@ -2185,9 +2257,11 @@ export function connectorFrame(args: {
   const span = axis.length();
   if (span < 1e-4) return null;
   axis.multiplyScalar(1 / span);
-  const up = (args.insertionByTooth.get(args.link.from)?.clone() ?? new THREE.Vector3())
-    .add(args.insertionByTooth.get(args.link.to) ?? new THREE.Vector3());
-  if (up.lengthSq() < 1e-8) up.copy(args.frame?.up ?? new THREE.Vector3(0, 0, 1));
+  const frameUp = args.frame?.up ?? new THREE.Vector3(0, 0, 1);
+  const up = crownSideDir(args.link.from, args.insertionByTooth.get(args.link.from), frameUp).add(
+    crownSideDir(args.link.to, args.insertionByTooth.get(args.link.to), frameUp),
+  );
+  if (up.lengthSq() < 1e-8) up.copy(frameUp);
   up.addScaledVector(axis, -up.dot(axis));
   if (up.lengthSq() < 1e-8) {
     up.set(0, 0, 1).addScaledVector(axis, -axis.z);
