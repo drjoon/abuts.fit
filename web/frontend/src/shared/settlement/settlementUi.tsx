@@ -280,7 +280,7 @@ export function SettlementPolicyDialog({
           contentClassName,
         )}
       >
-        <DialogHeader className="shrink-0 border-b border-slate-100 px-6 pb-4 pt-6">
+        <DialogHeader className="shrink-0 border-b border-slate-100 px-4 pb-4 pt-6 sm:px-6">
           <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
             {title}
           </DialogTitle>
@@ -290,7 +290,7 @@ export function SettlementPolicyDialog({
             </DialogDescription>
           ) : null}
         </DialogHeader>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pt-5 pb-8">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-5 pb-8 sm:px-6">
           {children}
         </div>
       </DialogContent>

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: 제조 구간 = 어벗츠 40%를 뺀 뒤 딜러 구간을 뺀 나머지.
 // - 2026-10-05: 커스텀어벗 의뢰비 분배 — 딜러 1천~5천 누진 10~20% · 어벗츠 40% 또는 제조 44%.
 export const CUSTOM_ABUTMENT_SALE_WON = 13_000;
 export const ABUTS_FIXED_SHARE_PCT = 40;
@@ -6,11 +7,13 @@ export const MANUFACTURER_FIXED_SHARE_PCT = 44;
 /** 의뢰비 대비. 어벗츠 몫에서 차감. */
 export const DEVOPS_FROM_ABUTS_SHARE_PCT = 5;
 
-export const DEALER_MARGINAL_BANDS: ReadonlyArray<{
+export type SplitMarginalBand = {
   fromQty: number;
   toQty: number | null;
   pct: number;
-}> = [
+};
+
+export const DEALER_MARGINAL_BANDS: ReadonlyArray<SplitMarginalBand> = [
   { fromQty: 1, toQty: 1_000, pct: 10 },
   { fromQty: 1_001, toQty: 2_000, pct: 12 },
   { fromQty: 2_001, toQty: 3_000, pct: 14 },
@@ -18,6 +21,22 @@ export const DEALER_MARGINAL_BANDS: ReadonlyArray<{
   { fromQty: 4_001, toQty: 5_000, pct: 18 },
   { fromQty: 5_001, toQty: null, pct: 20 },
 ];
+
+export function manufacturerMarginalPctForDealerPct(dealerPct: number): number {
+  return 100 - ABUTS_FIXED_SHARE_PCT - dealerPct;
+}
+
+export const MANUFACTURER_MARGINAL_BANDS: ReadonlyArray<SplitMarginalBand> =
+  DEALER_MARGINAL_BANDS.map((band) => ({
+    ...band,
+    pct: manufacturerMarginalPctForDealerPct(band.pct),
+  }));
+
+export const MANUFACTURER_FIXED_BANDS: ReadonlyArray<SplitMarginalBand> =
+  DEALER_MARGINAL_BANDS.map((band) => ({
+    ...band,
+    pct: MANUFACTURER_FIXED_SHARE_PCT,
+  }));
 
 export const CUSTOM_ABUTMENT_SPLIT_QTY_ROWS: readonly number[] = [
   1_000, 2_000, 3_000, 4_000, 5_000, 6_000, 7_000, 8_000, 9_000, 10_000, 11_000,
@@ -33,6 +52,8 @@ export type CustomAbutmentSplitRow = {
   dealerBandWon: number;
   manufacturerWon: number;
   manufacturerEffectivePct: number;
+  manufacturerMarginalPct: number;
+  manufacturerBandWon: number;
   abutsGrossWon: number;
   abutsGrossEffectivePct: number;
   devopsWon: number;
@@ -71,6 +92,7 @@ export function dealerMarginalBandForQty(qty: number) {
   const unitWon = Math.round((CUSTOM_ABUTMENT_SALE_WON * found.pct) / 100);
   return {
     pct: found.pct,
+    bandQty,
     bandWon: bandQty * unitWon,
   };
 }
@@ -86,6 +108,7 @@ function withDevopsFromAbuts(
   manufacturerWon: number,
   dealerWon: number,
   abutsGrossWon: number,
+  manufacturerMarginalPct: number,
 ): CustomAbutmentSplitRow {
   const saleWon = qty * CUSTOM_ABUTMENT_SALE_WON;
   const devopsWon = Math.round(
@@ -93,6 +116,9 @@ function withDevopsFromAbuts(
   );
   const abutsNetWon = abutsGrossWon - devopsWon;
   const band = dealerMarginalBandForQty(qty);
+  const manufacturerUnitWon = Math.round(
+    (CUSTOM_ABUTMENT_SALE_WON * manufacturerMarginalPct) / 100,
+  );
   return {
     qty,
     saleWon,
@@ -102,6 +128,8 @@ function withDevopsFromAbuts(
     dealerBandWon: band.bandWon,
     manufacturerWon,
     manufacturerEffectivePct: pctOfSale(manufacturerWon, qty),
+    manufacturerMarginalPct,
+    manufacturerBandWon: band.bandQty * manufacturerUnitWon,
     abutsGrossWon,
     abutsGrossEffectivePct: pctOfSale(abutsGrossWon, qty),
     devopsWon,
@@ -116,7 +144,14 @@ export function splitAbutsFixedRow(qty: number): CustomAbutmentSplitRow {
   const dealerWon = dealerWonForQty(qty);
   const abutsGrossWon = Math.round((saleWon * ABUTS_FIXED_SHARE_PCT) / 100);
   const manufacturerWon = saleWon - abutsGrossWon - dealerWon;
-  return withDevopsFromAbuts(qty, manufacturerWon, dealerWon, abutsGrossWon);
+  const band = dealerMarginalBandForQty(qty);
+  return withDevopsFromAbuts(
+    qty,
+    manufacturerWon,
+    dealerWon,
+    abutsGrossWon,
+    manufacturerMarginalPctForDealerPct(band.pct),
+  );
 }
 
 /** 제조 44% 고정. 나머지 56%를 딜러 누진·어벗츠. */
@@ -127,7 +162,13 @@ export function splitManufacturerFixedRow(qty: number): CustomAbutmentSplitRow {
     (saleWon * MANUFACTURER_FIXED_SHARE_PCT) / 100,
   );
   const abutsGrossWon = saleWon - manufacturerWon - dealerWon;
-  return withDevopsFromAbuts(qty, manufacturerWon, dealerWon, abutsGrossWon);
+  return withDevopsFromAbuts(
+    qty,
+    manufacturerWon,
+    dealerWon,
+    abutsGrossWon,
+    MANUFACTURER_FIXED_SHARE_PCT,
+  );
 }
 
 export function splitAbutsFixedRows(

@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
+// - 2026-10-05: 정산규칙 — 딜러와 같은 칩·표·팩트. 탭 제조 44% / 어벗츠 40%.
 // - 2026-10-05: 정산규칙 — 의뢰비 1.3만 분배 표(제조 몫만, 어벗츠 40%·제조 44%).
 // - 2026-09-20: 정산규칙 — 리메이크도 일반 매입가(판매가의 50%).
 // - 2026-09-06: 미정산=부가세 포함가. 힌트「포함가·세금계산서」(지급 시 +VAT 제거).
@@ -49,12 +50,6 @@ import { Input } from "@/components/ui/input";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
-  BookOpenText,
-  CalendarClock,
-  HandCoins,
-  ReceiptText,
-} from "lucide-react";
-import {
   Table,
   TableBody,
   TableCell,
@@ -66,11 +61,8 @@ import { cn } from "@/shared/ui/cn";
 import {
   SETTLEMENT_TAXABLE_INVOICE_LABEL,
   SETTLEMENT_VAT_PAYOUT_NOTICE,
-  SETTLEMENT_VAT_POLICY,
   formatWon,
   formatWonWithUnit,
-  splitInclusiveVat,
-  vatPctLabel,
 } from "@/shared/settlement/affiliateVat";
 import {
   CREDIT_SETTINGS_DEFAULTS,
@@ -78,14 +70,14 @@ import {
 } from "@/hooks/useSystemSettings";
 import {
   SettlementPolicyDialog,
-  SettlementPolicySection,
+  SettlementPolicyFact,
   SettlementSortIcon,
   SETTLEMENT_STAT_CARD_WIDTH_CLASS,
   SETTLEMENT_STAT_ROW_CLASS,
   SettlementStatCard,
   SettlementTableFrame,
 } from "@/shared/settlement/settlementUi";
-import { CustomAbutmentManufacturerSplitTables } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
+import { CustomAbutmentManufacturerSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
 import {
   ManufacturerDailyLedgerDetailDialog,
   type ManufacturerDailyLedgerDetail,
@@ -944,75 +936,35 @@ export const ManufacturerPaymentPage = () => {
               />
               <SettlementPolicyDialog
                 title="제조사 정산 규칙"
-                description="커스텀어벗 의뢰비 분배 · 과세 · 세금계산서"
-                contentClassName="sm:max-w-4xl"
+                description="커스텀어벗"
+                contentClassName="sm:max-w-3xl"
               >
-                <SettlementPolicySection title="커스텀어벗 생산 몫">
-                  <CustomAbutmentManufacturerSplitTables />
-                </SettlementPolicySection>
-                <SettlementPolicySection title="가공 승인 적립 (하청)">
-                  <div className="flex gap-2.5">
-                    <HandCoins className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p>
-                      위 표의 제조 몫(부가세 포함)을 어벗 1개 기준으로 적립합니다.
+                <div className="space-y-4">
+                  <CustomAbutmentManufacturerSplitTable />
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <SettlementPolicyFact label="적립">
+                      가공 승인 때 어벗 1개 기준입니다.
                       <br />
-                      리메이크도 같습니다.
+                      리메이크·무료 크레딧도 같습니다.
+                    </SettlementPolicyFact>
+                    <SettlementPolicyFact label="배송">
+                      1박스당{" "}
+                      {formatWonWithUnit(manufacturerShippingUnitPrice)}입니다.
                       <br />
-                      무료 크레딧 결제건도 약정 단가를 지급합니다.
-                    </p>
+                      이 표에는 없습니다.
+                    </SettlementPolicyFact>
+                    <SettlementPolicyFact label="세금계산서">
+                      지급은 잔액 그대로입니다.
+                      <br />
+                      ÷1.1로 공급가·세액을 나눕니다.
+                    </SettlementPolicyFact>
+                    <SettlementPolicyFact label="지급">
+                      KST 매달 말일에 일괄 지급합니다.
+                      <br />
+                      그 전까지는 미정산으로 쌓입니다.
+                    </SettlementPolicyFact>
                   </div>
-                </SettlementPolicySection>
-                <SettlementPolicySection title="배송비 적립 (하청)">
-                  <div className="flex gap-2.5">
-                    <ReceiptText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p>
-                      발송 패키지 1박스당 매입가{" "}
-                      {formatWonWithUnit(manufacturerShippingUnitPrice)}
-                      (부가세 포함, 공급가{" "}
-                      {formatWonWithUnit(
-                        splitInclusiveVat(manufacturerShippingUnitPrice).supply,
-                      )}
-                      ). 리메이크·무료 크레딧 결제건을 포함해 약정 단가를
-                      지급합니다.
-                      고객(치과·기공소)→어벗츠 배송비는 면세 수취 후, 제조사에는
-                      배송비(어벗츠→제조사)로 지급합니다.
-                    </p>
-                  </div>
-                </SettlementPolicySection>
-                <SettlementPolicySection title="월 지급">
-                  <div className="flex gap-2.5">
-                    <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p>
-                      KST 매달 말일 기준으로 지난달 원장을 일괄 지급합니다. 지급
-                      전까지 적립액은 미정산 잔액으로 쌓입니다.
-                    </p>
-                  </div>
-                </SettlementPolicySection>
-                <SettlementPolicySection title="부가세 · 세금계산서">
-                  <div className="flex gap-2.5">
-                    <ReceiptText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p>{SETTLEMENT_VAT_POLICY.manufacturerEarn}</p>
-                  </div>
-                </SettlementPolicySection>
-                <SettlementPolicySection title="롤백">
-                  <div className="flex gap-2.5">
-                    <BookOpenText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p>
-                      가공·포장 롤백 시 기존 소비/적립 커밋 내역은 삭제형
-                      롤백으로 정리합니다.
-                    </p>
-                  </div>
-                </SettlementPolicySection>
-                <SettlementPolicySection title="일별 정산 집계">
-                  <div className="flex gap-2.5">
-                    <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p>
-                      원장 기준 KST 일자별 실시간 집계. 장부·미정산은 부가세
-                      포함가이며 지급 시 재가산 없이 잔액을 입금하고{" "}
-                      {SETTLEMENT_TAXABLE_INVOICE_LABEL}를 수취합니다.
-                    </p>
-                  </div>
-                </SettlementPolicySection>
+                </div>
               </SettlementPolicyDialog>
             </div>
 
