@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: FAQ — `/`·기공소와 같은 좌측 제목 + 카드 아코디언.
 // - 2026-10-05: 통폐합 후 섹션 배경 — 대상 파랑, 화면 하양, 커스텀어벗 파랑, 크레딧 하양, FAQ 하양.
 // - 2026-10-05: extras·audiences 섹션 제거. glance·stories·pipeline·credit·FAQ만 유지.
 // - 2026-10-05: 커스텀어벗 플로우·하나의 크레딧 섹션을 기공소 오퍼에서 이동. HOW IT WORKS 4단계는 플로우로 대체.
@@ -568,6 +569,7 @@ export function PlatformCreditSection({
   );
 }
 
+/** FAQ — `/`·기공소와 같은 아코디언. */
 export function PlatformFaqSection({
   faq,
 }: {
@@ -579,29 +581,29 @@ export function PlatformFaqSection({
       data-rail-label="FAQ"
       className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
     >
-      <div className={cn(landingContent, "max-w-3xl")}>
-        <LandingReveal className="text-center">
+      <div
+        className={cn(
+          landingContent,
+          "grid gap-6 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:gap-10",
+        )}
+      >
+        <LandingReveal>
           <SectionEyebrow>{faq.eyebrow}</SectionEyebrow>
           <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>{faq.heading}</h2>
         </LandingReveal>
-        <LandingReveal delay={80}>
-          <Accordion type="single" collapsible className="mt-8">
+        <LandingReveal delay={120}>
+          <Accordion
+            type="single"
+            collapsible
+            className={cn(SKY.card, "px-4 sm:px-5")}
+          >
             {faq.items.map((item) => (
-              <AccordionItem
-                key={item.q}
-                value={item.q}
-                className="border-sky-100"
-              >
+              <AccordionItem key={item.q} value={item.q} className="border-sky-100">
                 <AccordionTrigger className="py-4 text-left text-[15px] font-semibold text-[#0b2a5c] hover:no-underline sm:text-base">
                   {item.q}
                 </AccordionTrigger>
-                <AccordionContent className={cn("pb-4", TYPO.body)}>
-                  {item.a.map((line, index) => (
-                    <span key={line}>
-                      {index > 0 ? <br /> : null}
-                      {line}
-                    </span>
-                  ))}
+                <AccordionContent className="pb-4">
+                  <Lines lines={item.a} className={TYPO.body} />
                 </AccordionContent>
               </AccordionItem>
             ))}
