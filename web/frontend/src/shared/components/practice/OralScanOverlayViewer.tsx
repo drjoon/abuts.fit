@@ -3448,6 +3448,20 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       }
       if (roots.length === 0) return null;
       const hits = raycaster.intersectObjects(roots, true);
+      // 마진 점은 depthTest 없이 앞에 그려지므로, 광선이 먼저 맞은 선·크라운보다 점을 우선한다.
+      if (designEditRef.current?.tool === "margin" && designEditRef.current.marginEdit) {
+        const handle = hits.find((hit) => readEditHit(hit.object)?.kind === "margin");
+        const tag = handle ? readEditHit(handle.object) : null;
+        if (handle && tag) {
+          return {
+            tag,
+            point: handle.point.clone(),
+            marginPoints: undefined,
+            object: handle.object,
+            face: null,
+          };
+        }
+      }
       // 홀 핸들은 비쳐 보이는 크라운 안쪽에 있어도 먼저 잡는다.
       if (designEditRef.current?.tool === "hole") {
         for (const kind of ["hole-tip", "hole"] as const) {
@@ -3482,6 +3496,34 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         };
       }
       return null;
+    };
+
+    /** 화면에 보이는 마진 점. 뒤에 가려져도 그린 자리로 잡는다. */
+    const screenMarginHandle = (event: PointerEvent) => {
+      const spec = designEditRef.current;
+      const layer = editLayerRef.current;
+      if (!spec?.marginEdit || spec.tool !== "margin" || !spec.showMargin || !layer) return null;
+      const rect = renderer.domElement.getBoundingClientRect();
+      const projected = new THREE.Vector3();
+      let best: { tooth: string; index: number } | null = null;
+      let bestDist = 16;
+      layer.updateWorldMatrix(true, true);
+      layer.traverse((child) => {
+        const tag = readEditHit(child);
+        if (tag?.kind !== "margin") return;
+        if (spec.activeTooth && tag.tooth !== spec.activeTooth) return;
+        child.getWorldPosition(projected);
+        projected.project(camera);
+        if (projected.z < -1 || projected.z > 1) return;
+        const sx = rect.left + ((projected.x + 1) / 2) * rect.width;
+        const sy = rect.top + ((1 - projected.y) / 2) * rect.height;
+        const dist = Math.hypot(event.clientX - sx, event.clientY - sy);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = { tooth: tag.tooth, index: tag.index };
+        }
+      });
+      return best;
     };
 
     /** 크라운 외면 로컬 점·면 법선. 내면·홀 벽·인레이는 훅을 받지 않는다. */
@@ -3590,8 +3632,9 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           return;
         }
       }
+      const handle = screenMarginHandle(event);
       const hit = pickEdit();
-      if (!hit) return;
+      if (!handle && !hit) return;
       const tool = designEditRef.current.tool;
       const brush = designEditRef.current.brush;
       const send = onDesignGestureRef.current;
@@ -3608,7 +3651,15 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         return false;
       };
 
-      if (hit.tag.kind === "insertion" && tool === "insertion" && event.button === 0) {
+      if (handle && event.button === 2) {
+        if (!secondary(() => send({ type: "margin-remove", tooth: handle.tooth, index: handle.index }))) {
+          return;
+        }
+      } else if (handle && event.button === 0) {
+        drag = { kind: "margin", tooth: handle.tooth, index: handle.index, at: 0 };
+      } else if (!hit) {
+        return;
+      } else if (hit.tag.kind === "insertion" && tool === "insertion" && event.button === 0) {
         drag = { kind: "insertion", key: hit.tag.key, at: 0 };
       } else if (
         (hit.tag.kind === "margin" || hit.tag.kind === "margin-line") &&
@@ -3724,6 +3775,14 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
 
       event.preventDefault();
       event.stopPropagation();
+      if (drag?.kind === "margin") {
+        try {
+          renderer.domElement.setPointerCapture(event.pointerId);
+        } catch {
+          // noop
+        }
+        event.stopImmediatePropagation();
+      }
       lastPointer = { x: event.clientX, y: event.clientY };
     };
 
@@ -3856,6 +3915,13 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
 
     const endEditDrag = (event: PointerEvent) => {
       if (!drag) return;
+      if (drag.kind === "margin") {
+        try {
+          renderer.domElement.releasePointerCapture(event.pointerId);
+        } catch {
+          // noop
+        }
+      }
       if (drag.kind === "insertion") {
         const aimedKey = drag.key;
         const aimed = insertionAxesRef.current.find((row) => row.key === aimedKey);
