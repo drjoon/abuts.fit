@@ -9,6 +9,8 @@ alwaysApply: false
 ## Policy
 
 - Mouse-hover tooltips open after **600ms** (`delayDuration={600}`).
+- Open **on hover only**. Click/focus must not keep the tooltip open.
+- Default **`disableHoverableContent`**. Interactive panels (fee/ledger) pass `disableHoverableContent={false}` plus `pointer-events-auto` on content.
 - Do not force instant tooltips (`delayDuration={0}`) or other custom delays.
 - Portal layer is **`z-[400]`** (above floating transfer panel `z-[300]` and nested modals `z-[320]`). Do not lower with `z-[200]` overrides.
 

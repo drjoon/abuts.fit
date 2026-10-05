@@ -1,4 +1,5 @@
 // 기공소 AI 보철 — 상악·하악·바이트를 저장된 좌표 그대로 겹쳐 본다.
+// - 2026-10-05: 마진 점을 끄는 동안 치아번호 뱃지가 클릭을 가로채지 않는다.
 // - 2026-10-01: onPaintSpace — 페인트 표시를 스캔에 붙인다. 화면을 돌리면 같이 돈다.
 // - 2026-09-26: 지대치는 불투명, 대합·바이트는 투명. 기본 뷰는 화면에 맞춘다.
 // - 2026-09-26: 교합면·협측·설측, 대합 접촉 색, 삽입 방향 언더컷.
@@ -5596,6 +5597,10 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     if (manualRef.current.arch) return;
     const frame = frameRef.current;
     const used = new Set<string>();
+    const spec = designEditRef.current;
+    const grabMargin =
+      spec?.tool === "margin" && Boolean(spec.marginEdit || spec.marginReset);
+    const badgePointer = grabMargin ? "pointer-events-none" : "pointer-events-auto";
     const placeOnRing = (button: HTMLButtonElement, parent: HTMLElement) => {
       button.type = "button";
       button.addEventListener("pointerdown", (event) => {
@@ -5615,7 +5620,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         );
         if (rows.length === 0 || !axis.origin) continue;
         const wrap = document.createElement("div");
-        wrap.className = "pointer-events-auto flex items-center justify-center";
+        wrap.className = `${badgePointer} flex items-center justify-center`;
         for (const badge of rows) {
           const button = document.createElement("button");
           button.textContent = badge.label ?? badge.toothNumber;
@@ -5662,8 +5667,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       const button = document.createElement("button");
       button.textContent = badge.label ?? badge.toothNumber;
       button.className = badge.active
-        ? "pointer-events-auto rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground shadow-sm"
-        : "pointer-events-auto rounded-md border border-border bg-background/95 px-2 py-1 text-xs font-semibold text-foreground shadow-sm";
+        ? `${badgePointer} rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground shadow-sm`
+        : `${badgePointer} rounded-md border border-border bg-background/95 px-2 py-1 text-xs font-semibold text-foreground shadow-sm`;
       button.type = "button";
       button.addEventListener("pointerdown", (event) => {
         event.stopPropagation();
@@ -5693,7 +5698,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       button.title = `${chip.from}-${chip.to} 커넥터`;
       button.setAttribute("aria-label", `${chip.from}-${chip.to} 커넥터 편집`);
       button.className = cn(
-        "pointer-events-auto flex h-5 w-5 items-center justify-center rounded-full border shadow-sm",
+        `${badgePointer} flex h-5 w-5 items-center justify-center rounded-full border shadow-sm`,
         chip.active
           ? "border-primary bg-primary text-primary-foreground"
           : chip.weak
@@ -5731,7 +5736,14 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
 
   useEffect(() => {
     syncBadgesRef.current();
-  }, [badgeKey, loadVersion, showInsertionAxis]);
+  }, [
+    badgeKey,
+    loadVersion,
+    showInsertionAxis,
+    designEdit?.tool,
+    designEdit?.marginEdit,
+    designEdit?.marginReset,
+  ]);
 
   syncInsertionMarkerRef.current = () => {
     const scene = sceneRef.current;

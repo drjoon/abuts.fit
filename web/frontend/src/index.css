@@ -528,6 +528,12 @@ body:has(.guide-tour-root) [data-guide-tour-satellite] {
   z-index: 430 !important;
 }
 
+/* 툴팁 래퍼가 뷰포트만큼 넓어도 아래 클릭(3D 마진 점 등)을 가로채지 않는다.
+   견적처럼 내용에 pointer-events-auto를 준 툴팁만 내용 위에서 받는다. */
+[data-radix-popper-content-wrapper]:has([role="tooltip"]) {
+  pointer-events: none;
+}
+
 /* 투어 중 중첩 모달(커스텀어벗 설정 등) — 블러/홀(z-420) 위에 올려 하단 잘림 방지 */
 body:has(.guide-tour-root) .guide-tour-nested-dialog {
   z-index: 425 !important;

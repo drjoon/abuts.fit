@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - .cursor/rules/tooltip-delay.mdc
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-10-05: 마우스 호버에서만 연다. 클릭·포커스로 남지 않게 해서 3D 화면을 가리지 않는다.
 // - 2026-08-28: z-[400] — 플로팅 의뢰상세(z-300)·중첩 모달(z-320) 위. z-200이면 견적 툴팁이 패널에 가려짐.
 // - 2026-08-16: w-max + 대칭 px — 절대배치 툴팁이 max-w만으로 뷰포트만큼 넓어지지 않게.
 import * as React from "react";
@@ -22,9 +23,84 @@ const TooltipProvider = ({
   />
 );
 
-const Tooltip = TooltipPrimitive.Root;
+type TooltipHoverGate = {
+  hovering: React.MutableRefObject<boolean>;
+  justClicked: React.MutableRefObject<boolean>;
+  dismiss: () => void;
+};
 
-const TooltipTrigger = TooltipPrimitive.Trigger;
+const TooltipHoverContext = React.createContext<TooltipHoverGate | null>(null);
+
+const Tooltip = ({
+  children,
+  open: openProp,
+  defaultOpen,
+  onOpenChange,
+  disableHoverableContent = true,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Root>) => {
+  const hovering = React.useRef(false);
+  const justClicked = React.useRef(false);
+  const [uncontrolled, setUncontrolled] = React.useState(Boolean(defaultOpen));
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : uncontrolled;
+  const handleOpenChange = (next: boolean) => {
+    if (next && (!hovering.current || justClicked.current)) return;
+    if (!controlled) setUncontrolled(next);
+    onOpenChange?.(next);
+  };
+  const dismissRef = React.useRef(() => {});
+  dismissRef.current = () => {
+    justClicked.current = true;
+    if (!controlled) setUncontrolled(false);
+    onOpenChange?.(false);
+  };
+  const gate = React.useMemo(
+    () => ({ hovering, justClicked, dismiss: () => dismissRef.current() }),
+    [],
+  );
+  return (
+    <TooltipHoverContext.Provider value={gate}>
+      <TooltipPrimitive.Root
+        {...props}
+        disableHoverableContent={disableHoverableContent}
+        open={open}
+        onOpenChange={handleOpenChange}
+      >
+        {children}
+      </TooltipPrimitive.Root>
+    </TooltipHoverContext.Provider>
+  );
+};
+
+const TooltipTrigger = React.forwardRef<
+  React.ElementRef<typeof TooltipPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Trigger>
+>(({ onPointerEnter, onPointerLeave, onPointerDown, ...props }, ref) => {
+  const gate = React.useContext(TooltipHoverContext);
+  return (
+    <TooltipPrimitive.Trigger
+      ref={ref}
+      {...props}
+      onPointerEnter={(event) => {
+        if (gate) gate.hovering.current = true;
+        onPointerEnter?.(event);
+      }}
+      onPointerLeave={(event) => {
+        if (gate) {
+          gate.hovering.current = false;
+          gate.justClicked.current = false;
+        }
+        onPointerLeave?.(event);
+      }}
+      onPointerDown={(event) => {
+        gate?.dismiss();
+        onPointerDown?.(event);
+      }}
+    />
+  );
+});
+TooltipTrigger.displayName = TooltipPrimitive.Trigger.displayName;
 
 const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
@@ -35,7 +111,7 @@ const TooltipContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "z-[400] w-max max-w-[min(100vw-2rem,20rem)] overflow-hidden rounded-md border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+        "pointer-events-none z-[400] w-max max-w-[min(100vw-2rem,20rem)] overflow-hidden rounded-md border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
         className,
       )}
       {...props}

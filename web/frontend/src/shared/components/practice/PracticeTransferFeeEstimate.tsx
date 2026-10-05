@@ -1512,7 +1512,7 @@ export function PracticeTransferFeeEstimate({
         >
           {labFeeUnset ? (
             <span className="inline-flex min-w-0 items-center gap-1">
-              <Tooltip onOpenChange={onBreakdownTooltipOpenChange}>
+              <Tooltip disableHoverableContent={false} onOpenChange={onBreakdownTooltipOpenChange}>
                 <TooltipTrigger asChild>
                   <div
                     className={cn(
@@ -1551,7 +1551,7 @@ export function PracticeTransferFeeEstimate({
             >
               {!finalFeeOnly ? (
                 <span className="inline-flex items-center gap-1">
-                  <Tooltip onOpenChange={onBreakdownTooltipOpenChange}>
+                  <Tooltip disableHoverableContent={false} onOpenChange={onBreakdownTooltipOpenChange}>
                     <TooltipTrigger asChild>
                       <span
                         className={cn(
@@ -1585,6 +1585,7 @@ export function PracticeTransferFeeEstimate({
               {showFinalFeeBar && allStagesTooltipPanel ? (
                 <span className="inline-flex items-center gap-1">
                   <Tooltip
+                    disableHoverableContent={false}
                     onOpenChange={
                       finalFeeOnly ? onBreakdownTooltipOpenChange : undefined
                     }
@@ -1647,7 +1648,7 @@ export function PracticeTransferFeeEstimate({
               )}
             >
               <span className="inline-flex items-center gap-1">
-                <Tooltip onOpenChange={onBreakdownTooltipOpenChange}>
+                <Tooltip disableHoverableContent={false} onOpenChange={onBreakdownTooltipOpenChange}>
                   <TooltipTrigger asChild>
                     <span
                       className={cn(

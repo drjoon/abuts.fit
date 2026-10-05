@@ -1245,7 +1245,7 @@ function PracticeTransferAmountHover({
 
   return (
     <TooltipProvider delayDuration={120}>
-      <Tooltip>
+      <Tooltip disableHoverableContent={false}>
         <TooltipTrigger asChild>
           <button
             type="button"
@@ -1310,7 +1310,7 @@ function LedgerPartsAmountHover({
 
   return (
     <TooltipProvider delayDuration={120}>
-      <Tooltip>
+      <Tooltip disableHoverableContent={false}>
         <TooltipTrigger asChild>
           <button
             type="button"

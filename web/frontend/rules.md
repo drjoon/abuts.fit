@@ -42,6 +42,7 @@ Notes:
 - 글꼴 확대 단축키 (앱 전체): Alt+− 축소 · Alt+=(Alt++) 확대 · Alt+0 기본(80~175%). html 인라인 `--ui-text-zoom`만 바꾸고 localStorage에 저장한다. 판별은 `KeyboardEvent.code`(Mac Alt 특수문자 회피). 화면별 확대율(AI 디자인)은 열려 있는 동안 capture 단계에서 먼저 처리하고 닫히면 `applyStoredUiTextZoom()`으로 복원한다. `--ui-text-zoom`을 `removeProperty`로 지우지 말 것. SSOT: `src/shared/ui/uiTextZoom.ts`, `src/shared/ui/UiTextZoomShortcuts.tsx`.
 - Tooltip (강제, 앱 전체):
   - 마우스 호버 툴팁은 **0.6초 지연** 후 표시 (`delayDuration={600}`).
+  - **호버에서만** 연다. 버튼 클릭·포커스로 툴팁이 남지 않게 한다.
   - 가로폭은 **내용에 맞춤** (`w-max`), 좌우 여백 대칭 (`px-3`). 기본 상한
     `max-w-[min(100vw-2rem,20rem)]` — 표·긴 안내는 호출부에서만 `max-w` 완화.
   - 포털 z-index **`z-[400]`** (Popover/Dropdown/Select와 동일 밴드). 플로팅
