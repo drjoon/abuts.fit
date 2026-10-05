@@ -1,3 +1,4 @@
+// - 2026-10-05: 딜러십 정책 — 커스텀어벗 10~20% 누적 구간. 심플웨이 지급 없음.
 // - 2026-09-27: 딜러십 정책 — 심플웨이 10% · 커스텀어벗 20% · 기공 제외 · 소개 코드 리셋.
 // - 2026-09-26: 기공소 정책 — 수수료 제목·협력·하청 문장.
 // - 2026-09-26: 기공소 정책 — 플랫폼 사용료·영업 수수료 안내를 단축.
@@ -80,8 +81,7 @@ import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from '@/shared/settlement/labPa
 import { LabDirectPlatformFeeNotice } from '@/shared/settlement/LabDirectPlatformFeeNotice';
 import { useLabTradingPartnerWindow } from '@/shared/lab/useLabTradingPartnerWindow';
 import {
-  DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT,
-  DEALERSHIP_SIMPLEWAY_COMMISSION_PCT,
+  DEALERSHIP_CUMULATIVE_BAND_LINE,
   REFERRAL_OWNERSHIP_RESET_ANYONE_LINE,
   REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
 } from '@/shared/sales/dealershipPolicyCopy';
@@ -402,7 +402,7 @@ export const PricingPolicyDialog = ({
     variant === 'devops'
       ? '유료의뢰비 정산 비율과 화면 안내를 확인하세요.'
       : variant === 'salesman'
-        ? `심플웨이 ${DEALERSHIP_SIMPLEWAY_COMMISSION_PCT}% · 커스텀어벗 ${DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT}% · 90일 무주문이면 소개 코드 리셋.`
+        ? `커스텀어벗 ${DEALERSHIP_CUMULATIVE_BAND_LINE} · 90일 무주문이면 소개 코드 리셋.`
         : variant === 'requestor'
           ? '소개한 치과·기공소에 안내할 단가와 출고 기준입니다.'
           : isLab
@@ -430,19 +430,13 @@ export const PricingPolicyDialog = ({
             <div className='space-y-3'>
               <PolicySection title='영업 수수료'>
                 <p>
-                  심플웨이 매출액 대비 수수료는{' '}
+                  커스텀어벗은{' '}
                   <span className='font-semibold text-slate-900'>
-                    {DEALERSHIP_SIMPLEWAY_COMMISSION_PCT}%
+                    {DEALERSHIP_CUMULATIVE_BAND_LINE}
                   </span>
                   입니다.
                   <br />
-                  커스텀어벗 매출액 대비 수수료는{' '}
-                  <span className='font-semibold text-slate-900'>
-                    {DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT}%
-                  </span>
-                  입니다.
-                  <br />
-                  배송비·월정액은 수수료 산정에서 빠집니다.
+                  기공·스토어·배송비·월정액은 수수료 산정에서 빠집니다.
                   <br />
                   {REFERRAL_OWNERSHIP_RESET_POLICY_LINE}
                   <br />
@@ -450,7 +444,7 @@ export const PricingPolicyDialog = ({
                 </p>
                 <BulletList
                   items={[
-                    '대상: 심플웨이(스토어) · 커스텀어벗(런칭 1.3만 / 정상 1.5만)',
+                    '대상: 커스텀어벗(런칭 1.3만 / 정상 1.5만)',
                     '소개 관계: 의뢰자 가입 시 입력한 딜러 코드',
                   ]}
                 />

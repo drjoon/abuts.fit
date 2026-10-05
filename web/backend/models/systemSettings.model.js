@@ -64,7 +64,7 @@ const systemSettingsSchema = new mongoose.Schema(
       salesmanSharePercent: { type: Number, default: 20 },
       devopsSharePercent: { type: Number, default: 5 },
       abutsSharePercent: { type: Number, default: 25 },
-      // 스토어 판매 분배(판매가 대비). 심플웨이 딜러 10%. 커스텀어벗 딜러와 독립.
+      // 스토어 판매 분배(판매가 대비). 딜러 지급 없음.
       storeManufacturerSharePercent: { type: Number, default: 50 },
       storeSalesmanSharePercent: { type: Number, default: 10 },
       storeDevopsSharePercent: { type: Number, default: 5 },
@@ -74,7 +74,7 @@ const systemSettingsSchema = new mongoose.Schema(
       labSalesTeamSharePercent: { type: Number, default: 20 },
       labDevopsSharePercent: { type: Number, default: 5 },
       labAbutsSharePercent: { type: Number, default: 25 },
-      // 딜러십 영업 수수료. 커스텀어벗 신규 유치는 20%. 심플웨이는 storeSalesmanSharePercent(10%).
+      // 딜러십 영업 수수료. 커스텀어벗은 1천 개 단위 10~20% 누진. 스토어(심플웨이) 지급 없음.
       // 기공·배송비·월정액 제외. 15% 인하 예약은 쓰지 않는다.
       dealershipActiveCommissionRate: {
         type: Number,

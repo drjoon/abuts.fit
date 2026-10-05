@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-05: 딜러 표 — 커스텀어벗만. 제목 아래 설명 제거. 구간 칩·표만.
+// - 2026-10-05: 딜러 표 — 스토어·커스텀어벗 공통 10~20% 누적 구간.
 // - 2026-10-05: 딜러 표 — 구간 분배비·누적 분배비(세금 구간) 분리 설명.
 import type { ReactNode } from "react";
 import {
@@ -17,26 +19,35 @@ import {
 function SplitTable({
   columns,
   rows,
+  framed = false,
 }: {
   columns: ReadonlyArray<{
     key: string;
     label: string;
     align?: "left" | "right";
+    emphasize?: boolean;
     cell: (row: CustomAbutmentSplitRow) => ReactNode;
   }>;
   rows: CustomAbutmentSplitRow[];
+  framed?: boolean;
 }) {
   return (
-    <div className="overflow-x-auto px-1.5 py-1.5">
+    <div
+      className={
+        framed
+          ? "overflow-x-auto rounded-xl border border-slate-200/80 bg-white px-1.5 py-1.5 shadow-sm"
+          : "overflow-x-auto px-1.5 py-1.5"
+      }
+    >
       <table className="w-full min-w-[22rem] border-collapse text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-xs text-slate-500">
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={`whitespace-nowrap px-2 py-2 font-medium ${
+                className={`whitespace-nowrap px-2.5 py-2 font-medium ${
                   col.align === "left" ? "text-left" : "text-right"
-                }`}
+                } ${col.emphasize ? "text-slate-800" : ""}`}
               >
                 {col.label}
               </th>
@@ -52,8 +63,12 @@ function SplitTable({
               {columns.map((col) => (
                 <td
                   key={col.key}
-                  className={`whitespace-nowrap px-2 py-1.5 tabular-nums ${
+                  className={`whitespace-nowrap px-2.5 py-1.5 tabular-nums ${
                     col.align === "left" ? "text-left" : "text-right"
+                  } ${
+                    col.emphasize
+                      ? "font-semibold text-slate-900"
+                      : "text-slate-700"
                   }`}
                 >
                   {col.cell(row)}
@@ -67,17 +82,41 @@ function SplitTable({
   );
 }
 
+function bandQtyLabel(band: (typeof DEALER_MARGINAL_BANDS)[number]) {
+  return band.toQty
+    ? `${band.fromQty.toLocaleString("ko-KR")}~${band.toQty.toLocaleString("ko-KR")}개`
+    : `${band.fromQty.toLocaleString("ko-KR")}개~`;
+}
+
 function DealerBandList() {
   return (
     <ul className="grid gap-1 sm:grid-cols-2">
       {DEALER_MARGINAL_BANDS.map((band) => (
         <li key={band.fromQty}>
-          {band.toQty
-            ? `${band.fromQty.toLocaleString("ko-KR")}~${band.toQty.toLocaleString("ko-KR")}개 ${band.pct}%`
-            : `${band.fromQty.toLocaleString("ko-KR")}개 초과 ${band.pct}%`}
+          {bandQtyLabel(band)} {band.pct}%
         </li>
       ))}
     </ul>
+  );
+}
+
+function DealerBandPills() {
+  return (
+    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+      {DEALER_MARGINAL_BANDS.map((band) => (
+        <div
+          key={band.fromQty}
+          className="flex items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5 shadow-sm"
+        >
+          <span className="text-[11px] leading-tight text-slate-500">
+            {bandQtyLabel(band)}
+          </span>
+          <span className="text-sm font-semibold tabular-nums tracking-tight text-slate-900">
+            {band.pct}%
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -91,34 +130,10 @@ const qtyColumn = {
 export function CustomAbutmentDealerSplitTable() {
   const rows = splitAbutsFixedRows();
   return (
-    <div className="space-y-3">
-      <p>
-        커스텀어벗 의뢰비 {CUSTOM_ABUTMENT_SALE_WON.toLocaleString("ko-KR")}원
-        대비입니다.
-        <br />
-        소득세처럼 구간마다 요율이 달라지고, 앞 구간은 낮은 요율을 유지합니다.
-        <br />
-        금액은 부가세 포함입니다.
-      </p>
-      <div className="space-y-1.5">
-        <h4 className="text-sm font-semibold text-slate-800">구간 분배비</h4>
-        <p>
-          그 구간에 들어간 개수에만 적용하는 요율입니다.
-          <br />
-          3,000개면 1~1,000개는 10%, 1,001~2,000개는 12%, 2,001~3,000개만
-          14%입니다.
-        </p>
-        <DealerBandList />
-      </div>
-      <div className="space-y-1.5">
-        <h4 className="text-sm font-semibold text-slate-800">누적 분배비</h4>
-        <p>
-          그달 전체 의뢰비 합 대비 딜러 지급 합의 비율입니다.
-          <br />
-          실효세율과 같습니다. 3,000개면 구간 마지막은 14%여도 누적은 12%입니다.
-        </p>
-      </div>
+    <div className="space-y-3 rounded-2xl bg-slate-50 px-3 py-3">
+      <DealerBandPills />
       <SplitTable
+        framed
         rows={rows}
         columns={[
           qtyColumn,
@@ -135,15 +150,20 @@ export function CustomAbutmentDealerSplitTable() {
           {
             key: "effectivePct",
             label: "누적 분배비",
+            emphasize: true,
             cell: (row) => formatSharePct(row.dealerEffectivePct),
           },
           {
             key: "dealerWon",
             label: "누적 지급",
+            emphasize: true,
             cell: (row) => formatManwon(row.dealerWon),
           },
         ]}
       />
+      <p className="px-0.5 text-xs leading-relaxed text-slate-500">
+        의뢰비 {CUSTOM_ABUTMENT_SALE_WON.toLocaleString("ko-KR")}원 기준입니다.
+      </p>
     </div>
   );
 }

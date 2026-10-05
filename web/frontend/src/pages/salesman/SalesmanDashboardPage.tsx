@@ -1,7 +1,7 @@
 /**
  * 딜러(salesman) 대시보드 — 수수료·소개 코드.
  *
- * 딜러십 영업 수수료: 심플웨이 매출액 대비 10% · 커스텀어벗 매출액 대비 20% · 기공 제외.
+ * 딜러십 영업 수수료: 커스텀어벗 10~20% 누적 구간 · 기공·스토어 제외.
  * 90일 무주문이면 소개 코드 리셋. 누구든 다시 영업 가능.
  */
 
@@ -29,8 +29,7 @@ import {
 import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import {
-  DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_LINE,
-  DEALERSHIP_SIMPLEWAY_COMMISSION_LINE,
+  DEALERSHIP_CUMULATIVE_BAND_LINE,
   REFERRAL_OWNERSHIP_RESET_ANYONE_SHORT,
   REFERRAL_OWNERSHIP_RESET_POLICY_SHORT,
 } from "@/shared/sales/dealershipPolicyCopy";
@@ -245,7 +244,6 @@ export const SalesmanDashboardPage = () => {
               onClick={() => openLedger("unpaid")}
               footer={
                 <ProductCommissionLines
-                  simpleway={kindStats.total.simplewayCommissionAmount}
                   customAbutment={kindStats.total.customAbutmentCommissionAmount}
                   className="text-[11px] text-muted-foreground sm:text-xs"
                 />
@@ -295,11 +293,10 @@ export const SalesmanDashboardPage = () => {
                 primary={`${practiceTileCount.toLocaleString()}개소`}
                 secondary={
                   <ProductCommissionLines
-                    simpleway={kindStats.practice.simplewayCommissionAmount}
                     customAbutment={kindStats.practice.customAbutmentCommissionAmount}
                   />
                 }
-                tip="내가 소개한 치과의 심플웨이·커스텀어벗 수수료"
+                tip="내가 소개한 치과의 커스텀어벗 수수료"
               />
               <SummaryTile
                 icon={Factory}
@@ -307,11 +304,10 @@ export const SalesmanDashboardPage = () => {
                 primary={`${labTileCount.toLocaleString()}개소`}
                 secondary={
                   <ProductCommissionLines
-                    simpleway={kindStats.lab.simplewayCommissionAmount}
                     customAbutment={kindStats.lab.customAbutmentCommissionAmount}
                   />
                 }
-                tip="내가 소개한 기공소의 심플웨이·커스텀어벗 수수료"
+                tip="내가 소개한 기공소의 커스텀어벗 수수료"
               />
               <SummaryTile
                 icon={Layers}
@@ -319,11 +315,10 @@ export const SalesmanDashboardPage = () => {
                 primary={`${totalTileCount.toLocaleString()}개소`}
                 secondary={
                   <ProductCommissionLines
-                    simpleway={kindStats.total.simplewayCommissionAmount}
                     customAbutment={kindStats.total.customAbutmentCommissionAmount}
                   />
                 }
-                tip="소개한 치과·기공소의 심플웨이·커스텀어벗 수수료 합계"
+                tip="소개한 치과·기공소의 커스텀어벗 수수료 합계"
               />
             </div>
           </div>
@@ -387,11 +382,10 @@ function DealershipTermsCard() {
             영업 수수료
           </h2>
         </div>
-        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-3">
-          <TermsItem title="심플웨이" body={DEALERSHIP_SIMPLEWAY_COMMISSION_LINE} />
+        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2">
           <TermsItem
             title="커스텀어벗"
-            body={DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_LINE}
+            body={DEALERSHIP_CUMULATIVE_BAND_LINE}
           />
           <TermsItem
             icon={RefreshCw}

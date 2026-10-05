@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: 딜러 정산 규칙 모달 — 커스텀어벗만. 중복 안내 제거 · 칩·카드.
 // - 2026-10-05: 딜러 정산 규칙 — 커스텀어벗 구간·누적 분배비.
 // - 2026-09-27: 정산 카드 하단 — 20%·15%·10% 대신 심플웨이 10% · 커스텀어벗 20%.
 // - 2026-09-27: 딜러 정산 규칙 — 심플웨이 10% · 커스텀어벗 20% · 기공 제외 · 소개 코드 리셋.
@@ -44,13 +45,13 @@ import {
   splitInclusiveVat,
 } from "@/shared/settlement/affiliateVat";
 import {
-  DEALERSHIP_SIMPLEWAY_COMMISSION_PCT,
+  DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD,
   REFERRAL_OWNERSHIP_INACTIVE_DAYS,
   REFERRAL_OWNERSHIP_RESET_ANYONE_LINE,
-  REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
 } from "@/shared/sales/dealershipPolicyCopy";
 import {
   SettlementPolicyDialog,
+  SettlementPolicyFact,
   SettlementPolicySection,
   SETTLEMENT_STAT_CARD_WIDTH_CLASS,
   SETTLEMENT_STAT_ROW_CLASS,
@@ -95,7 +96,6 @@ export function CommissionPaymentsPage({
     () => (Array.isArray(data?.organizations) ? data.organizations : []),
     [data?.organizations],
   );
-  const simplewayCommission = Number(overview?.simplewayCommissionAmount || 0);
   const customAbutmentCommission = Number(
     overview?.customAbutmentCommissionAmount || 0,
   );
@@ -123,7 +123,6 @@ export function CommissionPaymentsPage({
             footer={
               isSalesman ? (
                 <ProductCommissionLines
-                  simpleway={simplewayCommission}
                   customAbutment={customAbutmentCommission}
                   className="text-[11px] text-muted-foreground sm:text-xs"
                 />
@@ -140,7 +139,6 @@ export function CommissionPaymentsPage({
             footer={
               isSalesman ? (
                 <ProductCommissionLines
-                  simpleway={0}
                   customAbutment={0}
                   className="text-[11px] text-muted-foreground sm:text-xs"
                 />
@@ -188,58 +186,65 @@ export function CommissionPaymentsPage({
                 title={`${title} 규칙`}
                 description={
                   isSalesman
-                    ? `심플웨이 매출액 대비 ${DEALERSHIP_SIMPLEWAY_COMMISSION_PCT}% · 커스텀어벗 구간·누적 분배 · ${REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면 소개 코드 리셋 · 부가세 포함·세금계산서`
+                    ? DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD
                     : "잔여 분배 부가세 포함 · 세금계산서"
                 }
-                contentClassName={isSalesman ? "sm:max-w-4xl" : undefined}
+                contentClassName={isSalesman ? "sm:max-w-3xl" : undefined}
               >
                 {isSalesman ? (
-                  <SettlementPolicySection title="커스텀어벗 분배">
+                  <div className="space-y-4">
                     <CustomAbutmentDealerSplitTable />
-                  </SettlementPolicySection>
-                ) : null}
-                <SettlementPolicySection title="수수료율">
-                  <div className="flex gap-2.5">
-                    <Percent className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p>
-                      {isSalesman ? (
-                        <>
-                          심플웨이 매출액 대비 수수료는{" "}
-                          {DEALERSHIP_SIMPLEWAY_COMMISSION_PCT}%입니다.
-                          <br />
-                          배송비·월정액은 수수료 산정에서 빠집니다.
-                          <br />
-                          {REFERRAL_OWNERSHIP_RESET_POLICY_LINE}
-                          <br />
-                          {REFERRAL_OWNERSHIP_RESET_ANYONE_LINE}
-                          <br />
-                          정산은 사업자 단위이며 매월{" "}
-                          {Number(data?.payoutDayOfMonth || 1)}일에 지급합니다.
-                        </>
-                      ) : (
-                        <>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <SettlementPolicyFact label="제외">
+                        기공 · 스토어 · 배송비 · 월정액
+                      </SettlementPolicyFact>
+                      <SettlementPolicyFact label="소개 코드">
+                        {REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면
+                        리셋됩니다.
+                        <br />
+                        {REFERRAL_OWNERSHIP_RESET_ANYONE_LINE}
+                      </SettlementPolicyFact>
+                      <SettlementPolicyFact label="세금계산서">
+                        지급은 잔액 그대로입니다.
+                        <br />
+                        ÷1.1로 공급가·세액을 나눕니다.
+                      </SettlementPolicyFact>
+                      <SettlementPolicyFact label="지급">
+                        사업자 단위 · 매월{" "}
+                        {Number(data?.payoutDayOfMonth || 1)}일
+                        <br />
+                        무료 의뢰·배송은 지급 대상이 아닙니다.
+                      </SettlementPolicyFact>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <SettlementPolicySection title="수수료율">
+                      <div className="flex gap-2.5">
+                        <Percent className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                        <p>
                           잔여 분배 {ratePct}%. 정산은 사업자(
                           `businessAnchorId`) 단위이며 매월{" "}
                           {Number(data?.payoutDayOfMonth || 1)}일에 지급합니다.
-                        </>
-                      )}
-                    </p>
-                  </div>
-                </SettlementPolicySection>
-                <SettlementPolicySection title="부가세 · 세금계산서">
-                  <div className="flex gap-2.5">
-                    <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p>{payoutPolicy}</p>
-                  </div>
-                </SettlementPolicySection>
-                <SettlementPolicySection title="무료 수익">
-                  <div className="flex gap-2.5">
-                    <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p>
-                      무료 의뢰·배송 수익은 확인용이며 지급 대상이 아닙니다.
-                    </p>
-                  </div>
-                </SettlementPolicySection>
+                        </p>
+                      </div>
+                    </SettlementPolicySection>
+                    <SettlementPolicySection title="부가세 · 세금계산서">
+                      <div className="flex gap-2.5">
+                        <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                        <p>{payoutPolicy}</p>
+                      </div>
+                    </SettlementPolicySection>
+                    <SettlementPolicySection title="무료 수익">
+                      <div className="flex gap-2.5">
+                        <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                        <p>
+                          무료 의뢰·배송 수익은 확인용이며 지급 대상이 아닙니다.
+                        </p>
+                      </div>
+                    </SettlementPolicySection>
+                  </>
+                )}
               </SettlementPolicyDialog>
             </div>
 
@@ -302,7 +307,6 @@ export function CommissionPaymentsPage({
                           </div>
                           {isSalesman ? (
                             <ProductCommissionLines
-                              simpleway={Number(org.monthSimplewayCommissionAmount || 0)}
                               customAbutment={Number(
                                 org.monthCustomAbutmentCommissionAmount ??
                                   org.monthCommissionAmount ??

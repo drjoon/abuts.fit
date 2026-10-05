@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-05: SettlementPolicyFact(정산 규칙 모달 짧은 카드).
 // - 2026-10-05: SettlementPolicyDialog contentClassName(넓은 분배 표).
 // - 2026-10-04: 요약 카드 폭 16rem→11.5rem. 최소폭 미만일 때만 가로 스크롤.
 // - 2026-08-31: SettlementStatCard value — ReactNode(실사용/데모 2줄 잔액).
@@ -228,6 +229,23 @@ export function SettlementPolicySection({
         {children}
       </div>
     </section>
+  );
+}
+
+export function SettlementPolicyFact({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 shadow-sm">
+      <div className="text-[11px] font-semibold tracking-tight text-slate-900">
+        {label}
+      </div>
+      <p className="mt-1 text-xs leading-relaxed text-slate-600">{children}</p>
+    </div>
   );
 }
 
