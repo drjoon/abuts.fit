@@ -7,6 +7,8 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/rules.md
 // change-log:
+// - 2026-10-07: 정책 모달 폭 축소·fact 3장 세로 배치.
+// - 2026-10-07: 정책 모달 — 가격 카드 + fact 그리드. 문구 단축.
 // - 2026-10-07: 정책 fact — 기본가격·사용량할인·가입이벤트·소개그룹.
 // - 2026-10-07: 단가 ₩1.5만원 취소선. 상단 4카드 1행. 할인정책은 소개그룹 헤더.
 // - 2026-10-07: 가입링크·소개링크. 단가 취소선. 할인 카드 제거·기공소/그룹 할인 표시.
@@ -28,7 +30,6 @@ import { formatAbutsManwon } from "@/shared/pricing/abutsAbutmentService";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { cn } from "@/shared/ui/cn";
 import {
-  GUIDE_FACT_GRID_CLASS,
   SETTLEMENT_STAT_ROW_CLASS,
   SettlementPolicyDialog,
   SettlementPolicyFact,
@@ -88,6 +89,42 @@ function UnitPriceValue({
     );
   }
   return formatManwonWithWonPrefix(unitPrice);
+}
+
+/** 정책 모달 가격 행 — PricingPolicyDialog PriceRow와 동일 톤. */
+function PolicyPriceRow({
+  label,
+  value,
+  strikeValue,
+  note,
+}: {
+  label: string;
+  value: string;
+  strikeValue?: string;
+  note?: string;
+}) {
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="min-w-0 text-sm text-slate-600">{label}</div>
+        <div className="flex shrink-0 items-baseline gap-1.5 tabular-nums">
+          {strikeValue ? (
+            <span className="text-base font-normal text-slate-400 line-through">
+              {strikeValue}
+            </span>
+          ) : null}
+          <div className="text-xl font-semibold tracking-tight text-slate-900">
+            {value}
+          </div>
+        </div>
+      </div>
+      {note ? (
+        <div className="text-right text-xs tabular-nums text-slate-500">
+          {note}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export default function LabDiscountGroupPage() {
@@ -233,39 +270,42 @@ export default function LabDiscountGroupPage() {
       title="할인그룹 정책"
       description="커스텀어벗 건당 의뢰비"
       triggerLabel="할인 정책"
+      contentClassName="sm:max-w-md"
     >
-      <div className={GUIDE_FACT_GRID_CLASS}>
-        <SettlementPolicyFact label="기본 가격">
-          {formatLabDiscountWon(LAB_DISCOUNT_BASE_UNIT_PRICE)}원
-          <br />
-          <span className="mt-1.5 inline-block text-[11px] font-semibold text-slate-900">
-            오늘 가격
-          </span>
-          <br />
-          <span className="tabular-nums text-slate-400 line-through">
-            {formatLabDiscountWon(LAB_DISCOUNT_BASE_UNIT_PRICE)}원
-          </span>
-          {" → "}
-          {formatLabDiscountWon(LAB_DISCOUNT_INTRO_UNIT_PRICE)}원
-          <br />
-          ({LAB_DISCOUNT_INTRO_DAYS}일 가입이벤트)
-        </SettlementPolicyFact>
-        <SettlementPolicyFact label="사용량 할인">
-          지난 달 합산 1건당 {LAB_DISCOUNT_PER_ORDER}원
-          <br />
-          {maxOrdersForFloor}건 이상 의뢰시 최대{" "}
-          {formatLabDiscountWon(LAB_DISCOUNT_MAX_AMOUNT)}원 할인
-        </SettlementPolicyFact>
-        <SettlementPolicyFact label="가입 이벤트">
-          가입 후 {LAB_DISCOUNT_INTRO_DAYS}일간{" "}
-          {formatLabDiscountWon(LAB_DISCOUNT_INTRO_UNIT_PRICE)}원으로 고정
-          <br />
-          {LAB_DISCOUNT_INTRO_DAYS + 1}일부터는 지난 30일 주문량으로 오늘 가격
-          결정
-        </SettlementPolicyFact>
-        <SettlementPolicyFact label="소개 그룹">
-          소개한 기공소와 주문량을 합산해 할인합니다.
-        </SettlementPolicyFact>
+      <div className="space-y-3">
+        <section className="rounded-2xl border border-slate-200/80 bg-white px-4 py-4 shadow-sm ring-1 ring-slate-900/[0.02]">
+          <div className="space-y-3">
+            <PolicyPriceRow
+              label="기본 가격"
+              value={`${formatLabDiscountWon(LAB_DISCOUNT_BASE_UNIT_PRICE)}원`}
+            />
+            <div className="h-px bg-slate-100" />
+            <PolicyPriceRow
+              label="오늘 가격"
+              strikeValue={`${formatLabDiscountWon(LAB_DISCOUNT_BASE_UNIT_PRICE)}원`}
+              value={`${formatLabDiscountWon(LAB_DISCOUNT_INTRO_UNIT_PRICE)}원`}
+              note={`${LAB_DISCOUNT_INTRO_DAYS}일 가입이벤트`}
+            />
+          </div>
+        </section>
+
+        <div className="grid gap-2.5">
+          <SettlementPolicyFact label="사용량 할인">
+            지난 30일 합산 1건당 {LAB_DISCOUNT_PER_ORDER}원
+            <br />
+            {maxOrdersForFloor}건 이상이면 최대{" "}
+            {formatLabDiscountWon(LAB_DISCOUNT_MAX_AMOUNT)}원
+          </SettlementPolicyFact>
+          <SettlementPolicyFact label="가입 이벤트">
+            {LAB_DISCOUNT_INTRO_DAYS}일간{" "}
+            {formatLabDiscountWon(LAB_DISCOUNT_INTRO_UNIT_PRICE)}원 고정
+            <br />
+            {LAB_DISCOUNT_INTRO_DAYS + 1}일부터 지난 30일 주문량으로 결정
+          </SettlementPolicyFact>
+          <SettlementPolicyFact label="소개 그룹">
+            소개한 기공소 주문량을 합산해 할인합니다.
+          </SettlementPolicyFact>
+        </div>
       </div>
     </SettlementPolicyDialog>
   );
