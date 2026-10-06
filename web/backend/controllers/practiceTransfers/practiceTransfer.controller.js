@@ -20,6 +20,7 @@ import {
   adjustPracticeTransferHold,
   buildFeeQuotesForTransferDocs,
   buildPracticeTransferQuote,
+  countPracticeMonthlyRemakeTransfers,
   feeQuoteFromBillingDoc,
   holdPracticeTransferCredits,
   holdPracticeTransferProsthesisFollowUpCredits,
@@ -102,7 +103,7 @@ import {
 import {
   loadAutoMatchBudgetCatalog,
 } from "../../utils/practiceTransferAutoMatchBudget.js";
-import { resolveLabPracticeFeeMultiplier, isLabFeeScheduleConfigured, isLabFeeScheduleReadyToCharge, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks, toothWorksNeedLabFee, isLabPracticeSpecialSupplySnapshotCaptured, stripCustomAbutmentFromToothWorks, buildRemakeToothWorksFromSelectedParts, countCustomAbutmentWorks, readLabFeeFreeRemakeYears } from "../../utils/labFeeSchedule.js";
+import { resolveLabPracticeFeeMultiplier, isLabFeeScheduleConfigured, isLabFeeScheduleReadyToCharge, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks, toothWorksNeedLabFee, isLabPracticeSpecialSupplySnapshotCaptured, stripCustomAbutmentFromToothWorks, buildRemakeToothWorksFromSelectedParts, countCustomAbutmentWorks } from "../../utils/labFeeSchedule.js";
 import {
   normalizeRushFeeMultiplier,
   parseOrderYmdFromMemo,
@@ -133,7 +134,7 @@ import {
 import { toKstYmd } from "../requests/utils.js";
 import {
   isWithinRemakePolicyWindow,
-  isWithinLabFreeRemakeWindow,
+  resolveMonthlyRemakePricing,
   REMAKE_POLICY_WINDOW_DAYS,
 } from "../../utils/remakePricingPolicy.js";
 import {
@@ -3439,7 +3440,7 @@ export async function createPracticeTransfer(req, res) {
       isRemakeRequest &&
       remakeSourceMongoIdRaw &&
       Types.ObjectId.isValid(remakeSourceMongoIdRaw);
-    const [starBand, arrivalPolicy, practiceLabRatings, remakeSourceDoc, targetLabFeeDoc, practiceAnchorDoc] =
+    const [starBand, arrivalPolicy, practiceLabRatings, remakeSourceDoc, practiceAnchorDoc] =
       await Promise.all([
         loadStarBandForPracticeRequest({
           practiceAnchorId,
@@ -3461,11 +3462,6 @@ export async function createPracticeTransfer(req, res) {
                 .lean(),
             )
           : Promise.resolve(null),
-        targetLabAnchorId && Types.ObjectId.isValid(String(targetLabAnchorId))
-          ? BusinessAnchor.findById(targetLabAnchorId)
-              .select({ labFeeSchedule: 1 })
-              .lean()
-          : Promise.resolve(null),
         practiceAnchorId && Types.ObjectId.isValid(String(practiceAnchorId))
           ? BusinessAnchor.findById(practiceAnchorId)
               .select({ requireLabProsthesisUpload: 1 })
@@ -3479,19 +3475,17 @@ export async function createPracticeTransfer(req, res) {
         message: "리메이크 원본 의뢰를 찾지 못했습니다.",
       });
     }
-    // 원의뢰 연결 시 기공소 freeRemakeYears 창만 remake pricing. 미연결(플랫폼 이전)은 플래그 그대로.
-    const labFreeRemakeYears = readLabFeeFreeRemakeYears(
-      targetLabFeeDoc?.labFeeSchedule,
-    );
-    const remakePricing = remakeSourceDoc
-      ? isWithinLabFreeRemakeWindow(
-          remakeSourceDoc.createdAt ||
-            (Array.isArray(remakeSourceDoc.orderDates)
-              ? remakeSourceDoc.orderDates[0]
-              : null),
-          labFreeRemakeYears,
-        )
-      : isRemakeRequest;
+    // 리메이크: KST 월 3건 무료, 4건부터 고정 1만원. 미연결(플랫폼 이전)도 동일.
+    let remakePricing = Boolean(isRemakeRequest || remakeSourceDoc);
+    let remakeFixedAmount = null;
+    if (remakePricing && practiceAnchorId) {
+      const monthlyUsed = await countPracticeMonthlyRemakeTransfers({
+        practiceAnchorId,
+      });
+      const monthly = resolveMonthlyRemakePricing({ used: monthlyUsed });
+      remakePricing = true;
+      remakeFixedAmount = monthly.free ? null : monthly.amount;
+    }
     if (!arrivalPolicy.ok) {
       return res.status(arrivalPolicy.statusCode || 400).json({
         success: false,
@@ -3536,6 +3530,7 @@ export async function createPracticeTransfer(req, res) {
         catalog: autoMatchCatalog,
         rushFeeMultiplier,
         remake: remakePricing,
+        remakeFixedAmount,
         subcontracted: assigneeKind === "subcontract",
         consentLabAnchorId:
           assigneeKind === "subcontract" ? assigneeLabAnchorId : null,
@@ -6903,35 +6898,11 @@ export async function remakePracticeTransfers(req, res) {
       })
       .filter((item) => item.file.originalName && item.file.s3Key);
 
-    const labIdsForRemake = [
-      ...new Set(
-        sources
-          .map((row) =>
-            String(
-              resolveFeeScheduleLabAnchorId(row) || row?.targetLabAnchorId || "",
-            ).trim(),
-          )
-          .filter((id) => Types.ObjectId.isValid(id)),
-      ),
-    ];
-    const labFeeDocs =
-      labIdsForRemake.length > 0
-        ? await BusinessAnchor.find({
-            _id: { $in: labIdsForRemake.map((id) => new Types.ObjectId(id)) },
-          })
-            .select({ labFeeSchedule: 1 })
-            .lean()
-        : [];
-    const freeRemakeYearsByLabId = new Map(
-      labFeeDocs.map((lab) => [
-        String(lab._id),
-        readLabFeeFreeRemakeYears(lab?.labFeeSchedule),
-      ]),
-    );
-
     const created = [];
     const failed = [];
     const seen = new Set();
+    /** practiceId → 당월 기존 건수 + 이번 요청에서 만든 수 */
+    const remakeUsedByPractice = new Map();
 
     for (const source of sources) {
       const sourceMongoId = String(source?._id || "").trim();
@@ -7022,12 +6993,32 @@ export async function remakePracticeTransfers(req, res) {
             )
           : copiedFiles;
 
-      // 치과로부터 리메이크비: 기공소 freeRemakeYears 창 이내면 무료(LAB_FEE_REMAKE_FREE).
-      const remakePricing = isWithinLabFreeRemakeWindow(
-        source.createdAt ||
-          (Array.isArray(source.orderDates) ? source.orderDates[0] : null),
-        freeRemakeYearsByLabId.get(String(feeLabAnchorId)),
-      );
+      // 치과로부터 리메이크비: KST 월 3건 무료, 4건부터 고정 1만원.
+      const practiceKey = String(practiceAnchorId);
+      if (!remakeUsedByPractice.has(practiceKey)) {
+        remakeUsedByPractice.set(
+          practiceKey,
+          await countPracticeMonthlyRemakeTransfers({ practiceAnchorId }),
+        );
+      }
+      const monthlyUsed = remakeUsedByPractice.get(practiceKey) || 0;
+      const monthly = resolveMonthlyRemakePricing({ used: monthlyUsed });
+      const remakePricing = true;
+      const remakeFixedAmount = monthly.free ? null : monthly.amount;
+
+      const feeQuote = await buildPracticeTransferQuote({
+        practiceAnchorId,
+        labAnchorId: feeLabAnchorId,
+        labFeeMultiplierLabAnchorId:
+          resolveLabFeeMultiplierLabAnchorId(assigneeFields),
+        toothWorks,
+        remake: remakePricing,
+        remakeFixedAmount,
+        matchingMode: "direct",
+        subcontracted: assigneeKind === "subcontract",
+        consentLabAnchorId:
+          assigneeKind === "subcontract" ? assigneeLabAnchorId : null,
+      });
 
       try {
         await assertPracticeTransferPaidCreditSufficient({
@@ -7035,6 +7026,7 @@ export async function remakePracticeTransfers(req, res) {
           labAnchorId: targetLabAnchorId,
           toothWorks,
           remake: remakePricing,
+          fees: feeQuote.fees,
         });
       } catch (creditErr) {
         const status = Number(creditErr?.statusCode || 500);
@@ -7053,19 +7045,6 @@ export async function remakePracticeTransfers(req, res) {
         });
         continue;
       }
-
-      const feeQuote = await buildPracticeTransferQuote({
-        practiceAnchorId,
-        labAnchorId: feeLabAnchorId,
-        labFeeMultiplierLabAnchorId:
-          resolveLabFeeMultiplierLabAnchorId(assigneeFields),
-        toothWorks,
-        remake: remakePricing,
-        matchingMode: "direct",
-        subcontracted: assigneeKind === "subcontract",
-        consentLabAnchorId:
-          assigneeKind === "subcontract" ? assigneeLabAnchorId : null,
-      });
 
       const transferId = `PTX-${Date.now().toString(36).toUpperCase()}${created.length
         ? String(created.length)
@@ -7214,6 +7193,7 @@ export async function remakePracticeTransfers(req, res) {
         billing: transferDoc?.billing || null,
         remakeFeeTotal: feeTotal,
       });
+      remakeUsedByPractice.set(practiceKey, monthlyUsed + 1);
 
       void postPracticeTransferSystemChatMessage({
         transferMongoId: source._id,
@@ -7639,6 +7619,7 @@ export async function checkSimilarPracticeTransfers(req, res) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
+    const practiceAnchorId = req.user?.businessAnchorId || null;
     const patientName = String(req.query?.patientName || "")
       .trim()
       .normalize("NFC");
@@ -7653,7 +7634,7 @@ export async function checkSimilarPracticeTransfers(req, res) {
     }
 
     const days = Math.min(
-      365,
+      SIMILAR_CASE_DETECT_WINDOW_DAYS,
       Math.max(
         1,
         Number(req.query?.days || SIMILAR_CASE_DETECT_WINDOW_DAYS) ||
@@ -7711,36 +7692,19 @@ export async function checkSimilarPracticeTransfers(req, res) {
       .limit(Math.min(80, limit * 8))
       .lean();
 
-    const labIds = [
-      ...new Set(
-        fetched
-          .map((doc) => String(doc?.targetLabAnchorId || "").trim())
-          .filter((id) => Types.ObjectId.isValid(id)),
-      ),
-    ];
-    const labFeeDocs =
-      labIds.length > 0
-        ? await BusinessAnchor.find({
-            _id: { $in: labIds.map((id) => new Types.ObjectId(id)) },
-          })
-            .select({ labFeeSchedule: 1 })
-            .lean()
-        : [];
-    const freeRemakeYearsByLabId = new Map(
-      labFeeDocs.map((lab) => [
-        String(lab._id),
-        readLabFeeFreeRemakeYears(lab?.labFeeSchedule),
-      ]),
-    );
+    const monthlyUsed = practiceAnchorId
+      ? await countPracticeMonthlyRemakeTransfers({ practiceAnchorId })
+      : 0;
+    const monthly = resolveMonthlyRemakePricing({ used: monthlyUsed });
 
     const matches = [];
     for (const doc of fetched) {
       const docTeeth = collectToothNumbersFromToothWorks(doc?.toothWorks);
       if (!toothNumbersOverlap(toothNumbers, docTeeth)) continue;
       const match = toSimilarCaseMatchApi(doc, {
-        freeRemakeYears: freeRemakeYearsByLabId.get(
-          String(doc?.targetLabAnchorId || ""),
-        ),
+        monthlyRemakeFreeRemaining: monthly.monthlyRemakeFreeRemaining,
+        monthlyRemakeUsed: monthly.monthlyRemakeUsed,
+        withinRemakePricingWindow: monthly.free,
       });
       match.manufacturerStage = resolvePracticeTransferManufacturerStage(doc);
       matches.push(match);

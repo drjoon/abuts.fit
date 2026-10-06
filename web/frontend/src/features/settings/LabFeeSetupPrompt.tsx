@@ -3,6 +3,7 @@
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
+// - 2026-10-07: freeRemakeYears 게이트 제거(월 3건 무료 정책).
 // - 2026-09-21: freeRemakeYears 미설정 시 설정 탭 포워드·하이라이트.
 // - 2026-08-25: 안내 문구 — 치과 의뢰·기공비 정상 결제 위해 해당 카드 설정 필수.
 // - 2026-08-25: 기본 기공수가 신규 항목(needSetupNames)도 재접속 시 설정 탭·need 하이라이트로 안내.
@@ -21,14 +22,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import {
-  normalizeFreeRemakeYears,
-  LAB_FEE_SCHEDULE_GET_CACHE_TTL_MS,
-} from "@/shared/practice/labFeeSchedule";
+import { LAB_FEE_SCHEDULE_GET_CACHE_TTL_MS } from "@/shared/practice/labFeeSchedule";
 
 export const LAB_FEE_SETTINGS_PATH = "/dashboard/settings?tab=lab-fees&setup=1";
 export const LAB_FEE_SETTINGS_FROM_ACCEPT_PATH = `${LAB_FEE_SETTINGS_PATH}&from=accept`;
-export const LAB_FEE_SETTINGS_FROM_FREE_REMAKE_PATH = `${LAB_FEE_SETTINGS_PATH}&from=freeRemake`;
+/** @deprecated 월 3건 무료 정책 — 무료기간 게이트 없음 */
+export const LAB_FEE_SETTINGS_FROM_FREE_REMAKE_PATH = LAB_FEE_SETTINGS_PATH;
 export const LAB_FEE_UNCONFIGURED_REASON = "lab_fee_unconfigured";
 
 export const parseLabFeeNeedNames = (search: string) => {
@@ -48,7 +47,7 @@ export const parseLabFeeNeedNames = (search: string) => {
 
 export const labFeeSettingsNeedPath = (
   needNames?: string[],
-  from: "accept" | "catalog" | "freeRemake" = "accept",
+  from: "accept" | "catalog" = "accept",
 ) => {
   const params = new URLSearchParams({
     tab: "lab-fees",
@@ -73,8 +72,8 @@ export const labFeeSettingsFromAcceptPath = (needNames?: string[]) =>
 export const labFeeSettingsFromCatalogPath = (needNames?: string[]) =>
   labFeeSettingsNeedPath(needNames, "catalog");
 
-export const labFeeSettingsFromFreeRemakePath = () =>
-  labFeeSettingsNeedPath(undefined, "freeRemake");
+/** @deprecated */
+export const labFeeSettingsFromFreeRemakePath = () => LAB_FEE_SETTINGS_PATH;
 
 export const readLabFeeScheduleConfigured = (raw: unknown): boolean | null => {
   if (!raw || typeof raw !== "object") return null;
@@ -109,22 +108,10 @@ export const readLabFeeNeedSetupNames = (raw: unknown): string[] => {
   return names;
 };
 
-export const readLabFeeFreeRemakeYears = (raw: unknown): number | null => {
-  if (!raw || typeof raw !== "object") return null;
-  const body = raw as Record<string, unknown>;
-  const nested =
-    body.data && typeof body.data === "object"
-      ? (body.data as Record<string, unknown>)
-      : body;
-  return normalizeFreeRemakeYears(nested.freeRemakeYears);
-};
-
 const sessionKeyUnconfigured = (userId: string) =>
   `abuts:lab-fee-setup-prompted:${userId}`;
 const sessionKeyCatalog = (userId: string) =>
   `abuts:lab-fee-catalog-setup-prompted:${userId}`;
-const sessionKeyFreeRemake = (userId: string) =>
-  `abuts:lab-fee-free-remake-prompted:${userId}`;
 
 const readSessionFlag = (key: string) => {
   try {
@@ -147,19 +134,17 @@ type FeeSchedulePayload = {
     configured?: boolean;
     updatedAt?: string | null;
     needSetupNames?: string[];
-    freeRemakeYears?: number | null;
   };
   configured?: boolean;
   updatedAt?: string | null;
   needSetupNames?: string[];
-  freeRemakeYears?: number | null;
 };
 
 const isLabFeeSettingsPath = (pathname: string, search: string) =>
   pathname.startsWith("/dashboard/settings") &&
   new URLSearchParams(search).get("tab") === "lab-fees";
 
-type PromptMode = "unconfigured" | "catalog" | "freeRemake";
+type PromptMode = "unconfigured" | "catalog";
 
 export const LabFeeSetupPrompt = ({
   isLab,
@@ -182,7 +167,6 @@ export const LabFeeSetupPrompt = ({
   const fromParam = new URLSearchParams(location.search).get("from");
   const fromAccept = alreadyOnSettings && fromParam === "accept";
   const fromCatalog = alreadyOnSettings && fromParam === "catalog";
-  const fromFreeRemake = alreadyOnSettings && fromParam === "freeRemake";
   const needNames = parseLabFeeNeedNames(location.search);
 
   useEffect(() => {
@@ -192,13 +176,13 @@ export const LabFeeSetupPrompt = ({
     }
     if (
       alreadyOnSettings &&
-      (fromAccept || fromCatalog || fromFreeRemake) &&
-      (fromFreeRemake || needNames.length > 0)
+      (fromAccept || fromCatalog) &&
+      needNames.length > 0
     ) {
       setOpen(false);
       return;
     }
-    if (alreadyOnSettings && !fromAccept && !fromCatalog && !fromFreeRemake) {
+    if (alreadyOnSettings && !fromAccept && !fromCatalog) {
       setOpen(false);
       return;
     }
@@ -206,8 +190,7 @@ export const LabFeeSetupPrompt = ({
     const userId = String(user.id);
     const skipUnconfigured = readSessionFlag(sessionKeyUnconfigured(userId));
     const skipCatalog = readSessionFlag(sessionKeyCatalog(userId));
-    const skipFreeRemake = readSessionFlag(sessionKeyFreeRemake(userId));
-    if (!fromAccept && skipUnconfigured && skipCatalog && skipFreeRemake) {
+    if (!fromAccept && skipUnconfigured && skipCatalog) {
       setOpen(false);
       return;
     }
@@ -223,7 +206,6 @@ export const LabFeeSetupPrompt = ({
       if (!res.ok) return;
       const configured = readLabFeeScheduleConfigured(res.data);
       const setupNames = readLabFeeNeedSetupNames(res.data);
-      const freeRemakeYears = readLabFeeFreeRemakeYears(res.data);
 
       if (configured === false && !skipUnconfigured) {
         setMode("unconfigured");
@@ -239,13 +221,6 @@ export const LabFeeSetupPrompt = ({
         return;
       }
 
-      if (freeRemakeYears == null && !skipFreeRemake) {
-        setMode("freeRemake");
-        setCatalogNeedNames([]);
-        setOpen(true);
-        return;
-      }
-
       setOpen(false);
     });
 
@@ -256,7 +231,6 @@ export const LabFeeSetupPrompt = ({
     alreadyOnSettings,
     fromAccept,
     fromCatalog,
-    fromFreeRemake,
     isLab,
     needNames.length,
     ready,
@@ -268,8 +242,6 @@ export const LabFeeSetupPrompt = ({
     if (user?.id) {
       if (mode === "catalog") {
         writeSessionFlag(sessionKeyCatalog(String(user.id)));
-      } else if (mode === "freeRemake") {
-        writeSessionFlag(sessionKeyFreeRemake(String(user.id)));
       } else {
         writeSessionFlag(sessionKeyUnconfigured(String(user.id)));
       }
@@ -277,10 +249,6 @@ export const LabFeeSetupPrompt = ({
     setOpen(false);
     if (mode === "catalog") {
       navigate(labFeeSettingsFromCatalogPath(catalogNeedNames));
-      return;
-    }
-    if (mode === "freeRemake") {
-      navigate(labFeeSettingsFromFreeRemakePath());
       return;
     }
     if (fromAccept) {
@@ -293,29 +261,25 @@ export const LabFeeSetupPrompt = ({
   const dismissAcceptPrompt = () => setOpen(false);
 
   const title =
-    mode === "freeRemake"
-      ? "무료 리메이크 기간 설정"
-      : mode === "catalog"
+    mode === "catalog"
+      ? "기공수가 설정이 필요합니다"
+      : fromAccept
         ? "기공수가 설정이 필요합니다"
-        : fromAccept
-          ? "기공수가 설정이 필요합니다"
-          : "기공비 미설정";
+        : "기공비 미설정";
 
   const needLabel = (names: string[]) =>
     names.length ? `「${names.join("·")}」` : "해당";
 
   const description =
-    mode === "freeRemake"
-      ? "치과→기공소 무료 리메이크 기간(년)을 아직 정하지 않았습니다. 확인을 누르면 기공비 설정에서 기간을 지정할 수 있습니다. 0년이면 유료, 1년 이상이면 그 기간 동안 무료입니다."
-      : mode === "catalog"
-        ? catalogNeedNames.length
-          ? `치과에서 의뢰가 들어올 수 있습니다. 기공비를 정상적으로 받으려면 ${needLabel(catalogNeedNames)} 수가를 켜고 설정하세요.`
-          : "치과 의뢰를 정상적으로 받으려면 기공수가를 설정해야 합니다. 확인을 누르면 기공비 설정 페이지로 이동합니다."
-        : fromAccept
-          ? needNames.length
-            ? `치과에서 의뢰가 들어왔습니다. 기공비를 정상적으로 받으려면 ${needLabel(needNames)} 수가를 켜고 설정한 뒤, 기공의뢰수신에서 다시 작업시작해 주세요.`
-            : "치과에서 의뢰가 들어왔습니다. 기공비를 정상적으로 받으려면 기공수가를 먼저 설정한 뒤, 기공의뢰수신에서 다시 작업시작해 주세요."
-          : "기공비를 아직 설정하지 않았습니다. 확인을 누르면 기공비 설정 페이지로 이동합니다.";
+    mode === "catalog"
+      ? catalogNeedNames.length
+        ? `치과에서 의뢰가 들어올 수 있습니다. 기공비를 정상적으로 받으려면 ${needLabel(catalogNeedNames)} 수가를 켜고 설정하세요.`
+        : "치과 의뢰를 정상적으로 받으려면 기공수가를 설정해야 합니다. 확인을 누르면 기공비 설정 페이지로 이동합니다."
+      : fromAccept
+        ? needNames.length
+          ? `치과에서 의뢰가 들어왔습니다. 기공비를 정상적으로 받으려면 ${needLabel(needNames)} 수가를 켜고 설정한 뒤, 기공의뢰수신에서 다시 작업시작해 주세요.`
+          : "치과에서 의뢰가 들어왔습니다. 기공비를 정상적으로 받으려면 기공수가를 먼저 설정한 뒤, 기공의뢰수신에서 다시 작업시작해 주세요."
+        : "기공비를 아직 설정하지 않았습니다. 확인을 누르면 기공비 설정 페이지로 이동합니다.";
 
   return (
     <AlertDialog

@@ -38,10 +38,6 @@ import {
   formatManWon,
   formatWon,
 } from "@/shared/practice/practiceTransferFeeQuote";
-import {
-  LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE,
-  LAB_FEE_REMAKE_FREE,
-} from "@/shared/practice/labFeeSchedule";
 import { DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS } from "@/shared/practice/labArrivalDefaults";
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
@@ -376,14 +372,6 @@ export function ChatRemakePromptDialog({
     ),
   );
 
-  const hasSelectedCa = useMemo(
-    () =>
-      partOptions.some((o) => o.kind === "ca" && selectedKeys.has(o.key)),
-    [partOptions, selectedKeys],
-  );
-
-  const caRemakeDefaultLabel = `${LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE.toLocaleString("ko-KR")}원`;
-
   const feeText = useMemo(() => {
     if (selectedToothWorks.length === 0) return "—";
     if (liveQuote.contextReady && remakeFeeTotal >= 0) {
@@ -469,17 +457,15 @@ export function ChatRemakePromptDialog({
         ? "치과가 리메이크 체크를 빠뜨린 경우 기공소에서 범위를 기록할 수 있습니다."
         : "선택한 보철·어벗만 리메이크 의뢰로 전달됩니다. 작업시작 시 리메이크 기공비가 청구됩니다.";
 
-  const feeHelp =
-    LAB_FEE_REMAKE_FREE || isLab || isAbutmentRemake ? (
-      <p>치과↔기공소 리메이크비는 무료입니다.</p>
-    ) : hasSelectedCa ? (
-      <p>
-        커스텀어벗 리메이크 수가 미설정 시 개당 {caRemakeDefaultLabel}. 설정 →
-        기공비에서 변경할 수 있습니다.
-      </p>
-    ) : (
-      <p>작업시작 시 정산에 반영됩니다.</p>
-    );
+  const feeHelp = (
+    <p>
+      리메이크는 매월 3건까지 무료, 4건부터 건당 1만원입니다.
+      <br />
+      {isLab || isAbutmentRemake
+        ? "배송비는 별도입니다."
+        : "작업시작 시 정산에 반영됩니다. 배송비는 별도입니다."}
+    </p>
+  );
 
   return (
     <ConfirmDialog

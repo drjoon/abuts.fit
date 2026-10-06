@@ -3,12 +3,12 @@
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
+// - 2026-10-07: freeRemakeYears UI 제거(월 3건 무료 정책).
 // - 2026-09-21: freeRemakeYears 표시·관리자 편집.
 // - 2026-08-16: 수가 ON 상단 정렬·클릭 모달.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,10 +23,7 @@ import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 import {
-  FREE_REMAKE_YEARS_MAX,
   LAB_FEE_ITEM_UNIT_LABELS,
-  formatFreeRemakeYearsLabel,
-  normalizeFreeRemakeYears,
   type LabFeeItem,
   type LabFeeItemUnit,
 } from "@/shared/practice/labFeeSchedule";
@@ -44,7 +41,6 @@ type LabFeeScheduleRow = {
   verified: boolean;
   configured: boolean;
   active: boolean;
-  freeRemakeYears: number | null;
   items: LabFeeItem[];
   updatedAt: string | null;
 };
@@ -73,102 +69,16 @@ const mapRow = (row: Partial<LabFeeScheduleRow>): LabFeeScheduleRow => ({
   verified: Boolean(row?.verified),
   configured: Boolean(row?.configured),
   active: Boolean(row?.active),
-  freeRemakeYears: normalizeFreeRemakeYears(row?.freeRemakeYears),
   items: Array.isArray(row?.items) ? row.items : [],
   updatedAt: row?.updatedAt ? String(row.updatedAt) : null,
 });
 
-const LabFeeScheduleBody = ({
-  row,
-  draftYears,
-  saving,
-  onDraftChange,
-  onSave,
-}: {
-  row: LabFeeScheduleRow;
-  draftYears: number | null;
-  saving: boolean;
-  onDraftChange: (years: number | null) => void;
-  onSave: () => void;
-}) => {
-  const yearsUnset = draftYears == null;
+const LabFeeScheduleBody = ({ row }: { row: LabFeeScheduleRow }) => {
   return (
     <div className="space-y-5">
-      <div
-        className={cn(
-          "rounded-2xl border px-3 py-3",
-          yearsUnset
-            ? "border-red-300 bg-red-50/80 ring-2 ring-red-500 ring-offset-2"
-            : "border-slate-200/80 bg-slate-50/60",
-        )}
-      >
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0 space-y-1">
-            <Label
-              htmlFor={`admin-free-remake-${row._id}`}
-              className={cn(
-                "text-[13px] font-semibold",
-                yearsUnset ? "text-red-700" : "text-slate-800",
-              )}
-            >
-              무료 리메이크 기간
-            </Label>
-            <p className="text-[12px] leading-snug text-slate-500">
-              0년=유료 · 1년 이상=해당 기간 무료 · 미설정이면 유료
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Input
-              id={`admin-free-remake-${row._id}`}
-              type="number"
-              inputMode="numeric"
-              min={0}
-              max={FREE_REMAKE_YEARS_MAX}
-              step={1}
-              disabled={saving}
-              value={draftYears == null ? "" : String(draftYears)}
-              placeholder="설정"
-              onChange={(e) => {
-                const raw = e.target.value;
-                if (raw === "") {
-                  onDraftChange(null);
-                  return;
-                }
-                onDraftChange(
-                  Math.max(
-                    0,
-                    Math.min(
-                      FREE_REMAKE_YEARS_MAX,
-                      Math.trunc(Number(raw) || 0),
-                    ),
-                  ),
-                );
-              }}
-              className="h-10 w-[5.5rem] rounded-xl border-slate-200 bg-white text-center text-base font-semibold tabular-nums"
-            />
-            <span className="text-[13px] font-medium text-slate-600">년</span>
-            <Button
-              type="button"
-              size="sm"
-              className="h-10"
-              disabled={saving || draftYears === row.freeRemakeYears}
-              onClick={onSave}
-            >
-              저장
-            </Button>
-          </div>
-        </div>
-        <p
-          className={cn(
-            "mt-2 text-[12px]",
-            yearsUnset ? "font-medium text-red-600" : "text-slate-600",
-          )}
-        >
-          {yearsUnset
-            ? "기간을 입력해 주세요."
-            : `현재: ${formatFreeRemakeYearsLabel(draftYears)}`}
-        </p>
-      </div>
+      <p className="text-[12px] leading-snug text-slate-500">
+        리메이크는 치과당 매월 3건까지 무료, 4건부터 건당 1만원입니다.
+      </p>
 
       {!row.configured ? (
         <p className="text-sm text-muted-foreground">
@@ -217,8 +127,6 @@ export const AdminLabFeeSchedulesTab = () => {
   const [totalCount, setTotalCount] = useState(0);
   const [configuredCount, setConfiguredCount] = useState(0);
   const [selected, setSelected] = useState<LabFeeScheduleRow | null>(null);
-  const [draftYears, setDraftYears] = useState<number | null>(null);
-  const [savingYears, setSavingYears] = useState(false);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const loadingMoreRef = useRef(false);
@@ -240,7 +148,6 @@ export const AdminLabFeeSchedulesTab = () => {
 
   const openSelected = (row: LabFeeScheduleRow) => {
     setSelected(row);
-    setDraftYears(row.freeRemakeYears);
   };
 
   const loadPage = useCallback(
@@ -355,43 +262,6 @@ export const AdminLabFeeSchedulesTab = () => {
     return () => io.disconnect();
   }, [hasMore, loading, loadingMore, page, rows.length, loadPage]);
 
-  const saveSelectedFreeRemakeYears = async () => {
-    if (!token || !selected) return;
-    setSavingYears(true);
-    try {
-      const res = await request<{
-        success?: boolean;
-        data?: LabFeeScheduleRow;
-        message?: string;
-      }>({
-        path: `/api/admin/settings/lab-fee-schedules/${selected._id}`,
-        method: "PATCH",
-        token,
-        jsonBody: { freeRemakeYears: draftYears },
-      });
-      if (!res.ok) {
-        toast({
-          title: "저장 실패",
-          description: res.data?.message || "다시 시도해주세요.",
-          variant: "destructive",
-        });
-        return;
-      }
-      const next = mapRow(res.data?.data || { ...selected, freeRemakeYears: draftYears });
-      setSelected(next);
-      setDraftYears(next.freeRemakeYears);
-      setRows((prev) =>
-        prev.map((row) => (row._id === next._id ? next : row)),
-      );
-      toast({
-        title: "무료 리메이크 기간을 저장했습니다.",
-        description: formatFreeRemakeYearsLabel(next.freeRemakeYears),
-      });
-    } finally {
-      setSavingYears(false);
-    }
-  };
-
   return (
     <>
       <Card className="app-glass-card app-glass-card--lg overflow-hidden">
@@ -406,8 +276,10 @@ export const AdminLabFeeSchedulesTab = () => {
                   기공소 수가
                 </h3>
                 <p className="text-[13px] leading-relaxed text-muted-foreground">
-                  수가 ON 기공소가 위에 표시됩니다. 카드를 누르면 수가·무료
-                  리메이크 기간을 확인·수정합니다.
+                  수가 ON 기공소가 위에 표시됩니다. 카드를 누르면 수가를
+                  확인합니다.
+                  <br />
+                  리메이크는 치과당 매월 3건 무료·이후 건당 1만원입니다.
                 </p>
               </div>
             </div>
@@ -490,16 +362,6 @@ export const AdminLabFeeSchedulesTab = () => {
                                 ? "미설정"
                                 : row.status || "미검증"}
                           </span>
-                          <span
-                            className={cn(
-                              "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                              row.freeRemakeYears == null
-                                ? "bg-red-50 text-red-700 ring-1 ring-red-200"
-                                : "bg-slate-100 text-slate-700 ring-1 ring-slate-200",
-                            )}
-                          >
-                            {formatFreeRemakeYearsLabel(row.freeRemakeYears)}
-                          </span>
                         </div>
                         <dl className="space-y-1.5 text-[13px]">
                           <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-2">
@@ -566,13 +428,7 @@ export const AdminLabFeeSchedulesTab = () => {
                 </DialogDescription>
               </DialogHeader>
               <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-8">
-                <LabFeeScheduleBody
-                  row={selected}
-                  draftYears={draftYears}
-                  saving={savingYears}
-                  onDraftChange={setDraftYears}
-                  onSave={() => void saveSelectedFreeRemakeYears()}
-                />
+                <LabFeeScheduleBody row={selected} />
               </div>
             </>
           ) : null}

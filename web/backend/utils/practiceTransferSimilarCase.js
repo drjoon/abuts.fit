@@ -3,19 +3,18 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/frontend/src/shared/components/practice/PracticeSimilarCaseRemakeDialog.tsx
 // change-log:
+// - 2026-10-07: 유료/무료=월 3건 쿼터. freeRemakeYears 과금 퇴역.
 // - 2026-09-21: 감지 기본=무료기간 상한(년×365). 수가 창은 lab freeRemakeYears.
 // - 2026-09-14: 감지 창=리메이크 정책 창(180일) 통일.
 // - 2026-09-14: 신규 작성 시 동일 환자·치아 감지(리메이크 확인).
 
 import { toKstYmd } from "./krBusinessDays.js";
 import {
-  isWithinLabFreeRemakeWindow,
-  normalizeFreeRemakeYears,
   REMAKE_POLICY_WINDOW_DAYS,
   FREE_REMAKE_YEARS_MAX,
 } from "./remakePricingPolicy.js";
 
-/** 동일건 감지 기본 일수 — 기공소 무료기간 상한까지 커버 */
+/** 동일건 감지 기본 일수 — 고정 상한(과금과 무관) */
 export const SIMILAR_CASE_DETECT_WINDOW_DAYS = 365 * FREE_REMAKE_YEARS_MAX;
 
 export const patientNameFromTransferMemo = (memo) =>
@@ -98,18 +97,11 @@ export function escapePatientNameForMemoRegex(value) {
 
 /**
  * @param {object} doc
- * @param {{ freeRemakeYears?: unknown }} [opts]
- * @returns {{
- *   _id: string,
- *   transferId: string,
- *   patientName: string,
- *   toothNumbers: string[],
- *   targetLabName: string,
- *   createdAt: Date|null,
- *   orderYmd: string,
- *   freeRemakeYears: number|null,
- *   withinRemakePricingWindow: boolean,
- * }}
+ * @param {{
+ *   monthlyRemakeFreeRemaining?: number,
+ *   monthlyRemakeUsed?: number,
+ *   withinRemakePricingWindow?: boolean,
+ * }} [opts]
  */
 export function toSimilarCaseMatchApi(doc, opts = {}) {
   const toothNumbers = collectToothNumbersFromToothWorks(doc?.toothWorks);
@@ -119,7 +111,15 @@ export function toSimilarCaseMatchApi(doc, opts = {}) {
         .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
     : [];
   const createdAt = doc?.createdAt || null;
-  const freeRemakeYears = normalizeFreeRemakeYears(opts?.freeRemakeYears);
+  const remaining = Math.max(
+    0,
+    Math.trunc(Number(opts?.monthlyRemakeFreeRemaining) || 0),
+  );
+  const used = Math.max(0, Math.trunc(Number(opts?.monthlyRemakeUsed) || 0));
+  const withinFree =
+    opts?.withinRemakePricingWindow == null
+      ? remaining > 0
+      : Boolean(opts.withinRemakePricingWindow);
   return {
     _id: String(doc?._id || ""),
     transferId: String(doc?.transferId || "").trim(),
@@ -128,10 +128,10 @@ export function toSimilarCaseMatchApi(doc, opts = {}) {
     targetLabName: String(doc?.targetLabName || "").trim(),
     createdAt,
     orderYmd: orderDates[0] || toKstYmd(createdAt) || "",
-    freeRemakeYears,
-    withinRemakePricingWindow: isWithinLabFreeRemakeWindow(
-      createdAt || orderDates[0] || null,
-      freeRemakeYears,
-    ),
+    monthlyRemakeFreeRemaining: remaining,
+    monthlyRemakeUsed: used,
+    withinRemakePricingWindow: withinFree,
+    /** @deprecated 월 쿼터로 대체. FE 호환용 */
+    freeRemakeYears: null,
   };
 }

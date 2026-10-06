@@ -8,6 +8,7 @@
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
+// - 2026-10-07: 커스텀어벗 리메이크 — KST 월 3건 무료, 4건부터 건당 10,000원.
 // - 2026-10-01: 조직 스코프 캐시는 만료·상한으로 걷는다.
 // - 2026-09-14: 리메이크 매칭 창 90→180일(REMAKE_POLICY_WINDOW_DAYS).
 // - 2026-09-12: 리메이크 매칭 — implantBrand 조건 제거(정책: 동일 치과·환자·치식·창). forceRemakePricing.
@@ -41,8 +42,10 @@ import {
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
 import { resolveQuotedPriceWithExtras } from "./designPrice.utils.js";
 import {
-  buildAbutsRemakeFixedPrice,
+  buildAbutsRemakePriceFromMonthlyUsage,
+  kstMonthBounds,
   remakePolicyCutoffDate,
+  REMAKE_PRICE_RULES_FOR_MONTHLY_COUNT,
 } from "../../utils/remakePricingPolicy.js";
 import {
   loadCreditSettingsDefaults,
@@ -1263,8 +1266,9 @@ export async function computePriceForRequest({
       ? { _id: { $ne: new Types.ObjectId(String(currentRequestId)) } }
       : {};
 
-  // 리메이크 기준(REMAKE_POLICY_WINDOW_DAYS): 동일 치과·환자·치식에 직전 의뢰가 있으면 어벗츠로 1만원.
+  // 리메이크 판정(REMAKE_POLICY_WINDOW_DAYS): 동일 치과·환자·치식. 과금은 월 3건 무료.
   const remakeCutoff = remakePolicyCutoffDate(now);
+  const { start: monthStart, nextStart: nextMonthStart } = kstMonthBounds(now);
 
   const [creditSettings, existing] = await Promise.all([
     creditSettingsOverride
@@ -1290,10 +1294,18 @@ export async function computePriceForRequest({
   // SSOT: 관리자 플랫폼 설정 단가(+신속 expressFee).
   const BASE_UNIT_PRICE = resolveCustomAbutmentRequestUnitPrice(creditSettings);
 
-  // 어벗츠로 리메이크: 건당 고정 10,000원(배송비는 별도). 치과로부터(PTX)는 LAB_FEE_REMAKE_FREE.
+  // 어벗츠로 리메이크: KST 월 3건 무료, 4건부터 건당 10,000원(배송비 별도).
   if ((forceRemakePricing || existing) && !forceNewOrderPricing) {
-    return buildAbutsRemakeFixedPrice({
+    const monthlyRemakeUsed = await Request.countDocuments({
+      ...scopeFilter,
+      ...selfExclusionFilter,
+      manufacturerStage: { $ne: "취소" },
+      createdAt: { $gte: monthStart, $lt: nextMonthStart },
+      "price.rule": { $in: REMAKE_PRICE_RULES_FOR_MONTHLY_COUNT },
+    });
+    return buildAbutsRemakePriceFromMonthlyUsage({
       baseAmount: BASE_UNIT_PRICE,
+      used: monthlyRemakeUsed,
       quotedAt: now,
     });
   }

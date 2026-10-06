@@ -10,7 +10,6 @@
 // - 2026-09-09: 청구됨 잠금·미청구 기본선택·접힘 이력·합계 바.
 
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { ChevronDown, Repeat } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -19,7 +18,6 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
-import { LAB_FEE_SETTINGS_PATH } from "@/features/settings/LabFeeSetupPrompt";
 import {
   listRemakePartOptions,
   selectedKeysToRemakeParts,
@@ -550,15 +548,10 @@ export function LabRemakeChargeDialog({
               />
               <div className="space-y-0.5 text-[11px] text-muted-foreground">
                 <p>
-                  <Link
-                    to={LAB_FEE_SETTINGS_PATH}
-                    className="font-medium text-primary underline underline-offset-2"
-                  >
-                    기공비
-                  </Link>
-                  에서 리메이크 단가를 설정하세요.
+                  리메이크는 매월 3건까지 무료, 4건부터 건당 1만원입니다.
+                  <br />
+                  배송비는 별도입니다.
                 </p>
-                <p>커스텀어벗은 단가 미설정시 초기값 2만원으로 설정됩니다.</p>
               </div>
             </div>
           ) : (

@@ -54,7 +54,6 @@ import {
   countCustomAbutmentWorks,
   pickCustomAbutmentRowPerTooth,
 } from "../../utils/labFeeSchedule.js";
-import { isWithinLabFreeRemakeWindow } from "../../utils/remakePricingPolicy.js";
 import { listCustomAbutmentToothWorks } from "../../services/practiceTransferProduction.service.js";
 
 describe("labFeeSchedule", () => {
@@ -1062,9 +1061,7 @@ describe("labFeeSchedule", () => {
     expect(normal.labFeeTotal).toBe(120000);
   });
 
-  test("무료 리메이크 창 밖·미설정(null)·0년이면 정가, 창 안이면 0원이다", () => {
-    const now = new Date("2026-09-28T03:00:00.000Z");
-    const sourceCreatedAt = new Date("2025-03-01T03:00:00.000Z");
+  test("리메이크 플래그 true면 LAB_FEE_REMAKE_FREE로 0원, false면 정가", () => {
     const toothWorks = [
       {
         toothNumber: "16",
@@ -1073,17 +1070,19 @@ describe("labFeeSchedule", () => {
         abutmentProductMode: "design_custom_abutment",
       },
     ];
-    const quoteFor = (freeRemakeYears) =>
-      computePracticeTransferRetailFees({
-        toothWorks,
-        labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
-        remake: isWithinLabFreeRemakeWindow(sourceCreatedAt, freeRemakeYears, now),
-      }).total;
+    const paid = computePracticeTransferRetailFees({
+      toothWorks,
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      remake: false,
+    }).total;
+    const free = computePracticeTransferRetailFees({
+      toothWorks,
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      remake: true,
+    }).total;
     // 크라운 6만 + 지그포함 CA 4만
-    expect(quoteFor(null)).toBe(100000);
-    expect(quoteFor(0)).toBe(100000);
-    expect(quoteFor(1)).toBe(100000);
-    expect(quoteFor(2)).toBe(0);
+    expect(paid).toBe(100000);
+    expect(free).toBe(0);
   });
 
   test("기본 수가의 임시치아는 3치·6치 카드로 분리된다", () => {

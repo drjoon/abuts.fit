@@ -6,6 +6,7 @@
 // - web/backend/utils/practiceTransferStage.js
 // - web/backend/utils/creditSettingsDefaults.js
 // change-log:
+// - 2026-10-07: pricing-referral-stats — remakeUnitPrice=10000(월 3건 무료 소진 후 단가).
 // - 2026-09-09: pricing-referral-stats — 월 무료 리메이크 집계 제거, remakeUnitPrice=10000.
 // - 2026-08-21: cards/summary GET은 in-flight 대시보드 refresh를 기다리지 않음.
 // - 2026-08-19: 적용 단가=플랫폼 설정. 90일 1만원·주문량할인 폐지.

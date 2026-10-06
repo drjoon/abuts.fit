@@ -15,6 +15,7 @@
 // - 2026-09-21: 딜러십 정책 — 90일 주문 없음 시 소개 귀속 리셋 조항.
 // - 2026-09-20: 딜러십 요율 10/15/20% · 가입 당시 요율 적용 안내.
 // - 2026-09-20: 기공소 정책 안내 — 하청 % · 작업시작 적립 시 공제.
+// - 2026-10-07: 리메이크 — 치과로부터·어벗츠로 모두 월 3건 무료 / 4건부터 개당 1만원.
 // - 2026-09-21: 치과→기공소 리메이크=기공소 freeRemakeYears 기간 내 무료.
 // - 2026-09-20: 기공소 정책 안내 — 커스텀어벗 정산은 STL·생산비 지급 뒤.
 // - 2026-09-12: 리메이크를 가격 카드(배송비 아래)로 이동. 치과로부터=무료, 어벗츠로=1만원.
@@ -405,22 +406,30 @@ export const PricingPolicyDialog = ({
                       <div className='min-w-0 text-xs text-slate-500'>
                         치과로부터 의뢰
                       </div>
-                      <div className='shrink-0 text-base font-semibold tracking-tight tabular-nums text-slate-900'>
-                        기간 내 무료
+                      <div className='shrink-0 text-right text-base font-semibold tracking-tight tabular-nums text-slate-900'>
+                        매월 3건까지 무료
+                        <br />
+                        <span className='text-sm font-medium text-slate-700'>
+                          4건부터 건당 1만원
+                        </span>
                       </div>
                     </div>
                     <div className='flex items-baseline justify-between gap-3'>
                       <div className='min-w-0 text-xs text-slate-500'>
                         어벗츠로 의뢰
                       </div>
-                      <div className='shrink-0 text-base font-semibold tracking-tight tabular-nums text-slate-900'>
-                        10,000원
+                      <div className='shrink-0 text-right text-base font-semibold tracking-tight tabular-nums text-slate-900'>
+                        매월 3건까지 무료
+                        <br />
+                        <span className='text-sm font-medium text-slate-700'>
+                          4건부터 건당 1만원
+                        </span>
                       </div>
                     </div>
                     <p className='text-xs leading-relaxed text-slate-500'>
-                      치과→기공소: 기공소 설정 무료 리메이크 기간(년) 이내.
+                      사업자 단위·KST 월 경계. 배송비는 별도.
                       <br />
-                      어벗츠: 동일 치과·환자·치식·최근 180일.
+                      어벗츠: 동일 치과·환자·치식·최근 180일 조건.
                     </p>
                   </div>
                 </div>

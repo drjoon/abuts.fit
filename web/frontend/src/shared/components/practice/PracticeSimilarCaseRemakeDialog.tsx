@@ -5,6 +5,7 @@
  * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
  * - web/backend/utils/practiceTransferSimilarCase.js
  * change-log:
+ * - 2026-10-07: 무료=월 3건 잔여. freeRemakeYears 카피 제거.
  * - 2026-09-21: 무료 창=기공소 freeRemakeYears(카피·뱃지).
  * - 2026-09-21: z-[460] — 작성 모달(z-320, 투어 z-410) 뒤에서 바깥클릭으로 전송 버튼을 삼키던 문제.
  * - 2026-09-14: 신규 작성·전송 전 리메이크/신규 분기 모달.
@@ -21,7 +22,6 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toStatusBadgeLabel } from "@/shared/practice/practiceRecentTransferList";
-import { formatFreeRemakeYearsLabel } from "@/shared/practice/labFeeSchedule";
 
 export type PracticeSimilarCaseMatch = {
   _id: string;
@@ -32,8 +32,11 @@ export type PracticeSimilarCaseMatch = {
   createdAt?: string | Date | null;
   orderYmd?: string;
   manufacturerStage?: string;
-  freeRemakeYears?: number | null;
+  monthlyRemakeFreeRemaining?: number;
+  monthlyRemakeUsed?: number;
   withinRemakePricingWindow?: boolean;
+  /** @deprecated */
+  freeRemakeYears?: number | null;
 };
 
 export type PracticeSimilarCaseRemakeDialogProps = {
@@ -60,6 +63,10 @@ export function PracticeSimilarCaseRemakeDialog({
   const selected =
     matches.find((m) => m._id === selectedId) || matches[0] || null;
   const canRemake = Boolean(selected?._id);
+  const remaining = Math.max(
+    0,
+    Math.trunc(Number(selected?.monthlyRemakeFreeRemaining) || 0),
+  );
 
   return (
     <Dialog
@@ -79,8 +86,12 @@ export function PracticeSimilarCaseRemakeDialog({
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
             같은 환자·치아 의뢰입니다. 리메이크면 원의뢰에 연결되고 기공소에
-            「리메이크」로 표시됩니다. 무료 여부는 해당 기공소의 무료 리메이크
-            기간(년) 설정에 따릅니다.
+            「리메이크」로 표시됩니다.
+            <br />
+            매월 3건까지 무료, 4건부터 건당 1만원입니다.
+            {selected
+              ? ` (이번 달 무료 잔여 ${remaining}건)`
+              : ""}
           </DialogDescription>
         </DialogHeader>
 
@@ -96,17 +107,10 @@ export function PracticeSimilarCaseRemakeDialog({
                 Array.isArray(match.toothNumbers) && match.toothNumbers.length
                   ? match.toothNumbers.join(", ")
                   : "—";
-              const yearsLabel = formatFreeRemakeYearsLabel(
-                match.freeRemakeYears,
-              );
               const feeHint =
                 match.withinRemakePricingWindow === true
                   ? " · 리메이크비 무료 가능"
-                  : match.freeRemakeYears == null
-                    ? " · 리메이크비 정가(기간 미설정)"
-                    : match.freeRemakeYears <= 0
-                      ? " · 리메이크비 유료"
-                      : " · 리메이크비 정가(무료 기간 초과)";
+                  : " · 리메이크비 1만원";
               return (
                 <button
                   key={match._id}
@@ -132,7 +136,7 @@ export function PracticeSimilarCaseRemakeDialog({
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {match.orderYmd || "—"} ·{" "}
-                    {match.targetLabName || "기공소"} ({yearsLabel})
+                    {match.targetLabName || "기공소"}
                     {feeHint}
                   </div>
                 </button>

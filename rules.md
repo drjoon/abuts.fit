@@ -26,6 +26,8 @@
 3. 1~2 누락 시 작업 완료로 간주하지 않음
 4. 작업 중 발견한 중요 결정/예외/운영 기준은 루트 또는 해당 도메인 로컬 `rules.md`에 즉시 기록
 
+
+
 ### 0.2 룰 문서 경량화 원칙
 
 - 루트 `rules.md`: 정책 **요약/불변 규칙/진입점 지도**만 유지
@@ -33,6 +35,8 @@
 - 도메인/로컬 구현 메모(예: 프론트 훅/컴포넌트 단위 세부)는 각 로컬 `rules.md`에 기록
 - 구현 로그/원인 분석/히스토리: 코드 주석 또는 `.archive/` 문서로 분리
 - 하위 `rules.md`는 로컬 메모만 유지 (충돌 시 루트 우선)
+
+
 
 ### 0.3 상호참조 주석 템플릿
 
@@ -46,6 +50,8 @@
 - 경로는 저장소 루트 기준 상대경로
 - “해당 파일이 직접 연결되는 파일”만 기록 (과도한 나열 금지)
 
+
+
 ### 0.4 애매한 정책은 보류 후 사용자 컨펌 (강제)
 
 - 요구사항/정책이 애매하면 임의 확장/임의 축소 금지
@@ -53,11 +59,15 @@
 - 판단 보류 상태를 명시하고 사용자에게 확인 질문 후 진행
 - 특히 권한(role), 과금/정산, 추천(리퍼럴) 범위는 컨펌 없이 변경 금지
 
+
+
 ### 0.5 작업 우선순위 원칙 (강제)
 
 - 여러 작업을 동시에 진행할 때는 **중요도 순서**로 처리한다.
 - 결제/크레딧/정산/권한/데이터무결성 같은 고위험 변경을 먼저 처리한다.
 - 단순 반복 작업(예: 이름 교체, 문구 통일, 포맷 정리)은 핵심 로직 안정화 후에 처리한다.
+
+
 
 ### 0.6 AI 디자인 — 기공의뢰 데이터 연결과 선별 구현 (강제)
 
@@ -75,7 +85,11 @@
 
 ---
 
+
+
 ## 1) 절대 원칙 (변경 금지)
+
+
 
 ### 1.1 레거시 제거 / SSOT 단일화
 
@@ -83,15 +97,21 @@
 - 데이터는 **하나의 필드만 SSOT**로 사용
 - 읽기 경로에서 보정/추정하지 말고, 쓰기 이벤트 시점에만 SSOT 갱신
 
+
+
 ### 1.2 무분별 fallback 금지
 
 - 값이 없을 때 임의 추정값 주입 금지
 - 없으면 빈값/null/명시적 오류로 드러내고 원인 수정
 
+
+
 ### 1.3 보안
 
 - 비밀번호/API키/DB URI/JWT secret 하드코딩 금지
 - 환경변수 미설정 시 즉시 실패
+
+
 
 ### 1.4 시간
 
@@ -100,13 +120,15 @@
 - **프로세스 TZ SSOT (강제):** Node/백그라운드 앱의 `process.env.TZ`는 항상 `Asia/Seoul`
   - EBS 호스트 OS는 UTC여도 앱 프로세스는 KST로 통일 (로컬 개발 Mac KST와 동일)
   - 적용 위치: `web/backend/bootstrap/env.js`, `web/Procfile`, `web/.ebextensions/06_timezone.config`,
-    `web/eb.sh`(setenv), `local.env`/`test.env`/`prod.env`, bg Node 엔트리
+  `web/eb.sh`(setenv), `local.env`/`test.env`/`prod.env`, bg Node 엔트리
   - `Date#getDay()` / `setHours()` 등 **로컬 TZ에 의존하는 API**를 YMD/요일 판정에 쓸 때는
-    프로세스 TZ만 믿지 말고, 가능하면 `Asia/Seoul` 명시(`Intl` / `+09:00` / UTC noon 달력일)로 방어
+  프로세스 TZ만 믿지 말고, 가능하면 `Asia/Seoul` 명시(`Intl` / `+09:00` / UTC noon 달력일)로 방어
   - 출고일·묶음요일·출고 뱃지·영업일 계산은 이 정책에 직접 영향 받음
-    (`production.utils.js` `resolveNextWeeklyBatchYmd` / `resolveLeadDaysWithSameDayCutoff` 등)
+  (`production.utils.js` `resolveNextWeeklyBatchYmd` / `resolveLeadDaysWithSameDayCutoff` 등)
   - 묶음 리드타임 SSOT: `minBusinessDays=N`이면 접수 당일을 1일차로 포함 → 추가 영업일 `(N-1)`
-    (PricingPolicyDialog: 자정까지 1영업일=당일 집하). 이후 주간 발송 요일로 정렬.
+  (PricingPolicyDialog: 자정까지 1영업일=당일 집하). 이후 주간 발송 요일로 정렬.
+
+
 
 ### 1.5 구조
 
@@ -115,7 +137,11 @@
 
 ---
 
+
+
 ## 2) 데이터/도메인 핵심 SSOT
+
+
 
 ### 2.1 사업자/권한
 
@@ -134,6 +160,8 @@
   - 딜러(`salesman`) 일일보고: 딜러사 **대표·담당자만** 열람. **어벗츠 관계자**(admin/salesTeam/devops 등)는 조회 불가. SSOT `web/backend/utils/salesDailyReportAccess.js` · FE `SalesDailyReportPrivacyBanner`.
   - `practice` role은 제거. 기존 계정은 `requestor`+`requestorCapabilities.practice` 마이그레이션 대상(신규 생성 금지). 백필: `scripts/db/backfill-requestor-capabilities.js --apply`.
 
+
+
 ### 2.2 의뢰 생성/공정
 
 - 신규 의뢰 표준: `POST /api/requests/from-draft`
@@ -141,8 +169,8 @@
   - `준비 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리`
 - 크레딧 이벤트 발생 시점 SSOT:
   - `REQUEST_SPEND_HOLD` / `SHIPPING_SPEND_HOLD`: **의뢰 제출** 시 에스크로 보류(기공비·신속·배송비).
-    치과 어벗디자인·기공소 어벗생산 배송비는 **의뢰 사업자 + 예정 출고일** 1회(치과명으로 쪼개지 않음).
-    PTX(구강스캔) CA 배송비는 주문 기공소 크레딧(제조사→기공소). 동일 제출 배치에서도 1회.
+  치과 어벗디자인·기공소 어벗생산 배송비는 **의뢰 사업자 + 예정 출고일** 1회(치과명으로 쪼개지 않음).
+  PTX(구강스캔) CA 배송비는 주문 기공소 크레딧(제조사→기공소). 동일 제출 배치에서도 1회.
   - `REQUEST_SPEND_COMMIT`: **CAM 승인(가공 진입)** 시 보류→매출 전환(레거시 무보류만 실차감)
   - `SHIPPING_SPEND_COMMIT`: **포장.발송 진입(세척.패킹 승인)** 시 배송 보류→매출 전환(레거시·PTX abuts는 기존 SSOT). 배송비는 박스 단위. 어벗 해제와 같이 옮기지 않는다.
   - **비거래처 선불 어벗 해제(강제)**: 치과가 선불한 비거래처(`practicePrepaid && !isTradingPartner`)는 생성 시 어벗 소매가가 PTX 보류에 이미 있다. 가공 진입 `REQUEST_SPEND_COMMIT`은 건너뛴다(이중 청구). 어벗츠 수취는 제조사 발송 `releasePracticeTransferAbutmentShare`(의뢰 1건 전체, `practice_transfer:{id}:escrow_release_abutment`)만. **가공 진입으로 옮기지 않는다.** 치아 하나 진입에 전액이 풀리고, 발송 전 취소가 제조사 매출(`REV_MANUFACTURER`) 롤백·잔여 치아 재보류가 되며, 제조사 정산이 발송보다 빨라진다. 부분 취소 경로 없음. 기공소 부담(거래처)만 가공 진입 차감. 배송비와 무관.
@@ -150,23 +178,25 @@
   - `REQUEST` 차감 삭제: **가공 롤백(CAM 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**(HOLD는 유지). 제조사 의뢰비만.
   - `SHIPPING` 차감 삭제: **포장.발송 롤백(세척.패킹 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**. 제조사 배송비만.
   - 준비 단계 **취소**: 미전환 REQUEST/SHIPPING HOLD 전부 해제(물리 삭제)
-  - **기공의뢰(PTX) 삭제·작업취소**: 대응 `PRACTICE_TRANSFER_*`·디자인비 `ADJUST`·PTX 배송 저널 **물리 삭제**(제조사와 동일). 장부 UI에서도 숨김.
+  - **기공의뢰(PTX) 삭제·작업취소**: 대응 `PRACTICE_TRANSFER_`*·디자인비 `ADJUST`·PTX 배송 저널 **물리 삭제**(제조사와 동일). 장부 UI에서도 숨김.
   - **스토어 등 제품 판매 취소**: 원본 `STORE_SALE` 유지 + 취소 시점 `REFUND`(반대부호)로 잔고 복구·「취소」 표시. 제조사 REQUEST/SHIPPING·PTX 경로에는 REFUND 금지.
   - BG 콜백은 파일 처리 결과 동기화 이벤트이며 승인/롤백 트랜지션이 아니므로,
-    BG 콜백에서 크레딧/정산 장부 갱신을 수행하지 않음
+  BG 콜백에서 크레딧/정산 장부 갱신을 수행하지 않음
 - 샘플 정책(강제): `requestCategory in (rnd_sample, copied_sample)`는 크레딧/정산 무관 작업
   - 샘플은 장부에 **무기록(무자료/무상)** 처리
   - 작업용 샘플(`rnd.doneAt=null`)은 일반 의뢰와 동일하게 직경 요약·우편함 배정·포장.발송·추적관리까지 진행한다.
   - 포장.발송 우편함 상세에서 **샘플만 삭제**할 수 있다(일반 의뢰는 삭제 불가).
   - R&D 보관 샘플(`rnd.doneAt!=null`)만 R&D 탭 전용으로 분리한다.
 - 제조사 직접 NC 가공 정책(강제): `requestId`/`request._id` 등 의뢰 식별 메타가 없는 수동 NC 작업은
-  크레딧/정산 대상이 아니며 장부에 **무기록(무자료/무상)** 처리
+크레딧/정산 대상이 아니며 장부에 **무기록(무자료/무상)** 처리
 - 불완전가공(RnD unmachinable) 정책(강제):
   - 불완전가공은 샘플이 아니며, CAM 승인으로 이미 발생한 크레딧 차감은 유지한다.
   - 불완전가공 판정으로 가공 복귀가 발생해도 장부 삭제/환불을 수행하지 않는다.
   - 세척.패킹 이후 판정은 단계를 되돌리지 않는다. R&D 불완전가공에 사진·메시지와 함께 기록하고, 세척.패킹에서 출고를 이어 간다.
   - 가공 이전 판정만 가공 단계로 되돌린다.
   - 준비 단계 취소만 차감 미발생 상태로 처리한다.
+
+
 
 ### 2.3 크레딧/정산
 
@@ -183,29 +213,29 @@
   - 의뢰자 소비·기공 `REV_ADMIN` 잔여: 공급가 기준, `vatAmount = 0`(면세). 제조사·딜러·개발운영 `REV_*`는 적립 시 공급가+VAT 기록, **잔액·미정산=포함가**.
   - 제조사·딜러사·개발운영사 장부=포함가. 지급은 잔액 그대로(`SETTLEMENT_PAYOUT`: `amount`/`amountIncludingVat`=입금=잔액 차감, `amountExcludingVat`/`vatAmount`=세금계산서 분해).
   - 보존식·의뢰자 잔액 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 제조사·딜러사·개발운영사 지급 VAT는 어벗츠 추가 지급분(의뢰자 크레딧에서 차감하지 않음).
-  - 장부: 과세 스토어 매출 이벤트/계정은 `STORE_SALE` / `REV_STORE_TAXABLE`. 결제 확정(크레딧·입금) 시 저널 기록. **딜러/제조/개발운영 분배 없이 포함가 전액 어벗츠(`ownerRole=admin`, `amount=amountIncludingVat`)**. 면세 기공 장부와 분리 집계. 건별 과세 draft 없음 → 월말 합산.
+  - 장부: 과세 스토어 매출 이벤트/계정은 `STORE_SALE` / `REV_STORE_TAXABLE`. 결제 확정(크레딧·입금) 시 저널 기록. **딜러/제조/개발운영 분배 없이 포함가 전액 어벗츠(**`ownerRole=admin`**,** `amount=amountIncludingVat`**)**. 면세 기공 장부와 분리 집계. 건별 과세 draft 없음 → 월말 합산.
   - 스토어 결제: **크레딧(유료 선수금) 기본** + 계좌이체 유지. 장바구니 합치기(기공+스토어 한 체크아웃)는 금지. 풀필먼트: `UNPAID→READY→SHIPPED→DELIVERED`.
 - **어벗츠 사업 다각화 SSOT:**
   1. **스토어** — 기성품(심플웨이 등) 과세 매출. `STORE_SALE`/`REV_STORE_TAXABLE`. 포함가 전액 어벗츠 · 딜러/제조/개발운영 분배 없음 · 월말 세금계산서.
   2. **커스텀어벗** — 기공소 디자인 → 애크로덴트 생산 → 치과 납품. 매출=의뢰자 유료 소비, 지출=제조사 고정 하청, 잔여=딜러·개발운영·어벗츠 분배(배송 제외).
   3. **기공사업부** — 어벗츠기공소(`internalLab`)가 치과와 **직접 계약**(원청). 선수금·결제는 항상 어벗츠 서비스로 1차 결제 후 수행 기공소로 이체. 외부 수행은 두 종류:
-     - **협력**(`assigneeKind=cooperation`): 치과가 픽커에서 외부 기공소 직접 지정. **수가표·할증=수행 기공소**(치과↔지정과 동일). 정산만 어벗츠 gross→수행 매입(플랫폼 사용료·하청 수수료 **미부과**, `CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES=false`). 치과 표시「어벗츠 · {파트너}」.
-     - **하청**(`assigneeKind=subcontract`): 치과가 어벗츠기공사업부 지정 후 하청 풀/클레임. **수가표·할증=어벗츠(원청).** 매입 공제 수수료는 미부과(휴면 정책 `subcontractFeeRate`+사용료는 `resolvePracticeTransferFeeRatePolicy`에 유지). 치과에는 하청 기공소 실명 비공개. 미배정 하청 풀(신규 하청)을 보는 기공소와, 작업을 맡은 하청 기공소는 원청과 같이 치과 실명·담당자를 본다. 배정이 끝난 뒤 그 외 기공소에는 치과가 비공개.
+    - **협력**(`assigneeKind=cooperation`): 치과가 픽커에서 외부 기공소 직접 지정. **수가표·할증=수행 기공소**(치과↔지정과 동일). 정산만 어벗츠 gross→수행 매입(플랫폼 사용료·하청 수수료 **미부과**, `CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES=false`). 치과 표시「어벗츠 · {파트너}」.
+    - **하청**(`assigneeKind=subcontract`): 치과가 어벗츠기공사업부 지정 후 하청 풀/클레임. **수가표·할증=어벗츠(원청).** 매입 공제 수수료는 미부과(휴면 정책 `subcontractFeeRate`+사용료는 `resolvePracticeTransferFeeRatePolicy`에 유지). 치과에는 하청 기공소 실명 비공개. 미배정 하청 풀(신규 하청)을 보는 기공소와, 작업을 맡은 하청 기공소는 원청과 같이 치과 실명·담당자를 본다. 배정이 끝난 뒤 그 외 기공소에는 치과가 비공개.
   - **신규 PTX SSOT(강제):** `targetLabAnchorId`=항상 `internalLab`. 치과 픽커 외부=`assigneeLabAnchorId` + `assigneeKind=cooperation`. 어벗츠만 선택 후 풀 클레임=`assigneeKind=subcontract`. 계약·결제·계산서=어벗츠→치과(`ABUTS_TO_CUSTOMER`). 수행 기공소 정산=기공소→어벗츠 매입(`AFFILIATE_TO_ABUTS`, 품목 협력/하청 기공비).
   - **원청 vs 수행(강제):** 원청(어벗츠기공소)은 치과와 직계약하는 법률·정산 주체이고, 동시에 기공도 한다. 어벗츠기공소로 들어온 주문은 원청이 직접 하거나 하청으로 넘긴다. 협력은 치과가 파트너를 지정한 건이다. 수신함은 세 종류를 모두 보여 주고, 어벗츠기공소 화면에서 원청·협력·하청 표시/숨김으로 거른다. 매출 크레딧은 원청에 잠깐 찍힌 뒤 수행 기공소 매입으로 넘어간다. **작업:** 협력은 수행 기공소만 하고 원청 화면에서는 작업 버튼(작업시작·취소·업로드)을 숨긴다. 채팅 헤더 AI 디자인은 어벗츠기공소가 협력·하청·자체 수행 모두에서 연다(`canLabUsePracticeTransferAiDesign`). 하청·자체 수행은 원청도 작업을 대신할 수 있다. **채팅:** 협력·하청 모두 원청이 치과·수행 기공소와 함께 참여한다. 생산비 크레딧·수취는 수행 기공소(`resolvePerformingLabAnchorId`). 수가표는 이와 별개다(협력=수행, 하청=원청 수가).
   - **PTX 수가·할증 앵커(강제, 정산과 분리):** 협력=`resolveFeeScheduleLabAnchorId`/`resolveLabFeeMultiplierLabAnchorId` → **assignee**. 하청·어벗츠 자체 → **prime(어벗츠)**. `isPracticeTransferSubcontracted`(prime≠assignee)만으로 협력 수가를 어벗츠에 두지 말 것. 생성 스냅샷 소급 금지. Cursor: `.cursor/rules/ptx-cooperation-fee-ssot.mdc`.
   - 가격 안내 UI(`PricingPolicyDialog`)는 커스텀 어벗 단가·출고 정책 안내용이며, 사업 축 정의와 혼용하지 않는다.
   - 관리자 정산 UI: `AdminPaymentsPage` 상단 3사업 축(선택형) · 집계 `GET /api/admin/credits/settlement-business-overview`(분배비율·planned 몫 포함). 분배 비율 설정: 재무 › 설정 › 분배비율. 사업영역(`/dashboard/partners`)은 팀원 배분.
 - **매칭 과금 SSOT(강제):**
-  - 한 줄: **기공소 플랫폼 사용료·하청 수수료는 미부과(`CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES=false`). 화면·약관·정책 안내에 요율을 쓰지 않는다. 하청 배정 구조는 유지. 휴면 정책은 `resolvePracticeTransferFeeRatePolicy`(사용료 2%·하청 10%+사용료, 이벤트 off=0, 본부 수행 0). 재개 시 스위치를 true. 기공소 월 참여 0원.**
-  - 기공소(`lab`): 자동 매칭 **월 참여 수수료(`autoMatchMonthlyFee`)는 0원 고정(정책)**. 공개 차감은 `resolvePracticeTransferFeeRate`=0. 휴면 계산은 `resolveLabPlatformFeeRate` → `resolvePracticeTransferFeeRatePolicy`. 본부 여부는 `billing.internalPerformer` 스냅샷 또는 수행 기공소 `businessType`. `aiTrainingConsent`는 **기본 허용**이며 요율에 영향을 주지 않는다. 설정 「AI」탭·기공의뢰 「학습 이용」버튼·동의 모달은 없다. 안내는 약관·개인정보·서비스. 저장값이 `allowed: false`이고 확인된 건만 학습에서 뺀다. **어벗츠기공본부는 항상 동의한 것으로 보고 학습에 포함한다.**
+  - 한 줄: **기공소 플랫폼 사용료·하청 수수료는 미부과(**`CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES=false`**). 화면·약관·정책 안내에 요율을 쓰지 않는다. 하청 배정 구조는 유지. 휴면 정책은** `resolvePracticeTransferFeeRatePolicy`**(사용료 2%·하청 10%+사용료, 이벤트 off=0, 본부 수행 0). 재개 시 스위치를 true. 기공소 월 참여 0원.**
+  - 기공소(`lab`): 자동 매칭 **월 참여 수수료(**`autoMatchMonthlyFee`**)는 0원 고정(정책)**. 공개 차감은 `resolvePracticeTransferFeeRate`=0. 휴면 계산은 `resolveLabPlatformFeeRate` → `resolvePracticeTransferFeeRatePolicy`. 본부 여부는 `billing.internalPerformer` 스냅샷 또는 수행 기공소 `businessType`. `aiTrainingConsent`는 **기본 허용**이며 요율에 영향을 주지 않는다. 설정 「AI」탭·기공의뢰 「학습 이용」버튼·동의 모달은 없다. 안내는 약관·개인정보·서비스. 저장값이 `allowed: false`이고 확인된 건만 학습에서 뺀다. **어벗츠기공본부는 항상 동의한 것으로 보고 학습에 포함한다.**
   - 안내: 정책 모달·서비스 안내·약관·기공소 정산규칙·관리자 정산에서 플랫폼 사용료·하청 수수료 문구를 두지 않는다. 휴면 카피=`LabDirectPlatformFeeNotice`(미마운트).
-  - 치과(`practice`): 커스텀어벗은 플랫폼 고시 단가(**단일가**, `membership*` 키)만. 월 구독·가입 90일 1만원·멤버십/일반 청구 분기 없음.
+  - 치과(`practice`): 커스텀어벗은 플랫폼 고시 단가(**단일가**, `membership`* 키)만. 월 구독·가입 90일 1만원·멤버십/일반 청구 분기 없음.
   - 유료 크레딧 사용처: 기공물·어벗 주문 대금. 기공소 매칭 월정·플랫폼 SaaS 과금에는 쓰지 않는다. 선수금은 어벗츠가 제공하는 서비스 대금으로 1차 결제 후 수행 기공소로 이체.
   - 설정: 단가·신속비=`AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`. 휴면 하청 % · 플랫폼 사용료=`DevopsPlatformFeeTab`(인증 탭에서 숨김) / `PATCH /api/admin/settings/platform-fees`.
 - 단일 SSOT 장부: `LedgerJournal` + `LedgerLine`(논리적으로 하나의 General Ledger)
 - 기존 분리 원장(`CreditLedger`, `ManufacturerCreditLedger`, `SalesmanLedger`, `AdminCreditLedger`)은
-  **레거시로 간주하며 단계적 이관 후 삭제**한다. 이관 중 이중기록(dual-write) 금지.
+**레거시로 간주하며 단계적 이관 후 삭제**한다. 이관 중 이중기록(dual-write) 금지.
 - 필수 이벤트 타입 SSOT(저장형):
   - `REQUEST_SPEND_HOLD`, `REQUEST_SPEND_COMMIT`, `SHIPPING_SPEND_HOLD`, `SHIPPING_SPEND_COMMIT`
   - `PRACTICE_MEMBERSHIP_SPEND`(레거시 치과 멤버십 월 구독. 신규 과금 없음)
@@ -222,11 +252,11 @@
   - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공(settlement 상계) → 유료** 순으로 차감
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라 소비된 paid/free 총량을 role base에 비례 배분(무편향)해 기록
   - 딜러사·개발운영사·어벗츠의 무료 수익은 지급 0원으로 정산완료 상태만 표시 가능. **리메이크는 제조사 지급(기본 6,600)**. 무료 크레딧 포함 약정 단가는 말일 일괄 지급.
-- 커스텀 어벗 의뢰 단가 SSOT: 관리자「플랫폼 설정 · 커스텀어벗」. **정상가**=`membershipProductionPrice`(기본 **15,000원**). **런칭 이벤트**=`customAbutmentLaunchEventProductionPrice`(기본 **13,000원**) · 관리자 UI는 **on/off만**(시작·종료일 입력 없음) · **변경은 내일 0시(KST)부터**(`customAbutmentLaunchEventChangeScheduled*`, 분배 비율과 동일) — `resolveCustomAbutmentProductionPriceForAt`(의뢰 생성·hold 시점). **신규 Request는 항상 생산만**(`custom_abutment`). `design_custom_abutment`·`membershipDesignAndProductionPrice`(옛 2.5만)는 **레거시 읽기 전용**. 기공의뢰 CA 디자인은 수주 기공소·`labFeeSchedule` 커스텀어벗 수가. 출고: **택배 묶음 출고**=박스당 `shippingFee`(기본 **3,500원**). **딜리버리 익일 도착**=월정액(기본 **55,000원, VAT 포함**, `fmDentalMonthlyShippingFee`) · 당일 자정까지 주문 → 익일 기공소(치과) 도착. `regular*`·관리자「멤버/일반」은 **딜러 유무 분배**용. 치과 멤버십 월정 없음.
+- 커스텀 어벗 의뢰 단가 SSOT: 관리자「플랫폼 설정 · 커스텀어벗」. **정상가**=`membershipProductionPrice`(기본 **15,000원**). **런칭 이벤트**=`customAbutmentLaunchEventProductionPrice`(기본 **13,000원**) · 관리자 UI는 **on/off만**(시작·종료일 입력 없음) · **변경은 내일 0시(KST)부터**(`customAbutmentLaunchEventChangeScheduled`*, 분배 비율과 동일) — `resolveCustomAbutmentProductionPriceForAt`(의뢰 생성·hold 시점). **신규 Request는 항상 생산만**(`custom_abutment`). `design_custom_abutment`·`membershipDesignAndProductionPrice`(옛 2.5만)는 **레거시 읽기 전용**. 기공의뢰 CA 디자인은 수주 기공소·`labFeeSchedule` 커스텀어벗 수가. 출고: **택배 묶음 출고**=박스당 `shippingFee`(기본 **3,500원**). **딜리버리 익일 도착**=월정액(기본 **55,000원, VAT 포함**, `fmDentalMonthlyShippingFee`) · 당일 자정까지 주문 → 익일 기공소(치과) 도착. `regular`*·관리자「멤버/일반」은 **딜러 유무 분배**용. 치과 멤버십 월정 없음.
 - 롤백 원칙:
-  - **제조사 의뢰비·배송비**(`REQUEST_SPEND_*` / `SHIPPING_SPEND_*`): 롤백·준비 취소 시 원본 저널/라인 **물리 삭제**(REFUND 추가 금지)
-  - **기공의뢰(PTX)**(`PRACTICE_TRANSFER_*`·디자인비 `ADJUST`·PTX 배송): 삭제·작업취소 시 원본 저널/라인 **물리 삭제**(과거 REFUND 쌍도 함께 삭제)
-  - **스토어**(`STORE_SALE`): 원본 유지 + 취소 시점 **`REFUND`**(라인 부호 반전)로 잔고 복구·취소 표시
+  - **제조사 의뢰비·배송비**(`REQUEST_SPEND_`* / `SHIPPING_SPEND_*`): 롤백·준비 취소 시 원본 저널/라인 **물리 삭제**(REFUND 추가 금지)
+  - **기공의뢰(PTX)**(`PRACTICE_TRANSFER_`*·디자인비 `ADJUST`·PTX 배송): 삭제·작업취소 시 원본 저널/라인 **물리 삭제**(과거 REFUND 쌍도 함께 삭제)
+  - **스토어**(`STORE_SALE`): 원본 유지 + 취소 시점 `REFUND`(라인 부호 반전)로 잔고 복구·취소 표시
 - 조회/표시 타입 원칙:
   - 충전은 `CHARGE_PAID` / `CHARGE_FREE_REQUEST` / `CHARGE_FREE_SHIPPING`으로 분리 표기 (`CHARGE` 단일표시 금지)
   - 소비는 `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`으로 분리 표기 (`SPEND` 단일표시 금지)
@@ -279,6 +309,8 @@
 - 동시 차감(overspend) 방지: spend 트랜잭션에서 `CreditBalanceGuard`를 통한 앵커 단위 직렬화 적용
 - 이벤트 기반 캐시 갱신 우선, 조회 시 대규모 재계산 지양
 
+
+
 ### 2.4 의뢰자 유형(발신/수신) · 가입/온보딩 · 기공의뢰서 전송
 
 - 가입 role SSOT: **requestor** | **salesman**만. `practice` role은 **제거**(신규 생성·공개 가입·드롭존 가입·관리자 생성 모두 금지). 기존 `practice` 계정은 `requestor`+`requestorKind=practice`(의뢰 발신자)로 마이그레이션. 관리자 UI의 별도 치과 role 필터도 제거.
@@ -291,7 +323,7 @@
   - 최소 가입: 이메일(+인증) + 비밀번호 + 담당자 휴대폰(+인증). `practiceProfile`/Org 앵커는 만들지 않음
   - 가입 직후 **첫 PracticeTransfer**까지 드롭존에서 전송 가능(성공 후 대시보드로 보내지 않음)
   - 게이트: **성공한 첫 전송 이후** 추가 의뢰 작성·대시보드 진입 시 온보딩 유도(`onboardingWizardCompleted` 미완료). 로그인 세션(~3년)과 무관
-  - 온보딩에서 `practiceProfile` 완료 시 **BusinessAnchor를 생성**한다(첫 가입자=`owner`). 사업자등록번호가 없으면 synthetic `practice-*` BN. 이후 설정에서 lab을 추가·검증하면 **동일 앵커**에 실BN·license를 올린다.
+  - 온보딩에서 `practiceProfile` 완료 시 **BusinessAnchor를 생성**한다(첫 가입자=`owner`). 사업자등록번호가 없으면 synthetic `practice-`* BN. 이후 설정에서 lab을 추가·검증하면 **동일 앵커**에 실BN·license를 올린다.
 - 유형 SSOT(체크박스 OR, 최소 1개): `requestorCapabilities = { practice: boolean, lab: boolean }`
   - Org SSOT: `BusinessAnchor` (`businessType: "requestor"`). practice/lab은 같은 조직의 캡일 뿐이며 “무앵커 발신 전용 조직” 경로는 없다.
   - 캡 SSOT: `BusinessAnchor.requestorCapabilities` (User 필드는 미링크·온보딩 중 미러)
@@ -315,7 +347,7 @@
   - 제출은 Request 생성 경유 금지. 저장 SSOT: `PracticeTransfer`
   - **3D 스캔은 선택**. 첨부가 없거나 사진만 있어도 기공소로 전송된다. 러버인상(석고모델)도 이 경로를 쓴다. 다시 필수로 바꾸려면 사용자에게 경고하고 재확인한 뒤에만. SSOT: `.cursor/rules/practice-oral-scan-optional.mdc`
   - **완료 뱃지** (`isPracticeRecentFinishedBadgeStatus` · 서버 `isPracticeTransferFinishedBadge`): 표시 단계 `작업완료`(보철 업로드 또는 치과도착일 자동 완료)이고 어벗 뱃지가 없을 때. 어벗은 생산진행·포장.발송 또는 designFiles·designReadyAt. 집계·필터·목록·채팅·번호표는 이 판정만. 필터 문구는 의뢰·작업시작·완료·취소·어벗.
-- 환봉방식 커스텀어벗: 치과 프리셋 편집 제조사 선택 마지막「제조사 추가 요청」→ 제조사·브랜드·패밀리 입력, 타입 `헥스(사이즈 미정)` 고정. 요청 시 관리자 문의 자동 접수 + 프리셋 일단 저장. 관리자 플랫폼 설정에서 도입 체크 시 해당 치과 프리셋 정식 채택(되돌리기 가능). 가격 안내는 별도 고지. 프리셋 편집 패밀리 선택은 Regular / Mini / Narrow / Small Narrow +「패밀리 추가」. 기공의뢰 기공비 툴팁 컬럼 순서: 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗. **PTX CA(환봉 요청중·도입·CNC) 치과 청구는 기공소 `커스텀어벗` 수가.** 어벗츠 플랫폼 단가(생산 1.5만·디자인+생산 2.5만)는 **기공소→어벗츠 Request**.
+- 환봉방식 커스텀어벗: 치과 프리셋 편집 제조사 선택 마지막「제조사 추가 요청」→ 제조사·브랜드·패밀리 입력, 타입 `헥스(사이즈 미정)` 고정. 요청 시 관리자 문의 자동 접수 + 프리셋 일단 저장. 관리자 플랫폼 설정에서 도입 체크 시 해당 치과 프리셋 정식 채택(되돌리기 가능). 가격 안내는 별도 고지. 프리셋 편집 패밀리 선택은 Regular / Mini / Narrow / Small Narrow +「패밀리 추가」. 기공의뢰 기공비 툴팁 컬럼 순서: 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗. **PTX CA(환봉 요청중·도입·CNC) 치과 청구는 기공소** `커스텀어벗` **수가.** 어벗츠 플랫폼 단가(생산 1.5만·디자인+생산 2.5만)는 **기공소→어벗츠 Request**.
 - SSOT API:
   - 생성: `POST /api/practice/transfers`
   - 조회(발신): `GET /api/practice/transfers/my`
@@ -329,17 +361,23 @@
 - 레거시 혼입 경로(예: `/api/requests/practice/*`)는 제거 대상으로 관리
 - 백필: `web/backend/scripts/db/backfill-requestor-capabilities.js` (`--apply`)
 
+
+
 ### 2.5 채팅
 
 - 일반 의뢰 기반 채팅: `GET /api/chats/request-room/:requestId`
 - practice 전송 기반 채팅: `GET /api/chats/practice/transfer-room/:transferId`
 - 채팅 연결 판단은 라우팅 필드 SSOT 기준으로 처리
 
+
+
 ### 2.6 CNC/브리지
 
 - 브리지/장비 상태 SSOT는 백엔드 DB
 - 자동가공(Worksheet) 큐와 수동업로드(Equipment) 큐 절대 분리
 - `allowAutoMachining`(자동가공)과 `allowJobStart`(수동시작) 의미 혼용 금지
+
+
 
 ### 2.7 배송/우편함
 
@@ -349,17 +387,17 @@
 - 우편함 배정 시점: 가공→세척.패킹 진입. 같은 수신자면 집하 전까지 한 칸에 모음(1회 택배비). 포장.발송은 기존 배정 유지. 포장.발송↔세척.패킹·세척.패킹→가공 롤백도 우편함 유지(패킹 라벨 SSOT). 가공→준비 롤백에서만 해제.
 - 합류 키: 수신자 BusinessAnchor. PTX CA도 주문 기공소 BA. 신속/묶음은 같은 수신자면 같이 묶음.
 - 배송비 과금 시점: **포장.발송 진입(세척.패킹 승인)** 1회. 운송장 라벨에는 건수를 출력하지 않음(웹앱에서 확인).
-- 신속 배송 추가 의뢰크레딧: `creditSettings.expressFee`(기본 **2,000원**), **가공 진입(CAM 승인) 시 별도 `express_surcharge` 저널로 차감**
+- 신속 배송 추가 의뢰크레딧: `creditSettings.expressFee`(기본 **2,000원**), **가공 진입(CAM 승인) 시 별도** `express_surcharge` **저널로 차감**
   - 설정 UI: 관리자 플랫폼 설정「크레딧」(배송) / 「커스텀어벗」(단가) — `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits` (`admin`|`devops`)
   - 약속 출고일 자정까지 당일 집하 실패(또는 신속→묶음 전환) 시 신속 추가비만 물리 삭제 취소
-    (`shippingOnTimeEvalWorker` / `cancelExpressSurchargeIfShipDelayed`). 16시 이후 당일 수동 집하는 정시.
+  (`shippingOnTimeEvalWorker` / `cancelExpressSurchargeIfShipDelayed`). 16시 이후 당일 수동 집하는 정시.
   - 의뢰자 대시보드: `PATCH /api/requests/my/shipping-mode` (준비 단계만)
   - 견적/표시 금액 SSOT: 신속 지정 시점부터 `price.amount`에 추가비를 합산하고 `price.expressFee`에 기록 (`expressPrice.utils.js` `resolveQuotedPriceWithExpressFee`)
     - 적용 경로: 생성(`from-draft`/`createRequest`), 준비 단계 모드 전환, 대시보드/상세 응답 정규화
     - 실제 크레딧 차감 시점(CAM)과 표시 금액 반영 시점을 혼동하지 말 것
 - 디자인+가공 과금: `productMode === "design_custom_abutment"`일 때만 적용
   - **1 STL에 여러 어벗** 가능. 공식: `(가공 단가 + 디자인비) × 어벗 수`
-  - 단가: 치과 청구 SSOT=`creditSettings.membershipProductionPrice`(정상가 기본 **15,000**) · 런칭 이벤트 **13,000**(`customAbutmentLaunchEvent*`). `membershipDesignAndProductionPrice`(기본 **25,000**, 레거시). `designFee`는 디자인+생산 − 생산만과 동기화(기본 **10,000원 / 1어벗**). 기공의뢰(PTX) CA 치과 청구는 기공소 수가. 기공소→어벗츠 생산비는 플랫폼 유효가. 배송비 박스당 또는 FM덴탈 월정액. 신속=`expressFee`(기본 **+2,000**). CNC 관리자「멤버/일반」·`regular*`는 딜러 유무 분배용.
+  - 단가: 치과 청구 SSOT=`creditSettings.membershipProductionPrice`(정상가 기본 **15,000**) · 런칭 이벤트 **13,000**(`customAbutmentLaunchEvent`*). `membershipDesignAndProductionPrice`(기본 **25,000**, 레거시). `designFee`는 디자인+생산 − 생산만과 동기화(기본 **10,000원 / 1어벗**). 기공의뢰(PTX) CA 치과 청구는 기공소 수가. 기공소→어벗츠 생산비는 플랫폼 유효가. 배송비 박스당 또는 FM덴탈 월정액. 신속=`expressFee`(기본 **+2,000**). CNC 관리자「멤버/일반」·`regular`*는 딜러 유무 분배용.
   - 어벗 수: `caseInfos.toothWorks` 유효 행(없으면 `tooth` 파싱, 최소 1) — `countDesignAbutmentQty`
   - 설정 UI: 동일 `AdminCreditSettingsTab`(`variant=customAbut`) / `PATCH /api/admin/settings/credits`
   - 견적/표시: `designPrice.utils.js` `resolveQuotedPriceWithDesignFee`
@@ -370,6 +408,8 @@
   - 상세: `.cursor/rules/design-fee.mdc`
 - 추적관리 진입 기준: 집하완료(statusCode 11 / picked_up)
 - 한진 배송조회 운송장번호는 숫자 12자리. 수동 입력 하이픈은 조회 전 제거 (`shipping.Tracking.helpers.js`). 배송완료 전이는 statusCode 66.
+
+
 
 ### 2.8 R&D 샘플
 
@@ -383,6 +423,8 @@
 
 ---
 
+
+
 ## 3) 주요 금지사항 요약
 
 - 브라우저 `alert/confirm/prompt` 사용 금지 (`ConfirmDialog` 사용)
@@ -390,11 +432,13 @@
 - 규칙 우회용 임시 분기/레거시 보존 금지
 - 정책 변경 없이 색상/단계명/필드명 임의 확장 금지
 - **변이 UX 고지연 구현 금지(강제):** 업로드·취소·작업시작·완료·핸드오프 등 「처리 중…」 경로는
-  처음부터 critical path만 await하고, 수수료·스냅샷·알림·Rhino 등은 응답 후 처리.
-  동일 문서 재조회/재저장·성공 후 전체 목록 refetch로 대기를 늘리지 않는다.
-  상세: `.cursor/rules/mutation-ux-latency.mdc`
+처음부터 critical path만 await하고, 수수료·스냅샷·알림·Rhino 등은 응답 후 처리.
+동일 문서 재조회/재저장·성공 후 전체 목록 refetch로 대기를 늘리지 않는다.
+상세: `.cursor/rules/mutation-ux-latency.mdc`
 
 ---
+
+
 
 ## 4) 중요 진입 파일 지도 (rules에는 이것만 유지)
 
@@ -410,6 +454,8 @@
   - 요약 카드(정산·크레딧): 클릭→상세 모달, 수식·설명 문단 상시 노출 금지 → `web/frontend/rules.md`, `.cursor/rules/ui-summary-cards.mdc`
 - 프론트 상세 진입 파일 지도는 `web/frontend/rules.md`를 참조합니다.
 
+
+
 ### 4.2 Backend
 
 - 루트에는 전역 진입점만 유지합니다.
@@ -421,6 +467,8 @@
   - `web/Procfile`, `web/.ebextensions/06_timezone.config`, `web/eb.sh` (EBS TZ)
 - 백엔드 상세 진입 파일 지도는 `web/backend/rules.md`를 참조합니다.
 
+
+
 ### 4.3 Background
 
 - BG 상세 진입 파일 지도는 각 프로그램 로컬 `rules.md`를 참조합니다.
@@ -431,6 +479,8 @@
   - `bg/pc2/pack-server/rules.md`
   - `bg/lab-cad-helper/rules.md`
   - `bg/pc3/wbls-server/rules.md`
+
+
 
 ### 4.4 단위 프로그램 로컬 rules 위치
 
@@ -444,6 +494,8 @@
 - Lab Helper (Windows·Mac 연결 프로그램 v3): `bg/lab-cad-helper/rules.md`
 - WBL: `bg/pc3/wbls-server/rules.md`
 
+
+
 ### 4.5 상세 정책 참조 인덱스 (누락 방지)
 
 - 원문 보존본(archive): `.archive/rules.legacy-2026-07-29.md`
@@ -455,6 +507,8 @@
 
 ---
 
+
+
 ## 5) 변경 체크리스트 (작업 종료 전)
 
 - [ ] 레거시/중복 필드 제거 완료
@@ -465,6 +519,8 @@
 - [ ] 변이 API/버튼(업로드·취소 등): 응답 전 await에 부수 효과 없음 · 중복 find/save 없음 · FE 「처리 중」이 전체 refetch에 묶이지 않음 (`.cursor/rules/mutation-ux-latency.mdc`)
 
 ---
+
+
 
 ## 6) 인프라 마이그레이션 완료 기준 (EB → LB+NAT)
 
@@ -485,7 +541,10 @@
 
 ---
 
+
+
 ## 부록) 문서 범위 밖 항목
 
 - 상세 이력/긴 트러블슈팅/과거 정책 비교표는 루트 rules에서 제거
 - 필요 시 `.archive/` 또는 각 도메인 로컬 문서로 관리
+

@@ -1814,7 +1814,7 @@ export const PracticeFileTransferPage = ({
     labAnchorId: selectedLab?._id,
     toothWorks: syncToothWorks,
     implantFavorites,
-    // 원의뢰가 기공소 freeRemakeYears 밖이면 정가(리메이크 플래그와 수가 분리)
+    // 리메이크 견적=월 3건 무료 / 이후 고정 1만원(서버 remakeFeeQuote)
     remake:
       !linkedRemakeSource ||
       linkedRemakeSource.withinRemakePricingWindow !== false,
@@ -1885,7 +1885,7 @@ export const PracticeFileTransferPage = ({
           const qs = new URLSearchParams({
             patientName: normalizedPatientName,
             teeth: composeToothNumbersKey,
-            // 기공소 freeRemakeYears 상한(30년)까지 감지
+            // 유사 케이스 감지(고정 상한 일수)
             days: String(365 * 30),
             limit: "5",
           });
@@ -8537,7 +8537,7 @@ export const PracticeFileTransferPage = ({
           const qs = new URLSearchParams({
             patientName: normalizedPatientName,
             teeth: composeToothNumbersKey,
-            // 기공소 freeRemakeYears 상한(30년)까지 감지
+            // 유사 케이스 감지(고정 상한 일수)
             days: String(365 * 30),
             limit: "5",
           });
@@ -12514,8 +12514,8 @@ export const PracticeFileTransferPage = ({
                   )}
                 </div>
                 <div className="text-muted-foreground">
-                  해당 기공소의 무료 리메이크 기간(년) 이내면 치과→기공소
-                  리메이크비는 무료입니다. 기공소가 작업시작하면 반영됩니다.
+                  리메이크는 매월 3건까지 무료, 4건부터 건당 1만원입니다.
+                  기공소가 작업시작하면 반영됩니다.
                 </div>
                 {remakePending.transfer.hasCustomAbutment ? (
                   <label className="flex cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-[13px]">
@@ -12532,7 +12532,7 @@ export const PracticeFileTransferPage = ({
                       </span>
                       <span className="block text-[12px] text-muted-foreground">
                         기본은 보철만 리메이크합니다. 포함 시 기공소→어벗츠
-                        리메이크는 동일 조건에서 건당 10,000원(배송비 별도)입니다.
+                        리메이크도 월 3건 무료·이후 건당 1만원(배송비 별도)입니다.
                       </span>
                     </span>
                   </label>
@@ -12586,15 +12586,14 @@ export const PracticeFileTransferPage = ({
                 {PRE_PLATFORM_REMAKE_PRACTICE_SEND_HINT}
               </div>
               <div className="text-muted-foreground">
-                해당 기공소의 무료 리메이크 기간(년) 이내면 치과→기공소
-                리메이크비는 무료입니다. 커스텀어벗은 기본 제외이며, 작성
-                화면에서 넣으면 기공소→어벗츠 리메이크는 건당 10,000원(배송비
-                별도)입니다.
+                리메이크는 매월 3건까지 무료, 4건부터 건당 1만원입니다.
+                커스텀어벗은 기본 제외이며, 작성 화면에서 넣으면 기공소→어벗츠
+                리메이크도 같은 월 쿼터를 씁니다(배송비 별도).
               </div>
               {composeRemakeIncludesCustomAbutment ? (
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[12px] text-amber-950">
-                  커스텀어벗이 포함되어 있습니다. 기공소→어벗츠 리메이크는 동일
-                  조건에서 건당 10,000원(배송비 별도)입니다.
+                  커스텀어벗이 포함되어 있습니다. 기공소→어벗츠 리메이크도 월
+                  3건 무료·이후 건당 1만원(배송비 별도)입니다.
                 </div>
               ) : null}
             </div>

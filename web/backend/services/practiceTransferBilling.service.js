@@ -157,7 +157,6 @@ import {
   resolveEffectiveLabFeeLabDoc,
   stripCustomAbutmentFromToothWorks,
   countCustomAbutmentWorks,
-  readLabFeeFreeRemakeYears,
 } from "../utils/labFeeSchedule.js";
 import {
   normalizeConfiguredRushFeeMultiplier,
@@ -231,7 +230,12 @@ import {
 } from "../utils/practiceLabRating.js";
 import { shouldChargePracticeTransferLabShipping } from "../utils/practiceTransferLabShipping.js";
 import { SHIPPING_LEDGER_LABELS } from "../utils/shippingLedgerLabels.js";
-import { isWithinLabFreeRemakeWindow } from "../utils/remakePricingPolicy.js";
+import {
+  buildFixedRemakeRetailFees,
+  kstMonthBounds,
+  practiceMonthlyRemakeMatchFilter,
+  resolveMonthlyRemakePricing,
+} from "../utils/remakePricingPolicy.js";
 import {
   awaitsAbutmentShareRelease,
   requestMachiningSpendGlKey,
@@ -4790,6 +4794,69 @@ function frozenPracticeTransferFeeSnapshot(billing) {
   };
 }
 
+/**
+ * 치과 practiceAnchor의 KST 당월 리메이크 PTX 건수.
+ * @param {{ practiceAnchorId: unknown, excludeTransferId?: unknown, now?: Date }} input
+ */
+export async function countPracticeMonthlyRemakeTransfers({
+  practiceAnchorId,
+  excludeTransferId = null,
+  now = new Date(),
+}) {
+  const practiceId = String(practiceAnchorId || "").trim();
+  if (!practiceId || !Types.ObjectId.isValid(practiceId)) return 0;
+  const { start, nextStart } = kstMonthBounds(now);
+  const excludeId = String(excludeTransferId || "").trim();
+  const filter = practiceMonthlyRemakeMatchFilter({
+    practiceAnchorId: new Types.ObjectId(practiceId),
+    start,
+    nextStart,
+    excludeTransferId:
+      excludeId && Types.ObjectId.isValid(excludeId)
+        ? new Types.ObjectId(excludeId)
+        : null,
+  });
+  return PracticeTransfer.countDocuments(filter);
+}
+
+/**
+ * 여러 치과의 당월 리메이크 건수 Map(practiceId → count).
+ * @param {string[]} practiceAnchorIds
+ * @param {Date} [now]
+ */
+export async function countPracticeMonthlyRemakeTransfersByIds(
+  practiceAnchorIds,
+  now = new Date(),
+) {
+  const ids = [
+    ...new Set(
+      (Array.isArray(practiceAnchorIds) ? practiceAnchorIds : [])
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id)),
+    ),
+  ];
+  if (ids.length === 0) return new Map();
+  const { start, nextStart } = kstMonthBounds(now);
+  const rows = await PracticeTransfer.aggregate([
+    {
+      $match: practiceMonthlyRemakeMatchFilter({
+        practiceAnchorId: {
+          $in: ids.map((id) => new Types.ObjectId(id)),
+        },
+        start,
+        nextStart,
+      }),
+    },
+    {
+      $group: {
+        _id: "$practiceBusinessAnchorId",
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+  return new Map(rows.map((row) => [String(row._id), Number(row.count) || 0]));
+}
+
 export async function buildPracticeTransferQuote({
   practiceAnchorId = null,
   labAnchorId = null,
@@ -4801,6 +4868,8 @@ export async function buildPracticeTransferQuote({
   relationshipKind = undefined,
   labTradingPartnerId = undefined,
   remake = false,
+  /** 월 무료 소진 후 PTX 리메이크 고정가(원). 설정 시 수가표 대신 이 금액. */
+  remakeFixedAmount = null,
   skipAbutmentFees: skipAbutmentFeesInput = undefined,
   matchingMode = undefined,
   autoMatchBudget = undefined,
@@ -4917,6 +4986,10 @@ export async function buildPracticeTransferQuote({
   }
 
   const useRemake = Boolean(remake);
+  const fixedRemakeAmount =
+    remakeFixedAmount == null
+      ? null
+      : Math.max(0, Math.round(Number(remakeFixedAmount) || 0));
   const skipAbutmentFees =
     skipAbutmentFeesInput != null ? Boolean(skipAbutmentFeesInput) : useRemake;
   // 기공소 없음(자동매칭 작성): 할증 없음. 지정·수신: 할증 앵커(협력=수행, 하청=원청).
@@ -4928,35 +5001,42 @@ export async function buildPracticeTransferQuote({
     ? null
     : captureLabPracticeSpecialSupplySnapshot(lab, practiceId);
   const rushFeeMultiplier = normalizeRushFeeMultiplier(rushFeeMultiplierInput);
-  const fees = computePracticeTransferRetailFeesWithLabShipping(
-    {
-      toothWorks,
-      implantFavorites: implantFavoritesFromPractice(practice),
-      labFeeSchedule: schedule,
-      abutmentPricingTier,
-      abutmentPrices,
-      remake: useRemake,
-      skipAbutmentFees,
-      labFeeMultiplier,
-      rushFeeMultiplier,
-    },
-    {
-      toothWorks,
-      production: {
-        skipJig:
-          skipJig === false ||
-          skipJig === "false" ||
-          skipJig === 0 ||
-          skipJig === "0" ||
-          skipJig === "N"
-            ? false
-            : skipJig == null
-              ? true
-              : Boolean(skipJig),
-      },
-      billing: {},
-    },
-  );
+  let fees =
+    useRemake && fixedRemakeAmount != null && fixedRemakeAmount > 0
+      ? {
+          ...buildFixedRemakeRetailFees(fixedRemakeAmount),
+          labFeeMultiplier,
+          rushFeeMultiplier,
+        }
+      : computePracticeTransferRetailFeesWithLabShipping(
+          {
+            toothWorks,
+            implantFavorites: implantFavoritesFromPractice(practice),
+            labFeeSchedule: schedule,
+            abutmentPricingTier,
+            abutmentPrices,
+            remake: useRemake,
+            skipAbutmentFees,
+            labFeeMultiplier,
+            rushFeeMultiplier,
+          },
+          {
+            toothWorks,
+            production: {
+              skipJig:
+                skipJig === false ||
+                skipJig === "false" ||
+                skipJig === 0 ||
+                skipJig === "0" ||
+                skipJig === "N"
+                  ? false
+                  : skipJig == null
+                    ? true
+                    : Boolean(skipJig),
+            },
+            billing: {},
+          },
+        );
 
   let autoMatchBudgetOut = null;
 
@@ -6626,7 +6706,7 @@ export async function buildFeeQuotesForTransferDocs({
 
   const labIdList = [...labIds];
   const practiceIdList = [...practiceIds];
-  const [payoutRates, abutmentPricesBase, labs, practices, partners, creditSettings] =
+  const [payoutRates, abutmentPricesBase, labs, practices, partners, creditSettings, monthlyRemakeCountByPractice] =
     await Promise.all([
       loadCachedDevopsPayoutRates(),
       loadCachedAbutmentCreditPrices(),
@@ -6661,6 +6741,7 @@ export async function buildFeeQuotesForTransferDocs({
             .lean()
         : Promise.resolve([]),
       loadCreditSettingsDefaults(),
+      countPracticeMonthlyRemakeTransfersByIds(practiceIdList),
     ]);
 
   const abutmentPrices = normalizeAbutsAbutmentCreditPrices({
@@ -6759,37 +6840,38 @@ export async function buildFeeQuotesForTransferDocs({
           practiceId,
         );
     // 기본 리메이크 견적=보철만(CA 제외). CA 포함 견적은 별도 필드.
-    // 기공소 freeRemakeYears 창 밖·미설정(null)·0이면 정가(비-리메이크) 견적.
-    const remakePricingEligible = isWithinLabFreeRemakeWindow(
-      doc?.createdAt,
-      readLabFeeFreeRemakeYears(
-        labDocById.get(quoteLabId)?.labFeeSchedule,
-      ),
-    );
+    // KST 월 3건 무료 · 4건부터 고정 1만원(수가표 정가 아님).
+    const monthlyRemake = resolveMonthlyRemakePricing({
+      used: monthlyRemakeCountByPractice.get(practiceId) || 0,
+    });
     const remakeToothWorksProsthesisOnly =
       stripCustomAbutmentFromToothWorks(toothWorks);
-    const remakeFees = computePracticeTransferRetailFees({
-      toothWorks: remakeToothWorksProsthesisOnly,
-      implantFavorites,
-      labFeeSchedule: remakeFeeSchedule,
-      abutmentPricingTier,
-      abutmentPrices,
-      remake: remakePricingEligible,
-      labFeeMultiplier: remakeLabFeeMultiplier,
-      rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
-    });
+    const remakeFees = monthlyRemake.free
+      ? computePracticeTransferRetailFees({
+          toothWorks: remakeToothWorksProsthesisOnly,
+          implantFavorites,
+          labFeeSchedule: remakeFeeSchedule,
+          abutmentPricingTier,
+          abutmentPrices,
+          remake: true,
+          labFeeMultiplier: remakeLabFeeMultiplier,
+          rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
+        })
+      : buildFixedRemakeRetailFees(monthlyRemake.amount);
     const remakeFeesWithCustomAbutment =
       countCustomAbutmentWorks(toothWorks) > 0
-        ? computePracticeTransferRetailFees({
-            toothWorks,
-            implantFavorites,
-            labFeeSchedule: remakeFeeSchedule,
-            abutmentPricingTier,
-            abutmentPrices,
-            remake: remakePricingEligible,
-            labFeeMultiplier: remakeLabFeeMultiplier,
-            rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
-          })
+        ? monthlyRemake.free
+          ? computePracticeTransferRetailFees({
+              toothWorks,
+              implantFavorites,
+              labFeeSchedule: remakeFeeSchedule,
+              abutmentPricingTier,
+              abutmentPrices,
+              remake: true,
+              labFeeMultiplier: remakeLabFeeMultiplier,
+              rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
+            })
+          : buildFixedRemakeRetailFees(monthlyRemake.amount)
         : null;
     const fees = computePracticeTransferRetailFees({
       toothWorks,

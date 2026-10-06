@@ -1321,7 +1321,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     );
     let quotedPrice;
     if (isPtxRemake) {
-      // 기공소→어벗츠: 동일 치과·환자·치식·180일이면 건당 10,000원. 아니면 정가 생산.
+      // 기공소→어벗츠: 동일 치과·환자·치식·180일이면 월 3건 무료/이후 1만원. 아니면 정가 생산.
       quotedPrice = await computePriceForRequest({
         requestorId: labUserId,
         requestorOrgId: labAnchorId,

@@ -1,12 +1,12 @@
 // related files:
 // - web/backend/controllers/requests/utils.js
 // - web/backend/services/practiceTransferProduction.service.js
+// - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/utils/labFeeSchedule.js
-// - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
-// - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // change-log:
-// - 2026-09-21: 기공소 labFeeSchedule.freeRemakeYears — null=미설정·유료, 0=유료, 1+=N년 무료.
+// - 2026-10-07: PTX·어벗츠 리메이크 — KST 월 3건 무료, 4건부터 건당 1만원. freeRemakeYears 과금 퇴역.
+// - 2026-09-21: 기공소 labFeeSchedule.freeRemakeYears — null=미설정·유료, 0=유료, 1+=N년 무료(레거시).
 // - 2026-09-14: 리메이크 판정 창 90→180일(감지·수가 동일).
 // - 2026-09-12: 리메이크 정책 SSOT — 치과로부터=무료, 어벗츠로=동일치식·창 내 1만원.
 
@@ -14,22 +14,32 @@ import { toKstYmd } from "./krBusinessDays.js";
 
 /**
  * 레거시·어벗츠 Request(CA) 리메이크 매칭 창(일).
- * 치과→기공소 PTX 무료 창은 labFeeSchedule.freeRemakeYears.
+ * PTX 유사 케이스 감지는 FREE_REMAKE_YEARS_MAX 고정 상한.
  */
 export const REMAKE_POLICY_WINDOW_DAYS = 180;
 
-/** freeRemakeYears 상한(년) */
+/** PTX 유사 케이스 감지 상한(년). 과금과 무관. */
 export const FREE_REMAKE_YEARS_MAX = 30;
 
-/** 어벗츠로(Request) 리메이크 고객 단가(원). 배송비 별도. */
+/** KST 월 무료 리메이크 한도(건). PTX·어벗츠 공통. */
+export const MONTHLY_REMAKE_FREE_LIMIT = 3;
+
+/** 리메이크 고객 단가(원). 배송비 별도. 월 무료 소진 후. */
 export const ABUTS_REMAKE_FIXED_AMOUNT = 10000;
 
 export const ABUTS_REMAKE_PRICE_RULE = "remake_fixed_10000";
+export const ABUTS_REMAKE_MONTHLY_FREE_RULE = "remake_monthly_free_3";
+
+/** 월 쿼터 집계에 포함하는 price.rule */
+export const REMAKE_PRICE_RULES_FOR_MONTHLY_COUNT = [
+  ABUTS_REMAKE_MONTHLY_FREE_RULE,
+  "remake_general_pricing",
+  ABUTS_REMAKE_PRICE_RULE,
+];
 
 /**
- * null = 미설정(유료 + 설정 유도).
- * 0 = 항상 유료.
- * 1+ = 해당 년수 이내 무료.
+ * @deprecated 과금 SSOT 아님. 스키마·레거시 읽기용만 유지.
+ * null = 미설정. 0 = 유료. 1+ = N년.
  * @param {unknown} raw
  * @returns {number|null}
  */
@@ -41,8 +51,7 @@ export function normalizeFreeRemakeYears(raw) {
 }
 
 /**
- * 설정 UI·API용 — 미설정이면 null 유지.
- * body에 키가 없을 때 existing을 쓰려면 caller가 병합.
+ * @deprecated 과금 SSOT 아님. 스키마·레거시 읽기용만 유지.
  */
 export function parseFreeRemakeYearsInput(raw, fallback = null) {
   if (raw === undefined) return normalizeFreeRemakeYears(fallback);
@@ -51,7 +60,54 @@ export function parseFreeRemakeYearsInput(raw, fallback = null) {
 }
 
 /**
- * KST 달력 기준 N년 전 00:00+09:00.
+ * KST 달력 기준 이번 달 [start, nextMonthStart).
+ * @param {Date} [now]
+ * @returns {{ start: Date, nextStart: Date, year: number, month: number }}
+ */
+export function kstMonthBounds(now = new Date()) {
+  const nowYmd = toKstYmd(now) || toKstYmd(new Date());
+  const [year, month] = String(nowYmd)
+    .split("-")
+    .map((v) => Number(v || 0));
+  const y = Number.isFinite(year) ? year : new Date().getFullYear();
+  const m = Number.isFinite(month) && month >= 1 && month <= 12 ? month : 1;
+  const startYmd = `${y}-${String(m).padStart(2, "0")}-01`;
+  const start = new Date(`${startYmd}T00:00:00+09:00`);
+  const nextYear = m === 12 ? y + 1 : y;
+  const nextMonth = m === 12 ? 1 : m + 1;
+  const nextStartYmd = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+  const nextStart = new Date(`${nextStartYmd}T00:00:00+09:00`);
+  return { start, nextStart, year: y, month: m };
+}
+
+/**
+ * 당월 사용 건수로 무료/유료 결정.
+ * @param {{ used?: number, limit?: number }} input
+ * @returns {{ free: boolean, amount: number, rule: string, monthlyRemakeFreeLimit: number, monthlyRemakeUsed: number, monthlyRemakeFreeRemaining: number }}
+ */
+export function resolveMonthlyRemakePricing({
+  used = 0,
+  limit = MONTHLY_REMAKE_FREE_LIMIT,
+} = {}) {
+  const freeLimit = Math.max(0, Math.trunc(Number(limit) || 0));
+  const monthlyRemakeUsed = Math.max(0, Math.trunc(Number(used) || 0));
+  const monthlyRemakeFreeRemaining = Math.max(
+    0,
+    freeLimit - monthlyRemakeUsed,
+  );
+  const free = monthlyRemakeUsed < freeLimit;
+  return {
+    free,
+    amount: free ? 0 : ABUTS_REMAKE_FIXED_AMOUNT,
+    rule: free ? ABUTS_REMAKE_MONTHLY_FREE_RULE : ABUTS_REMAKE_PRICE_RULE,
+    monthlyRemakeFreeLimit: freeLimit,
+    monthlyRemakeUsed,
+    monthlyRemakeFreeRemaining,
+  };
+}
+
+/**
+ * @deprecated 과금 SSOT 아님. N년 전 컷오프(레거시).
  * @param {number} years
  * @param {Date} [now]
  * @returns {Date|null}
@@ -99,12 +155,7 @@ export function isWithinRemakePolicyWindow(at, now = new Date()) {
 }
 
 /**
- * 치과→기공소 PTX 리메이크 무료 창.
- * freeRemakeYears null/0 → false(유료). 1+ → N년 이내면 true.
- * @param {Date|string|number|null|undefined} at
- * @param {unknown} freeRemakeYears
- * @param {Date} [now]
- * @returns {boolean}
+ * @deprecated 과금 SSOT 아님. freeRemakeYears 창(레거시).
  */
 export function isWithinLabFreeRemakeWindow(
   at,
@@ -122,32 +173,176 @@ export function isWithinLabFreeRemakeWindow(
 }
 
 /**
- * 감지·후보 검색용 일수. 미설정이면 레거시 180일.
- * @param {unknown} freeRemakeYears
+ * PTX 유사 케이스 감지 일수(고정 상한). freeRemakeYears 무시.
+ * @param {unknown} [_freeRemakeYears] 레거시 인자 — 무시
  * @returns {number}
  */
-export function freeRemakeDetectWindowDays(freeRemakeYears) {
-  const years = normalizeFreeRemakeYears(freeRemakeYears);
-  if (years == null) return REMAKE_POLICY_WINDOW_DAYS;
-  if (years <= 0) return REMAKE_POLICY_WINDOW_DAYS;
-  return Math.min(365 * FREE_REMAKE_YEARS_MAX, years * 365);
+export function freeRemakeDetectWindowDays(_freeRemakeYears) {
+  void _freeRemakeYears;
+  return Math.min(365 * FREE_REMAKE_YEARS_MAX, FREE_REMAKE_YEARS_MAX * 365);
 }
 
 /**
- * @param {{ baseAmount: number, quotedAt?: Date }} input
+ * @param {{ baseAmount: number, quotedAt?: Date, monthlyRemakeUsed?: number, monthlyRemakeFreeLimit?: number, monthlyRemakeFreeRemaining?: number }} input
  */
 export function buildAbutsRemakeFixedPrice({
   baseAmount,
   quotedAt = new Date(),
+  monthlyRemakeUsed,
+  monthlyRemakeFreeLimit = MONTHLY_REMAKE_FREE_LIMIT,
+  monthlyRemakeFreeRemaining,
 }) {
   const base = Math.max(0, Math.round(Number(baseAmount) || 0));
+  const used =
+    monthlyRemakeUsed == null
+      ? undefined
+      : Math.max(0, Math.trunc(Number(monthlyRemakeUsed) || 0));
+  const remaining =
+    monthlyRemakeFreeRemaining == null
+      ? undefined
+      : Math.max(0, Math.trunc(Number(monthlyRemakeFreeRemaining) || 0));
   return {
     baseAmount: base,
     discountAmount: Math.max(0, base - ABUTS_REMAKE_FIXED_AMOUNT),
     amount: ABUTS_REMAKE_FIXED_AMOUNT,
     currency: "KRW",
     rule: ABUTS_REMAKE_PRICE_RULE,
-    discountMeta: {},
+    discountMeta: {
+      ...(used != null
+        ? {
+            monthlyRemakeFreeLimit,
+            monthlyRemakeUsed: used,
+            monthlyRemakeFreeRemaining:
+              remaining != null
+                ? remaining
+                : Math.max(0, monthlyRemakeFreeLimit - used),
+          }
+        : {}),
+    },
     quotedAt,
   };
+}
+
+/**
+ * @param {{ baseAmount: number, quotedAt?: Date, monthlyRemakeUsed?: number, monthlyRemakeFreeLimit?: number, monthlyRemakeFreeRemaining?: number }} input
+ */
+export function buildAbutsRemakeMonthlyFreePrice({
+  baseAmount,
+  quotedAt = new Date(),
+  monthlyRemakeUsed = 0,
+  monthlyRemakeFreeLimit = MONTHLY_REMAKE_FREE_LIMIT,
+  monthlyRemakeFreeRemaining,
+}) {
+  const base = Math.max(0, Math.round(Number(baseAmount) || 0));
+  const used = Math.max(0, Math.trunc(Number(monthlyRemakeUsed) || 0));
+  const limit = Math.max(0, Math.trunc(Number(monthlyRemakeFreeLimit) || 0));
+  const remaining =
+    monthlyRemakeFreeRemaining == null
+      ? Math.max(0, limit - used)
+      : Math.max(0, Math.trunc(Number(monthlyRemakeFreeRemaining) || 0));
+  return {
+    baseAmount: base,
+    discountAmount: base,
+    amount: 0,
+    currency: "KRW",
+    rule: ABUTS_REMAKE_MONTHLY_FREE_RULE,
+    discountMeta: {
+      monthlyRemakeFreeLimit: limit,
+      monthlyRemakeUsed: used,
+      monthlyRemakeFreeRemaining: remaining,
+    },
+    quotedAt,
+  };
+}
+
+/**
+ * 월 쿼터 결과에 맞는 어벗츠 리메이크 가격 객체.
+ * @param {{ baseAmount: number, used: number, quotedAt?: Date, limit?: number }} input
+ */
+export function buildAbutsRemakePriceFromMonthlyUsage({
+  baseAmount,
+  used,
+  quotedAt = new Date(),
+  limit = MONTHLY_REMAKE_FREE_LIMIT,
+}) {
+  const resolved = resolveMonthlyRemakePricing({ used, limit });
+  if (resolved.free) {
+    return buildAbutsRemakeMonthlyFreePrice({
+      baseAmount,
+      quotedAt,
+      monthlyRemakeUsed: resolved.monthlyRemakeUsed,
+      monthlyRemakeFreeLimit: resolved.monthlyRemakeFreeLimit,
+      monthlyRemakeFreeRemaining: resolved.monthlyRemakeFreeRemaining,
+    });
+  }
+  return buildAbutsRemakeFixedPrice({
+    baseAmount,
+    quotedAt,
+    monthlyRemakeUsed: resolved.monthlyRemakeUsed,
+    monthlyRemakeFreeLimit: resolved.monthlyRemakeFreeLimit,
+    monthlyRemakeFreeRemaining: resolved.monthlyRemakeFreeRemaining,
+  });
+}
+
+/**
+ * PTX 유료 리메이크(월 무료 소진 후) — 수가표 정가 대신 고정 견적.
+ * @param {number} [amount]
+ */
+export function buildFixedRemakeRetailFees(
+  amount = ABUTS_REMAKE_FIXED_AMOUNT,
+) {
+  const total = Math.max(0, Math.round(Number(amount) || 0));
+  return {
+    labFeeTotal: total,
+    labAbutmentTotal: 0,
+    labAbutmentPending: false,
+    abutmentRetailTotal: 0,
+    abutmentQuotePending: false,
+    abutmentQty: 0,
+    total,
+    labShippingFee: 0,
+    labFeeMultiplier: 1,
+    rushFeeMultiplier: 1,
+    lines:
+      total > 0
+        ? [
+            {
+              toothNumber: "",
+              prosthesisType: "리메이크비",
+              labFee: total,
+              labAbutmentFee: 0,
+              labAbutmentPending: false,
+              abutmentRetail: 0,
+            },
+          ]
+        : [],
+  };
+}
+
+/** PTX 월 리메이크 집계용 Mongo 필터 조각 */
+export function practiceMonthlyRemakeMatchFilter({
+  practiceAnchorId,
+  start,
+  nextStart,
+  excludeTransferId = null,
+}) {
+  const filter = {
+    practiceBusinessAnchorId: practiceAnchorId,
+    status: { $nin: ["deleted", "canceled"] },
+    createdAt: { $gte: start, $lt: nextStart },
+    $or: [
+      { "billing.isRemake": true },
+      { "remake.sourceTransferMongoId": { $ne: null } },
+      {
+        "remake.sourceTransferId": {
+          $exists: true,
+          $nin: ["", null],
+        },
+      },
+    ],
+  };
+  if (excludeTransferId) {
+    filter._id = { $ne: excludeTransferId };
+  }
+  return filter;
 }
