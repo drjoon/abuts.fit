@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-06: dummy_sample도 샘플 삭제로 취급. 가공 Next Up에서도 삭제 가능.
 // - 2026-10-01: GET /my 목록 캐시는 만료·상한으로 걷는다.
 // - 2026-10-01: 추적관리 워크시트 검색(q)에 로트번호·의뢰번호·환자·치과·송장을 포함한다.
 // - 2026-09-16: 관리자 모니터링 R&D·불완전가공 탭(rndDone/rndUnmachinable) 허용.
@@ -320,6 +321,7 @@ const REQUEST_CATEGORY = {
   ORDER: "order",
   RND_SAMPLE: "rnd_sample",
   COPIED_SAMPLE: "copied_sample",
+  DUMMY_SAMPLE: "dummy_sample",
 };
 
 const resolveRequestCategory = (requestLike) => {
@@ -327,14 +329,22 @@ const resolveRequestCategory = (requestLike) => {
   if (raw === REQUEST_CATEGORY.RND_SAMPLE) return REQUEST_CATEGORY.RND_SAMPLE;
   if (raw === REQUEST_CATEGORY.COPIED_SAMPLE)
     return REQUEST_CATEGORY.COPIED_SAMPLE;
+  if (raw === REQUEST_CATEGORY.DUMMY_SAMPLE)
+    return REQUEST_CATEGORY.DUMMY_SAMPLE;
+  const sourceRaw = String(requestLike?.source || "").trim();
+  if (sourceRaw === "dummy_sample") return REQUEST_CATEGORY.DUMMY_SAMPLE;
   return REQUEST_CATEGORY.ORDER;
 };
 
 const isAnySampleRequest = (requestLike) => {
   const category = resolveRequestCategory(requestLike);
+  const sourceRaw = String(requestLike?.source || "").trim();
   return (
     category === REQUEST_CATEGORY.RND_SAMPLE ||
-    category === REQUEST_CATEGORY.COPIED_SAMPLE
+    category === REQUEST_CATEGORY.COPIED_SAMPLE ||
+    category === REQUEST_CATEGORY.DUMMY_SAMPLE ||
+    sourceRaw === "manufacturer_sample" ||
+    sourceRaw === "dummy_sample"
   );
 };
 
@@ -358,10 +368,16 @@ const buildNonSampleRequestGuard = () => ({
         // 레거시 문서(requestCategory 미기재)도 일반 의뢰건으로 포함하되,
         // source / price.rule 기준 샘플은 항상 제외한다.
         { source: { $ne: "manufacturer_sample" } },
+        { source: { $ne: "dummy_sample" } },
         { "price.rule": { $ne: "manufacturer_sample" } },
+        { "price.rule": { $ne: "dummy_sample" } },
         {
           requestCategory: {
-            $nin: [REQUEST_CATEGORY.RND_SAMPLE, REQUEST_CATEGORY.COPIED_SAMPLE],
+            $nin: [
+              REQUEST_CATEGORY.RND_SAMPLE,
+              REQUEST_CATEGORY.COPIED_SAMPLE,
+              REQUEST_CATEGORY.DUMMY_SAMPLE,
+            ],
           },
         },
       ],
@@ -4641,6 +4657,33 @@ export async function deleteRequest(req, res) {
             error: err?.message,
           });
         }
+        if (
+          resolveRequestCategory(request) === REQUEST_CATEGORY.DUMMY_SAMPLE ||
+          String(request.source || "").trim() === "dummy_sample"
+        ) {
+          try {
+            const settings = await SystemSettings.findOne({ key: "global" })
+              .select({ dummyMachiningProducts: 1 })
+              .lean();
+            const rows = Array.isArray(settings?.dummyMachiningProducts)
+              ? settings.dummyMachiningProducts
+              : [];
+            const nextRows = rows.filter(
+              (row) => String(row?.requestId || "").trim() !== sampleRequestId,
+            );
+            if (nextRows.length !== rows.length) {
+              await SystemSettings.findOneAndUpdate(
+                { key: "global" },
+                { $set: { dummyMachiningProducts: nextRows } },
+              );
+            }
+          } catch (err) {
+            console.warn("[deleteRequest] dummy product detach failed", {
+              requestId: sampleRequestId,
+              error: err?.message,
+            });
+          }
+        }
       }
 
       await Request.findByIdAndDelete(request._id);
@@ -4655,7 +4698,8 @@ export async function deleteRequest(req, res) {
         stage: stageStatus,
         delta: -1,
         requestId: request.requestId,
-        source: "manufacturer_sample",
+        source:
+          String(request.source || "").trim() || "manufacturer_sample",
         requestCategory: resolveRequestCategory(request),
         action: "deleted",
       });

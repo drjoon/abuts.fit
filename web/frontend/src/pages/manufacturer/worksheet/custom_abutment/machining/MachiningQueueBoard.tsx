@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-06: Next Up 더미는 대기열에서만 빼고 더미설정은 유지.
+// - 2026-10-06: Next Up 샘플(더미 포함) 삭제.
 // - 2026-10-06: 더미 Next Up 반영 후 Complete도 갱신한다.
 // - 2026-10-02: 더미설정은 직경별 저장. 장비 카드 더미 가공은 Next Up 첫 칸에 넣는다.
 // - 2026-08-30: Now Playing X → 가공 중단(브리지 stop + cancel).
@@ -601,6 +603,95 @@ export const MachiningQueueBoard = ({
       setPlaylistJobs,
       playlistMachineId,
       loadProductionQueueForMachine,
+    ],
+  );
+
+  const deleteNextUpSample = useCallback(
+    async ({
+      requestMongoId,
+      requestId,
+      machineId,
+      isDummy,
+    }: {
+      requestMongoId: string;
+      requestId?: string;
+      machineId: string;
+      isDummy?: boolean;
+    }) => {
+      const mongoId = String(requestMongoId || "").trim();
+      const rid = String(requestId || "").trim();
+      const mid = String(machineId || "").trim();
+      if (!token || !mongoId) return;
+      try {
+        const res = isDummy
+          ? await fetch("/api/cnc-machines/dummy-product/dequeue", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                requestId: rid || undefined,
+                requestMongoId: mongoId,
+              }),
+            })
+          : await fetch(`/api/requests/${encodeURIComponent(mongoId)}`, {
+              method: "DELETE",
+              headers: { Authorization: `Bearer ${token}` },
+            });
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) {
+          throw new Error(
+            body?.message ||
+              (isDummy
+                ? "대기열에서 빼지 못했습니다."
+                : "샘플 삭제에 실패했습니다."),
+          );
+        }
+        if (mid) {
+          setQueueMap((prev) => {
+            const list = Array.isArray(prev?.[mid]) ? prev[mid] : [];
+            const nextList = list.filter((item) => {
+              const itemMongo = String(
+                (item as any)?.requestMongoId || "",
+              ).trim();
+              const itemRid = String(item?.requestId || "").trim();
+              if (mongoId && itemMongo === mongoId) return false;
+              if (rid && itemRid === rid) return false;
+              return true;
+            });
+            return { ...prev, [mid]: nextList };
+          });
+        }
+        toast({
+          title: isDummy ? "대기열에서 뺌" : "삭제 완료",
+          description: isDummy
+            ? "더미설정은 그대로 둡니다."
+            : rid
+              ? `샘플 ${rid}를 삭제했습니다.`
+              : "샘플을 삭제했습니다.",
+        });
+        void refreshProductionQueues();
+        void refreshLastCompletedFromServer();
+      } catch (error: any) {
+        toast({
+          title: isDummy ? "빼기 실패" : "삭제 실패",
+          description:
+            error?.message ||
+            (isDummy
+              ? "대기열에서 빼지 못했습니다."
+              : "샘플 삭제에 실패했습니다."),
+          variant: "destructive",
+        });
+        void refreshProductionQueues();
+      }
+    },
+    [
+      token,
+      toast,
+      setQueueMap,
+      refreshProductionQueues,
+      refreshLastCompletedFromServer,
     ],
   );
 
@@ -2114,6 +2205,19 @@ export const MachiningQueueBoard = ({
               }}
               onRollbackNextUp={(requestId, mid) => {
                 void rollbackRequestInQueue(mid, requestId);
+              }}
+              onDeleteNextUpSample={({
+                requestMongoId,
+                requestId,
+                machineId,
+                isDummy,
+              }) => {
+                void deleteNextUpSample({
+                  requestMongoId,
+                  requestId,
+                  machineId,
+                  isDummy,
+                });
               }}
               onMoveNextUpToMachine={(payload) => {
                 void moveNextUpToMachine(payload);

@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-06: Next Up 더미 X는 대기열에서만 빼고 더미설정은 유지.
+// - 2026-10-06: Next Up 샘플(더미 포함) 삭제 X.
 // - 2026-10-02: Now Playing 매칭에 machiningRecord.jobId를 포함한다.
 // - 2026-10-02: Now Playing 경과시간 — tabular-nums·줄바꿈 없음. 초마다 숫자 폭이 바뀌며 헤더가 접히던 현상.
 // - 2026-10-02: 더미 가공 아이콘은 아래 원형 버튼과 같은 크기다.
@@ -38,7 +40,7 @@ import {
   formatElapsedMMSS,
 } from "@/features/manufacturer/cnc/lib/machiningUi";
 import type { MachineQueueCardProps, QueueItem } from "../types";
-import { buildLabelExtraProps, formatMachiningLabel } from "../utils/label";
+import { buildLabelExtraProps, formatMachiningLabel, isMachiningSampleSlot } from "../utils/label";
 import { MachiningRequestLabel } from "./MachiningRequestLabel";
 import { getMachineStatusLabel } from "@/pages/manufacturer/equipment/cnc/lib/machineStatus";
 import { isCamGenerationOverlayPending } from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
@@ -135,6 +137,7 @@ export const MachineQueueCard = ({
   onRollbackNowPlaying,
   onRollbackNextUp,
   onRollbackCompleted,
+  onDeleteNextUpSample,
   onApproveFromRollback,
   onStopNowPlaying,
   onMoveNextUpToMachine,
@@ -320,11 +323,22 @@ export const MachineQueueCard = ({
   const nextUpMoveInFlightRef = useRef(false);
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const [stopSubmitting, setStopSubmitting] = useState(false);
+  const [deleteSampleConfirmOpen, setDeleteSampleConfirmOpen] = useState(false);
+  const [deleteSampleSubmitting, setDeleteSampleSubmitting] = useState(false);
 
   const nextUpMongoId = String(
     (nextSlot as { requestMongoId?: string } | null)?.requestMongoId || "",
   ).trim();
   const nextUpRequestId = String(nextSlot?.requestId || "").trim();
+  const canDeleteNextUpSample =
+    Boolean(onDeleteNextUpSample) &&
+    Boolean(nextUpMongoId) &&
+    isMachiningSampleSlot(nextSlot as any);
+  const isDummyNextUp =
+    String((nextSlot as { requestCategory?: string } | null)?.requestCategory || "").trim() ===
+      "dummy_sample" ||
+    String((nextSlot as { source?: string } | null)?.source || "").trim() ===
+      "dummy_sample";
   const canDragNextUp =
     Boolean(onMoveNextUpToMachine) && Boolean(nextUpMongoId);
   const nextUpHasNc = Boolean(
@@ -815,6 +829,47 @@ export const MachineQueueCard = ({
         }}
       />
 
+      <ConfirmDialog
+        open={deleteSampleConfirmOpen}
+        title={isDummyNextUp ? "대기열에서 빼기" : "샘플 삭제"}
+        description={
+          isDummyNextUp ? (
+            <>
+              이 더미만 대기열에서 뺍니다.
+              <br />
+              더미설정은 그대로 둡니다.
+            </>
+          ) : (
+            <>
+              이 샘플을 삭제합니다.
+              <br />
+              생산 대기열에서도 빠집니다.
+            </>
+          )
+        }
+        confirmLabel={isDummyNextUp ? "빼기" : "삭제"}
+        cancelLabel="취소"
+        onCancel={() => {
+          if (deleteSampleSubmitting) return;
+          setDeleteSampleConfirmOpen(false);
+        }}
+        onConfirm={async () => {
+          if (deleteSampleSubmitting || !nextUpMongoId) return;
+          setDeleteSampleSubmitting(true);
+          try {
+            await onDeleteNextUpSample?.({
+              requestMongoId: nextUpMongoId,
+              requestId: nextUpRequestId || undefined,
+              machineId,
+              isDummy: isDummyNextUp,
+            });
+            setDeleteSampleConfirmOpen(false);
+          } finally {
+            setDeleteSampleSubmitting(false);
+          }
+        }}
+      />
+
       <div className="app-glass-card-content mt-3 flex flex-col gap-1.5 text-sm">
         <div className="grid grid-cols-1 gap-1.5">
           {/* Complete */}
@@ -1239,6 +1294,22 @@ export const MachineQueueCard = ({
                 ) : null}
               </div>
               <div className="flex items-center gap-1 shrink-0">
+                {canDeleteNextUpSample ? (
+                  <button
+                    type="button"
+                    className={`${slotActionBtn(true)} text-destructive hover:bg-destructive-soft`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (deleteSampleSubmitting) return;
+                      setDeleteSampleConfirmOpen(true);
+                    }}
+                    disabled={deleteSampleSubmitting}
+                    title={isDummyNextUp ? "대기열에서 빼기" : "샘플 삭제"}
+                    aria-label={isDummyNextUp ? "대기열에서 빼기" : "샘플 삭제"}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className={slotActionBtn(

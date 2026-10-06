@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningRequestLabel.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // change-log:
+// - 2026-10-06: 더미 샘플 슬롯 판정.
 // - 2026-08-07: formatMachiningLabel에 의뢰자명(businessName) 포함.
 import type { QueueItem } from "../types";
 
@@ -59,6 +60,25 @@ const toNumber = (value: unknown) => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
+export function isMachiningSampleSlot(slot?: {
+  requestCategory?: string | null;
+  source?: string | null;
+  price?: { rule?: string | null } | null;
+} | null): boolean {
+  const requestCategory = String(slot?.requestCategory || "").trim();
+  const source = String(slot?.source || "").trim();
+  const priceRule = String(slot?.price?.rule || "").trim();
+  return (
+    requestCategory === "dummy_sample" ||
+    requestCategory === "copied_sample" ||
+    requestCategory === "rnd_sample" ||
+    source === "dummy_sample" ||
+    source === "manufacturer_sample" ||
+    priceRule === "dummy_sample" ||
+    priceRule === "manufacturer_sample"
+  );
+}
+
 export const buildLabelExtraProps = (slot?: QueueItem | null): LabelExtra => {
   if (!slot) return {};
   const ci = (slot as any)?.caseInfos || {};
@@ -69,11 +89,15 @@ export const buildLabelExtraProps = (slot?: QueueItem | null): LabelExtra => {
 
   const isRndArchivedSample = requestCategory === "rnd_sample";
   const isCopiedSample = requestCategory === "copied_sample";
+  const isDummySample =
+    requestCategory === "dummy_sample" || source === "dummy_sample";
   const isSample =
     isRndArchivedSample ||
     isCopiedSample ||
+    isDummySample ||
     source === "manufacturer_sample" ||
-    priceRule === "manufacturer_sample";
+    priceRule === "manufacturer_sample" ||
+    priceRule === "dummy_sample";
 
   const rebalance =
     (slot as any)?.fastMachiningRebalance || schedule?.fastMachiningRebalance;

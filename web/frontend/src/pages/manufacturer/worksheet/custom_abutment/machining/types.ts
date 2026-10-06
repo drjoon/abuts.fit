@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-10-06: Next Up 샘플 삭제 콜백.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -151,6 +153,12 @@ export type MachineQueueCardProps = {
   onRollbackNowPlaying?: (requestId: string, machineId: string) => void;
   onRollbackNextUp?: (requestId: string, machineId: string) => void;
   onRollbackCompleted?: (requestId: string, machineId: string) => void;
+  onDeleteNextUpSample?: (params: {
+    requestMongoId: string;
+    requestId?: string;
+    machineId: string;
+    isDummy?: boolean;
+  }) => void | Promise<void>;
   onApproveFromRollback?: (requestId: string) => void;
   /** Now Playing 가공 중단 (브리지 C_STOP + cancel) */
   onStopNowPlaying?: (machineId: string) => void | Promise<void>;

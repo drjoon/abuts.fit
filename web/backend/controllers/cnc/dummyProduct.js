@@ -5,6 +5,7 @@
 // - web/backend/controllers/requests/production.utils.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/DummyMachiningModal.tsx
 // change-log:
+// - 2026-10-06: Next Up에서 더미를 빼도 더미설정은 유지한다.
 // - 2026-10-06: 더미 복사본은 원본 완료 상태를 비운다. 장비에 넣을 때만 Next Up.
 // - 2026-10-02: 저장한 더미는 가공 단계 복사본으로 보관하고 대기열·카운터에서 뺀다.
 // - 2026-10-02: 추천도 로트 검색과 같이 3개씩 다음 페이지를 넘긴다.
@@ -318,6 +319,48 @@ function resetDummySampleForNextUp(
       status: "PENDING",
       updatedAt: null,
     });
+  }
+  return doc;
+}
+
+function parkDummySampleFromQueue(doc) {
+  const prevElapsed = resolveDurationSeconds(
+    doc?.productionSchedule?.machiningRecord &&
+      typeof doc.productionSchedule.machiningRecord === "object"
+      ? doc.productionSchedule.machiningRecord
+      : null,
+    doc?.productionSchedule?.machiningProgress,
+  );
+  const sourceRequestId = String(
+    doc?.productionSchedule?.dummySampleSourceRequestId || "",
+  ).trim();
+  const idle = applyIdleDummySchedule({
+    elapsedSeconds: prevElapsed,
+    sourceRequestId,
+  });
+  doc.manufacturerStage = "가공";
+  if (typeof doc.depopulate === "function") {
+    doc.depopulate("productionSchedule.machiningRecord");
+  }
+  doc.set("assignedMachine", null);
+  doc.set("productionSchedule.assignedMachine", idle.assignedMachine);
+  doc.set("productionSchedule.queuePosition", idle.queuePosition);
+  doc.set("productionSchedule.machiningRecord", idle.machiningRecord);
+  doc.set("productionSchedule.actualCamStart", idle.actualCamStart);
+  doc.set("productionSchedule.actualCamComplete", idle.actualCamComplete);
+  doc.set("productionSchedule.actualMachiningStart", idle.actualMachiningStart);
+  doc.set(
+    "productionSchedule.actualMachiningComplete",
+    idle.actualMachiningComplete,
+  );
+  doc.set("productionSchedule.dummyNextUpPinnedAt", idle.dummyNextUpPinnedAt);
+  if (sourceRequestId) {
+    doc.set("productionSchedule.dummySampleSourceRequestId", sourceRequestId);
+  }
+  if (idle.machiningProgress) {
+    doc.set("productionSchedule.machiningProgress", idle.machiningProgress);
+  } else {
+    doc.set("productionSchedule.machiningProgress", undefined);
   }
   return doc;
 }
@@ -948,4 +991,58 @@ async function finishDummyEnqueue(
           : null,
     },
   });
+}
+
+export async function dequeueDummyMachiningProduct(req, res) {
+  try {
+    const requestId = String(req.body?.requestId || "").trim();
+    const requestMongoId = String(req.body?.requestMongoId || "").trim();
+    if (!requestId && !requestMongoId) {
+      return res.status(400).json({
+        success: false,
+        message: "의뢰가 필요합니다.",
+      });
+    }
+    const idFilter = requestMongoId
+      ? { _id: requestMongoId }
+      : { requestId };
+    const doc = await Request.findOne({
+      ...idFilter,
+      source: "dummy_sample",
+    }).populate({
+      path: "productionSchedule.machiningRecord",
+      select: "status startedAt completedAt durationSeconds elapsedSeconds",
+    });
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "더미 샘플을 찾지 못했습니다.",
+      });
+    }
+    if (isMachiningInProgress(doc)) {
+      return res.status(409).json({
+        success: false,
+        message: "가공 중인 더미는 대기열에서 뺄 수 없습니다.",
+      });
+    }
+    const previousMachineId = resolveAssignedMachine(doc);
+    parkDummySampleFromQueue(doc);
+    await doc.save();
+    if (previousMachineId) {
+      await renumberMachineQueue(previousMachineId);
+    }
+    return res.json({
+      success: true,
+      data: {
+        requestId: String(doc.requestId || requestId),
+        previousMachineId: previousMachineId || null,
+      },
+    });
+  } catch (error) {
+    console.error("dequeueDummyMachiningProduct failed", error);
+    return res.status(500).json({
+      success: false,
+      message: "대기열에서 빼지 못했습니다.",
+    });
+  }
 }

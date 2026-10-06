@@ -167,6 +167,11 @@ router.post(
   authorizeRoles("manufacturer", "admin"),
   cncMachineController.enqueueDummyMachiningProduct,
 );
+router.post(
+  "/dummy-product/dequeue",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.dequeueDummyMachiningProduct,
+);
 
 // 더미 가공 on/off (단일 장비)
 router.patch(

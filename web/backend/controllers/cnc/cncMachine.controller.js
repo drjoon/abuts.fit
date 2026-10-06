@@ -61,6 +61,7 @@ import {
   selectDummyMachiningProduct,
   clearDummyMachiningProduct,
   enqueueDummyMachiningProduct,
+  dequeueDummyMachiningProduct,
 } from "../../controllers/cnc/dummyProduct.js";
 import { initializeMachines } from "../../controllers/cnc/dev.js";
 import {
@@ -124,6 +125,7 @@ export {
   selectDummyMachiningProduct,
   clearDummyMachiningProduct,
   enqueueDummyMachiningProduct,
+  dequeueDummyMachiningProduct,
   initializeMachines,
   getLastCompletedMachiningMap,
   getCompletedMachiningRecords,

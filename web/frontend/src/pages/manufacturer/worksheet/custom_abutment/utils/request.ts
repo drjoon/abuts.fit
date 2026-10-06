@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-06: 더미 샘플도 샘플 삭제·뱃지 대상.
 // - 2026-09-09: isRhinoWorkPending — GENERATING 또는 filled 재생성 pending(프리뷰 재생성 블러). idle filled 미수신은 제외.
 // - 2026-09-04: isRhinoWorkPending — 원본이 .stl일 때만(구강스캔 .ply 고스트 블러 방지).
 // - 2026-09-03: isRhinoWorkPending — 취소·원본 STL 없음 고스트 블러 방지. CANCELLED/FAILED면 해제.
@@ -165,6 +166,7 @@ export const REQUEST_CATEGORY = {
   ORDER: "order",
   RND_SAMPLE: "rnd_sample",
   COPIED_SAMPLE: "copied_sample",
+  DUMMY_SAMPLE: "dummy_sample",
 } as const;
 
 export const resolveRequestCategory = (req?: ManufacturerRequest | null) => {
@@ -172,6 +174,10 @@ export const resolveRequestCategory = (req?: ManufacturerRequest | null) => {
   if (raw === REQUEST_CATEGORY.RND_SAMPLE) return REQUEST_CATEGORY.RND_SAMPLE;
   if (raw === REQUEST_CATEGORY.COPIED_SAMPLE)
     return REQUEST_CATEGORY.COPIED_SAMPLE;
+  if (raw === REQUEST_CATEGORY.DUMMY_SAMPLE)
+    return REQUEST_CATEGORY.DUMMY_SAMPLE;
+  const source = String(req?.source || "").trim();
+  if (source === "dummy_sample") return REQUEST_CATEGORY.DUMMY_SAMPLE;
   return REQUEST_CATEGORY.ORDER;
 };
 
@@ -183,7 +189,9 @@ export const isAnySampleRequest = (req?: ManufacturerRequest | null) => {
   return (
     category === REQUEST_CATEGORY.RND_SAMPLE ||
     category === REQUEST_CATEGORY.COPIED_SAMPLE ||
-    source === "manufacturer_sample"
+    category === REQUEST_CATEGORY.DUMMY_SAMPLE ||
+    source === "manufacturer_sample" ||
+    source === "dummy_sample"
   );
 };
 
