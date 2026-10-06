@@ -1110,7 +1110,7 @@ namespace DentalAddin
             }
 
             double hexEndStartX = MoveSTL_Module.BackPointX;
-            double hexEndEndX = MoveSTL_Module.BackPointX + BackFinishConnectionOvershootMm;
+            double hexEndEndX = MoveSTL_Module.BackPointX + BackHexEndOvershootMm;
             double hexEndFirstPercent = 0.0;
             double hexEndLastPercent = 0.0;
             if (runBackFinishHexEnd && opBHexEnd != null)
@@ -1127,7 +1127,7 @@ namespace DentalAddin
                     opBHexEnd.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
                     opBHexEnd.FirstPassPercent = hexEndFirstPercent;
                     opBHexEnd.LastPassPercent = hexEndLastPercent;
-                    DentalLogger.Log($"Composite2SplitLine2 - Back_Finish 커넥션 연장: X[{hexEndStartX:F3}~{hexEndEndX:F3}] %({hexEndFirstPercent:F2}->{hexEndLastPercent:F2}), overshoot={BackFinishConnectionOvershootMm:F3}, stock={BackFinishConnectionOvershootStockMm:F3} (커넥션 비접촉)");
+                    DentalLogger.Log($"Composite2SplitLine2 - Back_Finish 커넥션 연장: X[{hexEndStartX:F3}~{hexEndEndX:F3}] %({hexEndFirstPercent:F2}->{hexEndLastPercent:F2}), overshoot={BackHexEndOvershootMm:F3}, stock={BackFinishConnectionOvershootStockMm:F3} (커넥션 비접촉)");
                 }
             }
 
@@ -1855,7 +1855,7 @@ namespace DentalAddin
         //                           Middle_Rough  [Splitline_2-roughR ~ Xk+0.8]  (Finish seam 너머 0.8을 먼저 3D 황삭)
         //                           Middle_Turn   [FrontPointX ~ Xk+3.0]         (황삭 끝+D4 반경 2.0+칩 0.2)
         //   Back   (region BACK2) : Back_Turn [Xk ~ xMax+exit] (기존 Back_Turn 끝 형상 유지)
-        //                           Back_Rough [Xk-roughR ~ BackPointX]
+        //                           Back_Rough [Xk-roughR ~ BackPointX+0.4]
         //                           Back_Finish 1단계 [Xk-0.8 ~ BackPointX], 2단계 [BackPointX ~ BackPointX+0.4] stock 0.02
         //   Xk = BackPointX - connectionTopZ (Z_a). 스펙 없으면 FL min+0.2 폴백.
         //   Middle이 치은–커넥션 접합까지 깎고, Rough/Turn은 같은 Xk에서 +0.8/+3.0.
@@ -1870,7 +1870,7 @@ namespace DentalAddin
         //   Back_Finish   1단계 끝 = BackPointX
         //   Back_Finish   2단계 = BackPointX ~ BackPointX+0.4, StockAllowance=0.02 (커넥션 OD 비접촉)
         private const double FinishAdjacentOverlapMm = 1.2 * 2.0 / 3.0;
-        private const double BackFinishConnectionOvershootMm = 0.4;
+        private const double BackHexEndOvershootMm = 0.4;
         private const double BackFinishConnectionOvershootStockMm = 0.02;
         private const double SafeSplitMinBackZoneMm = 1.5;
         internal const double SafeSplitTurnPastRoughMm = 2.2;
@@ -2674,23 +2674,25 @@ namespace DentalAddin
             double backStart = Clamp(splitline2 - roughOverlapMm, xMin + 1e-6, xMax - 1e-6);
             DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 시작=Splitline_2-roughRadius: startX={backStart:F3}, overlapMm={roughOverlapMm:F3}, roughDia={GetActiveRoughToolDiameterMm():F1}");
 
-            // Back_Rough 끝점 SSOT (§4.9): BackPointX 고정. 커넥션 쪽으로 공구반경만큼 넘기지 않는다.
+            // Back_Rough 끝점 SSOT (§4.9): BackPointX + 0.4.
+            // Back_Finish 2단계와 같은 길이만큼만 넘긴다. D1.2가 미황삭을 물어 부러지지 않게 한다.
+            // 공구 반경(+2.0)까지는 넘기지 않는다(커넥션 OD 침범 방지). xMax로 클램프하지 않는다.
             double backPointX = MoveSTL_Module.BackPointX;
-            double backEnd = backPointX;
+            double backEnd = backPointX + BackHexEndOvershootMm;
             if (double.TryParse(finishMinZRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out double finishLineMinZ)
                 && !double.IsNaN(finishLineMinZ)
                 && !double.IsInfinity(finishLineMinZ))
             {
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: backPointX={backPointX.ToString("F3", CultureInfo.InvariantCulture)}, finishLineMinZ={finishLineMinZ.ToString("F3", CultureInfo.InvariantCulture)}, appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, rule=BackPointX(fixed)");
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: backPointX={backPointX.ToString("F3", CultureInfo.InvariantCulture)}, finishLineMinZ={finishLineMinZ.ToString("F3", CultureInfo.InvariantCulture)}, appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, overshoot={BackHexEndOvershootMm.ToString("F3", CultureInfo.InvariantCulture)}, rule=BackPointX+0.4");
             }
             else
             {
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: ABUTS_FINISHLINE_MIN_Z 해석 실패(raw='{finishMinZRaw ?? ""}'), appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)} (BackPointX fixed)");
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: ABUTS_FINISHLINE_MIN_Z 해석 실패(raw='{finishMinZRaw ?? ""}'), appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)} (BackPointX+0.4)");
             }
 
             string region = (GetEnvString("ABUTS_ROUGHFREEFORM_SPLIT_REGION") ?? string.Empty).Trim().ToUpperInvariant();
 
-            // Safe split: region BACK(Middle_Rough) 끝 = Xk+0.8, region BACK2(Back_Rough) = [Xk-roughR ~ BackPointX]
+            // Safe split: region BACK(Middle_Rough) 끝 = Xk+0.8, region BACK2(Back_Rough) = [Xk-roughR ~ BackPointX+0.4]
             // 경계 체인 이름 분리: 같은 이름이면 기존 체인이 재생성돼 Middle_Rough 경계가 사라진다.
             bool safeSplitBack = TryResolveSafeSplitBackZoneX("RoughFreeFromMillSplitAB", out double safeZoneX);
             if (safeSplitBack)

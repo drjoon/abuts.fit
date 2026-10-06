@@ -101,8 +101,8 @@
 - 순서: `Front_Turn → Front_Rough → Front_Face → Front_Finish → Middle_Turn → Middle_Rough → Middle_Finish → Back_Turn → Back_Rough → Back_Finish → Connection`
   - 내부 region 코드는 Middle=`BACK`, Back=`BACK2`(T05·레이어·경계 로직 공유). 표시명만 바뀐다.
   - Middle_Finish 끝 `Xk`, Middle_Rough 끝 `Xk+0.8` (Finish seam 너머를 먼저 3D 황삭), Middle_Turn 끝 `Xk+3.0` (황삭 끝+D4 반경 2.0+칩 0.2)
-  - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX]`(경계 `RoughBoundryBack2`), Back_Finish 1단계 `[Xk-0.8 ~ BackPointX]`(`B2_PHASE`)
-    - Back_Finish 2단계: `BackPointX ~ BackPointX+0.4`, `StockAllowance=0.02` (커넥션 OD 비접촉)
+  - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX+0.4]`(경계 `RoughBoundryBack2`), Back_Finish 1단계 `[Xk-0.8 ~ BackPointX]`(`B2_PHASE`)
+    - Back_Finish 2단계: `BackPointX ~ BackPointX+0.4`, `StockAllowance=0.02` (커넥션 OD 비접촉). Back_Rough도 같은 +0.4라 D1.2가 미황삭을 물지 않는다.
     - Back_Turn은 기존처럼 `TurningExtend`로 헥스 너머 수평+45 퇴출을 유지한다.
 - Middle_Turn 끝(`Xk+3.0`)은 **클램프하지 않는다**. 커넥션 상단 seam이면 헥스를 넘을 수 있다.
 - 포기 조건(기존 단일 Back 유지): FL min_z 없음, `Xk < Splitline_2+1.5`, (스펙 없을 때만) Middle_Turn 끝 > `BackPointX+1.5`. 로그 `SafeSplit[...]`.
@@ -137,7 +137,7 @@
   - Finish: `Finish_Front` 끝 = `SharedFinishSplitX`, 다음 Finish 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()` (`0.8`)
   - Middle 끝 = `Xk`, `Back_Finish` 시작 = `Xk - 0.8`, Middle_Rough 끝 = `Xk + 0.8`
   - `Back_Finish` 1단계 끝 = `BackPointX`. 2단계 = `BackPointX+0.4`, stock `0.02`
-  - `Back_Rough` 끝 = `BackPointX` (§4.9)
+  - `Back_Rough` 끝 = `BackPointX+0.4` (§4.9, Back_Finish 2단계와 동일)
   - Finish_Front StepIncrement: `none`은 `5axisComposite_Front.prc` 값 유지, `deep`만 COM SetProperty 0.20 (`TrySetCompositeStepIncrement`)
   - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
   - 금지: 선행 Finish 끝을 경계 너머로 연장, `ABUTS_COMPOSITE_STEP_INCREMENT_A` 의존, `Splitline_2<=5mm`에서 `Middle_Turn`/`Middle_Rough` 생성, `Back + Z - stlTopZ` 구식 변환 (FL 하방 침범)
@@ -226,14 +226,14 @@
 ### 4.9 Back_Rough 끝점 고정값 SSOT (2026-07-11)
 
 - Back_Rough 끝점은 finishline min_z와 무관하게 **고정식**을 사용한다.
-  - `BackRoughEndX = BackPointX`
-  - 커넥션 쪽으로 공구 반경만큼 넘기지 않는다(커넥션 OD 침범 방지).
+  - `BackRoughEndX = BackPointX + 0.4` (`BackHexEndOvershootMm`, Back_Finish 2단계와 동일)
+  - D1.2가 미황삭을 물어 부러지지 않게 한다. 공구 반경(+2.0)까지는 넘기지 않는다.
 - 기존 `min_z` 기반 raw/translated 계산(`finishline min_z + 4.1`, `BackPointX + ...`)은 사용하지 않는다.
 - 구현 위치:
   - `DentalAddinDecomp/DentalAddin/MainModuleComposite.cs`
     - `TryRunRoughFreeFromMillSplitAB`
 - 디버깅 기준 로그:
-  - `RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: ... rule=BackPointX(fixed)`
+  - `RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: ... rule=BackPointX+0.4`
 
 ### 4.10 ROUGH_20 실험 토글 SSOT (2026-07-11)
 
