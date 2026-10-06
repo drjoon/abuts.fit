@@ -169,7 +169,7 @@
 - 검사 대기는 서버 타이머와 브라우저 폴링(`GET .../uploads?ids=`) 둘 다 진행시킨다. 처리 시작은 `status: scanning → processing` 원자 전환으로 한 번만.
 - 해석은 `worker_threads`(수십 MB면 CPU 수 초). 원본 바이트는 저장하지 않고, 검증한 좌표로 새로 만든 STL만 둔다. 병합은 `optimisticConcurrency` + 재시도.
 - 제조사 새 버전: 관리자가 공용에 다시 올린다. 같은 `systemName`이면 같은 키트는 새 형상으로 바꾸고 새 키트는 더한다. 예전 형상(S3 해시)은 지우지 않아 이미 만든 디자인은 그대로다. 업로드로 키트·형상이 바뀌면 `contentUpdatedAt`을 남긴다.
-- 기공소 사본(`forkOf`)은 만들 때 원본의 `contentUpdatedAt`을 `forkBaseContentAt`에 둔다. 원본이 그 뒤에 바뀌면 목록에 `forkBehind`가 오고, 기공소 화면(설정 → 스캔바디, AI 디자인)이 「업데이트할까요?」를 묻는다(`ScanbodyLibraryUpdatePrompt`). 자동으로 덮지 않는다. 「나중에」는 그 버전만 기억한다.
+- 기공소 사본(`forkOf`)은 만들 때 원본의 `contentUpdatedAt`을 `forkBaseContentAt`에 둔다. 원본이 그 뒤에 바뀌면 목록에 `forkBehind`가 오고, AI 디자인이 「업데이트할까요?」를 묻는다(`ScanbodyLibraryUpdatePrompt`). 자동으로 덮지 않는다. 「나중에」는 그 버전만 기억한다.
 - 업데이트는 `POST /:id/rebase`: 공용 키트는 새 형상으로 바꾸고, 사본에서 고친 `catalogIds`와 사본에만 있는 키트는 남긴다.
 - 묶음: 시스템 코드의 규격 접미사(`LL_H55`·`LS`·`CMFit`, 예: `C1W_LL_H55`·`BG41_LS`·`3IC60_CMFit`·`3ICM_LL_H40`)는 연결(타입) 하나 아래 키트로 합친다. 연결 코드가 숫자로 시작해도 같다. 제조사 폴더가 없고 연결이 지오메디 카탈로그(`3ICM`·`3ICR`·`3ICW`·`3IC60`)이면 제조사를 지오메디로 둔다. 관리자 목록은 그 묶음을 해당 제조사 의뢰 카드 아래에 붙인다. 경로·`LibraryImportInfo`·exocad `Supplier`에 제조사·임플란트 브랜드·타입이 있으면 `implantManufacturer`·`brand`·`implantType`과 키트 `spec`·`code`로 남긴다. 의뢰 매칭은 이 값과 한글 별칭(오스템↔OSSTEM)을 같이 본다. 이미 올라간 코드 문서는 `migrate-scanbody-library-groups.js`가 같은 규칙으로 합친다.
 - 받는 형식: 3Shape `.dme`, exocad 폴더(·`.zip`, config.xml + STL), 형상 한 개(`.dcm`·`.stl`·`.ply`·`.obj`). 형상 한 개는 AI 디자인의 의뢰 스캔바디에서만 올린다(`manufacturer`·`meshMeta` 필수). 축·플랫폼은 브라우저가 템플릿과 같은 방법(`computeAbutmentTemplateFrame`, 스캔 맨 아래=플랫폼)으로 보내고, 서버가 원본에서 형상을 다시 읽어 모델 좌표로 옮긴다(`frameToModel`). 라이브러리는 `source: "scan"`, 이름 `<제조사> 스캔바디`, 키트 `<제조사> <직경>/<높이>`. exocad 암호화 형상(.sdfa·.ipflib)은 읽지 못한다.

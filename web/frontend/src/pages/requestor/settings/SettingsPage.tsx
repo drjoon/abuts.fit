@@ -13,7 +13,6 @@ import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { LabFeeScheduleTab } from "@/features/settings/tabs/LabFeeScheduleTab";
 import { LabPracticeSpecialSupplyTab } from "@/features/settings/tabs/LabPracticeSpecialSupplyTab";
 import { PracticeOralScanTab } from "@/features/settings/tabs/PracticeOralScanTab";
-import { ScanbodyLibraryManager } from "@/shared/components/practice/ScanbodyLibraryManager";
 import {
   User,
   Building2,
@@ -23,7 +22,6 @@ import {
   Banknote,
   Tag,
   ScanLine,
-  Boxes,
 } from "lucide-react";
 import { RequestorSecurity } from "./Security";
 import { formatKstDateTimeToKo, toKstYmd } from "@/shared/date/kst";
@@ -46,7 +44,7 @@ import { InternalLabOrgBanner } from "@/features/settings/InternalLabOrgBanner";
 // 2026-08-29: 기공소 「특별공급가」탭(기공비 오른쪽).
 // 2026-09-21: 치과 「구강스캔」탭 — 구강 스캐너 사용 여부.
 // 2026-09-26: 기공소 「AI」탭 제거. 구 `?tab=ai` → 계정. 학습 안내는 약관·개인정보.
-// 2026-09-27: 기공소 「스캔바디」탭 — AI 디자인 스캔바디 라이브러리·심플어벗 템플릿 추가 등록.
+// 2026-10-07: 기공소 「스캔바디」탭 제거. 구 `?tab=lab-scanbody` → 계정. 라이브러리 업로드는 AI 디자인·관리자 대시보드.
 
 type TabKey =
   | "account"
@@ -55,7 +53,6 @@ type TabKey =
   | "digital"
   | "lab-fees"
   | "lab-special-supply"
-  | "lab-scanbody"
   | "notifications"
   | "security";
 
@@ -66,6 +63,7 @@ const LEGACY_TAB_REDIRECT: Partial<Record<string, TabKey>> = {
   "auto-match": "account",
   "trading-partners": "account",
   ai: "account",
+  "lab-scanbody": "account",
   "oral-scan": "digital",
 };
 
@@ -179,12 +177,6 @@ export const RequestorSettingsPage = () => {
           icon: Tag,
           content: <LabPracticeSpecialSupplyTab />,
         },
-        {
-          key: "lab-scanbody",
-          label: "스캔바디",
-          icon: Boxes,
-          content: <ScanbodyLibraryManager />,
-        },
       );
     }
 
@@ -221,7 +213,7 @@ export const RequestorSettingsPage = () => {
       (tabs[0]?.key as TabKey);
 
   if (accessLoading) {
-    return <SettingsTabsSkeleton tabCount={isLab ? 8 : isPractice ? 6 : 5} />;
+    return <SettingsTabsSkeleton tabCount={isLab ? 7 : isPractice ? 6 : 5} />;
   }
 
   return (

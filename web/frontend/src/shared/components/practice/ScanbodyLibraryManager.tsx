@@ -6,7 +6,6 @@
 // related files:
 // - web/frontend/src/shared/practice/scanbodyLibraryApi.ts
 // - web/frontend/src/shared/files/scanbodyLibraryBundle.ts
-// - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
 // - web/frontend/src/pages/admin/dashboard/ScanbodyDemandCard.tsx (관리자 대시보드 스캔바디는 압축 파일)
 // - web/frontend/src/pages/admin/dashboard/DirectAbutmentSettingsCard.tsx (관리자 대시보드 심플어벗 모델)
 

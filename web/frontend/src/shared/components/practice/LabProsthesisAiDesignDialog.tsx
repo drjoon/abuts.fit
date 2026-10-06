@@ -2821,7 +2821,7 @@ function LabProsthesisAiDesignDialog({
           title: done.length > 0 ? "일부 파일은 등록하지 못했습니다." : "라이브러리를 등록하지 못했습니다.",
           description: (
             <>
-              {(failed.length > 0 ? failed.map((row) => `${row.fileName}: ${row.message}`) : ["검사가 아직 끝나지 않았습니다. 설정 → 스캔바디에서 확인하세요."]).map(
+              {(failed.length > 0 ? failed.map((row) => `${row.fileName}: ${row.message}`) : ["검사가 아직 끝나지 않았습니다. 잠시 후 다시 시도하세요."]).map(
                 (line) => (
                   <span key={line} className="block">
                     {line}
@@ -2874,7 +2874,7 @@ function LabProsthesisAiDesignDialog({
       } else {
         toast({
           title: "템플릿을 등록하지 못했습니다.",
-          description: row.message || "검사가 아직 끝나지 않았습니다. 설정 → 스캔바디에서 확인하세요.",
+          description: row.message || "검사가 아직 끝나지 않았습니다. 잠시 후 다시 시도하세요.",
           variant: "destructive",
         });
       }
