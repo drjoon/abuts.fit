@@ -290,17 +290,17 @@ export default function LabDiscountGroupPage() {
         </section>
 
         <div className="grid gap-2.5">
-          <SettlementPolicyFact label="사용량 할인">
-            지난 30일 합산 1건당 {LAB_DISCOUNT_PER_ORDER}원
-            <br />
-            {maxOrdersForFloor}건 이상이면 최대{" "}
-            {formatLabDiscountWon(LAB_DISCOUNT_MAX_AMOUNT)}원
-          </SettlementPolicyFact>
           <SettlementPolicyFact label="가입 이벤트">
             {LAB_DISCOUNT_INTRO_DAYS}일간{" "}
             {formatLabDiscountWon(LAB_DISCOUNT_INTRO_UNIT_PRICE)}원 고정
             <br />
             {LAB_DISCOUNT_INTRO_DAYS + 1}일부터 지난 30일 주문량으로 결정
+          </SettlementPolicyFact>
+          <SettlementPolicyFact label="사용량 할인">
+            지난 30일 합산 1건당 {LAB_DISCOUNT_PER_ORDER}원
+            <br />
+            {maxOrdersForFloor}건 이상이면 최대{" "}
+            {formatLabDiscountWon(LAB_DISCOUNT_MAX_AMOUNT)}원
           </SettlementPolicyFact>
           <SettlementPolicyFact label="소개 그룹">
             소개한 기공소 주문량을 합산해 할인합니다.
