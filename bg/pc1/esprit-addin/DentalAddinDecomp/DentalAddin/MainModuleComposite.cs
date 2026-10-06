@@ -1,7 +1,8 @@
 // related files:
 // - bg/pc1/esprit-addin/rules.md
 // - bg/pc1/esprit-addin/StlFileProcessor.cs
-// - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/bg/bg.controller.js (request-meta connectionTopZ)
+// - web/backend/services/abutmentStl/cuffConnectionSpecs.js
 using Abuts.EspritAddIns.ESPRIT2025AddinProject;
 using Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers;
 using Esprit;
@@ -1779,15 +1780,16 @@ namespace DentalAddin
         // 문제: Back_Turn이 BackPointX 너머 TurningExtend까지 LowerY(가장 가는 반경)로 수평 연장하고
         //       Back_Rough도 BackPointX까지 먼저 깎아, Back_Finish(D1.2 크로스)가 가이드부시에서 먼 tip쪽을
         //       깎을 때 부시쪽 목이 이미 얇아 떨린다(wobble).
-        // 대책: Back을 피니시라인 하단(FL min_z) 부시쪽에서 끊어 Front → Middle → Back 3구간으로 가공한다.
+        // 대책: Back을 커넥션 상단(Z_a)에서 끊어 Front → Middle → Back 3구간으로 가공한다.
         //   Middle (region BACK)  : Middle_Finish [Splitline_2-0.8 ~ Xk]
         //                           Middle_Rough  [Splitline_2-roughR ~ Xk+0.8]  (Finish seam 너머 0.8을 먼저 3D 황삭)
         //                           Middle_Turn   [FrontPointX ~ Xk+3.0]         (황삭 끝+D4 반경 2.0+칩 0.2)
         //   Back   (region BACK2) : Back_Turn [Xk ~ xMax+exit] (기존 Back_Turn 끝 형상 유지)
         //                           Back_Rough [Xk-roughR ~ BackPointX]
         //                           Back_Finish [Xk-0.8 ~ BackPointX]
-        //   Xk = (BackPointX - FL min_z) + 0.2  (마진 띠 전체가 Middle_Finish 한 번에 들어가고, seam은 커프 쪽)
-        // Middle_Turn 끝이 BackPointX + 1.5를 넘으면(커프가 짧음) Xk를 마진 쪽으로 당기지 않고 분할을 포기한다.
+        //   Xk = BackPointX - connectionTopZ (Z_a). 스펙 없으면 FL min+0.2 폴백.
+        //   Middle이 치은–커넥션 접합까지 깎고, Rough/Turn은 같은 Xk에서 +0.8/+3.0.
+        // 스펙 없을 때만: Middle_Turn 끝이 BackPointX+1.5를 넘으면 분할 포기(짧은 커프).
         private const string SafeSplitEnableEnv = "ABUTS_SAFE_SPLIT_ENABLE";
         private const double SafeSplitBackZonePastFinishLineMinMm = 0.2;
 
@@ -1839,23 +1841,38 @@ namespace DentalAddin
                 // finishLineTopX = BackPointX - topZ 와 같은 좌표계 (Splitline_2 SSOT)
                 double backX = MoveSTL_Module.BackPointX;
                 double finishLineBottomX = backX - finishLineMinZ;
-                double rawZoneX = finishLineBottomX + SafeSplitBackZonePastFinishLineMinMm;
-                double lo = splitline2 + SafeSplitMinBackZoneMm;
                 double turnPastSeamMm = GetTurnPastFinishSeamMm();
-                double hi = backX + SafeSplitMaxTurnPastBackPointMm - turnPastSeamMm;
+                double lo = splitline2 + SafeSplitMinBackZoneMm;
+                double rawZoneX;
+                double hi;
+                string zoneSource;
+                if (TryResolveConnectionTopZ(out double connectionTopZ))
+                {
+                    // 커넥션 상단(Z_a): Middle_Finish가 치은–커넥션 접합까지 간다.
+                    // Rough/Turn은 같은 Xk에서 +0.8/+3.0이라 Middle_Turn이 헥스를 넘을 수 있다.
+                    rawZoneX = backX - connectionTopZ;
+                    hi = backX;
+                    zoneSource = $"connectionTopZ={connectionTopZ:F3}";
+                }
+                else
+                {
+                    rawZoneX = finishLineBottomX + SafeSplitBackZonePastFinishLineMinMm;
+                    hi = backX + SafeSplitMaxTurnPastBackPointMm - turnPastSeamMm;
+                    zoneSource = "FL min+0.2 (connectionTopZ 없음)";
+                }
                 if (rawZoneX > hi)
                 {
-                    DentalLogger.Log($"SafeSplit[{context}] - 커프 짧음: Xk={rawZoneX:F3} > 상한{hi:F3} (Middle_Turn 끝이 BackPointX+{SafeSplitMaxTurnPastBackPointMm:F1} 초과), 단일 Back 유지");
+                    DentalLogger.Log($"SafeSplit[{context}] - 커프 짧음: Xk={rawZoneX:F3} > 상한{hi:F3} ({zoneSource}), 단일 Back 유지");
                     return false;
                 }
                 if (rawZoneX < lo)
                 {
-                    DentalLogger.Log($"SafeSplit[{context}] - Back 구간 짧음: Xk={rawZoneX:F3} < 하한{lo:F3} (split2={splitline2:F3}), 단일 Back 유지");
+                    DentalLogger.Log($"SafeSplit[{context}] - Back 구간 짧음: Xk={rawZoneX:F3} < 하한{lo:F3} (split2={splitline2:F3}, {zoneSource}), 단일 Back 유지");
                     return false;
                 }
 
                 zoneX = rawZoneX;
-                DentalLogger.Log($"SafeSplit[{context}] - Xk={zoneX:F3}(=Finish 끝, Rough 끝={zoneX + GetRoughPastFinishSeamMm():F3}), TurnEnd={zoneX + turnPastSeamMm:F3} (FL bottomX={finishLineBottomX:F3}=Back{backX:F3}-minZ{finishLineMinZ:F3}, split2={splitline2:F3})");
+                DentalLogger.Log($"SafeSplit[{context}] - Xk={zoneX:F3}(=Finish 끝, Rough 끝={zoneX + GetRoughPastFinishSeamMm():F3}), TurnEnd={zoneX + turnPastSeamMm:F3} ({zoneSource}, FL bottomX={finishLineBottomX:F3}=Back{backX:F3}-minZ{finishLineMinZ:F3}, split2={splitline2:F3})");
                 return true;
             }
             catch (Exception ex)
@@ -2933,6 +2950,23 @@ namespace DentalAddin
         private static double GetTurnPastFinishSeamMm()
         {
             return GetRoughPastFinishSeamMm() + SafeSplitTurnPastRoughMm;
+        }
+
+        // 제조사 커넥션 상단 Z_a. request-meta connectionTopZ → ABUTS_CONNECTION_TOP_Z.
+        private static bool TryResolveConnectionTopZ(out double connectionTopZ)
+        {
+            connectionTopZ = 0.0;
+            string raw = GetEnvString("ABUTS_CONNECTION_TOP_Z");
+            if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed)
+                || double.IsNaN(parsed)
+                || double.IsInfinity(parsed)
+                || parsed <= 0.0)
+            {
+                return false;
+            }
+
+            connectionTopZ = parsed;
+            return true;
         }
 
         private static bool TryGetThreeStageSplitConfig(out double splitline1, out double splitline2, out double xMin, out double xMax)

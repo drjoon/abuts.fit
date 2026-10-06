@@ -3,6 +3,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/SelfInspectionReportModal.tsx (원점 직경 diameterRef)
 // - web/backend/rules.md (커프 이음부 G2 보정)
 // - web/backend/scripts/abutment-stl-js/measure-cuff-connection.js
+// - bg/pc1/esprit-addin/DentalAddinDecomp/DentalAddin/MainModuleComposite.cs (connectionTopZ → Middle Xk)
 // - .cursor/rules/cuff-connection-spec.mdc
 //
 // 커넥션 11° 테이퍼 스펙 SSOT. 커프 이음부 G2 보정과 Re(커프 재디자인)가 보호하는 제조사 영역의 상단(Z_a)을 정한다.

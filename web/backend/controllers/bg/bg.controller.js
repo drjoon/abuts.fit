@@ -12,6 +12,8 @@
 // - web/backend/rules.md
 // - bg/pc1/rhino-server/stl-metadata/index.js (pickLotEngravingSiteFromGuides)
 // - bg/pc1/esprit-addin/Helpers/NcFileGenerator.cs (ResolvePostLotEngravingNcParams)
+// - bg/pc1/esprit-addin/DentalAddinDecomp/DentalAddin/MainModuleComposite.cs (connectionTopZ → Middle seam Xk)
+// - web/backend/services/abutmentStl/cuffConnectionSpecs.js
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/utils.js
@@ -70,6 +72,7 @@ import {
   resolvePrcFileNames,
   resolveConnectionTargetDiameter,
 } from "../requests/prcMapping.utils.js";
+import { resolveCuffConnectionSpec } from "../../services/abutmentStl/cuffConnectionSpecs.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { buildWorksheetReadyQueueGuard } from "../../services/worksheetReadyQueue.guard.js";
 
@@ -1900,9 +1903,12 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   const connectionTargetDiameter = await resolveConnectionTargetDiameter(ci, {
     connectionPrcFileName: resolvedPrcFiles.connectionPrcFileName,
   });
+  const cuffSpec = resolveCuffConnectionSpec(ci).spec;
+  const connectionTopZ =
+    cuffSpec?.taperHeightMm > 0 ? cuffSpec.taperHeightMm : null;
   if (connectionTargetDiameter != null) {
     console.log(
-      `[BG] getRequestMeta: connectionTargetDiameter=${connectionTargetDiameter}mm requestId=${request.requestId} brand=${ci.implantManufacturer}/${ci.implantBrand}/${ci.implantFamily}/${ci.implantType}`,
+      `[BG] getRequestMeta: connectionTargetDiameter=${connectionTargetDiameter}mm connectionTopZ=${connectionTopZ ?? "null"} requestId=${request.requestId} brand=${ci.implantManufacturer}/${ci.implantBrand}/${ci.implantFamily}/${ci.implantType}`,
     );
   } else {
     console.warn(
@@ -1951,6 +1957,8 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           maxDiameter: ci.maxDiameter || 0,
           connectionDiameter: ci.connectionDiameter || 0,
           connectionTargetDiameter,
+          // 제조사 커넥션 상단 Z_a(원점 위 taperHeight). Esprit Middle_Finish 끝(Xk)=BackPointX-이 값.
+          connectionTopZ,
           workType: ci.workType || "",
           // 유지홈 옵션(2단계: 없음/있음). Esprit는 none/deep만 허용 — 미설정 시 null → NC 중단+토스트.
           // esprit-addin이 Finish_Front StepIncrement·Finish_Back 1피치 겹침에 사용.
