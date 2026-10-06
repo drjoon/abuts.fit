@@ -108,6 +108,7 @@ Notes:
   - `src/features/layout/DashboardLayout.tsx`
   - `src/features/layout/AccountSwitcher.tsx` (사이드바 계정 팝업 · 같은 사업자 계정 전환)
   - `src/store/useAuthStore.ts` (`switchAccount`)
+  - 기공소 할인그룹(소개 할인 UI): `/dashboard/discount-group` — 사이드「기공의뢰」와「스토어」사이. `LabDiscountGroupPage` · `labDiscountGroupPolicy.ts`(기본 1.5만 · 건당 50원 · 최대 1만 · 가입 90일 고정 1만). **표시·미리보기만**(청구 적용 로직 추후).
 - 공개 랜딩 (`/` · `/offer/:slug` · `/events/:slug`)
   - `src/pages/public/Index.tsx` — 홈 히어로 + 오퍼 타일 + `#events` + 스토리 밴드
   - `src/pages/public/OfferPage.tsx` — 오퍼 상세 (`landingOffers` · `LandingOfferPage`)

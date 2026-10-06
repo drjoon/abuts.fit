@@ -32,6 +32,7 @@ import {
   DASHBOARD_WORK_OUTER_PAD_CLASS,
 } from "@/shared/ui/dashboardChrome";
 
+// - 2026-10-07: 기공소 사이드 — 기공의뢰와 스토어 사이「할인그룹」(/dashboard/discount-group).
 // - 2026-10-01: 설정 사이드 배지는 기본 기공수가 검토를 세지 않는다. 그 수는 재무에 붙는다.
 // - 2026-09-30: 공지는 헤더의 필터와 버튼 사이. 자리가 없으면 작업영역 상단 줄.
 // - 2026-09-26: 작업 스캔 저장 소켓은 읽지 않음 배지를 다시 조회하지 않는다.
@@ -137,6 +138,7 @@ import {
 // - web/frontend/src/pages/manufacturer/design/DesignPage.tsx
 // - web/frontend/src/pages/requestor/new_request/components/RequestorAbutmentPageHeader.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/pages/requestor/discountGroup/LabDiscountGroupPage.tsx
 // - web/frontend/src/features/layout/DashboardSidebarNav.tsx
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
@@ -200,6 +202,7 @@ import {
   X,
   Monitor,
   Gift,
+  BadgePercent,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import {
@@ -299,10 +302,10 @@ const buildRequestorSidebarItems = (
     return [
       buildLabGigongRequestSidebarGroup(LAB_RECEIVE_HREF),
       {
-        icon: Store,
-        label: "스토어",
-        href: STORE_HREF,
-        guideTourSatellite: "store_workspace",
+        icon: BadgePercent,
+        label: "할인그룹",
+        href: "/dashboard/discount-group",
+        tooltip: "소개 할인 · 그룹 합산 의뢰비",
       },
       {
         icon: Wallet,

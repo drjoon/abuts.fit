@@ -34,6 +34,7 @@ import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPa
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/frontend/src/pages/requestor/store/RequestorStorePage.tsx
+// - web/frontend/src/pages/requestor/discountGroup/LabDiscountGroupPage.tsx
 // - web/frontend/src/pages/devops/DevopsPaymentsPage.tsx
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // - web/frontend/src/features/dashboard/DashboardHome.tsx
@@ -43,6 +44,7 @@ import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPa
 // - web/frontend/src/pages/admin/AdminFinancePage.tsx
 // - web/frontend/src/pages/admin/AdminSettingsHubPage.tsx
 // change-log:
+// - 2026-10-07: 기공소 할인그룹 `/dashboard/discount-group`(표시만).
 // - 2026-10-03: 치과 role=practice도 기공의뢰서 URL(`/dashboard/practice-transfers`)로 알림 보기가 열리게.
 // - 2026-09-30: 로그인 후 모바일 1회 — PC 최적화 안내 확인 모달.
 // - 2026-09-28: 쿠키 동의 배너 — 문구 너비에 맞추고 가용 영역 중앙.
@@ -86,6 +88,9 @@ const NewRequestPage = lazy(
 );
 const RequestorPracticePage = lazy(
   () => import("./pages/requestor/practice/RequestorPracticePage"),
+);
+const LabDiscountGroupPage = lazy(
+  () => import("./pages/requestor/discountGroup/LabDiscountGroupPage"),
 );
 const ManufacturerWorksheetPage = lazy(() =>
   import("./pages/manufacturer/worksheet/WorksheetPage").then((m) => ({
@@ -1055,6 +1060,14 @@ const App = () => {
                         roles={["admin", "requestor", "internalLab"]}
                       >
                         <CreditsRoute />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="discount-group"
+                    element={
+                      <RoleProtectedRoute roles={["requestor"]}>
+                        <LabDiscountGroupPage />
                       </RoleProtectedRoute>
                     }
                   />

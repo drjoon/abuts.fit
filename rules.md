@@ -356,7 +356,7 @@
   - **커스텀어벗 Abuts-first**: 작업시작 시 스캔 기반 Request 생성 → **작업시작 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수. 치과→기공소=`labFeeSchedule` 커스텀어벗 수가(기공비 정산). 기공소→어벗츠=생산비(플랫폼 1.5만, Request 과금). 레거시(치과 어벗츠 단가 선납)만 `abutmentDesignLabFee` 외주 지급. **생산 후 수행 기공소 수취**(치과 직납 아님. assignee가 있으면 그 기공소, 없으면 원청). 제조사 출고 목표=`치과도착일 − 2영업일`(`resolveManufacturerTargetShipYmd`). 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
 - 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
 - 크레딧/정산은 유료(검증된 수신자·lab) 경로에만 해당. 실 사업자등록번호가 없는 synthetic 앵커에는 환영 크레딧을 지급하지 않으며, synthetic→실BN 검증 승격 시 1회 지급
-- 소개(리퍼럴) 페이지·링크: 발신(practice) 포함 모든 requestor가 접근 가능. 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 기준. lab 체크·검증되면 유료 소개 혜택 경로로 이어짐. **영업(딜러·영업본부) 소개 귀속**은 의뢰자 90일 무주문 시 리셋(§2.3).
+- 소개(리퍼럴)·할인그룹: 기공소 사이드「할인그룹」(`/dashboard/discount-group`) — 소개 코드·그룹·단가 미리보기(기본 1.5만 · 지난 달 합산 1건당 50원 · 최대 1만 · 가입 90일 고정 1만). **UI만**(청구 적용 로직 추후). 소개 귀속(`referredByAnchorId`)·그룹 합산은 추천인 사업자 앵커 기준. **영업(딜러·영업본부) 소개 귀속**은 의뢰자 90일 무주문 시 리셋(§2.3).
 - 공통 헬퍼/권한: `web/backend/utils/requestorCapabilities.js`, `web/frontend/src/shared/business/requestorCapabilities.ts`, `practiceTransferAuth.middleware.js`, `web/backend/controllers/businesses/requestorOrgAnchor.util.js`
 - 레거시 혼입 경로(예: `/api/requests/practice/*`)는 제거 대상으로 관리
 - 백필: `web/backend/scripts/db/backfill-requestor-capabilities.js` (`--apply`)
