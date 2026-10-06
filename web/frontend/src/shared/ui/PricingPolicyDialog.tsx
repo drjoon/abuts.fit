@@ -375,6 +375,7 @@ export const PricingPolicyDialog = ({
                   <PriceRow
                     label={BULK_SHIPPING_LABEL}
                     value={formatAbutsAbutmentServiceWon(shippingFee)}
+                    valuePrefix='VAT 포함'
                     unitLabel='1박스당'
                     note='별도 부과'
                   />

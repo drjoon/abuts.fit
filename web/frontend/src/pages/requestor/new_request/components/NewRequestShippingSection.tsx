@@ -451,7 +451,7 @@ export function NewRequestShippingSection({
                   {EXPRESS_SHIPPING_ARRIVAL_LINE}
                 </div>
                 <div className="text-sm text-slate-600 leading-relaxed">
-                  월 {formatAbutsManwon(deliveryMonthlyFee)} 정액.
+                  월 {formatAbutsManwon(deliveryMonthlyFee)} 정액
                 </div>
               </>
             )}
