@@ -130,6 +130,7 @@ type Props = {
 function PriceRow({
   label,
   value,
+  valuePrefix,
   unitLabel,
   secondaryValue,
   strikeValue,
@@ -138,6 +139,7 @@ function PriceRow({
 }: {
   label: string;
   value: string;
+  valuePrefix?: string;
   unitLabel?: string;
   secondaryValue?: string;
   strikeValue?: string;
@@ -148,11 +150,14 @@ function PriceRow({
     <div className='space-y-0.5'>
       <div className='flex items-baseline justify-between gap-3'>
         <div className='min-w-0 text-sm text-slate-600'>{label}</div>
-        <div className='flex shrink-0 items-baseline gap-2 tabular-nums'>
+        <div className='flex shrink-0 items-baseline gap-1.5 tabular-nums'>
           {strikeValue ? (
             <span className='text-base font-normal text-slate-400 line-through'>
               {strikeValue}
             </span>
+          ) : null}
+          {valuePrefix ? (
+            <span className='text-sm font-normal text-slate-600'>{valuePrefix}</span>
           ) : null}
           <div className='text-xl font-semibold tracking-tight text-slate-900'>
             {value}
@@ -377,8 +382,8 @@ export const PricingPolicyDialog = ({
                   <PriceRow
                     label={EXPRESS_SHIPPING_LABEL}
                     value={formatAbutsManwon(deliveryMonthlyFee)}
+                    valuePrefix='VAT 포함'
                     unitLabel='매월'
-                    secondaryValue='VAT 포함'
                     note={EXPRESS_SHIPPING_FEE_LINE}
                     noteAction={
                       showDeliveryJoin ? (

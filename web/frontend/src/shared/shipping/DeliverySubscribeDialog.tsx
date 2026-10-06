@@ -54,11 +54,13 @@ export function DeliverySubscribeDialog({
         <div className={GUIDE_DIALOG_BODY_CLASS}>
           <div className="flex items-baseline justify-between gap-3">
             <div className="text-sm text-slate-600">월 정액</div>
-            <div className="text-xl font-semibold tabular-nums tracking-tight text-slate-900">
-              {formatAbutsManwon(fee)}
+            <div className="flex shrink-0 items-baseline gap-1.5">
+              <span className="text-sm font-normal text-slate-600">VAT 포함</span>
+              <span className="text-xl font-semibold tabular-nums tracking-tight text-slate-900">
+                {formatAbutsManwon(fee)}
+              </span>
             </div>
           </div>
-          <p className="text-xs text-slate-500">VAT 포함</p>
           <p className="text-sm leading-relaxed text-slate-600">
             {DELIVERY_SUBSCRIBE_PERIOD_LINE}
             <br />
