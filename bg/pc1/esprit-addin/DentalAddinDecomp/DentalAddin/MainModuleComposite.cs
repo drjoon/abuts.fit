@@ -820,7 +820,7 @@ namespace DentalAddin
 
             double splitPercent = Clamp(splitRatio * 100.0, firstPercent, effectiveLastPercent);
 
-            // [SSOT] Front_Rough 끝 = Splitline_2 = Finish_Front 끝
+            // [SSOT] Finish_Front 끝 = Splitline_2. Front_Rough 끝 = Splitline_2 + 0.8.
             // 다음 Finish 시작 = 경계 - FinishAdjacentOverlapMm(0.8, tip 쪽 X-)
             // 모두 TryResolveSharedFinishSplitX() 한 식의 물리 X를 공유한다.
             // Finish A/B는 피처 재해석 없이 이 X를 StartEndScale(20mm)로만 환산한다.
@@ -1775,16 +1775,14 @@ namespace DentalAddin
         // (Splitline_2 = finishLineTopX - 1.0, margin 0 → FL top - 1.0)
         private const double FrontFaceSplitline2NoCrossMarginMm = 0.0;
 
-        private const double FrontTurnEndPastBoundaryMm = 2.5;
-
         // ── Safe split (PreviewModal「Wide Split」, request-meta caseInfos.safeSplitEnabled, 미수신→ON) ──
         // 문제: Back_Turn이 BackPointX 너머 TurningExtend까지 LowerY(가장 가는 반경)로 수평 연장하고
         //       Back_Rough도 BackPointX까지 먼저 깎아, Back_Finish(D1.2 크로스)가 가이드부시에서 먼 tip쪽을
         //       깎을 때 부시쪽 목이 이미 얇아 떨린다(wobble).
         // 대책: Back을 피니시라인 하단(FL min_z) 부시쪽에서 끊어 Front → Middle → Back 3구간으로 가공한다.
         //   Middle (region BACK)  : Middle_Finish [Splitline_2-0.8 ~ Xk]
-        //                           Middle_Rough  [Splitline_2-roughR ~ Xk]  (D4 반경이 D1.2 반경을 덮으므로 Finish와 같은 끝)
-        //                           Middle_Turn   [FrontPointX ~ Xk+2.2]     (D4 러프가 원소재를 물지 않게 반경 2.0+칩 0.2)
+        //                           Middle_Rough  [Splitline_2-roughR ~ Xk+0.8]  (Finish seam 너머 0.8을 먼저 3D 황삭)
+        //                           Middle_Turn   [FrontPointX ~ Xk+3.0]         (황삭 끝+D4 반경 2.0+칩 0.2)
         //   Back   (region BACK2) : Back_Turn [Xk ~ xMax+exit] (기존 Back_Turn 끝 형상 유지)
         //                           Back_Rough [Xk-roughR ~ BackPointX]
         //                           Back_Finish [Xk-0.8 ~ BackPointX]
@@ -1843,7 +1841,8 @@ namespace DentalAddin
                 double finishLineBottomX = backX - finishLineMinZ;
                 double rawZoneX = finishLineBottomX + SafeSplitBackZonePastFinishLineMinMm;
                 double lo = splitline2 + SafeSplitMinBackZoneMm;
-                double hi = backX + SafeSplitMaxTurnPastBackPointMm - SafeSplitTurnPastRoughMm;
+                double turnPastSeamMm = GetTurnPastFinishSeamMm();
+                double hi = backX + SafeSplitMaxTurnPastBackPointMm - turnPastSeamMm;
                 if (rawZoneX > hi)
                 {
                     DentalLogger.Log($"SafeSplit[{context}] - 커프 짧음: Xk={rawZoneX:F3} > 상한{hi:F3} (Middle_Turn 끝이 BackPointX+{SafeSplitMaxTurnPastBackPointMm:F1} 초과), 단일 Back 유지");
@@ -1856,7 +1855,7 @@ namespace DentalAddin
                 }
 
                 zoneX = rawZoneX;
-                DentalLogger.Log($"SafeSplit[{context}] - Xk={zoneX:F3}(=Finish/Rough 끝), TurnEnd={zoneX + SafeSplitTurnPastRoughMm:F3} (FL bottomX={finishLineBottomX:F3}=Back{backX:F3}-minZ{finishLineMinZ:F3}, split2={splitline2:F3})");
+                DentalLogger.Log($"SafeSplit[{context}] - Xk={zoneX:F3}(=Finish 끝, Rough 끝={zoneX + GetRoughPastFinishSeamMm():F3}), TurnEnd={zoneX + turnPastSeamMm:F3} (FL bottomX={finishLineBottomX:F3}=Back{backX:F3}-minZ{finishLineMinZ:F3}, split2={splitline2:F3})");
                 return true;
             }
             catch (Exception ex)
@@ -2002,7 +2001,7 @@ namespace DentalAddin
                     return false;
                 }
 
-                // Front_Rough 끝점 SSOT: Splitline_2(= TwoPhaseSplitLine)
+                // Front Face 상한 = Splitline_2. Front_Rough 가공 끝은 Splitline_2+0.8.
                 splitXUsed = splitline2;
                 roughARightEndX = Clamp(splitline2, xMin + 1e-6, xMax - 1e-6);
                 return true;
@@ -2570,14 +2569,17 @@ namespace DentalAddin
                 return true;
             }
 
-            // 인접 겹침 SSOT: 선행 끝=경계 정확, 후행 시작=경계 tip쪽 공구반경
+            // 인접 겹침 SSOT: 후행 시작=경계 tip쪽 공구반경
+            // 선행 3D 황삭 끝은 Finish seam보다 GetRoughPastFinishSeamMm(0.8) 더 깎아
+            // Front/Middle_Finish(D1.2)가 미황삭 치은 쪽을 물지 않게 한다.
             // Rough D4→2.0mm (ROUGH_20 D2→1.0mm)
             double roughOverlapMm = GetRoughAdjacentOverlapMm();
+            double roughPastFinishSeamMm = GetRoughPastFinishSeamMm();
 
             double frontStart = xMin;
-            // Front_Rough 끝점 SSOT: Splitline_2(= TwoPhaseSplitLine = finishline top 상방 tip쪽 1mm)
-            double frontEnd = Clamp(splitline2, xMin + 1e-6, xMax - 1e-6);
-            DentalLogger.Log($"RoughFreeFromMillSplitAB - Front_Rough 끝점=Splitline_2: endX={frontEnd:F3}");
+            // Front_Rough 끝점: Splitline_2 + 0.8 (Finish_Front 끝은 Splitline_2)
+            double frontEnd = Clamp(splitline2 + roughPastFinishSeamMm, xMin + 1e-6, xMax - 1e-6);
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - Front_Rough 끝점=Splitline_2+{roughPastFinishSeamMm:F3}: endX={frontEnd:F3}");
 
             double backStart = Clamp(splitline2 - roughOverlapMm, xMin + 1e-6, xMax - 1e-6);
             DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 시작=Splitline_2-roughRadius: startX={backStart:F3}, overlapMm={roughOverlapMm:F3}, roughDia={GetActiveRoughToolDiameterMm():F1}");
@@ -2599,7 +2601,7 @@ namespace DentalAddin
 
             string region = (GetEnvString("ABUTS_ROUGHFREEFORM_SPLIT_REGION") ?? string.Empty).Trim().ToUpperInvariant();
 
-            // Safe split: region BACK(Middle_Rough) 끝 = Xk, region BACK2(Back_Rough) = [Xk-roughR ~ BackPointX]
+            // Safe split: region BACK(Middle_Rough) 끝 = Xk+0.8, region BACK2(Back_Rough) = [Xk-roughR ~ BackPointX]
             // 경계 체인 이름 분리: 같은 이름이면 기존 체인이 재생성돼 Middle_Rough 경계가 사라진다.
             bool safeSplitBack = TryResolveSafeSplitBackZoneX("RoughFreeFromMillSplitAB", out double safeZoneX);
             if (safeSplitBack)
@@ -2611,9 +2613,9 @@ namespace DentalAddin
                 }
                 else if (string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase))
                 {
-                    backEnd = Clamp(safeZoneX, backStart + 1e-3, backEnd);
+                    backEnd = Clamp(safeZoneX + roughPastFinishSeamMm, backStart + 1e-3, backEnd);
                 }
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - safe split: region={region}({(region == "BACK2" ? "Back_Rough" : "Middle_Rough")}):[{backStart:F3}~{backEnd:F3}], Xk={safeZoneX:F3}");
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - safe split: region={region}({(region == "BACK2" ? "Back_Rough" : "Middle_Rough")}):[{backStart:F3}~{backEnd:F3}], Xk={safeZoneX:F3}, roughPastSeam={roughPastFinishSeamMm:F3}");
             }
             else if (string.Equals(region, "BACK2", StringComparison.OrdinalIgnoreCase))
             {
@@ -2894,10 +2896,10 @@ namespace DentalAddin
 
         // 3-stage 분할 기준
         // - Splitline_1: FrontPointX
-        // - Splitline_2 / TwoPhaseSplitLine / Front_Rough끝 / Finish_Front끝
+        // - Splitline_2 / TwoPhaseSplitLine / Finish_Front끝
         //   = SharedFinishSplitX (finishLineTopX - 1.0mm, tip 쪽)
         // - 인접 툴패스:
-        //   Rough: 선행 끝=경계 정확, 후행(Back) 시작=경계 tip쪽(X-) 공구반경
+        //   Rough: 선행 끝=경계+GetRoughPastFinishSeamMm(0.8), 후행(Back) 시작=경계 tip쪽(X-) 공구반경
         //     Rough(Back): GetRoughAdjacentOverlapMm() = D4→2.0 / D2→1.0
         //   Finish: 선행 끝=경계, 후행 시작=경계 - 0.8 (GetFinishAdjacentOverlapMm, tip 쪽 X-)
         // - Splitline_2>5mm: Front(Turn/Rough/Face) + Middle(Turn/Rough) + Back
@@ -2918,6 +2920,19 @@ namespace DentalAddin
         private static double GetFinishAdjacentOverlapMm()
         {
             return FinishAdjacentOverlapMm;
+        }
+
+        // 선행 3D 황삭을 Finish seam보다 이만큼(X+) 더 깎는다. Finish 끝은 경계에 두고,
+        // D1.2 반경·5축 기울기가 치은 쪽 미황삭을 물지 않게 한다. 값은 Finish 겹침과 같다(0.8).
+        private static double GetRoughPastFinishSeamMm()
+        {
+            return FinishAdjacentOverlapMm;
+        }
+
+        // Front/Middle_Turn 끝 = Finish seam + 황삭 연장 + D4 반경 + 칩.
+        private static double GetTurnPastFinishSeamMm()
+        {
+            return GetRoughPastFinishSeamMm() + SafeSplitTurnPastRoughMm;
         }
 
         private static bool TryGetThreeStageSplitConfig(out double splitline1, out double splitline2, out double xMin, out double xMax)
@@ -2942,7 +2957,7 @@ namespace DentalAddin
 
                 splitline1 = Clamp(front, xMin + 1e-6, xMax - 1e-6);
 
-                // SharedFinishSplitX = Splitline_2 = Front_Rough 끝 = Finish seam
+                // SharedFinishSplitX = Splitline_2 = Finish seam (Front_Rough 끝은 +0.8)
                 if (!TryResolveSharedFinishSplitX(out double sharedSplitX, out string sharedSource))
                 {
                     DentalLogger.Log("ThreeStageSplit - SharedFinishSplitX 계산 실패");
@@ -2967,7 +2982,7 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// [SSOT] Front_Rough 끝 = Splitline_2 = Finish_Front 끝.
+        /// [SSOT] Finish_Front 끝 = Splitline_2. Front_Rough 끝 = Splitline_2 + GetRoughPastFinishSeamMm().
         /// 다음 Finish 시작 = 경계 - GetFinishAdjacentOverlapMm() (0.8mm, tip 쪽).
         /// 식: finishLineTopX + SharedFinishSplitOffsetFromFinishLineTopMm (-1.0mm, tip 쪽).
         /// 좌표: FrontPointX = -FrontPoint.z → finishLineTopX = -finishLineTopZ (+ MoveSTL).

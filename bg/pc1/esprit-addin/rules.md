@@ -76,16 +76,18 @@
 - `Splitline_1 = FrontPointX`
 - `Splitline_2 = TwoPhaseSplitLine` (midpoint 사용 금지)
 - 인접 툴패스:
-  - Rough: **선행 끝 = 경계 정확**, **후행 시작 = 경계 tip쪽(그림 왼쪽, X-) 공구 반경**
+  - Rough: **선행 끝 = 경계 + 0.8mm** (`GetRoughPastFinishSeamMm`, Finish seam 너머 3D 황삭), **후행 시작 = 경계 tip쪽(그림 왼쪽, X-) 공구 반경**
     - `GetRoughAdjacentOverlapMm()` = 활성 rough 반경 (D4→`2.0`, `ROUGH_20` D2→`1.0`)
+    - Front_Rough 끝 = `Splitline_2 + 0.8`, Middle_Rough 끝 = `Xk + 0.8`
+    - D1.2 Finish는 경계에서 끝나므로 치은 쪽은 이미 황삭된 면만 깎는다
   - Finish: **선행 끝 = 경계**, **후행 시작 = 경계 − 0.8mm** (D1.2 직경 2/3, tip 쪽 X−)
     - Front 끝 = `Splitline_2`, Middle/Back 시작 = `Splitline_2 − 0.8`
     - Middle 끝 = `Xk`, Back 시작 = `Xk − 0.8`
-    - 선행 끝은 경계 너머로 연장하지 않는다. 치은 쪽 D1.2 크로스가 깨진다.
+    - 선행 Finish 끝은 경계 너머로 연장하지 않는다. 치은 쪽 D1.2 크로스가 깨진다.
     - `GetFinishAdjacentOverlapMm()` = `0.8`. StepIncrement와 별개.
     - StepIncrement SSOT: 백엔드 `retentionGroove` (`none`→`5axisComposite_Front.prc` StepIncrement 그대로, `deep`→`0.20`) via `ABUTS_RETENTION_GROOVE`
     - `ABUTS_COMPOSITE_STEP_INCREMENT_A` **미사용**. none/deep 미수신 시 NC 중단 + 프론트 토스트
-  - Turn: **`Front_Turn` 끝 = `Splitline_2 + 2.5mm`** (Back 방향 X+)
+  - Turn: **`Front_Turn` 끝 = `Splitline_2 + 3.0mm`** (황삭 연장 0.8 + D4 반경 2.0 + 칩 0.2, Back 방향 X+)
     - 구현: `MainModuleOperations.TryPrepareTurningRegionRange` (`FRONT` → `rangeMaxX`)
 
 ### 4.3.0 Safe split — PreviewModal「Wide Split」(2026-09-30, 기본 ON)
@@ -95,19 +97,19 @@
 - 경계 `Xk = (BackPointX - FL min_z) + 0.2` (마진 띠는 Middle_Finish 한 번에, seam은 커프).
 - 순서: `Front_Turn → Front_Rough → Front_Face → Front_Finish → Middle_Turn → Middle_Rough → Middle_Finish → Back_Turn → Back_Rough → Back_Finish → Connection`
   - 내부 region 코드는 Middle=`BACK`, Back=`BACK2`(T05·레이어·경계 로직 공유). 표시명만 바뀐다.
-  - Middle_Finish·Middle_Rough 끝 `Xk` (D4 반경이 D1.2를 덮으므로 같은 끝 OK), Middle_Turn 끝 `Xk+2.2` (D4 반경 2.0+칩 0.2)
+  - Middle_Finish 끝 `Xk`, Middle_Rough 끝 `Xk+0.8` (Finish seam 너머를 먼저 3D 황삭), Middle_Turn 끝 `Xk+3.0` (황삭 끝+D4 반경 2.0+칩 0.2)
   - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX]`(경계 `RoughBoundryBack2`), Back_Finish `[Xk-0.8 ~ BackPointX]`(`B2_PHASE`)
-- Middle_Turn 끝(`Xk+2.2`)은 **클램프하지 않는다**. 줄이면 D4 러프가 원소재를 물고, Xk를 당기면 seam이 마진으로 들어간다.
-- 포기 조건(기존 단일 Back 유지): FL min_z 없음, `Xk < Splitline_2+1.5`, Middle_Turn 끝 > `BackPointX+1.5` (= 치은 파트 FL min_z < 0.9mm). 로그 `SafeSplit[...]`.
-- 원칙: Turn은 Rough 끝보다 D4 반경+칩(2.2) 이상 더 깎는다. Rough와 Finish(D1.2)는 같은 끝이어도 된다.
+- Middle_Turn 끝(`Xk+3.0`)은 **클램프하지 않는다**. 줄이면 D4 러프가 원소재를 물고, Xk를 당기면 seam이 마진으로 들어간다.
+- 포기 조건(기존 단일 Back 유지): FL min_z 없음, `Xk < Splitline_2+1.5`, Middle_Turn 끝 > `BackPointX+1.5` (= 치은 파트 FL min_z < 1.7mm). 로그 `SafeSplit[...]`.
+- 원칙: Turn은 Rough 끝보다 D4 반경+칩(2.2) 이상 더 깎는다. 선행 3D 황삭은 Finish seam보다 0.8mm 더 깎아 D1.2가 미황삭을 물지 않게 한다.
 - 구현: `MainModuleComposite.TryResolveSafeSplitBackZoneX`, `MainModuleOperations.OperationSeq`/`TryPrepareTurningRegionRange(BACK/BACK2)`/`TagNewOperations`.
 
 ### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`, `GetRoughAdjacentOverlapMm`, `GetFinishAdjacentOverlapMm`, `ABUTS_RETENTION_GROOVE`)
 
 - 목적: **한 식**으로 아래를 동일 경계 좌표에 둔다.
-  - `Front_Rough` 끝
   - `Splitline_2` / `TwoPhaseSplitLine`
   - `Finish_Front` 끝
+  - `Front_Rough` 끝 = 그 경계 + `GetRoughPastFinishSeamMm()` (`0.8`)
 - 기준식:
   - `SharedFinishSplitX = finishLineTopX - 1.0` (tip 쪽 1mm, Z+1 ≡ X-1)
 - 인접 후행 시작:
@@ -125,9 +127,9 @@
     (FL max_z > Front.z 이면 tip쪽 `topX-1`이 Front보다 작아짐; Front 하한으로 끌면 FL 하방 침범)
 - 구현:
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
-  - Rough: `frontEnd = splitline2`(기본) / wide 시 `Front_Face` end, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle은 wide 시만
+  - Rough: `frontEnd = splitline2 + GetRoughPastFinishSeamMm()` (`0.8`) / wide 시 `Front_Face` end, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle은 wide 시만
   - Finish: `Finish_Front` 끝 = `SharedFinishSplitX`, 다음 Finish 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()` (`0.8`)
-  - Middle 끝 = `Xk`, `Back_Finish` 시작 = `Xk - 0.8`
+  - Middle 끝 = `Xk`, `Back_Finish` 시작 = `Xk - 0.8`, Middle_Rough 끝 = `Xk + 0.8`
   - Finish_Front StepIncrement: `none`은 `5axisComposite_Front.prc` 값 유지, `deep`만 COM SetProperty 0.20 (`TrySetCompositeStepIncrement`)
   - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
   - 금지: 선행 Finish 끝을 경계 너머로 연장, `ABUTS_COMPOSITE_STEP_INCREMENT_A` 의존, `Splitline_2<=5mm`에서 `Middle_Turn`/`Middle_Rough` 생성, `Back + Z - stlTopZ` 구식 변환 (FL 하방 침범)
@@ -250,7 +252,9 @@
   - 구현: `MainModuleComposite.AddSplitOp`에서 Roughing/ZLevel에 별도 SetProperty 적용 금지
 - Rough 경계(Front/Back/Middle):
   - SSOT: `backStart = splitline2 - GetRoughAdjacentOverlapMm()` (D4→2.0)
+  - 선행 끝: `frontEnd = splitline2 + GetRoughPastFinishSeamMm()` (`0.8`), Middle_Rough 끝 = `Xk + 0.8`
   - `Splitline_2 > 5mm`일 때만 `Middle_Turn` / `Middle_Rough` 생성
+  - 바닥·벽면 가공 여유: `MillRough_3D.prc` `StockAllowanceFloors/Walls` = `0.20`
   - 구현: `MainModuleComposite.TryRunRoughFreeFromMillSplitAB`
 
 ### 4.11 Finish_Cuff Back_Rough 스타일 SSOT (2026-07-11)

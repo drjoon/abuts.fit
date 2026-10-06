@@ -145,7 +145,8 @@ namespace DentalAddin
                         TryNormalizeCompositeFinishOrderAfterFreeForm();
                     }
 
-                    // Safe split(Wide Split 토글): 위 BACK 구간은 Middle_Turn/Middle_Rough/Middle_Finish로 표시되고 FL 하단(Xk)에서 끝난다.
+                    // Safe split(Wide Split 토글): 위 BACK 구간은 Middle_Turn/Middle_Rough/Middle_Finish.
+                    // Middle_Finish는 Xk에서 끝나고, Middle_Rough는 Xk+0.8까지 먼저 깎아 D1.2가 미황삭을 물지 않는다.
                     // 부시쪽 목(커프~헥스 너머)은 여기 BACK2 구간(Back_Turn/Back_Rough/Back_Finish)에서 마지막에 깎는다.
                     if (TryResolveSafeSplitBackZoneX("OperationSeq", out _))
                     {
@@ -1604,12 +1605,12 @@ namespace DentalAddin
                 {
                     case "FRONT":
                         rangeMinX = xMin;
-                        rangeMaxX = Math.Min(xMax, splitline2 + FrontTurnEndPastBoundaryMm);
+                        rangeMaxX = Math.Min(xMax, splitline2 + GetTurnPastFinishSeamMm());
                         break;
                     case "BACK" when TryResolveSafeSplitBackZoneX("TurningOp BACK", out double safeZoneEndX):
-                        // Safe split(Middle_Turn): Middle_Rough 끝(Xk)보다 2.2 더 깎고 퇴출. 헥스 너머 연장·45도 퇴출은 BACK2(Back_Turn)로 미룬다.
+                        // Safe split(Middle_Turn): Middle_Rough 끝(Xk+0.8)보다 2.2 더 깎고 퇴출. 헥스 너머 연장·45도 퇴출은 BACK2(Back_Turn)로 미룬다.
                         rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
-                        rangeMaxX = safeZoneEndX + SafeSplitTurnPastRoughMm;
+                        rangeMaxX = safeZoneEndX + GetTurnPastFinishSeamMm();
                         break;
                     case "BACK2":
                         if (!TryResolveSafeSplitBackZoneX("TurningOp BACK2", out double safeZoneStartX))
@@ -1643,7 +1644,7 @@ namespace DentalAddin
                 }
 
                 DentalLogger.Log($"TurningOp 3-Stage - region={region}, range=[{rangeMinX:0.###},{rangeMaxX:0.###}], split1={splitline1:0.###}, split2={splitline2:0.###}" +
-                    (normalized == "FRONT" ? $", Front_Turn끝=Splitline_2+{FrontTurnEndPastBoundaryMm:0.###}" : string.Empty));
+                    (normalized == "FRONT" ? $", Front_Turn끝=Splitline_2+{GetTurnPastFinishSeamMm():0.###}" : string.Empty));
                 return true;
             }
             catch (Exception ex)
