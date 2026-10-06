@@ -390,12 +390,11 @@ export function NewRequestShippingSection({
               </div>
             </div>
             <div className="text-sm text-destructive">적어도 2-3개 요일 선택 권장</div>
+            <div className="text-base text-foreground leading-relaxed">
+              지정하신 요일에 모두 보내드립니다.
+            </div>
             <div className="text-sm text-slate-600 leading-relaxed">
-              1박스당 {shippingFeeLabel}원 별도 부과.
-              <br />
-              준비되는대로 바로 의뢰해주세요.
-              <br />
-              지정된 요일에 일괄 출고해드립니다.
+              1박스당 {shippingFeeLabel}원
             </div>
           </div>
 
@@ -452,7 +451,7 @@ export function NewRequestShippingSection({
                   {EXPRESS_SHIPPING_ARRIVAL_LINE}
                 </div>
                 <div className="text-sm text-slate-600 leading-relaxed">
-                  월 {formatAbutsManwon(deliveryMonthlyFee)}(VAT 포함) 정액.
+                  월 {formatAbutsManwon(deliveryMonthlyFee)} 정액.
                 </div>
               </>
             )}
