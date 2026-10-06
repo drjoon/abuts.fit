@@ -1,7 +1,6 @@
 // related files:
 // - bg/pc1/esprit-addin/rules.md
 // - bg/pc1/esprit-addin/DentalAddinDecomp/DentalAddin/MainModuleComposite.cs
-// - web/backend/controllers/bg/bg.controller.js (connectionTopZ)
 // - web/backend/controllers/requests/common.review.controller.js
 using System;
 using System.Collections;
@@ -50,7 +49,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         private const string BackRoughFourWayEnableEnv = "ABUTS_BACK_ROUGH_4WAY_ENABLE";
         private const string FinishLineMinZEnv = "ABUTS_FINISHLINE_MIN_Z";
-        private const string ConnectionTopZEnv = "ABUTS_CONNECTION_TOP_Z";
         // Finish_Cuff SSOT env
         // - ABUTS_COMPOSITE_CUFF_PROFILE: backend finishline points를 ESPRIT FeatureChain으로 변환한 profile token("6,<key>")
         // - ABUTS_COMPOSITE_CUFF_START_X: 시작 X (정책: finishline min_z)
@@ -348,20 +346,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                                 "ABUTS_MAX_DIAMETER",
                                 requestMeta.maxDiameter.ToString("0.###", CultureInfo.InvariantCulture));
                         }
-                        if (requestMeta.connectionTopZ.HasValue
-                            && requestMeta.connectionTopZ.Value > 0.0
-                            && !double.IsNaN(requestMeta.connectionTopZ.Value)
-                            && !double.IsInfinity(requestMeta.connectionTopZ.Value))
-                        {
-                            Environment.SetEnvironmentVariable(
-                                ConnectionTopZEnv,
-                                requestMeta.connectionTopZ.Value.ToString("0.###", CultureInfo.InvariantCulture));
-                        }
-                        else
-                        {
-                            Environment.SetEnvironmentVariable(ConnectionTopZEnv, null);
-                        }
-                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, ConnTopZ={(requestMeta.connectionTopZ.HasValue ? requestMeta.connectionTopZ.Value.ToString("F3", CultureInfo.InvariantCulture) : "<null>")}, CamDia={requestMeta.camDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}, SafeSplit={(safeSplitEnabled ? "1" : "0")}, ManufacturerHexRotation(mode)={(_backendManufacturerHexRotation ?? "<null>")}, HexAppliedDeg={(_backendHexRotationAppliedDeg.HasValue ? _backendHexRotationAppliedDeg.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
+                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, CamDia={requestMeta.camDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}, SafeSplit={(safeSplitEnabled ? "1" : "0")}, ManufacturerHexRotation(mode)={(_backendManufacturerHexRotation ?? "<null>")}, HexAppliedDeg={(_backendHexRotationAppliedDeg.HasValue ? _backendHexRotationAppliedDeg.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
                         AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, minZ={(finishLineMinZ.HasValue ? finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, TwoPhase={twoPhase}");
                         if (!_prcManager.ApplyBackendPrcNames((BackendApiClient.RequestMetaCaseInfos)requestMeta, requestId, _backendImplantLabel))
                         {
@@ -659,7 +644,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable(CompositeOrientationWAxisDegreesEnv, null);
             Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, null);
             Environment.SetEnvironmentVariable(FinishLineMinZEnv, null);
-            Environment.SetEnvironmentVariable(ConnectionTopZEnv, null);
             Environment.SetEnvironmentVariable(CompositeCuffProfileEnv, null);
             Environment.SetEnvironmentVariable(CompositeCuffStartXEnv, null);
             Environment.SetEnvironmentVariable(CompositeCuffEndXEnv, null);

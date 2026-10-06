@@ -379,8 +379,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember] public string implantType { get; set; }
             [DataMember] public double maxDiameter { get; set; }
             [DataMember] public double connectionDiameter { get; set; }
-            // 제조사 커넥션 상단 Z_a(mm). Middle_Finish 끝 Xk = BackPointX - connectionTopZ.
-            [DataMember(Name = "connectionTopZ", EmitDefaultValue = false)] public double? connectionTopZ { get; set; }
             [DataMember] public double camDiameter { get; set; }
             [DataMember] public string workType { get; set; }
             [DataMember] public string lotNumber { get; set; }

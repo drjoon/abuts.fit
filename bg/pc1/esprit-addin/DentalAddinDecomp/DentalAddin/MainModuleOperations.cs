@@ -146,7 +146,7 @@ namespace DentalAddin
                     }
 
                     // Safe split(Wide Split 토글): 위 BACK 구간은 Middle_Turn/Middle_Rough/Middle_Finish.
-                    // Xk=커넥션 상단(Z_a). Middle_Finish는 Xk, Middle_Rough는 Xk+0.8, Middle_Turn은 Xk+3.0.
+                    // Middle_Finish는 Xk에서 끝나고, Middle_Rough는 Xk+0.8까지 먼저 깎아 D1.2가 미황삭을 물지 않는다.
                     // 부시쪽 목(커프~헥스 너머)은 여기 BACK2 구간(Back_Turn/Back_Rough/Back_Finish)에서 마지막에 깎는다.
                     if (TryResolveSafeSplitBackZoneX("OperationSeq", out _))
                     {
@@ -1608,7 +1608,7 @@ namespace DentalAddin
                         rangeMaxX = Math.Min(xMax, splitline2 + GetTurnPastFinishSeamMm());
                         break;
                     case "BACK" when TryResolveSafeSplitBackZoneX("TurningOp BACK", out double safeZoneEndX):
-                        // Safe split(Middle_Turn): 끝=Xk+3.0 (커넥션 상단+황삭 0.8+D4 반경 2.0+칩 0.2). 헥스 너머 연장·45도 퇴출은 BACK2.
+                        // Safe split(Middle_Turn): Middle_Rough 끝(Xk+0.8)보다 2.2 더 깎고 퇴출. 헥스 너머 연장·45도 퇴출은 BACK2(Back_Turn)로 미룬다.
                         rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
                         rangeMaxX = safeZoneEndX + GetTurnPastFinishSeamMm();
                         break;
