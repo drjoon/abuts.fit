@@ -313,7 +313,7 @@ export const PTX_CA_INSUFFICIENT_CREDIT_TITLE = "크레딧이 부족합니다";
 
 export const PTX_CA_INSUFFICIENT_CREDIT_DESCRIPTION_LINES = [
   "어벗 디자인을 올리고 생산을 시작할 때 크레딧으로 결제됩니다.",
-  "데모 중에는 가상 잔고(마이너스 허용)로 진행됩니다. 데모가 끝났다면 충전 후 다시 업로드해 주세요.",
+  "충전 후 다시 업로드해 주세요.",
 ] as const;
 
 export const PTX_CA_INSUFFICIENT_CREDIT_CONFIRM_LABEL = "충전하기";

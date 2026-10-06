@@ -165,7 +165,7 @@ async function ensureFreeCreditGrant({
 
 /**
  * 기공소 가입 환영 무료크레딧 — 폐지.
- * 대체: 치과·기공소 데모 모드(30일 마이너스 허용) + 관리자 수동 무료크레딧.
+ * 대체: 치과 데모 모드(90일 마이너스 허용, 기공소 데모 없음) + 관리자 수동 무료크레딧.
  * 관리자 수동 무료크레딧 override는 adminFreeCreditGrant 경로 유지.
  */
 export async function grantWelcomeFreeCreditIfEligible() {

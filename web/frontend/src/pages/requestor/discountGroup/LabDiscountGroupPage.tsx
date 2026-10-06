@@ -1,23 +1,22 @@
 // related files:
 // - web/frontend/src/pages/requestor/discountGroup/labDiscountGroupPolicy.ts
 // - web/frontend/src/pages/requestor/referralGroups/hooks/useReferralData.ts
+// - web/frontend/src/shared/settlement/settlementUi.tsx
+// - web/frontend/src/shared/ui/dashboard/DashboardShell.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/App.tsx
 // - web/frontend/rules.md
 // change-log:
+// - 2026-10-07: 정책 fact — 기본가격·사용량할인·가입이벤트·소개그룹.
+// - 2026-10-07: 단가 ₩1.5만원 취소선. 상단 4카드 1행. 할인정책은 소개그룹 헤더.
+// - 2026-10-07: 가입링크·소개링크. 단가 취소선. 할인 카드 제거·기공소/그룹 할인 표시.
+// - 2026-10-07: DashboardShell·SettlementStatCard 스타일. 정책 문구는 fact 모달로 단축.
 // - 2026-10-07: 기공소 할인그룹 페이지 복구(표시만). 청구 적용 로직은 추후.
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Navigate } from "react-router-dom";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Check, Copy, Link2 } from "lucide-react";
+import { BadgeCheck, Check, Copy, Link2 } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
@@ -25,45 +24,78 @@ import { useReferralData } from "@/pages/requestor/referralGroups/hooks/useRefer
 import { ReferralNetworkChart } from "@/features/referral/components/ReferralNetworkChart";
 import { buildLabIntroMessage } from "@/shared/platform/referralShareMessages";
 import { formatKstYmdToKo, toKstYmd } from "@/shared/date/kst";
+import { formatAbutsManwon } from "@/shared/pricing/abutsAbutmentService";
+import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
+import { cn } from "@/shared/ui/cn";
+import {
+  GUIDE_FACT_GRID_CLASS,
+  SETTLEMENT_STAT_ROW_CLASS,
+  SettlementPolicyDialog,
+  SettlementPolicyFact,
+  SettlementStatCard,
+} from "@/shared/settlement/settlementUi";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   LAB_DISCOUNT_BASE_UNIT_PRICE,
   LAB_DISCOUNT_INTRO_DAYS,
   LAB_DISCOUNT_INTRO_UNIT_PRICE,
   LAB_DISCOUNT_MAX_AMOUNT,
-  LAB_DISCOUNT_MIN_UNIT_PRICE,
   LAB_DISCOUNT_PER_ORDER,
   formatLabDiscountWon,
   previewLabDiscountUnitPrice,
 } from "./labDiscountGroupPolicy";
 
-function MetricCard({
-  title,
-  value,
-  subtitle,
-}: {
-  title: string;
-  value: string;
-  subtitle?: string;
-}) {
-  return (
-    <div className="rounded-xl bg-slate-50 px-4 py-3.5">
-      <div className="text-xs text-slate-500">{title}</div>
-      <div className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-900 tabular-nums">
-        {value}
-      </div>
-      {subtitle ? (
-        <div className="mt-1 text-xs text-slate-500">{subtitle}</div>
-      ) : null}
-    </div>
+/** 상단 4카드 1행 — 고정 max 없이 가로를 나눠 쓴다. */
+const LAB_DISCOUNT_STATS_ROW_CLASS = cn(
+  SETTLEMENT_STAT_ROW_CLASS,
+  "flex-nowrap",
+);
+const LAB_DISCOUNT_CODE_CARD_CLASS =
+  "flex min-h-[7.25rem] min-w-0 flex-[1.35] basis-0 flex-col rounded-2xl border-2 border-primary/60 bg-white p-3 shadow-sm sm:p-4";
+const LAB_DISCOUNT_STAT_CARD_WIDTH_CLASS = "min-w-0 flex-1 basis-0";
+
+function volumeDiscountAmount(orders: number): number {
+  return Math.min(
+    Math.max(0, Math.floor(Number(orders) || 0)) * LAB_DISCOUNT_PER_ORDER,
+    LAB_DISCOUNT_MAX_AMOUNT,
   );
+}
+
+function formatManwonWithWonPrefix(price: number): string {
+  return `₩${formatAbutsManwon(price)}`;
+}
+
+function UnitPriceValue({
+  unitPrice,
+  basePrice,
+}: {
+  unitPrice: number;
+  basePrice: number;
+}): ReactNode {
+  if (unitPrice < basePrice) {
+    return (
+      <span className="inline-flex flex-wrap items-baseline justify-center gap-1.5">
+        <span className="text-base font-normal text-slate-400 line-through">
+          {formatManwonWithWonPrefix(basePrice)}
+        </span>
+        <span>{formatAbutsManwon(unitPrice)}</span>
+      </span>
+    );
+  }
+  return formatManwonWithWonPrefix(unitPrice);
 }
 
 export default function LabDiscountGroupPage() {
   const { toast } = useToast();
   const { user } = useAuthStore();
   const { kind, loading: accessLoading } = useRequestorBusinessAccess();
-  const [copied, setCopied] = useState(false);
-  const [codeCopied, setCodeCopied] = useState(false);
+  const [signupCopied, setSignupCopied] = useState(false);
+  const [introCopied, setIntroCopied] = useState(false);
 
   const {
     isReferralEligible,
@@ -94,6 +126,8 @@ export default function LabDiscountGroupPage() {
   const memberCount = Number(
     treeMemberCount ?? requestorStats?.groupMemberCount ?? 0,
   );
+  const myDiscount = volumeDiscountAmount(myOrders);
+  const groupDiscount = volumeDiscountAmount(groupOrders);
 
   const pricePreview = useMemo(
     () =>
@@ -109,24 +143,31 @@ export default function LabDiscountGroupPage() {
     ? formatKstYmdToKo(toKstYmd(pricePreview.introEndsAt))
     : null;
 
-  const ruleSubtitle = pricePreview.inIntroPeriod
-    ? introEndsLabel
-      ? `가입 후 ${LAB_DISCOUNT_INTRO_DAYS}일 고정 · ${introEndsLabel}까지`
-      : `가입 후 ${LAB_DISCOUNT_INTRO_DAYS}일 고정`
-    : pricePreview.rule === "usage_discount"
-      ? `그룹 합산 ${groupOrders.toLocaleString("ko-KR")}건 · 건당 ${LAB_DISCOUNT_PER_ORDER}원 할인`
-      : "기본가 적용";
+  const unitPriceHint = pricePreview.inIntroPeriod ? (
+    <>
+      {LAB_DISCOUNT_INTRO_DAYS}일 가입이벤트
+      {introEndsLabel ? (
+        <>
+          <br />
+          {introEndsLabel}까지
+        </>
+      ) : null}
+    </>
+  ) : pricePreview.rule === "usage_discount" ? (
+    <>지난 30일 사용량</>
+  ) : (
+    <>기본 가격</>
+  );
 
-  const handleCopyLink = async () => {
+  const handleCopySignupLink = async () => {
     if (!referralLink) return;
     try {
-      const text = buildLabIntroMessage(referralLink) || referralLink;
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(referralLink);
+      setSignupCopied(true);
+      setTimeout(() => setSignupCopied(false), 2000);
       toast({
         title: "복사 완료",
-        description: "소개 안내와 링크가 복사되었습니다.",
+        description: "가입 링크가 복사되었습니다.",
         duration: 2000,
       });
     } catch {
@@ -138,15 +179,16 @@ export default function LabDiscountGroupPage() {
     }
   };
 
-  const handleCopyCode = async () => {
-    if (!referralCode) return;
+  const handleCopyIntroLink = async () => {
+    if (!referralLink) return;
     try {
-      await navigator.clipboard.writeText(referralCode);
-      setCodeCopied(true);
-      setTimeout(() => setCodeCopied(false), 2000);
+      const text = buildLabIntroMessage(referralLink) || referralLink;
+      await navigator.clipboard.writeText(text);
+      setIntroCopied(true);
+      setTimeout(() => setIntroCopied(false), 2000);
       toast({
         title: "복사 완료",
-        description: "소개 코드가 복사되었습니다.",
+        description: "소개 링크가 복사되었습니다.",
         duration: 2000,
       });
     } catch {
@@ -161,7 +203,7 @@ export default function LabDiscountGroupPage() {
   if (accessLoading) {
     return (
       <div className="space-y-3">
-        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-28 w-full" />
         <Skeleton className="h-56 w-full" />
       </div>
     );
@@ -171,186 +213,187 @@ export default function LabDiscountGroupPage() {
     return <Navigate to="/dashboard" replace />;
   }
 
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-1.5 py-1.5">
-        {!isReferralEligible ? (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                기공소 계정에서 확인할 수 있습니다.
-              </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-12 xl:items-stretch">
-            <Card className="flex h-full flex-col xl:col-span-5">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-xl">소개 링크</CardTitle>
-                <CardDescription>
-                  다른 기공소를 소개하면 같은 할인그룹으로 묶입니다.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-1 flex-col gap-4 pt-0">
-                <button
-                  type="button"
-                  onClick={() => void handleCopyCode()}
-                  className="w-full rounded-xl bg-slate-50 px-4 py-5 text-left transition-colors hover:bg-slate-100"
-                >
-                  <div className="text-xs font-medium text-slate-500">
-                    소개 코드
-                  </div>
-                  <div className="mt-1 font-mono text-3xl font-semibold tracking-wider text-slate-900">
-                    {referralCode || "—"}
-                  </div>
-                </button>
+  if (!isReferralEligible) {
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-6 text-sm text-slate-500">
+        기공소 계정에서 확인할 수 있습니다.
+      </div>
+    );
+  }
 
-                <div className="mt-auto grid grid-cols-1 gap-2 sm:grid-cols-2">
+  const statsLoading = loadingRequestor || loadingTree;
+  const maxOrdersForFloor = LAB_DISCOUNT_MAX_AMOUNT / LAB_DISCOUNT_PER_ORDER;
+  const groupLabel =
+    memberCount > 0
+      ? `그룹 (${memberCount.toLocaleString("ko-KR")}개소)`
+      : "그룹";
+
+  const policyDialog = (
+    <SettlementPolicyDialog
+      title="할인그룹 정책"
+      description="커스텀어벗 건당 의뢰비"
+      triggerLabel="할인 정책"
+    >
+      <div className={GUIDE_FACT_GRID_CLASS}>
+        <SettlementPolicyFact label="기본 가격">
+          {formatLabDiscountWon(LAB_DISCOUNT_BASE_UNIT_PRICE)}원
+          <br />
+          <span className="mt-1.5 inline-block text-[11px] font-semibold text-slate-900">
+            오늘 가격
+          </span>
+          <br />
+          <span className="tabular-nums text-slate-400 line-through">
+            {formatLabDiscountWon(LAB_DISCOUNT_BASE_UNIT_PRICE)}원
+          </span>
+          {" → "}
+          {formatLabDiscountWon(LAB_DISCOUNT_INTRO_UNIT_PRICE)}원
+          <br />
+          ({LAB_DISCOUNT_INTRO_DAYS}일 가입이벤트)
+        </SettlementPolicyFact>
+        <SettlementPolicyFact label="사용량 할인">
+          지난 달 합산 1건당 {LAB_DISCOUNT_PER_ORDER}원
+          <br />
+          {maxOrdersForFloor}건 이상 의뢰시 최대{" "}
+          {formatLabDiscountWon(LAB_DISCOUNT_MAX_AMOUNT)}원 할인
+        </SettlementPolicyFact>
+        <SettlementPolicyFact label="가입 이벤트">
+          가입 후 {LAB_DISCOUNT_INTRO_DAYS}일간{" "}
+          {formatLabDiscountWon(LAB_DISCOUNT_INTRO_UNIT_PRICE)}원으로 고정
+          <br />
+          {LAB_DISCOUNT_INTRO_DAYS + 1}일부터는 지난 30일 주문량으로 오늘 가격
+          결정
+        </SettlementPolicyFact>
+        <SettlementPolicyFact label="소개 그룹">
+          소개한 기공소와 주문량을 합산해 할인합니다.
+        </SettlementPolicyFact>
+      </div>
+    </SettlementPolicyDialog>
+  );
+
+  return (
+    <TooltipProvider>
+      <DashboardShell
+        title="할인그룹"
+        subtitle=""
+        statsGridClassName={LAB_DISCOUNT_STATS_ROW_CLASS}
+        stats={
+          statsLoading ? (
+            <>
+              <Skeleton className="min-h-[7.25rem] min-w-0 flex-[1.35] basis-0" />
+              <Skeleton className="min-h-[7.25rem] min-w-0 flex-1 basis-0" />
+              <Skeleton className="min-h-[7.25rem] min-w-0 flex-1 basis-0" />
+              <Skeleton className="min-h-[7.25rem] min-w-0 flex-1 basis-0" />
+            </>
+          ) : (
+            <>
+              <div className={LAB_DISCOUNT_CODE_CARD_CLASS}>
+                <div className="flex shrink-0 items-center justify-center gap-1.5">
                   <Button
                     type="button"
                     size="sm"
-                    onClick={() => void handleCopyCode()}
-                    className="h-9 gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
+                    variant="outline"
+                    className="h-8 border-primary text-primary-strong hover:bg-primary-soft"
+                    disabled={!referralLink}
+                    onClick={() => void handleCopySignupLink()}
                   >
-                    {codeCopied ? (
-                      <>
-                        <Check className="h-4 w-4" />
-                        복사됨
-                      </>
+                    {signupCopied ? (
+                      <Check className="h-3.5 w-3.5" />
                     ) : (
-                      <>
-                        <Copy className="h-4 w-4" />
-                        코드 복사
-                      </>
+                      <Copy className="h-3.5 w-3.5" />
                     )}
+                    가입링크
                   </Button>
                   <Button
                     type="button"
                     size="sm"
-                    onClick={() => void handleCopyLink()}
-                    className="h-9 gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
+                    variant="outline"
+                    className="h-8 border-primary text-primary-strong hover:bg-primary-soft"
+                    disabled={!referralLink}
+                    onClick={() => void handleCopyIntroLink()}
                   >
-                    {copied ? (
-                      <>
-                        <Check className="h-4 w-4" />
-                        복사됨
-                      </>
+                    {introCopied ? (
+                      <Check className="h-3.5 w-3.5" />
                     ) : (
-                      <>
-                        <Link2 className="h-4 w-4" />
-                        링크 복사
-                      </>
+                      <Link2 className="h-3.5 w-3.5" />
                     )}
+                    소개링크
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => void handleCopySignupLink()}
+                      className="flex flex-1 items-center justify-center gap-2 sm:gap-3"
+                    >
+                      <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-slate-500 sm:text-[13px]">
+                        <BadgeCheck className="h-3.5 w-3.5 text-primary" />
+                        소개 코드
+                      </span>
+                      <span className="font-mono text-4xl font-bold tracking-[0.2em] text-slate-900 sm:text-5xl">
+                        {referralCode || "—"}
+                      </span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    다른 기공소 가입 시 입력하는 코드
+                  </TooltipContent>
+                </Tooltip>
+              </div>
 
-            <Card className="flex h-full flex-col xl:col-span-7">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-xl">오늘 건당 의뢰비</CardTitle>
-                <CardDescription>
-                  정책 미리보기 · 청구 적용은 추후 연결
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-1 flex-col pt-0">
-                {loadingRequestor || loadingTree ? (
-                  <div className="grid flex-1 gap-3 sm:grid-cols-2">
-                    <Skeleton className="h-full min-h-[88px]" />
-                    <Skeleton className="h-full min-h-[88px]" />
-                    <Skeleton className="h-full min-h-[88px]" />
-                    <Skeleton className="h-full min-h-[88px]" />
-                  </div>
-                ) : (
-                  <div className="grid flex-1 gap-3 sm:grid-cols-2">
-                    <MetricCard
-                      title="오늘 우리 기공소 건당 의뢰비"
-                      value={`${formatLabDiscountWon(pricePreview.unitPrice)}원`}
-                      subtitle={ruleSubtitle}
-                    />
-                    <MetricCard
-                      title="기본가 대비 할인"
-                      value={`${formatLabDiscountWon(pricePreview.discountAmount)}원`}
-                      subtitle={`기본 ${formatLabDiscountWon(LAB_DISCOUNT_BASE_UNIT_PRICE)}원 · 최저 ${formatLabDiscountWon(LAB_DISCOUNT_MIN_UNIT_PRICE)}원`}
-                    />
-                    <MetricCard
-                      title="우리 기공소 의뢰"
-                      value={`${myOrders.toLocaleString("ko-KR")}건`}
-                      subtitle="측정 구간 합산(표시)"
-                    />
-                    <MetricCard
-                      title="그룹 합산 의뢰"
-                      value={`${groupOrders.toLocaleString("ko-KR")}건`}
-                      subtitle={
-                        memberCount > 0
-                          ? `그룹 ${memberCount.toLocaleString("ko-KR")}개소 · 할인 ${formatLabDiscountWon(pricePreview.discountAmount)}원`
-                          : `할인 ${formatLabDiscountWon(pricePreview.discountAmount)}원`
-                      }
-                    />
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="xl:col-span-12">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-xl">할인 정책</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm leading-relaxed text-slate-700">
-                <p>
-                  기본 가격은{" "}
-                  {formatLabDiscountWon(LAB_DISCOUNT_BASE_UNIT_PRICE)}원입니다.
-                  <br />
-                  지난 달 합계 의뢰 1건당 {LAB_DISCOUNT_PER_ORDER}원
-                  할인합니다.
-                  <br />
-                  {LAB_DISCOUNT_MAX_AMOUNT / LAB_DISCOUNT_PER_ORDER}건이면{" "}
-                  {formatLabDiscountWon(LAB_DISCOUNT_MIN_UNIT_PRICE)}원입니다.
-                </p>
-                <p>
-                  가입 후 {LAB_DISCOUNT_INTRO_DAYS}일간은{" "}
-                  {formatLabDiscountWon(LAB_DISCOUNT_INTRO_UNIT_PRICE)}원
-                  고정입니다.
-                  <br />
-                  이후에는 지난 달 사용량으로 이번 달 가격이 정해집니다.
-                </p>
-                <p>
-                  예: 1월 10일 가입 → 4월 10일부터는 3월 10일~4월 9일
-                  주문량으로 가격이 정해집니다.
-                </p>
-                <p>
-                  다른 기공소를 소개하면 그룹으로 묶이고, 주문량을 합산해
-                  할인합니다.
-                </p>
-              </CardContent>
-            </Card>
-
-            <div className="xl:col-span-12">
-              {loadingTree ? (
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-xl">소개 그룹</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Skeleton className="h-[320px]" />
-                  </CardContent>
-                </Card>
-              ) : (
-                <ReferralNetworkChart
-                  data={treeData}
-                  maxDepth={1}
-                  title="소개 그룹"
-                  mode="radial-tree"
-                  currentBusinessAnchorId={user?.businessAnchorId || null}
-                  visibleRoles={["requestor"]}
-                  legendRoles={[]}
-                  chartHeight={420}
-                />
-              )}
+              <SettlementStatCard
+                className={LAB_DISCOUNT_STAT_CARD_WIDTH_CLASS}
+                label="오늘 건당 의뢰비"
+                value={
+                  <UnitPriceValue
+                    unitPrice={pricePreview.unitPrice}
+                    basePrice={LAB_DISCOUNT_BASE_UNIT_PRICE}
+                  />
+                }
+                tone="primary"
+                hint={unitPriceHint}
+              />
+              <SettlementStatCard
+                className={LAB_DISCOUNT_STAT_CARD_WIDTH_CLASS}
+                label="우리 기공소"
+                value={`${myOrders.toLocaleString("ko-KR")}건`}
+                hint={`${formatLabDiscountWon(myDiscount)}원 할인`}
+              />
+              <SettlementStatCard
+                className={LAB_DISCOUNT_STAT_CARD_WIDTH_CLASS}
+                label={groupLabel}
+                value={`${groupOrders.toLocaleString("ko-KR")}건`}
+                hint={`${formatLabDiscountWon(groupDiscount)}원 할인`}
+              />
+            </>
+          )
+        }
+        mainLeft={
+          loadingTree ? (
+            <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold text-slate-700">
+                  소개 그룹
+                </div>
+                {policyDialog}
+              </div>
+              <Skeleton className="h-[320px] w-full" />
             </div>
-          </div>
-        )}
-      </div>
-    </div>
+          ) : (
+            <ReferralNetworkChart
+              data={treeData}
+              maxDepth={1}
+              title="소개 그룹"
+              headerRight={policyDialog}
+              mode="radial-tree"
+              currentBusinessAnchorId={user?.businessAnchorId || null}
+              visibleRoles={["requestor"]}
+              legendRoles={[]}
+              chartHeight={420}
+            />
+          )
+        }
+      />
+    </TooltipProvider>
   );
 }

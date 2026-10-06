@@ -2,18 +2,19 @@
 // - web/frontend/src/pages/requestor/discountGroup/LabDiscountGroupPage.tsx
 // - web/frontend/rules.md
 // change-log:
+// - 2026-10-07: 가입이벤트 90일 고정 · 91일부터 지난 30일 주문량으로 오늘 가격.
 // - 2026-10-07: 기공소 소개 할인그룹 UI용 단가·기간 상수(청구 로직 연결 전 표시 SSOT).
 
 /** 기본 건당 의뢰비(원). */
 export const LAB_DISCOUNT_BASE_UNIT_PRICE = 15_000;
 
-/** 지난 달(측정 구간) 합산 의뢰 1건당 할인(원). */
+/** 합산 의뢰 1건당 할인(원). 91일부터는 지난 30일 주문량. */
 export const LAB_DISCOUNT_PER_ORDER = 50;
 
-/** 최대 할인액(원). 100건 이상이면 건당 1만원. */
+/** 최대 할인액(원). 100건 이상이면 최대 5천원 할인. */
 export const LAB_DISCOUNT_MAX_AMOUNT = 5_000;
 
-/** 가입 후 고정가 기간(일) · 고정 단가(원). */
+/** 가입 이벤트: 가입 후 고정가 기간(일) · 고정 단가(원). */
 export const LAB_DISCOUNT_INTRO_DAYS = 90;
 export const LAB_DISCOUNT_INTRO_UNIT_PRICE = 10_000;
 

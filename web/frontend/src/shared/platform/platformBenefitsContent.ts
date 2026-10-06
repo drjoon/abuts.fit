@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/features/platform/PlatformBenefitsDialog.tsx
 // - web/frontend/src/features/lab/LabPlatformBenefitsBanner.tsx
+// - 2026-10-07: 데모는 치과 90일만. 기공소 가입이유에서 30일 데모 문구 제거.
 // - 2026-08-19: 기공소 가입이유에서 자동 매칭 항목 제거.
 // - 2026-08-19: 기공소 가입이유에서 설정-자동매칭 링크 제거.
 // - 2026-08-19: 치과 가입이유 — 출고=도착−2영업일, 지정 도착일 1영업일 전 배송 목표.
@@ -77,7 +78,7 @@ const LAB_BENEFITS: PlatformBenefitsConfig = {
       title: "커스텀어벗 생산도 맡겨주세요",
       points: [
         "어벗츠는 전공정 자동화로 합리적인 가격의 고품질 CNC 커스텀어벗을 생산합니다.",
-        "가입 후 30일 데모(가상 잔고)로 체험할 수 있습니다. 이용료를 입금하면 정산 후 남는 금액이 선수금이 되고 실사용으로 전환됩니다.",
+        "크레딧으로 커스텀어벗 생산을 의뢰하고 정산까지 이어갑니다.",
       ],
     },
     {
@@ -111,7 +112,7 @@ const PRACTICE_BENEFITS: PlatformBenefitsConfig = {
       title: "정산·계산서는 맡기세요",
       points: [
         "크레딧 잔고와 기공비·어벗 의뢰비 내역을 플랫폼에서 확인할 수 있습니다.",
-        "결제·사용 내역을 관리하고 계산서 발행까지 함께 처리합니다.",
+        "가입 후 90일 데모(가상 잔고)로 체험할 수 있어요. 실사용 전환 시 미정산 기공비는 기공소에 직접 지급합니다.",
       ],
     },
     {

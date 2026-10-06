@@ -2,7 +2,10 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useId, useRef, useState } from "react";
+// - web/frontend/src/pages/requestor/discountGroup/LabDiscountGroupPage.tsx
+// change-log:
+// - 2026-10-07: headerRight — 카드 헤더 오른쪽 액션(할인 정책 등).
+import { useId, useRef, useState, type ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
 import { getAppUserRoleLabel } from "@/shared/types/role";
@@ -41,6 +44,8 @@ type ReferralNetworkChartProps = {
   data: ReferralNode | null;
   maxDepth?: number; // 기본 정책은 1단계 소개만 표시, 관리자는 제한 없음
   title?: string;
+  /** 카드 헤더 오른쪽(예: 정책 버튼). showCard일 때만. */
+  headerRight?: ReactNode;
   visibleRoles?: ReferralRole[];
   legendRoles?: ReferralRole[];
   chartHeight?: number;
@@ -58,6 +63,7 @@ export function ReferralNetworkChart({
   data,
   maxDepth = 999,
   title = "소개 네트워크",
+  headerRight,
   visibleRoles,
   legendRoles = ["requestor", "salesman", "devops"],
   chartHeight = 500,
@@ -701,10 +707,13 @@ export function ReferralNetworkChart({
 
     return (
       <Card className="shadow-sm">
-        <CardHeader className="pb-4">
+        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 pb-4">
           <CardTitle className="text-sm font-semibold text-slate-700">
             {title}
           </CardTitle>
+          {headerRight ? (
+            <div className="flex shrink-0 items-center">{headerRight}</div>
+          ) : null}
         </CardHeader>
         <CardContent>{emptyContent}</CardContent>
       </Card>
@@ -960,10 +969,13 @@ export function ReferralNetworkChart({
 
   return (
     <Card className="border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50/60 shadow-sm">
-      <CardHeader className="pb-4">
+      <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 pb-4">
         <CardTitle className="text-sm font-semibold text-slate-700">
           {title}
         </CardTitle>
+        {headerRight ? (
+          <div className="flex shrink-0 items-center">{headerRight}</div>
+        ) : null}
       </CardHeader>
       <CardContent className="pt-2">{chartContent}</CardContent>
     </Card>
