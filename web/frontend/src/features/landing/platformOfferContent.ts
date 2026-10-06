@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-06: 월말 과오입금 카톡 사례(caseStudy) — 원본 캡처·실명 없이 재구성.
 // - 2026-10-05: 중복 섹션 통폐합 — extras·audiences 제거. 크레딧/CNC는 credit·pipeline, 대상은 glance에 통합.
 // - 2026-10-05: 커스텀어벗 플로우·하나의 크레딧 섹션을 기공소 오퍼에서 이 페이지로 이동.
 // - 2026-10-05: CNC 카드 — 어벗 STL 업로드만으로 애크로덴트 CNC 생산이 시작된다는 설명.
@@ -7,11 +8,13 @@
 // related files:
 // - web/frontend/src/features/landing/landingOffers.ts
 // - web/frontend/src/features/landing/PlatformOfferSections.tsx
+// - web/frontend/src/features/landing/PlatformSettlementCase.tsx
 // - web/frontend/src/features/landing/landingAssets.ts
 // - web/frontend/src/features/landing/landingTheme.ts
 // - web/frontend/src/shared/legal/creditPrepaidCopy.ts (크레딧 정의·환불·계산서 SSOT)
 //
-// `/offer/platform` 전용 섹션 카피. 금액은 적지 않는다.
+// `/offer/platform` 전용 섹션 카피. 가격·수가 금액은 적지 않는다.
+// 사례 대화의 과오입금 액수는 현장 재구성에만 둔다.
 // 문장 배열은 한 칸 = 한 문장 = 한 줄(`<br />`).
 import {
   LANDING_CUSTOM_TRACKING,
@@ -76,6 +79,37 @@ export type PlatformCreditFact = {
   body: string[];
 };
 
+export type PlatformCaseMessage =
+  | {
+      from: "lab" | "practice";
+      kind?: "text";
+      text: string;
+      time: string;
+    }
+  | {
+      from: "lab" | "practice";
+      kind: "file";
+      fileName: string;
+      fileMeta: string;
+      time: string;
+    };
+
+export type PlatformOfferCase = {
+  eyebrow: string;
+  title: string;
+  lead: string[];
+  caption: string;
+  headerName: string;
+  headerSub: string;
+  dateLabel: string;
+  messages: PlatformCaseMessage[];
+  problemTitle: string;
+  problem: string[];
+  solveTitle: string;
+  solve: string[];
+  creditLink: string;
+};
+
 export type PlatformOfferExtras = {
   hero: {
     title: string[];
@@ -95,6 +129,7 @@ export type PlatformOfferExtras = {
     lead: string[];
     items: PlatformStory[];
   };
+  caseStudy: PlatformOfferCase;
   pipeline: {
     eyebrow: string;
     title: string;
@@ -217,6 +252,64 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
         },
       },
     ],
+  },
+
+  caseStudy: {
+    eyebrow: "CASE",
+    title: "플랫폼이 해결하는 문제.",
+    lead: [
+      "월말 엑셀 정산이 틀리면, 다음 달 카톡으로 돌려받습니다.",
+      "의뢰 건마다 결제하면 그 카톡이 필요 없습니다.",
+    ],
+    caption: "실제 현장에서 오간 대화를 재구성했습니다.",
+    headerName: "기공소",
+    headerSub: "협력 기공소",
+    dateLabel: "10월 6일 화요일",
+    messages: [
+      {
+        from: "lab",
+        text: "원장님, 9월 기공료 정산이 잘못 나갔습니다.",
+        time: "오후 4:10",
+      },
+      {
+        from: "lab",
+        kind: "file",
+        fileName: "9월 기공료 정산",
+        fileMeta: "엑셀 표",
+        time: "오후 4:10",
+      },
+      {
+        from: "lab",
+        text: "22만 원이 더 입금됐습니다.",
+        time: "오후 4:11",
+      },
+      {
+        from: "practice",
+        text: "그럼 어떻게 하죠?",
+        time: "오후 4:12",
+      },
+      {
+        from: "lab",
+        text: "10월분 기공료에서 빼서 청구하겠습니다.",
+        time: "오후 4:12",
+      },
+      {
+        from: "practice",
+        text: "알겠습니다. 다음엔 맞춰 주세요.",
+        time: "오후 4:13",
+      },
+    ],
+    problemTitle: "수기 정산이 어긋납니다.",
+    problem: [
+      "기공료를 월말에 모아 입금합니다.",
+      "합계가 틀리면 다음 달 메신저로 차감합니다.",
+    ],
+    solveTitle: "건별 결제, 월합 계산서.",
+    solve: [
+      "의뢰 건마다 크레딧으로 결제합니다.",
+      "과오입금을 카톡으로 맞출 일이 없습니다.",
+    ],
+    creditLink: "크레딧 정산 이어서 보기",
   },
 
   pipeline: {
@@ -356,6 +449,13 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
         a: [
           "플랫폼 사용에는 둘 다 제한이 없습니다.",
           "어벗츠기공소는 AI 디자인부터 커스텀어벗 납품까지 맡아 수행합니다.",
+        ],
+      },
+      {
+        q: "월말 기공료를 모아 입금하나요?",
+        a: [
+          "아닙니다. 의뢰 건마다 크레딧으로 결제합니다.",
+          "사용분은 월합 계산서로 발행합니다.",
         ],
       },
       {

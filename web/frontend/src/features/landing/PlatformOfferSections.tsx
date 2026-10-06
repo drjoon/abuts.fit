@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-06: 월말 과오입금 카톡 사례 섹션(PlatformSettlementCase).
 // - 2026-10-05: FAQ — `/`·기공소와 같은 좌측 제목 + 카드 아코디언.
 // - 2026-10-05: 통폐합 후 섹션 배경 — 대상 파랑, 화면 하양, 커스텀어벗 파랑, 크레딧 하양, FAQ 하양.
 // - 2026-10-05: extras·audiences 섹션 제거. glance·stories·pipeline·credit·FAQ만 유지.
@@ -7,6 +8,7 @@
 // related files:
 // - web/frontend/src/features/landing/LandingOfferPage.tsx
 // - web/frontend/src/features/landing/platformOfferContent.ts
+// - web/frontend/src/features/landing/PlatformSettlementCase.tsx
 // - web/frontend/src/features/landing/landingTheme.ts
 // - web/frontend/src/index.css (pf-* 이펙트)
 import type { CSSProperties } from "react";

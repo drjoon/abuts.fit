@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-06: 플랫폼 월말 정산 카톡 사례 섹션을 크레딧 앞에 둠.
 // - 2026-10-05: 플랫폼 섹션 배경 교차 — 용어 파랑, 시작하기 파랑. 기공소 오퍼 배경은 그대로.
 // - 2026-10-05: 플랫폼 extras·audiences 제거. glance·stories·pipeline·credit만 렌더.
 // - 2026-10-05: 플랫폼에 커스텀어벗 플로우·하나의 크레딧 섹션. 오퍼 slug 변경 시 섹션 레일 재수집.
@@ -9,6 +10,7 @@
 // related files:
 // - web/frontend/src/features/landing/LabOfferSections.tsx
 // - web/frontend/src/features/landing/PlatformOfferSections.tsx
+// - web/frontend/src/features/landing/PlatformSettlementCase.tsx
 // - web/frontend/src/pages/public/OfferPage.tsx
 // - web/frontend/src/features/landing/landingOffers.ts
 // - web/frontend/src/features/landing/OfferVisual.tsx
@@ -71,6 +73,7 @@ import {
   PlatformPipelineSection,
   PlatformStoriesSection,
 } from "./PlatformOfferSections";
+import { PlatformSettlementCaseSection } from "./PlatformSettlementCase";
 import { LandingMagnetic } from "./LandingMagnetic";
 import { LandingReveal } from "./LandingReveal";
 import { LandingScrollCue } from "./LandingScrollCue";
@@ -1408,6 +1411,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
           <PlatformGlanceSection glance={offer.platform.glance} />
           <PlatformStoriesSection stories={offer.platform.stories} />
           <PlatformPipelineSection pipeline={offer.platform.pipeline} />
+          <PlatformSettlementCaseSection caseStudy={offer.platform.caseStudy} />
           <PlatformCreditSection credit={offer.platform.credit} />
         </>
       ) : null}
