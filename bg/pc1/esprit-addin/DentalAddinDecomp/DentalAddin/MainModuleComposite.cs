@@ -167,7 +167,7 @@ namespace DentalAddin
 
         // Composite_B(+rightOffset 구간) 가공여유 보정.
         // PRC의 StockAllowance(DispId 272) 기본값을 수정하지 않고 런타임으로만 오버라이드한다.
-        private static void TrySetCompositeStockAllowance(TechLatheMill5xComposite op, string label)
+        private static void TrySetCompositeStockAllowance(TechLatheMill5xComposite op, string label, double? explicitStockMm = null)
         {
             if (op == null)
             {
@@ -195,7 +195,11 @@ namespace DentalAddin
             }
 
             double stockAllowance;
-            if (stockAllowanceOverride.HasValue)
+            if (explicitStockMm.HasValue)
+            {
+                stockAllowance = explicitStockMm.Value;
+            }
+            else if (stockAllowanceOverride.HasValue)
             {
                 stockAllowance = stockAllowanceOverride.Value;
             }
@@ -930,6 +934,12 @@ namespace DentalAddin
 
             ITechnology[] techA = TryOpenProcess(technologyUtility, effectivePrcA, "Composite2SplitLine2:A");
             ITechnology[] techB = runB ? TryOpenProcess(technologyUtility, effectivePrcB, "Composite2SplitLine2:B") : Array.Empty<ITechnology>();
+            // Back_Finish 2단계(헥스 끝→커넥션): BackPointX ~ BackPointX+0.4, Stock 0.02.
+            // Middle_Finish(B_PHASE+safe split)는 Xk에서 끝나므로 연장을 만들지 않는다.
+            bool runBackFinishHexEnd = runB && !(safeSplitBack && !explicitB2Phase);
+            ITechnology[] techBHexEnd = runBackFinishHexEnd
+                ? TryOpenProcess(technologyUtility, effectivePrcB, "Composite2SplitLine2:B_HEXEND")
+                : Array.Empty<ITechnology>();
 
             if (techA.Length <= 0 || (runB && techB.Length <= 0))
             {
@@ -939,10 +949,18 @@ namespace DentalAddin
 
             TechLatheMill5xComposite opA = techA[0] as TechLatheMill5xComposite;
             TechLatheMill5xComposite opB = runB ? (techB[0] as TechLatheMill5xComposite) : null;
+            TechLatheMill5xComposite opBHexEnd = (runBackFinishHexEnd && techBHexEnd.Length > 0)
+                ? (techBHexEnd[0] as TechLatheMill5xComposite)
+                : null;
             if (opA == null || (runB && opB == null))
             {
                 DentalLogger.Log($"Composite2SplitLine2 - TechLatheMill5xComposite 캐스팅 실패 (A:{techA[0]?.GetType().Name}, B:{(runB && techB.Length > 0 ? techB[0]?.GetType().Name : "<skip>")})");
                 return false;
+            }
+            if (runBackFinishHexEnd && opBHexEnd == null)
+            {
+                DentalLogger.Log("Composite2SplitLine2 - Back_Finish 커넥션 연장 PRC 로드 실패, BackPointX에서 종료");
+                runBackFinishHexEnd = false;
             }
 
             DentalLogger.Log($"Composite2SplitLine2 - 시작: FrontPointX={MoveSTL_Module.FrontPointX:F3}, BackPointX={MoveSTL_Module.BackPointX:F3}, TurnConnBoundaryX={turnConnectionBoundaryX:F3}, FinishLineX={MoveSTL_Module.FinishLineX:F3}, FinishLineTopZ={MoveSTL_Module.FinishLineTopZ:F3}, SurfaceNumber={SurfaceNumber}, ToolNs='{ToolNs ?? ""}'");
@@ -995,9 +1013,9 @@ namespace DentalAddin
             double finishOverlapMm = GetFinishAdjacentOverlapMm();
             const double aEndOffsetFromSplitMm = 0.0;
             double bStartOffsetFromSplitMm = -finishOverlapMm;
-            // Back_Finish 공구 중심이 BackPointX에서 끝나면 D1.2 반경만큼 헥스 끝이 남는다.
-            // 절삭날이 STL 헥스 끝에 닿도록 공구 반경만큼 X+로 넘긴다.
-            double compositeEndOffsetFromBackPointMm = GetFinishToolRadiusMm();
+            // Back_Finish 1단계: BackPointX에서 끝낸다. 커넥션 OD를 정삭으로 물지 않는다.
+            // 헥스 끝 절삭날은 아래 B_HEXEND 연장(+0.4mm, stock 0.02)이 담당한다.
+            const double compositeEndOffsetFromBackPointMm = 0.0;
 
             double finishFrontEndX = splitX + aEndOffsetFromSplitMm;
             double finishBackStartX = splitX + bStartOffsetFromSplitMm;
@@ -1034,7 +1052,7 @@ namespace DentalAddin
             string finishSeamAnchor = (safeSplitBack && explicitB2Phase) ? "Xk" : "Splitline_2";
             DentalLogger.Log($"Composite2SplitLine2 - Finish seam 확정: Front.end%={opA.LastPassPercent:F2} (X={finishFrontEndX:F3}), Back.start%={(runB && opB != null ? opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")} (X={finishBackStartX:F3}={finishSeamAnchor}-{finishOverlapMm:F3}), overlapMm={finishOverlapMm:F3}, guardWarn={startEndBFirstGuardApplied}");
 
-            // 정책: Finish_Back 종료 기준점은 BackPointX + D1.2 반경 (safe split Middle은 Xk)
+            // 정책: Finish_Back 1단계 종료점은 BackPointX (safe split Middle은 Xk)
             double compositeEndTargetX = finishBackEndX;
             double compositeEndPassPercent = XToPassPercentByStartEndScale(compositeEndTargetX, 0.0, 100.0);
             if (runB && opB != null)
@@ -1091,6 +1109,28 @@ namespace DentalAddin
                 opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
             }
 
+            double hexEndStartX = MoveSTL_Module.BackPointX;
+            double hexEndEndX = MoveSTL_Module.BackPointX + BackFinishConnectionOvershootMm;
+            double hexEndFirstPercent = 0.0;
+            double hexEndLastPercent = 0.0;
+            if (runBackFinishHexEnd && opBHexEnd != null)
+            {
+                hexEndFirstPercent = XToPassPercentByStartEndScale(hexEndStartX, 0.0, 100.0);
+                hexEndLastPercent = XToPassPercentByStartEndScale(hexEndEndX, 0.0, 100.0);
+                if (hexEndLastPercent <= hexEndFirstPercent + 1e-6)
+                {
+                    DentalLogger.Log($"Composite2SplitLine2 - Back_Finish 커넥션 연장 생략(퍼센트 창 없음): startX={hexEndStartX:F3}({hexEndFirstPercent:F2}%), endX={hexEndEndX:F3}({hexEndLastPercent:F2}%)");
+                    runBackFinishHexEnd = false;
+                }
+                else
+                {
+                    opBHexEnd.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
+                    opBHexEnd.FirstPassPercent = hexEndFirstPercent;
+                    opBHexEnd.LastPassPercent = hexEndLastPercent;
+                    DentalLogger.Log($"Composite2SplitLine2 - Back_Finish 커넥션 연장: X[{hexEndStartX:F3}~{hexEndEndX:F3}] %({hexEndFirstPercent:F2}->{hexEndLastPercent:F2}), overshoot={BackFinishConnectionOvershootMm:F3}, stock={BackFinishConnectionOvershootStockMm:F3} (커넥션 비접촉)");
+                }
+            }
+
             double aLastXBeforeClamp = PassPercentToX(aLastBeforeClamp, MoveSTL_Module.FrontPointX, direction, absSpan);
             double aLastXAfterClamp = PassPercentToX(opA.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
             double bLastXBeforeAdjust = runB && opB != null ? PassPercentToX(bLastBeforeAdjust, MoveSTL_Module.FrontPointX, direction, absSpan) : 0.0;
@@ -1127,6 +1167,10 @@ namespace DentalAddin
             if (runB && opB != null)
             {
                 opB.DriveSurface = driveB;
+            }
+            if (runBackFinishHexEnd && opBHexEnd != null)
+            {
+                opBHexEnd.DriveSurface = driveB;
             }
 
             DentalLogger.Log($"Composite2SplitLine2 - DriveSurface 적용: A='{driveA}'(dedicated={dedicatedAReady}), B='{(runB ? driveB : "<skip>")}'(dedicated={dedicatedBReady}), baseSurface={SurfaceNumber}, SurfaceNumber2={SurfaceNumber2:0.###}");
@@ -1173,6 +1217,14 @@ namespace DentalAddin
             {
                 TryApplyCompositeFinishCommonTool(opB, "B");
             }
+            if (runBackFinishHexEnd && opBHexEnd != null)
+            {
+                if (string.IsNullOrWhiteSpace(opBHexEnd.ToolID))
+                {
+                    opBHexEnd.ToolID = !string.IsNullOrWhiteSpace(opB?.ToolID) ? opB.ToolID : opA.ToolID;
+                }
+                TryApplyCompositeFinishCommonTool(opBHexEnd, "B_HEXEND");
+            }
 
             string passRangeB = (runB && opB != null)
                 ? "(" + opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) + "->" + opB.LastPassPercent.ToString("F2", CultureInfo.InvariantCulture) + ")"
@@ -1201,10 +1253,16 @@ namespace DentalAddin
             DentalLogger.Log("Composite2SplitLine2 - opA/opB StepIncrement/StockAllowance/MaxLinkDistance 적용 시작");
             TrySetCompositeStepIncrement(opA, "A");
             if (runB && opB != null) TrySetCompositeStepIncrement(opB, "B");
+            if (runBackFinishHexEnd && opBHexEnd != null) TrySetCompositeStepIncrement(opBHexEnd, "B_HEXEND");
             TryTouchCompositeMaximumLinkDistanceOnTechnology(opA, "A");
             if (runB && opB != null) TryTouchCompositeMaximumLinkDistanceOnTechnology(opB, "B");
+            if (runBackFinishHexEnd && opBHexEnd != null) TryTouchCompositeMaximumLinkDistanceOnTechnology(opBHexEnd, "B_HEXEND");
             TrySetCompositeStockAllowance(opA, "A");
             if (runB && opB != null) TrySetCompositeStockAllowance(opB, "B");
+            if (runBackFinishHexEnd && opBHexEnd != null)
+            {
+                TrySetCompositeStockAllowance(opBHexEnd, "B_HEXEND", BackFinishConnectionOvershootStockMm);
+            }
             DentalLogger.Log("Composite2SplitLine2 - opA/opB StepIncrement/StockAllowance/MaxLinkDistance 적용 완료");
 
             int beforeAddCount = Document?.Operations?.Count ?? -1;
@@ -1238,6 +1296,16 @@ namespace DentalAddin
                 TryAppendCompositeSuffixToNewOperations(beforeAddCountB, safeSplitBack && !explicitB2Phase ? "MIDDLE" : "BACK");
                 int afterB = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitLine2 - Operation 추가 완료: FINISH_BACK(opB) (afterCount={afterB})");
+
+                if (runBackFinishHexEnd && opBHexEnd != null)
+                {
+                    int beforeHexEnd = Document?.Operations?.Count ?? -1;
+                    TryDisableCompositeDynamicIfRequested(opBHexEnd, "B_HEXEND");
+                    TryAddOperation(opBHexEnd, freeFormFeature, "Composite2SplitLine2:B_HEXEND");
+                    TryAppendCompositeSuffixToNewOperations(beforeHexEnd, "BACK");
+                    int afterHexEnd = Document?.Operations?.Count ?? -1;
+                    DentalLogger.Log($"Composite2SplitLine2 - Operation 추가 완료: FINISH_BACK hex-end stock={BackFinishConnectionOvershootStockMm:F3} (afterCount={afterHexEnd})");
+                }
             }
             else
             {
@@ -1364,9 +1432,9 @@ namespace DentalAddin
             {
                 return;
             }
-            if (string.Equals(label, "B", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(label, "A", StringComparison.OrdinalIgnoreCase))
             {
-                DentalLogger.Log("Composite2SplitLine2 - B StepIncrement: PRC 기본값 유지 (retentionGroove는 Front_Finish만 적용)");
+                DentalLogger.Log($"Composite2SplitLine2 - {label} StepIncrement: PRC 기본값 유지 (retentionGroove는 Front_Finish만 적용)");
                 return;
             }
 
@@ -1787,8 +1855,8 @@ namespace DentalAddin
         //                           Middle_Rough  [Splitline_2-roughR ~ Xk+0.8]  (Finish seam 너머 0.8을 먼저 3D 황삭)
         //                           Middle_Turn   [FrontPointX ~ Xk+3.0]         (황삭 끝+D4 반경 2.0+칩 0.2)
         //   Back   (region BACK2) : Back_Turn [Xk ~ xMax+exit] (기존 Back_Turn 끝 형상 유지)
-        //                           Back_Rough [Xk-roughR ~ BackPointX+roughR]
-        //                           Back_Finish [Xk-0.8 ~ BackPointX+finishR]
+        //                           Back_Rough [Xk-roughR ~ BackPointX]
+        //                           Back_Finish 1단계 [Xk-0.8 ~ BackPointX], 2단계 [BackPointX ~ BackPointX+0.4] stock 0.02
         //   Xk = BackPointX - connectionTopZ (Z_a). 스펙 없으면 FL min+0.2 폴백.
         //   Middle이 치은–커넥션 접합까지 깎고, Rough/Turn은 같은 Xk에서 +0.8/+3.0.
         // 스펙 없을 때만: Middle_Turn 끝이 BackPointX+1.5를 넘으면 분할 포기(짧은 커프).
@@ -1799,8 +1867,11 @@ namespace DentalAddin
         // = D1.2 직경의 2/3 = 0.8. 선행 끝을 경계 너머로 연장하면 치은 쪽 D1.2 크로스가 깨진다.
         //   Front_Finish  끝 = Splitline_2           Middle/Back_Finish 시작 = Splitline_2 - 이 값
         //   Middle_Finish 끝 = Xk                    Back_Finish 시작 = Xk - 이 값
-        //   Back_Finish   끝 = BackPointX + D1.2 반경 (공구 중심이 헥스 끝을 지나 절삭날이 STL에 닿게)
+        //   Back_Finish   1단계 끝 = BackPointX
+        //   Back_Finish   2단계 = BackPointX ~ BackPointX+0.4, StockAllowance=0.02 (커넥션 OD 비접촉)
         private const double FinishAdjacentOverlapMm = 1.2 * 2.0 / 3.0;
+        private const double BackFinishConnectionOvershootMm = 0.4;
+        private const double BackFinishConnectionOvershootStockMm = 0.02;
         private const double SafeSplitMinBackZoneMm = 1.5;
         internal const double SafeSplitTurnPastRoughMm = 2.2;
         private const double SafeSplitMaxTurnPastBackPointMm = 1.5;
@@ -1991,11 +2062,6 @@ namespace DentalAddin
         private static double GetActiveRoughToolRadiusMm()
         {
             return GetActiveRoughToolDiameterMm() / 2.0;
-        }
-
-        private static double GetFinishToolRadiusMm()
-        {
-            return CompositeFinishCommonToolDiameterMm / 2.0;
         }
 
         // Front/Middle/Back rough 경계 확장 오프셋(mm)
@@ -2608,26 +2674,23 @@ namespace DentalAddin
             double backStart = Clamp(splitline2 - roughOverlapMm, xMin + 1e-6, xMax - 1e-6);
             DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 시작=Splitline_2-roughRadius: startX={backStart:F3}, overlapMm={roughOverlapMm:F3}, roughDia={GetActiveRoughToolDiameterMm():F1}");
 
-            // Back_Rough 끝점 SSOT (§4.9): BackPointX + rough 반경.
-            // 공구 중심이 BackPointX에서 끝나면 D4≈2mm / D2≈1mm가 헥스 끝에 남는다.
-            // xMax(=BackPointX)로 클램프하지 않는다.
+            // Back_Rough 끝점 SSOT (§4.9): BackPointX 고정. 커넥션 쪽으로 공구반경만큼 넘기지 않는다.
             double backPointX = MoveSTL_Module.BackPointX;
-            double roughEndOvershootMm = GetActiveRoughToolRadiusMm();
-            double backEnd = backPointX + roughEndOvershootMm;
+            double backEnd = backPointX;
             if (double.TryParse(finishMinZRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out double finishLineMinZ)
                 && !double.IsNaN(finishLineMinZ)
                 && !double.IsInfinity(finishLineMinZ))
             {
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: backPointX={backPointX.ToString("F3", CultureInfo.InvariantCulture)}, finishLineMinZ={finishLineMinZ.ToString("F3", CultureInfo.InvariantCulture)}, appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, roughDia={GetActiveRoughToolDiameterMm().ToString("F1", CultureInfo.InvariantCulture)}, rough20={(IsRough20Enabled() ? "1" : "0")}, rule=BackPointX+roughRadius");
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: backPointX={backPointX.ToString("F3", CultureInfo.InvariantCulture)}, finishLineMinZ={finishLineMinZ.ToString("F3", CultureInfo.InvariantCulture)}, appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, rule=BackPointX(fixed)");
             }
             else
             {
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: ABUTS_FINISHLINE_MIN_Z 해석 실패(raw='{finishMinZRaw ?? ""}'), appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, roughDia={GetActiveRoughToolDiameterMm().ToString("F1", CultureInfo.InvariantCulture)}, rough20={(IsRough20Enabled() ? "1" : "0")} (BackPointX+roughRadius)");
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: ABUTS_FINISHLINE_MIN_Z 해석 실패(raw='{finishMinZRaw ?? ""}'), appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)} (BackPointX fixed)");
             }
 
             string region = (GetEnvString("ABUTS_ROUGHFREEFORM_SPLIT_REGION") ?? string.Empty).Trim().ToUpperInvariant();
 
-            // Safe split: region BACK(Middle_Rough) 끝 = Xk+0.8, region BACK2(Back_Rough) = [Xk-roughR ~ BackPointX+roughR]
+            // Safe split: region BACK(Middle_Rough) 끝 = Xk+0.8, region BACK2(Back_Rough) = [Xk-roughR ~ BackPointX]
             // 경계 체인 이름 분리: 같은 이름이면 기존 체인이 재생성돼 Middle_Rough 경계가 사라진다.
             bool safeSplitBack = TryResolveSafeSplitBackZoneX("RoughFreeFromMillSplitAB", out double safeZoneX);
             if (safeSplitBack)
