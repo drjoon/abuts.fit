@@ -9,7 +9,7 @@
 // change-log:
 // - 2026-10-07: 정책 모달 폭 축소·fact 3장 세로 배치.
 // - 2026-10-07: 정책 모달 — 가격 카드 + fact 그리드. 문구 단축.
-// - 2026-10-07: 정책 fact — 기본가격·사용량할인·가입이벤트·소개그룹.
+// - 2026-10-07: 정책 fact — 기본가격·가입이벤트·주문량할인·소개그룹.
 // - 2026-10-07: 단가 ₩1.5만원 취소선. 상단 4카드 1행. 할인정책은 소개그룹 헤더.
 // - 2026-10-07: 가입링크·소개링크. 단가 취소선. 할인 카드 제거·기공소/그룹 할인 표시.
 // - 2026-10-07: DashboardShell·SettlementStatCard 스타일. 정책 문구는 fact 모달로 단축.
@@ -95,27 +95,28 @@ function UnitPriceValue({
 function PolicyPriceRow({
   label,
   value,
-  strikeValue,
   note,
+  struck,
 }: {
   label: string;
   value: string;
-  strikeValue?: string;
   note?: string;
+  /** true면 금액에 취소선. */
+  struck?: boolean;
 }) {
   return (
     <div className="space-y-0.5">
       <div className="flex items-baseline justify-between gap-3">
         <div className="min-w-0 text-sm text-slate-600">{label}</div>
-        <div className="flex shrink-0 items-baseline gap-1.5 tabular-nums">
-          {strikeValue ? (
-            <span className="text-base font-normal text-slate-400 line-through">
-              {strikeValue}
-            </span>
-          ) : null}
-          <div className="text-xl font-semibold tracking-tight text-slate-900">
-            {value}
-          </div>
+        <div
+          className={cn(
+            "shrink-0 text-xl font-semibold tracking-tight tabular-nums",
+            struck
+              ? "font-normal text-slate-400 line-through"
+              : "text-slate-900",
+          )}
+        >
+          {value}
         </div>
       </div>
       {note ? (
@@ -191,7 +192,7 @@ export default function LabDiscountGroupPage() {
       ) : null}
     </>
   ) : pricePreview.rule === "usage_discount" ? (
-    <>지난 30일 사용량</>
+    <>지난 30일 주문량</>
   ) : (
     <>기본 가격</>
   );
@@ -278,11 +279,11 @@ export default function LabDiscountGroupPage() {
             <PolicyPriceRow
               label="기본 가격"
               value={`${formatLabDiscountWon(LAB_DISCOUNT_BASE_UNIT_PRICE)}원`}
+              struck
             />
             <div className="h-px bg-slate-100" />
             <PolicyPriceRow
               label="오늘 가격"
-              strikeValue={`${formatLabDiscountWon(LAB_DISCOUNT_BASE_UNIT_PRICE)}원`}
               value={`${formatLabDiscountWon(LAB_DISCOUNT_INTRO_UNIT_PRICE)}원`}
               note={`${LAB_DISCOUNT_INTRO_DAYS}일 가입이벤트`}
             />
@@ -296,7 +297,7 @@ export default function LabDiscountGroupPage() {
             <br />
             {LAB_DISCOUNT_INTRO_DAYS + 1}일부터 지난 30일 주문량으로 결정
           </SettlementPolicyFact>
-          <SettlementPolicyFact label="사용량 할인">
+          <SettlementPolicyFact label="주문량 할인">
             지난 30일 합산 1건당 {LAB_DISCOUNT_PER_ORDER}원
             <br />
             {maxOrdersForFloor}건 이상이면 최대{" "}
