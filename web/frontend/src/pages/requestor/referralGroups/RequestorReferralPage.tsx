@@ -253,7 +253,7 @@ export const RequestorReferralPage = () => {
                         치과 커스텀 어벗 단가는 관리자 플랫폼 설정을 따릅니다.
                       </p>
                       <p className="mt-1.5">
-                        신속 출고는 플랫폼 설정 신속비(+2,000원 기본)가 추가됩니다.
+                        딜리버리 익일 도착은 월 5.5만원(VAT 포함) 정액입니다.
                       </p>
                     </div>
                   </div>

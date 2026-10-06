@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-08-11: 출고 뱃지 색 — semantic Primary(묶음) / Attention(신속).
 // - 2026-08-09: 표시 금액 — 기록된 expressFee 총액(어벗 배수)을 feeSetting으로 덮어쓰지 않음.
+// - 2026-10-06: 표시 라벨 신속출고/묶음출고 → 딜리버리 익일 도착/택배 묶음 출고.
 // - 2026-08-06: 표시 라벨 신속배송/묶음배송 → 신속출고/묶음출고 (제조사 출발일 의미).
 // related files:
 // - web/frontend/src/shared/ui/semanticStatus.ts
@@ -9,7 +10,17 @@
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
 // - web/backend/controllers/requests/shippingPriority.utils.js
 
+import {
+  BULK_SHIPPING_LABEL,
+  EXPRESS_SHIPPING_LABEL,
+} from "@/shared/shipping/shippingPolicyCopy";
+
 export type ShippingMode = "normal" | "express";
+
+export {
+  BULK_SHIPPING_LABEL,
+  EXPRESS_SHIPPING_LABEL,
+} from "@/shared/shipping/shippingPolicyCopy";
 
 export type ShippingModeSource = {
   shippingMode?: string | null;
@@ -73,7 +84,7 @@ export function resolveQuotedPriceAmount(params: {
 }
 
 export function getBulkExpressShippingLabel(mode: ShippingMode): string {
-  return mode === "express" ? "신속출고" : "묶음출고";
+  return mode === "express" ? EXPRESS_SHIPPING_LABEL : BULK_SHIPPING_LABEL;
 }
 
 export function getShippingModeBadgeClassName(mode: ShippingMode): string {

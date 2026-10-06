@@ -240,7 +240,7 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
     image: { src: LANDING_CUSTOM_TRACKING, alt: "커스텀어벗 CNC 추적관리" },
     notes: [
       "단계별 진행이 의뢰서에 그대로 표시됩니다.",
-      "같은 치과로 가는 건은 묶음 배송으로 모읍니다.",
+      "같은 치과로 가는 건은 택배 묶음 출고로 모읍니다.",
     ],
   },
 

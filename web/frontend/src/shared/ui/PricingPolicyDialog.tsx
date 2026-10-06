@@ -1,3 +1,4 @@
+// - 2026-10-06: 택배 묶음 출고(박스당)·딜리버리 익일 도착(월 정액 VAT 포함).
 // - 2026-10-06: 안내 모달 공통 크롬·fact 카드. 딜러·개발운영 문구 단축.
 // - 2026-10-05: 딜러십 정책 — 커스텀어벗 10~20% 누적 구간. 심플웨이 지급 없음.
 // - 2026-09-27: 딜러십 정책 — 심플웨이 10% · 커스텀어벗 20% · 기공 제외 · 소개 코드 리셋.
@@ -93,9 +94,18 @@ import {
   REFERRAL_OWNERSHIP_RESET_ANYONE_LINE,
   REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
 } from '@/shared/sales/dealershipPolicyCopy';
-import { apiFetch } from '@/shared/api/apiClient';
-import { useAuthStore } from '@/store/useAuthStore';
-import { useToast } from '@/shared/hooks/use-toast';
+import { DeliverySubscribeDialog } from '@/shared/shipping/DeliverySubscribeDialog';
+import {
+  BULK_SHIPPING_LABEL,
+  BULK_SHIPPING_POLICY_LINE,
+  DELIVERY_SUBSCRIBE_COMING_SOON_LINE,
+  DELIVERY_SUBSCRIBE_CREDIT_LINE,
+  DELIVERY_SUBSCRIBE_PERIOD_LINE,
+  EXPRESS_SHIPPING_ARRIVAL_LINE,
+  EXPRESS_SHIPPING_FEE_LINE,
+  EXPRESS_SHIPPING_LABEL,
+  resolveDeliveryNextDayMonthlyFee,
+} from '@/shared/shipping/shippingPolicyCopy';
 
 type Props = {
   open: boolean;
@@ -184,8 +194,8 @@ export const PricingPolicyDialog = ({
   const { kind } = useRequestorBusinessAccess();
   const isLab = kind === 'lab';
   const isRequestorPreview = variant === 'requestor';
-  /** 월정액 가입 버튼은 기공소 본인만 */
-  const showFmJoin = isLab && variant === 'default';
+  const showDeliveryJoin = variant === 'default' && !isRequestorPreview;
+  const [subscribeOpen, setSubscribeOpen] = useState(false);
   const { data: systemSettings, refetch: refetchSystemSettings } =
     useSystemSettings();
   useEffect(() => {
@@ -241,115 +251,10 @@ export const PricingPolicyDialog = ({
       credit?.shippingFee ?? CREDIT_SETTINGS_DEFAULTS.shippingFee,
     ) || CREDIT_SETTINGS_DEFAULTS.shippingFee,
   );
-  const expressFee = Math.max(
-    0,
-    Number(
-      credit?.expressFee ?? CREDIT_SETTINGS_DEFAULTS.expressFee,
-    ) || CREDIT_SETTINGS_DEFAULTS.expressFee,
+  /** 딜리버리 익일 도착 월정액(VAT 포함). 표시 폴백 5.5만원. */
+  const deliveryMonthlyFee = resolveDeliveryNextDayMonthlyFee(
+    credit?.fmDentalMonthlyShippingFee,
   );
-  const fmMonthlyFee = Math.max(
-    0,
-    Number(credit?.fmDentalMonthlyShippingFee ?? 0) || 0,
-  );
-  const token = useAuthStore((s) => s.token);
-  const { toast } = useToast();
-  const [fmState, setFmState] = useState<{
-    active: boolean;
-    cancelAtPeriodEnd: boolean;
-    nextBillingAt: string | null;
-    monthlyFee: number;
-    joinAllowed: boolean;
-    busy: boolean;
-  }>({
-    active: false,
-    cancelAtPeriodEnd: false,
-    nextBillingAt: null,
-    monthlyFee: fmMonthlyFee,
-    joinAllowed: false,
-    busy: false,
-  });
-
-  useEffect(() => {
-    if (!open || variant !== 'default' || !token || !isLab) return;
-    let cancelled = false;
-    void (async () => {
-      const res = await apiFetch<{
-        success?: boolean;
-        data?: {
-          fmDentalShippingActive?: boolean;
-          fmDentalShippingCancelAtPeriodEnd?: boolean;
-          fmDentalShippingNextBillingAt?: string | null;
-          monthlyFee?: number;
-          joinAllowed?: boolean;
-        };
-      }>({
-        path: '/api/businesses/me/fm-dental-shipping',
-        method: 'GET',
-        token,
-      });
-      if (cancelled || !res.ok) return;
-      const data = res.data?.data;
-      setFmState((prev) => ({
-        ...prev,
-        active: Boolean(data?.fmDentalShippingActive),
-        cancelAtPeriodEnd: Boolean(data?.fmDentalShippingCancelAtPeriodEnd),
-        nextBillingAt: data?.fmDentalShippingNextBillingAt ?? null,
-        monthlyFee: Math.max(0, Number(data?.monthlyFee ?? fmMonthlyFee) || 0),
-        joinAllowed: data?.joinAllowed !== false && !isLaunchEvent,
-      }));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open, variant, token, fmMonthlyFee, isLaunchEvent, isLab]);
-
-  const setFmDentalShipping = async (active: boolean) => {
-    if (!token || !isLab || fmState.busy) return;
-    setFmState((prev) => ({ ...prev, busy: true }));
-    try {
-      const res = await apiFetch<{
-        success?: boolean;
-        message?: string;
-        data?: {
-          fmDentalShippingActive?: boolean;
-          fmDentalShippingCancelAtPeriodEnd?: boolean;
-          fmDentalShippingNextBillingAt?: string | null;
-          monthlyFee?: number;
-        };
-      }>({
-        path: '/api/businesses/me/fm-dental-shipping',
-        method: 'POST',
-        token,
-        body: { active },
-      });
-      if (!res.ok) {
-        toast({
-          title: active ? '가입 실패' : '해지 실패',
-          description:
-            (res.data as { message?: string } | undefined)?.message ||
-            '다시 시도해 주세요.',
-          variant: 'destructive',
-        });
-        return;
-      }
-      const data = res.data?.data;
-      setFmState((prev) => ({
-        ...prev,
-        active: Boolean(data?.fmDentalShippingActive),
-        cancelAtPeriodEnd: Boolean(data?.fmDentalShippingCancelAtPeriodEnd),
-        nextBillingAt: data?.fmDentalShippingNextBillingAt ?? null,
-        monthlyFee: Math.max(
-          0,
-          Number(data?.monthlyFee ?? prev.monthlyFee) || 0,
-        ),
-      }));
-      toast({
-        title: res.data?.message || (active ? '가입했습니다.' : '해지 예약했습니다.'),
-      });
-    } finally {
-      setFmState((prev) => ({ ...prev, busy: false }));
-    }
-  };
 
   const title =
     variant === 'devops'
@@ -372,6 +277,7 @@ export const PricingPolicyDialog = ({
             : '기공소에 · 어벗츠에 단가와 출고 기준을 확인하세요.';
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={GUIDE_DIALOG_CONTENT_CLASS}>
         <DialogHeader className={GUIDE_DIALOG_HEADER_CLASS}>
@@ -400,8 +306,10 @@ export const PricingPolicyDialog = ({
                 <br />
                 {REFERRAL_OWNERSHIP_RESET_ANYONE_LINE}
               </SettlementPolicyFact>
-              <SettlementPolicyFact label="배송비">
-                수신자(치과·기공소)가 부담합니다.
+              <SettlementPolicyFact label="배송">
+                {BULK_SHIPPING_LABEL}은 1박스당 배송비가 별도입니다.
+                <br />
+                {EXPRESS_SHIPPING_LABEL}은 월 정액(VAT 포함)입니다.
                 <br />
                 딜러 수수료 산정에서 배송비·월정액은 빠집니다.
               </SettlementPolicyFact>
@@ -460,104 +368,30 @@ export const PricingPolicyDialog = ({
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
-                    label='커스텀 어벗 신속 출고'
-                    value={`+${formatAbutsAbutmentServiceWon(expressFee)}`}
-                    unitLabel='1개당'
+                    label={BULK_SHIPPING_LABEL}
+                    value={formatAbutsAbutmentServiceWon(shippingFee)}
+                    unitLabel='1박스당'
+                    note='별도 부과'
                   />
                   <div className='h-px bg-slate-100' />
-                  {isRequestorPreview ? (
-                    <div className='space-y-2'>
-                      <PriceRow
-                        label='배송비'
-                        value={formatAbutsAbutmentServiceWon(shippingFee)}
-                        unitLabel='1박스당'
-                        secondaryValue={
-                          isLaunchEvent
-                            ? '런칭 이벤트 · 치과·기공소'
-                            : '치과는 박스당'
-                        }
-                      />
-                      {!isLaunchEvent ? (
-                        <PriceRow
-                          label='기공소 · 월정액 배송'
-                          value={
-                            fmMonthlyFee > 0
-                              ? formatAbutsAbutmentServiceWon(fmMonthlyFee)
-                              : '추후 지원 예정'
-                          }
-                          unitLabel={fmMonthlyFee > 0 ? '매월' : undefined}
-                          secondaryValue='정상가 · 박스당 대신 선택'
-                        />
-                      ) : null}
-                    </div>
-                  ) : isLaunchEvent || (isLab && fmState.active) ? (
-                    <PriceRow
-                      label='배송비'
-                      value={
-                        isLab && fmState.active
-                          ? '월정액 포함'
-                          : formatAbutsAbutmentServiceWon(shippingFee)
-                      }
-                      unitLabel={
-                        isLab && fmState.active ? undefined : '1박스당'
-                      }
-                      note={
-                        isLab && fmState.active
-                          ? '월정액 배송 이용 중'
-                          : '런칭 이벤트 기간 · 박스당 배송비'
-                      }
-                    />
-                  ) : isLab ? (
-                    <div className='space-y-2'>
-                      <div className='text-sm text-slate-600'>배송 (둘 중 선택)</div>
-                      <PriceRow
-                        label='박스당 배송비'
-                        value={formatAbutsAbutmentServiceWon(shippingFee)}
-                        unitLabel='1박스당'
-                      />
-                      <PriceRow
-                        label='월정액 배송'
-                        value={
-                          fmState.monthlyFee > 0
-                            ? formatAbutsAbutmentServiceWon(fmState.monthlyFee)
-                            : '추후 지원 예정'
-                        }
-                        unitLabel={fmState.monthlyFee > 0 ? '매월' : undefined}
-                        note='가입 시 월 정액 배송비 0원'
-                        noteAction={
-                          showFmJoin ? (
-                            <Button
-                              type='button'
-                              size='sm'
-                              variant={fmState.active ? 'outline' : 'default'}
-                              disabled={
-                                fmState.busy ||
-                                (!fmState.active &&
-                                  (!fmState.joinAllowed ||
-                                    fmState.monthlyFee <= 0))
-                              }
-                              onClick={() =>
-                                void setFmDentalShipping(!fmState.active)
-                              }
-                            >
-                              {fmState.active
-                                ? fmState.cancelAtPeriodEnd
-                                  ? '해지 예약됨'
-                                  : '해지 예약'
-                                : '가입'}
-                            </Button>
-                          ) : undefined
-                        }
-                      />
-                    </div>
-                  ) : (
-                    <PriceRow
-                      label='배송비'
-                      value={formatAbutsAbutmentServiceWon(shippingFee)}
-                      unitLabel='1박스당'
-                      note='박스당 배송비'
-                    />
-                  )}
+                  <PriceRow
+                    label={EXPRESS_SHIPPING_LABEL}
+                    value={formatAbutsManwon(deliveryMonthlyFee)}
+                    unitLabel='매월'
+                    secondaryValue='VAT 포함'
+                    note={EXPRESS_SHIPPING_FEE_LINE}
+                    noteAction={
+                      showDeliveryJoin ? (
+                        <Button
+                          type='button'
+                          size='sm'
+                          onClick={() => setSubscribeOpen(true)}
+                        >
+                          가입
+                        </Button>
+                      ) : undefined
+                    }
+                  />
                   <div className='h-px bg-slate-100' />
                   <div className='space-y-1.5'>
                     <div className='text-sm text-slate-600'>리메이크</div>
@@ -593,24 +427,28 @@ export const PricingPolicyDialog = ({
               ) : null}
 
               <div className={GUIDE_FACT_GRID_CLASS}>
-                <SettlementPolicyFact label="묶음 출고">
+                <SettlementPolicyFact label={BULK_SHIPPING_LABEL}>
                   설정한 출고 요일 중 가장 빠른 날에 함께 출고합니다.
-                </SettlementPolicyFact>
-                <SettlementPolicyFact label="신속 출고">
-                  영업일 12시 이전은 당일 16:00, 이후·휴일은 익영업일
-                  16:00 목표입니다.
                   <br />
-                  묶음보다 빠를 때만 선택 가능하며, 1개당 +
-                  {formatAbutsAbutmentServiceWon(expressFee)}입니다.
+                  {BULK_SHIPPING_POLICY_LINE}
+                </SettlementPolicyFact>
+                <SettlementPolicyFact label={EXPRESS_SHIPPING_LABEL}>
+                  {EXPRESS_SHIPPING_ARRIVAL_LINE}
+                  <br />
+                  {DELIVERY_SUBSCRIBE_PERIOD_LINE}
+                  <br />
+                  {DELIVERY_SUBSCRIBE_CREDIT_LINE}
+                  <br />
+                  {DELIVERY_SUBSCRIBE_COMING_SOON_LINE}
                 </SettlementPolicyFact>
               </div>
 
               <SettlementPolicySection title='출고 일정 (KST)'>
                 <div className='grid gap-2 sm:grid-cols-3'>
                   {[
-                    { time: '0시', desc: '당일 의뢰 접수 마감' },
-                    { time: '15:00', desc: '포장 마감' },
-                    { time: '16:00', desc: '출고 (제조사 출발)' }
+                    { time: '0시', desc: '당일 주문 마감' },
+                    { time: '익일', desc: '기공소(치과) 도착' },
+                    { time: '지정 요일', desc: '택배 묶음 출고' }
                   ].map((row) => (
                     <div
                       key={row.time}
@@ -631,5 +469,11 @@ export const PricingPolicyDialog = ({
         </div>
       </DialogContent>
     </Dialog>
+    <DeliverySubscribeDialog
+      open={subscribeOpen}
+      onOpenChange={setSubscribeOpen}
+      monthlyFee={deliveryMonthlyFee}
+    />
+    </>
   );
 };

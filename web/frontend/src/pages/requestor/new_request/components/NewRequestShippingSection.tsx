@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-06: 택배 묶음 출고(박스당 배송비)·딜리버리 익일 도착(월 정액 VAT 포함).
 // - 2026-08-19: 의뢰하기 type=button (폼 submit 이중 처리 방지). 제출 중 비활성·접수 중 라벨.
 // - 2026-08-11: 의뢰하기 위 «디자인까지 의뢰할 경우 1일 추가» 안내 삭제.
 // - 2026-08-11: 묶음/신속 옵션 카드 ring·그림자 잘림 방지(내부 여백 확대).
@@ -32,6 +33,7 @@ import {
   useSystemSettings,
 } from "@/hooks/useSystemSettings";
 import { cn } from "@/shared/ui/cn";
+import { formatAbutsManwon } from "@/shared/pricing/abutsAbutmentService";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import {
   normalizeWeeklyBatchDays,
@@ -42,6 +44,14 @@ import {
   isExpressShippingSelectable,
   type LeadTimesMap,
 } from "@/shared/shipping/estimateShipDate";
+import {
+  BULK_SHIPPING_LABEL,
+  DELIVERY_SUBSCRIBE_AVAILABLE,
+  EXPRESS_SHIPPING_ARRIVAL_LINE,
+  EXPRESS_SHIPPING_LABEL,
+  resolveDeliveryNextDayMonthlyFee,
+} from "@/shared/shipping/shippingPolicyCopy";
+import { DeliverySubscribeDialog } from "@/shared/shipping/DeliverySubscribeDialog";
 
 type ShippingMode = "normal" | "express";
 
@@ -86,18 +96,22 @@ export function NewRequestShippingSection({
     [user?.role],
   );
   const { data: systemSettings } = useSystemSettings();
-  const expressFee = Math.max(
+  const shippingFee = Math.max(
     0,
     Number(
-      systemSettings?.creditSettings?.expressFee ??
-        CREDIT_SETTINGS_DEFAULTS.expressFee,
-    ) || CREDIT_SETTINGS_DEFAULTS.expressFee,
+      systemSettings?.creditSettings?.shippingFee ??
+        CREDIT_SETTINGS_DEFAULTS.shippingFee,
+    ) || CREDIT_SETTINGS_DEFAULTS.shippingFee,
   );
-  const expressFeeLabel = expressFee.toLocaleString("ko-KR");
+  const shippingFeeLabel = shippingFee.toLocaleString("ko-KR");
+  const deliveryMonthlyFee = resolveDeliveryNextDayMonthlyFee(
+    systemSettings?.creditSettings?.fmDentalMonthlyShippingFee,
+  );
   const [isUpdating, setIsUpdating] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const weekdaysRef = useRef<HTMLDivElement | null>(null);
   const [pulse, setPulse] = useState(false);
+  const [subscribeOpen, setSubscribeOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const selectedDays = useMemo(
     () => normalizeWeeklyBatchDays(weeklyBatchDays),
@@ -123,7 +137,8 @@ export function NewRequestShippingSection({
 
   // 저장된 기본값(preference)은 유지하고, 선택 불가 구간에서는 표시·적용만 묶음으로 본다.
   const effectiveDefaultMode: ShippingMode =
-    !expressSelectable && defaultShippingMode === "express"
+    !DELIVERY_SUBSCRIBE_AVAILABLE ||
+    (!expressSelectable && defaultShippingMode === "express")
       ? "normal"
       : defaultShippingMode;
 
@@ -230,9 +245,13 @@ export function NewRequestShippingSection({
 
   const persistDefaultShippingMode = async (mode: ShippingMode) => {
     if (isDisabled || isUpdating) return;
+    if (mode === "express" && !DELIVERY_SUBSCRIBE_AVAILABLE) {
+      setSubscribeOpen(true);
+      return;
+    }
     if (mode === "express" && !expressSelectable) {
       toast({
-        title: "신속 출고 선택 불가",
+        title: "딜리버리 익일 도착 선택 불가",
         description: EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE,
         variant: "destructive",
         duration: 4000,
@@ -336,7 +355,7 @@ export function NewRequestShippingSection({
           >
             <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
               <Package className="w-5 h-5 text-primary" />
-              묶음 출고
+              {BULK_SHIPPING_LABEL}
             </div>
             <div className="flex w-full max-w-sm flex-col items-center gap-2 sm:max-w-none sm:flex-row sm:flex-wrap sm:justify-center">
               <div className="text-sm text-slate-500 font-medium">출고일</div>
@@ -372,6 +391,8 @@ export function NewRequestShippingSection({
             </div>
             <div className="text-sm text-destructive">적어도 2-3개 요일 선택 권장</div>
             <div className="text-sm text-slate-600 leading-relaxed">
+              1박스당 {shippingFeeLabel}원 별도 부과.
+              <br />
               준비되는대로 바로 의뢰해주세요.
               <br />
               지정된 요일에 일괄 출고해드립니다.
@@ -381,18 +402,22 @@ export function NewRequestShippingSection({
           <div
             role="radio"
             aria-checked={effectiveDefaultMode === "express"}
-            aria-disabled={!expressSelectable}
-            tabIndex={
-              isDisabled || isUpdating || !expressSelectable ? -1 : 0
+            aria-disabled={
+              DELIVERY_SUBSCRIBE_AVAILABLE ? !expressSelectable : false
             }
+            tabIndex={isDisabled || isUpdating ? -1 : 0}
             className={modeCardClass(
               effectiveDefaultMode === "express",
-              !expressSelectable,
+              DELIVERY_SUBSCRIBE_AVAILABLE && !expressSelectable,
             )}
             onClick={() => {
+              if (!DELIVERY_SUBSCRIBE_AVAILABLE) {
+                setSubscribeOpen(true);
+                return;
+              }
               if (!expressSelectable) {
                 toast({
-                  title: "신속 출고 선택 불가",
+                  title: "딜리버리 익일 도착 선택 불가",
                   description: EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE,
                   variant: "destructive",
                   duration: 4000,
@@ -404,6 +429,10 @@ export function NewRequestShippingSection({
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
+                if (!DELIVERY_SUBSCRIBE_AVAILABLE) {
+                  setSubscribeOpen(true);
+                  return;
+                }
                 if (!expressSelectable) return;
                 void persistDefaultShippingMode("express");
               }
@@ -411,23 +440,21 @@ export function NewRequestShippingSection({
           >
             <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
               <Zap className="w-5 h-5 text-accent" />
-              신속 출고
+              {EXPRESS_SHIPPING_LABEL}
             </div>
-            {expressSelectable ? (
+            {DELIVERY_SUBSCRIBE_AVAILABLE && !expressSelectable ? (
+              <div className="text-sm text-slate-600 leading-relaxed">
+                {EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE}
+              </div>
+            ) : (
               <>
                 <div className="text-base text-foreground leading-relaxed">
-                  오늘 낮 12시 이전 의뢰 시 오늘 오후 출고
+                  {EXPRESS_SHIPPING_ARRIVAL_LINE}
                 </div>
                 <div className="text-sm text-slate-600 leading-relaxed">
-                  의뢰크레딧 {expressFeeLabel}원이 추가로 소비됩니다.
-                  <br />
-                  (생산지연시 내일 출고·추가 크레딧 없음)
+                  월 {formatAbutsManwon(deliveryMonthlyFee)}(VAT 포함) 정액.
                 </div>
               </>
-            ) : (
-              <div className="text-sm text-slate-600 leading-relaxed">
-                신속 출고일이 묶음 출고일과 같아 선택할 이유가 없습니다.
-              </div>
             )}
           </div>
         </div>
@@ -446,6 +473,11 @@ export function NewRequestShippingSection({
           </Button>
         </div>
       </div>
+      <DeliverySubscribeDialog
+        open={subscribeOpen}
+        onOpenChange={setSubscribeOpen}
+        monthlyFee={deliveryMonthlyFee}
+      />
     </div>
   );
 }

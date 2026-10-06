@@ -2584,8 +2584,6 @@ export const AdminCreditSettingsTab = ({
     [],
   );
 
-  const expressHelp = `생산 의뢰는 건당, 디자인+생산은 커스텀어벗 수만큼 곱합니다. 기본 ${CREDIT_SETTINGS_DEFAULTS.expressFee.toLocaleString("ko-KR")}원.`;
-
   return (
     <TooltipProvider>
       <div className="space-y-5">
@@ -2623,31 +2621,31 @@ export const AdminCreditSettingsTab = ({
                 <SectionHeader
                   icon={Truck}
                   title="배송"
-                  description="박스당 배송비와 신속 출고 추가 요금입니다."
+                  description="택배 묶음 출고 박스당 배송비와 딜리버리 익일 도착 월정액입니다."
                 />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <AmountField
                     id="shippingFee"
-                    label="배송비"
+                    label="택배 묶음 출고 배송비"
                     icon={Truck}
                     value={settings.shippingFee}
                     onChange={(next) =>
                       setSettings({ ...settings, shippingFee: next })
                     }
                     disabled={loading}
-                    help="박스단위 별도(의뢰자 청구)"
+                    help="1박스당 별도 부과(의뢰자 청구)"
                     step={SHIPPING_AMOUNT_STEP}
                   />
                   <AmountField
                     id="expressFee"
-                    label="신속 의뢰비"
+                    label="딜리버리 건당 추가(레거시)"
                     icon={Zap}
                     value={settings.expressFee}
                     onChange={(next) =>
                       setSettings({ ...settings, expressFee: next })
                     }
                     disabled={loading}
-                    help={expressHelp}
+                    help="신규 안내는 월정액입니다. 이 값은 기존 건당 추가 차감용입니다."
                     step={SHIPPING_AMOUNT_STEP}
                   />
                 </div>
@@ -2829,11 +2827,11 @@ export const AdminCreditSettingsTab = ({
                   />
                   <SalesAmountCard
                     id="fmDentalMonthlyShippingFee"
-                    title="FM덴탈 월정액 배송"
+                    title="딜리버리 익일 도착 월정액"
                     value={settings.fmDentalMonthlyShippingFee ?? 0}
                     disabled={loading}
                     onChange={updateFmDentalMonthlyFee}
-                    help="기공소만. 정상가 구간 선택지. 0원이면 가입 불가. 유료 크레딧에서 차감합니다."
+                    help="VAT 포함. 0원이면 가입 불가. 치과·기공소 안내 기본 5.5만원."
                   />
                 </div>
               </CardContent>

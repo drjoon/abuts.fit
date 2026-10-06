@@ -11,9 +11,15 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MessageSquare, BarChart3, Shield, Clock, Upload } from "lucide-react";
+import type { ReactNode } from "react";
 
 export const FeaturesSection = () => {
-  const features = [
+  const features: {
+    icon: typeof Upload;
+    title: string;
+    description: ReactNode;
+    category: string;
+  }[] = [
     {
       icon: Upload,
       title: "커스텀 어벗 의뢰",
@@ -49,7 +55,13 @@ export const FeaturesSection = () => {
     {
       icon: Clock,
       title: "배송 안내",
-      description: "배송비는 별도이며, 묶음배송을 권장합니다.",
+      description: (
+        <>
+          택배 묶음 출고는 1박스당 3,500원입니다.
+          <br />
+          딜리버리 익일 도착은 월 5.5만원(VAT 포함)입니다.
+        </>
+      ),
       category: "배송",
     },
   ];

@@ -23,8 +23,16 @@ export const AnnouncementSection = () => {
     },
     {
       id: 3,
-      title: "묶음배송 권장",
-      description: "배송비 절감을 위해 묶음배송을 권장합니다.",
+      title: "택배 묶음 출고 · 딜리버리 익일 도착",
+      description: (
+        <>
+          택배 묶음은 1박스당 3,500원입니다.
+          <br />
+          딜리버리는 월 5.5만원(VAT 포함)입니다.
+          <br />
+          자정까지 주문하면 다음 날 도착합니다.
+        </>
+      ),
       type: "new",
       date: "배송",
     },

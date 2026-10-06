@@ -65,6 +65,12 @@ import {
   isExpressShippingSelectable,
   type LeadTimesMap,
 } from "@/shared/shipping/estimateShipDate";
+import {
+  BULK_SHIPPING_LABEL_SHORT,
+  DELIVERY_SUBSCRIBE_AVAILABLE,
+  EXPRESS_SHIPPING_LABEL_SHORT,
+} from "@/shared/shipping/shippingPolicyCopy";
+import { DeliverySubscribeDialog } from "@/shared/shipping/DeliverySubscribeDialog";
 import { useToast } from "@/shared/hooks/use-toast";
 import type { AttachmentListItem, PatientFileGroup } from "../utils/patientGroups";
 import {
@@ -302,6 +308,7 @@ export function NewRequestAttachmentsPanel({
   const hasAnyAttachment = files.length > 0;
   const { toast } = useToast();
   const [now, setNow] = useState(() => new Date());
+  const [subscribeOpen, setSubscribeOpen] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [marquee, setMarquee] = useState<MarqueeState | null>(null);
   const selectionAnchorKeyRef = useRef<string | null>(null);
@@ -368,9 +375,13 @@ export function NewRequestAttachmentsPanel({
   ) => {
     if (!onShippingModeChange || fileKeys.length === 0) return;
     if (mode === "express") {
+      if (!DELIVERY_SUBSCRIBE_AVAILABLE) {
+        setSubscribeOpen(true);
+        return;
+      }
       if (!expressSelectableGlobal) {
         toast({
-          title: "신속 출고 선택 불가",
+          title: "딜리버리 익일 도착 선택 불가",
           description: EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE,
           variant: "destructive",
           duration: 4000,
@@ -386,7 +397,7 @@ export function NewRequestAttachmentsPanel({
       });
       if (!ok) {
         toast({
-          title: "신속 출고 선택 불가",
+          title: "딜리버리 익일 도착 선택 불가",
           description: EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE,
           variant: "destructive",
           duration: 4000,
@@ -768,19 +779,21 @@ export function NewRequestAttachmentsPanel({
                   applyMode(fileKeysForMode, "normal", { diameter, productMode })
                 }
               >
-                묶음
+                {BULK_SHIPPING_LABEL_SHORT}
               </button>
               <button
                 type="button"
                 className={modeButtonClass(
                   effectiveShippingMode === "express",
-                  !expressSelectable,
+                  DELIVERY_SUBSCRIBE_AVAILABLE && !expressSelectable,
                 )}
-                disabled={!expressSelectable}
+                disabled={
+                  DELIVERY_SUBSCRIBE_AVAILABLE && !expressSelectable
+                }
                 title={
-                  expressSelectable
-                    ? undefined
-                    : EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE
+                  DELIVERY_SUBSCRIBE_AVAILABLE && !expressSelectable
+                    ? EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE
+                    : undefined
                 }
                 onClick={() =>
                   applyMode(fileKeysForMode, "express", {
@@ -789,7 +802,7 @@ export function NewRequestAttachmentsPanel({
                   })
                 }
               >
-                신속
+                {EXPRESS_SHIPPING_LABEL_SHORT}
               </button>
             </div>
           ) : null}
@@ -1270,6 +1283,10 @@ export function NewRequestAttachmentsPanel({
         ) : null}
         </div>
       </div>
+      <DeliverySubscribeDialog
+        open={subscribeOpen}
+        onOpenChange={setSubscribeOpen}
+      />
     </>
   );
 }

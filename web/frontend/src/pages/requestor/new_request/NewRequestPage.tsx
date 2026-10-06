@@ -70,6 +70,7 @@ import {
   isExpressShippingSelectable,
   type LeadTimesMap,
 } from "@/shared/shipping/estimateShipDate";
+import { DELIVERY_SUBSCRIBE_AVAILABLE } from "@/shared/shipping/shippingPolicyCopy";
 import {
   findGroupByFileKey,
   isLikelyOralScanSize,
@@ -841,6 +842,7 @@ const NewRequestPageContent = () => {
       batchDays: string[] | null = null,
     ): "normal" | "express" => {
       if (mode !== "express") return "normal";
+      if (!DELIVERY_SUBSCRIBE_AVAILABLE) return "normal";
       const days = batchDays ?? weeklyBatchDays;
       // 우측에 디자인+1일 등으로 신속 이점이 없으면 건별(생산만)도 신속을 열지 않는다.
       const globalOk = isExpressShippingSelectable({
@@ -1961,7 +1963,7 @@ const NewRequestPageContent = () => {
                     toast({
                       title: "설정 필요",
                       description:
-                        "묶음 출고 의뢰가 있어 출고 요일을 선택한 후 다시 시도하세요.",
+                        "택배 묶음 출고 의뢰가 있어 출고 요일을 선택한 후 다시 시도하세요.",
                       variant: "destructive",
                       duration: 4500,
                     });

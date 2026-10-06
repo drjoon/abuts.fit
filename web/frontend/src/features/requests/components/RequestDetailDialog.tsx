@@ -601,7 +601,7 @@ export const RequestDetailDialog = ({
                       </div>
                       {expressFeeTotal > 0 && (
                         <div className="flex items-baseline justify-between gap-3">
-                          <span className="text-slate-600 shrink-0">신속출고</span>
+                          <span className="text-slate-600 shrink-0">딜리버리 익일 도착</span>
                           <span className="font-medium tabular-nums text-right text-accent-strong">
                             {formatUnitTimesQty(
                               expressUnit,
@@ -622,7 +622,7 @@ export const RequestDetailDialog = ({
                       </div>
                       <p className="text-[11px] leading-relaxed text-slate-500">
                         {`크레딧 사용액은 생산비와 디자인비${
-                          expressFeeTotal > 0 ? "·신속비" : ""
+                          expressFeeTotal > 0 ? "·딜리버리" : ""
                         }입니다.`}
                       </p>
                     </div>

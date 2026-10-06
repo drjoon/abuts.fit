@@ -12,7 +12,7 @@ import { toKstYmd } from "./utils.js";
 import { calculateInitialProductionSchedule } from "./production.utils.js";
 
 export const EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE =
-  "신속 출고일이 묶음 출고일과 같아 선택할 이유가 없습니다.";
+  "딜리버리 익일 도착일이 택배 묶음 출고일과 같아 선택할 이유가 없습니다.";
 
 /**
  * 신속 출고 선택 가능 여부.

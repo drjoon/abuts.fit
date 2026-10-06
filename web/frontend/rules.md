@@ -233,8 +233,8 @@ Notes:
       - `src/features/platform/PlatformBenefitsShareButtons.tsx` (안내+링크 클립보드 복사)
   - 의뢰자(치과) 설정: 구독 탭 없음. 구 `?tab=subscription` → 계정. 대시보드 헤더는 `[정책 안내]`만.
     - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx`
-    - `src/shared/ui/PricingPolicyDialog.tsx` — 런칭 이벤트 1.3만(+배송) / 정상가 1.5만(+배송 또는 FM덴탈 월정액·기공소만). 신속 +2,000 · 배송 3,500. FM 가입·해지(대표·기공소). 치과·기공소·딜러·영업팀 `requestor`: 플랫폼 사용료·하청 수수료 안내 없음(미부과). **딜러(`variant=salesman`)**: 커스텀어벗 10~20% 누적 구간 · 스토어(심플웨이)·기공 제외 · 90일 무주문이면 소개 코드 리셋(누구든 다시 영업 가능). **「의뢰자 정책」(`variant=requestor`)**: 딜러 대시보드·영업팀 성과 — 소개 치과·기공소 안내용 단가·출고.
-    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 정상가 **1.5만원** · 런칭 **1.3만원**(`resolveCustomAbutmentProductionPriceForAt`). 신속 `expressFee`(기본 +2,000). 배송 박스당 또는(기공소) FM덴탈 월정액. `regular*`는 관리자 딜러분배용. 기공소 매칭 월정 0 · 플랫폼 사용료·하청 수수료 미부과 — 루트 `rules.md` §2.3.
+    - `src/shared/ui/PricingPolicyDialog.tsx` — 런칭 이벤트 1.3만 / 정상가 1.5만. **택배 묶음 출고** 1박스당 3,500원. **딜리버리 익일 도착** 월 5.5만원(VAT 포함) 정액(자정까지 주문 → 익일 기공소·치과 도착). 치과·기공소·딜러·영업팀 `requestor`: 플랫폼 사용료·하청 수수료 안내 없음(미부과). **딜러(`variant=salesman`)**: 커스텀어벗 10~20% 누적 구간 · 스토어(심플웨이)·기공 제외 · 90일 무주문이면 소개 코드 리셋(누구든 다시 영업 가능). **「의뢰자 정책」(`variant=requestor`)**: 딜러 대시보드·영업팀 성과 — 소개 치과·기공소 안내용 단가·출고.
+    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 정상가 **1.5만원** · 런칭 **1.3만원**(`resolveCustomAbutmentProductionPriceForAt`). 출고 표시=`shippingPolicyCopy`(택배 묶음 출고 / 딜리버리 익일 도착). 택배 묶음=박스당 `shippingFee`(3,500). 딜리버리=월정액(기본 55,000, VAT 포함). `regular*`는 관리자 딜러분배용. 기공소 매칭 월정 0 · 플랫폼 사용료·하청 수수료 미부과 — 루트 `rules.md` §2.3.
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
   - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 기공소별 인증 ON·기공 테스트·메모. 수수료 스트립(`DevopsPlatformFeeTab`)은 숨김(미부과). 기공소 설정 탭은 없음. 관리자 테스트 통과/`enabled` 시 풀 참여. 학습 이용은 기본 허용이고 요율과 무관. 기공소 설정 「AI」탭·기공의뢰 동의 버튼·모달은 없다. 안내는 약관·개인정보. 관리자 플랫폼 설정「인증 기공소」탭
   - 기공소 어벗츠 인증: 가입 시 미신청 → 신청 → 기공 테스트 → 통과 시 인증. 상태·테스트·메모 SSOT `BusinessAnchor.abutsLabCertification` / `src/shared/practice/abutsLabCertification.ts`
@@ -284,18 +284,20 @@ Notes:
     - 수동 묶음은 `design_custom_abutment`. 해제 시 크기 휴리스틱으로 productMode 복원.
   - 구현: `patientGroups.ts`, `usePatientFileGroups.ts`, UI `NewRequestAttachmentsPanel.tsx`, 게이트 `NewRequestPage.tsx` + `ConfirmDialog`.
   - Cursor 룰: `.cursor/rules/oral-scan-file-size.mdc`
-- 신규의뢰 배송 방식(묶음/신속):
+- 신규의뢰 배송 방식(택배 묶음/딜리버리):
   - 의뢰카드에서 `shippingMode`(`normal`|`express`)를 건별로 선택합니다.
+  - 표시 라벨 SSOT: `src/shared/shipping/shippingPolicyCopy.ts` — 택배 묶음 출고 / 딜리버리 익일 도착.
   - 우측 배송 설정은 안내/요일 설정 + 제출만 담당합니다.
-  - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 2,000원)를 사용합니다.
+  - 택배 묶음 출고: 1박스당 `shippingFee`(기본 3,500원) 별도.
+  - 딜리버리 익일 도착: 월정액(기본 55,000원, VAT 포함). 당일 자정까지 주문 → 익일 기공소(치과) 도착.
   - 디자인+생산(`design_custom_abutment`): `(생산 단가 + 디자인비) × 어벗 수`.
     - 디자인비는 디자인+생산 − 생산만. 어벗 수는 `toothWorks` 커스텀어벗·임플란트 치아(Pontic·작업X 제외).
-    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 정상가 **1.5만원** · 런칭 **1.3만원**(`resolveCustomAbutmentProductionPriceForAt`). 신속 `expressFee`(기본 +2,000). 배송 박스당 또는(기공소) FM덴탈 월정액. `regular*`는 관리자 딜러분배용. 기공소 매칭 월정 0 · 플랫폼 사용료·하청 수수료 미부과 · 학습 이용은 요율과 무관 — 루트 `rules.md` §2.3.
+    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 정상가 **1.5만원** · 런칭 **1.3만원**(`resolveCustomAbutmentProductionPriceForAt`). 출고 표시=`shippingPolicyCopy`. 택배 묶음=박스당 3,500. 딜리버리=월 5.5만원(VAT 포함). `regular*`는 관리자 딜러분배용. 기공소 매칭 월정 0 · 플랫폼 사용료·하청 수수료 미부과 · 학습 이용은 요율과 무관 — 루트 `rules.md` §2.3.
     - 생산(`custom_abutment`)은 Request/STL당 생산 1개. 신속비는 건당.
     - 디자인+생산 신속비는 **어벗 수 배수** (`expressFee × abutmentQty`).
     - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`).
     - 출고일: 묶음/신속 공통 **+1영업일**(디자인). 안내 카피 SSOT는 `.cursor/rules/design-fee.mdc` UI 절.
-    - 의뢰카드는 `+디자인` 뱃지만. 의뢰 상세(`RequestDetailDialog`)에는 비용 세부(생산/디자인/신속) 표시. 배송비는 크레딧 장부만.
+    - 의뢰카드는 `+디자인` 뱃지만. 의뢰 상세(`RequestDetailDialog`)에는 비용 세부(생산/디자인/딜리버리) 표시. 배송비는 크레딧 장부만.
     - 표시: `PricingPolicyDialog`는 생산만/디자인+생산 정가와 배송비 별도(박스당 과금). `RequestDetailDialog`는 주문 비용만(배송 제외). 신규의뢰 우측에는 금액 미표시.
   - 설정 UI SSOT: 관리자 설정(결제) + 개발·운영사 설정(요금) → `AdminCreditSettingsTab`
     - API: `GET /api/credits/settings`, `PATCH /api/admin/settings/credits` (`admin`|`devops`)
@@ -538,7 +540,7 @@ Notes:
     잔액 < 50만원이면 사이드바 `크레딧`에 깜빡이는 충전 뱃지·클릭 시 `?tab=charge` (`DashboardLayout`).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
   - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage`, `InquiriesPage` — 크레딧=B2B 거래 선수금. 기공·어벗 경로는 면세, 스토어는 과세(월말 분리 발행). 회사=겸영. Terms: 기공회원(기공소·계산서)과 제조회원(일반과세·세금계산서) 분리.
-  - 가격 정책/대시보드: `PricingPolicyDialog` — 런칭 1.3만(+배송) / 정상 1.5만(+배송 또는 FM덴탈 월정액·기공소만). 신속 +2,000 · 배송 3,500. 의뢰자 변형에 **부가세 없음 · 면세**. 딜러는 판매가 기준(배송·월정액 제외).
+  - 가격 정책/대시보드: `PricingPolicyDialog` — 런칭 1.3만 / 정상 1.5만. 택배 묶음 출고 1박스당 3,500. 딜리버리 익일 도착 월 5.5만원(VAT 포함). 의뢰자 커스텀어벗 경로는 **부가세 없음 · 면세**(딜리버리 월정액만 VAT 포함). 딜러는 판매가 기준(배송·월정액 제외).
   - 관리자 플랫폼 설정「커스텀어벗」: 커스텀어벗 가격(CNC·환봉 생산 단가) + 분배 비율. 지정 기공소 디자인·어벗츠 생산만. 치과 공급·디자인+생산 카드 없음.
   - 제조사 정산규칙: 딜러와 같은 칩·표(구간·누적). 상단 탭 제조 44% 고정 / 어벗츠 40% 고정. 배송은 박스당 매입가(표 밖). 리메이크·무료 크레딧도 약정 단가. 말일 일괄 지급·세금계산서.
   - 어벗츠 정산규칙: 딜러·제조와 같은 칩·표. 상단 탭 어벗츠 40% 고정(순 35%) / 제조 44% 고정. 개발운영 5%는 어벗츠 몫(의뢰비 대비)에서 차감. 배송 제외. 어벗츠 순몫 면세 계산서.

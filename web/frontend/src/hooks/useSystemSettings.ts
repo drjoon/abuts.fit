@@ -84,7 +84,7 @@ export interface CreditSettings {
   /** 정책 안내 취소선. 의뢰자 특별가가 덮기 전의 플랫폼 정상가 */
   listProductionPrice?: number;
   customAbutmentPricingTier?: "event" | "regular";
-  /** FM덴탈 월정액 배송(원). 0이면 가입 불가 */
+  /** 딜리버리 익일 도착 월정액(원, VAT 포함). 0이면 안내는 5.5만원 기본. */
   fmDentalMonthlyShippingFee?: number;
 }
 
@@ -139,7 +139,7 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
     ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
   effectiveProductionPrice: ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
   customAbutmentPricingTier: "event",
-  fmDentalMonthlyShippingFee: 0,
+  fmDentalMonthlyShippingFee: 55000,
 };
 
 export interface SystemSettingsData {

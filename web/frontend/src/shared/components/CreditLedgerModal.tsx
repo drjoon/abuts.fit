@@ -1962,7 +1962,7 @@ const REF_TYPE_LABELS: Record<string, string> = {
   REQUEST: "의뢰",
   PRACTICE_TRANSFER: "기공비",
   PRACTICE_MEMBERSHIP: "치과 멤버십",
-  FM_DENTAL_SHIPPING: "FM덴탈 월정액 배송",
+  FM_DENTAL_SHIPPING: "딜리버리 익일 도착",
   LAB_SETTLEMENT_PAYOUT: "기공크레딧 정산",
   SETTLEMENT_BATCH_ITEM: "기공크레딧 정산",
   FREE_REQUEST_CREDIT: "환영 무료크레딧",
@@ -2068,7 +2068,7 @@ const renderTransactionDetail = ({
               variant="outline"
               className="h-5 px-1.5 text-[10px] leading-none border-accent-muted text-accent-strong bg-accent-soft"
             >
-              신속추가
+              딜리버리
             </Badge>
           ) : null}
           <span className="font-mono text-xs font-semibold text-slate-900">

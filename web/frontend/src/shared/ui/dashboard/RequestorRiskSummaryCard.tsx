@@ -171,13 +171,13 @@ export const RequestorRiskSummaryCard = ({
           <span>지연 가능 의뢰: {summary.warningCount ?? 0}건</span>
           <span>지연 확정 의뢰: {summary.delayedCount ?? 0}건</span>
           <span>
-            묶음 정시: {summary.normalOnTimeRate ?? summary.onTimeRate ?? 0}%
+            택배 정시: {summary.normalOnTimeRate ?? summary.onTimeRate ?? 0}%
             {typeof summary.normalEvaluatedCount === "number"
               ? ` (${summary.normalEvaluatedCount}건)`
               : ""}
           </span>
           <span>
-            신속 정시: {summary.expressOnTimeRate ?? summary.onTimeRate ?? 0}%
+            딜리버리 정시: {summary.expressOnTimeRate ?? summary.onTimeRate ?? 0}%
             {typeof summary.expressEvaluatedCount === "number"
               ? ` (${summary.expressEvaluatedCount}건)`
               : ""}

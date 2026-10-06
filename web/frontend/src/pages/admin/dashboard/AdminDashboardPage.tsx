@@ -2271,11 +2271,11 @@ export const AdminDashboardPage = () => {
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
                     <div className="text-xs text-muted-foreground">진행</div>
                     <div className="text-right text-lg font-bold">{inProgressRequestCount.toLocaleString()}</div>
-                    <div className="text-xs text-muted-foreground">묶음배송</div>
+                    <div className="text-xs text-muted-foreground">택배 묶음 출고</div>
                     <div className="text-right text-base font-semibold text-primary-strong">
                       {inProgressNormalCount.toLocaleString()}건
                     </div>
-                    <div className="text-xs text-muted-foreground">신속배송</div>
+                    <div className="text-xs text-muted-foreground">딜리버리 익일 도착</div>
                     <div className="text-right text-base font-semibold text-accent-strong">
                       {inProgressExpressCount.toLocaleString()}건
                     </div>
@@ -2567,13 +2567,13 @@ export const AdminDashboardPage = () => {
                       <span>지연 가능 의뢰: {riskWarningCount.toLocaleString()}건</span>
                       <span>지연 확정 의뢰: {riskDelayedCount.toLocaleString()}건</span>
                       <span>
-                        묶음 정시: {riskNormalOnTimeRate.toLocaleString()}%
+                        택배 정시: {riskNormalOnTimeRate.toLocaleString()}%
                         {riskNormalEvaluatedCount > 0
                           ? ` (${riskNormalEvaluatedCount.toLocaleString()}건)`
                           : ""}
                       </span>
                       <span>
-                        신속 정시: {riskExpressOnTimeRate.toLocaleString()}%
+                        딜리버리 정시: {riskExpressOnTimeRate.toLocaleString()}%
                         {riskExpressEvaluatedCount > 0
                           ? ` (${riskExpressEvaluatedCount.toLocaleString()}건)`
                           : ""}
