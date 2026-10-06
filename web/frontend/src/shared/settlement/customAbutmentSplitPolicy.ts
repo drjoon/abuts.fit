@@ -1,9 +1,10 @@
 // change-log:
+// - 2026-10-07: 딜러 누진 — ~1천 10% · ~2천 12% · ~4천 14% · ~6천 16% · ~9천 18% · 9천1~ 20%.
 // - 2026-10-07: 의뢰비 단가 파라미터(1만·1.3만). 딜러 표 탭용.
 // - 2026-10-05: 어벗츠 순몫·개발운영 구간 필드.
 // - 2026-10-05: 어벗츠 고정 몫 40%.
 // - 2026-10-05: 제조 구간 = 어벗츠 고정을 뺀 뒤 딜러 구간을 뺀 나머지.
-// - 2026-10-05: 커스텀어벗 의뢰비 분배 — 딜러 1천~5천 누진 10~20% · 어벗츠 또는 제조 고정.
+// - 2026-10-05: 커스텀어벗 의뢰비 분배 — 딜러 누진 10~20% · 어벗츠 또는 제조 고정.
 /** 이벤트·런칭 단가. */
 export const CUSTOM_ABUTMENT_SALE_WON_10K = 10_000;
 /** 기본(이벤트 종료 후) 단가. */
@@ -24,10 +25,10 @@ export type SplitMarginalBand = {
 export const DEALER_MARGINAL_BANDS: ReadonlyArray<SplitMarginalBand> = [
   { fromQty: 1, toQty: 1_000, pct: 10 },
   { fromQty: 1_001, toQty: 2_000, pct: 12 },
-  { fromQty: 2_001, toQty: 3_000, pct: 14 },
-  { fromQty: 3_001, toQty: 4_000, pct: 16 },
-  { fromQty: 4_001, toQty: 5_000, pct: 18 },
-  { fromQty: 5_001, toQty: null, pct: 20 },
+  { fromQty: 2_001, toQty: 4_000, pct: 14 },
+  { fromQty: 4_001, toQty: 6_000, pct: 16 },
+  { fromQty: 6_001, toQty: 9_000, pct: 18 },
+  { fromQty: 9_001, toQty: null, pct: 20 },
 ];
 
 export function manufacturerMarginalPctForDealerPct(dealerPct: number): number {
