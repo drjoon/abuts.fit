@@ -254,7 +254,7 @@
   - SSOT: `backStart = splitline2 - GetRoughAdjacentOverlapMm()` (D4→2.0)
   - 선행 끝: `frontEnd = splitline2 + GetRoughPastFinishSeamMm()` (`0.8`), Middle_Rough 끝 = `Xk + 0.8`
   - `Splitline_2 > 5mm`일 때만 `Middle_Turn` / `Middle_Rough` 생성
-  - 바닥·벽면 가공 여유: `MillRough_3D.prc` `StockAllowanceFloors/Walls` = `0.20`
+  - 바닥·벽면 가공 여유: `MillRough_3D.prc` `StockAllowanceFloors/Walls` = `0.10`
   - 구현: `MainModuleComposite.TryRunRoughFreeFromMillSplitAB`
 
 ### 4.11 Finish_Cuff Back_Rough 스타일 SSOT (2026-07-11)
