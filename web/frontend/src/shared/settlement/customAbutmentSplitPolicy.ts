@@ -1,8 +1,12 @@
 // change-log:
+// - 2026-10-07: 의뢰비 단가 파라미터(1만·1.3만). 딜러 표 탭용.
 // - 2026-10-05: 어벗츠 순몫·개발운영 구간 필드.
 // - 2026-10-05: 어벗츠 고정 몫 40%.
 // - 2026-10-05: 제조 구간 = 어벗츠 고정을 뺀 뒤 딜러 구간을 뺀 나머지.
 // - 2026-10-05: 커스텀어벗 의뢰비 분배 — 딜러 1천~5천 누진 10~20% · 어벗츠 또는 제조 고정.
+/** 이벤트·런칭 단가. */
+export const CUSTOM_ABUTMENT_SALE_WON_10K = 10_000;
+/** 기본(이벤트 종료 후) 단가. */
 export const CUSTOM_ABUTMENT_SALE_WON = 13_000;
 export const ABUTS_FIXED_SHARE_PCT = 40;
 export const MANUFACTURER_FIXED_SHARE_PCT = 44;
@@ -98,7 +102,10 @@ export type CustomAbutmentSplitRow = {
   abutsNetBandWon: number;
 };
 
-function dealerWonForQty(qty: number): number {
+function dealerWonForQty(
+  qty: number,
+  saleUnitWon: number = CUSTOM_ABUTMENT_SALE_WON,
+): number {
   let remaining = Math.max(0, Math.floor(qty));
   let won = 0;
   let cursor = 1;
@@ -107,14 +114,17 @@ function dealerWonForQty(qty: number): number {
     const bandEnd = band.toQty ?? cursor + remaining - 1;
     const bandSize = bandEnd - cursor + 1;
     const take = Math.min(remaining, bandSize);
-    won += take * Math.round((CUSTOM_ABUTMENT_SALE_WON * band.pct) / 100);
+    won += take * Math.round((saleUnitWon * band.pct) / 100);
     remaining -= take;
     cursor += take;
   }
   return won;
 }
 
-export function dealerMarginalBandForQty(qty: number) {
+export function dealerMarginalBandForQty(
+  qty: number,
+  saleUnitWon: number = CUSTOM_ABUTMENT_SALE_WON,
+) {
   const n = Math.max(0, Math.floor(qty));
   let found = DEALER_MARGINAL_BANDS[0];
   for (const band of DEALER_MARGINAL_BANDS) {
@@ -126,7 +136,7 @@ export function dealerMarginalBandForQty(qty: number) {
   const bandStart = found.fromQty;
   const bandEnd = found.toQty == null ? n : Math.min(n, found.toQty);
   const bandQty = n <= 0 ? 0 : Math.max(0, bandEnd - bandStart + 1);
-  const unitWon = Math.round((CUSTOM_ABUTMENT_SALE_WON * found.pct) / 100);
+  const unitWon = Math.round((saleUnitWon * found.pct) / 100);
   return {
     pct: found.pct,
     bandQty,
@@ -134,8 +144,8 @@ export function dealerMarginalBandForQty(qty: number) {
   };
 }
 
-function pctOfSale(won: number, qty: number): number {
-  const sale = qty * CUSTOM_ABUTMENT_SALE_WON;
+function pctOfSale(won: number, qty: number, saleUnitWon: number): number {
+  const sale = qty * saleUnitWon;
   if (sale <= 0) return 0;
   return (won / sale) * 100;
 }
@@ -147,52 +157,56 @@ function withDevopsFromAbuts(
   abutsGrossWon: number,
   manufacturerMarginalPct: number,
   abutsNetMarginalPct: number,
+  saleUnitWon: number = CUSTOM_ABUTMENT_SALE_WON,
 ): CustomAbutmentSplitRow {
-  const saleWon = qty * CUSTOM_ABUTMENT_SALE_WON;
+  const saleWon = qty * saleUnitWon;
   const devopsWon = Math.round(
     (saleWon * DEVOPS_FROM_ABUTS_SHARE_PCT) / 100,
   );
   const abutsNetWon = abutsGrossWon - devopsWon;
-  const band = dealerMarginalBandForQty(qty);
+  const band = dealerMarginalBandForQty(qty, saleUnitWon);
   const manufacturerUnitWon = Math.round(
-    (CUSTOM_ABUTMENT_SALE_WON * manufacturerMarginalPct) / 100,
+    (saleUnitWon * manufacturerMarginalPct) / 100,
   );
   const devopsUnitWon = Math.round(
-    (CUSTOM_ABUTMENT_SALE_WON * DEVOPS_FROM_ABUTS_SHARE_PCT) / 100,
+    (saleUnitWon * DEVOPS_FROM_ABUTS_SHARE_PCT) / 100,
   );
   const abutsNetUnitWon = Math.round(
-    (CUSTOM_ABUTMENT_SALE_WON * abutsNetMarginalPct) / 100,
+    (saleUnitWon * abutsNetMarginalPct) / 100,
   );
   return {
     qty,
     saleWon,
     dealerWon,
-    dealerEffectivePct: pctOfSale(dealerWon, qty),
+    dealerEffectivePct: pctOfSale(dealerWon, qty, saleUnitWon),
     dealerMarginalPct: band.pct,
     dealerBandWon: band.bandWon,
     manufacturerWon,
-    manufacturerEffectivePct: pctOfSale(manufacturerWon, qty),
+    manufacturerEffectivePct: pctOfSale(manufacturerWon, qty, saleUnitWon),
     manufacturerMarginalPct,
     manufacturerBandWon: band.bandQty * manufacturerUnitWon,
     abutsGrossWon,
-    abutsGrossEffectivePct: pctOfSale(abutsGrossWon, qty),
+    abutsGrossEffectivePct: pctOfSale(abutsGrossWon, qty, saleUnitWon),
     devopsWon,
     devopsMarginalPct: DEVOPS_FROM_ABUTS_SHARE_PCT,
     devopsBandWon: band.bandQty * devopsUnitWon,
     abutsNetWon,
-    abutsNetEffectivePct: pctOfSale(abutsNetWon, qty),
+    abutsNetEffectivePct: pctOfSale(abutsNetWon, qty, saleUnitWon),
     abutsNetMarginalPct,
     abutsNetBandWon: band.bandQty * abutsNetUnitWon,
   };
 }
 
 /** 어벗츠 고정. 나머지를 제조·딜러 누진. */
-export function splitAbutsFixedRow(qty: number): CustomAbutmentSplitRow {
-  const saleWon = qty * CUSTOM_ABUTMENT_SALE_WON;
-  const dealerWon = dealerWonForQty(qty);
+export function splitAbutsFixedRow(
+  qty: number,
+  saleUnitWon: number = CUSTOM_ABUTMENT_SALE_WON,
+): CustomAbutmentSplitRow {
+  const saleWon = qty * saleUnitWon;
+  const dealerWon = dealerWonForQty(qty, saleUnitWon);
   const abutsGrossWon = Math.round((saleWon * ABUTS_FIXED_SHARE_PCT) / 100);
   const manufacturerWon = saleWon - abutsGrossWon - dealerWon;
-  const band = dealerMarginalBandForQty(qty);
+  const band = dealerMarginalBandForQty(qty, saleUnitWon);
   return withDevopsFromAbuts(
     qty,
     manufacturerWon,
@@ -200,18 +214,22 @@ export function splitAbutsFixedRow(qty: number): CustomAbutmentSplitRow {
     abutsGrossWon,
     manufacturerMarginalPctForDealerPct(band.pct),
     ABUTS_NET_FIXED_SHARE_PCT,
+    saleUnitWon,
   );
 }
 
 /** 제조 44% 고정. 나머지 56%를 딜러 누진·어벗츠. */
-export function splitManufacturerFixedRow(qty: number): CustomAbutmentSplitRow {
-  const saleWon = qty * CUSTOM_ABUTMENT_SALE_WON;
-  const dealerWon = dealerWonForQty(qty);
+export function splitManufacturerFixedRow(
+  qty: number,
+  saleUnitWon: number = CUSTOM_ABUTMENT_SALE_WON,
+): CustomAbutmentSplitRow {
+  const saleWon = qty * saleUnitWon;
+  const dealerWon = dealerWonForQty(qty, saleUnitWon);
   const manufacturerWon = Math.round(
     (saleWon * MANUFACTURER_FIXED_SHARE_PCT) / 100,
   );
   const abutsGrossWon = saleWon - manufacturerWon - dealerWon;
-  const band = dealerMarginalBandForQty(qty);
+  const band = dealerMarginalBandForQty(qty, saleUnitWon);
   return withDevopsFromAbuts(
     qty,
     manufacturerWon,
@@ -219,19 +237,22 @@ export function splitManufacturerFixedRow(qty: number): CustomAbutmentSplitRow {
     abutsGrossWon,
     MANUFACTURER_FIXED_SHARE_PCT,
     abutsNetMarginalPctForDealerPctOnMfrFixed(band.pct),
+    saleUnitWon,
   );
 }
 
 export function splitAbutsFixedRows(
   qtys: readonly number[] = CUSTOM_ABUTMENT_SPLIT_QTY_ROWS,
+  saleUnitWon: number = CUSTOM_ABUTMENT_SALE_WON,
 ): CustomAbutmentSplitRow[] {
-  return qtys.map(splitAbutsFixedRow);
+  return qtys.map((qty) => splitAbutsFixedRow(qty, saleUnitWon));
 }
 
 export function splitManufacturerFixedRows(
   qtys: readonly number[] = CUSTOM_ABUTMENT_SPLIT_QTY_ROWS,
+  saleUnitWon: number = CUSTOM_ABUTMENT_SALE_WON,
 ): CustomAbutmentSplitRow[] {
-  return qtys.map(splitManufacturerFixedRow);
+  return qtys.map((qty) => splitManufacturerFixedRow(qty, saleUnitWon));
 }
 
 export function formatSharePct(pct: number): string {

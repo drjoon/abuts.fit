@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-07: 딜러 표 — 의뢰비 건당 1만·1.3만 탭.
 // - 2026-10-05: 어벗츠·개발운영 표 — 딜러·제조와 같은 칩·표.
 // - 2026-10-05: 제조·딜러 표 — 모바일은 구간 열 숨김·가로 스크롤 없음.
 // - 2026-10-05: 제조 표 — 상단 탭(제조 44% 고정 / 어벗츠 40% 고정).
@@ -14,6 +15,8 @@ import {
   ABUTS_NET_FIXED_SHARE_PCT,
   ABUTS_NET_MFR_FIXED_BANDS,
   CUSTOM_ABUTMENT_SALE_WON,
+  CUSTOM_ABUTMENT_SALE_WON_10K,
+  CUSTOM_ABUTMENT_SPLIT_QTY_ROWS,
   DEALER_MARGINAL_BANDS,
   DEVOPS_FIXED_BANDS,
   DEVOPS_FROM_ABUTS_SHARE_PCT,
@@ -148,50 +151,71 @@ const qtyColumn = {
   cell: (row: CustomAbutmentSplitRow) => row.qty.toLocaleString("ko-KR"),
 };
 
-export function CustomAbutmentDealerSplitTable() {
-  const rows = splitAbutsFixedRows();
+const dealerColumns = [
+  qtyColumn,
+  {
+    key: "marginalPct",
+    label: "구간 분배비",
+    labelShort: "구간%",
+    className: MOBILE_HIDDEN_COL,
+    cell: (row: CustomAbutmentSplitRow) =>
+      formatSharePct(row.dealerMarginalPct),
+  },
+  {
+    key: "bandWon",
+    label: "구간 지급",
+    labelShort: "구간",
+    className: MOBILE_HIDDEN_COL,
+    cell: (row: CustomAbutmentSplitRow) => formatManwon(row.dealerBandWon),
+  },
+  {
+    key: "effectivePct",
+    label: "누적 분배비",
+    labelShort: "누적%",
+    emphasize: true,
+    cell: (row: CustomAbutmentSplitRow) =>
+      formatSharePct(row.dealerEffectivePct),
+  },
+  {
+    key: "dealerWon",
+    label: "누적 지급",
+    labelShort: "누적",
+    emphasize: true,
+    cell: (row: CustomAbutmentSplitRow) => formatManwon(row.dealerWon),
+  },
+];
+
+function DealerSplitPanel({ saleUnitWon }: { saleUnitWon: number }) {
+  const rows = splitAbutsFixedRows(CUSTOM_ABUTMENT_SPLIT_QTY_ROWS, saleUnitWon);
   return (
     <div className="space-y-3 rounded-2xl bg-slate-50 px-2 py-3 sm:px-3">
       <BandPills bands={DEALER_MARGINAL_BANDS} />
-      <SplitTable
-        framed
-        rows={rows}
-        columns={[
-          qtyColumn,
-          {
-            key: "marginalPct",
-            label: "구간 분배비",
-            labelShort: "구간%",
-            className: MOBILE_HIDDEN_COL,
-            cell: (row) => formatSharePct(row.dealerMarginalPct),
-          },
-          {
-            key: "bandWon",
-            label: "구간 지급",
-            labelShort: "구간",
-            className: MOBILE_HIDDEN_COL,
-            cell: (row) => formatManwon(row.dealerBandWon),
-          },
-          {
-            key: "effectivePct",
-            label: "누적 분배비",
-            labelShort: "누적%",
-            emphasize: true,
-            cell: (row) => formatSharePct(row.dealerEffectivePct),
-          },
-          {
-            key: "dealerWon",
-            label: "누적 지급",
-            labelShort: "누적",
-            emphasize: true,
-            cell: (row) => formatManwon(row.dealerWon),
-          },
-        ]}
-      />
+      <SplitTable framed rows={rows} columns={dealerColumns} />
       <p className="px-0.5 text-xs leading-relaxed text-slate-500">
-        의뢰비 {CUSTOM_ABUTMENT_SALE_WON.toLocaleString("ko-KR")}원 기준입니다.
+        의뢰비 {saleUnitWon.toLocaleString("ko-KR")}원 기준입니다.
       </p>
     </div>
+  );
+}
+
+export function CustomAbutmentDealerSplitTable() {
+  return (
+    <Tabs defaultValue="sale-10k" className="min-w-0 space-y-3">
+      <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl bg-slate-100 p-1">
+        <TabsTrigger value="sale-10k" className="rounded-lg text-xs sm:text-sm">
+          건당 1만원
+        </TabsTrigger>
+        <TabsTrigger value="sale-13k" className="rounded-lg text-xs sm:text-sm">
+          건당 1.3만원
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="sale-10k" className="mt-0 min-w-0">
+        <DealerSplitPanel saleUnitWon={CUSTOM_ABUTMENT_SALE_WON_10K} />
+      </TabsContent>
+      <TabsContent value="sale-13k" className="mt-0 min-w-0">
+        <DealerSplitPanel saleUnitWon={CUSTOM_ABUTMENT_SALE_WON} />
+      </TabsContent>
+    </Tabs>
   );
 }
 
