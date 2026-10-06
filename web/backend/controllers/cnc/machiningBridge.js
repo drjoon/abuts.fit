@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 // change-log:
 // - 2026-10-02: 가공 시작·RUNNING tick은 이전 가공기록 포인터가 있어도 현재 RUNNING 기록으로 다시 연결한다.
+// - 2026-10-06: last-completed — dummy_sample 가공 잔여 완료는 Complete/힐에서 뺀다.
 // - 2026-09-16: last-completed — CNC 완료+stage 가공 stuck은 세척.패킹 힐 후 Complete 유지(재가공 스킵과 구분).
 // - 2026-09-11: CNC start/complete가 포장.발송·추적관리 건을 가공/세척.패킹으로 회귀시키지 않음. last-completed에 manufacturerStage 포함.
 // - 2026-08-26: 가공기록에 의뢰 라벨 스냅샷. 샘플 삭제 후에도 완료 목록 라벨 유지.
@@ -1038,6 +1039,13 @@ export async function getLastCompletedMachiningMap(req, res) {
         isRequestMachiningWorkCompleted(info) &&
         !isRequestUnmachinableJudged(info)
       ) {
+        // 더미 복사본은 원본 완료 상태를 물려받아도 세척.패킹 힐/Complete에 넣지 않는다.
+        // 실제 CNC 완료 후 단계는 세척.패킹이라 아래 remachining skip에 안 걸린다.
+        if (String(info.source || "").trim() === "dummy_sample") {
+          skippedRequestIds.add(rid);
+          remachiningMachineIds.push(mid);
+          continue;
+        }
         stuckHealIds.push(rid);
         continue;
       }

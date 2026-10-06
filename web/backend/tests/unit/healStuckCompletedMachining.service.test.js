@@ -48,6 +48,7 @@ function testFilter() {
   const f = buildStuckCompletedMachiningFilter();
   assert.equal(f.manufacturerStage, "가공");
   assert.equal(f["rnd.unmachinableAt"], null);
+  assert.deepEqual(f.source, { $ne: "dummy_sample" });
   assert.ok(Array.isArray(f.$or));
   assert.ok(f.$or.length >= 2);
 }

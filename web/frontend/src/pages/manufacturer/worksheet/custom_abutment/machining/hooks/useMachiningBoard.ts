@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-10-06: 더미를 Next Up에 넣은 뒤 Complete 슬롯도 다시 불러온다.
 // - 2026-10-02: 시작 소켓을 놓쳐도 RUNNING tick·큐 재조회로 Now Playing을 맞춘다. 이전 건 완료가 다음 건 힌트를 지우지 않음.
 // - 2026-10-02: refreshProductionQueues를 보드에서 호출할 수 있게 반환.
 // - 2026-08-30: stopNowPlayingMachining — 브리지 stop + machining/cancel, canceled 소켓 반영.
@@ -2680,6 +2681,7 @@ export const useMachiningBoard = ({
     expressRebalanceAlert,
     clearExpressRebalanceAlert,
     refreshProductionQueues,
+    refreshLastCompletedFromServer,
     token,
   };
 };

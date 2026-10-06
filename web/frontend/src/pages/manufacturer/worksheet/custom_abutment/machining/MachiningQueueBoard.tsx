@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-06: 더미 Next Up 반영 후 Complete도 갱신한다.
 // - 2026-10-02: 더미설정은 직경별 저장. 장비 카드 더미 가공은 Next Up 첫 칸에 넣는다.
 // - 2026-08-30: Now Playing X → 가공 중단(브리지 stop + cancel).
 // - 2026-08-30: 상단 CNC Alert 뱃지 클릭 시 알람 상세 모달 표시.
@@ -441,6 +442,7 @@ export const MachiningQueueBoard = ({
     expressRebalanceAlert,
     clearExpressRebalanceAlert,
     refreshProductionQueues,
+    refreshLastCompletedFromServer,
   } = board;
 
   const [expressRebalanceModalOpen, setExpressRebalanceModalOpen] =
@@ -2908,6 +2910,7 @@ export const MachiningQueueBoard = ({
         diameterGroup={dummyConfirm?.diameterGroup || ""}
         onEnqueued={() => {
           void refreshProductionQueues();
+          void refreshLastCompletedFromServer();
         }}
       />
 

@@ -24,6 +24,7 @@
 // - 2026-10-02: 더미 카드는 환자·임플란트를 가로로 두고 폭을 늘린다.
 // - 2026-10-02: 로트 검색은 고른 직경 구간만 보여 준다. 5.5는 6이다.
 // - 2026-10-02: 더미설정은 6·8·10·12·14 버튼을 누르면 그 직경을 고른다.
+// - 2026-10-06: 장비 더미 가공은 단계와 무관하게 Next Up으로 넣는다.
 // - 2026-10-02: 더미설정은 소재 직경별 저장만. 가공은 장비 카드에서 Next Up에 넣는다.
 // - 2026-10-02: 더미 후보가 여러 개면 의뢰카드 폭으로 가로 스크롤해 고른다.
 // related files:
@@ -805,8 +806,7 @@ export function DummyNextUpConfirm({
     };
   }, [open, token, diameterGroup, toast]);
 
-  const canEnqueue =
-    Boolean(product) && String(product?.manufacturerStage || "") === "가공";
+  const canEnqueue = Boolean(product);
 
   const confirm = async () => {
     if (!token || !machineId || saving || !canEnqueue) return;
@@ -864,15 +864,7 @@ export function DummyNextUpConfirm({
                 <ProductSummary item={product} />
               </div>
               <p className="text-center text-xs text-slate-600">
-                {canEnqueue ? (
-                  "확인하면 Next Up 첫 번째로 넣습니다."
-                ) : (
-                  <>
-                    더미는 저장되어 있습니다.
-                    <br />
-                    가공 단계가 아니라 Next Up에 넣을 수 없습니다.
-                  </>
-                )}
+                확인하면 Next Up 첫 번째로 넣습니다.
               </p>
             </div>
           ) : (

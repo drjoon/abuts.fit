@@ -5,6 +5,7 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-10-06: dummy_sample은 세척.패킹 힐 대상에서 제외(Next Up 재사용).
 // - 2026-09-16: 불완전가공(rnd.unmachinableAt)은 힐 대상에서 제외(판정 후 가공 복귀 SSOT).
 // - 2026-09-16: CNC 완료인데 manufacturerStage가 가공에 남은 stuck 건 → 세척.패킹 힐.
 import Request from "../models/request.model.js";
@@ -59,6 +60,7 @@ export function isRequestUnmachinableJudged(requestLike) {
 export function buildStuckCompletedMachiningFilter() {
   return {
     manufacturerStage: "가공",
+    source: { $ne: "dummy_sample" },
     // 불완전가공 판정 건은 의도적으로 가공으로 복귀한다 — 세척.패킹 힐 금지
     "rnd.unmachinableAt": null,
     $or: [
@@ -85,6 +87,9 @@ export async function healStuckCompletedMachiningToPacking(
   const fromStage = String(request.manufacturerStage || "").trim();
   if (fromStage !== "가공") {
     return { healed: false, reason: "not_machining_stage", fromStage };
+  }
+  if (String(request.source || "").trim() === "dummy_sample") {
+    return { healed: false, reason: "dummy_sample", fromStage };
   }
   if (isRequestUnmachinableJudged(request)) {
     return { healed: false, reason: "unmachinable", fromStage };

@@ -5,6 +5,7 @@
 // - web/backend/controllers/requests/production.utils.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/DummyMachiningModal.tsx
 // change-log:
+// - 2026-10-06: 더미 복사본은 원본 완료 상태를 비운다. 장비에 넣을 때만 Next Up.
 // - 2026-10-02: 저장한 더미는 가공 단계 복사본으로 보관하고 대기열·카운터에서 뺀다.
 // - 2026-10-02: 추천도 로트 검색과 같이 3개씩 다음 페이지를 넘긴다.
 // - 2026-10-02: 더미 검색에 기공소명을 실어 보낸다.
@@ -31,6 +32,7 @@ import {
   normalizeDiameterGroupValue,
 } from "./distribution.utils.js";
 import { compareMachiningQueueOrder } from "../requests/production.utils.js";
+import { pickFilledStlFileForClone } from "../../utils/filledStlFile.js";
 
 const DIAMETER_GROUPS = ["6", "8", "10", "12", "14"];
 
@@ -209,6 +211,117 @@ function kstYyMmDd() {
   return ymd.replace(/-/g, "");
 }
 
+function cloneDummyCaseInfos(sourceCaseInfos) {
+  const raw =
+    sourceCaseInfos && typeof sourceCaseInfos === "object"
+      ? JSON.parse(JSON.stringify(sourceCaseInfos))
+      : {};
+  delete raw._id;
+  const now = new Date();
+  const filled = pickFilledStlFileForClone(raw);
+  return {
+    ...raw,
+    ...filled,
+    ncFile: raw.ncFile || null,
+    reviewByStage: {
+      request: { status: "APPROVED", updatedAt: now },
+      cam: { status: "APPROVED", updatedAt: now },
+      machining: { status: "PENDING", updatedAt: null },
+      packing: { status: "PENDING", updatedAt: null },
+      shipping: { status: "PENDING", updatedAt: null },
+      tracking: { status: "PENDING", updatedAt: null },
+    },
+    rollbackCounts: {
+      request: 0,
+      cam: 0,
+      machining: 0,
+      packing: 0,
+      shipping: 0,
+      tracking: 0,
+    },
+    stageFiles: {
+      machining: null,
+      packing: null,
+      shipping: null,
+      tracking: null,
+    },
+  };
+}
+
+function expectedDummyDurationSeconds(elapsed) {
+  const n = Number(elapsed);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+}
+
+function applyIdleDummySchedule({ elapsedSeconds, sourceRequestId }) {
+  const duration = expectedDummyDurationSeconds(elapsedSeconds);
+  return {
+    assignedMachine: null,
+    queuePosition: null,
+    machiningQty: 1,
+    machiningRecord: null,
+    actualCamStart: null,
+    actualCamComplete: null,
+    actualMachiningStart: null,
+    actualMachiningComplete: null,
+    dummyNextUpPinnedAt: null,
+    dummySampleSourceRequestId: sourceRequestId || null,
+    machiningProgress:
+      duration != null ? { elapsedSeconds: duration } : undefined,
+  };
+}
+
+function resetDummySampleForNextUp(
+  doc,
+  { machineId, diameterGroup, materialDia },
+) {
+  const prevElapsed = resolveDurationSeconds(
+    doc?.productionSchedule?.machiningRecord &&
+      typeof doc.productionSchedule.machiningRecord === "object"
+      ? doc.productionSchedule.machiningRecord
+      : null,
+    doc?.productionSchedule?.machiningProgress,
+  );
+  doc.manufacturerStage = "가공";
+  if (typeof doc.depopulate === "function") {
+    doc.depopulate("productionSchedule.machiningRecord");
+  }
+  doc.set("assignedMachine", machineId);
+  doc.set("productionSchedule.assignedMachine", machineId);
+  doc.set("productionSchedule.dummyNextUpPinnedAt", new Date());
+  doc.set("productionSchedule.queuePosition", null);
+  doc.set("productionSchedule.machiningRecord", null);
+  doc.set("productionSchedule.actualCamStart", null);
+  doc.set("productionSchedule.actualCamComplete", null);
+  doc.set("productionSchedule.actualMachiningStart", null);
+  doc.set("productionSchedule.actualMachiningComplete", null);
+  if (Number.isFinite(materialDia) && materialDia > 0) {
+    doc.set("productionSchedule.diameter", materialDia);
+  }
+  if (diameterGroup) {
+    doc.set("productionSchedule.diameterGroup", diameterGroup);
+  }
+  const duration = expectedDummyDurationSeconds(prevElapsed);
+  if (duration != null) {
+    doc.set("productionSchedule.machiningProgress", {
+      elapsedSeconds: duration,
+    });
+  } else {
+    doc.set("productionSchedule.machiningProgress", undefined);
+  }
+  if (doc?.caseInfos?.reviewByStage) {
+    doc.set("caseInfos.reviewByStage.machining", {
+      status: "PENDING",
+      updatedAt: null,
+    });
+    doc.set("caseInfos.reviewByStage.packing", {
+      status: "PENDING",
+      updatedAt: null,
+    });
+  }
+  return doc;
+}
+
 async function uniqueDummyLot(sourceLot) {
   const tail = dummyLotTail(sourceLot);
   const ymd = kstYyMmDd();
@@ -238,14 +351,13 @@ async function createDummySample(source, userId) {
     .lean();
   const elapsed = resolveDurationSeconds(fromRecord, full?.productionSchedule?.machiningProgress) || duration;
   const lotValue = await uniqueDummyLot(full?.lotNumber?.value);
-  const caseInfos = full.caseInfos ? { ...full.caseInfos } : {};
-  delete caseInfos._id;
   const requestorId = full.requestor?._id || full.requestor;
   const copy = new Request({
-    caseInfos,
+    caseInfos: cloneDummyCaseInfos(full.caseInfos),
     requestor: requestorId,
     businessAnchorId: full.businessAnchorId || null,
     caManufacturer: userId || full.caManufacturer || null,
+    assignedMachine: null,
     manufacturerStage: "가공",
     source: "dummy_sample",
     requestCategory: "dummy_sample",
@@ -267,13 +379,14 @@ async function createDummySample(source, userId) {
       value: lotValue,
     },
     productionSchedule: {
-      assignedMachine: null,
-      queuePosition: null,
-      machiningQty: 1,
+      ...applyIdleDummySchedule({
+        elapsedSeconds: elapsed,
+        sourceRequestId: sourceId,
+      }),
       diameter: Number(full?.caseInfos?.maxDiameter) || null,
-      diameterGroup: inferDiameterGroupFromValue(Number(full?.caseInfos?.maxDiameter)),
-      machiningProgress: elapsed > 0 ? { elapsedSeconds: elapsed } : undefined,
-      dummySampleSourceRequestId: sourceId,
+      diameterGroup: inferDiameterGroupFromValue(
+        Number(full?.caseInfos?.maxDiameter),
+      ),
     },
   });
   await copy.save();
@@ -730,10 +843,46 @@ export async function enqueueDummyMachiningProduct(req, res) {
         message: "불완전가공 건은 Next Up에 넣을 수 없습니다.",
       });
     }
-    if (String(doc.manufacturerStage || "").trim() !== "가공") {
-      return res.status(409).json({
-        success: false,
-        message: "가공 단계가 아니라 Next Up에 넣을 수 없습니다.",
+    if (String(doc.source || "").trim() !== "dummy_sample") {
+      const copy = await createDummySample(
+        doc.toObject(),
+        req.user?._id || null,
+      );
+      if (!copy?.requestId) {
+        return res.status(500).json({
+          success: false,
+          message: "더미 복사본을 만들지 못했습니다.",
+        });
+      }
+      const savedRows = await readSavedRows();
+      const nextRows = savedRows.map((row) =>
+        String(row?.requestId || "").trim() === requestId
+          ? { ...row, requestId: String(copy.requestId) }
+          : row,
+      );
+      await SystemSettings.findOneAndUpdate(
+        { key: "global" },
+        { $set: { dummyMachiningProducts: nextRows } },
+        { upsert: true },
+      );
+      const copied = await Request.findOne({
+        requestId: copy.requestId,
+      }).populate({
+        path: "productionSchedule.machiningRecord",
+        select: "status startedAt completedAt durationSeconds elapsedSeconds",
+      });
+      if (!copied) {
+        return res.status(500).json({
+          success: false,
+          message: "더미 복사본을 만들지 못했습니다.",
+        });
+      }
+      return finishDummyEnqueue(copied, {
+        res,
+        machineId,
+        diameterGroup,
+        materialDia,
+        requestId: String(copy.requestId),
       });
     }
     if (isMachiningInProgress(doc)) {
@@ -742,42 +891,12 @@ export async function enqueueDummyMachiningProduct(req, res) {
         message: "가공 중인 건은 Next Up에 넣을 수 없습니다.",
       });
     }
-    const maxD = Number(doc?.caseInfos?.maxDiameter);
-    if (
-      Number.isFinite(maxD) &&
-      maxD > 0 &&
-      !machineMaterialCoversMaxDiameter(materialDia, maxD)
-    ) {
-      return res.status(409).json({
-        success: false,
-        message: `장비 소재(Ø${materialDia})가 이 제품 최대직경을 커버하지 않습니다.`,
-      });
-    }
-
-    const previousMachineId = resolveAssignedMachine(doc);
-    doc.set("assignedMachine", machineId);
-    doc.set("productionSchedule.assignedMachine", machineId);
-    doc.set("productionSchedule.dummyNextUpPinnedAt", new Date());
-    doc.set("productionSchedule.diameter", materialDia);
-    doc.set("productionSchedule.diameterGroup", diameterGroup);
-    await doc.save();
-
-    await renumberMachineQueue(machineId);
-    if (previousMachineId && previousMachineId !== machineId) {
-      await renumberMachineQueue(previousMachineId);
-    }
-
-    return res.json({
-      success: true,
-      data: {
-        requestId,
-        machineId,
-        diameterGroup,
-        previousMachineId:
-          previousMachineId && previousMachineId !== machineId
-            ? previousMachineId
-            : null,
-      },
+    return finishDummyEnqueue(doc, {
+      res,
+      machineId,
+      diameterGroup,
+      materialDia,
+      requestId,
     });
   } catch (error) {
     console.error("enqueueDummyMachiningProduct failed", error);
@@ -786,4 +905,47 @@ export async function enqueueDummyMachiningProduct(req, res) {
       message: "Next Up에 넣지 못했습니다.",
     });
   }
+}
+
+async function finishDummyEnqueue(
+  doc,
+  { res, machineId, diameterGroup, materialDia, requestId },
+) {
+  const maxD = Number(doc?.caseInfos?.maxDiameter);
+  if (
+    Number.isFinite(maxD) &&
+    maxD > 0 &&
+    !machineMaterialCoversMaxDiameter(materialDia, maxD)
+  ) {
+    return res.status(409).json({
+      success: false,
+      message: `장비 소재(Ø${materialDia})가 이 제품 최대직경을 커버하지 않습니다.`,
+    });
+  }
+
+  const previousMachineId = resolveAssignedMachine(doc);
+  resetDummySampleForNextUp(doc, {
+    machineId,
+    diameterGroup,
+    materialDia,
+  });
+  await doc.save();
+
+  await renumberMachineQueue(machineId);
+  if (previousMachineId && previousMachineId !== machineId) {
+    await renumberMachineQueue(previousMachineId);
+  }
+
+  return res.json({
+    success: true,
+    data: {
+      requestId,
+      machineId,
+      diameterGroup,
+      previousMachineId:
+        previousMachineId && previousMachineId !== machineId
+          ? previousMachineId
+          : null,
+    },
+  });
 }
