@@ -1,4 +1,8 @@
 // change-log:
+// - 2026-10-07: 제조 표 — 누적 분배비 열 제거(구간과 동일 고정).
+// - 2026-10-07: 제조 표 — 하단 의뢰비·분배 안내 제거(팩트 카드로 이동).
+// - 2026-10-07: 제조 표 — 전 구간 49.5% 상단 칩 제거(표만).
+// - 2026-10-07: 제조·어벗츠 표 — 제조 49.5% 고정만. 제조44%/어벗츠40% 탭 제거.
 // - 2026-10-07: 딜러 표 — 의뢰비 건당 1만원 고정(1만·1.3만 탭 제거).
 // - 2026-10-07: 딜러 표 — 의뢰비 건당 1만·1.3만 탭.
 // - 2026-10-05: 어벗츠·개발운영 표 — 딜러·제조와 같은 칩·표.
@@ -9,11 +13,7 @@
 // - 2026-10-05: 딜러 표 — 스토어·커스텀어벗 공통 10~20% 누적 구간.
 // - 2026-10-05: 딜러 표 — 구간 분배비·누적 분배비(세금 구간) 분리 설명.
 import type { ReactNode } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  ABUTS_FIXED_SHARE_PCT,
-  ABUTS_NET_FIXED_BANDS,
-  ABUTS_NET_FIXED_SHARE_PCT,
   ABUTS_NET_MFR_FIXED_BANDS,
   CUSTOM_ABUTMENT_SALE_WON,
   CUSTOM_ABUTMENT_SALE_WON_10K,
@@ -21,9 +21,7 @@ import {
   DEALER_MARGINAL_BANDS,
   DEVOPS_FIXED_BANDS,
   DEVOPS_FROM_ABUTS_SHARE_PCT,
-  MANUFACTURER_FIXED_BANDS,
   MANUFACTURER_FIXED_SHARE_PCT,
-  MANUFACTURER_MARGINAL_BANDS,
   formatManwon,
   formatSharePct,
   splitAbutsFixedRows,
@@ -135,7 +133,7 @@ function BandPills({ bands }: { bands: ReadonlyArray<SplitMarginalBand> }) {
             {bandQtyLabel(band)}
           </span>
           <span className="text-sm font-semibold tabular-nums tracking-tight text-slate-900">
-            {band.pct}%
+            {formatSharePct(band.pct)}
           </span>
         </div>
       ))}
@@ -241,12 +239,33 @@ function partyColumns(pick: {
   ];
 }
 
-const manufacturerColumns = partyColumns({
-  marginalPct: (row) => row.manufacturerMarginalPct,
-  bandWon: (row) => row.manufacturerBandWon,
-  effectivePct: (row) => row.manufacturerEffectivePct,
-  won: (row) => row.manufacturerWon,
-});
+const manufacturerColumns = [
+  qtyColumn,
+  {
+    key: "marginalPct",
+    label: "구간 분배비",
+    labelShort: "구간%",
+    className: MOBILE_HIDDEN_COL,
+    cell: (row: CustomAbutmentSplitRow) =>
+      formatSharePct(row.manufacturerMarginalPct),
+  },
+  {
+    key: "bandWon",
+    label: "구간 지급",
+    labelShort: "구간",
+    className: MOBILE_HIDDEN_COL,
+    cell: (row: CustomAbutmentSplitRow) =>
+      formatManwon(row.manufacturerBandWon),
+  },
+  {
+    key: "won",
+    label: "누적 지급",
+    labelShort: "누적",
+    emphasize: true,
+    cell: (row: CustomAbutmentSplitRow) =>
+      formatManwon(row.manufacturerWon),
+  },
+];
 
 const abutsNetColumns = partyColumns({
   marginalPct: (row) => row.abutsNetMarginalPct,
@@ -267,94 +286,69 @@ function PartySplitPanel({
   rows,
   columns,
   note,
+  showSaleNote = true,
 }: {
-  bands: ReadonlyArray<SplitMarginalBand>;
+  bands?: ReadonlyArray<SplitMarginalBand>;
   rows: CustomAbutmentSplitRow[];
-  columns: ReturnType<typeof partyColumns>;
+  columns: ReadonlyArray<{
+    key: string;
+    label: string;
+    labelShort?: string;
+    align?: "left" | "right";
+    emphasize?: boolean;
+    className?: string;
+    cell: (row: CustomAbutmentSplitRow) => ReactNode;
+  }>;
   note?: ReactNode;
+  showSaleNote?: boolean;
 }) {
-  return (
-    <div className="space-y-3 rounded-2xl bg-slate-50 px-2 py-3 sm:px-3">
-      <BandPills bands={bands} />
-      <SplitTable framed rows={rows} columns={columns} />
+  const footer =
+    showSaleNote || note ? (
       <p className="px-0.5 text-xs leading-relaxed text-slate-500">
-        의뢰비 {CUSTOM_ABUTMENT_SALE_WON.toLocaleString("ko-KR")}원 기준입니다.
+        {showSaleNote ? (
+          <>의뢰비 {CUSTOM_ABUTMENT_SALE_WON.toLocaleString("ko-KR")}원 기준입니다.</>
+        ) : null}
         {note ? (
           <>
-            <br />
+            {showSaleNote ? <br /> : null}
             {note}
           </>
         ) : null}
       </p>
+    ) : null;
+  return (
+    <div className="space-y-3 rounded-2xl bg-slate-50 px-2 py-3 sm:px-3">
+      {bands?.length ? <BandPills bands={bands} /> : null}
+      <SplitTable framed rows={rows} columns={columns} />
+      {footer}
     </div>
   );
 }
 
 export function CustomAbutmentManufacturerSplitTable() {
   return (
-    <Tabs defaultValue="mfr-fixed" className="min-w-0 space-y-3">
-      <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl bg-slate-100 p-1">
-        <TabsTrigger value="mfr-fixed" className="rounded-lg text-xs sm:text-sm">
-          제조 {MANUFACTURER_FIXED_SHARE_PCT}% 고정
-        </TabsTrigger>
-        <TabsTrigger
-          value="abuts-fixed"
-          className="rounded-lg text-xs sm:text-sm"
-        >
-          어벗츠 {ABUTS_FIXED_SHARE_PCT}% 고정
-        </TabsTrigger>
-      </TabsList>
-      <TabsContent value="mfr-fixed" className="mt-0 min-w-0">
-        <PartySplitPanel
-          bands={MANUFACTURER_FIXED_BANDS}
-          rows={splitManufacturerFixedRows()}
-          columns={manufacturerColumns}
-          note="딜러 누진과 무관합니다."
-        />
-      </TabsContent>
-      <TabsContent value="abuts-fixed" className="mt-0 min-w-0">
-        <PartySplitPanel
-          bands={MANUFACTURER_MARGINAL_BANDS}
-          rows={splitAbutsFixedRows()}
-          columns={manufacturerColumns}
-          note="나머지에서 딜러 구간을 뺍니다."
-        />
-      </TabsContent>
-    </Tabs>
+    <PartySplitPanel
+      rows={splitManufacturerFixedRows()}
+      columns={manufacturerColumns}
+      showSaleNote={false}
+    />
   );
 }
 
 export function CustomAbutmentAbutsSplitTable() {
   return (
-    <Tabs defaultValue="abuts-fixed" className="min-w-0 space-y-3">
-      <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl bg-slate-100 p-1">
-        <TabsTrigger
-          value="abuts-fixed"
-          className="rounded-lg text-xs sm:text-sm"
-        >
-          어벗츠 {ABUTS_FIXED_SHARE_PCT}% 고정
-        </TabsTrigger>
-        <TabsTrigger value="mfr-fixed" className="rounded-lg text-xs sm:text-sm">
-          제조 {MANUFACTURER_FIXED_SHARE_PCT}% 고정
-        </TabsTrigger>
-      </TabsList>
-      <TabsContent value="abuts-fixed" className="mt-0 min-w-0">
-        <PartySplitPanel
-          bands={ABUTS_NET_FIXED_BANDS}
-          rows={splitAbutsFixedRows()}
-          columns={abutsNetColumns}
-          note={`개발운영 ${DEVOPS_FROM_ABUTS_SHARE_PCT}%를 뺀 순 ${ABUTS_NET_FIXED_SHARE_PCT}%입니다.`}
-        />
-      </TabsContent>
-      <TabsContent value="mfr-fixed" className="mt-0 min-w-0">
-        <PartySplitPanel
-          bands={ABUTS_NET_MFR_FIXED_BANDS}
-          rows={splitManufacturerFixedRows()}
-          columns={abutsNetColumns}
-          note={`나머지에서 딜러 구간과 개발운영 ${DEVOPS_FROM_ABUTS_SHARE_PCT}%를 뺍니다.`}
-        />
-      </TabsContent>
-    </Tabs>
+    <PartySplitPanel
+      bands={ABUTS_NET_MFR_FIXED_BANDS}
+      rows={splitManufacturerFixedRows()}
+      columns={abutsNetColumns}
+      note={
+        <>
+          제조 {formatSharePct(MANUFACTURER_FIXED_SHARE_PCT)} 고정 후 나머지입니다.
+          <br />
+          딜러 구간과 개발운영 {DEVOPS_FROM_ABUTS_SHARE_PCT}%를 뺍니다.
+        </>
+      }
+    />
   );
 }
 
@@ -362,9 +356,9 @@ export function CustomAbutmentDevopsSplitTable() {
   return (
     <PartySplitPanel
       bands={DEVOPS_FIXED_BANDS}
-      rows={splitAbutsFixedRows()}
+      rows={splitManufacturerFixedRows()}
       columns={devopsColumns}
-      note="어벗츠 몫에서 뗍니다. 제조·어벗츠 고정안과 무관합니다."
+      note="어벗츠 몫에서 뗍니다."
     />
   );
 }

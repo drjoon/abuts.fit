@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-07: 제조사 몫 49.5%(부가세 포함) 고정. 어벗츠 40% 대안안 폐기.
 // - 2026-10-07: 딜러 누진 — ~1천 10% · ~2천 12% · ~4천 14% · ~6천 16% · ~9천 18% · 9천1~ 20%.
 // - 2026-10-07: 의뢰비 단가 파라미터(1만·1.3만). 딜러 표 탭용.
 // - 2026-10-05: 어벗츠 순몫·개발운영 구간 필드.
@@ -10,7 +11,8 @@ export const CUSTOM_ABUTMENT_SALE_WON_10K = 10_000;
 /** 기본(이벤트 종료 후) 단가. */
 export const CUSTOM_ABUTMENT_SALE_WON = 13_000;
 export const ABUTS_FIXED_SHARE_PCT = 40;
-export const MANUFACTURER_FIXED_SHARE_PCT = 44;
+/** 의뢰비 대비. 부가세 포함. */
+export const MANUFACTURER_FIXED_SHARE_PCT = 49.5;
 /** 의뢰비 대비. 어벗츠 몫에서 차감. */
 export const DEVOPS_FROM_ABUTS_SHARE_PCT = 5;
 export const ABUTS_NET_FIXED_SHARE_PCT =
@@ -219,7 +221,7 @@ export function splitAbutsFixedRow(
   );
 }
 
-/** 제조 44% 고정. 나머지 56%를 딜러 누진·어벗츠. */
+/** 제조 49.5% 고정(부가세 포함). 나머지를 딜러 누진·어벗츠. */
 export function splitManufacturerFixedRow(
   qty: number,
   saleUnitWon: number = CUSTOM_ABUTMENT_SALE_WON,

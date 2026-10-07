@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-07: 커스텀어벗 — 제조 49.5% 고정. 어벗츠 40% 대안 표기 제거.
 // - 2026-10-05: 기공사업부 정산 규칙 — 플랫폼 사용료·하청 수수료 안내 삭제(미부과).
 // - 2026-10-05: 정산규칙 — 딜러·제조와 같은 칩·표. 어벗츠 순(개발운영 5% 차감).
 // - 2026-10-05: 정산규칙 — 커스텀어벗 분배 표(구간·누적, 개발운영 5%는 어벗츠 몫에서).
@@ -60,9 +61,9 @@ import {
 } from "@/shared/settlement/settlementUi";
 import { CustomAbutmentAbutsSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
 import {
-  ABUTS_FIXED_SHARE_PCT,
   DEVOPS_FROM_ABUTS_SHARE_PCT,
   MANUFACTURER_FIXED_SHARE_PCT,
+  formatSharePct,
 } from "@/shared/settlement/customAbutmentSplitPolicy";
 import { DEALERSHIP_BAND_RANGE_LABEL } from "@/shared/sales/dealershipPolicyCopy";
 
@@ -1101,12 +1102,11 @@ export default function AdminPaymentsPage({
                       )}
                     </div>
                     <div className="tabular-nums">
-                      제조 {MANUFACTURER_FIXED_SHARE_PCT}% · 어벗츠{" "}
-                      {ABUTS_FIXED_SHARE_PCT}%
+                      제조 {formatSharePct(MANUFACTURER_FIXED_SHARE_PCT)} · 딜러{" "}
+                      {DEALERSHIP_BAND_RANGE_LABEL}
                     </div>
                     <div className="tabular-nums">
-                      딜러 {DEALERSHIP_BAND_RANGE_LABEL} · 개발{" "}
-                      {DEVOPS_FROM_ABUTS_SHARE_PCT}%
+                      개발 {DEVOPS_FROM_ABUTS_SHARE_PCT}%
                     </div>
                   </div>
                 )
@@ -1235,7 +1235,7 @@ export default function AdminPaymentsPage({
                   <CreditSectionHeader
                     icon={Factory}
                     title="커스텀어벗 · 생산·공급"
-                    description={`제조 ${MANUFACTURER_FIXED_SHARE_PCT}% 또는 어벗츠 ${ABUTS_FIXED_SHARE_PCT}% · 딜러 누진`}
+                    description={`제조 ${formatSharePct(MANUFACTURER_FIXED_SHARE_PCT)} 고정 · 딜러 누진`}
                   />
                   <EquationRow
                     revenue={
@@ -1263,7 +1263,7 @@ export default function AdminPaymentsPage({
                       <SettlementStatCard
                         label="지출(하청)"
                         value={dash ?? manufacturerEarn}
-                        hint={`${MANUFACTURER_FIXED_SHARE_PCT}% · 미정산 ${formatWonWithUnit(
+                        hint={`${formatSharePct(MANUFACTURER_FIXED_SHARE_PCT)} · 미정산 ${formatWonWithUnit(
                           manufacturerSummary?.periodBalanceAmount,
                         )}`}
                         hintTooltip={`단가 ${Number(

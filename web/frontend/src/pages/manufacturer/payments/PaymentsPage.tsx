@@ -6,6 +6,8 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
+// - 2026-10-07: 정산규칙 — 배송 카드→의뢰비·49.5% 기준. 표 하단 안내 제거.
+// - 2026-10-07: 정산규칙 — 제조 49.5%(부가세 포함) 고정. 제조44%/어벗츠40% 탭 제거.
 // - 2026-10-05: 정산규칙 — 딜러와 같은 칩·표·팩트. 탭 제조 44% / 어벗츠 40%.
 // - 2026-10-05: 정산규칙 — 의뢰비 1.3만 분배 표(제조 몫만, 어벗츠 40%·제조 44%).
 // - 2026-09-20: 정산규칙 — 리메이크도 일반 매입가(판매가의 50%).
@@ -58,12 +60,7 @@ import {
   SETTLEMENT_TAXABLE_INVOICE_LABEL,
   SETTLEMENT_VAT_PAYOUT_NOTICE,
   formatWon,
-  formatWonWithUnit,
 } from "@/shared/settlement/affiliateVat";
-import {
-  CREDIT_SETTINGS_DEFAULTS,
-  useSystemSettings,
-} from "@/hooks/useSystemSettings";
 import {
   GUIDE_FACT_GRID_CLASS,
   SettlementPolicyDialog,
@@ -75,6 +72,11 @@ import {
   SettlementTableFrame,
 } from "@/shared/settlement/settlementUi";
 import { CustomAbutmentManufacturerSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
+import {
+  CUSTOM_ABUTMENT_SALE_WON,
+  MANUFACTURER_FIXED_SHARE_PCT,
+  formatSharePct,
+} from "@/shared/settlement/customAbutmentSplitPolicy";
 import {
   ManufacturerDailyLedgerDetailDialog,
   type ManufacturerDailyLedgerDetail,
@@ -414,11 +416,6 @@ export const ManufacturerPaymentPage = () => {
   const settlementPeriod = isSettlementPeriodValue(period)
     ? period
     : SETTLEMENT_DEFAULT_PERIOD;
-  const { data: systemSettings } = useSystemSettings();
-  const manufacturerShippingUnitPrice = Number(
-    systemSettings?.creditSettings?.manufacturerShippingUnitPrice ??
-      CREDIT_SETTINGS_DEFAULTS.manufacturerShippingUnitPrice,
-  );
   const [q, setQ] = useState("");
   const [paymentSort, setPaymentSort] = useState<{
     key: PaymentSortKey;
@@ -940,11 +937,10 @@ export const ManufacturerPaymentPage = () => {
                       <br />
                       리메이크·무료 크레딧도 같습니다.
                     </SettlementPolicyFact>
-                    <SettlementPolicyFact label="배송">
-                      1박스당{" "}
-                      {formatWonWithUnit(manufacturerShippingUnitPrice)}입니다.
+                    <SettlementPolicyFact label="기준">
+                      {`의뢰비 ${CUSTOM_ABUTMENT_SALE_WON.toLocaleString("ko-KR")}원 기준입니다.`}
                       <br />
-                      이 표에는 없습니다.
+                      {`${formatSharePct(MANUFACTURER_FIXED_SHARE_PCT)} 고정(부가세 포함)입니다.`}
                     </SettlementPolicyFact>
                     <SettlementPolicyFact label="세금계산서">
                       지급은 잔액 그대로입니다.
