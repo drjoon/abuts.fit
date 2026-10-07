@@ -3,6 +3,7 @@
  *
  * 딜러십 영업 수수료: 커스텀어벗 10~20% 누적 구간 · 기공·스토어 제외.
  * 90일 무주문이면 소개 코드 리셋. 누구든 다시 영업 가능.
+ * 의뢰자 정책: 치과(런칭 이벤트 단일가) / 기공소(주문량 의뢰비) 탭.
  */
 
 import { useState, type ReactNode } from "react";
@@ -223,7 +224,7 @@ export const SalesmanDashboardPage = () => {
                   가입 링크 복사
                 </Button>
               </div>
-              <div className="flex flex-1 items-center justify-center font-mono text-5xl font-bold tracking-[0.2em] text-slate-900 sm:text-6xl">
+              <div className="flex flex-1 items-center justify-center pl-[0.2em] font-mono text-5xl font-bold tracking-[0.2em] text-slate-900 sm:pl-[0.25em] sm:tracking-[0.25em] sm:text-6xl">
                 {normalizedReferralCode || (loading ? "…" : "—")}
               </div>
             </div>

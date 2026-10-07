@@ -3,7 +3,8 @@
 // - web/frontend/src/pages/salesTeam/salesUi.tsx
 // change-log:
 // - 2026-09-27: 소개코드 카드의 옛 정책 안내 문단 제거.
-// - 2026-09-24: 「의뢰자 정책」모달(PricingPolicyDialog requestor) — 단가·출고·기공소 플랫폼 사용료.
+// - 2026-10-08: 「의뢰자 정책」모달 — 치과/기공소 탭(PricingPolicyDialog requestor).
+// - 2026-09-24: 「의뢰자 정책」모달(PricingPolicyDialog requestor) — 단가·출고.
 // - 2026-09-21: 영업팀 기본 진입=성과. 소개코드·가입 SSOT.
 // - 2026-09-21: 가입 링크 복사를 코드 복사 버튼 아래로 배치.
 // - 2026-09-21: 소개코드 왼쪽 카드(통계·내 코드)를 활동실적으로 합치고 탭 제거.
