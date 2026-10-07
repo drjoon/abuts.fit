@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-10-07: remakeFeeQuote — 어벗츠로부터 리메이크=무료(월 3건 유료 구간 폐지).
 // - 2026-10-05: 플랫폼 사용료·하청 수수료 미부과. 스냅샷이 있어도 차감 0.
 // - 2026-09-28: 보류 0원(HOLD 저널 없음) 건은 no_hold 대신 zero_lab_fee — settledAt 누락으로 결제 보류가 남던 문제.
 // - 2026-09-28: releasePracticeTransferLabShare skipSettlementGate(운영자 수동 정산 스크립트 전용).
@@ -234,7 +235,6 @@ import {
   buildFixedRemakeRetailFees,
   kstMonthBounds,
   practiceMonthlyRemakeMatchFilter,
-  resolveMonthlyRemakePricing,
 } from "../utils/remakePricingPolicy.js";
 import {
   awaitsAbutmentShareRelease,
@@ -4868,7 +4868,7 @@ export async function buildPracticeTransferQuote({
   relationshipKind = undefined,
   labTradingPartnerId = undefined,
   remake = false,
-  /** 월 무료 소진 후 PTX 리메이크 고정가(원). 설정 시 수가표 대신 이 금액. */
+  /** 레거시 PTX 리메이크 고정가(원). 어벗츠로부터 기본은 null(LAB_FEE_REMAKE_FREE). */
   remakeFixedAmount = null,
   skipAbutmentFees: skipAbutmentFeesInput = undefined,
   matchingMode = undefined,
@@ -6706,7 +6706,7 @@ export async function buildFeeQuotesForTransferDocs({
 
   const labIdList = [...labIds];
   const practiceIdList = [...practiceIds];
-  const [payoutRates, abutmentPricesBase, labs, practices, partners, creditSettings, monthlyRemakeCountByPractice] =
+  const [payoutRates, abutmentPricesBase, labs, practices, partners, creditSettings] =
     await Promise.all([
       loadCachedDevopsPayoutRates(),
       loadCachedAbutmentCreditPrices(),
@@ -6741,7 +6741,6 @@ export async function buildFeeQuotesForTransferDocs({
             .lean()
         : Promise.resolve([]),
       loadCreditSettingsDefaults(),
-      countPracticeMonthlyRemakeTransfersByIds(practiceIdList),
     ]);
 
   const abutmentPrices = normalizeAbutsAbutmentCreditPrices({
@@ -6840,38 +6839,31 @@ export async function buildFeeQuotesForTransferDocs({
           practiceId,
         );
     // 기본 리메이크 견적=보철만(CA 제외). CA 포함 견적은 별도 필드.
-    // KST 월 3건 무료 · 4건부터 고정 1만원(수가표 정가 아님).
-    const monthlyRemake = resolveMonthlyRemakePricing({
-      used: monthlyRemakeCountByPractice.get(practiceId) || 0,
-    });
+    // 어벗츠로부터 리메이크비: 무료(LAB_FEE_REMAKE_FREE).
     const remakeToothWorksProsthesisOnly =
       stripCustomAbutmentFromToothWorks(toothWorks);
-    const remakeFees = monthlyRemake.free
-      ? computePracticeTransferRetailFees({
-          toothWorks: remakeToothWorksProsthesisOnly,
-          implantFavorites,
-          labFeeSchedule: remakeFeeSchedule,
-          abutmentPricingTier,
-          abutmentPrices,
-          remake: true,
-          labFeeMultiplier: remakeLabFeeMultiplier,
-          rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
-        })
-      : buildFixedRemakeRetailFees(monthlyRemake.amount);
+    const remakeFees = computePracticeTransferRetailFees({
+      toothWorks: remakeToothWorksProsthesisOnly,
+      implantFavorites,
+      labFeeSchedule: remakeFeeSchedule,
+      abutmentPricingTier,
+      abutmentPrices,
+      remake: true,
+      labFeeMultiplier: remakeLabFeeMultiplier,
+      rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
+    });
     const remakeFeesWithCustomAbutment =
       countCustomAbutmentWorks(toothWorks) > 0
-        ? monthlyRemake.free
-          ? computePracticeTransferRetailFees({
-              toothWorks,
-              implantFavorites,
-              labFeeSchedule: remakeFeeSchedule,
-              abutmentPricingTier,
-              abutmentPrices,
-              remake: true,
-              labFeeMultiplier: remakeLabFeeMultiplier,
-              rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
-            })
-          : buildFixedRemakeRetailFees(monthlyRemake.amount)
+        ? computePracticeTransferRetailFees({
+            toothWorks,
+            implantFavorites,
+            labFeeSchedule: remakeFeeSchedule,
+            abutmentPricingTier,
+            abutmentPrices,
+            remake: true,
+            labFeeMultiplier: remakeLabFeeMultiplier,
+            rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
+          })
         : null;
     const fees = computePracticeTransferRetailFees({
       toothWorks,

@@ -20,7 +20,6 @@ import {
   adjustPracticeTransferHold,
   buildFeeQuotesForTransferDocs,
   buildPracticeTransferQuote,
-  countPracticeMonthlyRemakeTransfers,
   feeQuoteFromBillingDoc,
   holdPracticeTransferCredits,
   holdPracticeTransferProsthesisFollowUpCredits,
@@ -132,11 +131,7 @@ import {
   advanceLabRequestStagePlans,
 } from "../../utils/practiceRequestStagePresets.js";
 import { toKstYmd } from "../requests/utils.js";
-import {
-  isWithinRemakePolicyWindow,
-  resolveMonthlyRemakePricing,
-  REMAKE_POLICY_WINDOW_DAYS,
-} from "../../utils/remakePricingPolicy.js";
+import { REMAKE_POLICY_WINDOW_DAYS } from "../../utils/remakePricingPolicy.js";
 import {
   SIMILAR_CASE_DETECT_WINDOW_DAYS,
   collectToothNumbersFromToothWorks,
@@ -3475,17 +3470,9 @@ export async function createPracticeTransfer(req, res) {
         message: "리메이크 원본 의뢰를 찾지 못했습니다.",
       });
     }
-    // 리메이크: KST 월 3건 무료, 4건부터 고정 1만원. 미연결(플랫폼 이전)도 동일.
-    let remakePricing = Boolean(isRemakeRequest || remakeSourceDoc);
-    let remakeFixedAmount = null;
-    if (remakePricing && practiceAnchorId) {
-      const monthlyUsed = await countPracticeMonthlyRemakeTransfers({
-        practiceAnchorId,
-      });
-      const monthly = resolveMonthlyRemakePricing({ used: monthlyUsed });
-      remakePricing = true;
-      remakeFixedAmount = monthly.free ? null : monthly.amount;
-    }
+    // 어벗츠로부터 리메이크: 무료(LAB_FEE_REMAKE_FREE). 미연결(플랫폼 이전)도 동일.
+    const remakePricing = Boolean(isRemakeRequest || remakeSourceDoc);
+    const remakeFixedAmount = null;
     if (!arrivalPolicy.ok) {
       return res.status(arrivalPolicy.statusCode || 400).json({
         success: false,
@@ -6901,8 +6888,6 @@ export async function remakePracticeTransfers(req, res) {
     const created = [];
     const failed = [];
     const seen = new Set();
-    /** practiceId → 당월 기존 건수 + 이번 요청에서 만든 수 */
-    const remakeUsedByPractice = new Map();
 
     for (const source of sources) {
       const sourceMongoId = String(source?._id || "").trim();
@@ -6993,18 +6978,9 @@ export async function remakePracticeTransfers(req, res) {
             )
           : copiedFiles;
 
-      // 치과로부터 리메이크비: KST 월 3건 무료, 4건부터 고정 1만원.
-      const practiceKey = String(practiceAnchorId);
-      if (!remakeUsedByPractice.has(practiceKey)) {
-        remakeUsedByPractice.set(
-          practiceKey,
-          await countPracticeMonthlyRemakeTransfers({ practiceAnchorId }),
-        );
-      }
-      const monthlyUsed = remakeUsedByPractice.get(practiceKey) || 0;
-      const monthly = resolveMonthlyRemakePricing({ used: monthlyUsed });
+      // 어벗츠로부터 리메이크비: 무료(LAB_FEE_REMAKE_FREE).
       const remakePricing = true;
-      const remakeFixedAmount = monthly.free ? null : monthly.amount;
+      const remakeFixedAmount = null;
 
       const feeQuote = await buildPracticeTransferQuote({
         practiceAnchorId,
@@ -7193,7 +7169,6 @@ export async function remakePracticeTransfers(req, res) {
         billing: transferDoc?.billing || null,
         remakeFeeTotal: feeTotal,
       });
-      remakeUsedByPractice.set(practiceKey, monthlyUsed + 1);
 
       void postPracticeTransferSystemChatMessage({
         transferMongoId: source._id,
@@ -7692,19 +7667,12 @@ export async function checkSimilarPracticeTransfers(req, res) {
       .limit(Math.min(80, limit * 8))
       .lean();
 
-    const monthlyUsed = practiceAnchorId
-      ? await countPracticeMonthlyRemakeTransfers({ practiceAnchorId })
-      : 0;
-    const monthly = resolveMonthlyRemakePricing({ used: monthlyUsed });
-
     const matches = [];
     for (const doc of fetched) {
       const docTeeth = collectToothNumbersFromToothWorks(doc?.toothWorks);
       if (!toothNumbersOverlap(toothNumbers, docTeeth)) continue;
       const match = toSimilarCaseMatchApi(doc, {
-        monthlyRemakeFreeRemaining: monthly.monthlyRemakeFreeRemaining,
-        monthlyRemakeUsed: monthly.monthlyRemakeUsed,
-        withinRemakePricingWindow: monthly.free,
+        withinRemakePricingWindow: true,
       });
       match.manufacturerStage = resolvePracticeTransferManufacturerStage(doc);
       matches.push(match);

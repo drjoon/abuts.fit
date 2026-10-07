@@ -559,7 +559,7 @@ export const RequestDetailDialog = ({
                         )}
                         {isRemakeMonthlyFree && (
                           <Badge variant="secondary" className="text-[11px]">
-                            리메이크 무료(월 3건)
+                            리메이크 무료(레거시)
                           </Badge>
                         )}
                         {isSignupFreeTest && (

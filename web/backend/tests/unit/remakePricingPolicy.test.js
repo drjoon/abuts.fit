@@ -3,58 +3,45 @@
  */
 import {
   ABUTS_REMAKE_FIXED_AMOUNT,
-  ABUTS_REMAKE_MONTHLY_FREE_RULE,
   ABUTS_REMAKE_PRICE_RULE,
+  buildAbutsRemakeFixedPrice,
   buildAbutsRemakePriceFromMonthlyUsage,
   buildFixedRemakeRetailFees,
   FREE_REMAKE_YEARS_MAX,
   freeRemakeDetectWindowDays,
   isWithinRemakePolicyWindow,
   kstMonthBounds,
-  MONTHLY_REMAKE_FREE_LIMIT,
   normalizeFreeRemakeYears,
   parseFreeRemakeYearsInput,
   remakeFreeCutoffDateFromYears,
-  resolveMonthlyRemakePricing,
   REMAKE_POLICY_WINDOW_DAYS,
 } from "../../utils/remakePricingPolicy.js";
 
-describe("remakePricingPolicy monthly quota", () => {
-  test("resolveMonthlyRemakePricing free then paid", () => {
-    expect(resolveMonthlyRemakePricing({ used: 0 })).toMatchObject({
-      free: true,
-      amount: 0,
-      rule: ABUTS_REMAKE_MONTHLY_FREE_RULE,
-      monthlyRemakeFreeRemaining: MONTHLY_REMAKE_FREE_LIMIT,
+describe("remakePricingPolicy abuts path", () => {
+  test("buildAbutsRemakeFixedPrice is 10000", () => {
+    const price = buildAbutsRemakeFixedPrice({
+      baseAmount: 15000,
+      quotedAt: new Date("2026-10-07T01:00:00+09:00"),
     });
-    expect(resolveMonthlyRemakePricing({ used: 2 })).toMatchObject({
-      free: true,
-      amount: 0,
-      monthlyRemakeFreeRemaining: 1,
-    });
-    expect(resolveMonthlyRemakePricing({ used: 3 })).toMatchObject({
-      free: false,
-      amount: ABUTS_REMAKE_FIXED_AMOUNT,
-      rule: ABUTS_REMAKE_PRICE_RULE,
-      monthlyRemakeFreeRemaining: 0,
-    });
+    expect(price.amount).toBe(ABUTS_REMAKE_FIXED_AMOUNT);
+    expect(price.rule).toBe(ABUTS_REMAKE_PRICE_RULE);
+    expect(price.discountAmount).toBe(5000);
   });
 
-  test("buildAbutsRemakePriceFromMonthlyUsage", () => {
-    const free = buildAbutsRemakePriceFromMonthlyUsage({
+  test("buildAbutsRemakePriceFromMonthlyUsage always fixed (legacy helper)", () => {
+    const freeSlot = buildAbutsRemakePriceFromMonthlyUsage({
       baseAmount: 15000,
-      used: 1,
+      used: 0,
     });
-    expect(free.amount).toBe(0);
-    expect(free.rule).toBe(ABUTS_REMAKE_MONTHLY_FREE_RULE);
-    expect(free.discountMeta.monthlyRemakeUsed).toBe(1);
+    expect(freeSlot.amount).toBe(ABUTS_REMAKE_FIXED_AMOUNT);
+    expect(freeSlot.rule).toBe(ABUTS_REMAKE_PRICE_RULE);
 
-    const paid = buildAbutsRemakePriceFromMonthlyUsage({
+    const afterQuota = buildAbutsRemakePriceFromMonthlyUsage({
       baseAmount: 15000,
       used: 3,
     });
-    expect(paid.amount).toBe(ABUTS_REMAKE_FIXED_AMOUNT);
-    expect(paid.rule).toBe(ABUTS_REMAKE_PRICE_RULE);
+    expect(afterQuota.amount).toBe(ABUTS_REMAKE_FIXED_AMOUNT);
+    expect(afterQuota.rule).toBe(ABUTS_REMAKE_PRICE_RULE);
   });
 
   test("buildFixedRemakeRetailFees", () => {

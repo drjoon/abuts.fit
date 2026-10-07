@@ -1,10 +1,12 @@
 // change-log:
+// - 2026-10-07: 리메이크 FAQ — 어벗츠로부터/기공소에=무료·어벗츠로/어벗츠에=건당 1만원.
 // - 2026-08-12: 크레딧=기공료 선입금 FAQ 실문답 추가. 선불페이와 구분·환불/수정계산서 안내.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/legal/creditPrepaidCopy.ts
+// - web/frontend/src/shared/pricing/remakePolicyCopy.ts
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -20,6 +22,7 @@ import {
   PUBLIC_PAGE_TITLE,
   PUBLIC_PAGE_SUBTITLE,
 } from "./components/PublicPageLayout";
+import { remakePolicySummaryLine } from "@/shared/pricing/remakePolicyCopy";
 import {
   Search,
   HelpCircle,
@@ -76,7 +79,7 @@ const FAQ_SECTIONS: {
       },
       {
         q: "의뢰 취소는 언제 가능한가요?",
-        a: "준비 단계에서만 취소할 수 있습니다. 가공이 시작된 이후에는 취소할 수 없으며, 품질 이슈는 리메이크 정책(이용약관)을 따릅니다. 리메이크는 매월 3건까지 무료, 4건부터 건당 1만원입니다.",
+        a: `준비 단계에서만 취소할 수 있습니다. 가공이 시작된 이후에는 취소할 수 없으며, 품질 이슈는 리메이크 정책(이용약관)을 따릅니다. ${remakePolicySummaryLine("public")}`,
       },
     ],
   },

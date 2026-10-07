@@ -5,7 +5,8 @@
 // - web/backend/utils/labFeeSchedule.js
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
 // change-log:
-// - 2026-10-07: PTX·어벗츠 리메이크 — KST 월 3건 무료, 4건부터 건당 1만원. freeRemakeYears 과금 퇴역.
+// - 2026-10-07: 리메이크 SSOT — 어벗츠로부터(PTX)=무료, 어벗츠로(Request)=창 내 건당 1만원. 월 3건 무료 과금 퇴역.
+// - 2026-10-07: PTX·어벗츠 리메이크 — KST 월 3건 무료, 4건부터 건당 1만원. freeRemakeYears 과금 퇴역(폐지).
 // - 2026-09-21: 기공소 labFeeSchedule.freeRemakeYears — null=미설정·유료, 0=유료, 1+=N년 무료(레거시).
 // - 2026-09-14: 리메이크 판정 창 90→180일(감지·수가 동일).
 // - 2026-09-12: 리메이크 정책 SSOT — 치과로부터=무료, 어벗츠로=동일치식·창 내 1만원.
@@ -21,16 +22,20 @@ export const REMAKE_POLICY_WINDOW_DAYS = 180;
 /** PTX 유사 케이스 감지 상한(년). 과금과 무관. */
 export const FREE_REMAKE_YEARS_MAX = 30;
 
-/** KST 월 무료 리메이크 한도(건). PTX·어벗츠 공통. */
+/**
+ * @deprecated 과금 SSOT 아님. 레거시 문서·집계용.
+ * 어벗츠로부터(PTX)=무료, 어벗츠로=건당 ABUTS_REMAKE_FIXED_AMOUNT.
+ */
 export const MONTHLY_REMAKE_FREE_LIMIT = 3;
 
-/** 리메이크 고객 단가(원). 배송비 별도. 월 무료 소진 후. */
+/** 어벗츠로(Request) 리메이크 고객 단가(원). 배송비 별도. */
 export const ABUTS_REMAKE_FIXED_AMOUNT = 10000;
 
 export const ABUTS_REMAKE_PRICE_RULE = "remake_fixed_10000";
+/** @deprecated 과금 SSOT 아님. 레거시 price.rule */
 export const ABUTS_REMAKE_MONTHLY_FREE_RULE = "remake_monthly_free_3";
 
-/** 월 쿼터 집계에 포함하는 price.rule */
+/** @deprecated 과금 SSOT 아님. 레거시 월 쿼터 집계용 */
 export const REMAKE_PRICE_RULES_FOR_MONTHLY_COUNT = [
   ABUTS_REMAKE_MONTHLY_FREE_RULE,
   "remake_general_pricing",
@@ -81,7 +86,7 @@ export function kstMonthBounds(now = new Date()) {
 }
 
 /**
- * 당월 사용 건수로 무료/유료 결정.
+ * @deprecated 과금 SSOT 아님. 레거시 월 쿼터 계산용.
  * @param {{ used?: number, limit?: number }} input
  * @returns {{ free: boolean, amount: number, rule: string, monthlyRemakeFreeLimit: number, monthlyRemakeUsed: number, monthlyRemakeFreeRemaining: number }}
  */
@@ -256,7 +261,7 @@ export function buildAbutsRemakeMonthlyFreePrice({
 }
 
 /**
- * 월 쿼터 결과에 맞는 어벗츠 리메이크 가격 객체.
+ * @deprecated 과금 SSOT 아님. 어벗츠로는 buildAbutsRemakeFixedPrice.
  * @param {{ baseAmount: number, used: number, quotedAt?: Date, limit?: number }} input
  */
 export function buildAbutsRemakePriceFromMonthlyUsage({
@@ -265,27 +270,16 @@ export function buildAbutsRemakePriceFromMonthlyUsage({
   quotedAt = new Date(),
   limit = MONTHLY_REMAKE_FREE_LIMIT,
 }) {
-  const resolved = resolveMonthlyRemakePricing({ used, limit });
-  if (resolved.free) {
-    return buildAbutsRemakeMonthlyFreePrice({
-      baseAmount,
-      quotedAt,
-      monthlyRemakeUsed: resolved.monthlyRemakeUsed,
-      monthlyRemakeFreeLimit: resolved.monthlyRemakeFreeLimit,
-      monthlyRemakeFreeRemaining: resolved.monthlyRemakeFreeRemaining,
-    });
-  }
+  void used;
+  void limit;
   return buildAbutsRemakeFixedPrice({
     baseAmount,
     quotedAt,
-    monthlyRemakeUsed: resolved.monthlyRemakeUsed,
-    monthlyRemakeFreeLimit: resolved.monthlyRemakeFreeLimit,
-    monthlyRemakeFreeRemaining: resolved.monthlyRemakeFreeRemaining,
   });
 }
 
 /**
- * PTX 유료 리메이크(월 무료 소진 후) — 수가표 정가 대신 고정 견적.
+ * PTX 유료 리메이크 고정 견적(레거시·수동 고정가). 어벗츠로부터 기본은 LAB_FEE_REMAKE_FREE.
  * @param {number} [amount]
  */
 export function buildFixedRemakeRetailFees(

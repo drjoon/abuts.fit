@@ -8,6 +8,7 @@
 // - 2026-09-29: abutmentToothStages — 연동 CA Request 치아별 제조사 공정(기공소 채팅 `43(준비), 44(세척.패킹)`).
 // - 2026-09-28: CA Request 대상은 치아당 1행(임시치아+CA와 단독 커스텀어벗 중복 입력 시 생산·과금 1회).
 // - 2026-09-27: PTX CA 주문 기공소 = 수행 기공소(assignee). 원청 잔액으로 생산 hold 하지 않음.
+// - 2026-10-07: PTX 리메이크→어벗츠로 — 항상 forceRemakePricing(건당 1만). 월 3건·미매칭 정가 폐지.
 // - 2026-09-12: PTX→어벗츠 리메이크 — CA 재업로드 forceRemakePricing(1만). 미매칭 시 정가 생산 견적.
 // - 2026-09-29: 기공의뢰 생성·수정의 3D 스캔은 선택. 러버인상(석고모델)은 파일 없이 전송.
 //   다시 필수로 바꾸려면 사용자 경고·재확인 전 throw 금지. (.cursor/rules/practice-oral-scan-optional.mdc)
@@ -110,7 +111,6 @@ import { resolvePrcFileNames } from "../controllers/requests/prcMapping.utils.js
 import { resolveQuotedPriceWithExpressFee } from "../controllers/requests/expressPrice.utils.js";
 import { getManufacturerLeadTimesUtil } from "../controllers/businesses/leadTime.controller.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
-import { ABUTS_REMAKE_PRICE_RULE } from "../utils/remakePricingPolicy.js";
 import {
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   pickAbutsAbutmentCreditPrices,
@@ -1321,7 +1321,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     );
     let quotedPrice;
     if (isPtxRemake) {
-      // 기공소→어벗츠: 동일 치과·환자·치식·180일이면 월 3건 무료/이후 1만원. 아니면 정가 생산.
+      // PTX 리메이크 → 어벗츠로: 건당 1만원(배송비 별도). 180일 조회 생략.
       quotedPrice = await computePriceForRequest({
         requestorId: labUserId,
         requestorOrgId: labAnchorId,
@@ -1329,23 +1329,14 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         patientName: String(normalizedCaseInfos?.patientName || "").trim(),
         tooth: String(normalizedCaseInfos?.tooth || "").trim(),
         creditSettings: creditSettingsForQuote,
+        forceRemakePricing: true,
       });
-      if (quotedPrice?.rule !== ABUTS_REMAKE_PRICE_RULE) {
-        quotedPrice = buildPtxAbutsProductionQuote({
-          creditSettings: creditSettingsForQuote,
-          shippingMode,
-          abutmentQty,
-          expressFeePerRequest,
-          quotedAt: requestedAt,
-        });
-      } else {
-        quotedPrice = resolveQuotedPriceWithExpressFee({
-          price: quotedPrice,
-          shippingMode,
-          expressFee: expressFeePerRequest,
-          expressQty: abutmentQty,
-        });
-      }
+      quotedPrice = resolveQuotedPriceWithExpressFee({
+        price: quotedPrice,
+        shippingMode,
+        expressFee: expressFeePerRequest,
+        expressQty: abutmentQty,
+      });
     } else {
       quotedPrice = buildPtxAbutsProductionQuote({
         creditSettings: creditSettingsForQuote,
@@ -2803,6 +2794,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   );
   let quotedPrice;
   if (isPtxRemake) {
+    // PTX 리메이크·CA 재업로드 → 어벗츠로: 건당 1만원. 180일 조회 생략.
     quotedPrice = await computePriceForRequest({
       requestorId: requestDoc.requestor || null,
       requestorOrgId: labAnchorId,
@@ -2811,25 +2803,14 @@ export async function repriceAndReschedulePtxAbutmentRequest({
       tooth: String(requestDoc?.caseInfos?.tooth || "").trim(),
       creditSettings: creditSettingsForQuote,
       currentRequestId: requestDoc?._id || null,
-      // CA STL 재업로드(2회차+)는 동일 건 리메이크 — 180일 조회 없이 1만원.
-      forceRemakePricing: Boolean(forceRemake),
+      forceRemakePricing: true,
     });
-    if (quotedPrice?.rule !== ABUTS_REMAKE_PRICE_RULE) {
-      quotedPrice = buildPtxAbutsProductionQuote({
-        creditSettings: creditSettingsForQuote,
-        shippingMode,
-        abutmentQty,
-        expressFeePerRequest,
-        quotedAt: requestedAt,
-      });
-    } else {
-      quotedPrice = resolveQuotedPriceWithExpressFee({
-        price: quotedPrice,
-        shippingMode,
-        expressFee: expressFeePerRequest,
-        expressQty: abutmentQty,
-      });
-    }
+    quotedPrice = resolveQuotedPriceWithExpressFee({
+      price: quotedPrice,
+      shippingMode,
+      expressFee: expressFeePerRequest,
+      expressQty: abutmentQty,
+    });
   } else {
     quotedPrice = buildPtxAbutsProductionQuote({
       creditSettings: creditSettingsForQuote,

@@ -1,5 +1,6 @@
 // change-log:
-// - 2026-10-07: 제6조 — 리메이크 월 3건 무료·4건부터 건당 1만원.
+// - 2026-10-07: 제6조 — 리메이크 어벗츠로부터/기공소에=무료·어벗츠로/어벗츠에=건당 1만원.
+// - 2026-10-07: 제6조 — 리메이크 월 3건 무료·4건부터 건당 1만원(폐지).
 // - 2026-10-06: 제6조·제11조 — 택배 묶음 출고(박스당)·딜리버리 익일 도착(월 정액 VAT 포함).
 // - 2026-10-05: 제9조④·제13조 플랫폼 사용료·하청 수수료 공시 삭제(미부과).
 // - 2026-09-27: 제9조④·제13조⑦⑧ 기공회원 플랫폼 사용료 2% 복원, 이벤트 기간 면제(0%)·어벗츠기공소 미적용·작업시작 시점 확정.
@@ -19,6 +20,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/legal/creditPrepaidCopy.ts
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { REMAKE_TERMS_ARTICLE_LINES } from "@/shared/pricing/remakePolicyCopy";
 import {
   PublicPageLayout,
   PUBLIC_CARD_CLASS,
@@ -36,7 +38,7 @@ export const TermsPage = () => {
             policy
           </p>
           <h1 className={PUBLIC_PAGE_TITLE}>이용약관</h1>
-          <p className="text-slate-600">최종 개정일: 2026년 10월 6일</p>
+          <p className="text-slate-600">최종 개정일: 2026년 10월 7일</p>
         </div>
 
         <div className="space-y-8">
@@ -223,11 +225,11 @@ export const TermsPage = () => {
                   딜러십·영업 정책 안내를 따릅니다.
                 </p>
                 <p>
-                  5. 리메이크는 사업자 단위로 같은 달(KST) 3건까지 무료이며,
+                  5. {REMAKE_TERMS_ARTICLE_LINES[0]}
                   <br />
-                  4건부터는 건당 10,000원입니다. 배송비는 별도입니다.
+                  {REMAKE_TERMS_ARTICLE_LINES[1]}
                   <br />
-                  상세는 서비스 화면의 가격·출고 정책 안내를 따릅니다.
+                  {REMAKE_TERMS_ARTICLE_LINES[2]}
                 </p>
               </div>
             </CardContent>

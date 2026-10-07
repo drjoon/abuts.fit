@@ -949,7 +949,7 @@ export const RequestorRecentRequestsCard = ({
                     )}
                     {isRemakeMonthlyFree && (
                       <Badge variant="secondary" className="text-[10px]">
-                        리메이크 무료(월 3건)
+                        리메이크 무료(레거시)
                       </Badge>
                     )}
                     {isSignupFreeTest && (

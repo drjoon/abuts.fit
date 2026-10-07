@@ -1814,7 +1814,7 @@ export const PracticeFileTransferPage = ({
     labAnchorId: selectedLab?._id,
     toothWorks: syncToothWorks,
     implantFavorites,
-    // 리메이크 견적=월 3건 무료 / 이후 고정 1만원(서버 remakeFeeQuote)
+    // 리메이크 견적=어벗츠로부터 무료(서버 remakeFeeQuote)
     remake:
       !linkedRemakeSource ||
       linkedRemakeSource.withinRemakePricingWindow !== false,
@@ -12514,8 +12514,8 @@ export const PracticeFileTransferPage = ({
                   )}
                 </div>
                 <div className="text-muted-foreground">
-                  리메이크는 매월 3건까지 무료, 4건부터 건당 1만원입니다.
-                  기공소가 작업시작하면 반영됩니다.
+                  기공소에 리메이크비는 무료입니다. 기공소가 작업시작하면
+                  반영됩니다.
                 </div>
                 {remakePending.transfer.hasCustomAbutment ? (
                   <label className="flex cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-[13px]">
@@ -12532,7 +12532,7 @@ export const PracticeFileTransferPage = ({
                       </span>
                       <span className="block text-[12px] text-muted-foreground">
                         기본은 보철만 리메이크합니다. 포함 시 기공소→어벗츠
-                        리메이크도 월 3건 무료·이후 건당 1만원(배송비 별도)입니다.
+                        리메이크는 건당 1만원(배송비 별도)입니다.
                       </span>
                     </span>
                   </label>
@@ -12586,14 +12586,14 @@ export const PracticeFileTransferPage = ({
                 {PRE_PLATFORM_REMAKE_PRACTICE_SEND_HINT}
               </div>
               <div className="text-muted-foreground">
-                리메이크는 매월 3건까지 무료, 4건부터 건당 1만원입니다.
-                커스텀어벗은 기본 제외이며, 작성 화면에서 넣으면 기공소→어벗츠
-                리메이크도 같은 월 쿼터를 씁니다(배송비 별도).
+                기공소에 리메이크비는 무료입니다. 커스텀어벗은 기본 제외이며,
+                작성 화면에서 넣으면 어벗츠에 리메이크는 건당 1만원(배송비
+                별도)입니다.
               </div>
               {composeRemakeIncludesCustomAbutment ? (
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[12px] text-amber-950">
-                  커스텀어벗이 포함되어 있습니다. 기공소→어벗츠 리메이크도 월
-                  3건 무료·이후 건당 1만원(배송비 별도)입니다.
+                  커스텀어벗이 포함되어 있습니다. 기공소→어벗츠 리메이크는
+                  건당 1만원(배송비 별도)입니다.
                 </div>
               ) : null}
             </div>

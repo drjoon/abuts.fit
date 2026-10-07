@@ -459,7 +459,7 @@ export function ChatRemakePromptDialog({
 
   const feeHelp = (
     <p>
-      리메이크는 매월 3건까지 무료, 4건부터 건당 1만원입니다.
+      어벗츠로부터(기공소에) 리메이크비는 무료입니다.
       <br />
       {isLab || isAbutmentRemake
         ? "배송비는 별도입니다."

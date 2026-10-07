@@ -26,7 +26,7 @@ import { LAB_FEE_SCHEDULE_GET_CACHE_TTL_MS } from "@/shared/practice/labFeeSched
 
 export const LAB_FEE_SETTINGS_PATH = "/dashboard/settings?tab=lab-fees&setup=1";
 export const LAB_FEE_SETTINGS_FROM_ACCEPT_PATH = `${LAB_FEE_SETTINGS_PATH}&from=accept`;
-/** @deprecated 월 3건 무료 정책 — 무료기간 게이트 없음 */
+/** @deprecated 어벗츠로부터 무료·어벗츠로 건당 1만원 — 무료기간 게이트 없음 */
 export const LAB_FEE_SETTINGS_FROM_FREE_REMAKE_PATH = LAB_FEE_SETTINGS_PATH;
 export const LAB_FEE_UNCONFIGURED_REASON = "lab_fee_unconfigured";
 

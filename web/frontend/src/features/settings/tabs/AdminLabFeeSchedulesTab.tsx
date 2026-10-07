@@ -28,6 +28,7 @@ import {
   type LabFeeItemUnit,
 } from "@/shared/practice/labFeeSchedule";
 import { formatWon } from "@/shared/practice/practiceTransferFeeQuote";
+import { remakePolicySummaryLine } from "@/shared/pricing/remakePolicyCopy";
 
 const PAGE_LIMIT = 15;
 
@@ -77,7 +78,7 @@ const LabFeeScheduleBody = ({ row }: { row: LabFeeScheduleRow }) => {
   return (
     <div className="space-y-5">
       <p className="text-[12px] leading-snug text-slate-500">
-        리메이크는 치과당 매월 3건까지 무료, 4건부터 건당 1만원입니다.
+        {remakePolicySummaryLine("lab")}
       </p>
 
       {!row.configured ? (
@@ -279,7 +280,7 @@ export const AdminLabFeeSchedulesTab = () => {
                   수가 ON 기공소가 위에 표시됩니다. 카드를 누르면 수가를
                   확인합니다.
                   <br />
-                  리메이크는 치과당 매월 3건 무료·이후 건당 1만원입니다.
+                  {remakePolicySummaryLine("lab")}
                 </p>
               </div>
             </div>

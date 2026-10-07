@@ -548,7 +548,7 @@ export function LabRemakeChargeDialog({
               />
               <div className="space-y-0.5 text-[11px] text-muted-foreground">
                 <p>
-                  리메이크는 매월 3건까지 무료, 4건부터 건당 1만원입니다.
+                  어벗츠로부터 리메이크비는 무료입니다. 어벗츠로는 건당 1만원.
                   <br />
                   배송비는 별도입니다.
                 </p>

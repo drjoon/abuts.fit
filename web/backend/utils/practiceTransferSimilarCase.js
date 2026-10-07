@@ -3,7 +3,8 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/frontend/src/shared/components/practice/PracticeSimilarCaseRemakeDialog.tsx
 // change-log:
-// - 2026-10-07: 유료/무료=월 3건 쿼터. freeRemakeYears 과금 퇴역.
+// - 2026-10-07: 어벗츠로부터 리메이크=무료. 월 3건 쿼터 과금 퇴역.
+// - 2026-10-07: 유료/무료=월 3건 쿼터. freeRemakeYears 과금 퇴역(폐지).
 // - 2026-09-21: 감지 기본=무료기간 상한(년×365). 수가 창은 lab freeRemakeYears.
 // - 2026-09-14: 감지 창=리메이크 정책 창(180일) 통일.
 // - 2026-09-14: 신규 작성 시 동일 환자·치아 감지(리메이크 확인).
@@ -131,7 +132,7 @@ export function toSimilarCaseMatchApi(doc, opts = {}) {
     monthlyRemakeFreeRemaining: remaining,
     monthlyRemakeUsed: used,
     withinRemakePricingWindow: withinFree,
-    /** @deprecated 월 쿼터로 대체. FE 호환용 */
+    /** @deprecated FE 호환용 */
     freeRemakeYears: null,
   };
 }

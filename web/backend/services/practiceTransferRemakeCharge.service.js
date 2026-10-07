@@ -3,7 +3,8 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/controllers/requests/designHandoff.controller.js
 // - web/backend/utils/labFeeSchedule.js
-// - 2026-10-07: 월 3건 무료 · 4건부터 고정 1만원(수가표 정가 아님).
+// - 2026-10-07: 어벗츠로부터 리메이크 청구=무료(월 3건 유료 구간 폐지).
+// - 2026-10-07: 월 3건 무료 · 4건부터 고정 1만원(수가표 정가 아님) — 폐지.
 // - 2026-09-11: 치과↔기공소 리메이크비 무료(LAB_FEE_REMAKE_FREE). CA 리메이크 기본가 0.
 // - 2026-09-10: 리메이크 hold 직후 기공소 ESCROW_RELEASE(정산 누락 수정).
 // - 2026-09-10: Mutation UX — assert 중복 GL 제거. quote slim. timing 로그.
@@ -15,13 +16,11 @@
 import PracticeTransfer from "../models/practiceTransfer.model.js";
 import {
   buildPracticeTransferQuote,
-  countPracticeMonthlyRemakeTransfers,
   holdPracticeTransferRemakeChargeCredits,
   releasePracticeTransferRemakeChargeCredits,
   settleUnreleasedRemakeChargesForTransfer,
   cancelPracticeTransferRemakeChargeCredits,
 } from "./practiceTransferBilling.service.js";
-import { resolveMonthlyRemakePricing } from "../utils/remakePricingPolicy.js";
 import {
   buildRemakeToothWorksFromSelectedParts,
   countCustomAbutmentWorks,
@@ -433,13 +432,9 @@ export async function applyPracticeTransferRemakeCharge({
 
   // 청구 금액만 필요 — partner/budget/catalog 조회 생략. hold가 잔액 SSOT.
   // 협력: 수가·할증=수행 기공소. 하청·어벗츠: 원청. 정산은 어벗츠 경유.
-  // 월 3건 무료 · 4건부터 고정 1만원.
+  // 어벗츠로부터 리메이크비: 무료(LAB_FEE_REMAKE_FREE).
   const feeScheduleLabId =
     resolveFeeScheduleLabAnchorId(doc) || labAnchorId;
-  const monthlyUsed = await countPracticeMonthlyRemakeTransfers({
-    practiceAnchorId,
-  });
-  const monthly = resolveMonthlyRemakePricing({ used: monthlyUsed });
   const quote = await buildPracticeTransferQuote({
     practiceAnchorId,
     labAnchorId: feeScheduleLabId,
@@ -447,7 +442,7 @@ export async function applyPracticeTransferRemakeCharge({
       resolveLabFeeMultiplierLabAnchorId(doc) || feeScheduleLabId,
     toothWorks: works,
     remake: true,
-    remakeFixedAmount: monthly.free ? null : monthly.amount,
+    remakeFixedAmount: null,
     relationshipKind: "none",
     labTradingPartnerId: null,
     autoMatchBudget: null,
@@ -471,7 +466,7 @@ export async function applyPracticeTransferRemakeCharge({
       ok: true,
       skipped: true,
       reason: "remake_fee_free",
-      message: "리메이크비 무료(월 3건) — 청구하지 않습니다.",
+      message: "리메이크비 무료 — 청구하지 않습니다.",
       fees: quote?.fees || null,
       missingFeeNames: quote?.missingFeeNames || [],
     };

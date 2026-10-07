@@ -37,6 +37,7 @@ import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { SettingsCardSkeleton } from "@/features/components/SettingsSkeletons";
 import { parseLabFeeNeedNames } from "@/features/settings/LabFeeSetupPrompt";
+import { remakePolicySummaryLine } from "@/shared/pricing/remakePolicyCopy";
 import {
   LabFeeApplyTimingDialog,
   formatLabFeeApplyYmdShort,
@@ -680,9 +681,9 @@ export const LabFeeScheduleTab = () => {
           </p>
         ) : null}
         <p className="mt-2 text-[12px] leading-snug text-slate-500">
-          리메이크는 치과당 매월 3건까지 무료, 4건부터 건당 1만원입니다.
+          {remakePolicySummaryLine("lab")}
           <br />
-          리메이크 단가 입력은 참고용이며 월 무료 구간에서는 청구되지 않습니다.
+          리메이크 단가 입력은 참고용이며 어벗츠로부터는 청구되지 않습니다.
         </p>
         {pendingChange?.effectiveFromYmd ? (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-[13px] text-amber-950">
@@ -867,7 +868,7 @@ export const LabFeeScheduleTab = () => {
                   ),
                 ) <= 0 ? (
                   <p className="text-[11px] leading-snug text-slate-500">
-                    월 무료 구간에서는 청구되지 않습니다. 유료 시 건당 1만원.
+                    {remakePolicySummaryLine("lab")}
                   </p>
                 ) : null}
               </div>

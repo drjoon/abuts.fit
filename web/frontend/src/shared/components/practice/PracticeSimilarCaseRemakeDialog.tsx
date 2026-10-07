@@ -5,7 +5,8 @@
  * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
  * - web/backend/utils/practiceTransferSimilarCase.js
  * change-log:
- * - 2026-10-07: 무료=월 3건 잔여. freeRemakeYears 카피 제거.
+ * - 2026-10-07: 어벗츠로부터 리메이크=무료. 월 3건 카피 제거.
+ * - 2026-10-07: 무료=월 3건 잔여. freeRemakeYears 카피 제거(폐지).
  * - 2026-09-21: 무료 창=기공소 freeRemakeYears(카피·뱃지).
  * - 2026-09-21: z-[460] — 작성 모달(z-320, 투어 z-410) 뒤에서 바깥클릭으로 전송 버튼을 삼키던 문제.
  * - 2026-09-14: 신규 작성·전송 전 리메이크/신규 분기 모달.
@@ -21,6 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { remakePolicySummaryLine } from "@/shared/pricing/remakePolicyCopy";
 import { toStatusBadgeLabel } from "@/shared/practice/practiceRecentTransferList";
 
 export type PracticeSimilarCaseMatch = {
@@ -63,10 +65,6 @@ export function PracticeSimilarCaseRemakeDialog({
   const selected =
     matches.find((m) => m._id === selectedId) || matches[0] || null;
   const canRemake = Boolean(selected?._id);
-  const remaining = Math.max(
-    0,
-    Math.trunc(Number(selected?.monthlyRemakeFreeRemaining) || 0),
-  );
 
   return (
     <Dialog
@@ -88,10 +86,7 @@ export function PracticeSimilarCaseRemakeDialog({
             같은 환자·치아 의뢰입니다. 리메이크면 원의뢰에 연결되고 기공소에
             「리메이크」로 표시됩니다.
             <br />
-            매월 3건까지 무료, 4건부터 건당 1만원입니다.
-            {selected
-              ? ` (이번 달 무료 잔여 ${remaining}건)`
-              : ""}
+            {remakePolicySummaryLine("practice")}
           </DialogDescription>
         </DialogHeader>
 
@@ -107,10 +102,7 @@ export function PracticeSimilarCaseRemakeDialog({
                 Array.isArray(match.toothNumbers) && match.toothNumbers.length
                   ? match.toothNumbers.join(", ")
                   : "—";
-              const feeHint =
-                match.withinRemakePricingWindow === true
-                  ? " · 리메이크비 무료 가능"
-                  : " · 리메이크비 1만원";
+              const feeHint = " · 리메이크비 무료";
               return (
                 <button
                   key={match._id}

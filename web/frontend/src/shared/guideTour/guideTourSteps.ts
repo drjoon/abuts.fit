@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
 // - 2026-09-26: lab_calendar — 제목 「기공의뢰 · 어벗츠로부터」.
+// - 2026-10-07: remake·lab_remake — 어벗츠로부터 무료·어벗츠로 건당 1만원.
 // - 2026-09-14: remake·lab_remake — 180일 동일건 치과↔기공소 무료·어벗츠 1만원.
 // - 2026-09-12: remake·lab_remake — 90일 동일건 치과↔기공소 무료·어벗츠 1만원 정책 반영.
 // - 2026-09-12: abutment·abutment_order 제목 「기공의뢰 · 어벗츠에/어벗츠로」·힌트·스토어 카피 갱신.
@@ -170,7 +171,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "remake",
     title: "리메이크 의뢰",
-    hint: "이전 의뢰·가입 전 건도 리메이크할 수 있습니다. 매월 3건까지 무료, 4건부터 건당 1만원입니다.",
+    hint: "이전 의뢰·가입 전 건도 리메이크할 수 있습니다. 기공소에 리메이크비는 무료입니다.",
     path: PRACTICE_ORAL_PATH,
     target: "practice_remake",
     advance: "next",
@@ -312,7 +313,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "lab_remake",
     title: "리메이크 수신",
-    hint: "리메이크 의뢰는 뱃지로 표시됩니다.\n매월 3건까지 무료, 4건부터 건당 1만원입니다.\n플랫폼 가입 전 건은 별도 안내를 확인한 뒤 작업시작하세요.",
+    hint: "리메이크 의뢰는 뱃지로 표시됩니다.\n어벗츠로부터 리메이크비는 무료, 어벗츠로는 건당 1만원입니다.\n플랫폼 가입 전 건은 별도 안내를 확인한 뒤 작업시작하세요.",
     path: LAB_RECEIVE_PATH,
     target: "lab_remake",
     advance: "next",
