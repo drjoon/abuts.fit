@@ -18,7 +18,7 @@ import {
   DASHBOARD_FULL_BLEED_GUTTER_CLASS,
   DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS,
 } from "@/shared/ui/dashboardChrome";
-import type { DashboardNotice } from "./dashboardNotice";
+import { isNoticeWindowOpen, type DashboardNotice } from "./dashboardNotice";
 
 /** @deprecated 레이아웃 전폭 공지 바로 통일. */
 export const DASHBOARD_NOTICE_HEADER_CLASS =
@@ -53,11 +53,12 @@ function NoticeCopy({ text }: { text: string }) {
   );
 }
 
-const NOTICE_BUTTON_CLASS =
-  "pointer-events-auto inline-flex min-w-0 w-full max-w-none shrink items-center justify-start gap-2 rounded-md border border-amber-700 bg-amber-400 px-2.5 py-1 text-left text-sm font-semibold text-amber-950 shadow-md transition hover:bg-amber-300";
+const NOTICE_BANNER_CLASS =
+  "pointer-events-auto flex min-w-0 w-full max-w-none items-center justify-center gap-2 rounded-md border border-amber-700 bg-amber-400 px-2.5 py-1 text-sm font-semibold text-amber-950 shadow-md";
 
 /**
  * 대시보드 활성 공지. 레이아웃 전폭 바(`DashboardNoticeBar`)에서만 쓴다.
+ * 활성 공지가 여러 개여도 전폭 1개 배너에 가운데 정렬로 모은다.
  */
 export function DashboardNoticeAlert({
   className,
@@ -70,7 +71,7 @@ export function DashboardNoticeAlert({
   const token = useAuthStore((s) => s.token);
   const role = useAuthStore((s) => s.user?.role);
   const [openId, setOpenId] = useState<string | null>(null);
-  const { data: items = [] } = useQuery({
+  const { data: fetched = [] } = useQuery({
     queryKey: ["dashboard-notices-active"],
     enabled: Boolean(token) && role !== "admin",
     staleTime: 60_000,
@@ -83,9 +84,19 @@ export function DashboardNoticeAlert({
       return res.data?.data?.items || [];
     },
   });
+  // API·캐시가 남아 있어도 기간이 지난 공지는 숨긴다.
+  const items = fetched.filter((item) => isNoticeWindowOpen(item));
 
-  const open = items.find((item) => item.id === openId) || null;
+  const dialogOpen = openId !== null;
   if (!items.length) return null;
+
+  const single = items.length === 1 ? items[0] : null;
+  const bannerTitle = items.map((item) => item.title).join("\n");
+  const bannerAria = single ? single.title : `공지 ${items.length}건`;
+  const dialogTitle =
+    single && single.body.trim() !== single.title.trim()
+      ? single.title
+      : "공지";
 
   return (
     <>
@@ -97,44 +108,57 @@ export function DashboardNoticeAlert({
           className,
         )}
       >
-        <div className="flex min-w-0 w-full items-center gap-1.5">
-          {items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setOpenId(item.id)}
-              className={NOTICE_BUTTON_CLASS}
-              title={item.title}
-              aria-label={item.title}
-            >
-              <Megaphone className="h-4 w-4 shrink-0" />
-              <span className="min-w-0 truncate">{item.title}</span>
-            </button>
-          ))}
-        </div>
+        <button
+          type="button"
+          onClick={() => setOpenId(items[0].id)}
+          className={cn(NOTICE_BANNER_CLASS, "transition hover:bg-amber-300")}
+          title={bannerTitle}
+          aria-label={bannerAria}
+        >
+          <Megaphone className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 text-center">
+            {items.map((item, index) => (
+              <span key={item.id}>
+                {index > 0 ? <br /> : null}
+                {item.title}
+              </span>
+            ))}
+          </span>
+        </button>
       </div>
-      <Dialog open={Boolean(open)} onOpenChange={(next) => !next && setOpenId(null)}>
+      <Dialog open={dialogOpen} onOpenChange={(next) => !next && setOpenId(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="pr-6 text-base leading-snug">
-              {open && open.body.trim() === open.title.trim() ? "공지" : open?.title}
+              {dialogTitle}
             </DialogTitle>
           </DialogHeader>
-          {open ? <NoticeCopy text={open.body} /> : null}
-          {open?.images?.length ? (
-            <div className="flex flex-col gap-3">
-              {open.images.map((image, index) =>
-                image.url ? (
-                  <img
-                    key={image.url}
-                    src={image.url}
-                    alt={image.fileName || `공지 이미지 ${index + 1}`}
-                    className="max-h-80 w-full rounded-md object-contain"
-                  />
-                ) : null,
-              )}
-            </div>
-          ) : null}
+          <div className="flex flex-col gap-4">
+            {items.map((item) => (
+              <div key={item.id} className="flex flex-col gap-2">
+                {!single && item.body.trim() !== item.title.trim() ? (
+                  <p className="text-sm font-semibold text-foreground">
+                    {item.title}
+                  </p>
+                ) : null}
+                <NoticeCopy text={item.body} />
+                {item.images?.length ? (
+                  <div className="flex flex-col gap-3">
+                    {item.images.map((image, index) =>
+                      image.url ? (
+                        <img
+                          key={image.url}
+                          src={image.url}
+                          alt={image.fileName || `공지 이미지 ${index + 1}`}
+                          className="max-h-80 w-full rounded-md object-contain"
+                        />
+                      ) : null,
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
     </>

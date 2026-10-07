@@ -30,3 +30,20 @@ export type DashboardNotice = {
 export function noticeAudienceLabel(id: string) {
   return NOTICE_AUDIENCE_OPTIONS.find((option) => option.id === id)?.label || id;
 }
+
+/** published 이고 시작~종료 시각(없으면 제한 없음) 안인지. */
+export function isNoticeWindowOpen(
+  notice: Pick<DashboardNotice, "published" | "startsAt" | "endsAt">,
+  now: Date = new Date(),
+) {
+  if (!notice || notice.published === false) return false;
+  if (notice.startsAt) {
+    const start = new Date(notice.startsAt);
+    if (!Number.isNaN(start.getTime()) && start > now) return false;
+  }
+  if (notice.endsAt) {
+    const end = new Date(notice.endsAt);
+    if (!Number.isNaN(end.getTime()) && end < now) return false;
+  }
+  return true;
+}

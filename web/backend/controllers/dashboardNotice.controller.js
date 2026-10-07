@@ -19,6 +19,8 @@ import { deleteFileFromS3, getSignedUrl, putObjectToS3 } from "../utils/s3.utils
 const SHIP_HOLIDAY_NOTICE_CODE = "ship-holiday-2026-10-09";
 const SHIP_HOLIDAY_COPY =
   "10월 9일 금요일은 택배사 휴무이므로, 10월 6일 화요일에 발송합니다.";
+/** 선발송일(10/6) 종료 시각. 이후에는 안내가 필요 없다. */
+const SHIP_HOLIDAY_ENDS_AT = new Date("2026-10-06T23:59:59.999+09:00");
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const IMAGE_TYPES = new Set([
@@ -31,25 +33,34 @@ const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
 
 let seedPromise = null;
 
-/** 배송 휴무 안내. 이미 있으면 관리자 수정을 덮지 않는다. */
+/** 배송 휴무 안내. 이미 있으면 본문은 덮지 않고, 종료일만 선발송일 이후로 남지 않게 줄인다. */
 export function ensureDashboardNoticeSeed() {
   if (!seedPromise) {
-    seedPromise = DashboardNotice.updateOne(
-      { code: SHIP_HOLIDAY_NOTICE_CODE },
-      {
-        $setOnInsert: {
-          code: SHIP_HOLIDAY_NOTICE_CODE,
-          title: SHIP_HOLIDAY_COPY,
-          body: SHIP_HOLIDAY_COPY,
-          audiences: [...NOTICE_AUDIENCES],
-          images: [],
-          published: true,
-          startsAt: null,
-          endsAt: new Date("2026-10-09T23:59:59.999+09:00"),
+    seedPromise = (async () => {
+      await DashboardNotice.updateOne(
+        { code: SHIP_HOLIDAY_NOTICE_CODE },
+        {
+          $setOnInsert: {
+            code: SHIP_HOLIDAY_NOTICE_CODE,
+            title: SHIP_HOLIDAY_COPY,
+            body: SHIP_HOLIDAY_COPY,
+            audiences: [...NOTICE_AUDIENCES],
+            images: [],
+            published: true,
+            startsAt: null,
+            endsAt: SHIP_HOLIDAY_ENDS_AT,
+          },
         },
-      },
-      { upsert: true },
-    ).catch((error) => {
+        { upsert: true },
+      );
+      await DashboardNotice.updateOne(
+        {
+          code: SHIP_HOLIDAY_NOTICE_CODE,
+          endsAt: { $gt: SHIP_HOLIDAY_ENDS_AT },
+        },
+        { $set: { endsAt: SHIP_HOLIDAY_ENDS_AT } },
+      );
+    })().catch((error) => {
       seedPromise = null;
       if (Number(error?.code) === 11000) return null;
       throw error;

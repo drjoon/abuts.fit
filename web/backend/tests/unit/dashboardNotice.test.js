@@ -28,14 +28,14 @@ describe("dashboard notice audience", () => {
     const now = new Date("2026-09-30T12:00:00+09:00");
     expect(
       isNoticeWindowOpen(
-        { published: true, endsAt: "2026-10-09T23:59:59.999+09:00" },
+        { published: true, endsAt: "2026-10-06T23:59:59.999+09:00" },
         now,
       ),
     ).toBe(true);
     expect(
       isNoticeWindowOpen(
-        { published: true, endsAt: "2026-10-09T23:59:59.999+09:00" },
-        new Date("2026-10-10T00:00:00+09:00"),
+        { published: true, endsAt: "2026-10-06T23:59:59.999+09:00" },
+        new Date("2026-10-07T00:00:00+09:00"),
       ),
     ).toBe(false);
     expect(isNoticeWindowOpen({ published: false }, now)).toBe(false);
