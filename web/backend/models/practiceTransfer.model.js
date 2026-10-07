@@ -258,6 +258,12 @@ const practiceTransferSchema = new mongoose.Schema(
         type: [mongoose.Schema.Types.Mixed],
         default: undefined,
       },
+      /**
+       * 작업 파일 3D 프리뷰 페인트·카메라. 파일은 그대로 두고 여기만 저장한다.
+       * { fileKeys, shapes, view:{position,target,up}, updatedAt, updatedBy, updatedSide }.
+       * fileKeys가 지금 케이스 3D 키 집합과 같을 때만 유효하다(utils/workFilePaint.js).
+       */
+      workFilePaint: { type: mongoose.Schema.Types.Mixed, default: undefined },
       /** 기공소 AI 작업 스캔(상악·하악·바이트 DCM). 채팅「작업 파일」. 단계 판정에 쓰지 않는다. */
       labWorkScanFiles: {
         type: [practiceTransferFileSchema],

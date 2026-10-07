@@ -8529,8 +8529,7 @@ export function RequestorPracticeReceivePage({
     try {
       let attachments = toChatMessageAttachments([]);
       if (chatUploads.items.length > 0) {
-        const uploadedFiles = await chatUploads.ensureUploaded();
-        attachments = toChatMessageAttachments(uploadedFiles);
+        attachments = await chatUploads.ensureChatAttachments();
         if (!attachments.length) {
           throw new Error("파일 업로드에 실패했습니다.");
         }

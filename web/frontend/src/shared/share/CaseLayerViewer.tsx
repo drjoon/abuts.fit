@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/share/CaseShareViewer.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/three/screenSpaceOrbitControls.ts
+// - 2026-10-07: getView/restoreView — 작업 파일 프리뷰 카메라(각도·줌) 저장·복원.
 // - 2026-10-03: resetView — 사용자 조작을 잊고 보이는 메시에 다시 맞춘다(클러스터 전환용).
 // - 2026-10-03: 어벗 적합이 끝나면 뷰를 다시 맞춘다.
 // - 2026-10-03: 치식 라벨은 어벗 로컬 중심에 붙여 seating·펼침과 같이 움직인다.
@@ -81,10 +82,19 @@ export type CaseSeatDecision = {
   abutments: Array<{ id: string; matrix: number[] | null; deviation: SeatDeviation | null }>;
 };
 
+/** 원근 카메라 자세. 거리는 position−target. */
+export type CaseLayerView = {
+  position: [number, number, number];
+  target: [number, number, number];
+  up: [number, number, number];
+};
+
 export type CaseLayerViewerHandle = {
   fitToView: () => void;
   /** 카메라 조작을 잊고 보이는 메시에 맞춘다. 클러스터를 바꿀 때 쓴다. */
   resetView: () => void;
+  getView: () => CaseLayerView | null;
+  restoreView: (view: CaseLayerView) => void;
   /** 표시를 겹치기 위한 현재 프레임 캔버스. */
   captureCanvas: () => HTMLCanvasElement | null;
 };
@@ -98,6 +108,8 @@ type CaseLayerViewerProps = {
   onLayerError?: (id: string, message: string) => void;
   /** 페인트가 메시 표면에 붙도록. 씬이 준비되면 넘기고, 닫히면 null. */
   onPaintSpace?: (space: ViewPaintSpace | null) => void;
+  /** 사용자가 회전·줌·이동한 뒤. 저장용. */
+  onViewChange?: () => void;
   /** 어벗·보철 파일을 아직 받는 중. 다 받은 뒤에 맞춰야 기준 어벗이 흔들리지 않는다. */
   designPending?: boolean;
   /** 이미 확인·거절한 어벗 자세(레이어 id 기준). 있으면 다시 맞추지 않는다. */
@@ -476,6 +488,7 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
     prosthesisTransparency = 0,
     onLayerError,
     onPaintSpace,
+    onViewChange,
     designPending = false,
     storedSeats,
     onSeatDecision,
@@ -519,7 +532,38 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
     prosthesisTransparencyRef.current = prosthesisTransparency;
     const onPaintSpaceRef = useRef(onPaintSpace);
     onPaintSpaceRef.current = onPaintSpace;
+    const onViewChangeRef = useRef(onViewChange);
+    onViewChangeRef.current = onViewChange;
     const paintListenersRef = useRef(new Set<() => void>());
+
+    const getView = (): CaseLayerView | null => {
+      const camera = cameraRef.current;
+      const controls = controlsRef.current;
+      if (!camera || !controls) return null;
+      return {
+        position: [camera.position.x, camera.position.y, camera.position.z],
+        target: [controls.target.x, controls.target.y, controls.target.z],
+        up: [camera.up.x, camera.up.y, camera.up.z],
+      };
+    };
+
+    const restoreView = (view: CaseLayerView) => {
+      const camera = cameraRef.current;
+      const controls = controlsRef.current;
+      if (!camera || !controls) return;
+      userMovedRef.current = true;
+      controls.target.set(view.target[0], view.target[1], view.target[2]);
+      camera.position.set(view.position[0], view.position[1], view.position[2]);
+      camera.up.set(view.up[0], view.up[1], view.up[2]);
+      const distance = camera.position.distanceTo(controls.target);
+      if (Number.isFinite(distance) && distance > 1e-6) {
+        camera.near = Math.max(distance / 200, 0.01);
+        camera.far = distance * 200;
+        camera.updateProjectionMatrix();
+      }
+      camera.lookAt(controls.target);
+      controls.syncFromCamera();
+    };
 
     const fitToView = () => {
       const camera = cameraRef.current;
@@ -602,7 +646,13 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       return renderer.domElement;
     };
 
-    useImperativeHandle(ref, () => ({ fitToView, resetView, captureCanvas }));
+    useImperativeHandle(ref, () => ({
+      fitToView,
+      resetView,
+      getView,
+      restoreView,
+      captureCanvas,
+    }));
 
     const publishSeatProgress = () => {
       const jobs = [...seatJobsRef.current.values()];
@@ -797,6 +847,7 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       });
       controls.addEventListener("change", () => {
         userMovedRef.current = true;
+        onViewChangeRef.current?.();
       });
 
       const resize = () => {

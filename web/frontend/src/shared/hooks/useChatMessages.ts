@@ -6,6 +6,7 @@
 // - web/backend/modules/chat/chat.routes.js
 // - web/backend/controllers/chats/chat.controller.js
 // change-log:
+// - 2026-10-07: 작업파일-표시-*.png 첨부에 openWorkFiles를 정규화한다.
 // - 2026-10-04: 메시지 전송 낙관적 UI — API(~1.5s) 전에 말풍선 즉시 표시.
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -13,9 +14,33 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { ChatMessage } from "./useChatRooms";
+import { chatAttachmentOpensWorkFiles } from "@/shared/chat/chatOpenWorkFiles";
 
 const isOptimisticMessageId = (id: unknown) =>
   String(id || "").startsWith("optimistic:");
+
+/** 저장된 openWorkFiles·파일명으로 작업 파일 첨부를 정규화한다. */
+const withOpenWorkFilesFlag = <
+  T extends { fileName?: string; openWorkFiles?: boolean },
+>(
+  row: T,
+): T =>
+  chatAttachmentOpensWorkFiles(row) ? { ...row, openWorkFiles: true } : row;
+
+const normalizeChatMessage = (message: ChatMessage): ChatMessage => {
+  const list = Array.isArray(message.attachments) ? message.attachments : null;
+  if (!list?.length) return message;
+  let changed = false;
+  const attachments = list.map((row) => {
+    const next = withOpenWorkFilesFlag(row);
+    if (next !== row && next.openWorkFiles && !row.openWorkFiles) changed = true;
+    return next;
+  });
+  return changed ? { ...message, attachments } : message;
+};
+
+const normalizeChatMessages = (rows: ChatMessage[]) =>
+  (Array.isArray(rows) ? rows : []).map(normalizeChatMessage);
 
 interface UseChatMessagesOptions {
   roomId?: string;
@@ -154,7 +179,9 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
           throw new Error("메시지 조회에 실패했습니다.");
         }
 
-        const nextMessages = sortMessagesChronologically(res.data.data.messages || []);
+        const nextMessages = sortMessagesChronologically(
+          normalizeChatMessages(res.data.data.messages || []),
+        );
         const nextPagination = res.data.data.pagination || INITIAL_PAGINATION;
 
         writeCachedMessages(normalizedRoomId, userCacheId, nextMessages, nextPagination);
@@ -247,6 +274,7 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
         fileSize: number;
         s3Key: string;
         s3Url: string;
+        openWorkFiles?: boolean;
       }>,
       options?: { replyTo?: string | null },
     ) => {
@@ -268,15 +296,18 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
       const optimisticId = `optimistic:${Date.now()}:${Math.random()
         .toString(36)
         .slice(2, 8)}`;
-      const attachmentRows = normalizedAttachments.map((row) => ({
-        fileId: row.fileId,
-        fileName: row.fileName,
-        fileType: row.fileType,
-        fileSize: row.fileSize,
-        s3Key: row.s3Key,
-        s3Url: row.s3Url,
-        uploadedAt: nowIso,
-      }));
+      const attachmentRows = normalizedAttachments.map((row) =>
+        withOpenWorkFilesFlag({
+          fileId: row.fileId,
+          fileName: row.fileName,
+          fileType: row.fileType,
+          fileSize: row.fileSize,
+          s3Key: row.s3Key,
+          s3Url: row.s3Url,
+          uploadedAt: nowIso,
+          openWorkFiles: row.openWorkFiles,
+        }),
+      );
 
       let optimisticReplyTo: ChatMessage["replyTo"] = replyToId;
       setMessages((prev) => {
@@ -589,7 +620,7 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
 
       const messageRaw =
         payload.message && typeof payload.message === "object"
-          ? (payload.message as ChatMessage)
+          ? normalizeChatMessage(payload.message as ChatMessage)
           : null;
       if (!messageRaw?._id) return;
 

@@ -6,6 +6,10 @@
 // - web/frontend/src/features/chat/components/ChatComposer.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  chatAttachmentOpensWorkFiles,
+  chatFileOpensWorkFiles,
+} from "@/shared/chat/chatOpenWorkFiles";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   toTempUploadFileKey,
@@ -28,6 +32,8 @@ export type BackgroundUploadItem = {
   progress: number;
   result?: TempUploadedFile;
   error?: string;
+  /** 채팅 썸네일 클릭 시 작업 파일 프리뷰를 연다. */
+  openWorkFiles?: boolean;
 };
 
 export type ChatMessageAttachment = {
@@ -37,6 +43,7 @@ export type ChatMessageAttachment = {
   fileSize: number;
   s3Key: string;
   s3Url: string;
+  openWorkFiles?: boolean;
 };
 
 type Options = {
@@ -52,9 +59,10 @@ const toErrorMessage = (err: unknown) =>
 
 export function toChatMessageAttachments(
   files: TempUploadedFile[],
+  extras?: Array<{ openWorkFiles?: boolean } | undefined>,
 ): ChatMessageAttachment[] {
   return files
-    .map((file) => {
+    .map((file, index) => {
       const fileId = String(file._id || "").trim();
       const s3Key = String(file.key || "").trim();
       const s3Url = String(file.location || "").trim();
@@ -68,6 +76,12 @@ export function toChatMessageAttachments(
         fileSize: Number(file.size || 0),
         s3Key,
         s3Url,
+        ...((extras?.[index]?.openWorkFiles ||
+        chatAttachmentOpensWorkFiles({
+          fileName: String(file.originalName || "").trim(),
+        }))
+          ? { openWorkFiles: true }
+          : {}),
       };
     })
     .filter((row): row is ChatMessageAttachment => Boolean(row?.fileName));
@@ -198,6 +212,7 @@ export function useBackgroundTempUpload(options: Options) {
           progressKey: progressKeyOf(file),
           status: "queued",
           progress: 0,
+          ...(chatFileOpensWorkFiles(file) ? { openWorkFiles: true } : {}),
         });
       }
 
@@ -303,6 +318,11 @@ export function useBackgroundTempUpload(options: Options) {
     return uploaded;
   }, [ensureFilesUploaded]);
 
+  const ensureChatAttachments = useCallback(async () => {
+    const uploaded = await ensureUploaded();
+    return toChatMessageAttachments(uploaded, itemsRef.current);
+  }, [ensureUploaded]);
+
   const isUploading = items.some(
     (item) => item.status === "queued" || item.status === "uploading",
   );
@@ -317,6 +337,7 @@ export function useBackgroundTempUpload(options: Options) {
       retryItem,
       clear,
       ensureUploaded,
+      ensureChatAttachments,
       isUploading,
       hasError,
     }),
@@ -324,6 +345,7 @@ export function useBackgroundTempUpload(options: Options) {
       addFiles,
       clear,
       ensureUploaded,
+      ensureChatAttachments,
       hasError,
       isUploading,
       items,

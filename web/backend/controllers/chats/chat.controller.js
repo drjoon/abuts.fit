@@ -1820,16 +1820,24 @@ export async function sendChatMessage(req, res) {
     const userRole = req.user.role;
 
     const normalizedContent = String(content || "").trim();
+    const workFilePaintChatNameRe = /^작업파일-표시-\d{6}\.png$/i;
     const normalizedAttachments = Array.isArray(attachments)
       ? attachments
-          .map((row) => ({
-            fileId: row?.fileId || null,
-            fileName: String(row?.fileName || "").trim(),
-            fileType: String(row?.fileType || "application/octet-stream").trim(),
-            fileSize: Number(row?.fileSize || 0),
-            s3Key: String(row?.s3Key || "").trim(),
-            s3Url: String(row?.s3Url || "").trim(),
-          }))
+          .map((row) => {
+            const fileName = String(row?.fileName || "").trim();
+            const openWorkFiles =
+              row?.openWorkFiles === true ||
+              workFilePaintChatNameRe.test(fileName);
+            return {
+              fileId: row?.fileId || null,
+              fileName,
+              fileType: String(row?.fileType || "application/octet-stream").trim(),
+              fileSize: Number(row?.fileSize || 0),
+              s3Key: String(row?.s3Key || "").trim(),
+              s3Url: String(row?.s3Url || "").trim(),
+              ...(openWorkFiles ? { openWorkFiles: true } : {}),
+            };
+          })
           .filter((row) => row.fileName && row.s3Key)
       : [];
 

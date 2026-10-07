@@ -56,6 +56,11 @@ const chatSchema = new mongoose.Schema(
           type: Date,
           default: Date.now,
         },
+        /** true면 클릭 시 이미지 대신 작업 파일(페인트 포함)을 연다. */
+        openWorkFiles: {
+          type: Boolean,
+          default: false,
+        },
       },
     ],
     replyTo: {

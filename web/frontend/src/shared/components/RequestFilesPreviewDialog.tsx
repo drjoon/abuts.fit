@@ -1,5 +1,8 @@
 // 의뢰·작업 스캔·어벗·보철을 한 번에 띄운다. 3D는 같은 좌표로 겹치고, 사진은 오른쪽 패널에서 연다.
 // change-log:
+// - 2026-10-07: 카메라(각도·줌)도 workFilePaint.view에 남겨 다시 연다.
+// - 2026-10-07: 프리뷰 닫을 때 clear가 빈 표시를 저장하던 버그 수정. 표시는 메타데이터로 유지.
+// - 2026-10-07: 3D 페인트를 의뢰 메타데이터에 남겨 다시 연다. 채팅 첨부는 작업 파일을 연다.
 // - 2026-10-03: 처음엔 활성 클러스터만 받아 보여주고, 다른 묶음은 클릭 때 S3→IndexedDB 캐시. 클러스터 전환 시 뷰 리셋.
 // - 2026-10-03: 어벗을 보철에 맞춘 자세를 확인받아 의뢰에 저장(transferKey). 파일은 그대로, 자세만.
 // - 2026-10-03: 투명도·스캔색을 localStorage에 저장. 의뢰를 바꿔도 같은 값 적용.
@@ -83,7 +86,9 @@ import {
   ZoomableImagePreview,
   type ZoomableImagePreviewHandle,
 } from "@/shared/components/ZoomableImagePreview";
+import type { PaintShape } from "@/shared/components/practice/viewPaintGeom";
 import type { ViewPaintSpace } from "@/shared/components/practice/viewPaintSpace";
+import { parseWorkFilePaint } from "@/shared/practice/workFilePaint";
 import {
   isAbutsWorkScanFileName,
   preferWorkingOralScanFiles,
@@ -93,6 +98,7 @@ import {
   CaseLayerViewer,
   type CaseLayerModel,
   type CaseLayerTone,
+  type CaseLayerView,
   type CaseLayerViewerHandle,
   type CaseSeatDecision,
   type CaseSeatRecord,
@@ -545,6 +551,194 @@ export function RequestFilesPreviewDialog({
   itemsRef.current = items;
   const authTokenRef = useRef(authToken);
   authTokenRef.current = authToken;
+
+  const paintFileKeys = useMemo(
+    () =>
+      [...new Set(models.map((item) => item.key).filter(Boolean))].sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [models],
+  );
+  const paintFileKeySig = paintFileKeys.join("|");
+  const [loadedPaint, setLoadedPaint] = useState<PaintShape[] | null>(null);
+  const [loadedView, setLoadedView] = useState<CaseLayerView | null>(null);
+  const persistReadyRef = useRef(false);
+  const persistTimerRef = useRef<number | null>(null);
+  const persistShapesRef = useRef<PaintShape[]>([]);
+  const persistViewRef = useRef<CaseLayerView | null>(null);
+  const paintFileKeysRef = useRef(paintFileKeys);
+  paintFileKeysRef.current = paintFileKeys;
+  const appliedPaintSigRef = useRef("");
+  const appliedViewSigRef = useRef("");
+  const persistSigRef = useRef(paintFileKeySig);
+  if (persistSigRef.current !== paintFileKeySig) {
+    persistSigRef.current = paintFileKeySig;
+    persistReadyRef.current = false;
+  }
+
+  const currentPersistBody = () => {
+    const shapes =
+      paint.paintRef.current?.getShapes() ?? persistShapesRef.current;
+    const view = viewerRef.current?.getView() ?? persistViewRef.current;
+    persistShapesRef.current = shapes;
+    if (view) persistViewRef.current = view;
+    return {
+      fileKeys: paintFileKeysRef.current,
+      shapes,
+      view: view || persistViewRef.current,
+    };
+  };
+
+  const flushWorkFilePaint = () => {
+    if (persistTimerRef.current != null) {
+      window.clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+    }
+    const token = authTokenRef.current;
+    if (!seatTransferKey || !token) return;
+    const body = currentPersistBody();
+    void request({
+      path: `/api/practice/transfers/${encodeURIComponent(seatTransferKey)}/work-file-paint`,
+      method: "PUT",
+      token,
+      jsonBody: body,
+    }).catch((error) => {
+      console.error("[work-file-paint] flush failed", error);
+    });
+  };
+
+  useEffect(() => {
+    persistReadyRef.current = false;
+    setLoadedPaint(null);
+    setLoadedView(null);
+    appliedPaintSigRef.current = "";
+    appliedViewSigRef.current = "";
+    if (!open || !seatTransferKey) return;
+    const ac = new AbortController();
+    void request<{
+      data?: { fileKeys?: string[]; shapes?: unknown; view?: unknown };
+    }>({
+      path: `/api/practice/transfers/${encodeURIComponent(seatTransferKey)}/work-file-paint`,
+      method: "GET",
+      token: authToken,
+      skipCache: true,
+      signal: ac.signal,
+    })
+      .then((res) => {
+        if (ac.signal.aborted) return;
+        const parsed = parseWorkFilePaint(res.ok ? res.data?.data : null);
+        persistShapesRef.current = parsed.shapes;
+        persistViewRef.current = parsed.view;
+        setLoadedPaint(parsed.shapes);
+        setLoadedView(parsed.view);
+        // 뷰어가 아직 없어도 그리면 바로 저장되게 한다.
+        persistReadyRef.current = true;
+      })
+      .catch(() => {
+        if (ac.signal.aborted) return;
+        persistShapesRef.current = [];
+        persistViewRef.current = null;
+        setLoadedPaint([]);
+        setLoadedView(null);
+        persistReadyRef.current = true;
+      });
+    return () => {
+      ac.abort();
+      // 닫을 때 디바운스·최신 표시·뷰를 바로 저장한다(빈 clear로 덮지 않음).
+      if (persistReadyRef.current) flushWorkFilePaint();
+    };
+    // flushWorkFilePaint는 seatTransferKey·refs만 쓴다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, seatTransferKey, authToken, paintFileKeySig]);
+
+  useEffect(() => {
+    if (!open || !paintSpace || loadedPaint == null) return;
+    if (appliedPaintSigRef.current === paintFileKeySig) return;
+    let cancelled = false;
+    let frames = 0;
+    const apply = () => {
+      if (cancelled) return;
+      const surface = paint.paintRef.current;
+      if (!surface) {
+        if (frames < 60) {
+          frames += 1;
+          window.requestAnimationFrame(apply);
+        }
+        return;
+      }
+      // 서버 표시를 넣기 전에 사용자가 이미 그린 경우 덮지 않는다.
+      if (surface.hasInk() && loadedPaint.length === 0) {
+        appliedPaintSigRef.current = paintFileKeySig;
+        persistShapesRef.current = surface.getShapes();
+        return;
+      }
+      surface.replaceShapes(loadedPaint, { silent: true });
+      paint.setCount(loadedPaint.length);
+      appliedPaintSigRef.current = paintFileKeySig;
+    };
+    apply();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadedPaint, open, paint, paintFileKeySig, paintSpace]);
+
+  useEffect(() => {
+    if (!open || !paintSpace || !loadedView) return;
+    if (appliedViewSigRef.current === paintFileKeySig) return;
+    let cancelled = false;
+    let frames = 0;
+    const apply = () => {
+      if (cancelled) return;
+      const viewer = viewerRef.current;
+      if (!viewer?.getView()) {
+        if (frames < 90) {
+          frames += 1;
+          window.requestAnimationFrame(apply);
+        }
+        return;
+      }
+      viewer.restoreView(loadedView);
+      persistViewRef.current = loadedView;
+      appliedViewSigRef.current = paintFileKeySig;
+    };
+    apply();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadedView, open, paintFileKeySig, paintSpace]);
+
+  const persistWorkFilePaint = (
+    shapes?: PaintShape[],
+    immediate = false,
+  ) => {
+    if (shapes) persistShapesRef.current = shapes;
+    if (!persistReadyRef.current || !seatTransferKey) return Promise.resolve();
+    const run = () => {
+      persistTimerRef.current = null;
+      const token = authTokenRef.current;
+      if (!seatTransferKey || !token) return Promise.resolve();
+      const body = currentPersistBody();
+      return request({
+        path: `/api/practice/transfers/${encodeURIComponent(seatTransferKey)}/work-file-paint`,
+        method: "PUT",
+        token,
+        jsonBody: body,
+      })
+        .then(() => undefined)
+        .catch((error) => {
+          console.error("[work-file-paint] save failed", error);
+        });
+    };
+    if (persistTimerRef.current != null) {
+      window.clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+    }
+    if (immediate) return run();
+    persistTimerRef.current = window.setTimeout(() => {
+      void run();
+    }, 450);
+    return Promise.resolve();
+  };
 
   const expandCluster = (cluster: ItemCluster) => {
     setCollapsed((prev) =>
@@ -1196,6 +1390,13 @@ export function RequestFilesPreviewDialog({
                 colorMapping={colorMapping}
                 prosthesisTransparency={prosthesisTransparency}
                 onPaintSpace={setPaintSpace}
+                onViewChange={
+                  seatTransferKey
+                    ? () => {
+                        void persistWorkFilePaint();
+                      }
+                    : undefined
+                }
                 designPending={designPending}
                 storedSeats={storedSeats}
                 onSeatDecision={seatTransferKey ? saveSeatDecision : undefined}
@@ -1247,6 +1448,22 @@ export function RequestFilesPreviewDialog({
                 onAttachChatFile={onAttachChatFile}
                 onRemoveChatFile={onRemoveChatFile}
                 onReorderChatFiles={onReorderChatFiles}
+                onShapesCommit={
+                  showingImage
+                    ? undefined
+                    : (shapes) => {
+                        void persistWorkFilePaint(shapes);
+                      }
+                }
+                attachOpensWorkFiles={!showingImage}
+                onBeforeAttach={
+                  showingImage
+                    ? undefined
+                    : () => persistWorkFilePaint(
+                        paint.paintRef.current?.getShapes() ?? persistShapesRef.current,
+                        true,
+                      )
+                }
               />
             ) : null}
             {!showingImage ? (

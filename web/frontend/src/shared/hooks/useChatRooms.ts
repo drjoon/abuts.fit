@@ -50,6 +50,7 @@ export interface ChatMessage {
     s3Key: string;
     s3Url: string;
     uploadedAt: string;
+    openWorkFiles?: boolean;
   }>;
   replyTo?: ChatMessageReplyTo | string | null;
   reactions?: ChatMessageReaction[];

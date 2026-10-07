@@ -1,4 +1,5 @@
-// 3D·이미지 뷰 위에 표시를 그린다. 다시 열면 비운다.
+// 3D·이미지 뷰 위에 표시를 그린다. 작업 파일은 메타데이터로 다시 연다.
+// - 2026-10-07: getShapes/replaceShapes. 작업 파일은 메타데이터로 다시 연다.
 // - 2026-10-01: 표시 본체를 끌면 평행이동. 모서리는 크기.
 // - 2026-10-01: 표시는 모서리로 크기를 바꾼다. 3D 뷰에서는 모델에 붙어 화면을 돌리면 같이 돈다.
 // - 2026-09-30: 표시마다 (1)(2) 순번. X로 그 순번만 지운다. 저장·첨부 이미지에도 순번을 넣는다.
@@ -102,9 +103,12 @@ export function paintNoteFileName(fileName: string): string {
 }
 
 export type ViewPaintHandle = {
-  clear: () => void;
+  /** silent면 메타데이터 저장 콜백을 부르지 않는다(프리뷰 닫기·리셋). */
+  clear: (opts?: { silent?: boolean }) => void;
   undo: () => void;
   hasInk: () => boolean;
+  getShapes: () => PaintShape[];
+  replaceShapes: (shapes: PaintShape[], opts?: { silent?: boolean }) => void;
   /** 뷰 캔버스 위에 표시를 겹쳐 PNG로 만든다. */
   compositePng: (base: HTMLCanvasElement) => Promise<Blob | null>;
 };
@@ -239,6 +243,8 @@ type Props = {
   space?: ViewPaintSpace | null;
   /** 그려진 표시 개수가 바뀔 때마다. */
   onShapesChange?: (count: number) => void;
+  /** 표시를  commited(추가·삭제·이동·크기)할 때마다. silent replace는 생략. */
+  onShapesCommit?: (shapes: PaintShape[]) => void;
   /** 페인트를 켠 채 Esc를 누르면. 대화상자 닫기보다 먼저 받는다. */
   onEscape?: () => void;
   className?: string;
@@ -262,7 +268,7 @@ function roundKey(value: number) {
 
 export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
   function ViewPaintSurface(
-    { enabled, tool, color, width, space = null, onShapesChange, onEscape, className },
+    { enabled, tool, color, width, space = null, onShapesChange, onShapesCommit, onEscape, className },
     ref,
   ) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -292,6 +298,8 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
     textDraftRef.current = textDraft;
     const onShapesChangeRef = useRef(onShapesChange);
     onShapesChangeRef.current = onShapesChange;
+    const onShapesCommitRef = useRef(onShapesCommit);
+    onShapesCommitRef.current = onShapesCommit;
     const onEscapeRef = useRef(onEscape);
     onEscapeRef.current = onEscape;
     const styleRef = useRef({ color, width });
@@ -363,13 +371,18 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       setSelected(index);
     };
 
-    const setShapes = (next: PaintShape[]) => {
-      const before = shapesRef.current.length;
+    const notifyShapes = (opts?: { silent?: boolean }) => {
+      const next = shapesRef.current;
+      onShapesChangeRef.current?.(next.length);
+      if (!opts?.silent) onShapesCommitRef.current?.(next.map(cloneShape));
+    };
+
+    const setShapes = (next: PaintShape[], opts?: { silent?: boolean }) => {
       shapesRef.current = next;
       redraw();
       syncInk();
       publishOverlay();
-      if (before !== next.length) onShapesChangeRef.current?.(next.length);
+      notifyShapes(opts);
     };
 
     const removeAt = (index: number) => {
@@ -405,14 +418,14 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       setShapes(next);
     };
 
-    const clear = () => {
+    const clear = (opts?: { silent?: boolean }) => {
       draftRef.current = null;
       textDraftRef.current = null;
       setTextDraft(null);
       selectedRef.current = null;
       resizeRef.current = null;
       moveRef.current = null;
-      setShapes([]);
+      setShapes([], opts);
     };
 
     const undo = () => {
@@ -432,6 +445,11 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       clear,
       undo,
       hasInk: () => shapesRef.current.length > 0,
+      getShapes: () => shapesRef.current.map(cloneShape),
+      replaceShapes: (shapes, opts) => {
+        selectedRef.current = null;
+        setShapes(shapes.map(cloneShape), opts);
+      },
       compositePng: (base) =>
         new Promise((resolve) => {
           commitText();
@@ -896,6 +914,7 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
               moveRef.current = null;
               const canvas = canvasRef.current;
               if (canvas) canvas.style.cursor = "";
+              notifyShapes();
               return;
             }
             const draft = draftRef.current;
@@ -1022,7 +1041,10 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
                 }}
                 onPointerMove={applyResize}
                 onPointerUp={() => {
-                  resizeRef.current = null;
+                  if (resizeRef.current) {
+                    resizeRef.current = null;
+                    notifyShapes();
+                  }
                 }}
                 onPointerCancel={() => {
                   resizeRef.current = null;

@@ -10,6 +10,7 @@
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // change-log:
+// - 2026-10-07: 작업 파일 채팅 첨부 — openWorkFiles·파일명(작업파일-표시-*.png)으로 작업 파일 뷰어를 연다.
 // - 2026-09-30: 첨부 키 순서가 바뀌어도 썸네일 다운로드를 다시 시작하지 않는다.
 // - 2026-09-07: `[의뢰ID:…]` 클릭 → 작업현황(채팅) 열기·환자이름 표시.
 // - 2026-08-13: 채팅 첨부 다운로드 중 프로그레스바.
@@ -60,6 +61,7 @@ import {
   resolveCompanionTextureFileName,
 } from "@/shared/files/modelPreviewFile";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
+import { chatAttachmentOpensWorkFiles } from "@/shared/chat/chatOpenWorkFiles";
 import {
   getPracticeTransferFileExtension,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
@@ -76,6 +78,7 @@ export type ChatBubbleAttachment = {
   fileType?: string;
   s3Key?: string;
   s3Url?: string;
+  openWorkFiles?: boolean;
 };
 
 type ChatMessageBubbleProps = {
@@ -94,6 +97,8 @@ type ChatMessageBubbleProps = {
   /** 리액션 툴팁용 userId → 표시 이름 */
   reactionUserNameById?: Record<string, string>;
   onOpenAttachment?: (file: ChatBubbleAttachment) => void | Promise<void>;
+  /** 작업 파일 페인트 첨부. 클릭 시 이미지 대신 작업 파일을 연다. */
+  onOpenWorkFiles?: () => void;
   /** 채팅 본문 `[의뢰ID:…]` 클릭 → 해당 의뢰 작업현황 */
   onOpenRequestId?: (requestId: string) => void;
   formatFileSize?: (size: number) => string;
@@ -350,6 +355,7 @@ export function ChatMessageBubble({
   onDeleteMessage,
   reactionUserNameById = {},
   onOpenAttachment,
+  onOpenWorkFiles,
   onAttachChatFile,
   onRemoveChatFile,
   onReorderChatFiles,
@@ -692,6 +698,16 @@ export function ChatMessageBubble({
       0,
       Math.min(index, previewableAttachments.length - 1),
     );
+    const target = previewableAttachments[nextIndex];
+    // 작업파일-표시-*.png 는 단건 이미지 프리뷰로 열지 않는다.
+    if (
+      onOpenWorkFiles &&
+      target &&
+      chatAttachmentOpensWorkFiles(target)
+    ) {
+      onOpenWorkFiles();
+      return;
+    }
     setPreviewItems(previewableAttachments);
     setPreviewIndex(nextIndex);
     setPreviewOpen(true);
@@ -847,7 +863,11 @@ export function ChatMessageBubble({
                   const s3Key = String(file.s3Key || "").trim();
                   const thumbUrl = s3Key ? thumbUrls[s3Key] : "";
                   const modelThumb = s3Key ? modelThumbFiles[s3Key] : undefined;
+                  const opensWorkFiles =
+                    Boolean(onOpenWorkFiles) &&
+                    chatAttachmentOpensWorkFiles(file);
                   const canPreview =
+                    opensWorkFiles ||
                     Boolean(authToken && s3Key) ||
                     (typeof onOpenAttachment === "function" &&
                       (s3Key || file.s3Url));
@@ -869,6 +889,10 @@ export function ChatMessageBubble({
                       disabled={!canPreview || isBusy}
                       onClick={() => {
                         if (isBusy) return;
+                        if (opensWorkFiles) {
+                          onOpenWorkFiles?.();
+                          return;
+                        }
                         if (authToken && s3Key) {
                           openAttachmentPreview(idx);
                           return;
@@ -888,14 +912,18 @@ export function ChatMessageBubble({
                       aria-label={
                         isBusy
                           ? `${file.fileName} 다운로드 중 ${Math.round(progress)}%`
-                          : kind === "model"
-                            ? `${file.fileName} 3D 미리보기`
-                            : `${file.fileName} 미리보기`
+                          : opensWorkFiles
+                            ? `${file.fileName} 작업 파일 미리보기`
+                            : kind === "model"
+                              ? `${file.fileName} 3D 미리보기`
+                              : `${file.fileName} 미리보기`
                       }
                       title={
-                        kind === "model"
-                          ? "클릭하여 3D 미리보기"
-                          : "클릭하여 이미지 미리보기"
+                        opensWorkFiles
+                          ? "클릭하여 작업 파일 미리보기"
+                          : kind === "model"
+                            ? "클릭하여 3D 미리보기"
+                            : "클릭하여 이미지 미리보기"
                       }
                     >
                       {kind === "model" && modelThumb ? (
@@ -925,6 +953,11 @@ export function ChatMessageBubble({
                           <span className="line-clamp-3">{file.fileName}</span>
                         </span>
                       )}
+                      {opensWorkFiles ? (
+                        <span className="absolute left-1 top-1 z-10 rounded bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                          작업
+                        </span>
+                      ) : null}
                       {isBusy ? (
                         <span className="absolute inset-x-0 bottom-0 bg-black/55 px-1.5 py-1">
                           <span className="mb-0.5 block text-[10px] text-white tabular-nums">

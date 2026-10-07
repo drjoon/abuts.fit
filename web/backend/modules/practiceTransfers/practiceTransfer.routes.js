@@ -89,6 +89,10 @@ import {
   listPracticeTransferAbutmentSeats,
   savePracticeTransferAbutmentSeat,
 } from "../../controllers/practiceTransfers/practiceTransferAbutmentSeat.controller.js";
+import {
+  getPracticeTransferWorkFilePaint,
+  savePracticeTransferWorkFilePaint,
+} from "../../controllers/practiceTransfers/practiceTransferWorkFilePaint.controller.js";
 
 const router = express.Router();
 const caseShareAuth = authorize(["practice", "requestor", "internalLab", "admin"]);
@@ -410,6 +414,20 @@ router.post(
   authenticate,
   caseShareAuth,
   savePracticeTransferAbutmentSeat,
+);
+
+// 작업 파일 3D 페인트(표시). 파일은 그대로 두고 메타데이터만. 참여자 판정은 컨트롤러.
+router.get(
+  "/:transferId/work-file-paint",
+  authenticate,
+  caseShareAuth,
+  getPracticeTransferWorkFilePaint,
+);
+router.put(
+  "/:transferId/work-file-paint",
+  authenticate,
+  caseShareAuth,
+  savePracticeTransferWorkFilePaint,
 );
 
 router.post(

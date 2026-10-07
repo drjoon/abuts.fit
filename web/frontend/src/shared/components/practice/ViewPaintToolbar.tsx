@@ -41,7 +41,7 @@ const PAINT_TOOLS: Array<{ id: ViewPaintTool; label: string; hint: string; icon:
 
 const WIDTH_LABEL = ["얇게", "보통", "굵게"] as const;
 
-/** 닫히면 표시를 지우고 끈다. `resetKey`가 바뀌어도(다른 파일·의뢰) 지우고 처음 상태로 돌린다. */
+/** 닫히면 화면 표시만 지운다(메타데이터는 지우지 않음). `resetKey`가 바뀌어도 같다. */
 export function useViewPaint({
   open,
   resetKey,
@@ -62,13 +62,14 @@ export function useViewPaint({
   useEffect(() => {
     if (open) return;
     setPaintOn(initiallyOn);
-    paintRef.current?.clear();
+    // 프리뷰를 닫을 때 빈 표시를 저장하면 안 된다.
+    paintRef.current?.clear({ silent: true });
     setCount(0);
   }, [initiallyOn, open]);
 
   useEffect(() => {
     setPaintOn(initiallyOn);
-    paintRef.current?.clear();
+    paintRef.current?.clear({ silent: true });
     setCount(0);
   }, [initiallyOn, resetKey]);
 
