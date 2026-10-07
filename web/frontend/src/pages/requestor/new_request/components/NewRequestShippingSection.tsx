@@ -391,7 +391,7 @@ export function NewRequestShippingSection({
             </div>
             <div className="text-sm text-destructive">적어도 2-3개 요일 선택 권장</div>
             <div className="text-base text-foreground leading-relaxed">
-              지정하신 요일에 모두 보내드립니다.
+              지정하신 요일에 모두 발송합니다.
             </div>
             <div className="text-sm text-slate-600 leading-relaxed">
               1박스당 {shippingFeeLabel}원
