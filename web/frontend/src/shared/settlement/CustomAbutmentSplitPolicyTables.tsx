@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-07: 제조 표 — 의뢰비 1만원 기준으로 계산.
+// - 2026-10-07: 분배 표 — 전폭·헤더·줄무늬·호버·열 비율로 가독성 개선.
 // - 2026-10-07: 제조 표 — 누적 분배비 열 제거(구간과 동일 고정).
 // - 2026-10-07: 제조 표 — 하단 의뢰비·분배 안내 제거(팩트 카드로 이동).
 // - 2026-10-07: 제조 표 — 전 구간 49.5% 상단 칩 제거(표만).
@@ -13,6 +15,7 @@
 // - 2026-10-05: 딜러 표 — 스토어·커스텀어벗 공통 10~20% 누적 구간.
 // - 2026-10-05: 딜러 표 — 구간 분배비·누적 분배비(세금 구간) 분리 설명.
 import type { ReactNode } from "react";
+import { cn } from "@/shared/ui/cn";
 import {
   ABUTS_NET_MFR_FIXED_BANDS,
   CUSTOM_ABUTMENT_SALE_WON,
@@ -30,50 +33,60 @@ import {
   type SplitMarginalBand,
 } from "@/shared/settlement/customAbutmentSplitPolicy";
 
+type SplitColumn = {
+  key: string;
+  label: string;
+  labelShort?: string;
+  align?: "left" | "right";
+  emphasize?: boolean;
+  className?: string;
+  /** table-fixed 열 비율(예: w-[22%]). */
+  widthClass?: string;
+  cell: (row: CustomAbutmentSplitRow) => ReactNode;
+};
+
 function SplitTable({
   columns,
   rows,
   framed = false,
   wide = false,
 }: {
-  columns: ReadonlyArray<{
-    key: string;
-    label: string;
-    labelShort?: string;
-    align?: "left" | "right";
-    emphasize?: boolean;
-    className?: string;
-    cell: (row: CustomAbutmentSplitRow) => ReactNode;
-  }>;
+  columns: ReadonlyArray<SplitColumn>;
   rows: CustomAbutmentSplitRow[];
   framed?: boolean;
   wide?: boolean;
 }) {
   return (
     <div
-      className={
-        framed
-          ? `min-w-0 rounded-xl border border-slate-200/80 bg-white px-1 py-1.5 shadow-sm sm:px-1.5 ${
-              wide ? "overflow-x-auto" : "overflow-x-hidden"
-            }`
-          : `min-w-0 px-1 py-1.5 sm:px-1.5 ${wide ? "overflow-x-auto" : "overflow-x-hidden"}`
-      }
+      className={cn(
+        "min-w-0 w-full",
+        framed &&
+          "overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm ring-1 ring-slate-900/[0.02]",
+        wide ? "overflow-x-auto" : "overflow-x-hidden",
+      )}
     >
       <table
-        className={
-          wide
-            ? "w-full min-w-[40rem] border-collapse text-sm"
-            : "w-full min-w-0 table-fixed border-collapse text-[11px] sm:text-sm"
-        }
+        className={cn(
+          "w-full border-collapse text-sm",
+          wide ? "min-w-[40rem]" : "min-w-0 table-fixed",
+        )}
       >
+        <colgroup>
+          {columns.map((col) => (
+            <col key={col.key} className={col.widthClass} />
+          ))}
+        </colgroup>
         <thead>
-          <tr className="border-b border-slate-200 text-[10px] text-slate-500 sm:text-xs">
+          <tr className="border-b border-slate-200/90 bg-slate-50/95 text-[11px] text-slate-500 sm:text-xs">
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={`px-1 py-1.5 font-medium sm:px-2.5 sm:py-2 sm:whitespace-nowrap ${
-                  col.align === "left" ? "text-left" : "text-right"
-                } ${col.emphasize ? "text-slate-800" : ""} ${col.className ?? ""}`}
+                className={cn(
+                  "px-2.5 py-2.5 font-semibold tracking-tight sm:px-3.5 sm:whitespace-nowrap",
+                  col.align === "left" ? "text-left" : "text-right",
+                  col.emphasize ? "text-slate-800" : "text-slate-500",
+                  col.className,
+                )}
               >
                 {col.labelShort ? (
                   <>
@@ -88,21 +101,25 @@ function SplitTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {rows.map((row, index) => (
             <tr
               key={row.qty}
-              className="border-b border-slate-100 last:border-0"
+              className={cn(
+                "border-b border-slate-100/90 last:border-0 transition-colors hover:bg-sky-50/50",
+                index % 2 === 1 && "bg-slate-50/60",
+              )}
             >
               {columns.map((col) => (
                 <td
                   key={col.key}
-                  className={`px-1 py-1.5 tabular-nums sm:px-2.5 sm:whitespace-nowrap ${
-                    col.align === "left" ? "text-left" : "text-right"
-                  } ${
+                  className={cn(
+                    "px-2.5 py-2 tabular-nums tracking-tight sm:px-3.5 sm:whitespace-nowrap",
+                    col.align === "left" ? "text-left" : "text-right",
                     col.emphasize
                       ? "font-semibold text-slate-900"
-                      : "text-slate-700"
-                  } ${col.className ?? ""}`}
+                      : "text-slate-700",
+                    col.className,
+                  )}
                 >
                   {col.cell(row)}
                 </td>
@@ -143,44 +160,51 @@ function BandPills({ bands }: { bands: ReadonlyArray<SplitMarginalBand> }) {
 
 const MOBILE_HIDDEN_COL = "hidden sm:table-cell";
 
-const qtyColumn = {
+const qtyColumn: SplitColumn = {
   key: "qty",
   label: "월 개수",
-  align: "left" as const,
-  cell: (row: CustomAbutmentSplitRow) => row.qty.toLocaleString("ko-KR"),
+  align: "left",
+  widthClass: "w-[22%]",
+  cell: (row) => (
+    <span className="font-medium text-slate-900">
+      {row.qty.toLocaleString("ko-KR")}
+    </span>
+  ),
 };
 
-const dealerColumns = [
-  qtyColumn,
+const dealerColumns: SplitColumn[] = [
+  { ...qtyColumn, widthClass: "w-[18%]" },
   {
     key: "marginalPct",
     label: "구간 분배비",
     labelShort: "구간%",
     className: MOBILE_HIDDEN_COL,
-    cell: (row: CustomAbutmentSplitRow) =>
-      formatSharePct(row.dealerMarginalPct),
+    widthClass: "w-[18%]",
+    cell: (row) => formatSharePct(row.dealerMarginalPct),
   },
   {
     key: "bandWon",
     label: "구간 지급",
     labelShort: "구간",
     className: MOBILE_HIDDEN_COL,
-    cell: (row: CustomAbutmentSplitRow) => formatManwon(row.dealerBandWon),
+    widthClass: "w-[20%]",
+    cell: (row) => formatManwon(row.dealerBandWon),
   },
   {
     key: "effectivePct",
     label: "누적 분배비",
     labelShort: "누적%",
     emphasize: true,
-    cell: (row: CustomAbutmentSplitRow) =>
-      formatSharePct(row.dealerEffectivePct),
+    widthClass: "w-[22%]",
+    cell: (row) => formatSharePct(row.dealerEffectivePct),
   },
   {
     key: "dealerWon",
     label: "누적 지급",
     labelShort: "누적",
     emphasize: true,
-    cell: (row: CustomAbutmentSplitRow) => formatManwon(row.dealerWon),
+    widthClass: "w-[22%]",
+    cell: (row) => formatManwon(row.dealerWon),
   },
 ];
 
@@ -188,8 +212,10 @@ export function CustomAbutmentDealerSplitTable() {
   const saleUnitWon = CUSTOM_ABUTMENT_SALE_WON_10K;
   const rows = splitAbutsFixedRows(CUSTOM_ABUTMENT_SPLIT_QTY_ROWS, saleUnitWon);
   return (
-    <div className="space-y-3 rounded-2xl bg-slate-50 px-2 py-3 sm:px-3">
-      <BandPills bands={DEALER_MARGINAL_BANDS} />
+    <div className="w-full space-y-3">
+      <div className="rounded-2xl border border-slate-200/70 bg-slate-50/80 px-2.5 py-3 sm:px-3">
+        <BandPills bands={DEALER_MARGINAL_BANDS} />
+      </div>
       <SplitTable framed rows={rows} columns={dealerColumns} />
       <p className="px-0.5 text-xs leading-relaxed text-slate-500">
         의뢰비 {saleUnitWon.toLocaleString("ko-KR")}원 기준입니다.
@@ -203,67 +229,69 @@ function partyColumns(pick: {
   bandWon: (row: CustomAbutmentSplitRow) => number;
   effectivePct: (row: CustomAbutmentSplitRow) => number;
   won: (row: CustomAbutmentSplitRow) => number;
-}) {
+}): SplitColumn[] {
   return [
-    qtyColumn,
+    { ...qtyColumn, widthClass: "w-[18%]" },
     {
       key: "marginalPct",
       label: "구간 분배비",
       labelShort: "구간%",
       className: MOBILE_HIDDEN_COL,
-      cell: (row: CustomAbutmentSplitRow) =>
-        formatSharePct(pick.marginalPct(row)),
+      widthClass: "w-[18%]",
+      cell: (row) => formatSharePct(pick.marginalPct(row)),
     },
     {
       key: "bandWon",
       label: "구간 지급",
       labelShort: "구간",
       className: MOBILE_HIDDEN_COL,
-      cell: (row: CustomAbutmentSplitRow) => formatManwon(pick.bandWon(row)),
+      widthClass: "w-[20%]",
+      cell: (row) => formatManwon(pick.bandWon(row)),
     },
     {
       key: "effectivePct",
       label: "누적 분배비",
       labelShort: "누적%",
       emphasize: true,
-      cell: (row: CustomAbutmentSplitRow) =>
-        formatSharePct(pick.effectivePct(row)),
+      widthClass: "w-[22%]",
+      cell: (row) => formatSharePct(pick.effectivePct(row)),
     },
     {
       key: "won",
       label: "누적 지급",
       labelShort: "누적",
       emphasize: true,
-      cell: (row: CustomAbutmentSplitRow) => formatManwon(pick.won(row)),
+      widthClass: "w-[22%]",
+      cell: (row) => formatManwon(pick.won(row)),
     },
   ];
 }
 
-const manufacturerColumns = [
-  qtyColumn,
+const manufacturerColumns: SplitColumn[] = [
+  { ...qtyColumn, widthClass: "w-[22%]" },
   {
     key: "marginalPct",
     label: "구간 분배비",
     labelShort: "구간%",
     className: MOBILE_HIDDEN_COL,
-    cell: (row: CustomAbutmentSplitRow) =>
-      formatSharePct(row.manufacturerMarginalPct),
+    widthClass: "w-[20%]",
+    cell: (row) => formatSharePct(row.manufacturerMarginalPct),
   },
   {
     key: "bandWon",
     label: "구간 지급",
     labelShort: "구간",
     className: MOBILE_HIDDEN_COL,
-    cell: (row: CustomAbutmentSplitRow) =>
-      formatManwon(row.manufacturerBandWon),
+    widthClass: "w-[29%]",
+    cell: (row) => formatManwon(row.manufacturerBandWon),
   },
   {
     key: "won",
     label: "누적 지급",
     labelShort: "누적",
     emphasize: true,
-    cell: (row: CustomAbutmentSplitRow) =>
-      formatManwon(row.manufacturerWon),
+    widthClass: "w-[29%]",
+    cell: (row) => formatManwon(row.manufacturerWon),
   },
 ];
 
@@ -290,15 +318,7 @@ function PartySplitPanel({
 }: {
   bands?: ReadonlyArray<SplitMarginalBand>;
   rows: CustomAbutmentSplitRow[];
-  columns: ReadonlyArray<{
-    key: string;
-    label: string;
-    labelShort?: string;
-    align?: "left" | "right";
-    emphasize?: boolean;
-    className?: string;
-    cell: (row: CustomAbutmentSplitRow) => ReactNode;
-  }>;
+  columns: ReadonlyArray<SplitColumn>;
   note?: ReactNode;
   showSaleNote?: boolean;
 }) {
@@ -317,8 +337,12 @@ function PartySplitPanel({
       </p>
     ) : null;
   return (
-    <div className="space-y-3 rounded-2xl bg-slate-50 px-2 py-3 sm:px-3">
-      {bands?.length ? <BandPills bands={bands} /> : null}
+    <div className="w-full space-y-3">
+      {bands?.length ? (
+        <div className="rounded-2xl border border-slate-200/70 bg-slate-50/80 px-2.5 py-3 sm:px-3">
+          <BandPills bands={bands} />
+        </div>
+      ) : null}
       <SplitTable framed rows={rows} columns={columns} />
       {footer}
     </div>
@@ -328,7 +352,10 @@ function PartySplitPanel({
 export function CustomAbutmentManufacturerSplitTable() {
   return (
     <PartySplitPanel
-      rows={splitManufacturerFixedRows()}
+      rows={splitManufacturerFixedRows(
+        CUSTOM_ABUTMENT_SPLIT_QTY_ROWS,
+        CUSTOM_ABUTMENT_SALE_WON_10K,
+      )}
       columns={manufacturerColumns}
       showSaleNote={false}
     />
@@ -358,7 +385,7 @@ export function CustomAbutmentDevopsSplitTable() {
       bands={DEVOPS_FIXED_BANDS}
       rows={splitManufacturerFixedRows()}
       columns={devopsColumns}
-      note="어벗츠 몫에서 뗍니다."
+      note="어벗츠 몫에서 뺍니다."
     />
   );
 }

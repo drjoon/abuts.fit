@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
+// - 2026-10-07: 정산규칙 기준 — 의뢰비 1만원(표·안내 동일).
 // - 2026-10-07: 정산규칙 — 배송 카드→의뢰비·49.5% 기준. 표 하단 안내 제거.
 // - 2026-10-07: 정산규칙 — 제조 49.5%(부가세 포함) 고정. 제조44%/어벗츠40% 탭 제거.
 // - 2026-10-05: 정산규칙 — 딜러와 같은 칩·표·팩트. 탭 제조 44% / 어벗츠 40%.
@@ -73,7 +74,7 @@ import {
 } from "@/shared/settlement/settlementUi";
 import { CustomAbutmentManufacturerSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
 import {
-  CUSTOM_ABUTMENT_SALE_WON,
+  CUSTOM_ABUTMENT_SALE_WON_10K,
   MANUFACTURER_FIXED_SHARE_PCT,
   formatSharePct,
 } from "@/shared/settlement/customAbutmentSplitPolicy";
@@ -927,7 +928,7 @@ export const ManufacturerPaymentPage = () => {
               <SettlementPolicyDialog
                 title="제조사 정산 규칙"
                 description="커스텀어벗"
-                contentClassName="sm:max-w-3xl"
+                contentClassName="sm:max-w-4xl"
               >
                 <div className="space-y-4">
                   <CustomAbutmentManufacturerSplitTable />
@@ -938,7 +939,7 @@ export const ManufacturerPaymentPage = () => {
                       리메이크·무료 크레딧도 같습니다.
                     </SettlementPolicyFact>
                     <SettlementPolicyFact label="기준">
-                      {`의뢰비 ${CUSTOM_ABUTMENT_SALE_WON.toLocaleString("ko-KR")}원 기준입니다.`}
+                      {`의뢰비 ${CUSTOM_ABUTMENT_SALE_WON_10K.toLocaleString("ko-KR")}원 기준입니다.`}
                       <br />
                       {`${formatSharePct(MANUFACTURER_FIXED_SHARE_PCT)} 고정(부가세 포함)입니다.`}
                     </SettlementPolicyFact>
