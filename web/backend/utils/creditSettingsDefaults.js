@@ -35,6 +35,8 @@ import {
   ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
 } from "./abutsAbutmentService.js";
+import { REQUESTOR_UNIT_PRICE_MANUFACTURER_SHARE_PCT } from "./requestorUnitPricePolicy.js";
+import { resolveRequestorUnitPriceForAnchorId } from "../services/requestorUnitPrice.service.js";
 import {
   manufacturerPurchaseFromSale,
   buildDealershipRateChangeApplyPatch,
@@ -628,9 +630,18 @@ export function applySpecialRequestorPricesToCreditSettings(
  * 플랫폼 판매가를 한 금액으로 맞춘다. 관리자 가격 카드와 같은 필드.
  * 매입가(부가세 포함)는 판매가 × 제조사 비율(manufacturerSharePercent, 기본 50%).
  */
-export function overlayCustomAbutmentSalePrice(creditSettings, saleAmount) {
+export function overlayCustomAbutmentSalePrice(
+  creditSettings,
+  saleAmount,
+  options = {},
+) {
   const sale = Math.max(0, Math.round(Number(saleAmount) || 0));
-  const purchase = manufacturerPurchaseFromSale(sale, creditSettings);
+  const purchase = manufacturerPurchaseFromSale(
+    sale,
+    options?.manufacturerSharePercent != null
+      ? { manufacturerSharePercent: options.manufacturerSharePercent }
+      : creditSettings,
+  );
   const overlaid = {
     ...creditSettings,
     labProductionPrice: sale,
@@ -1280,7 +1291,25 @@ export async function loadCreditSettingsDefaults(options = {}) {
   const priced = applyLabSupply
     ? applyLabSupplyPricesToCreditSettings(base)
     : base;
-  const overridden = applyRequestorCustomAbutmentSaleOverride(priced, id);
+  const specialOverridden = applyRequestorCustomAbutmentSaleOverride(priced, id);
+  // 관리자 BA 특별가가 없으면 오늘 건당 의뢰비(자정 30일 주문량 스냅샷)를 판매가로 쓴다.
+  let requestorUnitPrice = null;
+  let overridden = specialOverridden;
+  // 기공소만 적용한다. 치과는 기존 단일가(런칭 이벤트·정상가). 매입가는 제조사 정산 49.5%.
+  if (
+    specialOverridden === priced &&
+    requestorKind === "lab" &&
+    options?.applyRequestorUnitPrice !== false
+  ) {
+    requestorUnitPrice = await resolveRequestorUnitPriceForAnchorId(id);
+    if (requestorUnitPrice) {
+      overridden = overlayCustomAbutmentSalePrice(
+        priced,
+        requestorUnitPrice.unitPrice,
+        { manufacturerSharePercent: REQUESTOR_UNIT_PRICE_MANUFACTURER_SHARE_PCT },
+      );
+    }
+  }
   // 치과 멤버십 폐지 — 청구·의뢰비는 플랫폼 고시(membership*) 단일가.
   // 의뢰자 BA 오버라이드가 있으면 그 판매가. 매입가는 적용 판매가의 50%.
   const picked = pickAbutsAbutmentCreditPrices(overridden);
@@ -1290,6 +1319,7 @@ export async function loadCreditSettingsDefaults(options = {}) {
     minCreditForRequest: picked.productionPrice,
     designFee: picked.designFeePerTooth,
     abutmentPricingTier: "membership",
+    requestorUnitPrice,
     requestorKind: requestorKind || null,
     manufacturerRequestUnitPrice: Number(
       overridden.manufacturerRequestUnitPrice,

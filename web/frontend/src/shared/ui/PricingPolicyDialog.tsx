@@ -1,3 +1,4 @@
+// - 2026-10-08: 기공소 의뢰비 — 가입 90일 1만원·지난 30일 주문량 할인(최대 1만원)·매일 자정 확정. 치과는 기존 단일가·런칭 이벤트.
 // - 2026-10-06: 택배 묶음 출고(박스당)·딜리버리 익일 도착(월 정액 VAT 포함).
 // - 2026-10-06: 안내 모달 공통 크롬·fact 카드. 딜러·개발운영 문구 단축.
 // - 2026-10-05: 딜러십 정책 — 커스텀어벗 10~20% 누적 구간. 심플웨이 지급 없음.
@@ -79,6 +80,15 @@ import {
   CREDIT_SETTINGS_DEFAULTS,
   useSystemSettings
 } from '@/hooks/useSystemSettings';
+import {
+  REQUESTOR_UNIT_PRICE_BASE,
+  REQUESTOR_UNIT_PRICE_FLOOR,
+  REQUESTOR_UNIT_PRICE_INTRO_DAYS,
+  REQUESTOR_UNIT_PRICE_INTRO_PRICE,
+  REQUESTOR_UNIT_PRICE_MAX_DISCOUNT_ORDERS,
+  REQUESTOR_UNIT_PRICE_PER_ORDER_DISCOUNT,
+  formatRequestorWon
+} from '@/shared/pricing/requestorUnitPricePolicy';
 import {
   ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
@@ -211,6 +221,8 @@ export const PricingPolicyDialog = ({
   const { kind } = useRequestorBusinessAccess();
   const isLab = kind === 'lab';
   const isRequestorPreview = variant === 'requestor';
+  /** 기공소 본인은 자정 스냅샷 의뢰비, 치과는 기존 단일가(런칭 이벤트). */
+  const useLabUnitPricePolicy = isLab && !isRequestorPreview;
   const remakeAudience: RemakePolicyAudience = isRequestorPreview
     ? 'public'
     : isLab
@@ -377,19 +389,27 @@ export const PricingPolicyDialog = ({
                           ? '커스텀 어벗 생산'
                           : '어벗츠에 · 커스텀 어벗 생산'
                     }
-                    value={formatAbutsManwon(productionPrice)}
+                    value={formatAbutsManwon(
+                      useLabUnitPricePolicy
+                        ? REQUESTOR_UNIT_PRICE_FLOOR
+                        : productionPrice
+                    )}
                     strikeValue={
-                      isLaunchEvent && regularPrice !== productionPrice
-                        ? formatAbutsManwon(regularPrice)
-                        : undefined
-                    }
-                    unitLabel='1개당'
-                    secondaryValue={
-                      isLaunchEvent
-                        ? '이벤트 중'
-                        : eventPrice !== regularPrice
-                          ? `이벤트 시 ${formatAbutsManwon(eventPrice)}`
+                      useLabUnitPricePolicy
+                        ? formatAbutsManwon(REQUESTOR_UNIT_PRICE_BASE)
+                        : isLaunchEvent && regularPrice !== productionPrice
+                          ? formatAbutsManwon(regularPrice)
                           : undefined
+                    }
+                    unitLabel={useLabUnitPricePolicy ? '1개당 의뢰비' : '1개당'}
+                    secondaryValue={
+                      useLabUnitPricePolicy
+                        ? '최저가'
+                        : isLaunchEvent
+                          ? '이벤트 중'
+                          : eventPrice !== regularPrice
+                            ? `이벤트 시 ${formatAbutsManwon(eventPrice)}`
+                            : undefined
                     }
                   />
                   <div className='h-px bg-slate-100' />
@@ -454,6 +474,21 @@ export const PricingPolicyDialog = ({
               ) : null}
 
               <div className={GUIDE_FACT_GRID_CLASS}>
+                {useLabUnitPricePolicy || isRequestorPreview ? (
+                  <SettlementPolicyFact label='기공소 의뢰비 정책'>
+                    가입 후 {REQUESTOR_UNIT_PRICE_INTRO_DAYS}일간{' '}
+                    {formatRequestorWon(REQUESTOR_UNIT_PRICE_INTRO_PRICE)}원 고정
+                    <br />
+                    {REQUESTOR_UNIT_PRICE_INTRO_DAYS + 1}일부터 지난 30일
+                    주문량으로 결정
+                    <br />
+                    1건당 {REQUESTOR_UNIT_PRICE_PER_ORDER_DISCOUNT}원 할인,{' '}
+                    {REQUESTOR_UNIT_PRICE_MAX_DISCOUNT_ORDERS}건 이상이면 최대
+                    할인
+                    <br />
+                    매일 자정(KST)에 정해 그날 하루 적용
+                  </SettlementPolicyFact>
+                ) : null}
                 <SettlementPolicyFact label={BULK_SHIPPING_LABEL}>
                   설정한 출고 요일 중 가장 빠른 날에 함께 출고합니다.
                   <br />

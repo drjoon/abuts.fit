@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-10-02: 분배 비율 딜러% 입력·즉시 적용. 그 외 비율은 내일 예약.
 // - 2026-09-24: 분배 비율 탭에 딜러십 월 매출 누진 구간 UI 마운트.
+// - 2026-10-08: 런칭 이벤트·정상가 안내를 치과 전용으로 명시(기공소는 자정 스냅샷 의뢰비).
 // - 2026-09-23: 런칭 이벤트 on/off — 즉시 적용(분배 비율 예약과 분리).
 // - 2026-09-23: 런칭 이벤트 on/off — 내일부터 예약 적용(분배 비율과 동일).
 // - 2026-09-23: 가격 카드에서 매입가 제거(분배 비율)·4열.
@@ -2780,7 +2781,7 @@ export const AdminCreditSettingsTab = ({
                       런칭 이벤트
                     </p>
                     <p className="text-xs text-slate-500">
-                      켜면 이벤트 단가, 끄면 정상가.
+                      치과 전용. 켜면 이벤트 단가, 끄면 정상가.
                       <br />
                       변경은 즉시 적용됩니다.
                     </p>
@@ -2806,7 +2807,7 @@ export const AdminCreditSettingsTab = ({
                     }
                     disabled={loading}
                     onChange={updateLaunchEventPrice}
-                    help="런칭 이벤트 기간 커스텀어벗 1개당 단가입니다."
+                    help="런칭 이벤트 기간 치과 커스텀어벗 1개당 단가입니다."
                   />
                   <SalesAmountCard
                     id="customAbutSalePrice"
@@ -2814,7 +2815,7 @@ export const AdminCreditSettingsTab = ({
                     value={settings.labProductionPrice}
                     disabled={loading}
                     onChange={updateSalePrice}
-                    help="이벤트 종료 후 치과·기공소에 청구하는 커스텀어벗 1개당 단가입니다."
+                    help="이벤트 종료 후 치과에 청구하는 단가이자 기공소 의뢰비의 기본가 표시입니다. 기공소는 자정 스냅샷 단가를 씁니다."
                   />
                   <SalesAmountCard
                     id="customAbutShippingPurchasePrice"

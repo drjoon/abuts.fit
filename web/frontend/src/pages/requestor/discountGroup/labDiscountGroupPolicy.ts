@@ -1,106 +1,17 @@
 // related files:
 // - web/frontend/src/pages/requestor/discountGroup/LabDiscountGroupPage.tsx
+// - web/frontend/src/shared/pricing/requestorUnitPricePolicy.ts
 // - web/frontend/rules.md
 // change-log:
+// - 2026-10-08: 정책 수치 SSOT를 shared/pricing/requestorUnitPricePolicy.ts로 이동. 오늘 단가는 서버 스냅샷.
 // - 2026-10-07: 가입이벤트 90일 고정 · 91일부터 지난 30일 주문량으로 오늘 가격.
-// - 2026-10-07: 기공소 소개 할인그룹 UI용 단가·기간 상수(청구 로직 연결 전 표시 SSOT).
-
-/** 기본 건당 의뢰비(원). */
-export const LAB_DISCOUNT_BASE_UNIT_PRICE = 15_000;
-
-/** 합산 의뢰 1건당 할인(원). 91일부터는 지난 30일 주문량. */
-export const LAB_DISCOUNT_PER_ORDER = 50;
-
-/** 최대 할인액(원). 100건 이상이면 최대 5천원 할인. */
-export const LAB_DISCOUNT_MAX_AMOUNT = 5_000;
-
-/** 가입 이벤트: 가입 후 고정가 기간(일) · 고정 단가(원). */
-export const LAB_DISCOUNT_INTRO_DAYS = 90;
-export const LAB_DISCOUNT_INTRO_UNIT_PRICE = 10_000;
-
-export const LAB_DISCOUNT_MIN_UNIT_PRICE =
-  LAB_DISCOUNT_BASE_UNIT_PRICE - LAB_DISCOUNT_MAX_AMOUNT;
-
-export type LabDiscountPricePreview = {
-  unitPrice: number;
-  discountAmount: number;
-  groupOrders: number;
-  rule: "intro_fixed" | "usage_discount" | "base";
-  introEndsAt: Date | null;
-  inIntroPeriod: boolean;
-};
-
-function addUtcDays(date: Date, days: number): Date {
-  const d = new Date(date.getTime());
-  d.setUTCDate(d.getUTCDate() + days);
-  return d;
-}
-
-/** 승인(또는 생성)일 기준 90일 고정가 종료 시각. */
-export function resolveLabDiscountIntroEndsAt(
-  approvedAt?: string | null,
-  createdAt?: string | null,
-): Date | null {
-  const raw = String(approvedAt || createdAt || "").trim();
-  if (!raw) return null;
-  const start = new Date(raw);
-  if (!Number.isFinite(start.getTime())) return null;
-  return addUtcDays(start, LAB_DISCOUNT_INTRO_DAYS);
-}
-
-/**
- * 표시용 예상 단가.
- * 청구 적용은 추후 서버 로직. UI는 정책 수치로 미리보기만 한다.
- */
-export function previewLabDiscountUnitPrice(input: {
-  groupOrders: number;
-  approvedAt?: string | null;
-  createdAt?: string | null;
-  now?: Date;
-}): LabDiscountPricePreview {
-  const now = input.now ?? new Date();
-  const introEndsAt = resolveLabDiscountIntroEndsAt(
-    input.approvedAt,
-    input.createdAt,
-  );
-  const inIntroPeriod = Boolean(
-    introEndsAt && now.getTime() < introEndsAt.getTime(),
-  );
-  const groupOrders = Math.max(0, Math.floor(Number(input.groupOrders) || 0));
-
-  if (inIntroPeriod) {
-    return {
-      unitPrice: LAB_DISCOUNT_INTRO_UNIT_PRICE,
-      discountAmount: LAB_DISCOUNT_BASE_UNIT_PRICE - LAB_DISCOUNT_INTRO_UNIT_PRICE,
-      groupOrders,
-      rule: "intro_fixed",
-      introEndsAt,
-      inIntroPeriod: true,
-    };
-  }
-
-  const discountAmount = Math.min(
-    groupOrders * LAB_DISCOUNT_PER_ORDER,
-    LAB_DISCOUNT_MAX_AMOUNT,
-  );
-  const unitPrice = LAB_DISCOUNT_BASE_UNIT_PRICE - discountAmount;
-
-  return {
-    unitPrice,
-    discountAmount,
-    groupOrders,
-    rule: discountAmount > 0 ? "usage_discount" : "base",
-    introEndsAt,
-    inIntroPeriod: false,
-  };
-}
-
-export function formatLabDiscountWon(n: number): string {
-  const v = Number(n || 0);
-  if (!Number.isFinite(v)) return "0";
-  try {
-    return v.toLocaleString("ko-KR");
-  } catch {
-    return String(v);
-  }
-}
+export {
+  REQUESTOR_UNIT_PRICE_BASE as LAB_DISCOUNT_BASE_UNIT_PRICE,
+  REQUESTOR_UNIT_PRICE_PER_ORDER_DISCOUNT as LAB_DISCOUNT_PER_ORDER,
+  REQUESTOR_UNIT_PRICE_MAX_DISCOUNT as LAB_DISCOUNT_MAX_AMOUNT,
+  REQUESTOR_UNIT_PRICE_INTRO_DAYS as LAB_DISCOUNT_INTRO_DAYS,
+  REQUESTOR_UNIT_PRICE_INTRO_PRICE as LAB_DISCOUNT_INTRO_UNIT_PRICE,
+  REQUESTOR_UNIT_PRICE_FLOOR as LAB_DISCOUNT_MIN_UNIT_PRICE,
+  requestorVolumeDiscountAmount as labVolumeDiscountAmount,
+  formatRequestorWon as formatLabDiscountWon,
+} from "@/shared/pricing/requestorUnitPricePolicy";

@@ -6,10 +6,18 @@
 // - web/backend/utils/practiceTransferStage.js
 // - web/backend/utils/creditSettingsDefaults.js
 // change-log:
+// - 2026-10-08: pricing-referral-stats — 오늘 건당 의뢰비=자정 30일 주문량 스냅샷 단가(가입 90일 1만원).
 // - 2026-10-07: pricing-referral-stats — remakeUnitPrice=10000(어벗츠로 리메이크 단가).
 // - 2026-09-09: pricing-referral-stats — 월 무료 리메이크 집계 제거, remakeUnitPrice=10000.
 // - 2026-08-21: cards/summary GET은 in-flight 대시보드 refresh를 기다리지 않음.
-// - 2026-08-19: 적용 단가=플랫폼 설정. 90일 1만원·주문량할인 폐지.
+// - 2026-08-19: (폐지됨, 2026-10-08 복원) 적용 단가=플랫폼 설정.
+import {
+  REQUESTOR_UNIT_PRICE_BASE,
+  REQUESTOR_UNIT_PRICE_INTRO_DAYS,
+  REQUESTOR_UNIT_PRICE_INTRO_PRICE,
+  REQUESTOR_UNIT_PRICE_MAX_DISCOUNT,
+  REQUESTOR_UNIT_PRICE_PER_ORDER_DISCOUNT,
+} from "../../utils/requestorUnitPricePolicy.js";
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -1962,15 +1970,18 @@ export async function getMyPricingReferralStats(req, res) {
         const creditSettings = await loadCreditSettingsDefaults({
           requestorOrgId: String(me?.businessAnchorId || "").trim(),
         });
-        const baseUnitPrice = resolveCustomAbutmentRequestUnitPrice(
+        // 오늘 건당 의뢰비: 자정 30일 주문량 스냅샷 단가(하루 고정). 관리자 특별가가 있으면 그 금액.
+        const snapshotPrice = creditSettings?.requestorUnitPrice || null;
+        const baseUnitPrice = REQUESTOR_UNIT_PRICE_BASE;
+        const effectiveUnitPrice = resolveCustomAbutmentRequestUnitPrice(
           creditSettings,
         );
-        const rule = "base_price";
-        const effectiveUnitPrice = baseUnitPrice;
-        const discountPerOrder = 0;
-        const maxDiscountPerUnit = 0;
+        const rule = snapshotPrice?.rule || "standard_price";
+        const discountPerOrder = REQUESTOR_UNIT_PRICE_PER_ORDER_DISCOUNT;
+        const maxDiscountPerUnit = REQUESTOR_UNIT_PRICE_MAX_DISCOUNT;
         const referralDiscountAmount = 0;
-        const discountAmount = 0;
+        const discountAmount = Math.max(0, baseUnitPrice - effectiveUnitPrice);
+        const introEndsYmd = snapshotPrice?.introEndsYmd || null;
 
         const responseData = {
           lastMonthStart,
@@ -1989,6 +2000,9 @@ export async function getMyPricingReferralStats(req, res) {
           referralDiscountAmount,
           effectiveUnitPrice,
           rule,
+          introDays: REQUESTOR_UNIT_PRICE_INTRO_DAYS,
+          introUnitPrice: REQUESTOR_UNIT_PRICE_INTRO_PRICE,
+          introEndsYmd,
           remakeUnitPrice: 10000,
           groupMemberCount,
           snapshotMissing,

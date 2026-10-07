@@ -7,6 +7,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/rules.md
 // change-log:
+// - 2026-10-08: 오늘 가격=서버 자정 스냅샷 단가(pricing-referral-stats). 클라이언트 미리보기 제거.
 // - 2026-10-07: 정책 모달 폭 축소·fact 3장 세로 배치.
 // - 2026-10-07: 정책 모달 — 가격 카드 + fact 그리드. 문구 단축.
 // - 2026-10-07: 정책 fact — 기본가격·가입이벤트·주문량할인·소개그룹.
@@ -14,7 +15,7 @@
 // - 2026-10-07: 가입링크·소개링크. 단가 취소선. 할인 카드 제거·기공소/그룹 할인 표시.
 // - 2026-10-07: DashboardShell·SettlementStatCard 스타일. 정책 문구는 fact 모달로 단축.
 // - 2026-10-07: 기공소 할인그룹 페이지 복구(표시만). 청구 적용 로직은 추후.
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -25,7 +26,7 @@ import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusine
 import { useReferralData } from "@/pages/requestor/referralGroups/hooks/useReferralData";
 import { ReferralNetworkChart } from "@/features/referral/components/ReferralNetworkChart";
 import { buildLabIntroMessage } from "@/shared/platform/referralShareMessages";
-import { formatKstYmdToKo, toKstYmd } from "@/shared/date/kst";
+import { formatKstYmdToKo } from "@/shared/date/kst";
 import { formatAbutsManwon } from "@/shared/pricing/abutsAbutmentService";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { cn } from "@/shared/ui/cn";
@@ -48,7 +49,7 @@ import {
   LAB_DISCOUNT_MAX_AMOUNT,
   LAB_DISCOUNT_PER_ORDER,
   formatLabDiscountWon,
-  previewLabDiscountUnitPrice,
+  labVolumeDiscountAmount,
 } from "./labDiscountGroupPolicy";
 
 /** 상단 4카드 1행 — 고정 max 없이 가로를 나눠 쓴다. */
@@ -59,13 +60,6 @@ const LAB_DISCOUNT_STATS_ROW_CLASS = cn(
 const LAB_DISCOUNT_CODE_CARD_CLASS =
   "flex min-h-[7.25rem] min-w-0 flex-[1.35] basis-0 flex-col rounded-2xl border-2 border-primary/60 bg-white p-3 shadow-sm sm:p-4";
 const LAB_DISCOUNT_STAT_CARD_WIDTH_CLASS = "min-w-0 flex-1 basis-0";
-
-function volumeDiscountAmount(orders: number): number {
-  return Math.min(
-    Math.max(0, Math.floor(Number(orders) || 0)) * LAB_DISCOUNT_PER_ORDER,
-    LAB_DISCOUNT_MAX_AMOUNT,
-  );
-}
 
 function formatManwonWithWonPrefix(price: number): string {
   return `₩${formatAbutsManwon(price)}`;
@@ -164,24 +158,20 @@ export default function LabDiscountGroupPage() {
   const memberCount = Number(
     treeMemberCount ?? requestorStats?.groupMemberCount ?? 0,
   );
-  const myDiscount = volumeDiscountAmount(myOrders);
-  const groupDiscount = volumeDiscountAmount(groupOrders);
+  const myDiscount = labVolumeDiscountAmount(myOrders);
+  const groupDiscount = labVolumeDiscountAmount(groupOrders);
 
-  const pricePreview = useMemo(
-    () =>
-      previewLabDiscountUnitPrice({
-        groupOrders,
-        approvedAt: user?.approvedAt,
-        createdAt: user?.createdAt,
-      }),
-    [groupOrders, user?.approvedAt, user?.createdAt],
+  // 오늘 가격은 매일 자정(KST) 30일 주문량 스냅샷으로 정해진 서버 값이다.
+  const todayUnitPrice = Number(
+    requestorStats?.effectiveUnitPrice ?? LAB_DISCOUNT_BASE_UNIT_PRICE,
   );
-
-  const introEndsLabel = pricePreview.introEndsAt
-    ? formatKstYmdToKo(toKstYmd(pricePreview.introEndsAt))
+  const priceRule = requestorStats?.rule;
+  const inIntroPeriod = priceRule === "intro_fixed";
+  const introEndsLabel = requestorStats?.introEndsYmd
+    ? formatKstYmdToKo(requestorStats.introEndsYmd)
     : null;
 
-  const unitPriceHint = pricePreview.inIntroPeriod ? (
+  const unitPriceHint = inIntroPeriod ? (
     <>
       {LAB_DISCOUNT_INTRO_DAYS}일 가입이벤트
       {introEndsLabel ? (
@@ -191,8 +181,10 @@ export default function LabDiscountGroupPage() {
         </>
       ) : null}
     </>
-  ) : pricePreview.rule === "usage_discount" ? (
+  ) : priceRule === "volume_discount" ? (
     <>지난 30일 주문량</>
+  ) : priceRule === "standard_price" ? (
+    <>지정 가격</>
   ) : (
     <>기본 가격</>
   );
@@ -284,8 +276,8 @@ export default function LabDiscountGroupPage() {
             <div className="h-px bg-slate-100" />
             <PolicyPriceRow
               label="오늘 가격"
-              value={`${formatLabDiscountWon(LAB_DISCOUNT_INTRO_UNIT_PRICE)}원`}
-              note={`${LAB_DISCOUNT_INTRO_DAYS}일 가입이벤트`}
+              value={`${formatLabDiscountWon(todayUnitPrice)}원`}
+              note={inIntroPeriod ? `${LAB_DISCOUNT_INTRO_DAYS}일 가입이벤트` : "매일 자정 확정"}
             />
           </div>
         </section>
@@ -302,6 +294,11 @@ export default function LabDiscountGroupPage() {
             <br />
             {maxOrdersForFloor}건 이상이면 최대{" "}
             {formatLabDiscountWon(LAB_DISCOUNT_MAX_AMOUNT)}원
+          </SettlementPolicyFact>
+          <SettlementPolicyFact label="가격 확정">
+            매일 자정(KST)에 정해 그날 하루 적용
+            <br />
+            배송비는 별도 부과
           </SettlementPolicyFact>
           <SettlementPolicyFact label="소개 그룹">
             소개한 기공소 주문량을 합산해 할인합니다.
@@ -387,7 +384,7 @@ export default function LabDiscountGroupPage() {
                 label="오늘 건당 의뢰비"
                 value={
                   <UnitPriceValue
-                    unitPrice={pricePreview.unitPrice}
+                    unitPrice={todayUnitPrice}
                     basePrice={LAB_DISCOUNT_BASE_UNIT_PRICE}
                   />
                 }

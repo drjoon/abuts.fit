@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/public/HelpPage.tsx
 // - web/backend/utils/remakePricingPolicy.js
 // change-log:
+// - 2026-10-08: 치과 안내 모달 — 어벗츠에 페이지로 주문하므로 건당 1만원 한 줄만 표시.
 // - 2026-10-07: 리메이크 행 라벨에 플랫폼 이용 조건 병합. 하단 노트=180일·배송비.
 // - 2026-10-07: 리메이크 과금 카피 SSOT — 어벗츠로부터/기공소에=무료, 어벗츠로/어벗츠에=건당 1만원.
 
@@ -27,16 +28,8 @@ export function remakePolicyRows(
   audience: RemakePolicyAudience,
 ): RemakePolicyRow[] {
   if (audience === "practice") {
-    return [
-      {
-        pathLabel: "기공소에 (치과·기공소 모두 플랫폼 이용)",
-        priceLabel: "무료",
-      },
-      {
-        pathLabel: "어벗츠에 (기공소만 플랫폼 이용)",
-        priceLabel: "건당 1만원",
-      },
-    ];
+    // 치과 리메이크는 「어벗츠에」 페이지로 주문한다. 건당 1만원만 안내.
+    return [{ pathLabel: "어벗츠에", priceLabel: "건당 1만원" }];
   }
   if (audience === "public") {
     return [

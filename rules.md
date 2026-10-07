@@ -230,7 +230,7 @@
   - 한 줄: **기공소 플랫폼 사용료·하청 수수료는 미부과(**`CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES=false`**). 화면·약관·정책 안내에 요율을 쓰지 않는다. 하청 배정 구조는 유지. 휴면 정책은** `resolvePracticeTransferFeeRatePolicy`**(사용료 2%·하청 10%+사용료, 이벤트 off=0, 본부 수행 0). 재개 시 스위치를 true. 기공소 월 참여 0원.**
   - 기공소(`lab`): 자동 매칭 **월 참여 수수료(**`autoMatchMonthlyFee`**)는 0원 고정(정책)**. 공개 차감은 `resolvePracticeTransferFeeRate`=0. 휴면 계산은 `resolveLabPlatformFeeRate` → `resolvePracticeTransferFeeRatePolicy`. 본부 여부는 `billing.internalPerformer` 스냅샷 또는 수행 기공소 `businessType`. `aiTrainingConsent`는 **기본 허용**이며 요율에 영향을 주지 않는다. 설정 「AI」탭·기공의뢰 「학습 이용」버튼·동의 모달은 없다. 안내는 약관·개인정보·서비스. 저장값이 `allowed: false`이고 확인된 건만 학습에서 뺀다. **어벗츠기공본부는 항상 동의한 것으로 보고 학습에 포함한다.**
   - 안내: 정책 모달·서비스 안내·약관·기공소 정산규칙·관리자 정산에서 플랫폼 사용료·하청 수수료 문구를 두지 않는다. 휴면 카피=`LabDirectPlatformFeeNotice`(미마운트).
-  - 치과(`practice`): 커스텀어벗은 플랫폼 고시 단가(**단일가**, `membership`* 키)만. 월 구독·가입 90일 1만원·멤버십/일반 청구 분기 없음.
+  - 치과(`practice`): 커스텀어벗은 플랫폼 고시 단가(**단일가**, `membership`* 키)만. 월 구독·멤버십/일반 청구 분기 없음. 치과는 단일가, 기공소 의뢰비는 자정 스냅샷 단가(아래 SSOT).
   - 유료 크레딧 사용처: 기공물·어벗 주문 대금. 기공소 매칭 월정·플랫폼 SaaS 과금에는 쓰지 않는다. 선수금은 어벗츠가 제공하는 서비스 대금으로 1차 결제 후 수행 기공소로 이체.
   - 설정: 단가·신속비=`AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`. 휴면 하청 % · 플랫폼 사용료=`DevopsPlatformFeeTab`(인증 탭에서 숨김) / `PATCH /api/admin/settings/platform-fees`.
 - 단일 SSOT 장부: `LedgerJournal` + `LedgerLine`(논리적으로 하나의 General Ledger)
@@ -252,7 +252,8 @@
   - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공(settlement 상계) → 유료** 순으로 차감
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라 소비된 paid/free 총량을 role base에 비례 배분(무편향)해 기록
   - 딜러사·개발운영사·어벗츠의 무료 수익은 지급 0원으로 정산완료 상태만 표시 가능. **리메이크는 제조사 지급(기본 6,600)**. 무료 크레딧 포함 약정 단가는 말일 일괄 지급.
-- 커스텀 어벗 의뢰 단가 SSOT: 관리자「플랫폼 설정 · 커스텀어벗」. **정상가**=`membershipProductionPrice`(기본 **15,000원**). **런칭 이벤트**=`customAbutmentLaunchEventProductionPrice`(기본 **13,000원**) · 관리자 UI는 **on/off만**(시작·종료일 입력 없음) · **변경은 내일 0시(KST)부터**(`customAbutmentLaunchEventChangeScheduled`*, 분배 비율과 동일) — `resolveCustomAbutmentProductionPriceForAt`(의뢰 생성·hold 시점). **신규 Request는 항상 생산만**(`custom_abutment`). `design_custom_abutment`·`membershipDesignAndProductionPrice`(옛 2.5만)는 **레거시 읽기 전용**. 기공의뢰 CA 디자인은 수주 기공소·`labFeeSchedule` 커스텀어벗 수가. 출고: **택배 묶음 출고**=박스당 `shippingFee`(기본 **3,500원**). **딜리버리 익일 도착**=월정액(기본 **55,000원, VAT 포함**, `fmDentalMonthlyShippingFee`) · 당일 자정까지 주문 → 익일 기공소(치과) 도착. `regular`*·관리자「멤버/일반」은 **딜러 유무 분배**용. 치과 멤버십 월정 없음.
+- **기공소(`requestorKind=lab`) 건당 의뢰비 SSOT**(`web/backend/utils/requestorUnitPricePolicy.js` · FE `shared/pricing/requestorUnitPricePolicy.ts`): 기본 **15,000원** · 가입일 포함 **90일 10,000원 고정** · 91일부터 소개 그룹 지난 30일 합산 **1건당 50원 할인, 100건 이상 최대 5,000원(=10,000원)**. **매일 자정(KST) 스냅샷**(`PricingReferralRolling30dAggregate.unitPrice`)으로 확정해 그날 하루 적용(장중 재집계는 단가 불변). 청구 반영=`loadCreditSettingsDefaults({requestorOrgId})`가 관리자 BA 특별가 없을 때 `resolveRequestorUnitPriceForAnchorId`로 판매가를 덮는다(스냅샷 전: 가입 이벤트가 → 직전 단가 → 기본가). 제조사 매입=판매가의 **49.5%**(`REQUESTOR_UNIT_PRICE_MANUFACTURER_SHARE_PCT`). 배송비는 별도. **치과는 기존 단일가(런칭 이벤트 13,000 / 정상가 15,000)** 유지, 관리자 런칭 이벤트 설정은 치과 전용.
+- 커스텀 어벗 의뢰 단가 관리자 설정(정상가 표시·딜러 분배 기준·레거시): 관리자「플랫폼 설정 · 커스텀어벗」. **정상가**=`membershipProductionPrice`(기본 **15,000원**). **런칭 이벤트**=`customAbutmentLaunchEventProductionPrice`(기본 **13,000원**) · 관리자 UI는 **on/off만**(시작·종료일 입력 없음) · **변경은 내일 0시(KST)부터**(`customAbutmentLaunchEventChangeScheduled`*, 분배 비율과 동일) — `resolveCustomAbutmentProductionPriceForAt`(의뢰 생성·hold 시점). **신규 Request는 항상 생산만**(`custom_abutment`). `design_custom_abutment`·`membershipDesignAndProductionPrice`(옛 2.5만)는 **레거시 읽기 전용**. 기공의뢰 CA 디자인은 수주 기공소·`labFeeSchedule` 커스텀어벗 수가. 출고: **택배 묶음 출고**=박스당 `shippingFee`(기본 **3,500원**). **딜리버리 익일 도착**=월정액(기본 **55,000원, VAT 포함**, `fmDentalMonthlyShippingFee`) · 당일 자정까지 주문 → 익일 기공소(치과) 도착. `regular`*·관리자「멤버/일반」은 **딜러 유무 분배**용. 치과 멤버십 월정 없음.
 - 롤백 원칙:
   - **제조사 의뢰비·배송비**(`REQUEST_SPEND_`* / `SHIPPING_SPEND_*`): 롤백·준비 취소 시 원본 저널/라인 **물리 삭제**(REFUND 추가 금지)
   - **기공의뢰(PTX)**(`PRACTICE_TRANSFER_`*·디자인비 `ADJUST`·PTX 배송): 삭제·작업취소 시 원본 저널/라인 **물리 삭제**(과거 REFUND 쌍도 함께 삭제)
@@ -356,7 +357,7 @@
   - **커스텀어벗 Abuts-first**: 작업시작 시 스캔 기반 Request 생성 → **작업시작 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수. 치과→기공소=`labFeeSchedule` 커스텀어벗 수가(기공비 정산). 기공소→어벗츠=생산비(플랫폼 1.5만, Request 과금). 레거시(치과 어벗츠 단가 선납)만 `abutmentDesignLabFee` 외주 지급. **생산 후 수행 기공소 수취**(치과 직납 아님. assignee가 있으면 그 기공소, 없으면 원청). 제조사 출고 목표=`치과도착일 − 2영업일`(`resolveManufacturerTargetShipYmd`). 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
 - 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
 - 크레딧/정산은 유료(검증된 수신자·lab) 경로에만 해당. 실 사업자등록번호가 없는 synthetic 앵커에는 환영 크레딧을 지급하지 않으며, synthetic→실BN 검증 승격 시 1회 지급
-- 소개(리퍼럴)·할인그룹: 기공소 사이드「할인그룹」(`/dashboard/discount-group`) — 소개 코드·그룹·단가 미리보기(기본 1.5만 · 지난 달 합산 1건당 50원 · 최대 1만 · 가입 90일 고정 1만). **UI만**(청구 적용 로직 추후). 소개 귀속(`referredByAnchorId`)·그룹 합산은 추천인 사업자 앵커 기준. **영업(딜러·영업본부) 소개 귀속**은 의뢰자 90일 무주문 시 리셋(§2.3).
+- 소개(리퍼럴)·할인그룹: 기공소 사이드「할인그룹」(`/dashboard/discount-group`) — 소개 코드·그룹·오늘 건당 의뢰비(기본 1.5만 · 가입 90일 1만 고정 · 91일부터 지난 30일 합산 1건당 50원 · 100건 이상 1만). 매일 자정 스냅샷 단가를 실제 청구에 적용(§2.3 건당 의뢰비 SSOT). 소개 귀속(`referredByAnchorId`)·그룹 합산은 추천인 사업자 앵커 기준. **영업(딜러·영업본부) 소개 귀속**은 의뢰자 90일 무주문 시 리셋(§2.3).
 - 공통 헬퍼/권한: `web/backend/utils/requestorCapabilities.js`, `web/frontend/src/shared/business/requestorCapabilities.ts`, `practiceTransferAuth.middleware.js`, `web/backend/controllers/businesses/requestorOrgAnchor.util.js`
 - 레거시 혼입 경로(예: `/api/requests/practice/*`)는 제거 대상으로 관리
 - 백필: `web/backend/scripts/db/backfill-requestor-capabilities.js` (`--apply`)

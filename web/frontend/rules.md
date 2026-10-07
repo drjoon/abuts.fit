@@ -108,7 +108,7 @@ Notes:
   - `src/features/layout/DashboardLayout.tsx`
   - `src/features/layout/AccountSwitcher.tsx` (사이드바 계정 팝업 · 같은 사업자 계정 전환)
   - `src/store/useAuthStore.ts` (`switchAccount`)
-  - 기공소 할인그룹(소개 할인 UI): `/dashboard/discount-group` — 사이드「기공의뢰」와「스토어」사이. `DashboardShell` + 소개코드 히어로 + `SettlementStatCard` + `SettlementPolicyDialog` fact(기본 가격·가입 이벤트·주문량 할인·소개 그룹). `labDiscountGroupPolicy.ts`(기본 1.5만 · 건당 50원 · 최대 5천 할인 · 가입 90일 고정 1만 · 91일부터 지난 30일). **표시·미리보기만**(청구 적용 로직 추후).
+  - 기공소 할인그룹(소개 할인 UI): `/dashboard/discount-group` — 사이드「기공의뢰」와「스토어」사이. `DashboardShell` + 소개코드 히어로 + `SettlementStatCard` + `SettlementPolicyDialog` fact(기본 가격·가입 이벤트·주문량 할인·소개 그룹). `labDiscountGroupPolicy.ts`(기본 1.5만 · 건당 50원 · 최대 5천 할인 · 가입 90일 고정 1만 · 91일부터 지난 30일). 오늘 가격은 서버 `pricing-referral-stats.effectiveUnitPrice`(자정 스냅샷 단가). 클라이언트 계산 없음. 수치 SSOT=`shared/pricing/requestorUnitPricePolicy.ts`.
 - 공개 랜딩 (`/` · `/offer/:slug` · `/events/:slug`)
   - `src/pages/public/Index.tsx` — 홈 히어로 + 오퍼 타일 + `#events` + 스토리 밴드
   - `src/pages/public/OfferPage.tsx` — 오퍼 상세 (`landingOffers` · `LandingOfferPage`)
@@ -361,7 +361,7 @@ Notes:
 
 - 커스텀 어벗 의뢰 단가 표시 SSOT:
   - 치과 정책 안내·크레딧 차감은 관리자「플랫폼 설정 · 커스텀어벗」유효가(런칭 1.3만 / 정상 1.5만). 의뢰자 BA 오버라이드가 있으면 그 판매가. 신속은 +신속 의뢰비.
-  - 기공소 커스텀어벗 안내도 치과와 동일 고시(`membershipProductionPrice` / `membershipDesignAndProductionPrice`). 라벨만 `어벗생산의뢰`·`기공의뢰수신`. 가입 90일 1만원 고정가 없음.
+  - 기공소 커스텀어벗 안내도 치과와 동일 고시(`membershipProductionPrice` / `membershipDesignAndProductionPrice`). 라벨만 `어벗생산의뢰`·`기공의뢰수신`. 기공소 의뢰비만 매일 자정 스냅샷 단가(가입 90일 1만원 · 이후 30일 주문량 할인). 치과는 기존 단일가.
   - 기공소 어벗츠 인증: 관리자 `PracticeTransferAutoMatchTab`에서 신청·테스트·상태 관리. **월 참여 수수료 0원**(정책). 플랫폼 사용료·하청 수수료 미부과. 어벗츠기공본부는 항상 학습에 포함. 구 거래 치과 소개 UI는 제거(초대 API는 레거시 유지). 구 기공소 설정「어벗츠 인증」탭 제거.
   - 치과향 지정 기공소 표시: `formatPracticeTargetLabLabel` → **「어벗츠 · {이름}」**(협력). 하청만 「어벗츠기공소 · 인증 협력 기공소에서 처리」. 라우팅 `targetLab`은 현행 유지. 작업시작·취소·거부 채팅은 협력만 `어벗츠 협력 기공소 「{수행 기공소}」이(가) …`(계약=어벗츠, 「」=실명). 하청 채팅은 원청명.
   - 기공소 사이드 설정과 계정 팝업 사이: 가입 이유 배너. 어벗생산의뢰 상단은 생산 현황 헤더(`[정책 안내]`·진행중·출고예정·완료·불완전가공).

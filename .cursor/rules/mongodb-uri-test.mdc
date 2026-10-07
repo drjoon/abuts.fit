@@ -10,6 +10,8 @@ alwaysApply: true
 - Local agent inspection, backfill, reconcile, and one-off DB scripts use **`MONGODB_URI_TEST`** (`abuts_fit_test`).
 - Do **not** default to `MONGODB_URI` / prod, or bare `mongodb://localhost:27017/...`, for this work.
 - Match the running local backend: `ENV_FILE=local.env` → Test DB.
+- **`MONGODB_URI_TEST`를 명시적으로 쓴다.** `local.env`는 `MONGODB_URI`도 같은 test DB를 가리키지만 그 값에 기대지 않는다. 새 스크립트·에이전트 작업은 `NODE_ENV=test`로 `_mongo.js`의 `getMongoUri()`(= `MONGODB_URI_TEST`)를 쓰고, 실행 로그의 `dbName`이 `abuts_fit_test`인지 확인한다.
+- 직접 `mongoose.connect(process.env.MONGODB_URI)`를 쓰지 않는다.
 
 ## How to connect
 

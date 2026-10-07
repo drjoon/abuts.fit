@@ -37,6 +37,15 @@ const pricingReferralRolling30dAggregateSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // 자정 스냅샷 시점에 확정한 건당 의뢰비(그날 하루 적용). utils/requestorUnitPricePolicy.js
+    unitPrice: { type: Number, default: null },
+    discountAmount: { type: Number, default: 0 },
+    priceRule: {
+      type: String,
+      enum: ["intro_fixed", "volume_discount", "base_price", null],
+      default: null,
+    },
+    introEndsYmd: { type: String, default: null },
     computedAt: {
       type: Date,
       default: null,
