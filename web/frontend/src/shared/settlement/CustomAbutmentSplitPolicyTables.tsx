@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-07: 딜러 표 — 의뢰비 건당 1만원 고정(1만·1.3만 탭 제거).
 // - 2026-10-07: 딜러 표 — 의뢰비 건당 1만·1.3만 탭.
 // - 2026-10-05: 어벗츠·개발운영 표 — 딜러·제조와 같은 칩·표.
 // - 2026-10-05: 제조·딜러 표 — 모바일은 구간 열 숨김·가로 스크롤 없음.
@@ -185,7 +186,8 @@ const dealerColumns = [
   },
 ];
 
-function DealerSplitPanel({ saleUnitWon }: { saleUnitWon: number }) {
+export function CustomAbutmentDealerSplitTable() {
+  const saleUnitWon = CUSTOM_ABUTMENT_SALE_WON_10K;
   const rows = splitAbutsFixedRows(CUSTOM_ABUTMENT_SPLIT_QTY_ROWS, saleUnitWon);
   return (
     <div className="space-y-3 rounded-2xl bg-slate-50 px-2 py-3 sm:px-3">
@@ -195,27 +197,6 @@ function DealerSplitPanel({ saleUnitWon }: { saleUnitWon: number }) {
         의뢰비 {saleUnitWon.toLocaleString("ko-KR")}원 기준입니다.
       </p>
     </div>
-  );
-}
-
-export function CustomAbutmentDealerSplitTable() {
-  return (
-    <Tabs defaultValue="sale-10k" className="min-w-0 space-y-3">
-      <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl bg-slate-100 p-1">
-        <TabsTrigger value="sale-10k" className="rounded-lg text-xs sm:text-sm">
-          건당 1만원
-        </TabsTrigger>
-        <TabsTrigger value="sale-13k" className="rounded-lg text-xs sm:text-sm">
-          건당 1.3만원
-        </TabsTrigger>
-      </TabsList>
-      <TabsContent value="sale-10k" className="mt-0 min-w-0">
-        <DealerSplitPanel saleUnitWon={CUSTOM_ABUTMENT_SALE_WON_10K} />
-      </TabsContent>
-      <TabsContent value="sale-13k" className="mt-0 min-w-0">
-        <DealerSplitPanel saleUnitWon={CUSTOM_ABUTMENT_SALE_WON} />
-      </TabsContent>
-    </Tabs>
   );
 }
 
