@@ -22,10 +22,6 @@ import { usePeriodStore } from "@/store/usePeriodStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import {
-  DashboardNoticeAlert,
-  DASHBOARD_NOTICE_HEADER_CLASS,
-} from "@/shared/notices/DashboardNoticeAlert";
-import {
   isSettlementPeriodValue,
   SETTLEMENT_DEFAULT_PERIOD,
   SETTLEMENT_PERIOD_PRESETS,
@@ -181,10 +177,6 @@ export function CommissionPaymentsPage({
                 onChange={setPeriod}
                 presets={SETTLEMENT_PERIOD_PRESETS}
                 className="shrink-0"
-              />
-              <DashboardNoticeAlert
-                placement="inline"
-                className={DASHBOARD_NOTICE_HEADER_CLASS}
               />
               <SettlementPolicyDialog
                 title={`${title} 규칙`}

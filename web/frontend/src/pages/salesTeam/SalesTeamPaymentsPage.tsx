@@ -9,10 +9,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Building2, Wallet } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Button } from "@/components/ui/button";
-import {
-  DashboardNoticeAlert,
-  DASHBOARD_NOTICE_HEADER_CLASS,
-} from "@/shared/notices/DashboardNoticeAlert";
 import { salesTeamApi } from "./salesTeamApi";
 import {
   SalesEmptyState,
@@ -42,15 +38,9 @@ export default function SalesTeamPaymentsPage() {
       title="정산"
       subtitle="소개 실적을 확인합니다. 기공사업 인센티브는 관리자 사업영역에서 정산됩니다."
       actions={
-        <div className="flex min-w-0 items-center gap-2">
-          <DashboardNoticeAlert
-            placement="inline"
-            className={DASHBOARD_NOTICE_HEADER_CLASS}
-          />
-          <Button asChild variant="outline" size="sm" className="shrink-0">
-            <Link to="/dashboard/sales/performance">성과</Link>
-          </Button>
-        </div>
+        <Button asChild variant="outline" size="sm" className="shrink-0">
+          <Link to="/dashboard/sales/performance">성과</Link>
+        </Button>
       }
     >
       {error ? (

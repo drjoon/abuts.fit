@@ -1,17 +1,8 @@
 // related files:
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-// - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
-// - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/backend/controllers/dashboardNotice.controller.js
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useLayoutEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+// - 2026-10-07: 공지는 DashboardLayout 작업영역 맨 위 전폭 1행. 페이지 inline 자리 제거.
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Megaphone } from "lucide-react";
 import {
@@ -29,28 +20,13 @@ import {
 } from "@/shared/ui/dashboardChrome";
 import type { DashboardNotice } from "./dashboardNotice";
 
-/** 헤더 줄에서 필터와 액션 버튼 사이 남는 폭. 기공소 수신과 같다. */
+/** @deprecated 레이아웃 전폭 공지 바로 통일. */
 export const DASHBOARD_NOTICE_HEADER_CLASS =
   "min-w-[6rem] max-w-none flex-1 shrink overflow-hidden 2xl:max-w-none";
 
-const NoticeClaimContext = createContext<(() => () => void) | null>(null);
-const NoticeHostedContext = createContext(false);
-
+/** 레이아웃 호환용 no-op. 공지는 `DashboardNoticeBar`가 맡는다. */
 export function DashboardNoticeHostProvider({ children }: { children: ReactNode }) {
-  const [count, setCount] = useState(0);
-  const claim = useCallback(() => {
-    setCount((n) => n + 1);
-    return () => setCount((n) => Math.max(0, n - 1));
-  }, []);
-  const hosted = count > 0;
-  const hostedValue = useMemo(() => hosted, [hosted]);
-  return (
-    <NoticeClaimContext.Provider value={claim}>
-      <NoticeHostedContext.Provider value={hostedValue}>
-        {children}
-      </NoticeHostedContext.Provider>
-    </NoticeClaimContext.Provider>
-  );
+  return <>{children}</>;
 }
 
 type ActiveResponse = {
@@ -78,31 +54,22 @@ function NoticeCopy({ text }: { text: string }) {
 }
 
 const NOTICE_BUTTON_CLASS =
-  "pointer-events-auto inline-flex min-w-0 max-w-[min(100%,14rem)] shrink-0 items-center gap-2 rounded-md border border-amber-700 bg-amber-400 px-2.5 py-1 text-left text-sm font-semibold text-amber-950 shadow-md transition hover:bg-amber-300 2xl:max-w-[min(100%,32rem)]";
+  "pointer-events-auto inline-flex min-w-0 w-full max-w-none shrink items-center justify-start gap-2 rounded-md border border-amber-700 bg-amber-400 px-2.5 py-1 text-left text-sm font-semibold text-amber-950 shadow-md transition hover:bg-amber-300";
 
+/**
+ * 대시보드 활성 공지. 레이아웃 전폭 바(`DashboardNoticeBar`)에서만 쓴다.
+ */
 export function DashboardNoticeAlert({
   className,
-  placement = "overlay",
-  claimHost = placement === "inline",
+  placement = "banner",
 }: {
   className?: string;
-  /**
-   * inline: 헤더 줄에 붙인다.
-   * banner: 페이지가 자리를 안 잡으면 작업영역 상단 줄.
-   * overlay: 쓰지 않는다.
-   */
-  placement?: "inline" | "banner" | "overlay";
-  /** 이 자리가 공지를 맡으면 상단 배너를 숨긴다. */
-  claimHost?: boolean;
+  /** banner: 작업영역 맨 위 전폭 1행. */
+  placement?: "banner";
 }) {
   const token = useAuthStore((s) => s.token);
   const role = useAuthStore((s) => s.user?.role);
-  const claim = useContext(NoticeClaimContext);
   const [openId, setOpenId] = useState<string | null>(null);
-  useLayoutEffect(() => {
-    if (!claimHost || !claim) return;
-    return claim();
-  }, [claim, claimHost]);
   const { data: items = [] } = useQuery({
     queryKey: ["dashboard-notices-active"],
     enabled: Boolean(token) && role !== "admin",
@@ -120,52 +87,32 @@ export function DashboardNoticeAlert({
   const open = items.find((item) => item.id === openId) || null;
   if (!items.length) return null;
 
-  const buttons = items.map((item) => (
-    <button
-      key={item.id}
-      type="button"
-      onClick={() => setOpenId(item.id)}
-      className={cn(
-        NOTICE_BUTTON_CLASS,
-        placement === "inline" && className,
-        placement === "banner" && DASHBOARD_NOTICE_HEADER_CLASS,
-      )}
-      title={item.title}
-      aria-label={item.title}
-    >
-      <Megaphone className="h-4 w-4 shrink-0" />
-      <span className="min-w-0 truncate">{item.title}</span>
-    </button>
-  ));
-
-  const buttonsRow = (
-    <div className="flex min-w-0 items-center">{buttons}</div>
-  );
-
   return (
     <>
-      {placement === "inline" ? (
-        <div className="contents">{buttons}</div>
-      ) : placement === "banner" ? (
-        <div
-          className={cn(
-            "shrink-0 border-b border-border bg-background/95",
-            DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS,
-            DASHBOARD_FULL_BLEED_GUTTER_CLASS,
-          )}
-        >
-          {buttonsRow}
+      <div
+        className={cn(
+          "shrink-0 border-b border-border bg-background/95",
+          DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS,
+          DASHBOARD_FULL_BLEED_GUTTER_CLASS,
+          className,
+        )}
+      >
+        <div className="flex min-w-0 w-full items-center gap-1.5">
+          {items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setOpenId(item.id)}
+              className={NOTICE_BUTTON_CLASS}
+              title={item.title}
+              aria-label={item.title}
+            >
+              <Megaphone className="h-4 w-4 shrink-0" />
+              <span className="min-w-0 truncate">{item.title}</span>
+            </button>
+          ))}
         </div>
-      ) : (
-        <div
-          className={cn(
-            "pointer-events-none absolute z-30 flex max-w-[min(100%,32rem)] flex-col items-stretch gap-1",
-            className,
-          )}
-        >
-          {buttons}
-        </div>
-      )}
+      </div>
       <Dialog open={Boolean(open)} onOpenChange={(next) => !next && setOpenId(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -194,9 +141,12 @@ export function DashboardNoticeAlert({
   );
 }
 
-/** 페이지 헤더가 공지 자리를 안 잡았을 때 작업영역 상단 줄. */
+/** DashboardLayout 작업영역 맨 위 전폭 공지. 모든 role 공통(관리자 제외). */
+export function DashboardNoticeBar() {
+  return <DashboardNoticeAlert placement="banner" />;
+}
+
+/** @deprecated `DashboardNoticeBar`로 대체. */
 export function DashboardNoticeFallback() {
-  const hosted = useContext(NoticeHostedContext);
-  if (hosted) return null;
-  return <DashboardNoticeAlert placement="banner" claimHost={false} />;
+  return <DashboardNoticeBar />;
 }

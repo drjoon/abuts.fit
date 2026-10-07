@@ -4,6 +4,7 @@
 // - 2026-10-03: 알림 보기 — 역할이 다른 창의 openTransfer는 수신함 탭으로 넘긴다.
 // - 2026-10-03: 수신 헤더 — 북마크·생산중·설정·데모는 오른쪽 끝(ml-auto).
 // - 2026-10-03: 수신 헤더 — 캘린더·목록은 설정 팝오버. 상태·역할은 라벨. 북마크·생산중·주문/도착은 툴바.
+// - 2026-10-07: 공지는 DashboardLayout 전폭 바. 헤더 inline 제거.
 // - 2026-09-30: 공지는 미처리 안내 바로 옆. 2xl 미만 헤더 뱃지·버튼은 아이콘.
 // - 2026-09-29: 작업시작 클릭 시 보철 업로드 요구 건은 적립 조건 확인 모달(다시 보지 않기).
 // - 2026-09-29: 작업 파일 「폴더 열기」 — 작업 스캔·어벗 디자인·보철물을 같은 케이스 폴더에 받고 연다.
@@ -289,10 +290,6 @@ import {
 } from "@/shared/hooks/useBackgroundTempUpload";
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { cn } from "@/shared/ui/cn";
-import {
-  DashboardNoticeAlert,
-  DASHBOARD_NOTICE_HEADER_CLASS,
-} from "@/shared/notices/DashboardNoticeAlert";
 import { WIDE_CLUSTER_ROW_CLASS } from "@/shared/ui/contentMeasuredChrome";
 import {
   DASHBOARD_FULL_BLEED_GUTTER_CLASS,
@@ -9058,10 +9055,6 @@ export function RequestorPracticeReceivePage({
     <div className="flex flex-col items-center gap-2">
       <div className="flex max-w-full flex-nowrap items-center justify-center gap-1.5">
         {labUnreadNotice}
-        <DashboardNoticeAlert
-          placement="inline"
-          className={DASHBOARD_NOTICE_HEADER_CLASS}
-        />
       </div>
       <div className="flex flex-nowrap items-center justify-center gap-1.5">
         {labMobileHeaderActionButtons}
@@ -9082,10 +9075,6 @@ export function RequestorPracticeReceivePage({
       className="group/practice-hdr flex w-full min-w-0 flex-nowrap items-center gap-2 overflow-hidden"
     >
       {labUnreadNotice}
-      <DashboardNoticeAlert
-        placement="inline"
-        className={DASHBOARD_NOTICE_HEADER_CLASS}
-      />
       <PracticeStatusFilterBadges
         className="shrink-0 flex-nowrap gap-1.5"
         items={labStatusFilterBadgeItems}
@@ -9688,10 +9677,6 @@ export function RequestorPracticeReceivePage({
                 value={period}
                 onChange={setPeriod}
                 className="shrink-0"
-              />
-              <DashboardNoticeAlert
-                placement="inline"
-                className={DASHBOARD_NOTICE_HEADER_CLASS}
               />
               <RequestSettingsToolbar
                 designSoftwareLabel={String(designSoftwareValue || "").trim()}

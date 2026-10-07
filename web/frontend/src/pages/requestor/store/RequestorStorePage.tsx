@@ -24,10 +24,6 @@ import {
 import { StoreProductCard } from "@/pages/requestor/store/StoreProductCard";
 import { useStoreCartStore } from "@/store/useStoreCartStore";
 import { STORE_PRICE_TAX_NOTE } from "@/shared/tax/invoiceLabels";
-import {
-  DashboardNoticeAlert,
-  DASHBOARD_NOTICE_HEADER_CLASS,
-} from "@/shared/notices/DashboardNoticeAlert";
 import { useStorePackagePricing, applyStoreCatalogPrices } from "@/shared/store/useStorePackagePricing";
 
 function ProductRow({
@@ -93,10 +89,6 @@ export default function RequestorStorePage() {
               {STORE_PRICE_TAX_NOTE}
             </Badge>
           </div>
-          <DashboardNoticeAlert
-            placement="inline"
-            className={DASHBOARD_NOTICE_HEADER_CLASS}
-          />
           <div className="flex shrink-0 flex-wrap gap-2">
             <Button variant="outline" size="sm" asChild>
               <Link to="/dashboard/store/orders">주문 내역</Link>

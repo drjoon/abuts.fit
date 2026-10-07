@@ -16,10 +16,8 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 import {
-  DashboardNoticeAlert,
-  DashboardNoticeFallback,
+  DashboardNoticeBar,
   DashboardNoticeHostProvider,
-  DASHBOARD_NOTICE_HEADER_CLASS,
 } from "@/shared/notices/DashboardNoticeAlert";
 import {
   DASHBOARD_FULL_BLEED_GUTTER_CLASS,
@@ -34,6 +32,7 @@ import {
 
 // - 2026-10-07: 기공소 사이드 — 기공의뢰와 스토어 사이「할인그룹」(/dashboard/discount-group).
 // - 2026-10-01: 설정 사이드 배지는 기본 기공수가 검토를 세지 않는다. 그 수는 재무에 붙는다.
+// - 2026-10-07: 공지는 DashboardLayout 작업영역 맨 위 전폭 1행(전 role).
 // - 2026-09-30: 공지는 헤더의 필터와 버튼 사이. 자리가 없으면 작업영역 상단 줄.
 // - 2026-09-26: 작업 스캔 저장 소켓은 읽지 않음 배지를 다시 조회하지 않는다.
 // - 2026-09-26: 기공소 기공의뢰 하위 — 어벗츠 하청 → 어벗츠로부터.
@@ -1999,7 +1998,7 @@ export const DashboardLayout = () => {
           <div className="flex-1 min-h-0 bg-gradient-to-br from-gray-50 to-primary-soft">
             <DashboardNoticeHostProvider>
             <div className="relative flex h-full flex-col">
-              <DashboardNoticeFallback />
+              <DashboardNoticeBar />
               {(isManufacturer && isEquipmentRoute) || isWorksheetRoute ? (
                 <div className="sticky top-0 z-10 border-b border-border bg-background/80">
                   <div
@@ -2035,10 +2034,6 @@ export const DashboardLayout = () => {
                           프린터
                         </Button>
                         </div>
-                        <DashboardNoticeAlert
-                          placement="inline"
-                          className={DASHBOARD_NOTICE_HEADER_CLASS}
-                        />
                       </div>
                     )}
 
@@ -2047,10 +2042,6 @@ export const DashboardLayout = () => {
                         <div className="flex gap-2 flex-shrink-0">
                           <PeriodFilter value={period} onChange={setPeriod} />
                         </div>
-                        <DashboardNoticeAlert
-                          placement="inline"
-                          className={DASHBOARD_NOTICE_HEADER_CLASS}
-                        />
 
                         {(worksheetType === "cnc" ||
                           worksheetType === "custom_abutment") && (

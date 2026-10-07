@@ -38,6 +38,7 @@
  * - 2026-08-28: 검색↔신규의뢰 안내 위치 교환 — 안내=헤더, 검색=캘린더 툴바.
  * - 2026-09-07: 오늘(KST) 포함 셀 클릭 → 신규 의뢰(도착일).
  * - 2026-10-02: 헤더 뱃지·버튼은 기본 아이콘+라벨. 줄이 840px 미만일 때만 아이콘.
+ * - 2026-10-07: 공지는 DashboardLayout 전폭 바. 페이지 헤더 inline 제거.
  * - 2026-09-30: 헤더가 문구+공지를 같이 못 담으면 뱃지·버튼은 아이콘. 공지는 그 사이 폭에서 줄임.
  * - 2026-09-07: 헤더 「도착일 클릭 신규의뢰」안내 문구 제거.
  * - 2026-09-07: 다단계 다음 도착일 미지정(+1일~) 헤더 alert(기공소 미확인 바와 동일 패턴).
@@ -85,10 +86,6 @@ import {
   DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS,
 } from "@/shared/ui/dashboardChrome";
 import { apiFetch } from "@/shared/api/apiClient";
-import {
-  DashboardNoticeAlert,
-  DASHBOARD_NOTICE_HEADER_CLASS,
-} from "@/shared/notices/DashboardNoticeAlert";
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
@@ -942,11 +939,6 @@ export function PracticeRecentTransfersAllModal({
               {statusBadges}
             </div>
           ) : null}
-          {isPage ? (
-            <div className="flex w-full justify-center">
-              <DashboardNoticeAlert placement="inline" />
-            </div>
-          ) : null}
           {resolvedHeaderActions ? (
             <div className="flex w-full flex-wrap items-center justify-center gap-1.5">
               {resolvedHeaderActions}
@@ -989,12 +981,6 @@ export function PracticeRecentTransfersAllModal({
             <div className="flex shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto sm:gap-2">
               {statusBadges}
             </div>
-            {isPage ? (
-              <DashboardNoticeAlert
-                placement="inline"
-                className={DASHBOARD_NOTICE_HEADER_CLASS}
-              />
-            ) : null}
             {resolvedHeaderActions ? (
               <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-1.5 sm:gap-2">
                 {resolvedHeaderActions}

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-07: 공지는 DashboardLayout 전폭 바. 이 헤더에서 inline 제거.
 // - 2026-08-19: 기간 필터는 치과 어벗디자인·기공소 어벗생산의뢰 헤더.
 // - 2026-08-18: 치과 어벗디자인 헤더에도 기간 필터+정책/출고/지난의뢰/불완전가공.
 // - 2026-08-12: children 슬롯은 [정책 안내] 등. 무료 재제작 잔여는 어벗 요약카드로 이동.
@@ -16,10 +17,6 @@
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 import { type ReactNode } from "react";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
-import {
-  DashboardNoticeAlert,
-  DASHBOARD_NOTICE_HEADER_CLASS,
-} from "@/shared/notices/DashboardNoticeAlert";
 
 export type RequestorWorkspaceHeaderProps = {
   /** 제공 시에만 기간 필터 표시 */
@@ -61,10 +58,6 @@ export const RequestorWorkspaceHeader = ({
           className="shrink-0"
         />
       )}
-      <DashboardNoticeAlert
-        placement="inline"
-        className={DASHBOARD_NOTICE_HEADER_CLASS}
-      />
       <div className="flex shrink-0 flex-wrap items-center gap-2">{children}</div>
     </div>
   );

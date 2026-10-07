@@ -44,10 +44,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/shared/ui/cn";
 import {
-  DashboardNoticeAlert,
-  DASHBOARD_NOTICE_HEADER_CLASS,
-} from "@/shared/notices/DashboardNoticeAlert";
-import {
   clampVisitHmAfterNow,
   defaultVisitHm,
   formatDayLabel,
@@ -826,10 +822,6 @@ export default function SalesHomePage() {
               onClick={() => setReportOpen(true)}
             />
           </div>
-          <DashboardNoticeAlert
-            placement="inline"
-            className={DASHBOARD_NOTICE_HEADER_CLASS}
-          />
           <div className="shrink-0">
             <Button
               size="sm"
