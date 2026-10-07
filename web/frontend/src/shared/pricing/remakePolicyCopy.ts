@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/public/HelpPage.tsx
 // - web/backend/utils/remakePricingPolicy.js
 // change-log:
+// - 2026-10-07: 리메이크 행 라벨에 플랫폼 이용 조건 병합. 하단 노트=180일·배송비.
 // - 2026-10-07: 리메이크 과금 카피 SSOT — 어벗츠로부터/기공소에=무료, 어벗츠로/어벗츠에=건당 1만원.
 
 /** 어벗츠로(Request) 리메이크 단가(원). 배송비 별도. */
@@ -27,45 +28,45 @@ export function remakePolicyRows(
 ): RemakePolicyRow[] {
   if (audience === "practice") {
     return [
-      { pathLabel: "기공소에", priceLabel: "무료" },
-      { pathLabel: "어벗츠에", priceLabel: "건당 1만원" },
+      {
+        pathLabel: "기공소에 (치과·기공소 모두 플랫폼 이용)",
+        priceLabel: "무료",
+      },
+      {
+        pathLabel: "어벗츠에 (기공소만 플랫폼 이용)",
+        priceLabel: "건당 1만원",
+      },
     ];
   }
   if (audience === "public") {
     return [
-      { pathLabel: "어벗츠로부터 · 기공소에", priceLabel: "무료" },
-      { pathLabel: "어벗츠로 · 어벗츠에", priceLabel: "건당 1만원" },
+      {
+        pathLabel: "어벗츠로부터 · 기공소에 (치과·기공소 모두 플랫폼 이용)",
+        priceLabel: "무료",
+      },
+      {
+        pathLabel: "어벗츠로 · 어벗츠에 (기공소만 플랫폼 이용)",
+        priceLabel: "건당 1만원",
+      },
     ];
   }
   return [
-    { pathLabel: "어벗츠로부터", priceLabel: "무료" },
-    { pathLabel: "어벗츠로", priceLabel: "건당 1만원" },
+    {
+      pathLabel: "어벗츠로부터 (치과·기공소 모두 플랫폼 이용)",
+      priceLabel: "무료",
+    },
+    {
+      pathLabel: "어벗츠로 (기공소만 플랫폼 이용)",
+      priceLabel: "건당 1만원",
+    },
   ];
 }
 
-/** 정책 모달·안내 하단 조건(문장 단위). */
+/** 정책 모달·안내 하단 조건(문장 단위). 경로별 조건은 pathLabel에 둠. */
 export function remakePolicyNoteLines(
-  audience: RemakePolicyAudience,
+  _audience: RemakePolicyAudience,
 ): string[] {
-  if (audience === "practice") {
-    return [
-      "기공소에: 치과·기공소 모두 플랫폼 이용.",
-      "어벗츠에: 동일 치과·환자·치식·최근 180일.",
-      "배송비는 별도.",
-    ];
-  }
-  if (audience === "public") {
-    return [
-      "어벗츠로부터(기공소에): 치과·기공소 모두 플랫폼 이용.",
-      "어벗츠로(어벗츠에): 기공소만 플랫폼 이용 · 동일 치과·환자·치식·최근 180일.",
-      "배송비는 별도.",
-    ];
-  }
-  return [
-    "어벗츠로부터: 치과·기공소 모두 플랫폼 이용.",
-    "어벗츠로: 기공소만 플랫폼 이용 · 동일 치과·환자·치식·최근 180일.",
-    "배송비는 별도.",
-  ];
+  return ["동일 치과·환자·치식·최근 180일.", "배송비는 별도."];
 }
 
 /** 한 줄 요약(설정·헬프·토스트). */

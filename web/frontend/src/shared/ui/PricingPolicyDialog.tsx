@@ -15,6 +15,8 @@
 // - 2026-09-21: 딜러십 정책 — 90일 주문 없음 시 소개 귀속 리셋 조항.
 // - 2026-09-20: 딜러십 요율 10/15/20% · 가입 당시 요율 적용 안내.
 // - 2026-09-20: 기공소 정책 안내 — 하청 % · 작업시작 적립 시 공제.
+// - 2026-10-07: 모달 가로폭 sm:max-w-3xl → 80%(38.4rem).
+// - 2026-10-07: 리메이크 — 행 라벨에 플랫폼 이용 조건, 노트는 180일·배송비.
 // - 2026-10-07: 리메이크 — 역할별 라벨(기공소/치과/공개) + remakePolicyCopy SSOT.
 // - 2026-10-07: 리메이크 — 어벗츠로부터=무료, 어벗츠로=건당 1만원.
 // - 2026-10-07: 리메이크 — 경로 구분 제거, 월 3건 무료 / 4건부터 개당 1만원(폐지).
@@ -85,6 +87,7 @@ import {
   resolveCustomAbutmentProductionPriceForAt
 } from '@/shared/pricing/abutsAbutmentService';
 import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from '@/shared/settlement/labPayoutBankbook';
+import { cn } from '@/shared/ui/cn';
 import {
   GUIDE_DIALOG_BODY_CLASS,
   GUIDE_DIALOG_CONTENT_CLASS,
@@ -300,7 +303,9 @@ export const PricingPolicyDialog = ({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={GUIDE_DIALOG_CONTENT_CLASS}>
+      <DialogContent
+        className={cn(GUIDE_DIALOG_CONTENT_CLASS, 'sm:max-w-[38.4rem]')}
+      >
         <DialogHeader className={GUIDE_DIALOG_HEADER_CLASS}>
           <DialogTitle className='text-xl font-semibold tracking-tight text-slate-900'>
             {title}
