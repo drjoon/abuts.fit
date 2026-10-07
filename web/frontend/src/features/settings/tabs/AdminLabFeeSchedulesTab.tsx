@@ -3,7 +3,7 @@
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
-// - 2026-10-07: freeRemakeYears UI 제거(월 3건 무료 정책).
+// - 2026-10-07: freeRemakeYears UI 제거(리메이크 무료기간 설정 폐지).
 // - 2026-09-21: freeRemakeYears 표시·관리자 편집.
 // - 2026-08-16: 수가 ON 상단 정렬·클릭 모달.
 import { useCallback, useEffect, useRef, useState } from "react";

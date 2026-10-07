@@ -6,7 +6,7 @@
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
 // change-log:
 // - 2026-10-07: 리메이크 SSOT — 어벗츠로부터(PTX)=무료, 어벗츠로(Request)=창 내 건당 1만원. 월 3건 무료 과금 퇴역.
-// - 2026-10-07: PTX·어벗츠 리메이크 — KST 월 3건 무료, 4건부터 건당 1만원. freeRemakeYears 과금 퇴역(폐지).
+// - 2026-10-07: (폐지) PTX·어벗츠 리메이크 KST 월 3건 무료·4건부터 1만원. freeRemakeYears 과금 퇴역.
 // - 2026-09-21: 기공소 labFeeSchedule.freeRemakeYears — null=미설정·유료, 0=유료, 1+=N년 무료(레거시).
 // - 2026-09-14: 리메이크 판정 창 90→180일(감지·수가 동일).
 // - 2026-09-12: 리메이크 정책 SSOT — 치과로부터=무료, 어벗츠로=동일치식·창 내 1만원.

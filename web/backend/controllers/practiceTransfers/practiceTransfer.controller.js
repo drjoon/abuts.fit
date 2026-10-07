@@ -7442,8 +7442,8 @@ const escapePracticeTransferPatientRegex = (value) =>
 /**
  * 리메이크 원본 검색.
  * - q 없음: 최근 180일(주문일·생성일) 작업시작 이후 의뢰 — 리메이크 정책 창과 동일
- * - q 있음: 환자명으로 전체 기간 검색(과금은 원본 180일 여부로 결정)
- * GET /api/practice/transfers/remake-candidates?q=&days=90&limit=30
+ * - q 있음: 환자명으로 전체 기간 검색(어벗츠로부터 리메이크비는 원본 기간과 무관하게 무료)
+ * GET /api/practice/transfers/remake-candidates?q=&days=180&limit=30
  */
 export async function searchRemakePracticeTransfers(req, res) {
   try {
@@ -7583,7 +7583,7 @@ export async function searchRemakePracticeTransfers(req, res) {
 }
 
 /**
- * 신규 작성·임시저장·전송 직전 — 최근 180일 동일 환자·치아 overlap.
+ * 신규 작성·임시저장·전송 직전 — 동일 환자·치아 overlap(감지 창 기본 SIMILAR_CASE_DETECT_WINDOW_DAYS=30년, 과금과 무관).
  * 견적/목록 매핑 없이 lean+limit만(저지연).
  * query: patientName, teeth(comma), days?, limit?, excludeTransferMongoId?
  */

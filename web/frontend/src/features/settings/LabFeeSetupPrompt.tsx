@@ -3,7 +3,7 @@
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
-// - 2026-10-07: freeRemakeYears 게이트 제거(월 3건 무료 정책).
+// - 2026-10-07: freeRemakeYears 게이트 제거(리메이크 무료기간 설정 폐지).
 // - 2026-09-21: freeRemakeYears 미설정 시 설정 탭 포워드·하이라이트.
 // - 2026-08-25: 안내 문구 — 치과 의뢰·기공비 정상 결제 위해 해당 카드 설정 필수.
 // - 2026-08-25: 기본 기공수가 신규 항목(needSetupNames)도 재접속 시 설정 탭·need 하이라이트로 안내.
