@@ -7,6 +7,7 @@
 export const NOTICE_AUDIENCES = [
   "practice",
   "lab",
+  "manufacturer",
   "dealer",
   "salesTeam",
   "labHq",
@@ -15,6 +16,7 @@ export const NOTICE_AUDIENCES = [
 export const NOTICE_AUDIENCE_LABEL = {
   practice: "치과",
   lab: "기공소",
+  manufacturer: "제조사",
   dealer: "딜러",
   salesTeam: "영업팀",
   labHq: "기공본부팀",
@@ -51,6 +53,7 @@ export function resolveNoticeAudiencesForUser(user) {
   if ((role === "requestor" || role === "practice") && kind === "lab") {
     out.push("lab");
   }
+  if (role === "manufacturer") out.push("manufacturer");
   if (role === "salesman") out.push("dealer");
   if (role === "salesTeam") out.push("salesTeam");
   if (role === "internalLab" || role === "labTeam") out.push("labHq");

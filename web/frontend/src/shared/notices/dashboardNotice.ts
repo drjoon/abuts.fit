@@ -1,6 +1,7 @@
 export const NOTICE_AUDIENCE_OPTIONS = [
   { id: "practice", label: "치과" },
   { id: "lab", label: "기공소" },
+  { id: "manufacturer", label: "제조사" },
   { id: "dealer", label: "딜러" },
   { id: "salesTeam", label: "영업팀" },
   { id: "labHq", label: "기공본부팀" },

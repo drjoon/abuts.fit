@@ -33,7 +33,15 @@ const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
 
 let seedPromise = null;
 
-/** 배송 휴무 안내. 이미 있으면 본문은 덮지 않고, 종료일만 선발송일 이후로 남지 않게 줄인다. */
+const LEGACY_ALL_AUDIENCES = [
+  "practice",
+  "lab",
+  "dealer",
+  "salesTeam",
+  "labHq",
+];
+
+/** 배송 휴무 안내. 이미 있으면 본문은 덮지 않고, 종료일·제조사 대상만 맞춘다. */
 export function ensureDashboardNoticeSeed() {
   if (!seedPromise) {
     seedPromise = (async () => {
@@ -59,6 +67,16 @@ export function ensureDashboardNoticeSeed() {
           endsAt: { $gt: SHIP_HOLIDAY_ENDS_AT },
         },
         { $set: { endsAt: SHIP_HOLIDAY_ENDS_AT } },
+      );
+      // 예전「전체 대상」공지에 제조사를 넣는다.
+      await DashboardNotice.updateMany(
+        {
+          audiences: {
+            $all: LEGACY_ALL_AUDIENCES,
+            $nin: ["manufacturer"],
+          },
+        },
+        { $addToSet: { audiences: "manufacturer" } },
       );
     })().catch((error) => {
       seedPromise = null;

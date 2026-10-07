@@ -6,13 +6,16 @@ import {
 } from "../../utils/dashboardNotice.js";
 
 describe("dashboard notice audience", () => {
-  test("치과·기공소·딜러·영업팀·기공본부를 나눈다", () => {
+  test("치과·기공소·제조사·딜러·영업팀·기공본부를 나눈다", () => {
     expect(
       resolveNoticeAudiencesForUser({ role: "requestor", requestorKind: "practice" }),
     ).toEqual(["practice"]);
     expect(
       resolveNoticeAudiencesForUser({ role: "requestor", requestorKind: "lab" }),
     ).toEqual(["lab"]);
+    expect(resolveNoticeAudiencesForUser({ role: "manufacturer" })).toEqual([
+      "manufacturer",
+    ]);
     expect(resolveNoticeAudiencesForUser({ role: "salesman" })).toEqual(["dealer"]);
     expect(resolveNoticeAudiencesForUser({ role: "salesTeam" })).toEqual([
       "salesTeam",
