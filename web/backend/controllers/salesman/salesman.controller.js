@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/components/CommissionLedgerInline.tsx
 // - web/frontend/src/shared/components/SalesmanLedgerModal.tsx
 // change-log:
+// - 2026-10-09: 거래처 판매가 목록에 연락처·구강스캔을 실어 거래처 카드에서 입력한다.
 // - 2026-10-05: 딜러 대시보드 — 심플웨이(스토어) 수수료 지급 없음. 커스텀어벗만.
 // - 2026-09-27: 딜러 대시보드 — 심플웨이(배송비 제외 10%)·커스텀어벗 수수료를 나눠 반환.
 // - 2026-09-24: 딜러 대시보드 — 유치 시점 요율 고정(신규 activeRate · BA 스탬프). 월 매출 누진 철회.
@@ -969,8 +970,22 @@ export async function getMyCustomerUnitPrices(req, res) {
       referredByAnchorId: myAnchorId,
       businessType: "requestor",
     })
-      .select({ _id: 1, name: 1, requestorKind: 1, dealerUnitPrice: 1, dealerPriceApproval: 1 })
-      .select("+dealerPriceApproval")
+      .select({
+        _id: 1,
+        name: 1,
+        requestorKind: 1,
+        dealerUnitPrice: 1,
+        dealerPriceApproval: 1,
+        usesOralScan: 1,
+        updatedAt: 1,
+        "metadata.representativeName": 1,
+        "metadata.phoneNumber": 1,
+        "metadata.address": 1,
+        "metadata.addressDetail": 1,
+        "metadata.lat": 1,
+        "metadata.lng": 1,
+      })
+      .select("+dealerUnitPrice +dealerPriceApproval")
       .sort({ name: 1 })
       .lean();
     return res.status(200).json({
@@ -978,16 +993,31 @@ export async function getMyCustomerUnitPrices(req, res) {
       data: {
         min: REQUESTOR_UNIT_PRICE_MIN,
         max: REQUESTOR_UNIT_PRICE_BASE,
-        items: rows.map((r) => ({
-          anchorId: String(r._id),
-          name: r.name || "",
-          requestorKind: r.requestorKind || null,
-          unitPrice: r.dealerUnitPrice ?? REQUESTOR_UNIT_PRICE_BASE,
-          isCustom: r.dealerUnitPrice != null,
-          approvalStatus: r.dealerPriceApproval?.status || "approved",
-          requestedPrice: r.dealerPriceApproval?.status === "pending" ? r.dealerPriceApproval.requestedPrice ?? null : null,
-          rejectReason: r.dealerPriceApproval?.status === "rejected" ? r.dealerPriceApproval.rejectReason || "" : "",
-        })),
+        items: rows.map((r) => {
+          const address = [r.metadata?.address, r.metadata?.addressDetail]
+            .map((v) => String(v || "").trim())
+            .filter(Boolean)
+            .join(" ");
+          const lat = Number(r.metadata?.lat);
+          const lng = Number(r.metadata?.lng);
+          return {
+            anchorId: String(r._id),
+            name: r.name || "",
+            requestorKind: r.requestorKind || null,
+            unitPrice: r.dealerUnitPrice ?? REQUESTOR_UNIT_PRICE_BASE,
+            isCustom: r.dealerUnitPrice != null,
+            approvalStatus: r.dealerPriceApproval?.status || "approved",
+            requestedPrice: r.dealerPriceApproval?.status === "pending" ? r.dealerPriceApproval.requestedPrice ?? null : null,
+            rejectReason: r.dealerPriceApproval?.status === "rejected" ? r.dealerPriceApproval.rejectReason || "" : "",
+            representativeName: String(r.metadata?.representativeName || "").trim(),
+            phone: String(r.metadata?.phoneNumber || "").trim(),
+            address,
+            lat: Number.isFinite(lat) ? lat : null,
+            lng: Number.isFinite(lng) ? lng : null,
+            usesOralScan: Boolean(r.usesOralScan),
+            updatedAt: r.updatedAt || null,
+          };
+        }),
       },
     });
   } catch (error) {

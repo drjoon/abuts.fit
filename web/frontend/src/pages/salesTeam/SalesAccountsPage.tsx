@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/salesTeam/SalesPlacePickerDrawer.tsx
 // - web/frontend/src/shared/sales/CustomerPriceDialog.tsx
 // change-log:
+// - 2026-10-09: 상단 판매가 카드 제거. 소개 거래처를 목록 위에 두고, 선택 카드에서 가격을 입력한다.
 // - 2026-10-08: 소개 거래처 판매가(1.2~1.5만)를 이 페이지에서 정한다.
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -44,6 +45,7 @@ import SalesPlaceSuggestInput from "./SalesPlaceSuggestInput";
 import SalesPlacePickerDrawer from "./SalesPlacePickerDrawer";
 import {
   KIND_LABEL,
+  inferPlaceKindFromName,
   salesTeamApi,
   type SalesAccount,
   type SalesPlaceSuggest,
@@ -56,9 +58,81 @@ import {
   SalesSplit,
   SalesToolbar,
 } from "./salesUi";
-import { CustomerPricePanel } from "@/shared/sales/CustomerPriceDialog";
+import {
+  CustomerPriceFields,
+  useCustomerPrices,
+  type CustomerPriceRow,
+} from "@/shared/sales/CustomerPriceDialog";
 
 type ListFilter = "all" | "practice" | "lab" | "unjoined" | "joined" | "oralScan";
+type AccountSort = "referred" | "name" | "recent";
+
+type AccountListItem = SalesAccount & {
+  referredByMe?: boolean;
+  referralOnly?: boolean;
+};
+
+function referralListId(anchorId: string) {
+  return `ref:${anchorId}`;
+}
+
+function referralMatchesFilter(
+  row: CustomerPriceRow,
+  filter: ListFilter,
+  q: string,
+) {
+  const kind = row.requestorKind === "lab" ? "lab" : "practice";
+  if (filter === "unjoined") return false;
+  if (filter === "practice" && kind !== "practice") return false;
+  if (filter === "lab" && kind !== "lab") return false;
+  if (filter === "oralScan" && (kind !== "practice" || !row.usesOralScan)) {
+    return false;
+  }
+  const query = q.trim().toLowerCase();
+  if (!query) return true;
+  const hay = [row.name, row.representativeName, row.phone]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return hay.includes(query);
+}
+
+function toReferralListItem(row: CustomerPriceRow): AccountListItem {
+  const kind = row.requestorKind === "lab" ? "lab" : "practice";
+  return {
+    _id: referralListId(row.anchorId),
+    kind,
+    name: row.name || "이름 없음",
+    representativeName: row.representativeName || "",
+    phone: row.phone || "",
+    address: row.address || "",
+    lat: row.lat ?? null,
+    lng: row.lng ?? null,
+    businessAnchorId: row.anchorId,
+    usesOralScan: Boolean(row.usesOralScan),
+    updatedAt: row.updatedAt || undefined,
+    referredByMe: true,
+    referralOnly: true,
+    teamVisible: true,
+  };
+}
+
+function sortAccounts(items: AccountListItem[], sort: AccountSort) {
+  const next = [...items];
+  next.sort((a, b) => {
+    if (sort === "referred") {
+      const rank =
+        Number(Boolean(b.referredByMe)) - Number(Boolean(a.referredByMe));
+      if (rank) return rank;
+    } else if (sort === "recent") {
+      const at = Date.parse(a.updatedAt || "") || 0;
+      const bt = Date.parse(b.updatedAt || "") || 0;
+      if (bt !== at) return bt - at;
+    }
+    return a.name.localeCompare(b.name, "ko");
+  });
+  return next;
+}
 
 function listParams(filter: ListFilter) {
   if (filter === "oralScan") {
@@ -89,6 +163,7 @@ export default function SalesAccountsPage() {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [listFilter, setListFilter] = useState<ListFilter>("all");
+  const [accountSort, setAccountSort] = useState<AccountSort>("referred");
   const [editing, setEditing] = useState<Partial<SalesAccount> | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showExtra, setShowExtra] = useState(false);
@@ -96,6 +171,7 @@ export default function SalesAccountsPage() {
   const [placePickerSeed, setPlacePickerSeed] =
     useState<Partial<SalesPlaceSuggest> | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [manualEntry, setManualEntry] = useState(false);
 
   const filterParams = listParams(listFilter);
   const queryKey = useMemo(
@@ -113,10 +189,19 @@ export default function SalesAccountsPage() {
       }),
   });
 
+  const {
+    rows: priceRows,
+    loadError: priceLoadError,
+    patch: patchPrice,
+  } = useCustomerPrices(true);
+
+  const accountDetailId =
+    selectedId && !selectedId.startsWith("ref:") ? selectedId : null;
+
   const { data: detail } = useQuery({
-    queryKey: ["sales-team-account", selectedId],
-    enabled: Boolean(token && selectedId),
-    queryFn: () => salesTeamApi.getAccount(token, selectedId!),
+    queryKey: ["sales-team-account", accountDetailId],
+    enabled: Boolean(token && accountDetailId),
+    queryFn: () => salesTeamApi.getAccount(token, accountDetailId!),
   });
 
   const saveMut = useMutation({
@@ -124,15 +209,22 @@ export default function SalesAccountsPage() {
       if (!editing?.name || !editing?.kind) {
         throw new Error("이름과 유형은 필수입니다.");
       }
+      const inferred = inferPlaceKindFromName(editing.name);
+      const kind =
+        manualEntry || editing.address || editing.lat != null
+          ? editing.kind
+          : inferred || editing.kind;
+      const payload = { ...editing, kind };
       if (editing._id) {
-        return salesTeamApi.updateAccount(token, editing._id, editing);
+        return salesTeamApi.updateAccount(token, editing._id, payload);
       }
-      return salesTeamApi.createAccount(token, editing);
+      return salesTeamApi.createAccount(token, payload);
     },
     onSuccess: (saved) => {
       toast({ title: "저장되었습니다." });
       setEditing(null);
       setShowExtra(false);
+      setManualEntry(false);
       void qc.invalidateQueries({ queryKey: ["sales-team-accounts"] });
       if (saved?._id) {
         setSelectedId(saved._id);
@@ -182,6 +274,12 @@ export default function SalesAccountsPage() {
   };
 
   const applySuggest = (item: SalesPlaceSuggest) => {
+    if (item.source === "manual") {
+      setManualEntry(true);
+      applyPlace(item);
+      return;
+    }
+    setManualEntry(false);
     if (
       item.businessAnchorId ||
       item.source === "platform" ||
@@ -193,14 +291,48 @@ export default function SalesAccountsPage() {
     applyPlace(item);
   };
 
-  const items = data?.items || [];
+  const items = useMemo(() => {
+    const accounts: AccountListItem[] = (data?.items || []).map((item) => ({
+      ...item,
+      referredByMe: Boolean(
+        item.businessAnchorId &&
+          priceRows?.some((row) => row.anchorId === item.businessAnchorId),
+      ),
+    }));
+    const linked = new Set(
+      accounts
+        .map((item) => String(item.businessAnchorId || ""))
+        .filter(Boolean),
+    );
+    const referrals = (priceRows || [])
+      .filter(
+        (row) =>
+          !linked.has(row.anchorId) &&
+          referralMatchesFilter(row, listFilter, q),
+      )
+      .map(toReferralListItem);
+    return sortAccounts([...accounts, ...referrals], accountSort);
+  }, [accountSort, data?.items, listFilter, priceRows, q]);
   const practiceCount = items.filter((i) => i.kind === "practice").length;
   const labCount = items.filter((i) => i.kind === "lab").length;
   const joinedCount = items.filter((i) => i.businessAnchorId).length;
   const unjoinedCount = items.length - joinedCount;
+  const selectedItem = items.find((item) => item._id === selectedId) ?? null;
+  const viewing: AccountListItem | null = selectedItem?.referralOnly
+    ? selectedItem
+    : detail && detail._id === selectedId
+      ? { ...detail, referredByMe: selectedItem?.referredByMe }
+      : selectedItem && !selectedItem.referralOnly
+        ? selectedItem
+        : null;
+  const priceRow = viewing?.businessAnchorId
+    ? (priceRows?.find((row) => row.anchorId === viewing.businessAnchorId) ??
+      null)
+    : null;
 
   const openCreate = () => {
     setShowExtra(false);
+    setManualEntry(false);
     setEditing({
       kind: "practice",
       name: "",
@@ -211,6 +343,7 @@ export default function SalesAccountsPage() {
   const closeForm = () => {
     setEditing(null);
     setShowExtra(false);
+    setManualEntry(false);
   };
 
   const listPanel = (
@@ -219,7 +352,10 @@ export default function SalesAccountsPage() {
       description={`${items.length}곳 · 치과 ${practiceCount} · 기공소 ${labCount}`}
       bodyClassName="lg:max-h-[min(74vh,48rem)] lg:overflow-y-auto"
     >
-      {isLoading ? (
+      {priceLoadError ? (
+        <p className="mb-2 text-sm text-destructive">{priceLoadError}</p>
+      ) : null}
+      {isLoading && items.length === 0 ? (
         <p className="text-sm text-muted-foreground">불러오는 중…</p>
       ) : items.length === 0 ? (
         <SalesEmptyState
@@ -230,7 +366,7 @@ export default function SalesAccountsPage() {
           onAction={openCreate}
         />
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2 px-0.5 py-0.5">
           {items.map((item) => (
             <SalesListRow
               key={item._id}
@@ -246,6 +382,11 @@ export default function SalesAccountsPage() {
               }
               trailing={
                 <div className="flex max-w-[48%] flex-wrap items-center justify-end gap-1 sm:max-w-none">
+                  {item.referredByMe ? (
+                    <Badge className="border-0 bg-emerald-50 text-emerald-800">
+                      소개
+                    </Badge>
+                  ) : null}
                   {!hasCoords(item) ? (
                     <Badge variant="outline" className="text-amber-700">
                       좌표없음
@@ -273,53 +414,61 @@ export default function SalesAccountsPage() {
     </SalesPanel>
   );
 
-  const detailPanel =
-    detail && selectedId === detail._id ? (
+  const detailPanel = viewing ? (
       <SalesPanel
-        title={detail.name}
-        description={`${KIND_LABEL[detail.kind] || detail.kind}${
-          detail.businessAnchorId ? " · 플랫폼 가입" : " · 플랫폼 미가입"
-        }${detail.usesOralScan ? " · 구강스캔" : ""}`}
+        title={viewing.name}
+        description={[
+          viewing.referredByMe ? "소개" : null,
+          KIND_LABEL[viewing.kind] || viewing.kind,
+          viewing.businessAnchorId ? "플랫폼 가입" : "플랫폼 미가입",
+          viewing.usesOralScan ? "구강스캔" : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
         actions={
-          <div className="flex gap-1">
-            {!hasCoords(detail) ? (
+          viewing.referralOnly ? undefined : (
+            <div className="flex gap-1">
+              {!hasCoords(viewing) ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setShowExtra(true);
+                    setManualEntry(false);
+                    setEditing(viewing);
+                    openPlacePicker({
+                      name: viewing.name,
+                      address: viewing.address || "",
+                      kind: viewing.kind,
+                      businessAnchorId: viewing.businessAnchorId || null,
+                      accountId: viewing._id,
+                      source: viewing.businessAnchorId ? "platform" : "kakao",
+                    });
+                  }}
+                >
+                  위치
+                </Button>
+              ) : null}
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => {
                   setShowExtra(true);
-                  setEditing(detail);
-                  openPlacePicker({
-                    name: detail.name,
-                    address: detail.address || "",
-                    kind: detail.kind,
-                    businessAnchorId: detail.businessAnchorId || null,
-                    accountId: detail._id,
-                    source: detail.businessAnchorId ? "platform" : "kakao",
-                  });
+                  setManualEntry(false);
+                  setEditing(viewing);
                 }}
               >
-                위치
+                수정
               </Button>
-            ) : null}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setShowExtra(true);
-                setEditing(detail);
-              }}
-            >
-              수정
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => setDeleteConfirmOpen(true)}
-            >
-              삭제
-            </Button>
-          </div>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => setDeleteConfirmOpen(true)}
+              >
+                삭제
+              </Button>
+            </div>
+          )
         }
       >
         <div className="grid gap-3 sm:grid-cols-2">
@@ -327,47 +476,53 @@ export default function SalesAccountsPage() {
             <UserRound className="mt-0.5 h-4 w-4 text-slate-400" />
             <div>
               <div className="text-xs text-muted-foreground">대표</div>
-              <div>{detail.representativeName || "—"}</div>
+              <div>{viewing.representativeName || "—"}</div>
             </div>
           </div>
           <div className="flex items-start gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 text-sm">
             <Phone className="mt-0.5 h-4 w-4 text-slate-400" />
             <div>
               <div className="text-xs text-muted-foreground">전화</div>
-              <div>{detail.phone || "—"}</div>
+              <div>{viewing.phone || "—"}</div>
             </div>
           </div>
           <div className="flex items-start gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 text-sm sm:col-span-2">
             <MapPin className="mt-0.5 h-4 w-4 text-slate-400" />
             <div className="min-w-0">
               <div className="text-xs text-muted-foreground">주소</div>
-              {detail.address ? (
+              {viewing.address ? (
                 <a
                   className="text-primary underline-offset-2 hover:underline"
-                  href={`https://map.kakao.com/?q=${encodeURIComponent(detail.address)}`}
+                  href={`https://map.kakao.com/?q=${encodeURIComponent(viewing.address)}`}
                   target="_blank"
                   rel="noreferrer"
                 >
-                  {detail.address}
+                  {viewing.address}
                 </a>
               ) : (
                 "—"
               )}
-              {!hasCoords(detail) ? (
+              {!hasCoords(viewing) ? (
                 <p className="mt-1 text-xs text-amber-700">좌표 없음</p>
               ) : null}
             </div>
           </div>
         </div>
-        {detail.memo ? (
+        {viewing.memo ? (
           <div className="mt-3 whitespace-pre-wrap rounded-xl border border-slate-100 bg-white p-3 text-sm text-slate-700">
-            {detail.memo}
+            {viewing.memo}
           </div>
         ) : null}
-        {!detail.businessAnchorId ? (
-          <p className="mt-3 text-xs text-muted-foreground">
-            플랫폼 미가입이면 판매·세금계산서가 불가합니다. 성과의 소개
-            코드로 가입을 유도하세요.
+        {priceRow ? (
+          <div className="mt-3 rounded-xl border border-slate-200/80 px-3 py-3 shadow-sm">
+            <CustomerPriceFields row={priceRow} onSaved={patchPrice} />
+          </div>
+        ) : null}
+        {!viewing.businessAnchorId ? (
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            플랫폼 미가입이면 판매·세금계산서가 불가합니다.
+            <br />
+            성과의 소개 코드로 가입을 유도하세요.
           </p>
         ) : null}
         <p className="mt-3 text-xs text-muted-foreground lg:hidden">
@@ -378,7 +533,6 @@ export default function SalesAccountsPage() {
 
   return (
     <SalesPageShell wide>
-      <CustomerPricePanel />
       <SalesToolbar className="w-full">
         <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2">
           <div className="relative min-w-0 flex-1 sm:max-w-xs">
@@ -390,6 +544,19 @@ export default function SalesAccountsPage() {
               className="h-8 pl-8"
             />
           </div>
+          <Select
+            value={accountSort}
+            onValueChange={(v) => setAccountSort(v as AccountSort)}
+          >
+            <SelectTrigger className="h-8 w-[8.25rem] shrink-0" aria-label="정렬">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="referred">소개 우선</SelectItem>
+              <SelectItem value="name">이름순</SelectItem>
+              <SelectItem value="recent">최근 수정</SelectItem>
+            </SelectContent>
+          </Select>
           <Select
             value={listFilter}
             onValueChange={(v) => setListFilter(v as ListFilter)}
@@ -422,7 +589,7 @@ export default function SalesAccountsPage() {
             className="h-full min-h-[20rem]"
             icon={Building2}
             title="거래처를 선택하세요"
-            description="목록에서 항목을 누르면 연락처·주소·메모가 여기에 표시됩니다."
+            description="목록에서 항목을 누르면 연락처와 판매가가 여기에 표시됩니다."
           />
         }
       />
@@ -457,18 +624,27 @@ export default function SalesAccountsPage() {
                   maxItems={24}
                   hideRegisteredAccounts
                   value={editing.name || ""}
-                  onChange={(name) =>
+                  onChange={(name) => {
+                    setManualEntry(false);
                     setEditing((prev) => ({
                       ...prev,
                       name,
                       ...(prev?._id ? {} : { accountId: undefined }),
-                    }))
-                  }
+                    }));
+                  }}
                   onPick={applySuggest}
                   placeholder="지역명 상호 · 예: 거제 서울미소"
                   autoFocus={!editing._id}
                 />
-                {editing.address || editing.phone ? (
+                {manualEntry && editing.kind ? (
+                  <p className="rounded-lg bg-slate-50 px-2.5 py-2 text-xs text-slate-700">
+                    <span className="font-medium text-slate-900">
+                      {KIND_LABEL[editing.kind] || editing.kind}
+                      {" · "}
+                      직접 입력
+                    </span>
+                  </p>
+                ) : editing.address || editing.phone ? (
                   <p className="rounded-lg bg-slate-50 px-2.5 py-2 text-xs text-slate-700">
                     <span className="font-medium text-slate-900">
                       {editing.address?.trim() || "주소 없음"}
@@ -547,7 +723,9 @@ export default function SalesAccountsPage() {
         initialQuery={placePickerSeed?.name || editing?.name || ""}
         seed={placePickerSeed}
         hideRegisteredAccounts
+        allowDirectEntry
         onConfirm={(place) => {
+          setManualEntry(place.source === "manual");
           applyPlace({
             ...place,
             accountId: place.accountId || editing?._id || null,
@@ -580,8 +758,8 @@ export default function SalesAccountsPage() {
           <AlertDialogHeader className="text-left">
             <AlertDialogTitle>이 거래처를 삭제할까요?</AlertDialogTitle>
             <AlertDialogDescription>
-              {detail?.name
-                ? `「${detail.name}」 거래처를 삭제합니다. 되돌릴 수 없습니다.`
+              {viewing?.name
+                ? `「${viewing.name}」 거래처를 삭제합니다. 되돌릴 수 없습니다.`
                 : "선택한 거래처를 삭제합니다. 되돌릴 수 없습니다."}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -590,12 +768,14 @@ export default function SalesAccountsPage() {
               취소
             </AlertDialogCancel>
             <AlertDialogAction
-              disabled={!detail?._id || deleteMut.isPending}
+              disabled={
+                !viewing?._id || viewing.referralOnly || deleteMut.isPending
+              }
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={(e) => {
                 e.preventDefault();
-                if (!detail?._id) return;
-                deleteMut.mutate(detail._id);
+                if (!viewing?._id || viewing.referralOnly) return;
+                deleteMut.mutate(viewing._id);
               }}
             >
               {deleteMut.isPending ? "삭제 중…" : "삭제"}

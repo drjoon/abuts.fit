@@ -72,7 +72,7 @@ export type DailyReportPrivacy = {
 };
 
 export type SalesPlaceSuggest = {
-  source: "account" | "platform" | "kakao" | "ba" | "geocode";
+  source: "account" | "platform" | "kakao" | "ba" | "geocode" | "manual";
   accountId?: string | null;
   businessAnchorId?: string | null;
   name: string;
@@ -84,6 +84,35 @@ export type SalesPlaceSuggest = {
   lng?: number | null;
   label?: string;
 };
+
+/** 상호에 유형이 드러날 때만. 애매하면 null — 화면에서 치과/기공소를 고른다. */
+export function inferPlaceKindFromName(
+  name: string,
+): "practice" | "lab" | null {
+  const n = String(name || "");
+  if (/기공/.test(n)) return "lab";
+  if (/치과|치의원|치과의원/.test(n)) return "practice";
+  return null;
+}
+
+export function manualPlaceSuggest(
+  name: string,
+  kind: "practice" | "lab",
+): SalesPlaceSuggest {
+  return {
+    source: "manual",
+    accountId: null,
+    businessAnchorId: null,
+    name: name.trim(),
+    kind,
+    representativeName: "",
+    phone: "",
+    address: "",
+    lat: null,
+    lng: null,
+    label: "직접 입력",
+  };
+}
 
 export const salesTeamApi = {
   home: (token: string | null) =>

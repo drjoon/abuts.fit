@@ -3,6 +3,7 @@
 // - web/backend/utils/requestorUnitPricePolicy.js
 // - web/frontend/src/shared/pricing/requestorUnitPricePolicy.ts
 // change-log:
+// - 2026-10-09: 상단 판매가 카드 제거. 선택한 거래처 카드에서 건당 판매가를 입력한다.
 // - 2026-10-08: 거래처 판매가 설정은 거래처 페이지. 대시보드·성과에서는 뺀다.
 // - 2026-10-08: 딜러·영업팀 거래처별 의뢰비 설정(1.2~1.5만). 거래처 본인에게만 보이고 외부 비공개.
 import { useEffect, useState } from "react";
@@ -33,7 +34,7 @@ import {
   validateDealerUnitPrice,
 } from "@/shared/pricing/requestorUnitPricePolicy";
 
-type Row = {
+export type CustomerPriceRow = {
   anchorId: string;
   name: string;
   requestorKind: "practice" | "lab" | null;
@@ -42,7 +43,16 @@ type Row = {
   approvalStatus?: "approved" | "pending" | "rejected";
   requestedPrice?: number | null;
   rejectReason?: string;
+  representativeName?: string;
+  phone?: string;
+  address?: string;
+  lat?: number | null;
+  lng?: number | null;
+  usesOralScan?: boolean;
+  updatedAt?: string | null;
 };
+
+type Row = CustomerPriceRow;
 
 const KIND_LABEL: Record<string, string> = { practice: "치과", lab: "기공소" };
 
@@ -57,7 +67,7 @@ function CustomerPriceLead() {
   );
 }
 
-function useCustomerPrices(enabled: boolean) {
+export function useCustomerPrices(enabled: boolean) {
   const token = useAuthStore((s) => s.token);
   const userId = useAuthStore((s) => s.user?.id || "");
   const queryClient = useQueryClient();
@@ -138,31 +148,7 @@ function CustomerPriceRows({
   );
 }
 
-/** 거래처 페이지. 소개 거래처의 판매가를 바로 정한다. */
-export function CustomerPricePanel() {
-  const { rows, loadError, patch } = useCustomerPrices(true);
-
-  return (
-    <section className="rounded-2xl border border-slate-200/90 bg-white shadow-sm">
-      <div className="border-b border-slate-100 px-5 py-4">
-        <h2 className="text-sm font-semibold text-slate-900">거래처 판매가</h2>
-        <p className="mt-1 text-xs leading-relaxed text-slate-500">
-          <CustomerPriceLead />
-        </p>
-      </div>
-      <div className="max-h-[min(70vh,36rem)] overflow-y-auto px-3 py-3">
-        <CustomerPriceRows
-          rows={rows}
-          loadError={loadError}
-          onSaved={patch}
-          wide
-        />
-      </div>
-    </section>
-  );
-}
-
-function PriceRow({ row, onSaved }: { row: Row; onSaved: (next: Row) => void }) {
+function useCustomerPriceDraft(row: Row, onSaved: (next: Row) => void) {
   const { token } = useAuthStore();
   const { toast } = useToast();
   const [value, setValue] = useState(String(row.unitPrice));
@@ -172,7 +158,7 @@ function PriceRow({ row, onSaved }: { row: Row; onSaved: (next: Row) => void }) 
   useEffect(() => {
     setValue(String(row.unitPrice));
     setError("");
-  }, [row.unitPrice]);
+  }, [row.anchorId, row.unitPrice]);
 
   const checked = validateDealerUnitPrice(value);
   const checkedPrice = "price" in checked ? checked.price : null;
@@ -221,50 +207,74 @@ function PriceRow({ row, onSaved }: { row: Row; onSaved: (next: Row) => void }) 
     }
   };
 
+  return {
+    value,
+    setValue,
+    error,
+    setError,
+    saving,
+    dirty,
+    checkedPrice,
+    save,
+    commission: dealerCommissionOf(checkedPrice ?? row.unitPrice),
+  };
+}
+
+function PriceStatus({ row }: { row: Row }) {
+  if (row.approvalStatus === "pending") {
+    return (
+      <p className="text-xs text-amber-700">
+        승인 대기 {formatRequestorWon(row.requestedPrice ?? 0)}원입니다.
+        <br />
+        승인 전에는 의뢰할 수 없습니다.
+      </p>
+    );
+  }
+  if (row.approvalStatus === "rejected") {
+    return (
+      <p className="text-xs text-destructive">
+        반려되었습니다.
+        {row.rejectReason ? (
+          <>
+            <br />
+            {row.rejectReason}
+          </>
+        ) : null}
+      </p>
+    );
+  }
+  return null;
+}
+
+function PriceControls({
+  row,
+  onSaved,
+  label,
+}: {
+  row: Row;
+  onSaved: (next: Row) => void;
+  label: string;
+}) {
+  const draft = useCustomerPriceDraft(row, onSaved);
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0 space-y-0.5">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-slate-900">
-            {row.name || "이름 없음"}
-          </span>
-          {row.requestorKind ? (
-            <Badge variant="outline" className="shrink-0 text-[10px]">
-              {KIND_LABEL[row.requestorKind]}
-            </Badge>
-          ) : null}
-        </div>
-        <div className="text-xs tabular-nums text-slate-500">
-          수수료 {formatRequestorWon(dealerCommissionOf(checkedPrice ?? row.unitPrice))}원
-        </div>
-        {row.approvalStatus === "pending" ? (
-          <div className="text-xs text-amber-700">
-            승인 대기 {formatRequestorWon(row.requestedPrice ?? 0)}원 · 승인 전에는 의뢰할 수 없습니다.
-          </div>
-        ) : null}
-        {row.approvalStatus === "rejected" ? (
-          <div className="text-xs text-destructive">
-            반려됨{row.rejectReason ? ` · ${row.rejectReason}` : ""}
-          </div>
-        ) : null}
-      </div>
-      <div className="flex shrink-0 items-start gap-2">
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-start gap-2">
         <div className="space-y-1">
           <Input
             inputMode="numeric"
-            value={value}
+            value={draft.value}
             onChange={(e) => {
-              setValue(e.target.value);
+              draft.setValue(e.target.value);
               const next = validateDealerUnitPrice(e.target.value);
-              setError("message" in next ? next.message : "");
+              draft.setError("message" in next ? next.message : "");
             }}
             className="h-9 w-28 text-right tabular-nums"
-            aria-invalid={Boolean(error)}
-            aria-label={`${row.name} 건당 의뢰비`}
+            aria-invalid={Boolean(draft.error)}
+            aria-label={label}
           />
-          {error ? (
+          {draft.error ? (
             <p className="max-w-[12rem] text-[11px] leading-tight text-destructive">
-              {error}
+              {draft.error}
             </p>
           ) : null}
         </div>
@@ -272,8 +282,10 @@ function PriceRow({ row, onSaved }: { row: Row; onSaved: (next: Row) => void }) 
           type="button"
           size="sm"
           className="h-9"
-          disabled={!dirty || saving}
-          onClick={() => checkedPrice != null && void save(checkedPrice)}
+          disabled={!draft.dirty || draft.saving}
+          onClick={() =>
+            draft.checkedPrice != null && void draft.save(draft.checkedPrice)
+          }
         >
           저장
         </Button>
@@ -283,13 +295,61 @@ function PriceRow({ row, onSaved }: { row: Row; onSaved: (next: Row) => void }) 
             size="sm"
             variant="ghost"
             className="h-9"
-            disabled={saving}
-            onClick={() => void save(null)}
+            disabled={draft.saving}
+            onClick={() => void draft.save(null)}
           >
             기본가
           </Button>
         ) : null}
       </div>
+      <p className="text-xs tabular-nums text-slate-500">
+        수수료 {formatRequestorWon(draft.commission)}원
+      </p>
+      <PriceStatus row={row} />
+    </div>
+  );
+}
+
+/** 선택한 거래처 카드. 미설정이면 기본가 15,000원. */
+export function CustomerPriceFields({
+  row,
+  onSaved,
+}: {
+  row: Row;
+  onSaved: (next: Row) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="text-xs text-muted-foreground">건당 판매가</div>
+      <PriceControls row={row} onSaved={onSaved} label="건당 판매가" />
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        {formatRequestorWon(REQUESTOR_UNIT_PRICE_MIN)}~
+        {formatRequestorWon(REQUESTOR_UNIT_PRICE_BASE)}원입니다.
+        <br />
+        거래처 본인에게만 보입니다.
+      </p>
+    </div>
+  );
+}
+
+function PriceRow({ row, onSaved }: { row: Row; onSaved: (next: Row) => void }) {
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-3 shadow-sm">
+      <div className="flex items-center gap-2">
+        <span className="truncate text-sm font-medium text-slate-900">
+          {row.name || "이름 없음"}
+        </span>
+        {row.requestorKind ? (
+          <Badge variant="outline" className="shrink-0 text-[10px]">
+            {KIND_LABEL[row.requestorKind]}
+          </Badge>
+        ) : null}
+      </div>
+      <PriceControls
+        row={row}
+        onSaved={onSaved}
+        label={`${row.name} 건당 의뢰비`}
+      />
     </div>
   );
 }
