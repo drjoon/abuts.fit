@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-08: 딜러 정산 규칙 본문 — DealerSettlementRulesContent 공유.
 // - 2026-10-05: 개발운영 정산 규칙 — 딜러와 같은 칩·표. 의뢰비 5%(어벗츠 몫).
 // - 2026-10-05: 딜러 정산 규칙 모달 — 커스텀어벗만. 중복 안내 제거 · 칩·카드.
 // - 2026-10-05: 딜러 정산 규칙 — 커스텀어벗 구간·누적 분배비.
@@ -41,9 +42,8 @@ import {
 } from "@/shared/settlement/affiliateVat";
 import {
   DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD,
-  REFERRAL_OWNERSHIP_INACTIVE_DAYS,
-  REFERRAL_OWNERSHIP_RESET_ANYONE_LINE,
 } from "@/shared/sales/dealershipPolicyCopy";
+import { DealerSettlementRulesContent } from "@/features/commission/DealerSettlementRulesContent";
 import {
   GUIDE_FACT_GRID_CLASS,
   SettlementPolicyDialog,
@@ -52,10 +52,7 @@ import {
   SETTLEMENT_STAT_ROW_CLASS,
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
-import {
-  CustomAbutmentDealerSplitTable,
-  CustomAbutmentDevopsSplitTable,
-} from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
+import { CustomAbutmentDevopsSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
 import { DEVOPS_FROM_ABUTS_SHARE_PCT } from "@/shared/settlement/customAbutmentSplitPolicy";
 
 export type CommissionPaymentsVariant = "salesman" | "devops";
@@ -183,50 +180,36 @@ export function CommissionPaymentsPage({
                 description={DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD}
                 contentClassName="sm:max-w-3xl"
               >
-                <div className="space-y-4">
-                  {isSalesman ? (
-                    <CustomAbutmentDealerSplitTable />
-                  ) : (
+                {isSalesman ? (
+                  <DealerSettlementRulesContent
+                    payoutDayOfMonth={Number(data?.payoutDayOfMonth || 1)}
+                  />
+                ) : (
+                  <div className="space-y-4">
                     <CustomAbutmentDevopsSplitTable />
-                  )}
-                  <div className={GUIDE_FACT_GRID_CLASS}>
-                    {isSalesman ? (
-                      <>
-                        <SettlementPolicyFact label="제외">
-                          기공 · 스토어 · 배송비 · 월정액
-                        </SettlementPolicyFact>
-                        <SettlementPolicyFact label="소개 코드">
-                          {REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면
-                          리셋됩니다.
-                          <br />
-                          {REFERRAL_OWNERSHIP_RESET_ANYONE_LINE}
-                        </SettlementPolicyFact>
-                      </>
-                    ) : (
-                      <>
-                        <SettlementPolicyFact label="분배">
-                          의뢰비 대비 {DEVOPS_FROM_ABUTS_SHARE_PCT}%입니다.
-                          <br />
-                          어벗츠 몫에서 뗍니다.
-                        </SettlementPolicyFact>
-                        <SettlementPolicyFact label="제외">
-                          기공 · 스토어 · 배송비
-                        </SettlementPolicyFact>
-                      </>
-                    )}
-                    <SettlementPolicyFact label="세금계산서">
-                      지급은 잔액 그대로입니다.
-                      <br />
-                      ÷1.1로 공급가·세액을 나눕니다.
-                    </SettlementPolicyFact>
-                    <SettlementPolicyFact label="지급">
-                      사업자 단위 · 매월{" "}
-                      {Number(data?.payoutDayOfMonth || 1)}일
-                      <br />
-                      무료 의뢰·배송은 지급 대상이 아닙니다.
-                    </SettlementPolicyFact>
+                    <div className={GUIDE_FACT_GRID_CLASS}>
+                      <SettlementPolicyFact label="분배">
+                        의뢰비 대비 {DEVOPS_FROM_ABUTS_SHARE_PCT}%입니다.
+                        <br />
+                        어벗츠 몫에서 뗍니다.
+                      </SettlementPolicyFact>
+                      <SettlementPolicyFact label="제외">
+                        기공 · 스토어 · 배송비
+                      </SettlementPolicyFact>
+                      <SettlementPolicyFact label="세금계산서">
+                        지급은 잔액 그대로입니다.
+                        <br />
+                        ÷1.1로 공급가·세액을 나눕니다.
+                      </SettlementPolicyFact>
+                      <SettlementPolicyFact label="지급">
+                        사업자 단위 · 매월{" "}
+                        {Number(data?.payoutDayOfMonth || 1)}일
+                        <br />
+                        무료 의뢰·배송은 지급 대상이 아닙니다.
+                      </SettlementPolicyFact>
+                    </div>
                   </div>
-                </div>
+                )}
               </SettlementPolicyDialog>
             </div>
 

@@ -10,6 +10,13 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/shared/hooks/use-toast";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
@@ -29,8 +36,10 @@ import {
 } from "lucide-react";
 import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
+import { DealerSettlementRulesContent } from "@/features/commission/DealerSettlementRulesContent";
 import {
   DEALERSHIP_CUMULATIVE_BAND_LINE,
+  DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD,
   REFERRAL_OWNERSHIP_RESET_ANYONE_SHORT,
   REFERRAL_OWNERSHIP_RESET_POLICY_SHORT,
 } from "@/shared/sales/dealershipPolicyCopy";
@@ -49,13 +58,21 @@ import {
   useNoOrderAlerts,
 } from "@/shared/noOrderAlerts";
 import {
-  SETTLEMENT_STAT_CARD_WIDTH_CLASS,
-  SETTLEMENT_STAT_ROW_CLASS,
+  GUIDE_DIALOG_BODY_CLASS,
+  GUIDE_DIALOG_CONTENT_CLASS,
+  GUIDE_DIALOG_HEADER_CLASS,
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
 import { ProductCommissionLines } from "@/features/commission/ProductCommissionLines";
 import { cn } from "@/shared/ui/cn";
 import { formatKstYmdToKo, toKstYmd } from "@/shared/date/kst";
+
+/** 소개 코드·수수료·의뢰자 카드를 같은 칸으로 맞춘다. */
+const DASHBOARD_CARD_GRID_CLASS =
+  "grid w-full grid-cols-1 items-stretch gap-3 lg:grid-cols-3";
+
+const DASHBOARD_STAT_CARD_CLASS =
+  "h-full min-h-[9.25rem] w-full max-w-none px-4 py-4 sm:min-h-[9.75rem] sm:px-5";
 
 export const SalesmanDashboardPage = () => {
   const { user } = useAuthStore();
@@ -64,7 +81,7 @@ export const SalesmanDashboardPage = () => {
   const [creditModalOpen, setCreditModalOpen] = useState(false);
   const [ledgerMode, setLedgerMode] = useState<"unpaid" | "paid">("unpaid");
   const [policyOpen, setPolicyOpen] = useState(false);
-  const [salesmanPolicyOpen, setSalesmanPolicyOpen] = useState(false);
+  const [splitOpen, setSplitOpen] = useState(false);
   const [period, setPeriod] = useState<PeriodFilterValue>(
     SETTLEMENT_DEFAULT_PERIOD,
   );
@@ -113,9 +130,6 @@ export const SalesmanDashboardPage = () => {
     scheduledRate: data?.dealershipRateChangeScheduledRate,
   });
 
-  const directBusinessCount = Number(
-    overview.directBusinessCount || overview.directOrganizationCount || 0,
-  );
   const payableGross = Number(
     overview.payableGrossCommissionAmount ||
       overview.totalCommissionAmount ||
@@ -132,7 +146,11 @@ export const SalesmanDashboardPage = () => {
   const labTileCount = data?.organizations ? kindStats.lab.count : labCount;
   const totalTileCount = data?.organizations
     ? kindStats.total.count
-    : directBusinessCount;
+    : practiceTileCount + labTileCount;
+  const payoutDay = Number(data?.payoutDayOfMonth || 0);
+  const practiceOrders = Number(kindStats.practice.orderCount || 0);
+  const labOrders = Number(kindStats.lab.orderCount || 0);
+  const totalOrders = Number(kindStats.total.orderCount || 0);
 
   return (
     <TooltipProvider>
@@ -140,7 +158,7 @@ export const SalesmanDashboardPage = () => {
         title="딜러 대시보드"
         subtitle=""
         headerRight={
-          <div className="flex w-full flex-col gap-3">
+          <div className="flex w-full flex-col gap-3 px-1">
             <div className="flex w-full min-w-0 flex-nowrap items-center gap-2">
               <PeriodFilter
                 value={period}
@@ -165,25 +183,19 @@ export const SalesmanDashboardPage = () => {
                 >
                   의뢰자 정책
                 </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8"
-                  onClick={() => setSalesmanPolicyOpen(true)}
-                >
-                  딜러십 정책
-                </Button>
               </div>
             </div>
-            <DealershipTermsCard />
+            <DealershipTermsCard
+              activePct={activePct || 20}
+              onOpenSplit={() => setSplitOpen(true)}
+            />
           </div>
         }
-        statsGridClassName={SETTLEMENT_STAT_ROW_CLASS}
+        statsGridClassName={DASHBOARD_CARD_GRID_CLASS}
         stats={
           <>
-            <div className="flex min-h-[7.25rem] w-full shrink-0 flex-col rounded-2xl border-2 border-primary/60 bg-white p-4 shadow-sm sm:w-[20rem]">
-              <div className="flex items-center justify-between gap-2">
+            <div className="flex h-full min-h-[9.25rem] w-full flex-col rounded-2xl border-2 border-primary/55 bg-white p-5 shadow-sm sm:min-h-[9.75rem]">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div className="flex cursor-help items-center gap-1.5 text-sm font-semibold text-slate-900">
@@ -224,27 +236,21 @@ export const SalesmanDashboardPage = () => {
                   가입 링크 복사
                 </Button>
               </div>
-              <div className="flex flex-1 items-center justify-center pl-[0.2em] font-mono text-5xl font-bold tracking-[0.2em] text-slate-900 sm:pl-[0.25em] sm:tracking-[0.25em] sm:text-6xl">
+              <div className="flex flex-1 items-center justify-center pl-[0.12em] font-mono text-5xl font-bold tracking-[0.16em] text-slate-900 xl:text-6xl xl:tracking-[0.18em]">
                 {normalizedReferralCode || (loading ? "…" : "—")}
               </div>
             </div>
 
             <SettlementStatCard
-              className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
+              className={DASHBOARD_STAT_CARD_CLASS}
               label="미정산 수수료"
               value={payableGross}
               tone="primary"
               onClick={() => openLedger("unpaid")}
-              footer={
-                <ProductCommissionLines
-                  customAbutment={kindStats.total.customAbutmentCommissionAmount}
-                  className="text-[11px] text-muted-foreground sm:text-xs"
-                />
-              }
             />
 
             <SettlementStatCard
-              className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
+              className={DASHBOARD_STAT_CARD_CLASS}
               label="지급 완료 수수료"
               value={paidNet}
               onClick={() => openLedger("paid")}
@@ -252,7 +258,7 @@ export const SalesmanDashboardPage = () => {
           </>
         }
         topSection={
-          <div className="space-y-3 px-0.5">
+          <div className="space-y-3 px-1">
             {rateChangeMessage ? (
               <div className="flex items-start gap-2.5 rounded-2xl border border-amber-200/80 bg-amber-50/60 px-3.5 py-3 shadow-sm sm:px-4">
                 <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
@@ -263,7 +269,9 @@ export const SalesmanDashboardPage = () => {
                     신규 유치 요율 변경 예정
                   </div>
                   <p className="mt-0.5 text-sm leading-relaxed text-amber-900/80">
-                    {rateChangeMessage}
+                    {rateChangeMessage.first}
+                    <br />
+                    {rateChangeMessage.second}
                   </p>
                 </div>
               </div>
@@ -272,46 +280,45 @@ export const SalesmanDashboardPage = () => {
               data={noOrderAlertsData}
               loading={noOrderAlertsLoading}
             />
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className={DASHBOARD_CARD_GRID_CLASS}>
               <SummaryTile
                 icon={Building2}
-                label="소개 의뢰자"
-                primary={`${directBusinessCount.toLocaleString()}개소`}
-                secondary={`치과 ${practiceCount} · 기공소 ${labCount}`}
-                tip="내가 소개한 의뢰자 사업자(1단계)"
-              />
-              <SummaryTile
-                icon={Building2}
+                tone="practice"
                 label="치과"
                 primary={`${practiceTileCount.toLocaleString()}개소`}
                 secondary={
-                  <ProductCommissionLines
-                    customAbutment={kindStats.practice.customAbutmentCommissionAmount}
+                  <KindTileMeta
+                    commission={kindStats.practice.customAbutmentCommissionAmount}
+                    orders={practiceOrders}
                   />
                 }
-                tip="내가 소개한 치과의 커스텀어벗 수수료"
+                tip="내가 소개한 치과의 기간 수수료와 주문"
               />
               <SummaryTile
                 icon={Factory}
+                tone="lab"
                 label="기공소"
                 primary={`${labTileCount.toLocaleString()}개소`}
                 secondary={
-                  <ProductCommissionLines
-                    customAbutment={kindStats.lab.customAbutmentCommissionAmount}
+                  <KindTileMeta
+                    commission={kindStats.lab.customAbutmentCommissionAmount}
+                    orders={labOrders}
                   />
                 }
-                tip="내가 소개한 기공소의 커스텀어벗 수수료"
+                tip="내가 소개한 기공소의 기간 수수료와 주문"
               />
               <SummaryTile
                 icon={Layers}
+                tone="total"
                 label="전체"
                 primary={`${totalTileCount.toLocaleString()}개소`}
                 secondary={
-                  <ProductCommissionLines
-                    customAbutment={kindStats.total.customAbutmentCommissionAmount}
+                  <KindTileMeta
+                    commission={kindStats.total.customAbutmentCommissionAmount}
+                    orders={totalOrders}
                   />
                 }
-                tip="소개한 치과·기공소의 커스텀어벗 수수료 합계"
+                tip="소개한 치과·기공소의 기간 수수료와 주문 합계"
               />
             </div>
           </div>
@@ -333,12 +340,25 @@ export const SalesmanDashboardPage = () => {
         onOpenChange={setPolicyOpen}
         variant="requestor"
       />
-      <PricingPolicyDialog
-        open={salesmanPolicyOpen}
-        onOpenChange={setSalesmanPolicyOpen}
-        variant="salesman"
-        dealershipActivePct={activePct || 20}
-      />
+      <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
+        <DialogContent
+          className={cn(GUIDE_DIALOG_CONTENT_CLASS, "sm:max-w-3xl")}
+        >
+          <DialogHeader className={GUIDE_DIALOG_HEADER_CLASS}>
+            <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
+              딜러 정산 규칙
+            </DialogTitle>
+            <DialogDescription className="text-sm text-slate-500">
+              {DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD}
+            </DialogDescription>
+          </DialogHeader>
+          <div className={GUIDE_DIALOG_BODY_CLASS}>
+            <DealerSettlementRulesContent
+              payoutDayOfMonth={payoutDay > 0 ? payoutDay : 1}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </TooltipProvider>
   );
 };
@@ -349,7 +369,7 @@ function formatDealershipRateChangeMessage({
 }: {
   scheduledAt?: string | Date | null;
   scheduledRate?: number | null;
-}): string | null {
+}): { first: string; second: string } | null {
   if (!scheduledAt || scheduledRate == null) return null;
   const ymd = toKstYmd(scheduledAt);
   if (!ymd) return null;
@@ -360,14 +380,23 @@ function formatDealershipRateChangeMessage({
   const pct = Math.round(Number(scheduledRate) * 100);
   if (!Number.isFinite(pct) || pct < 0) return null;
   const dateLabel = formatKstYmdToKo(ymd).replace(/\.$/, "");
-  return `${dateLabel} 0시부터 신규 유치 요율이 ${pct}%로 변경됩니다. 이미 유치한 의뢰자는 기존 요율이 유지됩니다.`;
+  return {
+    first: `${dateLabel} 0시부터 신규 유치 요율이 ${pct}%로 변경됩니다.`,
+    second: "이미 유치한 의뢰자는 기존 요율이 유지됩니다.",
+  };
 }
 
-function DealershipTermsCard() {
+function DealershipTermsCard({
+  activePct,
+  onOpenSplit,
+}: {
+  activePct: number;
+  onOpenSplit: () => void;
+}) {
   return (
-    <div className="rounded-2xl border border-slate-200/90 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 px-4 py-4 text-white shadow-sm sm:px-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-4">
-        <div className="shrink-0 sm:w-[7.5rem]">
+    <div className="rounded-2xl border border-slate-200/90 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 px-4 py-5 text-white shadow-sm sm:px-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-stretch sm:gap-5">
+        <div className="flex shrink-0 flex-col justify-center sm:w-[7.5rem]">
           <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-white/55">
             딜러십
           </div>
@@ -375,10 +404,18 @@ function DealershipTermsCard() {
             영업 수수료
           </h2>
         </div>
-        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2">
+        <div className="grid min-w-0 flex-1 items-stretch gap-3 sm:grid-cols-2">
           <TermsItem
             title="커스텀어벗"
-            body={DEALERSHIP_CUMULATIVE_BAND_LINE}
+            actionLabel="분배몫"
+            onClick={onOpenSplit}
+            body={
+              <>
+                {DEALERSHIP_CUMULATIVE_BAND_LINE}
+                <br />
+                신규 유치 {activePct}%
+              </>
+            }
           />
           <TermsItem
             icon={RefreshCw}
@@ -401,32 +438,83 @@ function TermsItem({
   icon: Icon = Percent,
   title,
   body,
+  onClick,
+  actionLabel,
 }: {
   icon?: typeof Percent;
   title: string;
   body: ReactNode;
+  onClick?: () => void;
+  actionLabel?: string;
 }) {
-  return (
-    <div className="flex items-start gap-2.5 rounded-xl bg-white/5 px-3 py-2.5">
-      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10">
-        <Icon className="h-3.5 w-3.5" />
+  const className = cn(
+    "flex h-full min-h-[6.25rem] w-full items-start gap-3 rounded-xl px-3.5 py-3.5 text-left",
+    onClick
+      ? "cursor-pointer bg-white/[0.07] transition-colors hover:bg-white/[0.14] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+      : "bg-white/5",
+  );
+  const inner = (
+    <>
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10">
+        <Icon className="h-4 w-4" />
       </span>
-      <div className="min-w-0">
-        <div className="text-sm font-semibold">{title}</div>
-        <p className="mt-0.5 text-xs leading-snug text-white/70">{body}</p>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-sm font-semibold">{title}</div>
+          {actionLabel ? (
+            <span className="shrink-0 rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-medium text-sky-100">
+              {actionLabel}
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-1 text-xs leading-relaxed text-white/75">{body}</p>
       </div>
-    </div>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={className}>
+        {inner}
+      </button>
+    );
+  }
+  return <div className={className}>{inner}</div>;
+}
+
+const SUMMARY_TONE_CLASS = {
+  practice: "bg-sky-50 text-sky-700",
+  lab: "bg-violet-50 text-violet-700",
+  total: "bg-primary-soft text-primary-strong",
+} as const;
+
+function KindTileMeta({
+  commission,
+  orders,
+}: {
+  commission: number;
+  orders?: number;
+}) {
+  const orderCount = Number(orders || 0);
+  return (
+    <>
+      <ProductCommissionLines customAbutment={commission} />
+      <div className="mt-1">
+        기간 주문 {orderCount.toLocaleString("ko-KR")}건
+      </div>
+    </>
   );
 }
 
 function SummaryTile({
   icon: Icon,
+  tone,
   label,
   primary,
   secondary,
   tip,
 }: {
   icon: typeof Building2;
+  tone: keyof typeof SUMMARY_TONE_CLASS;
   label: string;
   primary: string;
   secondary?: ReactNode;
@@ -435,21 +523,24 @@ function SummaryTile({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div
-          className={cn(
-            "flex min-h-[5.5rem] cursor-help flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm",
-          )}
-        >
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-            <Icon className="h-4 w-4 text-slate-500" />
+        <div className="flex h-full min-h-[8.25rem] cursor-help flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-2.5 text-sm font-semibold text-slate-900">
+            <span
+              className={cn(
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+                SUMMARY_TONE_CLASS[tone],
+              )}
+            >
+              <Icon className="h-4 w-4" />
+            </span>
             <span className="min-w-0 truncate">{label}</span>
           </div>
-          <div>
-            <div className="text-lg font-semibold tabular-nums text-slate-900">
+          <div className="mt-4">
+            <div className="text-2xl font-semibold tabular-nums tracking-tight text-slate-900">
               {primary}
             </div>
             {secondary ? (
-              <div className="mt-0.5 text-xs text-muted-foreground">
+              <div className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                 {secondary}
               </div>
             ) : null}

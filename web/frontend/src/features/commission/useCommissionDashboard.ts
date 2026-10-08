@@ -130,6 +130,7 @@ export function dealershipRateBucketTip(
 
 export type RequestorKindStat = {
   count: number;
+  orderCount: number;
   commissionAmount: number;
   simplewayCommissionAmount: number;
   customAbutmentCommissionAmount: number;
@@ -138,6 +139,7 @@ export type RequestorKindStat = {
 function emptyKindStat(): RequestorKindStat {
   return {
     count: 0,
+    orderCount: 0,
     commissionAmount: 0,
     simplewayCommissionAmount: 0,
     customAbutmentCommissionAmount: 0,
@@ -150,6 +152,7 @@ function addKindStat(stat: RequestorKindStat, org: CommissionOrgRow) {
     org.monthCustomAbutmentCommissionAmount ?? org.monthCommissionAmount ?? 0,
   );
   stat.count += 1;
+  stat.orderCount += Number(org.monthOrderCount || 0);
   stat.simplewayCommissionAmount += simpleway;
   stat.customAbutmentCommissionAmount += custom;
   stat.commissionAmount += simpleway + custom;
@@ -176,6 +179,7 @@ export function summarizeRequestorKindStats(
     lab,
     total: {
       count: practice.count + lab.count + other.count,
+      orderCount: practice.orderCount + lab.orderCount + other.orderCount,
       commissionAmount:
         practice.commissionAmount + lab.commissionAmount + other.commissionAmount,
       simplewayCommissionAmount:
