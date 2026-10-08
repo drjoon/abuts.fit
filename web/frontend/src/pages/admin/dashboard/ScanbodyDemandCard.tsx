@@ -40,8 +40,6 @@ import {
 } from "@/shared/practice/scanbodyLibraryIdentity";
 import { cn } from "@/shared/ui/cn";
 
-const POLL_MS = 60_000;
-
 const kstTime = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "Asia/Seoul",
   month: "numeric",
@@ -251,14 +249,12 @@ export function ScanbodyDemandCard({
       known.current = new Set(next.flatMap(demandKeys));
       setRows(next);
     } catch {
-      // 다음 폴링에서 다시 받는다.
+      // 소켓 scanbody:demand-updated가 오면 다시 받는다.
     }
   }, [notifyNew, toast]);
 
   useEffect(() => {
     void load();
-    const timer = window.setInterval(() => void load(), POLL_MS);
-    return () => window.clearInterval(timer);
   }, [load]);
 
   useAppEventDebouncedReload({

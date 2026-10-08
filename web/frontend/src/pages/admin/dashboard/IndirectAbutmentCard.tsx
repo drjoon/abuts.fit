@@ -11,8 +11,6 @@ import { cn } from "@/shared/ui/cn";
 import { ScanbodyDemandCard } from "@/pages/admin/dashboard/ScanbodyDemandCard";
 import { ScanbodyGeneratorCard } from "@/pages/admin/dashboard/ScanbodyGeneratorCard";
 
-const POLL_MS = 60_000;
-
 function demandKeys(row: ScanbodyDemandRow) {
   return row.keys?.length ? row.keys : [row.key];
 }
@@ -41,14 +39,12 @@ export function IndirectAbutmentCard({ className }: { className?: string }) {
       known.current = new Set(next.flatMap(demandKeys));
       setRows(next);
     } catch {
-      // 다음 폴링에서 다시 받는다.
+      // 소켓 scanbody:demand-updated가 오면 다시 받는다.
     }
   }, [toast]);
 
   useEffect(() => {
     void load();
-    const timer = window.setInterval(() => void load(), POLL_MS);
-    return () => window.clearInterval(timer);
   }, [load]);
 
   useAppEventDebouncedReload({
