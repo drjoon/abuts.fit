@@ -5,12 +5,19 @@
 // - web/frontend/src/pages/salesTeam/SalesPlacePickerDrawer.tsx
 // - web/frontend/src/shared/sales/CustomerPriceDialog.tsx
 // change-log:
+// - 2026-10-09: 목록 정렬 기본값 — 소개 내림차순(소개 거래처가 위).
+// - 2026-10-09: 목록 정렬을 버튼으로. 클릭마다 끄기·오름차순·내림차순.
+// - 2026-10-09: 정렬(소개 우선·이름순·최근 수정)을 목록 카드 헤더로 옮김.
+// - 2026-10-09: 목록 필터 — 구강스캔 대신 소개. 전체·소개·치과·기공소·미가입·가입.
 // - 2026-10-09: 거래처 목록·상세를 모노그램 행과 필터 칩으로 정리.
 // - 2026-10-09: 상단 판매가 카드 제거. 소개 거래처를 목록 위에 두고, 선택 카드에서 가격을 입력한다.
 // - 2026-10-08: 소개 거래처 판매가(1.2~1.5만)를 이 페이지에서 정한다.
 import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Building2,
   MapPin,
   Pencil,
@@ -45,13 +52,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import SalesPlaceSuggestInput from "./SalesPlaceSuggestInput";
 import SalesPlacePickerDrawer from "./SalesPlacePickerDrawer";
 import {
@@ -74,8 +74,28 @@ import {
   type CustomerPriceRow,
 } from "@/shared/sales/CustomerPriceDialog";
 
-type ListFilter = "all" | "practice" | "lab" | "unjoined" | "joined" | "oralScan";
-type AccountSort = "referred" | "name" | "recent";
+type ListFilter = "all" | "referred" | "practice" | "lab" | "unjoined" | "joined";
+type AccountSortKey = "referred" | "name" | "recent";
+type SortDir = "asc" | "desc";
+type AccountSort = { key: AccountSortKey; dir: SortDir } | null;
+
+const SORT_BUTTONS: Array<{ key: AccountSortKey; label: string }> = [
+  { key: "referred", label: "소개" },
+  { key: "name", label: "이름" },
+  { key: "recent", label: "최근" },
+];
+
+function cycleAccountSort(prev: AccountSort, key: AccountSortKey): AccountSort {
+  if (!prev || prev.key !== key) return { key, dir: "asc" };
+  if (prev.dir === "asc") return { key, dir: "desc" };
+  return null;
+}
+
+function sortDirLabel(dir: SortDir | null) {
+  if (dir === "asc") return "오름차순";
+  if (dir === "desc") return "내림차순";
+  return "정렬 없음";
+}
 
 type AccountListItem = SalesAccount & {
   referredByMe?: boolean;
@@ -95,9 +115,6 @@ function referralMatchesFilter(
   if (filter === "unjoined") return false;
   if (filter === "practice" && kind !== "practice") return false;
   if (filter === "lab" && kind !== "lab") return false;
-  if (filter === "oralScan" && (kind !== "practice" || !row.usesOralScan)) {
-    return false;
-  }
   const query = q.trim().toLowerCase();
   if (!query) return true;
   const hay = [row.name, row.representativeName, row.phone]
@@ -128,26 +145,27 @@ function toReferralListItem(row: CustomerPriceRow): AccountListItem {
 }
 
 function sortAccounts(items: AccountListItem[], sort: AccountSort) {
+  if (!sort) return items;
+  const dir = sort.dir === "asc" ? 1 : -1;
   const next = [...items];
   next.sort((a, b) => {
-    if (sort === "referred") {
-      const rank =
-        Number(Boolean(b.referredByMe)) - Number(Boolean(a.referredByMe));
-      if (rank) return rank;
-    } else if (sort === "recent") {
+    let cmp = 0;
+    if (sort.key === "referred") {
+      cmp = Number(Boolean(a.referredByMe)) - Number(Boolean(b.referredByMe));
+    } else if (sort.key === "recent") {
       const at = Date.parse(a.updatedAt || "") || 0;
       const bt = Date.parse(b.updatedAt || "") || 0;
-      if (bt !== at) return bt - at;
+      cmp = at - bt;
+    } else {
+      cmp = a.name.localeCompare(b.name, "ko");
     }
+    if (cmp) return cmp * dir;
     return a.name.localeCompare(b.name, "ko");
   });
   return next;
 }
 
 function listParams(filter: ListFilter) {
-  if (filter === "oralScan") {
-    return { usesOralScan: true as const };
-  }
   if (filter === "practice" || filter === "lab") {
     return { kind: filter };
   }
@@ -169,9 +187,9 @@ function hasCoords(a: { lat?: number | null; lng?: number | null } | null) {
 
 const LIST_FILTERS: Array<{ value: ListFilter; label: string }> = [
   { value: "all", label: "전체" },
+  { value: "referred", label: "소개" },
   { value: "practice", label: "치과" },
   { value: "lab", label: "기공소" },
-  { value: "oralScan", label: "구강스캔" },
   { value: "unjoined", label: "미가입" },
   { value: "joined", label: "가입" },
 ];
@@ -313,7 +331,10 @@ export default function SalesAccountsPage() {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [listFilter, setListFilter] = useState<ListFilter>("all");
-  const [accountSort, setAccountSort] = useState<AccountSort>("referred");
+  const [accountSort, setAccountSort] = useState<AccountSort>({
+    key: "referred",
+    dir: "desc",
+  });
   const [editing, setEditing] = useState<Partial<SalesAccount> | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showExtra, setShowExtra] = useState(false);
@@ -465,7 +486,11 @@ export default function SalesAccountsPage() {
           referralMatchesFilter(row, listFilter, q),
       )
       .map(toReferralListItem);
-    return sortAccounts([...accounts, ...referrals], accountSort);
+    const merged = sortAccounts([...accounts, ...referrals], accountSort);
+    if (listFilter === "referred") {
+      return merged.filter((item) => item.referredByMe);
+    }
+    return merged;
   }, [accountSort, data?.items, listFilter, priceRows, q]);
   const practiceCount = items.filter((i) => i.kind === "practice").length;
   const labCount = items.filter((i) => i.kind === "lab").length;
@@ -506,6 +531,39 @@ export default function SalesAccountsPage() {
     <SalesPanel
       title="목록"
       description={`${items.length}곳 · 치과 ${practiceCount} · 기공소 ${labCount}`}
+      actions={
+        <div className="flex gap-1" role="group" aria-label="정렬">
+          {SORT_BUTTONS.map((opt) => {
+            const dir = accountSort?.key === opt.key ? accountSort.dir : null;
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                aria-pressed={dir != null}
+                aria-label={`${opt.label}, ${sortDirLabel(dir)}`}
+                onClick={() =>
+                  setAccountSort((prev) => cycleAccountSort(prev, opt.key))
+                }
+                className={cn(
+                  "inline-flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-medium transition-colors",
+                  dir
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-white text-slate-600 shadow-sm ring-1 ring-slate-200/80 hover:text-slate-900",
+                )}
+              >
+                {opt.label}
+                {dir === "asc" ? (
+                  <ArrowUp className="h-3 w-3" aria-hidden />
+                ) : dir === "desc" ? (
+                  <ArrowDown className="h-3 w-3" aria-hidden />
+                ) : (
+                  <ArrowUpDown className="h-3 w-3 opacity-50" aria-hidden />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      }
       bodyClassName="lg:max-h-[min(74vh,48rem)] lg:overflow-y-auto"
     >
       {priceLoadError ? (
@@ -682,22 +740,6 @@ export default function SalesAccountsPage() {
                 className="h-9 rounded-xl border-slate-200/80 bg-white pl-9 shadow-sm"
               />
             </div>
-            <Select
-              value={accountSort}
-              onValueChange={(v) => setAccountSort(v as AccountSort)}
-            >
-              <SelectTrigger
-                className="h-9 w-[8.5rem] shrink-0 rounded-xl border-slate-200/80 bg-white shadow-sm"
-                aria-label="정렬"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="referred">소개 우선</SelectItem>
-                <SelectItem value="name">이름순</SelectItem>
-                <SelectItem value="recent">최근 수정</SelectItem>
-              </SelectContent>
-            </Select>
             <Button
               size="sm"
               className="h-9 shrink-0 rounded-xl px-3.5 shadow-sm"
