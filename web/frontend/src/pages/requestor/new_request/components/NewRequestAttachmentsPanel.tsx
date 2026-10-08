@@ -66,11 +66,8 @@ import {
   type LeadTimesMap,
 } from "@/shared/shipping/estimateShipDate";
 import {
-  BULK_SHIPPING_LABEL_SHORT,
-  DELIVERY_SUBSCRIBE_AVAILABLE,
   EXPRESS_SHIPPING_LABEL_SHORT,
 } from "@/shared/shipping/shippingPolicyCopy";
-import { DeliverySubscribeDialog } from "@/shared/shipping/DeliverySubscribeDialog";
 import { useToast } from "@/shared/hooks/use-toast";
 import type { AttachmentListItem, PatientFileGroup } from "../utils/patientGroups";
 import {
@@ -308,7 +305,6 @@ export function NewRequestAttachmentsPanel({
   const hasAnyAttachment = files.length > 0;
   const { toast } = useToast();
   const [now, setNow] = useState(() => new Date());
-  const [subscribeOpen, setSubscribeOpen] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [marquee, setMarquee] = useState<MarqueeState | null>(null);
   const selectionAnchorKeyRef = useRef<string | null>(null);
@@ -375,10 +371,6 @@ export function NewRequestAttachmentsPanel({
   ) => {
     if (!onShippingModeChange || fileKeys.length === 0) return;
     if (mode === "express") {
-      if (!DELIVERY_SUBSCRIBE_AVAILABLE) {
-        setSubscribeOpen(true);
-        return;
-      }
       if (!expressSelectableGlobal) {
         toast({
           title: "딜리버리 익일 도착 선택 불가",
@@ -770,42 +762,6 @@ export function NewRequestAttachmentsPanel({
           className="flex items-center gap-1.5 shrink-0"
           onClick={(event) => event.stopPropagation()}
         >
-          {onShippingModeChange ? (
-            <div className="flex gap-1">
-              <button
-                type="button"
-                className={modeButtonClass(effectiveShippingMode === "normal")}
-                onClick={() =>
-                  applyMode(fileKeysForMode, "normal", { diameter, productMode })
-                }
-              >
-                {BULK_SHIPPING_LABEL_SHORT}
-              </button>
-              <button
-                type="button"
-                className={modeButtonClass(
-                  effectiveShippingMode === "express",
-                  DELIVERY_SUBSCRIBE_AVAILABLE && !expressSelectable,
-                )}
-                disabled={
-                  DELIVERY_SUBSCRIBE_AVAILABLE && !expressSelectable
-                }
-                title={
-                  DELIVERY_SUBSCRIBE_AVAILABLE && !expressSelectable
-                    ? EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE
-                    : undefined
-                }
-                onClick={() =>
-                  applyMode(fileKeysForMode, "express", {
-                    diameter,
-                    productMode,
-                  })
-                }
-              >
-                {EXPRESS_SHIPPING_LABEL_SHORT}
-              </button>
-            </div>
-          ) : null}
           {isDesignMode && !hideDesignBadge ? (
             <ImmediateTooltip label={ORAL_SCAN_BADGE_TOOLTIP}>
               <Badge
@@ -1283,10 +1239,6 @@ export function NewRequestAttachmentsPanel({
         ) : null}
         </div>
       </div>
-      <DeliverySubscribeDialog
-        open={subscribeOpen}
-        onOpenChange={setSubscribeOpen}
-      />
     </>
   );
 }

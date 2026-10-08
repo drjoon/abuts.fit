@@ -13,10 +13,6 @@
 // - 2026-08-19: (폐지됨, 2026-10-08 복원) 적용 단가=플랫폼 설정.
 import {
   REQUESTOR_UNIT_PRICE_BASE,
-  REQUESTOR_UNIT_PRICE_INTRO_DAYS,
-  REQUESTOR_UNIT_PRICE_INTRO_PRICE,
-  REQUESTOR_UNIT_PRICE_MAX_DISCOUNT,
-  REQUESTOR_UNIT_PRICE_PER_ORDER_DISCOUNT,
 } from "../../utils/requestorUnitPricePolicy.js";
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
@@ -1409,22 +1405,19 @@ export async function getMyDashboardSummary(req, res) {
           }),
         }));
 
-        let expressFeePerRequest = 2000;
+        let expressFeePerRequest = 0;
         let designFeePerTooth = 5000;
         try {
           const creditSettings = await loadCreditSettingsDefaults({
             requestorOrgId: businessAnchorId,
           });
-          expressFeePerRequest = Math.max(
-            0,
-            Number(creditSettings?.expressFee ?? 2000) || 2000,
-          );
+          expressFeePerRequest = 0;
           designFeePerTooth = Math.max(
             0,
             Number(creditSettings?.designFee ?? 5000) || 5000,
           );
         } catch {
-          expressFeePerRequest = 2000;
+          expressFeePerRequest = 0;
           designFeePerTooth = 5000;
         }
 
@@ -1980,11 +1973,6 @@ export async function getMyPricingReferralStats(req, res) {
           creditSettings,
         );
         const rule = snapshotPrice?.rule || "standard_price";
-        const discountPerOrder = REQUESTOR_UNIT_PRICE_PER_ORDER_DISCOUNT;
-        const maxDiscountPerUnit = REQUESTOR_UNIT_PRICE_MAX_DISCOUNT;
-        const referralDiscountAmount = 0;
-        const discountAmount = Math.max(0, baseUnitPrice - effectiveUnitPrice);
-        const introEndsYmd = snapshotPrice?.introEndsYmd || null;
 
         const responseData = {
           lastMonthStart,
@@ -1997,15 +1985,8 @@ export async function getMyPricingReferralStats(req, res) {
           statsMode,
           totalOrders,
           baseUnitPrice,
-          discountPerOrder,
-          maxDiscountPerUnit,
-          discountAmount,
-          referralDiscountAmount,
           effectiveUnitPrice,
           rule,
-          introDays: REQUESTOR_UNIT_PRICE_INTRO_DAYS,
-          introUnitPrice: REQUESTOR_UNIT_PRICE_INTRO_PRICE,
-          introEndsYmd,
           remakeUnitPrice: 10000,
           groupMemberCount,
           snapshotMissing,

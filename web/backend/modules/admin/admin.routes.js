@@ -100,6 +100,7 @@ import {
   updateAbutsLabFeeSchedule,
 } from "../../controllers/admin/admin.abutsLabFeeSchedule.controller.js";
 import { getAllFiles } from "../../controllers/admin/admin.files.controller.js";
+import { listPriceApprovals, decidePriceApproval } from "../../controllers/admin/admin.priceApproval.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import { fixSubRole } from "../../controllers/admin/admin.fixSubRole.controller.js";
 import {
@@ -589,6 +590,10 @@ router.post(
 // 가격/리퍼럴 정책 통계
 router.get("/pricing-stats", getPricingStats);
 router.get("/pricing-stats/users", getPricingStatsByUser);
+
+// 영업팀 거래처 가격 승인
+router.get("/price-approvals", authorize(["admin"]), listPriceApprovals);
+router.post("/price-approvals/:anchorId", authorize(["admin"]), decidePriceApproval);
 
 // 리퍼럴 그룹
 router.get("/referral-groups", getReferralGroups);

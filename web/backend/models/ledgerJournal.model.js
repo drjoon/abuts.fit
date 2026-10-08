@@ -17,6 +17,8 @@ export const LEDGER_JOURNAL_EVENT_TYPES = [
   "PRACTICE_MEMBERSHIP_SPEND",
   /** FM덴탈 월정액 배송(유료 크레딧). 활성 시 박스 배송비 면제. */
   "FM_DENTAL_SHIPPING_SPEND",
+  /** 딜리버리 월정액 원가 — 거래처 1곳당 딜러 정산에서 차감, 직판은 어벗츠 부담. */
+  "DELIVERY_MONTHLY_COST",
   "CHARGE_PAID",
   "CHARGE_FREE_REQUEST",
   "CHARGE_FREE_SHIPPING",

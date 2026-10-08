@@ -5,6 +5,7 @@
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
+// - 2026-10-08: 의뢰 분배 고정 — 제조사 5,500 · 개발운영 1,000 · 어벗츠 3,500 · 나머지 딜러(부가세 포함). 딜러 없으면 딜러 몫=어벗츠.
 // - 2026-10-05: 플랫폼 사용료·하청 수수료 미부과(`CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES=false`). 하청 배정 구조·정책 함수는 유지.
 // - 2026-09-27: 기공소 플랫폼 사용료 2% 복원(협력·하청 공통). 적용 off=이벤트 면제 0%. 어벗츠기공소 수행은 항상 면제. 학습 동의와 무관.
 // - 2026-09-24: 딜러십 — 신규 유치 요율(기본 20%)·예약 인하(15/10)·유치 시점 스탬프. 월 매출 누진 철회.
@@ -32,6 +33,8 @@
 // - 2026-08-15: 제조사 %분배 → 하청 고정단가(의뢰/배송). 잔여는 salesman/devops/admin 재분배.
 // - 2026-08-14: DEFAULT_PLATFORM_FEE_RATE 0.25 → 0.1 (자동매칭 성공 수수료).
 // - 2026-08-16: 지정 거래 수수료 적용 on/off(기본 off=이벤트 0%).
+
+import { REQUESTOR_UNIT_PRICE_MANUFACTURER_COST } from "../utils/requestorUnitPricePolicy.js";
 
 /**
  * 딜러십 영업 수수료 기본(호환 alias).
@@ -1154,18 +1157,9 @@ export function resolveManufacturerUnitSettings(creditSettings = {}) {
   // 제조사=일반과세. 매입가(부가세 포함)는 판매가의 50%. 리메이크도 동일.
   const vatRate = normalizeAffiliateVatRate(creditSettings?.affiliateVatRate);
   const sale = readCustomAbutmentSalePrice(creditSettings);
-  const requestInclusive =
-    sale > 0
-      ? manufacturerPurchaseFromSale(sale, creditSettings)
-      : Math.max(
-          0,
-          Math.round(
-            Number(
-              creditSettings?.manufacturerRequestUnitPrice ??
-                DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE,
-            ) || 0,
-          ),
-        );
+  // 2026-10-08: 제조사 매입 5,500원(부가세 포함) 고정. 판매가와 무관.
+  void sale;
+  const requestInclusive = REQUESTOR_UNIT_PRICE_MANUFACTURER_COST;
   const shippingInclusive = Math.max(
     0,
     Math.round(
@@ -1392,6 +1386,37 @@ export function resolveResidualRatesFromCreditSettings(
   return null;
 }
 
+
+/** 개발운영 몫(부가세 포함, 어벗 1개당). */
+export const DEVOPS_UNIT_SHARE_INCLUSIVE = 1000;
+/** 어벗츠 몫(부가세 포함, 어벗 1개당). 딜러가 없으면 딜러 몫이 여기에 더해진다. */
+export const ABUTS_UNIT_SHARE_INCLUSIVE = 3500;
+
+/**
+ * 제조사를 뺀 잔여(공급가 기준)를 개발운영·딜러·어벗츠로 나눈다.
+ * 개발운영·딜러는 부가세 포함 금액을 정한 뒤 공급가=포함가/(1+vat)로 환산(부가세는 장부 라인에서 별도 가산).
+ * 딜러 포함가 = 판매가(1개당) − 10,000 → 잔여에서 제조사 공급가·개발운영·어벗츠 고정분을 뺀 값이 아니라 판매가 기준.
+ */
+function allocateFixedUnitSplit({ residual, qty, hasDealer, hasDevops, manufacturer, vatRate }) {
+  const q = Math.max(1, Math.floor(Number(qty) || 1));
+  const spendTotal = Math.max(0, Math.round(Number(residual || 0))) + Math.max(0, Math.round(Number(manufacturer || 0)));
+  const unitSale = spendTotal / q;
+  const toSupply = (inclusive) => Math.round(inclusive / (1 + (Number(vatRate) || 0)));
+  let left = Math.max(0, Math.round(Number(residual || 0)));
+
+  const devopsInclusive = hasDevops ? DEVOPS_UNIT_SHARE_INCLUSIVE * q : 0;
+  const devops = Math.min(left, toSupply(devopsInclusive));
+  left -= devops;
+
+  const dealerInclusive = hasDealer
+    ? Math.max(0, Math.round(unitSale - 10000)) * q
+    : 0;
+  const salesman = Math.min(left, toSupply(dealerInclusive));
+  left -= salesman;
+
+  return { devops, salesman, admin: left };
+}
+
 /**
  * 제조사 = 하청 고정 공급가. 잔여 = spend − 제조사 공급가 → salesman/devops/admin.
  * express 등 applyManufacturerUnit=false 이면 제조사 0·전액 잔여 분배.
@@ -1440,6 +1465,24 @@ export function resolveRevenueOwnerBaseAllocation({
       devops: 0,
       salesman: 0,
       admin: residual,
+      manufacturerVat,
+      manufacturerVatRate: unitEarn.vatRate,
+    };
+  }
+
+  // 2026-10-08 새 분배(어벗 1개당): 제조사 5,500 · 개발운영 1,000 · 어벗츠 3,500 · 나머지 딜러(부가세 포함).
+  // 딜러 없음(직판·영업팀)은 딜러 몫이 어벗츠. 제조사 앵커가 있고 제조사 단가를 적립하는 의뢰만 적용.
+  if (owners?.manufacturerAnchorId && applyManufacturerUnit) {
+    return {
+      manufacturer,
+      ...allocateFixedUnitSplit({
+        residual,
+        qty: unitEarn.qty,
+        hasDealer: Boolean(hasSalesmanReferrer && owners?.salesmanAnchorId),
+        hasDevops: Boolean(owners?.devopsAnchorId),
+        manufacturer,
+        vatRate: normalizeAffiliateVatRate(creditSettings?.affiliateVatRate),
+      }),
       manufacturerVat,
       manufacturerVatRate: unitEarn.vatRate,
     };

@@ -53,7 +53,6 @@ import {
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
 import { CustomAbutmentDevopsSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
-import { DEVOPS_FROM_ABUTS_SHARE_PCT } from "@/shared/settlement/customAbutmentSplitPolicy";
 
 export type CommissionPaymentsVariant = "salesman" | "devops";
 
@@ -121,7 +120,7 @@ export function CommissionPaymentsPage({
                 rateLabel={
                   isSalesman
                     ? undefined
-                    : `${DEVOPS_FROM_ABUTS_SHARE_PCT}%`
+                    : `1,000원`
                 }
                 className="text-[11px] text-muted-foreground sm:text-xs"
               />
@@ -140,7 +139,7 @@ export function CommissionPaymentsPage({
                 rateLabel={
                   isSalesman
                     ? undefined
-                    : `${DEVOPS_FROM_ABUTS_SHARE_PCT}%`
+                    : `1,000원`
                 }
                 className="text-[11px] text-muted-foreground sm:text-xs"
               />
@@ -189,7 +188,7 @@ export function CommissionPaymentsPage({
                     <CustomAbutmentDevopsSplitTable />
                     <div className={GUIDE_FACT_GRID_CLASS}>
                       <SettlementPolicyFact label="분배">
-                        의뢰비 대비 {DEVOPS_FROM_ABUTS_SHARE_PCT}%입니다.
+                        어벗 1개당 1,000원입니다.
                         <br />
                         어벗츠 몫에서 뗍니다.
                       </SettlementPolicyFact>
@@ -279,7 +278,7 @@ export function CommissionPaymentsPage({
                             rateLabel={
                               isSalesman
                                 ? undefined
-                                : `${DEVOPS_FROM_ABUTS_SHARE_PCT}%`
+                                : `1,000원`
                             }
                             className="pt-1 text-sm text-slate-900"
                           />

@@ -205,7 +205,7 @@ const systemSettingsSchema = new mongoose.Schema(
       manufacturerShippingUnitPrice: { type: Number, default: 3500 },
       affiliateVatRate: { type: Number, default: 0.1 },
       // 신속 배송 추가 의뢰크레딧 (생산=건당, 디자인+생산=1어벗당, 가공 진입 시 차감)
-      expressFee: { type: Number, default: 2000 },
+      expressFee: { type: Number, default: 0 },
       // 기공의뢰 신속처리 할증(기공비·어벗츠). 1 초과~2 이하.
       practiceRushFeeMultiplier: { type: Number, default: 1.2, min: 1, max: 2 },
       // 디자인비 (1어벗당). 플랫폼 고시 디자인+생산 − 생산만과 동기화.

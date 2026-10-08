@@ -91,15 +91,11 @@ Notes:
     (문구: `출고 N일전` / `출고 N시간전` / 1시간 미만은 `출고 0시간전`,
      `출고시간 지남`은 16:00 KST 이후만. 기준시각: `estimatedShipYmd` 16:00 KST)
   - 신규의뢰 ETA: `src/pages/requestor/new_request/hooks/useLeadTimeForecast.ts`
-    (묶음: `src/shared/shipping/weeklyBatchSchedule.ts` — 백엔드 `resolveNextWeeklyBatchYmd`와 동일 civil YMD 요일)
-    (묶음: 백엔드와 동일하게 `minBusinessDays=N` → N영업일 후 출고, lead=1이면 익영업일.
-     당일 출고·`(N-1)` 금지. 이후 주간 발송 요일 정렬)
-    (신속: KST 12시 이전=당일, 이후=+1영업일 — 백엔드 `EXPRESS_CUTOFF_HOUR_KST=12`와 동일.
-     선택 가능 조건: 신속 ETA YMD < 묶음 ETA YMD — `isExpressShippingSelectable`)
+    (딜리버리 익일 도착 단일: KST 12시 이전=당일, 이후=+1영업일 — 백엔드 `EXPRESS_CUTOFF_HOUR_KST=12`와 동일. 묶음 출고 일정은 폐지)
     (기공의뢰 주문-치과도착: 낮 12시 이전은 오늘 포함, 이후는 오늘 제외 —
      `practiceWorkPeriod.ts` / 백엔드 `countWeekdayBusinessDays`. 안내=`PRACTICE_ORDER_DAY_CUTOFF_NOTE`)
      2+2 허용. 1+2는 지연 경고 후 주문, 0+2는 차단.
-    (디자인+생산 `design_custom_abutment`: 묶음/신속 공통 출고 +1영업일 —
+    (디자인+생산 `design_custom_abutment`: 출고 +1영업일 —
      `estimateShipDate.ts` / 백엔드 `needsDesignLeadDay`)
     (안내 카피: `PricingPolicyDialog` 출고 리드타임·출고 방식,
      `NewRequestShippingSection`, 대시보드 `RequestorBulkShippingBannerCard`)
@@ -108,7 +104,7 @@ Notes:
   - `src/features/layout/DashboardLayout.tsx`
   - `src/features/layout/AccountSwitcher.tsx` (사이드바 계정 팝업 · 같은 사업자 계정 전환)
   - `src/store/useAuthStore.ts` (`switchAccount`)
-  - 기공소 할인그룹(소개 할인 UI): `/dashboard/discount-group` — 사이드「기공의뢰」와「스토어」사이. `DashboardShell` + 소개코드 히어로 + `SettlementStatCard` + `SettlementPolicyDialog` fact(기본 가격·가입 이벤트·주문량 할인·소개 그룹). `labDiscountGroupPolicy.ts`(기본 1.5만 · 건당 50원 · 최대 5천 할인 · 가입 90일 고정 1만 · 91일부터 지난 30일). 오늘 가격은 서버 `pricing-referral-stats.effectiveUnitPrice`(자정 스냅샷 단가). 클라이언트 계산 없음. 수치 SSOT=`shared/pricing/requestorUnitPricePolicy.ts`.
+  - (폐지) 기공소 할인그룹 `/dashboard/discount-group`는 삭제됨.
 - 공개 랜딩 (`/` · `/offer/:slug` · `/events/:slug`)
   - `src/pages/public/Index.tsx` — 홈 히어로 + 오퍼 타일 + `#events` + 스토리 밴드
   - `src/pages/public/OfferPage.tsx` — 오퍼 상세 (`landingOffers` · `LandingOfferPage`)
@@ -234,8 +230,8 @@ Notes:
       - `src/features/platform/PlatformBenefitsShareButtons.tsx` (안내+링크 클립보드 복사)
   - 의뢰자(치과) 설정: 구독 탭 없음. 구 `?tab=subscription` → 계정. 대시보드 헤더는 `[정책 안내]`만.
     - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx`
-    - `src/shared/ui/PricingPolicyDialog.tsx` — 런칭 이벤트 1.3만 / 정상가 1.5만. **택배 묶음 출고** 1박스당 3,500원. **딜리버리 익일 도착** 월 5.5만원(VAT 포함) 정액(자정까지 주문 → 익일 기공소·치과 도착). 치과·기공소·딜러·영업팀 `requestor`: 플랫폼 사용료·하청 수수료 안내 없음(미부과). **딜러(`variant=salesman`)**: 커스텀어벗 20→10% 구간(~1천 20% · ~2천 18% · ~3천 16% · ~4천 14% · ~5천 12% · 5천1~ 10%) · 스토어(심플웨이)·기공 제외 · 90일 무주문이면 소개 코드 리셋(누구든 다시 영업 가능). 모달 폭 `sm:max-w-[52rem]`. **「의뢰자 정책」(`variant=requestor`)**: 딜러 대시보드·영업팀 성과 — **치과/기공소 탭**. 치과=런칭 이벤트 단일가·리메이크「어벗츠에」건당 1만원. 기공소=주문량 의뢰비(가입 90일 1만원·이후 30일 스냅샷)·그룹할인(소개 그룹 주문량 합산)·리메이크 어벗츠로부터/어벗츠로.
-    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 정상가 **1.5만원** · 런칭 **1.3만원**(`resolveCustomAbutmentProductionPriceForAt`). 출고 표시=`shippingPolicyCopy`(택배 묶음 출고 / 딜리버리 익일 도착). 택배 묶음=박스당 `shippingFee`(3,500). 딜리버리=월정액(기본 55,000, VAT 포함). `regular*`는 관리자 딜러분배용. 기공소 매칭 월정 0 · 플랫폼 사용료·하청 수수료 미부과 — 루트 `rules.md` §2.3.
+    - `src/shared/ui/PricingPolicyDialog.tsx` — 단일가 1.5만(거래처 본인 가격 표시). 딜리버리 익일 도착만, 월정액은 딜러·어벗츠 부담(월 의뢰 2건 이하 무료).
+    - 안내·청구 단가 SSOT: `src/shared/pricing/requestorUnitPricePolicy.ts`(단일가 15,000 · 거래처 12,000~15,000). 출고 표시=`shippingPolicyCopy`(딜리버리 익일 도착).
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
   - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 기공소별 인증 ON·기공 테스트·메모. 수수료 스트립(`DevopsPlatformFeeTab`)은 숨김(미부과). 기공소 설정 탭은 없음. 관리자 테스트 통과/`enabled` 시 풀 참여. 학습 이용은 기본 허용이고 요율과 무관. 기공소 설정 「AI」탭·기공의뢰 동의 버튼·모달은 없다. 안내는 약관·개인정보. 관리자 플랫폼 설정「인증 기공소」탭
   - 기공소 어벗츠 인증: 가입 시 미신청 → 신청 → 기공 테스트 → 통과 시 인증. 상태·테스트·메모 SSOT `BusinessAnchor.abutsLabCertification` / `src/shared/practice/abutsLabCertification.ts`
@@ -285,34 +281,27 @@ Notes:
     - 수동 묶음은 `design_custom_abutment`. 해제 시 크기 휴리스틱으로 productMode 복원.
   - 구현: `patientGroups.ts`, `usePatientFileGroups.ts`, UI `NewRequestAttachmentsPanel.tsx`, 게이트 `NewRequestPage.tsx` + `ConfirmDialog`.
   - Cursor 룰: `.cursor/rules/oral-scan-file-size.mdc`
-- 신규의뢰 배송 방식(택배 묶음/딜리버리):
-  - 의뢰카드에서 `shippingMode`(`normal`|`express`)를 건별로 선택합니다.
-  - 표시 라벨 SSOT: `src/shared/shipping/shippingPolicyCopy.ts` — 택배 묶음 출고 / 딜리버리 익일 도착.
-  - 우측 배송 설정은 안내/요일 설정 + 제출만 담당합니다.
-  - 택배 묶음 출고: 1박스당 `shippingFee`(기본 3,500원) 별도.
-  - 딜리버리 익일 도착: 월정액(기본 55,000원, VAT 포함). 당일 자정까지 주문 → 익일 기공소(치과) 도착.
+- 신규의뢰 배송 방식(딜리버리 익일 도착 단일):
+  - 모드 선택 없음. 서버가 `shippingMode="express"`로 저장하고 신속 추가비는 0.
+  - 표시 라벨 SSOT: `src/shared/shipping/shippingPolicyCopy.ts` — 딜리버리 익일 도착.
+  - 우측 배송 카드는 안내 + 제출만 담당합니다(요일 설정 없음).
+  - 딜리버리 익일 도착: 거래처 부담 없음. 월정액 55,000원(VAT 포함)은 딜러·어벗츠 부담이며 월 의뢰 2건 이하는 무료. 당일 자정까지 주문 → 익일 도착.
   - 디자인+생산(`design_custom_abutment`): `(생산 단가 + 디자인비) × 어벗 수`.
     - 디자인비는 디자인+생산 − 생산만. 어벗 수는 `toothWorks` 커스텀어벗·임플란트 치아(Pontic·작업X 제외).
-    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 정상가 **1.5만원** · 런칭 **1.3만원**(`resolveCustomAbutmentProductionPriceForAt`). 출고 표시=`shippingPolicyCopy`. 택배 묶음=박스당 3,500. 딜리버리=월 5.5만원(VAT 포함). `regular*`는 관리자 딜러분배용. 기공소 매칭 월정 0 · 플랫폼 사용료·하청 수수료 미부과 · 학습 이용은 요율과 무관 — 루트 `rules.md` §2.3.
-    - 생산(`custom_abutment`)은 Request/STL당 생산 1개. 신속비는 건당.
-    - 디자인+생산 신속비는 **어벗 수 배수** (`expressFee × abutmentQty`).
+    - 안내·청구 단가 SSOT: `src/shared/pricing/requestorUnitPricePolicy.ts`(단일가 15,000 · 거래처 12,000~15,000). 출고 표시=`shippingPolicyCopy`(딜리버리 익일 도착).
+    - 생산(`custom_abutment`)은 Request/STL당 생산 1개.
     - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`).
-    - 출고일: 묶음/신속 공통 **+1영업일**(디자인). 안내 카피 SSOT는 `.cursor/rules/design-fee.mdc` UI 절.
+    - 출고일: 디자인 **+1영업일**. 안내 카피 SSOT는 `.cursor/rules/design-fee.mdc` UI 절.
     - 의뢰카드는 `+디자인` 뱃지만. 의뢰 상세(`RequestDetailDialog`)에는 비용 세부(생산/디자인/딜리버리) 표시. 배송비는 크레딧 장부만.
-    - 표시: `PricingPolicyDialog`는 생산만/디자인+생산 정가와 배송비 별도(박스당 과금). `RequestDetailDialog`는 주문 비용만(배송 제외). 신규의뢰 우측에는 금액 미표시.
+    - 표시: `RequestDetailDialog`는 주문 비용만(배송 제외). 신규의뢰 우측에는 금액 미표시.
   - 설정 UI SSOT: 관리자 설정(결제) + 개발·운영사 설정(요금) → `AdminCreditSettingsTab`
     - API: `GET /api/credits/settings`, `PATCH /api/admin/settings/credits` (`admin`|`devops`)
-  - 표시 금액 SSOT: 신속배송이면 생산비+추가비를 합산해 보여줍니다 (`resolveQuotedPriceAmount` in `shippingMode.ts`).
+  - 표시 금액 SSOT: `price.amount` 그대로(신속 추가비 폐지, 과거 건의 `price.expressFee`는 `resolveQuotedPriceAmount`가 이중 합산하지 않음).
     - 백엔드가 `price.amount`/`price.expressFee`/`price.designFee`를 내려주면 이중 합산하지 않습니다.
     - 카드/상세: `RequestorRecentRequestsCard.tsx`, `RequestDetailDialog.tsx`
-  - 우측 기본 배송 방식(`normal`|`express`)은 로컬스토리지 + `BusinessAnchor.shippingPolicy.defaultShippingMode`에 저장합니다.
-  - 신속 선택: `isExpressShippingSelectable` — 신속 예상 출고일이 묶음보다 빠를 때만 UI 활성
-    (`estimateShipDate.ts`, `NewRequestShippingSection` / `NewRequestAttachmentsPanel`).
-  - 의뢰카드 하단(마감시간 옆)에 `shippingMode`에 따라 `신속배송`/`묶음배송` 뱃지를 항상 표시합니다.
-    (`ShippingModeBadge`, `WorksheetCardGrid`, 대시보드 의뢰 리스트)
+  - 의뢰카드 하단에는 과거 `normal` 건을 위한 `ShippingModeBadge`만 남는다(신규는 모두 딜리버리).
   - 워크시트 목록 API(`view=worksheet`) projection에 `shippingMode`/`finalShipping`/`originalShipping`을 포함해야 합니다.
-  - 대시보드 묶음/신속 토글: `PATCH /api/requests/my/shipping-mode` (`RequestorBulkShippingBannerCard.tsx`)
-  - 우편함: 신속 건 포함 시 오늘 발송 가능으로 처리. 미발송 배지 요일은 가장 빠른 `estimatedShipYmd`(모달 출고일과 동일). YMD 없을 때만 `weeklyBatchDays` 폴백 (`shippingDay.helpers.ts` / `shipping.controller.js`)
+  - 우편함: 미발송 배지 요일은 가장 빠른 `estimatedShipYmd`(모달 출고일과 동일). YMD 없을 때만 `weeklyBatchDays` 폴백 (`shippingDay.helpers.ts` / `shipping.controller.js`)
   - 관련 파일:
     - `src/pages/requestor/new_request/NewRequestPage.tsx`
     - `src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx`
@@ -360,7 +349,7 @@ Notes:
   - 재생목록 항목 클릭 → PreviewModal (코드 에디터는 프리뷰 내 버튼)
 
 - 커스텀 어벗 의뢰 단가 표시 SSOT:
-  - 치과 정책 안내·크레딧 차감은 관리자「플랫폼 설정 · 커스텀어벗」유효가(런칭 1.3만 / 정상 1.5만). 의뢰자 BA 오버라이드가 있으면 그 판매가. 신속은 +신속 의뢰비.
+  - 치과 정책 안내·크레딧 차감은 단일가 15,000원(거래처 가격이 있으면 본인에게만 그 금액). 상세는 하단 「의뢰비·딜러·배송 정책 변경」.
   - 기공소 커스텀어벗 안내도 치과와 동일 고시(`membershipProductionPrice` / `membershipDesignAndProductionPrice`). 라벨만 `어벗생산의뢰`·`기공의뢰수신`. 기공소 의뢰비만 매일 자정 스냅샷 단가(가입 90일 1만원 · 이후 30일 주문량 할인). 치과는 기존 단일가.
   - 기공소 어벗츠 인증: 관리자 `PracticeTransferAutoMatchTab`에서 신청·테스트·상태 관리. **월 참여 수수료 0원**(정책). 플랫폼 사용료·하청 수수료 미부과. 어벗츠기공본부는 항상 학습에 포함. 구 거래 치과 소개 UI는 제거(초대 API는 레거시 유지). 구 기공소 설정「어벗츠 인증」탭 제거.
   - 치과향 지정 기공소 표시: `formatPracticeTargetLabLabel` → **「어벗츠 · {이름}」**(협력). 하청만 「어벗츠기공소 · 인증 협력 기공소에서 처리」. 라우팅 `targetLab`은 현행 유지. 작업시작·취소·거부 채팅은 협력만 `어벗츠 협력 기공소 「{수행 기공소}」이(가) …`(계약=어벗츠, 「」=실명). 하청 채팅은 원청명.
@@ -540,7 +529,7 @@ Notes:
     잔액 < 50만원이면 사이드바 `크레딧`에 깜빡이는 충전 뱃지·클릭 시 `?tab=charge` (`DashboardLayout`).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
   - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage`, `InquiriesPage` — 크레딧=B2B 거래 선수금. 기공·어벗 경로는 면세, 스토어는 과세(월말 분리 발행). 회사=겸영. Terms: 기공회원(기공소·계산서)과 제조회원(일반과세·세금계산서) 분리.
-  - 가격 정책/대시보드: `PricingPolicyDialog` — 런칭 1.3만 / 정상 1.5만. 택배 묶음 출고 1박스당 3,500. 딜리버리 익일 도착 월 5.5만원(VAT 포함). 의뢰자 커스텀어벗 경로는 **부가세 없음 · 면세**(딜리버리 월정액만 VAT 포함). 딜러는 판매가 기준(배송·월정액 제외).
+  - 가격 정책/대시보드: `PricingPolicyDialog` — 단일가 1.5만, 딜리버리 익일 도착만. 의뢰자 커스텀어벗 경로는 **부가세 없음 · 면세**.
   - 관리자 플랫폼 설정「커스텀어벗」: 커스텀어벗 가격(CNC·환봉 생산 단가) + 분배 비율. 지정 기공소 디자인·어벗츠 생산만. 치과 공급·디자인+생산 카드 없음.
   - 제조사 정산규칙: 딜러와 같은 칩·표(구간·누적). 제조 49.5% 고정(부가세 포함). 배송은 박스당 매입가(표 밖). 리메이크·무료 크레딧도 약정 단가. 말일 일괄 지급·세금계산서.
   - 어벗츠 정산규칙: 딜러·제조와 같은 칩·표. 제조 49.5% 고정 후 나머지에서 딜러 누진·개발운영 5%를 뺀 순몫. 배송 제외. 어벗츠 순몫 면세 계산서.
@@ -971,3 +960,12 @@ Notes:
 - 루트와 중복되는 정책은 여기 다시 쓰지 않습니다.
 - 특정 화면 UX나 과거 리팩터링 기록은 가능한 한 코드 근처로 옮기고, 이 문서에는 남기지 않습니다.
 - 새 규칙이 여러 역할/여러 페이지에 걸치면 루트 `rules.md`를 먼저 수정합니다.
+
+## 의뢰비·딜러·배송 정책 변경 (2026-10-08, 최우선)
+
+- **의뢰비·딜러·배송 SSOT (2026-10-08, 이전 기술과 충돌하면 이 항목이 우선)**:
+  - 건당 의뢰비는 치과·기공소 모두 **15,000원 단일가**. 딜러·영업팀이 거래처(`BusinessAnchor.dealerUnitPrice`, `select:false`)별로 **12,000~15,000원**을 정할 수 있고 거래처 본인에게만 보인다(외부 비공개). 서버·FE 모두 12,000 미만/15,000 초과 거절(`validateDealerUnitPrice`). 그룹할인·가입 90일 1만원·주문량 할인·런칭 이벤트 단가는 폐지.
+  - 분배(어벗 1개당, 부가세 포함): 제조사 **5,500** · 개발운영 **1,000** · 어벗츠 **3,500** · 나머지 **딜러(판매가 − 10,000)**. 딜러 없음(직판·영업팀 소개)이면 딜러 몫은 어벗츠. 어벗츠가 거래처에 직접 공급(면세)하고 딜러에게는 수수료를 부가세 포함으로 지급. 구현 `resolveRevenueOwnerBaseAllocation` (`creditRevenuePolicy.service.js`).
+  - 배송은 **딜리버리 익일 도착만**. 택배 묶음 출고·월 가입 폐지, 거래처 배송비 없음. 딜리버리 월정액 55,000원(VAT 포함)은 **거래처 1곳당** 딜러 부담(딜러 정산 `REV_SALESMAN` 차감), 딜러가 없으면 어벗츠 부담(`REV_ADMIN`). 직전 달 의뢰가 있던 거래처마다 월 1회 `DELIVERY_MONTHLY_COST` 저널(`deliveryMonthlyCost.service.js`, 멱등키 거래처+월).
+  - 위 항목과 충돌하는 이전 서술(자정 스냅샷 단가·할인그룹·택배 묶음 출고 박스당 배송비·딜러 10~20% 누적 구간·제조 49.5%·런칭 이벤트 단가)은 폐지된 정책이다.
+  - FE: `src/shared/pricing/requestorUnitPricePolicy.ts`(검증·상수), `src/shared/sales/CustomerPriceDialog.tsx`(딜러 「거래처 가격」), `NewRequestShippingSection.tsx`(딜리버리 단일 카드). 할인그룹 페이지·`DeliverySubscribeDialog` 삭제, `/dashboard/discount-group`은 대시보드로 리다이렉트.

@@ -167,22 +167,19 @@ export async function createRequest(req, res) {
       tooth,
     });
 
-    let expressFeePerRequest = 2000;
+    let expressFeePerRequest = 0;
     let designFeePerTooth = 5000;
     try {
       const creditSettings = await loadCreditSettingsDefaults({
         requestorOrgId: req.user?.businessAnchorId,
       });
-      expressFeePerRequest = Math.max(
-        0,
-        Number(creditSettings?.expressFee ?? 2000) || 2000,
-      );
+      expressFeePerRequest = 0;
       designFeePerTooth = Math.max(
         0,
         Number(creditSettings?.designFee ?? 5000) || 5000,
       );
     } catch {
-      expressFeePerRequest = 2000;
+      expressFeePerRequest = 0;
       designFeePerTooth = 5000;
     }
 
@@ -690,22 +687,19 @@ export async function createRequestsBulk(req, res) {
     }
 
     // 2. 총 의뢰비 계산 (+ 신속 추가비 + 디자인비)
-    let expressFeePerRequest = 2000;
+    let expressFeePerRequest = 0;
     let designFeePerTooth = 5000;
     try {
       const creditSettings = await loadCreditSettingsDefaults({
         requestorOrgId: req.user?.businessAnchorId,
       });
-      expressFeePerRequest = Math.max(
-        0,
-        Number(creditSettings?.expressFee ?? 2000) || 2000,
-      );
+      expressFeePerRequest = 0;
       designFeePerTooth = Math.max(
         0,
         Number(creditSettings?.designFee ?? 5000) || 5000,
       );
     } catch {
-      expressFeePerRequest = 2000;
+      expressFeePerRequest = 0;
       designFeePerTooth = 5000;
     }
 

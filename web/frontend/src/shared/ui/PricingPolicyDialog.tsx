@@ -1,3 +1,4 @@
+// - 2026-10-08: 단일가 1.5만(거래처별 1.2~1.5만은 딜러 설정·비공개). 그룹할인·묶음배송·월 가입 폐지, 딜리버리는 딜러/어벗츠 부담.
 // - 2026-10-08: 의뢰자 정책 기공소 — 그룹할인(소개 그룹 주문량 합산) 안내.
 // - 2026-10-08: 딜러 의뢰자 정책 — 치과/기공소 탭 분리. 치과=런칭 이벤트 단일가, 기공소=주문량 의뢰비.
 // - 2026-10-08: 딜러십·의뢰자 모달 폭 sm:max-w-3xl(어중간 줄바꿈 완화).
@@ -27,28 +28,18 @@ import {
   DialogTitle,
   DialogDescription
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { request } from '@/shared/api/apiClient';
+import { useAuthStore } from '@/store/useAuthStore';
 import { useRequestorBusinessAccess } from '@/shared/business/useRequestorBusinessAccess';
 import {
-  CREDIT_SETTINGS_DEFAULTS,
-  useSystemSettings
-} from '@/hooks/useSystemSettings';
-import {
+  DELIVERY_MONTHLY_FEE,
   REQUESTOR_UNIT_PRICE_BASE,
-  REQUESTOR_UNIT_PRICE_FLOOR,
-  REQUESTOR_UNIT_PRICE_INTRO_DAYS,
-  REQUESTOR_UNIT_PRICE_INTRO_PRICE,
-  REQUESTOR_UNIT_PRICE_MAX_DISCOUNT_ORDERS,
-  REQUESTOR_UNIT_PRICE_PER_ORDER_DISCOUNT,
+  REQUESTOR_UNIT_PRICE_MIN,
   formatRequestorWon
 } from '@/shared/pricing/requestorUnitPricePolicy';
 import {
-  ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
-  ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
-  formatAbutsAbutmentServiceWon,
-  formatAbutsManwon,
-  resolveCustomAbutmentProductionPriceForAt
+  formatAbutsManwon
 } from '@/shared/pricing/abutsAbutmentService';
 import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from '@/shared/settlement/labPayoutBankbook';
 import { cn } from '@/shared/ui/cn';
@@ -65,17 +56,10 @@ import {
   REFERRAL_OWNERSHIP_RESET_ANYONE_LINE,
   REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
 } from '@/shared/sales/dealershipPolicyCopy';
-import { DeliverySubscribeDialog } from '@/shared/shipping/DeliverySubscribeDialog';
 import {
-  BULK_SHIPPING_LABEL,
-  BULK_SHIPPING_POLICY_LINE,
-  DELIVERY_SUBSCRIBE_COMING_SOON_LINE,
-  DELIVERY_SUBSCRIBE_CREDIT_LINE,
-  DELIVERY_SUBSCRIBE_PERIOD_LINE,
+  DELIVERY_MONTHLY_PAYER_LINE,
   EXPRESS_SHIPPING_ARRIVAL_LINE,
-  EXPRESS_SHIPPING_FEE_LINE,
   EXPRESS_SHIPPING_LABEL,
-  resolveDeliveryNextDayMonthlyFee,
 } from '@/shared/shipping/shippingPolicyCopy';
 import {
   remakePolicyNoteLines,
@@ -183,21 +167,33 @@ export const PricingPolicyDialog = ({
   const effectiveIsLab = isRequestorPreview
     ? requestorKindTab === 'lab'
     : isLab;
-  /** 기공소=자정 스냅샷 의뢰비, 치과=런칭 이벤트 단일가. */
-  const useLabUnitPricePolicy = effectiveIsLab;
   const remakeAudience: RemakePolicyAudience = effectiveIsLab
     ? 'lab'
     : 'practice';
   const remakeRows = remakePolicyRows(remakeAudience);
   const remakeNotes = remakePolicyNoteLines(remakeAudience);
-  const showDeliveryJoin = variant === 'default' && !isRequestorPreview;
-  const [subscribeOpen, setSubscribeOpen] = useState(false);
-  const { data: systemSettings, refetch: refetchSystemSettings } =
-    useSystemSettings();
+  const { token } = useAuthStore();
+  /** 거래처 본인에게만 보이는 내 의뢰비(딜러가 정한 가격). 기본 1.5만. */
+  const [myUnitPrice, setMyUnitPrice] = useState<number | null>(null);
   useEffect(() => {
-    if (!open) return;
-    void refetchSystemSettings();
-  }, [open, refetchSystemSettings]);
+    if (!open || variant !== 'default' || !token) return;
+    let canceled = false;
+    void request<any>({
+      path: '/api/requests/my/pricing-referral-stats',
+      method: 'GET',
+      token,
+    })
+      .then((res) => {
+        const price = Number(res.data?.data?.effectiveUnitPrice);
+        if (!canceled && res.ok && Number.isFinite(price) && price > 0) {
+          setMyUnitPrice(price);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      canceled = true;
+    };
+  }, [open, variant, token]);
   useEffect(() => {
     if (!open || !isRequestorPreview) return;
     setRequestorKindTab('practice');
@@ -206,55 +202,6 @@ export const PricingPolicyDialog = ({
   void dealershipBasePct;
   void dealershipEventPct;
   void dealershipEventEnabled;
-  const credit = systemSettings?.creditSettings;
-  const platformRegularPrice = Math.max(
-    0,
-    Number(
-      credit?.listProductionPrice ??
-        credit?.membershipProductionPrice ??
-        ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
-    ) || ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
-  );
-  const launchResolved = resolveCustomAbutmentProductionPriceForAt(new Date(), {
-    membershipProductionPrice: platformRegularPrice,
-    customAbutmentLaunchEventEnabled: credit?.customAbutmentLaunchEventEnabled,
-    customAbutmentLaunchEventStartedAt: credit?.customAbutmentLaunchEventStartedAt,
-    customAbutmentLaunchEventEndedAt: credit?.customAbutmentLaunchEventEndedAt,
-    customAbutmentLaunchEventProductionPrice:
-      credit?.customAbutmentLaunchEventProductionPrice ??
-      ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
-  });
-  const regularPrice = platformRegularPrice;
-  const eventPrice = Math.max(
-    0,
-    Number(
-      credit?.customAbutmentLaunchEventProductionPrice ??
-        ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
-    ) || ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
-  );
-  const isLaunchEvent =
-    credit?.customAbutmentPricingTier === 'event' ||
-    launchResolved.tier === 'event';
-  const productionPrice = isLaunchEvent
-    ? eventPrice
-    : Math.max(
-        0,
-        Number(
-          credit?.effectiveProductionPrice ??
-            launchResolved.price ??
-            regularPrice,
-        ) || regularPrice,
-      );
-  const shippingFee = Math.max(
-    0,
-    Number(
-      credit?.shippingFee ?? CREDIT_SETTINGS_DEFAULTS.shippingFee,
-    ) || CREDIT_SETTINGS_DEFAULTS.shippingFee,
-  );
-  /** 딜리버리 익일 도착 월정액(VAT 포함). 표시 폴백 5.5만원. */
-  const deliveryMonthlyFee = resolveDeliveryNextDayMonthlyFee(
-    credit?.fmDentalMonthlyShippingFee,
-  );
 
   const title =
     variant === 'devops'
@@ -271,99 +218,65 @@ export const PricingPolicyDialog = ({
       : variant === 'salesman'
         ? `커스텀어벗 ${DEALERSHIP_CUMULATIVE_BAND_LINE} · 90일 무주문이면 소개 코드 리셋.`
         : variant === 'requestor'
-          ? requestorKindTab === 'lab'
-            ? '소개한 기공소에 안내할 단가와 출고 기준입니다.'
-            : '소개한 치과에 안내할 단가와 출고 기준입니다.'
-          : isLab
-            ? ''
-            : '기공소에 · 어벗츠에 단가와 출고 기준을 확인하세요.';
+          ? '소개한 거래처에 안내할 단가와 출고 기준입니다.'
+          : '단가와 출고 기준을 확인하세요.';
 
+  const hasMyDiscount =
+    myUnitPrice != null && myUnitPrice < REQUESTOR_UNIT_PRICE_BASE;
   const priceBody = (
     <div className='space-y-3'>
-      <section className='rounded-2xl border border-slate-200/80 bg-white px-4 py-4 shadow-sm ring-1 ring-slate-900/[0.02]'>
-        <div className='space-y-3'>
-          <PriceRow
-            label={
-              isRequestorPreview || effectiveIsLab
-                ? '커스텀 어벗 생산'
-                : '어벗츠에 · 커스텀 어벗 생산'
-            }
-            value={formatAbutsManwon(
-              useLabUnitPricePolicy
-                ? REQUESTOR_UNIT_PRICE_FLOOR
-                : productionPrice,
-            )}
-            strikeValue={
-              useLabUnitPricePolicy
-                ? formatAbutsManwon(REQUESTOR_UNIT_PRICE_BASE)
-                : isLaunchEvent && regularPrice !== productionPrice
-                  ? formatAbutsManwon(regularPrice)
-                  : undefined
-            }
-            unitLabel={useLabUnitPricePolicy ? '1개당 의뢰비' : '1개당'}
-            secondaryValue={
-              useLabUnitPricePolicy
-                ? '최저가'
-                : isLaunchEvent
-                  ? '이벤트 중'
-                  : eventPrice !== regularPrice
-                    ? `이벤트 시 ${formatAbutsManwon(eventPrice)}`
-                    : undefined
-            }
-          />
-          <div className='h-px bg-slate-100' />
-          <PriceRow
-            label={BULK_SHIPPING_LABEL}
-            value={formatAbutsAbutmentServiceWon(shippingFee)}
-            valuePrefix='VAT 포함'
-            unitLabel='1박스당'
-            note='별도 부과'
-          />
-          <div className='h-px bg-slate-100' />
-          <PriceRow
-            label={EXPRESS_SHIPPING_LABEL}
-            value={formatAbutsManwon(deliveryMonthlyFee)}
-            valuePrefix='VAT 포함'
-            unitLabel='매월'
-            note={EXPRESS_SHIPPING_FEE_LINE}
-            noteAction={
-              showDeliveryJoin ? (
-                <Button
-                  type='button'
-                  size='sm'
-                  onClick={() => setSubscribeOpen(true)}
-                >
-                  가입
-                </Button>
-              ) : undefined
-            }
-          />
-          <div className='h-px bg-slate-100' />
-          <div className='space-y-1.5'>
-            <div className='text-sm text-slate-600'>리메이크</div>
-            {remakeRows.map((row) => (
-              <div
-                key={row.pathLabel}
-                className='flex items-baseline justify-between gap-3'
-              >
-                <div className='min-w-0 text-xs text-slate-500'>
-                  {row.pathLabel}
-                </div>
-                <div className='shrink-0 text-base font-semibold tracking-tight tabular-nums text-slate-900'>
-                  {row.priceLabel}
-                </div>
-              </div>
-            ))}
-            <p className='text-xs leading-relaxed text-slate-500'>
-              {remakeNotes.map((line, idx) => (
-                <span key={line}>
-                  {idx > 0 ? <br /> : null}
-                  {line}
-                </span>
-              ))}
-            </p>
+      <div className='grid gap-2.5 sm:grid-cols-2'>
+        <div className='rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm'>
+          <div className='text-xs text-slate-500'>
+            {hasMyDiscount ? '내 의뢰비 · 1개당' : '의뢰비 · 1개당'}
+          </div>
+          <div className='mt-1 flex items-baseline gap-2 tabular-nums'>
+            <span className='text-2xl font-semibold tracking-tight text-slate-900'>
+              {formatAbutsManwon(myUnitPrice ?? REQUESTOR_UNIT_PRICE_BASE)}
+            </span>
+            {hasMyDiscount ? (
+              <span className='text-sm text-slate-400 line-through'>
+                {formatAbutsManwon(REQUESTOR_UNIT_PRICE_BASE)}
+              </span>
+            ) : null}
           </div>
         </div>
+        <div className='rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm'>
+          <div className='text-xs text-slate-500'>{EXPRESS_SHIPPING_LABEL}</div>
+          <div className='mt-1 text-2xl font-semibold tracking-tight text-slate-900'>
+            무료
+          </div>
+          <div className='mt-0.5 text-xs text-slate-500'>
+            0시까지 주문 · 익일 도착
+          </div>
+        </div>
+      </div>
+
+      <section className='rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm'>
+        <div className='mb-2 text-sm font-medium text-slate-700'>리메이크</div>
+        <div className='space-y-1.5'>
+          {remakeRows.map((row) => (
+            <div
+              key={row.pathLabel}
+              className='flex items-baseline justify-between gap-3'
+            >
+              <div className='min-w-0 text-xs text-slate-500'>
+                {row.pathLabel}
+              </div>
+              <div className='shrink-0 text-sm font-semibold tabular-nums text-slate-900'>
+                {row.priceLabel}
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className='mt-2 text-xs leading-relaxed text-slate-500'>
+          {remakeNotes.map((line, idx) => (
+            <span key={line}>
+              {idx > 0 ? <br /> : null}
+              {line}
+            </span>
+          ))}
+        </p>
       </section>
 
       {effectiveIsLab && !isRequestorPreview ? (
@@ -372,68 +285,26 @@ export const PricingPolicyDialog = ({
         </SettlementPolicyFact>
       ) : null}
 
-      <div className={GUIDE_FACT_GRID_CLASS}>
-        {useLabUnitPricePolicy ? (
-          <>
-            <SettlementPolicyFact label='기공소 의뢰비 정책'>
-              가입 후 {REQUESTOR_UNIT_PRICE_INTRO_DAYS}일간{' '}
-              {formatRequestorWon(REQUESTOR_UNIT_PRICE_INTRO_PRICE)}원 고정
-              <br />
-              {REQUESTOR_UNIT_PRICE_INTRO_DAYS + 1}일부터 지난 30일 주문량으로
-              결정
-              <br />
-              1건당 {REQUESTOR_UNIT_PRICE_PER_ORDER_DISCOUNT}원 할인,{' '}
-              {REQUESTOR_UNIT_PRICE_MAX_DISCOUNT_ORDERS}건 이상이면 최대 할인
-              <br />
-              매일 자정(KST)에 정해 그날 하루 적용
-            </SettlementPolicyFact>
-            <SettlementPolicyFact label='그룹할인'>
-              소개한 기공소 주문량을 합산해 할인합니다.
-            </SettlementPolicyFact>
-          </>
-        ) : null}
-        <SettlementPolicyFact label={BULK_SHIPPING_LABEL}>
-          설정한 출고 요일 중 가장 빠른 날에 함께 출고합니다.
-          <br />
-          {BULK_SHIPPING_POLICY_LINE}
-        </SettlementPolicyFact>
-        <SettlementPolicyFact label={EXPRESS_SHIPPING_LABEL}>
-          {EXPRESS_SHIPPING_ARRIVAL_LINE}
-          <br />
-          {DELIVERY_SUBSCRIBE_PERIOD_LINE}
-          <br />
-          {DELIVERY_SUBSCRIBE_CREDIT_LINE}
-          <br />
-          {DELIVERY_SUBSCRIBE_COMING_SOON_LINE}
-        </SettlementPolicyFact>
-      </div>
-
-      <SettlementPolicySection title='출고 일정 (KST)'>
-        <div className='grid gap-2 sm:grid-cols-3'>
-          {[
-            { time: '0시', desc: '당일 주문 마감' },
-            { time: '익일', desc: '기공소(치과) 도착' },
-            { time: '지정 요일', desc: '택배 묶음 출고' },
-          ].map((row) => (
-            <div
-              key={row.time}
-              className='rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 text-center shadow-sm sm:text-left'
-            >
-              <div className='text-base font-semibold tabular-nums text-slate-900'>
-                {row.time}
-              </div>
-              <div className='mt-0.5 text-xs leading-relaxed text-slate-500'>
-                {row.desc}
-              </div>
-            </div>
-          ))}
+      {isRequestorPreview ? (
+        <div className={GUIDE_FACT_GRID_CLASS}>
+          <SettlementPolicyFact label='거래처별 가격'>
+            {formatRequestorWon(REQUESTOR_UNIT_PRICE_MIN)}~
+            {formatRequestorWon(REQUESTOR_UNIT_PRICE_BASE)}원 안에서 정합니다.
+            <br />
+            거래처 본인에게만 보입니다.
+          </SettlementPolicyFact>
+          <SettlementPolicyFact label={EXPRESS_SHIPPING_LABEL}>
+            월 {formatAbutsManwon(DELIVERY_MONTHLY_FEE)}은 거래처 1곳당 딜러가
+            부담합니다.
+            <br />
+            딜러가 없으면 어벗츠가 부담합니다.
+          </SettlementPolicyFact>
         </div>
-      </SettlementPolicySection>
+      ) : null}
     </div>
   );
 
   return (
-    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
@@ -461,9 +332,9 @@ export const PricingPolicyDialog = ({
                 label='영업 수수료'
                 className='break-keep'
               >
-                커스텀어벗은 {DEALERSHIP_CUMULATIVE_BAND_LINE}입니다.
+                거래처 판매가 − 1만원(부가세 포함)입니다.
                 <br />
-                기공·스토어·배송비·월정액은 제외합니다.
+                판매가는 거래처별로 1.2~1.5만원 안에서 정합니다.
               </SettlementPolicyFact>
               <SettlementPolicyFact label='소개 코드' className='break-keep'>
                 {REFERRAL_OWNERSHIP_RESET_POLICY_LINE}
@@ -471,11 +342,12 @@ export const PricingPolicyDialog = ({
                 {REFERRAL_OWNERSHIP_RESET_ANYONE_LINE}
               </SettlementPolicyFact>
               <SettlementPolicyFact label='배송' className='break-keep'>
-                {BULK_SHIPPING_LABEL}은 1박스당 배송비가 별도입니다.
+                {EXPRESS_SHIPPING_LABEL}만 운영합니다.
                 <br />
-                {EXPRESS_SHIPPING_LABEL}은 월 정액(VAT 포함)입니다.
+                {DELIVERY_MONTHLY_PAYER_LINE}
                 <br />
-                딜러 수수료 산정에서 배송비·월정액은 빠집니다.
+                월 {formatAbutsManwon(DELIVERY_MONTHLY_FEE)}은 정산액에서
+                차감합니다.
               </SettlementPolicyFact>
               <SettlementPolicyFact label='집계 · 지급' className='break-keep'>
                 매일 자정(KST) 사업자 기준으로 업데이트합니다.
@@ -486,14 +358,14 @@ export const PricingPolicyDialog = ({
           ) : variant === 'devops' ? (
             <div className={GUIDE_FACT_GRID_CLASS}>
               <SettlementPolicyFact label='분배 구조'>
-                판매가에서 제조 매입을 뺀 뒤 딜러·개발운영·어벗츠로
-                나눕니다.
+                어벗 1개당 제조 5,500 · 개발운영 1,000 · 어벗츠 3,500원입니다.
                 <br />
-                개발운영 몫은 지급 시 부가세가 합산됩니다.
+                나머지는 딜러(판매가 − 1만원)이며, 부가세 포함입니다.
               </SettlementPolicyFact>
               <SettlementPolicyFact label='딜러 없음'>
-                딜러 소개가 없으면 잔여를 개발운영·어벗츠(기본 20:80)로
-                분배합니다.
+                딜러가 없으면 딜러 몫은 어벗츠가 가져갑니다.
+                <br />
+                딜리버리 월정액도 어벗츠가 부담합니다.
               </SettlementPolicyFact>
               <SettlementPolicyFact label='화면'>
                 정산 예정액·지급 완료액·사업자 요약·정산 원장으로
@@ -522,11 +394,5 @@ export const PricingPolicyDialog = ({
         </div>
       </DialogContent>
     </Dialog>
-    <DeliverySubscribeDialog
-      open={subscribeOpen}
-      onOpenChange={setSubscribeOpen}
-      monthlyFee={deliveryMonthlyFee}
-    />
-    </>
   );
 };

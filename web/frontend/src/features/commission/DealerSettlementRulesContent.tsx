@@ -21,9 +21,6 @@ export function DealerSettlementRulesContent({
     <div className="space-y-4">
       <CustomAbutmentDealerSplitTable />
       <div className={GUIDE_FACT_GRID_CLASS}>
-        <SettlementPolicyFact label="제외">
-          기공 · 스토어 · 배송비 · 월정액
-        </SettlementPolicyFact>
         <SettlementPolicyFact label="소개 코드">
           {REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면 리셋됩니다.
           <br />

@@ -66,7 +66,7 @@ export function toPlainRequestPrice(price) {
 export function resolveQuotedPriceWithExpressFee({
   price,
   shippingMode,
-  expressFee = 2000,
+  expressFee = 0,
   expressQty = 1,
 }) {
   const src = toPlainRequestPrice(price);

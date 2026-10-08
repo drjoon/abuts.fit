@@ -40,6 +40,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Search } from "lucide-react";
+import { PriceApprovalPanel } from "./PriceApprovalPanel";
 
 const PERIOD_LABEL: Record<string, string> = {
   "30d": "30일",
@@ -584,11 +585,12 @@ export default function AdminReferralGroupsPage() {
   return (
     <div className="flex h-full min-h-0 flex-col pb-2">
       <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-hidden">
+        <PriceApprovalPanel />
         <div className="grid shrink-0 grid-cols-1 gap-2.5 p-0.5 md:grid-cols-2">
           <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm sm:px-5">
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="text-sm font-bold tracking-tight text-slate-900">
-                의뢰자 할인 네트워크
+                의뢰자 소개 네트워크
               </h2>
               {roleBadge("requestor")}
             </div>

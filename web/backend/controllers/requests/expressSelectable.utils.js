@@ -78,16 +78,7 @@ export async function resolveSelectableShippingMode({
   manufacturerLeadTimes = null,
   calculateSchedule = calculateInitialProductionSchedule,
 } = {}) {
-  const mode = shippingMode === "express" ? "express" : "normal";
-  if (mode !== "express") return "normal";
-
-  const ok = await isExpressShippingSelectable({
-    requestedAt,
-    weeklyBatchDays,
-    maxDiameter,
-    productMode,
-    manufacturerLeadTimes,
-    calculateSchedule,
-  });
-  return ok ? "express" : "normal";
+  // 2026-10-08: 묶음 출고 폐지 — 모든 의뢰는 딜리버리 익일 도착(express 일정). 입력 모드는 무시한다.
+  void shippingMode; void requestedAt; void weeklyBatchDays; void maxDiameter; void productMode; void manufacturerLeadTimes; void calculateSchedule;
+  return "express";
 }

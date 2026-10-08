@@ -57,9 +57,9 @@ export const FeaturesSection = () => {
       title: "배송 안내",
       description: (
         <>
-          택배 묶음 출고는 1박스당 3,500원입니다.
+          딜리버리 익일 도착만 운영합니다.
           <br />
-          딜리버리 익일 도착은 월 5.5만원(VAT 포함)입니다.
+          배송비는 없습니다.
         </>
       ),
       category: "배송",

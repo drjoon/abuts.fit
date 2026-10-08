@@ -18,12 +18,7 @@ export type RequestorReferralStats = {
   statsMode?: "group" | "referral";
   effectiveUnitPrice?: number;
   baseUnitPrice?: number;
-  discountAmount?: number;
   rule?: string;
-  maxDiscountPerUnit?: number;
-  discountPerOrder?: number;
-  /** 가입 이벤트 마지막 날(KST, YYYY-MM-DD). 스냅샷 단가 기준. */
-  introEndsYmd?: string | null;
   /** 커스텀어벗 리메이크 단가(원). 어벗츠로 고정 10,000 */
   remakeUnitPrice?: number;
 };

@@ -1116,10 +1116,7 @@ export async function createRequestsFromDraft(req, res) {
     const createdYmd = toKstYmd(requestedAtForPrefetch) || getTodayYmdInKst();
     const shippingOrgId = String(businessAnchorId || shippingOrgIdEarly || "");
     const shippingFeePerBox = 3500;
-    const expressFeePerRequest = Math.max(
-      0,
-      Number(creditSettings?.expressFee ?? 2000) || 2000,
-    );
+    const expressFeePerRequest = 0;
     const designFeePerTooth = Math.max(
       0,
       Number(creditSettings?.designFee ?? 5000) || 5000,

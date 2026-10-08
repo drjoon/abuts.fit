@@ -5,20 +5,18 @@
 /** 딜러 영업 수수료·소개 귀속 카피 SSOT. */
 export const REFERRAL_OWNERSHIP_INACTIVE_DAYS = 90;
 
-export const DEALERSHIP_BAND_MIN_PCT = 10;
-export const DEALERSHIP_BAND_MAX_PCT = 20;
-export const DEALERSHIP_BAND_RANGE_LABEL = `${DEALERSHIP_BAND_MIN_PCT}~${DEALERSHIP_BAND_MAX_PCT}%`;
+/** 딜러 수수료 = 거래처 판매가(1.2~1.5만) − 1만원(부가세 포함). 누적 구간 폐지(2026-10-08). */
+export const DEALERSHIP_BAND_RANGE_LABEL = "판매가 − 1만원";
 
-/** 커스텀어벗만. 스토어(심플웨이) 지급 없음. */
-export const DEALERSHIP_CUMULATIVE_BAND_LINE = `${DEALERSHIP_BAND_RANGE_LABEL} 누적 구간`;
+export const DEALERSHIP_CUMULATIVE_BAND_LINE = "거래처 판매가 − 1만원(부가세 포함)";
 
 /** 딜러 대시보드 계약 카드 */
-export const DEALERSHIP_DASHBOARD_BAND_LINE = `${DEALERSHIP_BAND_RANGE_LABEL} 누적 구간 차등 분배`;
+export const DEALERSHIP_DASHBOARD_BAND_LINE = "거래처 판매가 − 1만원";
 
-/** 정산 규칙 모달 부제. 본문 표와 겹치지 않게 짧게. */
-export const DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD = "커스텀어벗";
+/** 정산 규칙 모달 부제. */
+export const DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD = "커스텀어벗 · 거래처별 판매가";
 
-export const DEALERSHIP_SETTLEMENT_RULE_SUMMARY = `커스텀어벗 ${DEALERSHIP_CUMULATIVE_BAND_LINE} · ${REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면 소개 코드 리셋 · 부가세 포함·세금계산서`;
+export const DEALERSHIP_SETTLEMENT_RULE_SUMMARY = `딜러 수수료는 ${DEALERSHIP_CUMULATIVE_BAND_LINE} · 딜리버리 월정액은 딜러 부담 · ${REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면 소개 코드 리셋`;
 
 export const REFERRAL_OWNERSHIP_RESET_POLICY_LINE =
   `${REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면 소개 코드가 리셋됩니다.`;

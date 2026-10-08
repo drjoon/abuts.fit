@@ -93,70 +93,41 @@
   - AI 디자인은 찾는 과정을 메시 변환으로 보여 주고(`onPose`), 도는 동안 `onAligningChange`로 편집·저장·실행취소·의뢰 이동을 잠근다. 「중단」하면 멈춘 순간 자세를 보여 주고 「이 자세 유지 / 원래대로」를 고르게 한다. 기하는 끝나거나 유지를 고를 때만 바뀐다.
   - 계산 코드는 프론트 `shared/practice/workScanAutoAlign.ts`의 Node 번들 `vendor/workScanAutoAlign/workScanAutoAlign.mjs`(생성물). 정렬·파서 코드를 바꾸면 `npm --prefix ../frontend run build:work-scan-align`으로 다시 만든다(`npm run build`·`eb.sh`도 만든다). 끄기: `WORK_SCAN_AUTO_ALIGN_WORKER_ENABLED=false`.
 
-- 신속 배송(`express`) 복원 메모:
-  - Draft/Request `shippingMode` 필드를 다시 저장합니다. (`models/draftRequest.model.js`, `models/request.model.js`)
-  - 생성 경로에서 `"normal"` 강제 금지: `draftRequest.controller.js`, `creation.draft.controller.js`, `creation.from-draft.controller.js`, `creation.request.controller.js`
-  - 유효 모드 해석: `controllers/requests/shippingPriority.utils.js`의 `resolveEffectiveShippingMode`
-  - 신속 추가 의뢰크레딧: `creditSettings.expressFee`(기본 2000)
-    - 설정 API: `GET|PATCH /api/admin/settings/credits` (`authorize(["admin","devops"])`)
-      - 공개 조회: `GET /api/credits/settings`
-      - 저장/정규화: `admin.settings.controller.js` `updateCreditSettings` (기존 값 merge)
-    - 견적/표시: `expressPrice.utils.js` `resolveQuotedPriceWithExpressFee` — 신속 지정 시 `price.amount`에 합산 + `price.expressFee` 기록
-      - 생성: `creation.from-draft.controller.js`, `creation.request.controller.js`
-      - 준비 단계 모드 전환: `shipping.Requestor.controller.js` `updateMyShippingMode`
-      - 응답 정규화: `utils.js` `normalizeRequestForResponse`, 대시보드 recent/snapshot
-    - 제출 잔액 체크: `creation.from-draft.controller.js`
-    - 실제 차감: `common.review.helpers.js` `ensureRequestCreditSpendOnMachiningEnter`
-      - 생산비: `request:<id>:machining_spend`
-      - 신속 추가비: `request:<id>:express_surcharge` (분리 저널)
-      - 누락 보정: `healMissingExpressSurchargesForBusiness` (크레딧 원장 조회 시)
-      - 원장 표시: `creditLedger.utils.js`에서 생산비+신속추가비를 1행으로 합산
-    - 지연/모드 전환 취소: `cancelExpressSurchargeIfShipDelayed` → `deleteExpressSurchargeAtomic` (표시 금액도 추가비 제외로 재동기화)
+- 배송은 딜리버리 익일 도착 단일(2026-10-08). 신속 추가비·택배 묶음 출고 폐지.
+  - 서버는 입력 모드와 무관하게 `shippingMode="express"`로 저장(`expressSelectable.utils.js` `resolveSelectableShippingMode`). 일정은 express 경로로 계산하며 `weeklyBatchDays`는 쓰지 않는다. 과거 `normal` 건은 표시용으로만 남는다.
+  - `expressFee`·`express_surcharge`: 모든 계산 경로(생성·견적·hold·대시보드)가 0, `creditSettings.expressFee`도 0으로 읽는다. 과거 `express_surcharge` 저널·`price.expressFee`는 원장 표시용 레거시.
+  - 딜리버리 월정액 원가: `services/deliveryMonthlyCost.service.js` — 직전 달 의뢰 3건 이상 거래처만(`DELIVERY_FREE_MAX_MONTHLY_REQUESTS=2` 이하 무료). `dryRun`으로 대상만 셀 수 있다.
+  - 영업팀 거래처 가격은 `BusinessAnchor.dealerPriceApproval`(select:false)로 승인 대기 → `/api/admin/price-approvals`. 대기 중에는 `checkCreditLock`이 의뢰를 막는다.
   - 디자인+생산 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
     - 공식: `(생산 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능
-    - 단가: 기공소 청구=자정 스냅샷 단가(`resolveRequestorUnitPriceForAnchorId`, 기본 15,000 · 가입 90일 10,000 · 지난 30일 합산 1건당 50원 할인·최대 5,000, `utils/requestorUnitPricePolicy.js`). 관리자 BA 특별가가 있으면 그 금액. `membershipProductionPrice`(15,000)=정상가 표시·기본. 제조사 매입 49.5%. 치과는 기존 단일가·런칭 이벤트 13,000(`customAbutmentLaunchEvent*`) 유지. `membershipDesignAndProductionPrice`(기본 25,000, 레거시). `designFee`는 디자인+생산 − 생산만과 동기화(기본 10,000, **1어벗당**). 출고: 택배 묶음 출고=박스당 `shippingFee`(3,500) · 딜리버리 익일 도착=월정액(기본 55,000, VAT 포함, `fmDentalMonthlyShippingFee`). 치과 멤버십 월정 없음. 기공소 자동 매칭 **월 참여 수수료 0원**. 기공소 플랫폼 사용료·하청 수수료 **미부과**(`CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES=false`). 학습 이용 동의는 요율과 무관. 루트 `rules.md` §2.3.
+    - 단가: 의뢰자 청구=`resolveRequestorUnitPriceForAnchorId`(기본 15,000, 딜러·영업팀 승인가 12,000~15,000, `utils/requestorUnitPricePolicy.js`). 상세는 하단 「의뢰비·딜러·배송 정책 변경」.
     - 의뢰자 BA 판매가 오버라이드: `creditSettings.specialRequestorPrices[]`. `productionPrice`=`amount`(레거시)가 그 BA의 커스텀어벗 판매가. 없으면 관리자「커스텀어벗 · 가격」판매가. 매입가는 적용 판매가의 50%. 배송 매입가는 전역.
     - 어벗 수: `designPrice.utils.js` `countDesignAbutmentQty` (`toothWorks` 커스텀어벗·임플란트만, Pontic·작업X 제외 → `tooth` → 1)
     - 견적/표시: `resolveQuotedPriceWithDesignFee`
       - `price.amount` = `(생산단가 + designFee) × qty`
       - `price.designFee` = 디자인 총액, `price.abutmentQty` = qty (재견적 단가 복원)
-      - 적용 순서: 디자인+생산 배수 → 신속비(생산=건당, 디자인+생산=어벗 수). 무상/0원 견적에는 미적용
+      - 적용 순서: 디자인+생산 배수. 무상/0원 견적에는 미적용
       - 생성·CAM 차감·응답 정규화 경로에서 재적용
-    - 차감: CAM `machining_spend` = `(생산단가 + 디자인비) × qty` (신속 `express_surcharge`와 분리)
+    - 차감: CAM `machining_spend` = `(생산단가 + 디자인비) × qty` 
     - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`)
     - SSOT: `.cursor/rules/design-fee.mdc`
-  - 기본 배송 방식: `BusinessAnchor.shippingPolicy.defaultShippingMode` (`normal`|`express`)
-    - PATCH: `business.update.controller.js` / 프론트 `NewRequestShippingSection` + `useBulkShippingPolicy`
-  - 스케줄: `production.utils.js` `calculateInitialProductionSchedule({ shippingMode, productMode })`
-    - 신속: **KST 12시 이전** 당일 영업일이면 당일 16:00 출고, 이후(또는 휴일)면 +1영업일
-    - 신속 **선택 가능**: 신속 ETA YMD < 묶음 ETA YMD (`expressSelectable.utils.js` /
-      프론트 `isExpressShippingSelectable`). 이점 없으면 UI 비활성·모드 변경 400·접수 시 normal 강등
-    - 묶음: `resolveLeadDaysWithSameDayCutoff` — `minBusinessDays=N`이면 접수
-      **익영업일부터** N영업일 생산 후 주간 발송 요일 정렬 (`resolveNextWeeklyBatchYmd`).
-      lead=1 → 익영업일 16:00 (당일 출고 금지, `(N-1)` 사용 금지)
-    - **디자인+생산** (`productMode === "design_custom_abutment"`): 묶음/신속 공통으로
-      출고일에 디자인 리드 **+1영업일** (프론트 `estimateShipDate.ts`와 동일).
-      안내 UI: `PricingPolicyDialog`, `NewRequestShippingSection`,
-      `RequestorBulkShippingBannerCard`
+  - 스케줄: `production.utils.js` `calculateInitialProductionSchedule({ shippingMode:"express", productMode })`
+    - **KST 12시 이전** 당일 영업일이면 당일 16:00 출고, 이후(또는 휴일)면 +1영업일
+    - **디자인+생산** (`productMode === "design_custom_abutment"`): 출고일에 디자인 리드 **+1영업일** (프론트 `estimateShipDate.ts`와 동일).
   - 출고일 고정: 의뢰 시점 `originalEstimatedShipYmd`(=estimated)는 포장.발송 진입으로 바꾸지 않음
     (`packingEnterShipYmd.utils.js`). 14:00 이후 진입해도 16:00 집하(또는 당일 수동 집하)면 정시.
   - 자정 이후 정시 평가: `jobs/shippingOnTimeEvalWorker.js` + `shippingOnTime.utils.js`
     - 약속일 KST 자정까지 당일 집하 없으면 `shipOutcome=late`
-    - 신속 late → `cancelExpressSurchargeIfShipDelayed`로 추가비 취소
-  - 정시 성공률(묶음/신속): 지연 위험 요약에 표시 (`dashboardRiskSummary.service.js`)
+  - 정시 성공률: 지연 위험 요약에 표시 (`dashboardRiskSummary.service.js`)
   - 포장.발송 진입(`enterManufacturerShippingStage` / `updateCurrentEstimatedShipYmdOnPackingEnter` when `updateShipYmd: true`):
     빈 timeline 필드만 보정. 날짜를 오늘/다음 영업일로 밀지 않음.
-  - 묶음 발송 요일 정렬: `resolveNextWeeklyBatchYmd` — YMD 달력일 요일은 서버 로컬 `getDay()` 금지
-    (UTC noon 기준). UTC 서버에서 `T00:00:00+09:00`.getDay()를 쓰면 금→토로 읽고
-    `fri+mon` 묶음이 화요일로 튀는 회귀가 난다.
   - 출고 우선순위 라벨: `shippingPriority.utils.js` (`출고 N일전` / `출고 N시간전`)
   - 출고일 재계산 스크립트: `scripts/db/fix-today-estimated-ship-ymd.js`
     (`ABUTS_DB_FORCE=true ENV_FILE=local.env|prod.env`, dry-run 후 `--apply`)
   - `getTodayYmdInKst(date?)`는 인자 날짜의 KST YMD를 반환(미지정 시 지금). 스케줄 재계산 시
     `toKstYmd(requestedAt)` / `getTodayYmdInKst(requestedAt)`를 써야 "오늘"로 밀리지 않음.
   - 우선순위: `sortByProductionPriority` 신속 부스트 (스케줄/ETA용). **장비 가공 큐 순서**는 아래 **가공 우선순위** SSOT.
-  - 우편함: 신속 건 포함 시 주간 묶음 요일 제한 무시. 미발송 배지 요일은 가장 빠른 `estimatedShipYmd`(모달 출고일과 동일). YMD 없을 때만 `weeklyBatchDays` 폴백 (`shipping.controller.js` / frontend `shippingDay.helpers.ts`)
-  - 대시보드 토글: `PATCH /my/shipping-mode` → `shipping.Requestor.controller.js` `updateMyShippingMode`
+  - 우편함: 미발송 배지 요일은 가장 빠른 `estimatedShipYmd`(모달 출고일과 동일). YMD 없을 때만 `weeklyBatchDays` 폴백 (`shipping.controller.js` / frontend `shippingDay.helpers.ts`)
 
 ### 기공소 디자인 프리셋 (AI 디자인 내면)
 
@@ -344,7 +315,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 관리자 문자/알림톡 발송은 큐가 아니라 팝빌 즉시 전송(`sendPopbillXMS` / `sendPopbillKakaoATS`)
 
 - 커스텀 어벗 의뢰 단가 SSOT:
-  - 관리자「플랫폼 설정 · 커스텀어벗」. 정상가=`membershipProductionPrice`(기본 15,000) · 런칭 이벤트=`customAbutmentLaunchEventProductionPrice`(기본 13,000) + on/off(**내일 0시 KST 예약**, 분배 비율과 동일). 딜리버리 익일 도착 월정액=`fmDentalMonthlyShippingFee`(기본 55,000, VAT 포함 · 0이면 가입 불가). 택배 묶음 출고=`shippingFee`(박스당 3,500). `regular*`·「멤버/일반」은 딜러 유무 분배용.
+  - 관리자「플랫폼 설정 · 커스텀어벗」은 레거시 표시용. 청구 단가는 하단 「의뢰비·딜러·배송 정책 변경」이 우선(런칭 이벤트 폐지).
   - 기공소 어벗생산의뢰 안내는 치과와 동일 플랫폼 유효가. FM 월정액은 정상가 구간·기공소만(치과 제외).
   - 기준일 계산은 `resolveRequestorPricingBaseDate`를 사용하고, 신규 의뢰 견적/의뢰자 대시보드 집계가 동일 규칙명을 공유해야 합니다.
   - 관련 파일:
@@ -1175,3 +1146,12 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - `scripts/db/seed/data.js`의 request/ledger/shipping 샘플 데이터 생성은 비활성화했습니다.
   (`db:seed-data`는 core shared 데이터만 시딩)
 - 추후 샘플 데이터가 필요하면 별도 opt-in 스크립트로 분리합니다.
+
+## 의뢰비·딜러·배송 정책 변경 (2026-10-08, 최우선)
+
+- **의뢰비·딜러·배송 SSOT (2026-10-08, 이전 기술과 충돌하면 이 항목이 우선)**:
+  - 건당 의뢰비는 치과·기공소 모두 **15,000원 단일가**. 딜러·영업팀이 거래처(`BusinessAnchor.dealerUnitPrice`, `select:false`)별로 **12,000~15,000원**을 정할 수 있고 거래처 본인에게만 보인다(외부 비공개). 서버·FE 모두 12,000 미만/15,000 초과 거절(`validateDealerUnitPrice`). 그룹할인·가입 90일 1만원·주문량 할인·런칭 이벤트 단가는 폐지. 영업팀 입력가는 `dealerPriceApproval.status=pending` → 본사 `POST /api/admin/price-approvals/:anchorId` 승인 전까지 `checkCreditLock`이 의뢰를 막는다. devops는 소개 거래처 없이 고정 분배.
+  - 분배(어벗 1개당, 부가세 포함): 제조사 **5,500** · 개발운영 **1,000** · 어벗츠 **3,500** · 나머지 **딜러(판매가 − 10,000)**. 딜러 없음(직판·영업팀 소개)이면 딜러 몫은 어벗츠. 어벗츠가 거래처에 직접 공급(면세)하고 딜러에게는 수수료를 부가세 포함으로 지급. 구현 `resolveRevenueOwnerBaseAllocation` (`creditRevenuePolicy.service.js`).
+  - 배송은 **딜리버리 익일 도착만**. 택배 묶음 출고·월 가입 폐지, 거래처 배송비 없음. 딜리버리 월정액 55,000원(VAT 포함)은 **거래처 1곳당** 딜러 부담(딜러 정산 `REV_SALESMAN` 차감), 딜러가 없으면 어벗츠 부담(`REV_ADMIN`). 직전 달 의뢰가 **3건 이상**인 거래처마다 월 1회 `DELIVERY_MONTHLY_COST` 저널(`deliveryMonthlyCost.service.js`, 멱등키 거래처+월). 2건 이하는 배송업체 무료(`DELIVERY_FREE_MAX_MONTHLY_REQUESTS`)라 저널 없음.
+  - 위 항목과 충돌하는 이전 서술(자정 스냅샷 단가·할인그룹·택배 묶음 출고 박스당 배송비·딜러 10~20% 누적 구간·제조 49.5%·런칭 이벤트 단가)은 폐지된 정책이다.
+  - FE: `src/shared/pricing/requestorUnitPricePolicy.ts`(검증·상수), `src/shared/sales/CustomerPriceDialog.tsx`(딜러 「거래처 가격」), `NewRequestShippingSection.tsx`(딜리버리 단일 카드). 할인그룹 페이지·`DeliverySubscribeDialog` 삭제, `/dashboard/discount-group`은 대시보드로 리다이렉트.

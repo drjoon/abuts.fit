@@ -27,6 +27,12 @@ import {
   resolveDealershipCommissionPolicy,
   resolveDealershipRateForAcquiredAt,
 } from "../../services/creditRevenuePolicy.service.js";
+import {
+  validateDealerUnitPrice,
+  REQUESTOR_UNIT_PRICE_BASE,
+  REQUESTOR_UNIT_PRICE_MIN,
+} from "../../utils/requestorUnitPricePolicy.js";
+import { invalidateRequestorUnitPriceCache } from "../../services/requestorUnitPrice.service.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 import {
   ensureSalesTeamPersonalAnchor,
@@ -937,5 +943,128 @@ export async function getPlatformPitch(req, res) {
       message: "플랫폼 소개 통계 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
+  }
+}
+
+async function resolveMyDealerAnchorId(me) {
+  let id = me?.businessAnchorId;
+  if (me?.role === "salesTeam") {
+    const full = await User.findById(me._id);
+    if (full) {
+      await ensureSalesTeamPersonalAnchor(full);
+      id = (await resolveSalesTeamReferralAnchorId(full)) || full.businessAnchorId;
+    }
+  }
+  return id && Types.ObjectId.isValid(String(id)) ? new Types.ObjectId(String(id)) : null;
+}
+
+/** 내 거래처별 의뢰비 목록. 가격은 본인 소개 거래처에게만 보인다. */
+export async function getMyCustomerUnitPrices(req, res) {
+  try {
+    const myAnchorId = await resolveMyDealerAnchorId(req.user);
+    if (!myAnchorId) {
+      return res.status(200).json({ success: true, data: { items: [], min: REQUESTOR_UNIT_PRICE_MIN, max: REQUESTOR_UNIT_PRICE_BASE } });
+    }
+    const rows = await BusinessAnchor.find({
+      referredByAnchorId: myAnchorId,
+      businessType: "requestor",
+    })
+      .select({ _id: 1, name: 1, requestorKind: 1, dealerUnitPrice: 1, dealerPriceApproval: 1 })
+      .select("+dealerPriceApproval")
+      .sort({ name: 1 })
+      .lean();
+    return res.status(200).json({
+      success: true,
+      data: {
+        min: REQUESTOR_UNIT_PRICE_MIN,
+        max: REQUESTOR_UNIT_PRICE_BASE,
+        items: rows.map((r) => ({
+          anchorId: String(r._id),
+          name: r.name || "",
+          requestorKind: r.requestorKind || null,
+          unitPrice: r.dealerUnitPrice ?? REQUESTOR_UNIT_PRICE_BASE,
+          isCustom: r.dealerUnitPrice != null,
+          approvalStatus: r.dealerPriceApproval?.status || "approved",
+          requestedPrice: r.dealerPriceApproval?.status === "pending" ? r.dealerPriceApproval.requestedPrice ?? null : null,
+          rejectReason: r.dealerPriceApproval?.status === "rejected" ? r.dealerPriceApproval.rejectReason || "" : "",
+        })),
+      },
+    });
+  } catch (error) {
+    console.error("[salesman.getMyCustomerUnitPrices] error", error);
+    return res.status(500).json({ success: false, message: "거래처 가격 조회 중 오류가 발생했습니다." });
+  }
+}
+
+/** 거래처별 의뢰비 설정. 12,000~15,000원. unitPrice=null이면 기본가로 되돌린다. */
+export async function setMyCustomerUnitPrice(req, res) {
+  try {
+    const targetId = String(req.params.anchorId || "").trim();
+    if (!Types.ObjectId.isValid(targetId)) {
+      return res.status(400).json({ success: false, message: "거래처 ID가 올바르지 않습니다." });
+    }
+    const raw = req.body?.unitPrice;
+    let next = null;
+    if (raw != null) {
+      const checked = validateDealerUnitPrice(raw);
+      if (!checked.ok) {
+        return res.status(400).json({ success: false, message: checked.message });
+      }
+      next = checked.price;
+    }
+    const myAnchorId = await resolveMyDealerAnchorId(req.user);
+    if (!myAnchorId) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+    const filter = { _id: targetId, referredByAnchorId: myAnchorId, businessType: "requestor" };
+    // 영업팀: 본사 승인 후 반영(승인 전 거래 불가). 딜러: 즉시 반영.
+    const needsApproval = req.user?.role === "salesTeam";
+    if (needsApproval) {
+      const requested = next ?? REQUESTOR_UNIT_PRICE_BASE;
+      const pending = await BusinessAnchor.findOneAndUpdate(
+        filter,
+        {
+          $set: {
+            dealerPriceApproval: {
+              status: "pending",
+              requestedPrice: requested,
+              requestedBy: req.user._id,
+              requestedAt: new Date(),
+              decidedBy: null,
+              decidedAt: null,
+              rejectReason: "",
+            },
+          },
+        },
+        { new: true },
+      )
+        .select({ _id: 1 })
+        .lean();
+      if (!pending) {
+        return res.status(404).json({ success: false, message: "내 거래처가 아닙니다." });
+      }
+      return res.status(200).json({
+        success: true,
+        data: { anchorId: targetId, unitPrice: null, isCustom: false, approvalStatus: "pending", requestedPrice: requested },
+      });
+    }
+    const updated = await BusinessAnchor.findOneAndUpdate(
+      filter,
+      { $set: { dealerUnitPrice: next } },
+      { new: true, runValidators: true },
+    )
+      .select({ _id: 1 })
+      .lean();
+    if (!updated) {
+      return res.status(404).json({ success: false, message: "내 거래처가 아닙니다." });
+    }
+    invalidateRequestorUnitPriceCache(targetId);
+    return res.status(200).json({
+      success: true,
+      data: { anchorId: targetId, unitPrice: next ?? REQUESTOR_UNIT_PRICE_BASE, isCustom: next != null, approvalStatus: "approved" },
+    });
+  } catch (error) {
+    console.error("[salesman.setMyCustomerUnitPrice] error", error);
+    return res.status(500).json({ success: false, message: "거래처 가격 저장 중 오류가 발생했습니다." });
   }
 }

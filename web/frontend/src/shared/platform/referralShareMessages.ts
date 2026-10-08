@@ -2,7 +2,6 @@
 // - web/frontend/src/features/platform/PlatformBenefitsShareButtons.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
-// - web/frontend/src/pages/requestor/discountGroup/LabDiscountGroupPage.tsx
 // - web/frontend/src/shared/demo/demoModeCopy.ts
 // change-log:
 // - 2026-10-07: 데모는 치과(practice) 90일만. 기공소·그 외 role 소개 문구에 데모 금지.

@@ -1,460 +1,69 @@
 // change-log:
+// - 2026-10-08: 택배 묶음 출고 폐지. 딜리버리 익일 도착만 남기고(배송비는 딜러/어벗츠 부담) 상단에 진행 도안 추가.
 // - 2026-10-06: 택배 묶음 출고(박스당 배송비)·딜리버리 익일 도착(월 정액 VAT 포함).
-// - 2026-08-19: 의뢰하기 type=button (폼 submit 이중 처리 방지). 제출 중 비활성·접수 중 라벨.
-// - 2026-08-11: 의뢰하기 위 «디자인까지 의뢰할 경우 1일 추가» 안내 삭제.
-// - 2026-08-11: 묶음/신속 옵션 카드 ring·그림자 잘림 방지(내부 여백 확대).
-// - 2026-08-09: 첨부 건이 디자인+생산이면 신속 선택 판정에 productMode(+1영업일) 반영.
-// - 2026-08-09: 출고 카드 상단 여백 정리(세로 중앙정렬 제거, 상하좌우 패딩 균일).
-// - 2026-08-09: 묶음/신속 카피 정리, 디자인+1일 안내를 의뢰하기 버튼 바로 위로.
-// - 2026-08-09: 디자인+1일 안내를 신속 카드 밖으로 이동(묶음/신속 내부 카피 삭제).
-// - 2026-08-09: 신속 카피 «디자인까지 의뢰할 경우 1일 추가».
-// - 2026-08-09: 출고 카드 max-h 제거·왼쪽과 동일 높이로 의뢰하기 버튼 잘림 방지.
-// - 2026-08-09: 디자인+생산 출고 +1영업일 안내(묶음/신속 카피).
-// - 2026-08-06: 배송/발송 표기를 출고로 통일 (제조사 출발일).
-// - 2026-08-08: weeklyBatchDays prop SSOT — selectedDays 이중 상태 제거, optimistic 반영.
-// - 2026-08-08: 신속 선택 = 신속 ETA < 묶음 ETA일 때만 (조기 이점 없으면 비활성).
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
-// - web/frontend/src/shared/shipping/weeklyBatchSchedule.ts
-// - web/frontend/src/shared/shipping/estimateShipDate.ts
-// - web/backend/controllers/requests/creation.from-draft.controller.js
+// - web/frontend/src/shared/shipping/shippingPolicyCopy.ts
 import { Button } from "@/components/ui/button";
-import { Package, Zap } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { apiFetch } from "@/shared/api/apiClient";
-import { useToast } from "@/shared/hooks/use-toast";
-import { useAuthStore } from "@/store/useAuthStore";
-import { useNavigate } from "react-router-dom";
+import { ClipboardList, Cog, Truck, Zap } from "lucide-react";
 import {
-  CREDIT_SETTINGS_DEFAULTS,
-  useSystemSettings,
-} from "@/hooks/useSystemSettings";
-import { cn } from "@/shared/ui/cn";
-import { formatAbutsManwon } from "@/shared/pricing/abutsAbutmentService";
-import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
-import {
-  normalizeWeeklyBatchDays,
-  type WeeklyBatchDayKey,
-} from "@/shared/shipping/weeklyBatchSchedule";
-import {
-  EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE,
-  isExpressShippingSelectable,
-  type LeadTimesMap,
-} from "@/shared/shipping/estimateShipDate";
-import {
-  BULK_SHIPPING_LABEL,
-  DELIVERY_SUBSCRIBE_AVAILABLE,
+  DELIVERY_FREE_LINE,
   EXPRESS_SHIPPING_ARRIVAL_LINE,
   EXPRESS_SHIPPING_LABEL,
-  resolveDeliveryNextDayMonthlyFee,
 } from "@/shared/shipping/shippingPolicyCopy";
-import { DeliverySubscribeDialog } from "@/shared/shipping/DeliverySubscribeDialog";
-
-type ShippingMode = "normal" | "express";
 
 type Props = {
   disabled?: boolean;
-  weeklyBatchDays: string[];
-  onWeeklyBatchDaysChange?: (days: string[]) => void;
-  leadTimes?: LeadTimesMap | null;
-  /** 첨부 건이 디자인+생산(구강 스캔 묶음 등)이면 +1영업일 반영 */
-  expressProductMode?: string | null;
-  defaultShippingMode: ShippingMode;
-  onDefaultShippingModeChange: (mode: ShippingMode) => void;
   onSubmit: () => void;
 };
 
-type WeekDay = WeeklyBatchDayKey;
+const STEPS = [
+  { key: "order", label: "의뢰", Icon: ClipboardList },
+  { key: "make", label: "제작", Icon: Cog },
+  { key: "arrive", label: "익일 도착", Icon: Truck },
+] as const;
 
-const WEEKDAYS: { key: WeekDay; label: string }[] = [
-  { key: "mon", label: "월" },
-  { key: "tue", label: "화" },
-  { key: "wed", label: "수" },
-  { key: "thu", label: "목" },
-  { key: "fri", label: "금" },
-];
-
-export function NewRequestShippingSection({
-  disabled,
-  weeklyBatchDays,
-  onWeeklyBatchDaysChange,
-  leadTimes = null,
-  expressProductMode = null,
-  defaultShippingMode,
-  onDefaultShippingModeChange,
-  onSubmit,
-}: Props) {
+export function NewRequestShippingSection({ disabled, onSubmit }: Props) {
   const isDisabled = !!disabled;
-  const { toast } = useToast();
-  const { token, user } = useAuthStore();
-  const navigate = useNavigate();
-  const businessType = useMemo(
-    () => resolveBusinessType(user?.role, "requestor"),
-    [user?.role],
-  );
-  const { data: systemSettings } = useSystemSettings();
-  const shippingFee = Math.max(
-    0,
-    Number(
-      systemSettings?.creditSettings?.shippingFee ??
-        CREDIT_SETTINGS_DEFAULTS.shippingFee,
-    ) || CREDIT_SETTINGS_DEFAULTS.shippingFee,
-  );
-  const shippingFeeLabel = shippingFee.toLocaleString("ko-KR");
-  const deliveryMonthlyFee = resolveDeliveryNextDayMonthlyFee(
-    systemSettings?.creditSettings?.fmDentalMonthlyShippingFee,
-  );
-  const [isUpdating, setIsUpdating] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const weekdaysRef = useRef<HTMLDivElement | null>(null);
-  const [pulse, setPulse] = useState(false);
-  const [subscribeOpen, setSubscribeOpen] = useState(false);
-  const [now, setNow] = useState(() => new Date());
-  const selectedDays = useMemo(
-    () => normalizeWeeklyBatchDays(weeklyBatchDays),
-    [weeklyBatchDays],
-  );
-
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(new Date()), 60_000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  const expressSelectable = useMemo(
-    () =>
-      isExpressShippingSelectable({
-        weeklyBatchDays: selectedDays,
-        leadTimes,
-        diameter: null,
-        productMode: expressProductMode,
-        requestedAt: now,
-      }),
-    [selectedDays, leadTimes, expressProductMode, now],
-  );
-
-  // 저장된 기본값(preference)은 유지하고, 선택 불가 구간에서는 표시·적용만 묶음으로 본다.
-  const effectiveDefaultMode: ShippingMode =
-    !DELIVERY_SUBSCRIBE_AVAILABLE ||
-    (!expressSelectable && defaultShippingMode === "express")
-      ? "normal"
-      : defaultShippingMode;
-
-  useEffect(() => {
-    const handler = () => {
-      setPulse(true);
-      try {
-        (weekdaysRef.current || containerRef.current)?.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
-      } catch {}
-      const t = setTimeout(() => setPulse(false), 4000);
-      return () => clearTimeout(t as any);
-    };
-    window.addEventListener("abuts:shipping:needs-weekly-days", handler as any);
-    return () =>
-      window.removeEventListener(
-        "abuts:shipping:needs-weekly-days",
-        handler as any,
-      );
-  }, []);
-
-  const toggleDay = async (day: WeekDay) => {
-    if (isDisabled || isUpdating) return;
-
-    const previousDays = selectedDays;
-    const newDays = previousDays.includes(day)
-      ? previousDays.filter((d) => d !== day)
-      : [...previousDays, day];
-
-    if (newDays.length === 0) {
-      toast({
-        title: "최소 1개 선택 필요",
-        description: "최소 1개의 출고일을 선택해야 합니다.",
-        variant: "destructive",
-        duration: 3000,
-      });
-      return;
-    }
-
-    onWeeklyBatchDaysChange?.(newDays);
-    if (import.meta.env.DEV) {
-      console.debug("[ship-eta] toggleDay optimistic", { previousDays, newDays });
-    }
-    setIsUpdating(true);
-    try {
-      const res = await apiFetch<any>({
-        path: `/api/businesses/me?businessType=${encodeURIComponent(
-          businessType,
-        )}`,
-        method: "PATCH",
-        token,
-        jsonBody: {
-          shippingPolicy: {
-            weeklyBatchDays: newDays,
-          },
-        },
-      });
-
-      if (res.ok) {
-        toast({
-          title: "출고일 설정 완료",
-          description: "출고일이 업데이트되었습니다.",
-          duration: 2000,
-        });
-      } else {
-        onWeeklyBatchDaysChange?.(previousDays);
-        const nextMessage = res.data?.message || "";
-        const missingBusinessInfo =
-          res.status === 400 &&
-          typeof nextMessage === "string" &&
-          nextMessage.includes("기공소");
-
-        if (missingBusinessInfo) {
-          toast({
-            title: "기공소 정보가 필요합니다",
-            description: "사업자 설정에서 기공소 정보를 모두 입력해주세요.",
-            variant: "destructive",
-            duration: 4000,
-          });
-          navigate("/dashboard/settings?tab=business", { replace: true });
-          return;
-        }
-
-        toast({
-          title: "업데이트 실패",
-          description: res.data?.message || "다시 시도해주세요.",
-          variant: "destructive",
-          duration: 3000,
-        });
-      }
-    } catch (e: any) {
-      onWeeklyBatchDaysChange?.(previousDays);
-      toast({
-        title: "오류",
-        description: e.message || "출고일 업데이트 중 오류가 발생했습니다.",
-        duration: 3000,
-      });
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const persistDefaultShippingMode = async (mode: ShippingMode) => {
-    if (isDisabled || isUpdating) return;
-    if (mode === "express" && !DELIVERY_SUBSCRIBE_AVAILABLE) {
-      setSubscribeOpen(true);
-      return;
-    }
-    if (mode === "express" && !expressSelectable) {
-      toast({
-        title: "딜리버리 익일 도착 선택 불가",
-        description: EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE,
-        variant: "destructive",
-        duration: 4000,
-      });
-      return;
-    }
-
-    // 기본값이 이미 express여도 건별 모드는 요일 변경 등으로 normal에 묶여 있을 수 있다.
-    // 같은 카드 재클릭 시에도 파일 모드를 다시 적용한다.
-    const modeUnchanged = mode === defaultShippingMode;
-    onDefaultShippingModeChange(mode);
-    if (modeUnchanged) return;
-
-    setIsUpdating(true);
-    try {
-      const res = await apiFetch<any>({
-        path: `/api/businesses/me?businessType=${encodeURIComponent(
-          businessType,
-        )}`,
-        method: "PATCH",
-        token,
-        jsonBody: {
-          shippingPolicy: {
-            defaultShippingMode: mode,
-          },
-        },
-      });
-
-      if (!res.ok) {
-        const nextMessage = res.data?.message || "";
-        const missingBusinessInfo =
-          res.status === 400 &&
-          typeof nextMessage === "string" &&
-          nextMessage.includes("기공소");
-
-        if (missingBusinessInfo) {
-          toast({
-            title: "기공소 정보가 필요합니다",
-            description: "사업자 설정에서 기공소 정보를 모두 입력해주세요.",
-            variant: "destructive",
-            duration: 4000,
-          });
-          navigate("/dashboard/settings?tab=business", { replace: true });
-          return;
-        }
-
-        toast({
-          title: "기본 출고 방식 저장 실패",
-          description: res.data?.message || "다시 시도해주세요.",
-          variant: "destructive",
-          duration: 3000,
-        });
-      }
-    } catch (e: any) {
-      toast({
-        title: "오류",
-        description: e.message || "기본 출고 방식 저장 중 오류가 발생했습니다.",
-        variant: "destructive",
-        duration: 3000,
-      });
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const modeCardClass = (active: boolean, cardDisabled = false) =>
-    cn(
-      "w-full rounded-lg border bg-white/70 px-4 py-4 space-y-3 text-center transition-all cursor-pointer",
-      active
-        ? "border-primary ring-2 ring-primary/25 bg-primary/5 shadow-[0_0_0_1px_rgba(37,99,235,0.12)]"
-        : "border-slate-200 hover:border-primary/40 hover:bg-slate-50/80",
-      (isDisabled || cardDisabled) && "opacity-50 cursor-not-allowed",
-      cardDisabled && !active && "hover:border-slate-200 hover:bg-white/70",
-    );
 
   return (
-    <div
-      ref={containerRef}
-      className="app-glass-card app-glass-card--lg relative flex flex-1 min-h-0 h-full flex-col gap-4 border-2 p-5 md:p-7 transition-all border-gray-300"
-    >
-      <div className="app-glass-card-content flex min-h-0 flex-1 flex-col items-center justify-start gap-3 overflow-y-auto p-2">
+    <div className="app-glass-card app-glass-card--lg relative flex flex-1 min-h-0 h-full flex-col gap-4 border-2 p-5 md:p-7 transition-all border-gray-300">
+      <div className="app-glass-card-content flex min-h-0 flex-1 flex-col items-center justify-start gap-4 overflow-y-auto p-2">
         <div
-          className="w-full flex flex-col gap-4"
-          role="radiogroup"
-          aria-label="기본 출고 방식"
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-50 px-3 py-4"
+          aria-label="의뢰부터 익일 도착까지"
         >
-          <div
-            role="radio"
-            aria-checked={effectiveDefaultMode === "normal"}
-            tabIndex={isDisabled || isUpdating ? -1 : 0}
-            className={modeCardClass(effectiveDefaultMode === "normal")}
-            onClick={() => {
-              void persistDefaultShippingMode("normal");
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                void persistDefaultShippingMode("normal");
-              }
-            }}
-          >
-            <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
-              <Package className="w-5 h-5 text-primary" />
-              {BULK_SHIPPING_LABEL}
-            </div>
-            <div className="flex w-full max-w-sm flex-col items-center gap-2 sm:max-w-none sm:flex-row sm:flex-wrap sm:justify-center">
-              <div className="text-sm text-slate-500 font-medium">출고일</div>
-              <div
-                ref={weekdaysRef}
-                className={`flex w-full flex-wrap justify-center gap-1 rounded-md px-1 py-1 transition-all sm:w-auto sm:flex-nowrap ${
-                  pulse
-                    ? "bg-destructive-soft border border-destructive/80 ring-2 ring-destructive-muted"
-                    : ""
-                }`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {WEEKDAYS.map((day) => (
-                  <button
-                    key={day.key}
-                    type="button"
-                    onClick={() => toggleDay(day.key)}
-                    disabled={isDisabled || isUpdating}
-                    className={`min-w-[2.25rem] flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors sm:flex-none sm:px-3 sm:text-sm ${
-                      selectedDays.includes(day.key)
-                        ? "bg-primary text-white"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    } ${
-                      isDisabled || isUpdating
-                        ? "opacity-50 cursor-not-allowed"
-                        : "cursor-pointer"
-                    }`}
-                  >
-                    {day.label}
-                  </button>
-                ))}
+          {STEPS.map(({ key, label, Icon }, i) => (
+            <div key={key} className="flex items-center gap-2">
+              <div className="flex flex-col items-center gap-1.5">
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <Icon className="h-5 w-5" />
+                </span>
+                <span className="text-xs font-medium text-slate-600">
+                  {label}
+                </span>
               </div>
+              {i < STEPS.length - 1 ? (
+                <span
+                  aria-hidden
+                  className="mb-5 h-px w-6 border-t border-dashed border-slate-300"
+                />
+              ) : null}
             </div>
-            <div className="text-sm text-destructive">적어도 2-3개 요일 선택 권장</div>
-            <div className="text-base text-foreground leading-relaxed">
-              지정하신 요일에 모두 발송합니다.
-            </div>
-            <div className="text-sm text-slate-600 leading-relaxed">
-              1박스당 {shippingFeeLabel}원
-            </div>
-          </div>
+          ))}
+        </div>
 
-          <div
-            role="radio"
-            aria-checked={effectiveDefaultMode === "express"}
-            aria-disabled={
-              DELIVERY_SUBSCRIBE_AVAILABLE ? !expressSelectable : false
-            }
-            tabIndex={isDisabled || isUpdating ? -1 : 0}
-            className={modeCardClass(
-              effectiveDefaultMode === "express",
-              DELIVERY_SUBSCRIBE_AVAILABLE && !expressSelectable,
-            )}
-            onClick={() => {
-              if (!DELIVERY_SUBSCRIBE_AVAILABLE) {
-                setSubscribeOpen(true);
-                return;
-              }
-              if (!expressSelectable) {
-                toast({
-                  title: "딜리버리 익일 도착 선택 불가",
-                  description: EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE,
-                  variant: "destructive",
-                  duration: 4000,
-                });
-                return;
-              }
-              void persistDefaultShippingMode("express");
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                if (!DELIVERY_SUBSCRIBE_AVAILABLE) {
-                  setSubscribeOpen(true);
-                  return;
-                }
-                if (!expressSelectable) return;
-                void persistDefaultShippingMode("express");
-              }
-            }}
-          >
-            <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
-              <Zap className="w-5 h-5 text-accent" />
-              {EXPRESS_SHIPPING_LABEL}
-            </div>
-            {DELIVERY_SUBSCRIBE_AVAILABLE && !expressSelectable ? (
-              <div className="text-sm text-slate-600 leading-relaxed">
-                {EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE}
-              </div>
-            ) : (
-              <>
-                <div className="text-base text-foreground leading-relaxed">
-                  {EXPRESS_SHIPPING_ARRIVAL_LINE}
-                </div>
-                <div className="text-sm text-slate-600 leading-relaxed">
-                  월 {formatAbutsManwon(deliveryMonthlyFee)} 정액
-                </div>
-              </>
-            )}
+        <div className="w-full space-y-3 rounded-lg border border-primary bg-primary/5 px-4 py-4 text-center ring-2 ring-primary/25">
+          <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
+            <Zap className="h-5 w-5 text-accent" />
+            {EXPRESS_SHIPPING_LABEL}
+          </div>
+          <div className="text-base leading-relaxed text-foreground">
+            {EXPRESS_SHIPPING_ARRIVAL_LINE}
+          </div>
+          <div className="text-sm leading-relaxed text-slate-600">
+            {DELIVERY_FREE_LINE}
           </div>
         </div>
       </div>
@@ -465,18 +74,13 @@ export function NewRequestShippingSection({
             type="button"
             onClick={onSubmit}
             size="lg"
-            className="w-full sm:w-1/2 text-lg mx-auto"
+            className="mx-auto w-full text-lg sm:w-1/2"
             disabled={isDisabled}
           >
             {isDisabled ? "접수 중..." : "의뢰하기"}
           </Button>
         </div>
       </div>
-      <DeliverySubscribeDialog
-        open={subscribeOpen}
-        onOpenChange={setSubscribeOpen}
-        monthlyFee={deliveryMonthlyFee}
-      />
     </div>
   );
 }

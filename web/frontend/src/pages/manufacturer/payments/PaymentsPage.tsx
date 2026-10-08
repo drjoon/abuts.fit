@@ -74,11 +74,6 @@ import {
 } from "@/shared/settlement/settlementUi";
 import { CustomAbutmentManufacturerSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
 import {
-  CUSTOM_ABUTMENT_SALE_WON_10K,
-  MANUFACTURER_FIXED_SHARE_PCT,
-  formatSharePct,
-} from "@/shared/settlement/customAbutmentSplitPolicy";
-import {
   ManufacturerDailyLedgerDetailDialog,
   type ManufacturerDailyLedgerDetail,
   type ManufacturerLedgerMailboxGroup,
@@ -928,30 +923,19 @@ export const ManufacturerPaymentPage = () => {
               <SettlementPolicyDialog
                 title="제조사 정산 규칙"
                 description="커스텀어벗"
-                contentClassName="sm:max-w-4xl"
               >
-                <div className="space-y-4">
+                <div className="space-y-3">
                   <CustomAbutmentManufacturerSplitTable />
                   <div className={GUIDE_FACT_GRID_CLASS}>
                     <SettlementPolicyFact label="적립">
-                      가공 승인 때 어벗 1개 기준입니다.
+                      가공 승인 때 적립합니다.
                       <br />
                       리메이크·무료 크레딧도 같습니다.
-                    </SettlementPolicyFact>
-                    <SettlementPolicyFact label="기준">
-                      {`의뢰비 ${CUSTOM_ABUTMENT_SALE_WON_10K.toLocaleString("ko-KR")}원 기준입니다.`}
-                      <br />
-                      {`${formatSharePct(MANUFACTURER_FIXED_SHARE_PCT)} 고정(부가세 포함)입니다.`}
-                    </SettlementPolicyFact>
-                    <SettlementPolicyFact label="세금계산서">
-                      지급은 잔액 그대로입니다.
-                      <br />
-                      ÷1.1로 공급가·세액을 나눕니다.
                     </SettlementPolicyFact>
                     <SettlementPolicyFact label="지급">
                       KST 매달 말일에 일괄 지급합니다.
                       <br />
-                      그 전까지는 미정산으로 쌓입니다.
+                      세금계산서는 잔액 ÷1.1로 나눕니다.
                     </SettlementPolicyFact>
                   </div>
                 </div>

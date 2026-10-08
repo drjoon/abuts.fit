@@ -123,7 +123,7 @@
   `web/eb.sh`(setenv), `local.env`/`test.env`/`prod.env`, bg Node 엔트리
   - `Date#getDay()` / `setHours()` 등 **로컬 TZ에 의존하는 API**를 YMD/요일 판정에 쓸 때는
   프로세스 TZ만 믿지 말고, 가능하면 `Asia/Seoul` 명시(`Intl` / `+09:00` / UTC noon 달력일)로 방어
-  - 출고일·묶음요일·출고 뱃지·영업일 계산은 이 정책에 직접 영향 받음
+  - 출고일·출고 뱃지·영업일 계산은 이 정책에 직접 영향 받음
   (`production.utils.js` `resolveNextWeeklyBatchYmd` / `resolveLeadDaysWithSameDayCutoff` 등)
   - 묶음 리드타임 SSOT: `minBusinessDays=N`이면 접수 당일을 1일차로 포함 → 추가 영업일 `(N-1)`
   (PricingPolicyDialog: 자정까지 1영업일=당일 집하). 이후 주간 발송 요일로 정렬.
@@ -252,8 +252,11 @@
   - paid/free/settlement 혼합 소비는 의뢰자 잔액에서 **무료 → 기공(settlement 상계) → 유료** 순으로 차감
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라 소비된 paid/free 총량을 role base에 비례 배분(무편향)해 기록
   - 딜러사·개발운영사·어벗츠의 무료 수익은 지급 0원으로 정산완료 상태만 표시 가능. **리메이크는 제조사 지급(기본 6,600)**. 무료 크레딧 포함 약정 단가는 말일 일괄 지급.
-- **기공소(`requestorKind=lab`) 건당 의뢰비 SSOT**(`web/backend/utils/requestorUnitPricePolicy.js` · FE `shared/pricing/requestorUnitPricePolicy.ts`): 기본 **15,000원** · 가입일 포함 **90일 10,000원 고정** · 91일부터 소개 그룹 지난 30일 합산 **1건당 50원 할인, 100건 이상 최대 5,000원(=10,000원)**. **매일 자정(KST) 스냅샷**(`PricingReferralRolling30dAggregate.unitPrice`)으로 확정해 그날 하루 적용(장중 재집계는 단가 불변). 청구 반영=`loadCreditSettingsDefaults({requestorOrgId})`가 관리자 BA 특별가 없을 때 `resolveRequestorUnitPriceForAnchorId`로 판매가를 덮는다(스냅샷 전: 가입 이벤트가 → 직전 단가 → 기본가). 제조사 매입=판매가의 **49.5%**(`REQUESTOR_UNIT_PRICE_MANUFACTURER_SHARE_PCT`). 배송비는 별도. **치과는 기존 단일가(런칭 이벤트 13,000 / 정상가 15,000)** 유지, 관리자 런칭 이벤트 설정은 치과 전용.
-- 커스텀 어벗 의뢰 단가 관리자 설정(정상가 표시·딜러 분배 기준·레거시): 관리자「플랫폼 설정 · 커스텀어벗」. **정상가**=`membershipProductionPrice`(기본 **15,000원**). **런칭 이벤트**=`customAbutmentLaunchEventProductionPrice`(기본 **13,000원**) · 관리자 UI는 **on/off만**(시작·종료일 입력 없음) · **변경은 내일 0시(KST)부터**(`customAbutmentLaunchEventChangeScheduled`*, 분배 비율과 동일) — `resolveCustomAbutmentProductionPriceForAt`(의뢰 생성·hold 시점). **신규 Request는 항상 생산만**(`custom_abutment`). `design_custom_abutment`·`membershipDesignAndProductionPrice`(옛 2.5만)는 **레거시 읽기 전용**. 기공의뢰 CA 디자인은 수주 기공소·`labFeeSchedule` 커스텀어벗 수가. 출고: **택배 묶음 출고**=박스당 `shippingFee`(기본 **3,500원**). **딜리버리 익일 도착**=월정액(기본 **55,000원, VAT 포함**, `fmDentalMonthlyShippingFee`) · 당일 자정까지 주문 → 익일 기공소(치과) 도착. `regular`*·관리자「멤버/일반」은 **딜러 유무 분배**용. 치과 멤버십 월정 없음.
+- 커스텀 어벗 의뢰 단가: 관리자「플랫폼 설정 · 커스텀어벗」은 레거시 표시용. 청구 단가는 아래 「의뢰비·딜러·배송 SSOT」가 우선(런칭 이벤트·정상가 이원화 폐지). 신규 Request는 항상 생산만(`custom_abutment`).
+- **의뢰비·딜러·배송 SSOT (2026-10-08, 이전 기술과 충돌하면 이 항목이 우선)**:
+  - 건당 의뢰비는 치과·기공소 모두 **15,000원 단일가**. 딜러·영업팀이 거래처(`BusinessAnchor.dealerUnitPrice`, `select:false`)별로 **12,000~15,000원**을 정할 수 있고 거래처 본인에게만 보인다(외부 비공개). 서버·FE 모두 12,000 미만/15,000 초과 거절(`validateDealerUnitPrice`). 그룹할인·가입 90일 1만원·주문량 할인·런칭 이벤트 단가는 폐지. 영업팀(`salesTeam`)이 입력한 가격은 `dealerPriceApproval.status=pending`이 되어 본사(admin) 승인(`POST /api/admin/price-approvals/:anchorId`) 전까지 의뢰가 막힌다(`checkCreditLock`). 승인 시 `dealerUnitPrice` 반영. devops는 소개 거래처 등록 없이 고정 분배(1,000원/어벗).
+  - 분배(어벗 1개당, 부가세 포함): 제조사 **5,500** · 개발운영 **1,000** · 어벗츠 **3,500** · 나머지 **딜러(판매가 − 10,000)**. 딜러 없음(직판·영업팀 소개)이면 딜러 몫은 어벗츠. 어벗츠가 거래처에 직접 공급(면세)하고 딜러에게는 수수료를 부가세 포함으로 지급. 구현 `resolveRevenueOwnerBaseAllocation` (`creditRevenuePolicy.service.js`).
+  - 배송은 **딜리버리 익일 도착만**. 택배 묶음 출고·월 가입 폐지, 거래처 배송비 없음. 딜리버리 월정액 55,000원(VAT 포함)은 **거래처 1곳당** 딜러 부담(딜러 정산 `REV_SALESMAN` 차감), 딜러가 없으면 어벗츠 부담(`REV_ADMIN`). 직전 달 의뢰가 **3건 이상**인 거래처마다 월 1회 `DELIVERY_MONTHLY_COST` 저널(`deliveryMonthlyCost.service.js`, 멱등키 거래처+월). 월 의뢰 2건 이하(`DELIVERY_FREE_MAX_MONTHLY_REQUESTS`)는 배송업체가 무료라 저널을 남기지 않는다.
 - 롤백 원칙:
   - **제조사 의뢰비·배송비**(`REQUEST_SPEND_`* / `SHIPPING_SPEND_*`): 롤백·준비 취소 시 원본 저널/라인 **물리 삭제**(REFUND 추가 금지)
   - **기공의뢰(PTX)**(`PRACTICE_TRANSFER_`*·디자인비 `ADJUST`·PTX 배송): 삭제·작업취소 시 원본 저널/라인 **물리 삭제**(과거 REFUND 쌍도 함께 삭제)
@@ -357,7 +360,6 @@
   - **커스텀어벗 Abuts-first**: 작업시작 시 스캔 기반 Request 생성 → **작업시작 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수. 치과→기공소=`labFeeSchedule` 커스텀어벗 수가(기공비 정산). 기공소→어벗츠=생산비(플랫폼 1.5만, Request 과금). 레거시(치과 어벗츠 단가 선납)만 `abutmentDesignLabFee` 외주 지급. **생산 후 수행 기공소 수취**(치과 직납 아님. assignee가 있으면 그 기공소, 없으면 원청). 제조사 출고 목표=`치과도착일 − 2영업일`(`resolveManufacturerTargetShipYmd`). 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
 - 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
 - 크레딧/정산은 유료(검증된 수신자·lab) 경로에만 해당. 실 사업자등록번호가 없는 synthetic 앵커에는 환영 크레딧을 지급하지 않으며, synthetic→실BN 검증 승격 시 1회 지급
-- 소개(리퍼럴)·할인그룹: 기공소 사이드「할인그룹」(`/dashboard/discount-group`) — 소개 코드·그룹·오늘 건당 의뢰비(기본 1.5만 · 가입 90일 1만 고정 · 91일부터 지난 30일 합산 1건당 50원 · 100건 이상 1만). 매일 자정 스냅샷 단가를 실제 청구에 적용(§2.3 건당 의뢰비 SSOT). 소개 귀속(`referredByAnchorId`)·그룹 합산은 추천인 사업자 앵커 기준. **영업(딜러·영업본부) 소개 귀속**은 의뢰자 90일 무주문 시 리셋(§2.3).
 - 공통 헬퍼/권한: `web/backend/utils/requestorCapabilities.js`, `web/frontend/src/shared/business/requestorCapabilities.ts`, `practiceTransferAuth.middleware.js`, `web/backend/controllers/businesses/requestorOrgAnchor.util.js`
 - 레거시 혼입 경로(예: `/api/requests/practice/*`)는 제거 대상으로 관리
 - 백필: `web/backend/scripts/db/backfill-requestor-capabilities.js` (`--apply`)
@@ -382,29 +384,20 @@
 
 ### 2.7 배송/우편함
 
-- 배송 방식 SSOT: `Request.shippingMode` + `finalShipping.mode` / `originalShipping.mode`
-  - `normal`(묶음) | `express`(신속)
-- 묶음 배송 식별은 박스/패키지 기준으로 유지
+- 배송 방식 SSOT: 딜리버리 익일 도착 단일. 서버는 입력과 무관하게 `shippingMode="express"`로 저장한다(`resolveSelectableShippingMode`). `normal`(묶음)은 과거 건 표시용으로만 남는다.
 - 우편함 배정 시점: 가공→세척.패킹 진입. 같은 수신자면 집하 전까지 한 칸에 모음(1회 택배비). 포장.발송은 기존 배정 유지. 포장.발송↔세척.패킹·세척.패킹→가공 롤백도 우편함 유지(패킹 라벨 SSOT). 가공→준비 롤백에서만 해제.
-- 합류 키: 수신자 BusinessAnchor. PTX CA도 주문 기공소 BA. 신속/묶음은 같은 수신자면 같이 묶음.
+- 합류 키: 수신자 BusinessAnchor. PTX CA도 주문 기공소 BA.
 - 배송비 과금 시점: **포장.발송 진입(세척.패킹 승인)** 1회. 운송장 라벨에는 건수를 출력하지 않음(웹앱에서 확인).
-- 신속 배송 추가 의뢰크레딧: `creditSettings.expressFee`(기본 **2,000원**), **가공 진입(CAM 승인) 시 별도** `express_surcharge` **저널로 차감**
-  - 설정 UI: 관리자 플랫폼 설정「크레딧」(배송) / 「커스텀어벗」(단가) — `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits` (`admin`|`devops`)
-  - 약속 출고일 자정까지 당일 집하 실패(또는 신속→묶음 전환) 시 신속 추가비만 물리 삭제 취소
-  (`shippingOnTimeEvalWorker` / `cancelExpressSurchargeIfShipDelayed`). 16시 이후 당일 수동 집하는 정시.
-  - 의뢰자 대시보드: `PATCH /api/requests/my/shipping-mode` (준비 단계만)
-  - 견적/표시 금액 SSOT: 신속 지정 시점부터 `price.amount`에 추가비를 합산하고 `price.expressFee`에 기록 (`expressPrice.utils.js` `resolveQuotedPriceWithExpressFee`)
-    - 적용 경로: 생성(`from-draft`/`createRequest`), 준비 단계 모드 전환, 대시보드/상세 응답 정규화
-    - 실제 크레딧 차감 시점(CAM)과 표시 금액 반영 시점을 혼동하지 말 것
+- 신속 추가비(`expressFee`·`express_surcharge`)는 폐지. 모든 계산 경로가 0이며 `creditSettings.expressFee`도 0으로 읽는다. 과거 `express_surcharge` 저널·`price.expressFee`는 원장 표시용으로만 남는다.
 - 디자인+가공 과금: `productMode === "design_custom_abutment"`일 때만 적용
   - **1 STL에 여러 어벗** 가능. 공식: `(가공 단가 + 디자인비) × 어벗 수`
-  - 단가: 치과 청구 SSOT=`creditSettings.membershipProductionPrice`(정상가 기본 **15,000**) · 런칭 이벤트 **13,000**(`customAbutmentLaunchEvent`*). `membershipDesignAndProductionPrice`(기본 **25,000**, 레거시). `designFee`는 디자인+생산 − 생산만과 동기화(기본 **10,000원 / 1어벗**). 기공의뢰(PTX) CA 치과 청구는 기공소 수가. 기공소→어벗츠 생산비는 플랫폼 유효가. 배송비 박스당 또는 FM덴탈 월정액. 신속=`expressFee`(기본 **+2,000**). CNC 관리자「멤버/일반」·`regular`*는 딜러 유무 분배용.
+  - 단가: 건당 의뢰비 단일가 15,000원(딜러·영업팀 거래처가 12,000~15,000, 영업팀은 본사 승인 후 거래). 정산은 위 「의뢰비·딜러·배송 정책」을 따른다.
   - 어벗 수: `caseInfos.toothWorks` 유효 행(없으면 `tooth` 파싱, 최소 1) — `countDesignAbutmentQty`
   - 설정 UI: 동일 `AdminCreditSettingsTab`(`variant=customAbut`) / `PATCH /api/admin/settings/credits`
   - 견적/표시: `designPrice.utils.js` `resolveQuotedPriceWithDesignFee`
     - `price.amount` = `(가공단가 + designFee) × qty`, `price.designFee` = 디자인 총액, `price.abutmentQty` = qty
-  - 적용 순서: 디자인+가공 배수 → 신속비(건당, 배수 없음). 무상/0원 견적에는 미적용
-  - 차감: CAM `machining_spend` = `(가공단가 + 디자인비) × qty` (신속비와 분리)
+  - 적용 순서: 디자인+가공 배수. 무상/0원 견적에는 미적용
+  - 차감: CAM `machining_spend` = `(가공단가 + 디자인비) × qty`
   - UI: `PricingPolicyDialog`, 의뢰 상세 비용 세부. 신규의뢰 우측·의뢰카드는 금액 미표시(`+디자인` 뱃지만)
   - 상세: `.cursor/rules/design-fee.mdc`
 - 추적관리 진입 기준: 집하완료(statusCode 11 / picked_up)

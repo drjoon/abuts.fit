@@ -95,9 +95,9 @@ describe("manufacturer fixed unit + residual allocation", () => {
       creditSettings,
     });
     expect(request).toEqual({
-      supply: 8000,
-      vat: 800,
-      total: 8800,
+      supply: 5000,
+      vat: 500,
+      total: 5500,
       vatRate: 0.1,
       qty: 1,
     });
@@ -133,9 +133,9 @@ describe("manufacturer fixed unit + residual allocation", () => {
       qty: 2,
     });
     expect(earn).toEqual({
-      supply: 16000,
-      vat: 1600,
-      total: 17600,
+      supply: 10000,
+      vat: 1000,
+      total: 11000,
       vatRate: 0.1,
       qty: 2,
     });
@@ -185,12 +185,12 @@ describe("manufacturer fixed unit + residual allocation", () => {
       creditSettings,
     });
 
-    expect(alloc.manufacturer).toBe(8000);
-    expect(alloc.manufacturerVat).toBe(800);
-    // residual 12000 · weights 30:10:40
-    expect(alloc.salesman).toBe(4500);
-    expect(alloc.devops).toBe(1500);
-    expect(alloc.admin).toBe(6000);
+    // 2026-10-08 고정 분배: 제조사 5,500(공급가 5,000) · 개발운영 1,000 · 딜러 = 판매가 − 10,000(포함가)
+    expect(alloc.manufacturer).toBe(5000);
+    expect(alloc.manufacturerVat).toBe(500);
+    expect(alloc.devops).toBe(909);
+    expect(alloc.salesman).toBe(9091);
+    expect(alloc.admin).toBe(5000);
     expect(alloc.manufacturer + alloc.devops + alloc.salesman + alloc.admin).toBe(
       20000,
     );
@@ -211,11 +211,11 @@ describe("manufacturer fixed unit + residual allocation", () => {
       creditSettings,
     });
 
-    expect(alloc.manufacturer).toBe(8000);
+    expect(alloc.manufacturer).toBe(5000);
     expect(alloc.salesman).toBe(0);
-    // residual 12000 · without-salesman 20:80
-    expect(alloc.devops).toBe(2400);
-    expect(alloc.admin).toBe(9600);
+    // 딜러 없음(직판·영업팀): 딜러 몫은 어벗츠
+    expect(alloc.devops).toBe(909);
+    expect(alloc.admin).toBe(14091);
   });
 
   test("request spend with salesman: residual 30/10/40 weights", () => {
@@ -240,11 +240,10 @@ describe("manufacturer fixed unit + residual allocation", () => {
       },
     });
 
-    expect(alloc.manufacturer).toBe(8000);
-    // residual 12000 · weights 30:10:40
-    expect(alloc.salesman).toBe(4500);
-    expect(alloc.devops).toBe(1500);
-    expect(alloc.admin).toBe(6000);
+    expect(alloc.manufacturer).toBe(5000);
+    expect(alloc.salesman).toBe(9091);
+    expect(alloc.devops).toBe(909);
+    expect(alloc.admin).toBe(5000);
     expect(alloc.manufacturer + alloc.devops + alloc.salesman + alloc.admin).toBe(
       20000,
     );
@@ -310,9 +309,9 @@ describe("manufacturer fixed unit + residual allocation", () => {
     });
     expect(remake).toEqual(normal);
     expect(remake).toEqual({
-      supply: 11818,
-      vat: 1182,
-      total: 13000,
+      supply: 10000,
+      vat: 1000,
+      total: 11000,
       vatRate: 0.1,
       qty: 2,
     });
@@ -343,14 +342,14 @@ describe("manufacturer fixed unit + residual allocation", () => {
       isShippingSpend: false,
       creditSettings,
     });
-    expect(alloc.manufacturer).toBe(8000);
-    expect(alloc.manufacturerVat).toBe(800);
+    expect(alloc.manufacturer).toBe(5000);
+    expect(alloc.manufacturerVat).toBe(500);
     expect(
       alloc.manufacturer + alloc.devops + alloc.salesman + alloc.admin,
     ).toBe(20000);
   });
 
-  test("sale 13000: purchase inclusive is 50% (6500)", () => {
+  test("sale 13000: purchase inclusive is fixed 5500", () => {
     const earn = resolveManufacturerUnitEarn({
       isShippingSpend: false,
       creditSettings: {
@@ -361,9 +360,9 @@ describe("manufacturer fixed unit + residual allocation", () => {
       qty: 1,
     });
     expect(earn).toEqual({
-      supply: 5909,
-      vat: 591,
-      total: 6500,
+      supply: 5000,
+      vat: 500,
+      total: 5500,
       vatRate: 0.1,
       qty: 1,
     });
@@ -384,8 +383,10 @@ describe("manufacturer fixed unit + residual allocation", () => {
       isRemake: true,
       remakeSaleAmount: 0,
     });
-    expect(alloc.manufacturer).toBe(5909);
-    expect(alloc.manufacturerVat).toBe(591);
+    // 리메이크 1만원: 제조사 5,000 + 개발운영 909 + 어벗츠, 딜러 0
+    expect(alloc.manufacturer).toBe(5000);
+    expect(alloc.manufacturerVat).toBe(500);
+    expect(alloc.salesman).toBe(0);
     expect(
       alloc.manufacturer + alloc.devops + alloc.salesman + alloc.admin,
     ).toBe(10000);

@@ -60,11 +60,6 @@ import {
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
 import { CustomAbutmentAbutsSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
-import {
-  DEVOPS_FROM_ABUTS_SHARE_PCT,
-  MANUFACTURER_FIXED_SHARE_PCT,
-  formatSharePct,
-} from "@/shared/settlement/customAbutmentSplitPolicy";
 import { DEALERSHIP_BAND_RANGE_LABEL } from "@/shared/sales/dealershipPolicyCopy";
 
 const HISTORY_MONTHS = 6;
@@ -1023,7 +1018,7 @@ export default function AdminPaymentsPage({
                   <CustomAbutmentAbutsSplitTable />
                   <div className={GUIDE_FACT_GRID_CLASS}>
                     <SettlementPolicyFact label="개발운영">
-                      의뢰비 대비 {DEVOPS_FROM_ABUTS_SHARE_PCT}%입니다.
+                      어벗 1개당 1,000원입니다.
                       <br />
                       어벗츠 몫에서 뗍니다.
                     </SettlementPolicyFact>
@@ -1038,7 +1033,7 @@ export default function AdminPaymentsPage({
                       제조·딜러·개발운영은 세금계산서입니다.
                     </SettlementPolicyFact>
                     <SettlementPolicyFact label="딜러">
-                      {DEALERSHIP_BAND_RANGE_LABEL} 누진입니다.
+                      {DEALERSHIP_BAND_RANGE_LABEL}입니다.
                       <br />
                       기공 · 스토어는 이 표에 없습니다.
                     </SettlementPolicyFact>
@@ -1102,11 +1097,11 @@ export default function AdminPaymentsPage({
                       )}
                     </div>
                     <div className="tabular-nums">
-                      제조 {formatSharePct(MANUFACTURER_FIXED_SHARE_PCT)} · 딜러{" "}
+                      제조 5,500원 · 딜러{" "}
                       {DEALERSHIP_BAND_RANGE_LABEL}
                     </div>
                     <div className="tabular-nums">
-                      개발 {DEVOPS_FROM_ABUTS_SHARE_PCT}%
+                      개발 1,000원
                     </div>
                   </div>
                 )
@@ -1235,7 +1230,7 @@ export default function AdminPaymentsPage({
                   <CreditSectionHeader
                     icon={Factory}
                     title="커스텀어벗 · 생산·공급"
-                    description={`제조 ${formatSharePct(MANUFACTURER_FIXED_SHARE_PCT)} 고정 · 딜러 누진`}
+                    description={`제조 5,500원 고정 · 딜러 판매가−1만원`}
                   />
                   <EquationRow
                     revenue={
@@ -1263,7 +1258,7 @@ export default function AdminPaymentsPage({
                       <SettlementStatCard
                         label="지출(하청)"
                         value={dash ?? manufacturerEarn}
-                        hint={`${formatSharePct(MANUFACTURER_FIXED_SHARE_PCT)} · 미정산 ${formatWonWithUnit(
+                        hint={`5,500원 · 미정산 ${formatWonWithUnit(
                           manufacturerSummary?.periodBalanceAmount,
                         )}`}
                         hintTooltip={`단가 ${Number(
@@ -1284,7 +1279,7 @@ export default function AdminPaymentsPage({
                         value={
                           dash ?? Number(customAbut?.residualTotalSupply || 0)
                         }
-                        hint={`딜러 ${DEALERSHIP_BAND_RANGE_LABEL} · 개발 ${DEVOPS_FROM_ABUTS_SHARE_PCT}% · 어벗츠 순`}
+                        hint={`딜러 ${DEALERSHIP_BAND_RANGE_LABEL} · 개발 1,000원 · 어벗츠 순`}
                         hintTooltip="판매가 − 제조 매입 − 딜러. 개발운영은 어벗츠 몫에서 뺍니다."
                         compact
                       />

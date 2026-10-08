@@ -7,7 +7,6 @@ import User from "../models/user.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import PricingReferralRolling30dAggregate from "../models/pricingReferralRolling30dAggregate.model.js";
 import { getPricingReferralOrderCountMapByBusinessAnchorIds } from "./pricingReferralOrderBucket.service.js";
-import { resolveRequestorUnitPrice } from "../utils/requestorUnitPricePolicy.js";
 import {
   getLast30DaysRangeUtc,
   getTodayYmdInKst,
@@ -334,36 +333,8 @@ export const recomputePricingReferralSnapshotForLeaderAnchorId = async (
       : null;
   const snapshotBusinessAnchorId = new Types.ObjectId(leaderAnchorId);
 
-  // 건당 의뢰비는 그날 첫 스냅샷(자정)에서 한 번 확정하고 하루 동안 바꾸지 않는다.
-  // 장중 재집계(소개 변경 등)는 주문량 수치만 갱신한다. 의뢰자 사업자만 단가를 가진다.
-  const [existingSnapshot, leaderAnchor] = await Promise.all([
-    PricingReferralRolling30dAggregate.findOne({
-      businessAnchorId: snapshotBusinessAnchorId,
-      ymd,
-    })
-      .select({ unitPrice: 1 })
-      .lean(),
-    BusinessAnchor.findById(leaderAnchorId)
-      .select({ businessType: 1, createdAt: 1 })
-      .lean(),
-  ]);
-  const priceFields =
-    String(leaderAnchor?.businessType || "") === "requestor" &&
-    existingSnapshot?.unitPrice == null
-      ? (() => {
-          const resolved = resolveRequestorUnitPrice({
-            groupOrders30d: groupTotalOrders,
-            startedAt: leaderAnchor?.createdAt,
-            ymd,
-          });
-          return {
-            unitPrice: resolved.unitPrice,
-            discountAmount: resolved.discountAmount,
-            priceRule: resolved.rule,
-            introEndsYmd: resolved.introEndsYmd,
-          };
-        })()
-      : {};
+  // 2026-10-08: 그룹할인 폐지 — 단가는 스냅샷에 쓰지 않는다(주문량 집계만).
+  const priceFields = {};
 
   await PricingReferralRolling30dAggregate.findOneAndUpdate(
     { businessAnchorId: snapshotBusinessAnchorId, ymd },

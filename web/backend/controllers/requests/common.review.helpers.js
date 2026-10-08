@@ -148,7 +148,7 @@ function buildPtxAbutsProductionQuoteLocal({
   creditSettings,
   shippingMode,
   abutmentQty = 1,
-  expressFeePerRequest = 2000,
+  expressFeePerRequest = 0,
 }) {
   const picked = pickAbutsAbutmentCreditPrices(creditSettings || {});
   const unit = Math.max(
@@ -1021,7 +1021,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   if (practicePrepaid && !isTradingPartner) {
     if (isPtxLabDesigned) {
       const shippingMode = resolveEffectiveShippingMode(request);
-      let expressFeePerRequest = 2000;
+      let expressFeePerRequest = 0;
       let creditSettingsForQuote = {};
       try {
         const { loadCreditSettingsDefaults } =
@@ -1030,10 +1030,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
           requestorOrgId: businessAnchorId,
           applyLabSupplyPrices: false,
         });
-        expressFeePerRequest = Math.max(
-          0,
-          Number(creditSettingsForQuote?.expressFee ?? 2000) || 2000,
-        );
+        expressFeePerRequest = 0;
       } catch {
         // defaults
       }
@@ -1082,7 +1079,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     if (shippingMode === "express") {
       expressFeeUnit = Math.max(
         0,
-        Number(creditSettingsForQuote?.expressFee ?? 2000) || 0,
+        0,
       );
     }
     designFeePerTooth = Math.max(
@@ -1090,7 +1087,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       Number(creditSettingsForQuote?.designFee ?? 5000) || 5000,
     );
   } catch {
-    if (shippingMode === "express") expressFeeUnit = 2000;
+    if (shippingMode === "express") expressFeeUnit = 0;
     designFeePerTooth = 5000;
   }
 

@@ -2616,42 +2616,6 @@ export const AdminCreditSettingsTab = ({
                 </div>
               </CardContent>
             </Card>
-
-            <Card className="app-glass-card app-glass-card--lg overflow-hidden">
-              <CardContent className="space-y-5 p-5 sm:p-6">
-                <SectionHeader
-                  icon={Truck}
-                  title="배송"
-                  description="택배 묶음 출고 박스당 배송비와 딜리버리 익일 도착 월정액입니다."
-                />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <AmountField
-                    id="shippingFee"
-                    label="택배 묶음 출고 배송비"
-                    icon={Truck}
-                    value={settings.shippingFee}
-                    onChange={(next) =>
-                      setSettings({ ...settings, shippingFee: next })
-                    }
-                    disabled={loading}
-                    help="1박스당 별도 부과(의뢰자 청구)"
-                    step={SHIPPING_AMOUNT_STEP}
-                  />
-                  <AmountField
-                    id="expressFee"
-                    label="딜리버리 건당 추가(레거시)"
-                    icon={Zap}
-                    value={settings.expressFee}
-                    onChange={(next) =>
-                      setSettings({ ...settings, expressFee: next })
-                    }
-                    disabled={loading}
-                    help="신규 안내는 월정액입니다. 이 값은 기존 건당 추가 차감용입니다."
-                    step={SHIPPING_AMOUNT_STEP}
-                  />
-                </div>
-              </CardContent>
-            </Card>
           </>
         ) : null}
 

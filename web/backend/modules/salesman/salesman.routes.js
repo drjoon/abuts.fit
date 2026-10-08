@@ -9,6 +9,8 @@ import {
   getSalesmanLedger,
   getSalesmanNoOrderAlerts,
   getPlatformPitch,
+  getMyCustomerUnitPrices,
+  setMyCustomerUnitPrice,
 } from "../../controllers/salesman/salesman.controller.js";
 
 const router = Router();
@@ -20,5 +22,7 @@ router.get("/dashboard", getSalesmanDashboard);
 router.get("/no-order-alerts", getSalesmanNoOrderAlerts);
 router.get("/ledger", getSalesmanLedger);
 router.get("/platform-pitch", getPlatformPitch);
+router.get("/customer-prices", getMyCustomerUnitPrices);
+router.put("/customer-prices/:anchorId", setMyCustomerUnitPrice);
 
 export default router;

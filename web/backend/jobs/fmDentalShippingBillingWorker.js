@@ -3,7 +3,7 @@
 // related files:
 // - web/backend/services/fmDentalShippingSubscription.service.js
 // - web/backend/server.js
-import { processDueFmDentalShippings } from "../services/fmDentalShippingSubscription.service.js";
+import { processDeliveryMonthlyCosts } from "../services/deliveryMonthlyCost.service.js";
 
 let timerHandle = null;
 let running = false;
@@ -11,9 +11,10 @@ let running = false;
 const INTERVAL_MS = 60 * 60 * 1000;
 
 async function tick() {
-  const result = await processDueFmDentalShippings();
-  if (result.due || result.backfilled || result.charged) {
-    console.log("[fmDentalShippingBilling] completed", result);
+  // 2026-10-08: 거래처 월정액 청구 폐지. 딜러 정산 차감/어벗츠 부담 원가를 매월 1회 기록(멱등).
+  const result = await processDeliveryMonthlyCosts();
+  if (result.posted) {
+    console.log("[deliveryMonthlyCost] completed", result);
   }
 }
 

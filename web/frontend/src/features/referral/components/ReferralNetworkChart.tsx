@@ -2,7 +2,6 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-// - web/frontend/src/pages/requestor/discountGroup/LabDiscountGroupPage.tsx
 // change-log:
 // - 2026-10-07: headerRight — 카드 헤더 오른쪽 액션(할인 정책 등).
 import { useId, useRef, useState, type ReactNode } from "react";

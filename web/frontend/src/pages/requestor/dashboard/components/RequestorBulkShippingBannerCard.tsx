@@ -64,7 +64,6 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { formatDateWithDay, formatDateOnly } from "@/utils/dateFormat";
 import { getShippingModeBadgeClassName } from "@/shared/shipping/shippingMode";
 import {
-  BULK_SHIPPING_LABEL,
   EXPRESS_SHIPPING_ARRIVAL_LINE,
   EXPRESS_SHIPPING_LABEL,
 } from "@/shared/shipping/shippingPolicyCopy";
@@ -197,7 +196,7 @@ const DIAMETER_LABELS: Record<DiameterKey, string> = {
 };
 
 const SHIP_OUT_INFO_MESSAGE =
-  `출고일은 리드타임 기준으로 계산됩니다. ${BULK_SHIPPING_LABEL}은 지정 요일에 일괄 출고하며 1박스당 배송비가 별도입니다. ${EXPRESS_SHIPPING_LABEL}은 월 정액(VAT 포함)이며, ${EXPRESS_SHIPPING_ARRIVAL_LINE}`;
+  `출고일은 리드타임 기준으로 계산됩니다. ${EXPRESS_SHIPPING_LABEL}만 운영하며 배송비는 없습니다. ${EXPRESS_SHIPPING_ARRIVAL_LINE}`;
 
 type ShippingItemApi = {
   id: string;
@@ -764,13 +763,6 @@ export const RequestorBulkShippingBannerCard = ({
               </Tooltip>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
-              <Badge
-                variant="outline"
-                className={`gap-1 font-medium ${getShippingModeBadgeClassName("normal")}`}
-              >
-                <Package className="h-3 w-3" />
-                {BULK_SHIPPING_LABEL}
-              </Badge>
               <Badge
                 variant="outline"
                 className={`gap-1 font-medium ${getShippingModeBadgeClassName("express")}`}

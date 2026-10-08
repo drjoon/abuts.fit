@@ -804,7 +804,7 @@ export function buildPtxAbutsProductionQuote({
   creditSettings,
   shippingMode,
   abutmentQty = 1,
-  expressFeePerRequest = 2000,
+  expressFeePerRequest = 0,
   quotedAt = new Date(),
 }) {
   const picked = pickAbutsAbutmentCreditPrices(creditSettings || {});
@@ -1195,19 +1195,16 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   );
   const practicePrepaidAbutment = abutmentRetailTotal > 0;
 
-  let expressFeePerRequest = 2000;
+  let expressFeePerRequest = 0;
   let creditSettingsForQuote = {};
   try {
     creditSettingsForQuote = await loadCreditSettingsDefaults({
       requestorOrgId: labAnchorId,
       applyLabSupplyPrices: false,
     });
-    expressFeePerRequest = Math.max(
-      0,
-      Number(creditSettingsForQuote?.expressFee ?? 2000) || 2000,
-    );
+    expressFeePerRequest = 0;
   } catch {
-    expressFeePerRequest = 2000;
+    expressFeePerRequest = 0;
     creditSettingsForQuote = {};
   }
   // PTX 신속처리는 flat expressFee 대신 배수 할증(PTX hold). Request 표시가도 동일.
@@ -2747,7 +2744,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
         .filter(Boolean)
     : [];
 
-  let expressFeePerRequest = 2000;
+  let expressFeePerRequest = 0;
   let creditSettingsForQuote = {};
   try {
     creditSettingsForQuote = await loadCreditSettingsDefaults({
@@ -2755,10 +2752,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
       requestorAnchor: labOrg || { requestorKind: "lab" },
       applyLabSupplyPrices: false,
     });
-    expressFeePerRequest = Math.max(
-      0,
-      Number(creditSettingsForQuote?.expressFee ?? 2000) || 2000,
-    );
+    expressFeePerRequest = 0;
   } catch {
     // defaults
   }

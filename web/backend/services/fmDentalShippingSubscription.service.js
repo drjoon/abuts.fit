@@ -148,16 +148,11 @@ export async function isFmDentalShippingActiveForAnchor(
 ) {
   const id = String(businessAnchorId || "").trim();
   if (!id || !mongoose.Types.ObjectId.isValid(id)) return false;
-  const query = BusinessAnchor.findById(id).select({
-    fmDentalShippingActive: 1,
-    requestorKind: 1,
-    requestorCapabilities: 1,
-    status: 1,
-  });
+  // 2026-10-08: 딜리버리 익일 도착만 남김. 거래처는 월정액·박스 배송비 없음(딜러/어벗츠 부담).
+  const query = BusinessAnchor.findById(id).select({ businessType: 1 });
   if (session) query.session(session);
   const row = await query.lean();
-  if (!row?.fmDentalShippingActive) return false;
-  return isFmDentalShippingLabEligible(row);
+  return String(row?.businessType || "") === "requestor";
 }
 
 export async function applyFmDentalShippingJoin(anchor, { now = new Date() } = {}) {

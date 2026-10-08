@@ -306,6 +306,39 @@ const businessAnchorSchema = new mongoose.Schema(
       min: 0,
       max: 1,
     },
+    /**
+     * 딜러/영업팀이 이 거래처에 정한 건당 의뢰비(12,000~15,000). 비공개.
+     * null이면 기본 15,000. 응답에 싣지 않는다(select:false). utils/requestorUnitPricePolicy.js
+     */
+    dealerUnitPrice: {
+      type: Number,
+      default: null,
+      min: 12000,
+      max: 15000,
+      select: false,
+    },
+    /**
+     * 영업팀이 거래처 가격을 입력하면 본사(관리자) 승인 전까지 pending — 승인 후 거래 가능.
+     * 딜러(salesman)는 승인 없이 즉시 반영. 승인 시 requestedPrice가 dealerUnitPrice로 적용된다.
+     */
+    dealerPriceApproval: {
+      type: {
+        status: {
+          type: String,
+          enum: ["pending", "approved", "rejected"],
+          default: "approved",
+        },
+        requestedPrice: { type: Number, default: null },
+        requestedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+        requestedAt: { type: Date, default: null },
+        decidedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+        decidedAt: { type: Date, default: null },
+        rejectReason: { type: String, default: "" },
+      },
+      default: undefined,
+      select: false,
+      _id: false,
+    },
     defaultReferralAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "BusinessAnchor",

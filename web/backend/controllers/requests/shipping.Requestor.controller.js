@@ -100,22 +100,19 @@ export async function updateMyShippingMode(req, res) {
     const { calculateInitialProductionSchedule } =
       await import("./production.utils.js");
 
-    let expressFeePerRequest = 2000;
+    let expressFeePerRequest = 0;
     let designFeePerTooth = 5000;
     try {
       const creditSettings = await loadCreditSettingsDefaults({
         requestorOrgId: getRequestorOrgId(req),
       });
-      expressFeePerRequest = Math.max(
-        0,
-        Number(creditSettings?.expressFee ?? 2000) || 2000,
-      );
+      expressFeePerRequest = 0;
       designFeePerTooth = Math.max(
         0,
         Number(creditSettings?.designFee ?? 5000) || 5000,
       );
     } catch {
-      expressFeePerRequest = 2000;
+      expressFeePerRequest = 0;
       designFeePerTooth = 5000;
     }
 

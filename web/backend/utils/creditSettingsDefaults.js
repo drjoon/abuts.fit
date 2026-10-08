@@ -35,7 +35,7 @@ import {
   ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
 } from "./abutsAbutmentService.js";
-import { REQUESTOR_UNIT_PRICE_MANUFACTURER_SHARE_PCT } from "./requestorUnitPricePolicy.js";
+import { REQUESTOR_UNIT_PRICE_MANUFACTURER_COST } from "./requestorUnitPricePolicy.js";
 import { resolveRequestorUnitPriceForAnchorId } from "../services/requestorUnitPrice.service.js";
 import {
   manufacturerPurchaseFromSale,
@@ -636,12 +636,16 @@ export function overlayCustomAbutmentSalePrice(
   options = {},
 ) {
   const sale = Math.max(0, Math.round(Number(saleAmount) || 0));
-  const purchase = manufacturerPurchaseFromSale(
-    sale,
-    options?.manufacturerSharePercent != null
-      ? { manufacturerSharePercent: options.manufacturerSharePercent }
-      : creditSettings,
-  );
+  const fixedPurchase = Math.round(Number(options?.manufacturerPurchaseAmount));
+  const purchase =
+    Number.isFinite(fixedPurchase) && fixedPurchase > 0
+      ? fixedPurchase
+      : manufacturerPurchaseFromSale(
+          sale,
+          options?.manufacturerSharePercent != null
+            ? { manufacturerSharePercent: options.manufacturerSharePercent }
+            : creditSettings,
+        );
   const overlaid = {
     ...creditSettings,
     labProductionPrice: sale,
@@ -820,9 +824,8 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
       if (!Number.isFinite(raw) || raw < 0) return SCHEMA_DEFAULTS.affiliateVatRate;
       return Math.min(1, raw);
     })(),
-    expressFee: Number(
-      creditSettings.expressFee ?? SCHEMA_DEFAULTS.expressFee,
-    ),
+    // 2026-10-08: 신속 추가비 폐지(딜리버리 단일). 저장값과 무관하게 0.
+    expressFee: 0,
     practiceRushFeeMultiplier: clampPracticeRushFeeMultiplier(
       creditSettings.practiceRushFeeMultiplier ??
         SCHEMA_DEFAULTS.practiceRushFeeMultiplier,
@@ -1295,10 +1298,9 @@ export async function loadCreditSettingsDefaults(options = {}) {
   // 관리자 BA 특별가가 없으면 오늘 건당 의뢰비(자정 30일 주문량 스냅샷)를 판매가로 쓴다.
   let requestorUnitPrice = null;
   let overridden = specialOverridden;
-  // 기공소만 적용한다. 치과는 기존 단일가(런칭 이벤트·정상가). 매입가는 제조사 정산 49.5%.
+  // 치과·기공소 공통: 기본 1.5만, 딜러가 정한 거래처가(1.2~1.5만). 제조사 매입 5,500원 고정.
   if (
     specialOverridden === priced &&
-    requestorKind === "lab" &&
     options?.applyRequestorUnitPrice !== false
   ) {
     requestorUnitPrice = await resolveRequestorUnitPriceForAnchorId(id);
@@ -1306,7 +1308,7 @@ export async function loadCreditSettingsDefaults(options = {}) {
       overridden = overlayCustomAbutmentSalePrice(
         priced,
         requestorUnitPrice.unitPrice,
-        { manufacturerSharePercent: REQUESTOR_UNIT_PRICE_MANUFACTURER_SHARE_PCT },
+        { manufacturerPurchaseAmount: REQUESTOR_UNIT_PRICE_MANUFACTURER_COST },
       );
     }
   }
