@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-10-08: 대시보드 카드는 순서 유지. 빈칸 없이 이어 붙이고 높이는 내용만큼.
 // - 2026-10-04: 데모 전환 · 어벗츠 확인 카드(하청·자체 지급 확인).
 // - 2026-10-02: 간접어벗 카드 — 타사 스캔바디와 어벗츠 스캔바디를 한 모달로.
 // - 2026-10-02: 직접어벗 설정 카드 — 심플어벗 3D 모델. 직접 입력은 기공소.
@@ -2260,7 +2261,7 @@ export const AdminDashboardPage = () => {
               <NoticeAdminCard className="h-full lg:col-span-2" />
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {/* 카드1: 진행 / 완료 */}
               <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -2330,7 +2331,7 @@ export const AdminDashboardPage = () => {
               />
 
               {/* 카드3: ExoCAD 헥스 회전 확인 */}
-              <Card className="app-glass-card app-glass-card--lg h-full">
+              <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
                     헥스 회전 확인
@@ -2384,7 +2385,7 @@ export const AdminDashboardPage = () => {
               </Card>
 
               {/* 카드5-3b: 신규 보철물(기공수가) 요청 */}
-              <Card className="app-glass-card app-glass-card--lg h-full">
+              <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
                     신규 보철물 요청
@@ -2450,11 +2451,9 @@ export const AdminDashboardPage = () => {
                   </button>
                 </CardContent>
               </Card>
-            </div>
 
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-4 items-stretch">
               {/* 카드5-2: 디자인 소프트웨어 통계 */}
-              <Card className="app-glass-card app-glass-card--lg h-full">
+              <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
                     디자인 소프트웨어 통계
@@ -2503,7 +2502,7 @@ export const AdminDashboardPage = () => {
               </Card>
 
               {/* 카드5-3: 미제공 어벗(임플란트 추가 요청) 통계 */}
-              <Card className="app-glass-card app-glass-card--lg h-full">
+              <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
                     미제공 어벗 통계
@@ -2552,7 +2551,7 @@ export const AdminDashboardPage = () => {
               </Card>
 
               {/* 카드8: 지연 위험 요약 */}
-              <Card className="app-glass-card app-glass-card--lg h-full">
+              <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">지연 위험 요약</CardTitle>
                   <AlertCircle className="h-4 w-4 text-muted-foreground" />
@@ -2587,7 +2586,7 @@ export const AdminDashboardPage = () => {
               </Card>
 
               {/* 카드5-4: 가공 통계 */}
-              <Card className="app-glass-card app-glass-card--lg h-full">
+              <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">가공 통계</CardTitle>
                   <BarChart3 className="h-4 w-4 text-muted-foreground" />
@@ -2612,8 +2611,8 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
 
-              {/* 카드6: 불완전가공 의뢰 현황 — 다음 카드들과 같은 그리드에서 옆·아래를 채움 */}
-              <Card className="app-glass-card app-glass-card--lg h-full flex flex-col lg:row-span-2">
+              {/* 카드6: 불완전가공 의뢰 현황 */}
+              <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium">불완전가공 의뢰 현황</CardTitle>
                 </CardHeader>
@@ -2709,8 +2708,7 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
 
-              {/* 치과 의뢰(파일) 전송 통계 */}
-              <Card className="app-glass-card app-glass-card--lg h-full">
+              <Card className="app-glass-card app-glass-card--lg lg:col-span-2">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">치과 의뢰(파일) 전송 통계</CardTitle>
                   <UploadCloud className="h-4 w-4 text-muted-foreground" />
@@ -2744,7 +2742,7 @@ export const AdminDashboardPage = () => {
               </Card>
 
               {/* 카드7: 거래금액 / 평균 단가 / 배송비 */}
-              <Card className="app-glass-card app-glass-card--lg h-full lg:col-span-2">
+              <Card className="app-glass-card app-glass-card--lg lg:col-span-2">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
                     거래금액 / 평균 단가 / 배송비
@@ -2807,8 +2805,8 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
 
-              {/* 카드9: 시스템 알림 — 불완전가공 옆 남은 3칸을 채움 */}
-              <Card className="app-glass-card app-glass-card--lg h-full lg:col-span-3">
+              {/* 카드9: 시스템 알림 */}
+              <Card className="app-glass-card app-glass-card--lg lg:col-span-2">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">시스템 알림</CardTitle>
                   <AlertCircle className="h-4 w-4 text-muted-foreground" />

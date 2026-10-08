@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/backend/controllers/dashboardNotice.controller.js
+// - 2026-10-08: 열람 모달은 고정 헤더·스크롤 본문.
 // - 2026-10-07: 공지는 DashboardLayout 작업영역 맨 위 전폭 1행. 페이지 inline 자리 제거.
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -18,7 +19,13 @@ import {
   DASHBOARD_FULL_BLEED_GUTTER_CLASS,
   DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS,
 } from "@/shared/ui/dashboardChrome";
-import { isNoticeWindowOpen, type DashboardNotice } from "./dashboardNotice";
+import {
+  isNoticeWindowOpen,
+  NOTICE_DIALOG_BODY_CLASS,
+  NOTICE_DIALOG_HEADER_CLASS,
+  NOTICE_DIALOG_SHELL_CLASS,
+  type DashboardNotice,
+} from "./dashboardNotice";
 
 /** @deprecated 레이아웃 전폭 공지 바로 통일. */
 export const DASHBOARD_NOTICE_HEADER_CLASS =
@@ -54,7 +61,7 @@ function NoticeCopy({ text }: { text: string }) {
 }
 
 const NOTICE_BANNER_CLASS =
-  "pointer-events-auto flex min-w-0 w-full max-w-none items-center justify-center gap-2 rounded-md border border-amber-700 bg-amber-400 px-2.5 py-1 text-sm font-semibold text-amber-950 shadow-md";
+  "pointer-events-auto flex min-w-0 w-full max-w-none items-center justify-center gap-2 rounded-xl border border-amber-300 bg-gradient-to-b from-amber-200 to-amber-300 px-3 py-1.5 text-sm font-semibold text-amber-950 shadow-sm";
 
 /**
  * 대시보드 활성 공지. 레이아웃 전폭 바(`DashboardNoticeBar`)에서만 쓴다.
@@ -111,7 +118,10 @@ export function DashboardNoticeAlert({
         <button
           type="button"
           onClick={() => setOpenId(items[0].id)}
-          className={cn(NOTICE_BANNER_CLASS, "transition hover:bg-amber-300")}
+          className={cn(
+            NOTICE_BANNER_CLASS,
+            "transition hover:from-amber-100 hover:to-amber-200",
+          )}
           title={bannerTitle}
           aria-label={bannerAria}
         >
@@ -127,17 +137,24 @@ export function DashboardNoticeAlert({
         </button>
       </div>
       <Dialog open={dialogOpen} onOpenChange={(next) => !next && setOpenId(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="pr-6 text-base leading-snug">
+        <DialogContent className={cn(NOTICE_DIALOG_SHELL_CLASS, "sm:max-w-lg")}>
+          <DialogHeader className={NOTICE_DIALOG_HEADER_CLASS}>
+            <DialogTitle className="pr-8 text-xl font-semibold leading-snug tracking-tight text-slate-900">
               {dialogTitle}
             </DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col gap-4">
+          <div className={NOTICE_DIALOG_BODY_CLASS}>
             {items.map((item) => (
-              <div key={item.id} className="flex flex-col gap-2">
+              <article
+                key={item.id}
+                className={
+                  items.length > 1
+                    ? "space-y-3 rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-sm"
+                    : "space-y-3"
+                }
+              >
                 {!single && item.body.trim() !== item.title.trim() ? (
-                  <p className="text-sm font-semibold text-foreground">
+                  <p className="text-sm font-semibold leading-snug text-slate-900">
                     {item.title}
                   </p>
                 ) : null}
@@ -150,13 +167,13 @@ export function DashboardNoticeAlert({
                           key={image.url}
                           src={image.url}
                           alt={image.fileName || `공지 이미지 ${index + 1}`}
-                          className="max-h-80 w-full rounded-md object-contain"
+                          className="max-h-80 w-full rounded-xl border border-slate-200/80 bg-slate-50 object-contain"
                         />
                       ) : null,
                     )}
                   </div>
                 ) : null}
-              </div>
+              </article>
             ))}
           </div>
         </DialogContent>

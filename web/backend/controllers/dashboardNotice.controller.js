@@ -94,6 +94,19 @@ function parseOptionalDate(raw) {
   return date;
 }
 
+/** 고른 시각의 KST 날짜 23:59:59. 종료는 날짜만 받고 그날 끝에 내린다. */
+function endOfKstDay(date) {
+  const ymd = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+  const end = new Date(`${ymd}T23:59:59+09:00`);
+  if (Number.isNaN(end.getTime())) return { invalid: true };
+  return end;
+}
+
 async function signImages(images) {
   const rows = Array.isArray(images) ? images : [];
   const signed = [];
@@ -149,7 +162,8 @@ function readNoticeFields(body) {
   if (text.length > 4000) return { error: "내용은 4000자까지 입력할 수 있습니다." };
   if (!audiences.length) return { error: "대상을 한 곳 이상 선택해 주세요." };
   const startsAt = parseOptionalDate(body?.startsAt);
-  const endsAt = parseOptionalDate(body?.endsAt);
+  const endsAtRaw = parseOptionalDate(body?.endsAt);
+  const endsAt = endsAtRaw && !endsAtRaw.invalid ? endOfKstDay(endsAtRaw) : endsAtRaw;
   if (startsAt?.invalid || endsAt?.invalid) {
     return { error: "게시 기간이 올바르지 않습니다." };
   }

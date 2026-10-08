@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowRightLeft } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/shared/ui/cn";
 import { request } from "@/shared/api/apiClient";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import {
@@ -16,9 +17,10 @@ import {
 
 type Props = {
   enabled?: boolean;
+  className?: string;
 };
 
-export function AdminDemoConversionCard({ enabled = true }: Props) {
+export function AdminDemoConversionCard({ enabled = true, className }: Props) {
   const [pending, setPending] = useState<AdminPendingDemoConversion[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -57,7 +59,7 @@ export function AdminDemoConversionCard({ enabled = true }: Props) {
   const count = pending.length;
 
   return (
-    <Card className="app-glass-card app-glass-card--lg h-full">
+    <Card className={cn("app-glass-card app-glass-card--lg", className)}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">
           데모 전환 · 어벗츠 확인
