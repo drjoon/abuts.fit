@@ -250,7 +250,15 @@ const PracticeSettingsPage = lazy(() =>
 );
 const NotFound = lazy(() => import("./pages/public/NotFound"));
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // 창 포커스·페이지 왕복마다 같은 GET이 나가지 않게. 저장 후 invalidate가 갱신 SSOT.
+      staleTime: 60_000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 // Protected Route wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {

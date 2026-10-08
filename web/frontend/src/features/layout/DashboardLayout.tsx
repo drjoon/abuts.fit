@@ -632,7 +632,7 @@ const getRoleBadgeVariant = (role: string) => {
 };
 
 export const DashboardLayout = () => {
-  const { user, logout, token, loginWithToken, setLastDashboardPath, setSidebarOpen } =
+  const { user, logout, token, setLastDashboardPath, setSidebarOpen } =
     useAuthStore();
   const {
     period,
@@ -670,8 +670,6 @@ export const DashboardLayout = () => {
   const sidebarCollapsed = !showExpandedChrome;
   const [worksheetSearch, setWorksheetSearch] = useState("");
   const [showCompleted, setShowCompleted] = useState(false);
-  const [bootstrappingAuth, setBootstrappingAuth] = useState(false);
-  const [bootstrappedOnce, setBootstrappedOnce] = useState(false);
   const [sidebarProfileImage, setSidebarProfileImage] = useState<string>("");
   const [pendingBusinessName, setPendingBusinessName] = useState<string | null>(
     null,
@@ -809,45 +807,7 @@ export const DashboardLayout = () => {
     token,
     user,
   ]);
-  useEffect(() => {
-    if (bootstrappedOnce) return;
-    if (!token) {
-      navigate("/login", { replace: true });
-      return;
-    }
-
-    if (!user || !user.id) {
-      setBootstrappingAuth(true);
-      loginWithToken(token)
-        .then((result) => {
-          if (
-            result.status === "unauthorized" &&
-            useAuthStore.getState().token === token
-          ) {
-            logout();
-            navigate("/login", { replace: true });
-          }
-        })
-        .finally(() => {
-          setBootstrappingAuth(false);
-          setBootstrappedOnce(true);
-        });
-      return;
-    }
-
-    setBootstrappedOnce(true);
-    if (user.role === "admin") return;
-    loginWithToken(token).then((result) => {
-      if (
-        result.status === "unauthorized" &&
-        useAuthStore.getState().token === token
-      ) {
-        logout();
-        navigate("/login", { replace: true });
-      }
-    });
-  }, [bootstrappedOnce, loginWithToken, logout, navigate, token, user]);
-
+  // /api/auth/me 는 App의 loginWithToken만 호출한다.
   useEffect(() => {
     if (!token || !user || !user.id) return;
     if (isWizardRoute) return;
@@ -1707,10 +1667,6 @@ export const DashboardLayout = () => {
       .join("")
       .toUpperCase();
   };
-
-  if (bootstrappingAuth) {
-    return null;
-  }
 
   if (!token || !user || !user.id) {
     return null;

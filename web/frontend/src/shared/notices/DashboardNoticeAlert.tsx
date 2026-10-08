@@ -79,9 +79,11 @@ export function DashboardNoticeAlert({
   const role = useAuthStore((s) => s.user?.role);
   const [openId, setOpenId] = useState<string | null>(null);
   const { data: fetched = [] } = useQuery({
-    queryKey: ["dashboard-notices-active"],
+    queryKey: ["dashboard-notices-active", role || ""],
     enabled: Boolean(token) && role !== "admin",
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     queryFn: async () => {
       const res = await apiFetch<ActiveResponse>({
         path: "/api/notices/active",

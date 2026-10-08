@@ -10,7 +10,8 @@
  * 관리자가 신규 유치 요율을 20%→15%→10%로 인하해도 기존 유치 건은 유지.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -203,44 +204,47 @@ export function requestorKindLabel(
 }
 
 export function useCommissionDashboard(period: PeriodFilterValue) {
-  const { token } = useAuthStore();
+  const token = useAuthStore((s) => s.token);
+  const userId = useAuthStore((s) => s.user?.id || "");
   const { toast } = useToast();
-  const [data, setData] = useState<CommissionDashboardData | null>(null);
-  const [loading, setLoading] = useState(false);
+
+  const query = useQuery({
+    queryKey: ["salesman-dashboard", userId, period],
+    enabled: Boolean(token && userId),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+    queryFn: async (): Promise<CommissionDashboardData> => {
+      const res = await request<{
+        success?: boolean;
+        message?: string;
+        data?: CommissionDashboardData;
+      }>({
+        path: `/api/salesman/dashboard?period=${encodeURIComponent(period)}`,
+        method: "GET",
+        token,
+      });
+      const body = (res.data || {}) as {
+        success?: boolean;
+        message?: string;
+        data?: CommissionDashboardData;
+      };
+      if (!res.ok || !body?.success || !body.data) {
+        throw new Error(body?.message || "대시보드 조회에 실패했습니다.");
+      }
+      return body.data;
+    },
+  });
 
   useEffect(() => {
-    if (!token) return;
-    setLoading(true);
-    request<{
-      success?: boolean;
-      message?: string;
-      data?: CommissionDashboardData;
-    }>({
-      path: `/api/salesman/dashboard?period=${encodeURIComponent(period)}`,
-      method: "GET",
-      token,
-    })
-      .then((res) => {
-        const body = (res.data || {}) as {
-          success?: boolean;
-          message?: string;
-          data?: CommissionDashboardData;
-        };
-        if (!res.ok || !body?.success) {
-          throw new Error(body?.message || "대시보드 조회에 실패했습니다.");
-        }
-        setData((body.data || null) as CommissionDashboardData | null);
-      })
-      .catch((err: unknown) => {
-        toast({
-          title: "오류",
-          description:
-            err instanceof Error ? err.message : "다시 시도해주세요.",
-          variant: "destructive",
-        });
-      })
-      .finally(() => setLoading(false));
-  }, [toast, token, period]);
+    if (!query.isError) return;
+    const err = query.error;
+    toast({
+      title: "오류",
+      description: err instanceof Error ? err.message : "다시 시도해주세요.",
+      variant: "destructive",
+    });
+  }, [query.error, query.isError, toast]);
 
-  return { data, loading };
+  return { data: query.data ?? null, loading: query.isLoading };
 }

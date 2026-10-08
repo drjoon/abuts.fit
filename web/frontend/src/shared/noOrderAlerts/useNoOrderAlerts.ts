@@ -15,10 +15,14 @@ export function useNoOrderAlerts(
   queryKey: string,
 ) {
   const token = useAuthStore((s) => s.token);
+  const userId = useAuthStore((s) => s.user?.id || "");
 
   return useQuery({
-    queryKey: [queryKey],
-    enabled: Boolean(token),
+    queryKey: [queryKey, userId],
+    enabled: Boolean(token && userId),
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     queryFn: async (): Promise<NoOrderAlertsData> => {
       const res = await apiFetch<{
         success?: boolean;

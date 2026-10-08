@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
 // - 2026-08-19: 기공소 공급 기본값을 고시(1.5만/2.5만)로.
 // - 2026-08-22: 환봉 생산 기본값을 CNC와 동일(1.5만/2.5만)로.
+// - 2026-10-08: 수가 설정은 5분 캐시. 창 포커스마다 다시 읽지 않음.
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -156,7 +157,6 @@ export const useSystemSettings = () => {
       const res = await apiFetch<CreditSettingsApiResponse>({
         path: "/api/credits/settings",
         method: "GET",
-        skipCache: true,
       });
       if (!res.ok) {
         throw new Error("크레딧 설정 조회 실패");
@@ -349,10 +349,11 @@ export const useSystemSettings = () => {
       };
       return { creditSettings } as SystemSettingsData;
     },
+    enabled: Boolean(settingsScopeId),
     retry: false,
-    // 가격 안내는 메모리에 남겨 두지 않고 서버 설정을 다시 읽는다.
-    staleTime: 0,
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
+    // 수가 변경은 관리자 저장의 invalidateQueries가 갱신한다.
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 };
