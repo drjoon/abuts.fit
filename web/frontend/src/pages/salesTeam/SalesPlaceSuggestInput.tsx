@@ -66,8 +66,14 @@ export default function SalesPlaceSuggestInput({
   const listId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
-  /** 선택 직후 value 동기화로 suggest가 다시 열려 드롭다운이 남는 것 방지 */
-  const suppressSuggestRef = useRef(false);
+  /**
+   * 유형·검색 결과를 고른 뒤 목록을 닫아 둔다.
+   * 입력 포커스가 돌아오거나 Strict Mode가 effect를 두 번 돌려도 다시 열지 않는다.
+   * 사용자가 글을 고치면 해제된다.
+   */
+  const closedByPickRef = useRef(false);
+  /** open이 다시 true가 되어도, 고른 뒤에는 목록을 그리지 않는다. */
+  const [lockList, setLockList] = useState(false);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<SalesPlaceSuggest[]>([]);
@@ -90,12 +96,12 @@ export default function SalesPlaceSuggestInput({
   }, [directCommitDisabled]);
 
   useEffect(() => {
+    if (closedByPickRef.current) return;
     if (kindPrompt && value.trim().length >= 2) setOpen(true);
   }, [kindPrompt, value]);
 
   useEffect(() => {
-    if (suppressSuggestRef.current) {
-      suppressSuggestRef.current = false;
+    if (closedByPickRef.current) {
       setItems([]);
       setOpen(false);
       setLoading(false);
@@ -115,7 +121,7 @@ export default function SalesPlaceSuggestInput({
       void salesTeamApi
         .suggestPlaces(token, q)
         .then((res) => {
-          if (reqId !== reqRef.current) return;
+          if (reqId !== reqRef.current || closedByPickRef.current) return;
           const next = (res.items || []).filter((it) =>
             hideRegisteredAccounts ? it.source !== "account" : true,
           );
@@ -124,7 +130,7 @@ export default function SalesPlaceSuggestInput({
           setOpen(true);
         })
         .catch(() => {
-          if (reqId !== reqRef.current) return;
+          if (reqId !== reqRef.current || closedByPickRef.current) return;
           setItems([]);
           setOpen(true);
         })
@@ -154,14 +160,18 @@ export default function SalesPlaceSuggestInput({
     el?.scrollIntoView({ block: "nearest" });
   }, [active, open]);
 
-  const pick = (item: SalesPlaceSuggest) => {
-    suppressSuggestRef.current = true;
+  const closeAfterPick = () => {
+    closedByPickRef.current = true;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     reqRef.current += 1;
+    setLockList(true);
     setOpen(false);
     setItems([]);
     setLoading(false);
-    onChange(item.name);
+  };
+
+  const pick = (item: SalesPlaceSuggest) => {
+    closeAfterPick();
     onPick(item);
   };
 
@@ -171,20 +181,55 @@ export default function SalesPlaceSuggestInput({
     const item = manualPlaceSuggest(name, kind);
     if (onDirectCommit) {
       committingRef.current = true;
-      suppressSuggestRef.current = true;
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      reqRef.current += 1;
-      setOpen(false);
-      setItems([]);
-      setLoading(false);
+      closeAfterPick();
       onDirectCommit(item);
       return;
     }
     pick(item);
   };
 
+  const handledPointerRef = useRef(0);
+  const pickRef = useRef(pick);
+  const commitManualRef = useRef(commitManual);
+  const visibleItemsRef = useRef(visibleItems);
+  pickRef.current = pick;
+  commitManualRef.current = commitManual;
+  visibleItemsRef.current = visibleItems;
+
+  const takePointer = (event: { timeStamp: number; preventDefault: () => void }) => {
+    if (handledPointerRef.current === event.timeStamp) return false;
+    handledPointerRef.current = event.timeStamp;
+    event.preventDefault();
+    return true;
+  };
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!open || lockList || !list) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const kindEl = target.closest("[data-place-kind]");
+      if (kindEl) {
+        const kind = kindEl.getAttribute("data-place-kind");
+        if (kind !== "practice" && kind !== "lab") return;
+        if (!takePointer(event)) return;
+        commitManualRef.current(kind);
+        return;
+      }
+      const option = target.closest("[data-suggest-idx]");
+      if (!option) return;
+      const item = visibleItemsRef.current[Number(option.getAttribute("data-suggest-idx"))];
+      if (!item || !takePointer(event)) return;
+      pickRef.current(item);
+    };
+    list.addEventListener("pointerdown", onPointerDown, true);
+    return () => list.removeEventListener("pointerdown", onPointerDown, true);
+  }, [open, lockList]);
+
   const clear = () => {
-    suppressSuggestRef.current = true;
+    closedByPickRef.current = false;
+    setLockList(false);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     reqRef.current += 1;
     setOpen(false);
@@ -195,7 +240,15 @@ export default function SalesPlaceSuggestInput({
   };
 
   return (
-    <div ref={rootRef} className={cn("relative", className)}>
+    <div
+      ref={rootRef}
+      className={cn("relative", className)}
+      onMouseDown={(e) => {
+        const el = e.target;
+        if (!(el instanceof Element) || !el.closest("[role='listbox']")) return;
+        e.preventDefault();
+      }}
+    >
       <div className="relative">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
         <Input
@@ -208,11 +261,14 @@ export default function SalesPlaceSuggestInput({
           placeholder={placeholder}
           className={cn("pl-8 pr-9", inputClassName)}
           onChange={(e) => {
-            suppressSuggestRef.current = false;
+            if (e.target.value === value) return;
+            closedByPickRef.current = false;
+            setLockList(false);
             onChange(e.target.value);
             setOpen(true);
           }}
           onFocus={() => {
+            if (closedByPickRef.current) return;
             if (value.trim().length >= 2) setOpen(true);
           }}
           onCompositionEnd={() => {
@@ -273,11 +329,15 @@ export default function SalesPlaceSuggestInput({
           </button>
         ) : null}
       </div>
-      {open && value.trim().length >= 2 ? (
+      {open && !lockList && value.trim().length >= 2 ? (
         <ul
           ref={listRef}
           id={listId}
           role="listbox"
+          onMouseDown={(e) => {
+            // 입력 블러로 목록이 먼저 닫히면 첫 클릭이 유형 버튼에 닿지 않는다.
+            e.preventDefault();
+          }}
           className={cn(
             listMode === "inline"
               ? "relative z-10 mt-2 max-h-64 w-full overflow-auto rounded-xl border border-slate-200 bg-white px-1.5 py-1.5 shadow-sm"
@@ -300,7 +360,10 @@ export default function SalesPlaceSuggestInput({
                     idx === active && "bg-primary-soft/40",
                   )}
                   onMouseEnter={() => setActive(idx)}
-                  onClick={() => pick(item)}
+                  onPointerDown={(e) => {
+                    if (!takePointer(e)) return;
+                    pick(item);
+                  }}
                 >
                   <span className="flex items-center gap-1.5 font-medium text-slate-900">
                     <span className="truncate">{item.name}</span>
@@ -364,12 +427,12 @@ export default function SalesPlaceSuggestInput({
                     key={kind}
                     type="button"
                     className="h-8 flex-1 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+                    data-place-kind={kind}
                     disabled={directCommitDisabled}
-                    onMouseDown={(e) => {
-                      e.stopPropagation();
+                    onPointerDown={(e) => {
+                      if (!takePointer(e)) return;
                       commitManual(kind);
                     }}
-                    onClick={(e) => e.preventDefault()}
                   >
                     {onDirectCommit
                       ? KIND_LABEL[kind]

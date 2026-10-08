@@ -544,7 +544,9 @@ export default function SalesRequirementsPage() {
                 value={placeQuery}
                 onChange={(v) => {
                   setPlaceQuery(v);
-                  setPickedPlace(null);
+                  setPickedPlace((prev) =>
+                    prev && prev.name.trim() === v.trim() ? prev : null,
+                  );
                 }}
                 onPick={(item) => {
                   setPickedPlace(item);
