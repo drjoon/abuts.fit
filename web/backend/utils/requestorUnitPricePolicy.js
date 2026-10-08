@@ -53,6 +53,69 @@ export function computeDealerCommission(salePrice) {
 }
 
 /**
+ * 견적 한 건의 딜러 수수료(부가세 포함).
+ * 생산 판매가 합계 = 청구액 − 신속비 − 디자인비. 수량은 abutmentQty(없으면 1).
+ * 청구액은 paidAmount가 있으면 그 값, 없으면 amount.
+ */
+export function dealerCommissionFromQuotedPrice(price) {
+  const src = price && typeof price === "object" ? price : {};
+  const paid = src.paidAmount;
+  const gross =
+    paid == null || paid === ""
+      ? Math.max(0, Math.round(Number(src.amount) || 0))
+      : Math.max(0, Math.round(Number(paid) || 0));
+  const express =
+    String(src.expressFeeStatus || "") === "cancelled"
+      ? 0
+      : Math.max(0, Math.round(Number(src.expressFee) || 0));
+  const design = Math.max(0, Math.round(Number(src.designFee) || 0));
+  const production = Math.max(0, gross - express - design);
+  const qtyRaw = Math.floor(Number(src.abutmentQty) || 0);
+  const qty = qtyRaw > 0 ? qtyRaw : 1;
+  const unitSale = production / qty;
+  return (
+    Math.max(0, Math.round(unitSale - REQUESTOR_UNIT_PRICE_DEALER_SUPPLY)) * qty
+  );
+}
+
+/** 집계 파이프라인용. 문서의 price.* 와 dealerCommissionFromQuotedPrice 가 같다. */
+export function dealerCommissionMongoExpr() {
+  const gross = {
+    $ifNull: ["$price.paidAmount", { $ifNull: ["$price.amount", 0] }],
+  };
+  const express = {
+    $cond: [
+      { $eq: ["$price.expressFeeStatus", "cancelled"] },
+      0,
+      { $max: [0, { $ifNull: ["$price.expressFee", 0] }] },
+    ],
+  };
+  const design = { $max: [0, { $ifNull: ["$price.designFee", 0] }] };
+  const qty = {
+    $cond: [
+      { $gt: [{ $ifNull: ["$price.abutmentQty", 0] }, 0] },
+      { $ifNull: ["$price.abutmentQty", 1] },
+      1,
+    ],
+  };
+  const production = {
+    $max: [0, { $subtract: [gross, { $add: [express, design] }] }],
+  };
+  const perUnit = {
+    $max: [
+      0,
+      {
+        $round: [
+          { $subtract: [{ $divide: [production, qty] }, REQUESTOR_UNIT_PRICE_DEALER_SUPPLY] },
+          0,
+        ],
+      },
+    ],
+  };
+  return { $multiply: [perUnit, qty] };
+}
+
+/**
  * @param {{ dealerUnitPrice?: number|null }} [input]
  * @returns {{ unitPrice: number, discountAmount: number, rule: "dealer_price"|"base_price", introEndsYmd: null }}
  */

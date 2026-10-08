@@ -5,6 +5,7 @@
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import Request from "../../models/request.model.js";
+import { dealerCommissionMongoExpr } from "../../utils/requestorUnitPricePolicy.js";
 
 const REFERRAL_LEADER_ROLES = ["requestor", "salesman", "devops"];
 const REFERRAL_CHILD_ROLES = ["requestor", "salesman", "devops"];
@@ -36,6 +37,7 @@ export async function buildReferralLeaderAggregation({
     ordersByBusinessAnchorId: new Map(),
     revenueByBusinessAnchorId: new Map(),
     bonusByBusinessAnchorId: new Map(),
+    commissionByBusinessAnchorId: new Map(),
     requestorBusinessStatsByBusinessAnchorId: new Map(),
   };
 
@@ -156,6 +158,7 @@ export async function buildReferralLeaderAggregation({
                 ],
               },
             },
+            commissionAmount: { $sum: dealerCommissionMongoExpr() },
           },
         },
       ])
@@ -222,6 +225,7 @@ export async function buildReferralLeaderAggregation({
                 ],
               },
             },
+            commissionAmount: { $sum: dealerCommissionMongoExpr() },
           },
         },
       ])
@@ -248,6 +252,12 @@ export async function buildReferralLeaderAggregation({
       requestRows.map((row) => [
         String(row?._id || ""),
         Number(row?.bonusAmount || 0),
+      ]),
+    ),
+    commissionByBusinessAnchorId: new Map(
+      requestRows.map((row) => [
+        String(row?._id || ""),
+        Number(row?.commissionAmount || 0),
       ]),
     ),
     requestorBusinessStatsByBusinessAnchorId: new Map(

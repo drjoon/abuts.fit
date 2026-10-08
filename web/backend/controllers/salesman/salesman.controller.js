@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/components/CommissionLedgerInline.tsx
 // - web/frontend/src/shared/components/SalesmanLedgerModal.tsx
 // change-log:
+// - 2026-10-09: 딜러 대시보드 수수료 = 거래처 판매가 − 1만원. 지급 완료는 장부 PAYOUT.
 // - 2026-10-09: 거래처 판매가 목록에 연락처·구강스캔을 실어 거래처 카드에서 입력한다.
 // - 2026-10-05: 딜러 대시보드 — 심플웨이(스토어) 수수료 지급 없음. 커스텀어벗만.
 // - 2026-09-27: 딜러 대시보드 — 심플웨이(배송비 제외 10%)·커스텀어벗 수수료를 나눠 반환.
@@ -26,12 +27,12 @@ import { getPlatformSocialProof } from "../../services/platformGrowthStats.servi
 import { listNoOrderAlerts } from "../../services/noOrderAlerts.service.js";
 import {
   resolveDealershipCommissionPolicy,
-  resolveDealershipRateForAcquiredAt,
 } from "../../services/creditRevenuePolicy.service.js";
 import {
   validateDealerUnitPrice,
   REQUESTOR_UNIT_PRICE_BASE,
   REQUESTOR_UNIT_PRICE_MIN,
+  dealerCommissionMongoExpr,
 } from "../../utils/requestorUnitPricePolicy.js";
 import { invalidateRequestorUnitPriceCache } from "../../services/requestorUnitPrice.service.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
@@ -553,6 +554,15 @@ export async function getSalesmanDashboard(req, res) {
               ],
             },
           },
+          payoutAmount: {
+            $sum: {
+              $cond: [
+                { $eq: ["$eventType", "SETTLEMENT_PAYOUT"] },
+                { $abs: "$baseAmount" },
+                0,
+              ],
+            },
+          },
         },
       },
     ]);
@@ -560,6 +570,9 @@ export async function getSalesmanDashboard(req, res) {
     const freeNetRequestAmount = roundMoney(Number(freeBreakdownRow?.freeRequestAmount || 0));
     const freeNetShippingAmount = roundMoney(Number(freeBreakdownRow?.freeShippingAmount || 0));
     const freeNetAmount = roundMoney(freeNetRequestAmount + freeNetShippingAmount);
+    const paidNetCommissionAmount = roundMoney(
+      Number(freeBreakdownRow?.payoutAmount || 0),
+    );
 
     const referredRequestors = await BusinessAnchor.find({
       referredByAnchorId: myBusinessAnchorObjectId,
@@ -571,7 +584,6 @@ export async function getSalesmanDashboard(req, res) {
         requestorKind: 1,
         name: 1,
         referralAssignedAt: 1,
-        dealershipCommissionRate: 1,
       })
       .lean();
 
@@ -591,7 +603,6 @@ export async function getSalesmanDashboard(req, res) {
             requestorKind: 1,
             name: 1,
             referralAssignedAt: 1,
-            dealershipCommissionRate: 1,
           })
           .lean()
       : [];
@@ -606,10 +617,6 @@ export async function getSalesmanDashboard(req, res) {
       requestorMetaById.set(idStr, {
         createdAt: row?.createdAt || null,
         referralAssignedAt: row?.referralAssignedAt || null,
-        dealershipCommissionRate:
-          row?.dealershipCommissionRate != null
-            ? Number(row.dealershipCommissionRate)
-            : null,
         requestorKind:
           row?.requestorKind === "lab" || row?.requestorKind === "practice"
             ? row.requestorKind
@@ -662,7 +669,7 @@ export async function getSalesmanDashboard(req, res) {
             unaffiliatedCommissionAmount: 0,
             totalCommissionAmount: 0,
             payableGrossCommissionAmount: 0,
-            paidNetCommissionAmount: roundMoney(totalCommissionAmount),
+            paidNetCommissionAmount,
             freeNetRequestAmount,
             freeNetShippingAmount,
             freeNetAmount,
@@ -733,6 +740,7 @@ export async function getSalesmanDashboard(req, res) {
               },
             },
             orderCount: { $sum: 1 },
+            commissionAmount: { $sum: dealerCommissionMongoExpr() },
           },
         },
       ]);
@@ -749,6 +757,12 @@ export async function getSalesmanDashboard(req, res) {
         Number(r.orderCount || 0),
       ]),
     );
+    const commissionByOrgId = new Map(
+      (revenueRows || []).map((r) => [
+        String(r._id),
+        Number(r.commissionAmount || 0),
+      ]),
+    );
 
     const organizations = organizationAnchorIds
       .map((id) => {
@@ -761,22 +775,19 @@ export async function getSalesmanDashboard(req, res) {
         const isUnaffiliated = unaffiliatedOrgIdSet.has(idStr);
         let commissionRateForOrg = commissionRate;
         let commissionTier = String(Math.round(commissionRate * 100));
+        let commissionAmount;
         if (isUnaffiliated) {
           commissionRateForOrg = unaffiliatedCommissionRate;
           commissionTier = String(Math.round(commissionRateForOrg * 100));
-        } else if (!isDevops) {
-          const acquiredAt = meta.referralAssignedAt || meta.createdAt;
-          const resolved = resolveDealershipRateForAcquiredAt(
-            acquiredAt,
-            dealershipPolicy,
-            meta.dealershipCommissionRate,
-          );
-          commissionRateForOrg = resolved.rate;
-          commissionTier = resolved.tier;
+          commissionAmount = roundMoney(revenueAmount * commissionRateForOrg);
+        } else if (isDevops) {
+          commissionAmount = roundMoney(revenueAmount * commissionRateForOrg);
+        } else {
+          // 딜러: 거래처 판매가 − 1만원. 유치 요율은 쓰지 않는다.
+          commissionRateForOrg = null;
+          commissionTier = null;
+          commissionAmount = roundMoney(commissionByOrgId.get(idStr) || 0);
         }
-        const commissionAmount = roundMoney(
-          revenueAmount * commissionRateForOrg,
-        );
 
         return {
           businessAnchorId: idStr,
@@ -862,7 +873,7 @@ export async function getSalesmanDashboard(req, res) {
           unaffiliatedCommissionAmount,
           totalCommissionAmount: roundMoney(totalCommissionAmount),
           payableGrossCommissionAmount,
-          paidNetCommissionAmount: 0,
+          paidNetCommissionAmount,
           freeNetRequestAmount,
           freeNetShippingAmount,
           freeNetAmount,

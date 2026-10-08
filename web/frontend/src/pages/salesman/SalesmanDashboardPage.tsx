@@ -2,8 +2,9 @@
  * 딜러(salesman) 대시보드 — 수수료·소개 코드.
  *
  * 딜러 수수료: 거래처 판매가(1.2~1.5만) − 1만원. 판매가는 거래처 페이지에서 정한다.
+ * 지급 완료는 기간 장부 지급액이다.
  * 90일 무주문이면 소개 코드 리셋. 누구든 다시 영업 가능.
- * 의뢰자 정책: 치과 / 기공소 탭(단일가 1.5만).
+ * 의뢰자 정책: 치과·기공소 공통(기공소 리메이크 안내, 단일가 1.5만).
  */
 
 import { useState, type ReactNode } from "react";
@@ -27,7 +28,6 @@ import {
 import {
   Copy,
   BadgeCheck,
-  CalendarClock,
   Layers,
   Percent,
   Building2,
@@ -65,7 +65,6 @@ import {
 } from "@/shared/settlement/settlementUi";
 import { ProductCommissionLines } from "@/features/commission/ProductCommissionLines";
 import { cn } from "@/shared/ui/cn";
-import { formatKstYmdToKo, toKstYmd } from "@/shared/date/kst";
 
 /** 소개 코드·수수료·의뢰자 카드를 같은 칸으로 맞춘다. */
 const DASHBOARD_CARD_GRID_CLASS =
@@ -116,11 +115,6 @@ export const SalesmanDashboardPage = () => {
   const overview = (data?.overview || {}) as NonNullable<
     ReturnType<typeof useCommissionDashboard>["data"]
   >["overview"];
-
-  const rateChangeMessage = formatDealershipRateChangeMessage({
-    scheduledAt: data?.dealershipRateChangeScheduledAt,
-    scheduledRate: data?.dealershipRateChangeScheduledRate,
-  });
 
   const payableGross = Number(
     overview.payableGrossCommissionAmount ||
@@ -248,23 +242,6 @@ export const SalesmanDashboardPage = () => {
         }
         topSection={
           <div className="space-y-3 px-1">
-            {rateChangeMessage ? (
-              <div className="flex items-start gap-2.5 rounded-2xl border border-amber-200/80 bg-amber-50/60 px-3.5 py-3 shadow-sm sm:px-4">
-                <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
-                  <CalendarClock className="h-4 w-4" />
-                </span>
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-amber-950">
-                    신규 유치 요율 변경 예정
-                  </div>
-                  <p className="mt-0.5 text-sm leading-relaxed text-amber-900/80">
-                    {rateChangeMessage.first}
-                    <br />
-                    {rateChangeMessage.second}
-                  </p>
-                </div>
-              </div>
-            ) : null}
             <NoOrderAlertBanner
               data={noOrderAlertsData}
               loading={noOrderAlertsLoading}
@@ -351,29 +328,6 @@ export const SalesmanDashboardPage = () => {
     </TooltipProvider>
   );
 };
-
-function formatDealershipRateChangeMessage({
-  scheduledAt,
-  scheduledRate,
-}: {
-  scheduledAt?: string | Date | null;
-  scheduledRate?: number | null;
-}): { first: string; second: string } | null {
-  if (!scheduledAt || scheduledRate == null) return null;
-  const ymd = toKstYmd(scheduledAt);
-  if (!ymd) return null;
-  const applyAt = new Date(`${ymd}T00:00:00+09:00`);
-  if (Number.isNaN(applyAt.getTime()) || Date.now() >= applyAt.getTime()) {
-    return null;
-  }
-  const pct = Math.round(Number(scheduledRate) * 100);
-  if (!Number.isFinite(pct) || pct < 0) return null;
-  const dateLabel = formatKstYmdToKo(ymd).replace(/\.$/, "");
-  return {
-    first: `${dateLabel} 0시부터 신규 유치 요율이 ${pct}%로 변경됩니다.`,
-    second: "이미 유치한 의뢰자는 기존 요율이 유지됩니다.",
-  };
-}
 
 function DealershipTermsCard({
   onOpenSplit,

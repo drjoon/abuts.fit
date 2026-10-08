@@ -6,6 +6,7 @@ import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { Types } from "mongoose";
+import { dealerCommissionMongoExpr } from "../../utils/requestorUnitPricePolicy.js";
 
 function normalizeObjectIdString(value) {
   const id = String(value || "").trim();
@@ -27,6 +28,7 @@ function buildRevenueRowMap(rows) {
         revenueAmount: Math.round(Number(row?.revenueAmount || 0)),
         bonusAmount: Math.round(Number(row?.bonusAmount || 0)),
         orderCount: Math.round(Number(row?.orderCount || 0)),
+        commissionAmount: Math.round(Number(row?.commissionAmount || 0)),
       },
     ]),
   );
@@ -190,6 +192,7 @@ export async function buildSalesmanReferralAggregation({ salesmanIds, range }) {
             },
             bonusAmount: { $sum: { $ifNull: ["$price.bonusAmount", 0] } },
             orderCount: { $sum: 1 },
+            commissionAmount: { $sum: dealerCommissionMongoExpr() },
           },
         },
       ])

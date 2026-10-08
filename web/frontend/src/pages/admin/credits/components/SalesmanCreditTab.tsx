@@ -84,12 +84,6 @@ export function SalesmanCreditTab({
   };
 
   const loading = loadingSalesmanOverview;
-  const commissionRate = (() => {
-    const base = Number(summaryForView.totalReferredRevenue30d || 0);
-    const comm = Number(summaryForView.totalEarned || 0);
-    if (base <= 0) return "-";
-    return `${((comm / base) * 100).toFixed(1)}%`;
-  })();
 
   return (
     <TabsContent value="salesman" className="space-y-4">
@@ -122,7 +116,7 @@ export function SalesmanCreditTab({
         <CreditStatTile
           label="수수료"
           value={loading ? "…" : won(summaryForView.totalEarned)}
-          hint={<>수수료율 {commissionRate}</>}
+          hint={<>판매가 − 1만원</>}
         />
         <CreditStatTile
           label="기간 잔액"

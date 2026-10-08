@@ -388,7 +388,7 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
     earnedAmount - paidOutAmount + adjustedAmount,
   );
 
-  const { directOrgIdsBySalesmanId, revenueByOrgId } =
+  const { directOrgIdsBySalesmanId, revenueByOrgId, salesmenById } =
     await buildSalesmanReferralAggregation({
       salesmanIds,
       range,
@@ -409,12 +409,17 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
   }
 
   let directAmount = 0;
-  for (const orgSet of directOrgIdsBySalesmanId.values()) {
+  for (const [salesmanId, orgSet] of directOrgIdsBySalesmanId) {
+    const role = String(salesmenById.get(String(salesmanId))?.role || "");
     let rev = 0;
+    let commission = 0;
     for (const oid of orgSet) {
-      rev += Number(revenueByOrgId.get(String(oid))?.revenueAmount || 0);
+      const row = revenueByOrgId.get(String(oid));
+      rev += Number(row?.revenueAmount || 0);
+      commission += Number(row?.commissionAmount || 0);
     }
-    directAmount += rev * commissionRate;
+    // 딜러는 판매가 − 1만원. 개발운영은 기존 요율.
+    directAmount += role === "devops" ? rev * commissionRate : commission;
   }
 
   const totalAmount = normalizeNumber(directAmount);
@@ -2132,18 +2137,23 @@ export async function adminGetSalesmanCredits(req, res) {
       let directRevenue30d = 0;
       let directBonus30d = 0;
       let directOrders30d = 0;
+      let directCommission30d = 0;
       for (const orgId of directOrgSet) {
         const row = revenueByOrgId.get(String(orgId));
         if (!row) continue;
         directRevenue30d += Number(row.revenueAmount || 0);
         directBonus30d += Number(row.bonusAmount || 0);
         directOrders30d += Number(row.orderCount || 0);
+        directCommission30d += Number(row.commissionAmount || 0);
       }
 
       const revenue30d = directRevenue30d;
       const bonus30d = directBonus30d;
       const orders30d = directOrders30d;
-      const commission30d = Math.round(directRevenue30d * commissionRate);
+      const commission30d =
+        ownerRole === "devops"
+          ? Math.round(directRevenue30d * commissionRate)
+          : Math.round(directCommission30d);
       const anchorId = String(s?.businessAnchorId || "");
       const anchor = anchorById.get(anchorId) || null;
 

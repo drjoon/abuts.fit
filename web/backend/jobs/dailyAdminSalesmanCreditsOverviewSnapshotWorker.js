@@ -29,6 +29,7 @@ import {
   getLast30DaysRangeUtc,
 } from "../utils/krBusinessDays.js";
 import { resolveMongoUri } from "../utils/mongoUri.js";
+import { dealerCommissionMongoExpr } from "../utils/requestorUnitPricePolicy.js";
 
 const PERIOD_KEY = "30d";
 const REFERRAL_LEADER_ROLES = ["salesman", "devops"];
@@ -280,6 +281,7 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
                 $sum: { $ifNull: ["$price.bonusAmount", 0] },
               },
               orderCount: { $sum: 1 },
+              commissionAmount: { $sum: dealerCommissionMongoExpr() },
             },
           },
         ]);
@@ -291,6 +293,7 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
         paid: normalizeNumber(r.paidRevenueAmount || 0),
         bonus: normalizeNumber(r.bonusRevenueAmount || 0),
         orders: normalizeNumber(r.orderCount || 0),
+        commission: normalizeNumber(r.commissionAmount || 0),
       },
     ]),
   );
@@ -306,14 +309,27 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
     totalOrders += row.orders;
   }
 
-  // 전체 수수료(유료 매출 기준) - 1단계 소개 10% 단일 수수료
+  // 딜러 수수료 = 판매가 − 1만원. 개발운영 소개분은 기존 10%.
+  const roleByAnchorId = new Map(
+    (salesmanUsers || []).map((u) => [
+      String(u?.businessAnchorId || ""),
+      String(u?.role || ""),
+    ]),
+  );
   let commissionTotal = 0;
-  for (const [, orgSet] of directOrgIdsBySalesmanBusinessAnchorId.entries()) {
-    let paid = 0;
-    for (const oid of orgSet) {
-      paid += Number(revenueByOrgId.get(String(oid))?.paid || 0);
+  for (const [anchorId, orgSet] of directOrgIdsBySalesmanBusinessAnchorId.entries()) {
+    const role = roleByAnchorId.get(String(anchorId));
+    if (role === "devops") {
+      let paid = 0;
+      for (const oid of orgSet) {
+        paid += Number(revenueByOrgId.get(String(oid))?.paid || 0);
+      }
+      commissionTotal += paid * commissionRate;
+      continue;
     }
-    commissionTotal += paid * commissionRate;
+    for (const oid of orgSet) {
+      commissionTotal += Number(revenueByOrgId.get(String(oid))?.commission || 0);
+    }
   }
 
   const totalCommissionAmount = normalizeNumber(commissionTotal);

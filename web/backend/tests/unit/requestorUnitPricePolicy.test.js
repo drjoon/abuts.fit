@@ -4,6 +4,7 @@ import {
   resolveRequestorUnitPrice,
   validateDealerUnitPrice,
   computeDealerCommission,
+  dealerCommissionFromQuotedPrice,
 } from "../../utils/requestorUnitPricePolicy.js";
 
 describe("requestorUnitPricePolicy", () => {
@@ -31,5 +32,30 @@ describe("requestorUnitPricePolicy", () => {
   test("딜러 수수료 = 판매가 − 1만원", () => {
     expect(computeDealerCommission(13000)).toBe(3000);
     expect(computeDealerCommission(15000)).toBe(5000);
+  });
+
+  test("견적 수수료는 생산 판매가와 수량으로 계산한다", () => {
+    expect(dealerCommissionFromQuotedPrice({ amount: 13500 })).toBe(3500);
+    expect(
+      dealerCommissionFromQuotedPrice({ amount: 27000, abutmentQty: 2 }),
+    ).toBe(7000);
+    expect(
+      dealerCommissionFromQuotedPrice({
+        amount: 18500,
+        designFee: 5000,
+        expressFee: 0,
+      }),
+    ).toBe(3500);
+    expect(
+      dealerCommissionFromQuotedPrice({
+        amount: 15500,
+        expressFee: 2000,
+        expressFeeStatus: "charged",
+      }),
+    ).toBe(3500);
+    expect(dealerCommissionFromQuotedPrice({ amount: 10000 })).toBe(0);
+    expect(
+      dealerCommissionFromQuotedPrice({ paidAmount: null, amount: 12000 }),
+    ).toBe(2000);
   });
 });

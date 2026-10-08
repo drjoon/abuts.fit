@@ -11,6 +11,7 @@ import { getLast30DaysRangeUtc } from "../requests/utils.js";
 import { getTodayYmdInKst, toKstYmd } from "../../utils/krBusinessDays.js";
 import { computeVolumeEffectiveUnitPrice } from "./admin.shared.controller.js";
 import { buildReferralLeaderAggregation } from "./adminReferral.aggregation.js";
+import { dealerCommissionMongoExpr } from "../../utils/requestorUnitPricePolicy.js";
 import {
   getDirectReferralCircleAnchorIds,
   recomputePricingReferralSnapshotForLeaderAnchorId,
@@ -273,6 +274,7 @@ export async function getReferralGroups(req, res) {
       childBusinessAnchorIdsByLeaderBusinessAnchorId,
       revenueByBusinessAnchorId,
       bonusByBusinessAnchorId,
+      commissionByBusinessAnchorId,
       requestorBusinessStatsByBusinessAnchorId,
       directChildren,
     } = await buildReferralLeaderAggregation({
@@ -388,7 +390,7 @@ export async function getReferralGroups(req, res) {
 
       const effectiveUnitPrice =
         computeVolumeEffectiveUnitPrice(groupTotalOrders);
-      // rules.md 2.4 기준: 소개 수수료는 devops/salesman 모두 10%
+      // 딜러 수수료 = 판매가 − 1만원. 개발운영은 앵커 요율.
       const leaderCommissionRate =
         role === "devops"
           ? Number(
@@ -396,9 +398,26 @@ export async function getReferralGroups(req, res) {
                 ?.devopsRate || 0.1,
             )
           : 0.1;
-      const commissionAmount = REFERRAL_COMMISSION_LEADER_ROLES.has(role)
-        ? Math.round(groupRevenueAmount * leaderCommissionRate)
-        : 0;
+      const commissionAmount =
+        role === "salesman"
+          ? Math.round(
+              Number(
+                commissionByBusinessAnchorId.get(leaderBusinessAnchorId) || 0,
+              ) +
+                fallbackChildBusinessAnchorIds.reduce(
+                  (acc, businessAnchorId) =>
+                    acc +
+                    Number(
+                      commissionByBusinessAnchorId.get(
+                        String(businessAnchorId),
+                      ) || 0,
+                    ),
+                  0,
+                ),
+            )
+          : REFERRAL_COMMISSION_LEADER_ROLES.has(role)
+            ? Math.round(groupRevenueAmount * leaderCommissionRate)
+            : 0;
 
       return {
         leader,
@@ -825,6 +844,9 @@ export async function getReferralGroupTree(req, res) {
                   lastMonthPaidRevenue: {
                     $sum: { $ifNull: ["$price.paidAmount", 0] },
                   },
+                  lastMonthDealerCommission: {
+                    $sum: dealerCommissionMongoExpr(),
+                  },
                   lastMonthBonusRevenue: {
                     $sum: { $ifNull: ["$price.bonusAmount", 0] },
                   },
@@ -841,6 +863,7 @@ export async function getReferralGroupTree(req, res) {
             lastMonthPaidOrders: Number(row.lastMonthPaidOrders || 0),
             lastMonthBonusOrders: Number(row.lastMonthBonusOrders || 0),
             lastMonthPaidRevenue: Number(row.lastMonthPaidRevenue || 0),
+            lastMonthDealerCommission: Number(row.lastMonthDealerCommission || 0),
             lastMonthBonusRevenue: Number(row.lastMonthBonusRevenue || 0),
           },
         ]),
@@ -881,6 +904,10 @@ export async function getReferralGroupTree(req, res) {
           lastMonthPaidRevenue: Number(
             businessStatsByBusinessAnchorId.get(businessAnchorId)
               ?.lastMonthPaidRevenue || 0,
+          ),
+          lastMonthDealerCommission: Number(
+            businessStatsByBusinessAnchorId.get(businessAnchorId)
+              ?.lastMonthDealerCommission || 0,
           ),
           lastMonthBonusRevenue: Number(
             businessStatsByBusinessAnchorId.get(businessAnchorId)
@@ -933,12 +960,13 @@ export async function getReferralGroupTree(req, res) {
         const directChildren = Array.isArray(rootNode.children)
           ? rootNode.children
           : [];
+        const dealerRoot = String(rootNode.role || "") === "salesman";
         let commissionAmount = 0;
         for (const child of directChildren) {
           if (String(child?.role || "") !== "requestor") continue;
-          commissionAmount += Math.round(
-            Number(child?.lastMonthPaidRevenue || 0) * 0.1,
-          );
+          commissionAmount += dealerRoot
+            ? Math.round(Number(child?.lastMonthDealerCommission || 0))
+            : Math.round(Number(child?.lastMonthPaidRevenue || 0) * 0.1);
         }
         rootNode.commissionAmount = Number(commissionAmount || 0);
       }
