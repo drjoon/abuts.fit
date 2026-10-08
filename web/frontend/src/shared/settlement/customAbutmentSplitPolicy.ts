@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-08: 딜러 구간 역전 — ~1천 20% · ~2천 18% · ~3천 16% · ~4천 14% · ~5천 12% · 5천1~ 10%.
 // - 2026-10-07: 제조사 몫 49.5%(부가세 포함) 고정. 어벗츠 40% 대안안 폐기.
 // - 2026-10-07: 딜러 누진 — ~1천 10% · ~2천 12% · ~4천 14% · ~6천 16% · ~9천 18% · 9천1~ 20%.
 // - 2026-10-07: 의뢰비 단가 파라미터(1만·1.3만). 딜러 표 탭용.
@@ -25,12 +26,12 @@ export type SplitMarginalBand = {
 };
 
 export const DEALER_MARGINAL_BANDS: ReadonlyArray<SplitMarginalBand> = [
-  { fromQty: 1, toQty: 1_000, pct: 10 },
-  { fromQty: 1_001, toQty: 2_000, pct: 12 },
-  { fromQty: 2_001, toQty: 4_000, pct: 14 },
-  { fromQty: 4_001, toQty: 6_000, pct: 16 },
-  { fromQty: 6_001, toQty: 9_000, pct: 18 },
-  { fromQty: 9_001, toQty: null, pct: 20 },
+  { fromQty: 1, toQty: 1_000, pct: 20 },
+  { fromQty: 1_001, toQty: 2_000, pct: 18 },
+  { fromQty: 2_001, toQty: 3_000, pct: 16 },
+  { fromQty: 3_001, toQty: 4_000, pct: 14 },
+  { fromQty: 4_001, toQty: 5_000, pct: 12 },
+  { fromQty: 5_001, toQty: null, pct: 10 },
 ];
 
 export function manufacturerMarginalPctForDealerPct(dealerPct: number): number {

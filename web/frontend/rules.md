@@ -234,7 +234,7 @@ Notes:
       - `src/features/platform/PlatformBenefitsShareButtons.tsx` (안내+링크 클립보드 복사)
   - 의뢰자(치과) 설정: 구독 탭 없음. 구 `?tab=subscription` → 계정. 대시보드 헤더는 `[정책 안내]`만.
     - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx`
-    - `src/shared/ui/PricingPolicyDialog.tsx` — 런칭 이벤트 1.3만 / 정상가 1.5만. **택배 묶음 출고** 1박스당 3,500원. **딜리버리 익일 도착** 월 5.5만원(VAT 포함) 정액(자정까지 주문 → 익일 기공소·치과 도착). 치과·기공소·딜러·영업팀 `requestor`: 플랫폼 사용료·하청 수수료 안내 없음(미부과). **딜러(`variant=salesman`)**: 커스텀어벗 10~20% 누적 구간 · 스토어(심플웨이)·기공 제외 · 90일 무주문이면 소개 코드 리셋(누구든 다시 영업 가능). 모달 폭 `sm:max-w-[52rem]`. **「의뢰자 정책」(`variant=requestor`)**: 딜러 대시보드·영업팀 성과 — **치과/기공소 탭**. 치과=런칭 이벤트 단일가·리메이크「어벗츠에」건당 1만원. 기공소=주문량 의뢰비(가입 90일 1만원·이후 30일 스냅샷)·그룹할인(소개 그룹 주문량 합산)·리메이크 어벗츠로부터/어벗츠로.
+    - `src/shared/ui/PricingPolicyDialog.tsx` — 런칭 이벤트 1.3만 / 정상가 1.5만. **택배 묶음 출고** 1박스당 3,500원. **딜리버리 익일 도착** 월 5.5만원(VAT 포함) 정액(자정까지 주문 → 익일 기공소·치과 도착). 치과·기공소·딜러·영업팀 `requestor`: 플랫폼 사용료·하청 수수료 안내 없음(미부과). **딜러(`variant=salesman`)**: 커스텀어벗 20→10% 구간(~1천 20% · ~2천 18% · ~3천 16% · ~4천 14% · ~5천 12% · 5천1~ 10%) · 스토어(심플웨이)·기공 제외 · 90일 무주문이면 소개 코드 리셋(누구든 다시 영업 가능). 모달 폭 `sm:max-w-[52rem]`. **「의뢰자 정책」(`variant=requestor`)**: 딜러 대시보드·영업팀 성과 — **치과/기공소 탭**. 치과=런칭 이벤트 단일가·리메이크「어벗츠에」건당 1만원. 기공소=주문량 의뢰비(가입 90일 1만원·이후 30일 스냅샷)·그룹할인(소개 그룹 주문량 합산)·리메이크 어벗츠로부터/어벗츠로.
     - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 정상가 **1.5만원** · 런칭 **1.3만원**(`resolveCustomAbutmentProductionPriceForAt`). 출고 표시=`shippingPolicyCopy`(택배 묶음 출고 / 딜리버리 익일 도착). 택배 묶음=박스당 `shippingFee`(3,500). 딜리버리=월정액(기본 55,000, VAT 포함). `regular*`는 관리자 딜러분배용. 기공소 매칭 월정 0 · 플랫폼 사용료·하청 수수료 미부과 — 루트 `rules.md` §2.3.
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
   - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 기공소별 인증 ON·기공 테스트·메모. 수수료 스트립(`DevopsPlatformFeeTab`)은 숨김(미부과). 기공소 설정 탭은 없음. 관리자 테스트 통과/`enabled` 시 풀 참여. 학습 이용은 기본 허용이고 요율과 무관. 기공소 설정 「AI」탭·기공의뢰 동의 버튼·모달은 없다. 안내는 약관·개인정보. 관리자 플랫폼 설정「인증 기공소」탭
@@ -250,7 +250,7 @@ Notes:
   - 기공소/어벗츠기공소: 정산(`/dashboard/credits`)「지급」탭 — `LabSettlementPayoutTab.tsx`(기공크레딧 잔액·**월별** 적립/지급/상태(지급·계산서), 면세 계산서, max-w-4xl). 월 지급은 **다음 달 초 사용 유보 50만원** 제외 후 잔액만(`LAB_SETTLEMENT_PAYOUT_RESERVE_WON`). 통장 사본·입금 계좌는 설정>사업자(`PayoutAccountCard`, 기공소·딜러사 공통). 미등록 시 지급 진입·정산일 7일 전 일 1회 안내, 지급일까지 미등록이면 1개월 이월. 구 `/dashboard/payments`·`?tab=settlement`는 `?tab=payout`으로 호환.
   - 딜러(salesman): 설정>사업자에서 동일 `PayoutAccountCard`·위수탁 카드. 구 설정 `?tab=payment|payout` → 사업자.
   - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·지급상태·금액·잔액·거래내역). 유형 열은 생략(모두 커스텀어벗 생산+배송비). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 **배송자 BA**(requestor businessAnchor·우편함)별. PTX는 치과명이 아니라 기공소 BA로 표기. 장부·미정산=부가세 포함가(어벗 1개당 매입가 기본 8,800, 리메이크 6,600). 무료 크레딧 결제 포함 약정 단가가 미정산으로 쌓이며 말일 일괄 지급(재가산 없음·세금계산서÷1.1). 정산규칙 모달은 딜러와 같은 칩·표(제조 49.5% 고정·부가세 포함).
-  - 딜러: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 부가세 포함가 장부·미정산, 지급=잔액 그대로·세금계산서(÷1.1). 정산규칙=커스텀어벗 10~20% 누진 칩·표.
+  - 딜러: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 부가세 포함가 장부·미정산, 지급=잔액 그대로·세금계산서(÷1.1). 정산규칙=커스텀어벗 20→10% 구간 칩·표.
   - 개발운영사: `src/pages/devops/DevopsPaymentsPage.tsx` — 부가세 포함가 장부·미정산, 지급=잔액 그대로·세금계산서(÷1.1). 정산규칙=커스텀어벗 의뢰비 5%(어벗츠 몫에서) 칩·표.
   - 관리자: `src/pages/admin/AdminPaymentsPage.tsx` — 스토어·커스텀어벗·기공사업부 + 관계사 분배. 정산규칙 커스텀어벗=어벗츠 순몫 칩·표(제조 49.5% 고정 후 나머지·개발운영 5% 차감).
 

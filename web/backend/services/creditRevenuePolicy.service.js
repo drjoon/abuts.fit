@@ -53,8 +53,11 @@ export const DEALERSHIP_EVENT_COMMISSION_RATE_OPTIONS = [0.15, 0.2];
 
 /** @deprecated 월 매출 누진 — 유치시점 고정 요율로 대체. */
 export const DEFAULT_DEALERSHIP_COMMISSION_TIERS = Object.freeze([
-  Object.freeze({ upToAmount: 50_000_000, rate: 0.2 }),
-  Object.freeze({ upToAmount: 100_000_000, rate: 0.15 }),
+  Object.freeze({ upToAmount: 10_000_000, rate: 0.2 }),
+  Object.freeze({ upToAmount: 20_000_000, rate: 0.18 }),
+  Object.freeze({ upToAmount: 30_000_000, rate: 0.16 }),
+  Object.freeze({ upToAmount: 40_000_000, rate: 0.14 }),
+  Object.freeze({ upToAmount: 50_000_000, rate: 0.12 }),
   Object.freeze({ upToAmount: null, rate: 0.1 }),
 ]);
 

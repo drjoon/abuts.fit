@@ -74,7 +74,7 @@ const systemSettingsSchema = new mongoose.Schema(
       labSalesTeamSharePercent: { type: Number, default: 20 },
       labDevopsSharePercent: { type: Number, default: 5 },
       labAbutsSharePercent: { type: Number, default: 25 },
-      // 딜러십 영업 수수료. 커스텀어벗은 누적 개수 10~20% 누진(~1천/~2천/~4천/~6천/~9천/~). 스토어(심플웨이) 지급 없음.
+      // 딜러십 영업 수수료. 커스텀어벗은 월 매출 20→10% 구간(~1천 20/~2천 18/~3천 16/~4천 14/~5천 12/5천1~ 10). 스토어(심플웨이) 지급 없음.
       // 기공·배송비·월정액 제외. 15% 인하 예약은 쓰지 않는다.
       dealershipActiveCommissionRate: {
         type: Number,
