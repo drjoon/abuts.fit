@@ -65,6 +65,7 @@ export default function SalesPlaceSuggestInput({
   const token = useAuthStore((s) => s.token);
   const listId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
   /**
    * 유형·검색 결과를 고른 뒤 목록을 닫아 둔다.
@@ -176,7 +177,8 @@ export default function SalesPlaceSuggestInput({
   };
 
   const commitManual = (kind: "practice" | "lab", nameOverride?: string) => {
-    const name = (nameOverride ?? value).trim();
+    // 한글 조합 중이면 state보다 입력창 값이 더 최신이다.
+    const name = (nameOverride ?? inputRef.current?.value ?? value).trim();
     if (!name || directCommitDisabled || committingRef.current) return;
     const item = manualPlaceSuggest(name, kind);
     if (onDirectCommit) {
@@ -188,44 +190,37 @@ export default function SalesPlaceSuggestInput({
     pick(item);
   };
 
-  const handledPointerRef = useRef(0);
-  const pickRef = useRef(pick);
-  const commitManualRef = useRef(commitManual);
-  const visibleItemsRef = useRef(visibleItems);
-  pickRef.current = pick;
-  commitManualRef.current = commitManual;
-  visibleItemsRef.current = visibleItems;
-
-  const takePointer = (event: { timeStamp: number; preventDefault: () => void }) => {
-    if (handledPointerRef.current === event.timeStamp) return false;
-    handledPointerRef.current = event.timeStamp;
+  const handledAtRef = useRef(0);
+  /**
+   * 한 번의 누름에서 pointerdown·mousedown·click 중 먼저 오는 이벤트만 처리한다.
+   * (IME 조합 중에는 첫 이벤트가 사라질 수 있어 여러 이벤트를 모두 받는다.)
+   */
+  const takePointer = (event: { preventDefault: () => void }) => {
     event.preventDefault();
+    const now = performance.now();
+    if (now - handledAtRef.current < 500) return false;
+    handledAtRef.current = now;
     return true;
   };
 
-  useEffect(() => {
-    const list = listRef.current;
-    if (!open || lockList || !list) return;
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const kindEl = target.closest("[data-place-kind]");
-      if (kindEl) {
-        const kind = kindEl.getAttribute("data-place-kind");
-        if (kind !== "practice" && kind !== "lab") return;
-        if (!takePointer(event)) return;
-        commitManualRef.current(kind);
-        return;
-      }
-      const option = target.closest("[data-suggest-idx]");
-      if (!option) return;
-      const item = visibleItemsRef.current[Number(option.getAttribute("data-suggest-idx"))];
-      if (!item || !takePointer(event)) return;
-      pickRef.current(item);
-    };
-    list.addEventListener("pointerdown", onPointerDown, true);
-    return () => list.removeEventListener("pointerdown", onPointerDown, true);
-  }, [open, lockList]);
+  /** 목록이 다시 그려져도 놓치지 않도록 React 위임으로 처리한다. */
+  const handleListPress = (event: React.SyntheticEvent) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const kindEl = target.closest("[data-place-kind]");
+    if (kindEl) {
+      const kind = kindEl.getAttribute("data-place-kind");
+      if (kind !== "practice" && kind !== "lab") return;
+      if (!takePointer(event)) return;
+      commitManual(kind);
+      return;
+    }
+    const option = target.closest("[data-suggest-idx]");
+    if (!option) return;
+    const item = visibleItems[Number(option.getAttribute("data-suggest-idx"))];
+    if (!item || !takePointer(event)) return;
+    pick(item);
+  };
 
   const clear = () => {
     closedByPickRef.current = false;
@@ -252,6 +247,7 @@ export default function SalesPlaceSuggestInput({
       <div className="relative">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
         <Input
+          ref={inputRef}
           value={value}
           autoFocus={autoFocus}
           autoComplete="off"
@@ -334,10 +330,11 @@ export default function SalesPlaceSuggestInput({
           ref={listRef}
           id={listId}
           role="listbox"
-          onMouseDown={(e) => {
-            // 입력 블러로 목록이 먼저 닫히면 첫 클릭이 유형 버튼에 닿지 않는다.
-            e.preventDefault();
-          }}
+          onPointerDown={handleListPress}
+          onMouseDown={handleListPress}
+          onPointerUp={handleListPress}
+          onMouseUp={handleListPress}
+          onClick={handleListPress}
           className={cn(
             listMode === "inline"
               ? "relative z-10 mt-2 max-h-64 w-full overflow-auto rounded-xl border border-slate-200 bg-white px-1.5 py-1.5 shadow-sm"
@@ -345,9 +342,7 @@ export default function SalesPlaceSuggestInput({
             listClassName,
           )}
         >
-          {visibleItems.length === 0 && loading ? (
-            <li className="px-3 py-2 text-xs text-muted-foreground">검색 중…</li>
-          ) : (
+          {visibleItems.length === 0 ? null : (
             visibleItems.map((item, idx) => (
               <li key={`${item.source}-${item.accountId || item.name}-${idx}`}>
                 <button
@@ -360,10 +355,6 @@ export default function SalesPlaceSuggestInput({
                     idx === active && "bg-primary-soft/40",
                   )}
                   onMouseEnter={() => setActive(idx)}
-                  onPointerDown={(e) => {
-                    if (!takePointer(e)) return;
-                    pick(item);
-                  }}
                 >
                   <span className="flex items-center gap-1.5 font-medium text-slate-900">
                     <span className="truncate">{item.name}</span>
@@ -390,9 +381,16 @@ export default function SalesPlaceSuggestInput({
                 )}
               >
                 {visibleItems.length === 0 && loading ? (
-                  onRequireKind
-                    ? "유형을 선택하세요."
-                    : "유형을 고르면 입력한 상호로 넣습니다."
+                  // 검색 완료 후 문구와 같은 두 줄 — 버튼이 밀리지 않게 한다.
+                  <>
+                    검색 중…
+                    <br />
+                    {onRequireKind
+                      ? "유형을 선택하세요."
+                      : onDirectCommit
+                        ? "유형을 누르면 바로 저장됩니다."
+                        : "유형을 고르면 입력한 상호로 넣습니다."}
+                  </>
                 ) : visibleItems.length === 0 ? (
                   onRequireKind ? (
                     <>
@@ -429,10 +427,6 @@ export default function SalesPlaceSuggestInput({
                     className="h-8 flex-1 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-60"
                     data-place-kind={kind}
                     disabled={directCommitDisabled}
-                    onPointerDown={(e) => {
-                      if (!takePointer(e)) return;
-                      commitManual(kind);
-                    }}
                   >
                     {onDirectCommit
                       ? KIND_LABEL[kind]
