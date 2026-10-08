@@ -12,6 +12,9 @@ export const DEALERSHIP_BAND_RANGE_LABEL = `${DEALERSHIP_BAND_MIN_PCT}~${DEALERS
 /** 커스텀어벗만. 스토어(심플웨이) 지급 없음. */
 export const DEALERSHIP_CUMULATIVE_BAND_LINE = `${DEALERSHIP_BAND_RANGE_LABEL} 누적 구간`;
 
+/** 딜러 대시보드 계약 카드 */
+export const DEALERSHIP_DASHBOARD_BAND_LINE = `${DEALERSHIP_BAND_RANGE_LABEL} 누적 구간 차등 분배`;
+
 /** 정산 규칙 모달 부제. 본문 표와 겹치지 않게 짧게. */
 export const DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD = "커스텀어벗";
 
@@ -25,6 +28,6 @@ export const REFERRAL_OWNERSHIP_RESET_ANYONE_LINE =
 
 /** 딜러 대시보드 카드 */
 export const REFERRAL_OWNERSHIP_RESET_POLICY_SHORT =
-  `${REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면 소개 코드 리셋.`;
+  `${REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면 소개 코드 리셋`;
 
-export const REFERRAL_OWNERSHIP_RESET_ANYONE_SHORT = "누구든 다시 영업 가능.";
+export const REFERRAL_OWNERSHIP_RESET_ANYONE_SHORT = "누구든 다시 영업 가능";

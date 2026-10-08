@@ -38,7 +38,7 @@ import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import { DealerSettlementRulesContent } from "@/features/commission/DealerSettlementRulesContent";
 import {
-  DEALERSHIP_CUMULATIVE_BAND_LINE,
+  DEALERSHIP_DASHBOARD_BAND_LINE,
   DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD,
   REFERRAL_OWNERSHIP_RESET_ANYONE_SHORT,
   REFERRAL_OWNERSHIP_RESET_POLICY_SHORT,
@@ -117,14 +117,6 @@ export const SalesmanDashboardPage = () => {
     ReturnType<typeof useCommissionDashboard>["data"]
   >["overview"];
 
-  const activePct = Math.round(
-    Number(
-      data?.dealershipActiveCommissionRate ??
-        data?.dealershipEventCommissionRate ??
-        data?.commissionRate ??
-        0.2,
-    ) * 100,
-  );
   const rateChangeMessage = formatDealershipRateChangeMessage({
     scheduledAt: data?.dealershipRateChangeScheduledAt,
     scheduledRate: data?.dealershipRateChangeScheduledRate,
@@ -185,10 +177,7 @@ export const SalesmanDashboardPage = () => {
                 </Button>
               </div>
             </div>
-            <DealershipTermsCard
-              activePct={activePct || 20}
-              onOpenSplit={() => setSplitOpen(true)}
-            />
+            <DealershipTermsCard onOpenSplit={() => setSplitOpen(true)} />
           </div>
         }
         statsGridClassName={DASHBOARD_CARD_GRID_CLASS}
@@ -387,10 +376,8 @@ function formatDealershipRateChangeMessage({
 }
 
 function DealershipTermsCard({
-  activePct,
   onOpenSplit,
 }: {
-  activePct: number;
   onOpenSplit: () => void;
 }) {
   return (
@@ -401,21 +388,14 @@ function DealershipTermsCard({
             딜러십
           </div>
           <h2 className="mt-1 text-base font-semibold tracking-tight sm:text-lg">
-            영업 수수료
+            계약 내용
           </h2>
         </div>
         <div className="grid min-w-0 flex-1 items-stretch gap-3 sm:grid-cols-2">
           <TermsItem
-            title="커스텀어벗"
-            actionLabel="분배몫"
+            title="커스텀어벗 영업 수수료"
             onClick={onOpenSplit}
-            body={
-              <>
-                {DEALERSHIP_CUMULATIVE_BAND_LINE}
-                <br />
-                신규 유치 {activePct}%
-              </>
-            }
+            body={DEALERSHIP_DASHBOARD_BAND_LINE}
           />
           <TermsItem
             icon={RefreshCw}
