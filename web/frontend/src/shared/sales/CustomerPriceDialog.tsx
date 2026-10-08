@@ -3,8 +3,10 @@
 // - web/backend/utils/requestorUnitPricePolicy.js
 // - web/frontend/src/shared/pricing/requestorUnitPricePolicy.ts
 // change-log:
+// - 2026-10-08: 거래처 판매가 설정은 거래처 페이지. 대시보드·성과에서는 뺀다.
 // - 2026-10-08: 딜러·영업팀 거래처별 의뢰비 설정(1.2~1.5만). 거래처 본인에게만 보이고 외부 비공개.
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -43,6 +45,122 @@ type Row = {
 };
 
 const KIND_LABEL: Record<string, string> = { practice: "치과", lab: "기공소" };
+
+function CustomerPriceLead() {
+  return (
+    <>
+      {formatRequestorWon(REQUESTOR_UNIT_PRICE_MIN)}~
+      {formatRequestorWon(REQUESTOR_UNIT_PRICE_BASE)}원 안에서 정합니다.
+      <br />
+      거래처 본인에게만 보이고 외부에는 공개되지 않습니다.
+    </>
+  );
+}
+
+function useCustomerPrices(enabled: boolean) {
+  const token = useAuthStore((s) => s.token);
+  const userId = useAuthStore((s) => s.user?.id || "");
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: ["salesman-customer-prices", userId],
+    enabled: Boolean(enabled && token && userId),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+    queryFn: async (): Promise<Row[]> => {
+      const res = await request<any>({
+        path: "/api/salesman/customer-prices",
+        method: "GET",
+        token,
+      });
+      const body: any = res.data || {};
+      if (!res.ok || !body?.success) {
+        throw new Error(body?.message || "거래처를 불러오지 못했습니다.");
+      }
+      return (body.data?.items || []) as Row[];
+    },
+  });
+
+  const patch = (next: Row) => {
+    queryClient.setQueryData<Row[]>(
+      ["salesman-customer-prices", userId],
+      (prev) =>
+        (prev || []).map((r) => (r.anchorId === next.anchorId ? next : r)),
+    );
+  };
+
+  const loadError =
+    query.error instanceof Error
+      ? query.error.message
+      : query.isError
+        ? "다시 시도해주세요."
+        : "";
+
+  return {
+    rows: query.isError ? [] : query.data === undefined ? null : query.data,
+    loadError,
+    patch,
+  };
+}
+
+function CustomerPriceRows({
+  rows,
+  loadError,
+  onSaved,
+  wide = false,
+}: {
+  rows: Row[] | null;
+  loadError: string;
+  onSaved: (next: Row) => void;
+  wide?: boolean;
+}) {
+  if (rows === null) {
+    return <p className="text-sm text-slate-500">불러오는 중…</p>;
+  }
+  if (loadError) {
+    return <p className="text-sm text-destructive">{loadError}</p>;
+  }
+  if (rows.length === 0) {
+    return <p className="text-sm text-slate-500">소개한 거래처가 없습니다.</p>;
+  }
+  return (
+    <div
+      className={
+        wide
+          ? "grid gap-2 px-1.5 py-1.5 lg:grid-cols-2"
+          : "space-y-2 px-1.5 py-1.5"
+      }
+    >
+      {rows.map((row) => (
+        <PriceRow key={row.anchorId} row={row} onSaved={onSaved} />
+      ))}
+    </div>
+  );
+}
+
+/** 거래처 페이지. 소개 거래처의 판매가를 바로 정한다. */
+export function CustomerPricePanel() {
+  const { rows, loadError, patch } = useCustomerPrices(true);
+
+  return (
+    <section className="rounded-2xl border border-slate-200/90 bg-white shadow-sm">
+      <div className="border-b border-slate-100 px-5 py-4">
+        <h2 className="text-sm font-semibold text-slate-900">거래처 판매가</h2>
+        <p className="mt-1 text-xs leading-relaxed text-slate-500">
+          <CustomerPriceLead />
+        </p>
+      </div>
+      <div className="max-h-[min(70vh,36rem)] overflow-y-auto px-3 py-3">
+        <CustomerPriceRows
+          rows={rows}
+          loadError={loadError}
+          onSaved={patch}
+          wide
+        />
+      </div>
+    </section>
+  );
+}
 
 function PriceRow({ row, onSaved }: { row: Row; onSaved: (next: Row) => void }) {
   const { token } = useAuthStore();
@@ -183,72 +301,25 @@ export function CustomerPriceDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { token } = useAuthStore();
-  const [rows, setRows] = useState<Row[] | null>(null);
-  const [loadError, setLoadError] = useState("");
-
-  const load = useCallback(async () => {
-    setLoadError("");
-    try {
-      const res = await request<any>({
-        path: "/api/salesman/customer-prices",
-        method: "GET",
-        token,
-        skipCache: true,
-      });
-      const body: any = res.data || {};
-      if (!res.ok || !body?.success) {
-        throw new Error(body?.message || "거래처를 불러오지 못했습니다.");
-      }
-      setRows((body.data?.items || []) as Row[]);
-    } catch (e: any) {
-      setLoadError(e?.message || "다시 시도해주세요.");
-      setRows([]);
-    }
-  }, [token]);
-
-  useEffect(() => {
-    if (open) void load();
-  }, [open, load]);
+  const { rows, loadError, patch } = useCustomerPrices(open);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={GUIDE_DIALOG_CONTENT_CLASS}>
         <DialogHeader className={GUIDE_DIALOG_HEADER_CLASS}>
           <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
-            거래처별 의뢰비
+            거래처 판매가
           </DialogTitle>
           <DialogDescription className="text-sm text-slate-500">
-            {formatRequestorWon(REQUESTOR_UNIT_PRICE_MIN)}~
-            {formatRequestorWon(REQUESTOR_UNIT_PRICE_BASE)}원 안에서 정합니다.
-            <br />
-            거래처 본인에게만 보이고 외부에는 공개되지 않습니다.
+            <CustomerPriceLead />
           </DialogDescription>
         </DialogHeader>
         <div className={GUIDE_DIALOG_BODY_CLASS}>
-          {rows === null ? (
-            <p className="text-sm text-slate-500">불러오는 중…</p>
-          ) : loadError ? (
-            <p className="text-sm text-destructive">{loadError}</p>
-          ) : rows.length === 0 ? (
-            <p className="text-sm text-slate-500">소개한 거래처가 없습니다.</p>
-          ) : (
-            <div className="space-y-2 px-1.5 py-1.5">
-              {rows.map((row) => (
-                <PriceRow
-                  key={row.anchorId}
-                  row={row}
-                  onSaved={(next) =>
-                    setRows((prev) =>
-                      (prev || []).map((r) =>
-                        r.anchorId === next.anchorId ? next : r,
-                      ),
-                    )
-                  }
-                />
-              ))}
-            </div>
-          )}
+          <CustomerPriceRows
+            rows={rows}
+            loadError={loadError}
+            onSaved={patch}
+          />
         </div>
       </DialogContent>
     </Dialog>

@@ -30,7 +30,6 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
-import { CustomerPriceDialog } from "@/shared/sales/CustomerPriceDialog";
 import {
   Select,
   SelectContent,
@@ -55,7 +54,6 @@ export default function SalesPerformancePage() {
   const { toast } = useToast();
   const [period, setPeriod] = useState("30d");
   const [requestorPolicyOpen, setRequestorPolicyOpen] = useState(false);
-  const [priceOpen, setPriceOpen] = useState(false);
   const [drill, setDrill] = useState<"visits" | "reports" | "referrals">(
     "visits",
   );
@@ -227,26 +225,15 @@ export default function SalesPerformancePage() {
               title="내 소개코드"
               description="현장에서 코드나 가입 링크를 공유하세요."
               actions={
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8"
-                    onClick={() => setPriceOpen(true)}
-                  >
-                    거래처 가격
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8"
-                    onClick={() => setRequestorPolicyOpen(true)}
-                  >
-                    의뢰자 정책
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  onClick={() => setRequestorPolicyOpen(true)}
+                >
+                  의뢰자 정책
+                </Button>
               }
             >
               <div className="flex flex-col items-center gap-4 rounded-2xl border border-primary-muted/50 bg-gradient-to-br from-primary-soft/80 to-white px-4 py-8 text-center">
@@ -441,7 +428,6 @@ export default function SalesPerformancePage() {
         </div>
       )}
 
-      <CustomerPriceDialog open={priceOpen} onOpenChange={setPriceOpen} />
       <PricingPolicyDialog
         open={requestorPolicyOpen}
         onOpenChange={setRequestorPolicyOpen}

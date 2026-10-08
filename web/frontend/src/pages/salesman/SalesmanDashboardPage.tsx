@@ -1,7 +1,7 @@
 /**
  * 딜러(salesman) 대시보드 — 수수료·소개 코드.
  *
- * 딜러 수수료: 거래처 판매가(1.2~1.5만) − 1만원. 거래처별 가격은 「거래처 가격」에서 설정.
+ * 딜러 수수료: 거래처 판매가(1.2~1.5만) − 1만원. 판매가는 거래처 페이지에서 정한다.
  * 90일 무주문이면 소개 코드 리셋. 누구든 다시 영업 가능.
  * 의뢰자 정책: 치과 / 기공소 탭(단일가 1.5만).
  */
@@ -36,7 +36,6 @@ import {
 } from "lucide-react";
 import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
-import { CustomerPriceDialog } from "@/shared/sales/CustomerPriceDialog";
 import { DealerSettlementRulesContent } from "@/features/commission/DealerSettlementRulesContent";
 import {
   DEALERSHIP_DASHBOARD_BAND_LINE,
@@ -82,7 +81,6 @@ export const SalesmanDashboardPage = () => {
   const [creditModalOpen, setCreditModalOpen] = useState(false);
   const [ledgerMode, setLedgerMode] = useState<"unpaid" | "paid">("unpaid");
   const [policyOpen, setPolicyOpen] = useState(false);
-  const [priceOpen, setPriceOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   const [period, setPeriod] = useState<PeriodFilterValue>(
     SETTLEMENT_DEFAULT_PERIOD,
@@ -176,15 +174,6 @@ export const SalesmanDashboardPage = () => {
                   onClick={() => setPolicyOpen(true)}
                 >
                   의뢰자 정책
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8"
-                  onClick={() => setPriceOpen(true)}
-                >
-                  거래처 가격
                 </Button>
               </div>
             </div>
@@ -335,7 +324,6 @@ export const SalesmanDashboardPage = () => {
         title={ledgerMode === "paid" ? "지급 완료 수수료" : "미정산 수수료"}
         initialType={ledgerMode === "paid" ? "PAYOUT" : "all"}
       />
-      <CustomerPriceDialog open={priceOpen} onOpenChange={setPriceOpen} />
       <PricingPolicyDialog
         open={policyOpen}
         onOpenChange={setPolicyOpen}

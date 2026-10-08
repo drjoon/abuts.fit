@@ -3,6 +3,9 @@
 // - web/frontend/src/pages/salesTeam/salesUi.tsx
 // - web/frontend/src/pages/salesTeam/SalesPlaceSuggestInput.tsx
 // - web/frontend/src/pages/salesTeam/SalesPlacePickerDrawer.tsx
+// - web/frontend/src/shared/sales/CustomerPriceDialog.tsx
+// change-log:
+// - 2026-10-08: 소개 거래처 판매가(1.2~1.5만)를 이 페이지에서 정한다.
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, MapPin, Phone, Search, UserRound } from "lucide-react";
@@ -53,6 +56,7 @@ import {
   SalesSplit,
   SalesToolbar,
 } from "./salesUi";
+import { CustomerPricePanel } from "@/shared/sales/CustomerPriceDialog";
 
 type ListFilter = "all" | "practice" | "lab" | "unjoined" | "joined" | "oralScan";
 
@@ -374,6 +378,7 @@ export default function SalesAccountsPage() {
 
   return (
     <SalesPageShell wide>
+      <CustomerPricePanel />
       <SalesToolbar className="w-full">
         <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2">
           <div className="relative min-w-0 flex-1 sm:max-w-xs">
