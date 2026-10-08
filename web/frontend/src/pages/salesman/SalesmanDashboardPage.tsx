@@ -331,7 +331,7 @@ export const SalesmanDashboardPage = () => {
       />
       <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
         <DialogContent
-          className={cn(GUIDE_DIALOG_CONTENT_CLASS, "sm:max-w-3xl")}
+          className={cn(GUIDE_DIALOG_CONTENT_CLASS, "sm:max-w-md")}
         >
           <DialogHeader className={GUIDE_DIALOG_HEADER_CLASS}>
             <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">

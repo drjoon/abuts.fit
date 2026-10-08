@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-09: 딜러 정산 규칙 모달 폭 sm:max-w-md.
 // - 2026-10-08: 딜러 정산 규칙 본문 — DealerSettlementRulesContent 공유.
 // - 2026-10-05: 개발운영 정산 규칙 — 딜러와 같은 칩·표. 의뢰비 5%(어벗츠 몫).
 // - 2026-10-05: 딜러 정산 규칙 모달 — 커스텀어벗만. 중복 안내 제거 · 칩·카드.
@@ -177,7 +178,7 @@ export function CommissionPaymentsPage({
               <SettlementPolicyDialog
                 title={`${title} 규칙`}
                 description={DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD}
-                contentClassName="sm:max-w-3xl"
+                contentClassName={isSalesman ? "sm:max-w-md" : "sm:max-w-3xl"}
               >
                 {isSalesman ? (
                   <DealerSettlementRulesContent

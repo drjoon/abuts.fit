@@ -1,10 +1,8 @@
 // change-log:
+// - 2026-10-09: 소개·세금·지급 카드를 세로로 쌓는다.
 // - 2026-10-08: 딜러 대시보드 누적 구간 클릭과 정산 페이지가 같은 분배몫 본문을 쓴다.
 import { CustomAbutmentDealerSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
-import {
-  GUIDE_FACT_GRID_CLASS,
-  SettlementPolicyFact,
-} from "@/shared/settlement/settlementUi";
+import { SettlementPolicyFact } from "@/shared/settlement/settlementUi";
 import {
   REFERRAL_OWNERSHIP_INACTIVE_DAYS,
   REFERRAL_OWNERSHIP_RESET_ANYONE_LINE,
@@ -20,7 +18,7 @@ export function DealerSettlementRulesContent({
   return (
     <div className="space-y-4">
       <CustomAbutmentDealerSplitTable />
-      <div className={GUIDE_FACT_GRID_CLASS}>
+      <div className="grid gap-2.5">
         <SettlementPolicyFact label="소개 코드">
           {REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면 리셋됩니다.
           <br />
