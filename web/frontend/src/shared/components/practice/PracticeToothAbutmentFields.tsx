@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-10-09: 숫자 스피너는 NumericStepperInput 공통 컴포넌트.
 // - 2026-09-07: 프리셋 카드 드래그로 순서 변경(계정 저장).
 // - 2026-09-07: 프리셋 라벨 truncate 제거 → line-clamp-2. 긴 규격도 한 카드에 보이게.
 // - 2026-08-27: 프리셋 카드 2열 + 편집/삭제는 호버 시 우상단 표시(커스텀어벗 설정).
@@ -10,7 +11,7 @@
 // - 2026-08-21: 스캔바디 추가 시 현재 선택값 기본 채움. 스피너 직경 0.5·높이 2, 직접입력 제한 없음.
 // - 2026-08-21: 프리셋 추가는 목록 sticky 하단(스크롤 시에만 고정). 임플란트와 독립.
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, ChevronUp, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +20,7 @@ import {
   type PracticeAbutmentFavorite,
 } from "@/shared/practice/transferMemo";
 import { cn } from "@/shared/ui/cn";
+import { NumericStepperInput } from "@/shared/ui/NumericStepperInput";
 
 export type ToothAbutmentValues = {
   abutmentManufacturer: string;
@@ -73,72 +75,6 @@ const favoriteLabel = (row: {
     .map((v) => String(v || "").trim())
     .filter(Boolean)
     .join(" / ") || "어벗 규격";
-
-const formatSteppedNumber = (n: number, step: number) => {
-  const decimals = String(step).includes(".")
-    ? String(step).split(".")[1]?.length || 0
-    : 0;
-  return decimals > 0 ? n.toFixed(decimals) : String(Math.round(n));
-};
-
-const stepNumericValue = (raw: string, step: number, direction: 1 | -1) => {
-  const current = Number.parseFloat(String(raw || "").trim());
-  const base = Number.isFinite(current) ? current : 0;
-  const next = Math.max(0, Math.round((base + direction * step) * 1000) / 1000);
-  return formatSteppedNumber(next, step);
-};
-
-const NumericStepperInput = ({
-  value,
-  placeholder,
-  step,
-  className,
-  onValueChange,
-}: {
-  value: string;
-  placeholder: string;
-  /** 스피너(▲▼) 클릭 단위. 직접 입력은 step 제한 없음. */
-  step: number;
-  className?: string;
-  onValueChange: (next: string) => void;
-}) => (
-  <div className="relative">
-    <Input
-      type="text"
-      inputMode="decimal"
-      autoComplete="off"
-      value={value}
-      placeholder={placeholder}
-      className={[
-        className,
-        "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      onChange={(e) => onValueChange(e.target.value)}
-    />
-    <div className="absolute inset-y-1 right-1 flex w-6 flex-col overflow-hidden rounded border border-slate-200 bg-white">
-      <button
-        type="button"
-        tabIndex={-1}
-        className="flex h-1/2 items-center justify-center text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-        aria-label="값 증가"
-        onClick={() => onValueChange(stepNumericValue(value, step, 1))}
-      >
-        <ChevronUp className="h-3 w-3" />
-      </button>
-      <button
-        type="button"
-        tabIndex={-1}
-        className="flex h-1/2 items-center justify-center border-t border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-        aria-label="값 감소"
-        onClick={() => onValueChange(stepNumericValue(value, step, -1))}
-      >
-        <ChevronDown className="h-3 w-3" />
-      </button>
-    </div>
-  </div>
-);
 
 export const PracticeToothAbutmentFields = ({
   value,

@@ -3,6 +3,7 @@
 // - web/backend/utils/requestorUnitPricePolicy.js
 // - web/frontend/src/shared/pricing/requestorUnitPricePolicy.ts
 // change-log:
+// - 2026-10-09: 판매가 입력에 500원 단위 스피너.
 // - 2026-10-09: 선택 카드의 건당 판매가 입력을 더 크게.
 // - 2026-10-09: 상단 판매가 카드 제거. 선택한 거래처 카드에서 건당 판매가를 입력한다.
 // - 2026-10-08: 거래처 판매가 설정은 거래처 페이지. 대시보드·성과에서는 뺀다.
@@ -17,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { NumericStepperInput } from "@/shared/ui/NumericStepperInput";
 import { Badge } from "@/components/ui/badge";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -30,6 +31,7 @@ import {
 import {
   REQUESTOR_UNIT_PRICE_BASE,
   REQUESTOR_UNIT_PRICE_MIN,
+  REQUESTOR_UNIT_PRICE_STEP,
   dealerCommissionOf,
   formatRequestorWon,
   validateDealerUnitPrice,
@@ -263,21 +265,24 @@ function PriceControls({
     <div className="space-y-2">
       <div className="flex flex-wrap items-start gap-2">
         <div className="space-y-1">
-          <Input
-            inputMode="numeric"
+          <NumericStepperInput
             value={draft.value}
-            onChange={(e) => {
-              draft.setValue(e.target.value);
-              const next = validateDealerUnitPrice(e.target.value);
-              draft.setError("message" in next ? next.message : "");
-            }}
+            step={REQUESTOR_UNIT_PRICE_STEP}
+            min={REQUESTOR_UNIT_PRICE_MIN}
+            max={REQUESTOR_UNIT_PRICE_BASE}
+            disabled={draft.saving}
+            ariaLabel={label}
+            ariaInvalid={Boolean(draft.error)}
             className={
               prominent
-                ? "h-11 w-36 rounded-xl bg-white text-right text-base font-semibold tabular-nums"
-                : "h-9 w-28 text-right tabular-nums"
+                ? "h-11 w-40 rounded-xl bg-white pr-8 text-right text-base font-semibold tabular-nums"
+                : "h-9 w-32 pr-8 text-right tabular-nums"
             }
-            aria-invalid={Boolean(draft.error)}
-            aria-label={label}
+            onValueChange={(next) => {
+              draft.setValue(next);
+              const checked = validateDealerUnitPrice(next);
+              draft.setError("message" in checked ? checked.message : "");
+            }}
           />
           {draft.error ? (
             <p className="max-w-[12rem] text-[11px] leading-tight text-destructive">

@@ -10,6 +10,8 @@
 export const REQUESTOR_UNIT_PRICE_BASE = 15_000;
 /** 딜러·영업팀이 거래처에 정할 수 있는 최저가(원). */
 export const REQUESTOR_UNIT_PRICE_MIN = 12_000;
+/** 판매가 스피너 단위(원). 직접 입력은 원 단위 정수. */
+export const REQUESTOR_UNIT_PRICE_STEP = 500;
 /** 어벗츠 → 딜러 공급가(원, 부가세 포함). 딜러 수수료 = 판매가 − 공급가. */
 export const REQUESTOR_UNIT_PRICE_DEALER_SUPPLY = 10_000;
 /** 제조사 매입가(원, 부가세 포함). */
