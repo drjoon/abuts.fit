@@ -71,11 +71,45 @@ export function resolveEffectiveShippingMode(requestLike) {
   return normalizeShippingMode(mode);
 }
 
+/** 복사·더미·R&D 샘플은 출고하지 않는다. 지연 위험·출고일 집계에서 뺀다. */
+export function isNonShippingSampleRequest(requestLike) {
+  const category = String(requestLike?.requestCategory || "").trim();
+  const source = String(requestLike?.source || "").trim();
+  const rule = String(requestLike?.price?.rule || "").trim();
+  return (
+    category === "copied_sample" ||
+    category === "dummy_sample" ||
+    category === "rnd_sample" ||
+    source === "manufacturer_sample" ||
+    source === "dummy_sample" ||
+    rule === "manufacturer_sample" ||
+    rule === "dummy_sample"
+  );
+}
+
+export const NON_SHIPPING_SAMPLE_QUERY = {
+  requestCategory: { $nin: ["copied_sample", "dummy_sample", "rnd_sample"] },
+  source: { $nin: ["manufacturer_sample", "dummy_sample"] },
+  "price.rule": { $nin: ["manufacturer_sample", "dummy_sample"] },
+};
+
 export async function computeShippingPriority({ request, now }) {
   const stage = String(request?.manufacturerStage || "").trim();
   const isPreShip = ["준비", "CAM", "가공", "cam", "machining"].includes(stage);
 
   const mode = resolveEffectiveShippingMode(request);
+
+  if (isNonShippingSampleRequest(request)) {
+    return {
+      mode,
+      level: "normal",
+      score: 0,
+      shipYmd: null,
+      deadlineAt: null,
+      minutesLeft: null,
+      label: "",
+    };
+  }
 
   if (!isPreShip) {
     return {

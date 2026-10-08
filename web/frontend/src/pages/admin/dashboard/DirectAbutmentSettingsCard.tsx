@@ -2,7 +2,7 @@
 // 심플어벗·심플밀링 3D 모델은 어벗츠가 올린다. 직접 입력(회사·직경·높이)은 기공소가 관리한다.
 import { useMemo, useRef, useState } from "react";
 import { Cylinder, Loader2, X } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DashBigNumber, DashTile } from "@/shared/ui/dashboard/DashTile";
 import {
   Dialog,
   DialogContent,
@@ -202,34 +202,17 @@ export function DirectAbutmentSettingsCard({ className }: { className?: string }
           void uploadFiles(files, spec);
         }}
       />
-      <Card
-        className={cn(
-          "app-glass-card app-glass-card--lg h-full cursor-pointer transition hover:bg-slate-50/60",
-          className,
-        )}
-        role="button"
-        tabIndex={0}
+      <DashTile
+        title="직접어벗"
+        icon={<Cylinder className="h-4 w-4 text-muted-foreground" />}
+        className={className}
         onClick={() => setOpen(true)}
-        onKeyDown={(event) => {
-          if (event.target !== event.currentTarget) return;
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            setOpen(true);
-          }
-        }}
       >
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">직접어벗</CardTitle>
-          <Cylinder className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-end justify-between gap-2">
-            <div className="text-2xl font-bold">{loaded ? templates.length.toLocaleString() : "—"}</div>
-            <span className="text-xs text-muted-foreground">심플어벗</span>
-          </div>
-          <p className="mt-1 text-[11px] text-muted-foreground">3DM · STL</p>
-        </CardContent>
-      </Card>
+        <div className="flex h-full flex-col justify-end gap-0.5">
+          <DashBigNumber value={loaded ? templates.length.toLocaleString() : "—"} unit="심플어벗" />
+          <p className="truncate text-[11px] text-muted-foreground">3DM · STL</p>
+        </div>
+      </DashTile>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="flex max-h-[85vh] flex-col gap-4 overflow-hidden sm:max-w-5xl">

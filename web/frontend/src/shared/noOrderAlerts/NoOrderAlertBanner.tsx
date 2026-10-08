@@ -6,13 +6,14 @@ import { AlertTriangle } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 import type { NoOrderAlertsData } from "./types";
 import { NoOrderAlertDialog } from "./NoOrderAlertDialog";
+import { DashBigNumber, DashTile } from "@/shared/ui/dashboard/DashTile";
 
 type Props = {
   data?: NoOrderAlertsData | null;
   loading?: boolean;
   className?: string;
   /** sales home uses rose panel tone */
-  variant?: "card" | "sales";
+  variant?: "card" | "sales" | "tile";
 };
 
 export function NoOrderAlertBanner({
@@ -26,6 +27,37 @@ export function NoOrderAlertBanner({
   const total = Number(summary?.total || 0);
   const count3m = Number(summary?.count3m || 0);
   const count6m = Number(summary?.count6m || 0);
+
+  if (variant === "tile") {
+    const hasAlert = total > 0;
+    return (
+      <>
+        <DashTile
+          title="무주문 의뢰자"
+          icon={
+            <AlertTriangle
+              className={cn("h-4 w-4", hasAlert ? "text-amber-600" : "text-muted-foreground")}
+            />
+          }
+          tone={hasAlert ? "warn" : "default"}
+          className={className}
+          onClick={hasAlert ? () => setOpen(true) : undefined}
+        >
+          <div className="flex h-full flex-col justify-end gap-0.5">
+            <DashBigNumber
+              value={loading && !data ? "—" : total.toLocaleString()}
+              unit="곳"
+              className={hasAlert ? "text-amber-900" : undefined}
+            />
+            <p className="truncate text-[11px] text-muted-foreground">
+              3개월 {count3m.toLocaleString()} · 6개월 {count6m.toLocaleString()}
+            </p>
+          </div>
+        </DashTile>
+        <NoOrderAlertDialog open={open} onOpenChange={setOpen} data={data} />
+      </>
+    );
+  }
 
   if (loading && !data) return null;
   if (total <= 0) return null;

@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ImagePlus, Megaphone, Pencil, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DashTile } from "@/shared/ui/dashboard/DashTile";
 import {
   Dialog,
   DialogContent,
@@ -201,8 +201,6 @@ function NoticeRow({
   onDelete: () => void;
 }) {
   const phase = noticePhase(item);
-  const body =
-    item.body.trim() && item.body.trim() !== item.title.trim() ? item.body.trim() : "";
   return (
     <li className="rounded-xl border border-slate-200/80 bg-white shadow-sm">
       <div className="flex items-start gap-1 p-1.5">
@@ -213,7 +211,7 @@ function NoticeRow({
           onClick={onEdit}
         >
           <span className="min-w-0 flex-1">
-            <p className="line-clamp-2 text-sm font-medium leading-snug text-slate-900">
+            <p className="line-clamp-1 text-sm font-medium leading-snug text-slate-900">
               {item.title}
             </p>
             <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
@@ -231,9 +229,6 @@ function NoticeRow({
                 {formatSchedule(item)}
               </span>
             </p>
-            {body ? (
-              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">{body}</p>
-            ) : null}
           </span>
           <Pencil className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
         </button>
@@ -525,53 +520,54 @@ export function NoticeAdminCard({ className }: { className?: string }) {
 
   return (
     <>
-      <Card className={cn("app-glass-card app-glass-card--lg", className)}>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-          <CardTitle className="flex items-center gap-1.5 text-sm font-medium">
-            <Megaphone className="h-4 w-4 text-muted-foreground" />
+      <DashTile
+        className={className}
+        bodyClassName="overflow-y-auto px-1.5 py-1.5"
+        title={
+          <>
+            <Megaphone className="h-4 w-4 shrink-0" />
             공지 관리
-            {items.length > 0 ? (
-              <span className="text-xs font-normal text-muted-foreground">{items.length}건</span>
-            ) : null}
-          </CardTitle>
-          <div className="flex items-center gap-1">
+            {items.length > 0 ? <span className="font-normal">{items.length}건</span> : null}
+          </>
+        }
+        extra={
+          <div className="flex shrink-0 items-center gap-1">
             {items.length > CARD_ITEMS ? (
               <Button
                 type="button"
                 size="sm"
                 variant="ghost"
-                className="h-7 px-2 text-xs"
+                className="h-6 px-2 text-xs"
                 onClick={() => setListOpen(true)}
               >
                 전체 보기
               </Button>
             ) : null}
-            <Button type="button" size="sm" className="h-7 px-2.5 text-xs" onClick={openCreate}>
+            <Button type="button" size="sm" className="h-6 px-2.5 text-xs" onClick={openCreate}>
               새 공지
             </Button>
           </div>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <p className="text-xs text-muted-foreground">불러오는 중…</p>
-          ) : items.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-3 py-6 text-center text-xs text-muted-foreground">
-              등록된 공지가 없습니다.
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {preview.map((item) => (
-                <NoticeRow
-                  key={item.id}
-                  item={item}
-                  onEdit={() => openEdit(item)}
-                  onDelete={() => setDeleteTarget(item)}
-                />
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+        }
+      >
+        {isLoading ? (
+          <p className="text-xs text-muted-foreground">불러오는 중…</p>
+        ) : items.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-3 py-6 text-center text-xs text-muted-foreground">
+            등록된 공지가 없습니다.
+          </p>
+        ) : (
+          <ul className="space-y-1.5">
+            {preview.map((item) => (
+              <NoticeRow
+                key={item.id}
+                item={item}
+                onEdit={() => openEdit(item)}
+                onDelete={() => setDeleteTarget(item)}
+              />
+            ))}
+          </ul>
+        )}
+      </DashTile>
 
       <Dialog open={listOpen} onOpenChange={setListOpen}>
         <DialogContent className={cn(NOTICE_DIALOG_SHELL_CLASS, "sm:max-w-xl")}>

@@ -45,7 +45,10 @@ import {
   recomputeSingleRequestorDashboardSummarySnapshot,
 } from "../../services/requestorDashboardSummarySnapshot.service.js";
 import { createdAtFilterFromHeaderPeriod } from "../../utils/dateRange.js";
-import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
+import {
+  NON_SHIPPING_SAMPLE_QUERY,
+  resolveEffectiveShippingMode,
+} from "./shippingPriority.utils.js";
 import { resolveQuotedPriceWithExtras } from "./designPrice.utils.js";
 import {
   loadCreditSettingsDefaults,
@@ -1213,6 +1216,7 @@ export async function getMyDashboardSummary(req, res) {
         const riskRequestFilter = {
           ...requestFilter,
           ...dateFilter,
+          ...NON_SHIPPING_SAMPLE_QUERY,
           manufacturerStage: {
             $in: [
               "준비",
@@ -1235,8 +1239,8 @@ export async function getMyDashboardSummary(req, res) {
         const onTimeRequestFilter = {
           ...requestFilter,
           ...dateFilter,
+          ...NON_SHIPPING_SAMPLE_QUERY,
           manufacturerStage: { $ne: "취소" },
-          source: { $ne: "manufacturer_sample" },
           $and: [
             {
               $or: [
@@ -1285,7 +1289,7 @@ export async function getMyDashboardSummary(req, res) {
             .limit(10)
             .lean(),
           getDashboardRiskSummaryData({
-            cacheKey: `dashboard-risk-summary:requestor:v4:${businessAnchorId}:${range.token}`,
+            cacheKey: `dashboard-risk-summary:requestor:v5:${businessAnchorId}:${range.token}`,
             riskRequestFilter,
             onTimeRequestFilter,
             debug,
@@ -1715,19 +1719,18 @@ export async function getDashboardRiskSummary(req, res) {
 
     const baseFilter = {
       ...dateFilter,
+      ...NON_SHIPPING_SAMPLE_QUERY,
       manufacturerStage: { $in: RISK_PRE_SHIP_STAGES },
       "caseInfos.implantBrand": { $exists: true, $ne: "" },
-      // R&D 샘플은 리스크 요약에서 제외
-      source: { $ne: "manufacturer_sample" },
       // 가공불가 판정 건은 지연 위험 집계에서 제외
       "rnd.unmachinableAt": null,
     };
 
     const onTimeBaseFilter = {
       ...dateFilter,
+      ...NON_SHIPPING_SAMPLE_QUERY,
       manufacturerStage: { $ne: "취소" },
       "caseInfos.implantBrand": { $exists: true, $ne: "" },
-      source: { $ne: "manufacturer_sample" },
       $or: [
         { "rnd.unmachinableAt": null },
         { manufacturerStage: { $in: UNMACHINABLE_SHIP_CONTINUE_STAGES } },
@@ -1755,7 +1758,7 @@ export async function getDashboardRiskSummary(req, res) {
           ? String(req.user?.businessAnchorId || req.user?._id || "").trim()
           : "admin";
     const riskData = await getDashboardRiskSummaryData({
-      cacheKey: `dashboard-risk-summary:v4:${role}:${cacheScope}:${range.token}`,
+      cacheKey: `dashboard-risk-summary:v5:${role}:${cacheScope}:${range.token}`,
       riskRequestFilter: filter,
       onTimeRequestFilter,
       debug,

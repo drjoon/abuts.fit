@@ -2,7 +2,7 @@
 // 치과 신규의뢰의 간접 어벗(스캔바디 | 심플 힐링)과 같이 두 칸을 나란히 둔다.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Boxes } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DashBigNumber, DashTile } from "@/shared/ui/dashboard/DashTile";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
@@ -63,38 +63,24 @@ export function IndirectAbutmentCard({ className }: { className?: string }) {
 
   return (
     <>
-      <Card
-        className={cn(
-          "app-glass-card app-glass-card--lg h-full cursor-pointer transition hover:bg-slate-50/60",
-          hasRows && "border-amber-300 bg-amber-50/60 hover:bg-amber-50",
-          className,
-        )}
-        role="button"
-        tabIndex={0}
+      <DashTile
+        title="간접어벗"
+        icon={<Boxes className={cn("h-4 w-4", hasRows ? "text-amber-600" : "text-muted-foreground")} />}
+        tone={hasRows ? "warn" : "default"}
+        className={className}
         onClick={() => setOpen(true)}
-        onKeyDown={(event) => {
-          if (event.target !== event.currentTarget) return;
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            setOpen(true);
-          }
-        }}
       >
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">간접어벗</CardTitle>
-          <Boxes className={cn("h-4 w-4", hasRows ? "text-amber-600" : "text-muted-foreground")} />
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="flex items-end justify-between gap-2">
-            <div className={cn("text-2xl font-bold", hasRows && "text-amber-900")}>
-              {rows.length.toLocaleString()}
-              <span className="ml-1 text-sm font-medium text-muted-foreground">종</span>
-            </div>
-            <span className="text-xs text-muted-foreground">의뢰 {transfers.toLocaleString()}건</span>
-          </div>
-          <p className="text-[11px] text-muted-foreground">타사 · 어벗츠 스캔바디</p>
-        </CardContent>
-      </Card>
+        <div className="flex h-full flex-col justify-end gap-0.5">
+          <DashBigNumber
+            value={rows.length.toLocaleString()}
+            unit="종"
+            className={hasRows ? "text-amber-900" : undefined}
+          />
+          <p className="truncate text-[11px] text-muted-foreground">
+            의뢰 {transfers.toLocaleString()}건
+          </p>
+        </div>
+      </DashTile>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="flex max-h-[90vh] w-[min(90rem,calc(100vw-2rem))] max-w-[min(90rem,calc(100vw-2rem))] flex-col gap-4 overflow-hidden sm:max-w-[min(90rem,calc(100vw-2rem))]">

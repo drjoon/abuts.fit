@@ -6,8 +6,7 @@
 // - 2026-10-04: 관리자 대시보드 — 어벗츠(하청·자체) 데모 전환 지급 확인 카드.
 import { useCallback, useEffect, useState } from "react";
 import { ArrowRightLeft } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/shared/ui/cn";
+import { DashBigNumber, DashTile } from "@/shared/ui/dashboard/DashTile";
 import { request } from "@/shared/api/apiClient";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import {
@@ -59,61 +58,25 @@ export function AdminDemoConversionCard({ enabled = true, className }: Props) {
   const count = pending.length;
 
   return (
-    <Card className={cn("app-glass-card app-glass-card--lg", className)}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">
-          데모 전환 · 어벗츠 확인
-        </CardTitle>
-        <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <button
-          type="button"
-          className="w-full rounded-sm px-1 py-1 text-left transition hover:bg-slate-50/70 disabled:cursor-default disabled:hover:bg-transparent"
-          onClick={() => {
-            if (pending[0]) openAdminDemoConversionConfirm(pending[0].invoiceId);
-          }}
-          disabled={count === 0}
-        >
-          <div className="text-2xl font-bold">
-            {count.toLocaleString("ko-KR")}
-            <span className="ml-1 text-sm font-medium text-muted-foreground">
-              대기
-            </span>
-          </div>
-          <div className="mt-2 space-y-1">
-            {pending.slice(0, 3).map((row) => (
-              <div
-                key={row.invoiceId}
-                className="truncate text-[11px] text-slate-700"
-              >
-                {row.practiceName || "치과"}
-                <span className="text-muted-foreground">
-                  {" "}
-                  · {row.amount.toLocaleString("ko-KR")}원
-                </span>
-              </div>
-            ))}
-            {count === 0 ? (
-              <div className="text-[11px] text-muted-foreground">
-                {loading
-                  ? "불러오는 중…"
-                  : "확인할 하청·어벗츠 자체 전환이 없습니다."}
-              </div>
-            ) : null}
-            {count > 3 ? (
-              <div className="text-[11px] text-muted-foreground">
-                외 {(count - 3).toLocaleString("ko-KR")}건
-              </div>
-            ) : null}
-          </div>
-          {count > 0 ? (
-            <div className="mt-2 text-[11px] text-muted-foreground">
-              클릭하면 지급 완료를 확인합니다.
-            </div>
-          ) : null}
-        </button>
-      </CardContent>
-    </Card>
+    <DashTile
+      title="데모 전환 확인"
+      icon={<ArrowRightLeft className="h-4 w-4 text-muted-foreground" />}
+      tone={count > 0 ? "warn" : "default"}
+      className={className}
+      onClick={
+        count > 0 ? () => openAdminDemoConversionConfirm(pending[0].invoiceId) : undefined
+      }
+    >
+      <div className="flex h-full flex-col justify-end gap-0.5">
+        <DashBigNumber value={count.toLocaleString("ko-KR")} unit="대기" />
+        <p className="truncate text-[11px] text-muted-foreground">
+          {pending[0]
+            ? `${pending[0].practiceName || "치과"} · ${pending[0].amount.toLocaleString("ko-KR")}원${count > 1 ? ` 외 ${count - 1}건` : ""}`
+            : loading
+              ? "불러오는 중…"
+              : "확인할 전환 없음"}
+        </p>
+      </div>
+    </DashTile>
   );
 }

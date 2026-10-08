@@ -424,10 +424,16 @@ export async function createHexVerificationSampleClone({
       queuePosition: null,
       machiningQty: 1,
       actualCamStart: null,
+      scheduledShipPickup: null,
+      scheduledPickupRequest: null,
     },
-    timeline: sourceRequest.timeline
-      ? JSON.parse(JSON.stringify(sourceRequest.timeline))
-      : undefined,
+    timeline: {
+      originalEstimatedShipYmd: null,
+      nextEstimatedShipYmd: null,
+      estimatedShipYmd: null,
+      forceTodayShipment: false,
+      actualCompletion: null,
+    },
     partnerBilling: sourceRequest.partnerBilling
       ? JSON.parse(JSON.stringify(sourceRequest.partnerBilling))
       : undefined,

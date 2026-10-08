@@ -51,7 +51,10 @@ import {
   deleteExpressSurchargeAtomic,
   deleteShippingSpendAtomicOnRollback,
 } from "../../services/creditBalance.service.js";
-import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
+import {
+  isNonShippingSampleRequest,
+  resolveEffectiveShippingMode,
+} from "./shippingPriority.utils.js";
 import {
   resolveQuotedPriceWithExpressFee,
   toPlainRequestPrice,
@@ -766,6 +769,18 @@ export function revertManufacturerStageByReviewStage(request, stage) {
  */
 export async function updateCurrentEstimatedShipYmdOnPackingEnter(request) {
   if (!request) return;
+
+  if (isNonShippingSampleRequest(request)) {
+    request.timeline = request.timeline || {};
+    request.timeline.originalEstimatedShipYmd = null;
+    request.timeline.nextEstimatedShipYmd = null;
+    request.timeline.estimatedShipYmd = null;
+    request.timeline.forceTodayShipment = false;
+    if (request.productionSchedule) {
+      request.productionSchedule.scheduledShipPickup = null;
+    }
+    return;
+  }
 
   request.timeline = request.timeline || {};
   const resolved = resolvePackingEnterShipYmds({

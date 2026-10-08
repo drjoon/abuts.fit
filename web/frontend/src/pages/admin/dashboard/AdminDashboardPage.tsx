@@ -30,11 +30,17 @@
 // - 2026-09-05: 추가요청 승인(지정 기공소/전체) · 반려.
 // - 2026-09-30: 공지 관리 카드 — 대상 대시보드 1줄 alert.
 // - 2026-09-13: 3·6개월 무주문 의뢰자 알람 배너.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import { useNavigate } from "react-router-dom";
 import { appendDashboardPeriodParams, usePeriodStore } from "@/store/usePeriodStore";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DASH_GRID_CLASS,
+  DASH_SPAN,
+  DashBigNumber,
+  DashStat,
+  DashTile,
+} from "@/shared/ui/dashboard/DashTile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -494,6 +500,52 @@ const UNMACHINABLE_DETAIL_BADGE_VARIANT = (
   if (code === "confirmed") return "secondary";
   return "outline";
 };
+
+function KpiTile({
+  className,
+  title,
+  icon,
+  value,
+  sub,
+  onClick,
+}: {
+  className?: string;
+  title: string;
+  icon: ReactNode;
+  value: ReactNode;
+  sub?: string;
+  onClick: () => void;
+}) {
+  return (
+    <DashTile className={className} title={title} icon={icon} onClick={onClick}>
+      <div className="flex h-full flex-col justify-end gap-0.5">
+        <div className="truncate text-2xl font-bold leading-none">{value}</div>
+        {sub ? <p className="truncate text-[11px] text-muted-foreground">{sub}</p> : null}
+      </div>
+    </DashTile>
+  );
+}
+
+function DashMini({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "primary";
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="truncate text-[11px] text-muted-foreground">{label}</div>
+      <div
+        className={`truncate text-lg font-semibold leading-tight ${tone === "primary" ? "text-primary-strong" : ""}`}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
 
 const getAlertIcon = (type: string) => {
   switch (type) {
@@ -2126,716 +2178,480 @@ export const AdminDashboardPage = () => {
         topSection={undefined}
         stats={
           <>
-            {/* 플랫폼 성장 KPI */}
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-5">
-              <Card
-                className="app-glass-card app-glass-card--lg cursor-pointer transition hover:bg-slate-50/60"
-                onClick={() => setGrowthDetailMetric("todayAccess")}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setGrowthDetailMetric("todayAccess");
-                  }
-                }}
+            {/* 벤토: 처리할 것 → 성장 지표 → 돈·공지·알림 → 통계·설정(자주 안 봄) */}
+            <div className={DASH_GRID_CLASS}>
+              {/* 1) 지금 처리·확인할 것 */}
+              <DashTile
+                className={DASH_SPAN.c4r2}
+                title="진행 / 완료"
+                icon={<FileText className="h-4 w-4 text-muted-foreground" />}
               >
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">오늘 접속</CardTitle>
-                  <Activity className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {Number(platformGrowthStats?.todayAccessUsers || 0).toLocaleString()}
+                <div className="flex h-full flex-col justify-between gap-2">
+                  <DashBigNumber
+                    value={inProgressRequestCount.toLocaleString()}
+                    unit="건 진행 중"
+                    className="[&>span:first-child]:text-4xl"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <DashStat
+                      label="택배 묶음 출고"
+                      value={`${inProgressNormalCount.toLocaleString()}건`}
+                      tone="primary"
+                    />
+                    <DashStat
+                      label="딜리버리 익일 도착"
+                      value={`${inProgressExpressCount.toLocaleString()}건`}
+                      tone={inProgressExpressCount > 0 ? "warn" : undefined}
+                    />
+                    <DashStat
+                      label="완료 · 유료"
+                      value={`${Number(completionSummary?.paid || 0).toLocaleString()}건`}
+                    />
+                    <DashStat
+                      label="완료 · 무료"
+                      value={`${Number(completionSummary?.free || 0).toLocaleString()}건`}
+                      tone="muted"
+                    />
                   </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">KST 오늘 로그인·접속 · 클릭하여 내역</p>
-                </CardContent>
-              </Card>
-              <Card
-                className="app-glass-card app-glass-card--lg cursor-pointer transition hover:bg-slate-50/60"
-                onClick={() => setGrowthDetailMetric("monthAccess")}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setGrowthDetailMetric("monthAccess");
-                  }
-                }}
-              >
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">월간 유저</CardTitle>
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {Number(platformGrowthStats?.monthActiveUsers || 0).toLocaleString()}
-                  </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">KST 이번 달 접속 · 클릭하여 내역</p>
-                </CardContent>
-              </Card>
-              <Card
-                className="app-glass-card app-glass-card--lg cursor-pointer transition hover:bg-slate-50/60"
-                onClick={() => setGrowthDetailMetric("totalUsers")}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setGrowthDetailMetric("totalUsers");
-                  }
-                }}
-              >
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">총 유저</CardTitle>
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {Number(platformGrowthStats?.totalUsers || 0).toLocaleString()}
-                  </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    치과 {Number(platformGrowthStats?.practiceBusinessCount || 0).toLocaleString()} · 기공소{" "}
-                    {Number(platformGrowthStats?.labBusinessCount || 0).toLocaleString()} · 클릭하여 내역
-                  </p>
-                </CardContent>
-              </Card>
-              <Card
-                className="app-glass-card app-glass-card--lg cursor-pointer transition hover:bg-slate-50/60"
-                onClick={() => setGrowthDetailMetric("periodRequests")}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setGrowthDetailMetric("periodRequests");
-                  }
-                }}
-              >
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">이용건수</CardTitle>
-                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {Number(platformGrowthStats?.periodRequestCount || 0).toLocaleString()}
-                  </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    기간 선택 · 누적 {Number(platformGrowthStats?.allTimeRequestCount || 0).toLocaleString()} · 클릭하여 내역
-                  </p>
-                </CardContent>
-              </Card>
-              <Card
-                className="app-glass-card app-glass-card--lg cursor-pointer transition hover:bg-slate-50/60"
-                onClick={() => setGrowthDetailMetric("periodRevenue")}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setGrowthDetailMetric("periodRevenue");
-                  }
-                }}
-              >
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">매출</CardTitle>
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    ₩{Number(platformGrowthStats?.periodRevenue || 0).toLocaleString()}
-                  </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">기간 유료 주문액 · 클릭하여 내역</p>
-                </CardContent>
-              </Card>
-            </div>
+                </div>
+              </DashTile>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              <DashTile
+                className={DASH_SPAN.c3r2}
+                title="지연 위험"
+                tone={riskDelayedCount > 0 ? "danger" : riskWarningCount > 0 ? "warn" : "default"}
+                icon={<AlertCircle className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => setRiskSummaryDialogOpen(true)}
+              >
+                <div className="grid h-full grid-cols-2 content-center gap-2">
+                  <DashStat
+                    label="지연 가능"
+                    value={`${riskWarningCount.toLocaleString()}건`}
+                    tone={riskWarningCount > 0 ? "warn" : undefined}
+                  />
+                  <DashStat
+                    label="지연 확정"
+                    value={`${riskDelayedCount.toLocaleString()}건`}
+                    tone={riskDelayedCount > 0 ? "danger" : undefined}
+                  />
+                  <DashStat
+                    label={`택배 정시${riskNormalEvaluatedCount > 0 ? ` · ${riskNormalEvaluatedCount.toLocaleString()}건` : ""}`}
+                    value={`${riskNormalOnTimeRate.toLocaleString()}%`}
+                  />
+                  <DashStat
+                    label={`딜리버리 정시${riskExpressEvaluatedCount > 0 ? ` · ${riskExpressEvaluatedCount.toLocaleString()}건` : ""}`}
+                    value={`${riskExpressOnTimeRate.toLocaleString()}%`}
+                  />
+                </div>
+              </DashTile>
+
+              <DashTile
+                className={DASH_SPAN.c5r2}
+                title="불완전가공 의뢰"
+                tone={Number(unmachinableSummary?.judgedCount || 0) > 0 ? "warn" : "default"}
+                bodyClassName="flex flex-col gap-2"
+              >
+                <div className="grid shrink-0 grid-cols-3 gap-2">
+                  <DashStat
+                    label="가능성"
+                    value={Number(unmachinableSummary?.potentialCount || 0).toLocaleString()}
+                  />
+                  <DashStat
+                    label="판정"
+                    value={Number(unmachinableSummary?.judgedCount || 0).toLocaleString()}
+                    tone="warn"
+                  />
+                  <DashStat
+                    label="확인"
+                    value={Number(unmachinableSummary?.confirmedCount || 0).toLocaleString()}
+                    tone="primary"
+                  />
+                </div>
+                <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-1.5 py-1.5">
+                  {unmachinableItems.map((rawItem, idx) => {
+                    const item = rawItem as Record<string, unknown>;
+                    const code = String(
+                      item?.unmachinableDetailCode || "none",
+                    ) as UnmachinableDetailCode;
+                    const caseInfos =
+                      (item?.caseInfos as Record<string, unknown> | undefined) || {};
+                    const clinic = String(caseInfos?.clinicName || "").trim();
+                    const patient = String(caseInfos?.patientName || "").trim();
+                    const title =
+                      String(item?.title || "").trim() ||
+                      [clinic, patient].filter(Boolean).join(" ") ||
+                      String(item?.requestId || "");
+                    const key = String(item?._id || item?.requestId || `unmach-${idx}`);
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        className="w-full rounded-lg border px-2 py-1 text-left transition hover:bg-slate-50"
+                        onClick={() => {
+                          setUnmachinableDetailDialog({
+                            open: true,
+                            item: rawItem as UnmachinableSummaryItem,
+                          });
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="truncate text-xs font-medium">{title}</div>
+                          <div className="flex flex-shrink-0 items-center gap-1">
+                            <ShippingModeBadge source={rawItem as any} size="sm" />
+                            <Badge
+                              variant={UNMACHINABLE_DETAIL_BADGE_VARIANT(code)}
+                              className={`text-[10px] ${
+                                code === "judged" || code === "potential"
+                                  ? "border-accent-muted bg-accent-soft text-accent-strong"
+                                  : ""
+                              }`}
+                            >
+                              {UNMACHINABLE_DETAIL_LABEL[code] || UNMACHINABLE_DETAIL_LABEL.none}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="truncate text-[11px] text-muted-foreground">
+                          {[
+                            String(item?.businessName || "").trim(),
+                            getNormalizedStageLabelSafe(item) ||
+                              String(item?.manufacturerStage || ""),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "-"}
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {unmachinableItems.length === 0 ? (
+                    <div className="py-3 text-center text-xs text-muted-foreground">
+                      표시할 의뢰가 없습니다.
+                    </div>
+                  ) : null}
+                </div>
+              </DashTile>
+
+              <AdminDemoConversionCard
+                className={DASH_SPAN.c2}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
+              <DashTile
+                className={DASH_SPAN.c2}
+                title="헥스 회전 확인"
+                tone={hexVerificationCount > 0 ? "warn" : "default"}
+                icon={<RotateCw className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => setHexVerificationDialogOpen(true)}
+              >
+                <div className="flex h-full flex-col justify-end gap-0.5">
+                  <DashBigNumber value={hexVerificationCount.toLocaleString()} unit="진행중" />
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    {pendingHexVerificationItems[0]
+                      ? `${pendingHexVerificationItems[0].businessName || pendingHexVerificationItems[0].businessAnchorId || "-"}${
+                          pendingHexVerificationItems.length > 1
+                            ? ` 외 ${(pendingHexVerificationItems.length - 1).toLocaleString()}건`
+                            : ""
+                        }`
+                      : loadingHexVerification
+                        ? "불러오는 중…"
+                        : `확정 ${confirmedHexVerificationCount.toLocaleString()}건`}
+                  </p>
+                </div>
+              </DashTile>
+              <DashTile
+                className={DASH_SPAN.c2}
+                title="신규 보철물 요청"
+                tone={prosthesisFeeItemRequestPending > 0 ? "warn" : "default"}
+                icon={<Layers className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => {
+                  setProsthesisFeeItemRequestFilter("all");
+                  setProsthesisFeeItemRequestDialogOpen(true);
+                }}
+              >
+                <div className="flex h-full flex-col justify-end gap-0.5">
+                  <DashBigNumber
+                    value={prosthesisFeeItemRequestPending.toLocaleString()}
+                    unit="대기"
+                  />
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    {prosthesisFeeItemRequestStatRows
+                      .filter((row) => row.key !== "pending")
+                      .map((row) => `${row.label} ${row.count.toLocaleString()}`)
+                      .join(" · ")}
+                  </p>
+                </div>
+              </DashTile>
+              <DashTile
+                className={DASH_SPAN.c3}
+                title="이번 주 해피콜"
+                icon={<PhoneCall className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => {
+                  setHappyCallReasonFilter("all");
+                  setHappyCallDialogTab("targets");
+                  setHappyCallDialogOpen(true);
+                }}
+              >
+                <div className="flex h-full flex-col justify-end gap-0.5">
+                  <DashBigNumber
+                    value={Number(happyCallSummary?.totalRequestorCount || 0).toLocaleString()}
+                    unit="개 대상"
+                  />
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    전체 사업자{" "}
+                    {(adminDashboardResponse?.data?.userStats?.requestorBusinessCount ?? 0).toLocaleString()}
+                    개
+                  </p>
+                </div>
+              </DashTile>
               <NoOrderAlertBanner
-                className="h-full"
+                variant="tile"
+                className={DASH_SPAN.c3}
                 data={noOrderAlertsData}
                 loading={noOrderAlertsLoading}
               />
-              <DirectAbutmentSettingsCard />
-              <IndirectAbutmentCard />
-              <NoticeAdminCard className="h-full lg:col-span-2" />
-            </div>
 
-            <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {/* 카드1: 진행 / 완료 */}
-              <Card className="app-glass-card app-glass-card--lg">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">진행 / 완료</CardTitle>
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                    <div className="text-xs text-muted-foreground">진행</div>
-                    <div className="text-right text-lg font-bold">{inProgressRequestCount.toLocaleString()}</div>
-                    <div className="text-xs text-muted-foreground">택배 묶음 출고</div>
-                    <div className="text-right text-base font-semibold text-primary-strong">
-                      {inProgressNormalCount.toLocaleString()}건
-                    </div>
-                    <div className="text-xs text-muted-foreground">딜리버리 익일 도착</div>
-                    <div className="text-right text-base font-semibold text-accent-strong">
-                      {inProgressExpressCount.toLocaleString()}건
-                    </div>
-                    <div className="text-xs text-muted-foreground">완료(유료)</div>
-                    <div className="text-right text-base font-semibold">
-                      {Number(completionSummary?.paid || 0).toLocaleString()}건
-                    </div>
-                    <div className="text-xs text-muted-foreground">완료(무료)</div>
-                    <div className="text-right text-base font-semibold text-muted-foreground">
-                      {Number(completionSummary?.free || 0).toLocaleString()}건
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* 카드2: 이번 주 해피콜 의뢰자 */}
-              <Card className="app-glass-card app-glass-card--lg">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    이번 주 해피콜 의뢰자
-                  </CardTitle>
-                  <PhoneCall className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <button
-                    type="button"
-                    className="w-full px-1 py-2 text-left hover:bg-slate-50/70 transition rounded-sm"
-                    onClick={() => {
-                      setHappyCallReasonFilter("all");
-                      setHappyCallDialogTab("targets");
-                      setHappyCallDialogOpen(true);
-                    }}
-                  >
-                    <div className="flex items-end justify-between gap-2">
-                      <div className="text-xs text-muted-foreground">해피콜 대상 의뢰자</div>
-                      <div className="text-3xl font-bold text-primary-strong leading-none">
-                        {Number(happyCallSummary?.totalRequestorCount || 0).toLocaleString()}개
-                      </div>
-                    </div>
-                    <div className="mt-2 flex items-end justify-between gap-2">
-                      <div className="text-xs text-muted-foreground">전체 의뢰자 사업자</div>
-                      <div className="text-lg sm:text-xl font-bold">
-                        {(adminDashboardResponse?.data?.userStats?.requestorBusinessCount ?? 0).toLocaleString()}개
-                      </div>
-                    </div>
-                  </button>
-                </CardContent>
-              </Card>
-
-              <AdminDemoConversionCard
-                enabled={Boolean(token) && user?.role === "admin"}
+              {/* 2) 성장 지표 */}
+              <KpiTile
+                className={DASH_SPAN.c2}
+                title="오늘 접속"
+                icon={<Activity className="h-4 w-4 text-muted-foreground" />}
+                value={Number(platformGrowthStats?.todayAccessUsers || 0).toLocaleString()}
+                sub="KST 오늘"
+                onClick={() => setGrowthDetailMetric("todayAccess")}
+              />
+              <KpiTile
+                className={DASH_SPAN.c2}
+                title="월간 유저"
+                icon={<Users className="h-4 w-4 text-muted-foreground" />}
+                value={Number(platformGrowthStats?.monthActiveUsers || 0).toLocaleString()}
+                sub="이번 달 접속"
+                onClick={() => setGrowthDetailMetric("monthAccess")}
+              />
+              <KpiTile
+                className={DASH_SPAN.c2}
+                title="총 유저"
+                icon={<Users className="h-4 w-4 text-muted-foreground" />}
+                value={Number(platformGrowthStats?.totalUsers || 0).toLocaleString()}
+                sub={`치과 ${Number(platformGrowthStats?.practiceBusinessCount || 0).toLocaleString()} · 기공소 ${Number(platformGrowthStats?.labBusinessCount || 0).toLocaleString()}`}
+                onClick={() => setGrowthDetailMetric("totalUsers")}
+              />
+              <KpiTile
+                className={DASH_SPAN.c3}
+                title="이용건수"
+                icon={<BarChart3 className="h-4 w-4 text-muted-foreground" />}
+                value={Number(platformGrowthStats?.periodRequestCount || 0).toLocaleString()}
+                sub={`누적 ${Number(platformGrowthStats?.allTimeRequestCount || 0).toLocaleString()}`}
+                onClick={() => setGrowthDetailMetric("periodRequests")}
+              />
+              <KpiTile
+                className={DASH_SPAN.c3}
+                title="매출"
+                icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
+                value={`₩${Number(platformGrowthStats?.periodRevenue || 0).toLocaleString()}`}
+                sub="기간 유료 주문액"
+                onClick={() => setGrowthDetailMetric("periodRevenue")}
               />
 
-              {/* 카드3: ExoCAD 헥스 회전 확인 */}
-              <Card className="app-glass-card app-glass-card--lg">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    헥스 회전 확인
-                  </CardTitle>
-                  <RotateCw className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <button
-                    type="button"
-                    className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
-                    onClick={() => setHexVerificationDialogOpen(true)}
-                  >
-                    <div className="text-2xl font-bold">
-                      {hexVerificationCount.toLocaleString()}
-                      <span className="ml-1 text-sm font-medium text-muted-foreground">
-                        진행중
-                      </span>
-                    </div>
-                    <div className="mt-2 space-y-1">
-                      {pendingHexVerificationItems.slice(0, 3).map((row) => (
-                        <div
-                          key={String(row.businessAnchorId || row.businessName)}
-                          className="truncate text-[11px] text-muted-foreground"
-                        >
-                          {row.businessName || row.businessAnchorId || "-"}
-                          {row.pendingUserCount
-                            ? ` · 미확정 ${row.pendingUserCount}명`
-                            : ""}
-                        </div>
-                      ))}
-                      {pendingHexVerificationItems.length === 0 ? (
-                        <div className="text-[11px] text-muted-foreground">
-                          {loadingHexVerification
-                            ? "불러오는 중…"
-                            : confirmedHexVerificationCount > 0
-                              ? `확정 제조사 ${confirmedHexVerificationCount.toLocaleString()}건 · 클릭하여 보기/수정`
-                              : "ExoCAD 3.0 이하 계정이 없습니다."}
-                        </div>
-                      ) : null}
-                      {pendingHexVerificationItems.length > 3 ? (
-                        <div className="text-[11px] text-muted-foreground">
-                          외 {(pendingHexVerificationItems.length - 3).toLocaleString()}건
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="mt-2 text-[11px] text-muted-foreground">
-                      클릭하면 진행중·확정 목록을 보고 수정합니다.
-                    </div>
-                  </button>
-                </CardContent>
-              </Card>
-
-              {/* 카드5-3b: 신규 보철물(기공수가) 요청 */}
-              <Card className="app-glass-card app-glass-card--lg">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    신규 보철물 요청
-                  </CardTitle>
-                  <Layers className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <button
-                    type="button"
-                    className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
-                    onClick={() => {
-                      setProsthesisFeeItemRequestFilter("all");
-                      setProsthesisFeeItemRequestDialogOpen(true);
-                    }}
-                  >
-                    <div className="space-y-1.5">
-                      {prosthesisFeeItemRequestStatRows.map((row) => {
-                        const isPending = row.key === "pending";
-                        const isApproved = row.key === "approved";
-                        return (
-                          <div
-                            key={row.key}
-                            className="flex items-center justify-between text-[11px]"
-                          >
-                            <span className="text-muted-foreground">{row.label}</span>
-                            <span
-                              className={`font-semibold ${
-                                isPending
-                                  ? "text-amber-800"
-                                  : isApproved
-                                    ? "text-sky-800"
-                                    : "text-primary-strong"
-                              }`}
-                            >
-                              {row.count.toLocaleString()}건
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {prosthesisFeeItemRequestPending > 0 ? (
-                      <div className="mt-2 space-y-1">
-                        {prosthesisFeeItemRequestItems
-                          .filter((item) => item.status === "pending")
-                          .slice(0, 3)
-                          .map((item) => (
-                            <div
-                              key={String(item.id || `${item.nameKey}-${item.createdAt}`)}
-                              className="truncate text-[11px] text-slate-700"
-                            >
-                              {String(item.name || "-")}
-                              <span className="text-muted-foreground">
-                                {" "}
-                                · {String(item.practiceName || "-")}
-                                {formatProsthesisFeeItemRequestLabs(item)
-                                  ? ` → ${formatProsthesisFeeItemRequestLabs(item)}`
-                                  : ""}
-                              </span>
-                            </div>
-                          ))}
-                      </div>
-                    ) : null}
-                  </button>
-                </CardContent>
-              </Card>
-
-              {/* 카드5-2: 디자인 소프트웨어 통계 */}
-              <Card className="app-glass-card app-glass-card--lg">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    디자인 소프트웨어 통계
-                  </CardTitle>
-                  <Code2 className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <button
-                    type="button"
-                    className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
-                    onClick={() => {
-                      setDesignSoftwareStatsFilter("all");
-                      setDesignSoftwareStatsDialogOpen(true);
-                    }}
-                  >
-                    <div className="space-y-2">
-                      {designSoftwareStatRows.map((row) => {
-                        const ratio = Math.max(
-                          0,
-                          Math.min(1, row.count / designSoftwareMaxCount),
-                        );
-                        const tone = getDesignSoftwareToneClasses(row.key);
-                        return (
-                          <div key={row.key} className="space-y-1 py-0.5">
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="text-muted-foreground">{row.label}</span>
-                              <span className={`font-semibold ${tone.count}`}>
-                                {row.count.toLocaleString()}개
-                              </span>
-                            </div>
-                            <div className="h-2 w-full rounded bg-slate-100 overflow-hidden">
-                              <div
-                                className={`h-full rounded ${tone.bar}`}
-                                style={{ width: `${ratio * 100}%` }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="mt-2 text-[11px] text-muted-foreground">
-                      총 {designSoftwareTotalCount.toLocaleString()}개 사업자
-                    </div>
-                  </button>
-                </CardContent>
-              </Card>
-
-              {/* 카드5-3: 미제공 어벗(임플란트 추가 요청) 통계 */}
-              <Card className="app-glass-card app-glass-card--lg">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    미제공 어벗 통계
-                  </CardTitle>
-                  <Puzzle className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <button
-                    type="button"
-                    className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
-                    onClick={() => {
-                      setUnsupportedAbutmentStatsFilter("all");
-                      setUnsupportedAbutmentStatsDialogOpen(true);
-                    }}
-                  >
-                    <div className="space-y-2">
-                      {unsupportedAbutmentStatRows.map((row) => {
-                        const ratio = Math.max(
-                          0,
-                          Math.min(1, row.count / unsupportedAbutmentMaxCount),
-                        );
-                        const tone = getUnsupportedAbutmentToneClasses(row.key);
-                        return (
-                          <div key={row.key} className="space-y-1 py-0.5">
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="text-muted-foreground">{row.label}</span>
-                              <span className={`font-semibold ${tone.count}`}>
-                                {row.count.toLocaleString()}건
-                              </span>
-                            </div>
-                            <div className="h-2 w-full rounded bg-slate-100 overflow-hidden">
-                              <div
-                                className={`h-full rounded ${tone.bar}`}
-                                style={{ width: `${ratio * 100}%` }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="mt-2 text-[11px] text-muted-foreground">
-                      총 {unsupportedAbutmentTotal.toLocaleString()}건 · 클릭 시 치과·기공소·임플란트 상세
-                    </div>
-                  </button>
-                </CardContent>
-              </Card>
-
-              {/* 카드8: 지연 위험 요약 */}
-              <Card className="app-glass-card app-glass-card--lg">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">지연 위험 요약</CardTitle>
-                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <button
-                    type="button"
-                    className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
-                    onClick={() => setRiskSummaryDialogOpen(true)}
-                  >
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                      <span>지연 가능 의뢰: {riskWarningCount.toLocaleString()}건</span>
-                      <span>지연 확정 의뢰: {riskDelayedCount.toLocaleString()}건</span>
-                      <span>
-                        택배 정시: {riskNormalOnTimeRate.toLocaleString()}%
-                        {riskNormalEvaluatedCount > 0
-                          ? ` (${riskNormalEvaluatedCount.toLocaleString()}건)`
-                          : ""}
-                      </span>
-                      <span>
-                        딜리버리 정시: {riskExpressOnTimeRate.toLocaleString()}%
-                        {riskExpressEvaluatedCount > 0
-                          ? ` (${riskExpressEvaluatedCount.toLocaleString()}건)`
-                          : ""}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-[11px] text-muted-foreground">
-                      클릭하면 지연 위험 상세 내역을 확인할 수 있습니다.
-                    </div>
-                  </button>
-                </CardContent>
-              </Card>
-
-              {/* 카드5-4: 가공 통계 */}
-              <Card className="app-glass-card app-glass-card--lg">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">가공 통계</CardTitle>
-                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <button
-                    type="button"
-                    className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
-                    onClick={() => setMachiningStatsDialogOpen(true)}
-                  >
-                    <div className="text-sm font-semibold text-slate-800">
-                      직경별 제작 · 소요시간
-                    </div>
-                    <div className="mt-1 text-[11px] text-muted-foreground leading-relaxed">
-                      6·8·10·12mm 제작 건수·비율과 최소·평균·최대 가공 시간을
-                      확인합니다.
-                    </div>
-                    <div className="mt-2 text-[11px] text-primary-strong font-medium">
-                      클릭하여 통계 열기
-                    </div>
-                  </button>
-                </CardContent>
-              </Card>
-
-              {/* 카드6: 불완전가공 의뢰 현황 */}
-              <Card className="app-glass-card app-glass-card--lg">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">불완전가공 의뢰 현황</CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-1 min-h-0 flex-col space-y-3">
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    <div className="rounded-md border px-2 py-2">
-                      <div className="text-[11px] text-muted-foreground">가능성</div>
-                      <div className="text-lg font-semibold">
-                        {Number(unmachinableSummary?.potentialCount || 0).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="rounded-md border px-2 py-2 border-accent-muted bg-accent-soft/60">
-                      <div className="text-[11px] text-muted-foreground">판정</div>
-                      <div className="text-lg font-semibold text-accent-strong">
-                        {Number(unmachinableSummary?.judgedCount || 0).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="rounded-md border px-2 py-2 border-primary-muted bg-primary-soft/60">
-                      <div className="text-[11px] text-muted-foreground">확인</div>
-                      <div className="text-lg font-semibold text-primary-strong">
-                        {Number(unmachinableSummary?.confirmedCount || 0).toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div
-                    className={`flex-1 min-h-0 space-y-1.5 pr-1 ${
-                      unmachinableItems.length >= 8
-                        ? "max-h-[420px] overflow-y-auto"
-                        : "overflow-visible"
-                    }`}
-                  >
-                    {unmachinableItems.map((rawItem, idx) => {
-                      const item = rawItem as Record<string, unknown>;
-                      const code = String(
-                        item?.unmachinableDetailCode || "none",
-                      ) as UnmachinableDetailCode;
-                      const caseInfos =
-                        (item?.caseInfos as Record<string, unknown> | undefined) || {};
-                      const clinic = String(caseInfos?.clinicName || "").trim();
-                      const patient = String(caseInfos?.patientName || "").trim();
-                      const title =
-                        String(item?.title || "").trim() ||
-                        [clinic, patient].filter(Boolean).join(" ") ||
-                        String(item?.requestId || "");
-                      const key = String(item?._id || item?.requestId || `unmach-${idx}`);
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          className="w-full rounded-md border px-2 py-1.5 text-left hover:bg-slate-50 transition"
-                          onClick={() => {
-                            setUnmachinableDetailDialog({
-                              open: true,
-                              item: rawItem as UnmachinableSummaryItem,
-                            });
-                          }}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="text-xs font-medium truncate">{title}</div>
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                              <ShippingModeBadge source={rawItem as any} size="sm" />
-                              <Badge
-                                variant={UNMACHINABLE_DETAIL_BADGE_VARIANT(code)}
-                                className={`text-[10px] ${
-                                  code === "judged" || code === "potential"
-                                    ? "border-accent-muted bg-accent-soft text-accent-strong"
-                                    : ""
-                                }`}
-                              >
-                                {UNMACHINABLE_DETAIL_LABEL[code] || UNMACHINABLE_DETAIL_LABEL.none}
-                              </Badge>
-                            </div>
-                          </div>
-                          <div className="text-[11px] text-muted-foreground truncate">
-                            의뢰번호: {String(item?.requestId || "-")} · 상태: {getNormalizedStageLabelSafe(item) || String(item?.manufacturerStage || "-")}
-                          </div>
-                          {String(item?.businessName || "").trim() && (
-                            <div className="text-[11px] text-muted-foreground truncate">
-                              의뢰자: {String(item?.businessName || "-")}
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-
-                    {unmachinableItems.length === 0 && (
-                      <div className="text-xs text-muted-foreground py-2 text-center">
-                        표시할 불완전가공 의뢰가 없습니다.
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="app-glass-card app-glass-card--lg lg:col-span-2">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">치과 의뢰(파일) 전송 통계</CardTitle>
-                  <UploadCloud className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <button
-                    type="button"
-                    className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
-                    onClick={() => setPracticeTransferStatsDialogOpen(true)}
-                  >
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2">
-                      <div>
-                        <div className="text-[11px] text-muted-foreground">전송</div>
-                        <div className="text-lg font-semibold">{practiceTransferTotal.toLocaleString()}건</div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] text-muted-foreground">파일</div>
-                        <div className="text-lg font-semibold">{practiceTransferTotalFiles.toLocaleString()}개</div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] text-muted-foreground">치과</div>
-                        <div className="text-lg font-semibold text-primary-strong">{practiceTransferTotalPractices.toLocaleString()}곳</div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] text-muted-foreground">기공소</div>
-                        <div className="text-lg font-semibold text-primary-strong">{practiceTransferTotalLabs.toLocaleString()}곳</div>
-                      </div>
-                    </div>
-                  </button>
-                </CardContent>
-              </Card>
-
-              {/* 카드7: 거래금액 / 평균 단가 / 배송비 */}
-              <Card className="app-glass-card app-glass-card--lg lg:col-span-2">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    거래금액 / 평균 단가 / 배송비
-                  </CardTitle>
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <div className="space-y-1">
-                      <div className="text-xs text-muted-foreground">유료 주문액</div>
-                      <div className="text-xl font-bold">
+              {/* 3) 공지 · 금액 · 알림 */}
+              <NoticeAdminCard className={DASH_SPAN.c5r2} />
+              <DashTile
+                className={DASH_SPAN.c4r2}
+                title="거래금액"
+                icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
+              >
+                <div className="flex h-full flex-col justify-between gap-2">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] text-muted-foreground">유료 주문액</div>
+                      <div className="truncate text-lg font-bold">
                         ₩{(pricingSummary?.totalRevenue ?? 0).toLocaleString()}
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <div className="text-xs text-muted-foreground">평균 단가</div>
-                      <div className="text-xl font-bold">
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] text-muted-foreground">평균 단가</div>
+                      <div className="truncate text-lg font-bold">
                         ₩{(pricingSummary?.avgUnitPrice ?? 0).toLocaleString()}
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <div className="text-xs text-muted-foreground">전체 배송비</div>
-                      <div className="text-xl font-bold">
-                        ₩
-                        {(
-                          pricingSummary?.totalShippingFeeSupply ?? 0
-                        ).toLocaleString()}
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] text-muted-foreground">배송비</div>
+                      <div className="truncate text-lg font-bold">
+                        ₩{(pricingSummary?.totalShippingFeeSupply ?? 0).toLocaleString()}
                       </div>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <div className="space-y-1">
-                      <div className="text-xs text-muted-foreground">무료 주문액</div>
-                      <div className="text-sm font-semibold text-muted-foreground">
-                        ₩
-                        {(
-                          pricingSummary?.totalBonusRevenue ?? 0
-                        ).toLocaleString()}
+                  <div className="grid grid-cols-3 gap-2 border-t pt-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] text-muted-foreground">무료 주문액</div>
+                      <div className="truncate text-sm font-semibold text-muted-foreground">
+                        ₩{(pricingSummary?.totalBonusRevenue ?? 0).toLocaleString()}
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <div className="text-xs text-muted-foreground">평균 무료 단가</div>
-                      <div className="text-sm font-semibold text-muted-foreground">
-                        ₩
-                        {(
-                          pricingSummary?.avgBonusUnitPrice ?? 0
-                        ).toLocaleString()}
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] text-muted-foreground">평균 무료 단가</div>
+                      <div className="truncate text-sm font-semibold text-muted-foreground">
+                        ₩{(pricingSummary?.avgBonusUnitPrice ?? 0).toLocaleString()}
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <div className="text-xs text-muted-foreground">평균 배송비</div>
-                      <div className="text-sm font-semibold">
-                        ₩
-                        {(
-                          pricingSummary?.avgShippingFeeSupply ?? 0
-                        ).toLocaleString()}
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] text-muted-foreground">평균 배송비</div>
+                      <div className="truncate text-sm font-semibold">
+                        ₩{(pricingSummary?.avgShippingFeeSupply ?? 0).toLocaleString()}
                       </div>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-
-              {/* 카드9: 시스템 알림 */}
-              <Card className="app-glass-card app-glass-card--lg lg:col-span-2">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">시스템 알림</CardTitle>
-                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {data.systemAlerts.length === 0 ? (
-                    <div className="text-xs text-muted-foreground">현재 이상 알림이 없습니다.</div>
-                  ) : (
-                    data.systemAlerts.map((alert) => (
+                </div>
+              </DashTile>
+              <DashTile
+                className={DASH_SPAN.c3r2}
+                title={
+                  <>
+                    시스템 알림
+                    {data.systemAlerts.length > 0 ? (
+                      <span className="font-normal">{data.systemAlerts.length}건</span>
+                    ) : null}
+                  </>
+                }
+                tone={data.systemAlerts.length > 0 ? "warn" : "default"}
+                icon={<AlertCircle className="h-4 w-4 text-muted-foreground" />}
+                bodyClassName="overflow-y-auto px-1.5 py-1.5"
+              >
+                {data.systemAlerts.length === 0 ? (
+                  <div className="py-3 text-center text-xs text-muted-foreground">
+                    이상 알림이 없습니다.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {data.systemAlerts.map((alert) => (
                       <div
                         key={alert.id}
-                        className="rounded border bg-accent-soft/60 px-2 py-1.5"
+                        className="flex items-start gap-2 rounded-lg border bg-white/70 px-2 py-1.5"
                       >
-                        <div className="flex items-start gap-2">
-                          <div className="mt-0.5">{getAlertIcon(alert.type)}</div>
-                          <div className="min-w-0">
-                            <div className="text-xs font-medium break-words">
-                              {alert.message}
-                            </div>
-                            <div className="text-[11px] text-muted-foreground mt-0.5">
-                              {toDateTimeLabel(alert.date)}
-                            </div>
+                        <div className="mt-0.5 shrink-0">{getAlertIcon(alert.type)}</div>
+                        <div className="min-w-0">
+                          <div className="line-clamp-2 break-words text-xs font-medium">
+                            {alert.message}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {toDateTimeLabel(alert.date)}
                           </div>
                         </div>
                       </div>
-                    ))
-                  )}
-                </CardContent>
-              </Card>
+                    ))}
+                  </div>
+                )}
+              </DashTile>
+
+              {/* 4) 통계 · 설정 (자주 안 봄) */}
+              <DashTile
+                className={DASH_SPAN.c3r2}
+                title="디자인 소프트웨어"
+                icon={<Code2 className="h-4 w-4 text-muted-foreground" />}
+                bodyClassName="overflow-y-auto px-1.5 py-1.5"
+                onClick={() => {
+                  setDesignSoftwareStatsFilter("all");
+                  setDesignSoftwareStatsDialogOpen(true);
+                }}
+              >
+                <div className="space-y-2">
+                  {designSoftwareStatRows.map((row) => {
+                    const ratio = Math.max(0, Math.min(1, row.count / designSoftwareMaxCount));
+                    const tone = getDesignSoftwareToneClasses(row.key);
+                    return (
+                      <div key={row.key} className="space-y-1">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-muted-foreground">{row.label}</span>
+                          <span className={`font-semibold ${tone.count}`}>
+                            {row.count.toLocaleString()}개
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded bg-slate-100">
+                          <div
+                            className={`h-full rounded ${tone.bar}`}
+                            style={{ width: `${ratio * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="text-[11px] text-muted-foreground">
+                    총 {designSoftwareTotalCount.toLocaleString()}개 사업자
+                  </div>
+                </div>
+              </DashTile>
+              <DashTile
+                className={DASH_SPAN.c3r2}
+                title="미제공 어벗"
+                icon={<Puzzle className="h-4 w-4 text-muted-foreground" />}
+                bodyClassName="overflow-y-auto px-1.5 py-1.5"
+                onClick={() => {
+                  setUnsupportedAbutmentStatsFilter("all");
+                  setUnsupportedAbutmentStatsDialogOpen(true);
+                }}
+              >
+                <div className="space-y-2">
+                  {unsupportedAbutmentStatRows.map((row) => {
+                    const ratio = Math.max(
+                      0,
+                      Math.min(1, row.count / unsupportedAbutmentMaxCount),
+                    );
+                    const tone = getUnsupportedAbutmentToneClasses(row.key);
+                    return (
+                      <div key={row.key} className="space-y-1">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-muted-foreground">{row.label}</span>
+                          <span className={`font-semibold ${tone.count}`}>
+                            {row.count.toLocaleString()}건
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded bg-slate-100">
+                          <div
+                            className={`h-full rounded ${tone.bar}`}
+                            style={{ width: `${ratio * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="text-[11px] text-muted-foreground">
+                    총 {unsupportedAbutmentTotal.toLocaleString()}건
+                  </div>
+                </div>
+              </DashTile>
+              <DashTile
+                className={DASH_SPAN.c3}
+                title="의뢰 전송"
+                icon={<UploadCloud className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => setPracticeTransferStatsDialogOpen(true)}
+              >
+                <div className="grid h-full grid-cols-4 items-end gap-1">
+                  <DashMini label="전송" value={practiceTransferTotal.toLocaleString()} />
+                  <DashMini label="파일" value={practiceTransferTotalFiles.toLocaleString()} />
+                  <DashMini
+                    label="치과"
+                    value={practiceTransferTotalPractices.toLocaleString()}
+                    tone="primary"
+                  />
+                  <DashMini
+                    label="기공소"
+                    value={practiceTransferTotalLabs.toLocaleString()}
+                    tone="primary"
+                  />
+                </div>
+              </DashTile>
+              <DashTile
+                className={DASH_SPAN.c3}
+                title="가공 통계"
+                icon={<BarChart3 className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => setMachiningStatsDialogOpen(true)}
+              >
+                <div className="flex h-full flex-col justify-end gap-0.5">
+                  <div className="truncate text-sm font-semibold text-slate-800">
+                    직경별 제작 · 소요시간
+                  </div>
+                  <p className="truncate text-[11px] text-muted-foreground">6 · 8 · 10 · 12mm</p>
+                </div>
+              </DashTile>
+              <DirectAbutmentSettingsCard className={DASH_SPAN.c3} />
+              <IndirectAbutmentCard className={DASH_SPAN.c3} />
             </div>
           </>
         }
