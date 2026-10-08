@@ -29,6 +29,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 import {
   KIND_LABEL,
+  manualPlaceSuggest,
   salesTeamApi,
   type SalesPlaceSuggest,
 } from "./salesTeamApi";
@@ -49,6 +50,8 @@ type SalesPlacePickerDrawerProps = {
   confirmDescription?: string;
   /** 거래처 추가 등 — 이미 등록된 거래처(source=account)는 검색 목록에서 제외 */
   hideRegisteredAccounts?: boolean;
+  /** 지도에 없을 때 상호·유형만으로 확정 */
+  allowDirectEntry?: boolean;
 };
 
 function hasCoords(p: { lat?: number | null; lng?: number | null } | null) {
@@ -160,6 +163,7 @@ export default function SalesPlacePickerDrawer({
   confirmLabel = "이 위치로",
   confirmDescription = "지도에서 맞는지 확인한 뒤 이 위치로 저장합니다.",
   hideRegisteredAccounts = false,
+  allowDirectEntry = false,
 }: SalesPlacePickerDrawerProps) {
   const token = useAuthStore((s) => s.token);
   const { toast } = useToast();
@@ -473,10 +477,43 @@ export default function SalesPlacePickerDrawer({
                 onClick={() => void handlePick(item)}
               />
             ))}
-            {query.trim().length >= 2 && !loading && items.length === 0 ? (
+            {query.trim().length >= 2 &&
+            !loading &&
+            items.length === 0 &&
+            !allowDirectEntry ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
                 자동완성에 없습니다. 아래 「지도에서 찾기」를 눌러 보세요.
               </p>
+            ) : null}
+            {allowDirectEntry && query.trim().length >= 2 ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                <p className="text-xs text-muted-foreground">
+                  {items.length === 0 && !loading ? (
+                    <>
+                      검색 결과가 없습니다.
+                      <br />
+                      유형을 고르면 입력한 상호로 넣습니다.
+                    </>
+                  ) : (
+                    "검색에 없으면 유형을 고르세요."
+                  )}
+                </p>
+                <div className="mt-2 flex gap-1.5">
+                  {(["practice", "lab"] as const).map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      className="h-10 flex-1 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-800 hover:bg-slate-50"
+                      onClick={() => {
+                        onConfirm(manualPlaceSuggest(query.trim(), kind));
+                        onOpenChange(false);
+                      }}
+                    >
+                      {KIND_LABEL[kind]}로 입력
+                    </button>
+                  ))}
+                </div>
+              </div>
             ) : null}
           </div>
         </div>

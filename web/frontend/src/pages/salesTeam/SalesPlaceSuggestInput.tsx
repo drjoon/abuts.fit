@@ -8,7 +8,9 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/shared/ui/cn";
 import {
+  inferPlaceKindFromName,
   KIND_LABEL,
+  manualPlaceSuggest,
   salesTeamApi,
   type SalesPlaceSuggest,
 } from "./salesTeamApi";
@@ -31,6 +33,15 @@ type SalesPlaceSuggestInputProps = {
   autoFocus?: boolean;
   /** 거래처 추가 등 — 이미 등록된 거래처(source=account)는 목록에서 제외 */
   hideRegisteredAccounts?: boolean;
+  /** 검색 없을 때 유형 버튼이 이 상호로 바로 저장 */
+  onDirectCommit?: (item: SalesPlaceSuggest) => void;
+  /** Enter·저장은 유형을 고르기 전에는 저장하지 않고 이 콜백만 호출 */
+  onRequireKind?: () => void;
+  /** 유형 미선택 안내를 강조 */
+  kindPrompt?: boolean;
+  /** Enter로 저장할 때 쓸 유형. onRequireKind가 있으면 Enter는 저장하지 않음 */
+  directKind?: "practice" | "lab";
+  directCommitDisabled?: boolean;
 };
 
 export default function SalesPlaceSuggestInput({
@@ -45,6 +56,11 @@ export default function SalesPlaceSuggestInput({
   maxItems,
   autoFocus,
   hideRegisteredAccounts = false,
+  onDirectCommit,
+  onRequireKind,
+  kindPrompt = false,
+  directKind,
+  directCommitDisabled = false,
 }: SalesPlaceSuggestInputProps) {
   const token = useAuthStore((s) => s.token);
   const listId = useId();
@@ -56,11 +72,26 @@ export default function SalesPlaceSuggestInput({
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<SalesPlaceSuggest[]>([]);
   const [active, setActive] = useState(0);
+  const committingRef = useRef(false);
+  const enterDuringCompositionRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reqRef = useRef(0);
 
   const visibleItems =
     maxItems != null && maxItems > 0 ? items.slice(0, maxItems) : items;
+
+  const wasDirectCommitDisabledRef = useRef(false);
+
+  useEffect(() => {
+    if (wasDirectCommitDisabledRef.current && !directCommitDisabled) {
+      committingRef.current = false;
+    }
+    wasDirectCommitDisabledRef.current = directCommitDisabled;
+  }, [directCommitDisabled]);
+
+  useEffect(() => {
+    if (kindPrompt && value.trim().length >= 2) setOpen(true);
+  }, [kindPrompt, value]);
 
   useEffect(() => {
     if (suppressSuggestRef.current) {
@@ -90,11 +121,12 @@ export default function SalesPlaceSuggestInput({
           );
           setItems(next);
           setActive(0);
-          setOpen(next.length > 0);
+          setOpen(true);
         })
         .catch(() => {
           if (reqId !== reqRef.current) return;
           setItems([]);
+          setOpen(true);
         })
         .finally(() => {
           if (reqId !== reqRef.current) return;
@@ -133,6 +165,24 @@ export default function SalesPlaceSuggestInput({
     onPick(item);
   };
 
+  const commitManual = (kind: "practice" | "lab", nameOverride?: string) => {
+    const name = (nameOverride ?? value).trim();
+    if (!name || directCommitDisabled || committingRef.current) return;
+    const item = manualPlaceSuggest(name, kind);
+    if (onDirectCommit) {
+      committingRef.current = true;
+      suppressSuggestRef.current = true;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      reqRef.current += 1;
+      setOpen(false);
+      setItems([]);
+      setLoading(false);
+      onDirectCommit(item);
+      return;
+    }
+    pick(item);
+  };
+
   const clear = () => {
     suppressSuggestRef.current = true;
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -163,9 +213,40 @@ export default function SalesPlaceSuggestInput({
             setOpen(true);
           }}
           onFocus={() => {
-            if (visibleItems.length) setOpen(true);
+            if (value.trim().length >= 2) setOpen(true);
+          }}
+          onCompositionEnd={() => {
+            enterDuringCompositionRef.current = false;
           }}
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing || e.key === "Process") {
+              if (e.key === "Enter") enterDuringCompositionRef.current = true;
+              return;
+            }
+            if (e.key === "Enter") {
+              if (enterDuringCompositionRef.current) {
+                enterDuringCompositionRef.current = false;
+                return;
+              }
+              if (open && visibleItems.length && visibleItems[active]) {
+                e.preventDefault();
+                pick(visibleItems[active]);
+                return;
+              }
+              const name = value.trim();
+              if (!name) return;
+              e.preventDefault();
+              if (onRequireKind) {
+                setOpen(true);
+                onRequireKind();
+                return;
+              }
+              if (!onDirectCommit) return;
+              commitManual(
+                inferPlaceKindFromName(name) || directKind || "practice",
+              );
+              return;
+            }
             if (!open || !visibleItems.length) return;
             if (e.key === "ArrowDown") {
               e.preventDefault();
@@ -173,9 +254,6 @@ export default function SalesPlaceSuggestInput({
             } else if (e.key === "ArrowUp") {
               e.preventDefault();
               setActive((i) => Math.max(0, i - 1));
-            } else if (e.key === "Enter" && visibleItems[active]) {
-              e.preventDefault();
-              pick(visibleItems[active]);
             } else if (e.key === "Escape") {
               setOpen(false);
             }
@@ -202,18 +280,12 @@ export default function SalesPlaceSuggestInput({
           role="listbox"
           className={cn(
             listMode === "inline"
-              ? "relative z-10 mt-2 max-h-64 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-sm"
-              : "absolute z-40 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg",
+              ? "relative z-10 mt-2 max-h-64 w-full overflow-auto rounded-xl border border-slate-200 bg-white px-1.5 py-1.5 shadow-sm"
+              : "absolute z-40 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-slate-200 bg-white px-1.5 py-1.5 shadow-lg",
             listClassName,
           )}
         >
-          {visibleItems.length === 0 && !loading ? (
-            <li className="px-3 py-2 text-xs text-muted-foreground">
-              {/\s/.test(value.trim())
-                ? "이 지역·상호로 결과가 없습니다. 주소를 확인한 뒤 다른 후보를 고르거나 상호를 그대로 넣을 수 있습니다."
-                : "상호만으로 부족하면 「지역명 상호」로 검색해 주소를 구분하세요."}
-            </li>
-          ) : visibleItems.length === 0 && loading ? (
+          {visibleItems.length === 0 && loading ? (
             <li className="px-3 py-2 text-xs text-muted-foreground">검색 중…</li>
           ) : (
             visibleItems.map((item, idx) => (
@@ -245,6 +317,67 @@ export default function SalesPlaceSuggestInput({
               </li>
             ))
           )}
+          <li className="sticky bottom-0 mt-1 border-t border-slate-100 bg-white px-1.5 pt-1.5">
+              <p
+                className={cn(
+                  "px-1.5 py-1 text-xs",
+                  kindPrompt
+                    ? "font-medium text-amber-800"
+                    : "text-muted-foreground",
+                )}
+              >
+                {visibleItems.length === 0 && loading ? (
+                  onRequireKind
+                    ? "유형을 선택하세요."
+                    : "유형을 고르면 입력한 상호로 넣습니다."
+                ) : visibleItems.length === 0 ? (
+                  onRequireKind ? (
+                    <>
+                      검색 결과가 없습니다.
+                      <br />
+                      유형을 선택하세요.
+                    </>
+                  ) : onDirectCommit ? (
+                    <>
+                      검색 결과가 없습니다.
+                      <br />
+                      유형을 누르면 바로 저장됩니다.
+                    </>
+                  ) : (
+                    <>
+                      검색 결과가 없습니다.
+                      <br />
+                      유형을 고르면 입력한 상호로 넣습니다.
+                    </>
+                  )
+                ) : onRequireKind ? (
+                  "유형을 선택하세요."
+                ) : onDirectCommit ? (
+                  "검색에 없으면 유형을 누르면 바로 저장됩니다."
+                ) : (
+                  "검색에 없으면 유형을 고르세요."
+                )}
+              </p>
+              <div className="flex gap-1.5 px-1.5 pb-1">
+                {(["practice", "lab"] as const).map((kind) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    className="h-8 flex-1 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+                    disabled={directCommitDisabled}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      commitManual(kind);
+                    }}
+                    onClick={(e) => e.preventDefault()}
+                  >
+                    {onDirectCommit
+                      ? KIND_LABEL[kind]
+                      : `${KIND_LABEL[kind]}로 입력`}
+                  </button>
+                ))}
+              </div>
+            </li>
         </ul>
       ) : null}
     </div>

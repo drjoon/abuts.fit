@@ -339,7 +339,7 @@ export function SalesEmptyState({
 }: {
   icon: LucideIcon;
   title: string;
-  description: string;
+  description: ReactNode;
   actionLabel?: string;
   onAction?: () => void;
   actionTo?: string;

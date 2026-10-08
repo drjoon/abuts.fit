@@ -52,6 +52,8 @@ import {
 } from "./salesDay";
 import {
   COMMITMENT_LABEL,
+  inferPlaceKindFromName,
+  KIND_LABEL,
   salesTeamApi,
   visitAccountName,
   type SalesAccount,
@@ -523,7 +525,8 @@ export default function SalesHomePage() {
       let accountId = place?.accountId || "";
       if (!accountId) {
         const created = await salesTeamApi.createAccount(token, {
-          kind: place?.kind || "practice",
+          kind:
+            place?.kind || inferPlaceKindFromName(name) || "practice",
           name,
           phone: place?.phone || "",
           address: place?.address || "",
@@ -1262,9 +1265,12 @@ export default function SalesHomePage() {
             {pickedPlace ? (
               <p className="rounded-lg bg-slate-50 px-2.5 py-2 text-xs text-slate-700">
                 <span className="font-medium text-slate-900">
-                  {pickedPlace.address?.trim() || "주소 없음 — 목록에서 주소를 확인해 주세요"}
+                  {pickedPlace.source === "manual"
+                    ? `${KIND_LABEL[pickedPlace.kind] || pickedPlace.kind} · 직접 입력`
+                    : pickedPlace.address?.trim() ||
+                      "주소 없음 — 목록에서 주소를 확인해 주세요"}
                 </span>
-                {pickedPlace.phone ? (
+                {pickedPlace.source !== "manual" && pickedPlace.phone ? (
                   <span className="text-muted-foreground">
                     {" "}
                     · {pickedPlace.phone}

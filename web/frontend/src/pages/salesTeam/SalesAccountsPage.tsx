@@ -5,13 +5,25 @@
 // - web/frontend/src/pages/salesTeam/SalesPlacePickerDrawer.tsx
 // - web/frontend/src/shared/sales/CustomerPriceDialog.tsx
 // change-log:
+// - 2026-10-09: 거래처 목록·상세를 모노그램 행과 필터 칩으로 정리.
 // - 2026-10-09: 상단 판매가 카드 제거. 소개 거래처를 목록 위에 두고, 선택 카드에서 가격을 입력한다.
 // - 2026-10-08: 소개 거래처 판매가(1.2~1.5만)를 이 페이지에서 정한다.
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, MapPin, Phone, Search, UserRound } from "lucide-react";
+import {
+  Building2,
+  MapPin,
+  Pencil,
+  Phone,
+  Plus,
+  Search,
+  Trash2,
+  UserRound,
+  type LucideIcon,
+} from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { cn } from "@/shared/ui/cn";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +34,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -52,7 +63,6 @@ import {
 } from "./salesTeamApi";
 import {
   SalesEmptyState,
-  SalesListRow,
   SalesPageShell,
   SalesPanel,
   SalesSplit,
@@ -157,6 +167,146 @@ function hasCoords(a: { lat?: number | null; lng?: number | null } | null) {
   );
 }
 
+const LIST_FILTERS: Array<{ value: ListFilter; label: string }> = [
+  { value: "all", label: "전체" },
+  { value: "practice", label: "치과" },
+  { value: "lab", label: "기공소" },
+  { value: "oralScan", label: "구강스캔" },
+  { value: "unjoined", label: "미가입" },
+  { value: "joined", label: "가입" },
+];
+
+function KindMark({ kind, className }: { kind: string; className?: string }) {
+  const lab = kind === "lab";
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center rounded-2xl text-sm font-semibold",
+        lab ? "bg-violet-100 text-violet-700" : "bg-sky-100 text-sky-700",
+        className,
+      )}
+    >
+      {lab ? "기" : "치"}
+    </span>
+  );
+}
+
+function StatusPill({
+  children,
+  tone,
+}: {
+  children: ReactNode;
+  tone: "join" | "idle" | "refer" | "scan" | "warn";
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium leading-none",
+        tone === "join" && "bg-primary/10 text-primary-strong",
+        tone === "idle" && "bg-slate-100 text-slate-500",
+        tone === "refer" && "bg-emerald-50 text-emerald-700",
+        tone === "scan" && "bg-sky-50 text-sky-700",
+        tone === "warn" && "bg-amber-50 text-amber-700",
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+function AccountRow({
+  item,
+  selected,
+  onClick,
+}: {
+  item: AccountListItem;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const meta =
+    [item.representativeName, item.phone].filter(Boolean).join(" · ") ||
+    "연락처 없음";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={cn(
+        "flex w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition-colors",
+        selected
+          ? "border-primary/30 bg-primary-soft shadow-sm"
+          : "border-slate-200/70 bg-white hover:border-slate-300 hover:bg-slate-50/80",
+      )}
+    >
+      <KindMark kind={item.kind} className="h-10 w-10" />
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-sm font-medium text-slate-900">
+            {item.name}
+          </span>
+          {item.referredByMe ? <StatusPill tone="refer">소개</StatusPill> : null}
+          {item.usesOralScan ? (
+            <StatusPill tone="scan">구강스캔</StatusPill>
+          ) : null}
+        </span>
+        <span className="mt-0.5 block truncate text-xs text-slate-500">
+          {meta}
+        </span>
+      </span>
+      <span className="flex shrink-0 flex-col items-end gap-1">
+        <StatusPill tone={item.businessAnchorId ? "join" : "idle"}>
+          {item.businessAnchorId ? "가입" : "미가입"}
+        </StatusPill>
+        {!hasCoords(item) ? (
+          <StatusPill tone="warn">좌표 없음</StatusPill>
+        ) : null}
+      </span>
+    </button>
+  );
+}
+
+function AccountListSkeleton() {
+  return (
+    <div className="space-y-2 px-0.5 py-0.5" aria-hidden>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-white px-3 py-2.5"
+        >
+          <div className="h-10 w-10 animate-pulse rounded-2xl bg-slate-100" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="h-3.5 w-2/5 animate-pulse rounded-full bg-slate-100" />
+            <div className="h-3 w-1/3 animate-pulse rounded-full bg-slate-100" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ContactFact({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: LucideIcon;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex items-start gap-3 px-4 py-3">
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-400 ring-1 ring-slate-100">
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0 pt-0.5">
+        <div className="text-[11px] font-medium text-slate-400">{label}</div>
+        <div className="mt-0.5 text-sm text-slate-800">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function SalesAccountsPage() {
   const token = useAuthStore((s) => s.token);
   const { toast } = useToast();
@@ -172,6 +322,7 @@ export default function SalesAccountsPage() {
     useState<Partial<SalesPlaceSuggest> | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [manualEntry, setManualEntry] = useState(false);
+  const [askKind, setAskKind] = useState(false);
 
   const filterParams = listParams(listFilter);
   const queryKey = useMemo(
@@ -205,18 +356,20 @@ export default function SalesAccountsPage() {
   });
 
   const saveMut = useMutation({
-    mutationFn: async () => {
-      if (!editing?.name || !editing?.kind) {
+    mutationFn: async (override?: Partial<SalesAccount>) => {
+      const row = { ...editing, ...override };
+      const name = String(row.name || "").trim();
+      const inferred = inferPlaceKindFromName(name);
+      const kind =
+        row.kind === "lab" || row.kind === "practice"
+          ? row.kind
+          : inferred || "practice";
+      if (!name) {
         throw new Error("이름과 유형은 필수입니다.");
       }
-      const inferred = inferPlaceKindFromName(editing.name);
-      const kind =
-        manualEntry || editing.address || editing.lat != null
-          ? editing.kind
-          : inferred || editing.kind;
-      const payload = { ...editing, kind };
-      if (editing._id) {
-        return salesTeamApi.updateAccount(token, editing._id, payload);
+      const payload = { ...row, name, kind };
+      if (row._id) {
+        return salesTeamApi.updateAccount(token, row._id, payload);
       }
       return salesTeamApi.createAccount(token, payload);
     },
@@ -225,6 +378,7 @@ export default function SalesAccountsPage() {
       setEditing(null);
       setShowExtra(false);
       setManualEntry(false);
+      setAskKind(false);
       void qc.invalidateQueries({ queryKey: ["sales-team-accounts"] });
       if (saved?._id) {
         setSelectedId(saved._id);
@@ -333,6 +487,7 @@ export default function SalesAccountsPage() {
   const openCreate = () => {
     setShowExtra(false);
     setManualEntry(false);
+    setAskKind(false);
     setEditing({
       kind: "practice",
       name: "",
@@ -344,6 +499,7 @@ export default function SalesAccountsPage() {
     setEditing(null);
     setShowExtra(false);
     setManualEntry(false);
+    setAskKind(false);
   };
 
   const listPanel = (
@@ -355,8 +511,8 @@ export default function SalesAccountsPage() {
       {priceLoadError ? (
         <p className="mb-2 text-sm text-destructive">{priceLoadError}</p>
       ) : null}
-      {isLoading && items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">불러오는 중…</p>
+      {isLoading ? (
+        <AccountListSkeleton />
       ) : items.length === 0 ? (
         <SalesEmptyState
           icon={Building2}
@@ -368,44 +524,12 @@ export default function SalesAccountsPage() {
       ) : (
         <div className="space-y-2 px-0.5 py-0.5">
           {items.map((item) => (
-            <SalesListRow
+            <AccountRow
               key={item._id}
+              item={item}
               selected={selectedId === item._id}
               onClick={() =>
                 setSelectedId((prev) => (prev === item._id ? null : item._id))
-              }
-              title={item.name}
-              meta={
-                [item.representativeName, item.phone]
-                  .filter(Boolean)
-                  .join(" · ") || "연락처 없음"
-              }
-              trailing={
-                <div className="flex max-w-[48%] flex-wrap items-center justify-end gap-1 sm:max-w-none">
-                  {item.referredByMe ? (
-                    <Badge className="border-0 bg-emerald-50 text-emerald-800">
-                      소개
-                    </Badge>
-                  ) : null}
-                  {!hasCoords(item) ? (
-                    <Badge variant="outline" className="text-amber-700">
-                      좌표없음
-                    </Badge>
-                  ) : null}
-                  {item.usesOralScan ? (
-                    <Badge className="border-0 bg-sky-50 text-sky-800">
-                      구강스캔
-                    </Badge>
-                  ) : null}
-                  {item.businessAnchorId ? (
-                    <Badge>가입</Badge>
-                  ) : (
-                    <Badge variant="outline">미가입</Badge>
-                  )}
-                  <Badge variant="secondary">
-                    {KIND_LABEL[item.kind] || item.kind}
-                  </Badge>
-                </div>
               }
             />
           ))}
@@ -415,81 +539,92 @@ export default function SalesAccountsPage() {
   );
 
   const detailPanel = viewing ? (
-      <SalesPanel
-        title={viewing.name}
-        description={[
-          viewing.referredByMe ? "소개" : null,
-          KIND_LABEL[viewing.kind] || viewing.kind,
-          viewing.businessAnchorId ? "플랫폼 가입" : "플랫폼 미가입",
-          viewing.usesOralScan ? "구강스캔" : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-        actions={
-          viewing.referralOnly ? undefined : (
-            <div className="flex gap-1">
-              {!hasCoords(viewing) ? (
+      <SalesPanel className="overflow-hidden" bodyClassName="p-0">
+        <div className="pb-4">
+          <div className="flex items-start gap-3 px-4 py-4">
+            <KindMark kind={viewing.kind} className="h-12 w-12 text-base" />
+            <div className="min-w-0 flex-1 pt-0.5">
+              <h2 className="truncate text-base font-semibold tracking-tight text-slate-900 sm:text-lg">
+                {viewing.name}
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                {[
+                  viewing.referredByMe ? "소개" : null,
+                  KIND_LABEL[viewing.kind] || viewing.kind,
+                  viewing.businessAnchorId ? "플랫폼 가입" : "플랫폼 미가입",
+                  viewing.usesOralScan ? "구강스캔" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+              {viewing.referralOnly ? null : (
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {!hasCoords(viewing) ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 rounded-lg"
+                    onClick={() => {
+                      setShowExtra(true);
+                      setManualEntry(false);
+                      setEditing(viewing);
+                      openPlacePicker({
+                        name: viewing.name,
+                        address: viewing.address || "",
+                        kind: viewing.kind,
+                        businessAnchorId: viewing.businessAnchorId || null,
+                        accountId: viewing._id,
+                        source: viewing.businessAnchorId ? "platform" : "kakao",
+                      });
+                    }}
+                  >
+                    <MapPin className="h-3.5 w-3.5" />
+                    위치
+                  </Button>
+                ) : null}
                 <Button
                   size="sm"
                   variant="outline"
+                  className="h-8 rounded-lg"
                   onClick={() => {
                     setShowExtra(true);
                     setManualEntry(false);
                     setEditing(viewing);
-                    openPlacePicker({
-                      name: viewing.name,
-                      address: viewing.address || "",
-                      kind: viewing.kind,
-                      businessAnchorId: viewing.businessAnchorId || null,
-                      accountId: viewing._id,
-                      source: viewing.businessAnchorId ? "platform" : "kakao",
-                    });
                   }}
                 >
-                  위치
+                  <Pencil className="h-3.5 w-3.5" />
+                  수정
                 </Button>
-              ) : null}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setShowExtra(true);
-                  setManualEntry(false);
-                  setEditing(viewing);
-                }}
-              >
-                수정
-              </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={() => setDeleteConfirmOpen(true)}
-              >
-                삭제
-              </Button>
-            </div>
-          )
-        }
-      >
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="flex items-start gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 text-sm">
-            <UserRound className="mt-0.5 h-4 w-4 text-slate-400" />
-            <div>
-              <div className="text-xs text-muted-foreground">대표</div>
-              <div>{viewing.representativeName || "—"}</div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 rounded-lg text-destructive hover:bg-destructive-soft hover:text-destructive"
+                  onClick={() => setDeleteConfirmOpen(true)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  삭제
+                </Button>
+              </div>
+              )}
             </div>
           </div>
-          <div className="flex items-start gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 text-sm">
-            <Phone className="mt-0.5 h-4 w-4 text-slate-400" />
-            <div>
-              <div className="text-xs text-muted-foreground">전화</div>
-              <div>{viewing.phone || "—"}</div>
-            </div>
-          </div>
-          <div className="flex items-start gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 text-sm sm:col-span-2">
-            <MapPin className="mt-0.5 h-4 w-4 text-slate-400" />
-            <div className="min-w-0">
-              <div className="text-xs text-muted-foreground">주소</div>
+          <div className="divide-y divide-slate-100 border-t border-slate-100">
+            <ContactFact icon={UserRound} label="대표">
+              {viewing.representativeName || "—"}
+            </ContactFact>
+            <ContactFact icon={Phone} label="전화">
+              {viewing.phone ? (
+                <a
+                  className="text-slate-800 hover:text-primary"
+                  href={`tel:${viewing.phone}`}
+                >
+                  {viewing.phone}
+                </a>
+              ) : (
+                "—"
+              )}
+            </ContactFact>
+            <ContactFact icon={MapPin} label="주소">
               {viewing.address ? (
                 <a
                   className="text-primary underline-offset-2 hover:underline"
@@ -503,80 +638,100 @@ export default function SalesAccountsPage() {
                 "—"
               )}
               {!hasCoords(viewing) ? (
-                <p className="mt-1 text-xs text-amber-700">좌표 없음</p>
+                <p className="mt-1 text-xs font-medium text-amber-700">
+                  좌표 없음
+                </p>
               ) : null}
+            </ContactFact>
+          </div>
+          {viewing.memo ? (
+            <div className="mx-4 mt-3 whitespace-pre-wrap rounded-xl bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
+              {viewing.memo}
             </div>
-          </div>
-        </div>
-        {viewing.memo ? (
-          <div className="mt-3 whitespace-pre-wrap rounded-xl border border-slate-100 bg-white p-3 text-sm text-slate-700">
-            {viewing.memo}
-          </div>
-        ) : null}
-        {priceRow ? (
-          <div className="mt-3 rounded-xl border border-slate-200/80 px-3 py-3 shadow-sm">
-            <CustomerPriceFields row={priceRow} onSaved={patchPrice} />
-          </div>
-        ) : null}
-        {!viewing.businessAnchorId ? (
-          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-            플랫폼 미가입이면 판매·세금계산서가 불가합니다.
-            <br />
-            성과의 소개 코드로 가입을 유도하세요.
+          ) : null}
+          {priceRow ? (
+            <div className="mx-4 mt-4 rounded-2xl bg-gradient-to-br from-primary-soft to-white p-4 ring-1 ring-primary-muted/80">
+              <CustomerPriceFields row={priceRow} onSaved={patchPrice} />
+            </div>
+          ) : null}
+          {!viewing.businessAnchorId ? (
+            <p className="mx-4 mt-3 text-xs leading-relaxed text-slate-500">
+              플랫폼 미가입이면 판매·세금계산서가 불가합니다.
+              <br />
+              성과의 소개 코드로 가입을 유도하세요.
+            </p>
+          ) : null}
+          <p className="mx-4 mt-3 text-xs text-muted-foreground lg:hidden">
+            플랫폼 가입 {joinedCount}곳 · 미가입 {unjoinedCount}곳
           </p>
-        ) : null}
-        <p className="mt-3 text-xs text-muted-foreground lg:hidden">
-          플랫폼 가입 {joinedCount}곳 · 미가입 {unjoinedCount}곳
-        </p>
+        </div>
       </SalesPanel>
     ) : undefined;
 
   return (
     <SalesPageShell wide>
       <SalesToolbar className="w-full">
-        <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2">
-          <div className="relative min-w-0 flex-1 sm:max-w-xs">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-            <Input
-              placeholder="이름 · 대표 · 전화"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              className="h-8 pl-8"
-            />
-          </div>
-          <Select
-            value={accountSort}
-            onValueChange={(v) => setAccountSort(v as AccountSort)}
-          >
-            <SelectTrigger className="h-8 w-[8.25rem] shrink-0" aria-label="정렬">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="referred">소개 우선</SelectItem>
-              <SelectItem value="name">이름순</SelectItem>
-              <SelectItem value="recent">최근 수정</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select
-            value={listFilter}
-            onValueChange={(v) => setListFilter(v as ListFilter)}
-          >
-            <SelectTrigger className="h-8 w-[7.5rem] shrink-0">
-              <SelectValue placeholder="필터" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">전체</SelectItem>
-              <SelectItem value="practice">치과</SelectItem>
-              <SelectItem value="lab">기공소</SelectItem>
-              <SelectItem value="oralScan">구강스캔</SelectItem>
-              <SelectItem value="unjoined">미가입</SelectItem>
-              <SelectItem value="joined">가입</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="shrink-0">
-            <Button size="sm" className="h-8" onClick={openCreate}>
+        <div className="flex w-full flex-col gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[12rem] flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                placeholder="이름 · 대표 · 전화"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                className="h-9 rounded-xl border-slate-200/80 bg-white pl-9 shadow-sm"
+              />
+            </div>
+            <Select
+              value={accountSort}
+              onValueChange={(v) => setAccountSort(v as AccountSort)}
+            >
+              <SelectTrigger
+                className="h-9 w-[8.5rem] shrink-0 rounded-xl border-slate-200/80 bg-white shadow-sm"
+                aria-label="정렬"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="referred">소개 우선</SelectItem>
+                <SelectItem value="name">이름순</SelectItem>
+                <SelectItem value="recent">최근 수정</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              className="h-9 shrink-0 rounded-xl px-3.5 shadow-sm"
+              onClick={openCreate}
+            >
+              <Plus className="h-4 w-4" />
               거래처 추가
             </Button>
+          </div>
+          <div
+            className="flex gap-1.5 overflow-x-auto px-0.5 py-0.5"
+            role="tablist"
+            aria-label="거래처 필터"
+          >
+            {LIST_FILTERS.map((opt) => {
+              const active = listFilter === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setListFilter(opt.value)}
+                  className={cn(
+                    "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                    active
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "bg-white text-slate-600 shadow-sm ring-1 ring-slate-200/80 hover:text-slate-900",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </SalesToolbar>
@@ -589,7 +744,13 @@ export default function SalesAccountsPage() {
             className="h-full min-h-[20rem]"
             icon={Building2}
             title="거래처를 선택하세요"
-            description="목록에서 항목을 누르면 연락처와 판매가가 여기에 표시됩니다."
+            description={
+              <>
+                목록에서 항목을 누르면
+                <br />
+                연락처와 판매가가 표시됩니다.
+              </>
+            }
           />
         }
       />
@@ -625,6 +786,7 @@ export default function SalesAccountsPage() {
                   hideRegisteredAccounts
                   value={editing.name || ""}
                   onChange={(name) => {
+                    if (!name.trim()) setAskKind(false);
                     setManualEntry(false);
                     setEditing((prev) => ({
                       ...prev,
@@ -633,6 +795,31 @@ export default function SalesAccountsPage() {
                     }));
                   }}
                   onPick={applySuggest}
+                  onDirectCommit={(item) => {
+                    setAskKind(false);
+                    saveMut.mutate({
+                      name: item.name,
+                      kind: item.kind,
+                      representativeName: editing.representativeName || "",
+                      memo: editing.memo || "",
+                      teamVisible: editing.teamVisible !== false,
+                      ...(editing._id
+                        ? { _id: editing._id }
+                        : {
+                            address: "",
+                            phone: "",
+                            lat: null,
+                            lng: null,
+                            businessAnchorId: null,
+                          }),
+                    });
+                  }}
+                  onRequireKind={
+                    editing._id ? undefined : () => setAskKind(true)
+                  }
+                  kindPrompt={askKind}
+                  directKind={editing.kind === "lab" ? "lab" : "practice"}
+                  directCommitDisabled={saveMut.isPending}
                   placeholder="지역명 상호 · 예: 거제 서울미소"
                   autoFocus={!editing._id}
                 />
@@ -694,6 +881,11 @@ export default function SalesAccountsPage() {
                 )}
               </div>
               <DialogFooter className="shrink-0 gap-2 border-t border-slate-100 bg-background px-4 py-3 sm:space-x-0 sm:px-5">
+                {askKind ? (
+                  <p className="mr-auto self-center text-xs font-medium text-amber-800">
+                    유형을 선택하세요.
+                  </p>
+                ) : null}
                 <Button
                   variant="outline"
                   onClick={closeForm}
@@ -702,12 +894,18 @@ export default function SalesAccountsPage() {
                   취소
                 </Button>
                 <Button
-                  disabled={
-                    !(editing.name || "").trim() ||
-                    !editing.kind ||
-                    saveMut.isPending
-                  }
-                  onClick={() => saveMut.mutate()}
+                  type="button"
+                  disabled={!(editing.name || "").trim() || saveMut.isPending}
+                  onClick={() => {
+                    if (!editing._id) {
+                      setAskKind(true);
+                      return;
+                    }
+                    saveMut.mutate({
+                      name: editing.name,
+                      kind: editing.kind,
+                    });
+                  }}
                 >
                   {saveMut.isPending ? "저장 중…" : "저장"}
                 </Button>

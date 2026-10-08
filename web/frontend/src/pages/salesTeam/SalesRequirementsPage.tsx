@@ -557,7 +557,9 @@ export default function SalesRequirementsPage() {
                   <span className="font-medium text-slate-900">
                     {KIND_LABEL[pickedPlace.kind] || pickedPlace.kind}
                     {" · "}
-                    {pickedPlace.address?.trim() || "주소 없음"}
+                    {pickedPlace.source === "manual"
+                      ? "직접 입력"
+                      : pickedPlace.address?.trim() || "주소 없음"}
                   </span>
                   {pickedPlace.phone ? (
                     <span className="text-muted-foreground">

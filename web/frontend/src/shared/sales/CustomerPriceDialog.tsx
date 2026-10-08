@@ -3,6 +3,7 @@
 // - web/backend/utils/requestorUnitPricePolicy.js
 // - web/frontend/src/shared/pricing/requestorUnitPricePolicy.ts
 // change-log:
+// - 2026-10-09: 선택 카드의 건당 판매가 입력을 더 크게.
 // - 2026-10-09: 상단 판매가 카드 제거. 선택한 거래처 카드에서 건당 판매가를 입력한다.
 // - 2026-10-08: 거래처 판매가 설정은 거래처 페이지. 대시보드·성과에서는 뺀다.
 // - 2026-10-08: 딜러·영업팀 거래처별 의뢰비 설정(1.2~1.5만). 거래처 본인에게만 보이고 외부 비공개.
@@ -250,10 +251,12 @@ function PriceControls({
   row,
   onSaved,
   label,
+  prominent,
 }: {
   row: Row;
   onSaved: (next: Row) => void;
   label: string;
+  prominent?: boolean;
 }) {
   const draft = useCustomerPriceDraft(row, onSaved);
   return (
@@ -268,7 +271,11 @@ function PriceControls({
               const next = validateDealerUnitPrice(e.target.value);
               draft.setError("message" in next ? next.message : "");
             }}
-            className="h-9 w-28 text-right tabular-nums"
+            className={
+              prominent
+                ? "h-11 w-36 rounded-xl bg-white text-right text-base font-semibold tabular-nums"
+                : "h-9 w-28 text-right tabular-nums"
+            }
             aria-invalid={Boolean(draft.error)}
             aria-label={label}
           />
@@ -281,7 +288,7 @@ function PriceControls({
         <Button
           type="button"
           size="sm"
-          className="h-9"
+          className={prominent ? "h-11 rounded-xl px-4" : "h-9"}
           disabled={!draft.dirty || draft.saving}
           onClick={() =>
             draft.checkedPrice != null && void draft.save(draft.checkedPrice)
@@ -294,7 +301,7 @@ function PriceControls({
             type="button"
             size="sm"
             variant="ghost"
-            className="h-9"
+            className={prominent ? "h-11 rounded-xl" : "h-9"}
             disabled={draft.saving}
             onClick={() => void draft.save(null)}
           >
@@ -302,7 +309,13 @@ function PriceControls({
           </Button>
         ) : null}
       </div>
-      <p className="text-xs tabular-nums text-slate-500">
+      <p
+        className={
+          prominent
+            ? "inline-flex rounded-full bg-white/80 px-2.5 py-1 text-xs font-medium tabular-nums text-slate-600 ring-1 ring-white"
+            : "text-xs tabular-nums text-slate-500"
+        }
+      >
         수수료 {formatRequestorWon(draft.commission)}원
       </p>
       <PriceStatus row={row} />
@@ -319,14 +332,21 @@ export function CustomerPriceFields({
   onSaved: (next: Row) => void;
 }) {
   return (
-    <div className="space-y-2">
-      <div className="text-xs text-muted-foreground">건당 판매가</div>
-      <PriceControls row={row} onSaved={onSaved} label="건당 판매가" />
-      <p className="text-xs leading-relaxed text-muted-foreground">
+    <div className="space-y-3">
+      <div className="text-sm font-semibold tracking-tight text-slate-900">
+        판매가격
+      </div>
+      <PriceControls
+        row={row}
+        onSaved={onSaved}
+        label="판매가격"
+        prominent
+      />
+      <p className="text-xs leading-relaxed text-slate-500">
         {formatRequestorWon(REQUESTOR_UNIT_PRICE_MIN)}~
         {formatRequestorWon(REQUESTOR_UNIT_PRICE_BASE)}원입니다.
         <br />
-        거래처 본인에게만 보입니다.
+        배송비는 딜러 부담입니다.
       </p>
     </div>
   );
