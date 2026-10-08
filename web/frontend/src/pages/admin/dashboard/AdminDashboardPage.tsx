@@ -2178,7 +2178,7 @@ export const AdminDashboardPage = () => {
         topSection={undefined}
         stats={
           <>
-            {/* 벤토: 처리할 것 → 성장 지표 → 돈·공지·알림 → 통계·설정(자주 안 봄) */}
+            {/* 벤토: 진행·지연·공지 → 확인할 것 → 성장 → 금액·알림 → 통계·설정 */}
             <div className={DASH_GRID_CLASS}>
               {/* 1) 지금 처리·확인할 것 */}
               <DashTile
@@ -2245,90 +2245,7 @@ export const AdminDashboardPage = () => {
                 </div>
               </DashTile>
 
-              <DashTile
-                className={DASH_SPAN.c5r2}
-                title="불완전가공 의뢰"
-                tone={Number(unmachinableSummary?.judgedCount || 0) > 0 ? "warn" : "default"}
-                bodyClassName="flex flex-col gap-2"
-              >
-                <div className="grid shrink-0 grid-cols-3 gap-2">
-                  <DashStat
-                    label="가능성"
-                    value={Number(unmachinableSummary?.potentialCount || 0).toLocaleString()}
-                  />
-                  <DashStat
-                    label="판정"
-                    value={Number(unmachinableSummary?.judgedCount || 0).toLocaleString()}
-                    tone="warn"
-                  />
-                  <DashStat
-                    label="확인"
-                    value={Number(unmachinableSummary?.confirmedCount || 0).toLocaleString()}
-                    tone="primary"
-                  />
-                </div>
-                <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-1.5 py-1.5">
-                  {unmachinableItems.map((rawItem, idx) => {
-                    const item = rawItem as Record<string, unknown>;
-                    const code = String(
-                      item?.unmachinableDetailCode || "none",
-                    ) as UnmachinableDetailCode;
-                    const caseInfos =
-                      (item?.caseInfos as Record<string, unknown> | undefined) || {};
-                    const clinic = String(caseInfos?.clinicName || "").trim();
-                    const patient = String(caseInfos?.patientName || "").trim();
-                    const title =
-                      String(item?.title || "").trim() ||
-                      [clinic, patient].filter(Boolean).join(" ") ||
-                      String(item?.requestId || "");
-                    const key = String(item?._id || item?.requestId || `unmach-${idx}`);
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        className="w-full rounded-lg border px-2 py-1 text-left transition hover:bg-slate-50"
-                        onClick={() => {
-                          setUnmachinableDetailDialog({
-                            open: true,
-                            item: rawItem as UnmachinableSummaryItem,
-                          });
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="truncate text-xs font-medium">{title}</div>
-                          <div className="flex flex-shrink-0 items-center gap-1">
-                            <ShippingModeBadge source={rawItem as any} size="sm" />
-                            <Badge
-                              variant={UNMACHINABLE_DETAIL_BADGE_VARIANT(code)}
-                              className={`text-[10px] ${
-                                code === "judged" || code === "potential"
-                                  ? "border-accent-muted bg-accent-soft text-accent-strong"
-                                  : ""
-                              }`}
-                            >
-                              {UNMACHINABLE_DETAIL_LABEL[code] || UNMACHINABLE_DETAIL_LABEL.none}
-                            </Badge>
-                          </div>
-                        </div>
-                        <div className="truncate text-[11px] text-muted-foreground">
-                          {[
-                            String(item?.businessName || "").trim(),
-                            getNormalizedStageLabelSafe(item) ||
-                              String(item?.manufacturerStage || ""),
-                          ]
-                            .filter(Boolean)
-                            .join(" · ") || "-"}
-                        </div>
-                      </button>
-                    );
-                  })}
-                  {unmachinableItems.length === 0 ? (
-                    <div className="py-3 text-center text-xs text-muted-foreground">
-                      표시할 의뢰가 없습니다.
-                    </div>
-                  ) : null}
-                </div>
-              </DashTile>
+              <NoticeAdminCard className={DASH_SPAN.c5r2} />
 
               <AdminDemoConversionCard
                 className={DASH_SPAN.c2}
@@ -2450,10 +2367,9 @@ export const AdminDashboardPage = () => {
                 onClick={() => setGrowthDetailMetric("periodRevenue")}
               />
 
-              {/* 3) 공지 · 금액 · 알림 */}
-              <NoticeAdminCard className={DASH_SPAN.c5r2} />
+              {/* 3) 금액 · 알림 */}
               <DashTile
-                className={DASH_SPAN.c4r2}
+                className={DASH_SPAN.c6r2}
                 title="거래금액"
                 icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
               >
@@ -2501,7 +2417,7 @@ export const AdminDashboardPage = () => {
                 </div>
               </DashTile>
               <DashTile
-                className={DASH_SPAN.c3r2}
+                className={DASH_SPAN.c6r2}
                 title={
                   <>
                     시스템 알림
@@ -2617,6 +2533,91 @@ export const AdminDashboardPage = () => {
                 </div>
               </DashTile>
               <DashTile
+                className={DASH_SPAN.c3r2}
+                title="불완전가공 의뢰"
+                tone={Number(unmachinableSummary?.judgedCount || 0) > 0 ? "warn" : "default"}
+                bodyClassName="flex flex-col gap-2"
+              >
+                <div className="grid shrink-0 grid-cols-3 gap-2">
+                  <DashStat
+                    label="가능성"
+                    value={Number(unmachinableSummary?.potentialCount || 0).toLocaleString()}
+                  />
+                  <DashStat
+                    label="판정"
+                    value={Number(unmachinableSummary?.judgedCount || 0).toLocaleString()}
+                    tone="warn"
+                  />
+                  <DashStat
+                    label="확인"
+                    value={Number(unmachinableSummary?.confirmedCount || 0).toLocaleString()}
+                    tone="primary"
+                  />
+                </div>
+                <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-1.5 py-1.5">
+                  {unmachinableItems.map((rawItem, idx) => {
+                    const item = rawItem as Record<string, unknown>;
+                    const code = String(
+                      item?.unmachinableDetailCode || "none",
+                    ) as UnmachinableDetailCode;
+                    const caseInfos =
+                      (item?.caseInfos as Record<string, unknown> | undefined) || {};
+                    const clinic = String(caseInfos?.clinicName || "").trim();
+                    const patient = String(caseInfos?.patientName || "").trim();
+                    const title =
+                      String(item?.title || "").trim() ||
+                      [clinic, patient].filter(Boolean).join(" ") ||
+                      String(item?.requestId || "");
+                    const key = String(item?._id || item?.requestId || `unmach-${idx}`);
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        className="w-full rounded-lg border px-2 py-1 text-left transition hover:bg-slate-50"
+                        onClick={() => {
+                          setUnmachinableDetailDialog({
+                            open: true,
+                            item: rawItem as UnmachinableSummaryItem,
+                          });
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="truncate text-xs font-medium">{title}</div>
+                          <div className="flex flex-shrink-0 items-center gap-1">
+                            <ShippingModeBadge source={rawItem as any} size="sm" />
+                            <Badge
+                              variant={UNMACHINABLE_DETAIL_BADGE_VARIANT(code)}
+                              className={`text-[10px] ${
+                                code === "judged" || code === "potential"
+                                  ? "border-accent-muted bg-accent-soft text-accent-strong"
+                                  : ""
+                              }`}
+                            >
+                              {UNMACHINABLE_DETAIL_LABEL[code] || UNMACHINABLE_DETAIL_LABEL.none}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="truncate text-[11px] text-muted-foreground">
+                          {[
+                            String(item?.businessName || "").trim(),
+                            getNormalizedStageLabelSafe(item) ||
+                              String(item?.manufacturerStage || ""),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "-"}
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {unmachinableItems.length === 0 ? (
+                    <div className="py-3 text-center text-xs text-muted-foreground">
+                      표시할 의뢰가 없습니다.
+                    </div>
+                  ) : null}
+                </div>
+              </DashTile>
+
+              <DashTile
                 className={DASH_SPAN.c3}
                 title="의뢰 전송"
                 icon={<UploadCloud className="h-4 w-4 text-muted-foreground" />}
@@ -2650,8 +2651,8 @@ export const AdminDashboardPage = () => {
                   <p className="truncate text-[11px] text-muted-foreground">6 · 8 · 10 · 12mm</p>
                 </div>
               </DashTile>
-              <DirectAbutmentSettingsCard className={DASH_SPAN.c3} />
-              <IndirectAbutmentCard className={DASH_SPAN.c3} />
+              <DirectAbutmentSettingsCard className={DASH_SPAN.c6} />
+              <IndirectAbutmentCard className={DASH_SPAN.c6} />
             </div>
           </>
         }

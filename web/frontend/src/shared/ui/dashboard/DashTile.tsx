@@ -17,6 +17,8 @@ export const DASH_SPAN = {
   c3r2: "col-span-2 row-span-2 lg:col-span-3",
   c4r2: "col-span-2 row-span-2 lg:col-span-4",
   c5r2: "col-span-2 row-span-2 lg:col-span-5",
+  c6: "col-span-2 lg:col-span-6",
+  c6r2: "col-span-2 row-span-2 lg:col-span-6",
 } as const;
 
 type Tone = "default" | "warn" | "danger";
