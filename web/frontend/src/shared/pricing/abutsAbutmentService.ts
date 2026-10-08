@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - .cursor/rules/design-fee.mdc
 // change-log:
+// - 2026-10-09: 만원 표기는 500원 단위를 유지(13,500원 → 1.35만원).
 // - 2026-10-01: 런칭 이벤트 1.3만 / 정상가 1.5만.
 // - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만. resolveCustomAbutmentProductionPriceForAt.
 // - 2026-08-22: 환봉 생산가 미설정(0)·폴백을 CNC 고시 생산가와 동일하게.
@@ -179,12 +180,14 @@ export const ABUTS_PRACTICE_MEMBERSHIP_SCOPE_NOTE = "멤버십은 치과만 적�
 export const formatAbutsAbutmentServiceWon = (value: number) =>
   `${Math.max(0, Math.round(Number(value || 0))).toLocaleString("ko-KR")}원`;
 
+/** 만원 표기. 1자리 반올림으로 1.35만을 1.4만으로 보이지 않는다. */
 export const formatAbutsManwon = (value: number) => {
-  const man = Math.max(0, Number(value || 0)) / 10_000;
-  const text = Number.isInteger(man)
-    ? String(man)
-    : man.toFixed(1).replace(/\.0$/, "");
-  return `${text}만원`;
+  const won = Math.max(0, Math.round(Number(value) || 0));
+  const whole = Math.floor(won / 10_000);
+  const frac = won % 10_000;
+  if (frac === 0) return `${whole}만원`;
+  const fracText = String(frac).padStart(4, "0").replace(/0+$/, "");
+  return `${whole}.${fracText}만원`;
 };
 
 /** @deprecated 치과 멤버십 폐지. 항상 고시 단일가. */

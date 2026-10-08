@@ -7,6 +7,7 @@
  * /api/salesman/dashboard 데이터 훅 + 타입 + 포매터.
  *
  * 딜러 수수료: 거래처 판매가 − 1만원(어벗 1개당, 부가세 포함).
+ * 거래처 카드의 unitPrice는 그 거래처 판매가(원).
  * 개발운영 대시보드는 앵커 요율.
  */
 
@@ -28,6 +29,8 @@ export type CommissionOrgRow = {
   monthSimplewayCommissionAmount?: number;
   /** 커스텀어벗 매출에 대한 수수료. 없으면 monthCommissionAmount. */
   monthCustomAbutmentCommissionAmount?: number;
+  /** 그 거래처 건당 판매가(원). 미설정이면 1.5만. */
+  unitPrice?: number;
   referralLevel?: "direct" | "unaffiliated";
   requestorKind?: "practice" | "lab" | null;
   acquiredAt?: string | null;

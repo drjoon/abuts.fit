@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-09: 거래처 카드에 그 거래처 판매가를 표시. 기간 수수료는 기간 합계.
 // - 2026-10-09: 딜러 정산 규칙 모달 폭 sm:max-w-md.
 // - 2026-10-08: 딜러 정산 규칙 본문 — DealerSettlementRulesContent 공유.
 // - 2026-10-05: 개발운영 정산 규칙 — 딜러와 같은 칩·표. 의뢰비 5%(어벗츠 몫).
@@ -54,6 +55,7 @@ import {
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
 import { CustomAbutmentDevopsSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
+import { formatAbutsManwon } from "@/shared/pricing/abutsAbutmentService";
 
 export type CommissionPaymentsVariant = "salesman" | "devops";
 
@@ -270,19 +272,43 @@ export function CommissionPaymentsPage({
                               {Number(org.monthOrderCount || 0).toLocaleString()}건
                             </span>
                           </div>
-                          <ProductCommissionLines
-                            customAbutment={Number(
-                              org.monthCustomAbutmentCommissionAmount ??
-                                org.monthCommissionAmount ??
-                                0,
-                            )}
-                            rateLabel={
-                              isSalesman
-                                ? undefined
-                                : `1,000원`
-                            }
-                            className="pt-1 text-sm text-slate-900"
-                          />
+                          {isSalesman && Number(org.unitPrice) > 0 ? (
+                            <>
+                              <div className="flex justify-between gap-3">
+                                <span className="text-muted-foreground">
+                                  판매가
+                                </span>
+                                <span className="tabular-nums">
+                                  {formatAbutsManwon(Number(org.unitPrice))}
+                                </span>
+                              </div>
+                              <div className="flex justify-between gap-3">
+                                <span className="text-muted-foreground">
+                                  기간 수수료
+                                </span>
+                                <span className="tabular-nums">
+                                  {formatMoney(
+                                    Number(
+                                      org.monthCustomAbutmentCommissionAmount ??
+                                        org.monthCommissionAmount ??
+                                        0,
+                                    ),
+                                  )}
+                                  원
+                                </span>
+                              </div>
+                            </>
+                          ) : (
+                            <ProductCommissionLines
+                              customAbutment={Number(
+                                org.monthCustomAbutmentCommissionAmount ??
+                                  org.monthCommissionAmount ??
+                                  0,
+                              )}
+                              rateLabel={isSalesman ? undefined : "1,000원"}
+                              className="pt-1 text-sm text-slate-900"
+                            />
+                          )}
                         </div>
                       </div>
                     );

@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/components/CommissionLedgerInline.tsx
 // - web/frontend/src/shared/components/SalesmanLedgerModal.tsx
 // change-log:
+// - 2026-10-09: 딜러 정산 거래처 카드에 그 거래처 판매가(dealerUnitPrice)를 싣는다.
 // - 2026-10-09: 딜러 대시보드 수수료 = 거래처 판매가 − 1만원. 지급 완료는 장부 PAYOUT.
 // - 2026-10-09: 거래처 판매가 목록에 연락처·구강스캔을 실어 거래처 카드에서 입력한다.
 // - 2026-10-05: 딜러 대시보드 — 심플웨이(스토어) 수수료 지급 없음. 커스텀어벗만.
@@ -699,11 +700,26 @@ export async function getSalesmanDashboard(req, res) {
         verification: 1,
         createdAt: 1,
         requestorKind: 1,
+        dealerUnitPrice: 1,
       })
+      .select("+dealerUnitPrice")
       .lean();
 
     const orgNameById = new Map(
       (orgDocs || []).map((o) => [String(o._id || ""), String(o.name || "")]),
+    );
+    const unitPriceById = new Map(
+      (orgDocs || []).map((o) => {
+        const raw = o?.dealerUnitPrice;
+        const price =
+          raw == null ? REQUESTOR_UNIT_PRICE_BASE : Number(raw);
+        return [
+          String(o._id || ""),
+          Number.isFinite(price) && price > 0
+            ? price
+            : REQUESTOR_UNIT_PRICE_BASE,
+        ];
+      }),
     );
     for (const o of orgDocs || []) {
       const idStr = String(o?._id || "");
@@ -804,6 +820,7 @@ export async function getSalesmanDashboard(req, res) {
           monthCommissionAmount: commissionAmount,
           monthCustomAbutmentCommissionAmount: commissionAmount,
           monthSimplewayCommissionAmount: 0,
+          unitPrice: unitPriceById.get(idStr) ?? REQUESTOR_UNIT_PRICE_BASE,
           referralLevel: isDirect ? "direct" : "unaffiliated",
         };
       })
