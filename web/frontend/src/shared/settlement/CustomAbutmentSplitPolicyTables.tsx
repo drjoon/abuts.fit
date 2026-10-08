@@ -2,6 +2,7 @@
 // - web/backend/services/creditRevenuePolicy.service.js
 // - web/frontend/src/shared/pricing/requestorUnitPricePolicy.ts
 // change-log:
+// - 2026-10-09: 딜러 표 아래 부가세·수수료 안내 삭제.
 // - 2026-10-08: 누적 구간표 폐지. 거래처 판매가(1.2~1.5만)별 고정 분배표(제조 5,500 · 개발운영 1,000 · 어벗츠 3,500 · 나머지 딜러, 부가세 포함).
 import { cn } from "@/shared/ui/cn";
 import {
@@ -105,22 +106,15 @@ export function CustomAbutmentDealerSplitTable() {
     { label: "배송비", value: `월 ${formatRequestorWon(DELIVERY_MONTHLY_FEE)}원 · 딜러 부담` },
   ];
   return (
-    <div className="w-full space-y-2">
-      <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm ring-1 ring-slate-900/[0.02]">
-        <dl className="divide-y divide-slate-100/90 text-sm">
-          {rows.map((r) => (
-            <div key={r.label} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-              <dt className="text-slate-500">{r.label}</dt>
-              <dd className="text-right font-semibold tabular-nums text-slate-900">{r.value}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-      <p className="px-0.5 text-xs leading-relaxed text-slate-500">
-        어벗 1개당 · 부가세 포함입니다.
-        <br />
-        수수료는 판매가에서 매입가를 뺀 금액입니다.
-      </p>
+    <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm ring-1 ring-slate-900/[0.02]">
+      <dl className="divide-y divide-slate-100/90 text-sm">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+            <dt className="text-slate-500">{r.label}</dt>
+            <dd className="text-right font-semibold tabular-nums text-slate-900">{r.value}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }
