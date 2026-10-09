@@ -6,6 +6,7 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
 import Request from "../../models/request.model.js";
+import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import {
   buildRequestorOrgScopeFilter,
   normalizeRequestStage,
@@ -60,6 +61,47 @@ export async function checkDuplicateCaseInfo(req, res) {
       .sort({ createdAt: -1 })
       .lean();
 
+    // 기공의뢰(PTX)로 접수됐으나 디자인 파일이 아직 없는 건 — 어벗츠로 직접 올리면 PTX가 고아가 된다.
+    // 치과명은 달라도 환자·치아가 같으면 잡는다.
+    let ptxPending = null;
+    try {
+      const ptxCandidate = await Request.findOne({
+        $and: [
+          requestFilter,
+          { manufacturerStage: "준비" },
+          { "partnerBilling.relatedPracticeTransferId": { $ne: null } },
+          { designCompletedAt: null },
+          {
+            "caseInfos.patientName": patientName,
+            "caseInfos.tooth": tooth,
+          },
+        ],
+      })
+        .select({
+          requestId: 1,
+          "partnerBilling.relatedPracticeTransferId": 1,
+          "caseInfos.clinicName": 1,
+        })
+        .sort({ createdAt: -1 })
+        .lean();
+      const transferMongoId = ptxCandidate?.partnerBilling
+        ?.relatedPracticeTransferId;
+      if (transferMongoId) {
+        const transfer = await PracticeTransfer.findById(transferMongoId)
+          .select({ transferId: 1, status: 1, canceledAt: 1 })
+          .lean();
+        if (transfer?.transferId && !transfer.canceledAt) {
+          ptxPending = {
+            transferId: String(transfer.transferId),
+            requestId: String(ptxCandidate.requestId || ""),
+            clinicName: String(ptxCandidate?.caseInfos?.clinicName || ""),
+          };
+        }
+      }
+    } catch (e) {
+      console.error("checkDuplicateCaseInfo ptxPending lookup failed:", e);
+    }
+
     const existing =
       Array.isArray(candidates) && candidates.length > 0 ? candidates[0] : null;
 
@@ -67,6 +109,7 @@ export async function checkDuplicateCaseInfo(req, res) {
       return res.status(200).json({
         success: true,
         data: {
+          ptxPending,
           exists: false,
           stageOrder: -1,
           existingRequest: null,
@@ -81,6 +124,7 @@ export async function checkDuplicateCaseInfo(req, res) {
     return res.status(200).json({
       success: true,
       data: {
+        ptxPending,
         exists: true,
         stageOrder,
         existingRequest: {

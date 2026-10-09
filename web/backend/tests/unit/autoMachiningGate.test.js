@@ -1,5 +1,8 @@
 import { describe, it, expect } from "@jest/globals";
-import { evaluateAutoMachiningGate } from "../../services/autoMachiningGate.service.js";
+import {
+  activePrepCreatedAtFilter,
+  evaluateAutoMachiningGate,
+} from "../../services/autoMachiningGate.service.js";
 import {
   hasManualMachiningApproval,
   isTestAccountAutoMachiningHeld,
@@ -101,6 +104,16 @@ describe("evaluateAutoMachiningGate", () => {
     expect(
       isTestAccountAutoMachiningHeld({ caseInfos: { clinicName: "향기로운치과" } }),
     ).toBe(false);
+  });
+  it("이번 달 밖 준비 의뢰는 게이트 창 밖이다", () => {
+    const filter = activePrepCreatedAtFilter(new Date("2026-10-09T12:00:00+09:00"));
+    const inside = (at) => {
+      const t = new Date(at).getTime();
+      return t >= filter.$gte.getTime() && t <= filter.$lte.getTime();
+    };
+    expect(inside("2026-10-02T06:14:21.560Z")).toBe(true);
+    expect(inside("2026-09-11T02:08:03.682Z")).toBe(false);
+    expect(inside("2026-09-02T11:58:28.005Z")).toBe(false);
   });
   it("커프 manual-review·NC 좌표 이탈·STL 누락은 보류", () => {
     expect(

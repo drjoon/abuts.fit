@@ -6260,6 +6260,21 @@ export const PracticeFileTransferPage = ({
     };
   }, [openTransferWorkStatusById]);
 
+  // 신규의뢰에서 PTX 건 직접 업로드를 막고 넘어온 경우 안내
+  useEffect(() => {
+    const hint = String(
+      (location.state as { ptxUploadHint?: string } | null)?.ptxUploadHint ||
+        "",
+    ).trim();
+    if (!hint) return;
+    toast({ title: "기공의뢰로 접수된 건입니다", description: hint });
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: null,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
+
   useEffect(() => {
     const transferId = String(searchParams.get("openTransfer") || "").trim();
     if (!transferId) return;

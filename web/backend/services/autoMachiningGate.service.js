@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js (autoMachiningReview)
 // - web/backend/controllers/requests/common.review.controller.js (updateReviewStatusByStage)
 // change-log:
+// - 2026-10-09: 테스트 계정·준비 단계 문제 건은 준비에 남긴다(가공으로 안 보냄). 판정 대상은 이번 달 준비만.
 // - 2026-10-09: 테스트치과·테스트기공소 의뢰는 품질과 무관하게 가공하지 않고 hold.
 // - 2026-10-09: 신설. 준비 단계 의뢰를 규칙으로 판정해 이상 없는 건만 가공으로 자동 승인한다.
 /**
@@ -16,6 +17,7 @@
 import mongoose from "mongoose";
 import Request from "../models/request.model.js";
 import SystemSettings from "../models/systemSettings.model.js";
+import { resolveHeaderMonthPeriodRange } from "../utils/dateRange.js";
 import { resolveFilledStlFile } from "../utils/filledStlFile.js";
 import { assessFinishLineQuality } from "../utils/finishLineQuality.js";
 import {
@@ -36,6 +38,25 @@ export const AUTO_GATE_DEFAULTS = Object.freeze({
   minFinishLineZ: 0.6,
   mode: "shadow",
 });
+
+/**
+ * 준비 큐 가드(requestDashboardStats `buildIsWorksheetReadyQueueRequestExpr`와 같다).
+ * PTX 연결 건은 어벗츠 디자인이 끝나기(designCompletedAt) 전에는 준비 큐에 없다.
+ */
+export const READY_QUEUE_GUARD = Object.freeze({
+  $or: [
+    { "partnerBilling.relatedPracticeTransferId": null },
+    { "partnerBilling.relatedPracticeTransferId": { $exists: false } },
+    { designCompletedAt: { $type: "date" } },
+  ],
+});
+
+/** 워크시트 헤더 기본(이번 달)과 같은 createdAt 창. 지난달 준비 잔여를 판정하지 않는다. */
+export function activePrepCreatedAtFilter(now = new Date()) {
+  const range = resolveHeaderMonthPeriodRange("calendarMonth", now);
+  if (!range) return null;
+  return { $gte: range.start, $lte: range.end };
+}
 
 /** 이 값 초과는 측정 오류로 본다(DB에 30~114mm 사례). */
 const ABSURD_DIAMETER_MM = 12;
@@ -199,6 +220,27 @@ async function recordReview(id, review) {
   );
 }
 
+async function clearPrepReviewsOutsideWindow(now = new Date()) {
+  const range = resolveHeaderMonthPeriodRange("calendarMonth", now);
+  if (!range) return;
+  await Request.collection.updateMany(
+    {
+      manufacturerStage: "준비",
+      "autoMachiningReview.verdict": { $exists: true },
+      $or: [
+        { createdAt: { $lt: range.start } },
+        { createdAt: { $gt: range.end } },
+        // 디자인 대기 PTX 건: 준비 큐에 없으므로 판정을 남기지 않는다.
+        {
+          "partnerBilling.relatedPracticeTransferId": { $ne: null },
+          designCompletedAt: { $not: { $type: "date" } },
+        },
+      ],
+    },
+    { $unset: { autoMachiningReview: "" } },
+  );
+}
+
 /**
  * 준비 단계 의뢰를 한 번 훑어 판정하고, 통과 건을 직렬로 승인한다.
  * shadow 모드는 판정만 기록하고 승인하지 않는다.
@@ -213,10 +255,14 @@ function annotateRequestorBusiness(request, nameById) {
 export async function runAutoMachiningGatePass({ limit = 10 } = {}) {
   const cfg = await getAutoGateConfig();
   const out = { enabled: cfg.enabled, evaluated: 0, approved: 0, held: 0, failed: 0 };
+  const createdAt = activePrepCreatedAtFilter();
+  await clearPrepReviewsOutsideWindow();
 
   const candidates = await Request.find({
     manufacturerStage: "준비",
     source: { $ne: "dummy_sample" },
+    ...(createdAt ? { createdAt } : {}),
+    $and: [READY_QUEUE_GUARD],
   })
     .sort({ createdAt: 1 })
     .limit(200)
@@ -250,8 +296,9 @@ export async function runAutoMachiningGatePass({ limit = 10 } = {}) {
   let approvedThisPass = 0;
   for (const request of candidates) {
     annotateRequestorBusiness(request, nameById);
-    if (!isEligibleForGate(request) || !needsEvaluation(request, cfg.mode)) continue;
+    if (!isEligibleForGate(request)) continue;
     const testAccount = isTestAccountMachiningRequestSync(request);
+    if (!needsEvaluation(request, cfg.mode)) continue;
     if (!testAccount && approvedThisPass >= limit) continue;
 
     const now = new Date();

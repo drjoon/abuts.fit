@@ -158,6 +158,22 @@ export const useNewRequestPage = (
   >([]);
   const [duplicatePromptFromSubmit, setDuplicatePromptFromSubmit] =
     useState(false);
+  const ptxDismissedKeysRef = useRef<Set<string>>(new Set());
+  const continueWithAbutsForPtxPending = useCallback(
+    (p: { fileName: string; patientName: string; tooth: string }) => {
+      ptxDismissedKeysRef.current.add(
+        `${p.fileName}|${p.patientName}|${p.tooth}`,
+      );
+      setPtxPendingPrompt(null);
+    },
+    [],
+  );
+  const [ptxPendingPrompt, setPtxPendingPrompt] = useState<{
+    transferId: string;
+    fileName: string;
+    patientName: string;
+    tooth: string;
+  } | null>(null);
 
   const clinicStorageKey = useMemo(() => {
     const userId = user?.id ? String(user.id) : "guest";
@@ -666,6 +682,22 @@ export const useNewRequestPage = (
 
             const body: any = res.data || {};
             const data = body?.data || body;
+
+            // 기공의뢰(PTX)로 접수된 미디자인 건 → 직접 업로드 대신 PTX로 안내
+            const ptxKey = `${file.name}|${patientName}|${tooth}`;
+            // 「동명이인·별개 건」으로 어벗츠 진행을 고른 조합은 다시 묻지 않는다.
+            if (
+              data?.ptxPending?.transferId &&
+              !ptxDismissedKeysRef.current.has(ptxKey)
+            ) {
+              setPtxPendingPrompt({
+                transferId: String(data.ptxPending.transferId),
+                fileName: file.name,
+                patientName,
+                tooth,
+              });
+              return;
+            }
 
             if (data?.exists) {
               const stageOrder = Number(data?.stageOrder || 0);
@@ -1423,6 +1455,9 @@ export const useNewRequestPage = (
     setDuplicatePrompt,
     duplicatePromptFromSubmit,
     setDuplicatePromptFromSubmit,
+    ptxPendingPrompt,
+    setPtxPendingPrompt,
+    continueWithAbutsForPtxPending,
     duplicateResolutions,
     setDuplicateResolutions,
   };

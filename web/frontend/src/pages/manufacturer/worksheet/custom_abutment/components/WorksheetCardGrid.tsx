@@ -43,7 +43,8 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/shippingPriority.utils.js
 // - web/backend/controllers/bg/bg.controller.js
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -181,6 +182,18 @@ export const WorksheetCardGrid = ({
   rndMemoSaving = {},
   debugLog = false,
 }: WorksheetCardGridProps) => {
+  // 헤더 기간 시작 이전에 생성됐지만 준비에 남은 건 → 별도 테두리
+  const headerPeriod = usePeriodStore((s) => s.period);
+  const headerCustomStart = usePeriodStore((s) => s.customStartDate);
+  const headerCustomEnd = usePeriodStore((s) => s.customEndDate);
+  const periodStartMs = useMemo(() => {
+    const range = periodToRange(headerPeriod, {
+      customStartDate: headerCustomStart,
+      customEndDate: headerCustomEnd,
+    });
+    const ms = range ? new Date(range.startDate).getTime() : NaN;
+    return Number.isFinite(ms) ? ms : null;
+  }, [headerPeriod, headerCustomStart, headerCustomEnd]);
   const [claimTickMs, setClaimTickMs] = useState(() => Date.now());
   useEffect(() => {
     if (!enableDesignClaim) return;
@@ -337,6 +350,14 @@ export const WorksheetCardGrid = ({
         const isPreMachiningTab = tabStage === "request" || tabStage === "cam";
         const isCuffManualReview =
           isPreMachiningTab && isCuffBlendManualReview(cuffBlend);
+        const createdAtMs = request.createdAt
+          ? new Date(request.createdAt as string).getTime()
+          : NaN;
+        const isStalePrepCard =
+          tabStage === "request" &&
+          periodStartMs !== null &&
+          Number.isFinite(createdAtMs) &&
+          createdAtMs < periodStartMs;
         const isCuffSpecPendingCard =
           isPreMachiningTab && isCuffSpecPending(cuffBlend);
         const isCuffProposalWaiting =
@@ -824,7 +845,9 @@ export const WorksheetCardGrid = ({
                     isFinishLineCaptureBad ||
                     isCuffManualReview
                   ? "border-accent-muted ring-2 ring-accent-muted/80"
-                  : ""
+                  : isStalePrepCard
+                    ? "!border-purple-500 border-2 border-dashed"
+                    : ""
             } ${onToggleSelected && !rhinoWorkPending ? "cursor-pointer" : ""} ${
               isPackingDropTarget ? "transition-shadow hover:shadow-md" : ""
             }`}

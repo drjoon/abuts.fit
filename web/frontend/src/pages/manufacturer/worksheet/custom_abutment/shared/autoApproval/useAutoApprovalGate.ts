@@ -11,6 +11,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 
 export type GateHoldItem = {
   requestId: string;
+  requestMongoId?: string;
   stage: "준비" | "가공";
   machineId: string | null;
   clinicName: string;

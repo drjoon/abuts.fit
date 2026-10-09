@@ -148,8 +148,14 @@ export const MachineQueueCard = ({
   materialAlertTooltip,
   holdItems,
 }: MachineQueueCardProps) => {
-  const machiningQueueAll = (Array.isArray(queue) ? queue : []).filter((q) =>
-    isMachiningStatus(q),
+  // 보류(HOLD) 건은 Next Up·대기 건수에 넣지 않는다. 가공 중인 건은 보류 대상이 아니다.
+  const holdRequestIds = new Set(
+    (holdItems || []).map((h) => String(h.requestId || "").trim()),
+  );
+  const machiningQueueAll = (Array.isArray(queue) ? queue : []).filter(
+    (q) =>
+      isMachiningStatus(q) &&
+      !holdRequestIds.has(String((q as any)?.requestId || "").trim()),
   );
 
   const { currentSlot, nextSlot } = useMemo(() => {
@@ -1373,7 +1379,24 @@ export const MachineQueueCard = ({
           </div>
         </div>
 
-        <GateHoldCard items={holdItems || []} />
+        <GateHoldCard
+          items={holdItems || []}
+          onOpenItem={
+            onOpenProgramCode
+              ? (h) =>
+                  onOpenProgramCode(
+                    {
+                      requestId: h.requestId,
+                      requestMongoId: h.requestMongoId,
+                      clinicName: h.clinicName,
+                      patientName: h.patientName,
+                      tooth: h.tooth,
+                    },
+                    machineId,
+                  )
+              : undefined
+          }
+        />
 
         <button
           type="button"

@@ -24,7 +24,8 @@ export function AutoApprovalGateSwitch() {
 
   if (!gate) return null;
 
-  const on = gate.enabled && machinesAutoEnabled;
+  // 전체 스위치는 게이트 설정만 따른다. 장비별 자동 스위치는 독립이라 일부가 꺼져도 유지한다.
+  const on = gate.enabled;
 
   const turnOn = async () => {
     const ok = await save({ enabled: true });
@@ -115,7 +116,9 @@ export function AutoApprovalGateSwitch() {
           <>
             이상 없는 의뢰가 자동으로 가공에 들어갑니다.
             <br />
-            보류된 의뢰는 준비에 남고, 장비 카드에서 확인할 수 있습니다.
+            테스트 계정과 준비 단계 문제 건은 준비에 남습니다.
+            <br />
+            CAM·가공 후 문제는 장비 카드 보류에서 확인합니다.
           </>
         }
         confirmLabel={confirm?.kind === "on" ? "켜기" : "라이브로 전환"}

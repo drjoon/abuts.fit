@@ -32,7 +32,13 @@ function reasonLabel(code: string): string {
 }
 
 /** 자동 가공이 건너뛴 의뢰. 아침에 작업자가 확인한다. */
-export function GateHoldCard({ items }: { items: GateHoldItem[] }) {
+export function GateHoldCard({
+  items,
+  onOpenItem,
+}: {
+  items: GateHoldItem[];
+  onOpenItem?: (item: GateHoldItem) => void;
+}) {
   const has = items.length > 0;
   return (
     <div
@@ -59,7 +65,22 @@ export function GateHoldCard({ items }: { items: GateHoldItem[] }) {
           {items.map((h) => (
             <li
               key={h.requestId}
-              className="rounded-lg border border-amber-100 bg-white px-2 py-1.5 text-[12px] text-slate-700"
+              role={onOpenItem ? "button" : undefined}
+              tabIndex={onOpenItem ? 0 : undefined}
+              onClick={onOpenItem ? () => onOpenItem(h) : undefined}
+              onKeyDown={
+                onOpenItem
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onOpenItem(h);
+                      }
+                    }
+                  : undefined
+              }
+              className={`rounded-lg border border-amber-100 bg-white px-2 py-1.5 text-[12px] text-slate-700 ${
+                onOpenItem ? "cursor-pointer hover:border-amber-300 hover:bg-amber-50/40" : ""
+              }`}
             >
               <div className="flex items-center gap-1.5">
                 <span className="truncate font-semibold">

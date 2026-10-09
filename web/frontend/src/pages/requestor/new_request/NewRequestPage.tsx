@@ -203,6 +203,9 @@ const NewRequestPageContent = () => {
     setDuplicatePrompt,
     duplicatePromptFromSubmit,
     setDuplicatePromptFromSubmit,
+    ptxPendingPrompt,
+    setPtxPendingPrompt,
+    continueWithAbutsForPtxPending,
     duplicateResolutions,
     setDuplicateResolutions,
     handleSubmitWithDuplicateResolutions,
@@ -1641,6 +1644,52 @@ const NewRequestPageContent = () => {
           }
         />
         <MultiActionDialog
+          open={!!ptxPendingPrompt}
+          preventCloseOnOverlayClick={false}
+          onClose={() => setPtxPendingPrompt(null)}
+          title="기공의뢰로 접수된 건입니다"
+          description={
+            <div className="space-y-2 text-sm text-gray-700">
+              <p>
+                {ptxPendingPrompt?.patientName} {ptxPendingPrompt?.tooth}번은
+                기공의뢰로 이미 접수됐습니다.
+                <br />
+                어벗츠로 따로 올리면 기공의뢰가 남아 중복됩니다.
+                <br />
+                기공소에 페이지에서 디자인 파일을 올려 주세요.
+                <br />
+                동명이인 등 별개 건이면 어벗츠로 계속 진행합니다.
+              </p>
+            </div>
+          }
+          actions={[
+            {
+              label: "별개 건, 어벗츠로 계속",
+              variant: "secondary",
+              onClick: () => {
+                if (ptxPendingPrompt)
+                  continueWithAbutsForPtxPending(ptxPendingPrompt);
+                else setPtxPendingPrompt(null);
+              },
+            },
+            {
+              label: "기공소에 페이지에서 올리기",
+              variant: "primary",
+              onClick: () => {
+                const p = ptxPendingPrompt;
+                setPtxPendingPrompt(null);
+                navigate("/dashboard/practice-transfers?mode=receive", {
+                  state: {
+                    ptxUploadHint: p
+                      ? `${p.patientName} ${p.tooth}번 건의 디자인 파일을 기공소에 페이지에서 올려 주세요.`
+                      : "",
+                  },
+                });
+              },
+            },
+          ]}
+        />
+        <MultiActionDialog
           open={!!duplicatePrompt}
           preventCloseOnOverlayClick={false}
           onClose={() => {
@@ -1663,11 +1712,9 @@ const NewRequestPageContent = () => {
               </div>
               {duplicatePrompt?.mode === "tracking" && (
                 <div className="rounded border border-primary-muted bg-primary-soft px-2.5 py-2 text-[11px] text-primary-strong">
-                  어벗츠로 리메이크는 건당 10,000원입니다.
+                  리메이크도 일반 의뢰와 같은 건당 의뢰비입니다.
                   <br />
                   배송비 판매자 부담.
-                  <br />
-                  동일 치과·환자·치식·최근 180일 조건 충족 시 적용.
                 </div>
               )}
               {duplicateList.map((dup, idx) => {
