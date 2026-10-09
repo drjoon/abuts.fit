@@ -1142,6 +1142,8 @@ const requestSchema = new mongoose.Schema(
         },
         updatedAt: Date,
         error: String,
+        // 수동「Rhino 실행」이면 "rhino" (준비 카드 오버레이 문구)
+        engine: String,
       },
       // 백엔드 JS 파이프라인이 실패해 원격 Rhino로 넘긴 기록(준비 페이지 상단 alert)
       stlJsFallback: {

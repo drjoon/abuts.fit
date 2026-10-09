@@ -298,6 +298,7 @@ export interface RequestBase {
       status?: string;
       updatedAt?: string | Date;
       error?: string;
+      engine?: string;
     };
     stlJsFallback?: {
       reason?: string;

@@ -168,8 +168,25 @@ export const processFileByName = asyncHandler(async (req, res) => {
     }
   }
 
+  // engine="rhino": 준비 카드「Rhino 실행」— JS 파이프라인을 건너뛰고 원격 Rhino로 바로 처리한다.
+  const forceRhinoEngine =
+    String(req.body?.engine || "").trim().toLowerCase() === "rhino";
+
+  // 준비 카드 오버레이「Rhino 작업중」표시용 (GENERATING 갱신은 위에서 이미 끝남)
+  if (forceRhinoEngine && requestId) {
+    await Request.updateOne(
+      { requestId },
+      { $set: { "productionSchedule.stlPreload.engine": "rhino" } },
+    ).catch(() => null);
+  }
+
   // 수동 재생성도 백엔드 JS 파이프라인 우선. 문제가 나면 원격 Rhino(force)로 넘긴다.
-  if (requestId && /\.stl$/i.test(safeName) && isAbutmentStlJsPrimaryEnabled()) {
+  if (
+    !forceRhinoEngine &&
+    requestId &&
+    /\.stl$/i.test(safeName) &&
+    isAbutmentStlJsPrimaryEnabled()
+  ) {
     void runJsPrimaryThenFallback({
       requestId,
       fileName: safeName,

@@ -48,6 +48,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft,
@@ -113,6 +114,9 @@ type WorksheetCardGridProps = {
   onDelete?: (req: ManufacturerRequest) => void;
   onCancelRhinoWork?: (req: ManufacturerRequest) => void;
   rhinoCancellingIds?: Record<string, boolean>;
+  /** 준비 카드: JS 파이프라인을 건너뛰고 Rhino로 Filled STL 생성 */
+  onRunRhino?: (req: ManufacturerRequest) => void;
+  rhinoRunningIds?: Record<string, boolean>;
   onDone?: (req: ManufacturerRequest) => void;
   onRestoreUnmachinable?: (req: ManufacturerRequest) => void;
   onSaveRndMemo?: (
@@ -164,6 +168,8 @@ export const WorksheetCardGrid = ({
   onDelete,
   onCancelRhinoWork,
   rhinoCancellingIds = {},
+  onRunRhino,
+  rhinoRunningIds = {},
   onDone,
   onRestoreUnmachinable,
   onSaveRndMemo,
@@ -871,13 +877,15 @@ export const WorksheetCardGrid = ({
                 role="status"
                 aria-live="polite"
                 aria-label={
-                  request.productionSchedule?.stlJsFallback?.at
+                  (request.productionSchedule?.stlJsFallback?.at ||
+                    request.productionSchedule?.stlPreload?.engine === "rhino")
                     ? "Rhino 작업중"
                     : "JS 작업중"
                 }
               >
                 <span className="rounded-full border border-primary/35 bg-primary-soft/70 px-3 py-1.5 text-sm font-extrabold text-primary-strong">
-                  {request.productionSchedule?.stlJsFallback?.at
+                  {(request.productionSchedule?.stlJsFallback?.at ||
+                    request.productionSchedule?.stlPreload?.engine === "rhino")
                     ? "Rhino 작업중"
                     : "JS 작업중"}
                 </span>
@@ -1400,6 +1408,33 @@ export const WorksheetCardGrid = ({
                         >
                           <FilledStlCardThumbnail request={request} />
                         </button>
+                        {onRunRhino && tabStage === "request" && !rhinoWorkPending ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-[11px] font-semibold"
+                            disabled={
+                              !!rhinoRunningIds[
+                                String(request._id || request.requestId || "")
+                              ]
+                            }
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              onRunRhino(request);
+                            }}
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                            }}
+                          >
+                            {rhinoRunningIds[
+                              String(request._id || request.requestId || "")
+                            ]
+                              ? "요청 중…"
+                              : "Rhino 실행"}
+                          </Button>
+                        ) : null}
                       </>
                     ) : null}
                     {showSideSpecBadges ? (

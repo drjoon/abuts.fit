@@ -2666,7 +2666,7 @@ export const RequestPage = ({
   const setRequests = pageState.setRequests;
 
   const patchFilledStlGenerating = useCallback(
-    (requestIdRaw: unknown) => {
+    (requestIdRaw: unknown, engine?: string) => {
       const requestId = String(requestIdRaw || "").trim();
       if (!requestId) return;
       markFilledStlRegenerationPending(requestId);
@@ -2682,6 +2682,7 @@ export const RequestPage = ({
               stlPreload: {
                 status: "GENERATING",
                 updatedAt: new Date().toISOString(),
+                ...(engine ? { engine } : {}),
               },
             },
           };
@@ -2689,6 +2690,87 @@ export const RequestPage = ({
       );
     },
     [setRequests],
+  );
+
+  // 준비 카드「Rhino 실행」— JS 파이프라인을 건너뛰고 원격 Rhino로 Filled STL을 다시 만든다.
+  const [rhinoRunningIds, setRhinoRunningIds] = useState<
+    Record<string, boolean>
+  >({});
+
+  const handleRunRhino = useCallback(
+    async (req: ManufacturerRequest) => {
+      const requestId = String(req?.requestId || "").trim();
+      const runKey = String(req?._id || requestId || "").trim();
+      if (!requestId || !runKey) return;
+      if (!token) {
+        toast({
+          title: "실패",
+          description: "로그인이 필요합니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (rhinoRunningIds[runKey]) return;
+
+      const filePath = String(
+        req.caseInfos?.file?.filePath || req.caseInfos?.file?.originalName || "",
+      ).trim();
+      if (!filePath) {
+        toast({
+          title: "실패",
+          description: "원본 STL 파일명이 없어 Rhino를 실행할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setRhinoRunningIds((prev) => ({ ...prev, [runKey]: true }));
+      try {
+        const res = await fetch("/api/rhino/process-file", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            filePath,
+            fileName: filePath,
+            requestId,
+            force: true,
+            engine: "rhino",
+          }),
+        });
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) {
+          toast({
+            title: "Rhino 실행 실패",
+            description:
+              body?.message || body?.error || "Rhino 실행 요청에 실패했습니다.",
+            variant: "destructive",
+          });
+          return;
+        }
+        patchFilledStlGenerating(requestId, "rhino");
+        toast({
+          title: "Rhino 실행",
+          description: "Rhino로 Filled STL 생성을 시작했습니다.",
+        });
+      } catch (err: any) {
+        toast({
+          title: "Rhino 실행 실패",
+          description: err?.message || "Rhino 실행 요청에 실패했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setRhinoRunningIds((prev) => {
+          const next = { ...prev };
+          delete next[runKey];
+          return next;
+        });
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rhinoRunningIds, token, toast, patchFilledStlGenerating],
   );
 
   useEffect(() => {
@@ -3280,6 +3362,8 @@ export const RequestPage = ({
                       onDelete={handleCardDelete}
                       onCancelRhinoWork={handleCancelRhinoWork}
                       rhinoCancellingIds={rhinoCancellingIds}
+                      onRunRhino={tabStage === "request" ? handleRunRhino : undefined}
+                      rhinoRunningIds={rhinoRunningIds}
                       onDone={handleCardDone}
                       onRestoreUnmachinable={handleRestoreUnmachinable}
                       onUploadNc={handleUploadNc}
