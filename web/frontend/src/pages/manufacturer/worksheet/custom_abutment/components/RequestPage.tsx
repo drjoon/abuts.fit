@@ -2692,13 +2692,14 @@ export const RequestPage = ({
     [setRequests],
   );
 
-  // 준비 카드「Rhino 실행」— JS 파이프라인을 건너뛰고 원격 Rhino로 Filled STL을 다시 만든다.
+  // 준비 카드「Rhino 실행」(원격 Rhino) · 「JS 실행」(백엔드 JS 파이프라인)으로 Filled STL을 다시 만든다.
   const [rhinoRunningIds, setRhinoRunningIds] = useState<
     Record<string, boolean>
   >({});
 
   const handleRunRhino = useCallback(
-    async (req: ManufacturerRequest) => {
+    async (req: ManufacturerRequest, engine: "rhino" | "js" = "rhino") => {
+      const engineLabel = engine === "js" ? "JS" : "Rhino";
       const requestId = String(req?.requestId || "").trim();
       const runKey = String(req?._id || requestId || "").trim();
       if (!requestId || !runKey) return;
@@ -2718,7 +2719,7 @@ export const RequestPage = ({
       if (!filePath) {
         toast({
           title: "실패",
-          description: "원본 STL 파일명이 없어 Rhino를 실행할 수 없습니다.",
+          description: `원본 STL 파일명이 없어 ${engineLabel}를 실행할 수 없습니다.`,
           variant: "destructive",
         });
         return;
@@ -2737,28 +2738,31 @@ export const RequestPage = ({
             fileName: filePath,
             requestId,
             force: true,
-            engine: "rhino",
+            engine,
           }),
         });
         const body: any = await res.json().catch(() => ({}));
         if (!res.ok || body?.success === false) {
           toast({
-            title: "Rhino 실행 실패",
+            title: `${engineLabel} 실행 실패`,
             description:
-              body?.message || body?.error || "Rhino 실행 요청에 실패했습니다.",
+              body?.message ||
+              body?.error ||
+              `${engineLabel} 실행 요청에 실패했습니다.`,
             variant: "destructive",
           });
           return;
         }
-        patchFilledStlGenerating(requestId, "rhino");
+        patchFilledStlGenerating(requestId, engine);
         toast({
-          title: "Rhino 실행",
-          description: "Rhino로 Filled STL 생성을 시작했습니다.",
+          title: `${engineLabel} 실행`,
+          description: `${engineLabel}로 Filled STL 생성을 시작했습니다.`,
         });
       } catch (err: any) {
         toast({
-          title: "Rhino 실행 실패",
-          description: err?.message || "Rhino 실행 요청에 실패했습니다.",
+          title: `${engineLabel} 실행 실패`,
+          description:
+            err?.message || `${engineLabel} 실행 요청에 실패했습니다.`,
           variant: "destructive",
         });
       } finally {

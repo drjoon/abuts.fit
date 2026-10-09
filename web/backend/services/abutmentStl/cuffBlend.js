@@ -348,6 +348,47 @@ function quinticHermite(p0, v0, a0, p1, v1, a1, h) {
   return value;
 }
 
+/**
+ * 이음 곡선을 오목(r'' ≥ 0)으로 만든다. 볼록하게 부푼 곳은 뼈에 걸린다.
+ * 표본의 아래 볼록 외피(greatest convex minorant)를 잡고 살짝 평활한다. 양끝 점은 그대로다.
+ * @param {(t: number) => number} fn t∈[0,1]
+ */
+export function toConcaveProfile(fn, samples = 160) {
+  const n = samples;
+  const xs = Array.from({ length: n + 1 }, (_, i) => i / n);
+  const ys = xs.map((x) => fn(x));
+  // 아래 볼록 외피 (monotone chain)
+  const hull = [];
+  for (let i = 0; i <= n; i += 1) {
+    while (hull.length >= 2) {
+      const a = hull[hull.length - 2];
+      const b = hull[hull.length - 1];
+      const cross = (xs[b] - xs[a]) * (ys[i] - ys[a]) - (ys[b] - ys[a]) * (xs[i] - xs[a]);
+      if (cross <= 0) hull.pop();
+      else break;
+    }
+    hull.push(i);
+  }
+  const out = new Array(n + 1);
+  for (let k = 0; k + 1 < hull.length; k += 1) {
+    const a = hull[k];
+    const b = hull[k + 1];
+    for (let i = a; i <= b; i += 1) out[i] = ys[a] + ((ys[b] - ys[a]) * (xs[i] - xs[a])) / (xs[b] - xs[a]);
+  }
+  // 외피의 꺾임을 평활(볼록 수열의 이동평균은 볼록). 양끝 고정.
+  let cur = out;
+  for (let pass = 0; pass < 24; pass += 1) {
+    const next = cur.slice();
+    for (let i = 1; i < n; i += 1) next[i] = 0.25 * cur[i - 1] + 0.5 * cur[i] + 0.25 * cur[i + 1];
+    cur = next;
+  }
+  return (t) => {
+    const x = Math.max(0, Math.min(1, t)) * n;
+    const i = Math.min(n - 1, Math.floor(x));
+    return cur[i] + (cur[i + 1] - cur[i]) * (x - i);
+  };
+}
+
 /** z 표본 [z0, z0+span]에서 r(z)=a+b·dz+c·dz² 최소제곱. */
 function fitQuadratic(samples, z0) {
   let s0 = 0, s1 = 0, s2 = 0, s3 = 0, s4 = 0, t0 = 0, t1 = 0, t2 = 0;
@@ -923,7 +964,10 @@ export function blendCuffJunction(buffer, options = {}) {
     const tops = sampleTopConditions(probe, thetas, thetas.map(() => zB), CLEAN_WINDOW_MM);
     if (tops.some((t) => !t)) fail("manual-review", "커프 하단 곡면을 읽지 못했습니다.");
     const h = zB - zA;
-    const profiles = tops.map((t) => quinticHermite(ra, TAPER_SLOPE, 0, t.r, t.slope, clampCurvature(t.curvature), h));
+    // 볼록(부푼) 구간은 뼈에 걸리므로 오목 프로파일로 바로잡는다.
+    const profiles = tops.map((t) =>
+      toConcaveProfile(quinticHermite(ra, TAPER_SLOPE, 0, t.r, t.slope, clampCurvature(t.curvature), h)),
+    );
     let maxSlope = 0;
     let minR = Infinity;
     for (let j = 0; j < profiles.length; j += 1) {

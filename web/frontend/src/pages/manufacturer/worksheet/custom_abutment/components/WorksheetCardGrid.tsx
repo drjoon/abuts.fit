@@ -115,7 +115,7 @@ type WorksheetCardGridProps = {
   onCancelRhinoWork?: (req: ManufacturerRequest) => void;
   rhinoCancellingIds?: Record<string, boolean>;
   /** 준비 카드: JS 파이프라인을 건너뛰고 Rhino로 Filled STL 생성 */
-  onRunRhino?: (req: ManufacturerRequest) => void;
+  onRunRhino?: (req: ManufacturerRequest, engine?: "rhino" | "js") => void;
   rhinoRunningIds?: Record<string, boolean>;
   onDone?: (req: ManufacturerRequest) => void;
   onRestoreUnmachinable?: (req: ManufacturerRequest) => void;
@@ -1433,6 +1433,33 @@ export const WorksheetCardGrid = ({
                             ]
                               ? "요청 중…"
                               : "Rhino 실행"}
+                          </Button>
+                        ) : null}
+                        {onRunRhino && tabStage === "request" && !rhinoWorkPending ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-[11px] font-semibold"
+                            disabled={
+                              !!rhinoRunningIds[
+                                String(request._id || request.requestId || "")
+                              ]
+                            }
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              onRunRhino(request, "js");
+                            }}
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                            }}
+                          >
+                            {rhinoRunningIds[
+                              String(request._id || request.requestId || "")
+                            ]
+                              ? "요청 중…"
+                              : "JS 실행"}
                           </Button>
                         ) : null}
                       </>
