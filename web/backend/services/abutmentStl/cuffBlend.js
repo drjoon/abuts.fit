@@ -31,6 +31,9 @@ const ALT_SPEC_DIAMETER_TOL_MM = 0.02;
 
 const MIN_BAND_MM = 0.15;
 const MAX_BAND_MM = 2.0;
+/** auto 이음 띠 상한: 피니시라인 최저 Z에서 이만큼 아래, 그리고 커넥션~피니시라인 높이의 이 비율 이내. */
+const AUTO_FL_MARGIN_MM = 0.2;
+const AUTO_MAX_BAND_FRACTION = 0.6;
 const CLEAN_WINDOW_MM = 0.3;
 const CLEAN_STEP_MM = 0.02;
 const CLEAN_MAX_JUMP_MM = 0.02;
@@ -353,7 +356,65 @@ function quinticHermite(p0, v0, a0, p1, v1, a1, h) {
  * 표본의 아래 볼록 외피(greatest convex minorant)를 잡고 살짝 평활한다. 양끝 점은 그대로다.
  * @param {(t: number) => number} fn t∈[0,1]
  */
-export function toConcaveProfile(fn, samples = 160) {
+export function toConcaveProfile(fn, samples = 160, tangents = null) {
+  if (tangents) {
+    const shaped = toConcaveProfileTangent(fn, samples, tangents);
+    if (shaped) return shaped;
+  }
+  return toConcaveProfilePlain(fn, samples);
+}
+
+/**
+ * 양끝 접선(커넥션 원뿔·커프)을 바깥으로 이어 붙인 뒤 볼록 외피를 잡는다.
+ * 외피가 양끝 접선보다 눕거나 서지 않아 Z_a·Z_b에서 꺾이지 않는다(볼록 모서리 없음).
+ * 양끝 값이 접선 연장 위에 놓이지 못하면(커프가 원뿔 연장보다 낮음 등) null.
+ * @param {{ m0: number, m1: number }} tangents t 단위 기울기(dr/dt)
+ */
+function toConcaveProfileTangent(fn, samples, { m0, m1 }) {
+  const n = samples;
+  const total = 3 * n;
+  const y0 = fn(0);
+  const y1 = fn(1);
+  const ys = Array.from({ length: total + 1 }, (_, i) => {
+    const t = i / n - 1;
+    if (t < 0) return y0 + m0 * t;
+    if (t > 1) return y1 + m1 * (t - 1);
+    return fn(t);
+  });
+  const xs = ys.map((_, i) => i / n - 1);
+  const hull = [];
+  for (let i = 0; i <= total; i += 1) {
+    while (hull.length >= 2) {
+      const a = hull[hull.length - 2];
+      const b = hull[hull.length - 1];
+      const cross = (xs[b] - xs[a]) * (ys[i] - ys[a]) - (ys[b] - ys[a]) * (xs[i] - xs[a]);
+      if (cross <= 0) hull.pop();
+      else break;
+    }
+    hull.push(i);
+  }
+  let cur = new Array(total + 1);
+  for (let k = 0; k + 1 < hull.length; k += 1) {
+    const a = hull[k];
+    const b = hull[k + 1];
+    for (let i = a; i <= b; i += 1) cur[i] = ys[a] + ((ys[b] - ys[a]) * (xs[i] - xs[a])) / (xs[b] - xs[a]);
+  }
+  for (let pass = 0; pass < 24; pass += 1) {
+    const next = cur.slice();
+    for (let i = 1; i < total; i += 1) next[i] = 0.25 * cur[i - 1] + 0.5 * cur[i] + 0.25 * cur[i + 1];
+    cur = next;
+  }
+  if (Math.abs(cur[n] - y0) > 0.002 || Math.abs(cur[2 * n] - y1) > 0.002) return null;
+  return (t) => {
+    const x = n + Math.max(0, Math.min(1, t)) * n;
+    const i = Math.min(2 * n - 1, Math.floor(x));
+    const v = cur[i] + (cur[i + 1] - cur[i]) * (x - i);
+    // 양끝은 정확히 원뿔·커프 값에 맞춘다(<=2µm 보정)
+    return v + (y0 - cur[n]) * (1 - t) + (y1 - cur[2 * n]) * t;
+  };
+}
+
+function toConcaveProfilePlain(fn, samples) {
   const n = samples;
   const xs = Array.from({ length: n + 1 }, (_, i) => i / n);
   const ys = xs.map((x) => fn(x));
@@ -939,7 +1000,8 @@ export function blendCuffJunction(buffer, options = {}) {
     const { mesh, probe, taper, zA, matchedKey, warning } = setup(buffer, options);
     const flMin = finishLineMinZ(options.finishLine);
     if (!Number.isFinite(flMin)) fail("manual-review", "피니시라인이 없어 커프 보호 범위를 정할 수 없습니다.");
-    const zLimit = flMin - FL_PROTECT_MM;
+    // 피니시라인(크라운 안착)과 그 위는 건드리지 않는다. 이음 띠는 커넥션 쪽 아래 구간으로만 제한한다.
+    const zLimit = Math.min(flMin - AUTO_FL_MARGIN_MM, zA + AUTO_MAX_BAND_FRACTION * (flMin - zA));
     if (zLimit - zA < MIN_BAND_MM) {
       fail("manual-review", "피니시라인과 커넥션 사이가 너무 좁아 이음부를 만들 수 없습니다.", {
         zA: round3(zA),
@@ -965,8 +1027,13 @@ export function blendCuffJunction(buffer, options = {}) {
     if (tops.some((t) => !t)) fail("manual-review", "커프 하단 곡면을 읽지 못했습니다.");
     const h = zB - zA;
     // 볼록(부푼) 구간은 뼈에 걸리므로 오목 프로파일로 바로잡는다.
+    // 커넥션 쪽(피니시라인에서 먼 쪽)은 원뿔 접선에서 오목하게 벌어지고, 위 끝은 커프 접선에 맞춘다.
     const profiles = tops.map((t) =>
-      toConcaveProfile(quinticHermite(ra, TAPER_SLOPE, 0, t.r, t.slope, clampCurvature(t.curvature), h)),
+      toConcaveProfile(
+        quinticHermite(ra, TAPER_SLOPE, 0, t.r, t.slope, clampCurvature(t.curvature), h),
+        160,
+        { m0: TAPER_SLOPE * h, m1: t.slope * h },
+      ),
     );
     let maxSlope = 0;
     let minR = Infinity;
