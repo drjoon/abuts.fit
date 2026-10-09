@@ -2004,7 +2004,8 @@ export async function updateReviewStatusByStage(req, res) {
           const shouldCheckNcOnNextUp =
             nextUpCamRunGuard === true &&
             (triggerSource === "preview-modal" ||
-              triggerSource === "worksheet-tab");
+              triggerSource === "worksheet-tab" ||
+              isAutoGateTrigger(triggerSource));
           const hasNcMeta = Boolean(request?.caseInfos?.ncFile?.s3Key);
           const selectedDiameter = Number(selected.diameter);
           // schedule.diameter는 이전 시도에서 이미 장비 직경으로 갱신됐을 수 있음.

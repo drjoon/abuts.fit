@@ -17,6 +17,10 @@ export const CUFF_BLEND_VERSION = "cuff-blend-1";
 export const CUFF_BLEND_PATCH_ATTRIBUTE = 0x4342;
 
 export const FL_PROTECT_MM = 0.2;
+/** auto 이음이 평면 Z_b에서 오목하게 못 이어질 때, 피니시라인 곡선 아래 이만큼에서 끝낸다. */
+const FINISH_KINK_OFFSET_MM = 0.05;
+/** 새로 만든 꼭짓점이 피니시라인 곡선 아래로 최소 이만큼 떨어져 있어야 한다. */
+const FINISH_MIN_CLEARANCE_MM = 0.01;
 const WELD_EPS = 1e-5;
 const MEASURE_BINS = 72;
 const PROFILE_BINS = 720;
@@ -30,6 +34,8 @@ const TAPER_MATCH_ABOVE_MM = 0.08;
 const ALT_SPEC_DIAMETER_TOL_MM = 0.02;
 
 const MIN_BAND_MM = 0.15;
+/** 피니시라인 곡선을 따라가는 이음은 이 높이부터 만든다. */
+const MIN_FOLLOW_BAND_MM = 0.02;
 const MAX_BAND_MM = 2.0;
 /** auto 이음 띠 상한: 피니시라인 최저 Z에서 이만큼 아래, 그리고 커넥션~피니시라인 높이의 이 비율 이내. */
 const AUTO_FL_MARGIN_MM = 0.2;
@@ -412,6 +418,77 @@ function toConcaveProfileTangent(fn, samples, { m0, m1 }) {
     // 양끝은 정확히 원뿔·커프 값에 맞춘다(<=2µm 보정)
     return v + (y0 - cur[n]) * (1 - t) + (y1 - cur[2 * n]) * t;
   };
+}
+
+/**
+ * 단차 부위 직경은 따르지 않는 오목 이음 곡선: r = ra + s0·t + k·t² (t∈[0,1], k>0).
+ * 끝 값(커프 r1)만 맞추고 항상 살짝 오목(r''≥0)이며 부드럽게 올라간다.
+ * 단차 때문에 원뿔 접선·커프 접선을 다 맞추면 볼록하게 부풀 때 쓴다.
+ * @param {number} h 띠 높이(mm)
+ */
+export function concaveBridgeProfile(ra, m0, r1, h) {
+  const delta = r1 - ra;
+  // 오목 최소량: r'' ≥ BRIDGE_MIN_CURVATURE(1/mm)
+  const kMin = (BRIDGE_MIN_CURVATURE * h * h) / 2;
+  // 원뿔 접선(m0)을 지키는 오목 곡선이 가능하면 그것을, 아니면 시작 기울기를 낮춰 오목을 지킨다.
+  const k = Math.max(kMin, delta - m0);
+  const s0 = delta - k;
+  return (t) => {
+    const x = Math.max(0, Math.min(1, t));
+    return ra + s0 * x + k * x * x;
+  };
+}
+
+const BRIDGE_MIN_CURVATURE = 1.2;
+/** 위 끝 기울기를 오목 조건에 맞추느라 바꿔도 되는 최대 기울기 차(z 방향 dr/dz, 약 6°). */
+const CONCAVE_SLOPE_TOL = 0.1;
+const CONCAVE_MARGIN = 0.01;
+
+/** 이음 곡선 모서리의 최대 곡률(1/mm). 클수록 모서리가 날카롭다(수직에 가깝게 오르다 늦게 꺾임). */
+const CORNER_CURVATURE = 2.5;
+/** 시작 기울기 = 원뿔 기울기 × 이 값(거의 수직). */
+const START_SLOPE_FACTOR = 0.25;
+/** 위쪽 접선 최대 기울기(약 65°). */
+const CORNER_MAX_END_SLOPE = Math.tan((65 * Math.PI) / 180);
+/** 위쪽 기울기 목표(약 60°). */
+const CORNER_END_SLOPE = Math.tan((60 * Math.PI) / 180);
+
+/**
+ * 가장 오목한 이음: 원뿔 접선(m0)을 따라 수직에 가깝게 오르다가, 위 끝 접선(e)으로 꺾여 올라간다.
+ * 두 직선의 max(볼록 모서리)를 곡률 CORNER_CURVATURE로 둥글린다. 가는 임플란트를 깊이 심어
+ * 커프를 수직으로 올려야 하는 경우 뼈·잇몸에 걸리지 않게 하려는 형상이다. t∈[0,1].
+ * 끝 값이 원뿔 접선 연장보다 낮으면(오목 불가) null.
+ * @param {number} m0 dr/dt 시작(= TAPER_SLOPE·h)
+ * @param {number} e0 dr/dt 끝(= 커프 기울기·h). 허용 범위로 당겨 쓴다.
+ * @returns {{ fn: (t: number) => number, shift: number } | null} shift = 끝 기울기 변경량(dr/dz)
+ */
+export function concaveHermiteProfile(ra, m0Cone, r1, e0, h) {
+  // 원뿔 기울기(11°)를 그대로 이으면 커프가 뚱뚱해진다. 거의 수직으로 올리고, 위에서 늦게 벌린다.
+  const m0 = m0Cone * START_SLOPE_FACTOR;
+  const d = r1 - ra;
+  if (d < m0 + CONCAVE_MARGIN * h) return null;
+  // 위쪽 기울기는 약 60°로 맞춘다. 모서리 위치 t* = (e - d)/(e - m0)는 [0.2, 0.9]로 제한하고,
+  // 60°로 닿지 못하면 최대 65°까지 허용한다. 원본 끝 접선과 꺾이는(볼록) 것은 허용한다.
+  const eLo = (d - 0.2 * m0) / 0.8;
+  const eHi = Math.min((d - 0.9 * m0) / 0.1, CORNER_MAX_END_SLOPE * h);
+  if (eLo > eHi) return null;
+  const e = Math.max(eLo, Math.min(eHi, CORNER_END_SLOPE * h));
+  const delta = e - m0;
+  // r''(mm) = delta²/(4·s·h²) = CORNER_CURVATURE
+  const s = (delta * delta) / (4 * CORNER_CURVATURE * h * h);
+  const raw = (t) => {
+    const a = ra + m0 * t;
+    const b = r1 + e * (t - 1);
+    return (a + b) / 2 + Math.sqrt(((a - b) / 2) ** 2 + s * s);
+  };
+  // 양 끝 값을 정확히 맞춘다(선형 보정이라 오목은 유지).
+  const c0 = ra - raw(0);
+  const c1 = r1 - raw(1);
+  const fn = (t) => {
+    const x = Math.max(0, Math.min(1, t));
+    return raw(x) + c0 * (1 - x) + c1 * x;
+  };
+  return { fn, shift: Math.abs(e - e0) / h };
 }
 
 function toConcaveProfilePlain(fn, samples) {
@@ -973,6 +1050,24 @@ function setup(buffer, { spec, specKey }) {
   return { mesh, probe, triCount, taper, ...top };
 }
 
+/** 보정으로 새로 생긴 꼭짓점 중 피니시라인 곡선과의 최소 여유(mm). 음수면 피니시라인을 넘은 것. */
+function finishLineClearance(inputBuffer, outputBuffer, flZ) {
+  const key = (x, y, z) => `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
+  const before = new Set();
+  const src = parseStl(inputBuffer).positions;
+  for (let i = 0; i < src.length; i += 3) before.add(key(src[i], src[i + 1], src[i + 2]));
+  const dst = parseStl(outputBuffer).positions;
+  let min = Infinity;
+  for (let i = 0; i < dst.length; i += 3) {
+    const x = dst[i];
+    const y = dst[i + 1];
+    const z = dst[i + 2];
+    if (before.has(key(x, y, z))) continue;
+    min = Math.min(min, flZ(angleOf(x, y)) - z);
+  }
+  return min;
+}
+
 function thetaColumns() {
   return Array.from({ length: STRIP_COLUMNS }, (_, j) => (j / STRIP_COLUMNS) * TWO_PI);
 }
@@ -1000,44 +1095,47 @@ export function blendCuffJunction(buffer, options = {}) {
     const { mesh, probe, taper, zA, matchedKey, warning } = setup(buffer, options);
     const flMin = finishLineMinZ(options.finishLine);
     if (!Number.isFinite(flMin)) fail("manual-review", "피니시라인이 없어 커프 보호 범위를 정할 수 없습니다.");
-    // 피니시라인(크라운 안착)과 그 위는 건드리지 않는다. 이음 띠는 커넥션 쪽 아래 구간으로만 제한한다.
-    const zLimit = Math.min(flMin - AUTO_FL_MARGIN_MM, zA + AUTO_MAX_BAND_FRACTION * (flMin - zA));
-    if (zLimit - zA < MIN_BAND_MM) {
-      fail("manual-review", "피니시라인과 커넥션 사이가 너무 좁아 이음부를 만들 수 없습니다.", {
-        zA: round3(zA),
-        finishLineMinZ: round3(flMin),
-      });
-    }
+    // 피니시라인(크라운 안착)과 그 위는 절대 건드리지 않는다.
+    // 단차 직경은 무시하고, 원뿔 끝에서 피니시라인 곡선 −0.05mm까지 오목한 곡선으로 잇는다(수평 평면 Z_b는 쓰지 않는다).
     const ra = taper.coneAt(zA);
-    const found = findBlendTop(probe, zA, ra, zLimit);
-    const zB = found?.zB;
-    if (zB == null) {
-      fail("manual-review", "피니시라인 아래 0.2mm까지 단차가 끝나는 구간을 찾지 못했습니다.", {
-        zA: round3(zA),
-        zLimit: round3(zLimit),
-      });
+    const thetas = thetaColumns();
+    const flZ = finishLineZByAngle(options.finishLine);
+    if (!flZ) fail("manual-review", "피니시라인 곡선을 읽지 못해 이음 위 끝을 정할 수 없습니다.");
+    const attempt = (offsetMm) => {
+      let topZ;
+      let topZOf;
+      {
+      topZOf = (theta) => flZ(theta) - offsetMm;
+      topZ = thetas.map(topZOf);
+      if (Math.min(...topZ) - zA < MIN_FOLLOW_BAND_MM) {
+        fail("manual-review", "피니시라인이 커넥션 상단보다 낮거나 너무 가까워 이음부를 만들 수 없습니다.", {
+          zA: round3(zA),
+          finishLineMinZ: round3(flMin),
+        });
+      }
     }
-    const rCh = channelRadius(mesh, zA - 0.3, zB + 0.3, ra);
+    const zTopMax = Math.max(...topZ);
+    const rCh = channelRadius(mesh, zA - 0.3, zTopMax + 0.3, ra);
     const rCut = rCh > 0 ? (rCh + ra) / 2 : ra * 0.75;
-    if (detachedInBand(mesh, -0.5, zB, rCut) || nonManifoldInBand(mesh, zA - 0.1, zB + 0.1)) {
+    if (detachedInBand(mesh, -0.5, zTopMax, rCut) || nonManifoldInBand(mesh, zA - 0.1, zTopMax + 0.1)) {
       fail("manual-review", "이음부에 겹친 보정 조각(예전 fill_steps 캡 등)이 있습니다.");
     }
-    const thetas = thetaColumns();
-    const tops = sampleTopConditions(probe, thetas, thetas.map(() => zB), CLEAN_WINDOW_MM);
+    const tops = sampleTopConditions(probe, thetas, topZ, CLEAN_WINDOW_MM);
     if (tops.some((t) => !t)) fail("manual-review", "커프 하단 곡면을 읽지 못했습니다.");
-    const h = zB - zA;
+    const hs = topZ.map((z) => z - zA);
     // 볼록(부푼) 구간은 뼈에 걸리므로 오목 프로파일로 바로잡는다.
     // 커넥션 쪽(피니시라인에서 먼 쪽)은 원뿔 접선에서 오목하게 벌어지고, 위 끝은 커프 접선에 맞춘다.
-    const profiles = tops.map((t) =>
-      toConcaveProfile(
-        quinticHermite(ra, TAPER_SLOPE, 0, t.r, t.slope, clampCurvature(t.curvature), h),
-        160,
-        { m0: TAPER_SLOPE * h, m1: t.slope * h },
-      ),
-    );
+    // 단차 직경은 따르지 않는다: 원뿔에서 커프까지 항상 살짝 오목하게 부드럽게 올린다.
+    // 원뿔 접선에서 시작해 Z_b에서 원본 곡면 접선에 이어지는 G1 오목 곡선. 불가능한 열만 단순 오목 곡선.
+    const profiles = tops.map((t, j) => {
+      const h = hs[j];
+      const p = concaveHermiteProfile(ra, TAPER_SLOPE * h, t.r, t.slope * h, h);
+      return p ? p.fn : concaveBridgeProfile(ra, TAPER_SLOPE * h, t.r, h);
+    });
     let maxSlope = 0;
     let minR = Infinity;
     for (let j = 0; j < profiles.length; j += 1) {
+      const h = hs[j];
       const lo = Math.min(ra, tops[j].r) - MAX_OVERSHOOT_MM;
       const hi = Math.max(ra, tops[j].r) + MAX_OVERSHOOT_MM;
       let prev = profiles[j](0);
@@ -1060,10 +1158,25 @@ export function blendCuffJunction(buffer, options = {}) {
     const out = replaceBand(mesh, {
       zA,
       ra,
-      topZOf: () => zB,
+      topZOf,
       radiusAt: (j, t) => profiles[j](t),
       rCut,
     });
+      return { out, zTopMax, maxSlope };
+    };
+    // 메시 모서리를 선형으로 자르면 곡선 경계가 수 µm 어긋난다. 새 꼭짓점이 피니시라인과 최소 여유(10µm)를 갖도록 확인하고, 모자라면 띠 위 끝을 더 내려 한 번 다시 만든다(2번 안에 안 되면 manual-review).
+    let offsetMm = FINISH_KINK_OFFSET_MM;
+    let built = attempt(offsetMm);
+    let clearance = finishLineClearance(buffer, built.out.buffer, flZ);
+    for (let i = 0; i < 1 && clearance < FINISH_MIN_CLEARANCE_MM; i += 1) {
+      offsetMm += FINISH_MIN_CLEARANCE_MM - Math.min(clearance, 0) + 0.005;
+      built = attempt(offsetMm);
+      clearance = finishLineClearance(buffer, built.out.buffer, flZ);
+    }
+    if (clearance < FINISH_MIN_CLEARANCE_MM) {
+      fail("manual-review", "이음 곡면이 피니시라인과 너무 가까워 적용하지 않았습니다.", { clearanceMm: round3(clearance) });
+    }
+    const { out, zTopMax, maxSlope } = built;
     return {
       ok: true,
       status: "applied",
@@ -1072,12 +1185,14 @@ export function blendCuffJunction(buffer, options = {}) {
       detail: {
         matchedSpecKey: matchedKey,
         zA: round3(zA),
-        zB: round3(zB),
+        zB: round3(zTopMax),
+        followsFinishLine: true,
+        finishLineOffsetMm: round3(offsetMm),
+        finishLineClearanceMm: round3(clearance),
         measuredTaperTopZ: round3(taper.measuredTopZ),
         originDiameter: round3(taper.originDiameter),
         maxAngleDeg: round3((Math.atan(maxSlope) * 180) / Math.PI),
-        maxCurvature: round3(found.curvature),
-        removedTriangles: out.removedTriangles,
+                removedTriangles: out.removedTriangles,
         patchTriangles: out.patchTriangles,
       },
     };
@@ -1283,4 +1398,4 @@ export function measureCuffConnection(buffer) {
   };
 }
 
-export { RadialProbe as _RadialProbe, prepare as _prepare };
+export { RadialProbe as _RadialProbe, prepare as _prepare, finishLineZByAngle as _finishLineZByAngle };

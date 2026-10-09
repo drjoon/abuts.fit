@@ -70,7 +70,9 @@
 // - web/backend/controllers/rhino/rhino.controller.js
 // - web/backend/modules/rhino/rhino.routes.js
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, RefreshCw, X } from "lucide-react";
+import { Grid3x3, Loader2, RefreshCw, X } from "lucide-react";
+import { mirrorShapes } from "@/shared/components/practice/viewPaintMirror";
+import type { PaintShape } from "@/shared/components/practice/viewPaintGeom";
 import {
   Dialog,
   DialogContent,
@@ -121,7 +123,6 @@ import {
   resolvePracticeDirectShippingContact,
 } from "../utils/request";
 import { isFinishLineDefective } from "../utils/finishLineQuality";
-import { isCuffBlendManualReview, resolveCuffBlend } from "../utils/cuffBlendStatus";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
@@ -641,7 +642,6 @@ export const PreviewModal = ({
   const { toast } = useToast();
   const [regenerating, setRegenerating] = useState(false);
   const [holeFilling, setHoleFilling] = useState(false);
-  const [cuffRedesigning, setCuffRedesigning] = useState(false);
   const [unmachinableEditorOpen, setUnmachinableEditorOpen] = useState(false);
   const labNoticeRef = useRef<UnmachinableLabNoticeHandle>(null);
   const [unmachinableReasonDraft, setUnmachinableReasonDraft] = useState("");
@@ -663,8 +663,11 @@ export const PreviewModal = ({
     number[][] | null
   >(null);
   const screwLotAutoAssignAttemptedRef = useRef<Set<string>>(new Set());
-  const paintViewerRef = useRef<StlPreviewViewerHandle | null>(null);
-  const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
+  const leftViewerRef = useRef<StlPreviewViewerHandle | null>(null);
+  const rightViewerRef = useRef<StlPreviewViewerHandle | null>(null);
+  const [gridOn, setGridOn] = useState(true);
+  const [leftPaintSpace, setLeftPaintSpace] = useState<ViewPaintSpace | null>(null);
+  const [rightPaintSpace, setRightPaintSpace] = useState<ViewPaintSpace | null>(null);
   const [guidedFinishLineSubmitting, setGuidedFinishLineSubmitting] = useState(false);
   const [guidedFinishLineOverridePoints, setGuidedFinishLineOverridePoints] =
     useState<number[][] | null>(null);
@@ -1171,22 +1174,29 @@ export const PreviewModal = ({
     setTrackingRightTab("nc");
   }, [open, stage, isCamStage, isMachiningStage, activeReq?._id]);
 
-  const paint = usePreviewPaint({
-    open,
-    resetKey: [
-      String(requestId || ""),
-      stage,
-      isCamStage ? "cam" : "",
-      isMachiningStage ? "machining" : "",
-    ].join("|"),
-    initiallyOn: false,
-  });
+  const paintResetKey = [
+    String(requestId || ""),
+    stage,
+    isCamStage ? "cam" : "",
+    isMachiningStage ? "machining" : "",
+  ].join("|");
+  const leftPaint = usePreviewPaint({ open, resetKey: `${paintResetKey}|L`, initiallyOn: false });
+  const rightPaint = usePreviewPaint({ open, resetKey: `${paintResetKey}|R`, initiallyOn: false });
+  const setBothPaintOn = (value: boolean | ((on: boolean) => boolean), current: boolean) => {
+    const next = typeof value === "function" ? value(current) : value;
+    leftPaint.setPaintOn(next);
+    rightPaint.setPaintOn(next);
+  };
+  // 양쪽 페인트 켜기/끄기를 연동한다(그리는 표시는 각 뷰에 따로).
+  const linkedLeftPaint = { ...leftPaint, setPaintOn: (v: any) => setBothPaintOn(v, leftPaint.paintOn) };
+  const linkedRightPaint = { ...rightPaint, setPaintOn: (v: any) => setBothPaintOn(v, rightPaint.paintOn) };
 
   useEffect(() => {
     if (guidedFinishLineMode || guidedFrontPointMode) {
-      paint.setPaintOn(false);
+      leftPaint.setPaintOn(false);
+      rightPaint.setPaintOn(false);
     }
-  }, [guidedFinishLineMode, guidedFrontPointMode, paint.setPaintOn]);
+  }, [guidedFinishLineMode, guidedFrontPointMode, leftPaint.setPaintOn, rightPaint.setPaintOn]);
 
   if (!activeReq && !open) return null;
 
@@ -1333,8 +1343,6 @@ export const PreviewModal = ({
   const isFinishLineMinZRisky =
     Number.isFinite(finishLineMinZ) && Number(finishLineMinZ) < 1;
   const isFinishLineCaptureBad = isFinishLineDefective(finishLinePoints);
-  const activeCuffBlend = resolveCuffBlend(activeReq?.caseInfos);
-  const isCuffManualReviewActive = isCuffBlendManualReview(activeCuffBlend);
   const isUnmachinable = Boolean((activeReq as any)?.rnd?.unmachinableAt);
   const shouldShowUnmachinableWarning = isFinishLineMinZRisky && !isUnmachinable;
   const requestorContinueAt = String(
@@ -1493,39 +1501,77 @@ export const PreviewModal = ({
   const rightViewer =
     !isCamStage && !isStageFileStage ? previewFiles.cam : null;
   const guideViewerFile = isCamStage ? filledViewer : rightViewer;
-  // 페인트는 filled(가이드) 쪽 우선. 없으면 왼쪽 STL.
-  const paintViewerSide: "left" | "right" | null = rightViewer
-    ? "right"
-    : leftViewer && !isNcStage
-      ? "left"
-      : null;
-  const canAnnotate = Boolean(paintViewerSide) && !previewLoading;
-  const paintControlsDisabled =
-    !canAnnotate ||
-    guidedFinishLineMode ||
-    guidedFrontPointMode ||
-    approveBusy;
-  const paintFileName =
-    paintViewerSide === "right" ? String(rightTitle || "preview") : String(leftTitle || "preview");
-  const paintSurfaceKey = `${String(requestId || "")}-${paintViewerSide || "none"}`;
+  const hasPaintViewer = { left: Boolean(leftViewer) && !isNcStage, right: Boolean(rightViewer) };
+  const paintControlsDisabled = previewLoading || guidedFinishLineMode || guidedFrontPointMode || approveBusy;
+  const viewerRefOf = { left: leftViewerRef, right: rightViewerRef };
+  // 한쪽에서 시점 버튼을 누르면 양쪽에 적용한다.
+  const runLinkedView = (kind: "viewSide" | "viewTop") => {
+    leftViewerRef.current?.[kind]();
+    rightViewerRef.current?.[kind]();
+  };
+  // 한쪽에 그린 표시를 같은 화면 위치로 반대쪽에도 그린다(되돌리기·지우기 포함, 전체 목록을 맞춘다).
+  const mirrorPaintTo = (from: "left" | "right", shapes: PaintShape[]) => {
+    const to = from === "left" ? "right" : "left";
+    const toSpace = to === "left" ? leftPaintSpace : rightPaintSpace;
+    const fromSpace = from === "left" ? leftPaintSpace : rightPaintSpace;
+    const toPaint = to === "left" ? leftPaint : rightPaint;
+    const canvas = viewerRefOf[to].current?.captureCanvas();
+    if (!hasPaintViewer[to] || !toSpace || !canvas || !toPaint.paintRef.current) return;
+    const mirrored = mirrorShapes(shapes, fromSpace, { space: toSpace, rect: canvas.getBoundingClientRect() });
+    toPaint.paintRef.current.replaceShapes(mirrored, { silent: true });
+  };
   const renderPaintOverlay = (side: "left" | "right") => {
-    if (paintViewerSide !== side) return null;
+    if (!hasPaintViewer[side]) return null;
+    const paint = side === "left" ? linkedLeftPaint : linkedRightPaint;
+    const paintTitle = side === "left" ? leftTitle : rightTitle;
     return (
       <>
-        <div className="absolute left-3 top-3 z-20">
+        <div className="absolute left-3 top-3 z-20 flex items-center gap-1.5">
           <PreviewPaintControls
             paint={paint}
             disabled={paintControlsDisabled}
             className="bg-white/95 text-xs shadow-sm"
           />
+          <button
+            type="button"
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-md border bg-white/95 shadow-sm transition ${
+              gridOn ? "border-primary-muted text-primary-strong" : "border-slate-200 text-slate-400"
+            }`}
+            aria-pressed={gridOn}
+            aria-label="그리드 켜기/끄기"
+            title={gridOn ? "그리드 끄기" : "그리드 켜기"}
+            onClick={() => setGridOn((on) => !on)}
+          >
+            <Grid3x3 className="h-4 w-4" />
+          </button>
         </div>
-        {canAnnotate ? (
+        <div className="absolute right-3 top-3 z-20 flex items-center gap-1.5">
+          {(
+            [
+              ["측면", "측면 보기", "viewSide"],
+              ["상단", "상단 보기", "viewTop"],
+            ] as const
+          ).map(([label, title, kind]) => (
+            <button
+              key={label}
+              type="button"
+              className="inline-flex h-8 items-center justify-center rounded-md border border-slate-200 bg-white/95 px-2.5 text-xs font-medium text-slate-800 shadow-sm transition hover:bg-slate-50"
+              aria-label={title}
+              title={`${title} — 모델이 뷰에 꽉 차게 맞춥니다(양쪽 연동)`}
+              onClick={() => runLinkedView(kind)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {!previewLoading ? (
           <PreviewPaintLayer
             paint={paint}
-            surfaceKey={paintSurfaceKey}
-            captureCanvas={() => paintViewerRef.current?.captureCanvas() ?? null}
-            fileName={paintFileName}
-            space={paintSpace}
+            surfaceKey={`${String(requestId || "")}-${side}`}
+            captureCanvas={() => viewerRefOf[side].current?.captureCanvas() ?? null}
+            fileName={String(paintTitle || "preview")}
+            space={side === "left" ? leftPaintSpace : rightPaintSpace}
+            onShapesCommit={(shapes) => mirrorPaintTo(side, shapes)}
           />
         ) : null}
       </>
@@ -1778,7 +1824,6 @@ export const PreviewModal = ({
   const canFillHole = canGuideFinishLine && hasCamFile;
   const holeFillBusy =
     holeFilling ||
-    cuffRedesigning ||
     regenerating ||
     isUploading ||
     guidedFinishLineSubmitting ||
@@ -1850,96 +1895,6 @@ export const PreviewModal = ({
         </TooltipTrigger>
         <TooltipContent side="bottom">
           Hole Filling — 상부 스크류홀 메우기
-        </TooltipContent>
-      </Tooltip>
-    ) : null;
-
-  const onRedesignCuff = async () => {
-    if (!canFillHole || holeFillBusy || !token) return;
-    const requestId = String(activeReq?.requestId || "").trim();
-    if (!requestId) return;
-    setCuffRedesigning(true);
-    try {
-      const res = await fetch(
-        `/api/requests/by-request/${encodeURIComponent(requestId)}/stl-file/redesign-cuff`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-      const body: any = await res.json().catch(() => ({}));
-      if (!res.ok || body?.success === false) {
-        throw new Error(body?.message || "커프 재디자인에 실패했습니다.");
-      }
-      await invalidateRequestPreviewCaches({
-        camS3Key: resolveFilledStlFile(activeReq?.caseInfos)?.s3Key,
-        requestMongoId: String(activeReq?._id || "").trim(),
-        requestId,
-      });
-      await onRefreshPreview?.(activeReq, { forceRefresh: true, silent: true });
-      const maxAngle = Number(body?.data?.detail?.maxAngleDeg);
-      toast({
-        title: "커프 재디자인",
-        description: (
-          <>
-            피니시라인 아래 커프를 부드러운 곡면으로 바꿨습니다
-            {Number.isFinite(maxAngle) ? ` (최대 ${Math.round(maxAngle)}°)` : ""}.
-            {body?.data?.ncStale ? (
-              <>
-                <br />
-                NC는 이전 filled.stl 기준이라 재생성이 필요합니다.
-              </>
-            ) : null}
-          </>
-        ),
-      });
-    } catch (err: any) {
-      toast({
-        title: "커프 재디자인 안 함",
-        description: err?.message || "커프 재디자인에 실패했습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setCuffRedesigning(false);
-    }
-  };
-
-  const renderCuffRedesignButton = () =>
-    canFillHole ? (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition ${
-              isCuffManualReviewActive
-                ? "border-destructive/80 bg-destructive-soft text-destructive hover:bg-destructive/15 ring-2 ring-destructive/30"
-                : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
-            } ${holeFillBusy ? "opacity-60 cursor-not-allowed" : ""}`}
-            disabled={holeFillBusy}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              void onRedesignCuff();
-            }}
-            aria-label="커프 형상 재디자인"
-          >
-            {cuffRedesigning ? <Loader2 className="h-4 w-4 animate-spin" /> : "Re"}
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">
-          {isCuffManualReviewActive ? (
-            <>
-              커프 확인 — {activeCuffBlend?.reason || "자동 보정을 건너뛰었습니다."}
-              <br />
-              Re로 커프 형상을 재디자인합니다.
-            </>
-          ) : (
-            <>
-              Redesign — 70°보다 누운 커프를 부드러운 곡면으로 재디자인
-              <br />
-              기공소 디자인을 바꾸는 작업입니다.
-            </>
-          )}
         </TooltipContent>
       </Tooltip>
     ) : null;
@@ -3677,7 +3632,6 @@ export const PreviewModal = ({
                     <div className="flex items-center gap-2">
                       <TooltipProvider>
                         {renderHoleFillButton()}
-                        {renderCuffRedesignButton()}
                         {canGuideFinishLine && (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -3826,7 +3780,7 @@ export const PreviewModal = ({
                 ) : isCamStage && leftViewer ? (
                   <div className="relative flex-1 min-h-0 overflow-hidden rounded-md border border-slate-200">
                     <StlPreviewViewer
-                      ref={paintViewerSide === "left" ? paintViewerRef : undefined}
+                      ref={leftViewerRef}
                       file={leftViewer}
                       requestId={requestId}
                       metadata={viewerStlMetadata}
@@ -3864,8 +3818,10 @@ export const PreviewModal = ({
                           ? handleUndoGuidedFrontPoint
                           : handleUndoGuidedFinishLinePoint
                       }
+                      gridVisible={gridOn}
+                      onViewChange={(state) => rightViewerRef.current?.applyViewState(state)}
                       onPaintSpace={
-                        paintViewerSide === "left" ? setPaintSpace : undefined
+                        setLeftPaintSpace
                       }
                     />
                     {renderPaintOverlay("left")}
@@ -3873,7 +3829,7 @@ export const PreviewModal = ({
                 ) : leftViewer ? (
                   <div className="relative flex-1 min-h-0 overflow-hidden rounded-md border border-slate-200">
                     <StlPreviewViewer
-                      ref={paintViewerSide === "left" ? paintViewerRef : undefined}
+                      ref={leftViewerRef}
                       file={leftViewer}
                       requestId={requestId}
                       metadata={viewerStlMetadata}
@@ -3885,8 +3841,10 @@ export const PreviewModal = ({
                       lotEngravingHexMode={manufacturerHexRotationDraft}
                       lotEngravingTarget={lotEngravingTargetDraft}
                       finishLinePoints={finishLinePoints}
+                      gridVisible={gridOn}
+                      onViewChange={(state) => rightViewerRef.current?.applyViewState(state)}
                       onPaintSpace={
-                        paintViewerSide === "left" ? setPaintSpace : undefined
+                        setLeftPaintSpace
                       }
                     />
                     {renderPaintOverlay("left")}
@@ -4108,7 +4066,6 @@ export const PreviewModal = ({
                         {!isCamStage && (
                           <TooltipProvider>
                             {renderHoleFillButton()}
-                            {renderCuffRedesignButton()}
                             {canGuideFinishLine && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -4467,7 +4424,7 @@ export const PreviewModal = ({
                 ) : rightViewer ? (
                   <div className="relative flex-1 min-h-0 overflow-hidden rounded-md border border-slate-200">
                     <StlPreviewViewer
-                      ref={paintViewerSide === "right" ? paintViewerRef : undefined}
+                      ref={rightViewerRef}
                       file={rightViewer}
                       requestId={requestId}
                       metadata={viewerStlMetadata}
@@ -4505,8 +4462,10 @@ export const PreviewModal = ({
                           ? handleUndoGuidedFrontPoint
                           : handleUndoGuidedFinishLinePoint
                       }
+                      gridVisible={gridOn}
+                      onViewChange={(state) => leftViewerRef.current?.applyViewState(state)}
                       onPaintSpace={
-                        paintViewerSide === "right" ? setPaintSpace : undefined
+                        setRightPaintSpace
                       }
                     />
                     {renderPaintOverlay("right")}

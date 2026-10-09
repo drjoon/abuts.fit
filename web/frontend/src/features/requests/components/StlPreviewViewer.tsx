@@ -101,6 +101,10 @@ type Props = {
   showOverlay?: boolean;
   /** 바닥 그리드 표시. 기본 true. 신규의뢰 프리뷰 등에서는 false 권장. */
   showGrid?: boolean;
+  /** showGrid가 true일 때 그리드를 켜고 끈다. 기본 true. */
+  gridVisible?: boolean;
+  /** 사용자가 회전·이동·확대할 때마다 부른다(다른 뷰어와 연동용). */
+  onViewChange?: (state: ViewSyncState) => void;
   finishLinePoints?: number[][] | null;
   enableManualPick?: boolean;
   manualPickPoints?: number[][] | null;
@@ -140,6 +144,21 @@ export type StlPreviewViewerHandle = {
   captureCanvas: () => HTMLCanvasElement | null;
   /** 처음 열 때의 방향·크기로 되돌린다. */
   fitToView: () => void;
+  /** 옆(−Y에서 +Y 방향)에서 보고 모델이 뷰에 꽉 차게 맞춘다. */
+  viewSide: () => void;
+  /** 위(+Z)에서 내려다보고 모델이 뷰에 꽉 차게 맞춘다. */
+  viewTop: () => void;
+  /** 다른 뷰어의 회전·이동·확대 상태를 그대로 따른다(onViewChange의 값). */
+  applyViewState: (state: ViewSyncState) => void;
+};
+
+/** 두 뷰어를 연동하는 화면 상태. 모델 크기와 무관하게 상대값이다. */
+export type ViewSyncState = {
+  /** 카메라 방향(쿼터니언 x,y,z,w) */
+  q: [number, number, number, number];
+  zoom: number;
+  /** 맞춤 위치에서 벗어난 이동량. 화면 오른쪽·위 방향, 프러스텀 반높이 단위. */
+  pan: [number, number];
 };
 
 export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
@@ -152,6 +171,8 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       onDiameterComputed,
       showOverlay = true,
       showGrid = true,
+      gridVisible = true,
+      onViewChange,
       finishLinePoints,
       enableManualPick = false,
       manualPickPoints,
@@ -244,6 +265,16 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
   const [colorMappingEnabled, setColorMappingEnabled] = useState(true);
   const previewTextureRef = useRef<THREE.Texture | null>(null);
   const applyCameraFitRef = useRef<(() => void) | null>(null);
+  const fitExtentRef = useRef<((side: "side" | "top") => void) | null>(null);
+  const applyViewStateRef = useRef<((state: ViewSyncState) => void) | null>(null);
+  const onViewChangeRef = useRef(onViewChange);
+  onViewChangeRef.current = onViewChange;
+  const gridRef = useRef<THREE.GridHelper | null>(null);
+  const gridVisibleRef = useRef(gridVisible);
+  gridVisibleRef.current = gridVisible;
+  useEffect(() => {
+    if (gridRef.current) gridRef.current.visible = gridVisible;
+  }, [gridVisible]);
   const onPaintSpaceRef = useRef(onPaintSpace);
   onPaintSpaceRef.current = onPaintSpace;
   const paintListenersRef = useRef(new Set<() => void>());
@@ -277,6 +308,9 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
         return renderer.domElement;
       },
       fitToView: () => applyCameraFitRef.current?.(),
+      viewSide: () => fitExtentRef.current?.("side"),
+      viewTop: () => fitExtentRef.current?.("top"),
+      applyViewState: (state) => applyViewStateRef.current?.(state),
     }),
     [],
   );
@@ -715,6 +749,47 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     const controls = new ScreenSpaceOrbitControls(camera, renderer.domElement);
     orbit = controls;
 
+    // 좌우 뷰어 연동: 맞춤 위치(fitTarget) 기준 상대 상태를 주고받는다.
+    const fitTarget = new THREE.Vector3();
+    const syncRight = new THREE.Vector3();
+    const syncUp = new THREE.Vector3();
+    const syncAxes = () => {
+      camera.updateMatrixWorld();
+      syncRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+      syncUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+    };
+    const syncHalfHeight = () => Math.max((camera.top - camera.bottom) / 2, 1e-6);
+    controls.addEventListener("change", () => {
+      const cb = onViewChangeRef.current;
+      if (!cb) return;
+      syncAxes();
+      const d = controls.target.clone().sub(fitTarget);
+      const half = syncHalfHeight();
+      cb({
+        q: [camera.quaternion.x, camera.quaternion.y, camera.quaternion.z, camera.quaternion.w],
+        zoom: camera.zoom,
+        pan: [d.dot(syncRight) / half, d.dot(syncUp) / half],
+      });
+    });
+    applyViewStateRef.current = (state) => {
+      const dist = Math.max(camera.position.distanceTo(controls.target), 1e-3);
+      camera.quaternion.set(state.q[0], state.q[1], state.q[2], state.q[3]).normalize();
+      camera.up.set(0, 1, 0).applyQuaternion(camera.quaternion);
+      camera.zoom = state.zoom;
+      camera.updateProjectionMatrix();
+      syncAxes();
+      const half = syncHalfHeight();
+      controls.target
+        .copy(fitTarget)
+        .addScaledVector(syncRight, state.pan[0] * half)
+        .addScaledVector(syncUp, state.pan[1] * half);
+      const back = new THREE.Vector3(0, 0, 1).applyQuaternion(camera.quaternion);
+      camera.position.copy(controls.target).addScaledVector(back, dist);
+      camera.updateMatrixWorld();
+      controls.syncFromCamera();
+      userHasOrbited = true;
+    };
+
     const viewRight = new THREE.Vector3();
     const viewUp = new THREE.Vector3();
     const viewToward = new THREE.Vector3();
@@ -744,6 +819,8 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     if (showGrid) {
       const grid = new THREE.GridHelper(60, 12, 0xaaaaaa, 0xe5e7eb);
       (grid.rotation as any).x = Math.PI / 2;
+      grid.visible = gridVisibleRef.current;
+      gridRef.current = grid;
       scene.add(grid);
     }
 
@@ -2392,10 +2469,70 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           camera.up.set(0, 0, 1);
           camera.lookAt(viewTarget);
           controls.target.copy(viewTarget);
+          fitTarget.copy(viewTarget);
           controls.syncFromCamera();
           controls.update();
         };
         applyCameraFitRef.current = applyCameraFit;
+
+        // 옆·위 보기: 메시 bbox 모서리를 화면에 투영해 가로·세로에 꽉 차게(Zoom to Extent).
+        fitExtentRef.current = (side) => {
+          const fitMesh = meshRef.current;
+          if (!fitMesh) return;
+          fitMesh.updateMatrixWorld(true);
+          const dir =
+            side === "top" ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, -1, 0);
+          const up = side === "top" ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
+          const distance = Math.max(radius * 4, 40);
+          camera.up.copy(up);
+          camera.position.copy(viewTarget.clone().addScaledVector(dir, distance));
+          camera.lookAt(viewTarget);
+          camera.updateMatrixWorld(true);
+          const inv = camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+          let minX = Infinity;
+          let maxX = -Infinity;
+          let minY = Infinity;
+          let maxY = -Infinity;
+          for (let i = 0; i < 8; i += 1) {
+            const corner = new THREE.Vector3(
+              i & 1 ? bbox.max.x : bbox.min.x,
+              i & 2 ? bbox.max.y : bbox.min.y,
+              i & 4 ? bbox.max.z : bbox.min.z,
+            )
+              .applyMatrix4(fitMesh.matrixWorld)
+              .applyMatrix4(inv);
+            minX = Math.min(minX, corner.x);
+            maxX = Math.max(maxX, corner.x);
+            minY = Math.min(minY, corner.y);
+            maxY = Math.max(maxY, corner.y);
+          }
+          const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+          const upAxis = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+          const shift = right
+            .multiplyScalar((minX + maxX) / 2)
+            .addScaledVector(upAxis, (minY + maxY) / 2);
+          camera.position.add(shift);
+          const target = viewTarget.clone().add(shift);
+          const aspect = Math.max(width / Math.max(height, 1), 0.01);
+          let halfW = Math.max(((maxX - minX) / 2) * 1.04, 0.01);
+          let halfH = Math.max(((maxY - minY) / 2) * 1.04, 0.01);
+          if (halfW / halfH > aspect) halfH = halfW / aspect;
+          else halfW = halfH * aspect;
+          camera.left = -halfW;
+          camera.right = halfW;
+          camera.top = halfH;
+          camera.bottom = -halfH;
+          camera.zoom = 1;
+          camera.near = Math.max(distance / 200, 0.01);
+          camera.far = Math.max(distance * 40, 2000);
+          camera.updateProjectionMatrix();
+          camera.lookAt(target);
+          controls.target.copy(target);
+          fitTarget.copy(target);
+          controls.syncFromCamera();
+          controls.update();
+          userHasOrbited = true;
+        };
 
         updateSize();
         applyCameraFit();
