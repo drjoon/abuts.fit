@@ -2,7 +2,8 @@
 // - web/backend/services/autoMachiningGate.service.js
 // - web/backend/server.js
 // change-log:
-// - 2026-10-09: 신설. 관리자 토글(autoMachiningGate.enabled)이 켜진 동안만 동작.
+// - 2026-10-09: 스위치가 꺼져 있어도 테스트 계정 준비 의뢰는 hold로 남긴다.
+// - 2026-10-09: 신설. 관리자 토글(autoMachiningGate.enabled)이 켜진 동안만 품질 판정·자동 승인.
 import { runAutoMachiningGatePass } from "../services/autoMachiningGate.service.js";
 import { runWithJobLock } from "../utils/distributedJobLock.js";
 

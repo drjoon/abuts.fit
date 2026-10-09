@@ -20,6 +20,7 @@ const REASON_LABEL: Record<string, string> = {
   cuff_failed: "커프 보정 실패",
   cuff_proposal_pending: "커프 제안 대기",
   program_too_large: "NC 용량 초과",
+  test_account: "테스트 계정",
   nc_no_coordinates: "NC 좌표 없음",
 };
 

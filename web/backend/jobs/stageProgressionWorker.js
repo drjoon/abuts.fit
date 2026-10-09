@@ -4,6 +4,7 @@
 // - web/backend/server.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-10-09: 테스트치과·테스트기공소 준비 의뢰는 출고일이 와도 가공으로 올리지 않는다.
 // - 2026-09-16: 가공→세척.패킹은 CNC 완료 stuck만 힐(출고일만으로 미완료 가공 승격 금지).
 // - 2026-08-22: 세척.패킹→포장.발송 자동 진행에서 샘플(source/price.rule) 제외 제거.
 //   작업용 샘플도 정식 의뢰와 같이 포장.발송·추적관리까지 진행.
@@ -19,6 +20,10 @@ import {
 import { enterManufacturerShippingStage } from "../controllers/requests/common.review.helpers.js";
 import { healAllStuckCompletedMachiningRequests } from "../services/healStuckCompletedMachining.service.js";
 import { resolveMongoUri } from "../utils/mongoUri.js";
+import {
+  isTestAccountMachiningRequestSync,
+  loadRequestorBusinessNames,
+} from "../utils/testAccountMachining.js";
 
 /**
  * 공정 단계 자동 진행 워커
@@ -64,7 +69,14 @@ async function progressStages() {
       "timeline.estimatedShipYmd": { $exists: true, $lte: twoDaysFromNow },
     });
 
+    const testNames = await loadRequestorBusinessNames(requestsToCam);
     for (const req of requestsToCam) {
+      if (isTestAccountMachiningRequestSync(req, testNames.get(String(req.businessAnchorId || "")))) {
+        console.log(
+          `  [준비 유지] ${req.requestId} (테스트 계정)`,
+        );
+        continue;
+      }
       applyStatusMapping(req, "가공");
       await req.save();
       updatedCount++;

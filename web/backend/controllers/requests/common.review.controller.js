@@ -10,6 +10,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - 2026-10-09: 테스트치과·테스트기공소 의뢰는 준비→가공 진입을 거절한다.
 // - 2026-09-20: 비거래처 어벗 해제는 포장.발송 유지(가공 진입으로 옮기지 않음).
 // - 2026-09-20: PTX 포장.발송 후 치과→기공소 정산(선불 생산비 지급 시점).
 // - 2026-09-03: 세척.패킹 승인 시 각인 이미지(stageFiles.packing) 필수(카드/프리뷰 → 수동 이동).
@@ -76,6 +77,17 @@ import {
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import { placeRequestAtPolicyQueuePosition } from "./production.utils.js";
 import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
+import { isTestAccountMachiningRequest } from "../../utils/testAccountMachining.js";
+
+const TEST_ACCOUNT_MACHINING_BLOCKED =
+  "테스트 계정 의뢰는 가공하지 않습니다.";
+
+async function assertTestAccountStaysInPrep(request) {
+  if (!(await isTestAccountMachiningRequest(request))) return;
+  const err = new Error(TEST_ACCOUNT_MACHINING_BLOCKED);
+  err.statusCode = 409;
+  throw err;
+}
 
 // Emit worksheet stage changed event
 
@@ -1375,6 +1387,10 @@ export async function updateReviewStatusByStage(req, res) {
         effectiveStage === "cam" &&
         previousManufacturerStage === "준비";
 
+      if (isMachiningEntryApproval || isLegacyCamMachiningEntry) {
+        await assertTestAccountStaysInPrep(request);
+      }
+
       const reviewStageToWrite =
         isMachiningEntryApproval || isLegacyCamMachiningEntry
           ? "request"
@@ -1531,6 +1547,7 @@ export async function updateReviewStatusByStage(req, res) {
           if (canSkipCamRegeneration) {
             // 기존 NC/CAM 이력이 있으면 NC 재생성 없이 바로 가공 단계로 진입한다.
             // CAM은 더 이상 노출/사용하지 않으므로 manufacturerStage는 바로 "가공"으로 설정한다.
+            await assertTestAccountStaysInPrep(request);
             applyStatusMapping(request, "가공");
             request.caseInfos.reviewByStage.cam = {
               status: "APPROVED",
@@ -2098,23 +2115,30 @@ export async function updateReviewStatusByStage(req, res) {
               .trim()
               .toUpperCase() === "APPROVED"
           ) {
-            // 작업 공정 변경: CAM은 더 이상 사용하지 않으므로 기존 NC 재사용 시바로 가공 단계로 이동한다.
-            applyStatusMapping(requestForReuse, "가공");
-            requestForReuse.caseInfos.reviewByStage.cam = {
-              status: "APPROVED",
-              updatedAt: new Date(),
-              updatedBy: req.user?._id || null,
-              reason: "",
-            };
-            requestForReuse.productionSchedule = requestForReuse.productionSchedule || {};
-            if (!requestForReuse.productionSchedule.actualCamComplete) {
-              requestForReuse.productionSchedule.actualCamComplete = new Date();
+            if (await isTestAccountMachiningRequest(requestForReuse)) {
+              console.log("[REVIEW] skip machining reuse for test account", {
+                requestId: requestForReuse.requestId,
+              });
+            } else {
+              // 작업 공정 변경: CAM은 더 이상 사용하지 않으므로 기존 NC 재사용 시바로 가공 단계로 이동한다.
+              applyStatusMapping(requestForReuse, "가공");
+              requestForReuse.caseInfos.reviewByStage.cam = {
+                status: "APPROVED",
+                updatedAt: new Date(),
+                updatedBy: req.user?._id || null,
+                reason: "",
+              };
+              requestForReuse.productionSchedule =
+                requestForReuse.productionSchedule || {};
+              if (!requestForReuse.productionSchedule.actualCamComplete) {
+                requestForReuse.productionSchedule.actualCamComplete = new Date();
+              }
+              await requestForReuse.save();
+              resultRequest = requestForReuse;
+              reusedExistingNc = true;
+              acceptedMessage =
+                "기존 NC 작업 이력을 재사용하여 가공 단계로 이동했습니다. BG 재생성은 실행하지 않았습니다.";
             }
-            await requestForReuse.save();
-            resultRequest = requestForReuse;
-            reusedExistingNc = true;
-            acceptedMessage =
-              "기존 NC 작업 이력을 재사용하여 가공 단계로 이동했습니다. BG 재생성은 실행하지 않았습니다.";
           }
         }
 

@@ -51,6 +51,20 @@ describe("evaluateAutoMachiningGate", () => {
     expect(r.verdict).toBe("hold");
     expect(r.reasons.some((x) => x.startsWith("finishline_"))).toBe(true);
   });
+  it("테스트치과·테스트기공소는 정상이어도 보류", () => {
+    expect(
+      evaluateAutoMachiningGate(okRequest({ clinicName: "테스트치과" })).reasons,
+    ).toContain("test_account");
+    expect(
+      evaluateAutoMachiningGate({
+        ...okRequest(),
+        requestorBusinessName: "테스트기공소",
+      }).verdict,
+    ).toBe("hold");
+    expect(
+      evaluateAutoMachiningGate(okRequest({ clinicName: "향기로운치과" })).reasons,
+    ).not.toContain("test_account");
+  });
   it("커프 manual-review·NC 좌표 이탈·STL 누락은 보류", () => {
     expect(
       evaluateAutoMachiningGate(okRequest({ cuffBlend: { status: "manual-review" } }))

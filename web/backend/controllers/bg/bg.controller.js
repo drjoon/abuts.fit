@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-09: 테스트 계정 의뢰는 NC 완료 뒤에도 준비에서 가공으로 올리지 않는다.
 // - 2026-09-28: 2-filled 등록 직전 커프 이음부 G2 보정(cuffBlend) → 같은 S3 키 덮어쓰기 + caseInfos.cuffBlend.
 //   응답 뒤 70° 접시형 커프면 의뢰자 제안(caseInfos.cuffProposal) 생성. 새 filled 등록 시 이전 제안 $unset.
 // - 2026-09-18: request-meta lotEngravingSite — guides로 산출(r=2 폴백 과절삭·T0909 파손 방지).
@@ -63,6 +64,7 @@ import {
 import { copyFilledStlToHexVerificationSamples } from "../../services/hexVerificationSample.service.js";
 import { enqueueAbutmentStlShadow } from "../../services/abutmentStl/shadow.service.js";
 import { analyzeAndStoreNc } from "../../services/ncAnalysis.service.js";
+import { isTestAccountMachiningRequest } from "../../utils/testAccountMachining.js";
 import {
   applyAutoCuffBlendSafely,
   isCuffBlendAutoEnabled,
@@ -1145,7 +1147,11 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           const currentStage = String(request?.manufacturerStage || "").trim();
           const canPromoteToMachining =
             !currentStage || currentStage === "준비" || currentStage === "CAM";
-          if (canPromoteToMachining) {
+          if (canPromoteToMachining && (await isTestAccountMachiningRequest(request))) {
+            console.log(
+              `[BG-Callback] sourceStep=3-nc request=${request?.requestId || "-"} skip machining promote (test account)`,
+            );
+          } else if (canPromoteToMachining) {
             try {
               const cloned = {
                 manufacturerStage: request?.manufacturerStage,

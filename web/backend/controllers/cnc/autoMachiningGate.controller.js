@@ -3,11 +3,14 @@
 // - web/backend/modules/cnc/cncMachine.routes.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/AutoApprovalGateSwitch.tsx
 // change-log:
+// - 2026-10-09: 테스트치과·테스트기공소 준비 의뢰를 장비 카드 HOLD에 포함한다.
 // - 2026-10-09: 신설. 제조사-가공 페이지 스위치용(관리자 설정 아님).
 import CncMachine from "../../models/cncMachine.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import Request from "../../models/request.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { getAutoGateConfig } from "../../services/autoMachiningGate.service.js";
+import { GUIDE_TOUR_ALWAYS_ON_BUSINESS_NAMES } from "../../utils/guideTour.util.js";
 
 const HOLD_LIST_LIMIT = 60;
 
@@ -24,8 +27,40 @@ function pickMachineForHold(doc, machines) {
   return sorted.length ? sorted[sorted.length - 1].machineId : null;
 }
 
+const TEST_ACCOUNT_NAMES = [...GUIDE_TOUR_ALWAYS_ON_BUSINESS_NAMES];
+
+async function findTestAccountPrepRequests() {
+  const anchors = await BusinessAnchor.find({ name: { $in: TEST_ACCOUNT_NAMES } })
+    .select("_id")
+    .lean();
+  const anchorIds = anchors.map((row) => row._id);
+  const or = [{ "caseInfos.clinicName": { $in: TEST_ACCOUNT_NAMES } }];
+  if (anchorIds.length) or.push({ businessAnchorId: { $in: anchorIds } });
+  return Request.find({
+    manufacturerStage: "준비",
+    source: { $ne: "dummy_sample" },
+    $or: or,
+  })
+    .sort({ createdAt: 1 })
+    .limit(HOLD_LIST_LIMIT)
+    .select(
+      "requestId caseInfos.clinicName caseInfos.patientName caseInfos.tooth caseInfos.maxDiameter productionSchedule.assignedMachine autoMachiningReview manufacturerStage",
+    )
+    .lean();
+}
+
+function upsertHold(byRequestId, item) {
+  const prev = byRequestId.get(item.requestId);
+  if (!prev) {
+    byRequestId.set(item.requestId, { ...item, reasons: [...(item.reasons || [])] });
+    return;
+  }
+  const reasons = new Set([...(prev.reasons || []), ...(item.reasons || [])]);
+  prev.reasons = [...reasons];
+}
+
 async function buildHolds() {
-  const [machinesRaw, prepHolds, machiningBlocked] = await Promise.all([
+  const [machinesRaw, prepHolds, testPrep, machiningBlocked] = await Promise.all([
     CncMachine.find({ status: "active" })
       .select("machineId currentMaterial")
       .lean(),
@@ -39,6 +74,7 @@ async function buildHolds() {
         "requestId caseInfos.clinicName caseInfos.patientName caseInfos.tooth caseInfos.maxDiameter productionSchedule.assignedMachine autoMachiningReview manufacturerStage",
       )
       .lean(),
+    findTestAccountPrepRequests(),
     // 가공 단계에서 자동 연속 가공이 건너뛰는 건(용량 초과 실패·NC 좌표 한계)
     Request.find({
       manufacturerStage: "가공",
@@ -61,9 +97,9 @@ async function buildHolds() {
     machineId: m.machineId,
     dia: Number(m.currentMaterial?.diameter) || 0,
   }));
-  const holds = [];
+  const byRequestId = new Map();
   for (const d of prepHolds) {
-    holds.push({
+    upsertHold(byRequestId, {
       requestId: d.requestId,
       stage: "준비",
       machineId: pickMachineForHold(d, machines),
@@ -73,6 +109,20 @@ async function buildHolds() {
       reasons: d.autoMachiningReview?.reasons || [],
     });
   }
+  for (const d of testPrep) {
+    const reasons = [...(d.autoMachiningReview?.reasons || [])];
+    if (!reasons.includes("test_account")) reasons.push("test_account");
+    upsertHold(byRequestId, {
+      requestId: d.requestId,
+      stage: "준비",
+      machineId: pickMachineForHold(d, machines),
+      clinicName: d.caseInfos?.clinicName || "",
+      patientName: d.caseInfos?.patientName || "",
+      tooth: d.caseInfos?.tooth || "",
+      reasons,
+    });
+  }
+  const holds = [...byRequestId.values()];
   for (const d of machiningBlocked) {
     const reasons = [...(d.caseInfos?.ncFile?.analysis?.flags || [])];
     const prog = d.productionSchedule?.machiningProgress;

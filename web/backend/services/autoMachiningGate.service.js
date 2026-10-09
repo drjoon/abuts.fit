@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js (autoMachiningReview)
 // - web/backend/controllers/requests/common.review.controller.js (updateReviewStatusByStage)
 // change-log:
+// - 2026-10-09: 테스트치과·테스트기공소 의뢰는 품질과 무관하게 가공하지 않고 hold.
 // - 2026-10-09: 신설. 준비 단계 의뢰를 규칙으로 판정해 이상 없는 건만 가공으로 자동 승인한다.
 /**
  * 준비→가공 자동 승인 게이트.
@@ -17,7 +18,17 @@ import Request from "../models/request.model.js";
 import SystemSettings from "../models/systemSettings.model.js";
 import { resolveFilledStlFile } from "../utils/filledStlFile.js";
 import { assessFinishLineQuality } from "../utils/finishLineQuality.js";
+import {
+  isTestAccountMachiningRequestSync,
+  loadRequestorBusinessNames,
+} from "../utils/testAccountMachining.js";
 import { updateReviewStatusByStage } from "../controllers/requests/common.review.controller.js";
+
+function anchorIdOf(request) {
+  const raw = request?.businessAnchorId;
+  if (raw && typeof raw === "object") return String(raw._id || "").trim();
+  return String(raw || "").trim();
+}
 
 export const AUTO_GATE_DEFAULTS = Object.freeze({
   enabled: false,
@@ -55,6 +66,9 @@ export async function getAutoGateConfig() {
 export function evaluateAutoMachiningGate(request, cfg = AUTO_GATE_DEFAULTS) {
   const ci = request?.caseInfos || {};
   const reasons = [];
+
+  // 테스트 계정은 업로드·주문 확인용이라 품질이 맞아도 가공하지 않는다.
+  if (isTestAccountMachiningRequestSync(request)) reasons.push("test_account");
 
   // 입력 누락
   const stl = resolveFilledStlFile(ci);
@@ -119,6 +133,12 @@ function isEligibleForGate(request) {
 
 function needsEvaluation(request, mode) {
   const review = request.autoMachiningReview;
+  if (
+    isTestAccountMachiningRequestSync(request) &&
+    !(review?.reasons || []).includes("test_account")
+  ) {
+    return true;
+  }
   if (!review?.verdict) return true;
   if (review.verdict === "approved") return false;
   // 섀도에서 통과로 기록된 건은 live 전환 후 승인 대상이 된다.
@@ -184,10 +204,15 @@ async function recordReview(id, review) {
  * shadow 모드는 판정만 기록하고 승인하지 않는다.
  * @returns {Promise<{ enabled: boolean, evaluated: number, approved: number, held: number, failed: number }>}
  */
+function annotateRequestorBusiness(request, nameById) {
+  request.requestorBusinessName =
+    nameById.get(anchorIdOf(request)) || request.requestorBusinessName || "";
+  return request;
+}
+
 export async function runAutoMachiningGatePass({ limit = 10 } = {}) {
   const cfg = await getAutoGateConfig();
   const out = { enabled: cfg.enabled, evaluated: 0, approved: 0, held: 0, failed: 0 };
-  if (!cfg.enabled) return out;
 
   const candidates = await Request.find({
     manufacturerStage: "준비",
@@ -196,11 +221,38 @@ export async function runAutoMachiningGatePass({ limit = 10 } = {}) {
     .sort({ createdAt: 1 })
     .limit(200)
     .lean();
+  const nameById = await loadRequestorBusinessNames(candidates);
+
+  // 스위치가 꺼져 있어도 테스트 계정은 가공 보류로 남긴다.
+  if (!cfg.enabled) {
+    for (const request of candidates) {
+      annotateRequestorBusiness(request, nameById);
+      if (!isEligibleForGate(request)) continue;
+      if (!isTestAccountMachiningRequestSync(request)) continue;
+      const prev = request.autoMachiningReview?.reasons || [];
+      if (request.autoMachiningReview?.verdict === "hold" && prev.includes("test_account")) {
+        continue;
+      }
+      const reasons = prev.includes("test_account") ? prev : [...prev, "test_account"];
+      await recordReview(request._id, {
+        verdict: "hold",
+        reasons,
+        metrics: request.autoMachiningReview?.metrics || {},
+        mode: cfg.mode,
+        evaluatedAt: new Date(),
+        attempts: 0,
+      });
+      out.held += 1;
+    }
+    return out;
+  }
 
   let approvedThisPass = 0;
   for (const request of candidates) {
+    annotateRequestorBusiness(request, nameById);
     if (!isEligibleForGate(request) || !needsEvaluation(request, cfg.mode)) continue;
-    if (approvedThisPass >= limit) break;
+    const testAccount = isTestAccountMachiningRequestSync(request);
+    if (!testAccount && approvedThisPass >= limit) continue;
 
     const now = new Date();
     const prevAttempts = request.autoMachiningReview?.attempts || 0;
