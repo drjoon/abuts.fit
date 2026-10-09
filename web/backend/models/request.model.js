@@ -1052,7 +1052,7 @@ const requestSchema = new mongoose.Schema(
         startedAt: Date,
         lastTickAt: Date,
         elapsedSeconds: Number,
-        // 실패 사유(bridge fail 콜백). CNC_PROGRAM_TOO_LARGE면 auto-next가 건너뛰고 작업자에게 넘긴다.
+        // 실패 사유(bridge fail 콜백). ALARM/FAILED면 auto-next가 그 건을 다시 집지 않는다.
         message: String,
         errorCode: String,
       },

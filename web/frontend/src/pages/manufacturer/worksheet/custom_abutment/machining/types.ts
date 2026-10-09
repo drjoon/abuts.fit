@@ -45,6 +45,12 @@ export type QueueItem = {
     updatedAt?: string | Date;
     error?: string;
   } | null;
+  machiningError?: {
+    phase?: string;
+    errorCode?: string | null;
+    message?: string;
+    failedAt?: string | Date | null;
+  } | null;
   clinicName?: string;
   patientName?: string;
   tooth?: string;
@@ -174,6 +180,9 @@ export type MachineQueueCardProps = {
   cancellingCamRequestIds?: ReadonlySet<string> | string[];
   materialNeedsReplacement?: boolean;
   materialAlertTooltip?: string;
-  /** 자동 가공이 건너뛴 보류 의뢰(카드 맨 아래 HOLD 카드) */
-  holdItems?: import("./hooks/useAutoApprovalGate").GateHoldItem[];
+  /** 이 장비의 가공 오류 알람 */
+  alertCount?: number;
+  alertSummary?: string;
+  onOpenAlert?: () => void;
+  onClearAlert?: () => void;
 };

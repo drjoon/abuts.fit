@@ -1764,8 +1764,8 @@ export async function upsertMachine(req, res) {
       );
       invalidateBridgeFlagsCache(finalUid).catch(() => {});
 
-      // false -> true 전환 시, 이전에 auto-next가 skip 된 장비가 멈춰있을 수 있으므로
-      // 즉시 다음 자동가공 트리거를 1회 시도한다.
+      // false -> true 전환 시 다음 자동가공을 한 번 시도한다.
+      // 자동 승인 직후 30초 유예 중이면 trigger 안에서 시작하지 않는다.
       if (nextAuto === true) {
         setTimeout(() => {
           triggerNextAutoMachiningAfterComplete({

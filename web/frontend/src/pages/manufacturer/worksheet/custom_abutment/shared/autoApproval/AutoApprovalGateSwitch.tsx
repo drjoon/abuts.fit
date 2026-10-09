@@ -1,9 +1,8 @@
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shared/autoApproval/useAutoApprovalGate.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // change-log:
-// - 2026-10-09: 준비·가공이 같은 스위치를 쓴다. 설정은 서버 한 곳이라 한쪽을 바꾸면 다른 쪽도 바뀐다.
+// - 2026-10-10: 켜면 장비 자동 가공을 토스트로 알리고, 가공 시작은 30초 뒤다.
 import { useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
@@ -13,8 +12,8 @@ import { useAutoApprovalGate } from "./useAutoApprovalGate";
 
 /**
  * 자동 승인 = 준비→가공 승인 게이트 + 장비별 자동 가공.
- * 켜면 이상 없는 건을 자동으로 가공에 넘긴다(섀도 모드 없음).
- * 장비 카드에서 장비별 자동 가공을 끄면 그 장비만 자동 가공에서 빠진다.
+ * 켜면 이상 없는 건만 가공으로 넘기고, 장비 자동 가공도 함께 켠다.
+ * 피니시라인 불량 등 문제 건은 준비에 남긴다.
  */
 export function AutoApprovalGateSwitch() {
   const { token } = useAuthStore();
@@ -38,7 +37,20 @@ export function AutoApprovalGateSwitch() {
       });
       return;
     }
-    if (!machinesAutoEnabled) await setMachinesAuto(true);
+    if (!machinesAutoEnabled) {
+      const machinesOk = await setMachinesAuto(true);
+      if (!machinesOk) return;
+    }
+    toast({
+      title: "장비 자동 가공을 켰습니다",
+      description: (
+        <>
+          30초 후 가공을 시작합니다.
+          <br />
+          끄려면 가공 화면에서 장비 자동 스위치를 끄세요.
+        </>
+      ),
+    });
   };
 
   const turnOff = async () => {
@@ -66,7 +78,7 @@ export function AutoApprovalGateSwitch() {
     <>
       <div
         className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700"
-        title="켜면 이상 없는 의뢰를 가공으로 자동 승인하고, 장비별 자동 가공도 함께 켭니다. 끄면 현재 가공 중인 건은 그대로 진행되고 다음 자동 시작만 멈춥니다."
+        title="켜면 이상 없는 의뢰만 가공으로 넘깁니다. 장비 자동 가공은 30초 후 시작합니다."
       >
         <span className="font-semibold">자동 승인</span>
         <Switch
@@ -75,9 +87,12 @@ export function AutoApprovalGateSwitch() {
           onCheckedChange={onToggle}
           aria-label="자동 승인"
         />
-        {gate.enabled ? (
-          <span className="text-slate-500">
-            보류 {gate.holdCount}
+        {gate.enabled && gate.holdCount > 0 ? (
+          <span
+            className="text-slate-500"
+            title="준비에 남겨 둔 문제 건입니다. 확인 후 가공으로 넘깁니다."
+          >
+            확인 {gate.holdCount}
           </span>
         ) : null}
       </div>
@@ -89,9 +104,11 @@ export function AutoApprovalGateSwitch() {
           <>
             이상 없는 의뢰가 자동으로 가공에 들어갑니다.
             <br />
-            테스트 계정과 준비 단계 문제 건은 준비에 남습니다.
+            장비 자동 가공을 켜고, 30초 후 시작합니다.
             <br />
-            CAM·가공 후 문제는 장비 카드 보류에서 확인합니다.
+            끄려면 가공 화면에서 장비 자동 스위치를 끄세요.
+            <br />
+            피니시라인 불량 등 문제 건은 준비에 남습니다.
           </>
         }
         confirmLabel="켜기"

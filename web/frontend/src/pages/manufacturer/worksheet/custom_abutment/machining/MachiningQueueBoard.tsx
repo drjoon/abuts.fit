@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-10: 오른쪽 위 버튼 옆에 전체 자동 스위치를 되돌린다.
+// - 2026-10-10: 자동 승인 스위치·HOLD 제거. 알람은 장비 카드. 아노 X 가공·재배정은 윗줄.
 // - 2026-10-06: Next Up 더미는 대기열에서만 빼고 더미설정은 유지.
 // - 2026-10-06: Next Up 샘플(더미 포함) 삭제.
 // - 2026-10-06: 더미 Next Up 반영 후 Complete도 갱신한다.
@@ -33,15 +35,13 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningPriorityRulesModal.tsx
 // - web/backend/controllers/requests/expressDeadlineRebalance.utils.js
 // - web/backend/controllers/requests/machiningPriorityRules.js
-import { AutoApprovalGateSwitch } from "./components/AutoApprovalGateSwitch";
-import { useAutoApprovalGate } from "./hooks/useAutoApprovalGate";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { onNotification } from "@/shared/realtime/socket";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useSearchParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, ArrowRight, ListOrdered, X, Zap } from "lucide-react";
+import { ArrowLeft, ArrowRight, ListOrdered, X, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/shared/ui/cn";
 import { RESPONSIVE } from "@/shared/ui/responsive";
@@ -232,7 +232,6 @@ export const MachiningQueueBoard = ({
   const { toast } = useToast();
   const { uploadMachineFiles } = useManUpload();
   const board = useMachiningBoard({ token });
-  const autoGate = useAutoApprovalGate(token);
   const { callRaw } = useCncRaw();
   const { ensureCncWriteAllowed, PinModal } = useCncWriteGuard();
   const [activeMachineId, setActiveMachineId] = useState<string | null>(null);
@@ -446,11 +445,14 @@ export const MachiningQueueBoard = ({
     clearExpressRebalanceAlert,
     refreshProductionQueues,
     refreshLastCompletedFromServer,
+    globalAutoEnabled,
+    setGlobalAutoEnabled,
   } = board;
 
   const [expressRebalanceModalOpen, setExpressRebalanceModalOpen] =
     useState(false);
   const [machiningAlertModalOpen, setMachiningAlertModalOpen] = useState(false);
+  const [alertMachineId, setAlertMachineId] = useState<string | null>(null);
   const [priorityRulesModalOpen, setPriorityRulesModalOpen] = useState(false);
   const [dummyModalOpen, setDummyModalOpen] = useState(false);
   const [dummyConfirm, setDummyConfirm] = useState<{
@@ -461,10 +463,15 @@ export const MachiningQueueBoard = ({
   const lastAutoOpenedExpressRebalanceIdRef = useRef<string>("");
 
   useEffect(() => {
-    if (machiningAlerts.length === 0) {
+    if (!alertMachineId) return;
+    const still = machiningAlerts.some(
+      (alert) => String(alert?.machineId || "") === alertMachineId,
+    );
+    if (!still) {
       setMachiningAlertModalOpen(false);
+      setAlertMachineId(null);
     }
-  }, [machiningAlerts.length]);
+  }, [alertMachineId, machiningAlerts]);
 
   useEffect(() => {
     const hasAlert =
@@ -1978,31 +1985,6 @@ export const MachiningQueueBoard = ({
               </div>
             </button>
           ) : null}
-          {machiningAlerts.length > 0 ? (
-            <div className="flex items-center gap-1 rounded-lg border border-destructive-muted bg-destructive-soft px-2 py-1 text-[11px] font-semibold text-destructive">
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 hover:underline"
-                onClick={() => setMachiningAlertModalOpen(true)}
-                title="CNC 알람 상세 보기"
-              >
-                <AlertTriangle className="h-3.5 w-3.5" />
-                <span>Alert {machiningAlerts.length}</span>
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-4 w-4 items-center justify-center rounded text-destructive hover:bg-destructive-soft"
-                onClick={() => {
-                  clearMachiningAlerts();
-                  setMachiningAlertModalOpen(false);
-                }}
-                title="알람 뱃지 지우기"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          ) : null}
-
           {expressRebalanceAlert &&
           Array.isArray(expressRebalanceAlert.moved) &&
           expressRebalanceAlert.moved.length > 0 ? (
@@ -2055,8 +2037,6 @@ export const MachiningQueueBoard = ({
           >
             {siFetching ? "로딩…" : "자주검사"}
           </button>
-            </div>
-            <div className="flex flex-wrap items-center justify-end gap-2">
           <button
             type="button"
             disabled={anodizingOffTriggering}
@@ -2077,7 +2057,30 @@ export const MachiningQueueBoard = ({
           >
             재배정
           </button>
-          <AutoApprovalGateSwitch />
+          <div
+            className="flex items-center gap-2"
+            title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
+          >
+            <span className="text-xs font-semibold text-slate-700">
+              전체 자동
+            </span>
+            <button
+              type="button"
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                globalAutoEnabled ? "bg-primary" : "bg-slate-300"
+              }`}
+              onClick={() => {
+                void setGlobalAutoEnabled(!globalAutoEnabled);
+              }}
+              aria-label="전체 자동"
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                  globalAutoEnabled ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
             </div>
           </>
         }
@@ -2160,7 +2163,28 @@ export const MachiningQueueBoard = ({
                 });
               }}
               autoEnabled={m.allowAutoMachining === true}
-              holdItems={autoGate.holdsByMachine[m.uid]}
+              alertCount={
+                machiningAlerts.filter(
+                  (alert) => String(alert?.machineId || "") === m.uid,
+                ).length
+              }
+              alertSummary={(() => {
+                const latest = machiningAlerts.find(
+                  (alert) => String(alert?.machineId || "") === m.uid,
+                );
+                return String(latest?.alarmText || latest?.message || "").trim();
+              })()}
+              onOpenAlert={() => {
+                setAlertMachineId(m.uid);
+                setMachiningAlertModalOpen(true);
+              }}
+              onClearAlert={() => {
+                clearMachiningAlerts(m.uid);
+                if (alertMachineId === m.uid) {
+                  setMachiningAlertModalOpen(false);
+                  setAlertMachineId(null);
+                }
+              }}
               machiningActive={machiningActive}
               onToggleAuto={(next) => {
                 requestToggleMachineAuto(m.uid, next);
@@ -2971,9 +2995,40 @@ export const MachiningQueueBoard = ({
 
       <MachiningAlertModal
         open={machiningAlertModalOpen}
-        onOpenChange={setMachiningAlertModalOpen}
-        alerts={machiningAlerts}
-        onClearAll={clearMachiningAlerts}
+        onOpenChange={(open) => {
+          setMachiningAlertModalOpen(open);
+          if (!open) setAlertMachineId(null);
+        }}
+        machineName={
+          displayMachines.find((m) => m.uid === alertMachineId)?.name ||
+          alertMachineId ||
+          ""
+        }
+        alerts={machiningAlerts.filter(
+          (alert) => String(alert?.machineId || "") === String(alertMachineId || ""),
+        )}
+        requestLabels={(() => {
+          const labels: Record<string, string> = {};
+          const queues = Object.values(queueMap || {});
+          for (const list of queues) {
+            if (!Array.isArray(list)) continue;
+            for (const item of list) {
+              const rid = String(item?.requestId || "").trim();
+              if (!rid || labels[rid]) continue;
+              const text = [item?.clinicName, item?.patientName, (item as any)?.tooth]
+                .map((v) => String(v || "").trim())
+                .filter(Boolean)
+                .join(" / ");
+              if (text) labels[rid] = text;
+            }
+          }
+          return labels;
+        })()}
+        onClearAll={
+          alertMachineId
+            ? () => clearMachiningAlerts(alertMachineId)
+            : undefined
+        }
       />
 
       <MachiningPriorityRulesModal

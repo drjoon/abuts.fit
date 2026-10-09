@@ -1,8 +1,7 @@
 // related files:
 // - web/backend/controllers/cnc/autoMachiningGate.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shared/autoApproval/AutoApprovalGateSwitch.tsx
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/GateHoldCard.tsx
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // change-log:
 // - 2026-10-09: 준비·가공이 같은 모듈 상태를 쓴다. 한쪽에서 바꾸면 다른 쪽 스위치도 바로 바뀐다.
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
@@ -269,13 +268,6 @@ export function useAutoApprovalGate(token: string | null) {
           variant: "destructive",
         });
         return false;
-      }
-      if (enabled) {
-        toast({
-          title: "전체 자동 가공 ON",
-          description:
-            "각 장비의 자동 연속 가공을 활성화했습니다. (가공 중 장비는 완료 후 다음 건부터 적용)",
-        });
       }
       return true;
     },

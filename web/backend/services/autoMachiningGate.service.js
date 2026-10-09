@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js (autoMachiningReview)
 // - web/backend/controllers/requests/common.review.controller.js (updateReviewStatusByStage)
 // change-log:
+// - 2026-10-10: 자동 승인을 켠 뒤 30초 유예 동안은 준비→가공 승인을 하지 않는다.
 // - 2026-10-09: 섀도 모드 제거. 스위치가 켜지면 통과 건을 바로 승인한다(장비별 자동 가공 OFF는 그 장비만 제외).
 // - 2026-10-09: 테스트 계정·준비 단계 문제 건은 준비에 남긴다(가공으로 안 보냄). 판정 대상은 이번 달 준비만.
 // - 2026-10-09: 테스트치과·테스트기공소 의뢰는 품질과 무관하게 가공하지 않고 hold.
@@ -26,6 +27,7 @@ import {
   loadRequestorBusinessNames,
 } from "../utils/testAccountMachining.js";
 import { updateReviewStatusByStage } from "../controllers/requests/common.review.controller.js";
+import { isAutoStartGraceActive } from "./autoStartGrace.js";
 
 function anchorIdOf(request) {
   const raw = request?.businessAnchorId;
@@ -124,8 +126,8 @@ export function evaluateAutoMachiningGate(request, cfg = AUTO_GATE_DEFAULTS) {
     reasons.push("cuff_proposal_pending");
   }
 
-  // NC가 이미 있으면 좌표 범위 분석 결과 반영(용량은 사전 게이트로 보지 않는다:
-  // 장비 한도가 풀렸고, 초과 실패는 auto-next가 건너뛰어 작업자에게 넘긴다)
+  // NC가 이미 있으면 좌표 범위도 준비 단계 보류다. 가공으로 넘기지 않는다.
+  // 가공에 들어간 뒤의 장비 오류는 가공 카드 알람으로 본다.
   const ncFlags = ci.ncFile?.analysis?.flags;
   if (Array.isArray(ncFlags)) for (const f of ncFlags) reasons.push(f);
 
@@ -299,6 +301,7 @@ export async function runAutoMachiningGatePass({ limit = 10 } = {}) {
     return out;
   }
 
+  const grace = await isAutoStartGraceActive();
   let approvedThisPass = 0;
   for (const request of candidates) {
     annotateRequestorBusiness(request, nameById);
@@ -324,6 +327,8 @@ export async function runAutoMachiningGatePass({ limit = 10 } = {}) {
       out.held += 1;
       continue;
     }
+
+    if (grace) continue;
 
     try {
       await invokeMachiningApproval(request._id);

@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-10-10: 가공 알람은 장비별로 쌓고, 알람 원문(헤드·type·no)을 함께 저장한다.
 // - 2026-10-09: 장비 자동가공 플래그를 준비·가공 공통 스위치와 맞춘다.
 // - 2026-10-06: 더미를 Next Up에 넣은 뒤 Complete 슬롯도 다시 불러온다.
 // - 2026-10-02: 시작 소켓을 놓쳐도 RUNNING tick·큐 재조회로 Now Playing을 맞춘다. 이전 건 완료가 다음 건 힌트를 지우지 않음.
@@ -49,6 +50,10 @@ import { useCncRaw } from "@/features/manufacturer/cnc/hooks/useCncRaw";
 import { useMachineStatusStore } from "@/store/useMachineStatusStore";
 import type { PlaylistJobItem } from "@/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer";
 import type {
+  MachiningAlarmDetail,
+  MachiningAlertItem,
+} from "../components/MachiningAlertModal";
+import type {
   QueueItem,
   QueueMap,
   LastCompletedMachining,
@@ -89,15 +94,32 @@ const isQueueItemRunning = (item?: QueueItem | null) => {
   return startedAt > 0 && completedAt <= 0;
 };
 
-type MachiningAlertItem = {
-  machineId: string;
-  requestId: string | null;
-  errorCode: string | null;
-  message: string;
-  alarmText: string;
-  updatedAt: string;
-  count: number;
-};
+const ALERTS_PER_MACHINE = 8;
+
+function normalizeAlarmDetails(raw: unknown): MachiningAlarmDetail[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 12).map((alarm: any) => ({
+    headType:
+      alarm?.headType != null
+        ? Number(alarm.headType)
+        : alarm?.headtype != null
+          ? Number(alarm.headtype)
+          : null,
+    type: alarm?.type != null ? String(alarm.type) : "",
+    no: alarm?.no != null ? String(alarm.no) : "",
+    message: String(alarm?.message || "").trim(),
+    displayText: String(alarm?.displayText || alarm?.message || "").trim(),
+    source: String(alarm?.source || "").trim(),
+  }));
+}
+
+function asAlertList(value: unknown): MachiningAlertItem[] {
+  if (Array.isArray(value)) {
+    return value.filter((row) => row && typeof row === "object");
+  }
+  if (value && typeof value === "object") return [value as MachiningAlertItem];
+  return [];
+}
 
 export type ExpressRebalanceAlertState = {
   id?: string;
@@ -349,7 +371,7 @@ export const useMachiningBoard = ({
   const recentAlertFingerprintRef = useRef<Record<string, number>>({});
 
   const [machiningAlertMap, setMachiningAlertMap] = useState<
-    Record<string, MachiningAlertItem>
+    Record<string, MachiningAlertItem[]>
   >({});
   const [expressRebalanceAlert, setExpressRebalanceAlert] =
     useState<ExpressRebalanceAlertState | null>(null);
@@ -361,8 +383,13 @@ export const useMachiningBoard = ({
       const raw = localStorage.getItem(MACHINING_ALERT_STORAGE_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object") return;
-      setMachiningAlertMap(parsed as Record<string, MachiningAlertItem>);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+      const next: Record<string, MachiningAlertItem[]> = {};
+      for (const [machineId, value] of Object.entries(parsed)) {
+        const list = asAlertList(value);
+        if (list.length) next[machineId] = list.slice(0, ALERTS_PER_MACHINE);
+      }
+      setMachiningAlertMap(next);
     } catch {
       // noop
     }
@@ -420,18 +447,24 @@ export const useMachiningBoard = ({
     (payload: {
       machineId?: string | null;
       requestId?: string | null;
+      jobId?: string | null;
       errorCode?: string | null;
       message?: string | null;
       alarmText?: string | null;
+      reason?: string | null;
+      alarms?: unknown;
     }) => {
       const mid = String(payload?.machineId || "").trim();
       if (!mid) return;
       const rid = String(payload?.requestId || "").trim() || null;
+      const jobId = String(payload?.jobId || "").trim() || null;
       const code = String(payload?.errorCode || "").trim() || null;
       const msg =
         String(payload?.message || payload?.alarmText || "").trim() ||
         "CNC 알람";
       const text = String(payload?.alarmText || payload?.message || "").trim();
+      const reason = String(payload?.reason || "").trim();
+      const alarms = normalizeAlarmDetails(payload?.alarms);
 
       const fingerprint = `${mid}|${rid || ""}|${code || ""}|${msg}`;
       const now = Date.now();
@@ -440,26 +473,30 @@ export const useMachiningBoard = ({
       recentAlertFingerprintRef.current[fingerprint] = now;
 
       setMachiningAlertMap((prev) => {
-        const prevItem = prev[mid];
+        const list = asAlertList(prev[mid]);
+        const prevItem = list[0];
         const sameReason =
           prevItem &&
           prevItem.requestId === rid &&
           prevItem.errorCode === code &&
           prevItem.message === msg;
-
+        const nextItem: MachiningAlertItem = {
+          machineId: mid,
+          requestId: rid,
+          jobId,
+          errorCode: code,
+          message: msg,
+          alarmText: text || msg,
+          reason: reason || undefined,
+          alarms,
+          source: "live",
+          updatedAt: new Date().toISOString(),
+          count: Number(sameReason ? prevItem?.count || 0 : 0) + 1,
+        };
+        const rest = sameReason ? list.slice(1) : list;
         return {
           ...prev,
-          [mid]: {
-            machineId: mid,
-            requestId: rid,
-            errorCode: code,
-            message: msg,
-            alarmText: text || msg,
-            updatedAt: new Date().toISOString(),
-            count: sameReason
-              ? Number(prevItem?.count || 0) + 1
-              : Number(prevItem?.count || 0) + 1,
-          },
+          [mid]: [nextItem, ...rest].slice(0, ALERTS_PER_MACHINE),
         };
       });
     },
@@ -724,6 +761,67 @@ export const useMachiningBoard = ({
     });
   }, []);
 
+  const syncQueueErrorAlerts = useCallback((queues: QueueMap) => {
+    setMachiningAlertMap((prev) => {
+      const next: Record<string, MachiningAlertItem[]> = { ...prev };
+      let changed = false;
+      const machineIds = new Set([
+        ...Object.keys(queues || {}),
+        ...Object.keys(prev || {}),
+      ]);
+      for (const mid of machineIds) {
+        if (mid === "unassigned") continue;
+        const list = Array.isArray(queues?.[mid]) ? queues[mid] : [];
+        const live = asAlertList(next[mid]).filter((alert) => alert.source !== "queue");
+        const liveRequestIds = new Set(
+          live.map((alert) => String(alert.requestId || "").trim()).filter(Boolean),
+        );
+        const queueAlerts: MachiningAlertItem[] = [];
+        for (const item of list) {
+          const err = item?.machiningError;
+          if (!err) continue;
+          const rid = String(item.requestId || "").trim();
+          if (rid && liveRequestIds.has(rid)) continue;
+          const message = String(err.message || "").trim() || "가공 오류";
+          const failedAtDate = err.failedAt ? new Date(err.failedAt) : null;
+          const failedAt =
+            failedAtDate && !Number.isNaN(failedAtDate.getTime())
+              ? failedAtDate.toISOString()
+              : "";
+          queueAlerts.push({
+            machineId: mid,
+            requestId: rid || null,
+            errorCode: err.errorCode || null,
+            message,
+            alarmText: message,
+            reason: message,
+            updatedAt: failedAt || new Date().toISOString(),
+            count: 1,
+            source: "queue",
+          });
+        }
+        const combined = [...queueAlerts, ...live].slice(0, ALERTS_PER_MACHINE);
+        const prevList = asAlertList(next[mid]);
+        const same =
+          prevList.length === combined.length &&
+          prevList.every((alert, index) => {
+            const other = combined[index];
+            return (
+              alert.requestId === other.requestId &&
+              alert.errorCode === other.errorCode &&
+              alert.message === other.message &&
+              alert.source === other.source
+            );
+          });
+        if (same) continue;
+        changed = true;
+        if (combined.length) next[mid] = combined;
+        else delete next[mid];
+      }
+      return changed ? next : prev;
+    });
+  }, []);
+
   const refreshProductionQueues = useCallback(async () => {
     if (!token) return;
     try {
@@ -767,11 +865,17 @@ export const useMachiningBoard = ({
         });
       });
       setQueueMap(normalized);
+      syncQueueErrorAlerts(normalized);
       reconcileMachiningTimersFromQueues(normalized);
     } catch {
       // ignore
     }
-  }, [token, reconcileMachiningTimersFromQueues, applyExpressRebalanceAlert]);
+  }, [
+    token,
+    reconcileMachiningTimersFromQueues,
+    applyExpressRebalanceAlert,
+    syncQueueErrorAlerts,
+  ]);
 
   const ncQueueVerifyTimerRef = useRef<number | null>(null);
   const scheduleNcQueueVerifyRefresh = useCallback(() => {
@@ -1840,9 +1944,12 @@ export const useMachiningBoard = ({
         upsertMachiningAlert({
           machineId: mid,
           requestId: rid || null,
+          jobId: data?.jobId != null ? String(data.jobId) : null,
           errorCode: null,
           message: "ALARM",
+          reason: String(data?.message || "").trim(),
           alarmText: alarmText || "CNC 알람 감지",
+          alarms: data?.alarms,
         });
       }
 
@@ -1978,9 +2085,12 @@ export const useMachiningBoard = ({
       upsertMachiningAlert({
         machineId: mid,
         requestId: data?.requestId != null ? String(data.requestId) : null,
+        jobId: data?.jobId != null ? String(data.jobId) : null,
         errorCode: data?.errorCode != null ? String(data.errorCode) : null,
         message: String(data?.reason || "FAILED"),
+        reason: String(data?.reason || "").trim(),
         alarmText: failedMessage,
+        alarms,
       });
 
       toast({
@@ -2031,9 +2141,12 @@ export const useMachiningBoard = ({
       upsertMachiningAlert({
         machineId: mid,
         requestId: data?.requestId != null ? String(data.requestId) : null,
+        jobId: data?.jobId != null ? String(data.jobId) : null,
         errorCode: data?.errorCode != null ? String(data.errorCode) : null,
         message: String(data?.message || data?.reason || "ALARM"),
+        reason: String(data?.reason || data?.message || "").trim(),
         alarmText,
+        alarms,
       });
 
       toast({
@@ -2636,9 +2749,11 @@ export const useMachiningBoard = ({
 
   const machiningAlerts = useMemo(
     () =>
-      Object.values(machiningAlertMap || {}).sort((a, b) =>
-        String(b?.updatedAt || "").localeCompare(String(a?.updatedAt || "")),
-      ),
+      Object.values(machiningAlertMap || {})
+        .flatMap((rows) => asAlertList(rows))
+        .sort((a, b) =>
+          String(b?.updatedAt || "").localeCompare(String(a?.updatedAt || "")),
+        ),
     [machiningAlertMap],
   );
 

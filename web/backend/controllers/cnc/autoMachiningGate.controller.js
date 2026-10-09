@@ -1,94 +1,82 @@
 // related files:
 // - web/backend/services/autoMachiningGate.service.js
 // - web/backend/modules/cnc/cncMachine.routes.js
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/AutoApprovalGateSwitch.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shared/autoApproval/AutoApprovalGateSwitch.tsx
 // change-log:
+// - 2026-10-10: 자동 승인을 켜면 30초 뒤에 승인·자동 가공을 시작한다.
+// - 2026-10-10: 가공 HOLD 목록 제거. holdCount는 준비에 남겨 둔 문제 건 수.
 // - 2026-10-09: 섀도 모드 제거. 켜면 통과 건을 바로 가공으로 승인한다.
-// - 2026-10-09: HOLD는 가공 단계 이후 문제(NC 좌표·용량)만 보여 준다. 준비 단계 문제·테스트 계정은 준비에 남기고 HOLD에 넣지 않는다.
-// - 2026-10-09: 신설. 제조사-가공 페이지 스위치용(관리자 설정 아님).
-import CncMachine from "../../models/cncMachine.model.js";
+// - 2026-10-09: 신설. 제조사-준비 페이지 스위치용(관리자 설정 아님).
 import SystemSettings from "../../models/systemSettings.model.js";
 import Request from "../../models/request.model.js";
-import { getAutoGateConfig } from "../../services/autoMachiningGate.service.js";
+import Machine from "../../models/machine.model.js";
+import {
+  activePrepCreatedAtFilter,
+  getAutoGateConfig,
+  runAutoMachiningGatePass,
+} from "../../services/autoMachiningGate.service.js";
+import {
+  AUTO_START_GRACE_MS,
+  isAutoStartGraceActive,
+} from "../../services/autoStartGrace.js";
+import { triggerNextAutoMachiningAfterComplete } from "./machiningBridge.js";
 
-const HOLD_LIST_LIMIT = 60;
+let graceKickTimer = null;
 
-/** 보류 건을 장비 카드에 붙인다: 배정 장비 → 소재 직경이 맞는 가장 작은 장비 → 가장 큰 장비. */
-function pickMachineForHold(doc, machines) {
-  const assigned = String(doc?.productionSchedule?.assignedMachine || "").trim();
-  if (assigned && machines.some((m) => m.machineId === assigned)) return assigned;
-  const d = Number(doc?.caseInfos?.maxDiameter);
-  const sorted = [...machines].sort((a, b) => a.dia - b.dia);
-  if (Number.isFinite(d) && d > 0) {
-    const fit = sorted.find((m) => m.dia >= d);
-    if (fit) return fit.machineId;
+async function kickAutoStartAfterGrace() {
+  if (await isAutoStartGraceActive()) return;
+  try {
+    await runAutoMachiningGatePass({ limit: 10 });
+  } catch (error) {
+    console.error("[autoMachiningGate] grace pass failed", error?.message || error);
   }
-  return sorted.length ? sorted[sorted.length - 1].machineId : null;
+  const machines = await Machine.find({ allowAutoMachining: true })
+    .select("uid")
+    .lean();
+  for (const machine of machines) {
+    const uid = String(machine?.uid || "").trim();
+    if (!uid) continue;
+    try {
+      await triggerNextAutoMachiningAfterComplete({
+        machineId: uid,
+        completedRequestId: null,
+      });
+    } catch (error) {
+      console.warn(
+        "[autoMachiningGate] grace auto-start failed",
+        uid,
+        error?.message || error,
+      );
+    }
+  }
 }
 
-/**
- * HOLD = 가공 단계로 넘어간 뒤(CAM 생성 후·가공 후) 자동 연속 가공이 건너뛰는 건.
- * 준비 단계 문제(STL·피니시라인·테스트 계정 등)는 준비에 남기며 여기에 넣지 않는다.
- */
-async function buildHolds() {
-  const [machinesRaw, machiningBlocked] = await Promise.all([
-    CncMachine.find({ status: "active" })
-      .select("machineId currentMaterial")
-      .lean(),
-    Request.find({
-      manufacturerStage: "가공",
-      $or: [
-        {
-          "productionSchedule.machiningProgress.phase": "ALARM",
-          "productionSchedule.machiningProgress.errorCode": "CNC_PROGRAM_TOO_LARGE",
-        },
-        { "caseInfos.ncFile.analysis.flags.0": { $exists: true } },
-      ],
-    })
-      .sort({ createdAt: 1 })
-      .limit(HOLD_LIST_LIMIT)
-      .select(
-        "requestId caseInfos.clinicName caseInfos.patientName caseInfos.tooth caseInfos.maxDiameter caseInfos.ncFile.analysis caseInfos.ncFile.uploadedAt productionSchedule.assignedMachine productionSchedule.machiningProgress manufacturerStage",
-      )
-      .lean(),
-  ]);
-  const machines = machinesRaw.map((m) => ({
-    machineId: m.machineId,
-    dia: Number(m.currentMaterial?.diameter) || 0,
-  }));
-  const holds = [];
-  for (const d of machiningBlocked) {
-    const reasons = [...(d.caseInfos?.ncFile?.analysis?.flags || [])];
-    const prog = d.productionSchedule?.machiningProgress;
-    if (String(prog?.errorCode || "") === "CNC_PROGRAM_TOO_LARGE") {
-      const ncAt = d.caseInfos?.ncFile?.uploadedAt
-        ? new Date(d.caseInfos.ncFile.uploadedAt).getTime()
-        : 0;
-      const failAt = prog?.lastTickAt ? new Date(prog.lastTickAt).getTime() : 0;
-      if (ncAt <= failAt) reasons.push("program_too_large");
-    }
-    if (!reasons.length) continue;
-    holds.push({
-      requestId: d.requestId,
-      requestMongoId: String(d._id || ""),
-      stage: "가공",
-      machineId: pickMachineForHold(d, machines),
-      clinicName: d.caseInfos?.clinicName || "",
-      patientName: d.caseInfos?.patientName || "",
-      tooth: d.caseInfos?.tooth || "",
-      reasons,
-    });
-  }
-  return holds;
+function scheduleGraceKick() {
+  if (graceKickTimer) clearTimeout(graceKickTimer);
+  graceKickTimer = setTimeout(() => {
+    graceKickTimer = null;
+    void kickAutoStartAfterGrace();
+  }, AUTO_START_GRACE_MS + 500);
+  graceKickTimer.unref?.();
+}
+
+/** 준비에 남겨 둔 문제 건. 작업자가 확인한 뒤 가공으로 넘긴다. */
+async function countPrepHolds() {
+  const createdAt = activePrepCreatedAtFilter();
+  return Request.countDocuments({
+    manufacturerStage: "준비",
+    "autoMachiningReview.verdict": "hold",
+    ...(createdAt ? { createdAt } : {}),
+  });
 }
 
 async function buildPayload() {
   const config = await getAutoGateConfig();
-  const holds = await buildHolds();
+  const holdCount = await countPrepHolds();
   return {
     enabled: config.enabled,
-    holdCount: holds.length,
-    holds,
+    holdCount,
+    holds: [],
   };
 }
 
@@ -110,6 +98,9 @@ export async function updateAutoMachiningGate(req, res) {
     const $set = {};
     if (typeof body.enabled === "boolean") {
       $set["autoMachiningGate.enabled"] = body.enabled;
+      $set["autoMachiningGate.autoStartAt"] = body.enabled
+        ? new Date(Date.now() + AUTO_START_GRACE_MS)
+        : null;
     }
     if (Object.keys($set).length === 0) {
       return res
@@ -125,6 +116,11 @@ export async function updateAutoMachiningGate(req, res) {
       by: req.user?._id ? String(req.user._id) : null,
       ...body,
     });
+    if (body.enabled === true) scheduleGraceKick();
+    if (body.enabled === false && graceKickTimer) {
+      clearTimeout(graceKickTimer);
+      graceKickTimer = null;
+    }
     return res.status(200).json({ success: true, data: await buildPayload() });
   } catch (error) {
     return res.status(500).json({

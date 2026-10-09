@@ -544,6 +544,7 @@ export async function getProductionQueues(req, res) {
         requestCategory: reqItem?.requestCategory || null,
         fastMachiningRebalance:
           reqItem?.productionSchedule?.fastMachiningRebalance || null,
+        machiningError: resolveQueueMachiningError(reqItem),
         totalLength:
           Number.isFinite(Number(reqItem?.caseInfos?.totalLength)) &&
           Number(reqItem.caseInfos.totalLength) > 0
@@ -569,6 +570,21 @@ export async function getProductionQueues(req, res) {
       error: error.message,
     });
   }
+}
+
+/** 자동 가공이 다시 집지 않는 오류. 작업자 중단(CNC_USER_STOP)은 알람 목록에 넣지 않는다. */
+function resolveQueueMachiningError(reqItem) {
+  const prog = reqItem?.productionSchedule?.machiningProgress || {};
+  const phase = String(prog.phase || "").trim().toUpperCase();
+  const code = String(prog.errorCode || "").trim();
+  if (code === "CNC_USER_STOP") return null;
+  if (phase !== "ALARM" && phase !== "FAILED") return null;
+  return {
+    phase,
+    errorCode: code || null,
+    message: String(prog.message || "").trim() || "가공 오류",
+    failedAt: prog.lastTickAt || null,
+  };
 }
 
 const inferDiameterGroup = (reqItem) => {

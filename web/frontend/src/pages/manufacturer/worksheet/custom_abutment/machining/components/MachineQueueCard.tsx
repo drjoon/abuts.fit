@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-10: HOLD 카드 제거. 가공 오류 알람은 카드 안에 둔다.
 // - 2026-10-06: Next Up 더미 X는 대기열에서만 빼고 더미설정은 유지.
 // - 2026-10-06: Next Up 샘플(더미 포함) 삭제 X.
 // - 2026-10-02: Now Playing 매칭에 machiningRecord.jobId를 포함한다.
@@ -26,7 +27,7 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/cnc/production.js
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Disc, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, Disc, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -40,7 +41,6 @@ import {
   formatElapsedMMSS,
 } from "@/features/manufacturer/cnc/lib/machiningUi";
 import type { MachineQueueCardProps, QueueItem } from "../types";
-import { GateHoldCard } from "./GateHoldCard";
 import { buildLabelExtraProps, formatMachiningLabel, isMachiningSampleSlot } from "../utils/label";
 import { MachiningRequestLabel } from "./MachiningRequestLabel";
 import { getMachineStatusLabel } from "@/pages/manufacturer/equipment/cnc/lib/machineStatus";
@@ -146,16 +146,13 @@ export const MachineQueueCard = ({
   cancellingCamRequestIds,
   materialNeedsReplacement,
   materialAlertTooltip,
-  holdItems,
+  alertCount = 0,
+  alertSummary,
+  onOpenAlert,
+  onClearAlert,
 }: MachineQueueCardProps) => {
-  // 보류(HOLD) 건은 Next Up·대기 건수에 넣지 않는다. 가공 중인 건은 보류 대상이 아니다.
-  const holdRequestIds = new Set(
-    (holdItems || []).map((h) => String(h.requestId || "").trim()),
-  );
   const machiningQueueAll = (Array.isArray(queue) ? queue : []).filter(
-    (q) =>
-      isMachiningStatus(q) &&
-      !holdRequestIds.has(String((q as any)?.requestId || "").trim()),
+    (q) => isMachiningStatus(q) && !(q as QueueItem)?.machiningError,
   );
 
   const { currentSlot, nextSlot } = useMemo(() => {
@@ -730,6 +727,36 @@ export const MachineQueueCard = ({
             }}
           />
         </div>
+        {alertCount > 0 ? (
+          <div className="flex items-center gap-1 rounded-lg border border-destructive-muted bg-destructive-soft px-2 py-1.5 text-[11px] font-semibold text-destructive">
+            <button
+              type="button"
+              className="inline-flex min-w-0 flex-1 items-center gap-1 text-left hover:underline"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenAlert?.();
+              }}
+              title="가공 오류 상세"
+            >
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">
+                Alert {alertCount}
+                {alertSummary ? ` · ${alertSummary}` : ""}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-destructive hover:bg-destructive-soft"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClearAlert?.();
+              }}
+              title="이 장비 알람 지우기"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {queueAdminOpen && (
@@ -1378,25 +1405,6 @@ export const MachineQueueCard = ({
             </div>
           </div>
         </div>
-
-        <GateHoldCard
-          items={holdItems || []}
-          onOpenItem={
-            onOpenProgramCode
-              ? (h) =>
-                  onOpenProgramCode(
-                    {
-                      requestId: h.requestId,
-                      requestMongoId: h.requestMongoId,
-                      clinicName: h.clinicName,
-                      patientName: h.patientName,
-                      tooth: h.tooth,
-                    },
-                    machineId,
-                  )
-              : undefined
-          }
-        />
 
         <button
           type="button"

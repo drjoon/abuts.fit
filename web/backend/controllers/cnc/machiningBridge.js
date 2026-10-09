@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 // change-log:
+// - 2026-10-10: 가공 오류(ALARM/FAILED)가 난 건은 자동으로 다시 집지 않는다. 자동 승인 직후 30초는 시작하지 않는다.
 // - 2026-10-09: 테스트 계정은 작업자 수동 가공 승인 전 auto-next에서 건너뛴다.
 // - 2026-10-02: 가공 시작·RUNNING tick은 이전 가공기록 포인터가 있어도 현재 RUNNING 기록으로 다시 연결한다.
 // - 2026-10-06: last-completed — dummy_sample 가공 잔여 완료는 Complete/힐에서 뺀다.
@@ -39,6 +40,7 @@ import {
   isRequestUnmachinableJudged,
 } from "../../services/healStuckCompletedMachining.service.js";
 import Machine from "../../models/machine.model.js";
+import { isAutoStartGraceActive } from "../../services/autoStartGrace.js";
 import {
   isTestAccountAutoMachiningHeld,
   loadRequestorBusinessNames,
@@ -656,6 +658,7 @@ export async function triggerNextAutoMachiningManually(req, res) {
       completedRequestId: "",
       allowAnodizingOff: isAnodizingOffMode,
       onlyAnodizingOff: isAnodizingOffMode,
+      ignoreGrace: isAnodizingOffMode,
     });
 
     return res.status(200).json({
@@ -1253,6 +1256,8 @@ export async function triggerNextAutoMachiningAfterComplete({
   // true면 아노다이징 OFF 건만 선택해서 트리거한다.
   // OFF 묶음 가공 세션에서 다음 건을 이어서 시작할 때 사용.
   onlyAnodizingOff = false,
+  // 작업자가 누른 아노 X 가공은 자동 승인 직후 30초 유예를 기다리지 않는다.
+  ignoreGrace = false,
 }) {
   const mid = String(machineId || "").trim();
   if (!mid) return;
@@ -1278,6 +1283,13 @@ export async function triggerNextAutoMachiningAfterComplete({
     if (m?.allowAutoMachining !== true) {
       console.log(
         `[bridge:auto-next] skip for ${mid}: allowAutoMachining is false`,
+      );
+      return;
+    }
+
+    if (!ignoreGrace && (await isAutoStartGraceActive())) {
+      console.log(
+        `[bridge:auto-next] skip for ${mid}: auto-start grace (30s)`,
       );
       return;
     }
@@ -1348,26 +1360,11 @@ export async function triggerNextAutoMachiningAfterComplete({
           continue;
         }
 
-        // 용량 초과(CNC_PROGRAM_TOO_LARGE)로 실패한 건은 NC가 재생성되기 전까지
-        // 자동으로 다시 집지 않는다. 작업자가 확인하고 다른 건을 계속 가공한다.
+        // 한 번이라도 가공 오류가 난 건은 자동으로 다시 집지 않는다. 작업자가 수동으로 처리한다.
         {
           const prog = r?.productionSchedule?.machiningProgress;
-          const failedTooLarge =
-            String(prog?.phase || "").toUpperCase() === "ALARM" &&
-            String(prog?.errorCode || "") === "CNC_PROGRAM_TOO_LARGE";
-          if (failedTooLarge) {
-            const ncAt = r?.caseInfos?.ncFile?.uploadedAt
-              ? new Date(r.caseInfos.ncFile.uploadedAt).getTime()
-              : 0;
-            const failAt = prog?.lastTickAt ? new Date(prog.lastTickAt).getTime() : 0;
-            if (ncAt <= failAt) {
-              skippedAutoBlocked += 1;
-              continue;
-            }
-          }
-          // NC 좌표 범위가 한계를 벗어난 건(원점 이탈 등)은 자동 가공하지 않는다.
-          const ncFlags = r?.caseInfos?.ncFile?.analysis?.flags;
-          if (Array.isArray(ncFlags) && ncFlags.length > 0) {
+          const phase = String(prog?.phase || "").trim().toUpperCase();
+          if (phase === "ALARM" || phase === "FAILED") {
             skippedAutoBlocked += 1;
             continue;
           }
@@ -1415,7 +1412,7 @@ export async function triggerNextAutoMachiningAfterComplete({
 
       if (skippedAutoBlocked > 0) {
         console.log(
-          `[bridge:auto-next] skipped ${skippedAutoBlocked} blocked request(s) machine=${mid} (too-large/nc-limit/test-account)`,
+          `[bridge:auto-next] skipped ${skippedAutoBlocked} blocked request(s) machine=${mid} (error/test-account)`,
         );
       }
       return { pick, firstDiameterMismatched, skippedNoNcMeta, skippedAlreadyRunning };

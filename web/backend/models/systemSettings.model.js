@@ -26,6 +26,8 @@ const systemSettingsSchema = new mongoose.Schema(
     // related: web/backend/services/autoMachiningGate.service.js
     autoMachiningGate: {
       enabled: { type: Boolean, default: false },
+      // 자동 승인을 켠 시각+30초. 이 시각 전에는 준비→가공 승인과 자동 시작을 하지 않는다.
+      autoStartAt: { type: Date, default: null },
       maxDiameterMm: { type: Number, default: 10 },
       minFinishLineZ: { type: Number, default: 0.6 },
       // NC 좌표 한계(xMin/xMax/yMin/yMax/zMin/zMax). 비우면 utils/ncProgramCheck.js 기본값.
