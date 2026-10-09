@@ -1143,6 +1143,11 @@ const requestSchema = new mongoose.Schema(
         updatedAt: Date,
         error: String,
       },
+      // 백엔드 JS 파이프라인이 실패해 원격 Rhino로 넘긴 기록(준비 페이지 상단 alert)
+      stlJsFallback: {
+        reason: String,
+        at: Date,
+      },
     },
 
     price: {

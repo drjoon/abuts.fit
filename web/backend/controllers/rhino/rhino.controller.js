@@ -3,6 +3,8 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // change-log:
+// - 2026-10-09: 수동 재생성(process-file)도 JS 우선·Rhino 폴백.
+// - 2026-10-09: triggerRhino — 백엔드 JS 파이프라인 우선, 문제 시 Rhino 폴백(ABUTMENT_STL_JS_PRIMARY=false로 끔).
 // - 2026-09-17: manual finish-line 저장 시 stlMetadataUpdatedAt + 전체 메타 emit(FP와 동일).
 // - 2026-09-09: process-file — stlPreload GENERATING을 응답 전 await(FE 블러/reload 레이스 방지).
 // - 2026-09-04: triggerRhino — stlPreload GENERATING 선반영 + BRIDGE_SHARED_SECRET 폴백.
@@ -15,6 +17,10 @@ import { emitAppEventToRoles } from "../../socket.js";
 import Request from "../../models/request.model.js";
 import { resolveConnectionTargetDiameter } from "../requests/prcMapping.utils.js";
 import { normalizeRequestForResponse } from "../requests/utils.js";
+import {
+  isAbutmentStlJsPrimaryEnabled,
+  runJsPrimaryThenFallback,
+} from "../../services/abutmentStl/jsPrimary.service.js";
 
 const RHINO_COMPUTE_BASE_URL = String(
   process.env.RHINO_COMPUTE_BASE_URL || "http://127.0.0.1:8000",
@@ -160,6 +166,43 @@ export const processFileByName = asyncHandler(async (req, res) => {
       if (err instanceof ApiError) throw err;
       // ignore lookup errors; Rhino enqueue may still proceed without preload flag
     }
+  }
+
+  // 수동 재생성도 백엔드 JS 파이프라인 우선. 문제가 나면 원격 Rhino(force)로 넘긴다.
+  if (requestId && /\.stl$/i.test(safeName) && isAbutmentStlJsPrimaryEnabled()) {
+    void runJsPrimaryThenFallback({
+      requestId,
+      fileName: safeName,
+      fallbackToRhino: () => {
+        void enqueueTask(() =>
+          axios.post(
+            `${RHINO_COMPUTE_BASE_URL}/api/rhino/process-file`,
+            { filePath: safeName, fileName: safeName, requestId, force: true },
+            { timeout: 1000 * 60 * 3, headers: rhinoAuthHeaders() },
+          ),
+        ).catch((err) => {
+          console.warn(
+            `[rhino-process-file] fallback failed requestId=${requestId}: ${err?.message || err}`,
+          );
+          void Request.updateOne(
+            { requestId },
+            {
+              $set: {
+                "productionSchedule.stlPreload": {
+                  status: "FAILED",
+                  updatedAt: new Date(),
+                  error: "백엔드 JS·Rhino 모두 Filled STL 생성에 실패했습니다.",
+                },
+              },
+            },
+          ).catch(() => null);
+        });
+      },
+    });
+    return res.status(200).json({
+      success: true,
+      data: { status: "queued", engine: "js" },
+    });
   }
 
   // Rhino 재생성 시작 시 런타임 상태 발행 (경과 시간 표시용)
@@ -492,34 +535,47 @@ export const triggerRhinoProcessFileForRequest = ({
     });
   }
 
-  const url = `${RHINO_COMPUTE_BASE_URL}/api/rhino/process-file`;
-  axios
-    .post(
-      url,
-      {
-        filePath: targetName,
-        fileName: targetName,
-        requestId: rid,
-        force: false,
-      },
-      {
-        timeout: 1000 * 30,
-        headers: rhinoAuthHeaders(),
-      },
-    )
-    .then((resp) => {
-      const status = resp?.data?.data?.status || resp?.data?.status || "ok";
-      console.log(
-        `[rhino-trigger] requestId=${rid || "-"} file=${targetName} status=${status}`,
-      );
-    })
-    .catch((err) => {
-      console.warn(
-        `[rhino-trigger] failed requestId=${rid || "-"} file=${targetName}: ${
-          err?.response?.status || ""
-        } ${err?.message || err}`,
-      );
+  const dispatchRhino = () => {
+    const url = `${RHINO_COMPUTE_BASE_URL}/api/rhino/process-file`;
+    axios
+      .post(
+        url,
+        {
+          filePath: targetName,
+          fileName: targetName,
+          requestId: rid,
+          force: false,
+        },
+        {
+          timeout: 1000 * 30,
+          headers: rhinoAuthHeaders(),
+        },
+      )
+      .then((resp) => {
+        const status = resp?.data?.data?.status || resp?.data?.status || "ok";
+        console.log(
+          `[rhino-trigger] requestId=${rid || "-"} file=${targetName} status=${status}`,
+        );
+      })
+      .catch((err) => {
+        console.warn(
+          `[rhino-trigger] failed requestId=${rid || "-"} file=${targetName}: ${
+            err?.response?.status || ""
+          } ${err?.message || err}`,
+        );
+      });
+  };
+
+  // 백엔드 JS 파이프라인 우선. 문제가 나면 원격 Rhino(dispatchRhino)로 넘긴다.
+  if (rid && /\.stl$/i.test(targetName) && isAbutmentStlJsPrimaryEnabled()) {
+    void runJsPrimaryThenFallback({
+      requestId: rid,
+      fileName: targetName,
+      fallbackToRhino: dispatchRhino,
     });
+    return;
+  }
+  dispatchRhino();
 };
 
 export const fillholeFromStoreName = asyncHandler(async (req, res) => {

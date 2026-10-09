@@ -52,7 +52,7 @@ for (const d of docs) {
   else t.tn += 1;
 }
 const n = docs.length;
-console.log(`mode=${backtest ? "backtest" : "shadow-records"} total=${n}`);
+console.log(`mode=${backtest ? "backtest" : "records"} total=${n}`);
 console.log("보류(양성) 기준 혼동행렬", JSON.stringify(t));
 console.log(`보류율 ${(((t.tp + t.fp) / Math.max(1, n)) * 100).toFixed(1)}%  재현율 ${(t.tp / Math.max(1, t.tp + t.fn) * 100).toFixed(0)}%`);
 console.log("누락(불량인데 통과):", JSON.stringify(missed));

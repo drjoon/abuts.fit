@@ -26,8 +26,6 @@ const systemSettingsSchema = new mongoose.Schema(
     // related: web/backend/services/autoMachiningGate.service.js
     autoMachiningGate: {
       enabled: { type: Boolean, default: false },
-      // shadow: 판정만 기록(승인 안 함) / live: 통과 건 자동 승인
-      mode: { type: String, enum: ["shadow", "live"], default: "shadow" },
       maxDiameterMm: { type: Number, default: 10 },
       minFinishLineZ: { type: Number, default: 0.6 },
       // NC 좌표 한계(xMin/xMax/yMin/yMax/zMin/zMax). 비우면 utils/ncProgramCheck.js 기본값.

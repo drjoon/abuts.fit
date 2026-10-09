@@ -3,16 +3,13 @@
 // - web/backend/modules/cnc/cncMachine.routes.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/AutoApprovalGateSwitch.tsx
 // change-log:
+// - 2026-10-09: 섀도 모드 제거. 켜면 통과 건을 바로 가공으로 승인한다.
 // - 2026-10-09: HOLD는 가공 단계 이후 문제(NC 좌표·용량)만 보여 준다. 준비 단계 문제·테스트 계정은 준비에 남기고 HOLD에 넣지 않는다.
 // - 2026-10-09: 신설. 제조사-가공 페이지 스위치용(관리자 설정 아님).
 import CncMachine from "../../models/cncMachine.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import Request from "../../models/request.model.js";
-import {
-  READY_QUEUE_GUARD,
-  activePrepCreatedAtFilter,
-  getAutoGateConfig,
-} from "../../services/autoMachiningGate.service.js";
+import { getAutoGateConfig } from "../../services/autoMachiningGate.service.js";
 
 const HOLD_LIST_LIMIT = 60;
 
@@ -27,11 +24,6 @@ function pickMachineForHold(doc, machines) {
     if (fit) return fit.machineId;
   }
   return sorted.length ? sorted[sorted.length - 1].machineId : null;
-}
-
-function thisMonthCreatedAt() {
-  const createdAt = activePrepCreatedAtFilter();
-  return createdAt ? { createdAt } : {};
 }
 
 /**
@@ -92,20 +84,10 @@ async function buildHolds() {
 
 async function buildPayload() {
   const config = await getAutoGateConfig();
-  const [holds, wouldApproveCount] = await Promise.all([
-    buildHolds(),
-    Request.countDocuments({
-      manufacturerStage: "준비",
-      "autoMachiningReview.verdict": "would_approve",
-      ...thisMonthCreatedAt(),
-      $and: [READY_QUEUE_GUARD],
-    }),
-  ]);
+  const holds = await buildHolds();
   return {
     enabled: config.enabled,
-    mode: config.mode,
     holdCount: holds.length,
-    wouldApproveCount,
     holds,
   };
 }
@@ -128,9 +110,6 @@ export async function updateAutoMachiningGate(req, res) {
     const $set = {};
     if (typeof body.enabled === "boolean") {
       $set["autoMachiningGate.enabled"] = body.enabled;
-    }
-    if (body.mode === "shadow" || body.mode === "live") {
-      $set["autoMachiningGate.mode"] = body.mode;
     }
     if (Object.keys($set).length === 0) {
       return res

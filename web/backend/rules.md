@@ -171,6 +171,8 @@
 
 ### 어벗 STL JS 파이프라인 (Rhino 대체 · 섀도 모드)
 
+- **JS 우선 · Rhino 폴백 (2026-10-09~, 1~2주 검증)**: 의뢰 생성·핸드오프의 `triggerRhinoProcessFileForRequest`가 `services/abutmentStl/jsPrimary.service.js`를 먼저 돌린다. JS가 `2-filled` 업로드 후 `registerStlMetadata` → `registerProcessedFile`(Rhino 콜백과 같은 경로, 커프 보정 포함)로 등록한다. 예외·정렬 실패·피니시라인 없음/불량·메타데이터/직경 계산 실패면 `productionSchedule.stlJsFallback{reason,at}`를 남기고 원격 Rhino(`/api/rhino/process-file`)를 호출한다. 준비 페이지 상단 alert(`StlJsFallbackAlert`)는 폴백 건이 `stlPreload` GENERATING/FAILED인 동안만 보인다. 끄기: `ABUTMENT_STL_JS_PRIMARY=false`. 수동 재생성(`process-file` 라우트)은 아직 Rhino다. 검증이 끝나면 폴백·Rhino 의존을 걷어낸다.
+
 - Rhino `process_abutment_stl.py`(1-stl → 2-filled)의 JS 이식. 순서: import → align → finishline → 스크류홀 패치 → 직경 → fill_steps → export → stl-metadata. 동작 SSOT는 아직 Rhino 스크립트다. 원본 스크립트를 고치면 같은 이름의 JS 모듈도 같이 고친다.
 - Rhino STL import는 22.5°로 용접한다. crease edge가 unwelded이고 피니시라인 edge 전략은 이 조각 경계를 쓴다(`RHINO_STL_WELD_ANGLE_DEG`, `Mesh.unweldedByAngle`). Rhino `ExtractMeshEdges(Unwelded)`는 조각 경계(naked)까지 돌려준다.
 - 정렬 채점이 원통 구간에서 거의 동점이면 부동소수점 잡음으로 Rhino와 0.05~0.1mm Z가 갈릴 수 있다. 리포트에서는 "Z 이동만 다름"으로 따로 센다.
@@ -424,8 +426,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - `manufacturerStage` 저장값으로 `CAM`을 쓰지 않습니다. 레거시 `CAM` 문서는 가공으로 취급/이관합니다.
 
 - 준비→가공 자동 승인 게이트(야간 무인 가공):
-  - `SystemSettings.autoMachiningGate`: `enabled`(기본 OFF), `mode`(`shadow` 기본 | `live`). 제조사 준비·가공 페이지의 같은 스위치(`AutoApprovalGateSwitch`)가 `GET/PUT /api/cnc-machines/machining/auto-gate`(manufacturer·admin)로 켜고 끈다. 장비 `allowAutoMachining`도 이 스위치가 함께 바꾼다. `jobs/autoMachiningGateWorker.js`가 30초마다 준비 단계 의뢰를 판정한다.
-  - `shadow`: 판정만 `Request.autoMachiningReview`(verdict `would_approve`/`hold`)에 기록하고 승인하지 않는다. `live`: 통과 건을 수동 승인과 같은 `updateReviewStatusByStage`(stage=machining, nextUpCamRunGuard) 경로로 직렬 승인한다. 크레딧 차감은 수동 승인과 동일(아침에 사람이 되돌린다).
+  - `SystemSettings.autoMachiningGate`: `enabled`(기본 OFF). 섀도 모드는 없다(켜면 통과 건을 바로 승인). 제조사 준비·가공 페이지의 같은 스위치(`AutoApprovalGateSwitch`)가 `GET/PUT /api/cnc-machines/machining/auto-gate`(manufacturer·admin)로 켜고 끈다. 장비 `allowAutoMachining`도 이 스위치가 함께 바꾼다. `jobs/autoMachiningGateWorker.js`가 30초마다 준비 단계 의뢰를 판정한다.
+  - 통과 건을 수동 승인과 같은 `updateReviewStatusByStage`(stage=machining, nextUpCamRunGuard) 경로로 직렬 승인한다. 크레딧 차감은 수동 승인과 동일(아침에 사람이 되돌린다).
   - 보류 조건: 직경(>10mm·소재그룹 초과·측정오류), 피니시라인 불량·`min_z<0.6`, `cuffBlend` 비적용·제안 대기, `ncFile.analysis.flags`, filled STL·피니시라인 누락, 테스트기공소(사유 `test_account`; 테스트치과는 일반 의뢰처럼 자동 승인). 커프 미가공은 검출하지 않는다(육안). 장비·소재·공구 상태는 작업자가 관리하므로 보지 않는다.
   - 판정·HOLD 대상은 워크시트 이번 달(`createdAt`, KST `calendarMonth`) 준비 의뢰만이다. 그 밖 준비 의뢰에 남은 판정은 지운다. PTX 연결 건은 어벗츠 디자인 완료(`designCompletedAt`) 전에는 준비 큐에 없으므로 판정·HOLD에서도 뺀다(`READY_QUEUE_GUARD`).
   - HOLD 카드(가공 보드)는 가공 단계로 넘어간 뒤(CAM 생성 후·가공 후)의 문제(NC 좌표 한계·용량 초과)만 보여 준다. HOLD 건은 Next Up·대기 건수에 넣지 않는다. 준비 단계 문제(STL·피니시라인·커프·직경)와 테스트 계정은 가공으로 보내지 않고 준비에 남긴다(`autoMachiningReview` 판정만 기록). 장비별 자동 스위치는 전체 자동 승인 스위치와 독립이다(개별 OFF가 전체 스위치 표시·설정을 바꾸지 않는다).

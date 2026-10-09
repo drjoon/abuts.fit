@@ -22,9 +22,7 @@ export type GateHoldItem = {
 
 export type GateState = {
   enabled: boolean;
-  mode: "shadow" | "live";
   holdCount: number;
-  wouldApproveCount: number;
   holds: GateHoldItem[];
 };
 
@@ -162,7 +160,7 @@ function retainPoller(token: string) {
 
 async function saveGate(
   token: string,
-  patch: Partial<Pick<GateState, "enabled" | "mode">>,
+  patch: Partial<Pick<GateState, "enabled">>,
 ) {
   if (snapshot.busy) return false;
   commit({ busy: true });
@@ -253,7 +251,7 @@ export function useAutoApprovalGate(token: string | null) {
   }, [token]);
 
   const save = useCallback(
-    async (patch: Partial<Pick<GateState, "enabled" | "mode">>) => {
+    async (patch: Partial<Pick<GateState, "enabled">>) => {
       if (!token) return false;
       return saveGate(token, patch);
     },

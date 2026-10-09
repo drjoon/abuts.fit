@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js (autoMachiningReview)
 // - web/backend/controllers/requests/common.review.controller.js (updateReviewStatusByStage)
 // change-log:
+// - 2026-10-09: 섀도 모드 제거. 스위치가 켜지면 통과 건을 바로 승인한다(장비별 자동 가공 OFF는 그 장비만 제외).
 // - 2026-10-09: 테스트 계정·준비 단계 문제 건은 준비에 남긴다(가공으로 안 보냄). 판정 대상은 이번 달 준비만.
 // - 2026-10-09: 테스트치과·테스트기공소 의뢰는 품질과 무관하게 가공하지 않고 hold.
 // - 2026-10-09: 신설. 준비 단계 의뢰를 규칙으로 판정해 이상 없는 건만 가공으로 자동 승인한다.
@@ -36,7 +37,6 @@ export const AUTO_GATE_DEFAULTS = Object.freeze({
   enabled: false,
   maxDiameterMm: 10,
   minFinishLineZ: 0.6,
-  mode: "shadow",
 });
 
 /**
@@ -74,7 +74,6 @@ export async function getAutoGateConfig() {
   const g = doc?.autoMachiningGate || {};
   return {
     enabled: g.enabled === true,
-    mode: g.mode === "live" ? "live" : "shadow",
     maxDiameterMm: num(g.maxDiameterMm) ?? AUTO_GATE_DEFAULTS.maxDiameterMm,
     minFinishLineZ: num(g.minFinishLineZ) ?? AUTO_GATE_DEFAULTS.minFinishLineZ,
   };
@@ -152,7 +151,7 @@ function isEligibleForGate(request) {
   return true;
 }
 
-function needsEvaluation(request, mode) {
+function needsEvaluation(request) {
   const review = request.autoMachiningReview;
   if (
     isTestAccountMachiningRequestSync(request) &&
@@ -160,10 +159,17 @@ function needsEvaluation(request, mode) {
   ) {
     return true;
   }
+  // 테스트 계정이 아니게 된 건(예: 테스트치과)에 남은 test_account 보류는 다시 판정한다.
+  if (
+    !isTestAccountMachiningRequestSync(request) &&
+    (review?.reasons || []).includes("test_account")
+  ) {
+    return true;
+  }
   if (!review?.verdict) return true;
   if (review.verdict === "approved") return false;
-  // 섀도에서 통과로 기록된 건은 live 전환 후 승인 대상이 된다.
-  if (review.verdict === "would_approve") return mode === "live";
+  // 섀도 모드는 제거됐다. 예전에 통과로만 기록된 건은 다시 판정해 승인한다.
+  if (review.verdict === "would_approve") return true;
   if (review.verdict === "error") return (review.attempts || 0) < MAX_ATTEMPTS;
   // hold: 입력이 바뀐 경우에만 재판정
   const at = review.evaluatedAt ? new Date(review.evaluatedAt).getTime() : 0;
@@ -284,7 +290,7 @@ export async function runAutoMachiningGatePass({ limit = 10 } = {}) {
         verdict: "hold",
         reasons,
         metrics: request.autoMachiningReview?.metrics || {},
-        mode: cfg.mode,
+        mode: "live",
         evaluatedAt: new Date(),
         attempts: 0,
       });
@@ -298,7 +304,7 @@ export async function runAutoMachiningGatePass({ limit = 10 } = {}) {
     annotateRequestorBusiness(request, nameById);
     if (!isEligibleForGate(request)) continue;
     const testAccount = isTestAccountMachiningRequestSync(request);
-    if (!needsEvaluation(request, cfg.mode)) continue;
+    if (!needsEvaluation(request)) continue;
     if (!testAccount && approvedThisPass >= limit) continue;
 
     const now = new Date();
@@ -311,23 +317,11 @@ export async function runAutoMachiningGatePass({ limit = 10 } = {}) {
         verdict: "hold",
         reasons: result.reasons,
         metrics: result.metrics,
-        mode: cfg.mode,
+        mode: "live",
         evaluatedAt: now,
         attempts: 0,
       });
       out.held += 1;
-      continue;
-    }
-
-    if (cfg.mode !== "live") {
-      await recordReview(request._id, {
-        verdict: "would_approve",
-        reasons: [],
-        metrics: result.metrics,
-        mode: "shadow",
-        evaluatedAt: now,
-        attempts: 0,
-      });
       continue;
     }
 

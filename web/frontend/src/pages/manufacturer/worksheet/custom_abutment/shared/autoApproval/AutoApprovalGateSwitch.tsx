@@ -13,14 +13,15 @@ import { useAutoApprovalGate } from "./useAutoApprovalGate";
 
 /**
  * 자동 승인 = 준비→가공 승인 게이트 + 장비별 자동 가공.
- * 섀도는 판정만 기록하고, 라이브는 이상 없는 건을 자동으로 가공에 넘긴다.
+ * 켜면 이상 없는 건을 자동으로 가공에 넘긴다(섀도 모드 없음).
+ * 장비 카드에서 장비별 자동 가공을 끄면 그 장비만 자동 가공에서 빠진다.
  */
 export function AutoApprovalGateSwitch() {
   const { token } = useAuthStore();
   const { state: gate, busy, save, setMachinesAuto, machinesAutoEnabled } =
     useAutoApprovalGate(token);
   const { toast } = useToast();
-  const [confirm, setConfirm] = useState<null | { kind: "on" | "live" }>(null);
+  const [confirm, setConfirm] = useState(false);
 
   if (!gate) return null;
 
@@ -58,14 +59,7 @@ export function AutoApprovalGateSwitch() {
       void turnOff();
       return;
     }
-    if (gate.mode === "live") setConfirm({ kind: "on" });
-    else void turnOn();
-  };
-
-  const onMode = (mode: "shadow" | "live") => {
-    if (mode === gate.mode) return;
-    if (mode === "live") setConfirm({ kind: "live" });
-    else void save({ mode });
+    setConfirm(true);
   };
 
   return (
@@ -81,37 +75,16 @@ export function AutoApprovalGateSwitch() {
           onCheckedChange={onToggle}
           aria-label="자동 승인"
         />
-        <div className="inline-flex overflow-hidden rounded-md border border-slate-200">
-          {(["shadow", "live"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              disabled={busy}
-              onClick={() => onMode(m)}
-              className={`px-2 py-0.5 text-[11px] font-semibold ${
-                gate.mode === m
-                  ? m === "live"
-                    ? "bg-emerald-600 text-white"
-                    : "bg-slate-700 text-white"
-                  : "bg-white text-slate-500 hover:bg-slate-50"
-              }`}
-            >
-              {m === "live" ? "라이브" : "섀도"}
-            </button>
-          ))}
-        </div>
         {gate.enabled ? (
           <span className="text-slate-500">
-            {gate.mode === "live"
-              ? `보류 ${gate.holdCount}`
-              : `통과 ${gate.wouldApproveCount} · 보류 ${gate.holdCount}`}
+            보류 {gate.holdCount}
           </span>
         ) : null}
       </div>
 
       <ConfirmDialog
-        open={confirm !== null}
-        title="라이브 자동 승인"
+        open={confirm}
+        title="자동 승인"
         description={
           <>
             이상 없는 의뢰가 자동으로 가공에 들어갑니다.
@@ -121,16 +94,14 @@ export function AutoApprovalGateSwitch() {
             CAM·가공 후 문제는 장비 카드 보류에서 확인합니다.
           </>
         }
-        confirmLabel={confirm?.kind === "on" ? "켜기" : "라이브로 전환"}
+        confirmLabel="켜기"
         cancelLabel="취소"
         confirmTone="primary"
         busy={busy}
-        onCancel={() => setConfirm(null)}
+        onCancel={() => setConfirm(false)}
         onConfirm={async () => {
-          const kind = confirm?.kind;
-          setConfirm(null);
-          if (kind === "on") await turnOn();
-          else if (kind === "live") await save({ mode: "live" });
+          setConfirm(false);
+          await turnOn();
         }}
       />
     </>

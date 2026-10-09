@@ -260,9 +260,6 @@ export async function updateSystemSettings(req, res) {
       if (typeof gateIn.enabled === "boolean") {
         $set["autoMachiningGate.enabled"] = gateIn.enabled;
       }
-      if (gateIn.mode === "shadow" || gateIn.mode === "live") {
-        $set["autoMachiningGate.mode"] = gateIn.mode;
-      }
       for (const key of ["maxDiameterMm", "minFinishLineZ"]) {
         const n = Number(gateIn[key]);
         if (gateIn[key] != null && Number.isFinite(n) && n > 0) {

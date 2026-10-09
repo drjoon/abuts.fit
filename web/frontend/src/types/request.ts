@@ -299,6 +299,10 @@ export interface RequestBase {
       updatedAt?: string | Date;
       error?: string;
     };
+    stlJsFallback?: {
+      reason?: string;
+      at?: string | Date;
+    };
   };
 
   shippingPriority?: {
