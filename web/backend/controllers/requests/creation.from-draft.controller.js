@@ -57,6 +57,7 @@ import {
   toKstYmd,
   getRequestorOrgId,
   normalizeRequestStage,
+  isRequestCancelableAtPrepStage,
   REQUEST_STAGE_ORDER,
 } from "./utils.js";
 import {
@@ -1426,7 +1427,11 @@ export async function createRequestsFromDraft(req, res) {
 
             const normalizedStage = normalizeRequestStage(existingDoc);
             const currentStageOrder = REQUEST_STAGE_ORDER[normalizedStage] ?? 0;
-            if (currentStageOrder > 0) {
+            if (
+              currentStageOrder > 0 ||
+              (normalizedStage !== "cancel" &&
+                !isRequestCancelableAtPrepStage(existingDoc))
+            ) {
               const err = new Error(
                 "준비 단계가 아닌 기존 의뢰는 취소할 수 없습니다. 기존 의뢰를 유지하고 재의뢰로 진행해주세요.",
               );

@@ -449,6 +449,42 @@ export function normalizeRequestStage(requestLike) {
   return "request";
 }
 
+const CANCELABLE_PREP_STAGE_VALUES = new Set(["", "준비", "의뢰", "request"]);
+const POST_PREP_REVIEW_KEYS = ["machining", "packing", "shipping", "tracking"];
+
+/**
+ * 의뢰자/관리자 취소(준비 단계 한정) 가능 여부. fail-closed.
+ * - manufacturerStage가 준비(빈값·레거시 의뢰/request 포함)가 아니면 불가.
+ *   (normalizeRequestStage는 알 수 없는 값을 request로 접어 취소를 열어주므로 쓰지 않는다)
+ * - 단계가 준비여도 가공 이후 흔적이 있으면 불가:
+ *   가공/포장/발송/추적 검수 상태가 PENDING이 아님, 실제 CAM·가공 시작/완료 기록, 가공기록 연결.
+ * - 불완전가공 판정(rnd.unmachinableAt)은 의뢰자 판단으로 취소 허용(기존 정책).
+ */
+export function isRequestCancelableAtPrepStage(requestLike) {
+  if (requestLike?.rnd?.unmachinableAt) return true;
+
+  const stage = String(requestLike?.manufacturerStage || "").trim();
+  if (!CANCELABLE_PREP_STAGE_VALUES.has(stage)) return false;
+
+  const review = requestLike?.caseInfos?.reviewByStage || {};
+  for (const key of POST_PREP_REVIEW_KEYS) {
+    const status = String(review?.[key]?.status || "").trim().toUpperCase();
+    if (status && status !== "PENDING") return false;
+  }
+
+  const sched = requestLike?.productionSchedule || {};
+  if (
+    sched.actualCamStart ||
+    sched.actualMachiningStart ||
+    sched.actualMachiningComplete ||
+    sched.machiningRecord
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 export function normalizeRequestStageLabel(requestLike) {
   const s = normalizeRequestStage(requestLike);
   if (s === "request") return "준비";

@@ -74,6 +74,7 @@ import {
   normalizeRequestForResponse,
   normalizeWorksheetRequestForResponse,
   normalizeRequestStage,
+  isRequestCancelableAtPrepStage,
   ensureLotNumberForMachining,
   persistReadyLotNumbersIfMissing,
   ensureFinishedLotNumberForPacking,
@@ -4212,7 +4213,8 @@ export async function updateRequestStatus(req, res) {
       // 취소 허용 판정은 정규화 결과 `request`(=준비)만 본다.
       const isPrepStage = normalizeRequestStage(request) === "request";
       const isUnmachinable = Boolean(request?.rnd?.unmachinableAt);
-      const isStageAllowed = isPrepStage || isUnmachinable;
+      // fail-closed: 준비가 아닌 단계·가공 이후 흔적(검수/가공 기록)이 있으면 취소 불가.
+      const isStageAllowed = isRequestCancelableAtPrepStage(request);
 
       console.log("[updateManufacturerStage] Cancel validation", {
         requestId: request.requestId,
@@ -4371,9 +4373,7 @@ export async function updateRequestStatus(req, res) {
 const BATCH_CANCEL_MAX = 50;
 
 function isCancelableManufacturerStage(request) {
-  const isPrepStage = normalizeRequestStage(request) === "request";
-  const isUnmachinable = Boolean(request?.rnd?.unmachinableAt);
-  return isPrepStage || isUnmachinable;
+  return isRequestCancelableAtPrepStage(request);
 }
 
 export async function updateRequestStatusBatch(req, res) {
@@ -4712,10 +4712,10 @@ export async function deleteRequest(req, res) {
     }
 
     const normalizedStageKey = normalizeRequestStage(request);
-    const isRequestorDeletable = normalizedStageKey === "request";
-    const isAdminDeletable = ["request", "cam", "machining"].includes(
-      normalizedStageKey,
-    );
+    const isRequestorDeletable = isRequestCancelableAtPrepStage(request);
+    const isAdminDeletable =
+      isRequestorDeletable ||
+      ["cam", "machining"].includes(normalizedStageKey);
 
     if ((isAdmin && !isAdminDeletable) || (!isAdmin && !isRequestorDeletable)) {
       return res.status(400).json({
