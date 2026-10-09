@@ -43,10 +43,6 @@ import {
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
 import { resolveQuotedPriceWithExtras } from "./designPrice.utils.js";
 import {
-  buildAbutsRemakeFixedPrice,
-  remakePolicyCutoffDate,
-} from "../../utils/remakePricingPolicy.js";
-import {
   loadCreditSettingsDefaults,
   resolveCustomAbutmentRequestUnitPrice,
 } from "../../utils/creditSettingsDefaults.js";
@@ -1252,50 +1248,27 @@ export async function computePriceForRequest({
   void signupFreeReserveOffset;
   const now = new Date();
 
-  const scopeFilter =
-    requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))
-      ? { businessAnchorId: new Types.ObjectId(String(requestorOrgId)) }
-      : { requestor: requestorId };
-
-  const selfExclusionFilter =
-    currentRequestId && Types.ObjectId.isValid(String(currentRequestId))
-      ? { _id: { $ne: new Types.ObjectId(String(currentRequestId)) } }
-      : {};
-
-  // 리메이크 판정(REMAKE_POLICY_WINDOW_DAYS): 동일 치과·환자·치식 → 어벗츠로 건당 1만원.
-  const remakeCutoff = remakePolicyCutoffDate(now);
-
-  const [creditSettings, existing] = await Promise.all([
-    creditSettingsOverride
-      ? Promise.resolve(creditSettingsOverride)
-      : loadCreditSettingsDefaults({ requestorOrgId }),
-    skipExistingLookup || forceNewOrderPricing || forceRemakePricing
-      ? Promise.resolve(null)
-      : Request.findOne({
-          ...scopeFilter,
-          ...selfExclusionFilter,
-          "caseInfos.patientName": patientName,
-          "caseInfos.tooth": tooth,
-          "caseInfos.clinicName": clinicName,
-          manufacturerStage: { $ne: "취소" },
-          createdAt: { $gte: remakeCutoff },
-        })
-          .select({ _id: 1 })
-          .lean(),
-  ]);
+  // 리메이크 여부와 무관하게 단가는 동일 — 동일 건 조회는 하지 않는다.
+  void requestorId;
+  void clinicName;
+  void patientName;
+  void tooth;
+  void currentRequestId;
+  void skipExistingLookup;
+  const creditSettings = creditSettingsOverride
+    ? creditSettingsOverride
+    : await loadCreditSettingsDefaults({ requestorOrgId });
   void pricingBaseDateOverride;
 
   // special.amount / productionPrice = CNC 생산만. 디자인+생산은 designFee로 가산.
   // SSOT: 관리자 플랫폼 설정 단가(+신속 expressFee).
   const BASE_UNIT_PRICE = resolveCustomAbutmentRequestUnitPrice(creditSettings);
 
-  // 어벗츠로 리메이크: 건당 고정 10,000원. 배송비는 판매자 부담. 어벗츠로부터(PTX)=LAB_FEE_REMAKE_FREE.
-  if ((forceRemakePricing || existing) && !forceNewOrderPricing) {
-    return buildAbutsRemakeFixedPrice({
-      baseAmount: BASE_UNIT_PRICE,
-      quotedAt: now,
-    });
-  }
+  // 리메이크도 고정 1만원이 아니라 의뢰자 거래처가(딜러 설정가) 또는 기본가를 그대로 적용한다.
+  // BASE_UNIT_PRICE 는 loadCreditSettingsDefaults({ requestorOrgId }) 가 거래처가를 반영한 값이다.
+  // 배송비는 판매자 부담. 어벗츠로부터(PTX)=LAB_FEE_REMAKE_FREE.
+  void forceRemakePricing;
+  void forceNewOrderPricing;
 
   return {
     baseAmount: BASE_UNIT_PRICE,

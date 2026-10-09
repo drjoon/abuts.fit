@@ -113,6 +113,8 @@ import { retainMailboxOnShippingEnter } from "./mailbox.utils.js";
 import { applyPracticeShippingReceiverSnapshotToRequest } from "../../utils/shippingReceiver.utils.js";
 import { observeTimestampMap } from "../../utils/boundedTtlMap.js";
 
+import { REQUESTOR_SHIPPING_FEE_PER_BOX } from "../../utils/requestorUnitPricePolicy.js";
+
 const SHIPPING_FEE_SUPPLY_FALLBACK = 3500;
 
 async function resolveShippingFeePerBox() {
@@ -2128,6 +2130,11 @@ export async function commitShippingFeeForPackage({
         shippingPackageId: String(pkg._id),
       };
     }
+  }
+
+  // 배송비는 판매자 부담 — 레거시 hold가 없으면 거래처 크레딧을 차감하지 않는다.
+  if (!(REQUESTOR_SHIPPING_FEE_PER_BOX > 0)) {
+    return { skipped: true, reason: "seller_pays_shipping" };
   }
 
   const onlySignupFreeTest =

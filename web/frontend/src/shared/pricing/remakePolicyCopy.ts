@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/public/HelpPage.tsx
 // - web/backend/utils/remakePricingPolicy.js
 // change-log:
+// - 2026-10-09: 어벗츠로 리메이크 고정 1만원 폐지 — 거래처가(딜러 설정가) 또는 기본가 적용.
 // - 2026-10-09: 치과 안내 모달 — 기공소에 무료 행 추가(어벗츠로부터 라벨은 기공소에).
 // - 2026-10-09: 치과 본인 정책은 어벗츠에 건당 1만원 한 줄만 쓰던 표시를 되돌림.
 // - 2026-10-09: 리메이크 안내의 「배송비는 별도」→「배송비 판매자 부담」.
@@ -37,7 +38,7 @@ export function remakePolicyRows(
       },
       {
         pathLabel: "어벗츠에 (기공소만 플랫폼 이용)",
-        priceLabel: "건당 1만원",
+        priceLabel: "일반 의뢰비와 동일",
       },
     ];
   }
@@ -49,7 +50,7 @@ export function remakePolicyRows(
       },
       {
         pathLabel: "어벗츠로 · 어벗츠에 (기공소만 플랫폼 이용)",
-        priceLabel: "건당 1만원",
+        priceLabel: "일반 의뢰비와 동일",
       },
     ];
   }
@@ -60,7 +61,7 @@ export function remakePolicyRows(
     },
     {
       pathLabel: "어벗츠로 (기공소만 플랫폼 이용)",
-      priceLabel: "건당 1만원",
+      priceLabel: "일반 의뢰비와 동일",
     },
   ];
 }
@@ -77,18 +78,18 @@ export function remakePolicySummaryLine(
   audience: RemakePolicyAudience = "lab",
 ): string {
   if (audience === "practice") {
-    return "리메이크는 기공소에 무료, 어벗츠에 건당 1만원입니다.";
+    return "리메이크는 기공소에 무료, 어벗츠에 일반 의뢰비와 동일합니다.";
   }
   if (audience === "public") {
-    return "리메이크는 어벗츠로부터(기공소에) 무료, 어벗츠로(어벗츠에) 건당 1만원입니다.";
+    return "리메이크는 어벗츠로부터(기공소에) 무료, 어벗츠로(어벗츠에) 일반 의뢰비와 동일합니다.";
   }
-  return "리메이크는 어벗츠로부터 무료, 어벗츠로 건당 1만원입니다.";
+  return "리메이크는 어벗츠로부터 무료, 어벗츠로 일반 의뢰비와 동일합니다.";
 }
 
 /** 이용약관 제6조 본문(문장 배열 — 호출측에서 br). */
 export const REMAKE_TERMS_ARTICLE_LINES = [
   "리메이크는 어벗츠로부터(치과·기공소 모두 플랫폼 이용·기공소에)는 무료이며,",
-  "어벗츠로(기공소만 플랫폼 이용·어벗츠에)는 건당 10,000원입니다.",
+  "어벗츠로(기공소만 플랫폼 이용·어벗츠에)는 일반 의뢰비와 동일합니다.",
   "배송비 판매자 부담.",
   "상세는 서비스 화면의 가격·출고 정책 안내를 따릅니다.",
 ] as const;

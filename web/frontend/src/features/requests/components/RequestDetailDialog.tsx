@@ -554,7 +554,7 @@ export const RequestDetailDialog = ({
                       <div className="flex items-center gap-1.5">
                         {isRemakeFixed && (
                           <Badge variant="secondary" className="text-[11px]">
-                            리메이크 1만원
+                            리메이크
                           </Badge>
                         )}
                         {isRemakeMonthlyFree && (

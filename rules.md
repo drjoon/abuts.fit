@@ -256,6 +256,7 @@
 - **의뢰비·딜러·배송 SSOT (2026-10-08, 이전 기술과 충돌하면 이 항목이 우선)**:
   - 건당 의뢰비는 치과·기공소 모두 **15,000원 단일가**. 딜러·영업팀이 거래처(`BusinessAnchor.dealerUnitPrice`, `select:false`)별로 **12,000~15,000원**을 정할 수 있고 거래처 본인에게만 보인다(외부 비공개). 서버·FE 모두 12,000 미만/15,000 초과 거절(`validateDealerUnitPrice`). 그룹할인·가입 90일 1만원·주문량 할인·런칭 이벤트 단가는 폐지. 영업팀(`salesTeam`)이 입력한 가격은 `dealerPriceApproval.status=pending`이 되어 본사(admin) 승인(`POST /api/admin/price-approvals/:anchorId`) 전까지 의뢰가 막힌다(`checkCreditLock`). 승인 시 `dealerUnitPrice` 반영. devops는 소개 거래처 등록 없이 고정 분배(1,000원/어벗).
   - 분배(어벗 1개당, 부가세 포함): 제조사 **5,500** · 개발운영 **1,000** · 어벗츠 **3,500** · 나머지 **딜러(판매가 − 10,000)**. 딜러 없음(직판·영업팀 소개)이면 딜러 몫은 어벗츠. 어벗츠가 거래처에 직접 공급(면세)하고 딜러에게는 수수료를 부가세 포함으로 지급. 구현 `resolveRevenueOwnerBaseAllocation` (`creditRevenuePolicy.service.js`).
+  - **구현(2026-10-09)**: 거래처 배송비 `REQUESTOR_SHIPPING_FEE_PER_BOX=0`(`requestorUnitPricePolicy.js`). 의뢰 사전 잔액검사·`SHIPPING_SPEND_HOLD`(`shouldSkipShippingHold`)·포장.발송 `SHIPPING_SPEND_COMMIT`(레거시 hold 없으면 skip) 모두 거래처 크레딧을 건드리지 않는다. 어벗츠로 리메이크도 고정 1만원이 아니라 거래처 개별가(`dealerUnitPrice`) 또는 기본 15,000원(`computePriceForRequest`).
   - 배송은 **딜리버리 익일 도착만**. 택배 묶음 출고·월 가입 폐지, 거래처 배송비 없음. 딜리버리 월정액 55,000원(VAT 포함)은 **거래처 1곳당** 딜러 부담(딜러 정산 `REV_SALESMAN` 차감), 딜러가 없으면 어벗츠 부담(`REV_ADMIN`). 직전 달 의뢰가 **3건 이상**인 거래처마다 월 1회 `DELIVERY_MONTHLY_COST` 저널(`deliveryMonthlyCost.service.js`, 멱등키 거래처+월). 월 의뢰 2건 이하(`DELIVERY_FREE_MAX_MONTHLY_REQUESTS`)는 배송업체가 무료라 저널을 남기지 않는다.
 - 롤백 원칙:
   - **제조사 의뢰비·배송비**(`REQUEST_SPEND_`* / `SHIPPING_SPEND_*`): 롤백·준비 취소 시 원본 저널/라인 **물리 삭제**(REFUND 추가 금지)

@@ -43,6 +43,7 @@ import { emitAppEventToRoles } from "../../socket.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
+import { REQUESTOR_SHIPPING_FEE_PER_BOX } from "../../utils/requestorUnitPricePolicy.js";
 import { isWorksheetReadyQueueRequest } from "../../services/worksheetReadyQueue.guard.js";
 
 /**
@@ -739,7 +740,8 @@ export async function createRequestsBulk(req, res) {
       expressCount * expressFeePerRequest;
 
     // 3. 배송비 계산: 배송 날짜별로 그룹화
-    const shippingFeePerBox = 3500;
+    // 배송비는 판매자 부담 — 거래처 박스당 0원.
+    const shippingFeePerBox = REQUESTOR_SHIPPING_FEE_PER_BOX;
 
     // 배송 날짜별로 그룹화 (간단 버전: estimatedShipYmd 기준)
     const shipDateGroups = new Map();

@@ -944,7 +944,7 @@ export const RequestorRecentRequestsCard = ({
                     )}
                     {isRemakeFixed && (
                       <Badge variant="secondary" className="text-[10px]">
-                        리메이크 1만원
+                        리메이크
                       </Badge>
                     )}
                     {isRemakeMonthlyFree && (

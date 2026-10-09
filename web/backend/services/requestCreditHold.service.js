@@ -23,6 +23,7 @@
 // - 2026-08-19: 신규 제출 보류는 선행 저널 조회 생략 + insertMany 1회로 기록.
 import mongoose, { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
+import { REQUESTOR_SHIPPING_FEE_PER_BOX } from "../utils/requestorUnitPricePolicy.js";
 import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import LedgerJournal from "../models/ledgerJournal.model.js";
 import Request from "../models/request.model.js";
@@ -160,6 +161,8 @@ export function shouldSkipMachiningHold(request) {
  * FM덴탈 월정액 배송 활성 BA는 박스 배송비 스킵.
  */
 export function shouldSkipShippingHold(request, { fmDentalShippingActive } = {}) {
+  // 배송비는 판매자 부담 — 거래처 크레딧에 배송비 hold를 잡지 않는다.
+  if (!(REQUESTOR_SHIPPING_FEE_PER_BOX > 0)) return true;
   if (isManufacturerSampleRequest(request)) return true;
   if (isSignupFreeTestRequest(request)) return true;
   if (fmDentalShippingActive === true) return true;

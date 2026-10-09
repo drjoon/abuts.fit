@@ -671,47 +671,10 @@ export const RequestorDashboardPage = () => {
     systemSettings,
   ]);
 
-  // 배송비 충전 경고
-  // 묶음 배송 건수를 기준으로 필요한 배송비 계산
+  // 배송비는 판매자 부담 — 거래처 배송비 충전 경고는 없다.
   useEffect(() => {
-    if (
-      bulkResponse?.success &&
-      paidCredit !== null &&
-      freeRequestCredit !== null &&
-      freeShippingCredit !== null &&
-      systemSettings?.creditSettings
-    ) {
-      const shippingFeePerBox =
-        systemSettings.creditSettings.shippingFee || 3500;
-
-      // 묶음 배송 후보 건수 (실제 배송될 박스 수)
-      const bulkShippingCandidates = bulkResponse.data?.candidates || [];
-      const totalShippingBoxes = bulkShippingCandidates.length;
-
-      const availableForShipping =
-        paidCredit +
-        freeRequestCredit +
-        freeShippingCredit +
-        Number(settlementCredit || 0);
-      const requiredShippingFee = totalShippingBoxes * shippingFeePerBox;
-
-      if (
-        totalShippingBoxes > 0 &&
-        availableForShipping < requiredShippingFee
-      ) {
-        setInsufficientShippingCredit(true);
-      } else {
-        setInsufficientShippingCredit(false);
-      }
-    }
-  }, [
-    bulkResponse,
-    freeRequestCredit,
-    freeShippingCredit,
-    paidCredit,
-    settlementCredit,
-    systemSettings,
-  ]);
+    setInsufficientShippingCredit(false);
+  }, [bulkResponse]);
 
   type DashboardRefreshPlan = {
     cardsSummary?: boolean;

@@ -313,7 +313,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "lab_remake",
     title: "리메이크 수신",
-    hint: "리메이크 의뢰는 뱃지로 표시됩니다.\n어벗츠로부터 리메이크비는 무료, 어벗츠로는 건당 1만원입니다.\n플랫폼 가입 전 건은 별도 안내를 확인한 뒤 작업시작하세요.",
+    hint: "리메이크 의뢰는 뱃지로 표시됩니다.\n어벗츠로부터 리메이크비는 무료, 어벗츠로는 일반 의뢰비와 동일합니다.\n플랫폼 가입 전 건은 별도 안내를 확인한 뒤 작업시작하세요.",
     path: LAB_RECEIVE_PATH,
     target: "lab_remake",
     advance: "next",

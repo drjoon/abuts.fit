@@ -66,6 +66,7 @@ import {
 } from "./production.utils.js";
 import { getManufacturerLeadTimesUtil } from "../businesses/leadTime.controller.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
+import { REQUESTOR_SHIPPING_FEE_PER_BOX } from "../../utils/requestorUnitPricePolicy.js";
 import { remakePolicyCutoffDate } from "../../utils/remakePricingPolicy.js";
 import { prefetchKoreanHolidaysForYears } from "../../utils/krBusinessDays.js";
 import {
@@ -1115,7 +1116,8 @@ export async function createRequestsFromDraft(req, res) {
     const requestedAtForPrefetch = new Date();
     const createdYmd = toKstYmd(requestedAtForPrefetch) || getTodayYmdInKst();
     const shippingOrgId = String(businessAnchorId || shippingOrgIdEarly || "");
-    const shippingFeePerBox = 3500;
+    // 배송비는 판매자 부담 — 거래처 박스당 0원.
+    const shippingFeePerBox = REQUESTOR_SHIPPING_FEE_PER_BOX;
     const expressFeePerRequest = 0;
     const designFeePerTooth = Math.max(
       0,

@@ -5,6 +5,7 @@
 // - web/backend/controllers/salesman/salesman.controller.js
 // - web/backend/rules.md
 // change-log:
+// - 2026-10-09: 배송비 판매자 부담 — 거래처 박스당 배송비 REQUESTOR_SHIPPING_FEE_PER_BOX=0.
 // - 2026-10-08: 단일가 1.5만 + 딜러/영업팀 거래처별 가격(1.2~1.5만, 비공개). 그룹할인·90일 이벤트·주문량 할인 폐지.
 
 /**
@@ -24,6 +25,11 @@ export const REQUESTOR_UNIT_PRICE_MANUFACTURER_COST = 5_500;
 export const REQUESTOR_UNIT_PRICE_DEALER_SUPPLY = 10_000;
 /** 딜리버리 월정액(원, 부가세 포함). 딜러 부담, 직판은 어벗츠 부담. */
 export const DELIVERY_MONTHLY_FEE = 55_000;
+/**
+ * 거래처(치과·기공소)에게 받는 박스당 배송비(원). 배송비는 판매자(딜러, 없으면 어벗츠) 부담이라 0.
+ * 의뢰 사전 잔액 검사·배송비 hold·포장.발송 commit 모두 이 값이 0이면 거래처 크레딧을 건드리지 않는다.
+ */
+export const REQUESTOR_SHIPPING_FEE_PER_BOX = 0;
 /** 월 의뢰가 이 건수 이하인 거래처는 배송업체가 무료로 처리한다(월정액 원가 0). */
 export const DELIVERY_FREE_MAX_MONTHLY_REQUESTS = 2;
 
