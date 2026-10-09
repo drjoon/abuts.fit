@@ -703,6 +703,31 @@ export const useNewRequestSubmitV2 = ({
           return;
         }
 
+        // 이미 제출·삭제된 Draft ID를 붙잡은 경우 — 캐시 비우고 새로고침 유도
+        if (res.status === 404 && String(errData?.message || "").includes("Draft")) {
+          try {
+            if (typeof window !== "undefined") {
+              window.localStorage.removeItem(NEW_REQUEST_DRAFT_ID_STORAGE_KEY);
+              const prefix = "abutsfit:new-request-draft-meta:v1:";
+              for (let i = window.localStorage.length - 1; i >= 0; i -= 1) {
+                const key = window.localStorage.key(i);
+                if (key && key.startsWith(prefix)) {
+                  window.localStorage.removeItem(key);
+                }
+              }
+            }
+          } catch {
+            // noop
+          }
+          dismiss();
+          toast({
+            title: "임시 의뢰가 만료되었습니다",
+            description: "페이지를 새로고침한 뒤 파일을 다시 추가해 의뢰해주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+
         // 타 계정 Draft ID를 붙잡은 경우 — 캐시 비우고 새로고침 유도
         if (
           res.status === 403 &&
