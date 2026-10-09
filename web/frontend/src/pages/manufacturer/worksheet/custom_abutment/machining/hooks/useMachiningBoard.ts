@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-10-09: 장비 자동가공 플래그를 준비·가공 공통 스위치와 맞춘다.
 // - 2026-10-06: 더미를 Next Up에 넣은 뒤 Complete 슬롯도 다시 불러온다.
 // - 2026-10-02: 시작 소켓을 놓쳐도 RUNNING tick·큐 재조회로 Now Playing을 맞춘다. 이전 건 완료가 다음 건 힌트를 지우지 않음.
 // - 2026-10-02: refreshProductionQueues를 보드에서 호출할 수 있게 반환.
@@ -37,6 +38,12 @@ import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { apiFetch } from "@/shared/api/apiClient";
 import { getMockCncMachiningEnabled } from "@/shared/bridge/bridgeSettings";
 import { useCncMachines } from "@/features/manufacturer/cnc/hooks/useCncMachines";
+import {
+  getMachineAutoFlags,
+  publishMachineAutoFlags,
+  registerMachineBusyCheck,
+  subscribeMachineAutoFlags,
+} from "./useAutoApprovalGate";
 import { useCncProgramEditor } from "@/features/manufacturer/cnc/hooks/useCncProgramEditor";
 import { useCncRaw } from "@/features/manufacturer/cnc/hooks/useCncRaw";
 import { useMachineStatusStore } from "@/store/useMachineStatusStore";
@@ -298,6 +305,35 @@ export const useMachiningBoard = ({
 
   const [queueMap, setQueueMap] = useState<QueueMap>({});
   const queueMapRef = useRef<QueueMap>({});
+
+  useEffect(() => {
+    publishMachineAutoFlags(machines);
+  }, [machines]);
+
+  useEffect(() => {
+    return subscribeMachineAutoFlags(() => {
+      const flags = getMachineAutoFlags();
+      setMachines((prev) => {
+        let changed = false;
+        const next = prev.map((m) => {
+          const hit = flags.find((f) => f.uid === m.uid);
+          if (!hit) return m;
+          const enabled = hit.allowAutoMachining === true;
+          if ((m.allowAutoMachining === true) === enabled) return m;
+          changed = true;
+          return { ...m, allowAutoMachining: enabled };
+        });
+        return changed ? next : prev;
+      });
+    });
+  }, [setMachines]);
+
+  useEffect(() => {
+    return registerMachineBusyCheck((uid) => {
+      const queue = queueMapRef.current?.[uid];
+      return Array.isArray(queue) && queue.some((item) => isQueueItemRunning(item));
+    });
+  }, []);
   useEffect(() => {
     queueMapRef.current = queueMap;
   }, [queueMap]);

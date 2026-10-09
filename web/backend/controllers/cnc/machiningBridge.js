@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 // change-log:
+// - 2026-10-09: 테스트 계정은 작업자 수동 가공 승인 전 auto-next에서 건너뛴다.
 // - 2026-10-02: 가공 시작·RUNNING tick은 이전 가공기록 포인터가 있어도 현재 RUNNING 기록으로 다시 연결한다.
 // - 2026-10-06: last-completed — dummy_sample 가공 잔여 완료는 Complete/힐에서 뺀다.
 // - 2026-09-16: last-completed — CNC 완료+stage 가공 stuck은 세척.패킹 힐 후 Complete 유지(재가공 스킵과 구분).
@@ -38,6 +39,10 @@ import {
   isRequestUnmachinableJudged,
 } from "../../services/healStuckCompletedMachining.service.js";
 import Machine from "../../models/machine.model.js";
+import {
+  isTestAccountAutoMachiningHeld,
+  loadRequestorBusinessNames,
+} from "../../utils/testAccountMachining.js";
 import {
   BRIDGE_BASE,
   withBridgeHeaders,
@@ -1297,6 +1302,13 @@ export async function triggerNextAutoMachiningAfterComplete({
       .lean()
       .catch(() => null);
 
+    let nameById = new Map();
+    const anchorIdOf = (request) => {
+      const raw = request?.businessAnchorId;
+      if (raw && typeof raw === "object") return String(raw._id || "").trim();
+      return String(raw || "").trim();
+    };
+
     const fetchPendingForAutoNext = async (limit) => {
       const rows = await Request.find({
         // 자동 가공 트리거 대상은 "가공" 단계만 허용한다.
@@ -1359,6 +1371,11 @@ export async function triggerNextAutoMachiningAfterComplete({
             skippedAutoBlocked += 1;
             continue;
           }
+          // 테스트 계정은 작업자가 준비→가공을 직접 승인하기 전에는 자동 가공하지 않는다.
+          if (isTestAccountAutoMachiningHeld(r, nameById.get(anchorIdOf(r)) || "")) {
+            skippedAutoBlocked += 1;
+            continue;
+          }
         }
 
         const isAnodizingOff = r?.caseInfos?.anodizingEnabled === false;
@@ -1398,7 +1415,7 @@ export async function triggerNextAutoMachiningAfterComplete({
 
       if (skippedAutoBlocked > 0) {
         console.log(
-          `[bridge:auto-next] skipped ${skippedAutoBlocked} blocked request(s) machine=${mid} (too-large/nc-limit)`,
+          `[bridge:auto-next] skipped ${skippedAutoBlocked} blocked request(s) machine=${mid} (too-large/nc-limit/test-account)`,
         );
       }
       return { pick, firstDiameterMismatched, skippedNoNcMeta, skippedAlreadyRunning };
@@ -1407,6 +1424,7 @@ export async function triggerNextAutoMachiningAfterComplete({
     const pendingPrimary = await fetchPendingForAutoNext(
       AUTO_NEXT_PRIMARY_PENDING_LIMIT,
     );
+    nameById = await loadRequestorBusinessNames(pendingPrimary);
     let pending = pendingPrimary;
     let {
       pick,
@@ -1419,6 +1437,7 @@ export async function triggerNextAutoMachiningAfterComplete({
       const pendingFallback = await fetchPendingForAutoNext(
         AUTO_NEXT_FALLBACK_PENDING_LIMIT,
       );
+      nameById = await loadRequestorBusinessNames(pendingFallback);
       pending = pendingFallback;
       const fallbackPicked = pickFromPending(pendingFallback);
       pick = fallbackPicked.pick;

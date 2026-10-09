@@ -404,8 +404,6 @@ export const MachiningQueueBoard = ({
     reassignProductionQueues,
     moveNextUpToMachine,
     handleBoardClickCapture,
-    globalAutoEnabled,
-    setGlobalAutoEnabled,
     updateMachineAuto,
     updateMachineRequestAssign,
     openReservationForMachine,
@@ -2079,13 +2077,7 @@ export const MachiningQueueBoard = ({
           >
             재배정
           </button>
-          <AutoApprovalGateSwitch
-            gate={autoGate.state}
-            busy={autoGate.busy}
-            save={autoGate.save}
-            machinesAutoEnabled={globalAutoEnabled}
-            setMachinesAuto={setGlobalAutoEnabled}
-          />
+          <AutoApprovalGateSwitch />
             </div>
           </>
         }

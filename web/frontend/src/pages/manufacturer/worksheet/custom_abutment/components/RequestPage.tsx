@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-09: 준비 탭 재생성 버튼 오른쪽에 가공과 같은 자동 승인·섀도/라이브 스위치.
 // - 2026-09-13: R&D 직경 행 중앙에 R&D/불완전가공 하위 탭(상단 공정 탭에서 불완전가공 분리).
 // - 2026-09-09: 관리자 헥스 확정 후에도 제조사가 준비 단계에서 의뢰 단위 헥스 변경 가능.
 // - 2026-09-09: filled-stl-regeneration-started → stlPreload GENERATING 낙관 패치(재생성 블러).
@@ -53,6 +54,7 @@ import {
   type WorksheetQueueItem,
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
+import { AutoApprovalGateSwitch } from "../shared/autoApproval/AutoApprovalGateSwitch";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
@@ -3111,26 +3113,29 @@ export const RequestPage = ({
             }
             toolbar={
               showBulkCamRegenerate && tabStage === "request" ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={!filteredAndSorted.length || bulkCamRegenerating}
-                  onClick={() => {
-                    pageState.setConfirmTitle("전체 Filled STL 재생성");
-                    pageState.setConfirmDescription(
-                      `현재 목록의 ${filteredAndSorted.length}개 의뢰에 전체 Filled STL 재생성 요청을 보냅니다. 진행할까요?`,
-                    );
-                    pageState.setConfirmAction(() => async () => {
-                      await handleRegenerateAllCam();
-                    });
-                    pageState.setConfirmOpen(true);
-                  }}
-                >
-                  {bulkCamRegenerating
-                    ? "Filled STL 재생성 요청 중..."
-                    : "전체 Filled STL 재생성"}
-                </Button>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!filteredAndSorted.length || bulkCamRegenerating}
+                    onClick={() => {
+                      pageState.setConfirmTitle("전체 Filled STL 재생성");
+                      pageState.setConfirmDescription(
+                        `현재 목록의 ${filteredAndSorted.length}개 의뢰에 전체 Filled STL 재생성 요청을 보냅니다. 진행할까요?`,
+                      );
+                      pageState.setConfirmAction(() => async () => {
+                        await handleRegenerateAllCam();
+                      });
+                      pageState.setConfirmOpen(true);
+                    }}
+                  >
+                    {bulkCamRegenerating
+                      ? "Filled STL 재생성 요청 중..."
+                      : "전체 Filled STL 재생성"}
+                  </Button>
+                  <AutoApprovalGateSwitch />
+                </div>
               ) : null
             }
           />

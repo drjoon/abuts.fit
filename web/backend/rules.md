@@ -424,10 +424,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - `manufacturerStage` 저장값으로 `CAM`을 쓰지 않습니다. 레거시 `CAM` 문서는 가공으로 취급/이관합니다.
 
 - 준비→가공 자동 승인 게이트(야간 무인 가공):
-  - `SystemSettings.autoMachiningGate`: `enabled`(기본 OFF), `mode`(`shadow` 기본 | `live`). 제조사-가공 페이지 스위치(`AutoApprovalGateSwitch`)가 `GET/PUT /api/cnc-machines/machining/auto-gate`(manufacturer·admin)로 켜고 끈다. `jobs/autoMachiningGateWorker.js`가 30초마다 준비 단계 의뢰를 판정한다.
+  - `SystemSettings.autoMachiningGate`: `enabled`(기본 OFF), `mode`(`shadow` 기본 | `live`). 제조사 준비·가공 페이지의 같은 스위치(`AutoApprovalGateSwitch`)가 `GET/PUT /api/cnc-machines/machining/auto-gate`(manufacturer·admin)로 켜고 끈다. 장비 `allowAutoMachining`도 이 스위치가 함께 바꾼다. `jobs/autoMachiningGateWorker.js`가 30초마다 준비 단계 의뢰를 판정한다.
   - `shadow`: 판정만 `Request.autoMachiningReview`(verdict `would_approve`/`hold`)에 기록하고 승인하지 않는다. `live`: 통과 건을 수동 승인과 같은 `updateReviewStatusByStage`(stage=machining, nextUpCamRunGuard) 경로로 직렬 승인한다. 크레딧 차감은 수동 승인과 동일(아침에 사람이 되돌린다).
   - 보류 조건: 직경(>10mm·소재그룹 초과·측정오류), 피니시라인 불량·`min_z<0.6`, `cuffBlend` 비적용·제안 대기, `ncFile.analysis.flags`, filled STL·피니시라인 누락, 테스트 계정(`테스트치과`·`테스트기공소`, 사유 `test_account`). 커프 미가공은 검출하지 않는다(육안). 장비·소재·공구 상태는 작업자가 관리하므로 보지 않는다.
-  - 테스트 계정 의뢰는 업로드·주문 확인용이다. 자동 승인 스위치와 무관하게 준비에 두고 가공 장비 카드 HOLD에 올린다. 준비→가공 승인, 출고일 자동 진행, NC 완료 후 가공 승격은 거절한다.
+  - 테스트 계정(`테스트치과`·`테스트기공소`)은 업로드·주문 확인용이다. 자동 승인 게이트와 출고일 자동 진행은 가공으로 넘기지 않고 HOLD에 둔다. 작업자가 준비에서 직접 승인하면 가공 진입과 NC 생성을 허용하고 `productionSchedule.manualMachiningApprovedAt`을 남긴다. 그 승인이 없으면 가공 단계에 NC가 있어도 auto-next가 건너뛴다.
   - NC 용량은 사전 게이트가 아니다(장비 한도 해제). 용량 초과 실패(`CNC_PROGRAM_TOO_LARGE`)는 bridge가 큐에서 빼고 `machiningProgress.errorCode`에 남기며, auto-next는 NC가 재생성되기 전까지 그 건을 건너뛰고 다음 건을 가공한다.
   - NC 좌표 점검: 3-nc 등록 직후(응답 후) `services/ncAnalysis.service.js`가 NC의 X/Y/Z 범위를 `caseInfos.ncFile.analysis`에 저장한다. 한계(`utils/ncProgramCheck.js` `DEFAULT_NC_LIMITS`, 설정 `autoMachiningGate.ncLimits`로 대체)를 벗어난 건은 auto-next가 건너뛴다. 기본값은 정상 NC 33개 실측 범위 기반이며 장비 행정 확정값이 나오면 교체한다.
   - 리포트: `node scripts/db/report-auto-machining-gate.js [--backtest]` (읽기 전용, 사람 결과와 비교).

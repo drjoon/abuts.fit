@@ -1,5 +1,9 @@
 import { describe, it, expect } from "@jest/globals";
 import { evaluateAutoMachiningGate } from "../../services/autoMachiningGate.service.js";
+import {
+  hasManualMachiningApproval,
+  isTestAccountAutoMachiningHeld,
+} from "../../utils/testAccountMachining.js";
 
 function ring(n = 60, r = 4, z = 2) {
   return Array.from({ length: n }, (_, i) => {
@@ -64,6 +68,39 @@ describe("evaluateAutoMachiningGate", () => {
     expect(
       evaluateAutoMachiningGate(okRequest({ clinicName: "향기로운치과" })).reasons,
     ).not.toContain("test_account");
+  });
+  it("테스트 계정은 수동 승인 전만 자동가공 보류", () => {
+    const testClinic = { caseInfos: { clinicName: "테스트치과" } };
+    expect(isTestAccountAutoMachiningHeld(testClinic)).toBe(true);
+    expect(hasManualMachiningApproval(testClinic)).toBe(false);
+    expect(
+      isTestAccountAutoMachiningHeld({
+        ...testClinic,
+        productionSchedule: { manualMachiningApprovedAt: new Date() },
+      }),
+    ).toBe(false);
+    expect(
+      isTestAccountAutoMachiningHeld({
+        caseInfos: {
+          clinicName: "테스트치과",
+          reviewByStage: { request: { status: "APPROVED", updatedBy: "worker" } },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isTestAccountAutoMachiningHeld({
+        caseInfos: {
+          clinicName: "테스트치과",
+          reviewByStage: { request: { status: "APPROVED", updatedBy: null } },
+        },
+      }),
+    ).toBe(true);
+    expect(
+      isTestAccountAutoMachiningHeld({ requestorBusinessName: "테스트기공소" }),
+    ).toBe(true);
+    expect(
+      isTestAccountAutoMachiningHeld({ caseInfos: { clinicName: "향기로운치과" } }),
+    ).toBe(false);
   });
   it("커프 manual-review·NC 좌표 이탈·STL 누락은 보류", () => {
     expect(

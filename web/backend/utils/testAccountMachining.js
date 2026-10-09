@@ -3,6 +3,7 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/utils/guideTour.util.js
 // change-log:
+// - 2026-10-09: 테스트 계정은 준비→가공·NC는 허용하고, 수동 가공 승인 전 자동가공만 보류.
 // - 2026-10-09: 테스트치과·테스트기공소 의뢰는 제조 가공 대상이 아니다.
 import mongoose from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -58,4 +59,22 @@ export async function isTestAccountMachiningRequest(request) {
   if (!id || !mongoose.Types.ObjectId.isValid(id)) return false;
   const anchor = await BusinessAnchor.findById(id).select("name").lean();
   return isTestAccountBusinessName(anchor?.name);
+}
+
+/** 작업자가 준비→가공을 직접 승인했는지. 자동 게이트(updatedBy 없음)는 승인이 아니다. */
+export function hasManualMachiningApproval(request) {
+  const at = request?.productionSchedule?.manualMachiningApprovedAt;
+  if (at) {
+    const t = new Date(at).getTime();
+    if (Number.isFinite(t) && t > 0) return true;
+  }
+  const review = request?.caseInfos?.reviewByStage?.request;
+  const status = String(review?.status || "").trim().toUpperCase();
+  return status === "APPROVED" && Boolean(review?.updatedBy);
+}
+
+/** 테스트 계정이고 작업자 수동 승인이 없으면 자동 가공(auto-next) 대상이 아니다. */
+export function isTestAccountAutoMachiningHeld(request, businessName) {
+  if (!isTestAccountMachiningRequestSync(request, businessName)) return false;
+  return !hasManualMachiningApproval(request);
 }

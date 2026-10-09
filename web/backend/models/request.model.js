@@ -1077,6 +1077,8 @@ const requestSchema = new mongoose.Schema(
         type: Number,
         default: 1,
       },
+      // 테스트 계정: 작업자가 준비→가공을 직접 승인한 시각. 없으면 auto-next가 건너뛴다.
+      manualMachiningApprovedAt: Date,
 
       // 직경 정보
       diameter: Number, // 실제 직경 (mm)
