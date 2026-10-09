@@ -28,7 +28,7 @@ export const FREE_REMAKE_YEARS_MAX = 30;
  */
 export const MONTHLY_REMAKE_FREE_LIMIT = 3;
 
-/** 어벗츠로(Request) 리메이크 고객 단가(원). 배송비 별도. */
+/** 어벗츠로(Request) 리메이크 고객 단가(원). 배송비는 판매자 부담. */
 export const ABUTS_REMAKE_FIXED_AMOUNT = 10000;
 
 export const ABUTS_REMAKE_PRICE_RULE = "remake_fixed_10000";

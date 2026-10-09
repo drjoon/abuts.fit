@@ -12531,7 +12531,9 @@ export const PracticeFileTransferPage = ({
                       </span>
                       <span className="block text-[12px] text-muted-foreground">
                         기본은 보철만 리메이크합니다. 포함 시 기공소→어벗츠
-                        리메이크는 건당 1만원(배송비 별도)입니다.
+                        리메이크는 건당 1만원입니다.
+                        <br />
+                        배송비 판매자 부담.
                       </span>
                     </span>
                   </label>
@@ -12586,13 +12588,14 @@ export const PracticeFileTransferPage = ({
               </div>
               <div className="text-muted-foreground">
                 기공소에 리메이크비는 무료입니다. 커스텀어벗은 기본 제외이며,
-                작성 화면에서 넣으면 어벗츠에 리메이크는 건당 1만원(배송비
-                별도)입니다.
+                작성 화면에서 넣으면 어벗츠에 리메이크는 건당 1만원입니다.
+                <br />
+                배송비 판매자 부담.
               </div>
               {composeRemakeIncludesCustomAbutment ? (
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[12px] text-amber-950">
                   커스텀어벗이 포함되어 있습니다. 기공소→어벗츠 리메이크는
-                  건당 1만원(배송비 별도)입니다.
+                  건당 1만원입니다.
                 </div>
               ) : null}
             </div>

@@ -246,14 +246,14 @@ export const RequestorReferralPage = () => {
                     <MetricCard
                       title="적용 단가"
                       value={`${fmtMoney(requestorUnitPrice)}원`}
-                      subtitle="배송비 없음 · 부가세 없음"
+                      subtitle="배송비 판매자 부담 · 부가세 없음"
                     />
                     <div className="rounded-xl bg-blue-50 px-4 py-3.5 text-xs leading-relaxed text-blue-900">
                       <p>
                         치과 커스텀 어벗 단가는 관리자 플랫폼 설정을 따릅니다.
                       </p>
                       <p className="mt-1.5">
-                        딜리버리 익일 도착은 배송비가 없습니다.
+                        배송비 판매자 부담.
                       </p>
                     </div>
                   </div>

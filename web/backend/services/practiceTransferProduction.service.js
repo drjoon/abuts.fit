@@ -1318,7 +1318,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     );
     let quotedPrice;
     if (isPtxRemake) {
-      // PTX 리메이크 → 어벗츠로: 건당 1만원(배송비 별도). 180일 조회 생략.
+      // PTX 리메이크 → 어벗츠로: 건당 1만원. 배송비는 판매자 부담. 180일 조회 생략.
       quotedPrice = await computePriceForRequest({
         requestorId: labUserId,
         requestorOrgId: labAnchorId,

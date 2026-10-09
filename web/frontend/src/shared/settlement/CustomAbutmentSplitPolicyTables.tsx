@@ -9,7 +9,6 @@ import {
   REQUESTOR_UNIT_PRICE_BASE,
   REQUESTOR_UNIT_PRICE_MANUFACTURER_COST,
   REQUESTOR_UNIT_PRICE_DEALER_SUPPLY,
-  DELIVERY_MONTHLY_FEE,
   REQUESTOR_UNIT_PRICE_MIN,
   dealerCommissionOf,
   formatRequestorWon,
@@ -95,7 +94,7 @@ function SplitByPriceTable({ highlight }: { highlight: Party }) {
   );
 }
 
-/** 딜러에게는 매입가·판매가·월정액만 보인다(제조사·어벗츠 몫은 비공개). */
+/** 딜러에게는 매입가·판매가·배송비 부담만 보인다(제조사·어벗츠 몫은 비공개). */
 export function CustomAbutmentDealerSplitTable() {
   const rows: { label: string; value: string }[] = [
     { label: "매입가", value: `${formatRequestorWon(REQUESTOR_UNIT_PRICE_DEALER_SUPPLY)}원` },
@@ -103,7 +102,7 @@ export function CustomAbutmentDealerSplitTable() {
       label: "판매가",
       value: `딜러가 정함 (${formatRequestorWon(REQUESTOR_UNIT_PRICE_MIN)}~${formatRequestorWon(REQUESTOR_UNIT_PRICE_BASE)}원)`,
     },
-    { label: "배송비", value: `월 ${formatRequestorWon(DELIVERY_MONTHLY_FEE)}원 · 딜러 부담` },
+    { label: "배송비", value: "판매자 부담" },
   ];
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm ring-1 ring-slate-900/[0.02]">

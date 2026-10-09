@@ -195,8 +195,25 @@ const DIAMETER_LABELS: Record<DiameterKey, string> = {
   d12: "직경 12mm",
 };
 
-const SHIP_OUT_INFO_MESSAGE =
-  `출고일은 리드타임 기준으로 계산됩니다. ${EXPRESS_SHIPPING_LABEL}만 운영하며 배송비는 없습니다. ${EXPRESS_SHIPPING_ARRIVAL_LINE}`;
+const SHIP_OUT_INFO_LINES = [
+  "출고일은 리드타임 기준으로 계산됩니다.",
+  `${EXPRESS_SHIPPING_LABEL}만 운영합니다.`,
+  "배송비 판매자 부담.",
+  EXPRESS_SHIPPING_ARRIVAL_LINE,
+];
+
+function ShipOutInfoMessage() {
+  return (
+    <>
+      {SHIP_OUT_INFO_LINES.map((line, idx) => (
+        <span key={line}>
+          {idx > 0 ? <br /> : null}
+          {line}
+        </span>
+      ))}
+    </>
+  );
+}
 
 type ShippingItemApi = {
   id: string;
@@ -758,7 +775,7 @@ export const RequestorBulkShippingBannerCard = ({
                   align="start"
                   className="max-w-xs text-xs leading-relaxed break-keep"
                 >
-                  {SHIP_OUT_INFO_MESSAGE}
+                  <ShipOutInfoMessage />
                 </TooltipContent>
               </Tooltip>
             </div>
@@ -1046,7 +1063,7 @@ export const RequestorBulkShippingBannerCard = ({
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pt-5 pb-8">
             <p className="rounded-xl bg-slate-50 px-3.5 py-2.5 text-xs leading-relaxed text-slate-600">
-              {SHIP_OUT_INFO_MESSAGE}
+              <ShipOutInfoMessage />
             </p>
             {leadTimeData ? (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

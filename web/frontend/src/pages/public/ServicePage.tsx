@@ -236,9 +236,7 @@ export const ServicePage = () => {
                   </div>
                   <ul className="list-disc list-inside space-y-2 ml-4">
                     <li>
-                      딜리버리 익일 도착은 배송비가 없습니다.
-                      <br />
-                      월정액은 소개 딜러가, 딜러가 없으면 어벗츠가 부담합니다.
+                      배송비 판매자 부담.
                       <br />
                       당일 자정까지 주문한 건은 다음 날 기공소 또는 치과 도착을
                       목표로 합니다.

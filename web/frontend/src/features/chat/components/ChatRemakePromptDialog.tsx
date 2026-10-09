@@ -461,9 +461,15 @@ export function ChatRemakePromptDialog({
     <p>
       어벗츠로부터(기공소에) 리메이크비는 무료입니다.
       <br />
-      {isLab || isAbutmentRemake
-        ? "배송비는 별도입니다."
-        : "작업시작 시 정산에 반영됩니다. 배송비는 별도입니다."}
+      {isLab || isAbutmentRemake ? (
+        "배송비 판매자 부담."
+      ) : (
+        <>
+          작업시작 시 정산에 반영됩니다.
+          <br />
+          배송비 판매자 부담.
+        </>
+      )}
     </p>
   );
 

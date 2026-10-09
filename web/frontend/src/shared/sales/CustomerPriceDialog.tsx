@@ -351,7 +351,7 @@ export function CustomerPriceFields({
         {formatRequestorWon(REQUESTOR_UNIT_PRICE_MIN)}~
         {formatRequestorWon(REQUESTOR_UNIT_PRICE_BASE)}원입니다.
         <br />
-        배송비는 딜러 부담입니다.
+        배송비 판매자 부담.
       </p>
     </div>
   );

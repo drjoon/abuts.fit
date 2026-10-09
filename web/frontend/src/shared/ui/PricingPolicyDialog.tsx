@@ -1,7 +1,9 @@
+// - 2026-10-09: 가격·출고 안내 폭 sm:max-w-lg. 리메이크 라벨과 금액 사이 빈칸을 줄임.
+// - 2026-10-09: 치과 본인 정책 — 기공소에 무료 / 어벗츠에 건당 1만원.
 // - 2026-10-09: 의뢰자 정책 — 치과/기공소 탭 제거. 기공소 리메이크 안내를 공통으로 표시.
 // - 2026-10-08: 단일가 1.5만(거래처별 1.2~1.5만은 딜러 설정·비공개). 그룹할인·묶음배송·월 가입 폐지, 딜리버리는 딜러/어벗츠 부담.
 // - 2026-10-08: 의뢰자 정책 기공소 — 그룹할인(소개 그룹 주문량 합산) 안내.
-// - 2026-10-08: 딜러십·의뢰자 모달 폭 sm:max-w-3xl(어중간 줄바꿈 완화).
+// - 2026-10-08: 딜러십·의뢰자 모달 폭을 넓혔던 설정은 2026-10-09에 sm:max-w-lg로 되돌림.
 // - 2026-10-08: 기공소 의뢰비 — 가입 90일 1만원·지난 30일 주문량 할인(최대 1만원)·매일 자정 확정. 치과는 기존 단일가·런칭 이벤트.
 // - 2026-10-06: 택배 묶음 출고(박스당)·딜리버리 익일 도착(월 정액 VAT 포함).
 // - 2026-10-06: 안내 모달 공통 크롬·fact 카드. 딜러·개발운영 문구 단축.
@@ -32,7 +34,6 @@ import { request } from '@/shared/api/apiClient';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useRequestorBusinessAccess } from '@/shared/business/useRequestorBusinessAccess';
 import {
-  DELIVERY_MONTHLY_FEE,
   REQUESTOR_UNIT_PRICE_BASE,
   REQUESTOR_UNIT_PRICE_MIN,
   formatRequestorWon
@@ -160,7 +161,7 @@ export const PricingPolicyDialog = ({
   const isRequestorPreview = variant === 'requestor';
   /**
    * 딜러 「의뢰자 정책」은 기공소 안내.
-   * 치과 본인 「가격 · 출고 정책」은 사이드바가 기공소에·어벗츠에라 어벗츠에 한 줄.
+   * 치과 본인 「가격 · 출고 정책」은 기공소에 무료 / 어벗츠에 건당 1만원.
    */
   const remakeAudience: RemakePolicyAudience =
     isRequestorPreview || isLab ? 'lab' : 'practice';
@@ -284,10 +285,7 @@ export const PricingPolicyDialog = ({
             거래처 본인에게만 보입니다.
           </SettlementPolicyFact>
           <SettlementPolicyFact label={EXPRESS_SHIPPING_LABEL}>
-            월 {formatAbutsManwon(DELIVERY_MONTHLY_FEE)}은 거래처 1곳당 딜러가
-            부담합니다.
-            <br />
-            딜러가 없으면 어벗츠가 부담합니다.
+            배송비 판매자 부담.
           </SettlementPolicyFact>
         </div>
       ) : null}
@@ -299,7 +297,8 @@ export const PricingPolicyDialog = ({
       <DialogContent
         className={cn(
           GUIDE_DIALOG_CONTENT_CLASS,
-          variant === 'salesman' && 'sm:max-w-[52rem]',
+          // 3xl·52rem은 리메이크 라벨과 오른쪽 금액 사이가 비어 어느 줄인지 헷갈린다.
+          'sm:max-w-lg',
         )}
       >
         <DialogHeader className={GUIDE_DIALOG_HEADER_CLASS}>
@@ -335,9 +334,6 @@ export const PricingPolicyDialog = ({
                 {EXPRESS_SHIPPING_LABEL}만 운영합니다.
                 <br />
                 {DELIVERY_MONTHLY_PAYER_LINE}
-                <br />
-                월 {formatAbutsManwon(DELIVERY_MONTHLY_FEE)}은 정산액에서
-                차감합니다.
               </SettlementPolicyFact>
               <SettlementPolicyFact label='집계 · 지급' className='break-keep'>
                 매일 자정(KST) 사업자 기준으로 업데이트합니다.

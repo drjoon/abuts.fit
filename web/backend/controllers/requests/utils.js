@@ -1289,7 +1289,7 @@ export async function computePriceForRequest({
   // SSOT: 관리자 플랫폼 설정 단가(+신속 expressFee).
   const BASE_UNIT_PRICE = resolveCustomAbutmentRequestUnitPrice(creditSettings);
 
-  // 어벗츠로 리메이크: 건당 고정 10,000원(배송비 별도). 어벗츠로부터(PTX)=LAB_FEE_REMAKE_FREE.
+  // 어벗츠로 리메이크: 건당 고정 10,000원. 배송비는 판매자 부담. 어벗츠로부터(PTX)=LAB_FEE_REMAKE_FREE.
   if ((forceRemakePricing || existing) && !forceNewOrderPricing) {
     return buildAbutsRemakeFixedPrice({
       baseAmount: BASE_UNIT_PRICE,

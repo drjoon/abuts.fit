@@ -1663,8 +1663,11 @@ const NewRequestPageContent = () => {
               </div>
               {duplicatePrompt?.mode === "tracking" && (
                 <div className="rounded border border-primary-muted bg-primary-soft px-2.5 py-2 text-[11px] text-primary-strong">
-                  어벗츠로 리메이크는 건당 10,000원(배송비 별도). 동일
-                  치과·환자·치식·최근 180일 조건 충족 시 적용.
+                  어벗츠로 리메이크는 건당 10,000원입니다.
+                  <br />
+                  배송비 판매자 부담.
+                  <br />
+                  동일 치과·환자·치식·최근 180일 조건 충족 시 적용.
                 </div>
               )}
               {duplicateList.map((dup, idx) => {

@@ -121,7 +121,7 @@ export const AdminAnalytics = () => {
                 ₩{totalRevenue.toLocaleString()}
               </div>
               <div className="text-xs text-muted-foreground">
-                배송비 별도 · 부가세 없음
+                배송비 판매자 부담 · 부가세 없음
               </div>
             </CardContent>
           </Card>

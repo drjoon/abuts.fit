@@ -59,7 +59,7 @@ export const FeaturesSection = () => {
         <>
           딜리버리 익일 도착만 운영합니다.
           <br />
-          배송비는 없습니다.
+          배송비 판매자 부담.
         </>
       ),
       category: "배송",

@@ -26,7 +26,7 @@ export const AnnouncementSection = () => {
       title: "딜리버리 익일 도착",
       description: (
         <>
-          배송비는 없습니다.
+          배송비 판매자 부담.
           <br />
           자정까지 주문하면 다음 날 도착합니다.
         </>

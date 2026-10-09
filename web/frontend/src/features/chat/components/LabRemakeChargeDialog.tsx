@@ -550,7 +550,7 @@ export function LabRemakeChargeDialog({
                 <p>
                   어벗츠로부터 리메이크비는 무료입니다. 어벗츠로는 건당 1만원.
                   <br />
-                  배송비는 별도입니다.
+                  배송비 판매자 부담.
                 </p>
               </div>
             </div>
