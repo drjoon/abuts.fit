@@ -13,6 +13,7 @@
 // - 2026-08-18: 기공소 공급 어벗 전역 단가 PATCH.
 // - 2026-09-09: manufacturerRemakeUnitPrice(리메이크 매입가, 기본 6,600) 저장 허용.
 import SystemSettings from "../../models/systemSettings.model.js";
+import { getAutoGateConfig } from "../../services/autoMachiningGate.service.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { Types } from "mongoose";
 import { updateManufacturerMaxLeadDays } from "../businesses/leadTime.controller.js";
@@ -189,6 +190,7 @@ export async function getSystemSettings(req, res) {
       },
       deliveryEtaLeadDays: leadDays,
       creditSettings,
+      autoMachiningGate: await getAutoGateConfig(),
     };
 
     res.status(200).json({ success: true, data: { settings } });
@@ -248,8 +250,37 @@ export async function updateSystemSettings(req, res) {
       }
     }
 
+    // 준비→가공 자동 승인 게이트 토글/임계값 (관리자)
+    const gateIn =
+      input.autoMachiningGate && typeof input.autoMachiningGate === "object"
+        ? input.autoMachiningGate
+        : null;
+    if (gateIn) {
+      const $set = {};
+      if (typeof gateIn.enabled === "boolean") {
+        $set["autoMachiningGate.enabled"] = gateIn.enabled;
+      }
+      if (gateIn.mode === "shadow" || gateIn.mode === "live") {
+        $set["autoMachiningGate.mode"] = gateIn.mode;
+      }
+      for (const key of ["maxDiameterMm", "minFinishLineZ"]) {
+        const n = Number(gateIn[key]);
+        if (gateIn[key] != null && Number.isFinite(n) && n > 0) {
+          $set[`autoMachiningGate.${key}`] = n;
+        }
+      }
+      if (Object.keys($set).length > 0) {
+        await SystemSettings.findOneAndUpdate(
+          { key: "global" },
+          { $set },
+          { upsert: true },
+        );
+      }
+    }
+
     const updatedSettings = {
       deliveryEtaLeadDays: await getDeliveryEtaLeadDays(),
+      autoMachiningGate: await getAutoGateConfig(),
     };
 
     res.status(200).json({

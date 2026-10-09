@@ -40,6 +40,7 @@ import {
   formatElapsedMMSS,
 } from "@/features/manufacturer/cnc/lib/machiningUi";
 import type { MachineQueueCardProps, QueueItem } from "../types";
+import { GateHoldCard } from "./GateHoldCard";
 import { buildLabelExtraProps, formatMachiningLabel, isMachiningSampleSlot } from "../utils/label";
 import { MachiningRequestLabel } from "./MachiningRequestLabel";
 import { getMachineStatusLabel } from "@/pages/manufacturer/equipment/cnc/lib/machineStatus";
@@ -145,6 +146,7 @@ export const MachineQueueCard = ({
   cancellingCamRequestIds,
   materialNeedsReplacement,
   materialAlertTooltip,
+  holdItems,
 }: MachineQueueCardProps) => {
   const machiningQueueAll = (Array.isArray(queue) ? queue : []).filter((q) =>
     isMachiningStatus(q),
@@ -1370,6 +1372,8 @@ export const MachineQueueCard = ({
             </div>
           </div>
         </div>
+
+        <GateHoldCard items={holdItems || []} />
 
         <button
           type="button"

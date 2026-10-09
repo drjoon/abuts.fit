@@ -174,4 +174,6 @@ export type MachineQueueCardProps = {
   cancellingCamRequestIds?: ReadonlySet<string> | string[];
   materialNeedsReplacement?: boolean;
   materialAlertTooltip?: string;
+  /** 자동 가공이 건너뛴 보류 의뢰(카드 맨 아래 HOLD 카드) */
+  holdItems?: import("./hooks/useAutoApprovalGate").GateHoldItem[];
 };

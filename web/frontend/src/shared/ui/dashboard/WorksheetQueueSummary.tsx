@@ -23,6 +23,8 @@ interface WorksheetQueueSummaryProps {
   leadingAddon?: ReactNode;
   centerAddon?: ReactNode;
   toolbar?: ReactNode;
+  /** compact: 툴바를 항상 다음 줄에 둔다(툴바가 길어 직경 칩이 접히는 화면용) */
+  stackToolbar?: boolean;
 }
 
 export const WorksheetQueueSummary = ({
@@ -35,10 +37,11 @@ export const WorksheetQueueSummary = ({
   leadingAddon,
   centerAddon,
   toolbar,
+  stackToolbar = false,
 }: WorksheetQueueSummaryProps) => {
   if (variant === "compact") {
     const queueLeading = (
-      <div className="flex min-w-0 w-full flex-wrap items-center gap-2 md:w-auto md:flex-nowrap">
+      <div className="flex min-w-0 w-auto flex-wrap items-center gap-2 md:flex-nowrap">
         <div className="shrink-0 whitespace-nowrap text-base font-semibold text-slate-800">
           {total}건
         </div>
@@ -73,11 +76,21 @@ export const WorksheetQueueSummary = ({
 
     return (
       <div
-        className={`mb-3 flex flex-col gap-2 md:flex-row md:items-center md:gap-3 ${className}`}
+        className={`mb-3 flex flex-col gap-2 ${
+          stackToolbar
+            ? "sm:flex-row sm:items-start sm:justify-between sm:gap-3"
+            : "md:flex-row md:items-center md:gap-3"
+        } ${className}`}
       >
         {queueLeading}
         {toolbar ? (
-          <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 md:ml-auto md:w-auto md:justify-end">
+          <div
+            className={
+              stackToolbar
+                ? "flex flex-col items-end gap-2"
+                : "flex w-full min-w-0 flex-wrap items-center justify-start gap-2 md:ml-auto md:w-auto md:justify-end"
+            }
+          >
             {toolbar}
           </div>
         ) : null}

@@ -1316,6 +1316,7 @@ export async function triggerNextAutoMachiningAfterComplete({
       let firstDiameterMismatched = null;
       let skippedNoNcMeta = 0;
       let skippedAlreadyRunning = 0;
+      let skippedAutoBlocked = 0;
 
       for (const r of Array.isArray(rows) ? rows : []) {
         const rid = String(r?.requestId || "").trim();
@@ -1333,6 +1334,31 @@ export async function triggerNextAutoMachiningAfterComplete({
         if (progressPhase === "STARTED") {
           skippedAlreadyRunning += 1;
           continue;
+        }
+
+        // 용량 초과(CNC_PROGRAM_TOO_LARGE)로 실패한 건은 NC가 재생성되기 전까지
+        // 자동으로 다시 집지 않는다. 작업자가 확인하고 다른 건을 계속 가공한다.
+        {
+          const prog = r?.productionSchedule?.machiningProgress;
+          const failedTooLarge =
+            String(prog?.phase || "").toUpperCase() === "ALARM" &&
+            String(prog?.errorCode || "") === "CNC_PROGRAM_TOO_LARGE";
+          if (failedTooLarge) {
+            const ncAt = r?.caseInfos?.ncFile?.uploadedAt
+              ? new Date(r.caseInfos.ncFile.uploadedAt).getTime()
+              : 0;
+            const failAt = prog?.lastTickAt ? new Date(prog.lastTickAt).getTime() : 0;
+            if (ncAt <= failAt) {
+              skippedAutoBlocked += 1;
+              continue;
+            }
+          }
+          // NC 좌표 범위가 한계를 벗어난 건(원점 이탈 등)은 자동 가공하지 않는다.
+          const ncFlags = r?.caseInfos?.ncFile?.analysis?.flags;
+          if (Array.isArray(ncFlags) && ncFlags.length > 0) {
+            skippedAutoBlocked += 1;
+            continue;
+          }
         }
 
         const isAnodizingOff = r?.caseInfos?.anodizingEnabled === false;
@@ -1370,6 +1396,11 @@ export async function triggerNextAutoMachiningAfterComplete({
         }
       }
 
+      if (skippedAutoBlocked > 0) {
+        console.log(
+          `[bridge:auto-next] skipped ${skippedAutoBlocked} blocked request(s) machine=${mid} (too-large/nc-limit)`,
+        );
+      }
       return { pick, firstDiameterMismatched, skippedNoNcMeta, skippedAlreadyRunning };
     };
 
@@ -3001,6 +3032,7 @@ export async function recordMachiningFailForBridge(req, res) {
                 phase: "ALARM",
                 percent: null,
                 message: reason || "FAILED",
+                errorCode: errorCode || null,
                 startedAt:
                   request?.productionSchedule?.machiningProgress?.startedAt ||
                   request?.productionSchedule?.actualMachiningStart ||

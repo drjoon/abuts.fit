@@ -526,6 +526,9 @@ const requestSchema = new mongoose.Schema(
         s3Url: String,
         // NC 생성 시 사용한 소재 직경(#521). 장비 소재와 불일치 시 재생성 SSOT.
         materialDiameter: Number,
+        // NC 사후 분석(좌표 범위·용량). flags가 있으면 자동 연속 가공이 건너뛴다.
+        // related: web/backend/utils/ncProgramCheck.js
+        analysis: { type: {}, default: undefined },
         uploadedAt: {
           type: Date,
           default: Date.now,
@@ -616,6 +619,19 @@ const requestSchema = new mongoose.Schema(
           after: { type: [[Number]], default: undefined },
         },
       },
+    },
+    // 준비→가공 자동 승인 게이트 판정 (services/autoMachiningGate.service.js)
+    // - verdict: approved(자동 승인함) | would_approve(섀도: 통과 판정만) | hold(아침 검토 필요) | error(승인 호출 실패)
+    // - mode: shadow(기록만) | live(실제 승인)
+    autoMachiningReview: {
+      verdict: { type: String, enum: ["approved", "would_approve", "hold", "error"] },
+      reasons: { type: [String], default: undefined },
+      metrics: { type: {}, default: undefined },
+      mode: String,
+      evaluatedAt: Date,
+      approvedAt: Date,
+      attempts: { type: Number, default: 0 },
+      error: String,
     },
     // 제조 공정 단계 SSOT
     // 의뢰 출처 구분 (내부 샘플/테스트용 의뢰 식별)
@@ -1036,6 +1052,9 @@ const requestSchema = new mongoose.Schema(
         startedAt: Date,
         lastTickAt: Date,
         elapsedSeconds: Number,
+        // 실패 사유(bridge fail 콜백). CNC_PROGRAM_TOO_LARGE면 auto-next가 건너뛰고 작업자에게 넘긴다.
+        message: String,
+        errorCode: String,
       },
 
       machiningRecord: {

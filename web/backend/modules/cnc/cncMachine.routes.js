@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 import express from "express";
 import * as cncMachineController from "../../controllers/cnc/cncMachine.controller.js";
+import * as autoMachiningGateController from "../../controllers/cnc/autoMachiningGate.controller.js";
 import * as cncEventController from "../../controllers/cnc/cncEvent.controller.js";
 import * as machiningCallbackController from "../../controllers/cnc/machiningCallback.js";
 import { authenticate } from "../../middlewares/auth.middleware.js";
@@ -98,6 +99,18 @@ router.post(
 
 // 모든 라우트에 인증 필요
 router.use(authenticate);
+
+// 준비→가공 자동 승인 게이트 스위치 (제조사-가공 페이지)
+router.get(
+  "/machining/auto-gate",
+  authorizeRoles("manufacturer", "admin"),
+  autoMachiningGateController.getAutoMachiningGate,
+);
+router.put(
+  "/machining/auto-gate",
+  authorizeRoles("manufacturer", "admin"),
+  autoMachiningGateController.updateAutoMachiningGate,
+);
 
 // 장비별 마지막 가공 완료 조회 (제조사, 관리자)
 router.get(

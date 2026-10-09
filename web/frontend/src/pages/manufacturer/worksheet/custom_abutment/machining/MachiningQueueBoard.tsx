@@ -33,6 +33,8 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningPriorityRulesModal.tsx
 // - web/backend/controllers/requests/expressDeadlineRebalance.utils.js
 // - web/backend/controllers/requests/machiningPriorityRules.js
+import { AutoApprovalGateSwitch } from "./components/AutoApprovalGateSwitch";
+import { useAutoApprovalGate } from "./hooks/useAutoApprovalGate";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { onNotification } from "@/shared/realtime/socket";
@@ -230,6 +232,7 @@ export const MachiningQueueBoard = ({
   const { toast } = useToast();
   const { uploadMachineFiles } = useManUpload();
   const board = useMachiningBoard({ token });
+  const autoGate = useAutoApprovalGate(token);
   const { callRaw } = useCncRaw();
   const { ensureCncWriteAllowed, PinModal } = useCncWriteGuard();
   const [activeMachineId, setActiveMachineId] = useState<string | null>(null);
@@ -1917,6 +1920,7 @@ export const MachiningQueueBoard = ({
         labels={queueLabels}
         counts={queueCounts}
         variant="compact"
+        stackToolbar
         className="px-4"
         leadingAddon={
           statusRefreshing || statusRefreshError || statusRefreshedAt ? (
@@ -1933,6 +1937,7 @@ export const MachiningQueueBoard = ({
         }
         toolbar={
           <>
+            <div className="flex flex-wrap items-center justify-end gap-2">
             {hasUnassigned ? (
               <button
                 type="button"
@@ -2046,6 +2051,16 @@ export const MachiningQueueBoard = ({
 
           <button
             type="button"
+            disabled={siFetching}
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            onClick={() => void openSelfInspectionQueue()}
+          >
+            {siFetching ? "로딩…" : "자주검사"}
+          </button>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
             disabled={anodizingOffTriggering}
             className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             onClick={() => {
@@ -2057,14 +2072,6 @@ export const MachiningQueueBoard = ({
           </button>
           <button
             type="button"
-            disabled={siFetching}
-            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            onClick={() => void openSelfInspectionQueue()}
-          >
-            {siFetching ? "로딩…" : "자주검사"}
-          </button>
-          <button
-            type="button"
             className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             onClick={() => {
               void reassignProductionQueues();
@@ -2072,29 +2079,14 @@ export const MachiningQueueBoard = ({
           >
             재배정
           </button>
-          <div
-            className="flex items-center gap-2"
-            title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
-          >
-            <span className="text-xs font-semibold text-slate-700">
-              전체 자동
-            </span>
-            <button
-              type="button"
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                globalAutoEnabled ? "bg-primary" : "bg-slate-300"
-              }`}
-              onClick={() => {
-                void setGlobalAutoEnabled(!globalAutoEnabled);
-              }}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                  globalAutoEnabled ? "translate-x-4" : "translate-x-0.5"
-                }`}
-              />
-            </button>
-          </div>
+          <AutoApprovalGateSwitch
+            gate={autoGate.state}
+            busy={autoGate.busy}
+            save={autoGate.save}
+            machinesAutoEnabled={globalAutoEnabled}
+            setMachinesAuto={setGlobalAutoEnabled}
+          />
+            </div>
           </>
         }
       />
@@ -2176,6 +2168,7 @@ export const MachiningQueueBoard = ({
                 });
               }}
               autoEnabled={m.allowAutoMachining === true}
+              holdItems={autoGate.holdsByMachine[m.uid]}
               machiningActive={machiningActive}
               onToggleAuto={(next) => {
                 requestToggleMachineAuto(m.uid, next);

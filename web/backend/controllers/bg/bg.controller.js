@@ -62,6 +62,7 @@ import {
 } from "../../utils/filledStlFile.js";
 import { copyFilledStlToHexVerificationSamples } from "../../services/hexVerificationSample.service.js";
 import { enqueueAbutmentStlShadow } from "../../services/abutmentStl/shadow.service.js";
+import { analyzeAndStoreNc } from "../../services/ncAnalysis.service.js";
 import {
   applyAutoCuffBlendSafely,
   isCuffBlendAutoEnabled,
@@ -1346,6 +1347,12 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   );
 
   const targetRequest = updatedRequest || request;
+
+  if (isCallbackSuccess && callbackStep === "3-nc" && updatedRequest) {
+    void analyzeAndStoreNc(updatedRequest).catch((error) => {
+      console.warn("[BG-Callback] NC analysis failed", error?.message || error);
+    });
+  }
 
   if (isCallbackSuccess && callbackStep === "2-filled" && updatedRequest) {
     void enqueueAbutmentStlShadow(updatedRequest).catch((error) => {

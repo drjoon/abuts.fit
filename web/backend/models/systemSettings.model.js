@@ -22,6 +22,17 @@ const systemSettingsSchema = new mongoose.Schema(
       d10: { type: Number, default: 1 },
       d12: { type: Number, default: 1 },
     },
+    // 준비→가공 자동 승인(야간 무인 가공). 기본 OFF, 관리자 토글.
+    // related: web/backend/services/autoMachiningGate.service.js
+    autoMachiningGate: {
+      enabled: { type: Boolean, default: false },
+      // shadow: 판정만 기록(승인 안 함) / live: 통과 건 자동 승인
+      mode: { type: String, enum: ["shadow", "live"], default: "shadow" },
+      maxDiameterMm: { type: Number, default: 10 },
+      minFinishLineZ: { type: Number, default: 0.6 },
+      // NC 좌표 한계(xMin/xMax/yMin/yMax/zMin/zMax). 비우면 utils/ncProgramCheck.js 기본값.
+      ncLimits: { type: {}, default: undefined },
+    },
     creditSettings: {
       minCreditForRequest: { type: Number, default: 15000 },
       // 정상가 SSOT=membership*. 런칭 이벤트 중은 customAbutmentLaunchEventProductionPrice.
