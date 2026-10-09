@@ -9,9 +9,14 @@ import mongoose from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import { isGuideTourAlwaysOnBusiness } from "./guideTour.util.js";
 
-/** 업로드·주문 테스트용 사업체. 제조 가공 대상이 아니다. */
+/**
+ * 가공 보류 대상 테스트 사업체. 테스트기공소만 해당한다.
+ * 테스트치과는 다른 의뢰인처럼 자동 승인 게이트를 탄다.
+ */
 export function isTestAccountBusinessName(name) {
-  return isGuideTourAlwaysOnBusiness(name);
+  return (
+    isGuideTourAlwaysOnBusiness(name) && String(name || "").trim() === "테스트기공소"
+  );
 }
 
 function anchorIdOf(request) {

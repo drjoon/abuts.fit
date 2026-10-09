@@ -58,10 +58,10 @@ describe("evaluateAutoMachiningGate", () => {
     expect(r.verdict).toBe("hold");
     expect(r.reasons.some((x) => x.startsWith("finishline_"))).toBe(true);
   });
-  it("테스트치과·테스트기공소는 정상이어도 보류", () => {
+  it("테스트기공소만 정상이어도 보류, 테스트치과는 일반 게이트", () => {
     expect(
       evaluateAutoMachiningGate(okRequest({ clinicName: "테스트치과" })).reasons,
-    ).toContain("test_account");
+    ).not.toContain("test_account");
     expect(
       evaluateAutoMachiningGate({
         ...okRequest(),
@@ -73,7 +73,10 @@ describe("evaluateAutoMachiningGate", () => {
     ).not.toContain("test_account");
   });
   it("테스트 계정은 수동 승인 전만 자동가공 보류", () => {
-    const testClinic = { caseInfos: { clinicName: "테스트치과" } };
+    const testClinic = { requestorBusinessName: "테스트기공소" };
+    expect(
+      isTestAccountAutoMachiningHeld({ caseInfos: { clinicName: "테스트치과" } }),
+    ).toBe(false);
     expect(isTestAccountAutoMachiningHeld(testClinic)).toBe(true);
     expect(hasManualMachiningApproval(testClinic)).toBe(false);
     expect(
@@ -84,16 +87,16 @@ describe("evaluateAutoMachiningGate", () => {
     ).toBe(false);
     expect(
       isTestAccountAutoMachiningHeld({
+        requestorBusinessName: "테스트기공소",
         caseInfos: {
-          clinicName: "테스트치과",
           reviewByStage: { request: { status: "APPROVED", updatedBy: "worker" } },
         },
       }),
     ).toBe(false);
     expect(
       isTestAccountAutoMachiningHeld({
+        requestorBusinessName: "테스트기공소",
         caseInfos: {
-          clinicName: "테스트치과",
           reviewByStage: { request: { status: "APPROVED", updatedBy: null } },
         },
       }),
