@@ -373,6 +373,12 @@ export function resolveConnectionTop(taper, spec, specKey) {
     return { zA, matchedKey: specKey, warning: null };
   }
   const measuredTopD = 2 * taper.coneAt(top);
+  // 파일마다 원점 높이가 달라 Z가 어긋나도 끝 직경이 입력 스펙과 같으면 입력 스펙으로 본다. Z_a는 실측 원뿔에서 다시 구한다.
+  const ownTopD = taperTopDiameterOf(spec);
+  if (Math.abs(ownTopD - measuredTopD) <= ALT_SPEC_DIAMETER_TOL_MM) {
+    const ownZa = (ownTopD / 2 - taper.r0) / (taper.slope || TAPER_SLOPE);
+    return { zA: Math.min(ownZa, top - 0.01), matchedKey: specKey, warning: null };
+  }
   for (const alt of CUFF_CONNECTION_SPECS) {
     if (alt === spec) continue;
     const altTopD = taperTopDiameterOf(alt);

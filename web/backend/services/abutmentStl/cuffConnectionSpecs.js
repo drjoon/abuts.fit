@@ -20,7 +20,6 @@
 // 제조사 준비 탭 의뢰카드에 빨간 테두리 +「개발팀 확인 필요」가 뜬다.
 // 개발팀이 해당 filled STL의 테이퍼 끝 높이를 재서 CUFF_CONNECTION_SPECS에 추가하고, 이 목록에서 뺀다.
 // 측정: scripts/abutment-stl-js/measure-cuff-connection.js --pending (턱 있는 샘플 3건 이상이 ±0.03mm로 모일 때만 등록).
-// - DENTIS SQ Regular            : 형상 3종 혼재
 // - DIO UF Narrow                : 샘플 1건
 // - MEGAGEN AnyOne Mini / Mini Internal, NEOBIOTECH Small Narrow, DENTIS Mini·Narrow, MEGAGEN ARi : 샘플 없음·메타 오류
 // - NEOBIOTECH IS2 중 테이퍼가 더 긴 변형(끝 직경 약 3.45) : IS 스펙과 안 맞으면 spec-pending으로 뜬다
@@ -59,6 +58,9 @@ export const CUFF_CONNECTION_SPECS = [
     samples: 17,
   },
   { key: "DENTIS|ONEQ|REGULAR", originDiameter: 3.35, taperHeightMm: 0.17, samples: 6 },
+  // 테이퍼 끝 직경 3.464. SQ는 파일마다 원점 높이가 달라(실측 원점 직경 3.296~3.348) taperTopZ가 0.33~0.43으로 흩어진다.
+  // 원점 보정 후 끝 직경은 3.463~3.466으로 모인다(4건). 끝 직경이 3.426/3.414인 변형은 OSSTEM·NEOBIOTECH 스펙으로 매칭된다.
+  { key: "DENTIS|SQ|REGULAR", originDiameter: 3.35, taperHeightMm: 0.295, samples: 4 },
   // Implantium·Superline2는 SuperLine과 같은 커넥션이다. 이 둘은 기공소가 원뿔을 스펙보다 길게 이어 그리는 파일이 많아
   // 원뿔이 Z_a보다 위까지 이어져도 기공소 연장으로 보고 Z_a부터 잇는다(labExtendsTaper).
   {
