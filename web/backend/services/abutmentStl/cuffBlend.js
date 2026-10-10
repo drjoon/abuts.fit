@@ -59,6 +59,8 @@ const MAX_BLEND_CURVATURE = 4;
 const MAX_TOP_CURVATURE = 20;
 const clampCurvature = (c) => Math.max(-MAX_TOP_CURVATURE, Math.min(MAX_TOP_CURVATURE, c));
 const MIN_WALL_MM = 0.3;
+/** 이보다 축 둘레로 넓게 걸친 삼각형은 곡면이 아니라 겹친 캡 조각이다. */
+const FIN_SPAN_RAD = (30 * Math.PI) / 180;
 const BOTTOM_ON_CONE_TOL_MM = 0.01;
 
 /** Re 기준: 이보다 누운 커프를 접시형으로 보고, 재디자인 곡선도 이보다 눕지 않게 한다. */
@@ -973,9 +975,75 @@ function nonManifoldInBand(mesh, zLo, zHi) {
     const a = Math.floor(key / nv);
     const b = key - a * nv;
     const z = (verts[a * 3 + 2] + verts[b * 3 + 2]) / 2;
-    if (z >= zLo && z <= zHi) return true;
+    if (z >= zLo && z <= zHi) {
+      return true;
+    }
   }
   return false;
+}
+
+/**
+ * 띠 위치에 남은 예전 fill_steps 캡 조각을 지운다: 축 둘레로 넓게 걸친 삼각형, 같은 세 꼭짓점으로 겹친 양면 면,
+ * 같은 원 위 세 점으로 된 수평 삼각형(원판 캡). 곡면과 고리 턱은 그대로 남는다. 보통 곡면 삼각형은 각도 폭이 몇 도뿐이다.
+ */
+function stripSpanFins(mesh, zLo, zHi, rMin) {
+  const { verts, faces, faceAttr, faceMain } = mesh;
+  const fc = faces.length / 3;
+  const keep = new Uint8Array(fc);
+  let stripped = 0;
+  // 같은 꼭짓점 세 개로 겹쳐 앉은 면(양면 캡)은 두 장 모두 지운다.
+  const triKey = (f) => [faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2]].sort((p, q) => p - q).join("_");
+  const seenTri = new Map();
+  for (let f = 0; f < fc; f += 1) {
+    const k = triKey(f);
+    seenTri.set(k, (seenTri.get(k) || 0) + 1);
+  }
+  for (let f = 0; f < fc; f += 1) {
+    keep[f] = 1;
+    let zMin = Infinity;
+    let zMax = -Infinity;
+    let rLow = Infinity;
+    let rHigh = -Infinity;
+    const ang = [];
+    for (let k = 0; k < 3; k += 1) {
+      const v = faces[f * 3 + k] * 3;
+      zMin = Math.min(zMin, verts[v + 2]);
+      zMax = Math.max(zMax, verts[v + 2]);
+      const rv = Math.hypot(verts[v], verts[v + 1]);
+      rLow = Math.min(rLow, rv);
+      rHigh = Math.max(rHigh, rv);
+      ang.push(angleOf(verts[v], verts[v + 1]));
+    }
+    if (zMax < zLo || zMax > zHi || rLow < rMin) continue;
+    // 수평 고리 턱은 안·바깥 원에 꼭짓점이 걸치지만, 세 꼭짓점이 같은 원 위에 놓인 수평 삼각형은 원판을 덮은 캡 조각이다.
+    const flatChordCap = zMax - zMin < 1e-3 && rHigh - rLow < 0.02;
+    if (flatChordCap || seenTri.get(triKey(f)) > 1) {
+      keep[f] = 0;
+      stripped += 1;
+      continue;
+    }
+    let span = 0;
+    for (let k = 0; k < 3; k += 1) {
+      let d = Math.abs(ang[k] - ang[(k + 1) % 3]);
+      if (d > Math.PI) d = TWO_PI - d;
+      span = Math.max(span, d);
+    }
+    if (span > FIN_SPAN_RAD) {
+      keep[f] = 0;
+      stripped += 1;
+    }
+  }
+  if (!stripped) return { mesh, stripped: 0 };
+  const nf = [];
+  const na = [];
+  const nm = [];
+  for (let f = 0; f < fc; f += 1) {
+    if (!keep[f]) continue;
+    nf.push(faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2]);
+    na.push(faceAttr[f]);
+    nm.push(faceMain[f]);
+  }
+  return { mesh: { ...mesh, faces: nf, faceAttr: na, faceMain: nm }, stripped };
 }
 
 /** 띠 안쪽 스크류 채널 반경(법선이 축을 향하는 면의 최대 반경). */
@@ -1002,6 +1070,40 @@ function channelRadius(mesh, zLo, zHi, rOuter) {
     if (-(nx * cx + ny * cy) / (len * rc) > 0.5) best = Math.max(best, rc);
   }
   return best;
+}
+
+/** 높이별 스크류 채널 반경(법선이 축을 향하는 면). 0.1mm 칸의 최댓값, 위아래 한 칸까지 넓혀 돌려준다. */
+function channelRadiusByZ(mesh, zLo, zHi, rOuter) {
+  const { verts, faces, faceMain } = mesh;
+  const bin = 0.1;
+  const n = Math.max(1, Math.ceil((zHi - zLo) / bin) + 1);
+  const best = new Float64Array(n);
+  for (let f = 0; f < faceMain.length; f += 1) {
+    if (!faceMain[f]) continue;
+    const a = faces[f * 3] * 3;
+    const b = faces[f * 3 + 1] * 3;
+    const c = faces[f * 3 + 2] * 3;
+    const cz = (verts[a + 2] + verts[b + 2] + verts[c + 2]) / 3;
+    if (cz < zLo || cz > zHi) continue;
+    const cx = (verts[a] + verts[b] + verts[c]) / 3;
+    const cy = (verts[a + 1] + verts[b + 1] + verts[c + 1]) / 3;
+    const rc = Math.hypot(cx, cy);
+    if (rc >= rOuter - 0.1 || rc < 1e-6) continue;
+    const ux = verts[b] - verts[a], uy = verts[b + 1] - verts[a + 1], uz = verts[b + 2] - verts[a + 2];
+    const vx = verts[c] - verts[a], vy = verts[c + 1] - verts[a + 1], vz = verts[c + 2] - verts[a + 2];
+    const nx = uy * vz - uz * vy;
+    const ny = uz * vx - ux * vz;
+    const len = Math.hypot(nx, ny, ux * vy - uy * vx);
+    if (len < 1e-12) continue;
+    if (-(nx * cx + ny * cy) / (len * rc) > 0.5) {
+      const k = Math.min(n - 1, Math.max(0, Math.floor((cz - zLo) / bin)));
+      best[k] = Math.max(best[k], rc);
+    }
+  }
+  return (z) => {
+    const k = Math.min(n - 1, Math.max(0, Math.floor((z - zLo) / bin)));
+    return Math.max(best[k], k > 0 ? best[k - 1] : 0, k < n - 1 ? best[k + 1] : 0);
+  };
 }
 
 /**
@@ -1035,7 +1137,13 @@ function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut, origProbe, crease }
   };
   const inBandOuter = (f, zTopSlack) => {
     const [cx, cy, cz] = centroid(f);
-    return cz > zA && cz < topZOf(angleOf(cx, cy)) + zTopSlack && Math.hypot(cx, cy) > rCut;
+    if (!(cz > zA && cz < topZOf(angleOf(cx, cy)) + zTopSlack)) return false;
+    // 겹친 캡 조각은 길쭉해서 무게중심이 축 쪽으로 들어온다. 세 꼭짓점이 모두 채널 밖이면 외곽 면이다.
+    for (let k = 0; k < 3; k += 1) {
+      const v = faces[f * 3 + k] * 3;
+      if (Math.hypot(verts[v], verts[v + 1]) <= rCut) return false;
+    }
+    return true;
   };
   if (crease) {
     // 마진 모서리를 넘지 않고, 모서리 아래 외곽 면만 이웃을 따라 지운다(모서리 위 면은 하나도 안 지운다).
@@ -1403,7 +1511,9 @@ function wrapResult(fn) {
  */
 export function blendCuffJunction(buffer, options = {}) {
   return wrapResult(() => {
-    const { mesh, probe, taper, zA, matchedKey, warning } = setup(buffer, options);
+    const prepared = setup(buffer, options);
+    const { taper, zA, matchedKey, warning } = prepared;
+    let { mesh, probe } = prepared;
     const flMin = finishLineMinZ(options.finishLine);
     if (!Number.isFinite(flMin)) fail("manual-review", "피니시라인이 없어 커프 보호 범위를 정할 수 없습니다.");
     // 피니시라인(크라운 안착)과 그 위는 절대 건드리지 않는다.
@@ -1412,6 +1522,17 @@ export function blendCuffJunction(buffer, options = {}) {
     const thetas = thetaColumns();
     const flZ = finishLineZByAngle(options.finishLine);
     if (!flZ) fail("manual-review", "피니시라인 곡선을 읽지 못해 이음 위 끝을 정할 수 없습니다.");
+    // 예전 fill_steps 캡이 남긴 얇은 부채·고리(축 둘레로 넓게 걸친 삼각형)를 먼저 걷어 낸다.
+    const flMaxZ = Math.max(...thetaColumns().map(flZ));
+    const fins = stripSpanFins(mesh, zA - 0.05, flMaxZ + 0.3, taper.coneAt(zA) * 0.6);
+    if (fins.stripped) {
+      mesh = fins.mesh;
+      const mainFaces = [];
+      for (let f = 0; f < mesh.faceMain.length; f += 1) {
+        if (mesh.faceMain[f]) mainFaces.push(mesh.faces[f * 3], mesh.faces[f * 3 + 1], mesh.faces[f * 3 + 2]);
+      }
+      probe = new RadialProbe(mesh.verts, mainFaces);
+    }
     const crease = findFinishCrease(mesh, flZ);
     const seamZ = crease ? crease.zOf : flZ;
     const attempt = (offsetMm) => {
@@ -1461,7 +1582,8 @@ export function blendCuffJunction(buffer, options = {}) {
       return p ? p.fn : concaveBridgeProfile(ra, m0, r1s[j], h);
     });
     let maxSlope = 0;
-    let minR = Infinity;
+    let minWall = Infinity;
+    const chAtZ = channelRadiusByZ(mesh, zA - 0.3, zTopMax + 0.3, ra);
     for (let j = 0; j < profiles.length; j += 1) {
       const h = hs[j];
       const lo = Math.min(ra, tops[j].r) - MAX_OVERSHOOT_MM;
@@ -1471,7 +1593,8 @@ export function blendCuffJunction(buffer, options = {}) {
         const r = profiles[j](i / 50);
         if (r < lo || r > hi) fail("manual-review", "이음 곡면이 커넥션·커프 범위를 벗어납니다.");
         maxSlope = Math.max(maxSlope, Math.abs(r - prev) / (h / 50));
-        minR = Math.min(minR, r);
+        // 벽 두께는 같은 높이의 채널 반경과 비교한다(채널이 위에서 벌어져도 아래 원뿔 벽은 영향 없음).
+        minWall = Math.min(minWall, r - chAtZ(zA + (i / 50) * h));
         prev = r;
       }
     }
@@ -1480,7 +1603,7 @@ export function blendCuffJunction(buffer, options = {}) {
         maxAngleDeg: round3((Math.atan(maxSlope) * 180) / Math.PI),
       });
     }
-    if (rCh > 0 && minR - rCh < MIN_WALL_MM) {
+    if (rCh > 0 && minWall < MIN_WALL_MM) {
       fail("manual-review", "이음부 벽 두께가 스크류 채널 대비 너무 얇아집니다.");
     }
     const out = replaceBand(mesh, {
@@ -1527,6 +1650,7 @@ export function blendCuffJunction(buffer, options = {}) {
         originDiameter: round3(taper.originDiameter),
         maxAngleDeg: round3((Math.atan(maxSlope) * 180) / Math.PI),
                 removedTriangles: out.removedTriangles,
+        strippedFinTriangles: fins.stripped,
         patchTriangles: out.patchTriangles,
       },
     };
