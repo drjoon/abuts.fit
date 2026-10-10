@@ -9,9 +9,7 @@ function normalizeBusinessNumberDigits(input) {
 }
 
 /** 홈택스 진위/상태가 어긋나도 등록 검증을 통과시킬 사업자번호(숫자 10자리) */
-const VERIFICATION_ALWAYS_PASS_BIZ_NOS = new Set([
-  "5028702617", // 저스트플러스
-]);
+const VERIFICATION_ALWAYS_PASS_BIZ_NOS = new Set([]);
 
 const DEFAULT_BASE_URL = "https://api.odcloud.kr/api/nts-businessman";
 
