@@ -14,6 +14,11 @@ const DEFAULT_SNAP_Z_BAND_MM = 0.85;
 const DEFAULT_SECTION_COUNT = 72;
 const DEFAULT_TRACE_Z_BAND_MM = 1.2;
 const DEFAULT_RESAMPLE_COUNT = 96;
+/** 클릭 지점 스냅 반경·Z폭. 커서에서 멀리 벗어난 정점으로 끌려가지 않게 작게 둔다. */
+export const CLICK_SNAP_RADIUS_MM = 0.5;
+export const CLICK_SNAP_Z_BAND_MM = 0.4;
+/** 모서리로 보는 반경 허용치(mm). 이보다 안쪽(재표면 곡면)은 제외. */
+const EDGE_RADIUS_TOL_MM = 0.03;
 const OUTLIER_RADIUS_RATIO = 0.22;
 const OUTLIER_DZ_MM = 1.2;
 
@@ -130,7 +135,8 @@ export function traceFinishLineFromSeed(
 
   const seed = snapToLocalRidge(geometry, seedRaw, {
     axisXy: [cx, cy],
-    zBandMm: Math.min(zBand, DEFAULT_SNAP_Z_BAND_MM),
+    searchRadiusMm: CLICK_SNAP_RADIUS_MM,
+    zBandMm: Math.min(zBand, CLICK_SNAP_Z_BAND_MM),
   });
   const z0 = seed[2];
 
@@ -138,6 +144,8 @@ export function traceFinishLineFromSeed(
     { length: sectionCount },
     () => null,
   );
+
+  const candidates: BucketPoint[][] = Array.from({ length: sectionCount }, () => []);
 
   for (let i = 0; i < positions.length; i += 3) {
     const x = positions[i];
@@ -152,6 +160,20 @@ export function traceFinishLineFromSeed(
     if (!prev || r > prev.r) {
       buckets[bi] = { x, y, z, r };
     }
+    (candidates[bi] ||= []).push({ x, y, z, r });
+  }
+
+  // 어깨 모서리(원본 FL)만 잡는다. 최대 반경 근처 정점 중 가장 높은 것을 고른다.
+  // 모서리 아래로 이어지는 재표면(re-surface) 곡면 정점은 반경이 거의 같아도 더 낮으므로 제외된다.
+  for (let i = 0; i < sectionCount; i += 1) {
+    const list = candidates[i];
+    const top = buckets[i];
+    if (!list || !top) continue;
+    let best = top;
+    for (const p of list) {
+      if (p.r >= top.r - EDGE_RADIUS_TOL_MM && p.z > best.z) best = p;
+    }
+    buckets[i] = best;
   }
 
   // 빈 버킷: 양옆 유효 버킷 보간

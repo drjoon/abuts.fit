@@ -75,6 +75,8 @@ import {
   type TaperDirectionGuide,
 } from "../utils/lotEngraving";
 import {
+  CLICK_SNAP_RADIUS_MM,
+  CLICK_SNAP_Z_BAND_MM,
   snapToLocalRidge,
   traceFinishLineFromSeed,
   type Xyz,
@@ -105,6 +107,8 @@ type Props = {
   gridVisible?: boolean;
   /** 처음 뷰를 측면(Zoom to Extent)으로 연다. */
   initialSideView?: boolean;
+  /** 피니시라인(빨간 선·min/max 점) 표시. 기본 true. */
+  finishLineVisible?: boolean;
   /** 사용자가 회전·이동·확대할 때마다 부른다(다른 뷰어와 연동용). */
   onViewChange?: (state: ViewSyncState) => void;
   finishLinePoints?: number[][] | null;
@@ -175,6 +179,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       showGrid = true,
       gridVisible = true,
       initialSideView = false,
+      finishLineVisible = true,
       onViewChange,
       finishLinePoints,
       enableManualPick = false,
@@ -275,6 +280,13 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
   const gridRef = useRef<THREE.GridHelper | null>(null);
   const gridVisibleRef = useRef(gridVisible);
   gridVisibleRef.current = gridVisible;
+  const finishLineVisibleRef = useRef(finishLineVisible);
+  finishLineVisibleRef.current = finishLineVisible;
+  useEffect(() => {
+    modelPivotRef.current?.traverse((o) => {
+      if (o.userData?.flOverlay) o.visible = finishLineVisible;
+    });
+  }, [finishLineVisible]);
   const initialSideViewRef = useRef(initialSideView);
   initialSideViewRef.current = initialSideView;
   useEffect(() => {
@@ -1802,6 +1814,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           const raycaster = new THREE.Raycaster();
           const pointer = new THREE.Vector2();
           const PICK_MOVE_PX = 6;
+          let rightDownPos: { x: number; y: number } | null = null;
 
           const clearHoverSnap = () => {
             const marker = hoverSnapMarkerRef.current;
@@ -1862,7 +1875,10 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
             const guide = finishLineGuideModeRef.current;
             if (!guide) return raw;
             const geom = mesh.geometry as THREE.BufferGeometry;
-            return snapToLocalRidge(geom, raw);
+            return snapToLocalRidge(geom, raw, {
+              searchRadiusMm: CLICK_SNAP_RADIUS_MM,
+              zBandMm: CLICK_SNAP_Z_BAND_MM,
+            });
           };
 
           const pickFromClient = (clientX: number, clientY: number) => {
@@ -1942,7 +1958,14 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
 
           const onPointerDown = (event: PointerEvent) => {
             if (!enableManualPickRef.current) return;
+            if (event.button === 2) {
+              rightDownPos = { x: event.clientX, y: event.clientY };
+              return;
+            }
             if (event.button !== 0) return;
+            // 왼쪽 버튼은 오빗이 시작하지 않아 lastGestureMoved가 이전 우클릭 드래그 값으로 남는다.
+            // 새 클릭마다 초기화하지 않으면 한 번 회전한 뒤 픽이 영구히 무시된다.
+            controls.lastGestureMoved = false;
             pickPointerDownPosRef.current = {
               x: event.clientX,
               y: event.clientY,
@@ -1951,6 +1974,16 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
 
           const onPointerUp = (event: PointerEvent) => {
             if (!enableManualPickRef.current) return;
+            if (event.button === 2) {
+              const rd = rightDownPos;
+              rightDownPos = null;
+              if (!rd || controls.lastGestureMoved) return;
+              const rx = event.clientX - rd.x;
+              const ry = event.clientY - rd.y;
+              if (rx * rx + ry * ry > PICK_MOVE_PX * PICK_MOVE_PX) return;
+              onManualUndoRef.current?.();
+              return;
+            }
             if (event.button !== 0) return;
             const down = pickPointerDownPosRef.current;
             pickPointerDownPosRef.current = null;
@@ -2021,9 +2054,8 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
             if (!enableManualPickRef.current) return;
             event.preventDefault();
             event.stopPropagation();
-            // 우클릭 드래그 패닝 직후에는 undo하지 않는다.
-            if (controls.lastGestureMoved) return;
-            onManualUndoRef.current?.();
+            // macOS는 contextmenu가 버튼을 누르는 순간 발생해 회전 드래그와 구분할 수 없다.
+            // 실행취소는 onPointerUp(우클릭, 이동 없음)에서 처리한다.
           };
           if (contextMenuHandlerRef.current) {
             renderer.domElement.removeEventListener("contextmenu", contextMenuHandlerRef.current);
@@ -2345,6 +2377,8 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
             });
             finishLine = new THREE.Mesh(tubeGeometry, tubeMaterial);
             finishLine.renderOrder = 10;
+            finishLine.userData.flOverlay = true;
+            finishLine.visible = finishLineVisibleRef.current;
             modelPivot.add(finishLine);
           }
         }
@@ -2409,6 +2443,8 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
             finishLineMaxPointMarker = new THREE.Mesh(g, m);
             finishLineMaxPointMarker.position.copy(toSceneVec(maxPoint));
             finishLineMaxPointMarker.renderOrder = 30;
+            finishLineMaxPointMarker.userData.flOverlay = true;
+            finishLineMaxPointMarker.visible = finishLineVisibleRef.current;
             modelPivot.add(finishLineMaxPointMarker);
           }
 
@@ -2420,6 +2456,8 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
             finishLineMinPointMarker = new THREE.Mesh(g, m);
             finishLineMinPointMarker.position.copy(toSceneVec(minPoint));
             finishLineMinPointMarker.renderOrder = 30;
+            finishLineMinPointMarker.userData.flOverlay = true;
+            finishLineMinPointMarker.visible = finishLineVisibleRef.current;
             modelPivot.add(finishLineMinPointMarker);
           }
         }

@@ -659,6 +659,7 @@ export const PreviewModal = ({
     [],
   );
   /** 반자동 추적 미리보기(저장 전). Esc/모드전환 시 폐기. */
+  const [showFinishLine, setShowFinishLine] = useState(true);
   const [semiAutoPendingPoints, setSemiAutoPendingPoints] = useState<
     number[][] | null
   >(null);
@@ -1524,9 +1525,36 @@ export const PreviewModal = ({
     if (!hasPaintViewer[side]) return null;
     const paint = side === "left" ? linkedLeftPaint : linkedRightPaint;
     const paintTitle = side === "left" ? leftTitle : rightTitle;
+    const guideSemi = finishLineGuideKind === "semiAuto";
+    const guideText = guideSemi
+      ? semiAutoPendingPoints
+        ? "확인 후 저장"
+        : "어깨 클릭"
+      : guidedFinishLinePoints.length === 0
+        ? "시작점 클릭"
+        : "끝점 클릭";
+    const guideUndoDisabled =
+      (guideSemi ? !semiAutoPendingPoints : guidedFinishLinePoints.length === 0) ||
+      guidedFinishLineSubmitting ||
+      isUploading;
+    const guideSaveDisabled =
+      (guideSemi
+        ? !semiAutoPendingPoints || semiAutoPendingPoints.length < 3
+        : guidedFinishLinePoints.length < 2) ||
+      guidedFinishLineSubmitting ||
+      isUploading;
+    const iconBtn =
+      "inline-flex h-8 items-center justify-center rounded-md border bg-white/95 text-xs font-medium shadow-sm transition disabled:opacity-40";
+    const showGuide = side === "right" && guidedFinishLineMode;
+    const showFlBad =
+      side === "right" &&
+      !guidedFinishLineMode &&
+      isFinishLineCaptureBad &&
+      canGuideFinishLine &&
+      !isTrackingStage;
     return (
       <>
-        <div className="absolute left-3 top-3 z-20 flex items-center gap-1.5">
+        <div className="absolute left-3 top-3 z-20 flex max-w-[calc(100%-9rem)] flex-wrap items-center gap-1.5">
           <PreviewPaintControls
             paint={paint}
             disabled={paintControlsDisabled}
@@ -1534,7 +1562,7 @@ export const PreviewModal = ({
           />
           <button
             type="button"
-            className={`inline-flex h-8 w-8 items-center justify-center rounded-md border bg-white/95 shadow-sm transition ${
+            className={`${iconBtn} w-8 ${
               gridOn ? "border-primary-muted text-primary-strong" : "border-slate-200 text-slate-400"
             }`}
             aria-pressed={gridOn}
@@ -1544,6 +1572,93 @@ export const PreviewModal = ({
           >
             <Grid3x3 className="h-4 w-4" />
           </button>
+          {side === "right" ? (
+            <button
+              type="button"
+              className={`${iconBtn} w-8 font-bold ${
+                showFinishLine || guidedFinishLineMode
+                  ? "border-primary-muted text-primary-strong"
+                  : "border-slate-200 text-slate-400 line-through"
+              }`}
+              aria-pressed={showFinishLine}
+              aria-label="피니시라인 켜기/끄기"
+              title={showFinishLine ? "피니시라인 끄기" : "피니시라인 켜기"}
+              disabled={guidedFinishLineMode}
+              onClick={() => setShowFinishLine((on) => !on)}
+            >
+              FL
+            </button>
+          ) : null}
+          {showFlBad ? (
+            <button
+              type="button"
+              className={`${iconBtn} border-destructive/60 px-2.5 text-destructive hover:bg-destructive-soft`}
+              title="피니시라인 불량 — FL로 수정하세요"
+              disabled={guidedFinishLineSubmitting || guidedFrontPointSubmitting || isUploading}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleToggleFinishLineEdit();
+              }}
+            >
+              FL 불량 · 수정
+            </button>
+          ) : null}
+          {showGuide ? (
+            <>
+              {(
+                [
+                  ["semiAuto", "반자동"],
+                  ["manual", "수동"],
+                ] as const
+              ).map(([kind, label]) => (
+                <button
+                  key={kind}
+                  type="button"
+                  className={`${iconBtn} px-2.5 ${
+                    finishLineGuideKind === kind
+                      ? "border-accent/70 bg-accent-soft text-accent-strong"
+                      : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                  disabled={guidedFinishLineSubmitting || isUploading}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleSwitchFinishLineGuideKind(kind);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+              <span className="inline-flex h-8 items-center whitespace-nowrap rounded-md bg-white/95 px-2 text-xs font-semibold text-accent-strong shadow-sm">
+                {guideText}
+              </span>
+              <button
+                type="button"
+                className={`${iconBtn} border-slate-200 px-2.5 text-slate-700 hover:bg-slate-50`}
+                disabled={guideUndoDisabled}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleUndoGuidedFinishLinePoint();
+                }}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className={`${iconBtn} border-accent/70 px-2.5 text-accent-strong hover:bg-accent-soft`}
+                disabled={guideSaveDisabled}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void handleSubmitGuidedFinishLine();
+                }}
+              >
+                {guidedFinishLineSubmitting ? "저장 중…" : "저장"}
+              </button>
+            </>
+          ) : null}
         </div>
         <div className="absolute right-3 top-3 z-20 flex items-center gap-1.5">
           {(
@@ -3490,126 +3605,6 @@ export const PreviewModal = ({
                     : ""
                 }`}
               >
-                {guidedFinishLineMode && isCamStage ? (
-                  <div
-                    className="flex flex-col gap-1.5 rounded-md border border-accent/50 bg-accent-soft px-2.5 py-1.5 text-[12px] font-semibold text-accent-strong"
-                    role="status"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                        <div className="inline-flex overflow-hidden rounded border border-accent/50 bg-white text-[11px] font-bold">
-                          <button
-                            type="button"
-                            className={`px-2 py-0.5 ${
-                              finishLineGuideKind === "semiAuto"
-                                ? "bg-accent text-white"
-                                : "text-accent-strong hover:bg-accent-soft"
-                            }`}
-                            disabled={guidedFinishLineSubmitting || isUploading}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handleSwitchFinishLineGuideKind("semiAuto");
-                            }}
-                          >
-                            반자동
-                          </button>
-                          <button
-                            type="button"
-                            className={`px-2 py-0.5 ${
-                              finishLineGuideKind === "manual"
-                                ? "bg-accent text-white"
-                                : "text-accent-strong hover:bg-accent-soft"
-                            }`}
-                            disabled={guidedFinishLineSubmitting || isUploading}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handleSwitchFinishLineGuideKind("manual");
-                            }}
-                          >
-                            수동
-                          </button>
-                        </div>
-                        <span className="min-w-0">
-                          {finishLineGuideKind === "semiAuto"
-                            ? semiAutoPendingPoints
-                              ? "미리보기 확인 후 저장 · 다시 찍으려면 실행취소"
-                              : "어깨 능선을 한 번 클릭하면 피니시라인을 찾습니다."
-                            : guidedFinishLinePoints.length === 0
-                              ? "① 빨간 라인 위 시작점을 한 번 클릭"
-                              : guidedFinishLinePoints.length === 1
-                                ? "② 올바른 어깨를 따라 클릭한 뒤, 빨간 라인 위 끝점 클릭 또는 저장"
-                                : `② 경로 ${guidedFinishLinePoints.length}점 — 끝점 클릭 또는 저장`}
-                        </span>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <button
-                          type="button"
-                          className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                          disabled={
-                            (finishLineGuideKind === "semiAuto"
-                              ? !semiAutoPendingPoints
-                              : guidedFinishLinePoints.length === 0) ||
-                            guidedFinishLineSubmitting ||
-                            isUploading
-                          }
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleUndoGuidedFinishLinePoint();
-                          }}
-                        >
-                          실행취소
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded border border-accent/60 bg-white px-2 py-0.5 text-[11px] font-bold text-accent-strong hover:bg-accent-soft disabled:opacity-40"
-                          disabled={
-                            (finishLineGuideKind === "semiAuto"
-                              ? !semiAutoPendingPoints ||
-                                semiAutoPendingPoints.length < 3
-                              : guidedFinishLinePoints.length < 2) ||
-                            guidedFinishLineSubmitting ||
-                            isUploading
-                          }
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            void handleSubmitGuidedFinishLine();
-                          }}
-                        >
-                          {guidedFinishLineSubmitting ? "저장 중…" : "저장"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : isFinishLineCaptureBad && isCamStage ? (
-                  <div
-                    className="flex items-center justify-between gap-2 rounded-md border border-destructive/50 bg-destructive-soft px-2.5 py-1.5 text-[12px] font-semibold text-destructive"
-                    role="status"
-                  >
-                    <span>피니시라인 불량 — FL로 수정하세요</span>
-                    {canGuideFinishLine && !guidedFinishLineMode ? (
-                      <button
-                        type="button"
-                        className="shrink-0 rounded border border-destructive/60 bg-white px-2 py-0.5 text-[11px] font-bold text-destructive hover:bg-destructive/10"
-                        disabled={
-                          guidedFinishLineSubmitting ||
-                          guidedFrontPointSubmitting ||
-                          isUploading
-                        }
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleToggleFinishLineEdit();
-                        }}
-                      >
-                        FL 수정
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
                 <div className="flex items-center justify-between gap-2 min-w-0">
                   <button
                     type="button"
@@ -3820,6 +3815,7 @@ export const PreviewModal = ({
                       }
                       gridVisible={gridOn}
                       initialSideView
+                      finishLineVisible={showFinishLine || guidedFinishLineMode}
                       onViewChange={(state) => rightViewerRef.current?.applyViewState(state)}
                       onPaintSpace={
                         setLeftPaintSpace
@@ -3844,6 +3840,7 @@ export const PreviewModal = ({
                       finishLinePoints={finishLinePoints}
                       gridVisible={gridOn}
                       initialSideView
+                      finishLineVisible={showFinishLine || guidedFinishLineMode}
                       onViewChange={(state) => rightViewerRef.current?.applyViewState(state)}
                       onPaintSpace={
                         setLeftPaintSpace
@@ -3878,126 +3875,6 @@ export const PreviewModal = ({
                   onUploadRight(file);
                 }}
               >
-                {guidedFinishLineMode && !isCamStage ? (
-                  <div
-                    className="flex flex-col gap-1.5 rounded-md border border-accent/50 bg-accent-soft px-2.5 py-1.5 text-[12px] font-semibold text-accent-strong"
-                    role="status"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                        <div className="inline-flex overflow-hidden rounded border border-accent/50 bg-white text-[11px] font-bold">
-                          <button
-                            type="button"
-                            className={`px-2 py-0.5 ${
-                              finishLineGuideKind === "semiAuto"
-                                ? "bg-accent text-white"
-                                : "text-accent-strong hover:bg-accent-soft"
-                            }`}
-                            disabled={guidedFinishLineSubmitting || isUploading}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handleSwitchFinishLineGuideKind("semiAuto");
-                            }}
-                          >
-                            반자동
-                          </button>
-                          <button
-                            type="button"
-                            className={`px-2 py-0.5 ${
-                              finishLineGuideKind === "manual"
-                                ? "bg-accent text-white"
-                                : "text-accent-strong hover:bg-accent-soft"
-                            }`}
-                            disabled={guidedFinishLineSubmitting || isUploading}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handleSwitchFinishLineGuideKind("manual");
-                            }}
-                          >
-                            수동
-                          </button>
-                        </div>
-                        <span className="min-w-0">
-                          {finishLineGuideKind === "semiAuto"
-                            ? semiAutoPendingPoints
-                              ? "미리보기 확인 후 저장 · 다시 찍으려면 실행취소"
-                              : "어깨 능선을 한 번 클릭하면 피니시라인을 찾습니다."
-                            : guidedFinishLinePoints.length === 0
-                              ? "① 빨간 라인 위 시작점을 한 번 클릭"
-                              : guidedFinishLinePoints.length === 1
-                                ? "② 올바른 어깨를 따라 클릭한 뒤, 빨간 라인 위 끝점 클릭 또는 저장"
-                                : `② 경로 ${guidedFinishLinePoints.length}점 — 끝점 클릭 또는 저장`}
-                        </span>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <button
-                          type="button"
-                          className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                          disabled={
-                            (finishLineGuideKind === "semiAuto"
-                              ? !semiAutoPendingPoints
-                              : guidedFinishLinePoints.length === 0) ||
-                            guidedFinishLineSubmitting ||
-                            isUploading
-                          }
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleUndoGuidedFinishLinePoint();
-                          }}
-                        >
-                          실행취소
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded border border-accent/60 bg-white px-2 py-0.5 text-[11px] font-bold text-accent-strong hover:bg-accent-soft disabled:opacity-40"
-                          disabled={
-                            (finishLineGuideKind === "semiAuto"
-                              ? !semiAutoPendingPoints ||
-                                semiAutoPendingPoints.length < 3
-                              : guidedFinishLinePoints.length < 2) ||
-                            guidedFinishLineSubmitting ||
-                            isUploading
-                          }
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            void handleSubmitGuidedFinishLine();
-                          }}
-                        >
-                          {guidedFinishLineSubmitting ? "저장 중…" : "저장"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : isFinishLineCaptureBad && !isTrackingStage && !isCamStage ? (
-                  <div
-                    className="flex items-center justify-between gap-2 rounded-md border border-destructive/50 bg-destructive-soft px-2.5 py-1.5 text-[12px] font-semibold text-destructive"
-                    role="status"
-                  >
-                    <span>피니시라인 불량 — FL로 수정하세요</span>
-                    {canGuideFinishLine && !guidedFinishLineMode ? (
-                      <button
-                        type="button"
-                        className="shrink-0 rounded border border-destructive/60 bg-white px-2 py-0.5 text-[11px] font-bold text-destructive hover:bg-destructive/10"
-                        disabled={
-                          guidedFinishLineSubmitting ||
-                          guidedFrontPointSubmitting ||
-                          isUploading
-                        }
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleToggleFinishLineEdit();
-                        }}
-                      >
-                        FL 수정
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
                 <div className="flex items-center justify-between gap-2 min-w-0">
                   {isTrackingStage ? (
                     <div className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-slate-50 p-0.5 min-w-0">
@@ -4466,6 +4343,7 @@ export const PreviewModal = ({
                       }
                       gridVisible={gridOn}
                       initialSideView
+                      finishLineVisible={showFinishLine || guidedFinishLineMode}
                       onViewChange={(state) => leftViewerRef.current?.applyViewState(state)}
                       onPaintSpace={
                         setRightPaintSpace
