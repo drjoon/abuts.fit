@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-10: 메타 정보 창·안내(삽입축·각도) 표시 토글, 45도 보기.
 // - 2026-10-01: onPaintSpace — 페인트 표시를 모델에 붙인다. 화면을 돌리면 같이 돈다.
 // - 2026-09-28: fitToView — 프리뷰의 「화면 맞춤」. 칼라 매핑 토글은 PreviewColorMappingToggle 공용.
 // - 2026-09-23: FL 반자동/수동 — ridge 스냅·호버 고스트·시드 1클릭 전둘레 추적.
@@ -109,6 +110,10 @@ type Props = {
   initialSideView?: boolean;
   /** 피니시라인(빨간 선·min/max 점) 표시. 기본 true. */
   finishLineVisible?: boolean;
+  /** 하단 메타 정보 창. showOverlay일 때만. 기본 true. */
+  metaVisible?: boolean;
+  /** 삽입축·각도 가이드. 기본 true. 피니시라인은 finishLineVisible. */
+  guidesVisible?: boolean;
   /** 사용자가 회전·이동·확대할 때마다 부른다(다른 뷰어와 연동용). */
   onViewChange?: (state: ViewSyncState) => void;
   finishLinePoints?: number[][] | null;
@@ -154,6 +159,8 @@ export type StlPreviewViewerHandle = {
   viewSide: () => void;
   /** 위(+Z)에서 내려다보고 모델이 뷰에 꽉 차게 맞춘다. */
   viewTop: () => void;
+  /** 측면과 상단 사이 45도에서 보고 모델이 뷰에 꽉 차게 맞춘다. */
+  view45: () => void;
   /** 다른 뷰어의 회전·이동·확대 상태를 그대로 따른다(onViewChange의 값). */
   applyViewState: (state: ViewSyncState) => void;
 };
@@ -180,6 +187,8 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       gridVisible = true,
       initialSideView = false,
       finishLineVisible = true,
+      metaVisible = true,
+      guidesVisible = true,
       onViewChange,
       finishLinePoints,
       enableManualPick = false,
@@ -273,7 +282,9 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
   const [colorMappingEnabled, setColorMappingEnabled] = useState(true);
   const previewTextureRef = useRef<THREE.Texture | null>(null);
   const applyCameraFitRef = useRef<(() => void) | null>(null);
-  const fitExtentRef = useRef<((side: "side" | "top", auto?: boolean) => void) | null>(null);
+  const fitExtentRef = useRef<
+    ((preset: "side" | "top" | "deg45", auto?: boolean) => void) | null
+  >(null);
   const applyViewStateRef = useRef<((state: ViewSyncState) => void) | null>(null);
   const onViewChangeRef = useRef(onViewChange);
   onViewChangeRef.current = onViewChange;
@@ -282,11 +293,14 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
   gridVisibleRef.current = gridVisible;
   const finishLineVisibleRef = useRef(finishLineVisible);
   finishLineVisibleRef.current = finishLineVisible;
+  const guidesVisibleRef = useRef(guidesVisible);
+  guidesVisibleRef.current = guidesVisible;
   useEffect(() => {
     modelPivotRef.current?.traverse((o) => {
       if (o.userData?.flOverlay) o.visible = finishLineVisible;
+      if (o.userData?.guideOverlay) o.visible = guidesVisible;
     });
-  }, [finishLineVisible]);
+  }, [finishLineVisible, guidesVisible]);
   const initialSideViewRef = useRef(initialSideView);
   initialSideViewRef.current = initialSideView;
   useEffect(() => {
@@ -327,6 +341,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       fitToView: () => applyCameraFitRef.current?.(),
       viewSide: () => fitExtentRef.current?.("side"),
       viewTop: () => fitExtentRef.current?.("top"),
+      view45: () => fitExtentRef.current?.("deg45"),
       applyViewState: (state) => applyViewStateRef.current?.(state),
     }),
     [],
@@ -2105,6 +2120,8 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           taperAxisGuide = new Line2(axisGeom, axisMat);
           taperAxisGuide.computeLineDistances();
           taperAxisGuide.renderOrder = 13;
+          taperAxisGuide.userData.guideOverlay = true;
+          taperAxisGuide.visible = guidesVisibleRef.current;
           modelPivot.add(taperAxisGuide);
         }
 
@@ -2278,6 +2295,8 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
               const line = new Line2(lineGeom, lineMat);
               line.renderOrder = 20;
               line.computeLineDistances();
+              line.userData.guideOverlay = true;
+              line.visible = guidesVisibleRef.current;
               modelPivot.add(line);
               multiDirectionLines.push(line);
 
@@ -2318,6 +2337,8 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
                 const textScale = isMaxPair ? 3.0 : 2.0;
                 sprite.scale.set(textScale, textScale * 0.25, 1);
                 sprite.renderOrder = 21;
+                sprite.userData.guideOverlay = true;
+                sprite.visible = guidesVisibleRef.current;
                 modelPivot.add(sprite);
                 multiDirectionSprites.push(sprite);
               }
@@ -2519,13 +2540,17 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
         applyCameraFitRef.current = applyCameraFit;
 
         // 옆·위 보기: 메시 bbox 모서리를 화면에 투영해 가로·세로에 꽉 차게(Zoom to Extent).
-        fitExtentRef.current = (side, auto = false) => {
+        fitExtentRef.current = (preset, auto = false) => {
           const fitMesh = meshRef.current;
           if (!fitMesh) return;
           fitMesh.updateMatrixWorld(true);
           const dir =
-            side === "top" ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, -1, 0);
-          const up = side === "top" ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
+            preset === "top"
+              ? new THREE.Vector3(0, 0, 1)
+              : preset === "deg45"
+                ? new THREE.Vector3(0, -1, 1).normalize()
+                : new THREE.Vector3(0, -1, 0);
+          const up = preset === "top" ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
           const distance = Math.max(radius * 4, 40);
           camera.up.copy(up);
           camera.position.copy(viewTarget.clone().addScaledVector(dir, distance));
@@ -3168,7 +3193,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           {error}
         </div>
       )}
-      {showOverlay && (
+      {showOverlay && metaVisible && (
         <div className="pointer-events-none absolute inset-x-2 bottom-2 z-10 flex flex-wrap gap-1.5 justify-between items-end">
           <div className="min-w-0 flex-1 basis-[9.5rem] max-w-full rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-[10px] leading-snug font-medium text-slate-800 shadow-sm sm:text-[11px] md:text-[12px]">
             <div className="flex min-w-0 items-baseline justify-between gap-2">

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-10: 작업영역 1행 — 왼쪽 그리드·메타·안내·페인트, 오른쪽 측면·상단·45도.
 // - 2026-10-03: 제조사 프리뷰 STL은 스캔색 스위치 숨김(showColorMappingToggle=false).
 // - 2026-10-03: STL 뷰어에 페인트(표시·이미지 저장). filled 쪽 우선, FL/FP 편집 중에는 끔.
 // - 2026-10-03: STL 뷰어에 ViewGestureHint(화면 조작) 표시 — 의뢰 프리뷰와 동일.
@@ -70,7 +71,7 @@
 // - web/backend/controllers/rhino/rhino.controller.js
 // - web/backend/modules/rhino/rhino.routes.js
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Grid3x3, Loader2, RefreshCw, X } from "lucide-react";
+import { Grid3x3, Info, Loader2, RefreshCw, Spline, X } from "lucide-react";
 import { mirrorShapes } from "@/shared/components/practice/viewPaintMirror";
 import type { PaintShape } from "@/shared/components/practice/viewPaintGeom";
 import {
@@ -659,7 +660,8 @@ export const PreviewModal = ({
     [],
   );
   /** 반자동 추적 미리보기(저장 전). Esc/모드전환 시 폐기. */
-  const [showFinishLine, setShowFinishLine] = useState(true);
+  const [metaOn, setMetaOn] = useState(true);
+  const [guidesOn, setGuidesOn] = useState(true);
   const [semiAutoPendingPoints, setSemiAutoPendingPoints] = useState<
     number[][] | null
   >(null);
@@ -1506,7 +1508,7 @@ export const PreviewModal = ({
   const paintControlsDisabled = previewLoading || guidedFinishLineMode || guidedFrontPointMode || approveBusy;
   const viewerRefOf = { left: leftViewerRef, right: rightViewerRef };
   // 한쪽에서 시점 버튼을 누르면 양쪽에 적용한다.
-  const runLinkedView = (kind: "viewSide" | "viewTop") => {
+  const runLinkedView = (kind: "viewSide" | "viewTop" | "view45") => {
     leftViewerRef.current?.[kind]();
     rightViewerRef.current?.[kind]();
   };
@@ -1552,14 +1554,10 @@ export const PreviewModal = ({
       isFinishLineCaptureBad &&
       canGuideFinishLine &&
       !isTrackingStage;
+    const guidesShown = guidesOn || guidedFinishLineMode;
     return (
       <>
-        <div className="absolute left-3 top-3 z-20 flex max-w-[calc(100%-9rem)] flex-wrap items-center gap-1.5">
-          <PreviewPaintControls
-            paint={paint}
-            disabled={paintControlsDisabled}
-            className="bg-white/95 text-xs shadow-sm"
-          />
+        <div className="absolute left-3 top-3 z-20 flex max-w-[calc(100%-12rem)] flex-wrap items-center gap-1.5">
           <button
             type="button"
             className={`${iconBtn} w-8 ${
@@ -1572,23 +1570,43 @@ export const PreviewModal = ({
           >
             <Grid3x3 className="h-4 w-4" />
           </button>
-          {side === "right" ? (
-            <button
-              type="button"
-              className={`${iconBtn} w-8 font-bold ${
-                showFinishLine || guidedFinishLineMode
-                  ? "border-primary-muted text-primary-strong"
-                  : "border-slate-200 text-slate-400 line-through"
-              }`}
-              aria-pressed={showFinishLine}
-              aria-label="피니시라인 켜기/끄기"
-              title={showFinishLine ? "피니시라인 끄기" : "피니시라인 켜기"}
-              disabled={guidedFinishLineMode}
-              onClick={() => setShowFinishLine((on) => !on)}
-            >
-              FL
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className={`${iconBtn} w-8 ${
+              metaOn ? "border-primary-muted text-primary-strong" : "border-slate-200 text-slate-400"
+            }`}
+            aria-pressed={metaOn}
+            aria-label="메타 정보 켜기/끄기"
+            title={metaOn ? "메타 정보 끄기" : "메타 정보 켜기"}
+            onClick={() => setMetaOn((on) => !on)}
+          >
+            <Info className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            className={`${iconBtn} w-8 ${
+              guidesShown
+                ? "border-primary-muted text-primary-strong"
+                : "border-slate-200 text-slate-400"
+            }`}
+            aria-pressed={guidesOn}
+            aria-label="안내 켜기/끄기"
+            title={
+              guidesOn
+                ? "안내 끄기 — 피니시라인, 삽입축, 각도"
+                : "안내 켜기 — 피니시라인, 삽입축, 각도"
+            }
+            disabled={guidedFinishLineMode}
+            onClick={() => setGuidesOn((on) => !on)}
+          >
+            <Spline className="h-4 w-4" />
+          </button>
+          <PreviewPaintControls
+            paint={paint}
+            disabled={paintControlsDisabled}
+            iconOnly
+            className="bg-white/95 text-xs shadow-sm"
+          />
           {showFlBad ? (
             <button
               type="button"
@@ -1678,6 +1696,15 @@ export const PreviewModal = ({
               {label}
             </button>
           ))}
+          <button
+            type="button"
+            className={`${iconBtn} w-8 px-0 text-[10px] font-bold text-slate-800 hover:bg-slate-50`}
+            aria-label="45도 보기"
+            title="45도 보기 — 모델이 뷰에 꽉 차게 맞춥니다(양쪽 연동)"
+            onClick={() => runLinkedView("view45")}
+          >
+            45°
+          </button>
         </div>
         {!previewLoading ? (
           <PreviewPaintLayer
@@ -3814,8 +3841,10 @@ export const PreviewModal = ({
                           : handleUndoGuidedFinishLinePoint
                       }
                       gridVisible={gridOn}
+                      metaVisible={metaOn}
+                      guidesVisible={guidesOn || guidedFinishLineMode}
                       initialSideView
-                      finishLineVisible={showFinishLine || guidedFinishLineMode}
+                      finishLineVisible={guidesOn || guidedFinishLineMode}
                       onViewChange={(state) => rightViewerRef.current?.applyViewState(state)}
                       onPaintSpace={
                         setLeftPaintSpace
@@ -3839,8 +3868,10 @@ export const PreviewModal = ({
                       lotEngravingTarget={lotEngravingTargetDraft}
                       finishLinePoints={finishLinePoints}
                       gridVisible={gridOn}
+                      metaVisible={metaOn}
+                      guidesVisible={guidesOn || guidedFinishLineMode}
                       initialSideView
-                      finishLineVisible={showFinishLine || guidedFinishLineMode}
+                      finishLineVisible={guidesOn || guidedFinishLineMode}
                       onViewChange={(state) => rightViewerRef.current?.applyViewState(state)}
                       onPaintSpace={
                         setLeftPaintSpace
@@ -4342,8 +4373,10 @@ export const PreviewModal = ({
                           : handleUndoGuidedFinishLinePoint
                       }
                       gridVisible={gridOn}
+                      metaVisible={metaOn}
+                      guidesVisible={guidesOn || guidedFinishLineMode}
                       initialSideView
-                      finishLineVisible={showFinishLine || guidedFinishLineMode}
+                      finishLineVisible={guidesOn || guidedFinishLineMode}
                       onViewChange={(state) => leftViewerRef.current?.applyViewState(state)}
                       onPaintSpace={
                         setRightPaintSpace

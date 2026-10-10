@@ -50,10 +50,13 @@ export function PreviewPaintControls({
   paint,
   disabled,
   className,
+  iconOnly = false,
 }: {
   paint: PreviewPaintState;
   disabled?: boolean;
   className?: string;
+  /** 글자 없이 연필 아이콘만. */
+  iconOnly?: boolean;
 }) {
   const { paintOn, setPaintOn } = paint;
   return (
@@ -62,7 +65,9 @@ export function PreviewPaintControls({
       size="sm"
       variant={paintOn ? "default" : "outline"}
       className={cn(
-        PREVIEW_HEADER_BUTTON_CLASS,
+        iconOnly
+          ? "h-8 w-8 shrink-0 gap-0 px-0 [&_svg]:!size-4"
+          : PREVIEW_HEADER_BUTTON_CLASS,
         className ?? "mr-3",
         paintOn && "!bg-primary !text-primary-foreground hover:!bg-primary/90",
       )}
@@ -73,7 +78,7 @@ export function PreviewPaintControls({
       title="왼쪽 드래그로 표시를 그립니다. 오른쪽 드래그는 화면 회전, 휠 버튼은 이동입니다."
     >
       <Pencil />
-      <span className="hidden sm:inline">페인트</span>
+      {iconOnly ? null : <span className="hidden sm:inline">페인트</span>}
     </Button>
   );
 }
