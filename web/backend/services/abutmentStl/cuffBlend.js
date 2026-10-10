@@ -359,6 +359,43 @@ export function measureConnectionTaper(probe) {
 }
 
 /**
+ * 원뿔 맞춤이 안 될 때의 대체 측정. 원점 근처에서 위로 올라가며 반경이 갑자기 커지는 첫 계단을 찾고,
+ * 그 바로 아래 반경·기울기(원뿔 11° 또는 수직)를 이음 시작 조건으로 쓴다.
+ */
+function measureConnectionStepTop(probe) {
+  const radiusAt = (z) => median(Array.from(probe.bins(z, MEASURE_BINS)));
+  const STEP = 0.01;
+  const JUMP_MM = 0.02;
+  let zStep = null;
+  for (let z = -0.6; z <= 1.0; z += STEP) {
+    const lo = radiusAt(z);
+    const hi = radiusAt(z + 2 * STEP);
+    if (Number.isFinite(lo) && Number.isFinite(hi) && hi - lo > JUMP_MM) {
+      zStep = z;
+      break;
+    }
+  }
+  if (zStep == null) return null;
+  const zA = zStep - STEP;
+  const ra = radiusAt(zA);
+  const rBelow = radiusAt(zA - 0.15);
+  if (!Number.isFinite(ra) || !Number.isFinite(rBelow)) return null;
+  // 수직이면 0, 원뿔이면 11° 기울기로 맞춘다(그 사이는 실측).
+  const slope = Math.max(0, Math.min(TAPER_SLOPE, (ra - rBelow) / 0.15));
+  const bins = Array.from(probe.bins(zA, MEASURE_BINS));
+  if (bins.filter((r) => Math.abs(r - ra) < TAPER_ROUND_TOL_MM).length / MEASURE_BINS < 0.8) return null;
+  const r0 = ra - slope * zA;
+  return {
+    r0,
+    slope,
+    originDiameter: 2 * r0,
+    coneAt: (z) => r0 + slope * z,
+    measuredTopZ: zA,
+    fromStep: true,
+  };
+}
+
+/**
  * 입력 스펙의 Z_a가 형상과 맞는지 본다. 안 맞으면 테이퍼 끝 직경이 같은 다른 스펙을 찾는다.
  * @returns {{ zA: number, matchedKey: string, warning: string | null }}
  */
@@ -985,6 +1022,67 @@ function detachedInBand(mesh, zLo, zHi, rCut) {
   return false;
 }
 
+/**
+ * 본체와 떨어진 fill_steps 솔리드(Z≈0 수직 구간을 덮은 로프트 조각)를 통째로 지운다.
+ * 띠 높이 안에서 채널 밖(r>rCut)으로 걸친 분리 조각만 대상이며, 스크류홀 패치(채널 안쪽·위쪽)는 건드리지 않는다.
+ * 이 조각이 띠 위로 남으면 새 곡면과 겹쳐 세로 줄무늬·이중 면이 생긴다.
+ */
+function stripDetachedFillSolid(mesh, zLo, zHi, rCut) {
+  const { verts, faces, faceAttr, faceMain } = mesh;
+  const fc = faceMain.length;
+  const parent = new Map();
+  const find = (a) => {
+    let r = a;
+    while (parent.get(r) !== r) r = parent.get(r);
+    let c = a;
+    while (parent.get(c) !== r) {
+      const n = parent.get(c);
+      parent.set(c, r);
+      c = n;
+    }
+    return r;
+  };
+  const join = (a, b) => {
+    if (!parent.has(a)) parent.set(a, a);
+    if (!parent.has(b)) parent.set(b, b);
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
+  for (let f = 0; f < fc; f += 1) {
+    if (faceMain[f]) continue;
+    join(faces[f * 3], faces[f * 3 + 1]);
+    join(faces[f * 3], faces[f * 3 + 2]);
+  }
+  const hit = new Set();
+  for (let f = 0; f < fc; f += 1) {
+    if (faceMain[f]) continue;
+    for (let k = 0; k < 3; k += 1) {
+      const v = faces[f * 3 + k] * 3;
+      const z = verts[v + 2];
+      if (z >= zLo && z <= zHi && Math.hypot(verts[v], verts[v + 1]) > rCut) {
+        hit.add(find(faces[f * 3]));
+        break;
+      }
+    }
+  }
+  if (!hit.size) return { mesh, stripped: 0 };
+  const nf = [];
+  const na = [];
+  const nm = [];
+  let stripped = 0;
+  for (let f = 0; f < fc; f += 1) {
+    if (!faceMain[f] && hit.has(find(faces[f * 3]))) {
+      stripped += 1;
+      continue;
+    }
+    nf.push(faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2]);
+    na.push(faceAttr[f]);
+    nm.push(faceMain[f]);
+  }
+  return { mesh: { ...mesh, faces: nf, faceAttr: na, faceMain: nm }, stripped };
+}
+
 /** 띠 안에 세 면 이상이 공유하는 모서리(겹친 캡·보정 조각)가 있는가. */
 function nonManifoldInBand(mesh, zLo, zHi) {
   const { verts, faces, faceMain } = mesh;
@@ -1493,9 +1591,24 @@ function setup(buffer, { spec, specKey }) {
   }
   const { mesh, probe, triCount } = prepare(buffer);
   const taper = measureConnectionTaper(probe);
-  if (!taper) fail("manual-review", "원점 아래 11° 커넥션 테이퍼를 찾지 못했습니다.");
-  const top = resolveConnectionTop(taper, spec, specKey);
-  return { mesh, probe, triCount, taper, ...top };
+  try {
+    if (!taper) fail("manual-review", "원점 아래 11° 커넥션 테이퍼를 찾지 못했습니다.");
+    const top = resolveConnectionTop(taper, spec, specKey);
+    return { mesh, probe, triCount, taper, ...top };
+  } catch (error) {
+    // 기공소가 11° 원뿔을 스펙보다 짧게 끝내고 수직 구간(fill_steps 포함)을 둔 설계: 첫 계단 바로 아래에서 잇는다.
+    const stepTaper = error instanceof CuffBlendError ? measureConnectionStepTop(probe) : null;
+    if (!stepTaper) throw error;
+    return {
+      mesh,
+      probe,
+      triCount,
+      taper: stepTaper,
+      zA: stepTaper.measuredTopZ,
+      matchedKey: specKey,
+      warning: "11° 원뿔이 스펙보다 짧아 첫 계단 아래에서 이었습니다.",
+    };
+  }
 }
 
 /** 보정으로 새로 생긴 꼭짓점 중 피니시라인 곡선과의 최소 여유(mm). 음수면 피니시라인을 넘은 것. */
@@ -1562,6 +1675,14 @@ export function blendCuffJunction(buffer, options = {}) {
       }
       probe = new RadialProbe(mesh.verts, mainFaces);
     }
+    let strippedSolid = 0;
+    if (taper.fromStep) {
+      // 원뿔이 짧은 설계: 수직 구간을 덮은 예전 fill_steps 솔리드는 본체와 떨어져 있어 새 곡면 아래·위로 겹친다. 통째로 걷어 낸다.
+      const rChPre = channelRadius(mesh, zA - 0.3, flMaxZ + 0.3, ra);
+      const solid = stripDetachedFillSolid(mesh, -0.6, flMaxZ + 0.3, rChPre > 0 ? (rChPre + ra) / 2 : ra * 0.75);
+      mesh = solid.mesh;
+      strippedSolid = solid.stripped;
+    }
     const crease = findFinishCrease(mesh, flZ);
     const seamZ = crease ? crease.zOf : flZ;
     const attempt = (offsetMm) => {
@@ -1600,7 +1721,7 @@ export function blendCuffJunction(buffer, options = {}) {
     const r1s = belowSlopes
       ? below.map((b) => b.r)
       : tops.map((t, j) => t.r + Math.max(-SMOOTH_MAX_SHIFT_MM, Math.min(SMOOTH_MAX_SHIFT_MM, r1avg[j] - t.r)));
-    const coneSlope = taper.slope || TAPER_SLOPE;
+    const coneSlope = Number.isFinite(taper.slope) ? taper.slope : TAPER_SLOPE;
     const profiles = tops.map((t, j) => {
       const h = hs[j];
       const dR = r1s[j] - ra;
