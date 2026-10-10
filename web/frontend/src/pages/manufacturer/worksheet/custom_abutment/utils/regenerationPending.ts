@@ -60,6 +60,16 @@ export function reconcileFilledStlRegenerationPending(
       pendingFilled.delete(id);
       continue;
     }
+    const preload = String(
+      (req as { productionSchedule?: { stlPreload?: { status?: unknown } } })
+        ?.productionSchedule?.stlPreload?.status || "",
+    )
+      .trim()
+      .toUpperCase();
+    if (preload === "FAILED" || preload === "CANCELLED") {
+      pendingFilled.delete(id);
+      continue;
+    }
     const filledKey = String(
       req?.caseInfos?.stlFile?.s3Key || req?.caseInfos?.camFile?.s3Key || "",
     ).trim();

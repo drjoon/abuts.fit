@@ -51,6 +51,9 @@ _EDGE_MIN_RADIUS_TO_MESH_BAND_RATIO = 0.55
 _EDGE_MAX_Z_ABOVE_PT0_MM = 8.0
 _EDGE_MAX_Z_BELOW_PT0_MM = 2.5
 _EDGE_MIN_Z_SPAN_MM = 0.08
+# 스팬이 0.08mm 이하여도 전체 반경의 이 비율 이상이면 수평 어깨로 유지한다.
+# 그보다 안쪽인 평면 링만 flat_z로 버린다. (박영옥: 어깨 스팬 0.027mm)
+_EDGE_FLAT_OUTER_RADIUS_RATIO = 0.8
 _EDGE_MIN_AZIMUTH_COVERAGE_RAD = 4.5
 _OUTLIER_SEGMENT_RATIO = 2.8  # max(segment) / median(segment)
 _OUTLIER_SEGMENT_ABS_MM = 2.0  # mm
@@ -183,6 +186,7 @@ def _detect_finishline_points_edge(
     except Exception:
         ref_pt0 = None
         ref_pt0_radius = None
+    full_band_r = _mesh_max_radius_in_z_band(mesh)
     def _reason_from_counters(counters: Dict[str, int]) -> str:
         if counters.get("rejected_low_z", 0) > 0:
             return "C_EDGE_REJECTED_LOW_Z"
@@ -295,7 +299,22 @@ def _detect_finishline_points_edge(
                         )
                     )
                     continue
-                if edge_z_span is not None and edge_z_span <= _EDGE_MIN_Z_SPAN_MM:
+                median_r = _points_median_radius(traced_points)
+                outer_ref = 0.0
+                if z_ref_pt0_radius is not None and float(z_ref_pt0_radius) > _DIST_TOL:
+                    outer_ref = max(outer_ref, float(z_ref_pt0_radius))
+                if full_band_r is not None and float(full_band_r) > _DIST_TOL:
+                    outer_ref = max(outer_ref, float(full_band_r))
+                is_outer_shoulder = (
+                    median_r is not None
+                    and outer_ref > _DIST_TOL
+                    and (float(median_r) / outer_ref) >= _EDGE_FLAT_OUTER_RADIUS_RATIO
+                )
+                if (
+                    edge_z_span is not None
+                    and edge_z_span <= _EDGE_MIN_Z_SPAN_MM
+                    and not is_outer_shoulder
+                ):
                     counters["rejected_flat_z"] += 1
                     _trace_log(
                         "[detect-edge:{}] candidate[{}] rejected flat_z z_span={:.6f} <= {:.3f}".format(

@@ -171,3 +171,9 @@ export function assessFinishLineQuality(points) {
 
   return { defective: false, reason: null, metrics };
 }
+
+/** 반자동·수동으로 저장한 피니시라인. STL 재생성 때 덮어쓰지 않는다. */
+export function isUserCapturedFinishLine(finishLine) {
+  if (String(finishLine?.source || "").trim() !== "frontend-manual") return false;
+  return Array.isArray(finishLine?.points) && finishLine.points.length >= 3;
+}

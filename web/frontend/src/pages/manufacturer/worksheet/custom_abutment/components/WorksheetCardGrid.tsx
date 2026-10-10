@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-10-09: 준비 카드 오버레이 문구 「JS 작업중」(JS 실패 후 Rhino 재처리면 「Rhino 작업중」).
+// - 2026-10-10: JS 실패는 준비 카드 «JS 실패» 뱃지. 오버레이는 engine=rhino일 때만 «Rhino 작업중».
 // - 2026-09-17: 공정 탭과 중복되는 단계 뱃지 숨김. 세척·패킹(이후) NC 뱃지 숨김(가공 이후 당연).
 // - 2026-09-17: 의뢰카드 썸네일을 absolute→flex 본문으로 — 좌우 px-3 대칭·환자폭↑.
 // - 2026-09-28: 커프 이음부 보정 — 안전검사 실패「커프 확인」뱃지, 커넥션 스펙 미등록은 빨간 테두리+개발팀 확인 문구(준비·가공 전).
@@ -687,7 +687,13 @@ export const WorksheetCardGrid = ({
           showLotShortBadge ||
           showScrewTypeBadge ||
           (tabStage === "packing" && isPrinted);
-        const showRightRail = showFilledFlThumb || showSideSpecBadges;
+        const jsFailed =
+          tabStage === "request" &&
+          Boolean(request.productionSchedule?.stlJsFallback?.at);
+        const jsFailedReason = String(
+          request.productionSchedule?.stlJsFallback?.reason || "",
+        ).trim();
+        const showRightRail = showFilledFlThumb || showSideSpecBadges || jsFailed;
         // summaryRightPadClass 제거 — 썸네일을 flex 본문에 넣어 좌우 px 대칭
 
         const hasTopFloatingControls =
@@ -877,15 +883,13 @@ export const WorksheetCardGrid = ({
                 role="status"
                 aria-live="polite"
                 aria-label={
-                  (request.productionSchedule?.stlJsFallback?.at ||
-                    request.productionSchedule?.stlPreload?.engine === "rhino")
+                  request.productionSchedule?.stlPreload?.engine === "rhino"
                     ? "Rhino 작업중"
                     : "JS 작업중"
                 }
               >
                 <span className="rounded-full border border-primary/35 bg-primary-soft/70 px-3 py-1.5 text-sm font-extrabold text-primary-strong">
-                  {(request.productionSchedule?.stlJsFallback?.at ||
-                    request.productionSchedule?.stlPreload?.engine === "rhino")
+                  {request.productionSchedule?.stlPreload?.engine === "rhino"
                     ? "Rhino 작업중"
                     : "JS 작업중"}
                 </span>
@@ -1355,6 +1359,15 @@ export const WorksheetCardGrid = ({
 
                 {showRightRail ? (
                   <div className="flex shrink-0 flex-col items-center gap-1 self-center">
+                    {jsFailed ? (
+                      <Badge
+                        variant="outline"
+                        className="h-5 max-w-full truncate text-[10px] px-1.5 py-0 font-semibold leading-none border border-destructive/70 bg-destructive-soft text-destructive flex items-center"
+                        title={jsFailedReason || "JS 파이프라인이 Filled STL을 만들지 못했습니다."}
+                      >
+                        JS 실패
+                      </Badge>
+                    ) : null}
                     {showFilledFlThumb ? (
                       <>
                         {isFinishLineCaptureBad && !rhinoWorkPending ? (

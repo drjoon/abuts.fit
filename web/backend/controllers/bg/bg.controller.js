@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-10: 반자동 피니시라인(source=frontend-manual)은 2-filled·finish-line 콜백으로 덮지 않는다.
 // - 2026-10-10: STL/원본 다운로드는 S3 스트림으로 응답한다. 대기열 목록은 파일 메타만 읽는다.
 // - 2026-10-09: 테스트 계정도 NC 완료 후 가공으로 올린다. 자동 가공은 수동 승인 전 hold.
 // - 2026-09-28: 2-filled 등록 직전 커프 이음부 G2 보정(cuffBlend) → 같은 S3 키 덮어쓰기 + caseInfos.cuffBlend.
@@ -78,6 +79,7 @@ import {
   resolveConnectionTargetDiameter,
 } from "../requests/prcMapping.utils.js";
 import { resolveCuffConnectionSpec } from "../../services/abutmentStl/cuffConnectionSpecs.js";
+import { isUserCapturedFinishLine } from "../../utils/finishLineQuality.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { buildWorksheetReadyQueueGuard } from "../../services/worksheetReadyQueue.guard.js";
 
@@ -454,6 +456,20 @@ export const registerFinishLine = asyncHandler(async (req, res) => {
           "Finish line received but no matching request found",
         ),
       );
+  }
+
+  if (isUserCapturedFinishLine(request.caseInfos?.finishLine)) {
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          updated: false,
+          kept: "frontend-manual",
+          requestId: request.requestId,
+        },
+        "Finish line kept",
+      ),
+    );
   }
 
   const safeFinishLineCore = normalizeFinishLineWithZExtrema(finishLine);
@@ -1012,14 +1028,21 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
       }
     }
 
+    const keepCapturedFinishLine = isUserCapturedFinishLine(
+      request?.caseInfos?.finishLine,
+    );
     const normalizedFinishLine = normalizeFinishLineWithZExtrema(
       metadata.finishLine,
     );
-    if (normalizedFinishLine) {
+    if (normalizedFinishLine && !keepCapturedFinishLine) {
       metadataUpdates["caseInfos.finishLine"] = {
         ...normalizedFinishLine,
         updatedAt: now,
       };
+    } else if (keepCapturedFinishLine) {
+      console.log(
+        `[BG-Callback] Keeping captured finish line requestId=${request?.requestId || ""}`,
+      );
     }
 
     const hexRotation = metadata.hexRotation;
@@ -1072,7 +1095,11 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         const cuff = await applyAutoCuffBlendSafely({
           s3Key: s3Info?.s3Key,
           caseInfos: request?.caseInfos,
-          finishLine: metadataUpdates["caseInfos.finishLine"] || null,
+          finishLine:
+            metadataUpdates["caseInfos.finishLine"] ||
+            (isUserCapturedFinishLine(request?.caseInfos?.finishLine)
+              ? request.caseInfos.finishLine
+              : null),
         });
         if (cuff) {
           updateData["caseInfos.cuffBlend"] = cuff.record;

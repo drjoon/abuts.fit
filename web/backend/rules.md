@@ -171,7 +171,7 @@
 
 ### 어벗 STL JS 파이프라인 (Rhino 대체 · 섀도 모드)
 
-- **JS 우선 · Rhino 폴백 (2026-10-09~, 1~2주 검증)**: 의뢰 생성·핸드오프의 `triggerRhinoProcessFileForRequest`가 `services/abutmentStl/jsPrimary.service.js`를 먼저 돌린다. JS가 `2-filled` 업로드 후 `registerStlMetadata` → `registerProcessedFile`(Rhino 콜백과 같은 경로, 커프 보정 포함)로 등록한다. 예외·정렬 실패·피니시라인 없음/불량·메타데이터/직경 계산 실패면 `productionSchedule.stlJsFallback{reason,at}`를 남기고 원격 Rhino(`/api/rhino/process-file`)를 호출한다. 준비 페이지 상단 alert(`StlJsFallbackAlert`)는 폴백 건이 `stlPreload` GENERATING/FAILED인 동안만 보인다. 끄기: `ABUTMENT_STL_JS_PRIMARY=false`. 수동 재생성(`process-file` 라우트)은 아직 Rhino다. 검증이 끝나면 폴백·Rhino 의존을 걷어낸다.
+- **JS 우선 (2026-10-10~)**: 의뢰 생성·핸드오프의 `triggerRhinoProcessFileForRequest`와 수동 재생성(`process-file`, `engine` 없음)이 `services/abutmentStl/jsPrimary.service.js`를 돌린다. JS가 `2-filled` 업로드 후 `registerStlMetadata` → `registerProcessedFile`(Rhino 콜백과 같은 경로, 커프 보정 포함)로 등록한다. 예외·정렬 실패·피니시라인 없음/불량·메타데이터/직경 계산 실패면 `productionSchedule.stlJsFallback{reason,at}`와 `stlPreload=FAILED`만 남긴다. 준비 카드에 «JS 실패» 뱃지. 원격 Rhino는 호출하지 않는다. 카드 «Rhino 실행»(`engine=rhino`)과 `ABUTMENT_STL_JS_PRIMARY=false`만 Rhino로 간다.
 
 - Rhino `process_abutment_stl.py`(1-stl → 2-filled)의 JS 이식. 순서: import → align → finishline → 스크류홀 패치 → 직경 → fill_steps → export → stl-metadata. 동작 SSOT는 아직 Rhino 스크립트다. 원본 스크립트를 고치면 같은 이름의 JS 모듈도 같이 고친다.
 - Rhino STL import는 22.5°로 용접한다. crease edge가 unwelded이고 피니시라인 edge 전략은 이 조각 경계를 쓴다(`RHINO_STL_WELD_ANGLE_DEG`, `Mesh.unweldedByAngle`). Rhino `ExtractMeshEdges(Unwelded)`는 조각 경계(naked)까지 돌려준다.

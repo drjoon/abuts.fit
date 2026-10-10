@@ -33,6 +33,11 @@ const EDGE_MIN_RADIUS_TO_PT0_RATIO = 0.45;
 const EDGE_MIN_RADIUS_TO_MESH_BAND_RATIO = 0.55;
 const EDGE_MAX_Z_ABOVE_PT0_MM = 8.0;
 const EDGE_MIN_Z_SPAN_MM = 0.08;
+/**
+ * 스팬이 0.08mm 이하여도 전체 반경의 이 비율 이상이면 수평 어깨로 유지한다.
+ * 그보다 안쪽인 평면 링만 flat_z로 버린다. (박영옥: 어깨 스팬 0.027mm)
+ */
+const EDGE_FLAT_OUTER_RADIUS_RATIO = 0.8;
 const EDGE_MIN_AZIMUTH_COVERAGE_RAD = 4.5;
 const OUTLIER_SEGMENT_RATIO = 2.8;
 const OUTLIER_SEGMENT_ABS_MM = 2.0;
@@ -417,7 +422,14 @@ function detectFinishlinePointsEdge(mesh, log) {
         counters.rejected_low_z += 1;
         return;
       }
-      if (span != null && span <= EDGE_MIN_Z_SPAN_MM) {
+      const medR = pointsMedianRadius(traced);
+      const outerRef = Math.max(
+        zRefPt0Radius != null && zRefPt0Radius > DIST_TOL ? zRefPt0Radius : 0,
+        fullBandR > DIST_TOL ? fullBandR : 0,
+      );
+      const isOuterShoulder =
+        medR != null && outerRef > DIST_TOL && medR / outerRef >= EDGE_FLAT_OUTER_RADIUS_RATIO;
+      if (span != null && span <= EDGE_MIN_Z_SPAN_MM && !isOuterShoulder) {
         counters.rejected_flat_z += 1;
         return;
       }
@@ -425,7 +437,6 @@ function detectFinishlinePointsEdge(mesh, log) {
         counters.rejected_high_z += 1;
         return;
       }
-      const medR = pointsMedianRadius(traced);
       if (zRefPt0Radius != null && zRefPt0Radius > DIST_TOL && medR != null) {
         if (medR / zRefPt0Radius <= EDGE_MIN_RADIUS_TO_PT0_RATIO) {
           counters.rejected_small_radius += 1;
@@ -451,6 +462,8 @@ function detectFinishlinePointsEdge(mesh, log) {
     log(`[detect-edge:${passName}] best=${Boolean(bestPoints)} strategy=${bestStrategy} counters=${JSON.stringify(counters)}`);
     return { bestPoints, bestStrategy, counters };
   };
+
+  const fullBandR = meshMaxRadiusInZBand(mesh);
 
   const reason = (c) =>
     c.rejected_low_z > 0

@@ -3,6 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // change-log:
+// - 2026-10-10: JS 실패는 Rhino로 넘기지 않는다. engine=rhino일 때만 원격 Rhino.
 // - 2026-10-09: 수동 재생성(process-file)도 JS 우선·Rhino 폴백.
 // - 2026-10-09: triggerRhino — 백엔드 JS 파이프라인 우선, 문제 시 Rhino 폴백(ABUTMENT_STL_JS_PRIMARY=false로 끔).
 // - 2026-09-17: manual finish-line 저장 시 stlMetadataUpdatedAt + 전체 메타 emit(FP와 동일).
@@ -180,7 +181,7 @@ export const processFileByName = asyncHandler(async (req, res) => {
     ).catch(() => null);
   }
 
-  // 수동 재생성도 백엔드 JS 파이프라인 우선. 문제가 나면 원격 Rhino(force)로 넘긴다.
+  // 수동 재생성도 백엔드 JS 파이프라인. 실패해도 원격 Rhino로 넘기지 않는다.
   if (
     !forceRhinoEngine &&
     requestId &&
@@ -190,31 +191,6 @@ export const processFileByName = asyncHandler(async (req, res) => {
     void runJsPrimaryThenFallback({
       requestId,
       fileName: safeName,
-      fallbackToRhino: () => {
-        void enqueueTask(() =>
-          axios.post(
-            `${RHINO_COMPUTE_BASE_URL}/api/rhino/process-file`,
-            { filePath: safeName, fileName: safeName, requestId, force: true },
-            { timeout: 1000 * 60 * 3, headers: rhinoAuthHeaders() },
-          ),
-        ).catch((err) => {
-          console.warn(
-            `[rhino-process-file] fallback failed requestId=${requestId}: ${err?.message || err}`,
-          );
-          void Request.updateOne(
-            { requestId },
-            {
-              $set: {
-                "productionSchedule.stlPreload": {
-                  status: "FAILED",
-                  updatedAt: new Date(),
-                  error: "백엔드 JS·Rhino 모두 Filled STL 생성에 실패했습니다.",
-                },
-              },
-            },
-          ).catch(() => null);
-        });
-      },
     });
     return res.status(200).json({
       success: true,
@@ -583,12 +559,11 @@ export const triggerRhinoProcessFileForRequest = ({
       });
   };
 
-  // 백엔드 JS 파이프라인 우선. 문제가 나면 원격 Rhino(dispatchRhino)로 넘긴다.
+  // 백엔드 JS 파이프라인. 실패해도 원격 Rhino로 넘기지 않는다.
   if (rid && /\.stl$/i.test(targetName) && isAbutmentStlJsPrimaryEnabled()) {
     void runJsPrimaryThenFallback({
       requestId: rid,
       fileName: targetName,
-      fallbackToRhino: dispatchRhino,
     });
     return;
   }

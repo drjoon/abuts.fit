@@ -14,6 +14,25 @@ import { calculateStlMetadataFromBuffer } from "./stlMetadata.js";
 
 export const ABUTMENT_STL_JS_VERSION = `abutment-stl-js-1+align-${ALIGN_MODULE_VERSION}+${JS_ALIGN_PORT_VERSION}`;
 
+function finishLineFromStoredPoints(rawPoints, log) {
+  if (!Array.isArray(rawPoints) || rawPoints.length < 3) return null;
+  const pts = rawPoints
+    .filter((p) => Array.isArray(p) && p.length >= 3)
+    .map((p) => [Number(p[0]), Number(p[1]), Number(p[2])])
+    .filter((p) => p.every((v) => Number.isFinite(v)));
+  if (pts.length < 3) return null;
+  log(`[finishline] reuse stored points n=${pts.length}`);
+  return {
+    version: 1,
+    sectionCount: pts.length,
+    maxStepDistance: 1,
+    points: pts,
+    source: "frontend-manual",
+    strategyUsed: "STORED_MANUAL",
+    ...finishlineZExtrema(pts),
+  };
+}
+
 function appendTriangles(soup, tris) {
   const out = new Float64Array(soup.length + tris.length * 9);
   out.set(soup, 0);
@@ -58,7 +77,8 @@ function analyzeDiameters(mesh) {
 
 /**
  * @param {Buffer} inputBuffer 1-stl 원본
- * @param {{ targetDiameter?: number|null, implantProfile?: object, screwholeParams?: object, log?: Function }} options
+ * @param {{ targetDiameter?: number|null, implantProfile?: object, screwholeParams?: object, finishLinePoints?: number[][], log?: Function }} options
+ * finishLinePoints가 있으면 검출을 건너뛰고 그 점을 메타데이터에 쓴다.
  */
 export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
   const { targetDiameter = null, implantProfile = {}, screwholeParams = SCREWHOLE_PARAMS } = options;
@@ -84,21 +104,23 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
   mark("align", t0);
 
   t0 = performance.now();
-  let finishLine = null;
-  try {
-    const fl = detectFinishLine(mesh.unweldedByAngle(), { log });
-    const pts = sanitizeFinishlinePoints(fl.points, log);
-    finishLine = {
-      version: 1,
-      sectionCount: pts.length,
-      maxStepDistance: 1,
-      points: pts,
-      pt0: fl.pt0,
-      strategyUsed: fl.strategyUsed,
-      ...finishlineZExtrema(pts),
-    };
-  } catch (error) {
-    log(`Finishline failed: ${error?.message || error}`);
+  let finishLine = finishLineFromStoredPoints(options.finishLinePoints, log);
+  if (!finishLine) {
+    try {
+      const fl = detectFinishLine(mesh.unweldedByAngle(), { log });
+      const pts = sanitizeFinishlinePoints(fl.points, log);
+      finishLine = {
+        version: 1,
+        sectionCount: pts.length,
+        maxStepDistance: 1,
+        points: pts,
+        pt0: fl.pt0,
+        strategyUsed: fl.strategyUsed,
+        ...finishlineZExtrema(pts),
+      };
+    } catch (error) {
+      log(`Finishline failed: ${error?.message || error}`);
+    }
   }
   mark("finishline", t0);
 

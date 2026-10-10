@@ -708,9 +708,39 @@ export function useWorksheetRealtimeStatus({
             }
             if (shouldClearRealtime) {
               delete realtimeBaseRef.current[requestId];
+              const jsFailed =
+                String(payload?.source || "").trim() === "backend-js" &&
+                status === "failed";
+              if (jsFailed) consumeFilledStlRegenerationPending(requestId);
+              const schedule = (r as any).productionSchedule || {};
               return {
                 ...(r as any),
                 realtimeProgress: null,
+                ...(jsFailed
+                  ? {
+                      productionSchedule: {
+                        ...schedule,
+                        stlJsFallback: {
+                          reason: String(
+                            payload?.metadata?.detail ||
+                              payload?.metadata?.reason ||
+                              "",
+                          ),
+                          at: new Date().toISOString(),
+                        },
+                        stlPreload: {
+                          ...(schedule.stlPreload || {}),
+                          status: "FAILED",
+                          updatedAt: new Date().toISOString(),
+                          error: String(
+                            payload?.metadata?.detail ||
+                              payload?.metadata?.reason ||
+                              "",
+                          ),
+                        },
+                      },
+                    }
+                  : {}),
               } as any;
             }
             if (hasValidBase) {
@@ -755,6 +785,7 @@ export function useWorksheetRealtimeStatus({
     refreshOpenPreviewIfMatch,
     invalidateCachesForProcessedFile,
     consumeRegenerationPending,
+    consumeFilledStlRegenerationPending,
   ]);
 
   // 웹소켓 실시간 업데이트(app-event): 활성 페이지에서만 이벤트를 반영한다.

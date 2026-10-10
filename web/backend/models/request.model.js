@@ -581,6 +581,8 @@ const requestSchema = new mongoose.Schema(
           type: Date,
           default: Date.now,
         },
+        // frontend-manual: 반자동·수동으로 저장. STL 재생성 때 이 점을 다시 잡지 않는다.
+        source: String,
       },
       // 커넥션 상단~커프 하단 이음부 보정 결과(auto) / Re 재디자인 결과
       // related: web/backend/services/abutmentStl/cuffBlend.service.js

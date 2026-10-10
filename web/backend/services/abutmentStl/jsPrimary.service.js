@@ -2,16 +2,18 @@
 // - web/backend/controllers/rhino/rhino.controller.js (triggerRhinoProcessFileForRequest: JS 우선, 실패 시 Rhino)
 // - web/backend/controllers/bg/bg.controller.js (registerProcessedFile · registerStlMetadata 재사용)
 // - web/backend/services/abutmentStl/pipeline.js
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shared/stlJsFallback/StlJsFallbackAlert.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx (JS 실패 뱃지)
 // change-log:
-// - 2026-10-09: 신설. 백엔드 JS 파이프라인이 1-stl → 2-filled를 먼저 처리하고, 문제가 있으면 원격 Rhino로 넘긴다.
+// - 2026-10-10: JS 실패는 카드 뱃지만 남기고 원격 Rhino로 넘기지 않는다.
+// - 2026-10-10: 반자동으로 저장한 피니시라인(source=frontend-manual)은 재검출하지 않는다.
+// - 2026-10-09: 신설. 백엔드 JS 파이프라인이 1-stl → 2-filled를 먼저 처리한다.
 //
-// 검증 기간(1~2주) 동안: JS가 정상이면 Rhino는 호출하지 않는다. 문제가 나면 사유를
-// productionSchedule.stlJsFallback에 남기고 Rhino를 돌린다(준비 페이지 상단 alert).
+// JS가 정상이면 Rhino는 호출하지 않는다. 문제가 나면 productionSchedule.stlJsFallback에
+// 사유를 남기고 stlPreload를 FAILED로 둔다. 준비 카드는 «JS 실패» 뱃지를 보여 준다.
 import path from "path";
 import Request from "../../models/request.model.js";
 import { getObjectBufferFromS3, uploadFileToS3 } from "../../utils/s3.utils.js";
-import { assessFinishLineQuality } from "../../utils/finishLineQuality.js";
+import { assessFinishLineQuality, isUserCapturedFinishLine } from "../../utils/finishLineQuality.js";
 import { emitBgRuntimeStatus } from "../../controllers/bg/bgRuntimeEvents.js";
 import { resolveAbutmentStlInputs } from "./abutmentStlInputs.js";
 import { runAbutmentStlPipelineInWorker } from "./runPipelineInWorker.js";
@@ -60,7 +62,7 @@ class JsPipelineProblem extends Error {
   }
 }
 
-/** 결과가 쓸 만한지. 하나라도 걸리면 Rhino로 넘긴다. */
+/** 결과가 쓸 만한지. 하나라도 걸리면 JS 실패로 남긴다. */
 function assertJsResultUsable(js) {
   if (!js?.outputBuffer?.length) throw new JsPipelineProblem("empty_output", "JS 출력 STL이 비어 있습니다.");
   if (js.align && js.align.ok === false) {
@@ -79,14 +81,19 @@ function assertJsResultUsable(js) {
   if (!(maxD > 0)) throw new JsPipelineProblem("diameter_missing", "직경을 계산하지 못했습니다.");
 }
 
-async function recordFallback(requestId, reason, detail) {
+async function recordJsFailure(requestId, reason, detail) {
   const now = new Date();
+  const message = String(detail || reason).slice(0, 300);
   await Request.updateOne(
     { requestId, manufacturerStage: { $ne: "취소" } },
     {
       $set: {
-        "productionSchedule.stlJsFallback": { reason: String(detail || reason).slice(0, 300), at: now },
-        "productionSchedule.stlPreload": { status: "GENERATING", updatedAt: now },
+        "productionSchedule.stlJsFallback": { reason: message, at: now },
+        "productionSchedule.stlPreload": {
+          status: "FAILED",
+          updatedAt: now,
+          error: message,
+        },
       },
     },
   );
@@ -94,16 +101,17 @@ async function recordFallback(requestId, reason, detail) {
     requestId,
     source: "backend-js",
     stage: "request",
-    status: "fallback",
-    label: "백엔드 STL 처리 문제 → 원격 Rhino 재처리",
-    tone: "amber",
-    metadata: { reason, detail },
+    status: "failed",
+    label: "JS 실패",
+    tone: "rose",
+    clear: true,
+    metadata: { reason, detail: message },
   });
 }
 
 /**
  * 백엔드 JS 파이프라인으로 Filled STL을 만들어 Rhino 콜백과 같은 경로로 등록한다.
- * 예외는 던진다(호출부가 Rhino로 넘긴다).
+ * 예외는 던진다(호출부가 카드에 JS 실패를 남긴다).
  */
 export async function processRequestWithJsPipeline({ requestId, fileName }) {
   const request = await Request.findOne({ requestId }).select({ caseInfos: 1, manufacturerStage: 1 }).lean();
@@ -118,9 +126,11 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
     getObjectBufferFromS3(originalS3Key),
     resolveAbutmentStlInputs(ci),
   ]);
+  const storedFinishLine = isUserCapturedFinishLine(ci.finishLine) ? ci.finishLine : null;
   const js = await runAbutmentStlPipelineInWorker(inputBuffer, {
     targetDiameter: inputs.targetDiameter,
     implantProfile: inputs.implantProfile,
+    ...(storedFinishLine ? { finishLinePoints: storedFinishLine.points } : {}),
   });
   assertJsResultUsable(js);
 
@@ -167,10 +177,10 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
 }
 
 /**
- * JS 우선 → 문제 시 fallbackToRhino 호출.
- * @param {{ requestId: string, fileName: string, fallbackToRhino: () => void }} args
+ * 백엔드 JS 파이프라인. 실패하면 카드용 stlJsFallback만 남긴다.
+ * @param {{ requestId: string, fileName: string }} args
  */
-export async function runJsPrimaryThenFallback({ requestId, fileName, fallbackToRhino }) {
+export async function runJsPrimaryThenFallback({ requestId, fileName }) {
   const started = Date.now();
   emitBgRuntimeStatus({
     requestId,
@@ -197,10 +207,9 @@ export async function runJsPrimaryThenFallback({ requestId, fileName, fallbackTo
   } catch (error) {
     const reason = error?.reason || "js_error";
     const detail = String(error?.message || error);
-    console.warn(`[abutment-stl-js] fallback to Rhino requestId=${requestId} reason=${reason}: ${detail}`);
-    await recordFallback(requestId, reason, detail).catch((e) =>
-      console.warn("[abutment-stl-js] recordFallback failed", e?.message || e),
+    console.warn(`[abutment-stl-js] failed requestId=${requestId} reason=${reason}: ${detail}`);
+    await recordJsFailure(requestId, reason, detail).catch((e) =>
+      console.warn("[abutment-stl-js] recordJsFailure failed", e?.message || e),
     );
-    fallbackToRhino();
   }
 }

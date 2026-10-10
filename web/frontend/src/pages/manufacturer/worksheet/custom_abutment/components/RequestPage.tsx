@@ -55,7 +55,6 @@ import {
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
 import { AutoApprovalGateSwitch } from "../shared/autoApproval/AutoApprovalGateSwitch";
-import { StlJsFallbackAlert } from "../shared/stlJsFallback/StlJsFallbackAlert";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
@@ -3240,10 +3239,6 @@ export const RequestPage = ({
               ) : null
             }
           />
-        ) : null}
-
-        {tabStage === "request" ? (
-          <StlJsFallbackAlert requests={pageState.requests as any[]} />
         ) : null}
 
         <div
