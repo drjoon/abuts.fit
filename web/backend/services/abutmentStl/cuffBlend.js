@@ -30,9 +30,9 @@ const PROFILE_BINS = 720;
 const STRIP_COLUMNS = 720;
 const ROW_PITCH_MM = 0.025;
 /** 이음 위 끝에서 이만큼 아래까지는 새 곡선을 원본 곡면에 서서히 섞는다(위 끝 접선·반경이 원본과 같아져 선이 둘로 보이지 않는다). */
-const SEAM_BLEND_DEPTH_MM = 0.12;
+const SEAM_BLEND_DEPTH_MM = 0.3;
 /** 위 끝에서 아래로 내려가는 깊이(mm) 순서로 촘촘히 두는 행. */
-const SEAM_ROW_DEPTHS_MM = [0.003, 0.008, 0.015, 0.025, 0.04, 0.06, 0.085, 0.12];
+const SEAM_ROW_DEPTHS_MM = [0.06, 0.085, 0.11, 0.14, 0.17, 0.2, 0.235, 0.27, 0.3];
 
 const TAPER_FIT_TOL_MM = 0.008;
 const TAPER_ROUND_TOL_MM = 0.012;
@@ -233,6 +233,41 @@ class RadialProbe {
     }
     this.cache.set(key, out);
     return out;
+  }
+
+  /** 높이 z, 각도 θ 방향 반직선이 곡면과 만나는 가장 바깥 반경(bin 없이 정확히). 없으면 NaN. */
+  rayRadius(theta, z) {
+    const s = Math.floor((z - this.lo) / this.slab);
+    if (s < 0 || s >= this.slabs.length) return NaN;
+    const { verts, faces } = this;
+    const dx = Math.cos(theta);
+    const dy = Math.sin(theta);
+    let best = NaN;
+    const hit = [];
+    for (const f of this.slabs[s]) {
+      if (this.zmin[f] > z || this.zmax[f] < z || this.zmin[f] === this.zmax[f]) continue;
+      hit.length = 0;
+      for (let k = 0; k < 3; k += 1) {
+        const a = faces[f * 3 + k] * 3;
+        const b = faces[f * 3 + ((k + 1) % 3)] * 3;
+        const za = verts[a + 2];
+        const zb = verts[b + 2];
+        if (za === zb || (za - z) * (zb - z) > 0 || zb === z) continue;
+        const t = (z - za) / (zb - za);
+        hit.push(verts[a] + t * (verts[b] - verts[a]), verts[a + 1] + t * (verts[b + 1] - verts[a + 1]));
+      }
+      if (hit.length < 4) continue;
+      const [x1, y1, x2, y2] = hit;
+      // 반직선 p = r·d 와 선분 p1 + u·(p2 − p1) 의 교점
+      const ex = x2 - x1;
+      const ey = y2 - y1;
+      const den = dx * ey - dy * ex;
+      if (Math.abs(den) < 1e-12) continue;
+      const r = (x1 * ey - y1 * ex) / den;
+      const u = (x1 * dy - y1 * dx) / den;
+      if (r > 0 && u >= -1e-9 && u <= 1 + 1e-9 && !(best >= r)) best = r;
+    }
+    return best;
   }
 
   /** 각도 θ의 외곽 반경(bin 선형 보간, 빈 bin은 이웃으로 메움). */
@@ -483,6 +518,11 @@ const CORNER_PREF_T = 0.3;
 const SMOOTH_HALF_COLUMNS = 24;
 /** 긴 띠(mm) 기준과 그때의 시작 기울기(약 8°). */
 const SMOOTH_MAX_SHIFT_MM = 0.04;
+/** 위 끝 접선을 잴 때 쓰는 위 끝 아래 원본 구간(mm)과, 모서리 바로 아래 건너뛸 틈(mm). */
+const TOP_BELOW_WINDOW_MM = 0.1;
+const TOP_BELOW_GAP_MM = 0.005;
+/** 위 끝 기울기 열 평균 반폭(열). */
+const TOP_SLOPE_SMOOTH_COLUMNS = 24;
 /** 위 끝 반경을 저주파(조화 K차 이하)만 남겨 매끈하게 한다. */
 const TOP_RADIUS_HARMONICS = 6;
 /** 끝 기울기를 2차 호(2d − m0)보다 이만큼 더 세워 늦게 벌어지게(더 오목하게) 한다. */
@@ -493,6 +533,7 @@ const LONG_BAND_MM = 2;
 /** 띠 면 평균: 반폭(열)과 위쪽 보존 지수(t^p). */
 const BAND_SMOOTH_HALF_COLUMNS = 60;
 const BAND_SMOOTH_TOP_POWER = 3;
+const BAND_SMOOTH_FADE_MM = 0.4;
 const LONG_BAND_START_SLOPE = Math.tan((8 * Math.PI) / 180);
 
 /**
@@ -709,6 +750,21 @@ function sampleTopConditions(probe, thetas, topZ, span) {
     const q = fitQuadratic(samples, z0);
     if (!q) return null;
     return { r: q.a, slope: q.b, curvature: 2 * q.c };
+  });
+}
+
+/** 위 끝(topZ) 바로 아래 [topZ − span, topZ] 원본 곡면을 2차로 맞춰 위 끝의 반경·기울기(dr/dz)를 잰다. */
+function sampleBelowConditions(probe, thetas, topZ, span) {
+  return thetas.map((theta, j) => {
+    const z0 = topZ[j];
+    const samples = [];
+    for (let d = TOP_BELOW_GAP_MM; d <= span + 1e-9; d += CLEAN_STEP_MM / 2) {
+      const r = probe.rayRadius(theta, z0 - d);
+      if (Number.isFinite(r)) samples.push([z0 - d, r]);
+    }
+    if (samples.length < 4) return null;
+    const q = fitQuadratic(samples, z0);
+    return q ? { r: q.a, slope: q.b } : null;
   });
 }
 
@@ -949,6 +1005,15 @@ function channelRadius(mesh, zLo, zHi, rOuter) {
 }
 
 /**
+ * 띠 행의 원래 곡선 비중(나머지는 각도 평균). 위 끝 BAND_SMOOTH_FADE_MM 안에서는 평균을 0까지 줄여,
+ * 위 끝에서 맞춘 원본 접선이 이웃 열 평균에 끌려 휘지 않게 한다.
+ */
+function bandSmoothKeep(t, height) {
+  const s = Math.min(1, Math.max(0, ((1 - t) * height) / BAND_SMOOTH_FADE_MM));
+  return 1 - (1 - t ** BAND_SMOOTH_TOP_POWER) * s * s * (3 - 2 * s);
+}
+
+/**
  * Z_a 평면 ~ 위쪽 레벨면(topLevel) 사이 외곽 면을 지우고 profiles로 만든 띠를 붙인다.
  * @param {(theta: number, t: number) => number} radiusAt t∈[0,1] (0=Z_a, 1=위)
  */
@@ -1068,16 +1133,16 @@ function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut, origProbe, crease }
   const grid = [];
   const minHeight = Math.min(...heights);
   const seamDepths = origProbe ? SEAM_ROW_DEPTHS_MM : [];
-  const seamStart = seamDepths.length ? SEAM_ROW_DEPTHS_MM[SEAM_ROW_DEPTHS_MM.length - 1] + 0.01 : 0;
+  const seamStart = seamDepths.length ? SEAM_ROW_DEPTHS_MM[SEAM_ROW_DEPTHS_MM.length - 1] + ROW_PITCH_MM : 0;
   for (let r = 1; r < rows; r += 1) {
     const t = r / rows;
     if (seamDepths.length && (1 - t) * minHeight < seamStart) break;
-    const keep = t ** BAND_SMOOTH_TOP_POWER;
     const raw = Array.from({ length: STRIP_COLUMNS }, (_, j) => radiusAt(j, t));
     const avg = circularSmooth(raw, BAND_SMOOTH_HALF_COLUMNS);
     const row = [];
     for (let j = 0; j < STRIP_COLUMNS; j += 1) {
       const theta = (j / STRIP_COLUMNS) * TWO_PI;
+      const keep = bandSmoothKeep(t, heights[j]);
       const rad = raw[j] * keep + avg[j] * (1 - keep);
       const hMix = heights[j] * keep + smoothHeights[j] * (1 - keep);
       const idx = verts.length / 3;
@@ -1098,11 +1163,10 @@ function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut, origProbe, crease }
     for (let j = 0; j < STRIP_COLUMNS; j += 1) {
       const theta = (j / STRIP_COLUMNS) * TWO_PI;
       // 아래 일반 행과 같은 각도 평균을 쓴 곡선 위치에서 출발해, 위로 갈수록 원본 곡면으로 옮겨 간다.
-      const keep = ts[j] ** BAND_SMOOTH_TOP_POWER;
+      const keep = bandSmoothKeep(ts[j], heights[j]);
       const zCurve = zA + ts[j] * (heights[j] * keep + smoothHeights[j] * (1 - keep));
       const z = zCurve * (1 - w) + (zA + heights[j] - depth) * w;
-      const fn = w > 0 ? origProbe.radiusFn(z) : null;
-      const ro = fn ? fn(theta) : NaN;
+      const ro = w > 0 ? origProbe.rayRadius(theta, z) : NaN;
       const rp = raw[j] * keep + avg[j] * (1 - keep);
       const rad = Number.isFinite(ro) ? rp * (1 - w) + ro * w : rp;
       const idx = verts.length / 3;
@@ -1372,6 +1436,9 @@ export function blendCuffJunction(buffer, options = {}) {
     const tops = sampleTopConditions(probe, thetas, topZ, CLEAN_WINDOW_MM);
     if (tops.some((t) => !t)) fail("manual-review", "커프 하단 곡면을 읽지 못했습니다.");
     const hs = topZ.map((z) => z - zA);
+    // 위 끝 반경·기울기는 위 끝 바로 아래 원본 커프에서 잰다. 곡선이 위 끝에서 원본과 같은 접선으로 이어져야 꺾인 선이 안 생긴다.
+    const below = sampleBelowConditions(probe, thetas, topZ, TOP_BELOW_WINDOW_MM);
+    const belowSlopes = below.every(Boolean) ? circularSmooth(below.map((b) => b.slope), TOP_SLOPE_SMOOTH_COLUMNS) : null;
     // 볼록(부푼) 구간은 뼈에 걸리므로 오목 프로파일로 바로잡는다.
     // 커넥션 쪽(피니시라인에서 먼 쪽)은 원뿔 접선에서 오목하게 벌어지고, 위 끝은 커프 접선에 맞춘다.
     // 단차 직경은 따르지 않는다: 원뿔에서 커프까지 항상 살짝 오목하게 부드럽게 올린다.
@@ -1380,14 +1447,17 @@ export function blendCuffJunction(buffer, options = {}) {
     // 출발 기울기는 커넥션 원뿔 기울기(11° 등)를 그대로 이어 받고, 곡선이 기울기를 줄여 가며 오목하게 오른다.
     // 평균값이 원본 반경에서 ±SMOOTH_MAX_SHIFT_MM 넘게 벗어나면 위 끝에 단차가 생기므로 그 안으로 제한한다.
     const r1avg = fourierLowPass(tops.map((t) => t.r), TOP_RADIUS_HARMONICS);
-    const r1s = tops.map((t, j) => t.r + Math.max(-SMOOTH_MAX_SHIFT_MM, Math.min(SMOOTH_MAX_SHIFT_MM, r1avg[j] - t.r)));
+    const r1s = belowSlopes
+      ? below.map((b) => b.r)
+      : tops.map((t, j) => t.r + Math.max(-SMOOTH_MAX_SHIFT_MM, Math.min(SMOOTH_MAX_SHIFT_MM, r1avg[j] - t.r)));
     const coneSlope = taper.slope || TAPER_SLOPE;
     const profiles = tops.map((t, j) => {
       const h = hs[j];
       const dR = r1s[j] - ra;
       // 반경 차가 작으면 출발 기울기를 줄여 범위를 벗어나지 않게 한다.
       const m0 = Math.max(0, Math.min(coneSlope * h, dR - CONCAVE_MARGIN * h));
-      const p = concaveHermiteProfile(ra, m0, r1s[j], END_SLOPE_BOOST * (2 * dR - m0), h);
+      const eTarget = belowSlopes ? belowSlopes[j] * h : END_SLOPE_BOOST * (2 * dR - m0);
+      const p = concaveHermiteProfile(ra, m0, r1s[j], eTarget, h);
       return p ? p.fn : concaveBridgeProfile(ra, m0, r1s[j], h);
     });
     let maxSlope = 0;
