@@ -12,7 +12,7 @@ import { getMongoUri } from "../db/_mongo.js";
 import { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
 import { resolveFilledStlFile } from "../../utils/filledStlFile.js";
 import { parseStl } from "../../utils/screwHoleFill.js";
-import { blendCuffJunction, _finishLineZByAngle } from "../../services/abutmentStl/cuffBlend.js";
+import { blendCuffJunction, _finishLineZByAngle, _findFinishCrease, _prepare } from "../../services/abutmentStl/cuffBlend.js";
 import { resolveCuffConnectionSpec } from "../../services/abutmentStl/cuffConnectionSpecs.js";
 
 const args = process.argv.slice(2);
@@ -64,7 +64,10 @@ for (const d of docs) {
   const before = vertexSet(buf);
   const after = vertexSet(res.buffer);
   const flZ = _finishLineZByAngle(ci.finishLine);
-  const topOf = (x, y) => flZ(Math.atan2(y, x)) - res.detail.finishLineOffsetMm;
+  // 마진 모서리에 붙인 경우 기준선은 그 모서리다.
+  const crease = res.detail.seam === "crease" ? _findFinishCrease(_prepare(buf).mesh, flZ) : null;
+  const seamZ = crease ? crease.zOf : flZ;
+  const topOf = (x, y) => seamZ(Math.atan2(y, x)) - res.detail.finishLineOffsetMm;
   const limitZ = res.detail.followsFinishLine ? null : res.detail.zB;
   // (a) 띠 위 원본 꼭짓점이 모두 그대로 남았는가
   let lost = 0;
@@ -80,14 +83,15 @@ for (const d of docs) {
   let aboveFl = 0;
   for (const [x, y, z] of after.list) {
     if (before.set.has(KEY(x, y, z))) continue;
-    const clearance = flZ(Math.atan2(y, x)) - z;
+    const clearance = seamZ(Math.atan2(y, x)) - z;
     minClearance = Math.min(minClearance, clearance);
     if (clearance <= 0) aboveFl += 1;
   }
-  // (c) 피니시라인 점 0.02mm 이내의 원본 꼭짓점은 모두 그대로여야 한다.
+  // (c) 피니시라인 점 0.02mm 이내이면서 이음 위 끝 이상인 원본 꼭짓점은 모두 그대로여야 한다(모서리 아래 커프 쪽은 보정 대상).
   let nearLost = 0;
   const pts = ci.finishLine.points.map((p) => [Number(p[0]), Number(p[1]), Number(p[2])]);
   for (const [x, y, z] of before.list) {
+    if (z < topOf(x, y) - EPS) continue;
     if (!pts.some((p) => Math.hypot(p[0] - x, p[1] - y, p[2] - z) < 0.02)) continue;
     if (!after.set.has(KEY(x, y, z))) nearLost += 1;
   }

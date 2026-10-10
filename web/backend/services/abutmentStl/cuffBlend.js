@@ -18,14 +18,21 @@ export const CUFF_BLEND_PATCH_ATTRIBUTE = 0x4342;
 
 export const FL_PROTECT_MM = 0.2;
 /** auto 이음이 평면 Z_b에서 오목하게 못 이어질 때, 피니시라인 곡선 아래 이만큼에서 끝낸다. */
-const FINISH_KINK_OFFSET_MM = 0.02;
-/** 새로 만든 꼭짓점이 피니시라인 곡선 아래로 최소 이만큼 떨어져 있어야 한다. */
-const FINISH_MIN_CLEARANCE_MM = 0.01;
+const FINISH_KINK_OFFSET_MM = 0.005;
+/** 피니시라인 점에서 이 높이 안에 있는 날카로운 모서리 한 바퀴를 마진 모서리로 본다. */
+const CREASE_WINDOW_MM = 0.03;
+const CREASE_MIN_DEG = 20;
+/** 새로 만든 꼭짓점이 피니시라인 곡선 아래로 최소 이만큼 떨어져 있어야 한다(오프셋 5µm보다 작아야 재시도가 안 걸린다). */
+const FINISH_MIN_CLEARANCE_MM = 0.003;
 const WELD_EPS = 1e-5;
 const MEASURE_BINS = 72;
 const PROFILE_BINS = 720;
 const STRIP_COLUMNS = 720;
 const ROW_PITCH_MM = 0.025;
+/** 이음 위 끝에서 이만큼 아래까지는 새 곡선을 원본 곡면에 서서히 섞는다(위 끝 접선·반경이 원본과 같아져 선이 둘로 보이지 않는다). */
+const SEAM_BLEND_DEPTH_MM = 0.12;
+/** 위 끝에서 아래로 내려가는 깊이(mm) 순서로 촘촘히 두는 행. */
+const SEAM_ROW_DEPTHS_MM = [0.003, 0.008, 0.015, 0.025, 0.04, 0.06, 0.085, 0.12];
 
 const TAPER_FIT_TOL_MM = 0.008;
 const TAPER_ROUND_TOL_MM = 0.012;
@@ -945,24 +952,70 @@ function channelRadius(mesh, zLo, zHi, rOuter) {
  * Z_a 평면 ~ 위쪽 레벨면(topLevel) 사이 외곽 면을 지우고 profiles로 만든 띠를 붙인다.
  * @param {(theta: number, t: number) => number} radiusAt t∈[0,1] (0=Z_a, 1=위)
  */
-function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut }) {
+function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut, origProbe, crease }) {
   let cut = splitByLevel(mesh, (x, y, z) => z - zA);
-  cut = splitByLevel(cut, (x, y, z) => z - topZOf(angleOf(x, y)));
+  if (!crease) cut = splitByLevel(cut, (x, y, z) => z - topZOf(angleOf(x, y)));
   const { verts, faces, faceAttr, faceMain } = cut;
   const fc = faces.length / 3;
   const removed = new Uint8Array(fc);
-  let outwardVotes = 0;
-  for (let f = 0; f < fc; f += 1) {
-    if (!faceMain[f]) continue;
+  const centroid = (f) => {
     const a = faces[f * 3] * 3;
     const b = faces[f * 3 + 1] * 3;
     const c = faces[f * 3 + 2] * 3;
-    const cx = (verts[a] + verts[b] + verts[c]) / 3;
-    const cy = (verts[a + 1] + verts[b + 1] + verts[c + 1]) / 3;
-    const cz = (verts[a + 2] + verts[b + 2] + verts[c + 2]) / 3;
-    if (cz <= zA || cz >= topZOf(angleOf(cx, cy))) continue;
-    if (Math.hypot(cx, cy) <= rCut) continue;
-    removed[f] = 1;
+    return [
+      (verts[a] + verts[b] + verts[c]) / 3,
+      (verts[a + 1] + verts[b + 1] + verts[c + 1]) / 3,
+      (verts[a + 2] + verts[b + 2] + verts[c + 2]) / 3,
+    ];
+  };
+  const inBandOuter = (f, zTopSlack) => {
+    const [cx, cy, cz] = centroid(f);
+    return cz > zA && cz < topZOf(angleOf(cx, cy)) + zTopSlack && Math.hypot(cx, cy) > rCut;
+  };
+  if (crease) {
+    // 마진 모서리를 넘지 않고, 모서리 아래 외곽 면만 이웃을 따라 지운다(모서리 위 면은 하나도 안 지운다).
+    const ek = (a, b) => (a < b ? `${a}_${b}` : `${b}_${a}`);
+    const edgeFaces = new Map();
+    for (let f = 0; f < fc; f += 1) {
+      if (!faceMain[f]) continue;
+      for (let k = 0; k < 3; k += 1) {
+        const key = ek(faces[f * 3 + k], faces[f * 3 + ((k + 1) % 3)]);
+        const list = edgeFaces.get(key);
+        if (list) list.push(f);
+        else edgeFaces.set(key, [f]);
+      }
+    }
+    const stack = [];
+    for (let f = 0; f < fc; f += 1) {
+      if (faceMain[f] && inBandOuter(f, -CREASE_WINDOW_MM)) {
+        removed[f] = 1;
+        stack.push(f);
+      }
+    }
+    while (stack.length) {
+      const f = stack.pop();
+      for (let k = 0; k < 3; k += 1) {
+        const key = ek(faces[f * 3 + k], faces[f * 3 + ((k + 1) % 3)]);
+        if (crease.edges.has(key)) continue;
+        for (const g of edgeFaces.get(key) || []) {
+          if (removed[g] || !faceMain[g] || !inBandOuter(g, CREASE_WINDOW_MM)) continue;
+          removed[g] = 1;
+          stack.push(g);
+        }
+      }
+    }
+  } else {
+    for (let f = 0; f < fc; f += 1) {
+      if (faceMain[f] && inBandOuter(f, 0)) removed[f] = 1;
+    }
+  }
+  let outwardVotes = 0;
+  for (let f = 0; f < fc; f += 1) {
+    if (!removed[f]) continue;
+    const a = faces[f * 3] * 3;
+    const b = faces[f * 3 + 1] * 3;
+    const c = faces[f * 3 + 2] * 3;
+    const [cx, cy] = centroid(f);
     const ux = verts[b] - verts[a], uy = verts[b + 1] - verts[a + 1], uz = verts[b + 2] - verts[a + 2];
     const vx = verts[c] - verts[a], vy = verts[c + 1] - verts[a + 1], vz = verts[c + 2] - verts[a + 2];
     const nx = uy * vz - uz * vy;
@@ -1013,8 +1066,12 @@ function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut }) {
   // 위쪽 행(피니시라인·원본 곡면과 만나는 곳)은 평균하지 않고 그대로 둔다.
   const smoothHeights = circularSmooth(heights, BAND_SMOOTH_HALF_COLUMNS);
   const grid = [];
+  const minHeight = Math.min(...heights);
+  const seamDepths = origProbe ? SEAM_ROW_DEPTHS_MM : [];
+  const seamStart = seamDepths.length ? SEAM_ROW_DEPTHS_MM[SEAM_ROW_DEPTHS_MM.length - 1] + 0.01 : 0;
   for (let r = 1; r < rows; r += 1) {
     const t = r / rows;
+    if (seamDepths.length && (1 - t) * minHeight < seamStart) break;
     const keep = t ** BAND_SMOOTH_TOP_POWER;
     const raw = Array.from({ length: STRIP_COLUMNS }, (_, j) => radiusAt(j, t));
     const avg = circularSmooth(raw, BAND_SMOOTH_HALF_COLUMNS);
@@ -1025,6 +1082,31 @@ function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut }) {
       const hMix = heights[j] * keep + smoothHeights[j] * (1 - keep);
       const idx = verts.length / 3;
       verts.push(rad * Math.cos(theta), rad * Math.sin(theta), zA + t * hMix);
+      row.push({ v: idx, a: theta });
+    }
+    grid.push(row);
+  }
+  // 위 끝 근처: 새 곡선을 원본 곡면(위 끝 반경·기울기)에 섞어 이음선을 없앤다. 위 끝 행은 원본 꼭짓점 그대로다.
+  for (let k = seamDepths.length - 1; k >= 0; k -= 1) {
+    const depth = seamDepths[k];
+    const s = 1 - depth / SEAM_BLEND_DEPTH_MM;
+    const w = s <= 0 ? 0 : s * s * (3 - 2 * s);
+    const ts = heights.map((h) => 1 - depth / h);
+    const raw = ts.map((t, j) => radiusAt(j, t));
+    const avg = circularSmooth(raw, BAND_SMOOTH_HALF_COLUMNS);
+    const row = [];
+    for (let j = 0; j < STRIP_COLUMNS; j += 1) {
+      const theta = (j / STRIP_COLUMNS) * TWO_PI;
+      // 아래 일반 행과 같은 각도 평균을 쓴 곡선 위치에서 출발해, 위로 갈수록 원본 곡면으로 옮겨 간다.
+      const keep = ts[j] ** BAND_SMOOTH_TOP_POWER;
+      const zCurve = zA + ts[j] * (heights[j] * keep + smoothHeights[j] * (1 - keep));
+      const z = zCurve * (1 - w) + (zA + heights[j] - depth) * w;
+      const fn = w > 0 ? origProbe.radiusFn(z) : null;
+      const ro = fn ? fn(theta) : NaN;
+      const rp = raw[j] * keep + avg[j] * (1 - keep);
+      const rad = Number.isFinite(ro) ? rp * (1 - w) + ro * w : rp;
+      const idx = verts.length / 3;
+      verts.push(rad * Math.cos(theta), rad * Math.sin(theta), z);
       row.push({ v: idx, a: theta });
     }
     grid.push(row);
@@ -1095,9 +1177,100 @@ function finishLineMinZ(finishLine) {
 
 /** 피니시라인 Z를 축 둘레 각도로 보간하는 함수. */
 function finishLineZByAngle(finishLine) {
-  const pts = validFinishLinePoints(finishLine)
-    .map((p) => ({ a: wrapAngle(angleOf(p[0], p[1])), z: p[2] }))
-    .sort((p, q) => p.a - q.a);
+  return zByAngle(validFinishLinePoints(finishLine).map((p) => ({ a: angleOf(p[0], p[1]), z: p[2] })));
+}
+
+/**
+ * 피니시라인 점 근처에서 메시의 실제 마진 모서리(날카로운 모서리 한 바퀴)를 찾는다.
+ * 피니시라인 점을 각도로 선형 보간한 곡선은 실제 모서리와 수십 µm 어긋나므로, 이음 위 끝은 이 모서리에 붙인다.
+ * @returns {{ loop: number[], edges: Set<string>, zOf: (theta: number) => number, meanOffsetMm: number } | null}
+ */
+function findFinishCrease(mesh, flZ) {
+  const { verts, faces, faceMain } = mesh;
+  const fc = faces.length / 3;
+  const normals = new Float64Array(fc * 3);
+  const edgeFaces = new Map();
+  const ek = (a, b) => (a < b ? `${a}_${b}` : `${b}_${a}`);
+  for (let f = 0; f < fc; f += 1) {
+    if (!faceMain[f]) continue;
+    const a = faces[f * 3] * 3;
+    const b = faces[f * 3 + 1] * 3;
+    const c = faces[f * 3 + 2] * 3;
+    const ux = verts[b] - verts[a], uy = verts[b + 1] - verts[a + 1], uz = verts[b + 2] - verts[a + 2];
+    const vx = verts[c] - verts[a], vy = verts[c + 1] - verts[a + 1], vz = verts[c + 2] - verts[a + 2];
+    const nx = uy * vz - uz * vy;
+    const ny = uz * vx - ux * vz;
+    const nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz) || 1;
+    normals[f * 3] = nx / len;
+    normals[f * 3 + 1] = ny / len;
+    normals[f * 3 + 2] = nz / len;
+    for (let k = 0; k < 3; k += 1) {
+      const key = ek(faces[f * 3 + k], faces[f * 3 + ((k + 1) % 3)]);
+      const list = edgeFaces.get(key);
+      if (list) list.push(f);
+      else edgeFaces.set(key, [f]);
+    }
+  }
+  const near = (v) => Math.abs(flZ(angleOf(verts[v * 3], verts[v * 3 + 1])) - verts[v * 3 + 2]) < CREASE_WINDOW_MM;
+  const cosMax = Math.cos((CREASE_MIN_DEG * Math.PI) / 180);
+  const adj = new Map();
+  for (const [key, fs] of edgeFaces) {
+    if (fs.length !== 2) continue;
+    const [p, q] = fs;
+    const dot = normals[p * 3] * normals[q * 3] + normals[p * 3 + 1] * normals[q * 3 + 1] + normals[p * 3 + 2] * normals[q * 3 + 2];
+    if (dot > cosMax) continue;
+    const [a, b] = key.split("_").map(Number);
+    if (!near(a) || !near(b)) continue;
+    if (!adj.has(a)) adj.set(a, []);
+    if (!adj.has(b)) adj.set(b, []);
+    adj.get(a).push(b);
+    adj.get(b).push(a);
+  }
+  let best = null;
+  const seen = new Set();
+  for (const start of adj.keys()) {
+    if (seen.has(start)) continue;
+    const comp = [];
+    const stack = [start];
+    seen.add(start);
+    while (stack.length) {
+      const v = stack.pop();
+      comp.push(v);
+      for (const w of adj.get(v)) {
+        if (!seen.has(w)) {
+          seen.add(w);
+          stack.push(w);
+        }
+      }
+    }
+    if (comp.length < 16 || comp.some((v) => adj.get(v).length !== 2)) continue;
+    const loop = [start];
+    let prev = -1;
+    let cur = start;
+    for (;;) {
+      const [n0, n1] = adj.get(cur);
+      const nxt = n0 !== prev ? n0 : n1;
+      if (nxt === start) break;
+      loop.push(nxt);
+      prev = cur;
+      cur = nxt;
+      if (loop.length > comp.length) break;
+    }
+    if (loop.length !== comp.length || !angularRow(loop, verts)) continue;
+    const meanOffsetMm =
+      loop.reduce((s, v) => s + Math.abs(flZ(angleOf(verts[v * 3], verts[v * 3 + 1])) - verts[v * 3 + 2]), 0) / loop.length;
+    if (!best || meanOffsetMm < best.meanOffsetMm) best = { loop, meanOffsetMm };
+  }
+  if (!best) return null;
+  const edges = new Set(best.loop.map((v, i) => ek(v, best.loop[(i + 1) % best.loop.length])));
+  const zOf = zByAngle(best.loop.map((v) => ({ a: angleOf(verts[v * 3], verts[v * 3 + 1]), z: verts[v * 3 + 2] })));
+  return { loop: best.loop, edges, zOf, meanOffsetMm: best.meanOffsetMm };
+}
+
+/** 각도별 점({a, z})을 선형 보간하는 z(θ). 점이 8개 미만이면 null. */
+function zByAngle(points) {
+  const pts = points.map((p) => ({ a: wrapAngle(p.a), z: p.z })).sort((p, q) => p.a - q.a);
   if (pts.length < 8) return null;
   return (theta) => {
     const a = wrapAngle(theta);
@@ -1175,11 +1348,13 @@ export function blendCuffJunction(buffer, options = {}) {
     const thetas = thetaColumns();
     const flZ = finishLineZByAngle(options.finishLine);
     if (!flZ) fail("manual-review", "피니시라인 곡선을 읽지 못해 이음 위 끝을 정할 수 없습니다.");
+    const crease = findFinishCrease(mesh, flZ);
+    const seamZ = crease ? crease.zOf : flZ;
     const attempt = (offsetMm) => {
       let topZ;
       let topZOf;
       {
-      topZOf = (theta) => flZ(theta) - offsetMm;
+      topZOf = (theta) => seamZ(theta) - offsetMm;
       topZ = thetas.map(topZOf);
       if (Math.min(...topZ) - zA < MIN_FOLLOW_BAND_MM) {
         fail("manual-review", "피니시라인이 커넥션 상단보다 낮거나 너무 가까워 이음부를 만들 수 없습니다.", {
@@ -1244,19 +1419,23 @@ export function blendCuffJunction(buffer, options = {}) {
       topZOf,
       radiusAt: (j, t) => profiles[j](t),
       rCut,
+      origProbe: probe,
+      crease: crease && offsetMm === 0 ? crease : null,
     });
       return { out, zTopMax, maxSlope };
     };
-    // 메시 모서리를 선형으로 자르면 곡선 경계가 수 µm 어긋난다. 새 꼭짓점이 피니시라인과 최소 여유(10µm)를 갖도록 확인하고, 모자라면 띠 위 끝을 더 내려 한 번 다시 만든다(2번 안에 안 되면 manual-review).
-    let offsetMm = FINISH_KINK_OFFSET_MM;
+    // 메시 모서리를 선형으로 자르면 곡선 경계가 수 µm 어긋난다. 새 꼭짓점이 피니시라인과 최소 여유를 갖도록 확인하고, 모자라면 띠 위 끝을 더 내려 한 번 다시 만든다(2번 안에 안 되면 manual-review).
+    // 마진 모서리를 찾으면 이음 위 끝을 그 모서리 꼭짓점에 그대로 붙인다(모서리를 자르지 않아 선이 하나만 남는다). 새 꼭짓점은 모서리 아래 첫 행부터다.
+    let offsetMm = crease ? 0 : FINISH_KINK_OFFSET_MM;
+    const minClearanceFor = (off) => (crease && off === 0 ? SEAM_ROW_DEPTHS_MM[0] / 2 : FINISH_MIN_CLEARANCE_MM);
     let built = attempt(offsetMm);
-    let clearance = finishLineClearance(buffer, built.out.buffer, flZ);
-    for (let i = 0; i < 1 && clearance < FINISH_MIN_CLEARANCE_MM; i += 1) {
+    let clearance = finishLineClearance(buffer, built.out.buffer, seamZ);
+    for (let i = 0; i < 1 && clearance < minClearanceFor(offsetMm); i += 1) {
       offsetMm += FINISH_MIN_CLEARANCE_MM - Math.min(clearance, 0) + 0.005;
       built = attempt(offsetMm);
-      clearance = finishLineClearance(buffer, built.out.buffer, flZ);
+      clearance = finishLineClearance(buffer, built.out.buffer, seamZ);
     }
-    if (clearance < FINISH_MIN_CLEARANCE_MM) {
+    if (clearance < minClearanceFor(offsetMm)) {
       fail("manual-review", "이음 곡면이 피니시라인과 너무 가까워 적용하지 않았습니다.", { clearanceMm: round3(clearance) });
     }
     const { out, zTopMax, maxSlope } = built;
@@ -1270,6 +1449,8 @@ export function blendCuffJunction(buffer, options = {}) {
         zA: round3(zA),
         zB: round3(zTopMax),
         followsFinishLine: true,
+        seam: crease && offsetMm === 0 ? "crease" : "finish-line-offset",
+        creaseOffsetMm: crease ? round3(crease.meanOffsetMm) : null,
         finishLineOffsetMm: round3(offsetMm),
         finishLineClearanceMm: round3(clearance),
         measuredTaperTopZ: round3(taper.measuredTopZ),
@@ -1481,4 +1662,9 @@ export function measureCuffConnection(buffer) {
   };
 }
 
-export { RadialProbe as _RadialProbe, prepare as _prepare, finishLineZByAngle as _finishLineZByAngle };
+export {
+  RadialProbe as _RadialProbe,
+  prepare as _prepare,
+  finishLineZByAngle as _finishLineZByAngle,
+  findFinishCrease as _findFinishCrease,
+};
