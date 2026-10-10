@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-10: onSnapshot — PNG 캡처 직후 부모가 STL File을 놓을 수 있게 한다.
 // - 2026-09-28: extraFiles — 상악·하악·바이트처럼 여러 메시를 파일 좌표 그대로 한 장에 담는다.
 // - 2026-09-24: 스캔 칼라 — 핑크/화이트 보정 + 흰 배경.
 // - 2026-09-23: 스캔 칼라 피니시라인 가독성 — parseModelPreview 콘트라스트 + NoToneMapping.
@@ -34,6 +35,8 @@ type Props = {
   finishLinePoints?: number[][] | null;
   /** 같은 좌표계의 메시를 함께 그린다(작업 스캔 상악·하악·바이트). */
   extraFiles?: File[] | null;
+  /** PNG 캡처가 끝나면 호출. 카드 썸네일이 STL File을 놓기 위해 쓴다. */
+  onSnapshot?: (dataUrl: string) => void;
   className?: string;
 };
 
@@ -199,6 +202,7 @@ export function StlPreviewThumbnail({
   companionFiles = null,
   finishLinePoints = null,
   extraFiles = null,
+  onSnapshot,
   className,
 }: Props) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
@@ -209,6 +213,8 @@ export function StlPreviewThumbnail({
   const finishLineKey = finishLineIdentityKey(finishLinePoints);
   const extraKey = companionFilesIdentityKey(extraFiles);
   const shownCaptureKeyRef = useRef("");
+  const onSnapshotRef = useRef(onSnapshot);
+  onSnapshotRef.current = onSnapshot;
 
   useEffect(() => {
     let cancelled = false;
@@ -357,6 +363,7 @@ export function StlPreviewThumbnail({
         const dataUrl = renderer!.domElement.toDataURL("image/png");
         if (cancelled || released) return;
         shownCaptureKeyRef.current = captureKey;
+        onSnapshotRef.current?.(dataUrl);
         setThumbUrl(dataUrl);
       } catch {
         if (!cancelled) setFailed(true);

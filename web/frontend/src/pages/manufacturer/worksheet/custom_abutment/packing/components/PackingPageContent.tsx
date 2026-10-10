@@ -32,7 +32,10 @@ import { shouldShowRequestInIncludeCompleted } from "@/pages/manufacturer/worksh
 import { WorksheetCardGrid } from "../../components/WorksheetCardGrid";
 import { PreviewModal } from "../../components/PreviewModal";
 import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
-import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
+import {
+  releasePreviewBinaries,
+  usePreviewLoader,
+} from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
 import { useWorksheetRealtimeStatus } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus";
 import { PackingPrinterSettingsDialog } from "../components/PackingPrinterSettingsDialog";
 import { usePackingPrintSettings } from "../hooks/usePackingPrintSettings";
@@ -1925,7 +1928,16 @@ export const PackingPageContent = ({
 
         <PreviewModal
           open={previewOpen}
-          onOpenChange={setPreviewOpen}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) {
+              releasePreviewBinaries({
+                setPreviewFiles,
+                setPreviewNcText,
+                setPreviewStageUrl,
+              });
+            }
+            setPreviewOpen(nextOpen);
+          }}
           previewLoading={previewLoading}
           previewFiles={previewFiles}
           previewNcText={previewNcText}

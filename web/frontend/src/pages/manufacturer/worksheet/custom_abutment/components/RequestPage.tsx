@@ -93,7 +93,10 @@ import { MachiningQueueBoard } from "../machining/MachiningQueueBoard";
 import { PreviewModal } from "./PreviewModal";
 import { DesignRequestTransferView } from "@/pages/requestor/design/DesignRequestTransferView";
 import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
-import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
+import {
+  releasePreviewBinaries,
+  usePreviewLoader,
+} from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
 import { useStageDropHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useStageDropHandlers";
 import { useWorksheetRealtimeStatus } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus";
 import { useRequestPageState } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestPageState";
@@ -1076,10 +1079,21 @@ export const RequestPage = ({
           requestMongoId: String(currentReq?._id || "").trim(),
           untilMs: Date.now() + 2000,
         };
+        releasePreviewBinaries({
+          setPreviewFiles: pageState.setPreviewFiles,
+          setPreviewNcText: pageState.setPreviewNcText,
+          setPreviewStageUrl: pageState.setPreviewStageUrl,
+        });
       }
       pageState.setPreviewOpen(nextOpen);
     },
-    [pageState.previewFiles, pageState.setPreviewOpen],
+    [
+      pageState.previewFiles,
+      pageState.setPreviewFiles,
+      pageState.setPreviewNcText,
+      pageState.setPreviewOpen,
+      pageState.setPreviewStageUrl,
+    ],
   );
 
   const handleOpenPreviewWithSameReopenGuard = useCallback(

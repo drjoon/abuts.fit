@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-10: 프리뷰를 닫으면 STL File·NC 문자열을 놓는다.
 // - 2026-09-03: 준비(request) 단계에서도 헥스 확정 미해석 시 full request 보강(cam/가공만 보강하던 회귀 수정).
 // - 2026-09-03: requestSettings merge 시 빈 hexByImplantManufacturer로 덮지 않음(헥스 확정/미정 뱃지).
 // - 2026-08-29: forceRefresh가 STL/NC 캐시를 통째로 건너뛰지 않음 — 버전 키·선택 무효화로 바뀐 파일만 재다운로드.
@@ -100,6 +101,25 @@ function buildFallbackBlobCacheKey(
   const base = `stl:${id}:${kind}`;
   if (!fileSize && !uploadedAt) return base;
   return `${base}:v=${fileSize}:${uploadedAt}`;
+}
+
+/** 닫힌 프리뷰가 STL·NC 본문을 붙잡지 않게 파일만 비운다. 의뢰 메타는 남긴다. */
+export function releasePreviewBinaries(setters: {
+  setPreviewFiles: React.Dispatch<React.SetStateAction<any>>;
+  setPreviewNcText: React.Dispatch<React.SetStateAction<string>>;
+  setPreviewStageUrl?: React.Dispatch<React.SetStateAction<string>>;
+}) {
+  setters.setPreviewFiles((prev) => {
+    if (!prev || typeof prev !== "object") return prev ?? {};
+    return {
+      ...prev,
+      original: null,
+      cam: null,
+      finishLinePoints: null,
+    };
+  });
+  setters.setPreviewNcText("");
+  setters.setPreviewStageUrl?.("");
 }
 
 type PreviewLoaderParams = {

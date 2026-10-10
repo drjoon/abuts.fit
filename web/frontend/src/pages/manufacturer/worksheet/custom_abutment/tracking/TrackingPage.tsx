@@ -47,7 +47,10 @@ import { useWorksheetRealtimeStatus } from "../hooks/useWorksheetRealtimeStatus"
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { PreviewModal } from "../components/PreviewModal";
-import { usePreviewLoader } from "../hooks/usePreviewLoader";
+import {
+  releasePreviewBinaries,
+  usePreviewLoader,
+} from "../hooks/usePreviewLoader";
 import { useRequestFileHandlers } from "../hooks/useRequestFileHandlers";
 import {
   RemakeStartQuickModal,
@@ -2599,7 +2602,16 @@ export const TrackingInquiryPage = () => {
 
       <PreviewModal
         open={previewOpen}
-        onOpenChange={setPreviewOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            releasePreviewBinaries({
+              setPreviewFiles,
+              setPreviewNcText,
+              setPreviewStageUrl,
+            });
+          }
+          setPreviewOpen(nextOpen);
+        }}
         previewLoading={previewLoading}
         previewFiles={previewFiles}
         previewNcText={previewNcText}

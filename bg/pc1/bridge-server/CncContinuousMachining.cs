@@ -3,6 +3,7 @@
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/cnc/production.js
 // change-log:
+// - 2026-10-10: Next Up 파일은 시작 직전에 S3에서 temp로 흘린다. 바이트 배열로 올리지 않는다.
 // - 2026-09-29: 가공 완료 시 register-file(sourceStep=cnc) 통지를 뺀다. 완료 신호는 machining/complete 하나.
 // - 2026-08-30: RUNNING 자동중단은 PowerOff/Alarm 만. Stop·통신실패 추정 중단은 오탐 위험으로 제거. 사용자 중단은 AbortForUserStop.
 // - 2026-08-30: RUNNING 중 Hi-Link MachineStatusType(PowerOff/Stop/Alarm)·통신 끊김을 감시해 비상정지 등에서 가공중으로 고착되지 않게 한다.
@@ -2428,17 +2429,29 @@ if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
 {
 Directory.CreateDirectory(dir);
 }
-using (var dl = await BackendClient.GetAsync(downloadUrl))
+var partPath = fullPath + ".part";
+using (var dl = await BackendClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead))
 {
 if (!dl.IsSuccessStatusCode) return false;
-var bytes = await dl.Content.ReadAsByteArrayAsync();
-File.WriteAllBytes(fullPath, bytes);
+using (var input = await dl.Content.ReadAsStreamAsync())
+using (var output = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true))
+{
+await input.CopyToAsync(output);
 }
+}
+if (File.Exists(fullPath)) File.Delete(fullPath);
+File.Move(partPath, fullPath);
 Console.WriteLine("[CncMachining] downloaded from S3 to temp: {0}", fullPath);
 return true;
 }
 catch (Exception ex)
 {
+try
+{
+var partPath = fullPath + ".part";
+if (!string.IsNullOrEmpty(fullPath) && File.Exists(partPath)) File.Delete(partPath);
+}
+catch { }
 Console.WriteLine("[CncMachining] TryDownloadAndCacheFromS3 error: {0}", ex.Message);
 return false;
 }

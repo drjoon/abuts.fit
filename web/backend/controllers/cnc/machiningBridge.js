@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 // change-log:
+// - 2026-10-10: 가공 완료 NC 툴번호는 S3 스트림으로 읽고, 본문은 메모리에 올리지 않는다.
 // - 2026-10-10: 가공 오류(ALARM/FAILED)가 난 건은 자동으로 다시 집지 않는다. 자동 승인 직후 30초는 시작하지 않는다.
 // - 2026-10-09: 테스트 계정은 작업자 수동 가공 승인 전 auto-next에서 건너뛴다.
 // - 2026-10-02: 가공 시작·RUNNING tick은 이전 가공기록 포인터가 있어도 현재 RUNNING 기록으로 다시 연결한다.
@@ -57,7 +58,7 @@ import { compareMachiningQueueOrder } from "../requests/production.utils.js";
 import {
   appendMachiningJobStats,
   appendToolLifeObservations,
-  extractToolNumsFromNcText,
+  extractToolNumsFromNcStream,
   incrementToolLifeUseCounts,
   normalizeToolSlots,
 } from "./tooling.js";
@@ -2752,12 +2753,10 @@ export async function recordMachiningCompleteForBridge(req, res) {
         ).trim();
         if (ncS3Key) {
           try {
-            const buf = await s3Utils.getObjectBufferFromS3(ncS3Key);
-            const ncText =
-              buf && typeof buf.toString === "function"
-                ? buf.toString("utf8")
-                : String(buf || "");
-            ncToolNums = extractToolNumsFromNcText(ncText);
+            const obj = await s3Utils.getObjectStreamFromS3(ncS3Key);
+            if (obj?.body) {
+              ncToolNums = await extractToolNumsFromNcStream(obj.body);
+            }
           } catch (ncErr) {
             console.warn(
               "[bridge:machining:complete] NC tool parse skipped",

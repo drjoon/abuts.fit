@@ -5,6 +5,8 @@
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/cnc/production.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+// change-log:
+// - 2026-10-10: NC 툴번호는 스트림 조각으로 모은다. 본문 전체를 문자열로 올리지 않는다.
 const TOOL_ALERT_RANK = {
   disabled: 0,
   unknown: 1,
@@ -789,23 +791,51 @@ export function resetCurrentMachiningStats(existingStats, toolNum) {
  * @param {string} ncText
  * @returns {number[]}
  */
+function addToolNumFromDigits(found, digits) {
+  const toolNum = Number.parseInt(String(digits || "").slice(0, 2), 10);
+  if (Number.isFinite(toolNum) && toolNum > 0) found.add(toolNum);
+}
+
+function scanNcToolNums(text, found, { final = false } = {}) {
+  const re = /\bT\s*(\d{2,6})\b/gi;
+  // 청크 경계에서 T0707이 T07로 잘리지 않게, 끝 16자와 걸친 토큰은 다음 조각으로 넘긴다.
+  const limit = final ? text.length : Math.max(0, text.length - 16);
+  let holdFrom = final ? text.length : Math.max(0, text.length - 16);
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    const end = match.index + match[0].length;
+    if (!final && end > limit) {
+      holdFrom = match.index;
+      break;
+    }
+    addToolNumFromDigits(found, match[1]);
+  }
+  return holdFrom;
+}
+
 export function extractToolNumsFromNcText(ncText) {
   const text = typeof ncText === "string" ? ncText : "";
   if (!text) return [];
 
   const found = new Set();
-  // 워드 경계 + T + 2~6자리 (T0707, T48, T 0909 등)
-  const re = /\bT\s*(\d{2,6})\b/gi;
-  let match;
-  while ((match = re.exec(text)) !== null) {
-    const digits = String(match[1] || "").trim();
-    if (!digits) continue;
-    // 앞 2자리가 슬롯 번호 (T0707 → 07 → 7)
-    const toolNum = Number.parseInt(digits.slice(0, 2), 10);
-    if (Number.isFinite(toolNum) && toolNum > 0) {
-      found.add(toolNum);
-    }
+  scanNcToolNums(text, found, { final: true });
+  return Array.from(found).sort((a, b) => a - b);
+}
+
+/** NC 본문을 한 번에 문자열로 올리지 않고 툴번호만 모은다. */
+export async function extractToolNumsFromNcStream(stream) {
+  const found = new Set();
+  let carry = "";
+  if (!stream) return [];
+  for await (const chunk of stream) {
+    const piece = Buffer.isBuffer(chunk)
+      ? chunk.toString("latin1")
+      : Buffer.from(chunk).toString("latin1");
+    const text = carry + piece;
+    const holdFrom = scanNcToolNums(text, found, { final: false });
+    carry = text.slice(holdFrom);
   }
+  if (carry) scanNcToolNums(carry, found, { final: true });
   return Array.from(found).sort((a, b) => a - b);
 }
 

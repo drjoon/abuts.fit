@@ -86,7 +86,10 @@ import {
 } from "./components/DummyMachiningModal";
 import { buildLabelExtraProps } from "./utils/label";
 import { PreviewModal } from "@/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal";
-import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
+import {
+  releasePreviewBinaries,
+  usePreviewLoader,
+} from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
 import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
 import {
   resolveFilledStlFile,
@@ -836,6 +839,11 @@ export const MachiningQueueBoard = ({
           requestMongoId: String(currentReq?._id || "").trim(),
           untilMs: Date.now() + 2000,
         };
+        releasePreviewBinaries({
+          setPreviewFiles: setCamPreviewFiles,
+          setPreviewNcText: setCamPreviewNcText,
+          setPreviewStageUrl: setCamPreviewStageUrl,
+        });
       }
       setCamPreviewOpen(nextOpen);
     },

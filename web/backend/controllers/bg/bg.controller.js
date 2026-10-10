@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-10: STL/원본 다운로드는 S3 스트림으로 응답한다. 대기열 목록은 파일 메타만 읽는다.
 // - 2026-10-09: 테스트 계정도 NC 완료 후 가공으로 올린다. 자동 가공은 수동 승인 전 hold.
 // - 2026-09-28: 2-filled 등록 직전 커프 이음부 G2 보정(cuffBlend) → 같은 S3 키 덮어쓰기 + caseInfos.cuffBlend.
 //   응답 뒤 70° 접시형 커프면 의뢰자 제안(caseInfos.cuffProposal) 생성. 새 filled 등록 시 이전 제안 $unset.
@@ -36,6 +37,8 @@ import BridgeSetting from "../../models/bridgeSetting.model.js";
 import { sendNotificationToRoles } from "../../socket.js";
 import path from "path";
 import fs from "fs/promises";
+import { Readable } from "stream";
+import { pipeStreamToResponse } from "../../utils/pipeStreamToResponse.js";
 import Request from "../../models/request.model.js";
 import Connection from "../../models/connection.model.js";
 import CncEvent from "../../models/cncEvent.model.js";
@@ -2048,7 +2051,14 @@ export const listPendingStl = asyncHandler(async (req, res) => {
   })
     .select({
       requestId: 1,
-      caseInfos: 1,
+      "caseInfos.file.fileName": 1,
+      "caseInfos.file.originalName": 1,
+      "caseInfos.file.filePath": 1,
+      "caseInfos.file.s3Key": 1,
+      "caseInfos.file.s3Url": 1,
+      "caseInfos.clinicName": 1,
+      "caseInfos.patientName": 1,
+      "caseInfos.tooth": 1,
     })
     .lean();
 
@@ -2099,7 +2109,19 @@ export const listPendingNc = asyncHandler(async (_req, res) => {
   })
     .select({
       requestId: 1,
-      caseInfos: 1,
+      "caseInfos.stlFile.fileName": 1,
+      "caseInfos.stlFile.originalName": 1,
+      "caseInfos.stlFile.filePath": 1,
+      "caseInfos.stlFile.s3Key": 1,
+      "caseInfos.stlFile.s3Url": 1,
+      "caseInfos.camFile.fileName": 1,
+      "caseInfos.camFile.originalName": 1,
+      "caseInfos.camFile.filePath": 1,
+      "caseInfos.camFile.s3Key": 1,
+      "caseInfos.camFile.s3Url": 1,
+      "caseInfos.clinicName": 1,
+      "caseInfos.patientName": 1,
+      "caseInfos.tooth": 1,
     })
     .lean();
 
@@ -2128,6 +2150,140 @@ export const listPendingNc = asyncHandler(async (_req, res) => {
     .json(new ApiResponse(200, { items }, "Pending NC list"));
 });
 
+const STORED_FILE_SELECT = {
+  requestId: 1,
+  "caseInfos.file.fileName": 1,
+  "caseInfos.file.originalName": 1,
+  "caseInfos.file.filePath": 1,
+  "caseInfos.file.s3Key": 1,
+  "caseInfos.file.s3Url": 1,
+  "caseInfos.stlFile.fileName": 1,
+  "caseInfos.stlFile.originalName": 1,
+  "caseInfos.stlFile.filePath": 1,
+  "caseInfos.stlFile.s3Key": 1,
+  "caseInfos.stlFile.s3Url": 1,
+  "caseInfos.camFile.fileName": 1,
+  "caseInfos.camFile.originalName": 1,
+  "caseInfos.camFile.filePath": 1,
+  "caseInfos.camFile.s3Key": 1,
+  "caseInfos.camFile.s3Url": 1,
+};
+
+const FILLED_NAME_FIELDS = [
+  "caseInfos.stlFile.originalName",
+  "caseInfos.stlFile.filePath",
+  "caseInfos.stlFile.fileName",
+  "caseInfos.camFile.originalName",
+  "caseInfos.camFile.filePath",
+  "caseInfos.camFile.fileName",
+  "caseInfos.file.originalName",
+  "caseInfos.file.filePath",
+  "caseInfos.file.fileName",
+];
+
+const ORIGINAL_NAME_FIELDS = [
+  "caseInfos.file.originalName",
+  "caseInfos.file.filePath",
+  "caseInfos.file.fileName",
+];
+
+async function findRequestByStoredFileName(filePath, kind) {
+  const leaf = String(filePath || "")
+    .split(/[\\/]/)
+    .pop()
+    ?.trim();
+  if (!leaf) return null;
+  const normalized = normalizeFilePath(filePath);
+  // 정규화 비교(.filled·대소문자·인코딩 보정)는 DB 쿼리로 못 하므로 파일명 필드만 커서로 훑는다.
+  const cursor = Request.find({})
+    .select(STORED_FILE_SELECT)
+    .lean()
+    .cursor();
+  for await (const doc of cursor) {
+    const ci = doc?.caseInfos || {};
+    const stored =
+      kind === "original"
+        ? [ci?.file?.originalName, ci?.file?.filePath, ci?.file?.fileName]
+        : [
+            resolveFilledStlFile(ci)?.originalName,
+            resolveFilledStlFile(ci)?.filePath,
+            resolveFilledStlFile(ci)?.fileName,
+            ci?.file?.originalName,
+            ci?.file?.filePath,
+          ];
+    if (stored.filter(Boolean).some((name) => normalizeFilePath(name) === normalized)) {
+      return doc;
+    }
+  }
+  return null;
+}
+
+async function loadRequestFileDoc(requestId, filePath, kind) {
+  const rid = String(requestId || "").trim();
+  if (rid) {
+    const byId = await Request.findOne({ requestId: rid })
+      .select(STORED_FILE_SELECT)
+      .lean();
+    if (byId) return byId;
+  }
+  if (filePath) return findRequestByStoredFileName(filePath, kind);
+  return null;
+}
+
+/** S3 객체를 응답으로 흘린다. 본문 Buffer를 만들지 않는다. */
+async function streamStoredFile(res, fileMeta, label) {
+  const targetName = selectStoredCaseFileName(fileMeta) || "file.stl";
+  const disposition = `attachment; filename*=UTF-8''${encodeURIComponent(targetName)}`;
+  const s3Key = String(fileMeta?.s3Key || "").trim();
+  if (s3Key) {
+    try {
+      const { body, contentType, contentLength } =
+        await s3Utils.getObjectStreamFromS3(s3Key);
+      if (body) {
+        res.setHeader("Content-Type", contentType || "application/octet-stream");
+        res.setHeader("Content-Disposition", disposition);
+        if (Number.isFinite(contentLength) && contentLength > 0) {
+          res.setHeader("Content-Length", String(Math.floor(contentLength)));
+        }
+        await pipeStreamToResponse(body, res, { label, key: s3Key });
+        return true;
+      }
+    } catch (err) {
+      if (res.headersSent) return true;
+      console.warn(
+        `[${label}] S3 stream failed key=${s3Key} err=${err?.message}`,
+      );
+    }
+  }
+
+  const s3Url = String(fileMeta?.s3Url || "").trim();
+  if (s3Url && !res.headersSent) {
+    try {
+      const resp = await fetch(s3Url);
+      if (resp.ok && resp.body) {
+        res.setHeader(
+          "Content-Type",
+          resp.headers.get("content-type") || "application/octet-stream",
+        );
+        res.setHeader("Content-Disposition", disposition);
+        const len = Number(resp.headers.get("content-length") || 0);
+        if (Number.isFinite(len) && len > 0) {
+          res.setHeader("Content-Length", String(Math.floor(len)));
+        }
+        await pipeStreamToResponse(Readable.fromWeb(resp.body), res, {
+          label,
+          key: s3Url,
+        });
+        return true;
+      }
+    } catch (err) {
+      if (res.headersSent) return true;
+      console.warn(`[${label}] URL stream failed err=${err?.message}`);
+    }
+  }
+  return false;
+}
+
 export const downloadSourceFile = asyncHandler(async (req, res) => {
   const { sourceStep, requestId, filePath } = req.query;
   const step = String(sourceStep || "").trim();
@@ -2142,72 +2298,16 @@ export const downloadSourceFile = asyncHandler(async (req, res) => {
     throw new ApiError(400, "unsupported sourceStep");
   }
 
-  let requestDoc = null;
-  if (requestId) {
-    requestDoc = await Request.findOne({ requestId });
-  }
-  if (!requestDoc && filePath) {
-    const normalized = normalizeFilePath(filePath);
-    const all = await Request.find({}).select({ requestId: 1, caseInfos: 1 });
-    for (const r of all) {
-      const ci = r?.caseInfos || {};
-      const stored = [
-        resolveFilledStlFile(ci)?.originalName,
-        resolveFilledStlFile(ci)?.filePath,
-        ci?.file?.originalName,
-        ci?.file?.filePath,
-      ].filter(Boolean);
-      const hit = stored.some((n) => normalizeFilePath(n) === normalized);
-      if (hit) {
-        requestDoc = r;
-        break;
-      }
-    }
-  }
-
+  const requestDoc = await loadRequestFileDoc(requestId, filePath, "filled");
   const f = resolveFilledStlFile(requestDoc?.caseInfos);
   if (!f) {
     throw new ApiError(404, "Source file not found");
   }
 
-  const targetName = selectStoredCaseFileName(f) || "file.stl";
-
-  if (f.s3Key) {
-    try {
-      const buf = await s3Utils.getObjectBufferFromS3(f.s3Key);
-      res.setHeader("Content-Type", "application/octet-stream");
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename*=UTF-8''${encodeURIComponent(targetName)}`,
-      );
-      return res.status(200).send(buf);
-    } catch (err) {
-      console.warn(
-        `[BG-Source] S3 download failed step=${step} key=${f.s3Key} err=${err?.message}`,
-      );
-    }
+  const streamed = await streamStoredFile(res, f, "BG-Source");
+  if (!streamed) {
+    throw new ApiError(404, "Source file not accessible");
   }
-
-  if (f.s3Url) {
-    try {
-      const resp = await fetch(f.s3Url);
-      if (resp.ok) {
-        const arrayBuffer = await resp.arrayBuffer();
-        res.setHeader("Content-Type", "application/octet-stream");
-        res.setHeader(
-          "Content-Disposition",
-          `attachment; filename*=UTF-8''${encodeURIComponent(targetName)}`,
-        );
-        return res.status(200).send(Buffer.from(arrayBuffer));
-      }
-    } catch (err) {
-      console.warn(
-        `[BG-Source] URL download failed step=${step} url=${f.s3Url} err=${err?.message}`,
-      );
-    }
-  }
-
-  throw new ApiError(404, "Source file not accessible");
 });
 
 // 원본 STL을 Rhino 서버가 다시 받아갈 수 있게 내려주는 엔드포인트
@@ -2218,71 +2318,16 @@ export const downloadOriginalFile = asyncHandler(async (req, res) => {
     throw new ApiError(400, "requestId or filePath is required");
   }
 
-  let requestDoc = null;
-  if (requestId) {
-    requestDoc = await Request.findOne({ requestId });
-  }
-  if (!requestDoc && filePath) {
-    const normalized = normalizeFilePath(filePath);
-    const all = await Request.find({}).select({ requestId: 1, caseInfos: 1 });
-    for (const r of all) {
-      const ci = r?.caseInfos || {};
-      const stored = [ci?.file?.originalName, ci?.file?.filePath].filter(
-        Boolean,
-      );
-      const hit = stored.some((n) => normalizeFilePath(n) === normalized);
-      if (hit) {
-        requestDoc = r;
-        break;
-      }
-    }
-  }
-
-  if (!requestDoc?.caseInfos?.file) {
+  const requestDoc = await loadRequestFileDoc(requestId, filePath, "original");
+  const f = requestDoc?.caseInfos?.file;
+  if (!f) {
     throw new ApiError(404, "Original file not found");
   }
 
-  const f = requestDoc.caseInfos.file;
-  const targetName = selectStoredCaseFileName(f) || "file.stl";
-
-  // 1) S3가 있으면 S3에서 읽기
-  if (f.s3Key) {
-    try {
-      const buf = await s3Utils.getObjectBufferFromS3(f.s3Key);
-      res.setHeader("Content-Type", "application/octet-stream");
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename*=UTF-8''${encodeURIComponent(targetName)}`,
-      );
-      return res.status(200).send(buf);
-    } catch (err) {
-      console.warn(
-        `[BG-Original] S3 download failed key=${f.s3Key} err=${err?.message}`,
-      );
-    }
+  const streamed = await streamStoredFile(res, f, "BG-Original");
+  if (!streamed) {
+    throw new ApiError(404, "Original file not accessible");
   }
-
-  // 2) S3 키가 없고 URL만 있으면 프록시 다운로드
-  if (f.s3Url) {
-    try {
-      const resp = await fetch(f.s3Url);
-      if (resp.ok) {
-        const arrayBuffer = await resp.arrayBuffer();
-        res.setHeader("Content-Type", "application/octet-stream");
-        res.setHeader(
-          "Content-Disposition",
-          `attachment; filename*=UTF-8''${encodeURIComponent(targetName)}`,
-        );
-        return res.status(200).send(Buffer.from(arrayBuffer));
-      }
-    } catch (err) {
-      console.warn(
-        `[BG-Original] URL download failed url=${f.s3Url} err=${err?.message}`,
-      );
-    }
-  }
-
-  throw new ApiError(404, "Original file not accessible");
 });
 
 function normalizeFilePath(v) {

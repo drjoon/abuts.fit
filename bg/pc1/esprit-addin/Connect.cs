@@ -198,7 +198,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 using (var req = new HttpRequestMessage(HttpMethod.Get, url))
                 {
                     AddBridgeSecretHeader(req);
-                    var resp = BackendHttp.SendAsync(req).GetAwaiter().GetResult();
+                    var resp = BackendHttp.SendAsync(req, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult();
                     if (!resp.IsSuccessStatusCode)
                     {
                         var body = string.Empty;
@@ -206,16 +206,28 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         AppLogger.Log($"Connect: source-file download failed status={resp.StatusCode} requestId={requestId} body={body}");
                         return false;
                     }
-                    var bytes = resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
                     var dir = Path.GetDirectoryName(targetFullPath);
                     if (!string.IsNullOrWhiteSpace(dir) && !Directory.Exists(dir))
                         Directory.CreateDirectory(dir);
-                    File.WriteAllBytes(targetFullPath, bytes);
+                    var partPath = targetFullPath + ".part";
+                    using (var input = resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult())
+                    using (var output = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, false))
+                    {
+                        input.CopyTo(output);
+                    }
+                    if (File.Exists(targetFullPath)) File.Delete(targetFullPath);
+                    File.Move(partPath, targetFullPath);
                     return true;
                 }
             }
             catch (Exception ex)
             {
+                try
+                {
+                    var partPath = targetFullPath + ".part";
+                    if (!string.IsNullOrWhiteSpace(targetFullPath) && File.Exists(partPath)) File.Delete(partPath);
+                }
+                catch { }
                 AppLogger.Log($"Connect: source-file download error requestId={requestId} err={ex.GetType().Name}:{ex.Message}");
                 return false;
             }

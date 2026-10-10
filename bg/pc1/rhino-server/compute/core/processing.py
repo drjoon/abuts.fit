@@ -205,17 +205,34 @@ def download_original_to_input(item: dict) -> bool:
     params = {"requestId": request_id, "filePath": file_name}
     url = f"{backend}/bg/original-file"
     try:
-        res = requests.get(
-            url, params=params, timeout=30, headers=settings.bridge_headers()
-        )
-        if res.status_code != 200:
-            log(f"original-file fetch failed: status={res.status_code}")
-            return False
-        content = res.content
-        target.write_bytes(content)
-        log(f"original-file restored to input: {target.name} ({len(content)} bytes)")
+        partial = target.with_suffix(target.suffix + ".part")
+        with requests.get(
+            url,
+            params=params,
+            timeout=(15, 180),
+            headers=settings.bridge_headers(),
+            stream=True,
+        ) as res:
+            if res.status_code != 200:
+                log(f"original-file fetch failed: status={res.status_code}")
+                return False
+            written = 0
+            with partial.open("wb") as out:
+                for chunk in res.iter_content(chunk_size=256 * 1024):
+                    if not chunk:
+                        continue
+                    out.write(chunk)
+                    written += len(chunk)
+        partial.replace(target)
+        log(f"original-file restored to input: {target.name} ({written} bytes)")
         return True
     except Exception as e:
+        try:
+            partial = target.with_suffix(target.suffix + ".part")
+            if partial.exists():
+                partial.unlink()
+        except Exception:
+            pass
         log(f"original-file fetch error: {e}")
         return False
 
