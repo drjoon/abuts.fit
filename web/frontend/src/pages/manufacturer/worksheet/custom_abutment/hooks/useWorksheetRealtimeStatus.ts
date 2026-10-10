@@ -983,6 +983,8 @@ export function useWorksheetRealtimeStatus({
                     ...prevCaseInfos,
                     ...filledPatch,
                     ncFile: null,
+                    // 커프 보정 결과(failed 등) → 「커프 확인」 뱃지를 새로고침 없이 반영
+                    cuffBlend: notification?.data?.cuffBlend ?? null,
                   }
                 : prevCaseInfos;
               return {

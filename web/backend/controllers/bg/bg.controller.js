@@ -1504,6 +1504,8 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
               ? previousNcS3Key || null
               : null,
         previousNcS3Key: previousNcS3Key || null,
+        // 카드 「커프 확인」 뱃지가 새로고침 없이 뜨도록 보정 결과를 같이 보낸다.
+        cuffBlend: updateData["caseInfos.cuffBlend"] || null,
         clinicName: String(request?.caseInfos?.clinicName || "").trim() || null,
         patientName:
           String(request?.caseInfos?.patientName || "").trim() || null,

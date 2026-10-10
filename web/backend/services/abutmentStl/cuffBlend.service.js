@@ -99,7 +99,9 @@ export async function applyCuffBlendToFilledStl({
 }) {
   const ci = toPlain(caseInfos);
   const { key, spec } = resolveCuffConnectionSpec(ci);
-  const finishLine = ci.finishLine || null;
+  // Mongoose 배열/서브문서가 worker structuredClone에서 "could not be cloned"로 터지므로 순수 JSON으로 만든다.
+  const rawFinishLine = ci.finishLine || null;
+  const finishLine = rawFinishLine ? JSON.parse(JSON.stringify(rawFinishLine)) : null;
   let result;
   if (!spec) {
     result = {
