@@ -761,6 +761,29 @@ function sampleTopConditions(probe, thetas, topZ, span) {
   });
 }
 
+/** 못 읽은 열을 양옆 열에서 원형 선형보간으로 채운다. 못 읽은 비율이 maxRatio를 넘으면 그대로 둔다. */
+function fillMissingTopConditions(tops, maxRatio) {
+  const n = tops.length;
+  const missing = tops.filter((t) => !t).length;
+  if (!missing || missing > n * maxRatio || missing === n) return;
+  const src = tops.slice();
+  for (let j = 0; j < n; j += 1) {
+    if (src[j]) continue;
+    let a = 1;
+    while (!src[(j - a + n) % n]) a += 1;
+    let b = 1;
+    while (!src[(j + b) % n]) b += 1;
+    const p = src[(j - a + n) % n];
+    const q = src[(j + b) % n];
+    const w = a / (a + b);
+    tops[j] = {
+      r: p.r + (q.r - p.r) * w,
+      slope: p.slope + (q.slope - p.slope) * w,
+      curvature: p.curvature + (q.curvature - p.curvature) * w,
+    };
+  }
+}
+
 /** 위 끝(topZ) 바로 아래 [topZ − span, topZ] 원본 곡면을 2차로 맞춰 위 끝의 반경·기울기(dr/dz)를 잰다. */
 function sampleBelowConditions(probe, thetas, topZ, span) {
   return thetas.map((theta, j) => {
@@ -1687,8 +1710,12 @@ function planCuffRedesign(buffer, options) {
   const flZ = finishLineZByAngle(options.finishLine);
   if (!flZ) fail("manual-review", "피니시라인이 없어 재디자인 범위를 정할 수 없습니다.");
   const thetas = thetaColumns();
-  const topZ = thetas.map((theta) => flZ(theta) - FL_PROTECT_MM);
-  if (Math.min(...topZ) - zA < MIN_BAND_MM) {
+  // 실험용 완화: options.flProtectMm / minBandMm / skipFlatCheck. 기본값은 기존 제한 그대로다.
+  const overshoot = Number.isFinite(options.maxOvershootMm) ? options.maxOvershootMm : MAX_OVERSHOOT_MM;
+  const flProtect = Number.isFinite(options.flProtectMm) ? options.flProtectMm : FL_PROTECT_MM;
+  const minBand = Number.isFinite(options.minBandMm) ? options.minBandMm : MIN_BAND_MM;
+  const topZ = thetas.map((theta) => flZ(theta) - flProtect);
+  if (Math.min(...topZ) - zA < minBand) {
     fail("manual-review", "피니시라인과 커넥션 사이가 너무 좁아 재디자인할 수 없습니다.");
   }
   const ra = taper.coneAt(zA);
@@ -1713,7 +1740,7 @@ function planCuffRedesign(buffer, options) {
       }
     }
   }
-  if (flatDegLimit >= flatDeg) {
+  if (!options.skipFlatCheck && flatDegLimit >= flatDeg) {
     return {
       notFlat: true,
       reason: `납작한(${flatDegLimit.toFixed(0)}° 넘게 누운) 커프 구간이 없어 재디자인하지 않았습니다. (최대 ${flatDeg.toFixed(0)}°)`,
@@ -1722,12 +1749,15 @@ function planCuffRedesign(buffer, options) {
   }
 
   const tops = sampleTopConditions(probe, thetas, topZ, 0.15);
+  if (options.fillMissing) fillMissingTopConditions(tops, options.fillMissingMaxRatio ?? 0.25);
   if (tops.some((t) => !t)) fail("manual-review", "피니시라인 아래 곡면을 읽지 못했습니다.");
   const profiles = tops.map((t, j) => {
     const h = topZ[j] - zA;
     const gentle = Math.abs(t.slope) <= flatSlope;
-    const slope = gentle ? t.slope : Math.sign(t.slope || 1) * flatSlope;
-    const curvature = gentle ? clampCurvature(t.curvature) : 0;
+    let slope = gentle ? t.slope : Math.sign(t.slope || 1) * flatSlope;
+    // 실험용: 위 끝에서 안쪽으로 접히는 커프(slope<0)는 곡선이 부풀지 않게 수직(0)으로 붙인다.
+    if (options.monotonicEnd && slope < 0) slope = 0;
+    const curvature = gentle && !(options.monotonicEnd && t.slope < 0) ? clampCurvature(t.curvature) : 0;
     // 띠가 길면 위 끝 곡률 항(c·h²)이 곡선을 부풀린다. 범위를 벗어나면 곡률을 반씩 줄여 본다(0이면 G1).
     for (const scale of [1, 0.5, 0.25, 0]) {
       const fn = quinticHermite(ra, TAPER_SLOPE, 0, t.r, slope, curvature * scale, h);
@@ -1740,7 +1770,7 @@ function planCuffRedesign(buffer, options) {
         worst = Math.max(worst, Math.abs(r - prev) / (h / 80));
         low = Math.min(low, r);
         prev = r;
-        if (r < Math.min(ra, t.r) - MAX_OVERSHOOT_MM || r > Math.max(ra, t.r) + MAX_OVERSHOOT_MM) {
+        if (r < Math.min(ra, t.r) - overshoot || r > Math.max(ra, t.r) + overshoot) {
           inRange = false;
           break;
         }
@@ -1760,7 +1790,7 @@ function planCuffRedesign(buffer, options) {
     );
   }
   const rCh = channelRadius(mesh, zA - 0.3, zMaxAll, ra);
-  if (rCh > 0 && minR - rCh < MIN_WALL_MM) {
+  if (rCh > 0 && minR - rCh < (Number.isFinite(options.minWallMm) ? options.minWallMm : MIN_WALL_MM)) {
     fail("manual-review", "재디자인 곡면 벽 두께가 스크류 채널 대비 너무 얇아집니다.");
   }
   const rCut = rCh > 0 ? (rCh + ra) / 2 : ra * 0.75;
@@ -1789,6 +1819,7 @@ function planCuffRedesign(buffer, options) {
     zA,
     ra,
     flZ,
+    flProtect,
     topZ,
     profiles,
     rCut,
@@ -1829,7 +1860,7 @@ export function redesignCuffBowl(buffer, options = {}) {
     const out = replaceBand(plan.mesh, {
       zA: plan.zA,
       ra: plan.ra,
-      topZOf: (theta) => plan.flZ(theta) - FL_PROTECT_MM,
+      topZOf: (theta) => plan.flZ(theta) - plan.flProtect,
       radiusAt: (j, t) => plan.profiles[j].fn(t),
       rCut: plan.rCut,
     });

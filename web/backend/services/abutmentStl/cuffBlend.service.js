@@ -95,6 +95,7 @@ export async function applyCuffBlendToFilledStl({
   caseInfos,
   mode = "auto",
   queueTimeoutMs = INTERACTIVE_QUEUE_TIMEOUT_MS,
+  blendOptions = {},
 }) {
   const ci = toPlain(caseInfos);
   const { key, spec } = resolveCuffConnectionSpec(ci);
@@ -108,7 +109,7 @@ export async function applyCuffBlendToFilledStl({
     };
   } else {
     const source = await getObjectBufferFromS3(s3Key);
-    result = await runCuffBlendInWorker(source, mode, { spec, specKey: key, finishLine }, { queueTimeoutMs });
+    result = await runCuffBlendInWorker(source, mode, { ...blendOptions, spec, specKey: key, finishLine }, { queueTimeoutMs });
   }
   let fileSize = null;
   if (result.ok && result.buffer) {

@@ -673,6 +673,28 @@ export function useWorksheetRealtimeStatus({
           ? parsedBase
           : inferredBase;
         const hasValidBase = Number.isFinite(effectiveBase);
+        // 백엔드 JS 파이프라인이 끝나면 같은 s3Key로 filled STL이 덮어써진다. 로컬 STL 캐시를 지우고 열린 프리뷰를 다시 받는다.
+        if (
+          String(payload?.source || "").trim() === "backend-js" &&
+          (status === "completed" || clear)
+        ) {
+          const localReq = requestsRef.current.find(
+            (r) => String((r as any)?.requestId || "").trim() === requestId,
+          ) as any;
+          const localCamS3Key = String(
+            resolveFilledStlFile(localReq?.caseInfos)?.s3Key || "",
+          ).trim();
+          void (async () => {
+            await invalidateCachesForProcessedFile({
+              kind: "filled",
+              requestId,
+              requestMongoId: String(localReq?._id || "").trim(),
+              localCamS3Key,
+              localNcS3Key: String(localReq?.caseInfos?.ncFile?.s3Key || "").trim(),
+            });
+            refreshOpenPreviewIfMatch(requestId, null);
+          })();
+        }
         const shouldClearRealtime =
           clear || (status === "completed" && !hasValidBase);
         if (!hasValidBase || shouldClearRealtime) {
