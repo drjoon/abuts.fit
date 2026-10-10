@@ -103,6 +103,8 @@ type Props = {
   showGrid?: boolean;
   /** showGrid가 true일 때 그리드를 켜고 끈다. 기본 true. */
   gridVisible?: boolean;
+  /** 처음 뷰를 측면(Zoom to Extent)으로 연다. */
+  initialSideView?: boolean;
   /** 사용자가 회전·이동·확대할 때마다 부른다(다른 뷰어와 연동용). */
   onViewChange?: (state: ViewSyncState) => void;
   finishLinePoints?: number[][] | null;
@@ -172,6 +174,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       showOverlay = true,
       showGrid = true,
       gridVisible = true,
+      initialSideView = false,
       onViewChange,
       finishLinePoints,
       enableManualPick = false,
@@ -265,13 +268,15 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
   const [colorMappingEnabled, setColorMappingEnabled] = useState(true);
   const previewTextureRef = useRef<THREE.Texture | null>(null);
   const applyCameraFitRef = useRef<(() => void) | null>(null);
-  const fitExtentRef = useRef<((side: "side" | "top") => void) | null>(null);
+  const fitExtentRef = useRef<((side: "side" | "top", auto?: boolean) => void) | null>(null);
   const applyViewStateRef = useRef<((state: ViewSyncState) => void) | null>(null);
   const onViewChangeRef = useRef(onViewChange);
   onViewChangeRef.current = onViewChange;
   const gridRef = useRef<THREE.GridHelper | null>(null);
   const gridVisibleRef = useRef(gridVisible);
   gridVisibleRef.current = gridVisible;
+  const initialSideViewRef = useRef(initialSideView);
+  initialSideViewRef.current = initialSideView;
   useEffect(() => {
     if (gridRef.current) gridRef.current.visible = gridVisible;
   }, [gridVisible]);
@@ -2476,7 +2481,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
         applyCameraFitRef.current = applyCameraFit;
 
         // 옆·위 보기: 메시 bbox 모서리를 화면에 투영해 가로·세로에 꽉 차게(Zoom to Extent).
-        fitExtentRef.current = (side) => {
+        fitExtentRef.current = (side, auto = false) => {
           const fitMesh = meshRef.current;
           if (!fitMesh) return;
           fitMesh.updateMatrixWorld(true);
@@ -2531,9 +2536,16 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           fitTarget.copy(target);
           controls.syncFromCamera();
           controls.update();
-          userHasOrbited = true;
+          if (!auto) userHasOrbited = true;
         };
 
+        if (initialSideViewRef.current) {
+          const baseFit = applyCameraFit as unknown as () => void;
+          applyCameraFit = () => {
+            baseFit();
+            fitExtentRef.current?.("side", true);
+          };
+        }
         updateSize();
         applyCameraFit();
         // 모달 오픈 직후 컨테이너 크기 확장을 반영하기 위해 한 프레임 뒤 재맞춤

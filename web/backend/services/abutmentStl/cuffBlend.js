@@ -18,13 +18,13 @@ export const CUFF_BLEND_PATCH_ATTRIBUTE = 0x4342;
 
 export const FL_PROTECT_MM = 0.2;
 /** auto 이음이 평면 Z_b에서 오목하게 못 이어질 때, 피니시라인 곡선 아래 이만큼에서 끝낸다. */
-const FINISH_KINK_OFFSET_MM = 0.05;
+const FINISH_KINK_OFFSET_MM = 0.02;
 /** 새로 만든 꼭짓점이 피니시라인 곡선 아래로 최소 이만큼 떨어져 있어야 한다. */
 const FINISH_MIN_CLEARANCE_MM = 0.01;
 const WELD_EPS = 1e-5;
 const MEASURE_BINS = 72;
 const PROFILE_BINS = 720;
-const STRIP_COLUMNS = 240;
+const STRIP_COLUMNS = 720;
 const ROW_PITCH_MM = 0.025;
 
 const TAPER_FIT_TOL_MM = 0.008;
@@ -276,12 +276,28 @@ export function measureConnectionTaper(probe) {
     if (round >= 0.8) pts.push([z, m]);
   }
   if (pts.length < 5) return null;
-  // 기울기는 11° 고정, 절편만 맞춘다
-  const r0 = median(pts.map(([z, r]) => r - TAPER_SLOPE * z));
-  const resid = Math.max(...pts.map(([z, r]) => Math.abs(r - (r0 + TAPER_SLOPE * z))));
-  if (resid > TAPER_FIT_TOL_MM * 2) return null;
+  // 기울기는 11° 고정, 절편만 맞춘다. 맞지 않으면(예: DENTIUM 약 15°) 실측 기울기(5~20°)로 다시 맞춘다.
+  const fitWith = (slope) => {
+    const r0 = median(pts.map(([z, r]) => r - slope * z));
+    const resid = Math.max(...pts.map(([z, r]) => Math.abs(r - (r0 + slope * z))));
+    return { r0, resid, slope };
+  };
+  let fit = fitWith(TAPER_SLOPE);
+  if (fit.resid > TAPER_FIT_TOL_MM * 2) {
+    const n = pts.length;
+    const mz = pts.reduce((s, p) => s + p[0], 0) / n;
+    const mr = pts.reduce((s, p) => s + p[1], 0) / n;
+    const num = pts.reduce((s, p) => s + (p[0] - mz) * (p[1] - mr), 0);
+    const den = pts.reduce((s, p) => s + (p[0] - mz) ** 2, 0);
+    const slope = den > 0 ? num / den : NaN;
+    const alt = Number.isFinite(slope) ? fitWith(slope) : null;
+    const deg = alt ? (Math.atan(alt.slope) * 180) / Math.PI : NaN;
+    if (!alt || deg < 5 || deg > 20 || alt.resid > TAPER_FIT_TOL_MM * 2) return null;
+    fit = alt;
+  }
+  const { r0, slope: taperSlope } = fit;
 
-  const coneAt = (z) => r0 + TAPER_SLOPE * z;
+  const coneAt = (z) => r0 + taperSlope * z;
   const fits = (z) => {
     const bins = Array.from(probe.bins(z, MEASURE_BINS));
     const near = bins.filter((r) => Math.abs(r - coneAt(z)) < TAPER_ROUND_TOL_MM).length;
@@ -295,7 +311,7 @@ export function measureConnectionTaper(probe) {
       miss = 0;
     } else if (++miss > 2) break;
   }
-  return { r0, originDiameter: 2 * r0, coneAt, measuredTopZ: top };
+  return { r0, slope: taperSlope, originDiameter: 2 * r0, coneAt, measuredTopZ: top };
 }
 
 /**
@@ -317,7 +333,7 @@ export function resolveConnectionTop(taper, spec, specKey) {
     if (alt === spec) continue;
     const altTopD = taperTopDiameterOf(alt);
     if (Math.abs(altTopD - measuredTopD) > ALT_SPEC_DIAMETER_TOL_MM) continue;
-    const altZa = (altTopD / 2 - taper.r0) / TAPER_SLOPE;
+    const altZa = (altTopD / 2 - taper.r0) / (taper.slope || TAPER_SLOPE);
     return {
       zA: Math.min(altZa, top - 0.01),
       matchedKey: alt.key,
@@ -446,49 +462,93 @@ const CONCAVE_MARGIN = 0.01;
 
 /** 이음 곡선 모서리의 최대 곡률(1/mm). 클수록 모서리가 날카롭다(수직에 가깝게 오르다 늦게 꺾임). */
 const CORNER_CURVATURE = 2.5;
-/** 시작 기울기 = 원뿔 기울기 × 이 값(거의 수직). */
-const START_SLOPE_FACTOR = 0.25;
+/** 시작 기울기 상한(원본 기울기를 따르되 이 이하). */
+const START_MAX_SLOPE = Math.tan((40 * Math.PI) / 180);
 /** 위쪽 접선 최대 기울기(약 65°). */
 const CORNER_MAX_END_SLOPE = Math.tan((65 * Math.PI) / 180);
 /** 위쪽 기울기 목표(약 60°). */
-const CORNER_END_SLOPE = Math.tan((60 * Math.PI) / 180);
+const CORNER_END_SLOPE = Math.tan((70 * Math.PI) / 180);
+/** 위쪽 최소 기울기(약 30°): 접시처럼 평평해지지 않게. */
+const CORNER_MIN_END_SLOPE = Math.tan((35 * Math.PI) / 180);
+/** 모서리(퍼지기 시작) 선호 위치. 낮을수록 원본처럼 일찍 퍼진다. */
+const CORNER_PREF_T = 0.3;
+/** 열 평균 반폭(열 수, 720열 기준 약 ±12°). */
+const SMOOTH_HALF_COLUMNS = 24;
+/** 긴 띠(mm) 기준과 그때의 시작 기울기(약 8°). */
+const SMOOTH_MAX_SHIFT_MM = 0.04;
+/** 위 끝 반경을 저주파(조화 K차 이하)만 남겨 매끈하게 한다. */
+const TOP_RADIUS_HARMONICS = 6;
+/** 끝 기울기를 2차 호(2d − m0)보다 이만큼 더 세워 늦게 벌어지게(더 오목하게) 한다. */
+const END_SLOPE_BOOST = 1.5;
+/** 둘째 제어점 간격 / 첫째 간격(작을수록 출발 후 더 빨리 수직에 가까워진다). */
+const BEZIER_DIP = 0.5;
+const LONG_BAND_MM = 2;
+/** 띠 면 평균: 반폭(열)과 위쪽 보존 지수(t^p). */
+const BAND_SMOOTH_HALF_COLUMNS = 60;
+const BAND_SMOOTH_TOP_POWER = 3;
+const LONG_BAND_START_SLOPE = Math.tan((8 * Math.PI) / 180);
 
 /**
- * 가장 오목한 이음: 원뿔 접선(m0)을 따라 수직에 가깝게 오르다가, 위 끝 접선(e)으로 꺾여 올라간다.
- * 두 직선의 max(볼록 모서리)를 곡률 CORNER_CURVATURE로 둥글린다. 가는 임플란트를 깊이 심어
- * 커프를 수직으로 올려야 하는 경우 뼈·잇몸에 걸리지 않게 하려는 형상이다. t∈[0,1].
- * 끝 값이 원뿔 접선 연장보다 낮으면(오목 불가) null.
- * @param {number} m0 dr/dt 시작(= TAPER_SLOPE·h)
- * @param {number} e0 dr/dt 끝(= 커프 기울기·h). 허용 범위로 당겨 쓴다.
- * @returns {{ fn: (t: number) => number, shift: number } | null} shift = 끝 기울기 변경량(dr/dz)
+ * 밥그릇 이음: 제어점 4개의 3차 베지어(= 시작·끝 값과 기울기를 지정한 3차 에르미트). 꺾임 없이 매끈하다.
+ * 커넥션 쪽은 m0(거의 수직)로 시작해 위로 갈수록 벌어지고, 위 끝에서 기울기 e가 된다. t∈[0,1].
+ * 오목이 깨지면 곡률이 일정한 2차 곡선(끝 기울기 = 2d − m0)으로 대체한다.
+ * @param {number} m0 dr/dt 시작
+ * @param {number} eTarget dr/dt 끝 목표(약 35~60°로 제한)
+ * @returns {{ fn: (t: number) => number } | null} d < m0이면 null
  */
-export function concaveHermiteProfile(ra, m0Cone, r1, e0, h) {
-  // 원뿔 기울기(11°)를 그대로 이으면 커프가 뚱뚱해진다. 거의 수직으로 올리고, 위에서 늦게 벌린다.
-  const m0 = m0Cone * START_SLOPE_FACTOR;
+export function concaveHermiteProfile(ra, m0, r1, eTarget, h) {
   const d = r1 - ra;
   if (d < m0 + CONCAVE_MARGIN * h) return null;
-  // 위쪽 기울기는 약 60°로 맞춘다. 모서리 위치 t* = (e - d)/(e - m0)는 [0.2, 0.9]로 제한하고,
-  // 60°로 닿지 못하면 최대 65°까지 허용한다. 원본 끝 접선과 꺾이는(볼록) 것은 허용한다.
-  const eLo = (d - 0.2 * m0) / 0.8;
-  const eHi = Math.min((d - 0.9 * m0) / 0.1, CORNER_MAX_END_SLOPE * h);
-  if (eLo > eHi) return null;
-  const e = Math.max(eLo, Math.min(eHi, CORNER_END_SLOPE * h));
-  const delta = e - m0;
-  // r''(mm) = delta²/(4·s·h²) = CORNER_CURVATURE
-  const s = (delta * delta) / (4 * CORNER_CURVATURE * h * h);
-  const raw = (t) => {
-    const a = ra + m0 * t;
-    const b = r1 + e * (t - 1);
-    return (a + b) / 2 + Math.sqrt(((a - b) / 2) ** 2 + s * s);
+  // 제어점 5개의 4차 베지어. 커넥션 기울기(m0, 11°)로 출발해 기울기를 점차 줄여(10°, 9°…) 거의 수직으로 올리다가,
+  // 위에서 벌어져 끝 기울기 e(약 35~70°)가 된다. Δ0 = m0/4, Δ1 = Δ0·BEZIER_DIP, Δ3 = e/4, Δ1 ≤ Δ2 ≤ Δ3.
+  const d0 = m0 / 4;
+  const d1 = d0 * BEZIER_DIP;
+  const rest = d - d0 - d1;
+  if (rest < 2 * d1) return null;
+  let e = Math.max(CORNER_MIN_END_SLOPE * h, Math.min(CORNER_END_SLOPE * h, eTarget));
+  e = Math.max(2 * rest, Math.min(4 * (rest - d1), e));
+  const d3 = e / 4;
+  const d2 = rest - d3;
+  const c = [ra, ra + d0, ra + d0 + d1, ra + d0 + d1 + d2, r1];
+  return {
+    fn: (t) => {
+      const u = 1 - t;
+      return (
+        c[0] * u ** 4 + 4 * c[1] * u ** 3 * t + 6 * c[2] * u ** 2 * t ** 2 + 4 * c[3] * u * t ** 3 + c[4] * t ** 4
+      );
+    },
   };
-  // 양 끝 값을 정확히 맞춘다(선형 보정이라 오목은 유지).
-  const c0 = ra - raw(0);
-  const c1 = r1 - raw(1);
-  const fn = (t) => {
-    const x = Math.max(0, Math.min(1, t));
-    return raw(x) + c0 * (1 - x) + c1 * x;
-  };
-  return { fn, shift: Math.abs(e - e0) / h };
+}
+
+/** 원형 신호의 저주파 성분(0..K차 조화)만 남긴다. */
+function fourierLowPass(values, harmonics) {
+  const n = values.length;
+  const out = new Array(n).fill(0);
+  for (let k = 0; k <= harmonics; k += 1) {
+    let re = 0;
+    let im = 0;
+    for (let j = 0; j < n; j += 1) {
+      const a = (2 * Math.PI * k * j) / n;
+      re += values[j] * Math.cos(a);
+      im += values[j] * Math.sin(a);
+    }
+    const w = k === 0 ? 1 / n : 2 / n;
+    for (let j = 0; j < n; j += 1) {
+      const a = (2 * Math.PI * k * j) / n;
+      out[j] += w * (re * Math.cos(a) + im * Math.sin(a));
+    }
+  }
+  return out;
+}
+
+/** 각도(원형) 이동 평균. */
+function circularSmooth(values, half) {
+  const n = values.length;
+  return values.map((_, j) => {
+    let sum = 0;
+    for (let k = -half; k <= half; k += 1) sum += values[(j + k + n * 4) % n];
+    return sum / (2 * half + 1);
+  });
 }
 
 function toConcaveProfilePlain(fn, samples) {
@@ -949,15 +1009,22 @@ function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut }) {
     heights.push(topZOf((j / STRIP_COLUMNS) * TWO_PI) - zA);
   }
   const rows = Math.max(6, Math.min(80, Math.ceil(Math.max(...heights) / ROW_PITCH_MM)));
+  // 면이 쭈글하지 않도록, 아래쪽 행일수록 각도 방향으로 반경·높이를 평균한다.
+  // 위쪽 행(피니시라인·원본 곡면과 만나는 곳)은 평균하지 않고 그대로 둔다.
+  const smoothHeights = circularSmooth(heights, BAND_SMOOTH_HALF_COLUMNS);
   const grid = [];
   for (let r = 1; r < rows; r += 1) {
     const t = r / rows;
+    const keep = t ** BAND_SMOOTH_TOP_POWER;
+    const raw = Array.from({ length: STRIP_COLUMNS }, (_, j) => radiusAt(j, t));
+    const avg = circularSmooth(raw, BAND_SMOOTH_HALF_COLUMNS);
     const row = [];
     for (let j = 0; j < STRIP_COLUMNS; j += 1) {
       const theta = (j / STRIP_COLUMNS) * TWO_PI;
-      const rad = radiusAt(j, t);
+      const rad = raw[j] * keep + avg[j] * (1 - keep);
+      const hMix = heights[j] * keep + smoothHeights[j] * (1 - keep);
       const idx = verts.length / 3;
-      verts.push(rad * Math.cos(theta), rad * Math.sin(theta), zA + t * heights[j]);
+      verts.push(rad * Math.cos(theta), rad * Math.sin(theta), zA + t * hMix);
       row.push({ v: idx, a: theta });
     }
     grid.push(row);
@@ -1009,19 +1076,26 @@ function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut }) {
   };
 }
 
+/** 피니시라인 점 중 커넥션 높이(z<0.5)에 잘못 잡힌 점(예: 반경 1.5, z −0.8)을 뺀다. 진짜 피니시라인은 그 위에 있다. */
+function validFinishLinePoints(finishLine) {
+  const all = (Array.isArray(finishLine?.points) ? finishLine.points : [])
+    .map((p) => [Number(p?.[0]), Number(p?.[1]), Number(p?.[2])])
+    .filter((p) => p.every(Number.isFinite) && Math.hypot(p[0], p[1]) > 0.1);
+  const kept = all.filter((p) => p[2] >= 0.5);
+  return kept.length >= all.length * 0.85 ? kept : all;
+}
+
 function finishLineMinZ(finishLine) {
+  const pts = validFinishLinePoints(finishLine);
+  const zs = pts.map((p) => p[2]);
+  if (zs.length) return Math.min(...zs);
   const direct = Number(finishLine?.min_z);
-  if (Number.isFinite(direct)) return direct;
-  const pts = Array.isArray(finishLine?.points) ? finishLine.points : [];
-  const zs = pts.map((p) => Number(p?.[2])).filter(Number.isFinite);
-  return zs.length ? Math.min(...zs) : NaN;
+  return Number.isFinite(direct) ? direct : NaN;
 }
 
 /** 피니시라인 Z를 축 둘레 각도로 보간하는 함수. */
 function finishLineZByAngle(finishLine) {
-  const pts = (Array.isArray(finishLine?.points) ? finishLine.points : [])
-    .map((p) => [Number(p?.[0]), Number(p?.[1]), Number(p?.[2])])
-    .filter((p) => p.every(Number.isFinite) && Math.hypot(p[0], p[1]) > 0.1)
+  const pts = validFinishLinePoints(finishLine)
     .map((p) => ({ a: wrapAngle(angleOf(p[0], p[1])), z: p[2] }))
     .sort((p, q) => p.a - q.a);
   if (pts.length < 8) return null;
@@ -1127,10 +1201,19 @@ export function blendCuffJunction(buffer, options = {}) {
     // 커넥션 쪽(피니시라인에서 먼 쪽)은 원뿔 접선에서 오목하게 벌어지고, 위 끝은 커프 접선에 맞춘다.
     // 단차 직경은 따르지 않는다: 원뿔에서 커프까지 항상 살짝 오목하게 부드럽게 올린다.
     // 원뿔 접선에서 시작해 Z_b에서 원본 곡면 접선에 이어지는 G1 오목 곡선. 불가능한 열만 단순 오목 곡선.
+    // 열마다 들쭉날쭉하면 면에 주름이 생기므로, 위 끝 반경은 저주파 성분만 남겨 매끈하게 한다.
+    // 출발 기울기는 커넥션 원뿔 기울기(11° 등)를 그대로 이어 받고, 곡선이 기울기를 줄여 가며 오목하게 오른다.
+    // 평균값이 원본 반경에서 ±SMOOTH_MAX_SHIFT_MM 넘게 벗어나면 위 끝에 단차가 생기므로 그 안으로 제한한다.
+    const r1avg = fourierLowPass(tops.map((t) => t.r), TOP_RADIUS_HARMONICS);
+    const r1s = tops.map((t, j) => t.r + Math.max(-SMOOTH_MAX_SHIFT_MM, Math.min(SMOOTH_MAX_SHIFT_MM, r1avg[j] - t.r)));
+    const coneSlope = taper.slope || TAPER_SLOPE;
     const profiles = tops.map((t, j) => {
       const h = hs[j];
-      const p = concaveHermiteProfile(ra, TAPER_SLOPE * h, t.r, t.slope * h, h);
-      return p ? p.fn : concaveBridgeProfile(ra, TAPER_SLOPE * h, t.r, h);
+      const dR = r1s[j] - ra;
+      // 반경 차가 작으면 출발 기울기를 줄여 범위를 벗어나지 않게 한다.
+      const m0 = Math.max(0, Math.min(coneSlope * h, dR - CONCAVE_MARGIN * h));
+      const p = concaveHermiteProfile(ra, m0, r1s[j], END_SLOPE_BOOST * (2 * dR - m0), h);
+      return p ? p.fn : concaveBridgeProfile(ra, m0, r1s[j], h);
     });
     let maxSlope = 0;
     let minR = Infinity;

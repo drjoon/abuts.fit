@@ -3819,6 +3819,7 @@ export const PreviewModal = ({
                           : handleUndoGuidedFinishLinePoint
                       }
                       gridVisible={gridOn}
+                      initialSideView
                       onViewChange={(state) => rightViewerRef.current?.applyViewState(state)}
                       onPaintSpace={
                         setLeftPaintSpace
@@ -3842,6 +3843,7 @@ export const PreviewModal = ({
                       lotEngravingTarget={lotEngravingTargetDraft}
                       finishLinePoints={finishLinePoints}
                       gridVisible={gridOn}
+                      initialSideView
                       onViewChange={(state) => rightViewerRef.current?.applyViewState(state)}
                       onPaintSpace={
                         setLeftPaintSpace
@@ -4463,6 +4465,7 @@ export const PreviewModal = ({
                           : handleUndoGuidedFinishLinePoint
                       }
                       gridVisible={gridOn}
+                      initialSideView
                       onViewChange={(state) => leftViewerRef.current?.applyViewState(state)}
                       onPaintSpace={
                         setRightPaintSpace

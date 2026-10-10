@@ -18,7 +18,8 @@ import { resolveFilledStlFile } from "../../utils/filledStlFile.js";
 import { applyCuffBlendToFilledStl } from "../../services/abutmentStl/cuffBlend.service.js";
 
 const args = process.argv.slice(2);
-const ids = (args[args.indexOf("--ids") + 1] || "").split(",").filter(Boolean);
+const idsAt = args.indexOf("--ids");
+const ids = idsAt < 0 ? [] : (args[idsAt + 1] || "").split(",").filter(Boolean);
 const restore = args.includes("--restore");
 const dir = path.resolve("../../.tmp-abuts-align/cuff-samples");
 const restoreFile = path.join(dir, "restore.json");
@@ -31,6 +32,7 @@ const col = mongoose.connection.db.collection("requests");
 if (restore) {
   const rows = JSON.parse(fs.readFileSync(restoreFile, "utf8"));
   for (const r of rows) {
+    if (ids.length && !ids.includes(r.requestId)) continue;
     await putObjectToS3(r.s3Key, fs.readFileSync(path.join(dir, `${r.requestId}.stl`)), { contentType: "application/sla" });
     await col.updateOne(
       { requestId: r.requestId },
