@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/hooks/use-mobile.tsx
 // - web/frontend/src/store/useAuthStore.ts
 // - web/frontend/rules.md
+// - 2026-10-11: 안내 문구를 한 문장으로 줄임.
 // - 2026-09-30: 로그인 후 모바일 1회 — PC 최적화 안내 확인 모달.
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
@@ -86,12 +87,7 @@ export function MobilePcOptimizedNotice() {
         <AlertDialogHeader className="text-center">
           <AlertDialogTitle>PC에서 사용해 주세요</AlertDialogTitle>
           <AlertDialogDescription className="text-center leading-relaxed">
-            이 화면은 PC에 최적화되어 있습니다.
-            <br />
-            모바일은 해상도가 낮아 일부 기능이 숨겨져 있고, 쓰기 불편한 부분도
-            있습니다.
-            <br />
-            더 많은 기능은 PC에서 사용해 주세요.
+            해상도가 낮아 일부 기능이 숨겨집니다.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter className="sm:justify-center">

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-11: 랜딩에 붙을 때는 헤더 여백을 뺀다.
 // - 2026-10-05: 장점 2(구강스캔 특화 · AI 지향) · 스토리 2. FIT TOGETHER 제외.
 // - 2026-10-05: 커스텀어벗 플로우·하나의 크레딧 섹션은 플랫폼 오퍼로 이동.
 // - 2026-10-05: 장점 3 · 생성 이미지 스토리 3 · AI는 검수·축적 카피. 히어로 스캔 점군 유지.
@@ -30,6 +31,10 @@ import {
 } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
+import {
+  useLandingOfferEmbedded,
+  useScopedSectionId,
+} from "./landingOfferInline";
 import {
   landingContent,
   landingProse,
@@ -85,10 +90,10 @@ export function LabOfferHero({
   onStart: () => void;
   onConsult: () => void;
 }) {
+  const embedded = useLandingOfferEmbedded();
   return (
     <section data-rail-label="시작" className="bg-white">
-      {/* fixed 헤더(h-14/sm:h-16) 아래부터 히어로 */}
-      <div className="h-14 sm:h-16" aria-hidden />
+      {embedded ? null : <div className="h-14 sm:h-16" aria-hidden />}
       <div className="relative flex min-h-[78svh] items-center overflow-hidden bg-[#050f24] sm:min-h-[82svh]">
         <div
           aria-hidden
@@ -193,9 +198,10 @@ export function LabAdvantagesSection({
 }: {
   advantages: LabOfferExtras["advantages"];
 }) {
+  const sectionId = useScopedSectionId("after-hero");
   return (
     <section
-      id="after-hero"
+      id={sectionId}
       data-rail-label="장점"
       className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
     >
@@ -420,9 +426,10 @@ export function LabAiDesignSection({ ai }: { ai: LabOfferExtras["ai"] }) {
 
 /** FAQ — `/` 와 같은 아코디언. */
 export function LabFaqSection({ faq }: { faq: LabOfferExtras["faq"] }) {
+  const sectionId = useScopedSectionId("faq");
   return (
     <section
-      id="faq"
+      id={sectionId}
       data-rail-label="FAQ"
       className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
     >

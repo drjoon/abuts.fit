@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-11: `embedded` — lg 미만 랜딩에 같은 오퍼를 이어 붙인다(진행바·레일·헤더 여백 없음).
 // - 2026-10-06: 플랫폼 월말 정산 카톡 사례 섹션을 크레딧 앞에 둠.
 // - 2026-10-05: 플랫폼 섹션 배경 교차 — 용어 파랑, 시작하기 파랑. 기공소 오퍼 배경은 그대로.
 // - 2026-10-05: 플랫폼 extras·audiences 제거. glance·stories·pipeline·credit만 렌더.
@@ -79,6 +80,12 @@ import { LandingReveal } from "./LandingReveal";
 import { LandingScrollCue } from "./LandingScrollCue";
 import { LandingScrollProgress } from "./LandingScrollProgress";
 import { LandingSectionRail } from "./LandingSectionRail";
+import {
+  LandingOfferEmbedProvider,
+  offerSectionId,
+  scrollToLandingSection,
+  useScopedSectionId,
+} from "./landingOfferInline";
 import { LandingSpotlightCard } from "./LandingSpotlightCard";
 import { OfferVisual } from "./OfferVisual";
 import { SimpleWayHeroFx, SimpleWayRings } from "./SimpleWayHeroFx";
@@ -243,9 +250,10 @@ function SectionEyebrow({
 const GLANCE_ICONS = [HelpCircle, Waypoints, ShieldCheck] as const;
 
 function GlanceSection({ glance }: { glance: OfferGlance }) {
+  const sectionId = useScopedSectionId("after-hero");
   return (
     <section
-      id="after-hero"
+      id={sectionId}
       data-rail-label="한눈에"
       className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
     >
@@ -1176,8 +1184,14 @@ function KitsColor({
   );
 }
 
-/** `/offer/*` — `/` Waveon 톤(타이포·하늘색·여백)과 동일 */
-export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
+/** `/offer/*` — `/` Waveon 톤(타이포·하늘색·여백)과 동일. `embedded`면 랜딩 아래에 붙는다. */
+export function LandingOfferPage({
+  offer,
+  embedded = false,
+}: {
+  offer: LandingOffer;
+  embedded?: boolean;
+}) {
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
@@ -1206,11 +1220,23 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
   const heroLines = offer.heroBody?.length
     ? offer.heroBody
     : [offer.line];
+  const scope = embedded ? offerSectionId(offer.slug) : null;
+
+  useEffect(() => {
+    if (!scope) return;
+    if (window.location.hash !== `#${scope}`) return;
+    const timer = window.setTimeout(() => scrollToLandingSection(scope), 0);
+    return () => window.clearTimeout(timer);
+  }, [scope]);
 
   return (
-    <div className="bg-white text-slate-900">
-      <LandingScrollProgress />
-      <LandingSectionRail key={offer.slug} />
+    <LandingOfferEmbedProvider scope={scope}>
+    <div
+      id={scope ?? undefined}
+      className={cn("bg-white text-slate-900", scope && "scroll-mt-20")}
+    >
+      {scope ? null : <LandingScrollProgress />}
+      {scope ? null : <LandingSectionRail key={offer.slug} />}
       {offer.hero === "brand" && offer.platform ? (
         <PlatformOfferHero
           hero={offer.platform.hero}
@@ -1577,7 +1603,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       {offer.lab ? <LabFaqSection faq={offer.lab.faq} /> : null}
 
       <section
-        id="contact"
+        id={scope ? `${scope}-contact` : "contact"}
         data-rail-label="시작하기"
         className={cn(
           "scroll-mt-20",
@@ -1642,5 +1668,6 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
         </div>
       </section>
     </div>
+    </LandingOfferEmbedProvider>
   );
 }

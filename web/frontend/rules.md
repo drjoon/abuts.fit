@@ -111,7 +111,7 @@ Notes:
   - `src/pages/public/EventsPage.tsx` — `/events` → `/#events` 리다이렉트
   - `src/pages/public/EventApplyPage.tsx` — 행사 신청 (`/events/:slug`)
   - `src/pages/public/PlatformPage.tsx` — 레거시 `/platform` → `/offer/platform` 리다이렉트
-  - 메뉴: 플랫폼 · 어벗츠기공소 (`landingOffers` 2개). 이벤트는 랜딩 `#events` (`LandingEventsSection`). 레거시 `/offer/simple-way`→플랫폼, `/offer/custom-abutment`→어벗츠기공소.
+  - 메뉴: 플랫폼 · 어벗츠기공소 (`landingOffers` 2개). 이벤트는 랜딩 `#events` (`LandingEventsSection`). lg 미만(햄버거)에서는 두 오퍼를 `/` 아래에 이어 붙이고 메뉴·갤러리는 `#offer-platform`·`#offer-lab`로 스크롤한다. `/offer/:slug` 직접 진입은 그 앵커로 보낸다. lg 이상은 별도 페이지. 레거시 `/offer/simple-way`→플랫폼, `/offer/custom-abutment`→어벗츠기공소.
   - `src/pages/public/AboutPage.tsx` — 레거시 `/about` → `/` 리다이렉트
   - `PublicPageLayout` 기본 `tone="light"` (랜딩·도움말·약관·문의 등 공개 안내 공통)
   - 카드/타이포 SSOT: `PUBLIC_CARD_CLASS` · `PUBLIC_PAGE_EYEBROW` · `PUBLIC_PAGE_TITLE` · `PUBLIC_PAGE_SUBTITLE`

@@ -11,14 +11,11 @@ import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath
 import { cn } from "@/shared/ui/cn";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { landingOffers, offerPath } from "@/features/landing/landingOffers";
-
-function scrollToLandingSection(id: string) {
-  const element = document.getElementById(id);
-  if (!element) return false;
-  const top = element.getBoundingClientRect().top + window.scrollY - 80;
-  window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
-  return true;
-}
+import {
+  offerSectionId,
+  scrollToLandingSection,
+  useLandingOfferInline,
+} from "@/features/landing/landingOfferInline";
 
 type NavigationProps = {
   tone?: "dark" | "light";
@@ -37,6 +34,7 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated, user, logout } = useAuthStore();
+  const offerInline = useLandingOfferInline();
   const overlayClear = overlay && !scrolled && !isOpen;
   /** 라이트 톤은 오버레이여도 어두운 글자 유지(밝은 히어로 위). */
   const isLight = tone === "light";
@@ -60,16 +58,33 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
     if (location.pathname !== "/") return;
     const id = location.hash.replace(/^#/, "");
     if (!id) return;
+    const offerSlug = landingOffers.find((offer) => offerSectionId(offer.slug) === id)
+      ?.slug;
+    if (offerSlug && !offerInline) {
+      navigate(offerPath(offerSlug), { replace: true });
+      return;
+    }
     const timer = window.setTimeout(() => {
       scrollToLandingSection(id);
     }, 50);
     return () => window.clearTimeout(timer);
-  }, [location.pathname, location.hash]);
+  }, [location.pathname, location.hash, navigate, offerInline]);
 
   const handleMenuClick = (href: string) => {
     setIsOpen(false);
     if (href === "/signup" && isAuthenticated) {
       navigate(resolveEntryDashboardPath(user));
+      return;
+    }
+    if (offerInline && href.startsWith("/offer/")) {
+      const slug = href.slice("/offer/".length).split(/[?#]/)[0];
+      const id = offerSectionId(slug);
+      if (location.pathname !== "/") {
+        navigate({ pathname: "/", hash: `#${id}` });
+        return;
+      }
+      navigate({ pathname: "/", hash: `#${id}` }, { replace: true });
+      scrollToLandingSection(id);
       return;
     }
     const hashIndex = href.indexOf("#");
@@ -111,6 +126,12 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
   };
 
   const isNavItemCurrent = (item: NavMenuItem) => {
+    if (offerInline && item.href.startsWith("/offer/")) {
+      const slug = item.href.slice("/offer/".length);
+      return (
+        location.pathname === "/" && location.hash === `#${offerSectionId(slug)}`
+      );
+    }
     return location.pathname === item.href;
   };
 

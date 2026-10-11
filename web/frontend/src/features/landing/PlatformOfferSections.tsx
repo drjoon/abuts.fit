@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-11: 랜딩에 붙을 때는 헤더 여백을 빼고, 어벗츠기공소 링크는 같은 페이지 앵커로 스크롤.
 // - 2026-10-06: 월말 과오입금 카톡 사례 섹션(PlatformSettlementCase).
 // - 2026-10-05: FAQ — `/`·기공소와 같은 좌측 제목 + 카드 아코디언.
 // - 2026-10-05: 통폐합 후 섹션 배경 — 대상 파랑, 화면 하양, 커스텀어벗 파랑, 크레딧 하양, FAQ 하양.
@@ -12,7 +13,7 @@
 // - web/frontend/src/features/landing/landingTheme.ts
 // - web/frontend/src/index.css (pf-* 이펙트)
 import type { CSSProperties } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   BadgeCheck,
@@ -45,6 +46,12 @@ import {
 } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
+import {
+  offerSectionId,
+  scrollToLandingSection,
+  useLandingOfferEmbedded,
+  useScopedSectionId,
+} from "./landingOfferInline";
 import {
   landingContent,
   landingProse,
@@ -110,9 +117,10 @@ export function PlatformOfferHero({
   onStart: () => void;
   onConsult: () => void;
 }) {
+  const embedded = useLandingOfferEmbedded();
   return (
     <section data-rail-label="시작" className="bg-white">
-      <div className="h-14 sm:h-16" aria-hidden />
+      {embedded ? null : <div className="h-14 sm:h-16" aria-hidden />}
       <div className="relative flex min-h-[78svh] items-center overflow-hidden bg-[#06122a] sm:min-h-[82svh]">
         <div
           aria-hidden
@@ -223,9 +231,10 @@ export function PlatformGlanceSection({
 }: {
   glance: PlatformOfferExtras["glance"];
 }) {
+  const sectionId = useScopedSectionId("after-hero");
   return (
     <section
-      id="after-hero"
+      id={sectionId}
       data-rail-label="대상"
       className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
     >
@@ -360,6 +369,8 @@ export function PlatformPipelineSection({
 }: {
   pipeline: PlatformOfferExtras["pipeline"];
 }) {
+  const embedded = useLandingOfferEmbedded();
+  const navigate = useNavigate();
   return (
     <section
       id="custom-abutment"
@@ -442,6 +453,13 @@ export function PlatformPipelineSection({
               </ul>
               <Link
                 to="/offer/lab"
+                onClick={(event) => {
+                  if (!embedded) return;
+                  event.preventDefault();
+                  const id = offerSectionId("lab");
+                  navigate({ pathname: "/", hash: `#${id}` }, { replace: true });
+                  scrollToLandingSection(id);
+                }}
                 className={cn(
                   "mt-6 inline-flex items-center gap-1 self-start underline-offset-4 hover:underline",
                   TYPO.link,
@@ -577,9 +595,10 @@ export function PlatformFaqSection({
 }: {
   faq: PlatformOfferExtras["faq"];
 }) {
+  const sectionId = useScopedSectionId("faq");
   return (
     <section
-      id="faq"
+      id={sectionId}
       data-rail-label="FAQ"
       className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
     >

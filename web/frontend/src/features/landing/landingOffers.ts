@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-11: lg 미만 랜딩은 이 오퍼를 `/#offer-{slug}`로 이어 붙인다.
 // - 2026-10-06: 플랫폼 월말 정산 카톡 사례(caseStudy) 카피 연결.
 // - 2026-10-05: 플랫폼 extras·audiences 제거(glance·credit·pipeline에 통합).
 // - 2026-10-05: 커스텀어벗 플로우·하나의 크레딧 섹션은 플랫폼(`/offer/platform`).

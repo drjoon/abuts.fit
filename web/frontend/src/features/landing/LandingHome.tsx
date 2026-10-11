@@ -4,7 +4,7 @@
 // - web/frontend/src/features/landing/LandingEventsSection.tsx
 // - web/frontend/src/features/layout/Navigation.tsx
 // - web/frontend/src/features/landing/landingAssets.ts
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,13 @@ import { LandingMagnetic } from "./LandingMagnetic";
 import { LandingReveal } from "./LandingReveal";
 import { LandingScrollProgress } from "./LandingScrollProgress";
 import { LandingSectionRail, type LandingRailItem } from "./LandingSectionRail";
+import { LandingOfferPage } from "./LandingOfferPage";
+import { landingOffers } from "./landingOffers";
+import {
+  offerSectionId,
+  scrollToLandingSection,
+  useLandingOfferInline,
+} from "./landingOfferInline";
 
 const TYPO = landingTypo;
 const SKY = landingSky;
@@ -88,6 +95,8 @@ function WorkflowGallery() {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const reduced = usePrefersReducedMotion();
+  const offerInline = useLandingOfferInline();
+  const navigate = useNavigate();
   const dragX = useRef<number | null>(null);
   const slide = slides[index] ?? slides[0];
 
@@ -241,17 +250,37 @@ function WorkflowGallery() {
             <p className={cn(TYPO.eyebrow, SKY.accent)}>{slide.eyebrow}</p>
             <h3 className={cn(TYPO.h3, "mt-2", SKY.ink)}>{slide.title}</h3>
             <Lines lines={[...slide.body]} className={cn("mt-3", TYPO.body)} />
-            <Link
-              to={slide.href}
-              className={cn(
-                "mt-5 inline-flex items-center gap-1 underline-offset-4 hover:underline",
-                TYPO.link,
-                SKY.accentStrong,
-              )}
-            >
-              {slide.cta}
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
+            {offerInline && slide.href.startsWith("/offer/") ? (
+              <button
+                type="button"
+                className={cn(
+                  "mt-5 inline-flex items-center gap-1 underline-offset-4 hover:underline",
+                  TYPO.link,
+                  SKY.accentStrong,
+                )}
+                onClick={() => {
+                  const slug = slide.href.replace(/^\/offer\//, "");
+                  const id = offerSectionId(slug);
+                  navigate({ pathname: "/", hash: `#${id}` }, { replace: true });
+                  scrollToLandingSection(id);
+                }}
+              >
+                {slide.cta}
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            ) : (
+              <Link
+                to={slide.href}
+                className={cn(
+                  "mt-5 inline-flex items-center gap-1 underline-offset-4 hover:underline",
+                  TYPO.link,
+                  SKY.accentStrong,
+                )}
+              >
+                {slide.cta}
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            )}
           </div>
         </div>
       </div>
@@ -262,8 +291,22 @@ function WorkflowGallery() {
 /** `/` — Waveon 구조 · 포토 히어로 · 작은 타이포 · 하늘색 · 둥근 모서리 */
 export function LandingHome() {
   const navigate = useNavigate();
+  const offerInline = useLandingOfferInline();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
+  const railItems = useMemo(
+    () =>
+      offerInline
+        ? [
+            ...RAIL_ITEMS,
+            ...landingOffers.map((offer) => ({
+              id: offerSectionId(offer.slug),
+              label: offer.navLabel,
+            })),
+          ]
+        : RAIL_ITEMS,
+    [offerInline],
+  );
   const goStart = () => {
     navigate(isAuthenticated ? resolveEntryDashboardPath(user) : "/signup");
   };
@@ -271,7 +314,7 @@ export function LandingHome() {
   return (
     <div className="bg-white text-slate-900">
       <LandingScrollProgress />
-      <LandingSectionRail items={RAIL_ITEMS} />
+      <LandingSectionRail items={railItems} />
       {/* 풀블리드 히어로 — 파티클 브랜드 워드 · 마우스 반응 · 스크롤 분산 */}
       <LandingHero
         onMore={() =>
@@ -396,6 +439,13 @@ export function LandingHome() {
           </LandingReveal>
         </div>
       </section>
+      {offerInline ? (
+        <>
+          {landingOffers.map((offer) => (
+            <LandingOfferPage key={offer.slug} offer={offer} embedded />
+          ))}
+        </>
+      ) : null}
     </div>
   );
 }

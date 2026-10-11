@@ -11,17 +11,38 @@ import {
   LEGACY_OFFER_REDIRECTS,
   offerPath,
 } from "@/features/landing/landingOffers";
+import {
+  offerSectionId,
+  useLandingOfferInline,
+} from "@/features/landing/landingOfferInline";
 import { PublicPageLayout } from "./components/PublicPageLayout";
 
 /** `/offer/:slug` — 헤더(플랫폼 · 어벗츠기공소 · 이벤트)의 상세 설명 */
 const OfferPage = () => {
   const { slug } = useParams();
+  const offerInline = useLandingOfferInline();
   const legacyTarget = slug ? LEGACY_OFFER_REDIRECTS[slug] : undefined;
   if (legacyTarget) {
+    if (offerInline) {
+      return (
+        <Navigate
+          to={{ pathname: "/", hash: `#${offerSectionId(legacyTarget)}` }}
+          replace
+        />
+      );
+    }
     return <Navigate to={offerPath(legacyTarget)} replace />;
   }
   const offer = getLandingOffer(slug);
   if (!offer) return <Navigate to="/" replace />;
+  if (offerInline) {
+    return (
+      <Navigate
+        to={{ pathname: "/", hash: `#${offerSectionId(offer.slug)}` }}
+        replace
+      />
+    );
+  }
 
   return (
     <PublicPageLayout
