@@ -6,7 +6,8 @@
 
 /**
  * 의뢰자 SSOT:
- * - requestorKind: "practice" | "lab" (XOR) — 치과(기공실) / 기공소
+ * - requestorKind: "practice" | "lab" (XOR) — 치과 / 기공소
+ * - practiceHasInHouseLab: 치과만. true=기공실 있음, false/없음=기공실 없음.
  * - requestorServices: paid-only. `free`(기공의뢰서)는 폐기 — 읽기 시 paid로 승격, 쓰기는 `{free:false,paid:true}`.
  * 레거시 requestorCapabilities.{practice,lab}는 normalize·백필·resolve 폴백 전용.
  */
@@ -17,6 +18,32 @@ export const normalizeRequestorKind = (raw) => {
   const k = String(raw || "").trim();
   if (k === "practice" || k === "lab") return k;
   return null;
+};
+
+/** 저장된 값만. 치과가 아니면 null. 미설정은 null(기존 치과=기공실 있음으로 해석). */
+export const normalizePracticeHasInHouseLab = (kind, raw) => {
+  if (normalizeRequestorKind(kind) !== "practice") return null;
+  if (raw === false || raw === "false") return false;
+  if (raw === true || raw === "true") return true;
+  return null;
+};
+
+/** 앵커 우선, 없으면 유저. 역할 폴백 kind는 넣지 않는다. */
+export const storedPracticeChoiceFields = ({
+  anchorKind,
+  anchorPracticeHasInHouseLab,
+  userKind,
+  userPracticeHasInHouseLab,
+} = {}) => {
+  const kind =
+    normalizeRequestorKind(anchorKind) || normalizeRequestorKind(userKind);
+  const raw = normalizeRequestorKind(anchorKind)
+    ? anchorPracticeHasInHouseLab
+    : userPracticeHasInHouseLab;
+  return {
+    requestorKindStored: kind,
+    practiceHasInHouseLab: normalizePracticeHasInHouseLab(kind, raw),
+  };
 };
 
 const missingRequestorKindClause = {
@@ -230,15 +257,27 @@ export const canReceivePracticeTransfer = (profileOrCaps) => {
   return Boolean(normalizeRequestorCapabilities(profileOrCaps).lab);
 };
 
-/** User/Anchor $set 필드 — kind가 있으면 항상 paid-only */
+/** User/Anchor $set 필드 — kind가 있으면 항상 paid-only. 기공소는 기공실 플래그를 넣지 않는다. */
 export const requestorProfilePersistFields = (profile = {}) => {
   const kind = normalizeRequestorKind(profile.kind);
-  return {
+  const fields = {
     requestorKind: kind,
     requestorServices: kind
       ? { ...PAID_ONLY_SERVICES }
       : { ...EMPTY_REQUESTOR_SERVICES },
   };
+  if (kind === "practice") {
+    fields.practiceHasInHouseLab =
+      profile.practiceHasInHouseLab === true;
+  }
+  return fields;
+};
+
+/** 기공소로 바꾸면 기공실 플래그를 지운다. */
+export const requestorProfileUnsetFields = (profile = {}) => {
+  const kind = normalizeRequestorKind(profile.kind);
+  if (kind === "lab") return { practiceHasInHouseLab: 1 };
+  return {};
 };
 
 /** API 응답 필드 (레거시 caps는 파생 호환) */
@@ -263,23 +302,33 @@ export const normalizeRequestorProfileInput = (body = {}) => {
       ? normalizeRequestorServices(body.requestorServices || body.services)
       : null;
 
+  const withLabFlag = (profile) => ({
+    ...profile,
+    practiceHasInHouseLab: normalizePracticeHasInHouseLab(
+      profile.kind,
+      body.practiceHasInHouseLab,
+    ),
+  });
+
   if (kindFromBody && servicesFromBody && hasAnyRequestorService(servicesFromBody)) {
-    return { kind: kindFromBody, services: { ...PAID_ONLY_SERVICES } };
+    return withLabFlag({ kind: kindFromBody, services: { ...PAID_ONLY_SERVICES } });
   }
 
   if (body.requestorCapabilities || body.practice != null || body.lab != null) {
-    return profileFromLegacyCapabilities(
-      body.requestorCapabilities || body,
-      { businessVerified: Boolean(body.businessVerified) },
+    return withLabFlag(
+      profileFromLegacyCapabilities(
+        body.requestorCapabilities || body,
+        { businessVerified: Boolean(body.businessVerified) },
+      ),
     );
   }
 
   if (kindFromBody) {
-    return {
+    return withLabFlag({
       kind: kindFromBody,
       services: { ...PAID_ONLY_SERVICES },
-    };
+    });
   }
 
-  return { kind: null, services: { ...EMPTY_REQUESTOR_SERVICES } };
+  return withLabFlag({ kind: null, services: { ...EMPTY_REQUESTOR_SERVICES } });
 };

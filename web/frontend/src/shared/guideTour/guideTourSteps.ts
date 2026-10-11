@@ -412,8 +412,16 @@ export const normalizeLabGuideTourStepId = (
 
 export const getGuideTourSteps = (
   kind: GuideTourKind,
-): readonly GuideTourStepDef[] =>
-  kind === "lab" ? LAB_GUIDE_TOUR_STEPS : PRACTICE_GUIDE_TOUR_STEPS;
+  options?: { hidePracticeAbutment?: boolean },
+): readonly GuideTourStepDef[] => {
+  if (kind === "lab") return LAB_GUIDE_TOUR_STEPS;
+  if (!options?.hidePracticeAbutment) return PRACTICE_GUIDE_TOUR_STEPS;
+  return PRACTICE_GUIDE_TOUR_STEPS.flatMap((step) => {
+    if (step.id === "abutment") return [];
+    if (step.id === "store") return [{ ...step, chapter: 3 }];
+    return [step];
+  });
+};
 
 export const getGuideTourStepIndex = (
   kind: GuideTourKind,

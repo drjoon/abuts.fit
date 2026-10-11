@@ -156,7 +156,10 @@ import { LabDashboardTopBanners } from "@/features/lab/LabDashboardTopBanners";
 import { GuideTourProvider } from "@/shared/guideTour/GuideTourProvider";
 import { GuideTourSidebarButton } from "@/shared/guideTour/GuideTourSidebarButton";
 import { useLabPayoutBankbookReminder } from "@/shared/settlement/useLabPayoutBankbookReminder";
-import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
+import {
+  getRequestorRoleBadgeLabel,
+  practiceHidesAbutmentSidebar,
+} from "@/shared/business/requestorCapabilities";
 import { getAppUserRoleLabel } from "@/shared/types/role";
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
@@ -294,10 +297,32 @@ const buildLabGigongRequestSidebarGroup = (
 
 const buildRequestorSidebarItems = (
   kind: "practice" | "lab" | null,
+  options?: { hidePracticeAbutment?: boolean },
 ): SidebarItem[] => {
   if (kind === "lab") {
     return [
       buildLabGigongRequestSidebarGroup(LAB_RECEIVE_HREF),
+      {
+        icon: Wallet,
+        label: "정산",
+        href: CREDITS_HREF,
+        guideTourSatellite: "credits_workspace",
+      },
+      ...requestorSidebarCommonTail,
+    ];
+  }
+
+  if (options?.hidePracticeAbutment) {
+    return [
+      {
+        icon: Building2,
+        label: "기공의뢰",
+        href: PRACTICE_ORAL_SCAN_HREF,
+        tooltip: PRACTICE_ORAL_SCAN_REQUEST_TOOLTIP,
+        accent: "기공",
+        guideTourSatellite: "oral_calendar",
+      },
+      { icon: Store, label: "스토어", href: STORE_HREF, guideTourSatellite: "store_workspace" },
       {
         icon: Wallet,
         label: "정산",
@@ -689,6 +714,7 @@ export const DashboardLayout = () => {
   const {
     canUsePaid: requestorCanUsePaid,
     kind: requestorKind,
+    practiceHasInHouseLab,
     loading: requestorAccessLoading,
   } = useRequestorBusinessAccess();
 
@@ -1087,6 +1113,22 @@ export const DashboardLayout = () => {
   }, [isMockUser, isPracticeUser, location.pathname, navigate, user]);
 
   useEffect(() => {
+    if (requestorAccessLoading) return;
+    if (
+      !practiceHidesAbutmentSidebar(requestorKind, practiceHasInHouseLab)
+    )
+      return;
+    if (!location.pathname.startsWith("/dashboard/new-request")) return;
+    navigate("/dashboard/practice-transfers?mode=send", { replace: true });
+  }, [
+    location.pathname,
+    navigate,
+    practiceHasInHouseLab,
+    requestorAccessLoading,
+    requestorKind,
+  ]);
+
+  useEffect(() => {
     if (!token) return;
     if (!user) return;
     if (isPracticeUser || user.role !== "requestor") return;
@@ -1228,7 +1270,11 @@ export const DashboardLayout = () => {
     []) as unknown as SidebarItem[];
   const menuItems = (() => {
     if (user.role !== "requestor") return baseMenuItems;
-    return buildRequestorSidebarItems(requestorKind);
+    return buildRequestorSidebarItems(requestorKind, {
+      hidePracticeAbutment:
+        !requestorAccessLoading &&
+        practiceHidesAbutmentSidebar(requestorKind, practiceHasInHouseLab),
+    });
   })();
 
   const isCreditLow =

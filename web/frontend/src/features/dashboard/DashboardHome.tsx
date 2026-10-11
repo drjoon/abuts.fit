@@ -5,6 +5,7 @@ import { SalesmanDashboardPage } from "@/pages/salesman/SalesmanDashboardPage";
 import { Navigate, useLocation } from "react-router-dom";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { practiceHidesAbutmentSidebar } from "@/shared/business/requestorCapabilities";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 // change-log:
@@ -25,8 +26,11 @@ import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath
 export const DashboardHome = () => {
   const { user } = useAuthStore();
   const location = useLocation();
-  const { kind: requestorKind, loading: requestorAccessLoading } =
-    useRequestorBusinessAccess();
+  const {
+    kind: requestorKind,
+    practiceHasInHouseLab,
+    loading: requestorAccessLoading,
+  } = useRequestorBusinessAccess();
 
   if (!user) return null;
 
@@ -43,13 +47,25 @@ export const DashboardHome = () => {
   if (user.role === "requestor") {
     if (requestorAccessLoading && requestorKind == null) return null;
     if (requestorKind === "practice") {
+      const oralPath = "/dashboard/practice-transfers?mode=send";
+      const hidesAbutment = practiceHidesAbutmentSidebar(
+        requestorKind,
+        practiceHasInHouseLab,
+      );
       if (stayOnDashboardHome) {
-        return <Navigate to="/dashboard/new-request" replace />;
+        return (
+          <Navigate
+            to={hidesAbutment ? oralPath : "/dashboard/new-request"}
+            replace
+          />
+        );
       }
       const dest =
         !entry || entry === "/dashboard" || entry === "/dashboard/"
-          ? "/dashboard/practice-transfers?mode=send"
-          : entry;
+          ? oralPath
+          : hidesAbutment && entry.startsWith("/dashboard/new-request")
+            ? oralPath
+            : entry;
       return <Navigate to={dest} replace />;
     }
     if (requestorKind === "lab") {

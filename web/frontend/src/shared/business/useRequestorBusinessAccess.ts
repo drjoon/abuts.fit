@@ -40,6 +40,9 @@ export const useRequestorBusinessAccess = () => {
   const [profile, setProfile] = useState<RequestorProfile>(emptyProfile);
   const [membership, setMembership] = useState<string>("none");
   const [designAccessEnabled, setDesignAccessEnabled] = useState(false);
+  const [practiceHasInHouseLab, setPracticeHasInHouseLab] = useState<
+    boolean | null
+  >(null);
   const hasLoadedOnceRef = useRef(false);
 
   const isInternalLab = user?.role === "internalLab";
@@ -55,6 +58,7 @@ export const useRequestorBusinessAccess = () => {
       hasLoadedOnceRef.current = true;
       setBusinessVerified(false);
       setDesignAccessEnabled(false);
+      setPracticeHasInHouseLab(null);
       setProfile(emptyProfile());
       return;
     }
@@ -77,6 +81,7 @@ export const useRequestorBusinessAccess = () => {
         setMembership("none");
       } finally {
         setDesignAccessEnabled(false);
+        setPracticeHasInHouseLab(null);
         setProfile(INTERNAL_LAB_PROFILE);
         hasLoadedOnceRef.current = true;
         setLoading(false);
@@ -89,6 +94,13 @@ export const useRequestorBusinessAccess = () => {
       hasLoadedOnceRef.current = true;
       setBusinessVerified(Boolean(user?.businessVerified));
       setDesignAccessEnabled(false);
+      setPracticeHasInHouseLab(
+        user?.practiceHasInHouseLab === false
+          ? false
+          : user?.practiceHasInHouseLab === true
+            ? true
+            : null,
+      );
       setProfile(
         resolveRequestorProfile({
           userKind: user?.requestorKind,
@@ -115,6 +127,13 @@ export const useRequestorBusinessAccess = () => {
       setBusinessVerified(verified);
       setMembership(String(data?.membership || "none"));
       setDesignAccessEnabled(Boolean(data?.designAccessEnabled));
+      setPracticeHasInHouseLab(
+        data?.practiceHasInHouseLab === false
+          ? false
+          : data?.practiceHasInHouseLab === true
+            ? true
+            : null,
+      );
       setProfile(
         resolveRequestorProfile({
           anchorKind: data?.requestorKind,
@@ -130,6 +149,13 @@ export const useRequestorBusinessAccess = () => {
     } catch {
       setBusinessVerified(false);
       setDesignAccessEnabled(false);
+      setPracticeHasInHouseLab(
+        user?.practiceHasInHouseLab === false
+          ? false
+          : user?.practiceHasInHouseLab === true
+            ? true
+            : null,
+      );
       setProfile(
         resolveRequestorProfile({
           userKind: user?.requestorKind,
@@ -149,6 +175,7 @@ export const useRequestorBusinessAccess = () => {
     token,
     user?.businessVerified,
     user?.requestorCapabilities,
+    user?.practiceHasInHouseLab,
     user?.requestorKind,
     user?.requestorServices,
     user?.role,
@@ -181,6 +208,7 @@ export const useRequestorBusinessAccess = () => {
     designAccessEnabled,
     profile,
     kind: profile.kind,
+    practiceHasInHouseLab,
     services: profile.services,
     /** @deprecated profile / kind 사용 */
     capabilities: {

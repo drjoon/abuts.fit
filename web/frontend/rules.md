@@ -695,7 +695,7 @@ Notes:
     - SSOT: `PracticeOralScanStep` · `practiceProfile.usesOralScan` / `BusinessAnchor.usesOralScan`. 설정「디지털」탭(키 `digital`, 구 `oral-scan`은 같은 탭)에서 구강 스캐너와 보철 작업물(`requireLabProsthesisUpload`, 기본 켬)을 체크 즉시 저장. 없음=요구. 협력 기공소 의뢰만 생성 때 `billing` 스냅샷을 따른다. 어벗츠기공본부 내부·하청은 완성 보철 업로드가 필수다.
     - 어벗츠 출시 행사 신청 폼은 구강 스캔 사용 여부를 항상 받는다. 프로필·사업자에 값이 있으면 그 값을 기본 선택한다.
   - 사업자 단계(`BusinessTab` + `RequestorCapabilitiesPicker`):
-    - 역할 라디오: `REQUESTOR_KIND_LABEL` — practice=`치과 (기공실 포함)`, lab=`기공소`
+    - 사업자등록증 검증 후 역할: `기공실 없는 치과` / `기공실 있는 치과` / `기공소`. 기공소는 기공실 구분 없음. 설정에서 변경. `practiceHasInHouseLab`
     - 서비스 선택 UI 없음. `requestorServices`는 paid-only(`{free:false,paid:true}`). 레거시 free는 읽기 시 paid 승격
     - 역할 선택 시 사업자등록증 등록·검증 필수
   - 온보딩 완료 랜딩: 기본 `/dashboard`. 행사 페이지 「회원가입 후 신청」으로 들어온 경우(`sessionStorage` `postOnboardingReturnTo`)는 해당 `/events/:slug#event-apply` 신청 폼.
@@ -703,7 +703,7 @@ Notes:
     - `BusinessPaidAccessGate`, 사이드바 `isPaidRequestorPath`, 설정 `PAID_REQUESTOR_SETTINGS_TABS`
     - 변경 후 `notifyRequestorAccessUpdated`
   - 기공의뢰서: 발신=`kind===practice`, 수신=`kind===lab` (`PracticeTransferRoleTabs`)
-  - 치과 사이드: 「기공의뢰」메인 행 + 서브 `구강스캔으로`(`/dashboard/practice-transfers?mode=send`, 서비스 2·3) · `어벗디자인으로`(`/dashboard/new-request`, 서비스 1). 대시보드 메뉴 없음.
+  - 치과 사이드: 기공실 있는 치과는 「기공의뢰」+ 서브 `기공소에` · `어벗츠에`. 기공실 없는 치과는 「기공의뢰」만(`/dashboard/practice-transfers?mode=send`). 대시보드 메뉴 없음.
   - 기공소·어벗츠기공소 사이드: 「기공의뢰」메인 행 + 서브 `기공의뢰수신`(lab=`/dashboard/practice-transfers?mode=receive`, 어벗츠기공소=`/dashboard/lab-work`) · `어벗생산의뢰`(`/dashboard/new-request`). 대시보드/대기보드 메뉴 없음(`/dashboard` → 수신, 제출 후 어벗생산의뢰).
   - 치과 대시보드 요약 행 라벨: `구강스캔` / `어벗디자인` (기공소는 `기공` / `어벗`). 액센트는 기공·어벗 토큰. 치과·기공소는 대시보드 페이지를 쓰지 않고 같은 기간 건수를 어벗디자인/어벗생산의뢰 헤더 버튼으로 연다. 기공 수신 건수는 기공의뢰수신 상태 탭.
   - 접근 훅: `useRequestorBusinessAccess` (kind/services + verified)

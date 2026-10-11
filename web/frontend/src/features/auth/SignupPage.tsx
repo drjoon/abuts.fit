@@ -1237,7 +1237,7 @@ export const SignupPage = () => {
                       ) : null}
                       {signupRole === "requestor" && (
                         <p className="text-sm text-white/70 text-left">
-                          치과(기공실 포함) 또는 기공소
+                          치과 또는 기공소
                         </p>
                       )}
                       {signupRole === "salesman" && (

@@ -13,7 +13,9 @@ import {
   visitPage,
 } from "./helpers";
 
-const KIND_PRACTICE = "치과 (기공실 포함)";
+const KIND_PRACTICE_WITHOUT_LAB = "기공실 없는 치과";
+const KIND_PRACTICE_WITH_LAB = "기공실 있는 치과";
+const KIND_PRACTICE = "치과";
 const KIND_LAB = "기공소";
 const ROLE_BADGE_PRACTICE = "의뢰자·치과";
 const ROLE_BADGE_LAB = "의뢰자·기공소";
@@ -55,6 +57,8 @@ async function assertNoLegacyLabels(
 test.describe("Requestor capability labels – SSOT/공개/관리자", () => {
   test("SSOT 상수 – 신규 라벨 존재·구 라벨 제거", async () => {
     expect(capsSource).toContain(`practice: "${KIND_PRACTICE}"`);
+    expect(capsSource).toContain(`without: "${KIND_PRACTICE_WITHOUT_LAB}"`);
+    expect(capsSource).toContain(`with: "${KIND_PRACTICE_WITH_LAB}"`);
     expect(capsSource).toContain(`lab: "${KIND_LAB}"`);
     expect(capsSource).toContain(`practice: "${ROLE_BADGE_PRACTICE}"`);
     expect(capsSource).toContain(`lab: "${ROLE_BADGE_LAB}"`);
@@ -164,8 +168,19 @@ test.describe("Requestor capability labels – 실계정 로그인", () => {
     expect(page.url()).not.toContain("/login");
 
     const body = await assertNoLegacyLabels(page, "설정>사업자");
-    if (body.includes(KIND_PRACTICE) || body.includes(KIND_LAB)) {
-      await expect(page.getByText(KIND_PRACTICE, { exact: false })).toBeVisible({
+    if (
+      body.includes(KIND_PRACTICE_WITHOUT_LAB) ||
+      body.includes(KIND_PRACTICE_WITH_LAB) ||
+      body.includes(KIND_LAB)
+    ) {
+      await expect(
+        page.getByText(KIND_PRACTICE_WITHOUT_LAB, { exact: false }),
+      ).toBeVisible({
+        timeout: 10_000,
+      });
+      await expect(
+        page.getByText(KIND_PRACTICE_WITH_LAB, { exact: false }),
+      ).toBeVisible({
         timeout: 10_000,
       });
       await expect(page.getByText(KIND_LAB, { exact: false })).toBeVisible({

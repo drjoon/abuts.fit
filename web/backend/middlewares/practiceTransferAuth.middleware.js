@@ -110,7 +110,7 @@ export const authorizePracticeTransferSend = (options = {}) => {
         return res.status(403).json({
           success: false,
           message:
-            "치과(기공실) 역할이 필요합니다. 설정 > 사업자에서 확인해주세요.",
+            "치과 역할이 필요합니다. 설정 > 사업자에서 확인해주세요.",
         });
       }
 

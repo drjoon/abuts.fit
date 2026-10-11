@@ -50,6 +50,7 @@ import {
   requestorKindCapableAnchorFilter,
   resolveRequestorProfile,
   requestorProfileResponseFields,
+  storedPracticeChoiceFields,
 } from "../../utils/requestorCapabilities.js";
 import {
   ensureRequestorOrgAnchor,
@@ -450,6 +451,10 @@ export async function getMyBusiness(req, res) {
               businessVerified: false,
             }),
           ),
+          ...storedPracticeChoiceFields({
+            userKind: req.user?.requestorKind,
+            userPracticeHasInHouseLab: req.user?.practiceHasInHouseLab,
+          }),
           ...abutsLabCertifiedPayload(null),
         },
       });
@@ -497,6 +502,7 @@ export async function getMyBusiness(req, res) {
         requestorKind: 1,
         requestorServices: 1,
         requestorCapabilities: 1,
+        practiceHasInHouseLab: 1,
         role: 1,
       })
       .lean();
@@ -576,6 +582,12 @@ export async function getMyBusiness(req, res) {
         shippingPolicy: anchor?.shippingPolicy || null,
         pricingBaseDate: pricingBaseDate || null,
         ...requestorProfileResponseFields(requestorProfile),
+        ...storedPracticeChoiceFields({
+          anchorKind: anchor.requestorKind,
+          anchorPracticeHasInHouseLab: anchor.practiceHasInHouseLab,
+          userKind: capsUser?.requestorKind,
+          userPracticeHasInHouseLab: capsUser?.practiceHasInHouseLab,
+        }),
         designAccessEnabled:
           businessType === "requestor"
             ? Boolean(anchor?.designAccessEnabled)

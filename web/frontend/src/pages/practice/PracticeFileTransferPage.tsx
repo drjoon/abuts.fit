@@ -239,6 +239,8 @@ import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { partitionDetailAttachFiles, PRACTICE_TRANSFER_IMAGE_EXTENSIONS } from "@/shared/practice/practiceTransferAccept";
 import { OralScanOptionalAttachmentNote } from "@/shared/practice/OralScanOptionalAttachmentNote";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { practiceHidesAbutmentSidebar } from "@/shared/business/requestorCapabilities";
 import {
   coerceAutoMatchLab,
   getBusinessLabel,
@@ -1342,6 +1344,14 @@ export const PracticeFileTransferPage = ({
   const { toast } = useToast();
   const authToken = useAuthStore((s) => s.token);
   const authUser = useAuthStore((s) => s.user);
+  const {
+    kind: requestorKind,
+    practiceHasInHouseLab,
+    loading: requestorAccessLoading,
+  } = useRequestorBusinessAccess();
+  const hideAbutmentProduction =
+    !requestorAccessLoading &&
+    practiceHidesAbutmentSidebar(requestorKind, practiceHasInHouseLab);
   const accountDesignSoftware = useAccountDesignSoftware();
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const requestSubmittingRef = useRef(false);
@@ -10466,9 +10476,11 @@ export const PracticeFileTransferPage = ({
                   defaultAbutmentProductMode,
                   onDefaultAbutmentProductModeChange: persistDefaultAbutmentProductModeSetting,
                   lockedAbutmentProductMode: ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION,
-                  onAlternateAbutmentModeNavigate: () => {
-                    navigate("/dashboard/new-request");
-                  },
+                  onAlternateAbutmentModeNavigate: hideAbutmentProduction
+                    ? undefined
+                    : () => {
+                        navigate("/dashboard/new-request");
+                      },
                   implantFavorites,
                   onPresetEditorOpen: () => {
                     void loadPracticeTransferSettingsFromServer();

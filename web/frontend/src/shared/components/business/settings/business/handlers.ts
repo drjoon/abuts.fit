@@ -33,6 +33,7 @@ interface HandleSaveParams {
     originalName?: string;
   };
   requestorKind?: "practice" | "lab" | null;
+  practiceHasInHouseLab?: boolean | null;
   requestorServices?: {
     free?: boolean;
     paid?: boolean;
@@ -81,6 +82,7 @@ export const handleSave = async (
     businessType,
     businessLicense,
     requestorKind,
+    practiceHasInHouseLab,
     requestorServices,
     requestorCapabilities,
     mockHeaders,
@@ -266,6 +268,11 @@ export const handleSave = async (
         ? {
             requestorKind: requestorKind ?? undefined,
             requestorServices: requestorServices ?? undefined,
+            ...(requestorKind === "practice"
+              ? {
+                  practiceHasInHouseLab: practiceHasInHouseLab === true,
+                }
+              : { practiceHasInHouseLab: null }),
           }
         : requestorCapabilities
           ? { requestorCapabilities }

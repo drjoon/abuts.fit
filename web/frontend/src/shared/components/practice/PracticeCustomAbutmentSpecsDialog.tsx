@@ -689,6 +689,7 @@ export function PracticeCustomAbutmentSpecsDialog({
 
           <DialogFooter className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-x-3 gap-y-2 sm:space-x-0">
             <div className="flex min-w-0 flex-wrap items-center justify-start gap-2">
+              {lockedMode && !onAlternateAbutmentModeNavigate ? null : (
               <Button
                 type="button"
                 className={
@@ -707,6 +708,7 @@ export function PracticeCustomAbutmentSpecsDialog({
                   ABUTMENT_PRODUCT_MODE_LABEL[alternateMode]
                 )}
               </Button>
+              )}
             </div>
             <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
               {wizardStep === "abutment" ? (

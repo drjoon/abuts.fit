@@ -33,19 +33,16 @@ import {
 import { useLocation, useNavigate } from "react-router-dom";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { practiceHidesAbutmentSidebar } from "@/shared/business/requestorCapabilities";
 import { PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS } from "@/shared/components/practice/PracticeToothWorkGuideTourBanner";
 import {
-  getGuideTourStepIndex,
   getGuideTourSteps,
-  getLabGuideTourProcessProgress,
-  getPracticeGuideTourProcessProgress,
   isGuideTourAllowTargetInteraction,
   isPracticeToothWorkOralStepId,
-  LAB_GUIDE_TOUR_CHAPTER_TOTAL,
   LAB_RECEIVE_PATH,
   normalizeLabGuideTourStepId,
   normalizePracticeGuideTourStepId,
-  PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL,
   PRACTICE_ORAL_PATH,
   type GuideTourKind,
   type GuideTourStepDef,
@@ -177,6 +174,16 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
   const user = useAuthStore((s) => s.user);
   const setGuideTour = useAuthStore((s) => s.setGuideTour);
 
+  const {
+    kind: requestorKind,
+    practiceHasInHouseLab,
+    loading: requestorAccessLoading,
+  } = useRequestorBusinessAccess();
+  const hidePracticeAbutment =
+    kind === "practice" &&
+    !requestorAccessLoading &&
+    practiceHidesAbutmentSidebar(requestorKind, practiceHasInHouseLab);
+
   const alwaysOn = isGuideTourAlwaysOnBusiness(user?.companyName);
   const completed = alwaysOn
     ? false
@@ -189,8 +196,8 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
     !completed;
 
   const steps = useMemo(
-    () => (kind ? getGuideTourSteps(kind) : []),
-    [kind],
+    () => (kind ? getGuideTourSteps(kind, { hidePracticeAbutment }) : []),
+    [hidePracticeAbutment, kind],
   );
 
   const [active, setActive] = useState(false);
@@ -200,7 +207,17 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
   const autoStartedRef = useRef(false);
   const persistSeq = useRef(0);
 
-  const stepIndex = kind ? getGuideTourStepIndex(kind, stepId) : 0;
+  const stepIndex = (() => {
+    if (!kind || steps.length === 0) return 0;
+    const normalized =
+      kind === "lab"
+        ? normalizeLabGuideTourStepId(stepId) ?? stepId
+        : normalizePracticeGuideTourStepId(stepId) ?? stepId;
+    const found = steps.findIndex((s) => s.id === normalized);
+    if (found >= 0) return found;
+    const storeIdx = steps.findIndex((s) => s.id === "store");
+    return storeIdx >= 0 ? storeIdx : 0;
+  })();
   const step = steps[stepIndex] ?? null;
   const stepTotal = steps.length;
 
@@ -209,12 +226,11 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
     usesChapterSteps && step?.chapter != null
       ? step.chapter
       : stepIndex + 1;
-  const chapterTotal =
-    kind === "practice"
-      ? PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL
-      : kind === "lab"
-        ? LAB_GUIDE_TOUR_CHAPTER_TOTAL
-        : Math.max(stepTotal, 1);
+  const chapterTotal = Math.max(
+    1,
+    ...steps.map((s) => s.chapter ?? 0),
+    usesChapterSteps ? 1 : stepTotal,
+  );
   /** intro/complete 등 — 챕터 번호 없이 제목만 */
   const showChapterProgress =
     !usesChapterSteps || step?.chapter != null;
@@ -381,12 +397,14 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
   const isLastStep = stepIndex >= stepTotal - 1;
   const spotlightTitle = spotlightCopyOverride?.title ?? step?.title ?? "";
   const spotlightHint = spotlightCopyOverride?.hint ?? step?.hint ?? "";
-  const processProgress =
-    kind === "practice"
-      ? getPracticeGuideTourProcessProgress(stepId)
-      : kind === "lab"
-        ? getLabGuideTourProcessProgress(stepId)
-        : null;
+  const processProgress = (() => {
+    if (kind !== "practice" && kind !== "lab") return null;
+    if (!step) return null;
+    const processSteps = steps.filter((s) => s.chapter != null);
+    const idx = processSteps.findIndex((s) => s.id === step.id);
+    if (idx < 0) return null;
+    return { index: idx, total: processSteps.length };
+  })();
   const spotlightStepIndex = processProgress
     ? processProgress.index
     : showChapterProgress

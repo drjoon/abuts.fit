@@ -62,11 +62,12 @@ import {
 } from "@/shared/components/business/settings/business/businessMeCache";
 import { RequestorCapabilitiesPicker } from "@/shared/components/business/RequestorCapabilitiesPicker";
 import {
+  PRACTICE_IN_HOUSE_LAB_LABEL,
   REQUESTOR_KIND_LABEL,
   hasRequestorProfile,
+  normalizeRequestorKind,
   notifyRequestorAccessUpdated,
   requiresBusinessLicense,
-  resolveRequestorProfile,
   type RequestorProfile,
 } from "@/shared/business/requestorCapabilities";
 import { PayoutAccountCard } from "@/shared/components/business/settings/PayoutAccountCard";
@@ -256,26 +257,49 @@ export const BusinessTab = ({
           force: true,
         });
         if (cancelled) return;
+        const storedKind = normalizeRequestorKind(data?.requestorKindStored);
+        const storedFlag =
+          data?.practiceHasInHouseLab === false
+            ? false
+            : data?.practiceHasInHouseLab === true
+              ? true
+              : null;
         setRequestorProfile(
-          resolveRequestorProfile({
-            anchorKind: data?.requestorKind,
-            anchorServices: data?.requestorServices,
-            anchorCaps: data?.requestorCapabilities,
-            userKind: user?.requestorKind,
-            userServices: user?.requestorServices,
-            userRole: user?.role,
-            businessVerified: Boolean(data?.businessVerified),
-          }),
+          storedKind
+            ? {
+                kind: storedKind,
+                services: { free: false, paid: true },
+                practiceHasInHouseLab:
+                  storedKind === "practice" ? storedFlag : null,
+              }
+            : {
+                kind: null,
+                services: { free: false, paid: true },
+                practiceHasInHouseLab: null,
+              },
         );
       } catch {
         if (!cancelled) {
+          const storedKind = normalizeRequestorKind(user?.requestorKind);
           setRequestorProfile(
-            resolveRequestorProfile({
-              userKind: user?.requestorKind,
-              userServices: user?.requestorServices,
-              userRole: user?.role,
-              businessVerified: false,
-            }),
+            storedKind
+              ? {
+                  kind: storedKind,
+                  services: { free: false, paid: true },
+                  practiceHasInHouseLab:
+                    storedKind === "practice"
+                      ? user?.practiceHasInHouseLab === false
+                        ? false
+                        : user?.practiceHasInHouseLab === true
+                          ? true
+                          : null
+                      : null,
+                }
+              : {
+                  kind: null,
+                  services: { free: false, paid: true },
+                  practiceHasInHouseLab: null,
+                },
           );
         }
       } finally {
@@ -300,11 +324,15 @@ export const BusinessTab = ({
       const normalized: RequestorProfile = {
         kind: next.kind,
         services: { free: false, paid: true },
+        practiceHasInHouseLab:
+          next.kind === "practice"
+            ? next.practiceHasInHouseLab === true
+            : null,
       };
       if (!hasRequestorProfile(normalized)) {
         toast({
           title: "역할을 선택해주세요",
-          description: `${REQUESTOR_KIND_LABEL.practice} 또는 ${REQUESTOR_KIND_LABEL.lab} 중 하나를 선택해주세요.`,
+          description: `${PRACTICE_IN_HOUSE_LAB_LABEL.without}, ${PRACTICE_IN_HOUSE_LAB_LABEL.with}, ${REQUESTOR_KIND_LABEL.lab} 중 하나를 선택해주세요.`,
           variant: "destructive",
         });
         return false;
@@ -330,6 +358,7 @@ export const BusinessTab = ({
           jsonBody: {
             requestorKind: normalized.kind,
             requestorServices: normalized.services,
+            practiceHasInHouseLab: normalized.practiceHasInHouseLab,
           },
         });
         if (!res.ok) {
@@ -349,6 +378,7 @@ export const BusinessTab = ({
             ...user,
             requestorKind: normalized.kind,
             requestorServices: normalized.services,
+            practiceHasInHouseLab: normalized.practiceHasInHouseLab,
           });
         }
         notifyRequestorAccessUpdated();
@@ -529,10 +559,18 @@ export const BusinessTab = ({
           s3Key: businessDataMgmt.licenseS3Key,
           originalName: businessDataMgmt.licenseFileName,
         },
-        requestorKind: isRequestorBusiness ? requestorProfile.kind : undefined,
-        requestorServices: isRequestorBusiness
-          ? { free: false, paid: true }
-          : undefined,
+        requestorKind:
+          isRequestorBusiness && requestorProfile.kind
+            ? requestorProfile.kind
+            : undefined,
+        requestorServices:
+          isRequestorBusiness && requestorProfile.kind
+            ? { free: false, paid: true }
+            : undefined,
+        practiceHasInHouseLab:
+          isRequestorBusiness && requestorProfile.kind === "practice"
+            ? requestorProfile.practiceHasInHouseLab === true
+            : undefined,
         mockHeaders: {},
         toast,
         silent: false,
@@ -837,27 +875,6 @@ export const BusinessTab = ({
 
   const tabBody = (
     <div className="space-y-5">
-        {isRequestorBusiness &&
-          (selectedRole === "owner" ||
-            membershipMgmt.membership === "owner" ||
-            membershipMgmt.membership === "none") && (
-            <RequestorCapabilitiesPicker
-              value={requestorProfile}
-              onChange={handleCapabilitiesChange}
-              disabled={
-                capabilitiesSaving ||
-                (membershipMgmt.membership !== "owner" &&
-                  membershipMgmt.membership !== "none" &&
-                  selectedRole !== "owner")
-              }
-              forcePracticeOnly={
-                isOnboarding &&
-                String(user?.signupChannel || "").trim() === "practice_dropzone"
-              }
-              className="space-y-4"
-            />
-          )}
-
         {!isOnboarding &&
         canEditSalesReferral &&
         membershipMgmt.membership === "owner" ? (
@@ -939,6 +956,31 @@ export const BusinessTab = ({
                   />
                   </div>
                 )}
+
+                {isRequestorBusiness &&
+                (businessDataMgmt.validationSucceeded ||
+                  businessDataMgmt.isVerified) &&
+                (selectedRole === "owner" ||
+                  membershipMgmt.membership === "owner" ||
+                  membershipMgmt.membership === "none") ? (
+                  <RequestorCapabilitiesPicker
+                    value={requestorProfile}
+                    onChange={handleCapabilitiesChange}
+                    disabled={
+                      capabilitiesSaving ||
+                      (membershipMgmt.membership !== "owner" &&
+                        membershipMgmt.membership !== "none" &&
+                        selectedRole !== "owner")
+                    }
+                    forcePracticeOnly={
+                      isOnboarding &&
+                      String(user?.signupChannel || "").trim() ===
+                        "practice_dropzone"
+                    }
+                    restrictToKind={!isOnboarding}
+                    className="space-y-4"
+                  />
+                ) : null}
 
                 {(membershipMgmt.membership === "owner" ||
                   businessDataMgmt.licenseStatus === "ready" ||
@@ -1091,7 +1133,7 @@ export const BusinessTab = ({
               사업자 정보
             </CardTitle>
             <CardDescription className="text-[13px] leading-relaxed">
-              역할 선택, 사업자등록증 등록 및 검증을 관리합니다.
+              사업자등록증을 검증한 뒤 역할을 선택합니다.
             </CardDescription>
           </CardHeader>
           <CardContent>{tabBody}</CardContent>

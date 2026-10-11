@@ -2420,7 +2420,7 @@ export const PracticeDropzonePage = () => {
         toast({
           title: "의뢰인(치과 발신) 계정만 이용 가능합니다",
           description:
-            "치과(기공실) 역할의 의뢰인 계정으로 로그인해 주세요.",
+            "치과 계정으로 로그인해 주세요.",
           variant: "destructive",
         });
         return;

@@ -52,7 +52,7 @@ const businessAnchorSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
-    // 의뢰자 역할 XOR: practice=치과(기공실), lab=기공소
+    // 의뢰자 역할 XOR: practice=치과, lab=기공소
     // related files:
     // - web/backend/utils/requestorCapabilities.js
     // - web/frontend/src/shared/business/requestorCapabilities.ts
@@ -64,6 +64,12 @@ const businessAnchorSchema = new mongoose.Schema(
         validator: (v) => v == null || v === "practice" || v === "lab",
         message: "requestorKind must be practice or lab",
       },
+    },
+    // 치과만. true=기공실 있는 치과, false=기공실 없는 치과. 기공소·미선택은 null.
+    // 기존 치과(필드 없음)는 기공실 있는 치과로 본다.
+    practiceHasInHouseLab: {
+      type: Boolean,
+      default: null,
     },
     // 이용 서비스: paid-only. free는 폐기(읽기 시 paid 승격).
     requestorServices: {

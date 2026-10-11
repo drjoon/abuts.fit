@@ -2,7 +2,7 @@
 // - web/backend/utils/requestorCapabilities.js
 // - web/frontend/src/shared/components/business/settings/business/businessMeCache.ts
 
-/** 역할 XOR — 치과(기공실) / 기공소 */
+/** 역할 XOR — 치과 / 기공소 */
 export type RequestorKind = "practice" | "lab";
 
 /** 서비스 — paid-only. `free`는 스키마 호환용(항상 false, 읽기 시 paid 승격). */
@@ -23,6 +23,8 @@ export const EMPTY_REQUESTOR_SERVICES: RequestorServices = Object.freeze({
 export type RequestorProfile = {
   kind: RequestorKind | null;
   services: RequestorServices;
+  /** 치과만. true=기공실 있음, 그 외 치과=없음. */
+  practiceHasInHouseLab?: boolean | null;
 };
 
 /** @deprecated 레거시 — normalize/백필·응답 호환용 */
@@ -247,9 +249,23 @@ export const isPaidRequestorSidebarLocked = (args?: {
 export const PAID_REQUESTOR_SETTINGS_TABS = new Set(["request", "payment"]);
 
 export const REQUESTOR_KIND_LABEL = {
-  practice: "치과 (기공실 포함)",
+  practice: "치과",
   lab: "기공소",
 } as const;
+
+/** 사업자 검증 후 치과 기공실 구분. 기공소에는 없다. */
+export const PRACTICE_IN_HOUSE_LAB_LABEL = {
+  without: "기공실 없는 치과",
+  with: "기공실 있는 치과",
+} as const;
+
+/** 기공실 있는 치과(true)만 어벗츠에를 본다. 치과가 true가 아니면 숨긴다. */
+export const practiceHidesAbutmentSidebar = (
+  kind?: RequestorKind | string | null,
+  practiceHasInHouseLab?: boolean | null,
+) =>
+  normalizeRequestorKind(kind) === "practice" &&
+  practiceHasInHouseLab !== true;
 
 /** 역할 뱃지 표기 SSOT: 의뢰자·치과 / 의뢰자·기공소 / 의뢰자 */
 export const REQUESTOR_ROLE_BADGE_LABEL = {

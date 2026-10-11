@@ -333,9 +333,11 @@
   - Org SSOT: `BusinessAnchor` (`businessType: "requestor"`). practice/lab은 같은 조직의 캡일 뿐이며 “무앵커 발신 전용 조직” 경로는 없다.
   - 캡 SSOT: `BusinessAnchor.requestorCapabilities` (User 필드는 미링크·온보딩 중 미러)
   - 해석 우선순위: 앵커 → 유저 → 레거시 폴백(미기입 requestor·구 practice role 데이터 → practice / verified requestor → lab). 폴백은 마이그레이션 전까지만.
-- UI 라벨 SSOT(`REQUESTOR_CAPABILITY_LABEL` / `REQUESTOR_CAPABILITY_OPTIONS`):
-  - `practice`: **의뢰 발신자 (치과)** — 생산의뢰, 사업자등록증 필수
-  - `lab`: **의뢰 수신자 (기공소와 기공실)** — 생산의뢰, 사업자등록증 필수
+- UI 라벨 SSOT(`REQUESTOR_KIND_LABEL` / `PRACTICE_IN_HOUSE_LAB_LABEL`):
+  - 사업자등록증 검증 후 선택. 설정 > 사업자에서 변경.
+  - `practice` + `practiceHasInHouseLab`가 true가 아님(기본): **기공실 없는 치과** — 사이드바는 「기공의뢰」만(내용은 기공소에)
+  - `practice` + `practiceHasInHouseLab: true`(테스트 DB는 평온치과만): **기공실 있는 치과** — 사이드바에 「어벗츠에」
+  - `lab`: **기공소** — 기공실 유무 구분 없음
 - `requestorServices`는 **paid-only**. `free`(기공의뢰서) 옵션은 폐기. 읽기 시 레거시 `free`는 `paid`로 승격, 쓰기는 `{free:false,paid:true}`.
 - 가입·온보딩 흐름:
   1. `/signup` → 계정(이메일·비번) → 로그인. 드롭존 → 계정(이메일·비번·담당자 휴대폰 인증) → **첫 기공의뢰 전송**

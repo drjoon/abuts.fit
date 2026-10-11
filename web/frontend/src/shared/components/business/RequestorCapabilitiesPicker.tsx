@@ -1,11 +1,11 @@
 // related files:
 // - web/frontend/src/shared/business/requestorCapabilities.ts
 // - web/frontend/src/shared/components/business/settings/BusinessTab.tsx
-import { Label } from "@/components/ui/label";
+import { Building2, Check, FlaskConical, Microscope } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
+  PRACTICE_IN_HOUSE_LAB_LABEL,
   REQUESTOR_KIND_LABEL,
-  REQUESTOR_KIND_OPTIONS,
-  type RequestorKind,
   type RequestorProfile,
   PAID_ONLY_SERVICES,
   type RequestorServices,
@@ -22,7 +22,39 @@ type Props = {
   className?: string;
   /** 드롭존 최소 가입자 등: practice 고정 */
   forcePracticeOnly?: boolean;
+  /** 이미 정해진 역할이면 그 역할의 카드만 보인다(치과=2장, 기공소=1장). */
+  restrictToKind?: boolean;
 };
+
+type ChoiceKey = "without" | "with" | "lab";
+
+type Choice = {
+  key: ChoiceKey;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+};
+
+const CHOICES: readonly Choice[] = [
+  {
+    key: "without",
+    label: PRACTICE_IN_HOUSE_LAB_LABEL.without,
+    description: "보철을 기공소에 의뢰합니다.",
+    icon: Building2,
+  },
+  {
+    key: "with",
+    label: PRACTICE_IN_HOUSE_LAB_LABEL.with,
+    description: "어벗 생산도 어벗츠에 의뢰합니다.",
+    icon: Microscope,
+  },
+  {
+    key: "lab",
+    label: REQUESTOR_KIND_LABEL.lab,
+    description: "치과 의뢰를 받아 작업합니다.",
+    icon: FlaskConical,
+  },
+];
 
 export const RequestorCapabilitiesPicker = ({
   value,
@@ -30,75 +62,124 @@ export const RequestorCapabilitiesPicker = ({
   disabled = false,
   className,
   forcePracticeOnly = false,
+  restrictToKind = false,
 }: Props) => {
-  const kind: RequestorKind | null = forcePracticeOnly
-    ? "practice"
-    : normalizeRequestorKind(value.kind);
+  const kind = normalizeRequestorKind(value.kind);
   const services: RequestorServices = (() => {
     const normalized = normalizeRequestorServices(value.services);
     return hasAnyRequestorService(normalized)
       ? normalized
       : { ...PAID_ONLY_SERVICES };
   })();
+  const selected: ChoiceKey | null =
+    kind === "lab"
+      ? "lab"
+      : kind === "practice"
+        ? value.practiceHasInHouseLab === true
+          ? "with"
+          : "without"
+        : null;
 
-  const setKind = (nextKind: RequestorKind) => {
-    if (forcePracticeOnly) return;
+  const choose = (next: ChoiceKey) => {
+    if (disabled || next === selected) return;
+    if (next === "lab") {
+      if (forcePracticeOnly) return;
+      onChange({ kind: "lab", services, practiceHasInHouseLab: null });
+      return;
+    }
     onChange({
-      kind: nextKind,
+      kind: "practice",
       services,
+      practiceHasInHouseLab: next === "with",
     });
   };
 
+  // 설정: 치과는 앞의 2개, 기공소는 기공소만. 온보딩(미선택)은 전체에서 고른다.
+  const choices =
+    forcePracticeOnly || (restrictToKind && kind === "practice")
+      ? CHOICES.filter((c) => c.key !== "lab")
+      : restrictToKind && kind === "lab"
+        ? CHOICES.filter((c) => c.key === "lab")
+        : CHOICES;
+
   return (
-    <div className={cn("space-y-6", className)}>
-      <div className="space-y-3">
-        {forcePracticeOnly ? (
-          <p className="text-xs leading-relaxed text-slate-500">
-            드롭존으로 가입한 계정은 치과(기공실)로 고정됩니다.
-          </p>
-        ) : null}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {REQUESTOR_KIND_OPTIONS.map((opt) => {
-            const checked = kind === opt.key;
-            const id = `requestor-kind-${opt.key}`;
-            const optionLocked = forcePracticeOnly;
-            return (
-              <label
-                key={opt.key}
-                htmlFor={id}
+    <div className={cn("space-y-3", className)}>
+      <div className="space-y-0.5">
+        <p className="text-sm font-semibold text-slate-900">역할</p>
+        <p className="text-xs text-slate-500">
+          {forcePracticeOnly
+            ? "드롭존 가입 계정은 치과로 고정됩니다."
+            : "설정에서 언제든 바꿀 수 있습니다."}
+        </p>
+      </div>
+      <div
+        role="radiogroup"
+        aria-label="역할 선택"
+        className={cn(
+          "grid grid-cols-1 gap-3",
+          choices.length === 3
+            ? "md:grid-cols-3"
+            : choices.length === 2
+              ? "md:grid-cols-2"
+              : "md:max-w-[50%]",
+        )}
+      >
+        {choices.map((opt) => {
+          const checked = selected === opt.key;
+          const Icon = opt.icon;
+          return (
+            <button
+              key={opt.key}
+              type="button"
+              role="radio"
+              aria-checked={checked}
+              disabled={disabled}
+              onClick={() => choose(opt.key)}
+              className={cn(
+                "group relative flex min-h-[5.5rem] flex-col items-start gap-2 rounded-2xl border p-4 text-left shadow-sm outline-none transition-all",
+                "focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2",
+                checked
+                  ? "border-primary/60 bg-primary-soft/40 ring-1 ring-primary/30"
+                  : "border-slate-200/80 bg-white/80 hover:-translate-y-px hover:border-primary-muted/60 hover:bg-primary-soft/10 hover:shadow-md",
+                disabled && "cursor-not-allowed opacity-60 hover:translate-y-0",
+              )}
+            >
+              <span
                 className={cn(
-                  "flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3.5 transition-all shadow-sm",
+                  "flex h-9 w-9 items-center justify-center rounded-xl transition-colors",
                   checked
-                    ? "border-primary-muted/70 bg-primary-soft/35"
-                    : "border-slate-200/80 bg-white/70 hover:border-primary-muted/50 hover:bg-primary-soft/10",
-                  (disabled || optionLocked) && "cursor-not-allowed opacity-60",
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-slate-100 text-slate-500 group-hover:bg-primary-soft/60 group-hover:text-primary-strong",
                 )}
               >
-                <input
-                  id={id}
-                  type="radio"
-                  name="requestor-kind"
-                  checked={checked}
-                  disabled={disabled || optionLocked}
-                  onChange={() => setKind(opt.key)}
-                />
-                <Label
-                  htmlFor={id}
-                  className="cursor-pointer text-sm font-medium text-slate-900"
-                >
+                <Icon className="h-4.5 w-4.5" aria-hidden />
+              </span>
+              <span className="space-y-0.5">
+                <span className="block text-sm font-semibold text-slate-900">
                   {opt.label}
-                </Label>
-              </label>
-            );
-          })}
-        </div>
-        {!kind && (
-          <p className="text-xs text-destructive">
-            {REQUESTOR_KIND_LABEL.practice} 또는 {REQUESTOR_KIND_LABEL.lab} 중
-            하나를 선택해주세요.
-          </p>
-        )}
+                </span>
+                <span className="block text-xs leading-snug text-slate-500">
+                  {opt.description}
+                </span>
+              </span>
+              <span
+                aria-hidden
+                className={cn(
+                  "absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full border transition-all",
+                  checked
+                    ? "scale-100 border-primary bg-primary text-primary-foreground"
+                    : "scale-90 border-slate-300 bg-white text-transparent",
+                )}
+              >
+                <Check className="h-3 w-3" strokeWidth={3} />
+              </span>
+            </button>
+          );
+        })}
       </div>
+      {!selected && (
+        <p className="text-xs text-destructive">역할을 선택해주세요.</p>
+      )}
     </div>
   );
 };

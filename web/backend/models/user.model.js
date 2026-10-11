@@ -70,6 +70,11 @@ const userSchema = new mongoose.Schema(
         message: "requestorKind must be practice or lab",
       },
     },
+    // 치과만. true=기공실 있음, false=없음. 기공소·미선택은 null. SSOT는 앵커.
+    practiceHasInHouseLab: {
+      type: Boolean,
+      default: null,
+    },
     // paid-only. free는 폐기(읽기 시 paid 승격).
     requestorServices: {
       free: { type: Boolean, default: false },

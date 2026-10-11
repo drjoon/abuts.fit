@@ -34,6 +34,7 @@ import {
   resolveRequestorProfile,
   normalizeRequestorProfileInput,
   requestorProfilePersistFields,
+  requestorProfileUnsetFields,
   requestorProfileResponseFields,
   normalizeRequestorKind,
   canReceivePracticeTransfer,
@@ -449,13 +450,23 @@ export async function updateMyBusiness(req, res) {
 
       if (onlyProfileUpdate) {
         const persist = requestorProfilePersistFields(nextRequestorProfile);
-        await User.findByIdAndUpdate(req.user._id, {
-          $set: persist,
-        });
+        const unset = requestorProfileUnsetFields(nextRequestorProfile);
+        const profileUpdate = { $set: persist };
+        if (Object.keys(unset).length > 0) profileUpdate.$unset = unset;
+        await User.findByIdAndUpdate(req.user._id, profileUpdate);
         if (businessAnchor?._id) {
-          await BusinessAnchor.findByIdAndUpdate(businessAnchor._id, {
-            $set: persist,
-          });
+          await BusinessAnchor.findByIdAndUpdate(businessAnchor._id, profileUpdate);
+          try {
+            await enableDemoModeAndGrantCreditIfEligible({
+              businessAnchorId: businessAnchor._id,
+              userId: req.user._id,
+            });
+          } catch (e) {
+            console.error(
+              "[BusinessAnchor] demo mode grant on profile update failed",
+              e,
+            );
+          }
         }
         invalidateMyBusinessCache(req.user._id);
         return res.json({
@@ -812,6 +823,7 @@ export async function updateMyBusiness(req, res) {
         });
       }
       Object.assign(patch, requestorProfilePersistFields(nextRequestorProfile));
+      Object.assign(unsetPatch, requestorProfileUnsetFields(nextRequestorProfile));
     }
 
     const metadataPatch = {};
@@ -1032,24 +1044,14 @@ export async function updateMyBusiness(req, res) {
         const businessNumberNormalized = businessNumber
           .replace(/\D/g, "")
           .trim();
-        const verifiedNow = Boolean(verificationResult?.verified);
         const createdProfile =
           nextRequestorProfile && hasRequestorProfile(nextRequestorProfile)
             ? nextRequestorProfile
-            : resolveRequestorProfile({
-                userKind: freshUser?.requestorKind,
-                userServices: freshUser?.requestorServices,
-                userCaps: freshUser?.requestorCapabilities,
-                userRole: req.user.role,
-                businessVerified: verifiedNow,
-              });
-        const createdKind = hasRequestorProfile(createdProfile)
-          ? createdProfile.kind
-          : "lab";
-        const createdPersist = requestorProfilePersistFields({
-          kind: createdKind,
-          services: { free: false, paid: true },
-        });
+            : null;
+        const createdKind = createdProfile?.kind || null;
+        const createdPersist = createdProfile
+          ? requestorProfilePersistFields(createdProfile)
+          : {};
 
         const created = await BusinessAnchor.create({
           businessType,
@@ -1284,6 +1286,13 @@ export async function updateMyBusiness(req, res) {
       if (patch.requestorServices) {
         userSyncPatch.requestorServices = patch.requestorServices;
       }
+      if (
+        patch.requestorKind === "practice" &&
+        (patch.practiceHasInHouseLab === true ||
+          patch.practiceHasInHouseLab === false)
+      ) {
+        userSyncPatch.practiceHasInHouseLab = patch.practiceHasInHouseLab;
+      }
     }
 
     if (Object.keys(userSyncPatch).length > 0) {
@@ -1304,9 +1313,17 @@ export async function updateMyBusiness(req, res) {
         if (userSyncPatch.requestorServices) {
           profileSet.requestorServices = userSyncPatch.requestorServices;
         }
-        await User.findByIdAndUpdate(req.user._id, {
-          $set: profileSet,
-        });
+        if (
+          userSyncPatch.practiceHasInHouseLab === true ||
+          userSyncPatch.practiceHasInHouseLab === false
+        ) {
+          profileSet.practiceHasInHouseLab = userSyncPatch.practiceHasInHouseLab;
+        }
+        const profileUpdate = { $set: profileSet };
+        if (userSyncPatch.requestorKind === "lab") {
+          profileUpdate.$unset = { practiceHasInHouseLab: 1 };
+        }
+        await User.findByIdAndUpdate(req.user._id, profileUpdate);
       }
     }
 

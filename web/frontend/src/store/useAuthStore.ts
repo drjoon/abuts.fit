@@ -83,6 +83,8 @@ export interface User {
   };
   signupChannel?: string | null;
   requestorKind?: RequestorKind | null;
+  /** 치과만. true=기공실 있음, false=없음. */
+  practiceHasInHouseLab?: boolean | null;
   requestorServices?: RequestorServices | null;
   /** @deprecated requestorKind / requestorServices 사용 */
   requestorCapabilities?: RequestorCapabilities | null;
@@ -176,6 +178,12 @@ const normalizeApiUser = (u: unknown): User | null => {
     requestorKind: normalizeRequestorKind(
       typeof row.requestorKind === "string" ? row.requestorKind : null,
     ),
+    practiceHasInHouseLab:
+      row.practiceHasInHouseLab === false
+        ? false
+        : row.practiceHasInHouseLab === true
+          ? true
+          : null,
     requestorServices: rawServices
       ? normalizeRequestorServices(rawServices)
       : null,
