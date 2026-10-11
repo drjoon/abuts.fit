@@ -82,6 +82,7 @@ import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { holdRequestCreditsOnSubmit, resolveDevopsEscrowOwnerId } from "../../services/requestCreditHold.service.js";
+import { positiveSpendableCredit } from "../../services/creditBalance.service.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import { emitDesignClaimChanged } from "../../utils/designClaimRealtime.js";
 import {
@@ -1285,11 +1286,13 @@ export async function createRequestsFromDraft(req, res) {
         totalShippingFee,
       });
 
-      const freeCredit = freeRequestCredit + freeShippingCredit;
-      const totalAvailable = Number(
-        spendableBalance ??
-          paidCredit + freeCredit + Number(settlementCredit || 0),
-      );
+      // 데모 부채(음수)는 가용에서 뺀다. 커스텀어벗은 충전된 양수 잔액만 쓴다.
+      const totalAvailable = positiveSpendableCredit({
+        paidCredit,
+        freeRequestCredit,
+        freeShippingCredit,
+        settlementCredit,
+      });
       let remaining = totalAvailable;
       const allocatedMachining = Math.min(remaining, requiredMachiningFee);
       remaining -= allocatedMachining;
@@ -1313,7 +1316,7 @@ export async function createRequestsFromDraft(req, res) {
         const details = [];
         const requestCount = preparedCasesForCreate.length;
         if (machiningShortfall > 0 && shippingShortfall > 0) {
-          message = "의뢰비와 배송비 크레딧이 모두 부족합니다.";
+          message = "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.";
           details.push(
             `의뢰비 필요: ${requiredMachiningFee.toLocaleString()}원 (${requestCount}건 합계${
               totalExpressFee > 0
@@ -1325,7 +1328,7 @@ export async function createRequestsFromDraft(req, res) {
             `배송비 필요: ${totalShippingFee.toLocaleString()}원 (보유: ${availableForShipping.toLocaleString()}원)`,
           );
         } else if (machiningShortfall > 0) {
-          message = "의뢰비 크레딧이 부족합니다.";
+          message = "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.";
           details.push(
             `필요: ${requiredMachiningFee.toLocaleString()}원 (${requestCount}건 합계${
               totalExpressFee > 0
@@ -1334,7 +1337,7 @@ export async function createRequestsFromDraft(req, res) {
             }), 보유: ${availableForMachining.toLocaleString()}원`,
           );
         } else {
-          message = "배송비 크레딧이 부족합니다.";
+          message = "커스텀어벗 배송비는 충전된 크레딧이 있어야 합니다.";
           details.push(
             `필요: ${totalShippingFee.toLocaleString()}원, 보유: ${availableForShipping.toLocaleString()}원`,
           );
@@ -1825,7 +1828,7 @@ export async function createRequestsFromDraft(req, res) {
             success: false,
             message:
               holdStatus === 402
-                ? "크레딧이 부족해 의뢰를 접수하지 않았습니다. 크레딧을 충전한 뒤 다시 시도해주세요."
+                ? "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다. 충전한 뒤 다시 시도해주세요."
                 : "크레딧 보류에 실패해 의뢰를 접수하지 않았습니다. 잠시 후 다시 시도해주세요.",
             data: {
               reason: holdStatus === 402 ? "insufficient_credit" : "credit_hold_failed",

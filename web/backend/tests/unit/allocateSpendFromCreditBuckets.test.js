@@ -1,6 +1,10 @@
 // related files:
 // - web/backend/services/creditBalance.service.js
-import { allocateSpendFromCreditBuckets } from "../../services/creditBalance.service.js";
+import {
+  allocateLabFeeAndAbutmentSpend,
+  allocateSpendFromCreditBuckets,
+  positiveSpendableCredit,
+} from "../../services/creditBalance.service.js";
 
 describe("allocateSpendFromCreditBuckets", () => {
   test("무료 → 기공 → 유료 순으로 차감한다", () => {
@@ -92,5 +96,56 @@ describe("allocateSpendFromCreditBuckets", () => {
     expect(split.ok).toBe(true);
     expect(split.fromFreeRequest).toBe(3000);
     expect(split.available).toBe(0);
+  });
+});
+
+describe("allocateLabFeeAndAbutmentSpend", () => {
+  test("데모 부채가 있어도 충전액으로 커스텀어벗을 내고 기공비는 마이너스한다", () => {
+    const split = allocateLabFeeAndAbutmentSpend({
+      labAmount: 30000,
+      abutmentAmount: 15000,
+      paidCredit: 20000,
+      freeRequestCredit: -50000,
+      allowLabOverdraft: true,
+    });
+
+    expect(split.ok).toBe(true);
+    expect(split.abutSplit.fromPaid).toBe(15000);
+    expect(split.abutSplit.fromFreeRequest).toBe(0);
+    expect(split.labSplit.fromPaid).toBe(5000);
+    expect(split.labSplit.fromFreeRequest).toBe(25000);
+  });
+
+  test("충전 잔액이 없으면 커스텀어벗은 거절하고 기공비만은 통과한다", () => {
+    const blocked = allocateLabFeeAndAbutmentSpend({
+      labAmount: 30000,
+      abutmentAmount: 15000,
+      paidCredit: 0,
+      freeRequestCredit: 0,
+      allowLabOverdraft: true,
+    });
+    expect(blocked.ok).toBe(false);
+    expect(blocked.failedKind).toBe("abutment");
+
+    const labOnly = allocateLabFeeAndAbutmentSpend({
+      labAmount: 30000,
+      abutmentAmount: 0,
+      paidCredit: 0,
+      freeRequestCredit: -10000,
+      allowLabOverdraft: true,
+    });
+    expect(labOnly.ok).toBe(true);
+    expect(labOnly.labSplit.fromFreeRequest).toBe(30000);
+  });
+
+  test("positiveSpendableCredit는 데모 부채를 가용에 넣지 않는다", () => {
+    expect(
+      positiveSpendableCredit({
+        paidCredit: 20000,
+        freeRequestCredit: -50000,
+        freeShippingCredit: 0,
+        settlementCredit: 0,
+      }),
+    ).toBe(20000);
   });
 });

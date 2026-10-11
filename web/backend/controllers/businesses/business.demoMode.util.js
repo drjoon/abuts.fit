@@ -468,7 +468,8 @@ export async function getDemoModeState(businessAnchorId) {
 }
 
 /**
- * 데모 중 가상 잔고 overdraft 허용.
+ * 데모 중 기공비 가상 잔고 overdraft 허용.
+ * 커스텀어벗 의뢰·가공·배송에는 쓰지 않는다.
  * 만료 또는 전환 요청 대기(conversionPending)면 잠금.
  */
 export async function allowsDemoFreeRequestOverdraft(businessAnchorId) {

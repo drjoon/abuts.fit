@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-10-11: 데모 가상 잔고는 기공비만. 커스텀어벗(디자인+생산 소매)은 충전 잔액 필요.
 // - 2026-10-07: remakeFeeQuote — 어벗츠로부터 리메이크=무료(월 3건 유료 구간 폐지).
 // - 2026-10-05: 플랫폼 사용료·하청 수수료 미부과. 스냅샷이 있어도 차감 0.
 // - 2026-09-28: 보류 0원(HOLD 저널 없음) 건은 no_hold 대신 zero_lab_fee — settledAt 누락으로 결제 보류가 남던 문제.
@@ -100,6 +101,7 @@ import LedgerJournal from "../models/ledgerJournal.model.js";
 import LedgerLine from "../models/ledgerLine.model.js";
 import {
   allocateSpendFromCreditBuckets,
+  allocateLabFeeAndAbutmentSpend,
   computeBusinessCreditBalanceFromLedger,
   spendShippingCreditAtomic,
   upsertBusinessCreditBalanceFromLedger,
@@ -397,10 +399,35 @@ async function lockGuard(businessAnchorId, session) {
   );
 }
 
-/** 치과 데모 모드면 가상 잔고 freeRequest 마이너스 허용(구강스캔·CA) */
+/** 치과 데모 모드면 기공비 hold만 freeRequest 마이너스 허용. 커스텀어벗은 제외. */
 async function practiceAllowsFreeRequestOverdraft(practiceAnchorId) {
   if (!practiceAnchorId) return false;
   return allowsDemoFreeRequestOverdraft(practiceAnchorId);
+}
+
+function formatWon(amount) {
+  return Math.max(0, Math.round(Number(amount) || 0)).toLocaleString("ko-KR");
+}
+
+function throwPracticeTransferCreditShortfall(result, extra = {}) {
+  const available = Math.max(0, Math.round(Number(result?.available) || 0));
+  const required = Math.max(0, Math.round(Number(result?.required) || 0));
+  const isAbutment = result?.failedKind === "abutment";
+  const err = new Error(
+    isAbutment
+      ? `커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다. (잔액 ${formatWon(available)}원 / 필요 ${formatWon(required)}원)`
+      : `크레딧이 부족합니다. (잔액 ${formatWon(available)}원 / 필요 ${formatWon(required)}원)`,
+  );
+  err.statusCode = 402;
+  err.payload = {
+    reason: isAbutment
+      ? "insufficient_credit_for_custom_abutment"
+      : "insufficient_credit_for_practice_transfer",
+    available,
+    required,
+    ...extra,
+  };
+  throw err;
 }
 
 /** 스냅샷/GL 잔액 — freeRequest는 부호 유지(데모 부채) */
@@ -873,32 +900,25 @@ export async function assertPracticeTransferPaidCreditSufficient({
   if (practiceRequired > 0 && balance) {
     const allowOverdraft =
       await practiceAllowsFreeRequestOverdraft(practiceId);
-    const split = allocateSpendFromCreditBuckets({
-      amount: practiceRequired,
+    const abutmentRequired = Math.max(
+      0,
+      Math.round(Number(fees?.abutmentRetailTotal || 0)),
+    );
+    const labRequired = Math.max(0, practiceRequired - abutmentRequired);
+    const split = allocateLabFeeAndAbutmentSpend({
+      labAmount: labRequired,
+      abutmentAmount: abutmentRequired,
       paidCredit: Number(balance?.paidCredit || 0),
       freeRequestCredit: Number(balance?.freeRequestCredit || 0),
       freeShippingCredit: Number(balance?.freeShippingCredit || 0),
-      freeOrder: ["freeRequest", "freeShipping"],
-      allowFreeRequestOverdraft: allowOverdraft,
+      allowLabOverdraft: allowOverdraft,
     });
     if (!split.ok) {
-      const err = new Error(
-        `크레딧이 부족합니다. (잔액 ${(split.available).toLocaleString("ko-KR")}원 / 필요 ${practiceRequired.toLocaleString("ko-KR")}원)`,
-      );
-      err.statusCode = 402;
-      err.payload = {
-        reason: "insufficient_credit_for_practice_transfer",
-        paidCredit: split.paidCredit,
-        freeCredit: split.freeCredit,
-        freeRequestCredit: split.freeRequestCredit,
-        freeShippingCredit: split.freeShippingCredit,
-        available: split.available,
-        required: practiceRequired,
+      throwPracticeTransferCreditShortfall(split, {
         fees,
         shipping,
         autoMatchBudget: budget,
-      };
-      throw err;
+      });
     }
   } else if (practiceRequired > 0 && !balance) {
     return {
@@ -1113,29 +1133,18 @@ export async function commitPracticeTransferBilling({
     });
     const allowOverdraft =
       await practiceAllowsFreeRequestOverdraft(practiceAnchorId);
-    const split = allocateSpendFromCreditBuckets({
-      amount: fees.total,
+    const allocated = allocateLabFeeAndAbutmentSpend({
+      labAmount: fees.labFeeTotal,
+      abutmentAmount: fees.abutmentRetailTotal,
       paidCredit: Number(balance?.paidCredit || 0),
       freeRequestCredit: Number(balance?.freeRequestCredit || 0),
       freeShippingCredit: Number(balance?.freeShippingCredit || 0),
-      freeOrder: ["freeRequest", "freeShipping"],
-      allowFreeRequestOverdraft: allowOverdraft,
+      allowLabOverdraft: allowOverdraft,
     });
-    if (!split.ok) {
-      const err = new Error("치과 크레딧이 부족합니다.");
-      err.statusCode = 402;
-      err.payload = {
-        reason: "insufficient_credit_for_practice_transfer",
-        paidCredit: split.paidCredit,
-        freeCredit: split.freeCredit,
-        freeRequestCredit: split.freeRequestCredit,
-        freeShippingCredit: split.freeShippingCredit,
-        available: split.available,
-        required: fees.total,
-        fees,
-      };
-      throw err;
+    if (!allocated.ok) {
+      throwPracticeTransferCreditShortfall(allocated, { fees });
     }
+    const split = allocated.combined;
 
     const owners = revenueOwners;
 
@@ -1833,12 +1842,18 @@ function prepareHoldSliceEntry({
     allowFreeRequestOverdraft,
   });
   if (!sliceSplit.ok) {
-    const payerLabel =
-      shareKind === "abuts_shipping" ? "기공소" : "치과";
-    const err = new Error(`${payerLabel} 크레딧이 부족합니다.`);
+    const isAbutment = shareKind === "abutment";
+    const payerLabel = shareKind === "abuts_shipping" ? "기공소" : "치과";
+    const err = new Error(
+      isAbutment
+        ? `커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다. (잔액 ${formatWon(sliceSplit.available)}원 / 필요 ${formatWon(amt)}원)`
+        : `${payerLabel} 크레딧이 부족합니다.`,
+    );
     err.statusCode = 402;
     err.payload = {
-      reason: "insufficient_credit_for_practice_transfer",
+      reason: isAbutment
+        ? "insufficient_credit_for_custom_abutment"
+        : "insufficient_credit_for_practice_transfer",
       available: sliceSplit.available,
       required: amt,
       shareKind,
@@ -2135,29 +2150,25 @@ export async function holdPracticeTransferCredits({
 
     const allowOverdraft =
       await practiceAllowsFreeRequestOverdraft(practiceAnchorId);
-    const totalSplit = allocateSpendFromCreditBuckets({
-      amount: required,
+    // 디자인비는 lab 슬라이스에 합쳐지지만, 소매 전체(디자인+생산)는 충전 잔액만.
+    const customAbutmentRequired =
+      Math.max(0, Math.round(Number(shares.abut || 0))) +
+      Math.max(0, Math.round(Number(shares.designFeeTotal || 0)));
+    const prosthesisLabRequired = Math.max(
+      0,
+      Math.round(Number(shares.lab || 0)) -
+        Math.max(0, Math.round(Number(shares.designFeeTotal || 0))),
+    );
+    const totalSplit = allocateLabFeeAndAbutmentSpend({
+      labAmount: prosthesisLabRequired,
+      abutmentAmount: customAbutmentRequired,
       paidCredit: Number(balance?.paidCredit || 0),
       freeRequestCredit: Number(balance?.freeRequestCredit || 0),
       freeShippingCredit: Number(balance?.freeShippingCredit || 0),
-      freeOrder: ["freeRequest", "freeShipping"],
-      allowFreeRequestOverdraft: allowOverdraft,
+      allowLabOverdraft: allowOverdraft,
     });
     if (!totalSplit.ok) {
-      const err = new Error(
-        `크레딧이 부족합니다. (잔액 ${(totalSplit.available).toLocaleString("ko-KR")}원 / 필요 ${required.toLocaleString("ko-KR")}원)`,
-      );
-      err.statusCode = 402;
-      err.payload = {
-        reason: "insufficient_credit_for_practice_transfer",
-        paidCredit: totalSplit.paidCredit,
-        freeCredit: totalSplit.freeCredit,
-        freeRequestCredit: totalSplit.freeRequestCredit,
-        freeShippingCredit: totalSplit.freeShippingCredit,
-        available: totalSplit.available,
-        required,
-      };
-      throw err;
+      throwPracticeTransferCreditShortfall(totalSplit);
     }
 
     let bucket = {
@@ -2173,14 +2184,16 @@ export async function holdPracticeTransferCredits({
 
     const sliceSpecs = [
       {
-        amount: shares.lab,
-        shareKind: "lab",
-        displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.holdLab,
-      },
-      {
         amount: shares.abut,
         shareKind: "abutment",
         displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.holdAbutment,
+        allowFreeRequestOverdraft: false,
+      },
+      {
+        amount: shares.lab,
+        shareKind: "lab",
+        displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.holdLab,
+        allowFreeRequestOverdraft: allowOverdraft,
       },
     ];
 
@@ -2195,7 +2208,7 @@ export async function holdPracticeTransferCredits({
         split: bucket,
         actorUserId,
         freeOrder: spec.freeOrder || ["freeRequest", "freeShipping"],
-        allowFreeRequestOverdraft: allowOverdraft,
+        allowFreeRequestOverdraft: Boolean(spec.allowFreeRequestOverdraft),
       });
       if (!prepared.prepared) continue;
       pendingEntries.push(prepared.entry);
@@ -2898,24 +2911,29 @@ export async function adjustPracticeTransferHold({
       });
       const allowOverdraft =
         await practiceAllowsFreeRequestOverdraft(practiceAnchorId);
-      const split = allocateSpendFromCreditBuckets({
-        amount: absDelta,
+      const prevAbutmentRetail = Math.max(
+        0,
+        Math.round(Number(transfer?.billing?.abutmentRetailTotal || 0)),
+      );
+      const nextAbutmentRetail = Math.max(
+        0,
+        Math.round(Number(fees?.abutmentRetailTotal || 0)),
+      );
+      const caIncrease = Math.max(0, nextAbutmentRetail - prevAbutmentRetail);
+      const abutmentCash = Math.min(absDelta, caIncrease);
+      const labCash = absDelta - abutmentCash;
+      const allocated = allocateLabFeeAndAbutmentSpend({
+        labAmount: labCash,
+        abutmentAmount: abutmentCash,
         paidCredit: Number(balance?.paidCredit || 0),
         freeRequestCredit: Number(balance?.freeRequestCredit || 0),
         freeShippingCredit: Number(balance?.freeShippingCredit || 0),
-        freeOrder: ["freeRequest", "freeShipping"],
-        allowFreeRequestOverdraft: allowOverdraft,
+        allowLabOverdraft: allowOverdraft,
       });
-      if (!split.ok) {
-        const err = new Error("치과 크레딧이 부족합니다.");
-        err.statusCode = 402;
-        err.payload = {
-          reason: "insufficient_credit_for_practice_transfer",
-          available: split.available,
-          required: absDelta,
-        };
-        throw err;
+      if (!allocated.ok) {
+        throwPracticeTransferCreditShortfall(allocated);
       }
+      const split = allocated.combined;
       lines.push(
         ...buildPracticeDebitLines({
           split,

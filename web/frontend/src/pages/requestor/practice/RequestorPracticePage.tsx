@@ -516,6 +516,7 @@ function isPtxCaInsufficientCreditBody(body: Record<string, unknown>, status?: n
     status === 402 ||
     reason === PTX_CA_INSUFFICIENT_CREDIT_REASON ||
     reason === "insufficient_credit_for_hold" ||
+    reason === "insufficient_credit_for_custom_abutment" ||
     reason === "insufficient_lab_credit_for_abuts_shipping" ||
     message.includes("크레딧이 부족") ||
     message.includes("데모 모드 마이너스는")
@@ -10534,7 +10535,7 @@ export function RequestorPracticeReceivePage({
         description={
           <div className="space-y-1.5 leading-relaxed">
             {(ptxCaCreditConfirmMessage
-              ? [ptxCaCreditConfirmMessage]
+              ? ptxCaCreditConfirmMessage.split("\n").filter(Boolean)
               : PTX_CA_INSUFFICIENT_CREDIT_DESCRIPTION_LINES
             ).map((line) => (
               <p key={line}>{line}</p>

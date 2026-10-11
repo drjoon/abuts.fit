@@ -835,7 +835,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 기존 의뢰의 hold skip·0원 commit·「가입 테스트」라벨만 레거시 유지
     - 대체: 치과·기공소 데모 모드(`allowFreeRequestOverdraft`) + 관리자 수동 무료크레딧
   - 데모 모드(치과 전용, 강제):
-    - 가입 시 0원·가상 잔고 마이너스 허용(치과 전용, 기공비)
+    - 가입 시 0원·가상 잔고 마이너스 허용(치과 전용, 기공비). 커스텀어벗 의뢰·가공·배송은 데모여도 충전 잔액 필요(`allowFreeRequestOverdraft` 금지)
     - **전환**: 치과 요청 -> 기공소 직접 지급 확인 -> 부채 리셋·데모 OFF·기공소 ADJUST. 이후 충전(선결제) 필요
     - 90일 만료 후 미전환: 신규 의뢰 차단. 전환 요청 후 기공소 직접 지급 확인 대기(`conversionPending`)
     - 입금 하한 없음. 협력은 수행 기공소, 하청·자체 어벗츠 몫은 관리자 대시보드가 지급 확인. `GET /api/credits/conversion-quote` · `GET /api/admin/credits/demo-conversions`

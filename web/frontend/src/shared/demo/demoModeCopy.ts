@@ -308,11 +308,11 @@ export const CREDIT_LEDGER_DEMO_CHARGE_LABEL = CREDIT_LEDGER_CHARGE_LABEL;
 export const CREDIT_LEDGER_DEMO_CHARGE_DETAIL_TITLE =
   CREDIT_LEDGER_CHARGE_DETAIL_TITLE;
 
-/** 기공소 PTX — 어벗 디자인/생산 시 실크레딧 부족 안내(실사용 전환 후). */
+/** 기공소 PTX — 어벗 디자인/생산 시 충전 잔액 부족. 데모 가상 잔고로는 결제되지 않는다. */
 export const PTX_CA_INSUFFICIENT_CREDIT_TITLE = "크레딧이 부족합니다";
 
 export const PTX_CA_INSUFFICIENT_CREDIT_DESCRIPTION_LINES = [
-  "어벗 디자인을 올리고 생산을 시작할 때 크레딧으로 결제됩니다.",
+  "커스텀어벗은 충전된 크레딧으로 결제됩니다.",
   "충전 후 다시 업로드해 주세요.",
 ] as const;
 
@@ -322,7 +322,7 @@ export const PTX_CA_INSUFFICIENT_CREDIT_REASON = "insufficient_credit_for_ptx_ca
 
 /** FAQ·도움말 공통 — 데모/무료 크레딧 안내. */
 export const DEMO_MODE_FREE_CREDIT_FAQ_ANSWER =
-  "아니요. 가입 환영 무료 크레딧은 없습니다. 90일 데모(가상 잔고·마이너스 허용)로 체험할 수 있고, 실사용 전환 시 미정산 기공비는 기공소에 직접 지급합니다. 이후 신규 의뢰는 충전(선결제)이 필요합니다.";
+  "아니요. 가입 환영 무료 크레딧은 없습니다. 90일 데모(가상 잔고)로 기공의뢰를 체험할 수 있고, 커스텀어벗은 충전된 크레딧이 있어야 합니다. 실사용 전환 시 미정산 기공비는 기공소에 직접 지급합니다. 이후 신규 의뢰는 충전(선결제)이 필요합니다.";
 
 export const DEMO_MODE_ONBOARDING_HINT =
   "가입 후 90일 데모(가상 잔고)로 체험할 수 있어요. 실사용 전환 시 미정산 기공비는 기공소에 직접 지급합니다.";

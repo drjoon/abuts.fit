@@ -119,7 +119,7 @@ import { alertAdminImplantCatalogMismatch } from "../../utils/implantCatalogMism
 /** PTX CA(어벗 생산) — 기공소 실크레딧 부족 (수락→디자인 업로드 시점) */
 const PTX_CA_INSUFFICIENT_CREDIT_REASON = "insufficient_credit_for_ptx_ca";
 const PTX_CA_INSUFFICIENT_CREDIT_MESSAGE =
-  "커스텀어벗 생산은 크레딧으로 결제됩니다. 치과 데모 모드에서는 가상 잔고(마이너스 허용)로 진행됩니다. 실사용 전환 후에는 충전 후 디자인을 다시 업로드해 주세요.";
+  "커스텀어벗은 충전된 크레딧으로 결제됩니다.\n충전 후 다시 업로드해 주세요.";
 
 function isPtxCaInsufficientCreditError(err) {
   const reason = String(err?.payload?.reason || err?.code || "").trim();
@@ -127,6 +127,7 @@ function isPtxCaInsufficientCreditError(err) {
   return (
     status === 402 ||
     reason === "insufficient_credit_for_hold" ||
+    reason === "insufficient_credit_for_custom_abutment" ||
     reason === PTX_CA_INSUFFICIENT_CREDIT_REASON ||
     reason === "insufficient_lab_credit_for_abuts_shipping"
   );
@@ -139,6 +140,7 @@ function rejectPtxCaInsufficientCredit(res, err) {
   const useCanonical =
     !rawMsg ||
     reason === "insufficient_credit_for_hold" ||
+    reason === "insufficient_credit_for_custom_abutment" ||
     reason === PTX_CA_INSUFFICIENT_CREDIT_REASON ||
     rawMsg.includes("크레딧이 부족");
   return res.status(status >= 400 && status < 600 ? status : 402).json({

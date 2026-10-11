@@ -31,6 +31,7 @@ import {
   buildStandardStlFileName,
   getBusinessCreditBalanceBreakdown,
 } from "./creation.helpers.controller.js";
+import { positiveSpendableCredit } from "../../services/creditBalance.service.js";
 import { getRequestorOrgId } from "./utils.js";
 import { calculateInitialProductionSchedule } from "./production.utils.js";
 import {
@@ -798,10 +799,13 @@ export async function createRequestsBulk(req, res) {
     });
 
     // 5. 크레딧 부족 체크 (무료→기공→유료 통합 풀, 의뢰비→배송비 순 배정)
-    const freeCredit = freeRequestCredit + freeShippingCredit;
-    const totalAvailable = Number(
-      spendableBalance ?? paidCredit + freeCredit + Number(settlementCredit || 0),
-    );
+    // 데모 부채(음수)는 가용에서 뺀다. 커스텀어벗은 충전된 양수 잔액만 쓴다.
+    const totalAvailable = positiveSpendableCredit({
+      paidCredit,
+      freeRequestCredit,
+      freeShippingCredit,
+      settlementCredit,
+    });
     let remaining = totalAvailable;
     const allocatedMachining = Math.min(remaining, totalMachiningFee);
     remaining -= allocatedMachining;
@@ -823,7 +827,7 @@ export async function createRequestsBulk(req, res) {
       const details = [];
 
       if (machiningShortfall > 0 && shippingShortfall > 0) {
-        message = "의뢰비와 배송비 크레딧이 모두 부족합니다.";
+        message = "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.";
         details.push(
           `의뢰비 필요: ${totalMachiningFee.toLocaleString()}원 (보유: ${availableForMachining.toLocaleString()}원)`,
         );
@@ -831,12 +835,12 @@ export async function createRequestsBulk(req, res) {
           `배송비 필요: ${totalShippingFee.toLocaleString()}원 (보유: ${availableForShipping.toLocaleString()}원)`,
         );
       } else if (machiningShortfall > 0) {
-        message = "의뢰비 크레딧이 부족합니다.";
+        message = "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.";
         details.push(
           `필요: ${totalMachiningFee.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
         );
       } else {
-        message = "배송비 크레딧이 부족합니다.";
+        message = "커스텀어벗 배송비는 충전된 크레딧이 있어야 합니다.";
         details.push(
           `필요: ${totalShippingFee.toLocaleString()}원, 보유: ${availableForShipping.toLocaleString()}원`,
         );

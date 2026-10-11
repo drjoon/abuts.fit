@@ -37,7 +37,7 @@ export function allocateSpendFromCreditBuckets({
   freeShippingCredit = 0,
   settlementCredit = 0,
   freeOrder = ["freeRequest", "freeShipping"],
-  /** 데모 가상 잔고: 부족분을 freeRequest 마이너스로 허용(기공의뢰·CA) */
+  /** 데모 가상 잔고: 부족분을 freeRequest 마이너스로 허용(기공비). 커스텀어벗은 끈다. */
   allowFreeRequestOverdraft = false,
 } = {}) {
   const required = Math.max(0, Math.round(Number(amount || 0)));
@@ -96,6 +96,110 @@ export function allocateSpendFromCreditBuckets({
     shortfall: Math.max(0, remaining),
     ok: remaining <= 0,
     allowFreeRequestOverdraft: Boolean(allowFreeRequestOverdraft),
+  };
+}
+
+/**
+ * 주문 가능액. 데모 부채(음수 freeRequest·유료)는 0으로 보고, 추가 마이너스는 넣지 않는다.
+ */
+export function positiveSpendableCredit({
+  paidCredit = 0,
+  freeRequestCredit = 0,
+  freeShippingCredit = 0,
+  settlementCredit = 0,
+} = {}) {
+  return allocateSpendFromCreditBuckets({
+    amount: 0,
+    paidCredit,
+    freeRequestCredit,
+    freeShippingCredit,
+    settlementCredit,
+    allowFreeRequestOverdraft: false,
+  }).available;
+}
+
+/**
+ * 기공비는 데모 overdraft 가능. 커스텀어벗 금액은 충전 잔액만.
+ * 어벗을 먼저 배분해 기공 overdraft가 충전분을 쓰지 않게 한다.
+ */
+export function allocateLabFeeAndAbutmentSpend({
+  labAmount = 0,
+  abutmentAmount = 0,
+  paidCredit = 0,
+  freeRequestCredit = 0,
+  freeShippingCredit = 0,
+  settlementCredit = 0,
+  allowLabOverdraft = false,
+  freeOrder = ["freeRequest", "freeShipping"],
+} = {}) {
+  const abutAmt = Math.max(0, Math.round(Number(abutmentAmount) || 0));
+  const labAmt = Math.max(0, Math.round(Number(labAmount) || 0));
+  let paid = Math.max(0, Math.round(Number(paidCredit) || 0));
+  let freeRequest = Math.round(Number(freeRequestCredit) || 0);
+  let freeShipping = Math.max(0, Math.round(Number(freeShippingCredit) || 0));
+  let settlement = Math.max(0, Math.round(Number(settlementCredit) || 0));
+
+  const abutSplit = allocateSpendFromCreditBuckets({
+    amount: abutAmt,
+    paidCredit: paid,
+    freeRequestCredit: freeRequest,
+    freeShippingCredit: freeShipping,
+    settlementCredit: settlement,
+    freeOrder,
+    allowFreeRequestOverdraft: false,
+  });
+  if (!abutSplit.ok) {
+    return {
+      ok: false,
+      failedKind: "abutment",
+      abutSplit,
+      labSplit: null,
+      available: abutSplit.available,
+      required: abutAmt,
+    };
+  }
+
+  paid = Math.max(0, paid - abutSplit.fromPaid);
+  freeRequest -= abutSplit.fromFreeRequest;
+  freeShipping = Math.max(0, freeShipping - abutSplit.fromFreeShipping);
+  settlement = Math.max(0, settlement - Number(abutSplit.fromSettlement || 0));
+
+  const labSplit = allocateSpendFromCreditBuckets({
+    amount: labAmt,
+    paidCredit: paid,
+    freeRequestCredit: freeRequest,
+    freeShippingCredit: freeShipping,
+    settlementCredit: settlement,
+    freeOrder,
+    allowFreeRequestOverdraft: Boolean(allowLabOverdraft),
+  });
+  if (!labSplit.ok) {
+    return {
+      ok: false,
+      failedKind: "lab",
+      abutSplit,
+      labSplit,
+      available: labSplit.available,
+      required: labAmt,
+    };
+  }
+
+  return {
+    ok: true,
+    failedKind: null,
+    abutSplit,
+    labSplit,
+    available: abutSplit.available,
+    required: abutAmt + labAmt,
+    combined: {
+      fromPaid: abutSplit.fromPaid + labSplit.fromPaid,
+      fromFreeRequest: abutSplit.fromFreeRequest + labSplit.fromFreeRequest,
+      fromFreeShipping: abutSplit.fromFreeShipping + labSplit.fromFreeShipping,
+      fromSettlement:
+        Number(abutSplit.fromSettlement || 0) + Number(labSplit.fromSettlement || 0),
+      available: abutSplit.available,
+      ok: true,
+    },
   };
 }
 
@@ -438,19 +542,13 @@ export async function spendRequestCreditAtomic({
     session,
   });
 
-  // 데모 가상 잔고: CA 가공 차감도 freeRequest 마이너스 허용. 스토어는 별도 경로.
+  // 커스텀어벗 가공 차감은 데모 마이너스를 쓰지 않는다. 충전 잔액만.
   const {
-    allowsDemoFreeRequestOverdraft,
     resolveDemoFreeRequestReserveCap,
     excludeDemoFreeRequestFromBalance,
   } = await import("../controllers/businesses/business.demoMode.util.js");
-  const allowOverdraft = await allowsDemoFreeRequestOverdraft(anchorObjectId);
-  const demoCap = allowOverdraft
-    ? 0
-    : await resolveDemoFreeRequestReserveCap(anchorObjectId);
-  const spendable = allowOverdraft
-    ? glBalance
-    : excludeDemoFreeRequestFromBalance(glBalance, demoCap);
+  const demoCap = await resolveDemoFreeRequestReserveCap(anchorObjectId);
+  const spendable = excludeDemoFreeRequestFromBalance(glBalance, demoCap);
 
   const split = allocateSpendFromCreditBuckets({
     amount: resolvedAmount,
@@ -459,7 +557,7 @@ export async function spendRequestCreditAtomic({
     freeShippingCredit: Number(spendable?.freeShippingCredit || 0),
     settlementCredit: Number(spendable?.settlementCredit || 0),
     freeOrder: ["freeRequest", "freeShipping"],
-    allowFreeRequestOverdraft: allowOverdraft,
+    allowFreeRequestOverdraft: false,
   });
 
   if (!split.ok) {
@@ -551,19 +649,13 @@ export async function spendShippingCreditAtomic({
     session,
   });
 
-  // 데모 가상 잔고: 어벗 배송비 차감도 freeRequest 마이너스 허용.
+  // 커스텀어벗 배송비는 데모 마이너스를 쓰지 않는다. 충전 잔액만.
   const {
-    allowsDemoFreeRequestOverdraft,
     resolveDemoFreeRequestReserveCap,
     excludeDemoFreeRequestFromBalance,
   } = await import("../controllers/businesses/business.demoMode.util.js");
-  const allowOverdraft = await allowsDemoFreeRequestOverdraft(anchorObjectId);
-  const demoCap = allowOverdraft
-    ? 0
-    : await resolveDemoFreeRequestReserveCap(anchorObjectId);
-  const spendable = allowOverdraft
-    ? glBalance
-    : excludeDemoFreeRequestFromBalance(glBalance, demoCap);
+  const demoCap = await resolveDemoFreeRequestReserveCap(anchorObjectId);
+  const spendable = excludeDemoFreeRequestFromBalance(glBalance, demoCap);
 
   const split = allocateSpendFromCreditBuckets({
     amount,
@@ -572,7 +664,7 @@ export async function spendShippingCreditAtomic({
     freeShippingCredit: Number(spendable?.freeShippingCredit || 0),
     settlementCredit: Number(spendable?.settlementCredit || 0),
     freeOrder: ["freeShipping", "freeRequest"],
-    allowFreeRequestOverdraft: allowOverdraft,
+    allowFreeRequestOverdraft: false,
   });
 
   if (!split.ok) {

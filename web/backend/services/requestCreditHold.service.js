@@ -7,6 +7,7 @@
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-10-11: 커스텀어벗 hold는 데모 마이너스 금지. 충전 잔액만.
 // - 2026-09-05: 데모 가상 잔고 — CA(가공·배송 hold)도 freeRequest 마이너스 허용.
 // - 2026-09-03: hold 시작 시 devops·배송단가·기존 hold키 병렬 조회. 배송단가 60s 캐시.
 //   레거시 PTX 배송 hold 해제는 세션 없을 때 응답 후(void) — UI 「처리 중」 단축.
@@ -33,7 +34,6 @@ import {
 } from "./creditBalance.service.js";
 import { isFmDentalShippingActiveForAnchor } from "./fmDentalShippingSubscription.service.js";
 import {
-  allowsDemoFreeRequestOverdraft,
   getDemoOrderBlock,
   excludeDemoFreeRequestFromBalance,
   resolveDemoFreeRequestReserveCap,
@@ -366,9 +366,9 @@ function prepareOneRequestHold({
   freeOrder = ["freeRequest", "freeShipping"],
   actorUserId = null,
   cachedBalance = null,
-  /** 데모 무료의뢰 예약분 — 스토어 등 실사용 차감 시 제외(overdraft 시 무시) */
+  /** 데모 무료의뢰 예약분 — 커스텀어벗 차감에서 제외 */
   demoFreeRequestReserveCap = 0,
-  /** 데모 가상 잔고: CA·배송 hold도 freeRequest 마이너스 허용 */
+  /** 커스텀어벗 hold는 데모 마이너스를 허용하지 않는다. */
   allowFreeRequestOverdraft = false,
 }) {
   const amt = Math.max(0, Math.round(Number(amount || 0)));
@@ -392,10 +392,13 @@ function prepareOneRequestHold({
   });
 
   if (!split.ok) {
-    const err = new Error("의뢰자 크레딧이 부족합니다.");
+    const available = Math.max(0, Math.round(Number(split.available) || 0));
+    const err = new Error(
+      `커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다. (잔액 ${available.toLocaleString("ko-KR")}원 / 필요 ${amt.toLocaleString("ko-KR")}원)`,
+    );
     err.statusCode = 402;
     err.payload = {
-      reason: "insufficient_credit_for_hold",
+      reason: "insufficient_credit_for_custom_abutment",
       holdKind,
       required: amt,
       available: split.available,
@@ -546,8 +549,6 @@ async function postOneRequestHold({
 
   const demoFreeRequestReserveCap =
     await resolveDemoFreeRequestReserveCap(requestorAnchorId);
-  const allowFreeRequestOverdraft =
-    await allowsDemoFreeRequestOverdraft(requestorAnchorId);
 
   const prepared = prepareOneRequestHold({
     request,
@@ -561,7 +562,7 @@ async function postOneRequestHold({
     actorUserId,
     cachedBalance: balance,
     demoFreeRequestReserveCap,
-    allowFreeRequestOverdraft,
+    allowFreeRequestOverdraft: false,
   });
   if (!prepared?.held || !prepared.journal) {
     return prepared;
@@ -833,7 +834,6 @@ export async function holdRequestCreditsOnSubmit({
   const lockedAnchors = new Set();
   const balanceByAnchor = new Map();
   const demoReserveCapByAnchor = new Map();
-  const demoOverdraftByAnchor = new Map();
   let totalHeld = 0;
   const results = [];
 
@@ -844,15 +844,6 @@ export async function holdRequestCreditsOnSubmit({
     const cap = await resolveDemoFreeRequestReserveCap(requestorAnchorId);
     demoReserveCapByAnchor.set(requestorAnchorId, cap);
     return cap;
-  };
-
-  const resolveDemoOverdraft = async (requestorAnchorId) => {
-    if (demoOverdraftByAnchor.has(requestorAnchorId)) {
-      return demoOverdraftByAnchor.get(requestorAnchorId);
-    }
-    const allow = await allowsDemoFreeRequestOverdraft(requestorAnchorId);
-    demoOverdraftByAnchor.set(requestorAnchorId, allow);
-    return allow;
   };
 
   const takeCachedBalance = async (requestorAnchorId) => {
@@ -927,7 +918,7 @@ export async function holdRequestCreditsOnSubmit({
       actorUserId,
       cachedBalance: await takeCachedBalance(requestorAnchorId),
       demoFreeRequestReserveCap: await resolveDemoCap(requestorAnchorId),
-      allowFreeRequestOverdraft: await resolveDemoOverdraft(requestorAnchorId),
+      allowFreeRequestOverdraft: false,
     });
     if (!prepared?.held || !prepared.journal) {
       results.push({ kind: holdKind, ...prepared });
