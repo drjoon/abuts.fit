@@ -1,4 +1,5 @@
-// 스캔 메시 뒷면을 앞면과 같은 재질로 불투명하게 겹쳐 그린다.
+// 스캔 메시 뒷면을 앞면과 같은 색조의 어두운 재질로 불투명하게 겹쳐 그린다.
+// - 2026-10-11: 뒷면 알베도만 눌러 대합이 셸 안쪽으로 튀어나온 면을 앞면과 구분한다.
 // - 2026-10-04: 표시는 FrontSide+셸이어도 픽킹은 양면을 맞힌다. 안쪽 와인딩 스캔에서 왼쪽 드래그가 빗나가지 않게.
 // related files:
 // - web/frontend/src/shared/share/CaseLayerViewer.tsx
@@ -7,6 +8,20 @@
 import * as THREE from "three";
 
 const SHELL_KEY = "backFaceShell";
+/** 앞면 색을 유지한 채 뒷면만 이 비율로 어둡게. 버텍스 컬러·텍스처는 `color`가 곱해진다. */
+const BACK_FACE_ALBEDO = 0.34;
+
+function shadeBackFace(material: THREE.Material) {
+  const lit = material as THREE.MeshStandardMaterial;
+  if (lit.color?.isColor) lit.color.multiplyScalar(BACK_FACE_ALBEDO);
+  if (typeof lit.roughness === "number") {
+    lit.roughness = Math.max(lit.roughness, 0.86);
+  }
+  // 실루엣에서 앞면이 이긴다. 밝기 차이가 가장자리에서 깜빡이지 않게.
+  material.polygonOffset = true;
+  material.polygonOffsetFactor = 1;
+  material.polygonOffsetUnits = 1;
+}
 
 function findShell(mesh: THREE.Mesh): THREE.Mesh | undefined {
   return mesh.children.find((child) => child.userData[SHELL_KEY]) as
@@ -29,7 +44,7 @@ export function disposeBackFaceShell(mesh: THREE.Mesh) {
 }
 
 /**
- * 앞면은 `mesh.material`(FrontSide), 뒷면은 같은 지오메트리의 불투명 복제본으로 그린다.
+ * 앞면은 `mesh.material`(FrontSide), 뒷면은 같은 지오메트리를 어둡게 한 불투명 복제본으로 그린다.
  * 재질·지오메트리를 바꾼 뒤마다 다시 부른다.
  * 이미 반투명한 재질(고스트 등)은 셸 없이 원래 `side`를 둔다.
  */
@@ -45,6 +60,7 @@ export function syncBackFaceShell(mesh: THREE.Mesh) {
   back.transparent = false;
   back.opacity = 1;
   back.depthWrite = true;
+  shadeBackFace(back);
 
   const shell = findShell(mesh);
   if (shell) {
