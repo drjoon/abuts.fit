@@ -1606,13 +1606,13 @@ namespace DentalAddin
                 {
                     case "FRONT":
                         rangeMinX = xMin;
-                        rangeMaxX = Math.Min(xMax, splitline2 + GetTurnPastFinishSeamMm());
+                        rangeMaxX = Math.Min(xMax, splitline2 + GetTurnPastFinishSeamMm() + ResolveTurnToolpathCompMm("FRONT"));
                         break;
                     case "BACK" when TryResolveSafeSplitBackZoneX("TurningOp BACK", out double safeZoneEndX):
                         // Safe split(Middle_Turn): Middle_Rough 끝(Xk+0.8)보다 2.2 더 깎고 퇴출. 헥스 너머 연장·45도 퇴출은 BACK2(Back_Turn)로 미룬다.
                         rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
                         // Middle_Turn 끝 = Middle_Rough 끝(=Xk) + 황삭 공구 반경(D4 → 2.0)
-                        rangeMaxX = safeZoneEndX + GetTurnPastRoughEndMm();
+                        rangeMaxX = safeZoneEndX + GetTurnPastRoughEndMm() + ResolveTurnToolpathCompMm("MIDDLE");
                         break;
                     case "BACK2":
                         if (!TryResolveSafeSplitBackZoneX("TurningOp BACK2", out double safeZoneStartX))
@@ -1657,17 +1657,25 @@ namespace DentalAddin
         }
 
         // Back_Turn 수평 끝(툴패스 기준) = Back_Rough 끝(BackPointX) + 황삭 공구 반경(D4 → 2.0) + 여유. (2026-10-12)
-        // Turning.prc ZStock(0.3)만큼 45도 퇴출 모서리가 툴패스에서 tip 쪽으로 당겨지므로 체인 끝을 ZStock만큼 더 뺀다.
-        // Back_Rough 툴패스는 BackPointX보다 조금(≈0.15) 더 나가므로 BackTurnPastRoughMarginMm를 더한다.
+        // Rough 툴패스 초과분과 ZStock 모서리 당김은 아래 공정별 보정값에 실측으로 흡수한다.
         // Tech_Default_Path.xml Turning Extend·Exit angle(80)은 이 구간 계산에서 무시한다.
-        private const double BackTurnPastRoughMarginMm = 0.5;
+        // 실측(ESPRIT 화면 X, Rough 끝 대비 Turn 끝 간격): 체인 +R일 때 Front 1.73 / Middle 1.69 / Back 1.90.
+        // 공통 +0.5 → 2.23 / 2.19 / 2.40-0.3=2.10. 공구 파손 방지로 2.0 미만이 되면 안 되므로 전 공정 같은 여유를 둔다.
+        private const double TurnPastRoughCompMm = 0.5;
+        private const double BackTurnPastRoughCompMm = TurnPastRoughCompMm;
         private static double s_activeTurningZStockMm;
+
+        private static double ResolveTurnToolpathCompMm(string region)
+        {
+            double comp = TurnPastRoughCompMm;
+            DentalLogger.Log($"TurningOp {region} - Turn 끝 = Rough끝 + R{GetTurnPastRoughEndMm():0.###} + 보정{comp:0.###}");
+            return comp;
+        }
 
         private static double ResolveBackTurnExitAllowance()
         {
-            double zStock = Math.Max(0.0, s_activeTurningZStockMm);
-            double allowance = GetTurnPastRoughEndMm() + BackTurnPastRoughMarginMm + zStock;
-            DentalLogger.Log($"TurningOp BACK - 수평 끝 = BackPointX + R{GetTurnPastRoughEndMm():0.###} + 여유{BackTurnPastRoughMarginMm:0.###} + ZStock{zStock:0.###} = +{allowance:0.###}");
+            double allowance = GetTurnPastRoughEndMm() + BackTurnPastRoughCompMm;
+            DentalLogger.Log($"TurningOp BACK - 수평 끝 = BackPointX + R{GetTurnPastRoughEndMm():0.###} + 보정{BackTurnPastRoughCompMm:0.###} = +{allowance:0.###}");
             return allowance;
         }
 
