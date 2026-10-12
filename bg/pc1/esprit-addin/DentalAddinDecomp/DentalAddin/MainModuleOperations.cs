@@ -1610,7 +1610,8 @@ namespace DentalAddin
                     case "BACK" when TryResolveSafeSplitBackZoneX("TurningOp BACK", out double safeZoneEndX):
                         // Safe split(Middle_Turn): Middle_Rough 끝(Xk+0.8)보다 2.2 더 깎고 퇴출. 헥스 너머 연장·45도 퇴출은 BACK2(Back_Turn)로 미룬다.
                         rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
-                        rangeMaxX = safeZoneEndX + GetTurnPastFinishSeamMm();
+                        // Middle_Turn 끝 = Middle_Rough 끝(=Xk) + 황삭 공구 반경(D4 → 2.0)
+                        rangeMaxX = safeZoneEndX + GetTurnPastRoughEndMm();
                         break;
                     case "BACK2":
                         if (!TryResolveSafeSplitBackZoneX("TurningOp BACK2", out double safeZoneStartX))
@@ -1654,19 +1655,12 @@ namespace DentalAddin
             }
         }
 
-        // Back_Turn 끝 형상(수평 extension + 45도 퇴출)이 클리핑되지 않도록 xMax 뒤에 더하는 여유
+        // Back_Turn 끝 = Back_Rough 끝(BackPointX) + 황삭 공구 반경(D4 → 2.0). (2026-10-12)
+        // Tech_Default_Path.xml Turning Extend(4.0)·Exit angle(80)은 이 구간 계산에서 무시한다.
+        // 이후 BuildTurningRangeChain(appendExit45)이 45도 퇴출 + 90도 수직 퇴출을 붙인다.
         private static double ResolveBackTurnExitAllowance()
         {
-            double backTurningExtend = ResolveBackTurningExtendForBackTurnRange();
-            double exitAllowance = Math.Max(0.5, Math.Abs(backTurningExtend) + Math.Abs(BackTurn));
-            double chamferTan = Math.Abs(Math.Tan(Math.PI * Chamfer / 180.0));
-            if (Math.Abs(Chamfer - 90.0) > 0.001 && chamferTan > 1e-6)
-            {
-                double topY = Document?.LatheMachineSetup?.BarDiameter / 2.0 ?? 0.0;
-                double rise = Math.Max(0.0, topY - LowerY);
-                exitAllowance += rise / chamferTan;
-            }
-            return exitAllowance;
+            return GetTurnPastRoughEndMm();
         }
 
         private static double ResolveBackTurningExtendForBackTurnRange()
@@ -1710,17 +1704,7 @@ namespace DentalAddin
                 rangeMinX = effectiveSplitX;
 
                 // 끝점은 기존 Back_Turn 형상(수평 extension + 45도 퇴출)을 유지하도록 확장한다.
-                double backTurningExtend = ResolveBackTurningExtendForBackTurnRange();
-                double exitAllowance = Math.Max(0.5, Math.Abs(backTurningExtend) + Math.Abs(BackTurn));
-                double chamferTan = Math.Abs(Math.Tan(Math.PI * Chamfer / 180.0));
-                if (Math.Abs(Chamfer - 90.0) > 0.001 && chamferTan > 1e-6)
-                {
-                    double topY = Document?.LatheMachineSetup?.BarDiameter / 2.0 ?? 0.0;
-                    double rise = Math.Max(0.0, topY - LowerY);
-                    exitAllowance += rise / chamferTan;
-                }
-
-                rangeMaxX = xMax + exitAllowance;
+                rangeMaxX = xMax + ResolveBackTurnExitAllowance();
 
                 if (rangeMaxX - rangeMinX < 1e-4)
                 {
@@ -1847,6 +1831,21 @@ namespace DentalAddin
                 {
                     DentalLogger.Log($"BuildTurningRangeChain - region 포인트 부족(range=[{minX:0.###},{maxX:0.###}], count={region.Count})");
                     return null;
+                }
+
+                // 퇴출 SSOT (2026-10-12): Front/Middle/Back 모두 끝점에서 45도로 올라가 소재 반경(topY)에 닿은 뒤 90도(수직)로 빠진다.
+                // Tech_Default_Path.xml Exit angle(80)은 이 3-stage 구간 체인에서 쓰지 않는다.
+                double exitTopY = (Document?.LatheMachineSetup?.BarDiameter ?? 0.0) / 2.0;
+                double[] lastPt = region[region.Count - 1];
+                double risePast = exitTopY - lastPt[1];
+                if (exitTopY > 0.0)
+                {
+                    if (risePast > 1e-4)
+                    {
+                        region.Add(new[] { lastPt[0] + risePast, exitTopY, lastPt[2] });
+                    }
+                    double[] atTop = region[region.Count - 1];
+                    region.Add(new[] { atTop[0], exitTopY + 1.0, atTop[2] });
                 }
 
                 Point startPt = Document.GetPoint(region[0][0], region[0][1], region[0][2]);

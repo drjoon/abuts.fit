@@ -36,7 +36,7 @@
     <double>1</double> # Front Mill Depth
     <double>1</double> # Turning Depth
     <double>3</double>
-    <double>4.0</double> # Turning Extend
+    <double>2.0</double> # Turning Extend: 3-stage Front/Middle/Back_Turn 끝은 이 값이 아니라 "구간 Rough 끝 + 황삭 공구 반경(D4=2.0)"으로 계산(MainModuleOperations.TryPrepareTurningRegionRange). 퇴출은 45도 후 90도(Exit angle 80 무시). rules.md §4.12
     <double>1.5</double> # Rough Mill Step
     <double>5</double>
   </NumData>

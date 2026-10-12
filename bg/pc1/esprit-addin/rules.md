@@ -257,6 +257,18 @@
   - 바닥·벽면 가공 여유: `MillRough_3D.prc` `StockAllowanceFloors/Walls` = `0.10`
   - 구현: `MainModuleComposite.TryRunRoughFreeFromMillSplitAB`
 
+### 4.12 Turn 끝점 = Rough 끝 + 공구 반경, 45도→90도 퇴출 SSOT (2026-10-12)
+
+- 이유: Rough(D4)가 Turn 미삭제 부위(공구 반경 2mm)에 걸리면 소재가 떨려 공구 파손·미삭제가 생긴다.
+- 구간별 끝점 (R = 황삭 공구 반경, D4 → 2.0 / ROUGH_20 D2 → 1.0):
+  - Front: Finish 끝 = Rough 끝 = `Splitline_2 + 0.8`, Turn 끝 = Rough 끝 + R
+  - Middle: Finish 끝 = Rough 끝 = `Xk`, Turn 끝 = `Xk + R`. **Turn 끝이 `BackPointX`를 넘으면 Middle 제거 → Front/Back 2단** (`TryResolveSafeSplitBackZoneX`: `Xk ≤ BackPointX - R`)
+  - Back: Finish 끝 = Rough 끝 = `BackPointX`, Turn 끝 = `BackPointX + R`
+- 퇴출: Front/Middle/Back 모두 Turn 끝에서 45도로 올라가 소재 반경(topY)에 닿은 뒤 90도(수직)로 빠진다 (`BuildTurningRangeChain`).
+- `Tech_Default_Path.xml` Turning Extend(NumData[5])·Exit angle(80)은 3-stage Turn 끝점에 쓰지 않는다. XML 값은 2.0으로 두고 주석으로 기록.
+- 구현: `GetTurnPastRoughEndMm`, `GetTurnPastFinishSeamMm`, `ResolveBackTurnExitAllowance`, `TryPrepareTurningRegionRange`, `aEndOffsetFromSplitMm`(Front_Finish 끝)
+- §4.8·§4.9·§4.10의 Back_Turn Extend direct 적용, `Middle_Rough 끝 = Xk + 0.8`, `Finish_Front 끝 = SharedFinishSplitX` 서술은 이 절이 우선한다.
+
 ### 4.11 Finish_Cuff Back_Rough 스타일 SSOT (2026-07-11)
 
 - 기본 공정 모드(SSOT):

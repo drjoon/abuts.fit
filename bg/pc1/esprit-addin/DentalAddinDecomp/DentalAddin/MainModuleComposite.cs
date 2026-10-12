@@ -992,7 +992,8 @@ namespace DentalAddin
             // 겹침은 다음 공정 시작을 -0.8mm로 당겨 만든다 (서로 0.8mm).
             // 중요: safeBFirstMax로 seam을 당기지 않는다. 당기면 Splitline_2/Front_Rough/Back_Rough와 어긋난다.
             double finishOverlapMm = GetFinishAdjacentOverlapMm();
-            const double aEndOffsetFromSplitMm = 0.0;
+            // [2026-10-12] Front_Finish 끝 = Front_Rough 끝 = Splitline_2 + 0.8 (예전 Splitline_2).
+            double aEndOffsetFromSplitMm = GetRoughPastFinishSeamMm();
             double bStartOffsetFromSplitMm = -finishOverlapMm;
             const double compositeEndOffsetFromBackPointMm = 0.0;
 
@@ -1798,8 +1799,8 @@ namespace DentalAddin
         //   Back_Finish   끝 = BackPointX            (더 이어질 Finish 없음)
         private const double FinishAdjacentOverlapMm = 1.2 * 2.0 / 3.0;
         private const double SafeSplitMinBackZoneMm = 1.5;
-        internal const double SafeSplitTurnPastRoughMm = 2.2;
-        private const double SafeSplitMaxTurnPastBackPointMm = 1.5;
+        // Middle_Turn 끝(Xk+황삭반경)이 BackPointX를 넘으면 Middle 제거 → Front/Back 2단.
+        private const double SafeSplitMaxTurnPastBackPointMm = 0.0;
 
         private static bool IsSafeSplitEnabledByRequest()
         {
@@ -1841,11 +1842,11 @@ namespace DentalAddin
                 double finishLineBottomX = backX - finishLineMinZ;
                 double rawZoneX = finishLineBottomX + SafeSplitBackZonePastFinishLineMinMm;
                 double lo = splitline2 + SafeSplitMinBackZoneMm;
-                double turnPastSeamMm = GetTurnPastFinishSeamMm();
+                double turnPastSeamMm = GetTurnPastRoughEndMm();
                 double hi = backX + SafeSplitMaxTurnPastBackPointMm - turnPastSeamMm;
                 if (rawZoneX > hi)
                 {
-                    DentalLogger.Log($"SafeSplit[{context}] - 커프 짧음: Xk={rawZoneX:F3} > 상한{hi:F3} (Middle_Turn 끝이 BackPointX+{SafeSplitMaxTurnPastBackPointMm:F1} 초과), 단일 Back 유지");
+                    DentalLogger.Log($"SafeSplit[{context}] - 커프 짧음: Xk={rawZoneX:F3} > 상한{hi:F3} (Middle_Turn 끝이 BackPointX 초과 → Middle 제거, Front/Back 2단), 단일 Back 유지");
                     return false;
                 }
                 if (rawZoneX < lo)
@@ -1855,7 +1856,7 @@ namespace DentalAddin
                 }
 
                 zoneX = rawZoneX;
-                DentalLogger.Log($"SafeSplit[{context}] - Xk={zoneX:F3}(=Finish 끝, Rough 끝={zoneX + GetRoughPastFinishSeamMm():F3}), TurnEnd={zoneX + turnPastSeamMm:F3} (FL bottomX={finishLineBottomX:F3}=Back{backX:F3}-minZ{finishLineMinZ:F3}, split2={splitline2:F3})");
+                DentalLogger.Log($"SafeSplit[{context}] - Xk={zoneX:F3}(=Finish 끝=Rough 끝), TurnEnd={zoneX + turnPastSeamMm:F3} (FL bottomX={finishLineBottomX:F3}=Back{backX:F3}-minZ{finishLineMinZ:F3}, split2={splitline2:F3})");
                 return true;
             }
             catch (Exception ex)
@@ -2613,7 +2614,8 @@ namespace DentalAddin
                 }
                 else if (string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase))
                 {
-                    backEnd = Clamp(safeZoneX + roughPastFinishSeamMm, backStart + 1e-3, backEnd);
+                    // Middle_Rough 끝 = Middle_Finish 끝 = Xk (2026-10-12, 예전 Xk+0.8)
+                    backEnd = Clamp(safeZoneX, backStart + 1e-3, backEnd);
                 }
                 DentalLogger.Log($"RoughFreeFromMillSplitAB - safe split: region={region}({(region == "BACK2" ? "Back_Rough" : "Middle_Rough")}):[{backStart:F3}~{backEnd:F3}], Xk={safeZoneX:F3}, roughPastSeam={roughPastFinishSeamMm:F3}");
             }
@@ -2930,9 +2932,17 @@ namespace DentalAddin
         }
 
         // Front/Middle_Turn 끝 = Finish seam + 황삭 연장 + D4 반경 + 칩.
+        // [SSOT 2026-10-12] Turn 끝 = 같은 구간 Rough 끝 + 황삭 공구 반경(D4 → 2.0).
+        // Rough 끝 = Finish 끝 (Front: Splitline_2+0.8, Middle: Xk, Back: BackPointX).
+        private static double GetTurnPastRoughEndMm()
+        {
+            return GetActiveRoughToolRadiusMm();
+        }
+
+        // Front_Turn 끝 = Splitline_2 + (Front_Rough 끝 오프셋 0.8) + 황삭 공구 반경
         private static double GetTurnPastFinishSeamMm()
         {
-            return GetRoughPastFinishSeamMm() + SafeSplitTurnPastRoughMm;
+            return GetRoughPastFinishSeamMm() + GetTurnPastRoughEndMm();
         }
 
         private static bool TryGetThreeStageSplitConfig(out double splitline1, out double splitline2, out double xMin, out double xMax)
