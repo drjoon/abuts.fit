@@ -263,7 +263,10 @@
 - 구간별 끝점 (R = 황삭 공구 반경, D4 → 2.0 / ROUGH_20 D2 → 1.0):
   - Front: Finish 끝 = Rough 끝 = `Splitline_2 + 0.8`, Turn 끝 = Rough 끝 + R
   - Middle: Finish 끝 = Rough 끝 = `Xk`, Turn 끝 = `Xk + R`. **Turn 끝이 `BackPointX`를 넘으면 Middle 제거 → Front/Back 2단** (`TryResolveSafeSplitBackZoneX`: `Xk ≤ BackPointX - R`)
-  - Back: Finish 끝 = Rough 끝 = `BackPointX`, Turn 끝 = `BackPointX + R`
+  - Back: Finish 끝 = Rough 끝 = `BackPointX`, Turn 체인 수평 끝 = `BackPointX + R + 0.5 + ZStock`
+    - 체인은 트림된 프로파일 끝(`EndXValue`, `LowerY`)까지만 쓰고 `ExtendTurning` 꼬리(EndX+Extend 수평, Exit angle 80 상승)는 버린다.
+    - `Turning.prc` ZStock(0.3)만큼 툴패스 45도 모서리가 tip 쪽으로 당겨지므로 체인에 더한다. 0.5는 Back_Rough 툴패스가 BackPointX를 조금 넘는 몫.
+- Finish 겹침: Front_Finish 끝 = `Splitline_2 + 0.8`, Back_Finish 시작 = Front_Finish 끝 − 2피치 (`ResolveFinishSeamOverlapMm`, 피치 = max(Front/Back StepIncrement)). safe split Back_Finish 시작 = `Xk − 2피치`.
 - 퇴출: Front/Middle/Back 모두 Turn 끝에서 45도로 올라가 소재 반경(topY)에 닿은 뒤 90도(수직)로 빠진다 (`BuildTurningRangeChain`).
 - `Tech_Default_Path.xml` Turning Extend(NumData[5])·Exit angle(80)은 3-stage Turn 끝점에 쓰지 않는다. XML 값은 2.0으로 두고 주석으로 기록.
 - 구현: `GetTurnPastRoughEndMm`, `GetTurnPastFinishSeamMm`, `ResolveBackTurnExitAllowance`, `TryPrepareTurningRegionRange`, `aEndOffsetFromSplitMm`(Front_Finish 끝)

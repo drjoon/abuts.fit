@@ -991,10 +991,11 @@ namespace DentalAddin
             // 선행 끝을 경계 너머로 연장하지 않는다. 치은 쪽 D1.2 크로스가 미가공 소재를 물어 깨진다.
             // 겹침은 다음 공정 시작을 -0.8mm로 당겨 만든다 (서로 0.8mm).
             // 중요: safeBFirstMax로 seam을 당기지 않는다. 당기면 Splitline_2/Front_Rough/Back_Rough와 어긋난다.
-            double finishOverlapMm = GetFinishAdjacentOverlapMm();
             // [2026-10-12] Front_Finish 끝 = Front_Rough 끝 = Splitline_2 + 0.8 (예전 Splitline_2).
+            // Finish 겹침 = Finish 스텝 2피치. Back_Finish 시작 = Front_Finish 끝 - 2피치.
             double aEndOffsetFromSplitMm = GetRoughPastFinishSeamMm();
-            double bStartOffsetFromSplitMm = -finishOverlapMm;
+            double finishOverlapMm = ResolveFinishSeamOverlapMm(opA, runB ? opB : null);
+            double bStartOffsetFromSplitMm = aEndOffsetFromSplitMm - finishOverlapMm;
             const double compositeEndOffsetFromBackPointMm = 0.0;
 
             double finishFrontEndX = splitX + aEndOffsetFromSplitMm;
@@ -1002,7 +1003,7 @@ namespace DentalAddin
             double finishBackEndX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
             if (safeSplitBack)
             {
-                // Middle_Finish 끝 = Xk, Back_Finish 시작 = Xk - 0.8 (Front/Middle seam과 같은 겹침)
+                // Middle_Finish 끝 = Xk, Back_Finish 시작 = Xk - 2피치 (Front seam과 같은 겹침)
                 if (explicitB2Phase)
                 {
                     finishBackStartX = safeSplitBackZoneX - finishOverlapMm;
@@ -1029,7 +1030,7 @@ namespace DentalAddin
                 opB.FirstPassPercent = Clamp(requestedBFirstPass, firstPercent, effectiveLastPercent);
                 opB.LastPassPercent = effectiveLastPercent;
             }
-            string finishSeamAnchor = (safeSplitBack && explicitB2Phase) ? "Xk" : "Splitline_2";
+            string finishSeamAnchor = (safeSplitBack && explicitB2Phase) ? "Xk" : "FrontFinishEnd";
             DentalLogger.Log($"Composite2SplitLine2 - Finish seam 확정: Front.end%={opA.LastPassPercent:F2} (X={finishFrontEndX:F3}), Back.start%={(runB && opB != null ? opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")} (X={finishBackStartX:F3}={finishSeamAnchor}-{finishOverlapMm:F3}), overlapMm={finishOverlapMm:F3}, guardWarn={startEndBFirstGuardApplied}");
 
             // 정책: Finish_Back 종료 기준점은 BackPointX + 0.0mm (safe split BACK 구간은 Xk)
@@ -1415,6 +1416,50 @@ namespace DentalAddin
                     throw new InvalidOperationException(
                         $"유지홈(retentionGroove)이 백엔드에서 전달되지 않았습니다. none 또는 deep이 필요합니다. (received='{shown}')");
             }
+        }
+
+        // Finish seam 겹침 = 2 × Finish 스텝 간격. Front(A)는 retentionGroove deep이면 0.20 오버라이드가 뒤에서 적용되므로 그 값을 쓴다.
+        private const int FinishSeamOverlapPitches = 2;
+
+        private static double ResolveFinishSeamOverlapMm(TechLatheMill5xComposite opA, TechLatheMill5xComposite opB)
+        {
+            double pitchA = TryResolveFinishFrontStepIncrementOverrideMm(out double overrideA)
+                ? overrideA
+                : TryReadCompositeStepIncrementMm(opA);
+            double pitchB = TryReadCompositeStepIncrementMm(opB);
+            double pitch = Math.Max(pitchA, pitchB);
+            if (!(pitch > 0.0))
+            {
+                DentalLogger.Log($"Composite2SplitLine2 - Finish 스텝 간격 해석 실패(A={pitchA:0.###}, B={pitchB:0.###}), 겹침 {GetFinishAdjacentOverlapMm():0.###}mm 유지");
+                return GetFinishAdjacentOverlapMm();
+            }
+            double overlap = pitch * FinishSeamOverlapPitches;
+            DentalLogger.Log($"Composite2SplitLine2 - Finish 겹침 = {FinishSeamOverlapPitches}피치 × {pitch:0.###} = {overlap:0.###}mm (A={pitchA:0.###}, B={pitchB:0.###})");
+            return overlap;
+        }
+
+        private static double TryReadCompositeStepIncrementMm(TechLatheMill5xComposite op)
+        {
+            if (op == null)
+            {
+                return 0.0;
+            }
+            try
+            {
+                object current = op.GetType().InvokeMember(
+                    "StepIncrement",
+                    BindingFlags.GetProperty,
+                    null,
+                    op,
+                    null,
+                    CultureInfo.InvariantCulture);
+                if (current is IConvertible convertible)
+                {
+                    return convertible.ToDouble(CultureInfo.InvariantCulture);
+                }
+            }
+            catch { }
+            return 0.0;
         }
 
         private static string TryFormatCompositeStepIncrement(TechLatheMill5xComposite op)

@@ -886,6 +886,7 @@ namespace DentalAddin
                 bool twoPhaseSplitReady = false;
                 double regionMinX = 0.0;
                 double regionMaxX = 0.0;
+                s_activeTurningZStockMm = effectiveTurningTechs.Count > 0 ? effectiveTurningTechs.Max(t => t.ZStock) : 0.0;
                 if (!string.IsNullOrWhiteSpace(twoPhaseRegion))
                 {
                     if (string.Equals(twoPhaseRegion, "BACK", StringComparison.OrdinalIgnoreCase))
@@ -1655,12 +1656,19 @@ namespace DentalAddin
             }
         }
 
-        // Back_Turn 끝 = Back_Rough 끝(BackPointX) + 황삭 공구 반경(D4 → 2.0). (2026-10-12)
-        // Tech_Default_Path.xml Turning Extend(4.0)·Exit angle(80)은 이 구간 계산에서 무시한다.
-        // 이후 BuildTurningRangeChain(appendExit45)이 45도 퇴출 + 90도 수직 퇴출을 붙인다.
+        // Back_Turn 수평 끝(툴패스 기준) = Back_Rough 끝(BackPointX) + 황삭 공구 반경(D4 → 2.0) + 여유. (2026-10-12)
+        // Turning.prc ZStock(0.3)만큼 45도 퇴출 모서리가 툴패스에서 tip 쪽으로 당겨지므로 체인 끝을 ZStock만큼 더 뺀다.
+        // Back_Rough 툴패스는 BackPointX보다 조금(≈0.15) 더 나가므로 BackTurnPastRoughMarginMm를 더한다.
+        // Tech_Default_Path.xml Turning Extend·Exit angle(80)은 이 구간 계산에서 무시한다.
+        private const double BackTurnPastRoughMarginMm = 0.5;
+        private static double s_activeTurningZStockMm;
+
         private static double ResolveBackTurnExitAllowance()
         {
-            return GetTurnPastRoughEndMm();
+            double zStock = Math.Max(0.0, s_activeTurningZStockMm);
+            double allowance = GetTurnPastRoughEndMm() + BackTurnPastRoughMarginMm + zStock;
+            DentalLogger.Log($"TurningOp BACK - 수평 끝 = BackPointX + R{GetTurnPastRoughEndMm():0.###} + 여유{BackTurnPastRoughMarginMm:0.###} + ZStock{zStock:0.###} = +{allowance:0.###}");
+            return allowance;
         }
 
         private static double ResolveBackTurningExtendForBackTurnRange()
@@ -1777,6 +1785,19 @@ namespace DentalAddin
                 }
 
                 const double eps = 1e-6;
+
+                // 소스 "Turning" 체인 = 트림된 프로파일(끝 EndXValue, LowerY) + ExtendTurning 꼬리(EndXValue+TurningExtend 수평, Exit angle 상승).
+                // 꼬리는 BackPointX+R 기준도 45도도 아니므로 버리고, 끝 형상은 아래에서 직접 만든다.
+                if (!SpindleSide && EndXValue > minX)
+                {
+                    int cut = pts.FindIndex(q => q[0] > EndXValue + 1e-4);
+                    if (cut > 0)
+                    {
+                        pts.RemoveRange(cut, pts.Count - cut);
+                        pts.Add(new[] { EndXValue, LowerY, pts[pts.Count - 1][2] });
+                    }
+                }
+
                 List<double[]> region = new List<double[]>();
 
                 for (int idx = 0; idx < pts.Count; idx++)
@@ -1837,6 +1858,14 @@ namespace DentalAddin
                 // Tech_Default_Path.xml Exit angle(80)은 이 3-stage 구간 체인에서 쓰지 않는다.
                 double exitTopY = (Document?.LatheMachineSetup?.BarDiameter ?? 0.0) / 2.0;
                 double[] lastPt = region[region.Count - 1];
+                // Back_Turn: 프로파일 끝(EndXValue, TurningProfile trim이 BackPointX 세그먼트를 제거해 BackPointX보다 짧음)에서
+                // maxX(= BackPointX + 황삭 공구 반경)까지 같은 반경으로 수평 연장한 뒤 45도로 퇴출한다.
+                if (maxX - lastPt[0] > 1e-4)
+                {
+                    region.Add(new[] { maxX, lastPt[1], lastPt[2] });
+                    lastPt = region[region.Count - 1];
+                }
+                DentalLogger.Log($"BuildTurningRangeChain - '{newName}' 끝 형상: profileEnd=({EndXValue:0.###},{LowerY:0.###}), 수평끝=({lastPt[0]:0.###},{lastPt[1]:0.###}), 45도→({lastPt[0] + Math.Max(0.0, exitTopY - lastPt[1]):0.###},{exitTopY:0.###})");
                 double risePast = exitTopY - lastPt[1];
                 if (exitTopY > 0.0)
                 {
