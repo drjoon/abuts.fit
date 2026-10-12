@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>abuts.fit 기공소 영업 브로셔 (A4 3단 · 양면)</title>
+<!--
+  A4 가로(297×210mm) 양면 3단 접지(C-fold).
+  1쪽 = 겉면  [왼쪽: 안쪽 날개 | 가운데: 뒷표지 | 오른쪽: 앞표지]
+  2쪽 = 속면  [왼쪽 | 가운데 | 오른쪽]
+  인쇄: 양면, 긴 변 뒤집기(좌우 넘김). 여백 없음(Chrome: 배율 100%, 머리글/바닥글 끔).
+  로고·색: src/components/branding/AbutsLogo.tsx, src/features/landing/landingTheme.ts
+  회사 정보: src/shared/lib/contactInfo.ts
+-->
+<style>
+  @page { size: 297mm 210mm; margin: 0; }
+  :root {
+    --navy: #0b2a5c;
+    --blue: #2563eb;
+    --sky: #eef6ff;
+    --sky-line: #cfe3fb;
+    --ink: #0f172a;
+    --body: #475569;
+    --muted: #64748b;
+    --bg: #f7f9fc;
+    --g1: #4c6cff; --g2: #8d6bff; --g3: #ff8656;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #d9dee7; }
+  body {
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+    color: var(--ink);
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    word-break: keep-all;
+    line-height: 1.5;
+  }
+  .sheet {
+    width: 297mm; height: 210mm; display: flex; overflow: hidden;
+    background: #fff; margin: 0 auto; page-break-after: always; break-after: page;
+    position: relative;
+  }
+  @media screen { .sheet { margin: 12px auto; box-shadow: 0 4px 24px rgba(0,0,0,.18); } }
+  .panel {
+    width: 99mm; height: 210mm; padding: 11mm 9mm 9mm; position: relative; overflow: hidden;
+    display: flex; flex-direction: column; background: var(--bg);
+  }
+  /* 접는 선 안내(화면 전용) */
+  @media screen { .panel + .panel { box-shadow: inset 1px 0 0 rgba(15,23,42,.08); } }
+
+  /* ---------- 공통 요소 ---------- */
+  .eyebrow {
+    display: inline-block; align-self: flex-start;
+    border: .25mm solid #bfdbfe; background: #eff6ff; color: #0369a1;
+    border-radius: 99mm; padding: .7mm 3mm; font-size: 6.2pt; font-weight: 700; letter-spacing: .18em;
+  }
+  h2 { font-size: 15.5pt; line-height: 1.28; letter-spacing: -.02em; color: var(--navy); margin: 3mm 0 2mm; font-weight: 800; }
+  .lead { font-size: 8.2pt; color: var(--body); line-height: 1.6; }
+  .grad { background: linear-gradient(90deg,#6e8bff,#a278ff,#ff9d62); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .logo { display: flex; align-items: center; gap: 2mm; }
+  .logo svg { width: 9mm; height: 9mm; }
+  .logo b { font-size: 15pt; font-weight: 700; letter-spacing: -.02em; }
+  .card {
+    background: #fff; border: .25mm solid var(--sky-line); border-radius: 3.2mm;
+    box-shadow: 0 1mm 3mm rgba(37,99,235,.07);
+  }
+  .fig { margin: 3mm 0 2.5mm; padding: 1.2mm; }
+  .fig img { display: block; width: 100%; border-radius: 2.2mm; border: .2mm solid #e2e8f0; }
+  .fig figcaption { display: flex; align-items: center; gap: 1.6mm; padding: 1.6mm 1mm .6mm; font-size: 6.6pt; color: var(--muted); }
+  .tag {
+    display: inline-block; background: var(--blue); color: #fff; font-weight: 700; font-size: 6.4pt;
+    border-radius: 99mm; padding: .35mm 2.2mm;
+  }
+  .no {
+    width: 4.4mm; height: 4.4mm; border-radius: 50%; background: var(--blue); color: #fff; font-size: 6.6pt; font-weight: 800;
+    display: grid; place-items: center; flex: none; margin-top: .4mm;
+  }
+  .steps { display: flex; flex-direction: column; gap: 2mm; margin-top: 1mm; }
+  .step { display: flex; gap: 2.2mm; font-size: 7.8pt; color: var(--body); line-height: 1.5; }
+  .step b { color: var(--navy); }
+  .num { font-size: 22pt; font-weight: 800; line-height: 1; letter-spacing: -.04em; }
+  .foot { margin-top: auto; padding-top: 3mm; font-size: 6pt; color: #94a3b8; display: flex; justify-content: space-between; align-items: center; border-top: .2mm solid #e2e8f0; }
+  .foot .logo svg { width: 4.2mm; height: 4.2mm; } .foot .logo b { font-size: 7.4pt; } .foot .logo { gap: 1.2mm; }
+
+  /* ---------- 앞표지 ---------- */
+  .cover {
+    background:
+      radial-gradient(ellipse at 15% 0%, rgba(56,189,248,.30), transparent 55%),
+      radial-gradient(ellipse at 100% 18%, rgba(141,107,255,.28), transparent 50%),
+      radial-gradient(ellipse at 80% 100%, rgba(255,134,86,.22), transparent 55%),
+      linear-gradient(170deg, #0b2a5c 0%, #071937 100%);
+    color: #fff;
+  }
+  .cover .hexbg { position: absolute; right: -26mm; top: 62mm; width: 104mm; opacity: .5; }
+  .cover .eyebrow { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.35); color: #dbeafe; }
+  .cover h1 { font-size: 24pt; line-height: 1.22; letter-spacing: -.035em; font-weight: 800; margin-top: 8mm; position: relative; }
+  .cover h1 span { display: block; }
+  .cover .sub { margin-top: 4mm; font-size: 9pt; line-height: 1.65; color: rgba(255,255,255,.82); position: relative; }
+  .cover .chips { margin-top: auto; display: flex; flex-direction: column; gap: 2mm; position: relative; }
+  .cover .chip {
+    display: flex; align-items: center; gap: 3mm; padding: 2.6mm 3.4mm; border-radius: 3mm;
+    background: rgba(255,255,255,.1); border: .25mm solid rgba(255,255,255,.22); font-size: 8.4pt;
+  }
+  .cover .chip i { font-style: normal; width: 5.4mm; height: 5.4mm; border-radius: 50%; background: #fff; color: var(--navy); display: grid; place-items: center; font-weight: 800; font-size: 7.4pt; flex: none; }
+  .cover .chip small { display: block; color: rgba(255,255,255,.7); font-size: 6.8pt; }
+  .cover .url { margin-top: 5mm; font-size: 8pt; color: rgba(255,255,255,.75); display: flex; justify-content: space-between; position: relative; }
+
+  /* ---------- 날개(안쪽 접힘) ---------- */
+  .flow { display: flex; align-items: stretch; gap: 1.4mm; margin: 3.5mm 0 3mm; }
+  .flow > div { flex: 1; text-align: center; padding: 2.4mm 1mm; border-radius: 2.6mm; font-size: 7pt; font-weight: 700; color: var(--navy); background: #fff; border: .25mm solid var(--sky-line); line-height: 1.35; }
+  .flow > div small { display: block; font-weight: 500; color: var(--muted); font-size: 6pt; }
+  .flow > div.me { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .flow > div.me small { color: #dbeafe; }
+  .flow .ar { flex: none; width: auto; border: 0; background: none; color: #93a4c0; display: grid; place-items: center; padding: 0; font-size: 8pt; }
+  .points { display: flex; flex-direction: column; gap: 2.2mm; margin-top: 1mm; }
+  .point { padding: 3mm 3.4mm; display: flex; gap: 2.8mm; }
+  .point .ic { width: 7mm; height: 7mm; border-radius: 2mm; background: var(--sky); color: var(--blue); display: grid; place-items: center; flex: none; }
+  .point .ic svg { width: 4.2mm; height: 4.2mm; }
+  .point h3 { font-size: 8.8pt; color: var(--navy); letter-spacing: -.01em; margin-bottom: .4mm; }
+  .point p { font-size: 7.4pt; color: var(--body); line-height: 1.5; }
+  .mfr { margin-top: 3mm; font-size: 6.8pt; color: var(--muted); text-align: center; }
+
+  /* ---------- 속면 ---------- */
+  .band { background: var(--sky); border: .25mm solid var(--sky-line); border-radius: 3mm; padding: 3mm 3.4mm; font-size: 7.6pt; color: var(--body); line-height: 1.55; }
+  .band b { color: var(--navy); }
+  .band.dark { background: var(--navy); border-color: var(--navy); color: rgba(255,255,255,.88); }
+  .band.dark b { color: #fff; }
+  .delivery { text-align: center; padding: 4mm 3mm; border: .35mm solid #93c5fd; background: #eff6ff; border-radius: 3mm; margin-top: 3mm; }
+  .delivery .t { font-size: 7.4pt; color: var(--blue); font-weight: 700; }
+  .delivery .h { font-size: 11.5pt; font-weight: 800; color: var(--navy); margin: 1mm 0; letter-spacing: -.02em; }
+  .delivery .s { font-size: 7.2pt; color: var(--muted); }
+  .route { display: flex; justify-content: space-between; align-items: center; gap: 1mm; margin-top: 3mm; }
+  .route div { flex: 1; text-align: center; font-size: 6.8pt; color: var(--body); }
+  .route div i { font-style: normal; display: grid; place-items: center; width: 8mm; height: 8mm; margin: 0 auto 1mm; border-radius: 50%; background: var(--sky); color: var(--blue); font-weight: 800; font-size: 8pt; }
+  .route .ar { flex: none; color: #cbd5e1; flex: 0 0 4mm; }
+  .facts { display: flex; flex-direction: column; margin-top: 1mm; border-top: .2mm solid #e2e8f0; }
+  .fact { display: flex; gap: 2.6mm; padding: 1.9mm 0; border-bottom: .2mm solid #e2e8f0; font-size: 7.2pt; color: var(--body); line-height: 1.5; }
+  .fact dt { flex: 0 0 15mm; font-weight: 800; color: var(--navy); }
+  .fact dd { flex: 1; }
+
+  /* ---------- 뒷표지 ---------- */
+  .back { background: #fff; padding-bottom: 8mm; }
+  .back .head { margin: -11mm -9mm 0; padding: 11mm 9mm 6mm; background: linear-gradient(170deg,#0b2a5c,#071937); color: #fff; }
+  .back .head h2 { color: #fff; margin: 3mm 0 1mm; }
+  .back .head p { font-size: 7.8pt; color: rgba(255,255,255,.78); }
+  .back .head .eyebrow { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.35); color: #dbeafe; }
+  .contact { display: flex; flex-direction: column; gap: 2.4mm; margin-top: 6mm; }
+  .contact div { display: flex; gap: 2.6mm; align-items: flex-start; font-size: 8pt; color: var(--body); }
+  .contact .k { flex: 0 0 11mm; font-weight: 800; color: var(--blue); font-size: 6.6pt; letter-spacing: .08em; padding-top: .5mm; }
+  .contact b { color: var(--navy); font-size: 12.5pt; letter-spacing: -.01em; }
+  .corp { margin-top: 4mm; font-size: 6.4pt; color: #94a3b8; line-height: 1.6; }
+  .cardslot-wrap { margin-top: auto; }
+  .cardslot-label { font-size: 6.4pt; color: var(--muted); margin-bottom: 1.6mm; display: flex; align-items: center; gap: 1.6mm; }
+  .cardslot-label::before { content: ""; flex: none; width: 1.6mm; height: 1.6mm; border-radius: 50%; background: var(--blue); }
+  .cardslot {
+    width: 90mm; height: 50mm; border: .35mm dashed #94a3b8; border-radius: 1.5mm; margin: 0 -4.5mm; /* 패널 폭 99mm 중앙 */
+    display: grid; place-items: center; text-align: center; color: #a3b1c6; font-size: 7.2pt; line-height: 1.7;
+    background:
+      linear-gradient(135deg, transparent 49.7%, #e8eef6 50%, transparent 50.3%) 0 0/6mm 6mm;
+  }
+  .cardslot span { background: #fff; padding: 1.2mm 3mm; border-radius: 99mm; }
+</style>
+</head>
+<body>
+
+<!-- 공통 SVG: abuts.fit 헥사곤 마크 (AbutsLogo.tsx와 동일 패스) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="gD" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6E8BFF"/><stop offset="50%" stop-color="#A278FF"/><stop offset="100%" stop-color="#FF9D62"/>
+    </linearGradient>
+    <linearGradient id="gL" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4C6CFF"/><stop offset="50%" stop-color="#8D6BFF"/><stop offset="100%" stop-color="#FF8656"/>
+    </linearGradient>
+    <symbol id="hexD" viewBox="0 0 64 64">
+      <path d="M32 4.5 56.5 18v28L32 59.5 7.5 46V18z" fill="#050b1d" fill-opacity=".55" stroke="url(#gD)" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M32 13 48.5 22.5v19L32 51 15.5 41.5v-19z" fill="url(#gD)" fill-opacity=".35" stroke="url(#gD)" stroke-width="1.4" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="hexL" viewBox="0 0 64 64">
+      <path d="M32 4.5 56.5 18v28L32 59.5 7.5 46V18z" fill="#f4f7ff" fill-opacity=".95" stroke="url(#gL)" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M32 13 48.5 22.5v19L32 51 15.5 41.5v-19z" fill="url(#gL)" fill-opacity=".55" stroke="url(#gL)" stroke-width="1.4" stroke-linejoin="round"/>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- ================= 1쪽 · 겉면 ================= -->
+<section class="sheet" id="outside">
+
+  <!-- 왼쪽: 안쪽 날개 (표지를 열면 처음 보임) -->
+  <div class="panel">
+    <span class="eyebrow">WHY ABUTS</span>
+    <h2>접수·디자인은 기공소가,<br />나머지는 어벗츠가.</h2>
+    <p class="lead">
+      치과·기공소·제조사를 하나의 흐름으로 잇는 임플란트 워크플로우 플랫폼입니다.
+    </p>
+
+    <div class="flow">
+      <div>치과<small>의뢰·스캔</small></div>
+      <div class="ar">›</div>
+      <div class="me">기공소<small>디자인</small></div>
+      <div class="ar">›</div>
+      <div>어벗츠<small>CNC·납품</small></div>
+    </div>
+
+    <div class="points">
+      <div class="card point">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/></svg></div>
+        <div><h3>한 보드에서 관리</h3><p>수신·작업시작·작업·완료를<br />한 화면에서 확인합니다.</p></div>
+      </div>
+      <div class="card point">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg></div>
+        <div><h3>AI 디자인 지향</h3><p>의뢰서 값으로 AI가 초안을 잡고,<br />기공사가 검수하고 마칩니다.</p></div>
+      </div>
+      <div class="card point">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></div>
+        <div><h3>CNC 생산은 어벗츠로</h3><p>디자인(STL)을 올리면<br />애크로덴트에서 바로 가공합니다.</p></div>
+      </div>
+      <div class="card point">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h4"/></svg></div>
+        <div><h3>수기 정산 감소</h3><p>크레딧·월 정산·계산서가<br />플랫폼 안에서 이어집니다.</p></div>
+      </div>
+      <div class="card point">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 11l7.6-4M8.2 13l7.6 4"/></svg></div>
+        <div><h3>신규 의뢰 기회</h3><p>어벗츠 네트워크를 통해<br />새로운 치과 의뢰를 받습니다.</p></div>
+      </div>
+    </div>
+
+    <p class="mfr">커스텀 어벗먼트 CNC 제조는 (주)애크로덴트가 담당합니다.</p>
+  </div>
+
+  <!-- 가운데: 뒷표지 + 명함 부착 공간 -->
+  <div class="panel back">
+    <div class="head">
+      <span class="eyebrow">CONTACT</span>
+      <h2>도입 상담은<br />영업 담당자에게.</h2>
+      <p>방문해 제품·사용 방법을 안내합니다.</p>
+    </div>
+
+    <div class="contact">
+      <div><span class="k">TEL</span><b>1588-3948</b></div>
+      <div><span class="k">MAIL</span><span>contact@abuts.fit</span></div>
+      <div><span class="k">WEB</span><span>abuts.fit</span></div>
+      <div><span class="k">본사</span><span>경상남도 거제시 거제중앙로29길 6, 3층(고현동)</span></div>
+    </div>
+
+    <p class="corp">
+      어벗츠 주식회사 · 대표 배태완<br />
+      사업자등록번호 358-87-03514
+    </p>
+
+    <div class="steps" style="margin-top:5mm;gap:2.2mm">
+      <div class="step"><span class="no">1</span><div><b>가입 · 사업자 등록</b><br />설정 › 사업자에서 통장 사본까지 등록합니다.</div></div>
+      <div class="step"><span class="no">2</span><div><b>크레딧 충전</b><br />정산 › 충전에서 입금하면 자동 매칭됩니다.</div></div>
+      <div class="step"><span class="no">3</span><div><b>STL 의뢰</b><br />기공의뢰 › 어벗츠로에서 바로 시작합니다.</div></div>
+    </div>
+
+    <div class="cardslot-wrap">
+      <div class="cardslot-label">담당 영업 명함을 이곳에 붙여 주세요 (90 × 50mm)</div>
+      <div class="cardslot"><span>명함 부착 공간</span></div>
+    </div>
+  </div>
+
+  <!-- 오른쪽: 앞표지 -->
+  <div class="panel cover">
+    <svg class="hexbg" viewBox="0 0 64 64" aria-hidden="true">
+      <path d="M32 4.5 56.5 18v28L32 59.5 7.5 46V18z" fill="none" stroke="url(#gD)" stroke-width=".8" stroke-linejoin="round"/>
+      <path d="M32 13 48.5 22.5v19L32 51 15.5 41.5v-19z" fill="url(#gD)" fill-opacity=".16" stroke="url(#gD)" stroke-width=".6" stroke-linejoin="round"/>
+    </svg>
+
+    <div class="logo"><svg><use href="#hexD"/></svg><b class="grad">abuts.fit</b></div>
+
+    <span class="eyebrow" style="margin-top:10mm">FOR DENTAL LAB · 기공소 안내</span>
+    <h1>
+      <span>접수·디자인에</span>
+      <span>집중하세요.</span>
+      <span class="grad" style="margin-top:1.5mm">CNC·배송·정산은<br />어벗츠가.</span>
+    </h1>
+    <p class="sub">
+      STL을 올리면 바로 생산하고,<br />
+      내일 도착합니다.
+    </p>
+
+    <div class="chips">
+      <div class="chip"><i>1</i><div>오늘 의뢰<small>STL 업로드 · 의뢰하기</small></div></div>
+      <div class="chip"><i>2</i><div>바로 생산<small>애크로덴트 CNC 가공</small></div></div>
+      <div class="chip"><i>3</i><div>내일 도착<small>익일 도착 딜리버리</small></div></div>
+    </div>
+    <div class="url"><span>치과 ↔ 기공소 ↔ 어벗츠</span><span>abuts.fit</span></div>
+  </div>
+</section>
+
+<!-- ================= 2쪽 · 속면 ================= -->
+<section class="sheet" id="inside">
+
+  <!-- 왼쪽: 01 커스텀어벗 주문 -->
+  <div class="panel">
+    <div style="display:flex;align-items:flex-end;gap:2.5mm">
+      <span class="num grad">01</span>
+      <span class="eyebrow">CUSTOM ABUTMENT</span>
+    </div>
+    <h2>커스텀어벗 주문,<br />STL 올리고 의뢰하기.</h2>
+
+    <figure class="card fig">
+      <img src="assets/fig1.png" alt="어벗츠로 의뢰 화면" />
+      <figcaption><span class="tag">첨1</span>기공의뢰 › 어벗츠로 · 의뢰 화면</figcaption>
+    </figure>
+
+    <div class="steps">
+      <div class="step"><span class="no">1</span><div><b>STL 추가</b><br />점선 영역을 클릭하거나 파일을 끌어놓습니다.</div></div>
+      <div class="step"><span class="no">2</span><div><b>옵션 확인</b><br />ExoCAD·아노다이징 설정을 확인합니다.</div></div>
+      <div class="step"><span class="no">3</span><div><b>의뢰하기</b><br />누르면 바로 생산에 들어갑니다.</div></div>
+    </div>
+
+    <div class="band" style="margin-top:3.5mm">
+      <b>환자·임플란트 정보는 다시 고르지 않습니다.</b><br />
+      의뢰서의 값이 그대로 디자인에 연결됩니다.
+    </div>
+    <div class="band" style="margin-top:2mm">
+      <b>진행 상황은 상단 뱃지에서.</b><br />
+      진행중 · 출고예정 · 완료 내역 · 불완전 가공을 한눈에 봅니다.
+    </div>
+    <div class="band" style="margin-top:2mm">
+      <b>AI가 초안, 기공사가 검수.</b><br />
+      스캔 정렬부터 보철 생성까지 AI가 먼저 잡고,<br />
+      사람이 확인하고 다듬습니다.
+    </div>
+
+    <div class="foot"><div class="logo"><svg><use href="#hexL"/></svg><b class="grad">abuts.fit</b></div><span>기공소 영업 안내 · 1/3</span></div>
+  </div>
+
+  <!-- 가운데: 02 배송 · 충전 -->
+  <div class="panel">
+    <div style="display:flex;align-items:flex-end;gap:2.5mm">
+      <span class="num grad">02</span>
+      <span class="eyebrow">DELIVERY · CREDIT</span>
+    </div>
+    <h2>익일 도착 배송,<br />크레딧으로 간편 결제.</h2>
+
+    <div class="delivery">
+      <div class="t">익일 도착 딜리버리</div>
+      <div class="h">오늘 주문하면 내일 도착합니다.</div>
+      <div class="s">배송비는 판매자 부담입니다.</div>
+    </div>
+    <div class="route">
+      <div><i>1</i>오늘 의뢰</div><span class="ar">›</span>
+      <div><i>2</i>바로 생산</div><span class="ar">›</span>
+      <div><i>3</i>내일 도착</div>
+    </div>
+    <p class="lead" style="margin-top:2.6mm;font-size:7.4pt">
+      가상 우편함·배송 추적으로<br />
+      “지금 어디?” 문의가 줄어듭니다.
+    </p>
+
+    <figure class="card fig" style="margin-top:3mm">
+      <img src="assets/fig2.png" alt="크레딧 충전 화면" />
+      <figcaption><span class="tag">첨2</span>정산 › 충전 · 크레딧(거래 선수금)</figcaption>
+    </figure>
+
+    <dl class="facts">
+      <div class="fact"><dt>충전</dt><dd>50만원 단위로 충전합니다.<br />입금자명 코드로 자동 매칭됩니다.</dd></div>
+      <div class="fact"><dt>성격</dt><dd>선불페이가 아닌 B2B 거래 선수금입니다.<br />미사용 잔액은 요청 시 환불합니다.</dd></div>
+      <div class="fact"><dt>계산서</dt><dd>충전 시에는 발행하지 않습니다.<br />사용분을 월 합산해 면세 계산서로 발행합니다.</dd></div>
+    </dl>
+
+    <div class="foot"><div class="logo"><svg><use href="#hexL"/></svg><b class="grad">abuts.fit</b></div><span>기공소 영업 안내 · 2/3</span></div>
+  </div>
+
+  <!-- 오른쪽: 03 정산 · 정책 -->
+  <div class="panel">
+    <div style="display:flex;align-items:flex-end;gap:2.5mm">
+      <span class="num grad">03</span>
+      <span class="eyebrow">SETTLEMENT · POLICY</span>
+    </div>
+    <h2>작업 완료되면 적립,<br />매월 자동 지급.</h2>
+
+    <figure class="card fig">
+      <img src="assets/fig3.png" alt="기공크레딧 지급 화면" />
+      <figcaption><span class="tag">첨3</span>정산 › 지급 · 기공크레딧 잔액·월 지급</figcaption>
+    </figure>
+
+    <dl class="facts">
+      <div class="fact"><dt>보철 적립</dt><dd>디자인 파일을 올려 작업완료되면<br />기공크레딧으로 적립합니다.</dd></div>
+      <div class="fact"><dt>커스텀어벗</dt><dd>STL 업로드와 어벗츠 생산비 지급 뒤 확정됩니다.<br />그전까지는 적립 보류입니다.</dd></div>
+      <div class="fact"><dt>월 지급</dt><dd>매월 등록 계좌로 자동 지급합니다.<br />다음 달 초 사용을 위해 50만원은 남깁니다.</dd></div>
+      <div class="fact"><dt>통장 사본</dt><dd>지급일까지 없으면 이번 달 지급분은<br />다음 달로 이월됩니다.<br />설정 › 사업자에서 등록합니다.</dd></div>
+      <div class="fact"><dt>사용·상계</dt><dd>차감 순서는 무료 → 기공 → 유료입니다.<br />기공크레딧 사용분은 월 정산에서 상계합니다.</dd></div>
+      <div class="fact"><dt>취소</dt><dd>취소·롤백 시 해당 적립은 삭제됩니다.</dd></div>
+      <div class="fact"><dt>계산서</dt><dd>부가세 없는 면세 계산서입니다.</dd></div>
+    </dl>
+
+    <div class="band dark" style="margin-top:3mm">
+      <b>거래 단가·시작 방법은</b><br />
+      영업 담당자가 방문해 안내합니다.
+    </div>
+
+    <div class="foot"><div class="logo"><svg><use href="#hexL"/></svg><b class="grad">abuts.fit</b></div><span>기공소 영업 안내 · 3/3</span></div>
+  </div>
+</section>
+
+</body>
+</html>

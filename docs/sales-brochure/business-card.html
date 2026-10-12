@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>abuts.fit 영업 담당자 명함 (90×50mm, 재단선 3mm 포함)</title>
+<!--
+  명함 90×50mm. 재단 여백(블리드) 3mm 포함 → 용지 96×56mm. 1쪽 = 앞면(담당자), 2쪽 = 뒷면(로고).
+  담당자별로 본문의 EDIT 주석이 붙은 3곳(성명·직책·휴대폰)만 바꾼 뒤 PDF를 다시 뽑는다.
+  브로셔 뒷표지 명함 칸 = 90×50mm, 같은 크기.
+-->
+<style>
+  @page { size: 96mm 56mm; margin: 0; }
+  :root { --navy:#0b2a5c; --blue:#2563eb; --body:#475569; --muted:#64748b; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #d9dee7; }
+  body {
+    font-family: "Pretendard","Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; word-break: keep-all;
+  }
+  .face { width: 96mm; height: 56mm; position: relative; overflow: hidden; page-break-after: always; break-after: page; margin: 0 auto; }
+  @media screen { .face { margin: 12px auto; box-shadow: 0 4px 18px rgba(0,0,0,.2); } }
+  /* 재단선 안쪽 안전 영역: 블리드 3mm + 안전 4mm */
+  .safe { position: absolute; inset: 7mm; display: flex; flex-direction: column; }
+  .grad { background: linear-gradient(90deg,#6e8bff,#a278ff,#ff9d62); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .logo { display:flex; align-items:center; gap: 1.6mm; }
+  .logo svg { width: 6.6mm; height: 6.6mm; } .logo b { font-size: 11pt; font-weight: 700; letter-spacing: -.02em; }
+
+  /* 앞면: 담당자 정보 (라이트) */
+  .front { background: radial-gradient(ellipse at 100% 0%, rgba(56,189,248,.18), transparent 55%), linear-gradient(180deg,#f8fafc,#eef4fb); }
+  .front::before { content:""; position:absolute; left:0; top:0; bottom:0; width: 4.2mm; background: linear-gradient(180deg,#4c6cff,#8d6bff,#ff8656); }
+  .front .safe { left: 10mm; }
+  .front .top { display:flex; justify-content: space-between; align-items:flex-start; }
+  .front .role { font-size: 5.6pt; letter-spacing: .16em; color: var(--blue); font-weight: 700; }
+  .front .name { margin-top: 6mm; font-size: 15pt; font-weight: 800; color: var(--navy); letter-spacing: -.03em; line-height: 1.1; }
+  .front .title { margin-top: 1mm; font-size: 7pt; color: var(--muted); font-weight: 600; }
+  .front .info { margin-top: auto; display:flex; flex-direction: column; gap: .9mm; font-size: 6.4pt; color: var(--body); line-height: 1.45; }
+  .front .info div { display:flex; gap: 2mm; }
+  .front .info i { font-style: normal; flex: 0 0 9.5mm; color: var(--blue); font-weight: 800; font-size: 5.4pt; letter-spacing: .08em; padding-top: .2mm; }
+  .front .info b { color: var(--navy); font-weight: 800; }
+
+  /* 뒷면: 로고 (다크) */
+  .back {
+    color:#fff;
+    background:
+      radial-gradient(ellipse at 15% 0%, rgba(56,189,248,.30), transparent 55%),
+      radial-gradient(ellipse at 100% 20%, rgba(141,107,255,.28), transparent 50%),
+      radial-gradient(ellipse at 80% 100%, rgba(255,134,86,.22), transparent 55%),
+      linear-gradient(170deg,#0b2a5c,#071937);
+  }
+  .back .hexbg { position:absolute; right:-14mm; top:-4mm; width: 62mm; opacity:.55; }
+  .back .safe { justify-content: space-between; }
+  .back .logo svg { width: 10mm; height: 10mm; } .back .logo b { font-size: 17pt; }
+  .back h1 { font-size: 10.5pt; line-height: 1.35; letter-spacing: -.02em; font-weight: 800; position: relative; }
+  .back .site { font-size: 6.4pt; color: rgba(255,255,255,.75); display:flex; justify-content: space-between; position: relative; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="gD" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#6E8BFF"/><stop offset="50%" stop-color="#A278FF"/><stop offset="100%" stop-color="#FF9D62"/></linearGradient>
+    <linearGradient id="gL" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#4C6CFF"/><stop offset="50%" stop-color="#8D6BFF"/><stop offset="100%" stop-color="#FF8656"/></linearGradient>
+    <symbol id="hexD" viewBox="0 0 64 64">
+      <path d="M32 4.5 56.5 18v28L32 59.5 7.5 46V18z" fill="#050b1d" fill-opacity=".55" stroke="url(#gD)" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M32 13 48.5 22.5v19L32 51 15.5 41.5v-19z" fill="url(#gD)" fill-opacity=".35" stroke="url(#gD)" stroke-width="1.4" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="hexL" viewBox="0 0 64 64">
+      <path d="M32 4.5 56.5 18v28L32 59.5 7.5 46V18z" fill="#f4f7ff" fill-opacity=".95" stroke="url(#gL)" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M32 13 48.5 22.5v19L32 51 15.5 41.5v-19z" fill="url(#gL)" fill-opacity=".55" stroke="url(#gL)" stroke-width="1.4" stroke-linejoin="round"/>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- 앞면 -->
+<section class="face front">
+  <div class="safe">
+    <div class="top">
+      <div class="logo"><svg><use href="#hexL"/></svg><b class="grad">abuts.fit</b></div>
+      <span class="role">어벗츠 주식회사</span>
+    </div>
+    <!-- EDIT: 성명 --><div class="name">홍길동</div>
+    <!-- EDIT: 직책 --><div class="title">영업 담당자</div>
+    <div class="info">
+      <!-- EDIT: 휴대폰 --><div><i>MOBILE</i><b>010-0000-0000</b></div>
+      <div><i>TEL</i><span>1588-3948</span></div>
+      <div><i>MAIL</i><span>contact@abuts.fit</span></div>
+      <div><i>본사</i><span>경상남도 거제시 거제중앙로29길 6, 3층(고현동)</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 뒷면 -->
+<section class="face back">
+  <svg class="hexbg" viewBox="0 0 64 64" aria-hidden="true">
+    <path d="M32 4.5 56.5 18v28L32 59.5 7.5 46V18z" fill="none" stroke="url(#gD)" stroke-width=".8" stroke-linejoin="round"/>
+    <path d="M32 13 48.5 22.5v19L32 51 15.5 41.5v-19z" fill="url(#gD)" fill-opacity=".16" stroke="url(#gD)" stroke-width=".6" stroke-linejoin="round"/>
+  </svg>
+  <div class="safe">
+    <div class="logo"><svg><use href="#hexD"/></svg><b class="grad">abuts.fit</b></div>
+    <h1>접수·디자인에 집중하세요.<br /><span class="grad">CNC·배송·정산은 어벗츠가.</span></h1>
+    <div class="site"><span>치과 ↔ 기공소 ↔ 어벗츠</span><span>abuts.fit</span></div>
+  </div>
+</section>
+
+</body>
+</html>

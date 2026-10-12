@@ -31,7 +31,8 @@ web/backend/scripts/db/seed/.essential-accounts.config.json
 web/backend/scripts/db/seed/.bulk-accounts.config.json
 web/backend/scripts/db/seed/.bulk-accounts.json
 # cam
-docs
+docs/*
+!docs/sales-brochure/
 # hi-link
 
 storage
