@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-10-13: 같은 가공 중단의 tick·fail·alarm 알림은 한 건으로 합친다.
 // - 2026-10-10: 가공 알람은 장비별로 쌓고, 알람 원문(헤드·type·no)을 함께 저장한다.
 // - 2026-10-09: 장비 자동가공 플래그를 준비·가공 공통 스위치와 맞춘다.
 // - 2026-10-06: 더미를 Next Up에 넣은 뒤 Complete 슬롯도 다시 불러온다.
@@ -49,10 +50,14 @@ import { useCncProgramEditor } from "@/features/manufacturer/cnc/hooks/useCncPro
 import { useCncRaw } from "@/features/manufacturer/cnc/hooks/useCncRaw";
 import { useMachineStatusStore } from "@/store/useMachineStatusStore";
 import type { PlaylistJobItem } from "@/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer";
-import type {
-  MachiningAlarmDetail,
-  MachiningAlertItem,
-} from "../components/MachiningAlertModal";
+import type { MachiningAlertItem } from "../components/MachiningAlertModal";
+import {
+  collapseMachiningAlerts,
+  humanAlarmText,
+  isMaterialExhaustedAlarmText,
+  normalizeAlarmDetails,
+  readAlarmDetails,
+} from "../machiningAlertIncident";
 import type {
   QueueItem,
   QueueMap,
@@ -95,23 +100,6 @@ const isQueueItemRunning = (item?: QueueItem | null) => {
 };
 
 const ALERTS_PER_MACHINE = 8;
-
-function normalizeAlarmDetails(raw: unknown): MachiningAlarmDetail[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.slice(0, 12).map((alarm: any) => ({
-    headType:
-      alarm?.headType != null
-        ? Number(alarm.headType)
-        : alarm?.headtype != null
-          ? Number(alarm.headtype)
-          : null,
-    type: alarm?.type != null ? String(alarm.type) : "",
-    no: alarm?.no != null ? String(alarm.no) : "",
-    message: String(alarm?.message || "").trim(),
-    displayText: String(alarm?.displayText || alarm?.message || "").trim(),
-    source: String(alarm?.source || "").trim(),
-  }));
-}
 
 function asAlertList(value: unknown): MachiningAlertItem[] {
   if (Array.isArray(value)) {
@@ -387,7 +375,12 @@ export const useMachiningBoard = ({
       const next: Record<string, MachiningAlertItem[]> = {};
       for (const [machineId, value] of Object.entries(parsed)) {
         const list = asAlertList(value);
-        if (list.length) next[machineId] = list.slice(0, ALERTS_PER_MACHINE);
+        if (list.length) {
+          next[machineId] = collapseMachiningAlerts(list).slice(
+            0,
+            ALERTS_PER_MACHINE,
+          );
+        }
       }
       setMachiningAlertMap(next);
     } catch {
@@ -466,7 +459,7 @@ export const useMachiningBoard = ({
       const reason = String(payload?.reason || "").trim();
       const alarms = normalizeAlarmDetails(payload?.alarms);
 
-      const fingerprint = `${mid}|${rid || ""}|${code || ""}|${msg}`;
+      const fingerprint = `${mid}|${rid || ""}|${jobId || ""}|${code || ""}|${msg}`;
       const now = Date.now();
       const last = recentAlertFingerprintRef.current[fingerprint] ?? 0;
       if (now - last < 5000) return;
@@ -474,12 +467,6 @@ export const useMachiningBoard = ({
 
       setMachiningAlertMap((prev) => {
         const list = asAlertList(prev[mid]);
-        const prevItem = list[0];
-        const sameReason =
-          prevItem &&
-          prevItem.requestId === rid &&
-          prevItem.errorCode === code &&
-          prevItem.message === msg;
         const nextItem: MachiningAlertItem = {
           machineId: mid,
           requestId: rid,
@@ -491,12 +478,14 @@ export const useMachiningBoard = ({
           alarms,
           source: "live",
           updatedAt: new Date().toISOString(),
-          count: Number(sameReason ? prevItem?.count || 0 : 0) + 1,
+          count: 1,
         };
-        const rest = sameReason ? list.slice(1) : list;
         return {
           ...prev,
-          [mid]: [nextItem, ...rest].slice(0, ALERTS_PER_MACHINE),
+          [mid]: collapseMachiningAlerts([nextItem, ...list]).slice(
+            0,
+            ALERTS_PER_MACHINE,
+          ),
         };
       });
     },
@@ -800,7 +789,10 @@ export const useMachiningBoard = ({
             source: "queue",
           });
         }
-        const combined = [...queueAlerts, ...live].slice(0, ALERTS_PER_MACHINE);
+        const combined = collapseMachiningAlerts([
+          ...queueAlerts,
+          ...live,
+        ]).slice(0, ALERTS_PER_MACHINE);
         const prevList = asAlertList(next[mid]);
         const same =
           prevList.length === combined.length &&
@@ -1920,37 +1912,42 @@ export const useMachiningBoard = ({
         .toUpperCase();
       if (phase === "ALARM") {
         const rid = data?.requestId != null ? String(data.requestId).trim() : "";
-        let alarmText = String(data?.message || "").trim();
-        if (alarmText) {
-          try {
-            const parsed = JSON.parse(alarmText);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              const summary = parsed
-                .slice(0, 3)
-                .map(
-                  (alarm: any) =>
-                    alarm?.displayText ||
-                    alarm?.message ||
-                    `type=${String(alarm?.type ?? "")}, no=${String(alarm?.no ?? "")}`,
-                )
-                .join(" / ");
-              if (summary) alarmText = summary;
-            }
-          } catch {
-            // message가 JSON 문자열이 아닐 수 있음
-          }
-        }
+        const rawMessage = String(data?.message || "").trim();
+        const parsedAlarms = readAlarmDetails(data?.alarms);
+        const messageAlarms = readAlarmDetails(rawMessage);
+        const alarms = parsedAlarms.length ? parsedAlarms : messageAlarms;
+        const alarmText =
+          humanAlarmText(
+            alarms.map(
+              (alarm) =>
+                alarm.displayText ||
+                alarm.message ||
+                `type=${alarm.type}, no=${alarm.no}`,
+            ),
+          ) ||
+          humanAlarmText([rawMessage]) ||
+          "CNC 알람 감지";
 
         upsertMachiningAlert({
           machineId: mid,
           requestId: rid || null,
           jobId: data?.jobId != null ? String(data.jobId) : null,
           errorCode: null,
-          message: "ALARM",
-          reason: String(data?.message || "").trim(),
-          alarmText: alarmText || "CNC 알람 감지",
-          alarms: data?.alarms,
+          message: alarmText,
+          reason: alarmText,
+          alarmText,
+          alarms,
         });
+        if (
+          isMaterialExhaustedAlarmText(alarmText) ||
+          isMaterialExhaustedAlarmText(rawMessage)
+        ) {
+          toast({
+            title: `${mid} 소재 알람`,
+            description: alarmText,
+            variant: "destructive",
+          });
+        }
       }
 
       if (LIVE_MACHINING_PHASES.has(phase)) {

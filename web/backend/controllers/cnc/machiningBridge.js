@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 // change-log:
+// - 2026-10-13: 가공 tick의 ALARM은 진행 상태만 갱신한다. 알람 건은 fail 알림 하나다.
 // - 2026-10-10: 가공 완료 NC 툴번호는 S3 스트림으로 읽고, 본문은 메모리에 올리지 않는다.
 // - 2026-10-10: 가공 오류(ALARM/FAILED)가 난 건은 자동으로 다시 집지 않는다. 자동 승인 직후 30초는 시작하지 않는다.
 // - 2026-10-09: 테스트 계정은 작업자 수동 가공 승인 전 auto-next에서 건너뛴다.
@@ -822,6 +823,14 @@ function resolveCompletedRecordLabels(rec, reqInfo) {
   };
 }
 
+function isMachineStatusOnlyAlarm(alarm) {
+  const source = String(alarm?.source || "");
+  if (source.startsWith("MachineStatusType.")) return true;
+  const type = Number(alarm?.type);
+  const no = Number(alarm?.no);
+  return type === -1 && (no === -1 || no === 0);
+}
+
 async function fetchMachineAlarmsFromBridge(machineId) {
   const mid = String(machineId || "").trim();
   if (!mid) return [];
@@ -864,12 +873,14 @@ async function fetchMachineAlarmsFromBridge(machineId) {
   );
 
   const seen = new Set();
-  return results.flat().filter((alarm) => {
+  const flat = results.flat().filter((alarm) => {
     const key = `${alarm?.headType ?? ""}:${alarm?.type ?? ""}:${alarm?.no ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+  const concrete = flat.filter((alarm) => !isMachineStatusOnlyAlarm(alarm));
+  return concrete.length ? concrete : flat;
 }
 
 const LAST_COMPLETED_CACHE_TTL_MS = 3_000;
@@ -2347,27 +2358,6 @@ export async function recordMachiningTickForBridge(req, res) {
         io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-tick", payload);
       }
       io.emit("cnc-machining-tick", payload);
-
-      if (phaseUpper === "ALARM") {
-        const alarms = await fetchMachineAlarmsFromBridge(mid);
-        console.log(
-          `[bridge:machining:tick] ALARM detected, emitting cnc-machining-alarm event`,
-          {
-            machineId: mid,
-            requestId: requestId || null,
-            message,
-            alarms,
-          },
-        );
-        io.emit("cnc-machining-alarm", {
-          machineId: mid,
-          jobId: jobId || null,
-          requestId: requestId || null,
-          message: message || null,
-          alarms,
-          alarmAt: now,
-        });
-      }
     } catch {
       // ignore
     }
@@ -3115,15 +3105,6 @@ export async function recordMachiningFailForBridge(req, res) {
         io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-failed", payload);
       }
       io.emit("cnc-machining-failed", payload);
-      io.emit("cnc-machining-alarm", {
-        machineId: mid,
-        jobId: jobId || null,
-        requestId: requestId || null,
-        message: reason || "FAILED",
-        errorCode: errorCode || null,
-        alarms,
-        alarmAt: now,
-      });
     } catch {
       // ignore
     }

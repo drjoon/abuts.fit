@@ -3,6 +3,7 @@
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/cnc/production.js
 // change-log:
+// - 2026-10-13: 가공 실패는 fail 통지 한 번. ALARM tick을 같이 보내지 않는다.
 // - 2026-10-10: Next Up 파일은 시작 직전에 S3에서 temp로 흘린다. 바이트 배열로 올리지 않는다.
 // - 2026-09-29: 가공 완료 시 register-file(sourceStep=cnc) 통지를 뺀다. 완료 신호는 machining/complete 하나.
 // - 2026-08-30: RUNNING 자동중단은 PowerOff/Alarm 만. Stop·통신실패 추정 중단은 오탐 위험으로 제거. 사용자 중단은 AbortForUserStop.
@@ -1074,8 +1075,6 @@ state.MockCompletionDueUtc = DateTime.MinValue;
 }
 if (shouldSendAwaitingAlarm)
 {
-var awaitingAlarmJson = Newtonsoft.Json.JsonConvert.SerializeObject(awaitingAlarms);
-_ = Task.Run(() => NotifyMachiningTick(awaitingJob, machineId, "ALARM", awaitingAlarmJson));
 _ = Task.Run(() => NotifyMachiningFailed(awaitingJob, machineId, "alarm", awaitingAlarms, "CNC_ALARM_DETECTED"));
 }
 Console.WriteLine("[CncMachining] awaiting-start alarm machine={0} alarms={1}", machineId, Newtonsoft.Json.JsonConvert.SerializeObject(awaitingAlarms));
@@ -1829,7 +1828,11 @@ private static void FailRunningJob(
             state.LastMachiningFailJobId = jobId;
         }
         var job = state.CurrentJob;
-        _ = Task.Run(() => NotifyMachiningTick(job, machineId, tickPhase ?? "ALARM", alarmJson));
+        var phase = string.IsNullOrWhiteSpace(tickPhase) ? "ALARM" : tickPhase;
+        if (!string.Equals(phase, "ALARM", StringComparison.OrdinalIgnoreCase))
+        {
+            _ = Task.Run(() => NotifyMachiningTick(job, machineId, phase, alarmJson));
+        }
         _ = Task.Run(() => NotifyMachiningFailed(job, machineId, reason, alarms, errorCode));
     }
 

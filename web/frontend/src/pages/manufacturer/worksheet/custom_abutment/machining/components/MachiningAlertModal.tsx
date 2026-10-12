@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/hooks/useMachiningBoard.ts
 // change-log:
+// - 2026-10-13: 장비별 알람. 같은 중단은 한 건으로 보이고, 알람 JSON은 사유에 두지 않는다.
 // - 2026-10-10: 장비별 알람. 헤드·코드·의뢰·시각을 나눠 보여 준다.
 import {
   Dialog,
@@ -11,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AlertTriangle } from "lucide-react";
+import { humanAlarmText } from "../machiningAlertIncident";
 
 export type MachiningAlarmDetail = {
   headType?: number | null;
@@ -115,7 +117,11 @@ export function MachiningAlertModal({
               const rid = String(alert.requestId || "").trim();
               const label = rid ? requestLabels?.[rid] || "" : "";
               const alarms = Array.isArray(alert.alarms) ? alert.alarms : [];
-              const reason = String(alert.reason || alert.message || "").trim();
+              const reason = humanAlarmText([
+                alert.reason,
+                alert.message,
+                alert.alarmText,
+              ]);
               return (
                 <div
                   key={`${alert.machineId}-${rid}-${alert.updatedAt}-${index}`}
