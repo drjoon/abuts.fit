@@ -9,6 +9,7 @@ import ChargeOrder from "../models/chargeOrder.model.js";
 import StoreOrder from "../models/storeOrder.model.js";
 import BankTransaction from "../models/bankTransaction.model.js";
 import User from "../models/user.model.js";
+import BusinessAnchor from "../models/businessAnchor.model.js";
 import AdminSmsTemplate from "../models/adminSmsTemplate.model.js";
 
 import { postGeneralLedgerJournal } from "../services/generalLedger.service.js";
@@ -102,6 +103,65 @@ export async function notifyChargePrepaidApplied({
   } catch (err) {
     console.error("[chargePrepaidNotify] failed:", err?.message || err);
   }
+}
+
+function normalizePayerName(input) {
+  return String(input || "")
+    .replace(/주식회사|\(주\)|㈜|유한회사|\(유\)/g, "")
+    .replace(/[^0-9A-Za-z가-힣]/g, "")
+    .toLowerCase();
+}
+
+/**
+ * 입금자명(printedContent)이 사업자명 또는 대표자명과 일치하는지: OK | MISMATCH | UNKNOWN.
+ * 은행이 이름을 잘라 보내므로 접두 일치도 허용한다.
+ * 입금자명이 없거나(코드만 수신) 비교할 이름이 없으면 UNKNOWN(통과).
+ */
+export function isPayerNameMatchingAnchor(printedContent, anchor) {
+  const candidates = [
+    anchor?.metadata?.companyName,
+    anchor?.name,
+    anchor?.metadata?.representativeName,
+  ]
+    .map(normalizePayerName)
+    .filter((s) => s.length >= 2);
+  if (candidates.length === 0) return "UNKNOWN";
+
+  // 입금코드만 찍혀 오면(글자 없음) 입금자명을 알 수 없다 → 코드 매칭을 신뢰한다.
+  const letters = normalizePayerName(String(printedContent || "").replace(/\d/g, ""));
+  if (letters.length < 2) return "UNKNOWN";
+  return candidates.some(
+    (c) => letters.includes(c) || c.includes(letters) || c.startsWith(letters),
+  )
+    ? "OK"
+    : "MISMATCH";
+}
+
+/**
+ * 입금자명 대조 결과만 tx에 기록한다(참고용). 입금코드가 맞으면 자동매칭은 막지 않는다.
+ * 항상 false를 반환한다.
+ */
+async function rejectIfPayerNameMismatch({ tx, businessAnchorId }) {
+  const anchor = businessAnchorId
+    ? await BusinessAnchor.findById(businessAnchorId)
+        .select({ name: 1, "metadata.companyName": 1, "metadata.representativeName": 1 })
+        .lean()
+    : null;
+  const next = isPayerNameMatchingAnchor(tx?.printedContent, anchor);
+  const ok = next !== "MISMATCH";
+  if (tx?.payerNameCheck !== next) {
+    await BankTransaction.updateOne(
+      { _id: tx._id, status: "NEW" },
+      { $set: { payerNameCheck: next } },
+    );
+  }
+  if (!ok) {
+    console.warn("[autoMatch] 입금자명 불일치(입금코드 일치로 진행)", {
+      bankTransactionId: String(tx._id),
+      businessAnchorId: String(businessAnchorId || ""),
+    });
+  }
+  return false;
 }
 
 export function extractDepositCodeFromText(text) {
@@ -342,6 +402,9 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
 }
 
 async function matchTxWithStoreOrder({ tx, order }) {
+  if (await rejectIfPayerNameMismatch({ tx, businessAnchorId: order.businessAnchorId })) {
+    return false;
+  }
   const session = await mongoose.startSession();
   let matched = false;
   try {
@@ -402,6 +465,9 @@ async function matchTxWithStoreOrder({ tx, order }) {
 }
 
 async function matchTxWithOrder({ tx, order }) {
+  if (await rejectIfPayerNameMismatch({ tx, businessAnchorId: order.businessAnchorId })) {
+    return false;
+  }
   const session = await mongoose.startSession();
   let matchedChargeDelta = 0;
 

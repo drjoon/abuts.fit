@@ -127,8 +127,17 @@ export async function verifyBusinessNumber({
   businessNumber,
   companyName,
   representativeName,
-  startDate, // YYYYMMDD, optional
+  startDate, // YYYYMMDD
+  // B2B 가입 검증 모드:
+  // - 홈택스 장애 시 통과시키지 않고 pending(복구 후 자동 재검증)을 돌려준다.
+  // - 공동대표 등으로 대표자명이 국세청과 달라도 사업자 상태(계속사업자)만 맞으면 통과한다.
+  deferOnOutage: deferOption = false,
 }) {
+  // 로컬/테스트에서 키가 없으면 기존 우회 동작 유지(운영은 항상 적용)
+  const keyMissingOutsideProd =
+    !String(process.env.HOMETAX_SERVICE_KEY || "").trim() &&
+    process.env.NODE_ENV !== "production";
+  const strict = deferOption && !keyMissingOutsideProd;
   const digits = normalizeBusinessNumberDigits(businessNumber);
   if (!digits) {
     return {
@@ -189,6 +198,16 @@ export async function verifyBusinessNumber({
               message: validateResp.message,
             },
           );
+          if (strict) {
+            return {
+              verified: false,
+              provider: "hometax",
+              pending: true,
+              message:
+                "홈택스 장애로 사업자 확인이 지연되고 있습니다. 복구되면 자동으로 처리됩니다.",
+              raw: { validateError: true },
+            };
+          }
           validateApiError = true;
           break outer;
         }
@@ -209,6 +228,7 @@ export async function verifyBusinessNumber({
 
     // validate API 서버 오류로 중단된 경우에는 status-only 검증으로 fallback
     if (
+      !strict &&
       !validateApiError &&
       representativeCandidates.length &&
       companyCandidates.length &&
@@ -226,6 +246,16 @@ export async function verifyBusinessNumber({
 
   // 2) 상태조회 결과 수집 (이미 병렬로 시작됨)
   const statusResp = await statusPromise;
+  if (!statusResp.ok && strict) {
+    return {
+      verified: false,
+      provider: "hometax",
+      pending: true,
+      message:
+        "홈택스 장애로 사업자 확인이 지연되고 있습니다. 복구되면 자동으로 처리됩니다.",
+      raw: { statusError: true },
+    };
+  }
   if (!statusResp.ok) {
     // status API 서버 오류(일시적 장애 등)는 등록을 차단하지 않는다
     // validate API fallback과 동일한 정책: 홈택스 서버 장애 시 검증 우회

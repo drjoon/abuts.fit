@@ -571,6 +571,8 @@ export async function getMyBusiness(req, res) {
         parentBusinessAnchorId: parentId || null,
         hasBusinessNumber,
         businessVerified,
+        // 홈택스 장애로 검증 보류 중(복구 후 자동 처리)
+        verificationPending: !businessVerified && !!anchor?.verificationPendingAt,
         metadata, // SSOT
         businessLicense: anchor?.businessLicense || null,
         payoutAccount: anchor?.payoutAccount || {},

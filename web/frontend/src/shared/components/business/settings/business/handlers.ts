@@ -409,6 +409,7 @@ export const handleSave = async (
     const verification = verificationRaw
       ? {
           verified: Boolean(verificationRaw?.verified),
+          pending: Boolean(verificationRaw?.pending),
           provider: String(verificationRaw?.provider || "").trim() || undefined,
           message: String(verificationRaw?.message || "").trim() || undefined,
           checkedAt:
@@ -422,6 +423,14 @@ export const handleSave = async (
       phone: normalizedPhoneNumber,
       businessNumber: normalizedBusinessNumber,
     }));
+
+    if (verification?.pending) {
+      toast({
+        title: "홈택스 장애로 사업자 확인이 지연되고 있어요",
+        description: "복구되면 자동으로 처리됩니다. 별도 조치는 필요 없어요.",
+        duration: 6000,
+      });
+    }
 
     if (welcomeFreeCreditGranted && welcomeFreeCreditAmount > 0) {
       const formatted = new Intl.NumberFormat("ko-KR").format(

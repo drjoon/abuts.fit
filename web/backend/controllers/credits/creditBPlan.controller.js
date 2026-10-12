@@ -96,6 +96,18 @@ export async function createChargeOrder(req, res) {
     });
   }
 
+  // B2B 전용: 검증된 사업자만 충전(무통장) 주문 가능
+  const payerAnchor = await BusinessAnchor.findById(businessAnchorId)
+    .select({ status: 1 })
+    .lean();
+  if (String(payerAnchor?.status || "").trim() !== "verified") {
+    return res.status(403).json({
+      success: false,
+      reason: "business_verification_required",
+      message: "사업자등록증 검증을 완료한 사업자만 충전할 수 있습니다.",
+    });
+  }
+
   const now = new Date();
   await ChargeOrder.deleteMany({
     businessAnchorId,

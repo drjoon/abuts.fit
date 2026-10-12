@@ -15,6 +15,7 @@ import { Link, Navigate } from "react-router-dom";
 import { ShoppingCart } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { BusinessVerificationRequiredNotice } from "@/shared/business/BusinessVerificationRequiredNotice";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import {
   getStoreCategoriesForAudience,
@@ -59,7 +60,8 @@ function ProductRow({
 }
 
 export default function RequestorStorePage() {
-  const { kind, loading } = useRequestorBusinessAccess();
+  const { kind, loading, businessVerified, verificationPending } =
+    useRequestorBusinessAccess();
   const { priceByProductId } = useStorePackagePricing();
   const cartQty = useStoreCartStore((s) =>
     s.lines.reduce((n, l) => {
@@ -77,6 +79,20 @@ export default function RequestorStorePage() {
 
   if (!loading && kind !== "practice" && kind !== "lab") {
     return <Navigate to="/dashboard/credits" replace />;
+  }
+
+  // B2B 전용: 검증 전에는 상품·가격을 보여주지 않는다.
+  if (!loading && !businessVerified) {
+    return (
+      <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
+        <div className="mx-auto w-full max-w-6xl space-y-6">
+          <h1 className="text-lg font-semibold tracking-tight">스토어</h1>
+          <BusinessVerificationRequiredNotice
+            pending={verificationPending}
+          />
+        </div>
+      </div>
+    );
   }
 
   return (

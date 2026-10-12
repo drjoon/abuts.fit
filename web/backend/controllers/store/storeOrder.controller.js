@@ -87,8 +87,16 @@ function assertPracticeRequestor(req) {
 
 async function assertRequestorStoreAccess(req, businessAnchorId) {
   const anchor = await BusinessAnchor.findById(businessAnchorId)
-    .select({ requestorKind: 1 })
+    .select({ requestorKind: 1, status: 1 })
     .lean();
+  // B2B 전용: 검증된 사업자만 주문 가능
+  if (String(anchor?.status || "").trim() !== "verified") {
+    const err = new Error(
+      "사업자등록증 검증을 완료한 사업자만 이용할 수 있습니다.",
+    );
+    err.statusCode = 403;
+    throw err;
+  }
   const kind =
     normalizeRequestorKind(anchor?.requestorKind) ||
     normalizeRequestorKind(req.user?.requestorKind) ||

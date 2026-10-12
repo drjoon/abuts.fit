@@ -38,6 +38,12 @@ const bankTransactionSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    // 자동매칭 시 입금자명이 사업자명·대표자명과 다르면 MISMATCH (관리자 수동 확인 필요)
+    payerNameCheck: {
+      type: String,
+      enum: ["", "OK", "MISMATCH", "UNKNOWN"],
+      default: "",
+    },
     matchedAt: { type: Date, default: null },
     matchedBy: { type: String, enum: ["AUTO", "ADMIN"], default: null },
     matchedByUserId: {

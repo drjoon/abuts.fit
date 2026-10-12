@@ -8,6 +8,7 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
 import { verifyBusinessNumber } from "../../services/hometax.service.js";
+import { ensureBusinessVerificationRetryScheduled } from "../../jobs/businessVerificationRetryWorker.js";
 import {
   assertBusinessRole,
   buildBusinessTypeFilter,
@@ -950,8 +951,15 @@ export async function updateMyBusiness(req, res) {
         companyName: nextName || businessAnchor?.name || "",
         representativeName,
         startDate,
+        deferOnOutage: true,
       });
-      if (!verificationResult?.verified) {
+      if (verificationResult?.pending) {
+        // 저장 직후 보류 건이 생기므로 잠시 뒤 재검증 워커를 켠다.
+        setTimeout(() => {
+          void ensureBusinessVerificationRetryScheduled().catch(() => null);
+        }, 3000);
+      }
+      if (!verificationResult?.verified && !verificationResult?.pending) {
         return res.status(400).json({
           success: false,
           reason: "business_verification_failed",
@@ -1061,6 +1069,12 @@ export async function updateMyBusiness(req, res) {
           owners: [],
           members: [req.user._id],
           status: verificationResult?.verified ? "verified" : "active",
+          ...(verificationResult?.pending
+            ? {
+                verificationPendingAt: new Date(),
+                verificationMessage: verificationResult.message || "",
+              }
+            : {}),
           ...(businessType === "requestor" && createdKind === "practice"
             ? { demoMode: true, demoModeStartedAt: new Date() }
             : {}),
@@ -1171,7 +1185,11 @@ export async function updateMyBusiness(req, res) {
             businessAnchorId: created._id,
             businessName: created.name,
             verification:
-              created.status === "verified" ? { verified: true } : null,
+              created.status === "verified"
+                ? { verified: true }
+                : verificationResult?.pending
+                  ? { verified: false, pending: true, message: verificationResult.message || "" }
+                  : null,
             welcomeFreeCreditGranted: welcomeGranted,
             welcomeFreeCreditAmount: welcomeAmount,
             // 하위호환 키
@@ -1203,6 +1221,13 @@ export async function updateMyBusiness(req, res) {
 
     if (verificationResult) {
       patch.status = verificationResult.verified ? "verified" : "active";
+      if (verificationResult.pending) {
+        patch.verificationPendingAt = new Date();
+        patch.verificationMessage = verificationResult.message || "";
+      } else {
+        patch.verificationPendingAt = null;
+        patch.verificationMessage = "";
+      }
       if (verificationResult.verified && businessType === "requestor") {
         patch.requestorServices = { free: false, paid: true };
       }
@@ -1379,6 +1404,7 @@ export async function updateMyBusiness(req, res) {
         verification: verificationResult
           ? {
               verified: !!verificationResult.verified,
+              pending: !!verificationResult.pending,
               provider: verificationResult.provider || "hometax",
               message: verificationResult.message || "",
               checkedAt: new Date(),

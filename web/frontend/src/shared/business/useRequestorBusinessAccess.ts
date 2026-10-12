@@ -37,6 +37,7 @@ export const useRequestorBusinessAccess = () => {
   const { token, user } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [businessVerified, setBusinessVerified] = useState(false);
+  const [verificationPending, setVerificationPending] = useState(false);
   const [profile, setProfile] = useState<RequestorProfile>(emptyProfile);
   const [membership, setMembership] = useState<string>("none");
   const [designAccessEnabled, setDesignAccessEnabled] = useState(false);
@@ -125,6 +126,7 @@ export const useRequestorBusinessAccess = () => {
       });
       const verified = Boolean(data?.businessVerified);
       setBusinessVerified(verified);
+      setVerificationPending(!verified && Boolean(data?.verificationPending));
       setMembership(String(data?.membership || "none"));
       setDesignAccessEnabled(Boolean(data?.designAccessEnabled));
       setPracticeHasInHouseLab(
@@ -205,6 +207,8 @@ export const useRequestorBusinessAccess = () => {
       }),
     membership,
     businessVerified,
+    /** 홈택스 장애로 검증 보류 — 복구되면 자동 처리 */
+    verificationPending,
     designAccessEnabled,
     profile,
     kind: profile.kind,

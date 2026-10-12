@@ -23,6 +23,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { BusinessVerificationRequiredNotice } from "@/shared/business/BusinessVerificationRequiredNotice";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
@@ -197,7 +198,12 @@ function formatRemaining(ms: number) {
 export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
-  const { kind: accessKind } = useRequestorBusinessAccess();
+  const {
+    kind: accessKind,
+    loading: accessLoading,
+    businessVerified,
+    verificationPending,
+  } = useRequestorBusinessAccess();
   // 충전은 데모 상태와 무관한 일반 선결제다(전환은 기공소 직접 지급 확인으로 처리).
   const demoMode = false as boolean;
   const [demoChargeConfirmOpen, setDemoChargeConfirmOpen] = useState(false);
@@ -823,6 +829,15 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
     },
     REFUNDED: { text: "환불 완료", cls: "bg-gray-100 text-gray-500" },
   };
+
+  // B2B 전용: 사업자 검증 전에는 충전(무통장) 화면을 보여주지 않는다.
+  if (!accessLoading && user?.role === "requestor" && !businessVerified) {
+    return (
+      <BusinessVerificationRequiredNotice
+        pending={verificationPending}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
