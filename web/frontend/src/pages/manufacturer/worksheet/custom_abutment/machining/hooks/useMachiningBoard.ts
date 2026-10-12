@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-10-13: 장비 알람 지우기는 같은 가공 오류의 재표시를 막는다.
 // - 2026-10-13: 같은 가공 중단의 tick·fail·alarm 알림은 한 건으로 합친다.
 // - 2026-10-10: 가공 알람은 장비별로 쌓고, 알람 원문(헤드·type·no)을 함께 저장한다.
 // - 2026-10-09: 장비 자동가공 플래그를 준비·가공 공통 스위치와 맞춘다.
@@ -54,9 +55,11 @@ import type { MachiningAlertItem } from "../components/MachiningAlertModal";
 import {
   collapseMachiningAlerts,
   humanAlarmText,
+  isDismissedMachiningAlert,
   isMaterialExhaustedAlarmText,
   normalizeAlarmDetails,
   readAlarmDetails,
+  type DismissedMachiningAlert,
 } from "../machiningAlertIncident";
 import type {
   QueueItem,
@@ -109,6 +112,31 @@ function asAlertList(value: unknown): MachiningAlertItem[] {
   return [];
 }
 
+function readDismissedMachiningAlerts(): DismissedMachiningAlert[] {
+  try {
+    const raw = localStorage.getItem(MACHINING_ALERT_DISMISSED_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((row) => row && typeof row === "object")
+      .slice(0, MACHINING_ALERT_DISMISSED_LIMIT) as DismissedMachiningAlert[];
+  } catch {
+    return [];
+  }
+}
+
+function writeDismissedMachiningAlerts(rows: DismissedMachiningAlert[]) {
+  try {
+    localStorage.setItem(
+      MACHINING_ALERT_DISMISSED_KEY,
+      JSON.stringify(rows.slice(0, MACHINING_ALERT_DISMISSED_LIMIT)),
+    );
+  } catch {
+    // noop
+  }
+}
+
 export type ExpressRebalanceAlertState = {
   id?: string;
   summary?: string;
@@ -120,6 +148,8 @@ export type ExpressRebalanceAlertState = {
 };
 
 const MACHINING_ALERT_STORAGE_KEY = "abuts:machining-alert-map";
+const MACHINING_ALERT_DISMISSED_KEY = "abuts:machining-alert-dismissed";
+const MACHINING_ALERT_DISMISSED_LIMIT = 50;
 const EXPRESS_REBALANCE_ALERT_STORAGE_KEY = "abuts:express-rebalance-alert";
 const EXPRESS_REBALANCE_ALERT_DISMISSED_KEY =
   "abuts:express-rebalance-alert-dismissed-ids";
@@ -361,6 +391,13 @@ export const useMachiningBoard = ({
   const [machiningAlertMap, setMachiningAlertMap] = useState<
     Record<string, MachiningAlertItem[]>
   >({});
+  const machiningAlertMapRef = useRef(machiningAlertMap);
+  const dismissedMachiningAlertsRef = useRef<DismissedMachiningAlert[]>(
+    readDismissedMachiningAlerts(),
+  );
+  useEffect(() => {
+    machiningAlertMapRef.current = machiningAlertMap;
+  }, [machiningAlertMap]);
   const [expressRebalanceAlert, setExpressRebalanceAlert] =
     useState<ExpressRebalanceAlertState | null>(null);
   const [expressRebalanceHydrated, setExpressRebalanceHydrated] =
@@ -374,7 +411,13 @@ export const useMachiningBoard = ({
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
       const next: Record<string, MachiningAlertItem[]> = {};
       for (const [machineId, value] of Object.entries(parsed)) {
-        const list = asAlertList(value);
+        const list = asAlertList(value).filter(
+          (alert) =>
+            !isDismissedMachiningAlert(
+              alert,
+              dismissedMachiningAlertsRef.current,
+            ),
+        );
         if (list.length) {
           next[machineId] = collapseMachiningAlerts(list).slice(
             0,
@@ -465,21 +508,31 @@ export const useMachiningBoard = ({
       if (now - last < 5000) return;
       recentAlertFingerprintRef.current[fingerprint] = now;
 
+      const incoming: MachiningAlertItem = {
+        machineId: mid,
+        requestId: rid,
+        jobId,
+        errorCode: code,
+        message: msg,
+        alarmText: text || msg,
+        reason: reason || undefined,
+        alarms,
+        source: "live",
+        updatedAt: new Date().toISOString(),
+        count: 1,
+      };
+      if (
+        isDismissedMachiningAlert(
+          incoming,
+          dismissedMachiningAlertsRef.current,
+        )
+      ) {
+        return;
+      }
+
       setMachiningAlertMap((prev) => {
         const list = asAlertList(prev[mid]);
-        const nextItem: MachiningAlertItem = {
-          machineId: mid,
-          requestId: rid,
-          jobId,
-          errorCode: code,
-          message: msg,
-          alarmText: text || msg,
-          reason: reason || undefined,
-          alarms,
-          source: "live",
-          updatedAt: new Date().toISOString(),
-          count: 1,
-        };
+        const nextItem: MachiningAlertItem = incoming;
         return {
           ...prev,
           [mid]: collapseMachiningAlerts([nextItem, ...list]).slice(
@@ -494,6 +547,28 @@ export const useMachiningBoard = ({
 
   const clearMachiningAlerts = useCallback((machineId?: string) => {
     const mid = String(machineId || "").trim();
+    const current = machiningAlertMapRef.current || {};
+    const targets = mid
+      ? asAlertList(current[mid])
+      : Object.values(current).flatMap((rows) => asAlertList(rows));
+    if (targets.length) {
+      const dismissedAt = new Date().toISOString();
+      const remembered: DismissedMachiningAlert[] = targets.map((alert) => ({
+        machineId: String(alert.machineId || mid).trim(),
+        requestId: String(alert.requestId || "").trim(),
+        jobId: String(alert.jobId || "").trim(),
+        errorCode: String(alert.errorCode || "").trim(),
+        message: String(alert.message || alert.alarmText || "").trim(),
+        incidentAt: String(alert.updatedAt || "").trim(),
+        dismissedAt,
+      }));
+      const nextDismissed = [
+        ...remembered,
+        ...dismissedMachiningAlertsRef.current,
+      ].slice(0, MACHINING_ALERT_DISMISSED_LIMIT);
+      dismissedMachiningAlertsRef.current = nextDismissed;
+      writeDismissedMachiningAlerts(nextDismissed);
+    }
     if (!mid) {
       setMachiningAlertMap({});
       return;
@@ -761,7 +836,14 @@ export const useMachiningBoard = ({
       for (const mid of machineIds) {
         if (mid === "unassigned") continue;
         const list = Array.isArray(queues?.[mid]) ? queues[mid] : [];
-        const live = asAlertList(next[mid]).filter((alert) => alert.source !== "queue");
+        const live = asAlertList(next[mid]).filter(
+          (alert) =>
+            alert.source !== "queue" &&
+            !isDismissedMachiningAlert(
+              alert,
+              dismissedMachiningAlertsRef.current,
+            ),
+        );
         const liveRequestIds = new Set(
           live.map((alert) => String(alert.requestId || "").trim()).filter(Boolean),
         );
@@ -777,17 +859,26 @@ export const useMachiningBoard = ({
             failedAtDate && !Number.isNaN(failedAtDate.getTime())
               ? failedAtDate.toISOString()
               : "";
-          queueAlerts.push({
+          const queueAlert: MachiningAlertItem = {
             machineId: mid,
             requestId: rid || null,
             errorCode: err.errorCode || null,
             message,
             alarmText: message,
             reason: message,
-            updatedAt: failedAt || new Date().toISOString(),
+            updatedAt: failedAt,
             count: 1,
             source: "queue",
-          });
+          };
+          if (
+            isDismissedMachiningAlert(
+              queueAlert,
+              dismissedMachiningAlertsRef.current,
+            )
+          ) {
+            continue;
+          }
+          queueAlerts.push(queueAlert);
         }
         const combined = collapseMachiningAlerts([
           ...queueAlerts,

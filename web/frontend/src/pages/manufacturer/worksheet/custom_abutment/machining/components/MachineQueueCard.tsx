@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-13: Next Up 가공 오류 건에 빨간 오류 뱃지를 단다.
+// - 2026-10-13: 가공 오류 건도 예약 관리와 같이 Next Up에 남긴다.
 // - 2026-10-10: HOLD 카드 제거. 가공 오류 알람은 카드 안에 둔다.
 // - 2026-10-06: Next Up 더미 X는 대기열에서만 빼고 더미설정은 유지.
 // - 2026-10-06: Next Up 샘플(더미 포함) 삭제 X.
@@ -43,6 +45,7 @@ import {
 import type { MachineQueueCardProps, QueueItem } from "../types";
 import { buildLabelExtraProps, formatMachiningLabel, isMachiningSampleSlot } from "../utils/label";
 import { MachiningRequestLabel } from "./MachiningRequestLabel";
+import { humanAlarmText } from "../machiningAlertIncident";
 import { getMachineStatusLabel } from "@/pages/manufacturer/equipment/cnc/lib/machineStatus";
 import { isCamGenerationOverlayPending } from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
 
@@ -151,8 +154,8 @@ export const MachineQueueCard = ({
   onOpenAlert,
   onClearAlert,
 }: MachineQueueCardProps) => {
-  const machiningQueueAll = (Array.isArray(queue) ? queue : []).filter(
-    (q) => isMachiningStatus(q) && !(q as QueueItem)?.machiningError,
+  const machiningQueueAll = (Array.isArray(queue) ? queue : []).filter((q) =>
+    isMachiningStatus(q),
   );
 
   const { currentSlot, nextSlot } = useMemo(() => {
@@ -282,6 +285,16 @@ export const MachineQueueCard = ({
   const nextUpAnodizingOff =
     (nextSlot as { caseInfos?: { anodizingEnabled?: boolean } } | null)
       ?.caseInfos?.anodizingEnabled === false;
+  const nextUpError = nextSlot?.machiningError || null;
+  const nextUpErrorReason = humanAlarmText([
+    nextUpError?.message,
+    nextUpError?.errorCode,
+  ]);
+  const nextUpErrorLabel = !nextUpError
+    ? ""
+    : !nextUpErrorReason || nextUpErrorReason === "가공 오류"
+      ? "오류"
+      : `오류 · ${nextUpErrorReason}`;
 
   const elapsedLabel = (() => {
     // 실제 Now Playing 슬롯이 없으면 타이머를 숨긴다.
@@ -1138,11 +1151,15 @@ export const MachineQueueCard = ({
             } ${
               nextUpDropActive
                 ? "border-primary bg-primary-soft/40 ring-1 ring-primary/30"
-                : "border-slate-200"
+                : nextUpErrorLabel
+                  ? "border-destructive bg-destructive-soft"
+                  : "border-slate-200"
             } ${
               !nextSlot && !nextUpDropActive
                 ? "bg-white text-slate-400"
-                : "bg-white hover:bg-slate-50"
+                : nextUpErrorLabel && !nextUpDropActive
+                  ? "hover:bg-destructive-soft"
+                  : "bg-white hover:bg-slate-50"
             } ${canDragNextUp ? "cursor-grab active:cursor-grabbing" : nextSlot && !nextUpCamRegenPending ? "cursor-pointer" : "cursor-default"}`}
             draggable={canDragNextUp}
             title={
@@ -1381,6 +1398,17 @@ export const MachineQueueCard = ({
               </div>
             </div>
             <div className="mt-1 min-w-0">
+              {nextUpErrorLabel ? (
+                <div className="mb-1.5">
+                  <span
+                    className="inline-flex max-w-full items-center gap-1 rounded-md bg-destructive px-2 py-1 text-xs font-bold text-white"
+                    title={nextUpErrorLabel}
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{nextUpErrorLabel}</span>
+                  </span>
+                </div>
+              ) : null}
               {nextSlot ? (
                 <MachiningRequestLabel
                   density="compact"

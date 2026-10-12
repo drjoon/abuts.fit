@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/hooks/useMachiningBoard.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningAlertModal.tsx
 // change-log:
+// - 2026-10-13: 지운 알람은 같은 가공 오류가 큐 재조회·소켓으로 다시 붙지 않게 한다.
 // - 2026-10-13: 같은 가공 중단의 tick·fail·alarm 알림을 한 건으로 합친다.
 import type {
   MachiningAlarmDetail,
@@ -211,4 +212,73 @@ export function collapseMachiningAlerts(
     out[index] = mergeIncident(out[index], normalized);
   }
   return out;
+}
+
+export type DismissedMachiningAlert = {
+  machineId: string;
+  requestId: string;
+  jobId: string;
+  errorCode: string;
+  message: string;
+  incidentAt: string;
+  dismissedAt: string;
+};
+
+function textOf(value: unknown): string {
+  return String(value || "").trim();
+}
+
+function sameDismissedIdentity(
+  alert: MachiningAlertItem,
+  row: DismissedMachiningAlert,
+): boolean {
+  if (textOf(alert.machineId) !== textOf(row.machineId)) return false;
+  const rid = textOf(alert.requestId);
+  const job = textOf(alert.jobId);
+  const sameRequest = Boolean(row.requestId && rid && row.requestId === rid);
+  const sameJob = Boolean(row.jobId && job && row.jobId === job);
+  if (!sameRequest && !sameJob) return false;
+
+  const code = textOf(alert.errorCode);
+  const message = textOf(alert.message || alert.alarmText || alert.reason);
+  if (row.errorCode && code) return row.errorCode === code;
+  if (row.errorCode && !code) {
+    return (
+      message === row.message ||
+      (Boolean(row.message) && message.includes(row.message)) ||
+      message.includes(row.errorCode)
+    );
+  }
+  if (!row.errorCode && code) {
+    return (
+      message === row.message ||
+      (Boolean(row.message) &&
+        (message.includes(row.message) || row.message.includes(message)))
+    );
+  }
+  if (row.message && message) return row.message === message;
+  return false;
+}
+
+/** 작업자가 지운 가공 오류는 큐 재조회·같은 소켓이 다시 붙이지 않는다. 이후 시각의 새 실패만 다시 보인다. */
+export function isDismissedMachiningAlert(
+  alert: MachiningAlertItem,
+  dismissed: DismissedMachiningAlert[],
+): boolean {
+  const incidentAt = parseTime(alert.updatedAt);
+  return dismissed.some((row) => {
+    if (!sameDismissedIdentity(alert, row)) return false;
+    const rowIncident = parseTime(row.incidentAt);
+    const dismissedAt = parseTime(row.dismissedAt);
+    if (
+      alert.source === "queue" &&
+      incidentAt &&
+      rowIncident &&
+      incidentAt > rowIncident + 2000 &&
+      (!dismissedAt || incidentAt > dismissedAt + 2000)
+    ) {
+      return false;
+    }
+    return true;
+  });
 }
