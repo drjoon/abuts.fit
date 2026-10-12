@@ -221,7 +221,7 @@ Notes:
   - 의뢰자(기공소) 설정: `requestorKind=lab`일 때 알림 **왼쪽**에 「기공비」 탭
     - `src/pages/requestor/settings/SettingsPage.tsx`
     - 구 `?tab=auto-match`·`trading-partners` → 계정. 인증 신청 UI 제거(관리자 `PracticeTransferAutoMatchTab`). 구 `?tab=ai` → 계정. 학습 안내는 약관·개인정보. 기공의뢰에 동의 버튼·모달을 두지 않는다
-    - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — 항목 카드(이름·단위·수가/리메이크). 하단 저장 버튼 없음, 항목 변경은 디바운스 자동 저장. 제목 오른쪽 마스터 On/Off(기본 off, 켜면 설정 완료·즉시 저장). **리메이크 과금은 어벗츠로부터=무료·어벗츠로=건당 1만원**(기공소 무료기간 설정 없음). 로그인 시 수가 미설정이면 `LabFeeSetupPrompt` → `?tab=lab-fees&setup=1`로 스위치 하이라이트. **작업시작 클릭 시 미설정이면** `?tab=lab-fees&setup=1&from=accept`로 포워드·안내 모달. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 끊기면 별도). 임시치아는 카드 두 장(이름 모두 「임시치아」, 3치·6치 이하). 청구는 의뢰서 「임시치아」에 치아 수 구간으로 합산. **카탈로그에 없는 신규 항목 저장 시 어벗츠 수가에 Off로 동기화·관리자 알림.**
+    - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — 항목 카드(이름·단위·수가/리메이크). 하단 저장 버튼 없음, 항목 변경은 디바운스 자동 저장. 제목 오른쪽 마스터 On/Off(기본 off, 켜면 설정 완료·즉시 저장). **리메이크 과금은 어벗츠로부터=무료·어벗츠로=건당 1만원**(기공소 무료기간 설정 없음). 수가 미설정 안내는 가입 직후가 아니라 치과 PTX 의뢰를 처음 받았을 때(미확인 수신 건) 뜬다(2026-10-12). **작업시작 클릭 시 미설정이면** `?tab=lab-fees&setup=1&from=accept`로 포워드·안내 모달. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 끊기면 별도). 임시치아는 카드 두 장(이름 모두 「임시치아」, 3치·6치 이하). 청구는 의뢰서 「임시치아」에 치아 수 구간으로 합산. **카탈로그에 없는 신규 항목 저장 시 어벗츠 수가에 Off로 동기화·관리자 알림.**
     - 가입 이유 배너: `LabDashboardTopBanners` — 기공소 사이드 설정과 계정 팝업 사이(짧은 카피).
       - 가입 이유 (`LabPlatformBenefitsBanner`) → 클릭 시 모달
       - 대시보드 `[정책 안내]` 옆 `[가입 이유]`로도 동일 모달 열기(기공소)
@@ -690,7 +690,7 @@ Notes:
 - 의뢰자 역할·서비스·유료게이트 SSOT (2026-08, 루트 §2.4 상세)
   - 가입 role: `requestor` | `salesman`만. `practice` role **제거**.
   - 공개 가입(`/signup`): `requestor` | `salesman`. 복원 draft에 `practice`가 있으면 requestor로 전환.
-  - 온보딩(`/dashboard/wizard`): 프로필 → 휴대전화 → 역할 → 사업자.
+  - 온보딩(`/dashboard/wizard`): 휴대전화 → 역할 → 사업자. 사업자등록은 가입 시 필수(크레딧 선결제·의뢰 가능 요건, 통신판매업 면제 법적 요건). 통장은 정산할 금액이 있을 때만, 수가표는 첫 PTX 수신 때 안내.
     - **치과 대표(owner)**: 사업자등록(검증) 직후 **구강 스캔 사용 여부**(필수 예/아니오). 직원(member)·기공소는 생략.
     - SSOT: `PracticeOralScanStep` · `practiceProfile.usesOralScan` / `BusinessAnchor.usesOralScan`. 설정「디지털」탭(키 `digital`, 구 `oral-scan`은 같은 탭)에서 구강 스캐너와 보철 작업물(`requireLabProsthesisUpload`, 기본 켬)을 체크 즉시 저장. 없음=요구. 협력 기공소 의뢰만 생성 때 `billing` 스냅샷을 따른다. 어벗츠기공본부 내부·하청은 완성 보철 업로드가 필수다.
     - 어벗츠 출시 행사 신청 폼은 구강 스캔 사용 여부를 항상 받는다. 프로필·사업자에 값이 있으면 그 값을 기본 선택한다.

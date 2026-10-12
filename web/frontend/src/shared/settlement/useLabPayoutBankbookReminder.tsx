@@ -3,9 +3,11 @@
 // - web/frontend/src/shared/settlement/LabPayoutBankbookRemindDialog.tsx
 // - web/frontend/src/shared/components/business/settings/business/businessMeCache.ts
 // change-log:
+// - 2026-10-12: 정산받을 기공크레딧 잔액이 있을 때만 안내.
 // - 2026-09-16: 기공소 통장사본 미등록 안내(지급 진입·정산일 7일 전, 일 1회).
 import { useCallback, useEffect, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
+import { request } from "@/shared/api/apiClient";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import {
   loadBusinessMeCached,
@@ -51,6 +53,12 @@ export function useLabPayoutBankbookReminder(options: Options = {}) {
         return;
       }
       if (hasLabPayoutRemindShownToday(id)) return;
+      // 정산받을 금액(기공크레딧)이 있을 때만 안내
+      const balanceRes = await request<{
+        data?: { settlementCredit?: number };
+      }>({ path: "/api/credits/balance", method: "GET", token });
+      if (!balanceRes.ok) return;
+      if (Number(balanceRes.data?.data?.settlementCredit || 0) <= 0) return;
       markLabPayoutRemindShownToday(id);
       setOpen(true);
     } catch {

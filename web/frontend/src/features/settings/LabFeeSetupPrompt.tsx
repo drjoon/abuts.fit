@@ -3,6 +3,7 @@
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
+// - 2026-10-12: 수가 미설정 안내는 치과 PTX 의뢰를 처음 받았을 때(미확인 수신 건)·작업시작 시점에만.
 // - 2026-10-07: freeRemakeYears 게이트 제거(리메이크 무료기간 설정 폐지).
 // - 2026-09-21: freeRemakeYears 미설정 시 설정 탭 포워드·하이라이트.
 // - 2026-08-25: 안내 문구 — 치과 의뢰·기공비 정상 결제 위해 해당 카드 설정 필수.
@@ -207,10 +208,39 @@ export const LabFeeSetupPrompt = ({
       const configured = readLabFeeScheduleConfigured(res.data);
       const setupNames = readLabFeeNeedSetupNames(res.data);
 
-      if (configured === false && !skipUnconfigured) {
-        setMode("unconfigured");
-        setCatalogNeedNames([]);
-        setOpen(true);
+      if (configured === false) {
+        if (skipUnconfigured) {
+          setOpen(false);
+          return;
+        }
+        // 가입 직후엔 띄우지 않는다. 치과 PTX 의뢰를 처음 받았을 때(미확인 수신 건 존재)
+        // 또는 작업시작 시점(from=accept)에 안내.
+        if (fromAccept) {
+          setMode("unconfigured");
+          setCatalogNeedNames([]);
+          setOpen(true);
+          return;
+        }
+        void apiFetch<unknown>({
+          path: "/api/practice/transfers/received-unread-count",
+          method: "GET",
+          token,
+        }).then((countRes) => {
+          if (cancelled || !countRes.ok) return;
+          const body =
+            countRes.data && typeof countRes.data === "object"
+              ? (countRes.data as Record<string, unknown>)
+              : {};
+          const inner =
+            body.data && typeof body.data === "object"
+              ? (body.data as Record<string, unknown>)
+              : body;
+          if (Number(inner.unreadCount || 0) > 0) {
+            setMode("unconfigured");
+            setCatalogNeedNames([]);
+            setOpen(true);
+          }
+        });
         return;
       }
 
@@ -279,7 +309,7 @@ export const LabFeeSetupPrompt = ({
         ? needNames.length
           ? `치과에서 의뢰가 들어왔습니다. 기공비를 정상적으로 받으려면 ${needLabel(needNames)} 수가를 켜고 설정한 뒤, 기공의뢰수신에서 다시 작업시작해 주세요.`
           : "치과에서 의뢰가 들어왔습니다. 기공비를 정상적으로 받으려면 기공수가를 먼저 설정한 뒤, 기공의뢰수신에서 다시 작업시작해 주세요."
-        : "기공비를 아직 설정하지 않았습니다. 확인을 누르면 기공비 설정 페이지로 이동합니다.";
+        : "치과에서 의뢰가 들어왔습니다. 기공비를 정상적으로 받으려면 기공수가를 설정하세요. 확인을 누르면 설정 페이지로 이동합니다.";
 
   return (
     <AlertDialog
