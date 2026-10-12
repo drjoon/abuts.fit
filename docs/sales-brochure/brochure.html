@@ -123,6 +123,20 @@
   .band b { color: var(--navy); }
   .band.dark { background: var(--navy); border-color: var(--navy); color: rgba(255,255,255,.88); }
   .band.dark b { color: #fff; }
+  .premise {
+    margin-top: 2.8mm; display: flex; gap: 2.4mm; align-items: flex-start;
+    background: #fff; border: .4mm solid var(--blue); border-radius: 3mm; padding: 2.6mm 3mm;
+  }
+  .premise .k {
+    flex: none; margin-top: .4mm; background: var(--blue); color: #fff;
+    font-size: 6.2pt; font-weight: 800; letter-spacing: .04em;
+    border-radius: 99mm; padding: .45mm 2mm;
+  }
+  .premise p { font-size: 7.5pt; color: var(--body); line-height: 1.5; }
+  .premise b { color: var(--navy); }
+  .sec-label { margin: 3mm 0 1.8mm; font-size: 7.4pt; font-weight: 800; color: var(--blue); letter-spacing: -.01em; }
+  .flap .point { padding: 2.4mm 3mm; }
+  .flap .points { gap: 1.8mm; margin-top: 0; }
   .delivery { text-align: center; padding: 4mm 3mm; border: .35mm solid #93c5fd; background: #eff6ff; border-radius: 3mm; margin-top: 3mm; }
   .delivery .t { font-size: 7.4pt; color: var(--blue); font-weight: 700; }
   .delivery .h { font-size: 11.5pt; font-weight: 800; color: var(--navy); margin: 1mm 0; letter-spacing: -.02em; }
@@ -185,7 +199,7 @@
 <section class="sheet" id="outside">
 
   <!-- 왼쪽: 안쪽 날개 (표지를 열면 처음 보임) -->
-  <div class="panel">
+  <div class="panel flap">
     <span class="eyebrow">WHY ABUTS</span>
     <h2>접수·디자인은 기공소가,<br />나머지는 어벗츠가.</h2>
     <p class="lead">
@@ -200,22 +214,28 @@
       <div>어벗츠<small>CNC·납품</small></div>
     </div>
 
+    <div class="premise" style="margin-top:0">
+      <span class="k">기본</span>
+      <p>
+        <b>치과는 지금처럼, 플랫폼 없이도 됩니다.</b><br />
+        기존 방식대로 받은 STL을 올리면<br />
+        CNC 커스텀어벗을 생산합니다. (01·02)
+      </p>
+    </div>
+
+    <p class="sec-label">치과도 플랫폼을 쓰면 더 편리 (03)</p>
     <div class="points">
+      <div class="card point">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg></div>
+        <div><h3>의뢰서 값 그대로 · AI 초안</h3><p>환자·임플란트를 다시 고르지 않고,<br />AI 초안을 기공사가 검수합니다.</p></div>
+      </div>
       <div class="card point">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/></svg></div>
         <div><h3>한 보드에서 관리</h3><p>수신·작업시작·작업·완료를<br />한 화면에서 확인합니다.</p></div>
       </div>
       <div class="card point">
-        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg></div>
-        <div><h3>AI 디자인 지향</h3><p>의뢰서 값으로 AI가 초안을 잡고,<br />기공사가 검수하고 마칩니다.</p></div>
-      </div>
-      <div class="card point">
-        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></div>
-        <div><h3>CNC 생산은 어벗츠로</h3><p>디자인(STL)을 올리면<br />애크로덴트에서 바로 가공합니다.</p></div>
-      </div>
-      <div class="card point">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h4"/></svg></div>
-        <div><h3>수기 정산 감소</h3><p>크레딧·월 정산·계산서가<br />플랫폼 안에서 이어집니다.</p></div>
+        <div><h3>수기 정산 감소</h3><p>작업 완료 적립부터 월 정산·계산서까지<br />플랫폼 안에서 이어집니다.</p></div>
       </div>
       <div class="card point">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 11l7.6-4M8.2 13l7.6 4"/></svg></div>
@@ -296,6 +316,13 @@
       <span class="num grad">01</span>
       <span class="eyebrow">CUSTOM ABUTMENT</span>
     </div>
+    <div class="premise">
+      <span class="k">기본</span>
+      <p>
+        <b>치과가 플랫폼을 쓰지 않아도 됩니다.</b><br />
+        기존 방식대로 받은 STL을 올려 주문합니다.
+      </p>
+    </div>
     <h2>커스텀어벗 주문,<br />STL 올리고 의뢰하기.</h2>
 
     <figure class="card fig">
@@ -310,17 +337,8 @@
     </div>
 
     <div class="band" style="margin-top:3.5mm">
-      <b>환자·임플란트 정보는 다시 고르지 않습니다.</b><br />
-      의뢰서의 값이 그대로 디자인에 연결됩니다.
-    </div>
-    <div class="band" style="margin-top:2mm">
       <b>진행 상황은 상단 뱃지에서.</b><br />
       진행중 · 출고예정 · 완료 내역 · 불완전 가공을 한눈에 봅니다.
-    </div>
-    <div class="band" style="margin-top:2mm">
-      <b>AI가 초안, 기공사가 검수.</b><br />
-      스캔 정렬부터 보철 생성까지 AI가 먼저 잡고,<br />
-      사람이 확인하고 다듬습니다.
     </div>
 
     <div class="foot"><div class="logo"><svg><use href="#hexL"/></svg><b class="grad">abuts.fit</b></div><span>기공소 영업 안내 · 1/3</span></div>
@@ -368,6 +386,13 @@
     <div style="display:flex;align-items:flex-end;gap:2.5mm">
       <span class="num grad">03</span>
       <span class="eyebrow">SETTLEMENT · POLICY</span>
+    </div>
+    <div class="premise">
+      <span class="k">조건</span>
+      <p>
+        <b>치과도 플랫폼을 쓸 때입니다.</b><br />
+        거래 치과가 온라인 기공의뢰를 보냅니다.
+      </p>
     </div>
     <h2>작업 완료되면 적립,<br />매월 자동 지급.</h2>
 
