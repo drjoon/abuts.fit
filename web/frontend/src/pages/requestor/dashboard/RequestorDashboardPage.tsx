@@ -504,8 +504,9 @@ export const RequestorDashboardPage = () => {
   ]);
 
   const [insufficientCredit, setInsufficientCredit] = useState(false);
-  const [insufficientShippingCredit, setInsufficientShippingCredit] =
-    useState(false);
+  // [LEGACY] 배송비 판매자 부담 — 의뢰자 배송비 충전 경고 중단. 의뢰자 부담으로 회귀 시 복구.
+  // const [insufficientShippingCredit, setInsufficientShippingCredit] =
+  //   useState(false);
 
   const { data: summaryResponse, refetch: refetchSummary } = useQuery({
     queryKey: summaryQueryKey,
@@ -671,10 +672,10 @@ export const RequestorDashboardPage = () => {
     systemSettings,
   ]);
 
-  // 배송비는 판매자 부담 — 거래처 배송비 충전 경고는 없다.
-  useEffect(() => {
-    setInsufficientShippingCredit(false);
-  }, [bulkResponse]);
+  // [LEGACY] 배송비는 판매자 부담 — 거래처 배송비 충전 경고는 없다. 회귀 시 복구.
+  // useEffect(() => {
+  //   setInsufficientShippingCredit(false);
+  // }, [bulkResponse]);
 
   type DashboardRefreshPlan = {
     cardsSummary?: boolean;
@@ -2000,13 +2001,17 @@ export const RequestorDashboardPage = () => {
         title={`안녕하세요, ${user?.name ?? ""}님!`}
         statsGridClassName="space-y-3"
         subtitle={
-          insufficientCredit && insufficientShippingCredit
-            ? "의뢰비와 배송비 크레딧 부족. 충전해주세요"
-            : insufficientCredit
-              ? "의뢰비 크레딧 부족. 충전하시면 생산이 진행됩니다"
-              : insufficientShippingCredit
-                ? "배송비 크레딧 부족. 충전해주세요"
-                : "의뢰 현황을 확인하세요."
+          // [LEGACY] 배송비 의뢰자 부담 문구 — 회귀 시 복구.
+          // insufficientCredit && insufficientShippingCredit
+          //   ? "의뢰비와 배송비 크레딧 부족. 충전해주세요"
+          //   : insufficientCredit
+          //     ? "의뢰비 크레딧 부족. 충전하시면 생산이 진행됩니다"
+          //     : insufficientShippingCredit
+          //       ? "배송비 크레딧 부족. 충전해주세요"
+          //       : "의뢰 현황을 확인하세요."
+          insufficientCredit
+            ? "의뢰비 크레딧 부족. 충전하시면 생산이 진행됩니다"
+            : "의뢰 현황을 확인하세요."
         }
         headerRight={
           <RequestorWorkspaceHeader

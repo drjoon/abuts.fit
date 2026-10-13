@@ -821,34 +821,35 @@ export const useRequestFileHandlers = ({
 
 
 
-        if (
-          errorAny?.statusCode === 402 &&
-          errorAny?.payload?.reason === "insufficient_credit_for_shipping"
-        ) {
-          const nextRequest = {
-            ...params.req,
-            shippingCreditMeta: {
-              insufficient: true,
-              required: Number(errorAny?.payload?.required || 0) || null,
-              paidBalance: Number(errorAny?.payload?.paidBalance || 0) || null,
-              freeShippingCreditBalance:
-                Number(errorAny?.payload?.freeShippingCreditBalance || 0) ||
-                null,
-              reason: String(errorAny?.payload?.reason || "").trim() || null,
-            },
-          } as ManufacturerRequest;
-          applySingleRequestPatch(nextRequest);
-        }
+        // [LEGACY] 배송비 판매자 부담 — 배송비 부족(402) 처리 중단. 의뢰자 부담으로 회귀 시 복구.
+        // if (
+        //   errorAny?.statusCode === 402 &&
+        //   errorAny?.payload?.reason === "insufficient_credit_for_shipping"
+        // ) {
+        //   const nextRequest = {
+        //     ...params.req,
+        //     shippingCreditMeta: {
+        //       insufficient: true,
+        //       required: Number(errorAny?.payload?.required || 0) || null,
+        //       paidBalance: Number(errorAny?.payload?.paidBalance || 0) || null,
+        //       freeShippingCreditBalance:
+        //         Number(errorAny?.payload?.freeShippingCreditBalance || 0) ||
+        //         null,
+        //       reason: String(errorAny?.payload?.reason || "").trim() || null,
+        //     },
+        //   } as ManufacturerRequest;
+        //   applySingleRequestPatch(nextRequest);
+        // }
         toast({
           title: "검토 상태 변경 실패",
           description:
+            // [LEGACY] errorAny?.payload?.reason === "insufficient_credit_for_shipping"
+            //   ? "배송비 부족으로 포장.발송 단계로 이동할 수 없습니다."
+            //   : ...
             errorAny?.statusCode === 402 &&
-            errorAny?.payload?.reason === "insufficient_credit_for_shipping"
-              ? "배송비 부족으로 포장.발송 단계로 이동할 수 없습니다."
-              : errorAny?.statusCode === 402 &&
-                  errorMessage.includes("의뢰자 잔액 부족")
-                ? "의뢰자 잔액 부족으로 가공 진입 불가"
-                : errorMessage,
+            errorMessage.includes("의뢰자 잔액 부족")
+              ? "의뢰자 잔액 부족으로 가공 진입 불가"
+              : errorMessage,
           variant: "destructive",
           duration: 5000,
         });

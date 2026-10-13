@@ -683,11 +683,12 @@ export const useNewRequestSubmitV2 = ({
                 `의뢰비 부족: ${machiningFee.shortfall.toLocaleString()}원`,
               );
             }
-            if (shippingFee?.shortfall > 0) {
-              details.push(
-                `배송비 부족: ${shippingFee.shortfall.toLocaleString()}원`,
-              );
-            }
+            // [LEGACY] 배송비 판매자 부담 — 배송비 부족 안내 중단. 회귀 시 복구.
+            // if (shippingFee?.shortfall > 0) {
+            //   details.push(
+            //     `배송비 부족: ${shippingFee.shortfall.toLocaleString()}원`,
+            //   );
+            // }
             if (details.length > 0) {
               description += "\n\n" + details.join("\n");
             }

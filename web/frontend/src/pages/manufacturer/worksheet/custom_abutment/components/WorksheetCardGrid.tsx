@@ -656,9 +656,11 @@ export const WorksheetCardGrid = ({
 
         const sp = request.shippingPriority;
         const urgency = String(sp?.level || "").trim();
-        const hasInsufficientShippingCredit = Boolean(
-          request.shippingCreditMeta?.insufficient,
-        );
+        // [LEGACY] 배송비 판매자 부담 — 배송비 부족 표시 중단. 의뢰자 부담으로 회귀 시 복구.
+        // const hasInsufficientShippingCredit = Boolean(
+        //   request.shippingCreditMeta?.insufficient,
+        // );
+        const hasInsufficientShippingCredit = false;
         const shippingMode = resolveShippingMode(request as any);
         const deadlineInfo = getDeadlineInfo(
           request.createdAt,
