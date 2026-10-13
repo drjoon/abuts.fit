@@ -32,6 +32,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { getBusinessTypeLabel as formatBusinessTypeLabel } from "@/shared/types/role";
+import { normalizeRequestorKind } from "@/shared/business/requestorCapabilities";
 import type { BusinessCredit } from "@/pages/admin/credits/adminCredit.types";
 
 type ApiBusinessCreditsResponse = {
@@ -151,6 +152,46 @@ const normalizeBusinessType = (rawType?: string) => {
 
 const getBusinessTypeLabel = (type?: string) =>
   formatBusinessTypeLabel(normalizeBusinessType(type));
+
+/** 의뢰자는 치과/기공소. 구강스캔(usesOralScan)은 역할이 아니다. */
+const REQUESTOR_MEMBER_LABEL = {
+  practice: "의뢰자(치과)",
+  lab: "의뢰자(기공소)",
+} as const;
+
+const resolveRequestorMemberKind = (business: BusinessCredit) => {
+  const kind = normalizeRequestorKind(business.requestorKind);
+  if (kind) return kind;
+  const raw = String(business.businessType || "")
+    .trim()
+    .toLowerCase();
+  if (raw.startsWith("practice")) return "practice" as const;
+  return null;
+};
+
+const getMemberTypeLabel = (business: BusinessCredit) => {
+  if (normalizeBusinessType(business.businessType) === "requestor") {
+    const kind = resolveRequestorMemberKind(business);
+    if (kind) return REQUESTOR_MEMBER_LABEL[kind];
+  }
+  return getBusinessTypeLabel(business.businessType);
+};
+
+const matchesMemberTypeFilter = (
+  business: BusinessCredit,
+  typeFilter: string,
+) => {
+  if (typeFilter === "all") return true;
+  const businessType = normalizeBusinessType(business.businessType);
+  if (typeFilter === "requestorPractice" || typeFilter === "requestorLab") {
+    if (businessType !== "requestor") return false;
+    const kind = resolveRequestorMemberKind(business);
+    return typeFilter === "requestorPractice"
+      ? kind === "practice"
+      : kind === "lab";
+  }
+  return businessType === normalizeBusinessType(typeFilter);
+};
 
 const getBusinessTypeBadgeClass = (type?: string) => {
   switch (normalizeBusinessType(type)) {
@@ -449,17 +490,7 @@ export default function AdminBusinessPage({
   const filteredBusinesses = useMemo(() => {
     const q = search.trim().toLowerCase();
     return businesses.filter((business) => {
-      if (typeFilter === "oralScan") {
-        if (!business.usesOralScan) return false;
-        const bt = normalizeBusinessType(business.businessType);
-        if (bt !== "requestor" && bt !== "practice") return false;
-      } else {
-        const matchesType =
-          typeFilter === "all" ||
-          normalizeBusinessType(business.businessType) ===
-            normalizeBusinessType(typeFilter);
-        if (!matchesType) return false;
-      }
+      if (!matchesMemberTypeFilter(business, typeFilter)) return false;
       if (!q) return true;
       const hay = [
         business.name,
@@ -582,8 +613,8 @@ export default function AdminBusinessPage({
                 {(
                   [
                     ["all", "전체"],
-                    ["requestor", "의뢰자"],
-                    ["oralScan", "구강스캔"],
+                    ["requestorPractice", "의뢰자(치과)"],
+                    ["requestorLab", "의뢰자(기공소)"],
                     ["salesman", formatBusinessTypeLabel("salesman")],
                     ["manufacturer", "제조사"],
                     ["devops", "개발운영사"],
@@ -668,13 +699,8 @@ export default function AdminBusinessPage({
                                 business.businessType,
                               )}`}
                             >
-                              {getBusinessTypeLabel(business.businessType)}
+                              {getMemberTypeLabel(business)}
                             </Badge>
-                            {business.usesOralScan ? (
-                              <Badge className="h-5 border-0 bg-sky-50 px-1.5 text-[10px] text-sky-800">
-                                구강스캔
-                              </Badge>
-                            ) : null}
                           </div>
                           {business.name &&
                           business.name !== business.companyName ? (
@@ -935,7 +961,7 @@ export default function AdminBusinessPage({
                 <div className="rounded-lg border p-3">
                   <div className="text-xs text-muted-foreground">사업자 유형</div>
                   <div className="mt-1 font-medium">
-                    {getBusinessTypeLabel(detailDialog.business.businessType)}
+                    {getMemberTypeLabel(detailDialog.business)}
                   </div>
                 </div>
                 <div className="rounded-lg border p-3">

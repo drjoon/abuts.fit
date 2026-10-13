@@ -102,6 +102,12 @@ import {
 import { getAllFiles } from "../../controllers/admin/admin.files.controller.js";
 import { listPriceApprovals, decidePriceApproval } from "../../controllers/admin/admin.priceApproval.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
+import {
+  adminListPendingBusinessVerifications,
+  adminRetryBusinessVerification,
+  adminApproveBusinessVerification,
+  adminRejectBusinessVerification,
+} from "../../controllers/admin/admin.businessVerification.controller.js";
 import { fixSubRole } from "../../controllers/admin/admin.fixSubRole.controller.js";
 import {
   adminListBankTransactions,
@@ -331,6 +337,21 @@ router.get("/requests/:id", getRequestById);
 router.patch("/requests/:id/status", updateRequestStatus);
 router.patch("/requests/:id/assign", assignManufacturer);
 router.post("/requests/fix-business-anchor-id", fixMissingBusinessAnchorId);
+
+// 홈택스 장애로 보류된 사업자 검증(관리자 개입)
+router.get(
+  "/business-verifications/pending",
+  adminListPendingBusinessVerifications,
+);
+router.post("/business-verifications/:id/retry", adminRetryBusinessVerification);
+router.post(
+  "/business-verifications/:id/approve",
+  adminApproveBusinessVerification,
+);
+router.post(
+  "/business-verifications/:id/reject",
+  adminRejectBusinessVerification,
+);
 
 // 대시보드 통계
 router.get("/dashboard", getDashboardStats);

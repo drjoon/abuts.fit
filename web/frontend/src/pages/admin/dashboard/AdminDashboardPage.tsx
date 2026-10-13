@@ -68,6 +68,7 @@ import { NoticeAdminCard } from "@/pages/admin/dashboard/NoticeAdminCard";
 import { DirectAbutmentSettingsCard } from "@/pages/admin/dashboard/DirectAbutmentSettingsCard";
 import { IndirectAbutmentCard } from "@/pages/admin/dashboard/IndirectAbutmentCard";
 import { AdminDemoConversionCard } from "@/pages/admin/dashboard/AdminDemoConversionCard";
+import { AdminBusinessVerificationCard } from "@/pages/admin/dashboard/AdminBusinessVerificationCard";
 import {
   Users,
   FileText,
@@ -2248,6 +2249,10 @@ export const AdminDashboardPage = () => {
               <NoticeAdminCard className={DASH_SPAN.c5r2} />
 
               <AdminDemoConversionCard
+                className={DASH_SPAN.c2}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
+              <AdminBusinessVerificationCard
                 className={DASH_SPAN.c2}
                 enabled={Boolean(token) && user?.role === "admin"}
               />
