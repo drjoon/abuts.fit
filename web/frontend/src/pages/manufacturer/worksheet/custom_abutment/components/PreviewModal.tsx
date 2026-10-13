@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-13: 더미는 헥스 회전이 없으면 STL모델대로로 보여 준다.
 // - 2026-10-10: 작업영역 1행 — 왼쪽 그리드·메타·안내·페인트, 오른쪽 측면·상단·45도.
 // - 2026-10-03: 제조사 프리뷰 STL은 스캔색 스위치 숨김(showColorMappingToggle=false).
 // - 2026-10-03: STL 뷰어에 페인트(표시·이미지 저장). filled 쪽 우선, FL/FP 편집 중에는 끔.
@@ -118,10 +119,12 @@ import {
 import {
   type ManufacturerRequest,
   type ReviewStageKey,
+  REQUEST_CATEGORY,
   getDeadlineInfo,
   getReviewStageKeyByTab,
   resolveFilledStlFile,
   resolvePracticeDirectShippingContact,
+  resolveRequestCategory,
 } from "../utils/request";
 import { isFinishLineDefective } from "../utils/finishLineQuality";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
@@ -991,8 +994,11 @@ export const PreviewModal = ({
         (req as any)?.caseInfos?.manufacturerHexRotation,
       );
 
+    const isDummySample =
+      resolveRequestCategory(req as any) === REQUEST_CATEGORY.DUMMY_SAMPLE;
     const nextHexRotationDraft: ManufacturerHexRotationDraftMode =
       savedManufacturerHexMode ||
+      (isDummySample ? "STL모델대로" : "") ||
       resolveDefaultPrepHexRotationMode(req as any) ||
       "";
 

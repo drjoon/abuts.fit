@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  applyDummySampleHexRotation,
   isDummySampleRequest,
   releaseDummySampleAfterMachining,
 } from "../../controllers/cnc/dummyProduct.js";
@@ -87,5 +88,36 @@ describe("dummy sample release after machining", () => {
     assert.equal(next.productionSchedule.dummySampleSourceRequestId, "RQ-ORIGIN");
     assert.equal(next.productionSchedule.machiningProgress.elapsedSeconds, 300);
     assert.equal(next.productionSchedule.machiningProgress.phase, undefined);
+  });
+});
+
+describe("dummy sample hex rotation", () => {
+  test("일반 의뢰의 빈 헥스 회전은 채우지 않는다", () => {
+    const doc = fakeRequest({
+      source: "order",
+      caseInfos: {},
+    });
+    assert.equal(applyDummySampleHexRotation(doc), false);
+    assert.equal(doc.snapshot().caseInfos.hexRotation, undefined);
+  });
+
+  test("더미에 헥스 회전이 없으면 STL모델대로로 둔다", () => {
+    const doc = fakeRequest({
+      source: "dummy_sample",
+      caseInfos: { hexRotation: { appliedDeg: 0 } },
+    });
+    assert.equal(applyDummySampleHexRotation(doc), true);
+    assert.equal(doc.snapshot().caseInfos.hexRotation.mode, "STL모델대로");
+    assert.equal(doc.snapshot().caseInfos.hexRotation.appliedDeg, 0);
+    assert.equal(applyDummySampleHexRotation(doc), false);
+  });
+
+  test("더미에 이미 있는 헥스 회전은 유지한다", () => {
+    const doc = fakeRequest({
+      source: "dummy_sample",
+      caseInfos: { hexRotation: { mode: "헥스30도회전" } },
+    });
+    assert.equal(applyDummySampleHexRotation(doc), false);
+    assert.equal(doc.snapshot().caseInfos.hexRotation.mode, "헥스30도회전");
   });
 });

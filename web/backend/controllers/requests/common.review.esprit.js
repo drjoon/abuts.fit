@@ -11,6 +11,7 @@ import {
   inferDiameterGroupFromDiameter,
 } from "./common.review.machine.js";
 import { resolveCaseInfosHexRotationMode } from "./common.requests.controller.js";
+import { persistDummySampleHexRotation } from "../cnc/dummyProduct.js";
 import { resolveFilledStlFile } from "../../utils/filledStlFile.js";
 
 const ESPRIT_BASE =
@@ -118,6 +119,7 @@ export async function triggerEspritForNc({
     resolvedGroup: matGroup,
   });
 
+  await persistDummySampleHexRotation(request);
   const hexRotationMode = resolveCaseInfosHexRotationMode(request);
 
   let resp;

@@ -5,6 +5,7 @@
 // - web/backend/controllers/requests/production.utils.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/DummyMachiningModal.tsx
 // change-log:
+// - 2026-10-13: 더미에 헥스 회전이 없으면 STL모델대로로 채운다. 가공 각도와 무관하다.
 // - 2026-10-13: 더미 가공이 끝나면 세척.패킹으로 넘기지 않고 대기열에서 뺀다. 더미설정은 유지.
 // - 2026-10-06: Next Up에서 더미를 빼도 더미설정은 유지한다.
 // - 2026-10-06: 더미 복사본은 원본 완료 상태를 비운다. 장비에 넣을 때만 Next Up.
@@ -36,6 +37,7 @@ import {
 import { compareMachiningQueueOrder } from "../requests/production.utils.js";
 import { pickFilledStlFileForClone } from "../../utils/filledStlFile.js";
 
+const DUMMY_SAMPLE_HEX_ROTATION_MODE = "STL모델대로";
 const DIAMETER_GROUPS = ["6", "8", "10", "12", "14"];
 const DUMMY_DOWNSTREAM_STAGES = ["세척.패킹", "포장.발송", "추적관리"];
 
@@ -222,7 +224,7 @@ function cloneDummyCaseInfos(sourceCaseInfos) {
   delete raw._id;
   const now = new Date();
   const filled = pickFilledStlFileForClone(raw);
-  return {
+  const cloned = {
     ...raw,
     ...filled,
     ncFile: raw.ncFile || null,
@@ -249,6 +251,11 @@ function cloneDummyCaseInfos(sourceCaseInfos) {
       tracking: null,
     },
   };
+  applyDummySampleHexRotation({
+    source: "dummy_sample",
+    caseInfos: cloned,
+  });
+  return cloned;
 }
 
 function expectedDummyDurationSeconds(elapsed) {
@@ -442,6 +449,49 @@ export function isDummySampleRequest(requestLike) {
   const source = String(requestLike?.source || "").trim();
   const category = String(requestLike?.requestCategory || "").trim();
   return source === "dummy_sample" || category === "dummy_sample";
+}
+
+function readHexRotationPlain(requestLike) {
+  const raw = requestLike?.caseInfos?.hexRotation;
+  if (!raw || typeof raw !== "object") return {};
+  const plain = typeof raw.toObject === "function" ? raw.toObject() : { ...raw };
+  delete plain._id;
+  return plain;
+}
+
+/** 더미는 헥스 각이 가공에 쓰이지 않는다. 비어 있으면 STL 원본 각도(STL모델대로)로 둔다. */
+export function applyDummySampleHexRotation(doc) {
+  if (!doc || !isDummySampleRequest(doc)) return false;
+  const before = String(doc?.caseInfos?.hexRotation?.mode || "").trim();
+  if (before) return false;
+  const next = {
+    ...readHexRotationPlain(doc),
+    mode: DUMMY_SAMPLE_HEX_ROTATION_MODE,
+  };
+  if (typeof doc.set === "function") {
+    doc.set("caseInfos.hexRotation", next);
+  } else if (doc.caseInfos && typeof doc.caseInfos === "object") {
+    doc.caseInfos.hexRotation = next;
+  } else {
+    doc.caseInfos = { hexRotation: next };
+  }
+  if (typeof doc.markModified === "function") {
+    doc.markModified("caseInfos");
+  }
+  return true;
+}
+
+export async function persistDummySampleHexRotation(doc) {
+  if (!applyDummySampleHexRotation(doc)) return false;
+  const hexRotation = readHexRotationPlain(doc);
+  const id = doc?._id;
+  const requestId = String(doc?.requestId || "").trim();
+  const filter = id ? { _id: id } : requestId ? { requestId } : null;
+  if (!filter || !hexRotation?.mode) return false;
+  await Request.updateOne(filter, {
+    $set: { "caseInfos.hexRotation": hexRotation },
+  });
+  return true;
 }
 
 export function releaseDummySampleAfterMachining(doc) {

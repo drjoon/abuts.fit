@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-13: 더미 조회 시 비어 있는 헥스 회전은 STL모델대로로 저장한다.
 // - 2026-10-13: 워크시트 목록에서 더미는 빼고, 세척.패킹 이후에 들어간 더미는 대기 상태로 되돌린다.
 // - 2026-10-06: dummy_sample도 샘플 삭제로 취급. 가공 Next Up에서도 삭제 가능.
 // - 2026-10-01: GET /my 목록 캐시는 만료·상한으로 걷는다.
@@ -89,7 +90,10 @@ import {
 } from "./utils.js";
 import { computeShippingPriority } from "./shippingPriority.utils.js";
 import { getAllProductionQueues } from "../cnc/shared.js";
-import { returnDownstreamDummySamplesToCatalog } from "../cnc/dummyProduct.js";
+import {
+  persistDummySampleHexRotation,
+  returnDownstreamDummySamplesToCatalog,
+} from "../cnc/dummyProduct.js";
 import {
   keepsUnmachinableOnShipPath,
   normalizeUnmachinableLabMessage,
@@ -2590,6 +2594,7 @@ export async function getRequestById(req, res) {
       });
     }
 
+    await persistDummySampleHexRotation(request);
     const normalized = await normalizeRequestForResponse(request);
     res.status(200).json({
       success: true,

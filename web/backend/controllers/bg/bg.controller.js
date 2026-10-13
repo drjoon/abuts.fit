@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-13: 더미 request-meta는 헥스 회전이 없으면 STL모델대로로 저장한 뒤 내려준다.
 // - 2026-10-10: 반자동 피니시라인(source=frontend-manual)은 2-filled·finish-line 콜백으로 덮지 않는다.
 // - 2026-10-10: STL/원본 다운로드는 S3 스트림으로 응답한다. 대기열 목록은 파일 메타만 읽는다.
 // - 2026-10-09: 테스트 계정도 NC 완료 후 가공으로 올린다. 자동 가공은 수동 승인 전 hold.
@@ -82,6 +83,7 @@ import { resolveCuffConnectionSpec } from "../../services/abutmentStl/cuffConnec
 import { isUserCapturedFinishLine } from "../../utils/finishLineQuality.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { buildWorksheetReadyQueueGuard } from "../../services/worksheetReadyQueue.guard.js";
+import { persistDummySampleHexRotation } from "../cnc/dummyProduct.js";
 
 const BG_STORAGE_BASE =
   process.env.BG_STORAGE_PATH ||
@@ -1834,6 +1836,8 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
     request = await Request.findOne({ requestId })
       .select({
         requestId: 1,
+        source: 1,
+        requestCategory: 1,
         caseInfos: 1,
         lotNumber: 1,
         // 제조사 수동 좌표계 전처리 모드(canonical: "STL모델대로"|"헥스30도회전"|"STL모델+"|"헥스30+")도 함께 로드한다.
@@ -1847,6 +1851,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
     const all = await Request.find({ manufacturerStage: { $ne: "취소" } })
       .select({
         requestId: 1,
+        source: 1,
         requestCategory: 1,
         manufacturerStage: 1,
         updatedAt: 1,
@@ -1902,6 +1907,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
       .json(new ApiResponse(404, { ok: false }, "Request not found"));
   }
 
+  await persistDummySampleHexRotation(request);
   const ci = request.caseInfos || {};
   const hexRotationMode = parseManufacturerHexRotationModeOrNull(
     ci?.hexRotation?.mode,
