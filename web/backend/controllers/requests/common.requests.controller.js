@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-13: 워크시트 목록에서 더미는 빼고, 세척.패킹 이후에 들어간 더미는 대기 상태로 되돌린다.
 // - 2026-10-06: dummy_sample도 샘플 삭제로 취급. 가공 Next Up에서도 삭제 가능.
 // - 2026-10-01: GET /my 목록 캐시는 만료·상한으로 걷는다.
 // - 2026-10-01: 추적관리 워크시트 검색(q)에 로트번호·의뢰번호·환자·치과·송장을 포함한다.
@@ -88,6 +89,7 @@ import {
 } from "./utils.js";
 import { computeShippingPriority } from "./shippingPriority.utils.js";
 import { getAllProductionQueues } from "../cnc/shared.js";
+import { returnDownstreamDummySamplesToCatalog } from "../cnc/dummyProduct.js";
 import {
   keepsUnmachinableOnShipPath,
   normalizeUnmachinableLabMessage,
@@ -1898,6 +1900,34 @@ export async function getAllRequests(req, res) {
       "rnd.doneAt",
       "requestor",
     ].join(" ");
+
+    if (view === "worksheet") {
+      try {
+        const parked = await returnDownstreamDummySamplesToCatalog();
+        if (parked > 0) {
+          emitAppEventToRoles(
+            ["manufacturer", "admin"],
+            "worksheet:count-update",
+            {
+              source: "dummy-sample-leave-downstream",
+              delta: -parked,
+            },
+          );
+        }
+      } catch (err) {
+        console.warn("[getAllRequests] dummy downstream return failed", {
+          message: err?.message || String(err),
+        });
+      }
+      const excludeDummySample = {
+        source: { $ne: "dummy_sample" },
+        requestCategory: { $ne: "dummy_sample" },
+      };
+      filter =
+        filter && Object.keys(filter).length > 0
+          ? { $and: [filter, excludeDummySample] }
+          : excludeDummySample;
+    }
 
     let query = Request.find(filter).sort(sort).skip(skip).limit(limit);
 

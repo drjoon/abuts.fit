@@ -10,6 +10,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - 2026-10-13: 더미 가공 승인·세척.패킹 승인은 다음 단계로 넘기지 않고 대기열에서 뺀다.
 // - 2026-10-09: 테스트 계정은 자동 승인만 거절. 작업자 수동 승인은 가공·NC를 허용한다.
 // - 2026-09-20: 비거래처 어벗 해제는 포장.발송 유지(가공 진입으로 옮기지 않음).
 // - 2026-09-20: PTX 포장.발송 후 치과→기공소 정산(선불 생산비 지급 시점).
@@ -46,6 +47,11 @@ import {
   normalizeBusinessAnchorId,
 } from "./mailbox.utils.js";
 import { triggerNextAutoMachiningAfterComplete } from "../cnc/machiningBridge.js";
+import {
+  isDummySampleRequest,
+  releaseDummySampleAfterMachining,
+  renumberQueuesAfterDummyRelease,
+} from "../cnc/dummyProduct.js";
 import { markPracticeTransferAbutmentMachiningStarted } from "../../services/practiceTransferProduction.service.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
 import { resolvePrcFileNames } from "./prcMapping.utils.js";
@@ -1227,6 +1233,7 @@ export async function updateReviewStatusByStage(req, res) {
     let resultRequest = null;
     let acceptedMessage = "";
     let previousManufacturerStage = null;
+    let releasedDummyMachineId = null;
     let isMachiningEntryApproval = false;
     let pendingEspritTriggerRequest = null;
     const pendingAdditionalEspritTriggerRequests = [];
@@ -1374,7 +1381,11 @@ export async function updateReviewStatusByStage(req, res) {
 
       // 세척.패킹 → 포장.발송: 각인 이미지(stageFiles.packing)가 있어야 승인 가능.
       // (AI 각인 인식 매칭과 무관 — 카드/프리뷰 → 수동 승인 경로)
-      if (status === "APPROVED" && effectiveStage === "packing") {
+      if (
+        status === "APPROVED" &&
+        effectiveStage === "packing" &&
+        !isDummySampleRequest(request)
+      ) {
         const packingFile = request?.caseInfos?.stageFiles?.packing || null;
         const hasPackingEngravingImage = Boolean(
           String(packingFile?.s3Key || "").trim() ||
@@ -1789,26 +1800,30 @@ export async function updateReviewStatusByStage(req, res) {
               // best-effort
             }
           } else if (effectiveStage === "machining") {
-            // machining 단계 승인: 이미 가공이 완료된 의뢰(machiningRecord 있음)는 재가공 없이 바로 세척.패킹으로
-            const hasMachiningRecord = !!request.machiningRecord;
-            if (hasMachiningRecord) {
-              console.log(
-                "[MACHINING_APPROVAL] machiningRecord exists, skip machining and go to packing",
-                {
-                  requestId: request.requestId,
-                  machiningRecord: String(request.machiningRecord),
-                },
-              );
+            if (isDummySampleRequest(request)) {
+              releasedDummyMachineId = releaseDummySampleAfterMachining(request);
+            } else {
+              // machining 단계 승인: 이미 가공이 완료된 의뢰(machiningRecord 있음)는 재가공 없이 바로 세척.패킹으로
+              const hasMachiningRecord = !!request.machiningRecord;
+              if (hasMachiningRecord) {
+                console.log(
+                  "[MACHINING_APPROVAL] machiningRecord exists, skip machining and go to packing",
+                  {
+                    requestId: request.requestId,
+                    machiningRecord: String(request.machiningRecord),
+                  },
+                );
+              }
+              applyStatusMapping(request, "세척.패킹");
+              // 우편함 배정 SSOT: 가공→세척.패킹 진입 시 1회 배정한다.
+              // (패킹 라벨 출력·각인 인식 전에도 메일함 코드가 필요하다)
+              await assignMailboxForCleaningPackingEnter({
+                request,
+                requestorOrgId: resolvedBusinessAnchorId,
+                session,
+                scopeFilter: mailboxAllocationScopeFilter,
+              });
             }
-            applyStatusMapping(request, "세척.패킹");
-            // 우편함 배정 SSOT: 가공→세척.패킹 진입 시 1회 배정한다.
-            // (패킹 라벨 출력·각인 인식 전에도 메일함 코드가 필요하다)
-            await assignMailboxForCleaningPackingEnter({
-              request,
-              requestorOrgId: resolvedBusinessAnchorId,
-              session,
-              scopeFilter: mailboxAllocationScopeFilter,
-            });
           } else if (effectiveStage === "packing") {
             // 작업용 샘플(헥스 확인용 등)도 정식 의뢰와 동일하게 포장.발송으로 진행.
             // 단계·배송비 SSOT: enterManufacturerShippingStage (아래 packing 블록).
@@ -1841,6 +1856,7 @@ export async function updateReviewStatusByStage(req, res) {
         );
         // 스크류 로트는 세척.패킹 진입(가공 완료 승인) 시점. 준비→가공 진입에는 배정하지 않는다.
         const shouldAutoAssignScrewLot =
+          !isDummySampleRequest(request) &&
           ((effectiveStage === "machining" && !isMachiningEntryApproval) ||
             effectiveStage === "packing") &&
           !hasTrackedScrewLot;
@@ -1860,7 +1876,9 @@ export async function updateReviewStatusByStage(req, res) {
           }
         }
 
-        if (effectiveStage === "packing") {
+        if (effectiveStage === "packing" && isDummySampleRequest(request)) {
+          releasedDummyMachineId = releaseDummySampleAfterMachining(request);
+        } else if (effectiveStage === "packing") {
           await ensureFinishedLotNumberForPacking(request);
           await enterManufacturerShippingStage({
             request,
@@ -2076,6 +2094,17 @@ export async function updateReviewStatusByStage(req, res) {
       }
       resultRequest = request;
     });
+
+    if (releasedDummyMachineId) {
+      try {
+        await renumberQueuesAfterDummyRelease(releasedDummyMachineId);
+      } catch (err) {
+        console.warn("[REVIEW] dummy queue renumber failed", {
+          machineId: releasedDummyMachineId,
+          message: err?.message || String(err),
+        });
+      }
+    }
 
     // 중요: 크레딧 이벤트는 트랜잭션 커밋 이후 발행한다.
     // CAM 승인/롤백 직후 프론트가 /api/credits/balance를 조회해도 커밋된 값을 읽도록 보장한다.

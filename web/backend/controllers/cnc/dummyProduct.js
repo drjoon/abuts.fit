@@ -5,6 +5,7 @@
 // - web/backend/controllers/requests/production.utils.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/DummyMachiningModal.tsx
 // change-log:
+// - 2026-10-13: 더미 가공이 끝나면 세척.패킹으로 넘기지 않고 대기열에서 뺀다. 더미설정은 유지.
 // - 2026-10-06: Next Up에서 더미를 빼도 더미설정은 유지한다.
 // - 2026-10-06: 더미 복사본은 원본 완료 상태를 비운다. 장비에 넣을 때만 Next Up.
 // - 2026-10-02: 저장한 더미는 가공 단계 복사본으로 보관하고 대기열·카운터에서 뺀다.
@@ -36,6 +37,7 @@ import { compareMachiningQueueOrder } from "../requests/production.utils.js";
 import { pickFilledStlFileForClone } from "../../utils/filledStlFile.js";
 
 const DIAMETER_GROUPS = ["6", "8", "10", "12", "14"];
+const DUMMY_DOWNSTREAM_STAGES = ["세척.패킹", "포장.발송", "추적관리"];
 
 const DUMMY_PRODUCT_SELECT = [
   "requestId",
@@ -434,6 +436,52 @@ async function createDummySample(source, userId) {
   });
   await copy.save();
   return copy.toObject();
+}
+
+export function isDummySampleRequest(requestLike) {
+  const source = String(requestLike?.source || "").trim();
+  const category = String(requestLike?.requestCategory || "").trim();
+  return source === "dummy_sample" || category === "dummy_sample";
+}
+
+export function releaseDummySampleAfterMachining(doc) {
+  if (!isDummySampleRequest(doc)) return null;
+  const previousMachineId = resolveAssignedMachine(doc);
+  parkDummySampleFromQueue(doc);
+  return previousMachineId || null;
+}
+
+export async function renumberQueuesAfterDummyRelease(machineId) {
+  const mid = String(machineId || "").trim();
+  if (!mid) return;
+  await renumberMachineQueue(mid);
+}
+
+export async function returnDownstreamDummySamplesToCatalog(limit = 40) {
+  const docs = await Request.find({
+    source: "dummy_sample",
+    manufacturerStage: { $in: DUMMY_DOWNSTREAM_STAGES },
+  })
+    .limit(Math.max(1, Number(limit) || 40))
+    .populate({
+      path: "productionSchedule.machiningRecord",
+      select: "status startedAt completedAt durationSeconds elapsedSeconds",
+    });
+  if (!docs.length) return 0;
+
+  const machines = new Set();
+  let parked = 0;
+  for (const doc of docs) {
+    if (isMachiningInProgress(doc)) continue;
+    const previousMachineId = releaseDummySampleAfterMachining(doc);
+    await doc.save();
+    parked += 1;
+    if (previousMachineId) machines.add(previousMachineId);
+  }
+  await Promise.all(
+    [...machines].map((machineId) => renumberMachineQueue(machineId)),
+  );
+  return parked;
 }
 
 async function retireDummySample(requestId) {

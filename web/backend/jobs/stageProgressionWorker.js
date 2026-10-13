@@ -5,6 +5,7 @@
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
 // - 2026-10-09: 테스트 계정은 출고일만으로 가공에 올리지 않는다. 작업자 승인 경로만 가공·NC로 간다.
+// - 2026-10-13: 더미는 세척.패킹에서 포장.발송으로 올리지 않는다.
 // - 2026-09-16: 가공→세척.패킹은 CNC 완료 stuck만 힐(출고일만으로 미완료 가공 승격 금지).
 // - 2026-08-22: 세척.패킹→포장.발송 자동 진행에서 샘플(source/price.rule) 제외 제거.
 //   작업용 샘플도 정식 의뢰와 같이 포장.발송·추적관리까지 진행.
@@ -113,6 +114,8 @@ async function progressStages() {
     // (크레딧 무기록은 retain/집하 경로에서 isManufacturerSampleRequest로 유지)
     const packagingToShipping = await Request.find({
       manufacturerStage: "세척.패킹",
+      source: { $ne: "dummy_sample" },
+      requestCategory: { $ne: "dummy_sample" },
       "timeline.estimatedShipYmd": { $exists: true, $lte: oneDayFromNow },
     }).populate("requestor", "businessAnchorId");
 

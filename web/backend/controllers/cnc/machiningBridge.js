@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 // change-log:
+// - 2026-10-13: 더미 가공 완료는 세척.패킹으로 넘기지 않고 대기열에서 뺀다.
 // - 2026-10-13: 가공 tick의 ALARM은 진행 상태만 갱신한다. 알람 건은 fail 알림 하나다.
 // - 2026-10-10: 가공 완료 NC 툴번호는 S3 스트림으로 읽고, 본문은 메모리에 올리지 않는다.
 // - 2026-10-10: 가공 오류(ALARM/FAILED)가 난 건은 자동으로 다시 집지 않는다. 자동 승인 직후 30초는 시작하지 않는다.
@@ -36,6 +37,11 @@ import {
   normalizeBusinessAnchorId,
 } from "../../controllers/requests/mailbox.utils.js";
 import { markPracticeTransferAbutmentMachiningStarted } from "../../services/practiceTransferProduction.service.js";
+import {
+  isDummySampleRequest,
+  releaseDummySampleAfterMachining,
+  renumberQueuesAfterDummyRelease,
+} from "./dummyProduct.js";
 import {
   healStuckCompletedMachiningToPacking,
   isRequestMachiningWorkCompleted,
@@ -1059,8 +1065,7 @@ export async function getLastCompletedMachiningMap(req, res) {
         isRequestMachiningWorkCompleted(info) &&
         !isRequestUnmachinableJudged(info)
       ) {
-        // 더미 복사본은 원본 완료 상태를 물려받아도 세척.패킹 힐/Complete에 넣지 않는다.
-        // 실제 CNC 완료 후 단계는 세척.패킹이라 아래 remachining skip에 안 걸린다.
+        // 더미는 가공 후 세척.패킹으로 올리지 않는다. 완료 흔적이 남아도 Complete/힐에서 뺀다.
         if (String(info.source || "").trim() === "dummy_sample") {
           skippedRequestIds.add(rid);
           remachiningMachineIds.push(mid);
@@ -2520,8 +2525,13 @@ export async function recordMachiningCompleteForBridge(req, res) {
         // CNC 가공 완료 시 제조 단계는 세척/패킹 단계로 전환한다.
         // status/manufacturerStage enum 은 '세척.패킹' 을 사용한다.
         // 이미 포장.발송·추적관리로 넘어간 건은 complete 이벤트로 단계를 되돌리지 않는다.
-        const canEnterPackingStage = fromStage === "가공";
-        if (canEnterPackingStage) {
+        // 더미는 세척.패킹으로 넘기지 않고 대기열에서 뺀다. 더미설정 복사본은 남긴다.
+        const isDummySample = isDummySampleRequest(request);
+        const canEnterPackingStage = !isDummySample && fromStage === "가공";
+        let releasedDummyMachineId = null;
+        if (isDummySample) {
+          releasedDummyMachineId = releaseDummySampleAfterMachining(request);
+        } else if (canEnterPackingStage) {
           applyStatusMapping(request, "세척.패킹");
           const requestAnchorIdStr = normalizeBusinessAnchorId(
             request.businessAnchorId,
@@ -2553,15 +2563,27 @@ export async function recordMachiningCompleteForBridge(req, res) {
           );
         }
         await request.save();
+        if (releasedDummyMachineId) {
+          try {
+            await renumberQueuesAfterDummyRelease(releasedDummyMachineId);
+          } catch (err) {
+            console.warn(
+              "[bridge:machining:complete] dummy queue renumber failed",
+              {
+                machineId: releasedDummyMachineId,
+                message: err?.message || String(err),
+              },
+            );
+          }
+        }
         console.log(
           "[bridge:machining:complete] request/record updated",
           JSON.stringify({
             machineId: mid,
             requestId,
             recordId: record?._id,
-            stage: canEnterPackingStage
-              ? "세척.패킹"
-              : fromStage || null,
+            stage: String(request?.manufacturerStage || "").trim() || null,
+            dummyReleased: Boolean(releasedDummyMachineId),
             mailboxAddress: request.mailboxAddress || null,
           }),
         );

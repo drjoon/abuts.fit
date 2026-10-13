@@ -9,6 +9,11 @@ import { getIO } from "../../socket.js";
 import mongoose from "mongoose";
 import Request from "../../models/request.model.js";
 import { applyStatusMapping } from "../../controllers/requests/utils.js";
+import {
+  isDummySampleRequest,
+  releaseDummySampleAfterMachining,
+  renumberQueuesAfterDummyRelease,
+} from "./dummyProduct.js";
 
 /**
  * 브리지 서버에서 가공 완료 시 호출하는 콜백 엔드포인트
@@ -49,8 +54,14 @@ export async function machiningCompleted(req, res) {
             : await Request.findOne({ requestId: jid });
 
         if (request) {
-          applyStatusMapping(request, "세척.패킹");
-          await request.save();
+          if (isDummySampleRequest(request)) {
+            const previousMachineId = releaseDummySampleAfterMachining(request);
+            await request.save();
+            await renumberQueuesAfterDummyRelease(previousMachineId);
+          } else {
+            applyStatusMapping(request, "세척.패킹");
+            await request.save();
+          }
         }
       }
     } catch (e) {
