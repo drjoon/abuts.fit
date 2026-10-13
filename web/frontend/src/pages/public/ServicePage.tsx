@@ -19,6 +19,7 @@ import {
   PUBLIC_PAGE_TITLE,
   PUBLIC_PAGE_SUBTITLE,
 } from "./components/PublicPageLayout";
+import { DEALER_CODE_REGISTER_WINDOW_LINE } from "@/shared/sales/dealershipPolicyCopy";
 
 function formatWon(value: number) {
   return `${value.toLocaleString()}원`;
@@ -229,9 +230,7 @@ export const ServicePage = () => {
                       가격을 정할 수 있으며, 해당 회원에게만 표시됩니다.
                     </li>
                     <li>
-                      가입 후 14일 안에 딜러 코드를 등록해야 합니다.
-                      <br />
-                      기간이 지나면 어벗츠 소개로 고정됩니다.
+                      {DEALER_CODE_REGISTER_WINDOW_LINE}
                     </li>
                   </ul>
                 </div>

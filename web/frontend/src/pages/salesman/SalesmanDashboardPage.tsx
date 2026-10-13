@@ -41,7 +41,6 @@ import { DealerSettlementRulesContent } from "@/features/commission/DealerSettle
 import {
   DEALERSHIP_DASHBOARD_BAND_LINE,
   DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD,
-  DEALER_CODE_REGISTER_WINDOW_AFTER_LINE,
   DEALER_CODE_REGISTER_WINDOW_LINE,
   REFERRAL_OWNERSHIP_RESET_ANYONE_SHORT,
   REFERRAL_OWNERSHIP_RESET_POLICY_SHORT,
@@ -348,7 +347,7 @@ function DealershipTermsCard({
             계약 내용
           </h2>
         </div>
-        <div className="grid min-w-0 flex-1 items-stretch gap-3 sm:grid-cols-2">
+        <div className="grid min-w-0 flex-1 items-stretch gap-3 sm:grid-cols-3">
           <TermsItem
             title="커스텀어벗 영업 수수료"
             onClick={onOpenSplit}
@@ -357,13 +356,7 @@ function DealershipTermsCard({
           <TermsItem
             icon={Clock}
             title="딜러 코드"
-            body={
-              <>
-                {DEALER_CODE_REGISTER_WINDOW_LINE}
-                <br />
-                {DEALER_CODE_REGISTER_WINDOW_AFTER_LINE}
-              </>
-            }
+            body={DEALER_CODE_REGISTER_WINDOW_LINE}
           />
           <TermsItem
             icon={RefreshCw}

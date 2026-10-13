@@ -28,6 +28,7 @@
 // - web/frontend/src/shared/legal/creditPrepaidCopy.ts
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { REMAKE_TERMS_ARTICLE_LINES } from "@/shared/pricing/remakePolicyCopy";
+import { DEALER_CODE_REGISTER_WINDOW_LINE } from "@/shared/sales/dealershipPolicyCopy";
 import {
   PublicPageLayout,
   PUBLIC_CARD_CLASS,
@@ -272,9 +273,7 @@ export const TermsPage = () => {
                   납품과 품질 책임은 회사가 집니다.
                 </p>
                 <p>
-                  4. 가입 후 14일 안에 딜러 코드를 등록해야 합니다.
-                  <br />
-                  기간이 지나면 어벗츠 소개로 고정됩니다.
+                  4. {DEALER_CODE_REGISTER_WINDOW_LINE}
                   <br />
                   딜러사·영업본부 소개로 가입한 의뢰자가
                   <br />

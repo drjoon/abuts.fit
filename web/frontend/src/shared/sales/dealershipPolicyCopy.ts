@@ -30,11 +30,8 @@ export const REFERRAL_OWNERSHIP_RESET_POLICY_SHORT =
 
 export const REFERRAL_OWNERSHIP_RESET_ANYONE_SHORT = "누구든 다시 영업 가능";
 
-/** 코드 없는 의뢰자는 가입 후 14일 안에 딜러 코드를 등록한다. 이후 어벗츠 소개로 고정. */
+/** 코드 없는 의뢰자는 가입 후 14일 안에 딜러 코드를 등록한다. */
 export const REQUESTOR_DEALER_CODE_WINDOW_DAYS = 14;
 
 export const DEALER_CODE_REGISTER_WINDOW_LINE =
-  `가입 후 ${REQUESTOR_DEALER_CODE_WINDOW_DAYS}일 안에 딜러 코드를 등록해야 합니다.`;
-
-export const DEALER_CODE_REGISTER_WINDOW_AFTER_LINE =
-  "기간이 지나면 어벗츠 소개로 고정됩니다.";
+  `의뢰자 가입 후 ${REQUESTOR_DEALER_CODE_WINDOW_DAYS}일 안에 반드시 딜러 코드를 등록해야 합니다.`;

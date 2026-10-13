@@ -34,10 +34,7 @@ import {
 import { SUPPORT_EMAIL } from "@/shared/lib/contactInfo";
 import { DEMO_MODE_FREE_CREDIT_FAQ_ANSWER } from "@/shared/demo/demoModeCopy";
 import { CREDIT_PREPAID_FAQS } from "@/shared/legal/creditPrepaidCopy";
-import {
-  DEALER_CODE_REGISTER_WINDOW_AFTER_LINE,
-  DEALER_CODE_REGISTER_WINDOW_LINE,
-} from "@/shared/sales/dealershipPolicyCopy";
+import { DEALER_CODE_REGISTER_WINDOW_LINE } from "@/shared/sales/dealershipPolicyCopy";
 
 type FaqItem = { q: string; a: string };
 
@@ -64,7 +61,7 @@ const FAQ_SECTIONS: {
       },
       {
         q: "딜러 코드는 언제까지 등록하나요?",
-        a: `${DEALER_CODE_REGISTER_WINDOW_LINE} ${DEALER_CODE_REGISTER_WINDOW_AFTER_LINE}`,
+        a: DEALER_CODE_REGISTER_WINDOW_LINE,
       },
       {
         q: "가입 시 무료 크레딧이 생기나요?",

@@ -54,7 +54,6 @@ import {
 } from '@/shared/settlement/settlementUi';
 import {
   DEALERSHIP_CUMULATIVE_BAND_LINE,
-  DEALER_CODE_REGISTER_WINDOW_AFTER_LINE,
   DEALER_CODE_REGISTER_WINDOW_LINE,
   REFERRAL_OWNERSHIP_RESET_ANYONE_LINE,
   REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
@@ -292,8 +291,6 @@ export const PricingPolicyDialog = ({
           </SettlementPolicyFact>
           <SettlementPolicyFact label='딜러 코드' className='break-keep sm:col-span-2'>
             {DEALER_CODE_REGISTER_WINDOW_LINE}
-            <br />
-            {DEALER_CODE_REGISTER_WINDOW_AFTER_LINE}
           </SettlementPolicyFact>
         </div>
       ) : null}
@@ -335,8 +332,6 @@ export const PricingPolicyDialog = ({
               </SettlementPolicyFact>
               <SettlementPolicyFact label='소개 코드' className='break-keep'>
                 {DEALER_CODE_REGISTER_WINDOW_LINE}
-                <br />
-                {DEALER_CODE_REGISTER_WINDOW_AFTER_LINE}
                 <br />
                 {REFERRAL_OWNERSHIP_RESET_POLICY_LINE}
                 <br />
