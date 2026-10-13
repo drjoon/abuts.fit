@@ -27,10 +27,17 @@ export async function handleBankWebhook(req, res) {
   try {
     // 선택적 시크릿 검증 (POPBILL_BANK_WEBHOOK_SECRET 설정 시 활성화)
     const expectedSecret = process.env.POPBILL_BANK_WEBHOOK_SECRET;
+    if (!expectedSecret && process.env.NODE_ENV === "production") {
+      console.warn(
+        "[bankWebhook] POPBILL_BANK_WEBHOOK_SECRET 미설정 — 입금 웹훅이 인증 없이 열려 있습니다.",
+      );
+    }
     if (expectedSecret) {
+      // 콜백 URL에 ?token=… 으로 심을 수 있게 query도 허용(커스텀 헤더 불가 대비)
       const receivedSecret =
         req.headers["x-popbill-token"] ||
         req.headers["x-webhook-secret"] ||
+        req.query?.token ||
         req.body?.secret;
       if (receivedSecret !== expectedSecret) {
         console.warn("[bankWebhook] unauthorized attempt");
