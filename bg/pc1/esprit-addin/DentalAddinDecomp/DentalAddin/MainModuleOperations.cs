@@ -1611,8 +1611,8 @@ namespace DentalAddin
                     case "BACK" when TryResolveSafeSplitBackZoneX("TurningOp BACK", out double safeZoneEndX):
                         // Safe split(Middle_Turn): Middle_Rough 끝(Xk+0.8)보다 2.2 더 깎고 퇴출. 헥스 너머 연장·45도 퇴출은 BACK2(Back_Turn)로 미룬다.
                         rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
-                        // Middle_Turn 끝 = Middle_Rough 끝(=Xk) + 황삭 공구 반경(D4 → 2.0)
-                        rangeMaxX = safeZoneEndX + GetTurnPastRoughEndMm() + ResolveTurnToolpathCompMm("MIDDLE");
+                        // Middle_Turn 끝 = Middle_Rough 끝(=Xk+0.6) + 황삭 공구 반경(D4 → 2.0)
+                        rangeMaxX = safeZoneEndX + RoughPastFinishEndMm + GetTurnPastRoughEndMm() + ResolveTurnToolpathCompMm("MIDDLE");
                         break;
                     case "BACK2":
                         if (!TryResolveSafeSplitBackZoneX("TurningOp BACK2", out double safeZoneStartX))

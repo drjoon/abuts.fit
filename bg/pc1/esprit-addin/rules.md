@@ -78,7 +78,8 @@
 - 인접 툴패스:
   - Rough: **선행 끝 = 경계 + 0.8mm** (`GetRoughPastFinishSeamMm`, Finish seam 너머 3D 황삭), **후행 시작 = 경계 tip쪽(그림 왼쪽, X-) 공구 반경**
     - `GetRoughAdjacentOverlapMm()` = 활성 rough 반경 (D4→`2.0`, `ROUGH_20` D2→`1.0`)
-    - Front_Rough 끝 = `Splitline_2 + 0.8`, Middle_Rough 끝 = `Xk + 0.8`
+    - Front_Rough 끝 = Front_Finish 끝(`Splitline_2`) + 0.6, Middle_Rough 끝 = Middle_Finish 끝(`Xk`) + 0.6 (D1.2 볼 반경, 2026-10-13). Back_Rough 끝 = BackPointX(Finish와 일치 유지)
+    - 후행 Rough 시작 = 선행 Rough 끝 − 1.0 (`GetRoughAdjacentOverlapMm`)
     - D1.2 Finish는 경계에서 끝나므로 치은 쪽은 이미 황삭된 면만 깎는다
   - Finish: **선행 끝 = 경계**, **후행 시작 = 경계 − 0.8mm** (D1.2 직경 2/3, tip 쪽 X−)
     - Front 끝 = `Splitline_2`, Middle/Back 시작 = `Splitline_2 − 0.8`
@@ -97,7 +98,7 @@
 - 경계 `Xk = (BackPointX - FL min_z) + 0.2` (마진 띠는 Middle_Finish 한 번에, seam은 커프).
 - 순서: `Front_Turn → Front_Rough → Front_Face → Front_Finish → Middle_Turn → Middle_Rough → Middle_Finish → Back_Turn → Back_Rough → Back_Finish → Connection`
   - 내부 region 코드는 Middle=`BACK`, Back=`BACK2`(T05·레이어·경계 로직 공유). 표시명만 바뀐다.
-  - Middle_Finish 끝 `Xk`, Middle_Rough 끝 `Xk+0.8` (Finish seam 너머를 먼저 3D 황삭), Middle_Turn 끝 `Xk+3.0` (황삭 끝+D4 반경 2.0+칩 0.2)
+  - Middle_Finish 끝 `Xk`, Middle_Rough 끝 `Xk+0.6`, Middle_Turn 끝 = Rough 끝 + D4 반경 + 보정 (황삭 끝+D4 반경 2.0+칩 0.2)
   - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX]`(경계 `RoughBoundryBack2`), Back_Finish `[Xk-0.8 ~ BackPointX]`(`B2_PHASE`)
 - Middle_Turn 끝(`Xk+3.0`)은 **클램프하지 않는다**. 줄이면 D4 러프가 원소재를 물고, Xk를 당기면 seam이 마진으로 들어간다.
 - 포기 조건(기존 단일 Back 유지): FL min_z 없음, `Xk < Splitline_2+1.5`, Middle_Turn 끝 > `BackPointX+1.5` (= 치은 파트 FL min_z < 1.7mm). 로그 `SafeSplit[...]`.
@@ -109,7 +110,7 @@
 - 목적: **한 식**으로 아래를 동일 경계 좌표에 둔다.
   - `Splitline_2` / `TwoPhaseSplitLine`
   - `Finish_Front` 끝
-  - `Front_Rough` 끝 = 그 경계 + `GetRoughPastFinishSeamMm()` (`0.8`)
+  - `Front_Rough` 끝 = 그 경계 + `GetRoughPastFinishSeamMm()` (`0.6`)
 - 기준식:
   - `SharedFinishSplitX = finishLineTopX - 1.0` (tip 쪽 1mm, Z+1 ≡ X-1)
 - 인접 후행 시작:
