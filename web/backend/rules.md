@@ -296,7 +296,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - **90일 무주문이면 소개 리셋**: `jobs/dailyReferralOwnershipResetWorker.js` + `services/referralOwnershipReset.service.js`
     - 대상: `businessType=requestor` 이고 추천인 BA가 `salesman|salesTeam`
     - 시계: `max(referralAssignedAt || BA.createdAt, 최근 Request.createdAt, 최근 크레딧 소비 COMMIT occurredAt)` < KST 오늘 자정−90일 → `referredByAnchorId=null` (+ 멤버 User 미러)
-    - 코드 없이 가입하면 귀속은 null. 대표만 `POST /api/businesses/me/apply-referral` (영업자·딜러 코드, 귀속 null 또는 개발운영사 기본 귀속일 때)
+    - 공개 가입 중간에 소개자 코드 입력(선택). 직원 가입·URL `ref`는 생략. 코드 없이 가입하면 귀속은 null. 개발운영사를 기본 소개자로 넣지 않는다. 대표만 `POST /api/businesses/me/apply-referral` (의뢰자·딜러·영업본부 코드, 귀속 null일 때)
     - 락: `worker:daily-referral-ownership-reset` / done `…:done:<ymd>`
     - FE 카피: `PricingPolicyDialog`(salesman) · `DealershipTermsCard`
   - 가격 SSOT 자동 점검(`runPricingSsotConsistencyCheck`)은 워커/관리자 대시보드/CI 스케줄에서 제외

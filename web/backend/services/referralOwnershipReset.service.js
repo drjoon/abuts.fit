@@ -263,9 +263,44 @@ export async function resetExpiredReferralOwnerships({
   return result;
 }
 
+/** 예전 기본 소개자(개발운영사) 귀속을 null로 되돌린다. 실제 소개자는 건드리지 않는다. */
+export async function clearDevopsDefaultReferrer(anchor) {
+  const anchorId = String(anchor?._id || "").trim();
+  const referrerId = String(anchor?.referredByAnchorId || "").trim();
+  if (!Types.ObjectId.isValid(anchorId) || !Types.ObjectId.isValid(referrerId)) {
+    return false;
+  }
+  const parent = await BusinessAnchor.findById(referrerId)
+    .select({ businessType: 1 })
+    .lean();
+  if (String(parent?.businessType || "") !== "devops") return false;
+
+  const updated = await BusinessAnchor.findOneAndUpdate(
+    {
+      _id: anchor._id,
+      referredByAnchorId: anchor.referredByAnchorId,
+    },
+    {
+      $set: {
+        referredByAnchorId: null,
+        defaultReferralAnchorId: null,
+        referralAssignedAt: null,
+        dealershipCommissionRate: null,
+      },
+    },
+  ).select({ _id: 1 });
+  if (!updated) return false;
+
+  await User.updateMany(
+    { businessAnchorId: anchor._id },
+    { $set: { referredByAnchorId: null } },
+  );
+  return true;
+}
+
 /**
- * 소개 귀속이 비어 있거나 기본 개발운영사 귀속인 의뢰자 BA에 영업자 코드를 적용한다.
- * (코드 없이 가입한 뒤 설정-사업자에서 등록, 또는 90일 리셋 후 재영업)
+ * 소개 귀속이 null인 의뢰자 BA에 소개자 코드를 적용한다.
+ * 의뢰자·딜러·영업본부 코드. 코드 없이 가입하면 귀속은 null이고, 대표가 설정-사업자에서 등록한다.
  */
 export async function applyReferralCodeToUnownedRequestor({
   requestorBusinessAnchorId,
@@ -280,7 +315,7 @@ export async function applyReferralCodeToUnownedRequestor({
     throw new Error("의뢰자 사업자 정보가 올바르지 않습니다.");
   }
   if (!code) {
-    throw new Error("영업자 코드를 입력해주세요.");
+    throw new Error("소개자 코드를 입력해주세요.");
   }
 
   const requestorAnchor = await BusinessAnchor.findById(anchorId)
@@ -291,20 +326,20 @@ export async function applyReferralCodeToUnownedRequestor({
     !requestorAnchor ||
     (anchorType !== "requestor" && anchorType !== "practice")
   ) {
-    throw new Error("의뢰자 사업자만 영업자 코드를 등록할 수 있습니다.");
+    throw new Error("의뢰자 사업자만 소개자 코드를 등록할 수 있습니다.");
   }
 
   const currentReferrerId = String(requestorAnchor.referredByAnchorId || "").trim();
-  let replaceable = !currentReferrerId;
+  let replaceable = !currentReferrerId || !Types.ObjectId.isValid(currentReferrerId);
   if (currentReferrerId && Types.ObjectId.isValid(currentReferrerId)) {
     const parent = await BusinessAnchor.findById(currentReferrerId)
       .select({ businessType: 1 })
       .lean();
-    replaceable = String(parent?.businessType || "") === "devops";
+    replaceable = !parent;
   }
   if (!replaceable) {
     throw new Error(
-      "이미 영업자 코드가 등록되어 있습니다. 90일 무주문이면 소개가 리셋된 뒤 다시 등록할 수 있습니다.",
+      "이미 소개자 코드가 등록되어 있습니다. 90일 무주문이면 소개가 리셋된 뒤 다시 등록할 수 있습니다.",
     );
   }
 
@@ -317,12 +352,12 @@ export async function applyReferralCodeToUnownedRequestor({
     .lean();
 
   if (!refUser) {
-    throw new Error("유효하지 않은 영업자 코드입니다.");
+    throw new Error("유효하지 않은 소개자 코드입니다.");
   }
 
   const role = String(refUser.role || "").trim();
-  if (!["salesman", "salesTeam"].includes(role)) {
-    throw new Error("영업자 또는 딜러 코드만 등록할 수 있습니다.");
+  if (!["requestor", "salesman", "salesTeam"].includes(role)) {
+    throw new Error("의뢰자·딜러·영업본부 코드만 등록할 수 있습니다.");
   }
 
   let referrerAnchorId = String(refUser.businessAnchorId || "").trim();
@@ -336,25 +371,37 @@ export async function applyReferralCodeToUnownedRequestor({
   }
 
   if (!Types.ObjectId.isValid(referrerAnchorId)) {
-    throw new Error("추천인 사업자 정보가 없습니다.");
+    throw new Error("소개자의 사업자 정보가 없습니다.");
   }
   if (referrerAnchorId === anchorId) {
     throw new Error("본인 코드는 등록할 수 없습니다.");
   }
 
   const assignedAt = new Date();
-  const creditDefaults = await loadCreditSettingsDefaults();
-  const dealershipPolicy = resolveDealershipCommissionPolicy(creditDefaults);
-  const stampedRate = dealershipPolicy.activeRate;
+  const salesReferrer = role === "salesman" || role === "salesTeam";
+  let stampedRate = null;
+  if (salesReferrer) {
+    const creditDefaults = await loadCreditSettingsDefaults();
+    const dealershipPolicy = resolveDealershipCommissionPolicy(creditDefaults);
+    stampedRate = dealershipPolicy.activeRate;
+  }
   const currentFilterId =
     currentReferrerId && Types.ObjectId.isValid(currentReferrerId)
       ? new Types.ObjectId(currentReferrerId)
       : null;
+  const referrerMatch = currentFilterId
+    ? { referredByAnchorId: currentFilterId }
+    : {
+        $or: [
+          { referredByAnchorId: null },
+          { referredByAnchorId: { $exists: false } },
+        ],
+      };
   const updated = await BusinessAnchor.findOneAndUpdate(
     {
       _id: new Types.ObjectId(anchorId),
-      businessType: anchorType,
-      referredByAnchorId: currentFilterId,
+      businessType: { $in: ["requestor", "practice"] },
+      ...referrerMatch,
     },
     {
       $set: {
@@ -368,7 +415,7 @@ export async function applyReferralCodeToUnownedRequestor({
   ).select({ _id: 1, referredByAnchorId: 1 });
 
   if (!updated) {
-    throw new Error("영업자 코드 등록에 실패했습니다. 이미 등록되어 있을 수 있습니다.");
+    throw new Error("소개자 코드 등록에 실패했습니다. 이미 등록되어 있을 수 있습니다.");
   }
 
   await User.updateMany(

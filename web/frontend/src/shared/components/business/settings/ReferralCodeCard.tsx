@@ -69,19 +69,19 @@ export function ReferralCodeCard({
       if (!res.ok) {
         const message = String((res.data as any)?.message || "").trim();
         toast({
-          title: "영업자 코드 등록 실패",
+          title: "소개자 코드 등록 실패",
           description: message || "코드를 다시 확인해주세요.",
           variant: "destructive",
         });
         return;
       }
-      toast({ title: "영업자 코드가 등록되었습니다" });
+      toast({ title: "소개자 코드가 등록되었습니다" });
       setCode("");
       invalidateBusinessMeCache({ token, businessType });
       await load();
     } catch {
       toast({
-        title: "영업자 코드 등록 실패",
+        title: "소개자 코드 등록 실패",
         description: "네트워크 오류가 발생했습니다.",
         variant: "destructive",
       });
@@ -94,21 +94,25 @@ export function ReferralCodeCard({
     return (
       <div className="flex h-16 items-center text-sm text-muted-foreground">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        영업자 코드를 확인하는 중…
+        소개자 코드를 확인하는 중…
       </div>
     );
   }
 
-  if (!ownership?.canRegister && !ownership?.assigned) return null;
-
   if (ownership?.assigned && !ownership?.canRegister) {
     return (
       <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
-        <p className="text-sm font-semibold text-slate-900">영업자 코드</p>
+        <p className="text-sm font-semibold text-slate-900">소개자 코드</p>
         <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-          {ownership?.salesAssigned
-            ? "등록되어 있습니다. 90일 무주문이면 소개가 리셋됩니다."
-            : "등록되어 있습니다."}
+          {ownership?.salesAssigned ? (
+            <>
+              등록되어 있습니다.
+              <br />
+              90일 무주문이면 소개가 리셋됩니다.
+            </>
+          ) : (
+            "등록되어 있습니다."
+          )}
         </p>
       </section>
     );
@@ -120,23 +124,21 @@ export function ReferralCodeCard({
       onSubmit={handleSubmit}
     >
       <div>
-        <p className="text-sm font-semibold text-slate-900">영업자 코드</p>
+        <p className="text-sm font-semibold text-slate-900">소개자 코드</p>
         <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-          영업자에게 받은 코드를 등록합니다.
-          <br />
-          대표만 등록할 수 있고, 90일 무주문이면 소개가 리셋됩니다.
+          대표만 등록할 수 있습니다.
         </p>
       </div>
       <div className="flex flex-col gap-2 sm:flex-row">
         <div className="flex-1 space-y-1.5">
           <Label htmlFor="sales-referral-code" className="sr-only">
-            영업자 코드
+            소개자 코드
           </Label>
           <Input
             id="sales-referral-code"
             value={code}
             onChange={(event) => setCode(event.target.value)}
-            placeholder="영업자 코드"
+            placeholder="소개자 코드"
             autoComplete="off"
             disabled={saving}
             className="h-10 rounded-xl bg-white"

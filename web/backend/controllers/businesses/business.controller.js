@@ -38,7 +38,10 @@ import {
   isPracticeRequestorAnchor,
   resolveDemoModeExpiresAt,
 } from "./business.demoMode.util.js";
-import { applyReferralCodeToUnownedRequestor } from "../../services/referralOwnershipReset.service.js";
+import {
+  applyReferralCodeToUnownedRequestor,
+  clearDevopsDefaultReferrer,
+} from "../../services/referralOwnershipReset.service.js";
 import { resolveRequestorPricingBaseDate } from "../requests/utils.js";
 import {
   isHexVerificationPending,
@@ -415,6 +418,10 @@ export async function getMyBusiness(req, res) {
       )
     ) {
       membership = "pending";
+    } else if (String(freshUser?.subRole || req.user?.subRole || "") === "owner") {
+      membership = "owner";
+    } else if (String(freshUser?.subRole || req.user?.subRole || "") === "staff") {
+      membership = "member";
     }
 
     if (
@@ -555,10 +562,18 @@ export async function getMyBusiness(req, res) {
         .lean();
       referrerBusinessType = String(referrerAnchor?.businessType || "") || null;
     }
+    if (referrerBusinessType === "devops") {
+      const cleared = await clearDevopsDefaultReferrer(anchor);
+      if (cleared) {
+        anchor.referredByAnchorId = null;
+        referrerBusinessType = null;
+      }
+    }
+    const hasReferrerId =
+      Boolean(anchor?.referredByAnchorId) &&
+      Types.ObjectId.isValid(String(anchor.referredByAnchorId));
     const referralCanRegister =
-      isRequestorRole &&
-      membership === "owner" &&
-      (!anchor?.referredByAnchorId || referrerBusinessType === "devops");
+      isRequestorRole && membership === "owner" && !hasReferrerId;
 
     const responseData = {
       success: true,
@@ -663,9 +678,7 @@ export async function getMyBusiness(req, res) {
         referralOwnership: isRequestorRole
             ? {
                 canRegister: referralCanRegister,
-                assigned:
-                  Boolean(anchor?.referredByAnchorId) &&
-                  referrerBusinessType !== "devops",
+                assigned: hasReferrerId,
                 salesAssigned:
                   referrerBusinessType === "salesman" ||
                   referrerBusinessType === "salesTeam",
@@ -1993,7 +2006,7 @@ export async function applyMyReferralCode(req, res) {
     if (!isOwner) {
       return res.status(403).json({
         success: false,
-        message: "영업자 코드는 대표만 등록할 수 있습니다.",
+        message: "소개자 코드는 대표만 등록할 수 있습니다.",
       });
     }
 
