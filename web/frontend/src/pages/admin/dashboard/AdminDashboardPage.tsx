@@ -69,6 +69,7 @@ import { DirectAbutmentSettingsCard } from "@/pages/admin/dashboard/DirectAbutme
 import { IndirectAbutmentCard } from "@/pages/admin/dashboard/IndirectAbutmentCard";
 import { AdminDemoConversionCard } from "@/pages/admin/dashboard/AdminDemoConversionCard";
 import { AdminBusinessVerificationCard } from "@/pages/admin/dashboard/AdminBusinessVerificationCard";
+import { AdminPopbillPointCard } from "@/pages/admin/dashboard/AdminPopbillPointCard";
 import {
   Users,
   FileText,
@@ -2253,6 +2254,10 @@ export const AdminDashboardPage = () => {
                 enabled={Boolean(token) && user?.role === "admin"}
               />
               <AdminBusinessVerificationCard
+                className={DASH_SPAN.c2}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
+              <AdminPopbillPointCard
                 className={DASH_SPAN.c2}
                 enabled={Boolean(token) && user?.role === "admin"}
               />

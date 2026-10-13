@@ -625,3 +625,28 @@ export const checkPopbillDepositorInfo = async ({
     );
   });
 };
+
+/** 파트너(LinkID) 잔여포인트. 예금주조회·실명조회 등 사용분이 여기서 차감된다. */
+export const getPopbillPartnerBalance = async () => {
+  const { corpNum } = getPopbillAccountCheckConfig();
+  return new Promise((resolve, reject) => {
+    accountCheckService.getPartnerBalance(
+      corpNum,
+      (balance) => resolve(Number(balance)),
+      (error) => reject(error),
+    );
+  });
+};
+
+/** 파트너 포인트 충전 페이지 URL(팝빌 발급, 유효시간 짧음). */
+export const getPopbillPartnerChargeUrl = async () => {
+  const { corpNum } = getPopbillAccountCheckConfig();
+  return new Promise((resolve, reject) => {
+    accountCheckService.getPartnerURL(
+      corpNum,
+      "CHRG",
+      (url) => resolve(String(url)),
+      (error) => reject(error),
+    );
+  });
+};

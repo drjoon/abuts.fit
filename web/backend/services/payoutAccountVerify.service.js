@@ -9,12 +9,17 @@ import {
   resolvePopbillBank,
 } from "../utils/bankCodes.js";
 import {
+  isPopbillPointShortage,
+  recordPopbillPointShortage,
+} from "./popbillPointAlert.service.js";
+import {
   checkPopbillAccountInfo,
   checkPopbillDepositorInfo,
   isPopbillAccountCheckConfigured,
 } from "../utils/popbill.util.js";
 
 const SUCCESS_RESULT = 100;
+
 
 function toResultCode(raw) {
   const n = Number(raw);
@@ -153,6 +158,22 @@ export async function verifyPayoutAccount(input = {}) {
     const code = err?.code;
     const msg = String(err?.message || err || "").trim();
     console.error("[payoutAccountVerify] checkAccountInfo error", code, msg);
+    if (isPopbillPointShortage(msg)) {
+      recordPopbillPointShortage(msg);
+      // 팝빌 포인트 부족은 사용자 책임이 아님 → 확인 건너뜀(수동 확인)으로 통과.
+      return {
+        verified: false,
+        skipped: true,
+        method: "account",
+        message:
+          "계좌 자동 확인을 일시적으로 사용할 수 없어 건너뛰었습니다. 입력값을 수동으로 확인해주세요.",
+        accountName: "",
+        bankCode: resolved.code,
+        bankName: resolved.name,
+        result: code ?? null,
+        resultMessage: msg,
+      };
+    }
     return {
       verified: false,
       skipped: false,
