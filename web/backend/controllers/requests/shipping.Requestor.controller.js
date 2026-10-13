@@ -154,10 +154,11 @@ export async function updateMyShippingMode(req, res) {
         weeklyBatchDaysForSchedule = [];
       }
 
-      if (shippingMode === "normal" && !weeklyBatchDaysForSchedule.length) {
-        rejectedIds.push(requestId);
-        continue;
-      }
+      // [LEGACY] 묶음배송 중단 — 재사용 시 복구
+      // if (shippingMode === "normal" && !weeklyBatchDaysForSchedule.length) {
+      //   rejectedIds.push(requestId);
+      //   continue;
+      // }
 
       if (shippingMode === "express") {
         const selectable = await isExpressShippingSelectable({

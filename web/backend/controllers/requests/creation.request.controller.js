@@ -92,13 +92,14 @@ export async function createRequest(req, res) {
         typeof requestorOrg?.requestSettings?.anodizingEnabled === "boolean"
           ? requestorOrg.requestSettings.anodizingEnabled
           : true;
-      if (requestorWeeklyBatchDays.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
-        });
-      }
+      // [LEGACY] 묶음배송 중단 — 재사용 시 복구
+      // if (requestorWeeklyBatchDays.length === 0) {
+      //   return res.status(400).json({
+      //     success: false,
+      //     message:
+      //       "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
+      //   });
+      // }
     }
 
     const { caseInfos, ...bodyRest } = req.body;
@@ -467,13 +468,14 @@ export async function createRequestsBulk(req, res) {
         typeof requestorOrg?.requestSettings?.anodizingEnabled === "boolean"
           ? requestorOrg.requestSettings.anodizingEnabled
           : true;
-      if (requestorWeeklyBatchDays.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
-        });
-      }
+      // [LEGACY] 묶음배송 중단 — 재사용 시 복구
+      // if (requestorWeeklyBatchDays.length === 0) {
+      //   return res.status(400).json({
+      //     success: false,
+      //     message:
+      //       "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
+      //   });
+      // }
     }
 
     const items = Array.isArray(req.body?.items) ? req.body.items : null;

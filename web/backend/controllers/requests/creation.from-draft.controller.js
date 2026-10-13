@@ -1240,17 +1240,18 @@ export async function createRequestsFromDraft(req, res) {
       totalShippingFee,
     });
 
-    // 묶음 배송 요일 설정 체크 (transaction 외부로 이동)
-    const hasNormalShipping = preparedCasesForCreate.some(
-      (item) => (item.shippingMode || "normal") === "normal",
-    );
-    if (hasNormalShipping && weeklyBatchDays.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "묶음 배송 요일을 설정해주세요. 신규 의뢰 페이지의 묶음 배송 섹션에서 요일을 선택 후 다시 시도하세요.",
-      });
-    }
+    // [LEGACY] 묶음배송 중단: 딜리버리 배송만 하므로 묶음 배송 요일 설정은 요구하지 않는다.
+    // 묶음배송을 다시 쓸 때 아래 검사를 되살린다.
+    // const hasNormalShipping = preparedCasesForCreate.some(
+    //   (item) => (item.shippingMode || "normal") === "normal",
+    // );
+    // if (hasNormalShipping && weeklyBatchDays.length === 0) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message:
+    //       "묶음 배송 요일을 설정해주세요. 신규 의뢰 페이지의 묶음 배송 섹션에서 요일을 선택 후 다시 시도하세요.",
+    //   });
+    // }
 
     // 부족분은 생성 전에 막아 402. 실제 보류는 insert 직후·응답 전(동시 제출 경합도 402로 응답).
     let creditBalanceForHold = null;
@@ -1657,17 +1658,17 @@ export async function createRequestsFromDraft(req, res) {
           // weeklyBatchDays already fetched in pre-fetch phase (same org as businessAnchorId)
           const requestorWeeklyBatchDays = weeklyBatchDays;
 
-          if (
-            shippingMode === "normal" &&
-            requestorWeeklyBatchDays.length === 0
-          ) {
-            const batchDayErr2 = new Error(
-              "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
-            );
-            batchDayErr2.statusCode = 400;
-            throw batchDayErr2;
-          }
-
+          // [LEGACY] 묶음배송 중단 — 재사용 시 복구
+          // if (
+          //   shippingMode === "normal" &&
+          //   requestorWeeklyBatchDays.length === 0
+          // ) {
+          //   const batchDayErr2 = new Error(
+          //     "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
+          //   );
+          //   batchDayErr2.statusCode = 400;
+          //   throw batchDayErr2;
+          // }
           const productionSchedule =
             item.productionSchedule ||
             (await calculateInitialProductionSchedule({
