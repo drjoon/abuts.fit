@@ -2262,7 +2262,7 @@ export const AdminDashboardPage = () => {
                 enabled={Boolean(token) && user?.role === "admin"}
               />
               <DashTile
-                className={DASH_SPAN.c2}
+                className={DASH_SPAN.c3}
                 title="헥스 회전 확인"
                 tone={hexVerificationCount > 0 ? "warn" : "default"}
                 icon={<RotateCw className="h-4 w-4 text-muted-foreground" />}
@@ -2284,7 +2284,7 @@ export const AdminDashboardPage = () => {
                 </div>
               </DashTile>
               <DashTile
-                className={DASH_SPAN.c2}
+                className={DASH_SPAN.c3}
                 title="신규 보철물 요청"
                 tone={prosthesisFeeItemRequestPending > 0 ? "warn" : "default"}
                 icon={<Layers className="h-4 w-4 text-muted-foreground" />}
