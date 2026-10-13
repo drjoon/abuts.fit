@@ -30,6 +30,8 @@ const systemSettingsSchema = new mongoose.Schema(
       autoStartAt: { type: Date, default: null },
       maxDiameterMm: { type: Number, default: 10 },
       minFinishLineZ: { type: Number, default: 0.6 },
+      // 자동 승인에서 뺀 의뢰자(BusinessAnchor _id). 해당 의뢰는 준비에 남기고 작업자가 승인한다.
+      excludedRequestorAnchorIds: { type: [String], default: undefined },
       // NC 좌표 한계(xMin/xMax/yMin/yMax/zMin/zMax). 비우면 utils/ncProgramCheck.js 기본값.
       ncLimits: { type: {}, default: undefined },
     },

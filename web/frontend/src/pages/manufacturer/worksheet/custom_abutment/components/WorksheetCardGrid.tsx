@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-14: 준비 카드 — 자동 승인에서 뺀 의뢰자의 의뢰에 «제외» 뱃지.
 // - 2026-10-10: JS 실패는 준비 카드 «JS 실패» 뱃지. 오버레이는 engine=rhino일 때만 «Rhino 작업중».
 // - 2026-09-17: 공정 탭과 중복되는 단계 뱃지 숨김. 세척·패킹(이후) NC 뱃지 숨김(가공 이후 당연).
 // - 2026-09-17: 의뢰카드 썸네일을 absolute→flex 본문으로 — 좌우 px-3 대칭·환자폭↑.
@@ -45,6 +46,8 @@
 // - web/backend/controllers/requests/shippingPriority.utils.js
 // - web/backend/controllers/bg/bg.controller.js
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useAuthStore } from "@/store/useAuthStore";
+import { useAutoApprovalGate } from "../shared/autoApproval/useAutoApprovalGate";
 import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -149,6 +152,16 @@ type WorksheetCardGridProps = {
   debugLog?: boolean;
 };
 
+function requestorAnchorId(request: ManufacturerRequest) {
+  const businessId = String(request.business?._id || "").trim();
+  if (businessId) return businessId;
+  const raw = (request as { businessAnchorId?: unknown }).businessAnchorId;
+  if (raw && typeof raw === "object") {
+    return String((raw as { _id?: unknown })._id || "").trim();
+  }
+  return String(raw || "").trim();
+}
+
 export const WorksheetCardGrid = ({
   requests,
   selectedRequestIds = [],
@@ -201,6 +214,17 @@ export const WorksheetCardGrid = ({
     const ms = range ? new Date(range.startDate).getTime() : NaN;
     return Number.isFinite(ms) ? ms : null;
   }, [headerPeriod, headerCustomStart, headerCustomEnd]);
+  const { token } = useAuthStore();
+  const { state: autoGate } = useAutoApprovalGate(
+    tabStage === "request" ? token : null,
+  );
+  const excludedRequestorIds = useMemo(() => {
+    return new Set(
+      (autoGate?.excludedRequestors || [])
+        .map((row) => String(row.id || "").trim())
+        .filter(Boolean),
+    );
+  }, [autoGate?.excludedRequestors]);
   const [claimTickMs, setClaimTickMs] = useState(() => Date.now());
   useEffect(() => {
     if (!enableDesignClaim) return;
@@ -698,7 +722,11 @@ export const WorksheetCardGrid = ({
         const showRightRail = showFilledFlThumb || showSideSpecBadges || jsFailed;
         // summaryRightPadClass 제거 — 썸네일을 flex 본문에 넣어 좌우 px 대칭
 
+        const showAutoExcludeBadge =
+          tabStage === "request" &&
+          excludedRequestorIds.has(requestorAnchorId(request));
         const hasTopFloatingControls =
+          showAutoExcludeBadge ||
           Boolean(onToggleSelected) ||
           Boolean(isSampleRequest) ||
           hasRealtimeProgress ||
@@ -928,6 +956,15 @@ export const WorksheetCardGrid = ({
               </div>
             ) : null}
             <div className="absolute left-2 top-2 z-20 flex items-center gap-1">
+              {showAutoExcludeBadge ? (
+                <Badge
+                  variant="outline"
+                  className="flex h-7 items-center border-amber-500/80 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                  title="자동 승인에서 빠진 의뢰입니다. 승인하면 가공으로 넘길 수 있습니다."
+                >
+                  제외
+                </Badge>
+              ) : null}
               {onToggleSelected ? (
                 <button
                   type="button"

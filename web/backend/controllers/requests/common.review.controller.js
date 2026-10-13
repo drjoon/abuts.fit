@@ -11,6 +11,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - 2026-10-13: 더미 가공 승인·세척.패킹 승인은 다음 단계로 넘기지 않고 대기열에서 뺀다.
+// - 2026-10-14: 자동 승인에서 뺀 의뢰자는 게이트만 거절. 작업자 수동 승인은 가공으로 넘긴다.
 // - 2026-10-09: 테스트 계정은 자동 승인만 거절. 작업자 수동 승인은 가공·NC를 허용한다.
 // - 2026-09-20: 비거래처 어벗 해제는 포장.발송 유지(가공 진입으로 옮기지 않음).
 // - 2026-09-20: PTX 포장.발송 후 치과→기공소 정산(선불 생산비 지급 시점).
@@ -97,6 +98,29 @@ async function assertAutoGateSkipsTestAccount(request, approvalTriggerSource) {
   if (!(await isTestAccountMachiningRequest(request))) return;
   const err = new Error(
     "테스트 계정 의뢰는 작업자가 직접 승인해야 가공됩니다.",
+  );
+  err.statusCode = 409;
+  throw err;
+}
+
+function requestorAnchorIdOf(request) {
+  const raw = request?.businessAnchorId;
+  if (raw && typeof raw === "object") return String(raw._id || "").trim();
+  return String(raw || "").trim();
+}
+
+/** 자동 승인 게이트만 제외 의뢰자를 거절한다. 작업자 버튼은 통과한다. */
+async function assertAutoGateSkipsExcludedRequestor(request, approvalTriggerSource) {
+  if (!isAutoGateTrigger(approvalTriggerSource)) return;
+  const anchorId = requestorAnchorIdOf(request);
+  if (!anchorId) return;
+  const doc = await SystemSettings.findOne({ key: "global" })
+    .select("autoMachiningGate.excludedRequestorAnchorIds")
+    .lean();
+  const ids = doc?.autoMachiningGate?.excludedRequestorAnchorIds;
+  if (!Array.isArray(ids) || !ids.map((id) => String(id)).includes(anchorId)) return;
+  const err = new Error(
+    "자동 승인에서 제외된 의뢰입니다. 작업자가 직접 승인해야 가공됩니다.",
   );
   err.statusCode = 409;
   throw err;
@@ -1415,6 +1439,7 @@ export async function updateReviewStatusByStage(req, res) {
 
       if (isMachiningEntryApproval || isLegacyCamMachiningEntry) {
         await assertAutoGateSkipsTestAccount(request, approvalTriggerSource);
+        await assertAutoGateSkipsExcludedRequestor(request, approvalTriggerSource);
         if (!isAutoGateTrigger(approvalTriggerSource)) {
           await markManualMachiningApprovalIfTestAccount(request);
         }
@@ -1577,6 +1602,7 @@ export async function updateReviewStatusByStage(req, res) {
             // 기존 NC/CAM 이력이 있으면 NC 재생성 없이 바로 가공 단계로 진입한다.
             // CAM은 더 이상 노출/사용하지 않으므로 manufacturerStage는 바로 "가공"으로 설정한다.
             await assertAutoGateSkipsTestAccount(request, approvalTriggerSource);
+            await assertAutoGateSkipsExcludedRequestor(request, approvalTriggerSource);
             if (!isAutoGateTrigger(approvalTriggerSource)) {
               await markManualMachiningApprovalIfTestAccount(request);
             }

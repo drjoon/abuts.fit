@@ -58,6 +58,21 @@ describe("evaluateAutoMachiningGate", () => {
     expect(r.verdict).toBe("hold");
     expect(r.reasons.some((x) => x.startsWith("finishline_"))).toBe(true);
   });
+  it("제외한 의뢰자는 정상이어도 보류", () => {
+    const anchorId = "507f1f77bcf86cd799439011";
+    const held = evaluateAutoMachiningGate(
+      { ...okRequest(), businessAnchorId: anchorId },
+      { excludedRequestorAnchorIds: [anchorId] },
+    );
+    expect(held.verdict).toBe("hold");
+    expect(held.reasons).toContain("excluded_requestor");
+    const other = evaluateAutoMachiningGate(
+      { ...okRequest(), businessAnchorId: { _id: "507f1f77bcf86cd799439012" } },
+      { excludedRequestorAnchorIds: [anchorId] },
+    );
+    expect(other.reasons).not.toContain("excluded_requestor");
+    expect(other.verdict).toBe("approved");
+  });
   it("테스트기공소만 정상이어도 보류, 테스트치과는 일반 게이트", () => {
     expect(
       evaluateAutoMachiningGate(okRequest({ clinicName: "테스트치과" })).reasons,

@@ -429,7 +429,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 준비→가공 자동 승인 게이트(야간 무인 가공):
   - `SystemSettings.autoMachiningGate`: `enabled`(기본 OFF). 섀도 모드는 없다(켜면 통과 건을 바로 승인). 제조사 준비·가공 페이지의 같은 스위치(`AutoApprovalGateSwitch`)가 `GET/PUT /api/cnc-machines/machining/auto-gate`(manufacturer·admin)로 켜고 끈다. 장비 `allowAutoMachining`도 이 스위치가 함께 바꾼다. `jobs/autoMachiningGateWorker.js`가 30초마다 준비 단계 의뢰를 판정한다.
   - 통과 건을 수동 승인과 같은 `updateReviewStatusByStage`(stage=machining, nextUpCamRunGuard) 경로로 직렬 승인한다. 크레딧 차감은 수동 승인과 동일(아침에 사람이 되돌린다).
-  - 보류 조건: 직경(>10mm·소재그룹 초과·측정오류), 피니시라인 불량·`min_z<0.6`, `cuffBlend` 비적용·제안 대기, `ncFile.analysis.flags`, filled STL·피니시라인 누락, 테스트기공소(사유 `test_account`; 테스트치과는 일반 의뢰처럼 자동 승인). 커프 미가공은 검출하지 않는다(육안). 장비·소재·공구 상태는 작업자가 관리하므로 보지 않는다.
+  - 보류 조건: 직경(>10mm·소재그룹 초과·측정오류), 피니시라인 불량·`min_z<0.6`, `cuffBlend` 비적용·제안 대기, `ncFile.analysis.flags`, filled STL·피니시라인 누락, 테스트기공소(사유 `test_account`; 테스트치과는 일반 의뢰처럼 자동 승인), 제외 의뢰자(사유 `excluded_requestor`, `autoMachiningGate.excludedRequestorAnchorIds`). 커프 미가공은 검출하지 않는다(육안). 장비·소재·공구 상태는 작업자가 관리하므로 보지 않는다.
+  - 제외 의뢰자: 준비 화면 자동 승인 카드의 «제외»가 목록을 저장한다. 그 의뢰자가 올린 준비 카드는 «제외» 뱃지. 자동 승인은 건너뛰고, 작업자 승인(화살표)은 가공으로 넘긴다.
   - 판정·HOLD 대상은 워크시트 이번 달(`createdAt`, KST `calendarMonth`) 준비 의뢰만이다. 그 밖 준비 의뢰에 남은 판정은 지운다. PTX 연결 건은 어벗츠 디자인 완료(`designCompletedAt`) 전에는 준비 큐에 없으므로 판정·HOLD에서도 뺀다(`READY_QUEUE_GUARD`).
   - HOLD 카드(가공 보드)는 가공 단계로 넘어간 뒤(CAM 생성 후·가공 후)의 문제(NC 좌표 한계·용량 초과)만 보여 준다. HOLD 건은 Next Up·대기 건수에 넣지 않는다. 준비 단계 문제(STL·피니시라인·커프·직경)와 테스트 계정은 가공으로 보내지 않고 준비에 남긴다(`autoMachiningReview` 판정만 기록). 장비별 자동 스위치는 전체 자동 승인 스위치와 독립이다(개별 OFF가 전체 스위치 표시·설정을 바꾸지 않는다).
   - 테스트기공소는 업로드·주문 확인용이다(테스트치과는 해당 없음). 항상 준비에 남고, 작업자가 준비에서 직접 승인하면 가공 진입과 NC 생성을 허용하고 `productionSchedule.manualMachiningApprovedAt`을 남긴다. 그 승인이 없으면 가공 단계에 NC가 있어도 auto-next가 건너뛴다.

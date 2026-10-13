@@ -3,13 +3,16 @@
 // - web/backend/modules/cnc/cncMachine.routes.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shared/autoApproval/AutoApprovalGateSwitch.tsx
 // change-log:
+// - 2026-10-14: 제외 의뢰자 목록 조회·저장. 이름은 BusinessAnchor에서 붙인다.
 // - 2026-10-10: 자동 승인을 켜면 30초 뒤에 승인·자동 가공을 시작한다.
 // - 2026-10-10: 가공 HOLD 목록 제거. holdCount는 준비에 남겨 둔 문제 건 수.
 // - 2026-10-09: 섀도 모드 제거. 켜면 통과 건을 바로 가공으로 승인한다.
 // - 2026-10-09: 신설. 제조사-준비 페이지 스위치용(관리자 설정 아님).
+import mongoose from "mongoose";
 import SystemSettings from "../../models/systemSettings.model.js";
 import Request from "../../models/request.model.js";
 import Machine from "../../models/machine.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
   activePrepCreatedAtFilter,
   getAutoGateConfig,
@@ -70,13 +73,50 @@ async function countPrepHolds() {
   });
 }
 
+const MAX_EXCLUDED_REQUESTORS = 100;
+
+function normalizeExcludedIds(raw) {
+  if (!Array.isArray(raw)) return null;
+  const ids = [];
+  const seen = new Set();
+  for (const item of raw) {
+    const id = String(item || "").trim();
+    if (!id || seen.has(id)) continue;
+    if (!mongoose.Types.ObjectId.isValid(id)) return { error: "의뢰자 식별자가 올바르지 않습니다." };
+    seen.add(id);
+    ids.push(id);
+  }
+  if (ids.length > MAX_EXCLUDED_REQUESTORS) {
+    return { error: `제외할 의뢰자는 ${MAX_EXCLUDED_REQUESTORS}곳까지 저장할 수 있습니다.` };
+  }
+  return { ids };
+}
+
+async function loadExcludedRequestors(ids) {
+  if (!ids.length) return [];
+  const rows = await BusinessAnchor.find({ _id: { $in: ids } })
+    .select("name")
+    .lean();
+  const nameById = new Map(
+    rows.map((row) => [String(row._id), String(row.name || "").trim()]),
+  );
+  return ids.map((id) => ({
+    id,
+    name: nameById.get(id) || "이름 없음",
+  }));
+}
+
 async function buildPayload() {
   const config = await getAutoGateConfig();
   const holdCount = await countPrepHolds();
+  const excludedRequestors = await loadExcludedRequestors(
+    config.excludedRequestorAnchorIds || [],
+  );
   return {
     enabled: config.enabled,
     holdCount,
     holds: [],
+    excludedRequestors,
   };
 }
 
@@ -101,6 +141,16 @@ export async function updateAutoMachiningGate(req, res) {
       $set["autoMachiningGate.autoStartAt"] = body.enabled
         ? new Date(Date.now() + AUTO_START_GRACE_MS)
         : null;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "excludedRequestorAnchorIds")) {
+      const normalized = normalizeExcludedIds(body.excludedRequestorAnchorIds);
+      if (!normalized || normalized.error) {
+        return res.status(400).json({
+          success: false,
+          message: normalized?.error || "제외할 의뢰자 목록이 올바르지 않습니다.",
+        });
+      }
+      $set["autoMachiningGate.excludedRequestorAnchorIds"] = normalized.ids;
     }
     if (Object.keys($set).length === 0) {
       return res

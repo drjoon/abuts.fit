@@ -3,6 +3,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shared/autoApproval/AutoApprovalGateSwitch.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // change-log:
+// - 2026-10-14: 자동 승인 제외 의뢰자 목록을 게이트 상태에 싣고 저장한다.
 // - 2026-10-09: 준비·가공이 같은 모듈 상태를 쓴다. 한쪽에서 바꾸면 다른 쪽 스위치도 바로 바뀐다.
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -19,10 +20,21 @@ export type GateHoldItem = {
   reasons: string[];
 };
 
+export type ExcludedRequestor = {
+  id: string;
+  name: string;
+};
+
 export type GateState = {
   enabled: boolean;
   holdCount: number;
   holds: GateHoldItem[];
+  excludedRequestors: ExcludedRequestor[];
+};
+
+type GatePatch = {
+  enabled?: boolean;
+  excludedRequestorAnchorIds?: string[];
 };
 
 type MachineAuto = {
@@ -130,7 +142,21 @@ async function refresh(token: string) {
   const machineBody: any = machineRes.data ?? {};
   const machineList: any[] = machineBody.data ?? machineBody.machines ?? [];
   const next: Partial<Snapshot> = {};
-  if (gateRes.ok && gateBody) next.gate = gateBody;
+  if (gateRes.ok && gateBody) {
+    next.gate = {
+      enabled: gateBody.enabled === true,
+      holdCount: Number(gateBody.holdCount) || 0,
+      holds: Array.isArray(gateBody.holds) ? gateBody.holds : [],
+      excludedRequestors: Array.isArray(gateBody.excludedRequestors)
+        ? gateBody.excludedRequestors
+            .map((row: { id?: unknown; name?: unknown }) => ({
+              id: String(row?.id || "").trim(),
+              name: String(row?.name || "").trim() || "이름 없음",
+            }))
+            .filter((row: ExcludedRequestor) => row.id)
+        : [],
+    };
+  }
   if (machineRes.ok && machinesAtStart === machineGen) {
     next.machines = machineList
       .map((row) => toMachineAuto(row))
@@ -157,10 +183,7 @@ function retainPoller(token: string) {
   };
 }
 
-async function saveGate(
-  token: string,
-  patch: Partial<Pick<GateState, "enabled">>,
-) {
+async function saveGate(token: string, patch: GatePatch) {
   if (snapshot.busy) return false;
   commit({ busy: true });
   try {
@@ -250,7 +273,7 @@ export function useAutoApprovalGate(token: string | null) {
   }, [token]);
 
   const save = useCallback(
-    async (patch: Partial<Pick<GateState, "enabled">>) => {
+    async (patch: GatePatch) => {
       if (!token) return false;
       return saveGate(token, patch);
     },

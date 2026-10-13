@@ -2,12 +2,15 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shared/autoApproval/useAutoApprovalGate.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // change-log:
+// - 2026-10-14: 스위치 옆에 제외 버튼. 모달에서 자동 승인에서 뺄 의뢰자를 고른다.
 // - 2026-10-10: 켜면 장비 자동 가공을 토스트로 알리고, 가공 시작은 30초 뒤다.
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
+import { AutoApprovalExcludeDialog } from "./AutoApprovalExcludeDialog";
 import { useAutoApprovalGate } from "./useAutoApprovalGate";
 
 /**
@@ -21,6 +24,8 @@ export function AutoApprovalGateSwitch() {
     useAutoApprovalGate(token);
   const { toast } = useToast();
   const [confirm, setConfirm] = useState(false);
+  const [excludeOpen, setExcludeOpen] = useState(false);
+  const excludedCount = gate?.excludedRequestors?.length || 0;
 
   if (!gate) return null;
 
@@ -87,6 +92,15 @@ export function AutoApprovalGateSwitch() {
           onCheckedChange={onToggle}
           aria-label="자동 승인"
         />
+        <Button
+          type="button"
+          variant="outline"
+          className="h-6 rounded-md px-2 text-[11px] font-semibold"
+          onClick={() => setExcludeOpen(true)}
+          aria-label="자동 승인 제외"
+        >
+          제외{excludedCount > 0 ? ` ${excludedCount}` : ""}
+        </Button>
         {gate.enabled && gate.holdCount > 0 ? (
           <span
             className="text-slate-500"
@@ -96,6 +110,11 @@ export function AutoApprovalGateSwitch() {
           </span>
         ) : null}
       </div>
+
+      <AutoApprovalExcludeDialog
+        open={excludeOpen}
+        onOpenChange={setExcludeOpen}
+      />
 
       <ConfirmDialog
         open={confirm}

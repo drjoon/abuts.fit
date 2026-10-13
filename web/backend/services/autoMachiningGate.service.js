@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js (autoMachiningReview)
 // - web/backend/controllers/requests/common.review.controller.js (updateReviewStatusByStage)
 // change-log:
+// - 2026-10-14: 제외 의뢰자(excludedRequestorAnchorIds)는 자동 승인하지 않는다. 작업자 수동 승인은 그대로다.
 // - 2026-10-10: 자동 승인을 켠 뒤 30초 유예 동안은 준비→가공 승인을 하지 않는다.
 // - 2026-10-09: 섀도 모드 제거. 스위치가 켜지면 통과 건을 바로 승인한다(장비별 자동 가공 OFF는 그 장비만 제외).
 // - 2026-10-09: 테스트 계정·준비 단계 문제 건은 준비에 남긴다(가공으로 안 보냄). 판정 대상은 이번 달 준비만.
@@ -39,7 +40,21 @@ export const AUTO_GATE_DEFAULTS = Object.freeze({
   enabled: false,
   maxDiameterMm: 10,
   minFinishLineZ: 0.6,
+  excludedRequestorAnchorIds: Object.freeze([]),
 });
+
+const EXCLUDED_REQUESTOR_REASON = "excluded_requestor";
+
+export function excludedRequestorIdSet(cfg = AUTO_GATE_DEFAULTS) {
+  const raw = cfg?.excludedRequestorAnchorIds;
+  if (!Array.isArray(raw)) return new Set();
+  return new Set(raw.map((id) => String(id || "").trim()).filter(Boolean));
+}
+
+function isExcludedRequestor(request, excludedIds) {
+  if (!excludedIds?.size) return false;
+  return excludedIds.has(anchorIdOf(request));
+}
 
 /**
  * 준비 큐 가드(requestDashboardStats `buildIsWorksheetReadyQueueRequestExpr`와 같다).
@@ -74,10 +89,14 @@ export async function getAutoGateConfig() {
     .select("autoMachiningGate")
     .lean();
   const g = doc?.autoMachiningGate || {};
+  const excludedRequestorAnchorIds = Array.isArray(g.excludedRequestorAnchorIds)
+    ? [...excludedRequestorIdSet({ excludedRequestorAnchorIds: g.excludedRequestorAnchorIds })]
+    : [];
   return {
     enabled: g.enabled === true,
     maxDiameterMm: num(g.maxDiameterMm) ?? AUTO_GATE_DEFAULTS.maxDiameterMm,
     minFinishLineZ: num(g.minFinishLineZ) ?? AUTO_GATE_DEFAULTS.minFinishLineZ,
+    excludedRequestorAnchorIds,
   };
 }
 
@@ -91,6 +110,11 @@ export function evaluateAutoMachiningGate(request, cfg = AUTO_GATE_DEFAULTS) {
 
   // 테스트 계정은 업로드·주문 확인용이라 품질이 맞아도 가공하지 않는다.
   if (isTestAccountMachiningRequestSync(request)) reasons.push("test_account");
+
+  // 작업자가 자동 승인에서 뺀 의뢰자. 품질과 무관하게 준비에 남긴다.
+  if (isExcludedRequestor(request, excludedRequestorIdSet(cfg))) {
+    reasons.push(EXCLUDED_REQUESTOR_REASON);
+  }
 
   // 입력 누락
   const stl = resolveFilledStlFile(ci);
@@ -153,8 +177,11 @@ function isEligibleForGate(request) {
   return true;
 }
 
-function needsEvaluation(request) {
+function needsEvaluation(request, excludedIds) {
   const review = request.autoMachiningReview;
+  const excluded = isExcludedRequestor(request, excludedIds);
+  const marked = (review?.reasons || []).includes(EXCLUDED_REQUESTOR_REASON);
+  if (excluded !== marked) return true;
   if (
     isTestAccountMachiningRequestSync(request) &&
     !(review?.reasons || []).includes("test_account")
@@ -262,6 +289,7 @@ function annotateRequestorBusiness(request, nameById) {
 
 export async function runAutoMachiningGatePass({ limit = 10 } = {}) {
   const cfg = await getAutoGateConfig();
+  const excludedIds = excludedRequestorIdSet(cfg);
   const out = { enabled: cfg.enabled, evaluated: 0, approved: 0, held: 0, failed: 0 };
   const createdAt = activePrepCreatedAtFilter();
   await clearPrepReviewsOutsideWindow();
@@ -307,7 +335,7 @@ export async function runAutoMachiningGatePass({ limit = 10 } = {}) {
     annotateRequestorBusiness(request, nameById);
     if (!isEligibleForGate(request)) continue;
     const testAccount = isTestAccountMachiningRequestSync(request);
-    if (!needsEvaluation(request)) continue;
+    if (!needsEvaluation(request, excludedIds)) continue;
     if (!testAccount && approvedThisPass >= limit) continue;
 
     const now = new Date();
