@@ -75,6 +75,8 @@ import {
   normalizeAffiliateVatRate,
   resolveConfiguredRevenueRates,
   resolveManufacturerUnitApply,
+  resolveManufacturerUnitSettings,
+  splitManufacturerInclusiveUnitPrice,
   resolveManufacturerUnitQty,
   resolveRevenueOwnerBaseAllocation,
   splitRevenueByCreditKindProRata,
@@ -264,6 +266,93 @@ async function resolveRoleOwnerAnchors({ request, businessAnchorId, session }) {
 }
 
 
+
+/** 이 시각 이후 접수된 유료 의뢰부터 딜러 택배비 차감. 이전에는 제조사가 부담했다. */
+const DEALER_PARCEL_COST_START = new Date("2026-10-13T00:00:00+09:00");
+
+/**
+ * 택배 배송(normal) 박스의 택배비를 딜러 적립에서 차감하고 택배를 보내는 제조사에 환입한다.
+ * 딜리버리 배송·직판(딜러 없음)·무료 체험·PTX 어벗 배송은 대상 아님. 멱등키=박스.
+ */
+export async function postDealerParcelShippingDeduction({
+  pkg,
+  requests = [],
+  payerAnchorId,
+  actorUserId = null,
+  session = null,
+  occurredAt = null,
+}) {
+  const billable = (Array.isArray(requests) ? requests : []).filter((row) => {
+    if (!row) return false;
+    const mode = row?.finalShipping?.mode || row?.shippingMode || "normal";
+    if (mode === "express") return false;
+    if (isSignupFreeTestRequest(row)) return false;
+    if (String(row?.partnerBilling?.relatedPracticeTransferId || "").trim()) return false;
+    const created = new Date(row?.createdAt || 0);
+    return created >= DEALER_PARCEL_COST_START;
+  });
+  if (!pkg?._id || !billable.length) return { skipped: true, reason: "not_billable" };
+
+  const owners = await resolveRoleOwnerAnchors({
+    request: billable[0],
+    businessAnchorId: payerAnchorId,
+    session,
+  });
+  if (!owners?.salesmanAnchorId) return { skipped: true, reason: "no_dealer" };
+
+  const { loadCreditSettingsDefaults } = await import(
+    "../../utils/creditSettingsDefaults.js"
+  );
+  const creditSettings = await loadCreditSettingsDefaults();
+  const unit = resolveManufacturerUnitSettings(creditSettings);
+  const total = unit.shippingInclusive;
+  if (!(total > 0)) return { skipped: true, reason: "zero_fee" };
+  const split = splitManufacturerInclusiveUnitPrice(total, unit.vatRate);
+
+  const receiverOwner = owners.manufacturerAnchorId
+    ? { accountCode: "REV_MANUFACTURER", ownerRole: "manufacturer", ownerId: owners.manufacturerAnchorId }
+    : { accountCode: "REV_ADMIN", ownerRole: "admin", ownerId: owners.adminAnchorId };
+  if (!receiverOwner.ownerId) return { skipped: true, reason: "no_receiver" };
+
+  const refId = String(pkg._id);
+  const meta = {
+    displayKind: "dealer_parcel_shipping",
+    displayLabel: "택배비",
+    shippingPackageId: refId,
+    customerAnchorId: String(payerAnchorId),
+  };
+  const line = (owner, sign) => ({
+    accountCode: owner.accountCode,
+    ownerRole: owner.ownerRole,
+    ownerId: owner.ownerId,
+    amount: sign * split.total,
+    amountExcludingVat: sign * split.supply,
+    vatAmount: sign * split.vat,
+    amountIncludingVat: sign * split.total,
+    creditKind: null,
+    refType: "SHIPPING_PACKAGE",
+    refId,
+    meta,
+  });
+  return postGeneralLedgerJournal({
+    idempotencyKey: `gl:shippingPackage:${refId}:dealer_parcel_cost`,
+    eventType: "DEALER_PARCEL_SHIPPING_COST",
+    businessAnchorId: owners.salesmanAnchorId,
+    refType: "SHIPPING_PACKAGE",
+    refId,
+    occurredAt: occurredAt || new Date(),
+    createdBy: actorUserId || null,
+    meta,
+    lines: [
+      line(
+        { accountCode: "REV_SALESMAN", ownerRole: "salesman", ownerId: owners.salesmanAnchorId },
+        -1,
+      ),
+      line(receiverOwner, +1),
+    ],
+    session,
+  });
+}
 
 async function postSpendCommitGeneralLedger({
   eventType,
@@ -2040,6 +2129,26 @@ export async function commitShippingFeeForPackage({
       mailboxAddress: mailbox,
     });
     return null;
+  }
+
+  // 택배 배송 박스는 딜러 적립에서 택배비를 차감한다(딜리버리는 딜러가 직접 지급). PTX 건은 함수가 걸러낸다.
+  const deduct = postDealerParcelShippingDeduction({
+    pkg,
+    requests: chargeable,
+    payerAnchorId,
+    actorUserId,
+    session,
+    occurredAt,
+  });
+  if (session) {
+    await deduct;
+  } else {
+    void deduct.catch((err) =>
+      console.error("[SHIPPING_FEE] dealer parcel deduction failed", {
+        shippingPackageId: String(pkg._id),
+        message: err?.message,
+      }),
+    );
   }
 
   const { isFmDentalShippingActiveForAnchor } = await import(

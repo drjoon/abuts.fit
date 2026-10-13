@@ -52,6 +52,9 @@ export type CustomerPriceRow = {
   lat?: number | null;
   lng?: number | null;
   usesOralScan?: boolean;
+  shippingMode?: "normal" | "express";
+  monthlyRequestCount?: number;
+  prevMonthRequestCount?: number;
   updatedAt?: string | null;
 };
 

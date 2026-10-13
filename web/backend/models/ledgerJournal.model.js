@@ -19,6 +19,8 @@ export const LEDGER_JOURNAL_EVENT_TYPES = [
   "FM_DENTAL_SHIPPING_SPEND",
   /** 딜리버리 월정액 원가 — 직판만 어벗츠 부담. 딜러 거래처는 적립 차감 없음. */
   "DELIVERY_MONTHLY_COST",
+  /** 택배 배송 박스 택배비 — 딜러 적립 차감, 제조사 환입. */
+  "DEALER_PARCEL_SHIPPING_COST",
   "CHARGE_PAID",
   "CHARGE_FREE_REQUEST",
   "CHARGE_FREE_SHIPPING",

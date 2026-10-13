@@ -11,6 +11,7 @@ import {
   getPlatformPitch,
   getMyCustomerUnitPrices,
   setMyCustomerUnitPrice,
+  setMyCustomerShippingMode,
 } from "../../controllers/salesman/salesman.controller.js";
 
 const router = Router();
@@ -24,5 +25,6 @@ router.get("/ledger", getSalesmanLedger);
 router.get("/platform-pitch", getPlatformPitch);
 router.get("/customer-prices", getMyCustomerUnitPrices);
 router.put("/customer-prices/:anchorId", setMyCustomerUnitPrice);
+router.put("/customer-shipping/:anchorId", setMyCustomerShippingMode);
 
 export default router;

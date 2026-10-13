@@ -390,6 +390,10 @@ export async function calculateInitialProductionSchedule({
     };
   }
 
+  // 2026-10-13: 택배 배송은 요일 선택 없음 — 접수 다음 영업일 16:00 발송.
+  // 레거시 weeklyBatchDays 인자는 무시한다.
+  weeklyBatchDays = [];
+
   const waitHours = getBulkWaitHours(diameterGroup);
   let scheduledCamStart = new Date(now.getTime() + waitHours * 60 * 60 * 1000);
 

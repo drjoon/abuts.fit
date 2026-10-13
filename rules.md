@@ -388,6 +388,7 @@
 ### 2.7 배송/우편함
 
 - 배송 방식 SSOT: 딜리버리 익일 도착 단일. 서버는 입력과 무관하게 `shippingMode="express"`로 저장한다(`resolveSelectableShippingMode`). `normal`(묶음)은 과거 건 표시용으로만 남는다.
+- **(2026-10-13 개정) 배송 방식 SSOT**: 택배 배송(기본, `normal`: 오늘 자정까지 주문 → 다음 영업일 16:00 발송, 요일 선택 없음) / 딜리버리 배송(`express`, 월 100건 이상 의뢰시 적용). 서버는 클라이언트 값을 무시하고 `BusinessAnchor.shippingPolicy.defaultShippingMode`로 저장한다(`resolveSelectableShippingMode`). 지정은 딜러·영업팀(`PUT /api/salesman/customer-shipping/:anchorId`, 소개 거래처만)과 관리자(`PUT /api/admin/requestor-shipping/:anchorId`, 대시보드 「의뢰자 배송 방식」)만. 거래처 본인 PATCH는 무시. 딜리버리 월정액 원가는 딜리버리 지정 거래처만.
 - 우편함 배정 시점: 가공→세척.패킹 진입. 같은 수신자면 집하 전까지 한 칸에 모음(1회 택배비). 포장.발송은 기존 배정 유지. 포장.발송↔세척.패킹·세척.패킹→가공 롤백도 우편함 유지(패킹 라벨 SSOT). 가공→준비 롤백에서만 해제.
 - 합류 키: 수신자 BusinessAnchor. PTX CA도 주문 기공소 BA.
 - 배송비 과금 시점: **포장.발송 진입(세척.패킹 승인)** 1회. 운송장 라벨에는 건수를 출력하지 않음(웹앱에서 확인).

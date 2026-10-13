@@ -94,9 +94,10 @@
   - 계산 코드는 프론트 `shared/practice/workScanAutoAlign.ts`의 Node 번들 `vendor/workScanAutoAlign/workScanAutoAlign.mjs`(생성물). 정렬·파서 코드를 바꾸면 `npm --prefix ../frontend run build:work-scan-align`으로 다시 만든다(`npm run build`·`eb.sh`도 만든다). 끄기: `WORK_SCAN_AUTO_ALIGN_WORKER_ENABLED=false`.
 
 - 배송은 딜리버리 익일 도착 단일(2026-10-08). 신속 추가비·택배 묶음 출고 폐지.
+- (2026-10-13 개정) 배송은 택배(기본)/딜리버리 두 방식. 거래처별 `shippingPolicy.defaultShippingMode`가 SSOT, 지정은 딜러·영업팀·관리자만(`services/requestorShipping.service.js`). 택배는 요일 정렬 없이 다음 영업일 16:00 발송(`weeklyBatchDays` 무시).
   - 서버는 입력 모드와 무관하게 `shippingMode="express"`로 저장(`expressSelectable.utils.js` `resolveSelectableShippingMode`). 일정은 express 경로로 계산하며 `weeklyBatchDays`는 쓰지 않는다. 과거 `normal` 건은 표시용으로만 남는다.
   - `expressFee`·`express_surcharge`: 모든 계산 경로(생성·견적·hold·대시보드)가 0, `creditSettings.expressFee`도 0으로 읽는다. 과거 `express_surcharge` 저널·`price.expressFee`는 원장 표시용 레거시.
-  - 딜리버리 월정액 원가: `services/deliveryMonthlyCost.service.js` — 직전 달 의뢰 3건 이상인 직판 거래처만 어벗츠 부담(`DELIVERY_FREE_MAX_MONTHLY_REQUESTS=2` 이하 무료). 딜러 거래처는 적립 차감 없음. `dryRun`으로 대상만 셀 수 있다.
+  - (2026-10-13 개정) 택배 배송 박스마다 택배비(`manufacturerShippingUnitPrice`, VAT 포함)를 딜러 적립(`REV_SALESMAN`)에서 차감하고 제조사에 환입한다(`DEALER_PARCEL_SHIPPING_COST`, `postDealerParcelShippingDeduction`, 포장.발송 진입, 멱등키=박스). 2026-10-13 이후 접수된 유료 의뢰만, 딜러 거래처만. 딜리버리는 적립 전액 지급이고 딜러가 딜리버리사에 직접 지급한다. 딜리버리 월정액 원가 저널은 중단(`processDeliveryMonthlyCosts` 비활성).
   - 영업팀 거래처 가격은 `BusinessAnchor.dealerPriceApproval`(select:false)로 승인 대기 → `/api/admin/price-approvals`. 대기 중에는 `checkCreditLock`이 의뢰를 막는다.
   - 디자인+생산 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
     - 공식: `(생산 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능

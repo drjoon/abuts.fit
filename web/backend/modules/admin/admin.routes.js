@@ -101,6 +101,7 @@ import {
 } from "../../controllers/admin/admin.abutsLabFeeSchedule.controller.js";
 import { getAllFiles } from "../../controllers/admin/admin.files.controller.js";
 import { listPriceApprovals, decidePriceApproval } from "../../controllers/admin/admin.priceApproval.controller.js";
+import { listRequestorShipping, setRequestorShipping } from "../../controllers/admin/admin.requestorShipping.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
   adminListPendingBusinessVerifications,
@@ -623,6 +624,10 @@ router.get("/pricing-stats/users", getPricingStatsByUser);
 // 영업팀 거래처 가격 승인
 router.get("/price-approvals", authorize(["admin"]), listPriceApprovals);
 router.post("/price-approvals/:anchorId", authorize(["admin"]), decidePriceApproval);
+
+// 의뢰자별 배송 방식(택배/딜리버리)
+router.get("/requestor-shipping", authorize(["admin"]), listRequestorShipping);
+router.put("/requestor-shipping/:anchorId", authorize(["admin"]), setRequestorShipping);
 
 // 리퍼럴 그룹
 router.get("/referral-groups", getReferralGroups);

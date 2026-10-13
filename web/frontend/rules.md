@@ -282,6 +282,7 @@ Notes:
   - 구현: `patientGroups.ts`, `usePatientFileGroups.ts`, UI `NewRequestAttachmentsPanel.tsx`, 게이트 `NewRequestPage.tsx` + `ConfirmDialog`.
   - Cursor 룰: `.cursor/rules/oral-scan-file-size.mdc`
 - 신규의뢰 배송 방식(딜리버리 익일 도착 단일):
+  - (2026-10-13 개정) 우측 카드는 택배 배송(기본)·딜리버리 배송(월 100건 이상 의뢰시 적용) 두 개이며 읽기 전용. 현재 거래처에 지정된 방식만 강조한다. 요일 선택 없음. 지정 UI: 딜러·영업팀=`SalesAccountsPage` 거래처 카드(`CustomerShippingFields`), 관리자=대시보드 `RequestorShippingModeCard`. 공통 토글 `ShippingModeToggle`.
   - 모드 선택 없음. 서버가 `shippingMode="express"`로 저장하고 신속 추가비는 0.
   - 표시 라벨 SSOT: `src/shared/shipping/shippingPolicyCopy.ts` — 딜리버리 익일 도착.
   - 우측 배송 카드는 안내 + 제출만 담당합니다(요일 설정 없음).

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-13: 택배 배송 ETA는 요일 정렬 없이 리드타임만.
 // - 2026-08-11: 묶음 (N-1)/당일출고 금지 주석 명시.
 // - 2026-08-09: 디자인+생산(구강스캔)은 메시 최대직경을 무시하고 생산 리드타임 1일.
 // - 2026-08-09: 디자인+생산(design_custom_abutment)은 묶음/신속 출고 +1영업일.
@@ -11,10 +12,7 @@
 // - web/backend/controllers/requests/expressSelectable.utils.js
 import { toKstYmd } from "@/shared/date/kst";
 import { isKrPublicHolidayYmd } from "@/shared/date/krHolidays";
-import {
-  normalizeWeeklyBatchDays,
-  resolveNextWeeklyBatchYmd,
-} from "@/shared/shipping/weeklyBatchSchedule";
+import { normalizeWeeklyBatchDays } from "@/shared/shipping/weeklyBatchSchedule";
 
 export const EXPRESS_SHIPPING_UNAVAILABLE_MESSAGE =
   "딜리버리 익일 도착일이 택배 묶음 출고일과 같아 선택할 이유가 없습니다.";
@@ -156,10 +154,9 @@ export function computeEstimatedShipYmd({
     addBusinessDaysFromKstYmd(requestedYmd, resolvedLeadDays),
     productMode,
   );
-  const batchDays = normalizeWeeklyBatchDays(weeklyBatchDays);
-  // 묶음 출고일 미로드/미설정 시 baseYmd(월요일 등)만 노출하지 않는다.
-  if (batchDays.length === 0) return null;
-  return resolveNextWeeklyBatchYmd(baseShipYmd, batchDays);
+  // 2026-10-13: 택배 배송은 요일 선택 없음 — 접수 다음 영업일(리드타임 반영) 16:00 발송.
+  void weeklyBatchDays;
+  return baseShipYmd;
 }
 
 export function computeEstimatedShipLabel(params: EstimateShipParams): string | null {

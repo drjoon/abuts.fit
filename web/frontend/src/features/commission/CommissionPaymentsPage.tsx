@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-13: 거래처 카드에 택배비 차감(박스 수·금액)을 표시. 기간 수수료는 택배비 차감 후.
 // - 2026-10-09: 거래처 카드에 그 거래처 판매가를 표시. 기간 수수료는 기간 합계.
 // - 2026-10-09: 딜러 정산 규칙 모달 폭 sm:max-w-md.
 // - 2026-10-08: 딜러 정산 규칙 본문 — DealerSettlementRulesContent 공유.
@@ -282,6 +283,16 @@ export function CommissionPaymentsPage({
                                   {formatAbutsManwon(Number(org.unitPrice))}
                                 </span>
                               </div>
+                              {Number(org.monthParcelShippingCost) > 0 ? (
+                                <div className="flex justify-between gap-3">
+                                  <span className="text-muted-foreground">
+                                    택배비 {Number(org.monthParcelBoxCount || 0).toLocaleString()}박스
+                                  </span>
+                                  <span className="tabular-nums text-rose-700">
+                                    −{formatMoney(Number(org.monthParcelShippingCost))}원
+                                  </span>
+                                </div>
+                              ) : null}
                               <div className="flex justify-between gap-3">
                                 <span className="text-muted-foreground">
                                   기간 수수료

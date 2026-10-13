@@ -70,6 +70,7 @@ export async function isExpressShippingSelectable({
  * @returns {"express"|"normal"}
  */
 export async function resolveSelectableShippingMode({
+  defaultShippingMode = "normal",
   shippingMode,
   requestedAt = new Date(),
   weeklyBatchDays = [],
@@ -78,7 +79,8 @@ export async function resolveSelectableShippingMode({
   manufacturerLeadTimes = null,
   calculateSchedule = calculateInitialProductionSchedule,
 } = {}) {
-  // 2026-10-08: 묶음 출고 폐지 — 모든 의뢰는 딜리버리 익일 도착(express 일정). 입력 모드는 무시한다.
+  // 2026-10-13: 배송 방식은 거래처(BusinessAnchor.shippingPolicy.defaultShippingMode)가 정한다.
+  // 클라이언트가 보낸 shippingMode는 무시한다. 기본 택배(normal), 딜리버리(express)는 딜러·영업팀·관리자가 지정.
   void shippingMode; void requestedAt; void weeklyBatchDays; void maxDiameter; void productMode; void manufacturerLeadTimes; void calculateSchedule;
-  return "express";
+  return defaultShippingMode === "express" ? "express" : "normal";
 }

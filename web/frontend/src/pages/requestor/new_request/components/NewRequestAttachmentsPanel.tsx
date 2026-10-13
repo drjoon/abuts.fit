@@ -697,7 +697,9 @@ export function NewRequestAttachmentsPanel({
       hideDesignBadge,
       fileKindBadge,
     } = params;
-    const shippingMode = resolveShippingMode(fileInfo, defaultShippingMode);
+    // 배송 방식은 거래처 설정(택배/딜리버리)이 정한다. 건별 값은 쓰지 않는다.
+    const shippingMode: ShippingMode =
+      defaultShippingMode === "express" ? "express" : "normal";
     // 구강스캔 메시 최대직경(>20mm)은 생산 리드에 쓰지 않는다(디자인+생산=리드 1일 SSOT).
     const diameter = productionOnly
       ? (fileDiameters[fileKey] ?? fileInfo?.maxDiameter ?? null)
@@ -709,17 +711,7 @@ export function NewRequestAttachmentsPanel({
       : forceDesignProductMode
         ? "custom_abutment"
         : (fileInfo?.productMode ?? null);
-    const expressSelectable =
-      expressSelectableGlobal &&
-      isExpressShippingSelectable({
-        weeklyBatchDays,
-        leadTimes,
-        diameter,
-        productMode,
-        requestedAt: now,
-      });
-    const effectiveShippingMode: ShippingMode =
-      shippingMode === "express" && !expressSelectable ? "normal" : shippingMode;
+    const effectiveShippingMode: ShippingMode = shippingMode;
     const estimatedShip =
       effectiveShippingMode === "express"
         ? computeEstimatedShipLabel({

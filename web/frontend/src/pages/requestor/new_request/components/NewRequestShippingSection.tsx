@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-13: 택배 배송(기본)·딜리버리 배송(월 100건 이상) 두 카드 복구. 요일 선택 제거. 방식은 딜러·영업팀·관리자가 지정하므로 카드는 읽기 전용.
 // - 2026-10-09: 진행 도안을 오늘 의뢰 → 바로 생산 → 내일 도착으로, 제목을 익일 도착 딜리버리로.
 // - 2026-10-08: 택배 묶음 출고 폐지. 딜리버리 익일 도착만 남기고(배송비는 딜러/어벗츠 부담) 상단에 진행 도안 추가.
 // - 2026-10-06: 택배 묶음 출고(박스당 배송비)·딜리버리 익일 도착(월 정액 VAT 포함).
@@ -6,67 +7,96 @@
 // - web/frontend/rules.md
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/shared/shipping/shippingPolicyCopy.ts
+// - web/backend/controllers/requests/expressSelectable.utils.js
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { ClipboardList, Cog, Truck, Zap } from "lucide-react";
+import { Package, Zap } from "lucide-react";
+import { cn } from "@/shared/ui/cn";
 import {
-  DELIVERY_FREE_LINE,
-  EXPRESS_SHIPPING_ARRIVAL_LINE,
+  BULK_SHIPPING_LABEL,
+  DELIVERY_CONDITION_LINE,
+  DELIVERY_ARRIVAL_LINE,
+  EXPRESS_SHIPPING_LABEL,
+  PARCEL_SHIPPING_DEFAULT_LINE,
+  PARCEL_SHIPPING_LINE,
 } from "@/shared/shipping/shippingPolicyCopy";
+
+type ShippingMode = "normal" | "express";
 
 type Props = {
   disabled?: boolean;
+  /** 거래처에 지정된 배송 방식(딜러·영업팀·관리자가 정함). */
+  defaultShippingMode: ShippingMode;
   onSubmit: () => void;
 };
 
-const CARD_TITLE = "익일 도착 딜리버리";
+function ModeCard({
+  active,
+  icon,
+  title,
+  children,
+}: {
+  active: boolean;
+  icon: ReactNode;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      role="radio"
+      aria-checked={active}
+      aria-readonly
+      className={cn(
+        "w-full space-y-2 rounded-lg border bg-white/70 px-4 py-4 text-center",
+        active
+          ? "border-primary bg-primary/5 ring-2 ring-primary/25"
+          : "border-slate-200 text-slate-500",
+      )}
+    >
+      <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
+        {icon}
+        {title}
+      </div>
+      <div className="text-sm leading-relaxed text-slate-600">{children}</div>
+    </div>
+  );
+}
 
-const STEPS = [
-  { key: "order", label: "오늘 의뢰", Icon: ClipboardList },
-  { key: "make", label: "바로 생산", Icon: Cog },
-  { key: "arrive", label: "내일 도착", Icon: Truck },
-] as const;
-
-export function NewRequestShippingSection({ disabled, onSubmit }: Props) {
+export function NewRequestShippingSection({
+  disabled,
+  defaultShippingMode,
+  onSubmit,
+}: Props) {
   const isDisabled = !!disabled;
+  const isExpress = defaultShippingMode === "express";
 
   return (
     <div className="app-glass-card app-glass-card--lg relative flex flex-1 min-h-0 h-full flex-col gap-4 border-2 p-5 md:p-7 transition-all border-gray-300">
-      <div className="app-glass-card-content flex min-h-0 flex-1 flex-col items-center justify-start gap-4 overflow-y-auto p-2">
+      <div className="app-glass-card-content flex min-h-0 flex-1 flex-col items-center justify-start gap-3 overflow-y-auto px-3 py-3">
         <div
-          className="flex w-full items-start justify-center gap-1 rounded-lg bg-slate-50 px-2 py-4"
-          aria-label="오늘 의뢰, 바로 생산, 내일 도착"
+          className="flex w-full flex-col gap-4"
+          role="radiogroup"
+          aria-label="배송 방식"
         >
-          {STEPS.map(({ key, label, Icon }, i) => (
-            <div key={key} className="flex items-start">
-              <div className="flex w-[5.75rem] flex-col items-center gap-1.5">
-                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <Icon className="h-5 w-5" />
-                </span>
-                <span className="text-center text-xs font-medium leading-snug text-slate-600">
-                  {label}
-                </span>
-              </div>
-              {i < STEPS.length - 1 ? (
-                <span
-                  aria-hidden
-                  className="mt-[1.375rem] h-px w-4 -translate-y-1/2 border-t border-dashed border-slate-300"
-                />
-              ) : null}
-            </div>
-          ))}
-        </div>
+          <ModeCard
+            active={!isExpress}
+            icon={<Package className="h-5 w-5 text-primary" />}
+            title={BULK_SHIPPING_LABEL}
+          >
+            {PARCEL_SHIPPING_LINE}
+            <br />
+            {PARCEL_SHIPPING_DEFAULT_LINE}
+          </ModeCard>
 
-        <div className="w-full space-y-3 rounded-lg border border-primary bg-primary/5 px-4 py-4 text-center ring-2 ring-primary/25">
-          <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
-            <Zap className="h-5 w-5 text-accent" />
-            {CARD_TITLE}
-          </div>
-          <div className="text-base leading-relaxed text-foreground">
-            {EXPRESS_SHIPPING_ARRIVAL_LINE}
-          </div>
-          <div className="text-sm leading-relaxed text-slate-600">
-            {DELIVERY_FREE_LINE}
-          </div>
+          <ModeCard
+            active={isExpress}
+            icon={<Zap className="h-5 w-5 text-accent" />}
+            title={EXPRESS_SHIPPING_LABEL}
+          >
+            {DELIVERY_ARRIVAL_LINE}
+            <br />
+            {DELIVERY_CONDITION_LINE}
+          </ModeCard>
         </div>
       </div>
 

@@ -73,6 +73,7 @@ import {
   useCustomerPrices,
   type CustomerPriceRow,
 } from "@/shared/sales/CustomerPriceDialog";
+import { CustomerShippingFields } from "@/shared/sales/CustomerShippingFields";
 
 type ListFilter = "all" | "referred" | "practice" | "lab" | "unjoined" | "joined";
 type AccountSortKey = "referred" | "name" | "recent";
@@ -710,6 +711,11 @@ export default function SalesAccountsPage() {
           {priceRow ? (
             <div className="mx-4 mt-4 rounded-2xl bg-gradient-to-br from-primary-soft to-white p-4 ring-1 ring-primary-muted/80">
               <CustomerPriceFields row={priceRow} onSaved={patchPrice} />
+            </div>
+          ) : null}
+          {priceRow ? (
+            <div className="mx-4 mt-3 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200/80">
+              <CustomerShippingFields row={priceRow} onSaved={patchPrice} />
             </div>
           ) : null}
           {!viewing.businessAnchorId ? (

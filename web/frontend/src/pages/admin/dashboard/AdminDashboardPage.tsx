@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-10-13: 의뢰자 배송 방식(택배/딜리버리) 지정 카드.
 // - 2026-10-08: 대시보드 카드는 순서 유지. 빈칸 없이 이어 붙이고 높이는 내용만큼.
 // - 2026-10-04: 데모 전환 · 어벗츠 확인 카드(하청·자체 지급 확인).
 // - 2026-10-02: 간접어벗 카드 — 타사 스캔바디와 어벗츠 스캔바디를 한 모달로.
@@ -66,6 +67,7 @@ import {
 } from "@/shared/noOrderAlerts";
 import { NoticeAdminCard } from "@/pages/admin/dashboard/NoticeAdminCard";
 import { DirectAbutmentSettingsCard } from "@/pages/admin/dashboard/DirectAbutmentSettingsCard";
+import { RequestorShippingModeCard } from "@/pages/admin/dashboard/RequestorShippingModeCard";
 import { IndirectAbutmentCard } from "@/pages/admin/dashboard/IndirectAbutmentCard";
 import { AdminDemoConversionCard } from "@/pages/admin/dashboard/AdminDemoConversionCard";
 import { AdminBusinessVerificationCard } from "@/pages/admin/dashboard/AdminBusinessVerificationCard";
@@ -2661,6 +2663,7 @@ export const AdminDashboardPage = () => {
                   <p className="truncate text-[11px] text-muted-foreground">6 · 8 · 10 · 12mm</p>
                 </div>
               </DashTile>
+              <RequestorShippingModeCard className={DASH_SPAN.c6r4} />
               <DirectAbutmentSettingsCard className={DASH_SPAN.c6} />
               <IndirectAbutmentCard className={DASH_SPAN.c6} />
             </div>

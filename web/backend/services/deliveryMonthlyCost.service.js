@@ -3,6 +3,8 @@
 // - web/backend/utils/requestorUnitPricePolicy.js
 // - web/backend/models/ledgerJournal.model.js
 // change-log:
+// - 2026-10-13: 월정액 원가 저널 중단(딜리버리는 딜러가 직접 지급). 택배비는 박스별 딜러 차감.
+// - 2026-10-13: 딜리버리 배송으로 지정된 거래처만 월정액 원가 대상.
 // - 2026-10-13: 딜러 거래처는 적립에서 빼지 않는다. 적립 총액을 입금하고, 딜러사가 딜리버리 회사에 직접 입금한다. 기존 차감 저널은 삭제.
 // - 2026-10-08: 월 의뢰 2건 이하 거래처는 배송업체 무료 → 원가 미기록.
 // - 2026-10-08: 딜리버리 월정액(거래처 1곳당 55,000원 VAT 포함)은 딜러 부담(딜러 정산에서 차감). 딜러 없으면 어벗츠 부담.
@@ -105,6 +107,9 @@ export function isDeliveryMonthlyCostBillable(monthlyRequestCount) {
 export async function processDeliveryMonthlyCosts({ now = new Date(), dryRun = false } = {}) {
   const prev = resolvePreviousMonthKst(getTodayYmdInKst(now));
   const voided = dryRun ? 0 : await voidDealerDeliveryMonthlyDeductions();
+  // 2026-10-13: 딜리버리 비용은 어벗츠가 다루지 않는다. 딜러 적립은 전액 지급하고 딜러가 딜리버리사에 직접 지급한다.
+  // 택배 배송 비용은 박스마다 딜러 적립에서 차감한다(common.review.helpers.js postDealerParcelShippingDeduction).
+  return { ym: prev.ym, customers: 0, billable: 0, dealerDirect: 0, posted: 0, voided, reason: "disabled" };
   const admin = await BusinessAnchor.findOne({ businessType: "admin", status: { $ne: "merged" } })
     .select({ _id: 1 })
     .sort({ createdAt: 1, _id: 1 })
@@ -128,7 +133,12 @@ export async function processDeliveryMonthlyCosts({ now = new Date(), dryRun = f
     return { ym: prev.ym, customers: counts.length, billable: 0, dealerDirect: 0, posted: 0, voided };
   }
 
-  const anchors = await BusinessAnchor.find({ _id: { $in: billableIds }, businessType: "requestor" })
+  // 딜리버리 배송으로 지정된 거래처만 월정액 원가가 있다(택배 거래처 제외).
+  const anchors = await BusinessAnchor.find({
+    _id: { $in: billableIds },
+    businessType: "requestor",
+    "shippingPolicy.defaultShippingMode": "express",
+  })
     .select({ _id: 1, referredByAnchorId: 1 })
     .lean();
   const refIds = anchors.map((a) => a.referredByAnchorId).filter((v) => v && Types.ObjectId.isValid(String(v)));

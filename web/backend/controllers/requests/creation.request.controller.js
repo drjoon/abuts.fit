@@ -54,6 +54,7 @@ import { isWorksheetReadyQueueRequest } from "../../services/worksheetReadyQueue
 export async function createRequest(req, res) {
   try {
     let requestorWeeklyBatchDays = [];
+    let requestorDefaultShippingMode = "normal";
     let requestorAnodizingEnabled = true;
     if (req.user?.role === "requestor") {
       const orgId = getRequestorOrgId(req);
@@ -78,6 +79,7 @@ export async function createRequest(req, res) {
       const requestorOrg = await BusinessAnchor.findById(orgId)
         .select({
           "shippingPolicy.weeklyBatchDays": 1,
+          "shippingPolicy.defaultShippingMode": 1,
           "requestSettings.anodizingEnabled": 1,
         })
         .lean();
@@ -88,6 +90,10 @@ export async function createRequest(req, res) {
             .map((value) => String(value || "").trim())
             .filter(Boolean)
         : [];
+      requestorDefaultShippingMode =
+        requestorOrg?.shippingPolicy?.defaultShippingMode === "express"
+          ? "express"
+          : "normal";
       requestorAnodizingEnabled =
         typeof requestorOrg?.requestSettings?.anodizingEnabled === "boolean"
           ? requestorOrg.requestSettings.anodizingEnabled
@@ -151,11 +157,7 @@ export async function createRequest(req, res) {
     }
 
     const shippingMode = await resolveSelectableShippingMode({
-      shippingMode:
-        bodyRest?.shippingMode === "express" ||
-        caseInfos?.shippingMode === "express"
-          ? "express"
-          : "normal",
+      defaultShippingMode: requestorDefaultShippingMode,
       requestedAt: new Date(),
       weeklyBatchDays: requestorWeeklyBatchDays,
       maxDiameter: normalizedCaseInfos?.maxDiameter,
@@ -432,6 +434,7 @@ export async function createRequestsBulk(req, res) {
   try {
     // 권한 및 조직/크레딧 검사
     let requestorWeeklyBatchDays = [];
+    let requestorDefaultShippingMode = "normal";
     let requestorAnodizingEnabled = true;
     if (req.user?.role === "requestor") {
       const orgId = getRequestorOrgId(req);
@@ -454,6 +457,7 @@ export async function createRequestsBulk(req, res) {
       const requestorOrg = await BusinessAnchor.findById(orgId)
         .select({
           "shippingPolicy.weeklyBatchDays": 1,
+          "shippingPolicy.defaultShippingMode": 1,
           "requestSettings.anodizingEnabled": 1,
         })
         .lean();
@@ -464,6 +468,10 @@ export async function createRequestsBulk(req, res) {
             .map((value) => String(value || "").trim())
             .filter(Boolean)
         : [];
+      requestorDefaultShippingMode =
+        requestorOrg?.shippingPolicy?.defaultShippingMode === "express"
+          ? "express"
+          : "normal";
       requestorAnodizingEnabled =
         typeof requestorOrg?.requestSettings?.anodizingEnabled === "boolean"
           ? requestorOrg.requestSettings.anodizingEnabled
@@ -711,13 +719,8 @@ export async function createRequestsBulk(req, res) {
     const requestedAtForSelect = new Date();
     const resolvedShippingModes = await Promise.all(
       items.map(async (raw) => {
-        const requested =
-          raw?.shippingMode === "express" ||
-          raw?.caseInfos?.shippingMode === "express"
-            ? "express"
-            : "normal";
         return resolveSelectableShippingMode({
-          shippingMode: requested,
+          defaultShippingMode: requestorDefaultShippingMode,
           requestedAt: requestedAtForSelect,
           weeklyBatchDays: requestorWeeklyBatchDays,
           maxDiameter:

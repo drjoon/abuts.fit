@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/components/CommissionLedgerInline.tsx
 // - web/frontend/src/shared/components/SalesmanLedgerModal.tsx
 // change-log:
+// - 2026-10-13: 거래처 목록에 배송 방식·월 의뢰 건수를 싣고, 딜러·영업팀이 택배/딜리버리를 지정한다.
 // - 2026-10-09: 딜러 정산 거래처 카드에 그 거래처 판매가(dealerUnitPrice)를 싣는다.
 // - 2026-10-09: 딜러 대시보드 수수료 = 거래처 판매가 − 1만원. 지급 완료는 장부 PAYOUT.
 // - 2026-10-09: 거래처 판매가 목록에 연락처·구강스캔을 실어 거래처 카드에서 입력한다.
@@ -36,6 +37,11 @@ import {
   dealerCommissionMongoExpr,
 } from "../../utils/requestorUnitPricePolicy.js";
 import { invalidateRequestorUnitPriceCache } from "../../services/requestorUnitPrice.service.js";
+import {
+  loadMonthlyRequestCounts,
+  normalizeShippingMode,
+  setRequestorShippingMode,
+} from "../../services/requestorShipping.service.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 import {
   ensureSalesTeamPersonalAnchor,
@@ -765,6 +771,38 @@ export async function getSalesmanDashboard(req, res) {
         },
       ]);
 
+    // 택배 배송 박스의 택배비는 딜러 적립에서 차감한다(장부 DEALER_PARCEL_SHIPPING_COST).
+    const parcelRows = isDevops
+      ? []
+      : await LedgerLine.aggregate([
+          {
+            $match: {
+              ownerRole: "salesman",
+              ownerId: myBusinessAnchorObjectId,
+              accountCode: "REV_SALESMAN",
+              "meta.displayKind": "dealer_parcel_shipping",
+              occurredAt: { $gte: start, $lt: end },
+            },
+          },
+          {
+            $group: {
+              _id: "$meta.customerAnchorId",
+              amount: {
+                $sum: {
+                  $ifNull: ["$amountIncludingVat", { $ifNull: ["$amount", 0] }],
+                },
+              },
+              boxCount: { $sum: 1 },
+            },
+          },
+        ]);
+    const parcelCostByOrgId = new Map(
+      (parcelRows || []).map((r) => [String(r._id), Math.abs(Number(r.amount || 0))]),
+    );
+    const parcelBoxesByOrgId = new Map(
+      (parcelRows || []).map((r) => [String(r._id), Number(r.boxCount || 0)]),
+    );
+
     const revenueByOrgId = new Map(
       (revenueRows || []).map((r) => [
         String(r._id),
@@ -806,7 +844,10 @@ export async function getSalesmanDashboard(req, res) {
           // 딜러: 거래처 판매가 − 1만원. 유치 요율은 쓰지 않는다.
           commissionRateForOrg = null;
           commissionTier = null;
-          commissionAmount = roundMoney(commissionByOrgId.get(idStr) || 0);
+          commissionAmount = roundMoney(
+            (commissionByOrgId.get(idStr) || 0) -
+              (parcelCostByOrgId.get(idStr) || 0),
+          );
         }
 
         return {
@@ -825,6 +866,8 @@ export async function getSalesmanDashboard(req, res) {
           monthCustomAbutmentCommissionAmount: commissionAmount,
           monthSimplewayCommissionAmount: 0,
           unitPrice: unitPriceById.get(idStr) ?? REQUESTOR_UNIT_PRICE_BASE,
+          monthParcelShippingCost: roundMoney(parcelCostByOrgId.get(idStr) || 0),
+          monthParcelBoxCount: parcelBoxesByOrgId.get(idStr) || 0,
           referralLevel: isDirect ? "direct" : "unaffiliated",
         };
       })
@@ -1010,6 +1053,7 @@ export async function getMyCustomerUnitPrices(req, res) {
         dealerPriceApproval: 1,
         usesOralScan: 1,
         updatedAt: 1,
+        "shippingPolicy.defaultShippingMode": 1,
         "metadata.representativeName": 1,
         "metadata.phoneNumber": 1,
         "metadata.address": 1,
@@ -1020,6 +1064,7 @@ export async function getMyCustomerUnitPrices(req, res) {
       .select("+dealerUnitPrice +dealerPriceApproval")
       .sort({ name: 1 })
       .lean();
+    const monthly = await loadMonthlyRequestCounts(rows.map((r) => r._id));
     return res.status(200).json({
       success: true,
       data: {
@@ -1047,6 +1092,9 @@ export async function getMyCustomerUnitPrices(req, res) {
             lat: Number.isFinite(lat) ? lat : null,
             lng: Number.isFinite(lng) ? lng : null,
             usesOralScan: Boolean(r.usesOralScan),
+            shippingMode: normalizeShippingMode(r.shippingPolicy?.defaultShippingMode),
+            monthlyRequestCount: monthly.get(String(r._id))?.thisMonth ?? 0,
+            prevMonthRequestCount: monthly.get(String(r._id))?.prevMonth ?? 0,
             updatedAt: r.updatedAt || null,
           };
         }),
@@ -1128,5 +1176,34 @@ export async function setMyCustomerUnitPrice(req, res) {
   } catch (error) {
     console.error("[salesman.setMyCustomerUnitPrice] error", error);
     return res.status(500).json({ success: false, message: "거래처 가격 저장 중 오류가 발생했습니다." });
+  }
+}
+
+/** 거래처 배송 방식 지정(택배 normal / 딜리버리 express). 본인이 소개한 거래처만. */
+export async function setMyCustomerShippingMode(req, res) {
+  try {
+    const targetId = String(req.params.anchorId || "").trim();
+    if (!Types.ObjectId.isValid(targetId)) {
+      return res.status(400).json({ success: false, message: "거래처 ID가 올바르지 않습니다." });
+    }
+    const raw = req.body?.shippingMode;
+    if (raw !== "normal" && raw !== "express") {
+      return res.status(400).json({ success: false, message: "배송 방식이 올바르지 않습니다." });
+    }
+    const myAnchorId = await resolveMyDealerAnchorId(req.user);
+    if (!myAnchorId) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+    const saved = await setRequestorShippingMode({
+      filter: { _id: targetId, referredByAnchorId: myAnchorId },
+      mode: raw,
+    });
+    if (!saved) {
+      return res.status(404).json({ success: false, message: "내 거래처가 아닙니다." });
+    }
+    return res.status(200).json({ success: true, data: saved });
+  } catch (error) {
+    console.error("[salesman.setMyCustomerShippingMode] error", error);
+    return res.status(500).json({ success: false, message: "배송 방식 저장 중 오류가 발생했습니다." });
   }
 }

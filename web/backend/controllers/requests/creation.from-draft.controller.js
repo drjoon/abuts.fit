@@ -326,6 +326,7 @@ export async function createRequestsFromDraft(req, res) {
           ? BusinessAnchor.findById(shippingOrgIdEarly)
               .select({
                 "shippingPolicy.weeklyBatchDays": 1,
+                "shippingPolicy.defaultShippingMode": 1,
                 "requestSettings.anodizingEnabled": 1,
                 "requestSettings.defaultRequestorHexRotation": 1,
                 "requestSettings.defaultManufacturerHexRotation": 1,
@@ -1132,25 +1133,15 @@ export async function createRequestsFromDraft(req, res) {
       : [];
     const calculateSchedule = createProductionScheduleMemo();
 
-    // 신속 ETA가 묶음과 같거나 늦으면 express → normal 강등 (스테일 클라 대비)
+    // 배송 방식은 거래처 설정(택배 normal / 딜리버리 express)이 정한다. 클라이언트 값은 무시.
+    const requestorDefaultShippingMode =
+      shippingOrg?.shippingPolicy?.defaultShippingMode === "express"
+        ? "express"
+        : "normal";
     await Promise.all(
       preparedCasesForCreate.map(async (item) => {
-        if ((item?.shippingMode || "normal") !== "express") return;
-        const maxDiameter =
-          item?.caseInfosWithFile?.maxDiameter ??
-          item?.caseInfos?.maxDiameter ??
-          null;
         item.shippingMode = await resolveSelectableShippingMode({
-          shippingMode: "express",
-          requestedAt: requestedAtForPrefetch,
-          weeklyBatchDays,
-          maxDiameter,
-          productMode:
-            item?.caseInfosWithFile?.productMode ??
-            item?.caseInfos?.productMode ??
-            null,
-          manufacturerLeadTimes,
-          calculateSchedule,
+          defaultShippingMode: requestorDefaultShippingMode,
         });
       }),
     );

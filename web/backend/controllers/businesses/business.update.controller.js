@@ -883,13 +883,8 @@ export async function updateMyBusiness(req, res) {
         );
       }
 
-      if (hasOwnKey(req.body?.shippingPolicy, "defaultShippingMode")) {
-        const rawMode = String(
-          req.body?.shippingPolicy?.defaultShippingMode || "",
-        ).trim();
-        patch["shippingPolicy.defaultShippingMode"] =
-          rawMode === "express" ? "express" : "normal";
-      }
+      // defaultShippingMode(택배/딜리버리)는 본인이 못 바꾼다.
+      // 딜러·영업팀·관리자만 거래처별로 바꾼다 (requestorShipping.service.js).
 
       if (
         hasOwnKey(req.body?.shippingPolicy, "leadTimes") &&

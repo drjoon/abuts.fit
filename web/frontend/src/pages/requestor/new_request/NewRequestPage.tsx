@@ -66,11 +66,7 @@ import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusine
 import { RequestorAbutmentPageHeader } from "./components/RequestorAbutmentPageHeader";
 
 import type { CaseInfos } from "./hooks/newRequestTypes";
-import {
-  isExpressShippingSelectable,
-  type LeadTimesMap,
-} from "@/shared/shipping/estimateShipDate";
-import { EXPRESS_MODE_PER_FILE_ENABLED } from "@/shared/shipping/shippingPolicyCopy";
+import { type LeadTimesMap } from "@/shared/shipping/estimateShipDate";
 import {
   findGroupByFileKey,
   isLikelyOralScanSize,
@@ -822,48 +818,22 @@ const NewRequestPageContent = () => {
     [],
   );
 
-  /** 우측 기본 신속 카드: 생산 리드만 (디자인+1일 레거시 제거) */
-  const expressSelectProductMode = useMemo(() => null, []);
-
-  /** 우측 신속 카드와 동일 조건 — 카드 신속 버튼·모드 강등에도 공통 적용 */
-  const expressSelectableGlobal = useMemo(
-    () =>
-      isExpressShippingSelectable({
-        weeklyBatchDays,
-        leadTimes,
-        diameter: null,
-        productMode: expressSelectProductMode,
-      }),
-    [weeklyBatchDays, leadTimes, expressSelectProductMode],
-  );
+  /** 배송 방식은 거래처 설정(택배/딜리버리)이 정한다. ETA 비교로 강등하지 않는다. */
+  const expressSelectableGlobal = true;
 
   const resolveEffectiveShippingMode = useCallback(
     (
       mode: "normal" | "express",
-      diameter: number | null = null,
-      productMode: string | null = null,
-      batchDays: string[] | null = null,
+      _diameter: number | null = null,
+      _productMode: string | null = null,
+      _batchDays: string[] | null = null,
     ): "normal" | "express" => {
-      if (mode !== "express") return "normal";
-      if (!EXPRESS_MODE_PER_FILE_ENABLED) return "normal";
-      const days = batchDays ?? weeklyBatchDays;
-      // 우측에 디자인+1일 등으로 신속 이점이 없으면 건별(생산만)도 신속을 열지 않는다.
-      const globalOk = isExpressShippingSelectable({
-        weeklyBatchDays: days,
-        leadTimes,
-        diameter: null,
-        productMode: expressSelectProductMode,
-      });
-      if (!globalOk) return "normal";
-      const ok = isExpressShippingSelectable({
-        weeklyBatchDays: days,
-        leadTimes,
-        diameter,
-        productMode,
-      });
-      return ok ? "express" : "normal";
+      void _diameter;
+      void _productMode;
+      void _batchDays;
+      return mode === "express" ? "express" : "normal";
     },
-    [weeklyBatchDays, leadTimes, expressSelectProductMode],
+    [],
   );
 
   /**
@@ -885,21 +855,7 @@ const NewRequestPageContent = () => {
         const info = caseInfosMap?.[key];
         const diameter =
           typeof info?.maxDiameter === "number" ? info.maxDiameter : null;
-        const preferred =
-          info?.shippingMode === "express" ||
-          defaultShippingMode === "express"
-            ? ("express" as const)
-            : ("normal" as const);
-        const shippingMode =
-          preferred === "express" &&
-          isExpressShippingSelectable({
-            weeklyBatchDays,
-            leadTimes,
-            diameter,
-            productMode,
-          })
-            ? ("express" as const)
-            : ("normal" as const);
+        const shippingMode = resolveEffectiveShippingMode(defaultShippingMode);
         updateCaseInfos(key, {
           productMode,
           workType: "abutment",
@@ -921,8 +877,7 @@ const NewRequestPageContent = () => {
       toNormalizedFileKey,
       caseInfosMap,
       defaultShippingMode,
-      weeklyBatchDays,
-      leadTimes,
+      resolveEffectiveShippingMode,
       updateCaseInfos,
     ],
   );
@@ -1956,6 +1911,7 @@ const NewRequestPageContent = () => {
           <div className="flex flex-col flex-1 min-h-0 h-full">
             <NewRequestShippingSection
               disabled={isSubmitting}
+              defaultShippingMode={defaultShippingMode}
               onSubmit={() => {
                 if (isSubmitting || submitClickGuardRef.current) return;
                 if (!files.length) {
