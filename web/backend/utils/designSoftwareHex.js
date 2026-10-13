@@ -5,6 +5,7 @@
 // - web/frontend/src/features/requestSettings/DesignSoftwareSettingsDialog.tsx
 // - web/backend/controllers/admin/admin.hexVerification.controller.js
 // change-log:
+// - 2026-10-13: 사업자 공통 적용용 — 전 제조사 verifiedHex를 한 회전으로 채우는 헬퍼.
 // - 2026-09-09: ExoCAD≤3.0 + implantManufacturer 없음 → designSoftware/계정 폴백 제거(null). 조용히 30° 시드 금지.
 // - 2026-09-03: 제조사별 확정 SSOT만 사용(레거시 계정 확정으로 전 제조사 확정 번짐 제거). User 맵 행(미정 포함)이 있으면 BA로 번지지 않음. 초기값 30°·미정.
 // - 2026-09-03: ExoCAD 3.0 이하 × 임플란트 제조사별 헥스 맵(applyHex30/verifiedHex). 계정 단일 확정은 레거시 fallback.
@@ -338,4 +339,31 @@ export const upsertHexByImplantManufacturerRow = (
   if (idx >= 0) list[idx] = next;
   else list.push(next);
   return list;
+};
+
+/**
+ * 전화로 사업자 전체가 한 회전이라고 확인했을 때.
+ * 저장 SSOT는 그대로 사용자×제조사 행이고, 그 행을 전 제조사 동일 verifiedHex로 채운다.
+ */
+export const buildVerifiedHexRowsForAllManufacturers = (
+  existingRows,
+  hexRotation,
+  { verifiedAt = null, verifiedBy = null } = {},
+) => {
+  const canonical = normalizeHexVerificationResultHex(hexRotation);
+  const list = Array.isArray(existingRows)
+    ? existingRows.map((row) => ({ ...row }))
+    : [];
+  if (!canonical) return list;
+  const applyHex30 = canonical === "헥스30도회전";
+  let rows = list;
+  for (const manufacturer of CNC_HEX_IMPLANT_MANUFACTURERS) {
+    rows = upsertHexByImplantManufacturerRow(rows, manufacturer, {
+      applyHex30,
+      verifiedHex: canonical,
+      verifiedAt,
+      verifiedBy,
+    });
+  }
+  return rows;
 };

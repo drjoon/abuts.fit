@@ -4,6 +4,7 @@
 // - web/backend/modules/admin/admin.routes.js
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // change-log:
+// - 2026-10-13: 전화 확인 후 사업자 공통 적용. SSOT는 사용자×제조사 행.
 // - 2026-09-03: 제조사별 확정/되돌리기 시 BA·User 레거시 hexVerificationResultHex 제거(전 제조사 확정 번짐 방지).
 // - 2026-09-03: 제조사 초기값=30°·미정. 레거시 계정 확정을 전 제조사 확정으로 번지지 않음.
 // - 2026-09-03: ExoCAD 3.0 이하 User를 BA 카드로 그룹. 임플란트 제조사별 applyHex30/확정 API.
@@ -23,8 +24,10 @@ import {
   CNC_HEX_IMPLANT_MANUFACTURERS,
   EXOCAD_VERSION_LE_3_0,
   HEX_VERIFICATION_RESULT_VALUES,
+  buildVerifiedHexRowsForAllManufacturers,
   findHexByImplantManufacturerEntry,
   hexModeFromApplyHex30,
+  isExoCadLe30,
   normalizeExoCadVersion,
   normalizeHexVerificationResultHex,
   normalizeImplantManufacturerKey,
@@ -70,6 +73,22 @@ const clearLegacyHexOnUserAndAnchor = async (user) => {
     anchor.markModified("requestSettings");
     await anchor.save();
   }
+};
+
+/** 사업자 대표 전화 → 없으면 대표 사용자 → 없으면 아무 사용자. */
+const pickHexVerificationContactPhone = (anchor, groupUsers) => {
+  const biz = String(anchor?.metadata?.phoneNumber || "").trim();
+  if (biz) return biz;
+  const ranked = [...(groupUsers || [])].sort((a, b) => {
+    const ao = String(a?.subRole || "") === "owner" ? 0 : 1;
+    const bo = String(b?.subRole || "") === "owner" ? 0 : 1;
+    return ao - bo;
+  });
+  for (const user of ranked) {
+    const phone = String(user?.phoneNumber || "").trim();
+    if (phone) return phone;
+  }
+  return "";
 };
 
 const pickBusinessName = (anchor) => {
@@ -130,6 +149,7 @@ export const listHexVerificationInProgress = asyncHandler(async (_req, res) => {
       _id: 1,
       name: 1,
       email: 1,
+      phoneNumber: 1,
       role: 1,
       subRole: 1,
       businessAnchorId: 1,
@@ -234,6 +254,7 @@ export const listHexVerificationInProgress = asyncHandler(async (_req, res) => {
         userId: uid,
         name: String(user.name || "").trim() || null,
         email: String(user.email || "").trim() || null,
+        phoneNumber: String(user.phoneNumber || "").trim() || null,
         role: user.role || null,
         subRole: user.subRole || null,
         designSoftware: "ExoCAD",
@@ -258,6 +279,7 @@ export const listHexVerificationInProgress = asyncHandler(async (_req, res) => {
       businessType: anchor?.businessType || null,
       employeeCount: employees.length,
       pendingUserCount: pendingUsers,
+      phoneNumber: pickHexVerificationContactPhone(anchor, groupUsers) || null,
       status: pendingUsers > 0 ? "pending" : "confirmed",
       employees,
     });
@@ -278,6 +300,7 @@ export const listHexVerificationInProgress = asyncHandler(async (_req, res) => {
         count: pendingManufacturerCount,
         pendingCount: pendingManufacturerCount,
         confirmedCount: confirmedManufacturerCount,
+        callNeededCount: items.filter((item) => item.status === "pending").length,
         businessCount: items.length,
         manufacturers: [...CNC_HEX_IMPLANT_MANUFACTURERS],
         items,
@@ -469,6 +492,91 @@ export const revertHexVerificationForManufacturer = asyncHandler(
     );
   },
 );
+
+/**
+ * 전화로 사업자 전체가 한 회전이라고 확인한 뒤, ExoCAD 3.0 이하 사용자 전원·전 제조사에 같은 값을 확정.
+ * 저장 SSOT는 User.hexByImplantManufacturer. BA 단일 확정 필드는 쓰지 않는다.
+ * POST /api/admin/hex-verification/businesses/:businessAnchorId/apply-common
+ * body: { hexRotation: "STL모델대로" | "헥스30도회전" }
+ */
+export const applyCommonHexVerification = asyncHandler(async (req, res) => {
+  const businessAnchorId = String(req.params.businessAnchorId || "").trim();
+  if (!Types.ObjectId.isValid(businessAnchorId)) {
+    throw new ApiError(400, "유효하지 않은 사업자 ID입니다.");
+  }
+  const hexRotation = normalizeHexVerificationResultHex(req.body?.hexRotation);
+  if (!hexRotation || !HEX_VERIFICATION_RESULT_VALUES.includes(hexRotation)) {
+    throw new ApiError(
+      400,
+      `hexRotation은 ${HEX_VERIFICATION_RESULT_VALUES.join(" | ")} 중 하나여야 합니다.`,
+    );
+  }
+
+  const users = await User.find({
+    role: { $in: REQUESTOR_ROLES },
+    businessAnchorId,
+    "requestSettings.designSoftware": "ExoCAD",
+  })
+    .select({
+      role: 1,
+      requestSettings: 1,
+    })
+    .lean();
+
+  const targets = (users || []).filter((user) =>
+    isExoCadLe30("ExoCAD", user?.requestSettings?.exoCadVersion),
+  );
+  if (!targets.length) {
+    throw new ApiError(404, "적용할 ExoCAD 3.0 이하 사용자가 없습니다.");
+  }
+
+  const now = new Date();
+  const actorId = req.user?._id || null;
+  const ops = targets.map((user) => ({
+    updateOne: {
+      filter: { _id: user._id },
+      update: {
+        $set: {
+          "requestSettings.hexByImplantManufacturer":
+            buildVerifiedHexRowsForAllManufacturers(
+              user.requestSettings?.hexByImplantManufacturer,
+              hexRotation,
+              { verifiedAt: now, verifiedBy: actorId },
+            ),
+          "requestSettings.updatedAt": now,
+          "requestSettings.hexVerificationResultHex": null,
+          "requestSettings.hexVerificationCompletedAt": null,
+          "requestSettings.hexVerificationCompletedBy": null,
+          updatedAt: now,
+        },
+      },
+    },
+  }));
+  await User.bulkWrite(ops);
+  await BusinessAnchor.updateOne(
+    { _id: businessAnchorId },
+    {
+      $set: {
+        "requestSettings.hexVerificationResultHex": null,
+        "requestSettings.hexVerificationCompletedAt": null,
+        "requestSettings.hexVerificationCompletedBy": null,
+        "requestSettings.updatedAt": now,
+      },
+    },
+  );
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        businessAnchorId,
+        hexRotation,
+        userCount: targets.length,
+      },
+      "모든 사용자에게 같은 헥스 회전을 적용했습니다.",
+    ),
+  );
+});
 
 /**
  * @deprecated BA 단위 확정 — 하위 호환. 새 UI는 manufacturer complete 사용.

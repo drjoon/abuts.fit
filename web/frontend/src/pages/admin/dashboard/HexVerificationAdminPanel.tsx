@@ -1,5 +1,6 @@
 // related: AdminDashboardPage.tsx, admin.hexVerification.controller.js
 // change-log:
+// - 2026-10-13: 전화 확인 후 사업자 공통 적용. 사용자별 스위치는 값이 다를 때.
 // - 2026-09-03: 저장 성공/실패 후 목록 invalidate — 낙관적 확정이 DB와 어긋나지 않게.
 // - 2026-09-03: BA/직원 collapse `??`/`||` 우선순위 수정 — pending 카드도 접힘
 // - 2026-09-03: 스위치 옆 라벨을 확정/미정으로 동적 표시
@@ -13,10 +14,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { apiFetch } from "@/shared/api/apiClient";
+import { formatPhoneNumberInput } from "@/shared/components/business/settings/business/validations";
 import { useToast } from "@/shared/hooks/use-toast";
-import { ChevronDown, ChevronRight, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, Phone, Search } from "lucide-react";
 
 type ApiEnvelope<T> = {
   success?: boolean;
@@ -38,6 +41,7 @@ type HexEmployeeRow = {
   userId: string;
   name?: string | null;
   email?: string | null;
+  phoneNumber?: string | null;
   subRole?: string | null;
   status: "pending" | "confirmed";
   pendingManufacturerCount?: number;
@@ -49,6 +53,7 @@ type HexBusinessGroup = {
   businessName?: string | null;
   employeeCount?: number;
   pendingUserCount?: number;
+  phoneNumber?: string | null;
   status: "pending" | "confirmed";
   employees: HexEmployeeRow[];
 };
@@ -56,6 +61,7 @@ type HexBusinessGroup = {
 type HexVerificationInProgressData = {
   pendingCount?: number;
   confirmedCount?: number;
+  callNeededCount?: number;
   businessCount?: number;
   items?: HexBusinessGroup[];
 };
@@ -88,6 +94,39 @@ const draftFromRow = (row: HexManufacturerRow): SwitchDraft => ({
 });
 
 const hay = (value?: string | null) => String(value || "").toLowerCase();
+
+const hexDegreeLabel = (applyHex30: boolean) => (applyHex30 ? "30°" : "0°");
+
+const phoneDigits = (value?: string | null) =>
+  String(value || "").replace(/\D/g, "");
+
+const formatPhoneLabel = (value?: string | null) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return formatPhoneNumberInput(raw) || raw;
+};
+
+const summarizeBusinessHex = (ba: HexBusinessGroup) => {
+  const confirmedHexes = new Set<string>();
+  let pending = 0;
+  for (const emp of ba.employees || []) {
+    for (const mfr of emp.manufacturers || []) {
+      if (mfr.status === "confirmed" && mfr.verifiedHex) {
+        confirmedHexes.add(mfr.verifiedHex);
+      } else {
+        pending += 1;
+      }
+    }
+  }
+  const uniformHex = confirmedHexes.size === 1 ? [...confirmedHexes][0] : null;
+  return {
+    pending,
+    divergent: confirmedHexes.size > 1,
+    uniformHex,
+    isFully: (hex: string) =>
+      pending === 0 && confirmedHexes.size === 1 && uniformHex === hex,
+  };
+};
 
 const filterHexGroups = (
   groups: HexBusinessGroup[],
@@ -180,12 +219,73 @@ const patchHexQueryData = (
   );
 };
 
+const patchBusinessCommonHex = (
+  queryClient: QueryClient,
+  businessAnchorId: string,
+  applyHex30: boolean,
+) => {
+  const hex = hexFromApply(applyHex30);
+  queryClient.setQueryData(
+    HEX_QUERY_KEY,
+    (prev: ApiEnvelope<HexVerificationInProgressData> | undefined) => {
+      if (!prev?.data) return prev;
+      const items = (prev.data.items || []).map((ba) => {
+        if (String(ba.businessAnchorId || "") !== businessAnchorId) return ba;
+        const employees = (ba.employees || []).map((emp) => ({
+          ...emp,
+          pendingManufacturerCount: 0,
+          status: "confirmed" as const,
+          manufacturers: (emp.manufacturers || []).map((mfr) => ({
+            ...mfr,
+            applyHex30,
+            status: "confirmed" as const,
+            verifiedHex: hex,
+            seedHex: hex,
+          })),
+        }));
+        return {
+          ...ba,
+          employees,
+          pendingUserCount: 0,
+          status: "confirmed" as const,
+        };
+      });
+      let pendingCount = 0;
+      let confirmedCount = 0;
+      for (const ba of items) {
+        for (const emp of ba.employees || []) {
+          for (const mfr of emp.manufacturers || []) {
+            if (mfr.status === "pending") pendingCount += 1;
+            else confirmedCount += 1;
+          }
+        }
+      }
+      return {
+        ...prev,
+        data: {
+          ...prev.data,
+          items,
+          pendingCount,
+          confirmedCount,
+          callNeededCount: items.filter((ba) => ba.status === "pending").length,
+        },
+      };
+    },
+  );
+};
+
 export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [expandedBa, setExpandedBa] = useState<Record<string, boolean>>({});
   const [expandedUser, setExpandedUser] = useState<Record<string, boolean>>({});
+  const [showUsers, setShowUsers] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
+  const [confirmApply, setConfirmApply] = useState<{
+    baKey: string;
+    applyHex30: boolean;
+  } | null>(null);
+  const [applyingBaId, setApplyingBaId] = useState<string | null>(null);
 
   const timersRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>(
     {},
@@ -223,8 +323,11 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
     () => filterHexGroups(items, search),
     [items, search],
   );
-  const pendingCount = Number(data?.data?.pendingCount || 0);
-  const confirmedCount = Number(data?.data?.confirmedCount || 0);
+  const callNeededCount = useMemo(
+    () => items.filter((ba) => ba.status === "pending").length,
+    [items],
+  );
+  const doneBusinessCount = items.length - callNeededCount;
 
   const persistDraft = useCallback(
     async (
@@ -308,6 +411,56 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
     }
   }, [flushKey]);
 
+  const discardPendingSaves = useCallback(() => {
+    for (const key of Object.keys(timersRef.current)) {
+      const timer = timersRef.current[key];
+      if (timer) clearTimeout(timer);
+      timersRef.current[key] = null;
+      delete latestRef.current[key];
+      delete baselineRef.current[key];
+      delete metaRef.current[key];
+    }
+  }, []);
+
+  const applyCommon = useCallback(
+    async (businessAnchorId: string, applyHex30: boolean) => {
+      discardPendingSaves();
+      setApplyingBaId(businessAnchorId);
+      patchBusinessCommonHex(queryClient, businessAnchorId, applyHex30);
+      try {
+        const res = await apiFetch<
+          ApiEnvelope<{ userCount?: number; hexRotation?: string }>
+        >({
+          path: `/api/admin/hex-verification/businesses/${encodeURIComponent(businessAnchorId)}/apply-common`,
+          method: "POST",
+          token: token || undefined,
+          jsonBody: { hexRotation: hexFromApply(applyHex30) },
+        });
+        if (!res.ok || !res.data?.success) {
+          throw new Error(res.data?.message || "공통 적용에 실패했습니다.");
+        }
+        const userCount = Number(res.data?.data?.userCount || 0);
+        toast({
+          title: "전체에 적용했습니다",
+          description: `${hexDegreeLabel(applyHex30)} · ${userCount.toLocaleString()}명`,
+        });
+        setConfirmApply((prev) =>
+          prev?.baKey === businessAnchorId ? null : prev,
+        );
+      } catch (e: unknown) {
+        toast({
+          title: "공통 적용 실패",
+          description: e instanceof Error ? e.message : "다시 시도해주세요.",
+          variant: "destructive",
+        });
+      } finally {
+        setApplyingBaId(null);
+        void queryClient.invalidateQueries({ queryKey: HEX_QUERY_KEY });
+      }
+    },
+    [discardPendingSaves, queryClient, toast, token],
+  );
+
   const scheduleSave = useCallback(
     (
       userId: string,
@@ -340,6 +493,7 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
     if (enabled) return;
     flushAll();
     setSearch("");
+    setConfirmApply(null);
   }, [enabled, flushAll]);
 
   useEffect(() => {
@@ -350,10 +504,17 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
 
   return (
     <div className="space-y-3 text-sm text-gray-700">
-      <div className="text-xs text-muted-foreground">
-        ExoCAD 3.0 이하 사용자 · 미확정 제조사 {pendingCount.toLocaleString()}건
-        · 확정 {confirmedCount.toLocaleString()}건
-      </div>
+      <p className="text-xs text-muted-foreground">
+        미확정인 곳에 전화하세요.
+        <br />
+        전체가 한 가지 회전을 쓰는지 물어보세요.
+        <br />
+        맞으면 그 회전을 모든 사용자에게 적용합니다.
+      </p>
+      <p className="text-xs text-muted-foreground">
+        전화 {callNeededCount.toLocaleString()}곳 · 완료{" "}
+        {doneBusinessCount.toLocaleString()}곳
+      </p>
       <div className="relative">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
         <input
@@ -364,7 +525,7 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
           className="h-8 w-full rounded-md border border-slate-300 bg-white pl-8 pr-2.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-muted"
         />
       </div>
-      <div className="max-h-[60vh] overflow-auto pr-1 space-y-3">
+      <div className="max-h-[60vh] space-y-3 overflow-auto px-1.5 py-1.5">
         {items.length === 0 ? (
           <div className="text-xs text-muted-foreground py-8 text-center border border-dashed rounded-md">
             {isFetching
@@ -378,14 +539,27 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
         ) : (
           visibleItems.map((ba) => {
             const baKey = String(ba.businessAnchorId || ba.businessName || "none");
-            const many = (ba.employees?.length || 0) > 2;
+            const summary = summarizeBusinessHex(ba);
             const baOpen =
-              expandedBa[baKey] ??
-              (searching || !many || ba.status === "pending");
+              expandedBa[baKey] ?? (searching || ba.status === "pending");
+            const usersOpen =
+              showUsers[baKey] ?? (searching || summary.divergent);
+            const phone = formatPhoneLabel(ba.phoneNumber);
+            const digits = phoneDigits(ba.phoneNumber);
+            const confirming =
+              confirmApply?.baKey === baKey ? confirmApply : null;
+            const applying =
+              applyingBaId != null && applyingBaId === String(ba.businessAnchorId || "");
+            const uniformLabel =
+              summary.uniformHex === "헥스30도회전"
+                ? "30°"
+                : summary.uniformHex === "STL모델대로"
+                  ? "0°"
+                  : "";
             return (
               <div
                 key={baKey}
-                className="rounded-md border bg-white overflow-hidden"
+                className="rounded-md border bg-white"
               >
                 <button
                   type="button"
@@ -404,8 +578,12 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
                       {ba.businessName || "사업자명 미확인"}
                     </div>
                     <div className="text-[11px] text-muted-foreground">
-                      직원 {(ba.employeeCount || 0).toLocaleString()}명 · 미확정
-                      사용자 {(ba.pendingUserCount || 0).toLocaleString()}명
+                      직원 {(ba.employeeCount || 0).toLocaleString()}명
+                      {summary.pending === 0 && uniformLabel
+                        ? ` · 전체 ${uniformLabel}`
+                        : summary.divergent
+                          ? " · 값이 서로 다름"
+                          : ` · 미확정 ${(ba.pendingUserCount || 0).toLocaleString()}명`}
                     </div>
                   </div>
                   <Badge
@@ -416,16 +594,115 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
                         : "text-[10px] border-emerald-200 bg-emerald-50 text-emerald-700"
                     }
                   >
-                    {ba.status === "pending" ? "관리중" : "완료"}
+                    {ba.status === "pending" ? "전화 확인" : "완료"}
                   </Badge>
                 </button>
                 {baOpen ? (
-                  <div className="border-t divide-y pl-5">
+                  <div className="space-y-2 border-t px-3 py-2.5">
+                    {phone && digits ? (
+                      <a
+                        href={`tel:${digits}`}
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-800 underline underline-offset-2"
+                      >
+                        <Phone className="h-3.5 w-3.5" />
+                        {phone}
+                      </a>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground">전화번호 없음</p>
+                    )}
+                    {ba.businessAnchorId ? (
+                      summary.divergent ? (
+                        <p className="text-[11px] text-amber-800">
+                          지금 값이 서로 다릅니다.
+                          <br />
+                          전체를 하나로 맞출 때만 적용하세요.
+                        </p>
+                      ) : null
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground">
+                        소속이 없어 사용자별로 저장합니다.
+                      </p>
+                    )}
+                    {ba.businessAnchorId ? (
+                      confirming ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-[11px] text-muted-foreground">
+                            모든 사용자에게 {hexDegreeLabel(confirming.applyHex30)}를
+                            확정합니다.
+                          </p>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-7 px-2.5 text-xs"
+                            disabled={applying}
+                            onClick={() =>
+                              void applyCommon(
+                                String(ba.businessAnchorId),
+                                confirming.applyHex30,
+                              )
+                            }
+                          >
+                            {applying ? "적용 중…" : "확정"}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2.5 text-xs"
+                            disabled={applying}
+                            onClick={() => setConfirmApply(null)}
+                          >
+                            취소
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={summary.isFully("STL모델대로") ? "default" : "outline"}
+                            className="h-7 px-2.5 text-xs"
+                            disabled={summary.isFully("STL모델대로") || applyingBaId != null}
+                            onClick={() =>
+                              setConfirmApply({ baKey, applyHex30: false })
+                            }
+                          >
+                            전체 0°
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={summary.isFully("헥스30도회전") ? "default" : "outline"}
+                            className="h-7 px-2.5 text-xs"
+                            disabled={summary.isFully("헥스30도회전") || applyingBaId != null}
+                            onClick={() =>
+                              setConfirmApply({ baKey, applyHex30: true })
+                            }
+                          >
+                            전체 30°
+                          </Button>
+                        </div>
+                      )
+                    ) : null}
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
+                      onClick={() =>
+                        setShowUsers((prev) => ({ ...prev, [baKey]: !usersOpen }))
+                      }
+                    >
+                      {usersOpen ? (
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      ) : (
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      )}
+                      사용자별
+                    </button>
+                    {usersOpen ? (
+                  <div className="divide-y rounded-md border bg-slate-50/40">
                     {(ba.employees || []).map((emp) => {
                       const uKey = emp.userId;
-                      const uOpen =
-                        expandedUser[uKey] ??
-                        (searching || emp.status === "pending");
+                      const uOpen = expandedUser[uKey] ?? searching;
                       return (
                         <div key={uKey} className="bg-slate-50/40">
                           <button
@@ -520,6 +797,8 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
                       );
                     })}
                   </div>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             );
@@ -557,6 +836,8 @@ export function useHexVerificationSummary(
   return {
     pendingCount: Number(data?.data?.pendingCount || 0),
     confirmedCount: Number(data?.data?.confirmedCount || 0),
+    callNeededCount: pendingBusinesses.length,
+    confirmedBusinessCount: items.length - pendingBusinesses.length,
     pendingBusinesses,
     loading: isFetching,
     refetch,

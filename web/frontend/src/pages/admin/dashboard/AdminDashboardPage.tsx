@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-10-13: 헥스 회전 확인 타일은 전화할 사업자 수와 같은 세팅인지 묻는 안내.
 // - 2026-10-13: 의뢰자 배송 방식(택배/딜리버리) 지정 카드.
 // - 2026-10-08: 대시보드 카드는 순서 유지. 빈칸 없이 이어 붙이고 높이는 내용만큼.
 // - 2026-10-04: 데모 전환 · 어벗츠 확인 카드(하청·자체 지급 확인).
@@ -870,9 +871,8 @@ export const AdminDashboardPage = () => {
   });
 
   const {
-    pendingCount: hexVerificationCount,
-    confirmedCount: confirmedHexVerificationCount,
-    pendingBusinesses: pendingHexVerificationItems,
+    callNeededCount: hexCallCount,
+    confirmedBusinessCount: hexDoneBusinessCount,
     loading: loadingHexVerification,
   } = useHexVerificationSummary(
     token,
@@ -2270,22 +2270,18 @@ export const AdminDashboardPage = () => {
               <DashTile
                 className={DASH_SPAN.c3}
                 title="헥스 회전 확인"
-                tone={hexVerificationCount > 0 ? "warn" : "default"}
+                tone={hexCallCount > 0 ? "warn" : "default"}
                 icon={<RotateCw className="h-4 w-4 text-muted-foreground" />}
                 onClick={() => setHexVerificationDialogOpen(true)}
               >
                 <div className="flex h-full flex-col justify-end gap-0.5">
-                  <DashBigNumber value={hexVerificationCount.toLocaleString()} unit="진행중" />
+                  <DashBigNumber value={hexCallCount.toLocaleString()} unit="전화" />
                   <p className="truncate text-[11px] text-muted-foreground">
-                    {pendingHexVerificationItems[0]
-                      ? `${pendingHexVerificationItems[0].businessName || pendingHexVerificationItems[0].businessAnchorId || "-"}${
-                          pendingHexVerificationItems.length > 1
-                            ? ` 외 ${(pendingHexVerificationItems.length - 1).toLocaleString()}건`
-                            : ""
-                        }`
+                    {hexCallCount > 0
+                      ? "같은 세팅인지 물어보세요"
                       : loadingHexVerification
                         ? "불러오는 중…"
-                        : `확정 ${confirmedHexVerificationCount.toLocaleString()}건`}
+                        : `완료 ${hexDoneBusinessCount.toLocaleString()}곳`}
                   </p>
                 </div>
               </DashTile>

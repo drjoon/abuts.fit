@@ -493,8 +493,13 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 라이노(2-filled)는 원본만 실행하고 샘플에 `stlFile`을 복사. Esprit NC는 샘플의 반대 헥스로 별도 생성.
   - 의뢰자 취소·삭제 시 원본↔헥스 확인 샘플을 **함께** `취소` 처리한다.
   - 관리자: `GET /api/admin/hex-verification/in-progress`는 ExoCAD 3.0 이하 User를 BA 카드로 그룹.
-    `POST .../users/:userId/manufacturers/:manufacturer/{apply-hex30|complete|revert}`.
+    미확정 사업자는 전화로 전체가 한 가지 회전인지 확인한다.
+    맞으면 `POST .../businesses/:businessAnchorId/apply-common` `{ hexRotation }` 가
+    그 사업자의 ExoCAD 3.0 이하 사용자 전원·전 제조사에 같은 `verifiedHex`를 쓴다.
+    저장 SSOT는 여전히 `User.hexByImplantManufacturer`. BA 단일 확정 필드는 쓰지 않는다.
+    사용자마다 다르면 `POST .../users/:userId/manufacturers/:manufacturer/{apply-hex30|complete|revert}`.
     BA 단위 complete/revert는 410(폐기).
+    대시보드 타일 숫자는 전화할 사업자 수. 문구로 전화 확인이 필요함을 안내한다.
   - 의뢰 단건 `business/requestor.requestSettings`에 `hexByImplantManufacturer`를 포함해
     PreviewModal 확정/미정 뱃지에 쓴다(뱃지는 잠금이 아님).
   - 설정 소유: requestor·internalLab 모두 `User.requestSettings` SSOT. BA는 신규 가입 시드·대표자 템플릿만.

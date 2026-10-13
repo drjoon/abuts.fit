@@ -65,6 +65,7 @@ import {
   updateHexApplyHex30,
   completeHexVerificationForManufacturer,
   revertHexVerificationForManufacturer,
+  applyCommonHexVerification,
 } from "../../controllers/admin/admin.hexVerification.controller.js";
 import {
   getSystemLogs,
@@ -401,6 +402,10 @@ router.post(
 router.post(
   "/hex-verification/users/:userId/manufacturers/:manufacturer/revert",
   revertHexVerificationForManufacturer,
+);
+router.post(
+  "/hex-verification/businesses/:businessAnchorId/apply-common",
+  applyCommonHexVerification,
 );
 // deprecated BA-level (410)
 router.post(
