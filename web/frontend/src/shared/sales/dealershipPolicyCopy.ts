@@ -16,7 +16,7 @@ export const DEALERSHIP_DASHBOARD_BAND_LINE = "거래처 판매가 − 1만원";
 /** 정산 규칙 모달 부제. */
 export const DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD = "커스텀어벗 · 거래처별 판매가";
 
-export const DEALERSHIP_SETTLEMENT_RULE_SUMMARY = `딜러 수수료는 ${DEALERSHIP_CUMULATIVE_BAND_LINE} · 적립 총액 지급 · 딜리버리는 딜러사가 직접 입금 · ${REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면 소개 코드 리셋`;
+export const DEALERSHIP_SETTLEMENT_RULE_SUMMARY = `딜러 수수료는 ${DEALERSHIP_CUMULATIVE_BAND_LINE} · 적립 총액 지급 · 택배는 적립에서 차감 · 딜리버리는 딜러사가 직접 입금 · ${REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면 소개 코드 리셋`;
 
 export const REFERRAL_OWNERSHIP_RESET_POLICY_LINE =
   `${REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면 소개 코드가 리셋됩니다.`;

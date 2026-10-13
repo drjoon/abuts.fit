@@ -17,12 +17,11 @@ export const BULK_SHIPPING_LABEL_SHORT = "택배";
 export const EXPRESS_SHIPPING_LABEL_SHORT = "딜리버리";
 
 /** 택배 배송 카드 안내. 요일 선택 없음, 기본 적용. */
-export const PARCEL_SHIPPING_LINE =
-  "오늘 의뢰시 내일 16시 출고";
+export const PARCEL_SHIPPING_LINE = "오늘 의뢰시 내일 16시 출고합니다.";
 export const PARCEL_SHIPPING_DEFAULT_LINE = "기본 적용";
 
 /** 딜리버리 카드 안내. */
-export const DELIVERY_ARRIVAL_LINE = "오늘 의뢰시 내일 도착";
+export const DELIVERY_ARRIVAL_LINE = "오늘 의뢰시 내일 도착합니다.";
 
 /** 딜리버리 배송 적용 기준(월 의뢰 건수). 지정 화면 안내용. */
 export const DELIVERY_MIN_MONTHLY_REQUESTS = 100;

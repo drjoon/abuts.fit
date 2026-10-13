@@ -1,3 +1,4 @@
+// - 2026-10-13: 정책 안내 — 택배(기본)·딜리버리(월 100건) 두 방식.
 // - 2026-10-13: 딜러 정책 — 적립 총액 입금, 딜리버리는 딜러사가 직접 입금.
 // - 2026-10-09: 가격·출고 안내 폭 sm:max-w-lg. 리메이크 라벨과 금액 사이 빈칸을 줄임.
 // - 2026-10-09: 치과 본인 정책 — 기공소에 무료 / 어벗츠에 건당 1만원.
@@ -59,9 +60,15 @@ import {
   REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
 } from '@/shared/sales/dealershipPolicyCopy';
 import {
+  BULK_SHIPPING_LABEL,
+  DELIVERY_APPLY_LINE,
+  DELIVERY_CONDITION_LINE,
+  DELIVERY_DEALER_FULL_PAYOUT_LINE,
+  DELIVERY_FREE_LINE,
   DELIVERY_MONTHLY_PAYER_LINE,
-  EXPRESS_SHIPPING_ARRIVAL_LINE,
   EXPRESS_SHIPPING_LABEL,
+  PARCEL_DEALER_DEDUCT_LINE,
+  PARCEL_SHIPPING_DEFAULT_LINE,
 } from '@/shared/shipping/shippingPolicyCopy';
 import {
   remakePolicyNoteLines,
@@ -218,32 +225,42 @@ export const PricingPolicyDialog = ({
     myUnitPrice != null && myUnitPrice < REQUESTOR_UNIT_PRICE_BASE;
   const priceBody = (
     <div className='space-y-3'>
+      <div className='rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm'>
+        <div className='text-xs text-slate-500'>
+          {hasMyDiscount ? '내 의뢰비 · 1개당' : '의뢰비 · 1개당'}
+        </div>
+        <div className='mt-1 flex items-baseline gap-2 tabular-nums'>
+          <span className='text-2xl font-semibold tracking-tight text-slate-900'>
+            {formatAbutsManwon(myUnitPrice ?? REQUESTOR_UNIT_PRICE_BASE)}
+          </span>
+          {hasMyDiscount ? (
+            <span className='text-sm text-slate-400 line-through'>
+              {formatAbutsManwon(REQUESTOR_UNIT_PRICE_BASE)}
+            </span>
+          ) : null}
+        </div>
+      </div>
       <div className='grid gap-2.5 sm:grid-cols-2'>
         <div className='rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm'>
-          <div className='text-xs text-slate-500'>
-            {hasMyDiscount ? '내 의뢰비 · 1개당' : '의뢰비 · 1개당'}
+          <div className='text-xs text-slate-500'>{BULK_SHIPPING_LABEL}</div>
+          <div className='mt-1 text-xl font-semibold tracking-tight text-slate-900'>
+            내일 16시 출고
           </div>
-          <div className='mt-1 flex items-baseline gap-2 tabular-nums'>
-            <span className='text-2xl font-semibold tracking-tight text-slate-900'>
-              {formatAbutsManwon(myUnitPrice ?? REQUESTOR_UNIT_PRICE_BASE)}
-            </span>
-            {hasMyDiscount ? (
-              <span className='text-sm text-slate-400 line-through'>
-                {formatAbutsManwon(REQUESTOR_UNIT_PRICE_BASE)}
-              </span>
-            ) : null}
+          <div className='mt-0.5 text-xs text-slate-500'>
+            {PARCEL_SHIPPING_DEFAULT_LINE}
           </div>
         </div>
         <div className='rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm'>
           <div className='text-xs text-slate-500'>{EXPRESS_SHIPPING_LABEL}</div>
-          <div className='mt-1 text-2xl font-semibold tracking-tight text-slate-900'>
-            무료
+          <div className='mt-1 text-xl font-semibold tracking-tight text-slate-900'>
+            내일 도착
           </div>
           <div className='mt-0.5 text-xs text-slate-500'>
-            0시까지 주문 · 익일 도착
+            {DELIVERY_CONDITION_LINE}
           </div>
         </div>
       </div>
+      <p className='text-xs text-slate-500'>{DELIVERY_FREE_LINE}</p>
 
       <section className='rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm'>
         <div className='mb-2 text-sm font-medium text-slate-700'>리메이크</div>
@@ -285,9 +302,6 @@ export const PricingPolicyDialog = ({
             {formatRequestorWon(REQUESTOR_UNIT_PRICE_BASE)}원 안에서 정합니다.
             <br />
             거래처 본인에게만 보입니다.
-          </SettlementPolicyFact>
-          <SettlementPolicyFact label={EXPRESS_SHIPPING_LABEL}>
-            배송비 판매자 부담.
           </SettlementPolicyFact>
           <SettlementPolicyFact label='딜러 코드' className='break-keep sm:col-span-2'>
             {DEALER_CODE_REGISTER_WINDOW_LINE}
@@ -338,7 +352,11 @@ export const PricingPolicyDialog = ({
                 {REFERRAL_OWNERSHIP_RESET_ANYONE_LINE}
               </SettlementPolicyFact>
               <SettlementPolicyFact label='배송' className='break-keep'>
-                {EXPRESS_SHIPPING_LABEL}만 운영합니다.
+                {PARCEL_DEALER_DEDUCT_LINE}
+                <br />
+                {DELIVERY_APPLY_LINE}
+                <br />
+                {DELIVERY_DEALER_FULL_PAYOUT_LINE}
                 <br />
                 {DELIVERY_MONTHLY_PAYER_LINE}
               </SettlementPolicyFact>
@@ -360,7 +378,7 @@ export const PricingPolicyDialog = ({
               <SettlementPolicyFact label='딜러 없음'>
                 딜러가 없으면 딜러 몫은 어벗츠가 가져갑니다.
                 <br />
-                딜리버리 월정액도 어벗츠가 부담합니다.
+                택배비와 딜리버리 비용은 이 분배에 넣지 않습니다.
               </SettlementPolicyFact>
               <SettlementPolicyFact label='화면'>
                 정산 예정액·지급 완료액·사업자 요약·정산 원장으로

@@ -62,6 +62,10 @@ import { AdminPageShell } from "@/pages/admin/adminUi";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import {
+  BULK_SHIPPING_LABEL,
+  EXPRESS_SHIPPING_LABEL,
+} from "@/shared/shipping/shippingPolicyCopy";
+import {
   NoOrderAlertBanner,
   useNoOrderAlerts,
 } from "@/shared/noOrderAlerts";
@@ -2198,12 +2202,12 @@ export const AdminDashboardPage = () => {
                   />
                   <div className="grid grid-cols-2 gap-2">
                     <DashStat
-                      label="택배 묶음 출고"
+                      label={BULK_SHIPPING_LABEL}
                       value={`${inProgressNormalCount.toLocaleString()}건`}
                       tone="primary"
                     />
                     <DashStat
-                      label="딜리버리 익일 도착"
+                      label={EXPRESS_SHIPPING_LABEL}
                       value={`${inProgressExpressCount.toLocaleString()}건`}
                       tone={inProgressExpressCount > 0 ? "warn" : undefined}
                     />

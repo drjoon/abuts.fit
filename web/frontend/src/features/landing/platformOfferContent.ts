@@ -333,7 +333,7 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
     image: { src: LANDING_CUSTOM_TRACKING, alt: "커스텀어벗 CNC 추적관리" },
     notes: [
       "단계별 진행이 의뢰서에 그대로 표시됩니다.",
-      "주문 다음 날 딜리버리로 도착합니다.",
+      "택배는 내일 16시 출고하고, 딜리버리는 다음 날 도착합니다.",
     ],
   },
 

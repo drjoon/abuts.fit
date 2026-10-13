@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-10-10: 제7조② 크레딧 사용처에 스토어 기성품 포함(충전 화면 안내·제7조①과 정합).
 // - 2026-10-10: 제4조② 국세청 사업자 조회 자동 검증(휴·폐업 거부, 검증 전 유료 의뢰 불가), 제2조 "거래처" 정의.
+// - 2026-10-13: 제6조·제11조 — 택배(기본)·딜리버리(월 100건) 두 방식.
 // - 2026-10-13: 제6조 — 딜러 수수료는 적립 총액 입금. 딜리버리 비용은 딜러사가 직접 입금.
 // - 2026-10-10: 제1·2·4·6·7·8·9조 — 회사=기공소(직접 납품), 제조사·타 기공소·딜러=협력사업자(중개 아님). B2B 한정·가입 시 사업자/면허 확인·크레딧 보류·차감 시점 명시.
 // - 2026-10-09: 제6조 — 배송비 안내는 판매자 부담. 「배송비 별도」「회원 부과 없음」삭제.
@@ -29,6 +30,17 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { REMAKE_TERMS_ARTICLE_LINES } from "@/shared/pricing/remakePolicyCopy";
 import { DEALER_CODE_REGISTER_WINDOW_LINE } from "@/shared/sales/dealershipPolicyCopy";
+import {
+  DELIVERY_APPLY_LINE,
+  DELIVERY_ARRIVAL_LINE,
+  DELIVERY_FREE_LINE,
+  DELIVERY_MIN_MONTHLY_REQUESTS,
+  DELIVERY_MONTHLY_PAYER_LINE,
+  PARCEL_DEALER_DEDUCT_LINE,
+  PARCEL_IS_DEFAULT_LINE,
+  PARCEL_SHIPPING_LINE,
+  SHIPPING_TWO_MODES_LINE,
+} from "@/shared/shipping/shippingPolicyCopy";
 import {
   PublicPageLayout,
   PUBLIC_CARD_CLASS,
@@ -251,7 +263,17 @@ export const TermsPage = () => {
                   주문량에 따른 그룹할인은 운영하지 않습니다.
                 </p>
                 <p>
-                  2. 배송비 판매자 부담.
+                  2. {DELIVERY_FREE_LINE}
+                  <br />
+                  {SHIPPING_TWO_MODES_LINE}
+                  <br />
+                  {PARCEL_IS_DEFAULT_LINE}
+                  <br />
+                  {PARCEL_SHIPPING_LINE}
+                  <br />
+                  {DELIVERY_APPLY_LINE}
+                  <br />
+                  {DELIVERY_ARRIVAL_LINE}
                   <br />
                   회사는 겸영사업자로서 기공·커스텀어벗·크레딧
                   경로에는 부가가치세(VAT)를 부과하지 않고, 스토어 기성품 및
@@ -261,7 +283,9 @@ export const TermsPage = () => {
                   <br />
                   회사는 딜러사에 적립 총액을 입금합니다.
                   <br />
-                  딜러사는 딜리버리 회사에 딜리버리 비용을 직접 입금합니다.
+                  {PARCEL_DEALER_DEDUCT_LINE}
+                  <br />
+                  {DELIVERY_MONTHLY_PAYER_LINE}
                 </p>
                 <p>
                   3. 회사가 치과회원에게 납품하는 기공물의 제작 일부는 회사가
@@ -509,15 +533,24 @@ export const TermsPage = () => {
                 </p>
                 <p>
                   4. 납기 지연으로 회사가 치과회원에게 보상, 무상 리메이크 또는
-                  딜리버리 익일 도착 비용 등을 부담한 경우, 회사는 그 비용을 기공회원에게
+                  택배·딜리버리 비용 등을 부담한 경우, 회사는 그 비용을 기공회원에게
                   구상하거나 정산 대금에서 공제할 수 있습니다.
                 </p>
                 <p>
-                  5. 딜리버리 익일 도착은 당일 자정(KST)까지 주문한 건을
-                  다음 날 기공소 또는 치과에 도착시키는 것을 목표로 합니다.
+                  5. {PARCEL_IS_DEFAULT_LINE}
+                  <br />
+                  당일 자정(KST)까지 주문한 건은 다음 영업일 16시 출고를 목표로
+                  합니다.
                 </p>
                 <p>
-                  6. 회사가 지정한 배송업체에 기공물을 인계하기 전까지의
+                  6. 딜리버리 배송은 월 {DELIVERY_MIN_MONTHLY_REQUESTS}건 이상
+                  의뢰하는 회원에 적용합니다.
+                  <br />
+                  당일 자정(KST)까지 주문한 건을 다음 날 기공소 또는 치과에
+                  도착시키는 것을 목표로 합니다.
+                </p>
+                <p>
+                  7. 회사가 지정한 배송업체에 기공물을 인계하기 전까지의
                   파손·분실 책임은 기공회원에게 있습니다. 인계 이후의 사고는
                   해당 배송업체의 약관 및 회사의 배송 정책에 따릅니다.
                 </p>

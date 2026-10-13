@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-13: 출고 안내 — 택배(기본)·딜리버리(월 100건).
 // - 2026-08-21: 출고예정 모달에 기공의뢰(PTX) 뱃지.
 // - 2026-08-19: 출고예정 모달 — 진행중과 같은 가로폭, 신속 포함, 상태·출고·케이스 뱃지. 리드타임 안내 문구 제거.
 // - 2026-08-19: 헤더 버튼 라벨 [출고예정 x건]. 취소 후 스냅샷 갱신과 맞춤.
@@ -64,8 +65,13 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { formatDateWithDay, formatDateOnly } from "@/utils/dateFormat";
 import { getShippingModeBadgeClassName } from "@/shared/shipping/shippingMode";
 import {
-  EXPRESS_SHIPPING_ARRIVAL_LINE,
-  EXPRESS_SHIPPING_LABEL,
+  BULK_SHIPPING_LABEL_SHORT,
+  DELIVERY_APPLY_LINE,
+  DELIVERY_ARRIVAL_LINE,
+  DELIVERY_FREE_LINE,
+  EXPRESS_SHIPPING_LABEL_SHORT,
+  PARCEL_IS_DEFAULT_LINE,
+  PARCEL_SHIPPING_LINE,
 } from "@/shared/shipping/shippingPolicyCopy";
 import type { PeriodFilterValue } from "@/shared/ui/periodFilterValues";
 import { periodToRange } from "@/store/usePeriodStore";
@@ -197,9 +203,11 @@ const DIAMETER_LABELS: Record<DiameterKey, string> = {
 
 const SHIP_OUT_INFO_LINES = [
   "출고일은 리드타임 기준으로 계산됩니다.",
-  `${EXPRESS_SHIPPING_LABEL}만 운영합니다.`,
-  "배송비 판매자 부담.",
-  EXPRESS_SHIPPING_ARRIVAL_LINE,
+  PARCEL_IS_DEFAULT_LINE,
+  PARCEL_SHIPPING_LINE,
+  DELIVERY_APPLY_LINE,
+  DELIVERY_ARRIVAL_LINE,
+  DELIVERY_FREE_LINE,
 ];
 
 function ShipOutInfoMessage() {
@@ -782,10 +790,17 @@ export const RequestorBulkShippingBannerCard = ({
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge
                 variant="outline"
+                className={`gap-1 font-medium ${getShippingModeBadgeClassName("normal")}`}
+              >
+                <Package className="h-3 w-3" />
+                {BULK_SHIPPING_LABEL_SHORT}
+              </Badge>
+              <Badge
+                variant="outline"
                 className={`gap-1 font-medium ${getShippingModeBadgeClassName("express")}`}
               >
                 <Zap className="h-3 w-3" />
-                {EXPRESS_SHIPPING_LABEL}
+                {EXPRESS_SHIPPING_LABEL_SHORT}
               </Badge>
             </div>
           </div>

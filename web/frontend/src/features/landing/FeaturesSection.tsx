@@ -12,6 +12,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { MessageSquare, BarChart3, Shield, Clock, Upload } from "lucide-react";
 import type { ReactNode } from "react";
+import {
+  DELIVERY_FREE_LINE,
+  SHIPPING_TWO_MODES_LINE,
+} from "@/shared/shipping/shippingPolicyCopy";
 
 export const FeaturesSection = () => {
   const features: {
@@ -57,9 +61,9 @@ export const FeaturesSection = () => {
       title: "배송 안내",
       description: (
         <>
-          딜리버리 익일 도착만 운영합니다.
+          {SHIPPING_TWO_MODES_LINE}
           <br />
-          배송비 판매자 부담.
+          {DELIVERY_FREE_LINE}
         </>
       ),
       category: "배송",

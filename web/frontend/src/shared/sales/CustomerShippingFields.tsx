@@ -14,7 +14,10 @@ import {
 } from "@/shared/shipping/ShippingModeToggle";
 import {
   DELIVERY_CONDITION_LINE,
+  DELIVERY_DEALER_FULL_PAYOUT_LINE,
   DELIVERY_MIN_MONTHLY_REQUESTS,
+  DELIVERY_MONTHLY_PAYER_LINE,
+  PARCEL_DEALER_DEDUCT_LINE,
 } from "@/shared/shipping/shippingPolicyCopy";
 import type { CustomerPriceRow } from "@/shared/sales/CustomerPriceDialog";
 
@@ -75,9 +78,11 @@ export function CustomerShippingFields({
         {eligible ? " (충족)" : ""}
       </p>
       <p className="text-xs leading-relaxed text-slate-500">
-        택배는 박스당 택배비를 적립에서 차감합니다.
+        {PARCEL_DEALER_DEDUCT_LINE}
         <br />
-        딜리버리는 적립을 전액 지급하며, 딜리버리사에는 직접 지급합니다.
+        {DELIVERY_DEALER_FULL_PAYOUT_LINE}
+        <br />
+        {DELIVERY_MONTHLY_PAYER_LINE}
       </p>
     </div>
   );

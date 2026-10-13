@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-13: 추가 비용 — 택배(기본)·딜리버리(월 100건) 두 방식.
 // - 2026-10-05: 수수료(플랫폼 사용료·하청) 안내 삭제(미부과).
 // - 2026-09-27: 플랫폼 사용료 ~~2%~~ → 이벤트 면제(0%) 안내 복원. 어벗츠기공소 항상 면제.
 // - 2026-09-26: 수수료 안내 — 협력은 수수료 없이 전액, 하청은 영업 수수료를 제한 적립.
@@ -20,6 +21,14 @@ import {
   PUBLIC_PAGE_SUBTITLE,
 } from "./components/PublicPageLayout";
 import { DEALER_CODE_REGISTER_WINDOW_LINE } from "@/shared/sales/dealershipPolicyCopy";
+import {
+  DELIVERY_APPLY_LINE,
+  DELIVERY_ARRIVAL_LINE,
+  DELIVERY_FREE_LINE,
+  PARCEL_IS_DEFAULT_LINE,
+  PARCEL_SHIPPING_LINE,
+  SHIPPING_TWO_MODES_LINE,
+} from "@/shared/shipping/shippingPolicyCopy";
 
 function formatWon(value: number) {
   return `${value.toLocaleString()}원`;
@@ -240,10 +249,17 @@ export const ServicePage = () => {
                   </div>
                   <ul className="list-disc list-inside space-y-2 ml-4">
                     <li>
-                      배송비 판매자 부담.
+                      {SHIPPING_TWO_MODES_LINE}
                       <br />
-                      당일 자정까지 주문한 건은 다음 날 기공소 또는 치과 도착을
-                      목표로 합니다.
+                      {PARCEL_IS_DEFAULT_LINE}
+                      <br />
+                      {PARCEL_SHIPPING_LINE}
+                      <br />
+                      {DELIVERY_APPLY_LINE}
+                      <br />
+                      {DELIVERY_ARRIVAL_LINE}
+                      <br />
+                      {DELIVERY_FREE_LINE}
                     </li>
                     <li>
                       커스텀어벗 디자인+생산 의뢰 시 디자인비는 생산비와 별도로

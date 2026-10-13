@@ -62,7 +62,12 @@ import {
 } from "@/shared/settlement/settlementUi";
 import { CustomAbutmentAbutsSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
 import { DEALERSHIP_BAND_RANGE_LABEL } from "@/shared/sales/dealershipPolicyCopy";
-import { DELIVERY_MONTHLY_PAYER_LINE } from "@/shared/shipping/shippingPolicyCopy";
+import {
+  DELIVERY_APPLY_LINE,
+  DELIVERY_DEALER_FULL_PAYOUT_LINE,
+  DELIVERY_MONTHLY_PAYER_LINE,
+  PARCEL_DEALER_DEDUCT_LINE,
+} from "@/shared/shipping/shippingPolicyCopy";
 
 const HISTORY_MONTHS = 6;
 
@@ -1036,6 +1041,12 @@ export default function AdminPaymentsPage({
                       {DEALERSHIP_BAND_RANGE_LABEL}입니다.
                       <br />
                       적립 총액을 입금합니다.
+                      <br />
+                      {PARCEL_DEALER_DEDUCT_LINE}
+                      <br />
+                      {DELIVERY_APPLY_LINE}
+                      <br />
+                      {DELIVERY_DEALER_FULL_PAYOUT_LINE}
                       <br />
                       {DELIVERY_MONTHLY_PAYER_LINE}
                       <br />

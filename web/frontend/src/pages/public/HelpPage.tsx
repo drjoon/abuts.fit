@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-13: 의뢰 FAQ — 택배(기본)·딜리버리(월 100건).
 // - 2026-10-07: 리메이크 FAQ — 어벗츠로부터/기공소에=무료·어벗츠로/어벗츠에=건당 1만원.
 // - 2026-08-12: 크레딧=기공료 선입금 FAQ 실문답 추가. 선불페이와 구분·환불/수정계산서 안내.
 // related files:
@@ -35,6 +36,14 @@ import { SUPPORT_EMAIL } from "@/shared/lib/contactInfo";
 import { DEMO_MODE_FREE_CREDIT_FAQ_ANSWER } from "@/shared/demo/demoModeCopy";
 import { CREDIT_PREPAID_FAQS } from "@/shared/legal/creditPrepaidCopy";
 import { DEALER_CODE_REGISTER_WINDOW_LINE } from "@/shared/sales/dealershipPolicyCopy";
+import {
+  DELIVERY_APPLY_LINE,
+  DELIVERY_ARRIVAL_LINE,
+  DELIVERY_FREE_LINE,
+  PARCEL_IS_DEFAULT_LINE,
+  PARCEL_SHIPPING_LINE,
+  SHIPPING_TWO_MODES_LINE,
+} from "@/shared/shipping/shippingPolicyCopy";
 
 type FaqItem = { q: string; a: string };
 
@@ -78,6 +87,17 @@ const FAQ_SECTIONS: {
     title: "의뢰",
     icon: FileText,
     items: [
+      {
+        q: "배송은 택배와 딜리버리 중 무엇인가요?",
+        a: [
+          SHIPPING_TWO_MODES_LINE,
+          PARCEL_IS_DEFAULT_LINE,
+          PARCEL_SHIPPING_LINE,
+          DELIVERY_APPLY_LINE,
+          DELIVERY_ARRIVAL_LINE,
+          DELIVERY_FREE_LINE,
+        ].join(" "),
+      },
       {
         q: "의뢰 상태는 어디서 확인하나요?",
         a: "로그인 후 대시보드에서 준비·가공·출고 진행 상태를 확인할 수 있습니다. 상세 화면과 채팅에서 제작사와 소통할 수 있습니다.",

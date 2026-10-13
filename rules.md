@@ -257,7 +257,7 @@
   - 건당 의뢰비는 치과·기공소 모두 **15,000원 단일가**. 딜러·영업팀이 거래처(`BusinessAnchor.dealerUnitPrice`, `select:false`)별로 **12,000~15,000원**을 정할 수 있고 거래처 본인에게만 보인다(외부 비공개). 서버·FE 모두 12,000 미만/15,000 초과 거절(`validateDealerUnitPrice`). 그룹할인·가입 90일 1만원·주문량 할인·런칭 이벤트 단가는 폐지. 영업팀(`salesTeam`)이 입력한 가격은 `dealerPriceApproval.status=pending`이 되어 본사(admin) 승인(`POST /api/admin/price-approvals/:anchorId`) 전까지 의뢰가 막힌다(`checkCreditLock`). 승인 시 `dealerUnitPrice` 반영. devops는 소개 거래처 등록 없이 고정 분배(1,000원/어벗).
   - 분배(어벗 1개당, 부가세 포함): 제조사 **5,500** · 개발운영 **1,000** · 어벗츠 **3,500** · 나머지 **딜러(판매가 − 10,000)**. 딜러 없음(직판·영업팀 소개)이면 딜러 몫은 어벗츠. 어벗츠가 거래처에 직접 공급(면세)하고 딜러에게는 수수료를 부가세 포함으로 지급. 구현 `resolveRevenueOwnerBaseAllocation` (`creditRevenuePolicy.service.js`).
   - **구현(2026-10-09)**: 거래처 배송비 `REQUESTOR_SHIPPING_FEE_PER_BOX=0`(`requestorUnitPricePolicy.js`). 의뢰 사전 잔액검사·`SHIPPING_SPEND_HOLD`(`shouldSkipShippingHold`)·포장.발송 `SHIPPING_SPEND_COMMIT`(레거시 hold 없으면 skip) 모두 거래처 크레딧을 건드리지 않는다. 어벗츠로 리메이크도 고정 1만원이 아니라 거래처 개별가(`dealerUnitPrice`) 또는 기본 15,000원(`computePriceForRequest`).
-  - 배송은 **딜리버리 익일 도착만**. 택배 묶음 출고·월 가입 폐지, 거래처 배송비 없음. 딜러 거래처의 딜리버리 월정액 55,000원(VAT 포함)은 적립에서 빼지 않는다. 적립 총액을 입금하고, 딜러사가 딜리버리 회사에 직접 입금한다. 딜러가 없으면 어벗츠 부담(`REV_ADMIN`). 직전 달 의뢰가 **3건 이상**인 직판 거래처마다 월 1회 `DELIVERY_MONTHLY_COST` 저널(`deliveryMonthlyCost.service.js`, 멱등키 거래처+월). 이미 딜러 적립에서 뺀 저널은 워커가 삭제한다. 월 의뢰 2건 이하(`DELIVERY_FREE_MAX_MONTHLY_REQUESTS`)는 배송업체가 무료라 저널을 남기지 않는다.
+  - 배송은 **택배(기본)와 딜리버리** 중 거래처별 하나(2026-10-13, §2.7). 거래처에게 배송비를 받지 않는다. 택배는 박스당 택배비를 딜러 적립에서 차감해 제조사에 환입한다. 딜리버리(월 100건 이상 안내)는 적립에서 빼지 않고, 딜러사가 딜리버리 회사에 직접 입금한다. 월정액 원가 저널은 중단(`deliveryMonthlyCost.service.js` reason `disabled`).
 - 롤백 원칙:
   - **제조사 의뢰비·배송비**(`REQUEST_SPEND_`* / `SHIPPING_SPEND_*`): 롤백·준비 취소 시 원본 저널/라인 **물리 삭제**(REFUND 추가 금지)
   - **기공의뢰(PTX)**(`PRACTICE_TRANSFER_`*·디자인비 `ADJUST`·PTX 배송): 삭제·작업취소 시 원본 저널/라인 **물리 삭제**(과거 REFUND 쌍도 함께 삭제)
@@ -387,8 +387,7 @@
 
 ### 2.7 배송/우편함
 
-- 배송 방식 SSOT: 딜리버리 익일 도착 단일. 서버는 입력과 무관하게 `shippingMode="express"`로 저장한다(`resolveSelectableShippingMode`). `normal`(묶음)은 과거 건 표시용으로만 남는다.
-- **(2026-10-13 개정) 배송 방식 SSOT**: 택배 배송(기본, `normal`: 오늘 자정까지 주문 → 다음 영업일 16:00 발송, 요일 선택 없음) / 딜리버리 배송(`express`, 월 100건 이상 의뢰시 적용). 서버는 클라이언트 값을 무시하고 `BusinessAnchor.shippingPolicy.defaultShippingMode`로 저장한다(`resolveSelectableShippingMode`). 지정은 딜러·영업팀(`PUT /api/salesman/customer-shipping/:anchorId`, 소개 거래처만)과 관리자(`PUT /api/admin/requestor-shipping/:anchorId`, 대시보드 「의뢰자 배송 방식」)만. 거래처 본인 PATCH는 무시. 딜리버리 월정액 원가는 딜리버리 지정 거래처만.
+- **배송 방식 SSOT (2026-10-13)**: 택배 배송(기본, `normal`: 오늘 자정까지 주문 → 다음 영업일 16:00 발송, 요일 선택 없음) / 딜리버리 배송(`express`, 월 100건 이상 의뢰시 적용). 서버는 클라이언트 값을 무시하고 `BusinessAnchor.shippingPolicy.defaultShippingMode`로 저장한다(`resolveSelectableShippingMode`). 지정은 딜러·영업팀(`PUT /api/salesman/customer-shipping/:anchorId`, 소개 거래처만)과 관리자(`PUT /api/admin/requestor-shipping/:anchorId`, 대시보드 「의뢰자 배송 방식」)만. 거래처 본인 PATCH는 무시. 딜리버리 월정액 원가는 딜리버리 지정 거래처만.
 - 우편함 배정 시점: 가공→세척.패킹 진입. 같은 수신자면 집하 전까지 한 칸에 모음(1회 택배비). 포장.발송은 기존 배정 유지. 포장.발송↔세척.패킹·세척.패킹→가공 롤백도 우편함 유지(패킹 라벨 SSOT). 가공→준비 롤백에서만 해제.
 - 합류 키: 수신자 BusinessAnchor. PTX CA도 주문 기공소 BA.
 - 배송비 과금 시점: **포장.발송 진입(세척.패킹 승인)** 1회. 운송장 라벨에는 건수를 출력하지 않음(웹앱에서 확인).

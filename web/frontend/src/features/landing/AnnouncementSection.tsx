@@ -4,6 +4,12 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  DELIVERY_APPLY_LINE,
+  DELIVERY_ARRIVAL_LINE,
+  PARCEL_IS_DEFAULT_LINE,
+  PARCEL_SHIPPING_LINE,
+} from "@/shared/shipping/shippingPolicyCopy";
 
 export const AnnouncementSection = () => {
   const announcements = [
@@ -23,12 +29,16 @@ export const AnnouncementSection = () => {
     },
     {
       id: 3,
-      title: "딜리버리 익일 도착",
+      title: "택배 · 딜리버리",
       description: (
         <>
-          배송비 판매자 부담.
+          {PARCEL_IS_DEFAULT_LINE}
           <br />
-          자정까지 주문하면 다음 날 도착합니다.
+          {PARCEL_SHIPPING_LINE}
+          <br />
+          {DELIVERY_APPLY_LINE}
+          <br />
+          {DELIVERY_ARRIVAL_LINE}
         </>
       ),
       type: "new",
