@@ -3,6 +3,7 @@
 // - web/backend/controllers/auth/auth.controller.js
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import User from "../models/user.model.js";
+import { isReservedReferralCode } from "./requestorReferralWindow.util.js";
 
 /**
  * Ensure salesTeam user has a personal BusinessAnchor for referral attribution.
@@ -62,7 +63,7 @@ export async function ensureSalesTeamReferralCode(userDoc) {
   const existing = String(userDoc.referralCode || "")
     .trim()
     .toUpperCase();
-  if (!/^[A-Z]{3}$/.test(existing)) {
+  if (!/^[A-Z]{3}$/.test(existing) || isReservedReferralCode(existing)) {
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     let created = null;
     for (let attempt = 0; attempt < 200; attempt += 1) {
@@ -70,6 +71,7 @@ export async function ensureSalesTeamReferralCode(userDoc) {
       for (let i = 0; i < 3; i += 1) {
         code += alphabet[Math.floor(Math.random() * alphabet.length)];
       }
+      if (isReservedReferralCode(code)) continue;
       const exists = await User.exists({ referralCode: code });
       if (!exists) {
         userDoc.referralCode = code;

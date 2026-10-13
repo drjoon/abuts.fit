@@ -34,6 +34,10 @@ import {
 import { SUPPORT_EMAIL } from "@/shared/lib/contactInfo";
 import { DEMO_MODE_FREE_CREDIT_FAQ_ANSWER } from "@/shared/demo/demoModeCopy";
 import { CREDIT_PREPAID_FAQS } from "@/shared/legal/creditPrepaidCopy";
+import {
+  DEALER_CODE_REGISTER_WINDOW_AFTER_LINE,
+  DEALER_CODE_REGISTER_WINDOW_LINE,
+} from "@/shared/sales/dealershipPolicyCopy";
 
 type FaqItem = { q: string; a: string };
 
@@ -57,6 +61,10 @@ const FAQ_SECTIONS: {
       {
         q: "회원가입은 어떻게 하나요?",
         a: "사업자등록번호로 가입합니다. 치과(의뢰 발신) 또는 기공소(의뢰 수신) 유형을 선택한 뒤 사업자 정보를 제출하면, 검증 후 서비스를 이용할 수 있습니다.",
+      },
+      {
+        q: "딜러 코드는 언제까지 등록하나요?",
+        a: `${DEALER_CODE_REGISTER_WINDOW_LINE} ${DEALER_CODE_REGISTER_WINDOW_AFTER_LINE}`,
       },
       {
         q: "가입 시 무료 크레딧이 생기나요?",

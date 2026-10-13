@@ -42,6 +42,12 @@ import {
   applyReferralCodeToUnownedRequestor,
   clearDevopsDefaultReferrer,
 } from "../../services/referralOwnershipReset.service.js";
+import { maybeAssignAbutsAdminReferral, resolveRequestorSignupAtForAnchor } from "../../services/abutsAdminReferral.service.js";
+import {
+  canSelfRegisterReferralCode,
+  isWithinReferralSelfSetWindow,
+  resolveReferralSelfSetExpiresAt,
+} from "../../utils/requestorReferralWindow.util.js";
 import { resolveRequestorPricingBaseDate } from "../requests/utils.js";
 import {
   isHexVerificationPending,
@@ -569,11 +575,50 @@ export async function getMyBusiness(req, res) {
         referrerBusinessType = null;
       }
     }
+    let requestorSignupAt = null;
+    if (isRequestorRole) {
+      const hasReferrerBeforeDefault = Boolean(
+        anchor?.referredByAnchorId &&
+          Types.ObjectId.isValid(String(anchor.referredByAnchorId)),
+      );
+      if (!hasReferrerBeforeDefault) {
+        requestorSignupAt = await resolveRequestorSignupAtForAnchor(
+          anchor,
+          freshUser,
+        );
+        try {
+          const assigned = await maybeAssignAbutsAdminReferral(anchor, {
+            signupAt: requestorSignupAt,
+          });
+          if (assigned?.referredByAnchorId) {
+            anchor.referredByAnchorId = assigned.referredByAnchorId;
+            referrerBusinessType = "admin";
+          }
+        } catch (e) {
+          console.error("[getMyBusiness] admin referral default failed", e);
+        }
+      }
+    }
     const hasReferrerId =
       Boolean(anchor?.referredByAnchorId) &&
       Types.ObjectId.isValid(String(anchor.referredByAnchorId));
+    const hasPriorDefault =
+      !hasReferrerId &&
+      Boolean(anchor?.defaultReferralAnchorId) &&
+      Types.ObjectId.isValid(String(anchor.defaultReferralAnchorId));
+    const withinSelfSetWindow =
+      isRequestorRole &&
+      !hasReferrerId &&
+      !hasPriorDefault &&
+      isWithinReferralSelfSetWindow(requestorSignupAt);
     const referralCanRegister =
-      isRequestorRole && membership === "owner" && !hasReferrerId;
+      isRequestorRole &&
+      membership === "owner" &&
+      canSelfRegisterReferralCode({
+        hasReferrer: hasReferrerId,
+        hasPriorDefault,
+        signupAt: requestorSignupAt,
+      });
 
     const responseData = {
       success: true,
@@ -682,6 +727,11 @@ export async function getMyBusiness(req, res) {
                 salesAssigned:
                   referrerBusinessType === "salesman" ||
                   referrerBusinessType === "salesTeam",
+                adminDefault: referrerBusinessType === "admin",
+                withinSelfSetWindow,
+                selfSetExpiresAt: withinSelfSetWindow
+                  ? resolveReferralSelfSetExpiresAt(requestorSignupAt)
+                  : null,
               }
             : null,
       },

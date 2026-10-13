@@ -690,7 +690,7 @@ Notes:
 - 의뢰자 역할·서비스·유료게이트 SSOT (2026-08, 루트 §2.4 상세)
   - 가입 role: `requestor` | `salesman`만. `practice` role **제거**.
   - 공개 가입(`/signup`): `requestor` | `salesman`. 복원 draft에 `practice`가 있으면 requestor로 전환.
-  - 이메일·소셜 가입 중간 단계에 소개자 코드 입력(선택, 확인 후 다음·미입력은 건너뛰기). 직원 가입(`/signup/staff`)과 URL `ref`는 생략. 건너뛰면 대표가 설정-사업자에서 등록.
+  - 이메일·소셜 가입 중간 단계에 소개자 코드 입력(선택, 확인 후 다음·미입력은 건너뛰기). 직원 가입(`/signup/staff`)과 URL `ref`는 생략. 건너뛰면 대표가 가입 후 14일간 설정-사업자에서 등록하고, 그 이후에는 어벗츠 소개(`AAA`)로 고정된다. 같은 기한은 딜러십 정책·영업팀 의뢰자 정책·약관·서비스·도움말에 둔다(`dealershipPolicyCopy`).
   - 온보딩(`/dashboard/wizard`): 휴대전화 → 역할 → 사업자. 사업자등록은 가입 시 필수(크레딧 선결제·의뢰 가능 요건, 통신판매업 면제 법적 요건). 통장은 정산할 금액이 있을 때만, 수가표는 첫 PTX 수신 때 안내.
     - **치과 대표(owner)**: 사업자등록(검증) 직후 **구강 스캔 사용 여부**(필수 예/아니오). 직원(member)·기공소는 생략.
     - SSOT: `PracticeOralScanStep` · `practiceProfile.usesOralScan` / `BusinessAnchor.usesOralScan`. 설정「디지털」탭(키 `digital`, 구 `oral-scan`은 같은 탭)에서 구강 스캐너와 보철 작업물(`requireLabProsthesisUpload`, 기본 켬)을 체크 즉시 저장. 없음=요구. 협력 기공소 의뢰만 생성 때 `billing` 스냅샷을 따른다. 어벗츠기공본부 내부·하청은 완성 보철 업로드가 필수다.

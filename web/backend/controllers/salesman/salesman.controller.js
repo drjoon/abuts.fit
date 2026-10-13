@@ -378,6 +378,7 @@ function createReferralCode3() {
 async function ensureUniqueReferralCode3() {
   for (let i = 0; i < 200; i += 1) {
     const code = createReferralCode3();
+    if (String(code || "").trim().toUpperCase() === "AAA") continue;
     const exists = await User.exists({ referralCode: code });
     if (!exists) return code;
   }
@@ -405,7 +406,10 @@ export async function getSalesmanDashboard(req, res) {
           (await resolveSalesTeamReferralAnchorId(full)) ||
           full.businessAnchorId;
       }
-    } else if (!/^[A-Z0-9]{3}$/.test(effectiveReferralCode)) {
+    } else if (
+      !/^[A-Z0-9]{3}$/.test(effectiveReferralCode) ||
+      String(effectiveReferralCode || "").trim().toUpperCase() === "AAA"
+    ) {
       try {
         effectiveReferralCode = await ensureUniqueReferralCode3();
         await User.updateOne(

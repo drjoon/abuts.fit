@@ -54,6 +54,8 @@ import {
 } from '@/shared/settlement/settlementUi';
 import {
   DEALERSHIP_CUMULATIVE_BAND_LINE,
+  DEALER_CODE_REGISTER_WINDOW_AFTER_LINE,
+  DEALER_CODE_REGISTER_WINDOW_LINE,
   REFERRAL_OWNERSHIP_RESET_ANYONE_LINE,
   REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
 } from '@/shared/sales/dealershipPolicyCopy';
@@ -288,6 +290,11 @@ export const PricingPolicyDialog = ({
           <SettlementPolicyFact label={EXPRESS_SHIPPING_LABEL}>
             배송비 판매자 부담.
           </SettlementPolicyFact>
+          <SettlementPolicyFact label='딜러 코드' className='break-keep sm:col-span-2'>
+            {DEALER_CODE_REGISTER_WINDOW_LINE}
+            <br />
+            {DEALER_CODE_REGISTER_WINDOW_AFTER_LINE}
+          </SettlementPolicyFact>
         </div>
       ) : null}
     </div>
@@ -327,6 +334,10 @@ export const PricingPolicyDialog = ({
                 판매가는 거래처별로 1.2~1.5만원 안에서 정합니다.
               </SettlementPolicyFact>
               <SettlementPolicyFact label='소개 코드' className='break-keep'>
+                {DEALER_CODE_REGISTER_WINDOW_LINE}
+                <br />
+                {DEALER_CODE_REGISTER_WINDOW_AFTER_LINE}
+                <br />
                 {REFERRAL_OWNERSHIP_RESET_POLICY_LINE}
                 <br />
                 {REFERRAL_OWNERSHIP_RESET_ANYONE_LINE}

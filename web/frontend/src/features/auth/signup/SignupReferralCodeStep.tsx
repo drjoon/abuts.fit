@@ -31,6 +31,8 @@ export const SignupReferralCodeStep = ({
       <p className="text-sm text-white/70">
         소개받으셨나요? 소개자 코드를 입력해주세요.{" "}
         <span className="text-white/40">(선택)</span>
+        <br />
+        건너뛰면 가입 후 14일 안에 설정에서 등록할 수 있습니다.
       </p>
       {confirmedLabel ? (
         <div className="space-y-1 rounded-2xl border border-primary/30 bg-primary/10 p-5">

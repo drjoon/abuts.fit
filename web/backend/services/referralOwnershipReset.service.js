@@ -33,6 +33,16 @@ import {
 } from "../utils/referralOwnershipReset.util.js";
 import { resolveDealershipCommissionPolicy } from "./creditRevenuePolicy.service.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
+import {
+  assignAbutsAdminReferralToRequestor,
+  resolveAbutsAdminReferralAnchorId,
+  resolveRequestorSignupAtForAnchor,
+} from "./abutsAdminReferral.service.js";
+import {
+  canSelfRegisterReferralCode,
+  isReservedReferralCode,
+  shouldAssignAbutsAdminReferral,
+} from "../utils/requestorReferralWindow.util.js";
 
 export {
   REFERRAL_OWNERSHIP_INACTIVE_DAYS,
@@ -300,7 +310,8 @@ export async function clearDevopsDefaultReferrer(anchor) {
 
 /**
  * 소개 귀속이 null인 의뢰자 BA에 소개자 코드를 적용한다.
- * 의뢰자·딜러·영업본부 코드. 코드 없이 가입하면 귀속은 null이고, 대표가 설정-사업자에서 등록한다.
+ * 코드 없이 가입하면 14일간 대표가 등록한다. 그 이후에는 어벗츠 코드(AAA)로 고정한다.
+ * 90일 영업 리셋 뒤(defaultReferralAnchorId 유지)에는 다시 등록할 수 있다.
  */
 export async function applyReferralCodeToUnownedRequestor({
   requestorBusinessAnchorId,
@@ -319,7 +330,14 @@ export async function applyReferralCodeToUnownedRequestor({
   }
 
   const requestorAnchor = await BusinessAnchor.findById(anchorId)
-    .select({ _id: 1, businessType: 1, referredByAnchorId: 1 })
+    .select({
+      _id: 1,
+      businessType: 1,
+      referredByAnchorId: 1,
+      defaultReferralAnchorId: 1,
+      primaryContactUserId: 1,
+      createdAt: 1,
+    })
     .lean();
   const anchorType = String(requestorAnchor?.businessType || "");
   if (
@@ -343,6 +361,36 @@ export async function applyReferralCodeToUnownedRequestor({
     );
   }
 
+  const hasReferrer = Boolean(
+    currentReferrerId && Types.ObjectId.isValid(currentReferrerId) && !replaceable,
+  );
+  const defaultId = String(requestorAnchor.defaultReferralAnchorId || "").trim();
+  const hasPriorDefault = Boolean(defaultId && Types.ObjectId.isValid(defaultId));
+  const signupAt = await resolveRequestorSignupAtForAnchor(requestorAnchor);
+  if (
+    shouldAssignAbutsAdminReferral({
+      hasReferrer,
+      hasPriorDefault,
+      signupAt,
+    })
+  ) {
+    const assigned = await assignAbutsAdminReferralToRequestor(anchorId);
+    if (assigned) {
+      return { ...assigned, closedWindow: true };
+    }
+  }
+  if (
+    !canSelfRegisterReferralCode({
+      hasReferrer,
+      hasPriorDefault,
+      signupAt,
+    })
+  ) {
+    const error = new Error("소개 코드 등록 기간이 지났습니다.");
+    error.statusCode = 400;
+    throw error;
+  }
+
   const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const refUser = await User.findOne({
     referralCode: { $regex: `^${escaped}$`, $options: "i" },
@@ -356,12 +404,16 @@ export async function applyReferralCodeToUnownedRequestor({
   }
 
   const role = String(refUser.role || "").trim();
-  if (!["requestor", "salesman", "salesTeam"].includes(role)) {
-    throw new Error("의뢰자·딜러·영업본부 코드만 등록할 수 있습니다.");
+  const adminReferral = role === "admin" && isReservedReferralCode(code);
+  if (!adminReferral && !["requestor", "salesman", "salesTeam"].includes(role)) {
+    throw new Error("의뢰자·딜러·영업본부·어벗츠 코드만 등록할 수 있습니다.");
   }
 
   let referrerAnchorId = String(refUser.businessAnchorId || "").trim();
-  if (role === "salesTeam") {
+  if (adminReferral) {
+    const adminAnchorId = await resolveAbutsAdminReferralAnchorId();
+    if (adminAnchorId) referrerAnchorId = String(adminAnchorId);
+  } else if (role === "salesTeam") {
     const full = await User.findById(refUser._id);
     if (full) {
       await ensureSalesTeamPersonalAnchor(full);

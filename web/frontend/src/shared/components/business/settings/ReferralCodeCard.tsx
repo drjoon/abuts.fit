@@ -18,6 +18,8 @@ type ReferralOwnership = {
   canRegister?: boolean;
   assigned?: boolean;
   salesAssigned?: boolean;
+  adminDefault?: boolean;
+  withinSelfSetWindow?: boolean;
 };
 
 export function ReferralCodeCard({
@@ -75,7 +77,12 @@ export function ReferralCodeCard({
         });
         return;
       }
-      toast({ title: "소개자 코드가 등록되었습니다" });
+      const closedWindow = Boolean((res.data as any)?.data?.closedWindow);
+      toast({
+        title: closedWindow
+          ? "어벗츠 소개로 고정되었습니다"
+          : "소개자 코드가 등록되었습니다",
+      });
       setCode("");
       invalidateBusinessMeCache({ token, businessType });
       await load();
@@ -104,7 +111,9 @@ export function ReferralCodeCard({
       <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
         <p className="text-sm font-semibold text-slate-900">소개자 코드</p>
         <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-          {ownership?.salesAssigned ? (
+          {ownership?.adminDefault ? (
+            "어벗츠 소개로 등록되어 있습니다."
+          ) : ownership?.salesAssigned ? (
             <>
               등록되어 있습니다.
               <br />
@@ -126,7 +135,15 @@ export function ReferralCodeCard({
       <div>
         <p className="text-sm font-semibold text-slate-900">소개자 코드</p>
         <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-          대표만 등록할 수 있습니다.
+          {ownership?.withinSelfSetWindow ? (
+            <>
+              가입 후 14일 안에 등록할 수 있습니다.
+              <br />
+              이후에는 어벗츠 소개로 고정됩니다.
+            </>
+          ) : (
+            "대표만 등록할 수 있습니다."
+          )}
         </p>
       </div>
       <div className="flex flex-col gap-2 sm:flex-row">

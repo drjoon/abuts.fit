@@ -17,6 +17,7 @@ import { emitReferralMembershipChanged } from "../../services/requestSnapshotTri
 import { enableDemoModeAndGrantCreditIfEligible } from "./business.demoMode.util.js";
 import { resolveDealershipCommissionPolicy } from "../../services/creditRevenuePolicy.service.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
+import { maybeAssignAbutsAdminReferral } from "../../services/abutsAdminReferral.service.js";
 
 export const isSyntheticPracticeBusinessNumber = (value) => {
   const bn = String(value || "")
@@ -203,6 +204,20 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
   });
 
   emitReferralMembershipChanged(created._id, "business-anchor-linked");
+
+  if (!created.referredByAnchorId) {
+    try {
+      const assigned = await maybeAssignAbutsAdminReferral(created, {
+        signupAt: user.createdAt || created.createdAt,
+      });
+      if (assigned?.referredByAnchorId) {
+        created.referredByAnchorId = assigned.referredByAnchorId;
+        created.defaultReferralAnchorId = assigned.referredByAnchorId;
+      }
+    } catch (e) {
+      console.error("[BusinessAnchor] admin referral default failed", e);
+    }
+  }
 
   try {
     await enableDemoModeAndGrantCreditIfEligible({

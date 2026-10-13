@@ -32,6 +32,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import {
+  DEALER_CODE_REGISTER_WINDOW_AFTER_LINE,
+  DEALER_CODE_REGISTER_WINDOW_LINE,
+} from "@/shared/sales/dealershipPolicyCopy";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -224,7 +228,15 @@ export default function SalesPerformancePage() {
 
             <SalesPanel
               title="내 소개코드"
-              description="현장에서 코드나 가입 링크를 공유하세요."
+              description={
+                <>
+                  현장에서 코드나 가입 링크를 공유하세요.
+                  <br />
+                  {DEALER_CODE_REGISTER_WINDOW_LINE}
+                  <br />
+                  {DEALER_CODE_REGISTER_WINDOW_AFTER_LINE}
+                </>
+              }
               actions={
                 <Button
                   type="button"

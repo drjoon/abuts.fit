@@ -61,6 +61,7 @@ function createReferralCode(length) {
 async function ensureUniqueReferralCode(length) {
   for (let i = 0; i < 200; i += 1) {
     const code = createReferralCode(length);
+    if (String(code || "").trim().toUpperCase() === "AAA") continue;
     const exists = await User.exists({ referralCode: code });
     if (!exists) return code;
   }

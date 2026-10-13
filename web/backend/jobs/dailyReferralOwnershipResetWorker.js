@@ -5,6 +5,7 @@
 // - web/backend/utils/distributedJobLock.js
 /**
  * KST 일자당 1회: 영업(딜러·영업본부) 소개 귀속 90일 비활성 리셋.
+ * 이어서, 가입 14일이 지난 미귀속 의뢰자에 어벗츠 소개 코드(AAA)를 고정한다.
  */
 import "../bootstrap/env.js";
 import path from "path";
@@ -15,6 +16,7 @@ import { runWithJobLock } from "../utils/distributedJobLock.js";
 import { getTodayYmdInKst } from "../utils/krBusinessDays.js";
 import { resolveMongoUri } from "../utils/mongoUri.js";
 import { resetExpiredReferralOwnerships } from "../services/referralOwnershipReset.service.js";
+import { assignExpiredUnownedRequestorReferrals } from "../services/abutsAdminReferral.service.js";
 
 const INTERVAL_MS = 60 * 1000;
 const WORKER_LOCK_NAME =
@@ -101,8 +103,25 @@ async function runDailyReset(ymd) {
     afterId = result.nextAfterId || null;
     if (result.exhausted || !afterId) break;
   }
+  let totalAssigned = 0;
+  let assignErrors = 0;
+  let assignScanned = 0;
+  let assignRounds = 0;
+  let assignAfterId = null;
+  while (assignRounds < 50) {
+    assignRounds += 1;
+    const assigned = await assignExpiredUnownedRequestorReferrals({
+      limit: BATCH_LIMIT,
+      afterId: assignAfterId,
+    });
+    totalAssigned += Number(assigned.assigned || 0);
+    assignErrors += Number(assigned.errors || 0);
+    assignScanned += Number(assigned.scanned || 0);
+    assignAfterId = assigned.nextAfterId || null;
+    if (assigned.exhausted || !assignAfterId) break;
+  }
   console.log(
-    `[referralOwnershipReset] Daily run done ymd=${ymd} scanned=${totalScanned} reset=${totalReset} errors=${totalErrors} rounds=${rounds}`,
+    `[referralOwnershipReset] Daily run done ymd=${ymd} scanned=${totalScanned} reset=${totalReset} errors=${totalErrors} rounds=${rounds} adminAssigned=${totalAssigned} adminScanned=${assignScanned} adminErrors=${assignErrors}`,
   );
 }
 
