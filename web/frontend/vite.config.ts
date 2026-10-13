@@ -16,6 +16,11 @@ export default defineConfig(({ mode }) => {
     server: {
       host: "::",
       port: 5173,
+      // 사전 번들 deps는 기본이 1년 immutable이다. 락파일 해시가 그대로면
+      // 청크 이름만 바뀐 뒤에도 브라우저가 옛 ?v= 를 써서, 없는 청크 404(MIME "")로 막힌다.
+      headers: {
+        "Cache-Control": "no-cache",
+      },
       proxy: {
         "/socket.io": {
           target: apiTarget,
@@ -60,6 +65,13 @@ export default defineConfig(({ mode }) => {
     },
     optimizeDeps: {
       exclude: ["rhino3dm"],
+      // esbuildOptions는 브라우저 해시(?v=)에 들어간다. 식별자는 소스에서 안 쓰여 출력은 그대로고,
+      // 이미 immutable로 박힌 98b24b15 URL만 버린다.
+      esbuildOptions: {
+        define: {
+          __ABUTS_OPTIMIZE_DEPS_REV__: '"1"',
+        },
+      },
     },
     build: {
       rollupOptions: {
