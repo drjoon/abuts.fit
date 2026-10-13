@@ -1,5 +1,6 @@
 // related: AdminDashboardPage.tsx, admin.hexVerification.controller.js
 // change-log:
+// - 2026-10-13: 모달 높이 안에서 목록만 스크롤. 마지막 카드가 닫기 버튼에 잘리지 않게.
 // - 2026-10-13: 공통 적용은 ExoCAD 3.0 이하 직원에게 제조사별 세팅을 복사.
 // - 2026-09-03: 저장 성공/실패 후 목록 invalidate — 낙관적 확정이 DB와 어긋나지 않게.
 // - 2026-09-03: BA/직원 collapse `??`/`||` 우선순위 수정 — pending 카드도 접힘
@@ -561,8 +562,8 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
   }, [flushAll]);
 
   return (
-    <div className="space-y-3 text-sm text-gray-700">
-      <p className="text-xs text-muted-foreground">
+    <div className="flex h-full min-h-0 flex-col gap-3 text-sm text-gray-700">
+      <p className="shrink-0 text-xs leading-relaxed text-muted-foreground">
         ExoCAD 3.0 이하 직원이 여러 명이면 전화하세요.
         <br />
         그 직원들이 같은 세팅을 쓰는지 물어보세요.
@@ -570,11 +571,11 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
         같으면 제조사별로 정해 그 직원들에게 적용합니다.
       </p>
       {callNeededCount > 0 ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="shrink-0 text-xs text-muted-foreground">
           전화 {callNeededCount.toLocaleString()}곳
         </p>
       ) : null}
-      <div className="relative">
+      <div className="relative shrink-0">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
         <input
           type="search"
@@ -584,7 +585,7 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
           className="h-8 w-full rounded-md border border-slate-300 bg-white pl-8 pr-2.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-muted"
         />
       </div>
-      <div className="max-h-[60vh] space-y-3 overflow-auto px-1.5 py-1.5">
+      <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-1.5 py-2">
         {items.length === 0 ? (
           <div className="text-xs text-muted-foreground py-8 text-center border border-dashed rounded-md">
             {isFetching
@@ -619,7 +620,7 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
             return (
               <div
                 key={baKey}
-                className="rounded-md border bg-white"
+                className="rounded-xl border border-slate-200 bg-white shadow-sm"
               >
                 <button
                   type="button"

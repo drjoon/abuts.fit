@@ -3802,7 +3802,8 @@ export const AdminDashboardPage = () => {
         open={hexVerificationDialogOpen}
         onClose={() => setHexVerificationDialogOpen(false)}
         title="ExoCAD 헥스 회전 확인"
-        panelClassName="!w-[min(900px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)]"
+        panelClassName="!h-[min(88vh,52rem)] !w-[min(920px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)]"
+        descriptionClassName="flex h-full min-h-0 flex-col !text-sm"
         descriptionScrollable={false}
         description={
           <HexVerificationAdminPanel
