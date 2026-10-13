@@ -1,3 +1,4 @@
+// - 2026-10-14: 의뢰자 정책 — 거래처별 가격 카드를 한 행 전체 폭으로.
 // - 2026-10-13: 정책 안내 — 택배(기본)·딜리버리(월 100건) 두 방식.
 // - 2026-10-13: 딜러 정책 — 적립 총액 입금, 딜리버리는 딜러사가 직접 입금.
 // - 2026-10-09: 가격·출고 안내 폭 sm:max-w-lg. 리메이크 라벨과 금액 사이 빈칸을 줄임.
@@ -297,7 +298,7 @@ export const PricingPolicyDialog = ({
 
       {isRequestorPreview ? (
         <div className={GUIDE_FACT_GRID_CLASS}>
-          <SettlementPolicyFact label='거래처별 가격'>
+          <SettlementPolicyFact label='거래처별 가격' className='break-keep sm:col-span-2'>
             {formatRequestorWon(REQUESTOR_UNIT_PRICE_MIN)}~
             {formatRequestorWon(REQUESTOR_UNIT_PRICE_BASE)}원 안에서 정합니다.
             <br />
