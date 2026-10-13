@@ -2654,7 +2654,7 @@ namespace DentalAddin
             bool safeSplitBack = TryResolveSafeSplitBackZoneX("RoughFreeFromMillSplitAB", out double safeZoneX);
             if (safeSplitBack)
             {
-                // Middle_Rough 끝 = Xk + 0.6 (Middle_Finish 끝 Xk보다 D1.2 반경만큼 더). Back_Rough 시작 = 그 끝 - 1.0
+                // Middle_Rough 끝 = Xk + 0.6 (Middle_Finish 끝 Xk보다 D1.2 반경만큼 더). Back_Rough 시작 = 그 끝 - 2.0
                 double middleRoughEnd = safeZoneX + RoughPastFinishEndMm;
                 double back2Start = Clamp(middleRoughEnd - roughOverlapMm, xMin + 1e-6, xMax - 1e-6);
                 if (string.Equals(region, "BACK2", StringComparison.OrdinalIgnoreCase))
@@ -2961,8 +2961,8 @@ namespace DentalAddin
 
         // Finish Front/Back PRC. Back 기본 StepIncrement는 5axisComposite_Back.prc.
         // Front none은 5axisComposite_Front.prc StepIncrement 유지, deep만 0.20.
-        // [2026-10-13] 후행 Rough 시작 = 선행 Rough 끝 - 1.0mm (1mm 겹침).
-        private const double RoughSeamExtraOverlapMm = 1.0;
+        // [2026-10-13] 후행 Rough 시작 = 선행 Rough 끝 - 2.0mm (2mm 겹침).
+        private const double RoughSeamExtraOverlapMm = 2.0;
 
         private static double GetRoughAdjacentOverlapMm()
         {

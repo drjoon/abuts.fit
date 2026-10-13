@@ -79,7 +79,7 @@
   - Rough: **선행 끝 = 경계 + 0.8mm** (`GetRoughPastFinishSeamMm`, Finish seam 너머 3D 황삭), **후행 시작 = 경계 tip쪽(그림 왼쪽, X-) 공구 반경**
     - `GetRoughAdjacentOverlapMm()` = 활성 rough 반경 (D4→`2.0`, `ROUGH_20` D2→`1.0`)
     - Front_Rough 끝 = Front_Finish 끝(`Splitline_2`) + 0.6, Middle_Rough 끝 = Middle_Finish 끝(`Xk`) + 0.6 (D1.2 볼 반경, 2026-10-13). Back_Rough 끝 = BackPointX(Finish와 일치 유지)
-    - 후행 Rough 시작 = 선행 Rough 끝 − 1.0 (`GetRoughAdjacentOverlapMm`)
+    - 후행 Rough 시작 = 선행 Rough 끝 − 2.0 (`GetRoughAdjacentOverlapMm`)
     - D1.2 Finish는 경계에서 끝나므로 치은 쪽은 이미 황삭된 면만 깎는다
   - Finish: **선행 끝 = 경계**, **후행 시작 = 경계 − 0.8mm** (D1.2 직경 2/3, tip 쪽 X−)
     - Front 끝 = `Splitline_2`, Middle/Back 시작 = `Splitline_2 − 0.8`
