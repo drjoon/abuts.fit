@@ -288,6 +288,9 @@ const businessAnchorSchema = new mongoose.Schema(
     // 홈택스 장애로 검증 보류된 시각. 복구 후 워커가 재검증하고 null로 되돌린다.
     verificationPendingAt: { type: Date, default: null, index: true },
     verificationMessage: { type: String, default: "" },
+    // 재검증 워커 시도 횟수·마지막 시각(관리자 대시보드에서 무한 반복 감시)
+    verificationRetryCount: { type: Number, default: 0 },
+    verificationLastCheckedAt: { type: Date, default: null },
     primaryContactUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

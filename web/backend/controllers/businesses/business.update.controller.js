@@ -8,7 +8,10 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
 import { verifyBusinessNumber } from "../../services/hometax.service.js";
-import { ensureBusinessVerificationRetryScheduled } from "../../jobs/businessVerificationRetryWorker.js";
+import {
+  ensureBusinessVerificationRetryScheduled,
+  emitBusinessVerificationChanged,
+} from "../../jobs/businessVerificationRetryWorker.js";
 import {
   assertBusinessRole,
   buildBusinessTypeFilter,
@@ -957,6 +960,8 @@ export async function updateMyBusiness(req, res) {
         // 저장 직후 보류 건이 생기므로 잠시 뒤 재검증 워커를 켠다.
         setTimeout(() => {
           void ensureBusinessVerificationRetryScheduled().catch(() => null);
+          // 저장이 끝난 뒤 관리자 대시보드 카드에 알린다.
+          emitBusinessVerificationChanged("pending-created");
         }, 3000);
       }
       if (!verificationResult?.verified && !verificationResult?.pending) {
