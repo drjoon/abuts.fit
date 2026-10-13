@@ -1,3 +1,4 @@
+// - 2026-10-13: 딜러 정책 — 적립 총액 입금, 딜리버리는 딜러사가 직접 입금.
 // - 2026-10-09: 가격·출고 안내 폭 sm:max-w-lg. 리메이크 라벨과 금액 사이 빈칸을 줄임.
 // - 2026-10-09: 치과 본인 정책 — 기공소에 무료 / 어벗츠에 건당 1만원.
 // - 2026-10-09: 의뢰자 정책 — 치과/기공소 탭 제거. 기공소 리메이크 안내를 공통으로 표시.
@@ -337,6 +338,8 @@ export const PricingPolicyDialog = ({
               </SettlementPolicyFact>
               <SettlementPolicyFact label='집계 · 지급' className='break-keep'>
                 매일 자정(KST) 사업자 기준으로 업데이트합니다.
+                <br />
+                적립 총액을 입금합니다.
                 <br />
                 계좌는 설정 › 결제, 원장은 정산 페이지입니다.
               </SettlementPolicyFact>

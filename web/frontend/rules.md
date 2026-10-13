@@ -230,7 +230,7 @@ Notes:
       - `src/features/platform/PlatformBenefitsShareButtons.tsx` (안내+링크 클립보드 복사)
   - 의뢰자(치과) 설정: 구독 탭 없음. 구 `?tab=subscription` → 계정. 대시보드 헤더는 `[정책 안내]`만.
     - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx`
-    - `src/shared/ui/PricingPolicyDialog.tsx` — 단일가 1.5만(거래처 본인 가격 표시). 딜리버리 익일 도착만, 월정액은 딜러·어벗츠 부담(월 의뢰 2건 이하 무료).
+    - `src/shared/ui/PricingPolicyDialog.tsx` — 단일가 1.5만(거래처 본인 가격 표시). 딜리버리 익일 도착만. 딜러 거래처는 적립 총액 지급·딜러사가 딜리버리 회사에 직접 입금, 직판은 어벗츠 부담(월 의뢰 2건 이하 무료).
     - 안내·청구 단가 SSOT: `src/shared/pricing/requestorUnitPricePolicy.ts`(단일가 15,000 · 거래처 12,000~15,000). 출고 표시=`shippingPolicyCopy`(딜리버리 익일 도착).
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
   - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 기공소별 인증 ON·기공 테스트·메모. 수수료 스트립(`DevopsPlatformFeeTab`)은 숨김(미부과). 기공소 설정 탭은 없음. 관리자 테스트 통과/`enabled` 시 풀 참여. 학습 이용은 기본 허용이고 요율과 무관. 기공소 설정 「AI」탭·기공의뢰 동의 버튼·모달은 없다. 안내는 약관·개인정보. 관리자 플랫폼 설정「인증 기공소」탭
@@ -246,7 +246,7 @@ Notes:
   - 기공소/어벗츠기공소: 정산(`/dashboard/credits`)「지급」탭 — `LabSettlementPayoutTab.tsx`(기공크레딧 잔액·**월별** 적립/지급/상태(지급·계산서), 면세 계산서, max-w-4xl). 월 지급은 **다음 달 초 사용 유보 50만원** 제외 후 잔액만(`LAB_SETTLEMENT_PAYOUT_RESERVE_WON`). 통장 사본·입금 계좌는 설정>사업자(`PayoutAccountCard`, 기공소·딜러사 공통). 미등록 시 지급 진입·정산일 7일 전 일 1회 안내, 지급일까지 미등록이면 1개월 이월. 구 `/dashboard/payments`·`?tab=settlement`는 `?tab=payout`으로 호환.
   - 딜러(salesman): 설정>사업자에서 동일 `PayoutAccountCard`·위수탁 카드. 구 설정 `?tab=payment|payout` → 사업자.
   - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·지급상태·금액·잔액·거래내역). 유형 열은 생략(모두 커스텀어벗 생산+배송비). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 **배송자 BA**(requestor businessAnchor·우편함)별. PTX는 치과명이 아니라 기공소 BA로 표기. 장부·미정산=부가세 포함가(어벗 1개당 매입가 기본 8,800, 리메이크 6,600). 무료 크레딧 결제 포함 약정 단가가 미정산으로 쌓이며 말일 일괄 지급(재가산 없음·세금계산서÷1.1). 정산규칙 모달은 딜러와 같은 칩·표(제조 49.5% 고정·부가세 포함).
-  - 딜러: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 부가세 포함가 장부·미정산, 지급=잔액 그대로·세금계산서(÷1.1). 정산규칙=거래처 판매가 − 1만원. 거래처 카드의 판매가는 그 거래처 `dealerUnitPrice`(없으면 1.5만). 기간 수수료는 그 기간 합계.
+  - 딜러: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 부가세 포함가 장부·미정산, 지급=적립 총액·세금계산서(÷1.1). 정산규칙=거래처 판매가 − 1만원. 딜리버리 월정액은 적립에서 빼지 않고 딜러사가 딜리버리 회사에 직접 입금. 거래처 카드의 판매가는 그 거래처 `dealerUnitPrice`(없으면 1.5만). 기간 수수료는 그 기간 합계.
   - 개발운영사: `src/pages/devops/DevopsPaymentsPage.tsx` — 부가세 포함가 장부·미정산, 지급=잔액 그대로·세금계산서(÷1.1). 정산규칙=커스텀어벗 의뢰비 5%(어벗츠 몫에서) 칩·표.
   - 관리자: `src/pages/admin/AdminPaymentsPage.tsx` — 스토어·커스텀어벗·기공사업부 + 관계사 분배. 정산규칙 커스텀어벗=어벗츠 순몫 칩·표(제조 49.5% 고정 후 나머지·개발운영 5% 차감).
 
@@ -285,7 +285,7 @@ Notes:
   - 모드 선택 없음. 서버가 `shippingMode="express"`로 저장하고 신속 추가비는 0.
   - 표시 라벨 SSOT: `src/shared/shipping/shippingPolicyCopy.ts` — 딜리버리 익일 도착.
   - 우측 배송 카드는 안내 + 제출만 담당합니다(요일 설정 없음).
-  - 딜리버리 익일 도착: 거래처 부담 없음. 월정액 55,000원(VAT 포함)은 딜러·어벗츠 부담이며 월 의뢰 2건 이하는 무료. 당일 자정까지 주문 → 익일 도착.
+  - 딜리버리 익일 도착: 거래처 부담 없음. 월정액 55,000원(VAT 포함)은 딜러사가 딜리버리 회사에 직접 입금(적립 차감 없음)이며, 딜러가 없으면 어벗츠 부담. 월 의뢰 2건 이하는 무료. 당일 자정까지 주문 → 익일 도착.
   - 디자인+생산(`design_custom_abutment`): `(생산 단가 + 디자인비) × 어벗 수`.
     - 디자인비는 디자인+생산 − 생산만. 어벗 수는 `toothWorks` 커스텀어벗·임플란트 치아(Pontic·작업X 제외).
     - 안내·청구 단가 SSOT: `src/shared/pricing/requestorUnitPricePolicy.ts`(단일가 15,000 · 거래처 12,000~15,000). 출고 표시=`shippingPolicyCopy`(딜리버리 익일 도착).
@@ -966,6 +966,6 @@ Notes:
 - **의뢰비·딜러·배송 SSOT (2026-10-08, 이전 기술과 충돌하면 이 항목이 우선)**:
   - 건당 의뢰비는 치과·기공소 모두 **15,000원 단일가**. 딜러·영업팀이 거래처(`BusinessAnchor.dealerUnitPrice`, `select:false`)별로 **12,000~15,000원**을 정할 수 있고 거래처 본인에게만 보인다(외부 비공개). 서버·FE 모두 12,000 미만/15,000 초과 거절(`validateDealerUnitPrice`). 그룹할인·가입 90일 1만원·주문량 할인·런칭 이벤트 단가는 폐지. 정책 안내 만원 표기(`formatAbutsManwon`)는 500원 단위를 유지한다(13,500원 → 1.35만원). 딜러 정산 거래처 카드도 같은 판매가를 보여 준다.
   - 분배(어벗 1개당, 부가세 포함): 제조사 **5,500** · 개발운영 **1,000** · 어벗츠 **3,500** · 나머지 **딜러(판매가 − 10,000)**. 딜러 없음(직판·영업팀 소개)이면 딜러 몫은 어벗츠. 어벗츠가 거래처에 직접 공급(면세)하고 딜러에게는 수수료를 부가세 포함으로 지급. 구현 `resolveRevenueOwnerBaseAllocation` (`creditRevenuePolicy.service.js`).
-  - 배송은 **딜리버리 익일 도착만**. 택배 묶음 출고·월 가입 폐지, 거래처 배송비 없음. 딜리버리 월정액 55,000원(VAT 포함)은 **거래처 1곳당** 딜러 부담(딜러 정산 `REV_SALESMAN` 차감), 딜러가 없으면 어벗츠 부담(`REV_ADMIN`). 직전 달 의뢰가 있던 거래처마다 월 1회 `DELIVERY_MONTHLY_COST` 저널(`deliveryMonthlyCost.service.js`, 멱등키 거래처+월).
+  - 배송은 **딜리버리 익일 도착만**. 택배 묶음 출고·월 가입 폐지, 거래처 배송비 없음. 딜러 거래처의 딜리버리 월정액 55,000원(VAT 포함)은 적립에서 빼지 않는다. 적립 총액을 입금하고, 딜러사가 딜리버리 회사에 직접 입금한다. 딜러가 없으면 어벗츠 부담(`REV_ADMIN`). 직전 달 의뢰가 **3건 이상**인 직판 거래처마다 월 1회 `DELIVERY_MONTHLY_COST` 저널(`deliveryMonthlyCost.service.js`, 멱등키 거래처+월). 이미 딜러 적립에서 뺀 저널은 워커가 삭제한다.
   - 위 항목과 충돌하는 이전 서술(자정 스냅샷 단가·할인그룹·택배 묶음 출고 박스당 배송비·딜러 10~20% 누적 구간·제조 49.5%·런칭 이벤트 단가)은 폐지된 정책이다.
   - FE: `src/shared/pricing/requestorUnitPricePolicy.ts`(검증·상수), `src/shared/sales/CustomerPriceDialog.tsx`(딜러 「거래처 가격」), `NewRequestShippingSection.tsx`(딜리버리 단일 카드). 할인그룹 페이지·`DeliverySubscribeDialog` 삭제, `/dashboard/discount-group`은 대시보드로 리다이렉트.

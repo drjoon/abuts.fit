@@ -2,6 +2,7 @@
 // - web/backend/services/creditRevenuePolicy.service.js
 // - web/frontend/src/shared/pricing/requestorUnitPricePolicy.ts
 // change-log:
+// - 2026-10-13: 딜러 배송비 — 딜러사가 딜리버리 회사에 직접 입금.
 // - 2026-10-09: 딜러 표 아래 부가세·수수료 안내 삭제.
 // - 2026-10-08: 누적 구간표 폐지. 거래처 판매가(1.2~1.5만)별 고정 분배표(제조 5,500 · 개발운영 1,000 · 어벗츠 3,500 · 나머지 딜러, 부가세 포함).
 import { cn } from "@/shared/ui/cn";
@@ -94,7 +95,7 @@ function SplitByPriceTable({ highlight }: { highlight: Party }) {
   );
 }
 
-/** 딜러에게는 매입가·판매가·배송비 부담만 보인다(제조사·어벗츠 몫은 비공개). */
+/** 딜러에게는 매입가·판매가만 보인다(제조사·어벗츠 몫은 비공개). 배송은 정산 규칙 카드. */
 export function CustomAbutmentDealerSplitTable() {
   const rows: { label: string; value: string }[] = [
     { label: "매입가", value: `${formatRequestorWon(REQUESTOR_UNIT_PRICE_DEALER_SUPPLY)}원` },
@@ -102,7 +103,6 @@ export function CustomAbutmentDealerSplitTable() {
       label: "판매가",
       value: `딜러가 정함 (${formatRequestorWon(REQUESTOR_UNIT_PRICE_MIN)}~${formatRequestorWon(REQUESTOR_UNIT_PRICE_BASE)}원)`,
     },
-    { label: "배송비", value: "판매자 부담" },
   ];
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm ring-1 ring-slate-900/[0.02]">

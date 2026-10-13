@@ -14,7 +14,7 @@
  * - 딜러/영업팀이 거래처(BusinessAnchor)별로 12,000~15,000원을 정할 수 있다. 거래처별 가격은 외부에 노출하지 않는다.
  * - 어벗츠는 제조사에서 5,500원에 매입하고 딜러에게 10,000원에 공급한다.
  *   거래처에는 어벗츠가 직접 공급(부가세 면제)하고, 딜러에게는 (판매가 − 10,000원)을 부가세 포함으로 지급한다.
- * - 딜리버리 월정액(55,000원)은 딜러가 부담. 딜러가 없는 직판은 어벗츠가 부담.
+ * - 딜리버리 월정액(55,000원)은 딜러사가 딜리버리 회사에 직접 입금한다. 적립에서는 빼지 않는다. 직판은 어벗츠가 부담.
  */
 export const REQUESTOR_UNIT_PRICE_BASE = 15_000;
 export const REQUESTOR_UNIT_PRICE_MIN = 12_000;
@@ -23,7 +23,7 @@ export const REQUESTOR_UNIT_PRICE_FLOOR = REQUESTOR_UNIT_PRICE_MIN;
 export const REQUESTOR_UNIT_PRICE_MANUFACTURER_COST = 5_500;
 /** 어벗츠 → 딜러 공급가(원, 부가세 포함). */
 export const REQUESTOR_UNIT_PRICE_DEALER_SUPPLY = 10_000;
-/** 딜리버리 월정액(원, 부가세 포함). 딜러 부담, 직판은 어벗츠 부담. */
+/** 딜리버리 월정액(원, 부가세 포함). 딜러사는 직접 입금, 직판은 어벗츠 부담. */
 export const DELIVERY_MONTHLY_FEE = 55_000;
 /**
  * 거래처(치과·기공소)에게 받는 박스당 배송비(원). 배송비는 판매자(딜러, 없으면 어벗츠) 부담이라 0.

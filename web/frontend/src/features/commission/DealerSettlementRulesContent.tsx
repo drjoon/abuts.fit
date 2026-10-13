@@ -1,10 +1,12 @@
 // change-log:
+// - 2026-10-13: 정산 규칙에 딜리버리 카드 — 적립 총액 입금, 딜러사가 직접 입금.
 // - 2026-10-09: 지급 카드 — 무료 의뢰만 제외.
 // - 2026-10-09: 소개 코드 카드 삭제.
 // - 2026-10-09: 소개·세금·지급 카드를 세로로 쌓는다.
 // - 2026-10-08: 딜러 대시보드 누적 구간 클릭과 정산 페이지가 같은 분배몫 본문을 쓴다.
 import { CustomAbutmentDealerSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
 import { SettlementPolicyFact } from "@/shared/settlement/settlementUi";
+import { DELIVERY_MONTHLY_PAYER_LINE } from "@/shared/shipping/shippingPolicyCopy";
 
 /** 딜러 정산 규칙 — 커스텀어벗 누적 분배 표와 지급 조건. */
 export function DealerSettlementRulesContent({
@@ -25,7 +27,12 @@ export function DealerSettlementRulesContent({
         <SettlementPolicyFact label="지급">
           사업자 단위 · 매월 {payoutDay}일
           <br />
+          적립 총액을 입금합니다.
+          <br />
           무료 의뢰는 지급 대상이 아닙니다.
+        </SettlementPolicyFact>
+        <SettlementPolicyFact label="딜리버리">
+          {DELIVERY_MONTHLY_PAYER_LINE}
         </SettlementPolicyFact>
       </div>
     </div>

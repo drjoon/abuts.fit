@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-13: 커스텀어벗 정산 규칙 — 딜러 적립 총액 입금, 딜리버리는 딜러사 직접 입금.
 // - 2026-10-07: 커스텀어벗 — 제조 49.5% 고정. 어벗츠 40% 대안 표기 제거.
 // - 2026-10-05: 기공사업부 정산 규칙 — 플랫폼 사용료·하청 수수료 안내 삭제(미부과).
 // - 2026-10-05: 정산규칙 — 딜러·제조와 같은 칩·표. 어벗츠 순(개발운영 5% 차감).
@@ -61,6 +62,7 @@ import {
 } from "@/shared/settlement/settlementUi";
 import { CustomAbutmentAbutsSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
 import { DEALERSHIP_BAND_RANGE_LABEL } from "@/shared/sales/dealershipPolicyCopy";
+import { DELIVERY_MONTHLY_PAYER_LINE } from "@/shared/shipping/shippingPolicyCopy";
 
 const HISTORY_MONTHS = 6;
 
@@ -1034,6 +1036,10 @@ export default function AdminPaymentsPage({
                     </SettlementPolicyFact>
                     <SettlementPolicyFact label="딜러">
                       {DEALERSHIP_BAND_RANGE_LABEL}입니다.
+                      <br />
+                      적립 총액을 입금합니다.
+                      <br />
+                      {DELIVERY_MONTHLY_PAYER_LINE}
                       <br />
                       기공 · 스토어는 이 표에 없습니다.
                     </SettlementPolicyFact>

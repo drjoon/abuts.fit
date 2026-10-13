@@ -11,7 +11,7 @@ let running = false;
 const INTERVAL_MS = 60 * 60 * 1000;
 
 async function tick() {
-  // 2026-10-08: 거래처 월정액 청구 폐지. 딜러 정산 차감/어벗츠 부담 원가를 매월 1회 기록(멱등).
+  // 2026-10-13: 딜러 거래처는 적립 차감 없음. 직판만 어벗츠 부담을 기록하고, 기존 딜러 차감 저널은 삭제.
   const result = await processDeliveryMonthlyCosts();
   if (result.posted) {
     console.log("[deliveryMonthlyCost] completed", result);

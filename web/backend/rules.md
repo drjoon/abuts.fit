@@ -96,7 +96,7 @@
 - 배송은 딜리버리 익일 도착 단일(2026-10-08). 신속 추가비·택배 묶음 출고 폐지.
   - 서버는 입력 모드와 무관하게 `shippingMode="express"`로 저장(`expressSelectable.utils.js` `resolveSelectableShippingMode`). 일정은 express 경로로 계산하며 `weeklyBatchDays`는 쓰지 않는다. 과거 `normal` 건은 표시용으로만 남는다.
   - `expressFee`·`express_surcharge`: 모든 계산 경로(생성·견적·hold·대시보드)가 0, `creditSettings.expressFee`도 0으로 읽는다. 과거 `express_surcharge` 저널·`price.expressFee`는 원장 표시용 레거시.
-  - 딜리버리 월정액 원가: `services/deliveryMonthlyCost.service.js` — 직전 달 의뢰 3건 이상 거래처만(`DELIVERY_FREE_MAX_MONTHLY_REQUESTS=2` 이하 무료). `dryRun`으로 대상만 셀 수 있다.
+  - 딜리버리 월정액 원가: `services/deliveryMonthlyCost.service.js` — 직전 달 의뢰 3건 이상인 직판 거래처만 어벗츠 부담(`DELIVERY_FREE_MAX_MONTHLY_REQUESTS=2` 이하 무료). 딜러 거래처는 적립 차감 없음. `dryRun`으로 대상만 셀 수 있다.
   - 영업팀 거래처 가격은 `BusinessAnchor.dealerPriceApproval`(select:false)로 승인 대기 → `/api/admin/price-approvals`. 대기 중에는 `checkCreditLock`이 의뢰를 막는다.
   - 디자인+생산 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
     - 공식: `(생산 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능
@@ -1166,6 +1166,6 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - **의뢰비·딜러·배송 SSOT (2026-10-08, 이전 기술과 충돌하면 이 항목이 우선)**:
   - 건당 의뢰비는 치과·기공소 모두 **15,000원 단일가**. 딜러·영업팀이 거래처(`BusinessAnchor.dealerUnitPrice`, `select:false`)별로 **12,000~15,000원**을 정할 수 있고 거래처 본인에게만 보인다(외부 비공개). 서버·FE 모두 12,000 미만/15,000 초과 거절(`validateDealerUnitPrice`). 그룹할인·가입 90일 1만원·주문량 할인·런칭 이벤트 단가는 폐지. 영업팀 입력가는 `dealerPriceApproval.status=pending` → 본사 `POST /api/admin/price-approvals/:anchorId` 승인 전까지 `checkCreditLock`이 의뢰를 막는다. devops는 소개 거래처 없이 고정 분배. 딜러 대시보드 거래처 행 `unitPrice`는 그 판매가(없으면 15,000).
   - 분배(어벗 1개당, 부가세 포함): 제조사 **5,500** · 개발운영 **1,000** · 어벗츠 **3,500** · 나머지 **딜러(판매가 − 10,000)**. 딜러 없음(직판·영업팀 소개)이면 딜러 몫은 어벗츠. 어벗츠가 거래처에 직접 공급(면세)하고 딜러에게는 수수료를 부가세 포함으로 지급. 구현 `resolveRevenueOwnerBaseAllocation` (`creditRevenuePolicy.service.js`).
-  - 배송은 **딜리버리 익일 도착만**. 택배 묶음 출고·월 가입 폐지, 거래처 배송비 없음. 딜리버리 월정액 55,000원(VAT 포함)은 **거래처 1곳당** 딜러 부담(딜러 정산 `REV_SALESMAN` 차감), 딜러가 없으면 어벗츠 부담(`REV_ADMIN`). 직전 달 의뢰가 **3건 이상**인 거래처마다 월 1회 `DELIVERY_MONTHLY_COST` 저널(`deliveryMonthlyCost.service.js`, 멱등키 거래처+월). 2건 이하는 배송업체 무료(`DELIVERY_FREE_MAX_MONTHLY_REQUESTS`)라 저널 없음.
+  - 배송은 **딜리버리 익일 도착만**. 택배 묶음 출고·월 가입 폐지, 거래처 배송비 없음. 딜러 거래처의 딜리버리 월정액 55,000원(VAT 포함)은 적립에서 빼지 않는다. 적립 총액을 입금하고, 딜러사가 딜리버리 회사에 직접 입금한다. 딜러가 없으면 어벗츠 부담(`REV_ADMIN`). 직전 달 의뢰가 **3건 이상**인 직판 거래처마다 월 1회 `DELIVERY_MONTHLY_COST` 저널(`deliveryMonthlyCost.service.js`, 멱등키 거래처+월). 이미 딜러 적립에서 뺀 저널은 워커가 삭제한다. 2건 이하는 배송업체 무료(`DELIVERY_FREE_MAX_MONTHLY_REQUESTS`)라 저널 없음.
   - 위 항목과 충돌하는 이전 서술(자정 스냅샷 단가·할인그룹·택배 묶음 출고 박스당 배송비·딜러 10~20% 누적 구간·제조 49.5%·런칭 이벤트 단가)은 폐지된 정책이다.
   - FE: `src/shared/pricing/requestorUnitPricePolicy.ts`(검증·상수), `src/shared/sales/CustomerPriceDialog.tsx`(딜러 「거래처 가격」), `NewRequestShippingSection.tsx`(딜리버리 단일 카드). 할인그룹 페이지·`DeliverySubscribeDialog` 삭제, `/dashboard/discount-group`은 대시보드로 리다이렉트.
