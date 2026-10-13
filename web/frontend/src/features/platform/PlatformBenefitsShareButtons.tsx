@@ -78,14 +78,7 @@ export const PlatformBenefitsShareButtons = ({ viewerKind: _viewerKind }: Props)
   };
 
   return (
-    <div className="space-y-2.5 rounded-xl border border-slate-200/80 bg-white px-4 py-3.5">
-      <p className="text-sm leading-relaxed text-slate-700">
-        치과나 기공소를 소개해 주실 때 사용하시면 됩니다.
-        <br />
-        지금은 소개에 따른 별도 혜택은 준비되어 있지 않습니다.
-        <br />
-        양해 부탁드립니다.
-      </p>
+    <div className="rounded-xl border border-slate-200/80 bg-white px-4 py-3.5">
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <Button
           type="button"
