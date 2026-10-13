@@ -29,7 +29,7 @@ export function DealerSettlementRulesContent({
           <br />
           적립 총액을 입금합니다.
           <br />
-          무료 의뢰는 지급 대상이 아닙니다.
+          무료 크레딧 사용분은 지급 대상이 아닙니다.
         </SettlementPolicyFact>
         <SettlementPolicyFact label="딜리버리">
           {DELIVERY_MONTHLY_PAYER_LINE}

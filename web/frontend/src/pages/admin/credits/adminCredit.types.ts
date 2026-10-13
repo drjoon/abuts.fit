@@ -47,16 +47,11 @@ export type CreditStats = {
   totalCharged: number;
   totalSpent: number;
   totalFree?: number;
-  totalFreeRequest?: number;
-  totalFreeShipping?: number;
   totalChargedFreeAmount?: number;
   totalSpentPaidAmount?: number;
   totalSpentFreeAmount?: number;
-  totalSpentFreeRequestAmount?: number;
-  totalSpentFreeShippingAmount?: number;
   totalPaidCredit?: number;
-  totalFreeRequestCredit?: number;
-  totalFreeShippingCredit?: number;
+  totalFreeCredit?: number;
 };
 
 export type SalesmanCreditRow = {
@@ -130,23 +125,22 @@ export type BusinessCredit = {
   ownerName?: string;
   ownerEmail?: string;
   ownerRole?: string;
+  /** 이 사업자를 소개한 사업자·대표 계정(없으면 빈 값) */
+  referredByAnchorId?: string | null;
+  referredByBusinessName?: string;
+  referredByUserName?: string;
+  referredByUserEmail?: string;
   isFreeCreditEligible?: boolean;
   balance: number;
   paidBalance: number;
   freeBalance?: number;
   paidCredit?: number;
   freeCredit?: number;
-  freeRequestCredit?: number;
-  freeShippingCredit?: number;
   spentAmount?: number;
   chargedPaidAmount?: number;
   chargedFreeAmount?: number;
-  chargedFreeRequestAmount?: number;
-  chargedFreeShippingAmount?: number;
   spentPaidAmount?: number;
   spentFreeAmount?: number;
-  spentFreeRequestAmount?: number;
-  spentFreeShippingAmount?: number;
 };
 
 export type ChargeOrder = {

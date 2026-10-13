@@ -88,30 +88,15 @@ function normalizeDigits(value: string) {
 function getFreeBalance(business: BusinessCredit) {
   const freeCredit = Number(business.freeCredit ?? NaN);
   if (Number.isFinite(freeCredit)) return freeCredit;
-  const freeBalance = Number(business.freeBalance ?? NaN);
-  if (Number.isFinite(freeBalance)) return freeBalance;
-  return (
-    Number(business.freeRequestCredit ?? 0) +
-    Number(business.freeShippingCredit ?? 0)
-  );
+  return Number(business.freeBalance ?? 0);
 }
 
 function getSpentFreeTotal(business: BusinessCredit) {
-  const spentFreeAmount = Number(business.spentFreeAmount ?? 0);
-  if (spentFreeAmount > 0) return spentFreeAmount;
-  return (
-    Number(business.spentFreeRequestAmount ?? 0) +
-    Number(business.spentFreeShippingAmount ?? 0)
-  );
+  return Number(business.spentFreeAmount ?? 0);
 }
 
 function getChargedFreeTotal(business: BusinessCredit) {
-  const chargedFreeAmount = Number(business.chargedFreeAmount ?? 0);
-  if (chargedFreeAmount > 0) return chargedFreeAmount;
-  return (
-    Number(business.chargedFreeRequestAmount ?? 0) +
-    Number(business.chargedFreeShippingAmount ?? 0)
-  );
+  return Number(business.chargedFreeAmount ?? 0);
 }
 
 function UsageSortIcon({

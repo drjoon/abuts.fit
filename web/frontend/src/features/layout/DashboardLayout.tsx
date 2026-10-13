@@ -476,15 +476,13 @@ type CreditBalanceApiResponse = {
     balance?: number;
     spendableBalance?: number;
     paidCredit?: number;
-    freeRequestCredit?: number;
-    freeShippingCredit?: number;
+    freeCredit?: number;
     settlementCredit?: number;
   };
   balance?: number;
   spendableBalance?: number;
   paidCredit?: number;
-  freeRequestCredit?: number;
-  freeShippingCredit?: number;
+  freeCredit?: number;
   settlementCredit?: number;
 };
 
@@ -675,12 +673,7 @@ export const DashboardLayout = () => {
     useLabPayoutBankbookReminder();
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [paidCredit, setPaidCredit] = useState<number | null>(null);
-  const [freeRequestCredit, setFreeRequestCredit] = useState<number | null>(
-    null,
-  );
-  const [freeShippingCredit, setFreeShippingCredit] = useState<number | null>(
-    null,
-  );
+  const [freeCredit, setFreeCredit] = useState<number | null>(null);
   const [settlementCredit, setSettlementCredit] = useState<number | null>(null);
   const [loadingCreditBalance, setLoadingCreditBalance] = useState(false);
   /** 토글 직후 /me 등이 스토어를 덮어도 데스크톱 접힘 UI는 유지 */
@@ -952,15 +945,13 @@ export const DashboardLayout = () => {
     if (isPracticeUser || (userRole !== "requestor" && userRole !== "internalLab")) {
       setCreditBalance(null);
       setPaidCredit(null);
-      setFreeRequestCredit(null);
-      setFreeShippingCredit(null);
+      setFreeCredit(null);
       return;
     }
     if (!userBusinessAnchorId) {
       setCreditBalance(null);
       setPaidCredit(null);
-      setFreeRequestCredit(null);
-      setFreeShippingCredit(null);
+      setFreeCredit(null);
       return;
     }
 
@@ -980,33 +971,29 @@ export const DashboardLayout = () => {
       if (!res.ok) {
         setCreditBalance(null);
         setPaidCredit(null);
-        setFreeRequestCredit(null);
-        setFreeShippingCredit(null);
+        setFreeCredit(null);
         setSettlementCredit(null);
         return;
       }
       const body = res.data || {};
       const data = body.data || body;
       const paid = Number(data?.paidCredit ?? 0);
-      const freeReq = Number(data?.freeRequestCredit ?? 0);
-      const freeShip = Number(data?.freeShippingCredit ?? 0);
+      const free = Number(data?.freeCredit ?? 0);
       const settlement = Number(data?.settlementCredit ?? 0);
       const spendable = Number(
         data?.spendableBalance ??
           data?.balance ??
-          paid + freeReq + freeShip + settlement,
+          paid + free + settlement,
       );
       creditBalanceLoadedForRef.current = loadedKey;
       setCreditBalance(spendable);
       setPaidCredit(paid);
-      setFreeRequestCredit(freeReq);
-      setFreeShippingCredit(freeShip);
+      setFreeCredit(free);
       setSettlementCredit(settlement);
     } catch {
       setCreditBalance(null);
       setPaidCredit(null);
-      setFreeRequestCredit(null);
-      setFreeShippingCredit(null);
+      setFreeCredit(null);
       setSettlementCredit(null);
     } finally {
       if (shouldShowLoading) {
@@ -2258,8 +2245,7 @@ export const DashboardLayout = () => {
                             setShowCompleted,
                             creditBalance,
                             paidCredit,
-                            freeRequestCredit,
-                            freeShippingCredit,
+                            freeCredit,
                             settlementCredit,
                             loadingCreditBalance,
                             rndCount: wsSummary.rndCount ?? 0,

@@ -484,14 +484,12 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
           balance?: number;
           paidCredit?: number;
           paidBalance?: number;
-          freeRequestCredit?: number;
-          freeShippingCredit?: number;
+          freeCredit?: number;
         };
         balance?: number;
         paidCredit?: number;
         paidBalance?: number;
-        freeRequestCredit?: number;
-        freeShippingCredit?: number;
+        freeCredit?: number;
       }>({
         path: "/api/credits/balance",
         method: "GET",
@@ -500,12 +498,10 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
       if (!res.ok) throw new Error("balance fetch failed");
       const body = res.data || {};
       const data = body.data || body;
-      const freeRequest = Number(data?.freeRequestCredit ?? 0);
-      const freeShipping = Number(data?.freeShippingCredit ?? 0);
 
       setBalance(Number(data?.balance || 0));
       setPaidBalance(Number(data?.paidCredit ?? data?.paidBalance ?? 0));
-      setFreeBalance(freeRequest + freeShipping);
+      setFreeBalance(Number(data?.freeCredit ?? 0));
     } catch {
       // ignore
     } finally {

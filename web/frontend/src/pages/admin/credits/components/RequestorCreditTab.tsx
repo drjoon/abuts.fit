@@ -116,21 +116,11 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
   });
 
   const totalChargedPaid = Number(props.stats?.totalCharged || 0);
-  const totalChargedFree = Number(
-    props.stats?.totalChargedFreeAmount ??
-      Number(props.stats?.totalFreeRequest ?? 0) +
-        Number(props.stats?.totalFreeShipping ?? 0),
-  );
+  const totalChargedFree = Number(props.stats?.totalChargedFreeAmount ?? 0);
   const totalPaidCredit = Number(props.stats?.totalPaidCredit || 0);
-  const totalFreeCredit = Number(
-    props.stats?.totalFreeRequestCredit ?? 0,
-  ) + Number(props.stats?.totalFreeShippingCredit ?? 0);
+  const totalFreeCredit = Number(props.stats?.totalFreeCredit ?? 0);
   const totalSpentPaid = Number(props.stats?.totalSpentPaidAmount || 0);
-  const totalSpentFree = Number(
-    props.stats?.totalSpentFreeAmount ??
-      Number(props.stats?.totalSpentFreeRequestAmount ?? 0) +
-        Number(props.stats?.totalSpentFreeShippingAmount ?? 0),
-  );
+  const totalSpentFree = Number(props.stats?.totalSpentFreeAmount ?? 0);
 
   const loading = props.loadingStats;
 

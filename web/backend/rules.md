@@ -1024,7 +1024,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 제조사 하청 고정단가(어벗 1개당 매입가 8,800 부가세 포함→공급가+VAT) 보정은 `scripts/db/rebalance-manufacturer-unit-price.js`로 수행합니다(타 역할 REV 미변경).
 
 - 관리자 크레딧 응답 필드 정책:
-  - `adminCredit`/잔액 응답에서 무료 크레딧 SSOT 키는 `freeCredit`(합), 하위호환으로 `freeRequestCredit`/`freeShippingCredit`/`freeBalance`입니다.
+  - `adminCredit`/잔액 응답에서 무료 크레딧 SSOT 키는 `freeCredit`(합), 하위호환 별칭은 `freeBalance`뿐입니다. API 응답에는 `freeRequestCredit`/`freeShippingCredit`을 내보내지 않습니다(의뢰·배송 구분 없음). 두 원장 버킷(`REQ_FREE_REQUEST_CREDIT`/`REQ_FREE_SHIPPING_CREDIT`)은 서비스 내부 계산에만 쓰며 마이그레이션 없이 유지합니다.
   - `bonus*` 계열 alias 응답/분기/정렬은 제거하고 SSOT 키만 사용합니다.
 
 - 보존식(의뢰 단위) SSOT:

@@ -421,8 +421,7 @@ async function getBusinessCreditBalanceBreakdown(businessAnchorId) {
     return {
       balance: 0,
       paidCredit: 0,
-      freeRequestCredit: 0,
-      freeShippingCredit: 0,
+      freeCredit: 0,
     };
   }
 
@@ -434,8 +433,7 @@ async function getBusinessCreditBalanceBreakdown(businessAnchorId) {
   return {
     balance: Number(snapshot?.balance || 0),
     paidCredit: Number(snapshot?.paidCredit || 0),
-    freeRequestCredit: Number(snapshot?.freeRequestCredit || 0),
-    freeShippingCredit: Number(snapshot?.freeShippingCredit || 0),
+    freeCredit: Number(snapshot?.freeCredit || 0),
   };
 }
 

@@ -198,8 +198,8 @@ async function getBalanceBreakdown(scope, requestorKindHint) {
   }
   const isLab = kind === "lab";
 
-  const freeRequestCredit = Number(snapshot?.freeRequestCredit || 0);
-  const freeShippingCredit = Number(snapshot?.freeShippingCredit || 0);
+  // 무료크레딧 = 의뢰·배송 구분 없는 통합 잔액(사용처 제한 없음).
+  const freeCredit = Number(snapshot?.freeCredit || 0);
   const balance = Number(snapshot?.balance || 0);
   const settlementCredit = Number(snapshot?.settlementCredit || 0);
   return {
@@ -208,12 +208,7 @@ async function getBalanceBreakdown(scope, requestorKindHint) {
       snapshot?.spendableBalance ?? balance + settlementCredit,
     ),
     paidCredit: Number(snapshot?.paidCredit || 0),
-    freeRequestCredit,
-    freeShippingCredit,
-    // 무료크레딧 = FREE_REQUEST + FREE_SHIPPING 통합 잔액(사용처 제한 없음).
-    freeCredit: Number(
-      snapshot?.freeCredit ?? freeRequestCredit + freeShippingCredit,
-    ),
+    freeCredit,
     // 기공크레딧: 적립·월정산 경로 분리. 주문 차감 시 무료 다음·유료 이전 상계.
     settlementCredit,
     // 데모 치과에서 적립된 기공크레딧(정산·인출 제외, 치과가 전환 시 직접 지급).

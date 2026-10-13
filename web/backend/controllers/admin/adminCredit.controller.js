@@ -601,8 +601,7 @@ export async function adminGetBusinessLedger(req, res) {
     const currentBalanceSnapshot = {
       balance: Number(balanceSnapshot?.balance || 0),
       paidCredit: Number(balanceSnapshot?.paidCredit || 0),
-      freeRequestCredit: Number(balanceSnapshot?.freeRequestCredit || 0),
-      freeShippingCredit: Number(balanceSnapshot?.freeShippingCredit || 0),
+      freeCredit: Number(balanceSnapshot?.freeCredit || 0),
       settlementCredit: Number(balanceSnapshot?.settlementCredit || 0),
       requestorKind: requestorKind === "practice" || isLab ? requestorKind : null,
       showSettlementCredit: isLab,
@@ -1707,24 +1706,13 @@ export async function adminGetCreditStats(req, res) {
         totalCharged: Math.max(0, Math.round(totalCharged)),
         totalSpent: Math.max(0, Math.round(totalSpent)),
         totalFree: Math.max(0, Math.round(totalFree)),
-        totalFreeRequest: Math.max(0, Math.round(totalFreeRequest)),
-        totalFreeShipping: Math.max(0, Math.round(totalFreeShipping)),
         totalChargedFreeAmount: Math.max(0, Math.round(totalFree)),
         totalSpentPaidAmount: Math.max(0, Math.round(totalSpentPaidAmount)),
         totalSpentFreeAmount: Math.max(0, Math.round(totalSpentFreeAmount)),
-        totalSpentFreeRequestAmount: Math.max(
-          0,
-          Math.round(totalSpentFreeRequestAmount),
-        ),
-        totalSpentFreeShippingAmount: Math.max(
-          0,
-          Math.round(totalSpentFreeShippingAmount),
-        ),
         totalPaidCredit: Math.max(0, Math.round(totalPaidCredit)),
-        totalFreeRequestCredit: Math.max(0, Math.round(totalFreeRequestCredit)),
-        totalFreeShippingCredit: Math.max(
+        totalFreeCredit: Math.max(
           0,
-          Math.round(totalFreeShippingCredit),
+          Math.round(totalFreeRequestCredit + totalFreeShippingCredit),
         ),
         ledgerByType: {},
       },
@@ -3632,16 +3620,36 @@ export async function adminGetBusinessCredits(req, res) {
         businessType: 1,
         requestorKind: 1,
         usesOralScan: 1,
+        referredByAnchorId: 1,
       })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
-    const ownerIds = Array.from(
+    // 소개한 사업자(앵커) + 그 대표 계정(사용자)
+    const referrerAnchorIds = Array.from(
       new Set(
         (orgs || [])
-          .map((o) => o?.primaryContactUserId)
+          .map((o) => String(o?.referredByAnchorId || ""))
+          .filter((id) => id && Types.ObjectId.isValid(id)),
+      ),
+    ).map((id) => new Types.ObjectId(id));
+    const referrerAnchors = referrerAnchorIds.length
+      ? await BusinessAnchor.find({ _id: { $in: referrerAnchorIds } })
+          .select({ name: 1, primaryContactUserId: 1 })
+          .lean()
+      : [];
+    const referrerAnchorById = new Map(
+      (referrerAnchors || []).map((a) => [String(a._id), a]),
+    );
+
+    const ownerIds = Array.from(
+      new Set(
+        [
+          ...(orgs || []).map((o) => o?.primaryContactUserId),
+          ...(referrerAnchors || []).map((a) => a?.primaryContactUserId),
+        ]
           .filter(Boolean)
           .map((id) => String(id)),
       ),
@@ -3949,20 +3957,16 @@ export async function adminGetBusinessCredits(req, res) {
         Math.round(spentFreeRequestAmount + spentFreeShippingAmount),
       );
 
+      const freeCredit = freeRequestCredit + freeShippingCredit;
       balanceMap[anchorId] = {
-        balance: paidCredit + freeRequestCredit + freeShippingCredit,
+        balance: paidCredit + freeCredit,
         paidCredit,
-        freeRequestCredit,
-        freeShippingCredit,
+        freeCredit,
         spentAmount: Math.max(0, Math.round(spentAmount)),
         chargedPaidAmount: Math.max(0, Math.round(chargedPaid)),
         chargedFreeAmount,
-        chargedFreeRequestAmount: Math.max(0, Math.round(chargedFreeRequest)),
-        chargedFreeShippingAmount: Math.max(0, Math.round(chargedFreeShipping)),
         spentPaidAmount: Math.max(0, Math.round(spentPaidAmount)),
         spentFreeAmount,
-        spentFreeRequestAmount: Math.max(0, Math.round(spentFreeRequestAmount)),
-        spentFreeShippingAmount: Math.max(0, Math.round(spentFreeShippingAmount)),
       };
     });
 
@@ -3971,17 +3975,12 @@ export async function adminGetBusinessCredits(req, res) {
       const balanceInfo = balanceMap[anchorId] || {
         balance: 0,
         paidCredit: 0,
-        freeRequestCredit: 0,
-        freeShippingCredit: 0,
+        freeCredit: 0,
         spentAmount: 0,
         chargedPaidAmount: 0,
         chargedFreeAmount: 0,
-        chargedFreeRequestAmount: 0,
-        chargedFreeShippingAmount: 0,
         spentPaidAmount: 0,
         spentFreeAmount: 0,
-        spentFreeRequestAmount: 0,
-        spentFreeShippingAmount: 0,
       };
 
       const ownerInfo =
@@ -3992,8 +3991,20 @@ export async function adminGetBusinessCredits(req, res) {
       const isFreeCreditEligible =
         businessType === "requestor" || ownerRole === "requestor";
 
+      const referrerAnchor = org.referredByAnchorId
+        ? referrerAnchorById.get(String(org.referredByAnchorId)) || null
+        : null;
+      const referrerOwner = referrerAnchor
+        ? ownerById.get(String(referrerAnchor.primaryContactUserId || "")) ||
+          null
+        : null;
+
       return {
         _id: org._id,
+        referredByAnchorId: referrerAnchor ? String(referrerAnchor._id) : null,
+        referredByBusinessName: referrerAnchor?.name || "",
+        referredByUserName: referrerOwner?.name || "",
+        referredByUserEmail: referrerOwner?.email || "",
         businessAnchorId: anchorId,
         businessType,
         requestorKind: String(org.requestorKind || "").trim() || null,
@@ -4015,15 +4026,14 @@ export async function adminGetBusinessCredits(req, res) {
         businessCategory: org.metadata?.businessType || "",
         startDate: org.metadata?.startDate || "",
         paidBalance: balanceInfo.paidCredit,
-        freeBalance:
-          balanceInfo.freeRequestCredit + balanceInfo.freeShippingCredit,
+        freeBalance: balanceInfo.freeCredit,
         ...balanceInfo,
       };
     });
 
     const sortedResult = [...result].sort((a, b) =>
       Number(b.paidCredit || 0) - Number(a.paidCredit || 0) ||
-      Number(b.freeRequestCredit || 0) - Number(a.freeRequestCredit || 0) ||
+      Number(b.freeCredit || 0) - Number(a.freeCredit || 0) ||
       String(a.name || "").localeCompare(String(b.name || ""), "ko"),
     );
 
@@ -4276,8 +4286,7 @@ export async function adminGetBusinessCreditDetail(req, res) {
         occurredAt: row?.occurredAt || null,
         balanceAfter: Math.max(0, paid + freeRequest + freeShipping),
         paidCreditAfter: Math.max(0, paid),
-        freeRequestCreditAfter: Math.max(0, freeRequest),
-        freeShippingCreditAfter: Math.max(0, freeShipping),
+        freeCreditAfter: Math.max(0, freeRequest + freeShipping),
       });
     }
 
@@ -4288,8 +4297,7 @@ export async function adminGetBusinessCreditDetail(req, res) {
         demoMode: Boolean(org?.demoMode) && !org?.demoModeExitedAt,
         balance: Number(balanceSnapshot?.balance || 0),
         paidCredit: Number(balanceSnapshot?.paidCredit || 0),
-        freeRequestCredit: Number(balanceSnapshot?.freeRequestCredit || 0),
-        freeShippingCredit: Number(balanceSnapshot?.freeShippingCredit || 0),
+        freeCredit: Number(balanceSnapshot?.freeCredit || 0),
         spentAmount: Math.max(0, spent),
         history: history.reverse(),
       },

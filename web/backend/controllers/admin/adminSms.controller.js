@@ -485,9 +485,7 @@ async function enrichRecipientsWithBalances(recipients) {
         balanceById.set(id, {
           balance: Number(snap?.balance || 0),
           paidBalance: Number(snap?.paidCredit || 0),
-          freeBalance:
-            Number(snap?.freeRequestCredit || 0) +
-            Number(snap?.freeShippingCredit || 0),
+          freeBalance: Number(snap?.freeCredit || 0),
         });
       } catch {
         balanceById.set(id, {

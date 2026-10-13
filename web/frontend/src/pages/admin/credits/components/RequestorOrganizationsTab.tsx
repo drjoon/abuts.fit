@@ -31,30 +31,15 @@ type RequestorOrganizationsTabProps = {
 function getFreeBalance(business: BusinessCredit) {
   const freeCredit = Number(business.freeCredit ?? NaN);
   if (Number.isFinite(freeCredit)) return freeCredit;
-  const freeBalance = Number(business.freeBalance ?? NaN);
-  if (Number.isFinite(freeBalance)) return freeBalance;
-  return (
-    Number(business.freeRequestCredit ?? 0) +
-    Number(business.freeShippingCredit ?? 0)
-  );
+  return Number(business.freeBalance ?? 0);
 }
 
 function getChargedFree(business: BusinessCredit) {
-  const charged = Number(business.chargedFreeAmount ?? NaN);
-  if (Number.isFinite(charged) && charged > 0) return charged;
-  return (
-    Number(business.chargedFreeRequestAmount ?? 0) +
-    Number(business.chargedFreeShippingAmount ?? 0)
-  );
+  return Number(business.chargedFreeAmount ?? 0);
 }
 
 function getSpentFree(business: BusinessCredit) {
-  const spent = Number(business.spentFreeAmount ?? NaN);
-  if (Number.isFinite(spent) && spent > 0) return spent;
-  return (
-    Number(business.spentFreeRequestAmount ?? 0) +
-    Number(business.spentFreeShippingAmount ?? 0)
-  );
+  return Number(business.spentFreeAmount ?? 0);
 }
 
 function MetricRow({

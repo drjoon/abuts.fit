@@ -50,8 +50,8 @@ export const creditTypeLabel = (
     return "무료충전(데모)";
   }
   if (t === "CHARGE_PAID") return "유료충전";
-  if (t === "CHARGE_FREE_REQUEST") return "무료충전(의뢰)";
-  if (t === "CHARGE_FREE_SHIPPING") return "무료충전(배송)";
+  if (t === "CHARGE_FREE_REQUEST") return "무료충전";
+  if (t === "CHARGE_FREE_SHIPPING") return "무료충전";
   if (t === "SPEND_PAID") return "사용(유료)";
   if (t === "SPEND_FREE_REQUEST") return "사용(무료)";
   if (t === "SPEND_FREE_SHIPPING") return "사용(무료)";

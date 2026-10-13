@@ -131,8 +131,7 @@ const dashDebug = (label: string, payload?: unknown) => {
 
 type DashboardOutletContext = {
   paidCredit: number | null;
-  freeRequestCredit: number | null;
-  freeShippingCredit: number | null;
+  freeCredit: number | null;
   settlementCredit: number | null;
 };
 
@@ -144,8 +143,7 @@ export const RequestorDashboardPage = () => {
   const { toast } = useToast();
   const {
     paidCredit,
-    freeRequestCredit,
-    freeShippingCredit,
+    freeCredit,
     settlementCredit,
   } = useOutletContext<DashboardOutletContext>();
   const { data: systemSettings } = useSystemSettings();
@@ -636,8 +634,7 @@ export const RequestorDashboardPage = () => {
     if (
       dashboardStatsSource?.success &&
       paidCredit !== null &&
-      freeRequestCredit !== null &&
-      freeShippingCredit !== null &&
+      freeCredit !== null &&
       systemSettings?.creditSettings
     ) {
       const stats = dashboardStatsSource.data.stats ?? {};
@@ -651,10 +648,7 @@ export const RequestorDashboardPage = () => {
       const totalPendingRequests = inRequest + inMachining;
 
       const availableForRequest =
-        paidCredit +
-        freeRequestCredit +
-        freeShippingCredit +
-        Number(settlementCredit || 0);
+        paidCredit + freeCredit + Number(settlementCredit || 0);
       const requiredCredit = totalPendingRequests * pricePerRequest;
 
       if (totalPendingRequests > 0 && availableForRequest < requiredCredit) {
@@ -666,8 +660,7 @@ export const RequestorDashboardPage = () => {
   }, [
     dashboardStatsSource,
     paidCredit,
-    freeRequestCredit,
-    freeShippingCredit,
+    freeCredit,
     settlementCredit,
     systemSettings,
   ]);

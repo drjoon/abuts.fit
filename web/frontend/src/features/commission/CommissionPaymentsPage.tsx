@@ -207,7 +207,7 @@ export function CommissionPaymentsPage({
                         사업자 단위 · 매월{" "}
                         {Number(data?.payoutDayOfMonth || 1)}일
                         <br />
-                        무료 의뢰·배송은 지급 대상이 아닙니다.
+                        무료 크레딧 사용분은 지급 대상이 아닙니다.
                       </SettlementPolicyFact>
                     </div>
                   </div>

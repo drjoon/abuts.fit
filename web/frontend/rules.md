@@ -504,10 +504,10 @@ Notes:
     - `ADJUST`
   - `REFUND` 레거시 조회/표시 경로는 제거했습니다.
   - 유료/무료 수익은 모두 표시하되, 지급(PAYOUT) 대상은 유료만 구분 표기해야 합니다.
-  - `DashboardLayout`→의뢰자 대시보드 Outlet context 크레딧 키는 `freeRequestCredit`, `freeShippingCredit`을 SSOT로 사용합니다.
+  - `DashboardLayout`→의뢰자 대시보드 Outlet context 크레딧 키는 `paidCredit`, `freeCredit`(의뢰·배송 구분 없는 통합 무료크레딧)을 SSOT로 사용합니다. 의뢰/배송 무료 분리 표시는 쓰지 않습니다.
   - 관리자 크레딧 탭의 사업자 정렬 키는 `freeBalance`를 사용합니다.
-  - 관리자 크레딧 집계 카드는 `totalChargedFreeAmount`, `totalSpentFreeAmount` 또는
-    `totalFreeRequest+totalFreeShipping`, `totalSpentFreeRequestAmount+totalSpentFreeShippingAmount`를 SSOT로 사용합니다.
+  - 관리자 크레딧 집계 카드는 `totalChargedFreeAmount`, `totalSpentFreeAmount`, `totalFreeCredit`을 SSOT로 사용합니다.
+  - 관리자 사업자 목록·세부는 `referredByBusinessName`/`referredByUserName`으로 소개한 사업자(사용자)를 표시합니다.
 
 - 부가세(VAT) / 면세 UI 정책(강제, 루트 `rules.md` §2.3) — 겸영 이중 체계:
   - **고객·기공 경로(면세)**: 가격·충전·약관에서 "VAT 별도 / 부가세 포함 / VAT 10%" 문구 금지. 증빙은 **계산서**.

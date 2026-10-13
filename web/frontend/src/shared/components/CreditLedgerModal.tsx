@@ -411,8 +411,6 @@ type CreditLedgerItem = {
 type CreditBalanceSnapshot = {
   balance: number;
   paidCredit: number;
-  freeRequestCredit?: number;
-  freeShippingCredit?: number;
   freeCredit?: number;
   settlementCredit?: number;
   spendableBalance?: number;
@@ -467,8 +465,8 @@ type LedgerSortKey = "createdAt" | "type" | "amount" | "balanceAfter" | "detail"
 
 const typeLabel = (t: CreditLedgerType) => {
   if (t === "CHARGE_PAID") return "유료충전(선입금)";
-  if (t === "CHARGE_FREE_REQUEST") return "무료충전(의뢰)";
-  if (t === "CHARGE_FREE_SHIPPING") return "무료충전(배송)";
+  if (t === "CHARGE_FREE_REQUEST") return "무료충전";
+  if (t === "CHARGE_FREE_SHIPPING") return "무료충전";
   if (t === "SPEND_PAID") return "사용(선입금)";
   if (t === "SPEND_FREE_REQUEST") return "사용(무료)";
   if (t === "SPEND_FREE_SHIPPING") return "사용(무료)";
@@ -3176,11 +3174,7 @@ export const CreditLedgerModal = ({
   );
 
   const freeCreditTotal = currentBalanceSnapshot
-    ? Number(
-        currentBalanceSnapshot.freeCredit ??
-          Number(currentBalanceSnapshot.freeRequestCredit ?? 0) +
-            Number(currentBalanceSnapshot.freeShippingCredit ?? 0),
-      )
+    ? Number(currentBalanceSnapshot.freeCredit ?? 0)
     : 0;
   const settlementCreditTotal = currentBalanceSnapshot
     ? Number(currentBalanceSnapshot.settlementCredit ?? 0)
@@ -3666,14 +3660,7 @@ export const CreditLedgerModal = ({
                         `${String(r.item.refId || "")}::${String(r.item.uniqueKey || "")}`,
                       )
                     : "";
-                  const freeSpendLabel = (() => {
-                    if (r.type === "SPEND_FREE_REQUEST") return "무료(의뢰)";
-                    if (r.type === "SPEND_FREE_SHIPPING") return "무료(배송)";
-                    const refType = String(r.item.refType || "");
-                    if (refType === "REQUEST") return "무료(의뢰)";
-                    if (refType === "SHIPPING_PACKAGE") return "무료(배송)";
-                    return "무료";
-                  })();
+                  const freeSpendLabel = "무료";
                   const isRemakeChargeRow = isPracticeTransferRemakeChargeLedgerItem(
                     r.item,
                   );

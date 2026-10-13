@@ -167,29 +167,29 @@ const getBusinessTypeBadgeClass = (type?: string) => {
   }
 };
 
+/** 소개한 사업자(사용자) 표시: `사업자명 (대표 계정명)` */
+const formatReferrerLabel = (business?: BusinessCredit | null) => {
+  const biz = String(business?.referredByBusinessName || "").trim();
+  const user = String(business?.referredByUserName || "").trim();
+  if (biz && user) return `${biz} (${user})`;
+  return biz || user || "-";
+};
+
 const getCreditBreakdown = (business?: BusinessCredit | null) => {
   const paidCredit = Number(business?.paidCredit ?? business?.paidBalance ?? 0);
-  const freeRequestCredit = Number(business?.freeRequestCredit ?? 0);
-  const freeShippingCredit = Number(business?.freeShippingCredit ?? 0);
-  const totalBalance = Number(
-    business?.balance ?? paidCredit + freeRequestCredit + freeShippingCredit,
-  );
+  const freeCredit = Number(business?.freeCredit ?? business?.freeBalance ?? 0);
+  const totalBalance = Number(business?.balance ?? paidCredit + freeCredit);
 
   const spentPaid = Number(business?.spentPaidAmount ?? 0);
-  const spentFreeRequest = Number(business?.spentFreeRequestAmount ?? 0);
-  const spentFreeShipping = Number(business?.spentFreeShippingAmount ?? 0);
-  const totalSpent = Number(
-    business?.spentAmount ?? spentPaid + spentFreeRequest + spentFreeShipping,
-  );
+  const spentFree = Number(business?.spentFreeAmount ?? 0);
+  const totalSpent = Number(business?.spentAmount ?? spentPaid + spentFree);
 
   return {
     paidCredit,
-    freeRequestCredit,
-    freeShippingCredit,
+    freeCredit,
     totalBalance,
     spentPaid,
-    spentFreeRequest,
-    spentFreeShipping,
+    spentFree,
     totalSpent,
   };
 };
@@ -467,6 +467,9 @@ export default function AdminBusinessPage({
         business.businessNumber,
         business.ownerName,
         business.ownerEmail,
+        business.referredByBusinessName,
+        business.referredByUserName,
+        business.referredByUserEmail,
         business.businessAnchorId,
       ]
         .filter(Boolean)
@@ -723,6 +726,12 @@ export default function AdminBusinessPage({
                             {business.ownerEmail || "-"}
                           </div>
                         </div>
+                        <div className="min-w-0 sm:col-span-2">
+                          <span className="text-slate-400">소개한 사업자</span>
+                          <div className="truncate font-medium text-slate-700">
+                            {formatReferrerLabel(business)}
+                          </div>
+                        </div>
                       </div>
 
                       <div className="mt-2.5 grid gap-2 border-t border-slate-100 pt-2.5 sm:grid-cols-2">
@@ -735,12 +744,7 @@ export default function AdminBusinessPage({
                           </div>
                           <div className="mt-1 space-y-0.5 text-[10px] text-slate-400">
                             <div>유료 {formatMoney(credit.spentPaid)}</div>
-                            <div>
-                              무료(의뢰) {formatMoney(credit.spentFreeRequest)}
-                            </div>
-                            <div>
-                              무료(배송) {formatMoney(credit.spentFreeShipping)}
-                            </div>
+                            <div>무료 {formatMoney(credit.spentFree)}</div>
                           </div>
                         </div>
                         <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2">
@@ -752,13 +756,7 @@ export default function AdminBusinessPage({
                           </div>
                           <div className="mt-1 space-y-0.5 text-[10px] text-slate-400">
                             <div>유료 {formatMoney(credit.paidCredit)}</div>
-                            <div>
-                              무료{" "}
-                              {formatMoney(
-                                Number(credit.freeRequestCredit || 0) +
-                                  Number(credit.freeShippingCredit || 0),
-                              )}
-                            </div>
+                            <div>무료 {formatMoney(credit.freeCredit)}</div>
                           </div>
                         </div>
                       </div>
@@ -968,6 +966,18 @@ export default function AdminBusinessPage({
                   </div>
                 </div>
 
+                <div className="rounded-lg border p-3 sm:col-span-2">
+                  <div className="text-xs text-muted-foreground">소개한 사업자(사용자)</div>
+                  <div className="mt-1 font-medium break-words">
+                    {formatReferrerLabel(detailDialog.business)}
+                    {detailDialog.business.referredByUserEmail ? (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        {detailDialog.business.referredByUserEmail}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+
                 <div className="rounded-lg border p-3">
                   <div className="text-xs text-muted-foreground">전화번호</div>
                   <div className="mt-1 font-medium break-words">
@@ -1022,7 +1032,7 @@ export default function AdminBusinessPage({
                 <div className="mt-1 text-lg font-semibold">
                   {formatMoney(detailCredit.totalSpent)}원
                 </div>
-                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <div className="rounded border bg-muted/30 p-2">
                     <div className="text-[11px] text-muted-foreground">유료 소비</div>
                     <div className="mt-0.5 font-semibold">
@@ -1030,15 +1040,9 @@ export default function AdminBusinessPage({
                     </div>
                   </div>
                   <div className="rounded border bg-muted/30 p-2">
-                    <div className="text-[11px] text-muted-foreground">무료 소비 (의뢰)</div>
+                    <div className="text-[11px] text-muted-foreground">무료 소비</div>
                     <div className="mt-0.5 font-semibold">
-                      {formatMoney(detailCredit.spentFreeRequest)}원
-                    </div>
-                  </div>
-                  <div className="rounded border bg-muted/30 p-2">
-                    <div className="text-[11px] text-muted-foreground">무료 소비 (배송)</div>
-                    <div className="mt-0.5 font-semibold">
-                      {formatMoney(detailCredit.spentFreeShipping)}원
+                      {formatMoney(detailCredit.spentFree)}원
                     </div>
                   </div>
                 </div>
@@ -1059,11 +1063,7 @@ export default function AdminBusinessPage({
                   <div className="rounded border bg-muted/30 p-2">
                     <div className="text-[11px] text-muted-foreground">무료크레딧</div>
                     <div className="mt-0.5 font-semibold">
-                      {formatMoney(
-                        Number(detailCredit.freeRequestCredit || 0) +
-                          Number(detailCredit.freeShippingCredit || 0),
-                      )}
-                      원
+                      {formatMoney(detailCredit.freeCredit)}원
                     </div>
                   </div>
                 </div>

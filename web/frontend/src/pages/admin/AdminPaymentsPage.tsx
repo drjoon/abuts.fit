@@ -380,8 +380,7 @@ function MonthlyHistorySection({
                   <th className="pb-2 font-medium">월</th>
                   <th className="pb-2 font-medium">유료 의뢰</th>
                   <th className="pb-2 font-medium">유료 배송</th>
-                  <th className="pb-2 font-medium">무료 의뢰</th>
-                  <th className="pb-2 font-medium">무료 배송</th>
+                  <th className="pb-2 font-medium">무료</th>
                 </tr>
               </thead>
               <tbody>
@@ -402,12 +401,11 @@ function MonthlyHistorySection({
                       {row.paidShippingCount.toLocaleString()})
                     </td>
                     <td className="py-2.5 tabular-nums text-muted-foreground">
-                      {formatWonWithUnit(row.freeRequestAmount)} (
-                      {row.freeRequestCount.toLocaleString()})
-                    </td>
-                    <td className="py-2.5 tabular-nums text-muted-foreground">
-                      {formatWonWithUnit(row.freeShippingAmount)} (
-                      {row.freeShippingCount.toLocaleString()})
+                      {formatWonWithUnit(row.freeTotalAmount)} (
+                      {(
+                        row.freeRequestCount + row.freeShippingCount
+                      ).toLocaleString()}
+                      )
                     </td>
                   </tr>
                 ))}
