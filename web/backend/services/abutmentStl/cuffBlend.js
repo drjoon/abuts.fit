@@ -61,7 +61,7 @@ const clampCurvature = (c) => Math.max(-MAX_TOP_CURVATURE, Math.min(MAX_TOP_CURV
 const MIN_WALL_MM = 0.3;
 /** 이보다 축 둘레로 넓게 걸친 삼각형은 곡면이 아니라 겹친 캡 조각이다. */
 const FIN_SPAN_RAD = (30 * Math.PI) / 180;
-const BOTTOM_ON_CONE_TOL_MM = 0.01;
+const BOTTOM_ON_CONE_TOL_MM = 0.02;
 
 /** Re 기준: 이보다 누운 커프를 접시형으로 보고, 재디자인 곡선도 이보다 눕지 않게 한다. */
 export const FLAT_SLOPE = Math.tan((70 * Math.PI) / 180);
