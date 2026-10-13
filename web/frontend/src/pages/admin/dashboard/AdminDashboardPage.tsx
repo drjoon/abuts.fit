@@ -1,6 +1,6 @@
 
 // change-log:
-// - 2026-10-13: 헥스 회전 확인 타일은 전화할 사업자 수와 같은 세팅인지 묻는 안내.
+// - 2026-10-13: 헥스 타일은 ExoCAD 3.0 이하 직원이 여러 명일 때 같은 세팅인지 전화로 확인.
 // - 2026-10-13: 의뢰자 배송 방식(택배/딜리버리) 지정 카드.
 // - 2026-10-08: 대시보드 카드는 순서 유지. 빈칸 없이 이어 붙이고 높이는 내용만큼.
 // - 2026-10-04: 데모 전환 · 어벗츠 확인 카드(하청·자체 지급 확인).
@@ -872,7 +872,6 @@ export const AdminDashboardPage = () => {
 
   const {
     callNeededCount: hexCallCount,
-    confirmedBusinessCount: hexDoneBusinessCount,
     loading: loadingHexVerification,
   } = useHexVerificationSummary(
     token,
@@ -2278,10 +2277,10 @@ export const AdminDashboardPage = () => {
                   <DashBigNumber value={hexCallCount.toLocaleString()} unit="전화" />
                   <p className="truncate text-[11px] text-muted-foreground">
                     {hexCallCount > 0
-                      ? "같은 세팅인지 물어보세요"
+                      ? "3.0 이하 직원이 같은지 확인"
                       : loadingHexVerification
                         ? "불러오는 중…"
-                        : `완료 ${hexDoneBusinessCount.toLocaleString()}곳`}
+                        : "전화할 곳 없음"}
                   </p>
                 </div>
               </DashTile>

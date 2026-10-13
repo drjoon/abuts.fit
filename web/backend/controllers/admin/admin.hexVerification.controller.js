@@ -4,7 +4,7 @@
 // - web/backend/modules/admin/admin.routes.js
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // change-log:
-// - 2026-10-13: 전화 확인 후 사업자 공통 적용. SSOT는 사용자×제조사 행.
+// - 2026-10-13: 공통 적용은 ExoCAD 3.0 이하 직원에게 제조사별 세팅을 복사.
 // - 2026-09-03: 제조사별 확정/되돌리기 시 BA·User 레거시 hexVerificationResultHex 제거(전 제조사 확정 번짐 방지).
 // - 2026-09-03: 제조사 초기값=30°·미정. 레거시 계정 확정을 전 제조사 확정으로 번지지 않음.
 // - 2026-09-03: ExoCAD 3.0 이하 User를 BA 카드로 그룹. 임플란트 제조사별 applyHex30/확정 API.
@@ -24,7 +24,7 @@ import {
   CNC_HEX_IMPLANT_MANUFACTURERS,
   EXOCAD_VERSION_LE_3_0,
   HEX_VERIFICATION_RESULT_VALUES,
-  buildVerifiedHexRowsForAllManufacturers,
+  buildHexRowsFromManufacturerChoices,
   findHexByImplantManufacturerEntry,
   hexModeFromApplyHex30,
   isExoCadLe30,
@@ -300,7 +300,9 @@ export const listHexVerificationInProgress = asyncHandler(async (_req, res) => {
         count: pendingManufacturerCount,
         pendingCount: pendingManufacturerCount,
         confirmedCount: confirmedManufacturerCount,
-        callNeededCount: items.filter((item) => item.status === "pending").length,
+        callNeededCount: items.filter(
+          (item) => item.status === "pending" && Number(item.employeeCount) > 1,
+        ).length,
         businessCount: items.length,
         manufacturers: [...CNC_HEX_IMPLANT_MANUFACTURERS],
         items,
@@ -493,24 +495,39 @@ export const revertHexVerificationForManufacturer = asyncHandler(
   },
 );
 
+const parseManufacturerChoices = (raw) => {
+  if (!Array.isArray(raw)) {
+    throw new ApiError(400, "manufacturers 배열이 필요합니다.");
+  }
+  return CNC_HEX_IMPLANT_MANUFACTURERS.map((manufacturer) => {
+    const found = raw.find(
+      (row) =>
+        normalizeImplantManufacturerKey(row?.manufacturer) === manufacturer,
+    );
+    if (!found || typeof found.applyHex30 !== "boolean") {
+      throw new ApiError(400, `${manufacturer}의 applyHex30가 필요합니다.`);
+    }
+    return {
+      manufacturer,
+      applyHex30: found.applyHex30,
+      confirmed: found.confirmed === true,
+    };
+  });
+};
+
 /**
- * 전화로 사업자 전체가 한 회전이라고 확인한 뒤, ExoCAD 3.0 이하 사용자 전원·전 제조사에 같은 값을 확정.
+ * 전화로 ExoCAD 3.0 이하 직원들이 같은 제조사별 세팅이라고 확인한 뒤, 그 선택을 전원에 복사.
+ * 임플란트 제조사마다 0°/30°가 달라도 그대로 둔다.
  * 저장 SSOT는 User.hexByImplantManufacturer. BA 단일 확정 필드는 쓰지 않는다.
  * POST /api/admin/hex-verification/businesses/:businessAnchorId/apply-common
- * body: { hexRotation: "STL모델대로" | "헥스30도회전" }
+ * body: { manufacturers: [{ manufacturer, applyHex30, confirmed }] }
  */
 export const applyCommonHexVerification = asyncHandler(async (req, res) => {
   const businessAnchorId = String(req.params.businessAnchorId || "").trim();
   if (!Types.ObjectId.isValid(businessAnchorId)) {
     throw new ApiError(400, "유효하지 않은 사업자 ID입니다.");
   }
-  const hexRotation = normalizeHexVerificationResultHex(req.body?.hexRotation);
-  if (!hexRotation || !HEX_VERIFICATION_RESULT_VALUES.includes(hexRotation)) {
-    throw new ApiError(
-      400,
-      `hexRotation은 ${HEX_VERIFICATION_RESULT_VALUES.join(" | ")} 중 하나여야 합니다.`,
-    );
-  }
+  const choices = parseManufacturerChoices(req.body?.manufacturers);
 
   const users = await User.find({
     role: { $in: REQUESTOR_ROLES },
@@ -538,9 +555,9 @@ export const applyCommonHexVerification = asyncHandler(async (req, res) => {
       update: {
         $set: {
           "requestSettings.hexByImplantManufacturer":
-            buildVerifiedHexRowsForAllManufacturers(
+            buildHexRowsFromManufacturerChoices(
               user.requestSettings?.hexByImplantManufacturer,
-              hexRotation,
+              choices,
               { verifiedAt: now, verifiedBy: actorId },
             ),
           "requestSettings.updatedAt": now,
@@ -570,10 +587,10 @@ export const applyCommonHexVerification = asyncHandler(async (req, res) => {
       200,
       {
         businessAnchorId,
-        hexRotation,
         userCount: targets.length,
+        manufacturers: choices,
       },
-      "모든 사용자에게 같은 헥스 회전을 적용했습니다.",
+      "ExoCAD 3.0 이하 직원에게 같은 제조사별 세팅을 적용했습니다.",
     ),
   );
 });

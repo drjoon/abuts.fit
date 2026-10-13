@@ -5,7 +5,7 @@
 // - web/frontend/src/features/requestSettings/DesignSoftwareSettingsDialog.tsx
 // - web/backend/controllers/admin/admin.hexVerification.controller.js
 // change-log:
-// - 2026-10-13: 사업자 공통 적용용 — 전 제조사 verifiedHex를 한 회전으로 채우는 헬퍼.
+// - 2026-10-13: 공통 적용은 제조사별 선택(0°/30°)을 직원들에게 복사. 6종을 한 회전으로 묶지 않음.
 // - 2026-09-09: ExoCAD≤3.0 + implantManufacturer 없음 → designSoftware/계정 폴백 제거(null). 조용히 30° 시드 금지.
 // - 2026-09-03: 제조사별 확정 SSOT만 사용(레거시 계정 확정으로 전 제조사 확정 번짐 제거). User 맵 행(미정 포함)이 있으면 BA로 번지지 않음. 초기값 30°·미정.
 // - 2026-09-03: ExoCAD 3.0 이하 × 임플란트 제조사별 헥스 맵(applyHex30/verifiedHex). 계정 단일 확정은 레거시 fallback.
@@ -342,27 +342,29 @@ export const upsertHexByImplantManufacturerRow = (
 };
 
 /**
- * 전화로 사업자 전체가 한 회전이라고 확인했을 때.
- * 저장 SSOT는 그대로 사용자×제조사 행이고, 그 행을 전 제조사 동일 verifiedHex로 채운다.
+ * ExoCAD 3.0 이하 직원들이 같은 제조사별 세팅일 때, 그 선택을 각 사용자 행에 복사한다.
+ * choices: [{ manufacturer, applyHex30, confirmed }]
+ * 제조사마다 0°/30°가 달라도 유지한다. 6종을 한 회전으로 덮지 않는다.
  */
-export const buildVerifiedHexRowsForAllManufacturers = (
+export const buildHexRowsFromManufacturerChoices = (
   existingRows,
-  hexRotation,
+  choices,
   { verifiedAt = null, verifiedBy = null } = {},
 ) => {
-  const canonical = normalizeHexVerificationResultHex(hexRotation);
   const list = Array.isArray(existingRows)
     ? existingRows.map((row) => ({ ...row }))
     : [];
-  if (!canonical) return list;
-  const applyHex30 = canonical === "헥스30도회전";
+  if (!Array.isArray(choices) || choices.length === 0) return list;
   let rows = list;
-  for (const manufacturer of CNC_HEX_IMPLANT_MANUFACTURERS) {
-    rows = upsertHexByImplantManufacturerRow(rows, manufacturer, {
+  for (const choice of choices) {
+    const applyHex30 = choice?.applyHex30 === true;
+    const confirmed = choice?.confirmed === true;
+    const hex = applyHex30 ? "헥스30도회전" : "STL모델대로";
+    rows = upsertHexByImplantManufacturerRow(rows, choice?.manufacturer, {
       applyHex30,
-      verifiedHex: canonical,
-      verifiedAt,
-      verifiedBy,
+      verifiedHex: confirmed ? hex : null,
+      verifiedAt: confirmed ? verifiedAt : null,
+      verifiedBy: confirmed ? verifiedBy : null,
     });
   }
   return rows;

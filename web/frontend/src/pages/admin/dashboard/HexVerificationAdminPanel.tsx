@@ -1,6 +1,6 @@
 // related: AdminDashboardPage.tsx, admin.hexVerification.controller.js
 // change-log:
-// - 2026-10-13: 전화 확인 후 사업자 공통 적용. 사용자별 스위치는 값이 다를 때.
+// - 2026-10-13: 공통 적용은 ExoCAD 3.0 이하 직원에게 제조사별 세팅을 복사.
 // - 2026-09-03: 저장 성공/실패 후 목록 invalidate — 낙관적 확정이 DB와 어긋나지 않게.
 // - 2026-09-03: BA/직원 collapse `??`/`||` 우선순위 수정 — pending 카드도 접힘
 // - 2026-09-03: 스위치 옆 라벨을 확정/미정으로 동적 표시
@@ -95,8 +95,6 @@ const draftFromRow = (row: HexManufacturerRow): SwitchDraft => ({
 
 const hay = (value?: string | null) => String(value || "").toLowerCase();
 
-const hexDegreeLabel = (applyHex30: boolean) => (applyHex30 ? "30°" : "0°");
-
 const phoneDigits = (value?: string | null) =>
   String(value || "").replace(/\D/g, "");
 
@@ -106,27 +104,56 @@ const formatPhoneLabel = (value?: string | null) => {
   return formatPhoneNumberInput(raw) || raw;
 };
 
-const summarizeBusinessHex = (ba: HexBusinessGroup) => {
-  const confirmedHexes = new Set<string>();
-  let pending = 0;
-  for (const emp of ba.employees || []) {
-    for (const mfr of emp.manufacturers || []) {
-      if (mfr.status === "confirmed" && mfr.verifiedHex) {
-        confirmedHexes.add(mfr.verifiedHex);
-      } else {
-        pending += 1;
-      }
-    }
-  }
-  const uniformHex = confirmedHexes.size === 1 ? [...confirmedHexes][0] : null;
-  return {
-    pending,
-    divergent: confirmedHexes.size > 1,
-    uniformHex,
-    isFully: (hex: string) =>
-      pending === 0 && confirmedHexes.size === 1 && uniformHex === hex,
-  };
+const exoStaffChoiceSig = (emp: HexEmployeeRow) =>
+  (emp.manufacturers || [])
+    .map((mfr) => `${mfr.manufacturer}:${mfr.applyHex30 ? "30" : "0"}`)
+    .join("|");
+
+/** 임플란트 제조사별 0°/30°가 직원 사이에 다른지. 제조사끼리 다른 것은 같은 세팅이다. */
+const exoStaffChoicesDiffer = (ba: HexBusinessGroup) => {
+  const employees = ba.employees || [];
+  if (employees.length < 2) return false;
+  return new Set(employees.map(exoStaffChoiceSig)).size > 1;
 };
+
+const needsExoStaffPhoneCheck = (ba: HexBusinessGroup) =>
+  (ba.employees?.length || 0) > 1 && ba.status === "pending";
+
+const seedSharedAngles = (ba: HexBusinessGroup): Record<string, boolean> => {
+  const employees = ba.employees || [];
+  const names = employees[0]?.manufacturers?.map((mfr) => mfr.manufacturer) || [];
+  const angles: Record<string, boolean> = {};
+  for (const name of names) {
+    const flags = employees
+      .map(
+        (emp) =>
+          emp.manufacturers?.find((mfr) => mfr.manufacturer === name)?.applyHex30,
+      )
+      .filter((value): value is boolean => typeof value === "boolean");
+    const first = flags[0];
+    angles[name] =
+      flags.length > 0 && flags.every((value) => value === first)
+        ? Boolean(first)
+        : true;
+  }
+  return angles;
+};
+
+const sharedAnglesAlreadyApplied = (
+  ba: HexBusinessGroup,
+  angles: Record<string, boolean>,
+) =>
+  (ba.employees || []).every((emp) =>
+    (emp.manufacturers || []).every((mfr) => {
+      const applyHex30 = angles[mfr.manufacturer];
+      if (typeof applyHex30 !== "boolean") return false;
+      return (
+        mfr.status === "confirmed" &&
+        mfr.applyHex30 === applyHex30 &&
+        mfr.verifiedHex === hexFromApply(applyHex30)
+      );
+    }),
+  );
 
 const filterHexGroups = (
   groups: HexBusinessGroup[],
@@ -222,32 +249,49 @@ const patchHexQueryData = (
 const patchBusinessCommonHex = (
   queryClient: QueryClient,
   businessAnchorId: string,
-  applyHex30: boolean,
+  angles: Record<string, boolean>,
 ) => {
-  const hex = hexFromApply(applyHex30);
   queryClient.setQueryData(
     HEX_QUERY_KEY,
     (prev: ApiEnvelope<HexVerificationInProgressData> | undefined) => {
       if (!prev?.data) return prev;
       const items = (prev.data.items || []).map((ba) => {
         if (String(ba.businessAnchorId || "") !== businessAnchorId) return ba;
-        const employees = (ba.employees || []).map((emp) => ({
-          ...emp,
-          pendingManufacturerCount: 0,
-          status: "confirmed" as const,
-          manufacturers: (emp.manufacturers || []).map((mfr) => ({
-            ...mfr,
-            applyHex30,
-            status: "confirmed" as const,
-            verifiedHex: hex,
-            seedHex: hex,
-          })),
-        }));
+        const employees = (ba.employees || []).map((emp) => {
+          const manufacturers = (emp.manufacturers || []).map((mfr) => {
+            const applyHex30 = angles[mfr.manufacturer];
+            if (typeof applyHex30 !== "boolean") return mfr;
+            const hex = hexFromApply(applyHex30);
+            return {
+              ...mfr,
+              applyHex30,
+              status: "confirmed" as const,
+              verifiedHex: hex,
+              seedHex: hex,
+            };
+          });
+          const pendingManufacturerCount = manufacturers.filter(
+            (mfr) => mfr.status === "pending",
+          ).length;
+          return {
+            ...emp,
+            manufacturers,
+            pendingManufacturerCount,
+            status:
+              pendingManufacturerCount > 0
+                ? ("pending" as const)
+                : ("confirmed" as const),
+          };
+        });
+        const pendingUserCount = employees.filter(
+          (emp) => emp.status === "pending",
+        ).length;
         return {
           ...ba,
           employees,
-          pendingUserCount: 0,
-          status: "confirmed" as const,
+          pendingUserCount,
+          status:
+            pendingUserCount > 0 ? ("pending" as const) : ("confirmed" as const),
         };
       });
       let pendingCount = 0;
@@ -267,7 +311,7 @@ const patchBusinessCommonHex = (
           items,
           pendingCount,
           confirmedCount,
-          callNeededCount: items.filter((ba) => ba.status === "pending").length,
+          callNeededCount: items.filter((ba) => needsExoStaffPhoneCheck(ba)).length,
         },
       };
     },
@@ -281,10 +325,10 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
   const [expandedUser, setExpandedUser] = useState<Record<string, boolean>>({});
   const [showUsers, setShowUsers] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
-  const [confirmApply, setConfirmApply] = useState<{
-    baKey: string;
-    applyHex30: boolean;
-  } | null>(null);
+  const [sharedAngles, setSharedAngles] = useState<
+    Record<string, Record<string, boolean>>
+  >({});
+  const [confirmApplyBaKey, setConfirmApplyBaKey] = useState<string | null>(null);
   const [applyingBaId, setApplyingBaId] = useState<string | null>(null);
 
   const timersRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>(
@@ -324,10 +368,9 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
     [items, search],
   );
   const callNeededCount = useMemo(
-    () => items.filter((ba) => ba.status === "pending").length,
+    () => items.filter((ba) => needsExoStaffPhoneCheck(ba)).length,
     [items],
   );
-  const doneBusinessCount = items.length - callNeededCount;
 
   const persistDraft = useCallback(
     async (
@@ -423,30 +466,44 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
   }, []);
 
   const applyCommon = useCallback(
-    async (businessAnchorId: string, applyHex30: boolean) => {
+    async (
+      businessAnchorId: string,
+      baKey: string,
+      angles: Record<string, boolean>,
+    ) => {
       discardPendingSaves();
       setApplyingBaId(businessAnchorId);
-      patchBusinessCommonHex(queryClient, businessAnchorId, applyHex30);
+      patchBusinessCommonHex(queryClient, businessAnchorId, angles);
       try {
-        const res = await apiFetch<
-          ApiEnvelope<{ userCount?: number; hexRotation?: string }>
-        >({
+        const res = await apiFetch<ApiEnvelope<{ userCount?: number }>>({
           path: `/api/admin/hex-verification/businesses/${encodeURIComponent(businessAnchorId)}/apply-common`,
           method: "POST",
           token: token || undefined,
-          jsonBody: { hexRotation: hexFromApply(applyHex30) },
+          jsonBody: {
+            manufacturers: Object.entries(angles).map(
+              ([manufacturer, applyHex30]) => ({
+                manufacturer,
+                applyHex30,
+                confirmed: true,
+              }),
+            ),
+          },
         });
         if (!res.ok || !res.data?.success) {
           throw new Error(res.data?.message || "공통 적용에 실패했습니다.");
         }
         const userCount = Number(res.data?.data?.userCount || 0);
         toast({
-          title: "전체에 적용했습니다",
-          description: `${hexDegreeLabel(applyHex30)} · ${userCount.toLocaleString()}명`,
+          title: "직원에게 적용했습니다",
+          description: `${userCount.toLocaleString()}명`,
         });
-        setConfirmApply((prev) =>
-          prev?.baKey === businessAnchorId ? null : prev,
-        );
+        setConfirmApplyBaKey((prev) => (prev === baKey ? null : prev));
+        setSharedAngles((prev) => {
+          if (!prev[baKey]) return prev;
+          const next = { ...prev };
+          delete next[baKey];
+          return next;
+        });
       } catch (e: unknown) {
         toast({
           title: "공통 적용 실패",
@@ -493,7 +550,8 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
     if (enabled) return;
     flushAll();
     setSearch("");
-    setConfirmApply(null);
+    setConfirmApplyBaKey(null);
+    setSharedAngles({});
   }, [enabled, flushAll]);
 
   useEffect(() => {
@@ -505,16 +563,17 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
   return (
     <div className="space-y-3 text-sm text-gray-700">
       <p className="text-xs text-muted-foreground">
-        미확정인 곳에 전화하세요.
+        ExoCAD 3.0 이하 직원이 여러 명이면 전화하세요.
         <br />
-        전체가 한 가지 회전을 쓰는지 물어보세요.
+        그 직원들이 같은 세팅을 쓰는지 물어보세요.
         <br />
-        맞으면 그 회전을 모든 사용자에게 적용합니다.
+        같으면 제조사별로 정해 그 직원들에게 적용합니다.
       </p>
-      <p className="text-xs text-muted-foreground">
-        전화 {callNeededCount.toLocaleString()}곳 · 완료{" "}
-        {doneBusinessCount.toLocaleString()}곳
-      </p>
+      {callNeededCount > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          전화 {callNeededCount.toLocaleString()}곳
+        </p>
+      ) : null}
       <div className="relative">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
         <input
@@ -539,23 +598,24 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
         ) : (
           visibleItems.map((ba) => {
             const baKey = String(ba.businessAnchorId || ba.businessName || "none");
-            const summary = summarizeBusinessHex(ba);
+            const exoCount = ba.employees?.length || 0;
+            const multi = exoCount > 1;
+            const staffDiffer = exoStaffChoicesDiffer(ba);
+            const phoneCheck = needsExoStaffPhoneCheck(ba);
             const baOpen =
               expandedBa[baKey] ?? (searching || ba.status === "pending");
             const usersOpen =
-              showUsers[baKey] ?? (searching || summary.divergent);
+              showUsers[baKey] ?? (searching || !multi || staffDiffer);
             const phone = formatPhoneLabel(ba.phoneNumber);
             const digits = phoneDigits(ba.phoneNumber);
-            const confirming =
-              confirmApply?.baKey === baKey ? confirmApply : null;
+            const angles = sharedAngles[baKey] ?? seedSharedAngles(ba);
+            const confirming = confirmApplyBaKey === baKey;
             const applying =
-              applyingBaId != null && applyingBaId === String(ba.businessAnchorId || "");
-            const uniformLabel =
-              summary.uniformHex === "헥스30도회전"
-                ? "30°"
-                : summary.uniformHex === "STL모델대로"
-                  ? "0°"
-                  : "";
+              applyingBaId != null &&
+              applyingBaId === String(ba.businessAnchorId || "");
+            const sharedManufacturers = ba.employees?.[0]?.manufacturers || [];
+            const sharedApplied =
+              multi && sharedAnglesAlreadyApplied(ba, angles);
             return (
               <div
                 key={baKey}
@@ -578,12 +638,14 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
                       {ba.businessName || "사업자명 미확인"}
                     </div>
                     <div className="text-[11px] text-muted-foreground">
-                      직원 {(ba.employeeCount || 0).toLocaleString()}명
-                      {summary.pending === 0 && uniformLabel
-                        ? ` · 전체 ${uniformLabel}`
-                        : summary.divergent
-                          ? " · 값이 서로 다름"
-                          : ` · 미확정 ${(ba.pendingUserCount || 0).toLocaleString()}명`}
+                      ExoCAD 3.0 이하 {exoCount.toLocaleString()}명
+                      {staffDiffer
+                        ? " · 직원마다 다름"
+                        : (ba.pendingUserCount || 0) > 0
+                          ? ` · 미확정 ${(ba.pendingUserCount || 0).toLocaleString()}명`
+                          : multi
+                            ? " · 같은 세팅"
+                            : ""}
                     </div>
                   </div>
                   <Badge
@@ -594,12 +656,12 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
                         : "text-[10px] border-emerald-200 bg-emerald-50 text-emerald-700"
                     }
                   >
-                    {ba.status === "pending" ? "전화 확인" : "완료"}
+                    {phoneCheck ? "전화 확인" : ba.status === "pending" ? "미정" : "완료"}
                   </Badge>
                 </button>
                 {baOpen ? (
                   <div className="space-y-2 border-t px-3 py-2.5">
-                    {phone && digits ? (
+                    {multi && phone && digits ? (
                       <a
                         href={`tel:${digits}`}
                         className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-800 underline underline-offset-2"
@@ -607,83 +669,102 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
                         <Phone className="h-3.5 w-3.5" />
                         {phone}
                       </a>
-                    ) : (
-                      <p className="text-[11px] text-muted-foreground">전화번호 없음</p>
-                    )}
-                    {ba.businessAnchorId ? (
-                      summary.divergent ? (
-                        <p className="text-[11px] text-amber-800">
-                          지금 값이 서로 다릅니다.
-                          <br />
-                          전체를 하나로 맞출 때만 적용하세요.
-                        </p>
-                      ) : null
-                    ) : (
+                    ) : null}
+                    {multi && !ba.businessAnchorId ? (
                       <p className="text-[11px] text-muted-foreground">
                         소속이 없어 사용자별로 저장합니다.
                       </p>
-                    )}
-                    {ba.businessAnchorId ? (
-                      confirming ? (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-[11px] text-muted-foreground">
-                            모든 사용자에게 {hexDegreeLabel(confirming.applyHex30)}를
-                            확정합니다.
-                          </p>
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="h-7 px-2.5 text-xs"
-                            disabled={applying}
-                            onClick={() =>
-                              void applyCommon(
-                                String(ba.businessAnchorId),
-                                confirming.applyHex30,
-                              )
-                            }
-                          >
-                            {applying ? "적용 중…" : "확정"}
-                          </Button>
+                    ) : null}
+                    {multi && ba.businessAnchorId && staffDiffer ? (
+                      <p className="text-[11px] text-amber-800">
+                        직원마다 세팅이 다릅니다.
+                        <br />
+                        맞출 때만 전원에 적용하세요.
+                      </p>
+                    ) : null}
+                    {multi && ba.businessAnchorId ? (
+                      <>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {sharedManufacturers.map((mfr) => {
+                            const applyHex30 = Boolean(angles[mfr.manufacturer]);
+                            return (
+                              <div
+                                key={mfr.manufacturer}
+                                className="flex items-center justify-between gap-2 rounded border bg-white px-2.5 py-2"
+                              >
+                                <div className="min-w-0 text-xs font-semibold truncate">
+                                  {mfr.manufacturer}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="w-5 shrink-0 text-[10px] text-muted-foreground">
+                                    0°
+                                  </span>
+                                  <Switch
+                                    checked={applyHex30}
+                                    onCheckedChange={(checked) =>
+                                      setSharedAngles((prev) => ({
+                                        ...prev,
+                                        [baKey]: {
+                                          ...(prev[baKey] ?? seedSharedAngles(ba)),
+                                          [mfr.manufacturer]: Boolean(checked),
+                                        },
+                                      }))
+                                    }
+                                  />
+                                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                                    30°
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {confirming ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-[11px] text-muted-foreground">
+                              ExoCAD 3.0 이하 직원에게 이 세팅을 적용합니다.
+                            </p>
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-7 px-2.5 text-xs"
+                              disabled={applying}
+                              onClick={() =>
+                                void applyCommon(
+                                  String(ba.businessAnchorId),
+                                  baKey,
+                                  angles,
+                                )
+                              }
+                            >
+                              {applying ? "적용 중…" : "적용"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2.5 text-xs"
+                              disabled={applying}
+                              onClick={() => setConfirmApplyBaKey(null)}
+                            >
+                              취소
+                            </Button>
+                          </div>
+                        ) : (
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
                             className="h-7 px-2.5 text-xs"
-                            disabled={applying}
-                            onClick={() => setConfirmApply(null)}
+                            disabled={sharedApplied || applyingBaId != null}
+                            onClick={() => setConfirmApplyBaKey(baKey)}
                           >
-                            취소
+                            이 세팅을 전원에 적용
                           </Button>
-                        </div>
-                      ) : (
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={summary.isFully("STL모델대로") ? "default" : "outline"}
-                            className="h-7 px-2.5 text-xs"
-                            disabled={summary.isFully("STL모델대로") || applyingBaId != null}
-                            onClick={() =>
-                              setConfirmApply({ baKey, applyHex30: false })
-                            }
-                          >
-                            전체 0°
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={summary.isFully("헥스30도회전") ? "default" : "outline"}
-                            className="h-7 px-2.5 text-xs"
-                            disabled={summary.isFully("헥스30도회전") || applyingBaId != null}
-                            onClick={() =>
-                              setConfirmApply({ baKey, applyHex30: true })
-                            }
-                          >
-                            전체 30°
-                          </Button>
-                        </div>
-                      )
+                        )}
+                      </>
                     ) : null}
+                    {multi ? (
                     <button
                       type="button"
                       className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
@@ -698,11 +779,12 @@ export function HexVerificationAdminPanel({ token, enabled = true }: Props) {
                       )}
                       사용자별
                     </button>
-                    {usersOpen ? (
+                    ) : null}
+                    {!multi || usersOpen ? (
                   <div className="divide-y rounded-md border bg-slate-50/40">
                     {(ba.employees || []).map((emp) => {
                       const uKey = emp.userId;
-                      const uOpen = expandedUser[uKey] ?? searching;
+                      const uOpen = expandedUser[uKey] ?? (searching || !multi);
                       return (
                         <div key={uKey} className="bg-slate-50/40">
                           <button
@@ -836,8 +918,9 @@ export function useHexVerificationSummary(
   return {
     pendingCount: Number(data?.data?.pendingCount || 0),
     confirmedCount: Number(data?.data?.confirmedCount || 0),
-    callNeededCount: pendingBusinesses.length,
-    confirmedBusinessCount: items.length - pendingBusinesses.length,
+    callNeededCount: items.filter((item) => needsExoStaffPhoneCheck(item)).length,
+    confirmedBusinessCount: items.filter((item) => item.status !== "pending")
+      .length,
     pendingBusinesses,
     loading: isFetching,
     refetch,
