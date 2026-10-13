@@ -3,6 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // change-log:
+// - 2026-10-13: 팝빌 테스트/운영 구분을 잔액 카드와 같이 쓰도록 노출.
 // - 2026-09-23: registIssue forceIssue — 작성일이 오늘(KST) 이전이면 지연발행 허용.
 // - 2026-09-23: formatDateYYYYMMDD — 이미 YYYYMMDD인 writeDate 문자열 통과(Invalid Date 방지).
 // - 2026-09-16: AccountCheckService 예금주 성명/실명조회 래퍼.
@@ -546,6 +547,9 @@ export const cancelIssuedInvoice = ({
     );
   });
 };
+
+/** SDK `popbill.config`와 같은 테스트 모드. 잔액·충전 URL이 이 값을 따른다. */
+export const isPopbillTestMode = () => IsTest;
 
 /** 예금주조회(AccountCheck) 호출에 필요한 팝빌 회원 설정이 있는지. */
 export const isPopbillAccountCheckConfigured = () => {

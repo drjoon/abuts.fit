@@ -3,11 +3,13 @@
 // - web/backend/utils/popbill.util.js
 // - web/frontend/src/pages/admin/dashboard/AdminPopbillPointCard.tsx
 // change-log:
+// - 2026-10-13: 잔액 응답에 테스트 모드 표시. 로컬은 테스트 잔액, 충전 창은 운영 파트너.
 // - 2026-10-13: 팝빌 파트너 잔여포인트 조회·충전 URL 발급(관리자).
 import {
   getPopbillPartnerBalance,
   getPopbillPartnerChargeUrl,
   isPopbillAccountCheckConfigured,
+  isPopbillTestMode,
 } from "../../utils/popbill.util.js";
 import {
   clearPopbillPointShortage,
@@ -17,10 +19,11 @@ import {
 /** @route GET /api/admin/popbill/point */
 export async function adminGetPopbillPoint(req, res) {
   const shortage = getPopbillPointShortage();
+  const testMode = isPopbillTestMode();
   if (!isPopbillAccountCheckConfigured()) {
     return res.json({
       success: true,
-      data: { configured: false, balance: null, shortage: null },
+      data: { configured: false, balance: null, shortage: null, testMode },
     });
   }
   let balance = null;
@@ -39,6 +42,7 @@ export async function adminGetPopbillPoint(req, res) {
     data: {
       configured: true,
       balance: Number.isFinite(balance) ? balance : null,
+      testMode,
       error,
       shortage: current
         ? {
