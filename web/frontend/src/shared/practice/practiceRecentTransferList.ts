@@ -1128,6 +1128,98 @@ export const bumpFeeQuoteByProsthesisFollowUpDelta = (
   };
 };
 
+export type PracticeTransferContentUpdatePatch = {
+  transferId: string;
+  billing?: {
+    total?: number;
+    labFeeTotal?: number;
+    abutmentRetailTotal?: number;
+    isRemake?: boolean;
+  } | null;
+  isRemake?: boolean;
+  feeQuote?: PracticeTransferFeeQuote | null;
+  toothWorks?: PracticeRecentRequestItem["toothWorks"];
+  transferMemo?: string;
+};
+
+/** 의뢰 수정(update-content) 직후 — 채팅·목록 feeQuote·리메이크 플래그 동기화 */
+export const patchPracticeRecentTransferAfterContentUpdate = <
+  T extends PracticeRecentTransferItem,
+>(
+  row: T,
+  patch: PracticeTransferContentUpdatePatch,
+): T => {
+  const transferId = String(patch.transferId || "").trim();
+  if (!transferId || String(row.transferId || "").trim() !== transferId) {
+    return row;
+  }
+  const billing =
+    patch.billing && typeof patch.billing === "object" ? patch.billing : null;
+  const isRemake = Boolean(
+    patch.isRemake ?? billing?.isRemake ?? row.isRemake,
+  );
+  let feeQuote =
+    patch.feeQuote !== undefined
+      ? patch.feeQuote
+        ? parsePracticeTransferFeeQuote(patch.feeQuote) || patch.feeQuote
+        : null
+      : row.feeQuote;
+  if (billing) {
+    feeQuote =
+      (feeQuote
+        ? applyProsthesisFollowUpBillingToFeeQuote(feeQuote, billing)
+        : null) ||
+      ({
+        relationshipKind: "none" as const,
+        feeRateApplied: 0,
+        labSettlementAmount: 0,
+        abutsRevenueAmount: 0,
+        total: Math.max(0, Number(billing.total || 0)),
+        labFeeTotal: Math.max(0, Number(billing.labFeeTotal || 0)),
+        labAbutmentTotal: 0,
+        abutmentRetailTotal: Math.max(
+          0,
+          Number(billing.abutmentRetailTotal || 0),
+        ),
+        lines: [],
+        tempCreditLabFeeTotal: 0,
+        billed: false,
+        labFeeConfigured: true,
+        isRemake,
+      } satisfies PracticeTransferFeeQuote);
+  }
+  if (isRemake) {
+    feeQuote = {
+      ...(feeQuote || {
+        relationshipKind: "none" as const,
+        feeRateApplied: 0,
+        labSettlementAmount: 0,
+        abutsRevenueAmount: 0,
+        labAbutmentTotal: 0,
+        abutmentRetailTotal: 0,
+        lines: [],
+        tempCreditLabFeeTotal: 0,
+        billed: false,
+        labFeeConfigured: true,
+      }),
+      isRemake: true,
+      total: 0,
+      labFeeTotal: 0,
+      tempCreditLabFeeTotal: 0,
+      lines: [],
+    };
+  }
+  return {
+    ...row,
+    ...(Array.isArray(patch.toothWorks) ? { toothWorks: patch.toothWorks } : {}),
+    ...(patch.transferMemo != null
+      ? { transferMemo: patch.transferMemo }
+      : {}),
+    isRemake,
+    ...(feeQuote ? { feeQuote } : {}),
+  };
+};
+
 export const isProsthesisFollowUpRealtimeAction = (action: unknown): boolean => {
   const normalized = String(action || "").trim().toLowerCase();
   return (
@@ -1401,6 +1493,8 @@ export const mergeOpenPracticeTransferFromRequestRows = (
       prev.arrivalDeadlineExpiredAt ||
       null,
     matchingMode: openRow.matchingMode || prev.matchingMode,
+    isRemake:
+      openRow.isRemake !== undefined ? Boolean(openRow.isRemake) : prev.isRemake,
     ...(keepBilled ? {} : nextFee ? { feeQuote: nextFee } : {}),
     ...(openRow.remakeFeeQuote ? { remakeFeeQuote: openRow.remakeFeeQuote } : {}),
     ...(openRow.remakeFeeQuoteWithCustomAbutment

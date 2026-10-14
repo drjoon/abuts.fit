@@ -4284,6 +4284,14 @@ export async function updatePracticeTransferContent(req, res) {
       skipJigChanged ||
       rushMultiplierChanged ||
       remakeChanged;
+    const remakeBillingStale =
+      hasRemakeFlagInBody &&
+      isRemakeRequest &&
+      !billingInputsChanged &&
+      (Number(previousBilling?.labFeeTotal || 0) > 0 ||
+        Number(previousBilling?.total || 0) > 0 ||
+        !previousBilling?.isRemake);
+    const shouldRebuildBilling = billingInputsChanged || remakeBillingStale;
     const previousBudget =
       previousBilling.autoMatchBudget &&
       typeof previousBilling.autoMatchBudget === "object"
@@ -4300,13 +4308,13 @@ export async function updatePracticeTransferContent(req, res) {
         ? previousAutoMatch.priorityLabAnchorIds || []
         : [];
     let autoMatchCatalog = null;
-    if (matchingMode === "auto" && billingInputsChanged) {
+    if (matchingMode === "auto" && shouldRebuildBilling) {
       autoMatchCatalog = await loadAutoMatchBudgetCatalog();
     }
 
     let feeQuote = null;
     let billingPreview = previousBilling;
-    if (billingInputsChanged) {
+    if (shouldRebuildBilling) {
       try {
         await rollbackPracticeTransferBilling({ transferId: doc._id });
       } catch (rollbackErr) {
@@ -4502,7 +4510,7 @@ export async function updatePracticeTransferContent(req, res) {
       requestorReadAt: null,
       requestorReadBy: null,
     };
-    if (billingInputsChanged) {
+    if (shouldRebuildBilling) {
       nextSet.billing = billingPreview;
     }
     if (hasRemakeFlagInBody) {
@@ -4531,7 +4539,7 @@ export async function updatePracticeTransferContent(req, res) {
     );
 
     if (!updated) {
-      if (billingInputsChanged) {
+      if (shouldRebuildBilling) {
         try {
           await holdPracticeTransferCredits({
             transfer: doc,
@@ -4553,7 +4561,7 @@ export async function updatePracticeTransferContent(req, res) {
       });
     }
 
-    if (billingInputsChanged) {
+    if (shouldRebuildBilling) {
       updated.billing = billingPreview;
       try {
         const holdResult = await holdPracticeTransferCredits({
@@ -4754,6 +4762,8 @@ export async function updatePracticeTransferContent(req, res) {
         matchingMode,
         count: files.length,
         billing: updated.billing || billingPreview,
+        ...(feeQuote ? { feeQuote: toFeeQuoteApi(feeQuote) } : {}),
+        ...toRemakeApiFields(updated),
         manufacturerStage,
         ...toAutoMatchApiFields(updated),
       },

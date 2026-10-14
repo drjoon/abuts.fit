@@ -669,6 +669,7 @@ export const PracticeToothWorkChartReadOnly = ({
 
   const storedLinesEmpty =
     !Array.isArray(storedFeeQuote?.lines) || storedFeeQuote.lines.length === 0;
+  const storedIsRemakeQuote = Boolean(storedFeeQuote?.isRemake);
   const hasStoredFeeStages =
     Array.isArray(prosthesisFeeStages) &&
     prosthesisFeeStages.some(
@@ -682,7 +683,7 @@ export const PracticeToothWorkChartReadOnly = ({
     enabled:
       !storedFeeQuote ||
       storedFeeQuote.labFeeConfigured === false ||
-      storedFeeQuote.total <= 0 ||
+      (storedFeeQuote.total <= 0 && !storedIsRemakeQuote) ||
       // 확정 금액만 있고 내역 lines가 비면 live 재계산으로 툴팁을 채운다.
       (storedFeeQuote.total > 0 && storedLinesEmpty) ||
       // 단계 스냅샷이 없으면 live로 임시/지르 섹션을 재구성한다.
@@ -695,6 +696,7 @@ export const PracticeToothWorkChartReadOnly = ({
     storedQuote: storedFeeQuote,
     skipAbutmentFees,
     creditToothWorks,
+    remake: storedIsRemakeQuote,
   });
   const feeStages = useMemo((): PracticeFeeStageSection[] | null => {
     if (hasStoredFeeStages) {

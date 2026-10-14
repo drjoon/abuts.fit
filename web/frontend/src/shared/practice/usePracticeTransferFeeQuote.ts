@@ -264,8 +264,22 @@ export const usePracticeTransferFeeQuote = (params: {
     (Math.max(0, Number(storedQuote?.total || 0)) > 0 ||
       Math.max(0, Number(storedQuote?.tempCreditLabFeeTotal || 0)) > 0 ||
       Math.max(0, Number(storedQuote?.finalLabFeeTotal || 0)) > 0);
+  const storedRemakeZero =
+    Boolean(storedQuote?.isRemake) &&
+    !storedHasAmount &&
+    Math.max(0, Number(storedQuote?.labFeeTotal || 0)) <= 0;
   // 금액만 있고 lines=[]이면 툴팁이 「선택된 보철물이 없습니다」로 떨어진다 → live 내역 사용.
-  const quote =
+  const quote = storedRemakeZero
+    ? {
+        ...liveQuote,
+        ...storedQuote!,
+        isRemake: true,
+        total: 0,
+        labFeeTotal: 0,
+        tempCreditLabFeeTotal: 0,
+        lines: liveQuote.lines,
+      }
+    :
     storedHasAmount && storedHasLines
       ? storedQuote!
       : storedHasAmount && !storedHasLines && liveQuote.lines.length > 0

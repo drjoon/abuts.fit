@@ -344,6 +344,7 @@ import {
   toStatusBadgeLabel,
   mapMyPracticeTransferApiRows,
   mergeOpenPracticeTransferFromRequestRows,
+  patchPracticeRecentTransferAfterContentUpdate,
   patchPracticeRecentRequestProsthesisFollowUp,
   applyProsthesisFollowUpBillingToFeeQuote,
   bumpFeeQuoteByProsthesisFollowUpDelta,
@@ -8894,6 +8895,60 @@ export const PracticeFileTransferPage = ({
       }
       rememberLab(selectedLab);
 
+      const savedAsRemake = composeRemakeMode;
+      const updateContentPayload =
+        editing && submitRes.data && typeof submitRes.data === "object"
+          ? ((submitRes.data as { data?: unknown }).data as
+              | {
+                  billing?: {
+                    total?: number;
+                    labFeeTotal?: number;
+                    abutmentRetailTotal?: number;
+                    isRemake?: boolean;
+                  };
+                  feeQuote?: unknown;
+                  isRemake?: boolean;
+                }
+              | undefined)
+          : undefined;
+      const contentUpdatePatch = editing
+        ? {
+            transferId,
+            billing: updateContentPayload?.billing || null,
+            feeQuote: updateContentPayload?.feeQuote
+              ? parsePracticeTransferFeeQuote(updateContentPayload.feeQuote)
+              : null,
+            isRemake: Boolean(
+              savedAsRemake || updateContentPayload?.isRemake,
+            ),
+            toothWorks: syncToothWorks,
+            transferMemo,
+          }
+        : null;
+
+      if (contentUpdatePatch) {
+        setRecentRequests((prev) =>
+          prev.map((row) =>
+            patchPracticeRecentTransferAfterContentUpdate(
+              row,
+              contentUpdatePatch,
+            ),
+          ),
+        );
+        setSelectedTransfer((prev) => {
+          if (
+            !prev ||
+            String(prev.transferId || "").trim() !== transferId
+          ) {
+            return prev;
+          }
+          return patchPracticeRecentTransferAfterContentUpdate(
+            prev,
+            contentUpdatePatch,
+          );
+        });
+      }
+
       toast({
         title: editing
           ? "의뢰가 수정되었습니다"
@@ -8919,9 +8974,13 @@ export const PracticeFileTransferPage = ({
       similarCasePromptedFpRef.current = "";
       pendingSubmitAfterSimilarRef.current = false;
       // 수정 저장 성공 — 작성 폼 닫고 원래 의뢰 상세·채팅으로 복귀.
-      const returnAfterEdit = editing
-        ? editReturnTransferRef.current
-        : null;
+      let returnAfterEdit = editing ? editReturnTransferRef.current : null;
+      if (returnAfterEdit && contentUpdatePatch) {
+        returnAfterEdit = patchPracticeRecentTransferAfterContentUpdate(
+          returnAfterEdit,
+          contentUpdatePatch,
+        );
+      }
       if (editing) editReturnTransferRef.current = null;
       setComposeOpen(false);
       void loadRecentRequests({ silent: true });
