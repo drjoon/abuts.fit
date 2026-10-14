@@ -216,8 +216,9 @@ export const SignupPage = () => {
   );
   const [enteredReferralCode, setEnteredReferralCode] = useState<
     string | undefined
-  >(() => restoredProgress?.enteredReferralCode);
+  >();
   const [isValidatingReferral, setIsValidatingReferral] = useState(false);
+  const invalidUrlReferralNotifiedRef = useRef<string | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<"email" | null>(
     () => restoredProgress?.selectedMethod || null,
   );
@@ -276,33 +277,6 @@ export const SignupPage = () => {
     setShowSetupConfirm(false);
     navigate("/dashboard/wizard?mode=account", { replace: true });
   }, [navigate]);
-
-  const oauthStartUrl = useCallback(
-    (provider: "google" | "kakao") => {
-      const qs = new URLSearchParams({
-        intent: "signup",
-        role: signupRole,
-        ...(referralCode ? { ref: referralCode } : {}),
-      });
-      return `/api/auth/oauth/${provider}/start?${qs.toString()}`;
-    },
-    [referralCode, signupRole],
-  );
-
-  const goSocialSignup = useCallback(
-    (provider: "google" | "kakao") => {
-      sessionStorage.setItem("oauthIntent", "signup");
-      sessionStorage.setItem("oauthReturnTo", oauthReturnTo);
-      sessionStorage.setItem("oauthSignupRole", signupRole);
-      if (referralCode) {
-        sessionStorage.setItem("oauthSignupRef", referralCode);
-      } else {
-        sessionStorage.removeItem("oauthSignupRef");
-      }
-      window.location.href = oauthStartUrl(provider);
-    },
-    [oauthReturnTo, oauthStartUrl, referralCode, signupRole],
-  );
 
   useEffect(() => {
     if (location.pathname === "/signup" && referralCode) {
@@ -375,7 +349,7 @@ export const SignupPage = () => {
     request<any>({
       path: "/api/auth/referral/validate",
       method: "POST",
-      jsonBody: { value: referralCode },
+      jsonBody: { value: referralCode, signupRole },
     })
       .then((res) => {
         const body: any = res.data || {};
@@ -385,6 +359,7 @@ export const SignupPage = () => {
           )
             ? body.data.allowedSignupRoles.filter(isSelectableSignupRole)
             : [];
+          const trimmed = referralCode.trim();
           setReferrerInfo({
             name: body.data.name,
             business: body.data.businessName,
@@ -396,6 +371,8 @@ export const SignupPage = () => {
                   : "requestor",
             allowedSignupRoles: nextAllowedSignupRoles,
           });
+          setEnteredReferralCode(trimmed);
+          setManualReferralInput(trimmed);
           if (
             nextAllowedSignupRoles.length > 0 &&
             !nextAllowedSignupRoles.includes(signupRole)
@@ -404,16 +381,59 @@ export const SignupPage = () => {
           }
         } else {
           setReferrerInfo(null);
+          if (enteredReferralCode === referralCode.trim()) {
+            setEnteredReferralCode(undefined);
+          }
+          const message = String(body?.message || "").trim();
+          if (invalidUrlReferralNotifiedRef.current !== referralCode) {
+            invalidUrlReferralNotifiedRef.current = referralCode;
+            toast({
+              title: "유효하지 않은 소개 코드",
+              description:
+                message || "소개 코드를 다시 확인하거나 건너뛰세요.",
+              variant: "destructive",
+            });
+          }
         }
       })
       .catch(() => {
         setReferrerInfo(null);
+        if (enteredReferralCode === referralCode.trim()) {
+          setEnteredReferralCode(undefined);
+        }
       });
-  }, [enteredReferralCode, referralCode, signupRole]);
+  }, [enteredReferralCode, referralCode, signupRole, toast]);
 
   const effectiveReferralCode = useMemo(
-    () => referralCode ?? enteredReferralCode,
-    [enteredReferralCode, referralCode],
+    () => enteredReferralCode,
+    [enteredReferralCode],
+  );
+
+  const oauthStartUrl = useCallback(
+    (provider: "google" | "kakao") => {
+      const qs = new URLSearchParams({
+        intent: "signup",
+        role: signupRole,
+        ...(effectiveReferralCode ? { ref: effectiveReferralCode } : {}),
+      });
+      return `/api/auth/oauth/${provider}/start?${qs.toString()}`;
+    },
+    [effectiveReferralCode, signupRole],
+  );
+
+  const goSocialSignup = useCallback(
+    (provider: "google" | "kakao") => {
+      sessionStorage.setItem("oauthIntent", "signup");
+      sessionStorage.setItem("oauthReturnTo", oauthReturnTo);
+      sessionStorage.setItem("oauthSignupRole", signupRole);
+      if (effectiveReferralCode) {
+        sessionStorage.setItem("oauthSignupRef", effectiveReferralCode);
+      } else {
+        sessionStorage.removeItem("oauthSignupRef");
+      }
+      window.location.href = oauthStartUrl(provider);
+    },
+    [effectiveReferralCode, oauthReturnTo, oauthStartUrl, signupRole],
   );
 
   const allowedSignupRoles = useMemo<SignupRole[]>(() => {
@@ -434,7 +454,10 @@ export const SignupPage = () => {
   }, [allowedSignupRoles, effectiveReferralCode]);
 
   const skipReferralCodeStep =
-    isStaffSignupRoute || Boolean(referralCode) || signupRole === "practice";
+    isStaffSignupRoute ||
+    signupRole === "practice" ||
+    (typeof referralCode === "string" &&
+      enteredReferralCode === referralCode.trim());
 
   const clearEnteredReferralCode = useCallback(() => {
     setEnteredReferralCode(undefined);
@@ -450,7 +473,7 @@ export const SignupPage = () => {
       const res = await request<any>({
         path: "/api/auth/referral/validate",
         method: "POST",
-        jsonBody: { value: code },
+        jsonBody: { value: code, signupRole },
       });
       const body: any = res.data || {};
       if (res.ok && body?.success && body?.data) {
@@ -488,9 +511,10 @@ export const SignupPage = () => {
           description: `${body.data.businessName || body.data.name}에서 소개받으셨군요!`,
         });
       } else {
+        const message = String(body?.message || "").trim();
         toast({
           title: "유효하지 않은 소개 코드",
-          description: "소개 코드를 다시 확인해주세요.",
+          description: message || "소개 코드를 다시 확인해주세요.",
           variant: "destructive",
         });
       }
@@ -649,9 +673,7 @@ export const SignupPage = () => {
             typeof data.enteredReferralCode === "string" &&
             data.enteredReferralCode.trim()
           ) {
-            const code = data.enteredReferralCode.trim();
-            setEnteredReferralCode(code);
-            setManualReferralInput(code);
+            setManualReferralInput(data.enteredReferralCode.trim());
           }
 
           setSelectedMethod(data.selectedMethod === "email" ? "email" : null);
@@ -863,6 +885,20 @@ export const SignupPage = () => {
       if (!validateAccountInfo()) return;
     }
 
+    const pendingManualReferral = manualReferralInput.trim();
+    if (
+      pendingManualReferral &&
+      pendingManualReferral !== String(enteredReferralCode || "").trim()
+    ) {
+      toast({
+        title: "소개 코드 확인 필요",
+        description:
+          "입력한 코드는 확인되지 않았습니다. 확인 버튼으로 검증하거나 내용을 지워주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (isLoading) return;
 
     setIsLoading(true);
@@ -1026,6 +1062,8 @@ export const SignupPage = () => {
     token,
     user,
     validateAccountInfo,
+    enteredReferralCode,
+    manualReferralInput,
   ]);
 
   useEffect(() => {
@@ -1363,6 +1401,10 @@ export const SignupPage = () => {
                       }
                       isValidating={isValidatingReferral}
                       nextLabel={enteredReferralCode ? "다음" : "건너뛰기"}
+                      nextDisabled={
+                        Boolean(manualReferralInput.trim()) &&
+                        !enteredReferralCode
+                      }
                       onChange={setManualReferralInput}
                       onValidate={() => void validateManualReferralCode()}
                       onClear={() => {
@@ -1445,7 +1487,11 @@ export const SignupPage = () => {
                             ? "가입하기"
                             : "건너뛰기"
                       }
-                      nextDisabled={isLoading}
+                      nextDisabled={
+                        isLoading ||
+                        (Boolean(manualReferralInput.trim()) &&
+                          !enteredReferralCode)
+                      }
                       onChange={setManualReferralInput}
                       onValidate={() => void validateManualReferralCode()}
                       onClear={() => {

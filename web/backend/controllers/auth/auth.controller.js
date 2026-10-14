@@ -876,6 +876,7 @@ async function register(req, res) {
 async function validateReferral(req, res) {
   try {
     const raw = String(req.body?.value || "").trim();
+    const signupRole = String(req.body?.signupRole || "").trim();
     if (!raw) {
       return res.status(400).json({
         success: false,
@@ -943,6 +944,18 @@ async function validateReferral(req, res) {
       });
     }
 
+    const allowedSignupRoles =
+      getAllowedSignupRolesForReferrerRole(normalizedReferrerRole);
+    if (signupRole && !allowedSignupRoles.includes(signupRole)) {
+      return res.status(400).json({
+        success: false,
+        message: getReferralRoleMismatchMessage({
+          signupRole,
+          referrerRole: normalizedReferrerRole,
+        }),
+      });
+    }
+
     let resolvedAnchorId = String(refUser.businessAnchorId || "").trim();
     if (normalizedReferrerRole === "admin") {
       const adminAnchorId = await resolveAbutsAdminReferralAnchorId();
@@ -975,9 +988,7 @@ async function validateReferral(req, res) {
         name: refUser.name || "",
         role: normalizedReferrerRole,
         businessName,
-        allowedSignupRoles: getAllowedSignupRolesForReferrerRole(
-          normalizedReferrerRole,
-        ),
+        allowedSignupRoles,
       },
     });
   } catch (error) {

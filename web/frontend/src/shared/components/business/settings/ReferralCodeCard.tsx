@@ -62,6 +62,22 @@ export function ReferralCodeCard({
     if (!token || !next || saving) return;
     setSaving(true);
     try {
+      const validateRes = await request<any>({
+        path: "/api/auth/referral/validate",
+        method: "POST",
+        jsonBody: { value: next, signupRole: "requestor" },
+      });
+      const validateBody: any = validateRes.data || {};
+      if (!validateRes.ok || !validateBody?.success) {
+        const message = String(validateBody?.message || "").trim();
+        toast({
+          title: "유효하지 않은 소개 코드",
+          description: message || "딜러·영업본부·어벗츠 코드만 등록할 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const res = await request<any>({
         path: "/api/businesses/me/apply-referral",
         method: "POST",

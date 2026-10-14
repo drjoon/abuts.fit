@@ -255,6 +255,18 @@ describe("인증 API 테스트", () => {
     });
   });
 
+  describe("POST /api/auth/referral/validate", () => {
+    it("존재하지 않는 소개 코드는 거부한다", async () => {
+      const response = await request(app)
+        .post("/api/auth/referral/validate")
+        .send({ value: "WT1", signupRole: "requestor" })
+        .expect(400);
+
+      expect(response.body.success).toBe(false);
+      expect(String(response.body.message || "")).toMatch(/추천인/);
+    });
+  });
+
   // 로그아웃 테스트
   describe("POST /api/auth/logout", () => {
     it("로그아웃 성공", async () => {
