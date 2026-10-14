@@ -60,6 +60,7 @@ export const AdminMailPage = ({
     handleMarkAsRead,
     handleMarkAsUnread,
     handleMoveToSpam,
+    handleRestoreToInbox,
     handleTrash,
     handleRestoreToSent,
     folder,
@@ -124,6 +125,7 @@ export const AdminMailPage = ({
           onMarkAsRead={handleMarkAsRead}
           onMarkAsUnread={handleMarkAsUnread}
           onMoveToSpam={handleMoveToSpam}
+          onRestoreToInbox={handleRestoreToInbox}
           onTrash={handleTrash}
           onRestoreToSent={handleRestoreToSent}
           showBackButton={isMobile && !mobileShowList}

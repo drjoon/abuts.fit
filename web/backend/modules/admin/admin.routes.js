@@ -165,6 +165,7 @@ import {
   adminMoveToSpam,
   adminTrashMail,
   adminRestoreToSent,
+  adminRestoreToInbox,
   adminEmptyTrash,
   adminEmptySpam,
   adminEmptySent,
@@ -687,6 +688,7 @@ router.post("/mails/:id/unread", adminMarkAsUnread);
 router.post("/mails/:id/spam", adminMoveToSpam);
 router.post("/mails/:id/trash", adminTrashMail);
 router.post("/mails/:id/restore-to-sent", adminRestoreToSent);
+router.post("/mails/:id/restore-to-inbox", adminRestoreToInbox);
 router.post("/mails/trash/empty", adminEmptyTrash);
 router.post("/mails/spam/empty", adminEmptySpam);
 router.post("/mails/sent/empty", adminEmptySent);

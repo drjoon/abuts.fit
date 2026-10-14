@@ -191,6 +191,15 @@ export async function restoreToSent(id: string) {
   return res.data!.data;
 }
 
+export async function restoreToInbox(id: string) {
+  const res = await request<ApiEnvelope<MailItem>>({
+    path: `/api/admin/mails/${id}/restore-to-inbox`,
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(res.data?.message || "수신함 이동 실패");
+  return res.data!.data;
+}
+
 export async function sendMail(payload: {
   to: string[];
   cc?: string[];

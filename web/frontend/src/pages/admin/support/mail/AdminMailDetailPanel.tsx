@@ -22,6 +22,7 @@ import {
   MailOpen,
   AlertOctagon,
   Trash2,
+  Inbox,
 } from "lucide-react";
 import {
   formatBytes,
@@ -29,6 +30,7 @@ import {
   getDirectionBadge,
   getStatusBadge,
 } from "./mailUi";
+import { MailMessageBody } from "./MailMessageBody";
 
 type Props = {
   selected: MailItem | null;
@@ -37,6 +39,7 @@ type Props = {
   onMarkAsRead?: (id: string) => void;
   onMarkAsUnread?: (id: string) => void;
   onMoveToSpam?: (id: string) => void;
+  onRestoreToInbox?: (id: string) => void;
   onTrash?: (id: string) => void;
   onRestoreToSent?: (id: string) => void;
   onBack?: () => void;
@@ -50,6 +53,7 @@ export const AdminMailDetailPanel = ({
   onMarkAsRead,
   onMarkAsUnread,
   onMoveToSpam,
+  onRestoreToInbox,
   onTrash,
   onRestoreToSent,
   onBack,
@@ -123,6 +127,19 @@ export const AdminMailDetailPanel = ({
                     안읽음
                   </Button>
                 ) : null}
+                {onRestoreToInbox &&
+                selected.direction === "inbound" &&
+                selected.folder === "spam" ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => onRestoreToInbox(selected._id)}
+                  >
+                    <Inbox className="h-4 w-4" />
+                    스팸 아님
+                  </Button>
+                ) : null}
                 {onMoveToSpam &&
                 selected.direction === "inbound" &&
                 selected.folder !== "spam" ? (
@@ -166,9 +183,7 @@ export const AdminMailDetailPanel = ({
             <Separator />
 
             <ScrollArea className="h-[300px]">
-              <div className="prose prose-sm max-w-none whitespace-pre-wrap pr-3">
-                {selected.bodyText || selected.bodyHtml || "(본문 없음)"}
-              </div>
+              <MailMessageBody mail={selected} />
             </ScrollArea>
 
             {selected.attachments?.length ? (

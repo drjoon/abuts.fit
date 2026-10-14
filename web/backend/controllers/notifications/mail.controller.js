@@ -193,6 +193,34 @@ export async function adminRestoreToSent(req, res) {
   }
 }
 
+export async function adminRestoreToInbox(req, res) {
+  try {
+    const { id } = req.params;
+    const mail = await Mail.findById(id);
+    if (!mail) {
+      return res.status(404).json({ success: false, message: "not found" });
+    }
+    if (mail.direction === "outbound") {
+      return res
+        .status(400)
+        .json({ success: false, message: "수신 메일만 수신함으로 이동할 수 있습니다." });
+    }
+    const prev = mail.toObject();
+    mail.folder = "inbox";
+    mail.trashedAt = null;
+    await mail.save();
+    if (!isInboxUnreadMail(prev) && isInboxUnreadMail(mail)) {
+      emitMailUnreadBadge(1);
+    }
+    return res.status(200).json({ success: true, data: mail });
+  } catch (error) {
+    console.error("[adminRestoreToInbox] failed", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "수신함 이동 실패" });
+  }
+}
+
 export async function adminEmptyTrash(req, res) {
   try {
     const { permanently } = req.body || {};

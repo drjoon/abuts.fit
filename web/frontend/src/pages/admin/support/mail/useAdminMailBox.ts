@@ -10,6 +10,7 @@ import {
   markAsRead,
   markAsUnread,
   moveToSpam,
+  restoreToInbox,
   restoreToSent,
   trashMail,
   type MailItem,
@@ -277,6 +278,25 @@ export const useAdminMailBox = (options?: { initialUnreadOnly?: boolean }) => {
     [toast, loadList]
   );
 
+  const handleRestoreToInbox = useCallback(
+    async (id: string) => {
+      try {
+        await restoreToInbox(id);
+        toast({ title: "수신함으로 이동했습니다" });
+        setSelectedId(null);
+        setSelected(null);
+        loadList(true);
+      } catch (err: any) {
+        toast({
+          title: "수신함 이동 실패",
+          description: err.message,
+          variant: "destructive",
+        });
+      }
+    },
+    [toast, loadList]
+  );
+
   return {
     tab,
     setTab,
@@ -298,6 +318,7 @@ export const useAdminMailBox = (options?: { initialUnreadOnly?: boolean }) => {
     handleMarkAsRead,
     handleMarkAsUnread,
     handleMoveToSpam,
+    handleRestoreToInbox,
     handleTrash,
     handleRestoreToSent,
   };
