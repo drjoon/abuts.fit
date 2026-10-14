@@ -110,6 +110,7 @@ import {
 } from "../../services/requestCreditHold.service.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
+import { scheduleRequestReadyBadgeEmit } from "../../services/adminCommBadge.service.js";
 import { resolvePrcFileNames } from "./prcMapping.utils.js";
 import { triggerRhinoProcessFileForRequest } from "../rhino/rhino.controller.js";
 import { ensureLotNumberOnReadyEnter, assertOrderableImplantPresetOrThrow } from "./utils.js";
@@ -1486,10 +1487,7 @@ export async function handoffDesignToProduction(req, res) {
             reason: "ptx-design-handoff",
             requestId: String(request._id),
           });
-          emitAppEventToRoles(["admin"], "comm:badge-update", {
-            key: "request",
-            delta: 1,
-          });
+          scheduleRequestReadyBadgeEmit();
         } catch (emitErr) {
           console.error("[DESIGN_HANDOFF] worksheet count emit failed", emitErr);
         }

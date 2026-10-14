@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // - web/backend/controllers/admin/admin.popbillBank.controller.js
 // change-log:
+// - 2026-10-14: 상태 안내 한 줄·line-clamp — c2 타일 세로 스크롤 제거.
 // - 2026-10-14: 조회 상태 메시지를 카드에 문장 단위로 표시.
 // - 2026-10-14: 관리자 대시보드에 하나은행 잔액. 20분 자동 수집 결과를 보여주고 즉시 조회할 수 있다.
 import { useCallback, useEffect, useState } from "react";
@@ -96,17 +97,19 @@ export function AdminPopbillBankCard({ enabled = true, className }: Props) {
   const balance = data?.balance;
   const failed = Boolean(data?.error);
   const balanceText = balance != null ? balance.toLocaleString("ko-KR") : "-";
-  const lines = busy
-    ? ["팝빌에 수집을 요청했습니다.", "완료될 때까지 기다립니다."]
-    : !data
-      ? ["불러오는 중…"]
-      : !data.configured
-        ? ["팝빌 연동 설정이 없습니다."]
-        : data.error
-          ? statusLines(data.error)
-          : data.syncedAt
-            ? ["조회가 완료되었습니다.", `${fmt(data.syncedAt)}에 확인했습니다.`]
-            : ["아직 조회 전입니다.", "20분마다 자동으로 확인합니다."];
+
+  const statusHint = (() => {
+    if (busy) return "조회 요청 중…";
+    if (!data) return "불러오는 중…";
+    if (!data.configured) return "팝빌 연동 없음";
+    if (data.error) {
+      const parts = statusLines(data.error);
+      return parts.length > 1 ? `${parts[0]} ${parts.slice(1).join(" ")}` : parts[0] || "조회 실패";
+    }
+    if (data.syncedAt) return `${fmt(data.syncedAt)} 확인`;
+    if (data.testMode) return "테스트 · 20분 자동 조회";
+    return "미조회 · 20분 자동";
+  })();
 
   return (
     <DashTile
@@ -130,28 +133,17 @@ export function AdminPopbillBankCard({ enabled = true, className }: Props) {
       }
       tone={failed && !busy ? "danger" : "default"}
     >
-      <div className="flex h-full min-h-0 flex-col gap-1">
+      <div className="flex h-full min-h-0 flex-col justify-between gap-0.5">
         <div className="flex shrink-0 items-end gap-1 whitespace-nowrap">
           <span className="text-2xl font-bold tabular-nums leading-none">{balanceText}</span>
           <span className="mb-0.5 text-sm font-medium leading-none text-muted-foreground">원</span>
         </div>
         <p
-          className={`min-h-0 flex-1 overflow-y-auto px-0.5 text-[11px] leading-snug ${
+          className={`line-clamp-2 shrink-0 text-[11px] leading-tight ${
             failed && !busy ? "text-rose-600" : "text-muted-foreground"
           }`}
         >
-          {data?.testMode && !failed && !busy ? (
-            <>
-              테스트 환경입니다.
-              <br />
-            </>
-          ) : null}
-          {lines.map((line, index) => (
-            <span key={`${index}-${line}`}>
-              {index > 0 ? <br /> : null}
-              {line}
-            </span>
-          ))}
+          {statusHint}
         </p>
       </div>
     </DashTile>

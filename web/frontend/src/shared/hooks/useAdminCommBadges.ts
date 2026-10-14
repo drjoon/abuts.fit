@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/admin/AdminMembersPage.tsx
 // - web/frontend/src/pages/admin/AdminFinancePage.tsx
 // change-log:
+// - 2026-10-14: request = 준비 큐 true count(모니터링 방문 시 0으로 지우지 않음).
 // - 2026-09-18: member·finance·tax 액션대기 키·절대 count 반영; 회원·재무 사이드 합산.
 // - 2026-09-18: 레이아웃·허브 공유 zustand; 채널은 방문 clear 없이 true unread; 소켓 구독 1회.
 // - 2026-09-06: 지원·채널 허브 합산 배지·탭 단위 clear.
@@ -62,6 +63,7 @@ const TAB_BADGE_KEYS: Record<string, CommBadgeKey> = {
 
 /** 채널·회원·재무는 실제 대기/unread 유지 (방문 시 0으로 지우지 않음) */
 const TRUE_COUNT_KEYS: CommBadgeKey[] = [
+  "request",
   "chat",
   "sms",
   "mail",
@@ -126,7 +128,7 @@ const clearedKeysRef = { current: new Set<CommBadgeKey>() };
 let fetchStartedForToken: string | null = null;
 let socketUnsub: (() => void) | null = null;
 
-async function fetchAdminCommBadges(token: string) {
+export async function fetchAdminCommBadges(token: string) {
   try {
     const res = await apiFetch<{ success: boolean; data: CommBadgeCounts }>({
       path: "/api/admin/comm-badges",
@@ -170,8 +172,8 @@ function ensureSocketListener() {
  *
  * - 마운트 시 /api/admin/comm-badges 로 초기 카운트를 1회 조회(전역 공유)
  * - 이후 app-event comm:badge-update 소켓 이벤트로 실시간 증감/절대값(구독 1회)
- * - 지원/모니터링 등은 방문 시 해당 키를 0으로 초기화
- * - 채널·회원·재무는 true count 유지
+ * - 지원 허브 등 일부는 방문 시 해당 키를 0으로 초기화
+ * - 의뢰(준비 큐)·채널·회원·재무는 true count 유지
  */
 export function useAdminCommBadges() {
   const { token, user } = useAuthStore();

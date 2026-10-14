@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-14: 준비 카드·사이드 배지 = comm-badges 준비 큐(기간 필터와 분리). 진입 시 배지 재조회.
 // - 2026-09-20: 요약 카드 그리드에 p-0.5 — 선택 border/ring이 overflow에 잘리지 않게.
 // - 2026-09-16: R&D·불완전가공 탭 추가(제조사 워크시트와 동일 버킷).
 // - 2026-09-16: 불완전가공(rnd.unmachinableAt) 제외 — 제조사 일반 탭·불완전가공 탭과 맞춤.
@@ -37,6 +38,10 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { getMonitoringStageLabel } from "@/utils/stage";
+import {
+  fetchAdminCommBadges,
+  useAdminCommBadgeStore,
+} from "@/shared/hooks/useAdminCommBadges";
 
 type StatusFilter =
   | "all"
@@ -216,6 +221,7 @@ const fetchMonitoringBucket = async ({
 
 export const AdminRequestMonitoring = () => {
   const { token } = useAuthStore();
+  const readyQueueCount = useAdminCommBadgeStore((s) => s.counts.request ?? 0);
   const [searchParams] = useSearchParams();
   const { period } = usePeriodStore();
   const { toast } = useToast();
@@ -373,6 +379,11 @@ export const AdminRequestMonitoring = () => {
     };
   }, [token, period]);
 
+  useEffect(() => {
+    if (!token) return;
+    void fetchAdminCommBadges(token);
+  }, [token]);
+
   const { startMs, endMs } = useMemo(() => {
     const { startDate, endDate } = periodToRange(period);
     return {
@@ -519,7 +530,10 @@ export const AdminRequestMonitoring = () => {
   }, [filteredRequests.length, visibleCount]);
 
   const byStatus = requestStats.byStatus || {};
-  const receiveCount = byStatus["준비"] || 0;
+  const receiveCountInPeriod = byStatus["준비"] || 0;
+  const receiveCount = readyQueueCount;
+  const readyOutsidePeriod =
+    readyQueueCount > receiveCountInPeriod ? readyQueueCount - receiveCountInPeriod : 0;
   const machiningCount = byStatus["가공"] || 0;
   const packagingCount = byStatus["세척.패킹"] || 0;
   const shippingCount = byStatus["포장.발송"] || 0;
@@ -685,6 +699,11 @@ export const AdminRequestMonitoring = () => {
                       <p className="text-xl font-bold tabular-nums tracking-tight text-slate-900">
                         {card.count.toLocaleString()}
                       </p>
+                      {card.key === "준비" && readyOutsidePeriod > 0 ? (
+                        <p className="text-[10px] text-slate-500">
+                          기간 외 {readyOutsidePeriod.toLocaleString()}건
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 </button>

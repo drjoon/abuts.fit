@@ -1,25 +1,32 @@
 // related files:
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // change-log:
+// - 2026-10-14: grid-flow-dense·c8r2·c6r3 — 중요도별 span 조정 시 빈 칸을 메운다.
 // - 2026-10-08: 관리자 대시보드 타일(벤토) 공통. 높이는 행 단위로 고정하고 내용은 타일 안에서만 스크롤한다.
 import type { KeyboardEvent, ReactNode } from "react";
 import { cn } from "@/shared/ui/cn";
 
 /** 12열 벤토. 행 높이 고정 → 타일이 내용 때문에 세로로 늘어나지 않는다. */
 export const DASH_GRID_CLASS =
-  "grid grid-cols-2 auto-rows-[6.5rem] gap-3 lg:grid-cols-12";
+  "grid grid-flow-dense grid-cols-2 auto-rows-[6.25rem] gap-2 lg:grid-cols-12";
 
 /** 타일 크기(열×행). 모바일은 작은 타일 1열, 큰 타일 2열. */
 export const DASH_SPAN = {
   c2: "col-span-1 lg:col-span-2",
+  c2r2: "col-span-1 row-span-2 lg:col-span-2",
   c3: "col-span-1 lg:col-span-3",
   c4: "col-span-1 lg:col-span-4",
   c3r2: "col-span-2 row-span-2 lg:col-span-3",
+  c3r3: "col-span-2 row-span-3 lg:col-span-3",
   c4r2: "col-span-2 row-span-2 lg:col-span-4",
   c5r2: "col-span-2 row-span-2 lg:col-span-5",
   c6: "col-span-2 lg:col-span-6",
   c6r2: "col-span-2 row-span-2 lg:col-span-6",
+  c6r3: "col-span-2 row-span-3 lg:col-span-6",
   c6r4: "col-span-2 row-span-4 lg:col-span-6",
+  c8r2: "col-span-2 row-span-2 lg:col-span-8",
+  c9r2: "col-span-2 row-span-2 lg:col-span-9",
+  c12r2: "col-span-2 row-span-2 lg:col-span-12",
 } as const;
 
 type Tone = "default" | "warn" | "danger";

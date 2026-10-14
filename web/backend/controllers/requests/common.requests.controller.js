@@ -110,6 +110,7 @@ import {
 } from "../../services/requestSnapshotTriggers.service.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import { buildMonitoringStageStatsFromGroupedRows } from "../../services/requestStageStats.service.js";
+import { scheduleRequestReadyBadgeEmit } from "../../services/adminCommBadge.service.js";
 import { buildCreatedAtFilterFromQuery } from "../../utils/dateRange.js";
 import {
   ensureRequestCreditRollbackDeleteOnRollbackToCam,
@@ -4390,6 +4391,10 @@ export async function updateRequestStatus(req, res) {
       newStage: manufacturerStage,
       businessAnchorId: String(request.businessAnchorId || ""),
     });
+
+    if (prevManufacturerStage === "준비" || manufacturerStage === "준비") {
+      scheduleRequestReadyBadgeEmit();
+    }
 
     res.status(200).json({
       success: true,

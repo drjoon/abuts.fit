@@ -3,8 +3,10 @@
 // - web/backend/socket.js
 // - web/frontend/src/shared/hooks/useAdminCommBadges.ts
 // change-log:
+// - 2026-10-14: countAdminRequestReadyBadge — comm-badges·소켓 절대값 보정 SSOT.
 // - 2026-09-18: member/finance/tax 액션대기 절대 count emit · 메일 delta 유지.
-// - 2026-09-18: 관리자 채널(메일·채팅 등) unread 배지 소켓 emit 헬퍼.
+import Request from "../models/request.model.js";
+import { buildAdminRequestReadyBadgeFilter } from "./worksheetReadyQueue.guard.js";
 import User from "../models/user.model.js";
 import ChargeOrder from "../models/chargeOrder.model.js";
 import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
@@ -77,6 +79,26 @@ export const TAX_PENDING_FILTER = {
 
 export async function countMemberPending() {
   return User.countDocuments(MEMBER_PENDING_FILTER);
+}
+
+/** 관리자「의뢰」사이드 배지 — 준비 큐 대기(기간 무관) */
+export async function countAdminRequestReadyBadge() {
+  return Request.countDocuments(buildAdminRequestReadyBadgeFilter());
+}
+
+export async function emitRequestReadyBadge() {
+  const count = await countAdminRequestReadyBadge();
+  emitAdminCommBadgeCount("request", count);
+  return count;
+}
+
+export function scheduleRequestReadyBadgeEmit() {
+  void emitRequestReadyBadge().catch((err) => {
+    console.error(
+      "[adminCommBadge] request emit failed:",
+      err?.message || err,
+    );
+  });
 }
 
 export async function countFinanceChargePending() {

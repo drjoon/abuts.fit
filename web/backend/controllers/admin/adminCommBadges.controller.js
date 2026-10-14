@@ -10,15 +10,16 @@
 // - 2026-09-18: member·finance·tax 액션대기 카운트 추가.
 // - 2026-09-18: 메일 배지 = inbound 수신함 미읽음만.
 // - 2026-09-06: remoteSupport = 직원 발신 pending 세션 수.
+// - 2026-10-14: 의뢰 배지 = 모니터링 ops 준비 큐 필터 SSOT(샘플·불완전가공 제외).
 // - 2026-08-26: 의뢰 배지 = 제조사 준비 큐와 동일(PTX 디자인 미완료·레거시 디자인 mode 제외).
-import Request from "../../models/request.model.js";
 import BusinessRegistrationInquiry from "../../models/businessRegistrationInquiry.model.js";
 import Mail from "../../models/mail.model.js";
 import Chat from "../../models/chat.model.js";
 import ChatRoom from "../../models/chatRoom.model.js";
 import RemoteSupportSession from "../../models/remoteSupport/remoteSupportSession.model.js";
-import { buildWorksheetReadyQueueGuard } from "../../services/worksheetReadyQueue.guard.js";
+import { buildAdminRequestReadyBadgeFilter } from "../../services/worksheetReadyQueue.guard.js";
 import {
+  countAdminRequestReadyBadge,
   countFinanceChargePending,
   countMemberPending,
   countTaxPending,
@@ -43,14 +44,7 @@ export async function adminGetCommBadges(req, res) {
       financeCount,
       taxCount,
     ] = await Promise.all([
-      // 준비: 제조사 준비 큐와 동일 범위(PTX 디자인 대기·레거시 디자인 mode 제외)
-      Request.countDocuments({
-        $and: [
-          { manufacturerStage: "준비" },
-          { source: { $ne: "manufacturer_sample" } },
-          buildWorksheetReadyQueueGuard(),
-        ],
-      }),
+      countAdminRequestReadyBadge(),
 
       // 문의: 처리되지 않은 열린 문의
       BusinessRegistrationInquiry.countDocuments({ status: "open" }),

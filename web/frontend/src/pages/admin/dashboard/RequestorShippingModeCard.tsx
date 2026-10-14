@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-14: 1열·3.5행 높이·세로 스크롤 고정.
 // - 2026-10-13: 의뢰자별 배송 방식(택배/딜리버리) 지정 카드. 딜리버리 지정·월 의뢰 많은 순.
 // related files:
 // - web/backend/controllers/admin/admin.requestorShipping.controller.js
@@ -99,7 +100,7 @@ export function RequestorShippingModeCard({ className }: { className?: string })
       className={className}
       title="의뢰자 배송 방식"
       icon={<Truck className="h-4 w-4 text-muted-foreground" />}
-      bodyClassName="flex flex-col gap-2 overflow-hidden"
+      bodyClassName="flex min-h-0 flex-col gap-2 overflow-hidden"
     >
       <div className="flex shrink-0 items-center gap-2">
         <Input
@@ -112,7 +113,7 @@ export function RequestorShippingModeCard({ className }: { className?: string })
           딜리버리 {deliveryCount.toLocaleString()}곳 · {DELIVERY_CONDITION_LINE}
         </span>
       </div>
-      <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-1.5 py-1.5">
+      <div className="h-[12.25rem] shrink-0 overflow-y-scroll px-1.5 py-1.5 [scrollbar-gutter:stable]">
         {items === null ? (
           <p className="text-xs text-slate-500">불러오는 중…</p>
         ) : error ? (
@@ -120,10 +121,11 @@ export function RequestorShippingModeCard({ className }: { className?: string })
         ) : items.length === 0 ? (
           <p className="text-xs text-slate-500">의뢰자가 없습니다.</p>
         ) : (
-          items.map((i) => (
-            <div
+          <ul className="flex flex-col gap-1.5">
+          {items.map((i) => (
+            <li
               key={i.anchorId}
-              className="flex items-center gap-2 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5"
+              className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5"
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
@@ -150,8 +152,9 @@ export function RequestorShippingModeCard({ className }: { className?: string })
                 onChange={(next) => void change(i.anchorId, next)}
                 ariaLabel={`${i.name} 배송 방식`}
               />
-            </div>
-          ))
+            </li>
+          ))}
+          </ul>
         )}
       </div>
     </DashTile>

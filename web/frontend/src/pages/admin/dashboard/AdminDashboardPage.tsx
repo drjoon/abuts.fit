@@ -1,5 +1,8 @@
 
 // change-log:
+// - 2026-10-14: 거래+이용·매출 통합·알림 c6r3·하단 불완전|가공 c3·배송 c6 1열 스크롤.
+// - 2026-10-14: 하단 벤토 재배치(전송·가공·어벗 한 줄, 배송 c6r2)·그리드 gap 축소.
+// - 2026-10-14: 카드 span을 중요도 기준으로 재조정(은행 잔액·빈 알림·배송 방식 등). 12열 빈칸 최소화.
 // - 2026-10-14: 운영보고서 진입 타일(사이드바 대신 홈).
 // - 2026-10-13: 헥스 타일은 ExoCAD 3.0 이하 직원이 여러 명일 때 같은 세팅인지 전화로 확인.
 // - 2026-10-13: 의뢰자 배송 방식(택배/딜리버리) 지정 카드.
@@ -2269,11 +2272,11 @@ export const AdminDashboardPage = () => {
                 enabled={Boolean(token) && user?.role === "admin"}
               />
               <AdminPopbillBankCard
-                className={DASH_SPAN.c4r2}
+                className={DASH_SPAN.c2}
                 enabled={Boolean(token) && user?.role === "admin"}
               />
               <DashTile
-                className={DASH_SPAN.c3}
+                className={DASH_SPAN.c2}
                 title="헥스 회전 확인"
                 tone={hexCallCount > 0 ? "warn" : "default"}
                 icon={<RotateCw className="h-4 w-4 text-muted-foreground" />}
@@ -2291,7 +2294,7 @@ export const AdminDashboardPage = () => {
                 </div>
               </DashTile>
               <DashTile
-                className={DASH_SPAN.c3}
+                className={DASH_SPAN.c2}
                 title="신규 보철물 요청"
                 tone={prosthesisFeeItemRequestPending > 0 ? "warn" : "default"}
                 icon={<Layers className="h-4 w-4 text-muted-foreground" />}
@@ -2367,30 +2370,81 @@ export const AdminDashboardPage = () => {
                 sub={`치과 ${Number(platformGrowthStats?.practiceBusinessCount || 0).toLocaleString()} · 기공소 ${Number(platformGrowthStats?.labBusinessCount || 0).toLocaleString()}`}
                 onClick={() => setGrowthDetailMetric("totalUsers")}
               />
-              <KpiTile
-                className={DASH_SPAN.c3}
-                title="이용건수"
-                icon={<BarChart3 className="h-4 w-4 text-muted-foreground" />}
-                value={Number(platformGrowthStats?.periodRequestCount || 0).toLocaleString()}
-                sub={`누적 ${Number(platformGrowthStats?.allTimeRequestCount || 0).toLocaleString()}`}
-                onClick={() => setGrowthDetailMetric("periodRequests")}
-              />
-              <KpiTile
-                className={DASH_SPAN.c3}
-                title="매출"
-                icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
-                value={`₩${Number(platformGrowthStats?.periodRevenue || 0).toLocaleString()}`}
-                sub="기간 유료 주문액"
-                onClick={() => setGrowthDetailMetric("periodRevenue")}
-              />
-
-              {/* 3) 금액 · 알림 */}
+              {/* 3) 금액 · 알림 — 이용건수·매출은 거래금액에 통합, 알림은 c6r3로 우측 높이 확장 */}
+              <DashTile
+                className={DASH_SPAN.c6r3}
+                title={
+                  <>
+                    시스템 알림
+                    {data.systemAlerts.length > 0 ? (
+                      <span className="font-normal">{data.systemAlerts.length}건</span>
+                    ) : null}
+                  </>
+                }
+                tone={data.systemAlerts.length > 0 ? "warn" : "default"}
+                icon={<AlertCircle className="h-4 w-4 text-muted-foreground" />}
+                bodyClassName="overflow-y-auto px-1.5 py-1.5"
+              >
+                {data.systemAlerts.length === 0 ? (
+                  <div className="flex h-full items-center text-xs text-muted-foreground">
+                    이상 알림이 없습니다.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {data.systemAlerts.map((alert) => (
+                      <div
+                        key={alert.id}
+                        className="flex items-start gap-2 rounded-lg border bg-white/70 px-2 py-1.5"
+                      >
+                        <div className="mt-0.5 shrink-0">{getAlertIcon(alert.type)}</div>
+                        <div className="min-w-0">
+                          <div className="line-clamp-2 break-words text-xs font-medium">
+                            {alert.message}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {toDateTimeLabel(alert.date)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </DashTile>
               <DashTile
                 className={DASH_SPAN.c6r2}
                 title="거래금액"
                 icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
               >
-                <div className="flex h-full flex-col justify-between gap-2">
+                <div className="flex h-full flex-col justify-between gap-1.5">
+                  <div className="grid grid-cols-2 gap-2 border-b border-slate-100 pb-1.5">
+                    <button
+                      type="button"
+                      className="min-w-0 rounded-lg bg-slate-50 px-2 py-1 text-left hover:bg-slate-100/80"
+                      onClick={() => setGrowthDetailMetric("periodRequests")}
+                    >
+                      <div className="truncate text-[11px] text-muted-foreground">이용건수</div>
+                      <div className="truncate text-base font-bold tabular-nums">
+                        {Number(platformGrowthStats?.periodRequestCount || 0).toLocaleString()}
+                      </div>
+                      <div className="truncate text-[10px] text-muted-foreground">
+                        누적{" "}
+                        {Number(platformGrowthStats?.allTimeRequestCount || 0).toLocaleString()}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="min-w-0 rounded-lg bg-slate-50 px-2 py-1 text-left hover:bg-slate-100/80"
+                      onClick={() => setGrowthDetailMetric("periodRevenue")}
+                    >
+                      <div className="truncate text-[11px] text-muted-foreground">매출</div>
+                      <div className="truncate text-base font-bold tabular-nums">
+                        ₩{Number(platformGrowthStats?.periodRevenue || 0).toLocaleString()}
+                      </div>
+                      <div className="truncate text-[10px] text-muted-foreground">
+                        기간 유료 주문액
+                      </div>
+                    </button>
+                  </div>
                   <div className="grid grid-cols-3 gap-2">
                     <div className="min-w-0">
                       <div className="truncate text-[11px] text-muted-foreground">유료 주문액</div>
@@ -2434,56 +2488,28 @@ export const AdminDashboardPage = () => {
                 </div>
               </DashTile>
               <DashTile
-                className={DASH_SPAN.c6r2}
-                title={
-                  <>
-                    시스템 알림
-                    {data.systemAlerts.length > 0 ? (
-                      <span className="font-normal">{data.systemAlerts.length}건</span>
-                    ) : null}
-                  </>
-                }
-                tone={data.systemAlerts.length > 0 ? "warn" : "default"}
-                icon={<AlertCircle className="h-4 w-4 text-muted-foreground" />}
-                bodyClassName="overflow-y-auto px-1.5 py-1.5"
+                className={DASH_SPAN.c6}
+                title="의뢰 전송"
+                icon={<UploadCloud className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => setPracticeTransferStatsDialogOpen(true)}
               >
-                {data.systemAlerts.length === 0 ? (
-                  <div className="py-3 text-center text-xs text-muted-foreground">
-                    이상 알림이 없습니다.
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    {data.systemAlerts.map((alert) => (
-                      <div
-                        key={alert.id}
-                        className="flex items-start gap-2 rounded-lg border bg-white/70 px-2 py-1.5"
-                      >
-                        <div className="mt-0.5 shrink-0">{getAlertIcon(alert.type)}</div>
-                        <div className="min-w-0">
-                          <div className="line-clamp-2 break-words text-xs font-medium">
-                            {alert.message}
-                          </div>
-                          <div className="text-[11px] text-muted-foreground">
-                            {toDateTimeLabel(alert.date)}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <div className="grid h-full grid-cols-4 items-end gap-1">
+                  <DashMini label="전송" value={practiceTransferTotal.toLocaleString()} />
+                  <DashMini label="파일" value={practiceTransferTotalFiles.toLocaleString()} />
+                  <DashMini
+                    label="치과"
+                    value={practiceTransferTotalPractices.toLocaleString()}
+                    tone="primary"
+                  />
+                  <DashMini
+                    label="기공소"
+                    value={practiceTransferTotalLabs.toLocaleString()}
+                    tone="primary"
+                  />
+                </div>
               </DashTile>
 
               {/* 4) 통계 · 설정 (자주 안 봄) */}
-              <DashTile
-                className={DASH_SPAN.c2}
-                title="운영보고서"
-                icon={<FileText className="h-4 w-4 text-muted-foreground" />}
-                onClick={() => navigate("/dashboard/ops-report")}
-              >
-                <div className="flex h-full flex-col justify-end gap-0.5">
-                  <p className="truncate text-[11px] text-muted-foreground">월간 · 인쇄</p>
-                </div>
-              </DashTile>
               <DashTile
                 className={DASH_SPAN.c3r2}
                 title="디자인 소프트웨어"
@@ -2559,8 +2585,24 @@ export const AdminDashboardPage = () => {
                   </div>
                 </div>
               </DashTile>
+              <div
+                className={`${DASH_SPAN.c3r2} grid min-h-0 grid-rows-2 gap-2`}
+              >
+                <DirectAbutmentSettingsCard className="min-h-0" />
+                <IndirectAbutmentCard className="min-h-0" />
+              </div>
               <DashTile
                 className={DASH_SPAN.c3r2}
+                title="운영보고서"
+                icon={<FileText className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => navigate("/dashboard/ops-report")}
+              >
+                <div className="flex h-full flex-col justify-end gap-0.5">
+                  <p className="truncate text-[11px] text-muted-foreground">월간 · 인쇄</p>
+                </div>
+              </DashTile>
+              <DashTile
+                className={DASH_SPAN.c3r3}
                 title="불완전가공 의뢰"
                 tone={Number(unmachinableSummary?.judgedCount || 0) > 0 ? "warn" : "default"}
                 bodyClassName="flex flex-col gap-2"
@@ -2643,30 +2685,8 @@ export const AdminDashboardPage = () => {
                   ) : null}
                 </div>
               </DashTile>
-
               <DashTile
-                className={DASH_SPAN.c3}
-                title="의뢰 전송"
-                icon={<UploadCloud className="h-4 w-4 text-muted-foreground" />}
-                onClick={() => setPracticeTransferStatsDialogOpen(true)}
-              >
-                <div className="grid h-full grid-cols-4 items-end gap-1">
-                  <DashMini label="전송" value={practiceTransferTotal.toLocaleString()} />
-                  <DashMini label="파일" value={practiceTransferTotalFiles.toLocaleString()} />
-                  <DashMini
-                    label="치과"
-                    value={practiceTransferTotalPractices.toLocaleString()}
-                    tone="primary"
-                  />
-                  <DashMini
-                    label="기공소"
-                    value={practiceTransferTotalLabs.toLocaleString()}
-                    tone="primary"
-                  />
-                </div>
-              </DashTile>
-              <DashTile
-                className={DASH_SPAN.c3}
+                className={DASH_SPAN.c3r3}
                 title="가공 통계"
                 icon={<BarChart3 className="h-4 w-4 text-muted-foreground" />}
                 onClick={() => setMachiningStatsDialogOpen(true)}
@@ -2678,9 +2698,7 @@ export const AdminDashboardPage = () => {
                   <p className="truncate text-[11px] text-muted-foreground">6 · 8 · 10 · 12mm</p>
                 </div>
               </DashTile>
-              <RequestorShippingModeCard className={DASH_SPAN.c6r4} />
-              <DirectAbutmentSettingsCard className={DASH_SPAN.c6} />
-              <IndirectAbutmentCard className={DASH_SPAN.c6} />
+              <RequestorShippingModeCard className={DASH_SPAN.c6r3} />
             </div>
           </>
         }

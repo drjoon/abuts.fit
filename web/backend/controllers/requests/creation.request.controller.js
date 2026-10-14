@@ -40,7 +40,7 @@ import {
 } from "./designPrice.utils.js";
 import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
 import { getManufacturerLeadTimesUtil } from "../businesses/leadTime.controller.js";
-import { emitAppEventToRoles } from "../../socket.js";
+import { scheduleRequestReadyBadgeEmit } from "../../services/adminCommBadge.service.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
@@ -370,10 +370,7 @@ export async function createRequest(req, res) {
     }
 
     if (isWorksheetReadyQueueRequest(newRequest)) {
-      emitAppEventToRoles(["admin"], "comm:badge-update", {
-        key: "request",
-        delta: 1,
-      });
+      scheduleRequestReadyBadgeEmit();
     }
 
     const createdAnchorId = String(
