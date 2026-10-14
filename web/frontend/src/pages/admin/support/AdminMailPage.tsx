@@ -11,7 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Inbox, Mail, Send, AlertOctagon } from "lucide-react";
+import { Inbox, Mail, Send, AlertOctagon, RefreshCw } from "lucide-react";
 import { AdminMailDetailPanel } from "./mail/AdminMailDetailPanel";
 import { AdminMailListPanel } from "./mail/AdminMailListPanel";
 import { AdminMailComposePanel } from "./mail/AdminMailComposePanel";
@@ -27,6 +27,7 @@ import {
   emptyTrash,
 } from "@/features/admin/mail/mailApi";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
+import { cn } from "@/shared/ui/cn";
 
 export const AdminMailPage = ({
   embedded = false,
@@ -101,7 +102,7 @@ export const AdminMailPage = ({
   const showDetailPanel = !isMobile || !mobileShowList;
 
   const renderMailPanels = (variant: "inbox" | "sent") => (
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+    <div className="grid h-full min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-12 lg:grid-rows-1 lg:items-stretch">
       {showListPanel ? (
         <AdminMailListPanel
           q={q}
@@ -187,10 +188,23 @@ export const AdminMailPage = ({
     }
   };
 
+  const mailTabContentClass =
+    "mt-4 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden";
+
   return (
-    <div className={embedded ? "space-y-4 p-0 pt-2" : "space-y-4 p-2 sm:p-4"}>
-      <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
-        <TabsList className="flex flex-wrap items-center gap-2 w-full">
+    <div
+      className={
+        embedded
+          ? "flex h-full min-h-0 flex-col p-0 pt-2"
+          : "flex h-full min-h-0 flex-col space-y-4 p-2 sm:p-4"
+      }
+    >
+      <Tabs
+        value={tab}
+        onValueChange={(v) => setTab(v as any)}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <TabsList className="flex w-full shrink-0 flex-wrap items-center gap-2">
           <TabsTrigger value="inbox" className="gap-2">
             <Inbox className="h-4 w-4" />
             수신함
@@ -248,32 +262,49 @@ export const AdminMailPage = ({
               휴지통 비우기
             </Button>
           )}
-          <TabsTrigger
-            value="compose"
-            className="ml-auto gap-2 bg-primary text-white hover:bg-primary/90"
-          >
-            <Mail className="h-4 w-4" />
-            작성
-          </TabsTrigger>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {tab !== "compose" ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2 h-8 px-3 text-sm"
+                onClick={onSearch}
+                disabled={listLoading}
+              >
+                <RefreshCw
+                  className={cn("h-4 w-4", listLoading && "animate-spin")}
+                />
+                새로고침
+              </Button>
+            ) : null}
+            <TabsTrigger
+              value="compose"
+              className="gap-2 bg-primary text-white hover:bg-primary/90"
+            >
+              <Mail className="h-4 w-4" />
+              작성
+            </TabsTrigger>
+          </div>
         </TabsList>
 
-        <TabsContent value="inbox" className="mt-4">
+        <TabsContent value="inbox" className={mailTabContentClass}>
           {renderMailPanels("inbox")}
         </TabsContent>
 
-        <TabsContent value="sent" className="mt-4">
+        <TabsContent value="sent" className={mailTabContentClass}>
           {renderMailPanels("sent")}
         </TabsContent>
 
-        <TabsContent value="trash" className="mt-4 space-y-3">
+        <TabsContent value="trash" className={mailTabContentClass}>
           {renderMailPanels("inbox")}
         </TabsContent>
 
-        <TabsContent value="spam" className="mt-4">
+        <TabsContent value="spam" className={mailTabContentClass}>
           {renderMailPanels("inbox")}
         </TabsContent>
 
-        <TabsContent value="compose" className="mt-4">
+        <TabsContent value="compose" className={mailTabContentClass}>
           <AdminMailComposePanel onSent={() => setTab("sent")} />
         </TabsContent>
       </Tabs>

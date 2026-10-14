@@ -19,20 +19,28 @@ export function AdminPageShell({
   wide,
   /** Drop outer padding when parent work area already pads (fillHeight hubs). */
   flush,
+  /** fillHeight 허브: space-y 대신 flex+gap(자식 flex-1 높이 전달). */
+  fillHeight,
 }: {
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
   wide?: boolean;
   flush?: boolean;
+  fillHeight?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "mx-auto w-full space-y-4",
-        flush
-          ? "p-0 pb-4 sm:space-y-5 sm:pb-6"
-          : "p-0 sm:space-y-5",
+        "mx-auto w-full",
+        fillHeight
+          ? "flex min-h-0 flex-1 flex-col gap-4 sm:gap-5"
+          : "space-y-4 sm:space-y-5",
+        flush && !fillHeight
+          ? "p-0 pb-4 sm:pb-6"
+          : flush
+            ? "p-0"
+            : "p-0",
         wide === false ? "max-w-3xl" : "max-w-7xl",
         className,
       )}

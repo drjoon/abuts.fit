@@ -1629,6 +1629,7 @@ export const DashboardLayout = () => {
     location.pathname.startsWith("/dashboard/credits") ||
     location.pathname.startsWith("/dashboard/payments") ||
     location.pathname.startsWith("/dashboard/finance") ||
+    location.pathname.startsWith("/dashboard/channels") ||
     isLabReceiveWorkArea ||
     isPracticeOralScanWorkArea ||
     isWorksheetTrackingStage;

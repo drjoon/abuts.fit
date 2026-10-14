@@ -63,8 +63,8 @@ export const AdminMailDetailPanel = ({
     selected?.createdAt || selected?.receivedAt || selected?.sentAt;
 
   return (
-    <Card className="lg:col-span-3">
-      <CardContent className="space-y-3 mt-6">
+    <Card className="flex h-full min-h-0 min-w-0 flex-col lg:col-span-9">
+      <CardContent className="mt-6 flex min-h-0 min-w-0 flex-1 flex-col">
         {showBackButton && onBack ? (
           <Button
             variant="ghost"
@@ -85,12 +85,12 @@ export const AdminMailDetailPanel = ({
             <Skeleton className="h-[240px] w-full" />
           </div>
         ) : !selected ? (
-          <div className="text-sm text-muted-foreground py-16 text-center">
+          <div className="flex flex-1 items-center justify-center py-16 text-center text-sm text-muted-foreground">
             좌측에서 메일을 선택하세요.
           </div>
         ) : (
-          <div className="space-y-4">
-            <div className="flex items-start justify-between gap-4">
+          <div className="flex min-h-0 flex-1 flex-col gap-4">
+            <div className="flex shrink-0 items-start justify-between gap-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   {getDirectionBadge(selected.direction)}
@@ -180,14 +180,16 @@ export const AdminMailDetailPanel = ({
               </div>
             </div>
 
-            <Separator />
+            <Separator className="shrink-0" />
 
-            <ScrollArea className="h-[300px]">
-              <MailMessageBody mail={selected} />
+            <ScrollArea className="h-full min-h-0 w-full flex-1 basis-0 overflow-x-hidden">
+              <div className="min-w-0 max-w-full overflow-x-hidden px-1.5 py-1.5 pr-3">
+                <MailMessageBody mail={selected} fillHeight />
+              </div>
             </ScrollArea>
 
             {selected.attachments?.length ? (
-              <div className="space-y-2">
+              <div className="shrink-0 space-y-2">
                 <div className="text-sm font-medium flex items-center gap-2">
                   <Paperclip className="h-4 w-4" />
                   첨부 ({selected.attachments.length})

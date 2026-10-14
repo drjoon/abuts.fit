@@ -37,8 +37,9 @@ export default function AdminChannelsPage() {
   };
 
   return (
-    <AdminPageShell flush className="flex min-h-0 flex-1 flex-col">
+    <AdminPageShell flush fillHeight className="h-full min-w-0">
       <AdminSegmentTabs
+        className="shrink-0"
         value={tab}
         onChange={setTab}
         options={[
@@ -47,7 +48,7 @@ export default function AdminChannelsPage() {
           { value: "mail", label: "메일", badge: counts.mail },
         ]}
       />
-      <div className="min-h-0 flex-1">
+      <div className="flex h-full min-h-0 flex-1 flex-col">
         {tab === "chat" ? <AdminChatManagement embedded /> : null}
         {tab === "sms" ? <AdminSmsPage embedded /> : null}
         {tab === "mail" ? <AdminMailPage embedded /> : null}

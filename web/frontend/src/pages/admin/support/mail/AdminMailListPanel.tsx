@@ -12,8 +12,8 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Paperclip, RefreshCw, Search } from "lucide-react";
-import { formatDateTime, getDirectionBadge, getStatusBadge } from "./mailUi";
+import { Paperclip, Search } from "lucide-react";
+import { formatDateTime } from "./mailUi";
 
 type Props = {
   q: string;
@@ -45,9 +45,9 @@ export const AdminMailListPanel = ({
   };
 
   return (
-    <Card className="lg:col-span-2">
-      <CardContent className="space-y-3 mt-6">
-        <div className="flex gap-2">
+    <Card className="flex h-full min-h-0 min-w-0 flex-col lg:col-span-3">
+      <CardContent className="mt-6 flex min-h-0 flex-1 flex-col space-y-3">
+        <div className="flex shrink-0 gap-2">
           <div className="relative flex-1">
             <Search className="h-4 w-4 text-muted-foreground absolute left-2 top-2.5" />
             <Input
@@ -61,21 +61,12 @@ export const AdminMailListPanel = ({
           <Button variant="secondary" onClick={onSearch} disabled={loading}>
             검색
           </Button>
-          <Button
-            variant="outline"
-            onClick={onSearch}
-            disabled={loading}
-            className="gap-2"
-          >
-            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-            새로고침
-          </Button>
         </div>
 
-        <Separator />
+        <Separator className="shrink-0" />
 
-        <ScrollArea className="h-[520px]">
-          <div className="space-y-2 pr-3">
+        <ScrollArea className="min-h-0 flex-1 basis-0">
+          <div className="space-y-2 px-1.5 py-1.5 pr-3">
             {loading && mails.length === 0 ? (
               <div className="space-y-2">
                 <Skeleton className="h-16 w-full" />
@@ -106,8 +97,6 @@ export const AdminMailListPanel = ({
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        {getDirectionBadge(mail.direction)}
-                        {getStatusBadge(mail.status)}
                         {!mail.isRead && mail.direction === "inbound" ? (
                           <Badge variant="default" className="text-xs">
                             새 메일
