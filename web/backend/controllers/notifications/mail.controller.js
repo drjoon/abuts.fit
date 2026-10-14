@@ -13,6 +13,7 @@ import {
   deleteFileFromS3,
 } from "../../utils/s3.utils.js";
 import { emitMailUnreadBadge } from "../../services/adminCommBadge.service.js";
+import { recordMailSenderAsNotSpam } from "../../services/mailSenderNotSpam.service.js";
 
 const PAGE_SIZE = 20;
 
@@ -209,6 +210,7 @@ export async function adminRestoreToInbox(req, res) {
     mail.folder = "inbox";
     mail.trashedAt = null;
     await mail.save();
+    await recordMailSenderAsNotSpam(mail.from, { sourceMailId: mail._id });
     if (!isInboxUnreadMail(prev) && isInboxUnreadMail(mail)) {
       emitMailUnreadBadge(1);
     }

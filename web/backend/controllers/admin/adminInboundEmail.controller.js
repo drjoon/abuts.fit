@@ -7,6 +7,7 @@
 // - 2026-09-18: Brevo 인바운드·읽음/이동 시 관리자 메일 unread 배지 동기화.
 import Mail from "../../models/mail.model.js";
 import { emitMailUnreadBadge } from "../../services/adminCommBadge.service.js";
+import { resolveInboundMailFolder } from "../../services/mailSenderNotSpam.service.js";
 
 function isInboxUnreadMail(mail) {
   return (
@@ -48,6 +49,11 @@ export async function handleInboundEmailWebhook(req, res) {
           continue;
         }
 
+        const folder = await resolveInboundMailFolder({
+          fromAddress: item.From?.Address,
+          spamScore: item.SpamScore,
+        });
+
         // 이메일 저장 (기존 Mail 모델 사용)
         const email = new Mail({
           direction: "inbound",
@@ -59,7 +65,7 @@ export async function handleInboundEmailWebhook(req, res) {
           subject: item.Subject,
           bodyText: item.ExtractedMarkdownMessage || item.RawTextBody,
           bodyHtml: item.RawHtmlBody,
-          folder: item.SpamScore > 5 ? "spam" : "inbox",
+          folder,
           isRead: false,
           receivedAt: new Date(item.SentAtDate),
           // Brevo 전용 메타데이터는 s3RawKey에 JSON으로 저장
