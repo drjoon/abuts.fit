@@ -3,6 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // change-log:
+// - 2026-10-14: 계좌조회 RequestJob·GetJobState·Search 래퍼.
 // - 2026-10-13: 팝빌 테스트/운영 구분을 잔액 카드와 같이 쓰도록 노출.
 // - 2026-09-23: registIssue forceIssue — 작성일이 오늘(KST) 이전이면 지연발행 허용.
 // - 2026-09-23: formatDateYYYYMMDD — 이미 YYYYMMDD인 writeDate 문자열 통과(Invalid Date 방지).
@@ -640,6 +641,75 @@ export const getPopbillPartnerBalance = async () => {
       (error) => reject(error),
     );
   });
+};
+
+const popbillCallback = (executor) =>
+  new Promise((resolve, reject) => {
+    executor(
+      (result) => resolve(result),
+      (error) => reject(error),
+    );
+  });
+
+/** 계좌 거래내역 수집 요청. 반환값은 JobID(1시간 유효). */
+export const requestEasyFinBankJob = async ({
+  bankCode,
+  accountNumber,
+  sDate,
+  eDate,
+} = {}) => {
+  const { corpNum, userId } = getPopbillAccountCheckConfig();
+  const code = String(bankCode || "").replace(/\D/g, "").padStart(4, "0");
+  const acct = String(accountNumber || "").replace(/\D/g, "");
+  return popbillCallback((ok, err) =>
+    easyFinBankService.requestJob(
+      corpNum,
+      code,
+      acct,
+      String(sDate || ""),
+      String(eDate || ""),
+      userId,
+      ok,
+      err,
+    ),
+  );
+};
+
+/** 수집 상태. jobState 3 + errorCode 1 이면 Search 가능. */
+export const getEasyFinBankJobState = async (jobId) => {
+  const { corpNum, userId } = getPopbillAccountCheckConfig();
+  return popbillCallback((ok, err) =>
+    easyFinBankService.getJobState(corpNum, String(jobId || ""), userId, ok, err),
+  );
+};
+
+/**
+ * 수집 결과. balance 가 현재 잔액.
+ * tradeType: "I" 입금, "O" 출금, "" 전체.
+ */
+export const searchEasyFinBank = async ({
+  jobId,
+  tradeType = "",
+  searchString = "",
+  page = 1,
+  perPage = 1000,
+  order = "D",
+} = {}) => {
+  const { corpNum, userId } = getPopbillAccountCheckConfig();
+  return popbillCallback((ok, err) =>
+    easyFinBankService.search(
+      corpNum,
+      String(jobId || ""),
+      tradeType,
+      searchString,
+      page,
+      perPage,
+      order,
+      userId,
+      ok,
+      err,
+    ),
+  );
 };
 
 /** 파트너 포인트 충전 페이지 URL(팝빌 발급, 유효시간 짧음). */

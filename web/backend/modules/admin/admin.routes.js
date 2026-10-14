@@ -114,6 +114,10 @@ import {
   adminGetPopbillPoint,
   adminGetPopbillPointChargeUrl,
 } from "../../controllers/admin/admin.popbillPoint.controller.js";
+import {
+  adminGetPopbillBank,
+  adminSyncPopbillBank,
+} from "../../controllers/admin/admin.popbillBank.controller.js";
 import { fixSubRole } from "../../controllers/admin/admin.fixSubRole.controller.js";
 import {
   adminListBankTransactions,
@@ -362,6 +366,8 @@ router.post(
 // 팝빌 파트너 포인트(계좌 확인 등)
 router.get("/popbill/point", adminGetPopbillPoint);
 router.post("/popbill/point/charge-url", adminGetPopbillPointChargeUrl);
+router.get("/popbill/bank", adminGetPopbillBank);
+router.post("/popbill/bank/sync", adminSyncPopbillBank);
 
 // 대시보드 통계
 router.get("/dashboard", getDashboardStats);

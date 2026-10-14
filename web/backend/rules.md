@@ -970,6 +970,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 스토어 단가: 판매 SKU는 Abutment 4종(공통) + Grip Driver(치과만). **단일 판매가**(패키지 할인 없음). 대상 SSOT `STORE_PRODUCT_AUDIENCES` · 관리자 클러스터는 `practice`/`lab` 키. `storeCatalog.js` · `storeProductClusterLayout.js`.
   - 장바구니 합치기 금지: 한 체크아웃에 기공+스토어 금지. 같은 선수금 잔액으로 각각 결제는 허용.
   - 팝빌: `POPBILL_IS_TEST=false`(prod)면 실홈택스 발행. local/test는 `true`.
+  - 계좌조회(EasyFinBank): 웹훅 없음. 운영 서버가 20분마다 `RequestJob` → `GetJobState` → `Search.balance`. 대상은 `bPlanDepositAccount`(하나은행). 입금만 `BankTransaction`으로 넘겨 기존 자동매칭. 스냅샷 `EasyFinBankSnapshot`. 관리자 `GET|POST /api/admin/popbill/bank`. 로컬 자동수집은 `EASYFIN_BANK_SYNC_ENABLED=true`.
   - 크레딧은 선불전자지급수단이 아니라 **B2B 거래 선수금/예치금**(계약 물품·용역만). 충전 화면·FAQ·약관·입금 확인에 동일 용어.
     프론트 카피: `web/frontend/src/shared/legal/creditPrepaidCopy.ts`
     입금 매칭 알림: `utils/creditBPlanMatching.js` `notifyChargePrepaidApplied` / 템플릿 `ats_credit_charged`
