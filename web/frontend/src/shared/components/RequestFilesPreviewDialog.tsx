@@ -1,6 +1,6 @@
 // 의뢰·작업 스캔·어벗·보철을 한 번에 띄운다. 3D는 같은 좌표로 겹치고, 사진은 오른쪽 패널에서 연다.
 // change-log:
-// - 2026-10-07: 카메라(각도·줌)도 workFilePaint.view에 남겨 다시 연다.
+// - 2026-10-14: 전체 화면 프리뷰는 translate·줌 없이 붙인다. 배율 있는 모니터에서 3D가 타원이 되지 않게.
 // - 2026-10-07: 프리뷰 닫을 때 clear가 빈 표시를 저장하던 버그 수정. 표시는 메타데이터로 유지.
 // - 2026-10-07: 3D 페인트를 의뢰 메타데이터에 남겨 다시 연다. 채팅 첨부는 작업 파일을 연다.
 // - 2026-10-03: 처음엔 활성 클러스터만 받아 보여주고, 다른 묶음은 클릭 때 S3→IndexedDB 캐시. 클러스터 전환 시 뷰 리셋.
@@ -1375,7 +1375,8 @@ export function RequestFilesPreviewDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="z-[450] flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 outline-none focus:outline-none focus-visible:outline-none sm:h-[100dvh] sm:max-h-[100dvh] sm:w-screen sm:max-w-none sm:gap-0 sm:rounded-none sm:p-0"
+        className="!inset-0 !left-0 !top-0 z-[450] flex !h-[100dvh] !max-h-[100dvh] !w-screen !max-w-none !translate-x-0 !translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 outline-none duration-0 focus:outline-none focus-visible:outline-none data-[state=open]:animate-none data-[state=closed]:animate-none sm:!inset-0 sm:!left-0 sm:!top-0 sm:!h-[100dvh] sm:!max-h-[100dvh] sm:!w-screen sm:!max-w-none sm:!translate-x-0 sm:!translate-y-0 sm:gap-0 sm:rounded-none sm:p-0"
+        style={{ transform: "none", translate: "none", animation: "none" }}
         overlayClassName="z-[445]"
         closeClassName="right-3 top-3 z-40 flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-background opacity-100 shadow-md hover:bg-foreground/85 focus:ring-0 focus:ring-offset-0"
         closeIconClassName="h-5 w-5 stroke-[2.5]"

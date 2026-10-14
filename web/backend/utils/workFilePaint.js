@@ -176,7 +176,7 @@ const tuple3 = (raw) => {
   return [x, y, z];
 };
 
-/** 원근 카메라 자세. position·target·up. */
+/** 카메라 자세. position·target·up. span은 화면에 보이는 세로 길이. */
 export function sanitizeWorkFilePaintView(raw) {
   if (!raw || typeof raw !== "object") return null;
   const position = tuple3(raw.position);
@@ -188,6 +188,10 @@ export function sanitizeWorkFilePaintView(raw) {
   const dz = position[2] - target[2];
   if (dx * dx + dy * dy + dz * dz < 1e-12) return null;
   if (up[0] * up[0] + up[1] * up[1] + up[2] * up[2] < 1e-12) return null;
+  const span = round(raw.span);
+  if (span != null && span > 1e-6 && span < 1e8) {
+    return { position, target, up, span };
+  }
   return { position, target, up };
 }
 

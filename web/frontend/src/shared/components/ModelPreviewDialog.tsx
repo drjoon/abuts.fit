@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-09-29: 채팅 첨부는 페인트 도구 막대 안으로. 헤더에는 페인트·다운로드만.
+// - 2026-10-14: 전체 화면 프리뷰는 translate·줌 없이 붙인다. 배율 있는 모니터에서 3D가 타원이 되지 않게.
 // - 2026-09-29: 제목 아래 케이스 정보(caseInfo) — 채팅 헤더와 같은 점·치과/기공소·환자·치아·날짜.
 // - 2026-09-28: 채팅 첨부 후 프리뷰를 닫지 않는다. 여러 장을 붙일 수 있게 토스트만 띄운다.
 // - 2026-09-28: 페인트·채팅 첨부·칼라 매핑은 PreviewAnnotateActions 공용(작업 스캔 프리뷰와 같음). 3D는 「화면 맞춤」.
@@ -300,8 +300,10 @@ export function ModelPreviewDialog({
       <DialogContent
         // Above floating transfer (z-300/410) and guide-tour coach (z-440).
         className={cn(
-          "z-[450] flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 outline-none focus:outline-none focus-visible:outline-none sm:h-[100dvh] sm:max-h-[100dvh] sm:w-screen sm:max-w-none sm:gap-0 sm:rounded-none sm:p-0",
+          "!inset-0 !left-0 !top-0 z-[450] flex !h-[100dvh] !max-h-[100dvh] !w-screen !max-w-none !translate-x-0 !translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 outline-none duration-0 focus:outline-none focus-visible:outline-none data-[state=open]:animate-none data-[state=closed]:animate-none",
+          "sm:!inset-0 sm:!left-0 sm:!top-0 sm:!h-[100dvh] sm:!max-h-[100dvh] sm:!w-screen sm:!max-w-none sm:!translate-x-0 sm:!translate-y-0 sm:gap-0 sm:rounded-none sm:p-0",
         )}
+        style={{ transform: "none", translate: "none", animation: "none" }}
         overlayClassName="z-[445]"
         closeClassName="right-3 top-3 z-40 flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-background opacity-100 shadow-md hover:bg-foreground/85 focus:ring-0 focus:ring-offset-0"
         closeIconClassName="h-5 w-5 stroke-[2.5]"

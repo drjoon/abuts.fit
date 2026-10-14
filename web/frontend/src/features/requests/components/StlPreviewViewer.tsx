@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-10-10: 메타 정보 창·안내(삽입축·각도) 표시 토글, 45도 보기.
+// - 2026-10-14: 캔버스 픽셀 비율을 화면 칸에 맞춰 원이 타원이 되지 않게.
 // - 2026-10-01: onPaintSpace — 페인트 표시를 모델에 붙인다. 화면을 돌리면 같이 돈다.
 // - 2026-09-28: fitToView — 프리뷰의 「화면 맞춤」. 칼라 매핑 토글은 PreviewColorMappingToggle 공용.
 // - 2026-09-23: FL 반자동/수동 — ridge 스냅·호버 고스트·시드 1클릭 전둘레 추적.
@@ -48,6 +48,7 @@
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import * as THREE from "three";
 import { ScreenSpaceOrbitControls, applyExternalView } from "@/shared/three/screenSpaceOrbitControls";
+import { resizeWebglToHost } from "@/shared/three/squarePixelViewport";
 import {
   createViewPaintSpace,
   notifyViewPaint,
@@ -2631,23 +2632,18 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
 
     const updateSize = () => {
       if (!containerRef.current) return;
-      const newWidth = containerRef.current.clientWidth || width;
-      const newHeight = containerRef.current.clientHeight || height;
-      width = newWidth;
-      height = newHeight;
-      const aspect = newWidth / Math.max(newHeight, 1);
-      // Keep vertical frustum extent; only rebalance left/right for aspect.
+      const sized = resizeWebglToHost(renderer, containerRef.current);
+      width = sized.width;
+      height = sized.height;
+      const aspect = sized.aspect;
+      // 세로 프러스텀은 유지하고 가로만 화면 비율에 맞춘다.
       const halfH = (camera.top - camera.bottom) / 2;
       camera.left = -halfH * aspect;
       camera.right = halfH * aspect;
       camera.updateProjectionMatrix();
-      renderer.setSize(newWidth, newHeight, false);
-      renderer.domElement.style.width = "100%";
-      renderer.domElement.style.height = "100%";
-      renderer.domElement.style.display = "block";
-      lineMaterials.forEach((mat) => mat.resolution.set(newWidth, newHeight));
+      lineMaterials.forEach((mat) => mat.resolution.set(width, height));
       lotEngravingLineMatsRef.current.forEach((mat) =>
-        mat.resolution.set(newWidth, newHeight),
+        mat.resolution.set(width, height),
       );
     };
 

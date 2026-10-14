@@ -1,6 +1,6 @@
 // 작업 스캔(상악·하악·바이트)을 한 모델로 연다. 파일 좌표 그대로 겹치고 악별로 켜고 끈다.
 // change-log:
-// - 2026-10-01: 페인트는 열 때 꺼 둔다. 날짜는 의뢰 업로드 날.
+// - 2026-10-14: 전체 화면 프리뷰는 translate·줌 없이 붙인다. 배율 있는 모니터에서 3D가 타원이 되지 않게.
 // - 2026-10-01: 헤더 날짜 팝오버. 기본은 가장 최근 날짜의 상악·하악.
 // - 2026-09-29: 채팅 첨부는 페인트 도구 막대 안으로. 헤더에는 악 토글·페인트·다운로드만.
 // - 2026-09-29: 제목 아래 케이스 정보(caseInfo) — 채팅 헤더와 같은 점·치과/기공소·환자·치아·날짜.
@@ -345,8 +345,10 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          "z-[450] outline-none focus:outline-none focus-visible:outline-none flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:h-[100dvh] sm:max-h-[100dvh] sm:w-screen sm:max-w-none sm:gap-0 sm:rounded-none sm:p-0 md:flex-row",
+          "!inset-0 !left-0 !top-0 z-[450] flex !h-[100dvh] !max-h-[100dvh] !w-screen !max-w-none !translate-x-0 !translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 outline-none duration-0 focus:outline-none focus-visible:outline-none data-[state=open]:animate-none data-[state=closed]:animate-none md:flex-row",
+          "sm:!inset-0 sm:!left-0 sm:!top-0 sm:!h-[100dvh] sm:!max-h-[100dvh] sm:!w-screen sm:!max-w-none sm:!translate-x-0 sm:!translate-y-0 sm:gap-0 sm:rounded-none sm:p-0",
         )}
+        style={{ transform: "none", translate: "none", animation: "none" }}
         overlayClassName="z-[445]"
         closeClassName="right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-background opacity-100 shadow-md hover:bg-foreground/85 focus:ring-0 focus:ring-offset-0"
         closeIconClassName="h-5 w-5 stroke-[2.5]"

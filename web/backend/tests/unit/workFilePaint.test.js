@@ -94,6 +94,19 @@ describe("workFilePaint", () => {
     });
     expect(
       sanitizeWorkFilePaintView({
+        position: [0, 0, 10],
+        target: [0, 0, 0],
+        up: [0, 1, 0],
+        span: 12.5,
+      }),
+    ).toEqual({
+      position: [0, 0, 10],
+      target: [0, 0, 0],
+      up: [0, 1, 0],
+      span: 12.5,
+    });
+    expect(
+      sanitizeWorkFilePaintView({
         position: [0, 0, 0],
         target: [0, 0, 0],
         up: [0, 1, 0],

@@ -27,7 +27,9 @@ export function parseWorkFilePaintView(raw: unknown): CaseLayerView | null {
   const target = tuple3(row.target);
   const up = tuple3(row.up);
   if (!position || !target || !up) return null;
-  return { position, target, up };
+  const spanRaw = Number(row.span);
+  const span = Number.isFinite(spanRaw) && spanRaw > 1e-6 ? spanRaw : undefined;
+  return span != null ? { position, target, up, span } : { position, target, up };
 }
 
 export function workFilePaintModelKeys(fileNamesAndKeys: ReadonlyArray<{

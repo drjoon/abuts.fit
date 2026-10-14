@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/share/CaseShareViewer.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/three/screenSpaceOrbitControls.ts
+// - 2026-10-14: 직교 카메라·픽셀 비율. 모니터 배율·가로 화면에 원이 타원으로 늘지 않게.
 // - 2026-10-07: getView/restoreView — 작업 파일 프리뷰 카메라(각도·줌) 저장·복원.
 // - 2026-10-03: resetView — 사용자 조작을 잊고 보이는 메시에 다시 맞춘다(클러스터 전환용).
 // - 2026-10-03: 어벗 적합이 끝나면 뷰를 다시 맞춘다.
@@ -39,6 +40,11 @@ import {
 } from "@/shared/files/modelPreviewFile";
 import { disposeBackFaceShell, syncBackFaceShell } from "@/shared/three/backFaceShell";
 import { ScreenSpaceOrbitControls, applyExternalView } from "@/shared/three/screenSpaceOrbitControls";
+import {
+  applyOrthoHeight,
+  readHostSize,
+  resizeWebglToHost,
+} from "@/shared/three/squarePixelViewport";
 import {
   createViewPaintSpace,
   notifyViewPaint,
@@ -82,11 +88,15 @@ export type CaseSeatDecision = {
   abutments: Array<{ id: string; matrix: number[] | null; deviation: SeatDeviation | null }>;
 };
 
-/** 원근 카메라 자세. 거리는 position−target. */
+/**
+ * 카메라 자세. 거리는 position−target.
+ * `span`은 화면에 보이는 세로 길이(모델 단위). 예전 원근 저장에는 없다.
+ */
 export type CaseLayerView = {
   position: [number, number, number];
   target: [number, number, number];
   up: [number, number, number];
+  span?: number;
 };
 
 export type CaseLayerViewerHandle = {
@@ -220,11 +230,18 @@ function applyScanRendering(renderer: THREE.WebGLRenderer, colorMapping: boolean
 }
 
 const VIEWER_BACKGROUND = 0xe6e9ec;
-const CAMERA_FOV = 30;
+/** 예전 원근(FOV 30°) 저장을 직교 세로 길이로 바꿀 때. */
+const LEGACY_FOV_DEG = 30;
 /** 화면 맞춤 여백. 1이면 가장자리에 딱 붙는다. */
 const FIT_MARGIN = 1.04;
 /** 보철 묶음을 펼칠 때 옆 간격(큰 쪽 치수 비율). */
 const PROSTHESIS_GAP_RATIO = 0.3;
+
+/** 예전 원근 카메라의 세로 시야를 직교 프러스텀 높이로. */
+function legacySpan(distance: number) {
+  const half = Math.tan(THREE.MathUtils.degToRad(LEGACY_FOV_DEG / 2));
+  return Math.max(distance, 1e-3) * 2 * half;
+}
 
 function designMaterial(tone: CaseLayerTone): THREE.MeshStandardMaterial {
   if (tone === "abutment") {
@@ -514,7 +531,7 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
     const [review, setReview] = useState<SeatReview | null>(null);
     const [deciding, setDeciding] = useState(false);
     const sceneRef = useRef<THREE.Scene | null>(null);
-    const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+    const cameraRef = useRef<THREE.OrthographicCamera | null>(null);
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
     const labelRendererRef = useRef<CSS2DRenderer | null>(null);
     const controlsRef = useRef<ScreenSpaceOrbitControls | null>(null);
@@ -540,10 +557,12 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       const camera = cameraRef.current;
       const controls = controlsRef.current;
       if (!camera || !controls) return null;
+      const span = (camera.top - camera.bottom) / Math.max(camera.zoom, 1e-6);
       return {
         position: [camera.position.x, camera.position.y, camera.position.z],
         target: [controls.target.x, controls.target.y, controls.target.z],
         up: [camera.up.x, camera.up.y, camera.up.z],
+        span,
       };
     };
 
@@ -556,11 +575,17 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       camera.position.set(view.position[0], view.position[1], view.position[2]);
       camera.up.set(view.up[0], view.up[1], view.up[2]);
       const distance = camera.position.distanceTo(controls.target);
+      const span =
+        view.span != null && Number.isFinite(view.span) && view.span > 1e-6
+          ? view.span
+          : legacySpan(distance);
       if (Number.isFinite(distance) && distance > 1e-6) {
         camera.near = Math.max(distance / 200, 0.01);
         camera.far = distance * 200;
-        camera.updateProjectionMatrix();
       }
+      camera.zoom = 1;
+      const host = containerRef.current;
+      applyOrthoHeight(camera, span / 2, host ? readHostSize(host).aspect : 1);
       camera.lookAt(controls.target);
       controls.syncFromCamera();
     };
@@ -591,7 +616,7 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       const min = new THREE.Vector3(Infinity, Infinity, Infinity);
       const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
       const point = new THREE.Vector3();
-      const points: THREE.Vector3[] = [];
+      let seen = 0;
       for (const mesh of targets) {
         mesh.updateMatrixWorld();
         const pos = mesh.geometry.getAttribute("position");
@@ -605,30 +630,30 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
             .applyMatrix4(toView);
           min.min(point);
           max.max(point);
-          points.push(point.clone());
+          seen += 1;
         }
       }
-      if (points.length === 0) return;
+      if (seen === 0) return;
 
-      // 화면 평면(x·y) 중심으로 옮긴다. z는 카메라 쪽이 +.
+      // 화면 평면(x·y) 중심으로 옮긴다. z는 카메라 쪽이 +. 직교라 거리로 크기가 안 변한다.
       const mid = new THREE.Vector3((min.x + max.x) / 2, (min.y + max.y) / 2, 0);
-      const tanV = Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV / 2));
-      const tanH = tanV * Math.max(camera.aspect, 1e-3);
-      let distance = 1e-3;
-      for (const p of points) {
-        const dx = Math.abs(p.x - mid.x);
-        const dy = Math.abs(p.y - mid.y);
-        distance = Math.max(distance, p.z + dx / tanH, p.z + dy / tanV);
-      }
-      distance *= FIT_MARGIN;
+      const host = containerRef.current;
+      const aspect = host ? readHostSize(host).aspect : 1;
+      const halfW = Math.max((max.x - min.x) / 2, 1e-4);
+      let halfH = Math.max((max.y - min.y) / 2, 1e-4);
+      if (halfW / halfH > aspect) halfH = halfW / aspect;
+      halfH *= FIT_MARGIN;
+      const depth = Math.max(max.z - min.z, halfH, 1);
+      const distance = Math.max(max.z + depth, halfH * 4, 40);
 
       const center = mid.applyQuaternion(camera.quaternion).add(boxCenter);
       controls.target.copy(center);
       camera.position.copy(center).addScaledVector(dir, distance);
       camera.near = Math.max(distance / 200, 0.01);
       camera.far = distance * 200;
-      camera.updateProjectionMatrix();
+      camera.zoom = 1;
       camera.lookAt(center);
+      applyOrthoHeight(camera, halfH, aspect);
       controls.syncFromCamera();
     };
 
@@ -812,7 +837,7 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
 
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(VIEWER_BACKGROUND);
-      const camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.1, 5000);
+      const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 5000);
       camera.position.set(0, 0, 100);
       scene.add(camera);
       scene.add(new THREE.AmbientLight(0xffffff, 0.55));
@@ -828,7 +853,6 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
         antialias: true,
         preserveDrawingBuffer: true,
       });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       container.appendChild(renderer.domElement);
       renderer.domElement.style.display = "block";
@@ -851,14 +875,10 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       });
 
       const resize = () => {
-        const w = Math.max(container.clientWidth, 1);
-        const h = Math.max(container.clientHeight, 1);
-        renderer.setSize(w, h, false);
-        renderer.domElement.style.width = "100%";
-        renderer.domElement.style.height = "100%";
-        labelRenderer.setSize(w, h);
-        camera.aspect = w / h;
-        camera.updateProjectionMatrix();
+        const sized = resizeWebglToHost(renderer, container);
+        labelRenderer.setSize(sized.width, sized.height);
+        const halfH = Math.max((camera.top - camera.bottom) / 2, 1e-4);
+        applyOrthoHeight(camera, halfH, sized.aspect);
       };
       resize();
       const observer = new ResizeObserver(resize);
