@@ -553,8 +553,8 @@ const CORNER_CURVATURE = 2.5;
 const START_MAX_SLOPE = Math.tan((40 * Math.PI) / 180);
 /** 위쪽 접선 최대 기울기(약 65°). */
 const CORNER_MAX_END_SLOPE = Math.tan((65 * Math.PI) / 180);
-/** 위쪽 기울기 목표(약 60°). */
-const CORNER_END_SLOPE = Math.tan((70 * Math.PI) / 180);
+/** 위쪽 끝 기울기 상한(55°). 예전 70° 상한보다 덜 눕혀 원본(약 45°)에 가깝게 퍼진다. */
+const CORNER_END_SLOPE = Math.tan((55 * Math.PI) / 180);
 /** 위쪽 최소 기울기(약 30°): 접시처럼 평평해지지 않게. */
 const CORNER_MIN_END_SLOPE = Math.tan((35 * Math.PI) / 180);
 /** 모서리(퍼지기 시작) 선호 위치. 낮을수록 원본처럼 일찍 퍼진다. */
@@ -573,7 +573,7 @@ const TOP_RADIUS_HARMONICS = 6;
 /** 끝 기울기를 2차 호(2d − m0)보다 이만큼 더 세워 늦게 벌어지게(더 오목하게) 한다. */
 const END_SLOPE_BOOST = 1.5;
 /** 둘째 제어점 간격 / 첫째 간격(작을수록 출발 후 더 빨리 수직에 가까워진다). */
-const BEZIER_DIP = 0.5;
+const BEZIER_DIP = 0.2;
 const LONG_BAND_MM = 2;
 /** 띠 면 평균: 반폭(열)과 위쪽 보존 지수(t^p). */
 const BAND_SMOOTH_HALF_COLUMNS = 60;
