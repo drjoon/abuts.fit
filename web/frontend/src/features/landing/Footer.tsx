@@ -16,12 +16,10 @@ import {
 import { Link, useLocation } from "react-router-dom";
 import {
   COMPANY_ADDRESS,
-  COMPANY_BUSINESS_REGISTRATION_NUMBER,
-  COMPANY_CEO_NAME,
-  COMPANY_NAME,
   COMPANY_PHONE,
   CONTACT_EMAIL,
 } from "@/shared/lib/contactInfo";
+import { SellerIdentityDisclosure } from "@/shared/legal/sellerIdentityDisclosure";
 import { landingIdentity, landingContent } from "@/features/landing/landingTheme";
 import { cn } from "@/shared/ui/cn";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
@@ -111,6 +109,7 @@ export const Footer = ({ tone = "dark", surface = "white" }: FooterProps) => {
   const legal: FooterLink[] = [
     { label: "이용약관", href: "/terms" },
     { label: "개인정보처리방침", href: "/privacy" },
+    { label: "환불·청약철회", href: "/refund-policy" },
     { label: "쿠키 정책", href: "/cookies" },
     { label: "서비스/상품 안내", href: "/service" },
     { label: "사업자 정보", href: "/business" },
@@ -287,20 +286,10 @@ export const Footer = ({ tone = "dark", surface = "white" }: FooterProps) => {
             </div>
           </div>
 
-          <div
-            className={cn(
-              "mt-6 text-xs leading-relaxed",
-              isLight ? "text-slate-500" : "text-white/60",
-            )}
-          >
-            <div>
-              {COMPANY_NAME} | 대표자: {COMPANY_CEO_NAME} | 사업자등록번호:{" "}
-              {COMPANY_BUSINESS_REGISTRATION_NUMBER}
-            </div>
-            <div>
-              주소: {COMPANY_ADDRESS} | 유선번호: {COMPANY_PHONE}
-            </div>
-          </div>
+          <SellerIdentityDisclosure
+            tone={isLight ? "footer-light" : "footer-dark"}
+            className="mt-6"
+          />
         </div>
       </div>
     </footer>

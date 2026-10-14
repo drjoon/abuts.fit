@@ -44,6 +44,7 @@ import {
   CREDIT_PREPAID_BALANCE_LABEL,
   resolveCreditChargeNoticeBody,
 } from "@/shared/legal/creditPrepaidCopy";
+import { SellerIdentityDisclosure } from "@/shared/legal/sellerIdentityDisclosure";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import {
   DEMO_MODE_CHARGE_EXIT_CONFIRM_LABEL,
@@ -1291,6 +1292,11 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
           </div>
         </div>
       )}
+
+      <SellerIdentityDisclosure
+        tone="footer-light"
+        className="border-t border-border/60 px-1.5 pt-4"
+      />
     </div>
   );
 };

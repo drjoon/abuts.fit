@@ -13,6 +13,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { landingPathIfOnboardingDone } from "@/shared/navigation/postOnboardingReturn";
 import { AuthMarketingPanel } from "@/features/auth/AuthMarketingPanel";
+import { SellerIdentityDisclosure } from "@/shared/legal/sellerIdentityDisclosure";
 
 type DevAccount = {
   label: string;
@@ -391,6 +392,9 @@ export const LoginPage = () => {
         </section>
       </main>
 
+      <footer className="relative z-10 mx-auto w-full max-w-6xl px-4 pb-8 pt-2 sm:px-6">
+        <SellerIdentityDisclosure tone="auth" className="text-center" />
+      </footer>
     </div>
   );
 };

@@ -20,6 +20,7 @@ import {
   type AppUserRole,
 } from "@/shared/types/role";
 import { AuthMarketingPanel } from "@/features/auth/AuthMarketingPanel";
+import { SellerIdentityDisclosure } from "@/shared/legal/sellerIdentityDisclosure";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1494,6 +1495,10 @@ export const SignupPage = () => {
           </Card>
         </section>
       </main>
+
+      <footer className="relative z-10 mx-auto w-full max-w-6xl px-4 pb-8 pt-2 sm:px-6">
+        <SellerIdentityDisclosure tone="auth" className="text-center" />
+      </footer>
 
       <AlertDialog
         open={showSetupConfirm}

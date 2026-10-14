@@ -8,6 +8,24 @@ export const COMPANY_NAME = "어벗츠 주식회사";
 export const COMPANY_CEO_NAME = "배태완";
 export const COMPANY_BUSINESS_REGISTRATION_NUMBER = "358-87-03514";
 
+/** 통신판매업 신고증(2026-10-13) */
+export const COMPANY_MAIL_ORDER_REPORT_NUMBER = "제 2026-경남거제-0377 호";
+export const COMPANY_MAIL_ORDER_REPORT_AUTHORITY = "경상남도 거제시";
+export const COMPANY_MAIL_ORDER_REPORT_AUTHORITY_PHONE = "055-639-4126";
+
+/** 통신판매 신고·표시용 */
+export const COMPANY_SERVICE_DOMAIN = "abuts.fit";
+/** 프론트(S3/CloudFront) 배포 리전 — `web/frontend/deploy.sh` */
+export const COMPANY_HOSTING_LOCATION =
+  "Amazon Web Services ap-south-1(인도)";
+
+/** 사업자등록번호 10자리(하이픈 제외) — 공정거래위원회 통신판매사업자 조회 */
+export const COMPANY_BUSINESS_REGISTRATION_NUMBER_DIGITS =
+  COMPANY_BUSINESS_REGISTRATION_NUMBER.replace(/-/g, "");
+
+/** 공정거래위원회 통신판매사업자 정보 확인 */
+export const FTC_MAIL_ORDER_BUSINESS_INFO_URL = `https://www.ftc.go.kr/bizCommPop.do?wrkr_no=${COMPANY_BUSINESS_REGISTRATION_NUMBER_DIGITS}`;
+
 export const COMPANY_ADDRESS = "경상남도 거제시 거제중앙로29길 6, 3층(고현동)";
 
 /** 지도 검색·임베드용 (층수 제외, 지번/도로명만) */
