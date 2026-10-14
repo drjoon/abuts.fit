@@ -2,10 +2,10 @@
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // - web/backend/controllers/admin/admin.popbillBank.controller.js
 // change-log:
+// - 2026-10-14: 조회 상태 메시지를 카드에 문장 단위로 표시.
 // - 2026-10-14: 관리자 대시보드에 하나은행 잔액. 20분 자동 수집 결과를 보여주고 즉시 조회할 수 있다.
 import { useCallback, useEffect, useState } from "react";
 import { Landmark } from "lucide-react";
-import { toast } from "sonner";
 import { DashTile } from "@/shared/ui/dashboard/DashTile";
 import { request } from "@/shared/api/apiClient";
 
@@ -33,6 +33,14 @@ const fmt = (iso: string) =>
     hour: "2-digit",
     minute: "2-digit",
   });
+
+/** 팝빌 문구는 '다.' 뒤에서만 끊는다. 날짜의 마침표는 나누지 않는다. */
+function statusLines(text: string) {
+  return text
+    .split(/(?<=다\.)\s+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
 
 export function AdminPopbillBankCard({ enabled = true, className }: Props) {
   const [data, setData] = useState<BankData | null>(null);
@@ -66,8 +74,17 @@ export function AdminPopbillBankCard({ enabled = true, className }: Props) {
         jsonBody: {},
       });
       if (!res.ok) {
-        toast.error(res.data?.message || "계좌를 조회하지 못했습니다.");
-        await load();
+        const message = res.data?.message || "계좌를 조회하지 못했습니다.";
+        setData((prev) => ({
+          configured: prev?.configured ?? true,
+          testMode: prev?.testMode,
+          bankName: prev?.bankName,
+          accountTail: prev?.accountTail,
+          balance: prev?.balance ?? null,
+          syncedAt: prev?.syncedAt,
+          depositCount: prev?.depositCount,
+          error: message,
+        }));
         return;
       }
       if (res.data?.data) setData(res.data.data);
@@ -79,16 +96,17 @@ export function AdminPopbillBankCard({ enabled = true, className }: Props) {
   const balance = data?.balance;
   const failed = Boolean(data?.error);
   const balanceText = balance != null ? balance.toLocaleString("ko-KR") : "-";
-  const tail = data?.accountTail ? `끝자리 ${data.accountTail}` : "";
-  const subtitle = !data
-    ? "불러오는 중…"
-    : !data.configured
-      ? "팝빌 미설정"
-      : failed
-        ? data.error
-        : data.syncedAt
-          ? `${tail} · ${fmt(data.syncedAt)}`
-          : "20분마다 갱신";
+  const lines = busy
+    ? ["팝빌에 수집을 요청했습니다.", "완료될 때까지 기다립니다."]
+    : !data
+      ? ["불러오는 중…"]
+      : !data.configured
+        ? ["팝빌 연동 설정이 없습니다."]
+        : data.error
+          ? statusLines(data.error)
+          : data.syncedAt
+            ? ["조회가 완료되었습니다.", `${fmt(data.syncedAt)}에 확인했습니다.`]
+            : ["아직 조회 전입니다.", "20분마다 자동으로 확인합니다."];
 
   return (
     <DashTile
@@ -110,19 +128,30 @@ export function AdminPopbillBankCard({ enabled = true, className }: Props) {
           </button>
         ) : undefined
       }
-      tone={failed ? "danger" : "default"}
+      tone={failed && !busy ? "danger" : "default"}
     >
-      <div className="flex h-full flex-col justify-end gap-1">
-        <div className="flex items-end gap-1 whitespace-nowrap">
+      <div className="flex h-full min-h-0 flex-col gap-1">
+        <div className="flex shrink-0 items-end gap-1 whitespace-nowrap">
           <span className="text-2xl font-bold tabular-nums leading-none">{balanceText}</span>
           <span className="mb-0.5 text-sm font-medium leading-none text-muted-foreground">원</span>
         </div>
         <p
-          className={`truncate text-[11px] ${failed ? "text-rose-600" : "text-muted-foreground"}`}
-          title={subtitle}
+          className={`min-h-0 flex-1 overflow-y-auto px-0.5 text-[11px] leading-snug ${
+            failed && !busy ? "text-rose-600" : "text-muted-foreground"
+          }`}
         >
-          {data?.testMode && !failed ? "테스트 · " : ""}
-          {subtitle}
+          {data?.testMode && !failed && !busy ? (
+            <>
+              테스트 환경입니다.
+              <br />
+            </>
+          ) : null}
+          {lines.map((line, index) => (
+            <span key={`${index}-${line}`}>
+              {index > 0 ? <br /> : null}
+              {line}
+            </span>
+          ))}
         </p>
       </div>
     </DashTile>

@@ -2268,7 +2268,7 @@ export const AdminDashboardPage = () => {
                 enabled={Boolean(token) && user?.role === "admin"}
               />
               <AdminPopbillBankCard
-                className={DASH_SPAN.c2}
+                className={DASH_SPAN.c4r2}
                 enabled={Boolean(token) && user?.role === "admin"}
               />
               <DashTile
