@@ -210,7 +210,7 @@ export function PracticeTransferLabReceiveCard({
             ) : transfer.isRemake ? (
               <Badge
                 variant="outline"
-                className="h-5 shrink-0 border-amber-300 bg-amber-50 px-1.5 text-[11px] leading-none text-amber-900"
+                className="h-5 shrink-0 border-2 border-amber-500 bg-amber-100 px-2 text-[11px] font-bold leading-none text-amber-950"
               >
                 리메이크
               </Badge>
@@ -241,16 +241,38 @@ export function PracticeTransferLabReceiveCard({
         toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
         afterMeta={
           transfer.feeQuote ? (
-            <PracticeTransferFeeEstimate
-              quote={transfer.feeQuote}
-              viewer="lab"
-              density="card"
-              skipJig={Boolean(transfer.production?.skipJig)}
-              rushProcessing={Boolean(transfer.production?.rushProcessing)}
-              labEffectiveStars={
-                transfer.labRatingSummary?.effectiveStars ?? null
-              }
-            />
+            <div
+              className={cn(
+                transfer.isRemake || transfer.feeQuote?.isRemake
+                  ? "mt-1.5 rounded-lg border-2 border-amber-400 bg-amber-50/90 px-2 py-1"
+                  : undefined,
+              )}
+            >
+              {transfer.isRemake || transfer.feeQuote?.isRemake ? (
+                <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                  리메이크 기공비
+                </p>
+              ) : null}
+              <PracticeTransferFeeEstimate
+                quote={transfer.feeQuote}
+                viewer="lab"
+                density="card"
+                skipJig={Boolean(transfer.production?.skipJig)}
+                rushProcessing={Boolean(transfer.production?.rushProcessing)}
+                labEffectiveStars={
+                  transfer.labRatingSummary?.effectiveStars ?? null
+                }
+                className={
+                  transfer.isRemake || transfer.feeQuote?.isRemake
+                    ? "mt-0"
+                    : undefined
+                }
+              />
+            </div>
+          ) : transfer.isRemake ? (
+            <p className="mt-1.5 rounded-lg border-2 border-amber-400 bg-amber-50/90 px-2 py-1 text-xs font-bold text-amber-950">
+              리메이크 의뢰
+            </p>
           ) : null
         }
       />

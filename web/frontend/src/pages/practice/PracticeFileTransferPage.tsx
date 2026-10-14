@@ -176,7 +176,6 @@ import {
   Check,
   Download,
   Plus,
-  Repeat,
   Pencil,
   X,
 } from "lucide-react";
@@ -337,7 +336,6 @@ import {
   PRACTICE_MY_TRANSFERS_PAGE_SIZE,
   canDeletePracticeTransferByStatus,
   canEditPracticeTransferByStatus,
-  canRemakePracticeTransferByStatus,
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
   isPracticeTransferActionNeededStatus,
@@ -372,7 +370,7 @@ import {
   resolvePracticeTransferLabDisplayLabel,
 } from "@/shared/practice/practiceLabRating";
 import { PracticeLabRejectedReselectDialog } from "@/shared/components/practice/PracticeLabRejectedReselectDialog";
-import { PracticeRemakeSearchDialog } from "@/shared/components/practice/PracticeRemakeSearchDialog";
+import { PracticeComposeRemakeSection } from "@/shared/components/practice/PracticeComposeRemakeSection";
 import {
   PracticeSimilarCaseRemakeDialog,
   type PracticeSimilarCaseMatch,
@@ -559,6 +557,32 @@ type EditingSentTransfer = {
   transferId: string;
   transferMongoId: string;
   orderDate: string;
+};
+
+const PRACTICE_TRANSFER_MONGO_ID_RE = /^[a-f0-9]{24}$/i;
+
+const linkedRemakeSourceFromTransfer = (
+  transfer: RecentTransferItem,
+): PracticeSimilarCaseMatch | null => {
+  if (!transfer.isRemake) return null;
+  const rawSource = String(transfer.remakeSourceTransferId || "").trim();
+  const mongoId = PRACTICE_TRANSFER_MONGO_ID_RE.test(rawSource) ? rawSource : "";
+  const sourceTransferId = mongoId ? "" : rawSource;
+  return {
+    _id: mongoId,
+    transferId: sourceTransferId,
+    patientName: resolvePracticeTransferListPatientName(transfer) || "",
+    toothNumbers: Array.isArray(transfer.toothNumbers)
+      ? transfer.toothNumbers.map((t) => String(t || "").trim()).filter(Boolean)
+      : resolvePracticeTransferListToothNumbers(transfer)
+          .split(/[,·\s]+/)
+          .map((t) => t.trim())
+          .filter(Boolean),
+    targetLabName: String(transfer.targetLab || "").trim(),
+    orderYmd: transfer.orderDate,
+    manufacturerStage: transfer.status,
+    withinRemakePricingWindow: true,
+  };
 };
 
 const inferPracticeTransferFileMimetype = (fileName: string) => {
@@ -1782,15 +1806,7 @@ export const PracticeFileTransferPage = ({
   const similarCaseCheckGenRef = useRef(0);
   const similarCasePromptedFpRef = useRef("");
   const pendingSubmitAfterSimilarRef = useRef(false);
-  const [remakeSearchOpen, setRemakeSearchOpen] = useState(false);
-  const [remakeBusy, setRemakeBusy] = useState(false);
-  const [remakeConfirmOpen, setRemakeConfirmOpen] = useState(false);
-  const [remakePending, setRemakePending] = useState<{
-    transfer: RecentTransferItem;
-    arrivalYmd: string;
-  } | null>(null);
-  /** PTX 리메이크: 커스텀어벗 포함(기본 false=보철만) */
-  const [remakeIncludeCustomAbutment, setRemakeIncludeCustomAbutment] =
+  const [composeRemakePickRequired, setComposeRemakePickRequired] =
     useState(false);
   const [composeRemakeConfirmOpen, setComposeRemakeConfirmOpen] = useState(false);
   const [draftsOpen, setDraftsOpen] = useState(false);
@@ -5708,7 +5724,7 @@ export const PracticeFileTransferPage = ({
    * 시트를 닫으면 채팅이 아니라 캘린더(진짜 메인)로 돌아가게 채팅을 미리 닫는다.
    */
   const dismissPracticeOverlaysForAction = (
-    keep: "compose" | "drafts" | "trash" | "remake" | "chat" | null,
+    keep: "compose" | "drafts" | "trash" | "chat" | null,
   ) => {
     if (keep !== "chat" && transferDialogOpenRef.current) {
       chatRoomResolveSeqRef.current += 1;
@@ -5729,7 +5745,6 @@ export const PracticeFileTransferPage = ({
     if (keep !== "compose") setComposeOpen(false);
     if (keep !== "drafts") setDraftsOpen(false);
     if (keep !== "trash") setTrashOpen(false);
-    if (keep !== "remake") setRemakeSearchOpen(false);
   };
 
   const handleAdoptDraftTransfer = useCallback(
@@ -5835,6 +5850,15 @@ export const PracticeFileTransferPage = ({
         skipDraftBind: true,
         skipJig: Boolean(transfer.skipJig),
       });
+
+      const linkedRemake = linkedRemakeSourceFromTransfer(transfer);
+      setComposeRemakeMode(Boolean(transfer.isRemake));
+      setComposeRemakePickRequired(false);
+      setLinkedRemakeSource(linkedRemake);
+      similarCaseResolutionRef.current = transfer.isRemake
+        ? { fingerprint: "", decision: "remake" }
+        : null;
+      similarCasePromptedFpRef.current = "";
 
       returnToAllModalRef.current = false;
       setTransferDialogOpen(false);
@@ -8537,6 +8561,15 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
+    if (composeRemakeMode && composeRemakePickRequired) {
+      toast({
+        title: "리메이크 원본을 선택해주세요",
+        description: "같은 환자·기공소 의뢰 목록에서 연결할 원본을 고르세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!orderDate || !arrivalDate) {
       toast({
         title: "날짜를 확인해주세요",
@@ -8601,11 +8634,7 @@ export const PracticeFileTransferPage = ({
       }
     }
 
-    if (
-      composeRemakeMode &&
-      !editingSentTransfer &&
-      !options?.skipRemakeConfirm
-    ) {
+    if (composeRemakeMode && !options?.skipRemakeConfirm) {
       const remakeFee = Math.max(
         0,
         Math.round(
@@ -8812,7 +8841,7 @@ export const PracticeFileTransferPage = ({
           rushProcessing,
           autoMatchMinLabRating,
           autoMatchMaxLabRating,
-          ...(composeRemakeMode && !editing
+          ...(composeRemakeMode
             ? {
                 isRemake: true,
                 ...(linkedRemakeSource?._id
@@ -8821,12 +8850,18 @@ export const PracticeFileTransferPage = ({
                       remakeSourceTransferId:
                         linkedRemakeSource.transferId || undefined,
                     }
-                  : {}),
+                  : linkedRemakeSource?.transferId
+                    ? {
+                        remakeSourceTransferId: linkedRemakeSource.transferId,
+                      }
+                    : {}),
                 ...(composeRemakeIncludesCustomAbutment
                   ? { includeCustomAbutment: true }
                   : {}),
               }
-            : {}),
+            : editing
+              ? { isRemake: false }
+              : {}),
           caseInfos: caseInfosPayload,
         },
       });
@@ -8876,6 +8911,7 @@ export const PracticeFileTransferPage = ({
 
       setComposeRemakeMode(false);
       setComposeRemakeConfirmOpen(false);
+      setComposeRemakePickRequired(false);
       setLinkedRemakeSource(null);
       setSimilarCaseMatches([]);
       setSimilarCasePromptOpen(false);
@@ -9045,6 +9081,7 @@ export const PracticeFileTransferPage = ({
 
     setComposeRemakeMode(Boolean(options?.remake));
     setComposeRemakeConfirmOpen(false);
+    setComposeRemakePickRequired(false);
     setLinkedRemakeSource(null);
     setSimilarCaseMatches([]);
     setSimilarCaseSelectedId("");
@@ -9614,113 +9651,52 @@ export const PracticeFileTransferPage = ({
   /** PC — 툴바는 작성 DialogHeader. intake는 투어 레일만 예약 */
   const showComposeHeaderToolbar = !isMobile;
 
-  const remakeFeeAmountForTransfer = (
-    transfer: RecentTransferItem,
-    includeCustomAbutment = false,
-  ) => {
-    const withCa =
-      includeCustomAbutment &&
-      transfer.remakeFeeQuoteWithCustomAbutment
-        ? transfer.remakeFeeQuoteWithCustomAbutment
-        : null;
-    const q = withCa || transfer.remakeFeeQuote || null;
-    if (!q) return 0;
-    return Math.max(0, Math.round(Number(q.total || q.labFeeTotal || 0)));
-  };
-
-  const handleConfirmRemake = useCallback(
-    async (pending?: { transfer: RecentTransferItem; arrivalYmd: string } | null) => {
-      const target = pending || remakePending;
-      if (!authToken || !target) return;
-      const mongoId = String(
-        target.transfer.transferMongoIds?.[0] || target.transfer.id || "",
-      ).trim();
-      if (!mongoId) {
-        toast({
-          title: "리메이크 의뢰 실패",
-          description: "원본 의뢰를 확인할 수 없습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-      if (!canRemakePracticeTransferByStatus(target.transfer.status)) {
-        toast({
-          title: "리메이크 의뢰 실패",
-          description: "작업시작 이후 의뢰만 리메이크할 수 있습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-      const includeCa =
-        remakeIncludeCustomAbutment &&
-        Boolean(target.transfer.hasCustomAbutment);
-      setRemakeBusy(true);
-      try {
-        const res = await apiFetch<{
-          message?: string;
-          data?: { created?: unknown[]; failed?: Array<{ message?: string }> };
-        }>({
-          path: "/api/practice/transfers/remake",
-          method: "POST",
-          token: authToken,
-          jsonBody: {
-            transferMongoIds: [mongoId],
-            arrivalYmd: target.arrivalYmd,
-            includeCustomAbutment: includeCa,
-          },
-        });
-        if (!res.ok) {
-          const body = res.data && typeof res.data === "object" ? res.data : {};
-          toast({
-            title: "리메이크 의뢰 실패",
-            description: String(
-              (body as { message?: string }).message || "다시 시도해주세요.",
-            ),
-            variant: "destructive",
-          });
-          return;
-        }
-        toast({
-          title: "리메이크 의뢰를 전송했습니다",
-          description: includeCa
-            ? `도착일 ${target.arrivalYmd} · 커스텀어벗 리메이크 포함`
-            : `도착일 ${target.arrivalYmd}`,
-        });
-        setRemakePending(null);
-        setRemakeConfirmOpen(false);
-        setRemakeIncludeCustomAbutment(false);
-        setRemakeSearchOpen(false);
-        void loadRecentRequests({ silent: true });
-        setCalendarRefreshNonce((n) => n + 1);
-      } catch (error) {
-        toast({
-          title: "리메이크 의뢰 실패",
-          description:
-            error instanceof Error ? error.message : "다시 시도해주세요.",
-          variant: "destructive",
-        });
-      } finally {
-        setRemakeBusy(false);
+  const handleComposeRemakeChecked = useCallback(
+    (next: boolean) => {
+      setComposeRemakeMode(next);
+      setLinkedRemakeSource(null);
+      setComposeRemakePickRequired(false);
+      if (next) {
+        similarCaseResolutionRef.current = similarCaseFingerprint
+          ? { fingerprint: similarCaseFingerprint, decision: "remake" }
+          : { fingerprint: "", decision: "remake" };
+      } else if (similarCaseResolutionRef.current?.decision === "remake") {
+        similarCaseResolutionRef.current = null;
       }
     },
-    [
-      authToken,
-      loadRecentRequests,
-      remakeIncludeCustomAbutment,
-      remakePending,
-      toast,
-    ],
+    [similarCaseFingerprint],
   );
 
-  const askRemakeForTransfer = useCallback(
-    (transfer: RecentTransferItem, arrivalYmd: string) => {
-      const pending = { transfer, arrivalYmd };
-      setRemakePending(pending);
-      setRemakeIncludeCustomAbutment(false);
-      // 리메이크비·CA 안내를 위해 항상 확인 모달
-      setRemakeConfirmOpen(true);
-    },
-    [],
+  const composeRemakeAboveMemo = useMemo(
+    () => (
+        <PracticeComposeRemakeSection
+          checked={composeRemakeMode}
+          onCheckedChange={handleComposeRemakeChecked}
+          patientName={normalizedPatientName}
+          labAnchorId={toApiLabAnchorId(selectedLab?._id)}
+          labName={String(selectedLab?.name || "").trim()}
+          linkedSource={linkedRemakeSource}
+          onLinkedSourceChange={setLinkedRemakeSource}
+          onPickRequiredChange={setComposeRemakePickRequired}
+          excludeTransferMongoId={
+            editingSentTransfer?.transferMongoId || ""
+          }
+          guideTourRemake={
+            platformGuideTour.active && platformGuideTour.stepId === "remake"
+          }
+        />
+      ),
+    [
+      composeRemakeMode,
+      editingSentTransfer?.transferMongoId,
+      handleComposeRemakeChecked,
+      linkedRemakeSource,
+      normalizedPatientName,
+      platformGuideTour.active,
+      platformGuideTour.stepId,
+      selectedLab?._id,
+      selectedLab?.name,
+    ],
   );
 
   const practiceWorkspaceToolbar = (
@@ -9745,23 +9721,6 @@ export const PracticeFileTransferPage = ({
                 작성 화면만 비웁니다. 임시저장은 목록에 남습니다.
               </TooltipContent>
             </Tooltip>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-9 gap-1.5 px-3"
-              onClick={() => {
-                dismissPracticeOverlaysForAction("remake");
-                setRemakeSearchOpen(true);
-              }}
-              {...(platformGuideTour.active &&
-              platformGuideTour.stepId === "remake"
-                ? { "data-guide-tour": "practice_remake" }
-                : {})}
-            >
-              <Repeat className="h-4 w-4 shrink-0" />
-              리메이크
-            </Button>
             <Button
               type="button"
               variant="outline"
@@ -9951,8 +9910,8 @@ export const PracticeFileTransferPage = ({
         variant="outline"
         size="sm"
         className="h-9 w-9 shrink-0 rounded-full border-slate-200 bg-white p-0 shadow-sm"
-        aria-label="신규주문"
-        title="신규주문"
+        aria-label="주문"
+        title="주문"
         onClick={() =>
           void handleStartNewTransfer({
             openCompose: true,
@@ -9961,24 +9920,6 @@ export const PracticeFileTransferPage = ({
         }
       >
         <Plus className="h-4 w-4 shrink-0" />
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-9 w-9 shrink-0 rounded-full border-slate-200 bg-white p-0 shadow-sm"
-        aria-label="리메이크"
-        title="리메이크"
-        onClick={() => {
-          dismissPracticeOverlaysForAction("remake");
-          setRemakeSearchOpen(true);
-        }}
-        {...(platformGuideTour.active &&
-        platformGuideTour.stepId === "remake"
-          ? { "data-guide-tour": "practice_remake" }
-          : {})}
-      >
-        <Repeat className="h-4 w-4 shrink-0" />
       </Button>
       <Button
         type="button"
@@ -10029,8 +9970,7 @@ export const PracticeFileTransferPage = ({
     (transferDialogOpen ||
       composeOpen ||
       draftsOpen ||
-      trashOpen ||
-      remakeSearchOpen);
+      trashOpen);
   const mobileActionChromeRef = useRef<HTMLDivElement | null>(null);
   const [mobileActionChromeH, setMobileActionChromeH] = useState(0);
   useLayoutEffect(() => {
@@ -10089,7 +10029,7 @@ export const PracticeFileTransferPage = ({
                 variant="outline"
                 size="sm"
                 className="h-9 w-9 shrink-0 gap-1.5 px-0 group-data-[wide=true]/practice-hdr:w-auto group-data-[wide=true]/practice-hdr:px-3"
-                aria-label="신규주문"
+                aria-label="주문"
                 onClick={() =>
                   void handleStartNewTransfer({
                     openCompose: true,
@@ -10099,39 +10039,12 @@ export const PracticeFileTransferPage = ({
               >
                 <Plus className="h-4 w-4 shrink-0" />
                 <span className="hidden group-data-[wide=true]/practice-hdr:inline">
-                  신규주문
+                  주문
                 </span>
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">
-              신규주문
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-9 w-9 shrink-0 gap-1.5 px-0 group-data-[wide=true]/practice-hdr:w-auto group-data-[wide=true]/practice-hdr:px-3"
-                aria-label="리메이크"
-                onClick={() => {
-                  dismissPracticeOverlaysForAction("remake");
-                  setRemakeSearchOpen(true);
-                }}
-                {...(platformGuideTour.active &&
-                platformGuideTour.stepId === "remake"
-                  ? { "data-guide-tour": "practice_remake" }
-                  : {})}
-              >
-                <Repeat className="h-4 w-4 shrink-0" />
-                <span className="hidden group-data-[wide=true]/practice-hdr:inline">
-                  리메이크
-                </span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              리메이크
+              주문
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -10694,7 +10607,7 @@ export const PracticeFileTransferPage = ({
                   headerToolbar: null,
                   reserveGuideTourAside: showComposeHeaderToolbar,
                   guideTourHeaderSlotEl: null,
-                  aboveMemoContent: null,
+                  aboveMemoContent: composeRemakeAboveMemo,
   };
 
   const showGuideTourPhonePreview =
@@ -10803,6 +10716,7 @@ export const PracticeFileTransferPage = ({
             setComposeOpen(false);
             setComposeRemakeMode(false);
             setComposeRemakeConfirmOpen(false);
+            setComposeRemakePickRequired(false);
             setLinkedRemakeSource(null);
             setSimilarCaseMatches([]);
             setSimilarCasePromptOpen(false);
@@ -10899,8 +10813,8 @@ export const PracticeFileTransferPage = ({
                 ? "의뢰 수정"
                 : composeRemakeMode
                   ? "리메이크 의뢰"
-                  : "신규 의뢰"}
-              {composeRemakeMode && !editingSentTransfer ? (
+                  : "주문"}
+              {composeRemakeMode ? (
                 <Badge
                   variant="outline"
                   className="border-amber-400 bg-amber-50 text-amber-800"
@@ -11002,7 +10916,7 @@ export const PracticeFileTransferPage = ({
 
           {!isMobile ? (
           <div className="flex items-center justify-end gap-3">
-            {composeRemakeMode && !editingSentTransfer ? (
+            {composeRemakeMode ? (
               <p className="max-w-[16rem] text-right text-xs leading-snug text-muted-foreground sm:max-w-xs">
                 {linkedRemakeSource
                   ? `원의뢰 ${linkedRemakeSource.transferId || linkedRemakeSource.orderYmd || ""}에 연결 · 기공소에 리메이크로 표시됩니다.`
@@ -12447,25 +12361,6 @@ export const PracticeFileTransferPage = ({
           }}
         />
 
-        <PracticeRemakeSearchDialog
-          open={remakeSearchOpen}
-          onOpenChange={setRemakeSearchOpen}
-          transfers={groupedTransfers}
-          busy={remakeBusy}
-          mobileSheet={Boolean(isMobileViewport && mobileOverlayDialogStyle)}
-          contentStyle={isMobileViewport ? mobileOverlayDialogStyle : undefined}
-          onSelectRemake={({ transfer, arrivalYmd }) => {
-            askRemakeForTransfer(transfer, arrivalYmd);
-          }}
-          onPrePlatformRemake={() => {
-            void handleStartNewTransfer({
-              openCompose: true,
-              silentToast: true,
-              remake: true,
-            });
-          }}
-        />
-
         <PracticeSimilarCaseRemakeDialog
           open={similarCasePromptOpen}
           matches={similarCaseMatches}
@@ -12515,74 +12410,6 @@ export const PracticeFileTransferPage = ({
                 skipSimilarCaseConfirm: true,
               });
             }
-          }}
-        />
-
-        <ConfirmDialog
-          open={remakeConfirmOpen}
-          title="리메이크 의뢰를 전송할까요?"
-          description={
-            remakePending ? (
-              <div className="space-y-2 text-left">
-                <div>
-                  환자{" "}
-                  {resolvePracticeTransferListPatientName(remakePending.transfer) ||
-                    "—"}{" "}
-                  · {remakePending.transfer.targetLab || "기공소"}
-                </div>
-                <div>
-                  도착일 {remakePending.arrivalYmd} · 치과→기공소 리메이크비{" "}
-                  {formatManWon(
-                    remakeFeeAmountForTransfer(
-                      remakePending.transfer,
-                      remakeIncludeCustomAbutment,
-                    ),
-                  )}
-                </div>
-                <div className="text-muted-foreground">
-                  기공소에 리메이크비는 무료입니다. 기공소가 작업시작하면
-                  반영됩니다.
-                </div>
-                {remakePending.transfer.hasCustomAbutment ? (
-                  <label className="flex cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-[13px]">
-                    <Checkbox
-                      checked={remakeIncludeCustomAbutment}
-                      onCheckedChange={(checked) =>
-                        setRemakeIncludeCustomAbutment(Boolean(checked))
-                      }
-                      className="mt-0.5"
-                    />
-                    <span className="space-y-1">
-                      <span className="block font-medium text-slate-800">
-                        커스텀어벗도 리메이크
-                      </span>
-                      <span className="block text-[12px] text-muted-foreground">
-                        기본은 보철만 리메이크합니다. 포함 시 기공소→어벗츠
-                        리메이크는 건당 1만원입니다.
-                        <br />
-                        배송비 판매자 부담.
-                      </span>
-                    </span>
-                  </label>
-                ) : null}
-                {!remakePending.transfer.hasCustomAbutment ? (
-                  <div className="text-[12px] text-muted-foreground">
-                    보철만 리메이크합니다(커스텀어벗 제외).
-                  </div>
-                ) : null}
-              </div>
-            ) : undefined
-          }
-          confirmLabel={remakeBusy ? "전송 중..." : "리메이크 의뢰"}
-          cancelLabel="취소"
-          confirmTone="primary"
-          busy={remakeBusy}
-          onConfirm={() => void handleConfirmRemake()}
-          onCancel={() => {
-            if (remakeBusy) return;
-            setRemakeConfirmOpen(false);
-            setRemakePending(null);
-            setRemakeIncludeCustomAbutment(false);
           }}
         />
 

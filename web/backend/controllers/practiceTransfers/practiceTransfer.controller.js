@@ -36,6 +36,7 @@ import {
   toBillingPreviewFields,
   toFeeQuoteApi,
   toRemakeApiFields,
+  isPracticeTransferRemake,
 } from "../../services/practiceTransferBilling.service.js";
 import {
   applyPracticeTransferRemakeCharge,
@@ -4107,6 +4108,101 @@ export async function updatePracticeTransferContent(req, res) {
     );
     const rushProcessing = parseRushProcessingInput(req.body, practiceRouting);
 
+    const previousRemake = isPracticeTransferRemake(doc);
+    const hasRemakeFlagInBody =
+      req.body &&
+      (Object.prototype.hasOwnProperty.call(req.body, "isRemake") ||
+        Object.prototype.hasOwnProperty.call(req.body, "remake"));
+    const isRemakeRequest = hasRemakeFlagInBody
+      ? Boolean(
+          req.body?.isRemake === true ||
+            req.body?.remake === true ||
+            String(req.body?.isRemake || "").trim() === "true" ||
+            String(req.body?.remake || "").trim() === "true",
+        )
+      : previousRemake;
+    const includeCustomAbutmentRemake = Boolean(
+      req.body?.includeCustomAbutment === true ||
+        req.body?.includeCa === true ||
+        req.body?.includeCustomAbutmentRemake === true,
+    );
+    const remakeSourceMongoIdRaw = String(
+      req.body?.remakeSourceTransferMongoId ||
+        req.body?.sourceTransferMongoId ||
+        "",
+    ).trim();
+    const remakeSourceTransferIdRaw = String(
+      req.body?.remakeSourceTransferId || req.body?.sourceTransferId || "",
+    ).trim();
+
+    if (
+      isRemakeRequest &&
+      remakeSourceMongoIdRaw &&
+      !Types.ObjectId.isValid(remakeSourceMongoIdRaw)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "리메이크 원본 의뢰 ID가 올바르지 않습니다.",
+      });
+    }
+
+    if (isRemakeRequest && !includeCustomAbutmentRemake) {
+      const stripped = stripCustomAbutmentFromToothWorks(toothWorksRaw);
+      if (
+        countCustomAbutmentWorks(toothWorksRaw) > 0 &&
+        stripped.length === 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "커스텀어벗만 있는 리메이크입니다. 커스텀어벗 리메이크를 선택한 뒤 다시 전송해 주세요.",
+        });
+      }
+      toothWorksRaw.length = 0;
+      for (const row of stripped) toothWorksRaw.push(row);
+    }
+
+    const needRemakeSource =
+      isRemakeRequest &&
+      remakeSourceMongoIdRaw &&
+      Types.ObjectId.isValid(remakeSourceMongoIdRaw);
+    let remakeSourceDoc = null;
+    if (needRemakeSource) {
+      remakeSourceDoc = await PracticeTransfer.findOne({
+        ...scope,
+        _id: new Types.ObjectId(remakeSourceMongoIdRaw),
+      }).lean();
+      if (!remakeSourceDoc) {
+        return res.status(404).json({
+          success: false,
+          message: "리메이크 원본 의뢰를 찾지 못했습니다.",
+        });
+      }
+    }
+
+    const prevRemakeMongo = String(
+      doc?.remake?.sourceTransferMongoId || "",
+    ).trim();
+    const nextRemakeMongo = isRemakeRequest
+      ? String(remakeSourceDoc?._id || remakeSourceMongoIdRaw || "").trim()
+      : "";
+    const prevRemakeTransferId = String(
+      doc?.remake?.sourceTransferId || "",
+    ).trim();
+    const nextRemakeTransferId = isRemakeRequest
+      ? String(
+          remakeSourceTransferIdRaw ||
+            remakeSourceDoc?.transferId ||
+            "",
+        ).trim()
+      : "";
+    const remakeChanged =
+      hasRemakeFlagInBody &&
+      (previousRemake !== isRemakeRequest ||
+        prevRemakeMongo !== nextRemakeMongo ||
+        prevRemakeTransferId !== nextRemakeTransferId);
+    const remakePricing = Boolean(isRemakeRequest);
+
     const arrivalPolicy = await resolvePracticeTransferArrivalPolicy({
       transferMemo,
       rushProcessing,
@@ -4183,7 +4279,11 @@ export async function updatePracticeTransferContent(req, res) {
       Number(rushFeeMultiplier || 1) !==
       Number(previousBilling.rushFeeMultiplier || 1);
     const billingInputsChanged =
-      labChanged || toothWorksChanged || skipJigChanged || rushMultiplierChanged;
+      labChanged ||
+      toothWorksChanged ||
+      skipJigChanged ||
+      rushMultiplierChanged ||
+      remakeChanged;
     const previousBudget =
       previousBilling.autoMatchBudget &&
       typeof previousBilling.autoMatchBudget === "object"
@@ -4239,6 +4339,8 @@ export async function updatePracticeTransferContent(req, res) {
         autoMatchBudget,
         catalog: autoMatchCatalog,
         rushFeeMultiplier,
+        remake: remakePricing,
+        remakeFixedAmount: null,
         subcontracted: assigneeKind === "subcontract",
         consentLabAnchorId:
           assigneeKind === "subcontract" ? assigneeLabAnchorId : null,
@@ -4263,6 +4365,7 @@ export async function updatePracticeTransferContent(req, res) {
           rushFeeMultiplier,
           skipJig,
           fees: feeQuote.fees,
+          remake: remakePricing,
         });
       } catch (creditErr) {
         try {
@@ -4293,6 +4396,14 @@ export async function updatePracticeTransferContent(req, res) {
           typeof previousBilling?.requireLabProsthesisUpload === "boolean"
             ? previousBilling.requireLabProsthesisUpload
             : true,
+        ...(hasRemakeFlagInBody || remakeChanged
+          ? { isRemake: isRemakeRequest }
+          : {}),
+      };
+    } else if (hasRemakeFlagInBody && remakeChanged) {
+      billingPreview = {
+        ...previousBilling,
+        isRemake: isRemakeRequest,
       };
     }
 
@@ -4394,9 +4505,28 @@ export async function updatePracticeTransferContent(req, res) {
     if (billingInputsChanged) {
       nextSet.billing = billingPreview;
     }
+    if (hasRemakeFlagInBody) {
+      if (isRemakeRequest) {
+        const prevRemake =
+          doc.remake && typeof doc.remake === "object" ? doc.remake : {};
+        nextSet.remake = {
+          sourceTransferId: nextRemakeTransferId,
+          sourceTransferMongoId: remakeSourceDoc?._id || null,
+          requestedAt: prevRemake.requestedAt || now,
+          requestedBy: prevRemake.requestedBy || req.user?._id || null,
+          includeCustomAbutment:
+            includeCustomAbutmentRemake &&
+            countCustomAbutmentWorks(toothWorksRaw) > 0,
+        };
+      }
+    }
+    const updateQuery =
+      hasRemakeFlagInBody && !isRemakeRequest
+        ? { $set: nextSet, $unset: { remake: "" } }
+        : { $set: nextSet };
     const updated = await PracticeTransfer.findOneAndUpdate(
       pendingFilter,
-      { $set: nextSet },
+      updateQuery,
       { new: true },
     );
 
