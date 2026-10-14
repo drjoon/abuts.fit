@@ -69,22 +69,46 @@ export function defaultAbutmentShipYmdFromArrival(
 }
 
 /**
- * 기공소 설정값 우선, 없으면 치과도착일 − N영업일(계정 선호, 기본 3).
- * @param {{ production?: { abutmentShipYmd?: unknown }, arrivalDates?: unknown, transferMemo?: unknown, arrivalDate?: unknown } | null | undefined} doc
- * @param {{ beforeArrivalBusinessDays?: unknown } | null | undefined} [opts]
+ * 저장된 기공소 출고일만 반환. 미설정이면 null(택배 익일은 호출측에서 계산).
+ * @param {{ production?: { abutmentShipYmd?: unknown } } | null | undefined} doc
  * @returns {string|null}
  */
-export function resolveEffectiveAbutmentShipYmd(doc, opts = null) {
+export function resolveEffectiveAbutmentShipYmd(doc) {
   const stored = String(doc?.production?.abutmentShipYmd || "").trim();
   if (YMD_RE.test(stored)) return stored;
-  const direct = String(doc?.arrivalDate || "").trim();
-  const arrival = YMD_RE.test(direct)
-    ? direct
-    : resolveCurrentArrivalYmd(resolvePracticeArrivalDates(doc));
+  return null;
+}
+
+/**
+ * 치과도착일 − N영업일(기본 3) — 출고 마감(이 날짜보다 늦게 출고하면 도착 여유 부족).
+ * @param {string|null|undefined} arrivalYmd
+ * @param {unknown} [beforeArrivalBusinessDays]
+ * @returns {string|null}
+ */
+export function resolveLatestAllowedAbutmentShipYmd(
+  arrivalYmd,
+  beforeArrivalBusinessDays,
+) {
   return defaultAbutmentShipYmdFromArrival(
-    arrival,
-    opts?.beforeArrivalBusinessDays,
+    arrivalYmd,
+    beforeArrivalBusinessDays,
   );
+}
+
+/**
+ * @param {{ shipYmd?: string|null, arrivalYmd?: string|null, beforeArrivalBusinessDays?: unknown }} opts
+ * @returns {boolean}
+ */
+export function isAbutmentShipYmdBeyondArrivalBuffer(opts = {}) {
+  const ship = String(opts.shipYmd || "").trim();
+  const arrival = String(opts.arrivalYmd || "").trim();
+  if (!YMD_RE.test(ship) || !YMD_RE.test(arrival)) return false;
+  const latest = resolveLatestAllowedAbutmentShipYmd(
+    arrival,
+    opts.beforeArrivalBusinessDays,
+  );
+  if (!latest) return false;
+  return ship > latest;
 }
 
 /**

@@ -103,7 +103,10 @@ import {
   normalizeKoreanBusinessDay,
   computePriceForRequest,
 } from "../controllers/requests/utils.js";
-import { calculateInitialProductionSchedule } from "../controllers/requests/production.utils.js";
+import {
+  calculateInitialProductionSchedule,
+  resolveNormalParcelEstimatedShipYmdKst,
+} from "../controllers/requests/production.utils.js";
 import {
   countDesignAbutmentQty,
 } from "../controllers/requests/designPrice.utils.js";
@@ -748,28 +751,36 @@ export async function resolveManufacturerTargetShipYmd(arrivalYmd) {
 }
 
 /**
- * PTX CA 출고 목표 SSOT.
- * 기공소 production.abutmentShipYmd 우선, 없으면 치과도착일 − N영업일
- * (계정 선호 beforeArrivalBusinessDays, 기본 3).
+ * PTX CA 출고 예정일 — 저장값 또는 택배 익영업일(autoShipYmd).
+ * 치과도착 − N은 마감 검증용(resolveLatestAllowedAbutmentShipYmd)만.
  */
-export function resolvePtxCaTargetShipYmd(
-  transferDoc,
-  arrivalYmd = null,
-  opts = null,
-) {
-  const arrival =
-    String(arrivalYmd || "").trim() ||
-    String(transferDoc?.arrivalDate || "").trim() ||
-    null;
-  return resolveEffectiveAbutmentShipYmd(
-    {
-      production: transferDoc?.production,
-      arrivalDates: transferDoc?.arrivalDates,
-      transferMemo: transferDoc?.transferMemo,
-      arrivalDate: arrival,
-    },
-    opts,
-  );
+export function resolvePtxCaTargetShipYmd(transferDoc, _arrivalYmd = null, opts = null) {
+  const stored = resolveEffectiveAbutmentShipYmd({
+    production: transferDoc?.production,
+  });
+  if (stored) return stored;
+  const auto = String(opts?.autoShipYmd || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(auto)) return auto;
+  return null;
+}
+
+/**
+ * PTX 어벗 STL 업로드 시점 택배 묶음 출고일(KST YMD).
+ */
+export async function resolvePtxAbutmentAutoShipYmd({
+  requestedAt = new Date(),
+  shippingMode = "normal",
+  weeklyBatchDays = [],
+  maxDiameter = 8,
+  productMode = "custom_abutment",
+} = {}) {
+  void shippingMode;
+  return resolveNormalParcelEstimatedShipYmdKst({
+    requestedAt,
+    maxDiameter,
+    weeklyBatchDays,
+    productMode,
+  });
 }
 
 /**
@@ -1173,13 +1184,28 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     String(scanFiles[0]?.patientName || "").trim() ||
     "환자";
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
-  // 기공소 출고일 설정 또는 계정 선호 −N(기본 도착−3영업일).
-  const beforeArrivalBusinessDays =
-    await loadAbutmentShipBeforeArrivalBusinessDaysForUser(
-      actorUserId || transferDoc?.requestorDownloadedBy,
+  const autoShipYmd = await resolvePtxAbutmentAutoShipYmd({
+    requestedAt: scheduleRequestedAt,
+    shippingMode,
+    weeklyBatchDays,
+  });
+  const storedShipYmd = String(
+    transferDoc?.production?.abutmentShipYmd || "",
+  ).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(storedShipYmd) && autoShipYmd) {
+    await PracticeTransfer.updateOne(
+      { _id: transferDoc._id },
+      { $set: { "production.abutmentShipYmd": autoShipYmd } },
     );
+    transferDoc.production = {
+      ...(transferDoc.production && typeof transferDoc.production === "object"
+        ? transferDoc.production
+        : {}),
+      abutmentShipYmd: autoShipYmd,
+    };
+  }
   const targetShipYmd = resolvePtxCaTargetShipYmd(transferDoc, arrivalYmd, {
-    beforeArrivalBusinessDays,
+    autoShipYmd,
   });
 
   const billing =
@@ -1363,17 +1389,13 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       weeklyBatchDays,
       productMode: scheduleProductMode,
     });
-    productionSchedule = await clampScheduleToTarget(
-      productionSchedule,
-      targetShipYmd,
-    );
-
     const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
     const pickupYmd = productionSchedule?.scheduledShipPickup
       ? toKstYmd(productionSchedule.scheduledShipPickup)
       : null;
 
-    let estimatedShipYmdRaw = pickupYmd || targetShipYmd || arrivalYmd;
+    let estimatedShipYmdRaw =
+      pickupYmd || targetShipYmd || autoShipYmd || arrivalYmd;
     if (!estimatedShipYmdRaw) {
       const d =
         typeof normalizedCaseInfos?.maxDiameter === "number" &&
@@ -1390,14 +1412,6 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         startYmd: createdYmd,
         days: Math.max(1, leadDays),
       });
-    }
-
-    if (targetShipYmd) {
-      const targetMs = ymdToUtcNoonMs(targetShipYmd);
-      const estMs = ymdToUtcNoonMs(estimatedShipYmdRaw);
-      if (targetMs != null && estMs != null && estMs > targetMs) {
-        estimatedShipYmdRaw = targetShipYmd;
-      }
     }
 
     const estimatedShipYmd = await normalizeKoreanBusinessDay({
@@ -2826,16 +2840,33 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   }
 
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
-  const resolvedBeforeArrival =
-    beforeArrivalBusinessDays != null
-      ? normalizeAbutmentShipBeforeArrivalBusinessDays(
-          beforeArrivalBusinessDays,
-        )
-      : await loadAbutmentShipBeforeArrivalBusinessDaysForUser(
-          actorUserId || transferDoc?.requestorDownloadedBy,
-        );
+  const autoShipYmd = await resolvePtxAbutmentAutoShipYmd({
+    requestedAt: scheduleRequestedAt,
+    shippingMode,
+    weeklyBatchDays,
+    maxDiameter,
+  });
+  const storedShipYmd = String(
+    transferDoc?.production?.abutmentShipYmd || "",
+  ).trim();
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(storedShipYmd) &&
+    autoShipYmd &&
+    transferDoc?._id
+  ) {
+    await PracticeTransfer.updateOne(
+      { _id: transferDoc._id },
+      { $set: { "production.abutmentShipYmd": autoShipYmd } },
+    );
+    transferDoc.production = {
+      ...(transferDoc.production && typeof transferDoc.production === "object"
+        ? transferDoc.production
+        : {}),
+      abutmentShipYmd: autoShipYmd,
+    };
+  }
   const targetShipYmd = resolvePtxCaTargetShipYmd(transferDoc, arrivalYmd, {
-    beforeArrivalBusinessDays: resolvedBeforeArrival,
+    autoShipYmd,
   });
 
   if (!requestDoc.caseInfos || typeof requestDoc.caseInfos !== "object") {
@@ -2848,13 +2879,14 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   let estimatedShipYmd = null;
 
   if (holdFast) {
-    // hold 박스 키용 출고일만 — 기공소 설정/도착−3 또는 기존 timeline. 무거운 리드타임 스케줄은 생략.
+    // hold 박스 키용 출고일 — 택배 익영업일(또는 저장값). 무거운 리드타임 스케줄은 생략.
     const existingYmd = String(
       requestDoc?.timeline?.estimatedShipYmd ||
         requestDoc?.timeline?.nextEstimatedShipYmd ||
         "",
     ).trim();
-    const raw = targetShipYmd || existingYmd || arrivalYmd || null;
+    const raw =
+      targetShipYmd || autoShipYmd || existingYmd || arrivalYmd || null;
     estimatedShipYmd = raw
       ? await normalizeKoreanBusinessDay({ ymd: raw })
       : null;
@@ -2866,22 +2898,12 @@ export async function repriceAndReschedulePtxAbutmentRequest({
       weeklyBatchDays,
       productMode: "custom_abutment",
     });
-    productionSchedule = await clampScheduleToTarget(
-      productionSchedule,
-      targetShipYmd,
-    );
 
     const pickupYmd = productionSchedule?.scheduledShipPickup
       ? toKstYmd(productionSchedule.scheduledShipPickup)
       : null;
-    let estimatedShipYmdRaw = pickupYmd || targetShipYmd || arrivalYmd;
-    if (targetShipYmd) {
-      const targetMs = ymdToUtcNoonMs(targetShipYmd);
-      const estMs = ymdToUtcNoonMs(estimatedShipYmdRaw);
-      if (targetMs != null && estMs != null && estMs > targetMs) {
-        estimatedShipYmdRaw = targetShipYmd;
-      }
-    }
+    const estimatedShipYmdRaw =
+      pickupYmd || targetShipYmd || autoShipYmd || arrivalYmd;
     estimatedShipYmd = estimatedShipYmdRaw
       ? await normalizeKoreanBusinessDay({ ymd: estimatedShipYmdRaw })
       : null;

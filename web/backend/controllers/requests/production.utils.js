@@ -530,6 +530,26 @@ export async function calculateInitialProductionSchedule({
   };
 }
 
+/**
+ * 택배 묶음 출고 예정일(KST YMD). 접수 시각 기준 익영업일 16:00 집하.
+ * PTX 어벗 STL 업로드·holdFast 견적 SSOT.
+ */
+export async function resolveNormalParcelEstimatedShipYmdKst({
+  requestedAt = new Date(),
+  maxDiameter = 8,
+  weeklyBatchDays = [],
+  productMode = null,
+} = {}) {
+  const schedule = await calculateInitialProductionSchedule({
+    shippingMode: "normal",
+    maxDiameter,
+    requestedAt,
+    weeklyBatchDays,
+    productMode,
+  });
+  return toKstYmd(schedule.scheduledShipPickup);
+}
+
 export function createProductionScheduleMemo() {
   const memo = new Map();
   return async function memoizedCalculateInitialProductionSchedule(params = {}) {

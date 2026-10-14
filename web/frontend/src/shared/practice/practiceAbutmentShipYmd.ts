@@ -10,13 +10,14 @@
 // - 2026-09-14: 팝오버 안내 — 「출고일 지정: 치과도착 − n일 전」(12시 컷오프 줄 제거).
 // - 2026-09-12: 출고 버튼 라벨 연도 생략(M.D) — 가로폭 축소.
 // - 2026-09-12: 출고일=도착−n 선택(최소 2). 낮 12시 전 신속·이후 묶음 출고일까지.
-// - 2026-09-12: 어벗 출고일 기본=치과도착일−3달력일. 출고일−3일 임박 경고 폐기.
+// - 2026-10-14: 미설정 출고일=택배 익영업일 16시. 도착−3은 마감 경고만.
 
 import {
   kstAddBusinessDays,
   kstYmdDiffBusinessDays,
   toKstYmd,
 } from "@/shared/date/kst";
+import { computeEstimatedShipYmd } from "@/shared/shipping/estimateShipDate";
 import { isKrPublicHolidayYmd } from "@/shared/date/krHolidays";
 import {
   normalizeWeeklyBatchDays,
@@ -114,21 +115,57 @@ export function resolvePracticeTransferArrivalYmd(transfer?: {
   return list.length > 0 ? list[list.length - 1]! : null;
 }
 
-/** 기공소 설정값 우선, 없으면 치과도착일 − N영업일(계정 선호, 기본 3) */
+/** 저장된 출고일 또는 택배 익영업일(16시 집하). */
+export function resolveAutoAbutmentShipYmdFromParcel(
+  at: Date = new Date(),
+): string | null {
+  return computeEstimatedShipYmd({
+    shippingMode: "normal",
+    productMode: "custom_abutment",
+    requestedAt: at,
+    weeklyBatchDays: [],
+  });
+}
+
+/** 치과도착일 − N영업일(기본 3) — 이 날짜보다 늦게 출고하면 도착 여유 부족 */
+export function resolveLatestAllowedAbutmentShipYmd(
+  arrivalYmd?: string | null,
+  beforeArrivalBusinessDays?: number | null,
+): string | null {
+  return defaultAbutmentShipYmdFromArrival(
+    arrivalYmd,
+    beforeArrivalBusinessDays,
+  );
+}
+
+export function isAbutmentShipYmdBeyondArrivalBuffer(opts: {
+  shipYmd?: string | null;
+  arrivalYmd?: string | null;
+  beforeArrivalBusinessDays?: number | null;
+}): boolean {
+  const ship = String(opts.shipYmd || "").trim();
+  const arrival = String(opts.arrivalYmd || "").trim();
+  if (!YMD_RE.test(ship) || !YMD_RE.test(arrival)) return false;
+  const latest = resolveLatestAllowedAbutmentShipYmd(
+    arrival,
+    opts.beforeArrivalBusinessDays,
+  );
+  if (!latest) return false;
+  return ship > latest;
+}
+
+/** 기공소 저장값 우선, 없으면 택배 익영업일 */
 export function resolveEffectiveAbutmentShipYmd(
   transfer?: {
     arrivalDate?: string | null;
     arrivalDates?: string[] | null;
     production?: { abutmentShipYmd?: string | null } | null;
   } | null,
-  opts?: { beforeArrivalBusinessDays?: number | null } | null,
+  opts?: { at?: Date | null } | null,
 ): string | null {
   const stored = String(transfer?.production?.abutmentShipYmd || "").trim();
   if (YMD_RE.test(stored)) return stored;
-  return defaultAbutmentShipYmdFromArrival(
-    resolvePracticeTransferArrivalYmd(transfer),
-    opts?.beforeArrivalBusinessDays,
-  );
+  return resolveAutoAbutmentShipYmdFromParcel(opts?.at ?? new Date());
 }
 
 export function resolveAbutmentShipCutoffMode(

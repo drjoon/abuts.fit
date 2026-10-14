@@ -21,7 +21,7 @@ describe("practiceTransferArrivalDates", () => {
     expect(PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS).toBe(7);
   });
 
-  it("defaults abutment ship to arrival − 3 business days", () => {
+  it("latest allowed abutment ship is arrival − 3 business days", () => {
     expect(PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS).toBe(3);
     expect(PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_BUSINESS_DAYS).toBe(2);
     // 목 8/20 − 3영업일 = 금 8/14 (8/17 광복절 대체공휴일 제외)
@@ -36,19 +36,16 @@ describe("practiceTransferArrivalDates", () => {
         arrivalDate: "2026-08-20",
       }),
     ).toBe("2026-08-14");
+    expect(
+      resolveEffectiveAbutmentShipYmd({ arrivalDate: "2026-08-20" }),
+    ).toBe(null);
   });
 
-  it("uses preferred before-arrival business days when ship ymd unset", () => {
+  it("uses preferred before-arrival business days for latest allowed ship", () => {
     // 목 8/20 − 4영업일 = 목 8/13
     expect(defaultAbutmentShipYmdFromArrival("2026-08-20", 4)).toBe(
       "2026-08-13",
     );
-    expect(
-      resolveEffectiveAbutmentShipYmd(
-        { arrivalDate: "2026-08-20" },
-        { beforeArrivalBusinessDays: 4 },
-      ),
-    ).toBe("2026-08-13");
   });
 
   it("seeds from memo when arrivalDates empty", () => {

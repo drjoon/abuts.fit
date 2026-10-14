@@ -8,6 +8,7 @@
 // - 2026-09-21: 어벗 출고 −N 계정 선호 전달·저장.
 // - 2026-09-20: abutmentLeadingActions — 어벗 건만 STL 업로드 왼쪽에 SW·아노 등.
 // - 2026-09-16: stickyTrailingActions — 어벗 완료 줄이 취소·리메이크를 맡아도 지르 작업 시작 유지.
+// - 2026-10-14: 출고일 수동 선택 제거 — 택배 익영업일 자동. 도착−3 경고만.
 // - 2026-09-16: 출고일 버튼 — 어벗츠 생산의뢰 줄 오른쪽 끝(업로드·지르 행에서 이동).
 // - 2026-09-12: 미업로드 잔여 시 pastReady=(전체리메이크) 대신 mixed(치아 리메이크만).
 // - 2026-09-12: 가공 치아 호박색·리메이크 클릭 · (전체리메이크). pastReadyTeeth 연동.
@@ -36,7 +37,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { PracticeAbutmentShipDateButton } from "@/shared/components/practice/PracticeAbutmentShipDateButton";
+import { PracticeAbutmentArrivalBufferAlert } from "@/shared/components/practice/PracticeAbutmentArrivalBufferAlert";
 import { PracticeAbutmentUploadOverdueAlert } from "@/shared/components/practice/PracticeAbutmentUploadOverdueAlert";
 import {
   LabPendingAbutmentGuide,
@@ -72,13 +73,7 @@ export type PracticeLabReceiveWorkActionsBarProps = {
   onAbutmentStlUpload?: (event: MouseEvent) => void;
   /** 보철 디자인 파일창 — 올리면 작업완료 */
   onProstheticUpload?: (event: MouseEvent) => void;
-  /** 어벗 출고일 저장(기공소). n은 계정 선호로 재사용 */
-  onAbutmentShipYmdSave?: (
-    shipYmd: string,
-    beforeArrivalBusinessDays: number,
-  ) => void | Promise<void>;
-  abutmentShipBusy?: boolean;
-  /** 계정 선호 치과도착 − N영업일 */
+  /** 계정 선호 치과도착 − N영업일(출고 마감 경고) */
   preferredAbutmentShipBeforeArrivalBusinessDays?: number | null;
   onDesignConfirm?: () => void;
   /**
@@ -119,8 +114,6 @@ export function PracticeLabReceiveWorkActionsBar({
   onOpenAbutmentRemake,
   onAbutmentStlUpload,
   onProstheticUpload,
-  onAbutmentShipYmdSave,
-  abutmentShipBusy = false,
   preferredAbutmentShipBeforeArrivalBusinessDays = null,
   onDesignConfirm,
   abutmentLeadingActions = null,
@@ -134,10 +127,9 @@ export function PracticeLabReceiveWorkActionsBar({
     transfer,
     catalog,
   );
-  const showAbutmentShip =
-    (state.designStlUploadMode === "abutment" ||
-      state.designStlUploadMode === "dual") &&
-    Boolean(onAbutmentShipYmdSave);
+  const showAbutmentShipBuffer =
+    state.designStlUploadMode === "abutment" ||
+    state.designStlUploadMode === "dual";
   const hasStickyTrailing = Boolean(stickyTrailingActions);
   const hasTrailing = Boolean(trailingActions);
   const hasAbutmentGuide = state.hasPendingLabCa || state.hasAbutsCa;
@@ -166,7 +158,6 @@ export function PracticeLabReceiveWorkActionsBar({
     !uploadOverdue &&
     !showAbutmentUpload &&
     !showProstheticUpload &&
-    !showAbutmentShip &&
     !showAbutmentLeading
   ) {
     return null;
@@ -182,29 +173,17 @@ export function PracticeLabReceiveWorkActionsBar({
   const standaloneOverdue =
     uploadOverdueAlert && !state.hasAbutsCa ? uploadOverdueAlert : null;
 
-  /** 출고일 — 생산의뢰 줄이 있으면 그 줄 오른쪽 끝, 없으면 업로드 행 */
-  const shipOnAbutsLine = showAbutmentShip && state.hasAbutsCa;
-  const shipInActionRow = showAbutmentShip && !state.hasAbutsCa;
-
-  const abutmentShipButton = showAbutmentShip ? (
-    <PracticeAbutmentShipDateButton
+  const abutmentShipBufferAlert = showAbutmentShipBuffer ? (
+    <PracticeAbutmentArrivalBufferAlert
       transfer={transfer}
-      busy={abutmentShipBusy}
-      disabled={busy}
-      preferredBeforeArrivalBusinessDays={
-        preferredAbutmentShipBeforeArrivalBusinessDays
-      }
-      onSave={onAbutmentShipYmdSave}
+      beforeArrivalBusinessDays={preferredAbutmentShipBeforeArrivalBusinessDays}
+      compact
     />
   ) : null;
 
-  const abutsTrailing =
-    abutsInlineOverdue || shipOnAbutsLine ? (
-      <div className="flex shrink-0 items-center gap-1.5">
-        {abutsInlineOverdue}
-        {shipOnAbutsLine ? abutmentShipButton : null}
-      </div>
-    ) : null;
+  const abutsTrailing = abutsInlineOverdue ? (
+    <div className="flex shrink-0 items-center gap-1.5">{abutsInlineOverdue}</div>
+  ) : null;
 
   const pastReadyTeeth = listPracticeTransferPastReadyAbutmentTeeth(transfer);
   const abutsProductionOrdered =
@@ -397,14 +376,12 @@ export function PracticeLabReceiveWorkActionsBar({
   const cancelCluster =
     abutmentUploadButton ||
     prostheticUploadButton ||
-    (shipInActionRow ? abutmentShipButton : null) ||
     productionCancelButton ||
     pastReadyRemakeButton ||
     hasEffectiveTrailing ? (
       <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
         {abutmentUploadButton}
         {prostheticUploadButton}
-        {shipInActionRow ? abutmentShipButton : null}
         {productionCancelButton}
         {pastReadyRemakeButton}
         {stickyTrailingActions}
@@ -443,6 +420,7 @@ export function PracticeLabReceiveWorkActionsBar({
     return (
       <div className={cn("w-full min-w-0 space-y-1.5", className)}>
         {standaloneOverdue}
+        {abutmentShipBufferAlert}
         {pendingLabGuide}
         {renderActionRow(designConfirmButton)}
       </div>
@@ -457,6 +435,7 @@ export function PracticeLabReceiveWorkActionsBar({
     return (
       <div className={cn("w-full min-w-0 space-y-1.5", className)}>
         {standaloneOverdue}
+        {abutmentShipBufferAlert}
         {pendingLabGuide}
         {renderActionRow(null)}
       </div>
@@ -474,6 +453,7 @@ export function PracticeLabReceiveWorkActionsBar({
   return (
     <div className={cn("w-full min-w-0 space-y-1.5", className)}>
       {standaloneOverdue}
+      {abutmentShipBufferAlert}
       {pendingLabGuide}
       {abutmentLeading || cancelCluster ? renderActionRow(null) : stickyOrTrailing}
     </div>

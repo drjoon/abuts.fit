@@ -10326,14 +10326,6 @@ export function RequestorPracticeReceivePage({
                   }
                 })();
               }}
-              onAbutmentShipYmdSave={(shipYmd, beforeArrivalBusinessDays) =>
-                void saveAbutmentShipYmd(
-                  selectedTransfer,
-                  shipYmd,
-                  beforeArrivalBusinessDays,
-                )
-              }
-              abutmentShipBusy={abutmentShipBusyId === transferKey}
               preferredAbutmentShipBeforeArrivalBusinessDays={
                 preferredAbutmentShipBeforeArrivalBusinessDays
               }
