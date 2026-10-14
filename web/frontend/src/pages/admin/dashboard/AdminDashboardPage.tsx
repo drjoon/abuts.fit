@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-10-14: 운영보고서 진입 타일(사이드바 대신 홈).
 // - 2026-10-13: 헥스 타일은 ExoCAD 3.0 이하 직원이 여러 명일 때 같은 세팅인지 전화로 확인.
 // - 2026-10-13: 의뢰자 배송 방식(택배/딜리버리) 지정 카드.
 // - 2026-10-08: 대시보드 카드는 순서 유지. 빈칸 없이 이어 붙이고 높이는 내용만큼.
@@ -2473,6 +2474,16 @@ export const AdminDashboardPage = () => {
               </DashTile>
 
               {/* 4) 통계 · 설정 (자주 안 봄) */}
+              <DashTile
+                className={DASH_SPAN.c2}
+                title="운영보고서"
+                icon={<FileText className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => navigate("/dashboard/ops-report")}
+              >
+                <div className="flex h-full flex-col justify-end gap-0.5">
+                  <p className="truncate text-[11px] text-muted-foreground">월간 · 인쇄</p>
+                </div>
+              </DashTile>
               <DashTile
                 className={DASH_SPAN.c3r2}
                 title="디자인 소프트웨어"
