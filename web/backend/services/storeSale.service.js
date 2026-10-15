@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-15: 스토어 카드결제(CARD) 확정·취소(토스 취소 후 REFUND). 신규 크레딧 결제 중단.
 // - 2026-10-04: 패키지 구매자 자동 ON 제거(단일가).
 // - 2026-09-13: full-package 결제 확정 시 BA.storePackageBuyer ON.
 // - 2026-09-13: 입금확정·선수금결제·취소 후 관리자 스토어 배지 emit(ownSession).
@@ -42,6 +43,14 @@ import {
   registIssueInvoice,
 } from "../utils/popbill.util.js";
 import { scheduleStoreAdminActionBadgeEmit } from "../utils/storeAdminBadge.util.js";
+import {
+  tossCancelPayment,
+  tossConfirmPayment,
+  makeDeterministicIdempotencyKey,
+} from "../utils/tossPayments.js";
+
+/** 스토어 크레딧 결제 재개 방지 (법인 판매·크레딧 분리). 코드 상수로만 켠다. */
+const ALLOW_LEGACY_STORE_CREDIT_PAY = false;
 
 function storeOrderSaleIdempotencyKeys(orderId) {
   const id = String(orderId || "").trim();
@@ -450,6 +459,7 @@ export async function finalizeStoreSale({
   matchedBy = "AUTO",
   matchedByUserId = null,
   adminNote = "",
+  pg = null,
   session: outerSession = null,
   issueInline: _issueInline = false,
 } = {}) {
@@ -488,6 +498,12 @@ export async function finalizeStoreSale({
       fulfillmentStatus: "READY",
       paymentMethod: order.paymentMethod || "BANK",
     };
+    if (pg && String(order.paymentMethod) === "CARD") {
+      setFields.pgProvider = "toss";
+      setFields.pgPaymentKey = String(pg.paymentKey || "");
+      setFields.pgReceiptUrl = String(pg.receiptUrl || "");
+      setFields.pgApprovedAt = pg.approvedAt || now;
+    }
     if (bankTransactionId) setFields.bankTransactionId = bankTransactionId;
     if (matchedByUserId) {
       setFields.matchedByUserId = matchedByUserId;
@@ -530,9 +546,13 @@ export async function finalizeStoreSale({
         bankTransactionId: bankTransactionId
           ? String(bankTransactionId)
           : null,
-        paymentMethod: "BANK",
+        paymentMethod: String(order.paymentMethod) === "CARD" ? "CARD" : "BANK",
         source:
-          matchedBy === "ADMIN" ? "admin_store_approval" : "store_auto_match",
+          String(order.paymentMethod) === "CARD"
+            ? "store_card_pay"
+            : matchedBy === "ADMIN"
+              ? "admin_store_approval"
+              : "store_auto_match",
         revenueOwner: STORE_REVENUE_OWNER_ROLE,
         splitToDealer: false,
         splitToManufacturer: false,
@@ -584,6 +604,15 @@ export async function payStoreOrderWithCredit({
   userId = null,
   session: outerSession = null,
 } = {}) {
+  // 2026-10-15: 스토어는 크레딧(선수금)과 분리. 카드결제만 허용.
+  if (!ALLOW_LEGACY_STORE_CREDIT_PAY) {
+    const err = new Error(
+      "스토어는 카드로만 결제할 수 있습니다. 크레딧은 기공·커스텀어벗 전용입니다.",
+    );
+    err.statusCode = 400;
+    err.code = "STORE_CREDIT_NOT_ALLOWED";
+    throw err;
+  }
   const {
     allocateSpendFromCreditBuckets,
     computeBusinessCreditBalanceFromLedger,
@@ -794,6 +823,46 @@ export async function cancelStoreOrderByUser({
     "./creditBalance.service.js"
   );
 
+  // 카드결제 완료 건: 트랜잭션 밖에서 PG 취소(멱등키로 재시도 안전).
+  const pre = await StoreOrder.findOne({ _id: orderId, businessAnchorId })
+    .select({
+      status: 1,
+      fulfillmentStatus: 1,
+      paymentMethod: 1,
+      pgPaymentKey: 1,
+      amountTotal: 1,
+    })
+    .lean();
+  if (
+    pre &&
+    String(pre.paymentMethod) === "CARD" &&
+    String(pre.status) === "PAID" &&
+    pre.pgPaymentKey &&
+    isStoreOrderCustomerCancelable(pre)
+  ) {
+    try {
+      await tossCancelPayment({
+        paymentKey: pre.pgPaymentKey,
+        cancelReason: String(cancelReason || "").trim() || "고객 요청 취소",
+        idempotencyKey: makeDeterministicIdempotencyKey(
+          "store-cancel",
+          String(pre._id),
+        ),
+      });
+    } catch (e) {
+      // 이미 PG에서 취소된 건은 DB만 정리한다.
+      const code = String(e?.data?.code || "");
+      if (code !== "ALREADY_CANCELED_PAYMENT") {
+        const err = new Error(
+          e?.message || "카드 결제 취소에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+        );
+        err.statusCode = 502;
+        err.code = "STORE_CARD_CANCEL_FAILED";
+        throw err;
+      }
+    }
+  }
+
   const ownSession = !outerSession;
   const session = outerSession || (await mongoose.startSession());
   let canceled = null;
@@ -973,4 +1042,93 @@ export async function markStoreOrderDelivered({
     order: order.toObject(),
     actorUserId: actorUserId ? String(actorUserId) : null,
   };
+}
+
+/** 토스 orderId(6~64자): 스토어 주문 _id 기반. */
+export function buildStoreCardPgOrderId(orderId) {
+  return `store-${String(orderId)}`;
+}
+
+/**
+ * 카드결제 승인: 금액·주문 검증 → 토스 승인 → 매출 확정(크레딧 라인 없음).
+ * 확정 실패 시 PG 승인 취소.
+ */
+export async function confirmStoreCardPayment({
+  orderId,
+  businessAnchorId,
+  userId = null,
+  paymentKey,
+  pgOrderId,
+  amount,
+} = {}) {
+  const order = await StoreOrder.findOne({ _id: orderId, businessAnchorId });
+  if (!order) {
+    const err = new Error("주문을 찾을 수 없습니다.");
+    err.statusCode = 404;
+    throw err;
+  }
+  if (String(order.paymentMethod) !== "CARD") {
+    const err = new Error("카드결제 주문이 아닙니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (String(order.status) === "PAID") {
+    return { order: order.toObject(), idempotent: true };
+  }
+  if (String(order.status) !== "PENDING") {
+    const err = new Error(`결제할 수 없는 주문 상태입니다: ${order.status}`);
+    err.statusCode = 400;
+    throw err;
+  }
+  const expected = buildStoreCardPgOrderId(order._id);
+  if (String(pgOrderId || "") !== expected || order.pgOrderId !== expected) {
+    const err = new Error("주문번호가 일치하지 않습니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (Number(amount) !== Number(order.amountTotal)) {
+    const err = new Error("결제 금액이 주문 금액과 일치하지 않습니다.");
+    err.statusCode = 400;
+    err.code = "STORE_CARD_AMOUNT_MISMATCH";
+    throw err;
+  }
+  if (!String(paymentKey || "").trim()) {
+    const err = new Error("paymentKey가 필요합니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const confirmed = await tossConfirmPayment({
+    paymentKey,
+    orderId: expected,
+    amount: Number(order.amountTotal),
+  });
+
+  try {
+    await finalizeStoreSale({
+      orderId: order._id,
+      matchedBy: "AUTO",
+      matchedByUserId: userId || null,
+      pg: {
+        paymentKey,
+        receiptUrl: confirmed?.receipt?.url || "",
+        approvedAt: confirmed?.approvedAt
+          ? new Date(confirmed.approvedAt)
+          : new Date(),
+      },
+    });
+  } catch (finalizeErr) {
+    await tossCancelPayment({
+      paymentKey,
+      cancelReason: "주문 확정 실패 자동 취소",
+      idempotencyKey: makeDeterministicIdempotencyKey(
+        "store-autocancel",
+        String(order._id),
+      ),
+    }).catch(() => {});
+    throw finalizeErr;
+  }
+
+  const paid = await StoreOrder.findById(order._id).lean();
+  return { order: paid, idempotent: false };
 }

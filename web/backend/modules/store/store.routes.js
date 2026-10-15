@@ -5,6 +5,7 @@ import { Router } from "express";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
   cancelMyStoreOrder,
+  confirmMyStoreCardPayment,
   createStoreOrder,
   getMyStoreOrder,
   getStoreCatalog,
@@ -21,6 +22,7 @@ router.get("/catalog", getStoreCatalog);
 router.get("/orders", listMyStoreOrders);
 router.get("/orders/:id", getMyStoreOrder);
 router.post("/orders", createStoreOrder);
+router.post("/orders/:id/card/confirm", confirmMyStoreCardPayment);
 router.post("/orders/:id/pay-with-credit", payMyStoreOrderWithCredit);
 router.post("/orders/:id/cancel", cancelMyStoreOrder);
 

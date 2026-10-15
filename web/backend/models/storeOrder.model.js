@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-15: 스토어 = 크레딧 분리. paymentMethod CARD(토스) + pg* 필드.
 // - 2026-09-23: 신규 배송=direct + 10만원↑무료·미만 3,500. lab_bundle은 레거시 표시만.
 // - 2026-09-13: shippingMode lab_bundle|direct (10만원 이하 동봉/유료직송).
 // - 2026-08-23: 배송·출고 풀필먼트 필드(fulfillmentStatus·shipping).
@@ -117,13 +118,21 @@ const storeOrderSchema = new mongoose.Schema(
       default: null,
     },
     paidAt: { type: Date, default: null },
-    /** BANK=계좌이체 입금, CREDIT=유료 선수금 차감 */
+    /**
+     * CARD=토스 카드결제(신규, 법인 판매·크레딧과 분리), BANK·CREDIT=레거시.
+     */
     paymentMethod: {
       type: String,
-      enum: ["BANK", "CREDIT"],
-      default: "BANK",
+      enum: ["BANK", "CREDIT", "CARD"],
+      default: "CARD",
       index: true,
     },
+    /** 카드결제 PG 식별자 (CARD 전용) */
+    pgProvider: { type: String, default: "", trim: true },
+    pgOrderId: { type: String, default: "", trim: true, index: true },
+    pgPaymentKey: { type: String, default: "", trim: true },
+    pgReceiptUrl: { type: String, default: "", trim: true },
+    pgApprovedAt: { type: Date, default: null },
     /** 고객·관리자 취소 이력 (원장 삭제형 롤백의 감사 대체) */
     canceledAt: { type: Date, default: null, index: true },
     canceledBy: {

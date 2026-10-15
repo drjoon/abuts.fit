@@ -54,8 +54,8 @@ export type StoreOrder = {
 };
 
 export const STORE_ORDER_STATUS_LABEL: Record<string, string> = {
-  PENDING: "입금 대기",
-  MATCHED: "입금 확인 중",
+  PENDING: "결제 대기",
+  MATCHED: "결제 확인 중",
   PAID: "결제 완료",
   CANCELED: "취소",
   EXPIRED: "만료",
@@ -64,6 +64,7 @@ export const STORE_ORDER_STATUS_LABEL: Record<string, string> = {
 export const STORE_PAYMENT_METHOD_LABEL: Record<string, string> = {
   BANK: "계좌이체",
   CREDIT: "선수금",
+  CARD: "카드",
 };
 
 export const STORE_SHELL_CLASS =
@@ -223,7 +224,7 @@ export function buildOrderProgressSteps(order: StoreOrder): ProgressStep[] {
     },
     {
       key: "payment",
-      label: paid ? "결제 완료" : "입금·결제",
+      label: paid ? "결제 완료" : "결제",
       done: paid,
       active: !paid,
       at: order.paidAt,

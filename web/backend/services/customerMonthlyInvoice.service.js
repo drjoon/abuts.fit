@@ -211,6 +211,7 @@ async function generateExemptDrafts({ periodStart, periodEnd }) {
 
 /**
  * 전월 STORE_SALE / REV_STORE_TAXABLE → 과세 세금계산서 월합 (사업자당 1건).
+ * 카드결제(CARD) 건은 제외(카드매출전표 증빙, 이중 증빙 방지).
  */
 async function generateTaxableStoreDrafts({ periodStart, periodEnd }) {
   const rows = await LedgerLine.aggregate([
@@ -233,6 +234,8 @@ async function generateTaxableStoreDrafts({ periodStart, periodEnd }) {
     {
       $match: {
         "journalDoc.eventType": "STORE_SALE",
+        // 카드결제 건은 카드매출전표가 증빙 — 세금계산서 월합 제외.
+        "journalDoc.meta.paymentMethod": { $ne: "CARD" },
       },
     },
     {

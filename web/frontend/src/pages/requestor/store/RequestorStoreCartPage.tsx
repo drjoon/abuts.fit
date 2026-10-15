@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-15: 스토어 결제 = 토스 카드결제(크레딧 분리).
 // - 2026-10-04: 장바구니 — 대상(치과/기공소)에 없는 상품 제외.
 // - 2026-10-04: 패키지 할인 제거 — 단일 판매가.
 // - 2026-09-23: 배송비=10만원↑무료·미만 3,500. 기공물 동봉 UI 폐지.
@@ -53,6 +54,10 @@ import {
   STORE_BUSINESS_SETTINGS_PATH,
   type StoreShippingForm,
 } from "@/shared/store/storeDefaultShipping";
+import {
+  requestStoreCardPayment,
+  type StoreCardPgInfo,
+} from "@/shared/store/storeCardPayment";
 import { StorePriceDisplay } from "@/pages/requestor/store/StorePriceDisplay";
 
 export default function RequestorStoreCartPage() {
@@ -153,7 +158,7 @@ export default function RequestorStoreCartPage() {
         success: boolean;
         message?: string;
         code?: string;
-        data?: { order: { _id: string } };
+        data?: { order: { _id: string }; pg?: StoreCardPgInfo };
       }>({
         path: "/api/store/orders",
         method: "POST",
@@ -164,24 +169,26 @@ export default function RequestorStoreCartPage() {
           })),
           shipping: { ...shipping, memo: memo.trim() },
           shippingMode: orderTotals.shippingMode,
-          paymentMethod: "CREDIT",
+          paymentMethod: "CARD",
         },
       });
       const body = res.data;
       if (
-        !res.ok &&
-        (body?.code === "INSUFFICIENT_PAID_CREDIT" || res.status === 402)
+        !res.ok ||
+        !body?.success ||
+        !body.data?.order?._id ||
+        !body.data.pg
       ) {
-        toast.error(body?.message || "선수금 잔액이 부족합니다. 충전 후 다시 주문해 주세요.");
-        navigate("/dashboard/credits?tab=charge");
-        return;
-      }
-      if (!res.ok || !body?.success || !body.data?.order?._id) {
         throw new Error(body?.message || "주문 생성에 실패했습니다.");
       }
+      // 결제창 이동 전에 비운다. 취소·실패 시 주문 내역에서 재확인.
       clear();
-      toast.success("선수금으로 결제되었습니다.");
-      navigate(`/dashboard/store/orders/${body.data.order._id}`);
+      await requestStoreCardPayment({
+        pg: body.data.pg,
+        storeOrderId: body.data.order._id,
+        customerEmail: user?.email,
+        customerName: user?.name,
+      });
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "주문 생성에 실패했습니다.";
@@ -382,8 +389,11 @@ export default function RequestorStoreCartPage() {
                 </span>
               </div>
               <p className="pt-1 text-xs text-muted-foreground">
-                스토어는 선수금으로만 결제합니다. 기공·커스텀어벗과 장바구니를
-                합치지 않으며, (세금)계산서는 사용분 기준 월말 과세 발행됩니다.
+                스토어는 카드로 결제합니다.
+                <br />
+                크레딧은 기공·커스텀어벗 전용이며, 장바구니를 합치지 않습니다.
+                <br />
+                카드매출전표로 증빙합니다.
               </p>
               <Button
                 type="button"
@@ -391,7 +401,7 @@ export default function RequestorStoreCartPage() {
                 disabled={submitting || shippingLoading || !shippingReady}
                 onClick={() => void checkout()}
               >
-                {submitting ? "결제 중…" : "선수금으로 결제"}
+                {submitting ? "결제창 여는 중…" : "카드로 결제"}
               </Button>
             </div>
           </div>

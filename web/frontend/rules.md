@@ -513,6 +513,7 @@ Notes:
 - 부가세(VAT) / 면세 UI 정책(강제, 루트 `rules.md` §2.3) — 겸영 이중 체계:
   - **고객·기공 경로(면세)**: 가격·충전·약관에서 "VAT 별도 / 부가세 포함 / VAT 10%" 문구 금지. 증빙은 **계산서**.
   - **스토어 기성품(과세)**: 치과·기공소 의뢰자. 판매 SKU는 **Abutment 4종**(공통) + **Grip Driver(치과만)**. 고객 표시는 **부가세 포함 단일가** + `과세 · 부가세 포함`. 패키지 할인 없음. `RequestorStorePage` / cart / orders. 헬퍼: `shared/tax/invoiceLabels.ts` · `shared/store/storeCatalog.ts` (`STORE_PRODUCT_AUDIENCES`).
+  - **스토어 결제**: 카드(토스 결제창) 전용. 장바구니 → 주문 생성 → 결제창 → `/dashboard/store/payment/success|fail` 복귀(승인·실패 시 대기 주문 취소). 크레딧 결제·충전 유도 문구 금지.
   - **스토어 배송비**: 상품 10만원 이상 무료 · 미만 ₩3,500(부가세 포함). 기공물 동봉(`lab_bundle`, 치과 기공소 우회 무료) 폐지. SSOT: `shared/store/storeShipping.ts`.
   - **관리자 스토어**: 재고·입금승인·출고(운송장)·배송완료 `/dashboard/store-admin` (`AdminStorePage`). 상품 배치는 **치과/기공소 각각** 저장. 매출은 전액 어벗츠(`REV_STORE_TAXABLE`).
   - **과세 지급**: 어벗츠↔제조사, 어벗츠↔딜러사, 어벗츠↔개발운영사. 지급 UI에 공급가·부가세·합계와 **세금계산서** 표시.
