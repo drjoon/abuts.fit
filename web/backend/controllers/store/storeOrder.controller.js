@@ -45,6 +45,7 @@ import {
   getInventoryMap,
   payStoreOrderWithCredit,
   confirmStoreCardPayment,
+  expireStaleStoreCardOrders,
   buildStoreCardPgOrderId,
   reserveStoreInventory,
 } from "../../services/storeSale.service.js";
@@ -56,7 +57,8 @@ const B_PLAN_DEPOSIT_ACCOUNT_DEFAULTS = {
   holderName: "어벗츠 주식회사",
 };
 
-const ORDER_TTL_MS = 48 * 60 * 60 * 1000;
+/** 카드결제 대기 주문 유효시간(결제창 이탈 시 재고 예약 해제). */
+const ORDER_TTL_MS = 30 * 60 * 1000;
 
 async function getDepositAccountInfo() {
   const doc = await SystemSettings.findOne({ key: "global" })
@@ -226,6 +228,7 @@ async function resolveDefaultShipping({ userId, businessAnchorId }) {
 
 export async function getStoreCatalog(req, res) {
   try {
+    await expireStaleStoreCardOrders().catch(() => {});
     assertPracticeRequestor(req);
     const businessAnchorId = req.user?.businessAnchorId;
     if (!businessAnchorId) {
@@ -293,6 +296,7 @@ export async function createStoreOrder(req, res) {
       });
     }
     const audience = await assertRequestorStoreAccess(req, businessAnchorId);
+    await expireStaleStoreCardOrders().catch(() => {});
 
     const built = buildOrderItems(req.body?.items, audience);
     const totals = applyStoreShippingToOrderTotals(built);
@@ -510,6 +514,7 @@ export async function listMyStoreOrders(req, res) {
       });
     }
 
+    await expireStaleStoreCardOrders().catch(() => {});
     const orders = await StoreOrder.find({ businessAnchorId })
       .sort({ createdAt: -1 })
       .limit(100)

@@ -46,6 +46,7 @@ import { scheduleStoreAdminActionBadgeEmit } from "../utils/storeAdminBadge.util
 import {
   tossCancelPayment,
   tossConfirmPayment,
+  tossGetPayment,
   makeDeterministicIdempotencyKey,
 } from "../utils/tossPayments.js";
 
@@ -1131,4 +1132,66 @@ export async function confirmStoreCardPayment({
 
   const paid = await StoreOrder.findById(order._id).lean();
   return { order: paid, idempotent: false };
+}
+
+/** 결제 대기(PENDING) 카드 주문 만료: 재고 예약 해제. 조회·주문 진입 시 호출(저비용). */
+export async function expireStaleStoreCardOrders({ limit = 50 } = {}) {
+  const stale = await StoreOrder.find({
+    status: "PENDING",
+    paymentMethod: "CARD",
+    expiresAt: { $lt: new Date() },
+  })
+    .select({ _id: 1, items: 1 })
+    .limit(limit)
+    .lean();
+  let expired = 0;
+  for (const row of stale) {
+    const res = await StoreOrder.updateOne(
+      { _id: row._id, status: "PENDING" },
+      {
+        $set: {
+          status: "EXPIRED",
+          fulfillmentStatus: "CANCELED",
+          canceledAt: new Date(),
+          canceledByRole: "SYSTEM",
+          cancelReason: "결제 대기 만료",
+        },
+      },
+    );
+    if (res.modifiedCount) {
+      await releaseStoreInventoryReservation({ items: row.items });
+      expired += 1;
+    }
+  }
+  return { expired };
+}
+
+/**
+ * 토스 웹훅(PAYMENT_STATUS_CHANGED): 토스에서 취소된 결제를 주문에 반영.
+ * 웹훅 본문은 신뢰하지 않고 paymentKey로 재조회해 상태를 확인한다.
+ */
+export async function syncStoreCardPaymentFromWebhook({ paymentKey } = {}) {
+  const key = String(paymentKey || "").trim();
+  if (!key) return { handled: false, reason: "no_payment_key" };
+  const payment = await tossGetPayment({ paymentKey: key });
+  const order = await StoreOrder.findOne({ pgPaymentKey: key }).lean();
+  if (!order) return { handled: false, reason: "order_not_found" };
+  if (String(payment?.status) !== "CANCELED") {
+    return { handled: false, reason: `status_${payment?.status}` };
+  }
+  if (String(order.status) !== "PAID") {
+    return { handled: false, reason: "order_not_paid" };
+  }
+  if (!isStoreOrderCustomerCancelable(order)) {
+    // 출고 이후 PG 취소는 자동 반영하지 않는다(수동 확인).
+    console.warn("[tossWebhook] 출고 후 PG 취소 — 수동 확인 필요", order._id);
+    return { handled: false, reason: "already_shipped" };
+  }
+  await cancelStoreOrderByUser({
+    orderId: order._id,
+    businessAnchorId: order.businessAnchorId,
+    userId: null,
+    cancelReason: "PG 취소 동기화",
+  });
+  return { handled: true };
 }
