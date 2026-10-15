@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-15: PTX 기공비 면세 월합 공급자=어벗츠기공소(ABUTS_LAB_TO_CUSTOMER, 위수탁). flag `ABUTS_LAB_SELLER_INVOICE`.
 // - 2026-09-20: PTX 라이브 HOLD/HOLD_ADJUST를 면세 월합에 포함. LAB_TO_PRACTICE와 이중발행 금지.
 // - 2026-09-20: 월합 writeDate=기간 말일(KST).
 // - 2026-08-23: 고객향 ABUTS_TO_CUSTOMER 월합 — 면세(기공·어벗) / 과세(스토어) 분리.
@@ -16,6 +17,7 @@ import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import { buildPartySnapshotFromAnchor } from "../utils/taxInvoiceParty.util.js";
 import { writeDateFromPeriodEnd } from "../utils/taxInvoicePeriod.util.js";
 import { resolvePreviousKstMonthRange } from "./practiceLabInvoice.service.js";
+import { ABUTS_LAB_SELLER_INVOICE_ENABLED } from "../constants/abutsLabSettlement.js";
 
 export { resolvePreviousKstMonthRange };
 
@@ -43,6 +45,13 @@ async function resolveContactUserForAnchor(anchor) {
     .lean();
 }
 
+/** 어벗츠기공소(internalLab, 개인 개설) 앵커. 없으면 null. */
+async function resolveAbutsLabSellerAnchor() {
+  return BusinessAnchor.findOne({ businessType: "internalLab" })
+    .sort({ createdAt: 1 })
+    .lean();
+}
+
 async function createCustomerMonthlyDraft({
   businessAnchorId,
   taxType,
@@ -54,6 +63,7 @@ async function createCustomerMonthlyDraft({
   periodEnd,
   sourceRefType,
   sourceRefIds,
+  sellerAnchor = null,
 }) {
   const practice = await BusinessAnchor.findById(businessAnchorId).lean();
   if (!practice) return { created: false, skipped: true };
@@ -63,18 +73,27 @@ async function createCustomerMonthlyDraft({
   const buyerKind =
     String(practice.requestorKind || "").trim() === "lab" ? "lab" : "practice";
 
+  // 어벗츠기공소 공급자: 위수탁(법인=팝빌 수탁자). 그 외는 기존 어벗츠 정발행.
+  const sellerContact = sellerAnchor
+    ? await resolveContactUserForAnchor(sellerAnchor)
+    : null;
+  const seller = sellerAnchor
+    ? buildPartySnapshotFromAnchor(sellerAnchor, sellerContact)
+    : undefined;
+
   try {
     await TaxInvoiceDraft.create({
       chargeOrderId: null,
       storeOrderId: null,
       userId: practice.primaryContactUserId || null,
       businessAnchorId,
-      direction: "ABUTS_TO_CUSTOMER",
-      issuanceMode: "SELF",
+      direction: sellerAnchor ? "ABUTS_LAB_TO_CUSTOMER" : "ABUTS_TO_CUSTOMER",
+      issuanceMode: sellerAnchor ? "TRUSTEE" : "SELF",
       taxType,
       kind: "NORMAL",
       buyerKind,
-      sellerAnchorId: null,
+      sellerAnchorId: sellerAnchor ? sellerAnchor._id : null,
+      ...(seller ? { seller } : {}),
       status: "PENDING_APPROVAL",
       supplyAmount,
       vatAmount,
@@ -125,8 +144,23 @@ async function generateExemptDrafts({ periodStart, periodEnd }) {
       },
     },
     {
+      $addFields: {
+        // PTX 기공비는 어벗츠기공소 공급자 경로(flag on)로 분리한다.
+        // 한 PTX 보류에 어벗 생산비가 섞여 있어도 의뢰 1건 단위로 같은 계산서에 둔다.
+        // flag off면 전부 false로 묶어 기존 월합(사업자당 1건)과 동일하게 둔다.
+        isPtx: ABUTS_LAB_SELLER_INVOICE_ENABLED
+          ? {
+              $regexMatch: {
+                input: "$journalDoc.eventType",
+                regex: "^PRACTICE_TRANSFER_",
+              },
+            }
+          : false,
+      },
+    },
+    {
       $group: {
-        _id: "$ownerId",
+        _id: { ownerId: "$ownerId", isPtx: "$isPtx" },
         totalAmount: { $sum: { $multiply: ["$amount", -1] } },
         refIds: { $addToSet: "$refId" },
       },
@@ -134,27 +168,40 @@ async function generateExemptDrafts({ periodStart, periodEnd }) {
     { $match: { totalAmount: { $gt: 0 } } },
   ]);
 
+  const labSeller = ABUTS_LAB_SELLER_INVOICE_ENABLED
+    ? await resolveAbutsLabSellerAnchor()
+    : null;
+  if (ABUTS_LAB_SELLER_INVOICE_ENABLED && !labSeller) {
+    throw new Error(
+      "어벗츠기공소(internalLab) 앵커가 없어 기공비 계산서를 만들 수 없습니다.",
+    );
+  }
+
   let created = 0;
   let skippedExisting = 0;
   for (const row of rows) {
-    const businessAnchorId = row?._id;
+    const businessAnchorId = row?._id?.ownerId;
     if (!businessAnchorId || !Types.ObjectId.isValid(String(businessAnchorId))) {
       continue;
     }
     const totalAmount = Math.round(Number(row.totalAmount || 0));
     if (totalAmount <= 0) continue;
 
+    const ptxLane = Boolean(labSeller) && row?._id?.isPtx === true;
     const result = await createCustomerMonthlyDraft({
       businessAnchorId,
       taxType: "면세",
       supplyAmount: totalAmount,
       vatAmount: 0,
       totalAmount,
-      itemName: "기공·커스텀어벗 대금(월합·면세 계산서)",
+      itemName: ptxLane
+        ? "기공비(월합·면세 계산서)"
+        : "기공·커스텀어벗 대금(월합·면세 계산서)",
       periodStart,
       periodEnd,
       sourceRefType: "EXEMPT_SPEND",
       sourceRefIds: (row.refIds || []).filter(Boolean),
+      sellerAnchor: ptxLane ? labSeller : null,
     });
     if (result.created) created++;
     else if (result.skipped) skippedExisting++;

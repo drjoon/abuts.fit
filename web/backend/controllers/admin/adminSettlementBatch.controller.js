@@ -23,6 +23,7 @@ import {
   resolveSettlementInvoiceDraftSpec,
 } from "../../services/settlement.service.js";
 import { buildPartySnapshotFromAnchor } from "../../utils/taxInvoiceParty.util.js";
+import { ABUTS_LAB_PURCHASE_BUYER_ENABLED } from "../../constants/abutsLabSettlement.js";
 import { writeDateFromPeriodEnd } from "../../utils/taxInvoicePeriod.util.js";
 import { scheduleTaxPendingBadgeEmit } from "../../services/adminCommBadge.service.js";
 
@@ -169,6 +170,17 @@ export async function adminConfirmSettlementBatch(req, res) {
       return res.status(409).json({ success: false, message: "DRAFT 배치만 확정할 수 있습니다." });
     }
     const abuts = await resolveAbutsAnchor();
+    const internalLab = ABUTS_LAB_PURCHASE_BUYER_ENABLED
+      ? await BusinessAnchor.findOne({ businessType: "internalLab" })
+          .sort({ createdAt: 1 })
+          .lean()
+      : null;
+    if (ABUTS_LAB_PURCHASE_BUYER_ENABLED && !internalLab) {
+      return res.status(409).json({
+        success: false,
+        message: "어벗츠기공소(internalLab) 앵커가 없어 매입 계산서를 만들 수 없습니다.",
+      });
+    }
     const items = await SettlementBatchItem.find({ batchId: batch._id });
     let totalAmount = 0;
     for (const item of items) {
@@ -202,9 +214,14 @@ export async function adminConfirmSettlementBatch(req, res) {
         anchor?.taxInvoice?.trusteeIssueEnabled !== false;
       if (invoiceSpec && trusteeEnabled) {
         const seller = buildPartySnapshotFromAnchor(anchor);
-        const buyer = abuts ? buildPartySnapshotFromAnchor(abuts) : {};
+        // 기공비 매입(협력·하청)의 구매자는 어벗츠기공소(개인 개설). flag off면 기존 admin 앵커.
+        const buyerAnchor =
+          item.role === "lab" && ABUTS_LAB_PURCHASE_BUYER_ENABLED
+            ? internalLab || abuts
+            : abuts;
+        const buyer = buyerAnchor ? buildPartySnapshotFromAnchor(buyerAnchor) : {};
         const draft = await TaxInvoiceDraft.create({
-          businessAnchorId: abuts?._id || null,
+          businessAnchorId: buyerAnchor?._id || null,
           direction: invoiceSpec.direction,
           issuanceMode: invoiceSpec.issuanceMode,
           taxType: invoiceSpec.taxType,

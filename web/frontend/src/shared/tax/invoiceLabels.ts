@@ -17,6 +17,7 @@ export type InvoiceTaxType = "과세" | "면세";
 
 export type TaxInvoiceDirection =
   | "ABUTS_TO_CUSTOMER"
+  | "ABUTS_LAB_TO_CUSTOMER"
   | "LAB_TO_PRACTICE"
   | "AFFILIATE_TO_ABUTS";
 
@@ -26,12 +27,14 @@ export type TaxInvoiceBuyerKind = "practice" | "lab";
 export type TaxInvoiceLane =
   | "ABUTS_TO_LAB"
   | "ABUTS_TO_PRACTICE"
+  | "ABUTS_LAB_TO_CUSTOMER"
   | "LAB_TO_PRACTICE"
   | "AFFILIATE_TO_ABUTS";
 
 export const TAX_INVOICE_LANE_LABEL: Record<TaxInvoiceLane, string> = {
   ABUTS_TO_LAB: "어벗츠 → 기공소",
   ABUTS_TO_PRACTICE: "어벗츠 → 치과",
+  ABUTS_LAB_TO_CUSTOMER: "어벗츠기공소 → 치과·기공소",
   LAB_TO_PRACTICE: "기공소 → 치과(이력)",
   AFFILIATE_TO_ABUTS: "관계사 → 어벗츠",
 };
@@ -40,6 +43,7 @@ export const TAX_INVOICE_LANE_LABEL: Record<TaxInvoiceLane, string> = {
 export const TAX_INVOICE_DIRECTION_LABEL: Record<TaxInvoiceDirection, string> =
   {
     ABUTS_TO_CUSTOMER: "어벗츠 → 고객",
+    ABUTS_LAB_TO_CUSTOMER: "어벗츠기공소 → 고객",
     LAB_TO_PRACTICE: "기공소 → 치과",
     AFFILIATE_TO_ABUTS: "관계사 → 어벗츠",
   };
@@ -51,6 +55,7 @@ export function taxInvoiceLaneFromDraft(draft: {
   const direction = String(draft?.direction || "").trim();
   if (direction === "LAB_TO_PRACTICE") return "LAB_TO_PRACTICE";
   if (direction === "AFFILIATE_TO_ABUTS") return "AFFILIATE_TO_ABUTS";
+  if (direction === "ABUTS_LAB_TO_CUSTOMER") return "ABUTS_LAB_TO_CUSTOMER";
   if (direction === "ABUTS_TO_CUSTOMER") {
     return String(draft?.buyerKind || "").trim() === "lab"
       ? "ABUTS_TO_LAB"

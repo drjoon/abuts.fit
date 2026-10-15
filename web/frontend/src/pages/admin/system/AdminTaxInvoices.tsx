@@ -125,6 +125,10 @@ function applyLaneToQuery(qs: URLSearchParams, lane: LaneFilter) {
     qs.set("direction", "AFFILIATE_TO_ABUTS");
     return;
   }
+  if (lane === "ABUTS_LAB_TO_CUSTOMER") {
+    qs.set("direction", "ABUTS_LAB_TO_CUSTOMER");
+    return;
+  }
   qs.set("direction", "ABUTS_TO_CUSTOMER");
   qs.set("buyerKind", lane === "ABUTS_TO_LAB" ? "lab" : "practice");
 }

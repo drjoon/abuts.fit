@@ -83,6 +83,10 @@ import {
   getPlatformFeeSettings,
   updatePlatformFeeSettings,
 } from "../../controllers/admin/admin.settings.controller.js";
+import {
+  getCorpPlatformFees,
+  updateCorpPlatformFees,
+} from "../../controllers/admin/adminCorpPlatformFee.controller.js";
 // - web/frontend/src/features/settings/tabs/AdminLabFeeSchedulesTab.tsx
 // - web/frontend/src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx
 // - web/backend/controllers/admin/admin.abutsLabFeeSchedule.controller.js
@@ -300,6 +304,18 @@ router.patch(
   authenticate,
   authorize(["admin", "devops"]),
   updatePlatformFeeSettings,
+);
+router.get(
+  "/settings/corp-fees",
+  authenticate,
+  authorize(["admin", "devops"]),
+  getCorpPlatformFees,
+);
+router.patch(
+  "/settings/corp-fees",
+  authenticate,
+  authorize(["admin", "devops"]),
+  updateCorpPlatformFees,
 );
 router.get(
   "/settings/lab-fee-schedules",

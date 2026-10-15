@@ -913,6 +913,9 @@ export const DEFAULT_PLATFORM_FEE_RATE = 0.1;
  * 기공소 플랫폼 사용료·하청 수수료 부과 여부.
  * false = 미부과(화면·정산 차감 0). 하청 배정(`assigneeKind=subcontract`)은 유지.
  * 재개 시 true 후 `resolvePracticeTransferFeeRatePolicy` 경로를 다시 탄다.
+ * 주의(2026-10-15): 어벗츠기공소(개인 개설)와 어벗츠 주식회사 구조에서는 기공 매출 정률 청구가
+ * 명의대여·사실상 개설 시비에 가장 취약하다. true로 되돌리지 말고 법인 청구는 정액/건당으로 모델링한다
+ * (`constants/abutsLabSettlement.js` CORP_FEE_FIXED_ONLY).
  */
 export const CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES = false;
 /** 어벗츠 원청을 타 기공소가 하청 수행할 때 공제율(기본 10%, 수행 기공소 90%). */

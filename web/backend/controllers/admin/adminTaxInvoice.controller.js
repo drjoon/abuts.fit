@@ -116,9 +116,12 @@ export async function adminListTaxInvoiceDrafts(req, res) {
     match.status = status;
   }
   if (
-    ["ABUTS_TO_CUSTOMER", "LAB_TO_PRACTICE", "AFFILIATE_TO_ABUTS"].includes(
-      direction,
-    )
+    [
+      "ABUTS_TO_CUSTOMER",
+      "ABUTS_LAB_TO_CUSTOMER",
+      "LAB_TO_PRACTICE",
+      "AFFILIATE_TO_ABUTS",
+    ].includes(direction)
   ) {
     match.direction = direction;
   }

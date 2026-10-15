@@ -35,9 +35,11 @@ import { AdminCreditSettingsTab } from "@/features/settings/tabs/AdminCreditSett
 import { AdminLabFeeSchedulesTab } from "@/features/settings/tabs/AdminLabFeeSchedulesTab";
 import { AdminAbutsLabFeeScheduleTab } from "@/features/settings/tabs/AdminAbutsLabFeeScheduleTab";
 import { PracticeTransferAutoMatchTab } from "@/pages/devops/components/PracticeTransferAutoMatchTab";
+import { AdminCorpFeesTab } from "@/features/settings/tabs/AdminCorpFeesTab";
 import {
   BadgeJapaneseYen,
   Banknote,
+  Building2,
   CreditCard,
   FlaskConical,
   Package,
@@ -54,7 +56,8 @@ type TabKey =
   | "customAbut"
   | "autoMatch"
   | "abutsFees"
-  | "labFees";
+  | "labFees"
+  | "corpFees";
 
 const LEGACY_TAB_REDIRECT: Record<string, TabKey> = {
   design: "autoMatch",
@@ -178,6 +181,12 @@ export const AdminPlatformSettingsPage = ({
         label: "기공소 수가",
         icon: Banknote,
         content: <AdminLabFeeSchedulesTab />,
+      },
+      {
+        key: "corpFees",
+        label: "법인 청구",
+        icon: Building2,
+        content: <AdminCorpFeesTab />,
       },
     ],
     [abutsPendingCount, handlePendingCountChange],

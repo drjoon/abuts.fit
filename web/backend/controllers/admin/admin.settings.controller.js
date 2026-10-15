@@ -13,6 +13,7 @@
 // - 2026-08-18: 기공소 공급 어벗 전역 단가 PATCH.
 // - 2026-09-09: manufacturerRemakeUnitPrice(리메이크 매입가, 기본 6,600) 저장 허용.
 import SystemSettings from "../../models/systemSettings.model.js";
+import { CORP_FEE_FIXED_ONLY } from "../../constants/abutsLabSettlement.js";
 import { getAutoGateConfig } from "../../services/autoMachiningGate.service.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { Types } from "mongoose";
@@ -1649,6 +1650,14 @@ export async function updatePlatformFeeSettings(req, res) {
     let directPlatformFeeEnabled;
     if (payload.directPlatformFeeEnabled != null) {
       directPlatformFeeEnabled = Boolean(payload.directPlatformFeeEnabled);
+      // 법인 청구는 정액/건당만. 기공 매출 정률 사용료 재개는 명의대여·사실상 개설 시비 위험.
+      if (directPlatformFeeEnabled && CORP_FEE_FIXED_ONLY) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "정률 플랫폼 사용료는 켤 수 없습니다. 법인 청구는 정액 또는 건당 단가로 설정하세요.",
+        });
+      }
     }
 
     let autoMatchMonthlyFee;

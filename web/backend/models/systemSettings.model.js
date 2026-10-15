@@ -234,6 +234,19 @@ const systemSettingsSchema = new mongoose.Schema(
       defaultRequestFreeCredit: { type: Number, default: 0 },
       defaultShippingFreeCredit: { type: Number, default: 0 },
     },
+    // 법인(어벗츠 주식회사)→어벗츠기공소 정액 청구 단가. 금액은 부가세 포함. 제품 단위는 어벗츠 기공수가 항목 id 기준.
+    // 법인·기공소 협의로 관리자가 언제든 변경. 정률 금지(CORP_FEE_FIXED_ONLY). 현재 청구·정산 연동 없음(설정만).
+    // related: web/backend/services/corpPlatformFee.service.js
+    corpPlatformFees: {
+      platformUsageMonthlyFee: { type: Number, default: 0 },
+      cncRentalMonthlyFee: { type: Number, default: 0 },
+      productUnitFees: { type: [mongoose.Schema.Types.Mixed], default: undefined },
+      note: { type: String, default: "" },
+      updatedAt: { type: Date, default: null },
+      updatedBy: { type: String, default: "" },
+      // 변경 이력(협의 근거). 최근 50건.
+      history: { type: [mongoose.Schema.Types.Mixed], default: undefined },
+    },
     // 어벗츠 기공수가 카탈로그(항목 On/Off·이름). price는 관리자 입력.
     abutsLabFeeSchedule: {
       items: { type: [mongoose.Schema.Types.Mixed], default: [] },

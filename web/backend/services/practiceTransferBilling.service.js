@@ -79,6 +79,7 @@
 // - 2026-08-23: 제조사 적립은 어벗 1개당 고정단가(부가세 포함→공급가+VAT). 플랫폼수수료·기공소 배송은 제외.
 // - 2026-08-18: 제조사 적립은 어벗 1개당 고정단가. 플랫폼수수료·기공소 배송은 제외.
 import mongoose, { Types } from "mongoose";
+import { ABUTS_LAB_ESCROW_OWNER_ENABLED } from "../constants/abutsLabSettlement.js";
 
 /** 치과 크레딧 내역 유형 라벨 SSOT */
 export const PRACTICE_TRANSFER_LEDGER_LABELS = {
@@ -1471,6 +1472,45 @@ async function resolveDevopsEscrowOwnerId(session = null) {
   return id;
 }
 
+let _cachedLabEscrowOwnerId = null;
+/**
+ * 기공비(lab share) 에스크로 소유.
+ * flag `ABUTS_LAB_ESCROW_OWNER` on: 어벗츠기공소(internalLab, 개인 개설) — 대금 수취·계약 주체.
+ * off 또는 앵커 없음: 기존 devops. 어벗·배송 몫은 항상 devops.
+ * 반환 role은 hold meta(`escrowOwnerRole`)에 같이 남겨 release가 hold 소유자를 따른다.
+ */
+async function resolveLabShareEscrowOwner(session = null) {
+  if (ABUTS_LAB_ESCROW_OWNER_ENABLED) {
+    if (!session && _cachedLabEscrowOwnerId) {
+      return { id: _cachedLabEscrowOwnerId, role: "requestor" };
+    }
+    const lab = await BusinessAnchor.findOne({ businessType: "internalLab" })
+      .select({ _id: 1 })
+      .sort({ createdAt: 1 })
+      .session(session || null)
+      .lean();
+    if (lab?._id) {
+      const id = String(lab._id);
+      if (!session) _cachedLabEscrowOwnerId = id;
+      return { id, role: "requestor" };
+    }
+    console.warn(
+      "[ptx-escrow] internalLab 앵커가 없어 기공비 에스크로를 devops에 둡니다.",
+    );
+  }
+  return { id: await resolveDevopsEscrowOwnerId(session), role: "devops" };
+}
+
+/** release/adjust: hold 저널 meta의 소유자를 우선(진행 중 hold 호환), 없으면 fallback. */
+function escrowOwnerFromHoldMeta(holdMeta, fallback) {
+  const id = String(holdMeta?.devopsAnchorId || "").trim();
+  if (!id) return fallback;
+  return {
+    id,
+    role: String(holdMeta?.escrowOwnerRole || "").trim() || "devops",
+  };
+}
+
 function practiceTransferHoldKey(transferId) {
   return `practice_transfer:${String(transferId)}:hold`;
 }
@@ -1803,6 +1843,7 @@ function prepareHoldSliceEntry({
   transferId,
   practiceAnchorId,
   devopsAnchorId,
+  escrowOwnerRole = "devops",
   amount,
   shareKind,
   displayLabel,
@@ -1907,6 +1948,7 @@ function prepareHoldSliceEntry({
         fromFreeRequest: sliceSplit.fromFreeRequest,
         fromFreeShipping: sliceSplit.fromFreeShipping,
         devopsAnchorId,
+        escrowOwnerRole,
       },
       lines: [
         ...buildPracticeDebitLines({
@@ -1917,7 +1959,7 @@ function prepareHoldSliceEntry({
         }),
         {
           accountCode: "PLATFORM_ESCROW",
-          ownerRole: "devops",
+          ownerRole: escrowOwnerRole,
           ownerId: devopsAnchorId,
           amount: amt,
           amountExcludingVat: amt,
@@ -2120,6 +2162,8 @@ export async function holdPracticeTransferCredits({
     err.statusCode = 500;
     throw err;
   }
+  // 기공비 몫만 어벗츠기공소 소유(flag). 어벗·배송 몫은 devops.
+  const labEscrow = await resolveLabShareEscrowOwner(null);
 
   const session = outerSession || (await mongoose.startSession());
   if (ownSession) session.startTransaction();
@@ -2198,10 +2242,12 @@ export async function holdPracticeTransferCredits({
     ];
 
     for (const spec of sliceSpecs) {
+      const isLabSlice = spec.shareKind === "lab";
       const prepared = prepareHoldSliceEntry({
         transferId,
         practiceAnchorId,
-        devopsAnchorId,
+        devopsAnchorId: isLabSlice ? labEscrow.id : devopsAnchorId,
+        escrowOwnerRole: isLabSlice ? labEscrow.role : "devops",
         amount: spec.amount,
         shareKind: spec.shareKind,
         displayLabel: spec.displayLabel,
@@ -2849,9 +2895,13 @@ export async function adjustPracticeTransferHold({
 
   try {
     await lockGuard(practiceAnchorId, session);
-    const devopsAnchorId =
-      String(holdJournal?.meta?.devopsAnchorId || "").trim() ||
-      (await resolveDevopsEscrowOwnerId(session));
+    // 보정은 기공비 몫(lab hold) 소유자를 따른다. 증액 중 어벗 몫은 아래에서 devops로 분리.
+    const devopsEscrowId = await resolveDevopsEscrowOwnerId(session);
+    const escrowOwner = escrowOwnerFromHoldMeta(
+      holdsPrefetch?.lab?.meta || holdJournal?.meta,
+      { id: devopsEscrowId, role: "devops" },
+    );
+    const devopsAnchorId = escrowOwner.id;
     if (!devopsAnchorId) {
       const err = new Error("에스크로(devops) 사업자를 찾을 수 없습니다.");
       err.statusCode = 500;
@@ -2882,7 +2932,7 @@ export async function adjustPracticeTransferHold({
       lines.push(
         {
           accountCode: "PLATFORM_ESCROW",
-          ownerRole: "devops",
+          ownerRole: escrowOwner.role,
           ownerId: devopsAnchorId,
           amount: -absDelta,
           amountExcludingVat: -absDelta,
@@ -2946,18 +2996,48 @@ export async function adjustPracticeTransferHold({
             fromFreeShipping: split.fromFreeShipping,
           },
         }),
-        {
-          accountCode: "PLATFORM_ESCROW",
-          ownerRole: "devops",
-          ownerId: devopsAnchorId,
-          amount: absDelta,
-          amountExcludingVat: absDelta,
-          vatAmount: 0,
-          creditKind: null,
-          refType: "PRACTICE_TRANSFER",
-          refId: transferId,
-          meta: { ...metaBase, source: "practice_transfer_escrow_topup" },
-        },
+        // 기공비 증액 = 기공비 에스크로 소유자, 어벗 증액 = devops.
+        ...(() => {
+          const splitAbut =
+            abutmentCash > 0 &&
+            devopsEscrowId &&
+            String(devopsEscrowId) !== String(devopsAnchorId);
+          const labPart = splitAbut ? labCash : absDelta;
+          const rows = [];
+          if (labPart > 0) {
+            rows.push({
+              accountCode: "PLATFORM_ESCROW",
+              ownerRole: escrowOwner.role,
+              ownerId: devopsAnchorId,
+              amount: labPart,
+              amountExcludingVat: labPart,
+              vatAmount: 0,
+              creditKind: null,
+              refType: "PRACTICE_TRANSFER",
+              refId: transferId,
+              meta: { ...metaBase, source: "practice_transfer_escrow_topup" },
+            });
+          }
+          if (splitAbut) {
+            rows.push({
+              accountCode: "PLATFORM_ESCROW",
+              ownerRole: "devops",
+              ownerId: devopsEscrowId,
+              amount: abutmentCash,
+              amountExcludingVat: abutmentCash,
+              vatAmount: 0,
+              creditKind: null,
+              refType: "PRACTICE_TRANSFER",
+              refId: transferId,
+              meta: {
+                ...metaBase,
+                source: "practice_transfer_escrow_topup",
+                holdShare: "abutment",
+              },
+            });
+          }
+          return rows;
+        })(),
       );
       fromPaid += split.fromPaid;
       fromFreeRequest += split.fromFreeRequest;
@@ -3688,7 +3768,12 @@ export async function releasePracticeTransferLabShare({
       practiceAnchorId,
       session,
     });
-    const devopsAnchorId = revenueOwners?.devopsAnchorId || null;
+    // hold 저널의 에스크로 소유자를 따른다(진행 중 hold 호환, 어벗츠기공소 이전 flag).
+    const escrowOwner = escrowOwnerFromHoldMeta(
+      holds.lab?.meta || holds.legacy?.meta,
+      { id: revenueOwners?.devopsAnchorId || null, role: "devops" },
+    );
+    const devopsAnchorId = escrowOwner.id || null;
     if (!devopsAnchorId) {
       const err = new Error("에스크로(devops) 사업자를 찾을 수 없습니다.");
       err.statusCode = 500;
@@ -3698,7 +3783,7 @@ export async function releasePracticeTransferLabShare({
     const releaseLines = [
       {
         accountCode: "PLATFORM_ESCROW",
-        ownerRole: "devops",
+        ownerRole: escrowOwner.role,
         ownerId: devopsAnchorId,
         amount: -labFeeTotal,
         amountExcludingVat: -labFeeTotal,
@@ -5229,7 +5314,8 @@ export async function holdPracticeTransferProsthesisFollowUpCredits({
 
   try {
     await lockGuard(practiceAnchorId, session);
-    const devopsAnchorId = await resolveDevopsEscrowOwnerId(session);
+    const labEscrow = await resolveLabShareEscrowOwner(session);
+    const devopsAnchorId = labEscrow.id;
     if (!devopsAnchorId) {
       const err = new Error("에스크로(devops) 사업자를 찾을 수 없습니다.");
       err.statusCode = 500;
@@ -5246,6 +5332,7 @@ export async function holdPracticeTransferProsthesisFollowUpCredits({
       transferId,
       practiceAnchorId,
       devopsAnchorId,
+      escrowOwnerRole: labEscrow.role,
       amount: holdLabAmount,
       shareKind: "lab",
       displayLabel: "후속 보철 추가",
@@ -5356,7 +5443,8 @@ export async function holdPracticeTransferRemakeChargeCredits({
 
   try {
     await lockGuard(practiceAnchorId, session);
-    const devopsAnchorId = await resolveDevopsEscrowOwnerId(session);
+    const labEscrow = await resolveLabShareEscrowOwner(session);
+    const devopsAnchorId = labEscrow.id;
     if (!devopsAnchorId) {
       const err = new Error("에스크로(devops) 사업자를 찾을 수 없습니다.");
       err.statusCode = 500;
@@ -5373,6 +5461,7 @@ export async function holdPracticeTransferRemakeChargeCredits({
       transferId,
       practiceAnchorId,
       devopsAnchorId,
+      escrowOwnerRole: labEscrow.role,
       amount: holdLabAmount,
       shareKind: "lab",
       displayLabel,
@@ -5585,7 +5674,11 @@ export async function releasePracticeTransferRemakeChargeCredits({
       practiceAnchorId,
       session,
     });
-    const devopsAnchorId = revenueOwners?.devopsAnchorId || null;
+    const escrowOwner = escrowOwnerFromHoldMeta(
+      holdMeta || holdLive?.existing?.meta,
+      { id: revenueOwners?.devopsAnchorId || null, role: "devops" },
+    );
+    const devopsAnchorId = escrowOwner.id || null;
     if (!devopsAnchorId) {
       const err = new Error("에스크로(devops) 사업자를 찾을 수 없습니다.");
       err.statusCode = 500;
@@ -5596,7 +5689,7 @@ export async function releasePracticeTransferRemakeChargeCredits({
     const releaseLines = [
       {
         accountCode: "PLATFORM_ESCROW",
-        ownerRole: "devops",
+        ownerRole: escrowOwner.role,
         ownerId: devopsAnchorId,
         amount: -releaseAmount,
         amountExcludingVat: -releaseAmount,
@@ -6137,7 +6230,11 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
       practiceAnchorId,
       session,
     });
-    const devopsAnchorId = revenueOwners?.devopsAnchorId || null;
+    const escrowOwner = escrowOwnerFromHoldMeta(
+      holdMeta || holdLive?.existing?.meta,
+      { id: revenueOwners?.devopsAnchorId || null, role: "devops" },
+    );
+    const devopsAnchorId = escrowOwner.id || null;
     if (!devopsAnchorId) {
       const err = new Error("에스크로(devops) 사업자를 찾을 수 없습니다.");
       err.statusCode = 500;
@@ -6148,7 +6245,7 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
     const releaseLines = [
       {
         accountCode: "PLATFORM_ESCROW",
-        ownerRole: "devops",
+        ownerRole: escrowOwner.role,
         ownerId: devopsAnchorId,
         amount: -releaseAmount,
         amountExcludingVat: -releaseAmount,

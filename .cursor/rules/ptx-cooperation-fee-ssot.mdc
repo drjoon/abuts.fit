@@ -11,9 +11,11 @@ alwaysApply: true
 
 | 구분 | `assigneeKind` | 수가표·할증 앵커 | 정산 |
 | --- | --- | --- | --- |
-| **협력** | `cooperation` | **수행 기공소** (`assignee`) — 치과↔지정 기공소와 동일 | 어벗츠 gross 1회 → 수행 기공소 매입 |
-| **하청** | `subcontract` | **원청 어벗츠** (`target` / prime) | 어벗츠 gross → 하청 매입(`subcontractFeeRate`, 기본 10%) |
-| **어벗츠 자체** | (assignee 없음) | **원청 어벗츠** | 어벗츠 전액 |
+| **협력** | `cooperation` | **수행 기공소** (`assignee`) — 치과↔지정 기공소와 동일 | 어벗츠기공소 gross 1회 → 수행 기공소 매입 |
+| **하청** | `subcontract` | **원청 어벗츠기공소** (`target` / prime) | 어벗츠기공소 gross → 하청 매입(`subcontractFeeRate` 휴면, 미부과) |
+| **어벗츠 자체** | (assignee 없음) | **원청 어벗츠기공소** | 어벗츠기공소 전액 |
+
+> 어벗츠기공소(`internalLab`)는 면허 개인이 개설한 기공소(원청·법적 공급자)다. 어벗츠 주식회사는 플랫폼·장비 공급자로 기공소에 정액/건당 청구하며 기공 매출 정률 분배는 하지 않는다.
 
 - 헬퍼: `resolveFeeScheduleLabAnchorId` · `resolveLabFeeMultiplierLabAnchorId` (`practiceTransferAutoMatchCore.js`)
 - 정산 당사자: `resolvePracticeTransferSettlementParties` — `grossOwnerId`=어벗츠(prime), `purchasePayeeId`=수행(assignee) when prime≠assignee
