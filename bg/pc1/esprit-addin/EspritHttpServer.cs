@@ -850,21 +850,39 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 FileOptions.SequentialScan))
             {
                 rawBytes = input.Length;
-                if (gzip)
+                AppLogger.Log(
+                    "[HTTP Server] ESP download START requestId=" + requestId
+                    + " bytes=" + rawBytes.ToString()
+                    + " gzip=" + (gzip ? "1" : "0"));
+                try
                 {
-                    response.SendChunked = true;
-                    response.Headers["Content-Encoding"] = "gzip";
-                    response.Headers["Vary"] = "Accept-Encoding";
-                    // net48 GZipStream은 leaveOpen이 없다. Dispose가 풋터를 쓰고 OutputStream을 닫는다.
-                    using (var gzipStream = new GZipStream(response.OutputStream, CompressionLevel.Fastest))
+                    if (gzip)
                     {
-                        input.CopyTo(gzipStream, 256 * 1024);
+                        response.SendChunked = true;
+                        response.Headers["Content-Encoding"] = "gzip";
+                        response.Headers["Vary"] = "Accept-Encoding";
+                        // net48 GZipStream은 leaveOpen이 없다. Dispose가 풋터를 쓰고 OutputStream을 닫는다.
+                        using (var gzipStream = new GZipStream(response.OutputStream, CompressionLevel.Fastest))
+                        {
+                            input.CopyTo(gzipStream, 256 * 1024);
+                        }
+                    }
+                    else
+                    {
+                        response.ContentLength64 = rawBytes;
+                        input.CopyTo(response.OutputStream, 256 * 1024);
                     }
                 }
-                else
+                catch (Exception ex)
                 {
-                    response.ContentLength64 = rawBytes;
-                    input.CopyTo(response.OutputStream, 256 * 1024);
+                    // 받는 쪽이 끊으면(취소·Chrome 재시도·백엔드 종료) 여기로 온다.
+                    AppLogger.Log(
+                        "[HTTP Server] ESP download ABORTED requestId=" + requestId
+                        + " readBytes=" + input.Position.ToString() + "/" + rawBytes.ToString()
+                        + " gzip=" + (gzip ? "1" : "0")
+                        + " elapsedMs=" + sw.ElapsedMilliseconds.ToString()
+                        + " reason=" + ex.GetType().Name + ":" + ex.Message);
+                    throw;
                 }
             }
             sw.Stop();

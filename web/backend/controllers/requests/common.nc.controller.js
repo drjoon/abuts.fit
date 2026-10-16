@@ -988,6 +988,12 @@ export async function downloadEspFile(req, res) {
     if (upstream) {
       upstream.destroy();
     }
+    console.error("[esp-file] failed", {
+      id: req.params?.id,
+      code: error?.code,
+      name: error?.name,
+      message: error?.message,
+    });
     if (res.headersSent) return;
     const aborted = error?.name === "TimeoutError" || error?.name === "AbortError";
     res.status(aborted ? 504 : 500).json({
