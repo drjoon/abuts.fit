@@ -5,6 +5,7 @@
 // - bg/pc1/esprit-addin/Helpers/BackendApiClient.cs
 // - web/backend/controllers/requests/common.nc.controller.js
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -15,9 +16,10 @@ using Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging;
 namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 {
     /// <summary>
-    /// CAM 완료 문서를 운영 PC ESP 폴더에 남긴다.
+    /// CAM 완료 문서를 운영 PC `storage/3-nc/{requestId}/{requestId}.esp` 에 남긴다.
+    /// NC와 같은 의뢰 폴더·짧은 파일명이다. 예전 `storage/esp/{requestId}.esp` 는 다운로드만 찾는다.
     /// ResetDocument의 임시 ESP(템플릿 교체용)와 별개이며, 그 임시 파일은 계속 삭제한다.
-    /// 폴더 합이 10GB를 넘으면 방금 저장한 파일을 제외하고 오래된 것부터 지운다.
+    /// ESP 합이 10GB를 넘으면 방금 저장한 파일을 제외하고 오래된 것부터 지운다.
     /// </summary>
     public static class EspFileArchive
     {
@@ -45,7 +47,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 
             try
             {
-                string dir = AppConfig.StorageEspDirectory;
+                string dir = Path.Combine(AppConfig.StorageNcDirectory, safeId);
                 Directory.CreateDirectory(dir);
                 string fullPath = Path.Combine(dir, safeId + ".esp");
                 TryDeleteExisting(fullPath);
@@ -59,7 +61,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 
                 var info = new FileInfo(fullPath);
                 AppLogger.Log($"EspFileArchive: ESP 저장 완료 - {fullPath} size={info.Length}");
-                PruneOldest(dir, fullPath);
+                PruneOldest(fullPath);
                 return new SavedEsp
                 {
                     FullPath = fullPath,
@@ -84,8 +86,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 
             try
             {
-                string fullPath = Path.Combine(AppConfig.StorageEspDirectory, safeId + ".esp");
-                return File.Exists(fullPath) ? fullPath : null;
+                string primary = Path.Combine(AppConfig.StorageNcDirectory, safeId, safeId + ".esp");
+                if (File.Exists(primary))
+                {
+                    return primary;
+                }
+                string legacy = Path.Combine(AppConfig.StorageEspDirectory, safeId + ".esp");
+                return File.Exists(legacy) ? legacy : null;
             }
             catch (Exception ex)
             {
@@ -119,13 +126,32 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             }
         }
 
-        private static void PruneOldest(string dir, string keepPath)
+        private static void CollectEspFiles(string dir, List<FileInfo> files)
+        {
+            if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+            {
+                return;
+            }
+            foreach (string path in Directory.EnumerateFiles(dir, "*.esp", SearchOption.AllDirectories))
+            {
+                var info = new FileInfo(path);
+                if (info.Exists)
+                {
+                    files.Add(info);
+                }
+            }
+        }
+
+        private static void PruneOldest(string keepPath)
         {
             try
             {
-                var files = Directory.EnumerateFiles(dir, "*.esp")
-                    .Select(path => new FileInfo(path))
-                    .Where(info => info.Exists)
+                var found = new List<FileInfo>();
+                CollectEspFiles(AppConfig.StorageNcDirectory, found);
+                CollectEspFiles(AppConfig.StorageEspDirectory, found);
+                var files = found
+                    .GroupBy(info => info.FullName, StringComparer.OrdinalIgnoreCase)
+                    .Select(group => group.First())
                     .OrderBy(info => info.LastWriteTimeUtc)
                     .ThenBy(info => info.FullName, StringComparer.OrdinalIgnoreCase)
                     .ToList();

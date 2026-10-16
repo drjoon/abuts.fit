@@ -721,6 +721,7 @@ export async function getNcFileUrl(req, res) {
 
     const request = await Request.findById(id)
       .select({
+        requestId: 1,
         caseInfos: 1,
       })
       .lean();
@@ -737,11 +738,7 @@ export async function getNcFileUrl(req, res) {
     }
 
     const s3Key = request?.caseInfos?.ncFile?.s3Key;
-    const fileName =
-      request?.caseInfos?.ncFile?.filePath ||
-      request?.caseInfos?.ncFile?.fileName ||
-      request?.caseInfos?.ncFile?.originalName ||
-      "program.nc";
+    const fileName = ncAttachmentName(request);
     if (!s3Key) {
       return res.status(404).json({
         success: false,
@@ -770,23 +767,20 @@ export async function getNcFileUrl(req, res) {
   }
 }
 
+function shortProgramAttachmentName(request, ext) {
+  const rid = String(request?.requestId || "")
+    .replace(/[\r\n"]/g, "")
+    .trim();
+  if (/^[A-Za-z0-9_-]{1,80}$/.test(rid)) return `${rid}.${ext}`;
+  return `program.${ext}`;
+}
+
+function ncAttachmentName(request) {
+  return shortProgramAttachmentName(request, "nc");
+}
+
 function espAttachmentName(request) {
-  const ncRaw = String(
-    request?.caseInfos?.ncFile?.originalName ||
-      request?.caseInfos?.ncFile?.filePath ||
-      request?.caseInfos?.espFile?.fileName ||
-      request?.requestId ||
-      "program",
-  );
-  const base =
-    ncRaw
-      .split(/[/\\]/)
-      .pop()
-      .replace(/\.nc$/i, "")
-      .replace(/\.esp$/i, "")
-      .replace(/[\r\n"]/g, "")
-      .trim() || "program";
-  return `${base}.esp`;
+  return shortProgramAttachmentName(request, "esp");
 }
 
 export async function downloadEspFile(req, res) {
@@ -813,8 +807,7 @@ export async function downloadEspFile(req, res) {
     }
 
     const requestId = String(request.requestId || "").trim();
-    const espFileName = String(request?.caseInfos?.espFile?.fileName || "").trim();
-    if (!requestId || !espFileName) {
+    if (!requestId) {
       return res.status(404).json({
         success: false,
         message: "ESP 파일이 없습니다.",

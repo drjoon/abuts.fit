@@ -116,26 +116,27 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         }
         private string BuildNcFilePath(string stlPath, string canonicalRequestId = null)
         {
-            string baseName = Path.GetFileNameWithoutExtension(stlPath) ?? "output";
-            string sanitizedBase = RemoveFilledToken(baseName);
-
             // payload RequestId 우선. STL 파일명 역추론은 원본/샘플 공유 STL에서 원본 폴더로 새는 버그.
+            // 파일명도 의뢰번호만 쓴다. STL 베이스(치과·환자·치아)는 프리뷰와 CNC에서 너무 길다.
             string requestId = !string.IsNullOrWhiteSpace(canonicalRequestId)
                 ? canonicalRequestId.Trim()
                 : null;
             if (string.IsNullOrWhiteSpace(requestId))
             {
                 AppLogger.Log("NcFileGenerator: ⚠️ canonicalRequestId 없음 — STL 경로 역추론은 사용하지 않음 (원본 오염 방지)");
+                string baseName = Path.GetFileNameWithoutExtension(stlPath) ?? "output";
+                string sanitizedBase = RemoveFilledToken(baseName);
+                return Path.Combine(_outputFolder, sanitizedBase + ".nc");
             }
 
-            if (!string.IsNullOrWhiteSpace(requestId))
+            string safeStem = Regex.Replace(requestId, "[^A-Za-z0-9_-]", "_");
+            if (string.IsNullOrWhiteSpace(safeStem))
             {
-                string requestFolder = Path.Combine(_outputFolder, requestId);
-                Directory.CreateDirectory(requestFolder);
-                return Path.Combine(requestFolder, sanitizedBase + ".nc");
+                safeStem = "nc";
             }
-
-            return Path.Combine(_outputFolder, sanitizedBase + ".nc");
+            string requestFolder = Path.Combine(_outputFolder, safeStem);
+            Directory.CreateDirectory(requestFolder);
+            return Path.Combine(requestFolder, safeStem + ".nc");
         }
         private string BuildExecuteFallbackNcPath(string stlPath, string currentNcPath, string canonicalRequestId = null)
         {

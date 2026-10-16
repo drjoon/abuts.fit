@@ -534,7 +534,8 @@ const requestSchema = new mongoose.Schema(
           default: Date.now,
         },
       },
-      // CAM 완료 Esprit 문서. 파일은 운영 PC storage/esp 에만 둔다(S3 없음).
+      // CAM 완료 Esprit 문서. 파일은 운영 PC storage/3-nc/{requestId}/{requestId}.esp (S3 없음).
+      // 예전 storage/esp/{requestId}.esp 는 다운로드 조회만 한다.
       espFile: {
         fileName: String,
         fileSize: Number,

@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-10-16: 가공 프리뷰 NC 파일명 오른쪽에 ESP 다운로드.
+// - 2026-10-16: 가공 프리뷰 NC 표시명을 의뢰번호.nc 로 줄이고, ESP 버튼은 NC가 있으면 항상 표시.
 // - 2026-10-13: 더미는 헥스 회전이 없으면 STL모델대로로 보여 준다.
 // - 2026-10-10: 작업영역 1행 — 왼쪽 그리드·메타·안내·페인트, 오른쪽 측면·상단·45도.
 // - 2026-10-03: 제조사 프리뷰 STL은 스캔색 스위치 숨김(showColorMappingToggle=false).
@@ -1791,8 +1791,14 @@ export const PreviewModal = ({
   const hasCamFile = !!resolveFilledStlFile(activeReq?.caseInfos)?.s3Key;
   const hasNcFile = !!activeReq?.caseInfos?.ncFile?.s3Key;
   const espFileName = String(activeReq?.caseInfos?.espFile?.fileName || "").trim();
+  const programStem = String(activeReq?.requestId || "").trim();
+  const shortProgramFile = (ext: "nc" | "esp") =>
+    /^[A-Za-z0-9_-]{1,80}$/.test(programStem) ? `${programStem}.${ext}` : "";
   const showEspDownload =
-    Boolean(espFileName) &&
+    Boolean(shortProgramFile("esp")) &&
+    (hasNcFile ||
+      Boolean(espFileName) ||
+      Boolean(String(previewNcText || "").trim())) &&
     (isCamStage || (isTrackingStage && trackingRightTab === "nc"));
 
   const canGuideFinishLine =
@@ -2059,9 +2065,15 @@ export const PreviewModal = ({
       ? ".nc"
       : ".filled.stl";
 
-  const fileLabel = hasRightFile
-    ? String(rightMeta?.filePath || rightTitle).trim() || rightTitle
-    : rightTitle;
+  const storedFilePath = String(rightMeta?.filePath || "").trim();
+  const shortNcLabel = shortProgramFile("nc");
+  const fileLabel =
+    shortNcLabel &&
+    (isCamStage || (isTrackingStage && trackingRightTab === "nc"))
+      ? shortNcLabel
+      : hasRightFile
+        ? storedFilePath || rightTitle
+        : rightTitle;
 
   const formatElapsed = (secRaw?: number | null) => {
     const sec = Number.isFinite(Number(secRaw))
@@ -4020,7 +4032,7 @@ export const PreviewModal = ({
                         title={
                           stage === "packing" || stage === "shipping"
                             ? "각인 이미지"
-                            : fileLabel
+                            : storedFilePath || fileLabel
                         }
                       >
                         {stage === "packing" || stage === "shipping"

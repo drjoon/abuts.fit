@@ -25,7 +25,9 @@
   - `StlPath` 파일명에서 requestId를 역추론하면 원본/샘플이 섞일 수 있으므로 금지합니다.
   - NC 출력 폴더도 payload `RequestId`만 사용합니다 (`3-nc/{RequestId}/…`). STL 파일명 금지.
   - `RequestMongoId`를 register-file에 함께 전달해 BG가 원본 ncFile을 덮지 않게 합니다.
-- NC 생성 직후 CAM 문서를 운영 PC `storage/esp/{requestId}.esp`에 저장한다 (`ABUTS_STORAGE_ESP`).
+- NC 파일명은 `{requestId}.nc` 다. STL 베이스(치과·환자·치아)를 붙이지 않는다. 경로는 `3-nc/{requestId}/{requestId}.nc`.
+- NC 생성 직후 CAM 문서를 운영 PC `storage/3-nc/{requestId}/{requestId}.esp`에 저장한다.
+  - 예전 `storage/esp/{requestId}.esp`(`ABUTS_STORAGE_ESP`)는 다운로드할 때만 찾는다. 새로 쓰지 않는다.
   - `ResetDocument`의 임시 ESP는 템플릿 교체용이라 그대로 삭제한다. CAM 결과와 별개다.
   - 폴더 합이 10GB를 넘으면 방금 저장한 파일을 남기고 오래된 ESP부터 삭제한다.
   - `GET /esp/{requestId}`로 파일을 넘긴다. 프론트 다운로드는 백엔드 `GET /api/requests/:id/esp-file`이 프록시한다.

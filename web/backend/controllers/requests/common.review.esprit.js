@@ -50,18 +50,11 @@ export async function triggerEspritForNc({
     throw err;
   }
 
-  const camBaseName = String(camFileName || "")
-    .trim()
-    .replace(/\\/g, "/")
-    .split("/")
-    .pop();
-  const camNcName = String(camBaseName || "")
-    .replace(/\.stl$/i, ".nc")
-    .trim();
   // 샘플/복사 의뢰와 원본 의뢰가 동일 filled STL 경로를 공유할 수 있으므로,
-  // NC 출력 경로는 항상 requestId 단위로 분리한다. (rules.md §18.8 분리 정책)
-  const ncFileName = request?.requestId
-    ? `3-nc/${String(request.requestId).trim()}/${camNcName || `${String(request.requestId).trim()}.nc`}`
+  // NC 출력은 항상 의뢰번호 폴더 + 의뢰번호.nc 다. STL 파일명(치과·환자)은 쓰지 않는다.
+  const requestIdForNc = String(request?.requestId || "").trim();
+  const ncFileName = requestIdForNc
+    ? `3-nc/${requestIdForNc}/${requestIdForNc}.nc`
     : String(camFileName).replace(/\.stl$/i, ".nc");
   const controller = new AbortController();
   // Esprit HTTP 서버는 요청 수신 시 런타임 상태 전송(backend callback)을 먼저 수행한 뒤
