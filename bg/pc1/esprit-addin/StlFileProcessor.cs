@@ -1430,9 +1430,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         double frontX = Convert.ToDouble(frontField.GetValue(null), CultureInfo.InvariantCulture);
                         double backX = Convert.ToDouble(backField.GetValue(null), CultureInfo.InvariantCulture);
 
-                        // finishLine 기준 오프셋(mm) - 기본 1.0
+                        // finishLine 기준 오프셋(mm) - 기본 0.5 (SharedFinishSplit과 동일)
                         // 필요 시 env(ABUTS_FINISHLINE_SPLIT_OFFSET_MM)로 런타임 조정 가능
-                        double offsetMm = 1.0;
+                        double offsetMm = 0.5;
                         string offsetRaw = Environment.GetEnvironmentVariable("ABUTS_FINISHLINE_SPLIT_OFFSET_MM");
                         if (!string.IsNullOrWhiteSpace(offsetRaw) && double.TryParse(offsetRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsedOffset))
                         {
@@ -1475,7 +1475,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
                         // 오프셋 방향 정책:
                         // - env ABUTS_FINISHLINE_SPLIT_SIDE=front|back 로 명시 가능
-                        // - 기본값: front (요청사항: finish line 최정상보다 1mm 좌측)
+                        // - 기본값: front (요청사항: finish line 최정상보다 0.5mm 좌측)
                         string splitSideRaw = Environment.GetEnvironmentVariable("ABUTS_FINISHLINE_SPLIT_SIDE");
                         bool useFrontSide = string.Equals(splitSideRaw, "front", StringComparison.OrdinalIgnoreCase)
                             || string.Equals(splitSideRaw, "left", StringComparison.OrdinalIgnoreCase)
@@ -1541,20 +1541,20 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         double frontX = Convert.ToDouble(frontField.GetValue(null), CultureInfo.InvariantCulture);
                         double backX = Convert.ToDouble(backField.GetValue(null), CultureInfo.InvariantCulture);
                         // tip(원점 0)까지 허용. FrontPointX로 하한을 잡으면 FL top이 Front보다 tip쪽일 때
-                        // Splitline_2(topX-1)가 Front로 끌려올라가 FL을 하방 침범한다 (로그: 1.359→2.852).
+                        // Splitline_2(topX-0.5)가 Front로 끌려올라가 FL을 하방 침범한다 (로그: 1.359→2.852).
                         double xMin = Math.Min(0.0, Math.Min(frontX, backX));
                         double xMax = Math.Max(frontX, backX);
 
                         // [SSOT] SharedFinishSplitX
                         //   Splitline_2 = Finish_Front끝
                         //   Front_Rough끝 = Splitline_2 + 0.8
-                        //   = finishLineTopX - 1.0 (tip 쪽; Z+1 ≡ X-1)
+                        //   = finishLineTopX - 0.5 (tip 쪽; Z+0.5 ≡ X-0.5)
                         //   finishLineTopX = backX - finishLineTopZ  (MoveSTL 이후, X=-Z)
                         // MainModuleComposite.SharedFinishSplitOffsetFromFinishLineTopMm 과 동일해야 한다.
                         // 금지: backX + finishLineTopZ - stlTopZ (FL 하방 침범)
                         // 금지: xMin=FrontPointX 클램프 (FL max_z > Front.z 일 때 tip쪽 seam 파괴)
-                        const double splitOffsetMm = -1.0;
-                        double targetZ = finishLineTopZ.Value + 1.0;
+                        const double splitOffsetMm = -0.5;
+                        double targetZ = finishLineTopZ.Value + 0.5;
                         double topX = backX - finishLineTopZ.Value;
                         double rawSplitX = topX + splitOffsetMm;
                         double splitX = Math.Max(xMin + 0.01, Math.Min(xMax - 0.01, rawSplitX));
@@ -1565,7 +1565,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         Environment.SetEnvironmentVariable(AppConfig.RoughfreeformSplitEnableEnv, "1");
                         Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_X", splitX.ToString(CultureInfo.InvariantCulture));
 
-                        AppLogger.Log($"DentalAddin: SharedFinishSplit 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top+1):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, topX:{topX.ToString("F4", CultureInfo.InvariantCulture)} (=Back-Z), rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, sharedSplitX:{splitX.ToString("F4", CultureInfo.InvariantCulture)}, clamped:{clamped} (=Splitline_2/Finish seam, Front_Rough끝=+0.8, FL상방1mm) (xRange:[{xMin.ToString("F4", CultureInfo.InvariantCulture)}~{xMax.ToString("F4", CultureInfo.InvariantCulture)}], Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
+                        AppLogger.Log($"DentalAddin: SharedFinishSplit 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top+0.5):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, topX:{topX.ToString("F4", CultureInfo.InvariantCulture)} (=Back-Z), rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, sharedSplitX:{splitX.ToString("F4", CultureInfo.InvariantCulture)}, clamped:{clamped} (=Splitline_2/Finish seam, Front_Rough끝=+0.8, FL상방0.5mm) (xRange:[{xMin.ToString("F4", CultureInfo.InvariantCulture)}~{xMax.ToString("F4", CultureInfo.InvariantCulture)}], Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
                             }
                             catch (Exception ex)
                             {

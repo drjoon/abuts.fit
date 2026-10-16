@@ -110,14 +110,14 @@
 - 원칙: Turn은 Rough 끝보다 D4 반경+칩(2.2) 이상 더 깎는다. 선행 3D 황삭은 Finish seam보다 0.8mm 더 깎아 D1.2가 미황삭을 물지 않게 한다.
 - 구현: `MainModuleComposite.TryResolveSafeSplitBackZoneX`, `MainModuleOperations.OperationSeq`/`TryPrepareTurningRegionRange(BACK/BACK2)`/`TagNewOperations`.
 
-### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`, `GetRoughAdjacentOverlapMm`, `GetFinishAdjacentOverlapMm`, `ABUTS_RETENTION_GROOVE`)
+### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-0.5mm`, `X=-Z`, `GetRoughAdjacentOverlapMm`, `GetFinishAdjacentOverlapMm`, `ABUTS_RETENTION_GROOVE`)
 
 - 목적: **한 식**으로 아래를 동일 경계 좌표에 둔다.
   - `Splitline_2` / `TwoPhaseSplitLine`
   - `Finish_Front` 끝
   - `Front_Rough` 끝 = 그 경계 + `GetRoughPastFinishSeamMm()` (`0.6`)
 - 기준식:
-  - `SharedFinishSplitX = finishLineTopX - 1.0` (tip 쪽 1mm, Z+1 ≡ X-1)
+  - `SharedFinishSplitX = finishLineTopX - 0.5` (tip 쪽 0.5mm, Z+0.5 ≡ X-0.5). 축에 수직인 한 평면이라 피니시라인 둘레 높낮이는 따라가지 않는다.
 - 인접 후행 시작:
   - `Back_Rough` 시작 = `Splitline_2 - roughRadius` (D4→2.0)
   - `Finish_Back` / Middle 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()` (`0.8`, tip 쪽)
@@ -130,7 +130,7 @@
   - MoveSTL 후: `finishLineTopX = BackPointX - finishLineTopZ` (= 시프트된 `FinishLineX`)
   - 재해석: `finishLineTopX = BackPointX - FinishLineTopZ + DefaultStlShift`
   - env 클램프 `xMin`: **`min(0, Front, Back)`** — FrontPointX 하한 금지
-    (FL max_z > Front.z 이면 tip쪽 `topX-1`이 Front보다 작아짐; Front 하한으로 끌면 FL 하방 침범)
+    (FL max_z > Front.z 이면 tip쪽 `topX-0.5`가 Front보다 작아짐; Front 하한으로 끌면 FL 하방 침범)
 - 구현:
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
   - Rough: `frontEnd = splitline2 + GetRoughPastFinishSeamMm()` (`0.8`) / wide 시 `Front_Face` end, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle은 wide 시만
@@ -162,8 +162,8 @@
 - Front Face 시작/종료점 정책(현행 SSOT):
   - 시작: `Face.StartX = 0` (원점). TopZ는 FACE.prc 유지
   - 끝: `Face.RightX = FrontPointX + L` (소재/팁 직경 기반)
-  - 클램프: 항상 `Face.RightX ≤ Splitline_2` (= **FinishLine top 상방 1mm**)
-    - `Splitline_2 = finishLineTopX - 1.0`, margin 0 → FL top − 1.0
+  - 클램프: 항상 `Face.RightX ≤ Splitline_2` (= **FinishLine top 상방 0.5mm**)
+    - `Splitline_2 = finishLineTopX - 0.5`, margin 0 → FL top − 0.5
   - `L` 산출 (`GetFrontFaceEndOffsetFromFrontMm`):
     - env `ABUTS_FRONT_FACE_END_OFFSET_MM` 강제값 우선
     - 아니면 `R_tip`: `ABUTS_MAX_DIAMETER`×0.20 → `HighY`×0.45 → `BarDiameter`×0.20 (각 [1.2, 3.5])

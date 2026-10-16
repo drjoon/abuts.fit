@@ -1818,8 +1818,8 @@ namespace DentalAddin
             }
         }
 
-        // Face.RightX ≤ Splitline_2 ≡ FinishLine top 상방(tip) 1mm
-        // (Splitline_2 = finishLineTopX - 1.0, margin 0 → FL top - 1.0)
+        // Face.RightX ≤ Splitline_2 ≡ FinishLine top 상방(tip) 0.5mm
+        // (Splitline_2 = finishLineTopX - 0.5, margin 0 → FL top - 0.5)
         private const double FrontFaceSplitline2NoCrossMarginMm = 0.0;
 
         // ── Safe split (PreviewModal「Wide Split」, request-meta caseInfos.safeSplitEnabled, 미수신→ON) ──
@@ -1913,7 +1913,7 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// Face.RightX 상한: Splitline_2 (= FL top 상방 1mm). Split 실패 시 requested 유지.
+        /// Face.RightX 상한: Splitline_2 (= FL top 상방 0.5mm). Split 실패 시 requested 유지.
         /// </summary>
         private static double ClampFaceRightXBelowSplitline2(double requestedFaceRightX, out double splitline2Used, out bool clampApplied)
         {
@@ -2065,7 +2065,7 @@ namespace DentalAddin
         /// <summary>
         /// Front Face(ParallelPlanes): tip 시작 원점 0, 끝은 FrontPointX(Material Diameter)+L.
         /// - 시작: Face.StartX = 0 (원점). TopZ는 FACE.prc 유지(1.0)
-        /// - 끝: Face.RightX = FrontPointX + L, 단 Splitline_2 (= FinishLine top 상방 1mm) 상한
+        /// - 끝: Face.RightX = FrontPointX + L, 단 Splitline_2 (= FinishLine top 상방 0.5mm) 상한
         /// - LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm(0.5mm)
         /// </summary>
         private static void ApplyFrontFaceFixedDepth(TechLatheMoldParallelPlanes faceOp, string context)
@@ -2101,7 +2101,7 @@ namespace DentalAddin
                 SetFaceTopZLimitFromStartX(faceOp, faceStartX);
                 SetFaceBottomZLimitFromRightX(faceOp, appliedFaceRightX);
 
-                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 오프셋 적용: frontX={frontX:F3}, startX={faceStartX:F3}(origin), endOffset={faceEndOffsetMm:F3}, requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ(prc)={faceOp.TopZLimit:F3} (was {oldTop:F3}), BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={FrontFaceSplitline2NoCrossMarginMm:F3} (=FL top 상방 1mm)");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 오프셋 적용: frontX={frontX:F3}, startX={faceStartX:F3}(origin), endOffset={faceEndOffsetMm:F3}, requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ(prc)={faceOp.TopZLimit:F3} (was {oldTop:F3}), BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={FrontFaceSplitline2NoCrossMarginMm:F3} (=FL top 상방 0.5mm)");
             }
             catch (Exception ex)
             {
@@ -2110,7 +2110,7 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// Face가 Front_Rough/Splitline_2를 넘지 않도록 유지한다 (= FL top 상방 1mm).
+        /// Face가 Front_Rough/Splitline_2를 넘지 않도록 유지한다 (= FL top 상방 0.5mm).
         /// </summary>
         private static bool TryApplyFaceRightEndGuard(TechLatheMoldParallelPlanes faceOp, string context)
         {
@@ -2948,7 +2948,7 @@ namespace DentalAddin
         // 3-stage 분할 기준
         // - Splitline_1: FrontPointX
         // - Splitline_2 / TwoPhaseSplitLine / Finish_Front끝
-        //   = SharedFinishSplitX (finishLineTopX - 1.0mm, tip 쪽)
+        //   = SharedFinishSplitX (finishLineTopX - 0.5mm, tip 쪽)
         // - 인접 툴패스:
         //   Rough: 선행 끝=경계+GetRoughPastFinishSeamMm(0.8), 후행(Back) 시작=경계 tip쪽(X-) 공구반경
         //     Rough(Back): GetRoughAdjacentOverlapMm() = D4→2.0 / D2→1.0
@@ -2956,8 +2956,8 @@ namespace DentalAddin
         // - Splitline_2>5mm: Front(Turn/Rough/Face) + Middle(Turn/Rough) + Back
         // - Splitline_2<=5mm: Front+Back만 (Middle 미생성)
         // SharedFinishSplit 오프셋(mm): finishLine top 기준 tip 방향.
-        // X=-Z 이므로 Z+1mm ≡ X-1mm.
-        private const double SharedFinishSplitOffsetFromFinishLineTopMm = -1.0;
+        // X=-Z 이므로 Z+0.5mm ≡ X-0.5mm. 평면 seam이라 둘레 높낮이는 따라가지 못한다.
+        private const double SharedFinishSplitOffsetFromFinishLineTopMm = -0.5;
 
         // Finish Front/Back PRC. Back 기본 StepIncrement는 5axisComposite_Back.prc.
         // Front none은 5axisComposite_Front.prc StepIncrement 유지, deep만 0.20.
@@ -3058,7 +3058,7 @@ namespace DentalAddin
         /// <summary>
         /// [SSOT] Finish_Front 끝 = Splitline_2. Front_Rough 끝 = Splitline_2 + GetRoughPastFinishSeamMm().
         /// 다음 Finish 시작 = 경계 - GetFinishAdjacentOverlapMm() (0.8mm, tip 쪽).
-        /// 식: finishLineTopX + SharedFinishSplitOffsetFromFinishLineTopMm (-1.0mm, tip 쪽).
+        /// 식: finishLineTopX + SharedFinishSplitOffsetFromFinishLineTopMm (-0.5mm, tip 쪽).
         /// 좌표: FrontPointX = -FrontPoint.z → finishLineTopX = -finishLineTopZ (+ MoveSTL).
         /// </summary>
         private static bool TryResolveSharedFinishSplitX(out double splitX, out string source)
@@ -3095,7 +3095,7 @@ namespace DentalAddin
                 if (!double.IsNaN(finishLineX) && !double.IsInfinity(finishLineX) && Math.Abs(finishLineX) > 1e-6)
                 {
                     splitX = Clamp(finishLineX + offsetMm, xMin + 1e-6, xMax - 1e-6);
-                    source = "finishlineX-1mm";
+                    source = "finishlineX-0.5mm";
                     return true;
                 }
 
@@ -3107,7 +3107,7 @@ namespace DentalAddin
                 {
                     double finishLineTopX = back - finishLineTopZ + AppConfig.DefaultStlShift;
                     splitX = Clamp(finishLineTopX + offsetMm, xMin + 1e-6, xMax - 1e-6);
-                    source = "finishlineTopZ-1mm";
+                    source = "finishlineTopZ-0.5mm";
                     return true;
                 }
 
