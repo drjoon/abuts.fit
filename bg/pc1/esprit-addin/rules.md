@@ -31,7 +31,8 @@
   - `ResetDocument`의 임시 ESP는 템플릿 교체용이라 그대로 삭제한다. CAM 결과와 별개다.
   - 폴더 합이 10GB를 넘으면 방금 저장한 파일을 남기고 오래된 ESP부터 삭제한다.
   - `GET /esp/{requestId}`로 파일을 넘긴다. `Accept-Encoding: gzip`이면 본문을 gzip으로 보낸다(약 20MB 원본을 줄여 공인 IP 구간을 짧게).
-  - 프론트는 `GET /api/requests/:id/esp-file-url`로 주소를 받는다. 공인 `ESPRIT_ADDIN_BASE_URL`이면 HMAC(`exp`,`sig`)이 붙은 운영 PC `/esp/{requestId}`로 바로 받고, 아니면 백엔드 프록시(`/esp-file?ticket=`)로 받는다.
+  - 프론트는 `GET /api/requests/:id/esp-file-url` → 백엔드 프록시 `/esp-file?ticket=` 로 받는다(브라우저는 운영 PC :8001에 직접 못 붙는 경우가 많음).
+  - 운영 PC 직결 HMAC URL은 `ESPRIT_ESP_BROWSER_DIRECT=true` + 애드인 `EspDownloadAuth` 배포 후에만 쓴다.
   - 등록은 `register-file`의 `espFileName`/`espFileSize` → `caseInfos.espFile`. S3에 올리지 않는다.
 
 ## 2. 구현 체크포인트

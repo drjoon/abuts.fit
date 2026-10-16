@@ -2121,9 +2121,7 @@ export const PreviewModal = ({
       if (!res.ok) {
         throw new Error(body?.message || "ESP 파일을 받지 못했습니다.");
       }
-      const url = String(
-        body?.data?.directUrl || body?.data?.url || "",
-      ).trim();
+      const url = String(body?.data?.url || "").trim();
       const name =
         String(body?.data?.fileName || "").trim() ||
         `${String(activeReq.requestId || "program").trim() || "program"}.esp`;

@@ -11,10 +11,18 @@ function resolveEspritSharedSecret() {
   ).trim();
 }
 
+/** 브라우저→운영 PC :8001 직결. 방화벽 때문에 기본 off, ESPRIT_ESP_BROWSER_DIRECT=true 일 때만. */
+export function isEspritEspBrowserDirectEnabled() {
+  return String(process.env.ESPRIT_ESP_BROWSER_DIRECT || "")
+    .trim()
+    .toLowerCase() === "true";
+}
+
 /**
  * 브라우저가 운영 PC에서 ESP를 직접 받을 URL. 공인 ESPRIT_BASE + HMAC(exp,sig)일 때만.
  */
 export function buildDirectEspritEspDownloadUrl(espritBase, requestId) {
+  if (!isEspritEspBrowserDirectEnabled()) return null;
   const rid = String(requestId || "").trim();
   if (!/^[A-Za-z0-9_-]{1,80}$/.test(rid)) return null;
 

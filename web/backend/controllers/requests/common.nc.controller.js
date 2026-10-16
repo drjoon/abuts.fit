@@ -859,9 +859,8 @@ export async function getEspFileUrl(req, res) {
     return res.status(200).json({
       success: true,
       data: {
-        url: directUrl || proxyUrl,
-        directUrl: directUrl || undefined,
-        proxyUrl,
+        url: proxyUrl,
+        ...(directUrl ? { directUrl } : {}),
         fileName: espAttachmentName(request),
       },
     });
