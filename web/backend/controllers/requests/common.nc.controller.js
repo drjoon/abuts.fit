@@ -41,6 +41,7 @@ import zlib from "node:zlib";
 import { generateToken, verifyToken } from "../../utils/jwt.utils.js";
 import { authenticate } from "../../middlewares/auth.middleware.js";
 import { withEspritHeaders } from "./common.review.helpers.js";
+import { buildDirectEspritEspDownloadUrl } from "../../utils/espritEspDownloadUrl.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -835,12 +836,16 @@ export async function getEspFileUrl(req, res) {
         .status(403)
         .json({ success: false, message: "다운로드 권한이 없습니다." });
     }
-    const request = await Request.findById(id).select({ requestId: 1 }).lean();
+    const request = await Request.findById(id)
+      .select({ requestId: 1, "caseInfos.espFile": 1 })
+      .lean();
     if (!request?.requestId) {
       return res
         .status(404)
         .json({ success: false, message: "ESP 파일이 없습니다." });
     }
+    const requestId = String(request.requestId || "").trim();
+    const directUrl = buildDirectEspritEspDownloadUrl(ESPRIT_BASE, requestId);
     const ticket = generateToken(
       {
         purpose: ESP_DOWNLOAD_TICKET_PURPOSE,
@@ -850,10 +855,13 @@ export async function getEspFileUrl(req, res) {
       },
       "2m",
     );
+    const proxyUrl = `/api/requests/${id}/esp-file?ticket=${encodeURIComponent(ticket)}`;
     return res.status(200).json({
       success: true,
       data: {
-        url: `/api/requests/${id}/esp-file?ticket=${encodeURIComponent(ticket)}`,
+        url: directUrl || proxyUrl,
+        directUrl: directUrl || undefined,
+        proxyUrl,
         fileName: espAttachmentName(request),
       },
     });
@@ -947,9 +955,16 @@ export async function downloadEspFile(req, res) {
     const gzipped = String(upstream.headers["content-encoding"] || "")
       .toLowerCase()
       .includes("gzip");
+    const storedSize = Number(request?.caseInfos?.espFile?.fileSize);
     const len = Number(upstream.headers["content-length"] || 0);
-    if (!gzipped && Number.isFinite(len) && len > 0) {
-      res.setHeader("Content-Length", String(Math.floor(len)));
+    const outLen =
+      Number.isFinite(storedSize) && storedSize > 0
+        ? Math.floor(storedSize)
+        : !gzipped && Number.isFinite(len) && len > 0
+          ? Math.floor(len)
+          : 0;
+    if (outLen > 0) {
+      res.setHeader("Content-Length", String(outLen));
     }
     await new Promise((resolve) => {
       const done = (err) => {

@@ -244,7 +244,17 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             response.ContentType = "application/json";
             var sharedSecret = (AppConfig.GetBridgeSecret() ?? string.Empty).Trim();
             var allowRaw = (AppConfig.GetEspritAllowIpsRaw() ?? string.Empty).Trim();
-            if (!string.IsNullOrEmpty(allowRaw))
+            bool espBrowserDownload = false;
+            if (string.Equals(request.HttpMethod, "GET", StringComparison.OrdinalIgnoreCase))
+            {
+                string tokenRequestId;
+                if (EspDownloadAuth.TryParseEspRequestId(request, out tokenRequestId)
+                    && EspDownloadAuth.IsValidDownloadToken(request, tokenRequestId))
+                {
+                    espBrowserDownload = true;
+                }
+            }
+            if (!espBrowserDownload && !string.IsNullOrEmpty(allowRaw))
             {
                 string ip = string.Empty;
                 try
@@ -277,7 +287,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
             }
-            if (!string.IsNullOrEmpty(sharedSecret))
+            if (!espBrowserDownload && !string.IsNullOrEmpty(sharedSecret))
             {
                 var provided = (request.Headers["X-Esprit-Secret"] ?? string.Empty).Trim();
                 if (!string.Equals(provided, sharedSecret, StringComparison.Ordinal))
@@ -826,7 +836,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             response.StatusCode = (int)HttpStatusCode.OK;
             response.ContentType = "application/octet-stream";
             string downloadName = Path.GetFileName(espPath);
-            response.Headers["Content-Disposition"] = "attachment; filename=\"" + downloadName + "\"";
+            response.Headers["Content-Disposition"] =
+                "attachment; filename=\"" + downloadName + "\"; filename*=UTF-8''"
+                + Uri.EscapeDataString(downloadName);
             var sw = Stopwatch.StartNew();
             long rawBytes;
             using (var input = new FileStream(
@@ -866,28 +878,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         private static bool TryWriteEspDownload(HttpListenerRequest request, HttpListenerResponse response)
         {
-            string rawPath = request?.Url?.AbsolutePath ?? string.Empty;
-            string requestId = null;
-            if (rawPath.StartsWith("/esp/", StringComparison.OrdinalIgnoreCase))
-            {
-                requestId = rawPath.Substring("/esp/".Length);
-            }
-            else if (string.Equals(rawPath.TrimEnd('/'), "/esp", StringComparison.OrdinalIgnoreCase))
-            {
-                requestId = request.QueryString["requestId"];
-            }
-            else
+            string requestId;
+            if (!EspDownloadAuth.TryParseEspRequestId(request, out requestId))
             {
                 return false;
-            }
-
-            try
-            {
-                requestId = Uri.UnescapeDataString(requestId ?? string.Empty).Trim().Trim('/');
-            }
-            catch
-            {
-                requestId = (requestId ?? string.Empty).Trim().Trim('/');
             }
 
             string espPath = EspFileArchive.TryResolve(requestId);
