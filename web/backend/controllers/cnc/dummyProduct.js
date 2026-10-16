@@ -66,6 +66,7 @@ const DUMMY_PRODUCT_SELECT = [
   "caseInfos.stlFile",
   "caseInfos.camFile",
   "caseInfos.ncFile",
+  "caseInfos.espFile",
   "caseInfos.finishLine.points",
 ].join(" ");
 

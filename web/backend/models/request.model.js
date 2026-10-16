@@ -534,6 +534,12 @@ const requestSchema = new mongoose.Schema(
           default: Date.now,
         },
       },
+      // CAM 완료 Esprit 문서. 파일은 운영 PC storage/esp 에만 둔다(S3 없음).
+      espFile: {
+        fileName: String,
+        fileSize: Number,
+        savedAt: Date,
+      },
       // NC 재생성(재처리) 이력: 프론트/백엔드에서 재생성 요청이 발생한 경우 간단한 이력을 남김
       ncRegenerations: {
         type: [

@@ -79,7 +79,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             }
         }
 
-        public static void NotifyBackendSuccess(string requestId, string stlPath, string ncPath, string requestMongoId = null)
+        public static void NotifyBackendSuccess(string requestId, string stlPath, string ncPath, string requestMongoId = null, string espFileName = null, long espFileSize = 0)
         {
             try
             {
@@ -129,14 +129,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                     ? ""
                     : $",\"requestMongoId\":\"{EscapeJson(requestMongoId.Trim())}\"";
 
+                string espJson = BuildEspRegisterJson(espFileName, espFileSize);
                 string json;
                 if (upload.ok)
                 {
-                    json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(ncRelativePath)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\"{mongoIdJson},\"status\":\"success\",\"s3Key\":\"{EscapeJson(upload.s3Key)}\",\"s3Url\":\"{EscapeJson(upload.s3Url)}\",\"fileSize\":{upload.fileSize}}}";
+                    json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(ncRelativePath)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\"{mongoIdJson},\"status\":\"success\",\"s3Key\":\"{EscapeJson(upload.s3Key)}\",\"s3Url\":\"{EscapeJson(upload.s3Url)}\",\"fileSize\":{upload.fileSize}{espJson}}}";
                 }
                 else
                 {
-                    json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(ncRelativePath)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\"{mongoIdJson},\"status\":\"success\",\"metadata\":{{\"fileSize\":{fi.Length},\"upload\":\"fallback_no_s3\"}}}}";
+                    json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(ncRelativePath)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\"{mongoIdJson},\"status\":\"success\",\"metadata\":{{\"fileSize\":{fi.Length},\"upload\":\"fallback_no_s3\"}}{espJson}}}";
                 }
 
                 AppLogger.Log($"BackendApiClient: register-file POST {url} with requestId={requestId}, requestMongoId={(requestMongoId ?? "<null>")}, fileName={ncRelativePath}");
@@ -344,6 +345,20 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         {
             if (string.IsNullOrEmpty(value)) return "";
             return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        }
+
+        private static string BuildEspRegisterJson(string espFileName, long espFileSize)
+        {
+            string safeName = EspFileArchive.SanitizeRequestId(Path.GetFileNameWithoutExtension(espFileName ?? string.Empty));
+            if (string.IsNullOrWhiteSpace(safeName))
+            {
+                return string.Empty;
+            }
+            if (espFileSize < 0)
+            {
+                espFileSize = 0;
+            }
+            return $",\"espFileName\":\"{EscapeJson(safeName + ".esp")}\",\"espFileSize\":{espFileSize}";
         }
 
         [DataContract]

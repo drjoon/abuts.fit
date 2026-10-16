@@ -331,7 +331,7 @@ export async function rebalanceProductionQueuesInternal({
           status: "GENERATING",
           updatedAt: new Date(),
         };
-        update.$unset = { "caseInfos.ncFile": 1 };
+        update.$unset = { "caseInfos.ncFile": 1, "caseInfos.espFile": 1 };
         const key = `${materialDia}|${diameterGroup || ""}`;
         if (!espritRetriggerByDiameter.has(key)) {
           espritRetriggerByDiameter.set(key, {
@@ -392,6 +392,7 @@ export async function getProductionQueues(req, res) {
       "caseInfos.tooth",
       "caseInfos.rollbackCounts.machining",
       "caseInfos.ncFile",
+      "caseInfos.espFile",
       "caseInfos.anodizingEnabled",
       "caseInfos.designSoftware",
       "caseInfos.manufacturerHexRotation",
@@ -848,7 +849,7 @@ export async function moveProductionQueueRequest(req, res) {
       { _id: requestDoc._id },
       {
         $set,
-        $unset: { "caseInfos.ncFile": 1 },
+        $unset: { "caseInfos.ncFile": 1, "caseInfos.espFile": 1 },
       },
     );
 

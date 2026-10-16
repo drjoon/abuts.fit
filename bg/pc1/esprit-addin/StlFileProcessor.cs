@@ -503,7 +503,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 if (!string.IsNullOrWhiteSpace(ncFilePath))
                 {
                     AppLogger.Log($"StlFileProcessor: NC file generated - {ncFilePath}");
-                    BackendApiClient.NotifyBackendSuccess(requestId, stlPath, ncFilePath, _backendRequestMongoId);
+                    // 운영 PC에 CAM 문서를 ESP로 남긴다. 실패해도 NC 등록은 계속한다.
+                    var espSaved = EspFileArchive.TrySave(document, requestId);
+                    BackendApiClient.NotifyBackendSuccess(
+                        requestId,
+                        stlPath,
+                        ncFilePath,
+                        _backendRequestMongoId,
+                        espSaved?.FileName,
+                        espSaved?.FileSize ?? 0);
                 }
                 else
                 {

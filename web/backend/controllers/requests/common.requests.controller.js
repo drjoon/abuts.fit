@@ -1732,6 +1732,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.hexVerificationSample",
       "caseInfos.hexRotation",
       "caseInfos.ncFile",
+      "caseInfos.espFile",
       "caseInfos.stageFiles",
       "caseInfos.reviewByStage",
       "caseInfos.rollbackCounts",
@@ -3701,6 +3702,7 @@ export const updateRequestLotEngravingTargetOverride = asyncHandler(
     // 각인 면이 바뀌면 기존 NC는 무효 — 다음 승인 때 Esprit가 재생성
     if (targetChanged && request?.caseInfos?.ncFile) {
       request.set("caseInfos.ncFile", undefined);
+      request.set("caseInfos.espFile", undefined);
       console.info(
         "[request-lot-engraving-target] cleared stale ncFile after target change",
         {
@@ -3885,6 +3887,7 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   });
   if (hexModeChanged && request?.caseInfos?.ncFile) {
     request.set("caseInfos.ncFile", undefined);
+    request.set("caseInfos.espFile", undefined);
     console.info("[rnd-hex-rotation] cleared stale ncFile after hex mode change", {
       requestId: request.requestId,
       previousHexMode,

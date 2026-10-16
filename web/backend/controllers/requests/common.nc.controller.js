@@ -33,6 +33,15 @@ import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "./common.revie
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { clearPracticeTransferAbutmentMachiningStarted } from "../../services/practiceTransferProduction.service.js";
 import { resolveFilledStlFile } from "../../utils/filledStlFile.js";
+import { Readable } from "stream";
+import { pipeStreamToResponse } from "../../utils/pipeStreamToResponse.js";
+import { withEspritHeaders } from "./common.review.helpers.js";
+
+const ESPRIT_BASE =
+  process.env.ESPRIT_ADDIN_BASE_URL ||
+  process.env.ESPRIT_BASE ||
+  process.env.ESPRIT_URL ||
+  "http://localhost:8001";
 
 /**
  * NC 재생성 시작 전 기존 NC 메타를 제거한다.
@@ -48,11 +57,12 @@ async function clearNcMetaBeforeRegeneration(request) {
     { _id: request._id },
     {
       $set: { "productionSchedule.ncPreload": generating },
-      $unset: { "caseInfos.ncFile": 1 },
+      $unset: { "caseInfos.ncFile": 1, "caseInfos.espFile": 1 },
     },
   );
   if (request.caseInfos && typeof request.caseInfos === "object") {
     request.caseInfos.ncFile = undefined;
+    request.caseInfos.espFile = undefined;
   }
   if (request.productionSchedule && typeof request.productionSchedule === "object") {
     request.productionSchedule.ncPreload = generating;
@@ -615,12 +625,13 @@ export async function cancelNcRegenerationByRequestId(req, res) {
             error: "cam_regeneration_cancelled",
           },
         },
-        $unset: { "caseInfos.ncFile": 1 },
+        $unset: { "caseInfos.ncFile": 1, "caseInfos.espFile": 1 },
       },
     );
 
     if (request.caseInfos && typeof request.caseInfos === "object") {
       request.caseInfos.ncFile = undefined;
+      request.caseInfos.espFile = undefined;
     }
     if (
       request.productionSchedule &&
@@ -755,6 +766,99 @@ export async function getNcFileUrl(req, res) {
       success: false,
       message: "NC 파일 URL 생성 중 오류가 발생했습니다.",
       error: error.message,
+    });
+  }
+}
+
+function espAttachmentName(request) {
+  const ncRaw = String(
+    request?.caseInfos?.ncFile?.originalName ||
+      request?.caseInfos?.ncFile?.filePath ||
+      request?.caseInfos?.espFile?.fileName ||
+      request?.requestId ||
+      "program",
+  );
+  const base =
+    ncRaw
+      .split(/[/\\]/)
+      .pop()
+      .replace(/\.nc$/i, "")
+      .replace(/\.esp$/i, "")
+      .replace(/[\r\n"]/g, "")
+      .trim() || "program";
+  return `${base}.esp`;
+}
+
+export async function downloadEspFile(req, res) {
+  try {
+    const { id } = req.params;
+    if (!Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
+    }
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "다운로드 권한이 없습니다." });
+    }
+
+    const request = await Request.findById(id)
+      .select({ requestId: 1, caseInfos: 1 })
+      .lean();
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    const requestId = String(request.requestId || "").trim();
+    const espFileName = String(request?.caseInfos?.espFile?.fileName || "").trim();
+    if (!requestId || !espFileName) {
+      return res.status(404).json({
+        success: false,
+        message: "ESP 파일이 없습니다.",
+      });
+    }
+
+    const espritUrl = `${ESPRIT_BASE.replace(/\/+$/, "")}/esp/${encodeURIComponent(requestId)}`;
+    const upstream = await fetch(espritUrl, {
+      headers: withEspritHeaders(),
+      signal: AbortSignal.timeout(180000),
+    });
+    if (!upstream.ok || !upstream.body) {
+      const status = upstream.status === 404 ? 404 : 502;
+      return res.status(status).json({
+        success: false,
+        message:
+          status === 404
+            ? "운영 PC에서 ESP 파일을 찾지 못했습니다."
+            : "운영 PC에서 ESP 파일을 받지 못했습니다.",
+      });
+    }
+
+    const downloadName = espAttachmentName(request);
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${encodeURIComponent(downloadName)}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
+    );
+    const len = Number(upstream.headers.get("content-length") || 0);
+    if (Number.isFinite(len) && len > 0) {
+      res.setHeader("Content-Length", String(Math.floor(len)));
+    }
+    await pipeStreamToResponse(Readable.fromWeb(upstream.body), res, {
+      label: "esp-file",
+      key: requestId,
+    });
+  } catch (error) {
+    if (res.headersSent) return;
+    const aborted = error?.name === "TimeoutError" || error?.name === "AbortError";
+    res.status(aborted ? 504 : 500).json({
+      success: false,
+      message: aborted
+        ? "운영 PC ESP 응답 시간이 초과했습니다."
+        : "ESP 파일 다운로드 중 오류가 발생했습니다.",
     });
   }
 }
@@ -1066,6 +1170,7 @@ export async function deleteNcFileAndRollbackCam(req, res) {
         } else {
           update.$unset = {
             "caseInfos.ncFile": 1,
+            "caseInfos.espFile": 1,
           };
         }
 

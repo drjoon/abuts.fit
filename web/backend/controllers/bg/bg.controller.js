@@ -1080,6 +1080,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     isCallbackSuccess && callbackStep === "3-nc" && Boolean(previousNcS3Key);
   const shouldClearNcOnFilled =
     isCallbackSuccess && callbackStep === "2-filled" && Boolean(previousNcS3Key);
+  let unsetEspFile = shouldClearNcOnFilled;
 
   if (status === "success") {
     switch (sourceStep) {
@@ -1156,6 +1157,20 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           }
         }
         updateData["productionSchedule.actualCamComplete"] = now;
+        const espFileName = String(req.body?.espFileName || "").trim();
+        const espFileSize = Number(req.body?.espFileSize);
+        if (/^[A-Za-z0-9_-]{1,80}\.esp$/i.test(espFileName)) {
+          updateData["caseInfos.espFile"] = {
+            fileName: espFileName,
+            ...(Number.isFinite(espFileSize) && espFileSize >= 0
+              ? { fileSize: espFileSize }
+              : {}),
+            savedAt: now,
+          };
+          unsetEspFile = false;
+        } else {
+          unsetEspFile = true;
+        }
         // CAM 재생성 블러(GENERATING) 해제
         updateData["productionSchedule.ncPreload"] = {
           status: "NONE",
@@ -1362,12 +1377,22 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   }
 
   const mongoUpdate = { $set: updateData };
+  if (unsetEspFile) {
+    mongoUpdate.$unset = {
+      ...(mongoUpdate.$unset || {}),
+      "caseInfos.espFile": 1,
+    };
+  }
   if (isCallbackSuccess && callbackStep === "2-filled") {
     // 새 filled는 이전 제안 곡선과 맞지 않는다. 응답 뒤 다시 분석한다.
     mongoUpdate.$unset = { "caseInfos.cuffProposal": 1 };
   }
   if (shouldClearNcOnFilled) {
-    mongoUpdate.$unset = { ...(mongoUpdate.$unset || {}), "caseInfos.ncFile": 1 };
+    mongoUpdate.$unset = {
+      ...(mongoUpdate.$unset || {}),
+      "caseInfos.ncFile": 1,
+      "caseInfos.espFile": 1,
+    };
     console.log(
       `[BG-Callback] Clearing NC after filled STL regeneration request=${request.requestId} previousNcS3Key=${previousNcS3Key}`,
     );

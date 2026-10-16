@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-16: 가공 프리뷰 NC 파일명 오른쪽에 ESP 다운로드.
 // - 2026-10-13: 더미는 헥스 회전이 없으면 STL모델대로로 보여 준다.
 // - 2026-10-10: 작업영역 1행 — 왼쪽 그리드·메타·안내·페인트, 오른쪽 측면·상단·45도.
 // - 2026-10-03: 제조사 프리뷰 STL은 스캔색 스위치 숨김(showColorMappingToggle=false).
@@ -72,7 +73,7 @@
 // - web/backend/controllers/rhino/rhino.controller.js
 // - web/backend/modules/rhino/rhino.routes.js
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Grid3x3, Info, Loader2, RefreshCw, Spline, X } from "lucide-react";
+import { Download, Grid3x3, Info, Loader2, RefreshCw, Spline, X } from "lucide-react";
 import { mirrorShapes } from "@/shared/components/practice/viewPaintMirror";
 import type { PaintShape } from "@/shared/components/practice/viewPaintGeom";
 import {
@@ -645,6 +646,7 @@ export const PreviewModal = ({
   const { token } = useAuthStore();
   const { toast } = useToast();
   const [regenerating, setRegenerating] = useState(false);
+  const [espDownloading, setEspDownloading] = useState(false);
   const [holeFilling, setHoleFilling] = useState(false);
   const [unmachinableEditorOpen, setUnmachinableEditorOpen] = useState(false);
   const labNoticeRef = useRef<UnmachinableLabNoticeHandle>(null);
@@ -1788,6 +1790,10 @@ export const PreviewModal = ({
   const hasRightFile = !!rightMeta?.s3Key;
   const hasCamFile = !!resolveFilledStlFile(activeReq?.caseInfos)?.s3Key;
   const hasNcFile = !!activeReq?.caseInfos?.ncFile?.s3Key;
+  const espFileName = String(activeReq?.caseInfos?.espFile?.fileName || "").trim();
+  const showEspDownload =
+    Boolean(espFileName) &&
+    (isCamStage || (isTrackingStage && trackingRightTab === "nc"));
 
   const canGuideFinishLine =
     !!token &&
@@ -2082,6 +2088,71 @@ export const PreviewModal = ({
     }
     return "bg-primary-soft text-primary-strong border-primary-muted";
   };
+
+  const onDownloadEsp = async () => {
+    if (!showEspDownload || espDownloading) return;
+    if (!token || !activeReq?._id) {
+      toast({
+        title: "ESP 다운로드 실패",
+        description: "로그인이 필요합니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setEspDownloading(true);
+    try {
+      const res = await fetch(`/api/requests/${activeReq._id}/esp-file`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.message || "ESP 파일을 받지 못했습니다.");
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") || "";
+      const matched = /filename\*=UTF-8''([^;]+)/i.exec(cd);
+      const name = matched
+        ? decodeURIComponent(matched[1])
+        : `${String(activeReq.requestId || "program").trim() || "program"}.esp`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = name;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast({
+        title: "ESP 다운로드 실패",
+        description: err?.message || "ESP 파일을 받지 못했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setEspDownloading(false);
+    }
+  };
+
+  const renderEspDownloadButton = () =>
+    showEspDownload ? (
+      <button
+        type="button"
+        className="inline-flex h-8 shrink-0 items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+        disabled={espDownloading}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void onDownloadEsp();
+        }}
+        aria-label="ESP 다운로드"
+        title="ESP 다운로드"
+      >
+        {espDownloading ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Download className="h-3.5 w-3.5" />
+        )}
+        ESP
+      </button>
+    ) : null;
 
   const onDownload = () => {
     if (isTrackingStage) {
@@ -3941,42 +4012,48 @@ export const PreviewModal = ({
                       </button>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      className="min-w-0 flex-1 text-sm font-semibold text-primary-strong hover:underline text-left truncate"
-                      onClick={onDownload}
-                      title={
-                        stage === "packing" || stage === "shipping"
+                    <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                      <button
+                        type="button"
+                        className="min-w-0 truncate text-left text-sm font-semibold text-primary-strong hover:underline"
+                        onClick={onDownload}
+                        title={
+                          stage === "packing" || stage === "shipping"
+                            ? "각인 이미지"
+                            : fileLabel
+                        }
+                      >
+                        {stage === "packing" || stage === "shipping"
                           ? "각인 이미지"
-                          : fileLabel
-                      }
-                    >
-                      {stage === "packing" || stage === "shipping"
-                        ? "각인 이미지"
-                        : fileLabel}
-                    </button>
+                          : fileLabel}
+                      </button>
+                      {isCamStage ? renderEspDownloadButton() : null}
+                    </div>
                   )}
                   <div className="flex items-center gap-2">
                     {isTrackingStage ? (
-                      <button
-                        type="button"
-                        className={cn(
-                          "inline-flex items-center justify-center h-8 rounded-md border px-2 text-[12px] font-medium transition",
-                          (trackingRightTab === "nc" ? hasNcFile : hasRightFile)
-                            ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                            : "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed",
-                        )}
-                        disabled={
-                          trackingRightTab === "nc" ? !hasNcFile : !hasRightFile
-                        }
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          onDownload();
-                        }}
-                      >
-                        다운로드
-                      </button>
+                      <>
+                        {trackingRightTab === "nc" ? renderEspDownloadButton() : null}
+                        <button
+                          type="button"
+                          className={cn(
+                            "inline-flex items-center justify-center h-8 rounded-md border px-2 text-[12px] font-medium transition",
+                            (trackingRightTab === "nc" ? hasNcFile : hasRightFile)
+                              ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                              : "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed",
+                          )}
+                          disabled={
+                            trackingRightTab === "nc" ? !hasNcFile : !hasRightFile
+                          }
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onDownload();
+                          }}
+                        >
+                          다운로드
+                        </button>
+                      </>
                     ) : (
                       <>
                         {!isCamStage && (

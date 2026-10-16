@@ -35,6 +35,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         public const string StorageNcEnv = "ABUTS_STORAGE_NC";
 
+        public const string StorageEspEnv = "ABUTS_STORAGE_ESP";
+
         public const string AddInRootEnv = "ABUTS_ADDIN_ROOT";
 
         public const string PrcRootEnv = "ABUTS_PRC_ROOT";
@@ -91,6 +93,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         private static readonly string DefaultStorageNcDirectory = Path.Combine(DefaultBaseDirectory, "storage", "3-nc");
 
+        private static readonly string DefaultStorageEspDirectory = Path.Combine(DefaultBaseDirectory, "storage", "esp");
+
         private static readonly string DefaultAddInRootDirectory = Path.Combine(DefaultBaseDirectory, "esprit-addin");
 
         private static string DefaultPrcRootDirectory => Path.Combine(DefaultAddInRootDirectory, "AcroDent");
@@ -144,6 +148,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public static string StorageFilledDirectory => GetEnvOrDefault(StorageFilledEnv, DefaultStorageFilledDirectory);
 
         public static string StorageNcDirectory => GetEnvOrDefault(StorageNcEnv, DefaultStorageNcDirectory);
+
+        public static string StorageEspDirectory => GetEnvOrDefault(StorageEspEnv, DefaultStorageEspDirectory);
 
         private static string _resolvedAddInRootDirectory;
         private static bool _resolvingAddInRoot;

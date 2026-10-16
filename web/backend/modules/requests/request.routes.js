@@ -736,6 +736,12 @@ router.get(
   authorizeManufacturerOrDesignPartner(),
   requestController.getNcFileUrl,
 );
+router.get(
+  "/:id/esp-file",
+  authenticate,
+  authorizeManufacturerOrDesignPartner(),
+  requestController.downloadEspFile,
+);
 
 // 제조사/관리자: stageFiles(이미지 등) 다운로드 URL
 router.get(

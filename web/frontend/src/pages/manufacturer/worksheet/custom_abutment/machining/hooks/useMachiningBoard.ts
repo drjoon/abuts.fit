@@ -1036,10 +1036,12 @@ export const useMachiningBoard = ({
                 ...prevCaseInfos,
                 ...requestCaseInfos,
                 ncFile: mergedNcFile,
+                ...(opts?.clearNc ? { espFile: null } : {}),
               }
             : {
                 ...prevCaseInfos,
                 ncFile: mergedNcFile,
+                ...(opts?.clearNc ? { espFile: null } : {}),
               };
 
           return {
@@ -1172,7 +1174,7 @@ export const useMachiningBoard = ({
               ...moved,
               ncFile: null,
               caseInfos: moved.caseInfos
-                ? { ...moved.caseInfos, ncFile: null }
+                ? { ...moved.caseInfos, ncFile: null, espFile: null }
                 : moved.caseInfos,
               ncPreload: { status: "NONE" },
             };
@@ -1565,6 +1567,7 @@ export const useMachiningBoard = ({
                     ? item.caseInfos
                     : {}),
                   ncFile: null,
+                  espFile: null,
                 },
                 ncPreload: {
                   status: "CANCELLED",
@@ -1770,6 +1773,7 @@ export const useMachiningBoard = ({
                   ? item.caseInfos
                   : {}),
                 ncFile: null,
+                espFile: null,
               },
               ncPreload: {
                 status: "CANCELLED",

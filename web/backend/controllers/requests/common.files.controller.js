@@ -779,7 +779,9 @@ export async function acceptCuffProposalByRequestor(req, res) {
       $set[`caseInfos.${field}.uploadedAt`] = now;
     }
     // filled가 바뀌면 이전 NC는 맞지 않는다(Rhino 재생성과 같은 규칙).
-    const $unset = String(request.caseInfos?.ncFile?.s3Key || "").trim() ? { "caseInfos.ncFile": 1 } : null;
+    const $unset = String(request.caseInfos?.ncFile?.s3Key || "").trim()
+      ? { "caseInfos.ncFile": 1, "caseInfos.espFile": 1 }
+      : null;
     console.log("[cuff-proposal] accepted", { requestId: request.requestId, s3Key, ...result.detail });
     return await finishProposalDecision(res, request, $set, $unset, "커프 형상을 바꿨습니다.");
   } catch (error) {

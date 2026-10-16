@@ -457,6 +457,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 string templatePath = ResolveTemplatePath(templateDiameter);
                 tempEspPath = BuildTempEspSavePath();
 
+                // 템플릿으로 바꾸기 전 현재 문서를 잠깐 저장한다. CAM 결과 ESP는 여기가 아니라
+                // NC 생성 직후 EspFileArchive가 운영 PC storage/esp 에 남긴다.
                 document.SaveAs(tempEspPath);
                 AppLogger.Log($"EspritDocumentManager: 임시 ESP 저장 완료 - {tempEspPath}");
 

@@ -300,6 +300,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         response.OutputStream.Write(buffer, 0, buffer.Length);
                         return;
                     }
+                    if (TryWriteEspDownload(request, response))
+                    {
+                        return;
+                    }
                 }
                 if (!_isRunning)
                 {
@@ -804,6 +808,54 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 }
             }
             AppLogger.Log("[Queue Processor] Stopped");
+        }
+        private static bool TryWriteEspDownload(HttpListenerRequest request, HttpListenerResponse response)
+        {
+            string rawPath = request?.Url?.AbsolutePath ?? string.Empty;
+            string requestId = null;
+            if (rawPath.StartsWith("/esp/", StringComparison.OrdinalIgnoreCase))
+            {
+                requestId = rawPath.Substring("/esp/".Length);
+            }
+            else if (string.Equals(rawPath.TrimEnd('/'), "/esp", StringComparison.OrdinalIgnoreCase))
+            {
+                requestId = request.QueryString["requestId"];
+            }
+            else
+            {
+                return false;
+            }
+
+            try
+            {
+                requestId = Uri.UnescapeDataString(requestId ?? string.Empty).Trim().Trim('/');
+            }
+            catch
+            {
+                requestId = (requestId ?? string.Empty).Trim().Trim('/');
+            }
+
+            string espPath = EspFileArchive.TryResolve(requestId);
+            if (string.IsNullOrWhiteSpace(espPath))
+            {
+                response.StatusCode = (int)HttpStatusCode.NotFound;
+                response.ContentType = "application/json";
+                byte[] missing = Encoding.UTF8.GetBytes("{\"ok\":false,\"message\":\"esp file not found\"}");
+                response.OutputStream.Write(missing, 0, missing.Length);
+                return true;
+            }
+
+            response.StatusCode = (int)HttpStatusCode.OK;
+            response.ContentType = "application/octet-stream";
+            string downloadName = Path.GetFileName(espPath);
+            response.Headers["Content-Disposition"] = "attachment; filename=\"" + downloadName + "\"";
+            using (var stream = new FileStream(espPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                response.ContentLength64 = stream.Length;
+                stream.CopyTo(response.OutputStream);
+            }
+            AppLogger.Log($"[HTTP Server] ESP download - requestId={requestId} path={espPath}");
+            return true;
         }
         private static string GetTempStlDir()
         {

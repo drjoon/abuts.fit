@@ -143,6 +143,7 @@
     <Compile Include="Helpers\EspritDocumentHelper.cs" />
     <Compile Include="Helpers\EspritDocumentManager.cs" />
     <Compile Include="Helpers\NcFileGenerator.cs" />
+    <Compile Include="Helpers\EspFileArchive.cs" />
     <Compile Include="DentalAddin\DentalAddinConfigurator.cs" />
     <Compile Include="DentalAddin\DentalAddinPrcManager.cs" />
     <Compile Include="DentalAddin\DentalAddinReflectionHelper.cs" />

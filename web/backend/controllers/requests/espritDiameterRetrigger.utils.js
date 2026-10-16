@@ -77,7 +77,7 @@ export async function clearNcAndForceEspritRetrigger({
     { _id: { $in: ids } },
     {
       $set,
-      $unset: { "caseInfos.ncFile": 1 },
+      $unset: { "caseInfos.ncFile": 1, "caseInfos.espFile": 1 },
     },
   );
 

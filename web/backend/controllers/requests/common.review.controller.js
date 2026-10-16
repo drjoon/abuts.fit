@@ -2114,7 +2114,7 @@ export async function updateReviewStatusByStage(req, res) {
       if (pendingCamStageEspritForceReprocess) {
         await Request.updateOne(
           { _id: request._id },
-          { $unset: { "caseInfos.ncFile": 1 } },
+          { $unset: { "caseInfos.ncFile": 1, "caseInfos.espFile": 1 } },
           { session },
         );
       }

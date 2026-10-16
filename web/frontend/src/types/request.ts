@@ -234,6 +234,12 @@ export interface RequestCaseInfos {
     s3Url?: string;
     uploadedAt?: string;
   };
+  // CAM 완료 Esprit 문서. 바이트는 운영 PC에 있고 다운로드는 /esp-file.
+  espFile?: {
+    fileName?: string;
+    fileSize?: number;
+    savedAt?: string;
+  };
 }
 
 // 프론트에서 공통으로 사용하는 의뢰 타입 (백엔드 Request 모델의 부분집합)
