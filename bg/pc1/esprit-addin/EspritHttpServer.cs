@@ -5,7 +5,9 @@
 // - web/backend/controllers/requests/common.review.controller.js
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -809,6 +811,59 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             AppLogger.Log("[Queue Processor] Stopped");
         }
+        private static bool ClientAcceptsGzip(HttpListenerRequest request)
+        {
+            string accept = request?.Headers["Accept-Encoding"] ?? string.Empty;
+            return accept.IndexOf("gzip", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// ESP는 한 건이 약 20MB다. 운영 PC는 공인 IP 뒤에 있으므로 gzip으로 줄을 줄여 보낸다.
+        /// Content-Length는 원본일 때만 둔다. gzip은 청크로 흘려 압축이 끝날 때까지 헤더를 붙잡지 않는다.
+        /// </summary>
+        private static void WriteEspFile(HttpListenerResponse response, string espPath, bool gzip, string requestId)
+        {
+            response.StatusCode = (int)HttpStatusCode.OK;
+            response.ContentType = "application/octet-stream";
+            string downloadName = Path.GetFileName(espPath);
+            response.Headers["Content-Disposition"] = "attachment; filename=\"" + downloadName + "\"";
+            var sw = Stopwatch.StartNew();
+            long rawBytes;
+            using (var input = new FileStream(
+                espPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite,
+                256 * 1024,
+                FileOptions.SequentialScan))
+            {
+                rawBytes = input.Length;
+                if (gzip)
+                {
+                    response.SendChunked = true;
+                    response.Headers["Content-Encoding"] = "gzip";
+                    response.Headers["Vary"] = "Accept-Encoding";
+                    // net48 GZipStream은 leaveOpen이 없다. Dispose가 풋터를 쓰고 OutputStream을 닫는다.
+                    using (var gzipStream = new GZipStream(response.OutputStream, CompressionLevel.Fastest))
+                    {
+                        input.CopyTo(gzipStream, 256 * 1024);
+                    }
+                }
+                else
+                {
+                    response.ContentLength64 = rawBytes;
+                    input.CopyTo(response.OutputStream, 256 * 1024);
+                }
+            }
+            sw.Stop();
+            AppLogger.Log(
+                "[HTTP Server] ESP download requestId=" + requestId
+                + " bytes=" + rawBytes.ToString()
+                + " gzip=" + (gzip ? "1" : "0")
+                + " elapsedMs=" + sw.ElapsedMilliseconds.ToString()
+                + " path=" + espPath);
+        }
+
         private static bool TryWriteEspDownload(HttpListenerRequest request, HttpListenerResponse response)
         {
             string rawPath = request?.Url?.AbsolutePath ?? string.Empty;
@@ -845,16 +900,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return true;
             }
 
-            response.StatusCode = (int)HttpStatusCode.OK;
-            response.ContentType = "application/octet-stream";
-            string downloadName = Path.GetFileName(espPath);
-            response.Headers["Content-Disposition"] = "attachment; filename=\"" + downloadName + "\"";
-            using (var stream = new FileStream(espPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-            {
-                response.ContentLength64 = stream.Length;
-                stream.CopyTo(response.OutputStream);
-            }
-            AppLogger.Log($"[HTTP Server] ESP download - requestId={requestId} path={espPath}");
+            bool gzip = ClientAcceptsGzip(request);
+            WriteEspFile(response, espPath, gzip, requestId);
             return true;
         }
         private static string GetTempStlDir()

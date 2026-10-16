@@ -737,8 +737,14 @@ router.get(
   requestController.getNcFileUrl,
 );
 router.get(
-  "/:id/esp-file",
+  "/:id/esp-file-url",
   authenticate,
+  authorizeManufacturerOrDesignPartner(),
+  requestController.getEspFileUrl,
+);
+router.get(
+  "/:id/esp-file",
+  requestController.authenticateEspDownload,
   authorizeManufacturerOrDesignPartner(),
   requestController.downloadEspFile,
 );

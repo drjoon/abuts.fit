@@ -30,7 +30,8 @@
   - 예전 `storage/esp/{requestId}.esp`(`ABUTS_STORAGE_ESP`)는 다운로드할 때만 찾는다. 새로 쓰지 않는다.
   - `ResetDocument`의 임시 ESP는 템플릿 교체용이라 그대로 삭제한다. CAM 결과와 별개다.
   - 폴더 합이 10GB를 넘으면 방금 저장한 파일을 남기고 오래된 ESP부터 삭제한다.
-  - `GET /esp/{requestId}`로 파일을 넘긴다. 프론트 다운로드는 백엔드 `GET /api/requests/:id/esp-file`이 프록시한다.
+  - `GET /esp/{requestId}`로 파일을 넘긴다. `Accept-Encoding: gzip`이면 본문을 gzip으로 보낸다(약 20MB 원본을 줄여 공인 IP 구간을 짧게).
+  - 프론트는 `GET /api/requests/:id/esp-file-url`로 짧은 주소를 받고, 브라우저가 `GET /api/requests/:id/esp-file`을 직접 저장한다. 페이지가 파일 전체를 메모리에 모으지 않는다.
   - 등록은 `register-file`의 `espFileName`/`espFileSize` → `caseInfos.espFile`. S3에 올리지 않는다.
 
 ## 2. 구현 체크포인트

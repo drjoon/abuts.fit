@@ -48,6 +48,8 @@ export const {
   saveStageFile,
   deleteStageFile,
   getNcFileUrl,
+  getEspFileUrl,
+  authenticateEspDownload,
   downloadEspFile,
   getRequestSummaryByRequestId,
   getRndUnmachinableReasonOptions,

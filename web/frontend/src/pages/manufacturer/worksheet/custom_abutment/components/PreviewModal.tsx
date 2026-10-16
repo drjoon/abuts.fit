@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-16: ESP 버튼은 짧은 주소만 받고, 파일은 브라우저 다운로드로 바로 저장한다.
 // - 2026-10-16: 가공 프리뷰 NC 표시명을 의뢰번호.nc 로 줄이고, ESP 버튼은 NC가 있으면 항상 표시.
 // - 2026-10-13: 더미는 헥스 회전이 없으면 STL모델대로로 보여 준다.
 // - 2026-10-10: 작업영역 1행 — 왼쪽 그리드·메타·안내·페인트, 오른쪽 측면·상단·45도.
@@ -2113,25 +2114,26 @@ export const PreviewModal = ({
     }
     setEspDownloading(true);
     try {
-      const res = await fetch(`/api/requests/${activeReq._id}/esp-file`, {
+      const res = await fetch(`/api/requests/${activeReq._id}/esp-file-url`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
         throw new Error(body?.message || "ESP 파일을 받지 못했습니다.");
       }
-      const blob = await res.blob();
-      const cd = res.headers.get("Content-Disposition") || "";
-      const matched = /filename\*=UTF-8''([^;]+)/i.exec(cd);
-      const name = matched
-        ? decodeURIComponent(matched[1])
-        : `${String(activeReq.requestId || "program").trim() || "program"}.esp`;
-      const url = URL.createObjectURL(blob);
+      const url = String(body?.data?.url || "").trim();
+      const name =
+        String(body?.data?.fileName || "").trim() ||
+        `${String(activeReq.requestId || "program").trim() || "program"}.esp`;
+      if (!url) {
+        throw new Error("ESP 파일을 받지 못했습니다.");
+      }
       const link = document.createElement("a");
       link.href = url;
       link.download = name;
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(url);
+      link.remove();
     } catch (err: any) {
       toast({
         title: "ESP 다운로드 실패",

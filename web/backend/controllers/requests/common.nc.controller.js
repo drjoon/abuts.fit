@@ -9,6 +9,7 @@
 // - web/backend/services/requestSnapshotTriggers.service.js
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // change-log:
+// - 2026-10-16: ESP 다운로드는 gzip으로 운영 PC에서 받고, 브라우저는 짧은 주소로 직접 저장한다.
 // - 2026-08-29: CAM 생성 중단(cancel-regeneration) — NC 삭제·Esprit /cancel·블러 해제(ncPreload NONE).
 // - 2026-08-29: NC 재생성 시 ncPreload=GENERATING + ncFile 삭제 + cam-processing-started(ncCleared).
 // - 2026-08-17: NC 롤백(준비) 시 우편함 해제.
@@ -33,8 +34,12 @@ import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "./common.revie
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { clearPracticeTransferAbutmentMachiningStarted } from "../../services/practiceTransferProduction.service.js";
 import { resolveFilledStlFile } from "../../utils/filledStlFile.js";
-import { Readable } from "stream";
-import { pipeStreamToResponse } from "../../utils/pipeStreamToResponse.js";
+import http from "node:http";
+import https from "node:https";
+import { pipeline } from "node:stream";
+import zlib from "node:zlib";
+import { generateToken, verifyToken } from "../../utils/jwt.utils.js";
+import { authenticate } from "../../middlewares/auth.middleware.js";
 import { withEspritHeaders } from "./common.review.helpers.js";
 
 const ESPRIT_BASE =
@@ -783,7 +788,41 @@ function espAttachmentName(request) {
   return shortProgramAttachmentName(request, "esp");
 }
 
-export async function downloadEspFile(req, res) {
+const ESP_DOWNLOAD_TICKET_PURPOSE = "esp-download";
+
+function canDownloadEsp(user) {
+  const role = String(user?.role || "");
+  return role === "manufacturer" || role === "admin";
+}
+
+/**
+ * 브라우저 `<a download>`는 Authorization을 못 보낸다.
+ * 로그인 세션으로 2분짜리 티켓을 발급하고, 그 주소로 파일을 직접 받는다.
+ */
+export function authenticateEspDownload(req, res, next) {
+  const ticket = String(req.query?.ticket || "").trim();
+  if (!ticket) return authenticate(req, res, next);
+  try {
+    const decoded = verifyToken(ticket);
+    if (
+      decoded?.purpose !== ESP_DOWNLOAD_TICKET_PURPOSE ||
+      String(decoded.rid || "") !== String(req.params?.id || "") ||
+      !canDownloadEsp(decoded)
+    ) {
+      return res
+        .status(403)
+        .json({ success: false, message: "다운로드 권한이 없습니다." });
+    }
+    req.user = { _id: decoded.sub, id: decoded.sub, role: decoded.role };
+    return next();
+  } catch {
+    return res
+      .status(401)
+      .json({ success: false, message: "ESP 다운로드 주소가 만료되었습니다." });
+  }
+}
+
+export async function getEspFileUrl(req, res) {
   try {
     const { id } = req.params;
     if (!Types.ObjectId.isValid(id)) {
@@ -791,7 +830,72 @@ export async function downloadEspFile(req, res) {
         .status(400)
         .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
     }
-    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+    if (!canDownloadEsp(req.user)) {
+      return res
+        .status(403)
+        .json({ success: false, message: "다운로드 권한이 없습니다." });
+    }
+    const request = await Request.findById(id).select({ requestId: 1 }).lean();
+    if (!request?.requestId) {
+      return res
+        .status(404)
+        .json({ success: false, message: "ESP 파일이 없습니다." });
+    }
+    const ticket = generateToken(
+      {
+        purpose: ESP_DOWNLOAD_TICKET_PURPOSE,
+        rid: String(id),
+        sub: String(req.user?._id || req.user?.id || ""),
+        role: req.user.role,
+      },
+      "2m",
+    );
+    return res.status(200).json({
+      success: true,
+      data: {
+        url: `/api/requests/${id}/esp-file?ticket=${encodeURIComponent(ticket)}`,
+        fileName: espAttachmentName(request),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "ESP 다운로드 주소 생성 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+function requestEspritEsp(url, headers) {
+  return new Promise((resolve, reject) => {
+    const lib = url.startsWith("https:") ? https : http;
+    const req = lib.get(
+      url,
+      {
+        headers,
+        timeout: 180000,
+      },
+      (upstream) => resolve(upstream),
+    );
+    req.on("timeout", () => {
+      const err = new Error("timeout");
+      err.name = "TimeoutError";
+      req.destroy(err);
+    });
+    req.on("error", reject);
+  });
+}
+
+export async function downloadEspFile(req, res) {
+  let upstream = null;
+  try {
+    const { id } = req.params;
+    if (!Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
+    }
+    if (!canDownloadEsp(req.user)) {
       return res
         .status(403)
         .json({ success: false, message: "다운로드 권한이 없습니다." });
@@ -815,12 +919,15 @@ export async function downloadEspFile(req, res) {
     }
 
     const espritUrl = `${ESPRIT_BASE.replace(/\/+$/, "")}/esp/${encodeURIComponent(requestId)}`;
-    const upstream = await fetch(espritUrl, {
-      headers: withEspritHeaders(),
-      signal: AbortSignal.timeout(180000),
-    });
-    if (!upstream.ok || !upstream.body) {
-      const status = upstream.status === 404 ? 404 : 502;
+    // 운영 PC 구간만 gzip. 브라우저에는 푼 ESP를 준다(저장 파일이 .gz로 남지 않게).
+    upstream = await requestEspritEsp(
+      espritUrl,
+      withEspritHeaders({ "Accept-Encoding": "gzip" }),
+    );
+    const statusCode = Number(upstream.statusCode || 0);
+    if (statusCode !== 200) {
+      upstream.resume();
+      const status = statusCode === 404 ? 404 : 502;
       return res.status(status).json({
         success: false,
         message:
@@ -832,19 +939,41 @@ export async function downloadEspFile(req, res) {
 
     const downloadName = espAttachmentName(request);
     res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader("Cache-Control", "no-store");
     res.setHeader(
       "Content-Disposition",
       `attachment; filename="${encodeURIComponent(downloadName)}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
     );
-    const len = Number(upstream.headers.get("content-length") || 0);
-    if (Number.isFinite(len) && len > 0) {
+    const gzipped = String(upstream.headers["content-encoding"] || "")
+      .toLowerCase()
+      .includes("gzip");
+    const len = Number(upstream.headers["content-length"] || 0);
+    if (!gzipped && Number.isFinite(len) && len > 0) {
       res.setHeader("Content-Length", String(Math.floor(len)));
     }
-    await pipeStreamToResponse(Readable.fromWeb(upstream.body), res, {
-      label: "esp-file",
-      key: requestId,
+    await new Promise((resolve) => {
+      const done = (err) => {
+        if (
+          err &&
+          err?.code !== "ERR_STREAM_PREMATURE_CLOSE" &&
+          err?.code !== "ECONNRESET" &&
+          err?.code !== "EPIPE"
+        ) {
+          console.error("[esp-file] pipe failed", {
+            key: requestId,
+            error: err?.message || String(err),
+          });
+        }
+        resolve();
+      };
+      if (gzipped) pipeline(upstream, zlib.createGunzip(), res, done);
+      else pipeline(upstream, res, done);
     });
+    upstream = null;
   } catch (error) {
+    if (upstream) {
+      upstream.destroy();
+    }
     if (res.headersSent) return;
     const aborted = error?.name === "TimeoutError" || error?.name === "AbortError";
     res.status(aborted ? 504 : 500).json({

@@ -40,6 +40,7 @@
     <StartProgram>C:\Program Files (x86)\D.P.Technology\ESPRIT\Prog\esprit.exe</StartProgram>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="System.IO.Compression" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="Microsoft.VisualBasic" />
     <Reference Include="EspritAddInAssistant, Version=12.4.4.22230, Culture=neutral, processorArchitecture=MSIL">
