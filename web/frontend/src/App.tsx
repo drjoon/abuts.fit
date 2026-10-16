@@ -147,7 +147,6 @@ import RequestorCreditsPage from "@/pages/requestor/credits/RequestorCreditsPage
 import RequestorStorePage from "@/pages/requestor/store/RequestorStorePage";
 import RequestorStoreProductPage from "@/pages/requestor/store/RequestorStoreProductPage";
 import RequestorStoreCartPage from "@/pages/requestor/store/RequestorStoreCartPage";
-import RequestorStorePaymentResultPage from "@/pages/requestor/store/RequestorStorePaymentResultPage";
 import RequestorStoreOrdersPage, {
   RequestorStoreOrderDetailPage,
 } from "@/pages/requestor/store/RequestorStoreOrdersPage";
@@ -1087,22 +1086,6 @@ const App = () => {
                     element={
                       <RoleProtectedRoute roles={["requestor"]}>
                         <RequestorStoreCartPage />
-                      </RoleProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="store/payment/success"
-                    element={
-                      <RoleProtectedRoute roles={["requestor"]}>
-                        <RequestorStorePaymentResultPage mode="success" />
-                      </RoleProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="store/payment/fail"
-                    element={
-                      <RoleProtectedRoute roles={["requestor"]}>
-                        <RequestorStorePaymentResultPage mode="fail" />
                       </RoleProtectedRoute>
                     }
                   />

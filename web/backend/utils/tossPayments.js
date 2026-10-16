@@ -96,25 +96,3 @@ export async function tossCancelPayment({
 
   return data;
 }
-
-/** paymentKey로 결제 상태 재조회(웹훅 검증용). */
-export async function tossGetPayment({ paymentKey }) {
-  const url = `${getTossBaseUrl()}/v1/payments/${encodeURIComponent(
-    paymentKey,
-  )}`;
-  const { status, data } = await httpJson({
-    url,
-    method: "GET",
-    headers: { Authorization: getBasicAuthHeader() },
-  });
-  if (status < 200 || status >= 300) {
-    const err = new Error(
-      (data && typeof data === "object" && data.message) ||
-        `토스 결제 조회 실패 (status=${status})`,
-    );
-    err.statusCode = status;
-    err.data = data;
-    throw err;
-  }
-  return data;
-}

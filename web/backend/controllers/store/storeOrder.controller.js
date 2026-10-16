@@ -1,5 +1,4 @@
 // change-log:
-// - 2026-10-15: 스토어 주문 = 카드결제(토스) 전용. 크레딧 결제 중단.
 // - 2026-10-04: 카탈로그·주문 — practice/lab 판매 대상 분리(Grip Driver=치과만).
 // - 2026-10-04: 패키지 할인 제거 — 카탈로그·주문은 단일 판매가.
 // - 2026-09-23: 배송비=상품 10만원↑무료·미만 3,500. 기공물 동봉(lab_bundle) 폐지. 치과·기공소 스토어.
@@ -44,9 +43,6 @@ import {
   finalizeStoreSale,
   getInventoryMap,
   payStoreOrderWithCredit,
-  confirmStoreCardPayment,
-  expireStaleStoreCardOrders,
-  buildStoreCardPgOrderId,
   reserveStoreInventory,
 } from "../../services/storeSale.service.js";
 import { scheduleStoreAdminActionBadgeEmit } from "../../utils/storeAdminBadge.util.js";
@@ -57,8 +53,7 @@ const B_PLAN_DEPOSIT_ACCOUNT_DEFAULTS = {
   holderName: "어벗츠 주식회사",
 };
 
-/** 카드결제 대기 주문 유효시간(결제창 이탈 시 재고 예약 해제). */
-const ORDER_TTL_MS = 30 * 60 * 1000;
+const ORDER_TTL_MS = 48 * 60 * 60 * 1000;
 
 async function getDepositAccountInfo() {
   const doc = await SystemSettings.findOne({ key: "global" })
@@ -228,7 +223,6 @@ async function resolveDefaultShipping({ userId, businessAnchorId }) {
 
 export async function getStoreCatalog(req, res) {
   try {
-    await expireStaleStoreCardOrders().catch(() => {});
     assertPracticeRequestor(req);
     const businessAnchorId = req.user?.businessAnchorId;
     if (!businessAnchorId) {
@@ -296,7 +290,6 @@ export async function createStoreOrder(req, res) {
       });
     }
     const audience = await assertRequestorStoreAccess(req, businessAnchorId);
-    await expireStaleStoreCardOrders().catch(() => {});
 
     const built = buildOrderItems(req.body?.items, audience);
     const totals = applyStoreShippingToOrderTotals(built);
@@ -336,27 +329,18 @@ export async function createStoreOrder(req, res) {
     const shipping = assertShippingComplete(
       normalizeShippingInput(req.body?.shipping),
     );
-    // 스토어는 카드결제(CARD)만 허용. 크레딧은 기공·커스텀어벗 전용.
-    const requestedMethod = String(req.body?.paymentMethod || "CARD")
+    // 스토어는 선수금(CREDIT)만 허용.
+    const requestedMethod = String(req.body?.paymentMethod || "CREDIT")
       .trim()
       .toUpperCase();
-    if (requestedMethod !== "CARD") {
+    if (requestedMethod && requestedMethod !== "CREDIT") {
       return res.status(400).json({
         success: false,
-        message:
-          "스토어는 카드로만 결제할 수 있습니다. 크레딧은 기공·커스텀어벗 전용입니다.",
-        code: "STORE_CARD_ONLY",
+        message: "스토어는 선수금으로만 결제할 수 있습니다. 잔액이 부족하면 충전 후 다시 주문해 주세요.",
+        code: "STORE_CREDIT_ONLY",
       });
     }
-    const paymentMethod = "CARD";
-    const clientKey = String(process.env.TOSS_CLIENT_KEY || "").trim();
-    if (!clientKey) {
-      return res.status(503).json({
-        success: false,
-        message: "카드결제가 아직 설정되지 않았습니다.",
-        code: "STORE_CARD_NOT_CONFIGURED",
-      });
-    }
+    const paymentMethod = "CREDIT";
 
     const { depositCode } = await generateStoreOrderDepositCode();
     const expiresAt = new Date(Date.now() + ORDER_TTL_MS);
@@ -394,41 +378,26 @@ export async function createStoreOrder(req, res) {
         );
         created = doc.toObject();
 
-        const pgOrderId = buildStoreCardPgOrderId(created._id);
-        await StoreOrder.updateOne(
-          { _id: created._id },
-          { $set: { pgProvider: "toss", pgOrderId } },
-          { session },
-        );
-        created.pgProvider = "toss";
-        created.pgOrderId = pgOrderId;
+        await payStoreOrderWithCredit({
+          orderId: created._id,
+          userId,
+          session,
+        });
       });
     } catch (payErr) {
       const status = payErr.statusCode || 500;
       return res.status(status).json({
         success: false,
-        message: payErr.message || "create_order_failed",
+        message: payErr.message || "credit_pay_failed",
         code: payErr.code || undefined,
+        payload: payErr.payload || undefined,
       });
     }
+    const paid = await StoreOrder.findById(created._id).lean();
     scheduleStoreAdminActionBadgeEmit();
-    const orderName =
-      items.length > 1
-        ? `${items[0].name} 외 ${items.length - 1}건`
-        : items[0]?.name || "스토어 기성품";
     return res.status(201).json({
       success: true,
-      data: {
-        order: created,
-        paymentMethod: "CARD",
-        pg: {
-          provider: "toss",
-          clientKey,
-          orderId: created.pgOrderId,
-          orderName: String(orderName).slice(0, 100),
-          amount: created.amountTotal,
-        },
-      },
+      data: { order: paid, paymentMethod: "CREDIT" },
     });
   } catch (error) {
     const status = error.statusCode || 500;
@@ -439,37 +408,6 @@ export async function createStoreOrder(req, res) {
     });
   } finally {
     session.endSession();
-  }
-}
-
-/** 토스 결제창 성공 후 승인(금액·주문 검증). */
-export async function confirmMyStoreCardPayment(req, res) {
-  try {
-    assertPracticeRequestor(req);
-    const businessAnchorId = req.user?.businessAnchorId;
-    if (!businessAnchorId) {
-      return res.status(403).json({
-        success: false,
-        message: "사업자 정보가 없습니다.",
-      });
-    }
-    const result = await confirmStoreCardPayment({
-      orderId: String(req.params.id || "").trim(),
-      businessAnchorId,
-      userId: req.user?._id || null,
-      paymentKey: req.body?.paymentKey,
-      pgOrderId: req.body?.orderId,
-      amount: req.body?.amount,
-    });
-    scheduleStoreAdminActionBadgeEmit();
-    return res.json({ success: true, data: result.order });
-  } catch (error) {
-    const status = error.statusCode || 500;
-    return res.status(status >= 400 && status < 600 ? status : 500).json({
-      success: false,
-      message: error.message || "card_confirm_failed",
-      code: error.code || undefined,
-    });
   }
 }
 
@@ -514,7 +452,6 @@ export async function listMyStoreOrders(req, res) {
       });
     }
 
-    await expireStaleStoreCardOrders().catch(() => {});
     const orders = await StoreOrder.find({ businessAnchorId })
       .sort({ createdAt: -1 })
       .limit(100)

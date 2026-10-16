@@ -1,5 +1,4 @@
 // change-log:
-// - 2026-10-15: 스토어 = 카드결제. 선수금 전환 결제 제거, 카드 취소 카피.
 // - 2026-08-23: 주문 목록 취소·배송료 표시.
 // - 2026-08-23: 주문 필터·테이블/카드 반응형, 상세 2열·선수금 결제·취소 확인.
 // - 2026-08-23: 배송지·출고/배송 상태 표시.
@@ -267,9 +266,7 @@ export default function RequestorStoreOrdersPage() {
       invalidateApiGetCache("/api/store/orders");
       toast.success(
         cancelPaidReady
-          ? cancelTarget?.paymentMethod === "CARD"
-            ? "주문이 취소되었습니다. 카드 결제가 취소됩니다."
-            : "주문이 취소되었습니다. 선수금이 잔액으로 복원됩니다."
+          ? "주문이 취소되었습니다. 선수금이 잔액으로 복원됩니다."
           : "주문이 취소되었습니다.",
       );
       setCancelTarget(null);
@@ -386,10 +383,8 @@ export default function RequestorStoreOrdersPage() {
               <AlertDialogTitle>주문을 취소할까요?</AlertDialogTitle>
               <AlertDialogDescription>
                 {cancelPaidReady
-                  ? cancelTarget?.paymentMethod === "CARD"
-                    ? "출고 전 결제 완료 주문을 취소합니다. 카드 결제가 취소됩니다."
-                    : "출고 전 결제 완료 주문을 취소합니다. 선수금이 잔액으로 복원됩니다."
-                  : "결제 대기 주문을 취소하면 재고 예약이 해제됩니다."}
+                  ? "출고 전 결제 완료 주문을 취소합니다. 선수금이 잔액으로 복원됩니다."
+                  : "입금 대기 주문을 취소하면 재고 예약이 해제됩니다."}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -418,6 +413,7 @@ export function RequestorStoreOrderDetailPage() {
   );
   const [busy, setBusy] = useState(true);
   const [canceling, setCanceling] = useState(false);
+  const [paying, setPaying] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -447,13 +443,9 @@ export function RequestorStoreOrderDetailPage() {
   }
 
   const canCancel = order ? isOrderCustomerCancelable(order) : false;
-  /** 레거시 계좌이체 대기 주문: 입금 안내 + 취소만(선수금 전환 결제 중단) */
-  const legacyBankPending =
+  /** 레거시 계좌이체 대기 주문만 선수금 전환 결제 허용 */
+  const canPayWithCredit =
     order?.status === "PENDING" && order?.paymentMethod === "BANK";
-  const cardPaid = order?.paymentMethod === "CARD";
-  const cancelPaidMessage = cardPaid
-    ? "출고 전 결제 완료 주문을 취소합니다. 카드 결제가 취소됩니다."
-    : "출고 전 결제 완료 주문을 취소합니다. 선수금이 잔액으로 복원됩니다.";
   const cancelPaidReady =
     order?.status === "PAID" && order?.fulfillmentStatus === "READY";
 
@@ -472,9 +464,7 @@ export function RequestorStoreOrderDetailPage() {
       invalidateApiGetCache("/api/store/orders");
       toast.success(
         cancelPaidReady
-          ? cardPaid
-            ? "주문이 취소되었습니다. 카드 결제가 취소됩니다."
-            : "주문이 취소되었습니다. 선수금이 잔액으로 복원됩니다."
+          ? "주문이 취소되었습니다. 선수금이 잔액으로 복원됩니다."
           : "주문이 취소되었습니다.",
       );
       setCancelOpen(false);
@@ -483,6 +473,26 @@ export function RequestorStoreOrderDetailPage() {
       toast.error(err instanceof Error ? err.message : "취소 실패");
     } finally {
       setCanceling(false);
+    }
+  }
+
+  async function payWithCredit() {
+    if (!orderId) return;
+    setPaying(true);
+    try {
+      const res = await apiFetch<{ success: boolean; message?: string }>({
+        path: `/api/store/orders/${orderId}/pay-with-credit`,
+        method: "POST",
+      });
+      if (!res.ok || !res.data?.success) {
+        throw new Error(res.data?.message || "결제 실패");
+      }
+      toast.success("선수금으로 결제되었습니다.");
+      await load();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "결제 실패");
+    } finally {
+      setPaying(false);
     }
   }
 
@@ -640,10 +650,8 @@ export function RequestorStoreOrderDetailPage() {
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {STORE_PRICE_TAX_NOTE}
-                    {cardPaid
-                      ? " · 카드 결제는 카드매출전표로 증빙합니다."
-                      : " · (세금)계산서는 사용분 기준 월말 합산 발행"}
+                    {STORE_PRICE_TAX_NOTE} · (세금)계산서는 사용분 기준 월말
+                    합산 발행
                   </p>
                   {order.status === "PAID" ? (
                     <p className="text-xs text-muted-foreground">
@@ -663,14 +671,13 @@ export function RequestorStoreOrderDetailPage() {
                 </CardContent>
               </Card>
 
-              {legacyBankPending ? (
+              {canPayWithCredit ? (
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base">입금 대기 주문</CardTitle>
                     <CardDescription>
-                      계좌이체 대기는 더 이상 신규 접수되지 않습니다.
-                      <br />
-                      스토어는 크레딧으로 결제할 수 없습니다. 주문을 취소해 주세요.
+                      계좌이체 대기는 더 이상 신규 접수되지 않습니다. 선수금으로
+                      결제하거나 취소할 수 있습니다.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-2">
@@ -681,12 +688,20 @@ export function RequestorStoreOrderDetailPage() {
                         onCopy={copyText}
                       />
                     ) : null}
+                    <Button
+                      type="button"
+                      className="w-full"
+                      disabled={paying || canceling}
+                      onClick={() => void payWithCredit()}
+                    >
+                      {paying ? "결제 중…" : "선수금으로 결제"}
+                    </Button>
                     {canCancel ? (
                       <Button
                         type="button"
                         variant="outline"
                         className="w-full"
-                        disabled={canceling}
+                        disabled={canceling || paying}
                         onClick={() => setCancelOpen(true)}
                       >
                         주문 취소
@@ -730,8 +745,8 @@ export function RequestorStoreOrderDetailPage() {
               <AlertDialogTitle>주문을 취소할까요?</AlertDialogTitle>
               <AlertDialogDescription>
                 {cancelPaidReady
-                  ? cancelPaidMessage
-                  : "결제 대기 주문을 취소하면 재고 예약이 해제됩니다."}
+                  ? "출고 전 결제 완료 주문을 취소합니다. 선수금이 잔액으로 복원됩니다."
+                  : "입금 대기 주문을 취소하면 재고 예약이 해제됩니다."}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
