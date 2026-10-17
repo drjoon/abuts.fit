@@ -517,23 +517,24 @@ export function PracticeObBillingTab() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="cursor-default rounded-lg border border-slate-200/80 bg-white/90 px-2.5 py-1 text-xs tabular-nums text-slate-700">
-                  협력 직거래{" "}
+                  기공물{" "}
                   {formatRequestorWon(currentMonthEstimate.directLabTotal)}원
                 </span>
               </TooltipTrigger>
               <TooltipContent className="max-w-xs text-xs">
-                협력 기공소 계좌로 치과 출금 계좌에서 직접 이체됩니다.
+                지정·수행 기공소(협력·어벗츠 기공소 포함) 계좌로 직접
+                이체됩니다.
               </TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="cursor-default rounded-lg border border-slate-200/80 bg-white/90 px-2.5 py-1 text-xs tabular-nums text-slate-700">
-                  어벗츠{" "}
+                  커스텀어벗{" "}
                   {formatRequestorWon(currentMonthEstimate.abutsCorpTotal)}원
                 </span>
               </TooltipTrigger>
               <TooltipContent className="max-w-xs text-xs">
-                어벗츠 의뢰·하청분은 어벗츠 법인 계좌로 이체됩니다.
+                커스텀어벗·PTX 어벗분은 어벗츠 법인 계좌로 이체됩니다.
               </TooltipContent>
             </Tooltip>
           </div>

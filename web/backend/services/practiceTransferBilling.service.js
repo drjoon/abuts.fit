@@ -3598,8 +3598,7 @@ export async function settlePracticeToLabShareIfReady({
 
 /**
  * 기공소 발송(mark-complete): 기공비 에스크로 해제.
- * 어벗츠 원청: gross→internalLab, 하청·협력 매입→assignee, 잔여(수수료)는 원청 잔액.
- * 레거시 외부 직접 지정: performing lab에 전액(수수료 정책 그대로).
+ * gross→수행 기공소(`resolvePracticeTransferSettlementParties`). 매입 이체 없음.
  * 커스텀어벗은 디자인 STL + 생산비 지급 전에는 released=false.
  * skipSettlementGate: 운영자 수동 정산 스크립트 전용. API 경로에서 쓰지 말 것.
  */

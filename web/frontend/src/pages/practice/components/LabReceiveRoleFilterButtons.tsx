@@ -1,7 +1,7 @@
 /**
  * 기공의뢰수신 — 협력 · 하청 역할 마커·뱃지 헬퍼.
  * 상단 협력·하청 필터 토글 UI는 제거(역할 뱃지·풀 판별 헬퍼만 유지).
- * 협력·하청 건은 목록·캘린더·상세에 역할 뱃지. 원청 직접 수행은 뱃지 없음.
+ * 하청(및 하청 풀)만 목록·캘린더·상세 뱃지. 치과↔기공소 직접·레거시 협력은 뱃지 없음.
  * - 2026-10-03: 수신 툴바 협력·하청 필터 뱃지 제거.
  * - 2026-10-03: 협력·하청 — 아이콘+라벨+건수(항상).
  * - 2026-09-30: 2xl 미만 — 협력·하청은 아이콘+건수.
@@ -103,37 +103,29 @@ export function resolveLabReceiveRoleMarker(
       : poolOpen || transfer.autoMatch?.subcontracted
         ? "subcontract"
         : null;
-  if (!roleKind) return null;
-  const label = roleKind === "cooperation" ? "협력" : "하청";
+  if (!roleKind || roleKind === "cooperation") return null;
+  const label = "하청";
   const assignee = String(transfer.assigneeLabName || "").trim();
   const prime = String(transfer.targetLabName || "").trim() || "어벗츠기공소";
   if (opts.viewerIsPrime) {
     return {
-      role: roleKind,
+      role: "subcontract",
       label,
       peer: assignee,
-      hint:
-        roleKind === "subcontract"
-          ? poolOpen
-            ? "하청 풀에 연 의뢰입니다."
-            : assignee
-              ? `${assignee}에 하청으로 넘긴 의뢰입니다.`
-              : "하청으로 넘긴 의뢰입니다."
-          : assignee
-            ? `협력 기공소 ${assignee}가 수행하는 의뢰입니다.`
-            : "협력 기공소가 수행하는 의뢰입니다.",
+      hint: poolOpen
+        ? "하청 풀에 연 의뢰입니다."
+        : assignee
+          ? `${assignee}에 하청으로 넘긴 의뢰입니다.`
+          : "하청으로 넘긴 의뢰입니다.",
     };
   }
   return {
-    role: roleKind,
+    role: "subcontract",
     label,
     peer: prime,
-    hint:
-      roleKind === "subcontract"
-        ? poolOpen
-          ? `${prime} 하청 풀에 들어온 의뢰입니다.`
-          : `${prime}에서 하청으로 받은 의뢰입니다.`
-        : `${prime} 협력으로 받은 의뢰입니다.`,
+    hint: poolOpen
+      ? `${prime} 하청 풀에 들어온 의뢰입니다.`
+      : `${prime}에서 하청으로 받은 의뢰입니다.`,
   };
 }
 

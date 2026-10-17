@@ -70,20 +70,21 @@ export function normalizePracticePartnerLabCoreName(label: unknown): string {
   return name;
 }
 
-/** 협력 채팅 주체. 「」는 수행 기공소 실명만. */
+/** 채팅 주체 — 수행 기공소 실명. */
 export function formatCooperationWorkActorChatPhrase(partnerName: unknown): string {
   const partner = normalizePracticePartnerLabCoreName(partnerName);
   if (!partner || partner === "어벗츠기공소") return "";
-  return `어벗츠 협력 기공소 「${partner}」`;
+  return `기공소「${partner}」`;
 }
 
+/** @deprecated 신규 PTX는 기공소 실명만 표시 */
 export function formatAbutsCooperationLabLabel(partnerName: unknown): string {
   const core = normalizePracticePartnerLabCoreName(partnerName);
   if (!core || core === "어벗츠기공소") return "어벗츠기공소";
-  return `${ABUTS_PARTNER_LAB_LABEL_PREFIX} · ${core}`;
+  return core;
 }
 
-/** 치과 목록·캘린더·채팅 헤더 기공소 표시. 협력은 「어벗츠 · 파트너」. */
+/** 치과 목록·캘린더·채팅 헤더 — 지정·수행 기공소 실명. */
 export function resolvePracticeTransferLabDisplayLabel({
   targetLab,
   handledByCertifiedPartner,
@@ -95,24 +96,20 @@ export function resolvePracticeTransferLabDisplayLabel({
   assigneeKind?: unknown;
   assigneeLabName?: unknown;
 } = {}): string {
-  const partner = normalizePracticePartnerLabCoreName(assigneeLabName);
   const kind = String(assigneeKind || "").trim();
+  const partner = normalizePracticePartnerLabCoreName(assigneeLabName);
   const raw = String(targetLab || "").trim();
-  if (!handledByCertifiedPartner && kind !== "subcontract" && partner) {
-    const rawCore = normalizePracticePartnerLabCoreName(raw);
-    const abutsOnly =
-      !raw ||
-      raw === "-" ||
-      ABUTS_INTERNAL_LAB_DISPLAY_NAMES.has(raw) ||
-      rawCore === "어벗츠기공소" ||
-      raw === "자동 매칭" ||
-      raw === "자동매칭";
-    if (kind === "cooperation" || abutsOnly) {
-      return formatAbutsCooperationLabLabel(partner);
-    }
+  if (kind === "cooperation" && partner) {
+    return formatAbutsCooperationLabLabel(partner);
+  }
+  if (partner && kind === "subcontract" && handledByCertifiedPartner) {
+    return formatPracticeTargetLabLabel({
+      targetLab: raw,
+      handledByCertifiedPartner,
+    });
   }
   return formatPracticeTargetLabLabel({
-    targetLab: raw,
+    targetLab: partner || raw,
     handledByCertifiedPartner,
   });
 }
@@ -186,14 +183,14 @@ export function formatPracticeTargetLabLabel({
   }
   const core = normalizePracticePartnerLabCoreName(name);
   if (!core || core === "어벗츠기공소") return "어벗츠기공소";
-  return formatAbutsCooperationLabLabel(core);
+  return core;
 }
 
-/** 목록 병합 시 표시 접미사/접두사 제거. 「어벗츠 · {핵심}」로 정규화. */
+/** 목록 병합 시 표시 접두사 제거 → 기공소 실명. */
 export function stripPracticeTargetLabDisplayDecorations(label: unknown): string {
   const core = normalizePracticePartnerLabCoreName(label);
   if (!core || core === "어벗츠기공소") return "어벗츠기공소";
-  return formatAbutsCooperationLabLabel(core);
+  return core;
 }
 
 export type PracticeLabRatingPublic = {

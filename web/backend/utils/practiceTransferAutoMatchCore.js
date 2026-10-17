@@ -54,6 +54,7 @@ const stripPartnerLabDisplayPrefixes = (raw) => {
   return name;
 };
 
+/** @deprecated 레거시 「어벗츠 · {파트너}」 접두 — 신규는 기공소 실명만 */
 export const formatAbutsCooperationLabLabel = (partnerName) => {
   const partner = stripPartnerLabDisplayPrefixes(partnerName);
   if (
@@ -63,7 +64,7 @@ export const formatAbutsCooperationLabLabel = (partnerName) => {
   ) {
     return ABUTS_LAB_DISPLAY_NAME;
   }
-  return `${ABUTS_COOPERATION_LABEL_PREFIX} · ${partner}`;
+  return partner;
 };
 
 const isAbutsLabDisplayName = (name) => {
@@ -77,16 +78,19 @@ const isAbutsLabDisplayName = (name) => {
  * 「」는 등록 상호만. 하청·어벗츠 자체는 원청 표시명(실명 비공개).
  */
 export const formatPracticeTransferChatActorPhrase = (transfer) => {
-  if (isCooperationAssignee(transfer)) {
-    const partner = stripPartnerLabDisplayPrefixes(transfer?.assigneeLabName);
-    if (partner && !isAbutsLabDisplayName(partner)) {
-      return `어벗츠 협력 기공소 「${partner}」`;
-    }
-  }
-  const raw = String(transfer?.targetLabName || "").trim();
+  const performingName = stripPartnerLabDisplayPrefixes(
+    getAssigneeLabAnchorId(transfer)
+      ? transfer?.assigneeLabName
+      : transfer?.targetLabName,
+  );
   const labLabel =
-    raw && raw !== AUTO_MATCH_LAB_DISPLAY_NAME ? raw : "기공소";
-  return `기공소「${labLabel}」`;
+    performingName && !isAbutsLabDisplayName(performingName)
+      ? performingName
+      : String(transfer?.targetLabName || "").trim() ||
+        ABUTS_LAB_DISPLAY_NAME;
+  const display =
+    labLabel && labLabel !== AUTO_MATCH_LAB_DISPLAY_NAME ? labLabel : "기공소";
+  return `기공소「${display}」`;
 };
 
 export const formatPracticeTransferWorkStartedChat = (transfer) =>
@@ -265,85 +269,31 @@ export const isAbutsPrimePracticeTransfer = (transfer) => {
   return isAutoMatchMode(transfer);
 };
 
-/**
- * 수가표 앵커.
- * 협력: 수행 기공소(치과↔지정 기공소와 동일). 정산만 어벗츠 경유.
- * 하청·하청풀·어벗츠 자체: 원청(어벗츠).
- * 레거시 외부 직접 지정: 수행 기공소.
- * SSOT: `.cursor/rules/ptx-cooperation-fee-ssot.mdc` · 루트 `rules.md` §2.
- * 주의: `isPracticeTransferSubcontracted`(prime≠assignee)만으로 협력에 원청 수가를 쓰지 말 것.
- */
-export const resolveFeeScheduleLabAnchorId = (transfer) => {
-  if (isCooperationAssignee(transfer)) {
-    return (
-      getAssigneeLabAnchorId(transfer) || resolvePerformingLabAnchorId(transfer)
-    );
-  }
-  if (
-    isAbutsPrimePracticeTransfer(transfer) ||
-    isSubcontractFeeScheduleContext(transfer)
-  ) {
-    return (
-      getPrimeLabAnchorId(transfer) || resolvePerformingLabAnchorId(transfer)
-    );
-  }
-  return resolvePerformingLabAnchorId(transfer);
-};
+/** 수가·할증 = 수행 기공소(지정 lab). 레거시 협력(assignee)도 performing. */
+export const resolveFeeScheduleLabAnchorId = (transfer) =>
+  resolvePerformingLabAnchorId(transfer) || getPrimeLabAnchorId(transfer);
+
+export const resolveLabFeeMultiplierLabAnchorId = (transfer) =>
+  resolveFeeScheduleLabAnchorId(transfer);
 
 /**
- * 기공수가 할증(labFeeMultiplier) 앵커.
- * 협력(assigneeKind=cooperation): 수행 기공소(assignee).
- * 하청·어벗츠 자체 수행·하청풀: 원청(어벗츠).
- * 레거시 외부 직접 지정: 수행 기공소.
- * SSOT: `.cursor/rules/ptx-cooperation-fee-ssot.mdc` (수가표 앵커와 동일 분기).
- */
-export const resolveLabFeeMultiplierLabAnchorId = (transfer) => {
-  if (isCooperationAssignee(transfer)) {
-    return (
-      getAssigneeLabAnchorId(transfer) || resolvePerformingLabAnchorId(transfer)
-    );
-  }
-  if (
-    isAbutsPrimePracticeTransfer(transfer) ||
-    isSubcontractAssignee(transfer) ||
-    isSubcontractFeeScheduleContext(transfer)
-  ) {
-    return (
-      getPrimeLabAnchorId(transfer) || resolvePerformingLabAnchorId(transfer)
-    );
-  }
-  return resolvePerformingLabAnchorId(transfer);
-};
-
-/**
- * 정산 당사자.
- * 어벗츠 원청: gross→prime, 하청 매입→assignee.
- * 레거시 외부 직접 지정: gross→performing(target), 매입 없음.
+ * 정산 당사자 — 치과→수행 기공소 직접(gross). 매입 이체 없음.
+ * 레거시 assignee 필드는 performing 해석에만 사용.
  */
 export const resolvePracticeTransferSettlementParties = (transfer) => {
   const primeId = getPrimeLabAnchorId(transfer);
   const assigneeId = getAssigneeLabAnchorId(transfer);
   const performingId = resolvePerformingLabAnchorId(transfer);
   const abutsPrime = isAbutsPrimePracticeTransfer(transfer);
-  const subcontracted = isPracticeTransferSubcontracted(transfer);
-  const grossOwnerId = abutsPrime
-    ? primeId || performingId
-    : performingId || primeId;
-  const purchasePayeeId =
-    abutsPrime &&
-    subcontracted &&
-    assigneeId &&
-    assigneeId !== String(primeId || "").trim()
-      ? assigneeId
-      : null;
+  const grossOwnerId = performingId || primeId;
   return {
     primeId,
     assigneeId,
     performingId,
     abutsPrime,
-    subcontracted: Boolean(purchasePayeeId),
+    subcontracted: isPracticeTransferSubcontracted(transfer),
     grossOwnerId: String(grossOwnerId || "").trim() || null,
-    purchasePayeeId,
+    purchasePayeeId: null,
   };
 };
 

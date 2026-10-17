@@ -4,6 +4,7 @@
 // - web/backend/services/openBankingAdapter.service.js
 // - web/backend/services/generalLedger.service.js
 // - web/backend/jobs/monthlyPracticeObSettlementWorker.js
+// - web/backend/utils/practiceTransferAutoMatchCore.js (OB 집계 — 수행 기공소)
 // - web/backend/controllers/credits/practiceOpenBanking.controller.js
 import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -25,6 +26,7 @@ import {
 } from "../utils/requestorUnitPricePolicy.js";
 import { loadMonthlyRequestCounts } from "./requestorShipping.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../utils/creditRealtime.js";
+import { resolvePerformingLabAnchorId } from "../utils/practiceTransferAutoMatchCore.js";
 
 export function getKstYearMonth(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -73,7 +75,9 @@ export function resolveScheduledTransferDateForYearMonth(yearMonth) {
 }
 
 /**
- * 특정 기간(월) 치과의 직거래 협력 기공소별 및 어벗츠 법인(기공사업부·어벗생산) 정산 예정액 집계.
+ * 특정 기간(월) 치과 OB 정산 예정액 집계.
+ * - 기공물(PTX labFee): 수행 기공소(협력·하청·어벗츠 기공소 포함) 계좌로 직접 이체.
+ * - 커스텀어벗(Request·PTX abutment): 어벗츠 법인(admin) 계좌로 이체.
  */
 export async function aggregatePracticeMonthUsage({
   practiceAnchorId,
@@ -139,17 +143,15 @@ export async function aggregatePracticeMonthUsage({
     );
     if (labTotal <= 0 && abutmentTotal <= 0) continue;
 
-    const isDirectCoop =
-      t?.assigneeKind === "cooperation" &&
-      t?.assigneeLabAnchorId &&
-      String(t.assigneeLabAnchorId) !== String(internalLabAnchor?._id || "");
-
-    if (isDirectCoop && labTotal > 0) {
-      const labKey = String(t.assigneeLabAnchorId);
-      directLabMap.set(labKey, (directLabMap.get(labKey) || 0) + labTotal);
+    if (labTotal > 0) {
+      const performerId = resolvePerformingLabAnchorId(t);
+      if (performerId) {
+        const labKey = String(performerId);
+        directLabMap.set(labKey, (directLabMap.get(labKey) || 0) + labTotal);
+      }
+    }
+    if (abutmentTotal > 0) {
       abutsCorpAmount += abutmentTotal;
-    } else {
-      abutsCorpAmount += labTotal + abutmentTotal;
     }
   }
 
@@ -197,11 +199,11 @@ export async function aggregatePracticeMonthUsage({
   }
 
   if (abutsCorpAmount > 0) {
-    const corpAnchor = internalLabAnchor || adminAnchor;
+    const corpAnchor = adminAnchor || internalLabAnchor;
     lines.push({
       payeeKind: "abuts_corp",
       payeeAnchorId: corpAnchor?._id || null,
-      payeeName: "어벗츠 주식회사(기공사업부)",
+      payeeName: corpAnchor?.name || "어벗츠 주식회사",
       bankCode: "088",
       bankName: corpAnchor?.payoutAccount?.bankName || "신한은행",
       accountNumber:

@@ -4,7 +4,7 @@
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/server.js
 //
-// 1. 매월 1일 KST: 전월 치과 사용분(협력 직거래 N건 + 어벗츠 법인 1건) 정산서 확정 생성.
+// 1. 매월 1일 KST: 전월 치과 사용분(기공소별 기공물 N건 + 어벗츠 법인 커스텀어벗 1건) 정산서 확정 생성.
 // 2. 매월 5일 09:00 KST 이후: 확정된 정산서를 대상으로 OB 장기동의 자동 일괄이체 실행(실패 시 즉시 Hold).
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import PracticeMonthlySettlement from "../models/practiceMonthlySettlement.model.js";

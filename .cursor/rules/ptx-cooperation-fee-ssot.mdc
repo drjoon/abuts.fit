@@ -1,49 +1,44 @@
 ---
-description: PTX 협력 vs 하청 — 수가·할증·정산 앵커 SSOT
+description: PTX 수가·정산 — 치과↔기공소 직접 SSOT
 alwaysApply: true
 ---
 
-# PTX cooperation vs subcontract fees (강제)
+# PTX fees & settlement (강제)
 
-기공의뢰(`PracticeTransfer`)에서 **견적·보류·청구에 쓰는 수가/할증**과 **크레딧 정산 경로**를 섞지 않는다.
+기공의뢰(`PracticeTransfer`)는 **치과→지정 기공소** 관계다. 어벗츠 법인 경유·「어벗츠 · {파트너}」 표시는 신규에 쓰지 않는다.
 
 ## SSOT
 
-| 구분 | `assigneeKind` | 수가표·할증 앵커 | 정산 |
+| 구분 | 수가·할증 | 크레딧 정산 gross | OB 월 이체(기공물) |
 | --- | --- | --- | --- |
-| **협력** | `cooperation` | **수행 기공소** (`assignee`) — 치과↔지정 기공소와 동일 | 어벗츠기공소 gross 1회 → 수행 기공소 매입 |
-| **하청** | `subcontract` | **원청 어벗츠기공소** (`target` / prime) | 어벗츠기공소 gross → 하청 매입(`subcontractFeeRate` 휴면, 미부과) |
-| **어벗츠 자체** | (assignee 없음) | **원청 어벗츠기공소** | 어벗츠기공소 전액 |
+| **지정 기공소** | `targetLabAnchorId`(=수행) | 수행 기공소 | 수행 기공소 |
+| **어벗츠 하청** (`assigneeKind=subcontract`) | 수행(`assignee`) | 수행 | 수행 |
+| **레거시 협력** (`cooperation`, prime≠assignee) | 수행(`assignee`) | 수행 | 수행 |
 
-> 어벗츠기공소(`internalLab`)는 면허 개인이 개설한 기공소(원청·법적 공급자)다. 어벗츠 주식회사는 플랫폼·장비 공급자로 기공소에 정액/건당 청구하며 기공 매출 정률 분배는 하지 않는다.
-
-- 헬퍼: `resolveFeeScheduleLabAnchorId` · `resolveLabFeeMultiplierLabAnchorId` (`practiceTransferAutoMatchCore.js`)
-- 정산 당사자: `resolvePracticeTransferSettlementParties` — `grossOwnerId`=어벗츠(prime), `purchasePayeeId`=수행(assignee) when prime≠assignee
-- **실무:** 원청도 기공을 한다. 어벗츠기공소 주문은 원청이 직접 하거나 하청으로 넘긴다. 수신함은 원청·협력·하청을 모두 포함하고, 표시/숨김은 UI 토글. **작업:** 협력은 수행 기공소만(`canLabOperatePracticeTransferWork` false for prime). 하청·자체 수행은 원청도 작업(업로드·취소·완료). **AI 디자인:** 어벗츠기공소 채팅 헤더는 모든 케이스에 둔다. 협력 원청도 작업 스캔을 저장한다(`canLabUsePracticeTransferAiDesign`). **채팅:** 협력·하청 모두 원청이 참여(`canJoinPracticeTransferAsLabPeer`). 생산비 크레딧·수취는 수행 기공소(`resolvePerformingLabAnchorId`). 수가 앵커(협력=수행, 하청=원청)와 섞지 말 것.
-- 생성 시 `billing.labFeeMultiplier`(및 견적 금액) **스냅샷** — 이후 할증 변경 소급 금지
-- `quote-context`: 픽커가 고른 기공소 = 그 기공소 수가·할증(협력=파트너, 어벗츠=어벗츠)
+- 커스텀어벗(Request·PTX abutment): **어벗츠 법인** (`admin`) — OB·장부 SSOT는 루트 `rules.md` §2.3.
+- 헬퍼: `resolveFeeScheduleLabAnchorId` · `resolveLabFeeMultiplierLabAnchorId` · `resolvePerformingLabAnchorId` · `resolvePracticeTransferSettlementParties` (`practiceTransferAutoMatchCore.js`)
+- 생성: `resolveCreateMatchingTarget` — 외부 lab 선택 시 `targetLabAnchorId`=해당 lab, `assignee` 없음.
+- **실무:** 하청 풀·어벗츠기공소 UI(원청 화면·하청 전환)는 유지. 작업·적립·수가는 **수행 기공소** 기준.
 
 ## Do / Don't
 
 ```js
-// ❌ BAD — 협력인데 수가/할증을 무조건 어벗츠(target)로
-buildPracticeTransferQuote({ labAnchorId: transfer.targetLabAnchorId, ... });
+// ❌ BAD — 신규 생성에 원청 internal + assignee cooperation
+return { ...prime, assigneeLabAnchorId: partnerId, assigneeKind: "cooperation" };
 
-// ✅ GOOD — 수가·할증 앵커 헬퍼
-const feeLabId = resolveFeeScheduleLabAnchorId(transfer);
-const multLabId = resolveLabFeeMultiplierLabAnchorId(transfer);
-buildPracticeTransferQuote({
-  labAnchorId: feeLabId,
-  labFeeMultiplierLabAnchorId: multLabId,
-  ...
-});
+// ✅ GOOD — 치과가 고른 lab이 target
+return {
+  matchingMode: "direct",
+  targetLabAnchorId: partnerId,
+  assigneeLabAnchorId: null,
+};
 ```
 
-- ❌ 협력 건을 「하청이니까 어벗츠 수가」로 취급하지 말 것 (`isPracticeTransferSubcontracted`는 prime≠assignee라 협력에도 true일 수 있음 → **반드시 `assigneeKind` / `isCooperationAssignee`로 분기**)
-- ❌ 정산 경로(어벗츠 경유)를 이유로 협력 수가표를 어벗츠로 바꾸지 말 것
+- ❌ UI에 「어벗츠 · {파트너}」 합성 라벨을 신규 건에 쓰지 말 것
+- ❌ `resolvePracticeTransferSettlementParties`에서 gross→원청 + 매입→수행 2단계를 신규에 넣지 말 것
 
 ## SSOT docs
 
-- 루트 `rules.md` §2 (기공사업부 · 매칭 과금)
-- `web/backend/rules.md` PracticeTransfer 에스크로
-- `web/frontend/rules.md` 견적·청구
+- 루트 `rules.md` §2.3 · §2 (기공소/법인)
+- `web/backend/rules.md` PracticeTransfer
+- `web/frontend/rules.md` 견적·표시

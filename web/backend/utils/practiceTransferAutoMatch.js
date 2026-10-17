@@ -158,7 +158,7 @@ export async function assertLabAllowedAsDirectPracticeTarget({
 
 /**
  * 하청 풀·하청 assignee만 치과에 원청(어벗츠)만 노출.
- * 협력(치과 직접 지정)은 실명 공개 — 표시는 「어벗츠 · {파트너}」로 합성.
+ * 그 외는 지정 기공소 실명(`targetLabName`).
  */
 export const redactAutoMatchLabIdentity = (
   matchingMode,
@@ -167,20 +167,28 @@ export const redactAutoMatchLabIdentity = (
 ) => {
   const hideSubcontractPartner =
     Boolean(transfer) && !reveal && shouldHideAssigneeFromPractice(transfer);
-  if (transfer && !reveal && isCooperationAssignee(transfer)) {
-    const partner = String(transfer?.assigneeLabName || "").trim();
-    return {
-      targetLabName: formatAbutsCooperationLabLabel(partner),
-      targetLabAnchorId: transfer?.targetLabAnchorId || targetLabAnchorId || null,
-    };
-  }
   if (
     reveal ||
     (!isAutoMatchMode({ matchingMode }) && !hideSubcontractPartner)
   ) {
+    const directName =
+      String(targetLabName || "").trim() ||
+      String(transfer?.targetLabName || "").trim();
+    const directId =
+      targetLabAnchorId ||
+      transfer?.targetLabAnchorId ||
+      null;
+    if (transfer && !reveal && isCooperationAssignee(transfer)) {
+      const partner = String(transfer?.assigneeLabName || "").trim();
+      return {
+        targetLabName: partner || directName,
+        targetLabAnchorId:
+          transfer?.assigneeLabAnchorId || directId || null,
+      };
+    }
     return {
-      targetLabName: String(targetLabName || "").trim(),
-      targetLabAnchorId: targetLabAnchorId || null,
+      targetLabName: directName,
+      targetLabAnchorId: directId,
     };
   }
   const name = String(targetLabName || "").trim();
@@ -556,9 +564,9 @@ export const wantsAbutsPrimePool = ({
 };
 
 /**
- * 신규 PTX 계약 상대=항상 어벗츠기공소(원청).
- * 치과 픽커 외부 기공소 → assignee(협력, 0%).
- * 어벗츠/레거시 자동매칭 선택 → 원청만(자체 수행 또는 이후 하청 풀 10%).
+ * 신규 PTX: 치과→지정 기공소(`targetLabAnchorId`) 직접.
+ * 어벗츠기공소·레거시 자동매칭 선택 → target=internalLab(하청 풀은 assignee).
+ * 외부 기공소 선택 → target=해당 lab, assignee 없음.
  */
 export async function resolveCreateMatchingTarget({
   matchingModeRaw,
@@ -566,9 +574,6 @@ export async function resolveCreateMatchingTarget({
   rawAnchorId,
   targetLabName,
 }) {
-  const prime = await resolveAbutsPrimeLabFields();
-  if (prime.error) return prime;
-
   const wantsAbuts = wantsAbutsPrimePool({
     matchingModeRaw,
     autoMatchFlag,
@@ -580,24 +585,20 @@ export async function resolveCreateMatchingTarget({
     const picked = await BusinessAnchor.findById(rawAnchorId)
       .select({ businessType: 1, name: 1 })
       .lean();
-    if (isInternalLabBusinessType(picked)) {
-      return {
-        ...prime,
-        assigneeLabAnchorId: null,
-        assigneeLabName: "",
-        assigneeKind: null,
-      };
-    }
-    const partnerName =
+    const labName =
       String(targetLabName || "").trim() || String(picked?.name || "").trim();
     return {
-      ...prime,
-      assigneeLabAnchorId: new Types.ObjectId(rawAnchorId),
-      assigneeLabName: partnerName,
-      assigneeKind: ASSIGNEE_KIND_COOPERATION,
+      matchingMode: "direct",
+      targetLabAnchorId: new Types.ObjectId(rawAnchorId),
+      targetLabName: labName,
+      assigneeLabAnchorId: null,
+      assigneeLabName: "",
+      assigneeKind: null,
     };
   }
 
+  const prime = await resolveAbutsPrimeLabFields();
+  if (prime.error) return prime;
   return {
     ...prime,
     assigneeLabAnchorId: null,

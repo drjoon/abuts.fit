@@ -6,6 +6,7 @@
 // - web/backend/models/practiceMonthlySettlement.model.js
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
+  aggregatePracticeMonthUsage,
   confirmPracticeMonthlySettlement,
   getPracticeObBillingOverview,
   reauthenticatePracticeOpenBanking,
@@ -14,12 +15,96 @@ import {
   transferPracticeLabDeposit,
   listPracticeLabDeposits,
 } from "../../services/practiceObBilling.service.js";
+import PracticeTransfer from "../../models/practiceTransfer.model.js";
+import Request from "../../models/request.model.js";
+import { Types } from "mongoose";
 import {
   checkCreditLock,
   checkPracticeSettlementLock,
 } from "../../utils/creditLock.util.js";
 
 describe("practiceObBilling & checkCreditLock", () => {
+  test("aggregatePracticeMonthUsage — 기공물은 수행 기공소, 커스텀어벗만 법인", async () => {
+    const practice = await BusinessAnchor.create({
+      businessNumberNormalized: "5234567890",
+      businessType: "requestor",
+      requestorKind: "practice",
+      name: "집계치과",
+    });
+    const internalLab = await BusinessAnchor.create({
+      businessNumberNormalized: "5234567891",
+      businessType: "internalLab",
+      name: "어벗츠기공소",
+      payoutAccount: {
+        bankName: "국민은행",
+        accountNumber: "110-111-111111",
+        holderName: "어벗츠기공소",
+      },
+    });
+    const partnerLab = await BusinessAnchor.create({
+      businessNumberNormalized: "5234567892",
+      businessType: "requestor",
+      requestorKind: "lab",
+      name: "협력기공소",
+      payoutAccount: {
+        bankName: "국민은행",
+        accountNumber: "110-222-222222",
+        holderName: "협력기공소",
+      },
+    });
+    await BusinessAnchor.create({
+      businessNumberNormalized: "5234567893",
+      businessType: "admin",
+      name: "어벗츠 주식회사",
+      payoutAccount: {
+        bankName: "신한은행",
+        accountNumber: "140-999-888777",
+        holderName: "주식회사 어벗츠",
+      },
+    });
+    const createdAt = new Date("2026-09-15T10:00:00+09:00");
+    const userId = new Types.ObjectId();
+    await PracticeTransfer.create({
+      transferId: "ptx-ob-1",
+      practiceUserId: userId,
+      practiceBusinessAnchorId: practice._id,
+      targetLabAnchorId: internalLab._id,
+      assigneeLabAnchorId: partnerLab._id,
+      assigneeKind: "cooperation",
+      status: "accepted",
+      createdAt,
+      billing: { labFeeTotal: 100_000, abutmentTotal: 30_000 },
+    });
+    await PracticeTransfer.create({
+      transferId: "ptx-ob-2",
+      practiceUserId: userId,
+      practiceBusinessAnchorId: practice._id,
+      targetLabAnchorId: internalLab._id,
+      status: "accepted",
+      createdAt,
+      billing: { labFeeTotal: 200_000, abutmentTotal: 50_000 },
+    });
+    await Request.create({
+      businessAnchorId: practice._id,
+      requestor: userId,
+      requestCategory: "order",
+      manufacturerStage: "준비",
+      createdAt,
+      price: { amount: 45_000, paidAmount: 45_000 },
+    });
+    const usage = await aggregatePracticeMonthUsage({
+      practiceAnchorId: practice._id,
+      yearMonth: "2026-09",
+    });
+    expect(usage.directLabTotal).toBe(300_000);
+    expect(usage.abutsCorpTotal).toBe(125_000);
+    const directLines = usage.lines.filter((l) => l.payeeKind === "direct_lab");
+    expect(directLines).toHaveLength(2);
+    const corpLine = usage.lines.find((l) => l.payeeKind === "abuts_corp");
+    expect(corpLine?.payeeName).toBe("어벗츠 주식회사");
+    expect(corpLine?.amount).toBe(125_000);
+  });
+
   test("현금 보증금 없이 한도 없이 OB 장기동의 등록 → 정산일 자동이체 실패 시 즉시 Hold → Face ID 1탭 재이체 및 90일 재인증 시 해제", async () => {
     const practice = await BusinessAnchor.create({
       businessNumberNormalized: "1234567890",

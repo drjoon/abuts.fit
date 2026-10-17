@@ -2,7 +2,10 @@
 // - web/backend/utils/practiceObBeta.util.js
 // - web/backend/utils/practiceObPostpaid.util.js
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import { isPracticeObPostpaidActive } from "../../utils/practiceObPostpaid.util.js";
+import {
+  isPracticeObPostpaidActive,
+  isPracticeOnlyObPostpaidActive,
+} from "../../utils/practiceObPostpaid.util.js";
 import {
   isLabCustomAbutmentFreeCreditOnly,
   isLabObAutopayPrepaidTestAnchor,
@@ -89,7 +92,7 @@ describe("practiceObBeta (런칭 전)", () => {
     }
   });
 
-  test("베타 종료 후 OB active면 기공소도 후불 active", async () => {
+  test("베타 종료 후 OB active여도 기공소 Request CA는 isPracticeOnlyObPostpaidActive=false", async () => {
     const prev = process.env.PRACTICE_OB_LAUNCH_BETA;
     process.env.PRACTICE_OB_LAUNCH_BETA = "false";
     try {
@@ -104,6 +107,7 @@ describe("practiceObBeta (런칭 전)", () => {
         },
       });
       expect(await isPracticeObPostpaidActive(lab._id)).toBe(true);
+      expect(await isPracticeOnlyObPostpaidActive(lab._id)).toBe(false);
     } finally {
       if (prev === undefined) delete process.env.PRACTICE_OB_LAUNCH_BETA;
       else process.env.PRACTICE_OB_LAUNCH_BETA = prev;

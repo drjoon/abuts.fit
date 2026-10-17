@@ -29,7 +29,7 @@ describe("assigneeKind cooperation vs subcontract", () => {
     expect(isSubcontractFeeApplicable(t)).toBe(false);
     expect(shouldHideAssigneeFromPractice(t)).toBe(false);
     expect(formatAbutsCooperationLabLabel(t.assigneeLabName)).toBe(
-      "어벗츠 · 통영 Zahn-Art 치과기공소",
+      "통영 Zahn-Art 치과기공소",
     );
   });
 
@@ -44,7 +44,7 @@ describe("assigneeKind cooperation vs subcontract", () => {
     };
     // creditLedger uses redactAutoMatchLabIdentity — imported below via dynamic to keep this file core-focused
     expect(formatAbutsCooperationLabLabel(t.assigneeLabName)).toBe(
-      "어벗츠 · 우리치과기공소",
+      "우리치과기공소",
     );
     expect(resolveAssigneeKind(t)).toBe(ASSIGNEE_KIND_COOPERATION);
     expect(shouldHideAssigneeFromPractice(t)).toBe(false);
@@ -59,10 +59,10 @@ describe("assigneeKind cooperation vs subcontract", () => {
       assigneeKind: ASSIGNEE_KIND_COOPERATION,
     };
     expect(formatPracticeTransferWorkStartedChat(t)).toBe(
-      "어벗츠 협력 기공소 「테스트기공소」이(가) 작업을 시작했습니다.",
+      "기공소「테스트기공소」이(가) 작업을 시작했습니다.",
     );
     expect(formatPracticeTransferWorkCanceledChat(t)).toContain(
-      "어벗츠 협력 기공소 「테스트기공소」",
+      "기공소「테스트기공소」",
     );
   });
 
@@ -75,7 +75,7 @@ describe("assigneeKind cooperation vs subcontract", () => {
       assigneeKind: ASSIGNEE_KIND_SUBCONTRACT,
     };
     expect(formatPracticeTransferWorkStartedChat(t)).toBe(
-      "기공소「어벗츠기공소」이(가) 작업을 시작했습니다.",
+      "기공소「테스트기공소」이(가) 작업을 시작했습니다.",
     );
   });
 
