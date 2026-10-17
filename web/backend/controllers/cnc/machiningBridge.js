@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 // change-log:
+// - 2026-10-17: machiningQty>1이면 완료 후 수량만 깎고 같은 의뢰를 auto-next로 이어 가공한다.
 // - 2026-10-13: 더미 가공 완료는 세척.패킹으로 넘기지 않고 대기열에서 뺀다.
 // - 2026-10-13: 가공 tick의 ALARM은 진행 상태만 갱신한다. 알람 건은 fail 알림 하나다.
 // - 2026-10-10: 가공 완료 NC 툴번호는 S3 스트림으로 읽고, 본문은 메모리에 올리지 않는다.
@@ -2408,6 +2409,8 @@ export async function recordMachiningCompleteForBridge(req, res) {
 
     const now = new Date();
     let requestId = requestIdRaw;
+    /** auto-next에서 방금 완료한 의뢰를 건너뛸지. 배치 잔여 수량이 있으면 같은 건을 다시 집는다. */
+    let autoNextCompletedRequestIdToSkip = "";
 
     requestId = await resolveRequestIdFromDb({
       requestId,
@@ -2504,21 +2507,6 @@ export async function recordMachiningCompleteForBridge(req, res) {
             });
 
         request.productionSchedule = request.productionSchedule || {};
-        request.productionSchedule.actualMachiningComplete = now;
-        if (!request.productionSchedule.machiningRecord && record?._id) {
-          request.productionSchedule.machiningRecord = record._id;
-        }
-
-        request.productionSchedule.machiningProgress = {
-          ...(progress || {}),
-          machineId: mid,
-          jobId: jobId || (progress?.jobId ?? null),
-          phase: "COMPLETED",
-          percent: 100,
-          startedAt: startBase ? new Date(startBase) : now,
-          lastTickAt: now,
-          elapsedSeconds: durationSeconds,
-        };
 
         const fromStage = String(request?.manufacturerStage || "").trim() || null;
 
@@ -2527,40 +2515,89 @@ export async function recordMachiningCompleteForBridge(req, res) {
         // 이미 포장.발송·추적관리로 넘어간 건은 complete 이벤트로 단계를 되돌리지 않는다.
         // 더미는 세척.패킹으로 넘기지 않고 대기열에서 뺀다. 더미설정 복사본은 남긴다.
         const isDummySample = isDummySampleRequest(request);
-        const canEnterPackingStage = !isDummySample && fromStage === "가공";
+        const batchQtyBefore = Math.max(
+          1,
+          Number(request.productionSchedule?.machiningQty ?? 1) || 1,
+        );
+        const hasMoreBatchRuns = !isDummySample && batchQtyBefore > 1;
+
         let releasedDummyMachineId = null;
-        if (isDummySample) {
-          releasedDummyMachineId = releaseDummySampleAfterMachining(request);
-        } else if (canEnterPackingStage) {
-          applyStatusMapping(request, "세척.패킹");
-          const requestAnchorIdStr = normalizeBusinessAnchorId(
-            request.businessAnchorId,
-          );
-          const requestorAnchorIdStr = normalizeBusinessAnchorId(
-            request.requestor?.businessAnchorId,
-          );
-
-          // request 문서의 businessAnchorId가 비어 있는 경우에만 requestor anchor로 보정
-          if (!requestAnchorIdStr && requestorAnchorIdStr) {
-            request.businessAnchorId = request.requestor.businessAnchorId;
-          }
-
-          // 우편함 배정 SSOT: 가공→세척.패킹 진입 시 1회 배정한다.
-          const effectiveAnchorId =
-            requestAnchorIdStr || requestorAnchorIdStr || null;
-          await assignMailboxForCleaningPackingEnter({
-            request,
-            requestorOrgId: effectiveAnchorId,
-          });
-        } else {
-          console.warn(
-            "[bridge:machining:complete] skip stage regression",
+        if (hasMoreBatchRuns) {
+          request.productionSchedule.machiningQty = batchQtyBefore - 1;
+          request.productionSchedule.machiningRecord = null;
+          request.productionSchedule.machiningProgress = {
+            machineId: mid,
+            jobId: null,
+            phase: "",
+            percent: 0,
+            startedAt: null,
+            lastTickAt: now,
+            elapsedSeconds: 0,
+          };
+          delete request.productionSchedule.actualMachiningComplete;
+          autoNextCompletedRequestIdToSkip = "";
+          console.log(
+            "[bridge:machining:complete] batch qty decremented, staying in queue",
             JSON.stringify({
               machineId: mid,
               requestId,
-              fromStage,
+              qtyBefore: batchQtyBefore,
+              qtyAfter: batchQtyBefore - 1,
             }),
           );
+        } else {
+          request.productionSchedule.actualMachiningComplete = now;
+          if (!request.productionSchedule.machiningRecord && record?._id) {
+            request.productionSchedule.machiningRecord = record._id;
+          }
+
+          request.productionSchedule.machiningProgress = {
+            ...(progress || {}),
+            machineId: mid,
+            jobId: jobId || (progress?.jobId ?? null),
+            phase: "COMPLETED",
+            percent: 100,
+            startedAt: startBase ? new Date(startBase) : now,
+            lastTickAt: now,
+            elapsedSeconds: durationSeconds,
+          };
+
+          autoNextCompletedRequestIdToSkip = requestId || requestIdRaw || "";
+
+          const canEnterPackingStage = !isDummySample && fromStage === "가공";
+          if (isDummySample) {
+            releasedDummyMachineId = releaseDummySampleAfterMachining(request);
+          } else if (canEnterPackingStage) {
+            applyStatusMapping(request, "세척.패킹");
+            const requestAnchorIdStr = normalizeBusinessAnchorId(
+              request.businessAnchorId,
+            );
+            const requestorAnchorIdStr = normalizeBusinessAnchorId(
+              request.requestor?.businessAnchorId,
+            );
+
+            // request 문서의 businessAnchorId가 비어 있는 경우에만 requestor anchor로 보정
+            if (!requestAnchorIdStr && requestorAnchorIdStr) {
+              request.businessAnchorId = request.requestor.businessAnchorId;
+            }
+
+            // 우편함 배정 SSOT: 가공→세척.패킹 진입 시 1회 배정한다.
+            const effectiveAnchorId =
+              requestAnchorIdStr || requestorAnchorIdStr || null;
+            await assignMailboxForCleaningPackingEnter({
+              request,
+              requestorOrgId: effectiveAnchorId,
+            });
+          } else {
+            console.warn(
+              "[bridge:machining:complete] skip stage regression",
+              JSON.stringify({
+                machineId: mid,
+                requestId,
+                fromStage,
+              }),
+            );
+          }
         }
         await request.save();
         if (releasedDummyMachineId) {
@@ -2949,7 +2986,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
         request?.caseInfos?.anodizingEnabled === false;
       void triggerNextAutoMachiningAfterComplete({
         machineId: mid,
-        completedRequestId: requestId || requestIdRaw || "",
+        completedRequestId: autoNextCompletedRequestIdToSkip,
         allowAnodizingOff: completedIsAnodizingOff,
         onlyAnodizingOff: completedIsAnodizingOff,
       });

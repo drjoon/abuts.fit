@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-17: 예약 관리 행에 가공 수량 스피너(onChangeQty) 추가.
 // - 2026-09-13: 예약 관리 CAM 오버레이 — Next Up·라이노와 동일(블러 제거·옅은 틴트+반투명「작업중/작업중지」).
 // - 2026-08-29: 「CAM 생성 중」블러 옆 생성 중단 버튼.
 // - 2026-08-29: CAM 재생성 버튼·NC 미수신 시 Next Up과 동일 블러「CAM 생성 중」오버레이.
@@ -20,6 +21,8 @@ import {
   ArrowUp,
   ArrowDown,
   RefreshCw,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { CncModalShell } from "@/features/manufacturer/cnc/components/CncModalShell";
@@ -96,7 +99,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
   onRegenerateCam,
   onCancelCamGeneration,
   onReorder,
-  onChangeQty: _onChangeQty,
+  onChangeQty,
 }) => {
   const [localJobs, setLocalJobs] = useState<PlaylistJobItem[]>(jobs);
   const dragIdRef = useRef<string | null>(null);
@@ -126,6 +129,18 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
   }, [cancellingJobIds]);
 
   const order = useMemo(() => localJobs.map((j) => j.id), [localJobs]);
+
+  const normalizeQty = (raw: number) =>
+    Math.max(1, Math.floor(Number.isFinite(raw) ? raw : 1));
+
+  const setJobQty = (jobId: string, nextQty: number) => {
+    if (readOnly) return;
+    const qty = normalizeQty(nextQty);
+    setLocalJobs((prev) =>
+      prev.map((j) => (j.id === jobId ? { ...j, qty } : j)),
+    );
+    onChangeQty(jobId, qty);
+  };
 
   const move = (from: number, to: number) => {
     if (readOnly) return;
@@ -369,6 +384,65 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                     ) : null}
                   </div>
                 </button>
+
+                <div
+                  className="flex shrink-0 flex-col items-center gap-0.5"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
+                    수량
+                  </span>
+                  <div className="flex h-8 items-stretch overflow-hidden rounded-lg border border-slate-200 bg-white">
+                    <button
+                      type="button"
+                      className="inline-flex w-7 items-center justify-center border-r border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                      disabled={
+                        !!readOnly ||
+                        camRegenPending ||
+                        normalizeQty(job.qty) <= 1
+                      }
+                      onClick={() =>
+                        setJobQty(job.id, normalizeQty(job.qty) - 1)
+                      }
+                      title="수량 감소"
+                      aria-label="수량 감소"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      inputMode="numeric"
+                      className="w-10 border-0 bg-transparent px-0 text-center text-[12px] font-bold tabular-nums text-slate-800 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      value={normalizeQty(job.qty)}
+                      disabled={!!readOnly || camRegenPending}
+                      onChange={(e) => {
+                        const parsed = Number.parseInt(e.target.value, 10);
+                        if (!Number.isFinite(parsed)) return;
+                        setJobQty(job.id, parsed);
+                      }}
+                      onBlur={(e) => {
+                        const parsed = Number.parseInt(e.target.value, 10);
+                        setJobQty(job.id, Number.isFinite(parsed) ? parsed : 1);
+                      }}
+                      aria-label="가공 수량"
+                    />
+                    <button
+                      type="button"
+                      className="inline-flex w-7 items-center justify-center border-l border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                      disabled={!!readOnly || camRegenPending}
+                      onClick={() =>
+                        setJobQty(job.id, normalizeQty(job.qty) + 1)
+                      }
+                      title="수량 증가"
+                      aria-label="수량 증가"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
 
                 <div className="flex shrink-0 items-center gap-1">
                   {onRegenerateCam && (hasNc || isRegenerating || !camRegenPending) ? (
