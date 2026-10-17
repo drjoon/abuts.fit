@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-10-17: `compactLabel` — 긴 사이드 메뉴 라벨 작은 글꼴. 기공/어벗 accent는 중첩·요약카드용(최상위 밑줄 없음).
+// - 2026-10-17: `compactLabel` — 긴 사이드 메뉴 라벨 작은 글꼴(기공/어벗 accent 밑줄과 병행).
 // - 2026-09-06: 영업본부 홈(/dashboard/sales) exact-only — 하위 경로에서 홈 항상 선택 버그 수정.
 // - 2026-09-05: 기공의뢰 부모+어벗 서브 satellite(복수 키). oral_calendar·credits·new_request 사이드 홀.
 // - 2026-08-20: 관리자 섹션 포함 전 롤이 같은 사이드 렌더러. 접히면 라벨 툴팁.
@@ -230,7 +230,7 @@ const SidebarNavButton = ({
   );
 
   const buttonWithAccent =
-    !nested && item.accent && !item.compactLabel ? (
+    !nested && item.accent ? (
       <div className="relative">
         <div aria-hidden className={gigongAbutConnectorLineClass(item.accent)} />
         {button}

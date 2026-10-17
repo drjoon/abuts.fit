@@ -30,7 +30,7 @@ import {
   DASHBOARD_WORK_OUTER_PAD_CLASS,
 } from "@/shared/ui/dashboardChrome";
 
-// - 2026-10-17: 기공소 수신·커스텀어벗 사이드 — 두 상위 메뉴(일반 `text-sm`·`lg:text-base`).
+// - 2026-10-17: 기공소 수신·커스텀어벗 — `compactLabel` + 기공/어벗 accent 밑줄.
 // - 2026-10-17: 기공소·어벗츠기공소 사이드 — 「기공의뢰」그룹 제거. 상위 `치과의뢰 수신하기` · `커스텀어벗 의뢰하기`.
 // - 2026-10-08: 기공소 사이드「할인그룹」폐지.
 // - 2026-10-01: 설정 사이드 배지는 기본 기공수가 검토를 세지 않는다. 그 수는 재무에 붙는다.
@@ -277,6 +277,8 @@ const buildLabSidebarRequestItems = (
     label: "치과의뢰 수신하기",
     href: receiveHref,
     tooltip: receiveTooltip,
+    accent: "기공",
+    compactLabel: true,
     guideTourSatellite: "lab_calendar",
   },
   {
@@ -284,6 +286,8 @@ const buildLabSidebarRequestItems = (
     label: "커스텀어벗 의뢰하기",
     href: LAB_ABUTMENT_PRODUCTION_HREF,
     tooltip: ABUTMENT_REQUEST_TOOLTIP,
+    accent: "어벗",
+    compactLabel: true,
     guideTourSatellite: "new_request_workspace",
   },
 ];
