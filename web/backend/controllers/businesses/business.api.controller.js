@@ -23,7 +23,6 @@ export const {
   updateBusinessShippingAddress,
   getMyRequestSettings,
   updateMyRequestSettings,
-  exitMyDemoMode,
   applyMyReferralCode,
 } = businessController;
 
@@ -64,7 +63,6 @@ export default {
   updateBusinessShippingAddress,
   getMyRequestSettings,
   updateMyRequestSettings,
-  exitMyDemoMode,
   requestJoinBusiness,
   cancelJoinRequest,
   leaveBusiness,

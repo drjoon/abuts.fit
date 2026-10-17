@@ -32,13 +32,6 @@ import {
   verifyMyPayoutAccount,
 } from "./business.update.controller.js";
 import {
-  beginDemoConversionPending,
-  enableDemoModeAndGrantCreditIfEligible,
-  isDemoModeExpired,
-  isPracticeRequestorAnchor,
-  resolveDemoModeExpiresAt,
-} from "./business.demoMode.util.js";
-import {
   applyReferralCodeToUnownedRequestor,
   clearDevopsDefaultReferrer,
 } from "../../services/referralOwnershipReset.service.js";
@@ -655,40 +648,6 @@ export async function getMyBusiness(req, res) {
             ? Boolean(anchor?.designAccessEnabled)
             : false,
         ...abutsLabCertifiedPayload(anchor),
-        demoMode:
-          businessType === "requestor" &&
-          isPracticeRequestorAnchor(anchor) &&
-          Boolean(anchor?.demoMode),
-        demoModeExpired:
-          businessType === "requestor" &&
-          isPracticeRequestorAnchor(anchor) &&
-          Boolean(anchor?.demoMode) &&
-          !anchor?.demoModeExitedAt &&
-          isDemoModeExpired(anchor?.demoModeStartedAt),
-        demoModeStartedAt:
-          businessType === "requestor"
-            ? anchor?.demoModeStartedAt || null
-            : null,
-        demoModeExpiresAt:
-          businessType === "requestor"
-            ? resolveDemoModeExpiresAt(anchor?.demoModeStartedAt) || null
-            : null,
-        demoModeExitedAt:
-          businessType === "requestor" ? anchor?.demoModeExitedAt || null : null,
-        conversionPendingAt:
-          businessType === "requestor"
-            ? anchor?.conversionPendingAt || null
-            : null,
-        conversionPending:
-          businessType === "requestor"
-            ? Boolean(anchor?.conversionPendingAt) &&
-              Boolean(anchor?.demoMode) &&
-              !anchor?.demoModeExitedAt
-            : false,
-        conversionPendingReason:
-          businessType === "requestor"
-            ? anchor?.conversionPendingReason || ""
-            : "",
         requestSettings: {
           anodizingEnabled:
             typeof anchor?.requestSettings?.anodizingEnabled === "boolean"
@@ -736,27 +695,6 @@ export async function getMyBusiness(req, res) {
             : null,
       },
     };
-
-    // 의뢰자(치과·기공소): 실사용 전환 이력이 없으면 데모 시작/힐. 만료 시 전환 입금 대기.
-    if (businessType === "requestor" && !anchor?.demoModeExitedAt) {
-      try {
-        const demoResult = await enableDemoModeAndGrantCreditIfEligible({
-          businessAnchorId: anchor._id,
-          userId: req.user._id,
-        });
-        if (demoResult?.demoMode) {
-          responseData.data.demoMode = true;
-          if (!responseData.data.demoModeStartedAt) {
-            const startedAt = new Date();
-            responseData.data.demoModeStartedAt = startedAt;
-            responseData.data.demoModeExpiresAt =
-              resolveDemoModeExpiresAt(startedAt) || null;
-          }
-        }
-      } catch (e) {
-        console.error("[BusinessAnchor] demo mode enable/heal failed", e);
-      }
-    }
 
     setTtlMapValue(
       __getMyBusinessCache,
@@ -1935,88 +1873,6 @@ export async function updateMyRequestSettings(req, res) {
     });
   }
 }
-
-/**
- * 데모 → 실사용 전환. 잔여 데모 크레딧 회수 후 뱃지/데모 모드 종료.
- * @route POST /api/businesses/me/exit-demo
- */
-export async function exitMyDemoMode(req, res) {
-  try {
-    res.set("x-abuts-handler", "business.exitMyDemoMode");
-    const roleCheck = assertBusinessRole(req, res);
-    if (!roleCheck) return;
-
-    const freshUser = await User.findById(req.user._id)
-      .select({ businessAnchorId: 1, subRole: 1 })
-      .lean();
-    const businessAnchorId = freshUser?.businessAnchorId || req.user.businessAnchorId;
-    if (!businessAnchorId) {
-      return res.status(400).json({
-        success: false,
-        message: "사업자 정보가 설정되지 않았습니다.",
-      });
-    }
-
-    const anchor = await BusinessAnchor.findById(businessAnchorId)
-      .select({
-        businessType: 1,
-        demoMode: 1,
-        owners: 1,
-        primaryContactUserId: 1,
-      })
-      .lean();
-    if (!anchor || String(anchor.businessType || "") !== "requestor") {
-      return res.status(400).json({
-        success: false,
-        message: "의뢰자 사업자만 실사용으로 전환할 수 있습니다.",
-      });
-    }
-
-    const meId = String(req.user._id);
-    const isOwner =
-      String(anchor.primaryContactUserId || "") === meId ||
-      (Array.isArray(anchor.owners) &&
-        anchor.owners.some((id) => String(id) === meId)) ||
-      String(freshUser?.subRole || "") === "owner";
-    if (!isOwner) {
-      return res.status(403).json({
-        success: false,
-        message: "대표 계정만 실사용으로 전환할 수 있습니다.",
-      });
-    }
-
-    const result = await beginDemoConversionPending({
-      businessAnchorId,
-      userId: req.user._id,
-      reason: "사용자 실사용 전환 요청",
-    });
-    invalidateMyBusinessCache(businessAnchorId);
-
-    return res.json({
-      success: true,
-      data: {
-        demoMode: !result?.completed,
-        conversionPending: !result?.completed,
-        completed: Boolean(result?.completed),
-        alreadyExited: Boolean(result?.alreadyExited),
-        alreadyPending: Boolean(result?.alreadyPending),
-        labs: result?.labs || [],
-        message: result?.completed
-          ? "실사용으로 전환되었습니다. 신규 의뢰는 충전 후 가능합니다."
-          : "기공소에 미정산 기공비를 직접 지급해 주세요. 기공소가 지급을 확인하면 실사용으로 전환됩니다.",
-      },
-    });
-  } catch (error) {
-    const status = Number(error?.statusCode) || 500;
-    return res.status(status).json({
-      success: false,
-      message:
-        error?.message || "실사용 전환 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
 
 /**
  * 소개 귀속이 비어 있을 때 소개코드 재적용 (90일 리셋 후 재영업).

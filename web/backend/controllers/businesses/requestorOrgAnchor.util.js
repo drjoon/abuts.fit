@@ -14,7 +14,6 @@ import {
   requestorProfilePersistFields,
 } from "../../utils/requestorCapabilities.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
-import { enableDemoModeAndGrantCreditIfEligible } from "./business.demoMode.util.js";
 import { resolveDealershipCommissionPolicy } from "../../services/creditRevenuePolicy.service.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 import { maybeAssignAbutsAdminReferral } from "../../services/abutsAdminReferral.service.js";
@@ -164,8 +163,6 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
     primaryContactUserId: user._id,
     owners: [user._id],
     members: [user._id],
-    demoMode: true,
-    demoModeStartedAt: new Date(),
     usesOralScan: Boolean(practiceProfile.usesOralScan),
     requireLabProsthesisUpload:
       practiceProfile.requireLabProsthesisUpload !== false,
@@ -217,15 +214,6 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
     } catch (e) {
       console.error("[BusinessAnchor] admin referral default failed", e);
     }
-  }
-
-  try {
-    await enableDemoModeAndGrantCreditIfEligible({
-      businessAnchorId: created._id,
-      userId: user._id,
-    });
-  } catch (e) {
-    console.error("[BusinessAnchor] demo mode grant on org ensure failed", e);
   }
 
   return created;

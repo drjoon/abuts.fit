@@ -189,39 +189,6 @@ async function upsertCollection(db, name, docs) {
   return { upserted, modified, total: docs.length };
 }
 
-async function enableDemoForPractices() {
-  const anchors = await BusinessAnchor.find({ businessType: "requestor" })
-    .select({
-      name: 1,
-      requestorKind: 1,
-      requestorCapabilities: 1,
-      demoMode: 1,
-      demoModeExitedAt: 1,
-      demoModeStartedAt: 1,
-      createdAt: 1,
-    })
-    .lean();
-
-  let enabled = 0;
-  for (const a of anchors) {
-    if (!isPracticeAnchor(a)) continue;
-    if (a.demoModeExitedAt) continue;
-    if (a.demoMode) continue;
-    await BusinessAnchor.updateOne(
-      { _id: a._id },
-      {
-        $set: {
-          demoMode: true,
-          demoModeStartedAt: a.demoModeStartedAt || a.createdAt || new Date(),
-        },
-      },
-    );
-    enabled += 1;
-    console.log("demoMode ON", a.name);
-  }
-  return enabled;
-}
-
 async function refreshBalances() {
   const anchors = await BusinessAnchor.find({ businessType: "requestor" })
     .select({ _id: 1, name: 1 })
@@ -262,9 +229,8 @@ async function main() {
   }
 
   if (apply) {
-    const demoEnabled = await enableDemoForPractices();
     const refreshed = await refreshBalances();
-    console.log("post", { demoEnabled, refreshed });
+    console.log("post", { refreshed });
   }
 
   await mongoose.disconnect();

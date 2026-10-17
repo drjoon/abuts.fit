@@ -53,9 +53,9 @@ export async function checkPracticeSettlementLock(
   now = new Date(),
 ) {
   const anchor = await BusinessAnchor.findById(practiceAnchorId)
-    .select("demoMode openBankingConsent")
+    .select("openBankingConsent")
     .lean();
-  if (!anchor || anchor.demoMode) return { isLocked: false };
+  if (!anchor) return { isLocked: false };
 
   const hold = anchor.openBankingConsent?.paymentHold;
   if (hold?.isHeld) {

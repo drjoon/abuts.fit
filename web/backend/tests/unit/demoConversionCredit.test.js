@@ -12,8 +12,6 @@ import {
   computeLabDemoSettlementCredit,
 } from "../../services/labDemoCredit.service.js";
 import {
-  DEMO_MODE_DURATION_DAYS,
-  getDemoOrderBlock,
 } from "../../controllers/businesses/business.demoMode.util.js";
 
 const oid = () => new mongoose.Types.ObjectId();
@@ -62,51 +60,6 @@ describe("classifyPracticeCreditOwner", () => {
       }),
     ).toBe("abuts");
     expect(classifyPracticeCreditOwner({ ownerId: prime, ptx })).toBe("direct");
-  });
-});
-
-describe("getDemoOrderBlock", () => {
-  async function makePractice(patch) {
-    const id = oid();
-    await BusinessAnchor.collection.insertOne({
-      _id: id,
-      name: "t-practice",
-      businessType: "requestor",
-      requestorKind: "practice",
-      businessNumberNormalized: String(Math.random()).slice(2, 12),
-      demoMode: true,
-      demoModeStartedAt: new Date(),
-      demoModeExitedAt: null,
-      conversionPendingAt: null,
-      ...patch,
-    });
-    return id;
-  }
-
-  test("active demo is not blocked", async () => {
-    const id = await makePractice({});
-    expect(await getDemoOrderBlock(id)).toBeNull();
-  });
-
-  test("expired demo is blocked as demo_expired", async () => {
-    const id = await makePractice({
-      demoModeStartedAt: new Date(Date.now() - (DEMO_MODE_DURATION_DAYS + 1) * DAY),
-    });
-    expect((await getDemoOrderBlock(id))?.reason).toBe("demo_expired");
-  });
-
-  test("conversion pending is blocked", async () => {
-    const id = await makePractice({ conversionPendingAt: new Date() });
-    expect((await getDemoOrderBlock(id))?.reason).toBe("conversion_pending");
-  });
-
-  test("converted (exited) practice is not blocked", async () => {
-    const id = await makePractice({
-      demoMode: false,
-      demoModeExitedAt: new Date(),
-      demoModeStartedAt: new Date(Date.now() - 200 * DAY),
-    });
-    expect(await getDemoOrderBlock(id)).toBeNull();
   });
 });
 

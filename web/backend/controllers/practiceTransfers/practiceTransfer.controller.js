@@ -1,5 +1,4 @@
 import { Types } from "mongoose";
-import { getDemoOrderBlock } from "../businesses/business.demoMode.util.js";
 import { notifyScanbodyDemand } from "../../services/scanbodyDemand.service.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import PracticeTransferDraft from "../../models/practiceTransferDraft.model.js";
@@ -3241,16 +3240,6 @@ export async function createPracticeTransfer(req, res) {
     const role = String(req.user?.role || "").trim();
     if (!isPracticeTransferSenderRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
-    }
-
-    // 데모 만료(미전환)·전환 확인 대기 중에는 신규 의뢰 불가.
-    const demoBlock = await getDemoOrderBlock(req.user?.businessAnchorId);
-    if (demoBlock) {
-      return res.status(403).json({
-        success: false,
-        message: demoBlock.message,
-        reason: demoBlock.reason,
-      });
     }
 
     const caseInfos = Array.isArray(req.body?.caseInfos) ? req.body.caseInfos : [];

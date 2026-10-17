@@ -1,17 +1,16 @@
 // related files:
 // - web/backend/scripts/db/delete-practice-charge-journals.js
-// - web/backend/scripts/db/zero-practice-credits-enable-demo.js
 // - web/backend/scripts/db/_mongo.js
 // - web/backend/services/creditBalance.service.js
 /**
  * ⚠️ 원장 전량 삭제용. 일반적으로 쓰지 말 것.
  * 내역 유지 + 마이너스 잔고 체제만 적용할 때는
- * `restore-credit-ledgers-from-critical-backup.js` 로 복구한 뒤 demoMode/overdraft를 쓴다.
+ * `restore-credit-ledgers-from-critical-backup.js` 로 복구한다.
  *
  * 의뢰자(치과+기공소) 크레딧 원장 전량 리셋.
  * - 유료/무료/데모 충전·회수·소비·홀드·정산적립 저널을 통째로 삭제(에스크로·수익 상대계정 포함)
  * - FreeCreditGrant 취소, PTX billing hold/settle 필드 초기화
- * - 치과·기공소: demoMode ON + 잔고 0
+ * - 치과·기공소: 잔고 0
  *
  * Usage:
  *   cd web/backend && \
@@ -60,19 +59,6 @@ function classifyAnchor(anchor) {
   if (kind === "practice" || caps.practice) return "practice";
   if (caps.lab) return "lab";
   return "practice";
-}
-
-async function enableDemoModeKeepStartedAt(businessAnchorId, startedAt) {
-  const now = new Date();
-  await BusinessAnchor.updateOne(
-    { _id: businessAnchorId, demoModeExitedAt: null },
-    {
-      $set: {
-        demoMode: true,
-        demoModeStartedAt: startedAt || now,
-      },
-    },
-  );
 }
 
 async function clearPracticeTransferBillingHolds(anchorIds) {
@@ -182,7 +168,6 @@ async function main() {
   let deletedJournals = 0;
   let deletedLines = 0;
   let canceledGrants = 0;
-  let demoEnabled = 0;
   let errors = 0;
   const perAnchor = [];
 
@@ -259,11 +244,6 @@ async function main() {
       );
       canceledGrants += Number(grantRes?.modifiedCount || 0);
 
-      if (!anchor.demoModeExitedAt) {
-        await enableDemoModeKeepStartedAt(id, anchor.demoModeStartedAt);
-        if (!anchor.demoMode) demoEnabled += 1;
-      }
-
       await upsertBusinessCreditBalanceFromLedger({ businessAnchorId: id });
       const after = await getBusinessCreditBalanceSnapshot({
         businessAnchorId: id,
@@ -298,7 +278,6 @@ async function main() {
     deletedJournals,
     deletedLines,
     canceledGrants,
-    demoEnabled,
     ptxCleared,
     errors,
   });

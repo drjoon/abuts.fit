@@ -107,7 +107,6 @@ import {
   spendShippingCreditAtomic,
   upsertBusinessCreditBalanceFromLedger,
 } from "./creditBalance.service.js";
-import { allowsDemoFreeRequestOverdraft } from "../controllers/businesses/business.demoMode.util.js";
 import {
   postGeneralLedgerJournal,
   postGeneralLedgerJournals,
@@ -401,12 +400,11 @@ async function lockGuard(businessAnchorId, session) {
 }
 
 /**
- * 치과 데모 모드이거나, 오픈뱅킹(OB) 장기동의가 활성이고 paymentHold가 없으면
+ * 오픈뱅킹(OB) 장기동의가 활성이고 paymentHold가 없으면
  * 기공비(어벗 소매가 제외)를 월 후불로 허용한다. 월 한도는 두지 않는다.
  */
 async function practiceAllowsFreeRequestOverdraft(practiceAnchorId) {
   if (!practiceAnchorId) return false;
-  if (await allowsDemoFreeRequestOverdraft(practiceAnchorId)) return true;
   const anchor = await BusinessAnchor.findById(practiceAnchorId)
     .select({ openBankingConsent: 1 })
     .lean();
@@ -970,19 +968,14 @@ export async function assertPracticeTransferPaidCreditSufficient({
     };
   }
 
-  // 제조사→기공소 배송비는 주문 기공소 크레딧(데모 무료의뢰 제외 · 실유료/무료만).
+  // 제조사→기공소 배송비는 주문 기공소 크레딧(실유료/무료만).
   if (abutsShippingRequired > 0) {
     const labId = String(labAnchorId || "").trim();
     if (labId && Types.ObjectId.isValid(labId)) {
       const labBalance = await computeBusinessCreditBalanceFromLedger({
         businessAnchorId: labId,
       });
-      const {
-        resolveDemoFreeRequestReserveCap,
-        excludeDemoFreeRequestFromBalance,
-      } = await import("../controllers/businesses/business.demoMode.util.js");
-      const demoCap = await resolveDemoFreeRequestReserveCap(labId);
-      const spendable = excludeDemoFreeRequestFromBalance(labBalance, demoCap);
+      const spendable = labBalance;
       const labSplit = allocateSpendFromCreditBuckets({
         amount: abutsShippingRequired,
         paidCredit: Number(spendable?.paidCredit || 0),

@@ -542,13 +542,7 @@ export async function spendRequestCreditAtomic({
     session,
   });
 
-  // 커스텀어벗 가공 차감은 데모 마이너스를 쓰지 않는다. 충전 잔액만.
-  const {
-    resolveDemoFreeRequestReserveCap,
-    excludeDemoFreeRequestFromBalance,
-  } = await import("../controllers/businesses/business.demoMode.util.js");
-  const demoCap = await resolveDemoFreeRequestReserveCap(anchorObjectId);
-  const spendable = excludeDemoFreeRequestFromBalance(glBalance, demoCap);
+  const spendable = glBalance;
 
   const split = allocateSpendFromCreditBuckets({
     amount: resolvedAmount,
@@ -649,13 +643,7 @@ export async function spendShippingCreditAtomic({
     session,
   });
 
-  // 커스텀어벗 배송비는 데모 마이너스를 쓰지 않는다. 충전 잔액만.
-  const {
-    resolveDemoFreeRequestReserveCap,
-    excludeDemoFreeRequestFromBalance,
-  } = await import("../controllers/businesses/business.demoMode.util.js");
-  const demoCap = await resolveDemoFreeRequestReserveCap(anchorObjectId);
-  const spendable = excludeDemoFreeRequestFromBalance(glBalance, demoCap);
+  const spendable = glBalance;
 
   const split = allocateSpendFromCreditBuckets({
     amount,

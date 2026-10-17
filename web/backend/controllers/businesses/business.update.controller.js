@@ -29,7 +29,6 @@ import {
 import { normalizeBusinessAddressFields } from "./business.address.util.js";
 import { findBusinessByAnchors } from "./business.find.util.js";
 import { grantWelcomeFreeCreditIfEligible } from "./business.freeCredit.util.js";
-import { enableDemoModeAndGrantCreditIfEligible } from "./business.demoMode.util.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
 import { invalidateMyBusinessCache } from "./business.controller.js";
 import {
@@ -202,7 +201,6 @@ export async function ensureBusinessAnchor({
         referredByAnchorId: referredByAnchorId || null,
         defaultReferralAnchorId: referredByAnchorId || null,
         referralAssignedAt: referredByAnchorId ? new Date() : null,
-        // 데모는 치과 전용: 종류를 아는 enableDemoModeAndGrantCreditIfEligible 에서만 켠다.
       },
     },
     {
@@ -214,18 +212,6 @@ export async function ensureBusinessAnchor({
 
   const anchorId = anchor?._id || existingAnchor?._id || null;
   if (!anchorId) return null;
-
-  // 신규 requestor 앵커: 데모 모드 + 데모 크레딧(멱등)
-  if (businessType === "requestor" && !existingAnchor?._id) {
-    try {
-      await enableDemoModeAndGrantCreditIfEligible({
-        businessAnchorId: anchorId,
-        userId,
-      });
-    } catch (e) {
-      console.error("[BusinessAnchor] demo mode grant failed", e);
-    }
-  }
 
   if (
     !existingAnchor?.referredByAnchorId &&
@@ -460,17 +446,6 @@ export async function updateMyBusiness(req, res) {
         await User.findByIdAndUpdate(req.user._id, profileUpdate);
         if (businessAnchor?._id) {
           await BusinessAnchor.findByIdAndUpdate(businessAnchor._id, profileUpdate);
-          try {
-            await enableDemoModeAndGrantCreditIfEligible({
-              businessAnchorId: businessAnchor._id,
-              userId: req.user._id,
-            });
-          } catch (e) {
-            console.error(
-              "[BusinessAnchor] demo mode grant on profile update failed",
-              e,
-            );
-          }
         }
         invalidateMyBusinessCache(req.user._id);
         return res.json({
@@ -1056,7 +1031,6 @@ export async function updateMyBusiness(req, res) {
           nextRequestorProfile && hasRequestorProfile(nextRequestorProfile)
             ? nextRequestorProfile
             : null;
-        const createdKind = createdProfile?.kind || null;
         const createdPersist = createdProfile
           ? requestorProfilePersistFields(createdProfile)
           : {};
@@ -1074,9 +1048,6 @@ export async function updateMyBusiness(req, res) {
                 verificationPendingAt: new Date(),
                 verificationMessage: verificationResult.message || "",
               }
-            : {}),
-          ...(businessType === "requestor" && createdKind === "practice"
-            ? { demoMode: true, demoModeStartedAt: new Date() }
             : {}),
           ...createdPersist,
           ...(businessLicense &&
@@ -1157,20 +1128,6 @@ export async function updateMyBusiness(req, res) {
           });
         const welcomeGranted = !!welcomeFreeCreditAmount;
         const welcomeAmount = Number(welcomeFreeCreditAmount || 0);
-
-        if (businessType === "requestor") {
-          try {
-            await enableDemoModeAndGrantCreditIfEligible({
-              businessAnchorId: created._id,
-              userId: req.user._id,
-            });
-          } catch (e) {
-            console.error(
-              "[BusinessAnchor] demo mode grant on create failed",
-              e,
-            );
-          }
-        }
 
         const labTradingPartner = await bindLabTradingPartnerFromRequest({
           req,

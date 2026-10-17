@@ -401,16 +401,6 @@ async function approveChargeOrder(req, res, { mock = false } = {}) {
   });
 
   if (glResult?.posted || glResult?.idempotent) {
-    const { exitDemoModeAfterPaidCreditGrant } = await import(
-      "../businesses/business.demoMode.util.js"
-    );
-    await exitDemoModeAfterPaidCreditGrant({
-      businessAnchorId: order.businessAnchorId,
-      userId: order.userId || actorUserId,
-      reason: "유료 크레딧 입금",
-      chargeOrderId: order._id,
-      chargeAmount: Number(order.supplyAmount || order.amountTotal || 0),
-    });
   }
 
   const updated = await ChargeOrder.findById(order._id)
@@ -869,16 +859,6 @@ export async function adminManualMatch(req, res) {
     },
   });
 
-  const { exitDemoModeAfterPaidCreditGrant } = await import(
-    "../businesses/business.demoMode.util.js"
-  );
-  await exitDemoModeAfterPaidCreditGrant({
-    businessAnchorId: order.businessAnchorId,
-    userId: order.userId || req.user?._id || null,
-    reason: "유료 크레딧 입금",
-    chargeOrderId: order._id,
-    chargeAmount: Number(order.supplyAmount || order.amountTotal || 0),
-  });
 
   notifyChargePrepaidApplied({
     userId: order.userId,

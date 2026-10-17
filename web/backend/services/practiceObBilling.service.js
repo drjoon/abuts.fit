@@ -624,7 +624,6 @@ export async function getPracticeObBillingOverview({
   return {
     practiceAnchorId: String(anchor._id),
     practiceName: anchor.name || "",
-    demoMode: Boolean(anchor.demoMode),
     depositGuidance: {
       required: isPracticeDepositGuidanceRequired(monthlySpend),
       threshold: PRACTICE_DEPOSIT_GUIDANCE_THRESHOLD,

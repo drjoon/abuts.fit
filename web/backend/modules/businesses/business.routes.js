@@ -81,12 +81,6 @@ router.post(
 );
 
 router.post(
-  "/me/exit-demo",
-  authorize(["requestor", "practice"]),
-  businessController.exitMyDemoMode,
-);
-
-router.post(
   "/me/apply-referral",
   authorize(["requestor", "practice"]),
   businessController.applyMyReferralCode,

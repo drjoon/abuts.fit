@@ -34,11 +34,6 @@ import {
 } from "./creditBalance.service.js";
 import { isFmDentalShippingActiveForAnchor } from "./fmDentalShippingSubscription.service.js";
 import {
-  getDemoOrderBlock,
-  excludeDemoFreeRequestFromBalance,
-  resolveDemoFreeRequestReserveCap,
-} from "../controllers/businesses/business.demoMode.util.js";
-import {
   deleteGeneralLedgerCommitJournal,
   getJournalByIdempotencyKey,
   getJournalsByIdempotencyKeys,
@@ -366,8 +361,6 @@ function prepareOneRequestHold({
   freeOrder = ["freeRequest", "freeShipping"],
   actorUserId = null,
   cachedBalance = null,
-  /** 데모 무료의뢰 예약분 — 커스텀어벗 차감에서 제외 */
-  demoFreeRequestReserveCap = 0,
   /** 커스텀어벗 hold는 데모 마이너스를 허용하지 않는다. */
   allowFreeRequestOverdraft = false,
 }) {
@@ -378,9 +371,7 @@ function prepareOneRequestHold({
   }
 
   const balance = normalizeHoldBalanceBuckets(cachedBalance);
-  const spendable = allowFreeRequestOverdraft
-    ? balance
-    : excludeDemoFreeRequestFromBalance(balance, demoFreeRequestReserveCap);
+  const spendable = balance;
   const split = allocateSpendFromCreditBuckets({
     amount: amt,
     paidCredit: Number(spendable?.paidCredit || 0),
@@ -539,17 +530,6 @@ async function postOneRequestHold({
         session,
       });
 
-  const demoOrderBlock = await getDemoOrderBlock(requestorAnchorId);
-  if (demoOrderBlock) {
-    const err = new Error(demoOrderBlock.message);
-    err.statusCode = 403;
-    err.payload = { reason: demoOrderBlock.reason };
-    throw err;
-  }
-
-  const demoFreeRequestReserveCap =
-    await resolveDemoFreeRequestReserveCap(requestorAnchorId);
-
   const prepared = prepareOneRequestHold({
     request,
     requestorAnchorId,
@@ -561,7 +541,6 @@ async function postOneRequestHold({
     freeOrder,
     actorUserId,
     cachedBalance: balance,
-    demoFreeRequestReserveCap,
     allowFreeRequestOverdraft: false,
   });
   if (!prepared?.held || !prepared.journal) {
@@ -833,18 +812,8 @@ export async function holdRequestCreditsOnSubmit({
   const shippingGroupsNewHoldOnly = new Set();
   const lockedAnchors = new Set();
   const balanceByAnchor = new Map();
-  const demoReserveCapByAnchor = new Map();
   let totalHeld = 0;
   const results = [];
-
-  const resolveDemoCap = async (requestorAnchorId) => {
-    if (demoReserveCapByAnchor.has(requestorAnchorId)) {
-      return demoReserveCapByAnchor.get(requestorAnchorId);
-    }
-    const cap = await resolveDemoFreeRequestReserveCap(requestorAnchorId);
-    demoReserveCapByAnchor.set(requestorAnchorId, cap);
-    return cap;
-  };
 
   const takeCachedBalance = async (requestorAnchorId) => {
     if (!lockedAnchors.has(requestorAnchorId)) {
@@ -917,7 +886,6 @@ export async function holdRequestCreditsOnSubmit({
       freeOrder,
       actorUserId,
       cachedBalance: await takeCachedBalance(requestorAnchorId),
-      demoFreeRequestReserveCap: await resolveDemoCap(requestorAnchorId),
       allowFreeRequestOverdraft: false,
     });
     if (!prepared?.held || !prepared.journal) {
