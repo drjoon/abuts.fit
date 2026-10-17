@@ -6,7 +6,7 @@
 // change-log:
 // - 2026-09-18: 수신함 미읽음 증감 시 comm:badge-update(mail) emit.
 import Mail from "../../models/mail.model.js";
-import { sendEmailWithAttachments } from "../../utils/email.util.js";
+import { sendLoggedOutboundMail } from "../../services/outboundMailRecord.service.js";
 import {
   getSignedUrl,
   getUploadSignedUrl,
@@ -340,37 +340,18 @@ export async function adminSendMail(req, res) {
     const normalizedCc = Array.isArray(cc) ? cc : [cc];
     const normalizedBcc = Array.isArray(bcc) ? bcc : [bcc];
 
-    const mailDoc = await Mail.create({
-      folder: "sent",
-      direction: "outbound",
-      status: "pending",
-      from: process.env.SES_FROM_EMAIL || process.env.SES_FROM || "",
-      to: normalizedTo,
-      cc: normalizedCc,
-      bcc: normalizedBcc,
-      subject,
-      bodyHtml,
-      bodyText,
-      attachments,
-      sentAt: new Date(),
-    });
-
+    let mailDoc;
     try {
-      await sendEmailWithAttachments({
+      mailDoc = await sendLoggedOutboundMail({
         to: normalizedTo,
         cc: normalizedCc,
         bcc: normalizedBcc,
         subject,
-        html: bodyHtml,
-        text: bodyText,
+        bodyHtml,
+        bodyText,
         attachments,
       });
-      mailDoc.status = "sent";
-      await mailDoc.save();
     } catch (error) {
-      mailDoc.status = "failed";
-      mailDoc.error = error?.message || String(error);
-      await mailDoc.save();
       console.error("[adminSendMail] send failed", error);
       return res
         .status(500)
