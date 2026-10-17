@@ -24,7 +24,7 @@
 
 Notes:
 - 커스텀어벗 배송: 사이드바 메뉴는 두지 않는다. 기공의뢰 케이스 채팅 헤더에 `커스텀어벗 배송: {한진 현황}` 한 줄(예: HUB 도착). 생산 전·준비·가공 단계는 이 줄에 넣지 않는다.
-- Requestor workspace header: 기간 필터는 치과 `어벗디자인으로`·기공소 `어벗생산의뢰`(`/dashboard/new-request`) 상단. 헤더 버튼: `[정책 안내]` · `[진행중 x건]` · `[출고예정 x건]` · `[완료 내역 x건]` · `[불완전 가공 x건]` (x=기간 건수). 치과·기공소·어벗츠기공소는 대시보드 메뉴를 두지 않음(치과 `/dashboard` → 구강스캔, 기공소 → 기공의뢰수신, 제출 후 어벗생산/어벗디자인). 정산은 사이드바 `정산`(`/dashboard/credits`) — 치과: 내역·통계·자동정산(`?tab=autopay`, 구 `?tab=charge` 리다이렉트). 기공소: 내역·통계·충전·지급. 설정 결제 탭 제거(구 `?tab=payment` → 치과 autopay / 기공소 charge). 의뢰자 **스토어** 메뉴·`/dashboard/store/*` 폐쇄(관리자 `/dashboard/store-admin` 유지). 설정 의뢰 탭도 제거 — 디자인소프트웨어·아노다이징은 어벗의뢰(`/dashboard/new-request`) 좌측 상단 버튼. 치과 설정 「구독」탭·헤더 `[구독]`은 제거(구 `?tab=subscription` → 계정). 아노다이징: 의뢰자 계정 기본값(`User.requestSettings.anodizingEnabled` / API `requestorAnodizingEnabled`) → **신규 업로드에만** `caseInfos.anodizingEnabled` 주입(이미 첨부된 카드·디자인소프트웨어와 동일하게 미변경). 사업체 `requestSettings.anodizingEnabled`는 레거시/미설정 폴백(기본 ON).
+- Requestor workspace header: 기간 필터는 치과 `어벗디자인으로`·기공소 `어벗생산의뢰`(`/dashboard/new-request`) 상단. 헤더 버튼: `[정책 안내]` · `[진행중 x건]` · `[출고예정 x건]` · `[완료 내역 x건]` · `[불완전 가공 x건]` (x=기간 건수). 치과·기공소·어벗츠기공소는 대시보드 메뉴를 두지 않음(치과 `/dashboard` → 구강스캔, 기공소 → 기공의뢰수신, 제출 후 어벗생산/어벗디자인). 정산은 사이드바 `정산`(`/dashboard/credits`) — 치과: 내역·통계·자동정산(`?tab=autopay`, 구 `?tab=charge` 리다이렉트). 기공소: 내역·통계·충전·지급. 설정 결제 탭 제거(구 `?tab=payment` → 치과 autopay / 기공소 charge). 치과 의뢰자 **스토어** `/dashboard/store/*` 복원(결제 OB 후불). 기공소 스토어·관리자 `/dashboard/store-admin` 유지. 설정 의뢰 탭도 제거 — 디자인소프트웨어·아노다이징은 어벗의뢰(`/dashboard/new-request`) 좌측 상단 버튼. 치과 설정 「구독」탭·헤더 `[구독]`은 제거(구 `?tab=subscription` → 계정). 아노다이징: 의뢰자 계정 기본값(`User.requestSettings.anodizingEnabled` / API `requestorAnodizingEnabled`) → **신규 업로드에만** `caseInfos.anodizingEnabled` 주입(이미 첨부된 카드·디자인소프트웨어와 동일하게 미변경). 사업체 `requestSettings.anodizingEnabled`는 레거시/미설정 폴백(기본 ON).
 - Semantic color palette (강제, 앱 전체):
   - 의미 축 4 + 서비스 1만 사용. 같은 축 안 차이는 soft/muted/DEFAULT/strong 밝기만.
     - **Primary** (`--primary*`) — 브랜드·CTA·공정·묶음출고·정상/완료
@@ -513,7 +513,7 @@ Notes:
 
 - 부가세(VAT) / 면세 UI 정책(강제, 루트 `rules.md` §2.3) — 겸영 이중 체계:
   - **고객·기공 경로(면세)**: 가격·충전·약관에서 "VAT 별도 / 부가세 포함 / VAT 10%" 문구 금지. 증빙은 **계산서**.
-  - **스토어 기성품(과세)**: 2026-10 의뢰자 스토어 UI·라우트 **폐쇄**(코드·API 유지, `/dashboard/store/*` → 기공의뢰). 재개 시 `RequestorStorePage` / cart / orders. SKU SSOT: **Abutment 4종** + **Grip Driver(치과만)**. `shared/tax/invoiceLabels.ts` · `shared/store/storeCatalog.ts`.
+  - **스토어 기성품(과세)**: 치과 `RequestorStorePage` / cart / orders — 결제 **OB 후불**(기공소는 선수금). SKU SSOT: **Abutment 4종** + **Grip Driver(치과만)**. `shared/tax/invoiceLabels.ts` · `shared/store/storeCatalog.ts`.
   - **스토어 배송비**: 상품 10만원 이상 무료 · 미만 ₩3,500(부가세 포함). 기공물 동봉(`lab_bundle`, 치과 기공소 우회 무료) 폐지. SSOT: `shared/store/storeShipping.ts`.
   - **관리자 스토어**: 재고·입금승인·출고(운송장)·배송완료 `/dashboard/store-admin` (`AdminStorePage`). 상품 배치는 **치과/기공소 각각** 저장. 매출은 전액 어벗츠(`REV_STORE_TAXABLE`).
   - **과세 지급**: 어벗츠↔제조사, 어벗츠↔딜러사, 어벗츠↔개발운영사. 지급 UI에 공급가·부가세·합계와 **세금계산서** 표시.

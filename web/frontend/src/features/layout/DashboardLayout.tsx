@@ -245,6 +245,7 @@ const CREDIT_LOW_BALANCE_THRESHOLD = 500_000;
 const CREDITS_HREF = "/dashboard/credits";
 const CREDITS_CHARGE_HREF = "/dashboard/credits?tab=charge";
 const CREDITS_AUTOPAY_HREF = "/dashboard/credits?tab=autopay";
+const STORE_HREF = "/dashboard/store";
 
 const requestorSidebarCommonTail: SidebarItem[] = [
   { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
@@ -322,6 +323,12 @@ const buildRequestorSidebarItems = (
         guideTourSatellite: "oral_calendar",
       },
       {
+        icon: Store,
+        label: "스토어",
+        href: STORE_HREF,
+        guideTourSatellite: "store_workspace",
+      },
+      {
         icon: Wallet,
         label: "정산",
         href: CREDITS_HREF,
@@ -356,6 +363,12 @@ const buildRequestorSidebarItems = (
           guideTourSatellite: "new_request_workspace",
         },
       ],
+    },
+    {
+      icon: Store,
+      label: "스토어",
+      href: STORE_HREF,
+      guideTourSatellite: "store_workspace",
     },
     {
       icon: Wallet,

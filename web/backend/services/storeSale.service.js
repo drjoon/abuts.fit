@@ -47,6 +47,7 @@ function storeOrderSaleIdempotencyKeys(orderId) {
   const id = String(orderId || "").trim();
   return [
     `gl:store:order:${id}:credit-pay`,
+    `gl:store:order:${id}:ob-pay`,
     `gl:store:order:${id}:sale`,
   ];
 }
@@ -747,6 +748,129 @@ export async function payStoreOrderWithCredit({
       reason: "store_credit_pay",
       refId: orderId,
     }).catch(() => {});
+  }
+
+  return { finalized, idempotent };
+}
+
+/**
+ * 치과 OB 후불 스토어 결제 — 선수금 차감 없이 매출만 기록, 월 OB 일괄정산에 포함.
+ */
+export async function payStoreOrderWithObPostpaid({
+  orderId,
+  userId = null,
+  session: outerSession = null,
+} = {}) {
+  const ownSession = !outerSession;
+  const session = outerSession || (await mongoose.startSession());
+  let finalized = false;
+  let idempotent = false;
+
+  const run = async () => {
+    const order = await StoreOrder.findById(orderId).session(session);
+    if (!order) {
+      const err = new Error("store_order_not_found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    if (String(order.status) === "PAID") {
+      idempotent = true;
+      return;
+    }
+    if (String(order.status) !== "PENDING") {
+      const err = new Error(`store_order_not_payable:${order.status}`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const supply = Math.max(0, Math.round(Number(order.supplyAmount || 0)));
+    const vat = Math.max(0, Math.round(Number(order.vatAmount || 0)));
+    const total = Math.max(0, Math.round(Number(order.amountTotal || 0)));
+    if (total <= 0) {
+      const err = new Error("invalid_store_amount");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const now = new Date();
+    const updated = await StoreOrder.updateOne(
+      { _id: order._id, status: "PENDING" },
+      {
+        $set: {
+          status: "PAID",
+          paidAt: now,
+          matchedAt: now,
+          matchedBy: "ADMIN",
+          adminApprovalStatus: "APPROVED",
+          adminApprovalAt: now,
+          fulfillmentStatus: "READY",
+          paymentMethod: "OB",
+        },
+      },
+      { session },
+    );
+    if (!updated?.modifiedCount) {
+      idempotent = true;
+      return;
+    }
+
+    await commitStoreInventory({ items: order.items, session });
+
+    const adminAnchorId = await resolveAdminAnchorId(session);
+    if (!adminAnchorId) {
+      const err = new Error("admin_anchor_missing");
+      err.statusCode = 500;
+      throw err;
+    }
+
+    await postGeneralLedgerJournal({
+      idempotencyKey: `gl:store:order:${String(order._id)}:ob-pay`,
+      eventType: LEDGER_EVENT_STORE_SALE,
+      businessAnchorId: order.businessAnchorId,
+      refType: "STORE_ORDER",
+      refId: order._id,
+      createdBy: userId || order.userId || null,
+      meta: {
+        storeOrderId: String(order._id),
+        paymentMethod: "OB",
+        source: "store_ob_postpaid",
+        revenueOwner: STORE_REVENUE_OWNER_ROLE,
+        splitToDealer: false,
+        splitToManufacturer: false,
+      },
+      lines: [
+        {
+          accountCode: LEDGER_ACCOUNT_REV_STORE_TAXABLE,
+          ownerRole: STORE_REVENUE_OWNER_ROLE,
+          ownerId: adminAnchorId,
+          amount: total,
+          amountExcludingVat: supply,
+          vatAmount: vat,
+          amountIncludingVat: total,
+          creditKind: "PAID",
+          refType: "STORE_ORDER",
+          refId: order._id,
+        },
+      ],
+      session,
+    });
+
+    finalized = true;
+  };
+
+  try {
+    if (ownSession) {
+      await session.withTransaction(run);
+    } else {
+      await run();
+    }
+  } finally {
+    if (ownSession) session.endSession();
+  }
+
+  if (ownSession && (finalized || idempotent)) {
+    scheduleStoreAdminActionBadgeEmit();
   }
 
   return { finalized, idempotent };

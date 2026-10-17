@@ -7,7 +7,7 @@
 // - 2026-09-13: 배송 옵션(기공물 동봉 / 빠른 직송) + 동봉 안내 카피.
 // - 2026-08-23: 배송지 = 설정·사업자 주소(읽기 전용). 변경은 설정 CTA.
 // - 2026-08-23: 기본 배송지 = practiceProfile(즉시). catalog API 호출 제거.
-// - 2026-08-23: 스토어 결제 = 선수금만. 잔액 부족 시 충전 탭으로 이동.
+// - 2026-10-17: 치과 결제 = OB 후불. 기공소는 선수금.
 // - 2026-08-23: 2열 반응형·배송료(10만원 이하 3,300원 부가세 포함).
 // - 2026-08-23: 2열 반응형(상품·배송지 / 결제 요약 사이드바).
 // - 2026-08-23: 배송지 입력. 커스텀어벗·크레딧 합치기 금지 유지.
@@ -136,6 +136,8 @@ export default function RequestorStoreCartPage() {
     return <Navigate to="/dashboard/credits" replace />;
   }
 
+  const practiceObCheckout = kind === "practice";
+
   async function checkout() {
     if (rows.length === 0) return;
     if (STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT) {
@@ -164,15 +166,26 @@ export default function RequestorStoreCartPage() {
           })),
           shipping: { ...shipping, memo: memo.trim() },
           shippingMode: orderTotals.shippingMode,
-          paymentMethod: "CREDIT",
+          paymentMethod: practiceObCheckout ? "OB" : "CREDIT",
         },
       });
       const body = res.data;
+      if (!res.ok && body?.code === "PRACTICE_OB_REQUIRED") {
+        toast.error(
+          body?.message ||
+            "오픈뱅킹 자동정산을 먼저 등록해 주세요.",
+        );
+        navigate("/dashboard/credits?tab=autopay");
+        return;
+      }
       if (
         !res.ok &&
         (body?.code === "INSUFFICIENT_PAID_CREDIT" || res.status === 402)
       ) {
-        toast.error(body?.message || "선수금 잔액이 부족합니다. 충전 후 다시 주문해 주세요.");
+        toast.error(
+          body?.message ||
+            "선수금 잔액이 부족합니다. 충전 후 다시 주문해 주세요.",
+        );
         navigate("/dashboard/credits?tab=charge");
         return;
       }
@@ -180,7 +193,11 @@ export default function RequestorStoreCartPage() {
         throw new Error(body?.message || "주문 생성에 실패했습니다.");
       }
       clear();
-      toast.success("선수금으로 결제되었습니다.");
+      toast.success(
+        practiceObCheckout
+          ? "주문이 접수되었습니다. 금액은 월 자동정산에 포함됩니다."
+          : "선수금으로 결제되었습니다.",
+      );
       navigate(`/dashboard/store/orders/${body.data.order._id}`);
     } catch (err: unknown) {
       const message =
@@ -382,8 +399,21 @@ export default function RequestorStoreCartPage() {
                 </span>
               </div>
               <p className="pt-1 text-xs text-muted-foreground">
-                스토어는 선수금으로만 결제합니다. 기공·커스텀어벗과 장바구니를
-                합치지 않으며, (세금)계산서는 사용분 기준 월말 과세 발행됩니다.
+                {practiceObCheckout ? (
+                  <>
+                    치과 스토어는 오픈뱅킹 자동정산(후불)로 결제합니다.
+                    <br />
+                    기공·커스텀어벗과 장바구니를 합치지 않으며, (세금)계산서는
+                    사용분 기준 월말 과세 발행됩니다.
+                  </>
+                ) : (
+                  <>
+                    스토어는 선수금으로만 결제합니다.
+                    <br />
+                    기공·커스텀어벗과 장바구니를 합치지 않으며, (세금)계산서는
+                    사용분 기준 월말 과세 발행됩니다.
+                  </>
+                )}
               </p>
               <Button
                 type="button"
@@ -391,7 +421,11 @@ export default function RequestorStoreCartPage() {
                 disabled={submitting || shippingLoading || !shippingReady}
                 onClick={() => void checkout()}
               >
-                {submitting ? "결제 중…" : "선수금으로 결제"}
+                {submitting
+                  ? "결제 중…"
+                  : practiceObCheckout
+                    ? "자동정산으로 주문"
+                    : "선수금으로 결제"}
               </Button>
             </div>
           </div>

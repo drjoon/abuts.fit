@@ -43,9 +43,11 @@ import {
   finalizeStoreSale,
   getInventoryMap,
   payStoreOrderWithCredit,
+  payStoreOrderWithObPostpaid,
   reserveStoreInventory,
 } from "../../services/storeSale.service.js";
 import { scheduleStoreAdminActionBadgeEmit } from "../../utils/storeAdminBadge.util.js";
+import { isPracticeOnlyObPostpaidActive } from "../../utils/practiceObPostpaid.util.js";
 
 const B_PLAN_DEPOSIT_ACCOUNT_DEFAULTS = {
   bankName: "하나은행",
@@ -265,6 +267,8 @@ export async function getStoreCatalog(req, res) {
         // 장바구니 합치기 금지 SSOT (프론트 카피·가드용)
         cartMergeWithCreditOrCustomAbutment:
           STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT,
+        checkoutPaymentMethod:
+          audience === "practice" ? "OB" : "CREDIT",
         defaultShipping,
       },
     });
@@ -329,18 +333,42 @@ export async function createStoreOrder(req, res) {
     const shipping = assertShippingComplete(
       normalizeShippingInput(req.body?.shipping),
     );
-    // 스토어는 선수금(CREDIT)만 허용.
-    const requestedMethod = String(req.body?.paymentMethod || "CREDIT")
+
+    const practiceUsesOb = audience === "practice";
+    const requestedMethod = String(
+      req.body?.paymentMethod || (practiceUsesOb ? "OB" : "CREDIT"),
+    )
       .trim()
       .toUpperCase();
-    if (requestedMethod && requestedMethod !== "CREDIT") {
+
+    if (practiceUsesOb) {
+      if (requestedMethod !== "OB") {
+        return res.status(400).json({
+          success: false,
+          message:
+            "치과 스토어는 오픈뱅킹 자동정산(후불)으로만 결제할 수 있습니다.",
+          code: "STORE_OB_ONLY",
+        });
+      }
+      const obActive = await isPracticeOnlyObPostpaidActive(businessAnchorId);
+      if (!obActive) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "오픈뱅킹 자동정산을 먼저 등록해 주세요. 정산 · 자동정산 탭에서 설정할 수 있습니다.",
+          code: "PRACTICE_OB_REQUIRED",
+        });
+      }
+    } else if (requestedMethod && requestedMethod !== "CREDIT") {
       return res.status(400).json({
         success: false,
-        message: "스토어는 선수금으로만 결제할 수 있습니다. 잔액이 부족하면 충전 후 다시 주문해 주세요.",
+        message:
+          "스토어는 선수금으로만 결제할 수 있습니다. 잔액이 부족하면 충전 후 다시 주문해 주세요.",
         code: "STORE_CREDIT_ONLY",
       });
     }
-    const paymentMethod = "CREDIT";
+
+    const paymentMethod = practiceUsesOb ? "OB" : "CREDIT";
 
     const { depositCode } = await generateStoreOrderDepositCode();
     const expiresAt = new Date(Date.now() + ORDER_TTL_MS);
@@ -378,17 +406,25 @@ export async function createStoreOrder(req, res) {
         );
         created = doc.toObject();
 
-        await payStoreOrderWithCredit({
-          orderId: created._id,
-          userId,
-          session,
-        });
+        if (practiceUsesOb) {
+          await payStoreOrderWithObPostpaid({
+            orderId: created._id,
+            userId,
+            session,
+          });
+        } else {
+          await payStoreOrderWithCredit({
+            orderId: created._id,
+            userId,
+            session,
+          });
+        }
       });
     } catch (payErr) {
       const status = payErr.statusCode || 500;
       return res.status(status).json({
         success: false,
-        message: payErr.message || "credit_pay_failed",
+        message: payErr.message || "pay_failed",
         code: payErr.code || undefined,
         payload: payErr.payload || undefined,
       });
@@ -397,7 +433,7 @@ export async function createStoreOrder(req, res) {
     scheduleStoreAdminActionBadgeEmit();
     return res.status(201).json({
       success: true,
-      data: { order: paid, paymentMethod: "CREDIT" },
+      data: { order: paid, paymentMethod },
     });
   } catch (error) {
     const status = error.statusCode || 500;

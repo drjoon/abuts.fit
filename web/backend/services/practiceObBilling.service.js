@@ -11,6 +11,7 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import PracticeMonthlySettlement from "../models/practiceMonthlySettlement.model.js";
 import PracticeTransfer from "../models/practiceTransfer.model.js";
 import Request from "../models/request.model.js";
+import StoreOrder from "../models/storeOrder.model.js";
 import { postGeneralLedgerJournal } from "./generalLedger.service.js";
 import PracticeLabDeposit from "../models/practiceLabDeposit.model.js";
 import {
@@ -78,6 +79,7 @@ export function resolveScheduledTransferDateForYearMonth(yearMonth) {
  * 특정 기간(월) 치과 OB 정산 예정액 집계.
  * - 기공물(PTX labFee): 수행 기공소(협력·하청·어벗츠 기공소 포함) 계좌로 직접 이체.
  * - 커스텀어벗(Request·PTX abutment): 어벗츠 법인(admin) 계좌로 이체.
+ * - 스토어 기성품(OB 결제): 어벗츠 법인(admin) 계좌로 이체.
  */
 export async function aggregatePracticeMonthUsage({
   practiceAnchorId,
@@ -86,7 +88,7 @@ export async function aggregatePracticeMonthUsage({
   const anchorObjId = new Types.ObjectId(String(practiceAnchorId));
   const { start, end } = resolveMonthBoundsFromYearMonth(yearMonth);
 
-  const [transfers, requests, internalLabAnchor, adminAnchor] =
+  const [transfers, requests, storeOrders, internalLabAnchor, adminAnchor] =
     await Promise.all([
       PracticeTransfer.find({
         practiceBusinessAnchorId: anchorObjId,
@@ -109,6 +111,14 @@ export async function aggregatePracticeMonthUsage({
         createdAt: { $gte: start, $lt: end },
       })
         .select({ _id: 1, price: 1 })
+        .lean(),
+      StoreOrder.find({
+        businessAnchorId: anchorObjId,
+        status: "PAID",
+        paymentMethod: "OB",
+        paidAt: { $gte: start, $lt: end },
+      })
+        .select({ _id: 1, amountTotal: 1 })
         .lean(),
       BusinessAnchor.findOne({ businessType: "internalLab" })
         .select({ _id: 1, name: 1, payoutAccount: 1 })
@@ -163,6 +173,13 @@ export async function aggregatePracticeMonthUsage({
       ),
     );
     abutsCorpAmount += reqAmt;
+  }
+
+  for (const storeOrder of storeOrders) {
+    abutsCorpAmount += Math.max(
+      0,
+      Math.round(Number(storeOrder?.amountTotal || 0)),
+    );
   }
 
   const directLabIds = Array.from(directLabMap.keys()).map(

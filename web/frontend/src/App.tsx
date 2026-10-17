@@ -43,7 +43,7 @@ import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPa
 // - web/frontend/src/pages/admin/AdminFinancePage.tsx
 // - web/frontend/src/pages/admin/AdminSettingsHubPage.tsx
 // change-log:
-// - 2026-10-17: 의뢰자 스토어 라우트 폐쇄 — `/dashboard/store/*` → 기공의뢰 발신.
+// - 2026-10-17: 치과 스토어 복원 — 결제는 OB 후불(기공소는 선수금 유지).
 // - 2026-10-08: 할인그룹 폐지 — `/dashboard/discount-group`은 대시보드로 이동.
 // - 2026-10-03: 치과 role=practice도 기공의뢰서 URL(`/dashboard/practice-transfers`)로 알림 보기가 열리게.
 // - 2026-09-30: 로그인 후 모바일 1회 — PC 최적화 안내 확인 모달.
@@ -145,6 +145,25 @@ import AdminSettlementBatches from "@/pages/admin/system/AdminSettlementBatches"
 import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
 import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
 import RequestorCreditsPage from "@/pages/requestor/credits/RequestorCreditsPage";
+const RequestorStorePage = lazy(
+  () => import("@/pages/requestor/store/RequestorStorePage"),
+);
+const RequestorStoreProductPage = lazy(
+  () => import("@/pages/requestor/store/RequestorStoreProductPage"),
+);
+const RequestorStoreCartPage = lazy(
+  () => import("@/pages/requestor/store/RequestorStoreCartPage"),
+);
+const RequestorStoreOrdersPage = lazy(() =>
+  import("@/pages/requestor/store/RequestorStoreOrdersPage").then((m) => ({
+    default: m.default,
+  })),
+);
+const RequestorStoreOrderDetailPage = lazy(() =>
+  import("@/pages/requestor/store/RequestorStoreOrdersPage").then((m) => ({
+    default: m.RequestorStoreOrderDetailPage,
+  })),
+);
 import AdminStorePage from "@/pages/admin/system/AdminStorePage";
 import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
 import SalesTeamPaymentsPage from "@/pages/salesTeam/SalesTeamPaymentsPage";
@@ -1080,12 +1099,43 @@ const App = () => {
                     }
                   />
                   <Route
-                    path="store/*"
+                    path="store"
                     element={
-                      <Navigate
-                        to="/dashboard/practice-transfers?mode=send"
-                        replace
-                      />
+                      <RoleProtectedRoute roles={["requestor"]}>
+                        <RequestorStorePage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="store/cart"
+                    element={
+                      <RoleProtectedRoute roles={["requestor"]}>
+                        <RequestorStoreCartPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="store/orders"
+                    element={
+                      <RoleProtectedRoute roles={["requestor"]}>
+                        <RequestorStoreOrdersPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="store/orders/:orderId"
+                    element={
+                      <RoleProtectedRoute roles={["requestor"]}>
+                        <RequestorStoreOrderDetailPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="store/:productId"
+                    element={
+                      <RoleProtectedRoute roles={["requestor"]}>
+                        <RequestorStoreProductPage />
+                      </RoleProtectedRoute>
                     }
                   />
                   <Route

@@ -17,6 +17,7 @@ import {
 } from "../../services/practiceObBilling.service.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import Request from "../../models/request.model.js";
+import StoreOrder from "../../models/storeOrder.model.js";
 import { Types } from "mongoose";
 import {
   checkCreditLock,
@@ -92,17 +93,43 @@ describe("practiceObBilling & checkCreditLock", () => {
       createdAt,
       price: { amount: 45_000, paidAmount: 45_000 },
     });
+    await StoreOrder.create({
+      businessAnchorId: practice._id,
+      userId,
+      depositCode: "ST01",
+      depositorName: "ST01",
+      status: "PAID",
+      paymentMethod: "OB",
+      paidAt: createdAt,
+      fulfillmentStatus: "READY",
+      items: [
+        {
+          productId: "grip-driver",
+          name: "Grip Driver",
+          qty: 1,
+          unitPriceInclusive: 20_000,
+          supplyAmount: 18_182,
+          vatAmount: 1_818,
+          lineTotalInclusive: 20_000,
+        },
+      ],
+      supplyAmount: 18_182,
+      vatAmount: 1_818,
+      amountTotal: 20_000,
+      itemsAmountTotal: 20_000,
+      expiresAt: new Date("2026-09-20T00:00:00+09:00"),
+    });
     const usage = await aggregatePracticeMonthUsage({
       practiceAnchorId: practice._id,
       yearMonth: "2026-09",
     });
     expect(usage.directLabTotal).toBe(300_000);
-    expect(usage.abutsCorpTotal).toBe(125_000);
+    expect(usage.abutsCorpTotal).toBe(145_000);
     const directLines = usage.lines.filter((l) => l.payeeKind === "direct_lab");
     expect(directLines).toHaveLength(2);
     const corpLine = usage.lines.find((l) => l.payeeKind === "abuts_corp");
     expect(corpLine?.payeeName).toBe("어벗츠 주식회사");
-    expect(corpLine?.amount).toBe(125_000);
+    expect(corpLine?.amount).toBe(145_000);
   });
 
   test("현금 보증금 없이 한도 없이 OB 장기동의 등록 → 정산일 자동이체 실패 시 즉시 Hold → Face ID 1탭 재이체 및 90일 재인증 시 해제", async () => {

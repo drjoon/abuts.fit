@@ -117,10 +117,10 @@ const storeOrderSchema = new mongoose.Schema(
       default: null,
     },
     paidAt: { type: Date, default: null },
-    /** BANK=계좌이체 입금, CREDIT=유료 선수금 차감 */
+    /** BANK=계좌이체 입금, CREDIT=유료 선수금 차감, OB=치과 오픈뱅킹 후불(월 자동정산) */
     paymentMethod: {
       type: String,
-      enum: ["BANK", "CREDIT"],
+      enum: ["BANK", "CREDIT", "OB"],
       default: "BANK",
       index: true,
     },
