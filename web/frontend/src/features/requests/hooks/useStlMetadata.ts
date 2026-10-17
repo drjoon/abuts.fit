@@ -98,7 +98,7 @@ function toRevisionValue(metadata: StlMetadata | null | undefined): string {
   });
 }
 
-async function fetchStlMetadata(requestId: string): Promise<{
+export async function fetchStlMetadata(requestId: string): Promise<{
   metadata: StlMetadata | null;
   cached: boolean;
 }> {

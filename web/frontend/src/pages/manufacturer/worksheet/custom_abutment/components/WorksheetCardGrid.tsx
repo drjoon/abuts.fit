@@ -378,9 +378,12 @@ export const WorksheetCardGrid = ({
         const isFinishLineCaptureBad = isFinishLineDefective(
           (caseInfos as any)?.finishLine?.points,
         );
-        const isTightCornerCorrectionNeeded = isTightCornerCorrectionRequired(
-          (caseInfos as any)?.tightCorner,
-        );
+        const autoGateTightCornerHold = (
+          (request as any)?.autoMachiningReview?.reasons || []
+        ).includes("tight_corner_correction");
+        const isTightCornerCorrectionNeeded =
+          isTightCornerCorrectionRequired((caseInfos as any)?.tightCorner) ||
+          autoGateTightCornerHold;
         const cuffBlend = resolveCuffBlend(caseInfos);
         const isPreMachiningTab = tabStage === "request" || tabStage === "cam";
         const isCuffManualReview =
@@ -719,6 +722,16 @@ export const WorksheetCardGrid = ({
           showLotShortBadge ||
           showScrewTypeBadge ||
           (tabStage === "packing" && isPrinted);
+        const showUnmachinableSideBadge =
+          shouldShowTopUnmachinableBadge &&
+          !rhinoWorkPending &&
+          showSideSpecBadges &&
+          (tabStage === "request" || tabStage === "cam");
+        const showUnmachinableThumbBadge =
+          shouldShowTopUnmachinableBadge &&
+          !rhinoWorkPending &&
+          showFilledFlThumb &&
+          !showUnmachinableSideBadge;
         const jsFailed =
           tabStage === "request" &&
           Boolean(request.productionSchedule?.stlJsFallback?.at);
@@ -1484,7 +1497,7 @@ export const WorksheetCardGrid = ({
                         >
                           <FilledStlCardThumbnail request={request} />
                         </button>
-                        {shouldShowTopUnmachinableBadge && !rhinoWorkPending ? (
+                        {showUnmachinableThumbBadge ? (
                           <Badge
                             variant="outline"
                             className="h-auto min-h-6 max-w-[4.75rem] text-[10px] px-1.5 py-0.5 font-semibold leading-[1.15] border border-accent-muted bg-accent-soft text-accent-strong flex flex-col items-center justify-center text-center"
@@ -1533,6 +1546,24 @@ export const WorksheetCardGrid = ({
                     ) : null}
                     {showSideSpecBadges ? (
                       <div className="flex flex-col items-center gap-1">
+                        {showUnmachinableSideBadge ? (
+                          <Badge
+                            variant="outline"
+                            className="min-w-[3.25rem] whitespace-nowrap text-[11px] px-2 py-1 font-bold leading-[1.15] border border-accent-muted bg-accent-soft text-accent-strong flex flex-col items-center text-center"
+                            title={
+                              isTightCornerCorrectionNeeded
+                                ? "마진 fillet R이 φ1.2 볼(R0.6)보다 작습니다. 프리뷰에서 확인하세요."
+                                : isFinishLineMinZRisky
+                                  ? "피니시라인 높이가 낮습니다. 프리뷰에서 확인하세요."
+                                  : "불완전가공 판정 건입니다."
+                            }
+                          >
+                            <span>불완전가공</span>
+                            {!isUnmachinableSample ? (
+                              <span className="text-[9px] font-medium">확인요망</span>
+                            ) : null}
+                          </Badge>
+                        ) : null}
                         {shouldShowAnodizingOffBadge && (
                           <Badge
                             variant="outline"

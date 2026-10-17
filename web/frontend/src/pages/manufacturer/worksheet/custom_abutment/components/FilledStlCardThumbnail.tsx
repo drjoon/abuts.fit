@@ -8,7 +8,9 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 // - web/frontend/src/shared/files/stlIndexedDb.ts
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { fetchStlMetadata } from "@/features/requests/hooks/useStlMetadata";
+import { isTightCornerCorrectionRequired } from "../utils/tightCornerReview";
 import { Box } from "lucide-react";
 import { StlPreviewThumbnail } from "@/features/requests/components/StlPreviewThumbnail";
 import {
@@ -129,14 +131,81 @@ export function FilledStlCardThumbnail({ request, className }: Props) {
     ),
   );
   const finishLinePoints = resolveFinishLinePoints(request);
+  const requestPublicId = String(request?.requestId || "").trim();
+  const needsCorrectionThumb = useMemo(() => {
+    const hold = (
+      (request as { autoMachiningReview?: { reasons?: string[] } })
+        ?.autoMachiningReview?.reasons || []
+    ).includes("tight_corner_correction");
+    return (
+      isTightCornerCorrectionRequired(
+        (request?.caseInfos as { tightCorner?: unknown })?.tightCorner as
+          | Parameters<typeof isTightCornerCorrectionRequired>[0]
+          | undefined,
+      ) || hold
+    );
+  }, [request]);
   const cacheKey = buildCamCacheKey(
     s3Key,
     filledMeta,
-    requestMongoId || String(request?.requestId || "").trim(),
+    requestMongoId || requestPublicId,
   );
+  const [correctionSolid, setCorrectionSolid] = useState<{
+    positions?: number[];
+    indices?: number[];
+  } | null>(null);
+  const [correctionMetaReady, setCorrectionMetaReady] = useState(
+    () => !needsCorrectionThumb,
+  );
+  const thumbCacheKey = useMemo(() => {
+    if (!cacheKey) return null;
+    if (!needsCorrectionThumb) return cacheKey;
+    if (!correctionMetaReady) return `${cacheKey}:tc-pending`;
+    const posLen = correctionSolid?.positions?.length ?? 0;
+    const idxLen = correctionSolid?.indices?.length ?? 0;
+    return `${cacheKey}:tc-${posLen}-${idxLen}`;
+  }, [
+    cacheKey,
+    correctionMetaReady,
+    correctionSolid?.indices?.length,
+    correctionSolid?.positions?.length,
+    needsCorrectionThumb,
+  ]);
   const [pngUrl, setPngUrl] = useState<string | null>(() =>
-    cacheKey ? pngCache.get(cacheKey) || null : null,
+    thumbCacheKey && !thumbCacheKey.endsWith(":tc-pending")
+      ? pngCache.get(thumbCacheKey) || null
+      : null,
   );
+
+  useEffect(() => {
+    if (!needsCorrectionThumb) {
+      setCorrectionSolid(null);
+      setCorrectionMetaReady(true);
+      return;
+    }
+    if (!visible || !token || !requestPublicId) return;
+    let cancelled = false;
+    setCorrectionMetaReady(false);
+    void fetchStlMetadata(requestPublicId)
+      .then(({ metadata }) => {
+        if (cancelled) return;
+        const tc = metadata?.tightCorner;
+        const solid =
+          tc?.correctionSolid?.positions?.length
+            ? tc.correctionSolid
+            : tc?.reliefOverlay?.positions?.length
+              ? tc.reliefOverlay
+              : null;
+        setCorrectionSolid(solid ?? null);
+        setCorrectionMetaReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setCorrectionMetaReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [needsCorrectionThumb, requestPublicId, token, visible]);
 
   useEffect(() => {
     const el = rootRef.current;
@@ -155,12 +224,23 @@ export function FilledStlCardThumbnail({ request, className }: Props) {
   }, []);
 
   useEffect(() => {
-    setPngUrl(cacheKey ? pngCache.get(cacheKey) || null : null);
+    setPngUrl(
+      thumbCacheKey && !thumbCacheKey.endsWith(":tc-pending")
+        ? pngCache.get(thumbCacheKey) || null
+        : null,
+    );
     setFile(null);
-  }, [cacheKey]);
+  }, [thumbCacheKey]);
 
   useEffect(() => {
-    if (pngUrl || !visible || !token || !requestMongoId || !s3Key) {
+    if (
+      pngUrl ||
+      !visible ||
+      !token ||
+      !requestMongoId ||
+      !s3Key ||
+      (needsCorrectionThumb && !correctionMetaReady)
+    ) {
       if (!pngUrl) setFile(null);
       setFailed(!pngUrl && (!s3Key || !requestMongoId));
       return;
@@ -252,7 +332,17 @@ export function FilledStlCardThumbnail({ request, className }: Props) {
       releaseOnce();
       if (releaseSlotRef.current === releaseOnce) releaseSlotRef.current = null;
     };
-  }, [visible, pngUrl, token, requestMongoId, s3Key, fileName, cacheKey]);
+  }, [
+    visible,
+    pngUrl,
+    token,
+    requestMongoId,
+    s3Key,
+    fileName,
+    cacheKey,
+    needsCorrectionThumb,
+    correctionMetaReady,
+  ]);
 
   return (
     <div ref={rootRef} className={cn("h-full w-full", className)} aria-hidden>
@@ -267,9 +357,10 @@ export function FilledStlCardThumbnail({ request, className }: Props) {
         <StlPreviewThumbnail
           file={file}
           finishLinePoints={finishLinePoints}
+          correctionSolid={needsCorrectionThumb ? correctionSolid : null}
           className="pointer-events-none"
           onSnapshot={(dataUrl) => {
-            if (cacheKey) rememberPng(cacheKey, dataUrl);
+            if (thumbCacheKey) rememberPng(thumbCacheKey, dataUrl);
             setPngUrl(dataUrl);
             setFile(null);
             releaseSlotRef.current?.();

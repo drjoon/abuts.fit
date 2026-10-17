@@ -33,6 +33,11 @@ type Props = {
   companionFiles?: File[] | null;
   /** filled STL 피니시라인(xyz). 있으면 빨간 튜브로 오버레이. */
   finishLinePoints?: number[][] | null;
+  /** 타이트 코너 보정 솔리드(또는 reliefOverlay). filled STL 좌표계. */
+  correctionSolid?: {
+    positions?: number[];
+    indices?: number[];
+  } | null;
   /** 같은 좌표계의 메시를 함께 그린다(작업 스캔 상악·하악·바이트). */
   extraFiles?: File[] | null;
   /** PNG 캡처가 끝나면 호출. 카드 썸네일이 STL File을 놓기 위해 쓴다. */
@@ -136,6 +141,63 @@ function companionFilesIdentityKey(files: File[] | null | undefined): string {
     .join("|");
 }
 
+function correctionSolidIdentityKey(
+  solid: { positions?: number[]; indices?: number[] } | null | undefined,
+): string {
+  if (!solid?.positions?.length) return "";
+  const posLen = solid.positions.length;
+  const idxLen = solid.indices?.length ?? 0;
+  const p0 = Number(solid.positions[0]);
+  const pMid = Number(solid.positions[Math.floor(posLen / 2)]);
+  return `${posLen}:${idxLen}:${p0}:${pMid}`;
+}
+
+function addCorrectionSolidOverlay(
+  scene: THREE.Scene,
+  solid: { positions?: number[]; indices?: number[] } | null | undefined,
+): THREE.Mesh | null {
+  const reliefPos = solid?.positions;
+  const reliefIdx = solid?.indices;
+  if (
+    !Array.isArray(reliefPos) ||
+    reliefPos.length < 9 ||
+    !Array.isArray(reliefIdx) ||
+    reliefIdx.length < 3
+  ) {
+    return null;
+  }
+  const posNumbers = reliefPos.map((v) => Number(v)).filter((v) => Number.isFinite(v));
+  if (posNumbers.length < 9) return null;
+  const posAttr = new Float32Array(posNumbers.length);
+  for (let i = 0; i < posNumbers.length; i += 1) {
+    posAttr[i] = posNumbers[i];
+  }
+  const idxArr = reliefIdx.map((v) => Number(v)).filter((v) => Number.isFinite(v));
+  if (idxArr.length < 3) return null;
+  const reliefGeometry = new THREE.BufferGeometry();
+  reliefGeometry.setAttribute("position", new THREE.BufferAttribute(posAttr, 3));
+  reliefGeometry.setIndex(idxArr);
+  reliefGeometry.computeVertexNormals();
+  reliefGeometry.computeBoundingBox();
+  const reliefMaterial = new THREE.MeshPhongMaterial({
+    color: 0xe53935,
+    emissive: 0x7f0000,
+    shininess: 60,
+    transparent: true,
+    opacity: 0.92,
+    side: THREE.DoubleSide,
+    depthTest: true,
+    depthWrite: true,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  });
+  const reliefMesh = new THREE.Mesh(reliefGeometry, reliefMaterial);
+  reliefMesh.renderOrder = 10;
+  scene.add(reliefMesh);
+  return reliefMesh;
+}
+
 function finishLineIdentityKey(points: number[][] | null | undefined): string {
   if (!Array.isArray(points) || points.length < 2) return "";
   const first = points[0];
@@ -201,6 +263,7 @@ export function StlPreviewThumbnail({
   textureFile = null,
   companionFiles = null,
   finishLinePoints = null,
+  correctionSolid = null,
   extraFiles = null,
   onSnapshot,
   className,
@@ -211,6 +274,7 @@ export function StlPreviewThumbnail({
   const textureKey = fileIdentityKey(textureFile);
   const companionKey = companionFilesIdentityKey(companionFiles);
   const finishLineKey = finishLineIdentityKey(finishLinePoints);
+  const correctionSolidKey = correctionSolidIdentityKey(correctionSolid);
   const extraKey = companionFilesIdentityKey(extraFiles);
   const shownCaptureKeyRef = useRef("");
   const onSnapshotRef = useRef(onSnapshot);
@@ -221,6 +285,7 @@ export function StlPreviewThumbnail({
     let released = false;
     let mesh: THREE.Mesh | null = null;
     let finishLineMesh: THREE.Mesh | null = null;
+    let correctionSolidMesh: THREE.Mesh | null = null;
     let geometry: THREE.BufferGeometry | null = null;
     let previewTexture: THREE.Texture | null = null;
     let scene: THREE.Scene | null = null;
@@ -247,6 +312,17 @@ export function StlPreviewThumbnail({
         }
         finishLineMesh = null;
       }
+      if (correctionSolidMesh && scene) {
+        scene.remove(correctionSolidMesh);
+        correctionSolidMesh.geometry?.dispose();
+        const csMat = correctionSolidMesh.material;
+        if (Array.isArray(csMat)) {
+          csMat.forEach((item) => item.dispose());
+        } else {
+          csMat?.dispose();
+        }
+        correctionSolidMesh = null;
+      }
       releaseWebGl(renderer, mesh, geometry, scene, previewTexture);
       renderer = null;
       mesh = null;
@@ -256,7 +332,7 @@ export function StlPreviewThumbnail({
     };
 
     setFailed(false);
-    const captureKey = `${fileKey}|${finishLineKey}|${extraKey}`;
+    const captureKey = `${fileKey}|${finishLineKey}|${correctionSolidKey}|${extraKey}`;
     // 모델/FL이 바뀐 경우에만 placeholder. companion/texture 갱신은 이전 PNG 유지.
     if (
       shownCaptureKeyRef.current &&
@@ -355,6 +431,15 @@ export function StlPreviewThumbnail({
           finishLineMesh = null;
         }
 
+        try {
+          correctionSolidMesh = addCorrectionSolidOverlay(scene!, correctionSolid);
+          if (correctionSolidMesh?.geometry.boundingBox) {
+            bounds.union(correctionSolidMesh.geometry.boundingBox);
+          }
+        } catch {
+          correctionSolidMesh = null;
+        }
+
         if (!bounds.isEmpty()) {
           fitOrthographicCameraToGeometry(camera, bounds);
         }
@@ -378,7 +463,7 @@ export function StlPreviewThumbnail({
     };
     // file/texture/companion/FL 객체 참조가 매 렌더 바뀌어도 identity key가 같으면 재캡처하지 않는다.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- identity keys are SSOT
-  }, [companionKey, extraKey, fileKey, finishLineKey, textureKey]);
+  }, [companionKey, correctionSolidKey, extraKey, fileKey, finishLineKey, textureKey]);
 
   if (failed) {
     return (

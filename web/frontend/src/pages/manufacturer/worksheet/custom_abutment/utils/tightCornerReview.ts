@@ -15,8 +15,12 @@ export function isTightCornerCorrectionRequired(
   if (!Number.isFinite(count) || count <= 0) return false;
   const solidLen = Number(tightCorner.correctionSolid?.positions?.length);
   const overlayLen = Number(tightCorner.reliefOverlay?.positions?.length);
-  return (
+  if (
     (Number.isFinite(solidLen) && solidLen > 0) ||
     (Number.isFinite(overlayLen) && overlayLen > 0)
-  );
+  ) {
+    return true;
+  }
+  // worksheet 목록은 tightCount만 내려올 수 있다.
+  return true;
 }
