@@ -2598,6 +2598,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
     frontPoint,
     taperGuide,
     lotEngravingSite,
+    tightCorner,
     hexRotation,
     coordinateError,
   } = req.body;
@@ -2653,6 +2654,9 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
   if (taperGuide) {
     metadataSetPayload["caseInfos.taperGuide"] = taperGuide;
   }
+  if (tightCorner && typeof tightCorner === "object") {
+    metadataSetPayload["caseInfos.tightCorner"] = tightCorner;
+  }
   // 사이트 없으면 guides로 산출해 저장 (request-meta·Esprit r=2 폴백 방지)
   const resolvedLotSite =
     lotEngravingSite &&
@@ -2695,6 +2699,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
     frontPoint,
     taperGuide: updatedRequest?.caseInfos?.taperGuide,
     lotEngravingSite: updatedRequest?.caseInfos?.lotEngravingSite,
+    tightCorner: updatedRequest?.caseInfos?.tightCorner || null,
     hexRotation: updatedRequest?.caseInfos?.hexRotation,
     // finishline 높이 메타데이터는 max_z/min_z SSOT로만 전달
     finishLine: updatedRequest?.caseInfos?.finishLine || null,
@@ -2779,6 +2784,7 @@ export const getStlMetadata = asyncHandler(async (req, res) => {
     frontPoint: request.caseInfos?.frontPoint,
     frontFaceEndOffsetMm: request.caseInfos?.frontFaceEndOffsetMm,
     taperGuide: request.caseInfos?.taperGuide,
+    tightCorner: request.caseInfos?.tightCorner || null,
     hexRotation: request.caseInfos?.hexRotation,
     // PreviewModal(useStlMetadata)에서 finishline extrema를 바로 사용하도록 포함
     finishLine: request.caseInfos?.finishLine || null,

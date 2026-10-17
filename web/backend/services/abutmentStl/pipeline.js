@@ -11,6 +11,7 @@ import { detectFinishLine, finishlineZExtrema, sanitizeFinishlinePoints } from "
 import { buildScrewholePatch, SCREWHOLE_PARAMS } from "./fillScrewholes.js";
 import { buildVerticalBandSolid } from "./fillSteps.js";
 import { calculateStlMetadataFromBuffer } from "./stlMetadata.js";
+import { detectTightCorners } from "./tightCorner.js";
 
 export const ABUTMENT_STL_JS_VERSION = `abutment-stl-js-1+align-${ALIGN_MODULE_VERSION}+${JS_ALIGN_PORT_VERSION}`;
 
@@ -152,6 +153,7 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
 
   t0 = performance.now();
   let stlMetadata = null;
+  let tightCorner = null;
   if (finishLine?.points?.length) {
     try {
       stlMetadata = await calculateStlMetadataFromBuffer(outputBuffer, finishLine.points);
@@ -161,6 +163,17 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
       }
     } catch (error) {
       log(`[stl_metadata] failed: ${error?.message || error}`);
+    }
+    try {
+      tightCorner = detectTightCorners(combined, finishLine.points, {
+        tiltAxisVector: stlMetadata?.tiltAxisVector,
+        log,
+      });
+      if (tightCorner?.tightCount > 0) {
+        log(`[tight-corner] flagged ${tightCorner.tightCount} samples`);
+      }
+    } catch (error) {
+      log(`[tight-corner] failed: ${error?.message || error}`);
     }
   } else {
     log("[process_single_stl] finishLine missing; skipping STL metadata calculation");
@@ -193,6 +206,7 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
     screwhole: screw.result,
     fillSteps,
     stlMetadata,
+    tightCorner,
     perf,
     logs,
   };

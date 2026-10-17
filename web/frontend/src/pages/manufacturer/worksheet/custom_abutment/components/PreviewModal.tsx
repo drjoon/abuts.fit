@@ -1662,8 +1662,8 @@ export const PreviewModal = ({
             aria-label="안내 켜기/끄기"
             title={
               guidesOn
-                ? "안내 끄기 — 피니시라인, 삽입축, 각도"
-                : "안내 켜기 — 피니시라인, 삽입축, 각도"
+                ? "안내 끄기 — 피니시라인, 타이트 코너, 삽입축, 각도"
+                : "안내 켜기 — 피니시라인, 타이트 코너, 삽입축, 각도"
             }
             disabled={guidedFinishLineMode}
             onClick={() => setGuidesOn((on) => !on)}

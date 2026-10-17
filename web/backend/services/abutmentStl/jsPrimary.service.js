@@ -154,6 +154,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
     frontPoint: meta.frontPoint,
     taperGuide: meta.taperGuide,
     lotEngravingSite: meta.lotEngravingSite,
+    tightCorner: js.tightCorner || null,
     hexRotation: js.hexRotation || undefined,
     coordinateError: meta.coordinateValidation?.valid === false ? meta.coordinateValidation?.error || "coordinate error" : null,
   });

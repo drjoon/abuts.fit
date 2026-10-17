@@ -2499,6 +2499,98 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           }
         }
 
+        const tightCornerMeta = latestMetadata?.tightCorner;
+        if (
+          showOverlay &&
+          isFilled &&
+          hasFinishLine &&
+          finishLinePoints &&
+          tightCornerMeta &&
+          (tightCornerMeta.tightCount ?? 0) > 0
+        ) {
+          const size = new THREE.Vector3();
+          bbox.getSize(size);
+          const diag = size.length() || 40;
+          const tightTubeRadius = Math.max(diag * 0.0045, 0.07);
+          const ballTubeRadius = Math.max(diag * 0.0035, 0.05);
+
+          const toSceneVec = (raw: number[]) => {
+            const vec = new THREE.Vector3(raw[0], raw[1], raw[2]);
+            return isFilled ? vec : vec.sub(center);
+          };
+
+          const addPolylineTube = (
+            rawPts: number[][],
+            color: number,
+            emissive: number,
+            radius: number,
+            overlayKind: "flOverlay" | "guideOverlay",
+          ) => {
+            const pts = rawPts
+              .filter((p) => Array.isArray(p) && p.length >= 3)
+              .map((p) => toSceneVec(p.map(Number)));
+            if (pts.length < 2) return;
+            const curve = new THREE.CatmullRomCurve3(pts, false, "catmullrom", 0.2);
+            const tubeGeometry = new THREE.TubeGeometry(
+              curve,
+              Math.max(pts.length * 4, 24),
+              radius,
+              10,
+              false,
+            );
+            const tubeMaterial = new THREE.MeshPhongMaterial({
+              color,
+              emissive,
+              shininess: 70,
+              transparent: true,
+              opacity: overlayKind === "flOverlay" ? 1 : 0.92,
+              depthTest: false,
+              depthWrite: false,
+            });
+            const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
+            tube.renderOrder = overlayKind === "flOverlay" ? 12 : 11;
+            tube.userData[overlayKind === "flOverlay" ? "flOverlay" : "guideOverlay"] =
+              true;
+            tube.visible =
+              overlayKind === "flOverlay"
+                ? finishLineVisibleRef.current
+                : guidesVisibleRef.current;
+            modelPivot.add(tube);
+          };
+
+          const segments = Array.isArray(tightCornerMeta.tightFinishLineSegments)
+            ? tightCornerMeta.tightFinishLineSegments
+            : [];
+          const flPts = finishLinePoints.filter(
+            (p) => Array.isArray(p) && p.length >= 3,
+          ) as number[][];
+          for (const seg of segments) {
+            const start = Math.max(0, Number(seg.startIndex) || 0);
+            const end = Math.min(flPts.length - 1, Number(seg.endIndex) || 0);
+            if (end <= start) continue;
+            addPolylineTube(
+              flPts.slice(start, end + 1),
+              0xff1744,
+              0x8b0000,
+              tightTubeRadius,
+              "flOverlay",
+            );
+          }
+
+          const ballPolys = Array.isArray(tightCornerMeta.ballPassPolylines)
+            ? tightCornerMeta.ballPassPolylines
+            : [];
+          for (const pl of ballPolys) {
+            addPolylineTube(
+              pl,
+              0x00bcd4,
+              0x006064,
+              ballTubeRadius,
+              "guideOverlay",
+            );
+          }
+        }
+
         {
           const modelSize = new THREE.Vector3();
           bbox.getSize(modelSize);
@@ -2891,6 +2983,8 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     // 씬/카메라가 초기화된다.
     resolvedMetadata?.finishLine?.max_z,
     resolvedMetadata?.finishLine?.min_z,
+    resolvedMetadata?.tightCorner?.tightCount,
+    resolvedMetadata?.tightCorner?.version,
     isFilledFile,
   ]);
 

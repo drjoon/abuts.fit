@@ -12,6 +12,10 @@ import {
 import { alignMeshToOrigin } from "../../services/abutmentStl/align.js";
 import { connectionDiameterAtOrigin } from "../../services/abutmentStl/qualityMetrics.js";
 import { runAbutmentStlPipeline } from "../../services/abutmentStl/pipeline.js";
+import {
+  gougeDepthForCorner,
+  metalInteriorAngleRad,
+} from "../../services/abutmentStl/tightCorner.js";
 
 function soupOf(tris) {
   const out = new Float64Array(tris.length * 9);
@@ -43,6 +47,39 @@ function revolvedAbutmentSoup(seg = 96) {
     [1, 1.7],
     [3, 3.0],
     [8, 3.0],
+    [8, 0],
+  ];
+  const tris = [];
+  const at = (r, z, i) => {
+    const a = (i / seg) * Math.PI * 2;
+    return [r * Math.cos(a), r * Math.sin(a), z];
+  };
+  for (let s = 0; s < profile.length - 1; s += 1) {
+    const [z0, r0] = profile[s];
+    const [z1, r1] = profile[s + 1];
+    for (let i = 0; i < seg; i += 1) {
+      const a = at(r0, z0, i);
+      const b = at(r0, z0, i + 1);
+      const c = at(r1, z1, i + 1);
+      const d = at(r1, z1, i);
+      if (r0 > 0) tris.push([a, b, c]);
+      if (r1 > 0) tris.push([a, c, d]);
+    }
+  }
+  return soupOf(tris);
+}
+
+/** 어깨→벽 전환이 각진 프로파일(마진 타이트 코너 유도). */
+function sharpMarginAbutmentSoup(seg = 96) {
+  const profile = [
+    [-3, 0],
+    [-3, 1.4],
+    [-1, 1.4],
+    [-1, 1.6],
+    [1, 1.7],
+    [2.4, 2.75],
+    [6.8, 2.75],
+    [8, 3.2],
     [8, 0],
   ];
   const tris = [];
@@ -99,6 +136,30 @@ describe("abutmentStl align", () => {
   });
 });
 
+describe("abutmentStl tightCorner", () => {
+  it("estimates gouge depth for a sharp margin-like corner", () => {
+    const wallLine = { d: { u: 0, w: 1 } };
+    const du = 1.05;
+    const dw = 1.72;
+    const len = Math.hypot(du, dw);
+    const shoulderLine = { d: { u: du / len, w: dw / len } };
+    const metal = metalInteriorAngleRad(wallLine, shoulderLine);
+    const gouge = gougeDepthForCorner(metal, 0.6);
+    expect(gouge).toBeGreaterThan(0.018);
+  });
+
+  it("flags sharp margin corners but not smooth revolved shoulders", async () => {
+    const smoothBuffer = writeBinaryStl({ positions: revolvedAbutmentSoup(), attributes: null });
+    const smoothPipe = await runAbutmentStlPipeline(smoothBuffer, { targetDiameter: 3.33 });
+    expect(smoothPipe.tightCorner?.tightCount ?? 0).toBe(0);
+
+    const sharpBuffer = writeBinaryStl({ positions: sharpMarginAbutmentSoup(), attributes: null });
+    const sharpPipe = await runAbutmentStlPipeline(sharpBuffer, { targetDiameter: 3.33 });
+    expect(sharpPipe.tightCorner?.tightCount ?? 0).toBeGreaterThan(0);
+    expect(sharpPipe.tightCorner?.ballPassPolylines?.length).toBeGreaterThan(0);
+  });
+});
+
 describe("abutmentStl pipeline", () => {
   it("produces a filled STL with metadata-ready outputs", async () => {
     const buffer = writeBinaryStl({ positions: revolvedAbutmentSoup(), attributes: null });
@@ -110,6 +171,8 @@ describe("abutmentStl pipeline", () => {
     if (out.finishLine) {
       expect(out.finishLine.points.length).toBeGreaterThanOrEqual(8);
       expect(out.stlMetadata?.connectionDiameter).toBe(3.33);
+      expect(out.tightCorner).toBeTruthy();
+      expect(out.tightCorner.version).toBe(1);
     }
   });
 });

@@ -132,6 +132,8 @@ const requestSchema = new mongoose.Schema(
         message: String,
       },
       taperGuide: mongoose.Schema.Types.Mixed,
+      // φ1.2 볼 마진 타이트 코너 검사( finish line 추적 · ballPassPolylines ).
+      tightCorner: mongoose.Schema.Types.Mixed,
       // 포스트 측면 로트 각인 사이트 (FL+1.5mm · C축). stl-metadata 산출.
       lotEngravingSite: mongoose.Schema.Types.Mixed,
       // 로트 각인 위치: hex(헥스면, 기본) | post(포스트 측면). 준비 단계에서만 변경.

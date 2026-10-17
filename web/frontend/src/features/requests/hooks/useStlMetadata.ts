@@ -47,6 +47,21 @@ export interface StlMetadata {
     points?: number[][];
   } | null;
   taperGuide?: unknown;
+  /** φ1.2 볼 마진 타이트 코너 검사 (finish line 추적). */
+  tightCorner?: {
+    version?: number;
+    toolDiameterMm?: number;
+    tightCount?: number;
+    tightFinishLineSegments?: Array<{ startIndex: number; endIndex: number }>;
+    ballPassPolylines?: number[][][];
+    samples?: Array<{
+      tight?: boolean;
+      finishLinePoint?: number[];
+      cornerPoint?: number[];
+      metalInteriorAngleDeg?: number;
+      gougeDepthMm?: number;
+    }>;
+  } | null;
 }
 
 function toRevisionValue(metadata: StlMetadata | null | undefined): string {
