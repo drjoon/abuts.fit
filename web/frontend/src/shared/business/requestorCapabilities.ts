@@ -259,13 +259,40 @@ export const PRACTICE_IN_HOUSE_LAB_LABEL = {
   with: "기공실 있는 치과",
 } as const;
 
+/** API·auth 공통 — true/false만 확정, 그 외 null(미정). */
+export const normalizePracticeHasInHouseLabFlag = (
+  raw?: boolean | null,
+): boolean | null =>
+  raw === false ? false : raw === true ? true : null;
+
+/** access 훅·auth user 등에서 치과 기공실 유무 힌트를 하나로 합친다. */
+export const coalescePracticeHasInHouseLab = (
+  ...candidates: Array<boolean | null | undefined>
+): boolean | null => {
+  for (const candidate of candidates) {
+    const normalized = normalizePracticeHasInHouseLabFlag(candidate);
+    if (normalized !== null) return normalized;
+  }
+  return null;
+};
+
+export const coalesceRequestorKind = (
+  ...candidates: Array<RequestorKind | string | null | undefined>
+): RequestorKind | null => {
+  for (const candidate of candidates) {
+    const normalized = normalizeRequestorKind(candidate);
+    if (normalized) return normalized;
+  }
+  return null;
+};
+
 /** 기공실 있는 치과(true)만 어벗츠에를 본다. 치과가 true가 아니면 숨긴다. */
 export const practiceHidesAbutmentSidebar = (
   kind?: RequestorKind | string | null,
   practiceHasInHouseLab?: boolean | null,
 ) =>
   normalizeRequestorKind(kind) === "practice" &&
-  practiceHasInHouseLab !== true;
+  normalizePracticeHasInHouseLabFlag(practiceHasInHouseLab) !== true;
 
 /** 역할 뱃지 표기 SSOT: 의뢰자·치과 / 의뢰자·기공소 / 의뢰자 */
 export const REQUESTOR_ROLE_BADGE_LABEL = {

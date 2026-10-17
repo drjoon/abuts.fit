@@ -16,12 +16,50 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const repeat = (count: number) => Array.from({ length: count }, (_, i) => i);
 
+type CreditsSkeletonTab =
+  | "ledger"
+  | "stats"
+  | "charge"
+  | "payout"
+  | "autopay";
+
 type RequestorCreditsPageSkeletonProps = {
   /** 치과=3(내역·통계·자동정산), 기공소=4(내역·통계·충전·지급) */
   tabCount?: 3 | 4;
   /** 기공소 내역 수식: 현재=충전+정산−소비 */
   showSettlement?: boolean;
+  /** URL ?tab= 과 동일 — 본문 스켈레톤 형태 */
+  activeTab?: CreditsSkeletonTab;
 };
+
+export const PracticeObBillingTabSkeleton = () => (
+  <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-1.5 py-3">
+    <Skeleton className="h-36 w-full rounded-2xl" />
+    <Skeleton className="h-48 w-full rounded-2xl" />
+    <Skeleton className="h-32 w-full rounded-2xl" />
+  </div>
+);
+
+const CreditChargeTabSkeleton = () => (
+  <div className="flex h-full min-h-0 items-start justify-center overflow-auto px-0.5 pt-1 sm:items-center sm:pt-0">
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-1.5 py-4">
+      <Skeleton className="mx-auto h-8 w-40 rounded-lg" />
+      <Skeleton className="h-44 w-full rounded-2xl" />
+      <Skeleton className="h-52 w-full rounded-2xl" />
+    </div>
+  </div>
+);
+
+const CreditStatsTabSkeleton = () => (
+  <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto overflow-x-hidden px-0.5 pb-2 pt-2">
+    <Skeleton className="mx-auto h-9 w-full max-w-md rounded-xl" />
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <Skeleton className="h-28 w-full rounded-2xl" />
+      <Skeleton className="h-28 w-full rounded-2xl" />
+    </div>
+    <Skeleton className="h-64 w-full rounded-2xl" />
+  </div>
+);
 
 const EquationOperatorSkeleton = () => (
   <div
@@ -152,9 +190,29 @@ export const LabSettlementPayoutTableSkeleton = ({
   </div>
 );
 
+const renderCreditsBodySkeleton = (
+  activeTab: CreditsSkeletonTab,
+  showSettlement: boolean,
+) => {
+  switch (activeTab) {
+    case "autopay":
+      return <PracticeObBillingTabSkeleton />;
+    case "charge":
+      return <CreditChargeTabSkeleton />;
+    case "payout":
+      return <LabSettlementPayoutTableSkeleton />;
+    case "stats":
+      return <CreditStatsTabSkeleton />;
+    case "ledger":
+    default:
+      return <CreditLedgerTableSkeleton showSettlement={showSettlement} />;
+  }
+};
+
 export const RequestorCreditsPageSkeleton = ({
   tabCount = 3,
   showSettlement = false,
+  activeTab = "ledger",
 }: RequestorCreditsPageSkeletonProps) => {
   return (
     <div className="box-border flex h-full min-h-0 flex-col overflow-hidden">
@@ -170,7 +228,7 @@ export const RequestorCreditsPageSkeleton = ({
           </div>
         </div>
         <div className="mx-auto flex w-full min-h-0 flex-1 flex-col">
-          <CreditLedgerTableSkeleton showSettlement={showSettlement} />
+          {renderCreditsBodySkeleton(activeTab, showSettlement)}
         </div>
       </div>
     </div>

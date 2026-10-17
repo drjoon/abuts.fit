@@ -19,6 +19,7 @@ import {
   canUsePaidServices,
   hasRequestorProfile,
   requiresBusinessLicense,
+  normalizePracticeHasInHouseLabFlag,
   resolveRequestorProfile,
   type RequestorProfile,
 } from "@/shared/business/requestorCapabilities";
@@ -43,7 +44,7 @@ export const useRequestorBusinessAccess = () => {
   const [designAccessEnabled, setDesignAccessEnabled] = useState(false);
   const [practiceHasInHouseLab, setPracticeHasInHouseLab] = useState<
     boolean | null
-  >(null);
+  >(() => normalizePracticeHasInHouseLabFlag(user?.practiceHasInHouseLab));
   const hasLoadedOnceRef = useRef(false);
 
   const isInternalLab = user?.role === "internalLab";
@@ -96,11 +97,7 @@ export const useRequestorBusinessAccess = () => {
       setBusinessVerified(Boolean(user?.businessVerified));
       setDesignAccessEnabled(false);
       setPracticeHasInHouseLab(
-        user?.practiceHasInHouseLab === false
-          ? false
-          : user?.practiceHasInHouseLab === true
-            ? true
-            : null,
+        normalizePracticeHasInHouseLabFlag(user?.practiceHasInHouseLab),
       );
       setProfile(
         resolveRequestorProfile({
@@ -130,11 +127,7 @@ export const useRequestorBusinessAccess = () => {
       setMembership(String(data?.membership || "none"));
       setDesignAccessEnabled(Boolean(data?.designAccessEnabled));
       setPracticeHasInHouseLab(
-        data?.practiceHasInHouseLab === false
-          ? false
-          : data?.practiceHasInHouseLab === true
-            ? true
-            : null,
+        normalizePracticeHasInHouseLabFlag(data?.practiceHasInHouseLab),
       );
       setProfile(
         resolveRequestorProfile({
@@ -152,11 +145,7 @@ export const useRequestorBusinessAccess = () => {
       setBusinessVerified(false);
       setDesignAccessEnabled(false);
       setPracticeHasInHouseLab(
-        user?.practiceHasInHouseLab === false
-          ? false
-          : user?.practiceHasInHouseLab === true
-            ? true
-            : null,
+        normalizePracticeHasInHouseLabFlag(user?.practiceHasInHouseLab),
       );
       setProfile(
         resolveRequestorProfile({

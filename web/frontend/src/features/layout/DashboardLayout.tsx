@@ -160,6 +160,8 @@ import { GuideTourProvider } from "@/shared/guideTour/GuideTourProvider";
 import { GuideTourSidebarButton } from "@/shared/guideTour/GuideTourSidebarButton";
 import { useLabPayoutBankbookReminder } from "@/shared/settlement/useLabPayoutBankbookReminder";
 import {
+  coalescePracticeHasInHouseLab,
+  coalesceRequestorKind,
   getRequestorRoleBadgeLabel,
   practiceHidesAbutmentSidebar,
 } from "@/shared/business/requestorCapabilities";
@@ -714,6 +716,12 @@ export const DashboardLayout = () => {
     practiceHasInHouseLab,
     loading: requestorAccessLoading,
   } = useRequestorBusinessAccess();
+  const sidebarRequestorKind =
+    coalesceRequestorKind(requestorKind, user?.requestorKind) ?? "practice";
+  const sidebarPracticeHasInHouseLab = coalescePracticeHasInHouseLab(
+    practiceHasInHouseLab,
+    user?.practiceHasInHouseLab,
+  );
 
   const isWizardRoute = location.pathname.startsWith("/dashboard/wizard");
   const isPracticeUser = Boolean(user?.role === "practice");
@@ -1104,9 +1112,11 @@ export const DashboardLayout = () => {
   }, [isMockUser, isPracticeUser, location.pathname, navigate, user]);
 
   useEffect(() => {
-    if (requestorAccessLoading) return;
     if (
-      !practiceHidesAbutmentSidebar(requestorKind, practiceHasInHouseLab)
+      !practiceHidesAbutmentSidebar(
+        sidebarRequestorKind,
+        sidebarPracticeHasInHouseLab,
+      )
     )
       return;
     if (!location.pathname.startsWith("/dashboard/new-request")) return;
@@ -1114,9 +1124,8 @@ export const DashboardLayout = () => {
   }, [
     location.pathname,
     navigate,
-    practiceHasInHouseLab,
-    requestorAccessLoading,
-    requestorKind,
+    sidebarPracticeHasInHouseLab,
+    sidebarRequestorKind,
   ]);
 
   useEffect(() => {
@@ -1271,10 +1280,11 @@ export const DashboardLayout = () => {
     []) as unknown as SidebarItem[];
   const menuItems = (() => {
     if (user.role !== "requestor") return baseMenuItems;
-    return buildRequestorSidebarItems(requestorKind, {
-      hidePracticeAbutment:
-        !requestorAccessLoading &&
-        practiceHidesAbutmentSidebar(requestorKind, practiceHasInHouseLab),
+    return buildRequestorSidebarItems(sidebarRequestorKind, {
+      hidePracticeAbutment: practiceHidesAbutmentSidebar(
+        sidebarRequestorKind,
+        sidebarPracticeHasInHouseLab,
+      ),
     });
   })();
 

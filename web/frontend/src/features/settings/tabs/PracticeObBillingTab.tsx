@@ -26,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PracticeObBillingTabSkeleton } from "@/shared/ui/skeletons/RequestorCreditsPageSkeleton";
 import {
   Select,
   SelectContent,
@@ -170,16 +170,6 @@ async function triggerBrowserPasskeyAssertion(): Promise<{
     credentialId: `pk-bio-${Date.now()}`,
     verifiedAt: new Date().toISOString(),
   };
-}
-
-function ObBillingSkeleton() {
-  return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-1.5 py-3">
-      <Skeleton className="h-36 w-full rounded-2xl" />
-      <Skeleton className="h-48 w-full rounded-2xl" />
-      <Skeleton className="h-32 w-full rounded-2xl" />
-    </div>
-  );
 }
 
 export function PracticeObBillingTab() {
@@ -342,7 +332,7 @@ export function PracticeObBillingTab() {
   };
 
   if (loading && !data) {
-    return <ObBillingSkeleton />;
+    return <PracticeObBillingTabSkeleton />;
   }
 
   if (!data) {

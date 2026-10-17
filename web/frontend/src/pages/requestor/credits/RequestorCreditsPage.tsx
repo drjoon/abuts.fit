@@ -182,6 +182,7 @@ export default function RequestorCreditsPage() {
       <RequestorCreditsPageSkeleton
         tabCount={isLab ? 4 : 3}
         showSettlement={isLab}
+        activeTab={activeTab}
       />
     );
   }

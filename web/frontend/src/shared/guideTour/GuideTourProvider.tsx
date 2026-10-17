@@ -34,7 +34,11 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
-import { practiceHidesAbutmentSidebar } from "@/shared/business/requestorCapabilities";
+import {
+  coalescePracticeHasInHouseLab,
+  coalesceRequestorKind,
+  practiceHidesAbutmentSidebar,
+} from "@/shared/business/requestorCapabilities";
 import { PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS } from "@/shared/components/practice/PracticeToothWorkGuideTourBanner";
 import {
   getGuideTourSteps,
@@ -174,15 +178,17 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
   const user = useAuthStore((s) => s.user);
   const setGuideTour = useAuthStore((s) => s.setGuideTour);
 
-  const {
-    kind: requestorKind,
-    practiceHasInHouseLab,
-    loading: requestorAccessLoading,
-  } = useRequestorBusinessAccess();
+  const { kind: requestorKind, practiceHasInHouseLab } =
+    useRequestorBusinessAccess();
   const hidePracticeAbutment =
     kind === "practice" &&
-    !requestorAccessLoading &&
-    practiceHidesAbutmentSidebar(requestorKind, practiceHasInHouseLab);
+    practiceHidesAbutmentSidebar(
+      coalesceRequestorKind(requestorKind, user?.requestorKind),
+      coalescePracticeHasInHouseLab(
+        practiceHasInHouseLab,
+        user?.practiceHasInHouseLab,
+      ),
+    );
 
   const alwaysOn = isGuideTourAlwaysOnBusiness(user?.companyName);
   const completed = alwaysOn
