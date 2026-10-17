@@ -38,15 +38,21 @@ export const ASSIGNEE_KIND_SUBCONTRACT = "subcontract";
 /** 치과 UI: 「어벗츠 · {파트너}」 */
 export const ABUTS_COOPERATION_LABEL_PREFIX = "어벗츠";
 
+const PARTNER_LAB_LABEL_DOT = "[·‧∙•・]";
+
 const stripPartnerLabDisplayPrefixes = (raw) => {
   let name = String(raw || "").trim();
-  name = name.replace(/\s·\s인증 협력 기공소에서 처리$/, "").trim();
+  name = name
+    .replace(new RegExp(`\\s${PARTNER_LAB_LABEL_DOT}\\s인증 협력 기공소에서 처리$`), "")
+    .trim();
   for (let i = 0; i < 6; i += 1) {
     const next = name
-      .replace(/^어벗츠\s*협력\s*기공소\s*·\s*/, "")
-      .replace(/^어벗츠\s*협력\s*·\s*/, "")
-      .replace(/^어벗츠\s*·\s*/, "")
-      .replace(/^어벗츠기공소\s*·\s*/, "")
+      .replace(new RegExp(`^어벗츠\\s*협력\\s*기공소\\s*${PARTNER_LAB_LABEL_DOT}\\s*`), "")
+      .replace(new RegExp(`^어벗츠\\s*협력\\s*${PARTNER_LAB_LABEL_DOT}\\s*`), "")
+      .replace(new RegExp(`^어벗츠\\s*${PARTNER_LAB_LABEL_DOT}\\s*`), "")
+      .replace(/^어벗츠기공소\s*[-–—]\s*/, "")
+      .replace(/^어벗츠\s*[-–—]\s*/, "")
+      .replace(new RegExp(`^어벗츠기공소\\s*${PARTNER_LAB_LABEL_DOT}\\s*`), "")
       .trim();
     if (next === name) break;
     name = next;

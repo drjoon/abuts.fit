@@ -31,6 +31,9 @@ describe("assigneeKind cooperation vs subcontract", () => {
     expect(formatAbutsCooperationLabLabel(t.assigneeLabName)).toBe(
       "통영 Zahn-Art 치과기공소",
     );
+    expect(
+      formatAbutsCooperationLabLabel("어벗츠 · 통영 Zahn-Art 치과기공소"),
+    ).toBe("통영 Zahn-Art 치과기공소");
   });
 
   test("ledger-style redact shows cooperation partner for practice", () => {

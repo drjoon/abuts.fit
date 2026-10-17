@@ -567,7 +567,9 @@ export const isPracticeRecentCancelBadgeStatus = (status: unknown) => {
 const extractLabNameFromMessage = (message: string) => {
   const raw = String(message || "").trim();
   const matched = raw.match(/\[\s*기공소\s*:\s*([^\]]+)\]/);
-  return String(matched?.[1] || "").trim();
+  return stripPracticeTargetLabDisplayDecorations(
+    String(matched?.[1] || "").trim(),
+  );
 };
 
 const extractTransferIdFromMessage = (message: string) => {

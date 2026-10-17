@@ -373,6 +373,7 @@ import {
   resolveAutoMatchEligibleStarBand,
   resolvePracticeTransferLabColorKey,
   resolvePracticeTransferLabDisplayLabel,
+  stripPracticeTargetLabDisplayDecorations,
 } from "@/shared/practice/practiceLabRating";
 import { PracticeLabRejectedReselectDialog } from "@/shared/components/practice/PracticeLabRejectedReselectDialog";
 import { PracticeComposeRemakeSection } from "@/shared/components/practice/PracticeComposeRemakeSection";
@@ -5344,12 +5345,14 @@ export const PracticeFileTransferPage = ({
     const arrival = certainArrivals.includes(focusedArrival)
       ? focusedArrival
       : certainArrivals[certainArrivals.length - 1] || focusedArrival;
-    const labLabel = resolvePracticeTransferLabDisplayLabel({
-      targetLab: selectedTransfer.targetLab,
-      handledByCertifiedPartner: selectedTransfer.handledByCertifiedPartner,
-      assigneeKind: selectedTransfer.assigneeKind,
-      assigneeLabName: selectedTransfer.assigneeLabName,
-    });
+    const labLabel = stripPracticeTargetLabDisplayDecorations(
+      resolvePracticeTransferLabDisplayLabel({
+        targetLab: selectedTransfer.targetLab,
+        handledByCertifiedPartner: selectedTransfer.handledByCertifiedPartner,
+        assigneeKind: selectedTransfer.assigneeKind,
+        assigneeLabName: selectedTransfer.assigneeLabName,
+      }),
+    );
     // 기공소 · 환자 · 원장 · 치아번호. 점은 목록과 같은 기공소 색.
     const identityParts = [String(labLabel || "").trim(), patient, doctor, teeth].filter(
       Boolean,
@@ -8430,7 +8433,9 @@ export const PracticeFileTransferPage = ({
           releaseTransferId &&
           releaseTransferId === selectedTransferIdRef.current
         ) {
-          const labName = String(payload.targetLabName || "").trim();
+          const labName = stripPracticeTargetLabDisplayDecorations(
+            String(payload.targetLabName || "").trim(),
+          );
           const labAnchorId =
             payload.targetLabAnchorId != null
               ? String(payload.targetLabAnchorId).trim()
@@ -8442,7 +8447,7 @@ export const PracticeFileTransferPage = ({
             return {
               ...prev,
               status: stage,
-              ...(labName ? { targetLab: labName } : {}),
+              ...(labName && labName !== "-" ? { targetLab: labName } : {}),
               targetLabAnchorId: isAutoRelease ? "" : labAnchorId,
             };
           });
@@ -8456,7 +8461,9 @@ export const PracticeFileTransferPage = ({
         action === "auto-match-claimed" ||
         action === "downloaded";
       if (isAcceptChatEvent && eventTransferId) {
-        const labName = String(payload.targetLabName || "").trim();
+        const labName = stripPracticeTargetLabDisplayDecorations(
+          String(payload.targetLabName || "").trim(),
+        );
         const labAnchorId = String(payload.targetLabAnchorId || "").trim();
         const stageRaw = String(payload.manufacturerStage || "").trim();
         const stage = stageRaw ? toStatusLabel(stageRaw) : "";
@@ -8471,7 +8478,7 @@ export const PracticeFileTransferPage = ({
           if (String(row.transferId || "").trim() !== eventTransferId) return row;
           return {
             ...row,
-            ...(labName ? { targetLab: labName } : {}),
+            ...(labName && labName !== "-" ? { targetLab: labName } : {}),
             ...(labAnchorId ? { targetLabAnchorId: labAnchorId } : {}),
             ...(stage ? { status: stage } : {}),
             ...(acceptedFeeQuote ? { feeQuote: acceptedFeeQuote } : {}),

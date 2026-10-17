@@ -34,11 +34,13 @@ export const DEFAULT_EFFECTIVE_LAB_STARS = 3;
 /** 하청 수행 시 치과 표시(실명 비공개). */
 export const CERTIFIED_PARTNER_LAB_DISPLAY_NAME = "인증 협력 기공소";
 
-/** 협력 기공소 — 치과향 표시 SSOT「어벗츠 · {이름}」. */
+/** 레거시 합성 라벨 접두 strip용(신규 UI에는 붙이지 않음). */
 export const ABUTS_PARTNER_LAB_LABEL_PREFIX = "어벗츠";
 /** 구 표시 접두(목록 병합 시 strip용). */
 const ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_A = "어벗츠 협력";
 const ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_B = "어벗츠 협력 기공소";
+/** 레거시 DB·메시지에 섞인 구분 dot 변형. */
+const PARTNER_LAB_LABEL_DOT = "[·‧∙•・]";
 
 const ABUTS_INTERNAL_LAB_DISPLAY_NAMES = new Set([
   "어벗츠기공소",
@@ -51,14 +53,36 @@ const ABUTS_INTERNAL_LAB_DISPLAY_NAMES = new Set([
  */
 export function normalizePracticePartnerLabCoreName(label: unknown): string {
   let name = String(label || "").trim();
-  name = name.replace(/\s·\s인증 협력 기공소에서 처리$/, "").trim();
+  name = name
+    .replace(new RegExp(`\\s${PARTNER_LAB_LABEL_DOT}\\s인증 협력 기공소에서 처리$`), "")
+    .trim();
   for (let i = 0; i < 6; i += 1) {
     const next = name
-      .replace(new RegExp(`^${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_B}\\s*·\\s*`), "")
-      .replace(new RegExp(`^${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_A}\\s*·\\s*`), "")
-      .replace(new RegExp(`^${ABUTS_PARTNER_LAB_LABEL_PREFIX}\\s*·\\s*`), "")
-      .replace(/^어벗츠기공소\s*·\s*/, "")
-      .replace(/^어벗츠\s*기공소\s*·\s*/, "")
+      .replace(
+        new RegExp(
+          `^${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_B}\\s*${PARTNER_LAB_LABEL_DOT}\\s*`,
+        ),
+        "",
+      )
+      .replace(
+        new RegExp(
+          `^${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_A}\\s*${PARTNER_LAB_LABEL_DOT}\\s*`,
+        ),
+        "",
+      )
+      .replace(
+        new RegExp(
+          `^${ABUTS_PARTNER_LAB_LABEL_PREFIX}\\s*${PARTNER_LAB_LABEL_DOT}\\s*`,
+        ),
+        "",
+      )
+      .replace(/^어벗츠기공소\s*[-–—]\s*/, "")
+      .replace(
+        new RegExp(`^${ABUTS_PARTNER_LAB_LABEL_PREFIX}\\s*[-–—]\\s*`),
+        "",
+      )
+      .replace(new RegExp(`^어벗츠기공소\\s*${PARTNER_LAB_LABEL_DOT}\\s*`), "")
+      .replace(new RegExp(`^어벗츠\\s*기공소\\s*${PARTNER_LAB_LABEL_DOT}\\s*`), "")
       .trim();
     if (next === name) break;
     name = next;
