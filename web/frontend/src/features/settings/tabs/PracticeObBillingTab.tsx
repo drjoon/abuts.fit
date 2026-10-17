@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-10-17: 자동정산 탭 UI 단순화 — 상태 히어로·출금 계좌 중심, 보증금·이력은 접기.
+// - 2026-10-17: 자동정산 탭 — 후불 OB만, 보증금 UI 제거·문구·상태 배너 정리.
 // related files:
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/backend/controllers/credits/practiceOpenBanking.controller.js
@@ -7,7 +7,7 @@
 // - web/frontend/src/shared/legal/creditPrepaidCopy.ts
 // - web/frontend/src/shared/settlement/settlementUi.tsx
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Building2,
@@ -85,12 +85,6 @@ type MonthlySettlement = {
 type PracticeBillingOverview = {
   practiceAnchorId: string;
   practiceName: string;
-  depositGuidance: {
-    required: boolean;
-    threshold: number;
-    monthlySpend: number;
-    labOptions: { labAnchorId: string; name: string }[];
-  };
   openBankingConsent: {
     status: "none" | "active" | "reauth_required" | "revoked";
     bankCode: string;
@@ -191,20 +185,15 @@ function ObBillingSkeleton() {
 export function PracticeObBillingTab() {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
+  const accountSectionRef = useRef<HTMLElement>(null);
   const [data, setData] = useState<PracticeBillingOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
-  const [depositOpen, setDepositOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   const [bankCode, setBankCode] = useState("088");
   const [accountNumber, setAccountNumber] = useState("");
   const [accountHolder, setAccountHolder] = useState("");
-  const [depositLabId, setDepositLabId] = useState("");
-  const [depositAmount, setDepositAmount] = useState("");
-  const [deposits, setDeposits] = useState<
-    { id: string; labName: string; amount: number; status: string }[]
-  >([]);
 
   const loadOverview = useCallback(async (opts?: { silent?: boolean }) => {
     if (!token) return;
@@ -223,7 +212,6 @@ export function PracticeObBillingTab() {
       if (res.ok && res.data?.success && res.data.data) {
         const next = res.data.data;
         setData(next);
-        if (next.depositGuidance.required) setDepositOpen(true);
         if (next.openBankingConsent.paymentHold.isHeld) setHistoryOpen(true);
         if (next.openBankingConsent.accountHolder && !accountHolder) {
           setAccountHolder(next.openBankingConsent.accountHolder);
@@ -236,21 +224,9 @@ export function PracticeObBillingTab() {
     }
   }, [token, accountHolder]);
 
-  const loadDeposits = useCallback(async () => {
-    if (!token) return;
-    const res = await request<any>({
-      path: "/api/practice/billing/deposits",
-      method: "GET",
-      token,
-      skipCache: true,
-    });
-    if (res.ok && res.data?.success) setDeposits(res.data.data?.items || []);
-  }, [token]);
-
   useEffect(() => {
     void loadOverview();
-    void loadDeposits();
-  }, [loadOverview, loadDeposits]);
+  }, [loadOverview]);
 
   useAppEventDebouncedReload({
     enabled: Boolean(token && user?.businessAnchorId),
@@ -296,39 +272,6 @@ export function PracticeObBillingTab() {
       toast({
         title: "등록 실패",
         description: e?.message || "계좌 정보를 확인해 주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setBusyAction("");
-    }
-  };
-
-  const handleTransferDeposit = async () => {
-    if (busyAction) return;
-    setBusyAction("deposit");
-    try {
-      const bio = await triggerBrowserPasskeyAssertion();
-      const res = await request<any>({
-        path: "/api/practice/billing/deposits",
-        method: "POST",
-        token,
-        jsonBody: {
-          labAnchorId: depositLabId,
-          amount: Number(depositAmount),
-          passkeyAssertion: bio,
-        },
-      });
-      const body = res.data || {};
-      if (!res.ok || !body.success) {
-        throw new Error(body.message || "보증금 이체에 실패했습니다.");
-      }
-      toast({ title: "보증금 이체 완료", description: body.message });
-      setDepositAmount("");
-      await Promise.all([loadOverview({ silent: true }), loadDeposits()]);
-    } catch (e: any) {
-      toast({
-        title: "이체 실패",
-        description: e?.message || "출금계좌 잔액을 확인해 주세요.",
         variant: "destructive",
       });
     } finally {
@@ -410,103 +353,48 @@ export function PracticeObBillingTab() {
     );
   }
 
-  const { depositGuidance, openBankingConsent, currentMonthEstimate, settlements } =
-    data;
+  const { openBankingConsent, currentMonthEstimate, settlements } = data;
   const isHeld = openBankingConsent.paymentHold.isHeld;
   const failedBatchId = openBankingConsent.paymentHold.failedBatchId;
   const consentMeta = consentStatusMeta(openBankingConsent.status);
   const isObActive = openBankingConsent.status === "active";
+  const needsConnectAccount = !isObActive && isHeld;
+  const needsPaymentRetry = isHeld && Boolean(failedBatchId) && isObActive;
+  const needsHoldReauth = isHeld && isObActive && !failedBatchId;
+  const showReauthBanner =
+    (openBankingConsent.needsReauth || needsHoldReauth) &&
+    !needsPaymentRetry &&
+    !needsConnectAccount;
+  const showActionBanner =
+    needsConnectAccount || needsPaymentRetry || showReauthBanner;
 
   const noticeLines = PRACTICE_OB_BILLING_NOTICE_BODY.split("\n").filter(Boolean);
 
-  return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-1.5 py-2 pb-4">
-      <div
-        className={cn(
-          CONTENT_MEASURED_CHROME_CLASS,
-          "mx-auto rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 text-xs leading-relaxed text-slate-600 shadow-sm sm:text-sm",
-        )}
-      >
-        <p className="font-medium text-slate-800">{PRACTICE_OB_BILLING_NOTICE_TITLE}</p>
-        <p className="mt-1">
-          {noticeLines.map((line, i) => (
-            <span key={line}>
-              {i > 0 ? (
-                <>
-                  <br />
-                </>
-              ) : null}
-              {line}
-            </span>
-          ))}
-        </p>
-      </div>
-      {(isHeld || openBankingConsent.needsReauth) && (
-        <div
-          className={cn(
-            CONTENT_MEASURED_CHROME_CLASS,
-            "mx-auto flex flex-col gap-3 rounded-2xl border px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between",
-            isHeld
-              ? "border-destructive/40 bg-destructive/5 text-destructive"
-              : "border-amber-300/80 bg-amber-50/80 text-amber-900",
-          )}
-        >
-          <div className="flex items-start gap-2.5 text-xs sm:text-sm">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            {isHeld ? (
-              <p className="font-medium">
-                {openBankingConsent.paymentHold.reason}
-                <br />
-                Face ID(지문)로 재이체하면 기공의뢰 제한이 풀립니다.
-              </p>
-            ) : (
-              <p className="font-medium">
-                90일 주기 재인증이 필요합니다.
-                <br />
-                Face ID(지문)로 1탭 재인증을 완료해 주세요.
-              </p>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {failedBatchId ? (
-              <Button
-                size="sm"
-                className="h-9 rounded-xl px-3.5"
-                disabled={Boolean(busyAction)}
-                onClick={() => void handleRetrySettlement(failedBatchId)}
-              >
-                <Fingerprint className="mr-1.5 h-4 w-4" />
-                지금 이체
-              </Button>
-            ) : null}
-            {openBankingConsent.needsReauth && !failedBatchId ? (
-              <Button
-                size="sm"
-                className="h-9 rounded-xl px-3.5"
-                disabled={Boolean(busyAction)}
-                onClick={() => void handleBiometricReauth()}
-              >
-                <Fingerprint className="mr-1.5 h-4 w-4" />
-                재인증
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      )}
+  const scrollToAccount = () => {
+    accountSectionRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
 
+  return (
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-1.5 py-2 pb-4">
       {/* 당월 예정 + 연결 상태 */}
       <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-50/90 via-white to-primary/[0.04] shadow-sm">
         <div className="p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-xs font-medium text-slate-500">
-                {currentMonthEstimate.yearMonth} 정산 예정
+                {PRACTICE_OB_BILLING_NOTICE_TITLE}
               </p>
               <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-[2rem]">
                 {formatRequestorWon(currentMonthEstimate.totalAmount)}
                 <span className="ml-0.5 text-lg font-semibold text-slate-600">
                   원
                 </span>
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {currentMonthEstimate.yearMonth} 사용 예정
               </p>
             </div>
             <Badge variant={consentMeta.variant} className="rounded-lg px-2.5 py-1">
@@ -522,8 +410,7 @@ export function PracticeObBillingTab() {
                 </span>
               </TooltipTrigger>
               <TooltipContent className="max-w-xs text-xs">
-                지정·수행 기공소(협력·어벗츠 기공소 포함) 계좌로 직접
-                이체됩니다.
+                거래 기공소 계좌로 이체됩니다.
               </TooltipContent>
             </Tooltip>
             <Tooltip>
@@ -534,20 +421,100 @@ export function PracticeObBillingTab() {
                 </span>
               </TooltipTrigger>
               <TooltipContent className="max-w-xs text-xs">
-                커스텀어벗·PTX 어벗분은 어벗츠 법인 계좌로 이체됩니다.
+                어벗츠 법인 계좌로 이체됩니다.
               </TooltipContent>
             </Tooltip>
           </div>
           <p className="mt-4 text-xs text-slate-500">
-            전월 사용분은 매월 1일 확정됩니다.
-            <br />
-            매월 5일 09:00에 일괄 자동이체됩니다.
+            {noticeLines.map((line, i) => (
+              <span key={line}>
+                {i > 0 ? (
+                  <>
+                    <br />
+                  </>
+                ) : null}
+                {line}
+              </span>
+            ))}
           </p>
         </div>
       </section>
 
+      {showActionBanner ? (
+        <div
+          className={cn(
+            CONTENT_MEASURED_CHROME_CLASS,
+            "mx-auto flex flex-col gap-3 rounded-2xl border px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between",
+            needsPaymentRetry
+              ? "border-destructive/40 bg-destructive/5 text-destructive"
+              : "border-amber-300/80 bg-amber-50/80 text-amber-950",
+          )}
+        >
+          <div className="flex items-start gap-2.5 text-xs sm:text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            {needsConnectAccount ? (
+              <p className="font-medium">
+                출금 계좌를 연결해야 기공의뢰를 보낼 수 있습니다.
+                <br />
+                아래에서 Face ID(지문)로 등록해 주세요.
+              </p>
+            ) : needsPaymentRetry ? (
+              <p className="font-medium">
+                {openBankingConsent.paymentHold.reason ||
+                  "정산금 입금이 필요합니다."}
+                <br />
+                Face ID(지문)로 이체하면 제한이 풀립니다.
+              </p>
+            ) : (
+              <p className="font-medium">
+                90일마다 Face ID(지문) 재인증이 필요합니다.
+                <br />
+                재인증하지 않으면 신규 기공의뢰가 제한될 수 있습니다.
+              </p>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {needsConnectAccount ? (
+              <Button
+                size="sm"
+                className="h-9 rounded-xl px-3.5"
+                variant="outline"
+                onClick={scrollToAccount}
+              >
+                계좌 연결
+              </Button>
+            ) : null}
+            {needsPaymentRetry && failedBatchId ? (
+              <Button
+                size="sm"
+                className="h-9 rounded-xl px-3.5"
+                disabled={Boolean(busyAction)}
+                onClick={() => void handleRetrySettlement(failedBatchId)}
+              >
+                <Fingerprint className="mr-1.5 h-4 w-4" />
+                지금 이체
+              </Button>
+            ) : null}
+            {showReauthBanner ? (
+              <Button
+                size="sm"
+                className="h-9 rounded-xl px-3.5"
+                disabled={Boolean(busyAction)}
+                onClick={() => void handleBiometricReauth()}
+              >
+                <Fingerprint className="mr-1.5 h-4 w-4" />
+                재인증
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       {/* 출금 계좌 · 장기동의 */}
-      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+      <section
+        ref={accountSectionRef}
+        className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6"
+      >
         <div className="flex items-center gap-2">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
             <Landmark className="h-4 w-4 text-primary" />
@@ -556,9 +523,7 @@ export function PracticeObBillingTab() {
             <h2 className="text-base font-semibold tracking-tight text-slate-900">
               출금 계좌
             </h2>
-            <p className="text-xs text-slate-500">
-              오픈뱅킹 장기동의 · Face ID(지문)
-            </p>
+            <p className="text-xs text-slate-500">Face ID(지문) · 매월 자동출금</p>
           </div>
         </div>
 
@@ -602,7 +567,7 @@ export function PracticeObBillingTab() {
         ) : (
           <div className="mt-4 space-y-4">
             <p className="text-xs leading-relaxed text-slate-600">
-              최초 1회 계좌 연결과 생체인증 등록으로 매월 정산일에 자동 출금됩니다.
+              1회 연결하면 매월 5일에 전월분이 자동 출금됩니다.
             </p>
             <div className="space-y-3">
               <div className="space-y-1.5">
@@ -667,7 +632,7 @@ export function PracticeObBillingTab() {
       {currentMonthEstimate.lines.length > 0 ? (
         <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
           <h2 className="text-base font-semibold tracking-tight text-slate-900">
-            이번 달 이체 예정
+            수취처별 예정
           </h2>
           <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200/70 px-1.5 py-1.5">
             {currentMonthEstimate.lines.map((line, idx) => (
@@ -681,15 +646,7 @@ export function PracticeObBillingTab() {
                     <span className="font-medium text-slate-900">
                       {line.payeeName}
                     </span>
-                    <Badge variant="outline" className="text-[10px] font-normal">
-                      {line.payeeKind === "direct_lab"
-                        ? "협력 직거래"
-                        : "어벗츠"}
-                    </Badge>
                   </div>
-                  <p className="mt-1 truncate text-xs text-slate-500">
-                    {line.bankName} {line.accountNumber} · {line.holderName}
-                  </p>
                 </div>
                 <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">
                   {formatRequestorWon(line.amount)}원
@@ -698,109 +655,6 @@ export function PracticeObBillingTab() {
             ))}
           </ul>
         </section>
-      ) : null}
-
-      {/* 보증금 — 필요할 때만 접기 */}
-      {depositGuidance.required ? (
-        <Collapsible open={depositOpen} onOpenChange={setDepositOpen}>
-          <section className="rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-            <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 rounded-2xl px-5 py-4 text-left sm:px-6">
-              <div>
-                <h2 className="text-base font-semibold text-slate-900">
-                  보증금 이체
-                </h2>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  거래 기공소 계좌로 직접 이체 · 어벗츠 미보관
-                </p>
-              </div>
-              <ChevronDown
-                className={cn(
-                  "h-5 w-5 shrink-0 text-slate-400 transition-transform",
-                  depositOpen && "rotate-180",
-                )}
-              />
-            </CollapsibleTrigger>
-            <CollapsibleContent className="px-5 pb-5 sm:px-6 sm:pb-6">
-              <Separator className="mb-4" />
-              <p className="text-xs leading-relaxed text-slate-600">
-                월 이용이 {formatRequestorWon(depositGuidance.threshold)}원을
-                넘었습니다.
-                <br />
-                영업 담당자 안내에 따라 거래 기공소 계좌로 보증금을 이체해
-                주세요.
-              </p>
-              {isObActive ? (
-                <div className="mt-4 space-y-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">받을 기공소</Label>
-                    <Select value={depositLabId} onValueChange={setDepositLabId}>
-                      <SelectTrigger className="h-10 rounded-xl">
-                        <SelectValue placeholder="기공소 선택" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {depositGuidance.labOptions.map((l) => (
-                          <SelectItem key={l.labAnchorId} value={l.labAnchorId}>
-                            {l.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="deposit-amount" className="text-xs">
-                      금액 (100만원 단위)
-                    </Label>
-                    <Input
-                      id="deposit-amount"
-                      inputMode="numeric"
-                      placeholder="1,000,000"
-                      value={depositAmount}
-                      onChange={(e) =>
-                        setDepositAmount(e.target.value.replace(/[^0-9]/g, ""))
-                      }
-                      className="h-10 rounded-xl"
-                    />
-                  </div>
-                  <Button
-                    className="h-10 rounded-xl"
-                    disabled={
-                      Boolean(busyAction) ||
-                      !depositLabId ||
-                      Number(depositAmount) < 1_000_000 ||
-                      Number(depositAmount) % 1_000_000 !== 0
-                    }
-                    onClick={() => void handleTransferDeposit()}
-                  >
-                    <Fingerprint className="mr-1.5 h-4 w-4" />
-                    Face ID로 이체
-                  </Button>
-                </div>
-              ) : (
-                <p className="mt-3 text-xs font-medium text-amber-800">
-                  출금 계좌 연결 후 이체할 수 있습니다.
-                </p>
-              )}
-              {deposits.length > 0 ? (
-                <ul className="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-200/70 text-xs">
-                  {deposits.map((d) => (
-                    <li
-                      key={d.id}
-                      className="flex items-center justify-between gap-2 px-3 py-2.5"
-                    >
-                      <span className="font-medium text-slate-900">
-                        {d.labName}
-                      </span>
-                      <span className="tabular-nums text-slate-600">
-                        {formatRequestorWon(d.amount)}원 ·{" "}
-                        {d.status === "TRANSFERRED" ? "완료" : "실패"}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </CollapsibleContent>
-          </section>
-        </Collapsible>
       ) : null}
 
       {/* 지난 정산 */}
@@ -900,10 +754,8 @@ export function PracticeObBillingTab() {
         </Collapsible>
       ) : null}
 
-      <p className="text-center text-[11px] leading-relaxed text-slate-400">
-        기공의뢰는 후불 정산입니다.
-        <br />
-        어벗츠 CNC 생산 의뢰는 「기공의뢰 · 어벗츠에」에서 별도로 진행합니다.
+      <p className="text-center text-[11px] text-slate-400">
+        CNC 생산 의뢰는 「어벗츠에」에서 별도로 진행합니다.
       </p>
     </div>
   );

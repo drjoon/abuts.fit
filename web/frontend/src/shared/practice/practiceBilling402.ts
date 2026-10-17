@@ -38,8 +38,8 @@ export function resolvePracticeBilling402Dialog(
     const lines = message
       ? message.split(/\n+/).filter(Boolean)
       : [
-          "월 정산 미납 또는 자동이체 재인증이 필요합니다.",
-          "자동정산 탭에서 Face ID(지문)로 재이체·재인증을 완료해 주세요.",
+          "정산 미납 또는 재인증이 필요합니다.",
+          "자동정산 탭에서 Face ID(지문)로 입금·재인증을 완료해 주세요.",
         ];
     return {
       title: "기공의뢰를 보낼 수 없습니다",

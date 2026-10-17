@@ -55,7 +55,6 @@ export type CustomerPriceRow = {
   shippingMode?: "normal" | "express";
   monthlyRequestCount?: number;
   prevMonthRequestCount?: number;
-  /** 월 이용 금액 1천만원 초과 → 영업 담당자가 보증금(기공소 직접 수취) 안내 */
   depositGuidance?: boolean;
   monthlySpend?: number;
   updatedAt?: string | null;
@@ -375,17 +374,7 @@ function PriceRow({ row, onSaved }: { row: Row; onSaved: (next: Row) => void }) 
             {KIND_LABEL[row.requestorKind]}
           </Badge>
         ) : null}
-        {row.depositGuidance ? (
-          <Badge className="shrink-0 text-[10px]">보증금 안내</Badge>
-        ) : null}
       </div>
-      {row.depositGuidance ? (
-        <p className="text-xs leading-relaxed text-slate-500">
-          월 이용 금액이 1,000만원을 넘었습니다.
-          <br />
-          거래 기공소 계좌로 보증금을 직접 이체하도록 안내해 주세요.
-        </p>
-      ) : null}
       <PriceControls
         row={row}
         onSaved={onSaved}
