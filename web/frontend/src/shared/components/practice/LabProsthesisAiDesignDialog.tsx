@@ -5699,6 +5699,17 @@ function LabProsthesisAiDesignDialog({
                         }))}
                         insertionToothNumber={activeNumber}
                         onPickInsertionTooth={showTooth}
+                        marginUndercutCount={
+                          marginUndercut.tooth === activeNumber ? marginUndercut.count : 0
+                        }
+                        marginReview={
+                          activeNumber ? (marginReview[activeNumber] ?? "none") : "none"
+                        }
+                        onConfirmMargin={
+                          activeNumber
+                            ? () => confirmMargin(activeNumber)
+                            : undefined
+                        }
                         cavityKind={activeNumber ? (cavityKinds[activeNumber] ?? null) : null}
                         generated={
                           activeNumber ? generated[activeNumber] === true : false

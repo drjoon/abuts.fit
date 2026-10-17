@@ -45,6 +45,8 @@ export type CrownAdaptInput = {
   ridge: ScanColumns | null;
   occlusal: SurfaceAdapt;
   proximal: SurfaceAdapt;
+  /** true면 인접 절삭 없이도 삽입 경로 언더컷을 옆으로 뺀다. */
+  proximalBlockOut: boolean;
   gingival: GingivalAdapt | null;
   /** 인접 보철과 떼어 두는 평면. 정점을 `normal·p <= offset` 쪽에 둔다. */
   discs?: DiscPlane[];
@@ -433,7 +435,7 @@ export function adaptCrownVertices(input: CrownAdaptInput): CrownAdaptResult {
   }
 
   const columns = input.adjacentColumns;
-  if (columns && input.proximal.trim) {
+  if (columns && (input.proximal.trim || input.proximalBlockOut)) {
     blockOutVertices(columns, input.proximal.clearanceMm, unit, axis, pos, nor, count, move);
   }
 

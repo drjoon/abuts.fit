@@ -454,18 +454,39 @@ export function LabRefineControls({
             onFit={(occlusalFit) => setRefine({ occlusalFit })}
           />
           {cavity ? null : (
-          <ClearanceRow
-            label="인접 간격"
-            value={refine.proximalClearanceMm}
-            trim={refine.proximalTrim}
-            fit={refine.proximalFit}
-            disabled={!generated}
-            target="인접치"
-            canFit
-            onValue={(proximalClearanceMm) => setRefine({ proximalClearanceMm })}
-            onTrim={(proximalTrim) => setRefine({ proximalTrim })}
-            onFit={(proximalFit) => setRefine({ proximalFit })}
-          />
+            <>
+              <ClearanceRow
+                label="인접 간격"
+                value={refine.proximalClearanceMm}
+                trim={refine.proximalTrim}
+                fit={refine.proximalFit}
+                disabled={!generated}
+                target="인접치"
+                canFit
+                onValue={(proximalClearanceMm) => setRefine({ proximalClearanceMm })}
+                onTrim={(proximalTrim) => setRefine({ proximalTrim })}
+                onFit={(proximalFit) => setRefine({ proximalFit })}
+              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <label className="flex items-center justify-between gap-3 text-xs font-medium">
+                    삽입 경로 블록아웃
+                    <Switch
+                      checked={refine.proximalBlockOut}
+                      disabled={!generated}
+                      onCheckedChange={(proximalBlockOut) => setRefine({ proximalBlockOut })}
+                      aria-label="삽입 경로 블록아웃"
+                      className={SWITCH_CLASS}
+                    />
+                  </label>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="z-[520]">
+                  삽입축 아래 인접치에 걸리는 면을 옆으로 밉니다.
+                  <br />
+                  인접 절삭과 함께 켜도 됩니다.
+                </TooltipContent>
+              </Tooltip>
+            </>
           )}
           {edit.pontic.on ? (
             <div className="space-y-2 border-t pt-2">

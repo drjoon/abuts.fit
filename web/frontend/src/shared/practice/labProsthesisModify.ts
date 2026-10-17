@@ -826,7 +826,7 @@ export function normalizeToothDesignEdit(raw: unknown): ToothDesignEdit {
     stretch: finiteTuple(rawRefine.stretch, 3, base.refine.stretch),
     offsetMm: finiteTuple(rawRefine.offsetMm, 2, base.refine.offsetMm),
     rotateDeg: Number(rawRefine.rotateDeg) || 0,
-    proximalBlockOut: true,
+    proximalBlockOut: rawRefine.proximalBlockOut !== false,
   };
   return {
     ...base,

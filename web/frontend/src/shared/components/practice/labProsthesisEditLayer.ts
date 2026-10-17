@@ -811,6 +811,7 @@ function adaptCrownGeometry(args: {
     refine.occlusalFit ||
     refine.proximalTrim ||
     refine.proximalFit ||
+    refine.proximalBlockOut ||
     (edit.pontic.on && refine.gingivalFit) ||
     cervical != null;
   const adapting = scanAdapting || discs.length > 0;
@@ -982,6 +983,7 @@ function adaptCrownGeometry(args: {
         trim: refine.proximalTrim,
         fit: refine.proximalFit,
       },
+      proximalBlockOut: refine.proximalBlockOut,
       gingival,
       discs,
       allowCutMm,

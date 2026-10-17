@@ -41,6 +41,7 @@ import {
   innerParamsOf,
   type EditBrush,
   type MarginEditMode,
+  type MarginReview,
   type ModifyTool,
   type RefineTab,
   type SculptBrush,
@@ -185,6 +186,10 @@ type Props = {
   insertionTeeth?: Array<{ toothNumber: string; label: string }>;
   insertionToothNumber?: string | null;
   onPickInsertionTooth?: (toothNumber: string) => void;
+  /** 마진선이 언더컷 영역을 지나는 점 수. */
+  marginUndercutCount?: number;
+  marginReview?: MarginReview;
+  onConfirmMargin?: () => void;
 };
 
 export type ConnectorRow = {
@@ -975,6 +980,9 @@ export function LabProsthesisModifyPanel({
   insertionTeeth = [],
   insertionToothNumber = null,
   onPickInsertionTooth,
+  marginUndercutCount = 0,
+  marginReview = "none",
+  onConfirmMargin,
 }: Props) {
   const implant = edit.implant.on;
   const cavity = implant || edit.pontic.on ? null : cavityKind;
@@ -1044,6 +1052,22 @@ export function LabProsthesisModifyPanel({
               </Button>
             ))}
           </div>
+        ) : null}
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          치아를 고른 뒤 화면 가운데에서 삽입축을 맞춥니다.
+          <br />
+          맞으면 삽입축 설정을 누릅니다.
+        </p>
+        {insertionToothNumber ? (
+          axisReady ? (
+            <p className="text-[11px] font-medium text-foreground">삽입축이 잡혀 있습니다.</p>
+          ) : (
+            <p className="text-[11px] leading-relaxed text-destructive">
+              삽입축이 없습니다.
+              <br />
+              화면 가운데 안내에 따라 맞춘 뒤 설정을 누르세요.
+            </p>
+          )
         ) : null}
       </StageSubsection>
 
@@ -1170,7 +1194,38 @@ export function LabProsthesisModifyPanel({
                   확장
                 </Button>
               </div>
+              {Math.abs(edit.margin.offsetMm) > 0.001 ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 w-full text-[11px]"
+                  onClick={() => onEdit(adjustMarginOffset(edit, -edit.margin.offsetMm))}
+                >
+                  오프셋 초기화
+                </Button>
+              ) : null}
             </>
+          ) : null}
+          {marginUndercutCount > 0 ? (
+            <p className="flex items-center gap-1 text-[11px] leading-relaxed text-destructive">
+              <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {marginWord}선이 언더컷 영역을 {marginUndercutCount}곳 지납니다.
+            </p>
+          ) : null}
+          {marginReview === "detected" &&
+          !edit.margin.deleted &&
+          axisReady &&
+          onConfirmMargin ? (
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 w-full text-[11px]"
+              data-coach="margin-confirm"
+              onClick={onConfirmMargin}
+            >
+              {marginWord} 확인
+            </Button>
           ) : null}
           {implant ? null : (
             <div className="space-y-1 rounded-md border px-2 py-1.5 text-xs">
