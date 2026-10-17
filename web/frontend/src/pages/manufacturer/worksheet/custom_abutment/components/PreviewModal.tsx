@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-17: 안내 off 시 프론트포인트(녹색점)도 피니시라인과 함께 숨김(FP 편집 중은 유지).
 // - 2026-10-17: 그리드·메타·안내(피니시라인 등) on/off를 localStorage에 저장.
 // - 2026-10-16: ESP 버튼은 짧은 주소만 받고, 파일은 브라우저 다운로드로 바로 저장한다.
 // - 2026-10-16: 가공 프리뷰 NC 표시명을 의뢰번호.nc 로 줄이고, ESP 버튼은 NC가 있으면 항상 표시.
@@ -4166,6 +4167,11 @@ export const PreviewModal = ({
                       guidesVisible={guidesOn || guidedFinishLineMode}
                       initialSideView
                       finishLineVisible={guidesOn || guidedFinishLineMode}
+                      frontPointVisible={
+                        guidesOn ||
+                        guidedFinishLineMode ||
+                        guidedFrontPointMode
+                      }
                       onViewChange={(state) => rightViewerRef.current?.applyViewState(state)}
                       onPaintSpace={
                         setLeftPaintSpace
@@ -4193,6 +4199,11 @@ export const PreviewModal = ({
                       guidesVisible={guidesOn || guidedFinishLineMode}
                       initialSideView
                       finishLineVisible={guidesOn || guidedFinishLineMode}
+                      frontPointVisible={
+                        guidesOn ||
+                        guidedFinishLineMode ||
+                        guidedFrontPointMode
+                      }
                       onViewChange={(state) => rightViewerRef.current?.applyViewState(state)}
                       onPaintSpace={
                         setLeftPaintSpace
@@ -4704,6 +4715,11 @@ export const PreviewModal = ({
                       guidesVisible={guidesOn || guidedFinishLineMode}
                       initialSideView
                       finishLineVisible={guidesOn || guidedFinishLineMode}
+                      frontPointVisible={
+                        guidesOn ||
+                        guidedFinishLineMode ||
+                        guidedFrontPointMode
+                      }
                       onViewChange={(state) => leftViewerRef.current?.applyViewState(state)}
                       onPaintSpace={
                         setRightPaintSpace

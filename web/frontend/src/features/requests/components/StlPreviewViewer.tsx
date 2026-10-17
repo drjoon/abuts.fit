@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-17: 프론트포인트(녹색점)를 finishLineVisible(또는 frontPointVisible)과 함께 on/off.
 // - 2026-10-14: 캔버스 픽셀 비율을 화면 칸에 맞춰 원이 타원이 되지 않게.
 // - 2026-10-01: onPaintSpace — 페인트 표시를 모델에 붙인다. 화면을 돌리면 같이 돈다.
 // - 2026-09-28: fitToView — 프리뷰의 「화면 맞춤」. 칼라 매핑 토글은 PreviewColorMappingToggle 공용.
@@ -111,6 +112,8 @@ type Props = {
   initialSideView?: boolean;
   /** 피니시라인(빨간 선·min/max 점) 표시. 기본 true. */
   finishLineVisible?: boolean;
+  /** filled 프론트포인트(녹색점). 미지정 시 finishLineVisible과 동일. */
+  frontPointVisible?: boolean;
   /** 하단 메타 정보 창. showOverlay일 때만. 기본 true. */
   metaVisible?: boolean;
   /** 삽입축·각도 가이드. 기본 true. 피니시라인은 finishLineVisible. */
@@ -188,6 +191,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       gridVisible = true,
       initialSideView = false,
       finishLineVisible = true,
+      frontPointVisible,
       metaVisible = true,
       guidesVisible = true,
       onViewChange,
@@ -294,6 +298,10 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
   gridVisibleRef.current = gridVisible;
   const finishLineVisibleRef = useRef(finishLineVisible);
   finishLineVisibleRef.current = finishLineVisible;
+  const frontPointVisibleResolved =
+    frontPointVisible ?? finishLineVisible;
+  const frontPointVisibleRef = useRef(frontPointVisibleResolved);
+  frontPointVisibleRef.current = frontPointVisibleResolved;
   const guidesVisibleRef = useRef(guidesVisible);
   guidesVisibleRef.current = guidesVisible;
   useEffect(() => {
@@ -307,6 +315,11 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
   useEffect(() => {
     if (gridRef.current) gridRef.current.visible = gridVisible;
   }, [gridVisible]);
+  useEffect(() => {
+    if (frontPointMeshRef.current) {
+      frontPointMeshRef.current.visible = frontPointVisibleRef.current;
+    }
+  }, [frontPointVisibleResolved]);
   const onPaintSpaceRef = useRef(onPaintSpace);
   onPaintSpaceRef.current = onPaintSpace;
   const paintListenersRef = useRef(new Set<() => void>());
@@ -675,6 +688,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     }
 
     frontPointMeshRef.current.position.copy(scenePosition);
+    frontPointMeshRef.current.visible = frontPointVisibleRef.current;
 
     return () => {
       if (!sceneRef.current) {
@@ -691,6 +705,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     resolvedMetadata?.frontPoint?.y,
     resolvedMetadata?.frontPoint?.z,
     isFilledFile,
+    frontPointVisibleResolved,
   ]);
 
   // STL 렌더링 및 finish line 시각화
