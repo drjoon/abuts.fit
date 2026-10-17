@@ -177,6 +177,12 @@ type Props = {
   generating?: boolean;
   generateDisabled?: boolean;
   generateHint?: string;
+  /** 생성이 막혔을 때 이유. 디자인 단계에서 상시 안내한다. */
+  generateBlockReason?: string | null;
+  generateBlockKind?: "margin" | "implant" | "other" | null;
+  /** 마진·EPL 확인이 필요한 치아 번호. */
+  marginPendingTeeth?: string[];
+  onGoPrepareMargin?: () => void;
   onGenerate?: () => void;
   /** 뷰어가 맞춘 이 크라운에서 잰 가장 얇은 외면. 맞춤이 없으면 null. */
   crownShellMm: number | null;
@@ -974,6 +980,10 @@ export function LabProsthesisModifyPanel({
   generating = false,
   generateDisabled = true,
   generateHint = "보철 생성",
+  generateBlockReason = null,
+  generateBlockKind = null,
+  marginPendingTeeth = [],
+  onGoPrepareMargin,
   onGenerate,
   crownShellMm,
   intaglio,
@@ -1154,7 +1164,12 @@ export function LabProsthesisModifyPanel({
           </div>
           {!edit.margin.deleted ? (
             <>
-              <Row label={`${marginWord} 오프셋`} value={`${edit.margin.offsetMm.toFixed(2)} mm`} />
+              <div className="flex items-center justify-between text-xs font-medium">
+                <span>{marginWord} 오프셋</span>
+                <span className="tabular-nums text-muted-foreground">
+                  {edit.margin.offsetMm.toFixed(2)} mm
+                </span>
+              </div>
               <div className="flex items-center justify-between gap-2 text-xs font-medium">
                 <span>조정 간격</span>
                 <span className="flex items-center gap-1">
@@ -1395,6 +1410,46 @@ export function LabProsthesisModifyPanel({
           {generateHint}
         </TooltipContent>
       </Tooltip>
+      {generateBlockReason && !generating ? (
+        <div className="space-y-1.5 rounded-md border border-destructive/40 bg-destructive/5 px-2 py-2 text-[11px] leading-relaxed">
+          <p className="flex items-start gap-1 font-medium text-destructive">
+            <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>{generateBlockReason}</span>
+          </p>
+          {generateBlockKind === "margin" && marginPendingTeeth.length > 0 ? (
+            <p className="text-muted-foreground">
+              확인 필요:{" "}
+              {marginPendingTeeth.map((tooth) => `#${tooth}`).join(", ")}
+            </p>
+          ) : null}
+          {generateBlockKind === "margin" ? (
+            <div className="grid grid-cols-2 gap-1">
+              {onGoPrepareMargin ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-1 text-[11px]"
+                  onClick={onGoPrepareMargin}
+                >
+                  준비 › 마진
+                </Button>
+              ) : null}
+              {marginReview === "detected" && onConfirmMargin ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-7 px-1 text-[11px]"
+                  data-coach="margin-confirm"
+                  onClick={onConfirmMargin}
+                >
+                  {edit.implant.on ? "EPL 확인" : "마진 확인"}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <StageSubsection
         title="내면"
         open={openTool === "inner"}

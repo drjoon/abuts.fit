@@ -95,6 +95,7 @@
 // - 2026-10-04: 한 번 잡은 뒤에는 화면을 돌려도 설정 모드로 돌아가지 않는다. 아이콘을 눌러야 다시 맞춘다.
 // - 2026-10-04: 패널 접기 셰브론은 붙은 가장자리 쪽으로 연다. 치아 정보 제목·셰브론 클릭이 드래그에 먹히지 않게 한다.
 // - 2026-10-17: 마진 점·펜, 수축·확장, 언더컷·배면 투명을 작업 패널과 뷰어에 연결.
+// - 2026-10-17: AI 채팅 규칙 명령(마진·맞춤·생성)과 디자인 단계 생성 차단 안내.
 // - 2026-10-05: 작업 패널 단계 라벨. 출력 → 생산.
 // - 2026-10-05: 디자인 하위는 내면·형상·교합·훅·컷백·홀·커넥터. 보철 생성은 맨 위.
 // - 2026-10-04: 작업 패널. 상단은 스캔·디자인·모델·출력. 마진은 디자인 안. 수정은 마진·삽입축·내면·형상·훅·컷백·홀·커넥터 아코디언. 치아 라벨은 치아 정보 뱃지로.
@@ -315,6 +316,13 @@ import {
   type WorkSessionDocument,
   type WorkSessionViewToggles,
 } from "@/shared/practice/labProsthesisWorkDraft";
+import {
+  applyLabAiChatMarginOffset,
+  applyLabAiChatPatchRefine,
+  interpretLabProsthesisAiChat,
+  refineTabForNavigate,
+  type LabAiChatAction,
+} from "@/shared/practice/labProsthesisAiChatCommands";
 import {
   undercutLimitFromRange,
   type ContactPaintMode,
@@ -3236,6 +3244,45 @@ function LabProsthesisAiDesignDialog({
     };
   })();
 
+  const marginPendingTeeth = useMemo(() => {
+    const needsConfirm = (toothNumber: string) => {
+      const tooth = plan.teeth.find((row) => row.toothNumber === toothNumber);
+      if (!tooth?.designable) return false;
+      const edit = edits[toothNumber] ?? createToothDesignEdit();
+      if (edit.pontic.on) return false;
+      if (tooth.implant) {
+        if (!edit.implant.libraryId || !edit.implant.aligned) return false;
+      }
+      return edit.margin.deleted || (marginReview[toothNumber] ?? "none") !== "confirmed";
+    };
+    if (isBridgeSpan && bridgeMembers.length > 1) {
+      const pending = bridgeMembers.filter((number) => generated[number] !== true);
+      return pending.filter(needsConfirm);
+    }
+    if (!activeNumber) return [];
+    return needsConfirm(activeNumber) ? [activeNumber] : [];
+  }, [
+    activeNumber,
+    bridgeMembers,
+    edits,
+    generated,
+    isBridgeSpan,
+    marginReview,
+    plan.teeth,
+  ]);
+
+  const generateBlockKind: "margin" | "implant" | "other" | null =
+    designGenerate.disabled && !generating
+      ? designGenerate.hint.includes("마진") || designGenerate.hint.includes("EPL")
+        ? "margin"
+        : designGenerate.hint.includes("스캔바디") ||
+            designGenerate.hint.includes("라이브러리")
+          ? "implant"
+          : designGenerate.hint.includes("치아")
+            ? "other"
+            : "other"
+      : null;
+
   const commitAiChat = (next: AiDesignChatTurn[]) => {
     const clipped = next.slice(-40);
     for (const turn of next.slice(0, next.length - clipped.length)) {
@@ -3254,13 +3301,6 @@ function LabProsthesisAiDesignDialog({
     commitAiChat(current.filter((_, row) => row !== index));
   };
 
-  const sendAiChat = () => {
-    const text = chatDraft.trim().slice(0, 2000);
-    if (!text) return;
-    commitAiChat([...aiChatRef.current, { role: "user", text }]);
-    setChatDraft("");
-  };
-
   const sendPaintToAi = () => {
     const surface = paint.paintRef.current;
     const base = viewerRef.current?.captureCanvas();
@@ -3271,6 +3311,10 @@ function LabProsthesisAiDesignDialog({
       commitAiChat([
         ...aiChatRef.current,
         { role: "user", text: "페인트 표시", fromPaint: true, paintImageUrl: url },
+        {
+          role: "assistant",
+          text: "페인트 표시를 받았습니다.\n위치를 말씀해 주시면 나중에 반영할 수 있습니다.",
+        },
       ]);
       setPanelsHidden(false);
       setChatOpen(true);
@@ -3520,6 +3564,100 @@ function LabProsthesisAiDesignDialog({
       setMarginShown(true);
       if (detect) runMarginDetect(marginToothNumbersRef.current);
     }
+  };
+
+  const applyLabAiChatAction = (action: LabAiChatAction) => {
+    switch (action.kind) {
+      case "patchRefine":
+        setEdits((prev) => {
+          const current = prev[action.tooth] ?? createToothDesignEdit();
+          return {
+            ...prev,
+            [action.tooth]: applyLabAiChatPatchRefine(current, action.patch),
+          };
+        });
+        return;
+      case "adjustMarginOffset":
+        setEdits((prev) => {
+          const current = prev[action.tooth] ?? createToothDesignEdit();
+          return {
+            ...prev,
+            [action.tooth]: applyLabAiChatMarginOffset(current, action.deltaMm),
+          };
+        });
+        setMarginReview((prev) =>
+          prev[action.tooth] === "confirmed"
+            ? prev
+            : { ...prev, [action.tooth]: "confirmed" },
+        );
+        return;
+      case "confirmMargin":
+        confirmMargin(action.tooth);
+        return;
+      case "autoDetectMargin":
+        autoDetectMargin(action.tooth);
+        return;
+      case "generate":
+        void runGenerate(action.teeth);
+        return;
+      case "toggleRefine":
+        setEdits((prev) => {
+          const current = prev[action.tooth] ?? createToothDesignEdit();
+          return {
+            ...prev,
+            [action.tooth]: {
+              ...current,
+              refine: { ...current.refine, [action.field]: action.on },
+            },
+          };
+        });
+        return;
+      case "navigate":
+        if (action.target === "prepareMargin") {
+          setStage("scan");
+          openPrepareTool("margin", false);
+          if (activeNumber) showTooth(activeNumber);
+          return;
+        }
+        setStage("design");
+        setMarginShown(true);
+        if (action.target === "designInner") {
+          setModifyTool("inner");
+          setDesignFold("inner");
+          return;
+        }
+        setModifyTool("refine");
+        setDesignFold("refine");
+        setRefineTab(refineTabForNavigate(action.target) ?? "transform");
+        return;
+      default:
+        return;
+    }
+  };
+
+  const sendAiChat = () => {
+    const text = chatDraft.trim().slice(0, 2000);
+    if (!text) return;
+    const { actions, reply } = interpretLabProsthesisAiChat(text, {
+      activeToothNumber: activeNumber,
+      marginReview: marginReviewRef.current,
+      edits: editsRef.current,
+    });
+    const editMutations = actions.some(
+      (action) =>
+        action.kind === "patchRefine" ||
+        action.kind === "adjustMarginOffset" ||
+        action.kind === "toggleRefine",
+    );
+    if (editMutations) beginEditUndo();
+    for (const action of actions) applyLabAiChatAction(action);
+    if (actions.length > 0) queueSaveWorkRef.current();
+    commitAiChat([
+      ...aiChatRef.current,
+      { role: "user", text },
+      { role: "assistant", text: reply },
+    ]);
+    setChatDraft("");
   };
 
   const patchMeshEdit = (patch: Partial<ScanMeshEdit>) => {
@@ -5630,6 +5768,16 @@ function LabProsthesisAiDesignDialog({
                         generating={generating}
                         generateDisabled={designGenerate.disabled}
                         generateHint={designGenerate.hint}
+                        generateBlockReason={
+                          designGenerate.disabled ? designGenerate.hint : null
+                        }
+                        generateBlockKind={generateBlockKind}
+                        marginPendingTeeth={marginPendingTeeth}
+                        onGoPrepareMargin={() => {
+                          setStage("scan");
+                          openPrepareTool("margin", false);
+                          if (activeNumber) showTooth(activeNumber);
+                        }}
                         onGenerate={designGenerate.run}
                         crownShellMm={activeNumber ? (crownShells[activeNumber] ?? null) : null}
                         intaglio={activeNumber ? (intaglios[activeNumber] ?? null) : null}
@@ -6760,7 +6908,11 @@ function AiDesignChatPanel({
             )}
           >
             {turns.length === 0 ? (
-              <p className="text-xs text-muted-foreground">AI에게 디자인 명령해주세요.</p>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                AI에게 디자인 명령해 주세요.
+                <br />
+                예: 교합 간격 0.2, 마진 확인, 도움말
+              </p>
             ) : (
               turns.map((turn, index) => {
                 const shotNo = turn.paintImageUrl ? ++imageNo : 0;
