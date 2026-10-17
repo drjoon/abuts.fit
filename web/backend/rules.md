@@ -1179,10 +1179,11 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 배송은 **딜리버리 익일 도착만**. 택배 묶음 출고·월 가입 폐지, 거래처 배송비 없음. 딜러 거래처의 딜리버리 월정액 55,000원(VAT 포함)은 적립에서 빼지 않는다. 적립 총액을 입금하고, 딜러사가 딜리버리 회사에 직접 입금한다. 딜러가 없으면 어벗츠 부담(`REV_ADMIN`). 직전 달 의뢰가 **3건 이상**인 직판 거래처마다 월 1회 `DELIVERY_MONTHLY_COST` 저널(`deliveryMonthlyCost.service.js`, 멱등키 거래처+월). 이미 딜러 적립에서 뺀 저널은 워커가 삭제한다. 2건 이하는 배송업체 무료(`DELIVERY_FREE_MAX_MONTHLY_REQUESTS`)라 저널 없음.
   - 위 항목과 충돌하는 이전 서술(자정 스냅샷 단가·할인그룹·택배 묶음 출고 박스당 배송비·딜러 10~20% 누적 구간·제조 49.5%·런칭 이벤트 단가)은 폐지된 정책이다.
   - FE: `src/shared/pricing/requestorUnitPricePolicy.ts`(검증·상수), `src/shared/sales/CustomerPriceDialog.tsx`(딜러 「거래처 가격」), `NewRequestShippingSection.tsx`(딜리버리 단일 카드). 할인그룹 페이지·`DeliverySubscribeDialog` 삭제, `/dashboard/discount-group`은 대시보드로 리다이렉트.
-- **치과 기공의뢰 OB 후불 + 어벗츠로 선불 크레딧 + 대형 치과 보증금 SSOT (2026-10-17, 월 한도 없음)**:
+- **치과 OB 후불(PTX·어벗·커스텀어벗) + 기공소 선불 + 대형 치과 보증금 SSOT (2026-10-17, 월 한도 없음)**:
   - 모델: `BusinessAnchor.openBankingConsent`, `PracticeMonthlySettlement`, `PracticeLabDeposit`.
   - 서비스/어댑터: `services/openBankingAdapter.service.js`(`executeBatchWithdrawal`, `executeDirectTransfer`), `services/practiceObBilling.service.js`.
   - API: `/api/practice/billing/{overview,consent,reauth,retry-settlement/:id,confirm-month,deposits}` (`modules/practiceBilling/practiceBilling.routes.js`).
   - 워커: `jobs/monthlyPracticeObSettlementWorker.js` (1일 확정 → 5일 09:00 KST 일괄이체).
-  - 게이트: `checkCreditLock`은 ChargeOrder·거래처 가격 승인만(커스텀어벗 `Request` 선불 크레딧에 OB 잠금 없음). 미납·Hold·재인증 만료는 `checkPracticeSettlementLock`, 신규 PTX 생성에서만(`enforceSettlementLock: true`).
+  - 후불 활성: `utils/practiceObPostpaid.util.js` (`isPracticeObPostpaidActive` — OB active + Hold 없음, 90일 만료는 overdraft가 아니라 PTX 잠금). hold/견적: `allocateLabFeeAndAbutmentSpend`·PTX abutment slice·`holdRequestCreditsOnSubmit`(치과 앵커).
+  - 게이트: `checkCreditLock`은 ChargeOrder·거래처 가격 승인만. OB 정산 잠금은 `Request`·진행 중 PTX CA에 적용하지 않음. 미납·Hold·재인증 만료는 `checkPracticeSettlementLock`, **신규 PTX 생성만**(`enforceSettlementLock: true`).
   - 보증금: 월 이용 1천만원 초과(`PRACTICE_DEPOSIT_GUIDANCE_THRESHOLD`)는 안내만. 개별 기공소 직접 수취, 플랫폼 미보관.

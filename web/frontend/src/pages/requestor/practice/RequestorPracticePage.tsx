@@ -504,20 +504,22 @@ import {
   PTX_CA_INSUFFICIENT_CREDIT_REASON,
   PTX_CA_INSUFFICIENT_CREDIT_TITLE,
 } from "@/shared/legal/creditLedgerCopy";
+import {
+  CREDITS_PRACTICE_AUTOPAY_HREF,
+  parseApiErrorPayload,
+  resolvePracticeBilling402Dialog,
+  type PracticeBilling402Dialog,
+} from "@/shared/practice/practiceBilling402";
 import type { ReactNode } from "react";
 
-const CREDITS_PRACTICE_BILLING_HREF = "/dashboard/credits?tab=autopay";
-
-function isPtxCaInsufficientCreditBody(body: Record<string, unknown>, status?: number) {
+function isPtxCaInsufficientCreditBody(body: Record<string, unknown>) {
   const reason = String(body.reason || "").trim();
   const message = String(body.message || "").trim();
   return (
-    status === 402 ||
     reason === PTX_CA_INSUFFICIENT_CREDIT_REASON ||
     reason === "insufficient_credit_for_hold" ||
     reason === "insufficient_credit_for_custom_abutment" ||
-    reason === "insufficient_lab_credit_for_abuts_shipping" ||
-    message.includes("크레딧이 부족") ||
+    message.includes("커스텀어벗") ||
     message.includes("데모 모드 마이너스는")
   );
 }
@@ -1042,8 +1044,8 @@ export function RequestorPracticeReceivePage({
     useState(false);
   const [acceptProsthesisFollowUpWorkBusy, setAcceptProsthesisFollowUpWorkBusy] =
     useState(false);
-  const [ptxCaCreditConfirmOpen, setPtxCaCreditConfirmOpen] = useState(false);
-  const [ptxCaCreditConfirmMessage, setPtxCaCreditConfirmMessage] = useState("");
+  const [billing402Dialog, setBilling402Dialog] =
+    useState<PracticeBilling402Dialog | null>(null);
   const [openSubcontractBusy, setOpenSubcontractBusy] = useState(false);
   const [closeSubcontractBusy, setCloseSubcontractBusy] = useState(false);
   const [releaseBusy, setReleaseBusy] = useState(false);
@@ -3465,10 +3467,30 @@ export function RequestorPracticeReceivePage({
   /** 수락/취소 버튼 UI 전환 최소 딜레이(API는 백그라운드, UI는 이 시간만 대기) */
   const ACTION_UI_MIN_MS = 500;
 
-  const openPtxCaCreditConfirm = useCallback((message?: string) => {
-    setPtxCaCreditConfirmMessage(String(message || "").trim());
-    setPtxCaCreditConfirmOpen(true);
-  }, []);
+  const openPracticeBilling402FromResponse = useCallback(
+    (rawBody: Record<string, unknown>, status?: number) => {
+      const body = parseApiErrorPayload(rawBody);
+      const dialog = resolvePracticeBilling402Dialog(body, status);
+      if (dialog) {
+        setBilling402Dialog(dialog);
+        return true;
+      }
+      if (isPtxCaInsufficientCreditBody(body)) {
+        const message = String(body.message || "").trim();
+        setBilling402Dialog({
+          title: PTX_CA_INSUFFICIENT_CREDIT_TITLE,
+          descriptionLines: message
+            ? message.split("\n").filter(Boolean)
+            : [...PTX_CA_INSUFFICIENT_CREDIT_DESCRIPTION_LINES],
+          confirmLabel: PTX_CA_INSUFFICIENT_CREDIT_CONFIRM_LABEL,
+          href: CREDITS_PRACTICE_AUTOPAY_HREF,
+        });
+        return true;
+      }
+      return false;
+    },
+    [],
+  );
 
   const markTransferAccepted = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
@@ -3621,9 +3643,9 @@ export function RequestorPracticeReceivePage({
                   ? (res.data as Record<string, unknown>)
                   : {};
               applyAcceptedLocalPatch(transfer, rollbackPatch);
-              if (isPtxCaInsufficientCreditBody(body, res.status)) {
-                openPtxCaCreditConfirm(String(body.message || ""));
-              } else {
+              if (
+                !openPracticeBilling402FromResponse(body, res.status)
+              ) {
                 toast({
                   title: "작업시작 실패",
                   description: String(
@@ -3809,7 +3831,7 @@ export function RequestorPracticeReceivePage({
       mergeProductionRelatedRequestIds,
       navigate,
       openGateModal,
-      openPtxCaCreditConfirm,
+      openPracticeBilling402FromResponse,
       pickRelatedRequestIdsFromPayload,
       settingsReady,
       toast,
@@ -6872,8 +6894,7 @@ export function RequestorPracticeReceivePage({
                 ? removeFailedDesignFile(prev)
                 : prev,
             );
-            if (isPtxCaInsufficientCreditBody(body, res.status)) {
-              openPtxCaCreditConfirm(String(body.message || ""));
+            if (openPracticeBilling402FromResponse(body, res.status)) {
               return;
             }
             throw new Error(
@@ -7012,7 +7033,7 @@ export function RequestorPracticeReceivePage({
       designConfirmQueueIndex,
       designConfirmRequestId,
       designConfirmTransfer,
-      openPtxCaCreditConfirm,
+      openPracticeBilling402FromResponse,
       toast,
       token,
       ensureFilesUploaded,
@@ -10517,27 +10538,29 @@ export function RequestorPracticeReceivePage({
         onCancel={() => setWorkStartUploadNoticeOpen(false)}
       />
       <ConfirmDialog
-        open={ptxCaCreditConfirmOpen}
-        title={PTX_CA_INSUFFICIENT_CREDIT_TITLE}
+        open={billing402Dialog != null}
+        title={billing402Dialog?.title ?? PTX_CA_INSUFFICIENT_CREDIT_TITLE}
         panelClassName="max-w-lg"
         description={
-          <div className="space-y-1.5 leading-relaxed">
-            {(ptxCaCreditConfirmMessage
-              ? ptxCaCreditConfirmMessage.split("\n").filter(Boolean)
-              : PTX_CA_INSUFFICIENT_CREDIT_DESCRIPTION_LINES
-            ).map((line) => (
-              <p key={line}>{line}</p>
-            ))}
-          </div>
+          billing402Dialog ? (
+            <div className="space-y-1.5 leading-relaxed">
+              {billing402Dialog.descriptionLines.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+            </div>
+          ) : null
         }
-        confirmLabel={PTX_CA_INSUFFICIENT_CREDIT_CONFIRM_LABEL}
+        confirmLabel={
+          billing402Dialog?.confirmLabel ?? PTX_CA_INSUFFICIENT_CREDIT_CONFIRM_LABEL
+        }
         cancelLabel="닫기"
         confirmTone="primary"
         onConfirm={() => {
-          setPtxCaCreditConfirmOpen(false);
-          navigate(CREDITS_PRACTICE_BILLING_HREF);
+          const href = billing402Dialog?.href ?? CREDITS_PRACTICE_AUTOPAY_HREF;
+          setBilling402Dialog(null);
+          navigate(href);
         }}
-        onCancel={() => setPtxCaCreditConfirmOpen(false)}
+        onCancel={() => setBilling402Dialog(null)}
       />
       </>
       ) : null}

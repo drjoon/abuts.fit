@@ -47,6 +47,10 @@ import {
 import { CONTENT_MEASURED_CHROME_CLASS } from "@/shared/ui/contentMeasuredChrome";
 import { cn } from "@/shared/ui/cn";
 import { formatRequestorWon } from "@/shared/pricing/requestorUnitPricePolicy";
+import {
+  PRACTICE_OB_BILLING_NOTICE_BODY,
+  PRACTICE_OB_BILLING_NOTICE_TITLE,
+} from "@/shared/legal/creditPrepaidCopy";
 
 type SettlementLine = {
   id?: string;
@@ -413,8 +417,30 @@ export function PracticeObBillingTab() {
   const consentMeta = consentStatusMeta(openBankingConsent.status);
   const isObActive = openBankingConsent.status === "active";
 
+  const noticeLines = PRACTICE_OB_BILLING_NOTICE_BODY.split("\n").filter(Boolean);
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-1.5 py-2 pb-4">
+      <div
+        className={cn(
+          CONTENT_MEASURED_CHROME_CLASS,
+          "mx-auto rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 text-xs leading-relaxed text-slate-600 shadow-sm sm:text-sm",
+        )}
+      >
+        <p className="font-medium text-slate-800">{PRACTICE_OB_BILLING_NOTICE_TITLE}</p>
+        <p className="mt-1">
+          {noticeLines.map((line, i) => (
+            <span key={line}>
+              {i > 0 ? (
+                <>
+                  <br />
+                </>
+              ) : null}
+              {line}
+            </span>
+          ))}
+        </p>
+      </div>
       {(isHeld || openBankingConsent.needsReauth) && (
         <div
           className={cn(
@@ -699,7 +725,8 @@ export function PracticeObBillingTab() {
                 월 이용이 {formatRequestorWon(depositGuidance.threshold)}원을
                 넘었습니다.
                 <br />
-                미입금 시 다음 기공의뢰가 제한될 수 있습니다.
+                영업 담당자 안내에 따라 거래 기공소 계좌로 보증금을 이체해
+                주세요.
               </p>
               {isObActive ? (
                 <div className="mt-4 space-y-3">

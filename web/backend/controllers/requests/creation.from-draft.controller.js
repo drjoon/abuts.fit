@@ -82,6 +82,7 @@ import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { holdRequestCreditsOnSubmit, resolveDevopsEscrowOwnerId } from "../../services/requestCreditHold.service.js";
+import { isPracticeObPostpaidActive } from "../../utils/practiceObPostpaid.util.js";
 import { positiveSpendableCredit } from "../../services/creditBalance.service.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import { emitDesignClaimChanged } from "../../utils/designClaimRealtime.js";
@@ -1246,7 +1247,14 @@ export async function createRequestsFromDraft(req, res) {
 
     // 부족분은 생성 전에 막아 402. 실제 보류는 insert 직후·응답 전(동시 제출 경합도 402로 응답).
     let creditBalanceForHold = null;
-    if (!isPracticeRoutingSubmission && preparedCasesForCreate.length > 0) {
+    const practiceObPostpaid =
+      businessAnchorId &&
+      (await isPracticeObPostpaidActive(businessAnchorId));
+    if (
+      !isPracticeRoutingSubmission &&
+      preparedCasesForCreate.length > 0 &&
+      !practiceObPostpaid
+    ) {
       creditBalanceForHold = await getBusinessCreditBalanceBreakdown({
         businessAnchorId,
       });

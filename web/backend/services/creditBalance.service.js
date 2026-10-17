@@ -119,7 +119,7 @@ export function positiveSpendableCredit({
 }
 
 /**
- * 기공비는 데모 overdraft 가능. 커스텀어벗 금액은 충전 잔액만.
+ * 기공비·어벗(커스텀어벗) 금액 배분. OB 후불 치과는 lab·abutment 모두 overdraft 가능.
  * 어벗을 먼저 배분해 기공 overdraft가 충전분을 쓰지 않게 한다.
  */
 export function allocateLabFeeAndAbutmentSpend({
@@ -138,6 +138,7 @@ export function allocateLabFeeAndAbutmentSpend({
   let freeRequest = Math.round(Number(freeRequestCredit) || 0);
   let freeShipping = Math.max(0, Math.round(Number(freeShippingCredit) || 0));
   let settlement = Math.max(0, Math.round(Number(settlementCredit) || 0));
+  const allowPostpaid = Boolean(allowLabOverdraft);
 
   const abutSplit = allocateSpendFromCreditBuckets({
     amount: abutAmt,
@@ -146,7 +147,7 @@ export function allocateLabFeeAndAbutmentSpend({
     freeShippingCredit: freeShipping,
     settlementCredit: settlement,
     freeOrder,
-    allowFreeRequestOverdraft: false,
+    allowFreeRequestOverdraft: allowPostpaid,
   });
   if (!abutSplit.ok) {
     return {

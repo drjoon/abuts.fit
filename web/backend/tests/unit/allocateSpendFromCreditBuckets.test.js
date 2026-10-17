@@ -116,13 +116,26 @@ describe("allocateLabFeeAndAbutmentSpend", () => {
     expect(split.labSplit.fromFreeRequest).toBe(25000);
   });
 
-  test("충전 잔액이 없으면 커스텀어벗은 거절하고 기공비만은 통과한다", () => {
-    const blocked = allocateLabFeeAndAbutmentSpend({
+  test("OB 후불(allowLabOverdraft)이면 어벗·기공비 모두 마이너스 허용", () => {
+    const postpaid = allocateLabFeeAndAbutmentSpend({
       labAmount: 30000,
       abutmentAmount: 15000,
       paidCredit: 0,
       freeRequestCredit: 0,
       allowLabOverdraft: true,
+    });
+    expect(postpaid.ok).toBe(true);
+    expect(postpaid.abutSplit.fromFreeRequest).toBe(15000);
+    expect(postpaid.labSplit.fromFreeRequest).toBe(30000);
+  });
+
+  test("선불이면 충전 잔액 없을 때 커스텀어벗은 거절하고 기공비만은 통과하지 않는다", () => {
+    const blocked = allocateLabFeeAndAbutmentSpend({
+      labAmount: 30000,
+      abutmentAmount: 15000,
+      paidCredit: 0,
+      freeRequestCredit: 0,
+      allowLabOverdraft: false,
     });
     expect(blocked.ok).toBe(false);
     expect(blocked.failedKind).toBe("abutment");

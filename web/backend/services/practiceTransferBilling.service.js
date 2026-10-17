@@ -135,6 +135,7 @@ import {
   allocateAffiliateVatAcrossSupplyParts,
 } from "./creditRevenuePolicy.service.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
+import { isPracticeObPostpaidActive } from "../utils/practiceObPostpaid.util.js";
 import PracticeTransfer from "../models/practiceTransfer.model.js";
 import {
   computePracticeTransferRetailFees,
@@ -399,22 +400,9 @@ async function lockGuard(businessAnchorId, session) {
   );
 }
 
-/**
- * 오픈뱅킹(OB) 장기동의가 활성이고 paymentHold가 없으면
- * 기공비(어벗 소매가 제외)를 월 후불로 허용한다. 월 한도는 두지 않는다.
- */
+/** @deprecated 이름 유지 — OB 후불 활성 여부(SSOT: `isPracticeObPostpaidActive`) */
 async function practiceAllowsFreeRequestOverdraft(practiceAnchorId) {
-  if (!practiceAnchorId) return false;
-  const anchor = await BusinessAnchor.findById(practiceAnchorId)
-    .select({ openBankingConsent: 1 })
-    .lean();
-  if (!anchor) return false;
-  const consent = anchor.openBankingConsent;
-  if (consent?.status === "active" && !consent?.paymentHold?.isHeld) {
-    const exp = consent.expiresAt ? new Date(consent.expiresAt).getTime() : 0;
-    return exp > Date.now();
-  }
-  return false;
+  return isPracticeObPostpaidActive(practiceAnchorId);
 }
 
 function formatWon(amount) {
@@ -2259,7 +2247,7 @@ export async function holdPracticeTransferCredits({
         amount: shares.abut,
         shareKind: "abutment",
         displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.holdAbutment,
-        allowFreeRequestOverdraft: false,
+        allowFreeRequestOverdraft: allowOverdraft,
       },
       {
         amount: shares.lab,

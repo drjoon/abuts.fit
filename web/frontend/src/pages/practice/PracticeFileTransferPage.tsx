@@ -273,6 +273,11 @@ import {
   type PracticeTransferAutoMatchBudget,
 } from "@/shared/practice/autoMatchBudget";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import {
+  parseApiErrorPayload,
+  resolvePracticeBilling402Dialog,
+  type PracticeBilling402Dialog,
+} from "@/shared/practice/practiceBilling402";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import {
   Tooltip,
@@ -1382,6 +1387,8 @@ export const PracticeFileTransferPage = ({
   const [skipJig, setSkipJig] = useState(true);
   const [rushProcessing, setRushProcessing] = useState(false);
   const [rushConfirmOpen, setRushConfirmOpen] = useState(false);
+  const [billing402Dialog, setBilling402Dialog] =
+    useState<PracticeBilling402Dialog | null>(null);
   const [pendingRushArrivalYmd, setPendingRushArrivalYmd] = useState("");
   const [autoMatchBudget, setAutoMatchBudget] =
     useState<PracticeTransferAutoMatchBudget | null>(null);
@@ -8866,7 +8873,15 @@ export const PracticeFileTransferPage = ({
         },
       });
       if (!submitRes.ok) {
-        const body = asApiMessagePayload(submitRes.data);
+        const body = parseApiErrorPayload(submitRes.data);
+        const billingDialog = resolvePracticeBilling402Dialog(
+          body,
+          submitRes.status,
+        );
+        if (billingDialog) {
+          setBilling402Dialog(billingDialog);
+          return;
+        }
         throw new Error(
           String(
             body?.message ||
@@ -12548,6 +12563,30 @@ export const PracticeFileTransferPage = ({
           cancelLabel="취소"
           onConfirm={handleConfirmDeleteTransfer}
           onCancel={handleCancelDeleteTransfer}
+        />
+
+        <ConfirmDialog
+          open={billing402Dialog != null}
+          title={billing402Dialog?.title ?? ""}
+          panelClassName="max-w-lg"
+          description={
+            billing402Dialog ? (
+              <div className="space-y-1.5 leading-relaxed">
+                {billing402Dialog.descriptionLines.map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+              </div>
+            ) : null
+          }
+          confirmLabel={billing402Dialog?.confirmLabel ?? "자동정산"}
+          cancelLabel="닫기"
+          confirmTone="primary"
+          onConfirm={() => {
+            const href = billing402Dialog?.href;
+            setBilling402Dialog(null);
+            if (href) navigate(href);
+          }}
+          onCancel={() => setBilling402Dialog(null)}
         />
 
         <ConfirmDialog

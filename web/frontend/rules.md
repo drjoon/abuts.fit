@@ -974,4 +974,4 @@ Notes:
   - 배송은 **택배(기본)와 딜리버리** 중 거래처별 하나. 거래처 배송비는 받지 않는다. 택배는 박스당 택배비를 딜러 적립에서 차감한다. 딜리버리(월 100건 이상 안내)는 적립에서 빼지 않고, 딜러사가 딜리버리 회사에 직접 입금한다. 월정액 원가 저널은 중단.
   - 위 항목과 충돌하는 이전 서술(자정 스냅샷 단가·할인그룹·딜리버리만·딜러 10~20% 누적 구간·제조 49.5%·런칭 이벤트 단가)은 폐지된 정책이다.
   - FE: `src/shared/pricing/requestorUnitPricePolicy.ts`(검증·상수), `src/shared/shipping/shippingPolicyCopy.ts`(문구), `src/shared/sales/CustomerPriceDialog.tsx`(딜러 「거래처 가격」), `NewRequestShippingSection.tsx`(택배·딜리버리 읽기 전용 카드). 할인그룹 페이지·`DeliverySubscribeDialog` 삭제, `/dashboard/discount-group`은 대시보드로 리다이렉트.
-- **치과 크레딧 화면 (2026-10-17)**: 「충전」 탭은 어벗츠로 커스텀어벗 선불 크레딧(`CreditPaymentTab`), 「자동정산」 탭(`PracticeObBillingTab`)은 기공의뢰 후불·OB 장기동의·Face ID 재인증/재이체·보증금 이체(월 1천만원 초과 안내). 월 후불 한도 UI는 없다. 딜러 `CustomerPriceDialog`는 `depositGuidance` 행에 「보증금 안내」 뱃지를 보인다. 카피 SSOT: `shared/legal/creditPrepaidCopy.ts`.
+- **치과 크레딧 화면 (2026-10-17)**: 「자동정산」 탭(`PracticeObBillingTab`) — 기공의뢰·PTX 어벗·어벗츠로 커스텀어벗 OB 후불, Face ID 재인증/재이체·보증금 이체(월 1천만원 초과 안내). 충전 탭 없음(기공소만 `CreditPaymentTab`). 402 CTA: `shared/practice/practiceBilling402.ts`. 딜러 `CustomerPriceDialog`는 `depositGuidance` 행에 「보증금 안내」 뱃지. 카피 SSOT: `shared/legal/creditPrepaidCopy.ts`.

@@ -32,6 +32,7 @@ import {
   allocateSpendFromCreditBuckets,
   computeBusinessCreditBalanceFromLedger,
 } from "./creditBalance.service.js";
+import { isPracticeObPostpaidActive } from "../utils/practiceObPostpaid.util.js";
 import { isFmDentalShippingActiveForAnchor } from "./fmDentalShippingSubscription.service.js";
 import {
   deleteGeneralLedgerCommitJournal,
@@ -361,7 +362,7 @@ function prepareOneRequestHold({
   freeOrder = ["freeRequest", "freeShipping"],
   actorUserId = null,
   cachedBalance = null,
-  /** 커스텀어벗 hold는 데모 마이너스를 허용하지 않는다. */
+  /** 치과 OB 후불이면 true. 기공소·선불 치과는 false. */
   allowFreeRequestOverdraft = false,
 }) {
   const amt = Math.max(0, Math.round(Number(amount || 0)));
@@ -812,8 +813,18 @@ export async function holdRequestCreditsOnSubmit({
   const shippingGroupsNewHoldOnly = new Set();
   const lockedAnchors = new Set();
   const balanceByAnchor = new Map();
+  const postpaidByAnchor = new Map();
   let totalHeld = 0;
   const results = [];
+
+  const resolveAllowPostpaidHold = async (requestorAnchorId) => {
+    const key = String(requestorAnchorId || "").trim();
+    if (!key) return false;
+    if (postpaidByAnchor.has(key)) return postpaidByAnchor.get(key);
+    const active = await isPracticeObPostpaidActive(key);
+    postpaidByAnchor.set(key, active);
+    return active;
+  };
 
   const takeCachedBalance = async (requestorAnchorId) => {
     if (!lockedAnchors.has(requestorAnchorId)) {
@@ -875,6 +886,7 @@ export async function holdRequestCreditsOnSubmit({
       });
       return;
     }
+    const allowPostpaid = await resolveAllowPostpaidHold(requestorAnchorId);
     const prepared = prepareOneRequestHold({
       request,
       requestorAnchorId,
@@ -886,7 +898,7 @@ export async function holdRequestCreditsOnSubmit({
       freeOrder,
       actorUserId,
       cachedBalance: await takeCachedBalance(requestorAnchorId),
-      allowFreeRequestOverdraft: false,
+      allowFreeRequestOverdraft: allowPostpaid,
     });
     if (!prepared?.held || !prepared.journal) {
       results.push({ kind: holdKind, ...prepared });
