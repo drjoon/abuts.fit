@@ -213,6 +213,15 @@ const requestSchema = new mongoose.Schema(
         enum: ["none", "shallow", "deep"],
         default: "deep",
       },
+      // Finish Composite StepIncrement(mm) — 제조사 override. null=의뢰자설정(포스트=retentionGroove, 치은=PRC 0.05).
+      compositeStepIncrementPostOverrideMm: {
+        type: Number,
+        default: null,
+      },
+      compositeStepIncrementGingivaOverrideMm: {
+        type: Number,
+        default: null,
+      },
       // related files:
       // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
       // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx

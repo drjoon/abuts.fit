@@ -129,6 +129,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // Finish_Front StepIncrement: none=5axisComposite_Front.prc 그대로, deep=0.20.
         // Finish 인접 겹침(0.8mm)은 retentionGroove와 별개.
         private string _backendRetentionGroove;
+        private double? _backendCompositeStepPostOverrideMm;
+        private double? _backendCompositeStepGingivaOverrideMm;
         public string FaceHoleProcessFilePath { get; set; }
         public string ConnectionMachiningProcessFilePath { get; set; }
         private double? _effectiveFrontLimitX;
@@ -324,6 +326,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         _backendRetentionGroove = RequireBackendRetentionGrooveOrThrow(
                             requestMeta.retentionGroove,
                             requestId);
+                        _backendCompositeStepPostOverrideMm =
+                            TryNormalizeCompositeStepOverrideMm(
+                                requestMeta.compositeStepIncrementPostOverrideMm);
+                        _backendCompositeStepGingivaOverrideMm =
+                            TryNormalizeCompositeStepOverrideMm(
+                                requestMeta.compositeStepIncrementGingivaOverrideMm);
                         bool safeSplitEnabled = requestMeta.safeSplitEnabled ?? true;
                         Environment.SetEnvironmentVariable(
                             "ABUTS_SAFE_SPLIT_ENABLE",
@@ -632,6 +640,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendFinishLinePoints = null;
             _backendManufacturerHexRotation = null;
             _backendHexRotationAppliedDeg = null;
+            _backendRetentionGroove = null;
+            _backendCompositeStepPostOverrideMm = null;
+            _backendCompositeStepGingivaOverrideMm = null;
             _effectiveFrontLimitX = null;
             Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
             Environment.SetEnvironmentVariable(AppConfig.TwoPhaseEnableEnv, null);
@@ -643,6 +654,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", null);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
             Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", null);
+            Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, null);
+            Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementBEnv, null);
             Environment.SetEnvironmentVariable("ABUTS_SAFE_SPLIT_ENABLE", null);
             Environment.SetEnvironmentVariable("ABUTS_CAM_DIAMETER", null);
             Environment.SetEnvironmentVariable("ABUTS_MAX_DIAMETER", null);
@@ -714,6 +727,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             // 유지홈(retentionGroove) — Finish_Front StepIncrement. none=5axisComposite_Front.prc, deep=0.20.
             // 값을 의뢰별로 덮어쓰기 위한 필드. rules.md §7.4.1 참조.
             [DataMember] public string retentionGroove { get; set; }
+            [DataMember(EmitDefaultValue = false)] public double? compositeStepIncrementPostOverrideMm { get; set; }
+            [DataMember(EmitDefaultValue = false)] public double? compositeStepIncrementGingivaOverrideMm { get; set; }
             [DataMember] public RequestMetaFinishLine finishLine { get; set; }
         }
         [DataContract]
@@ -2013,14 +2028,29 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
-        // 유지홈(retentionGroove) SSOT — 백엔드 none/deep만 허용.
-        // Finish_Front StepIncrement는 ABUTS_RETENTION_GROOVE 를 본다. Finish 겹침(0.8mm)은 별개.
-        // ABUTS_COMPOSITE_STEP_INCREMENT_A 는 사용하지 않는다.
-        //   none → 5axisComposite_Front.prc StepIncrement 그대로
-        //   deep → 0.20
-        // Finish_Back(B) StepIncrement는 PRC 기본 유지.
+        // 유지홈(retentionGroove) + 제조사 compositeStepIncrement*OverrideMm → STEP_INCREMENT env.
+        // 포스트(A): override ?? (deep→0.20, none→Front PRC). 치은(B): override ?? Back PRC.
         private const string RetentionGrooveMissingMessage =
             "유지홈(retentionGroove)이 백엔드에서 전달되지 않았습니다. none 또는 deep이 필요합니다.";
+
+        private static readonly double[] AllowedCompositeStepIncrementMm =
+            { 0.03, 0.05, 0.10, 0.20 };
+
+        private static double? TryNormalizeCompositeStepOverrideMm(double? raw)
+        {
+            if (!raw.HasValue || double.IsNaN(raw.Value) || double.IsInfinity(raw.Value))
+            {
+                return null;
+            }
+            foreach (double allowed in AllowedCompositeStepIncrementMm)
+            {
+                if (Math.Abs(raw.Value - allowed) < 1e-6)
+                {
+                    return allowed;
+                }
+            }
+            return null;
+        }
 
         private static string RequireBackendRetentionGrooveOrThrow(string raw, string requestId)
         {
@@ -2057,11 +2087,27 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 _backendRetentionGroove,
                 _backendRequestId);
 
-            // legacy numeric env는 더 이상 쓰지 않는다(오용 방지로 항상 해제).
-            Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, null);
-            Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementBEnv, null);
             Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", normalizedGroove);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
+
+            string envA = null;
+            if (_backendCompositeStepPostOverrideMm.HasValue)
+            {
+                envA = _backendCompositeStepPostOverrideMm.Value.ToString(CultureInfo.InvariantCulture);
+            }
+            else if (string.Equals(normalizedGroove, "deep", StringComparison.OrdinalIgnoreCase))
+            {
+                envA = "0.2";
+            }
+
+            string envB = null;
+            if (_backendCompositeStepGingivaOverrideMm.HasValue)
+            {
+                envB = _backendCompositeStepGingivaOverrideMm.Value.ToString(CultureInfo.InvariantCulture);
+            }
+
+            Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, envA);
+            Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementBEnv, envB);
 
             if (normalizedGroove == "none")
             {
@@ -2079,7 +2125,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
 
             AppLogger.Log(
-                $"DentalAddin: retentionGroove 적용 - groove={normalizedGroove} (none=5axisComposite_Front.prc StepIncrement, deep=0.20; STEP_INCREMENT_A 미사용)");
+                $"DentalAddin: retentionGroove 적용 - groove={normalizedGroove}, stepA env={(envA ?? "<Front PRC>")}, stepB env={(envB ?? "<Back PRC>")}, postOverride={(_backendCompositeStepPostOverrideMm.HasValue ? _backendCompositeStepPostOverrideMm.Value.ToString(CultureInfo.InvariantCulture) : "requestor")}, gingivaOverride={(_backendCompositeStepGingivaOverrideMm.HasValue ? _backendCompositeStepGingivaOverrideMm.Value.ToString(CultureInfo.InvariantCulture) : "requestor")}");
         }
 
         private void TryApplyCompositeFirstPassPercentEnv(string tooth)

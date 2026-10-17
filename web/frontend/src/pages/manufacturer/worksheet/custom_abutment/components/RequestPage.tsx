@@ -1886,6 +1886,9 @@ export const RequestPage = ({
   const [safeSplitSavingMap, setSafeSplitSavingMap] = useState<
     Record<string, boolean>
   >({});
+  const [compositeStepSavingMap, setCompositeStepSavingMap] = useState<
+    Record<string, boolean>
+  >({});
   const [lotEngravingTargetSavingMap, setLotEngravingTargetSavingMap] =
     useState<Record<string, boolean>>({});
   const [bulkCamRegenerating, setBulkCamRegenerating] = useState(false);
@@ -2259,6 +2262,170 @@ export const RequestPage = ({
       }
     },
     [pageState, toast, token, safeSplitSavingMap],
+  );
+
+  const handleSaveCompositeStepIncrementOverride = useCallback(
+    async (
+      req: ManufacturerRequest,
+      value: {
+        compositeStepIncrementPostOverrideMm?: number | null;
+        compositeStepIncrementGingivaOverrideMm?: number | null;
+      },
+    ) => {
+      if (!req?._id) return;
+      const requestMongoId = String(req._id || "").trim();
+      if (!requestMongoId) return;
+
+      const stageLabel = String(req.manufacturerStage || "").trim();
+      if (!["준비", "의뢰", "CAM", "request", "cam"].includes(stageLabel)) {
+        toast({
+          title: "변경 불가",
+          description: "스텝 간격 설정은 준비 단계에서만 변경할 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (compositeStepSavingMap[requestMongoId]) return;
+
+      const prevPost =
+        typeof req.caseInfos?.compositeStepIncrementPostOverrideMm === "number"
+          ? req.caseInfos.compositeStepIncrementPostOverrideMm
+          : null;
+      const prevGingiva =
+        typeof req.caseInfos?.compositeStepIncrementGingivaOverrideMm ===
+        "number"
+          ? req.caseInfos.compositeStepIncrementGingivaOverrideMm
+          : null;
+
+      const nextPost = Object.prototype.hasOwnProperty.call(
+        value,
+        "compositeStepIncrementPostOverrideMm",
+      )
+        ? value.compositeStepIncrementPostOverrideMm ?? null
+        : prevPost;
+      const nextGingiva = Object.prototype.hasOwnProperty.call(
+        value,
+        "compositeStepIncrementGingivaOverrideMm",
+      )
+        ? value.compositeStepIncrementGingivaOverrideMm ?? null
+        : prevGingiva;
+
+      setCompositeStepSavingMap((prev) => ({ ...prev, [requestMongoId]: true }));
+      pageState.setRequests((prev) =>
+        prev.map((item) => {
+          if (String(item?._id || "").trim() !== requestMongoId) return item;
+          return {
+            ...item,
+            caseInfos: {
+              ...(item.caseInfos || {}),
+              compositeStepIncrementPostOverrideMm: nextPost,
+              compositeStepIncrementGingivaOverrideMm: nextGingiva,
+            },
+          };
+        }),
+      );
+
+      try {
+        const body: Record<string, number | null> = {};
+        if (
+          Object.prototype.hasOwnProperty.call(
+            value,
+            "compositeStepIncrementPostOverrideMm",
+          )
+        ) {
+          body.compositeStepIncrementPostOverrideMm = nextPost;
+        }
+        if (
+          Object.prototype.hasOwnProperty.call(
+            value,
+            "compositeStepIncrementGingivaOverrideMm",
+          )
+        ) {
+          body.compositeStepIncrementGingivaOverrideMm = nextGingiva;
+        }
+
+        const res = await fetch(
+          `/api/requests/${req._id}/composite-step-increment-override`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(
+            data?.message || "스텝 간격 설정 저장에 실패했습니다.",
+          );
+        }
+
+        const savedPost =
+          typeof data?.data?.compositeStepIncrementPostOverrideMm === "number"
+            ? data.data.compositeStepIncrementPostOverrideMm
+            : data?.data?.compositeStepIncrementPostOverrideMm === null
+              ? null
+              : nextPost;
+        const savedGingiva =
+          typeof data?.data?.compositeStepIncrementGingivaOverrideMm ===
+          "number"
+            ? data.data.compositeStepIncrementGingivaOverrideMm
+            : data?.data?.compositeStepIncrementGingivaOverrideMm === null
+              ? null
+              : nextGingiva;
+
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            return {
+              ...item,
+              caseInfos: {
+                ...(item.caseInfos || {}),
+                compositeStepIncrementPostOverrideMm: savedPost,
+                compositeStepIncrementGingivaOverrideMm: savedGingiva,
+              },
+            };
+          }),
+        );
+      } catch (e: unknown) {
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            const nextCaseInfos = { ...(item.caseInfos || {}) };
+            if (typeof prevPost === "number") {
+              nextCaseInfos.compositeStepIncrementPostOverrideMm = prevPost;
+            } else {
+              delete nextCaseInfos.compositeStepIncrementPostOverrideMm;
+            }
+            if (typeof prevGingiva === "number") {
+              nextCaseInfos.compositeStepIncrementGingivaOverrideMm =
+                prevGingiva;
+            } else {
+              delete nextCaseInfos.compositeStepIncrementGingivaOverrideMm;
+            }
+            return {
+              ...item,
+              caseInfos: nextCaseInfos,
+            };
+          }),
+        );
+        toast({
+          title: "스텝 간격 저장 실패",
+          description: e instanceof Error ? e.message : "네트워크 오류",
+          variant: "destructive",
+        });
+        throw e;
+      } finally {
+        setCompositeStepSavingMap((prev) => ({
+          ...prev,
+          [requestMongoId]: false,
+        }));
+      }
+    },
+    [compositeStepSavingMap, pageState, toast, token],
   );
 
   const handleSaveLotEngravingTargetOverride = useCallback(
@@ -3505,6 +3672,9 @@ export const RequestPage = ({
           onSaveManufacturerHexRotation={handleSaveManufacturerHexRotation}
           onSaveAnodizingEnabledOverride={handleSaveAnodizingEnabledOverride}
           onSaveSafeSplitEnabledOverride={handleSaveSafeSplitEnabledOverride}
+          onSaveCompositeStepIncrementOverride={
+            handleSaveCompositeStepIncrementOverride
+          }
           onSaveLotEngravingTargetOverride={
             handleSaveLotEngravingTargetOverride
           }

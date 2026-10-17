@@ -32,6 +32,7 @@ export const {
   updateRndHexRotation,
   updateRequestAnodizingOverride,
   updateRequestSafeSplitOverride,
+  updateRequestCompositeStepIncrementOverride,
   updateRequestLotEngravingTargetOverride,
   continueRndUnmachinableByRequestor,
   confirmRndUnmachinableByRequestor,

@@ -104,6 +104,7 @@ import s3Utils, {
   getSignedUrl as getSignedUrlForS3Key,
 } from "../../utils/s3.utils.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
+import { normalizeCompositeFinishStepOverrideMm } from "../../utils/compositeStepIncrement.js";
 import {
   triggerDashboardSummaryRefreshForAnchorId,
   triggerPricingSnapshotForBusinessAnchorId,
@@ -3507,6 +3508,138 @@ export const updateRequestAnodizingOverride = asyncHandler(async (req, res) => {
     },
   });
 });
+
+// PreviewModal Finish StepIncrement — caseInfos compositeStepIncrement*OverrideMm (null=의뢰자설정).
+export const updateRequestCompositeStepIncrementOverride = asyncHandler(
+  async (req, res) => {
+    const { id } = req.params;
+    const body = req.body || {};
+    const hasPost = Object.prototype.hasOwnProperty.call(
+      body,
+      "compositeStepIncrementPostOverrideMm",
+    );
+    const hasGingiva = Object.prototype.hasOwnProperty.call(
+      body,
+      "compositeStepIncrementGingivaOverrideMm",
+    );
+
+    if (!hasPost && !hasGingiva) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "compositeStepIncrementPostOverrideMm 또는 compositeStepIncrementGingivaOverrideMm 가 필요합니다.",
+      });
+    }
+
+    let postOverride = undefined;
+    let gingivaOverride = undefined;
+
+    if (hasPost) {
+      postOverride = normalizeCompositeFinishStepOverrideMm(
+        body.compositeStepIncrementPostOverrideMm,
+      );
+      if (postOverride === undefined) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "compositeStepIncrementPostOverrideMm 는 null 또는 0.03|0.05|0.10|0.20 이어야 합니다.",
+        });
+      }
+    }
+    if (hasGingiva) {
+      gingivaOverride = normalizeCompositeFinishStepOverrideMm(
+        body.compositeStepIncrementGingivaOverrideMm,
+      );
+      if (gingivaOverride === undefined) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "compositeStepIncrementGingivaOverrideMm 는 null 또는 0.03|0.05|0.10|0.20 이어야 합니다.",
+        });
+      }
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 의뢰 ID입니다.",
+      });
+    }
+
+    const request = await Request.findById(id);
+    if (!request) {
+      return res.status(404).json({
+        success: false,
+        message: "의뢰를 찾을 수 없습니다.",
+      });
+    }
+
+    if (req.user.role === "manufacturer") {
+      const orgScope = await buildManufacturerOrgScopeFilter(req);
+      const allowed = await Request.exists({
+        _id: request._id,
+        ...orgScope,
+      });
+      if (!allowed) {
+        return res.status(403).json({
+          success: false,
+          message: "이 의뢰를 변경할 권한이 없습니다.",
+        });
+      }
+    }
+
+    const currentManufacturerStage = String(
+      request?.manufacturerStage || "",
+    ).trim();
+    const editableStages = new Set([
+      "준비",
+      "의뢰",
+      "CAM",
+      "request",
+      "cam",
+    ]);
+    if (!editableStages.has(currentManufacturerStage)) {
+      return res.status(409).json({
+        success: false,
+        message: "스텝 간격 설정은 준비 단계에서만 변경할 수 있습니다.",
+      });
+    }
+
+    if (hasPost) {
+      request.set(
+        "caseInfos.compositeStepIncrementPostOverrideMm",
+        postOverride,
+      );
+    }
+    if (hasGingiva) {
+      request.set(
+        "caseInfos.compositeStepIncrementGingivaOverrideMm",
+        gingivaOverride,
+      );
+    }
+    await request.save();
+
+    const ci = request.caseInfos || {};
+    const savedPost =
+      typeof ci.compositeStepIncrementPostOverrideMm === "number"
+        ? ci.compositeStepIncrementPostOverrideMm
+        : null;
+    const savedGingiva =
+      typeof ci.compositeStepIncrementGingivaOverrideMm === "number"
+        ? ci.compositeStepIncrementGingivaOverrideMm
+        : null;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        requestId: request.requestId,
+        manufacturerStage: request.manufacturerStage,
+        compositeStepIncrementPostOverrideMm: savedPost,
+        compositeStepIncrementGingivaOverrideMm: savedGingiva,
+      },
+    });
+  },
+);
 
 // PreviewModal「Wide Split」= caseInfos.safeSplitEnabled (Front/Middle/Back 3구간, 기본 ON).
 export const updateRequestSafeSplitOverride = asyncHandler(async (req, res) => {

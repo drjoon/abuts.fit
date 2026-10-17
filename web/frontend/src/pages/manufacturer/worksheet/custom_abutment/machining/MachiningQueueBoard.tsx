@@ -1328,6 +1328,183 @@ export const MachiningQueueBoard = ({
     [token, camPreviewFiles],
   );
 
+  const handleSaveCompositeStepIncrementOverrideFromCamPreview = useCallback(
+    async (
+      req: ManufacturerRequest,
+      value: {
+        compositeStepIncrementPostOverrideMm?: number | null;
+        compositeStepIncrementGingivaOverrideMm?: number | null;
+      },
+    ) => {
+      if (!token) return;
+
+      let requestMongoId = String(req?._id || "").trim();
+      const requestId = String(req?.requestId || "").trim();
+
+      if (!requestMongoId && requestId) {
+        const summaryRes = await fetch(
+          `/api/requests/by-request/${encodeURIComponent(requestId)}/summary`,
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        const summaryBody = await summaryRes.json().catch(() => ({}));
+        requestMongoId = String(summaryBody?.data?._id || "").trim();
+      }
+
+      if (!requestMongoId) {
+        throw new Error("의뢰 식별값이 없어 스텝 간격을 저장할 수 없습니다.");
+      }
+
+      const prevPost =
+        typeof (camPreviewFiles?.request as any)?.caseInfos
+          ?.compositeStepIncrementPostOverrideMm === "number"
+          ? (camPreviewFiles!.request as any).caseInfos
+              .compositeStepIncrementPostOverrideMm
+          : null;
+      const prevGingiva =
+        typeof (camPreviewFiles?.request as any)?.caseInfos
+          ?.compositeStepIncrementGingivaOverrideMm === "number"
+          ? (camPreviewFiles!.request as any).caseInfos
+              .compositeStepIncrementGingivaOverrideMm
+          : null;
+
+      const nextPost = Object.prototype.hasOwnProperty.call(
+        value,
+        "compositeStepIncrementPostOverrideMm",
+      )
+        ? value.compositeStepIncrementPostOverrideMm ?? null
+        : prevPost;
+      const nextGingiva = Object.prototype.hasOwnProperty.call(
+        value,
+        "compositeStepIncrementGingivaOverrideMm",
+      )
+        ? value.compositeStepIncrementGingivaOverrideMm ?? null
+        : prevGingiva;
+
+      setCamPreviewFiles((prev) => {
+        const currentReq = prev?.request || null;
+        if (!currentReq) return prev;
+        return {
+          ...prev,
+          request: {
+            ...currentReq,
+            _id: requestMongoId,
+            caseInfos: {
+              ...(currentReq.caseInfos || {}),
+              compositeStepIncrementPostOverrideMm: nextPost,
+              compositeStepIncrementGingivaOverrideMm: nextGingiva,
+            },
+          },
+        };
+      });
+
+      try {
+        const body: Record<string, number | null> = {};
+        if (
+          Object.prototype.hasOwnProperty.call(
+            value,
+            "compositeStepIncrementPostOverrideMm",
+          )
+        ) {
+          body.compositeStepIncrementPostOverrideMm = nextPost;
+        }
+        if (
+          Object.prototype.hasOwnProperty.call(
+            value,
+            "compositeStepIncrementGingivaOverrideMm",
+          )
+        ) {
+          body.compositeStepIncrementGingivaOverrideMm = nextGingiva;
+        }
+
+        const res = await fetch(
+          `/api/requests/${encodeURIComponent(requestMongoId)}/composite-step-increment-override`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+          },
+        );
+        const responseBody = await res.json().catch(() => ({}));
+        if (!res.ok || (responseBody as { success?: boolean })?.success === false) {
+          throw new Error(
+            (responseBody as { message?: string })?.message ||
+              "스텝 간격 설정 저장에 실패했습니다.",
+          );
+        }
+
+        const savedPost =
+          typeof (responseBody as { data?: { compositeStepIncrementPostOverrideMm?: unknown } })
+            ?.data?.compositeStepIncrementPostOverrideMm === "number"
+            ? (responseBody as { data: { compositeStepIncrementPostOverrideMm: number } })
+                .data.compositeStepIncrementPostOverrideMm
+            : (responseBody as { data?: { compositeStepIncrementPostOverrideMm?: null } })?.data
+                  ?.compositeStepIncrementPostOverrideMm === null
+              ? null
+              : nextPost;
+        const savedGingiva =
+          typeof (responseBody as { data?: { compositeStepIncrementGingivaOverrideMm?: unknown } })
+            ?.data?.compositeStepIncrementGingivaOverrideMm === "number"
+            ? (responseBody as { data: { compositeStepIncrementGingivaOverrideMm: number } })
+                .data.compositeStepIncrementGingivaOverrideMm
+            : (responseBody as { data?: { compositeStepIncrementGingivaOverrideMm?: null } })?.data
+                  ?.compositeStepIncrementGingivaOverrideMm === null
+              ? null
+              : nextGingiva;
+
+        setCamPreviewFiles((prev) => {
+          const currentReq = prev?.request || null;
+          if (!currentReq) return prev;
+          return {
+            ...prev,
+            request: {
+              ...currentReq,
+              _id: requestMongoId,
+              caseInfos: {
+                ...(currentReq.caseInfos || {}),
+                compositeStepIncrementPostOverrideMm: savedPost,
+                compositeStepIncrementGingivaOverrideMm: savedGingiva,
+              },
+            },
+          };
+        });
+      } catch (error) {
+        setCamPreviewFiles((prev) => {
+          const currentReq = prev?.request || null;
+          if (!currentReq) return prev;
+          const nextCaseInfos = { ...(currentReq.caseInfos || {}) } as Record<
+            string,
+            unknown
+          >;
+          if (typeof prevPost === "number") {
+            nextCaseInfos.compositeStepIncrementPostOverrideMm = prevPost;
+          } else {
+            delete nextCaseInfos.compositeStepIncrementPostOverrideMm;
+          }
+          if (typeof prevGingiva === "number") {
+            nextCaseInfos.compositeStepIncrementGingivaOverrideMm = prevGingiva;
+          } else {
+            delete nextCaseInfos.compositeStepIncrementGingivaOverrideMm;
+          }
+          return {
+            ...prev,
+            request: {
+              ...currentReq,
+              caseInfos: nextCaseInfos as any,
+            },
+          };
+        });
+        throw error;
+      }
+    },
+    [token, camPreviewFiles],
+  );
+
   const handleSaveLotEngravingTargetOverrideFromCamPreview = useCallback(
     async (req: ManufacturerRequest, nextValue: "hex" | "post") => {
       // 2026-09-18: 포스트면 각인 포기 (추후 Connection PRC).
@@ -2821,6 +2998,9 @@ export const MachiningQueueBoard = ({
         }
         onSaveSafeSplitEnabledOverride={
           handleSaveSafeSplitEnabledOverrideFromCamPreview
+        }
+        onSaveCompositeStepIncrementOverride={
+          handleSaveCompositeStepIncrementOverrideFromCamPreview
         }
         onSaveLotEngravingTargetOverride={
           handleSaveLotEngravingTargetOverrideFromCamPreview

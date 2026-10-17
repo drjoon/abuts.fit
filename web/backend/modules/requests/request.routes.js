@@ -557,6 +557,13 @@ router.patch(
 );
 
 router.patch(
+  "/:id/composite-step-increment-override",
+  authenticate,
+  authorizeManufacturerOrDesignPartner(),
+  requestController.updateRequestCompositeStepIncrementOverride,
+);
+
+router.patch(
   "/:id/lot-engraving-target-override",
   authenticate,
   authorizeManufacturerOrDesignPartner(),

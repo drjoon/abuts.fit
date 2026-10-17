@@ -1355,9 +1355,7 @@ namespace DentalAddin
             return Clamp(value, 0.0, 100.0);
         }
 
-        // retentionGroove(백엔드 none/deep) → Finish_Front StepIncrement.
-        // none: 5axisComposite_Front.prc StepIncrement를 덮어쓰지 않는다.
-        // deep: 0.20. ABUTS_COMPOSITE_STEP_INCREMENT_A 는 읽지 않는다. Finish_Back(B)는 PRC 기본 유지.
+        // Finish_Front(A)·Finish_Back(B) StepIncrement — env(ABUTS_COMPOSITE_STEP_INCREMENT_*) 우선, A는 retentionGroove 폴백.
         private static void TrySetCompositeStepIncrement(TechLatheMill5xComposite op, string label)
         {
             if (op == null)
@@ -1366,7 +1364,27 @@ namespace DentalAddin
             }
             if (string.Equals(label, "B", StringComparison.OrdinalIgnoreCase))
             {
-                DentalLogger.Log("Composite2SplitLine2 - B StepIncrement: PRC 기본값 유지 (retentionGroove는 Front_Finish만 적용)");
+                if (!TryGetCompositeStepIncrementFromEnv(AppConfig.CompositeStepIncrementBEnv, out double stepB))
+                {
+                    DentalLogger.Log("Composite2SplitLine2 - B StepIncrement: 5axisComposite_Back.prc 유지");
+                    return;
+                }
+
+                try
+                {
+                    op.GetType().InvokeMember(
+                        "StepIncrement",
+                        BindingFlags.SetProperty,
+                        null,
+                        op,
+                        new object[] { stepB },
+                        CultureInfo.InvariantCulture);
+                    DentalLogger.Log($"Composite2SplitLine2 - B StepIncrement={stepB.ToString("0.###", CultureInfo.InvariantCulture)} 적용 (env)");
+                }
+                catch (Exception ex)
+                {
+                    DentalLogger.Log($"Composite2SplitLine2 - B StepIncrement 설정 실패: {ex.GetType().Name}:{ex.Message}");
+                }
                 return;
             }
 
@@ -1386,7 +1404,7 @@ namespace DentalAddin
                     op,
                     new object[] { stepIncrement },
                     CultureInfo.InvariantCulture);
-                DentalLogger.Log($"Composite2SplitLine2 - A StepIncrement={stepIncrement.ToString("0.###", CultureInfo.InvariantCulture)} 적용 (retentionGroove=deep)");
+                DentalLogger.Log($"Composite2SplitLine2 - A StepIncrement={stepIncrement.ToString("0.###", CultureInfo.InvariantCulture)} 적용");
             }
             catch (Exception ex)
             {
@@ -1394,13 +1412,37 @@ namespace DentalAddin
             }
         }
 
+        private static bool TryGetCompositeStepIncrementFromEnv(string envName, out double stepIncrementMm)
+        {
+            stepIncrementMm = 0.0;
+            string raw = GetEnvString(envName);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out stepIncrementMm)
+                && stepIncrementMm > 0.0)
+            {
+                return true;
+            }
+
+            DentalLogger.Log($"Composite2SplitLine2 - StepIncrement env 파싱 실패 (env={envName}, raw='{raw}')");
+            stepIncrementMm = 0.0;
+            return false;
+        }
+
         /// <summary>
-        /// 백엔드 retentionGroove(ABUTS_RETENTION_GROOVE) → Finish_Front StepIncrement 오버라이드.
-        /// none → false (5axisComposite_Front.prc StepIncrement 그대로). deep → 0.20. 그 외/미지정은 예외.
+        /// Finish_Front StepIncrement: env A → retentionGroove deep(0.20). none → PRC 유지(false).
         /// </summary>
         private static bool TryResolveFinishFrontStepIncrementOverrideMm(out double stepIncrementMm)
         {
             stepIncrementMm = 0.0;
+            if (TryGetCompositeStepIncrementFromEnv(AppConfig.CompositeStepIncrementAEnv, out stepIncrementMm))
+            {
+                return true;
+            }
+
             string groove = (GetEnvString("ABUTS_RETENTION_GROOVE") ?? string.Empty).Trim().ToLowerInvariant();
             if (groove == "없음") groove = "none";
             if (groove == "있음") groove = "deep";
