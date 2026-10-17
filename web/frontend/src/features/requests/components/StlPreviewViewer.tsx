@@ -2122,20 +2122,22 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           const axisGeom = new LineGeometry();
           axisGeom.setPositions([p2.x, p2.y, p2.z, p1.x, p1.y, p1.z]);
           const axisMat = new LineMaterial({
-            color: 0x66cc66, // 눈에 잘 띄는 연두색
-            linewidth: 5,
+            color: 0x22c55e,
+            linewidth: 4,
             dashed: true,
             dashScale: 2,
-            dashSize: 2,
-            gapSize: 1,
+            dashSize: 1.2,
+            gapSize: 0.7,
             transparent: true,
-            opacity: 0.9,
+            opacity: 1,
+            depthTest: false,
+            depthWrite: false,
           });
           axisMat.resolution.set(width, height);
           lineMaterials.push(axisMat);
           taperAxisGuide = new Line2(axisGeom, axisMat);
           taperAxisGuide.computeLineDistances();
-          taperAxisGuide.renderOrder = 13;
+          taperAxisGuide.renderOrder = 30;
           taperAxisGuide.userData.guideOverlay = true;
           taperAxisGuide.visible = guidesVisibleRef.current;
           modelPivot.add(taperAxisGuide);
@@ -2209,11 +2211,6 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
                 maxTiltValue = tilt;
               }
             }
-
-            const backendTaperAngleValue = Number(latestMetadata?.taperAngle);
-            const hasBackendTaperAngleValue =
-              Number.isFinite(backendTaperAngleValue) &&
-              backendTaperAngleValue > 0;
 
             taperGuide.multiDirectionGuides.forEach((guide) => {
               const guideTilt = Math.abs(Number(guide.taperAngle) || 0);
@@ -2319,14 +2316,9 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
               // const startPos = centeredPoints[0];
               const endPos = centeredPoints[centeredPoints.length - 1];
 
-              // 제조사 페이지에서만 각도 텍스트 표시 (의뢰자 페이지에서는 표시하지 않음)
-              // 백엔드 taperAngle이 있으면 최대 기울기 라벨만 백엔드 AAA 값으로 표시해
-              // 오버레이(AAA)와 프리뷰 수치가 반드시 일치하도록 한다.
-              const labelAngle = hasBackendTaperAngleValue
-                ? isMaxPair
-                  ? backendTaperAngleValue
-                  : null
-                : Math.abs(guide.taperAngle);
+              // 방향마다 그 축면의 기울기를 보여 준다. 최대 쌍만 AAA로 바꾸면
+              // 잘못 잡힌 방향이 화면에 남지 않는다.
+              const labelAngle = Math.abs(Number(guide.taperAngle) || 0);
 
               if (showOverlay && labelAngle !== null) {
                 const canvas = document.createElement("canvas");

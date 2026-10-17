@@ -282,19 +282,26 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
   }
 
   const finishLineTopZ = Math.max(...finishLineZs);
-  const postSpanBelowFl = finishLineTopZ - Math.max(bbox.min.z, 0);
+  // 스캘럽 마진의 가장 높은 점 위가 크라운이 끼는 포스트 축면이다.
+  // 그 아래(낮은 마진 방향)는 이머전스 날개라 축면 각에 넣지 않는다.
+  const postSpanAboveFl = bbox.max.z - finishLineTopZ;
 
-  if (postSpanBelowFl < 0.35) {
+  if (postSpanAboveFl < 0.35) {
     return null;
   }
 
-  /** 정렬 STL: 임플란트 축 = Z, XY 원점. 테이퍼·삽입축은 포스트 외측면 둘레만 본다. */
+  /** 정렬 STL: 임플란트 축 = Z, XY 원점. 방향마다 그 방위 쐐기 안의 외측 벽만 본다. */
   const axisCenter = { x: 0, y: 0 };
   const center = {
     x: axisCenter.x,
     y: axisCenter.y,
     z: (bbox.min.z + bbox.max.z) / 2,
   };
+  // 마진 필렛(아래 18%)과 교합면(위 22%)을 뺀 공통 밴드. 12방향이 같은 Z를 쓴다.
+  const postStartZ = finishLineTopZ + postSpanAboveFl * 0.18;
+  const postEndZ = finishLineTopZ + postSpanAboveFl * 0.78;
+  const postHeight = postEndZ - postStartZ;
+  const wedgeRad = (14 * Math.PI) / 180;
 
   let maxRadiusFromAxis = 0;
   for (let i = 0; i < position.count; i++) {
@@ -319,8 +326,6 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
 
   for (const angleDeg of angles) {
     const angleRad = (angleDeg * Math.PI) / 180;
-    const dx = Math.cos(angleRad);
-    const dy = Math.sin(angleRad);
 
     // 각 방향의 finish line Z 찾기
     let dirFinishLineZ = finishLineTopZ;
@@ -342,17 +347,19 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
       }
     }
 
-    const dirPostSpan = Math.max(0.4, dirFinishLineZ - Math.max(bbox.min.z, 0));
-    // 피니시라인 바로 아래 포스트 축면 외측 둘레 (크라운 위쪽이 아님)
-    const dirPostEndZ = dirFinishLineZ - dirPostSpan * 0.06;
-    const dirPostStartZ = dirFinishLineZ - dirPostSpan * 0.88;
-    const dirPostHeight = dirPostEndZ - dirPostStartZ;
-
-    if (dirPostHeight > 0.1) {
+    if (postHeight > 0.1) {
       const dirSamples = [];
       const surfacePoints = [];
       const sliceCount = 40;
 
+      const wrapPi = (d) => {
+        let x = d;
+        while (x > Math.PI) x -= Math.PI * 2;
+        while (x < -Math.PI) x += Math.PI * 2;
+        return x;
+      };
+
+      // 지지점(최대 투영)은 옆 날개로 건너뛴다. 이 방향 쐐기 안의 최대 반경만 축면이다.
       const considerOuterPoint = (
         x,
         y,
@@ -360,20 +367,20 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
         maxRadiusInDirRef,
         bestSurfacePointRef,
       ) => {
-        const radial = Math.hypot(x, y);
-        if (radial < outerPerimeterMinR) return;
         const cx = x - axisCenter.x;
         const cy = y - axisCenter.y;
-        const proj = cx * dx + cy * dy;
-        if (proj > maxRadiusInDirRef.value) {
-          maxRadiusInDirRef.value = proj;
+        const radial = Math.hypot(cx, cy);
+        if (radial < outerPerimeterMinR) return;
+        if (Math.abs(wrapPi(Math.atan2(cy, cx) - angleRad)) > wedgeRad) return;
+        if (radial > maxRadiusInDirRef.value) {
+          maxRadiusInDirRef.value = radial;
           bestSurfacePointRef.value = { x, y, z };
         }
       };
 
       for (let s = 0; s <= sliceCount; s++) {
-        const targetZ = dirPostStartZ + (dirPostHeight * s) / sliceCount;
-        const tolerance = dirPostHeight / (sliceCount * 4);
+        const targetZ = postStartZ + (postHeight * s) / sliceCount;
+        const tolerance = postHeight / (sliceCount * 4);
         const maxRadiusInDirRef = { value: -Infinity };
         const bestSurfacePointRef = { value: null };
 
@@ -461,7 +468,7 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
           }
           const rSquared = ssTot > 1e-8 ? 1 - ssRes / ssTot : 0;
 
-          if (rSquared > 0.92) {
+          if (rSquared > 0.65) {
             const dirTaperAngleSigned = Math.atan(dirSlope) * (180 / Math.PI);
             directions.push({
               angle: angleDeg,
@@ -470,9 +477,9 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
               taperAngle: dirTaperAngleSigned,
               rSquared,
               dirFinishLineZ,
-              dirAvailableHeight: dirPostSpan,
-              sampleStartZ: dirPostStartZ,
-              sampleEndZ: dirPostEndZ,
+              dirAvailableHeight: postSpanAboveFl,
+              sampleStartZ: postStartZ,
+              sampleEndZ: postEndZ,
               surfacePoints,
             });
           }
@@ -500,6 +507,8 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
       pairedAverages.push(Math.abs(trueTilt));
       baseGuide.taperAngle = trueTilt;
       oppositeGuide.taperAngle = -trueTilt;
+      baseGuide.paired = true;
+      oppositeGuide.paired = true;
     }
   }
 
@@ -548,6 +557,15 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
         }
       }
     }
+  }
+
+  // 짝이 없는 방향은 대칭 테이퍼가 기울기로 남아 축면 각이 어긋나 보인다.
+  for (let i = directions.length - 1; i >= 0; i -= 1) {
+    if (!directions[i].paired) directions.splice(i, 1);
+    else delete directions[i].paired;
+  }
+  if (directions.length < 6) {
+    return null;
   }
 
   // 3. FrontPoint 계산 (Top/Side 교점 + side 방향 보정)
@@ -845,8 +863,8 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
     `[frontPoint] candidates strict=${strictCandidates.length} relaxed=${relaxedCandidates.length} guides=${guideAnglesDeg.length} purpleGuides=${purpleGuideAngles.length} hits=${directionIntersections.length} hits20=${fallback20Hits.length} hits36=${fallback36Hits.length} lineBand=${lineBand.toFixed(3)} outerMinTight=${outerMinTight.toFixed(3)} outerMinRelaxed=${outerMinRelaxed.toFixed(3)} strictProjMin=${strictProjMin.toFixed(3)}`,
   );
 
-  let guideZStart = finishLineTopZ;
-  let guideZEnd = finishLineTopZ;
+  let guideZStart = Infinity;
+  let guideZEnd = -Infinity;
   for (const d of directions) {
     if (Number.isFinite(d.sampleStartZ)) {
       guideZStart = Math.min(guideZStart, d.sampleStartZ);
@@ -855,9 +873,9 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
       guideZEnd = Math.max(guideZEnd, d.sampleEndZ);
     }
   }
-  if (guideZEnd <= guideZStart) {
-    guideZStart = finishLineTopZ - postSpanBelowFl * 0.88;
-    guideZEnd = finishLineTopZ;
+  if (!Number.isFinite(guideZStart) || !Number.isFinite(guideZEnd) || guideZEnd <= guideZStart) {
+    guideZStart = postStartZ;
+    guideZEnd = postEndZ;
   }
 
   return {
@@ -889,8 +907,11 @@ function pickLotEngravingSiteFromGuides(directions, opts = {}) {
     const flZ = Number(g.dirFinishLineZ);
     const slope = Number(g.slope);
     const intercept = Number(g.intercept);
+    const sampleStartZ = Number(g.sampleStartZ);
     if (!Number.isFinite(angle) || !Number.isFinite(taperAbs)) continue;
     if (!Number.isFinite(flZ)) continue;
+    // 낮은 마진 + 1.5mm 가 포스트 축면 밴드 아래면 이머전스라 각인 후보에서 뺀다.
+    if (Number.isFinite(sampleStartZ) && flZ + 1.5 < sampleStartZ - 0.2) continue;
     scored.push({ angle, taperAbs, flZ, slope, intercept });
   }
   if (scored.length === 0) return null;
