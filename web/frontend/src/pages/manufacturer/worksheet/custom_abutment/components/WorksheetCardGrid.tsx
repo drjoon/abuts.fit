@@ -1328,6 +1328,20 @@ export const WorksheetCardGrid = ({
                     if (!rg) return null;
                     return rg === "deep" ? "있음" : "없음";
                   })()}
+                  showCompositeStepLabels
+                  retentionGroove={
+                    (caseInfos as { retentionGroove?: "none" | "shallow" | "deep" })
+                      .retentionGroove ?? null
+                  }
+                  compositeStepIncrementPostOverrideMm={
+                    (caseInfos as { compositeStepIncrementPostOverrideMm?: number | null })
+                      .compositeStepIncrementPostOverrideMm
+                  }
+                  compositeStepIncrementGingivaOverrideMm={
+                    (caseInfos as {
+                      compositeStepIncrementGingivaOverrideMm?: number | null;
+                    }).compositeStepIncrementGingivaOverrideMm
+                  }
                   shippingContact={resolvePracticeDirectShippingContact(
                     request as ManufacturerRequest,
                   )}
