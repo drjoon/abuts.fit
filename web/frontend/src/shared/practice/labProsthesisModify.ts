@@ -1,5 +1,8 @@
 // 기공소 AI 보철 — 마진·삽입·내면·형상·훅·컷백·홀·커넥터·폰틱 수정값.
 // 내면은 기공소 디자인 프리셋(labDesignPresets.ts) 열을 복사한 숫자다.
+// related files:
+// - web/frontend/src/shared/components/practice/LabProsthesisModifyPanel.tsx
+// - web/frontend/src/shared/components/practice/LabProsthesisAiDesignDialog.tsx
 
 import { fdiToothDigits } from "@/shared/practice/toothArchOrder";
 import type { ScanbodyMesh } from "@/shared/practice/scanbodyRegistration";
@@ -1066,6 +1069,14 @@ export function redetectMargin(edit: ToothDesignEdit): ToothDesignEdit {
   };
 }
 
+/** Dentbird 마진 수축·확장 한 번에 움직일 간격 기본값(mm). */
+export const MARGIN_OFFSET_STEP_DEFAULT_MM = 0.1;
+export const MARGIN_OFFSET_STEP_MIN_MM = 0.01;
+export const MARGIN_OFFSET_STEP_MAX_MM = 0.5;
+/** 마진 일괄 오프셋 누적 한도(mm). */
+export const MARGIN_OFFSET_MIN_MM = -2;
+export const MARGIN_OFFSET_MAX_MM = 2;
+
 /** 마진 일괄 수축 / 확장 (mm 단위) */
 export function adjustMarginOffset(
   edit: ToothDesignEdit,
@@ -1074,8 +1085,8 @@ export function adjustMarginOffset(
   const currentOffset = edit.margin.offsetMm;
   const nextOffset = clamp(
     Math.round((currentOffset + deltaMm) * 100) / 100,
-    -0.4,
-    0.6,
+    MARGIN_OFFSET_MIN_MM,
+    MARGIN_OFFSET_MAX_MM,
   );
   return {
     ...edit,

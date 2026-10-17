@@ -94,6 +94,7 @@
 // - 2026-10-04: 「삽입축 설정」이 바로 잡고, 확정·취소는 없다. 다시 잡으려면 치아 정보 아이콘을 누른다.
 // - 2026-10-04: 한 번 잡은 뒤에는 화면을 돌려도 설정 모드로 돌아가지 않는다. 아이콘을 눌러야 다시 맞춘다.
 // - 2026-10-04: 패널 접기 셰브론은 붙은 가장자리 쪽으로 연다. 치아 정보 제목·셰브론 클릭이 드래그에 먹히지 않게 한다.
+// - 2026-10-17: 마진 점·펜, 수축·확장, 언더컷·배면 투명을 작업 패널과 뷰어에 연결.
 // - 2026-10-05: 작업 패널 단계 라벨. 출력 → 생산.
 // - 2026-10-05: 디자인 하위는 내면·형상·교합·훅·컷백·홀·커넥터. 보철 생성은 맨 위.
 // - 2026-10-04: 작업 패널. 상단은 스캔·디자인·모델·출력. 마진은 디자인 안. 수정은 마진·삽입축·내면·형상·훅·컷백·홀·커넥터 아코디언. 치아 라벨은 치아 정보 뱃지로.
@@ -337,6 +338,7 @@ import {
   type DesignGesture,
   type DesignScope,
   type EditBrush,
+  type MarginEditMode,
   type MarginReview,
   type ModelSettings,
   type ModifyTool,
@@ -953,6 +955,7 @@ function LabProsthesisAiDesignDialog({
   });
   const restoreGhostVisibleRef = useRef(false);
   const [modifyTool, setModifyTool] = useState<ModifyTool>("margin");
+  const [marginMode, setMarginMode] = useState<MarginEditMode>("point");
   const [marginEditOn, setMarginEditOn] = useState(false);
   /** 재설정 모드. 켜 있는 동안 마진 위를 찍어 새로 잡는다. */
   const [marginResetOn, setMarginResetOn] = useState(false);
@@ -1173,6 +1176,7 @@ function LabProsthesisAiDesignDialog({
       setCenterGuide("grid");
       restoreGhostVisibleRef.current = false;
       setModifyTool("margin");
+      setMarginMode("point");
       setMarginEditOn(false);
       setMarginTracePoints(0);
       setEditBrush("none");
@@ -1573,7 +1577,18 @@ function LabProsthesisAiDesignDialog({
   const marginHint: { warn: boolean; body: ReactNode } | null =
     marginEditing && !toothAxisReady(activeNumber)
       ? { warn: true, body: <>삽입축을 먼저 잡으세요.</> }
-      : marginEditing && marginResetOn
+        : marginEditing && marginMode === "pen" && !marginResetOn
+          ? {
+              warn: false,
+              body: (
+                <>
+                  스캔 위에서 {activeTooth?.implant ? "EPL" : "마진"}을 따라 끌어 그립니다.
+                  <br />
+                  한 바퀴를 그리면 전체를 바꿉니다.
+                </>
+              ),
+            }
+        : marginEditing && marginResetOn
         ? {
             warn: false,
             body:
@@ -2018,8 +2033,8 @@ function LabProsthesisAiDesignDialog({
     const spec = {
       tool: modifyTool,
       refineTab,
-      marginMode: "point" as const,
-      marginEdit: marginEditOn,
+      marginMode,
+      marginEdit: marginEditOn && marginMode === "point",
       marginReset: marginResetOn,
       brush: editBrush,
       edits,
@@ -2045,6 +2060,7 @@ function LabProsthesisAiDesignDialog({
     edits,
     generated,
     marginEditOn,
+    marginMode,
     marginResetOn,
     marginShown,
     meshEditOn,
@@ -2399,7 +2415,7 @@ function LabProsthesisAiDesignDialog({
     }
     setEdits((prev) => {
       const current = prev[gesture.tooth] ?? createToothDesignEdit();
-      const next = reduceDesignGesture(current, gesture, false);
+      const next = reduceDesignGesture(current, gesture, marginMode === "pen");
       return { ...prev, [gesture.tooth]: next };
     });
   };
@@ -5617,12 +5633,23 @@ function LabProsthesisAiDesignDialog({
                         onGenerate={designGenerate.run}
                         crownShellMm={activeNumber ? (crownShells[activeNumber] ?? null) : null}
                         intaglio={activeNumber ? (intaglios[activeNumber] ?? null) : null}
+                        marginMode={marginMode}
+                        onMarginMode={(mode) => {
+                          setMarginMode(mode);
+                          if (mode === "pen") setMarginEditOn(false);
+                        }}
                         marginEditOn={marginEditOn}
                         marginResetPaused={marginResetPaused}
                         onMarginEdit={() => {
                           if (marginResetPaused) setMarginResetOn(true);
-                          else setMarginEditOn((on) => !on);
+                          else {
+                            setMarginMode("point");
+                            setMarginEditOn((on) => !on);
+                          }
                         }}
+                        undercutShown={paintUndercut}
+                        canUndercut={canUndercut}
+                        onUndercut={setUndercutMap}
                         onAutoDetect={() => {
                           if (activeNumber) autoDetectMargin(activeNumber);
                         }}

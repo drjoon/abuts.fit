@@ -1,12 +1,14 @@
 // 기공소 AI 보철 — 마진·삽입·내면·형상·훅·컷백·홀·커넥터 조작.
 // - 2026-10-01: 스캔바디 맞춤은 스캔 단계, 메시 편집 아래.
 // - 2026-10-05: 디자인은 보철 생성, 그다음 내면·형상·교합·훅·컷백·홀·커넥터.
+// - 2026-10-17: 마진 점·펜, 수축·확장, 언더컷·배면 투명(Dentbird·exocad 계열).
 
 import { Fragment, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -18,6 +20,10 @@ import {
   CONNECTOR_SHAPES,
   CUTBACK_BRUSH_RANGE_MM,
   CUTBACK_DEPTH_RANGE_MM,
+  MARGIN_OFFSET_STEP_DEFAULT_MM,
+  MARGIN_OFFSET_STEP_MAX_MM,
+  MARGIN_OFFSET_STEP_MIN_MM,
+  adjustMarginOffset,
   applyInnerParams,
   cutbackHasSelection,
   editCutbackSelection,
@@ -34,6 +40,7 @@ import {
   holeTiltDeg,
   innerParamsOf,
   type EditBrush,
+  type MarginEditMode,
   type ModifyTool,
   type RefineTab,
   type SculptBrush,
@@ -95,6 +102,8 @@ export type ScanbodyControls = {
 };
 
 
+const DEFAULT_MARGIN_STEP = MARGIN_OFFSET_STEP_DEFAULT_MM;
+
 const FIT_LEGEND = `linear-gradient(90deg, ${[-0.1, -0.05, 0, 0.05, 0.1]
   .map((mm) => {
     const [r, g, b] = fitDistanceRgb(mm);
@@ -106,6 +115,8 @@ type Props = {
   /** prepare: 마진·삽입축. design: 내면 이후. */
   part: "prepare" | "design";
   onTool: (tool: ModifyTool) => void;
+  marginMode: MarginEditMode;
+  onMarginMode: (mode: MarginEditMode) => void;
   /** 마진 점을 끌어 옮기는 편집 중인지. */
   marginEditOn: boolean;
   /** 재설정을 잠시 멈춘 상태. 마진편집을 누르면 찍어 둔 점에서 이어 찍는다. */
@@ -115,6 +126,9 @@ type Props = {
   onAutoDetect: () => void;
   /** 이 치아의 삽입축을 잡았는지. 마진보다 먼저 잡아야 한다. */
   axisReady: boolean;
+  undercutShown?: boolean;
+  canUndercut?: boolean;
+  onUndercut?: (on: boolean) => void;
   brush: EditBrush;
   onBrush: (brush: EditBrush) => void;
   edit: ToothDesignEdit;
@@ -906,11 +920,16 @@ function Row({
 export function LabProsthesisModifyPanel({
   part,
   onTool,
+  marginMode,
+  onMarginMode,
   marginEditOn,
   marginResetPaused,
   onMarginEdit,
   onAutoDetect,
   axisReady,
+  undercutShown = false,
+  canUndercut = false,
+  onUndercut,
   brush,
   onBrush,
   edit,
@@ -981,6 +1000,14 @@ export function LabProsthesisModifyPanel({
     </Row>
   );
   const marginWord = implant ? "EPL" : "마진";
+  const [stepDraft, setStepDraft] = useState(DEFAULT_MARGIN_STEP.toFixed(2));
+  const parsedStep = Number(stepDraft);
+  const marginStep = Number.isFinite(parsedStep)
+    ? Math.min(
+        MARGIN_OFFSET_STEP_MAX_MM,
+        Math.max(MARGIN_OFFSET_STEP_MIN_MM, Math.round(parsedStep * 100) / 100),
+      )
+    : DEFAULT_MARGIN_STEP;
   const connectorRow =
     connectors.find((row) => row.from === connectorFrom) ?? connectors[0] ?? null;
   const openFold = (id: ModifyTool | "occlusal") => (on: boolean) => {
@@ -1063,6 +1090,116 @@ export function LabProsthesisModifyPanel({
               삽입축을 먼저 잡습니다.
             </p>
           ) : null}
+          <div className="grid grid-cols-2 gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={marginMode === "point" ? "default" : "outline"}
+                  className="h-7 text-[11px]"
+                  onClick={() => onMarginMode("point")}
+                >
+                  점
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[520]">
+                점을 끌어 스캔 면 위로 옮깁니다.
+                <br />
+                선을 누르면 점을 더하고, 점을 우클릭하면 지웁니다.
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={marginMode === "pen" ? "default" : "outline"}
+                  className="h-7 text-[11px]"
+                  onClick={() => onMarginMode("pen")}
+                >
+                  펜
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[520]">
+                {marginWord}을 따라 끌면 그 구간을 다시 그립니다.
+                <br />
+                한 바퀴를 그리면 {marginWord} 전체를 바꿉니다.
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          {!edit.margin.deleted ? (
+            <>
+              <Row label={`${marginWord} 오프셋`} value={`${edit.margin.offsetMm.toFixed(2)} mm`} />
+              <div className="flex items-center justify-between gap-2 text-xs font-medium">
+                <span>조정 간격</span>
+                <span className="flex items-center gap-1">
+                  <Input
+                    type="number"
+                    min={MARGIN_OFFSET_STEP_MIN_MM}
+                    max={MARGIN_OFFSET_STEP_MAX_MM}
+                    step={0.01}
+                    value={stepDraft}
+                    onChange={(event) => setStepDraft(event.target.value)}
+                    onBlur={() => setStepDraft(marginStep.toFixed(2))}
+                    className="h-7 w-16 px-1.5 text-right text-[11px] tabular-nums"
+                    aria-label={`${marginWord} 조정 간격`}
+                  />
+                  <span className="text-muted-foreground">mm</span>
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-[11px]"
+                  disabled={edit.margin.deleted}
+                  onClick={() => onEdit(adjustMarginOffset(edit, -marginStep))}
+                >
+                  수축
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-[11px]"
+                  disabled={edit.margin.deleted}
+                  onClick={() => onEdit(adjustMarginOffset(edit, marginStep))}
+                >
+                  확장
+                </Button>
+              </div>
+            </>
+          ) : null}
+          {implant ? null : (
+            <div className="space-y-1 rounded-md border px-2 py-1.5 text-xs">
+              <label className="flex items-center justify-between gap-3">
+                <span className="font-medium text-foreground">언더컷 표시</span>
+                <Switch
+                  checked={undercutShown}
+                  disabled={!canUndercut || !onUndercut}
+                  onCheckedChange={(on) => onUndercut?.(on)}
+                  aria-label="언더컷 표시"
+                  className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3">
+                <span className="font-medium text-foreground">배면 투명</span>
+                <Switch
+                  checked={edit.margin.showBack}
+                  onCheckedChange={(checked) =>
+                    onEdit({
+                      ...edit,
+                      margin: { ...edit.margin, showBack: checked },
+                    })
+                  }
+                  aria-label="지대치 배면 투명"
+                  className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
+                />
+              </label>
+            </div>
+          )}
           <div className="grid grid-cols-3 gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1124,18 +1261,28 @@ export function LabProsthesisModifyPanel({
                   variant={marginEditOn ? "default" : "outline"}
                   className="h-7 px-1 text-[11px]"
                   aria-pressed={marginEditOn}
-                  disabled={(edit.margin.deleted && !marginResetPaused) || marginResetOn}
+                  disabled={
+                    marginMode === "pen" ||
+                    (edit.margin.deleted && !marginResetPaused) ||
+                    marginResetOn
+                  }
                   onClick={onMarginEdit}
                 >
                   {marginWord}편집
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right" className="z-[520]">
-                점을 끌어 옮깁니다.
-                <br />
-                이웃 점이 함께 따라와 뾰족함을 줄입니다.
-                <br />
-                선을 누르면 점을 더하고, 점을 우클릭하면 지웁니다.
+                {marginMode === "pen" ? (
+                  <>펜 모드에서는 스캔 위를 끌어 그립니다.</>
+                ) : (
+                  <>
+                    점을 끌어 옮깁니다.
+                    <br />
+                    이웃 점이 함께 따라와 뾰족함을 줄입니다.
+                    <br />
+                    선을 누르면 점을 더하고, 점을 우클릭하면 지웁니다.
+                  </>
+                )}
               </TooltipContent>
             </Tooltip>
           </div>
