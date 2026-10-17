@@ -34,6 +34,8 @@ export const LEDGER_JOURNAL_EVENT_TYPES = [
    * 루트 rules.md §2.3
    */
   "REFUND",
+  /** 치과 오픈뱅킹 월말 일괄정산 완료 기록. */
+  "OB_MONTHLY_SETTLEMENT",
 ];
 
 const ledgerJournalSchema = new mongoose.Schema(

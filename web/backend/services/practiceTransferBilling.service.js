@@ -400,10 +400,23 @@ async function lockGuard(businessAnchorId, session) {
   );
 }
 
-/** 치과 데모 모드면 기공비 hold만 freeRequest 마이너스 허용. 커스텀어벗은 제외. */
+/**
+ * 치과 데모 모드이거나, 오픈뱅킹(OB) 장기동의가 활성이고 paymentHold가 없으면
+ * 기공비(어벗 소매가 제외)를 월 후불로 허용한다. 월 한도는 두지 않는다.
+ */
 async function practiceAllowsFreeRequestOverdraft(practiceAnchorId) {
   if (!practiceAnchorId) return false;
-  return allowsDemoFreeRequestOverdraft(practiceAnchorId);
+  if (await allowsDemoFreeRequestOverdraft(practiceAnchorId)) return true;
+  const anchor = await BusinessAnchor.findById(practiceAnchorId)
+    .select({ openBankingConsent: 1 })
+    .lean();
+  if (!anchor) return false;
+  const consent = anchor.openBankingConsent;
+  if (consent?.status === "active" && !consent?.paymentHold?.isHeld) {
+    const exp = consent.expiresAt ? new Date(consent.expiresAt).getTime() : 0;
+    return exp > Date.now();
+  }
+  return false;
 }
 
 function formatWon(amount) {
@@ -746,12 +759,34 @@ export async function assertPracticeTransferPaidCreditSufficient({
    * ledger: GL 집계(기본, 확정 검증). hold는 항상 ledger로 재검증.
    */
   balanceMode = "ledger",
+  /** 신규 기공의뢰 생성 시에만 true. 작업시작·확정 등 기존 의뢰 진행은 막지 않는다. */
+  enforceSettlementLock = false,
 }) {
   const practiceId = String(practiceAnchorId || "").trim();
   if (!practiceId || !Types.ObjectId.isValid(practiceId)) {
     const err = new Error("치과 사업자 정보가 필요합니다.");
     err.statusCode = 400;
     throw err;
+  }
+
+  if (enforceSettlementLock) {
+    const { checkPracticeSettlementLock } = await import(
+      "../utils/creditLock.util.js"
+    );
+    const lockStatus = await checkPracticeSettlementLock(practiceId);
+    if (lockStatus?.isLocked) {
+    const err = new Error(
+      lockStatus.reason ||
+        "월 정산 미납으로 신규 기공의뢰가 제한되었습니다.",
+    );
+    err.statusCode = 402;
+    err.payload = {
+      reason: "practice_credit_locked",
+      lockedReason: lockStatus.reason,
+      lockedAt: lockStatus.lockedAt || null,
+    };
+    throw err;
+    }
   }
 
   let fees = feesInput && typeof feesInput === "object" ? feesInput : null;

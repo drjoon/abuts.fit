@@ -351,6 +351,40 @@ const businessAnchorSchema = new mongoose.Schema(
       select: false,
       _id: false,
     },
+    /**
+     * 치과 오픈뱅킹(OB) 장기동의 및 정산일 자동 일괄이체 상태.
+     * related: services/openBankingAdapter.service.js · jobs/monthlyPracticeObSettlementWorker.js
+     */
+    openBankingConsent: {
+      status: {
+        type: String,
+        enum: ["none", "active", "reauth_required", "revoked"],
+        default: "none",
+        index: true,
+      },
+      bankCode: { type: String, default: "" },
+      bankName: { type: String, default: "" },
+      accountNumberMasked: { type: String, default: "" },
+      accountHolder: { type: String, default: "" },
+      fintechUseNum: { type: String, default: "" },
+      monthlyCapAmount: { type: Number, default: 0, min: 0 },
+      consentedAt: { type: Date, default: null },
+      expiresAt: { type: Date, default: null, index: true },
+      lastVerifiedAt: { type: Date, default: null },
+      passkeyCredentialId: { type: String, default: "" },
+      passkeyPublicKey: { type: String, default: "" },
+      passkeyCounter: { type: Number, default: 0 },
+      paymentHold: {
+        isHeld: { type: Boolean, default: false, index: true },
+        reason: { type: String, default: "" },
+        heldAt: { type: Date, default: null },
+        failedBatchId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "PracticeMonthlySettlement",
+          default: null,
+        },
+      },
+    },
     defaultReferralAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "BusinessAnchor",

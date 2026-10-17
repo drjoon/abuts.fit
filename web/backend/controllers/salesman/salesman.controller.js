@@ -35,7 +35,10 @@ import {
   REQUESTOR_UNIT_PRICE_BASE,
   REQUESTOR_UNIT_PRICE_MIN,
   dealerCommissionMongoExpr,
+  PRACTICE_DEPOSIT_GUIDANCE_THRESHOLD,
+  isPracticeDepositGuidanceRequired,
 } from "../../utils/requestorUnitPricePolicy.js";
+import PracticeMonthlySettlement from "../../models/practiceMonthlySettlement.model.js";
 import { invalidateRequestorUnitPriceCache } from "../../services/requestorUnitPrice.service.js";
 import {
   loadMonthlyRequestCounts,
@@ -1065,12 +1068,34 @@ export async function getMyCustomerUnitPrices(req, res) {
       .sort({ name: 1 })
       .lean();
     const monthly = await loadMonthlyRequestCounts(rows.map((r) => r._id));
+    // 월 이용 금액(직전 확정 정산 총액, 없으면 이번 달 건수×단가 추정)이 1천만원 초과면 보증금 안내
+    const settlements = await PracticeMonthlySettlement.find({
+      practiceAnchorId: { $in: rows.map((r) => r._id) },
+    })
+      .select({ practiceAnchorId: 1, totalAmount: 1, yearMonth: 1 })
+      .sort({ yearMonth: -1 })
+      .limit(rows.length * 3)
+      .lean();
+    const maxSettlement = new Map();
+    for (const st of settlements) {
+      const key = String(st.practiceAnchorId);
+      maxSettlement.set(
+        key,
+        Math.max(maxSettlement.get(key) || 0, Number(st.totalAmount) || 0),
+      );
+    }
     return res.status(200).json({
       success: true,
       data: {
         min: REQUESTOR_UNIT_PRICE_MIN,
         max: REQUESTOR_UNIT_PRICE_BASE,
+        depositGuidanceThreshold: PRACTICE_DEPOSIT_GUIDANCE_THRESHOLD,
         items: rows.map((r) => {
+          const monthlySpend = Math.max(
+            maxSettlement.get(String(r._id)) || 0,
+            (monthly.get(String(r._id))?.thisMonth ?? 0) *
+              (r.dealerUnitPrice ?? REQUESTOR_UNIT_PRICE_BASE),
+          );
           const address = [r.metadata?.address, r.metadata?.addressDetail]
             .map((v) => String(v || "").trim())
             .filter(Boolean)
@@ -1095,6 +1120,8 @@ export async function getMyCustomerUnitPrices(req, res) {
             shippingMode: normalizeShippingMode(r.shippingPolicy?.defaultShippingMode),
             monthlyRequestCount: monthly.get(String(r._id))?.thisMonth ?? 0,
             prevMonthRequestCount: monthly.get(String(r._id))?.prevMonth ?? 0,
+            monthlySpend,
+            depositGuidance: isPracticeDepositGuidanceRequired(monthlySpend),
             updatedAt: r.updatedAt || null,
           };
         }),

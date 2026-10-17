@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-09-28: 내역·통계·지급은 작업영역 폭. 탭·충전 폼만 읽기 폭 유지.
+// - 2026-10-17: 치과도 「충전」(어벗츠로 커스텀어벗 선불 크레딧) 유지 + 「자동정산」(기공의뢰 후불 OB) 탭 분리.
 // - 2026-09-16: access 로딩 스켈레톤 탭 3|4(지급 포함). isLab에 user.requestorKind 힌트.
 // - 2026-09-16: 기공소·어벗츠기공소 — 충전 옆「지급」탭(LabSettlementPayoutTab). ?tab=settlement → payout.
 // - 2026-09-05: 가이드투어 — 정산 탭(내역·통계·충전·지급)별 data-guide-tour·활성 탭 강조.
@@ -39,12 +40,13 @@
 // - web/frontend/src/shared/business/useRequestorBusinessAccess.ts
 import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { BarChart3, CreditCard, HandCoins, Wallet } from "lucide-react";
+import { BarChart3, CreditCard, HandCoins, Landmark, Wallet } from "lucide-react";
 import {
   SettingsScaffold,
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
 import { PaymentTab } from "@/features/settings/tabs/CreditPaymentTab";
+import { PracticeObBillingTab } from "@/features/settings/tabs/PracticeObBillingTab";
 import { LabSettlementPayoutTab } from "@/features/settings/tabs/LabSettlementPayoutTab";
 import { CreditLedgerModal } from "@/shared/components/CreditLedgerModal";
 import { DemoModeBadge } from "@/shared/demo/DemoModeBadge";
@@ -55,7 +57,7 @@ import { RequestorCreditsPageSkeleton } from "@/shared/ui/skeletons/RequestorCre
 
 import { CreditStatisticsTab } from "@/pages/requestor/credits/components/CreditStatisticsTab";
 
-type TabKey = "ledger" | "stats" | "charge" | "payout";
+type TabKey = "ledger" | "stats" | "charge" | "payout" | "autopay";
 
 const CREDITS_GUIDE_TOUR_TARGETS = new Set([
   "credits_ledger",
@@ -72,8 +74,9 @@ const resolveCreditsTab = (
   if (raw === "charge") return "charge";
   if (raw === "stats") return "stats";
   if (raw === "payout" || raw === "settlement") {
-    return isLab ? "payout" : "ledger";
+    return isLab ? "payout" : "autopay";
   }
+  if (raw === "autopay") return isLab ? "ledger" : "autopay";
   return "ledger";
 };
 
@@ -143,6 +146,20 @@ export default function RequestorCreditsPage() {
       },
     ];
 
+    if (!isLab) {
+      next.push({
+        key: "autopay",
+        label: "자동정산",
+        icon: Landmark,
+        content:
+          activeTab === "autopay" ? (
+            <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden px-0.5 pb-2 pt-2">
+              <PracticeObBillingTab />
+            </div>
+          ) : null,
+      });
+    }
+
     if (isLab) {
       next.push({
         key: "payout",
@@ -164,7 +181,7 @@ export default function RequestorCreditsPage() {
   if (accessLoading) {
     return (
       <RequestorCreditsPageSkeleton
-        tabCount={isLab ? 4 : 3}
+        tabCount={4}
         showSettlement={isLab}
       />
     );

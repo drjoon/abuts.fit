@@ -240,6 +240,14 @@
   - `REQUEST_SPEND_HOLD`, `REQUEST_SPEND_COMMIT`, `SHIPPING_SPEND_HOLD`, `SHIPPING_SPEND_COMMIT`
   - `PRACTICE_MEMBERSHIP_SPEND`(레거시 치과 멤버십 월 구독. 신규 과금 없음)
   - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`, `STORE_SALE`, `REFUND`
+  - `OB_MONTHLY_SETTLEMENT` (치과 오픈뱅킹 월말 일괄정산 완료)
+- **치과 기공의뢰 후불(OB 자동정산) + 어벗츠로 선불 크레딧 + 대형 치과 보증금 SSOT (2026-10-17)**:
+  - **월 후불 한도 없음**: 기공의뢰(PTX) 기공료는 후불이다. 한도를 두지 않는다(`monthlyCreditLimit` 폐기). 오픈뱅킹(OB) 장기동의가 활성이면 기공비는 마이너스 허용(`practiceAllowsFreeRequestOverdraft`), 어벗 소매가는 크레딧이 필요하다.
+  - **어벗츠로(커스텀어벗 `Request`)는 선불 크레딧 유지**: 어벗츠기공소에만 주문하므로 선불이 가능하다. OB 잠금은 `Request`에 적용하지 않는다(`checkCreditLock`은 ChargeOrder·거래처 가격 승인만).
+  - **미납 시 다음 기공의뢰 즉시 제한**: `checkPracticeSettlementLock`(`utils/creditLock.util.js`)이 정산 예정일이 지났는데 `COMPLETED`가 아닌 월 정산, 자동이체 실패 Hold, 90일 재인증 만료를 잠근다. 신규 PTX 생성(`assertPracticeTransferPaidCreditSufficient({ enforceSettlementLock: true })`)에서만 적용하고 진행 중인 의뢰는 막지 않는다.
+  - **OB 장기동의 + 가끔 재인증**: 최초 1회 출금계좌 연결 + 생체인증(Face ID/지문 패스키) 등록 시 90일 유효(`BusinessAnchor.openBankingConsent`). 만료 시 1탭 재인증(`POST /api/practice/billing/reauth`).
+  - **정산일 자동 일괄이체**: 매월 1일 KST 전월 사용분(협력 기공소 직거래 N건 + 어벗츠 법인 1건)을 `PracticeMonthlySettlement`로 확정, 5일 09:00 KST에 일괄출금(`jobs/monthlyPracticeObSettlementWorker.js`). 실패 시 `paymentHold`, Face ID 재이체(`POST /api/practice/billing/retry-settlement/:id`)로 해제.
+  - **보증금(월 이용 1천만원 초과 치과)**: 딜러/영업 담당자가 안내한다(`PRACTICE_DEPOSIT_GUIDANCE_THRESHOLD`, 거래처 목록 `depositGuidance`). 보증금은 개별 기공소(어벗츠기공소 포함)가 직접 받는다. 치과는 OB + Face ID로 해당 기공소에 직접 이체한다(`POST /api/practice/billing/deposits`, `PracticeLabDeposit`). 어벗츠는 제3자 보증금을 보관하지 않고 의뢰도 막지 않는다(안내).
 - 수익 계정 SSOT:
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
   - **제조사(하청)**: % 분배 금지. **어벗 1개당** 고정 매입가(부가세 포함) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800)·`manufacturerRemakeUnitPrice`(기본 6,600, 리메이크)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 장부·미정산·지급=포함가(재가산 없음)·세금계산서(÷1.1). **리메이크도 제조사 지급(기본 6,600)**. 그 외(무료 크레딧 결제 포함)는 **약정 단가 전액 지급**. 매달 말일 일괄 지급 전까지는 미정산 잔액으로 적립.

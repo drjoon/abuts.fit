@@ -21,6 +21,19 @@ export const DELIVERY_MONTHLY_FEE = 55_000;
 /** 월 의뢰가 이 건수 이하인 거래처는 배송업체가 무료로 처리한다(딜러·어벗츠 부담 없음). */
 export const DELIVERY_FREE_MAX_MONTHLY_REQUESTS = 2;
 
+/** 월 이용 금액이 이 금액(원)을 넘는 치과는 딜러/영업팀이 보증금 이체를 안내한다(개별 기공소 직접 수취). */
+export const PRACTICE_DEPOSIT_GUIDANCE_THRESHOLD = 10_000_000;
+
+/** 월 이용 금액이 보증금 안내 기준을 넘는지. */
+export function isPracticeDepositGuidanceRequired(
+  monthlySpendWon: number,
+): boolean {
+  return (
+    Math.round(Number(monthlySpendWon) || 0) >
+    PRACTICE_DEPOSIT_GUIDANCE_THRESHOLD
+  );
+}
+
 export type RequestorUnitPriceRule = "dealer_price" | "base_price";
 
 export type DealerUnitPriceCheck =

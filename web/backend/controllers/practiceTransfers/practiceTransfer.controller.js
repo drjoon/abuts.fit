@@ -3562,6 +3562,7 @@ export async function createPracticeTransfer(req, res) {
         fees: feeQuote.fees,
         balanceMode: "snapshot",
         remake: remakePricing,
+        enforceSettlementLock: true,
       });
       createShippingFees = creditCheck?.shipping || null;
     } catch (creditErr) {
