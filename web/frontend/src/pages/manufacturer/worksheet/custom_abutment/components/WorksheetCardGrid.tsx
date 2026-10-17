@@ -1438,15 +1438,6 @@ export const WorksheetCardGrid = ({
                             FL 확인
                           </Badge>
                         ) : null}
-                        {isTightCornerCorrectionNeeded && !rhinoWorkPending ? (
-                          <Badge
-                            variant="outline"
-                            className="h-5 max-w-full truncate text-[10px] px-1.5 py-0 font-semibold leading-none border border-destructive/70 bg-destructive-soft text-destructive flex items-center"
-                            title="마진 fillet R이 φ1.2 볼(R0.6)보다 작습니다. 프리뷰에서 보정 솔리드를 확인하세요."
-                          >
-                            마진 보정
-                          </Badge>
-                        ) : null}
                         {isCuffManualReview && !rhinoWorkPending ? (
                           <Badge
                             variant="outline"
@@ -1493,32 +1484,23 @@ export const WorksheetCardGrid = ({
                         >
                           <FilledStlCardThumbnail request={request} />
                         </button>
-                        {onRunRhino && tabStage === "request" && !rhinoWorkPending ? (
-                          <Button
-                            type="button"
-                            size="sm"
+                        {shouldShowTopUnmachinableBadge && !rhinoWorkPending ? (
+                          <Badge
                             variant="outline"
-                            className="h-6 px-2 text-[11px] font-semibold"
-                            disabled={
-                              !!rhinoRunningIds[
-                                String(request._id || request.requestId || "")
-                              ]
+                            className="h-auto min-h-6 max-w-[4.75rem] text-[10px] px-1.5 py-0.5 font-semibold leading-[1.15] border border-accent-muted bg-accent-soft text-accent-strong flex flex-col items-center justify-center text-center"
+                            title={
+                              isTightCornerCorrectionNeeded
+                                ? "마진 fillet R이 φ1.2 볼(R0.6)보다 작습니다. 프리뷰에서 확인하세요."
+                                : isFinishLineMinZRisky
+                                  ? "피니시라인 높이가 낮습니다. 프리뷰에서 확인하세요."
+                                  : "불완전가공 판정 건입니다."
                             }
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              onRunRhino(request);
-                            }}
-                            onPointerDown={(e) => {
-                              e.stopPropagation();
-                            }}
                           >
-                            {rhinoRunningIds[
-                              String(request._id || request.requestId || "")
-                            ]
-                              ? "요청 중…"
-                              : "Rhino 실행"}
-                          </Button>
+                            <span>불완전가공</span>
+                            {!isUnmachinableSample ? (
+                              <span className="text-[9px] font-medium">확인요망</span>
+                            ) : null}
+                          </Badge>
                         ) : null}
                         {onRunRhino && tabStage === "request" && !rhinoWorkPending ? (
                           <Button

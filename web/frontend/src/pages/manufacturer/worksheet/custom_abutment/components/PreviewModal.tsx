@@ -1736,23 +1736,6 @@ export const PreviewModal = ({
               FL 불량 · 수정
             </button>
           ) : null}
-          {isTightCornerCorrectionNeeded &&
-          side === filledSide &&
-          !showFlBad &&
-          !guidedFinishLineMode ? (
-            <button
-              type="button"
-              className={`${iconBtn} border-destructive/60 px-2.5 text-destructive hover:bg-destructive-soft`}
-              title="마진 fillet R이 φ1.2 볼(R0.6)보다 작습니다. 보정 솔리드를 켜서 확인하세요."
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setCorrectionSolidOn(true);
-              }}
-            >
-              마진 보정 · 확인
-            </button>
-          ) : null}
           {showGuide ? (
             <>
               {(
