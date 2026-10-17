@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-17: 그리드·메타·안내(피니시라인 등) on/off를 localStorage에 저장.
 // - 2026-10-16: ESP 버튼은 짧은 주소만 받고, 파일은 브라우저 다운로드로 바로 저장한다.
 // - 2026-10-16: 가공 프리뷰 NC 표시명을 의뢰번호.nc 로 줄이고, ESP 버튼은 NC가 있으면 항상 표시.
 // - 2026-10-13: 더미는 헥스 회전이 없으면 STL모델대로로 보여 준다.
@@ -71,6 +72,7 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/finishLineQuality.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/previewOverlayPrefs.ts
 // - web/backend/controllers/rhino/rhino.controller.js
 // - web/backend/modules/rhino/rhino.routes.js
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -144,6 +146,10 @@ import {
   resolveRequestCategory,
 } from "../utils/request";
 import { isFinishLineDefective } from "../utils/finishLineQuality";
+import {
+  loadPreviewOverlayPrefs,
+  savePreviewOverlayPrefs,
+} from "../utils/previewOverlayPrefs";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
@@ -689,15 +695,27 @@ export const PreviewModal = ({
     [],
   );
   /** 반자동 추적 미리보기(저장 전). Esc/모드전환 시 폐기. */
-  const [metaOn, setMetaOn] = useState(true);
-  const [guidesOn, setGuidesOn] = useState(true);
+  const [metaOn, setMetaOn] = useState(
+    () => loadPreviewOverlayPrefs().meta,
+  );
+  const [guidesOn, setGuidesOn] = useState(
+    () => loadPreviewOverlayPrefs().guides,
+  );
   const [semiAutoPendingPoints, setSemiAutoPendingPoints] = useState<
     number[][] | null
   >(null);
   const screwLotAutoAssignAttemptedRef = useRef<Set<string>>(new Set());
   const leftViewerRef = useRef<StlPreviewViewerHandle | null>(null);
   const rightViewerRef = useRef<StlPreviewViewerHandle | null>(null);
-  const [gridOn, setGridOn] = useState(true);
+  const [gridOn, setGridOn] = useState(() => loadPreviewOverlayPrefs().grid);
+
+  useEffect(() => {
+    savePreviewOverlayPrefs({
+      grid: gridOn,
+      meta: metaOn,
+      guides: guidesOn,
+    });
+  }, [gridOn, metaOn, guidesOn]);
   const [leftPaintSpace, setLeftPaintSpace] = useState<ViewPaintSpace | null>(null);
   const [rightPaintSpace, setRightPaintSpace] = useState<ViewPaintSpace | null>(null);
   const [guidedFinishLineSubmitting, setGuidedFinishLineSubmitting] = useState(false);
