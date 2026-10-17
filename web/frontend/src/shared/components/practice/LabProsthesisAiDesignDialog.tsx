@@ -330,8 +330,10 @@ import {
 import {
   alignPresetToKind,
   applyDesignPreset,
+  applyInnerParams,
   applyDetectedMargin,
   applyMarginTrace,
+  innerParamsOf,
   clinicKeyFromCasePrimary,
   connectorIsWeak,
   createToothDesignEdit,
@@ -3322,7 +3324,7 @@ function LabProsthesisAiDesignDialog({
   };
 
   /** 잡아 둔 삽입축과 치아색·잇몸색·형상 경계로 마진을 자동 검출한다. */
-  const autoDetectMargin = (toothNumber: string) => {
+  const autoDetectMargin = (toothNumber: string, options?: { noUndo?: boolean }) => {
     if (!toothAxisReady(toothNumber)) {
       toast({
         title: "삽입축을 먼저 잡으세요.",
@@ -3342,7 +3344,7 @@ function LabProsthesisAiDesignDialog({
       });
       return;
     }
-    beginEditUndo();
+    if (!options?.noUndo) beginEditUndo();
     marginResetBackupRef.current = null;
     setMarginResetOn(false);
     viewerRef.current?.resetMarginTrace();
@@ -3568,6 +3570,9 @@ function LabProsthesisAiDesignDialog({
 
   const applyLabAiChatAction = (action: LabAiChatAction) => {
     switch (action.kind) {
+      case "selectTooth":
+        showTooth(action.tooth);
+        return;
       case "patchRefine":
         setEdits((prev) => {
           const current = prev[action.tooth] ?? createToothDesignEdit();
@@ -3591,11 +3596,39 @@ function LabProsthesisAiDesignDialog({
             : { ...prev, [action.tooth]: "confirmed" },
         );
         return;
+      case "patchInner":
+        setEdits((prev) => {
+          const current = prev[action.tooth] ?? createToothDesignEdit();
+          const params = innerParamsOf(current);
+          const next = { ...params, ...action.patch };
+          const kind = innerKindOf(current, cavityKindsRef.current[action.tooth] ?? null);
+          return {
+            ...prev,
+            [action.tooth]: applyInnerParams(current, next, kind, null),
+          };
+        });
+        return;
       case "confirmMargin":
         confirmMargin(action.tooth);
         return;
+      case "confirmMarginBulk": {
+        beginEditUndo();
+        setMarginReview((prev) => {
+          const next = { ...prev };
+          for (const tooth of action.teeth) {
+            if (next[tooth] === "detected") next[tooth] = "confirmed";
+          }
+          return next;
+        });
+        queueSaveWorkRef.current();
+        return;
+      }
       case "autoDetectMargin":
         autoDetectMargin(action.tooth);
+        return;
+      case "autoDetectMarginBulk":
+        if (action.teeth.length > 0) beginEditUndo();
+        for (const tooth of action.teeth) autoDetectMargin(tooth, { noUndo: true });
         return;
       case "generate":
         void runGenerate(action.teeth);
@@ -3626,6 +3659,11 @@ function LabProsthesisAiDesignDialog({
           setDesignFold("inner");
           return;
         }
+        if (action.target === "designOcclusal") {
+          setModifyTool("refine");
+          setDesignFold("occlusal");
+          return;
+        }
         setModifyTool("refine");
         setDesignFold("refine");
         setRefineTab(refineTabForNavigate(action.target) ?? "transform");
@@ -3638,14 +3676,23 @@ function LabProsthesisAiDesignDialog({
   const sendAiChat = () => {
     const text = chatDraft.trim().slice(0, 2000);
     if (!text) return;
+    const bridgePendingGenerate =
+      bridgeMembers.length > 1
+        ? bridgeMembers.filter((number) => generatedRef.current[number] !== true)
+        : [];
     const { actions, reply } = interpretLabProsthesisAiChat(text, {
       activeToothNumber: activeNumber,
       marginReview: marginReviewRef.current,
       edits: editsRef.current,
+      planTeeth: plan.teeth.filter((tooth) => tooth.designable).map((tooth) => tooth.toothNumber),
+      bridgeSpanTeeth: bridgeMembers.length > 1 ? bridgeMembers : undefined,
+      bridgePendingGenerate:
+        bridgePendingGenerate.length > 0 ? bridgePendingGenerate : undefined,
     });
     const editMutations = actions.some(
       (action) =>
         action.kind === "patchRefine" ||
+        action.kind === "patchInner" ||
         action.kind === "adjustMarginOffset" ||
         action.kind === "toggleRefine",
     );
@@ -6911,7 +6958,7 @@ function AiDesignChatPanel({
               <p className="text-xs leading-relaxed text-muted-foreground">
                 AI에게 디자인 명령해 주세요.
                 <br />
-                예: 교합 간격 0.2, 마진 확인, 도움말
+                예: #16 마진 확인, 브리지 생성, 도움말
               </p>
             ) : (
               turns.map((turn, index) => {
