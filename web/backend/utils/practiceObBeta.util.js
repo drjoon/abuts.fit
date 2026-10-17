@@ -5,14 +5,14 @@
 // - web/backend/services/requestCreditHold.service.js
 //
 // 런칭 전 베타: OB 자동정산·PTX 잠금은 테스트치과·테스트기공소만. 그 외는 무제한(마이너스 허용).
-// 베타 종료: `PRACTICE_OB_LAUNCH_BETA=false` → 일반 치과·기공소 모두 OB 후불(`isPracticeObPostpaidActive`).
+// 베타 종료: 치과 PTX는 OB 후불(`isPracticeObPostpaidActive`). 기공소 Request CA는 선충전·무료만(`resolveLabCustomAbutmentCreditHoldPolicy`).
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import { isGuideTourAlwaysOnBusiness } from "./guideTour.util.js";
 
 /**
  * 런칭 전 베타 과금 완화 ON/OFF.
  * - true(기본): 테스트 계정만 OB·PTX 잠금, 그 외 치과 무제한 후불·일반 기공소 CA 무료크레딧
- * - false: 치과·기공소 모두 OB 장기동의 active + Hold 없을 때만 후불 overdraft
+ * - false: 치과 PTX OB 후불 overdraft. 기공소 CA는 항상 선충전·무료만
  */
 export function isPracticeObLaunchBetaActive() {
   const raw = String(process.env.PRACTICE_OB_LAUNCH_BETA ?? "true")
@@ -73,4 +73,62 @@ export async function isLabCustomAbutmentFreeCreditOnly(labAnchorId) {
   const ctx = await loadBusinessAnchorBillingGateContext(labAnchorId);
   if (!ctx?.isLab) return false;
   return !ctx.obAutopayEnforced;
+}
+
+/**
+ * 기공소 어벗(Request·배송 hold) 크레딧 버킷 SSOT.
+ * - 치과 PTX 적립(settlement) 사용 금지 — 치과 직수납·플랫폼 후납 리스크.
+ * - OB 후불 마이너스(overdraft) 금지 — 선충전·무료만.
+ * - 런칭 베타: 테스트기공소 제외 일반 기공소는 무료크레딧만(`freeCreditOnly`).
+ */
+export async function resolveLabCustomAbutmentCreditHoldPolicy(anchorId) {
+  const ctx = await loadBusinessAnchorBillingGateContext(anchorId);
+  if (!ctx?.isLab) {
+    return {
+      applies: false,
+      freeCreditOnly: false,
+      excludeSettlementCredit: false,
+      allowPostpaidOverdraft: true,
+    };
+  }
+  return {
+    applies: true,
+    freeCreditOnly: await isLabCustomAbutmentFreeCreditOnly(anchorId),
+    excludeSettlementCredit: true,
+    allowPostpaidOverdraft: false,
+  };
+}
+
+/** hold·402 사전검사용 — policy에 맞게 settlement·paid 버킷 조정 */
+export function buildCustomAbutmentSpendBuckets(balances, policy) {
+  const paidCredit = Math.round(Number(balances?.paidCredit || 0));
+  const freeRequestCredit = Math.round(
+    Number(balances?.freeRequestCredit || 0),
+  );
+  const freeShippingCredit = Math.round(
+    Number(balances?.freeShippingCredit || 0),
+  );
+  const settlementCredit = Math.round(Number(balances?.settlementCredit || 0));
+  if (!policy?.applies) {
+    return {
+      paidCredit,
+      freeRequestCredit,
+      freeShippingCredit,
+      settlementCredit,
+    };
+  }
+  if (policy.freeCreditOnly) {
+    return {
+      paidCredit: 0,
+      freeRequestCredit,
+      freeShippingCredit,
+      settlementCredit: 0,
+    };
+  }
+  return {
+    paidCredit,
+    freeRequestCredit,
+    freeShippingCredit,
+    settlementCredit: policy.excludeSettlementCredit ? 0 : settlementCredit,
+  };
 }

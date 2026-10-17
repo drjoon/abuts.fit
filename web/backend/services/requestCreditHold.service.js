@@ -33,7 +33,7 @@ import {
   computeBusinessCreditBalanceFromLedger,
 } from "./creditBalance.service.js";
 import { isPracticeObPostpaidActive } from "../utils/practiceObPostpaid.util.js";
-import { isLabCustomAbutmentFreeCreditOnly } from "../utils/practiceObBeta.util.js";
+import { resolveLabCustomAbutmentCreditHoldPolicy } from "../utils/practiceObBeta.util.js";
 import { isFmDentalShippingActiveForAnchor } from "./fmDentalShippingSubscription.service.js";
 import {
   deleteGeneralLedgerCommitJournal,
@@ -367,6 +367,8 @@ function prepareOneRequestHold({
   allowFreeRequestOverdraft = false,
   /** 일반 기공소 CA: paid·settlement 제외, 무료크레딧만 */
   freeCreditOnly = false,
+  /** 기공소 CA: PTX 적립(settlement) 제외, 충전·무료만 */
+  excludeSettlementCredit = false,
 }) {
   const amt = Math.max(0, Math.round(Number(amount || 0)));
   const requestId = request?._id;
@@ -383,9 +385,10 @@ function prepareOneRequestHold({
       : Number(spendable?.paidCredit || 0),
     freeRequestCredit: Number(spendable?.freeRequestCredit || 0),
     freeShippingCredit: Number(spendable?.freeShippingCredit || 0),
-    settlementCredit: freeCreditOnly
-      ? 0
-      : Number(spendable?.settlementCredit || 0),
+    settlementCredit:
+      freeCreditOnly || excludeSettlementCredit
+        ? 0
+        : Number(spendable?.settlementCredit || 0),
     freeOrder,
     allowFreeRequestOverdraft: freeCreditOnly
       ? false
@@ -825,7 +828,7 @@ export async function holdRequestCreditsOnSubmit({
   const lockedAnchors = new Set();
   const balanceByAnchor = new Map();
   const postpaidByAnchor = new Map();
-  const labFreeCreditOnlyByAnchor = new Map();
+  const labCreditHoldPolicyByAnchor = new Map();
   let totalHeld = 0;
   const results = [];
 
@@ -838,15 +841,22 @@ export async function holdRequestCreditsOnSubmit({
     return active;
   };
 
-  const resolveLabFreeCreditOnlyHold = async (requestorAnchorId) => {
+  const resolveLabCreditHoldPolicy = async (requestorAnchorId) => {
     const key = String(requestorAnchorId || "").trim();
-    if (!key) return false;
-    if (labFreeCreditOnlyByAnchor.has(key)) {
-      return labFreeCreditOnlyByAnchor.get(key);
+    if (!key) {
+      return {
+        applies: false,
+        freeCreditOnly: false,
+        excludeSettlementCredit: false,
+        allowPostpaidOverdraft: true,
+      };
     }
-    const onlyFree = await isLabCustomAbutmentFreeCreditOnly(key);
-    labFreeCreditOnlyByAnchor.set(key, onlyFree);
-    return onlyFree;
+    if (labCreditHoldPolicyByAnchor.has(key)) {
+      return labCreditHoldPolicyByAnchor.get(key);
+    }
+    const policy = await resolveLabCustomAbutmentCreditHoldPolicy(key);
+    labCreditHoldPolicyByAnchor.set(key, policy);
+    return policy;
   };
 
   const takeCachedBalance = async (requestorAnchorId) => {
@@ -909,10 +919,9 @@ export async function holdRequestCreditsOnSubmit({
       });
       return;
     }
-    const labFreeCreditOnly =
-      await resolveLabFreeCreditOnlyHold(requestorAnchorId);
+    const labHoldPolicy = await resolveLabCreditHoldPolicy(requestorAnchorId);
     const allowPostpaid =
-      !labFreeCreditOnly &&
+      labHoldPolicy.allowPostpaidOverdraft !== false &&
       (await resolveAllowPostpaidHold(requestorAnchorId));
     const prepared = prepareOneRequestHold({
       request,
@@ -926,7 +935,8 @@ export async function holdRequestCreditsOnSubmit({
       actorUserId,
       cachedBalance: await takeCachedBalance(requestorAnchorId),
       allowFreeRequestOverdraft: allowPostpaid,
-      freeCreditOnly: labFreeCreditOnly,
+      freeCreditOnly: labHoldPolicy.freeCreditOnly,
+      excludeSettlementCredit: labHoldPolicy.excludeSettlementCredit,
     });
     if (!prepared?.held || !prepared.journal) {
       results.push({ kind: holdKind, ...prepared });

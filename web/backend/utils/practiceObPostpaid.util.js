@@ -16,6 +16,7 @@ import {
  * 90일 재인증 만료는 치과 신규 PTX 잠금(`checkPracticeSettlementLock`)으로만 막는다.
  * 베타(`PRACTICE_OB_LAUNCH_BETA`): 테스트치과만 OB 필수, 그 외 치과는 OB 없이 overdraft.
  * 베타 종료: 치과·기공소 모두 OB active일 때만 후불.
+ * 기공소 커스텀어벗(Request hold)은 settlement·OB overdraft 불가 — `resolveLabCustomAbutmentCreditHoldPolicy`.
  */
 export async function isPracticeObPostpaidActive(practiceAnchorId) {
   const id = String(practiceAnchorId || "").trim();
@@ -29,4 +30,15 @@ export async function isPracticeObPostpaidActive(practiceAnchorId) {
   if (kind === "lab" && isPracticeObLaunchBetaActive()) return false;
   const consent = anchor.openBankingConsent;
   return consent?.status === "active" && !consent?.paymentHold?.isHeld;
+}
+
+/** 치과 PTX·기공비 후불만. 기공소 Request CA는 선충전 검사 유지. */
+export async function isPracticeOnlyObPostpaidActive(anchorId) {
+  const id = String(anchorId || "").trim();
+  if (!id) return false;
+  const anchor = await BusinessAnchor.findById(id)
+    .select({ requestorKind: 1 })
+    .lean();
+  if (String(anchor?.requestorKind || "").trim() === "lab") return false;
+  return isPracticeObPostpaidActive(id);
 }

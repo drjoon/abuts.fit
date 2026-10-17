@@ -82,8 +82,11 @@ import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { holdRequestCreditsOnSubmit, resolveDevopsEscrowOwnerId } from "../../services/requestCreditHold.service.js";
-import { isPracticeObPostpaidActive } from "../../utils/practiceObPostpaid.util.js";
-import { isLabCustomAbutmentFreeCreditOnly } from "../../utils/practiceObBeta.util.js";
+import { isPracticeOnlyObPostpaidActive } from "../../utils/practiceObPostpaid.util.js";
+import {
+  buildCustomAbutmentSpendBuckets,
+  resolveLabCustomAbutmentCreditHoldPolicy,
+} from "../../utils/practiceObBeta.util.js";
 import { positiveSpendableCredit } from "../../services/creditBalance.service.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import { emitDesignClaimChanged } from "../../utils/designClaimRealtime.js";
@@ -1250,10 +1253,10 @@ export async function createRequestsFromDraft(req, res) {
     let creditBalanceForHold = null;
     const practiceObPostpaid =
       businessAnchorId &&
-      (await isPracticeObPostpaidActive(businessAnchorId));
-    const labFreeCreditOnly =
+      (await isPracticeOnlyObPostpaidActive(businessAnchorId));
+    const labCaHoldPolicy =
       businessAnchorId &&
-      (await isLabCustomAbutmentFreeCreditOnly(businessAnchorId));
+      (await resolveLabCustomAbutmentCreditHoldPolicy(businessAnchorId));
     if (
       !isPracticeRoutingSubmission &&
       preparedCasesForCreate.length > 0 &&
@@ -1292,19 +1295,15 @@ export async function createRequestsFromDraft(req, res) {
 
       // 데모 부채(음수)는 가용에서 뺀다. 일반 기공소는 무료크레딧만, 그 외는 충전·무료·기공 통합.
       const totalAvailable = positiveSpendableCredit(
-        labFreeCreditOnly
-          ? {
-              paidCredit: 0,
-              freeRequestCredit,
-              freeShippingCredit,
-              settlementCredit: 0,
-            }
-          : {
-              paidCredit,
-              freeRequestCredit,
-              freeShippingCredit,
-              settlementCredit,
-            },
+        buildCustomAbutmentSpendBuckets(
+          {
+            paidCredit,
+            freeRequestCredit,
+            freeShippingCredit,
+            settlementCredit,
+          },
+          labCaHoldPolicy || { applies: false },
+        ),
       );
       let remaining = totalAvailable;
       const allocatedMachining = Math.min(remaining, requiredMachiningFee);
@@ -1328,7 +1327,7 @@ export async function createRequestsFromDraft(req, res) {
         let message = "";
         const details = [];
         const requestCount = preparedCasesForCreate.length;
-        const needCreditLabel = labFreeCreditOnly
+        const needCreditLabel = labCaHoldPolicy?.freeCreditOnly
           ? "커스텀어벗 의뢰는 무료 크레딧이 있어야 합니다."
           : "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.";
         if (machiningShortfall > 0 && shippingShortfall > 0) {
@@ -1353,7 +1352,7 @@ export async function createRequestsFromDraft(req, res) {
             }), 보유: ${availableForMachining.toLocaleString()}원`,
           );
         } else {
-          message = labFreeCreditOnly
+          message = labCaHoldPolicy?.freeCreditOnly
             ? "커스텀어벗 배송비는 무료 크레딧이 있어야 합니다."
             : "커스텀어벗 배송비는 충전된 크레딧이 있어야 합니다.";
           details.push(

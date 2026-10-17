@@ -32,8 +32,11 @@ import {
   getBusinessCreditBalanceBreakdown,
 } from "./creation.helpers.controller.js";
 import { positiveSpendableCredit } from "../../services/creditBalance.service.js";
-import { isPracticeObPostpaidActive } from "../../utils/practiceObPostpaid.util.js";
-import { isLabCustomAbutmentFreeCreditOnly } from "../../utils/practiceObBeta.util.js";
+import { isPracticeOnlyObPostpaidActive } from "../../utils/practiceObPostpaid.util.js";
+import {
+  buildCustomAbutmentSpendBuckets,
+  resolveLabCustomAbutmentCreditHoldPolicy,
+} from "../../utils/practiceObBeta.util.js";
 import { getRequestorOrgId } from "./utils.js";
 import { calculateInitialProductionSchedule } from "./production.utils.js";
 import {
@@ -779,10 +782,10 @@ export async function createRequestsBulk(req, res) {
       });
     }
 
-    const skipPrepaidCreditGate = await isPracticeObPostpaidActive(
+    const skipPrepaidCreditGate = await isPracticeOnlyObPostpaidActive(
       businessAnchorId,
     );
-    const labFreeCreditOnly = await isLabCustomAbutmentFreeCreditOnly(
+    const labCaHoldPolicy = await resolveLabCustomAbutmentCreditHoldPolicy(
       businessAnchorId,
     );
 
@@ -822,19 +825,15 @@ export async function createRequestsBulk(req, res) {
     // 데모 부채(음수)는 가용에서 뺀다. 커스텀어벗은 충전된 양수 잔액만 쓴다.
     if (!skipPrepaidCreditGate) {
       const totalAvailable = positiveSpendableCredit(
-        labFreeCreditOnly
-          ? {
-              paidCredit: 0,
-              freeRequestCredit,
-              freeShippingCredit,
-              settlementCredit: 0,
-            }
-          : {
-              paidCredit,
-              freeRequestCredit,
-              freeShippingCredit,
-              settlementCredit,
-            },
+        buildCustomAbutmentSpendBuckets(
+          {
+            paidCredit,
+            freeRequestCredit,
+            freeShippingCredit,
+            settlementCredit,
+          },
+          labCaHoldPolicy,
+        ),
       );
       let remaining = totalAvailable;
       const allocatedMachining = Math.min(remaining, totalMachiningFee);
@@ -859,7 +858,7 @@ export async function createRequestsBulk(req, res) {
         let message = "";
         const details = [];
 
-        const needCreditLabel = labFreeCreditOnly
+        const needCreditLabel = labCaHoldPolicy.freeCreditOnly
           ? "커스텀어벗 의뢰는 무료 크레딧이 있어야 합니다."
           : "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.";
         if (machiningShortfall > 0 && shippingShortfall > 0) {
@@ -876,7 +875,7 @@ export async function createRequestsBulk(req, res) {
             `필요: ${totalMachiningFee.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
           );
         } else {
-          message = labFreeCreditOnly
+          message = labCaHoldPolicy.freeCreditOnly
             ? "커스텀어벗 배송비는 무료 크레딧이 있어야 합니다."
             : "커스텀어벗 배송비는 충전된 크레딧이 있어야 합니다.";
           details.push(
