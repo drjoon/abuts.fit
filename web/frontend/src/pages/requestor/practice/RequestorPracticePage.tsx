@@ -503,11 +503,10 @@ import {
   PTX_CA_INSUFFICIENT_CREDIT_DESCRIPTION_LINES,
   PTX_CA_INSUFFICIENT_CREDIT_REASON,
   PTX_CA_INSUFFICIENT_CREDIT_TITLE,
-} from "@/shared/demo/demoModeCopy";
-import { DemoModeBadge } from "@/shared/demo/DemoModeBadge";
+} from "@/shared/legal/creditLedgerCopy";
 import type { ReactNode } from "react";
 
-const CREDITS_CHARGE_HREF = "/dashboard/credits?tab=charge";
+const CREDITS_PRACTICE_BILLING_HREF = "/dashboard/credits?tab=autopay";
 
 function isPtxCaInsufficientCreditBody(body: Record<string, unknown>, status?: number) {
   const reason = String(body.reason || "").trim();
@@ -9064,7 +9063,6 @@ export function RequestorPracticeReceivePage({
           hiddenWeekdays={hiddenWeekdays}
           onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
         />
-        <DemoModeBadge className="shrink-0" />
       </div>
       {labMobileStatusBadges}
     </div>
@@ -9093,7 +9091,6 @@ export function RequestorPracticeReceivePage({
           hiddenWeekdays={hiddenWeekdays}
           onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
         />
-        <DemoModeBadge className="shrink-0" />
       </div>
     </div>
   );
@@ -9686,7 +9683,6 @@ export function RequestorPracticeReceivePage({
                 onToggleAnodizing={handleToggleAnodizing}
                 iconOnly={isMobile}
               />
-              <DemoModeBadge className="shrink-0" />
             </div>
             <DesignQueueSection listMode={designQueueListMode} />
           </div>
@@ -10539,7 +10535,7 @@ export function RequestorPracticeReceivePage({
         confirmTone="primary"
         onConfirm={() => {
           setPtxCaCreditConfirmOpen(false);
-          navigate(CREDITS_CHARGE_HREF);
+          navigate(CREDITS_PRACTICE_BILLING_HREF);
         }}
         onCancel={() => setPtxCaCreditConfirmOpen(false)}
       />

@@ -273,7 +273,6 @@ import {
   type PracticeTransferAutoMatchBudget,
 } from "@/shared/practice/autoMatchBudget";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
-import { DemoModeBadge } from "@/shared/demo/DemoModeBadge";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import {
   Tooltip,
@@ -9836,7 +9835,6 @@ export const PracticeFileTransferPage = ({
             {formSyncStatusLabel}
           </span>
         ) : null}
-        <DemoModeBadge />
       </div>
     </>
   );
@@ -10156,7 +10154,6 @@ export const PracticeFileTransferPage = ({
             hiddenWeekdays: opts?.hiddenWeekdays,
             onHiddenWeekdaysChange: opts?.onHiddenWeekdaysChange,
           })}
-          <DemoModeBadge />
         </>
       )}
     </div>

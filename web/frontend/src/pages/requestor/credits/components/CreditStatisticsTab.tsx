@@ -27,7 +27,7 @@
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/backend/controllers/credits/creditLedgerStats.controller.js
-// - web/frontend/src/shared/demo/demoModeCopy.ts
+// - web/frontend/src/shared/legal/creditLedgerCopy.ts
 // - web/frontend/src/shared/ui/gigongAbutAccent.ts
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - .cursor/rules/ui-summary-cards.mdc
@@ -83,10 +83,7 @@ import { cn } from "@/shared/ui/cn";
 import {
   CREDIT_LEDGER_CHARGE_DETAIL_TITLE,
   CREDIT_LEDGER_CHARGE_LABEL,
-  CREDIT_LEDGER_DEMO_CHARGE_HINT,
-  resolveCreditLedgerDemoPeriodSpendHint,
-} from "@/shared/demo/demoModeCopy";
-import { useDemoMode } from "@/shared/demo/useDemoMode";
+} from "@/shared/legal/creditLedgerCopy";
 import { useAuthStore } from "@/store/useAuthStore";
 import { type GigongAbutAccentKey } from "@/shared/ui/gigongAbutAccent";
 
@@ -616,7 +613,6 @@ function CategoryBarChart({
 }
 
 export function CreditStatisticsTab() {
-  const { demoMode } = useDemoMode();
   const accessKind = useAuthStore((s) => s.user?.requestorKind || null);
   const [period, setPeriod] = useState<PeriodFilterValue>(
     SETTLEMENT_DEFAULT_PERIOD,
@@ -718,17 +714,13 @@ export function CreditStatisticsTab() {
 
   const statCardClass = SETTLEMENT_STAT_CARD_WIDTH_CLASS;
 
-  const abutsSpendTooltip = demoMode
-    ? resolveCreditLedgerDemoPeriodSpendHint(isLab ? "lab" : "practice")
-    : "선택한 기간에 지출한 어벗 생산·배송·스토어 결제 합계입니다.";
-  const practiceSpendTooltip = demoMode
-    ? resolveCreditLedgerDemoPeriodSpendHint(isLab ? "lab" : "practice")
-    : "선택한 기간에 지출한 기공료·스토어 결제 합계입니다. 결제 보류(잔액 차감분)를 포함합니다.";
+  const abutsSpendTooltip =
+    "선택한 기간에 지출한 어벗 생산·배송·스토어 결제 합계입니다.";
+  const practiceSpendTooltip =
+    "선택한 기간에 지출한 기공료·스토어 결제 합계입니다. 결제 보류(잔액 차감분)를 포함합니다.";
   const chargeLabel = CREDIT_LEDGER_CHARGE_LABEL;
   const chargeDetailTitle = CREDIT_LEDGER_CHARGE_DETAIL_TITLE;
-  const chargeTooltip = demoMode
-    ? CREDIT_LEDGER_DEMO_CHARGE_HINT
-    : "선택한 기간에 충전된 금액 합계입니다.";
+  const chargeTooltip = "선택한 기간에 충전된 금액 합계입니다.";
 
   const settlementOrderCount = Number(
     stats?.summary.settlementOrderCount ?? stats?.summary.orderCount ?? 0,

@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-09-28: 내역·통계·지급은 작업영역 폭. 탭·충전 폼만 읽기 폭 유지.
-// - 2026-10-17: 치과도 「충전」(어벗츠로 커스텀어벗 선불 크레딧) 유지 + 「자동정산」(기공의뢰 후불 OB) 탭 분리.
+// - 2026-10-17: 치과 「충전」 탭 제거(?tab=charge→autopay). 기공소만 충전 유지.
+// - 2026-10-17: 치과 「자동정산」(기공의뢰 후불 OB) 탭.
 // - 2026-09-16: access 로딩 스켈레톤 탭 3|4(지급 포함). isLab에 user.requestorKind 힌트.
 // - 2026-09-16: 기공소·어벗츠기공소 — 충전 옆「지급」탭(LabSettlementPayoutTab). ?tab=settlement → payout.
 // - 2026-09-05: 가이드투어 — 정산 탭(내역·통계·충전·지급)별 data-guide-tour·활성 탭 강조.
@@ -34,11 +35,10 @@
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/shared/ui/skeletons/RequestorCreditsPageSkeleton.tsx
-// - web/frontend/src/shared/demo/DemoModeBadge.tsx
 // - web/frontend/src/shared/guideTour/guideTourSteps.ts
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // - web/frontend/src/shared/business/useRequestorBusinessAccess.ts
-import { useCallback, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { BarChart3, CreditCard, HandCoins, Landmark, Wallet } from "lucide-react";
 import {
@@ -49,7 +49,6 @@ import { PaymentTab } from "@/features/settings/tabs/CreditPaymentTab";
 import { PracticeObBillingTab } from "@/features/settings/tabs/PracticeObBillingTab";
 import { LabSettlementPayoutTab } from "@/features/settings/tabs/LabSettlementPayoutTab";
 import { CreditLedgerModal } from "@/shared/components/CreditLedgerModal";
-import { DemoModeBadge } from "@/shared/demo/DemoModeBadge";
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -63,6 +62,7 @@ const CREDITS_GUIDE_TOUR_TARGETS = new Set([
   "credits_ledger",
   "credits_stats",
   "credits_charge",
+  "credits_autopay",
   "credits_payout",
   "credits_workspace",
 ]);
@@ -71,7 +71,7 @@ const resolveCreditsTab = (
   raw: string | null,
   isLab: boolean,
 ): TabKey => {
-  if (raw === "charge") return "charge";
+  if (raw === "charge") return isLab ? "charge" : "autopay";
   if (raw === "stats") return "stats";
   if (raw === "payout" || raw === "settlement") {
     return isLab ? "payout" : "autopay";
@@ -90,7 +90,7 @@ export default function RequestorCreditsPage() {
     user?.requestorKind === "lab";
   const guideTour = useGuideTour();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [ledgerKey, setLedgerKey] = useState(0);
+  const ledgerKey = 0;
   const activeTab = resolveCreditsTab(searchParams.get("tab"), isLab);
 
   const guideTourTarget =
@@ -99,10 +99,6 @@ export default function RequestorCreditsPage() {
     CREDITS_GUIDE_TOUR_TARGETS.has(guideTour.step.target)
       ? guideTour.step.target
       : undefined;
-
-  const handleDemoExited = useCallback(() => {
-    setLedgerKey((n) => n + 1);
-  }, []);
 
   const tabs = useMemo<SettingsTabDef[]>(() => {
     const next: SettingsTabDef[] = [
@@ -131,7 +127,10 @@ export default function RequestorCreditsPage() {
             </div>
           ) : null,
       },
-      {
+    ];
+
+    if (isLab) {
+      next.push({
         key: "charge",
         label: "충전",
         icon: CreditCard,
@@ -143,8 +142,8 @@ export default function RequestorCreditsPage() {
               </div>
             </div>
           ) : null,
-      },
-    ];
+      });
+    }
 
     if (!isLab) {
       next.push({
@@ -153,7 +152,7 @@ export default function RequestorCreditsPage() {
         icon: Landmark,
         content:
           activeTab === "autopay" ? (
-            <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden px-0.5 pb-2 pt-2">
+            <div className="flex h-full min-h-0 justify-center overflow-y-auto overflow-x-hidden px-0.5 pb-2 pt-1 sm:pt-2">
               <PracticeObBillingTab />
             </div>
           ) : null,
@@ -181,7 +180,7 @@ export default function RequestorCreditsPage() {
   if (accessLoading) {
     return (
       <RequestorCreditsPageSkeleton
-        tabCount={4}
+        tabCount={isLab ? 4 : 3}
         showSettlement={isLab}
       />
     );
@@ -201,7 +200,6 @@ export default function RequestorCreditsPage() {
         tabsMaxClassName="max-w-4xl"
         contentMaxClassName="max-w-none"
         fillHeight
-        tabsTrailing={<DemoModeBadge onExited={handleDemoExited} />}
         onTabChange={(next) => {
           const nextParams = new URLSearchParams(searchParams);
           nextParams.set("tab", next);

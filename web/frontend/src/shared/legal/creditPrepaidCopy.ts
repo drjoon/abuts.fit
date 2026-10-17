@@ -17,9 +17,7 @@
 // - web/frontend/src/pages/public/TermsPage.tsx
 // - web/frontend/src/pages/public/ServicePage.tsx
 // - web/frontend/src/features/support/InquiriesPage.tsx
-// - web/frontend/src/shared/demo/demoModeCopy.ts
 
-import { DEMO_MODE_FREE_CREDIT_FAQ_ANSWER } from "@/shared/demo/demoModeCopy";
 
 /** 화면 제목·탭 주변. 선불전자지급수단이 아닌 B2B 거래 선수금임을 명시. */
 export const CREDIT_CHARGE_NOTICE_TITLE = "크레딧(거래 선수금) 충전";
@@ -51,8 +49,6 @@ export const CREDIT_LEDGER_PREPAID_NOTICE_BODY =
 export const CREDIT_LEDGER_FREE_NOTICE_BODY =
   "이전에 적립된 무료 크레딧(잔여분)입니다. 기공의뢰·어벗 생산·배송 등에 다른 크레딧보다 먼저 사용되며, 환불 대상이 아닙니다. 신규 자동 무료 크레딧 지급은 없으며, 관리자가 수동으로 지급한 경우에만 적립됩니다.";
 
-/** 내역 탭 — 데모 모드 안내는 shared/demo/demoModeCopy.ts (CREDIT_LEDGER_DEMO_*). */
-
 /** 내역 탭 — 기공 카드 툴팁(기공소). */
 export const CREDIT_LEDGER_SETTLEMENT_NOTICE_BODY =
   "치과 기공의뢰 작업완료 시 적립되는 정산 대기금입니다. 앱 내 주문 대금에 쓰면 해당 금액만큼 월 정산에서 차감(상계)되며, 남으면 등록 계좌로 지급됩니다.";
@@ -66,10 +62,6 @@ export const CREDIT_SETTLEMENT_BUCKET_HINT = "정산·주문 상계";
 export type CreditPrepaidFaq = { q: string; a: string };
 
 export const CREDIT_PREPAID_FAQS: CreditPrepaidFaq[] = [
-  {
-    q: "가입 시 무료 크레딧이 지급되나요?",
-    a: DEMO_MODE_FREE_CREDIT_FAQ_ANSWER,
-  },
   {
     q: "어벗츠 크레딧은 네이버페이나 카카오페이 같은 선불 충전금인가요?",
     a: "아닙니다. 어벗츠 크레딧은 플랫폼 내 계약 물품·용역 대금용 B2B 거래 선수금(예치금)입니다. 환전이 불가하며, 기공·커스텀어벗(면세)과 스토어 기성품(과세) 대금으로만 사용됩니다. 의뢰 등록 시 대금이 보류되고 취소하면 해제됩니다. 확정 차감은 거래처는 가공 진입 시, 비거래처 선결제는 제조사 발송 시입니다(치과·기공소 공통).",

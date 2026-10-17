@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 const repeat = (count: number) => Array.from({ length: count }, (_, i) => i);
 
 type RequestorCreditsPageSkeletonProps = {
-  /** 치과=3(내역·통계·충전), 기공소=4(+지급) */
+  /** 치과=3(내역·통계·자동정산), 기공소=4(내역·통계·충전·지급) */
   tabCount?: 3 | 4;
   /** 기공소 내역 수식: 현재=충전+정산−소비 */
   showSettlement?: boolean;

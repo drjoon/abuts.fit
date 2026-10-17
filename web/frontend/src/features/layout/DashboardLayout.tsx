@@ -217,8 +217,6 @@ import { loadBusinessMeCached } from "@/shared/components/business/settings/busi
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { useChatRooms } from "@/shared/hooks/useChatRooms";
 import { isCreditEventForBusiness } from "@/shared/realtime/creditBalanceEvent";
-import { useDemoMode } from "@/shared/demo/useDemoMode";
-import { DemoConversionPromptModal } from "@/shared/demo/DemoConversionPromptModal";
 import { LabDemoConversionConfirmModal } from "@/shared/demo/LabDemoConversionConfirmModal";
 import { AdminDemoConversionConfirmModal } from "@/shared/demo/AdminDemoConversionConfirmModal";
 import {
@@ -246,7 +244,7 @@ type SidebarItem = DashboardSidebarItem;
 const CREDIT_LOW_BALANCE_THRESHOLD = 500_000;
 const CREDITS_HREF = "/dashboard/credits";
 const CREDITS_CHARGE_HREF = "/dashboard/credits?tab=charge";
-const STORE_HREF = "/dashboard/store";
+const CREDITS_AUTOPAY_HREF = "/dashboard/credits?tab=autopay";
 
 const requestorSidebarCommonTail: SidebarItem[] = [
   { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
@@ -323,7 +321,6 @@ const buildRequestorSidebarItems = (
         accent: "기공",
         guideTourSatellite: "oral_calendar",
       },
-      { icon: Store, label: "스토어", href: STORE_HREF, guideTourSatellite: "store_workspace" },
       {
         icon: Wallet,
         label: "정산",
@@ -360,7 +357,6 @@ const buildRequestorSidebarItems = (
         },
       ],
     },
-    { icon: Store, label: "스토어", href: STORE_HREF, guideTourSatellite: "store_workspace" },
     {
       icon: Wallet,
       label: "정산",
@@ -667,7 +663,6 @@ export const DashboardLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const { demoMode } = useDemoMode();
   const { dialog: labPayoutBankbookRemindDialog } =
     useLabPayoutBankbookReminder();
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
@@ -1119,6 +1114,8 @@ export const DashboardLayout = () => {
     if (!user) return;
     if (isPracticeUser || user.role !== "requestor") return;
     if (!user.businessAnchorId) return;
+    // 치과(후불·자동정산)는 선불 충전 nudge 대상이 아님.
+    if (requestorKind === "practice") return;
 
     // 크레딧 안내는 신규 의뢰 흐름에서만 노출한다.
     // (설정/대시보드 등에서 자동 토스트가 뜨며 흐름을 방해하는 문제 방지)
@@ -1135,9 +1132,10 @@ export const DashboardLayout = () => {
     }
 
     const params = new URLSearchParams(location.search);
+    const creditsTab = params.get("tab");
     const isOnCreditCharge =
       (location.pathname.startsWith("/dashboard/credits") &&
-        params.get("tab") === "charge") ||
+        (creditsTab === "charge" || creditsTab === "autopay")) ||
       (location.pathname.startsWith("/dashboard/settings") &&
         params.get("tab") === "payment");
 
@@ -1188,8 +1186,6 @@ export const DashboardLayout = () => {
           avgDailySpendSupply > 0 ? avgDailySpendSupply : fallbackDailySpend;
 
         if (balance <= 0) {
-          if (demoMode) return;
-
           try {
             localStorage.setItem(storageKey, "1");
           } catch {
@@ -1247,7 +1243,16 @@ export const DashboardLayout = () => {
     return () => {
       cancelled = true;
     };
-  }, [demoMode, isPracticeUser, location.pathname, location.search, navigate, toast, token, user]);
+  }, [
+    isPracticeUser,
+    location.pathname,
+    location.search,
+    navigate,
+    requestorKind,
+    toast,
+    token,
+    user,
+  ]);
 
   const effectiveSidebarRole = isPracticeUser
     ? "practice"
@@ -1549,11 +1554,16 @@ export const DashboardLayout = () => {
     };
   }, [user.role]);
 
+  const creditsLowBalanceHref =
+    requestorKind === "lab" || user.role === "internalLab"
+      ? CREDITS_CHARGE_HREF
+      : CREDITS_AUTOPAY_HREF;
+
   const resolvedMenuItems = (() => {
     if (!isCreditLow) return menuItems;
     return menuItems.map((item) => {
       if (sidebarItemPath(item.href) !== CREDITS_HREF) return item;
-      return { ...item, href: CREDITS_CHARGE_HREF };
+      return { ...item, href: creditsLowBalanceHref };
     });
   })();
 
@@ -1752,9 +1762,6 @@ export const DashboardLayout = () => {
         ready={!requestorAccessLoading || user.role === "internalLab"}
       />
       {labPayoutBankbookRemindDialog}
-      {user.role === "requestor" && requestorKind === "practice" ? (
-        <DemoConversionPromptModal />
-      ) : null}
       {user.role === "requestor" && requestorKind === "lab" ? (
         <LabDemoConversionConfirmModal />
       ) : null}

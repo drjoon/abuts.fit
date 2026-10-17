@@ -24,7 +24,7 @@
 
 Notes:
 - 커스텀어벗 배송: 사이드바 메뉴는 두지 않는다. 기공의뢰 케이스 채팅 헤더에 `커스텀어벗 배송: {한진 현황}` 한 줄(예: HUB 도착). 생산 전·준비·가공 단계는 이 줄에 넣지 않는다.
-- Requestor workspace header: 기간 필터는 치과 `어벗디자인으로`·기공소 `어벗생산의뢰`(`/dashboard/new-request`) 상단. 헤더 버튼: `[정책 안내]` · `[진행중 x건]` · `[출고예정 x건]` · `[완료 내역 x건]` · `[불완전 가공 x건]` (x=기간 건수). 치과·기공소·어벗츠기공소는 대시보드 메뉴를 두지 않음(치과 `/dashboard` → 구강스캔, 기공소 → 기공의뢰수신, 제출 후 어벗생산/어벗디자인). 보유 크레딧·충전은 사이드바 `크레딧`(`/dashboard/credits`) — 내역/충전 탭, 충전 CTA=`?tab=charge`. 설정 결제 탭은 제거(구 `?tab=payment` → 크레딧 충전 리다이렉트). 설정 의뢰 탭도 제거 — 디자인소프트웨어·아노다이징은 어벗의뢰(`/dashboard/new-request`) 좌측 상단 버튼. 치과 설정 「구독」탭·헤더 `[구독]`은 제거(구 `?tab=subscription` → 계정). 아노다이징: 의뢰자 계정 기본값(`User.requestSettings.anodizingEnabled` / API `requestorAnodizingEnabled`) → **신규 업로드에만** `caseInfos.anodizingEnabled` 주입(이미 첨부된 카드·디자인소프트웨어와 동일하게 미변경). 사업체 `requestSettings.anodizingEnabled`는 레거시/미설정 폴백(기본 ON).
+- Requestor workspace header: 기간 필터는 치과 `어벗디자인으로`·기공소 `어벗생산의뢰`(`/dashboard/new-request`) 상단. 헤더 버튼: `[정책 안내]` · `[진행중 x건]` · `[출고예정 x건]` · `[완료 내역 x건]` · `[불완전 가공 x건]` (x=기간 건수). 치과·기공소·어벗츠기공소는 대시보드 메뉴를 두지 않음(치과 `/dashboard` → 구강스캔, 기공소 → 기공의뢰수신, 제출 후 어벗생산/어벗디자인). 정산은 사이드바 `정산`(`/dashboard/credits`) — 치과: 내역·통계·자동정산(`?tab=autopay`, 구 `?tab=charge` 리다이렉트). 기공소: 내역·통계·충전·지급. 설정 결제 탭 제거(구 `?tab=payment` → 치과 autopay / 기공소 charge). 의뢰자 **스토어** 메뉴·`/dashboard/store/*` 폐쇄(관리자 `/dashboard/store-admin` 유지). 설정 의뢰 탭도 제거 — 디자인소프트웨어·아노다이징은 어벗의뢰(`/dashboard/new-request`) 좌측 상단 버튼. 치과 설정 「구독」탭·헤더 `[구독]`은 제거(구 `?tab=subscription` → 계정). 아노다이징: 의뢰자 계정 기본값(`User.requestSettings.anodizingEnabled` / API `requestorAnodizingEnabled`) → **신규 업로드에만** `caseInfos.anodizingEnabled` 주입(이미 첨부된 카드·디자인소프트웨어와 동일하게 미변경). 사업체 `requestSettings.anodizingEnabled`는 레거시/미설정 폴백(기본 ON).
 - Semantic color palette (강제, 앱 전체):
   - 의미 축 4 + 서비스 1만 사용. 같은 축 안 차이는 soft/muted/DEFAULT/strong 밝기만.
     - **Primary** (`--primary*`) — 브랜드·CTA·공정·묶음출고·정상/완료
@@ -68,6 +68,7 @@ Notes:
   - 내역: `현재 잔액 = 충전 [+ 정산 적립] − 소비`(「무료 충전」카드 없음).
   - 통계(치과): `충전 − 소비 | 의뢰건수`.
   - 통계(기공소): `어벗츠로부터`=`정산 적립 | 의뢰건수`, `어벗츠로 의뢰`=`충전 − 소비 | 의뢰건수`.
+  - **[폐지 2026-10-17] 치과 데모 모드는 폐지되었다.** 신규 가입은 `demoMode`를 켜지 않고, 데모 게이트(만료·전환 대기 차단, 가상 잔고 overdraft, 예약분 제외)와 치과 전환 UI(`/me/exit-demo`, 뱃지·안내 모달)를 제거했다. 기공의뢰는 OB 후불, 커스텀어벗은 선불 크레딧이다. 기존 플래그는 `scripts/db/clear-practice-demo-mode.js`로 해제한다. 아래 데모 서술은 이력이며, 기공소 전환 정산(`demoConversion`·`labDemoCredit`)·장부 라벨은 레거시 데이터용으로만 남아 있다.
   - 데모/실사용 `usageScope`·2줄 집계는 쓰지 않는다(단일 장부). 데모 모드는 뱃지·잔고 힌트만.
   - 가로폭은 작업영역을 나누지 않는다. `SETTLEMENT_STAT_CARD_WIDTH_CLASS`(선호 11.5rem, 최소 sm 10.5rem) + `SETTLEMENT_STAT_ROW_CLASS`(가운데 묶음). 최소폭 미만일 때만 가로 스크롤. 기공소 지급·제조사·관리자·딜러·개발운영·내역·통계 공통.
   - SSOT: `src/shared/settlement/settlementUi.tsx`, `CreditLedgerModal.tsx`,
@@ -512,7 +513,7 @@ Notes:
 
 - 부가세(VAT) / 면세 UI 정책(강제, 루트 `rules.md` §2.3) — 겸영 이중 체계:
   - **고객·기공 경로(면세)**: 가격·충전·약관에서 "VAT 별도 / 부가세 포함 / VAT 10%" 문구 금지. 증빙은 **계산서**.
-  - **스토어 기성품(과세)**: 치과·기공소 의뢰자. 판매 SKU는 **Abutment 4종**(공통) + **Grip Driver(치과만)**. 고객 표시는 **부가세 포함 단일가** + `과세 · 부가세 포함`. 패키지 할인 없음. `RequestorStorePage` / cart / orders. 헬퍼: `shared/tax/invoiceLabels.ts` · `shared/store/storeCatalog.ts` (`STORE_PRODUCT_AUDIENCES`).
+  - **스토어 기성품(과세)**: 2026-10 의뢰자 스토어 UI·라우트 **폐쇄**(코드·API 유지, `/dashboard/store/*` → 기공의뢰). 재개 시 `RequestorStorePage` / cart / orders. SKU SSOT: **Abutment 4종** + **Grip Driver(치과만)**. `shared/tax/invoiceLabels.ts` · `shared/store/storeCatalog.ts`.
   - **스토어 배송비**: 상품 10만원 이상 무료 · 미만 ₩3,500(부가세 포함). 기공물 동봉(`lab_bundle`, 치과 기공소 우회 무료) 폐지. SSOT: `shared/store/storeShipping.ts`.
   - **관리자 스토어**: 재고·입금승인·출고(운송장)·배송완료 `/dashboard/store-admin` (`AdminStorePage`). 상품 배치는 **치과/기공소 각각** 저장. 매출은 전액 어벗츠(`REV_STORE_TAXABLE`).
   - **과세 지급**: 어벗츠↔제조사, 어벗츠↔딜러사, 어벗츠↔개발운영사. 지급 UI에 공급가·부가세·합계와 **세금계산서** 표시.
@@ -527,7 +528,7 @@ Notes:
     약관 제7조: `src/pages/public/TermsPage.tsx` (선결제 잔액 표현 금지)
     충전 단위 SSOT: 기공소(`lab`) 50만원, 치과(`practice`) 100만원.
     첫 충전 기본 1단위. 2회차부터 기본 배수 3(단위≈월사용량 1/3 → 약 한 달분). 추천 버튼은 월사용량 반올림.
-    잔액 < 50만원이면 사이드바 `크레딧`에 깜빡이는 충전 뱃지·클릭 시 `?tab=charge` (`DashboardLayout`).
+    잔액 < 50만원이면 사이드바 `정산`에 깜빡 뱃지 — 기공소 `?tab=charge`, 치과 `?tab=autopay` (`DashboardLayout`).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
   - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage`, `InquiriesPage` — 크레딧=B2B 거래 선수금. 기공·어벗 경로는 면세, 스토어는 과세(월말 분리 발행). 회사=겸영. Terms: 기공회원(기공소·계산서)과 제조회원(일반과세·세금계산서) 분리.
   - 가격 정책/대시보드: `PricingPolicyDialog` — 단일가 1.5만, 택배·딜리버리. 의뢰자 커스텀어벗 경로는 **부가세 없음 · 면세**.

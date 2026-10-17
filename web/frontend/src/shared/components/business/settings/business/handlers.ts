@@ -3,7 +3,6 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { request } from "@/shared/api/apiClient";
-import { DEMO_MODE_ONBOARDING_HINT } from "@/shared/demo/demoModeCopy";
 import {
   normalizeBusinessNumber,
   normalizePhoneNumber,
@@ -439,17 +438,6 @@ export const handleSave = async (
       toast({
         title: "신규 사업자 등록 완료",
         description: `무료크레딧 ${formatted}원이 적립되었어요.`,
-      });
-    } else if (
-      Boolean(data?.created) &&
-      (requestorKind === "lab" ||
-        requestorKind === "practice" ||
-        requestorCapabilities?.lab ||
-        requestorCapabilities?.practice)
-    ) {
-      toast({
-        title: "신규 사업자 등록 완료",
-        description: DEMO_MODE_ONBOARDING_HINT,
       });
     }
 

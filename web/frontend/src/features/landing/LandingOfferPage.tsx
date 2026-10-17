@@ -1199,10 +1199,6 @@ export function LandingOfferPage({
 
   const onBuy = (buy: OfferBuy) => {
     if (buy.kind === "store") {
-      if (isAuthenticated && user?.role === "requestor") {
-        navigate(`/dashboard/store/${buy.productId}`);
-        return;
-      }
       navigate(isAuthenticated ? resolveEntryDashboardPath(user) : "/signup");
       return;
     }

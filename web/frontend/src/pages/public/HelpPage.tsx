@@ -33,7 +33,6 @@ import {
   Wallet,
 } from "lucide-react";
 import { SUPPORT_EMAIL } from "@/shared/lib/contactInfo";
-import { DEMO_MODE_FREE_CREDIT_FAQ_ANSWER } from "@/shared/demo/demoModeCopy";
 import { CREDIT_PREPAID_FAQS } from "@/shared/legal/creditPrepaidCopy";
 import { DEALER_CODE_REGISTER_WINDOW_LINE } from "@/shared/sales/dealershipPolicyCopy";
 import {
@@ -71,10 +70,6 @@ const FAQ_SECTIONS: {
       {
         q: "딜러 코드는 언제까지 등록하나요?",
         a: DEALER_CODE_REGISTER_WINDOW_LINE,
-      },
-      {
-        q: "가입 시 무료 크레딧이 생기나요?",
-        a: DEMO_MODE_FREE_CREDIT_FAQ_ANSWER,
       },
       {
         q: "계정 해지 시 남은 크레딧은 어떻게 되나요?",

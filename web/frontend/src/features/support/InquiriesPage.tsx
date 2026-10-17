@@ -60,9 +60,6 @@ import {
   MessageSquarePlus,
   Phone,
 } from "lucide-react";
-import {
-  DEMO_MODE_FREE_CREDIT_FAQ_ANSWER,
-} from "@/shared/demo/demoModeCopy";
 
 type RequestorFaqItem = {
   q: string;
@@ -87,11 +84,6 @@ const REQUESTOR_FAQS: RequestorFaqItem[] = [
     q: "기공소가 어벗츠를 쓰는 이유는?",
     a: "의뢰 접수·채팅으로 이메일 없이 소통하고, 정산·계산서·커스텀어벗 생산 의뢰까지 한곳에서 이어갑니다.",
     audience: "lab",
-  },
-  {
-    q: "가입 시 무료 크레딧이 지급되나요?",
-    a: DEMO_MODE_FREE_CREDIT_FAQ_ANSWER,
-    audience: "practice",
   },
   {
     q: "가입 시 무료 크레딧이 지급되나요?",

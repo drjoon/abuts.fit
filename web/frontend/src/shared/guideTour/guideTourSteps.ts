@@ -46,7 +46,12 @@ export type GuideTourKind = "practice" | "lab";
 
 export type GuideTourAdvanceMode = "next" | "action";
 
-export type GuideTourCreditsTab = "ledger" | "stats" | "charge" | "payout";
+export type GuideTourCreditsTab =
+  | "ledger"
+  | "stats"
+  | "charge"
+  | "autopay"
+  | "payout";
 
 export type GuideTourStepDef = {
   id: string;
@@ -81,9 +86,7 @@ export const PRACTICE_ORAL_PATH = "/dashboard/practice-transfers?mode=send";
 export const LAB_RECEIVE_PATH = "/dashboard/practice-transfers?mode=receive";
 const CREDITS_PATH = "/dashboard/credits";
 const NEW_REQUEST_PATH = "/dashboard/new-request";
-const STORE_PATH = "/dashboard/store";
-
-export const PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL = 4;
+export const PRACTICE_GUIDE_TOUR_CHAPTER_TOTAL = 3;
 export const LAB_GUIDE_TOUR_CHAPTER_TOTAL = 3;
 
 /** 구강 챕터 — Spotlight 하위(영화형) id · PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS 와 동일 순서 */
@@ -114,6 +117,8 @@ export const normalizePracticeGuideTourStepId = (
     return "oral_custom_abut";
   }
   if (stepId === "oral_prosthesis") return "oral_card_ops";
+  if (stepId === "store") return "complete";
+  if (stepId === "credits_charge") return "credits_autopay";
   return stepId;
 };
 
@@ -209,14 +214,14 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     creditsTab: "stats",
   },
   {
-    id: "credits_charge",
-    title: "정산 · 충전",
-    hint: "크레딧(선수금)을 충전합니다.",
-    path: `${CREDITS_PATH}?tab=charge`,
-    target: "credits_charge",
+    id: "credits_autopay",
+    title: "정산 · 자동정산",
+    hint: "오픈뱅킹으로 기공의뢰 후불 정산일에 자동 이체됩니다.",
+    path: `${CREDITS_PATH}?tab=autopay`,
+    target: "credits_autopay",
     advance: "next",
     chapter: 2,
-    creditsTab: "charge",
+    creditsTab: "autopay",
   },
   // —— 챕터3: 커스텀어벗(사이드바「어벗츠에」) ——
   {
@@ -228,16 +233,6 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     advance: "next",
     chapter: 3,
   },
-  // —— 챕터4: 스토어 ——
-  {
-    id: "store",
-    title: "스토어",
-    hint: "어벗·시술 키트 등 기성품을 선수금으로 구매할 수 있습니다.",
-    path: STORE_PATH,
-    target: "store_workspace",
-    advance: "next",
-    chapter: 4,
-  },
   // —— 수료 (intro와 동일 — 챕터 번호 없음·중앙 카드) ——
   {
     id: "complete",
@@ -248,7 +243,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   },
 ] as const;
 
-/** 치과 Spotlight 분모 — intro 제외(chapter 있는 스텝). oral_calendar+구강+채팅+정산3+어벗+스토어 */
+/** 치과 Spotlight 분모 — intro 제외(chapter 있는 스텝). oral_calendar+구강+채팅+정산3+어벗 */
 export const PRACTICE_GUIDE_TOUR_PROCESS_TOTAL = PRACTICE_GUIDE_TOUR_STEPS.filter(
   (s) => s.chapter != null,
 ).length;
@@ -418,7 +413,6 @@ export const getGuideTourSteps = (
   if (!options?.hidePracticeAbutment) return PRACTICE_GUIDE_TOUR_STEPS;
   return PRACTICE_GUIDE_TOUR_STEPS.flatMap((step) => {
     if (step.id === "abutment") return [];
-    if (step.id === "store") return [{ ...step, chapter: 3 }];
     return [step];
   });
 };

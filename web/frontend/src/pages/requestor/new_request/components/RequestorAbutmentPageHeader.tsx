@@ -50,7 +50,6 @@ import { RequestorUnmachinableHost } from "@/pages/requestor/dashboard/component
 import { PastRequestsModal } from "@/shared/components/PastRequestsModal";
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
-import { DemoModeBadge } from "@/shared/demo/DemoModeBadge";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import { cn } from "@/shared/ui/cn";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
@@ -675,7 +674,6 @@ export const RequestorAbutmentPageHeader = ({
           customEndDate={customEndDate}
           count={unmachinableCount}
         />
-        <DemoModeBadge className="shrink-0 sm:ml-auto" />
       </RequestorWorkspaceHeader>
 
       {inProgressModal}

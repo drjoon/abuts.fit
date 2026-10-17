@@ -215,8 +215,8 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
         : normalizePracticeGuideTourStepId(stepId) ?? stepId;
     const found = steps.findIndex((s) => s.id === normalized);
     if (found >= 0) return found;
-    const storeIdx = steps.findIndex((s) => s.id === "store");
-    return storeIdx >= 0 ? storeIdx : 0;
+    const completeIdx = steps.findIndex((s) => s.id === "complete");
+    return completeIdx >= 0 ? completeIdx : 0;
   })();
   const step = steps[stepIndex] ?? null;
   const stepTotal = steps.length;

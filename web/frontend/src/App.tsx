@@ -43,6 +43,7 @@ import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPa
 // - web/frontend/src/pages/admin/AdminFinancePage.tsx
 // - web/frontend/src/pages/admin/AdminSettingsHubPage.tsx
 // change-log:
+// - 2026-10-17: 의뢰자 스토어 라우트 폐쇄 — `/dashboard/store/*` → 기공의뢰 발신.
 // - 2026-10-08: 할인그룹 폐지 — `/dashboard/discount-group`은 대시보드로 이동.
 // - 2026-10-03: 치과 role=practice도 기공의뢰서 URL(`/dashboard/practice-transfers`)로 알림 보기가 열리게.
 // - 2026-09-30: 로그인 후 모바일 1회 — PC 최적화 안내 확인 모달.
@@ -144,12 +145,6 @@ import AdminSettlementBatches from "@/pages/admin/system/AdminSettlementBatches"
 import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
 import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
 import RequestorCreditsPage from "@/pages/requestor/credits/RequestorCreditsPage";
-import RequestorStorePage from "@/pages/requestor/store/RequestorStorePage";
-import RequestorStoreProductPage from "@/pages/requestor/store/RequestorStoreProductPage";
-import RequestorStoreCartPage from "@/pages/requestor/store/RequestorStoreCartPage";
-import RequestorStoreOrdersPage, {
-  RequestorStoreOrderDetailPage,
-} from "@/pages/requestor/store/RequestorStoreOrdersPage";
 import AdminStorePage from "@/pages/admin/system/AdminStorePage";
 import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
 import SalesTeamPaymentsPage from "@/pages/salesTeam/SalesTeamPaymentsPage";
@@ -416,12 +411,23 @@ const SettingsRoute = () => {
       />
     );
   }
-  // 구 북마크: 의뢰자 설정 결제 → 사이드바 크레딧 충전
+  // 구 북마크: 의뢰자 설정 결제 → 크레딧(기공소=충전, 치과=자동정산)
   if (
     (user.role === "requestor" || user.role === "internalLab") &&
     tab === "payment"
   ) {
-    return <Navigate to="/dashboard/credits?tab=charge" replace />;
+    const isLabRequestor =
+      user.role === "internalLab" || user.requestorKind === "lab";
+    return (
+      <Navigate
+        to={
+          isLabRequestor
+            ? "/dashboard/credits?tab=charge"
+            : "/dashboard/credits?tab=autopay"
+        }
+        replace
+      />
+    );
   }
   return <SettingsPage />;
 };
@@ -1074,43 +1080,12 @@ const App = () => {
                     }
                   />
                   <Route
-                    path="store"
+                    path="store/*"
                     element={
-                      <RoleProtectedRoute roles={["requestor"]}>
-                        <RequestorStorePage />
-                      </RoleProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="store/cart"
-                    element={
-                      <RoleProtectedRoute roles={["requestor"]}>
-                        <RequestorStoreCartPage />
-                      </RoleProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="store/orders"
-                    element={
-                      <RoleProtectedRoute roles={["requestor"]}>
-                        <RequestorStoreOrdersPage />
-                      </RoleProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="store/orders/:orderId"
-                    element={
-                      <RoleProtectedRoute roles={["requestor"]}>
-                        <RequestorStoreOrderDetailPage />
-                      </RoleProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="store/:productId"
-                    element={
-                      <RoleProtectedRoute roles={["requestor"]}>
-                        <RequestorStoreProductPage />
-                      </RoleProtectedRoute>
+                      <Navigate
+                        to="/dashboard/practice-transfers?mode=send"
+                        replace
+                      />
                     }
                   />
                   <Route
