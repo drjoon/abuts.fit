@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-17: 예약 관리 수량 라벨·스피너를 한 줄 배치.
 // - 2026-10-17: 예약 관리 행에 가공 수량 스피너(onChangeQty) 추가.
 // - 2026-09-13: 예약 관리 CAM 오버레이 — Next Up·라이노와 동일(블러 제거·옅은 틴트+반투명「작업중/작업중지」).
 // - 2026-08-29: 「CAM 생성 중」블러 옆 생성 중단 버튼.
@@ -253,7 +254,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
             return (
               <div
                 key={job.id}
-                className={`relative flex items-start gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 ${
+                className={`relative flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 ${
                   camRegenPending ? "overflow-hidden" : ""
                 }`}
                 draggable={!readOnly && !camRegenPending}
@@ -317,7 +318,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                   </div>
                 ) : null}
 
-                <div className="flex shrink-0 items-center gap-1 pt-0.5 text-slate-400">
+                <div className="flex shrink-0 items-center gap-1 text-slate-400">
                   <span className="w-5 text-center text-[11px] font-semibold text-slate-400">
                     {idx + 1}
                   </span>
@@ -386,14 +387,14 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                 </button>
 
                 <div
-                  className="flex shrink-0 flex-col items-center gap-0.5"
+                  className="flex shrink-0 items-center gap-1.5 whitespace-nowrap"
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
                 >
-                  <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
+                  <span className="text-[11px] font-semibold text-slate-500">
                     수량
                   </span>
-                  <div className="flex h-8 items-stretch overflow-hidden rounded-lg border border-slate-200 bg-white">
+                  <div className="flex h-8 shrink-0 items-stretch overflow-hidden rounded-lg border border-slate-200 bg-white">
                     <button
                       type="button"
                       className="inline-flex w-7 items-center justify-center border-r border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
