@@ -3633,6 +3633,12 @@ function LabProsthesisAiDesignDialog({
       case "generate":
         void runGenerate(action.teeth);
         return;
+      case "undo":
+        undoWork();
+        return;
+      case "redo":
+        redoWork();
+        return;
       case "toggleRefine":
         setEdits((prev) => {
           const current = prev[action.tooth] ?? createToothDesignEdit();
@@ -3680,6 +3686,9 @@ function LabProsthesisAiDesignDialog({
       bridgeMembers.length > 1
         ? bridgeMembers.filter((number) => generatedRef.current[number] !== true)
         : [];
+    const pendingGenerate = plan.teeth
+      .filter((tooth) => tooth.designable && generatedRef.current[tooth.toothNumber] !== true)
+      .map((tooth) => tooth.toothNumber);
     const { actions, reply } = interpretLabProsthesisAiChat(text, {
       activeToothNumber: activeNumber,
       marginReview: marginReviewRef.current,
@@ -3688,6 +3697,7 @@ function LabProsthesisAiDesignDialog({
       bridgeSpanTeeth: bridgeMembers.length > 1 ? bridgeMembers : undefined,
       bridgePendingGenerate:
         bridgePendingGenerate.length > 0 ? bridgePendingGenerate : undefined,
+      pendingGenerate: pendingGenerate.length > 0 ? pendingGenerate : undefined,
     });
     const editMutations = actions.some(
       (action) =>
@@ -3696,9 +3706,10 @@ function LabProsthesisAiDesignDialog({
         action.kind === "adjustMarginOffset" ||
         action.kind === "toggleRefine",
     );
-    if (editMutations) beginEditUndo();
+    const historyOnly = actions.every((action) => action.kind === "undo" || action.kind === "redo");
+    if (!historyOnly && editMutations) beginEditUndo();
     for (const action of actions) applyLabAiChatAction(action);
-    if (actions.length > 0) queueSaveWorkRef.current();
+    if (actions.length > 0 && !historyOnly) queueSaveWorkRef.current();
     commitAiChat([
       ...aiChatRef.current,
       { role: "user", text },

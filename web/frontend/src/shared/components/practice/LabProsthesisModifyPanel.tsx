@@ -1425,6 +1425,8 @@ export function LabProsthesisModifyPanel({
           {generateBlockKind === "margin" ? (
             <p className="text-muted-foreground">
               AI 채팅에 「마진 확인」·「#16 마진 검출」·「준비 마진」을 쓸 수 있습니다.
+              <br />
+              「치은 간격」·「회전」·「모두 생성」도 됩니다.
             </p>
           ) : null}
           {generateBlockKind === "margin" ? (
