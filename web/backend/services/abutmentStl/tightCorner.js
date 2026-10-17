@@ -3,10 +3,11 @@
 // - web/backend/services/abutmentStl/pipeline.js
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 //
-// 마진 코너(어깨↔벽)에서 φ1.2 볼 엔드밀 미삭제·CAM 오버컷(움푹 패임) 가능 구간을 finish line을 따라 검사한다.
+// 마진 코너(어깨↔벽)에서 φ1.2 볼 엔드밀 미삭제 구간을 finish line 따라 검사하고,
+// 프리뷰 전용 reliefOverlay(필렛 보정면) 메타를 만든다 — STL·CAM에는 쓰지 않는다.
 import { cross, meshPlaneSection, normalize } from "./meshCore.js";
 
-export const TIGHT_CORNER_VERSION = 1;
+export const TIGHT_CORNER_VERSION = 2;
 export const FINISH_BALL_DIAMETER_MM = 1.2;
 export const FINISH_BALL_RADIUS_MM = FINISH_BALL_DIAMETER_MM / 2;
 
@@ -250,47 +251,148 @@ export function gougeDepthForCorner(metalAngleRad, toolR) {
   return Number.isFinite(depth) && depth > 0 ? depth : 0;
 }
 
-function ballPassPolyline2d(wallLine, shoulderLine, corner, toolR, radial, axis) {
-  const metalAngle = metalInteriorAngleRad(wallLine, shoulderLine);
-  const half = metalAngle / 2;
-  if (!(half > 1e-6) || half >= Math.PI / 2 - 1e-4) return [];
-  const bisU = -wallLine.d.u + shoulderLine.d.u;
-  const bisW = -wallLine.d.w + shoulderLine.d.w;
-  const bisLen = Math.hypot(bisU, bisW);
-  if (bisLen < DIST_TOL) return [];
-  const bu = bisU / bisLen;
-  const bw = bisW / bisLen;
-  const centerDist = toolR / Math.sin(half);
-  const cx = corner.u + bu * centerDist;
-  const cw = corner.w + bw * centerDist;
+function rotateAroundAxis(v, axis, angleRad) {
+  const [ax, ay, az] = axis;
+  const len = Math.hypot(ax, ay, az) || 1;
+  const x = ax / len;
+  const y = ay / len;
+  const z = az / len;
+  const c = Math.cos(angleRad);
+  const s = Math.sin(angleRad);
+  const dot = v[0] * x + v[1] * y + v[2] * z;
+  return [
+    v[0] * c + (y * v[2] - z * v[1]) * s + x * dot * (1 - c),
+    v[1] * c + (z * v[0] - x * v[2]) * s + y * dot * (1 - c),
+    v[2] * c + (x * v[1] - y * v[0]) * s + z * dot * (1 - c),
+  ];
+}
 
-  const tanWall = { u: -wallLine.d.w, w: wallLine.d.u };
-  const tanShoulder = { u: -shoulderLine.d.w, w: shoulderLine.d.u };
-  const norm = (v) => {
-    const l = Math.hypot(v.u, v.w);
-    return l > DIST_TOL ? { u: v.u / l, w: v.w / l } : null;
-  };
-  const t1 = norm(tanWall);
-  const t2 = norm(tanShoulder);
-  if (!t1 || !t2) return [];
-
-  const p1 = { u: cx + t1.u * toolR, w: cw + t1.w * toolR };
-  const p2 = { u: cx + t2.u * toolR, w: cw + t2.w * toolR };
-  let a1 = Math.atan2(p1.w - cw, p1.u - cx);
-  let a2 = Math.atan2(p2.w - cw, p2.u - cx);
+/** 외곽 단면에서 φ볼 반경만큼 코너를 깎은 뒤 프로파일(가공 가능 형상). */
+export function filletExteriorCorner2d(corner, wallLine, shoulderLine, toolR) {
+  const wallDir = { u: wallLine.d.u, w: wallLine.d.w };
+  const wl = Math.hypot(wallDir.u, wallDir.w);
+  if (wl < DIST_TOL) return null;
+  const vWall = { u: wallDir.u / wl, w: wallDir.w / wl };
+  const shDir = shoulderLine.d;
+  const sl = Math.hypot(shDir.u, shDir.w);
+  if (sl < DIST_TOL) return null;
+  const vShoulder = { u: -shDir.u / sl, w: -shDir.w / sl };
+  const cosExt = clamp(vWall.u * vShoulder.u + vWall.w * vShoulder.w, -1, 1);
+  const extAngle = Math.acos(cosExt);
+  if (!(extAngle > 0.04) || extAngle >= Math.PI - 0.04) return null;
+  const trim = toolR / Math.tan(extAngle / 2);
+  if (!(trim > 0.02) || trim > 4) return null;
+  const tWall = { u: corner.u + vWall.u * trim, w: corner.w + vWall.w * trim };
+  const tShoulder = { u: corner.u + vShoulder.u * trim, w: corner.w + vShoulder.w * trim };
+  let bisU = vWall.u + vShoulder.u;
+  let bisW = vWall.w + vShoulder.w;
+  const bl = Math.hypot(bisU, bisW);
+  if (bl < DIST_TOL) return null;
+  bisU /= bl;
+  bisW /= bl;
+  const centerDist = toolR / Math.sin(extAngle / 2);
+  const cx = corner.u + bisU * centerDist;
+  const cw = corner.w + bisW * centerDist;
+  let a1 = Math.atan2(tWall.w - cw, tWall.u - cx);
+  let a2 = Math.atan2(tShoulder.w - cw, tShoulder.u - cx);
   let da = a2 - a1;
   while (da <= -Math.PI) da += Math.PI * 2;
   while (da > Math.PI) da -= Math.PI * 2;
-  const steps = Math.max(6, Math.ceil((Math.abs(da) / Math.PI) * 24));
-  const pts = [];
+  const steps = Math.max(5, Math.ceil((Math.abs(da) / Math.PI) * 18));
+  const arc = [];
   for (let i = 0; i <= steps; i += 1) {
     const t = i / steps;
     const ang = a1 + da * t;
-    const u = cx + toolR * Math.cos(ang);
-    const w = cw + toolR * Math.sin(ang);
-    pts.push(fromPlaneCoords(u, w, radial, axis));
+    arc.push({ u: cx + toolR * Math.cos(ang), w: cw + toolR * Math.sin(ang) });
   }
-  return pts;
+  return { arc, tWall, tShoulder };
+}
+
+function buildReliefProfileAfter(profile, corner, wallLine, shoulderLine, toolR) {
+  const fillet = filletExteriorCorner2d(corner, wallLine, shoulderLine, toolR);
+  if (!fillet) return null;
+  const wLo = Math.min(fillet.tShoulder.w, fillet.tWall.w) - 0.08;
+  const wHi = Math.max(fillet.tShoulder.w, fillet.tWall.w) + 0.08;
+  const before = profile
+    .filter((p) => p.w >= wLo - 0.45 && p.w <= wHi + 1.2)
+    .map((p) => ({ u: p.u, w: p.w }));
+  if (before.length < 4) return null;
+  const after = [];
+  for (const p of before) {
+    if (p.w <= fillet.tShoulder.w - 0.02) after.push({ u: p.u, w: p.w });
+  }
+  for (const p of fillet.arc) after.push(p);
+  for (const p of before) {
+    if (p.w >= fillet.tWall.w + 0.02) after.push({ u: p.u, w: p.w });
+  }
+  after.sort((a, b) => a.w - b.w);
+  if (after.length < 4) return null;
+  return {
+    before: before.map((p) => [round3(p.u), round3(p.w)]),
+    after: after.map((p) => [round3(p.u), round3(p.w)]),
+  };
+}
+
+function round3(v) {
+  return Math.round(v * 1000) / 1000;
+}
+
+function pushTriangle(indices, a, b, c) {
+  indices.push(a, b, c);
+}
+
+/** 프리뷰 전용: φ볼 필렛 보정면을 얇은 패치 메시로 만든다(CAM·STL 미사용). */
+export function buildTightCornerReliefOverlay(tightRows, axis, options = {}) {
+  const toolR =
+    Number(options.toolRadiusMm) > 0 ? Number(options.toolRadiusMm) : FINISH_BALL_RADIUS_MM;
+  const rows = Array.isArray(tightRows) ? tightRows : [];
+  if (!rows.length) return null;
+  const positions = [];
+  const indices = [];
+  const angularHalfSpan =
+    Number(options.angularHalfSpanRad) > 0 ? Number(options.angularHalfSpanRad) : 0.11;
+  const angularSteps = Math.max(4, Number(options.angularSteps) || 7);
+
+  for (const row of rows) {
+    const fl = row.finishLinePoint;
+    const profile = row.reliefProfiles;
+    if (!Array.isArray(fl) || fl.length < 3 || !profile?.after?.length) continue;
+    const baseRadial = radialFromFinishPoint(fl, axis);
+    const afterProf = profile.after
+      .map((p) => ({ u: Number(p[0]), w: Number(p[1]) }))
+      .filter((p) => Number.isFinite(p.u) && Number.isFinite(p.w));
+    if (afterProf.length < 3) continue;
+
+    const baseVert = positions.length / 3;
+    for (let ai = 0; ai <= angularSteps; ai += 1) {
+      const ang = -angularHalfSpan + (angularHalfSpan * 2 * ai) / angularSteps;
+      const radial = normalize(rotateAroundAxis(baseRadial, axis, ang));
+      for (const pt of afterProf) {
+        const p3 = fromPlaneCoords(pt.u, pt.w, radial, axis);
+        positions.push(p3[0], p3[1], p3[2]);
+      }
+    }
+
+    const cols = afterProf.length;
+    for (let ai = 0; ai < angularSteps; ai += 1) {
+      for (let pi = 0; pi < cols - 1; pi += 1) {
+        const i0 = baseVert + ai * cols + pi;
+        const i1 = i0 + 1;
+        const i2 = baseVert + (ai + 1) * cols + pi;
+        const i3 = i2 + 1;
+        pushTriangle(indices, i0, i2, i1);
+        pushTriangle(indices, i1, i2, i3);
+      }
+    }
+  }
+
+  if (positions.length < 9 || indices.length < 3) return null;
+  return {
+    displayOnly: true,
+    filletRadiusMm: toolR,
+    positions,
+    indices,
+  };
 }
 
 export function collectOuterProfileFromVertices(mesh, fl, axis, wFl, uTarget) {
@@ -380,15 +482,8 @@ export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log) {
     (metalAngle <= METAL_ANGLE_TIGHT_RAD && gougeDepthMm >= 0.008);
   if (!tight) return { tight: false };
 
-  const ballPassPolyline = ballPassPolyline2d(
-    wallLine,
-    shoulderLine,
-    corner,
-    toolR,
-    radial,
-    axis,
-  );
-  const cornerPoint3 = corner.p || fromPlaneCoords(corner.u, corner.w, radial, axis);
+  const reliefProfiles = buildReliefProfileAfter(profile, corner, wallLine, shoulderLine, toolR);
+  const cornerPoint3 = fromPlaneCoords(corner.u, corner.w, radial, axis);
   log?.(
     `[tight-corner] tight az=${((Math.atan2(fl[1], fl[0]) * 180) / Math.PI).toFixed(1)}° ` +
       `metalAngle=${((metalAngle * 180) / Math.PI).toFixed(1)}° gouge=${gougeDepthMm.toFixed(3)}mm`,
@@ -399,7 +494,7 @@ export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log) {
     cornerPoint: cornerPoint3.slice(),
     metalInteriorAngleDeg: Math.round((metalAngle * 1800) / Math.PI) / 10,
     gougeDepthMm: Math.round(gougeDepthMm * 1000) / 1000,
-    ballPassPolyline,
+    reliefProfiles,
   };
 }
 
@@ -450,7 +545,7 @@ export function detectTightCorners(mesh, finishLinePoints, options = {}) {
       tightCount: 0,
       samples: [],
       tightFinishLineSegments: [],
-      ballPassPolylines: [],
+      reliefOverlay: null,
     };
   }
   const sampled = resampleFinishLine(raw, FL_SAMPLE_MAX);
@@ -459,16 +554,19 @@ export function detectTightCorners(mesh, finishLinePoints, options = {}) {
     const row = analyzeMarginAtPoint(mesh, fl, toolR, axis, log);
     if (row?.tight) samples.push(row);
   }
-  const ballPassPolylines = samples
-    .map((s) => s.ballPassPolyline)
-    .filter((pl) => Array.isArray(pl) && pl.length >= 2);
   const tightFinishLineSegments = buildTightFinishLineSegments(raw, samples);
+  const reliefOverlay = buildTightCornerReliefOverlay(samples, axis, { toolRadiusMm: toolR });
   return {
     version: TIGHT_CORNER_VERSION,
     toolDiameterMm: FINISH_BALL_DIAMETER_MM,
     tightCount: samples.length,
-    samples: samples.map(({ ballPassPolyline, ...rest }) => rest),
+    samples: samples.map(({ reliefProfiles, ...rest }) => ({
+      ...rest,
+      reliefProfiles: reliefProfiles || null,
+    })),
     tightFinishLineSegments,
-    ballPassPolylines,
+    /** @deprecated v2 — 프리뷰는 reliefOverlay만 사용(CAM 미참조). */
+    ballPassPolylines: [],
+    reliefOverlay,
   };
 }

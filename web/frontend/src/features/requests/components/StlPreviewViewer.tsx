@@ -2512,20 +2512,13 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           bbox.getSize(size);
           const diag = size.length() || 40;
           const tightTubeRadius = Math.max(diag * 0.0045, 0.07);
-          const ballTubeRadius = Math.max(diag * 0.0035, 0.05);
 
           const toSceneVec = (raw: number[]) => {
             const vec = new THREE.Vector3(raw[0], raw[1], raw[2]);
             return isFilled ? vec : vec.sub(center);
           };
 
-          const addPolylineTube = (
-            rawPts: number[][],
-            color: number,
-            emissive: number,
-            radius: number,
-            overlayKind: "flOverlay" | "guideOverlay",
-          ) => {
+          const addPolylineTube = (rawPts: number[][], radius: number) => {
             const pts = rawPts
               .filter((p) => Array.isArray(p) && p.length >= 3)
               .map((p) => toSceneVec(p.map(Number)));
@@ -2539,22 +2532,18 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
               false,
             );
             const tubeMaterial = new THREE.MeshPhongMaterial({
-              color,
-              emissive,
+              color: 0xff1744,
+              emissive: 0x8b0000,
               shininess: 70,
               transparent: true,
-              opacity: overlayKind === "flOverlay" ? 1 : 0.92,
+              opacity: 1,
               depthTest: false,
               depthWrite: false,
             });
             const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
-            tube.renderOrder = overlayKind === "flOverlay" ? 12 : 11;
-            tube.userData[overlayKind === "flOverlay" ? "flOverlay" : "guideOverlay"] =
-              true;
-            tube.visible =
-              overlayKind === "flOverlay"
-                ? finishLineVisibleRef.current
-                : guidesVisibleRef.current;
+            tube.renderOrder = 12;
+            tube.userData.flOverlay = true;
+            tube.visible = finishLineVisibleRef.current;
             modelPivot.add(tube);
           };
 
@@ -2568,26 +2557,51 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
             const start = Math.max(0, Number(seg.startIndex) || 0);
             const end = Math.min(flPts.length - 1, Number(seg.endIndex) || 0);
             if (end <= start) continue;
-            addPolylineTube(
-              flPts.slice(start, end + 1),
-              0xff1744,
-              0x8b0000,
-              tightTubeRadius,
-              "flOverlay",
-            );
+            addPolylineTube(flPts.slice(start, end + 1), tightTubeRadius);
           }
 
-          const ballPolys = Array.isArray(tightCornerMeta.ballPassPolylines)
-            ? tightCornerMeta.ballPassPolylines
-            : [];
-          for (const pl of ballPolys) {
-            addPolylineTube(
-              pl,
-              0x00bcd4,
-              0x006064,
-              ballTubeRadius,
-              "guideOverlay",
-            );
+          const relief = tightCornerMeta.reliefOverlay;
+          const reliefPos = relief?.positions;
+          const reliefIdx = relief?.indices;
+          if (
+            relief?.displayOnly !== false &&
+            Array.isArray(reliefPos) &&
+            reliefPos.length >= 9 &&
+            Array.isArray(reliefIdx) &&
+            reliefIdx.length >= 3
+          ) {
+            const posNumbers = reliefPos.map((v) => Number(v)).filter((v) => Number.isFinite(v));
+            const posAttr = new Float32Array(posNumbers.length);
+            for (let i = 0; i < posNumbers.length; i += 3) {
+              const vec = toSceneVec([posNumbers[i], posNumbers[i + 1], posNumbers[i + 2]]);
+              posAttr[i] = vec.x;
+              posAttr[i + 1] = vec.y;
+              posAttr[i + 2] = vec.z;
+            }
+            const idxArr = reliefIdx.map((v) => Number(v)).filter((v) => Number.isFinite(v));
+            const reliefGeometry = new THREE.BufferGeometry();
+            reliefGeometry.setAttribute("position", new THREE.BufferAttribute(posAttr, 3));
+            reliefGeometry.setIndex(idxArr);
+            reliefGeometry.computeVertexNormals();
+            const reliefMaterial = new THREE.MeshPhongMaterial({
+              color: 0xff9800,
+              emissive: 0x5d4037,
+              shininess: 40,
+              transparent: true,
+              opacity: 0.42,
+              side: THREE.DoubleSide,
+              depthTest: true,
+              depthWrite: false,
+              polygonOffset: true,
+              polygonOffsetFactor: -1,
+              polygonOffsetUnits: -1,
+            });
+            const reliefMesh = new THREE.Mesh(reliefGeometry, reliefMaterial);
+            reliefMesh.renderOrder = 10;
+            reliefMesh.userData.guideOverlay = true;
+            reliefMesh.userData.tightCornerRelief = true;
+            reliefMesh.visible = guidesVisibleRef.current;
+            modelPivot.add(reliefMesh);
           }
         }
 
@@ -2985,6 +2999,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     resolvedMetadata?.finishLine?.min_z,
     resolvedMetadata?.tightCorner?.tightCount,
     resolvedMetadata?.tightCorner?.version,
+    resolvedMetadata?.tightCorner?.reliefOverlay?.positions?.length,
     isFilledFile,
   ]);
 

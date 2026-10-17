@@ -47,19 +47,27 @@ export interface StlMetadata {
     points?: number[][];
   } | null;
   taperGuide?: unknown;
-  /** φ1.2 볼 마진 타이트 코너 검사 (finish line 추적). */
+  /** φ1.2 볼 마진 타이트 코너 — finish line 추적 + 프리뷰 전용 reliefOverlay. */
   tightCorner?: {
     version?: number;
     toolDiameterMm?: number;
     tightCount?: number;
     tightFinishLineSegments?: Array<{ startIndex: number; endIndex: number }>;
+    /** @deprecated v2 — reliefOverlay 사용 */
     ballPassPolylines?: number[][][];
+    reliefOverlay?: {
+      displayOnly?: boolean;
+      filletRadiusMm?: number;
+      positions?: number[];
+      indices?: number[];
+    } | null;
     samples?: Array<{
       tight?: boolean;
       finishLinePoint?: number[];
       cornerPoint?: number[];
       metalInteriorAngleDeg?: number;
       gougeDepthMm?: number;
+      reliefProfiles?: { before?: number[][]; after?: number[][] } | null;
     }>;
   } | null;
 }

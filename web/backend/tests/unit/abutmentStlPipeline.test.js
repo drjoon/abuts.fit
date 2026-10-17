@@ -156,7 +156,7 @@ describe("abutmentStl tightCorner", () => {
     const sharpBuffer = writeBinaryStl({ positions: sharpMarginAbutmentSoup(), attributes: null });
     const sharpPipe = await runAbutmentStlPipeline(sharpBuffer, { targetDiameter: 3.33 });
     expect(sharpPipe.tightCorner?.tightCount ?? 0).toBeGreaterThan(0);
-    expect(sharpPipe.tightCorner?.ballPassPolylines?.length).toBeGreaterThan(0);
+    expect(sharpPipe.tightCorner?.reliefOverlay?.positions?.length).toBeGreaterThan(9);
   });
 });
 
@@ -172,7 +172,7 @@ describe("abutmentStl pipeline", () => {
       expect(out.finishLine.points.length).toBeGreaterThanOrEqual(8);
       expect(out.stlMetadata?.connectionDiameter).toBe(3.33);
       expect(out.tightCorner).toBeTruthy();
-      expect(out.tightCorner.version).toBe(1);
+      expect(out.tightCorner.version).toBe(2);
     }
   });
 });
