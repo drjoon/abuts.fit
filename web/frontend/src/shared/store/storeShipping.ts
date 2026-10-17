@@ -95,16 +95,21 @@ export function storeShippingModeLabel(mode?: unknown): string {
   return "";
 }
 
+/** 스토어 배송비 정책 한 줄(SSOT). 장바구니·주문 상세·스토어 메인 공통. */
+export function storeShippingPolicySummaryLine(): string {
+  return `상품 ${STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE.toLocaleString("ko-KR")}원(부가세 포함) 이상 배송비 무료 · 미만 ${STORE_SHIPPING_FEE_INCLUSIVE.toLocaleString("ko-KR")}원(부가세 포함)`;
+}
+
 export function storeShippingPolicyHint(goodsTotalInclusive = 0): string {
   const goods = Math.max(0, Math.round(Number(goodsTotalInclusive || 0)));
   if (goods > 0 && goods < STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE) {
     const remain = STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE - goods;
-    return `상품 ${STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE.toLocaleString("ko-KR")}원 이상 배송비 무료 · ${remain.toLocaleString("ko-KR")}원 더 담으면 무료`;
+    return `${storeShippingPolicySummaryLine()} · ${remain.toLocaleString("ko-KR")}원 더 담으면 무료`;
   }
   if (goods >= STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE) {
-    return `상품 ${STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE.toLocaleString("ko-KR")}원 이상 · 배송비 무료`;
+    return `상품 ${STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE.toLocaleString("ko-KR")}원(부가세 포함) 이상 · 이 주문 배송비 무료`;
   }
-  return `상품 ${STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE.toLocaleString("ko-KR")}원 이상 배송비 무료 · 미만 ${STORE_SHIPPING_FEE_INCLUSIVE.toLocaleString("ko-KR")}원(부가세 포함)`;
+  return storeShippingPolicySummaryLine();
 }
 
 export function resolveStoreOrderShippingFee(order: {

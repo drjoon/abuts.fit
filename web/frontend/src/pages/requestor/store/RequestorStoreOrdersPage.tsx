@@ -52,6 +52,8 @@ import {
   summarizeOrderItems,
 } from "@/pages/requestor/store/storeOrderUi";
 import {
+  STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE,
+  STORE_SHIPPING_FEE_INCLUSIVE,
   resolveStoreOrderShippingFee,
   storeShippingModeLabel,
 } from "@/shared/store/storeShipping";
@@ -625,6 +627,17 @@ export function RequestorStoreOrderDetailPage() {
                         : "무료"}
                     </span>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    상품{" "}
+                    {STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE.toLocaleString(
+                      "ko-KR",
+                    )}
+                    원(부가세 포함) 이상 배송비 무료.
+                    <br />
+                    미만{" "}
+                    {STORE_SHIPPING_FEE_INCLUSIVE.toLocaleString("ko-KR")}
+                    원(부가세 포함).
+                  </p>
                   {storeShippingModeLabel(order.shippingMode) ? (
                     <div className="flex justify-between gap-3">
                       <span className="text-muted-foreground">배송 방식</span>

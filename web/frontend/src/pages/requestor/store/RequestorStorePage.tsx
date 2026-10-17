@@ -25,6 +25,10 @@ import {
 import { StoreProductCard } from "@/pages/requestor/store/StoreProductCard";
 import { useStoreCartStore } from "@/store/useStoreCartStore";
 import { STORE_PRICE_TAX_NOTE } from "@/shared/tax/invoiceLabels";
+import {
+  STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE,
+  STORE_SHIPPING_FEE_INCLUSIVE,
+} from "@/shared/store/storeShipping";
 import { useStorePackagePricing, applyStoreCatalogPrices } from "@/shared/store/useStorePackagePricing";
 
 function ProductRow({
@@ -117,6 +121,14 @@ export default function RequestorStorePage() {
             </Button>
           </div>
         </header>
+        <p className="text-sm text-muted-foreground">
+          상품{" "}
+          {STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE.toLocaleString("ko-KR")}
+          원(부가세 포함) 이상 배송비 무료.
+          <br />
+          미만 {STORE_SHIPPING_FEE_INCLUSIVE.toLocaleString("ko-KR")}
+          원(부가세 포함).
+        </p>
 
         <div className="space-y-6 sm:space-y-8">
           {categories.map((category) => (
