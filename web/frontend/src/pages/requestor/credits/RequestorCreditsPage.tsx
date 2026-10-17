@@ -50,6 +50,7 @@ import { PracticeObBillingTab } from "@/features/settings/tabs/PracticeObBilling
 import { LabSettlementPayoutTab } from "@/features/settings/tabs/LabSettlementPayoutTab";
 import { CreditLedgerModal } from "@/shared/components/CreditLedgerModal";
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
+import { coalesceRequestorKind } from "@/shared/business/requestorCapabilities";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { useAuthStore } from "@/store/useAuthStore";
 import { RequestorCreditsPageSkeleton } from "@/shared/ui/skeletons/RequestorCreditsPageSkeleton";
@@ -85,9 +86,8 @@ export default function RequestorCreditsPage() {
   const { kind, loading: accessLoading } = useRequestorBusinessAccess();
   // kind 확정 전에도 auth 힌트로 지급 탭 칸을 맞춤(스켈레톤·첫 페인트 3→4 플리커 방지).
   const isLab =
-    kind === "lab" ||
-    user?.role === "internalLab" ||
-    user?.requestorKind === "lab";
+    coalesceRequestorKind(kind, user?.requestorKind) === "lab" ||
+    user?.role === "internalLab";
   const guideTour = useGuideTour();
   const [searchParams, setSearchParams] = useSearchParams();
   const ledgerKey = 0;

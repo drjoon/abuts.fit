@@ -4,6 +4,7 @@
 // - 2026-09-20: 내역/지급 스켈레톤 — overflow 바깥 여백으로 카드 경계 클리핑 방지.
 // - 2026-09-20: 내역/지급 스켈레톤 요약 카드 — p-0.5(실 UI와 동일, overflow 클리핑 방지).
 // - 2026-09-20: 내역 필터 스켈레톤 — 결제(적립) 상태 Select 칸 추가.
+// - 2026-10-17: 자동정산 OB 스켈레톤 max-w-2xl·카드 높이 실 UI에 맞춤.
 // - 2026-09-16: 기공소 탭 4칸(내역·통계·충전·지급). 내역 스켈레톤=수식 카드·6열·필터 행.
 // - 2026-08-14: 잔액 카드·테이블 스켈레톤을 최신 크레딧 UI(rounded-2xl)에 맞춤.
 // - 2026-08-11: 크레딧(내역/충전/정산) SettingsScaffold 레이아웃에 맞춘 페이지 스켈레톤 신설.
@@ -33,10 +34,10 @@ type RequestorCreditsPageSkeletonProps = {
 };
 
 export const PracticeObBillingTabSkeleton = () => (
-  <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-1.5 py-3">
-    <Skeleton className="h-36 w-full rounded-2xl" />
-    <Skeleton className="h-48 w-full rounded-2xl" />
-    <Skeleton className="h-32 w-full rounded-2xl" />
+  <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-1.5 py-2 pb-4">
+    <Skeleton className="h-44 w-full rounded-2xl" />
+    <Skeleton className="h-56 w-full rounded-2xl" />
+    <Skeleton className="h-40 w-full rounded-2xl" />
   </div>
 );
 

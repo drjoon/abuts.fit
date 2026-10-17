@@ -349,7 +349,10 @@ import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWo
 import { buildPracticeTransferDateSummaryItems } from "@/shared/practice/practiceSenderTransferDetailModel";
 import { normalizeLabRequestStagePlans } from "@/shared/practice/requestStagePresets";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
-import { REQUESTOR_KIND_LABEL } from "@/shared/business/requestorCapabilities";
+import {
+  coalesceRequestorKind,
+  REQUESTOR_KIND_LABEL,
+} from "@/shared/business/requestorCapabilities";
 import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
 import { DesignQueueSection } from "@/pages/requestor/design/DesignQueueSection";
 import { RequestorPracticePageSkeleton } from "@/shared/ui/skeletons/RequestorPracticePageSkeleton";
@@ -661,6 +664,7 @@ type LabReceiveStatusFilterKey = PracticeRecentStatusFilterKey;
 export default function RequestorPracticePage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const user = useAuthStore((s) => s.user);
   const {
     loading,
     canSendTransfer,
@@ -669,8 +673,9 @@ export default function RequestorPracticePage() {
     designAccessEnabled,
   } = useRequestorBusinessAccess();
   const modeParam = searchParams.get("mode");
+  const effectiveKind = coalesceRequestorKind(kind, user?.requestorKind);
 
-  const desiredMode = kind === "lab" ? "receive" : "send";
+  const desiredMode = effectiveKind === "lab" ? "receive" : "send";
   const openId = String(searchParams.get("openTransfer") || "").trim();
   const intendedMode =
     modeParam === "receive" || modeParam === "send" ? modeParam : null;
@@ -711,12 +716,14 @@ export default function RequestorPracticePage() {
     const hintMode =
       modeParam === "receive" || modeParam === "send"
         ? modeParam
-        : "send";
+        : effectiveKind === "lab"
+          ? "receive"
+          : "send";
     return <RequestorPracticePageSkeleton mode={hintMode} />;
   }
 
   // 기공소: 항상 수신만. 지정 기공소 디자인 큐도 의뢰수신에 통합 표시.
-  if (kind === "lab") {
+  if (effectiveKind === "lab") {
     if (!canReceiveTransfer && !designAccessEnabled) {
       return (
         <div className="flex min-h-[50vh] items-center justify-center p-6">

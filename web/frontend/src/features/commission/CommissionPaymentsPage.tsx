@@ -57,6 +57,10 @@ import {
 } from "@/shared/settlement/settlementUi";
 import { CustomAbutmentDevopsSplitTable } from "@/shared/settlement/CustomAbutmentSplitPolicyTables";
 import { formatAbutsManwon } from "@/shared/pricing/abutsAbutmentService";
+import {
+  CommissionPaymentsOrgGridSkeleton,
+  CommissionPaymentsStatCardsSkeleton,
+} from "@/shared/ui/skeletons/CommissionPaymentsPageSkeleton";
 
 export type CommissionPaymentsVariant = "salesman" | "devops";
 
@@ -99,6 +103,7 @@ export function CommissionPaymentsPage({
   );
 
   const title = isSalesman ? "딜러 정산" : "개발운영사 정산";
+  const showInitialSkeleton = loading && !data;
 
   if (!user) return null;
 
@@ -108,7 +113,10 @@ export function CommissionPaymentsPage({
       subtitle=""
       statsGridClassName={SETTLEMENT_STAT_ROW_CLASS}
       stats={
-        <>
+        showInitialSkeleton ? (
+          <CommissionPaymentsStatCardsSkeleton />
+        ) : (
+          <>
           <SettlementStatCard
             className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
             label="유료 미정산"
@@ -161,7 +169,8 @@ export function CommissionPaymentsPage({
               </div>
             }
           />
-        </>
+          </>
+        )
       }
       mainLeft={
         <div className="space-y-4">
@@ -217,10 +226,10 @@ export function CommissionPaymentsPage({
             </div>
 
             <TabsContent value="businesses" className="mt-0">
-              {loading ? (
-                <div className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-10 text-center text-sm text-muted-foreground">
-                  불러오는 중...
-                </div>
+              {showInitialSkeleton ? (
+                <CommissionPaymentsOrgGridSkeleton />
+              ) : loading ? (
+                <CommissionPaymentsOrgGridSkeleton count={3} />
               ) : organizations.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-10 text-center text-sm text-muted-foreground">
                   선택한 기간에 표시할 정산 대상 사업자가 없습니다.

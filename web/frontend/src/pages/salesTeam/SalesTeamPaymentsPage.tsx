@@ -17,6 +17,7 @@ import {
   SalesPanel,
   SalesStatCard,
 } from "./salesUi";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * 영업본부 정산 — 소개 실적 요약.
@@ -54,23 +55,38 @@ export default function SalesTeamPaymentsPage() {
       ) : (
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            <SalesStatCard
-              label="소개 거래처"
-              value={isLoading ? "…" : String(orgs.length)}
-              hint="소개코드로 가입한 누적"
-              icon={Building2}
-            />
-            <SalesStatCard
-              label="소개코드"
-              value={isLoading ? "…" : String(data?.referralCode || "—")}
-              hint="성과 탭에서 공유"
-              icon={Wallet}
-            />
+            {isLoading ? (
+              <>
+                <Skeleton className="h-[5.5rem] w-full rounded-2xl" />
+                <Skeleton className="h-[5.5rem] w-full rounded-2xl" />
+              </>
+            ) : (
+              <>
+                <SalesStatCard
+                  label="소개 거래처"
+                  value={String(orgs.length)}
+                  hint="소개코드로 가입한 누적"
+                  icon={Building2}
+                />
+                <SalesStatCard
+                  label="소개코드"
+                  value={String(data?.referralCode || "—")}
+                  hint="성과 탭에서 공유"
+                  icon={Wallet}
+                />
+              </>
+            )}
           </div>
 
           <SalesPanel title="소개 거래처">
             {isLoading ? (
-              <p className="text-sm text-muted-foreground">불러오는 중…</p>
+              <ul className="space-y-2">
+                {Array.from({ length: 5 }).map((_, idx) => (
+                  <li key={`sales-team-pay-skel-${idx}`}>
+                    <Skeleton className="h-12 w-full rounded-xl" />
+                  </li>
+                ))}
+              </ul>
             ) : orgs.length === 0 ? (
               <SalesEmptyState
                 icon={Building2}

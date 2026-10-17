@@ -5,7 +5,11 @@ import { SalesmanDashboardPage } from "@/pages/salesman/SalesmanDashboardPage";
 import { Navigate, useLocation } from "react-router-dom";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
-import { practiceHidesAbutmentSidebar } from "@/shared/business/requestorCapabilities";
+import {
+  coalescePracticeHasInHouseLab,
+  coalesceRequestorKind,
+  practiceHidesAbutmentSidebar,
+} from "@/shared/business/requestorCapabilities";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 // change-log:
@@ -43,14 +47,22 @@ export const DashboardHome = () => {
   );
 
   const entry = resolveEntryDashboardPath(user);
+  const effectiveRequestorKind = coalesceRequestorKind(
+    requestorKind,
+    user?.requestorKind,
+  );
+  const effectivePracticeHasInHouseLab = coalescePracticeHasInHouseLab(
+    practiceHasInHouseLab,
+    user?.practiceHasInHouseLab,
+  );
 
   if (user.role === "requestor") {
-    if (requestorAccessLoading && requestorKind == null) return null;
-    if (requestorKind === "practice") {
+    if (requestorAccessLoading && effectiveRequestorKind == null) return null;
+    if (effectiveRequestorKind === "practice") {
       const oralPath = "/dashboard/practice-transfers?mode=send";
       const hidesAbutment = practiceHidesAbutmentSidebar(
-        requestorKind,
-        practiceHasInHouseLab,
+        effectiveRequestorKind,
+        effectivePracticeHasInHouseLab,
       );
       if (stayOnDashboardHome) {
         return (
@@ -68,7 +80,7 @@ export const DashboardHome = () => {
             : entry;
       return <Navigate to={dest} replace />;
     }
-    if (requestorKind === "lab") {
+    if (effectiveRequestorKind === "lab") {
       if (stayOnDashboardHome) {
         return <Navigate to="/dashboard/new-request" replace />;
       }

@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { RequestorSecurity } from "./Security";
 import { formatKstDateTimeToKo, toKstYmd } from "@/shared/date/kst";
+import { coalesceRequestorKind } from "@/shared/business/requestorCapabilities";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { InternalLabOrgBanner } from "@/features/settings/InternalLabOrgBanner";
 
@@ -71,14 +72,12 @@ export const RequestorSettingsPage = () => {
   const { user } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const { loading: accessLoading, kind } = useRequestorBusinessAccess();
+  const effectiveKind = coalesceRequestorKind(kind, user?.requestorKind);
   const isLab =
-    kind === "lab" ||
-    user?.role === "internalLab" ||
-    user?.requestorKind === "lab";
+    effectiveKind === "lab" || user?.role === "internalLab";
   const isPractice =
-    kind === "practice" ||
+    effectiveKind === "practice" ||
     user?.role === "practice" ||
-    user?.requestorKind === "practice" ||
     Boolean(user?.requestorCapabilities?.practice);
 
   const joinDate = user?.createdAt ? String(user.createdAt) : null;

@@ -168,7 +168,9 @@ import AdminStorePage from "@/pages/admin/system/AdminStorePage";
 import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
 import SalesTeamPaymentsPage from "@/pages/salesTeam/SalesTeamPaymentsPage";
 import DevopsPaymentsPage from "@/pages/devops/DevopsPaymentsPage";
+import { coalesceRequestorKind } from "@/shared/business/requestorCapabilities";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { RequestorCreditsPageSkeleton } from "@/shared/ui/skeletons/RequestorCreditsPageSkeleton";
 const CncDashboardPage = lazy(() =>
   import("./pages/manufacturer/equipment/EquipmentPage").then((m) => ({
     default: m.EquipmentPage,
@@ -351,8 +353,18 @@ const PaymentsRoute = () => {
     return <Navigate to="/dashboard/credits?tab=payout" replace />;
   }
   if (user.role === "requestor") {
+    const effectiveKind = coalesceRequestorKind(kind, user?.requestorKind);
+    if (accessLoading && effectiveKind === "lab") {
+      return (
+        <RequestorCreditsPageSkeleton
+          tabCount={4}
+          showSettlement
+          activeTab="payout"
+        />
+      );
+    }
     if (accessLoading) return null;
-    if (kind === "lab") {
+    if (effectiveKind === "lab") {
       return <Navigate to="/dashboard/credits?tab=payout" replace />;
     }
   }
