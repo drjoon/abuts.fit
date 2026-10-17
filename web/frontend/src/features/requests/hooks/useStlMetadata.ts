@@ -67,7 +67,7 @@ export interface StlMetadata {
       cornerPoint?: number[];
       metalInteriorAngleDeg?: number;
       gougeDepthMm?: number;
-      reliefProfiles?: { before?: number[][]; after?: number[][] } | null;
+      
     }>;
   } | null;
 }

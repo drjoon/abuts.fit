@@ -2564,6 +2564,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           const reliefPos = relief?.positions;
           const reliefIdx = relief?.indices;
           if (
+            (tightCornerMeta.version ?? 0) >= 3 &&
             relief?.displayOnly !== false &&
             Array.isArray(reliefPos) &&
             reliefPos.length >= 9 &&
@@ -2584,17 +2585,14 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
             reliefGeometry.setIndex(idxArr);
             reliefGeometry.computeVertexNormals();
             const reliefMaterial = new THREE.MeshPhongMaterial({
-              color: 0xff9800,
-              emissive: 0x5d4037,
-              shininess: 40,
+              color: 0xe53935,
+              emissive: 0x7f0000,
+              shininess: 60,
               transparent: true,
-              opacity: 0.42,
+              opacity: 0.88,
               side: THREE.DoubleSide,
-              depthTest: true,
+              depthTest: false,
               depthWrite: false,
-              polygonOffset: true,
-              polygonOffsetFactor: -1,
-              polygonOffsetUnits: -1,
             });
             const reliefMesh = new THREE.Mesh(reliefGeometry, reliefMaterial);
             reliefMesh.renderOrder = 10;
