@@ -80,6 +80,7 @@ import {
   isHexVerificationSampleRequest,
 } from "../utils/hexRotation";
 import { isFinishLineDefective } from "../utils/finishLineQuality";
+import { isTightCornerCorrectionRequired } from "../utils/tightCornerReview";
 import {
   isCuffBlendManualReview,
   isCuffProposalPending,
@@ -377,6 +378,9 @@ export const WorksheetCardGrid = ({
         const isFinishLineCaptureBad = isFinishLineDefective(
           (caseInfos as any)?.finishLine?.points,
         );
+        const isTightCornerCorrectionNeeded = isTightCornerCorrectionRequired(
+          (caseInfos as any)?.tightCorner,
+        );
         const cuffBlend = resolveCuffBlend(caseInfos);
         const isPreMachiningTab = tabStage === "request" || tabStage === "cam";
         const isCuffManualReview =
@@ -493,7 +497,9 @@ export const WorksheetCardGrid = ({
             (Number.isFinite(requestorContinueAtMs) &&
               requestorContinueAtMs >= unmachinableEventAtMs));
         const shouldShowTopUnmachinableBadge =
-          (isFinishLineMinZRisky || isUnmachinableSample) &&
+          (isFinishLineMinZRisky ||
+            isTightCornerCorrectionNeeded ||
+            isUnmachinableSample) &&
           !showLatestContinueBadge;
 
         const shouldShowFullLot =
@@ -1432,6 +1438,15 @@ export const WorksheetCardGrid = ({
                             FL 확인
                           </Badge>
                         ) : null}
+                        {isTightCornerCorrectionNeeded && !rhinoWorkPending ? (
+                          <Badge
+                            variant="outline"
+                            className="h-5 max-w-full truncate text-[10px] px-1.5 py-0 font-semibold leading-none border border-destructive/70 bg-destructive-soft text-destructive flex items-center"
+                            title="마진 fillet R이 φ1.2 볼(R0.6)보다 작습니다. 프리뷰에서 보정 솔리드를 확인하세요."
+                          >
+                            마진 보정
+                          </Badge>
+                        ) : null}
                         {isCuffManualReview && !rhinoWorkPending ? (
                           <Badge
                             variant="outline"
@@ -1453,7 +1468,7 @@ export const WorksheetCardGrid = ({
                         <button
                           type="button"
                           className={`h-[72px] w-[72px] shrink-0 overflow-hidden rounded-md border bg-slate-100 shadow-sm transition hover:shadow ${
-                            isFinishLineCaptureBad
+                            isFinishLineCaptureBad || isTightCornerCorrectionNeeded
                               ? "border-destructive/80 ring-2 ring-destructive/40 hover:border-destructive"
                               : "border-slate-200 hover:border-primary/50"
                           }`}
@@ -1464,12 +1479,16 @@ export const WorksheetCardGrid = ({
                           aria-label={
                             isFinishLineCaptureBad
                               ? "FL 확인 — 프리뷰 열기"
-                              : "피니시라인 프리뷰 열기"
+                              : isTightCornerCorrectionNeeded
+                                ? "마진 보정 — 프리뷰 열기"
+                                : "피니시라인 프리뷰 열기"
                           }
                           title={
                             isFinishLineCaptureBad
                               ? "FL 확인"
-                              : "피니시라인 프리뷰"
+                              : isTightCornerCorrectionNeeded
+                                ? "마진 보정"
+                                : "피니시라인 프리뷰"
                           }
                         >
                           <FilledStlCardThumbnail request={request} />

@@ -29,6 +29,7 @@ import {
 } from "../utils/testAccountMachining.js";
 import { updateReviewStatusByStage } from "../controllers/requests/common.review.controller.js";
 import { isAutoStartGraceActive } from "./autoStartGrace.js";
+import { isTightCornerCorrectionRequired } from "../utils/tightCornerReview.js";
 
 function anchorIdOf(request) {
   const raw = request?.businessAnchorId;
@@ -142,6 +143,11 @@ export function evaluateAutoMachiningGate(request, cfg = AUTO_GATE_DEFAULTS) {
   if (quality.defective) reasons.push(`finishline_${quality.reason}`);
   const minZ = num(ci.finishLine?.min_z);
   if (minZ != null && minZ < cfg.minFinishLineZ) reasons.push("finishline_low_z");
+
+  // 마진 fillet R < φ1.2 볼(R0.6) — 보정 솔리드 필요. CAM 원본 유지·작업자 확인.
+  if (isTightCornerCorrectionRequired(ci.tightCorner)) {
+    reasons.push("tight_corner_correction");
+  }
 
   // 이미 기록된 커프 상태(검출 못 하는 미가공과 별개로 모델이 남긴 신호만 사용)
   const cuff = String(ci.cuffBlend?.status || "").trim();

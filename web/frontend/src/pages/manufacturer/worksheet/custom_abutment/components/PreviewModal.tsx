@@ -147,6 +147,7 @@ import {
   resolveRequestCategory,
 } from "../utils/request";
 import { isFinishLineDefective } from "../utils/finishLineQuality";
+import { isTightCornerCorrectionRequired } from "../utils/tightCornerReview";
 import {
   loadPreviewOverlayPrefs,
   savePreviewOverlayPrefs,
@@ -1430,8 +1431,12 @@ export const PreviewModal = ({
   const isFinishLineMinZRisky =
     Number.isFinite(finishLineMinZ) && Number(finishLineMinZ) < 1;
   const isFinishLineCaptureBad = isFinishLineDefective(finishLinePoints);
+  const isTightCornerCorrectionNeeded = isTightCornerCorrectionRequired(
+    (activeReq as any)?.caseInfos?.tightCorner ?? viewerStlMetadata?.tightCorner,
+  );
   const isUnmachinable = Boolean((activeReq as any)?.rnd?.unmachinableAt);
-  const shouldShowUnmachinableWarning = isFinishLineMinZRisky && !isUnmachinable;
+  const shouldShowUnmachinableWarning =
+    (isFinishLineMinZRisky || isTightCornerCorrectionNeeded) && !isUnmachinable;
   const requestorContinueAt = String(
     (activeReq as any)?.rnd?.requestorContinueAt || "",
   ).trim();
@@ -1590,11 +1595,9 @@ export const PreviewModal = ({
   const guideViewerFile = isCamStage ? filledViewer : rightViewer;
   const filledSide: "left" | "right" = isCamStage ? "left" : "right";
   const tightCornerMeta = viewerStlMetadata?.tightCorner;
-  const hasCorrectionSolid = Boolean(
-    (tightCornerMeta?.tightCount ?? 0) > 0 &&
-      (tightCornerMeta?.correctionSolid?.positions?.length ||
-        tightCornerMeta?.reliefOverlay?.positions?.length),
-  );
+  const hasCorrectionSolid =
+    isTightCornerCorrectionNeeded ||
+    isTightCornerCorrectionRequired(tightCornerMeta);
   const hasPaintViewer = { left: Boolean(leftViewer) && !isNcStage, right: Boolean(rightViewer) };
   const paintControlsDisabled = previewLoading || guidedFinishLineMode || guidedFrontPointMode || approveBusy;
   const viewerRefOf = { left: leftViewerRef, right: rightViewerRef };
@@ -1731,6 +1734,23 @@ export const PreviewModal = ({
               }}
             >
               FL 불량 · 수정
+            </button>
+          ) : null}
+          {isTightCornerCorrectionNeeded &&
+          side === filledSide &&
+          !showFlBad &&
+          !guidedFinishLineMode ? (
+            <button
+              type="button"
+              className={`${iconBtn} border-destructive/60 px-2.5 text-destructive hover:bg-destructive-soft`}
+              title="마진 fillet R이 φ1.2 볼(R0.6)보다 작습니다. 보정 솔리드를 켜서 확인하세요."
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setCorrectionSolidOn(true);
+              }}
+            >
+              마진 보정 · 확인
             </button>
           ) : null}
           {showGuide ? (

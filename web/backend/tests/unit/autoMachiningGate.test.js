@@ -133,6 +133,18 @@ describe("evaluateAutoMachiningGate", () => {
     expect(inside("2026-09-11T02:08:03.682Z")).toBe(false);
     expect(inside("2026-09-02T11:58:28.005Z")).toBe(false);
   });
+  it("마진 fillet R<공구 R 보정 솔리드는 보류", () => {
+    const r = evaluateAutoMachiningGate(
+      okRequest({
+        tightCorner: {
+          tightCount: 3,
+          correctionSolid: { positions: [0, 0, 0] },
+        },
+      }),
+    );
+    expect(r.verdict).toBe("hold");
+    expect(r.reasons).toContain("tight_corner_correction");
+  });
   it("커프 manual-review·NC 좌표 이탈·STL 누락은 보류", () => {
     expect(
       evaluateAutoMachiningGate(okRequest({ cuffBlend: { status: "manual-review" } }))
