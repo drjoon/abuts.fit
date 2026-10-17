@@ -83,6 +83,7 @@ import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { holdRequestCreditsOnSubmit, resolveDevopsEscrowOwnerId } from "../../services/requestCreditHold.service.js";
 import { isPracticeObPostpaidActive } from "../../utils/practiceObPostpaid.util.js";
+import { isLabCustomAbutmentFreeCreditOnly } from "../../utils/practiceObBeta.util.js";
 import { positiveSpendableCredit } from "../../services/creditBalance.service.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import { emitDesignClaimChanged } from "../../utils/designClaimRealtime.js";
@@ -1250,6 +1251,9 @@ export async function createRequestsFromDraft(req, res) {
     const practiceObPostpaid =
       businessAnchorId &&
       (await isPracticeObPostpaidActive(businessAnchorId));
+    const labFreeCreditOnly =
+      businessAnchorId &&
+      (await isLabCustomAbutmentFreeCreditOnly(businessAnchorId));
     if (
       !isPracticeRoutingSubmission &&
       preparedCasesForCreate.length > 0 &&
@@ -1286,13 +1290,22 @@ export async function createRequestsFromDraft(req, res) {
         totalShippingFee,
       });
 
-      // 데모 부채(음수)는 가용에서 뺀다. 커스텀어벗은 충전된 양수 잔액만 쓴다.
-      const totalAvailable = positiveSpendableCredit({
-        paidCredit,
-        freeRequestCredit,
-        freeShippingCredit,
-        settlementCredit,
-      });
+      // 데모 부채(음수)는 가용에서 뺀다. 일반 기공소는 무료크레딧만, 그 외는 충전·무료·기공 통합.
+      const totalAvailable = positiveSpendableCredit(
+        labFreeCreditOnly
+          ? {
+              paidCredit: 0,
+              freeRequestCredit,
+              freeShippingCredit,
+              settlementCredit: 0,
+            }
+          : {
+              paidCredit,
+              freeRequestCredit,
+              freeShippingCredit,
+              settlementCredit,
+            },
+      );
       let remaining = totalAvailable;
       const allocatedMachining = Math.min(remaining, requiredMachiningFee);
       remaining -= allocatedMachining;
@@ -1315,8 +1328,11 @@ export async function createRequestsFromDraft(req, res) {
         let message = "";
         const details = [];
         const requestCount = preparedCasesForCreate.length;
+        const needCreditLabel = labFreeCreditOnly
+          ? "커스텀어벗 의뢰는 무료 크레딧이 있어야 합니다."
+          : "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.";
         if (machiningShortfall > 0 && shippingShortfall > 0) {
-          message = "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.";
+          message = needCreditLabel;
           details.push(
             `의뢰비 필요: ${requiredMachiningFee.toLocaleString()}원 (${requestCount}건 합계${
               totalExpressFee > 0
@@ -1328,7 +1344,7 @@ export async function createRequestsFromDraft(req, res) {
             `배송비 필요: ${totalShippingFee.toLocaleString()}원 (보유: ${availableForShipping.toLocaleString()}원)`,
           );
         } else if (machiningShortfall > 0) {
-          message = "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.";
+          message = needCreditLabel;
           details.push(
             `필요: ${requiredMachiningFee.toLocaleString()}원 (${requestCount}건 합계${
               totalExpressFee > 0
@@ -1337,7 +1353,9 @@ export async function createRequestsFromDraft(req, res) {
             }), 보유: ${availableForMachining.toLocaleString()}원`,
           );
         } else {
-          message = "커스텀어벗 배송비는 충전된 크레딧이 있어야 합니다.";
+          message = labFreeCreditOnly
+            ? "커스텀어벗 배송비는 무료 크레딧이 있어야 합니다."
+            : "커스텀어벗 배송비는 충전된 크레딧이 있어야 합니다.";
           details.push(
             `필요: ${totalShippingFee.toLocaleString()}원, 보유: ${availableForShipping.toLocaleString()}원`,
           );

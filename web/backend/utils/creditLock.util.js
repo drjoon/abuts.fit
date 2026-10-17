@@ -3,9 +3,11 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // - web/backend/services/practiceObBilling.service.js
+// - web/backend/utils/practiceObBeta.util.js
 import ChargeOrder from "../models/chargeOrder.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import PracticeMonthlySettlement from "../models/practiceMonthlySettlement.model.js";
+import { isPracticeBetaUnlimitedPostpaid } from "./practiceObBeta.util.js";
 
 export async function checkCreditLock(businessAnchorId, now = new Date()) {
   const lockedOrder = await ChargeOrder.findOne({
@@ -52,6 +54,9 @@ export async function checkPracticeSettlementLock(
   practiceAnchorId,
   now = new Date(),
 ) {
+  if (await isPracticeBetaUnlimitedPostpaid(practiceAnchorId)) {
+    return { isLocked: false };
+  }
   const anchor = await BusinessAnchor.findById(practiceAnchorId)
     .select("openBankingConsent")
     .lean();

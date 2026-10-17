@@ -243,7 +243,7 @@
   - `OB_MONTHLY_SETTLEMENT` (치과 오픈뱅킹 월말 일괄정산 완료)
 - **치과 기공의뢰 후불(OB 자동정산) + 어벗츠로 선불 크레딧 + 대형 치과 보증금 SSOT (2026-10-17)**:
   - **월 후불 한도 없음**: 치과 기공의뢰(PTX) 기공비·PTX 어벗·어벗츠로 커스텀어벗은 OB 후불이다. 한도를 두지 않는다(`monthlyCreditLimit` 폐기). OB 장기동의가 **활성**이고 `paymentHold`가 없으면 마이너스 허용(`isPracticeObPostpaidActive`). 90일 재인증 만료·미납은 **신규 PTX**만 잠금(`checkPracticeSettlementLock`) — 데모 기간이 아니다.
-  - **기공소 어벗츠로(커스텀어벗 `Request`)는 선불 크레딧**: 기공소만 선불 hold. 치과 `Request`·PTX CA hold는 OB 후불과 동일 경로. OB 정산 잠금은 `Request`에 적용하지 않는다(`checkCreditLock`은 ChargeOrder·거래처 가격 승인만).
+  - **기공소 어벗츠로(커스텀어벗 `Request`)**: **런칭 후**(`PRACTICE_OB_LAUNCH_BETA=false`) 치과와 같이 OB 후불(`isPracticeObPostpaidActive`, 기공소 BA 동일). **런칭 전 베타** ON이면 일반 기공소는 무료크레딧만·`테스트기공소`만 선불 테스트. 치과 `Request`·PTX CA hold는 OB 후불 경로. OB 정산 잠금은 `Request`에 적용하지 않는다(`checkCreditLock`은 ChargeOrder·거래처 가격 승인만).
   - **미납 시 다음 기공의뢰 즉시 제한**: `checkPracticeSettlementLock`(`utils/creditLock.util.js`)이 정산 예정일이 지났는데 `COMPLETED`가 아닌 월 정산, 자동이체 실패 Hold, 90일 재인증 만료를 잠근다. 신규 PTX 생성(`assertPracticeTransferPaidCreditSufficient({ enforceSettlementLock: true })`)에서만 적용하고 진행 중인 의뢰는 막지 않는다.
   - **OB 장기동의 + 가끔 재인증**: 최초 1회 출금계좌 연결 + 생체인증(Face ID/지문 패스키) 등록 시 90일 유효(`BusinessAnchor.openBankingConsent`). 만료 시 1탭 재인증(`POST /api/practice/billing/reauth`).
   - **정산일 자동 일괄이체**: 매월 1일 KST 전월 사용분(협력 기공소 직거래 N건 + 어벗츠 법인 1건)을 `PracticeMonthlySettlement`로 확정, 5일 09:00 KST에 일괄출금(`jobs/monthlyPracticeObSettlementWorker.js`). 실패 시 `paymentHold`, Face ID 재이체(`POST /api/practice/billing/retry-settlement/:id`)로 해제.

@@ -1185,5 +1185,6 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - API: `/api/practice/billing/{overview,consent,reauth,retry-settlement/:id,confirm-month,deposits}` (`modules/practiceBilling/practiceBilling.routes.js`).
   - 워커: `jobs/monthlyPracticeObSettlementWorker.js` (1일 확정 → 5일 09:00 KST 일괄이체).
   - 후불 활성: `utils/practiceObPostpaid.util.js` (`isPracticeObPostpaidActive` — OB active + Hold 없음, 90일 만료는 overdraft가 아니라 PTX 잠금). hold/견적: `allocateLabFeeAndAbutmentSpend`·PTX abutment slice·`holdRequestCreditsOnSubmit`(치과 앵커).
+  - **런칭 전 베타**: `PRACTICE_OB_LAUNCH_BETA`(기본 `true`) + `utils/practiceObBeta.util.js`. ON이면 `테스트치과`·`테스트기공소`만 OB·PTX 잠금, 그 외 치과 OB 없이 후불, 일반 기공소 CA는 무료크레딧만. **OFF(런칭)** 이면 치과·기공소 모두 `isPracticeObPostpaidActive`(OB active + Hold 없음) 후불만 — 기공소 CA hold overdraft도 동일.
   - 게이트: `checkCreditLock`은 ChargeOrder·거래처 가격 승인만. OB 정산 잠금은 `Request`·진행 중 PTX CA에 적용하지 않음. 미납·Hold·재인증 만료는 `checkPracticeSettlementLock`, **신규 PTX 생성만**(`enforceSettlementLock: true`).
   - 보증금: 월 이용 1천만원 초과(`PRACTICE_DEPOSIT_GUIDANCE_THRESHOLD`)는 안내만. 개별 기공소 직접 수취, 플랫폼 미보관.

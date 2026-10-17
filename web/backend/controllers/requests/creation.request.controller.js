@@ -32,6 +32,8 @@ import {
   getBusinessCreditBalanceBreakdown,
 } from "./creation.helpers.controller.js";
 import { positiveSpendableCredit } from "../../services/creditBalance.service.js";
+import { isPracticeObPostpaidActive } from "../../utils/practiceObPostpaid.util.js";
+import { isLabCustomAbutmentFreeCreditOnly } from "../../utils/practiceObBeta.util.js";
 import { getRequestorOrgId } from "./utils.js";
 import { calculateInitialProductionSchedule } from "./production.utils.js";
 import {
@@ -777,6 +779,13 @@ export async function createRequestsBulk(req, res) {
       });
     }
 
+    const skipPrepaidCreditGate = await isPracticeObPostpaidActive(
+      businessAnchorId,
+    );
+    const labFreeCreditOnly = await isLabCustomAbutmentFreeCreditOnly(
+      businessAnchorId,
+    );
+
     const {
       balance,
       spendableBalance,
@@ -784,9 +793,18 @@ export async function createRequestsBulk(req, res) {
       freeRequestCredit,
       freeShippingCredit,
       settlementCredit,
-    } = await getBusinessCreditBalanceBreakdown({
-      businessAnchorId,
-    });
+    } = skipPrepaidCreditGate
+      ? {
+          balance: 0,
+          spendableBalance: 0,
+          paidCredit: 0,
+          freeRequestCredit: 0,
+          freeShippingCredit: 0,
+          settlementCredit: 0,
+        }
+      : await getBusinessCreditBalanceBreakdown({
+          businessAnchorId,
+        });
 
     console.log("[createRequestsBulk] Credit check", {
       totalMachiningFee,
@@ -802,74 +820,93 @@ export async function createRequestsBulk(req, res) {
 
     // 5. 크레딧 부족 체크 (무료→기공→유료 통합 풀, 의뢰비→배송비 순 배정)
     // 데모 부채(음수)는 가용에서 뺀다. 커스텀어벗은 충전된 양수 잔액만 쓴다.
-    const totalAvailable = positiveSpendableCredit({
-      paidCredit,
-      freeRequestCredit,
-      freeShippingCredit,
-      settlementCredit,
-    });
-    let remaining = totalAvailable;
-    const allocatedMachining = Math.min(remaining, totalMachiningFee);
-    remaining -= allocatedMachining;
-    const allocatedShipping = Math.min(remaining, totalShippingFee);
-    const availableForMachining = totalAvailable;
-    const availableForShipping = Math.max(0, totalAvailable - allocatedMachining);
+    if (!skipPrepaidCreditGate) {
+      const totalAvailable = positiveSpendableCredit(
+        labFreeCreditOnly
+          ? {
+              paidCredit: 0,
+              freeRequestCredit,
+              freeShippingCredit,
+              settlementCredit: 0,
+            }
+          : {
+              paidCredit,
+              freeRequestCredit,
+              freeShippingCredit,
+              settlementCredit,
+            },
+      );
+      let remaining = totalAvailable;
+      const allocatedMachining = Math.min(remaining, totalMachiningFee);
+      remaining -= allocatedMachining;
+      const allocatedShipping = Math.min(remaining, totalShippingFee);
+      const availableForMachining = totalAvailable;
+      const availableForShipping = Math.max(
+        0,
+        totalAvailable - allocatedMachining,
+      );
 
-    const machiningShortfall =
-      totalMachiningFee > allocatedMachining
-        ? totalMachiningFee - allocatedMachining
-        : 0;
-    const shippingShortfall =
-      totalShippingFee > allocatedShipping
-        ? totalShippingFee - allocatedShipping
-        : 0;
+      const machiningShortfall =
+        totalMachiningFee > allocatedMachining
+          ? totalMachiningFee - allocatedMachining
+          : 0;
+      const shippingShortfall =
+        totalShippingFee > allocatedShipping
+          ? totalShippingFee - allocatedShipping
+          : 0;
 
-    if (machiningShortfall > 0 || shippingShortfall > 0) {
-      let message = "";
-      const details = [];
+      if (machiningShortfall > 0 || shippingShortfall > 0) {
+        let message = "";
+        const details = [];
 
-      if (machiningShortfall > 0 && shippingShortfall > 0) {
-        message = "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.";
-        details.push(
-          `의뢰비 필요: ${totalMachiningFee.toLocaleString()}원 (보유: ${availableForMachining.toLocaleString()}원)`,
-        );
-        details.push(
-          `배송비 필요: ${totalShippingFee.toLocaleString()}원 (보유: ${availableForShipping.toLocaleString()}원)`,
-        );
-      } else if (machiningShortfall > 0) {
-        message = "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.";
-        details.push(
-          `필요: ${totalMachiningFee.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
-        );
-      } else {
-        message = "커스텀어벗 배송비는 충전된 크레딧이 있어야 합니다.";
-        details.push(
-          `필요: ${totalShippingFee.toLocaleString()}원, 보유: ${availableForShipping.toLocaleString()}원`,
-        );
+        const needCreditLabel = labFreeCreditOnly
+          ? "커스텀어벗 의뢰는 무료 크레딧이 있어야 합니다."
+          : "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.";
+        if (machiningShortfall > 0 && shippingShortfall > 0) {
+          message = needCreditLabel;
+          details.push(
+            `의뢰비 필요: ${totalMachiningFee.toLocaleString()}원 (보유: ${availableForMachining.toLocaleString()}원)`,
+          );
+          details.push(
+            `배송비 필요: ${totalShippingFee.toLocaleString()}원 (보유: ${availableForShipping.toLocaleString()}원)`,
+          );
+        } else if (machiningShortfall > 0) {
+          message = needCreditLabel;
+          details.push(
+            `필요: ${totalMachiningFee.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
+          );
+        } else {
+          message = labFreeCreditOnly
+            ? "커스텀어벗 배송비는 무료 크레딧이 있어야 합니다."
+            : "커스텀어벗 배송비는 충전된 크레딧이 있어야 합니다.";
+          details.push(
+            `필요: ${totalShippingFee.toLocaleString()}원, 보유: ${availableForShipping.toLocaleString()}원`,
+          );
+        }
+
+        message +=
+          " " + details.join(", ") + ". 크레딧을 충전한 뒤 다시 시도해주세요.";
+
+        return res.status(402).json({
+          success: false,
+          message,
+          data: {
+            machiningFee: {
+              required: totalMachiningFee,
+              available: availableForMachining,
+              shortfall: machiningShortfall,
+            },
+            shippingFee: {
+              required: totalShippingFee,
+              available: availableForShipping,
+              shortfall: shippingShortfall,
+              boxCount,
+              feePerBox: shippingFeePerBox,
+            },
+            reason: "insufficient_credit",
+          },
+        });
       }
-
-      message +=
-        " " + details.join(", ") + ". 크레딧을 충전한 뒤 다시 시도해주세요.";
-
-      return res.status(402).json({
-        success: false,
-        message,
-        data: {
-          machiningFee: {
-            required: totalMachiningFee,
-            available: availableForMachining,
-            shortfall: machiningShortfall,
-          },
-          shippingFee: {
-            required: totalShippingFee,
-            available: availableForShipping,
-            shortfall: shippingShortfall,
-            boxCount,
-            feePerBox: shippingFeePerBox,
-          },
-          reason: "insufficient_credit",
-        },
-      });
     }
     // ===== 크레딧 사전 체크 끝 =====
 

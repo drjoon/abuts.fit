@@ -33,6 +33,7 @@ import {
   computeBusinessCreditBalanceFromLedger,
 } from "./creditBalance.service.js";
 import { isPracticeObPostpaidActive } from "../utils/practiceObPostpaid.util.js";
+import { isLabCustomAbutmentFreeCreditOnly } from "../utils/practiceObBeta.util.js";
 import { isFmDentalShippingActiveForAnchor } from "./fmDentalShippingSubscription.service.js";
 import {
   deleteGeneralLedgerCommitJournal,
@@ -364,6 +365,8 @@ function prepareOneRequestHold({
   cachedBalance = null,
   /** 치과 OB 후불이면 true. 기공소·선불 치과는 false. */
   allowFreeRequestOverdraft = false,
+  /** 일반 기공소 CA: paid·settlement 제외, 무료크레딧만 */
+  freeCreditOnly = false,
 }) {
   const amt = Math.max(0, Math.round(Number(amount || 0)));
   const requestId = request?._id;
@@ -375,18 +378,26 @@ function prepareOneRequestHold({
   const spendable = balance;
   const split = allocateSpendFromCreditBuckets({
     amount: amt,
-    paidCredit: Number(spendable?.paidCredit || 0),
+    paidCredit: freeCreditOnly
+      ? 0
+      : Number(spendable?.paidCredit || 0),
     freeRequestCredit: Number(spendable?.freeRequestCredit || 0),
     freeShippingCredit: Number(spendable?.freeShippingCredit || 0),
-    settlementCredit: Number(spendable?.settlementCredit || 0),
+    settlementCredit: freeCreditOnly
+      ? 0
+      : Number(spendable?.settlementCredit || 0),
     freeOrder,
-    allowFreeRequestOverdraft,
+    allowFreeRequestOverdraft: freeCreditOnly
+      ? false
+      : allowFreeRequestOverdraft,
   });
 
   if (!split.ok) {
     const available = Math.max(0, Math.round(Number(split.available) || 0));
     const err = new Error(
-      `커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다. (잔액 ${available.toLocaleString("ko-KR")}원 / 필요 ${amt.toLocaleString("ko-KR")}원)`,
+      freeCreditOnly
+        ? `커스텀어벗 의뢰는 무료 크레딧이 있어야 합니다. (잔액 ${available.toLocaleString("ko-KR")}원 / 필요 ${amt.toLocaleString("ko-KR")}원)`
+        : `커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다. (잔액 ${available.toLocaleString("ko-KR")}원 / 필요 ${amt.toLocaleString("ko-KR")}원)`,
     );
     err.statusCode = 402;
     err.payload = {
@@ -814,6 +825,7 @@ export async function holdRequestCreditsOnSubmit({
   const lockedAnchors = new Set();
   const balanceByAnchor = new Map();
   const postpaidByAnchor = new Map();
+  const labFreeCreditOnlyByAnchor = new Map();
   let totalHeld = 0;
   const results = [];
 
@@ -824,6 +836,17 @@ export async function holdRequestCreditsOnSubmit({
     const active = await isPracticeObPostpaidActive(key);
     postpaidByAnchor.set(key, active);
     return active;
+  };
+
+  const resolveLabFreeCreditOnlyHold = async (requestorAnchorId) => {
+    const key = String(requestorAnchorId || "").trim();
+    if (!key) return false;
+    if (labFreeCreditOnlyByAnchor.has(key)) {
+      return labFreeCreditOnlyByAnchor.get(key);
+    }
+    const onlyFree = await isLabCustomAbutmentFreeCreditOnly(key);
+    labFreeCreditOnlyByAnchor.set(key, onlyFree);
+    return onlyFree;
   };
 
   const takeCachedBalance = async (requestorAnchorId) => {
@@ -886,7 +909,11 @@ export async function holdRequestCreditsOnSubmit({
       });
       return;
     }
-    const allowPostpaid = await resolveAllowPostpaidHold(requestorAnchorId);
+    const labFreeCreditOnly =
+      await resolveLabFreeCreditOnlyHold(requestorAnchorId);
+    const allowPostpaid =
+      !labFreeCreditOnly &&
+      (await resolveAllowPostpaidHold(requestorAnchorId));
     const prepared = prepareOneRequestHold({
       request,
       requestorAnchorId,
@@ -899,6 +926,7 @@ export async function holdRequestCreditsOnSubmit({
       actorUserId,
       cachedBalance: await takeCachedBalance(requestorAnchorId),
       allowFreeRequestOverdraft: allowPostpaid,
+      freeCreditOnly: labFreeCreditOnly,
     });
     if (!prepared?.held || !prepared.journal) {
       results.push({ kind: holdKind, ...prepared });
