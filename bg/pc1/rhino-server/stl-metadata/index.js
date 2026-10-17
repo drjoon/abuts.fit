@@ -282,18 +282,26 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
   }
 
   const finishLineTopZ = Math.max(...finishLineZs);
-  const availableHeight = bbox.max.z - finishLineTopZ;
+  const postSpanBelowFl = finishLineTopZ - Math.max(bbox.min.z, 0);
 
-  if (availableHeight <= 0) {
+  if (postSpanBelowFl < 0.35) {
     return null;
   }
 
-  // 기하 중심 계산 (Z축 중심)
+  /** 정렬 STL: 임플란트 축 = Z, XY 원점. 테이퍼·삽입축은 포스트 외측면 둘레만 본다. */
+  const axisCenter = { x: 0, y: 0 };
   const center = {
-    x: (bbox.min.x + bbox.max.x) / 2,
-    y: (bbox.min.y + bbox.max.y) / 2,
+    x: axisCenter.x,
+    y: axisCenter.y,
     z: (bbox.min.z + bbox.max.z) / 2,
   };
+
+  let maxRadiusFromAxis = 0;
+  for (let i = 0; i < position.count; i++) {
+    const r = Math.hypot(position.getX(i), position.getY(i));
+    if (r > maxRadiusFromAxis) maxRadiusFromAxis = r;
+  }
+  const outerPerimeterMinR = Math.max(0.8, maxRadiusFromAxis * 0.12);
 
   const triangleCount = index
     ? Math.floor(index.count / 3)
@@ -334,19 +342,40 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
       }
     }
 
-    const dirAvailableHeight = bbox.max.z - dirFinishLineZ;
-    const dirPostStartZ = dirFinishLineZ + dirAvailableHeight * 0.3;
-    const dirPostEndZ = dirFinishLineZ + dirAvailableHeight * 0.4;
+    const dirPostSpan = Math.max(0.4, dirFinishLineZ - Math.max(bbox.min.z, 0));
+    // 피니시라인 바로 아래 포스트 축면 외측 둘레 (크라운 위쪽이 아님)
+    const dirPostEndZ = dirFinishLineZ - dirPostSpan * 0.06;
+    const dirPostStartZ = dirFinishLineZ - dirPostSpan * 0.88;
     const dirPostHeight = dirPostEndZ - dirPostStartZ;
 
     if (dirPostHeight > 0.1) {
       const dirSamples = [];
+      const surfacePoints = [];
       const sliceCount = 40;
+
+      const considerOuterPoint = (
+        x,
+        y,
+        z,
+        maxRadiusInDirRef,
+        bestSurfacePointRef,
+      ) => {
+        const radial = Math.hypot(x, y);
+        if (radial < outerPerimeterMinR) return;
+        const cx = x - axisCenter.x;
+        const cy = y - axisCenter.y;
+        const proj = cx * dx + cy * dy;
+        if (proj > maxRadiusInDirRef.value) {
+          maxRadiusInDirRef.value = proj;
+          bestSurfacePointRef.value = { x, y, z };
+        }
+      };
 
       for (let s = 0; s <= sliceCount; s++) {
         const targetZ = dirPostStartZ + (dirPostHeight * s) / sliceCount;
         const tolerance = dirPostHeight / (sliceCount * 4);
-        let maxRadiusInDir = -Infinity;
+        const maxRadiusInDirRef = { value: -Infinity };
+        const bestSurfacePointRef = { value: null };
 
         for (let tri = 0; tri < triangleCount; tri++) {
           const i0 = index ? index.getX(tri * 3) : tri * 3;
@@ -356,19 +385,18 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
           const v1 = readVertex(i1);
           const v2 = readVertex(i2);
 
-          // 정점 체크
           [v0, v1, v2].forEach((v) => {
             if (Math.abs(v.z - targetZ) <= tolerance) {
-              const cx = v.x - center.x;
-              const cy = v.y - center.y;
-              const proj = cx * dx + cy * dy;
-              if (proj > maxRadiusInDir) {
-                maxRadiusInDir = proj;
-              }
+              considerOuterPoint(
+                v.x,
+                v.y,
+                v.z,
+                maxRadiusInDirRef,
+                bestSurfacePointRef,
+              );
             }
           });
 
-          // 엣지 교차점 체크
           const intersectEdgeDir = (a, b) => {
             if (
               (a.z < targetZ && b.z < targetZ) ||
@@ -380,12 +408,13 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
             if (t < 0 || t > 1) return;
             const ix = a.x + t * (b.x - a.x);
             const iy = a.y + t * (b.y - a.y);
-            const cx = ix - center.x;
-            const cy = iy - center.y;
-            const proj = cx * dx + cy * dy;
-            if (proj > maxRadiusInDir) {
-              maxRadiusInDir = proj;
-            }
+            considerOuterPoint(
+              ix,
+              iy,
+              targetZ,
+              maxRadiusInDirRef,
+              bestSurfacePointRef,
+            );
           };
 
           intersectEdgeDir(v0, v1);
@@ -393,8 +422,10 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
           intersectEdgeDir(v2, v0);
         }
 
-        if (maxRadiusInDir > -10) {
+        const maxRadiusInDir = maxRadiusInDirRef.value;
+        if (maxRadiusInDir > -10 && bestSurfacePointRef.value) {
           dirSamples.push({ z: targetZ, radius: maxRadiusInDir });
+          surfacePoints.push(bestSurfacePointRef.value);
         }
       }
 
@@ -439,7 +470,10 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
               taperAngle: dirTaperAngleSigned,
               rSquared,
               dirFinishLineZ,
-              dirAvailableHeight,
+              dirAvailableHeight: dirPostSpan,
+              sampleStartZ: dirPostStartZ,
+              sampleEndZ: dirPostEndZ,
+              surfacePoints,
             });
           }
         }
@@ -472,33 +506,47 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
   if (pairedAverages.length > 0) {
     taperAngle = Math.max(...pairedAverages);
 
-    let localMaxTiltValue = -1;
-    let localMaxTiltAngle = -1;
-    let bestTrueTilt = 0;
+    // 둘레 12방향 축면 각 → 크라운 삽입축(가중 평균)
+    let sumX = 0;
+    let sumY = 0;
+    let sumZ = 0;
+    let weightSum = 0;
     for (let baseAngle = 0; baseAngle < 180; baseAngle += 30) {
       const oppositeAngle = baseAngle + 180;
       const baseGuide = directions.find((g) => g.angle === baseAngle);
       const oppositeGuide = directions.find((g) => g.angle === oppositeAngle);
-      if (baseGuide && oppositeGuide) {
-        const tilt = Math.abs(baseGuide.taperAngle);
-        if (tilt > localMaxTiltValue) {
-          localMaxTiltValue = tilt;
-          localMaxTiltAngle = baseAngle;
-          bestTrueTilt = baseGuide.taperAngle;
-        }
-      }
+      if (!baseGuide || !oppositeGuide) continue;
+
+      const trueTilt = baseGuide.taperAngle;
+      const absTilt = Math.abs(trueTilt);
+      if (absTilt < 1e-4) continue;
+
+      const rad = baseAngle * (Math.PI / 180);
+      const tiltRad = absTilt * (Math.PI / 180);
+      const directionAngle = trueTilt >= 0 ? rad : rad + Math.PI;
+      const w = absTilt;
+      sumX += w * Math.sin(tiltRad) * Math.cos(directionAngle);
+      sumY += w * Math.sin(tiltRad) * Math.sin(directionAngle);
+      sumZ += w * Math.cos(tiltRad);
+      weightSum += w;
     }
 
-    if (localMaxTiltAngle !== -1) {
-      const rad = localMaxTiltAngle * (Math.PI / 180);
-      const tiltRad = Math.abs(bestTrueTilt) * (Math.PI / 180);
-      const directionAngle = bestTrueTilt >= 0 ? rad : rad + Math.PI;
-
-      tiltAxisVector = {
-        x: Math.sin(tiltRad) * Math.cos(directionAngle),
-        y: Math.sin(tiltRad) * Math.sin(directionAngle),
-        z: Math.cos(tiltRad),
-      };
+    if (weightSum > 0) {
+      const len = Math.hypot(sumX, sumY, sumZ);
+      if (len > 1e-6) {
+        tiltAxisVector = {
+          x: sumX / len,
+          y: sumY / len,
+          z: sumZ / len,
+        };
+        if (tiltAxisVector.z < 0) {
+          tiltAxisVector = {
+            x: -tiltAxisVector.x,
+            y: -tiltAxisVector.y,
+            z: -tiltAxisVector.z,
+          };
+        }
+      }
     }
   }
 
@@ -797,13 +845,28 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
     `[frontPoint] candidates strict=${strictCandidates.length} relaxed=${relaxedCandidates.length} guides=${guideAnglesDeg.length} purpleGuides=${purpleGuideAngles.length} hits=${directionIntersections.length} hits20=${fallback20Hits.length} hits36=${fallback36Hits.length} lineBand=${lineBand.toFixed(3)} outerMinTight=${outerMinTight.toFixed(3)} outerMinRelaxed=${outerMinRelaxed.toFixed(3)} strictProjMin=${strictProjMin.toFixed(3)}`,
   );
 
+  let guideZStart = finishLineTopZ;
+  let guideZEnd = finishLineTopZ;
+  for (const d of directions) {
+    if (Number.isFinite(d.sampleStartZ)) {
+      guideZStart = Math.min(guideZStart, d.sampleStartZ);
+    }
+    if (Number.isFinite(d.sampleEndZ)) {
+      guideZEnd = Math.max(guideZEnd, d.sampleEndZ);
+    }
+  }
+  if (guideZEnd <= guideZStart) {
+    guideZStart = finishLineTopZ - postSpanBelowFl * 0.88;
+    guideZEnd = finishLineTopZ;
+  }
+
   return {
     taperAngle,
     tiltAxisVector,
     frontPoint,
     taperGuide: {
-      zStart: finishLineTopZ,
-      zEnd: bbox.max.z,
+      zStart: guideZStart,
+      zEnd: guideZEnd,
       multiDirectionGuides: directions,
     },
     lotEngravingSite: pickLotEngravingSiteFromGuides(directions, {
