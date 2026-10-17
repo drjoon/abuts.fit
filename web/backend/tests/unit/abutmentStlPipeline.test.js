@@ -172,7 +172,7 @@ describe("abutmentStl pipeline", () => {
       expect(out.finishLine.points.length).toBeGreaterThanOrEqual(8);
       expect(out.stlMetadata?.connectionDiameter).toBe(3.33);
       expect(out.tightCorner).toBeTruthy();
-      expect(out.tightCorner.version).toBe(3);
+      expect(out.tightCorner.version).toBe(4);
     }
   });
 });

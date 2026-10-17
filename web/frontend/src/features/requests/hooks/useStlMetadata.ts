@@ -65,7 +65,7 @@ export interface StlMetadata {
       tight?: boolean;
       finishLinePoint?: number[];
       cornerPoint?: number[];
-      metalInteriorAngleDeg?: number;
+      airAngleDeg?: number;
       gougeDepthMm?: number;
       
     }>;

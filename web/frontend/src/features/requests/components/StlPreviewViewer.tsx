@@ -2564,7 +2564,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           const reliefPos = relief?.positions;
           const reliefIdx = relief?.indices;
           if (
-            (tightCornerMeta.version ?? 0) >= 3 &&
+            (tightCornerMeta.version ?? 0) >= 4 &&
             relief?.displayOnly !== false &&
             Array.isArray(reliefPos) &&
             reliefPos.length >= 9 &&
@@ -2589,10 +2589,13 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
               emissive: 0x7f0000,
               shininess: 60,
               transparent: true,
-              opacity: 0.88,
+              opacity: 0.92,
               side: THREE.DoubleSide,
-              depthTest: false,
-              depthWrite: false,
+              depthTest: true,
+              depthWrite: true,
+              polygonOffset: true,
+              polygonOffsetFactor: -2,
+              polygonOffsetUnits: -2,
             });
             const reliefMesh = new THREE.Mesh(reliefGeometry, reliefMaterial);
             reliefMesh.renderOrder = 10;

@@ -1,0 +1,11 @@
+---
+description: 로컬 화면 테스트는 http://localhost:5173/ 로 한다
+alwaysApply: true
+---
+
+# 로컬 테스트 주소 (강제)
+
+로컬 프론트 테스트·화면 확인은 **`http://localhost:5173/`** (Vite)로 돌린다.
+
+- `127.0.0.1`, 다른 포트, 배포 주소로 바꿔 열지 않는다.
+- API는 로컬 백엔드(`8080`)를 쓴다. 브라우저 열기·닫기 규칙은 `.cursor/rules/no-cursor-internal-browser.mdc`.
