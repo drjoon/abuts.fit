@@ -2311,20 +2311,76 @@ export const RequestPage = ({
         ? value.compositeStepIncrementGingivaOverrideMm ?? null
         : prevGingiva;
 
-      setCompositeStepSavingMap((prev) => ({ ...prev, [requestMongoId]: true }));
-      pageState.setRequests((prev) =>
-        prev.map((item) => {
-          if (String(item?._id || "").trim() !== requestMongoId) return item;
+      const patchCompositeCaseInfos = (
+        caseInfos: ManufacturerRequest["caseInfos"] | undefined,
+        post: number | null,
+        gingiva: number | null,
+      ) => {
+        const nextCaseInfos = { ...(caseInfos || {}) };
+        if (
+          Object.prototype.hasOwnProperty.call(
+            value,
+            "compositeStepIncrementPostOverrideMm",
+          )
+        ) {
+          if (post == null) {
+            delete nextCaseInfos.compositeStepIncrementPostOverrideMm;
+          } else {
+            nextCaseInfos.compositeStepIncrementPostOverrideMm = post;
+          }
+        }
+        if (
+          Object.prototype.hasOwnProperty.call(
+            value,
+            "compositeStepIncrementGingivaOverrideMm",
+          )
+        ) {
+          if (gingiva == null) {
+            delete nextCaseInfos.compositeStepIncrementGingivaOverrideMm;
+          } else {
+            nextCaseInfos.compositeStepIncrementGingivaOverrideMm = gingiva;
+          }
+        }
+        return nextCaseInfos;
+      };
+
+      const syncLocalCompositeOverride = (
+        post: number | null,
+        gingiva: number | null,
+      ) => {
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            return {
+              ...item,
+              caseInfos: patchCompositeCaseInfos(item.caseInfos, post, gingiva),
+            };
+          }),
+        );
+        pageState.setPreviewFiles((prev) => {
+          const openReq = prev?.request as ManufacturerRequest | undefined;
+          if (
+            !openReq ||
+            String(openReq._id || "").trim() !== requestMongoId
+          ) {
+            return prev;
+          }
           return {
-            ...item,
-            caseInfos: {
-              ...(item.caseInfos || {}),
-              compositeStepIncrementPostOverrideMm: nextPost,
-              compositeStepIncrementGingivaOverrideMm: nextGingiva,
+            ...prev,
+            request: {
+              ...openReq,
+              caseInfos: patchCompositeCaseInfos(
+                openReq.caseInfos,
+                post,
+                gingiva,
+              ),
             },
           };
-        }),
-      );
+        });
+      };
+
+      setCompositeStepSavingMap((prev) => ({ ...prev, [requestMongoId]: true }));
+      syncLocalCompositeOverride(nextPost, nextGingiva);
 
       try {
         const body: Record<string, number | null> = {};
@@ -2377,41 +2433,49 @@ export const RequestPage = ({
               ? null
               : nextGingiva;
 
-        pageState.setRequests((prev) =>
-          prev.map((item) => {
-            if (String(item?._id || "").trim() !== requestMongoId) return item;
-            return {
-              ...item,
-              caseInfos: {
-                ...(item.caseInfos || {}),
-                compositeStepIncrementPostOverrideMm: savedPost,
-                compositeStepIncrementGingivaOverrideMm: savedGingiva,
-              },
-            };
-          }),
-        );
+        syncLocalCompositeOverride(savedPost, savedGingiva);
       } catch (e: unknown) {
+        const rollbackCompositeCaseInfos = (
+          caseInfos: ManufacturerRequest["caseInfos"] | undefined,
+        ) => {
+          const nextCaseInfos = { ...(caseInfos || {}) };
+          if (typeof prevPost === "number") {
+            nextCaseInfos.compositeStepIncrementPostOverrideMm = prevPost;
+          } else {
+            delete nextCaseInfos.compositeStepIncrementPostOverrideMm;
+          }
+          if (typeof prevGingiva === "number") {
+            nextCaseInfos.compositeStepIncrementGingivaOverrideMm = prevGingiva;
+          } else {
+            delete nextCaseInfos.compositeStepIncrementGingivaOverrideMm;
+          }
+          return nextCaseInfos;
+        };
         pageState.setRequests((prev) =>
           prev.map((item) => {
             if (String(item?._id || "").trim() !== requestMongoId) return item;
-            const nextCaseInfos = { ...(item.caseInfos || {}) };
-            if (typeof prevPost === "number") {
-              nextCaseInfos.compositeStepIncrementPostOverrideMm = prevPost;
-            } else {
-              delete nextCaseInfos.compositeStepIncrementPostOverrideMm;
-            }
-            if (typeof prevGingiva === "number") {
-              nextCaseInfos.compositeStepIncrementGingivaOverrideMm =
-                prevGingiva;
-            } else {
-              delete nextCaseInfos.compositeStepIncrementGingivaOverrideMm;
-            }
             return {
               ...item,
-              caseInfos: nextCaseInfos,
+              caseInfos: rollbackCompositeCaseInfos(item.caseInfos),
             };
           }),
         );
+        pageState.setPreviewFiles((prev) => {
+          const openReq = prev?.request as ManufacturerRequest | undefined;
+          if (
+            !openReq ||
+            String(openReq._id || "").trim() !== requestMongoId
+          ) {
+            return prev;
+          }
+          return {
+            ...prev,
+            request: {
+              ...openReq,
+              caseInfos: rollbackCompositeCaseInfos(openReq.caseInfos),
+            },
+          };
+        });
         toast({
           title: "스텝 간격 저장 실패",
           description: e instanceof Error ? e.message : "네트워크 오류",

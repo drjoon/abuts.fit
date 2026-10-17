@@ -1725,6 +1725,8 @@ export async function getAllRequests(req, res) {
       "caseInfos.manufacturerHexRotation",
       "caseInfos.anodizingEnabled",
       "caseInfos.retentionGroove",
+      "caseInfos.compositeStepIncrementPostOverrideMm",
+      "caseInfos.compositeStepIncrementGingivaOverrideMm",
       "caseInfos.requestorHexRotation",
       "caseInfos.finalHexRotation",
       "caseInfos.file",
@@ -5017,6 +5019,9 @@ function buildReviewByStageForStartStage(startStage, now = new Date()) {
 function buildClonedCaseInfos(sourceCaseInfos, startStage, now = new Date()) {
   const base = {
     ...sourceCaseInfos,
+    // 복사본마다 Finish 스텝 override는 독립(원본 값 상속·연동 방지)
+    compositeStepIncrementPostOverrideMm: null,
+    compositeStepIncrementGingivaOverrideMm: null,
     reviewByStage: buildReviewByStageForStartStage(startStage, now),
     rollbackCounts: {
       request: 0,
