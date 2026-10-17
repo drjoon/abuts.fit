@@ -4,10 +4,10 @@
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 //
 // 마진 코너(어깨↔벽)에서 φ1.2 볼 엔드밀 미삭제 구간을 finish line 따라 검사하고,
-// 피니시라인 위 오목 코너만 검사하고 프리뷰 전용 reliefOverlay(필렛 보정면) 메타를 만든다 — STL·CAM에는 쓰지 않는다.
+// 피니시라인 바로 위 마진↔축면 경계의 fillet R을 재고, R<공구R이면 프리뷰 전용 reliefOverlay(필렛 보정면) 메타를 만든다 — STL·CAM에는 쓰지 않는다.
 import { cross, meshPlaneSection, normalize } from "./meshCore.js";
 
-export const TIGHT_CORNER_VERSION = 4;
+export const TIGHT_CORNER_VERSION = 5;
 export const FINISH_BALL_DIAMETER_MM = 1.2;
 export const FINISH_BALL_RADIUS_MM = FINISH_BALL_DIAMETER_MM / 2;
 
@@ -294,44 +294,6 @@ export function filletConcaveCorner2d(corner, rayLedge, rayWall, toolR) {
   return pts.map((p) => [round3(p.u), round3(p.w)]);
 }
 
-/** 피니시라인 위(w ≥ wFl)에서 가장 큰 오목 꺾임(ledge→벽). 아래·FL 자체 모서리는 보지 않는다. */
-function findConcaveCornerAboveFl(profile, wFl) {
-  let best = null;
-  let bestTurn = 0;
-  for (let i = 1; i < profile.length - 1; i += 1) {
-    const b = profile[i];
-    if (b.w < wFl + CORNER_ABOVE_FL_MIN_MM || b.w > wFl + CORNER_W_SEARCH_ABOVE_MM) continue;
-    const a = profile[i - 1];
-    const c = profile[i + 1];
-    const v1u = b.u - a.u;
-    const v1w = b.w - a.w;
-    const v2u = c.u - b.u;
-    const v2w = c.w - b.w;
-    const l1 = Math.hypot(v1u, v1w);
-    const l2 = Math.hypot(v2u, v2w);
-    if (l1 < 1e-6 || l2 < 1e-6) continue;
-    const cross = v1u * v2w - v1w * v2u;
-    if (cross >= 0) continue; // 볼록(금속 모서리)은 제외
-    const turn = Math.acos(clamp((v1u * v2u + v1w * v2w) / (l1 * l2), -1, 1));
-    if (turn > bestTurn) {
-      bestTurn = turn;
-      best = b;
-    }
-  }
-  return bestTurn >= CORNER_MIN_TURN_RAD ? best : null;
-}
-
-function rayFromPoints(corner, pts) {
-  let su = 0;
-  let sw = 0;
-  for (const p of pts) {
-    su += p.u - corner.u;
-    sw += p.w - corner.w;
-  }
-  const len = Math.hypot(su, sw);
-  return len > DIST_TOL ? { u: su / len, w: sw / len } : null;
-}
-
 function round3(v) {
   return Math.round(v * 1000) / 1000;
 }
@@ -442,63 +404,241 @@ export function collectOuterProfileFromVertices(mesh, fl, axis, wFl, uTarget) {
   return null;
 }
 
+const PROFILE_STEP_MM = 0.03;
+const PROFILE_UP_MM = 3.2;
+const FL_SNAP_MAX_MM = 0.35;
+const MARGIN_MAX_DEG = 40;
+const WALL_MIN_DEG = 70;
+const TANGENT_HALF_STEPS = 5;
+const JUNCTION_EXCLUDE_MM = 0.25;
+const MARGIN_FIT_MIN_MM = 0.25;
+const WALL_FIT_MIN_MM = 0.4;
+const WALL_FIT_MAX_MM = 1.4;
+/** 측정 R이 공구 R보다 이 값 이상 작을 때만 보정면을 만든다. */
+const FILLET_R_TOLERANCE_MM = 0.02;
+
+function cumulativeLength(pts) {
+  const out = [0];
+  for (let i = 1; i < pts.length; i += 1) {
+    out.push(out[i - 1] + Math.hypot(pts[i].u - pts[i - 1].u, pts[i].w - pts[i - 1].w));
+  }
+  return out;
+}
+
+function resampleUniform(pts, step) {
+  if (pts.length < 2) return pts;
+  const len = cumulativeLength(pts);
+  const total = len[len.length - 1];
+  const out = [];
+  let j = 0;
+  for (let s = 0; s <= total; s += step) {
+    while (j < pts.length - 2 && len[j + 1] < s) j += 1;
+    const seg = len[j + 1] - len[j] || 1;
+    const t = (s - len[j]) / seg;
+    out.push({
+      u: pts[j].u + t * (pts[j + 1].u - pts[j].u),
+      w: pts[j].w + t * (pts[j + 1].w - pts[j].w),
+    });
+  }
+  return out;
+}
+
+/** FL에서 위로 올라가는 단면 폴리라인(부호 있는 u, w). 반경 평면 단면 루프를 그대로 따른다. */
+function extractProfileAboveFl(mesh, fl, radial, axis, n) {
+  const loops = meshPlaneSection(mesh, [0, 0, 0], n);
+  const uFl = dot3(fl, radial);
+  const wFl = dot3(fl, axis);
+  let best = null;
+  let bestD = Infinity;
+  for (const loop of loops) {
+    if (!loop || loop.length < 6) continue;
+    for (let i = 0; i < loop.length; i += 1) {
+      const u = dot3(loop[i], radial);
+      if (u <= 0) continue;
+      const d = Math.hypot(u - uFl, dot3(loop[i], axis) - wFl);
+      if (d < bestD) {
+        bestD = d;
+        best = { loop, i };
+      }
+    }
+  }
+  if (!best || bestD > FL_SNAP_MAX_MM) return null;
+  const { loop, i } = best;
+  const m = loop.length;
+  const walk = (dir) => {
+    const out = [];
+    for (let k = 0; k < m; k += 1) {
+      const p = loop[(i + dir * k + m * 2) % m];
+      const u = dot3(p, radial);
+      const w = dot3(p, axis);
+      if (u <= 0.2) break;
+      out.push({ u, w });
+      // 긴 변은 정점 하나뿐일 수 있어, 한도를 넘는 첫 점까지 담고 리샘플 뒤 자른다.
+      if (w > wFl + PROFILE_UP_MM) break;
+    }
+    return out;
+  };
+  const rise = (seq) => {
+    let mx = -Infinity;
+    for (const p of seq) {
+      if (Math.hypot(p.u - uFl, p.w - wFl) > 1.0) break;
+      mx = Math.max(mx, p.w);
+    }
+    return mx;
+  };
+  const fwd = walk(1);
+  const bwd = walk(-1);
+  const seq = rise(fwd) >= rise(bwd) ? fwd : bwd;
+  if (seq.length < 2) return null;
+  const pts = resampleUniform(seq, PROFILE_STEP_MM).filter((p) => p.w <= wFl + PROFILE_UP_MM);
+  return pts.length >= 40 ? pts : null;
+}
+
+function pcaLine(pts) {
+  let cu = 0;
+  let cw = 0;
+  for (const p of pts) {
+    cu += p.u;
+    cw += p.w;
+  }
+  cu /= pts.length;
+  cw /= pts.length;
+  let suu = 0;
+  let sww = 0;
+  let suw = 0;
+  for (const p of pts) {
+    suu += (p.u - cu) ** 2;
+    sww += (p.w - cw) ** 2;
+    suw += (p.u - cu) * (p.w - cw);
+  }
+  const ang = 0.5 * Math.atan2(2 * suw, suu - sww);
+  let du = Math.cos(ang);
+  let dw = Math.sin(ang);
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  if (du * (last.u - first.u) + dw * (last.w - first.w) < 0) {
+    du = -du;
+    dw = -dw;
+  }
+  return { p: { u: cu, w: cw }, d: { u: du, w: dw } };
+}
+
+function pointSegDist(p, a, b) {
+  const abu = b.u - a.u;
+  const abw = b.w - a.w;
+  const l2 = abu * abu + abw * abw || 1;
+  const t = clamp(((p.u - a.u) * abu + (p.w - a.w) * abw) / l2, 0, 1);
+  return Math.hypot(p.u - (a.u + t * abu), p.w - (a.w + t * abw));
+}
+
+/**
+ * 피니시라인 바로 위, 마진(수평에 가까움)↔축면(수직에 가까움) 경계의 fillet R을 잰다.
+ * R < 공구 R이면 공구 R 필렛 보정면 단면(reliefProfile)을 돌려준다. 메시는 바꾸지 않는다.
+ */
 export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log) {
   const radial = radialFromFinishPoint(fl, axis);
   const n = sectionNormal(radial, axis);
   if (!n) return null;
-
-  const wFl = dot3(fl, axis);
-  const uTarget = finishLineRadius(fl, axis);
-  let profile = collectOuterProfileFromVertices(mesh, fl, axis, wFl, uTarget);
-  if (!profile) {
-    const loops = meshPlaneSection(mesh, [0, 0, 0], n);
-    const loop = pickSectionLoop(loops, fl, radial, axis);
-    if (!loop) return null;
-    profile = buildOuterProfile(loop, radial, axis, wFl, 6.5, uTarget);
+  const no = (why) => {
+    log?.(`[tight-corner] skip: ${why}`);
+    return { tight: false };
+  };
+  const pts = extractProfileAboveFl(mesh, fl, radial, axis, n);
+  if (!pts) {
+    log?.("[tight-corner] skip: no-profile");
+    return null;
   }
-  if (!profile) return null;
 
-  // FL 위 오목 코너만 검사한다.
-  const corner = findConcaveCornerAboveFl(profile, wFl);
-  if (!corner) return { tight: false };
+  const stepsPerMm = 1 / PROFILE_STEP_MM;
+  const H = TANGENT_HALF_STEPS;
+  const phi = pts.map((_, i) => {
+    if (i < H || i >= pts.length - H) return null;
+    const du = Math.abs(pts[i + H].u - pts[i - H].u);
+    const dw = Math.abs(pts[i + H].w - pts[i - H].w);
+    return (Math.atan2(dw, du) * 180) / Math.PI;
+  });
 
-  const ledgePts = profile.filter((p) => p.w >= wFl - 0.02 && p.w < corner.w - 0.04);
-  const wallPts = profile.filter(
-    (p) => p.w > corner.w + 0.04 && p.w <= corner.w + ABOVE_FL_SECTION_MAX_MM,
-  );
-  if (ledgePts.length < 2 || wallPts.length < 2) return { tight: false };
-  const rayLedge = rayFromPoints(corner, ledgePts);
-  const rayWall = rayFromPoints(corner, wallPts);
-  if (!rayLedge || !rayWall) return { tight: false };
+  // 축면 시작: 이후 0.4mm가 계속 수직에 가까운 첫 지점.
+  const wallRun = Math.round(0.4 * stepsPerMm);
+  let iw = -1;
+  for (let i = H; i < pts.length - H - wallRun; i += 1) {
+    let ok = true;
+    for (let j = i; j <= i + wallRun; j += 1) {
+      if (phi[j] == null || phi[j] < WALL_MIN_DEG) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) {
+      iw = i;
+      break;
+    }
+  }
+  if (iw < 0) return no("wall-not-found");
 
-  const ledgeSpan = Math.hypot(
-    Math.max(...ledgePts.map((p) => p.u)) - Math.min(...ledgePts.map((p) => p.u)),
-    Math.max(...ledgePts.map((p) => p.w)) - Math.min(...ledgePts.map((p) => p.w)),
-  );
-  const wallSpan = Math.hypot(
-    Math.max(...wallPts.map((p) => p.u)) - Math.min(...wallPts.map((p) => p.u)),
-    Math.max(...wallPts.map((p) => p.w)) - Math.min(...wallPts.map((p) => p.w)),
-  );
-  if (ledgeSpan < SHOULDER_MIN_SPAN_MM || wallSpan < WALL_MIN_SPAN_MM) return { tight: false };
+  // 마진: 축면 직전, 수평에 가까운 연속 구간.
+  let jm = iw - 1;
+  while (jm >= H && !(phi[jm] != null && phi[jm] <= MARGIN_MAX_DEG)) jm -= 1;
+  if (jm < H) return no("margin-not-found");
+  let ms = jm;
+  while (ms - 1 >= H && phi[ms - 1] != null && phi[ms - 1] <= MARGIN_MAX_DEG) ms -= 1;
 
-  // 공기 쪽 쐐기 각. 작을수록 볼이 못 들어가 코너가 필렛으로 남는다.
-  const airAngle = Math.acos(clamp(rayLedge.u * rayWall.u + rayLedge.w * rayWall.w, -1, 1));
-  const gougeDepthMm = gougeDepthForCorner(airAngle, toolR);
-  if (gougeDepthMm < GOUGE_TIGHT_THRESHOLD_MM) return { tight: false };
+  const excl = Math.round(JUNCTION_EXCLUDE_MM * stepsPerMm);
+  const marginPts = pts.slice(ms, jm - excl + 1);
+  const wallEnd = Math.min(pts.length, iw + Math.round(WALL_FIT_MAX_MM * stepsPerMm));
+  const wallPts = pts.slice(iw + excl, wallEnd);
+  if (
+    marginPts.length < MARGIN_FIT_MIN_MM * stepsPerMm ||
+    wallPts.length < WALL_FIT_MIN_MM * stepsPerMm
+  ) {
+    return no("fit-span-short");
+  }
+
+  const lm = pcaLine(marginPts);
+  const lw = pcaLine(wallPts);
+  const det = lm.d.u * lw.d.w - lm.d.w * lw.d.u;
+  // 오목(공기 쪽이 벌어진) 코너만: 마진→축면 회전이 시계 방향.
+  if (!(det < -0.05)) return no("not-concave");
+  const du = lw.p.u - lm.p.u;
+  const dw = lw.p.w - lm.p.w;
+  const tm = (du * lw.d.w - dw * lw.d.u) / det;
+  const corner = { u: lm.p.u + lm.d.u * tm, w: lm.p.w + lm.d.w * tm };
+  const near = Math.hypot(corner.u - pts[iw].u, corner.w - pts[iw].w);
+  if (!Number.isFinite(near) || near > 1.5) return no("corner-far");
+
+  const rayLedge = { u: -lm.d.u, w: -lm.d.w };
+  const rayWall = { u: lw.d.u, w: lw.d.w };
+  const ext = Math.acos(clamp(rayLedge.u * rayWall.u + rayLedge.w * rayWall.w, -1, 1));
+  if (!(ext > (30 * Math.PI) / 180) || ext > (168 * Math.PI) / 180) return no("wedge-angle");
+
+  const k = 1 / Math.sin(ext / 2) - 1;
+  const from = Math.max(0, jm - 10);
+  const to = Math.min(pts.length - 1, iw + 10);
+  let dMin = Infinity;
+  for (let i = from; i < to; i += 1) {
+    dMin = Math.min(dMin, pointSegDist(corner, pts[i], pts[i + 1]));
+  }
+  const measuredR = dMin / k;
+  if (!(measuredR < toolR - FILLET_R_TOLERANCE_MM)) {
+    log?.(
+      `[tight-corner] ok az=${((Math.atan2(fl[1], fl[0]) * 180) / Math.PI).toFixed(1)}° R=${measuredR.toFixed(3)}mm`,
+    );
+    return { tight: false };
+  }
 
   const reliefProfile = filletConcaveCorner2d(corner, rayLedge, rayWall, toolR);
-  if (!reliefProfile) return { tight: false };
+  if (!reliefProfile) return no("relief-null");
   const cornerPoint3 = fromPlaneCoords(corner.u, corner.w, radial, axis);
   log?.(
-    `[tight-corner] above-FL az=${((Math.atan2(fl[1], fl[0]) * 180) / Math.PI).toFixed(1)}° ` +
-      `airAngle=${((airAngle * 180) / Math.PI).toFixed(1)}° fillet=${gougeDepthMm.toFixed(3)}mm`,
+    `[tight-corner] tight az=${((Math.atan2(fl[1], fl[0]) * 180) / Math.PI).toFixed(1)}° ` +
+      `R=${measuredR.toFixed(3)}mm<${toolR}`,
   );
   return {
     tight: true,
     finishLinePoint: fl.slice(),
     cornerPoint: cornerPoint3.slice(),
-    airAngleDeg: Math.round((airAngle * 1800) / Math.PI) / 10,
-    gougeDepthMm: Math.round(gougeDepthMm * 1000) / 1000,
+    airAngleDeg: Math.round((ext * 1800) / Math.PI) / 10,
+    filletRadiusMm: Math.round(Math.max(0, measuredR) * 1000) / 1000,
     reliefProfile,
   };
 }

@@ -66,7 +66,7 @@ export interface StlMetadata {
       finishLinePoint?: number[];
       cornerPoint?: number[];
       airAngleDeg?: number;
-      gougeDepthMm?: number;
+      filletRadiusMm?: number;
       
     }>;
   } | null;

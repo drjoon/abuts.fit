@@ -2158,10 +2158,9 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
         // 원본 STL은 오버레이 표시 안함, filled STL만 표시
         if (taperGuide && isFilled) {
           const guideHeight = Math.max(taperGuide.zEnd - taperGuide.zStart, 1);
-          // 가이드 렌더 구간은 "측면"의 짧은 영역만 사용한다.
-          // (기존처럼 과도하게 연장하면 모델을 관통하는 긴 선으로 보임)
-          const renderStartZ = taperGuide.zStart + guideHeight * 0.08;
-          const renderEndZ = taperGuide.zStart + guideHeight * 0.28;
+          // 포스트 축면 외측 둘레 — 측정 밴드 대부분을 표시
+          const renderStartZ = taperGuide.zStart + guideHeight * 0.05;
+          const renderEndZ = taperGuide.zStart + guideHeight * 0.95;
           // filled STL은 이미 원점 정렬되어 있으므로 center.z를 빼지 않음
           const effectiveCenter =
             centerRef.current || new THREE.Vector3(0, 0, 0);
@@ -2564,7 +2563,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           const reliefPos = relief?.positions;
           const reliefIdx = relief?.indices;
           if (
-            (tightCornerMeta.version ?? 0) >= 4 &&
+            (tightCornerMeta.version ?? 0) >= 5 &&
             relief?.displayOnly !== false &&
             Array.isArray(reliefPos) &&
             reliefPos.length >= 9 &&

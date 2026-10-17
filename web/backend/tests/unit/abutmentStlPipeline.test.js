@@ -13,6 +13,7 @@ import { alignMeshToOrigin } from "../../services/abutmentStl/align.js";
 import { connectionDiameterAtOrigin } from "../../services/abutmentStl/qualityMetrics.js";
 import { runAbutmentStlPipeline } from "../../services/abutmentStl/pipeline.js";
 import {
+  analyzeMarginAtPoint,
   gougeDepthForCorner,
   metalInteriorAngleRad,
 } from "../../services/abutmentStl/tightCorner.js";
@@ -69,18 +70,43 @@ function revolvedAbutmentSoup(seg = 96) {
   return soupOf(tris);
 }
 
-/** 어깨→벽 전환이 각진 프로파일(마진 타이트 코너 유도). */
-function sharpMarginAbutmentSoup(seg = 96) {
+/**
+ * FL(r=3.6,z=2.0) 바로 위 마진(약 27°)이 코너(r=2.4,z=2.6)에서 수직 축면과 만나는 회전체.
+ * filletR>0이면 그 코너를 공기 쪽 호(반경 filletR)로 메운다.
+ */
+function marginWallSoup(filletR, seg = 96) {
+  const C = [2.4, 2.6];
+  const fl = [3.6, 2.0];
+  const lx = fl[0] - C[0];
+  const lz = fl[1] - C[1];
+  const ll = Math.hypot(lx, lz);
+  const rayL = [lx / ll, lz / ll];
+  const rayW = [0, 1];
+  const ext = Math.acos(rayL[0] * rayW[0] + rayL[1] * rayW[1]);
+  const mid = [];
+  if (filletR > 0) {
+    const trim = filletR / Math.tan(ext / 2);
+    const bx = rayL[0] + rayW[0];
+    const bz = rayL[1] + rayW[1];
+    const bl = Math.hypot(bx, bz);
+    const cd = filletR / Math.sin(ext / 2);
+    const c = [C[0] + (bx / bl) * cd, C[1] + (bz / bl) * cd];
+    const t1 = [C[0] + rayL[0] * trim, C[1] + rayL[1] * trim];
+    const t2 = [C[0] + rayW[0] * trim, C[1] + rayW[1] * trim];
+    const a1 = Math.atan2(t1[1] - c[1], t1[0] - c[0]);
+    let da = Math.atan2(t2[1] - c[1], t2[0] - c[0]) - a1;
+    while (da <= -Math.PI) da += Math.PI * 2;
+    while (da > Math.PI) da -= Math.PI * 2;
+    for (let i = 0; i <= 24; i += 1) {
+      const a = a1 + (da * i) / 24;
+      mid.push([c[0] + filletR * Math.cos(a), c[1] + filletR * Math.sin(a)]);
+    }
+  } else {
+    mid.push(C);
+  }
+  // [r, z] 프로파일(축에서 시작해 축으로 닫힘)
   const profile = [
-    [-3, 0],
-    [-3, 1.4],
-    [-1, 1.4],
-    [-1, 1.6],
-    [1, 1.7],
-    [2.4, 2.75],
-    [6.8, 2.75],
-    [8, 3.2],
-    [8, 0],
+    [0, -3], [1.4, -3], [1.4, -1], [1.6, -1], [1.7, 1], fl, ...mid, [2.4, 8], [0, 8],
   ];
   const tris = [];
   const at = (r, z, i) => {
@@ -88,8 +114,8 @@ function sharpMarginAbutmentSoup(seg = 96) {
     return [r * Math.cos(a), r * Math.sin(a), z];
   };
   for (let s = 0; s < profile.length - 1; s += 1) {
-    const [z0, r0] = profile[s];
-    const [z1, r1] = profile[s + 1];
+    const [r0, z0] = profile[s];
+    const [r1, z1] = profile[s + 1];
     for (let i = 0; i < seg; i += 1) {
       const a = at(r0, z0, i);
       const b = at(r0, z0, i + 1);
@@ -148,15 +174,29 @@ describe("abutmentStl tightCorner", () => {
     expect(gouge).toBeGreaterThan(0.018);
   });
 
-  it("flags sharp margin corners but not smooth revolved shoulders", async () => {
+  it("피니시라인 위 마진↔축면 fillet R이 공구 R(0.6)보다 작을 때만 표시한다", () => {
+    const fl = [3.6, 0, 2.0];
+    const axis = [0, 0, 1];
+    const analyze = (r) => {
+      const mesh = Mesh.fromStlBuffer(
+        writeBinaryStl({ positions: marginWallSoup(r), attributes: null }),
+      );
+      return analyzeMarginAtPoint(mesh, fl, 0.6, axis);
+    };
+    expect(analyze(0.9)?.tight).toBe(false);
+    expect(analyze(0.7)?.tight).toBe(false);
+    const small = analyze(0.25);
+    expect(small?.tight).toBe(true);
+    expect(small.filletRadiusMm).toBeLessThan(0.45);
+    expect(small.reliefProfile.length).toBeGreaterThan(8);
+    expect(analyze(0)?.tight).toBe(true);
+  });
+
+  it("회전체 샘플(R>0.6)은 보정면 없음", async () => {
     const smoothBuffer = writeBinaryStl({ positions: revolvedAbutmentSoup(), attributes: null });
     const smoothPipe = await runAbutmentStlPipeline(smoothBuffer, { targetDiameter: 3.33 });
     expect(smoothPipe.tightCorner?.tightCount ?? 0).toBe(0);
-
-    const sharpBuffer = writeBinaryStl({ positions: sharpMarginAbutmentSoup(), attributes: null });
-    const sharpPipe = await runAbutmentStlPipeline(sharpBuffer, { targetDiameter: 3.33 });
-    expect(sharpPipe.tightCorner?.tightCount ?? 0).toBeGreaterThan(0);
-    expect(sharpPipe.tightCorner?.reliefOverlay?.positions?.length).toBeGreaterThan(9);
+    expect(smoothPipe.tightCorner?.reliefOverlay ?? null).toBeNull();
   });
 });
 
@@ -172,7 +212,7 @@ describe("abutmentStl pipeline", () => {
       expect(out.finishLine.points.length).toBeGreaterThanOrEqual(8);
       expect(out.stlMetadata?.connectionDiameter).toBe(3.33);
       expect(out.tightCorner).toBeTruthy();
-      expect(out.tightCorner.version).toBe(4);
+      expect(out.tightCorner.version).toBe(5);
     }
   });
 });

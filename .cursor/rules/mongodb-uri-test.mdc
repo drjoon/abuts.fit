@@ -28,6 +28,12 @@ node scripts/db/<script>.js
 - Atlas mutate: `ABUTS_DB_FORCE=true` (see `scripts/db/_mongo.js` `assertSafeToMutateDb`).
 - Jest wipe: still **local Mongo only** (`tests/mongoSafety.js`). Never point Jest wipe at Atlas test.
 
+## Jest / 단위 테스트
+
+- 백엔드 테스트(`npm test`)도 **`MONGODB_URI_TEST`** 로 돌린다. `tests/setup.js`는 이 값 하나로 모든 Mongo URI 키를 고정한다.
+- Jest는 매 테스트 후 컬렉션을 비우므로, 로컬이 아닌 URI는 `ALLOW_REMOTE_JEST_DB=true` + 전용 DB명(`abutsFitJest`)일 때만 허용된다. `abuts_fit_test`에는 쓰지 않는다. 안전장치를 우회하지 않는다.
+- DB가 필요 없는 순수 단위 테스트는 Mongo setup 없이 돌려도 된다.
+
 ## Don't
 
 - Don't print full Mongo URIs or credentials in chat/logs (redact `user:pass@`).
