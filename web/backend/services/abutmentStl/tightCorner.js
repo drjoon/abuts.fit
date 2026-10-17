@@ -4,10 +4,12 @@
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 //
 // 마진 코너(어깨↔벽)에서 φ1.2 볼 엔드밀 미삭제 구간을 finish line 따라 검사하고,
-// 피니시라인 바로 위 마진↔축면 경계의 fillet R을 재고, R<공구R이면 프리뷰 전용 reliefOverlay(필렛 보정면) 메타를 만든다 — STL·CAM에는 쓰지 않는다.
+// 피니시라인 바로 위 마진↔축면 경계의 fillet R을 재고, R<공구R이면 공구 R 필렛 보정면을 만든다.
+// 보정 솔리드는 원본과 별개로 메타데이터에 담긴다. filled STL·CAM은 원본 그대로 두고,
+// 뷰어에서 토글을 켰을 때만 원본 위에 빨갛게 덧입혀 보여준다.
 import { cross, meshPlaneSection, normalize } from "./meshCore.js";
 
-export const TIGHT_CORNER_VERSION = 5;
+export const TIGHT_CORNER_VERSION = 6;
 export const FINISH_BALL_DIAMETER_MM = 1.2;
 export const FINISH_BALL_RADIUS_MM = FINISH_BALL_DIAMETER_MM / 2;
 
@@ -339,7 +341,21 @@ function smoothRunProfiles(run) {
   });
 }
 
-/** 프리뷰 전용: 필렛 보정면 연속 띠(CAM·STL 미사용). */
+/** 연속 샘플 묶음 + 묶음 안에서 평활한 보정 단면들. 프리뷰·솔리드·밴드가 같은 면을 쓴다. */
+function reliefRuns(tightRows, total) {
+  const rows = (Array.isArray(tightRows) ? tightRows : []).filter(
+    (r) => Array.isArray(r?.reliefProfile) && r.reliefProfile.length >= 4 && Number.isInteger(r.sampleIndex),
+  );
+  if (!rows.length || !total) return [];
+  const runs = [];
+  for (const run of groupConsecutiveRows(rows, total)) {
+    if (run.length < 2) continue;
+    runs.push({ run, smooth: smoothRunProfiles(run) });
+  }
+  return runs;
+}
+
+/** 프리뷰용 필렛 보정면 연속 띠. 보정 솔리드의 바깥면과 같은 면이다. */
 export function buildTightCornerReliefOverlay(tightRows, axis, options = {}) {
   const toolR =
     Number(options.toolRadiusMm) > 0 ? Number(options.toolRadiusMm) : FINISH_BALL_RADIUS_MM;
@@ -376,6 +392,131 @@ export function buildTightCornerReliefOverlay(tightRows, axis, options = {}) {
   return { displayOnly: true, filletRadiusMm: toolR, positions, indices };
 }
 
+/** 보정 솔리드를 원본 몸통 안으로 묻는 깊이. 바깥면만 가공면이 된다. */
+const RELIEF_SOLID_DEPTH_MM = 0.3;
+
+/**
+ * filled STL에 덧씌우는 닫힌 보정 솔리드. 바깥면은 프리뷰 reliefOverlay와 같은 공구 R 필렛이고,
+ * 안쪽 면은 반경 방향으로 {@link RELIEF_SOLID_DEPTH_MM}만큼 몸통 안에 묻힌다.
+ * 원본 메시와 합치지 않으므로 원본 삼각형은 그대로 남는다.
+ */
+export function buildTightCornerReliefSolid(tightRows, axis, options = {}) {
+  const toolR =
+    Number(options.toolRadiusMm) > 0 ? Number(options.toolRadiusMm) : FINISH_BALL_RADIUS_MM;
+  const total = Number(options.sampleTotal) || 0;
+  const positions = [];
+  const indices = [];
+  const quad = (a, b, c, d, flip = false) => {
+    if (flip) indices.push(a, b, c, b, d, c);
+    else indices.push(a, c, b, b, c, d);
+  };
+  for (const { run, smooth } of reliefRuns(tightRows, total)) {
+    const cols = smooth[0].length;
+    const cyclic = run.length >= total;
+    const rowCount = cyclic ? run.length + 1 : run.length;
+    const outerBase = positions.length / 3;
+    for (let layer = 0; layer < 2; layer += 1) {
+      for (let ri = 0; ri < rowCount; ri += 1) {
+        const src = ri % run.length;
+        const radial = radialFromFinishPoint(run[src].finishLinePoint, axis);
+        for (const [u0, w] of smooth[src]) {
+          const u = layer === 0 ? u0 : Math.max(u0 - RELIEF_SOLID_DEPTH_MM, 0.25);
+          const p = fromPlaneCoords(u, w, radial, axis);
+          positions.push(round3(p[0]), round3(p[1]), round3(p[2]));
+        }
+      }
+    }
+    const innerBase = outerBase + rowCount * cols;
+    const O = (ri, c) => outerBase + ri * cols + c;
+    const I = (ri, c) => innerBase + ri * cols + c;
+    for (let ri = 0; ri < rowCount - 1; ri += 1) {
+      for (let c = 0; c < cols - 1; c += 1) {
+        quad(O(ri, c), O(ri, c + 1), O(ri + 1, c), O(ri + 1, c + 1));
+        quad(I(ri, c), I(ri, c + 1), I(ri + 1, c), I(ri + 1, c + 1), true);
+      }
+      quad(O(ri, 0), O(ri + 1, 0), I(ri, 0), I(ri + 1, 0), true);
+      quad(O(ri, cols - 1), O(ri + 1, cols - 1), I(ri, cols - 1), I(ri + 1, cols - 1));
+    }
+    if (!cyclic) {
+      for (const ri of [0, rowCount - 1]) {
+        for (let c = 0; c < cols - 1; c += 1) {
+          quad(O(ri, c), O(ri, c + 1), I(ri, c), I(ri, c + 1), ri !== 0);
+        }
+      }
+    }
+  }
+  if (positions.length < 9 || indices.length < 3) return null;
+  return { filletRadiusMm: toolR, positions, indices, triangleCount: indices.length / 3 };
+}
+
+/** 솔리드(indexed)를 삼각형 수프 배열로 편다. */
+export function reliefSolidTriangles(solid) {
+  if (!solid?.positions?.length || !solid?.indices?.length) return [];
+  const tris = [];
+  const { positions, indices } = solid;
+  for (let i = 0; i + 2 < indices.length; i += 3) {
+    const tri = [];
+    for (const idx of [indices[i], indices[i + 1], indices[i + 2]]) {
+      tri.push([positions[idx * 3], positions[idx * 3 + 1], positions[idx * 3 + 2]]);
+    }
+    tris.push(tri);
+  }
+  return tris;
+}
+
+/**
+ * 걷어 낼 원본 삼각형 판정용 밴드(정렬 축=Z 전제). 열마다 평활 보정 단면(u,w)을 들고 있다.
+ * 솔리드와 같은 평활 단면을 써서, 걷어 낸 자리와 덧씌운 면이 어긋나지 않는다.
+ */
+export function buildTightCornerReliefBand(tightRows, options = {}) {
+  const total = Number(options.sampleTotal) || 0;
+  const band = [];
+  for (const { run, smooth } of reliefRuns(tightRows, total)) {
+    run.forEach((row, ri) => {
+      const profile = smooth[ri]
+        .map(([u, w]) => ({ u, w }))
+        .sort((a, b) => a.w - b.w);
+      band.push({
+        theta: Math.atan2(row.finishLinePoint[1], row.finishLinePoint[0]),
+        profile,
+      });
+    });
+  }
+  return band;
+}
+
+/** 점이 보정 밴드의 바깥 표면 근처(걷어 낼 원본 코너 면)에 있는가. */
+export function isPointInTightCornerReliefBand(band, p) {
+  if (!band?.length || !Array.isArray(p)) return false;
+  const theta = Math.atan2(p[1], p[0]);
+  let best = null;
+  let bestD = Infinity;
+  for (const entry of band) {
+    let d = Math.abs(theta - entry.theta);
+    if (d > Math.PI) d = Math.PI * 2 - d;
+    if (d < bestD) {
+      bestD = d;
+      best = entry;
+    }
+  }
+  if (!best || bestD > 0.09) return false;
+  const profile = best.profile;
+  const w = p[2];
+  if (w < profile[0].w - 0.02 || w > profile[profile.length - 1].w + 0.02) return false;
+  let uOuter = profile[profile.length - 1].u;
+  for (let i = 0; i < profile.length - 1; i += 1) {
+    const a = profile[i];
+    const b = profile[i + 1];
+    if (w >= a.w && w <= b.w) {
+      const t = b.w - a.w > 1e-9 ? (w - a.w) / (b.w - a.w) : 0;
+      uOuter = a.u + t * (b.u - a.u);
+      break;
+    }
+  }
+  const u = Math.hypot(p[0], p[1]);
+  return u >= uOuter - RELIEF_SOLID_DEPTH_MM - 0.02 && u <= uOuter + 0.2;
+}
+
 export function collectOuterProfileFromVertices(mesh, fl, axis, wFl, uTarget) {
   const angFl = Math.atan2(fl[1], fl[0]);
   const angTol = 0.22;
@@ -407,7 +548,12 @@ export function collectOuterProfileFromVertices(mesh, fl, axis, wFl, uTarget) {
 const PROFILE_STEP_MM = 0.03;
 const PROFILE_UP_MM = 3.2;
 const FL_SNAP_MAX_MM = 0.35;
-const MARGIN_MAX_DEG = 40;
+/**
+ * 마진 접선각 상한. 직선 마진만 찾으면 단면이 곡선으로 휘어 들어가는(움푹 패인) 케이스는
+ * 벽 직전 접선각이 이미 40°를 넘어 피팅 구간이 사라진다. FL 근처 초기 접선을 벽 각(70°)과
+ * 겹치지 않는 55°까지 허용해 마진 점근선을 잡는다.
+ */
+const MARGIN_FIT_MAX_DEG = 55;
 const WALL_MIN_DEG = 70;
 const TANGENT_HALF_STEPS = 5;
 const JUNCTION_EXCLUDE_MM = 0.25;
@@ -576,15 +722,15 @@ export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log) {
   }
   if (iw < 0) return no("wall-not-found");
 
-  // 마진: 축면 직전, 수평에 가까운 연속 구간.
-  let jm = iw - 1;
-  while (jm >= H && !(phi[jm] != null && phi[jm] <= MARGIN_MAX_DEG)) jm -= 1;
-  if (jm < H) return no("margin-not-found");
-  let ms = jm;
-  while (ms - 1 >= H && phi[ms - 1] != null && phi[ms - 1] <= MARGIN_MAX_DEG) ms -= 1;
+  // 마진 점근선: FL에서 시작해 접선각이 MARGIN_FIT_MAX_DEG를 처음 넘는 지점까지.
+  // 곡선 전이(움푹 패인 마진)는 벽 직전 구간이 이미 휘어 있어, 벽에서 거꾸로 찾으면
+  // 직선 구간이 남지 않는다. 초기 접선으로 점근선을 잡아야 가상 코너·R을 잴 수 있다.
+  let mEnd = H;
+  while (mEnd < iw && phi[mEnd] != null && phi[mEnd] <= MARGIN_FIT_MAX_DEG) mEnd += 1;
+  if (mEnd <= H) return no("margin-not-found");
 
   const excl = Math.round(JUNCTION_EXCLUDE_MM * stepsPerMm);
-  const marginPts = pts.slice(ms, jm - excl + 1);
+  const marginPts = pts.slice(2, mEnd);
   const wallEnd = Math.min(pts.length, iw + Math.round(WALL_FIT_MAX_MM * stepsPerMm));
   const wallPts = pts.slice(iw + excl, wallEnd);
   if (
@@ -612,7 +758,7 @@ export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log) {
   if (!(ext > (30 * Math.PI) / 180) || ext > (168 * Math.PI) / 180) return no("wedge-angle");
 
   const k = 1 / Math.sin(ext / 2) - 1;
-  const from = Math.max(0, jm - 10);
+  const from = Math.max(0, mEnd - 10);
   const to = Math.min(pts.length - 1, iw + 10);
   let dMin = Infinity;
   for (let i = from; i < to; i += 1) {
@@ -678,40 +824,74 @@ function buildTightFinishLineSegments(finishLinePoints, samples) {
  * @param {number[][]} finishLinePoints
  * @param {{ tiltAxisVector?: {x?:number,y?:number,z?:number}|null, toolRadiusMm?: number, log?: Function }} [options]
  */
-export function detectTightCorners(mesh, finishLinePoints, options = {}) {
+function collectTightSamples(mesh, finishLinePoints, options = {}) {
   const toolR = Number(options.toolRadiusMm) > 0 ? Number(options.toolRadiusMm) : FINISH_BALL_RADIUS_MM;
   const axis = normalizeAxis(options.tiltAxisVector);
-  const log = options.log;
   const raw = Array.isArray(finishLinePoints) ? finishLinePoints : [];
-  if (raw.length < FL_SAMPLE_MIN) {
-    return {
-      version: TIGHT_CORNER_VERSION,
-      toolDiameterMm: FINISH_BALL_DIAMETER_MM,
-      tightCount: 0,
-      samples: [],
-      tightFinishLineSegments: [],
-      reliefOverlay: null,
-    };
-  }
+  if (raw.length < FL_SAMPLE_MIN) return { toolR, axis, raw, sampled: [], samples: [] };
   const sampled = resampleFinishLine(raw, FL_SAMPLE_MAX);
   const samples = [];
   sampled.forEach((fl, sampleIndex) => {
-    const row = analyzeMarginAtPoint(mesh, fl, toolR, axis, log);
+    const row = analyzeMarginAtPoint(mesh, fl, toolR, axis, options.log);
     if (row?.tight) samples.push({ ...row, sampleIndex });
   });
-  const tightFinishLineSegments = buildTightFinishLineSegments(raw, samples);
-  const reliefOverlay = buildTightCornerReliefOverlay(samples, axis, {
-    toolRadiusMm: toolR,
-    sampleTotal: sampled.length,
-  });
+  return { toolR, axis, raw, sampled, samples };
+}
+
+function tightCornerMeta({ toolR, axis, raw, sampled, samples }) {
+  const rValues = samples
+    .map((s) => Number(s.filletRadiusMm))
+    .filter((v) => Number.isFinite(v));
   return {
     version: TIGHT_CORNER_VERSION,
     toolDiameterMm: FINISH_BALL_DIAMETER_MM,
     tightCount: samples.length,
+    /** 타이트 샘플 전체의 현재 fillet R 평균(mm). 타이트 없으면 null. */
+    averageFilletRadiusMm: rValues.length
+      ? Math.round((rValues.reduce((a, b) => a + b, 0) / rValues.length) * 1000) / 1000
+      : null,
     samples: samples.map(({ reliefProfile, ...rest }) => rest),
-    tightFinishLineSegments,
-    /** @deprecated v2 — 프리뷰는 reliefOverlay만 사용(CAM 미참조). */
+    tightFinishLineSegments: buildTightFinishLineSegments(raw, samples),
+    /** @deprecated v2 — 프리뷰는 reliefOverlay만 사용. */
     ballPassPolylines: [],
-    reliefOverlay,
+    reliefOverlay: buildTightCornerReliefOverlay(samples, axis, {
+      toolRadiusMm: toolR,
+      sampleTotal: sampled.length,
+    }),
+    /**
+     * 원본과 별개인 보정 솔리드(닫힌 메시). filled STL에는 넣지 않는다.
+     * 뷰어 토글 ON일 때만 원본 위에 빨갛게 덧입혀 보여준다.
+     */
+    correctionSolid: buildTightCornerReliefSolid(samples, axis, {
+      toolRadiusMm: toolR,
+      sampleTotal: sampled.length,
+    }),
+  };
+}
+
+export function detectTightCorners(mesh, finishLinePoints, options = {}) {
+  return tightCornerMeta(collectTightSamples(mesh, finishLinePoints, options));
+}
+
+/**
+ * 보정 솔리드 적용 시뮬레이션(테스트·검증용). triangles를 수프에 덧씌우고, band에 걸리는
+ * 원본 삼각형은 걷어 낸다. 실제 파이프라인은 filled STL을 변형하지 않으므로 이 계획을 쓰지 않는다.
+ * @returns {{ tightCorner: object, triangles: number[][][], band: object[] }}
+ */
+export function planTightCornerCorrection(mesh, finishLinePoints, options = {}) {
+  const collected = collectTightSamples(mesh, finishLinePoints, options);
+  const tightCorner = tightCornerMeta(collected);
+  if (!collected.samples.length) return { tightCorner, triangles: [], band: [] };
+  const solid = buildTightCornerReliefSolid(collected.samples, collected.axis, {
+    toolRadiusMm: collected.toolR,
+    sampleTotal: collected.sampled.length,
+  });
+  if (!solid) return { tightCorner, triangles: [], band: [] };
+  return {
+    tightCorner,
+    triangles: reliefSolidTriangles(solid),
+    band: buildTightCornerReliefBand(collected.samples, {
+      sampleTotal: collected.sampled.length,
+    }),
   };
 }

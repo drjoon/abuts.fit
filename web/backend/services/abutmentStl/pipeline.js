@@ -165,6 +165,7 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
       log(`[stl_metadata] failed: ${error?.message || error}`);
     }
     try {
+      // 검사만 한다. 보정 솔리드는 메타데이터에만 담고 filled STL은 원본 그대로 둔다.
       tightCorner = detectTightCorners(combined, finishLine.points, {
         tiltAxisVector: stlMetadata?.tiltAxisVector,
         log,

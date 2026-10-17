@@ -6,6 +6,8 @@ export type PreviewOverlayPrefs = {
   grid: boolean;
   meta: boolean;
   guides: boolean;
+  /** 보정 솔리드 덧입혀 표시. 기본 off(원본만). */
+  correctionSolid: boolean;
 };
 
 const DEFAULT_PREFS: PreviewOverlayPrefs = {
@@ -13,6 +15,7 @@ const DEFAULT_PREFS: PreviewOverlayPrefs = {
   grid: true,
   meta: true,
   guides: true,
+  correctionSolid: false,
 };
 
 function parseBool(value: unknown, fallback: boolean): boolean {
@@ -31,6 +34,10 @@ export function loadPreviewOverlayPrefs(): PreviewOverlayPrefs {
       grid: parseBool(parsed.grid, DEFAULT_PREFS.grid),
       meta: parseBool(parsed.meta, DEFAULT_PREFS.meta),
       guides: parseBool(parsed.guides, DEFAULT_PREFS.guides),
+      correctionSolid: parseBool(
+        parsed.correctionSolid,
+        DEFAULT_PREFS.correctionSolid,
+      ),
     };
   } catch {
     return DEFAULT_PREFS;
@@ -38,7 +45,7 @@ export function loadPreviewOverlayPrefs(): PreviewOverlayPrefs {
 }
 
 export function savePreviewOverlayPrefs(
-  patch: Pick<PreviewOverlayPrefs, "grid" | "meta" | "guides">,
+  patch: Partial<Pick<PreviewOverlayPrefs, "grid" | "meta" | "guides" | "correctionSolid">>,
 ) {
   if (typeof window === "undefined") return;
   const next: PreviewOverlayPrefs = { ...loadPreviewOverlayPrefs(), ...patch, v: 1 };

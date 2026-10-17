@@ -77,7 +77,7 @@
 // - web/backend/controllers/rhino/rhino.controller.js
 // - web/backend/modules/rhino/rhino.routes.js
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, Grid3x3, Info, Loader2, RefreshCw, Spline, X } from "lucide-react";
+import { Download, Grid3x3, Info, Layers, Loader2, RefreshCw, Spline, X } from "lucide-react";
 import { mirrorShapes } from "@/shared/components/practice/viewPaintMirror";
 import type { PaintShape } from "@/shared/components/practice/viewPaintGeom";
 import {
@@ -709,14 +709,29 @@ export const PreviewModal = ({
   const leftViewerRef = useRef<StlPreviewViewerHandle | null>(null);
   const rightViewerRef = useRef<StlPreviewViewerHandle | null>(null);
   const [gridOn, setGridOn] = useState(() => loadPreviewOverlayPrefs().grid);
+  const [correctionSolidOn, setCorrectionSolidOn] = useState(
+    () => loadPreviewOverlayPrefs().correctionSolid,
+  );
 
   useEffect(() => {
     savePreviewOverlayPrefs({
       grid: gridOn,
       meta: metaOn,
       guides: guidesOn,
+      correctionSolid: correctionSolidOn,
     });
-  }, [gridOn, metaOn, guidesOn]);
+  }, [gridOn, metaOn, guidesOn, correctionSolidOn]);
+
+  const toggleCorrectionSolid = () => {
+    if (!correctionSolidOn) {
+      toast({
+        title: "보정 솔리드 표시 중",
+        description: "CAM 가공은 원본대로 됩니다.",
+        duration: 2500,
+      });
+    }
+    setCorrectionSolidOn((on) => !on);
+  };
   const [leftPaintSpace, setLeftPaintSpace] = useState<ViewPaintSpace | null>(null);
   const [rightPaintSpace, setRightPaintSpace] = useState<ViewPaintSpace | null>(null);
   const [guidedFinishLineSubmitting, setGuidedFinishLineSubmitting] = useState(false);
@@ -1573,6 +1588,13 @@ export const PreviewModal = ({
   const rightViewer =
     !isCamStage && !isStageFileStage ? previewFiles.cam : null;
   const guideViewerFile = isCamStage ? filledViewer : rightViewer;
+  const filledSide: "left" | "right" = isCamStage ? "left" : "right";
+  const tightCornerMeta = viewerStlMetadata?.tightCorner;
+  const hasCorrectionSolid = Boolean(
+    (tightCornerMeta?.tightCount ?? 0) > 0 &&
+      (tightCornerMeta?.correctionSolid?.positions?.length ||
+        tightCornerMeta?.reliefOverlay?.positions?.length),
+  );
   const hasPaintViewer = { left: Boolean(leftViewer) && !isNcStage, right: Boolean(rightViewer) };
   const paintControlsDisabled = previewLoading || guidedFinishLineMode || guidedFrontPointMode || approveBusy;
   const viewerRefOf = { left: leftViewerRef, right: rightViewerRef };
@@ -1670,6 +1692,26 @@ export const PreviewModal = ({
           >
             <Spline className="h-4 w-4" />
           </button>
+          {hasCorrectionSolid && side === filledSide ? (
+            <button
+              type="button"
+              className={`${iconBtn} w-8 ${
+                correctionSolidOn
+                  ? "border-red-300 bg-red-50 text-red-600"
+                  : "border-slate-200 text-slate-400"
+              }`}
+              aria-pressed={correctionSolidOn}
+              aria-label="보정 솔리드 켜기/끄기"
+              title={
+                correctionSolidOn
+                  ? "보정 솔리드 끄기 — 원본만 표시"
+                  : "보정 솔리드 켜기 — Ø1.2 볼 R0.6 필렛을 원본 위에 표시"
+              }
+              onClick={toggleCorrectionSolid}
+            >
+              <Layers className="h-4 w-4" />
+            </button>
+          ) : null}
           <PreviewPaintControls
             paint={paint}
             disabled={paintControlsDisabled}
@@ -4165,6 +4207,7 @@ export const PreviewModal = ({
                       gridVisible={gridOn}
                       metaVisible={metaOn}
                       guidesVisible={guidesOn || guidedFinishLineMode}
+                      correctionSolidVisible={correctionSolidOn}
                       initialSideView
                       finishLineVisible={guidesOn || guidedFinishLineMode}
                       frontPointVisible={
@@ -4713,6 +4756,7 @@ export const PreviewModal = ({
                       gridVisible={gridOn}
                       metaVisible={metaOn}
                       guidesVisible={guidesOn || guidedFinishLineMode}
+                      correctionSolidVisible={correctionSolidOn}
                       initialSideView
                       finishLineVisible={guidesOn || guidedFinishLineMode}
                       frontPointVisible={

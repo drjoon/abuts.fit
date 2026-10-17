@@ -47,11 +47,13 @@ export interface StlMetadata {
     points?: number[][];
   } | null;
   taperGuide?: unknown;
-  /** φ1.2 볼 마진 타이트 코너 — finish line 추적 + 프리뷰 전용 reliefOverlay. */
+  /** φ1.2 볼 마진 타이트 코너 — finish line 추적 + 별도 보정 솔리드(토글 표시, CAM 원본 유지). */
   tightCorner?: {
     version?: number;
     toolDiameterMm?: number;
     tightCount?: number;
+    /** 타이트 샘플 전체의 현재 fillet R 평균(mm) */
+    averageFilletRadiusMm?: number | null;
     tightFinishLineSegments?: Array<{ startIndex: number; endIndex: number }>;
     /** @deprecated v2 — reliefOverlay 사용 */
     ballPassPolylines?: number[][][];
@@ -61,13 +63,20 @@ export interface StlMetadata {
       positions?: number[];
       indices?: number[];
     } | null;
+    /** 원본과 별개인 닫힌 보정 솔리드. 뷰어 토글 ON일 때만 원본 위에 덧입힌다. */
+    correctionSolid?: {
+      filletRadiusMm?: number;
+      positions?: number[];
+      indices?: number[];
+      triangleCount?: number;
+    } | null;
     samples?: Array<{
       tight?: boolean;
+      sampleIndex?: number;
       finishLinePoint?: number[];
       cornerPoint?: number[];
       airAngleDeg?: number;
       filletRadiusMm?: number;
-      
     }>;
   } | null;
 }

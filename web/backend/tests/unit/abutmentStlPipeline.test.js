@@ -14,8 +14,11 @@ import { connectionDiameterAtOrigin } from "../../services/abutmentStl/qualityMe
 import { runAbutmentStlPipeline } from "../../services/abutmentStl/pipeline.js";
 import {
   analyzeMarginAtPoint,
+  detectTightCorners,
   gougeDepthForCorner,
+  isPointInTightCornerReliefBand,
   metalInteriorAngleRad,
+  planTightCornerCorrection,
 } from "../../services/abutmentStl/tightCorner.js";
 
 function soupOf(tris) {
@@ -192,11 +195,49 @@ describe("abutmentStl tightCorner", () => {
     expect(analyze(0)?.tight).toBe(true);
   });
 
+  it("곡선으로 휘어 들어간(움푹 패인) 마진도 R을 재고, 보정 적용 뒤에는 타이트가 풀린다", () => {
+    // 실제 케이스(20261018-EVQULGSM): 단면 접선각이 20°→85°로 곡선 전이, R≈0.43.
+    const flPts = [];
+    for (let i = 0; i < 48; i += 1) {
+      const a = (i / 48) * Math.PI * 2;
+      flPts.push([3.6 * Math.cos(a), 3.6 * Math.sin(a), 2.0]);
+    }
+    const meshOf = (soup) =>
+      Mesh.fromStlBuffer(writeBinaryStl({ positions: soup, attributes: null }));
+    const mesh = meshOf(marginWallSoup(0.43));
+    const plan = planTightCornerCorrection(mesh, flPts, {});
+    expect(plan.tightCorner.tightCount).toBeGreaterThan(20);
+    expect(plan.tightCorner.correctionSolid?.positions?.length).toBeGreaterThan(100);
+    expect(plan.tightCorner.averageFilletRadiusMm).toBeGreaterThan(0.25);
+    expect(plan.tightCorner.averageFilletRadiusMm).toBeLessThan(0.58);
+    expect(plan.tightCorner.samples[0].filletRadiusMm).toBeGreaterThan(0.25);
+    expect(plan.tightCorner.samples[0].filletRadiusMm).toBeLessThan(0.58);
+    expect(plan.triangles.length).toBeGreaterThan(100);
+    expect(plan.band.length).toBeGreaterThan(20);
+
+    // 파이프라인과 같은 적용: 밴드 삼각형 제거 + 보정 솔리드 추가.
+    const soup = marginWallSoup(0.43);
+    const kept = [];
+    for (let i = 0; i + 8 < soup.length; i += 9) {
+      const c = [
+        (soup[i] + soup[i + 3] + soup[i + 6]) / 3,
+        (soup[i + 1] + soup[i + 4] + soup[i + 7]) / 3,
+        (soup[i + 2] + soup[i + 5] + soup[i + 8]) / 3,
+      ];
+      if (isPointInTightCornerReliefBand(plan.band, c)) continue;
+      kept.push(...soup.slice(i, i + 9));
+    }
+    const solidFlat = plan.triangles.flatMap((t) => t.flat());
+    const corrected = meshOf(new Float64Array([...kept, ...solidFlat]));
+    expect(detectTightCorners(corrected, flPts, {}).tightCount).toBe(0);
+  });
+
   it("회전체 샘플(R>0.6)은 보정면 없음", async () => {
     const smoothBuffer = writeBinaryStl({ positions: revolvedAbutmentSoup(), attributes: null });
     const smoothPipe = await runAbutmentStlPipeline(smoothBuffer, { targetDiameter: 3.33 });
     expect(smoothPipe.tightCorner?.tightCount ?? 0).toBe(0);
     expect(smoothPipe.tightCorner?.reliefOverlay ?? null).toBeNull();
+    expect(smoothPipe.tightCorner?.averageFilletRadiusMm ?? null).toBeNull();
   });
 });
 
@@ -212,7 +253,7 @@ describe("abutmentStl pipeline", () => {
       expect(out.finishLine.points.length).toBeGreaterThanOrEqual(8);
       expect(out.stlMetadata?.connectionDiameter).toBe(3.33);
       expect(out.tightCorner).toBeTruthy();
-      expect(out.tightCorner.version).toBe(5);
+      expect(out.tightCorner.version).toBe(6);
     }
   });
 });

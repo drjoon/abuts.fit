@@ -118,6 +118,8 @@ type Props = {
   metaVisible?: boolean;
   /** 삽입축·각도 가이드. 기본 true. 피니시라인은 finishLineVisible. */
   guidesVisible?: boolean;
+  /** 별도 보정 솔리드(타이트 코너 R0.6 필렛)를 원본 위에 덧입혀 표시. 기본 false(원본만). */
+  correctionSolidVisible?: boolean;
   /** 사용자가 회전·이동·확대할 때마다 부른다(다른 뷰어와 연동용). */
   onViewChange?: (state: ViewSyncState) => void;
   finishLinePoints?: number[][] | null;
@@ -194,6 +196,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       frontPointVisible,
       metaVisible = true,
       guidesVisible = true,
+      correctionSolidVisible = false,
       onViewChange,
       finishLinePoints,
       enableManualPick = false,
@@ -304,12 +307,15 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
   frontPointVisibleRef.current = frontPointVisibleResolved;
   const guidesVisibleRef = useRef(guidesVisible);
   guidesVisibleRef.current = guidesVisible;
+  const correctionSolidVisibleRef = useRef(correctionSolidVisible);
+  correctionSolidVisibleRef.current = correctionSolidVisible;
   useEffect(() => {
     modelPivotRef.current?.traverse((o) => {
       if (o.userData?.flOverlay) o.visible = finishLineVisible;
       if (o.userData?.guideOverlay) o.visible = guidesVisible;
+      if (o.userData?.correctionSolid) o.visible = correctionSolidVisible;
     });
-  }, [finishLineVisible, guidesVisible]);
+  }, [finishLineVisible, guidesVisible, correctionSolidVisible]);
   const initialSideViewRef = useRef(initialSideView);
   initialSideViewRef.current = initialSideView;
   useEffect(() => {
@@ -2551,12 +2557,15 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
             addPolylineTube(flPts.slice(start, end + 1), tightTubeRadius);
           }
 
-          const relief = tightCornerMeta.reliefOverlay;
+          // 보정 솔리드(닫힌 메시)를 우선 쓰고, 없는 구버전 메타는 reliefOverlay 띠로 대체한다.
+          const relief =
+            tightCornerMeta.correctionSolid?.positions?.length
+              ? tightCornerMeta.correctionSolid
+              : tightCornerMeta.reliefOverlay;
           const reliefPos = relief?.positions;
           const reliefIdx = relief?.indices;
           if (
             (tightCornerMeta.version ?? 0) >= 5 &&
-            relief?.displayOnly !== false &&
             Array.isArray(reliefPos) &&
             reliefPos.length >= 9 &&
             Array.isArray(reliefIdx) &&
@@ -2590,10 +2599,77 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
             });
             const reliefMesh = new THREE.Mesh(reliefGeometry, reliefMaterial);
             reliefMesh.renderOrder = 10;
-            reliefMesh.userData.guideOverlay = true;
+            reliefMesh.userData.correctionSolid = true;
             reliefMesh.userData.tightCornerRelief = true;
-            reliefMesh.visible = guidesVisibleRef.current;
+            reliefMesh.visible = correctionSolidVisibleRef.current;
             modelPivot.add(reliefMesh);
+          }
+
+          // 보정 지점: 타이트 샘플을 등간격으로 몇 곳 골라 현재 fillet R을 점+라벨로 표시.
+          const rSamples = (Array.isArray(tightCornerMeta.samples)
+            ? tightCornerMeta.samples
+            : []
+          )
+            .filter(
+              (s) =>
+                Array.isArray(s?.cornerPoint) &&
+                s.cornerPoint.length >= 3 &&
+                Number.isFinite(Number(s?.filletRadiusMm)),
+            )
+            .slice()
+            .sort((a, b) => (a.sampleIndex ?? 0) - (b.sampleIndex ?? 0));
+          const labelCount = Math.min(6, rSamples.length);
+          for (let li = 0; li < labelCount; li += 1) {
+            const sample =
+              rSamples[
+                labelCount === 1
+                  ? 0
+                  : Math.round((li * (rSamples.length - 1)) / (labelCount - 1))
+              ];
+            const cornerRaw = sample.cornerPoint.map(Number);
+            const corner = toSceneVec(cornerRaw);
+            const marker = new THREE.Mesh(
+              new THREE.SphereGeometry(Math.max(tightTubeRadius * 0.85, 0.05), 16, 16),
+              new THREE.MeshBasicMaterial({ color: 0xd32f2f, depthTest: false }),
+            );
+            marker.position.copy(corner);
+            marker.renderOrder = 24;
+            marker.userData.correctionSolid = true;
+            marker.visible = correctionSolidVisibleRef.current;
+            modelPivot.add(marker);
+
+            const radial = new THREE.Vector3(cornerRaw[0], cornerRaw[1], 0);
+            if (radial.lengthSq() < 1e-8) radial.set(1, 0, 0);
+            radial.normalize();
+            const canvas = document.createElement("canvas");
+            canvas.width = 320;
+            canvas.height = 96;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) continue;
+            ctx.font = "bold 52px Arial";
+            ctx.lineWidth = 10;
+            ctx.strokeStyle = "rgba(255,255,255,0.95)";
+            const text = `R${Number(sample.filletRadiusMm).toFixed(2)}`;
+            ctx.strokeText(text, 12, 62);
+            ctx.fillStyle = "#d32f2f";
+            ctx.fillText(text, 12, 62);
+            const sprite = new THREE.Sprite(
+              new THREE.SpriteMaterial({
+                map: new THREE.CanvasTexture(canvas),
+                depthTest: false,
+                transparent: true,
+              }),
+            );
+            sprite.position.set(
+              corner.x + radial.x * 0.85,
+              corner.y + radial.y * 0.85,
+              corner.z + 0.4,
+            );
+            sprite.scale.set(2.8, 0.84, 1);
+            sprite.renderOrder = 25;
+            sprite.userData.correctionSolid = true;
+            sprite.visible = correctionSolidVisibleRef.current;
+            modelPivot.add(sprite);
           }
         }
 
@@ -2992,6 +3068,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     resolvedMetadata?.tightCorner?.tightCount,
     resolvedMetadata?.tightCorner?.version,
     resolvedMetadata?.tightCorner?.reliefOverlay?.positions?.length,
+    resolvedMetadata?.tightCorner?.correctionSolid?.positions?.length,
     isFilledFile,
   ]);
 
@@ -3277,6 +3354,15 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     isFilledFile,
   ]);
 
+  const tightRSamples = (resolvedMetadata?.tightCorner?.samples ?? [])
+    .map((s) => Number(s?.filletRadiusMm))
+    .filter((v) => Number.isFinite(v));
+  const averageFilletRadiusMm =
+    resolvedMetadata?.tightCorner?.averageFilletRadiusMm ??
+    (tightRSamples.length
+      ? tightRSamples.reduce((a, b) => a + b, 0) / tightRSamples.length
+      : null);
+
   return (
     <div
       className={cn(
@@ -3285,6 +3371,19 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       )}
     >
       <div ref={containerRef} className="absolute inset-0 h-full w-full" />
+      {correctionSolidVisible && averageFilletRadiusMm != null && !error ? (
+        <div className="pointer-events-none absolute right-2 top-2 z-20 rounded-md border border-red-200 bg-white/92 px-2.5 py-1.5 text-right shadow-sm">
+          <div className="text-[10px] font-medium leading-tight text-slate-500">
+            전체 평균 fillet R
+          </div>
+          <div className="text-sm font-bold leading-tight tabular-nums text-red-600">
+            {averageFilletRadiusMm.toFixed(2)} mm
+            <span className="ml-1 text-[10px] font-medium text-slate-400">
+              / 공구 R 0.60
+            </span>
+          </div>
+        </div>
+      ) : null}
       {showColorMappingToggle && !error ? (
         <PreviewColorMappingToggle
           checked={hasScanColor && colorMappingEnabled}

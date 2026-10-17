@@ -132,7 +132,7 @@ const requestSchema = new mongoose.Schema(
         message: String,
       },
       taperGuide: mongoose.Schema.Types.Mixed,
-      // φ1.2 볼 마진 타이트 코너 — finish line 추적 + 프리뷰 전용 reliefOverlay(CAM 미사용).
+      // φ1.2 볼 마진 타이트 코너 — finish line 추적 + 별도 보정 솔리드(뷰어 토글, filled STL·CAM 원본 유지).
       tightCorner: mongoose.Schema.Types.Mixed,
       // 포스트 측면 로트 각인 사이트 (FL+1.5mm · C축). stl-metadata 산출.
       lotEngravingSite: mongoose.Schema.Types.Mixed,
