@@ -988,24 +988,52 @@ export const useNewRequestPage = (
   );
 
   const replaceDesignFile = useCallback(
-    (index: number, nextFile: File) => {
+    (index: number, nextFile: File): Promise<void> => {
       const current = files[index];
-      if (!current) return;
+      if (!current) return Promise.resolve();
       const oldKey = getFileKey(current);
       const newKey = getFileKey(nextFile);
-      if (oldKey === newKey) return;
+      if (
+        oldKey === newKey &&
+        current.size === nextFile.size &&
+        current.lastModified === nextFile.lastModified
+      ) {
+        return Promise.resolve();
+      }
       setFiles((prev) => prev.map((file, i) => (i === index ? nextFile : file)));
-      rekeyCaseInfos(oldKey, newKey);
-      patientFileGroupsApi.renameFileKey(oldKey, newKey);
+      if (oldKey !== newKey) {
+        rekeyCaseInfos(oldKey, newKey);
+        patientFileGroupsApi.renameFileKey(oldKey, newKey);
+      }
       replaceDraftFile(oldKey, nextFile);
       forgetFile(current);
-      void saveFile(newKey, nextFile)
-        .then(() => deleteFile(oldKey))
+      forgetFile(nextFile);
+
+      const persistLocal = async () => {
+        await saveFile(newKey, nextFile);
+        if (oldKey !== newKey) {
+          await deleteFile(oldKey).catch(() => {
+            // ignore
+          });
+        }
+      };
+
+      return persistLocal()
+        .then(() => ensureFilesUploaded([nextFile]))
+        .then((rows) => {
+          const row = rows[0];
+          if (!row?._id || !row.key) return;
+          patchFileUploadMeta(getFileKey(nextFile), {
+            fileId: row._id,
+            s3Key: row.key,
+            mimetype: row.mimetype,
+          });
+        })
         .catch((error) => {
-          console.warn("[replaceDesignFile] local file swap failed", error);
+          console.warn("[replaceDesignFile] corrected STL swap/upload failed", error);
         });
     },
-    [files, forgetFile, patientFileGroupsApi, rekeyCaseInfos],
+    [ensureFilesUploaded, files, forgetFile, patientFileGroupsApi, rekeyCaseInfos],
   );
 
   // V3 드래그 앤 드롭 핸들러

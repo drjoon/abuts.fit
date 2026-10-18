@@ -255,7 +255,7 @@ const NewRequestPageContent = () => {
   });
 
   const applyCorrectedDesign = useCallback(
-    (index: number, file: File) => {
+    async (index: number, file: File) => {
       const current = files[index];
       if (!current) return;
       const oldKey = toNormalizedFileKey(current);
@@ -266,7 +266,7 @@ const NewRequestPageContent = () => {
         delete next[oldKey];
         return next;
       });
-      replaceDesignFile(index, file);
+      await replaceDesignFile(index, file);
     },
     [files, replaceDesignFile, setFileVerificationStatus, toNormalizedFileKey],
   );

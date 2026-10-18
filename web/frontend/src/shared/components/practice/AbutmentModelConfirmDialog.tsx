@@ -152,8 +152,8 @@ export type AbutmentModelConfirmDialogProps = {
   fileUploadLabel?: string | null;
   /** 접수 전 가공 검사 결과(신규의뢰만 전달). tight여도 확인을 막지 않는다. */
   machiningPreflight?: StlMachiningPreflight | null;
-  /** 보정 디자인을 확인하면 접수 파일을 그 STL로 바꾼다. */
-  onApplyCorrectedDesign?: (index: number, file: File) => void;
+  /** 보정 디자인을 확인하면 접수 파일을 그 STL로 바꾼다(S3 재업로드 포함). */
+  onApplyCorrectedDesign?: (index: number, file: File) => void | Promise<void>;
 };
 
 export function AbutmentModelConfirmDialog({
@@ -337,7 +337,9 @@ export function AbutmentModelConfirmDialog({
         type: "model/stl",
         lastModified: Date.now(),
       });
-      if (detailIndex != null) onApplyCorrectedDesign?.(detailIndex, correctedFile);
+      if (detailIndex != null) {
+        await onApplyCorrectedDesign?.(detailIndex, correctedFile);
+      }
       triggerBrowserFileDownload(result.blob, result.fileName);
       toast({
         title: "보정 디자인으로 바꿨습니다.",
@@ -389,8 +391,6 @@ export function AbutmentModelConfirmDialog({
     if (index === null) return;
     const ok = await runCorrectedStlDownload();
     if (!ok) return;
-    // 접수 파일 교체(setState)가 반영된 뒤 최신 콜백으로 진행해야 검증 키가 새 파일과 맞는다.
-    await new Promise((resolve) => setTimeout(resolve, 50));
     await onVerifyAndNextRef.current(index);
   }, [detailIndex, runCorrectedStlDownload]);
 
