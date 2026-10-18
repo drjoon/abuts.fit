@@ -976,7 +976,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     프론트 카피: `web/frontend/src/shared/legal/creditPrepaidCopy.ts`
     입금 매칭 알림: `utils/creditBPlanMatching.js` `notifyChargePrepaidApplied` / 템플릿 `ats_credit_charged`
   - 충전 주문(`ChargeOrder`): `vatAmount = 0`, `amountTotal = supplyAmount`. **충전 확정 시 TaxInvoiceDraft 생성·발행 금지.**
-  - 월말 고객 증빙: `services/customerMonthlyInvoice.service.js` — 전월 사용분 `ABUTS_TO_CUSTOMER` 면세/과세 각각 합산. **작성연월일=`writeDate`=전월 말일(KST)**. 크론 `jobs/monthlyCustomerInvoiceWorker.js`(KST 익월 1일 초안). 관리자 발행은 재무→세금계산서. `TAX_INVOICE_AUTO_ISSUE_ON_DAY1=true`면 1B 자동 발행.
+  - 월말 선결제 증빙: `services/customerMonthlyInvoice.service.js` — 기공소·기공실 있는 치과의 어벗츠 커스텀어벗 사용분(`REQUEST_SPEND_COMMIT`)만 `ABUTS_TO_CUSTOMER` 면세. **작성연월일=`writeDate`=전월 말일(KST)**. 크론 `jobs/monthlyCustomerInvoiceWorker.js`(KST 익월 1일). 치과 스토어·기공서비스는 OB 이체 성공 때 `services/practiceObPaymentInvoice.service.js`.
   - 충전 단위: `utils/creditChargeUnit.js` — 기공소 50만원, 치과(practice) 100만원. 절대 상한 5,000만원.
     주문 검증 `creditBPlan.controller.js`, insights(월사용량/3·한 달분) `credit.controller.js`.
     UI 2회차 기본 배수 3은 프론트(`CreditPaymentTab`). 잔액 < 50만원 시 사이드바 충전 뱃지는 `DashboardLayout`.
@@ -988,8 +988,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 
 - (세금)계산서 발행 방향/위수탁 정책(강제, `TaxInvoiceDraft.direction`):
   - 파이프라인: 월중 적립·소비 → **KST 익월 1일 초안**(PENDING_APPROVAL, writeDate=전월 말일) → 관리자 재무 콘솔 검토·발행 → 관계사 입금. 연결 draft가 있으면 **SENT 후에만** mark-paid.
-  - `ABUTS_TO_CUSTOMER`: 사용분 월합. **기공·커스텀어벗=면세 계산서**, **스토어(심플웨이 포함)=과세 세금계산서** — taxType별로 별도 draft(사업자·기간당 각 1건). `buyerKind=lab|practice`로 어벗츠→기공소 / 어벗츠→치과 표시. `issuanceMode="SELF"`. 충전(ChargeOrder) 시점 발행 금지. 과거 충전 건별 draft는 유지. 기공의뢰(PTX) 유료 소비는 `PRACTICE_TRANSFER_SPEND_HOLD` / `HOLD_ADJUST` / 레거시 `SPEND_COMMIT`을 면세 월합에 포함(어벗츠→치과 매출).
-  - `LAB_TO_PRACTICE`(기공소→치과 기공의뢰비, 월합): **신규 생성 중단**(2026-09-20). 이력 draft만 유지. 기공비 증빙은 `ABUTS_TO_CUSTOMER`로 통일.
+  - `ABUTS_TO_CUSTOMER`: 어벗츠가 공급자(SELF). 월말=기공소·기공실 있는 치과 커스텀어벗 선결제 사용분(면세). 치과 OB 이체=스토어(과세)와, 이체액에 포함된 어벗(면세). `buyerKind=lab|practice`. 충전 시점 발행 금지.
+  - `LAB_TO_PRACTICE`(기공소→치과 기공서비스, 면세 위수탁): 치과 OB 이체 성공 라인마다 수행 기공소가 공급자. 플랫폼이 팝빌로 대행. 월 원장 재집계 생성은 하지 않는다(`LAB_TO_PRACTICE_INVOICE_GENERATION_ENABLED=false`). `taxInvoice.trusteeIssueEnabled=false`면 그 기공소 초안은 만들지 않는다.
   - `AFFILIATE_TO_ABUTS`(어벗츠→딜러사·개발운영사·제조사·기공소 정산의 반대방향): 제조사·딜러사·개발운영사는 `taxType="과세"`(부가세 10%), 기공소는 `taxType="면세"`(품목 **기공비 정산(매입)** — 협력·하청 합산). 기본 `issuanceMode="TRUSTEE"`. BA.`taxInvoice.trusteeIssueEnabled`(default true)가 false면 정산 확정 시 Draft 미생성(상대 직접 발행).
   - 정산 배치: 익월 1일 DRAFT(`monthlySettlementBatchWorker`) → 관리자 확정 시 Draft(위수탁 ON만). SSOT: `resolveSettlementInvoiceDraftSpec` in `services/settlement.service.js`.
   - 위수탁발행(`issueType:"위수탁"` + `trusteeCorpNum` 등)은 팝빌 `TaxinvoiceService`가 과세/면세 모두 동일하게 지원한다(별도 서비스 아님). 수탁자(어벗츠)만 팝빌 회원/인증서가 필요하고, 위탁자(실제 공급자)는 회원가입이 불필요하다.

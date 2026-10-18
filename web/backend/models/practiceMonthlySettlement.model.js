@@ -105,6 +105,13 @@ const practiceMonthlySettlementSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    /** 어벗츠 법인 이체액을 스토어(과세)와 커스텀어벗(면세)으로 나눈 값. */
+    invoiceSplit: {
+      storeSupplyAmount: { type: Number, default: 0, min: 0 },
+      storeVatAmount: { type: Number, default: 0, min: 0 },
+      storeTotalAmount: { type: Number, default: 0, min: 0 },
+      abutmentAmount: { type: Number, default: 0, min: 0 },
+    },
     confirmedAt: {
       type: Date,
       default: null,

@@ -35,7 +35,7 @@ export const TAX_INVOICE_LANE_LABEL: Record<TaxInvoiceLane, string> = {
   ABUTS_TO_LAB: "어벗츠 → 기공소",
   ABUTS_TO_PRACTICE: "어벗츠 → 치과",
   ABUTS_LAB_TO_CUSTOMER: "어벗츠기공소 → 치과·기공소",
-  LAB_TO_PRACTICE: "기공소 → 치과(이력)",
+  LAB_TO_PRACTICE: "기공소 → 치과",
   AFFILIATE_TO_ABUTS: "관계사 → 어벗츠",
 };
 
@@ -122,4 +122,4 @@ export const CUSTOM_ABUTMENT_TAX_NOTE = "면세 · 부가세 없음";
 
 /** 고객향 발행 레인 안내(재무 콘솔). */
 export const CUSTOMER_TAX_LANE_ISSUE_NOTICE =
-  "어벗츠→기공소·치과: 기공·커스텀어벗은 면세 계산서, 스토어는 과세 세금계산서로 각각 발행합니다.";
+  "치과 OB 이체 때 스토어는 어벗츠 세금계산서, 기공서비스는 기공소 계산서입니다. 어벗츠 커스텀어벗 선결제는 월말 사용분 계산서입니다.";

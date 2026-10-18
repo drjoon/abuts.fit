@@ -27,16 +27,23 @@ describe("LAB_TO_PRACTICE invoice generation", () => {
   });
 });
 
-describe("customerMonthlyInvoice EXEMPT_SPEND_EVENTS", () => {
-  test("PTX HOLD/HOLD_ADJUST를 소스에서 포함한다", async () => {
-    const fs = await import("node:fs/promises");
-    const path = new URL(
-      "../../services/customerMonthlyInvoice.service.js",
-      import.meta.url,
-    );
-    const src = await fs.readFile(path, "utf8");
-    expect(src).toContain("PRACTICE_TRANSFER_SPEND_HOLD");
-    expect(src).toContain("PRACTICE_TRANSFER_HOLD_ADJUST");
-    expect(src).toContain("PRACTICE_TRANSFER_SPEND_COMMIT");
+describe("customerMonthlyInvoice prepaid custom abutment", () => {
+  test("월합은 어벗츠 커스텀어벗 확정 차감만 포함한다", async () => {
+    const { PREPAID_EXEMPT_SPEND_EVENTS, isPrepaidCreditUsageBuyer } =
+      await import("../../services/customerMonthlyInvoice.service.js");
+    expect(PREPAID_EXEMPT_SPEND_EVENTS).toEqual(["REQUEST_SPEND_COMMIT"]);
+    expect(isPrepaidCreditUsageBuyer({ requestorKind: "lab" })).toBe(true);
+    expect(
+      isPrepaidCreditUsageBuyer({
+        requestorKind: "practice",
+        practiceHasInHouseLab: true,
+      }),
+    ).toBe(true);
+    expect(
+      isPrepaidCreditUsageBuyer({
+        requestorKind: "practice",
+        practiceHasInHouseLab: false,
+      }),
+    ).toBe(false);
   });
 });

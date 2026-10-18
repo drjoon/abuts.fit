@@ -21,7 +21,7 @@ export async function adminGenerateLabToPracticeInvoiceDrafts(req, res) {
       return res.status(410).json({
         success: false,
         message:
-          "기공소→치과(LAB_TO_PRACTICE) 계산서는 중단되었습니다. 기공비는 어벗츠→치과(ABUTS_TO_CUSTOMER) 월합으로 발행합니다.",
+          "기공서비스 계산서는 치과 OB 이체가 성공하면 기공소 위수탁으로 만들어집니다. 이 화면에서 월합을 다시 만들지는 않습니다.",
         code: "LAB_TO_PRACTICE_DISABLED",
       });
     }

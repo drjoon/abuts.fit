@@ -28,6 +28,7 @@ import {
 import { loadMonthlyRequestCounts } from "./requestorShipping.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../utils/creditRealtime.js";
 import { resolvePerformingLabAnchorId } from "../utils/practiceTransferAutoMatchCore.js";
+import { issuePracticeObPaymentInvoices } from "./practiceObPaymentInvoice.service.js";
 
 export function getKstYearMonth(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -78,8 +79,9 @@ export function resolveScheduledTransferDateForYearMonth(yearMonth) {
 /**
  * 특정 기간(월) 치과 OB 정산 예정액 집계.
  * - 기공물(PTX labFee): 수행 기공소(협력·하청·어벗츠 기공소 포함) 계좌로 직접 이체.
- * - 커스텀어벗(Request·PTX abutment): 어벗츠 법인(admin) 계좌로 이체.
- * - 스토어 기성품(OB 결제): 어벗츠 법인(admin) 계좌로 이체.
+ * - 커스텀어벗(Request): 기공실 없는 치과만 OB로 어벗츠 법인에 이체.
+ *   기공실 있는 치과·기공소는 선결제 크레딧이라 이 집계에 넣지 않는다.
+ * - PTX 어벗·스토어 기성품: 어벗츠 법인(admin) 계좌로 이체.
  */
 export async function aggregatePracticeMonthUsage({
   practiceAnchorId,
@@ -88,8 +90,14 @@ export async function aggregatePracticeMonthUsage({
   const anchorObjId = new Types.ObjectId(String(practiceAnchorId));
   const { start, end } = resolveMonthBoundsFromYearMonth(yearMonth);
 
-  const [transfers, requests, storeOrders, internalLabAnchor, adminAnchor] =
-    await Promise.all([
+  const [
+    transfers,
+    requests,
+    storeOrders,
+    internalLabAnchor,
+    adminAnchor,
+    practiceAnchor,
+  ] = await Promise.all([
       PracticeTransfer.find({
         practiceBusinessAnchorId: anchorObjId,
         status: { $nin: ["canceled", "rejected"] },
@@ -118,7 +126,12 @@ export async function aggregatePracticeMonthUsage({
         paymentMethod: "OB",
         paidAt: { $gte: start, $lt: end },
       })
-        .select({ _id: 1, amountTotal: 1 })
+        .select({
+          _id: 1,
+          amountTotal: 1,
+          supplyAmount: 1,
+          vatAmount: 1,
+        })
         .lean(),
       BusinessAnchor.findOne({ businessType: "internalLab" })
         .select({ _id: 1, name: 1, payoutAccount: 1 })
@@ -126,10 +139,21 @@ export async function aggregatePracticeMonthUsage({
       BusinessAnchor.findOne({ businessType: "admin" })
         .select({ _id: 1, name: 1, payoutAccount: 1 })
         .lean(),
+      BusinessAnchor.findById(anchorObjId)
+        .select({ requestorKind: 1, practiceHasInHouseLab: 1 })
+        .lean(),
     ]);
 
+  // 기공실 있는 치과가 어벗츠에 내는 커스텀어벗은 선결제 크레딧이다. OB 이체에 넣지 않는다.
+  const customAbutmentOnPrepaidCredit =
+    String(practiceAnchor?.requestorKind || "") === "practice" &&
+    practiceAnchor?.practiceHasInHouseLab === true;
+
   const directLabMap = new Map();
-  let abutsCorpAmount = 0;
+  let abutmentAmount = 0;
+  let storeSupplyAmount = 0;
+  let storeVatAmount = 0;
+  let storeTotalAmount = 0;
 
   for (const t of transfers) {
     const labTotal = Math.max(
@@ -161,26 +185,32 @@ export async function aggregatePracticeMonthUsage({
       }
     }
     if (abutmentTotal > 0) {
-      abutsCorpAmount += abutmentTotal;
+      abutmentAmount += abutmentTotal;
     }
   }
 
-  for (const reqDoc of requests) {
-    const reqAmt = Math.max(
-      0,
-      Math.round(
-        Number(reqDoc?.price?.paidAmount ?? reqDoc?.price?.amount ?? 0),
-      ),
-    );
-    abutsCorpAmount += reqAmt;
+  if (!customAbutmentOnPrepaidCredit) {
+    for (const reqDoc of requests) {
+      const reqAmt = Math.max(
+        0,
+        Math.round(
+          Number(reqDoc?.price?.paidAmount ?? reqDoc?.price?.amount ?? 0),
+        ),
+      );
+      abutmentAmount += reqAmt;
+    }
   }
 
   for (const storeOrder of storeOrders) {
-    abutsCorpAmount += Math.max(
-      0,
-      Math.round(Number(storeOrder?.amountTotal || 0)),
-    );
+    const total = Math.max(0, Math.round(Number(storeOrder?.amountTotal || 0)));
+    const supply = Math.max(0, Math.round(Number(storeOrder?.supplyAmount || 0)));
+    const vat = Math.max(0, Math.round(Number(storeOrder?.vatAmount || 0)));
+    storeTotalAmount += total;
+    storeSupplyAmount += supply > 0 ? supply : total;
+    storeVatAmount += supply > 0 ? vat : 0;
   }
+
+  const abutsCorpAmount = abutmentAmount + storeTotalAmount;
 
   const directLabIds = Array.from(directLabMap.keys()).map(
     (id) => new Types.ObjectId(id),
@@ -241,6 +271,10 @@ export async function aggregatePracticeMonthUsage({
       .filter((l) => l.payeeKind === "direct_lab")
       .reduce((s, l) => s + l.amount, 0),
     abutsCorpTotal: abutsCorpAmount,
+    storeSupplyAmount,
+    storeVatAmount,
+    storeTotalAmount,
+    abutmentAmount,
   };
 }
 
@@ -273,6 +307,15 @@ export async function confirmPracticeMonthlySettlement({
 
   const scheduledTransferAt = resolveScheduledTransferDateForYearMonth(yearMonth);
 
+  const invoiceSplit = overrideLines
+    ? null
+    : {
+        storeSupplyAmount: Math.max(0, Math.round(usage.storeSupplyAmount || 0)),
+        storeVatAmount: Math.max(0, Math.round(usage.storeVatAmount || 0)),
+        storeTotalAmount: Math.max(0, Math.round(usage.storeTotalAmount || 0)),
+        abutmentAmount: Math.max(0, Math.round(usage.abutmentAmount || 0)),
+      };
+
   const doc = await PracticeMonthlySettlement.findOneAndUpdate(
     { practiceAnchorId, yearMonth },
     {
@@ -282,6 +325,7 @@ export async function confirmPracticeMonthlySettlement({
         status: usage.totalAmount > 0 ? "CONFIRMED" : "COMPLETED",
         confirmedAt: now,
         scheduledTransferAt,
+        ...(invoiceSplit ? { invoiceSplit } : {}),
       },
     },
     { upsert: true, new: true },
@@ -469,6 +513,37 @@ export async function runPracticeMonthlySettlementTransfer({
         },
       },
     );
+  }
+
+  const paidAny = settlement.lines.some(
+    (line) => String(line.transferStatus) === "SUCCESS" && Number(line.amount) > 0,
+  );
+  if (paidAny) {
+    try {
+      let invoiceSplit = settlement.invoiceSplit;
+      const splitReady =
+        Number(invoiceSplit?.storeTotalAmount) > 0 ||
+        Number(invoiceSplit?.abutmentAmount) > 0;
+      if (!splitReady) {
+        const usage = await aggregatePracticeMonthUsage({
+          practiceAnchorId: settlement.practiceAnchorId,
+          yearMonth: settlement.yearMonth,
+        });
+        invoiceSplit = {
+          storeSupplyAmount: usage.storeSupplyAmount,
+          storeVatAmount: usage.storeVatAmount,
+          storeTotalAmount: usage.storeTotalAmount,
+          abutmentAmount: usage.abutmentAmount,
+        };
+      }
+      await issuePracticeObPaymentInvoices({
+        settlement,
+        invoiceSplit,
+        now,
+      });
+    } catch (err) {
+      console.error("[ob_payment_invoice] failed", err);
+    }
   }
 
   emitCreditBalanceUpdatedToBusiness({

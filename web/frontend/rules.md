@@ -521,7 +521,7 @@ Notes:
   - **관리자 (세금)계산서**: 과세/면세 라벨 구분, 마이너스 발행은 원본 SENT 유지 + REVERSE 탭. `AdminTaxInvoices.tsx`.
   - 공통 UI: `src/shared/settlement/settlementUi.tsx`, VAT 카피 `src/shared/settlement/affiliateVat.ts`
   - 크레딧 충전 UI: 결제·입금 금액 = 공급가. `vatAmount` 표시·가산 금지.
-    화면 제목/안내: **크레딧(거래 선수금)** — 선불페이가 아니라 B2B 계약 물품·용역 예치금. 충전 시 계산서 없음, 사용분 월합·익월 초 면세/과세 각각 발행.
+    화면 제목/안내: **크레딧(거래 선수금)** — 어벗츠 커스텀어벗 주문용 예치금. 충전 시 계산서 없음. 월말 정산 후 사용분만큼 어벗츠가 기공소·기공실 있는 치과에 계산서. 치과 스토어·기공서비스는 OB 이체 때 발행.
     카피 SSOT: `src/shared/legal/creditPrepaidCopy.ts`
     구현: `src/features/settings/tabs/CreditPaymentTab.tsx`
     FAQ: `src/pages/public/HelpPage.tsx`, 의뢰자 문의 `InquiriesPage`
@@ -530,7 +530,7 @@ Notes:
     첫 충전 기본 1단위. 2회차부터 기본 배수 3(단위≈월사용량 1/3 → 약 한 달분). 추천 버튼은 월사용량 반올림.
     잔액 < 50만원이면 사이드바 `정산`에 깜빡 뱃지 — 기공소 `?tab=charge`, 치과 `?tab=autopay` (`DashboardLayout`).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
-  - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage`, `InquiriesPage` — 크레딧=B2B 거래 선수금. 기공·어벗 경로는 면세, 스토어는 과세(월말 분리 발행). 회사=겸영. Terms: 기공회원(기공소·계산서)과 제조회원(일반과세·세금계산서) 분리.
+  - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage`, `InquiriesPage` — 크레딧=어벗츠 커스텀어벗 선결제. 그 사용분은 월말 계산서. 치과 스토어(과세)·기공서비스(면세)는 OB 이체 때 발행. 회사=겸영. Terms: 기공회원(기공소·계산서)과 제조회원(일반과세·세금계산서) 분리.
   - 가격 정책/대시보드: `PricingPolicyDialog` — 단일가 1.5만, 택배·딜리버리. 의뢰자 커스텀어벗 경로는 **부가세 없음 · 면세**.
   - 관리자 플랫폼 설정「커스텀어벗」: 커스텀어벗 가격(CNC·환봉 생산 단가) + 분배 비율. 지정 기공소 디자인·어벗츠 생산만. 치과 공급·디자인+생산 카드 없음.
   - 제조사 정산규칙: 딜러와 같은 칩·표(구간·누적). 제조 49.5% 고정(부가세 포함). 배송은 박스당 매입가(표 밖). 리메이크·무료 크레딧도 약정 단가. 말일 일괄 지급·세금계산서.

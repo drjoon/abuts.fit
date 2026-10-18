@@ -125,6 +125,10 @@ describe("practiceObBilling & checkCreditLock", () => {
     });
     expect(usage.directLabTotal).toBe(300_000);
     expect(usage.abutsCorpTotal).toBe(145_000);
+    expect(usage.storeTotalAmount).toBe(20_000);
+    expect(usage.storeSupplyAmount).toBe(18_182);
+    expect(usage.storeVatAmount).toBe(1_818);
+    expect(usage.abutmentAmount).toBe(125_000);
     const directLines = usage.lines.filter((l) => l.payeeKind === "direct_lab");
     expect(directLines).toHaveLength(2);
     const corpLine = usage.lines.find((l) => l.payeeKind === "abuts_corp");

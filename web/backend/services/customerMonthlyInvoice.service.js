@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-18: 월합은 어벗츠 커스텀어벗을 선결제 크레딧으로 주문한 사용분만.
+//   구매자=기공소·기공실 있는 치과. 스토어·기공서비스는 치과 OB 이체 때 발행.
 // - 2026-10-15: PTX 기공비 면세 월합 공급자=어벗츠기공소(ABUTS_LAB_TO_CUSTOMER, 위수탁). flag `ABUTS_LAB_SELLER_INVOICE`.
 // - 2026-09-20: PTX 라이브 HOLD/HOLD_ADJUST를 면세 월합에 포함. LAB_TO_PRACTICE와 이중발행 금지.
 // - 2026-09-20: 월합 writeDate=기간 말일(KST).
@@ -17,17 +19,31 @@ import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import { buildPartySnapshotFromAnchor } from "../utils/taxInvoiceParty.util.js";
 import { writeDateFromPeriodEnd } from "../utils/taxInvoicePeriod.util.js";
 import { resolvePreviousKstMonthRange } from "./practiceLabInvoice.service.js";
-import { ABUTS_LAB_SELLER_INVOICE_ENABLED } from "../constants/abutsLabSettlement.js";
 
 export { resolvePreviousKstMonthRange };
 
-const EXEMPT_SPEND_EVENTS = [
-  "REQUEST_SPEND_COMMIT",
-  "SHIPPING_SPEND_COMMIT",
-  "PRACTICE_TRANSFER_SPEND_COMMIT",
-  "PRACTICE_TRANSFER_SPEND_HOLD",
-  "PRACTICE_TRANSFER_HOLD_ADJUST",
-];
+/** 어벗츠 커스텀어벗 선결제 크레딧 확정 차감. 배송·스토어·기공서비스는 여기 넣지 않는다. */
+export const PREPAID_EXEMPT_SPEND_EVENTS = ["REQUEST_SPEND_COMMIT"];
+
+/** 기공소, 또는 기공실 있는 치과. 어벗츠 커스텀어벗을 선결제로 주문하는 구매자. */
+export function isPrepaidCreditUsageBuyer(anchor) {
+  const kind = String(anchor?.requestorKind || "").trim();
+  if (kind === "lab") return true;
+  return kind === "practice" && anchor?.practiceHasInHouseLab === true;
+}
+
+async function listPrepaidCreditInvoiceBuyerIds() {
+  const rows = await BusinessAnchor.find({
+    businessType: "requestor",
+    $or: [
+      { requestorKind: "lab" },
+      { requestorKind: "practice", practiceHasInHouseLab: true },
+    ],
+  })
+    .select({ _id: 1 })
+    .lean();
+  return rows.map((row) => row._id);
+}
 
 function isDuplicateKeyError(err) {
   const code = err?.code;
@@ -42,13 +58,6 @@ async function resolveContactUserForAnchor(anchor) {
   if (!anchor?.primaryContactUserId) return null;
   return User.findById(anchor.primaryContactUserId)
     .select({ name: 1, email: 1, phone: 1 })
-    .lean();
-}
-
-/** 어벗츠기공소(internalLab, 개인 개설) 앵커. 없으면 null. */
-async function resolveAbutsLabSellerAnchor() {
-  return BusinessAnchor.findOne({ businessType: "internalLab" })
-    .sort({ createdAt: 1 })
     .lean();
 }
 
@@ -116,15 +125,16 @@ async function createCustomerMonthlyDraft({
 }
 
 /**
- * 전월 유료 기공·어벗·배송 소비 → 면세 계산서 월합 (사업자당 1건).
- * 스토어 크레딧 차감(refType=STORE_ORDER)은 제외.
+ * 어벗츠 커스텀어벗 선결제 사용분 → 어벗츠 법인 면세 계산서 (사업자당 1건).
+ * 구매자는 기공소와 기공실 있는 치과만.
  */
-async function generateExemptDrafts({ periodStart, periodEnd }) {
+async function generateExemptDrafts({ periodStart, periodEnd, buyerIds }) {
+  if (!buyerIds.length) return { created: 0, skippedExisting: 0, groups: 0 };
   const rows = await LedgerLine.aggregate([
     {
       $match: {
         accountCode: "REQ_PAID_CREDIT",
-        // 음수(소비)·양수(환급/조정) 모두 합산해 순액 월합. HOLD_ADJUST 상계 포함.
+        ownerId: { $in: buyerIds },
         occurredAt: { $gte: periodStart, $lt: periodEnd },
         refType: { $ne: "STORE_ORDER" },
       },
@@ -140,119 +150,17 @@ async function generateExemptDrafts({ periodStart, periodEnd }) {
     { $unwind: { path: "$journalDoc", preserveNullAndEmptyArrays: false } },
     {
       $match: {
-        "journalDoc.eventType": { $in: EXEMPT_SPEND_EVENTS },
-      },
-    },
-    {
-      $addFields: {
-        // PTX 기공비는 어벗츠기공소 공급자 경로(flag on)로 분리한다.
-        // 한 PTX 보류에 어벗 생산비가 섞여 있어도 의뢰 1건 단위로 같은 계산서에 둔다.
-        // flag off면 전부 false로 묶어 기존 월합(사업자당 1건)과 동일하게 둔다.
-        isPtx: ABUTS_LAB_SELLER_INVOICE_ENABLED
-          ? {
-              $regexMatch: {
-                input: "$journalDoc.eventType",
-                regex: "^PRACTICE_TRANSFER_",
-              },
-            }
-          : false,
+        "journalDoc.eventType": { $in: PREPAID_EXEMPT_SPEND_EVENTS },
       },
     },
     {
       $group: {
-        _id: { ownerId: "$ownerId", isPtx: "$isPtx" },
+        _id: "$ownerId",
         totalAmount: { $sum: { $multiply: ["$amount", -1] } },
         refIds: { $addToSet: "$refId" },
       },
     },
     { $match: { totalAmount: { $gt: 0 } } },
-  ]);
-
-  const labSeller = ABUTS_LAB_SELLER_INVOICE_ENABLED
-    ? await resolveAbutsLabSellerAnchor()
-    : null;
-  if (ABUTS_LAB_SELLER_INVOICE_ENABLED && !labSeller) {
-    throw new Error(
-      "어벗츠기공소(internalLab) 앵커가 없어 기공비 계산서를 만들 수 없습니다.",
-    );
-  }
-
-  let created = 0;
-  let skippedExisting = 0;
-  for (const row of rows) {
-    const businessAnchorId = row?._id?.ownerId;
-    if (!businessAnchorId || !Types.ObjectId.isValid(String(businessAnchorId))) {
-      continue;
-    }
-    const totalAmount = Math.round(Number(row.totalAmount || 0));
-    if (totalAmount <= 0) continue;
-
-    const ptxLane = Boolean(labSeller) && row?._id?.isPtx === true;
-    const result = await createCustomerMonthlyDraft({
-      businessAnchorId,
-      taxType: "면세",
-      supplyAmount: totalAmount,
-      vatAmount: 0,
-      totalAmount,
-      itemName: ptxLane
-        ? "기공비(월합·면세 계산서)"
-        : "기공·커스텀어벗 대금(월합·면세 계산서)",
-      periodStart,
-      periodEnd,
-      sourceRefType: "EXEMPT_SPEND",
-      sourceRefIds: (row.refIds || []).filter(Boolean),
-      sellerAnchor: ptxLane ? labSeller : null,
-    });
-    if (result.created) created++;
-    else if (result.skipped) skippedExisting++;
-  }
-  return { created, skippedExisting, groups: rows.length };
-}
-
-/**
- * 전월 STORE_SALE / REV_STORE_TAXABLE → 과세 세금계산서 월합 (사업자당 1건).
- */
-async function generateTaxableStoreDrafts({ periodStart, periodEnd }) {
-  const rows = await LedgerLine.aggregate([
-    {
-      $match: {
-        accountCode: "REV_STORE_TAXABLE",
-        amount: { $gt: 0 },
-        occurredAt: { $gte: periodStart, $lt: periodEnd },
-      },
-    },
-    {
-      $lookup: {
-        from: LedgerJournal.collection.name,
-        localField: "journalId",
-        foreignField: "journalId",
-        as: "journalDoc",
-      },
-    },
-    { $unwind: { path: "$journalDoc", preserveNullAndEmptyArrays: false } },
-    {
-      $match: {
-        "journalDoc.eventType": "STORE_SALE",
-      },
-    },
-    {
-      $group: {
-        _id: "$journalDoc.businessAnchorId",
-        supplyAmount: {
-          $sum: {
-            $ifNull: ["$amountExcludingVat", "$amount"],
-          },
-        },
-        vatAmount: { $sum: { $ifNull: ["$vatAmount", 0] } },
-        totalAmount: {
-          $sum: {
-            $ifNull: ["$amountIncludingVat", "$amount"],
-          },
-        },
-        refIds: { $addToSet: "$refId" },
-      },
-    },
-    { $match: { supplyAmount: { $gt: 0 } } },
   ]);
 
   let created = 0;
@@ -262,22 +170,19 @@ async function generateTaxableStoreDrafts({ periodStart, periodEnd }) {
     if (!businessAnchorId || !Types.ObjectId.isValid(String(businessAnchorId))) {
       continue;
     }
-    const supplyAmount = Math.round(Number(row.supplyAmount || 0));
-    const vatAmount = Math.round(Number(row.vatAmount || 0));
-    let totalAmount = Math.round(Number(row.totalAmount || 0));
-    if (totalAmount <= 0) totalAmount = supplyAmount + vatAmount;
-    if (supplyAmount <= 0) continue;
+    const totalAmount = Math.round(Number(row.totalAmount || 0));
+    if (totalAmount <= 0) continue;
 
     const result = await createCustomerMonthlyDraft({
       businessAnchorId,
-      taxType: "과세",
-      supplyAmount,
-      vatAmount,
+      taxType: "면세",
+      supplyAmount: totalAmount,
+      vatAmount: 0,
       totalAmount,
-      itemName: "스토어·심플웨이 기성품(월합·과세 세금계산서)",
+      itemName: "커스텀어벗 대금(월합·면세 계산서)",
       periodStart,
       periodEnd,
-      sourceRefType: "STORE_ORDER",
+      sourceRefType: "EXEMPT_SPEND",
       sourceRefIds: (row.refIds || []).filter(Boolean),
     });
     if (result.created) created++;
@@ -287,8 +192,8 @@ async function generateTaxableStoreDrafts({ periodStart, periodEnd }) {
 }
 
 /**
- * KST [periodStart, periodEnd) 고객향 월합 draft 생성.
- * @returns {Promise<{ exempt: object, taxable: object }>}
+ * KST [periodStart, periodEnd) 어벗츠 커스텀어벗 선결제 사용분 월합.
+ * 스토어는 치과 OB 이체 때 어벗츠가 발행하므로 여기서 만들지 않는다.
  */
 export async function generateMonthlyCustomerInvoiceDrafts({
   periodStart,
@@ -297,7 +202,10 @@ export async function generateMonthlyCustomerInvoiceDrafts({
   if (!(periodStart instanceof Date) || !(periodEnd instanceof Date)) {
     throw new Error("periodStart/periodEnd(Date)가 필요합니다.");
   }
-  const exempt = await generateExemptDrafts({ periodStart, periodEnd });
-  const taxable = await generateTaxableStoreDrafts({ periodStart, periodEnd });
-  return { exempt, taxable };
+  const buyerIds = await listPrepaidCreditInvoiceBuyerIds();
+  const exempt = await generateExemptDrafts({ periodStart, periodEnd, buyerIds });
+  return {
+    exempt,
+    taxable: { created: 0, skippedExisting: 0, groups: 0 },
+  };
 }

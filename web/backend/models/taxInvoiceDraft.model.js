@@ -9,7 +9,7 @@ import mongoose from "mongoose";
 
 // 계산서/세금계산서 발행 방향(반대방향 = 크레딧 흐름의 역방향).
 // - ABUTS_TO_CUSTOMER: 치과/기공소가 어벗츠(주식회사)에 결제한 사용분(어벗·배송=면세 계산서, 스토어=과세 세금계산서)의 반대방향. 어벗츠가 실제 공급자(SELF). buyerKind로 치과/기공소 구분. PTX 기공비는 flag off일 때만 여기 포함(on이면 ABUTS_LAB_TO_CUSTOMER).
-// - LAB_TO_PRACTICE: (deprecated 2026-09-20) 기공소→치과 위수탁. 신규 생성 중단. 이력만.
+// - LAB_TO_PRACTICE: 기공소→치과 기공서비스 면세 위수탁. 치과 OB 이체 성공 때 생성. 월 원장 재집계는 하지 않는다.
 // - AFFILIATE_TO_ABUTS: 관계사→어벗츠 매입/정산(기공소=하청 매입 기공비 면세, 제조·딜러·개발운영=과세). 어벗츠=수탁자(TRUSTEE).
 // - ABUTS_LAB_TO_CUSTOMER: (2026-10-15) 어벗츠기공소(개인 개설, internalLab)→치과/기공소 PTX 기공비 면세 월합.
 //   공급자=어벗츠기공소(sellerAnchorId), 어벗츠 주식회사는 팝빌 수탁자(TRUSTEE). `ABUTS_LAB_SELLER_INVOICE_ENABLED`일 때만 생성.
@@ -211,7 +211,8 @@ TaxInvoiceDraftSchema.index(
     },
   },
 );
-// 고객향 월합: 사업자+taxType+기간당 NORMAL 1건 (면세/과세 각각)
+// 고객향: 사업자+taxType+기간+원천당 NORMAL 1건.
+// 같은 달에 선결제 커스텀어벗(EXEMPT_SPEND)과 OB 이체분(PRACTICE_OB_SETTLEMENT)이 같이 있을 수 있다.
 TaxInvoiceDraftSchema.index(
   {
     businessAnchorId: 1,
@@ -220,9 +221,11 @@ TaxInvoiceDraftSchema.index(
     periodStart: 1,
     periodEnd: 1,
     kind: 1,
+    sourceRefType: 1,
   },
   {
     unique: true,
+    name: "abutsToCustomerBySource",
     partialFilterExpression: {
       direction: "ABUTS_TO_CUSTOMER",
       periodStart: { $type: "date" },
