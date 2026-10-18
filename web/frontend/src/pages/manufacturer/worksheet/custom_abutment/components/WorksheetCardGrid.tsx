@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-18: 준비 «제외» 뱃지는 자동 승인이 켜져 있을 때만 표시한다.
 // - 2026-10-14: 준비 카드 — 자동 승인에서 뺀 의뢰자의 의뢰에 «제외» 뱃지.
 // - 2026-10-10: JS 실패는 준비 카드 «JS 실패» 뱃지. 오버레이는 engine=rhino일 때만 «Rhino 작업중».
 // - 2026-09-17: 공정 탭과 중복되는 단계 뱃지 숨김. 세척·패킹(이후) NC 뱃지 숨김(가공 이후 당연).
@@ -748,6 +749,7 @@ export const WorksheetCardGrid = ({
 
         const showAutoExcludeBadge =
           tabStage === "request" &&
+          autoGate?.enabled === true &&
           excludedRequestorIds.has(requestorAnchorId(request));
         const hasTopFloatingControls =
           showAutoExcludeBadge ||
