@@ -223,6 +223,8 @@ async function lockCreditBalanceGuardByAnchor({ businessAnchorId, session }) {
 export async function computeBusinessCreditBalanceFromLedger({
   businessAnchorId,
   session,
+  /** 제출 402 선검사. 데모 정산 차감은 기공크레딧이 부족분을 메울 때만 나중에 한다. */
+  skipDemoSettlement = false,
 }) {
   // 잔액 버킷:
   // - paidCredit: 유료(선입금). freeCredit: 무료(REQ_FREE_REQUEST + REQ_FREE_SHIPPING 합).
@@ -290,7 +292,7 @@ export async function computeBusinessCreditBalanceFromLedger({
   const freeCredit = freeRequestCredit + freeShippingCredit;
   // 데모 치과에서 적립된 기공크레딧은 정산·인출·주문 차감에서 제외(치과가 전환 시 직접 지급).
   let demoSettlementCredit = 0;
-  if (Math.round(settlement) > 0) {
+  if (Math.round(settlement) > 0 && !skipDemoSettlement) {
     try {
       demoSettlementCredit = await computeLabDemoSettlementCredit(
         anchorObjectId,
@@ -326,6 +328,7 @@ export async function getBusinessCreditBalanceSnapshot({
   businessAnchorId,
   session,
   upsertIfMissing = true,
+  skipDemoSettlement = false,
 }) {
   // NOTE:
   // - 함수명 호환성을 위해 "Snapshot" 네이밍은 유지한다.
@@ -351,6 +354,7 @@ export async function getBusinessCreditBalanceSnapshot({
   const glBalance = await computeBusinessCreditBalanceFromLedger({
     businessAnchorId: anchorObjectId,
     session,
+    skipDemoSettlement,
   });
 
   const paidCredit = Number(glBalance?.paidCredit || 0);

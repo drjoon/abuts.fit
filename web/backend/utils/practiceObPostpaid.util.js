@@ -6,8 +6,10 @@
 // - rules.md (치과 OB 후불 SSOT)
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import {
+  isObAutopayEnforcedBusinessName,
   isPracticeBetaUnlimitedPostpaid,
   isPracticeObLaunchBetaActive,
+  resolveBusinessAnchorDisplayName,
 } from "./practiceObBeta.util.js";
 
 /**
@@ -18,6 +20,21 @@ import {
  * 베타 종료: 치과·기공소 모두 OB active일 때만 후불.
  * 기공소 커스텀어벗(Request hold)은 settlement·OB overdraft 불가 — `resolveLabCustomAbutmentCreditHoldPolicy`.
  */
+export function isPracticeObPostpaidActiveFromAnchor(anchor) {
+  if (!anchor) return false;
+  const kind = String(anchor.requestorKind || "").trim();
+  if (isPracticeObLaunchBetaActive()) {
+    if (kind === "lab") return false;
+    if (
+      !isObAutopayEnforcedBusinessName(resolveBusinessAnchorDisplayName(anchor))
+    ) {
+      return true;
+    }
+  }
+  const consent = anchor.openBankingConsent;
+  return consent?.status === "active" && !consent?.paymentHold?.isHeld;
+}
+
 export async function isPracticeObPostpaidActive(practiceAnchorId) {
   const id = String(practiceAnchorId || "").trim();
   if (!id) return false;

@@ -591,7 +591,7 @@ export function resolveMachiningHoldAmount(request) {
   return resolveMachiningHoldAmountFromPrice(request?.price);
 }
 
-function resolveExpressHoldAmount(request) {
+export function resolveExpressHoldAmount(request) {
   const shippingMode = resolveEffectiveShippingMode(request);
   if (shippingMode !== "express") return 0;
   if (String(request?.price?.expressFeeStatus || "") === "cancelled") return 0;

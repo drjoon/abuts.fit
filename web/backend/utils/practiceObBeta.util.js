@@ -81,9 +81,9 @@ export async function isLabCustomAbutmentFreeCreditOnly(labAnchorId) {
  * - OB 후불 마이너스(overdraft) 금지 — 선충전·무료만.
  * - 런칭 베타: 테스트기공소 제외 일반 기공소는 무료크레딧만(`freeCreditOnly`).
  */
-export async function resolveLabCustomAbutmentCreditHoldPolicy(anchorId) {
-  const ctx = await loadBusinessAnchorBillingGateContext(anchorId);
-  if (!ctx?.isLab) {
+export function resolveLabCustomAbutmentCreditHoldPolicyFromAnchor(anchor) {
+  const kind = String(anchor?.requestorKind || "").trim();
+  if (kind !== "lab") {
     return {
       applies: false,
       freeCreditOnly: false,
@@ -91,12 +91,20 @@ export async function resolveLabCustomAbutmentCreditHoldPolicy(anchorId) {
       allowPostpaidOverdraft: true,
     };
   }
+  const freeCreditOnly =
+    isPracticeObLaunchBetaActive() &&
+    !isObAutopayEnforcedBusinessName(resolveBusinessAnchorDisplayName(anchor));
   return {
     applies: true,
-    freeCreditOnly: await isLabCustomAbutmentFreeCreditOnly(anchorId),
+    freeCreditOnly,
     excludeSettlementCredit: true,
     allowPostpaidOverdraft: false,
   };
+}
+
+export async function resolveLabCustomAbutmentCreditHoldPolicy(anchorId) {
+  const ctx = await loadBusinessAnchorBillingGateContext(anchorId);
+  return resolveLabCustomAbutmentCreditHoldPolicyFromAnchor(ctx?.anchor || null);
 }
 
 /** hold·402 사전검사용 — policy에 맞게 settlement·paid 버킷 조정 */

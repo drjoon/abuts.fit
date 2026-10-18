@@ -8,6 +8,7 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/backend/rules.md
 // change-log:
+// - 2026-10-18: 접수 응답은 검증·잔액 402만 기다린다. 저널 보류·출고일은 201 뒤.
 // - 2026-10-18: 로컬에만 남은 draftId는 제출 시 같은 id로 다시 만든다. 만료 토스트 없이 접수.
 // - 2026-09-28: credit hold를 201 전으로. 실패 시 취소하고 402/500 한 번으로 응답(201 뒤 조용한 취소 없음).
 // - 2026-09-09: 리메이크 월 무료 쿼터 응답(remakeQuota) 제거. 과금은 computePriceForRequest 고정 1만원.
@@ -33,6 +34,7 @@ import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import DraftRequest from "../../models/draftRequest.model.js";
 import User from "../../models/user.model.js";
+import ChargeOrder from "../../models/chargeOrder.model.js";
 import {
   normalizeExoCadVersion,
   normalizeHexVerificationResultHex,
@@ -52,7 +54,6 @@ import {
   computePriceForRequest,
   resolveRequestorPricingBaseDate,
   canAccessRequestAsRequestor,
-  addKoreanBusinessDays,
   getTodayYmdInKst,
   toKstYmd,
   getRequestorOrgId,
@@ -60,11 +61,7 @@ import {
   isRequestCancelableAtPrepStage,
   REQUEST_STAGE_ORDER,
 } from "./utils.js";
-import {
-  calculateInitialProductionSchedule,
-  createProductionScheduleMemo,
-  resolveLeadDaysWithSameDayCutoff,
-} from "./production.utils.js";
+import { createProductionScheduleMemo } from "./production.utils.js";
 import { getManufacturerLeadTimesUtil } from "../businesses/leadTime.controller.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 import { resolveRequestorUnitPrice } from "../../utils/requestorUnitPricePolicy.js";
@@ -72,7 +69,6 @@ import { REQUESTOR_SHIPPING_FEE_PER_BOX } from "../../utils/requestorUnitPricePo
 import { remakePolicyCutoffDate } from "../../utils/remakePricingPolicy.js";
 import { prefetchKoreanHolidaysForYears } from "../../utils/krBusinessDays.js";
 import {
-  countDesignAbutmentQty,
   resolveMachiningSpendAmount,
   resolveQuotedPriceWithExtras,
 } from "./designPrice.utils.js";
@@ -80,15 +76,18 @@ import {
   isSignupFreeTestPriceRule,
 } from "./signupFreeTest.utils.js";
 import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
-import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
-import { holdRequestCreditsOnSubmit, resolveDevopsEscrowOwnerId } from "../../services/requestCreditHold.service.js";
-import { isPracticeObPostpaidActive } from "../../utils/practiceObPostpaid.util.js";
+import {
+  holdRequestCreditsOnSubmit,
+  resolveExpressHoldAmount,
+} from "../../services/requestCreditHold.service.js";
+import { isPracticeObPostpaidActiveFromAnchor } from "../../utils/practiceObPostpaid.util.js";
 import {
   buildCustomAbutmentSpendBuckets,
-  resolveLabCustomAbutmentCreditHoldPolicy,
+  resolveLabCustomAbutmentCreditHoldPolicyFromAnchor,
 } from "../../utils/practiceObBeta.util.js";
 import { positiveSpendableCredit } from "../../services/creditBalance.service.js";
+import { computeLabDemoSettlementCredit } from "../../services/labDemoCredit.service.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import { emitDesignClaimChanged } from "../../utils/designClaimRealtime.js";
 import {
@@ -226,6 +225,173 @@ const generateRequestIdBatch = (count) => {
   return requestIds;
 };
 
+const implantPresetKey = (ci) =>
+  [
+    ci?.implantManufacturer,
+    ci?.implantBrand,
+    ci?.implantFamily,
+    ci?.implantType,
+  ]
+    .map((part) => String(part || "").trim())
+    .join("|");
+
+const duplicateTupleFromCase = (ci) => {
+  const clinicName = String(ci?.clinicName || "").trim();
+  const patientName = String(ci?.patientName || "").trim();
+  const tooth = String(ci?.tooth || "").trim();
+  if (!clinicName || !patientName || !tooth) return null;
+  return {
+    caseId: String(ci?._id || "").trim(),
+    clinicName,
+    patientName,
+    tooth,
+    fileName: ci?.file?.originalName || undefined,
+  };
+};
+
+async function findDuplicateRequestCandidates({
+  businessAnchorId,
+  userId,
+  tuples,
+}) {
+  const list = Array.isArray(tuples) ? tuples : [];
+  if (!list.length) return [];
+  const orConditions = list.map((k) => ({
+    "caseInfos.clinicName": k.clinicName,
+    "caseInfos.patientName": k.patientName,
+    "caseInfos.tooth": k.tooth,
+  }));
+  const duplicateSelect = {
+    _id: 1,
+    requestId: 1,
+    manufacturerStage: 1,
+    createdAt: 1,
+    price: 1,
+    "caseInfos.clinicName": 1,
+    "caseInfos.patientName": 1,
+    "caseInfos.tooth": 1,
+    "caseInfos.implantBrand": 1,
+  };
+  const duplicateLimit = Math.max(20, list.length * 5);
+  const duplicateBase = {
+    manufacturerStage: { $ne: "취소" },
+    $or: orConditions,
+  };
+  const duplicateFinds = [];
+  if (Types.ObjectId.isValid(String(businessAnchorId || ""))) {
+    duplicateFinds.push(
+      Request.find({
+        businessAnchorId: new Types.ObjectId(String(businessAnchorId)),
+        ...duplicateBase,
+      })
+        .select(duplicateSelect)
+        .sort({ createdAt: -1 })
+        .limit(duplicateLimit)
+        .lean(),
+    );
+  }
+  if (userId && Types.ObjectId.isValid(String(userId))) {
+    duplicateFinds.push(
+      Request.find({
+        requestor: new Types.ObjectId(String(userId)),
+        ...duplicateBase,
+      })
+        .select(duplicateSelect)
+        .sort({ createdAt: -1 })
+        .limit(duplicateLimit)
+        .lean(),
+    );
+  }
+  const groups = await Promise.all(duplicateFinds);
+  const seenDuplicateIds = new Set();
+  const candidates = [];
+  for (const group of groups) {
+    for (const doc of group || []) {
+      const id = String(doc?._id || "");
+      if (!id || seenDuplicateIds.has(id)) continue;
+      seenDuplicateIds.add(id);
+      candidates.push(doc);
+    }
+  }
+  candidates.sort(
+    (a, b) =>
+      new Date(b?.createdAt || 0).getTime() -
+      new Date(a?.createdAt || 0).getTime(),
+  );
+  return candidates;
+}
+
+function creditLockFromOrderAndAnchor(chargeOrder, anchor) {
+  if (chargeOrder) {
+    return {
+      isLocked: true,
+      reason: chargeOrder.lockedReason || "관리자 검토 중",
+      lockedAt: chargeOrder.lockedAt || null,
+    };
+  }
+  if (anchor?.dealerPriceApproval?.status === "pending") {
+    return {
+      isLocked: true,
+      reason:
+        "거래처 가격 승인 대기 중입니다. 본사 승인 후 의뢰할 수 있습니다.",
+      lockedAt: anchor.dealerPriceApproval.requestedAt || null,
+    };
+  }
+  return { isLocked: false };
+}
+
+async function backfillCreatedRequestSchedule(requests, { weeklyBatchDays }) {
+  const docs = (Array.isArray(requests) ? requests : []).filter(Boolean);
+  if (!docs.length) return;
+  let manufacturerLeadTimes = null;
+  try {
+    const manufacturerSettings = await getManufacturerLeadTimesUtil();
+    manufacturerLeadTimes = manufacturerSettings?.leadTimes || null;
+  } catch {
+    manufacturerLeadTimes = null;
+  }
+  const calculateSchedule = createProductionScheduleMemo();
+  const ops = [];
+  for (const doc of docs) {
+    const shippingMode = doc?.shippingMode === "express" ? "express" : "normal";
+    const schedule = await calculateSchedule({
+      shippingMode,
+      maxDiameter: doc?.caseInfos?.maxDiameter,
+      requestedAt: doc?.createdAt || new Date(),
+      weeklyBatchDays: shippingMode === "normal" ? weeklyBatchDays : [],
+      productMode: doc?.caseInfos?.productMode ?? null,
+      manufacturerLeadTimes,
+    });
+    doc.productionSchedule = schedule;
+    const pickupYmd = schedule?.scheduledShipPickup
+      ? toKstYmd(schedule.scheduledShipPickup)
+      : null;
+    if (pickupYmd) {
+      doc.timeline = doc.timeline || {};
+      doc.timeline.originalEstimatedShipYmd = pickupYmd;
+      doc.timeline.nextEstimatedShipYmd = pickupYmd;
+      doc.timeline.estimatedShipYmd = pickupYmd;
+    }
+    const set = { productionSchedule: schedule };
+    if (pickupYmd) {
+      set["timeline.originalEstimatedShipYmd"] = pickupYmd;
+      set["timeline.nextEstimatedShipYmd"] = pickupYmd;
+      set["timeline.estimatedShipYmd"] = pickupYmd;
+    }
+    if (doc?._id) {
+      ops.push({
+        updateOne: {
+          filter: { _id: doc._id },
+          update: { $set: set },
+        },
+      });
+    }
+  }
+  if (ops.length) {
+    await Request.bulkWrite(ops, { ordered: false });
+  }
+}
+
 /**
  * ===== 신규 의뢰 생성 표준 엔드포인트 (SSOT) =====
  * Draft 기반 워크플로우: 파일 업로드 → Draft 생성 → Draft 수정 → Request로 전환
@@ -313,74 +479,107 @@ export async function createRequestsFromDraft(req, res) {
     );
     const creditAnchorReady =
       shippingOrgIdEarly && Types.ObjectId.isValid(shippingOrgIdEarly);
+    // 공휴일 캐시는 출고일 계산(응답 후)에서 쓴다. 접수 응답은 기다리지 않는다.
+    void prefetchKoreanHolidaysForYears(
+      Number.isFinite(kstYear) ? [kstYear, kstYear + 1] : [],
+    ).catch(() => {});
+    const bodyCases = Array.isArray(req.body?.caseInfos)
+      ? req.body.caseInfos
+      : [];
+    const earlyTupleKeys = new Set();
+    const earlyTuples = [];
+    for (const ci of bodyCases) {
+      const tuple = duplicateTupleFromCase(ci);
+      if (!tuple) continue;
+      const key = `${tuple.clinicName}|${tuple.patientName}|${tuple.tooth}`;
+      if (earlyTupleKeys.has(key)) continue;
+      earlyTupleKeys.add(key);
+      earlyTuples.push(tuple);
+    }
+    const earlyOrderableCases = [];
+    const seenOrderableKeys = new Set();
+    for (const ci of bodyCases) {
+      if (ci?.newSystemRequest?.requested === true) continue;
+      const key = implantPresetKey(ci);
+      if (!key || key.split("|").some((part) => !part)) continue;
+      if (seenOrderableKeys.has(key)) continue;
+      seenOrderableKeys.add(key);
+      earlyOrderableCases.push([key, ci]);
+    }
     const [
       loadedDraft,
-      lockStatus,
+      chargeLockOrder,
       creditSettingsBase,
-      manufacturerSettings,
       shippingOrg,
-      devopsAnchorIdPrefetch,
-      ,
       requestorSettingsDoc,
-      labCaHoldPolicyEarly,
       prefetchedBalanceEarly,
-      practiceObPostpaidEarly,
-    ] =
-      await Promise.all([
-        DraftRequest.findById(draftId).lean(),
-        earlyOrgId && Types.ObjectId.isValid(earlyOrgId)
-          ? checkCreditLock(earlyOrgId)
-          : Promise.resolve({ isLocked: false }),
-        loadCreditSettingsDefaults(),
-        getManufacturerLeadTimesUtil().catch(() => null),
-        shippingOrgIdEarly && Types.ObjectId.isValid(shippingOrgIdEarly)
-          ? BusinessAnchor.findById(shippingOrgIdEarly)
-              .select({
-                "shippingPolicy.weeklyBatchDays": 1,
-                "shippingPolicy.defaultShippingMode": 1,
-                "requestSettings.anodizingEnabled": 1,
-                "requestSettings.defaultRequestorHexRotation": 1,
-                "requestSettings.defaultManufacturerHexRotation": 1,
-                "requestSettings.designSoftware": 1,
-                "requestSettings.exoCadVersion": 1,
-                "requestSettings.hexVerificationResultHex": 1,
-                "requestSettings.hexByImplantManufacturer": 1,
-                requestorKind: 1,
-                businessType: 1,
-                dealerUnitPrice: 1,
-                "verification.verifiedAt": 1,
-                createdAt: 1,
-              })
-              .lean()
-          : Promise.resolve(null),
-        resolveDevopsEscrowOwnerId().catch(() => null),
-        prefetchKoreanHolidaysForYears(
-          Number.isFinite(kstYear) ? [kstYear, kstYear + 1] : [],
-        ),
-        req.user?._id
-          ? User.findById(req.user._id)
-              .select({
-                "requestSettings.anodizingEnabled": 1,
-                "requestSettings.defaultManufacturerHexRotation": 1,
-                "requestSettings.designSoftware": 1,
-                "requestSettings.exoCadVersion": 1,
-                "requestSettings.hexVerificationResultHex": 1,
-                "requestSettings.hexByImplantManufacturer": 1,
-              })
-              .lean()
-          : Promise.resolve(null),
-        creditAnchorReady
-          ? resolveLabCustomAbutmentCreditHoldPolicy(shippingOrgIdEarly)
-          : Promise.resolve(null),
-        creditAnchorReady
-          ? getBusinessCreditBalanceBreakdown({
-              businessAnchorId: shippingOrgIdEarly,
+      earlyDuplicateCandidates,
+      earlyOrderableRows,
+    ] = await Promise.all([
+      DraftRequest.findById(draftId).lean(),
+      creditAnchorReady
+        ? ChargeOrder.findOne({
+            businessAnchorId: shippingOrgIdEarly,
+            isLocked: true,
+          })
+            .select({ lockedReason: 1, lockedAt: 1 })
+            .lean()
+        : Promise.resolve(null),
+      loadCreditSettingsDefaults(),
+      creditAnchorReady
+        ? BusinessAnchor.findById(shippingOrgIdEarly)
+            .select("+dealerUnitPrice +dealerPriceApproval")
+            .lean()
+        : Promise.resolve(null),
+      req.user?._id
+        ? User.findById(req.user._id)
+            .select({
+              "requestSettings.anodizingEnabled": 1,
+              "requestSettings.defaultManufacturerHexRotation": 1,
+              "requestSettings.designSoftware": 1,
+              "requestSettings.exoCadVersion": 1,
+              "requestSettings.hexVerificationResultHex": 1,
+              "requestSettings.hexByImplantManufacturer": 1,
             })
-          : Promise.resolve(null),
-        creditAnchorReady
-          ? isPracticeObPostpaidActive(shippingOrgIdEarly)
-          : Promise.resolve(false),
-      ]);
+            .lean()
+        : Promise.resolve(null),
+      creditAnchorReady
+        ? getBusinessCreditBalanceBreakdown({
+            businessAnchorId: shippingOrgIdEarly,
+            skipDemoSettlement: true,
+          })
+        : Promise.resolve(null),
+      req.user?.role === "requestor" && earlyTuples.length
+        ? findDuplicateRequestCandidates({
+            businessAnchorId: shippingOrgIdEarly,
+            userId: req.user?._id,
+            tuples: earlyTuples,
+          })
+        : Promise.resolve(null),
+      earlyOrderableCases.length
+        ? Promise.all(
+            earlyOrderableCases.map(async ([key, ci]) => {
+              try {
+                await assertOrderableImplantPresetOrThrow(ci);
+                return [key, null];
+              } catch (orderableError) {
+                return [key, orderableError];
+              }
+            }),
+          )
+        : Promise.resolve([]),
+    ]);
+    const lockStatus = creditLockFromOrderAndAnchor(
+      chargeLockOrder,
+      shippingOrg,
+    );
+    const labCaHoldPolicyEarly = creditAnchorReady
+      ? resolveLabCustomAbutmentCreditHoldPolicyFromAnchor(shippingOrg)
+      : null;
+    const practiceObPostpaidEarly = creditAnchorReady
+      ? isPracticeObPostpaidActiveFromAnchor(shippingOrg)
+      : false;
+    const earlyOrderableByKey = new Map(earlyOrderableRows || []);
     // 로컬 스토리지가 가리키는 Draft가 이미 삭제됐어도, 본문 caseInfos로 접수한다.
     let draft = loadedDraft;
     if (!draft) {
@@ -418,7 +617,6 @@ export async function createRequestsFromDraft(req, res) {
         requestorId: req.user?._id,
         requestorOrgId: earlyOrgId,
       }).catch(() => null));
-    const manufacturerLeadTimes = manufacturerSettings?.leadTimes || null;
     console.log("[createRequestsFromDraft] draft loaded", {
       t: Date.now() - startTime,
       found: Boolean(draft),
@@ -586,7 +784,13 @@ export async function createRequestsFromDraft(req, res) {
 
         if (!isNewSystemRequest) {
           try {
-            await assertOrderableImplantPresetOrThrow(normalizedCi);
+            const presetKey = implantPresetKey(normalizedCi);
+            if (earlyOrderableByKey.has(presetKey)) {
+              const orderableError = earlyOrderableByKey.get(presetKey);
+              if (orderableError) throw orderableError;
+            } else {
+              await assertOrderableImplantPresetOrThrow(normalizedCi);
+            }
           } catch (orderableError) {
             const fileName = ci?.file?.originalName || `파일 ${idx + 1}`;
             return {
@@ -856,71 +1060,20 @@ export async function createRequestsFromDraft(req, res) {
           t: Date.now() - startTime,
           tuples: keyTuples.length,
         });
-        const orConditions = keyTuples.map((k) => ({
-          "caseInfos.clinicName": k.clinicName,
-          "caseInfos.patientName": k.patientName,
-          "caseInfos.tooth": k.tooth,
-        }));
-
-        // 조직 스코프 $or는 clinic+patient+tooth 인덱스를 못 쓴다.
-        // 사업자·본인 의뢰를 각각 그 인덱스로 찾고 합친다.
-        const duplicateSelect = {
-          _id: 1,
-          requestId: 1,
-          manufacturerStage: 1,
-          createdAt: 1,
-          price: 1,
-          "caseInfos.clinicName": 1,
-          "caseInfos.patientName": 1,
-          "caseInfos.tooth": 1,
-          "caseInfos.implantBrand": 1,
-        };
-        const duplicateLimit = Math.max(20, keyTuples.length * 5);
-        const duplicateBase = {
-          manufacturerStage: { $ne: "취소" },
-          $or: orConditions,
-        };
-        const duplicateFinds = [];
-        if (Types.ObjectId.isValid(String(businessAnchorId))) {
-          duplicateFinds.push(
-            Request.find({
-              businessAnchorId: new Types.ObjectId(String(businessAnchorId)),
-              ...duplicateBase,
-            })
-              .select(duplicateSelect)
-              .sort({ createdAt: -1 })
-              .limit(duplicateLimit)
-              .lean(),
+        const earlyCoversDuplicates =
+          Array.isArray(earlyDuplicateCandidates) &&
+          keyTuples.every((item) =>
+            earlyTupleKeys.has(
+              `${item.clinicName}|${item.patientName}|${item.tooth}`,
+            ),
           );
-        }
-        if (req.user?._id && Types.ObjectId.isValid(String(req.user._id))) {
-          duplicateFinds.push(
-            Request.find({
-              requestor: new Types.ObjectId(String(req.user._id)),
-              ...duplicateBase,
-            })
-              .select(duplicateSelect)
-              .sort({ createdAt: -1 })
-              .limit(duplicateLimit)
-              .lean(),
-          );
-        }
-        const duplicateGroups = await Promise.all(duplicateFinds);
-        const seenDuplicateIds = new Set();
-        const candidates = [];
-        for (const group of duplicateGroups) {
-          for (const doc of group || []) {
-            const id = String(doc?._id || "");
-            if (!id || seenDuplicateIds.has(id)) continue;
-            seenDuplicateIds.add(id);
-            candidates.push(doc);
-          }
-        }
-        candidates.sort(
-          (a, b) =>
-            new Date(b?.createdAt || 0).getTime() -
-            new Date(a?.createdAt || 0).getTime(),
-        );
+        const candidates = earlyCoversDuplicates
+          ? earlyDuplicateCandidates
+          : await findDuplicateRequestCandidates({
+              businessAnchorId,
+              userId: req.user?._id,
+              tuples: keyTuples,
+            });
 
         const latestByKey = new Map();
         for (const doc of candidates || []) {
@@ -1215,7 +1368,6 @@ export async function createRequestsFromDraft(req, res) {
     )
       ? shippingOrg.shippingPolicy.weeklyBatchDays
       : [];
-    const calculateSchedule = createProductionScheduleMemo();
 
     // 배송 방식은 거래처 설정(택배 normal / 딜리버리 express)이 정한다. 클라이언트 값은 무시.
     const requestorDefaultShippingMode =
@@ -1245,14 +1397,15 @@ export async function createRequestsFromDraft(req, res) {
       ? 0
       : preparedCasesForCreate.reduce((acc, item) => {
           if (isSignupFreeTestPriceRule(item?.computedPrice?.rule)) return acc;
-          if ((item.shippingMode || "normal") !== "express") return acc;
           const ci = item?.caseInfosWithFile || item?.caseInfos || {};
-          const mode = String(ci?.productMode || "").trim();
-          const qty =
-            mode === "design_custom_abutment"
-              ? Math.max(0, countDesignAbutmentQty(ci))
-              : 1;
-          return acc + qty * expressFeePerRequest;
+          return (
+            acc +
+            resolveExpressHoldAmount({
+              shippingMode: item.shippingMode || "normal",
+              price: item.computedPrice,
+              caseInfos: ci,
+            })
+          );
         }, 0);
     const expressCount = preparedCasesForCreate.filter(
       (item) =>
@@ -1328,7 +1481,7 @@ export async function createRequestsFromDraft(req, res) {
     //   });
     // }
 
-    // 부족분은 생성 전에 막아 402. 실제 보류는 insert 직후·응답 전(동시 제출 경합도 402로 응답).
+    // 부족분은 생성 전에 막아 402. 저널 보류는 201 뒤에 한다.
     let creditBalanceForHold = null;
     // 후불 여부·보류 정책·잔액은 서로 독립이다. 직렬이면 왕복이 세 번 쌓인다.
     const requestorKindForHold = String(shippingOrg?.requestorKind || "").trim();
@@ -1344,7 +1497,47 @@ export async function createRequestsFromDraft(req, res) {
       preparedCasesForCreate.length > 0 &&
       !practiceObPostpaid
     ) {
-      creditBalanceForHold = prefetchedBalance;
+      creditBalanceForHold = prefetchedBalance || {
+        balance: 0,
+        spendableBalance: 0,
+        paidCredit: 0,
+        freeRequestCredit: 0,
+        freeShippingCredit: 0,
+        settlementCredit: 0,
+      };
+      const policyForCheck = labCaHoldPolicy || { applies: false };
+      const previewBuckets = buildCustomAbutmentSpendBuckets(
+        creditBalanceForHold,
+        policyForCheck,
+      );
+      const requiredTotalForHold = requiredMachiningFee + totalShippingFee;
+      const availableWithSettlement = positiveSpendableCredit(previewBuckets);
+      const availableWithoutSettlement = positiveSpendableCredit({
+        ...previewBuckets,
+        settlementCredit: 0,
+      });
+      // 무료·충전만으로 충분하면 데모 기공크레딧 집계(추가 왕복)는 하지 않는다.
+      if (
+        availableWithSettlement >= requiredTotalForHold &&
+        availableWithoutSettlement < requiredTotalForHold &&
+        previewBuckets.settlementCredit > 0
+      ) {
+        const demoSettlement = await computeLabDemoSettlementCredit(
+          shippingOrgIdEarly,
+        );
+        const settlementCredit = Math.max(
+          0,
+          Math.round(Number(creditBalanceForHold.settlementCredit || 0)) -
+            Math.round(Number(demoSettlement) || 0),
+        );
+        creditBalanceForHold = {
+          ...creditBalanceForHold,
+          settlementCredit,
+          spendableBalance:
+            Math.round(Number(creditBalanceForHold.balance || 0)) +
+            settlementCredit,
+        };
+      }
       const {
         balance,
         spendableBalance,
@@ -1478,20 +1671,6 @@ export async function createRequestsFromDraft(req, res) {
     try {
       const needsRequestTransaction =
         duplicates.length > 0 && Boolean(duplicateResolutions);
-      await Promise.all(
-        preparedCasesForCreate.map(async (item) => {
-          const shippingMode = item.shippingMode || "normal";
-          item.productionSchedule = await calculateSchedule({
-            shippingMode,
-            maxDiameter: item.caseInfosWithFile?.maxDiameter,
-            requestedAt: requestedAtForPrefetch,
-            weeklyBatchDays:
-              shippingMode === "normal" ? weeklyBatchDays : [],
-            productMode: item.caseInfosWithFile?.productMode ?? null,
-            manufacturerLeadTimes,
-          });
-        }),
-      );
       if (needsRequestTransaction) {
         session = await mongoose.startSession();
       }
@@ -1754,73 +1933,7 @@ export async function createRequestsFromDraft(req, res) {
             updatedAt: requestedAt,
           };
 
-          // weeklyBatchDays already fetched in pre-fetch phase (same org as businessAnchorId)
-          const requestorWeeklyBatchDays = weeklyBatchDays;
-
-          // [LEGACY] 묶음배송 중단 — 재사용 시 복구
-          // if (
-          //   shippingMode === "normal" &&
-          //   requestorWeeklyBatchDays.length === 0
-          // ) {
-          //   const batchDayErr2 = new Error(
-          //     "묶음 배송 요일을 설정해주세요. 설정 > 배송에서 요일을 선택 후 다시 시도하세요.",
-          //   );
-          //   batchDayErr2.statusCode = 400;
-          //   throw batchDayErr2;
-          // }
-          const productionSchedule =
-            item.productionSchedule ||
-            (await calculateInitialProductionSchedule({
-              shippingMode,
-              maxDiameter: item.caseInfosWithFile?.maxDiameter,
-              requestedAt,
-              weeklyBatchDays:
-                shippingMode === "normal" ? requestorWeeklyBatchDays : [],
-              productMode: item.caseInfosWithFile?.productMode ?? null,
-              manufacturerLeadTimes,
-            }));
-          newRequest.productionSchedule = productionSchedule;
-
-          const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
-          const pickupYmdRaw = productionSchedule?.scheduledShipPickup
-            ? toKstYmd(productionSchedule.scheduledShipPickup)
-            : null;
-          if (pickupYmdRaw) {
-            newRequest.timeline = newRequest.timeline || {};
-            newRequest.timeline.originalEstimatedShipYmd = pickupYmdRaw;
-            newRequest.timeline.nextEstimatedShipYmd = pickupYmdRaw;
-            newRequest.timeline.estimatedShipYmd = pickupYmdRaw;
-          } else {
-            const leadTimes = manufacturerLeadTimes || {};
-
-            const maxD = item.caseInfosWithFile?.maxDiameter;
-            const d = typeof maxD === "number" && !isNaN(maxD) ? maxD : 8;
-            let diameterKey = "d8";
-            if (d <= 6) diameterKey = "d6";
-            else if (d <= 8) diameterKey = "d8";
-            else if (d <= 10) diameterKey = "d10";
-            else diameterKey = "d12";
-
-            const leadDays = leadTimes[diameterKey]?.minBusinessDays ?? 1;
-            const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
-              leadDays,
-              requestedAt,
-              shippingMode,
-            });
-
-            const estimatedShipYmd = await addKoreanBusinessDays({
-              startYmd: createdYmd,
-              days:
-                shippingMode === "express"
-                  ? resolvedLeadDays
-                  : Math.max(1, resolvedLeadDays),
-            });
-            newRequest.timeline = newRequest.timeline || {};
-            newRequest.timeline.originalEstimatedShipYmd = estimatedShipYmd;
-            newRequest.timeline.nextEstimatedShipYmd = estimatedShipYmd;
-            newRequest.timeline.estimatedShipYmd = estimatedShipYmd;
-          }
-
+          // 출고일·생산 스케줄은 201 뒤에 채운다. 접수 버튼은 기다리지 않는다.
           if (duplicateResolutions) {
             const r = resolutionsByCaseId.get(String(item.caseId));
             if (String(r?.strategy || "") === "remake") {
@@ -1905,52 +2018,16 @@ export async function createRequestsFromDraft(req, res) {
         deferredCreditHoldContext = {
           requests: [...createdRequests],
           actorUserId: req.user?._id || null,
+          shippingFee: shippingFeePerBox,
+          seedBalance: creditBalanceForHold,
+          labHoldPolicy: labCaHoldPolicy || null,
+          postpaidActive: practiceObPostpaidForHold,
+          fmDentalShippingActive:
+            shippingOrg && shippingOrg.businessType != null
+              ? String(shippingOrg.businessType) === "requestor"
+              : null,
+          weeklyBatchDays,
         };
-        // 크레딧 보류는 응답 전에 끝낸다. 성공/실패를 응답 한 번으로 정확히 알린다.
-        // (동시 제출로 사전검사 뒤 잔액이 모자라면 여기서 402)
-        const holdT0 = Date.now();
-        try {
-          await holdRequestCreditsOnSubmit({
-            requests: createdRequests,
-            actorUserId: req.user?._id || null,
-            session: null,
-            shippingFee: shippingFeePerBox,
-            seedBalance: creditBalanceForHold,
-            devopsAnchorId: devopsAnchorIdPrefetch,
-            labHoldPolicy: labCaHoldPolicy || null,
-            postpaidActive: practiceObPostpaidForHold,
-            fmDentalShippingActive:
-              shippingOrg && shippingOrg.businessType != null
-                ? String(shippingOrg.businessType) === "requestor"
-                : null,
-            assumeNoExistingHolds: true,
-          });
-          console.log("[createRequestsFromDraft] credit hold done", {
-            t: Date.now() - startTime,
-            dt: Date.now() - holdT0,
-            created: createdRequests.length,
-          });
-        } catch (holdErr) {
-          console.error(
-            "[createRequestsFromDraft] credit hold failed",
-            holdErr?.message || holdErr,
-          );
-          await cancelRequestsAfterHoldFailure(createdRequests, req.user?._id || null);
-          const holdStatus = Number(holdErr?.statusCode || 0) === 402 ? 402 : 500;
-          return res.status(holdStatus).json({
-            success: false,
-            message:
-              holdStatus === 402
-                ? "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다. 충전한 뒤 다시 시도해주세요."
-                : "크레딧 보류에 실패해 의뢰를 접수하지 않았습니다. 잠시 후 다시 시도해주세요.",
-            data: {
-              reason: holdStatus === 402 ? "insufficient_credit" : "credit_hold_failed",
-              canceledRequestIds: createdRequests
-                .map((row) => String(row?.requestId || "").trim())
-                .filter(Boolean),
-            },
-          });
-        }
       }
 
       // 헥스 확인용 복사샘플·credit hold·대시보드 refresh는 201 finish 이후.
@@ -2009,14 +2086,11 @@ export async function createRequestsFromDraft(req, res) {
           }
         : null;
       if (createdAnchorId) {
-        try {
-          const { clearMyRequestsCache } = await import(
-            "./common.requests.controller.js"
-          );
-          clearMyRequestsCache();
-        } catch {
-          // best-effort
-        }
+        void import("./common.requests.controller.js")
+          .then(({ clearMyRequestsCache }) => {
+            clearMyRequestsCache();
+          })
+          .catch(() => {});
         // credit:balance-updated는 hold 성공 후 finish 핸들러에서 emit
         deferredDashboardRefreshAnchorId = createdAnchorId;
       } else {
@@ -2147,20 +2221,62 @@ export async function createRequestsFromDraft(req, res) {
       const hexCtx = deferredHexSampleContext;
       const holdCtx = deferredCreditHoldContext;
       res.once("finish", () => {
-        try {
-          dispatchRhinoJobs();
-        } catch (rhinoErr) {
-          console.warn(
-            "[createRequestsFromDraft] rhino dispatch failed",
-            rhinoErr?.message || rhinoErr,
-          );
-        }
         void (async () => {
           const requestIdsForRefresh = [...refreshRequestIds];
-          // 보류는 응답 전에 끝났다. 여기까지 왔으면 성공.
-          const holdOk = true;
+          let holdOk = true;
+          if (holdCtx?.requests?.length) {
+            try {
+              await backfillCreatedRequestSchedule(holdCtx.requests, {
+                weeklyBatchDays: holdCtx.weeklyBatchDays,
+              });
+            } catch (scheduleErr) {
+              console.warn(
+                "[createRequestsFromDraft] schedule backfill failed",
+                scheduleErr?.message || scheduleErr,
+              );
+            }
+            const holdT0 = Date.now();
+            try {
+              await holdRequestCreditsOnSubmit({
+                requests: holdCtx.requests,
+                actorUserId: holdCtx.actorUserId || null,
+                session: null,
+                shippingFee: holdCtx.shippingFee,
+                seedBalance: holdCtx.seedBalance,
+                labHoldPolicy: holdCtx.labHoldPolicy,
+                postpaidActive: holdCtx.postpaidActive,
+                fmDentalShippingActive: holdCtx.fmDentalShippingActive,
+                assumeNoExistingHolds: true,
+              });
+              console.log("[createRequestsFromDraft] credit hold done", {
+                dt: Date.now() - holdT0,
+                created: holdCtx.requests.length,
+              });
+            } catch (holdErr) {
+              holdOk = false;
+              console.error(
+                "[createRequestsFromDraft] credit hold failed",
+                holdErr?.message || holdErr,
+              );
+              await cancelRequestsAfterHoldFailure(
+                holdCtx.requests,
+                holdCtx.actorUserId || null,
+              );
+            }
+          }
 
-          if (holdCtx?.requests?.length && refreshAnchorId) {
+          if (holdOk) {
+            try {
+              dispatchRhinoJobs();
+            } catch (rhinoErr) {
+              console.warn(
+                "[createRequestsFromDraft] rhino dispatch failed",
+                rhinoErr?.message || rhinoErr,
+              );
+            }
+          }
+
+          if (holdCtx?.requests?.length && refreshAnchorId && holdOk) {
             try {
               const { emitCreditBalanceUpdatedToBusiness } = await import(
                 "../../utils/creditRealtime.js"

@@ -5,6 +5,7 @@
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/frontend/src/App.tsx
 // change-log:
+// - 2026-10-18: 로컬 Atlas 풀을 유지한다. 유휴 10초면 제출 때 연결을 다시 열어 1초가 넘었다.
 // - 2026-10-04: morgan skip — lab-helper alarms/wait 롱폴링(25s) 로그 스팸 제외.
 import express, { json, urlencoded, static as staticMiddleware } from "express";
 import "./bootstrap/env.js";
@@ -48,19 +49,32 @@ if (!mongoUri) {
   );
 }
 
-// 로컬 nodemon 재시작이 잦아 Atlas 연결이 쌓이지 않도록 dev 풀을 작게 유지한다.
+// nodemon이 프로세스를 죽이므로 최소 풀은 같이 닫힌다.
+// 유휴로 풀이 0이 되면 제출 Promise.all이 연결을 다시 열고(maxConnecting 대기) 1초를 넘긴다.
 const isProd = process.env.NODE_ENV === "production";
-// 로컬 기본 5는 worksheet 폴링·hold 트랜잭션이 동시에 붙으면 대기열·TransientTransaction 유발.
 const mongoPoolSize = Number(
   process.env.MONGO_MAX_POOL_SIZE || (isProd ? 50 : 20),
 );
+const mongoMinPoolSize = Number(
+  process.env.MONGO_MIN_POOL_SIZE || (isProd ? 2 : 8),
+);
+const mongoMaxConnecting = Number(
+  process.env.MONGO_MAX_CONNECTING || (isProd ? 4 : 8),
+);
 const mongoMaxIdleMs = Number(
-  process.env.MONGO_MAX_IDLE_MS || (isProd ? 60_000 : 10_000),
+  process.env.MONGO_MAX_IDLE_MS || (isProd ? 60_000 : 10 * 60_000),
 );
 
 const dbReady = connect(mongoUri, {
   maxPoolSize: Number.isFinite(mongoPoolSize) && mongoPoolSize > 0 ? mongoPoolSize : 5,
-  minPoolSize: 0,
+  minPoolSize:
+    Number.isFinite(mongoMinPoolSize) && mongoMinPoolSize > 0
+      ? mongoMinPoolSize
+      : 0,
+  maxConnecting:
+    Number.isFinite(mongoMaxConnecting) && mongoMaxConnecting > 0
+      ? mongoMaxConnecting
+      : 2,
   maxIdleTimeMS:
     Number.isFinite(mongoMaxIdleMs) && mongoMaxIdleMs > 0
       ? mongoMaxIdleMs
@@ -75,7 +89,22 @@ const dbReady = connect(mongoUri, {
       const dbName = mongoUri.split("/").pop()?.split("?")[0] || "unknown";
       console.log(`연결된 DB: ${dbName}`);
       console.log(
-        `[mongoose] pool maxPoolSize=${mongoPoolSize} maxIdleTimeMS=${mongoMaxIdleMs}`,
+        `[mongoose] pool maxPoolSize=${mongoPoolSize} minPoolSize=${mongoMinPoolSize} maxConnecting=${mongoMaxConnecting} maxIdleTimeMS=${mongoMaxIdleMs}`,
+      );
+      const warmCount = Math.min(
+        8,
+        Number.isFinite(mongoMinPoolSize) && mongoMinPoolSize > 0
+          ? mongoMinPoolSize
+          : 1,
+      );
+      const warmT0 = Date.now();
+      await Promise.all(
+        Array.from({ length: warmCount }, () =>
+          mongoose.connection.db.command({ ping: 1 }),
+        ),
+      );
+      console.log(
+        `[mongoose] pool warmed ${warmCount} in ${Date.now() - warmT0}ms`,
       );
     }
 

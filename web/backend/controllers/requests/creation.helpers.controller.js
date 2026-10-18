@@ -31,11 +31,13 @@ export function buildStandardStlFileName({
 export async function getBusinessCreditBalanceBreakdown({
   businessAnchorId,
   session,
+  skipDemoSettlement = false,
 }) {
   const snapshot = await getBusinessCreditBalanceSnapshot({
     businessAnchorId,
     session,
     upsertIfMissing: true,
+    skipDemoSettlement,
   });
 
   return {
