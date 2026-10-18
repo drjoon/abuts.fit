@@ -67,6 +67,7 @@ import {
 } from "./production.utils.js";
 import { getManufacturerLeadTimesUtil } from "../businesses/leadTime.controller.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
+import { resolveRequestorUnitPrice } from "../../utils/requestorUnitPricePolicy.js";
 import { REQUESTOR_SHIPPING_FEE_PER_BOX } from "../../utils/requestorUnitPricePolicy.js";
 import { remakePolicyCutoffDate } from "../../utils/remakePricingPolicy.js";
 import { prefetchKoreanHolidaysForYears } from "../../utils/krBusinessDays.js";
@@ -310,6 +311,8 @@ export async function createRequestsFromDraft(req, res) {
         year: "numeric",
       }).format(new Date()),
     );
+    const creditAnchorReady =
+      shippingOrgIdEarly && Types.ObjectId.isValid(shippingOrgIdEarly);
     const [
       loadedDraft,
       lockStatus,
@@ -319,6 +322,9 @@ export async function createRequestsFromDraft(req, res) {
       devopsAnchorIdPrefetch,
       ,
       requestorSettingsDoc,
+      labCaHoldPolicyEarly,
+      prefetchedBalanceEarly,
+      practiceObPostpaidEarly,
     ] =
       await Promise.all([
         DraftRequest.findById(draftId).lean(),
@@ -341,6 +347,7 @@ export async function createRequestsFromDraft(req, res) {
                 "requestSettings.hexByImplantManufacturer": 1,
                 requestorKind: 1,
                 businessType: 1,
+                dealerUnitPrice: 1,
                 "verification.verifiedAt": 1,
                 createdAt: 1,
               })
@@ -362,6 +369,17 @@ export async function createRequestsFromDraft(req, res) {
               })
               .lean()
           : Promise.resolve(null),
+        creditAnchorReady
+          ? resolveLabCustomAbutmentCreditHoldPolicy(shippingOrgIdEarly)
+          : Promise.resolve(null),
+        creditAnchorReady
+          ? getBusinessCreditBalanceBreakdown({
+              businessAnchorId: shippingOrgIdEarly,
+            })
+          : Promise.resolve(null),
+        creditAnchorReady
+          ? isPracticeObPostpaidActive(shippingOrgIdEarly)
+          : Promise.resolve(false),
       ]);
     // 로컬 스토리지가 가리키는 Draft가 이미 삭제됐어도, 본문 caseInfos로 접수한다.
     let draft = loadedDraft;
@@ -377,10 +395,20 @@ export async function createRequestsFromDraft(req, res) {
         draft = await DraftRequest.findById(draftId).lean();
       }
     }
+    const resolvedRequestorUnitPrice =
+      shippingOrg && String(shippingOrg.businessType || "") === "requestor"
+        ? {
+            ...resolveRequestorUnitPrice({
+              dealerUnitPrice: shippingOrg.dealerUnitPrice,
+            }),
+            source: shippingOrg.dealerUnitPrice != null ? "dealer" : "base",
+          }
+        : null;
     const creditSettings = earlyOrgId
       ? await loadCreditSettingsDefaults({
           requestorOrgId: earlyOrgId,
           requestorAnchor: shippingOrg,
+          resolvedRequestorUnitPrice,
         })
       : creditSettingsBase;
     const pricingBaseDate =
@@ -1304,12 +1332,10 @@ export async function createRequestsFromDraft(req, res) {
     let creditBalanceForHold = null;
     // 후불 여부·보류 정책·잔액은 서로 독립이다. 직렬이면 왕복이 세 번 쌓인다.
     const requestorKindForHold = String(shippingOrg?.requestorKind || "").trim();
-    const [labCaHoldPolicy, prefetchedBalance, practiceObPostpaidForHold] =
-      await Promise.all([
-        resolveLabCustomAbutmentCreditHoldPolicy(businessAnchorId),
-        getBusinessCreditBalanceBreakdown({ businessAnchorId }),
-        isPracticeObPostpaidActive(businessAnchorId),
-      ]);
+    // 초반 prefetch와 겹쳐 돌린 값. 여기서 잔액·후불·보류 정책을 다시 읽지 않는다.
+    const labCaHoldPolicy = labCaHoldPolicyEarly;
+    const prefetchedBalance = prefetchedBalanceEarly;
+    const practiceObPostpaidForHold = practiceObPostpaidEarly;
     // 치과만 후불 선검사. 기공소 Request 커스텀어벗은 선충전.
     const practiceObPostpaid =
       requestorKindForHold === "lab" ? false : practiceObPostpaidForHold;
@@ -1449,29 +1475,31 @@ export async function createRequestsFromDraft(req, res) {
     let deferredHexSampleContext = null;
     let deferredCreditHoldContext = null;
     try {
-      const [, startedSession] = await Promise.all([
-        Promise.all(
-          preparedCasesForCreate.map(async (item) => {
-            const shippingMode = item.shippingMode || "normal";
-            item.productionSchedule = await calculateSchedule({
-              shippingMode,
-              maxDiameter: item.caseInfosWithFile?.maxDiameter,
-              requestedAt: requestedAtForPrefetch,
-              weeklyBatchDays:
-                shippingMode === "normal" ? weeklyBatchDays : [],
-              productMode: item.caseInfosWithFile?.productMode ?? null,
-              manufacturerLeadTimes,
-            });
-          }),
-        ),
-        mongoose.startSession(),
-      ]);
-      session = startedSession;
+      const needsRequestTransaction =
+        duplicates.length > 0 && Boolean(duplicateResolutions);
+      await Promise.all(
+        preparedCasesForCreate.map(async (item) => {
+          const shippingMode = item.shippingMode || "normal";
+          item.productionSchedule = await calculateSchedule({
+            shippingMode,
+            maxDiameter: item.caseInfosWithFile?.maxDiameter,
+            requestedAt: requestedAtForPrefetch,
+            weeklyBatchDays:
+              shippingMode === "normal" ? weeklyBatchDays : [],
+            productMode: item.caseInfosWithFile?.productMode ?? null,
+            manufacturerLeadTimes,
+          });
+        }),
+      );
+      if (needsRequestTransaction) {
+        session = await mongoose.startSession();
+      }
       console.log("[createRequestsFromDraft] transaction start", {
         t: Date.now() - startTime,
         createCount: preparedCasesForCreate.length,
+        transactional: needsRequestTransaction,
       });
-      await session.withTransaction(async () => {
+      const writeCreatedRequests = async () => {
         if (duplicates.length > 0 && duplicateResolutions) {
           const dupsByCaseId = new Map(
             duplicates.map((d) => [String(d.caseId || ""), d]),
@@ -1856,11 +1884,17 @@ export async function createRequestsFromDraft(req, res) {
 
         await ensureLotNumbersOnReadyEnter(requestDocs, session);
 
-        const insertedRequests = await Request.insertMany(requestDocs, {
-          session,
-        });
+        const insertedRequests = await Request.insertMany(
+          requestDocs,
+          session ? { session } : {},
+        );
         insertedRequests.forEach((doc) => createdRequests.push(doc));
-      });
+      };
+      if (session) {
+        await session.withTransaction(writeCreatedRequests);
+      } else {
+        await writeCreatedRequests();
+      }
       console.log("[createRequestsFromDraft] transaction done", {
         t: Date.now() - startTime,
         created: createdRequests.length,
@@ -1888,6 +1922,7 @@ export async function createRequestsFromDraft(req, res) {
               shippingOrg && shippingOrg.businessType != null
                 ? String(shippingOrg.businessType) === "requestor"
                 : null,
+            assumeNoExistingHolds: true,
           });
           console.log("[createRequestsFromDraft] credit hold done", {
             t: Date.now() - startTime,
@@ -1939,7 +1974,8 @@ export async function createRequestsFromDraft(req, res) {
           return { requestId: doc.requestId, filePath };
         })
         .filter(Boolean);
-      if (rhinoJobs.length > 0) {
+      const dispatchRhinoJobs = () => {
+        if (!rhinoJobs.length) return;
         void import("../rhino/rhino.controller.js")
           .then(({ triggerRhinoProcessFileForRequest }) => {
             for (const job of rhinoJobs) {
@@ -1956,7 +1992,7 @@ export async function createRequestsFromDraft(req, res) {
               e?.message || e,
             );
           });
-      }
+      };
 
       const createdAnchorId = String(
         createdRequests[0]?.businessAnchorId ||
@@ -2110,6 +2146,7 @@ export async function createRequestsFromDraft(req, res) {
       const hexCtx = deferredHexSampleContext;
       const holdCtx = deferredCreditHoldContext;
       res.once("finish", () => {
+        dispatchRhinoJobs();
         void (async () => {
           const requestIdsForRefresh = [...refreshRequestIds];
           // 보류는 응답 전에 끝났다. 여기까지 왔으면 성공.
@@ -2194,6 +2231,10 @@ export async function createRequestsFromDraft(req, res) {
             count: requestIdsForRefresh.length,
           });
         })();
+      });
+    } else {
+      res.once("finish", () => {
+        dispatchRhinoJobs();
       });
     }
 

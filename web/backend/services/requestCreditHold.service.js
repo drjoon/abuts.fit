@@ -772,6 +772,8 @@ export async function holdRequestCreditsOnSubmit({
   labHoldPolicy = null,
   postpaidActive = null,
   fmDentalShippingActive = null,
+  /** 방금 insert한 의뢰. 기존 hold 키 조회를 생략한다. */
+  assumeNoExistingHolds = false,
 }) {
   const list = (Array.isArray(requests) ? requests : [])
     .filter(Boolean)
@@ -811,10 +813,12 @@ export async function holdRequestCreditsOnSubmit({
     shippingFeeFromArgOk
       ? Promise.resolve(shippingFeeFromArg)
       : resolveShippingFeePerBox(),
-    getJournalsByIdempotencyKeys({
-      idempotencyKeys: holdIdempotencyKeys,
-      session,
-    }),
+    assumeNoExistingHolds
+      ? Promise.resolve(new Map())
+      : getJournalsByIdempotencyKeys({
+          idempotencyKeys: holdIdempotencyKeys,
+          session,
+        }),
   ]);
   timing.setupMs = Date.now() - setupT0;
 

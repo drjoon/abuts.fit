@@ -1303,7 +1303,11 @@ export async function loadCreditSettingsDefaults(options = {}) {
     specialOverridden === priced &&
     options?.applyRequestorUnitPrice !== false
   ) {
-    requestorUnitPrice = await resolveRequestorUnitPriceForAnchorId(id);
+    // 제출 경로는 이미 읽은 사업자 문서로 단가를 넘긴다. 없으면 그때 조회한다.
+    requestorUnitPrice =
+      options.resolvedRequestorUnitPrice !== undefined
+        ? options.resolvedRequestorUnitPrice
+        : await resolveRequestorUnitPriceForAnchorId(id);
     if (requestorUnitPrice) {
       overridden = overlayCustomAbutmentSalePrice(
         priced,
