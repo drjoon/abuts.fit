@@ -120,6 +120,11 @@ type Props = {
   guidesVisible?: boolean;
   /** 별도 보정 솔리드(타이트 코너 R0.6 필렛)를 원본 위에 덧입혀 표시. 기본 false(원본만). */
   correctionSolidVisible?: boolean;
+  /**
+   * 접수 전 검사처럼 정렬 전 원본 STL 위에 불완전 가공 구간을 표시한다.
+   * metadata.tightCorner는 원본 좌표여야 한다.
+   */
+  showTightCorner?: boolean;
   /** 사용자가 회전·이동·확대할 때마다 부른다(다른 뷰어와 연동용). */
   onViewChange?: (state: ViewSyncState) => void;
   finishLinePoints?: number[][] | null;
@@ -197,6 +202,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       metaVisible = true,
       guidesVisible = true,
       correctionSolidVisible = false,
+      showTightCorner = false,
       onViewChange,
       finishLinePoints,
       enableManualPick = false,
@@ -2497,13 +2503,12 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
         }
 
         const tightCornerMeta = latestMetadata?.tightCorner;
+        const tightOnFilled =
+          showOverlay && isFilled && hasFinishLine && Boolean(finishLinePoints);
         if (
-          showOverlay &&
-          isFilled &&
-          hasFinishLine &&
-          finishLinePoints &&
           tightCornerMeta &&
-          (tightCornerMeta.tightCount ?? 0) > 0
+          (tightCornerMeta.tightCount ?? 0) > 0 &&
+          (tightOnFilled || showTightCorner)
         ) {
           const size = new THREE.Vector3();
           bbox.getSize(size);
@@ -2547,9 +2552,9 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           const segments = Array.isArray(tightCornerMeta.tightFinishLineSegments)
             ? tightCornerMeta.tightFinishLineSegments
             : [];
-          const flPts = finishLinePoints.filter(
-            (p) => Array.isArray(p) && p.length >= 3,
-          ) as number[][];
+          const flPts = (
+            tightOnFilled && Array.isArray(finishLinePoints) ? finishLinePoints : []
+          ).filter((p) => Array.isArray(p) && p.length >= 3) as number[][];
           for (const seg of segments) {
             const start = Math.max(0, Number(seg.startIndex) || 0);
             const end = Math.min(flPts.length - 1, Number(seg.endIndex) || 0);
@@ -2638,7 +2643,9 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
             marker.visible = correctionSolidVisibleRef.current;
             modelPivot.add(marker);
 
-            const radial = new THREE.Vector3(cornerRaw[0], cornerRaw[1], 0);
+            const radial = isFilled
+              ? new THREE.Vector3(cornerRaw[0], cornerRaw[1], 0)
+              : new THREE.Vector3(corner.x, corner.y, 0);
             if (radial.lengthSq() < 1e-8) radial.set(1, 0, 0);
             radial.normalize();
             const canvas = document.createElement("canvas");
@@ -3069,6 +3076,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     resolvedMetadata?.tightCorner?.version,
     resolvedMetadata?.tightCorner?.reliefOverlay?.positions?.length,
     resolvedMetadata?.tightCorner?.correctionSolid?.positions?.length,
+    showTightCorner,
     isFilledFile,
   ]);
 

@@ -11,6 +11,10 @@ import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import { upload } from "../../middlewares/upload.middleware.js";
 import { s3Upload } from "../../utils/s3.utils.js";
 import * as fileController from "../../controllers/files/file.controller.js";
+import {
+  checkStlMachiningPreflight,
+  stlPreflightUpload,
+} from "../../controllers/files/stlPreflight.controller.js";
 
 const router = Router();
 
@@ -34,6 +38,15 @@ router.post(
   "/temp/presign",
   authenticate,
   fileController.createTempUploadPresign,
+);
+
+// 접수 전 커스텀어벗 STL 가공 검사(JS 파이프라인 즉시 실행, 저장 없음)
+router.post(
+  "/temp/stl-preflight",
+  authenticate,
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
+  stlPreflightUpload,
+  checkStlMachiningPreflight,
 );
 
 router.post(

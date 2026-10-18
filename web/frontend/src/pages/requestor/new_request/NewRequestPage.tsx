@@ -73,6 +73,7 @@ import {
   resolveFileSizeBytes,
 } from "./utils/patientGroups";
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
+import { useStlMachiningPreflight } from "./hooks/useStlMachiningPreflight";
 
 
 // related files:
@@ -216,6 +217,13 @@ const NewRequestPageContent = () => {
     suppressLocalDraftForGuideTour,
   } = useNewRequestPage(existingRequestId, {
     enableOralScanGrouping: !isLabRequestor,
+  });
+
+  // STL 첨부 즉시 JS 파이프라인 가공 검사(불완전가공 사전 안내)
+  const machiningPreflightByFileKey = useStlMachiningPreflight({
+    files,
+    caseInfosMap,
+    token,
   });
 
   const countableFileKeys = useMemo(() => {
@@ -1864,6 +1872,7 @@ const NewRequestPageContent = () => {
               onGroupSelectedFiles={groupSelectedFiles}
               onUngroupPatientFiles={handleUngroupPatientFiles}
               onRemoveFileFromPatientGroup={handleRemoveFileFromPatientGroup}
+              machiningPreflightByFileKey={machiningPreflightByFileKey}
               onDuplicateDetected={({ file, duplicate }) => {
                 const fileWithDraftCaseId = file as File & {
                   _draftCaseInfoId?: string;

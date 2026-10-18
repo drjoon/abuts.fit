@@ -58,6 +58,7 @@ import {
   type PreUploadFileProgress,
 } from "@/shared/hooks/useFilePreUpload";
 import type { CaseInfos } from "../hooks/newRequestTypes";
+import type { StlMachiningPreflight } from "@/features/requests/components/StlMachiningPreflightNotice";
 import { useMemo, useState, useEffect, useRef, useCallback, type ReactElement } from "react";
 import {
   computeEstimatedShipLabel,
@@ -157,6 +158,43 @@ function renderUploadProgressBar(progress?: PreUploadFileProgress | null) {
       />
     </div>
   );
+}
+
+/** 접수 전 가공 검사 뱃지. tight·검사 중만 카드에 보인다. */
+function renderMachiningPreflightBadge(
+  preflight?: StlMachiningPreflight | null,
+) {
+  if (!preflight) return null;
+  if (preflight.status === "tight") {
+    const suggested =
+      typeof preflight.suggestedFilletRadiusMm === "number"
+        ? preflight.suggestedFilletRadiusMm.toFixed(2)
+        : null;
+    return (
+      <div onClick={(event) => event.stopPropagation()}>
+        <Badge
+          variant="secondary"
+          className="bg-destructive-soft px-1.5 py-0.5 text-[10px] font-semibold text-destructive"
+        >
+          불완전 가공
+          {suggested ? ` · R ${suggested}mm 이상` : ""}
+        </Badge>
+      </div>
+    );
+  }
+  if (preflight.status === "checking") {
+    return (
+      <div onClick={(event) => event.stopPropagation()}>
+        <Badge
+          variant="secondary"
+          className="bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500"
+        >
+          가공 검사 중
+        </Badge>
+      </div>
+    );
+  }
+  return null;
 }
 
 /** 파일 용량 옆 케이스 메타 뱃지(디자인소프트웨어·아노다이징). 카드 스냅샷만 표시. */
@@ -259,6 +297,8 @@ type Props = {
   onRemoveFileFromGroup?: (fileKey: string) => void;
   /** true: 기공소 — 생산 전용(구강스캔 묶음·파일유형 뱃지 없음) */
   productionOnly?: boolean;
+  /** 파일 키별 접수 전 가공 검사 결과 */
+  machiningPreflightByFileKey?: Record<string, StlMachiningPreflight>;
 };
 
 function resolveShippingMode(
@@ -301,6 +341,7 @@ export function NewRequestAttachmentsPanel({
   onUngroup,
   onRemoveFileFromGroup,
   productionOnly = false,
+  machiningPreflightByFileKey = {},
 }: Props) {
   const hasAnyAttachment = files.length > 0;
   const { toast } = useToast();
@@ -891,6 +932,7 @@ export function NewRequestAttachmentsPanel({
                   ? "abut_design"
                   : null,
           })}
+          {renderMachiningPreflightBadge(machiningPreflightByFileKey[fileKey])}
         </div>
       </div>
     );

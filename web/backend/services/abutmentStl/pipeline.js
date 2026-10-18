@@ -5,7 +5,7 @@
 //
 // Rhino 없이 1-stl → 2-filled를 만든다. 순서는 process_abutment_stl.main과 같다:
 // import → align → finishline → 스크류홀 패치 → (explode/join: 기하 변화 없음) → 직경 → fill_steps → export → 메타.
-import { Mesh, writeBinaryStl, parseStl } from "./meshCore.js";
+import { Mesh, writeBinaryStl, parseStl, identity, multiply } from "./meshCore.js";
 import { alignMeshToOrigin, ALIGN_MODULE_VERSION, JS_ALIGN_PORT_VERSION } from "./align.js";
 import { detectFinishLine, finishlineZExtrema, sanitizeFinishlinePoints } from "./finishline.js";
 import { buildScrewholePatch, SCREWHOLE_PARAMS } from "./fillScrewholes.js";
@@ -14,6 +14,25 @@ import { calculateStlMetadataFromBuffer } from "./stlMetadata.js";
 import { detectTightCorners } from "./tightCorner.js";
 
 export const ABUTMENT_STL_JS_VERSION = `abutment-stl-js-1+align-${ALIGN_MODULE_VERSION}+${JS_ALIGN_PORT_VERSION}`;
+
+/**
+ * align이 mesh.transform으로 쌓는 행렬. aligned = M * original.
+ * 인스턴스 메서드만 감싸고, 끝나면 프로토타입으로 되돌린다.
+ */
+function alignWithMatrix(mesh, alignFn) {
+  const orig = mesh.transform;
+  let accum = identity();
+  mesh.transform = function tracked(m) {
+    const ok = orig.call(this, m);
+    accum = multiply(m, accum);
+    return ok;
+  };
+  try {
+    return { align: alignFn(), alignMatrix: accum };
+  } finally {
+    delete mesh.transform;
+  }
+}
 
 function finishLineFromStoredPoints(rawPoints, log) {
   if (!Array.isArray(rawPoints) || rawPoints.length < 3) return null;
@@ -100,7 +119,9 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
   mark("import", t0);
 
   t0 = performance.now();
-  const align = alignMeshToOrigin(mesh, { targetDiameter, implantProfile, log });
+  const { align, alignMatrix } = alignWithMatrix(mesh, () =>
+    alignMeshToOrigin(mesh, { targetDiameter, implantProfile, log }),
+  );
   if (!align.ok) log(`[align] warning: ${align.message}; continue to finishline detection`);
   mark("align", t0);
 
@@ -189,6 +210,8 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
     bodyTriangleCount: mesh.faceCount,
     screwholeParams,
     align: { ok: align.ok, message: align.message },
+    /** 정렬 행렬. aligned = alignMatrix * original. 의뢰 메타에는 넣지 않는다. */
+    alignMatrix,
     finishLine,
     hexRotation: hex
       ? {

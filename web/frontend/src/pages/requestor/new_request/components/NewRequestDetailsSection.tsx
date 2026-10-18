@@ -7,6 +7,7 @@ import { NewRequestDetailDialog } from "./NewRequestDetailDialog";
 import type { LeadTimesMap } from "@/shared/shipping/estimateShipDate";
 import type { PreUploadFileProgress } from "@/shared/hooks/useFilePreUpload";
 import type { AttachmentListItem, PatientFileGroup } from "../utils/patientGroups";
+import type { StlMachiningPreflight } from "@/features/requests/components/StlMachiningPreflightNotice";
 import {
   findGroupByFileKey,
   getPrimaryFileKey,
@@ -117,6 +118,8 @@ type Props = {
   localDraftRestoreDone?: boolean;
   /** 가이드투어 중 3D 확인 모달 자동 오픈·유지 금지 */
   suppressDetailAutoOpen?: boolean;
+  /** 파일 키별 접수 전 가공 검사 결과 */
+  machiningPreflightByFileKey?: Record<string, StlMachiningPreflight>;
 };
 
 export function NewRequestDetailsSection({
@@ -187,6 +190,7 @@ export function NewRequestDetailsSection({
   productionOnly = false,
   localDraftRestoreDone = true,
   suppressDetailAutoOpen = false,
+  machiningPreflightByFileKey = {},
 }: Props) {
   const { token } = useAuthStore();
   const listContainerRef = useRef<HTMLDivElement | null>(null);
@@ -735,6 +739,7 @@ export function NewRequestDetailsSection({
             onUngroup={productionOnly ? undefined : onUngroupPatientFiles}
             onRemoveFileFromGroup={productionOnly ? undefined : onRemoveFileFromPatientGroup}
             productionOnly={productionOnly}
+            machiningPreflightByFileKey={machiningPreflightByFileKey}
           />
         </div>
       </div>
@@ -785,6 +790,9 @@ export function NewRequestDetailsSection({
         lockProductionProductMode={lockProductionProductMode}
         previewFileIndices={previewFileIndices}
         onSelectPreviewIndex={selectPreviewIndex}
+        machiningPreflight={
+          detailFileKey ? machiningPreflightByFileKey[detailFileKey] : undefined
+        }
       />
 
 

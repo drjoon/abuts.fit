@@ -45,6 +45,10 @@ import { NewRequestDesignAbutmentFields } from "@/pages/requestor/new_request/co
 import { NewRequestPatientImplantFields } from "@/pages/requestor/new_request/components/NewRequestPatientImplantFields";
 import { RetentionGrooveField } from "@/shared/components/practice/RetentionGrooveField";
 import { AnodizingField } from "@/shared/components/practice/AnodizingField";
+import {
+  StlMachiningPreflightNotice,
+  type StlMachiningPreflight,
+} from "@/features/requests/components/StlMachiningPreflightNotice";
 
 export type AbutmentModelConfirmVariant = "new-request" | "lab-handoff";
 
@@ -142,6 +146,8 @@ export type AbutmentModelConfirmDialogProps = {
   /** 현재 파일 S3 사전업로드 진행률(0~100). null이면 숨김 */
   fileUploadPercent?: number | null;
   fileUploadLabel?: string | null;
+  /** 접수 전 가공 검사 결과(신규의뢰만 전달). tight여도 확인을 막지 않는다. */
+  machiningPreflight?: StlMachiningPreflight | null;
 };
 
 export function AbutmentModelConfirmDialog({
@@ -196,6 +202,7 @@ export function AbutmentModelConfirmDialog({
   progressLabel,
   fileUploadPercent = null,
   fileUploadLabel = null,
+  machiningPreflight = null,
 }: AbutmentModelConfirmDialogProps) {
   const isLabHandoff = variant === "lab-handoff";
   const labConfirmLabel = String(confirmLabel || "").trim() || "확인";
@@ -321,6 +328,13 @@ export function AbutmentModelConfirmDialog({
             </DialogDescription>
           </DialogHeader>
 
+          {machiningPreflight ? (
+            <StlMachiningPreflightNotice
+              preflight={machiningPreflight}
+              className="shrink-0"
+            />
+          ) : null}
+
           {uploadPercent != null ? (
             <div
               className="shrink-0 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2"
@@ -345,6 +359,13 @@ export function AbutmentModelConfirmDialog({
                     file={detailFile}
                     showOverlay={false}
                     showGrid={false}
+                    showTightCorner={Boolean(machiningPreflight?.overlay)}
+                    correctionSolidVisible={Boolean(machiningPreflight?.overlay)}
+                    metadata={
+                      machiningPreflight?.overlay
+                        ? { tightCorner: machiningPreflight.overlay }
+                        : undefined
+                    }
                     className="h-full min-h-[240px]"
                     onDiameterComputed={handleDiameterComputed}
                   />
