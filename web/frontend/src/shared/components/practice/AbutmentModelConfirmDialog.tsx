@@ -751,7 +751,7 @@ export function AbutmentModelConfirmDialog({
             <AlertDialogDescription asChild>
               <div className="space-y-3">
                 <p className="text-base font-semibold leading-relaxed text-primary sm:text-lg">
-                  다운로드된 디자인으로 보철을 새로 만드세요!
+                  다운로드된 디자인으로 보철을 재생성해주세요.
                 </p>
                 <p className="text-sm leading-relaxed text-muted-foreground">
                   다음부터는 라운드 반경 0.65mm 이상 설정해서 디자인해주세요.
