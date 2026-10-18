@@ -502,17 +502,14 @@ export const WorksheetCardGrid = ({
           (isFinishLineMinZRisky ||
             isTightCornerCorrectionNeeded ||
             isUnmachinableSample ||
-            isFinishLineCaptureBad ||
-            isCuffManualReview);
+            isFinishLineCaptureBad);
+        const showCuffReviewBadge = isCuffManualReview && !rhinoWorkPending;
         const incompleteMachiningBadgeTitle = (() => {
           if (isTightCornerCorrectionNeeded) {
             return "마진 fillet R이 φ1.2 볼(R0.6)보다 작습니다. 프리뷰에서 확인하세요.";
           }
           if (isFinishLineCaptureBad) {
             return "피니시라인이 어깨를 따라가지 않습니다. 프리뷰에서 FL로 수정하세요.";
-          }
-          if (isCuffManualReview) {
-            return `커프 이음부 자동 보정을 건너뛰었습니다. ${cuffBlend?.reason || ""} 프리뷰에서 형상을 확인하세요.`;
           }
           if (isFinishLineMinZRisky) {
             return "피니시라인 높이가 낮습니다. 프리뷰에서 확인하세요.";
@@ -1445,6 +1442,15 @@ export const WorksheetCardGrid = ({
                             title={incompleteMachiningBadgeTitle}
                           >
                             불완전
+                          </Badge>
+                        ) : null}
+                        {showCuffReviewBadge ? (
+                          <Badge
+                            variant="outline"
+                            className="h-5 max-w-full truncate text-[10px] px-1.5 py-0 font-semibold leading-none border border-accent-muted bg-accent-soft text-accent-strong flex items-center"
+                            title={`커프 이음부 자동 보정을 건너뛰었습니다. ${cuffBlend?.reason || ""} 프리뷰에서 형상을 확인하세요.`}
+                          >
+                            커프 확인
                           </Badge>
                         ) : null}
                         {isCuffProposalWaiting && !rhinoWorkPending ? (
