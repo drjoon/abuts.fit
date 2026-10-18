@@ -7,7 +7,7 @@
 // 피니시라인 바로 위 마진↔축면 경계의 fillet R을 재고, R<공구R이면 공구 R 필렛 보정면을 만든다.
 // 보정 솔리드는 원본과 별개로 메타데이터에 담긴다. filled STL·CAM은 원본 그대로 두고,
 // 뷰어에서 토글을 켰을 때만 원본 위에 빨갛게 덧입혀 보여준다.
-import { cross, meshPlaneSection, normalize } from "./meshCore.js";
+import { Mesh, cross, meshPlaneSection, normalize } from "./meshCore.js";
 
 export const TIGHT_CORNER_VERSION = 6;
 export const FINISH_BALL_DIAMETER_MM = 1.2;
@@ -1468,9 +1468,354 @@ function pullSilhouetteWings(mesh, axis, frame, wMin) {
  */
 const CORRECTION_FILLET_CLEARANCE_MM = 0.45;
 
+// ---------------------------------------------------------------------------
+// 커프 재디자인(cuffBlend.replaceBand) 차용: 코너 띠 교체
+//
+// 별도 솔리드를 덧씌우지 않는다. cuffBlend와 같은 순서로 간다.
+// 1) 띠 위·아래 경계 곡선으로 원본 면을 가른다(splitByLevel 방식).
+// 2) 경계 사이 바깥 면만 걷어 낸다(나사홀 등 안쪽 면은 그대로).
+// 3) 경계 루프 사이에 각도×필렛 단면의 규칙 격자를 지퍼로 잇는다.
+// 격자가 규칙적이고 열마다 원형 평활을 거치므로, 원본 삼각 분할이
+// 거칠거나 정점 이동량이 제각각이어도 톱니처럼 깨지지 않는다.
+
+const BAND_COLUMNS = 360;
+const BAND_SMOOTH_HALF = 5;
+/** 타이트 구간이 이 각도보다 크게 비면 한 바퀴 띠로 잇지 않는다. */
+const BAND_MAX_GAP_RAD = 0.6;
+
+function bandStationGroups(tightRows, axis, sampleTotal) {
+  const frame = axisFrame(axis);
+  const runs = [];
+  for (const { run, smooth } of reliefRuns(tightRows, sampleTotal)) {
+    runs.push(stationColsFromRun(run, smooth, axis, frame));
+  }
+  const groups = connectCuffRuns(runs)
+    .map(fairCuffCols)
+    .filter((cols) => cols.length >= 2);
+  return { frame, groups };
+}
+
+/** 정렬된 스테이션 사이를 각도 보간한 촘촘한(360열) 필렛 단면들. 열 방향 원형 평활 포함. */
+function denseBandProfiles(cols) {
+  const sorted = cols.slice().sort((a, b) => a.theta - b.theta);
+  const profLen = sorted[0].profile.length;
+  if (profLen < 4 || sorted.some((c) => c.profile.length !== profLen)) return null;
+  let maxGap = 0;
+  for (let i = 0; i < sorted.length; i += 1) {
+    const a = sorted[i].theta;
+    const b = sorted[(i + 1) % sorted.length].theta + (i === sorted.length - 1 ? Math.PI * 2 : 0);
+    maxGap = Math.max(maxGap, b - a);
+  }
+  if (sorted.length < 8 || maxGap > BAND_MAX_GAP_RAD) return null;
+  const dense = [];
+  for (let j = 0; j < BAND_COLUMNS; j += 1) {
+    const theta = -Math.PI + (j / BAND_COLUMNS) * Math.PI * 2;
+    let i = sorted.length - 1;
+    for (let k = 0; k < sorted.length; k += 1) {
+      const next = sorted[(k + 1) % sorted.length];
+      const nextTheta = next.theta + (k === sorted.length - 1 ? Math.PI * 2 : 0);
+      const curTheta = sorted[k].theta;
+      const probe = theta < curTheta ? theta + Math.PI * 2 : theta;
+      if (probe >= curTheta && probe <= nextTheta) {
+        i = k;
+        break;
+      }
+    }
+    const from = sorted[i];
+    const to = sorted[(i + 1) % sorted.length];
+    const fromTheta = from.theta;
+    const toTheta = to.theta + (i === sorted.length - 1 ? Math.PI * 2 : 0);
+    const probe = theta < fromTheta ? theta + Math.PI * 2 : theta;
+    const span = toTheta - fromTheta;
+    const t = span > 1e-9 ? clamp((probe - fromTheta) / span, 0, 1) : 0;
+    dense.push(
+      from.profile.map((p, c) => ({
+        u: p.u + t * (to.profile[c].u - p.u),
+        w: p.w + t * (to.profile[c].w - p.w),
+      })),
+    );
+  }
+  // 열 방향으로 흔들리면 세로 톱니가 되므로 단면 점마다 원형 이동평균한다(cuffBlend circularSmooth).
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (let c = 0; c < profLen; c += 1) {
+      const us = dense.map((d) => d[c].u);
+      const ws = dense.map((d) => d[c].w);
+      for (let j = 0; j < BAND_COLUMNS; j += 1) {
+        let su = 0;
+        let sw = 0;
+        for (let k = -BAND_SMOOTH_HALF; k <= BAND_SMOOTH_HALF; k += 1) {
+          const idx = (j + k + BAND_COLUMNS) % BAND_COLUMNS;
+          su += us[idx];
+          sw += ws[idx];
+        }
+        const cnt = BAND_SMOOTH_HALF * 2 + 1;
+        dense[j][c] = { u: su / cnt, w: sw / cnt };
+      }
+    }
+  }
+  return { dense, profLen };
+}
+
+function bandValueAt(values, theta) {
+  const pos = (((theta + Math.PI) / (Math.PI * 2)) * BAND_COLUMNS) % BAND_COLUMNS;
+  const j0 = Math.floor(pos);
+  const j1 = (j0 + 1) % BAND_COLUMNS;
+  const t = pos - j0;
+  return values[j0] * (1 - t) + values[j1] * t;
+}
+
+/** cuffBlend.splitByLevel 차용: levelOf 부호가 바뀌는 삼각형을 경계에서 정확히 가른다. */
+function splitMeshByBandLevel(mesh, levelOf) {
+  const verts = Array.from(mesh.verts);
+  const values = [];
+  for (let v = 0; v < verts.length / 3; v += 1) {
+    let f = levelOf([verts[v * 3], verts[v * 3 + 1], verts[v * 3 + 2]]);
+    if (Math.abs(f) < 1e-7) f = 0;
+    values.push(f);
+  }
+  const cache = new Map();
+  const mid = (a, b) => {
+    const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+    const hit = cache.get(key);
+    if (hit !== undefined) return hit;
+    const t = values[a] / (values[a] - values[b]);
+    const idx = verts.length / 3;
+    verts.push(
+      verts[a * 3] + t * (verts[b * 3] - verts[a * 3]),
+      verts[a * 3 + 1] + t * (verts[b * 3 + 1] - verts[a * 3 + 1]),
+      verts[a * 3 + 2] + t * (verts[b * 3 + 2] - verts[a * 3 + 2]),
+    );
+    values.push(0);
+    cache.set(key, idx);
+    return idx;
+  };
+  const sign = (v) => (values[v] > 0 ? 1 : values[v] < 0 ? -1 : 0);
+  const faces = [];
+  for (let f = 0; f < mesh.faceCount; f += 1) {
+    const tri = [mesh.faces[f * 3], mesh.faces[f * 3 + 1], mesh.faces[f * 3 + 2]];
+    const s = tri.map(sign);
+    if (!(s[0] * s[1] < 0 || s[1] * s[2] < 0 || s[2] * s[0] < 0)) {
+      faces.push(tri[0], tri[1], tri[2]);
+      continue;
+    }
+    const zeroAt = s.indexOf(0);
+    if (zeroAt >= 0) {
+      const v0 = tri[zeroAt];
+      const v1 = tri[(zeroAt + 1) % 3];
+      const v2 = tri[(zeroAt + 2) % 3];
+      const m = mid(v1, v2);
+      faces.push(v0, v1, m, v0, m, v2);
+      continue;
+    }
+    let iso = 0;
+    if (s[0] === s[1]) iso = 2;
+    else if (s[0] === s[2]) iso = 1;
+    const v0 = tri[iso];
+    const v1 = tri[(iso + 1) % 3];
+    const v2 = tri[(iso + 2) % 3];
+    const m1 = mid(v0, v1);
+    const m2 = mid(v0, v2);
+    faces.push(v0, m1, m2, m1, v1, v2, m1, v2, m2);
+  }
+  return new Mesh(Float64Array.from(verts), Int32Array.from(faces));
+}
+
+/** cuffBlend.chainBoundaryLoops 차용. */
+function chainBandLoops(directedEdges) {
+  const next = new Map();
+  for (const [a, b] of directedEdges) {
+    if (next.has(a)) return null;
+    next.set(a, b);
+  }
+  const loops = [];
+  const seen = new Set();
+  for (const start of next.keys()) {
+    if (seen.has(start)) continue;
+    const loop = [];
+    let v = start;
+    while (!seen.has(v)) {
+      seen.add(v);
+      loop.push(v);
+      v = next.get(v);
+      if (v === undefined) return null;
+    }
+    if (v !== start) return null;
+    loops.push(loop);
+  }
+  return loops;
+}
+
+/** cuffBlend.angularRow 차용(축 기준 각도). */
+function angularBandRow(loop, verts, axis, frame) {
+  const point = (v) => [verts[v * 3], verts[v * 3 + 1], verts[v * 3 + 2]];
+  const ang = loop.map((v) => thetaAboutAxis(point(v), axis, frame));
+  const steps = ang.map((a, i) => angDelta(ang[(i + 1) % ang.length], a));
+  const turn = steps.reduce((s, d) => s + d, 0);
+  const dir = Math.sign(turn);
+  if (Math.abs(Math.abs(turn) - Math.PI * 2) > 0.1 || steps.some((d) => d * dir < -0.02)) return null;
+  let order = loop.map((_, i) => i);
+  if (dir < 0) order = order.reverse();
+  const wrap = (a) => {
+    let t = a % (Math.PI * 2);
+    if (t < 0) t += Math.PI * 2;
+    return t;
+  };
+  let start = 0;
+  for (let i = 1; i < order.length; i += 1) {
+    if (wrap(ang[order[i]]) < wrap(ang[order[start]])) start = i;
+  }
+  order = [...order.slice(start), ...order.slice(0, start)];
+  const out = [];
+  let acc = wrap(ang[order[0]]);
+  for (let i = 0; i < order.length; i += 1) {
+    if (i > 0) acc += angDelta(ang[order[i]], ang[order[i - 1]]);
+    out.push({ v: loop[order[i]], a: acc });
+  }
+  return out;
+}
+
+/** cuffBlend.zipperRows 차용. */
+function zipperBandRows(lower, upper, emit) {
+  const A = lower.length;
+  const B = upper.length;
+  let i = 0;
+  let j = 0;
+  const angA = (k) => lower[k % A].a + Math.floor(k / A) * Math.PI * 2;
+  const angB = (k) => upper[k % B].a + Math.floor(k / B) * Math.PI * 2;
+  while (i < A || j < B) {
+    const nextA = i < A ? angA(i + 1) : Infinity;
+    const nextB = j < B ? angB(j + 1) : Infinity;
+    if (nextA <= nextB) {
+      emit(lower[i % A].v, lower[(i + 1) % A].v, upper[j % B].v);
+      i += 1;
+    } else {
+      emit(lower[i % A].v, upper[(j + 1) % B].v, upper[j % B].v);
+      j += 1;
+    }
+  }
+}
+
 /**
- * 타이트 코너를 공구보다 넉넉한 필렛으로 밀어 낸 메시(정렬 좌표계).
- * 면을 도려내지 않아서 경계가 갈라지지 않는다.
+ * 코너 띠를 걷어 내고 공구 R 필렛 격자로 다시 잇는다.
+ * 한 바퀴를 덮는 타이트 구간에서만 쓰고, 아니면 null(기존 정점 이동 폴백).
+ */
+function buildBandCorrectedMesh(mesh, tightRows, axis, sampleTotal) {
+  const { frame, groups } = bandStationGroups(tightRows, axis, sampleTotal);
+  for (const cols of groups) {
+    const band = denseBandProfiles(cols);
+    if (!band) continue;
+    const { dense, profLen } = band;
+    const wBottom = dense.map((d) => d[0].w);
+    const wTop = dense.map((d) => d[profLen - 1].w);
+    const levelAt = (values) => (p) => {
+      const m = vertexMetrics(p, axis, frame);
+      return m.along - bandValueAt(values, m.theta);
+    };
+    let cut = splitMeshByBandLevel(mesh, levelAt(wBottom));
+    cut = splitMeshByBandLevel(cut, levelAt(wTop));
+    const verts = Array.from(cut.verts);
+    const faces = Array.from(cut.faces);
+    const fc = faces.length / 3;
+    const wLo = Math.min(...wBottom);
+    const wHi = Math.max(...wTop);
+    const field = buildOuterRadiusGrid(cut, axis, frame, wLo - 0.25, wHi + 0.25);
+    const point = (v) => [verts[v * 3], verts[v * 3 + 1], verts[v * 3 + 2]];
+    const removed = new Uint8Array(fc);
+    for (let f = 0; f < fc; f += 1) {
+      const tri = [faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2]];
+      const centroid = [0, 1, 2].map(
+        (k) => (point(tri[0])[k] + point(tri[1])[k] + point(tri[2])[k]) / 3,
+      );
+      const cm = vertexMetrics(centroid, axis, frame);
+      if (cm.along <= bandValueAt(wBottom, cm.theta) || cm.along >= bandValueAt(wTop, cm.theta)) {
+        continue;
+      }
+      const outer = tri.every((v) => onOuterShell(field, vertexMetrics(point(v), axis, frame)));
+      if (outer) removed[f] = 1;
+    }
+    if (!removed.some((x) => x)) continue;
+    const keptEdges = new Set();
+    const removedEdges = [];
+    for (let f = 0; f < fc; f += 1) {
+      for (let k = 0; k < 3; k += 1) {
+        const a = faces[f * 3 + k];
+        const b = faces[f * 3 + ((k + 1) % 3)];
+        if (removed[f]) removedEdges.push([a, b]);
+        else keptEdges.add(`${a}_${b}`);
+      }
+    }
+    const boundary = [];
+    for (const [a, b] of removedEdges) {
+      if (keptEdges.has(`${b}_${a}`)) boundary.push([b, a]);
+    }
+    const loops = chainBandLoops(boundary);
+    if (!loops || loops.length !== 2) continue;
+    const meanAlong = (loop) =>
+      loop.reduce((s, v) => s + vertexMetrics(point(v), axis, frame).along, 0) / loop.length;
+    loops.sort((p, q) => meanAlong(p) - meanAlong(q));
+    const bottom = angularBandRow(loops[0], verts, axis, frame);
+    const top = angularBandRow(loops[1], verts, axis, frame);
+    if (!bottom || !top) continue;
+    const gridRows = [];
+    for (let c = 1; c < profLen - 1; c += 1) {
+      const row = [];
+      for (let j = 0; j < BAND_COLUMNS; j += 1) {
+        const theta = -Math.PI + (j / BAND_COLUMNS) * Math.PI * 2;
+        const radial = [
+          frame.xAxis[0] * Math.cos(theta) + frame.yAxis[0] * Math.sin(theta),
+          frame.xAxis[1] * Math.cos(theta) + frame.yAxis[1] * Math.sin(theta),
+          frame.xAxis[2] * Math.cos(theta) + frame.yAxis[2] * Math.sin(theta),
+        ];
+        const p = fromPlaneCoords(dense[j][c].u, dense[j][c].w, radial, axis);
+        const idx = verts.length / 3;
+        verts.push(p[0], p[1], p[2]);
+        row.push({ v: idx, a: (j / BAND_COLUMNS) * Math.PI * 2 });
+      }
+      gridRows.push(row);
+    }
+    const newFaces = [];
+    const emit = (a, b, c) => {
+      const pa = point(a);
+      const pb = point(b);
+      const pc = point(c);
+      const ux = pb[0] - pa[0];
+      const uy = pb[1] - pa[1];
+      const uz = pb[2] - pa[2];
+      const vx = pc[0] - pa[0];
+      const vy = pc[1] - pa[1];
+      const vz = pc[2] - pa[2];
+      const nx = uy * vz - uz * vy;
+      const ny = uz * vx - ux * vz;
+      const nz = ux * vy - uy * vx;
+      if (Math.hypot(nx, ny, nz) < 1e-12) return;
+      const centroid = [
+        (pa[0] + pb[0] + pc[0]) / 3,
+        (pa[1] + pb[1] + pc[1]) / 3,
+        (pa[2] + pb[2] + pc[2]) / 3,
+      ];
+      const cm = vertexMetrics(centroid, axis, frame);
+      const outward = nx * cm.radial[0] + ny * cm.radial[1] + nz * cm.radial[2];
+      if (outward >= 0) newFaces.push(a, b, c);
+      else newFaces.push(a, c, b);
+    };
+    const stack = [bottom, ...gridRows, top];
+    for (let r = 0; r + 1 < stack.length; r += 1) zipperBandRows(stack[r], stack[r + 1], emit);
+    const outFaces = [];
+    for (let f = 0; f < fc; f += 1) {
+      if (!removed[f]) outFaces.push(faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2]);
+    }
+    outFaces.push(...newFaces);
+    const result = new Mesh(Float64Array.from(verts), Int32Array.from(outFaces));
+    if (result.nakedEdgeCount() !== mesh.nakedEdgeCount()) continue;
+    return result;
+  }
+  return null;
+}
+
+/**
+ * 타이트 코너를 공구보다 넉넉한 필렛으로 변형한 메시(정렬 좌표계).
+ * 덧씌우는 솔리드는 만들지 않는다. 한 바퀴 구간은 커프식으로 띠를
+ * 교체하고, 부분 구간은 기존 정점을 필렛으로 옮긴다.
  * @returns {import("./meshCore.js").Mesh | null}
  */
 export function applyTightCornerCorrectionToMesh(mesh, finishLinePoints, options = {}) {
@@ -1484,6 +1829,12 @@ export function applyTightCornerCorrectionToMesh(mesh, finishLinePoints, options
     (s) => Number(s.filletRadiusMm) < toolR - FILLET_R_TOLERANCE_MM,
   );
   if (!samples.length) return null;
+  const banded = buildBandCorrectedMesh(mesh, samples, collected.axis, collected.sampled.length);
+  if (banded) {
+    const wMin = Math.min(...samples.flatMap((s) => s.reliefProfile.map((p) => p[1])));
+    pullSilhouetteWings(banded, collected.axis, axisFrame(collected.axis), wMin);
+    return banded;
+  }
   const next = mesh.clone();
   const moved = projectVerticesOntoRelief(
     next,

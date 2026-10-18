@@ -266,6 +266,48 @@ describe("abutmentStl tightCorner", () => {
     expect(rMax - rMin).toBeLessThan(0.55);
   });
 
+  it("거친 삼각 분할의 날카로운 코너도 커프식 띠 교체로 매끈해진다(덧씌움 아님)", () => {
+    const flPts = [];
+    for (let i = 0; i < 48; i += 1) {
+      const a = (i / 48) * Math.PI * 2;
+      flPts.push([3.6 * Math.cos(a), 3.6 * Math.sin(a), 2.0]);
+    }
+    const mesh = Mesh.fromStlBuffer(
+      writeBinaryStl({ positions: marginWallSoup(0, 24), attributes: null }),
+    );
+    const beforeNaked = mesh.nakedEdgeCount();
+    const corrected = applyTightCornerCorrectionToMesh(mesh, flPts, {});
+    expect(corrected).not.toBeNull();
+    expect(corrected.nakedEdgeCount()).toBe(beforeNaked);
+    expect(detectTightCorners(corrected, flPts, {}).tightCount).toBe(0);
+    // 띠 구간에서 각도 1° 이웃 반경 차가 작아야 톱니로 보이지 않는다.
+    const bins = new Array(360).fill(null);
+    const v = corrected.verts;
+    for (let i = 0; i < v.length; i += 3) {
+      const z = v[i + 2];
+      if (z < 2.4 || z > 3.4) continue;
+      const u = Math.hypot(v[i], v[i + 1]);
+      if (u < 2) continue;
+      const deg = Math.round(((Math.atan2(v[i + 1], v[i]) * 180) / Math.PI + 360) % 360);
+      if (bins[deg] == null || u > bins[deg]) bins[deg] = u;
+    }
+    let maxJump = 0;
+    for (let i = 0; i < 360; i += 1) {
+      const a = bins[i];
+      const b = bins[(i + 1) % 360];
+      if (a != null && b != null) maxJump = Math.max(maxJump, Math.abs(a - b));
+    }
+    expect(maxJump).toBeLessThan(0.05);
+    // 띠 아래(마진~FL) 원본 정점은 그대로다.
+    let belowKept = 0;
+    for (let i = 0; i < v.length; i += 3) {
+      if (Math.abs(v[i + 2] - 2.0) < 1e-9 && Math.abs(Math.hypot(v[i], v[i + 1]) - 3.6) < 1e-6) {
+        belowKept += 1;
+      }
+    }
+    expect(belowKept).toBeGreaterThan(0);
+  });
+
   it("회전체 샘플(R>0.6)은 보정면 없음", async () => {
     const smoothBuffer = writeBinaryStl({ positions: revolvedAbutmentSoup(), attributes: null });
     const smoothPipe = await runAbutmentStlPipeline(smoothBuffer, { targetDiameter: 3.33 });

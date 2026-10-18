@@ -12,7 +12,7 @@
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailDialog.tsx
 // - web/frontend/src/shared/components/practice/AbutmentDesignConfirmDialog.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestPatientImplantFields.tsx
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import {
   AlertDialog,
@@ -313,8 +313,11 @@ export function AbutmentModelConfirmDialog({
     Boolean(machiningPreflight?.overlay) &&
     Boolean(detailFile);
 
+  const onVerifyAndNextRef = useRef(onVerifyAndNext);
+  onVerifyAndNextRef.current = onVerifyAndNext;
+
   const runCorrectedStlDownload = useCallback(async () => {
-    if (!detailFile || correctedDownloading) return;
+    if (!detailFile || correctedDownloading) return false;
     setCorrectedDownloading(true);
     try {
       const result = await fetchCorrectedStlBlob({
@@ -328,7 +331,7 @@ export function AbutmentModelConfirmDialog({
           variant: "destructive",
           duration: 4500,
         });
-        return;
+        return false;
       }
       const correctedFile = new File([result.blob], result.fileName, {
         type: "model/stl",
@@ -338,14 +341,58 @@ export function AbutmentModelConfirmDialog({
       triggerBrowserFileDownload(result.blob, result.fileName);
       toast({
         title: "보정 디자인으로 바꿨습니다.",
-        description: "다운로드한 파일로 보철을 다시 디자인해야 합니다.",
+        description: "변경된 디자인을 다운로드해서 보철 내면을 새로 생성하셔야 합니다.",
         duration: 3500,
       });
+      return true;
     } finally {
       setCorrectedDownloading(false);
       setCorrectedDownloadOpen(false);
     }
   }, [correctedDownloading, detailCaseInfos, detailFile, detailIndex, onApplyCorrectedDesign, toast]);
+
+  /** 부모(handleVerifyFile)와 같은 필수 항목이 비었으면 보정 확인보다 입력 안내가 먼저다. */
+  const hasMissingRequiredInfo = useMemo(() => {
+    if (isLabHandoff || isDesignCustomMode) return false;
+    const rg = String(detailCaseInfos?.retentionGroove || "").trim();
+    return !(
+      detailCaseInfos?.clinicName &&
+      detailCaseInfos?.patientName &&
+      detailCaseInfos?.tooth &&
+      (detailCaseInfos?.implantManufacturer || implantManufacturer) &&
+      (detailCaseInfos?.implantBrand || implantBrand) &&
+      (detailCaseInfos?.implantFamily || implantFamily) &&
+      (detailCaseInfos?.implantType || implantType) &&
+      (rg === "none" || rg === "shallow" || rg === "deep")
+    );
+  }, [
+    detailCaseInfos,
+    implantBrand,
+    implantFamily,
+    implantManufacturer,
+    implantType,
+    isDesignCustomMode,
+    isLabHandoff,
+  ]);
+
+  const handleConfirmAndNext = useCallback(() => {
+    if (detailIndex === null) return;
+    if (canOfferCorrectedDownload && !hasMissingRequiredInfo) {
+      setCorrectedDownloadOpen(true);
+      return;
+    }
+    void onVerifyAndNext(detailIndex);
+  }, [canOfferCorrectedDownload, detailIndex, hasMissingRequiredInfo, onVerifyAndNext]);
+
+  const handleCorrectedProceed = useCallback(async () => {
+    const index = detailIndex;
+    if (index === null) return;
+    const ok = await runCorrectedStlDownload();
+    if (!ok) return;
+    // 접수 파일 교체(setState)가 반영된 뒤 최신 콜백으로 진행해야 검증 키가 새 파일과 맞는다.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await onVerifyAndNextRef.current(index);
+  }, [detailIndex, runCorrectedStlDownload]);
 
   return (
     <>
@@ -358,7 +405,7 @@ export function AbutmentModelConfirmDialog({
       >
         <DialogContent
           // Above floating transfer panel (z-300). Same band as ModelPreviewDialog.
-          className="new-request-page z-[320] flex w-[calc(100vw-1rem)] max-h-[92vh] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-y-auto p-4 sm:w-[980px] sm:max-w-[980px] sm:p-5"
+          className="new-request-page z-[320] flex h-[min(96vh,920px)] max-h-[96vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-y-auto p-4 sm:w-[980px] sm:max-w-[980px] sm:p-5"
           overlayClassName="z-[310]"
         >
           <DialogHeader className="relative shrink-0 space-y-0 pr-8">
@@ -377,19 +424,6 @@ export function AbutmentModelConfirmDialog({
             </DialogDescription>
           </DialogHeader>
 
-          {machiningPreflight ? (
-            <StlMachiningPreflightNotice
-              preflight={machiningPreflight}
-              className="shrink-0"
-              onCorrectedDownloadClick={
-                canOfferCorrectedDownload
-                  ? () => setCorrectedDownloadOpen(true)
-                  : undefined
-              }
-              correctedDownloadBusy={correctedDownloading}
-            />
-          ) : null}
-
           {uploadPercent != null ? (
             <div
               className="shrink-0 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2"
@@ -407,7 +441,7 @@ export function AbutmentModelConfirmDialog({
           ) : null}
 
           <div className="grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 sm:pr-2 lg:grid-cols-[52%_48%]">
-            <div className="app-glass-card app-glass-card--lg flex h-full min-h-[240px] flex-col !p-2 gap-2">
+            <div className="app-glass-card app-glass-card--lg flex h-full min-h-[320px] flex-col !p-2 gap-2 sm:min-h-[380px]">
               <div className="app-glass-card-content min-h-0 flex-1">
                 {detailFile ? (
                   <StlPreviewViewer
@@ -421,15 +455,21 @@ export function AbutmentModelConfirmDialog({
                         ? { tightCorner: machiningPreflight.overlay }
                         : undefined
                     }
-                    className="h-full min-h-[240px]"
+                    className="h-full min-h-[280px] sm:min-h-[340px]"
                     onDiameterComputed={handleDiameterComputed}
                   />
                 ) : (
-                  <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
+                  <div className="flex h-[280px] min-h-[280px] items-center justify-center text-sm text-muted-foreground sm:h-[340px] sm:min-h-[340px]">
                     3D Preview
                   </div>
                 )}
               </div>
+              {machiningPreflight ? (
+                <StlMachiningPreflightNotice
+                  preflight={machiningPreflight}
+                  className="w-full shrink-0"
+                />
+              ) : null}
               {selectablePreviewIndices.length > 1 ? (
                 <div className="shrink-0 rounded-lg border border-slate-200 bg-white/80">
                   <ul className="max-h-[7.5rem] overflow-y-auto py-1">
@@ -670,11 +710,7 @@ export function AbutmentModelConfirmDialog({
                                 ? "animate-bounce bg-primary text-white"
                                 : undefined
                             }
-                            onClick={() => {
-                              if (detailIndex !== null) {
-                                void onVerifyAndNext(detailIndex);
-                              }
-                            }}
+                            onClick={handleConfirmAndNext}
                           >
                             확인 & 다음
                           </Button>
@@ -712,9 +748,9 @@ export function AbutmentModelConfirmDialog({
             <AlertDialogTitle>보정 디자인으로 진행할까요?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <p className="text-sm leading-6 text-muted-foreground">
-                다운로드하여 보철을 다시 디자인해야 합니다.
+                공구에 맞는 디자인으로 변경하여 의뢰합니다.
                 <br />
-                변경된 형태로 가공됩니다.
+                변경된 디자인을 다운로드해서 보철 내면을 새로 생성하셔야 합니다.
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -724,7 +760,7 @@ export function AbutmentModelConfirmDialog({
               disabled={correctedDownloading}
               onClick={(event) => {
                 event.preventDefault();
-                void runCorrectedStlDownload();
+                void handleCorrectedProceed();
               }}
             >
               {correctedDownloading ? "만드는 중…" : "확인"}
