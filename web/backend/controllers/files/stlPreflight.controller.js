@@ -11,7 +11,7 @@ import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 import {
   buildCorrectedDesignStlBuffer,
-  readCorrectedDesignStl,
+  awaitCorrectedDesignStl,
   runStlMachiningPreflight,
 } from "../../services/abutmentStl/preflight.service.js";
 
@@ -44,6 +44,7 @@ const CORRECTED_REASON_MESSAGE = {
   empty_file: "STL 파일이 비어 있습니다.",
   finishline_missing: "피니시라인을 찾지 못해 보정 STL을 만들 수 없습니다.",
   no_tight_corners: "불완전 가공 구간이 없어 보정 STL이 필요하지 않습니다.",
+  correction_deferred: "보정은 제조사 준비에서 합니다.",
   correction_failed: "보정 메시를 만들지 못했습니다.",
   pipeline_failed: "가공 검사 파이프라인이 실패했습니다.",
 };
@@ -134,7 +135,7 @@ export const downloadCachedCorrectedStl = asyncHandler(async (req, res) => {
   if (!/^[a-f0-9]{32}$/.test(id)) {
     throw new ApiError(404, "보정 STL이 없거나 만료되었습니다.");
   }
-  const row = readCorrectedDesignStl(id, req.user?._id);
+  const row = await awaitCorrectedDesignStl(id, req.user?._id);
   if (!row?.buffer?.length) {
     throw new ApiError(404, "보정 STL이 없거나 만료되었습니다.");
   }

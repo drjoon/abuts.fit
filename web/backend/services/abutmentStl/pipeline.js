@@ -11,7 +11,7 @@ import { detectFinishLine, finishlineZExtrema, sanitizeFinishlinePoints } from "
 import { buildScrewholePatch, SCREWHOLE_PARAMS } from "./fillScrewholes.js";
 import { buildVerticalBandSolid } from "./fillSteps.js";
 import { calculateStlMetadataFromBuffer, tiltAxisFromMesh } from "./stlMetadata.js";
-import { correctTightCornerFillet, detectTightCorners, movedFilletSurface } from "./tightCorner.js";
+import { correctTightCornerFillet, detectTightCorners } from "./tightCorner.js";
 
 export const ABUTMENT_STL_JS_VERSION = `abutment-stl-js-1+align-${ALIGN_MODULE_VERSION}+${JS_ALIGN_PORT_VERSION}`;
 
@@ -53,7 +53,7 @@ function finishLineFromStoredPoints(rawPoints, log) {
   };
 }
 
-/** preflight.service invertRigidMatrix와 같다. 보정 STL을 원본 좌표로 되돌릴 때 쓴다. */
+/** 보정 STL을 원본 좌표로 되돌릴 때 쓴다. */
 function invertRigidMatrix(m) {
   const src = Array.isArray(m) && m.length === 16 ? m : identity();
   const tx = src[3];
@@ -115,45 +115,29 @@ function analyzeDiameters(mesh) {
 }
 
 /**
- * 접수 전 검사. filled STL·전체 메타는 만들지 않는다.
- * 타이트하면 필렛 면과, 원본 좌표의 보정 STL(outputBuffer)을 같이 돌려준다.
- * 확인 클릭이 파이프라인을 다시 돌리지 않게 부모가 이 버퍼를 캐시한다.
+ * 접수 모달 검사. 정렬·피니시라인 다음, 그 위 필레만 8곳으로 본다.
+ * 스크류홀 패치·보정 STL·filled는 만들지 않는다. 그건 제조사 준비의 전체 파이프라인이 한다.
  */
-function finishPreflight({ mesh, combined, finishLine, align, alignMatrix, logs, perf, mark, total0, log }) {
+function finishPreflight({ mesh, finishLine, align, alignMatrix, logs, perf, mark, total0, log }) {
   const t0 = performance.now();
   let tiltAxisVector = null;
   let tightCorner = null;
-  let filletSurface = null;
-  let outputBuffer = Buffer.alloc(0);
   if (finishLine?.points?.length) {
     try {
-      tiltAxisVector = tiltAxisFromMesh(combined, finishLine.points);
+      tiltAxisVector = tiltAxisFromMesh(mesh, finishLine.points);
     } catch (error) {
       log(`[stl-preflight] tilt failed: ${error?.message || error}`);
     }
     try {
-      tightCorner = detectTightCorners(combined, finishLine.points, {
+      tightCorner = detectTightCorners(mesh, finishLine.points, {
         tiltAxisVector,
-        solids: false,
+        screen: true,
       });
     } catch (error) {
       log(`[tight-corner] failed: ${error?.message || error}`);
     }
     if (Number(tightCorner?.tightCount) > 0) {
       log(`[tight-corner] flagged ${tightCorner.tightCount} samples`);
-      try {
-        const corrected = correctTightCornerFillet(mesh, finishLine.points, { tiltAxisVector });
-        filletSurface = corrected ? movedFilletSurface(corrected) : null;
-        if (corrected?.mesh) {
-          corrected.mesh.transform(invertRigidMatrix(alignMatrix));
-          outputBuffer = writeBinaryStl({
-            positions: corrected.mesh.toTriangleSoup(),
-            attributes: null,
-          });
-        }
-      } catch (error) {
-        log(`[stl-preflight] fillet surface failed: ${error?.message || error}`);
-      }
     }
   } else {
     log("[stl-preflight] finishLine missing");
@@ -162,14 +146,14 @@ function finishPreflight({ mesh, combined, finishLine, align, alignMatrix, logs,
   mark("total", total0);
   return {
     version: ABUTMENT_STL_JS_VERSION,
-    outputBuffer,
+    outputBuffer: Buffer.alloc(0),
     bodyTriangleCount: mesh.faceCount,
     align: { ok: align.ok, message: align.message },
     alignMatrix,
     finishLine,
     tightCorner,
-    /** 정렬 좌표계의 보정 필렛 면. 없으면 null. */
-    filletSurface,
+    /** 정렬 좌표계의 표시용 필렛 띠. 보정 STL은 아니다. */
+    filletSurface: tightCorner?.reliefOverlay || null,
     stlMetadata: tiltAxisVector ? { tiltAxisVector } : null,
     perf,
     logs,
@@ -178,10 +162,58 @@ function finishPreflight({ mesh, combined, finishLine, align, alignMatrix, logs,
 }
 
 /**
+ * 의뢰 전에 내려받을 보정 STL. 필레를 피니시라인 한 바퀴로 다시 재고 정점을 옮긴다.
+ * 스크류홀 패치는 넣지 않는다. 제조사 준비의 filled와 별개다.
+ */
+function finishCorrectedDesign({ mesh, finishLine, align, alignMatrix, logs, perf, mark, total0, log }) {
+  const t0 = performance.now();
+  let tiltAxisVector = null;
+  let outputBuffer = Buffer.alloc(0);
+  if (finishLine?.points?.length) {
+    try {
+      tiltAxisVector = tiltAxisFromMesh(mesh, finishLine.points);
+    } catch (error) {
+      log(`[stl-correct] tilt failed: ${error?.message || error}`);
+    }
+    try {
+      const corrected = correctTightCornerFillet(mesh, finishLine.points, { tiltAxisVector });
+      if (corrected?.mesh) {
+        corrected.mesh.transform(invertRigidMatrix(alignMatrix));
+        outputBuffer = writeBinaryStl({
+          positions: corrected.mesh.toTriangleSoup(),
+          attributes: null,
+        });
+      } else {
+        log("[stl-correct] no vertex move");
+      }
+    } catch (error) {
+      log(`[stl-correct] failed: ${error?.message || error}`);
+    }
+  } else {
+    log("[stl-correct] finishLine missing");
+  }
+  mark("correct", t0);
+  mark("total", total0);
+  return {
+    version: ABUTMENT_STL_JS_VERSION,
+    outputBuffer,
+    bodyTriangleCount: mesh.faceCount,
+    align: { ok: align.ok, message: align.message },
+    alignMatrix,
+    finishLine,
+    stlMetadata: tiltAxisVector ? { tiltAxisVector } : null,
+    perf,
+    logs,
+    correctDesign: true,
+  };
+}
+
+/**
  * @param {Buffer} inputBuffer 1-stl 원본
  * @param {{ targetDiameter?: number|null, implantProfile?: object, screwholeParams?: object, finishLinePoints?: number[][], preflight?: boolean, log?: Function }} options
  * finishLinePoints가 있으면 검출을 건너뛰고 그 점을 메타데이터에 쓴다.
- * preflight면 filled STL을 만들지 않고 불완전 가공만 검사한다.
+ * preflight면 8곳 필레 검사만 한다.
+ * correctDesign이면 의뢰 전 다운로드용 보정 STL만 만든다.
  */
 export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
   const { targetDiameter = null, implantProfile = {}, screwholeParams = SCREWHOLE_PARAMS } = options;
@@ -229,17 +261,9 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
   }
   mark("finishline", t0);
 
-  t0 = performance.now();
-  const screw = buildScrewholePatch(mesh, { params: screwholeParams, log });
-  let soup = mesh.toTriangleSoup();
-  if (screw.patch) soup = appendTriangles(soup, screw.patch);
-  const combined = Mesh.fromTriangleSoup(soup);
-  mark("screwhole", t0);
-
   if (options.preflight) {
     return finishPreflight({
       mesh,
-      combined,
       finishLine,
       align,
       alignMatrix,
@@ -250,6 +274,27 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
       log,
     });
   }
+
+  if (options.correctDesign) {
+    return finishCorrectedDesign({
+      mesh,
+      finishLine,
+      align,
+      alignMatrix,
+      logs,
+      perf,
+      mark,
+      total0,
+      log,
+    });
+  }
+
+  t0 = performance.now();
+  const screw = buildScrewholePatch(mesh, { params: screwholeParams, log });
+  let soup = mesh.toTriangleSoup();
+  if (screw.patch) soup = appendTriangles(soup, screw.patch);
+  const combined = Mesh.fromTriangleSoup(soup);
+  mark("screwhole", t0);
 
   t0 = performance.now();
   const diameter = analyzeDiameters(combined);

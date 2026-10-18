@@ -326,7 +326,7 @@ export function AbutmentModelConfirmDialog({
   const canOfferCorrectedDownload =
     !isLabHandoff &&
     machiningPreflight?.status === "tight" &&
-    Boolean(machiningPreflight?.overlay) &&
+    Boolean(machiningPreflight?.correctedId) &&
     Boolean(detailFile);
   const machiningCheckPending = !isLabHandoff && machiningPreflight?.status === "checking";
 

@@ -280,6 +280,36 @@ describe("abutmentStl tightCorner", () => {
     expect(applyTightCornerCorrectionToMesh(mesh, flPts, {})).toBeNull();
   });
 
+  it("접수 모달은 한 바퀴 8곳만 재고, 좁은 마진은 잡는다", () => {
+    const flPts = [];
+    for (let i = 0; i < 48; i += 1) {
+      const a = (i / 48) * Math.PI * 2;
+      flPts.push([3.6 * Math.cos(a), 3.6 * Math.sin(a), 2.0]);
+    }
+    const meshOf = (soup) =>
+      Mesh.fromStlBuffer(writeBinaryStl({ positions: soup, attributes: null }));
+    const tight = detectTightCorners(meshOf(marginWallSoup(0.25)), flPts, { screen: true });
+    expect(tight.tightCount).toBeGreaterThan(0);
+    expect(tight.tightCount).toBeLessThanOrEqual(8);
+    expect(tight.correctionSolid).toBeNull();
+    const loose = detectTightCorners(meshOf(marginWallSoup(0.9)), flPts, { screen: true });
+    expect(loose.tightCount).toBe(0);
+  });
+
+  it("공구 R 근처면 그 구간 가운데를 한 번 더 잰다", () => {
+    const flPts = [];
+    for (let i = 0; i < 48; i += 1) {
+      const a = (i / 48) * Math.PI * 2;
+      flPts.push([3.6 * Math.cos(a), 3.6 * Math.sin(a), 2.0]);
+    }
+    const mesh = Mesh.fromStlBuffer(
+      writeBinaryStl({ positions: marginWallSoup(0.55), attributes: null }),
+    );
+    const screened = detectTightCorners(mesh, flPts, { screen: true });
+    expect(screened.tightCount).toBeGreaterThan(8);
+    expect(screened.tightCount).toBeLessThanOrEqual(16);
+  });
+
   it("회전체 샘플(R>0.6)은 보정면 없음", async () => {
     const smoothBuffer = writeBinaryStl({ positions: revolvedAbutmentSoup(), attributes: null });
     const smoothPipe = await runAbutmentStlPipeline(smoothBuffer, { targetDiameter: 3.33 });
@@ -303,5 +333,14 @@ describe("abutmentStl pipeline", () => {
       expect(out.tightCorner).toBeTruthy();
       expect(out.tightCorner.version).toBe(6);
     }
+  });
+
+  it("접수 모달 검사는 스크류홀 패치와 보정 STL을 만들지 않는다", async () => {
+    const buffer = writeBinaryStl({ positions: revolvedAbutmentSoup(), attributes: null });
+    const out = await runAbutmentStlPipeline(buffer, { targetDiameter: 3.33, preflight: true });
+    expect(out.preflight).toBe(true);
+    expect(out.outputBuffer.length).toBe(0);
+    expect(out.perf.screwhole).toBeUndefined();
+    expect(out.tightCorner).toBeTruthy();
   });
 });

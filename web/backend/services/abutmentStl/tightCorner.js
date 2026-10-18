@@ -16,6 +16,9 @@ export const FINISH_BALL_RADIUS_MM = FINISH_BALL_DIAMETER_MM / 2;
 const DIST_TOL = 1e-8;
 const FL_SAMPLE_MAX = 80;
 const FL_SAMPLE_MIN = 12;
+/** 접수 모달 검사. 한 바퀴 8곳(45°). 공구 R 근처 구간만 가운데를 한 번 더 잰다. */
+const PREFLIGHT_SCREEN_COUNT = 8;
+const PREFLIGHT_NEAR_TOOL_MM = 0.15;
 /** 보정 스테이션. 피니시라인 정점마다 단면을 자르면 고해상도 STL에서 수 초가 걸린다. */
 const STATION_SAMPLE_MAX = 96;
 const PROFILE_W_BIN_MM = 0.06;
@@ -809,7 +812,7 @@ function bestFilletStation(mesh, fl, axis) {
  * 피니시라인 바로 위, 마진(수평에 가까움)↔축면(수직에 가까움) 경계의 fillet R을 잰다.
  * R < 공구 R이면 공구 R 필렛 보정면 단면(reliefProfile)을 돌려준다. 메시는 바꾸지 않는다.
  */
-export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log) {
+export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log, measureOptions = {}) {
   const radial = radialFromFinishPoint(fl, axis);
   const n = sectionNormal(radial, axis);
   if (!n) return null;
@@ -818,12 +821,17 @@ export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log) {
     return { tight: false };
   };
   const azDeg = ((Math.atan2(fl[1], fl[0]) * 180) / Math.PI).toFixed(1);
-  const station = bestFilletStation(mesh, fl, axis);
+  const station = measureOptions.singleAxis
+    ? measureFilletStation(mesh, fl, axis)
+    : bestFilletStation(mesh, fl, axis);
   if (station) {
     const { corner, rayLedge, rayWall, ext, measuredR } = station;
     if (!(measuredR < toolR - FILLET_R_TOLERANCE_MM)) {
       log?.(`[tight-corner] ok az=${azDeg}° R=${measuredR.toFixed(3)}mm`);
-      return { tight: false };
+      return {
+        tight: false,
+        filletRadiusMm: Math.round(Math.max(0, measuredR) * 1000) / 1000,
+      };
     }
     const reliefProfile = filletConcaveCorner2d(corner, rayLedge, rayWall, toolR);
     if (!reliefProfile) return no("relief-null");
@@ -917,7 +925,10 @@ export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log) {
     log?.(
       `[tight-corner] ok az=${((Math.atan2(fl[1], fl[0]) * 180) / Math.PI).toFixed(1)}° R=${measuredR.toFixed(3)}mm`,
     );
-    return { tight: false };
+    return {
+      tight: false,
+      filletRadiusMm: Math.round(Math.max(0, measuredR) * 1000) / 1000,
+    };
   }
 
   const reliefProfile = filletConcaveCorner2d(corner, rayLedge, rayWall, toolR);
@@ -972,10 +983,72 @@ function buildTightFinishLineSegments(finishLinePoints, samples) {
  * @param {number[][]} finishLinePoints
  * @param {{ tiltAxisVector?: {x?:number,y?:number,z?:number}|null, toolRadiusMm?: number, log?: Function }} [options]
  */
+function finishLinePointsValid(finishLinePoints) {
+  return (Array.isArray(finishLinePoints) ? finishLinePoints : [])
+    .filter((p) => Array.isArray(p) && p.length >= 3)
+    .map((p) => [Number(p[0]), Number(p[1]), Number(p[2])])
+    .filter((p) => p.every((v) => Number.isFinite(v)));
+}
+
+/** 닫힌 피니시라인에서 분수 위치(0~1)의 점. 인덱스 간격으로 보간한다. */
+function finishLineAtFraction(points, fraction) {
+  const n = points.length;
+  const wrapped = ((fraction % 1) + 1) % 1;
+  const t = wrapped * n;
+  const i0 = Math.floor(t) % n;
+  const i1 = (i0 + 1) % n;
+  const f = t - Math.floor(t);
+  const a = points[i0];
+  const b = points[i1];
+  return [a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1]), a[2] + f * (b[2] - a[2])];
+}
+
+function filletRadiusOf(row) {
+  const r = Number(row?.filletRadiusMm);
+  return Number.isFinite(r) ? r : null;
+}
+
+/**
+ * 접수 모달용. 축은 한 번만 자르고, 8곳만 잰 뒤 공구 R 근처 호의 가운데만 다시 잰다.
+ */
+function collectScreenSamples(mesh, finishLinePoints, options = {}) {
+  const toolR = Number(options.toolRadiusMm) > 0 ? Number(options.toolRadiusMm) : FINISH_BALL_RADIUS_MM;
+  const axis = normalizeAxis(options.tiltAxisVector);
+  const raw = finishLinePointsValid(finishLinePoints);
+  if (raw.length < FL_SAMPLE_MIN) return { toolR, axis, raw, sampled: [], samples: [] };
+  const measure = (fl) =>
+    analyzeMarginAtPoint(mesh, fl, toolR, axis, options.log, { singleAxis: true });
+  const nearTool = (row) => {
+    const r = filletRadiusOf(row);
+    return r != null && Math.abs(r - toolR) <= PREFLIGHT_NEAR_TOOL_MM;
+  };
+  const coarse = [];
+  for (let i = 0; i < PREFLIGHT_SCREEN_COUNT; i += 1) {
+    const fraction = i / PREFLIGHT_SCREEN_COUNT;
+    const fl = finishLineAtFraction(raw, fraction);
+    coarse.push({ fraction, fl, row: measure(fl) });
+  }
+  const stations = [];
+  for (let i = 0; i < coarse.length; i += 1) {
+    stations.push(coarse[i]);
+    const next = coarse[(i + 1) % coarse.length];
+    if (!nearTool(coarse[i].row) && !nearTool(next.row)) continue;
+    const fraction = (i + 0.5) / PREFLIGHT_SCREEN_COUNT;
+    const fl = finishLineAtFraction(raw, fraction);
+    stations.push({ fraction, fl, row: measure(fl) });
+  }
+  stations.sort((a, b) => a.fraction - b.fraction);
+  const samples = [];
+  stations.forEach((st, sampleIndex) => {
+    if (st.row?.tight) samples.push({ ...st.row, sampleIndex });
+  });
+  return { toolR, axis, raw, sampled: stations.map((st) => st.fl), samples };
+}
+
 function collectTightSamples(mesh, finishLinePoints, options = {}) {
   const toolR = Number(options.toolRadiusMm) > 0 ? Number(options.toolRadiusMm) : FINISH_BALL_RADIUS_MM;
   const axis = normalizeAxis(options.tiltAxisVector);
-  const raw = Array.isArray(finishLinePoints) ? finishLinePoints : [];
+  const raw = finishLinePointsValid(finishLinePoints);
   if (raw.length < FL_SAMPLE_MIN) return { toolR, axis, raw, sampled: [], samples: [] };
   const sampled = resampleFinishLine(raw, FL_SAMPLE_MAX);
   const samples = [];
@@ -986,7 +1059,8 @@ function collectTightSamples(mesh, finishLinePoints, options = {}) {
   return { toolR, axis, raw, sampled, samples };
 }
 
-function tightCornerMeta({ toolR, axis, raw, sampled, samples }, { solids = true } = {}) {
+function tightCornerMeta({ toolR, axis, raw, sampled, samples }, { solids = true, preview = false } = {}) {
+  const showOverlay = solids || preview;
   const rValues = samples
     .map((s) => Number(s.filletRadiusMm))
     .filter((v) => Number.isFinite(v));
@@ -1002,7 +1076,7 @@ function tightCornerMeta({ toolR, axis, raw, sampled, samples }, { solids = true
     tightFinishLineSegments: buildTightFinishLineSegments(raw, samples),
     /** @deprecated v2 — 프리뷰는 reliefOverlay만 사용. */
     ballPassPolylines: [],
-    reliefOverlay: solids
+    reliefOverlay: showOverlay
       ? buildTightCornerReliefOverlay(samples, axis, {
           toolRadiusMm: toolR,
           sampleTotal: sampled.length,
@@ -1030,8 +1104,13 @@ function tightCornerMeta({ toolR, axis, raw, sampled, samples }, { solids = true
 }
 
 export function detectTightCorners(mesh, finishLinePoints, options = {}) {
-  return tightCornerMeta(collectTightSamples(mesh, finishLinePoints, options), {
-    solids: options.solids !== false,
+  const screen = Boolean(options.screen);
+  const collected = screen
+    ? collectScreenSamples(mesh, finishLinePoints, options)
+    : collectTightSamples(mesh, finishLinePoints, options);
+  return tightCornerMeta(collected, {
+    solids: !screen && options.solids !== false,
+    preview: screen,
   });
 }
 

@@ -16,7 +16,7 @@ export type StlMachiningPreflight = {
   reason?: string;
   /** 원본 STL 좌표의 불완전 가공 면. 프리뷰에 빨갛게 얹는다. */
   overlay?: StlMetadata["tightCorner"];
-  /** 검사 때 만들어 둔 보정 STL. 확인 클릭은 이 id로 받는다. */
+  /** 백그라운드에서 만드는 완전한 보정 STL. 확인 전에 이 id로 받는다. */
   correctedId?: string;
 };
 
@@ -68,7 +68,7 @@ export function StlMachiningPreflightNotice({
           <p className="whitespace-nowrap text-sm font-semibold leading-5">코너가 좁아요</p>
         </div>
         <p className="text-center text-xs leading-5 text-rose-900/80">
-          공구에 맞는 디자인으로 변경하여 의뢰합니다.
+          공구에 맞는 디자인으로 바꿔 의뢰합니다.
           <br />
           변경된 디자인을 다운로드해서 보철 내면을 새로 생성하셔야 합니다.
         </p>

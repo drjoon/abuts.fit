@@ -4,14 +4,13 @@
 // - web/backend/controllers/files/stlPreflight.controller.js
 // - web/frontend/src/pages/requestor/new_request/hooks/useStlMachiningPreflight.ts
 //
-// 의뢰 접수 전, 의뢰자가 올린 커스텀어벗 STL로 JS 파이프라인을 바로 돌려
-// 불완전가공(마진 코너 R < 공구 R)만 요약한다. 검사 응답에는 filled STL을 넣지 않는다.
-// 타이트하면 같은 실행의 보정 STL을 잠시 들고, 확인 클릭은 그 버퍼만 받는다.
-// 응답 뒤에는 접수에 쓸 바이트로 filled 파이프라인을 미리 돌려 둔다.
+// 의뢰 모달은 EBS에서 정렬·피니시라인·필레 8곳만 검사하고, 좁으면 바로 경고한다.
+// 완전한 보정 STL은 그 응답 뒤 람다가 만들고, 의뢰하기 전에 내려받는다.
 import crypto from "crypto";
 import { resolveAbutmentStlInputs } from "./abutmentStlInputs.js";
 import { applyAutoCuffBlendSafely, isCuffBlendAutoEnabled } from "./cuffBlend.service.js";
 import { runAbutmentStlPipelineInWorker } from "./runPipelineInWorker.js";
+import { buildCorrectedDesignOffRequest } from "./correctLambda.service.js";
 import { identity } from "./meshCore.js";
 import { FINISH_BALL_RADIUS_MM } from "./tightCorner.js";
 
@@ -32,7 +31,7 @@ const correctedByHash = new Map();
 
 function pruneCorrectedDesignCache(now = Date.now()) {
   for (const [id, row] of correctedById) {
-    if (row.expires <= now) {
+    if (row.expires <= now && !row.promise) {
       correctedById.delete(id);
       if (correctedByHash.get(row.slot) === id) correctedByHash.delete(row.slot);
     }
@@ -40,6 +39,7 @@ function pruneCorrectedDesignCache(now = Date.now()) {
   while (correctedById.size > CORRECTED_MAX) {
     const oldest = correctedById.keys().next().value;
     const row = correctedById.get(oldest);
+    if (row?.promise) break;
     correctedById.delete(oldest);
     if (row && correctedByHash.get(row.slot) === oldest) correctedByHash.delete(row.slot);
   }
@@ -194,8 +194,77 @@ export function rememberCorrectedDesignStl({ hash, buffer, fileName, userId } = 
 export function readCorrectedDesignStl(id, userId) {
   pruneCorrectedDesignCache();
   const row = correctedById.get(String(id || ""));
-  if (!row || row.expires <= Date.now()) return null;
+  if (!row || (row.expires <= Date.now() && !row.promise)) return null;
   if (row.userId !== correctedUserId(userId)) return null;
+  return row;
+}
+
+const CORRECT_WAIT_MS = 150 * 1000;
+
+/**
+ * 모달 검사가 타이트로 끝나면 id만 바로 돌려주고, 완전한 보정 STL은 뒤에서 채운다.
+ * @returns {string|null}
+ */
+export function scheduleCorrectedDesignStl({
+  buffer,
+  caseInfos,
+  userId,
+  fileName,
+  inputs,
+} = {}) {
+  const uid = correctedUserId(userId);
+  const hash = correctedDesignCacheKey(buffer, caseInfos);
+  if (!uid || !hash || !buffer?.length) return null;
+  pruneCorrectedDesignCache();
+  const slot = correctedSlot(hash, uid);
+  const existingId = correctedByHash.get(slot);
+  const existing = existingId ? correctedById.get(existingId) : null;
+  if (existing && (existing.expires > Date.now() || existing.promise)) {
+    if (existing.buffer?.length || existing.promise) return existingId;
+  }
+  const id = crypto.randomBytes(16).toString("hex");
+  const row = {
+    hash,
+    slot,
+    buffer: null,
+    fileName: String(fileName || "corrected.stl"),
+    userId: uid,
+    expires: Date.now() + CORRECTED_TTL_MS,
+    promise: null,
+    errorReason: null,
+  };
+  row.promise = buildCorrectedDesignOffRequest(buffer, inputs)
+    .then((out) => {
+      row.buffer = out;
+      row.expires = Date.now() + CORRECTED_TTL_MS;
+      row.promise = null;
+      return out;
+    })
+    .catch((error) => {
+      row.errorReason = error?.reason || "correction_failed";
+      row.promise = null;
+      console.warn("[stl-correct] background failed:", error?.message || error);
+      return null;
+    });
+  correctedById.set(id, row);
+  correctedByHash.set(slot, id);
+  pruneCorrectedDesignCache();
+  return id;
+}
+
+/** 다운로드가 완전한 파일을 받을 때까지 기다린다. */
+export async function awaitCorrectedDesignStl(id, userId) {
+  const row = readCorrectedDesignStl(id, userId);
+  if (!row) return null;
+  if (row.buffer?.length) return row;
+  if (!row.promise) return null;
+  let timer = null;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(resolve, CORRECT_WAIT_MS);
+  });
+  await Promise.race([row.promise, timeout]);
+  clearTimeout(timer);
+  if (!row.buffer?.length) return null;
   return row;
 }
 
@@ -319,8 +388,7 @@ export function summarizeTightCorner(tightCorner) {
 }
 
 /**
- * 업로드 STL에 타이트 코너 보정을 적용한 바이너리 STL(원본 좌표계).
- * 검사 캐시가 있으면 파이프라인을 다시 돌리지 않는다.
+ * 완전한 보정 STL. 이미 도는 작업이 있으면 그 결과를 기다린다.
  * @returns {Promise<{ ok: true, buffer: Buffer } | { ok: false, reason: string }>}
  */
 export async function buildCorrectedDesignStlBuffer({
@@ -330,39 +398,29 @@ export async function buildCorrectedDesignStlBuffer({
   originalFileName,
 } = {}) {
   if (!buffer?.length) return { ok: false, reason: "empty_file" };
-  const hash = correctedDesignCacheKey(buffer, caseInfos);
-  const cached = readCorrectedDesignStlByHash(hash, userId);
-  if (cached?.buffer?.length) return { ok: true, buffer: cached.buffer };
   try {
     const inputs = await resolveAbutmentStlInputs(caseInfos || {});
-    const js = await runAbutmentStlPipelineInWorker(buffer, {
-      targetDiameter: inputs.targetDiameter,
-      implantProfile: inputs.implantProfile,
-      preflight: true,
-    });
-    if (!Array.isArray(js?.finishLine?.points) || js.finishLine.points.length < 4) {
-      return { ok: false, reason: "finishline_missing" };
-    }
-    if (!(Number(js?.tightCorner?.tightCount) > 0)) {
-      return { ok: false, reason: "no_tight_corners" };
-    }
-    if (!js.outputBuffer?.length) return { ok: false, reason: "correction_failed" };
-    rememberCorrectedDesignStl({
-      hash,
-      buffer: js.outputBuffer,
-      fileName: originalFileName,
+    const id = scheduleCorrectedDesignStl({
+      buffer,
+      caseInfos,
       userId,
+      fileName: originalFileName,
+      inputs,
     });
-    return { ok: true, buffer: js.outputBuffer };
+    if (!id) return { ok: false, reason: "correction_failed" };
+    const row = await awaitCorrectedDesignStl(id, userId);
+    if (row?.buffer?.length) return { ok: true, buffer: row.buffer };
+    const reason = correctedById.get(id)?.errorReason || "correction_failed";
+    return { ok: false, reason };
   } catch (error) {
     console.warn("[stl-corrected] failed:", error?.message || error);
-    return { ok: false, reason: "pipeline_failed" };
+    return { ok: false, reason: error?.reason || "pipeline_failed" };
   }
 }
 
 /**
- * 접수 전 가공 검사. 파이프라인이 실패해도 의뢰를 막지 않도록 unknown으로 돌려준다.
- * 타이트하면 같은 실행의 보정 STL id를 붙인다. 바이트는 응답에 넣지 않는다.
+ * 접수 모달 가공 검사. 정렬·피니시라인·필레 8곳만 돌린다.
+ * 파이프라인이 실패해도 의뢰를 막지 않도록 unknown으로 돌려준다.
  * @param {{ buffer: Buffer, caseInfos?: object, userId?: string, originalFileName?: string }} args
  */
 export async function runStlMachiningPreflight({
@@ -388,13 +446,6 @@ export async function runStlMachiningPreflight({
       return { status: "unknown", reason: "tightcorner_missing", tightCount: 0 };
     }
     const summary = summarizeTightCorner(js.tightCorner);
-    if (summary.status === "ok" || summary.status === "tight") {
-      // 확인(보정 STL)과 건너뛰기(원본) 둘 다 접수 전에 filled를 만들어 둔다.
-      scheduleFilledStlPrep(buffer, inputs);
-      if (summary.status === "tight" && js.outputBuffer?.length) {
-        scheduleFilledStlPrep(js.outputBuffer, inputs);
-      }
-    }
     const elapsed = Number(js?.perf?.total);
     if (Number.isFinite(elapsed) && elapsed > 2.5) {
       console.info("[stl-preflight] slow", js.perf);
@@ -405,14 +456,13 @@ export async function runStlMachiningPreflight({
       js.alignMatrix,
       js.filletSurface || null,
     );
-    const correctedId = js.outputBuffer?.length
-      ? rememberCorrectedDesignStl({
-          hash: correctedDesignCacheKey(buffer, caseInfos),
-          buffer: js.outputBuffer,
-          fileName: originalFileName,
-          userId,
-        })
-      : null;
+    const correctedId = scheduleCorrectedDesignStl({
+      buffer,
+      caseInfos,
+      userId,
+      fileName: originalFileName,
+      inputs,
+    });
     return {
       ...summary,
       ...(overlay ? { overlay } : {}),
