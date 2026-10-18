@@ -560,8 +560,8 @@ const JUNCTION_EXCLUDE_MM = 0.25;
 const MARGIN_FIT_MIN_MM = 0.25;
 const WALL_FIT_MIN_MM = 0.4;
 const WALL_FIT_MAX_MM = 1.4;
-/** 측정 R이 공구 R보다 이 값 이상 작을 때만 보정면을 만든다. */
-const FILLET_R_TOLERANCE_MM = 0.02;
+/** 측정 R이 공구 R보다 이 값 이상 작을 때만 보정면을 만든다. 공구 R 이상이면 통과. */
+const FILLET_R_TOLERANCE_MM = 0;
 
 function cumulativeLength(pts) {
   const out = [0];
@@ -777,6 +777,7 @@ function measureFilletStation(mesh, fl, axis) {
   }
   const dist = (p) => Math.hypot(p.u - corner.u, p.w - corner.w);
   return {
+    axis,
     radial,
     uFl: pts[0].u,
     wFl,
@@ -792,6 +793,17 @@ function measureFilletStation(mesh, fl, axis) {
 }
 
 /**
+ * 기울기 축과 정렬 z축 단면 중 R이 큰 쪽. 디자인 자오선에서 비스듬히 자른 단면은 R을 작게 잰다.
+ */
+function bestFilletStation(mesh, fl, axis) {
+  const a = measureFilletStation(mesh, fl, axis);
+  if (dot3(axis, [0, 0, 1]) >= 1 - 1e-9) return a;
+  const z = measureFilletStation(mesh, fl, [0, 0, 1]);
+  if (!a || !z) return a || z;
+  return z.measuredR >= a.measuredR ? z : a;
+}
+
+/**
  * 피니시라인 바로 위, 마진(수평에 가까움)↔축면(수직에 가까움) 경계의 fillet R을 잰다.
  * R < 공구 R이면 공구 R 필렛 보정면 단면(reliefProfile)을 돌려준다. 메시는 바꾸지 않는다.
  */
@@ -804,7 +816,7 @@ export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log) {
     return { tight: false };
   };
   const azDeg = ((Math.atan2(fl[1], fl[0]) * 180) / Math.PI).toFixed(1);
-  const station = measureFilletStation(mesh, fl, axis);
+  const station = bestFilletStation(mesh, fl, axis);
   if (station) {
     const { corner, rayLedge, rayWall, ext, measuredR } = station;
     if (!(measuredR < toolR - FILLET_R_TOLERANCE_MM)) {
@@ -817,7 +829,7 @@ export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log) {
     return {
       tight: true,
       finishLinePoint: fl.slice(),
-      cornerPoint: fromPlaneCoords(corner.u, corner.w, radial, axis).slice(),
+      cornerPoint: fromPlaneCoords(corner.u, corner.w, station.radial, station.axis).slice(),
       airAngleDeg: Math.round((ext * 1800) / Math.PI) / 10,
       filletRadiusMm: Math.round(Math.max(0, measuredR) * 1000) / 1000,
       reliefProfile,
