@@ -19,6 +19,7 @@
 // - 2026-08-19: 모달 가로폭을 뷰포트 여백 기준(min 92vw, 최대 1440)으로 맞춤.
 // - 2026-08-19: 모달 가로 확장·기간 캘린더 입력 제거·검색을 기간필터 오른쪽·신속/묶음·디자인SW·아노 뱃지.
 // - 2026-08-19: 기본 제목 완료 내역(구 지난 의뢰).
+// - 2026-10-18: 진행중 — 취소 후 목록이 비면 모달 자동 닫기(closeWhenEmptyAfterCancel).
 // - 2026-08-19: 취소 확인은 즉시 닫고 목록 행을 낙관적으로 제거.
 // - 2026-08-19: 진행중인 의뢰 목록에서 준비 단계 취소.
 // - 2026-08-19: description prop — 진행중인 의뢰 목록 안내 문구.
@@ -112,6 +113,10 @@ export type PastRequestsModalProps = {
   contentStyle?: CSSProperties;
   /** 모바일 채팅형 전체화면 시트 */
   mobileSheet?: boolean;
+  /** 취소 성공 후 표시 중인 목록이 비면 모달을 닫는다(진행중 목록). */
+  closeWhenEmptyAfterCancel?: boolean;
+  /** 상세 등 모달 밖에서 취소가 성공했을 때 증가 — 목록이 비었으면 닫기 */
+  externalCancelSuccessNonce?: number;
 };
 
 const DEFAULT_MANUFACTURER_STAGE_IN = ["추적관리"];
@@ -246,6 +251,8 @@ export const PastRequestsModal = ({
   removeMongoId = null,
   contentStyle,
   mobileSheet = false,
+  closeWhenEmptyAfterCancel = false,
+  externalCancelSuccessNonce = 0,
 }: PastRequestsModalProps) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -473,6 +480,20 @@ export const PastRequestsModal = ({
     });
   }, [removeMongoId]);
 
+  useEffect(() => {
+    if (!closeWhenEmptyAfterCancel || !open || loading) return;
+    if (!externalCancelSuccessNonce) return;
+    if (items.length > 0) return;
+    onOpenChange(false);
+  }, [
+    closeWhenEmptyAfterCancel,
+    externalCancelSuccessNonce,
+    items.length,
+    loading,
+    open,
+    onOpenChange,
+  ]);
+
   const handleConfirmCancel = async () => {
     const snapshots = cancelTargets.filter((row) => requestMongoId(row));
     if (!snapshots.length || (!onCancelRequest && !onCancelRequests)) {
@@ -484,10 +505,11 @@ export const PastRequestsModal = ({
     const removedRows = items.filter((row) =>
       removeIds.has(requestMongoId(row)),
     );
-    const batch = snapshots.length > 1;
-    setItems((prev) =>
-      prev.filter((row) => !removeIds.has(requestMongoId(row))),
+    let workingItems = items.filter(
+      (row) => !removeIds.has(requestMongoId(row)),
     );
+    const batch = snapshots.length > 1;
+    setItems(workingItems);
     setSelectedIds(new Set());
     setCancelTargets([]);
     setCanceling(true);
@@ -513,11 +535,19 @@ export const PastRequestsModal = ({
               restoreIds.has(requestMongoId(row)),
             );
             if (restoreRows.length) {
-              setItems((prev) => [...restoreRows, ...prev]);
+              workingItems = [...restoreRows, ...workingItems];
+              setItems(workingItems);
             }
           }
           const okCount = Array.isArray(okIds) ? okIds.length : 0;
           if (okCount > 0) onCanceled?.();
+          if (
+            closeWhenEmptyAfterCancel &&
+            okCount > 0 &&
+            workingItems.length === 0
+          ) {
+            onOpenChange(false);
+          }
           if (okCount > 0 && failedRows.length === 0) {
             toast({
               title: `${okCount}건이 취소되었습니다`,
@@ -569,10 +599,18 @@ export const PastRequestsModal = ({
           restoreIds.has(requestMongoId(row)),
         );
         if (restoreRows.length) {
-          setItems((prev) => [...restoreRows, ...prev]);
+          workingItems = [...restoreRows, ...workingItems];
+          setItems(workingItems);
         }
       }
       if (okCount > 0) onCanceled?.();
+      if (
+        closeWhenEmptyAfterCancel &&
+        okCount > 0 &&
+        workingItems.length === 0
+      ) {
+        onOpenChange(false);
+      }
       if (!batch) return;
       if (okCount > 0 && failed.length === 0) {
         toast({

@@ -14,6 +14,7 @@
 // - 2026-08-19: 제출·공정 변경 소켓으로 진행중/출고예정 건수 재조회(리프레시 없이).
 // - 2026-08-19: 취소 확인은 즉시 닫고, 헤더 건수 재조회는 스냅샷 완료 뒤로 미룸.
 // - 2026-08-19: 헤더 라벨 출고예정. 취소 후 출고 스냅샷 쿼리도 무효화.
+// - 2026-10-18: 진행중 — 취소 후 목록이 비면 모달 자동 닫기.
 // - 2026-08-19: 취소 후 진행중인 의뢰 목록으로 복귀. 확인 클릭이 목록을 닫지 않음.
 // - 2026-08-19: 진행중인 의뢰 상세에서 준비 단계 취소. 원본 STL 프리뷰는 RequestDetailDialog.
 // - 2026-08-19: [정책 안내] 오른쪽 [진행중인 의뢰] — 준비~포장.발송.
@@ -141,6 +142,8 @@ export const RequestorAbutmentPageHeader = ({
   const [canceledMongoIds, setCanceledMongoIds] = useState<string[]>([]);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  const [inProgressCancelSuccessNonce, setInProgressCancelSuccessNonce] =
+    useState(0);
 
   const cardsSummaryQueryKey = useMemo(
     () => [
@@ -459,6 +462,8 @@ export const RequestorAbutmentPageHeader = ({
       if (!ok) {
         setCanceledMongoIds([]);
         setSelectedPastRequest(snapshot);
+      } else if (listSource === "inProgress") {
+        setInProgressCancelSuccessNonce((n) => n + 1);
       }
     } finally {
       setCanceling(false);
@@ -554,6 +559,8 @@ export const RequestorAbutmentPageHeader = ({
       onCanceled={refreshHeaderCounts}
       onCancelRequest={cancelRequestByMongoId}
       onCancelRequests={cancelRequestsByMongoIds}
+      closeWhenEmptyAfterCancel
+      externalCancelSuccessNonce={inProgressCancelSuccessNonce}
       contentStyle={inProgressDialogStyle}
       mobileSheet={inProgressMobileSheet}
       onSelectRequest={(request) => {
