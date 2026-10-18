@@ -568,6 +568,8 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     s3Key: incomingS3Key, // presigned 업로드 후 전달되는 키
     s3Url: incomingS3Url, // presigned 업로드 후 전달되는 URL
     fileSize: incomingFileSize,
+    // JS 파이프라인이 업로드 전에 메모리에서 커프 보정한 결과. 있으면 S3를 다시 읽지 않는다.
+    cuffBlendResult,
   } = req.body;
 
   if (!fileName || !sourceStep) {
@@ -578,14 +580,13 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     `[BG-Callback] Received from ${sourceStep}: ${fileName} (originalFileName=${originalFileName}, Status: ${status})`,
   );
   if (metadata) {
-    try {
-      console.log(
-        "[BG-Callback] Incoming metadata:",
-        JSON.stringify(metadata, null, 2),
-      );
-    } catch (metaLogErr) {
-      console.log("[BG-Callback] Incoming metadata (raw):", metadata);
-    }
+    const points = metadata?.finishLine?.points;
+    console.log("[BG-Callback] Incoming metadata:", {
+      diameter: metadata.diameter || null,
+      finishLinePoints: Array.isArray(points) ? points.length : 0,
+      strategy: metadata?.finishLine?.strategyUsed || null,
+      hasHexRotation: Boolean(metadata.hexRotation),
+    });
   } else {
     console.log("[BG-Callback] Incoming metadata: <none>");
   }
@@ -1095,15 +1096,17 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           });
         // 커넥션 상단~커프 하단 이음부 G2 보정 후 같은 키에 덮어쓴다. DB·소켓보다 먼저 끝내야 프론트가 보정 전 STL을 캐시하지 않는다.
         // 메시 worker 슬롯 대기는 CUFF_BLEND_AUTO_QUEUE_TIMEOUT_MS(기본 15초)로 끊고, 넘으면 보정 없이 failed(「커프 확인」)로 등록한다.
-        const cuff = await applyAutoCuffBlendSafely({
-          s3Key: s3Info?.s3Key,
-          caseInfos: request?.caseInfos,
-          finishLine:
-            metadataUpdates["caseInfos.finishLine"] ||
-            (isUserCapturedFinishLine(request?.caseInfos?.finishLine)
-              ? request.caseInfos.finishLine
-              : null),
-        });
+        const cuff = cuffBlendResult
+          ? cuffBlendResult
+          : await applyAutoCuffBlendSafely({
+              s3Key: s3Info?.s3Key,
+              caseInfos: request?.caseInfos,
+              finishLine:
+                metadataUpdates["caseInfos.finishLine"] ||
+                (isUserCapturedFinishLine(request?.caseInfos?.finishLine)
+                  ? request.caseInfos.finishLine
+                  : null),
+            });
         if (cuff) {
           updateData["caseInfos.cuffBlend"] = cuff.record;
           if (cuff.fileSize) filledMeta.fileSize = cuff.fileSize;

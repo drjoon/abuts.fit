@@ -16,6 +16,8 @@ import { getObjectBufferFromS3, uploadFileToS3 } from "../../utils/s3.utils.js";
 import { assessFinishLineQuality, isUserCapturedFinishLine } from "../../utils/finishLineQuality.js";
 import { emitBgRuntimeStatus } from "../../controllers/bg/bgRuntimeEvents.js";
 import { resolveAbutmentStlInputs } from "./abutmentStlInputs.js";
+import { applyAutoCuffBlendSafely, isCuffBlendAutoEnabled } from "./cuffBlend.service.js";
+import { correctedDesignCacheKey, takeFilledStlPrep } from "./preflight.service.js";
 import { runAbutmentStlPipelineInWorker } from "./runPipelineInWorker.js";
 
 /** 끄기: ABUTMENT_STL_JS_PRIMARY=false (Rhino만 사용) */
@@ -127,17 +129,45 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
     resolveAbutmentStlInputs(ci),
   ]);
   const storedFinishLine = isUserCapturedFinishLine(ci.finishLine) ? ci.finishLine : null;
-  const js = await runAbutmentStlPipelineInWorker(inputBuffer, {
-    targetDiameter: inputs.targetDiameter,
-    implantProfile: inputs.implantProfile,
-    ...(storedFinishLine ? { finishLinePoints: storedFinishLine.points } : {}),
-  });
+  // 수동 피니시라인은 검사 때 만든 결과와 다르다. 그 경우만 파이프라인을 다시 돌린다.
+  let fromPrep = false;
+  let js = storedFinishLine
+    ? null
+    : await takeFilledStlPrep(correctedDesignCacheKey(inputBuffer, ci));
+  if (js?.outputBuffer?.length) {
+    fromPrep = true;
+  } else {
+    js = await runAbutmentStlPipelineInWorker(inputBuffer, {
+      targetDiameter: inputs.targetDiameter,
+      implantProfile: inputs.implantProfile,
+      ...(storedFinishLine ? { finishLinePoints: storedFinishLine.points } : {}),
+    });
+  }
   assertJsResultUsable(js);
 
   const originalName = sanitizeStlName(fileName || ci.file?.filePath || ci.file?.originalName || "input.stl");
   const outName = filledNameOf(originalName);
   const s3Key = `requests/${requestId}/2-filled/${outName}`;
-  const uploaded = await uploadFileToS3(js.outputBuffer, s3Key, "application/octet-stream");
+  // 커프 보정은 업로드한 파일을 다시 받지 않고, 방금 만든 버퍼로 끝낸 뒤 한 번만 올린다.
+  let output = js.outputBuffer;
+  let cuffBlendResult = null;
+  if (isCuffBlendAutoEnabled()) {
+    const blended = await applyAutoCuffBlendSafely({
+      s3Key,
+      sourceBuffer: output,
+      caseInfos: { ...ci, finishLine: js.finishLine },
+      writeBack: false,
+    });
+    if (blended?.record) {
+      cuffBlendResult = { record: blended.record, fileSize: blended.fileSize || null };
+    }
+    if (blended?.ok && blended.buffer?.length) output = blended.buffer;
+  }
+  const uploaded = await uploadFileToS3(
+    output,
+    s3Key,
+    cuffBlendResult?.record?.status === "applied" ? "application/sla" : "application/octet-stream",
+  );
 
   const { registerProcessedFile, registerStlMetadata } = await import("../../controllers/bg/bg.controller.js");
 
@@ -166,7 +196,8 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
     status: "success",
     s3Key: uploaded.key,
     s3Url: uploaded.location,
-    fileSize: js.outputBuffer.length,
+    fileSize: output.length,
+    ...(cuffBlendResult ? { cuffBlendResult } : {}),
     metadata: {
       diameter: js.diameter,
       finishLine: js.finishLine,
@@ -174,7 +205,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
     },
   });
   await Request.updateOne({ requestId }, { $unset: { "productionSchedule.stlJsFallback": "" } }).catch(() => null);
-  return { ok: true, outName, perf: js.perf };
+  return { ok: true, outName, perf: js.perf, fromPrep };
 }
 
 /**
@@ -204,7 +235,11 @@ export async function runJsPrimaryThenFallback({ requestId, fileName }) {
       tone: "blue",
       clear: true,
     });
-    console.log(`[abutment-stl-js] requestId=${requestId} ${result.skipped ? `skipped=${result.skipped}` : `ok ${Date.now() - started}ms`}`);
+    const prep = result.fromPrep ? " prep=hit" : result.skipped ? "" : " prep=miss";
+    const perf = !result.fromPrep && result.perf ? ` perf=${JSON.stringify(result.perf)}` : "";
+    console.log(
+      `[abutment-stl-js] requestId=${requestId} ${result.skipped ? `skipped=${result.skipped}` : `ok ${Date.now() - started}ms${prep}${perf}`}`,
+    );
   } catch (error) {
     const reason = error?.reason || "js_error";
     const detail = String(error?.message || error);

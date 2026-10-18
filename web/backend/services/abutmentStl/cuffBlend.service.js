@@ -96,6 +96,10 @@ export async function applyCuffBlendToFilledStl({
   mode = "auto",
   queueTimeoutMs = INTERACTIVE_QUEUE_TIMEOUT_MS,
   blendOptions = {},
+  /** 있으면 S3에서 다시 받지 않는다. JS 파이프라인이 방금 만든 filled 버퍼. */
+  sourceBuffer = null,
+  /** false면 호출부가 버퍼를 직접 업로드한다. */
+  writeBack = true,
 }) {
   const ci = toPlain(caseInfos);
   const { key, spec } = resolveCuffConnectionSpec(ci);
@@ -110,20 +114,22 @@ export async function applyCuffBlendToFilledStl({
       reason: `커넥션 스펙이 등록되지 않은 임플란트입니다(${key}). 개발팀 확인이 필요합니다.`,
     };
   } else {
-    const source = await getObjectBufferFromS3(s3Key);
+    const source = sourceBuffer?.length ? sourceBuffer : await getObjectBufferFromS3(s3Key);
     result = await runCuffBlendInWorker(source, mode, { ...blendOptions, spec, specKey: key, finishLine }, { queueTimeoutMs });
   }
   let fileSize = null;
-  if (result.ok && result.buffer) {
-    await putObjectToS3(s3Key, result.buffer, { contentType: "application/sla" });
-    fileSize = result.buffer.length;
+  const blended = result.ok && result.buffer?.length ? result.buffer : null;
+  if (blended && writeBack) {
+    await putObjectToS3(s3Key, blended, { contentType: "application/sla" });
   }
+  if (blended) fileSize = blended.length;
   return {
     ok: Boolean(result.ok),
     status: result.status,
     reason: result.reason || null,
     record: buildRecord({ mode, result, specKey: key, s3Key }),
     fileSize,
+    buffer: blended,
     detail: result.detail || {},
   };
 }
@@ -213,12 +219,20 @@ export async function proposeCuffRedesignForRequest(requestMongoId) {
  * register-file(2-filled) 안에서 호출한다. 실패해도 등록은 계속되도록 예외를 삼킨다.
  * 메시 worker 슬롯을 AUTO_QUEUE_TIMEOUT_MS 안에 못 얻으면 보정을 건너뛰고 failed(「커프 확인」)로 남긴다.
  */
-export async function applyAutoCuffBlendSafely({ s3Key, caseInfos, finishLine }) {
-  if (!isCuffBlendAutoEnabled() || !s3Key) return null;
+export async function applyAutoCuffBlendSafely({
+  s3Key,
+  caseInfos,
+  finishLine,
+  sourceBuffer = null,
+  writeBack = true,
+}) {
+  if (!isCuffBlendAutoEnabled() || (!s3Key && !sourceBuffer?.length)) return null;
   const ci = { ...toPlain(caseInfos), ...(finishLine ? { finishLine } : {}) };
   try {
     const out = await applyCuffBlendToFilledStl({
       s3Key,
+      sourceBuffer,
+      writeBack,
       caseInfos: ci,
       mode: "auto",
       queueTimeoutMs: AUTO_QUEUE_TIMEOUT_MS,

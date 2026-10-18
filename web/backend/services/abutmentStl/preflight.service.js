@@ -5,8 +5,9 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useStlMachiningPreflight.ts
 //
 // 의뢰 접수 전, 의뢰자가 올린 커스텀어벗 STL로 JS 파이프라인을 바로 돌려
-// 불완전가공(마진 코너 R < 공구 R)만 요약한다. filled STL·메타데이터는 저장하지 않는다.
+// 불완전가공(마진 코너 R < 공구 R)만 요약한다. 검사 응답에는 filled STL을 넣지 않는다.
 // 타이트하면 같은 실행의 보정 STL을 잠시 들고, 확인 클릭은 그 버퍼만 받는다.
+// 응답 뒤에는 접수에 쓸 바이트로 filled 파이프라인을 미리 돌려 둔다.
 import crypto from "crypto";
 import { resolveAbutmentStlInputs } from "./abutmentStlInputs.js";
 import { runAbutmentStlPipelineInWorker } from "./runPipelineInWorker.js";
@@ -68,6 +69,70 @@ export function correctedDesignCacheKey(buffer, caseInfos) {
 
 function correctedSlot(hash, userId) {
   return `${correctedUserId(userId)}:${hash}`;
+}
+
+const FILLED_PREP_TTL_MS = 15 * 60 * 1000;
+const FILLED_PREP_MAX = 4;
+/** hash -> { expires, promise, result } */
+const filledPrepByHash = new Map();
+
+function pruneFilledStlPrep(now = Date.now()) {
+  for (const [hash, slot] of filledPrepByHash) {
+    if (slot.expires <= now && !slot.promise) filledPrepByHash.delete(hash);
+  }
+  const settled = [];
+  for (const [hash, slot] of filledPrepByHash) {
+    if (!slot.promise) settled.push(hash);
+  }
+  while (filledPrepByHash.size > FILLED_PREP_MAX && settled.length) {
+    filledPrepByHash.delete(settled.shift());
+  }
+}
+
+/**
+ * 검사 응답을 보낸 뒤, 접수에 쓸 STL로 filled 파이프라인을 미리 돌린다.
+ * 의뢰 생성 뒤 JS 등록이 같은 바이트면 이 결과를 그대로 쓴다.
+ */
+export function scheduleFilledStlPrep(buffer, inputs) {
+  if (!buffer?.length) return;
+  const hash = correctedDesignCacheKey(buffer, inputs?.implantProfile || {});
+  const now = Date.now();
+  const existing = filledPrepByHash.get(hash);
+  if (existing && existing.expires > now && (existing.result || existing.promise)) return;
+  const slot = { expires: now + FILLED_PREP_TTL_MS, promise: null, result: null };
+  slot.promise = runAbutmentStlPipelineInWorker(buffer, {
+    targetDiameter: inputs?.targetDiameter ?? null,
+    implantProfile: inputs?.implantProfile || {},
+  })
+    .then((js) => {
+      slot.result = js;
+      slot.promise = null;
+      return js;
+    })
+    .catch((error) => {
+      filledPrepByHash.delete(hash);
+      console.warn("[filled-stl-prep] failed", error?.message || error);
+      return null;
+    });
+  filledPrepByHash.set(hash, slot);
+  pruneFilledStlPrep();
+}
+
+/** 진행 중이면 그 실행이 끝날 때까지 기다린다. 없거나 실패면 null. */
+export async function takeFilledStlPrep(hash) {
+  const key = String(hash || "");
+  const slot = filledPrepByHash.get(key);
+  if (!slot) return null;
+  if (slot.expires <= Date.now() && !slot.promise) {
+    filledPrepByHash.delete(key);
+    return null;
+  }
+  if (slot.result?.outputBuffer?.length) return slot.result;
+  if (slot.promise) {
+    const js = await slot.promise;
+    return js?.outputBuffer?.length ? js : null;
+  }
+  return null;
 }
 
 /**
@@ -300,6 +365,13 @@ export async function runStlMachiningPreflight({
       return { status: "unknown", reason: "tightcorner_missing", tightCount: 0 };
     }
     const summary = summarizeTightCorner(js.tightCorner);
+    if (summary.status === "ok" || summary.status === "tight") {
+      // 확인(보정 STL)과 건너뛰기(원본) 둘 다 접수 전에 filled를 만들어 둔다.
+      scheduleFilledStlPrep(buffer, inputs);
+      if (summary.status === "tight" && js.outputBuffer?.length) {
+        scheduleFilledStlPrep(js.outputBuffer, inputs);
+      }
+    }
     const elapsed = Number(js?.perf?.total);
     if (Number.isFinite(elapsed) && elapsed > 2.5) {
       console.info("[stl-preflight] slow", js.perf);
