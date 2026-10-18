@@ -768,6 +768,10 @@ export async function holdRequestCreditsOnSubmit({
   devopsAnchorId: devopsAnchorIdArg = null,
   shippingFee: shippingFeeArg = null,
   seedBalance = null,
+  /** from-draft가 이미 조회한 값. 있으면 보류 안에서 같은 문서를 다시 읽지 않는다. */
+  labHoldPolicy = null,
+  postpaidActive = null,
+  fmDentalShippingActive = null,
 }) {
   const list = (Array.isArray(requests) ? requests : [])
     .filter(Boolean)
@@ -832,10 +836,21 @@ export async function holdRequestCreditsOnSubmit({
   let totalHeld = 0;
   const results = [];
 
+  const seedPostpaid =
+    typeof postpaidActive === "boolean" ? postpaidActive : null;
+  const seedLabPolicy =
+    labHoldPolicy && typeof labHoldPolicy === "object" ? labHoldPolicy : null;
+  const seedFm =
+    typeof fmDentalShippingActive === "boolean" ? fmDentalShippingActive : null;
+
   const resolveAllowPostpaidHold = async (requestorAnchorId) => {
     const key = String(requestorAnchorId || "").trim();
     if (!key) return false;
     if (postpaidByAnchor.has(key)) return postpaidByAnchor.get(key);
+    if (seedPostpaid !== null) {
+      postpaidByAnchor.set(key, seedPostpaid);
+      return seedPostpaid;
+    }
     const active = await isPracticeObPostpaidActive(key);
     postpaidByAnchor.set(key, active);
     return active;
@@ -853,6 +868,10 @@ export async function holdRequestCreditsOnSubmit({
     }
     if (labCreditHoldPolicyByAnchor.has(key)) {
       return labCreditHoldPolicyByAnchor.get(key);
+    }
+    if (seedLabPolicy) {
+      labCreditHoldPolicyByAnchor.set(key, seedLabPolicy);
+      return seedLabPolicy;
     }
     const policy = await resolveLabCustomAbutmentCreditHoldPolicy(key);
     labCreditHoldPolicyByAnchor.set(key, policy);
@@ -996,10 +1015,12 @@ export async function holdRequestCreditsOnSubmit({
           shippingGroupHeld.add(groupKey);
           continue;
         }
-        const fmActive = await isFmDentalShippingActiveForAnchor(
-          requestorAnchorId,
-          { session },
-        );
+        const fmActive =
+          seedFm !== null
+            ? seedFm
+            : await isFmDentalShippingActiveForAnchor(requestorAnchorId, {
+                session,
+              });
         if (fmActive) {
           shippingGroupHeld.add(groupKey);
           continue;

@@ -52,7 +52,6 @@ import {
   computePriceForRequest,
   resolveRequestorPricingBaseDate,
   canAccessRequestAsRequestor,
-  buildRequestorOrgScopeFilter,
   addKoreanBusinessDays,
   getTodayYmdInKst,
   toKstYmd,
@@ -83,7 +82,7 @@ import { resolveSelectableShippingMode } from "./expressSelectable.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { holdRequestCreditsOnSubmit, resolveDevopsEscrowOwnerId } from "../../services/requestCreditHold.service.js";
-import { isPracticeOnlyObPostpaidActive } from "../../utils/practiceObPostpaid.util.js";
+import { isPracticeObPostpaidActive } from "../../utils/practiceObPostpaid.util.js";
 import {
   buildCustomAbutmentSpendBuckets,
   resolveLabCustomAbutmentCreditHoldPolicy,
@@ -341,6 +340,7 @@ export async function createRequestsFromDraft(req, res) {
                 "requestSettings.hexVerificationResultHex": 1,
                 "requestSettings.hexByImplantManufacturer": 1,
                 requestorKind: 1,
+                businessType: 1,
                 "verification.verifiedAt": 1,
                 createdAt: 1,
               })
@@ -758,7 +758,6 @@ export async function createRequestsFromDraft(req, res) {
       preparedCount: preparedCases.length,
       missingCount: missingFieldsByFile.length,
     });
-    const requestFilter = await buildRequestorOrgScopeFilter(req);
     const duplicates = [];
     const skipCaseIds = new Set();
     const autoSkippedDuplicateCaseIds = new Set();
@@ -835,28 +834,65 @@ export async function createRequestsFromDraft(req, res) {
           "caseInfos.tooth": k.tooth,
         }));
 
-        const query = {
-          $and: [
-            requestFilter,
-            { manufacturerStage: { $ne: "취소" } },
-            { $or: orConditions },
-          ],
+        // 조직 스코프 $or는 clinic+patient+tooth 인덱스를 못 쓴다.
+        // 사업자·본인 의뢰를 각각 그 인덱스로 찾고 합친다.
+        const duplicateSelect = {
+          _id: 1,
+          requestId: 1,
+          manufacturerStage: 1,
+          createdAt: 1,
+          price: 1,
+          "caseInfos.clinicName": 1,
+          "caseInfos.patientName": 1,
+          "caseInfos.tooth": 1,
+          "caseInfos.implantBrand": 1,
         };
-
-        const candidates = await Request.find(query)
-          .select({
-            _id: 1,
-            requestId: 1,
-            manufacturerStage: 1,
-            createdAt: 1,
-            price: 1,
-            "caseInfos.clinicName": 1,
-            "caseInfos.patientName": 1,
-            "caseInfos.tooth": 1,
-            "caseInfos.implantBrand": 1,
-          })
-          .sort({ createdAt: -1 })
-          .lean();
+        const duplicateLimit = Math.max(20, keyTuples.length * 5);
+        const duplicateBase = {
+          manufacturerStage: { $ne: "취소" },
+          $or: orConditions,
+        };
+        const duplicateFinds = [];
+        if (Types.ObjectId.isValid(String(businessAnchorId))) {
+          duplicateFinds.push(
+            Request.find({
+              businessAnchorId: new Types.ObjectId(String(businessAnchorId)),
+              ...duplicateBase,
+            })
+              .select(duplicateSelect)
+              .sort({ createdAt: -1 })
+              .limit(duplicateLimit)
+              .lean(),
+          );
+        }
+        if (req.user?._id && Types.ObjectId.isValid(String(req.user._id))) {
+          duplicateFinds.push(
+            Request.find({
+              requestor: new Types.ObjectId(String(req.user._id)),
+              ...duplicateBase,
+            })
+              .select(duplicateSelect)
+              .sort({ createdAt: -1 })
+              .limit(duplicateLimit)
+              .lean(),
+          );
+        }
+        const duplicateGroups = await Promise.all(duplicateFinds);
+        const seenDuplicateIds = new Set();
+        const candidates = [];
+        for (const group of duplicateGroups) {
+          for (const doc of group || []) {
+            const id = String(doc?._id || "");
+            if (!id || seenDuplicateIds.has(id)) continue;
+            seenDuplicateIds.add(id);
+            candidates.push(doc);
+          }
+        }
+        candidates.sort(
+          (a, b) =>
+            new Date(b?.createdAt || 0).getTime() -
+            new Date(a?.createdAt || 0).getTime(),
+        );
 
         const latestByKey = new Map();
         for (const doc of candidates || []) {
@@ -1267,12 +1303,16 @@ export async function createRequestsFromDraft(req, res) {
     // 부족분은 생성 전에 막아 402. 실제 보류는 insert 직후·응답 전(동시 제출 경합도 402로 응답).
     let creditBalanceForHold = null;
     // 후불 여부·보류 정책·잔액은 서로 독립이다. 직렬이면 왕복이 세 번 쌓인다.
-    const [practiceObPostpaid, labCaHoldPolicy, prefetchedBalance] =
+    const requestorKindForHold = String(shippingOrg?.requestorKind || "").trim();
+    const [labCaHoldPolicy, prefetchedBalance, practiceObPostpaidForHold] =
       await Promise.all([
-        isPracticeOnlyObPostpaidActive(businessAnchorId),
         resolveLabCustomAbutmentCreditHoldPolicy(businessAnchorId),
         getBusinessCreditBalanceBreakdown({ businessAnchorId }),
+        isPracticeObPostpaidActive(businessAnchorId),
       ]);
+    // 치과만 후불 선검사. 기공소 Request 커스텀어벗은 선충전.
+    const practiceObPostpaid =
+      requestorKindForHold === "lab" ? false : practiceObPostpaidForHold;
     if (
       !isPracticeRoutingSubmission &&
       preparedCasesForCreate.length > 0 &&
@@ -1842,6 +1882,12 @@ export async function createRequestsFromDraft(req, res) {
             shippingFee: shippingFeePerBox,
             seedBalance: creditBalanceForHold,
             devopsAnchorId: devopsAnchorIdPrefetch,
+            labHoldPolicy: labCaHoldPolicy || null,
+            postpaidActive: practiceObPostpaidForHold,
+            fmDentalShippingActive:
+              shippingOrg && shippingOrg.businessType != null
+                ? String(shippingOrg.businessType) === "requestor"
+                : null,
           });
           console.log("[createRequestsFromDraft] credit hold done", {
             t: Date.now() - startTime,
@@ -1885,24 +1931,31 @@ export async function createRequestsFromDraft(req, res) {
       // [트리거] 트랜잭션 커밋 후 rhino-server에 fill hole 처리 시작을 알린다 (fire-and-forget).
       // 헥스 확인용 복사샘플은 라이노를 돌리지 않는다 — 원본 2-filled 완료 시 stlFile(+legacy camFile)을 복사한다.
       // 의뢰별로 STL이 있으면 각각 트리거. 실패해도 의뢰 생성은 그대로 성공 응답된다.
-      try {
-        const { triggerRhinoProcessFileForRequest } =
-          await import("../rhino/rhino.controller.js");
-        for (const doc of createdRequests) {
-          if (doc?.caseInfos?.hexVerificationSample === true) continue;
+      const rhinoJobs = createdRequests
+        .filter((doc) => doc?.caseInfos?.hexVerificationSample !== true)
+        .map((doc) => {
           const filePath = doc?.caseInfos?.file?.filePath;
-          if (!filePath) continue;
-          triggerRhinoProcessFileForRequest({
-            requestId: doc.requestId,
-            filePath,
-            fileName: filePath,
+          if (!filePath) return null;
+          return { requestId: doc.requestId, filePath };
+        })
+        .filter(Boolean);
+      if (rhinoJobs.length > 0) {
+        void import("../rhino/rhino.controller.js")
+          .then(({ triggerRhinoProcessFileForRequest }) => {
+            for (const job of rhinoJobs) {
+              triggerRhinoProcessFileForRequest({
+                requestId: job.requestId,
+                filePath: job.filePath,
+                fileName: job.filePath,
+              });
+            }
+          })
+          .catch((e) => {
+            console.warn(
+              "[createRequestsFromDraft] rhino trigger import/dispatch failed",
+              e?.message || e,
+            );
           });
-        }
-      } catch (e) {
-        console.warn(
-          "[createRequestsFromDraft] rhino trigger import/dispatch failed",
-          e?.message || e,
-        );
       }
 
       const createdAnchorId = String(
