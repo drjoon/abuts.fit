@@ -16,6 +16,7 @@ import {
 } from "../utils/patientGroups";
 
 // change-log:
+// - 2026-10-18: 유지홈 라디오가 「없음」인데 저장값이 비면 없음으로 저장. 만료 토스트처럼 막지 않음.
 // - 2026-09-08: 가이드투어 abutment — 확인 모달 자동 오픈 억제·draft 복원 bootstrap 대기.
 // - 2026-08-16: 신규 첨부 시 3D 확인 모달 자동 오픈. 생산모드 유지홈 필수.
 // related files:
@@ -578,6 +579,7 @@ export function NewRequestDetailsSection({
 
       const fileKey = toNormalizedFileKey(file);
       const fileCaseInfos = caseInfosMap?.[fileKey] || caseInfos;
+      const group = findGroupByFileKey(patientGroups, fileKey);
       const missingFields: string[] = [];
       const isDesignCustomMode = false; // design_custom_abutment 폐기 — 생산만 검증
 
@@ -600,9 +602,23 @@ export function NewRequestDetailsSection({
         if (!fileCaseInfos?.implantBrand) missingFields.push("임플란트 브랜드");
         if (!fileCaseInfos?.implantFamily) missingFields.push("Family");
         if (!fileCaseInfos?.implantType) missingFields.push("Type");
+        // 라디오는 값이 비어도 「없음」이 선택된 것처럼 보인다. 그 표시를 저장값으로 맞춘다.
         const rg = String(fileCaseInfos?.retentionGroove || "").trim();
         if (rg !== "none" && rg !== "shallow" && rg !== "deep") {
-          missingFields.push("유지홈");
+          const keys = group ? group.fileKeys : [fileKey];
+          for (const key of keys) {
+            const existing = String(
+              caseInfosMap?.[key]?.retentionGroove || "",
+            ).trim();
+            if (
+              existing === "none" ||
+              existing === "shallow" ||
+              existing === "deep"
+            ) {
+              continue;
+            }
+            updateCaseInfos(key, { retentionGroove: "none" });
+          }
         }
       }
       if (missingFields.length > 0) {
@@ -619,7 +635,6 @@ export function NewRequestDetailsSection({
         [fileKey]: true,
       };
 
-      const group = findGroupByFileKey(patientGroups, fileKey);
       if (group) {
         for (const key of group.fileKeys) {
           nextStatus[key] = true;
@@ -699,6 +714,7 @@ export function NewRequestDetailsSection({
       setSelectedPreviewIndex,
       toast,
       toNormalizedFileKey,
+      updateCaseInfos,
     ],
   );
 

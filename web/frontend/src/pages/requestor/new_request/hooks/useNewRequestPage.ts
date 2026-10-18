@@ -5,6 +5,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - 2026-10-18: 첫 Draft id 도착 때 파일을 비우지 않음. 복원 caseInfos는 메타 값을 덮지 않음.
 // - 2026-09-10: 기공소 신규의뢰 clinicName 기본값=사업자명.
 // - 2026-09-08: 가이드투어 abutment/abutment_order — 로컬 draft 복원·UI 잔류 억제.
 // - 2026-08-19: 제출 시작 시 초안 PATCH debounce를 멈춰 from-draft와 겹치지 않게.
@@ -317,6 +318,7 @@ export const useNewRequestPage = (
     rekeyCaseInfos,
     removeCaseInfos,
     patchDraftImmediately,
+    rotateServerDraft,
     suspendDraftPatches,
     status: draftStatus,
     resetDraft,
@@ -324,6 +326,7 @@ export const useNewRequestPage = (
   } = useDraftMeta();
 
   const prevDraftIdRef = useRef<string | null | undefined>(undefined);
+  const keepFilesOnDraftSwapRef = useRef(false);
   const setupReadyRef = useRef(false);
 
   // 첨부 직후 백그라운드 사전 업로드 (제출 시 ensureFilesUploaded로 재사용)
@@ -338,13 +341,14 @@ export const useNewRequestPage = (
   } = useFilePreUpload({ token });
 
   useEffect(() => {
-    // undefined: 초기 마운트 (스킵)
-    // null 또는 string: 이후 변경 (처리)
-    if (
-      prevDraftIdRef.current !== undefined &&
-      prevDraftIdRef.current !== draftId
-    ) {
-      // Draft가 바뀌었으면 파일/케이스 관련 상태를 즉시 비움
+    // 첫 id(null → 서버 Draft)는 로컬 복원 파일을 지우지 않는다.
+    // 만료된 id를 갈아끼울 때도 첨부 파일은 유지한다.
+    if (keepFilesOnDraftSwapRef.current) {
+      keepFilesOnDraftSwapRef.current = false;
+      prevDraftIdRef.current = draftId ?? null;
+      return;
+    }
+    if (prevDraftIdRef.current && prevDraftIdRef.current !== draftId) {
       clearPreUploadCache();
       setFiles([]);
       setDraftFiles([]);
@@ -426,7 +430,7 @@ export const useNewRequestPage = (
                     : v.shippingMode === "normal"
                       ? "normal"
                       : undefined;
-                next[k] = {
+                const fromLocal = {
                   ...v,
                   shippingMode,
                   requestorHexRotation: normalizeRequestorHexRotation(
@@ -436,6 +440,13 @@ export const useNewRequestPage = (
                     (v as any)?.finalHexRotation,
                   ),
                 } as CaseInfos;
+                // 메타(prev)에 이미 있는 유지홈·임플란트는 오래된 v2 맵이 지우지 않는다.
+                const current = prev[k];
+                next[k] = current ? { ...fromLocal, ...current } : fromLocal;
+                const rg = String(next[k]?.retentionGroove || "").trim();
+                if (rg !== "none" && rg !== "shallow" && rg !== "deep") {
+                  next[k] = { ...next[k], retentionGroove: "none" };
+                }
               });
               return next;
             });
@@ -1356,6 +1367,12 @@ export const useNewRequestPage = (
     onSubmitStart: () => {
       suspendDraftPatches();
       duplicateCheckGenRef.current += 1;
+    },
+    onDraftMissing: async (map) => {
+      keepFilesOnDraftSwapRef.current = true;
+      const nextId = await rotateServerDraft(map);
+      if (!nextId) keepFilesOnDraftSwapRef.current = false;
+      return nextId;
     },
     onSuccessfulSubmitBegin: () => {
       skipLocalDraftRestoreRef.current = true;

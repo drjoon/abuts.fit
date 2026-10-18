@@ -420,7 +420,6 @@ export function AbutmentDesignConfirmDialog({
     if (!String(detailCaseInfos.implantFamily || "").trim()) missing.push("Family");
     if (!String(detailCaseInfos.implantType || "").trim()) missing.push("Type");
     const rg = String(detailCaseInfos.retentionGroove || "").trim();
-    if (rg !== "none" && rg !== "deep") missing.push("유지홈");
     if (missing.length > 0) {
       toast({
         title: "정보를 먼저 채워주세요",

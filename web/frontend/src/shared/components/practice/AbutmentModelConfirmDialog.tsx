@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-18: 유지홈 저장값이 비어 있으면 화면에 보이는 「없음」을 바로 저장.
 // - 2026-09-20: 유지홈 아래 아노다이징 ON/OFF(계정 기본값 저장).
 // - 2026-09-02: lab-handoff 기본 확인 라벨「확인」(S3는 모달 중 사전 업로드). confirmDisabled.
 // - 2026-08-28: 확인 중 버튼「처리 중…」(백그라운드 S3 완료 후 API 저장과 구분).
@@ -270,6 +271,13 @@ export function AbutmentModelConfirmDialog({
   const persistedNewSystemRequest = detailCaseInfos?.newSystemRequest;
 
   useEffect(() => {
+    if (!open) return;
+    const stored = String(detailCaseInfos?.retentionGroove || "").trim();
+    if (stored === "none" || stored === "shallow" || stored === "deep") return;
+    setDetailCaseInfos({ retentionGroove: "none" });
+  }, [detailCaseInfos?.retentionGroove, open, setDetailCaseInfos]);
+
+  useEffect(() => {
     if (persistedNewSystemRequest?.requested) {
       setShowNewSystemForm(true);
       setNewSystemManufacturer(persistedNewSystemRequest.manufacturer || "");
@@ -357,6 +365,8 @@ export function AbutmentModelConfirmDialog({
   const hasMissingRequiredInfo = useMemo(() => {
     if (isLabHandoff || isDesignCustomMode) return false;
     const rg = String(detailCaseInfos?.retentionGroove || "").trim();
+    const retentionReady =
+      rg === "none" || rg === "shallow" || rg === "deep" || rg === "";
     return !(
       detailCaseInfos?.clinicName &&
       detailCaseInfos?.patientName &&
@@ -365,7 +375,7 @@ export function AbutmentModelConfirmDialog({
       (detailCaseInfos?.implantBrand || implantBrand) &&
       (detailCaseInfos?.implantFamily || implantFamily) &&
       (detailCaseInfos?.implantType || implantType) &&
-      (rg === "none" || rg === "shallow" || rg === "deep")
+      retentionReady
     );
   }, [
     detailCaseInfos,

@@ -8,6 +8,7 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/backend/rules.md
 // change-log:
+// - 2026-10-18: 로컬에만 남은 draftId는 제출 시 같은 id로 다시 만든다. 만료 토스트 없이 접수.
 // - 2026-09-28: credit hold를 201 전으로. 실패 시 취소하고 402/500 한 번으로 응답(201 뒤 조용한 취소 없음).
 // - 2026-09-09: 리메이크 월 무료 쿼터 응답(remakeQuota) 제거. 과금은 computePriceForRequest 고정 1만원.
 // - 2026-08-21: 잔액 사전검사 후 insert만 txn. credit hold·stage-changed는 201 finish·스냅샷 이후.
@@ -311,7 +312,7 @@ export async function createRequestsFromDraft(req, res) {
       }).format(new Date()),
     );
     const [
-      draft,
+      loadedDraft,
       lockStatus,
       creditSettingsBase,
       manufacturerSettings,
@@ -362,6 +363,20 @@ export async function createRequestsFromDraft(req, res) {
               .lean()
           : Promise.resolve(null),
       ]);
+    // 로컬 스토리지가 가리키는 Draft가 이미 삭제됐어도, 본문 caseInfos로 접수한다.
+    let draft = loadedDraft;
+    if (!draft) {
+      try {
+        draft = await DraftRequest.create({
+          _id: draftId,
+          requestor: req.user._id,
+          status: "draft",
+          caseInfos: [],
+        });
+      } catch {
+        draft = await DraftRequest.findById(draftId).lean();
+      }
+    }
     const creditSettings = earlyOrgId
       ? await loadCreditSettingsDefaults({
           requestorOrgId: earlyOrgId,

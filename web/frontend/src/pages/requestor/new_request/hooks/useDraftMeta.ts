@@ -5,11 +5,15 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - 2026-08-19: 제출 시작 시 초안 PATCH debounce를 멈춰 from-draft와 겹치지 않게.
+// - 2026-10-18: 로컬 파일이 있어도 살아 있는 Draft는 재사용. 새로고침마다 새 id를 만들지 않음.
 // - 2026-09-10: 계정 공용 draft-id 복원 제거 — 타 계정 Draft 403 방지, 캐시는 서버 소유권 확인 후만 재사용.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import type { DraftCaseInfo, CaseInfos, DraftRequest } from "./newRequestTypes";
-import { getLocalDraft as getLocalNewRequestDraft } from "../utils/localDraftStorage";
+import {
+  getLocalDraft as getLocalNewRequestDraft,
+  saveLocalDraft,
+} from "../utils/localDraftStorage";
 
 /** @deprecated 계정 공용 키 — 읽지 않음. 레거시 잔여분만 삭제용 */
 const DRAFT_ID_STORAGE_KEY = "abutsfit:new-request-draft-id:v1";
@@ -98,6 +102,16 @@ export function useDraftMeta() {
       };
 
       localStorage.setItem(metaKey, JSON.stringify(meta));
+      // v2 로컬 드래프트 caseInfos는 메타와 따로 놀면 복원 때 유지홈 등이 빈다.
+      try {
+        const localDraft = getLocalNewRequestDraft();
+        if (localDraft) {
+          localDraft.caseInfosMap = infoMap as typeof localDraft.caseInfosMap;
+          saveLocalDraft(localDraft);
+        }
+      } catch {
+        // ignore
+      }
       // 계정 공용 draft-id 키는 더 이상 쓰지 않는다(타 계정 403). 잔여분만 정리.
       try {
         localStorage.removeItem(DRAFT_ID_STORAGE_KEY);
@@ -205,42 +219,32 @@ export function useDraftMeta() {
 
         const localDraft =
           getLocalNewRequestDraft() as LocalDraftSnapshot | null;
-        const hasLocalFiles =
-          Array.isArray(localDraft?.files) && localDraft.files.length > 0;
+        const cachedMeta = loadDraftMeta();
+        const initialMap =
+          cachedMeta?.caseInfosMap &&
+          Object.keys(cachedMeta.caseInfosMap).length > 0
+            ? { ...cachedMeta.caseInfosMap }
+            : localDraft?.caseInfosMap &&
+                Object.keys(localDraft.caseInfosMap).length > 0
+              ? { ...localDraft.caseInfosMap }
+              : { ...emptyMap };
 
-        if (hasLocalFiles) {
-          const newDraft = await createDraft();
-          if (!newDraft) {
-            throw new Error("Failed to create new draft");
-          }
-          if (cancelled) return;
-
-          // updateCaseInfos는 saveDraftMeta만 호출하므로 cachedMeta가 최신 patient/implant 정보를 가짐
-          // localDraft.caseInfosMap은 업데이트되지 않으므로 cachedMeta를 우선 사용
-          const cachedMeta = loadDraftMeta();
-          const initialMap =
-            cachedMeta?.caseInfosMap &&
-            Object.keys(cachedMeta.caseInfosMap).length > 0
-              ? { ...cachedMeta.caseInfosMap }
-              : localDraft?.caseInfosMap &&
-                  Object.keys(localDraft.caseInfosMap).length > 0
-                ? { ...localDraft.caseInfosMap }
-                : { ...emptyMap };
-
-          clearStoredDraftIdentity();
-          adoptDraft(newDraft._id, initialMap);
+        // 같은 세션에서 토큰만 바뀌면 Draft를 새로 만들지 않는다.
+        // 새로 만들면 id가 바뀌고, 화면의 파일·입력 중인 값이 지워진다.
+        if (
+          cachedMeta?.draftId &&
+          draftIdRef.current &&
+          draftIdRef.current === cachedMeta.draftId
+        ) {
           setStatus("ready");
           return;
         }
 
-        const cachedMeta = loadDraftMeta();
         if (cachedMeta?.draftId) {
           const owned = await ensureOwnedDraftId(cachedMeta.draftId);
           if (cancelled) return;
           if (owned) {
-            adoptDraft(cachedMeta.draftId, cachedMeta.caseInfosMap || {
-              ...emptyMap,
-            });
+            adoptDraft(cachedMeta.draftId, initialMap);
             setStatus("ready");
             return;
           }
@@ -253,7 +257,7 @@ export function useDraftMeta() {
         }
         if (cancelled) return;
 
-        adoptDraft(newDraft._id, { ...emptyMap });
+        adoptDraft(newDraft._id, initialMap);
         setStatus("ready");
       } catch (err) {
         if (cancelled) return;
@@ -484,6 +488,24 @@ export function useDraftMeta() {
     await createFreshDraftState();
   }, [createFreshDraftState]);
 
+  const rotateServerDraft = useCallback(
+    async (map: Record<string, CaseInfos>) => {
+      const replacement = await createDraft();
+      if (!replacement?._id) return null;
+      const id = String(replacement._id);
+      const nextMap =
+        map && Object.keys(map).length > 0 ? { ...map } : { ...emptyMap };
+      if (!nextMap.__default__) {
+        nextMap.__default__ = { workType: "abutment" };
+      }
+      draftIdRef.current = id;
+      setDraftId(id);
+      saveDraftMeta(id, nextMap);
+      return id;
+    },
+    [createDraft, saveDraftMeta],
+  );
+
   const suspendDraftPatches = useCallback(() => {
     patchesSuspendedRef.current = true;
     if (patchTimeoutRef.current) {
@@ -509,6 +531,7 @@ export function useDraftMeta() {
     rekeyCaseInfos,
     removeCaseInfos,
     patchDraftImmediately,
+    rotateServerDraft,
     suspendDraftPatches,
     status,
     error,
