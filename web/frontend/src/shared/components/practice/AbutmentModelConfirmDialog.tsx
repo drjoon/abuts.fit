@@ -405,7 +405,7 @@ export function AbutmentModelConfirmDialog({
       >
         <DialogContent
           // Above floating transfer panel (z-300). Same band as ModelPreviewDialog.
-          className="new-request-page z-[320] flex h-[min(96vh,920px)] max-h-[96vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-y-auto p-4 sm:w-[980px] sm:max-w-[980px] sm:p-5"
+          className="new-request-page z-[320] flex w-[calc(100vw-1rem)] max-h-[94vh] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-y-auto p-4 sm:w-[980px] sm:max-w-[980px] sm:p-5"
           overlayClassName="z-[310]"
         >
           <DialogHeader className="relative shrink-0 space-y-0 pr-8">
@@ -440,29 +440,31 @@ export function AbutmentModelConfirmDialog({
             </div>
           ) : null}
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 sm:pr-2 lg:grid-cols-[52%_48%]">
-            <div className="app-glass-card app-glass-card--lg flex h-full min-h-[320px] flex-col !p-2 gap-2 sm:min-h-[380px]">
-              <div className="app-glass-card-content min-h-0 flex-1">
-                {detailFile ? (
-                  <StlPreviewViewer
-                    file={detailFile}
-                    showOverlay={false}
-                    showGrid={false}
-                    showTightCorner={Boolean(machiningPreflight?.overlay)}
-                    correctionSolidVisible={Boolean(machiningPreflight?.overlay)}
-                    metadata={
-                      machiningPreflight?.overlay
-                        ? { tightCorner: machiningPreflight.overlay }
-                        : undefined
-                    }
-                    className="h-full min-h-[280px] sm:min-h-[340px]"
-                    onDiameterComputed={handleDiameterComputed}
-                  />
-                ) : (
-                  <div className="flex h-[280px] min-h-[280px] items-center justify-center text-sm text-muted-foreground sm:h-[340px] sm:min-h-[340px]">
-                    3D Preview
-                  </div>
-                )}
+          <div className="grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 sm:pr-2 lg:grid-cols-[52%_48%] lg:items-start">
+            <div className="app-glass-card app-glass-card--lg flex w-full flex-col !p-2 gap-2 lg:self-start">
+              <div className="app-glass-card-content shrink-0">
+                <div className="relative aspect-[4/3] w-full min-h-[240px] overflow-hidden">
+                  {detailFile ? (
+                    <StlPreviewViewer
+                      file={detailFile}
+                      showOverlay={false}
+                      showGrid={false}
+                      showTightCorner={Boolean(machiningPreflight?.overlay)}
+                      correctionSolidVisible={Boolean(machiningPreflight?.overlay)}
+                      metadata={
+                        machiningPreflight?.overlay
+                          ? { tightCorner: machiningPreflight.overlay }
+                          : undefined
+                      }
+                      className="absolute inset-0 h-full w-full min-h-0 md:min-h-0"
+                      onDiameterComputed={handleDiameterComputed}
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+                      3D Preview
+                    </div>
+                  )}
+                </div>
               </div>
               {machiningPreflight ? (
                 <StlMachiningPreflightNotice
@@ -747,10 +749,8 @@ export function AbutmentModelConfirmDialog({
           <AlertDialogHeader className="space-y-3">
             <AlertDialogTitle>보정 디자인으로 진행할까요?</AlertDialogTitle>
             <AlertDialogDescription asChild>
-              <p className="text-sm leading-6 text-muted-foreground">
-                공구에 맞는 디자인으로 변경하여 의뢰합니다.
-                <br />
-                변경된 디자인을 다운로드해서 보철 내면을 새로 생성하셔야 합니다.
+              <p className="text-base font-semibold leading-relaxed text-primary sm:text-lg">
+                다운로드된 디자인으로 보철을 새로 만드세요!
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
