@@ -1474,6 +1474,7 @@ export async function createRequestsFromDraft(req, res) {
     let deferredDashboardRefreshAnchorId = null;
     let deferredHexSampleContext = null;
     let deferredCreditHoldContext = null;
+    let dispatchRhinoJobs = () => {};
     try {
       const needsRequestTransaction =
         duplicates.length > 0 && Boolean(duplicateResolutions);
@@ -1974,7 +1975,7 @@ export async function createRequestsFromDraft(req, res) {
           return { requestId: doc.requestId, filePath };
         })
         .filter(Boolean);
-      const dispatchRhinoJobs = () => {
+      dispatchRhinoJobs = () => {
         if (!rhinoJobs.length) return;
         void import("../rhino/rhino.controller.js")
           .then(({ triggerRhinoProcessFileForRequest }) => {
@@ -2146,7 +2147,14 @@ export async function createRequestsFromDraft(req, res) {
       const hexCtx = deferredHexSampleContext;
       const holdCtx = deferredCreditHoldContext;
       res.once("finish", () => {
-        dispatchRhinoJobs();
+        try {
+          dispatchRhinoJobs();
+        } catch (rhinoErr) {
+          console.warn(
+            "[createRequestsFromDraft] rhino dispatch failed",
+            rhinoErr?.message || rhinoErr,
+          );
+        }
         void (async () => {
           const requestIdsForRefresh = [...refreshRequestIds];
           // 보류는 응답 전에 끝났다. 여기까지 왔으면 성공.
@@ -2234,7 +2242,14 @@ export async function createRequestsFromDraft(req, res) {
       });
     } else {
       res.once("finish", () => {
-        dispatchRhinoJobs();
+        try {
+          dispatchRhinoJobs();
+        } catch (rhinoErr) {
+          console.warn(
+            "[createRequestsFromDraft] rhino dispatch failed",
+            rhinoErr?.message || rhinoErr,
+          );
+        }
       });
     }
 
