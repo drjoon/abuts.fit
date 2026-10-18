@@ -11,9 +11,11 @@ import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 import {
   buildCorrectedDesignStlBuffer,
+  awaitCorrectedDesignMeta,
   awaitCorrectedDesignStl,
   runStlMachiningPreflight,
 } from "../../services/abutmentStl/preflight.service.js";
+import { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
 
 const MAX_STL_BYTES = 30 * 1024 * 1024;
 
@@ -129,6 +131,28 @@ export const downloadStlMachiningCorrected = asyncHandler(async (req, res) => {
   return res.status(200).send(result.buffer);
 });
 
+/** GET /api/files/temp/stl-corrected-cache/:id/meta — 의뢰에 쓸 보정 STL의 S3 위치. */
+export const readCachedCorrectedStlMeta = asyncHandler(async (req, res) => {
+  const id = String(req.params?.id || "");
+  if (!/^[a-f0-9]{32}$/.test(id)) {
+    throw new ApiError(404, "보정 STL이 없거나 만료되었습니다.");
+  }
+  let meta = null;
+  try {
+    meta = await awaitCorrectedDesignMeta(id, req.user?._id);
+  } catch (error) {
+    const reason = String(error?.reason || "correction_failed");
+    throw new ApiError(
+      422,
+      CORRECTED_REASON_MESSAGE[reason] || CORRECTED_REASON_MESSAGE.correction_failed,
+    );
+  }
+  if (!meta?.s3Key) {
+    throw new ApiError(404, "보정 STL이 없거나 만료되었습니다.");
+  }
+  return res.status(200).json(new ApiResponse(200, meta, "보정 STL이 준비되었습니다."));
+});
+
 /** GET /api/files/temp/stl-corrected-cache/:id — 검사 때 만들어 둔 보정 STL. */
 export const downloadCachedCorrectedStl = asyncHandler(async (req, res) => {
   const id = String(req.params?.id || "");
@@ -136,11 +160,25 @@ export const downloadCachedCorrectedStl = asyncHandler(async (req, res) => {
     throw new ApiError(404, "보정 STL이 없거나 만료되었습니다.");
   }
   const row = await awaitCorrectedDesignStl(id, req.user?._id);
-  if (!row?.buffer?.length) {
+  let buffer = row?.buffer?.length ? row.buffer : null;
+  if (!buffer?.length) {
+    let meta = null;
+    try {
+      meta = await awaitCorrectedDesignMeta(id, req.user?._id);
+    } catch (error) {
+      const reason = String(error?.reason || "correction_failed");
+      throw new ApiError(
+        422,
+        CORRECTED_REASON_MESSAGE[reason] || CORRECTED_REASON_MESSAGE.correction_failed,
+      );
+    }
+    buffer = meta?.s3Key ? await getObjectBufferFromS3(meta.s3Key) : null;
+  }
+  if (!buffer?.length) {
     throw new ApiError(404, "보정 STL이 없거나 만료되었습니다.");
   }
-  const filename = correctedDownloadName(row.fileName);
+  const filename = correctedDownloadName(row?.fileName);
   res.setHeader("Content-Type", "application/octet-stream");
   res.setHeader("Content-Disposition", attachmentDisposition(filename));
-  return res.status(200).send(row.buffer);
+  return res.status(200).send(buffer);
 });

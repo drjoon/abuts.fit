@@ -216,7 +216,6 @@ export function AbutmentModelConfirmDialog({
   fileUploadPercent = null,
   fileUploadLabel = null,
   machiningPreflight = null,
-  onApplyCorrectedDesign,
   onPrepareCorrectedDesign,
   onTakePreparedCorrectedDesign,
 }: AbutmentModelConfirmDialogProps) {
@@ -358,9 +357,6 @@ export function AbutmentModelConfirmDialog({
         : null;
       const prepared = pending ? await pending : null;
       if (prepared) {
-        if (detailIndex != null) {
-          await onApplyCorrectedDesign?.(detailIndex, prepared);
-        }
         triggerBrowserFileDownload(prepared, prepared.name);
       } else {
         const result = await fetchCorrectedStlBlob({
@@ -376,18 +372,11 @@ export function AbutmentModelConfirmDialog({
           });
           return false;
         }
-        const correctedFile = new File([result.blob], result.fileName, {
-          type: "model/stl",
-          lastModified: Date.now(),
-        });
-        if (detailIndex != null) {
-          await onApplyCorrectedDesign?.(detailIndex, correctedFile);
-        }
         triggerBrowserFileDownload(result.blob, result.fileName);
       }
       toast({
-        title: "보정 디자인으로 바꿨습니다.",
-        description: "변경된 디자인을 다운로드해서 보철 내면을 새로 생성하셔야 합니다.",
+        title: "보정 디자인을 내려받았습니다.",
+        description: "의뢰에는 이 파일을 사용합니다.",
         duration: 3500,
       });
       return true;
@@ -408,9 +397,7 @@ export function AbutmentModelConfirmDialog({
     correctedDownloading,
     detailCaseInfos,
     detailFile,
-    detailIndex,
     machiningPreflight?.correctedId,
-    onApplyCorrectedDesign,
     onPrepareCorrectedDesign,
     onTakePreparedCorrectedDesign,
     toast,

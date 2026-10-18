@@ -15,6 +15,7 @@ import {
   checkStlMachiningPreflight,
   downloadCachedCorrectedStl,
   downloadStlMachiningCorrected,
+  readCachedCorrectedStlMeta,
   stlPreflightUpload,
 } from "../../controllers/files/stlPreflight.controller.js";
 
@@ -57,6 +58,13 @@ router.post(
   authorize(["requestor", "lab", "admin"], { subRoles: ["owner", "staff"] }),
   stlPreflightUpload,
   downloadStlMachiningCorrected,
+);
+
+router.get(
+  "/temp/stl-corrected-cache/:id/meta",
+  authenticate,
+  authorize(["requestor", "lab", "admin"], { subRoles: ["owner", "staff"] }),
+  readCachedCorrectedStlMeta,
 );
 
 router.get(

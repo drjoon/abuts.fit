@@ -69,7 +69,10 @@ const normalizeRequestorHexRotation = (
  */
 export const useNewRequestPage = (
   existingRequestId?: string,
-  options?: { enableOralScanGrouping?: boolean },
+  options?: {
+    enableOralScanGrouping?: boolean;
+    resolveCorrectedDesignUpload?: (file: File) => Promise<TempUploadedFile | null>;
+  },
 ) => {
   const { user, token, setLastDashboardPath } = useAuthStore();
   const navigate = useNavigate();
@@ -1372,6 +1375,7 @@ export const useNewRequestPage = (
     caseInfosMap,
     patientGroups: patientFileGroupsApi.patientGroups,
     patchDraftImmediately,
+    resolveCorrectedDesignUpload: options?.resolveCorrectedDesignUpload,
     uploadFiles: ensureFilesUploaded,
     peekCachedUploadedFiles,
     onDuplicateDetected: handleServerDuplicateDetected,

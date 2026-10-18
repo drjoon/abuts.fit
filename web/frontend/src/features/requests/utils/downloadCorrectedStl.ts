@@ -90,6 +90,66 @@ export async function fetchCorrectedStlBlob({
   return { ok: true, blob, fileName };
 }
 
+/** 람다가 S3에 남긴 보정 STL. 의뢰 파일은 이 키를 그대로 쓴다. */
+export async function fetchCorrectedDesignUpload({
+  correctedId,
+  fallbackName,
+  token,
+}: {
+  correctedId: string;
+  fallbackName: string;
+  token?: string | null;
+}): Promise<
+  | { ok: true; file: { _id: string; key: string; originalName: string; size: number; mimetype: string } }
+  | { ok: false; message: string }
+> {
+  const id = String(correctedId || "").trim();
+  if (!/^[a-f0-9]{32}$/.test(id)) {
+    return { ok: false, message: "보정 STL이 없거나 만료되었습니다." };
+  }
+  let effectiveToken = token;
+  if (!effectiveToken) {
+    try {
+      effectiveToken = localStorage.getItem("abuts_auth_token") || undefined;
+    } catch {
+      // ignore
+    }
+  }
+  const res = await fetch(`/api/files/temp/stl-corrected-cache/${id}/meta`, {
+    method: "GET",
+    headers: effectiveToken ? { Authorization: `Bearer ${effectiveToken}` } : {},
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let message = "보정 STL이 없거나 만료되었습니다.";
+    try {
+      const json = (await res.json()) as { message?: string };
+      if (json?.message) message = json.message;
+    } catch {
+      // ignore
+    }
+    return { ok: false, message };
+  }
+  const json = (await res.json()) as {
+    data?: { s3Key?: string; size?: number; originalName?: string };
+  };
+  const s3Key = String(json?.data?.s3Key || "").trim();
+  const size = Number(json?.data?.size || 0);
+  if (!s3Key || !(size > 0)) {
+    return { ok: false, message: "보정 STL이 없거나 만료되었습니다." };
+  }
+  return {
+    ok: true,
+    file: {
+      _id: id,
+      key: s3Key,
+      originalName: correctedFileName(json?.data?.originalName || fallbackName),
+      size,
+      mimetype: "model/stl",
+    },
+  };
+}
+
 /** 검사 때 캐시한 보정 STL. 원본 파일을 다시 올리지 않는다. */
 export async function fetchCachedCorrectedStlBlob({
   correctedId,

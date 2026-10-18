@@ -17,6 +17,7 @@ import { assessFinishLineQuality, isUserCapturedFinishLine } from "../../utils/f
 import { emitBgRuntimeStatus } from "../../controllers/bg/bgRuntimeEvents.js";
 import { resolveAbutmentStlInputs } from "./abutmentStlInputs.js";
 import { applyAutoCuffBlendSafely, isCuffBlendAutoEnabled } from "./cuffBlend.service.js";
+import { isPersistedCorrectedDesignKey } from "./correctLambda.service.js";
 import { correctedDesignCacheKey, takeFilledStlPrep } from "./preflight.service.js";
 import { runAbutmentStlPipelineInWorker } from "./runPipelineInWorker.js";
 
@@ -123,6 +124,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
   const ci = request.caseInfos || {};
   const originalS3Key = String(ci.file?.s3Key || "").trim();
   if (!originalS3Key) throw new JsPipelineProblem("original_missing", "원본 STL(S3)이 없습니다.");
+  const designAlreadyCorrected = isPersistedCorrectedDesignKey(originalS3Key);
 
   const [inputBuffer, inputs] = await Promise.all([
     getObjectBufferFromS3(originalS3Key),
@@ -141,14 +143,18 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
       targetDiameter: inputs.targetDiameter,
       implantProfile: inputs.implantProfile,
       ...(storedFinishLine ? { finishLinePoints: storedFinishLine.points } : {}),
+      ...(designAlreadyCorrected ? { designAlreadyCorrected: true } : {}),
     });
+  }
+  if (designAlreadyCorrected && js?.tightCorner) {
+    js.tightCorner = { ...js.tightCorner, needsCorrectionReview: false, correctionSolid: null };
   }
   assertJsResultUsable(js);
 
   const originalName = sanitizeStlName(fileName || ci.file?.filePath || ci.file?.originalName || "input.stl");
   const outName = filledNameOf(originalName);
   const s3Key = `requests/${requestId}/2-filled/${outName}`;
-  // 검사 중 보정이 끝났으면 그 버퍼를 쓴다. 없을 때만 지금 보정한다.
+  // 필레 보정은 의뢰 STL에 이미 들어 있다. 여기서는 스크류홀·fill만 만든다.
   let output = js.outputBuffer;
   let cuffBlendResult = js.cuffBlendResult?.record
     ? {

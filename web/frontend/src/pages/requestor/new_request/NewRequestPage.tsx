@@ -74,7 +74,12 @@ import {
 } from "./utils/patientGroups";
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
 import { useStlMachiningPreflight } from "./hooks/useStlMachiningPreflight";
-import { fetchCachedCorrectedStlBlob } from "@/features/requests/utils/downloadCorrectedStl";
+import {
+  fetchCachedCorrectedStlBlob,
+  fetchCorrectedDesignUpload,
+} from "@/features/requests/utils/downloadCorrectedStl";
+import { getFileKey } from "./utils/localDraftStorage";
+import type { TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 
 
 // related files:
@@ -154,6 +159,14 @@ const NewRequestPageContent = () => {
     }
   }, []);
 
+  const resolveCorrectedRef = useRef<
+    (file: File) => Promise<TempUploadedFile | null>
+  >(async () => null);
+  const resolveCorrectedDesignUpload = useCallback(
+    (file: File) => resolveCorrectedRef.current(file),
+    [],
+  );
+
   const toNormalizedFileKey = useCallback(
     (f: File) => {
       return `${normalizeKeyPart(f.name)}:${f.size}`;
@@ -172,8 +185,6 @@ const NewRequestPageContent = () => {
     handleUpload,
     handleUploadUnchecked,
     handleRemoveFile: rawHandleRemoveFile,
-    replaceDesignFile,
-    ensureFilesUploaded,
     uploadProgress,
     familyOptions,
     typeOptions,
@@ -220,6 +231,7 @@ const NewRequestPageContent = () => {
     suppressLocalDraftForGuideTour,
   } = useNewRequestPage(existingRequestId, {
     enableOralScanGrouping: !isLabRequestor,
+    resolveCorrectedDesignUpload,
   });
 
   // STL 첨부 즉시 JS 파이프라인 가공 검사(불완전가공 사전 안내)
@@ -228,6 +240,58 @@ const NewRequestPageContent = () => {
     caseInfosMap,
     token,
   });
+  const preflightStateRef = useRef(machiningPreflightByFileKey);
+  preflightStateRef.current = machiningPreflightByFileKey;
+  const correctedJobsRef = useRef(
+    new Map<string, Promise<TempUploadedFile | null>>(),
+  );
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
+
+  resolveCorrectedRef.current = async (file) => {
+    if (!/\.stl$/i.test(file.name)) return null;
+    const key = getFileKey(file);
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline) {
+      const preflight = preflightStateRef.current[key];
+      if (!preflight || preflight.status === "checking") {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        continue;
+      }
+      const correctedId = String(preflight.correctedId || "").trim();
+      if (preflight.status !== "tight" || !correctedId) return null;
+      let job = correctedJobsRef.current.get(key);
+      if (!job) {
+        job = fetchCorrectedDesignUpload({
+          correctedId,
+          fallbackName: file.name,
+          token: tokenRef.current,
+        }).then((result) => {
+          if (!result.ok) {
+            correctedJobsRef.current.delete(key);
+            throw new Error(result.message);
+          }
+          return result.file;
+        });
+        correctedJobsRef.current.set(key, job);
+      }
+      return job;
+    }
+    const late = preflightStateRef.current[key];
+    if (late?.status === "tight" && late.correctedId) {
+      throw new Error("보정 STL을 준비하는 중입니다. 잠시 후 다시 의뢰해주세요.");
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    for (const file of files) {
+      const key = getFileKey(file);
+      const preflight = machiningPreflightByFileKey[key];
+      if (preflight?.status !== "tight" || !preflight.correctedId) continue;
+      void resolveCorrectedRef.current(file).catch(() => null);
+    }
+  }, [files, machiningPreflightByFileKey]);
 
   const countableFileKeys = useMemo(() => {
     if (!patientGroups?.length) return undefined;
@@ -271,16 +335,10 @@ const NewRequestPageContent = () => {
           token,
         });
         if (!result.ok) return null;
-        const file = new File([result.blob], result.fileName, {
+        return new File([result.blob], result.fileName, {
           type: "model/stl",
           lastModified: Date.now(),
         });
-        try {
-          await ensureFilesUploaded([file]);
-        } catch (error) {
-          console.warn("[prepareCorrectedDesign] upload failed", error);
-        }
-        return file;
       })()
         .then((file) => {
           if (!file) preparedCorrectedRef.current.delete(id);
@@ -293,29 +351,12 @@ const NewRequestPageContent = () => {
         });
       preparedCorrectedRef.current.set(id, job);
     },
-    [ensureFilesUploaded, token],
+    [token],
   );
 
   const takePreparedCorrectedDesign = useCallback((correctedId: string) => {
     return preparedCorrectedRef.current.get(String(correctedId || "").trim()) ?? null;
   }, []);
-
-  const applyCorrectedDesign = useCallback(
-    async (index: number, file: File) => {
-      const current = files[index];
-      if (!current) return;
-      const oldKey = toNormalizedFileKey(current);
-      const newKey = toNormalizedFileKey(file);
-      setFileVerificationStatus((prev) => {
-        if (!prev[oldKey]) return prev;
-        const next = { ...prev, [newKey]: prev[oldKey] };
-        delete next[oldKey];
-        return next;
-      });
-      await replaceDesignFile(index, file);
-    },
-    [files, replaceDesignFile, setFileVerificationStatus, toNormalizedFileKey],
-  );
 
   const handleRequestSettingsDefaultsChange = useCallback(
     (next: {
@@ -1937,7 +1978,6 @@ const NewRequestPageContent = () => {
               onUngroupPatientFiles={handleUngroupPatientFiles}
               onRemoveFileFromPatientGroup={handleRemoveFileFromPatientGroup}
               machiningPreflightByFileKey={machiningPreflightByFileKey}
-            onApplyCorrectedDesign={applyCorrectedDesign}
             onPrepareCorrectedDesign={prepareCorrectedDesign}
             onTakePreparedCorrectedDesign={takePreparedCorrectedDesign}
               onDuplicateDetected={({ file, duplicate }) => {

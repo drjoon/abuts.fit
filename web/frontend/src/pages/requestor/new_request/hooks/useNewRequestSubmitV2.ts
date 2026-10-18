@@ -53,6 +53,11 @@ type UseNewRequestSubmitV2Params = {
   caseInfosMap?: Record<string, CaseInfos>;
   patientGroups?: PatientFileGroup[];
   patchDraftImmediately?: (map: Record<string, CaseInfos>) => Promise<void>;
+  /**
+   * 좁은 코너면 람다가 S3에 남긴 보정 STL을 반환한다.
+   * null이면 올린 원본을 쓴다. 준비 실패는 throw.
+   */
+  resolveCorrectedDesignUpload?: (file: File) => Promise<TempUploadedFile | null>;
   /** 사전 업로드 캐시 재사용 (useFilePreUpload.ensureFilesUploaded) */
   uploadFiles?: (
     files: File[],
@@ -99,6 +104,7 @@ export const useNewRequestSubmitV2 = ({
   caseInfosMap,
   patientGroups = [],
   patchDraftImmediately,
+  resolveCorrectedDesignUpload,
   uploadFiles,
   peekCachedUploadedFiles,
   onDuplicateDetected,
@@ -109,6 +115,8 @@ export const useNewRequestSubmitV2 = ({
   const { toast, dismiss } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const resolveCorrectedRef = useRef(resolveCorrectedDesignUpload);
+  resolveCorrectedRef.current = resolveCorrectedDesignUpload;
   const preparedDraftRef = useRef<{
     draftId: string;
     uploadFingerprint: string;
@@ -489,6 +497,25 @@ export const useNewRequestSubmitV2 = ({
         );
       } else {
         let tempFiles: TempUploadedFile[] = [];
+        let correctedFiles: Array<TempUploadedFile | null> = [];
+        try {
+          correctedFiles = await Promise.all(
+            files.map((file) =>
+              resolveCorrectedRef.current
+                ? resolveCorrectedRef.current(file)
+                : Promise.resolve(null),
+            ),
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "";
+          toast({
+            title: "보정 STL을 준비하지 못했습니다.",
+            description: message || "잠시 후 다시 의뢰해주세요.",
+            variant: "destructive",
+            duration: 4500,
+          });
+          return;
+        }
         try {
           tempFiles =
             files.length > 0
@@ -505,7 +532,8 @@ export const useNewRequestSubmitV2 = ({
           >();
           for (let i = 0; i < files.length; i += 1) {
             const file = files[i];
-            const tf = tempFiles[i];
+            const corrected = correctedFiles[i];
+            const tf = corrected?.key ? corrected : tempFiles[i];
             if (!file || !tf?.key) continue;
             fileByKey.set(toNormalizedFileKey(file), { file, temp: tf });
           }

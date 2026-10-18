@@ -329,13 +329,16 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
       log(`[stl_metadata] failed: ${error?.message || error}`);
     }
     try {
-      // 검사만 한다. 보정 솔리드는 메타데이터에만 담고 filled STL은 원본 그대로 둔다.
+      // 필레 정점은 여기서 다시 옮기지 않는다. 이미 보정된 의뢰 STL이면 재검토도 하지 않는다.
       tightCorner = detectTightCorners(combined, finishLine.points, {
         tiltAxisVector: stlMetadata?.tiltAxisVector,
         log,
       });
       if (tightCorner?.tightCount > 0) {
         log(`[tight-corner] flagged ${tightCorner.tightCount} samples`);
+      }
+      if (options.designAlreadyCorrected && tightCorner) {
+        tightCorner = { ...tightCorner, needsCorrectionReview: false, correctionSolid: null };
       }
     } catch (error) {
       log(`[tight-corner] failed: ${error?.message || error}`);

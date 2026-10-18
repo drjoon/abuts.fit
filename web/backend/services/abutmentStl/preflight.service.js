@@ -5,12 +5,16 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useStlMachiningPreflight.ts
 //
 // 의뢰 모달은 EBS에서 정렬·피니시라인·필레 8곳만 검사하고, 좁으면 바로 경고한다.
-// 완전한 보정 STL은 그 응답 뒤 람다가 만들고, 의뢰하기 전에 내려받는다.
+// 완전한 보정 STL은 그 응답 뒤 람다가 만들어 S3에 남기고, 의뢰는 그 객체를 쓴다.
 import crypto from "crypto";
 import { resolveAbutmentStlInputs } from "./abutmentStlInputs.js";
 import { applyAutoCuffBlendSafely, isCuffBlendAutoEnabled } from "./cuffBlend.service.js";
 import { runAbutmentStlPipelineInWorker } from "./runPipelineInWorker.js";
-import { buildCorrectedDesignOffRequest } from "./correctLambda.service.js";
+import {
+  buildCorrectedDesignOffRequest,
+  correctedDesignS3Key,
+} from "./correctLambda.service.js";
+import { headObjectSizeInS3 } from "../../utils/s3.utils.js";
 import { identity } from "./meshCore.js";
 import { FINISH_BALL_RADIUS_MM } from "./tightCorner.js";
 
@@ -233,9 +237,11 @@ export function scheduleCorrectedDesignStl({
     promise: null,
     errorReason: null,
   };
-  row.promise = buildCorrectedDesignOffRequest(buffer, inputs)
+  row.s3Key = correctedDesignS3Key(id);
+  row.promise = buildCorrectedDesignOffRequest(buffer, inputs, id)
     .then((out) => {
       row.buffer = out;
+      row.size = out?.length || 0;
       row.expires = Date.now() + CORRECTED_TTL_MS;
       row.promise = null;
       return out;
@@ -250,6 +256,48 @@ export function scheduleCorrectedDesignStl({
   correctedByHash.set(slot, id);
   pruneCorrectedDesignCache();
   return id;
+}
+
+/**
+ * 의뢰에 넣을 보정 STL 위치. 이 인스턴스에 작업이 있으면 기다리고, 아니면 S3 객체를 본다.
+ * @returns {Promise<{ s3Key: string, size: number, originalName: string } | null>}
+ */
+export async function awaitCorrectedDesignMeta(id, userId) {
+  const keyId = String(id || "");
+  const row = readCorrectedDesignStl(keyId, userId);
+  const stored = correctedById.get(keyId);
+  if (stored && !row) return null;
+  if (row?.promise) {
+    let timer = null;
+    const timeout = new Promise((resolve) => {
+      timer = setTimeout(resolve, CORRECT_WAIT_MS);
+    });
+    await Promise.race([row.promise, timeout]);
+    clearTimeout(timer);
+  }
+  if (row?.errorReason && !row?.buffer?.length) {
+    const error = new Error(row.errorReason);
+    error.reason = row.errorReason;
+    throw error;
+  }
+  const s3Key = correctedDesignS3Key(keyId);
+  if (row?.buffer?.length) {
+    return {
+      s3Key,
+      size: row.buffer.length,
+      originalName: row.fileName || "corrected.stl",
+    };
+  }
+  const started = Date.now();
+  while (Date.now() - started < CORRECT_WAIT_MS) {
+    const size = await headObjectSizeInS3(s3Key);
+    if (size > 0) {
+      return { s3Key, size, originalName: row?.fileName || "corrected.stl" };
+    }
+    if (row) break;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  return null;
 }
 
 /** 다운로드가 완전한 파일을 받을 때까지 기다린다. */

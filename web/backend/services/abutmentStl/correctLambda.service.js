@@ -4,7 +4,6 @@
 // - web/backend/services/abutmentStl/runPipelineInWorker.js
 //
 // 완전한 보정 STL은 람다에서 만든다. 함수 이름이 없으면(로컬·테스트) 워커로 같은 코드를 돌린다.
-import crypto from "crypto";
 import AWS from "aws-sdk";
 import {
   deleteFileFromS3,
@@ -16,6 +15,15 @@ import { runAbutmentStlPipelineInWorker } from "./runPipelineInWorker.js";
 
 const POLL_MS = 1000;
 const WAIT_MS = 150 * 1000;
+
+/** 의뢰에 그대로 넣는 보정 STL. 람다 임시 입력·에러만 지우고 이 객체는 남긴다. */
+export function correctedDesignS3Key(id) {
+  return `temp/stl-correct/${id}/out.stl`;
+}
+
+export function isPersistedCorrectedDesignKey(key) {
+  return /^temp\/stl-correct\/[a-f0-9]{32}\/out\.stl$/.test(String(key || "").trim());
+}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -31,7 +39,7 @@ function getLambdaClient() {
   return lambdaClient;
 }
 
-async function buildOnWorker(buffer, inputs) {
+async function buildOnWorker(buffer, inputs, id) {
   const js = await runAbutmentStlPipelineInWorker(buffer, {
     targetDiameter: inputs?.targetDiameter ?? null,
     implantProfile: inputs?.implantProfile || {},
@@ -42,6 +50,9 @@ async function buildOnWorker(buffer, inputs) {
     error.reason = "correction_failed";
     throw error;
   }
+  await putObjectToS3(correctedDesignS3Key(id), js.outputBuffer, {
+    contentType: "model/stl",
+  });
   return js.outputBuffer;
 }
 
@@ -67,13 +78,13 @@ async function pollCorrectedObject(outKey, errKey) {
   throw error;
 }
 
-async function buildOnLambda(buffer, inputs) {
+async function buildOnLambda(buffer, inputs, id) {
   const name = correctedStlLambdaName();
-  const id = crypto.randomBytes(16).toString("hex");
   const inKey = `temp/stl-correct/${id}/in.stl`;
-  const outKey = `temp/stl-correct/${id}/out.stl`;
+  const outKey = correctedDesignS3Key(id);
   const errKey = `temp/stl-correct/${id}/error.txt`;
   const bucket = process.env.AWS_S3_BUCKET_NAME || "abuts-fit";
+  await deleteFileFromS3(errKey).catch(() => null);
   await putObjectToS3(inKey, buffer, { contentType: "application/octet-stream" });
   await getLambdaClient()
     .invoke({
@@ -93,14 +104,18 @@ async function buildOnLambda(buffer, inputs) {
     return await pollCorrectedObject(outKey, errKey);
   } finally {
     void deleteFileFromS3(inKey).catch(() => null);
-    void deleteFileFromS3(outKey).catch(() => null);
     void deleteFileFromS3(errKey).catch(() => null);
   }
 }
 
-/** 완전한 보정 STL. 람다 이름이 있으면 람다, 없으면 로컬 워커. */
-export async function buildCorrectedDesignOffRequest(buffer, inputs) {
-  if (correctedStlLambdaName()) return buildOnLambda(buffer, inputs);
+/** 완전한 보정 STL. 람다 이름이 있으면 람다, 없으면 로컬 워커. out.stl은 의뢰용으로 남긴다. */
+export async function buildCorrectedDesignOffRequest(buffer, inputs, id) {
+  if (!/^[a-f0-9]{32}$/.test(String(id || ""))) {
+    const error = new Error("보정 STL id가 없습니다.");
+    error.reason = "correction_failed";
+    throw error;
+  }
+  if (correctedStlLambdaName()) return buildOnLambda(buffer, inputs, id);
   console.warn("[stl-correct] ABUTMENT_STL_CORRECT_LAMBDA가 없어 EBS 워커로 보정 STL을 만듭니다.");
-  return buildOnWorker(buffer, inputs);
+  return buildOnWorker(buffer, inputs, id);
 }
