@@ -499,11 +499,32 @@ export const WorksheetCardGrid = ({
           (!Number.isFinite(unmachinableEventAtMs) ||
             (Number.isFinite(requestorContinueAtMs) &&
               requestorContinueAtMs >= unmachinableEventAtMs));
-        const shouldShowTopUnmachinableBadge =
+        const showIncompleteMachiningBadge =
+          !showLatestContinueBadge &&
+          !rhinoWorkPending &&
           (isFinishLineMinZRisky ||
             isTightCornerCorrectionNeeded ||
-            isUnmachinableSample) &&
-          !showLatestContinueBadge;
+            isUnmachinableSample ||
+            isFinishLineCaptureBad ||
+            isCuffManualReview);
+        const incompleteMachiningBadgeTitle = (() => {
+          if (isTightCornerCorrectionNeeded) {
+            return "마진 fillet R이 φ1.2 볼(R0.6)보다 작습니다. 프리뷰에서 확인하세요.";
+          }
+          if (isFinishLineCaptureBad) {
+            return "피니시라인이 어깨를 따라가지 않습니다. 프리뷰에서 FL로 수정하세요.";
+          }
+          if (isCuffManualReview) {
+            return `커프 이음부 자동 보정을 건너뛰었습니다. ${cuffBlend?.reason || ""} 프리뷰에서 형상을 확인하세요.`;
+          }
+          if (isFinishLineMinZRisky) {
+            return "피니시라인 높이가 낮습니다. 프리뷰에서 확인하세요.";
+          }
+          if (isUnmachinableSample) {
+            return "불완전가공 판정 건입니다.";
+          }
+          return "가공 전 확인이 필요합니다.";
+        })();
 
         const shouldShowFullLot =
           !isSampleRequest &&
@@ -722,16 +743,6 @@ export const WorksheetCardGrid = ({
           showLotShortBadge ||
           showScrewTypeBadge ||
           (tabStage === "packing" && isPrinted);
-        const showUnmachinableSideBadge =
-          shouldShowTopUnmachinableBadge &&
-          !rhinoWorkPending &&
-          showSideSpecBadges &&
-          (tabStage === "request" || tabStage === "cam");
-        const showUnmachinableThumbBadge =
-          shouldShowTopUnmachinableBadge &&
-          !rhinoWorkPending &&
-          showFilledFlThumb &&
-          !showUnmachinableSideBadge;
         const jsFailed =
           tabStage === "request" &&
           Boolean(request.productionSchedule?.stlJsFallback?.at);
@@ -1095,18 +1106,6 @@ export const WorksheetCardGrid = ({
                   </span>
                 </button>
               )}
-              {shouldShowTopUnmachinableBadge && (
-                <Badge
-                  variant="outline"
-                  className={`h-7 text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border flex items-center ${
-                    isUnmachinableSample
-                      ? "border-accent-muted bg-accent-soft text-accent-strong"
-                      : "border-accent-muted bg-accent-soft text-accent-strong"
-                  }`}
-                >
-                  {isUnmachinableSample ? "불완전가공" : "불완전가공 확인요망"}
-                </Badge>
-              )}
               {showLatestContinueBadge && (
                 <Badge
                   variant="outline"
@@ -1442,22 +1441,13 @@ export const WorksheetCardGrid = ({
                     ) : null}
                     {showFilledFlThumb ? (
                       <>
-                        {isFinishLineCaptureBad && !rhinoWorkPending ? (
+                        {showIncompleteMachiningBadge ? (
                           <Badge
                             variant="outline"
                             className="h-5 max-w-full truncate text-[10px] px-1.5 py-0 font-semibold leading-none border border-destructive/70 bg-destructive-soft text-destructive flex items-center"
-                            title="피니시라인이 어깨를 따라가지 않습니다. 프리뷰에서 FL로 수정하세요."
+                            title={incompleteMachiningBadgeTitle}
                           >
-                            FL 확인
-                          </Badge>
-                        ) : null}
-                        {isCuffManualReview && !rhinoWorkPending ? (
-                          <Badge
-                            variant="outline"
-                            className="h-5 max-w-full truncate text-[10px] px-1.5 py-0 font-semibold leading-none border border-destructive/70 bg-destructive-soft text-destructive flex items-center"
-                            title={`커프 이음부 자동 보정을 건너뛰었습니다. ${cuffBlend?.reason || ""} 프리뷰에서 형상을 확인하세요.`}
-                          >
-                            커프 확인
+                            불완전
                           </Badge>
                         ) : null}
                         {isCuffProposalWaiting && !rhinoWorkPending ? (
@@ -1472,7 +1462,7 @@ export const WorksheetCardGrid = ({
                         <button
                           type="button"
                           className={`h-[72px] w-[72px] shrink-0 overflow-hidden rounded-md border bg-slate-100 shadow-sm transition hover:shadow ${
-                            isFinishLineCaptureBad || isTightCornerCorrectionNeeded
+                            showIncompleteMachiningBadge
                               ? "border-destructive/80 ring-2 ring-destructive/40 hover:border-destructive"
                               : "border-slate-200 hover:border-primary/50"
                           }`}
@@ -1481,40 +1471,18 @@ export const WorksheetCardGrid = ({
                             e.stopPropagation();
                           }}
                           aria-label={
-                            isFinishLineCaptureBad
-                              ? "FL 확인 — 프리뷰 열기"
-                              : isTightCornerCorrectionNeeded
-                                ? "마진 보정 — 프리뷰 열기"
-                                : "피니시라인 프리뷰 열기"
+                            showIncompleteMachiningBadge
+                              ? "불완전 — 프리뷰 열기"
+                              : "피니시라인 프리뷰 열기"
                           }
                           title={
-                            isFinishLineCaptureBad
-                              ? "FL 확인"
-                              : isTightCornerCorrectionNeeded
-                                ? "마진 보정"
-                                : "피니시라인 프리뷰"
+                            showIncompleteMachiningBadge
+                              ? "불완전"
+                              : "피니시라인 프리뷰"
                           }
                         >
                           <FilledStlCardThumbnail request={request} />
                         </button>
-                        {showUnmachinableThumbBadge ? (
-                          <Badge
-                            variant="outline"
-                            className="h-auto min-h-6 max-w-[4.75rem] text-[10px] px-1.5 py-0.5 font-semibold leading-[1.15] border border-accent-muted bg-accent-soft text-accent-strong flex flex-col items-center justify-center text-center"
-                            title={
-                              isTightCornerCorrectionNeeded
-                                ? "마진 fillet R이 φ1.2 볼(R0.6)보다 작습니다. 프리뷰에서 확인하세요."
-                                : isFinishLineMinZRisky
-                                  ? "피니시라인 높이가 낮습니다. 프리뷰에서 확인하세요."
-                                  : "불완전가공 판정 건입니다."
-                            }
-                          >
-                            <span>불완전가공</span>
-                            {!isUnmachinableSample ? (
-                              <span className="text-[9px] font-medium">확인요망</span>
-                            ) : null}
-                          </Badge>
-                        ) : null}
                         {onRunRhino && tabStage === "request" && !rhinoWorkPending ? (
                           <Button
                             type="button"
@@ -1546,24 +1514,6 @@ export const WorksheetCardGrid = ({
                     ) : null}
                     {showSideSpecBadges ? (
                       <div className="flex flex-col items-center gap-1">
-                        {showUnmachinableSideBadge ? (
-                          <Badge
-                            variant="outline"
-                            className="min-w-[3.25rem] whitespace-nowrap text-[11px] px-2 py-1 font-bold leading-[1.15] border border-accent-muted bg-accent-soft text-accent-strong flex flex-col items-center text-center"
-                            title={
-                              isTightCornerCorrectionNeeded
-                                ? "마진 fillet R이 φ1.2 볼(R0.6)보다 작습니다. 프리뷰에서 확인하세요."
-                                : isFinishLineMinZRisky
-                                  ? "피니시라인 높이가 낮습니다. 프리뷰에서 확인하세요."
-                                  : "불완전가공 판정 건입니다."
-                            }
-                          >
-                            <span>불완전가공</span>
-                            {!isUnmachinableSample ? (
-                              <span className="text-[9px] font-medium">확인요망</span>
-                            ) : null}
-                          </Badge>
-                        ) : null}
                         {shouldShowAnodizingOffBadge && (
                           <Badge
                             variant="outline"
