@@ -66,6 +66,19 @@ describe("stlPreflight summarizeTightCorner", () => {
     expect(invertRigidMatrix(m)).toHaveLength(16);
   });
 
+  it("보정으로 옮길 면이 없으면 덧붙인 솔리드를 대신 보여 주지 않는다", () => {
+    const overlay = tightCornerOverlayInOriginalFrame(
+      {
+        tightCount: 1,
+        samples: [{ sampleIndex: 0, filletRadiusMm: 0.44, cornerPoint: [1, 0, 0] }],
+        correctionSolid: { filletRadiusMm: 0.6, positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], indices: [0, 1, 2] },
+      },
+      null,
+      null,
+    );
+    expect(overlay).toBeNull();
+  });
+
   it("타이트가 없으면 ok다", () => {
     const summary = summarizeTightCorner({
       toolDiameterMm: 1.2,

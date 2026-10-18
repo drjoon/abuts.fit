@@ -12,6 +12,8 @@ import { Mesh, writeBinaryStl, identity } from "./meshCore.js";
 import {
   FINISH_BALL_RADIUS_MM,
   applyTightCornerCorrectionToMesh,
+  correctTightCornerFillet,
+  movedFilletSurface,
 } from "./tightCorner.js";
 
 /** 디자인 수정 권고 여유(mm). 공구 R에 이만큼 더한 값을 권한다. */
@@ -65,11 +67,12 @@ function mapFlatPositions(flat, m) {
 
 /**
  * 정렬 좌표계의 불완전 가공 면을 원본 STL 좌표로 되돌린다.
- * 뷰어가 올린 파일 위에 그대로 얹을 수 있게 보정 솔리드와 코너 점만 남긴다.
+ * 뷰어가 올린 파일 위에 그대로 얹을 수 있게 보정 면과 코너 점만 남긴다.
+ * @param {object|null} [correctionSurface] 보정으로 옮긴 필렛 면. 생략하면 tightCorner.correctionSolid.
  */
-export function tightCornerOverlayInOriginalFrame(tightCorner, alignMatrix) {
+export function tightCornerOverlayInOriginalFrame(tightCorner, alignMatrix, correctionSurface) {
   const tc = tightCorner && typeof tightCorner === "object" ? tightCorner : null;
-  const solid = tc?.correctionSolid;
+  const solid = correctionSurface === undefined ? tc?.correctionSolid : correctionSurface;
   if (!(Number(tc?.tightCount) > 0) || !solid?.positions?.length || !solid?.indices?.length) {
     return null;
   }
@@ -174,6 +177,21 @@ export async function buildCorrectedDesignStlBuffer({ buffer, caseInfos } = {}) 
   }
 }
 
+/** 보정 STL과 같은 계산으로 옮겨질 필렛 면(정렬 좌표계). 실패하면 null. */
+function correctedFilletSurface(buffer, js) {
+  try {
+    const mesh = Mesh.fromStlBuffer(buffer);
+    mesh.transform(js.alignMatrix);
+    const corrected = correctTightCornerFillet(mesh, js.finishLine.points, {
+      tiltAxisVector: js.stlMetadata?.tiltAxisVector,
+    });
+    return corrected ? movedFilletSurface(corrected) : null;
+  } catch (error) {
+    console.warn("[stl-preflight] fillet surface failed:", error?.message || error);
+    return null;
+  }
+}
+
 export async function runStlMachiningPreflight({ buffer, caseInfos } = {}) {
   if (!buffer?.length) {
     return { status: "unknown", reason: "empty_file", tightCount: 0 };
@@ -192,7 +210,11 @@ export async function runStlMachiningPreflight({ buffer, caseInfos } = {}) {
     }
     const summary = summarizeTightCorner(js.tightCorner);
     if (summary.status !== "tight") return summary;
-    const overlay = tightCornerOverlayInOriginalFrame(js.tightCorner, js.alignMatrix);
+    const overlay = tightCornerOverlayInOriginalFrame(
+      js.tightCorner,
+      js.alignMatrix,
+      correctedFilletSurface(buffer, js),
+    );
     return overlay ? { ...summary, overlay } : summary;
   } catch (error) {
     console.warn("[stl-preflight] failed:", error?.message || error);

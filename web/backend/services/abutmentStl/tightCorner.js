@@ -7,7 +7,7 @@
 // 피니시라인 바로 위 마진↔축면 경계의 fillet R을 재고, R<공구R이면 공구 R 필렛 보정면을 만든다.
 // 보정 솔리드는 원본과 별개로 메타데이터에 담긴다. filled STL·CAM은 원본 그대로 두고,
 // 뷰어에서 토글을 켰을 때만 원본 위에 빨갛게 덧입혀 보여준다.
-import { Mesh, cross, meshPlaneSection, normalize } from "./meshCore.js";
+import { cross, meshPlaneSection, normalize } from "./meshCore.js";
 
 export const TIGHT_CORNER_VERSION = 6;
 export const FINISH_BALL_DIAMETER_MM = 1.2;
@@ -591,6 +591,16 @@ function resampleUniform(pts, step) {
 
 /** FL에서 위로 올라가는 단면 폴리라인(부호 있는 u, w). 반경 평면 단면 루프를 그대로 따른다. */
 function extractProfileAboveFl(mesh, fl, radial, axis, n) {
+  const seq = sectionWalkAboveFl(mesh, fl, radial, axis, n);
+  if (!seq || seq.length < 2) return null;
+  const pts = resampleUniform(seq, PROFILE_STEP_MM).filter(
+    (p) => p.w <= dot3(fl, axis) + PROFILE_UP_MM,
+  );
+  return pts.length >= 40 ? pts : null;
+}
+
+/** 단면 루프 정점을 FL에서 위쪽(축면) 방향으로 리샘플 없이 따라간다. */
+function sectionWalkAboveFl(mesh, fl, radial, axis, n) {
   const loops = meshPlaneSection(mesh, [0, 0, 0], n);
   const uFl = dot3(fl, radial);
   const wFl = dot3(fl, axis);
@@ -618,6 +628,8 @@ function extractProfileAboveFl(mesh, fl, radial, axis, n) {
       const u = dot3(p, radial);
       const w = dot3(p, axis);
       if (u <= 0.2) break;
+      const last = out[out.length - 1];
+      if (last && Math.hypot(u - last.u, w - last.w) < 1e-4) continue;
       out.push({ u, w });
       // 긴 변은 정점 하나뿐일 수 있어, 한도를 넘는 첫 점까지 담고 리샘플 뒤 자른다.
       if (w > wFl + PROFILE_UP_MM) break;
@@ -634,10 +646,7 @@ function extractProfileAboveFl(mesh, fl, radial, axis, n) {
   };
   const fwd = walk(1);
   const bwd = walk(-1);
-  const seq = rise(fwd) >= rise(bwd) ? fwd : bwd;
-  if (seq.length < 2) return null;
-  const pts = resampleUniform(seq, PROFILE_STEP_MM).filter((p) => p.w <= wFl + PROFILE_UP_MM);
-  return pts.length >= 40 ? pts : null;
+  return rise(fwd) >= rise(bwd) ? fwd : bwd;
 }
 
 function pcaLine(pts) {
@@ -677,6 +686,111 @@ function pointSegDist(p, a, b) {
   return Math.hypot(p.u - (a.u + t * abu), p.w - (a.w + t * abw));
 }
 
+const STATION_MIN_SEG_MM = 0.005;
+/** 마진 직선으로 보는 첫 변 기울기 허용(도). 이보다 꺾이면 필렛 시작. */
+const STATION_MARGIN_TOL_DEG = 4.5;
+const STATION_WALL_REACH_MM = 2.2;
+const STATION_WALL_STRAIGHT_DEG = 2.5;
+/** 이보다 좁은 공기 쪽 각은 마진↔축면 필렛이 아니라 틈(브릿지 사이 등)이다. */
+const STATION_MIN_AIR_DEG = 60;
+
+/**
+ * 단면 정점 그대로 마진 직선·축면 직선·필렛 R을 잰다(리샘플 없음).
+ * 보정은 이 값으로 코너 근처 정점만 옮긴다.
+ */
+function measureFilletStation(mesh, fl, axis) {
+  const radial = radialFromFinishPoint(fl, axis);
+  const n = sectionNormal(radial, axis);
+  if (!n) return null;
+  const raw = sectionWalkAboveFl(mesh, fl, radial, axis, n);
+  if (!raw || raw.length < 3) return null;
+  const pts = [raw[0]];
+  for (let i = 1; i < raw.length; i += 1) {
+    const last = pts[pts.length - 1];
+    if (Math.hypot(raw[i].u - last.u, raw[i].w - last.w) >= STATION_MIN_SEG_MM) pts.push(raw[i]);
+  }
+  const segs = [];
+  for (let i = 0; i < pts.length - 1; i += 1) {
+    const du = pts[i + 1].u - pts[i].u;
+    const dw = pts[i + 1].w - pts[i].w;
+    const len = Math.hypot(du, dw);
+    segs.push({
+      a: pts[i],
+      du: du / len,
+      dw: dw / len,
+      len,
+      deg: (Math.atan2(dw, -du) * 180) / Math.PI,
+    });
+  }
+  if (!segs.length || !(segs[0].deg >= -5 && segs[0].deg <= MARGIN_FIT_MAX_DEG)) return null;
+
+  let wallStart = -1;
+  for (let i = 1; i < segs.length && wallStart < 0; i += 1) {
+    if (segs[i].deg < WALL_MIN_DEG) continue;
+    let span = 0;
+    for (let j = i; j < segs.length && segs[j].deg >= WALL_MIN_DEG; j += 1) span += segs[j].len;
+    if (span >= WALL_MIN_SPAN_MM) wallStart = i;
+  }
+  if (wallStart < 0) return null;
+  const wFl = pts[0].w;
+  const wallSegs = segs
+    .slice(wallStart)
+    .filter((s) => s.deg >= WALL_MIN_DEG && s.a.w <= wFl + STATION_WALL_REACH_MM);
+  if (!wallSegs.length) return null;
+  const maxWallDeg = Math.max(...wallSegs.map((s) => s.deg));
+  const straightWall = wallSegs.filter((s) => s.deg >= maxWallDeg - STATION_WALL_STRAIGHT_DEG);
+  const wRef = straightWall[0];
+  let wdu = 0;
+  let wdw = 0;
+  for (const s of straightWall) {
+    wdu += s.du * s.len;
+    wdw += s.dw * s.len;
+  }
+  const wl = Math.hypot(wdu, wdw);
+  wdu /= wl;
+  wdw /= wl;
+
+  let mdu = 0;
+  let mdw = 0;
+  let filletStartIdx = 1;
+  for (let i = 0; i < wallStart; i += 1) {
+    if (segs[i].deg > segs[0].deg + STATION_MARGIN_TOL_DEG) break;
+    mdu += segs[i].du * segs[i].len;
+    mdw += segs[i].dw * segs[i].len;
+    filletStartIdx = i + 1;
+  }
+  const ml = Math.hypot(mdu, mdw);
+  mdu /= ml;
+  mdw /= ml;
+
+  const det = mdu * wdw - mdw * wdu;
+  if (!(det < -0.05)) return null;
+  const tm = ((wRef.a.u - pts[0].u) * wdw - (wRef.a.w - pts[0].w) * wdu) / det;
+  const corner = { u: pts[0].u + mdu * tm, w: pts[0].w + mdw * tm };
+  const rayLedge = { u: -mdu, w: -mdw };
+  const rayWall = { u: wdu, w: wdw };
+  const ext = Math.acos(clamp(rayLedge.u * rayWall.u + rayLedge.w * rayWall.w, -1, 1));
+  if (!(ext > (STATION_MIN_AIR_DEG * Math.PI) / 180) || ext > (168 * Math.PI) / 180) return null;
+  let dMin = Infinity;
+  for (let i = 0; i < pts.length - 1; i += 1) {
+    dMin = Math.min(dMin, pointSegDist(corner, pts[i], pts[i + 1]));
+  }
+  const dist = (p) => Math.hypot(p.u - corner.u, p.w - corner.w);
+  return {
+    radial,
+    uFl: pts[0].u,
+    wFl,
+    corner,
+    rayLedge,
+    rayWall,
+    ext,
+    measuredR: dMin / (1 / Math.sin(ext / 2) - 1),
+    distFl: dist(pts[0]),
+    oldTrimL: dist(pts[filletStartIdx]),
+    oldTrimW: dist(wRef.a),
+  };
+}
+
 /**
  * 피니시라인 바로 위, 마진(수평에 가까움)↔축면(수직에 가까움) 경계의 fillet R을 잰다.
  * R < 공구 R이면 공구 R 필렛 보정면 단면(reliefProfile)을 돌려준다. 메시는 바꾸지 않는다.
@@ -689,6 +803,26 @@ export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log) {
     log?.(`[tight-corner] skip: ${why}`);
     return { tight: false };
   };
+  const azDeg = ((Math.atan2(fl[1], fl[0]) * 180) / Math.PI).toFixed(1);
+  const station = measureFilletStation(mesh, fl, axis);
+  if (station) {
+    const { corner, rayLedge, rayWall, ext, measuredR } = station;
+    if (!(measuredR < toolR - FILLET_R_TOLERANCE_MM)) {
+      log?.(`[tight-corner] ok az=${azDeg}° R=${measuredR.toFixed(3)}mm`);
+      return { tight: false };
+    }
+    const reliefProfile = filletConcaveCorner2d(corner, rayLedge, rayWall, toolR);
+    if (!reliefProfile) return no("relief-null");
+    log?.(`[tight-corner] tight az=${azDeg}° R=${measuredR.toFixed(3)}mm<${toolR}`);
+    return {
+      tight: true,
+      finishLinePoint: fl.slice(),
+      cornerPoint: fromPlaneCoords(corner.u, corner.w, radial, axis).slice(),
+      airAngleDeg: Math.round((ext * 1800) / Math.PI) / 10,
+      filletRadiusMm: Math.round(Math.max(0, measuredR) * 1000) / 1000,
+      reliefProfile,
+    };
+  }
   const pts = extractProfileAboveFl(mesh, fl, radial, axis, n);
   if (!pts) {
     log?.("[tight-corner] skip: no-profile");
@@ -918,929 +1052,244 @@ function angDelta(a, b) {
   return d;
 }
 
-/** 필렛 아래 마진 실루엣에서 날개를 깎아 내는 높이. */
-const CUFF_SHOULDER_BELOW_MM = 0.6;
-const SILHOUETTE_BINS = 72;
+/** 보정 필렛 R = 공구 R + 이 여유(mm). */
+export const CORRECTION_FILLET_MARGIN_MM = 0.05;
+/** 이보다 벌어진 측정 구간 사이는 보간하지 않고 건드리지 않는다. */
+const STATION_MAX_GAP_RAD = 0.6;
+/** 마진 끝(FL)에 남겨 둘 직선 마진 길이(mm). */
+const LEDGE_KEEP_MM = 0.025;
+const RAY_ALIGN_DOT = 0.9995;
+const ON_LINE_EPS_MM = 0.005;
 
-/** 단면 (u,w)에서 w에 해당하는 필렛 반경. 구간 밖이면 null. */
-function profileUAtW(profile, w) {
-  const n = profile.length;
-  if (n < 2) return null;
-  const w0 = profile[0].w;
-  const w1 = profile[n - 1].w;
-  if (w < w0 - 0.03 || w > w1 + 0.03) return null;
-  if (w <= w0) return profile[0].u;
-  if (w >= w1) return profile[n - 1].u;
-  for (let i = 0; i < n - 1; i += 1) {
-    const a = profile[i];
-    const b = profile[i + 1];
-    const lo = Math.min(a.w, b.w);
-    const hi = Math.max(a.w, b.w);
-    if (w < lo || w > hi) continue;
-    const span = b.w - a.w;
-    const t = Math.abs(span) > 1e-9 ? (w - a.w) / span : 0;
-    return a.u + t * (b.u - a.u);
-  }
-  return null;
+function norm2(v) {
+  const l = Math.hypot(v.u, v.w) || 1;
+  return { u: v.u / l, w: v.w / l };
 }
 
-const RELIEF_MIN_PULL_MM = 0.004;
-const RELIEF_MAX_SEGMENT_RAD = 0.4;
-/** 필렛보다 밖으로 튀어나온 날개를 끌어당기는 한도. */
-const CUFF_WING_PULL_MM = 2.8;
-const CUFF_SPLIT_EDGE_MM = 0.32;
-const CUFF_SPLIT_ROUNDS = 4;
-
-/**
- * 인접 샘플의 공구 R 필렛을 (theta, w)에서 잇는다.
- * 런 사이 빈 각도는 건너뛴다.
- */
-/** 떨어진 타이트 구간을 이 각도(라디안) 안이면 하나의 커프로 잇는다. */
-const CUFF_BRIDGE_GAP_RAD = 0.95;
-
-function stationColsFromRun(run, smooth, axis, frame) {
-  return run.map((row, ri) => ({
-    theta: thetaAboutAxis(row.finishLinePoint, axis, frame),
-    profile: smooth[ri]
-      .map(([u, w]) => ({ u, w }))
-      .sort((a, b) => a.w - b.w || a.u - b.u),
-  }));
-}
-
-function lerpStation(from, to, t, gap) {
+function withFilletTarget(st, targetR) {
+  const bis = norm2({ u: st.rayLedge.u + st.rayWall.u, w: st.rayLedge.w + st.rayWall.w });
+  const ext = Math.acos(clamp(st.rayLedge.u * st.rayWall.u + st.rayLedge.w * st.rayWall.w, -1, 1));
+  const cd = targetR / Math.sin(ext / 2);
   return {
-    theta: from.theta + gap * t,
-    profile: from.profile.map((p, k) => ({
-      u: p.u + t * (to.profile[k].u - p.u),
-      w: p.w + t * (to.profile[k].w - p.w),
-    })),
+    ...st,
+    bis,
+    ext,
+    trim: targetR / Math.tan(ext / 2),
+    cd,
+    center: { u: st.corner.u + bis.u * cd, w: st.corner.w + bis.w * cd },
   };
 }
 
-/** 가까운 런 사이를 보간해 날개 사이 빈 각이 남지 않게 한다. */
-function connectCuffRuns(runs) {
-  if (!runs.length) return [];
-  const ordered = runs.filter((cols) => cols.length).slice().sort((a, b) => a[0].theta - b[0].theta);
-  const groups = [ordered[0].slice()];
-  const bridge = (from, to, gap) => {
-    if (!(gap > 0.04) || gap > CUFF_BRIDGE_GAP_RAD) return null;
-    if (from.profile.length < 2 || from.profile.length !== to.profile.length) return null;
-    const steps = Math.max(2, Math.round(gap / 0.16));
-    const cols = [];
-    for (let s = 1; s < steps; s += 1) cols.push(lerpStation(from, to, s / steps, gap));
-    return cols;
-  };
-  for (let i = 0; i < ordered.length - 1; i += 1) {
-    const cur = groups[groups.length - 1];
-    const next = ordered[i + 1];
-    const gap = angDelta(next[0].theta, cur[cur.length - 1].theta);
-    const mid = bridge(cur[cur.length - 1], next[0], gap);
-    if (mid) cur.push(...mid, ...next);
-    else groups.push(next.slice());
-  }
-  if (groups.length > 1) {
-    const first = groups[0];
-    const last = groups[groups.length - 1];
-    const gap = angDelta(first[0].theta + Math.PI * 2, last[last.length - 1].theta);
-    const mid = bridge(last[last.length - 1], first[0], gap);
-    if (mid) {
-      const shifted = first.map((col) => ({
-        theta: col.theta + Math.PI * 2,
-        profile: col.profile,
-      }));
-      groups[0] = last.concat(mid, shifted);
-      groups.pop();
-    }
-  } else {
-    const cols = groups[0];
-    const gap = angDelta(cols[0].theta + Math.PI * 2, cols[cols.length - 1].theta);
-    const mid = bridge(cols[cols.length - 1], cols[0], gap);
-    if (mid) cols.push(...mid);
-  }
-  return groups;
-}
-
-function fairCuffCols(cols) {
-  const n = cols.length;
-  if (n < 5) return cols;
-  const half = Math.max(4, Math.round(n / 12));
-  const m = cols[0].profile.length;
-  const endGap = angDelta(cols[0].theta + Math.PI * 2, cols[n - 1].theta);
-  const cyclic = endGap < 0.5;
-  return cols.map((col, i) => {
-    const acc = Array.from({ length: m }, () => ({ u: 0, w: 0 }));
-    let cnt = 0;
-    for (let k = -half; k <= half; k += 1) {
-      let j = i + k;
-      if (cyclic) j = ((j % n) + n) % n;
-      else if (j < 0 || j >= n) continue;
-      const profile = cols[j].profile;
-      if (profile.length !== m) continue;
-      for (let c = 0; c < m; c += 1) {
-        acc[c].u += profile[c].u;
-        acc[c].w += profile[c].w;
-      }
-      cnt += 1;
-    }
-    if (!cnt) return col;
-    return {
-      theta: col.theta,
-      profile: acc.map((a) => ({ u: a.u / cnt, w: a.w / cnt })),
-    };
-  });
-}
-
-function reliefStationPairs(tightRows, axis, sampleTotal, options = {}) {
-  const frame = axisFrame(axis);
-  const pairs = [];
-  let wMin = Infinity;
-  let wMax = -Infinity;
-  const runs = [];
-  for (const { run, smooth } of reliefRuns(tightRows, sampleTotal)) {
-    runs.push(stationColsFromRun(run, smooth, axis, frame));
-  }
-  const groups = options.fairCuff ? connectCuffRuns(runs).map(fairCuffCols) : runs;
-  for (const cols of groups) {
-    if (cols.length < 2) continue;
-    for (const col of cols) {
-      const profile = col.profile;
-      if (!profile.length) continue;
-      wMin = Math.min(wMin, profile[0].w);
-      wMax = Math.max(wMax, profile[profile.length - 1].w);
-    }
-    const endGap = angDelta(cols[0].theta + Math.PI * 2, cols[cols.length - 1].theta);
-    const cyclic = endGap < 0.5 && cols.length >= 8;
-    const last = cyclic ? cols.length : cols.length - 1;
-    for (let i = 0; i < last; i += 1) {
-      pairs.push([cols[i], cols[(i + 1) % cols.length]]);
-    }
-  }
-  return { frame, pairs, wMin, wMax };
-}
-
-function filletUAt(pairs, theta, w) {
-  for (const [a, b] of pairs) {
-    const span = angDelta(b.theta, a.theta);
-    if (Math.abs(span) < 1e-8 || Math.abs(span) > RELIEF_MAX_SEGMENT_RAD) continue;
-    const t = angDelta(theta, a.theta) / span;
-    if (t < -0.02 || t > 1.02) continue;
-    const u0 = profileUAtW(a.profile, w);
-    const u1 = profileUAtW(b.profile, w);
-    if (u0 == null || u1 == null) continue;
-    const clamped = Math.min(1, Math.max(0, t));
-    return u0 + clamped * (u1 - u0);
+function stationAtTheta(stations, theta, targetR) {
+  const n = stations.length;
+  for (let k = 0; k < n; k += 1) {
+    const a = stations[k];
+    const b = stations[(k + 1) % n];
+    const span = k === n - 1 ? b.theta + Math.PI * 2 - a.theta : b.theta - a.theta;
+    let off = theta - a.theta;
+    while (off < 0) off += Math.PI * 2;
+    if (off > span + 1e-12) continue;
+    if (span > STATION_MAX_GAP_RAD) return null;
+    const t = span > 1e-9 ? off / span : 0;
+    const lerp = (x, y) => x + t * (y - x);
+    const lerp2 = (p, q) => ({ u: lerp(p.u, q.u), w: lerp(p.w, q.w) });
+    return withFilletTarget(
+      {
+        uFl: lerp(a.uFl, b.uFl),
+        wFl: lerp(a.wFl, b.wFl),
+        distFl: lerp(a.distFl, b.distFl),
+        oldTrimL: lerp(a.oldTrimL, b.oldTrimL),
+        oldTrimW: lerp(a.oldTrimW, b.oldTrimW),
+        corner: lerp2(a.corner, b.corner),
+        rayLedge: norm2(lerp2(a.rayLedge, b.rayLedge)),
+        rayWall: norm2(lerp2(a.rayWall, b.rayWall)),
+      },
+      targetR,
+    );
   }
   return null;
 }
 
-function vertexMetrics(p, axis, frame) {
-  const along = dot3(p, axis);
-  const radial = sub3(p, scale3(axis, along));
-  const u = Math.hypot(radial[0], radial[1], radial[2]);
-  const theta = Math.atan2(dot3(radial, frame.yAxis), dot3(radial, frame.xAxis));
-  return { along, radial, u, theta };
+/**
+ * 반경 평면 (u, w) 정점을 R 필렛 위로 옮긴 좌표. 안 옮기면 null.
+ * 코너 꼭짓점에서 정점 방향 그대로 호까지 민다(마진·축면 직선은 그대로).
+ * FL 쪽 마진 정점은 마진 직선 위에서만 미끄러진다.
+ */
+function filletTargetInPlane(st, u, w, targetR) {
+  if (w <= st.wFl + ON_LINE_EPS_MM || u >= st.uFl - ON_LINE_EPS_MM) return null;
+  const cu = u - st.corner.u;
+  const cw = w - st.corner.w;
+  const cLen = Math.hypot(cu, cw);
+  if (cLen < 1e-6) return null;
+  if (Math.hypot(u - st.center.u, w - st.center.w) > st.cd + 0.08) return null;
+  const dir = { u: cu / cLen, w: cw / cLen };
+  const dotL = dir.u * st.rayLedge.u + dir.w * st.rayLedge.w;
+  const dotW = dir.u * st.rayWall.u + dir.w * st.rayWall.w;
+  const effTrimL = Math.min(st.trim, st.distFl - LEDGE_KEEP_MM);
+
+  if (dotW > RAY_ALIGN_DOT && cLen > st.oldTrimW + 0.02) return null;
+  if (dotL > RAY_ALIGN_DOT && cLen >= st.oldTrimL - ON_LINE_EPS_MM) {
+    if (effTrimL <= st.oldTrimL || cLen >= st.distFl - ON_LINE_EPS_MM) return null;
+    const t = (cLen - st.oldTrimL) / Math.max(1e-6, st.distFl - st.oldTrimL);
+    const len = effTrimL + t * (st.distFl - effTrimL);
+    return { u: st.corner.u + st.rayLedge.u * len, w: st.corner.w + st.rayLedge.w * len };
+  }
+  if (Math.hypot(u - st.center.u, w - st.center.w) <= targetR + 1e-4) return null;
+  const b = (st.center.u - st.corner.u) * dir.u + (st.center.w - st.corner.w) * dir.w;
+  let tArc = b - Math.sqrt(Math.max(0, b * b - st.trim * st.trim));
+  // FL이 가까워 호 접점이 마진 끝을 넘으면, 마진 쪽 절반만 접점을 FL 안쪽으로 당긴다.
+  const crossBis = st.bis.u * dir.w - st.bis.w * dir.u;
+  if (crossBis < 0 && effTrimL < st.trim) {
+    const angFromBis = Math.acos(clamp(dir.u * st.bis.u + dir.w * st.bis.w, -1, 1));
+    const s = Math.min(1, angFromBis / Math.max(1e-6, st.ext / 2));
+    tArc *= 1 - (1 - effTrimL / st.trim) * s * s;
+  }
+  if (tArc <= cLen + 1e-4) return null;
+  return { u: st.corner.u + dir.u * tArc, w: st.corner.w + dir.w * tArc };
 }
 
 /**
- * 커프 구간의 긴 변을 나눠 필렛을 따라가는 면을 만든다.
- * 양 끝이 모두 바깥 껍질일 때만 나누고, 중간점은 인접 면이 공유한다.
+ * 타이트 코너 필렛만 공구 R + 여유로 키운다. 정점·면 수는 그대로이고
+ * 마진·축면 직선 위 정점과 FL 아래는 움직이지 않는다.
+ * @returns {{ mesh: import("./meshCore.js").Mesh, movedVertices: Uint8Array, movedCount: number, filletRadiusMm: number } | null}
  */
-function subdivideCuffBand(mesh, onCuff) {
-  let verts = Array.from(mesh.verts);
-  let faces = Array.from(mesh.faces);
-  const pos = (i) => [verts[i * 3], verts[i * 3 + 1], verts[i * 3 + 2]];
-  for (let round = 0; round < CUFF_SPLIT_ROUNDS; round += 1) {
-    const mid = new Map();
-    const keyOf = (a, b) => (a < b ? `${a}:${b}` : `${b}:${a}`);
-    const want = (a, b) => {
-      const pa = pos(a);
-      const pb = pos(b);
-      const len = Math.hypot(pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]);
-      if (len <= CUFF_SPLIT_EDGE_MM || len > 2.4) return false;
-      return onCuff(pa) && onCuff(pb);
-    };
-    const midpoint = (a, b) => {
-      const key = keyOf(a, b);
-      const hit = mid.get(key);
-      if (hit != null) return hit;
-      const pa = pos(a);
-      const pb = pos(b);
-      const idx = verts.length / 3;
-      verts.push((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, (pa[2] + pb[2]) / 2);
-      mid.set(key, idx);
-      return idx;
-    };
-    const next = [];
-    let grew = false;
-    for (let f = 0; f < faces.length; f += 3) {
-      const a = faces[f];
-      const b = faces[f + 1];
-      const c = faces[f + 2];
-      const mab = want(a, b) ? midpoint(a, b) : -1;
-      const mbc = want(b, c) ? midpoint(b, c) : -1;
-      const mca = want(c, a) ? midpoint(c, a) : -1;
-      const n = (mab >= 0 ? 1 : 0) + (mbc >= 0 ? 1 : 0) + (mca >= 0 ? 1 : 0);
-      if (!n) {
-        next.push(a, b, c);
-        continue;
-      }
-      grew = true;
-      if (n === 3) {
-        next.push(a, mab, mca, b, mbc, mab, c, mca, mbc, mab, mbc, mca);
-      } else if (n === 1) {
-        if (mab >= 0) next.push(a, mab, c, mab, b, c);
-        else if (mbc >= 0) next.push(b, mbc, a, mbc, c, a);
-        else next.push(c, mca, b, mca, a, b);
-      } else if (mab < 0) {
-        next.push(a, b, mbc, a, mbc, mca, mbc, c, mca);
-      } else if (mbc < 0) {
-        next.push(b, c, mca, b, mca, mab, mca, a, mab);
-      } else {
-        next.push(c, a, mab, c, mab, mbc, mab, b, mbc);
-      }
-    }
-    faces = next;
-    if (!grew) break;
-  }
-  if (faces.length === mesh.faces.length && verts.length === mesh.verts.length) return;
-  mesh.verts = Float64Array.from(verts);
-  mesh.faces = Int32Array.from(faces);
-  mesh.invalidate();
-}
-
-/** 이 간격보다 바깥 실루엣 안쪽이면 나사홀·육각이라 움직이지 않는다. */
-const OUTER_SHELL_INSET_MM = 0.42;
-const OUTER_GRID_TH = 96;
-const OUTER_GRID_DW = 0.15;
-
-function thetaCol(theta, bins) {
-  let idx = Math.floor(((theta + Math.PI) / (Math.PI * 2)) * bins);
-  if (idx < 0) idx = 0;
-  if (idx >= bins) idx = bins - 1;
-  return idx;
-}
-
-/** (theta, 높이) 칸의 최대 반경. 빈 칸은 가까운 각도의 실루엣으로 메운다. */
-function buildOuterRadiusGrid(mesh, axis, frame, wLo, wHi) {
-  const row0 = Math.floor(wLo / OUTER_GRID_DW);
-  const row1 = Math.ceil(wHi / OUTER_GRID_DW);
-  const rows = Math.max(1, row1 - row0 + 1);
-  const grid = Array.from({ length: rows }, () => new Float64Array(OUTER_GRID_TH));
-  const v = mesh.verts;
-  for (let i = 0; i < v.length; i += 3) {
-    const m = vertexMetrics([v[i], v[i + 1], v[i + 2]], axis, frame);
-    if (m.along < wLo || m.along > wHi || m.u < 0.5) continue;
-    const row = Math.round(m.along / OUTER_GRID_DW) - row0;
-    if (row < 0 || row >= rows) continue;
-    const col = thetaCol(m.theta, OUTER_GRID_TH);
-    if (m.u > grid[row][col]) grid[row][col] = m.u;
-  }
-  for (let r = 0; r < rows; r += 1) {
-    const filled = [];
-    for (let c = 0; c < OUTER_GRID_TH; c += 1) if (grid[r][c] > 0) filled.push(c);
-    if (!filled.length) continue;
-    for (let c = 0; c < OUTER_GRID_TH; c += 1) {
-      if (grid[r][c] > 0) continue;
-      let best = 0;
-      let bestD = 99;
-      for (const fc of filled) {
-        let d = Math.abs(c - fc);
-        if (d > OUTER_GRID_TH / 2) d = OUTER_GRID_TH - d;
-        if (d < bestD && d <= 4) {
-          bestD = d;
-          best = grid[r][fc];
-        }
-      }
-      if (best > 0) grid[r][c] = best;
-    }
-  }
-  return { grid, row0 };
-}
-
-function outerRadiusAt(field, theta, w) {
-  const row = Math.round(w / OUTER_GRID_DW) - field.row0;
-  const g = field.grid;
-  if (row < 0 || row >= g.length) return 0;
-  const col = thetaCol(theta, OUTER_GRID_TH);
-  if (g[row][col] > 0) return g[row][col];
-  let best = 0;
-  for (let dc = -2; dc <= 2; dc += 1) {
-    const cc = (col + dc + OUTER_GRID_TH) % OUTER_GRID_TH;
-    if (g[row][cc] > best) best = g[row][cc];
-  }
-  return best;
-}
-
-function onOuterShell(field, metrics) {
-  const outer = outerRadiusAt(field, metrics.theta, metrics.along);
-  return (
-    outer > 0.8 &&
-    metrics.u >= outer - OUTER_SHELL_INSET_MM &&
-    metrics.u <= outer + 0.25
+export function correctTightCornerFillet(mesh, finishLinePoints, options = {}) {
+  const toolR =
+    Number(options.toolRadiusMm) > 0 ? Number(options.toolRadiusMm) : FINISH_BALL_RADIUS_MM;
+  const raw = (Array.isArray(finishLinePoints) ? finishLinePoints : []).filter(
+    (p) => Array.isArray(p) && p.length >= 3 && p.every((v) => Number.isFinite(Number(v))),
   );
-}
-
-function incidentFaceLists(mesh) {
-  const lists = Array.from({ length: mesh.vertexCount }, () => []);
-  const f = mesh.faces;
-  for (let i = 0; i < mesh.faceCount; i += 1) {
-    lists[f[i * 3]].push(i);
-    lists[f[i * 3 + 1]].push(i);
-    lists[f[i * 3 + 2]].push(i);
+  if (raw.length < FL_SAMPLE_MIN) return null;
+  // 디자인 정점 사슬은 정렬 z축 자오선을 따른다. 기울기 축이 더 맞는 경우만 그쪽을 쓴다.
+  const axes = [[0, 0, 1]];
+  const tilt = normalizeAxis(options.tiltAxisVector);
+  if (dot3(tilt, axes[0]) < 1 - 1e-9) axes.push(tilt);
+  let best = null;
+  for (const axis of axes) {
+    const res = filletCorrectionAboutAxis(mesh, raw, toolR, axis);
+    if (!res) continue;
+    res.flipped = revertFlippedFaces(mesh, res);
+    if (!best || res.flipped < best.flipped) best = res;
+    if (best.flipped === 0) break;
   }
-  return lists;
-}
-
-function facePose(verts, faces, fi, axis) {
-  const ia = faces[fi * 3] * 3;
-  const ib = faces[fi * 3 + 1] * 3;
-  const ic = faces[fi * 3 + 2] * 3;
-  const ax = verts[ia];
-  const ay = verts[ia + 1];
-  const az = verts[ia + 2];
-  const bx = verts[ib];
-  const by = verts[ib + 1];
-  const bz = verts[ib + 2];
-  const cx = verts[ic];
-  const cy = verts[ic + 1];
-  const cz = verts[ic + 2];
-  const ux = bx - ax;
-  const uy = by - ay;
-  const uz = bz - az;
-  const vx = cx - ax;
-  const vy = cy - ay;
-  const vz = cz - az;
-  let nx = uy * vz - uz * vy;
-  let ny = uz * vx - ux * vz;
-  let nz = ux * vy - uy * vx;
-  const len = Math.hypot(nx, ny, nz);
-  const area = len * 0.5;
-  if (len > 1e-12) {
-    nx /= len;
-    ny /= len;
-    nz /= len;
-  }
-  const px = (ax + bx + cx) / 3;
-  const py = (ay + by + cy) / 3;
-  const pz = (az + bz + cz) / 3;
-  const along = px * axis[0] + py * axis[1] + pz * axis[2];
-  const rx = px - axis[0] * along;
-  const ry = py - axis[1] * along;
-  const rz = pz - axis[2] * along;
-  const ru = Math.hypot(rx, ry, rz);
-  const radial = ru > 1e-6 ? (nx * rx + ny * ry + nz * rz) / ru : 0;
-  return { nx, ny, nz, area, radial };
-}
-
-/** 정점을 옮겨도 면이 뒤집히거나 면적이 사라지지 않으면 true. 위치는 되돌린다. */
-function movePreservesFaces(verts, faces, incident, vi, pos, axis) {
-  const base = vi * 3;
-  const ox = verts[base];
-  const oy = verts[base + 1];
-  const oz = verts[base + 2];
-  const before = incident.map((fi) => facePose(verts, faces, fi, axis));
-  verts[base] = pos[0];
-  verts[base + 1] = pos[1];
-  verts[base + 2] = pos[2];
-  let ok = true;
-  for (let k = 0; k < incident.length; k += 1) {
-    const now = facePose(verts, faces, incident[k], axis);
-    const prev = before[k];
-    const dot = now.nx * prev.nx + now.ny * prev.ny + now.nz * prev.nz;
-    if (prev.area > 1e-8 && now.area < Math.min(prev.area * 0.08, 1e-6)) {
-      ok = false;
-      break;
-    }
-    if (dot < 0) {
-      ok = false;
-      break;
-    }
-    if (prev.radial > 0.2 && now.radial < -0.2) {
-      ok = false;
-      break;
-    }
-  }
-  verts[base] = ox;
-  verts[base + 1] = oy;
-  verts[base + 2] = oz;
-  return ok;
-}
-
-/** 필렛이 이보다 더 밖에 있으면 리드가 공중에 뜬 것이라 실루엣을 키우지 않는다. */
-const FILLET_OUTWARD_MAX_MM = 0.22;
-
-/**
- * 반경을 targetU로 옮긴다. 한 번에 뒤집히면 이동량을 줄여 안전한 만큼만 옮긴다.
- * @returns {boolean}
- */
-function commitRadialMove(mesh, incident, vi, targetU, axis, frame) {
-  const v = mesh.verts;
-  const p = [v[vi * 3], v[vi * 3 + 1], v[vi * 3 + 2]];
-  const m = vertexMetrics(p, axis, frame);
-  if (!(m.u > 0.2) || !(targetU > 0)) return false;
-  const lo = Math.max(0.2, m.u - CUFF_WING_PULL_MM);
-  const hi = m.u + FILLET_OUTWARD_MAX_MM;
-  const clamped = Math.min(hi, Math.max(lo, targetU));
-  if (Math.abs(clamped - m.u) <= RELIEF_MIN_PULL_MM) return false;
-  const place = (u) => {
-    const s = u / m.u;
-    return [
-      m.radial[0] * s + axis[0] * m.along,
-      m.radial[1] * s + axis[1] * m.along,
-      m.radial[2] * s + axis[2] * m.along,
-    ];
-  };
-  let t = 1;
-  for (let step = 0; step < 6; step += 1) {
-    const u = m.u + (clamped - m.u) * t;
-    const pos = place(u);
-    if (movePreservesFaces(v, mesh.faces, incident, vi, pos, axis)) {
-      v[vi * 3] = pos[0];
-      v[vi * 3 + 1] = pos[1];
-      v[vi * 3 + 2] = pos[2];
-      return true;
-    }
-    t *= 0.5;
-  }
-  return false;
-}
-
-/**
- * 바깥 껍질의 코너만 필렛으로 옮긴다.
- * 공중에 뜬 리드는 키우지 않고, 나사홀은 실루엣 안쪽이라 그대로 둔다.
- * 면이 뒤집히면 그 정점은 안전한 거리만 옮긴다.
- * @returns {boolean} 정점을 하나라도 옮겼으면 true
- */
-function projectVerticesOntoRelief(mesh, tightRows, axis, sampleTotal) {
-  const { frame, pairs, wMin, wMax } = reliefStationPairs(tightRows, axis, sampleTotal, {
-    fairCuff: true,
-  });
-  if (!pairs.length || !Number.isFinite(wMin)) return false;
-  const wLo = wMin - 0.05;
-  const wHi = wMax + 0.08;
-  const shellAt = (field, p) => {
-    const m = vertexMetrics(p, axis, frame);
-    if (m.along < wLo || m.along > wHi) return false;
-    return onOuterShell(field, m);
-  };
-  let field = buildOuterRadiusGrid(mesh, axis, frame, wLo - 0.25, wHi + 0.25);
-  subdivideCuffBand(mesh, (p) => shellAt(field, p));
-
-  let moved = 0;
-  for (let pass = 0; pass < 3; pass += 1) {
-    field = buildOuterRadiusGrid(mesh, axis, frame, wLo - 0.25, wHi + 0.25);
-    const incident = incidentFaceLists(mesh);
-    const v = mesh.verts;
-    let passMoved = 0;
-    for (let i = 0; i < v.length; i += 3) {
-      const vi = i / 3;
-      const p = [v[i], v[i + 1], v[i + 2]];
-      const metrics = vertexMetrics(p, axis, frame);
-      if (metrics.along < wLo || metrics.along > wHi) continue;
-      if (!onOuterShell(field, metrics)) continue;
-      const uFillet = filletUAt(pairs, metrics.theta, metrics.along);
-      if (!(uFillet > 0)) continue;
-      // 공중에 뜬 리드는 실루엣을 부풀리지 않는다. 코너의 얕은 바깥 이동만 허용한다.
-      if (uFillet > metrics.u + FILLET_OUTWARD_MAX_MM) continue;
-      if (uFillet < metrics.u - CUFF_WING_PULL_MM) continue;
-      if (Math.abs(metrics.u - uFillet) <= RELIEF_MIN_PULL_MM) continue;
-      if (commitRadialMove(mesh, incident[vi], vi, uFillet, axis, frame)) passMoved += 1;
-    }
-    moved += passMoved;
-    if (!passMoved) break;
-  }
-  const wings = pullSilhouetteWings(mesh, axis, frame, wMin);
-  if (moved > 0 || wings) mesh.invalidate();
-  return moved > 0 || wings;
-}
-
-/**
- * 필렛 아래 마진에서 둘레보다 튀어나온 꼭짓점을, 주변에서 가장 낮은 반경으로 당긴다.
- * 골은 밀지 않아서 매끈한 커프 지름은 그대로 둔다.
- */
-function pullSilhouetteWings(mesh, axis, frame, wMin) {
-  const lo = wMin - CUFF_SHOULDER_BELOW_MM;
-  const hi = wMin + 0.08;
-  const field = buildOuterRadiusGrid(mesh, axis, frame, lo - 0.15, hi + 0.15);
-  subdivideCuffBand(mesh, (p) => {
-    const m = vertexMetrics(p, axis, frame);
-    if (m.along < lo || m.along > hi) return false;
-    return onOuterShell(field, m);
-  });
-  const bins = new Array(SILHOUETTE_BINS).fill(0);
-  const v = mesh.verts;
-  for (let i = 0; i < v.length; i += 3) {
-    const m = vertexMetrics([v[i], v[i + 1], v[i + 2]], axis, frame);
-    if (m.along < lo || m.along > hi || !onOuterShell(field, m)) continue;
-    const idx = thetaCol(m.theta, SILHOUETTE_BINS);
-    if (m.u > bins[idx]) bins[idx] = m.u;
-  }
-  const half = Math.max(3, Math.round(SILHOUETTE_BINS / 14));
-  const target = bins.map((_, i) => {
-    let m = Infinity;
-    let n = 0;
-    for (let k = -half; k <= half; k += 1) {
-      const u = bins[(i + k + SILHOUETTE_BINS) % SILHOUETTE_BINS];
-      if (!(u > 0)) continue;
-      m = Math.min(m, u);
-      n += 1;
-    }
-    return n ? m : 0;
-  });
-  const incident = incidentFaceLists(mesh);
-  let moved = 0;
-  for (let i = 0; i < v.length; i += 3) {
-    const vi = i / 3;
-    const metrics = vertexMetrics([v[i], v[i + 1], v[i + 2]], axis, frame);
-    if (metrics.along < lo || metrics.along > hi || !onOuterShell(field, metrics)) continue;
-    const goal = target[thetaCol(metrics.theta, SILHOUETTE_BINS)];
-    if (!(goal > 0)) continue;
-    const excess = metrics.u - goal;
-    if (excess <= 0.12 || excess > CUFF_WING_PULL_MM) continue;
-    if (commitRadialMove(mesh, incident[vi], vi, goal, axis, frame)) moved += 1;
-  }
-  return moved > 0;
-}
-
-/**
- * 재측정할 때 가상 코너가 필렛 쪽으로 따라오므로,
- * 공구 R보다 이만큼 큰 호를 만들어야 측정 R이 공구를 넘긴다.
- */
-const CORRECTION_FILLET_CLEARANCE_MM = 0.45;
-
-// ---------------------------------------------------------------------------
-// 커프 재디자인(cuffBlend.replaceBand) 차용: 코너 띠 교체
-//
-// 별도 솔리드를 덧씌우지 않는다. cuffBlend와 같은 순서로 간다.
-// 1) 띠 위·아래 경계 곡선으로 원본 면을 가른다(splitByLevel 방식).
-// 2) 경계 사이 바깥 면만 걷어 낸다(나사홀 등 안쪽 면은 그대로).
-// 3) 경계 루프 사이에 각도×필렛 단면의 규칙 격자를 지퍼로 잇는다.
-// 격자가 규칙적이고 열마다 원형 평활을 거치므로, 원본 삼각 분할이
-// 거칠거나 정점 이동량이 제각각이어도 톱니처럼 깨지지 않는다.
-
-const BAND_COLUMNS = 360;
-const BAND_SMOOTH_HALF = 5;
-/** 타이트 구간이 이 각도보다 크게 비면 한 바퀴 띠로 잇지 않는다. */
-const BAND_MAX_GAP_RAD = 0.6;
-
-function bandStationGroups(tightRows, axis, sampleTotal) {
-  const frame = axisFrame(axis);
-  const runs = [];
-  for (const { run, smooth } of reliefRuns(tightRows, sampleTotal)) {
-    runs.push(stationColsFromRun(run, smooth, axis, frame));
-  }
-  const groups = connectCuffRuns(runs)
-    .map(fairCuffCols)
-    .filter((cols) => cols.length >= 2);
-  return { frame, groups };
-}
-
-/** 정렬된 스테이션 사이를 각도 보간한 촘촘한(360열) 필렛 단면들. 열 방향 원형 평활 포함. */
-function denseBandProfiles(cols) {
-  const sorted = cols.slice().sort((a, b) => a.theta - b.theta);
-  const profLen = sorted[0].profile.length;
-  if (profLen < 4 || sorted.some((c) => c.profile.length !== profLen)) return null;
-  let maxGap = 0;
-  for (let i = 0; i < sorted.length; i += 1) {
-    const a = sorted[i].theta;
-    const b = sorted[(i + 1) % sorted.length].theta + (i === sorted.length - 1 ? Math.PI * 2 : 0);
-    maxGap = Math.max(maxGap, b - a);
-  }
-  if (sorted.length < 8 || maxGap > BAND_MAX_GAP_RAD) return null;
-  const dense = [];
-  for (let j = 0; j < BAND_COLUMNS; j += 1) {
-    const theta = -Math.PI + (j / BAND_COLUMNS) * Math.PI * 2;
-    let i = sorted.length - 1;
-    for (let k = 0; k < sorted.length; k += 1) {
-      const next = sorted[(k + 1) % sorted.length];
-      const nextTheta = next.theta + (k === sorted.length - 1 ? Math.PI * 2 : 0);
-      const curTheta = sorted[k].theta;
-      const probe = theta < curTheta ? theta + Math.PI * 2 : theta;
-      if (probe >= curTheta && probe <= nextTheta) {
-        i = k;
-        break;
-      }
-    }
-    const from = sorted[i];
-    const to = sorted[(i + 1) % sorted.length];
-    const fromTheta = from.theta;
-    const toTheta = to.theta + (i === sorted.length - 1 ? Math.PI * 2 : 0);
-    const probe = theta < fromTheta ? theta + Math.PI * 2 : theta;
-    const span = toTheta - fromTheta;
-    const t = span > 1e-9 ? clamp((probe - fromTheta) / span, 0, 1) : 0;
-    dense.push(
-      from.profile.map((p, c) => ({
-        u: p.u + t * (to.profile[c].u - p.u),
-        w: p.w + t * (to.profile[c].w - p.w),
-      })),
-    );
-  }
-  // 열 방향으로 흔들리면 세로 톱니가 되므로 단면 점마다 원형 이동평균한다(cuffBlend circularSmooth).
-  for (let pass = 0; pass < 2; pass += 1) {
-    for (let c = 0; c < profLen; c += 1) {
-      const us = dense.map((d) => d[c].u);
-      const ws = dense.map((d) => d[c].w);
-      for (let j = 0; j < BAND_COLUMNS; j += 1) {
-        let su = 0;
-        let sw = 0;
-        for (let k = -BAND_SMOOTH_HALF; k <= BAND_SMOOTH_HALF; k += 1) {
-          const idx = (j + k + BAND_COLUMNS) % BAND_COLUMNS;
-          su += us[idx];
-          sw += ws[idx];
-        }
-        const cnt = BAND_SMOOTH_HALF * 2 + 1;
-        dense[j][c] = { u: su / cnt, w: sw / cnt };
-      }
-    }
-  }
-  return { dense, profLen };
-}
-
-function bandValueAt(values, theta) {
-  const pos = (((theta + Math.PI) / (Math.PI * 2)) * BAND_COLUMNS) % BAND_COLUMNS;
-  const j0 = Math.floor(pos);
-  const j1 = (j0 + 1) % BAND_COLUMNS;
-  const t = pos - j0;
-  return values[j0] * (1 - t) + values[j1] * t;
-}
-
-/** cuffBlend.splitByLevel 차용: levelOf 부호가 바뀌는 삼각형을 경계에서 정확히 가른다. */
-function splitMeshByBandLevel(mesh, levelOf) {
-  const verts = Array.from(mesh.verts);
-  const values = [];
-  for (let v = 0; v < verts.length / 3; v += 1) {
-    let f = levelOf([verts[v * 3], verts[v * 3 + 1], verts[v * 3 + 2]]);
-    if (Math.abs(f) < 1e-7) f = 0;
-    values.push(f);
-  }
-  const cache = new Map();
-  const mid = (a, b) => {
-    const key = a < b ? `${a}_${b}` : `${b}_${a}`;
-    const hit = cache.get(key);
-    if (hit !== undefined) return hit;
-    const t = values[a] / (values[a] - values[b]);
-    const idx = verts.length / 3;
-    verts.push(
-      verts[a * 3] + t * (verts[b * 3] - verts[a * 3]),
-      verts[a * 3 + 1] + t * (verts[b * 3 + 1] - verts[a * 3 + 1]),
-      verts[a * 3 + 2] + t * (verts[b * 3 + 2] - verts[a * 3 + 2]),
-    );
-    values.push(0);
-    cache.set(key, idx);
-    return idx;
-  };
-  const sign = (v) => (values[v] > 0 ? 1 : values[v] < 0 ? -1 : 0);
-  const faces = [];
-  for (let f = 0; f < mesh.faceCount; f += 1) {
-    const tri = [mesh.faces[f * 3], mesh.faces[f * 3 + 1], mesh.faces[f * 3 + 2]];
-    const s = tri.map(sign);
-    if (!(s[0] * s[1] < 0 || s[1] * s[2] < 0 || s[2] * s[0] < 0)) {
-      faces.push(tri[0], tri[1], tri[2]);
-      continue;
-    }
-    const zeroAt = s.indexOf(0);
-    if (zeroAt >= 0) {
-      const v0 = tri[zeroAt];
-      const v1 = tri[(zeroAt + 1) % 3];
-      const v2 = tri[(zeroAt + 2) % 3];
-      const m = mid(v1, v2);
-      faces.push(v0, v1, m, v0, m, v2);
-      continue;
-    }
-    let iso = 0;
-    if (s[0] === s[1]) iso = 2;
-    else if (s[0] === s[2]) iso = 1;
-    const v0 = tri[iso];
-    const v1 = tri[(iso + 1) % 3];
-    const v2 = tri[(iso + 2) % 3];
-    const m1 = mid(v0, v1);
-    const m2 = mid(v0, v2);
-    faces.push(v0, m1, m2, m1, v1, v2, m1, v2, m2);
-  }
-  return new Mesh(Float64Array.from(verts), Int32Array.from(faces));
-}
-
-/** cuffBlend.chainBoundaryLoops 차용. */
-function chainBandLoops(directedEdges) {
-  const next = new Map();
-  for (const [a, b] of directedEdges) {
-    if (next.has(a)) return null;
-    next.set(a, b);
-  }
-  const loops = [];
-  const seen = new Set();
-  for (const start of next.keys()) {
-    if (seen.has(start)) continue;
-    const loop = [];
-    let v = start;
-    while (!seen.has(v)) {
-      seen.add(v);
-      loop.push(v);
-      v = next.get(v);
-      if (v === undefined) return null;
-    }
-    if (v !== start) return null;
-    loops.push(loop);
-  }
-  return loops;
-}
-
-/** cuffBlend.angularRow 차용(축 기준 각도). */
-function angularBandRow(loop, verts, axis, frame) {
-  const point = (v) => [verts[v * 3], verts[v * 3 + 1], verts[v * 3 + 2]];
-  const ang = loop.map((v) => thetaAboutAxis(point(v), axis, frame));
-  const steps = ang.map((a, i) => angDelta(ang[(i + 1) % ang.length], a));
-  const turn = steps.reduce((s, d) => s + d, 0);
-  const dir = Math.sign(turn);
-  if (Math.abs(Math.abs(turn) - Math.PI * 2) > 0.1 || steps.some((d) => d * dir < -0.02)) return null;
-  let order = loop.map((_, i) => i);
-  if (dir < 0) order = order.reverse();
-  const wrap = (a) => {
-    let t = a % (Math.PI * 2);
-    if (t < 0) t += Math.PI * 2;
-    return t;
-  };
-  let start = 0;
-  for (let i = 1; i < order.length; i += 1) {
-    if (wrap(ang[order[i]]) < wrap(ang[order[start]])) start = i;
-  }
-  order = [...order.slice(start), ...order.slice(0, start)];
-  const out = [];
-  let acc = wrap(ang[order[0]]);
-  for (let i = 0; i < order.length; i += 1) {
-    if (i > 0) acc += angDelta(ang[order[i]], ang[order[i - 1]]);
-    out.push({ v: loop[order[i]], a: acc });
-  }
+  if (!best || !best.movedCount) return null;
+  const { flipped, ...out } = best;
   return out;
 }
 
-/** cuffBlend.zipperRows 차용. */
-function zipperBandRows(lower, upper, emit) {
-  const A = lower.length;
-  const B = upper.length;
-  let i = 0;
-  let j = 0;
-  const angA = (k) => lower[k % A].a + Math.floor(k / A) * Math.PI * 2;
-  const angB = (k) => upper[k % B].a + Math.floor(k / B) * Math.PI * 2;
-  while (i < A || j < B) {
-    const nextA = i < A ? angA(i + 1) : Infinity;
-    const nextB = j < B ? angB(j + 1) : Infinity;
-    if (nextA <= nextB) {
-      emit(lower[i % A].v, lower[(i + 1) % A].v, upper[j % B].v);
-      i += 1;
-    } else {
-      emit(lower[i % A].v, upper[(j + 1) % B].v, upper[j % B].v);
-      j += 1;
+function faceNormalRaw(verts, faces, fi) {
+  const a = faces[fi * 3] * 3;
+  const b = faces[fi * 3 + 1] * 3;
+  const c = faces[fi * 3 + 2] * 3;
+  const ab = [verts[b] - verts[a], verts[b + 1] - verts[a + 1], verts[b + 2] - verts[a + 2]];
+  const ac = [verts[c] - verts[a], verts[c + 1] - verts[a + 1], verts[c + 2] - verts[a + 2]];
+  return cross(ab, ac);
+}
+
+/** 방향이 뒤집힌 면의 이동 정점을 원래 자리로 되돌린다. 처음 뒤집힌 면 수를 돌려준다. */
+function revertFlippedFaces(original, res) {
+  const { mesh, movedVertices } = res;
+  const faces = mesh.faces;
+  let firstFlipped = -1;
+  for (let pass = 0; pass < 4; pass += 1) {
+    let flipped = 0;
+    for (let fi = 0; fi < mesh.faceCount; fi += 1) {
+      const tri = [faces[fi * 3], faces[fi * 3 + 1], faces[fi * 3 + 2]];
+      if (!tri.some((vi) => movedVertices[vi])) continue;
+      const before = faceNormalRaw(original.verts, original.faces, fi);
+      const after = faceNormalRaw(mesh.verts, faces, fi);
+      if (dot3(before, after) >= 0) continue;
+      flipped += 1;
+      for (const vi of tri) {
+        if (!movedVertices[vi]) continue;
+        mesh.verts[vi * 3] = original.verts[vi * 3];
+        mesh.verts[vi * 3 + 1] = original.verts[vi * 3 + 1];
+        mesh.verts[vi * 3 + 2] = original.verts[vi * 3 + 2];
+        movedVertices[vi] = 0;
+        res.movedCount -= 1;
+      }
     }
+    if (firstFlipped < 0) firstFlipped = flipped;
+    if (!flipped) break;
   }
+  mesh.invalidate();
+  return firstFlipped;
+}
+
+function filletCorrectionAboutAxis(mesh, raw, toolR, axis) {
+  const targetR = toolR + CORRECTION_FILLET_MARGIN_MM;
+  const frame = axisFrame(axis);
+  const stations = raw
+    .map((fl) => {
+      const st = measureFilletStation(mesh, fl, axis);
+      return st ? { ...st, theta: thetaAboutAxis(fl, axis, frame) } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.theta - b.theta);
+  if (stations.length < 3) return null;
+  if (!stations.some((s) => s.measuredR < toolR - FILLET_R_TOLERANCE_MM)) return null;
+
+  const next = mesh.clone();
+  const v = next.verts;
+  const movedVertices = new Uint8Array(next.vertexCount);
+  let movedCount = 0;
+  for (let vi = 0; vi < next.vertexCount; vi += 1) {
+    const p = [v[vi * 3], v[vi * 3 + 1], v[vi * 3 + 2]];
+    const w = dot3(p, axis);
+    const radialVec = sub3(p, scale3(axis, w));
+    const u = Math.hypot(...radialVec);
+    if (u < 0.2) continue;
+    const st = stationAtTheta(stations, thetaAboutAxis(p, axis, frame), targetR);
+    if (!st) continue;
+    const to = filletTargetInPlane(st, u, w, targetR);
+    if (!to) continue;
+    const q = add3(scale3(radialVec, to.u / u), scale3(axis, to.w));
+    v[vi * 3] = q[0];
+    v[vi * 3 + 1] = q[1];
+    v[vi * 3 + 2] = q[2];
+    movedVertices[vi] = 1;
+    movedCount += 1;
+  }
+  if (!movedCount) return null;
+  next.invalidate();
+  return { mesh: next, movedVertices, movedCount, filletRadiusMm: targetR, axis };
 }
 
 /**
- * 코너 띠를 걷어 내고 공구 R 필렛 격자로 다시 잇는다.
- * 한 바퀴를 덮는 타이트 구간에서만 쓰고, 아니면 null(기존 정점 이동 폴백).
+ * 보정으로 움직인 필렛 면(정점 2개 이상 이동)만 평면 배열로 뽑는다. 프리뷰 표시용.
+ * @returns {{ filletRadiusMm: number, positions: number[], indices: number[] } | null}
  */
-function buildBandCorrectedMesh(mesh, tightRows, axis, sampleTotal) {
-  const { frame, groups } = bandStationGroups(tightRows, axis, sampleTotal);
-  for (const cols of groups) {
-    const band = denseBandProfiles(cols);
-    if (!band) continue;
-    const { dense, profLen } = band;
-    const wBottom = dense.map((d) => d[0].w);
-    const wTop = dense.map((d) => d[profLen - 1].w);
-    const levelAt = (values) => (p) => {
-      const m = vertexMetrics(p, axis, frame);
-      return m.along - bandValueAt(values, m.theta);
-    };
-    let cut = splitMeshByBandLevel(mesh, levelAt(wBottom));
-    cut = splitMeshByBandLevel(cut, levelAt(wTop));
-    const verts = Array.from(cut.verts);
-    const faces = Array.from(cut.faces);
-    const fc = faces.length / 3;
-    const wLo = Math.min(...wBottom);
-    const wHi = Math.max(...wTop);
-    const field = buildOuterRadiusGrid(cut, axis, frame, wLo - 0.25, wHi + 0.25);
-    const point = (v) => [verts[v * 3], verts[v * 3 + 1], verts[v * 3 + 2]];
-    const removed = new Uint8Array(fc);
-    for (let f = 0; f < fc; f += 1) {
-      const tri = [faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2]];
-      const centroid = [0, 1, 2].map(
-        (k) => (point(tri[0])[k] + point(tri[1])[k] + point(tri[2])[k]) / 3,
-      );
-      const cm = vertexMetrics(centroid, axis, frame);
-      if (cm.along <= bandValueAt(wBottom, cm.theta) || cm.along >= bandValueAt(wTop, cm.theta)) {
-        continue;
+export function movedFilletSurface(corrected) {
+  const { mesh, movedVertices, filletRadiusMm } = corrected || {};
+  if (!mesh || !movedVertices) return null;
+  const remap = new Map();
+  const positions = [];
+  const indices = [];
+  const f = mesh.faces;
+  for (let fi = 0; fi < mesh.faceCount; fi += 1) {
+    const tri = [f[fi * 3], f[fi * 3 + 1], f[fi * 3 + 2]];
+    if (tri.filter((vi) => movedVertices[vi]).length < 2) continue;
+    for (const vi of tri) {
+      let k = remap.get(vi);
+      if (k == null) {
+        k = remap.size;
+        remap.set(vi, k);
+        positions.push(
+          round3(mesh.verts[vi * 3]),
+          round3(mesh.verts[vi * 3 + 1]),
+          round3(mesh.verts[vi * 3 + 2]),
+        );
       }
-      const outer = tri.every((v) => onOuterShell(field, vertexMetrics(point(v), axis, frame)));
-      if (outer) removed[f] = 1;
+      indices.push(k);
     }
-    if (!removed.some((x) => x)) continue;
-    const keptEdges = new Set();
-    const removedEdges = [];
-    for (let f = 0; f < fc; f += 1) {
-      for (let k = 0; k < 3; k += 1) {
-        const a = faces[f * 3 + k];
-        const b = faces[f * 3 + ((k + 1) % 3)];
-        if (removed[f]) removedEdges.push([a, b]);
-        else keptEdges.add(`${a}_${b}`);
-      }
-    }
-    const boundary = [];
-    for (const [a, b] of removedEdges) {
-      if (keptEdges.has(`${b}_${a}`)) boundary.push([b, a]);
-    }
-    const loops = chainBandLoops(boundary);
-    if (!loops || loops.length !== 2) continue;
-    const meanAlong = (loop) =>
-      loop.reduce((s, v) => s + vertexMetrics(point(v), axis, frame).along, 0) / loop.length;
-    loops.sort((p, q) => meanAlong(p) - meanAlong(q));
-    const bottom = angularBandRow(loops[0], verts, axis, frame);
-    const top = angularBandRow(loops[1], verts, axis, frame);
-    if (!bottom || !top) continue;
-    const gridRows = [];
-    for (let c = 1; c < profLen - 1; c += 1) {
-      const row = [];
-      for (let j = 0; j < BAND_COLUMNS; j += 1) {
-        const theta = -Math.PI + (j / BAND_COLUMNS) * Math.PI * 2;
-        const radial = [
-          frame.xAxis[0] * Math.cos(theta) + frame.yAxis[0] * Math.sin(theta),
-          frame.xAxis[1] * Math.cos(theta) + frame.yAxis[1] * Math.sin(theta),
-          frame.xAxis[2] * Math.cos(theta) + frame.yAxis[2] * Math.sin(theta),
-        ];
-        const p = fromPlaneCoords(dense[j][c].u, dense[j][c].w, radial, axis);
-        const idx = verts.length / 3;
-        verts.push(p[0], p[1], p[2]);
-        row.push({ v: idx, a: (j / BAND_COLUMNS) * Math.PI * 2 });
-      }
-      gridRows.push(row);
-    }
-    const newFaces = [];
-    const emit = (a, b, c) => {
-      const pa = point(a);
-      const pb = point(b);
-      const pc = point(c);
-      const ux = pb[0] - pa[0];
-      const uy = pb[1] - pa[1];
-      const uz = pb[2] - pa[2];
-      const vx = pc[0] - pa[0];
-      const vy = pc[1] - pa[1];
-      const vz = pc[2] - pa[2];
-      const nx = uy * vz - uz * vy;
-      const ny = uz * vx - ux * vz;
-      const nz = ux * vy - uy * vx;
-      if (Math.hypot(nx, ny, nz) < 1e-12) return;
-      const centroid = [
-        (pa[0] + pb[0] + pc[0]) / 3,
-        (pa[1] + pb[1] + pc[1]) / 3,
-        (pa[2] + pb[2] + pc[2]) / 3,
-      ];
-      const cm = vertexMetrics(centroid, axis, frame);
-      const outward = nx * cm.radial[0] + ny * cm.radial[1] + nz * cm.radial[2];
-      if (outward >= 0) newFaces.push(a, b, c);
-      else newFaces.push(a, c, b);
-    };
-    const stack = [bottom, ...gridRows, top];
-    for (let r = 0; r + 1 < stack.length; r += 1) zipperBandRows(stack[r], stack[r + 1], emit);
-    const outFaces = [];
-    for (let f = 0; f < fc; f += 1) {
-      if (!removed[f]) outFaces.push(faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2]);
-    }
-    outFaces.push(...newFaces);
-    const result = new Mesh(Float64Array.from(verts), Int32Array.from(outFaces));
-    if (result.nakedEdgeCount() !== mesh.nakedEdgeCount()) continue;
-    return result;
   }
-  return null;
+  return indices.length ? { filletRadiusMm, positions, indices } : null;
 }
 
 /**
- * 타이트 코너를 공구보다 넉넉한 필렛으로 변형한 메시(정렬 좌표계).
- * 덧씌우는 솔리드는 만들지 않는다. 한 바퀴 구간은 커프식으로 띠를
- * 교체하고, 부분 구간은 기존 정점을 필렛으로 옮긴다.
+ * 타이트 코너를 공구보다 넉넉한 필렛으로 바꾼 메시(정렬 좌표계). 덧붙이는 면 없음.
  * @returns {import("./meshCore.js").Mesh | null}
  */
 export function applyTightCornerCorrectionToMesh(mesh, finishLinePoints, options = {}) {
-  const toolR =
-    Number(options.toolRadiusMm) > 0 ? Number(options.toolRadiusMm) : FINISH_BALL_RADIUS_MM;
-  const collected = collectTightSamples(mesh, finishLinePoints, {
-    ...options,
-    toolRadiusMm: toolR + CORRECTION_FILLET_CLEARANCE_MM,
-  });
-  const samples = collected.samples.filter(
-    (s) => Number(s.filletRadiusMm) < toolR - FILLET_R_TOLERANCE_MM,
-  );
-  if (!samples.length) return null;
-  const banded = buildBandCorrectedMesh(mesh, samples, collected.axis, collected.sampled.length);
-  if (banded) {
-    const wMin = Math.min(...samples.flatMap((s) => s.reliefProfile.map((p) => p[1])));
-    pullSilhouetteWings(banded, collected.axis, axisFrame(collected.axis), wMin);
-    return banded;
-  }
-  const next = mesh.clone();
-  const moved = projectVerticesOntoRelief(
-    next,
-    samples,
-    collected.axis,
-    collected.sampled.length,
-  );
-  return moved ? next : null;
+  return correctTightCornerFillet(mesh, finishLinePoints, options)?.mesh || null;
 }
