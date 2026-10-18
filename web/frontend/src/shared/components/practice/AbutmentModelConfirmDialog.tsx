@@ -152,6 +152,8 @@ export type AbutmentModelConfirmDialogProps = {
   fileUploadLabel?: string | null;
   /** 접수 전 가공 검사 결과(신규의뢰만 전달). tight여도 확인을 막지 않는다. */
   machiningPreflight?: StlMachiningPreflight | null;
+  /** 보정 디자인을 확인하면 접수 파일을 그 STL로 바꾼다. */
+  onApplyCorrectedDesign?: (index: number, file: File) => void;
 };
 
 export function AbutmentModelConfirmDialog({
@@ -207,6 +209,7 @@ export function AbutmentModelConfirmDialog({
   fileUploadPercent = null,
   fileUploadLabel = null,
   machiningPreflight = null,
+  onApplyCorrectedDesign,
 }: AbutmentModelConfirmDialogProps) {
   const isLabHandoff = variant === "lab-handoff";
   const labConfirmLabel = String(confirmLabel || "").trim() || "확인";
@@ -327,17 +330,22 @@ export function AbutmentModelConfirmDialog({
         });
         return;
       }
+      const correctedFile = new File([result.blob], result.fileName, {
+        type: "model/stl",
+        lastModified: Date.now(),
+      });
+      if (detailIndex != null) onApplyCorrectedDesign?.(detailIndex, correctedFile);
       triggerBrowserFileDownload(result.blob, result.fileName);
       toast({
-        title: "보정 STL 다운로드",
-        description: "기공소에서 이 파일로 크라운을 재디자인할 수 있습니다.",
+        title: "보정 디자인으로 바꿨습니다.",
+        description: "내려받은 파일로 크라운을 다시 만듭니다.",
         duration: 3500,
       });
     } finally {
       setCorrectedDownloading(false);
       setCorrectedDownloadOpen(false);
     }
-  }, [correctedDownloading, detailCaseInfos, detailFile, toast]);
+  }, [correctedDownloading, detailCaseInfos, detailFile, detailIndex, onApplyCorrectedDesign, toast]);
 
   return (
     <>
@@ -697,21 +705,17 @@ export function AbutmentModelConfirmDialog({
         }}
       >
         <AlertDialogContent
-          className="new-request-page z-[330]"
+          className="new-request-page z-[330] gap-5 sm:max-w-md"
           overlayClassName="z-[325]"
         >
-          <AlertDialogHeader>
-            <AlertDialogTitle>보정 STL로 진행할까요?</AlertDialogTitle>
+          <AlertDialogHeader className="space-y-3">
+            <AlertDialogTitle>보정 디자인으로 진행할까요?</AlertDialogTitle>
             <AlertDialogDescription asChild>
-              <div className="space-y-2 text-sm text-muted-foreground">
-                <p>
-                  불완전 가공 구간을 제거하고 공구 R 필렛으로 보정한 모델을
-                  다운로드합니다.
-                  <br />
-                  기공소에서 이 STL로 크라운을 재디자인할 수 있습니다.
-                </p>
-                <p>이 보정 모델로 진행할까요?</p>
-              </div>
+              <p className="text-sm leading-6 text-muted-foreground">
+                어벗츠는 이 디자인으로 가공합니다.
+                <br />
+                기공소는 파일을 받아 크라운을 다시 만듭니다.
+              </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -723,7 +727,7 @@ export function AbutmentModelConfirmDialog({
                 void runCorrectedStlDownload();
               }}
             >
-              {correctedDownloading ? "만드는 중…" : "다운로드"}
+              {correctedDownloading ? "만드는 중…" : "확인"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

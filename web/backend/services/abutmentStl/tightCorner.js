@@ -7,7 +7,7 @@
 // 피니시라인 바로 위 마진↔축면 경계의 fillet R을 재고, R<공구R이면 공구 R 필렛 보정면을 만든다.
 // 보정 솔리드는 원본과 별개로 메타데이터에 담긴다. filled STL·CAM은 원본 그대로 두고,
 // 뷰어에서 토글을 켰을 때만 원본 위에 빨갛게 덧입혀 보여준다.
-import { Mesh, cross, meshPlaneSection, normalize } from "./meshCore.js";
+import { cross, meshPlaneSection, normalize } from "./meshCore.js";
 
 export const TIGHT_CORNER_VERSION = 6;
 export const FINISH_BALL_DIAMETER_MM = 1.2;
@@ -896,24 +896,162 @@ export function planTightCornerCorrection(mesh, finishLinePoints, options = {}) 
   };
 }
 
+function axisFrame(axis) {
+  const helper = Math.abs(axis[2]) > 0.9 ? [1, 0, 0] : [0, 0, 1];
+  let xAxis = cross(helper, axis);
+  if (Math.hypot(xAxis[0], xAxis[1], xAxis[2]) < 1e-8) xAxis = cross([0, 1, 0], axis);
+  xAxis = normalize(xAxis);
+  const yAxis = normalize(cross(axis, xAxis));
+  return { xAxis, yAxis };
+}
+
+function thetaAboutAxis(p, axis, frame) {
+  const along = dot3(p, axis);
+  const radial = sub3(p, scale3(axis, along));
+  return Math.atan2(dot3(radial, frame.yAxis), dot3(radial, frame.xAxis));
+}
+
+function angDelta(a, b) {
+  let d = a - b;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+/** 단면 (u,w)에서 w에 해당하는 필렛 반경. 구간 밖이면 null. */
+function profileUAtW(profile, w) {
+  const n = profile.length;
+  if (n < 2) return null;
+  const w0 = profile[0].w;
+  const w1 = profile[n - 1].w;
+  if (w < w0 - 0.03 || w > w1 + 0.03) return null;
+  if (w <= w0) return profile[0].u;
+  if (w >= w1) return profile[n - 1].u;
+  for (let i = 0; i < n - 1; i += 1) {
+    const a = profile[i];
+    const b = profile[i + 1];
+    const lo = Math.min(a.w, b.w);
+    const hi = Math.max(a.w, b.w);
+    if (w < lo || w > hi) continue;
+    const span = b.w - a.w;
+    const t = Math.abs(span) > 1e-9 ? (w - a.w) / span : 0;
+    return a.u + t * (b.u - a.u);
+  }
+  return null;
+}
+
+const RELIEF_MAX_PULL_MM = 1.2;
+const RELIEF_MIN_PULL_MM = 0.004;
+const RELIEF_MAX_SEGMENT_RAD = 0.4;
+
 /**
- * 타이트 코너 밴드 삼각형을 걷고 보정 솔리드를 덧씌운 메시를 만든다(정렬 좌표계).
+ * 인접 샘플의 공구 R 필렛을 (theta, w)에서 잇는다.
+ * 런 사이 빈 각도는 건너뛴다.
+ */
+function reliefStationPairs(tightRows, axis, sampleTotal) {
+  const frame = axisFrame(axis);
+  const pairs = [];
+  let wMin = Infinity;
+  let wMax = -Infinity;
+  for (const { run, smooth } of reliefRuns(tightRows, sampleTotal)) {
+    const cols = run.map((row, ri) => {
+      const profile = smooth[ri]
+        .map(([u, w]) => ({ u, w }))
+        .sort((a, b) => a.w - b.w || a.u - b.u);
+      if (profile.length) {
+        wMin = Math.min(wMin, profile[0].w);
+        wMax = Math.max(wMax, profile[profile.length - 1].w);
+      }
+      return {
+        theta: thetaAboutAxis(row.finishLinePoint, axis, frame),
+        profile,
+      };
+    });
+    const cyclic = sampleTotal > 0 && run.length >= sampleTotal;
+    const last = cyclic ? cols.length : cols.length - 1;
+    for (let i = 0; i < last; i += 1) {
+      pairs.push([cols[i], cols[(i + 1) % cols.length]]);
+    }
+  }
+  return { frame, pairs, wMin, wMax };
+}
+
+function filletUAt(pairs, theta, w) {
+  for (const [a, b] of pairs) {
+    const span = angDelta(b.theta, a.theta);
+    if (Math.abs(span) < 1e-8 || Math.abs(span) > RELIEF_MAX_SEGMENT_RAD) continue;
+    const t = angDelta(theta, a.theta) / span;
+    if (t < -0.02 || t > 1.02) continue;
+    const u0 = profileUAtW(a.profile, w);
+    const u1 = profileUAtW(b.profile, w);
+    if (u0 == null || u1 == null) continue;
+    const clamped = Math.min(1, Math.max(0, t));
+    return u0 + clamped * (u1 - u0);
+  }
+  return null;
+}
+
+/**
+ * 코너 근처 정점을 공구 R 필렛 반경으로 옮긴다.
+ * 삼각형을 지우지 않아서 경계가 갈라지지 않는다.
+ * @returns {boolean} 정점을 하나라도 옮겼으면 true
+ */
+function projectVerticesOntoRelief(mesh, tightRows, axis, sampleTotal) {
+  const { frame, pairs, wMin, wMax } = reliefStationPairs(tightRows, axis, sampleTotal);
+  if (!pairs.length || !Number.isFinite(wMin)) return false;
+  const v = mesh.verts;
+  let moved = 0;
+  for (let i = 0; i < v.length; i += 3) {
+    const p = [v[i], v[i + 1], v[i + 2]];
+    const along = dot3(p, axis);
+    if (along < wMin - 0.05 || along > wMax + 0.05) continue;
+    const radial = sub3(p, scale3(axis, along));
+    const u = Math.hypot(radial[0], radial[1], radial[2]);
+    if (u < 0.2) continue;
+    const theta = Math.atan2(dot3(radial, frame.yAxis), dot3(radial, frame.xAxis));
+    const uFillet = filletUAt(pairs, theta, along);
+    if (!(uFillet > 0)) continue;
+    // 필렛보다 안쪽(코너 쪽)이면 공구 면까지 밀어 내고, 살짝 밖이면 면에 붙인다.
+    const gap = Math.abs(u - uFillet);
+    if (gap <= RELIEF_MIN_PULL_MM || gap > RELIEF_MAX_PULL_MM) continue;
+    const s = uFillet / u;
+    v[i] = radial[0] * s + axis[0] * along;
+    v[i + 1] = radial[1] * s + axis[1] * along;
+    v[i + 2] = radial[2] * s + axis[2] * along;
+    moved += 1;
+  }
+  if (moved > 0) mesh.invalidate();
+  return moved > 0;
+}
+
+/**
+ * 재측정할 때 가상 코너가 필렛 쪽으로 따라오므로,
+ * 공구 R보다 이만큼 큰 호를 만들어야 측정 R이 공구를 넘긴다.
+ */
+const CORRECTION_FILLET_CLEARANCE_MM = 0.3;
+
+/**
+ * 타이트 코너를 공구보다 넉넉한 필렛으로 밀어 낸 메시(정렬 좌표계).
+ * 면을 도려내지 않아서 경계가 갈라지지 않는다.
  * @returns {import("./meshCore.js").Mesh | null}
  */
 export function applyTightCornerCorrectionToMesh(mesh, finishLinePoints, options = {}) {
-  const plan = planTightCornerCorrection(mesh, finishLinePoints, options);
-  if (!(Number(plan.tightCorner?.tightCount) > 0) || !plan.triangles.length) return null;
-  const soup = mesh.toTriangleSoup();
-  const kept = [];
-  for (let i = 0; i + 8 < soup.length; i += 9) {
-    const c = [
-      (soup[i] + soup[i + 3] + soup[i + 6]) / 3,
-      (soup[i + 1] + soup[i + 4] + soup[i + 7]) / 3,
-      (soup[i + 2] + soup[i + 5] + soup[i + 8]) / 3,
-    ];
-    if (isPointInTightCornerReliefBand(plan.band, c)) continue;
-    kept.push(...soup.slice(i, i + 9));
-  }
-  const solidFlat = plan.triangles.flatMap((t) => t.flat());
-  return Mesh.fromTriangleSoup(new Float64Array([...kept, ...solidFlat]));
+  const toolR =
+    Number(options.toolRadiusMm) > 0 ? Number(options.toolRadiusMm) : FINISH_BALL_RADIUS_MM;
+  const collected = collectTightSamples(mesh, finishLinePoints, {
+    ...options,
+    toolRadiusMm: toolR + CORRECTION_FILLET_CLEARANCE_MM,
+  });
+  const samples = collected.samples.filter(
+    (s) => Number(s.filletRadiusMm) < toolR - FILLET_R_TOLERANCE_MM,
+  );
+  if (!samples.length) return null;
+  const next = mesh.clone();
+  const moved = projectVerticesOntoRelief(
+    next,
+    samples,
+    collected.axis,
+    collected.sampled.length,
+  );
+  return moved ? next : null;
 }

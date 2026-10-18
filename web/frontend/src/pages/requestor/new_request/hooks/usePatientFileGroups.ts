@@ -599,6 +599,25 @@ export function usePatientFileGroups({
     persistGroups([]);
   }, [persistGroups]);
 
+  const renameFileKey = useCallback(
+    (oldKey: string, newKey: string) => {
+      if (!oldKey || !newKey || oldKey === newKey) return;
+      const next = patientGroups.map((group) => {
+        if (!group.fileKeys.includes(oldKey)) return group;
+        return {
+          ...group,
+          fileKeys: group.fileKeys.map((key) => (key === oldKey ? newKey : key)),
+        };
+      });
+      const changed = next.some(
+        (group, index) => group.fileKeys.join("|") !== patientGroups[index]?.fileKeys.join("|"),
+      );
+      if (!changed) return;
+      persistGroups(next);
+    },
+    [patientGroups, persistGroups],
+  );
+
   const getGroupForFileKey = useCallback(
     (fileKey: string) => findGroupByFileKey(patientGroups, fileKey),
     [patientGroups],
@@ -624,6 +643,7 @@ export function usePatientFileGroups({
     addFilesToGroup,
     removeFileFromGroups,
     clearGroups,
+    renameFileKey,
     getGroupForFileKey,
     updateGroupCaseInfos,
     getPrimaryFileKey,

@@ -14,9 +14,9 @@ import { connectionDiameterAtOrigin } from "../../services/abutmentStl/qualityMe
 import { runAbutmentStlPipeline } from "../../services/abutmentStl/pipeline.js";
 import {
   analyzeMarginAtPoint,
+  applyTightCornerCorrectionToMesh,
   detectTightCorners,
   gougeDepthForCorner,
-  isPointInTightCornerReliefBand,
   metalInteriorAngleRad,
   planTightCornerCorrection,
 } from "../../services/abutmentStl/tightCorner.js";
@@ -215,20 +215,11 @@ describe("abutmentStl tightCorner", () => {
     expect(plan.triangles.length).toBeGreaterThan(100);
     expect(plan.band.length).toBeGreaterThan(20);
 
-    // 파이프라인과 같은 적용: 밴드 삼각형 제거 + 보정 솔리드 추가.
-    const soup = marginWallSoup(0.43);
-    const kept = [];
-    for (let i = 0; i + 8 < soup.length; i += 9) {
-      const c = [
-        (soup[i] + soup[i + 3] + soup[i + 6]) / 3,
-        (soup[i + 1] + soup[i + 4] + soup[i + 7]) / 3,
-        (soup[i + 2] + soup[i + 5] + soup[i + 8]) / 3,
-      ];
-      if (isPointInTightCornerReliefBand(plan.band, c)) continue;
-      kept.push(...soup.slice(i, i + 9));
-    }
-    const solidFlat = plan.triangles.flatMap((t) => t.flat());
-    const corrected = meshOf(new Float64Array([...kept, ...solidFlat]));
+    const beforeNaked = mesh.nakedEdgeCount();
+    const corrected = applyTightCornerCorrectionToMesh(mesh, flPts, {});
+    expect(corrected).not.toBeNull();
+    expect(corrected.faceCount).toBe(mesh.faceCount);
+    expect(corrected.nakedEdgeCount()).toBe(beforeNaked);
     expect(detectTightCorners(corrected, flPts, {}).tightCount).toBe(0);
   });
 

@@ -3,10 +3,17 @@
 // - web/frontend/src/shared/components/practice/AbutmentModelConfirmDialog.tsx
 import type { CaseInfos } from "@/pages/requestor/new_request/hooks/newRequestTypes";
 
-function correctedFileName(originalName: string) {
-  const raw = String(originalName || "model.stl").trim() || "model.stl";
-  const base = raw.replace(/\.stl$/i, "");
-  return `${base}.corrected.stl`;
+/** 서버 correctedDownloadName과 같다. 긴 원본명 대신 짧은 이름. */
+export function correctedFileName(originalName: string) {
+  const base = String(originalName || "")
+    .trim()
+    .replace(/\.stl$/i, "")
+    .replace(/\.corrected$/i, "");
+  const ab = /(?:^|[^a-z0-9])ab[-_ ]?(\d{1,2})$/i.exec(base);
+  if (ab) return `ab-${Number(ab[1])}.stl`;
+  const tooth = /(?:^|[^0-9])([1-4][1-8])$/.exec(base);
+  if (tooth) return `${tooth[1]}.stl`;
+  return "corrected.stl";
 }
 
 function parseAttachmentFileName(contentDisposition: string | null) {

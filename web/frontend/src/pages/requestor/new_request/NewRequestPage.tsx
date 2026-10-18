@@ -171,6 +171,7 @@ const NewRequestPageContent = () => {
     handleUpload,
     handleUploadUnchecked,
     handleRemoveFile: rawHandleRemoveFile,
+    replaceDesignFile,
     uploadProgress,
     familyOptions,
     typeOptions,
@@ -252,6 +253,23 @@ const NewRequestPageContent = () => {
     files,
     countableFileKeys,
   });
+
+  const applyCorrectedDesign = useCallback(
+    (index: number, file: File) => {
+      const current = files[index];
+      if (!current) return;
+      const oldKey = toNormalizedFileKey(current);
+      const newKey = toNormalizedFileKey(file);
+      setFileVerificationStatus((prev) => {
+        if (!prev[oldKey]) return prev;
+        const next = { ...prev, [newKey]: prev[oldKey] };
+        delete next[oldKey];
+        return next;
+      });
+      replaceDesignFile(index, file);
+    },
+    [files, replaceDesignFile, setFileVerificationStatus, toNormalizedFileKey],
+  );
 
   const handleRequestSettingsDefaultsChange = useCallback(
     (next: {
@@ -1873,6 +1891,7 @@ const NewRequestPageContent = () => {
               onUngroupPatientFiles={handleUngroupPatientFiles}
               onRemoveFileFromPatientGroup={handleRemoveFileFromPatientGroup}
               machiningPreflightByFileKey={machiningPreflightByFileKey}
+            onApplyCorrectedDesign={applyCorrectedDesign}
               onDuplicateDetected={({ file, duplicate }) => {
                 const fileWithDraftCaseId = file as File & {
                   _draftCaseInfoId?: string;

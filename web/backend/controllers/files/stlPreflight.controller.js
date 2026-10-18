@@ -47,10 +47,17 @@ const CORRECTED_REASON_MESSAGE = {
   pipeline_failed: "가공 검사 파이프라인이 실패했습니다.",
 };
 
-function correctedDownloadName(originalName) {
-  const raw = String(originalName || "model.stl").trim() || "model.stl";
-  const base = raw.replace(/\.stl$/i, "");
-  return `${base}.corrected.stl`;
+/** 긴 원본명 대신 ab-15.stl, 치아번호, 또는 corrected.stl */
+export function correctedDownloadName(originalName) {
+  const base = String(originalName || "")
+    .trim()
+    .replace(/\.stl$/i, "")
+    .replace(/\.corrected$/i, "");
+  const ab = /(?:^|[^a-z0-9])ab[-_ ]?(\d{1,2})$/i.exec(base);
+  if (ab) return `ab-${Number(ab[1])}.stl`;
+  const tooth = /(?:^|[^0-9])([1-4][1-8])$/.exec(base);
+  if (tooth) return `${tooth[1]}.stl`;
+  return "corrected.stl";
 }
 
 export const checkStlMachiningPreflight = asyncHandler(async (req, res) => {
@@ -88,7 +95,7 @@ export const downloadStlMachiningCorrected = asyncHandler(async (req, res) => {
   res.setHeader("Content-Type", "application/octet-stream");
   res.setHeader(
     "Content-Disposition",
-    `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
   );
   return res.status(200).send(result.buffer);
 });

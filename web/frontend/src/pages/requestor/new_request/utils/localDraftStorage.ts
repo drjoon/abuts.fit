@@ -218,6 +218,38 @@ export function addFiles(files: File[]): {
 }
 
 /**
+ * 보정 STL로 접수 파일을 교체한다. S3 메타는 비워서 새 파일을 다시 올린다.
+ */
+export function replaceDraftFile(oldKey: string, file: File): void {
+  const draft = getLocalDraft() || initLocalDraft();
+  const newKey = getFileKey(file);
+  const prev = draft.files.find((row) => row.fileKey === oldKey);
+  draft.files = draft.files.filter(
+    (row) => row.fileKey !== oldKey && row.fileKey !== newKey,
+  );
+  draft.files.push({
+    fileKey: newKey,
+    name: file.name,
+    size: file.size,
+    type: file.type || "model/stl",
+    lastModified: file.lastModified,
+    addedAt: prev?.addedAt || Date.now(),
+  });
+  if (draft.caseInfosMap?.[oldKey]) {
+    draft.caseInfosMap[newKey] = draft.caseInfosMap[oldKey];
+    delete draft.caseInfosMap[oldKey];
+  }
+  draft.duplicateResolutions = (draft.duplicateResolutions || []).map((row) =>
+    row.fileKey === oldKey ? { ...row, fileKey: newKey } : row,
+  );
+  draft.patientGroups = (draft.patientGroups || []).map((group) => ({
+    ...group,
+    fileKeys: group.fileKeys.map((key) => (key === oldKey ? newKey : key)),
+  }));
+  saveLocalDraft(draft);
+}
+
+/**
  * 파일 제거
  */
 export function removeFile(fileKey: string): LocalDraft {

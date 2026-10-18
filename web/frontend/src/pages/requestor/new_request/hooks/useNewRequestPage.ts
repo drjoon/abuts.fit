@@ -40,8 +40,9 @@ import {
   getLocalDraft,
   initLocalDraft,
   patchFileUploadMeta,
+  replaceDraftFile,
 } from "../utils/localDraftStorage";
-import { getFile } from "../utils/fileIndexedDB";
+import { deleteFile, getFile, saveFile } from "../utils/fileIndexedDB";
 
 const NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX =
   "abutsfit:new-request-clinics:v1:";
@@ -313,6 +314,7 @@ export const useNewRequestPage = (
     caseInfosMap,
     setCaseInfosMap,
     updateCaseInfos,
+    rekeyCaseInfos,
     removeCaseInfos,
     patchDraftImmediately,
     suspendDraftPatches,
@@ -985,6 +987,27 @@ export const useNewRequestPage = (
     [files, forgetFile, rawHandleRemoveFile],
   );
 
+  const replaceDesignFile = useCallback(
+    (index: number, nextFile: File) => {
+      const current = files[index];
+      if (!current) return;
+      const oldKey = getFileKey(current);
+      const newKey = getFileKey(nextFile);
+      if (oldKey === newKey) return;
+      setFiles((prev) => prev.map((file, i) => (i === index ? nextFile : file)));
+      rekeyCaseInfos(oldKey, newKey);
+      patientFileGroupsApi.renameFileKey(oldKey, newKey);
+      replaceDraftFile(oldKey, nextFile);
+      forgetFile(current);
+      void saveFile(newKey, nextFile)
+        .then(() => deleteFile(oldKey))
+        .catch((error) => {
+          console.warn("[replaceDesignFile] local file swap failed", error);
+        });
+    },
+    [files, forgetFile, patientFileGroupsApi, rekeyCaseInfos],
+  );
+
   // V3 드래그 앤 드롭 핸들러
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -1408,6 +1431,7 @@ export const useNewRequestPage = (
     handleUpload: isReady ? handleUpload : () => {},
     handleUploadUnchecked: isReady ? handleUploadUnchecked : () => {},
     handleRemoveFile: isReady ? handleRemoveFile : () => {},
+    replaceDesignFile,
     uploadProgress,
     isSubmitting,
 

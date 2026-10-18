@@ -418,6 +418,24 @@ export function useDraftMeta() {
     [patchDraftDebounced, saveDraftMeta],
   );
 
+  const rekeyCaseInfos = useCallback(
+    (oldKey: string, newKey: string) => {
+      if (!oldKey || !newKey || oldKey === newKey) return;
+      setCaseInfosMap((prev) => {
+        const current = prev[oldKey];
+        if (!current) return prev;
+        const next = { ...prev, [newKey]: current };
+        delete next[oldKey];
+        if (draftIdRef.current) {
+          saveDraftMeta(draftIdRef.current, next);
+          patchDraftDebounced(next);
+        }
+        return next;
+      });
+    },
+    [patchDraftDebounced, saveDraftMeta],
+  );
+
   const removeCaseInfos = useCallback(
     (fileKey: string) => {
       if (!fileKey) return;
@@ -488,6 +506,7 @@ export function useDraftMeta() {
     caseInfosMap,
     setCaseInfosMap,
     updateCaseInfos,
+    rekeyCaseInfos,
     removeCaseInfos,
     patchDraftImmediately,
     suspendDraftPatches,

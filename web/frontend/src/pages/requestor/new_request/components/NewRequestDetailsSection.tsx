@@ -120,6 +120,8 @@ type Props = {
   suppressDetailAutoOpen?: boolean;
   /** 파일 키별 접수 전 가공 검사 결과 */
   machiningPreflightByFileKey?: Record<string, StlMachiningPreflight>;
+  /** 보정 디자인 확인 시 해당 STL로 접수 파일을 교체 */
+  onApplyCorrectedDesign?: (index: number, file: File) => void;
 };
 
 export function NewRequestDetailsSection({
@@ -191,6 +193,7 @@ export function NewRequestDetailsSection({
   localDraftRestoreDone = true,
   suppressDetailAutoOpen = false,
   machiningPreflightByFileKey = {},
+  onApplyCorrectedDesign,
 }: Props) {
   const { token } = useAuthStore();
   const listContainerRef = useRef<HTMLDivElement | null>(null);
@@ -793,6 +796,7 @@ export function NewRequestDetailsSection({
         machiningPreflight={
           detailFileKey ? machiningPreflightByFileKey[detailFileKey] : undefined
         }
+        onApplyCorrectedDesign={onApplyCorrectedDesign}
       />
 
 
