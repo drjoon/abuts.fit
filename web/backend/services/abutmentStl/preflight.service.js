@@ -8,8 +8,11 @@
 // 불완전가공(마진 코너 R < 공구 R)만 요약한다. filled STL·메타데이터는 저장하지 않는다.
 import { resolveAbutmentStlInputs } from "./abutmentStlInputs.js";
 import { runAbutmentStlPipelineInWorker } from "./runPipelineInWorker.js";
-import { identity } from "./meshCore.js";
-import { FINISH_BALL_RADIUS_MM } from "./tightCorner.js";
+import { Mesh, writeBinaryStl, identity } from "./meshCore.js";
+import {
+  FINISH_BALL_RADIUS_MM,
+  applyTightCornerCorrectionToMesh,
+} from "./tightCorner.js";
 
 /** 디자인 수정 권고 여유(mm). 공구 R에 이만큼 더한 값을 권한다. */
 export const PREFLIGHT_FILLET_MARGIN_MM = 0.05;
@@ -135,6 +138,42 @@ export function summarizeTightCorner(tightCorner) {
  * 접수 전 가공 검사. 파이프라인이 실패해도 의뢰를 막지 않도록 unknown으로 돌려준다.
  * @param {{ buffer: Buffer, caseInfos?: object }} args
  */
+/**
+ * 업로드 STL에 타이트 코너 보정을 적용한 바이너리 STL(원본 좌표계).
+ * @returns {Promise<{ ok: true, buffer: Buffer } | { ok: false, reason: string }>}
+ */
+export async function buildCorrectedDesignStlBuffer({ buffer, caseInfos } = {}) {
+  if (!buffer?.length) return { ok: false, reason: "empty_file" };
+  try {
+    const inputs = await resolveAbutmentStlInputs(caseInfos || {});
+    const js = await runAbutmentStlPipelineInWorker(buffer, {
+      targetDiameter: inputs.targetDiameter,
+      implantProfile: inputs.implantProfile,
+    });
+    if (!Array.isArray(js?.finishLine?.points) || js.finishLine.points.length < 4) {
+      return { ok: false, reason: "finishline_missing" };
+    }
+    if (!(Number(js?.tightCorner?.tightCount) > 0)) {
+      return { ok: false, reason: "no_tight_corners" };
+    }
+    const mesh = Mesh.fromStlBuffer(buffer);
+    mesh.transform(js.alignMatrix);
+    const corrected = applyTightCornerCorrectionToMesh(mesh, js.finishLine.points, {
+      tiltAxisVector: js.stlMetadata?.tiltAxisVector,
+    });
+    if (!corrected) return { ok: false, reason: "correction_failed" };
+    corrected.transform(invertRigidMatrix(js.alignMatrix));
+    const outBuffer = writeBinaryStl({
+      positions: corrected.toTriangleSoup(),
+      attributes: null,
+    });
+    return { ok: true, buffer: outBuffer };
+  } catch (error) {
+    console.warn("[stl-corrected] failed:", error?.message || error);
+    return { ok: false, reason: "pipeline_failed" };
+  }
+}
+
 export async function runStlMachiningPreflight({ buffer, caseInfos } = {}) {
   if (!buffer?.length) {
     return { status: "unknown", reason: "empty_file", tightCount: 0 };

@@ -2,7 +2,8 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useStlMachiningPreflight.ts
 // - web/backend/services/abutmentStl/preflight.service.js
 // - web/frontend/src/shared/components/practice/AbutmentModelConfirmDialog.tsx
-import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
 import type { StlMetadata } from "@/features/requests/hooks/useStlMetadata";
 
@@ -25,9 +26,14 @@ const fmtMm = (v?: number | null) =>
 export function StlMachiningPreflightNotice({
   preflight,
   className,
+  onCorrectedDownloadClick,
+  correctedDownloadBusy = false,
 }: {
   preflight?: StlMachiningPreflight | null;
   className?: string;
+  /** 불완전 가공일 때 보정 STL 다운로드(확인은 부모에서). */
+  onCorrectedDownloadClick?: () => void;
+  correctedDownloadBusy?: boolean;
 }) {
   if (!preflight) return null;
 
@@ -73,6 +79,23 @@ export function StlMachiningPreflightNotice({
             ) : null}
             {suggested}mm 이상으로 키우면 가공됩니다.
           </p>
+          {onCorrectedDownloadClick ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-2 h-8 border-destructive/30 bg-white/90 text-destructive hover:bg-destructive-soft"
+              disabled={correctedDownloadBusy}
+              onClick={onCorrectedDownloadClick}
+            >
+              {correctedDownloadBusy ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              보정 STL 다운로드
+            </Button>
+          ) : null}
         </div>
       </div>
     );

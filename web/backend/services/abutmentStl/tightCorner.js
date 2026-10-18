@@ -7,7 +7,7 @@
 // 피니시라인 바로 위 마진↔축면 경계의 fillet R을 재고, R<공구R이면 공구 R 필렛 보정면을 만든다.
 // 보정 솔리드는 원본과 별개로 메타데이터에 담긴다. filled STL·CAM은 원본 그대로 두고,
 // 뷰어에서 토글을 켰을 때만 원본 위에 빨갛게 덧입혀 보여준다.
-import { cross, meshPlaneSection, normalize } from "./meshCore.js";
+import { Mesh, cross, meshPlaneSection, normalize } from "./meshCore.js";
 
 export const TIGHT_CORNER_VERSION = 6;
 export const FINISH_BALL_DIAMETER_MM = 1.2;
@@ -894,4 +894,26 @@ export function planTightCornerCorrection(mesh, finishLinePoints, options = {}) 
       sampleTotal: collected.sampled.length,
     }),
   };
+}
+
+/**
+ * 타이트 코너 밴드 삼각형을 걷고 보정 솔리드를 덧씌운 메시를 만든다(정렬 좌표계).
+ * @returns {import("./meshCore.js").Mesh | null}
+ */
+export function applyTightCornerCorrectionToMesh(mesh, finishLinePoints, options = {}) {
+  const plan = planTightCornerCorrection(mesh, finishLinePoints, options);
+  if (!(Number(plan.tightCorner?.tightCount) > 0) || !plan.triangles.length) return null;
+  const soup = mesh.toTriangleSoup();
+  const kept = [];
+  for (let i = 0; i + 8 < soup.length; i += 9) {
+    const c = [
+      (soup[i] + soup[i + 3] + soup[i + 6]) / 3,
+      (soup[i + 1] + soup[i + 4] + soup[i + 7]) / 3,
+      (soup[i + 2] + soup[i + 5] + soup[i + 8]) / 3,
+    ];
+    if (isPointInTightCornerReliefBand(plan.band, c)) continue;
+    kept.push(...soup.slice(i, i + 9));
+  }
+  const solidFlat = plan.triangles.flatMap((t) => t.flat());
+  return Mesh.fromTriangleSoup(new Float64Array([...kept, ...solidFlat]));
 }

@@ -49,6 +49,10 @@ import {
   StlMachiningPreflightNotice,
   type StlMachiningPreflight,
 } from "@/features/requests/components/StlMachiningPreflightNotice";
+import {
+  fetchCorrectedStlBlob,
+  triggerBrowserFileDownload,
+} from "@/features/requests/utils/downloadCorrectedStl";
 
 export type AbutmentModelConfirmVariant = "new-request" | "lab-handoff";
 
@@ -218,6 +222,8 @@ export function AbutmentModelConfirmDialog({
   const [newSystemBrand, setNewSystemBrand] = useState("");
   const [newSystemFamily, setNewSystemFamily] = useState("");
   const [confirmNewSystemOpen, setConfirmNewSystemOpen] = useState(false);
+  const [correctedDownloadOpen, setCorrectedDownloadOpen] = useState(false);
+  const [correctedDownloading, setCorrectedDownloading] = useState(false);
 
   const [pendingNewSystem, setPendingNewSystem] = useState<{
     manufacturer: string;
@@ -298,6 +304,41 @@ export function AbutmentModelConfirmDialog({
 
   const retentionIdPrefix = isLabHandoff ? "lab-handoff-rg" : "new-req-rg";
 
+  const canOfferCorrectedDownload =
+    !isLabHandoff &&
+    machiningPreflight?.status === "tight" &&
+    Boolean(machiningPreflight?.overlay) &&
+    Boolean(detailFile);
+
+  const runCorrectedStlDownload = useCallback(async () => {
+    if (!detailFile || correctedDownloading) return;
+    setCorrectedDownloading(true);
+    try {
+      const result = await fetchCorrectedStlBlob({
+        file: detailFile,
+        caseInfos: detailCaseInfos,
+      });
+      if (!result.ok) {
+        toast({
+          title: "다운로드 실패",
+          description: result.message,
+          variant: "destructive",
+          duration: 4500,
+        });
+        return;
+      }
+      triggerBrowserFileDownload(result.blob, result.fileName);
+      toast({
+        title: "보정 STL 다운로드",
+        description: "기공소에서 이 파일로 크라운을 재디자인할 수 있습니다.",
+        duration: 3500,
+      });
+    } finally {
+      setCorrectedDownloading(false);
+      setCorrectedDownloadOpen(false);
+    }
+  }, [correctedDownloading, detailCaseInfos, detailFile, toast]);
+
   return (
     <>
       <Dialog
@@ -332,6 +373,12 @@ export function AbutmentModelConfirmDialog({
             <StlMachiningPreflightNotice
               preflight={machiningPreflight}
               className="shrink-0"
+              onCorrectedDownloadClick={
+                canOfferCorrectedDownload
+                  ? () => setCorrectedDownloadOpen(true)
+                  : undefined
+              }
+              correctedDownloadBusy={correctedDownloading}
             />
           ) : null}
 
@@ -642,6 +689,45 @@ export function AbutmentModelConfirmDialog({
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={correctedDownloadOpen}
+        onOpenChange={(open) => {
+          if (!correctedDownloading) setCorrectedDownloadOpen(open);
+        }}
+      >
+        <AlertDialogContent
+          className="new-request-page z-[330]"
+          overlayClassName="z-[325]"
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>보정 STL로 진행할까요?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  불완전 가공 구간을 제거하고 공구 R 필렛으로 보정한 모델을
+                  다운로드합니다.
+                  <br />
+                  기공소에서 이 STL로 크라운을 재디자인할 수 있습니다.
+                </p>
+                <p>이 보정 모델로 진행할까요?</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={correctedDownloading}>취소</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={correctedDownloading}
+              onClick={(event) => {
+                event.preventDefault();
+                void runCorrectedStlDownload();
+              }}
+            >
+              {correctedDownloading ? "만드는 중…" : "다운로드"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={confirmNewSystemOpen}

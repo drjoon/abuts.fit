@@ -13,6 +13,7 @@ import { s3Upload } from "../../utils/s3.utils.js";
 import * as fileController from "../../controllers/files/file.controller.js";
 import {
   checkStlMachiningPreflight,
+  downloadStlMachiningCorrected,
   stlPreflightUpload,
 } from "../../controllers/files/stlPreflight.controller.js";
 
@@ -47,6 +48,14 @@ router.post(
   authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
   stlPreflightUpload,
   checkStlMachiningPreflight,
+);
+
+router.post(
+  "/temp/stl-corrected",
+  authenticate,
+  authorize(["requestor", "lab", "admin"], { subRoles: ["owner", "staff"] }),
+  stlPreflightUpload,
+  downloadStlMachiningCorrected,
 );
 
 router.post(
