@@ -944,13 +944,10 @@ function profileUAtW(profile, w) {
   return null;
 }
 
-const RELIEF_MAX_PULL_MM = 1.2;
 const RELIEF_MIN_PULL_MM = 0.004;
 const RELIEF_MAX_SEGMENT_RAD = 0.4;
 /** 필렛보다 밖으로 튀어나온 날개를 끌어당기는 한도. */
 const CUFF_WING_PULL_MM = 2.8;
-/** 이보다 필렛 안쪽이면 보어·육각이라 움직이지 않는다. */
-const CUFF_BORE_GAP_MM = 0.7;
 const CUFF_SPLIT_EDGE_MM = 0.32;
 const CUFF_SPLIT_ROUNDS = 4;
 
@@ -1106,7 +1103,7 @@ function vertexMetrics(p, axis, frame) {
 
 /**
  * 커프 구간의 긴 변을 나눠 필렛을 따라가는 면을 만든다.
- * 변 분할은 인접 면을 같이 나눠서 경계 개수가 늘지 않는다.
+ * 양 끝이 모두 바깥 껍질일 때만 나누고, 중간점은 인접 면이 공유한다.
  */
 function subdivideCuffBand(mesh, onCuff) {
   let verts = Array.from(mesh.verts);
@@ -1120,7 +1117,7 @@ function subdivideCuffBand(mesh, onCuff) {
       const pb = pos(b);
       const len = Math.hypot(pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]);
       if (len <= CUFF_SPLIT_EDGE_MM || len > 2.4) return false;
-      return onCuff(pa) || onCuff(pb);
+      return onCuff(pa) && onCuff(pb);
     };
     const midpoint = (a, b) => {
       const key = keyOf(a, b);
@@ -1171,9 +1168,207 @@ function subdivideCuffBand(mesh, onCuff) {
   mesh.invalidate();
 }
 
+/** 이 간격보다 바깥 실루엣 안쪽이면 나사홀·육각이라 움직이지 않는다. */
+const OUTER_SHELL_INSET_MM = 0.42;
+const OUTER_GRID_TH = 96;
+const OUTER_GRID_DW = 0.15;
+
+function thetaCol(theta, bins) {
+  let idx = Math.floor(((theta + Math.PI) / (Math.PI * 2)) * bins);
+  if (idx < 0) idx = 0;
+  if (idx >= bins) idx = bins - 1;
+  return idx;
+}
+
+/** (theta, 높이) 칸의 최대 반경. 빈 칸은 가까운 각도의 실루엣으로 메운다. */
+function buildOuterRadiusGrid(mesh, axis, frame, wLo, wHi) {
+  const row0 = Math.floor(wLo / OUTER_GRID_DW);
+  const row1 = Math.ceil(wHi / OUTER_GRID_DW);
+  const rows = Math.max(1, row1 - row0 + 1);
+  const grid = Array.from({ length: rows }, () => new Float64Array(OUTER_GRID_TH));
+  const v = mesh.verts;
+  for (let i = 0; i < v.length; i += 3) {
+    const m = vertexMetrics([v[i], v[i + 1], v[i + 2]], axis, frame);
+    if (m.along < wLo || m.along > wHi || m.u < 0.5) continue;
+    const row = Math.round(m.along / OUTER_GRID_DW) - row0;
+    if (row < 0 || row >= rows) continue;
+    const col = thetaCol(m.theta, OUTER_GRID_TH);
+    if (m.u > grid[row][col]) grid[row][col] = m.u;
+  }
+  for (let r = 0; r < rows; r += 1) {
+    const filled = [];
+    for (let c = 0; c < OUTER_GRID_TH; c += 1) if (grid[r][c] > 0) filled.push(c);
+    if (!filled.length) continue;
+    for (let c = 0; c < OUTER_GRID_TH; c += 1) {
+      if (grid[r][c] > 0) continue;
+      let best = 0;
+      let bestD = 99;
+      for (const fc of filled) {
+        let d = Math.abs(c - fc);
+        if (d > OUTER_GRID_TH / 2) d = OUTER_GRID_TH - d;
+        if (d < bestD && d <= 4) {
+          bestD = d;
+          best = grid[r][fc];
+        }
+      }
+      if (best > 0) grid[r][c] = best;
+    }
+  }
+  return { grid, row0 };
+}
+
+function outerRadiusAt(field, theta, w) {
+  const row = Math.round(w / OUTER_GRID_DW) - field.row0;
+  const g = field.grid;
+  if (row < 0 || row >= g.length) return 0;
+  const col = thetaCol(theta, OUTER_GRID_TH);
+  if (g[row][col] > 0) return g[row][col];
+  let best = 0;
+  for (let dc = -2; dc <= 2; dc += 1) {
+    const cc = (col + dc + OUTER_GRID_TH) % OUTER_GRID_TH;
+    if (g[row][cc] > best) best = g[row][cc];
+  }
+  return best;
+}
+
+function onOuterShell(field, metrics) {
+  const outer = outerRadiusAt(field, metrics.theta, metrics.along);
+  return (
+    outer > 0.8 &&
+    metrics.u >= outer - OUTER_SHELL_INSET_MM &&
+    metrics.u <= outer + 0.25
+  );
+}
+
+function incidentFaceLists(mesh) {
+  const lists = Array.from({ length: mesh.vertexCount }, () => []);
+  const f = mesh.faces;
+  for (let i = 0; i < mesh.faceCount; i += 1) {
+    lists[f[i * 3]].push(i);
+    lists[f[i * 3 + 1]].push(i);
+    lists[f[i * 3 + 2]].push(i);
+  }
+  return lists;
+}
+
+function facePose(verts, faces, fi, axis) {
+  const ia = faces[fi * 3] * 3;
+  const ib = faces[fi * 3 + 1] * 3;
+  const ic = faces[fi * 3 + 2] * 3;
+  const ax = verts[ia];
+  const ay = verts[ia + 1];
+  const az = verts[ia + 2];
+  const bx = verts[ib];
+  const by = verts[ib + 1];
+  const bz = verts[ib + 2];
+  const cx = verts[ic];
+  const cy = verts[ic + 1];
+  const cz = verts[ic + 2];
+  const ux = bx - ax;
+  const uy = by - ay;
+  const uz = bz - az;
+  const vx = cx - ax;
+  const vy = cy - ay;
+  const vz = cz - az;
+  let nx = uy * vz - uz * vy;
+  let ny = uz * vx - ux * vz;
+  let nz = ux * vy - uy * vx;
+  const len = Math.hypot(nx, ny, nz);
+  const area = len * 0.5;
+  if (len > 1e-12) {
+    nx /= len;
+    ny /= len;
+    nz /= len;
+  }
+  const px = (ax + bx + cx) / 3;
+  const py = (ay + by + cy) / 3;
+  const pz = (az + bz + cz) / 3;
+  const along = px * axis[0] + py * axis[1] + pz * axis[2];
+  const rx = px - axis[0] * along;
+  const ry = py - axis[1] * along;
+  const rz = pz - axis[2] * along;
+  const ru = Math.hypot(rx, ry, rz);
+  const radial = ru > 1e-6 ? (nx * rx + ny * ry + nz * rz) / ru : 0;
+  return { nx, ny, nz, area, radial };
+}
+
+/** 정점을 옮겨도 면이 뒤집히거나 면적이 사라지지 않으면 true. 위치는 되돌린다. */
+function movePreservesFaces(verts, faces, incident, vi, pos, axis) {
+  const base = vi * 3;
+  const ox = verts[base];
+  const oy = verts[base + 1];
+  const oz = verts[base + 2];
+  const before = incident.map((fi) => facePose(verts, faces, fi, axis));
+  verts[base] = pos[0];
+  verts[base + 1] = pos[1];
+  verts[base + 2] = pos[2];
+  let ok = true;
+  for (let k = 0; k < incident.length; k += 1) {
+    const now = facePose(verts, faces, incident[k], axis);
+    const prev = before[k];
+    const dot = now.nx * prev.nx + now.ny * prev.ny + now.nz * prev.nz;
+    if (prev.area > 1e-8 && now.area < Math.min(prev.area * 0.08, 1e-6)) {
+      ok = false;
+      break;
+    }
+    if (dot < 0) {
+      ok = false;
+      break;
+    }
+    if (prev.radial > 0.2 && now.radial < -0.2) {
+      ok = false;
+      break;
+    }
+  }
+  verts[base] = ox;
+  verts[base + 1] = oy;
+  verts[base + 2] = oz;
+  return ok;
+}
+
+/** 필렛이 이보다 더 밖에 있으면 리드가 공중에 뜬 것이라 실루엣을 키우지 않는다. */
+const FILLET_OUTWARD_MAX_MM = 0.22;
+
 /**
- * 코너 정점을 매끈한 커프 필렛으로 옮긴다.
- * 밖으로 튀어나온 날개도 같은 단면으로 당기고, 긴 면은 나눠 붙인다.
+ * 반경을 targetU로 옮긴다. 한 번에 뒤집히면 이동량을 줄여 안전한 만큼만 옮긴다.
+ * @returns {boolean}
+ */
+function commitRadialMove(mesh, incident, vi, targetU, axis, frame) {
+  const v = mesh.verts;
+  const p = [v[vi * 3], v[vi * 3 + 1], v[vi * 3 + 2]];
+  const m = vertexMetrics(p, axis, frame);
+  if (!(m.u > 0.2) || !(targetU > 0)) return false;
+  const lo = Math.max(0.2, m.u - CUFF_WING_PULL_MM);
+  const hi = m.u + FILLET_OUTWARD_MAX_MM;
+  const clamped = Math.min(hi, Math.max(lo, targetU));
+  if (Math.abs(clamped - m.u) <= RELIEF_MIN_PULL_MM) return false;
+  const place = (u) => {
+    const s = u / m.u;
+    return [
+      m.radial[0] * s + axis[0] * m.along,
+      m.radial[1] * s + axis[1] * m.along,
+      m.radial[2] * s + axis[2] * m.along,
+    ];
+  };
+  let t = 1;
+  for (let step = 0; step < 6; step += 1) {
+    const u = m.u + (clamped - m.u) * t;
+    const pos = place(u);
+    if (movePreservesFaces(v, mesh.faces, incident, vi, pos, axis)) {
+      v[vi * 3] = pos[0];
+      v[vi * 3 + 1] = pos[1];
+      v[vi * 3 + 2] = pos[2];
+      return true;
+    }
+    t *= 0.5;
+  }
+  return false;
+}
+
+/**
+ * 바깥 껍질의 코너만 필렛으로 옮긴다.
+ * 공중에 뜬 리드는 키우지 않고, 나사홀은 실루엣 안쪽이라 그대로 둔다.
+ * 면이 뒤집히면 그 정점은 안전한 거리만 옮긴다.
  * @returns {boolean} 정점을 하나라도 옮겼으면 true
  */
 function projectVerticesOntoRelief(mesh, tightRows, axis, sampleTotal) {
@@ -1181,31 +1376,38 @@ function projectVerticesOntoRelief(mesh, tightRows, axis, sampleTotal) {
     fairCuff: true,
   });
   if (!pairs.length || !Number.isFinite(wMin)) return false;
-  subdivideCuffBand(mesh, (p) => {
+  const wLo = wMin - 0.05;
+  const wHi = wMax + 0.08;
+  const shellAt = (field, p) => {
     const m = vertexMetrics(p, axis, frame);
-    if (m.along < wMin - 0.05 || m.along > wMax + 0.05) return false;
-    const uFillet = filletUAt(pairs, m.theta, m.along);
-    if (!(uFillet > 0)) return false;
-    return m.u >= uFillet - CUFF_BORE_GAP_MM && m.u <= uFillet + CUFF_WING_PULL_MM;
-  });
-  const v = mesh.verts;
+    if (m.along < wLo || m.along > wHi) return false;
+    return onOuterShell(field, m);
+  };
+  let field = buildOuterRadiusGrid(mesh, axis, frame, wLo - 0.25, wHi + 0.25);
+  subdivideCuffBand(mesh, (p) => shellAt(field, p));
+
   let moved = 0;
-  for (let i = 0; i < v.length; i += 3) {
-    const p = [v[i], v[i + 1], v[i + 2]];
-    const { along, radial, u, theta } = vertexMetrics(p, axis, frame);
-    if (along < wMin - 0.05 || along > wMax + 0.05) continue;
-    if (u < 0.2) continue;
-    const uFillet = filletUAt(pairs, theta, along);
-    if (!(uFillet > 0)) continue;
-    const excess = u - uFillet;
-    // 필렛 안쪽은 코너만(보어는 한도 밖), 바깥 날개는 더 멀리까지 단면에 붙인다.
-    if (excess < -RELIEF_MAX_PULL_MM || excess > CUFF_WING_PULL_MM) continue;
-    if (Math.abs(excess) <= RELIEF_MIN_PULL_MM) continue;
-    const s = uFillet / u;
-    v[i] = radial[0] * s + axis[0] * along;
-    v[i + 1] = radial[1] * s + axis[1] * along;
-    v[i + 2] = radial[2] * s + axis[2] * along;
-    moved += 1;
+  for (let pass = 0; pass < 3; pass += 1) {
+    field = buildOuterRadiusGrid(mesh, axis, frame, wLo - 0.25, wHi + 0.25);
+    const incident = incidentFaceLists(mesh);
+    const v = mesh.verts;
+    let passMoved = 0;
+    for (let i = 0; i < v.length; i += 3) {
+      const vi = i / 3;
+      const p = [v[i], v[i + 1], v[i + 2]];
+      const metrics = vertexMetrics(p, axis, frame);
+      if (metrics.along < wLo || metrics.along > wHi) continue;
+      if (!onOuterShell(field, metrics)) continue;
+      const uFillet = filletUAt(pairs, metrics.theta, metrics.along);
+      if (!(uFillet > 0)) continue;
+      // 공중에 뜬 리드는 실루엣을 부풀리지 않는다. 코너의 얕은 바깥 이동만 허용한다.
+      if (uFillet > metrics.u + FILLET_OUTWARD_MAX_MM) continue;
+      if (uFillet < metrics.u - CUFF_WING_PULL_MM) continue;
+      if (Math.abs(metrics.u - uFillet) <= RELIEF_MIN_PULL_MM) continue;
+      if (commitRadialMove(mesh, incident[vi], vi, uFillet, axis, frame)) passMoved += 1;
+    }
+    moved += passMoved;
+    if (!passMoved) break;
   }
   const wings = pullSilhouetteWings(mesh, axis, frame, wMin);
   if (moved > 0 || wings) mesh.invalidate();
@@ -1219,18 +1421,18 @@ function projectVerticesOntoRelief(mesh, tightRows, axis, sampleTotal) {
 function pullSilhouetteWings(mesh, axis, frame, wMin) {
   const lo = wMin - CUFF_SHOULDER_BELOW_MM;
   const hi = wMin + 0.08;
+  const field = buildOuterRadiusGrid(mesh, axis, frame, lo - 0.15, hi + 0.15);
   subdivideCuffBand(mesh, (p) => {
     const m = vertexMetrics(p, axis, frame);
-    return m.along >= lo && m.along <= hi && m.u > 1.8;
+    if (m.along < lo || m.along > hi) return false;
+    return onOuterShell(field, m);
   });
   const bins = new Array(SILHOUETTE_BINS).fill(0);
   const v = mesh.verts;
   for (let i = 0; i < v.length; i += 3) {
     const m = vertexMetrics([v[i], v[i + 1], v[i + 2]], axis, frame);
-    if (m.along < lo || m.along > hi || m.u < 1.8) continue;
-    let idx = Math.floor(((m.theta + Math.PI) / (Math.PI * 2)) * SILHOUETTE_BINS);
-    if (idx < 0) idx = 0;
-    if (idx >= SILHOUETTE_BINS) idx = SILHOUETTE_BINS - 1;
+    if (m.along < lo || m.along > hi || !onOuterShell(field, m)) continue;
+    const idx = thetaCol(m.theta, SILHOUETTE_BINS);
     if (m.u > bins[idx]) bins[idx] = m.u;
   }
   const half = Math.max(3, Math.round(SILHOUETTE_BINS / 14));
@@ -1245,23 +1447,17 @@ function pullSilhouetteWings(mesh, axis, frame, wMin) {
     }
     return n ? m : 0;
   });
+  const incident = incidentFaceLists(mesh);
   let moved = 0;
   for (let i = 0; i < v.length; i += 3) {
-    const p = [v[i], v[i + 1], v[i + 2]];
-    const { along, radial, u, theta } = vertexMetrics(p, axis, frame);
-    if (along < lo || along > hi || u < 1.8) continue;
-    let idx = Math.floor(((theta + Math.PI) / (Math.PI * 2)) * SILHOUETTE_BINS);
-    if (idx < 0) idx = 0;
-    if (idx >= SILHOUETTE_BINS) idx = SILHOUETTE_BINS - 1;
-    const goal = target[idx];
+    const vi = i / 3;
+    const metrics = vertexMetrics([v[i], v[i + 1], v[i + 2]], axis, frame);
+    if (metrics.along < lo || metrics.along > hi || !onOuterShell(field, metrics)) continue;
+    const goal = target[thetaCol(metrics.theta, SILHOUETTE_BINS)];
     if (!(goal > 0)) continue;
-    const excess = u - goal;
-    if (excess <= 0.04 || excess > CUFF_WING_PULL_MM) continue;
-    const s = goal / u;
-    v[i] = radial[0] * s + axis[0] * along;
-    v[i + 1] = radial[1] * s + axis[1] * along;
-    v[i + 2] = radial[2] * s + axis[2] * along;
-    moved += 1;
+    const excess = metrics.u - goal;
+    if (excess <= 0.12 || excess > CUFF_WING_PULL_MM) continue;
+    if (commitRadialMove(mesh, incident[vi], vi, goal, axis, frame)) moved += 1;
   }
   return moved > 0;
 }
@@ -1270,7 +1466,7 @@ function pullSilhouetteWings(mesh, axis, frame, wMin) {
  * 재측정할 때 가상 코너가 필렛 쪽으로 따라오므로,
  * 공구 R보다 이만큼 큰 호를 만들어야 측정 R이 공구를 넘긴다.
  */
-const CORRECTION_FILLET_CLEARANCE_MM = 0.3;
+const CORRECTION_FILLET_CLEARANCE_MM = 0.45;
 
 /**
  * 타이트 코너를 공구보다 넉넉한 필렛으로 밀어 낸 메시(정렬 좌표계).

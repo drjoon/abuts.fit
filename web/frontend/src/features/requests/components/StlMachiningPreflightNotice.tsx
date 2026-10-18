@@ -19,9 +19,6 @@ export type StlMachiningPreflight = {
   overlay?: StlMetadata["tightCorner"];
 };
 
-const fmtMm = (v?: number | null) =>
-  typeof v === "number" && Number.isFinite(v) ? v.toFixed(2) : null;
-
 /** 접수 전 가공 검사 결과 안내. tight여도 접수를 막지 않는다. */
 export function StlMachiningPreflightNotice({
   preflight,
@@ -57,45 +54,39 @@ export function StlMachiningPreflightNotice({
   }
 
   if (preflight.status === "tight") {
-    const avg = fmtMm(preflight.averageFilletRadiusMm);
-    const suggested = fmtMm(preflight.suggestedFilletRadiusMm) ?? "0.65";
     return (
       <div
         className={cn(
-          "flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-rose-950",
+          "flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-rose-950",
           className,
         )}
         role="alert"
       >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-rose-600 shadow-sm">
-          <AlertTriangle className="h-4 w-4" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold leading-5">코너가 좁아요</p>
-          <p className="mt-1 text-xs leading-5 text-rose-900/80">
-            {avg ? (
-              <>
-                R {avg}mm입니다.
-                <br />
-              </>
-            ) : null}
-            {suggested}mm 이상이어야 가공됩니다.
-          </p>
-          {onCorrectedDownloadClick ? (
-            <Button
-              type="button"
-              size="sm"
-              className="mt-2.5 h-8 rounded-full bg-rose-600 px-3.5 text-white hover:bg-rose-700"
-              disabled={correctedDownloadBusy}
-              onClick={onCorrectedDownloadClick}
-            >
-              {correctedDownloadBusy ? (
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              ) : null}
-              보정 디자인 확인
-            </Button>
-          ) : null}
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-rose-600 shadow-sm">
+            <AlertTriangle className="h-4 w-4" />
+          </span>
+          <p className="whitespace-nowrap text-sm font-semibold leading-5">코너가 좁아요</p>
         </div>
+        <p className="min-w-0 flex-1 text-xs leading-5 text-rose-900/80">
+          다운로드하여 보철을 다시 디자인해야 합니다.
+          <br />
+          변경된 형태로 가공됩니다.
+        </p>
+        {onCorrectedDownloadClick ? (
+          <Button
+            type="button"
+            size="sm"
+            className="h-8 shrink-0 rounded-full bg-rose-600 px-3.5 text-white hover:bg-rose-700"
+            disabled={correctedDownloadBusy}
+            onClick={onCorrectedDownloadClick}
+          >
+            {correctedDownloadBusy ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : null}
+            보정 디자인 확인
+          </Button>
+        ) : null}
       </div>
     );
   }

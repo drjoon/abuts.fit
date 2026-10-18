@@ -338,7 +338,7 @@ export function AbutmentModelConfirmDialog({
       triggerBrowserFileDownload(result.blob, result.fileName);
       toast({
         title: "보정 디자인으로 바꿨습니다.",
-        description: "내려받은 파일로 크라운을 다시 만듭니다.",
+        description: "다운로드한 파일로 보철을 다시 디자인해야 합니다.",
         duration: 3500,
       });
     } finally {
@@ -712,9 +712,9 @@ export function AbutmentModelConfirmDialog({
             <AlertDialogTitle>보정 디자인으로 진행할까요?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <p className="text-sm leading-6 text-muted-foreground">
-                어벗츠는 이 디자인으로 가공합니다.
+                다운로드하여 보철을 다시 디자인해야 합니다.
                 <br />
-                기공소는 파일을 받아 크라운을 다시 만듭니다.
+                변경된 형태로 가공됩니다.
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
