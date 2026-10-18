@@ -1341,10 +1341,49 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     }
   }
 
-  console.log(
-    `[BG-Callback] Updating request ${request.requestId} with updateData:`,
-    JSON.stringify(updateData, null, 2),
-  );
+  const incomingStlMeta = req.body?.stlMetadata;
+  let unsetFrontFaceOffset = false;
+  if (incomingStlMeta && typeof incomingStlMeta === "object") {
+    const setNum = (key, value) => {
+      const n = Number(value);
+      if (Number.isFinite(n)) updateData[key] = n;
+    };
+    setNum("caseInfos.maxDiameter", incomingStlMeta.maxDiameter);
+    setNum("caseInfos.connectionDiameter", incomingStlMeta.connectionDiameter);
+    setNum("caseInfos.totalLength", incomingStlMeta.totalLength);
+    setNum("caseInfos.l1", incomingStlMeta.l1);
+    setNum("caseInfos.taperAngle", incomingStlMeta.taperAngle);
+    updateData["caseInfos.stlMetadataUpdatedAt"] = new Date();
+    updateData["caseInfos.coordinateError"] = incomingStlMeta.coordinateError || null;
+    if (incomingStlMeta.tiltAxisVector) {
+      updateData["caseInfos.tiltAxisVector"] = incomingStlMeta.tiltAxisVector;
+    }
+    if (incomingStlMeta.frontPoint) {
+      updateData["caseInfos.frontPoint"] = incomingStlMeta.frontPoint;
+    }
+    if (incomingStlMeta.taperGuide) {
+      updateData["caseInfos.taperGuide"] = incomingStlMeta.taperGuide;
+    }
+    if (incomingStlMeta.tightCorner && typeof incomingStlMeta.tightCorner === "object") {
+      updateData["caseInfos.tightCorner"] = incomingStlMeta.tightCorner;
+    }
+    const lotSite =
+      incomingStlMeta.lotEngravingSite &&
+      typeof incomingStlMeta.lotEngravingSite === "object" &&
+      Number(incomingStlMeta.lotEngravingSite.radius) > 0.4
+        ? incomingStlMeta.lotEngravingSite
+        : pickLotEngravingSiteFromTaperGuide(incomingStlMeta.taperGuide);
+    if (lotSite) updateData["caseInfos.lotEngravingSite"] = lotSite;
+    unsetFrontFaceOffset = true;
+  }
+
+  const finishLinePoints = updateData["caseInfos.finishLine"]?.points;
+  console.log(`[BG-Callback] Updating request ${request.requestId}`, {
+    sourceStep,
+    fields: Object.keys(updateData).length,
+    finishLinePoints: Array.isArray(finishLinePoints) ? finishLinePoints.length : 0,
+    hasCuff: Boolean(updateData["caseInfos.cuffBlend"]),
+  });
 
   try {
     const step = String(sourceStep || "").trim();
@@ -1380,6 +1419,12 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   }
 
   const mongoUpdate = { $set: updateData };
+  if (unsetFrontFaceOffset) {
+    mongoUpdate.$unset = {
+      ...(mongoUpdate.$unset || {}),
+      "caseInfos.frontFaceEndOffsetMm": "",
+    };
+  }
   if (unsetEspFile) {
     mongoUpdate.$unset = {
       ...(mongoUpdate.$unset || {}),
@@ -1388,7 +1433,10 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   }
   if (isCallbackSuccess && callbackStep === "2-filled") {
     // 새 filled는 이전 제안 곡선과 맞지 않는다. 응답 뒤 다시 분석한다.
-    mongoUpdate.$unset = { "caseInfos.cuffProposal": 1 };
+    mongoUpdate.$unset = {
+      ...(mongoUpdate.$unset || {}),
+      "caseInfos.cuffProposal": 1,
+    };
   }
   if (shouldClearNcOnFilled) {
     mongoUpdate.$unset = {

@@ -10,6 +10,7 @@
 // 응답 뒤에는 접수에 쓸 바이트로 filled 파이프라인을 미리 돌려 둔다.
 import crypto from "crypto";
 import { resolveAbutmentStlInputs } from "./abutmentStlInputs.js";
+import { applyAutoCuffBlendSafely, isCuffBlendAutoEnabled } from "./cuffBlend.service.js";
 import { runAbutmentStlPipelineInWorker } from "./runPipelineInWorker.js";
 import { identity } from "./meshCore.js";
 import { FINISH_BALL_RADIUS_MM } from "./tightCorner.js";
@@ -104,7 +105,29 @@ export function scheduleFilledStlPrep(buffer, inputs) {
     targetDiameter: inputs?.targetDiameter ?? null,
     implantProfile: inputs?.implantProfile || {},
   })
-    .then((js) => {
+    .then(async (js) => {
+      if (js?.outputBuffer?.length && isCuffBlendAutoEnabled()) {
+        try {
+          const blended = await applyAutoCuffBlendSafely({
+            s3Key: `prep/${hash}`,
+            sourceBuffer: js.outputBuffer,
+            caseInfos: {
+              ...(inputs?.implantProfile || {}),
+              finishLine: js.finishLine,
+            },
+            writeBack: false,
+          });
+          if (blended?.ok && blended.buffer?.length) js.outputBuffer = blended.buffer;
+          if (blended?.record) {
+            js.cuffBlendResult = {
+              record: blended.record,
+              fileSize: blended.fileSize || null,
+            };
+          }
+        } catch (error) {
+          console.warn("[filled-stl-prep] cuff failed", error?.message || error);
+        }
+      }
       slot.result = js;
       slot.promise = null;
       return js;

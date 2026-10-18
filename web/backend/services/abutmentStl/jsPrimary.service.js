@@ -148,10 +148,15 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
   const originalName = sanitizeStlName(fileName || ci.file?.filePath || ci.file?.originalName || "input.stl");
   const outName = filledNameOf(originalName);
   const s3Key = `requests/${requestId}/2-filled/${outName}`;
-  // 커프 보정은 업로드한 파일을 다시 받지 않고, 방금 만든 버퍼로 끝낸 뒤 한 번만 올린다.
+  // 검사 중 보정이 끝났으면 그 버퍼를 쓴다. 없을 때만 지금 보정한다.
   let output = js.outputBuffer;
-  let cuffBlendResult = null;
-  if (isCuffBlendAutoEnabled()) {
+  let cuffBlendResult = js.cuffBlendResult?.record
+    ? {
+        record: { ...js.cuffBlendResult.record, s3Key },
+        fileSize: js.cuffBlendResult.fileSize || null,
+      }
+    : null;
+  if (!cuffBlendResult && isCuffBlendAutoEnabled()) {
     const blended = await applyAutoCuffBlendSafely({
       s3Key,
       sourceBuffer: output,
@@ -169,25 +174,10 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
     cuffBlendResult?.record?.status === "applied" ? "application/sla" : "application/octet-stream",
   );
 
-  const { registerProcessedFile, registerStlMetadata } = await import("../../controllers/bg/bg.controller.js");
+  const { registerProcessedFile } = await import("../../controllers/bg/bg.controller.js");
 
-  // Rhino와 같은 순서: STL 메타데이터 → 파일 등록(2-filled)
+  // 메타데이터와 2-filled를 한 번에 저장한다. 문서를 두 번 읽고 쓰지 않는다.
   const meta = js.stlMetadata;
-  await invokeController(registerStlMetadata, {
-    requestId,
-    maxDiameter: meta.maxDiameter,
-    connectionDiameter: meta.connectionDiameter,
-    totalLength: meta.totalLength,
-    l1: meta.l1,
-    taperAngle: meta.taperAngle,
-    tiltAxisVector: meta.tiltAxisVector,
-    frontPoint: meta.frontPoint,
-    taperGuide: meta.taperGuide,
-    lotEngravingSite: meta.lotEngravingSite,
-    tightCorner: js.tightCorner || null,
-    hexRotation: js.hexRotation || undefined,
-    coordinateError: meta.coordinateValidation?.valid === false ? meta.coordinateValidation?.error || "coordinate error" : null,
-  });
   await invokeController(registerProcessedFile, {
     sourceStep: "2-filled",
     fileName: outName,
@@ -198,6 +188,22 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
     s3Url: uploaded.location,
     fileSize: output.length,
     ...(cuffBlendResult ? { cuffBlendResult } : {}),
+    stlMetadata: {
+      maxDiameter: meta.maxDiameter,
+      connectionDiameter: meta.connectionDiameter,
+      totalLength: meta.totalLength,
+      l1: meta.l1,
+      taperAngle: meta.taperAngle,
+      tiltAxisVector: meta.tiltAxisVector,
+      frontPoint: meta.frontPoint,
+      taperGuide: meta.taperGuide,
+      lotEngravingSite: meta.lotEngravingSite,
+      tightCorner: js.tightCorner || null,
+      coordinateError:
+        meta.coordinateValidation?.valid === false
+          ? meta.coordinateValidation?.error || "coordinate error"
+          : null,
+    },
     metadata: {
       diameter: js.diameter,
       finishLine: js.finishLine,
