@@ -47,17 +47,43 @@ const CORRECTED_REASON_MESSAGE = {
   pipeline_failed: "가공 검사 파이프라인이 실패했습니다.",
 };
 
-/** 긴 원본명 대신 ab-15.stl, 치아번호, 또는 corrected.stl */
+/** multipart 파일명은 latin1로 읽혀 한글이 깨질 수 있다. UTF-8이면 되돌린다. */
+function decodeUploadFileName(name) {
+  const raw = String(name || "");
+  if (!raw) return "";
+  const hasHangul = /[\uac00-\ud7a3]/.test(raw);
+  if (!hasHangul && /[\u0080-\u00ff]/.test(raw)) {
+    const recovered = Buffer.from(raw, "latin1").toString("utf8");
+    if (recovered && !recovered.includes("\uFFFD") && /[\uac00-\ud7a3]/.test(recovered)) {
+      return recovered.normalize("NFC");
+    }
+  }
+  return raw.normalize("NFC");
+}
+
+/**
+ * 의뢰 STL 이름을 유지한다. 경로·따옴표만 빼고, 한글은 NFC로 둔다.
+ * `.corrected` 접미사는 거듭 붙지 않게 뺀다.
+ */
 export function correctedDownloadName(originalName) {
-  const base = String(originalName || "")
-    .trim()
-    .replace(/\.stl$/i, "")
-    .replace(/\.corrected$/i, "");
-  const ab = /(?:^|[^a-z0-9])ab[-_ ]?(\d{1,2})$/i.exec(base);
-  if (ab) return `ab-${Number(ab[1])}.stl`;
-  const tooth = /(?:^|[^0-9])([1-4][1-8])$/.exec(base);
-  if (tooth) return `${tooth[1]}.stl`;
-  return "corrected.stl";
+  let base = decodeUploadFileName(originalName)
+    .replace(/\\/g, "/")
+    .split("/")
+    .pop()
+    .replace(/[\u0000-\u001f"]/g, "")
+    .trim();
+  base = base.replace(/\.corrected(?=\.stl$)/i, "").replace(/\.corrected$/i, "");
+  if (!base) return "corrected.stl";
+  if (base.length > 180) base = base.slice(-180);
+  if (!/\.stl$/i.test(base)) base = `${base}.stl`;
+  return base.normalize("NFC");
+}
+
+function attachmentDisposition(filename) {
+  const nfc = filename.normalize("NFC");
+  const ascii =
+    nfc.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_") || "corrected.stl";
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(nfc)}`;
 }
 
 export const checkStlMachiningPreflight = asyncHandler(async (req, res) => {
@@ -91,11 +117,8 @@ export const downloadStlMachiningCorrected = asyncHandler(async (req, res) => {
       CORRECTED_REASON_MESSAGE[reason] || CORRECTED_REASON_MESSAGE.correction_failed,
     );
   }
-  const filename = correctedDownloadName(file.originalname);
+  const filename = correctedDownloadName(req.body?.originalFileName || file.originalname);
   res.setHeader("Content-Type", "application/octet-stream");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
-  );
+  res.setHeader("Content-Disposition", attachmentDisposition(filename));
   return res.status(200).send(result.buffer);
 });

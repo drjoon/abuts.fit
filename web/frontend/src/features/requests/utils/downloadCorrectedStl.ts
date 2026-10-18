@@ -3,17 +3,22 @@
 // - web/frontend/src/shared/components/practice/AbutmentModelConfirmDialog.tsx
 import type { CaseInfos } from "@/pages/requestor/new_request/hooks/newRequestTypes";
 
-/** 서버 correctedDownloadName과 같다. 긴 원본명 대신 짧은 이름. */
+/** 서버 correctedDownloadName과 같다. 의뢰 파일명을 유지하고 한글은 NFC로 둔다. */
 export function correctedFileName(originalName: string) {
-  const base = String(originalName || "")
-    .trim()
-    .replace(/\.stl$/i, "")
-    .replace(/\.corrected$/i, "");
-  const ab = /(?:^|[^a-z0-9])ab[-_ ]?(\d{1,2})$/i.exec(base);
-  if (ab) return `ab-${Number(ab[1])}.stl`;
-  const tooth = /(?:^|[^0-9])([1-4][1-8])$/.exec(base);
-  if (tooth) return `${tooth[1]}.stl`;
-  return "corrected.stl";
+  let base = (
+    String(originalName || "")
+      .normalize("NFC")
+      .replace(/\\/g, "/")
+      .split("/")
+      .pop() || ""
+  )
+    .replace(/[\u0000-\u001f"]/g, "")
+    .trim();
+  base = base.replace(/\.corrected(?=\.stl$)/i, "").replace(/\.corrected$/i, "");
+  if (!base) return "corrected.stl";
+  if (base.length > 180) base = base.slice(-180);
+  if (!/\.stl$/i.test(base)) base = `${base}.stl`;
+  return base.normalize("NFC");
 }
 
 function parseAttachmentFileName(contentDisposition: string | null) {
@@ -42,6 +47,7 @@ export async function fetchCorrectedStlBlob({
   { ok: true; blob: Blob; fileName: string } | { ok: false; message: string }
 > {
   const form = new FormData();
+  form.append("originalFileName", file.name);
   form.append("file", file, file.name);
   if (caseInfos?.implantManufacturer) {
     form.append("implantManufacturer", caseInfos.implantManufacturer);

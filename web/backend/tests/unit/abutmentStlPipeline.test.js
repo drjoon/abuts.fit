@@ -218,8 +218,51 @@ describe("abutmentStl tightCorner", () => {
     const beforeNaked = mesh.nakedEdgeCount();
     const corrected = applyTightCornerCorrectionToMesh(mesh, flPts, {});
     expect(corrected).not.toBeNull();
-    expect(corrected.faceCount).toBe(mesh.faceCount);
+    expect(corrected.faceCount).toBeGreaterThanOrEqual(mesh.faceCount);
     expect(corrected.nakedEdgeCount()).toBe(beforeNaked);
+    expect(detectTightCorners(corrected, flPts, {}).tightCount).toBe(0);
+  });
+
+  it("마진 실루엣의 날개를 커프 단면에 붙여 둘레가 매끈해진다", () => {
+    const flPts = [];
+    for (let i = 0; i < 48; i += 1) {
+      const a = (i / 48) * Math.PI * 2;
+      flPts.push([3.6 * Math.cos(a), 3.6 * Math.sin(a), 2.0]);
+    }
+    const mesh = Mesh.fromStlBuffer(
+      writeBinaryStl({ positions: marginWallSoup(0.43), attributes: null }),
+    );
+    const v = mesh.verts;
+    for (let i = 0; i < v.length; i += 3) {
+      const z = v[i + 2];
+      if (z < 1.7 || z > 3.4) continue;
+      const u = Math.hypot(v[i], v[i + 1]);
+      if (u < 2.6) continue;
+      const sector = Math.floor((((Math.atan2(v[i + 1], v[i]) + Math.PI) / (Math.PI * 2)) * 8) % 8);
+      if (sector % 2 === 0) {
+        const s = (u + 0.85) / u;
+        v[i] *= s;
+        v[i + 1] *= s;
+      }
+    }
+    mesh.invalidate();
+    const beforeNaked = mesh.nakedEdgeCount();
+    const corrected = applyTightCornerCorrectionToMesh(mesh, flPts, {});
+    expect(corrected).not.toBeNull();
+    expect(corrected.nakedEdgeCount()).toBe(beforeNaked);
+    expect(corrected.faceCount).toBeGreaterThan(mesh.faceCount);
+    let rMin = Infinity;
+    let rMax = -Infinity;
+    const cv = corrected.verts;
+    for (let i = 0; i < cv.length; i += 3) {
+      const z = cv[i + 2];
+      if (z < 1.85 || z > 2.15) continue;
+      const u = Math.hypot(cv[i], cv[i + 1]);
+      if (u < 2.5) continue;
+      rMin = Math.min(rMin, u);
+      rMax = Math.max(rMax, u);
+    }
+    expect(rMax - rMin).toBeLessThan(0.2);
     expect(detectTightCorners(corrected, flPts, {}).tightCount).toBe(0);
   });
 
