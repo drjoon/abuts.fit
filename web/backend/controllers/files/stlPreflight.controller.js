@@ -11,6 +11,7 @@ import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 import {
   buildCorrectedDesignStlBuffer,
+  readCorrectedDesignStl,
   runStlMachiningPreflight,
 } from "../../services/abutmentStl/preflight.service.js";
 
@@ -94,6 +95,8 @@ export const checkStlMachiningPreflight = asyncHandler(async (req, res) => {
   const summary = await runStlMachiningPreflight({
     buffer: file.buffer,
     caseInfos: caseInfosFromMultipartBody(req.body),
+    userId: req.user?._id,
+    originalFileName: req.body?.originalFileName || file.originalname,
   });
   return res
     .status(200)
@@ -109,6 +112,8 @@ export const downloadStlMachiningCorrected = asyncHandler(async (req, res) => {
   const result = await buildCorrectedDesignStlBuffer({
     buffer: file.buffer,
     caseInfos: caseInfosFromMultipartBody(req.body),
+    userId: req.user?._id,
+    originalFileName: req.body?.originalFileName || file.originalname,
   });
   if (!result.ok) {
     const reason = String(result.reason || "correction_failed");
@@ -121,4 +126,20 @@ export const downloadStlMachiningCorrected = asyncHandler(async (req, res) => {
   res.setHeader("Content-Type", "application/octet-stream");
   res.setHeader("Content-Disposition", attachmentDisposition(filename));
   return res.status(200).send(result.buffer);
+});
+
+/** GET /api/files/temp/stl-corrected-cache/:id — 검사 때 만들어 둔 보정 STL. */
+export const downloadCachedCorrectedStl = asyncHandler(async (req, res) => {
+  const id = String(req.params?.id || "");
+  if (!/^[a-f0-9]{32}$/.test(id)) {
+    throw new ApiError(404, "보정 STL이 없거나 만료되었습니다.");
+  }
+  const row = readCorrectedDesignStl(id, req.user?._id);
+  if (!row?.buffer?.length) {
+    throw new ApiError(404, "보정 STL이 없거나 만료되었습니다.");
+  }
+  const filename = correctedDownloadName(row.fileName);
+  res.setHeader("Content-Type", "application/octet-stream");
+  res.setHeader("Content-Disposition", attachmentDisposition(filename));
+  return res.status(200).send(row.buffer);
 });

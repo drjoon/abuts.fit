@@ -1266,20 +1266,19 @@ export async function createRequestsFromDraft(req, res) {
 
     // 부족분은 생성 전에 막아 402. 실제 보류는 insert 직후·응답 전(동시 제출 경합도 402로 응답).
     let creditBalanceForHold = null;
-    const practiceObPostpaid =
-      businessAnchorId &&
-      (await isPracticeOnlyObPostpaidActive(businessAnchorId));
-    const labCaHoldPolicy =
-      businessAnchorId &&
-      (await resolveLabCustomAbutmentCreditHoldPolicy(businessAnchorId));
+    // 후불 여부·보류 정책·잔액은 서로 독립이다. 직렬이면 왕복이 세 번 쌓인다.
+    const [practiceObPostpaid, labCaHoldPolicy, prefetchedBalance] =
+      await Promise.all([
+        isPracticeOnlyObPostpaidActive(businessAnchorId),
+        resolveLabCustomAbutmentCreditHoldPolicy(businessAnchorId),
+        getBusinessCreditBalanceBreakdown({ businessAnchorId }),
+      ]);
     if (
       !isPracticeRoutingSubmission &&
       preparedCasesForCreate.length > 0 &&
       !practiceObPostpaid
     ) {
-      creditBalanceForHold = await getBusinessCreditBalanceBreakdown({
-        businessAnchorId,
-      });
+      creditBalanceForHold = prefetchedBalance;
       const {
         balance,
         spendableBalance,

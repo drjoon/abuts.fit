@@ -90,6 +90,45 @@ export async function fetchCorrectedStlBlob({
   return { ok: true, blob, fileName };
 }
 
+/** 검사 때 캐시한 보정 STL. 원본 파일을 다시 올리지 않는다. */
+export async function fetchCachedCorrectedStlBlob({
+  correctedId,
+  fallbackName,
+  token,
+}: {
+  correctedId: string;
+  fallbackName: string;
+  token?: string | null;
+}): Promise<
+  { ok: true; blob: Blob; fileName: string } | { ok: false; message: string }
+> {
+  const id = String(correctedId || "").trim();
+  if (!/^[a-f0-9]{32}$/.test(id)) {
+    return { ok: false, message: "보정 STL이 없거나 만료되었습니다." };
+  }
+  let effectiveToken = token;
+  if (!effectiveToken) {
+    try {
+      effectiveToken = localStorage.getItem("abuts_auth_token") || undefined;
+    } catch {
+      // ignore
+    }
+  }
+  const res = await fetch(`/api/files/temp/stl-corrected-cache/${id}`, {
+    method: "GET",
+    headers: effectiveToken ? { Authorization: `Bearer ${effectiveToken}` } : {},
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    return { ok: false, message: "보정 STL이 없거나 만료되었습니다." };
+  }
+  const blob = await res.blob();
+  const fileName =
+    parseAttachmentFileName(res.headers.get("Content-Disposition")) ||
+    correctedFileName(fallbackName);
+  return { ok: true, blob, fileName };
+}
+
 export function triggerBrowserFileDownload(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");

@@ -16,6 +16,8 @@ export type StlMachiningPreflight = {
   reason?: string;
   /** 원본 STL 좌표의 불완전 가공 면. 프리뷰에 빨갛게 얹는다. */
   overlay?: StlMetadata["tightCorner"];
+  /** 검사 때 만들어 둔 보정 STL. 확인 클릭은 이 id로 받는다. */
+  correctedId?: string;
 };
 
 /** 접수 전 가공 검사 결과 안내. tight여도 접수를 막지 않는다. */

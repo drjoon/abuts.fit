@@ -74,6 +74,7 @@ import {
 } from "./utils/patientGroups";
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
 import { useStlMachiningPreflight } from "./hooks/useStlMachiningPreflight";
+import { fetchCachedCorrectedStlBlob } from "@/features/requests/utils/downloadCorrectedStl";
 
 
 // related files:
@@ -172,6 +173,7 @@ const NewRequestPageContent = () => {
     handleUploadUnchecked,
     handleRemoveFile: rawHandleRemoveFile,
     replaceDesignFile,
+    ensureFilesUploaded,
     uploadProgress,
     familyOptions,
     typeOptions,
@@ -253,6 +255,50 @@ const NewRequestPageContent = () => {
     files,
     countableFileKeys,
   });
+
+  const preparedCorrectedRef = useRef(
+    new Map<string, Promise<File | null>>(),
+  );
+
+  const prepareCorrectedDesign = useCallback(
+    (correctedId: string, sourceName: string) => {
+      const id = String(correctedId || "").trim();
+      if (!id || preparedCorrectedRef.current.has(id)) return;
+      const job = (async (): Promise<File | null> => {
+        const result = await fetchCachedCorrectedStlBlob({
+          correctedId: id,
+          fallbackName: sourceName,
+          token,
+        });
+        if (!result.ok) return null;
+        const file = new File([result.blob], result.fileName, {
+          type: "model/stl",
+          lastModified: Date.now(),
+        });
+        try {
+          await ensureFilesUploaded([file]);
+        } catch (error) {
+          console.warn("[prepareCorrectedDesign] upload failed", error);
+        }
+        return file;
+      })()
+        .then((file) => {
+          if (!file) preparedCorrectedRef.current.delete(id);
+          return file;
+        })
+        .catch((error) => {
+          console.warn("[prepareCorrectedDesign] failed", error);
+          preparedCorrectedRef.current.delete(id);
+          return null;
+        });
+      preparedCorrectedRef.current.set(id, job);
+    },
+    [ensureFilesUploaded, token],
+  );
+
+  const takePreparedCorrectedDesign = useCallback((correctedId: string) => {
+    return preparedCorrectedRef.current.get(String(correctedId || "").trim()) ?? null;
+  }, []);
 
   const applyCorrectedDesign = useCallback(
     async (index: number, file: File) => {
@@ -1892,6 +1938,8 @@ const NewRequestPageContent = () => {
               onRemoveFileFromPatientGroup={handleRemoveFileFromPatientGroup}
               machiningPreflightByFileKey={machiningPreflightByFileKey}
             onApplyCorrectedDesign={applyCorrectedDesign}
+            onPrepareCorrectedDesign={prepareCorrectedDesign}
+            onTakePreparedCorrectedDesign={takePreparedCorrectedDesign}
               onDuplicateDetected={({ file, duplicate }) => {
                 const fileWithDraftCaseId = file as File & {
                   _draftCaseInfoId?: string;

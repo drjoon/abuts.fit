@@ -1004,13 +1004,34 @@ export const useNewRequestPage = (
       if (!current) return Promise.resolve();
       const oldKey = getFileKey(current);
       const newKey = getFileKey(nextFile);
-      if (
+      const sameFile =
         oldKey === newKey &&
         current.size === nextFile.size &&
-        current.lastModified === nextFile.lastModified
-      ) {
-        return Promise.resolve();
+        current.lastModified === nextFile.lastModified;
+
+      const uploadNext = () =>
+        ensureFilesUploaded([nextFile]).then((rows) => {
+          const row = rows[0];
+          if (!row?._id || !row.key) {
+            throw new Error("보정 STL 업로드 결과가 없습니다.");
+          }
+          return row;
+        });
+
+      const writeUploadMeta = (row: { _id?: string; key?: string; mimetype?: string }) => {
+        patchFileUploadMeta(getFileKey(nextFile), {
+          fileId: row._id,
+          s3Key: row.key,
+          mimetype: row.mimetype,
+        });
+      };
+
+      if (sameFile) {
+        return uploadNext().then((row) => {
+          writeUploadMeta(row);
+        });
       }
+
       setFiles((prev) => prev.map((file, i) => (i === index ? nextFile : file)));
       if (oldKey !== newKey) {
         rekeyCaseInfos(oldKey, newKey);
@@ -1018,7 +1039,6 @@ export const useNewRequestPage = (
       }
       replaceDraftFile(oldKey, nextFile);
       forgetFile(current);
-      forgetFile(nextFile);
 
       const persistLocal = async () => {
         await saveFile(newKey, nextFile);
@@ -1029,20 +1049,11 @@ export const useNewRequestPage = (
         }
       };
 
-      return persistLocal()
-        .then(() => ensureFilesUploaded([nextFile]))
-        .then((rows) => {
-          const row = rows[0];
-          if (!row?._id || !row.key) return;
-          patchFileUploadMeta(getFileKey(nextFile), {
-            fileId: row._id,
-            s3Key: row.key,
-            mimetype: row.mimetype,
-          });
-        })
-        .catch((error) => {
-          console.warn("[replaceDesignFile] corrected STL swap/upload failed", error);
-        });
+      return Promise.all([uploadNext(), persistLocal()]).then(async ([row]) => {
+        writeUploadMeta(row);
+        // 확인 직후 검증이 교체된 파일을 보게, 렌더가 끝난 뒤에 반환한다.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
     },
     [ensureFilesUploaded, files, forgetFile, patientFileGroupsApi, rekeyCaseInfos],
   );
@@ -1477,6 +1488,7 @@ export const useNewRequestPage = (
     handleUploadUnchecked: isReady ? handleUploadUnchecked : () => {},
     handleRemoveFile: isReady ? handleRemoveFile : () => {},
     replaceDesignFile,
+    ensureFilesUploaded,
     uploadProgress,
     isSubmitting,
 

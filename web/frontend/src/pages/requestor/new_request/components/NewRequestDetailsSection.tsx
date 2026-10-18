@@ -123,6 +123,11 @@ type Props = {
   machiningPreflightByFileKey?: Record<string, StlMachiningPreflight>;
   /** 보정 디자인 확인 시 해당 STL로 접수 파일을 교체 */
   onApplyCorrectedDesign?: (index: number, file: File) => void | Promise<void>;
+  /** 3D 확인 모달이 열린 동안 보정 STL을 받아 S3에 올려 둔다. */
+  onPrepareCorrectedDesign?: (correctedId: string, sourceName: string) => void;
+  onTakePreparedCorrectedDesign?: (
+    correctedId: string,
+  ) => Promise<File | null> | null;
 };
 
 export function NewRequestDetailsSection({
@@ -195,6 +200,8 @@ export function NewRequestDetailsSection({
   suppressDetailAutoOpen = false,
   machiningPreflightByFileKey = {},
   onApplyCorrectedDesign,
+  onPrepareCorrectedDesign,
+  onTakePreparedCorrectedDesign,
 }: Props) {
   const { token } = useAuthStore();
   const listContainerRef = useRef<HTMLDivElement | null>(null);
@@ -813,6 +820,8 @@ export function NewRequestDetailsSection({
           detailFileKey ? machiningPreflightByFileKey[detailFileKey] : undefined
         }
         onApplyCorrectedDesign={onApplyCorrectedDesign}
+        onPrepareCorrectedDesign={onPrepareCorrectedDesign}
+        onTakePreparedCorrectedDesign={onTakePreparedCorrectedDesign}
       />
 
 

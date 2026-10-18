@@ -53,6 +53,25 @@ function finishLineFromStoredPoints(rawPoints, log) {
   };
 }
 
+/** preflight.service invertRigidMatrix와 같다. 보정 STL을 원본 좌표로 되돌릴 때 쓴다. */
+function invertRigidMatrix(m) {
+  const src = Array.isArray(m) && m.length === 16 ? m : identity();
+  const tx = src[3];
+  const ty = src[7];
+  const tz = src[11];
+  const inv = [
+    src[0], src[4], src[8], 0,
+    src[1], src[5], src[9], 0,
+    src[2], src[6], src[10], 0,
+    0, 0, 0, 1,
+  ];
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+  inv[3] = r3(-(inv[0] * tx + inv[1] * ty + inv[2] * tz));
+  inv[7] = r3(-(inv[4] * tx + inv[5] * ty + inv[6] * tz));
+  inv[11] = r3(-(inv[8] * tx + inv[9] * ty + inv[10] * tz));
+  return inv;
+}
+
 function appendTriangles(soup, tris) {
   const out = new Float64Array(soup.length + tris.length * 9);
   out.set(soup, 0);
@@ -96,14 +115,16 @@ function analyzeDiameters(mesh) {
 }
 
 /**
- * 접수 전 검사. filled STL·전체 메타·보정 솔리드는 만들지 않고
- * 마진 코너와, 타이트하면 원본 메시에 얹을 필렛 면만 돌려준다.
+ * 접수 전 검사. filled STL·전체 메타는 만들지 않는다.
+ * 타이트하면 필렛 면과, 원본 좌표의 보정 STL(outputBuffer)을 같이 돌려준다.
+ * 확인 클릭이 파이프라인을 다시 돌리지 않게 부모가 이 버퍼를 캐시한다.
  */
 function finishPreflight({ mesh, combined, finishLine, align, alignMatrix, logs, perf, mark, total0, log }) {
   const t0 = performance.now();
   let tiltAxisVector = null;
   let tightCorner = null;
   let filletSurface = null;
+  let outputBuffer = Buffer.alloc(0);
   if (finishLine?.points?.length) {
     try {
       tiltAxisVector = tiltAxisFromMesh(combined, finishLine.points);
@@ -123,6 +144,13 @@ function finishPreflight({ mesh, combined, finishLine, align, alignMatrix, logs,
       try {
         const corrected = correctTightCornerFillet(mesh, finishLine.points, { tiltAxisVector });
         filletSurface = corrected ? movedFilletSurface(corrected) : null;
+        if (corrected?.mesh) {
+          corrected.mesh.transform(invertRigidMatrix(alignMatrix));
+          outputBuffer = writeBinaryStl({
+            positions: corrected.mesh.toTriangleSoup(),
+            attributes: null,
+          });
+        }
       } catch (error) {
         log(`[stl-preflight] fillet surface failed: ${error?.message || error}`);
       }
@@ -134,7 +162,7 @@ function finishPreflight({ mesh, combined, finishLine, align, alignMatrix, logs,
   mark("total", total0);
   return {
     version: ABUTMENT_STL_JS_VERSION,
-    outputBuffer: Buffer.alloc(0),
+    outputBuffer,
     bodyTriangleCount: mesh.faceCount,
     align: { ok: align.ok, message: align.message },
     alignMatrix,

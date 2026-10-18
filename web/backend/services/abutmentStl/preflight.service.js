@@ -6,13 +6,12 @@
 //
 // 의뢰 접수 전, 의뢰자가 올린 커스텀어벗 STL로 JS 파이프라인을 바로 돌려
 // 불완전가공(마진 코너 R < 공구 R)만 요약한다. filled STL·메타데이터는 저장하지 않는다.
+// 타이트하면 같은 실행의 보정 STL을 잠시 들고, 확인 클릭은 그 버퍼만 받는다.
+import crypto from "crypto";
 import { resolveAbutmentStlInputs } from "./abutmentStlInputs.js";
 import { runAbutmentStlPipelineInWorker } from "./runPipelineInWorker.js";
-import { Mesh, writeBinaryStl, identity } from "./meshCore.js";
-import {
-  FINISH_BALL_RADIUS_MM,
-  applyTightCornerCorrectionToMesh,
-} from "./tightCorner.js";
+import { identity } from "./meshCore.js";
+import { FINISH_BALL_RADIUS_MM } from "./tightCorner.js";
 
 /** 디자인 수정 권고 여유(mm). 공구 R에 이만큼 더한 값을 권한다. */
 export const PREFLIGHT_FILLET_MARGIN_MM = 0.05;
@@ -21,6 +20,102 @@ const SUGGEST_STEP_MM = 0.05;
 
 const round2 = (v) => Math.round(v * 100) / 100;
 const round3 = (v) => Math.round(v * 1000) / 1000;
+
+const CORRECTED_TTL_MS = 15 * 60 * 1000;
+const CORRECTED_MAX = 16;
+/** @type {Map<string, { hash: string, slot: string, buffer: Buffer, fileName: string, userId: string, expires: number }>} */
+const correctedById = new Map();
+/** slot(userId:hash) -> id */
+const correctedByHash = new Map();
+
+function pruneCorrectedDesignCache(now = Date.now()) {
+  for (const [id, row] of correctedById) {
+    if (row.expires <= now) {
+      correctedById.delete(id);
+      if (correctedByHash.get(row.slot) === id) correctedByHash.delete(row.slot);
+    }
+  }
+  while (correctedById.size > CORRECTED_MAX) {
+    const oldest = correctedById.keys().next().value;
+    const row = correctedById.get(oldest);
+    correctedById.delete(oldest);
+    if (row && correctedByHash.get(row.slot) === oldest) correctedByHash.delete(row.slot);
+  }
+}
+
+function correctedUserId(userId) {
+  return String(userId || "").trim();
+}
+
+/** 파일 바이트와 정렬에 쓰는 임플란트 조합. 같은 키면 보정 STL이 같다. */
+export function correctedDesignCacheKey(buffer, caseInfos) {
+  const c = caseInfos || {};
+  const h = crypto.createHash("sha256");
+  h.update(buffer);
+  h.update("\0");
+  h.update(
+    [
+      c.implantManufacturer,
+      c.implantBrand,
+      c.implantFamily,
+      c.implantType,
+    ]
+      .map((v) => String(v || "").trim())
+      .join("|"),
+  );
+  return h.digest("hex");
+}
+
+function correctedSlot(hash, userId) {
+  return `${correctedUserId(userId)}:${hash}`;
+}
+
+/**
+ * 검사에서 만든 보정 STL. 같은 사용자·같은 파일이면 id를 유지한다.
+ * @returns {string|null}
+ */
+export function rememberCorrectedDesignStl({ hash, buffer, fileName, userId } = {}) {
+  const uid = correctedUserId(userId);
+  if (!uid || !hash || !buffer?.length) return null;
+  pruneCorrectedDesignCache();
+  const slot = correctedSlot(hash, uid);
+  const existingId = correctedByHash.get(slot);
+  const existing = existingId ? correctedById.get(existingId) : null;
+  if (existing && existing.expires > Date.now()) {
+    existing.buffer = buffer;
+    existing.fileName = String(fileName || existing.fileName || "corrected.stl");
+    existing.expires = Date.now() + CORRECTED_TTL_MS;
+    correctedById.delete(existingId);
+    correctedById.set(existingId, existing);
+    return existingId;
+  }
+  const id = crypto.randomBytes(16).toString("hex");
+  correctedById.set(id, {
+    hash,
+    slot,
+    buffer,
+    fileName: String(fileName || "corrected.stl"),
+    userId: uid,
+    expires: Date.now() + CORRECTED_TTL_MS,
+  });
+  correctedByHash.set(slot, id);
+  pruneCorrectedDesignCache();
+  return id;
+}
+
+export function readCorrectedDesignStl(id, userId) {
+  pruneCorrectedDesignCache();
+  const row = correctedById.get(String(id || ""));
+  if (!row || row.expires <= Date.now()) return null;
+  if (row.userId !== correctedUserId(userId)) return null;
+  return row;
+}
+
+export function readCorrectedDesignStlByHash(hash, userId) {
+  const id = correctedByHash.get(correctedSlot(hash, userId));
+  if (!id) return null;
+  return readCorrectedDesignStl(id, userId);
+}
 
 /** 강체 4x4(행 우선)의 역행렬. R은 회전이라 전치로 되돌린다. */
 export function invertRigidMatrix(m) {
@@ -136,20 +231,26 @@ export function summarizeTightCorner(tightCorner) {
 }
 
 /**
- * 접수 전 가공 검사. 파이프라인이 실패해도 의뢰를 막지 않도록 unknown으로 돌려준다.
- * @param {{ buffer: Buffer, caseInfos?: object }} args
- */
-/**
  * 업로드 STL에 타이트 코너 보정을 적용한 바이너리 STL(원본 좌표계).
+ * 검사 캐시가 있으면 파이프라인을 다시 돌리지 않는다.
  * @returns {Promise<{ ok: true, buffer: Buffer } | { ok: false, reason: string }>}
  */
-export async function buildCorrectedDesignStlBuffer({ buffer, caseInfos } = {}) {
+export async function buildCorrectedDesignStlBuffer({
+  buffer,
+  caseInfos,
+  userId,
+  originalFileName,
+} = {}) {
   if (!buffer?.length) return { ok: false, reason: "empty_file" };
+  const hash = correctedDesignCacheKey(buffer, caseInfos);
+  const cached = readCorrectedDesignStlByHash(hash, userId);
+  if (cached?.buffer?.length) return { ok: true, buffer: cached.buffer };
   try {
     const inputs = await resolveAbutmentStlInputs(caseInfos || {});
     const js = await runAbutmentStlPipelineInWorker(buffer, {
       targetDiameter: inputs.targetDiameter,
       implantProfile: inputs.implantProfile,
+      preflight: true,
     });
     if (!Array.isArray(js?.finishLine?.points) || js.finishLine.points.length < 4) {
       return { ok: false, reason: "finishline_missing" };
@@ -157,25 +258,31 @@ export async function buildCorrectedDesignStlBuffer({ buffer, caseInfos } = {}) 
     if (!(Number(js?.tightCorner?.tightCount) > 0)) {
       return { ok: false, reason: "no_tight_corners" };
     }
-    const mesh = Mesh.fromStlBuffer(buffer);
-    mesh.transform(js.alignMatrix);
-    const corrected = applyTightCornerCorrectionToMesh(mesh, js.finishLine.points, {
-      tiltAxisVector: js.stlMetadata?.tiltAxisVector,
+    if (!js.outputBuffer?.length) return { ok: false, reason: "correction_failed" };
+    rememberCorrectedDesignStl({
+      hash,
+      buffer: js.outputBuffer,
+      fileName: originalFileName,
+      userId,
     });
-    if (!corrected) return { ok: false, reason: "correction_failed" };
-    corrected.transform(invertRigidMatrix(js.alignMatrix));
-    const outBuffer = writeBinaryStl({
-      positions: corrected.toTriangleSoup(),
-      attributes: null,
-    });
-    return { ok: true, buffer: outBuffer };
+    return { ok: true, buffer: js.outputBuffer };
   } catch (error) {
     console.warn("[stl-corrected] failed:", error?.message || error);
     return { ok: false, reason: "pipeline_failed" };
   }
 }
 
-export async function runStlMachiningPreflight({ buffer, caseInfos } = {}) {
+/**
+ * 접수 전 가공 검사. 파이프라인이 실패해도 의뢰를 막지 않도록 unknown으로 돌려준다.
+ * 타이트하면 같은 실행의 보정 STL id를 붙인다. 바이트는 응답에 넣지 않는다.
+ * @param {{ buffer: Buffer, caseInfos?: object, userId?: string, originalFileName?: string }} args
+ */
+export async function runStlMachiningPreflight({
+  buffer,
+  caseInfos,
+  userId,
+  originalFileName,
+} = {}) {
   if (!buffer?.length) {
     return { status: "unknown", reason: "empty_file", tightCount: 0 };
   }
@@ -203,7 +310,19 @@ export async function runStlMachiningPreflight({ buffer, caseInfos } = {}) {
       js.alignMatrix,
       js.filletSurface || null,
     );
-    return overlay ? { ...summary, overlay } : summary;
+    const correctedId = js.outputBuffer?.length
+      ? rememberCorrectedDesignStl({
+          hash: correctedDesignCacheKey(buffer, caseInfos),
+          buffer: js.outputBuffer,
+          fileName: originalFileName,
+          userId,
+        })
+      : null;
+    return {
+      ...summary,
+      ...(overlay ? { overlay } : {}),
+      ...(correctedId ? { correctedId } : {}),
+    };
   } catch (error) {
     console.warn("[stl-preflight] failed:", error?.message || error);
     return { status: "unknown", reason: "pipeline_failed", tightCount: 0 };

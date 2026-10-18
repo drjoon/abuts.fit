@@ -155,6 +155,12 @@ export type AbutmentModelConfirmDialogProps = {
   machiningPreflight?: StlMachiningPreflight | null;
   /** 보정 디자인을 확인하면 접수 파일을 그 STL로 바꾼다(S3 재업로드 포함). */
   onApplyCorrectedDesign?: (index: number, file: File) => void | Promise<void>;
+  /** 3D 확인 모달이 열린 동안 보정 STL을 받아 S3에 올려 둔다. */
+  onPrepareCorrectedDesign?: (correctedId: string, sourceName: string) => void;
+  /** 준비된 보정 파일. 아직이면 그 작업을 기다린다. 없으면 null. */
+  onTakePreparedCorrectedDesign?: (
+    correctedId: string,
+  ) => Promise<File | null> | null;
 };
 
 export function AbutmentModelConfirmDialog({
@@ -211,6 +217,8 @@ export function AbutmentModelConfirmDialog({
   fileUploadLabel = null,
   machiningPreflight = null,
   onApplyCorrectedDesign,
+  onPrepareCorrectedDesign,
+  onTakePreparedCorrectedDesign,
 }: AbutmentModelConfirmDialogProps) {
   const isLabHandoff = variant === "lab-handoff";
   const labConfirmLabel = String(confirmLabel || "").trim() || "확인";
@@ -325,42 +333,88 @@ export function AbutmentModelConfirmDialog({
   const onVerifyAndNextRef = useRef(onVerifyAndNext);
   onVerifyAndNextRef.current = onVerifyAndNext;
 
+  useEffect(() => {
+    if (!open || isLabHandoff) return;
+    const id = String(machiningPreflight?.correctedId || "").trim();
+    if (!id || machiningPreflight?.status !== "tight" || !detailFile) return;
+    onPrepareCorrectedDesign?.(id, detailFile.name);
+  }, [
+    open,
+    isLabHandoff,
+    machiningPreflight?.correctedId,
+    machiningPreflight?.status,
+    detailFile,
+    onPrepareCorrectedDesign,
+  ]);
+
   const runCorrectedStlDownload = useCallback(async () => {
     if (!detailFile || correctedDownloading) return false;
     setCorrectedDownloading(true);
     try {
-      const result = await fetchCorrectedStlBlob({
-        file: detailFile,
-        caseInfos: detailCaseInfos,
-      });
-      if (!result.ok) {
-        toast({
-          title: "다운로드 실패",
-          description: result.message,
-          variant: "destructive",
-          duration: 4500,
+      const correctedId = String(machiningPreflight?.correctedId || "").trim();
+      if (correctedId) onPrepareCorrectedDesign?.(correctedId, detailFile.name);
+      const pending = correctedId
+        ? onTakePreparedCorrectedDesign?.(correctedId)
+        : null;
+      const prepared = pending ? await pending : null;
+      if (prepared) {
+        if (detailIndex != null) {
+          await onApplyCorrectedDesign?.(detailIndex, prepared);
+        }
+        triggerBrowserFileDownload(prepared, prepared.name);
+      } else {
+        const result = await fetchCorrectedStlBlob({
+          file: detailFile,
+          caseInfos: detailCaseInfos,
         });
-        return false;
+        if (!result.ok) {
+          toast({
+            title: "다운로드 실패",
+            description: result.message,
+            variant: "destructive",
+            duration: 4500,
+          });
+          return false;
+        }
+        const correctedFile = new File([result.blob], result.fileName, {
+          type: "model/stl",
+          lastModified: Date.now(),
+        });
+        if (detailIndex != null) {
+          await onApplyCorrectedDesign?.(detailIndex, correctedFile);
+        }
+        triggerBrowserFileDownload(result.blob, result.fileName);
       }
-      const correctedFile = new File([result.blob], result.fileName, {
-        type: "model/stl",
-        lastModified: Date.now(),
-      });
-      if (detailIndex != null) {
-        await onApplyCorrectedDesign?.(detailIndex, correctedFile);
-      }
-      triggerBrowserFileDownload(result.blob, result.fileName);
       toast({
         title: "보정 디자인으로 바꿨습니다.",
         description: "변경된 디자인을 다운로드해서 보철 내면을 새로 생성하셔야 합니다.",
         duration: 3500,
       });
       return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      toast({
+        title: "보정 디자인을 적용하지 못했습니다.",
+        description: message || "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+        duration: 4500,
+      });
+      return false;
     } finally {
       setCorrectedDownloading(false);
       setCorrectedDownloadOpen(false);
     }
-  }, [correctedDownloading, detailCaseInfos, detailFile, detailIndex, onApplyCorrectedDesign, toast]);
+  }, [
+    correctedDownloading,
+    detailCaseInfos,
+    detailFile,
+    detailIndex,
+    machiningPreflight?.correctedId,
+    onApplyCorrectedDesign,
+    onPrepareCorrectedDesign,
+    onTakePreparedCorrectedDesign,
+    toast,
+  ]);
 
   /** 부모(handleVerifyFile)와 같은 필수 항목이 비었으면 보정 확인보다 입력 안내가 먼저다. */
   const hasMissingRequiredInfo = useMemo(() => {
