@@ -157,7 +157,7 @@ describe("aggregatePracticeMonthUsage prepaid custom abutment", () => {
       practiceUserId: userId,
       practiceBusinessAnchorId: practice._id,
       targetLabAnchorId: lab._id,
-      status: "accepted",
+      status: "active",
       createdAt,
       billing: { labFeeTotal: 80_000, abutmentTotal: 15_000 },
     });

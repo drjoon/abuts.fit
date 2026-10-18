@@ -159,19 +159,16 @@ export async function aggregatePracticeMonthUsage({
     const labTotal = Math.max(
       0,
       Math.round(
-        Number(
-          t?.billing?.labFeeTotal ??
-            t?.feeQuote?.labFeeTotal ??
-            t?.feeQuote?.total ??
-            0,
-        ),
+        Number(t?.billing?.labFeeTotal || 0) +
+          Number(t?.billing?.labAbutmentTotal || 0),
       ),
     );
+    // 어벗츠 어벗. 스키마 필드는 abutmentRetailTotal. 예전 abutmentTotal은 호환용.
     const abutmentTotal = Math.max(
       0,
       Math.round(
         Number(
-          t?.billing?.abutmentTotal ?? t?.feeQuote?.abutmentTotal ?? 0,
+          t?.billing?.abutmentRetailTotal ?? t?.billing?.abutmentTotal ?? 0,
         ),
       ),
     );

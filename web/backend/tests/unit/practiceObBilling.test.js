@@ -72,18 +72,18 @@ describe("practiceObBilling & checkCreditLock", () => {
       targetLabAnchorId: internalLab._id,
       assigneeLabAnchorId: partnerLab._id,
       assigneeKind: "cooperation",
-      status: "accepted",
+      status: "active",
       createdAt,
-      billing: { labFeeTotal: 100_000, abutmentTotal: 30_000 },
+      billing: { labFeeTotal: 100_000, abutmentRetailTotal: 30_000 },
     });
     await PracticeTransfer.create({
       transferId: "ptx-ob-2",
       practiceUserId: userId,
       practiceBusinessAnchorId: practice._id,
       targetLabAnchorId: internalLab._id,
-      status: "accepted",
+      status: "active",
       createdAt,
-      billing: { labFeeTotal: 200_000, abutmentTotal: 50_000 },
+      billing: { labFeeTotal: 200_000, abutmentRetailTotal: 50_000 },
     });
     await Request.create({
       businessAnchorId: practice._id,
