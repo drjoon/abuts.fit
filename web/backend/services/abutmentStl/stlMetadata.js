@@ -284,6 +284,32 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
     z: position.getZ(vertexIndex),
   });
 
+  // z 슬랩에 면을 한 번만 넣는다. 슬라이스마다 전체 삼각형을 다시 돌지 않는다.
+  const sliceCount = 40;
+  const slab = Math.max(postHeight / sliceCount, 1e-4);
+  const z0 = bbox.min.z;
+  const bucketCount = Math.max(1, Math.ceil((bbox.max.z - z0) / slab) + 1);
+  const zBuckets = Array.from({ length: bucketCount }, () => []);
+  const triVerts = new Int32Array(triangleCount * 3);
+  for (let tri = 0; tri < triangleCount; tri += 1) {
+    const i0 = index ? index.getX(tri * 3) : tri * 3;
+    const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+    const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
+    triVerts[tri * 3] = i0;
+    triVerts[tri * 3 + 1] = i1;
+    triVerts[tri * 3 + 2] = i2;
+    const za = position.getZ(i0);
+    const zb = position.getZ(i1);
+    const zc = position.getZ(i2);
+    const lo = Math.floor((Math.min(za, zb, zc) - z0) / slab);
+    const hi = Math.floor((Math.max(za, zb, zc) - z0) / slab);
+    for (let s = Math.max(0, lo); s <= Math.min(bucketCount - 1, hi); s += 1) {
+      zBuckets[s].push(tri);
+    }
+  }
+  const seenTri = new Int32Array(triangleCount);
+  let seenGen = 0;
+
   // 1. Taper 계산 (12방향)
   const directions = [];
   const angles = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
@@ -314,7 +340,6 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
     if (postHeight > 0.1) {
       const dirSamples = [];
       const surfacePoints = [];
-      const sliceCount = 40;
 
       const wrapPi = (d) => {
         let x = d;
@@ -348,49 +373,58 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
         const maxRadiusInDirRef = { value: -Infinity };
         const bestSurfacePointRef = { value: null };
 
-        for (let tri = 0; tri < triangleCount; tri++) {
-          const i0 = index ? index.getX(tri * 3) : tri * 3;
-          const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
-          const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
-          const v0 = readVertex(i0);
-          const v1 = readVertex(i1);
-          const v2 = readVertex(i2);
+        const loB = Math.max(0, Math.floor((targetZ - tolerance - z0) / slab));
+        const hiB = Math.min(bucketCount - 1, Math.floor((targetZ + tolerance - z0) / slab));
+        const gen = ++seenGen;
+        for (let b = loB; b <= hiB; b += 1) {
+          const bucket = zBuckets[b];
+          for (let bi = 0; bi < bucket.length; bi += 1) {
+            const tri = bucket[bi];
+            if (seenTri[tri] === gen) continue;
+            seenTri[tri] = gen;
+            const i0 = triVerts[tri * 3];
+            const i1 = triVerts[tri * 3 + 1];
+            const i2 = triVerts[tri * 3 + 2];
+            const v0 = readVertex(i0);
+            const v1 = readVertex(i1);
+            const v2 = readVertex(i2);
 
-          [v0, v1, v2].forEach((v) => {
-            if (Math.abs(v.z - targetZ) <= tolerance) {
+            [v0, v1, v2].forEach((v) => {
+              if (Math.abs(v.z - targetZ) <= tolerance) {
+                considerOuterPoint(
+                  v.x,
+                  v.y,
+                  v.z,
+                  maxRadiusInDirRef,
+                  bestSurfacePointRef,
+                );
+              }
+            });
+
+            const intersectEdgeDir = (a, b) => {
+              if (
+                (a.z < targetZ && b.z < targetZ) ||
+                (a.z > targetZ && b.z > targetZ)
+              )
+                return;
+              if (Math.abs(a.z - b.z) < 1e-9) return;
+              const t = (targetZ - a.z) / (b.z - a.z);
+              if (t < 0 || t > 1) return;
+              const ix = a.x + t * (b.x - a.x);
+              const iy = a.y + t * (b.y - a.y);
               considerOuterPoint(
-                v.x,
-                v.y,
-                v.z,
+                ix,
+                iy,
+                targetZ,
                 maxRadiusInDirRef,
                 bestSurfacePointRef,
               );
-            }
-          });
+            };
 
-          const intersectEdgeDir = (a, b) => {
-            if (
-              (a.z < targetZ && b.z < targetZ) ||
-              (a.z > targetZ && b.z > targetZ)
-            )
-              return;
-            if (Math.abs(a.z - b.z) < 1e-9) return;
-            const t = (targetZ - a.z) / (b.z - a.z);
-            if (t < 0 || t > 1) return;
-            const ix = a.x + t * (b.x - a.x);
-            const iy = a.y + t * (b.y - a.y);
-            considerOuterPoint(
-              ix,
-              iy,
-              targetZ,
-              maxRadiusInDirRef,
-              bestSurfacePointRef,
-            );
-          };
-
-          intersectEdgeDir(v0, v1);
-          intersectEdgeDir(v1, v2);
-          intersectEdgeDir(v2, v0);
+            intersectEdgeDir(v0, v1);
+            intersectEdgeDir(v1, v2);
+            intersectEdgeDir(v2, v0);
+          }
         }
 
         const maxRadiusInDir = maxRadiusInDirRef.value;
@@ -913,6 +947,31 @@ function pickLotEngravingSiteFromGuides(directions, opts = {}) {
     charPitchCDeg: Math.round(charPitchCDeg * 10000) / 10000,
     cutDiameterX: Math.round(cutDiameterX * 1000) / 1000,
   };
+}
+
+/**
+ * 용접된 메시에서 크라운 삽입축만 구한다. STL로 다시 쓰지 않는다.
+ * 테이퍼 샘플은 피니시라인 위 포스트라, Z=0 채움 솔리드가 없어도 기울기 축은 같다.
+ * @returns {{ x: number, y: number, z: number } | null}
+ */
+export function tiltAxisFromMesh(mesh, finishLinePoints) {
+  if (!mesh?.faceCount || !Array.isArray(finishLinePoints) || finishLinePoints.length < 3) return null;
+  const { min, max } = mesh.bbox();
+  const bbox = {
+    min: { x: min[0], y: min[1], z: min[2] },
+    max: { x: max[0], y: max[1], z: max[2] },
+  };
+  const position = {
+    count: mesh.vertexCount,
+    getX: (i) => mesh.verts[i * 3],
+    getY: (i) => mesh.verts[i * 3 + 1],
+    getZ: (i) => mesh.verts[i * 3 + 2],
+  };
+  const index = {
+    count: mesh.faces.length,
+    getX: (i) => mesh.faces[i],
+  };
+  return calculateTaperWithFinishLine(position, index, finishLinePoints, bbox)?.tiltAxisVector || null;
 }
 
 /**

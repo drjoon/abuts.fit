@@ -320,6 +320,7 @@ export function AbutmentModelConfirmDialog({
     machiningPreflight?.status === "tight" &&
     Boolean(machiningPreflight?.overlay) &&
     Boolean(detailFile);
+  const machiningCheckPending = !isLabHandoff && machiningPreflight?.status === "checking";
 
   const onVerifyAndNextRef = useRef(onVerifyAndNext);
   onVerifyAndNextRef.current = onVerifyAndNext;
@@ -388,13 +389,19 @@ export function AbutmentModelConfirmDialog({
   ]);
 
   const handleConfirmAndNext = useCallback(() => {
-    if (detailIndex === null) return;
+    if (detailIndex === null || machiningCheckPending) return;
     if (canOfferCorrectedDownload && !hasMissingRequiredInfo) {
       setCorrectedDownloadOpen(true);
       return;
     }
     void onVerifyAndNext(detailIndex);
-  }, [canOfferCorrectedDownload, detailIndex, hasMissingRequiredInfo, onVerifyAndNext]);
+  }, [
+    canOfferCorrectedDownload,
+    detailIndex,
+    hasMissingRequiredInfo,
+    machiningCheckPending,
+    onVerifyAndNext,
+  ]);
 
   const handleCorrectedProceed = useCallback(async () => {
     const index = detailIndex;
@@ -718,13 +725,14 @@ export function AbutmentModelConfirmDialog({
                           <Button
                             type="button"
                             className={
-                              highlightUnverifiedArrows
+                              highlightUnverifiedArrows && !machiningCheckPending
                                 ? "animate-bounce bg-primary text-white"
                                 : undefined
                             }
+                            disabled={machiningCheckPending}
                             onClick={handleConfirmAndNext}
                           >
-                            확인 & 다음
+                            {machiningCheckPending ? "검사 중…" : "확인 & 다음"}
                           </Button>
                           <Button
                             type="button"

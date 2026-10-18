@@ -5,6 +5,7 @@
 import { describe, expect, it } from "@jest/globals";
 import {
   Mesh,
+  meshAxisPlaneSection,
   meshPlaneSection,
   rotationAxisAngle,
   writeBinaryStl,
@@ -140,6 +141,31 @@ describe("abutmentStl meshCore", () => {
     // 옆면 4개 × (모서리 2 + 대각선 1) 교차 중 모서리 공유분을 합치면 8점 + 닫힘 점
     expect(loop).toHaveLength(9);
     expect(loop[0]).toEqual(loop[8]);
+  });
+
+  it("축을 포함하는 평면 단면은 전체 스캔과 같은 점을 낸다", () => {
+    const mesh = Mesh.fromTriangleSoup(revolvedAbutmentSoup(64));
+    const keyOf = (loops) => {
+      const pts = [];
+      for (const loop of loops) {
+        for (const p of loop) pts.push(p.map((v) => Math.round(v * 1e5)).join(","));
+      }
+      pts.sort();
+      return pts.join("|");
+    };
+    const normals = [
+      [1, 0, 0],
+      [0, 1, 0],
+      [1, 1, 0],
+      [1, -2, 0],
+      [0.3, 0.9, 0],
+    ];
+    for (const normal of normals) {
+      const full = meshPlaneSection(mesh, [0, 0, 0], normal);
+      const fast = meshAxisPlaneSection(mesh, [0, 0, 1], [0, 0, 0], normal);
+      expect(fast.length).toBeGreaterThan(0);
+      expect(keyOf(fast)).toBe(keyOf(full));
+    }
   });
 
   it("unweldedByAngle splits a cube into 6 faces at 22.5°", () => {

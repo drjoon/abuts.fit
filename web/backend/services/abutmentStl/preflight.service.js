@@ -12,8 +12,6 @@ import { Mesh, writeBinaryStl, identity } from "./meshCore.js";
 import {
   FINISH_BALL_RADIUS_MM,
   applyTightCornerCorrectionToMesh,
-  correctTightCornerFillet,
-  movedFilletSurface,
 } from "./tightCorner.js";
 
 /** 디자인 수정 권고 여유(mm). 공구 R에 이만큼 더한 값을 권한다. */
@@ -177,21 +175,6 @@ export async function buildCorrectedDesignStlBuffer({ buffer, caseInfos } = {}) 
   }
 }
 
-/** 보정 STL과 같은 계산으로 옮겨질 필렛 면(정렬 좌표계). 실패하면 null. */
-function correctedFilletSurface(buffer, js) {
-  try {
-    const mesh = Mesh.fromStlBuffer(buffer);
-    mesh.transform(js.alignMatrix);
-    const corrected = correctTightCornerFillet(mesh, js.finishLine.points, {
-      tiltAxisVector: js.stlMetadata?.tiltAxisVector,
-    });
-    return corrected ? movedFilletSurface(corrected) : null;
-  } catch (error) {
-    console.warn("[stl-preflight] fillet surface failed:", error?.message || error);
-    return null;
-  }
-}
-
 export async function runStlMachiningPreflight({ buffer, caseInfos } = {}) {
   if (!buffer?.length) {
     return { status: "unknown", reason: "empty_file", tightCount: 0 };
@@ -201,6 +184,7 @@ export async function runStlMachiningPreflight({ buffer, caseInfos } = {}) {
     const js = await runAbutmentStlPipelineInWorker(buffer, {
       targetDiameter: inputs.targetDiameter,
       implantProfile: inputs.implantProfile,
+      preflight: true,
     });
     if (!Array.isArray(js?.finishLine?.points) || js.finishLine.points.length < 4) {
       return { status: "unknown", reason: "finishline_missing", tightCount: 0 };
@@ -209,11 +193,15 @@ export async function runStlMachiningPreflight({ buffer, caseInfos } = {}) {
       return { status: "unknown", reason: "tightcorner_missing", tightCount: 0 };
     }
     const summary = summarizeTightCorner(js.tightCorner);
+    const elapsed = Number(js?.perf?.total);
+    if (Number.isFinite(elapsed) && elapsed > 2.5) {
+      console.info("[stl-preflight] slow", js.perf);
+    }
     if (summary.status !== "tight") return summary;
     const overlay = tightCornerOverlayInOriginalFrame(
       js.tightCorner,
       js.alignMatrix,
-      correctedFilletSurface(buffer, js),
+      js.filletSurface || null,
     );
     return overlay ? { ...summary, overlay } : summary;
   } catch (error) {

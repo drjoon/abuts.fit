@@ -9,6 +9,48 @@ import { parseStl, writeBinaryStl } from "../../utils/screwHoleFill.js";
 export { parseStl, writeBinaryStl };
 
 const WELD_EPS = 1e-5;
+/** 축 포함 평면 단면용 둘레 버킷. 3.75° */
+const AXIS_SECTION_BINS = 96;
+const AXIS_SECTION_TURN = Math.PI * 2;
+/** 이보다 축에 가까운 정점은 각도가 불안정해서 그 면은 항상 후보로 둔다. */
+const AXIS_SECTION_NEAR_MM = 1e-3;
+
+function axisFrame(axis) {
+  const helper = Math.abs(axis[2]) > 0.9 ? [1, 0, 0] : [0, 0, 1];
+  let xAxis = cross(helper, axis);
+  if (Math.hypot(xAxis[0], xAxis[1], xAxis[2]) < 1e-8) xAxis = cross([0, 1, 0], axis);
+  xAxis = normalize(xAxis);
+  const yAxis = normalize(cross(axis, xAxis));
+  return { xAxis, yAxis };
+}
+
+/** 세 각을 덮는 가장 짧은 호. start는 [−π, π], arc는 0~2π. */
+function coveringArc(a, b, c) {
+  const angs = [a, b, c].sort((p, q) => p - q);
+  const gaps = [angs[1] - angs[0], angs[2] - angs[1], angs[0] + AXIS_SECTION_TURN - angs[2]];
+  let maxGap = gaps[0];
+  let maxI = 0;
+  for (let i = 1; i < 3; i += 1) {
+    if (gaps[i] > maxGap) {
+      maxGap = gaps[i];
+      maxI = i;
+    }
+  }
+  const start = maxI === 2 ? angs[0] : angs[maxI + 1];
+  return { start, arc: AXIS_SECTION_TURN - maxGap };
+}
+
+function addArcToBins(bins, start, arc, faceIndex) {
+  const width = AXIS_SECTION_TURN / AXIS_SECTION_BINS;
+  const s = Math.floor(start / width);
+  const e = Math.floor((start + arc) / width);
+  for (let b = s; b <= e; b += 1) {
+    const bi = ((b % AXIS_SECTION_BINS) + AXIS_SECTION_BINS) % AXIS_SECTION_BINS;
+    const bucket = bins[bi];
+    if (bucket.length && bucket[bucket.length - 1] === faceIndex) continue;
+    bucket.push(faceIndex);
+  }
+}
 /** Rhino STL import 기본 용접각. 피니시라인 edge 최소 인접각 23.0°(골든 137건)와 맞다. */
 export const RHINO_STL_WELD_ANGLE_DEG = 22.5;
 
@@ -67,6 +109,7 @@ export class Mesh {
     this._faceNormals = null;
     this._edges = null;
     this._zIndex = null;
+    this._axisSection = null;
     this._cornerIds = null;
   }
 
@@ -314,6 +357,104 @@ export class Mesh {
     this._zIndex = { zMin: min[2], slab, buckets };
     return this._zIndex;
   }
+
+  /**
+   * 원점을 지나는 축을 포함하는 평면이 만날 수 있는 면.
+   * 축에서 떨어진 작은 면은 둘레 각도 버킷에만 넣고, 축을 품거나 각이 큰 면은 항상 후보로 둔다.
+   * 평면이 그 축을 포함하지 않으면 null(전체 스캔).
+   */
+  facesOnAxisPlane(axis, normal) {
+    const ax = normalize(axis);
+    const n = normalize(normal);
+    if (Math.hypot(...ax) < 0.5 || Math.hypot(...n) < 0.5) return null;
+    if (Math.abs(dot(ax, n)) > 1e-6) return null;
+    const index = this.axisSectionIndex(ax);
+    const radial = cross(ax, n);
+    if (Math.hypot(...radial) < 1e-8) return null;
+    const theta = Math.atan2(dot(radial, index.frame.yAxis), dot(radial, index.frame.xAxis));
+    const pick = (ang) => {
+      let x = ang % AXIS_SECTION_TURN;
+      if (x < 0) x += AXIS_SECTION_TURN;
+      return Math.min(AXIS_SECTION_BINS - 1, Math.floor((x / AXIS_SECTION_TURN) * AXIS_SECTION_BINS));
+    };
+    const binsToRead = [];
+    const markBin = (b) => {
+      const bi = (b + AXIS_SECTION_BINS) % AXIS_SECTION_BINS;
+      if (!binsToRead.includes(bi)) binsToRead.push(bi);
+    };
+    for (const base of [theta, theta + Math.PI]) {
+      const b = pick(base);
+      markBin(b - 1);
+      markBin(b);
+      markBin(b + 1);
+    }
+    let gen = index.gen + 1;
+    if (gen >= 0x7ffffffe) {
+      index.stamp.fill(0);
+      gen = 1;
+    }
+    index.gen = gen;
+    const out = [];
+    const add = (fi) => {
+      if (index.stamp[fi] === gen) return;
+      index.stamp[fi] = gen;
+      out.push(fi);
+    };
+    for (const b of binsToRead) {
+      const bucket = index.bins[b];
+      for (let i = 0; i < bucket.length; i += 1) add(bucket[i]);
+    }
+    for (let i = 0; i < index.wide.length; i += 1) add(index.wide[i]);
+    // 면 번호 순으로 봐야 교차 그래프가 전체 스캔과 같다.
+    out.sort((a, b) => a - b);
+    return out;
+  }
+
+  axisSectionIndex(axis) {
+    const ax = normalize(axis);
+    const key = `${Math.round(ax[0] * 1e6)},${Math.round(ax[1] * 1e6)},${Math.round(ax[2] * 1e6)}`;
+    if (this._axisSection?.key === key) return this._axisSection;
+    const frame = axisFrame(ax);
+    const bins = Array.from({ length: AXIS_SECTION_BINS }, () => []);
+    const wide = [];
+    const v = this.verts;
+    const f = this.faces;
+    const angs = [0, 0, 0];
+    for (let i = 0; i < this.faceCount; i += 1) {
+      let nearAxis = false;
+      for (let k = 0; k < 3; k += 1) {
+        const o = f[i * 3 + k] * 3;
+        const along = v[o] * ax[0] + v[o + 1] * ax[1] + v[o + 2] * ax[2];
+        const rx = v[o] - ax[0] * along;
+        const ry = v[o + 1] - ax[1] * along;
+        const rz = v[o + 2] - ax[2] * along;
+        if (Math.hypot(rx, ry, rz) < AXIS_SECTION_NEAR_MM) nearAxis = true;
+        angs[k] = Math.atan2(
+          rx * frame.yAxis[0] + ry * frame.yAxis[1] + rz * frame.yAxis[2],
+          rx * frame.xAxis[0] + ry * frame.xAxis[1] + rz * frame.xAxis[2],
+        );
+      }
+      if (nearAxis) {
+        wide.push(i);
+        continue;
+      }
+      const cover = coveringArc(angs[0], angs[1], angs[2]);
+      if (cover.arc >= Math.PI - 1e-4) {
+        wide.push(i);
+        continue;
+      }
+      addArcToBins(bins, cover.start - 1e-3, cover.arc + 2e-3, i);
+    }
+    this._axisSection = {
+      key,
+      frame,
+      bins,
+      wide,
+      stamp: new Int32Array(this.faceCount),
+      gen: 0,
+    };
+    return this._axisSection;
+  }
 }
 
 function dropDegenerateFaces(faces) {
@@ -460,6 +601,16 @@ export function meshPlaneSection(mesh, origin, normal, faceSubset = null) {
   return chainAdjacency(adj).map(({ vertices }) =>
     vertices.map((key) => points.get(key)),
   );
+}
+
+/**
+ * 축을 포함하는 평면 단면. 후보 면만 보고, 축을 포함하지 않는 평면은 전체 스캔으로 돌아간다.
+ * 교차 그래프는 전체 스캔과 같다. 루프의 시작점·방향만 달라질 수 있다.
+ */
+export function meshAxisPlaneSection(mesh, axis, origin, normal) {
+  const faces = mesh.facesOnAxisPlane?.(axis, normal);
+  if (!faces) return meshPlaneSection(mesh, origin, normal);
+  return meshPlaneSection(mesh, origin, normal, faces);
 }
 
 export function meshZSection(mesh, z) {

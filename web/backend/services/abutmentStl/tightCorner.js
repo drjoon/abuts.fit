@@ -7,7 +7,7 @@
 // 피니시라인 바로 위 마진↔축면 경계의 fillet R을 재고, R<공구R이면 공구 R 필렛 보정면을 만든다.
 // 보정 솔리드는 원본과 별개로 메타데이터에 담긴다. filled STL·CAM은 원본 그대로 두고,
 // 뷰어에서 토글을 켰을 때만 원본 위에 빨갛게 덧입혀 보여준다.
-import { cross, meshPlaneSection, normalize } from "./meshCore.js";
+import { cross, meshAxisPlaneSection, normalize } from "./meshCore.js";
 
 export const TIGHT_CORNER_VERSION = 6;
 export const FINISH_BALL_DIAMETER_MM = 1.2;
@@ -16,6 +16,8 @@ export const FINISH_BALL_RADIUS_MM = FINISH_BALL_DIAMETER_MM / 2;
 const DIST_TOL = 1e-8;
 const FL_SAMPLE_MAX = 80;
 const FL_SAMPLE_MIN = 12;
+/** 보정 스테이션. 피니시라인 정점마다 단면을 자르면 고해상도 STL에서 수 초가 걸린다. */
+const STATION_SAMPLE_MAX = 96;
 const PROFILE_W_BIN_MM = 0.06;
 const PROFILE_U_MIN_MM = 0.35;
 const WALL_MIN_SPAN_MM = 0.35;
@@ -601,7 +603,7 @@ function extractProfileAboveFl(mesh, fl, radial, axis, n) {
 
 /** 단면 루프 정점을 FL에서 위쪽(축면) 방향으로 리샘플 없이 따라간다. */
 function sectionWalkAboveFl(mesh, fl, radial, axis, n) {
-  const loops = meshPlaneSection(mesh, [0, 0, 0], n);
+  const loops = meshAxisPlaneSection(mesh, axis, [0, 0, 0], n);
   const uFl = dot3(fl, radial);
   const wFl = dot3(fl, axis);
   let best = null;
@@ -984,7 +986,7 @@ function collectTightSamples(mesh, finishLinePoints, options = {}) {
   return { toolR, axis, raw, sampled, samples };
 }
 
-function tightCornerMeta({ toolR, axis, raw, sampled, samples }) {
+function tightCornerMeta({ toolR, axis, raw, sampled, samples }, { solids = true } = {}) {
   const rValues = samples
     .map((s) => Number(s.filletRadiusMm))
     .filter((v) => Number.isFinite(v));
@@ -1000,18 +1002,23 @@ function tightCornerMeta({ toolR, axis, raw, sampled, samples }) {
     tightFinishLineSegments: buildTightFinishLineSegments(raw, samples),
     /** @deprecated v2 — 프리뷰는 reliefOverlay만 사용. */
     ballPassPolylines: [],
-    reliefOverlay: buildTightCornerReliefOverlay(samples, axis, {
-      toolRadiusMm: toolR,
-      sampleTotal: sampled.length,
-    }),
+    reliefOverlay: solids
+      ? buildTightCornerReliefOverlay(samples, axis, {
+          toolRadiusMm: toolR,
+          sampleTotal: sampled.length,
+        })
+      : null,
     /**
      * 원본과 별개인 보정 솔리드(닫힌 메시). filled STL에는 넣지 않는다.
      * 뷰어 토글 ON일 때만 원본 위에 빨갛게 덧입혀 보여준다.
+     * 접수 전 검사는 보정 필렛 면만 쓰므로 솔리드를 만들지 않는다.
      */
-    correctionSolid: buildTightCornerReliefSolid(samples, axis, {
-      toolRadiusMm: toolR,
-      sampleTotal: sampled.length,
-    }),
+    correctionSolid: solids
+      ? buildTightCornerReliefSolid(samples, axis, {
+          toolRadiusMm: toolR,
+          sampleTotal: sampled.length,
+        })
+      : null,
   };
   const solidLen = Number(meta.correctionSolid?.positions?.length);
   const overlayLen = Number(meta.reliefOverlay?.positions?.length);
@@ -1023,7 +1030,9 @@ function tightCornerMeta({ toolR, axis, raw, sampled, samples }) {
 }
 
 export function detectTightCorners(mesh, finishLinePoints, options = {}) {
-  return tightCornerMeta(collectTightSamples(mesh, finishLinePoints, options));
+  return tightCornerMeta(collectTightSamples(mesh, finishLinePoints, options), {
+    solids: options.solids !== false,
+  });
 }
 
 /**
@@ -1238,7 +1247,8 @@ function revertFlippedFaces(original, res) {
 function filletCorrectionAboutAxis(mesh, raw, toolR, axis) {
   const targetR = toolR + CORRECTION_FILLET_MARGIN_MM;
   const frame = axisFrame(axis);
-  const stations = raw
+  const sampledFl = resampleFinishLine(raw, STATION_SAMPLE_MAX);
+  const stations = sampledFl
     .map((fl) => {
       const st = measureFilletStation(mesh, fl, axis);
       return st ? { ...st, theta: thetaAboutAxis(fl, axis, frame) } : null;

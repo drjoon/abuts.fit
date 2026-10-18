@@ -10,7 +10,7 @@ import {
   chainAdjacency,
   cross,
   median,
-  meshPlaneSection,
+  meshAxisPlaneSection,
   normalize,
 } from "./meshCore.js";
 
@@ -685,7 +685,7 @@ function detectMaxRadiusTrack(mesh, planes, axisDir, refPt0) {
   const duals = [];
   const reps = [];
   planes.forEach((normal, idx) => {
-    const all = meshPlaneSection(mesh, [0, 0, 0], normal).flat();
+    const all = meshAxisPlaneSection(mesh, axis, [0, 0, 0], normal).flat();
     const byAxis = all.filter((p) => aLow <= axial(p) && axial(p) <= aHigh);
     const byZ =
       pt0Z != null
