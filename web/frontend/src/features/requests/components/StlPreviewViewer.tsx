@@ -2239,65 +2239,39 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
                 : // 농도를 다르게 하기 위해 인덱스별로 회색 값 조정 (0x666666 부터 0xcccccc 까지)
                   0x666666 + colorIdx * 0x111111;
 
-              // 우선순위:
-              // 1) 백엔드 surfacePoints가 있으면 그대로 사용
-              // 2) 없으면 slope/intercept + angle로 가이드 선을 복원 렌더링
-              let centeredPoints: Array<{ x: number; y: number; z: number }> =
-                [];
-
+              // 화면에 그리는 선은 그 방향 축면 각의 회귀선이다.
+              // surfacePoints는 ±14° 쐐기에서 반경이 가장 큰 꼭짓점이라
+              // 높이마다 쐐기 가장자리로 튀고, 이으면 선이 꺾인다.
+              const slope = Number(guide.slope);
+              const intercept = Number(guide.intercept);
+              const guideAngleDeg = Number(guide.angle);
               if (
-                Array.isArray(guide.surfacePoints) &&
-                guide.surfacePoints.length >= 2
+                !Number.isFinite(slope) ||
+                !Number.isFinite(intercept) ||
+                !Number.isFinite(guideAngleDeg)
               ) {
-                centeredPoints = guide.surfacePoints
-                  .filter((p) => Number.isFinite(Number(p.z)))
-                  .filter((p) => {
-                    const z = Number(p.z);
-                    return z >= renderStartZ && z <= renderEndZ;
-                  })
-                  .map((p) => ({
-                    x: p.x - effectiveCenter.x,
-                    y: p.y - effectiveCenter.y,
-                    z: p.z - effectiveCenter.z,
-                  }));
-              } else {
-                const slope = Number(guide.slope);
-                const intercept = Number(guide.intercept);
-                const guideAngleDeg = Number(guide.angle);
-                if (
-                  !Number.isFinite(slope) ||
-                  !Number.isFinite(intercept) ||
-                  !Number.isFinite(guideAngleDeg)
-                ) {
-                  return;
-                }
+                return;
+              }
 
-                const guideAngleRad = (guideAngleDeg * Math.PI) / 180;
-                const dirX = Math.cos(guideAngleRad);
-                const dirY = Math.sin(guideAngleRad);
-                const worldCenterX = center.x;
-                const worldCenterY = center.y;
-                const sampleCount = 10;
-
-                for (let i = 0; i < sampleCount; i++) {
-                  const t = sampleCount <= 1 ? 0 : i / (sampleCount - 1);
-                  const worldZ = renderStartZ + (renderEndZ - renderStartZ) * t;
-                  const radius = slope * worldZ + intercept;
-                  if (!Number.isFinite(radius)) continue;
-
-                  const worldX = worldCenterX + dirX * radius;
-                  const worldY = worldCenterY + dirY * radius;
-                  centeredPoints.push({
-                    x: worldX - effectiveCenter.x,
-                    y: worldY - effectiveCenter.y,
-                    z: worldZ - effectiveCenter.z,
-                  });
-                }
+              const guideAngleRad = (guideAngleDeg * Math.PI) / 180;
+              const dirX = Math.cos(guideAngleRad);
+              const dirY = Math.sin(guideAngleRad);
+              // filled STL의 임플란트 축은 XY 원점. slope·intercept 반지름도 그 축 기준이다.
+              const centeredPoints: Array<{ x: number; y: number; z: number }> =
+                [];
+              for (const worldZ of [renderStartZ, renderEndZ]) {
+                const radius = slope * worldZ + intercept;
+                if (!Number.isFinite(radius)) continue;
+                centeredPoints.push({
+                  x: dirX * radius - effectiveCenter.x,
+                  y: dirY * radius - effectiveCenter.y,
+                  z: worldZ - effectiveCenter.z,
+                });
               }
 
               if (centeredPoints.length < 2) return;
 
-              // 측정선 - Line2로 굵게 (실제 표면 포인트들 연결)
+              // 측정선 - 그 방향 회귀선을 Line2로 굵게
               const positions: number[] = [];
               centeredPoints.forEach((p) => {
                 positions.push(p.x, p.y, p.z);
