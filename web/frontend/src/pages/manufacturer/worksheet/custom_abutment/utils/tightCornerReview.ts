@@ -6,21 +6,21 @@
 export function isTightCornerCorrectionRequired(
   tightCorner: {
     tightCount?: number;
+    needsCorrectionReview?: boolean;
     correctionSolid?: { positions?: number[] } | null;
     reliefOverlay?: { positions?: number[] } | null;
   } | null | undefined,
 ): boolean {
   if (!tightCorner || typeof tightCorner !== "object") return false;
+  if (typeof tightCorner.needsCorrectionReview === "boolean") {
+    return tightCorner.needsCorrectionReview;
+  }
   const count = Number(tightCorner.tightCount);
   if (!Number.isFinite(count) || count <= 0) return false;
   const solidLen = Number(tightCorner.correctionSolid?.positions?.length);
   const overlayLen = Number(tightCorner.reliefOverlay?.positions?.length);
-  if (
+  return (
     (Number.isFinite(solidLen) && solidLen > 0) ||
     (Number.isFinite(overlayLen) && overlayLen > 0)
-  ) {
-    return true;
-  }
-  // worksheet 목록은 tightCount만 내려올 수 있다.
-  return true;
+  );
 }

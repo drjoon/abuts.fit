@@ -1741,6 +1741,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.rollbackCounts",
       "caseInfos.finishLine",
       "caseInfos.tightCorner.tightCount",
+      "caseInfos.tightCorner.needsCorrectionReview",
       "caseInfos.cuffBlend",
       "caseInfos.cuffProposal",
       "autoMachiningReview",

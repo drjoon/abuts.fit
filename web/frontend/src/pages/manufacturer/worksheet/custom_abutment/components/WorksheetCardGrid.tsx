@@ -378,12 +378,9 @@ export const WorksheetCardGrid = ({
         const isFinishLineCaptureBad = isFinishLineDefective(
           (caseInfos as any)?.finishLine?.points,
         );
-        const autoGateTightCornerHold = (
-          (request as any)?.autoMachiningReview?.reasons || []
-        ).includes("tight_corner_correction");
-        const isTightCornerCorrectionNeeded =
-          isTightCornerCorrectionRequired((caseInfos as any)?.tightCorner) ||
-          autoGateTightCornerHold;
+        const isTightCornerCorrectionNeeded = isTightCornerCorrectionRequired(
+          (caseInfos as any)?.tightCorner,
+        );
         const cuffBlend = resolveCuffBlend(caseInfos);
         const isPreMachiningTab = tabStage === "request" || tabStage === "cam";
         const isCuffManualReview =

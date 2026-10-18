@@ -132,19 +132,15 @@ export function FilledStlCardThumbnail({ request, className }: Props) {
   );
   const finishLinePoints = resolveFinishLinePoints(request);
   const requestPublicId = String(request?.requestId || "").trim();
-  const needsCorrectionThumb = useMemo(() => {
-    const hold = (
-      (request as { autoMachiningReview?: { reasons?: string[] } })
-        ?.autoMachiningReview?.reasons || []
-    ).includes("tight_corner_correction");
-    return (
+  const needsCorrectionThumb = useMemo(
+    () =>
       isTightCornerCorrectionRequired(
         (request?.caseInfos as { tightCorner?: unknown })?.tightCorner as
           | Parameters<typeof isTightCornerCorrectionRequired>[0]
           | undefined,
-      ) || hold
-    );
-  }, [request]);
+      ),
+    [request],
+  );
   const cacheKey = buildCamCacheKey(
     s3Key,
     filledMeta,

@@ -988,7 +988,7 @@ function tightCornerMeta({ toolR, axis, raw, sampled, samples }) {
   const rValues = samples
     .map((s) => Number(s.filletRadiusMm))
     .filter((v) => Number.isFinite(v));
-  return {
+  const meta = {
     version: TIGHT_CORNER_VERSION,
     toolDiameterMm: FINISH_BALL_DIAMETER_MM,
     tightCount: samples.length,
@@ -1013,6 +1013,13 @@ function tightCornerMeta({ toolR, axis, raw, sampled, samples }) {
       sampleTotal: sampled.length,
     }),
   };
+  const solidLen = Number(meta.correctionSolid?.positions?.length);
+  const overlayLen = Number(meta.reliefOverlay?.positions?.length);
+  meta.needsCorrectionReview =
+    meta.tightCount > 0 &&
+    ((Number.isFinite(solidLen) && solidLen > 0) ||
+      (Number.isFinite(overlayLen) && overlayLen > 0));
+  return meta;
 }
 
 export function detectTightCorners(mesh, finishLinePoints, options = {}) {
