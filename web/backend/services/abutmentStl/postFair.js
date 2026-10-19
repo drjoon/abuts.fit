@@ -1,46 +1,37 @@
 // related files:
-// - web/backend/services/abutmentStl/cuffBlend.js (피니시라인 아래 커프. 거기는 면을 다시 만든다)
-// - web/backend/utils/screwHoleFill.js (parseStl / writeBinaryStl)
+// - web/backend/services/abutmentStl/cuffBlend.js (피니시라인 아래 커프를 촘촘한 곡면으로 바꿈)
+// - web/backend/utils/screwHoleFill.js (parseStl / writeBinaryStl, HF 패치 attribute)
 // - web/backend/scripts/abutment-stl-js/fair-post.js
 // - web/backend/tests/unit/postFair.test.js
 //
-// 피니시라인 위 포스트(크라운이 안착하는 축면)만 매끈하게 한다.
-// 커프와 달리 삼각형을 지우거나 더하지 않는다. 꼭짓점 연결은 그대로 두고 좌표만 옮긴다.
-// 같은 세로줄에서 위·아래 반경보다 큰 가로 봉우리만 반경을 줄인다.
-// 둘레 곡률(원통 살)은 반경이 같으므로 움직이지 않는다. 안쪽 골은 키우지 않는다.
-// 바깥(반경 증가)은 2µm, 안쪽은 MAX_IN 까지.
-import { parseStl, writeBinaryStl } from "../../utils/screwHoleFill.js";
+// 피니시라인 위 포스트 축면을 커프와 같은 밀도로 다시 만든다.
+// 줄무늬는 성긴 삼각형의 접힘각이라, 꼭짓점만 눌러서는 화면의 줄이 사라지지 않는다.
+// 스크류홀·교합면·커프는 그대로 두고, 그 사이 바깥 축면만 바꾼다.
+// 새 곡면 반경은 원래 면보다 바깥 2µm, 안쪽 50µm를 넘지 않는다. 크라운보다 커지지 않게.
+import { parseStl, writeBinaryStl, HOLE_FILL_PATCH_ATTRIBUTE } from "../../utils/screwHoleFill.js";
+import { CUFF_BLEND_PATCH_ATTRIBUTE } from "./cuffBlend.js";
 
-export const POST_FAIR_VERSION = "post-fair-1";
-/** 크라운 쪽(반경이 커지는 쪽). 이보다 나가면 조기 접촉한다. */
+export const POST_FAIR_VERSION = "post-fair-2";
+/** 크라운 쪽. 반경이 이보다 커지면 조기 접촉한다. */
 export const POST_FAIR_MAX_OUT_MM = 0.002;
-/**
- * 안쪽(반경이 작아지는 쪽) 상한.
- * 봉우리를 누르는 양이다. 크라운과의 틈이 이 값까지 늘어날 수 있다.
- */
-export const POST_FAIR_MAX_IN_MM = 0.03;
+/** 안쪽. 성긴 면의 모서리를 둥글게 누르는 한도. */
+export const POST_FAIR_MAX_IN_MM = 0.05;
+/** 다시 깐 축면 삼각형. */
+export const POST_FAIR_PATCH_ATTRIBUTE = 0x5053;
 
 const TWO_PI = Math.PI * 2;
 const WELD_EPS = 1e-5;
-/** 축면으로 볼 최소 법선·반지름 성분. 1이면 수직 벽, 0이면 윗면. */
-const MIN_RADIAL_NORMAL = 0.4;
-/** 피니시라인보다 이만큼 아래 점은 샘플에서도 뺀다. */
-const SAMPLE_BELOW_MM = 0.01;
-/** 이 높이까지는 마진 꼭짓점을 그대로 둔다. */
-const GUARD_MM = 0.05;
-/** 가드 위에서 이 구간 동안 이동량을 0에서 1로 올린다. 마진에 턱이 생기지 않게. */
-const FALLOFF_MM = 0.22;
-/** 같은 세로줄(각도)에서 위·아래만 본다. 둘레로 평균하면 원통 곡률을 봉우리로 오인한다. */
-const COL_BINS = 120;
-const COL_TH = (8 * Math.PI) / 180;
-const COL_Z_MIN = 0.05;
-const COL_Z_MAX = 0.35;
-const COL_SIGMA_Z = 0.16;
-/** 위·아래 모두보다 이만큼 더 굵은 점만 봉우리로 본다. 한 칸 곡률은 여기 안 든다. */
-const BUMP_DEADBAND_MM = 0.008;
-/** 이보다 반경이 다른 점은 다른 면(홈·구멍)이라 봉우리 계산에 넣지 않는다. */
-const COL_R_GATE_MM = 0.12;
-const FAIR_PASSES = 1;
+const COLUMNS = 720;
+const ROW_PITCH_MM = 0.025;
+const MAX_ROWS = 240;
+const SCREW_R_MM = 1.7;
+const FIELD_BINS = 360;
+const FIELD_DZ_MM = 0.04;
+/** 둘레 4°. 축면의 1~2° 면 접힘을 지우고, 타원 단면은 남긴다. */
+const SMOOTH_SIGMA_COL = 4;
+/** 0.22mm. 가로 줄(한 칸 0.1~0.2mm)을 지우고, 긴 테이퍼는 그대로다. */
+const SMOOTH_SIGMA_ROW = 0.22 / FIELD_DZ_MM;
+const RIM_BLEND_MM = 0.08;
 
 const wrap = (a) => {
   let t = a % TWO_PI;
@@ -48,42 +39,14 @@ const wrap = (a) => {
   return t;
 };
 
-const angDiff = (a, b) => {
-  let d = a - b;
-  while (d > Math.PI) d -= TWO_PI;
-  while (d < -Math.PI) d += TWO_PI;
-  return d;
-};
+const angleOf = (x, y) => wrap(Math.atan2(y, x));
 
 const smoothstep = (t) => {
   const x = t < 0 ? 0 : t > 1 ? 1 : t;
   return x * x * (3 - 2 * x);
 };
 
-const distPointSeg = (px, py, pz, a, b) => {
-  const abx = b[0] - a[0];
-  const aby = b[1] - a[1];
-  const abz = b[2] - a[2];
-  const apx = px - a[0];
-  const apy = py - a[1];
-  const apz = pz - a[2];
-  const ab2 = abx * abx + aby * aby + abz * abz;
-  let t = ab2 > 0 ? (apx * abx + apy * aby + apz * abz) / ab2 : 0;
-  if (t < 0) t = 0;
-  else if (t > 1) t = 1;
-  return Math.hypot(a[0] + abx * t - px, a[1] + aby * t - py, a[2] + abz * t - pz);
-};
-
-/** 피니시라인 폐곡선까지 거리. 마진 모서리 자체는 옮기지 않기 위해 쓴다. */
-function distanceToFinishLine(x, y, z, points) {
-  let best = Infinity;
-  const n = points.length;
-  for (let i = 0; i < n; i += 1) {
-    const d = distPointSeg(x, y, z, points[i], points[(i + 1) % n]);
-    if (d < best) best = d;
-  }
-  return best;
-}
+const emptyDesired = () => ({ n: 0, p50: 0, p90: 0, p95: 0, max: 0 });
 
 function finishLineAngleMap(points) {
   const bins = 360;
@@ -92,6 +55,9 @@ function finishLineAngleMap(points) {
     const b = Math.min(bins - 1, Math.floor((wrap(Math.atan2(p[1], p[0])) / TWO_PI) * bins));
     z[b] = Number.isFinite(z[b]) ? Math.max(z[b], p[2]) : p[2];
   }
+  let known = 0;
+  for (let i = 0; i < bins; i += 1) if (Number.isFinite(z[i])) known += 1;
+  if (known < 8) return null;
   for (let i = 0; i < bins; i += 1) {
     if (Number.isFinite(z[i])) continue;
     let l = 1;
@@ -110,330 +76,769 @@ function finishLineAngleMap(points) {
   };
 }
 
-function weldSoup(positions) {
-  const corners = positions.length / 3;
-  const triCount = corners / 3;
+function weldSoup(positions, attributes) {
+  const triCount = Math.floor(positions.length / 9);
   const keyTo = new Map();
   const verts = [];
-  const cornerOf = new Int32Array(corners);
-  const inv = 1 / WELD_EPS;
-  for (let c = 0; c < corners; c += 1) {
-    const o = c * 3;
-    const key = `${Math.round(positions[o] * inv)},${Math.round(positions[o + 1] * inv)},${Math.round(positions[o + 2] * inv)}`;
-    let v = keyTo.get(key);
-    if (v === undefined) {
-      v = verts.length / 3;
-      verts.push(positions[o], positions[o + 1], positions[o + 2]);
-      keyTo.set(key, v);
-    }
-    cornerOf[c] = v;
-  }
   const faces = [];
+  const faceAttr = [];
+  const inv = 1 / WELD_EPS;
   for (let t = 0; t < triCount; t += 1) {
-    const a = cornerOf[t * 3];
-    const b = cornerOf[t * 3 + 1];
-    const c = cornerOf[t * 3 + 2];
-    if (a === b || b === c || a === c) continue;
-    faces.push(a, b, c);
+    const idx = [0, 0, 0];
+    for (let k = 0; k < 3; k += 1) {
+      const o = t * 9 + k * 3;
+      const key = `${Math.round(positions[o] * inv)},${Math.round(positions[o + 1] * inv)},${Math.round(positions[o + 2] * inv)}`;
+      let v = keyTo.get(key);
+      if (v === undefined) {
+        v = verts.length / 3;
+        verts.push(positions[o], positions[o + 1], positions[o + 2]);
+        keyTo.set(key, v);
+      }
+      idx[k] = v;
+    }
+    if (idx[0] === idx[1] || idx[1] === idx[2] || idx[0] === idx[2]) continue;
+    faces.push(idx[0], idx[1], idx[2]);
+    faceAttr.push(attributes?.[t] || 0);
   }
-  return { verts, cornerOf, faces };
+  return { verts, faces, faceAttr };
 }
 
-function vertexNormals(verts, faces) {
+function largestComponent(verts, faces) {
   const nv = verts.length / 3;
-  const acc = new Float64Array(nv * 3);
-  const nf = faces.length / 3;
-  for (let f = 0; f < nf; f += 1) {
-    const ia = faces[f * 3];
-    const ib = faces[f * 3 + 1];
-    const ic = faces[f * 3 + 2];
-    const ax = verts[ia * 3];
-    const ay = verts[ia * 3 + 1];
-    const az = verts[ia * 3 + 2];
-    const ux = verts[ib * 3] - ax;
-    const uy = verts[ib * 3 + 1] - ay;
-    const uz = verts[ib * 3 + 2] - az;
-    const vx = verts[ic * 3] - ax;
-    const vy = verts[ic * 3 + 1] - ay;
-    const vz = verts[ic * 3 + 2] - az;
-    const nx = uy * vz - uz * vy;
-    const ny = uz * vx - ux * vz;
-    const nz = ux * vy - uy * vx;
-    acc[ia * 3] += nx;
-    acc[ia * 3 + 1] += ny;
-    acc[ia * 3 + 2] += nz;
-    acc[ib * 3] += nx;
-    acc[ib * 3 + 1] += ny;
-    acc[ib * 3 + 2] += nz;
-    acc[ic * 3] += nx;
-    acc[ic * 3 + 1] += ny;
-    acc[ic * 3 + 2] += nz;
+  const parent = new Int32Array(nv);
+  for (let i = 0; i < nv; i += 1) parent[i] = i;
+  const find = (a) => {
+    while (parent[a] !== a) {
+      parent[a] = parent[parent[a]];
+      a = parent[a];
+    }
+    return a;
+  };
+  const fc = faces.length / 3;
+  for (let f = 0; f < fc; f += 1) {
+    const a = find(faces[f * 3]);
+    parent[find(faces[f * 3 + 1])] = a;
+    parent[find(faces[f * 3 + 2])] = a;
   }
-  const out = new Float64Array(nv * 3);
-  for (let i = 0; i < nv; i += 1) {
-    const x = acc[i * 3];
-    const y = acc[i * 3 + 1];
-    const z = acc[i * 3 + 2];
-    const len = Math.hypot(x, y, z);
-    if (len < 1e-12) continue;
-    out[i * 3] = x / len;
-    out[i * 3 + 1] = y / len;
-    out[i * 3 + 2] = z / len;
+  const counts = new Map();
+  for (let f = 0; f < fc; f += 1) {
+    const r = find(faces[f * 3]);
+    counts.set(r, (counts.get(r) || 0) + 1);
+  }
+  let main = -1;
+  let best = -1;
+  for (const [r, n] of counts) {
+    if (n > best) {
+      best = n;
+      main = r;
+    }
+  }
+  const inMain = new Uint8Array(fc);
+  for (let f = 0; f < fc; f += 1) inMain[f] = find(faces[f * 3]) === main ? 1 : 0;
+  return inMain;
+}
+
+function faceGeom(verts, faces, f) {
+  const ia = faces[f * 3];
+  const ib = faces[f * 3 + 1];
+  const ic = faces[f * 3 + 2];
+  const a = ia * 3;
+  const b = ib * 3;
+  const c = ic * 3;
+  const ux = verts[b] - verts[a];
+  const uy = verts[b + 1] - verts[a + 1];
+  const uz = verts[b + 2] - verts[a + 2];
+  const vx = verts[c] - verts[a];
+  const vy = verts[c + 1] - verts[a + 1];
+  const vz = verts[c + 2] - verts[a + 2];
+  let nx = uy * vz - uz * vy;
+  let ny = uz * vx - ux * vz;
+  let nz = ux * vy - uy * vx;
+  const len = Math.hypot(nx, ny, nz) || 1;
+  nx /= len;
+  ny /= len;
+  nz /= len;
+  const cx = (verts[a] + verts[b] + verts[c]) / 3;
+  const cy = (verts[a + 1] + verts[b + 1] + verts[c + 1]) / 3;
+  const cz = (verts[a + 2] + verts[b + 2] + verts[c + 2]) / 3;
+  const r = Math.hypot(cx, cy);
+  const radial = r > 1e-8 ? (nx * cx + ny * cy) / r : 0;
+  const minR = Math.min(Math.hypot(verts[a], verts[a + 1]), Math.hypot(verts[b], verts[b + 1]), Math.hypot(verts[c], verts[c + 1]));
+  return { nx, ny, nz, cx, cy, cz, r, radial, minR };
+}
+
+/** 축면 법선이 축을 향하면 면 순서를 뒤집어 바깥을 향하게 한다. */
+function orientOutward(mesh) {
+  const { verts, faces, faceMain } = mesh;
+  const fc = faces.length / 3;
+  let pos = 0;
+  let neg = 0;
+  for (let f = 0; f < fc; f += 1) {
+    if (!faceMain[f]) continue;
+    const g = faceGeom(verts, faces, f);
+    if (g.r < SCREW_R_MM || Math.abs(g.nz) > 0.65) continue;
+    if (g.radial >= 0) pos += 1;
+    else neg += 1;
+  }
+  if (neg <= pos) return;
+  for (let f = 0; f < fc; f += 1) {
+    const b = faces[f * 3 + 1];
+    faces[f * 3 + 1] = faces[f * 3 + 2];
+    faces[f * 3 + 2] = b;
+  }
+}
+
+/** 가파른 축면이 끝나는 높이. 교합면(누운 면)은 넣지 않는다. */
+function wallTopMap(verts, faces, faceAttr, faceMain, flZ) {
+  const bins = 360;
+  const zMax = new Float64Array(bins).fill(NaN);
+  const fc = faces.length / 3;
+  for (let f = 0; f < fc; f += 1) {
+    if (!faceMain[f]) continue;
+    if (faceAttr[f] === CUFF_BLEND_PATCH_ATTRIBUTE || faceAttr[f] === HOLE_FILL_PATCH_ATTRIBUTE) continue;
+    const g = faceGeom(verts, faces, f);
+    if (g.r < SCREW_R_MM || g.radial < 0.75 || g.nz > 0.45) continue;
+    const th = Math.atan2(g.cy, g.cx);
+    if (g.cz < flZ(th) + 0.2) continue;
+    const b = Math.min(bins - 1, Math.floor((wrap(th) / TWO_PI) * bins));
+    if (!(zMax[b] >= g.cz)) zMax[b] = g.cz;
+  }
+  let known = 0;
+  let gap = 0;
+  let maxGap = 0;
+  for (let i = 0; i < bins * 2; i += 1) {
+    if (Number.isFinite(zMax[i % bins])) {
+      known += i < bins ? 1 : 0;
+      maxGap = Math.max(maxGap, gap);
+      gap = 0;
+    } else gap += 1;
+  }
+  if (known < 16 || maxGap > 45) return null;
+  for (let i = 0; i < bins; i += 1) {
+    if (Number.isFinite(zMax[i])) continue;
+    let l = 1;
+    while (!Number.isFinite(zMax[(i - l + bins) % bins])) l += 1;
+    let r = 1;
+    while (!Number.isFinite(zMax[(i + r) % bins])) r += 1;
+    zMax[i] = zMax[(i - l + bins) % bins] + ((zMax[(i + r) % bins] - zMax[(i - l + bins) % bins]) * l) / (l + r);
+  }
+  const sigma = 4;
+  const rad = sigma * 3;
+  const sm = new Float64Array(bins);
+  for (let i = 0; i < bins; i += 1) {
+    let s = 0;
+    let w = 0;
+    for (let k = -rad; k <= rad; k += 1) {
+      const g = Math.exp(-0.5 * (k / sigma) ** 2);
+      s += zMax[(i + k + bins) % bins] * g;
+      w += g;
+    }
+    sm[i] = s / w;
+  }
+  return (theta) => {
+    const p = (wrap(theta) / TWO_PI) * bins;
+    const i0 = Math.floor(p) % bins;
+    const w = p - Math.floor(p);
+    return sm[i0] * (1 - w) + sm[(i0 + 1) % bins] * w;
+  };
+}
+
+function splitByLevel(mesh, levelOf, canSplit) {
+  const { verts, faceAttr, faceMain } = mesh;
+  let { faces } = mesh;
+  const nv0 = verts.length / 3;
+  const fv = new Float64Array(nv0);
+  for (let v = 0; v < nv0; v += 1) {
+    let f = levelOf(verts[v * 3], verts[v * 3 + 1], verts[v * 3 + 2]);
+    if (Math.abs(f) < 1e-7) f = 0;
+    fv[v] = f;
+  }
+  const values = Array.from(fv);
+  const cache = new Map();
+  const mid = (a, b) => {
+    const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+    const hit = cache.get(key);
+    if (hit !== undefined) return hit;
+    const t = values[a] / (values[a] - values[b]);
+    const idx = verts.length / 3;
+    verts.push(
+      verts[a * 3] + t * (verts[b * 3] - verts[a * 3]),
+      verts[a * 3 + 1] + t * (verts[b * 3 + 1] - verts[a * 3 + 1]),
+      verts[a * 3 + 2] + t * (verts[b * 3 + 2] - verts[a * 3 + 2]),
+    );
+    values.push(0);
+    cache.set(key, idx);
+    return idx;
+  };
+  const sign = (v) => (values[v] > 0 ? 1 : values[v] < 0 ? -1 : 0);
+  const outFaces = [];
+  const outAttr = [];
+  const outMain = [];
+  const fc = faces.length / 3;
+  for (let f = 0; f < fc; f += 1) {
+    const tri = [faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2]];
+    const attr = faceAttr[f];
+    const main = faceMain[f];
+    const push = (a, b, c) => {
+      outFaces.push(a, b, c);
+      outAttr.push(attr);
+      outMain.push(main);
+    };
+    const s = tri.map(sign);
+    const crosses = s[0] * s[1] < 0 || s[1] * s[2] < 0 || s[2] * s[0] < 0;
+    if (!main || !crosses || !canSplit(f)) {
+      push(tri[0], tri[1], tri[2]);
+      continue;
+    }
+    const zeroAt = s.indexOf(0);
+    if (zeroAt >= 0) {
+      const v0 = tri[zeroAt];
+      const v1 = tri[(zeroAt + 1) % 3];
+      const v2 = tri[(zeroAt + 2) % 3];
+      const m = mid(v1, v2);
+      push(v0, v1, m);
+      push(v0, m, v2);
+      continue;
+    }
+    let iso = 0;
+    if (s[0] === s[1]) iso = 2;
+    else if (s[0] === s[2]) iso = 1;
+    const v0 = tri[iso];
+    const v1 = tri[(iso + 1) % 3];
+    const v2 = tri[(iso + 2) % 3];
+    const m1 = mid(v0, v1);
+    const m2 = mid(v0, v2);
+    push(v0, m1, m2);
+    push(m1, v1, v2);
+    push(m1, v2, m2);
+  }
+  return { verts, faces: outFaces, faceAttr: outAttr, faceMain: outMain };
+}
+
+function chainBoundaryLoops(directedEdges) {
+  const next = new Map();
+  for (const [a, b] of directedEdges) {
+    if (next.has(a)) return null;
+    next.set(a, b);
+  }
+  const loops = [];
+  const seen = new Set();
+  for (const start of next.keys()) {
+    if (seen.has(start)) continue;
+    const loop = [];
+    let v = start;
+    while (!seen.has(v)) {
+      seen.add(v);
+      loop.push(v);
+      v = next.get(v);
+      if (v === undefined) return null;
+    }
+    if (v !== start) return null;
+    loops.push(loop);
+  }
+  return loops;
+}
+
+function angularRow(loop, verts) {
+  const ang = loop.map((v) => angleOf(verts[v * 3], verts[v * 3 + 1]));
+  const steps = ang.map((a, i) => {
+    let d = ang[(i + 1) % ang.length] - a;
+    if (d > Math.PI) d -= TWO_PI;
+    if (d < -Math.PI) d += TWO_PI;
+    return d;
+  });
+  const turn = steps.reduce((s, d) => s + d, 0);
+  const dir = Math.sign(turn);
+  if (Math.abs(Math.abs(turn) - TWO_PI) > 0.15 || steps.some((d) => d * dir < -0.12)) return null;
+  let order = loop.map((_, i) => i);
+  if (dir < 0) order = order.reverse();
+  let start = 0;
+  for (let i = 1; i < order.length; i += 1) {
+    if (wrap(ang[order[i]]) < wrap(ang[order[start]])) start = i;
+  }
+  order = [...order.slice(start), ...order.slice(0, start)];
+  const out = [];
+  let acc = wrap(ang[order[0]]);
+  for (let i = 0; i < order.length; i += 1) {
+    if (i > 0) {
+      let d = ang[order[i]] - ang[order[i - 1]];
+      if (d > Math.PI) d -= TWO_PI;
+      if (d < -Math.PI) d += TWO_PI;
+      acc += d;
+    }
+    out.push({ v: loop[order[i]], a: acc });
   }
   return out;
 }
 
-function faceNormal(verts, a, b, c) {
-  const ax = verts[a * 3];
-  const ay = verts[a * 3 + 1];
-  const az = verts[a * 3 + 2];
-  const ux = verts[b * 3] - ax;
-  const uy = verts[b * 3 + 1] - ay;
-  const uz = verts[b * 3 + 2] - az;
-  const vx = verts[c * 3] - ax;
-  const vy = verts[c * 3 + 1] - ay;
-  const vz = verts[c * 3 + 2] - az;
-  return [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
+function zipperRows(lower, upper, emit) {
+  const A = lower.length;
+  const B = upper.length;
+  let i = 0;
+  let j = 0;
+  const angA = (k) => lower[k % A].a + Math.floor(k / A) * TWO_PI;
+  const angB = (k) => upper[k % B].a + Math.floor(k / B) * TWO_PI;
+  while (i < A || j < B) {
+    const nextA = i < A ? angA(i + 1) : Infinity;
+    const nextB = j < B ? angB(j + 1) : Infinity;
+    if (nextA <= nextB) {
+      emit(lower[i % A].v, lower[(i + 1) % A].v, upper[j % B].v);
+      i += 1;
+    } else {
+      emit(lower[i % A].v, upper[(j + 1) % B].v, upper[j % B].v);
+      j += 1;
+    }
+  }
 }
 
-/**
- * 정렬된 filled STL(축=Z, 피니시라인과 같은 좌표)에서 포스트 축면 봉우리를 누른다.
- * @param {Buffer} buffer
- * @param {{ finishLinePoints?: number[][], maxInMm?: number, maxOutMm?: number }} [options]
- */
-export function fairPostAboveFinishLine(buffer, options = {}) {
-  const parsed = parseStl(buffer);
-  const positions = parsed.positions;
-  const triCount = Math.floor(positions.length / 9);
-  const empty = {
+class RadialProbe {
+  constructor(verts, faces) {
+    this.verts = verts;
+    this.faces = faces;
+    const fc = faces.length / 3;
+    this.zmin = new Float64Array(fc);
+    this.zmax = new Float64Array(fc);
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let f = 0; f < fc; f += 1) {
+      const za = verts[faces[f * 3] * 3 + 2];
+      const zb = verts[faces[f * 3 + 1] * 3 + 2];
+      const zc = verts[faces[f * 3 + 2] * 3 + 2];
+      this.zmin[f] = Math.min(za, zb, zc);
+      this.zmax[f] = Math.max(za, zb, zc);
+      lo = Math.min(lo, this.zmin[f]);
+      hi = Math.max(hi, this.zmax[f]);
+    }
+    this.lo = lo;
+    this.hi = hi;
+    this.slab = 0.08;
+    this.angN = 72;
+    const n = Math.max(1, Math.ceil((hi - lo) / this.slab) + 1);
+    this.cells = Array.from({ length: n }, () => Array.from({ length: this.angN }, () => []));
+    this.wide = Array.from({ length: n }, () => []);
+    for (let f = 0; f < fc; f += 1) {
+      const s0 = Math.max(0, Math.floor((this.zmin[f] - lo) / this.slab));
+      const s1 = Math.min(n - 1, Math.floor((this.zmax[f] - lo) / this.slab));
+      const angs = [0, 1, 2].map((k) => angleOf(verts[faces[f * 3 + k] * 3], verts[faces[f * 3 + k] * 3 + 1]));
+      let span = 0;
+      for (let i = 0; i < 3; i += 1) {
+        let d = angs[(i + 1) % 3] - angs[i];
+        if (d > Math.PI) d -= TWO_PI;
+        if (d < -Math.PI) d += TWO_PI;
+        span = Math.max(span, Math.abs(d));
+      }
+      const wide = span > 0.35;
+      for (let s = s0; s <= s1; s += 1) {
+        if (wide) {
+          this.wide[s].push(f);
+          continue;
+        }
+        const seen = new Set();
+        for (const a of angs) {
+          const b = Math.min(this.angN - 1, Math.floor((a / TWO_PI) * this.angN));
+          if (seen.has(b)) continue;
+          seen.add(b);
+          this.cells[s][b].push(f);
+        }
+      }
+    }
+  }
+
+  rayRadius(theta, z) {
+    const s = Math.floor((z - this.lo) / this.slab);
+    if (s < 0 || s >= this.cells.length) return NaN;
+    const { verts, faces } = this;
+    const dx = Math.cos(theta);
+    const dy = Math.sin(theta);
+    let best = NaN;
+    const b = Math.min(this.angN - 1, Math.floor((wrap(theta) / TWO_PI) * this.angN));
+    const lists = [
+      this.cells[s][b],
+      this.cells[s][(b + 1) % this.angN],
+      this.cells[s][(b + this.angN - 1) % this.angN],
+      this.wide[s],
+    ];
+    for (const list of lists) for (const f of list) {
+      if (this.zmin[f] > z || this.zmax[f] < z || this.zmin[f] === this.zmax[f]) continue;
+      const hit = [];
+      for (let k = 0; k < 3; k += 1) {
+        const a = faces[f * 3 + k] * 3;
+        const b = faces[f * 3 + ((k + 1) % 3)] * 3;
+        const za = verts[a + 2];
+        const zb = verts[b + 2];
+        if (za === zb) continue;
+        const zLo = Math.min(za, zb);
+        const zHi = Math.max(za, zb);
+        if (z < zLo || z >= zHi) continue;
+        const t = (z - za) / (zb - za);
+        hit.push(verts[a] + t * (verts[b] - verts[a]), verts[a + 1] + t * (verts[b + 1] - verts[a + 1]));
+      }
+      if (hit.length < 4) continue;
+      const ex = hit[2] - hit[0];
+      const ey = hit[3] - hit[1];
+      const den = dx * ey - dy * ex;
+      if (Math.abs(den) < 1e-12) continue;
+      const r = (hit[0] * ey - hit[1] * ex) / den;
+      const u = (hit[0] * dy - hit[1] * dx) / den;
+      if (r > 0.5 && u >= -1e-8 && u <= 1 + 1e-8 && !(best >= r)) best = r;
+    }
+    return best;
+  }
+}
+
+function fillCircular(row) {
+  const n = row.length;
+  for (let i = 0; i < n; i += 1) {
+    if (Number.isFinite(row[i])) continue;
+    let l = 1;
+    while (l < n && !Number.isFinite(row[(i - l + n) % n])) l += 1;
+    let r = 1;
+    while (r < n && !Number.isFinite(row[(i + r) % n])) r += 1;
+    if (l >= n || r >= n) return;
+    const a = row[(i - l + n) % n];
+    const b = row[(i + r) % n];
+    row[i] = a + ((b - a) * l) / (l + r);
+  }
+}
+
+function buildSmoothField(probe, z0, z1) {
+  const zs = [];
+  for (let z = z0; z <= z1 + 1e-9; z += FIELD_DZ_MM) zs.push(z);
+  if (zs.length < 3) return null;
+  const grid = zs.map((z) => {
+    const row = new Float64Array(FIELD_BINS);
+    for (let j = 0; j < FIELD_BINS; j += 1) row[j] = probe.rayRadius((j / FIELD_BINS) * TWO_PI, z);
+    fillCircular(row);
+    return row;
+  });
+  const smooth = grid.map((row) => Float64Array.from(row));
+  const colW = [];
+  const colR = Math.ceil(SMOOTH_SIGMA_COL * 3);
+  let colSum = 0;
+  for (let k = -colR; k <= colR; k += 1) {
+    const g = Math.exp(-0.5 * (k / SMOOTH_SIGMA_COL) ** 2);
+    colW.push(g);
+    colSum += g;
+  }
+  for (let i = 0; i < colW.length; i += 1) colW[i] /= colSum;
+  const rowW = [];
+  const rowR = Math.ceil(SMOOTH_SIGMA_ROW * 3);
+  let rowSum = 0;
+  for (let k = -rowR; k <= rowR; k += 1) {
+    const g = Math.exp(-0.5 * (k / SMOOTH_SIGMA_ROW) ** 2);
+    rowW.push(g);
+    rowSum += g;
+  }
+  for (let i = 0; i < rowW.length; i += 1) rowW[i] /= rowSum;
+  const tmp = grid.map(() => new Float64Array(FIELD_BINS));
+  for (let zi = 0; zi < grid.length; zi += 1) {
+    for (let j = 0; j < FIELD_BINS; j += 1) {
+      let s = 0;
+      for (let k = -colR; k <= colR; k += 1) s += grid[zi][(j + k + FIELD_BINS) % FIELD_BINS] * colW[k + colR];
+      tmp[zi][j] = s;
+    }
+  }
+  for (let zi = 0; zi < grid.length; zi += 1) {
+    for (let j = 0; j < FIELD_BINS; j += 1) {
+      let s = 0;
+      let w = 0;
+      for (let k = -rowR; k <= rowR; k += 1) {
+        const zz = zi + k;
+        if (zz < 0 || zz >= grid.length) continue;
+        const g = rowW[k + rowR];
+        s += tmp[zz][j] * g;
+        w += g;
+      }
+      smooth[zi][j] = w > 0 ? s / w : tmp[zi][j];
+    }
+  }
+  return {
+    sample(theta, z) {
+      const tz = (z - zs[0]) / FIELD_DZ_MM;
+      const z0i = Math.max(0, Math.min(smooth.length - 1, Math.floor(tz)));
+      const z1i = Math.max(0, Math.min(smooth.length - 1, z0i + 1));
+      const wz = Math.max(0, Math.min(1, tz - z0i));
+      const p = (wrap(theta) / TWO_PI) * FIELD_BINS;
+      const j0 = Math.floor(p) % FIELD_BINS;
+      const wj = p - Math.floor(p);
+      const j1 = (j0 + 1) % FIELD_BINS;
+      const a = smooth[z0i][j0] * (1 - wj) + smooth[z0i][j1] * wj;
+      const b = smooth[z1i][j0] * (1 - wj) + smooth[z1i][j1] * wj;
+      return a * (1 - wz) + b * wz;
+    },
+  };
+}
+
+function rowSampler(row, verts, pick) {
+  const pts = row.map(({ v, a }) => ({ a, value: pick(verts, v) }));
+  const first = pts[0];
+  pts.push({ a: first.a + TWO_PI, value: first.value });
+  return (theta) => {
+    let a = wrap(theta);
+    if (a < pts[0].a - 1e-8) a += TWO_PI;
+    let lo = 0;
+    let hi = pts.length - 1;
+    while (hi - lo > 1) {
+      const m = (lo + hi) >> 1;
+      if (pts[m].a <= a) lo = m;
+      else hi = m;
+    }
+    const span = pts[hi].a - pts[lo].a;
+    const w = span > 1e-12 ? (a - pts[lo].a) / span : 0;
+    return pts[lo].value * (1 - w) + pts[hi].value * w;
+  };
+}
+
+function unchanged(buffer, triCount, reason) {
+  return {
     buffer,
     movedCount: 0,
     maxInwardMm: 0,
     maxOutwardMm: 0,
     faceCount: triCount,
     revertedVertices: 0,
-    desiredInwardUm: null,
+    desiredInwardUm: emptyDesired(),
+    patchTriangles: 0,
+    rows: 0,
+    reason,
   };
+}
+
+/**
+ * 피니시라인 위 포스트 축면을 커프와 같은 간격의 곡면으로 바꾼다.
+ * @param {Buffer} buffer
+ * @param {{ finishLinePoints?: number[][] }} [options]
+ */
+export function fairPostAboveFinishLine(buffer, options = {}) {
+  const parsed = parseStl(buffer);
+  const triCount = Math.floor(parsed.positions.length / 9);
   const points = (options.finishLinePoints || [])
-    .filter((p) => Array.isArray(p) && p.length >= 3)
-    .map((p) => [Number(p[0]), Number(p[1]), Number(p[2])])
-    .filter((p) => p.every((v) => Number.isFinite(v)));
-  if (points.length < 8 || triCount < 10) return empty;
+    .map((p) => [Number(p?.[0]), Number(p?.[1]), Number(p?.[2])])
+    .filter((p) => p.every(Number.isFinite));
+  const flZ = finishLineAngleMap(points);
+  if (!flZ || triCount < 100) return unchanged(buffer, triCount, "피니시라인이 없습니다.");
 
-  const maxIn = Number.isFinite(options.maxInMm) ? options.maxInMm : POST_FAIR_MAX_IN_MM;
-  const maxOut = Number.isFinite(options.maxOutMm) ? options.maxOutMm : POST_FAIR_MAX_OUT_MM;
-  const flZAt = finishLineAngleMap(points);
-  const { verts, cornerOf, faces } = weldSoup(positions);
-  const nv = verts.length / 3;
-  const normals = vertexNormals(verts, faces);
-  const orig = Float64Array.from(verts);
+  const welded = weldSoup(parsed.positions, parsed.attributes);
+  const faceMain = Array.from(largestComponent(welded.verts, welded.faces));
+  let mesh = { ...welded, faceMain };
+  orientOutward(mesh);
+  const probe = new RadialProbe(mesh.verts, mesh.faces.slice());
+  const zTopOf = wallTopMap(mesh.verts, mesh.faces, mesh.faceAttr, mesh.faceMain, flZ);
+  if (!zTopOf) return unchanged(buffer, triCount, "포스트 축면 위끝을 찾지 못했습니다.");
 
-  const theta = new Float64Array(nv);
-  const radius = new Float64Array(nv);
-  const above = new Float64Array(nv);
-  const radialN = new Float64Array(nv);
-  for (let i = 0; i < nv; i += 1) {
-    const x = verts[i * 3];
-    const y = verts[i * 3 + 1];
-    const z = verts[i * 3 + 2];
-    const r = Math.hypot(x, y);
-    radius[i] = r;
-    theta[i] = Math.atan2(y, x);
-    above[i] = z - flZAt(theta[i]);
-    if (r > 1e-6) {
-      radialN[i] = (normals[i * 3] * x + normals[i * 3 + 1] * y) / r;
+  // 커프 면도 잘라야 맞닿은 모서리에 중간 꼭짓점이 맞는다. 지우지는 않는다.
+  const crossesOuter = (f) => faceGeom(mesh.verts, mesh.faces, f).minR > SCREW_R_MM;
+  mesh = splitByLevel(mesh, (x, y, z) => z - flZ(angleOf(x, y)), crossesOuter);
+  mesh = splitByLevel(mesh, (x, y, z) => z - zTopOf(angleOf(x, y)), (f) => faceGeom(mesh.verts, mesh.faces, f).minR > SCREW_R_MM);
+
+  const { verts, faces, faceAttr, faceMain: main } = mesh;
+  const fc = faces.length / 3;
+  const candidate = new Uint8Array(fc);
+  for (let f = 0; f < fc; f += 1) {
+    if (!main[f]) continue;
+    if (faceAttr[f] === CUFF_BLEND_PATCH_ATTRIBUTE || faceAttr[f] === HOLE_FILL_PATCH_ATTRIBUTE) continue;
+    const g = faceGeom(verts, faces, f);
+    if (g.minR <= SCREW_R_MM || g.radial < 0.32 || g.nz > 0.86) continue;
+    const th = Math.atan2(g.cy, g.cx);
+    if (g.cz <= flZ(th) + 0.002 || g.cz >= zTopOf(th) + 0.05) continue;
+    candidate[f] = 1;
+  }
+  const ek = (a, b) => (a < b ? `${a}_${b}` : `${b}_${a}`);
+  const edgeFaces = new Map();
+  for (let f = 0; f < fc; f += 1) {
+    if (!main[f]) continue;
+    for (let k = 0; k < 3; k += 1) {
+      const key = ek(faces[f * 3 + k], faces[f * 3 + ((k + 1) % 3)]);
+      const list = edgeFaces.get(key);
+      if (list) list.push(f);
+      else edgeFaces.set(key, [f]);
     }
   }
-
-  let posN = 0;
-  let negN = 0;
-  for (let i = 0; i < nv; i += 1) {
-    if (above[i] < 0.05 || radius[i] < 0.4) continue;
-    if (radialN[i] > 0.3) posN += 1;
-    else if (radialN[i] < -0.3) negN += 1;
-  }
-  const flipNormal = negN > posN * 2;
-  const isOuter = (i) => {
-    if (radius[i] < 0.35) return false;
-    const rn = flipNormal ? -radialN[i] : radialN[i];
-    return rn >= MIN_RADIAL_NORMAL;
-  };
-
-  const sample = new Uint8Array(nv);
-  const weight = new Float64Array(nv);
-  const marginDist = new Float64Array(nv);
-  let sampleCount = 0;
-  for (let i = 0; i < nv; i += 1) {
-    if (!isOuter(i) || above[i] < -SAMPLE_BELOW_MM) continue;
-    sample[i] = 1;
-    sampleCount += 1;
-    marginDist[i] = distanceToFinishLine(verts[i * 3], verts[i * 3 + 1], verts[i * 3 + 2], points);
-    const byZ = smoothstep((above[i] - GUARD_MM) / FALLOFF_MM);
-    const byDist = smoothstep((marginDist[i] - 0.05) / 0.2);
-    weight[i] = Math.min(byZ, byDist);
-  }
-  if (sampleCount < 30) return empty;
-
-  const nSign = flipNormal ? -1 : 1;
-  const nx = new Float64Array(nv);
-  const ny = new Float64Array(nv);
-  const nz = new Float64Array(nv);
-  for (let i = 0; i < nv; i += 1) {
-    nx[i] = nSign * normals[i * 3];
-    ny[i] = nSign * normals[i * 3 + 1];
-    nz[i] = nSign * normals[i * 3 + 2];
-  }
-
-  const colBins = Array.from({ length: COL_BINS }, () => []);
-  const colOf = (th) => Math.min(COL_BINS - 1, Math.floor((wrap(th) / TWO_PI) * COL_BINS));
-  for (let i = 0; i < nv; i += 1) if (sample[i]) colBins[colOf(theta[i])].push(i);
-  const colReach = Math.ceil((COL_TH / TWO_PI) * COL_BINS) + 1;
-  const sigZ2 = COL_SIGMA_Z * COL_SIGMA_Z;
-
-  const weightedMedian = (pts) => {
-    if (pts.length < 2) return null;
-    pts.sort((a, b) => a[0] - b[0]);
-    let sumW = 0;
-    for (let k = 0; k < pts.length; k += 1) sumW += pts[k][1];
-    let acc = 0;
-    for (let k = 0; k < pts.length; k += 1) {
-      acc += pts[k][1];
-      if (acc >= sumW * 0.5) return pts[k][0];
+  const removed = new Uint8Array(fc);
+  const stack = [];
+  for (let f = 0; f < fc; f += 1) {
+    if (!candidate[f]) continue;
+    const g = faceGeom(verts, faces, f);
+    if (g.radial > 0.85 && g.nz < 0.4) {
+      removed[f] = 1;
+      stack.push(f);
     }
-    return pts[pts.length - 1][0];
-  };
-
-  const columnDeltaR = (i) => {
-    const th = theta[i];
-    const z = verts[i * 3 + 2];
-    const r = Math.hypot(verts[i * 3], verts[i * 3 + 1]);
-    const tb = colOf(th);
-    const abovePts = [];
-    const belowPts = [];
-    for (let dt = -colReach; dt <= colReach; dt += 1) {
-      const list = colBins[(tb + dt + COL_BINS) % COL_BINS];
-      for (let k = 0; k < list.length; k += 1) {
-        const j = list[k];
-        if (j === i) continue;
-        const dth = angDiff(theta[j], th);
-        const dz = verts[j * 3 + 2] - z;
-        const adz = Math.abs(dz);
-        if (Math.abs(dth) > COL_TH || adz < COL_Z_MIN || adz > COL_Z_MAX) continue;
-        const rj = Math.hypot(verts[j * 3], verts[j * 3 + 1]);
-        if (Math.abs(rj - r) > COL_R_GATE_MM) continue;
-        const w = Math.exp(-0.5 * ((dz * dz) / sigZ2));
-        (dz > 0 ? abovePts : belowPts).push([rj, w]);
+  }
+  while (stack.length) {
+    const f = stack.pop();
+    for (let k = 0; k < 3; k += 1) {
+      const key = ek(faces[f * 3 + k], faces[f * 3 + ((k + 1) % 3)]);
+      for (const g of edgeFaces.get(key) || []) {
+        if (removed[g] || !candidate[g]) continue;
+        removed[g] = 1;
+        stack.push(g);
       }
     }
-    const aboveMed = weightedMedian(abovePts);
-    const belowMed = weightedMedian(belowPts);
-    if (aboveMed == null || belowMed == null) return null;
-    // 위와 아래보다 동시에 굵을 때만 봉우리다. 경사면·골 어깨는 빠진다.
-    return Math.max(aboveMed, belowMed) - r;
-  };
+  }
+  let removedCount = 0;
+  let outwardVotes = 0;
+  for (let f = 0; f < fc; f += 1) {
+    if (!removed[f]) continue;
+    removedCount += 1;
+    const g = faceGeom(verts, faces, f);
+    outwardVotes += Math.sign(g.nx * g.cx + g.ny * g.cy);
+  }
+  if (removedCount < 30) return unchanged(buffer, triCount, "다시 깔 축면이 없습니다.");
 
+  const keptEdges = new Set();
+  const removedEdges = [];
+  for (let f = 0; f < fc; f += 1) {
+    if (!main[f]) continue;
+    for (let k = 0; k < 3; k += 1) {
+      const a = faces[f * 3 + k];
+      const b = faces[f * 3 + ((k + 1) % 3)];
+      if (removed[f]) removedEdges.push([a, b]);
+      else keptEdges.add(`${a}_${b}`);
+    }
+  }
+  const boundary = [];
+  for (const [a, b] of removedEdges) {
+    if (keptEdges.has(`${b}_${a}`)) boundary.push([b, a]);
+  }
+  const openEdgeCount = new Map();
+  for (const [a, b] of removedEdges) {
+    const key = ek(a, b);
+    openEdgeCount.set(key, (openEdgeCount.get(key) || 0) + 1);
+  }
+  for (const [a, b] of removedEdges) {
+    if (keptEdges.has(`${b}_${a}`) || keptEdges.has(`${a}_${b}`)) continue;
+    if (openEdgeCount.get(ek(a, b)) !== 1) continue;
+    boundary.push([b, a]);
+  }
+  const loops = chainBoundaryLoops(boundary);
+  if (!loops) return unchanged(buffer, triCount, "축면 경계가 닫히지 않습니다.");
+  const rings = [];
+  for (const loop of loops) {
+    if (loop.length < 12) continue;
+    const row = angularRow(loop, verts);
+    if (!row) continue;
+    const meanR = loop.reduce((s, v) => s + Math.hypot(verts[v * 3], verts[v * 3 + 1]), 0) / loop.length;
+    const meanZ = loop.reduce((s, v) => s + verts[v * 3 + 2], 0) / loop.length;
+    if (meanR < SCREW_R_MM) continue;
+    rings.push({ row, meanZ, meanR, n: loop.length });
+  }
+  if (rings.length !== 2) {
+    return unchanged(buffer, triCount, `축면 경계 고리가 ${rings.length}개입니다.`);
+  }
+  rings.sort((a, b) => a.meanZ - b.meanZ);
+  const bottom = rings[0];
+  const top = rings[1];
+  if (top.meanZ - bottom.meanZ < 0.4) return unchanged(buffer, triCount, "포스트 축면이 너무 낮습니다.");
+
+  const zBottom = rowSampler(bottom.row, verts, (vs, v) => vs[v * 3 + 2]);
+  const zTop = rowSampler(top.row, verts, (vs, v) => vs[v * 3 + 2]);
+  const rBottom = rowSampler(bottom.row, verts, (vs, v) => Math.hypot(vs[v * 3], vs[v * 3 + 1]));
+  const rTop = rowSampler(top.row, verts, (vs, v) => Math.hypot(vs[v * 3], vs[v * 3 + 1]));
+  let maxH = 0;
+  for (let j = 0; j < COLUMNS; j += 1) {
+    const th = (j / COLUMNS) * TWO_PI;
+    maxH = Math.max(maxH, zTop(th) - zBottom(th));
+  }
+  const rows = Math.max(8, Math.min(MAX_ROWS, Math.ceil(maxH / ROW_PITCH_MM)));
+  const field = buildSmoothField(probe, bottom.meanZ - 0.1, top.meanZ + 0.1);
+  if (!field) return unchanged(buffer, triCount, "축면 반경을 읽지 못했습니다.");
+
+  const grid = [];
   const desired = [];
-  for (let pass = 0; pass < FAIR_PASSES; pass += 1) {
-    const nextR = new Float64Array(nv);
-    for (let i = 0; i < nv; i += 1) nextR[i] = Math.hypot(verts[i * 3], verts[i * 3 + 1]);
-    for (let i = 0; i < nv; i += 1) {
-      if (!(weight[i] > 0)) continue;
-      const delta = columnDeltaR(i);
-      if (delta == null) continue;
-      // delta < 0 이면 위·아래보다 반경이 크다.
-      if (pass === 0 && weight[i] > 0.85 && delta < 0) desired.push(-delta);
-      if (!(-delta > BUMP_DEADBAND_MM)) continue;
-      const origR = Math.hypot(orig[i * 3], orig[i * 3 + 1]);
-      const room = nextR[i] - (origR - maxIn);
-      if (!(room > 0)) continue;
-      const shrink = Math.min(-delta, room) * weight[i];
-      nextR[i] -= shrink;
-      if (nextR[i] > origR + maxOut) nextR[i] = origR + maxOut;
-    }
-    for (let i = 0; i < nv; i += 1) {
-      const r = Math.hypot(verts[i * 3], verts[i * 3 + 1]);
-      if (!(r > 1e-8) || nextR[i] === r) continue;
-      const scale = nextR[i] / r;
-      verts[i * 3] *= scale;
-      verts[i * 3 + 1] *= scale;
-    }
-  }
-
-  const nf = faces.length / 3;
-  const origN = new Float64Array(nf * 3);
-  for (let f = 0; f < nf; f += 1) {
-    const n = faceNormal(orig, faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2]);
-    origN[f * 3] = n[0];
-    origN[f * 3 + 1] = n[1];
-    origN[f * 3 + 2] = n[2];
-  }
-  const revert = new Uint8Array(nv);
-  let revertedVertices = 0;
-  for (let f = 0; f < nf; f += 1) {
-    const n = faceNormal(verts, faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2]);
-    const dot = n[0] * origN[f * 3] + n[1] * origN[f * 3 + 1] + n[2] * origN[f * 3 + 2];
-    const o2 = origN[f * 3] ** 2 + origN[f * 3 + 1] ** 2 + origN[f * 3 + 2] ** 2;
-    const n2 = n[0] * n[0] + n[1] * n[1] + n[2] * n[2];
-    if (o2 < 1e-16 || n2 < 1e-16 || dot <= 0) {
-      revert[faces[f * 3]] = 1;
-      revert[faces[f * 3 + 1]] = 1;
-      revert[faces[f * 3 + 2]] = 1;
-    }
-  }
-  for (let i = 0; i < nv; i += 1) {
-    if (!revert[i]) continue;
-    verts[i * 3] = orig[i * 3];
-    verts[i * 3 + 1] = orig[i * 3 + 1];
-    verts[i * 3 + 2] = orig[i * 3 + 2];
-    revertedVertices += 1;
-  }
-
-  const moved = new Uint8Array(nv);
-  let movedCount = 0;
   let maxInwardMm = 0;
   let maxOutwardMm = 0;
-  for (let i = 0; i < nv; i += 1) {
-    const dx = verts[i * 3] - orig[i * 3];
-    const dy = verts[i * 3 + 1] - orig[i * 3 + 1];
-    const dz = verts[i * 3 + 2] - orig[i * 3 + 2];
-    if (dx * dx + dy * dy + dz * dz < 1e-16) continue;
-    moved[i] = 1;
-    movedCount += 1;
-    const along = dx * nx[i] + dy * ny[i] + dz * nz[i];
-    maxInwardMm = Math.max(maxInwardMm, -along);
-    maxOutwardMm = Math.max(maxOutwardMm, along);
-    const origR = Math.hypot(orig[i * 3], orig[i * 3 + 1]);
-    const newR = Math.hypot(verts[i * 3], verts[i * 3 + 1]);
-    maxOutwardMm = Math.max(maxOutwardMm, newR - origR);
+  let movedCount = 0;
+  for (let r = 1; r < rows; r += 1) {
+    const t = r / rows;
+    const line = [];
+    for (let j = 0; j < COLUMNS; j += 1) {
+      const theta = (j / COLUMNS) * TWO_PI;
+      const zb = zBottom(theta);
+      const zt = zTop(theta);
+      const z = zb + t * (zt - zb);
+      const heightEdge = Math.min(z - zb, zt - z);
+      const w = smoothstep(heightEdge / RIM_BLEND_MM);
+      const rs = field.sample(theta, z);
+      const rim = z - zb <= zt - z ? rBottom(theta) : rTop(theta);
+      let rad = (Number.isFinite(rs) ? rs : rim) * w + rim * (1 - w);
+      const ro = probe.rayRadius(theta, z);
+      if (Number.isFinite(ro)) {
+        const lo = ro - POST_FAIR_MAX_IN_MM;
+        const hi = ro + POST_FAIR_MAX_OUT_MM;
+        if (rad > hi) rad = hi;
+        if (rad < lo) rad = lo;
+        const delta = rad - ro;
+        if (delta < -0.001) movedCount += 1;
+        if (delta < 0) maxInwardMm = Math.max(maxInwardMm, -delta);
+        else maxOutwardMm = Math.max(maxOutwardMm, delta);
+        desired.push(Math.max(0, -delta));
+      }
+      const idx = verts.length / 3;
+      verts.push(rad * Math.cos(theta), rad * Math.sin(theta), z);
+      line.push({ v: idx, a: theta });
+    }
+    grid.push(line);
   }
 
-  const outPos = new Float64Array(positions.length);
-  for (let c = 0; c < cornerOf.length; c += 1) {
-    const v = cornerOf[c];
-    const o = c * 3;
-    if (moved[v]) {
-      outPos[o] = verts[v * 3];
-      outPos[o + 1] = verts[v * 3 + 1];
-      outPos[o + 2] = verts[v * 3 + 2];
-    } else {
-      outPos[o] = positions[o];
-      outPos[o + 1] = positions[o + 1];
-      outPos[o + 2] = positions[o + 2];
+  const outward = outwardVotes >= 0 ? 1 : -1;
+  const newFaces = [];
+  const emit = (a, b, c) => {
+    const pa = a * 3;
+    const pb = b * 3;
+    const pc = c * 3;
+    const ux = verts[pb] - verts[pa];
+    const uy = verts[pb + 1] - verts[pa + 1];
+    const uz = verts[pb + 2] - verts[pa + 2];
+    const vx = verts[pc] - verts[pa];
+    const vy = verts[pc + 1] - verts[pa + 1];
+    const vz = verts[pc + 2] - verts[pa + 2];
+    const nx = uy * vz - uz * vy;
+    const ny = uz * vx - ux * vz;
+    const cx = (verts[pa] + verts[pb] + verts[pc]) / 3;
+    const cy = (verts[pa + 1] + verts[pb + 1] + verts[pc + 1]) / 3;
+    if (Math.hypot(nx, ny, ux * vy - uy * vx) < 1e-14) return;
+    if (Math.sign(nx * cx + ny * cy) === outward || Math.sign(nx * cx + ny * cy) === 0) newFaces.push(a, b, c);
+    else newFaces.push(a, c, b);
+  };
+  const stackRows = [bottom.row, ...grid, top.row];
+  for (let r = 0; r + 1 < stackRows.length; r += 1) zipperRows(stackRows[r], stackRows[r + 1], emit);
+
+  const outFaces = [];
+  const outAttr = [];
+  for (let f = 0; f < fc; f += 1) {
+    if (removed[f]) continue;
+    outFaces.push(faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2]);
+    outAttr.push(faceAttr[f]);
+  }
+  for (let i = 0; i < newFaces.length; i += 3) {
+    outFaces.push(newFaces[i], newFaces[i + 1], newFaces[i + 2]);
+    outAttr.push(POST_FAIR_PATCH_ATTRIBUTE);
+  }
+  const outTri = outFaces.length / 3;
+  const positions = new Float64Array(outTri * 9);
+  for (let t = 0; t < outTri; t += 1) {
+    for (let k = 0; k < 3; k += 1) {
+      const v = outFaces[t * 3 + k] * 3;
+      positions[t * 9 + k * 3] = verts[v];
+      positions[t * 9 + k * 3 + 1] = verts[v + 1];
+      positions[t * 9 + k * 3 + 2] = verts[v + 2];
     }
   }
-
   desired.sort((a, b) => a - b);
   const q = (p) => (desired.length ? desired[Math.min(desired.length - 1, Math.floor(p * (desired.length - 1)))] * 1000 : 0);
-
   return {
-    buffer: writeBinaryStl({ positions: outPos, attributes: parsed.attributes }),
+    buffer: writeBinaryStl({ positions, attributes: Uint16Array.from(outAttr) }),
     movedCount,
     maxInwardMm,
     maxOutwardMm,
-    faceCount: triCount,
-    revertedVertices,
+    faceCount: outTri,
+    revertedVertices: 0,
     desiredInwardUm: desired.length
-      ? { n: desired.length, p50: q(0.5), p90: q(0.9), p95: q(0.95), max: desired[desired.length - 1] * 1000 }
-      : { n: 0, p50: 0, p90: 0, p95: 0, max: 0 },
+      ? { n: desired.length, p50: +q(0.5).toFixed(1), p90: +q(0.9).toFixed(1), p95: +q(0.95).toFixed(1), max: +(desired[desired.length - 1] * 1000).toFixed(1) }
+      : emptyDesired(),
+    patchTriangles: newFaces.length / 3,
+    rows,
+    removedTriangles: removedCount,
+    reason: "",
   };
 }

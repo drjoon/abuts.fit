@@ -1,8 +1,8 @@
 // related files:
 // - web/backend/services/abutmentStl/postFair.js
 //
-// 피니시라인 위 포스트 축면을 매끈하게 하고, 전후 요철을 출력한다.
-// 위상(삼각형 수·연결)은 유지하고, 반경이 커지는 이동은 2µm 이하다.
+// 피니시라인 위 포스트 축면을 커프와 같은 밀도로 다시 깔고, 전후 요철을 출력한다.
+// 스크류홀·교합면·커프는 그대로 둔다. 반경이 커지는 이동은 2µm 이하다.
 //
 //   node scripts/abutment-stl-js/fair-post.js --file in.stl --out out.stl
 //   ENV_FILE=local.env NODE_ENV=test node scripts/abutment-stl-js/fair-post.js --request CA261019-BQM --out /tmp/post.stl
@@ -268,6 +268,10 @@ const topology = sameTopology(input.buf, result.buffer);
 console.log(JSON.stringify({
   version: POST_FAIR_VERSION,
   topology,
+  reason: result.reason || "",
+  patchTriangles: result.patchTriangles || 0,
+  rows: result.rows || 0,
+  removedTriangles: result.removedTriangles || 0,
   movedCount: result.movedCount,
   maxInwardUm: +(result.maxInwardMm * 1000).toFixed(1),
   maxOutwardUm: +(result.maxOutwardMm * 1000).toFixed(1),
