@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-20: 프리뷰 다운로드 파일명 — NC는 .nc, 공정 이미지는 png/jpg. 확장자 없으면 .stl로 두지 않는다.
 // - 2026-09-03: 세척.패킹 각인 이미지 업로드 직후 프리뷰 URL을 즉시 반영(→ 승인 가능 상태).
 // - 2026-08-17: 세척.패킹→가공 롤백 시 우편함 유지, 가공→준비 롤백 시 해제.
 // - 2026-08-03: 가공/롤백/승인 로컬 패치에서 의뢰 단계 명칭을 '준비'로 사용하도록 조정 (UI 표시용).
@@ -18,6 +19,10 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
 import { deleteCncProgramCache } from "@/shared/files/fileBlobCache";
 import { downloadBlobFile } from "@/shared/components/practice/ViewPaintSurface";
+import {
+  resolveDownloadFileName,
+  type PreviewDownloadKind,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/previewDownloadName";
 import {
   deriveStageForFilter,
   patchFilledStlFile,
@@ -501,7 +506,11 @@ export const useRequestFileHandlers = ({
   };
 
   const downloadByEndpoint = useCallback(
-    async (endpoint: string, errorMessage: string) => {
+    async (
+      endpoint: string,
+      errorMessage: string,
+      opts?: { preferredName?: string; requestId?: string },
+    ) => {
       if (!token) {
         toast({
           title: "다운로드 실패",
@@ -510,6 +519,11 @@ export const useRequestFileHandlers = ({
         });
         return;
       }
+      const kind: PreviewDownloadKind = endpoint.includes("/nc-file-url")
+        ? "nc"
+        : endpoint.includes("/stage-file-url")
+          ? "image"
+          : "stl";
       let signedUrl = "";
       try {
         const res = await fetch(endpoint, {
@@ -525,15 +539,20 @@ export const useRequestFileHandlers = ({
         if (!signedUrl) {
           throw new Error(errorMessage);
         }
-        const rawName = String(data?.data?.fileName || "").trim();
-        const baseName = (rawName || "download").split("/").pop() || "download";
-        const fileName = baseName.includes(".") ? baseName : `${baseName}.stl`;
+        const apiName = String(data?.data?.fileName || "").trim();
         try {
           const fileRes = await fetch(signedUrl);
           if (!fileRes.ok) {
             throw new Error(errorMessage);
           }
           const blob = await fileRes.blob();
+          const fileName = resolveDownloadFileName({
+            preferredName: opts?.preferredName,
+            apiName,
+            kind,
+            mime: blob.type,
+            requestId: opts?.requestId,
+          });
           downloadBlobFile(blob, fileName);
         } catch {
           // S3 CORS 등으로 blob fetch가 막히면 서명 URL 직접 열기(attachment disposition).
@@ -551,42 +570,46 @@ export const useRequestFileHandlers = ({
   );
 
   const handleDownloadOriginalStl = useCallback(
-    async (req: ManufacturerRequest) => {
+    async (req: ManufacturerRequest, preferredName?: string) => {
       await downloadByEndpoint(
         `/api/requests/${req._id}/original-file-url`,
         "원본 STL을 가져올 수 없습니다.",
+        { preferredName, requestId: String(req.requestId || "") },
       );
     },
     [downloadByEndpoint],
   );
 
   const handleDownloadCamStl = useCallback(
-    async (req: ManufacturerRequest) => {
+    async (req: ManufacturerRequest, preferredName?: string) => {
       await downloadByEndpoint(
         `/api/requests/${req._id}/cam-file-url`,
         "CAM STL을 가져올 수 없습니다.",
+        { preferredName, requestId: String(req.requestId || "") },
       );
     },
     [downloadByEndpoint],
   );
 
   const handleDownloadNcFile = useCallback(
-    async (req: ManufacturerRequest) => {
+    async (req: ManufacturerRequest, preferredName?: string) => {
       await downloadByEndpoint(
         `/api/requests/${req._id}/nc-file-url`,
         "NC 파일을 가져올 수 없습니다.",
+        { preferredName, requestId: String(req.requestId || "") },
       );
     },
     [downloadByEndpoint],
   );
 
   const handleDownloadStageFile = useCallback(
-    async (req: ManufacturerRequest, stage: string) => {
+    async (req: ManufacturerRequest, stage: string, preferredName?: string) => {
       await downloadByEndpoint(
         `/api/requests/${req._id}/stage-file-url?stage=${encodeURIComponent(
           stage,
         )}`,
         "파일을 가져올 수 없습니다.",
+        { preferredName, requestId: String(req.requestId || "") },
       );
     },
     [downloadByEndpoint],

@@ -9,6 +9,7 @@
 // - web/backend/services/requestSnapshotTriggers.service.js
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // change-log:
+// - 2026-10-20: NC 다운로드 응답에 fileName(의뢰번호.nc)을 넣어 STL로 저장되지 않게 한다.
 // - 2026-10-16: ESP 다운로드는 gzip으로 운영 PC에서 받고, 브라우저는 짧은 주소로 직접 저장한다.
 // - 2026-08-29: CAM 생성 중단(cancel-regeneration) — NC 삭제·Esprit /cancel·블러 해제(ncPreload NONE).
 // - 2026-08-29: NC 재생성 시 ncPreload=GENERATING + ncFile 삭제 + cam-processing-started(ncCleared).
@@ -762,7 +763,7 @@ export async function getNcFileUrl(req, res) {
 
     return res.status(200).json({
       success: true,
-      data: { url },
+      data: { url, fileName },
     });
   } catch (error) {
     res.status(500).json({

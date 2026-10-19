@@ -2583,6 +2583,36 @@ export async function updateReviewStatusByStage(req, res) {
   }
 }
 
+function stageImageDownloadName(meta, stage) {
+  const candidates = [meta?.filePath, meta?.fileName, meta?.originalName, meta?.s3Key];
+  for (const raw of candidates) {
+    const base = String(raw || "")
+      .trim()
+      .split(/[/\\]/)
+      .pop();
+    if (base && /\.(png|jpe?g|webp|bmp|gif)$/i.test(base)) return base;
+  }
+  const type = String(meta?.fileType || "").toLowerCase();
+  const ext = type.includes("jpeg") || type.includes("jpg")
+    ? ".jpg"
+    : type.includes("webp")
+      ? ".webp"
+      : type.includes("bmp")
+        ? ".bmp"
+        : type.includes("gif")
+          ? ".gif"
+          : type.includes("png")
+            ? ".png"
+            : "";
+  const stem =
+    String(meta?.fileName || meta?.filePath || `${stage}-image`)
+      .trim()
+      .split(/[/\\]/)
+      .pop()
+      ?.replace(/\.[^.]+$/, "") || `${stage}-image`;
+  return ext ? `${stem}${ext}` : stem;
+}
+
 export async function getStageFileUrl(req, res) {
   try {
     const { id } = req.params;
@@ -2616,7 +2646,7 @@ export async function getStageFileUrl(req, res) {
 
     const meta = request?.caseInfos?.stageFiles?.[stage];
     const s3Key = meta?.s3Key;
-    const fileName = meta?.fileName || `${stage}-file`;
+    const fileName = stageImageDownloadName(meta, stage);
     if (!s3Key) {
       return res.status(404).json({
         success: false,
@@ -2634,7 +2664,7 @@ export async function getStageFileUrl(req, res) {
 
     return res.status(200).json({
       success: true,
-      data: { url },
+      data: { url, fileName },
     });
   } catch (error) {
     return res.status(500).json({

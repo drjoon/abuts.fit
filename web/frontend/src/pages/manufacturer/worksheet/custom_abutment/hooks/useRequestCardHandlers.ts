@@ -6,6 +6,7 @@
 // - web/backend/controllers/requests/common.review.controller.js
 import { useCallback } from "react";
 import { type ManufacturerRequest, resolveFilledStlFile } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import { resolveDownloadFileName } from "@/pages/manufacturer/worksheet/custom_abutment/utils/previewDownloadName";
 import { useToast } from "@/shared/hooks/use-toast";
 
 export const useRequestCardHandlers = (
@@ -37,14 +38,20 @@ export const useRequestCardHandlers = (
         const url = data?.data?.url;
         if (!url) throw new Error("download url missing");
 
-        const fetchAndSave = async (signedUrl: string, filename: string) => {
+        const fetchAndSave = async (
+          signedUrl: string,
+          preferredName: string,
+          kind: "nc" | "stl",
+        ) => {
           const r = await fetch(signedUrl);
           if (!r.ok) throw new Error("download failed");
           const blob = await r.blob();
-
-          const nameWithExt = filename.includes(".")
-            ? filename
-            : `${filename}.stl`;
+          const nameWithExt = resolveDownloadFileName({
+            preferredName,
+            kind,
+            mime: blob.type,
+            requestId: String(req.requestId || ""),
+          });
           const link = document.createElement("a");
           link.href = URL.createObjectURL(blob);
           link.download = nameWithExt;
@@ -52,19 +59,23 @@ export const useRequestCardHandlers = (
           URL.revokeObjectURL(link.href);
         };
 
-        const fileName =
-          isMachiningStage || isCamStage
-            ? resolveFilledStlFile(req.caseInfos)?.filePath ||
-              resolveFilledStlFile(req.caseInfos)?.fileName ||
-              resolveFilledStlFile(req.caseInfos)?.originalName ||
-              req.caseInfos?.file?.filePath ||
-              req.caseInfos?.file?.originalName ||
-              "download.stl"
-            : req.caseInfos?.file?.filePath ||
-              req.caseInfos?.file?.originalName ||
-              "download.stl";
+        const stlName =
+          resolveFilledStlFile(req.caseInfos)?.filePath ||
+          resolveFilledStlFile(req.caseInfos)?.fileName ||
+          resolveFilledStlFile(req.caseInfos)?.originalName ||
+          req.caseInfos?.file?.filePath ||
+          req.caseInfos?.file?.originalName ||
+          "";
+        const ncName =
+          req.caseInfos?.ncFile?.originalName ||
+          req.caseInfos?.ncFile?.filePath ||
+          "";
 
-        await fetchAndSave(url, fileName);
+        if (isMachiningStage) {
+          await fetchAndSave(url, ncName, "nc");
+        } else {
+          await fetchAndSave(url, stlName, "stl");
+        }
 
         toast({
           title: "다운로드 시작",

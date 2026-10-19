@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-20: 프리뷰 다운로드는 공정 파일 형식 그대로 저장. NC는 .nc, 세척·포장 이미지는 png/jpg.
 // - 2026-10-20: One Pass는 포스트·치은 스텝이 같을 때만. 다르면 2–3단 Finish.
 // - 2026-10-19: 헤더 Wide Split 토글을 One Pass로 교체. 기본 OFF. ON이면 Finish는 마지막 Back_Finish 한 번에.
 // - 2026-10-17: 안내 off 시 프론트포인트(녹색점)도 피니시라인과 함께 숨김(FP 편집 중은 유지).
@@ -129,6 +130,7 @@ import {
   markFilledStlRegenerationPending,
   markNcRegenerationPending,
 } from "../utils/regenerationPending";
+import { resolveDownloadFileName } from "../utils/previewDownloadName";
 import {
   COMPOSITE_FINISH_STEP_MM_OPTIONS,
   type CompositeFinishStepDraft,
@@ -590,12 +592,22 @@ type PreviewModalProps = {
     file: File;
     source: "manual" | "worker";
   }) => Promise<void>;
-  onDownloadOriginalStl: (req: ManufacturerRequest) => Promise<void>;
-  onDownloadCamStl: (req: ManufacturerRequest) => Promise<void>;
-  onDownloadNcFile: (req: ManufacturerRequest) => Promise<void>;
+  onDownloadOriginalStl: (
+    req: ManufacturerRequest,
+    preferredName?: string,
+  ) => Promise<void>;
+  onDownloadCamStl: (
+    req: ManufacturerRequest,
+    preferredName?: string,
+  ) => Promise<void>;
+  onDownloadNcFile: (
+    req: ManufacturerRequest,
+    preferredName?: string,
+  ) => Promise<void>;
   onDownloadStageFile: (
     req: ManufacturerRequest,
     stage: string,
+    preferredName?: string,
   ) => Promise<void>;
   onRefreshPreview?: (
     req: ManufacturerRequest,
@@ -2280,48 +2292,80 @@ export const PreviewModal = ({
 
   const downloadLoadedPreviewFile = (file: File | null | undefined) => {
     if (!file) return false;
-    downloadBlobFile(file, file.name);
+    const name = resolveDownloadFileName({
+      preferredName: file.name,
+      kind: "stl",
+      requestId: String(activeReq?.requestId || ""),
+    });
+    downloadBlobFile(file, name);
     return true;
   };
 
+  const ncSaveName = resolveDownloadFileName({
+    preferredName: shortNcLabel || ncName,
+    kind: "nc",
+    requestId: String(activeReq?.requestId || ""),
+  });
+  const filledSaveName = resolveDownloadFileName({
+    preferredName: camName,
+    kind: "stl",
+  });
+  const originalSaveName = resolveDownloadFileName({
+    preferredName: originalName,
+    kind: "stl",
+  });
+  const stageSaveName = resolveDownloadFileName({
+    preferredName:
+      previewStageName ||
+      String(
+        (rightMeta as { filePath?: string; fileName?: string; originalName?: string } | null)
+          ?.filePath ||
+          (rightMeta as { fileName?: string } | null)?.fileName ||
+          (rightMeta as { originalName?: string } | null)?.originalName ||
+          "",
+      ),
+    kind: "image",
+    mime: null,
+  });
+
   const onDownloadLeft = () => {
-    if (isMachiningStage) {
-      void onDownloadNcFile(activeReq);
+    if (isMachiningStage || isNcStage) {
+      void onDownloadNcFile(activeReq, ncSaveName);
       return;
     }
     const localFile =
       isCamStage || isImageStage ? filledViewer || leftViewer : leftViewer;
     if (downloadLoadedPreviewFile(localFile)) return;
     if (isCamStage || isImageStage) {
-      void onDownloadCamStl(activeReq);
+      void onDownloadCamStl(activeReq, filledSaveName);
       return;
     }
-    void onDownloadOriginalStl(activeReq);
+    void onDownloadOriginalStl(activeReq, originalSaveName);
   };
 
   const onDownload = () => {
     if (isTrackingStage) {
       if (trackingRightTab === "nc") {
         if (!hasNcFile) return;
-        void onDownloadNcFile(activeReq);
+        void onDownloadNcFile(activeReq, ncSaveName);
         return;
       }
       if (!hasRightFile) return;
-      void onDownloadStageFile(activeReq, imageStageKey);
+      void onDownloadStageFile(activeReq, imageStageKey, stageSaveName);
       return;
     }
     if (isStageFileStage) {
       if (!hasRightFile && !previewStageUrl) return;
-      void onDownloadStageFile(activeReq, imageStageKey);
+      void onDownloadStageFile(activeReq, imageStageKey, stageSaveName);
       return;
     }
     if (isCamStage) {
       if (!hasNcFile) return;
-      void onDownloadNcFile(activeReq);
+      void onDownloadNcFile(activeReq, ncSaveName);
       return;
     }
     if (downloadLoadedPreviewFile(rightViewer)) return;
-    void onDownloadCamStl(activeReq);
+    void onDownloadCamStl(activeReq, filledSaveName);
   };
 
   const onDelete = () => {
