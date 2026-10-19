@@ -27,16 +27,24 @@ const FINISH_MIN_CLEARANCE_MM = 0.003;
 const WELD_EPS = 1e-5;
 const MEASURE_BINS = 72;
 const PROFILE_BINS = 720;
-const STRIP_COLUMNS = 240;
+/** 곡선을 계산하는 열(0.375°). 메시에는 이 중 selectMeshColumns가 고른 열만 쓴다. */
+const STRIP_COLUMNS = 960;
 const columnsForDeg = (deg) => Math.max(1, Math.round((STRIP_COLUMNS * deg) / 360));
 /** 행 사이 최소 간격(mm). */
 const ROW_PITCH_MM = 0.025;
-/** 옆모습이 이만큼 꺾이면 행을 하나 둔다. 가로 결이 둘레 결(한 칸 1.5°)보다 먼저 보여서 그보다 촘촘하게 둔다. */
+/** 옆모습이 이만큼 꺾이면 행을 하나 둔다. */
 const ROW_TURN_DEG = 1.0;
 /** 곧은 구간 행 간격 상한(mm). */
 const ROW_MAX_PITCH_MM = 0.2;
 const ROW_TURN_SAMPLES = 400;
-const ROW_TURN_COLUMN_STRIDE = 2;
+const ROW_TURN_COLUMN_STRIDE = columnsForDeg(3);
+/**
+ * 둘레 곡선이 이만큼 꺾이면 열을 하나 둔다(행과 같은 기준). 열을 각도로 똑같이 나누면 어금니 단면 모서리에서
+ * 한 칸이 6° 넘게 꺾여 가공면에 세로 결이 남는다.
+ */
+const COLUMN_TURN_DEG = 1.0;
+const COLUMN_MAX_ARC_MM = 0.2;
+const COLUMN_TURN_SMOOTH_HALF = columnsForDeg(1.5);
 /** 이음 위 끝에서 이만큼 아래까지는 새 곡선을 원본 곡면에 서서히 섞는다(위 끝 접선·반경이 원본과 같아져 선이 둘로 보이지 않는다). */
 const SEAM_BLEND_DEPTH_MM = 0.3;
 /** 위 끝에서 아래로 내려가는 깊이(mm) 순서로 촘촘히 두는 행. */
@@ -578,6 +586,12 @@ const TOP_BELOW_GAP_MM = 0.005;
 const TOP_SLOPE_SMOOTH_COLUMNS = columnsForDeg(12);
 /** 위 끝 반경을 저주파(조화 K차 이하)만 남겨 매끈하게 한다. */
 const TOP_RADIUS_HARMONICS = 6;
+/** 원본에서 잰 위 끝·이음 반경의 둘레 저역 통과: 32차(11°)까지 그대로, 64차(5.6°)부터 0. 원본 열 결(약 3°)은 지운다. */
+const ANGULAR_PASS_HARMONICS = 32;
+const ANGULAR_STOP_HARMONICS = 64;
+const HEIGHT_SMOOTH_OVERSHOOT_MM = 0.005;
+/** 원본 곡면은 이 열 간격(240열)으로만 광선을 쏘아 재고, 저역 통과하면서 전체 열로 늘린다. */
+const MEASURE_STRIDE = 4;
 /** 끝 기울기를 2차 호(2d − m0)보다 이만큼 더 세워 늦게 벌어지게(더 오목하게) 한다. */
 const END_SLOPE_BOOST = 1.5;
 /** 둘째 제어점 간격 / 첫째 간격(작을수록 출발 후 더 빨리 수직에 가까워진다). */
@@ -621,10 +635,38 @@ export function concaveHermiteProfile(ra, m0, r1, eTarget, h) {
   };
 }
 
-/** 원형 신호의 저주파 성분(0..K차 조화)만 남긴다. */
-function fourierLowPass(values, harmonics) {
+/**
+ * 원본 곡면에서 둘레로 잰 값을 기공소 메시 열 간격과 무관하게 만든다.
+ * 원본 꼭짓점 사이 현(chord)만큼 처진 값이 그대로 들어가면 원본 열 간격(보통 3°)마다 세로 결이 생긴다.
+ * 등간격 열 값에서 ANGULAR_PASS_HARMONICS차까지는 그대로, ANGULAR_STOP_HARMONICS차부터는 0으로 줄인다(그 사이 cos 감쇠).
+ * NaN이 하나라도 있으면 null.
+ * @param {ArrayLike<number>} values 열(0..2π 등간격) 값
+ * @param {number} [outN] 돌려줄 등간격 열 수
+ */
+function angularLowPass(values, outN = values.length) {
+  for (let i = 0; i < values.length; i += 1) if (!Number.isFinite(values[i])) return null;
+  const span = ANGULAR_STOP_HARMONICS - ANGULAR_PASS_HARMONICS;
+  return fourierLowPass(
+    values,
+    ANGULAR_STOP_HARMONICS - 1,
+    (k) => (k <= ANGULAR_PASS_HARMONICS ? 1 : 0.5 + 0.5 * Math.cos((Math.PI * (k - ANGULAR_PASS_HARMONICS)) / span)),
+    outN,
+  );
+}
+
+/** MEASURE_STRIDE열마다 잰 값(sampleAt(j))을 저역 통과해 전체 STRIP_COLUMNS열로 늘린다. NaN이 있으면 null. */
+function measureSmoothColumns(sampleAt) {
+  const m = STRIP_COLUMNS / MEASURE_STRIDE;
+  return angularLowPass(
+    Array.from({ length: m }, (_, i) => sampleAt(i * MEASURE_STRIDE)),
+    STRIP_COLUMNS,
+  );
+}
+
+/** 원형 신호의 저주파 성분(0..K차 조화)만 남긴다. weightOf(k)로 차수별 비중을 줄 수 있고, outN 등간격 점에서 돌려준다. */
+function fourierLowPass(values, harmonics, weightOf = () => 1, outN = values.length) {
   const n = values.length;
-  const out = new Array(n).fill(0);
+  const out = new Array(outN).fill(0);
   for (let k = 0; k <= harmonics; k += 1) {
     let re = 0;
     let im = 0;
@@ -633,9 +675,9 @@ function fourierLowPass(values, harmonics) {
       re += values[j] * Math.cos(a);
       im += values[j] * Math.sin(a);
     }
-    const w = k === 0 ? 1 / n : 2 / n;
-    for (let j = 0; j < n; j += 1) {
-      const a = (2 * Math.PI * k * j) / n;
+    const w = ((k === 0 ? 1 : 2) * weightOf(k)) / n;
+    for (let j = 0; j < outN; j += 1) {
+      const a = (2 * Math.PI * k * j) / outN;
       out[j] += w * (re * Math.cos(a) + im * Math.sin(a));
     }
   }
@@ -1283,6 +1325,56 @@ function adaptiveRowTs(radiusAt, heights, tEnd) {
   return ts;
 }
 
+/**
+ * 메시에 쓸 열을 고른다. 둘레 곡선이 COLUMN_TURN_DEG만큼 꺾일 때마다 열 하나, 곧은 곳은 COLUMN_MAX_ARC_MM까지 벌린다.
+ * 꺾임·길이는 모든 행에서 재서 가장 큰 값을 쓴다. 볼록한 단면은 한 바퀴 꺾임이 360°라 열은 모서리에 몰린다.
+ * @param {{ rad: Float64Array, z: Float64Array }[]} rows
+ * @returns {number[]} 열 번호(오름차순, 0 포함)
+ */
+function selectMeshColumns(rows, thetas) {
+  const n = thetas.length;
+  const turn = new Float64Array(n);
+  const arc = new Float64Array(n);
+  const cos = thetas.map(Math.cos);
+  const sin = thetas.map(Math.sin);
+  for (const row of rows) {
+    // 열 사이 µm 잡음이 0.375° 간격에서는 몇 도 꺾임으로 보인다. 꺾임은 ±1.5° 평균한 곡선에서 잰다.
+    const rad = circularSmooth(Array.from(row.rad), COLUMN_TURN_SMOOTH_HALF);
+    const z = circularSmooth(Array.from(row.z), COLUMN_TURN_SMOOTH_HALF);
+    const seg = (j) => {
+      const k = (j + 1) % n;
+      return [rad[k] * cos[k] - rad[j] * cos[j], rad[k] * sin[k] - rad[j] * sin[j], z[k] - z[j]];
+    };
+    let prev = seg(n - 1);
+    for (let j = 0; j < n; j += 1) {
+      const cur = seg(j);
+      const lp = Math.hypot(...prev);
+      const lc = Math.hypot(...cur);
+      if (lc > arc[j]) arc[j] = lc;
+      if (lp > 0 && lc > 0) {
+        const dot = (prev[0] * cur[0] + prev[1] * cur[1] + prev[2] * cur[2]) / (lp * lc);
+        const a = Math.acos(Math.max(-1, Math.min(1, dot)));
+        if (a > turn[j]) turn[j] = a;
+      }
+      prev = cur;
+    }
+  }
+  const step = (COLUMN_TURN_DEG * Math.PI) / 180;
+  const cols = [0];
+  let acc = 0;
+  let gap = 0;
+  for (let j = 1; j < n; j += 1) {
+    acc += turn[j];
+    gap += arc[j - 1];
+    if (acc >= step || gap + arc[j] > COLUMN_MAX_ARC_MM) {
+      cols.push(j);
+      acc = 0;
+      gap = 0;
+    }
+  }
+  return cols;
+}
+
 function bandSmoothKeep(t, height) {
   const s = Math.min(1, Math.max(0, ((1 - t) * height) / BAND_SMOOTH_FADE_MM));
   return 1 - (1 - t ** BAND_SMOOTH_TOP_POWER) * s * s * (3 - 2 * s);
@@ -1403,14 +1495,17 @@ function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut, origProbe, crease }
     fail("manual-review", "커넥션 상단 경계가 11° 원뿔 위에 있지 않습니다.", { offConeMm: round3(offCone) });
   }
 
-  const heights = [];
-  for (let j = 0; j < STRIP_COLUMNS; j += 1) {
-    heights.push(topZOf((j / STRIP_COLUMNS) * TWO_PI) - zA);
-  }
+  const thetas = thetaColumns();
+  const rawHeights = thetas.map((theta) => topZOf(theta) - zA);
+  // 위 끝 높이(마진 모서리 꼭짓점을 직선으로 이은 곡선)도 원본 열마다 꺾여 있다. 띠 행은 매끈한 높이를 따르되
+  // 위 끝을 넘지 않는다. 이음 행(가장 위가 0.06mm 아래)이 있으면 HEIGHT_SMOOTH_OVERSHOOT_MM까지는 넘어도 된다.
+  const overshoot = origProbe ? HEIGHT_SMOOTH_OVERSHOOT_MM : 0;
+  const heights = (angularLowPass(rawHeights) || rawHeights).map((h, j) => Math.min(h, rawHeights[j] + overshoot));
   // 면이 쭈글하지 않도록, 아래쪽 행일수록 각도 방향으로 반경·높이를 평균한다.
   // 위쪽 행(피니시라인·원본 곡면과 만나는 곳)은 평균하지 않고 그대로 둔다.
   const smoothHeights = circularSmooth(heights, BAND_SMOOTH_HALF_COLUMNS);
-  const grid = [];
+  /** 행마다 전체 열의 반경·z. 메시에는 selectMeshColumns로 고른 열만 쓴다. */
+  const rowData = [];
   const minHeight = Math.min(...heights);
   const maxHeight = Math.max(...heights);
   const seamDepths = origProbe ? SEAM_ROW_DEPTHS_MM : [];
@@ -1419,17 +1514,14 @@ function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut, origProbe, crease }
   for (const t of adaptiveRowTs(radiusAt, heights, tEnd)) {
     const raw = Array.from({ length: STRIP_COLUMNS }, (_, j) => radiusAt(j, t));
     const avg = circularSmooth(raw, BAND_SMOOTH_HALF_COLUMNS);
-    const row = [];
+    const rad = new Float64Array(STRIP_COLUMNS);
+    const z = new Float64Array(STRIP_COLUMNS);
     for (let j = 0; j < STRIP_COLUMNS; j += 1) {
-      const theta = (j / STRIP_COLUMNS) * TWO_PI;
       const keep = bandSmoothKeep(t, heights[j]);
-      const rad = raw[j] * keep + avg[j] * (1 - keep);
-      const hMix = heights[j] * keep + smoothHeights[j] * (1 - keep);
-      const idx = verts.length / 3;
-      verts.push(rad * Math.cos(theta), rad * Math.sin(theta), zA + t * hMix);
-      row.push({ v: idx, a: theta });
+      rad[j] = raw[j] * keep + avg[j] * (1 - keep);
+      z[j] = zA + t * (heights[j] * keep + smoothHeights[j] * (1 - keep));
     }
-    grid.push(row);
+    rowData.push({ rad, z });
   }
   // 위 끝 근처: 새 곡선을 원본 곡면(위 끝 반경·기울기)에 섞어 이음선을 없앤다. 위 끝 행은 원본 꼭짓점 그대로다.
   for (let k = seamDepths.length - 1; k >= 0; k -= 1) {
@@ -1439,22 +1531,33 @@ function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut, origProbe, crease }
     const ts = heights.map((h) => 1 - depth / h);
     const raw = ts.map((t, j) => radiusAt(j, t));
     const avg = circularSmooth(raw, BAND_SMOOTH_HALF_COLUMNS);
-    const row = [];
+    // 아래 일반 행과 같은 각도 평균을 쓴 곡선 위치에서 출발해, 위로 갈수록 원본 곡면으로 옮겨 간다.
+    const keeps = ts.map((t, j) => bandSmoothKeep(t, heights[j]));
+    const zs = ts.map((t, j) => {
+      const zCurve = zA + t * (heights[j] * keeps[j] + smoothHeights[j] * (1 - keeps[j]));
+      return zCurve * (1 - w) + (zA + heights[j] - depth) * w;
+    });
+    const roCols =
+      w > 0
+        ? measureSmoothColumns((j) => origProbe.rayRadius(thetas[j], zs[j])) ||
+          thetas.map((theta, j) => origProbe.rayRadius(theta, zs[j]))
+        : null;
+    const rad = new Float64Array(STRIP_COLUMNS);
     for (let j = 0; j < STRIP_COLUMNS; j += 1) {
-      const theta = (j / STRIP_COLUMNS) * TWO_PI;
-      // 아래 일반 행과 같은 각도 평균을 쓴 곡선 위치에서 출발해, 위로 갈수록 원본 곡면으로 옮겨 간다.
-      const keep = bandSmoothKeep(ts[j], heights[j]);
-      const zCurve = zA + ts[j] * (heights[j] * keep + smoothHeights[j] * (1 - keep));
-      const z = zCurve * (1 - w) + (zA + heights[j] - depth) * w;
-      const ro = w > 0 ? origProbe.rayRadius(theta, z) : NaN;
-      const rp = raw[j] * keep + avg[j] * (1 - keep);
-      const rad = Number.isFinite(ro) ? rp * (1 - w) + ro * w : rp;
-      const idx = verts.length / 3;
-      verts.push(rad * Math.cos(theta), rad * Math.sin(theta), z);
-      row.push({ v: idx, a: theta });
+      const ro = roCols ? roCols[j] : NaN;
+      const rp = raw[j] * keeps[j] + avg[j] * (1 - keeps[j]);
+      rad[j] = Number.isFinite(ro) ? rp * (1 - w) + ro * w : rp;
     }
-    grid.push(row);
+    rowData.push({ rad, z: Float64Array.from(zs) });
   }
+  const meshColumns = selectMeshColumns(rowData, thetas);
+  const grid = rowData.map(({ rad, z }) =>
+    meshColumns.map((j) => {
+      const idx = verts.length / 3;
+      verts.push(rad[j] * Math.cos(thetas[j]), rad[j] * Math.sin(thetas[j]), z[j]);
+      return { v: idx, a: thetas[j] };
+    }),
+  );
 
   const outward = outwardVotes >= 0 ? 1 : -1;
   const newFaces = [];
@@ -1499,6 +1602,7 @@ function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut, origProbe, crease }
     removedTriangles: removed.reduce((s, x) => s + x, 0),
     patchTriangles: newFaces.length / 3,
     rows: grid.length,
+    columns: meshColumns.length,
   };
 }
 
@@ -1753,8 +1857,20 @@ export function blendCuffJunction(buffer, options = {}) {
     if (tops.some((t) => !t)) fail("manual-review", "커프 하단 곡면을 읽지 못했습니다.");
     const hs = topZ.map((z) => z - zA);
     // 위 끝 반경·기울기는 위 끝 바로 아래 원본 커프에서 잰다. 곡선이 위 끝에서 원본과 같은 접선으로 이어져야 꺾인 선이 안 생긴다.
-    const below = sampleBelowConditions(probe, thetas, topZ, TOP_BELOW_WINDOW_MM);
-    const belowSlopes = below.every(Boolean) ? circularSmooth(below.map((b) => b.slope), TOP_SLOPE_SMOOTH_COLUMNS) : null;
+    const measureCols = thetas.map((_, j) => j).filter((j) => j % MEASURE_STRIDE === 0);
+    const below = sampleBelowConditions(
+      probe,
+      measureCols.map((j) => thetas[j]),
+      measureCols.map((j) => topZ[j]),
+      TOP_BELOW_WINDOW_MM,
+    );
+    const belowOk = below.every(Boolean);
+    const belowSlopes = belowOk
+      ? circularSmooth(
+          fourierLowPass(below.map((b) => b.slope), measureCols.length / 2 - 1, undefined, STRIP_COLUMNS),
+          TOP_SLOPE_SMOOTH_COLUMNS,
+        )
+      : null;
     // 볼록(부푼) 구간은 뼈에 걸리므로 오목 프로파일로 바로잡는다.
     // 커넥션 쪽(피니시라인에서 먼 쪽)은 원뿔 접선에서 오목하게 벌어지고, 위 끝은 커프 접선에 맞춘다.
     // 단차 직경은 따르지 않는다: 원뿔에서 커프까지 항상 살짝 오목하게 부드럽게 올린다.
@@ -1764,7 +1880,7 @@ export function blendCuffJunction(buffer, options = {}) {
     // 평균값이 원본 반경에서 ±SMOOTH_MAX_SHIFT_MM 넘게 벗어나면 위 끝에 단차가 생기므로 그 안으로 제한한다.
     const r1avg = fourierLowPass(tops.map((t) => t.r), TOP_RADIUS_HARMONICS);
     const r1s = belowSlopes
-      ? below.map((b) => b.r)
+      ? angularLowPass(below.map((b) => b.r), STRIP_COLUMNS)
       : tops.map((t, j) => t.r + Math.max(-SMOOTH_MAX_SHIFT_MM, Math.min(SMOOTH_MAX_SHIFT_MM, r1avg[j] - t.r)));
     const coneSlope = Number.isFinite(taper.slope) ? taper.slope : TAPER_SLOPE;
     const profiles = tops.map((t, j) => {
@@ -1844,9 +1960,11 @@ export function blendCuffJunction(buffer, options = {}) {
         measuredTaperTopZ: round3(taper.measuredTopZ),
         originDiameter: round3(taper.originDiameter),
         maxAngleDeg: round3((Math.atan(maxSlope) * 180) / Math.PI),
-                removedTriangles: out.removedTriangles,
+        removedTriangles: out.removedTriangles,
         strippedFinTriangles: fins.stripped,
         patchTriangles: out.patchTriangles,
+        patchRows: out.rows,
+        patchColumns: out.columns,
       },
     };
   });
@@ -1914,9 +2032,13 @@ function planCuffRedesign(buffer, options) {
     };
   }
 
-  const tops = sampleTopConditions(probe, thetas, topZ, 0.15);
-  if (options.fillMissing) fillMissingTopConditions(tops, options.fillMissingMaxRatio ?? 0.25);
-  if (tops.some((t) => !t)) fail("manual-review", "피니시라인 아래 곡면을 읽지 못했습니다.");
+  const rawTops = sampleTopConditions(probe, thetas, topZ, 0.15);
+  if (options.fillMissing) fillMissingTopConditions(rawTops, options.fillMissingMaxRatio ?? 0.25);
+  if (rawTops.some((t) => !t)) fail("manual-review", "피니시라인 아래 곡면을 읽지 못했습니다.");
+  const [topR, topSlope, topCurvature] = ["r", "slope", "curvature"].map(
+    (k) => angularLowPass(rawTops.map((t) => t[k])) || rawTops.map((t) => t[k]),
+  );
+  const tops = rawTops.map((_, j) => ({ r: topR[j], slope: topSlope[j], curvature: topCurvature[j] }));
   const profiles = tops.map((t, j) => {
     const h = topZ[j] - zA;
     const gentle = Math.abs(t.slope) <= flatSlope;
@@ -2036,7 +2158,13 @@ export function redesignCuffBowl(buffer, options = {}) {
       reason: plan.warning,
       buffer: out.buffer,
       curve: plan.curve,
-      detail: { ...plan.detail, removedTriangles: out.removedTriangles, patchTriangles: out.patchTriangles },
+      detail: {
+        ...plan.detail,
+        removedTriangles: out.removedTriangles,
+        patchTriangles: out.patchTriangles,
+        patchRows: out.rows,
+        patchColumns: out.columns,
+      },
     };
   });
 }

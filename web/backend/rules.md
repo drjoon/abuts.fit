@@ -195,6 +195,7 @@
 - 결과 `caseInfos.cuffBlend.status`: `applied` | `manual-review`(안전검사 실패 → 준비 카드「커프 확인」, Re로 처리) | `spec-pending`(스펙 미등록·형상 불일치 → 빨간 테두리 +「개발팀 확인 필요」) | `failed`.
 - **spec-pending이 뜨면**: `node scripts/abutment-stl-js/measure-cuff-connection.js --pending`으로 테이퍼 끝 높이를 재고, `services/abutmentStl/cuffConnectionSpecs.js` `CUFF_CONNECTION_SPECS`에 추가한 뒤 파일 상단 미등록 목록에서 뺀다. 턱 있는 샘플 3건 이상이 ±0.03mm로 모일 때만 등록한다.
 - 보정 곡면 삼각형 attribute는 `0x4342`. HF 패치(`0x4846`)는 유지된다.
+- 세로 결 방지: 원본 곡면에서 둘레로 잰 값(위 끝 반경, 이음 행 반경, 위 끝 높이, Re 위 끝 조건)은 둘레 저역 통과(32차까지 유지, 64차부터 0)를 거친다. 기공소 메시는 보통 둘레 약 114칸(3°)이고, 열마다 그대로 재면 꼭짓점 사이 처짐이 커프 전체에 세로 결로 번진다. 곡선은 960열(0.375°)로 계산하고, 메시 열은 둘레 곡선이 1° 꺾일 때마다(곧은 곳은 0.2mm까지) 고른다(`selectMeshColumns`). 열을 각도로 똑같이 나누면 어금니 단면 모서리에서 한 칸이 6° 넘게 꺾인다.
 - SSOT: `services/abutmentStl/{cuffConnectionSpecs,cuffBlend,cuffBlend.service}.js`, `tests/unit/cuffBlend.test.js`, `.cursor/rules/cuff-connection-spec.mdc`
 
 ### 디자인 파트너 클레임·마감
