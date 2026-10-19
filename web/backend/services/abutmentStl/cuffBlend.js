@@ -29,7 +29,14 @@ const MEASURE_BINS = 72;
 const PROFILE_BINS = 720;
 const STRIP_COLUMNS = 240;
 const columnsForDeg = (deg) => Math.max(1, Math.round((STRIP_COLUMNS * deg) / 360));
+/** 행 사이 최소 간격(mm). */
 const ROW_PITCH_MM = 0.025;
+/** 옆모습이 이만큼 꺾이면 행을 하나 둔다. 가로 결이 둘레 결(한 칸 1.5°)보다 먼저 보여서 그보다 촘촘하게 둔다. */
+const ROW_TURN_DEG = 1.0;
+/** 곧은 구간 행 간격 상한(mm). */
+const ROW_MAX_PITCH_MM = 0.2;
+const ROW_TURN_SAMPLES = 400;
+const ROW_TURN_COLUMN_STRIDE = 2;
 /** 이음 위 끝에서 이만큼 아래까지는 새 곡선을 원본 곡면에 서서히 섞는다(위 끝 접선·반경이 원본과 같아져 선이 둘로 보이지 않는다). */
 const SEAM_BLEND_DEPTH_MM = 0.3;
 /** 위 끝에서 아래로 내려가는 깊이(mm) 순서로 촘촘히 두는 행. */
@@ -1238,6 +1245,44 @@ function channelRadiusByZ(mesh, zLo, zHi, rOuter) {
  * 띠 행의 원래 곡선 비중(나머지는 각도 평균). 위 끝 BAND_SMOOTH_FADE_MM 안에서는 평균을 0까지 줄여,
  * 위 끝에서 맞춘 원본 접선이 이웃 열 평균에 끌려 휘지 않게 한다.
  */
+/**
+ * 옆모습 곡선이 ROW_TURN_DEG만큼 꺾일 때마다 행 하나(t∈(0, tEnd)). 곧은 곳은 ROW_MAX_PITCH_MM까지 벌린다.
+ * 꺾임은 열마다 재서 가장 큰 값을 쓴다.
+ */
+function adaptiveRowTs(radiusAt, heights, tEnd) {
+  const n = ROW_TURN_SAMPLES;
+  const maxHeight = Math.max(...heights);
+  const turn = new Float64Array(n + 1);
+  for (let j = 0; j < heights.length; j += ROW_TURN_COLUMN_STRIDE) {
+    const dz = heights[j] / n;
+    let r0 = radiusAt(j, 0);
+    let prev = null;
+    for (let i = 1; i <= n; i += 1) {
+      const r1 = radiusAt(j, i / n);
+      const a = Math.atan2(r1 - r0, dz);
+      if (prev !== null) turn[i - 1] = Math.max(turn[i - 1], Math.abs(a - prev));
+      prev = a;
+      r0 = r1;
+    }
+  }
+  const step = (ROW_TURN_DEG * Math.PI) / 180;
+  const ts = [];
+  let acc = 0;
+  let last = 0;
+  for (let i = 1; i < n; i += 1) {
+    const t = i / n;
+    if (t >= tEnd) break;
+    acc += turn[i];
+    const gapMm = (t - last) * maxHeight;
+    if ((acc >= step && gapMm >= ROW_PITCH_MM) || gapMm >= ROW_MAX_PITCH_MM) {
+      ts.push(t);
+      acc = 0;
+      last = t;
+    }
+  }
+  return ts;
+}
+
 function bandSmoothKeep(t, height) {
   const s = Math.min(1, Math.max(0, ((1 - t) * height) / BAND_SMOOTH_FADE_MM));
   return 1 - (1 - t ** BAND_SMOOTH_TOP_POWER) * s * s * (3 - 2 * s);
@@ -1362,17 +1407,16 @@ function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut, origProbe, crease }
   for (let j = 0; j < STRIP_COLUMNS; j += 1) {
     heights.push(topZOf((j / STRIP_COLUMNS) * TWO_PI) - zA);
   }
-  const rows = Math.max(6, Math.min(80, Math.ceil(Math.max(...heights) / ROW_PITCH_MM)));
   // 면이 쭈글하지 않도록, 아래쪽 행일수록 각도 방향으로 반경·높이를 평균한다.
   // 위쪽 행(피니시라인·원본 곡면과 만나는 곳)은 평균하지 않고 그대로 둔다.
   const smoothHeights = circularSmooth(heights, BAND_SMOOTH_HALF_COLUMNS);
   const grid = [];
   const minHeight = Math.min(...heights);
+  const maxHeight = Math.max(...heights);
   const seamDepths = origProbe ? SEAM_ROW_DEPTHS_MM : [];
   const seamStart = seamDepths.length ? SEAM_ROW_DEPTHS_MM[SEAM_ROW_DEPTHS_MM.length - 1] + ROW_PITCH_MM : 0;
-  for (let r = 1; r < rows; r += 1) {
-    const t = r / rows;
-    if (seamDepths.length && (1 - t) * minHeight < seamStart) break;
+  const tEnd = seamDepths.length ? 1 - seamStart / minHeight : 1 - ROW_PITCH_MM / maxHeight;
+  for (const t of adaptiveRowTs(radiusAt, heights, tEnd)) {
     const raw = Array.from({ length: STRIP_COLUMNS }, (_, j) => radiusAt(j, t));
     const avg = circularSmooth(raw, BAND_SMOOTH_HALF_COLUMNS);
     const row = [];
@@ -1454,7 +1498,7 @@ function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut, origProbe, crease }
     buffer: writeBinaryStl({ positions, attributes: Uint16Array.from(outAttr) }),
     removedTriangles: removed.reduce((s, x) => s + x, 0),
     patchTriangles: newFaces.length / 3,
-    rows,
+    rows: grid.length,
   };
 }
 
