@@ -117,6 +117,7 @@ import {
   PreviewPaintLayer,
   usePreviewPaint,
 } from "@/shared/components/PreviewAnnotateActions";
+import { downloadBlobFile } from "@/shared/components/practice/ViewPaintSurface";
 import type { ViewPaintSpace } from "@/shared/components/practice/viewPaintSpace";
 import { lotSerialFromLotNumberValue } from "@/features/requests/utils/lotEngraving";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -2274,6 +2275,24 @@ export const PreviewModal = ({
       </button>
     ) : null;
 
+  const downloadLoadedPreviewFile = (file: File | null | undefined) => {
+    if (!file) return false;
+    downloadBlobFile(file, file.name);
+    return true;
+  };
+
+  const onDownloadLeft = () => {
+    if (isMachiningStage) {
+      void onDownloadNcFile(activeReq);
+      return;
+    }
+    if (isCamStage || isImageStage) {
+      void onDownloadCamStl(activeReq);
+      return;
+    }
+    void onDownloadOriginalStl(activeReq);
+  };
+
   const onDownload = () => {
     if (isTrackingStage) {
       if (trackingRightTab === "nc") {
@@ -2285,13 +2304,18 @@ export const PreviewModal = ({
       void onDownloadStageFile(activeReq, imageStageKey);
       return;
     }
-    if (!hasRightFile) return;
     if (isStageFileStage) {
+      if (!hasRightFile && !previewStageUrl) return;
       void onDownloadStageFile(activeReq, imageStageKey);
       return;
     }
     if (isCamStage) {
+      if (!hasNcFile) return;
       void onDownloadNcFile(activeReq);
+      return;
+    }
+    if (!hasRightFile) {
+      if (downloadLoadedPreviewFile(rightViewer)) return;
       return;
     }
     void onDownloadCamStl(activeReq);
@@ -4003,17 +4027,13 @@ export const PreviewModal = ({
                 <div className="flex items-center justify-between gap-2 min-w-0">
                   <button
                     type="button"
-                    className="min-w-0 flex-1 text-sm font-semibold text-primary-strong hover:underline text-left truncate"
-                    onClick={() => {
-                      if (isMachiningStage) {
-                        void onDownloadNcFile(activeReq);
-                        return;
-                      }
-                      if (isCamStage || isImageStage) {
-                        void onDownloadCamStl(activeReq);
-                        return;
-                      }
-                      void onDownloadOriginalStl(activeReq);
+                    className="min-w-0 flex-1 cursor-pointer text-sm font-semibold text-primary-strong hover:underline text-left truncate"
+                    title="클릭하여 다운로드"
+                    aria-label={`${leftTitle} 다운로드`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onDownloadLeft();
                     }}
                   >
                     {leftTitle}
@@ -4317,12 +4337,21 @@ export const PreviewModal = ({
                     <div className="flex min-w-0 flex-1 items-center gap-1.5">
                       <button
                         type="button"
-                        className="min-w-0 truncate text-left text-sm font-semibold text-primary-strong hover:underline"
-                        onClick={onDownload}
+                        className="min-w-0 cursor-pointer truncate text-left text-sm font-semibold text-primary-strong hover:underline"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onDownload();
+                        }}
                         title={
                           stage === "packing" || stage === "shipping"
-                            ? "각인 이미지"
-                            : storedFilePath || fileLabel
+                            ? "클릭하여 각인 이미지 다운로드"
+                            : `클릭하여 다운로드 — ${storedFilePath || fileLabel}`
+                        }
+                        aria-label={
+                          stage === "packing" || stage === "shipping"
+                            ? "각인 이미지 다운로드"
+                            : `${fileLabel} 다운로드`
                         }
                       >
                         {stage === "packing" || stage === "shipping"

@@ -17,6 +17,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
 import { deleteCncProgramCache } from "@/shared/files/fileBlobCache";
+import { downloadBlobFile } from "@/shared/components/practice/ViewPaintSurface";
 import {
   deriveStageForFilter,
   patchFilledStlFile,
@@ -492,30 +493,36 @@ export const useRequestFileHandlers = ({
   const downloadByEndpoint = useCallback(
     async (endpoint: string, errorMessage: string) => {
       if (!token) return;
-      const res = await fetch(endpoint, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      if (!res.ok) {
+      try {
+        const res = await fetch(endpoint, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(String(data?.message || errorMessage));
+        }
+        const url = String(data?.data?.url || "").trim();
+        if (!url) {
+          throw new Error(errorMessage);
+        }
+        const rawName = String(data?.data?.fileName || "").trim();
+        const fileRes = await fetch(url);
+        if (!fileRes.ok) {
+          throw new Error(errorMessage);
+        }
+        const blob = await fileRes.blob();
+        const baseName = (rawName || "download").split("/").pop() || "download";
+        const fileName = baseName.includes(".") ? baseName : `${baseName}.stl`;
+        downloadBlobFile(blob, fileName);
+      } catch (err: any) {
         toast({
           title: "다운로드 실패",
-          description: errorMessage,
+          description: err?.message || errorMessage,
           variant: "destructive",
         });
-        return;
       }
-      const data = await res.json();
-      const url = data?.data?.url;
-      if (!url) {
-        toast({
-          title: "다운로드 실패",
-          description: errorMessage,
-          variant: "destructive",
-        });
-        return;
-      }
-      window.open(url, "_blank");
     },
     [token, toast],
   );
