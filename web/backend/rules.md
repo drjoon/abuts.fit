@@ -971,6 +971,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 스토어 단가: 판매 SKU는 Abutment 4종(공통) + Grip Driver(치과만). **단일 판매가**(패키지 할인 없음). 대상 SSOT `STORE_PRODUCT_AUDIENCES` · 관리자 클러스터는 `practice`/`lab` 키. `storeCatalog.js` · `storeProductClusterLayout.js`.
   - 장바구니 합치기 금지: 한 체크아웃에 기공+스토어 금지. 같은 선수금 잔액으로 각각 결제는 허용.
   - 팝빌: `POPBILL_IS_TEST=false`(prod)면 실홈택스 발행. local/test는 `true`.
+  - 팝빌 API **허용 발신 IP**(국외 IP 차단 대응, 2026-10-19 AWS·라우트 확인): 호출 주체는 **web 백엔드만**(BG PC·rhino-server는 팝빌 미호출).
+    - **운영 EB 아웃바운드**: NAT 인스턴스 EIP `13.201.249.118` (`nat-instance-1c`, ap-south-1). ALB EIP(`13.202.56.204`, `13.203.6.162`)는 인바운드 전용 — 등록 불필요.
+    - **로컬 개발**(Mac에서 `8080` 백엔드): `bg/pc1/*/local.env` `ALLOW_IPS`·주석 `BACKEND_BASE`에 있는 고정 공인 IP — 대표 `118.217.235.170`, `175.223.35.140`. 재택·핫스팟은 등록 전 `curl -s https://api.ipify.org`로 확인.
+    - 레거시 `13.203.56.190`은 계정에 없음 — 신청서에 넣지 않음.
   - 계좌조회(EasyFinBank): 웹훅 없음. 운영 서버가 20분마다 `RequestJob` → `GetJobState` → `Search.balance`. 대상은 `bPlanDepositAccount`(하나은행). 입금만 `BankTransaction`으로 넘겨 기존 자동매칭. 스냅샷 `EasyFinBankSnapshot`. 관리자 `GET|POST /api/admin/popbill/bank`. 로컬 자동수집은 `EASYFIN_BANK_SYNC_ENABLED=true`.
   - 크레딧은 선불전자지급수단이 아니라 **B2B 거래 선수금/예치금**(계약 물품·용역만). 충전 화면·FAQ·약관·입금 확인에 동일 용어.
     프론트 카피: `web/frontend/src/shared/legal/creditPrepaidCopy.ts`
