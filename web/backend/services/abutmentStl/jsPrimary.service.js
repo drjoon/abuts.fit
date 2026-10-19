@@ -182,7 +182,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
     if (blended?.record) {
       cuffBlendResult = { record: blended.record, fileSize: blended.fileSize || null };
     }
-    if (blended?.ok && blended.buffer?.length) output = blended.buffer;
+    if (blended?.buffer?.length) output = blended.buffer;
   }
   lap("cuff");
   const uploaded = await uploadFileToS3(

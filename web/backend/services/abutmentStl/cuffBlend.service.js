@@ -31,7 +31,7 @@ const INTERACTIVE_QUEUE_TIMEOUT_MS = Number(process.env.CUFF_BLEND_QUEUE_TIMEOUT
 
 /**
  * timeout은 메시 worker 슬롯을 얻은 뒤부터 센다(workerSlots.js).
- * @param {"auto"|"redesign"|"propose"} mode
+ * @param {"auto"|"redesign"|"propose"|"post"} mode
  * @param {{ queueTimeoutMs?: number }} [run]
  */
 export async function runCuffBlendInWorker(buffer, mode, options, { queueTimeoutMs = 0 } = {}) {
@@ -81,6 +81,7 @@ function buildRecord({ mode, result, specKey, s3Key }) {
     zA: d.zA ?? null,
     zB: d.zB ?? null,
     maxAngleDeg: d.maxAngleDeg ?? null,
+    postSmooth: d.postSmooth || null,
     s3Key,
     updatedAt: new Date(),
   };
@@ -108,17 +109,30 @@ export async function applyCuffBlendToFilledStl({
   const finishLine = rawFinishLine ? JSON.parse(JSON.stringify(rawFinishLine)) : null;
   let result;
   if (!spec) {
+    // 커프는 못 고쳐도 auto면 포스트 계단 결은 다듬는다.
+    const post =
+      mode === "auto"
+        ? await runCuffBlendInWorker(
+            sourceBuffer?.length ? sourceBuffer : await getObjectBufferFromS3(s3Key),
+            "post",
+            { finishLine },
+            { queueTimeoutMs },
+          )
+        : null;
     result = {
       ok: false,
       status: "spec-pending",
       reason: `커넥션 스펙이 등록되지 않은 임플란트입니다(${key}). 개발팀 확인이 필요합니다.`,
+      buffer: post?.buffer || null,
+      detail: post?.detail || {},
     };
   } else {
     const source = sourceBuffer?.length ? sourceBuffer : await getObjectBufferFromS3(s3Key);
     result = await runCuffBlendInWorker(source, mode, { ...blendOptions, spec, specKey: key, finishLine }, { queueTimeoutMs });
   }
   let fileSize = null;
-  const blended = result.ok && result.buffer?.length ? result.buffer : null;
+  // 커프 보정이 안 돼도(manual-review·spec-pending) 포스트를 다듬었으면 버퍼가 있다.
+  const blended = result.buffer?.length ? result.buffer : null;
   if (blended && writeBack) {
     await putObjectToS3(s3Key, blended, { contentType: "application/sla" });
   }

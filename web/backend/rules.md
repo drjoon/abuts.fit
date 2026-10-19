@@ -199,6 +199,15 @@
 - 가로 결 방지: 마진 아래 0.45mm에서 곡선을 원본에 섞고, 이음 행은 옆모습이 1° 꺾일 때마다 둔다(`seamRows`). 이음 행 9줄 고정(0.3mm)일 때는 한 줄에 4~6°씩 꺾였다. 행 수가 늘어 파일은 약 1.5배다.
 - SSOT: `services/abutmentStl/{cuffConnectionSpecs,cuffBlend,cuffBlend.service}.js`, `tests/unit/cuffBlend.test.js`, `.cursor/rules/cuff-connection-spec.mdc`
 
+### 포스트 계단 결 다듬기(postSmooth)
+
+- 커프 보정과 같은 worker에서 `smoothPostAboveFinishLine`이 피니시라인 위 포스트(크라운이 앉는 면)를 다듬는다. auto는 커프가 `manual-review`·`spec-pending`이어도 포스트는 다듬는다(스펙 없으면 worker `post` 모드). Re는 재디자인이 적용될 때만. 다듬기가 실패·건너뜀이면 커프 결과(또는 입력)를 그대로 쓴다. 결과는 `caseInfos.cuffBlend.postSmooth`.
+- 마진 모서리(`findFinishCrease`) 꼭짓점과 그 아래는 비트 단위로 그대로다. 나머지는 원본 면 **안쪽으로만** 옮긴다(꼭짓점·모서리 가운데·면 중심을 원본 면 부호거리로 검사). 50µm보다 깊이 들어가야 하면 적용하지 않는다. 샘플 기준 안쪽 이동 중앙값 1.4~2µm, 최대 7~20µm.
+- 30° 넘게 꺾이는 모서리(슬롯·스크류홀 메움 테두리)와 스크류 채널과 벽이 얇은 곳은 고정한다. 영역은 마진 모서리 위 면에서 시작해 이런 모서리를 넘지 않는다(열린 채널로 마진 아래까지 새지 않게).
+- 영역 삼각형을 한 번 4등분하고(고정 꼭짓점 둘을 잇는 모서리는 나누지 않는다. T자 이음 방지), 원본 면에 국소 2차 곡면(σ 0.2mm)을 맞춘 뒤 원본 밖으로 나간 양만큼 매끈하게 함께 내린다. 마진 위 0.25mm·디자인 모서리 0.12mm 안에서 원본으로 넘어간다. 건당 0.5~1초, 포스트 삼각형은 약 4배.
+- 다듬은 삼각형 attribute는 `0x5053`. 이미 있으면(Re로 다시 들어온 filled) 다시 다듬지 않는다.
+- SSOT: `services/abutmentStl/postSmooth.js`, `services/abutmentStl/cuffBlend.worker.js`, `tests/unit/postSmooth.test.js`
+
 ### 디자인 파트너 클레임·마감
 
 - 접근: `BusinessAnchor.designAccessEnabled` (`/api/devops/design-access`). 제조사 큐 엔드포인트는

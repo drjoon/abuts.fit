@@ -122,7 +122,7 @@ export function scheduleFilledStlPrep(buffer, inputs) {
             },
             writeBack: false,
           });
-          if (blended?.ok && blended.buffer?.length) js.outputBuffer = blended.buffer;
+          if (blended?.buffer?.length) js.outputBuffer = blended.buffer;
           if (blended?.record) {
             js.cuffBlendResult = {
               record: blended.record,

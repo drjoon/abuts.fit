@@ -2329,4 +2329,7 @@ export {
   prepare as _prepare,
   finishLineZByAngle as _finishLineZByAngle,
   findFinishCrease as _findFinishCrease,
+  prepare as prepareCuffMesh,
+  finishLineZByAngle,
+  findFinishCrease,
 };

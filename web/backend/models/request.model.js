@@ -618,6 +618,15 @@ const requestSchema = new mongoose.Schema(
         zA: Number,
         zB: Number,
         maxAngleDeg: Number,
+        // 커프 보정 뒤 피니시라인 위 포스트 계단 결 다듬기(postSmooth.js). applied | skipped | failed
+        postSmooth: {
+          status: String,
+          reason: String,
+          patchTriangles: Number,
+          maxInwardUm: Number,
+          meanInwardUm: Number,
+          ms: Number,
+        },
         s3Key: String,
         updatedAt: Date,
       },
