@@ -13,7 +13,7 @@
 // - 2026-09-17: 준비/가공 카드 오른쪽에 filled STL+피니시라인 썸네일(프리뷰 오른쪽과 동일).
 // - 2026-09-12: 라이노 오버레이 — 블러 제거·옅은 틴트+반투명「작업중/작업중지」(의뢰 내용 또렷이).
 // - 2026-09-04: 세척.패킹 카드에 각인 이미지(또는 pending) 드롭 매칭 지원.
-// - 2026-10-20: 준비·원본 STL·filled 없음 — 의뢰 직후「JS 작업중」·작업중지(isRhinoWorkPending).
+// - 2026-10-20: 준비·원본 STL·filled 없음 — 의뢰 직후 STL/Rhino 생성 중지 단일 버튼(isRhinoWorkPending).
 // - 2026-09-09: 라이노 블러 — GENERATING만(idle filled 미수신 해제). 오버레이 약하게(내용 가독).
 // - 2026-09-03: 준비 탭「라이노 작업중」오버레이에 중단 버튼(뱃지 아래).
 // - 2026-09-03: 세척.패킹 → 승인은 각인 이미지가 있을 때만 가능(AI 인식 실패 시 카드/프리뷰 수동 승인).
@@ -91,6 +91,7 @@ import {
 } from "../utils/cuffBlendStatus";
 import { RequestInfoSummary } from "./RequestInfoSummary";
 import { FilledStlCardThumbnail } from "./FilledStlCardThumbnail";
+import { WorkRegenerationOverlayButton } from "./WorkRegenerationOverlayButton";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { PACKING_PENDING_DRAG_MIME } from "../packing/hooks/usePackingCapture";
@@ -928,7 +929,7 @@ export const WorksheetCardGrid = ({
           >
             {rhinoWorkPending ? (
               <div
-                className="absolute inset-0 z-30 flex items-center justify-center gap-2 rounded-[inherit] bg-white/10 cursor-not-allowed"
+                className="absolute inset-0 z-30 flex items-center justify-center rounded-[inherit] bg-white/10 cursor-not-allowed"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -937,49 +938,25 @@ export const WorksheetCardGrid = ({
                   e.preventDefault();
                   e.stopPropagation();
                 }}
-                role="status"
                 aria-live="polite"
-                aria-label={
-                  request.productionSchedule?.stlPreload?.engine === "rhino"
-                    ? "Rhino 작업중"
-                    : "JS 작업중"
-                }
               >
-                <span className="rounded-full border border-primary/35 bg-primary-soft/70 px-3 py-1.5 text-sm font-extrabold text-primary-strong">
-                  {request.productionSchedule?.stlPreload?.engine === "rhino"
-                    ? "Rhino 작업중"
-                    : "JS 작업중"}
-                </span>
-                {onCancelRhinoWork ? (
-                  <button
-                    type="button"
-                    className="rounded-full border border-slate-400/40 bg-white/75 px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-white/85 disabled:opacity-50 cursor-pointer"
-                    disabled={!!rhinoCancellingIds[String(request._id || request.requestId || "")]}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (
-                        rhinoCancellingIds[
-                          String(request._id || request.requestId || "")
-                        ]
-                      ) {
-                        return;
-                      }
-                      onCancelRhinoWork(request);
-                    }}
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                    }}
-                    title="작업중지"
-                    aria-label="작업중지"
-                  >
-                    {rhinoCancellingIds[
+                <WorkRegenerationOverlayButton
+                  workLabel={
+                    request.productionSchedule?.stlPreload?.engine === "rhino"
+                      ? "Rhino"
+                      : "STL"
+                  }
+                  cancelling={
+                    !!rhinoCancellingIds[
                       String(request._id || request.requestId || "")
                     ]
-                      ? "중지 중…"
-                      : "작업중지"}
-                  </button>
-                ) : null}
+                  }
+                  onCancel={
+                    onCancelRhinoWork
+                      ? () => onCancelRhinoWork(request)
+                      : undefined
+                  }
+                />
               </div>
             ) : null}
             <div className="absolute left-2 top-2 z-20 flex items-center gap-1">

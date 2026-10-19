@@ -1,7 +1,7 @@
 // change-log:
 // - 2026-10-17: 예약 관리 수량 라벨·스피너를 한 줄 배치.
 // - 2026-10-17: 예약 관리 행에 가공 수량 스피너(onChangeQty) 추가.
-// - 2026-09-13: 예약 관리 CAM 오버레이 — Next Up·라이노와 동일(블러 제거·옅은 틴트+반투명「작업중/작업중지」).
+// - 2026-09-13: 예약 관리 CAM 오버레이 — Next Up·준비와 동일「CAM 생성 중지」단일 버튼.
 // - 2026-08-29: 「CAM 생성 중」블러 옆 생성 중단 버튼.
 // - 2026-08-29: CAM 재생성 버튼·NC 미수신 시 Next Up과 동일 블러「CAM 생성 중」오버레이.
 // - 2026-08-08: CncModalShell 적용. 예약 관리 톤·compact 라벨로 정리.
@@ -28,6 +28,7 @@ import {
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { CncModalShell } from "@/features/manufacturer/cnc/components/CncModalShell";
 import { isCamGenerationOverlayPending } from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
+import { WorkRegenerationOverlayButton } from "@/pages/manufacturer/worksheet/custom_abutment/components/WorkRegenerationOverlayButton";
 
 export interface PlaylistJobItem {
   id: string;
@@ -279,7 +280,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
               >
                 {camRegenPending ? (
                   <div
-                    className="absolute inset-0 z-30 flex items-center justify-center gap-2 rounded-[inherit] bg-white/10"
+                    className="absolute inset-0 z-30 flex items-center justify-center rounded-[inherit] bg-white/10"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -288,33 +289,18 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                       e.preventDefault();
                       e.stopPropagation();
                     }}
-                    role="status"
                     aria-live="polite"
-                    aria-label="작업중"
                   >
-                    <span className="rounded-full border border-primary/35 bg-primary-soft/70 px-3 py-1.5 text-sm font-extrabold text-primary-strong">
-                      작업중
-                    </span>
-                    {onCancelCamGeneration ? (
-                      <button
-                        type="button"
-                        className="rounded-full border border-slate-400/40 bg-white/75 px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-white/85 disabled:opacity-50"
-                        disabled={!canCancelCam}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (!canCancelCam) return;
-                          onCancelCamGeneration(job.id);
-                        }}
-                        onPointerDown={(e) => {
-                          e.stopPropagation();
-                        }}
-                        title="작업중지"
-                        aria-label="작업중지"
-                      >
-                        {isCancelling ? "중지 중…" : "작업중지"}
-                      </button>
-                    ) : null}
+                    <WorkRegenerationOverlayButton
+                      workLabel="CAM"
+                      cancelling={isCancelling}
+                      disabled={!canCancelCam}
+                      onCancel={
+                        onCancelCamGeneration && canCancelCam
+                          ? () => onCancelCamGeneration(job.id)
+                          : undefined
+                      }
+                    />
                   </div>
                 ) : null}
 

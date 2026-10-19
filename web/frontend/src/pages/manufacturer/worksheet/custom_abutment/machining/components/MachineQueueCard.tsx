@@ -9,7 +9,7 @@
 // - 2026-10-02: 더미 가공 아이콘은 아래 원형 버튼과 같은 크기다.
 // - 2026-10-02: 카드 상단 배정 스위치 왼쪽 더미 가공 아이콘.
 // - 2026-09-17: Complete 슬롯 — 출고시간(마감) 뱃지 숨김(hideDeadline).
-// - 2026-09-12: Next Up CAM 오버레이 — 블러 제거·옅은 틴트+반투명「작업중/작업중지」(준비 탭과 동일).
+// - 2026-09-12: Next Up CAM 오버레이 — 블러 제거·옅은 틴트+「CAM 생성 중지」단일 버튼(준비 탭과 동일).
 // - 2026-09-11: Complete 슬롯 — 포장.발송·추적관리 건은 준비 롤백/재승인 비활성.
 // - 2026-08-30: Now Playing X — 확인 후 브리지 정지(C_STOP) + machining/cancel.
 // - 2026-08-29: Next Up「CAM 생성 중」블러 옆 생성 중단 버튼.
@@ -48,6 +48,7 @@ import { MachiningRequestLabel } from "./MachiningRequestLabel";
 import { humanAlarmText } from "../machiningAlertIncident";
 import { getMachineStatusLabel } from "@/pages/manufacturer/equipment/cnc/lib/machineStatus";
 import { isCamGenerationOverlayPending } from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
+import { WorkRegenerationOverlayButton } from "../../components/WorkRegenerationOverlayButton";
 
 /** Next Up → 타 장비 드롭 MIME (playlist 재정렬과 구분) */
 const NEXT_UP_MOVE_MIME = "application/x-abuts-nextup-move";
@@ -1164,7 +1165,7 @@ export const MachineQueueCard = ({
             draggable={canDragNextUp}
             title={
               nextUpCamRegenPending
-                ? "작업중"
+                ? "CAM 생성 중"
                 : canDragNextUp
                   ? "드래그하여 다른 장비 Next Up으로 이동"
                   : undefined
@@ -1289,7 +1290,7 @@ export const MachineQueueCard = ({
           >
             {nextUpCamRegenPending ? (
               <div
-                className="absolute inset-0 z-30 flex items-center justify-center gap-2 rounded-[inherit] bg-white/10"
+                className="absolute inset-0 z-30 flex items-center justify-center rounded-[inherit] bg-white/10"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1298,33 +1299,17 @@ export const MachineQueueCard = ({
                   e.preventDefault();
                   e.stopPropagation();
                 }}
-                role="status"
                 aria-live="polite"
-                aria-label="작업중"
               >
-                <span className="rounded-full border border-primary/35 bg-primary-soft/70 px-3 py-1.5 text-sm font-extrabold text-primary-strong">
-                  작업중
-                </span>
-                {onCancelCamGeneration && nextUpRequestId ? (
-                  <button
-                    type="button"
-                    className="rounded-full border border-slate-400/40 bg-white/75 px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-white/85 disabled:opacity-50"
-                    disabled={nextUpCamCancelling}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (nextUpCamCancelling) return;
-                      void onCancelCamGeneration(nextUpRequestId);
-                    }}
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                    }}
-                    title="작업중지"
-                    aria-label="작업중지"
-                  >
-                    {nextUpCamCancelling ? "중지 중…" : "작업중지"}
-                  </button>
-                ) : null}
+                <WorkRegenerationOverlayButton
+                  workLabel="CAM"
+                  cancelling={nextUpCamCancelling}
+                  onCancel={
+                    onCancelCamGeneration && nextUpRequestId
+                      ? () => void onCancelCamGeneration(nextUpRequestId)
+                      : undefined
+                  }
+                />
               </div>
             ) : null}
             <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">

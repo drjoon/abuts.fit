@@ -317,7 +317,7 @@ export const hasRhinoEligibleOriginalStl = (
 };
 
 /**
- * 제조사 생산 준비 카드: Filled STL 생성 중 오버레이(「JS/Rhino 작업중」·작업중지).
+ * 제조사 생산 준비 카드: Filled STL 생성 중 오버레이(STL/Rhino「생성 중지」단일 버튼).
  * - DB/로컬 `stlPreload=GENERATING` 또는 재생성 in-memory pending
  * - 의뢰 직후 filled 없음(백그라운드 JS 파이프라인) — GET /api/bg/pending-stl 과 동일 SSOT
  * CANCELLED/FAILED·취소·구강스캔 .ply 제외. 기존 filled가 있어도 재생성 중이면 블러.
