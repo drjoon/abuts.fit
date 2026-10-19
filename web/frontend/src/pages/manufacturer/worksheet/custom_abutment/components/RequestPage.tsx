@@ -2347,13 +2347,24 @@ export const RequestPage = ({
       const syncLocalCompositeOverride = (
         post: number | null,
         gingiva: number | null,
+        clearNc = false,
       ) => {
+        const applyCaseInfos = (
+          caseInfos: ManufacturerRequest["caseInfos"] | undefined,
+        ) => {
+          const nextCaseInfos = patchCompositeCaseInfos(caseInfos, post, gingiva);
+          if (clearNc) {
+            delete nextCaseInfos.ncFile;
+            delete nextCaseInfos.espFile;
+          }
+          return nextCaseInfos;
+        };
         pageState.setRequests((prev) =>
           prev.map((item) => {
             if (String(item?._id || "").trim() !== requestMongoId) return item;
             return {
               ...item,
-              caseInfos: patchCompositeCaseInfos(item.caseInfos, post, gingiva),
+              caseInfos: applyCaseInfos(item.caseInfos),
             };
           }),
         );
@@ -2369,11 +2380,7 @@ export const RequestPage = ({
             ...prev,
             request: {
               ...openReq,
-              caseInfos: patchCompositeCaseInfos(
-                openReq.caseInfos,
-                post,
-                gingiva,
-              ),
+              caseInfos: applyCaseInfos(openReq.caseInfos),
             },
           };
         });
@@ -2433,7 +2440,11 @@ export const RequestPage = ({
               ? null
               : nextGingiva;
 
-        syncLocalCompositeOverride(savedPost, savedGingiva);
+        syncLocalCompositeOverride(
+          savedPost,
+          savedGingiva,
+          data?.data?.ncCleared === true,
+        );
       } catch (e: unknown) {
         const rollbackCompositeCaseInfos = (
           caseInfos: ManufacturerRequest["caseInfos"] | undefined,

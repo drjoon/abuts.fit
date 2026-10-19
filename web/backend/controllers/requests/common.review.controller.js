@@ -85,6 +85,7 @@ import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.j
 import { placeRequestAtPolicyQueuePosition } from "./production.utils.js";
 import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
 import { isTestAccountMachiningRequest } from "../../utils/testAccountMachining.js";
+import { compositeNcIsStale } from "../../utils/compositeNcMatch.js";
 
 const AUTO_GATE_TRIGGER = "auto-machining-gate";
 
@@ -2065,10 +2066,13 @@ export async function updateReviewStatusByStage(req, res) {
             (!Number.isFinite(ncMaterialDiameter) ||
               ncMaterialDiameter <= 0 ||
               Math.abs(ncMaterialDiameter - selectedDiameter) > 1e-6);
+          const stepMismatch =
+            hasNcMeta && (await compositeNcIsStale(request));
 
-          // 기존 NC가 없으면 생성. 장비 소재 직경이 바뀌었으면 기존 NC(#521)를 버리고 재생성.
+          // 기존 NC가 없으면 생성. 장비 소재 직경이 바뀌었거나
+          // 포스트·치은 피치와 다른 NC면 버리고 이 카드 피치로 다시 만든다.
           if (status === "APPROVED" && shouldCheckNcOnNextUp) {
-            if (diameterMismatch) {
+            if (diameterMismatch || stepMismatch) {
               if (request.caseInfos) {
                 request.caseInfos.ncFile = undefined;
                 request.markModified("caseInfos");
@@ -2076,7 +2080,7 @@ export async function updateReviewStatusByStage(req, res) {
               request.productionSchedule.ncPreload = { status: "NONE" };
               pendingCamStageEspritForceReprocess = true;
             }
-            if (!hasNcMeta || diameterMismatch) {
+            if (!hasNcMeta || diameterMismatch || stepMismatch) {
               pendingCamStageEspritTriggerRequest = request.toObject
                 ? request.toObject()
                 : JSON.parse(JSON.stringify(request));

@@ -104,7 +104,12 @@ import s3Utils, {
   getSignedUrl as getSignedUrlForS3Key,
 } from "../../utils/s3.utils.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
-import { normalizeCompositeFinishStepOverrideMm } from "../../utils/compositeStepIncrement.js";
+import {
+  compositeStepsMatch,
+  normalizeCompositeFinishStepOverrideMm,
+  resolveEffectiveCompositeSteps,
+  stampCompositeStepsOnNcFile,
+} from "../../utils/compositeStepIncrement.js";
 import {
   triggerDashboardSummaryRefreshForAnchorId,
   triggerPricingSnapshotForBusinessAnchorId,
@@ -3612,6 +3617,7 @@ export const updateRequestCompositeStepIncrementOverride = asyncHandler(
       });
     }
 
+    const previousSteps = resolveEffectiveCompositeSteps(request.caseInfos);
     if (hasPost) {
       request.set(
         "caseInfos.compositeStepIncrementPostOverrideMm",
@@ -3624,7 +3630,53 @@ export const updateRequestCompositeStepIncrementOverride = asyncHandler(
         gingivaOverride,
       );
     }
+
+    const nextCaseInfos = {
+      ...(request.caseInfos?.toObject?.() || request.caseInfos || {}),
+      ...(hasPost
+        ? { compositeStepIncrementPostOverrideMm: postOverride }
+        : {}),
+      ...(hasGingiva
+        ? { compositeStepIncrementGingivaOverrideMm: gingivaOverride }
+        : {}),
+    };
+    const nextSteps = resolveEffectiveCompositeSteps(nextCaseInfos);
+    const stepsChanged = !compositeStepsMatch(previousSteps, nextSteps);
+    const hadNc = Boolean(
+      request?.caseInfos?.ncFile?.s3Key ||
+        request?.caseInfos?.ncFile?.filePath ||
+        request?.caseInfos?.ncFile?.fileName,
+    );
+    const reviewApproved =
+      String(request?.caseInfos?.reviewByStage?.request?.status || "")
+        .trim()
+        .toUpperCase() === "APPROVED";
+    let ncCleared = false;
+    if (stepsChanged && hadNc) {
+      request.set("caseInfos.ncFile", undefined);
+      request.set("caseInfos.espFile", undefined);
+      ncCleared = true;
+      if (reviewApproved) {
+        request.set("productionSchedule.ncPreload", {
+          status: "GENERATING",
+          updatedAt: new Date(),
+        });
+      }
+    }
     await request.save();
+    if (ncCleared && reviewApproved) {
+      const regenRequest = request;
+      void import("./common.review.esprit.js")
+        .then(({ triggerEspritForNc }) =>
+          triggerEspritForNc({ request: regenRequest, force: true }),
+        )
+        .catch((error) => {
+          console.warn("[composite-step] NC regenerate failed", {
+            requestId: regenRequest?.requestId || null,
+            message: error?.message || String(error),
+          });
+        });
+    }
 
     const ci = request.caseInfos || {};
     const savedPost =
@@ -3643,6 +3695,7 @@ export const updateRequestCompositeStepIncrementOverride = asyncHandler(
         manufacturerStage: request.manufacturerStage,
         compositeStepIncrementPostOverrideMm: savedPost,
         compositeStepIncrementGingivaOverrideMm: savedGingiva,
+        ncCleared,
       },
     });
   },
@@ -5024,9 +5077,7 @@ function buildReviewByStageForStartStage(startStage, now = new Date()) {
 function buildClonedCaseInfos(sourceCaseInfos, startStage, now = new Date()) {
   const base = {
     ...sourceCaseInfos,
-    // 복사본마다 Finish 스텝 override는 독립(원본 값 상속·연동 방지)
-    compositeStepIncrementPostOverrideMm: null,
-    compositeStepIncrementGingivaOverrideMm: null,
+    // 복사 시점의 포스트·치은 피치를 이 카드 값으로 고정한다. 이후 수정은 이 카드만 바꾼다.
     reviewByStage: buildReviewByStageForStartStage(startStage, now),
     rollbackCounts: {
       request: 0,
@@ -5055,7 +5106,10 @@ function buildClonedCaseInfos(sourceCaseInfos, startStage, now = new Date()) {
     return {
       ...base,
       ...pickFilledStlFileForClone(sourceCaseInfos),
-      ncFile: sourceCaseInfos?.ncFile || null,
+      ncFile: stampCompositeStepsOnNcFile(
+        sourceCaseInfos?.ncFile,
+        sourceCaseInfos,
+      ),
     };
   }
 

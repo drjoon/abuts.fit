@@ -59,6 +59,9 @@ import {
 } from "../requests/utils.js";
 
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
+import {
+  resolveEffectiveCompositeSteps,
+} from "../../utils/compositeStepIncrement.js";
 import { emitBgRuntimeStatus } from "./bgRuntimeEvents.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import {
@@ -551,6 +554,30 @@ async function fetchRemoteFileBuffer(sourceStep, fileName) {
     );
     return null;
   }
+}
+
+/** 가공 단계인데 장비가 비어 있으면, 방금 만든 이 카드 NC로 자동 가공을 시도한다. */
+async function kickIdleAutoMachiningAfterNc(request) {
+  const stage = String(request?.manufacturerStage || "").trim();
+  if (stage !== "가공") return;
+  const machineId = String(
+    request?.productionSchedule?.assignedMachine ||
+      request?.assignedMachine ||
+      "",
+  ).trim();
+  if (!machineId) return;
+  const running = await Request.exists({
+    "productionSchedule.assignedMachine": machineId,
+    "productionSchedule.machiningProgress.phase": "STARTED",
+  });
+  if (running) return;
+  const { triggerNextAutoMachiningAfterComplete } = await import(
+    "../cnc/machiningBridge.js"
+  );
+  await triggerNextAutoMachiningAfterComplete({
+    machineId,
+    completedRequestId: "",
+  });
 }
 
 /**
@@ -1149,15 +1176,18 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
               metadata?.materialDiameter ??
               request?.productionSchedule?.diameter,
           );
-          if (Number.isFinite(ncMaterialDiameter) && ncMaterialDiameter > 0) {
-            updateData["caseInfos.ncFile"] = {
-              ...(updateData["caseInfos.ncFile"] &&
-              typeof updateData["caseInfos.ncFile"] === "object"
-                ? updateData["caseInfos.ncFile"]
-                : {}),
-              materialDiameter: ncMaterialDiameter,
-            };
-          }
+          const bakedSteps = resolveEffectiveCompositeSteps(request?.caseInfos);
+          updateData["caseInfos.ncFile"] = {
+            ...(updateData["caseInfos.ncFile"] &&
+            typeof updateData["caseInfos.ncFile"] === "object"
+              ? updateData["caseInfos.ncFile"]
+              : {}),
+            ...(Number.isFinite(ncMaterialDiameter) && ncMaterialDiameter > 0
+              ? { materialDiameter: ncMaterialDiameter }
+              : {}),
+            compositeStepPostMm: bakedSteps.post,
+            compositeStepGingivaMm: bakedSteps.gingiva,
+          };
         }
         updateData["productionSchedule.actualCamComplete"] = now;
         const espFileName = String(req.body?.espFileName || "").trim();
@@ -1460,6 +1490,12 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   if (isCallbackSuccess && callbackStep === "3-nc" && updatedRequest) {
     void analyzeAndStoreNc(updatedRequest).catch((error) => {
       console.warn("[BG-Callback] NC analysis failed", error?.message || error);
+    });
+    void kickIdleAutoMachiningAfterNc(updatedRequest).catch((error) => {
+      console.warn(
+        "[BG-Callback] idle auto-machining kick failed",
+        error?.message || error,
+      );
     });
   }
 

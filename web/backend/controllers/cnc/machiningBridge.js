@@ -80,6 +80,10 @@ import {
   inferDiameterGroupFromValue,
 } from "./distribution.utils.js";
 import { shouldRequeueSameRequestAfterComplete } from "./machiningBatchContinue.js";
+import {
+  compositeNcIsStale,
+  regenerateCompositeNc,
+} from "../../utils/compositeNcMatch.js";
 import { toKstYmd } from "../../utils/krBusinessDays.js";
 import { getTtlMapValue, observeTimestampMap, setTtlMapValue } from "../../utils/boundedTtlMap.js";
 
@@ -1465,6 +1469,26 @@ export async function triggerNextAutoMachiningAfterComplete({
       console.log(
         `[bridge:auto-next] fallback pending scan used machine=${mid} primaryLimit=${AUTO_NEXT_PRIMARY_PENDING_LIMIT} fallbackLimit=${AUTO_NEXT_FALLBACK_PENDING_LIMIT} pending=${pendingFallback.length} skippedNoNcMeta=${skippedNoNcMeta} skippedAlreadyRunning=${skippedAlreadyRunning}`,
       );
+    }
+
+    while (pick && (await compositeNcIsStale(pick))) {
+      const staleId = String(pick?._id || "").trim();
+      const staleRequestId = String(pick?.requestId || "").trim();
+      console.log(
+        `[bridge:auto-next] stale composite NC machine=${mid} requestId=${staleRequestId} post=${pick?.caseInfos?.compositeStepIncrementPostOverrideMm ?? "requestor"} gingiva=${pick?.caseInfos?.compositeStepIncrementGingivaOverrideMm ?? "requestor"}`,
+      );
+      void regenerateCompositeNc(pick).catch((error) => {
+        console.warn("[bridge:auto-next] composite NC regenerate failed", {
+          requestId: staleRequestId,
+          message: error?.message || String(error),
+        });
+      });
+      pending = pending.filter((row) => String(row?._id || "") !== staleId);
+      const nextPick = pickFromPending(pending);
+      pick = nextPick.pick;
+      if (!firstDiameterMismatched) {
+        firstDiameterMismatched = nextPick.firstDiameterMismatched;
+      }
     }
 
     if (!pick && firstDiameterMismatched) {
