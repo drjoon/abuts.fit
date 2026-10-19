@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-20: worksheetSelect — stlPreload·stlJsFallback·ncPreload(준비「JS 작업중」·실패 뱃지).
 // - 2026-10-13: 더미 조회 시 비어 있는 헥스 회전은 STL모델대로로 저장한다.
 // - 2026-10-13: 워크시트 목록에서 더미는 빼고, 세척.패킹 이후에 들어간 더미는 대기 상태로 되돌린다.
 // - 2026-10-06: dummy_sample도 샘플 삭제로 취급. 가공 Next Up에서도 삭제 가능.
@@ -1765,6 +1766,9 @@ export async function getAllRequests(req, res) {
       "productionSchedule.actualCamComplete",
       "productionSchedule.actualMachiningComplete",
       "productionSchedule.scheduledShipPickup",
+      "productionSchedule.stlPreload",
+      "productionSchedule.stlJsFallback",
+      "productionSchedule.ncPreload",
       "timeline.estimatedShipYmd",
       "requestor",
       "shippingReceiver",

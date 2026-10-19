@@ -12,6 +12,7 @@
 // - web/backend/controllers/bg/bg.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending.ts
 // change-log:
+// - 2026-10-20: filled 미수신 준비 건도 isRhinoWorkPending 기준으로 silent refetch(의뢰 직후 JS 작업중).
 // - 2026-09-09: Rhino 완료 소켓이 다른 BACKEND_BASE로만 올 때 「라이노 작업중」고스트 — GENERATING/pending 폴링 refetch.
 // - 2026-09-03: 취소 시 목록에서 본건 강제 제거 + manufacturerStage 보정(라이노 고스트 방지).
 // - 2026-08-29: NC-only 재생성 시 STL IndexedDB를 지우지 않음. 캐시 무효화 후 열린 프리뷰를 갱신.
@@ -40,13 +41,13 @@ import { invalidateRequestPreviewCaches } from "@/shared/files/fileBlobCache";
 import {
   consumeFilledStlRegenerationPending,
   consumeNcRegenerationPending,
-  hasFilledStlRegenerationPending,
   reconcileFilledStlRegenerationPending,
 } from "../utils/regenerationPending";
 import {
   deriveStageForFilter,
   resolveFilledStlFile,
   patchFilledStlFile,
+  isRhinoWorkPending,
   type ManufacturerRequest,
 } from "../utils/request";
 import { filterOutHexVerificationCancelCompanions } from "../utils/hexRotation";
@@ -874,13 +875,10 @@ export function useWorksheetRealtimeStatus({
     const id = window.setInterval(() => {
       if (rhinoPollInFlightRef.current) return;
       const list = requestsRef.current || [];
-      const hasGenerating = list.some((r) => {
-        const status = String(r?.productionSchedule?.stlPreload?.status || "")
-          .trim()
-          .toUpperCase();
-        return status === "GENERATING";
-      });
-      if (!hasGenerating && !hasFilledStlRegenerationPending()) return;
+      const needsFilledWorkPoll = list.some((r) =>
+        isRhinoWorkPending(r, "request"),
+      );
+      if (!needsFilledWorkPoll) return;
       const fetchFn = fetchRequestsRef.current;
       if (!fetchFn) return;
       rhinoPollInFlightRef.current = true;

@@ -3,6 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // change-log:
+// - 2026-10-20: trigger/process-file stlPreload GENERATING에 engine js|rhino 반영(준비 카드 라벨).
 // - 2026-10-10: JS 실패는 Rhino로 넘기지 않는다. engine=rhino일 때만 원격 Rhino.
 // - 2026-10-09: 수동 재생성(process-file)도 JS 우선·Rhino 폴백.
 // - 2026-10-09: triggerRhino — 백엔드 JS 파이프라인 우선, 문제 시 Rhino 폴백(ABUTMENT_STL_JS_PRIMARY=false로 끔).
@@ -126,6 +127,13 @@ export const processFileByName = asyncHandler(async (req, res) => {
   const safeName = sanitizeStlName(String(rawName));
   const requestId = req.body?.requestId || null;
   const force = Boolean(req.body?.force);
+  const forceRhinoEngine =
+    String(req.body?.engine || "").trim().toLowerCase() === "rhino";
+  const jsPrimaryForStl =
+    !forceRhinoEngine &&
+    Boolean(requestId) &&
+    /\.stl$/i.test(safeName) &&
+    isAbutmentStlJsPrimaryEnabled();
 
   // requestId가 있으면 Request 조회하여 requestMongoId 확보 + 재생성 시 stlPreload 재개
   let requestMongoId = null;
@@ -152,6 +160,11 @@ export const processFileByName = asyncHandler(async (req, res) => {
                 "productionSchedule.stlPreload": {
                   status: "GENERATING",
                   updatedAt: new Date(),
+                  ...(forceRhinoEngine
+                    ? { engine: "rhino" }
+                    : jsPrimaryForStl
+                      ? { engine: "js" }
+                      : {}),
                 },
               },
             },
@@ -169,25 +182,8 @@ export const processFileByName = asyncHandler(async (req, res) => {
     }
   }
 
-  // engine="rhino": 준비 카드「Rhino 실행」— JS 파이프라인을 건너뛰고 원격 Rhino로 바로 처리한다.
-  const forceRhinoEngine =
-    String(req.body?.engine || "").trim().toLowerCase() === "rhino";
-
-  // 준비 카드 오버레이「Rhino 작업중」표시용 (GENERATING 갱신은 위에서 이미 끝남)
-  if (forceRhinoEngine && requestId) {
-    await Request.updateOne(
-      { requestId },
-      { $set: { "productionSchedule.stlPreload.engine": "rhino" } },
-    ).catch(() => null);
-  }
-
   // 수동 재생성도 백엔드 JS 파이프라인. 실패해도 원격 Rhino로 넘기지 않는다.
-  if (
-    !forceRhinoEngine &&
-    requestId &&
-    /\.stl$/i.test(safeName) &&
-    isAbutmentStlJsPrimaryEnabled()
-  ) {
+  if (jsPrimaryForStl) {
     void runJsPrimaryThenFallback({
       requestId,
       fileName: safeName,
@@ -505,7 +501,9 @@ export const triggerRhinoProcessFileForRequest = ({
   if (!targetName) return;
   const rid = String(requestId || "").trim() || null;
 
-  // 준비 탭「라이노 작업중」+ pending-stl 복구가 잡도록 enqueue 전에 GENERATING 표시
+  // 준비 탭「JS/Rhino 작업중」+ pending-stl 복구가 잡도록 enqueue 전에 GENERATING 표시
+  const useJsEngine =
+    /\.stl$/i.test(targetName) && isAbutmentStlJsPrimaryEnabled();
   if (rid) {
     void Request.updateOne(
       {
@@ -517,6 +515,7 @@ export const triggerRhinoProcessFileForRequest = ({
           "productionSchedule.stlPreload": {
             status: "GENERATING",
             updatedAt: new Date(),
+            ...(useJsEngine ? { engine: "js" } : {}),
           },
         },
       },
