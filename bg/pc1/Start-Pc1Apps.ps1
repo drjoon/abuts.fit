@@ -1,82 +1,25 @@
 # related files:
 # - bg/pc1/Install-Pc1Autostart.ps1
-# - bg/pc1/rhino-server/compute/rhino.cmd
-# - bg/pc1/rhino-server/compute/scripts/init_instance.py
 # - bg/pc1/esprit-addin/Esprit.cmd
 # - bg/pc1/bridge-server/bridge.cmd
-# - bg/pc1/rhino-server/rules.md
+# - bg/pc1/abutment-stl-shadow/shadow-worker.cmd
 #
-# Boot order after Windows logon (Rhino/ESPRIT need interactive desktop):
-#   1) Rhino 8 + ScriptEditor wake (RhinoCode pipe)
-#   2) rhino-server (:8000)
-#   3) ESPRIT + add-in (:8001) — splash/license OK is manual
-#   4) bridge-server (:8002)
-#   5) abutment STL shadow worker (node, BelowNormal): bg/pc1/abutment-stl-shadow/shadow-worker.cmd
+# Boot order after Windows logon (ESPRIT needs interactive desktop):
+#   1) ESPRIT + add-in (:8001) — splash/license OK is manual
+#   2) bridge-server (:8002)
+#   3) abutment STL shadow worker (node, BelowNormal): bg/pc1/abutment-stl-shadow/shadow-worker.cmd
 param(
   [int]$DelaySeconds = 45,
-  [int]$RhinoReadyTimeoutSec = 180,
   [switch]$SkipDelay,
-  [switch]$ForceRhinoRestart,
   [switch]$WhatIf
 )
 
 $ErrorActionPreference = "Continue"
 
-# --- Win32 / UI helpers (Rhino ScriptEditor SendKeys) ---
-Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
-
-if (-not ("AbutsWin32" -as [type])) {
-  Add-Type @"
-using System;
-using System.Text;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
-
-public static class AbutsWin32 {
-  public delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
-
-  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc lpEnumFunc, IntPtr lParam);
-  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
-  [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-  public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-  [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
-
-  public const int SW_RESTORE = 9;
-
-  public static List<IntPtr> GetVisibleWindowsForPid(uint pid) {
-    var list = new List<IntPtr>();
-    EnumWindows((hWnd, lParam) => {
-      uint wpid;
-      GetWindowThreadProcessId(hWnd, out wpid);
-      if (wpid == pid && IsWindowVisible(hWnd)) list.Add(hWnd);
-      return true;
-    }, IntPtr.Zero);
-    return list;
-  }
-
-  public static string GetTitle(IntPtr hWnd) {
-    var sb = new StringBuilder(512);
-    GetWindowText(hWnd, sb, sb.Capacity);
-    return sb.ToString();
-  }
-
-  public static void FocusWindow(IntPtr hWnd) {
-    ShowWindow(hWnd, SW_RESTORE);
-    BringWindowToTop(hWnd);
-    SetForegroundWindow(hWnd);
-  }
-}
-"@
-}
-
 function Test-Pc1RootCandidate {
   param([string]$Path)
   if (-not $Path -or -not (Test-Path $Path)) { return $false }
   return (
-    (Test-Path (Join-Path $Path "rhino-server\compute\rhino.cmd")) -and
     (Test-Path (Join-Path $Path "esprit-addin\Esprit.cmd")) -and
     (Test-Path (Join-Path $Path "bridge-server"))
   )
@@ -84,20 +27,27 @@ function Test-Pc1RootCandidate {
 
 function Resolve-Pc1Root {
   $scriptDir = Split-Path -Parent $PSCommandPath
-  $candidates = @(
-    $scriptDir,
-    (Join-Path $scriptDir "pc1"),
-    (Join-Path (Split-Path $scriptDir -Parent) "pc1")
-  )
+  $candidates = @()
+  if ((Split-Path -Leaf $scriptDir) -eq "pc1") {
+    $candidates += $scriptDir
+  } else {
+    $candidates += (Join-Path $scriptDir "pc1")
+    $candidates += (Join-Path (Split-Path $scriptDir -Parent) "pc1")
+    $candidates += $scriptDir
+  }
   foreach ($c in $candidates) {
     if (Test-Pc1RootCandidate -Path $c) {
       return (Resolve-Path $c).Path
     }
   }
-  return $scriptDir
+  return $null
 }
 
 $Pc1Root = Resolve-Pc1Root
+if (-not $Pc1Root) {
+  Write-Error "PC1 root not found. Run bg\pc1\Start-Pc1Apps.ps1 (not a copy under bg\)."
+  exit 1
+}
 $LogDir = Join-Path $Pc1Root "logs"
 if (-not (Test-Path $LogDir)) {
   New-Item -ItemType Directory -Path $LogDir | Out-Null
@@ -143,274 +93,6 @@ function Test-TcpPortOpen {
   return $false
 }
 
-function Read-EnvFileValue {
-  param([string]$EnvPath, [string]$Key)
-  if (-not (Test-Path $EnvPath)) { return $null }
-  foreach ($line in Get-Content -Path $EnvPath -ErrorAction SilentlyContinue) {
-    if ([string]::IsNullOrWhiteSpace($line)) { continue }
-    if ($line -match '^\s*#') { continue }
-    if ($line -match "^\s*$([regex]::Escape($Key))\s*=\s*(.*)$") {
-      return $Matches[1].Trim().Trim('"')
-    }
-  }
-  return $null
-}
-
-function Resolve-RhinoPaths {
-  $rhinoEnv = Join-Path $Pc1Root "rhino-server\compute\local.env"
-  $rhinoApp = Read-EnvFileValue -EnvPath $rhinoEnv -Key "RHINO_APP"
-  $rhinoCode = Read-EnvFileValue -EnvPath $rhinoEnv -Key "RHINOCODE_BIN"
-  if (-not $rhinoApp) {
-    $rhinoApp = "C:\Program Files\Rhino 8\System\Rhino.exe"
-  }
-  if (-not $rhinoCode) {
-    $rhinoCode = "C:\Program Files\Rhino 8\System\RhinoCode.exe"
-  }
-  return @{
-    RhinoApp = $rhinoApp
-    RhinoCode = $rhinoCode
-    InitScript = (Join-Path $Pc1Root "rhino-server\compute\scripts\init_instance.py")
-    EnvFile = $rhinoEnv
-  }
-}
-
-function Get-RhinoCodeListRaw {
-  param([string]$RhinoCode)
-  if (-not (Test-Path $RhinoCode)) { return "" }
-  try {
-    $out = & $RhinoCode list --json 2>&1 | Out-String
-    return $out.Trim()
-  } catch {
-    return ""
-  }
-}
-
-function Get-RhinoCodePipeCount {
-  param([string]$RhinoCode)
-  $text = Get-RhinoCodeListRaw -RhinoCode $RhinoCode
-  if (-not $text -or $text -eq "[]" -or $text -eq "null") { return 0 }
-  try {
-    $parsed = $text | ConvertFrom-Json -ErrorAction Stop
-    if ($null -eq $parsed) { return 0 }
-    if ($parsed -is [System.Array]) { return $parsed.Count }
-    return 1
-  } catch {
-    $lines = @($text -split "`r?`n" | Where-Object { $_.Trim() -ne "" })
-    return $lines.Count
-  }
-}
-
-function Get-RhinoProcesses {
-  return @(Get-Process -Name "Rhino" -ErrorAction SilentlyContinue)
-}
-
-function Get-ProcessWindows {
-  param([string[]]$ProcessNames)
-  $out = @()
-  foreach ($name in $ProcessNames) {
-    foreach ($proc in @(Get-Process -Name $name -ErrorAction SilentlyContinue)) {
-      try {
-        $hwnds = [AbutsWin32]::GetVisibleWindowsForPid([uint32]$proc.Id)
-        foreach ($h in $hwnds) {
-          $title = [AbutsWin32]::GetTitle($h)
-          $out += [pscustomobject]@{
-            ProcessName = $proc.ProcessName
-            Pid = $proc.Id
-            Hwnd = $h
-            Title = $title
-          }
-        }
-      } catch {}
-    }
-  }
-  return $out
-}
-
-function Send-KeysToProcessWindow {
-  param(
-    [string[]]$ProcessNames,
-    [string]$Keys,
-    [string]$TitleContains = $null
-  )
-  $wins = Get-ProcessWindows -ProcessNames $ProcessNames
-  if ($TitleContains) {
-    $wins = @($wins | Where-Object { $_.Title -and ($_.Title -like "*$TitleContains*") })
-  }
-  if ($wins.Count -eq 0) { return $false }
-  # Prefer largest / main-looking window (non-empty title).
-  $target = $wins | Sort-Object { if ($_.Title) { $_.Title.Length } else { 0 } } -Descending | Select-Object -First 1
-  try {
-    [AbutsWin32]::FocusWindow($target.Hwnd)
-    Start-Sleep -Milliseconds 400
-    [System.Windows.Forms.SendKeys]::SendWait($Keys)
-    Write-Log "Sent keys to $($target.ProcessName) '$($target.Title)': $Keys"
-    return $true
-  } catch {
-    Write-Log "SendKeys failed: $($_.Exception.Message)" "WARN"
-    return $false
-  }
-}
-
-function Invoke-RhinoScriptEditorViaCom {
-  $progIds = @("Rhino.Application.8", "Rhino.Application")
-  foreach ($id in $progIds) {
-    try {
-      $app = [Runtime.InteropServices.Marshal]::GetActiveObject($id)
-      $null = $app.RunScript("_ScriptEditor", $false)
-      Write-Log "Sent _ScriptEditor via COM ($id)"
-      return $true
-    } catch {
-      Write-Log "COM $id unavailable: $($_.Exception.Message)" "WARN"
-    }
-  }
-  return $false
-}
-
-function Invoke-RhinoScriptEditorViaKeys {
-  # Escape any modal, then run ScriptEditor command in Rhino command line.
-  $ok = Send-KeysToProcessWindow -ProcessNames @("Rhino") -Keys "{ESC}{ESC}_ScriptEditor{ENTER}"
-  if (-not $ok) {
-    $ok = Send-KeysToProcessWindow -ProcessNames @("Rhino") -Keys "{ESC}ScriptEditor{ENTER}"
-  }
-  return $ok
-}
-
-function Start-FreshRhinoWithScriptEditor {
-  param($Paths)
-  if (-not (Test-Path $Paths.RhinoApp)) {
-    Write-Log "Rhino.exe not found: $($Paths.RhinoApp)" "ERROR"
-    return $false
-  }
-  # McNeel form: /runscript="..."  (hyphen form is often ignored)
-  Write-Log "Starting Rhino 8 /nosplash /runscript=`"_ScriptEditor`""
-  if (-not $WhatIf) {
-    Start-Process -FilePath $Paths.RhinoApp -ArgumentList @(
-      "/nosplash",
-      '/runscript="_ScriptEditor"'
-    ) | Out-Null
-  }
-  return $true
-}
-
-function Restart-RhinoWithScriptEditor {
-  param($Paths)
-  Write-Log "Restarting Rhino so ScriptEditor can wake RhinoCode..." "WARN"
-  if ($WhatIf) { return $true }
-  Get-RhinoProcesses | ForEach-Object {
-    try {
-      Write-Log "Stopping Rhino pid=$($_.Id)"
-      Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
-    } catch {}
-  }
-  Start-Sleep -Seconds 4
-  return (Start-FreshRhinoWithScriptEditor -Paths $Paths)
-}
-
-function Start-RhinoWithScriptEditor {
-  param($Paths)
-
-  $existing = Get-RhinoProcesses
-  $needRestart = [bool]$ForceRhinoRestart
-
-  if ($needRestart) {
-    Restart-RhinoWithScriptEditor -Paths $Paths | Out-Null
-  } elseif ($existing.Count -gt 0) {
-    Write-Log "Rhino already running (pid=$($existing[0].Id))"
-    $count = Get-RhinoCodePipeCount -RhinoCode $Paths.RhinoCode
-    if ($count -gt 0) {
-      Write-Log "RhinoCode list already OK (pipes=$count)"
-      return $true
-    }
-    Write-Log "RhinoCode list empty while Rhino is up — waking ScriptEditor..."
-    if (-not (Invoke-RhinoScriptEditorViaCom)) {
-      Invoke-RhinoScriptEditorViaKeys | Out-Null
-    }
-  } else {
-    Start-FreshRhinoWithScriptEditor -Paths $Paths | Out-Null
-  }
-
-  $deadline = (Get-Date).AddSeconds($RhinoReadyTimeoutSec)
-  $woke = $false
-  $keysAt = 25
-  $comAt = 45
-  $restartAt = 70
-  $didKeys = $false
-  $didCom = $false
-  $didRestart = $false
-  $pollStart = Get-Date
-
-  while ((Get-Date) -lt $deadline) {
-    $count = Get-RhinoCodePipeCount -RhinoCode $Paths.RhinoCode
-    if ($count -gt 0) {
-      Write-Log "RhinoCode list OK (pipes=$count)"
-      if ((Test-Path $Paths.RhinoCode) -and (Test-Path $Paths.InitScript) -and -not $WhatIf) {
-        try {
-          $p = Start-Process -FilePath $Paths.RhinoCode -ArgumentList @(
-            "script", $Paths.InitScript
-          ) -PassThru -WindowStyle Minimized -ErrorAction SilentlyContinue
-          if ($p -and -not $p.WaitForExit(30000)) {
-            try { $p.Kill() } catch {}
-          } elseif ($p) {
-            Write-Log "init_instance.py exitCode=$($p.ExitCode)"
-          }
-        } catch {
-          Write-Log "init_instance.py failed: $($_.Exception.Message)" "WARN"
-        }
-      }
-      $woke = $true
-      break
-    }
-
-    $elapsed = [int]((Get-Date) - $pollStart).TotalSeconds
-    Write-Log "Waiting for RhinoCode pipes... (${elapsed}s / ${RhinoReadyTimeoutSec}s)"
-
-    # Dismiss possible Rhino license/update modal with Enter, then ScriptEditor keys.
-    if (-not $didKeys -and $elapsed -ge $keysAt) {
-      $didKeys = $true
-      Write-Log "Trying Enter + _ScriptEditor via SendKeys..."
-      Send-KeysToProcessWindow -ProcessNames @("Rhino") -Keys "{ENTER}" | Out-Null
-      Start-Sleep -Seconds 1
-      Invoke-RhinoScriptEditorViaKeys | Out-Null
-    }
-    if (-not $didCom -and $elapsed -ge $comAt) {
-      $didCom = $true
-      Invoke-RhinoScriptEditorViaCom | Out-Null
-      Invoke-RhinoScriptEditorViaKeys | Out-Null
-    }
-    if (-not $didRestart -and $elapsed -ge $restartAt) {
-      $didRestart = $true
-      Restart-RhinoWithScriptEditor -Paths $Paths | Out-Null
-      Start-Sleep -Seconds 20
-      Invoke-RhinoScriptEditorViaKeys | Out-Null
-    }
-
-    Start-Sleep -Seconds 5
-  }
-
-  if (-not $woke) {
-    $raw = Get-RhinoCodeListRaw -RhinoCode $Paths.RhinoCode
-    Write-Log "RhinoCode pipes still empty after ${RhinoReadyTimeoutSec}s. raw=$(if ($raw) { $raw } else { '(empty)' })" "WARN"
-    Write-Log "Open ScriptEditor once manually in Rhino (Tools > ScriptEditor), then pipes should appear." "WARN"
-  }
-  return $woke
-}
-
-function Start-RhinoServer {
-  if (Test-TcpPortOpen -Port 8000) {
-    Write-Log "rhino-server already listening on :8000"
-    return
-  }
-  $cmd = Join-Path $Pc1Root "rhino-server\compute\rhino.cmd"
-  if (-not (Test-Path $cmd)) {
-    Write-Log "Missing $cmd (Pc1Root wrong?)" "ERROR"
-    return
-  }
-  Write-Log "Starting rhino-server (rhino.cmd)"
-  if (-not $WhatIf) {
-    Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", "`"$cmd`"") -WorkingDirectory (Split-Path $cmd -Parent) -WindowStyle Minimized | Out-Null
-  }
-}
-
 function Start-EspritApp {
   $esprit = Get-Process -Name "esprit" -ErrorAction SilentlyContinue
   if ($esprit) {
@@ -446,7 +128,6 @@ function Start-BridgeServer {
   if (-not $WhatIf) {
     Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe -Parent) -WindowStyle Minimized | Out-Null
   }
-  # Give HTTP listener a moment (urlacl / bind).
   for ($i = 0; $i -lt 10; $i++) {
     if (Test-TcpPortOpen -Port 8002) {
       Write-Log "bridge-server listening on :8002"
@@ -474,42 +155,30 @@ function Start-AbutmentStlShadowWorker {
     Write-Log "shadow worker skipped: abutment-stl-shadow\dist\shadow-remote-worker.js not copied yet" "WARN"
     return
   }
-  if (-not (Test-Path (Join-Path $Pc1Root "rhino-server\compute\local.env"))) {
+  $shadowEnv = Join-Path $Pc1Root "rhino-server\compute\local.env"
+  if (-not (Test-Path $shadowEnv)) {
     Write-Log "shadow worker skipped: rhino-server\compute\local.env missing (BACKEND_BASE, RHINO_SHARED_SECRET)" "WARN"
     return
   }
   Write-Log "Starting abutment STL shadow worker (BelowNormal)"
   if (-not $WhatIf) {
     $p = Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", "`"$cmd`"") -WorkingDirectory (Split-Path $cmd -Parent) -WindowStyle Minimized -PassThru
-    # Keep Rhino/ESPRIT first; child node.exe inherits BelowNormal.
     try { $p.PriorityClass = "BelowNormal" } catch { Write-Log "priority set failed: $($_.Exception.Message)" "WARN" }
   }
 }
 
 Write-Log "=== PC1 autostart begin (Pc1Root=$Pc1Root) ==="
-if (-not (Test-Pc1RootCandidate -Path $Pc1Root)) {
-  Write-Log "Pc1Root does not look like bg/pc1 (missing rhino/esprit/bridge). Run from bg\pc1 after pull." "ERROR"
-}
 
 if (-not $SkipDelay -and $DelaySeconds -gt 0) {
   Write-Log "Waiting ${DelaySeconds}s for desktop/network after logon..."
   if (-not $WhatIf) { Start-Sleep -Seconds $DelaySeconds }
 }
 
-$rhinoPaths = Resolve-RhinoPaths
-Write-Log "RHINO_APP=$($rhinoPaths.RhinoApp)"
-Write-Log "RHINOCODE_BIN=$($rhinoPaths.RhinoCode)"
-Write-Log "local.env exists=$(Test-Path $rhinoPaths.EnvFile)"
-
-Start-RhinoWithScriptEditor -Paths $rhinoPaths | Out-Null
-Start-Sleep -Seconds 3
-Start-RhinoServer
-Start-Sleep -Seconds 5
 Start-EspritApp
 Start-Sleep -Seconds 3
 Start-BridgeServer
 Start-Sleep -Seconds 2
 Start-AbutmentStlShadowWorker
 
-Write-Log "Port check: 8000=$(Test-TcpPortOpen -Port 8000) 8001=$(Test-TcpPortOpen -Port 8001) 8002=$(Test-TcpPortOpen -Port 8002)"
+Write-Log "Port check: 8001=$(Test-TcpPortOpen -Port 8001) 8002=$(Test-TcpPortOpen -Port 8002)"
 Write-Log "=== PC1 autostart end ==="

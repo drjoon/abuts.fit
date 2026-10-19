@@ -2,15 +2,6 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"type": "npm",
-			"script": "build",
-			"path": "rhino-server/web",
-			"group": "build",
-			"problemMatcher": [],
-			"label": "npm: build - rhino-server/web",
-			"detail": "tsc -b && vite build"
-		},
-		{
 			"type": "process",
 			"command": "dotnet",
 			"args": [
@@ -41,9 +32,8 @@
 			"detail": "Debug|x86"
 		},
 		{
-			"label": "build: pc1 (rhino + esprit + bridge)",
+			"label": "build: pc1 (esprit + bridge)",
 			"dependsOn": [
-				"npm: build - rhino-server/web",
 				"dotnet: build - esprit-addin",
 				"dotnet: build - bridge-server"
 			],

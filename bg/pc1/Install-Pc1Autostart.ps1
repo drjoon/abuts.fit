@@ -1,6 +1,5 @@
 # related files:
 # - bg/pc1/Start-Pc1Apps.ps1
-# - bg/pc1/rhino-server/rules.md
 #
 # Registers a per-user AtLogOn scheduled task so PC1 apps restart after
 # Windows Update reboot (requires interactive logon / auto-logon).
@@ -17,7 +16,6 @@ function Test-Pc1RootCandidate {
   param([string]$Path)
   if (-not $Path -or -not (Test-Path $Path)) { return $false }
   return (
-    (Test-Path (Join-Path $Path "rhino-server\compute\rhino.cmd")) -and
     (Test-Path (Join-Path $Path "esprit-addin\Esprit.cmd")) -and
     (Test-Path (Join-Path $Path "bridge-server"))
   )
@@ -25,33 +23,42 @@ function Test-Pc1RootCandidate {
 
 function Resolve-Pc1Root {
   $scriptDir = Split-Path -Parent $PSCommandPath
-  $candidates = @(
-    $scriptDir,
-    (Join-Path $scriptDir "pc1"),
-    (Join-Path (Split-Path $scriptDir -Parent) "pc1")
-  )
+  $candidates = @()
+  if ((Split-Path -Leaf $scriptDir) -eq "pc1") {
+    $candidates += $scriptDir
+  } else {
+    $candidates += (Join-Path $scriptDir "pc1")
+    $candidates += (Join-Path (Split-Path $scriptDir -Parent) "pc1")
+    $candidates += $scriptDir
+  }
   foreach ($c in $candidates) {
     if (Test-Pc1RootCandidate -Path $c) {
       return (Resolve-Path $c).Path
     }
   }
-  return $scriptDir
+  return $null
+}
+
+function Assert-Pc1RootReady {
+  param([string]$Root)
+  if (-not $Root -or -not (Test-Pc1RootCandidate -Path $Root)) {
+    throw @"
+PC1 root not found (need esprit-addin\Esprit.cmd and bridge-server).
+
+  cd C:\Users\user\abuts.fit\bg\pc1
+  .\Install-Pc1Autostart.ps1 -Action install
+
+Do not run from bg\ or copy Start-Pc1Apps.ps1 outside bg\pc1.
+"@
+  }
 }
 
 $Pc1Root = Resolve-Pc1Root
+Assert-Pc1RootReady -Root $Pc1Root
 $StartScript = Join-Path $Pc1Root "Start-Pc1Apps.ps1"
-# Prefer Start script next to this installer if present (same folder copy).
-$siblingStart = Join-Path (Split-Path -Parent $PSCommandPath) "Start-Pc1Apps.ps1"
-if (Test-Path $siblingStart) {
-  $StartScript = $siblingStart
-  # Still prefer resolved pc1 as working directory when apps live there.
-}
 
 if (-not (Test-Path $StartScript)) {
   throw "Start script not found: $StartScript (expected under bg\pc1)"
-}
-if (-not (Test-Pc1RootCandidate -Path $Pc1Root)) {
-  Write-Warning "Pc1Root=$Pc1Root does not contain rhino/esprit/bridge. cd to bg\pc1 and re-run install after git pull."
 }
 
 function Get-TaskStatus {
@@ -87,7 +94,7 @@ switch ($Action) {
       -MultipleInstances IgnoreNew `
       -RestartCount 1 `
       -RestartInterval (New-TimeSpan -Minutes 1)
-    # Interactive: Rhino/ESPRIT must run in the logged-on desktop session (not Session 0).
+    # Interactive: ESPRIT must run in the logged-on desktop session (not Session 0).
     $principal = New-ScheduledTaskPrincipal `
       -UserId $env:USERNAME `
       -LogonType Interactive `
@@ -99,7 +106,7 @@ switch ($Action) {
       -Trigger $trigger `
       -Settings $settings `
       -Principal $principal `
-      -Description "abuts.fit PC1: Rhino(+ScriptEditor), rhino-server, ESPRIT, bridge after logon / Windows Update reboot" `
+      -Description "abuts.fit PC1: ESPRIT, bridge after logon / Windows Update reboot" `
       -Force | Out-Null
 
     Write-Host "Installed scheduled task '$TaskName' (At logon for user $env:USERNAME)."
