@@ -79,8 +79,10 @@ export interface RequestCaseInfos {
   connectionDiameter?: number;
   workType?: string;
   anodizingEnabled?: boolean;
-  /** PreviewModal「Wide Split」: Back/Back2 분할 가공(떨림 방지). 기본 ON. false만 꺼짐. 준비 단계에서만 변경. */
+  /** PreviewModal「Wide Split」: Back/Back2 분할 가공(떨림 방지). 기본 ON. false만 꺼짐. */
   safeSplitEnabled?: boolean;
+  /** PreviewModal「One Pass」: Finish를 마지막 Back_Finish에서 한 번에. 기본 OFF. true만 켜짐. 준비 단계에서만 변경. */
+  onePassEnabled?: boolean;
   /** Finish Composite StepIncrement(mm) override. null=의뢰자설정. */
   compositeStepIncrementPostOverrideMm?: number | null;
   compositeStepIncrementGingivaOverrideMm?: number | null;

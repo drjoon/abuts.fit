@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-19: 헤더 Wide Split 토글을 One Pass로 교체. 기본 OFF. ON이면 Finish는 마지막 Back_Finish 한 번에.
 // - 2026-10-17: 안내 off 시 프론트포인트(녹색점)도 피니시라인과 함께 숨김(FP 편집 중은 유지).
 // - 2026-10-17: 그리드·메타·안내(피니시라인 등) on/off를 localStorage에 저장.
 // - 2026-10-16: ESP 버튼은 짧은 주소만 받고, 파일은 브라우저 다운로드로 바로 저장한다.
@@ -614,7 +615,7 @@ type PreviewModalProps = {
     req: ManufacturerRequest,
     value: boolean,
   ) => Promise<void>;
-  onSaveSafeSplitEnabledOverride?: (
+  onSaveOnePassEnabledOverride?: (
     req: ManufacturerRequest,
     value: boolean,
   ) => Promise<void>;
@@ -668,7 +669,7 @@ export const PreviewModal = ({
   onRestoreUnmachinable,
   onSaveManufacturerHexRotation,
   onSaveAnodizingEnabledOverride,
-  onSaveSafeSplitEnabledOverride,
+  onSaveOnePassEnabledOverride,
   onSaveCompositeStepIncrementOverride,
   onSaveLotEngravingTargetOverride,
   onOpenNextRequest,
@@ -762,8 +763,8 @@ export const PreviewModal = ({
   const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] =
     useState<ManufacturerHexRotationDraftMode>("");
   const [anodizingEnabledDraft, setAnodizingEnabledDraft] = useState<boolean>(true);
-  const [safeSplitEnabledDraft, setSafeSplitEnabledDraft] = useState<boolean>(true);
-  const [safeSplitSaving, setSafeSplitSaving] = useState(false);
+  const [onePassEnabledDraft, setOnePassEnabledDraft] = useState<boolean>(false);
+  const [onePassSaving, setOnePassSaving] = useState(false);
   const [compositePostStepDraft, setCompositePostStepDraft] =
     useState<CompositeFinishStepDraft>("requestor");
   const [compositeGingivaStepDraft, setCompositeGingivaStepDraft] =
@@ -1038,7 +1039,7 @@ export const PreviewModal = ({
       setAnodizingEnabledDraft(true);
     }
 
-    setSafeSplitEnabledDraft((req as any)?.caseInfos?.safeSplitEnabled !== false);
+    setOnePassEnabledDraft((req as any)?.caseInfos?.onePassEnabled === true);
     setCompositePostStepDraft(
       overrideMmToDraft(
         (req as any)?.caseInfos?.compositeStepIncrementPostOverrideMm,
@@ -2980,12 +2981,12 @@ export const PreviewModal = ({
     }
   };
 
-  const handleToggleSafeSplitEnabled = async (checked: boolean) => {
+  const handleToggleOnePassEnabled = async (checked: boolean) => {
     const prepStages = new Set(["준비", "의뢰", "CAM", "request", "cam"]);
     const mfgStage = String(activeReq?.manufacturerStage || "").trim();
     if (
-      !onSaveSafeSplitEnabledOverride ||
-      safeSplitSaving ||
+      !onSaveOnePassEnabledOverride ||
+      onePassSaving ||
       approveBusy ||
       !(currentReviewStageKey === "request" || currentReviewStageKey === "cam") ||
       !prepStages.has(mfgStage)
@@ -2993,15 +2994,15 @@ export const PreviewModal = ({
       return;
     }
 
-    const prev = safeSplitEnabledDraft;
-    setSafeSplitEnabledDraft(checked);
-    setSafeSplitSaving(true);
+    const prev = onePassEnabledDraft;
+    setOnePassEnabledDraft(checked);
+    setOnePassSaving(true);
     try {
-      await onSaveSafeSplitEnabledOverride(activeReq, checked);
+      await onSaveOnePassEnabledOverride(activeReq, checked);
     } catch (error) {
-      setSafeSplitEnabledDraft(prev);
+      setOnePassEnabledDraft(prev);
       toast({
-        title: "Wide Split 저장 실패",
+        title: "One Pass 저장 실패",
         description:
           error instanceof Error
             ? error.message
@@ -3009,7 +3010,7 @@ export const PreviewModal = ({
         variant: "destructive",
       });
     } finally {
-      setSafeSplitSaving(false);
+      setOnePassSaving(false);
     }
   };
 
@@ -3534,29 +3535,29 @@ export const PreviewModal = ({
               */}
               <label
                 className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${
-                  canOverrideSafeSplit && !approveBusy && !safeSplitSaving
+                  canOverrideSafeSplit && !approveBusy && !onePassSaving
                     ? "border-slate-200 bg-white text-slate-700"
                     : "border-slate-200 bg-slate-100 text-slate-400"
                 }`}
-                title="피니시라인 하단에서 한 번 더 끊어 Front·Middle·Back 3구간으로 가공(가이드부시 쪽을 굵게 남겨 떨림 방지). 준비 단계에서만 변경 가능."
+                title="Finish를 Front·Middle로 나누지 않고, 마지막 Back_Finish에서 한 번에 깎습니다. 준비 단계에서만 변경할 수 있습니다."
               >
                 <input
                   type="checkbox"
                   className="h-3.5 w-3.5 rounded border-slate-300"
-                  checked={Boolean(safeSplitEnabledDraft)}
+                  checked={Boolean(onePassEnabledDraft)}
                   disabled={
                     !canOverrideSafeSplit ||
                     approveBusy ||
-                    safeSplitSaving ||
-                    !onSaveSafeSplitEnabledOverride
+                    onePassSaving ||
+                    !onSaveOnePassEnabledOverride
                   }
                   onChange={(e) => {
-                    void handleToggleSafeSplitEnabled(Boolean(e.target.checked));
+                    void handleToggleOnePassEnabled(Boolean(e.target.checked));
                   }}
                 />
-                <span className="whitespace-nowrap">Wide Split</span>
+                <span className="whitespace-nowrap">One Pass</span>
                 <span className="text-[10px] font-semibold text-slate-500">
-                  {safeSplitEnabledDraft ? "O" : "X"}
+                  {onePassEnabledDraft ? "O" : "X"}
                 </span>
               </label>
               <label

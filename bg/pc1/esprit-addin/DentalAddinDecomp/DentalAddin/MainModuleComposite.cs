@@ -889,6 +889,26 @@ namespace DentalAddin
                 runB = true;
             }
 
+            // One Pass: Front_Finish·Middle_Finish는 만들지 않고, 마지막 Back_Finish가 팁~BackPointX를 한 번에 깎는다.
+            bool finishOnePass = IsFinishOnePassEnabled();
+            if (finishOnePass && explicitAPhase)
+            {
+                DentalLogger.Log("Composite2SplitLine2 - One Pass: Front_Finish 툴패스 생략");
+                return true;
+            }
+            if (finishOnePass && explicitBPhase
+                && TryResolveSafeSplitBackZoneX("Composite2SplitLine2.OnePass", out _))
+            {
+                DentalLogger.Log("Composite2SplitLine2 - One Pass: Middle_Finish 툴패스 생략 (Back_Finish에서 전체)");
+                return true;
+            }
+            if (finishOnePass)
+            {
+                runA = false;
+                runB = true;
+                DentalLogger.Log($"Composite2SplitLine2 - One Pass: Back_Finish에서 Finish 전체 (phase='{phaseMode}')");
+            }
+
             double safeSplitBackZoneX = 0.0;
             bool safeSplitBack = (explicitBPhase || explicitB2Phase)
                 && TryResolveSafeSplitBackZoneX("Composite2SplitLine2", out safeSplitBackZoneX);
@@ -1015,6 +1035,14 @@ namespace DentalAddin
                 }
                 DentalLogger.Log($"Composite2SplitLine2 - safe split {(explicitB2Phase ? "Back_Finish" : "Middle_Finish")}: X[{finishBackStartX:F3}~{finishBackEndX:F3}], Xk={safeSplitBackZoneX:F3}");
             }
+            if (finishOnePass && runB)
+            {
+                // Front_Finish 시작(FirstPassPercent=0, env override 있으면 그 값)부터 BackPointX까지.
+                double onePassStartPercent = firstPassPercentOverride ?? 0.0;
+                finishBackStartX = onePassStartPercent / 100.0 * StartEndScaleMm;
+                finishBackEndX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
+                DentalLogger.Log($"Composite2SplitLine2 - One Pass Back_Finish 전체: X[{finishBackStartX:F3}~{finishBackEndX:F3}] (start%={onePassStartPercent:F2} ~ BackPointX)");
+            }
             double requestedALastPass = XToPassPercentByStartEndScale(finishFrontEndX, firstPercent, effectiveLastPercent);
             double requestedBFirstPass = XToPassPercentByStartEndScale(finishBackStartX, firstPercent, effectiveLastPercent);
 
@@ -1077,7 +1105,7 @@ namespace DentalAddin
             if (runB && opB != null)
             {
                 opB.FirstPassPercent = XToPassPercentByStartEndScale(finishBackStartX, firstPercent, effectiveLastPercent);
-                if (!explicitB2Phase && opB.FirstPassPercent > opA.LastPassPercent)
+                if (!finishOnePass && !explicitB2Phase && opB.FirstPassPercent > opA.LastPassPercent)
                 {
                     // Front 끝이 줄어든 극단 케이스에서만 Back 시작을 Front 끝 이하로 맞춤
                     opB.FirstPassPercent = opA.LastPassPercent;
@@ -1108,8 +1136,10 @@ namespace DentalAddin
             // (기본 SurfaceNumber는 생성 실패 시에만 fallback)
             int dedicatedAKey = 0;
             int dedicatedBKey = 0;
+            bool onePassFullBack = finishOnePass && runB;
+            string finishBZone = onePassFullBack || !(safeSplitBack && !explicitB2Phase) ? "BACK" : "MIDDLE";
             bool dedicatedAReady = runA && TryCreateDedicatedCompositeDriveSurface("Composite2SplitLine2", "FINISH_FRONT", out dedicatedAKey);
-            bool dedicatedBReady = runB && TryCreateDedicatedCompositeDriveSurface("Composite2SplitLine2", safeSplitBack && !explicitB2Phase ? "FINISH_MIDDLE" : "FINISH_BACK", out dedicatedBKey);
+            bool dedicatedBReady = runB && TryCreateDedicatedCompositeDriveSurface("Composite2SplitLine2", "FINISH_" + finishBZone, out dedicatedBKey);
 
             bool canUseFallbackBase = surfaceReady && SurfaceNumber > 0;
             bool hasDriveForA = !runA || dedicatedAReady || canUseFallbackBase;
@@ -1190,6 +1220,10 @@ namespace DentalAddin
             {
                 TryApplyCompositeOrientationProfileFromEnv(opA, "A");
             }
+            else if (onePassFullBack && opB != null)
+            {
+                TryApplyCompositeOrientationProfileFromEnv(opB, "OnePass");
+            }
             else
             {
                 DentalLogger.Log("Composite2SplitLine2 - phaseMode=B_PHASE, A OrientationProfile 생성 생략");
@@ -1235,7 +1269,7 @@ namespace DentalAddin
                 int beforeAddCountB = Document?.Operations?.Count ?? -1;
                 TryDisableCompositeDynamicIfRequested(opB, "B");
                 TryAddOperation(opB, freeFormFeature, explicitB2Phase ? "Composite2SplitLine2:B2" : "Composite2SplitLine2:B");
-                TryAppendCompositeSuffixToNewOperations(beforeAddCountB, safeSplitBack && !explicitB2Phase ? "MIDDLE" : "BACK");
+                TryAppendCompositeSuffixToNewOperations(beforeAddCountB, finishBZone);
                 int afterB = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitLine2 - Operation 추가 완료: FINISH_BACK(opB) (afterCount={afterB})");
             }
@@ -1851,6 +1885,16 @@ namespace DentalAddin
         private const double SafeSplitMinBackZoneMm = 1.5;
         // Middle_Turn 끝(Xk+황삭반경)이 BackPointX를 넘으면 Middle 제거 → Front/Back 2단.
         private const double SafeSplitMaxTurnPastBackPointMm = 0.0;
+
+        private const string FinishOnePassEnv = "ABUTS_FINISH_ONE_PASS";
+
+        // PreviewModal「One Pass」. 미수신·0은 OFF. ON이면 Finish는 마지막 Back_Finish 한 공정.
+        private static bool IsFinishOnePassEnabled()
+        {
+            string raw = GetEnvString(FinishOnePassEnv);
+            return string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase);
+        }
 
         private static bool IsSafeSplitEnabledByRequest()
         {

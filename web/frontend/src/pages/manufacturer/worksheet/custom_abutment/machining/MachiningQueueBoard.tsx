@@ -1212,7 +1212,7 @@ export const MachiningQueueBoard = ({
     [token, camPreviewFiles],
   );
 
-  const handleSaveSafeSplitEnabledOverrideFromCamPreview = useCallback(
+  const handleSaveOnePassEnabledOverrideFromCamPreview = useCallback(
     async (req: ManufacturerRequest, nextValue: boolean) => {
       if (!token) return;
 
@@ -1232,13 +1232,13 @@ export const MachiningQueueBoard = ({
       }
 
       if (!requestMongoId) {
-        throw new Error("의뢰 식별값이 없어 Wide Split을 저장할 수 없습니다.");
+        throw new Error("의뢰 식별값이 없어 One Pass를 저장할 수 없습니다.");
       }
 
       const prevValue =
-        typeof (camPreviewFiles?.request as any)?.caseInfos?.safeSplitEnabled ===
+        typeof (camPreviewFiles?.request as any)?.caseInfos?.onePassEnabled ===
         "boolean"
-          ? Boolean((camPreviewFiles.request as any).caseInfos.safeSplitEnabled)
+          ? Boolean((camPreviewFiles.request as any).caseInfos.onePassEnabled)
           : null;
 
       setCamPreviewFiles((prev) => {
@@ -1251,7 +1251,7 @@ export const MachiningQueueBoard = ({
             _id: requestMongoId,
             caseInfos: {
               ...(currentReq.caseInfos || {}),
-              safeSplitEnabled: nextValue,
+              onePassEnabled: nextValue,
             },
           },
         };
@@ -1259,30 +1259,30 @@ export const MachiningQueueBoard = ({
 
       try {
         const res = await fetch(
-          `/api/requests/${encodeURIComponent(requestMongoId)}/safe-split-override`,
+          `/api/requests/${encodeURIComponent(requestMongoId)}/one-pass-override`,
           {
             method: "PATCH",
             headers: {
               Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ safeSplitEnabled: nextValue }),
+            body: JSON.stringify({ onePassEnabled: nextValue }),
           },
         );
         const body = await res.json().catch(() => ({}));
         if (!res.ok || (body as { success?: boolean })?.success === false) {
           throw new Error(
             (body as { message?: string })?.message ||
-              "Wide Split 설정 저장에 실패했습니다.",
+              "One Pass 설정 저장에 실패했습니다.",
           );
         }
 
         const savedValue =
-          typeof (body as { data?: { safeSplitEnabled?: unknown } })?.data
-            ?.safeSplitEnabled === "boolean"
+          typeof (body as { data?: { onePassEnabled?: unknown } })?.data
+            ?.onePassEnabled === "boolean"
             ? Boolean(
-                (body as { data?: { safeSplitEnabled?: boolean } }).data
-                  ?.safeSplitEnabled,
+                (body as { data?: { onePassEnabled?: boolean } }).data
+                  ?.onePassEnabled,
               )
             : nextValue;
 
@@ -1296,7 +1296,7 @@ export const MachiningQueueBoard = ({
               _id: requestMongoId,
               caseInfos: {
                 ...(currentReq.caseInfos || {}),
-                safeSplitEnabled: savedValue,
+                onePassEnabled: savedValue,
               },
             },
           };
@@ -1310,9 +1310,9 @@ export const MachiningQueueBoard = ({
             unknown
           >;
           if (typeof prevValue === "boolean") {
-            nextCaseInfos.safeSplitEnabled = prevValue;
+            nextCaseInfos.onePassEnabled = prevValue;
           } else {
-            delete nextCaseInfos.safeSplitEnabled;
+            delete nextCaseInfos.onePassEnabled;
           }
           return {
             ...prev,
@@ -2996,8 +2996,8 @@ export const MachiningQueueBoard = ({
         onSaveAnodizingEnabledOverride={
           handleSaveAnodizingEnabledOverrideFromCamPreview
         }
-        onSaveSafeSplitEnabledOverride={
-          handleSaveSafeSplitEnabledOverrideFromCamPreview
+        onSaveOnePassEnabledOverride={
+          handleSaveOnePassEnabledOverrideFromCamPreview
         }
         onSaveCompositeStepIncrementOverride={
           handleSaveCompositeStepIncrementOverrideFromCamPreview

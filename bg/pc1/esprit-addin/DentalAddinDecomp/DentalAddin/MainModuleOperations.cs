@@ -116,6 +116,8 @@ namespace DentalAddin
 
                 // 요청 반영:
                 // Front_Finish는 Front Face와 Back_Turn(safe split: Middle_Turn) 사이에 생성한다.
+                // One Pass(ABUTS_FINISH_ONE_PASS=1): 아래 A/B FreeFormMill은 Finish 툴패스를 만들지 않는다.
+                // 마지막 Back_Finish(B2, safe split 없으면 B)가 Front 시작~BackPointX를 한 번에 깎는다.
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
                 try
                 {

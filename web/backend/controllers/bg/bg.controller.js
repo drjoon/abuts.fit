@@ -2130,6 +2130,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
               ? ci.compositeStepIncrementGingivaOverrideMm
               : null,
           safeSplitEnabled: ci.safeSplitEnabled !== false,
+          onePassEnabled: ci.onePassEnabled === true,
           lotNumber: lotValue,
           // esprit-addin에서 공정 PRC를 선택하기 위한 의뢰별 설정
           // PRC 파일명이 DB에 저장된 경우 그대로 사용, 없으면 임플란트 정보로 동적 계산.

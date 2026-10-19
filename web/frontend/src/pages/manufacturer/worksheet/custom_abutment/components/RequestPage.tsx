@@ -1883,7 +1883,7 @@ export const RequestPage = ({
   const [anodizingSavingMap, setAnodizingSavingMap] = useState<
     Record<string, boolean>
   >({});
-  const [safeSplitSavingMap, setSafeSplitSavingMap] = useState<
+  const [onePassSavingMap, setOnePassSavingMap] = useState<
     Record<string, boolean>
   >({});
   const [compositeStepSavingMap, setCompositeStepSavingMap] = useState<
@@ -2164,7 +2164,7 @@ export const RequestPage = ({
     [anodizingSavingMap, pageState, toast, token],
   );
 
-  const handleSaveSafeSplitEnabledOverride = useCallback(
+  const handleSaveOnePassEnabledOverride = useCallback(
     async (req: ManufacturerRequest, nextValue: boolean) => {
       if (!req?._id) return;
       const requestMongoId = String(req._id || "").trim();
@@ -2174,20 +2174,20 @@ export const RequestPage = ({
       if (!["준비", "의뢰", "CAM", "request", "cam"].includes(stageLabel)) {
         toast({
           title: "변경 불가",
-          description: "Wide Split 설정은 준비 단계에서만 변경할 수 있습니다.",
+          description: "One Pass 설정은 준비 단계에서만 변경할 수 있습니다.",
           variant: "destructive",
         });
         return;
       }
 
-      if (safeSplitSavingMap[requestMongoId]) return;
+      if (onePassSavingMap[requestMongoId]) return;
 
       const prevValue =
-        typeof req.caseInfos?.safeSplitEnabled === "boolean"
-          ? req.caseInfos.safeSplitEnabled
+        typeof req.caseInfos?.onePassEnabled === "boolean"
+          ? req.caseInfos.onePassEnabled
           : null;
 
-      setSafeSplitSavingMap((prev) => ({ ...prev, [requestMongoId]: true }));
+      setOnePassSavingMap((prev) => ({ ...prev, [requestMongoId]: true }));
       pageState.setRequests((prev) =>
         prev.map((item) => {
           if (String(item?._id || "").trim() !== requestMongoId) return item;
@@ -2195,7 +2195,7 @@ export const RequestPage = ({
             ...item,
             caseInfos: {
               ...(item.caseInfos || {}),
-              safeSplitEnabled: nextValue,
+              onePassEnabled: nextValue,
             },
           };
         }),
@@ -2203,24 +2203,24 @@ export const RequestPage = ({
 
       try {
         const res = await fetch(
-          `/api/requests/${req._id}/safe-split-override`,
+          `/api/requests/${req._id}/one-pass-override`,
           {
             method: "PATCH",
             headers: {
               Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ safeSplitEnabled: nextValue }),
+            body: JSON.stringify({ onePassEnabled: nextValue }),
           },
         );
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data?.success === false) {
-          throw new Error(data?.message || "Wide Split 설정 저장에 실패했습니다.");
+          throw new Error(data?.message || "One Pass 설정 저장에 실패했습니다.");
         }
 
         const savedValue =
-          typeof data?.data?.safeSplitEnabled === "boolean"
-            ? Boolean(data.data.safeSplitEnabled)
+          typeof data?.data?.onePassEnabled === "boolean"
+            ? Boolean(data.data.onePassEnabled)
             : nextValue;
 
         pageState.setRequests((prev) =>
@@ -2230,7 +2230,7 @@ export const RequestPage = ({
               ...item,
               caseInfos: {
                 ...(item.caseInfos || {}),
-                safeSplitEnabled: savedValue,
+                onePassEnabled: savedValue,
               },
             };
           }),
@@ -2241,9 +2241,9 @@ export const RequestPage = ({
             if (String(item?._id || "").trim() !== requestMongoId) return item;
             const nextCaseInfos = { ...(item.caseInfos || {}) };
             if (typeof prevValue === "boolean") {
-              nextCaseInfos.safeSplitEnabled = prevValue;
+              nextCaseInfos.onePassEnabled = prevValue;
             } else {
-              delete nextCaseInfos.safeSplitEnabled;
+              delete nextCaseInfos.onePassEnabled;
             }
             return {
               ...item,
@@ -2252,16 +2252,16 @@ export const RequestPage = ({
           }),
         );
         toast({
-          title: "Wide Split 저장 실패",
+          title: "One Pass 저장 실패",
           description: e?.message || "네트워크 오류",
           variant: "destructive",
         });
         throw e;
       } finally {
-        setSafeSplitSavingMap((prev) => ({ ...prev, [requestMongoId]: false }));
+        setOnePassSavingMap((prev) => ({ ...prev, [requestMongoId]: false }));
       }
     },
-    [pageState, toast, token, safeSplitSavingMap],
+    [pageState, toast, token, onePassSavingMap],
   );
 
   const handleSaveCompositeStepIncrementOverride = useCallback(
@@ -3746,7 +3746,7 @@ export const RequestPage = ({
           onRestoreUnmachinable={handleRestoreUnmachinable}
           onSaveManufacturerHexRotation={handleSaveManufacturerHexRotation}
           onSaveAnodizingEnabledOverride={handleSaveAnodizingEnabledOverride}
-          onSaveSafeSplitEnabledOverride={handleSaveSafeSplitEnabledOverride}
+          onSaveOnePassEnabledOverride={handleSaveOnePassEnabledOverride}
           onSaveCompositeStepIncrementOverride={
             handleSaveCompositeStepIncrementOverride
           }

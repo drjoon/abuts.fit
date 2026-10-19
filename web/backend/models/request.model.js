@@ -202,10 +202,15 @@ const requestSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
-      // PreviewModal「Wide Split」: 피니시라인 하단에서 끊어 Front/Middle/Back 3구간 가공(떨림 방지). 기본 ON. 준비 단계에서만 변경.
+      // PreviewModal「Wide Split」: 피니시라인 하단에서 끊어 Front/Middle/Back 3구간 가공(떨림 방지). 기본 ON. 헤더 토글은 One Pass로 교체.
       safeSplitEnabled: {
         type: Boolean,
         default: true,
+      },
+      // PreviewModal「One Pass」: Finish를 Front/Middle에서 나누지 않고 마지막 Back_Finish에서 한 번에 깎음. 기본 OFF.
+      onePassEnabled: {
+        type: Boolean,
+        default: false,
       },
       // 유지홈(retentionGroove) 옵션 — 현재 UI 정책은 없음/있음(2단계).
       // legacy shallow 데이터는 none으로 정규화해 사용한다.

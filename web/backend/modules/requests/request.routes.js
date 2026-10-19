@@ -557,6 +557,13 @@ router.patch(
 );
 
 router.patch(
+  "/:id/one-pass-override",
+  authenticate,
+  authorizeManufacturerOrDesignPartner(),
+  requestController.updateRequestOnePassOverride,
+);
+
+router.patch(
   "/:id/composite-step-increment-override",
   authenticate,
   authorizeManufacturerOrDesignPartner(),

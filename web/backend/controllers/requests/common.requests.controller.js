@@ -3812,6 +3812,115 @@ export const updateRequestSafeSplitOverride = asyncHandler(async (req, res) => {
   }
 });
 
+// PreviewModal「One Pass」= caseInfos.onePassEnabled (마지막 Back_Finish에서 Finish 전체, 기본 OFF).
+export const updateRequestOnePassOverride = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const hasOnePassEnabled = Object.prototype.hasOwnProperty.call(
+    req.body || {},
+    "onePassEnabled",
+  );
+  const onePassEnabled = req.body?.onePassEnabled;
+
+  if (!hasOnePassEnabled || typeof onePassEnabled !== "boolean") {
+    return res.status(400).json({
+      success: false,
+      message: "onePassEnabled(boolean) 값이 필요합니다.",
+    });
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({
+      success: false,
+      message: "유효하지 않은 의뢰 ID입니다.",
+    });
+  }
+
+  const request = await Request.findById(id);
+  if (!request) {
+    return res.status(404).json({
+      success: false,
+      message: "의뢰를 찾을 수 없습니다.",
+    });
+  }
+
+  if (req.user.role === "manufacturer") {
+    const orgScope = await buildManufacturerOrgScopeFilter(req);
+    const allowed = await Request.exists({
+      _id: request._id,
+      ...orgScope,
+    });
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: "이 의뢰를 변경할 권한이 없습니다.",
+      });
+    }
+  }
+
+  const currentManufacturerStage = String(request?.manufacturerStage || "").trim();
+  const editableStages = new Set([
+    "준비",
+    "의뢰",
+    "CAM",
+    "request",
+    "cam",
+  ]);
+  if (!editableStages.has(currentManufacturerStage)) {
+    return res.status(409).json({
+      success: false,
+      message: "One Pass 설정은 준비 단계에서만 변경할 수 있습니다.",
+    });
+  }
+
+  request.set("caseInfos.onePassEnabled", onePassEnabled);
+  await request.save();
+
+  const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
+
+  res.status(200).json({
+    success: true,
+    data: {
+      requestId: request.requestId,
+      manufacturerStage: request.manufacturerStage,
+      onePassEnabled,
+    },
+  });
+
+  emitAppEventToRoles(
+    REQUEST_HEX_ROTATION_EVENT_ROLES,
+    "request:one-pass-updated",
+    {
+      requestId: request.requestId,
+      requestMongoId: String(request._id || "").trim() || null,
+      requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+      onePassEnabled,
+      request: {
+        _id: request._id,
+        requestId: request.requestId,
+        manufacturerStage: request.manufacturerStage,
+        businessAnchorId: request.businessAnchorId,
+        requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+        caseInfos: {
+          ...(request.caseInfos || {}),
+          onePassEnabled,
+        },
+      },
+    },
+  );
+
+  if (requestorBusinessAnchorId) {
+    void triggerDashboardSummaryRefreshForAnchorId(
+      requestorBusinessAnchorId,
+      "request-one-pass-updated",
+    ).catch((refreshError) => {
+      console.warn("[request-one-pass] dashboard refresh trigger failed", {
+        requestId: request.requestId,
+        error: refreshError?.message,
+      });
+    });
+  }
+});
+
 export const updateRequestLotEngravingTargetOverride = asyncHandler(
   async (req, res) => {
     const { id } = req.params;
