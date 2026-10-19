@@ -165,13 +165,16 @@
 
 - Front Face 시작/종료점 정책(현행 SSOT):
   - 시작: `Face.StartX = 0` (원점). TopZ는 FACE.prc 유지
-  - 끝: `Face.RightX = FrontPointX + L` (소재/팁 직경 기반)
+  - 끝: `Face.RightX = FrontPointX + L`
   - 클램프: 항상 `Face.RightX ≤ Splitline_2` (= **FinishLine top 상방 0.5mm**)
     - `Splitline_2 = finishLineTopX - 0.5`, margin 0 → FL top − 0.5
   - `L` 산출 (`GetFrontFaceEndOffsetFromFrontMm`):
     - env `ABUTS_FRONT_FACE_END_OFFSET_MM` 강제값 우선
-    - 아니면 `R_tip`: `ABUTS_MAX_DIAMETER`×0.20 → `HighY`×0.45 → `BarDiameter`×0.20 (각 [1.2, 3.5])
-    - `L = clamp(0.45·R_tip + 0.85, 1.2, 2.5)`, fallback 2.0
+    - 삽입축이 Z에서 기울수록 FrontPoint가 팁(원점) 아래로 내려간다. 구치는 위에 가깝고, 전치는 더 아래인 편이다. 내려온 거리 = `max(0, FrontPointX)`
+    - 긴 여유 `L_long` = `R_tip` 기반 `clamp(0.45·R_tip + 0.85, 1.2, 2.5)`, fallback 2.0. `R_tip` = `ABUTS_MAX_DIAMETER`×0.20 → `HighY`×0.45 → `BarDiameter`×0.20 (각 [1.2, 3.5])
+    - `L`은 하강 0에서 `1.0`(FACE.prc `BM_D2` 반경)이고, 하강 1.5mm에서 `L_long`이 된다. 그 사이는 선형. 1.0보다 짧으면 팁 미가공으로 D1.2가 부러진다
+    - 구간 길이 = `FrontPointX + L` 이라, 포인트가 내려올수록 Face가 길어진다. 팁 근처(구치)만 겹침 단차를 줄인다
+    - `Face.RightX` 하한은 1.0 (팁 코너)
   - `LastAppliedFrontFaceDepthMm = 0.5mm`
   - 구현: `ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2` / `TryApplyFaceRightEndGuard`
   - `ABUTS_MAX_DIAMETER`은 `StlFileProcessor`가 request-meta `maxDiameter`로 주입

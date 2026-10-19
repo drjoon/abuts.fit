@@ -125,7 +125,7 @@ namespace DentalAddin
                         return false;
                     }
 
-                    // Front Face 끝점: RightX = FrontPointX + L (소재/팁 직경), Splitline_2(=FL 상방 0.5mm) 클램프.
+                    // Front Face 끝점: RightX = FrontPointX+L. 포인트가 팁에 가까우면 L=1.0, 내려올수록 동적 L. Splitline_2 클램프.
                     ApplyFrontFaceFixedDepth(faceOp, "TryRunFreeFormMillSafe:FrontFace");
 
                     ZH = Math.Abs(MoveSTL_Module.FrontPointX);
