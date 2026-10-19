@@ -103,7 +103,7 @@ function outerMetrics(mesh, z) {
   return best;
 }
 
-function nakedEdges(mesh) {
+function edgeUse(mesh) {
   const f = mesh.faces;
   const count = new Map();
   const key = (a, b) => (a < b ? `${a}_${b}` : `${b}_${a}`);
@@ -115,18 +115,22 @@ function nakedEdges(mesh) {
     }
   }
   let naked = 0;
-  for (const n of count.values()) if (n === 1) naked += 1;
-  return naked;
+  let nonManifold = 0;
+  for (const n of count.values()) {
+    if (n === 1) naked += 1;
+    else if (n > 2) nonManifold += 1;
+  }
+  return { naked, nonManifold };
 }
 
 describe("connectionTaperFill", () => {
   it("긴 헥스에 11° 커넥션 원뿔을 붙인다", () => {
     const mesh = Mesh.fromTriangleSoup(longHexSoup());
-    const beforeNaked = nakedEdges(mesh);
+    const before = edgeUse(mesh);
     const result = addMissingConnectionTaper(mesh, { implantProfile: PROFILE });
     expect(result.applied).toBe(true);
-    expect(beforeNaked).toBe(0);
-    expect(nakedEdges(mesh)).toBe(0);
+    expect(before.naked).toBe(0);
+    expect(edgeUse(mesh)).toEqual({ naked: 0, nonManifold: 0 });
     const atOrigin = outerMetrics(mesh, 0);
     expect(atOrigin.rMean * 2).toBeCloseTo(3.35, 2);
     expect(atOrigin.hexRatio).toBeLessThan(1.04);
@@ -138,6 +142,57 @@ describe("connectionTaperFill", () => {
     expect(hex.hexRatio).toBeGreaterThan(1.1);
     const cuff = outerMetrics(mesh, 2);
     expect(cuff.rMean).toBeGreaterThan(2.4);
+  });
+
+  it("꼭짓점이 성긴 헥스도 이음 모서리가 한 면에만 붙지 않는다", () => {
+    const corner = FLAT / Math.sqrt(3);
+    const ringAt = (z) =>
+      Array.from({ length: 6 }, (_, i) => {
+        const a = -Math.PI + (i * Math.PI) / 3;
+        return [corner * Math.cos(a), corner * Math.sin(a), z];
+      });
+    const cuff = (z, r) =>
+      Array.from({ length: 24 }, (_, i) => {
+        const a = (i / 24) * Math.PI * 2;
+        return [r * Math.cos(a), r * Math.sin(a), z];
+      });
+    const bands = [ringAt(-4), ringAt(-0.4), cuff(0.4, 2.3), cuff(6, 3.2)];
+    const tris = [];
+    const addCap = (loop, down) => {
+      const c = [0, 0, loop[0][2]];
+      for (let i = 0; i < loop.length; i += 1) {
+        const j = (i + 1) % loop.length;
+        tris.push(down ? [c, loop[j], loop[i]] : [c, loop[i], loop[j]]);
+      }
+    };
+    const addLoft = (a, b) => {
+      const n = a.length;
+      const m = b.length;
+      let i = 0;
+      let j = 0;
+      while (i < n || j < m) {
+        if (i < n && (j >= m || i / n <= j / m)) {
+          tris.push([a[i % n], a[(i + 1) % n], b[j % m]]);
+          i += 1;
+        } else {
+          tris.push([a[Math.min(i, n) % n], b[(j + 1) % m], b[j % m]]);
+          j += 1;
+        }
+      }
+    };
+    addCap(bands[0], true);
+    for (let i = 0; i < bands.length - 1; i += 1) addLoft(bands[i], bands[i + 1]);
+    addCap(bands[bands.length - 1], false);
+    const soup = new Float64Array(tris.length * 9);
+    tris.forEach((t, i) => t.forEach((p, k) => soup.set(p, i * 9 + k * 3)));
+    const mesh = Mesh.fromTriangleSoup(soup);
+    const result = addMissingConnectionTaper(mesh, { implantProfile: PROFILE });
+    expect(result.applied).toBe(true);
+    expect(edgeUse(mesh)).toEqual({ naked: 0, nonManifold: 0 });
+    const atOrigin = outerMetrics(mesh, 0);
+    expect(atOrigin.rMean * 2).toBeCloseTo(3.35, 2);
+    const hex = outerMetrics(mesh, -2);
+    expect(hex.hexRatio).toBeGreaterThan(1.1);
   });
 
   it("헥스 끝이 같은 반경의 원기둥이어도 11°로 보지 않고 원뿔을 붙인다", () => {

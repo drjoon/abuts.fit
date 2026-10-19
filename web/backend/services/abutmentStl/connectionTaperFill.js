@@ -340,42 +340,55 @@ function rotateToMinAngle(pts) {
   return pts.slice(k).concat(pts.slice(0, k));
 }
 
+/** 고리 순서대로 각도를 증가시킨다. ±180°를 그대로 쓰면 그 자리에서 삼각형이 엇갈린다. */
+function monotonicAngles(pts) {
+  const out = [Math.atan2(pts[0][1], pts[0][0])];
+  for (let i = 1; i < pts.length; i += 1) {
+    let a = Math.atan2(pts[i][1], pts[i][0]);
+    while (a < out[i - 1] - 1e-8) a += Math.PI * 2;
+    out.push(a);
+  }
+  let close = out[0] + Math.PI * 2;
+  while (close < out[out.length - 1] - 1e-6) close += Math.PI * 2;
+  return { ang: out, close };
+}
+
 /** 두 폐곡선을 각도로 잇는다. 링은 +Z에서 반시계. 옆면 법선은 바깥. */
 function stitch(src, dst) {
   const A = rotateToMinAngle(asCcw(src));
   const B = rotateToMinAngle(asCcw(dst));
   const n = A.length;
   const m = B.length;
-  const ang = (p) => Math.atan2(p[1], p[0]);
-  const aAng = A.map(ang);
-  const bAng = B.map(ang);
+  const aTurn = monotonicAngles(A);
+  const bTurn = monotonicAngles(B);
+  const aAng = aTurn.ang;
+  const bAng = bTurn.ang;
   const tris = [];
   let i = 0;
   let j = 0;
   for (let step = 0; step < n + m + 2 && (i < n || j < m); step += 1) {
-    const a = A[Math.min(i, n - 1)];
-    const b = B[Math.min(j, m - 1)];
+    const a = A[i % n];
+    const b = B[j % m];
+    const a2 = A[(i + 1) % n];
+    const b2 = B[(j + 1) % m];
+    const aNext = i + 1 < n ? aAng[i + 1] : aTurn.close;
+    const bNext = j + 1 < m ? bAng[j + 1] : bTurn.close;
     if (i >= n) {
-      tris.push([A[0], B[(j + 1) % m], b]);
+      tris.push([a, b2, b]);
       j += 1;
       continue;
     }
     if (j >= m) {
-      tris.push([a, A[(i + 1) % n], B[0]]);
+      tris.push([a, a2, b]);
       i += 1;
       continue;
     }
-    const a2 = i + 1 < n ? A[i + 1] : A[0];
-    const b2 = j + 1 < m ? B[j + 1] : B[0];
-    const aNext = i + 1 < n ? aAng[i + 1] : aAng[0] + Math.PI * 2;
-    const bNext = j + 1 < m ? bAng[j + 1] : bAng[0] + Math.PI * 2;
-    const da = aNext - aAng[i];
-    const db = bNext - bAng[j];
-    if (Math.abs(da - db) <= 1e-4) {
+    // 다음 꼭짓점의 절대 각도를 비교한다. 간격 길이로 비교하면 성긴 헥스가 원 전체를 한 점에 모아 이음이 찢어진다.
+    if (Math.abs(aNext - bNext) <= 1e-4) {
       tris.push([a, a2, b2], [a, b2, b]);
       i += 1;
       j += 1;
-    } else if (da < db) {
+    } else if (aNext < bNext) {
       tris.push([a, a2, b]);
       i += 1;
     } else {
