@@ -45,10 +45,16 @@ const ROW_TURN_COLUMN_STRIDE = columnsForDeg(3);
 const COLUMN_TURN_DEG = 1.0;
 const COLUMN_MAX_ARC_MM = 0.2;
 const COLUMN_TURN_SMOOTH_HALF = columnsForDeg(1.5);
-/** 이음 위 끝에서 이만큼 아래까지는 새 곡선을 원본 곡면에 서서히 섞는다(위 끝 접선·반경이 원본과 같아져 선이 둘로 보이지 않는다). */
-const SEAM_BLEND_DEPTH_MM = 0.3;
-/** 위 끝에서 아래로 내려가는 깊이(mm) 순서로 촘촘히 두는 행. */
-const SEAM_ROW_DEPTHS_MM = [0.06, 0.085, 0.11, 0.14, 0.17, 0.2, 0.235, 0.27, 0.3];
+/**
+ * 이음 위 끝에서 이만큼 아래까지는 새 곡선을 원본 곡면에 서서히 섞는다(위 끝 접선·반경이 원본과 같아져 선이 둘로 보이지 않는다).
+ * 오목 곡선은 위 끝에서 원본보다 20°쯤 서 있어 이 안에서 꺾임을 되돌린다. 짧으면 그 꺾임이 몰려 가로 결이 된다.
+ */
+const SEAM_BLEND_DEPTH_MM = 0.45;
+/** 이음 맨 위 행 깊이. 여기서 원본 곡면에 다 붙고, 그 위는 마진 모서리 꼭짓점까지 원본 면 그대로다. */
+const SEAM_TOP_DEPTH_MM = 0.06;
+/** 이음 행 후보 간격·최소 간격(mm). 행은 옆모습이 ROW_TURN_DEG 꺾일 때마다 고른다. */
+const SEAM_CANDIDATE_STEP_MM = 0.0025;
+const SEAM_MIN_PITCH_MM = 0.005;
 
 const TAPER_FIT_TOL_MM = 0.008;
 const TAPER_ROUND_TOL_MM = 0.012;
@@ -286,6 +292,52 @@ class RadialProbe {
       if (r > 0 && u >= -1e-9 && u <= 1 + 1e-9 && !(best >= r)) best = r;
     }
     return best;
+  }
+
+  /**
+   * 각도 θ 반평면으로 [zLo, zHi]를 한 번 잘라 둔다. 돌려준 함수는 rayRadius(θ, z)와 같은 값(그 높이의 가장 바깥 반경, 없으면 NaN)을
+   * 면을 다시 훑지 않고 낸다. 같은 열에서 높이만 바꿔 여러 번 잴 때 쓴다.
+   */
+  meridian(theta, zLo, zHi) {
+    const { verts, faces } = this;
+    const c = Math.cos(theta);
+    const s = Math.sin(theta);
+    const segs = [];
+    const s0 = Math.max(0, Math.floor((zLo - this.lo) / this.slab));
+    const s1 = Math.min(this.slabs.length - 1, Math.floor((zHi - this.lo) / this.slab));
+    const seen = new Set();
+    const pts = [];
+    for (let sl = s0; sl <= s1; sl += 1) {
+      for (const f of this.slabs[sl]) {
+        if (seen.has(f) || this.zmin[f] > zHi || this.zmax[f] < zLo || this.zmin[f] === this.zmax[f]) continue;
+        seen.add(f);
+        pts.length = 0;
+        for (let k = 0; k < 3; k += 1) {
+          const a = faces[f * 3 + k] * 3;
+          const b = faces[f * 3 + ((k + 1) % 3)] * 3;
+          const wa = -verts[a] * s + verts[a + 1] * c;
+          const wb = -verts[b] * s + verts[b + 1] * c;
+          if (wa === wb || wa * wb > 0 || wb === 0) continue;
+          const t = wa / (wa - wb);
+          const x = verts[a] + t * (verts[b] - verts[a]);
+          const y = verts[a + 1] + t * (verts[b + 1] - verts[a + 1]);
+          pts.push(x * c + y * s, verts[a + 2] + t * (verts[b + 2] - verts[a + 2]));
+        }
+        if (pts.length < 4 || pts[0] <= 0 || pts[2] <= 0 || pts[1] === pts[3]) continue;
+        segs.push(pts[0], pts[1], pts[2], pts[3]);
+      }
+    }
+    return (z) => {
+      let best = NaN;
+      for (let i = 0; i < segs.length; i += 4) {
+        const za = segs[i + 1];
+        const zb = segs[i + 3];
+        if ((za - z) * (zb - z) > 0) continue;
+        const r = segs[i] + ((z - za) / (zb - za)) * (segs[i + 2] - segs[i]);
+        if (!(best >= r)) best = r;
+      }
+      return best;
+    };
   }
 
   /** 각도 θ의 외곽 반경(bin 선형 보간, 빈 bin은 이웃으로 메움). */
@@ -599,6 +651,8 @@ const BEZIER_DIP = 0.05;
 const LONG_BAND_MM = 2;
 /** 띠 면 평균: 반폭(약 ±30°)과 위쪽 보존 지수(t^p). */
 const BAND_SMOOTH_HALF_COLUMNS = columnsForDeg(30);
+/** 이음 구간 각도 평균을 미리 구해 두는 t 단계 수(사이는 3차 보간). */
+const SEAM_AVG_LEVELS = 64;
 const BAND_SMOOTH_TOP_POWER = 3;
 const BAND_SMOOTH_FADE_MM = 0.4;
 const LONG_BAND_START_SLOPE = Math.tan((8 * Math.PI) / 180);
@@ -654,31 +708,37 @@ function angularLowPass(values, outN = values.length) {
   );
 }
 
-/** MEASURE_STRIDE열마다 잰 값(sampleAt(j))을 저역 통과해 전체 STRIP_COLUMNS열로 늘린다. NaN이 있으면 null. */
-function measureSmoothColumns(sampleAt) {
-  const m = STRIP_COLUMNS / MEASURE_STRIDE;
-  return angularLowPass(
-    Array.from({ length: m }, (_, i) => sampleAt(i * MEASURE_STRIDE)),
-    STRIP_COLUMNS,
-  );
+const unitCircleTables = new Map();
+/** cos/sin(2π·m/n), m = 0..n-1. */
+function unitCircle(n) {
+  let t = unitCircleTables.get(n);
+  if (!t) {
+    t = { cos: new Float64Array(n), sin: new Float64Array(n) };
+    for (let m = 0; m < n; m += 1) {
+      t.cos[m] = Math.cos((TWO_PI * m) / n);
+      t.sin[m] = Math.sin((TWO_PI * m) / n);
+    }
+    unitCircleTables.set(n, t);
+  }
+  return t;
 }
 
 /** 원형 신호의 저주파 성분(0..K차 조화)만 남긴다. weightOf(k)로 차수별 비중을 줄 수 있고, outN 등간격 점에서 돌려준다. */
 function fourierLowPass(values, harmonics, weightOf = () => 1, outN = values.length) {
   const n = values.length;
+  const inT = unitCircle(n);
+  const outT = unitCircle(outN);
   const out = new Array(outN).fill(0);
   for (let k = 0; k <= harmonics; k += 1) {
     let re = 0;
     let im = 0;
-    for (let j = 0; j < n; j += 1) {
-      const a = (2 * Math.PI * k * j) / n;
-      re += values[j] * Math.cos(a);
-      im += values[j] * Math.sin(a);
+    for (let j = 0, m = 0; j < n; j += 1, m = (m + k) % n) {
+      re += values[j] * inT.cos[m];
+      im += values[j] * inT.sin[m];
     }
     const w = ((k === 0 ? 1 : 2) * weightOf(k)) / n;
-    for (let j = 0; j < outN; j += 1) {
-      const a = (2 * Math.PI * k * j) / outN;
-      out[j] += w * (re * Math.cos(a) + im * Math.sin(a));
+    for (let j = 0, m = 0; j < outN; j += 1, m = (m + k) % outN) {
+      out[j] += w * (re * outT.cos[m] + im * outT.sin[m]);
     }
   }
   return out;
@@ -687,11 +747,15 @@ function fourierLowPass(values, harmonics, weightOf = () => 1, outN = values.len
 /** 각도(원형) 이동 평균. */
 function circularSmooth(values, half) {
   const n = values.length;
-  return values.map((_, j) => {
-    let sum = 0;
-    for (let k = -half; k <= half; k += 1) sum += values[(j + k + n * 4) % n];
-    return sum / (2 * half + 1);
-  });
+  const at = (k) => values[(((k % n) + n) % n)];
+  let sum = 0;
+  for (let k = -half; k <= half; k += 1) sum += at(k);
+  const out = new Array(n);
+  for (let j = 0; j < n; j += 1) {
+    out[j] = sum / (2 * half + 1);
+    sum += at(j + half + 1) - at(j - half);
+  }
+  return out;
 }
 
 function toConcaveProfilePlain(fn, samples) {
@@ -1326,6 +1390,106 @@ function adaptiveRowTs(radiusAt, heights, tEnd) {
 }
 
 /**
+ * 위 끝 근처 이음 행(깊은 행부터). 새 곡선을 위로 갈수록 원본 곡면(반경·기울기)에 섞어 이음선을 없앤다.
+ * seamDepth에서는 곡선 그대로, SEAM_TOP_DEPTH_MM에서는 원본 그대로다. 그 위는 마진 모서리 꼭짓점까지 원본 면이다.
+ * 후보를 SEAM_CANDIDATE_STEP_MM 간격으로 만든 뒤, 어느 열이든 옆모습이 ROW_TURN_DEG 꺾이면 행을 고른다.
+ * @returns {{ rad: Float64Array, z: Float64Array }[]}
+ */
+function seamRows({ zA, thetas, heights, smoothHeights, radiusAt, origProbe, seamDepth, tEnd }) {
+  const n = thetas.length;
+  const top = Math.min(SEAM_TOP_DEPTH_MM, seamDepth / 2);
+  // 맨 아래 이음 행은 일반 행이 끝나는 t(tEnd)에 둔다. 높이가 큰 열은 그 깊이가 seamDepth보다 깊고, 그 사이는 곡선 그대로다.
+  const bottoms = heights.map((h) => (1 - tEnd) * h);
+  const measureN = n / MEASURE_STRIDE;
+  const meridians = Array.from({ length: measureN }, (_, i) => {
+    const j = i * MEASURE_STRIDE;
+    const zLo = zA + tEnd * Math.min(heights[j], smoothHeights[j]) - ROW_PITCH_MM;
+    return origProbe.meridian(thetas[j], zLo, zA + heights[j]);
+  });
+  // 둘레 평균 반경은 일반 행처럼 이웃 열을 같은 t에서 잰 값이어야 한다. 이음 행은 열마다 t가 달라서(같은 깊이),
+  // t 격자(tEnd..1)마다 평균을 구해 두고 열의 t에서 3차 보간한다. 이웃이 제 깊이에서 잰 값을 평균하면
+  // 열마다 높이가 달라 일반 행에서 넘어가는 곳에 출렁임이 남는다.
+  const levels = Array.from({ length: SEAM_AVG_LEVELS }, (_, i) => {
+    const t = tEnd + ((1 - tEnd) * i) / (SEAM_AVG_LEVELS - 1);
+    return circularSmooth(Array.from({ length: n }, (_, j) => radiusAt(j, t)), BAND_SMOOTH_HALF_COLUMNS);
+  });
+  const avgAt = (j, t) => {
+    const u = Math.min(SEAM_AVG_LEVELS - 1, Math.max(0, ((t - tEnd) / (1 - tEnd)) * (SEAM_AVG_LEVELS - 1)));
+    const i = Math.min(SEAM_AVG_LEVELS - 2, Math.floor(u));
+    const f = u - i;
+    const p0 = levels[Math.max(0, i - 1)][j];
+    const p1 = levels[i][j];
+    const p2 = levels[i + 1][j];
+    const p3 = levels[Math.min(SEAM_AVG_LEVELS - 1, i + 2)][j];
+    return p1 + 0.5 * f * (p2 - p0 + f * (2 * p0 - 5 * p1 + 4 * p2 - p3 + f * (3 * (p1 - p2) + p3 - p0)));
+  };
+  // 섞는 구간(top..seamDepth)은 모든 열이 같은 깊이를 쓴다(꺾임이 그 깊이에 몰린다). 그 아래 곡선 구간만 열마다 늘린다.
+  const blendSpan = seamDepth - top;
+  const tailMin = Math.min(...bottoms) - seamDepth;
+  const span = blendSpan + tailMin;
+  const rowAt = (v) => {
+    const depths = bottoms.map((b) =>
+      v <= blendSpan ? top + v : seamDepth + ((v - blendSpan) / tailMin) * (b - seamDepth),
+    );
+    const ts = heights.map((h, j) => 1 - depths[j] / h);
+    const raw = ts.map((t, j) => radiusAt(j, t));
+    const avg = ts.map((t, j) => avgAt(j, t));
+    // 아래 일반 행과 같은 각도 평균을 쓴 곡선 위치에서 출발해, 위로 갈수록 원본 곡면으로 옮겨 간다.
+    // 높이는 곡선 그대로 두고 같은 높이에서 반경만 섞는다. 높이까지 섞으면 둘레 평균 높이와 실제 높이 차(0.1mm 넘기도)만큼
+    // 점이 위아래로 밀려 옆모습에 혹이 생긴다.
+    const keeps = ts.map((t, j) => bandSmoothKeep(t, heights[j]));
+    const z = Float64Array.from(ts, (t, j) => zA + t * (heights[j] * keeps[j] + smoothHeights[j] * (1 - keeps[j])));
+    // 원본과 곡선의 반경 차가 0.3mm까지 나서, 섞는 비율은 양 끝에서 곡률까지 0이어야 시작·끝에 꺾인 선이 안 남는다.
+    const ws = Array.from(z, (zj, j) => {
+      const s = Math.min(1, Math.max(0, (seamDepth - (zA + heights[j] - zj)) / (seamDepth - top)));
+      return s * s * s * (10 - 15 * s + 6 * s * s);
+    });
+    const w = Math.max(...ws);
+    let ro = null;
+    if (w > 0) {
+      ro = angularLowPass(
+        Array.from({ length: measureN }, (_, i) => meridians[i](z[i * MEASURE_STRIDE])),
+        n,
+      );
+      if (!ro) ro = thetas.map((theta, j) => origProbe.rayRadius(theta, z[j]));
+    }
+    const rad = new Float64Array(n);
+    for (let j = 0; j < n; j += 1) {
+      const rp = raw[j] * keeps[j] + avg[j] * (1 - keeps[j]);
+      rad[j] = ro && Number.isFinite(ro[j]) ? rp * (1 - ws[j]) + ro[j] * ws[j] : rp;
+    }
+    return { rad, z };
+  };
+
+  const count = Math.max(1, Math.round(span / SEAM_CANDIDATE_STEP_MM));
+  const depths = Array.from({ length: count + 1 }, (_, i) => (span * i) / count);
+  const rows = depths.map(rowAt);
+  // 꺾임은 열마다 따로 누적한다. 열마다 가장 큰 꺾임을 더하면 서로 다른 깊이의 꺾임이 겹쳐 행이 두 배 가까이 는다.
+  const angle = (i, j) => Math.atan2(rows[i].rad[j] - rows[i + 1].rad[j], rows[i].z[j] - rows[i + 1].z[j]);
+  const prevAngle = Float64Array.from({ length: n }, (_, j) => angle(0, j));
+  const acc = new Float64Array(n);
+  const step = (ROW_TURN_DEG * Math.PI) / 180;
+  const picked = [0];
+  for (let i = 1; i < rows.length; i += 1) {
+    let worst = 0;
+    if (i < rows.length - 1) {
+      for (let j = 0; j < n; j += 1) {
+        const a = angle(i, j);
+        acc[j] += Math.abs(a - prevAngle[j]);
+        prevAngle[j] = a;
+        if (acc[j] > worst) worst = acc[j];
+      }
+    }
+    const gap = depths[i] - depths[picked[picked.length - 1]];
+    if (i === rows.length - 1 || (worst >= step && gap >= SEAM_MIN_PITCH_MM) || gap >= ROW_MAX_PITCH_MM) {
+      picked.push(i);
+      acc.fill(0);
+    }
+  }
+  return picked.reverse().map((i) => rows[i]);
+}
+
+/**
  * 메시에 쓸 열을 고른다. 둘레 곡선이 COLUMN_TURN_DEG만큼 꺾일 때마다 열 하나, 곧은 곳은 COLUMN_MAX_ARC_MM까지 벌린다.
  * 꺾임·길이는 모든 행에서 재서 가장 큰 값을 쓴다. 볼록한 단면은 한 바퀴 꺾임이 360°라 열은 모서리에 몰린다.
  * @param {{ rad: Float64Array, z: Float64Array }[]} rows
@@ -1508,9 +1672,8 @@ function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut, origProbe, crease }
   const rowData = [];
   const minHeight = Math.min(...heights);
   const maxHeight = Math.max(...heights);
-  const seamDepths = origProbe ? SEAM_ROW_DEPTHS_MM : [];
-  const seamStart = seamDepths.length ? SEAM_ROW_DEPTHS_MM[SEAM_ROW_DEPTHS_MM.length - 1] + ROW_PITCH_MM : 0;
-  const tEnd = seamDepths.length ? 1 - seamStart / minHeight : 1 - ROW_PITCH_MM / maxHeight;
+  const seamDepth = origProbe ? Math.min(SEAM_BLEND_DEPTH_MM, minHeight / 2) : 0;
+  const tEnd = origProbe ? 1 - (seamDepth + ROW_PITCH_MM) / minHeight : 1 - ROW_PITCH_MM / maxHeight;
   for (const t of adaptiveRowTs(radiusAt, heights, tEnd)) {
     const raw = Array.from({ length: STRIP_COLUMNS }, (_, j) => radiusAt(j, t));
     const avg = circularSmooth(raw, BAND_SMOOTH_HALF_COLUMNS);
@@ -1523,33 +1686,7 @@ function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut, origProbe, crease }
     }
     rowData.push({ rad, z });
   }
-  // 위 끝 근처: 새 곡선을 원본 곡면(위 끝 반경·기울기)에 섞어 이음선을 없앤다. 위 끝 행은 원본 꼭짓점 그대로다.
-  for (let k = seamDepths.length - 1; k >= 0; k -= 1) {
-    const depth = seamDepths[k];
-    const s = 1 - depth / SEAM_BLEND_DEPTH_MM;
-    const w = s <= 0 ? 0 : s * s * (3 - 2 * s);
-    const ts = heights.map((h) => 1 - depth / h);
-    const raw = ts.map((t, j) => radiusAt(j, t));
-    const avg = circularSmooth(raw, BAND_SMOOTH_HALF_COLUMNS);
-    // 아래 일반 행과 같은 각도 평균을 쓴 곡선 위치에서 출발해, 위로 갈수록 원본 곡면으로 옮겨 간다.
-    const keeps = ts.map((t, j) => bandSmoothKeep(t, heights[j]));
-    const zs = ts.map((t, j) => {
-      const zCurve = zA + t * (heights[j] * keeps[j] + smoothHeights[j] * (1 - keeps[j]));
-      return zCurve * (1 - w) + (zA + heights[j] - depth) * w;
-    });
-    const roCols =
-      w > 0
-        ? measureSmoothColumns((j) => origProbe.rayRadius(thetas[j], zs[j])) ||
-          thetas.map((theta, j) => origProbe.rayRadius(theta, zs[j]))
-        : null;
-    const rad = new Float64Array(STRIP_COLUMNS);
-    for (let j = 0; j < STRIP_COLUMNS; j += 1) {
-      const ro = roCols ? roCols[j] : NaN;
-      const rp = raw[j] * keeps[j] + avg[j] * (1 - keeps[j]);
-      rad[j] = Number.isFinite(ro) ? rp * (1 - w) + ro * w : rp;
-    }
-    rowData.push({ rad, z: Float64Array.from(zs) });
-  }
+  if (origProbe) rowData.push(...seamRows({ zA, thetas, heights, smoothHeights, radiusAt, origProbe, seamDepth, tEnd }));
   const meshColumns = selectMeshColumns(rowData, thetas);
   const grid = rowData.map(({ rad, z }) =>
     meshColumns.map((j) => {
@@ -1931,7 +2068,7 @@ export function blendCuffJunction(buffer, options = {}) {
     // 메시 모서리를 선형으로 자르면 곡선 경계가 수 µm 어긋난다. 새 꼭짓점이 피니시라인과 최소 여유를 갖도록 확인하고, 모자라면 띠 위 끝을 더 내려 한 번 다시 만든다(2번 안에 안 되면 manual-review).
     // 마진 모서리를 찾으면 이음 위 끝을 그 모서리 꼭짓점에 그대로 붙인다(모서리를 자르지 않아 선이 하나만 남는다). 새 꼭짓점은 모서리 아래 첫 행부터다.
     let offsetMm = crease ? 0 : FINISH_KINK_OFFSET_MM;
-    const minClearanceFor = (off) => (crease && off === 0 ? SEAM_ROW_DEPTHS_MM[0] / 2 : FINISH_MIN_CLEARANCE_MM);
+    const minClearanceFor = (off) => (crease && off === 0 ? SEAM_TOP_DEPTH_MM / 2 : FINISH_MIN_CLEARANCE_MM);
     let built = attempt(offsetMm);
     let clearance = finishLineClearance(buffer, built.out.buffer, seamZ);
     for (let i = 0; i < 1 && clearance < minClearanceFor(offsetMm); i += 1) {
