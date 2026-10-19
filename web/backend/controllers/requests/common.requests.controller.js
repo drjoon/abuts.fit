@@ -3812,7 +3812,7 @@ export const updateRequestSafeSplitOverride = asyncHandler(async (req, res) => {
   }
 });
 
-// PreviewModal「One Pass」= caseInfos.onePassEnabled (마지막 Back_Finish에서 Finish 전체, 기본 OFF).
+// PreviewModal「One Pass」= caseInfos.onePassEnabled. 가공 적용은 포스트·치은 스텝이 같을 때만.
 export const updateRequestOnePassOverride = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const hasOnePassEnabled = Object.prototype.hasOwnProperty.call(

@@ -73,6 +73,17 @@ export function draftToOverrideMm(
   return draft === "requestor" ? null : draft;
 }
 
+export function compositeFinishStepsMatch(postMm: number, gingivaMm: number): boolean {
+  return Math.abs(postMm - gingivaMm) < 1e-6;
+}
+
+export function displayedCompositeStepMm(
+  draft: CompositeFinishStepDraft,
+  effectiveMm: number,
+): number {
+  return draft === "requestor" ? effectiveMm : draft;
+}
+
 export function compositeStepTriggerLabel(
   side: "포스트" | "치은",
   draft: CompositeFinishStepDraft,

@@ -1888,12 +1888,45 @@ namespace DentalAddin
 
         private const string FinishOnePassEnv = "ABUTS_FINISH_ONE_PASS";
 
-        // PreviewModal「One Pass」. 미수신·0은 OFF. ON이면 Finish는 마지막 Back_Finish 한 공정.
+        // PreviewModal「One Pass」. 미수신·0은 OFF.
+        // 포스트·치은 StepIncrement가 같을 때만 마지막 Back_Finish 한 공정. 다르면 2–3단.
         private static bool IsFinishOnePassEnabled()
         {
             string raw = GetEnvString(FinishOnePassEnv);
-            return string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase)
+            bool requested = string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase);
+            if (!requested)
+            {
+                return false;
+            }
+            if (!CompositeFinishStepsMatchForOnePass())
+            {
+                DentalLogger.Log("Composite2SplitLine2 - One Pass 생략: 포스트·치은 StepIncrement가 달라 2-3단 Finish");
+                return false;
+            }
+            return true;
+        }
+
+        // env A/B가 없으면 UI와 같이 포스트 none=0.05·deep=0.20, 치은=0.05.
+        private static bool CompositeFinishStepsMatchForOnePass()
+        {
+            double postMm = 0.05;
+            string groove = (GetEnvString("ABUTS_RETENTION_GROOVE") ?? string.Empty).Trim().ToLowerInvariant();
+            if (groove == "없음") groove = "none";
+            if (groove == "있음") groove = "deep";
+            if (groove == "deep") postMm = 0.2;
+            if (TryGetCompositeStepIncrementFromEnv(AppConfig.CompositeStepIncrementAEnv, out double stepA))
+            {
+                postMm = stepA;
+            }
+
+            double gingivaMm = 0.05;
+            if (TryGetCompositeStepIncrementFromEnv(AppConfig.CompositeStepIncrementBEnv, out double stepB))
+            {
+                gingivaMm = stepB;
+            }
+
+            return Math.Abs(postMm - gingivaMm) < 1e-6;
         }
 
         private static bool IsSafeSplitEnabledByRequest()

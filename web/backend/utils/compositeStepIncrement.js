@@ -44,6 +44,13 @@ export function resolveEffectiveCompositeSteps(caseInfos) {
   };
 }
 
+/** One Pass는 포스트·치은 Finish 스텝이 같을 때만. 다르면 2–3단. */
+export function resolveOnePassEnabled(caseInfos) {
+  if (caseInfos?.onePassEnabled !== true) return false;
+  const { post, gingiva } = resolveEffectiveCompositeSteps(caseInfos);
+  return Math.abs(post - gingiva) < 1e-6;
+}
+
 export function readStampedCompositeSteps(ncFile) {
   const post = Number(ncFile?.compositeStepPostMm);
   const gingiva = Number(ncFile?.compositeStepGingivaMm);

@@ -336,7 +336,17 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         Environment.SetEnvironmentVariable(
                             "ABUTS_SAFE_SPLIT_ENABLE",
                             safeSplitEnabled ? "1" : "0");
-                        bool onePassEnabled = requestMeta.onePassEnabled == true;
+                        bool onePassRequested = requestMeta.onePassEnabled == true;
+                        double onePassPostMm = _backendCompositeStepPostOverrideMm
+                            ?? (string.Equals(_backendRetentionGroove, "deep", StringComparison.OrdinalIgnoreCase) ? 0.2 : 0.05);
+                        double onePassGingivaMm = _backendCompositeStepGingivaOverrideMm ?? 0.05;
+                        bool onePassStepsMatch = Math.Abs(onePassPostMm - onePassGingivaMm) < 1e-6;
+                        bool onePassEnabled = onePassRequested && onePassStepsMatch;
+                        if (onePassRequested && !onePassStepsMatch)
+                        {
+                            AppLogger.Log(
+                                $"StlFileProcessor: One Pass 생략 - 포스트 {onePassPostMm.ToString("0.###", CultureInfo.InvariantCulture)} != 치은 {onePassGingivaMm.ToString("0.###", CultureInfo.InvariantCulture)}, 2-3단 Finish");
+                        }
                         Environment.SetEnvironmentVariable(
                             "ABUTS_FINISH_ONE_PASS",
                             onePassEnabled ? "1" : "0");

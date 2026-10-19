@@ -207,7 +207,7 @@ const requestSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
-      // PreviewModal「One Pass」: Finish를 Front/Middle에서 나누지 않고 마지막 Back_Finish에서 한 번에 깎음. 기본 OFF.
+      // PreviewModal「One Pass」: 포스트·치은 스텝이 같을 때만 마지막 Back_Finish 한 번에. 다르면 2–3단. 기본 OFF.
       onePassEnabled: {
         type: Boolean,
         default: false,

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-20: request-meta One Pass는 포스트·치은 스텝이 같을 때만 true.
 // - 2026-10-13: 더미 request-meta는 헥스 회전이 없으면 STL모델대로로 저장한 뒤 내려준다.
 // - 2026-10-10: 반자동 피니시라인(source=frontend-manual)은 2-filled·finish-line 콜백으로 덮지 않는다.
 // - 2026-10-10: STL/원본 다운로드는 S3 스트림으로 응답한다. 대기열 목록은 파일 메타만 읽는다.
@@ -61,6 +62,7 @@ import {
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
 import {
   resolveEffectiveCompositeSteps,
+  resolveOnePassEnabled,
 } from "../../utils/compositeStepIncrement.js";
 import { emitBgRuntimeStatus } from "./bgRuntimeEvents.js";
 import { emitAppEventToRoles } from "../../socket.js";
@@ -2130,7 +2132,8 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
               ? ci.compositeStepIncrementGingivaOverrideMm
               : null,
           safeSplitEnabled: ci.safeSplitEnabled !== false,
-          onePassEnabled: ci.onePassEnabled === true,
+          // 체크여도 포스트·치은 스텝이 다르면 OFF. Esprit는 2–3단 Finish.
+          onePassEnabled: resolveOnePassEnabled(ci),
           lotNumber: lotValue,
           // esprit-addin에서 공정 PRC를 선택하기 위한 의뢰별 설정
           // PRC 파일명이 DB에 저장된 경우 그대로 사용, 없으면 임플란트 정보로 동적 계산.

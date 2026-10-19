@@ -3,6 +3,7 @@ import {
   compositeStepsMatch,
   ncOwnerRequestId,
   resolveEffectiveCompositeSteps,
+  resolveOnePassEnabled,
   stampCompositeStepsOnNcFile,
 } from "../../utils/compositeStepIncrement.js";
 
@@ -36,6 +37,35 @@ describe("composite step NC ownership", () => {
         "20261017-COPY0001",
       ),
     ).toBe("20261017-COPY0001");
+  });
+
+  it("One Pass는 포스트·치은 스텝이 같을 때만 적용한다", () => {
+    expect(
+      resolveOnePassEnabled({
+        onePassEnabled: true,
+        retentionGroove: "none",
+      }),
+    ).toBe(true);
+    expect(
+      resolveOnePassEnabled({
+        onePassEnabled: true,
+        retentionGroove: "deep",
+      }),
+    ).toBe(false);
+    expect(
+      resolveOnePassEnabled({
+        onePassEnabled: true,
+        retentionGroove: "deep",
+        compositeStepIncrementPostOverrideMm: 0.1,
+        compositeStepIncrementGingivaOverrideMm: 0.1,
+      }),
+    ).toBe(true);
+    expect(
+      resolveOnePassEnabled({
+        onePassEnabled: false,
+        retentionGroove: "none",
+      }),
+    ).toBe(false);
   });
 
   it("복사한 NC에는 원본 피치를 찍는다", () => {
