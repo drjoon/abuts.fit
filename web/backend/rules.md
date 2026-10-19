@@ -202,7 +202,7 @@
 - 커프 이음은 피니시라인 아래를 새 곡면으로 바꾼다. 그 위 포스트는 크라운 내면이 닿으므로 삼각형을 더하거나 지우지 않는다.
 - `fairPostAboveFinishLine`은 같은 세로줄에서 **위와 아래보다 동시에 8µm 이상 굵은 점**만 반경을 줄인다. 골·경사·피니시라인 아래는 그대로다.
 - 바깥(반경 증가)은 2µm까지. 안쪽은 30µm까지. 마진에서 0.27mm 구간은 이동량을 0으로 붙인다.
-- 자동 파이프라인에는 넣지 않는다. 샘플 확인: `node scripts/abutment-stl-js/fair-post.js --request CA261019-BQM --out /tmp/post.stl` (`--write`는 그 의뢰 filled STL을 덮어쓴다).
+- 자동 파이프라인에는 넣지 않는다. 샘플 확인: `node scripts/abutment-stl-js/fair-post.js --request CA261019-BQM --out /tmp/post.stl`. `--write`는 그 의뢰만 새 S3 키로 바꾼다. 공유 중인 filled 키는 덮어쓰지 않는다.
 - SSOT: `services/abutmentStl/postFair.js`, `tests/unit/postFair.test.js`
 
 ### 디자인 파트너 클레임·마감
