@@ -50,8 +50,13 @@ const COLUMN_TURN_SMOOTH_HALF = columnsForDeg(1.5);
  * 오목 곡선은 위 끝에서 원본보다 20°쯤 서 있어 이 안에서 꺾임을 되돌린다. 짧으면 그 꺾임이 몰려 가로 결이 된다.
  */
 const SEAM_BLEND_DEPTH_MM = 0.45;
-/** 이음 맨 위 행 깊이. 여기서 원본 곡면에 다 붙고, 그 위는 마진 모서리 꼭짓점까지 원본 면 그대로다. */
+/**
+ * 이음 맨 위 행은 원본 면을 따라 모서리에서 이만큼(mm) 떨어진다. 여기서 원본 곡면에 다 붙고, 그 위는 마진 모서리 꼭짓점까지 한 줄이다.
+ * 높이로 재면 마진 아래가 거의 수평인 턱에서 첫 줄이 안쪽으로 0.5mm쯤 가 버려, 둥근 턱이 평면 한 장으로 잘린다.
+ */
 const SEAM_TOP_DEPTH_MM = 0.06;
+/** 이음 맨 위 행은 높이로도 모서리 아래 최소 이만큼(mm)이다. */
+const SEAM_TOP_MIN_DROP_MM = 0.01;
 /** 이음 행 후보 간격·최소 간격(mm). 행은 옆모습이 ROW_TURN_DEG 꺾일 때마다 고른다. */
 const SEAM_CANDIDATE_STEP_MM = 0.0025;
 const SEAM_MIN_PITCH_MM = 0.005;
@@ -60,6 +65,22 @@ const SEAM_FRAME_NEAR_MM = 0.01;
 const SEAM_FRAME_FAR_MM = 0.05;
 /** 이음 섞기에서 원본 옆모습은 위 끝에서 이 거리(mm) 안의 선분만 본다. */
 const SEAM_FRAME_REACH_MM = 1.5;
+/** 마진 아래 원본 턱: 기울기를 재는 창·걸음(mm), 최대 깊이(mm·열 높이 비율), 옆모습 표본 수. */
+const SHELF_SLOPE_WINDOW_MM = 0.01;
+const SHELF_STEP_MM = 0.0025;
+const SHELF_MAX_DEPTH_MM = 0.3;
+const SHELF_MAX_HEIGHT_FRACTION = 0.5;
+const SHELF_SAMPLE_COUNT = 33;
+/** 모서리 바로 아래 이 깊이(mm)의 평균 기울기가 SHELF_MIN_SLOPE(75°) 이상인 열만 턱으로 본다. 계단식 60°대 경사는 턱이 아니다. */
+const SHELF_DETECT_MM = 0.03;
+const SHELF_MIN_SLOPE = Math.tan((75 * Math.PI) / 180);
+/** 턱 아래 끝에서 오목 곡선 끝이 원본보다 SHELF_FIT_FREE_DEG까지 더 누운 것은 두고, 그 위로 SHELF_FIT_SPAN_DEG에 걸쳐 턱 비중을 0으로 줄인다. */
+const SHELF_FIT_FREE_DEG = 4;
+const SHELF_FIT_SPAN_DEG = 8;
+/** 턱이 이 깊이(mm)보다 얕으면 곡선 위 끝 기울기를 원본 위 끝 기울기 쪽으로 섞는다(턱 유무 경계에서 열이 튀지 않게). */
+const SHELF_SLOPE_FADE_MM = 0.02;
+/** 턱을 남긴 열은 턱 아래 끝(최소 맨 위 이음 행 + 이만큼, mm)까지만 섞는다. */
+const SHELF_SEAM_EXTRA_MM = 0.02;
 
 const TAPER_FIT_TOL_MM = 0.008;
 const TAPER_ROUND_TOL_MM = 0.012;
@@ -655,7 +676,7 @@ const START_MAX_SLOPE = Math.tan((40 * Math.PI) / 180);
 /** 위쪽 접선 최대 기울기(약 65°). */
 const CORNER_MAX_END_SLOPE = Math.tan((65 * Math.PI) / 180);
 /** 위쪽 끝 기울기 상한(65°). 예전 70° 상한보다 덜 눕혀 원본에 가깝게 퍼진다. */
-const CORNER_END_SLOPE = Math.tan(((Number(process.env.XP_END) || 65) * Math.PI) / 180);
+const CORNER_END_SLOPE = Math.tan((65 * Math.PI) / 180);
 /** 위쪽 최소 기울기(약 30°): 접시처럼 평평해지지 않게. */
 const CORNER_MIN_END_SLOPE = Math.tan((35 * Math.PI) / 180);
 /** 모서리(퍼지기 시작) 선호 위치. 낮을수록 원본처럼 일찍 퍼진다. */
@@ -713,6 +734,7 @@ export function concaveHermiteProfile(ra, m0, r1, eTarget, h) {
   const d2 = rest - d3;
   const c = [ra, ra + d0, ra + d0 + d1, ra + d0 + d1 + d2, r1];
   return {
+    endSlope: e / h,
     fn: (t) => {
       const u = 1 - t;
       return (
@@ -1000,6 +1022,78 @@ function sampleBelowConditions(probe, thetas, topZ, span) {
     const q = fitQuadratic(samples, z0);
     return q ? { r: q.a, slope: q.b } : null;
   });
+}
+
+/**
+ * 마진 아래 원본 턱(위 끝 기울기 상한 CORNER_END_SLOPE보다 누운 곳)을 잰다. 턱은 원본 그대로 두고 그 아래부터 오목 곡선을 잇는다.
+ * 턱을 곡선으로 덮으면 곡선 위 끝(상한 65°)과 원본 턱(80°대)이 마진 바로 아래에서 섞이며 옆모습이 섰다 누웠다 해 S자로 꼬인다.
+ * @returns {{ depths: number[], weights: number[], slopes: number[], radiusAt: (j: number, s: number) => number } | null}
+ *   depths: 열마다 턱 깊이(mm, 0이면 턱 없음), weights: 턱 비중(0~1), slopes: 턱 아래 끝 dr/dz,
+ *   radiusAt: 턱 위 끝(s=0)~아래 끝(s=1) 반경
+ */
+function measureMarginShelf(probe, thetas, topZ, heights) {
+  const n = thetas.length;
+  const cols = [];
+  for (let j = 0; j < n; j += MEASURE_STRIDE) cols.push(j);
+  const half = SHELF_SLOPE_WINDOW_MM / 2;
+  const merid = cols.map((j) => {
+    const maxD = Math.min(SHELF_MAX_DEPTH_MM, heights[j] * SHELF_MAX_HEIGHT_FRACTION);
+    return { maxD, m: probe.meridian(thetas[j], topZ[j] - maxD - SHELF_SLOPE_WINDOW_MM, topZ[j]) };
+  });
+  const raw = merid.map(({ maxD, m }, i) => {
+    const zTop = topZ[cols[i]];
+    const detect = (m(zTop - TOP_BELOW_GAP_MM) - m(zTop - TOP_BELOW_GAP_MM - SHELF_DETECT_MM)) / SHELF_DETECT_MM;
+    if (!Number.isFinite(detect)) return NaN;
+    if (detect < SHELF_MIN_SLOPE) return 0;
+    const first = TOP_BELOW_GAP_MM + half;
+    for (let d = first; d <= maxD; d += SHELF_STEP_MM) {
+      const slope = (m(zTop - d + half) - m(zTop - d - half)) / SHELF_SLOPE_WINDOW_MM;
+      if (!Number.isFinite(slope)) return NaN;
+      if (slope <= CORNER_END_SLOPE) return d === first ? 0 : d;
+    }
+    return maxD;
+  });
+  const smooth = angularLowPass(fillMissingCircular(raw), n);
+  if (!smooth) return null;
+  const depths = circularSmooth(smooth, TOP_SLOPE_SMOOTH_COLUMNS).map((d, j) =>
+    Math.max(0, Math.min(d, SHELF_MAX_DEPTH_MM, heights[j] * SHELF_MAX_HEIGHT_FRACTION)),
+  );
+  if (!depths.some((d) => d > 0)) return null;
+  // 턱 깊이를 둘레로 펴면 턱이 없는 이웃 열까지 번진다. 그 열은 원래 곡선 쪽을 쓰도록 턱 비중을 따로 둔다.
+  const weights = circularSmooth(
+    angularLowPass(fillMissingCircular(raw).map((d) => (d > 0 ? 1 : 0)), n),
+    TOP_SLOPE_SMOOTH_COLUMNS,
+  ).map((w) => Math.max(0, Math.min(1, w)));
+  const levels = [];
+  for (let k = 0; k < SHELF_SAMPLE_COUNT; k += 1) {
+    const s = k / (SHELF_SAMPLE_COUNT - 1);
+    const level = angularLowPass(
+      fillMissingCircular(
+        merid.map(({ maxD, m }, i) => m(topZ[cols[i]] - s * Math.min(depths[cols[i]], maxD))),
+      ),
+      n,
+    );
+    if (!level) return null;
+    levels.push(level);
+  }
+  const last = SHELF_SAMPLE_COUNT - 1;
+  const slopes = angularLowPass(
+    fillMissingCircular(
+      merid.map(({ maxD, m }, i) => {
+        const zJ = topZ[cols[i]] - Math.min(depths[cols[i]], maxD);
+        return (m(zJ + half) - m(zJ - half)) / SHELF_SLOPE_WINDOW_MM;
+      }),
+    ),
+    n,
+  );
+  if (!slopes) return null;
+  const radiusAt = (j, s) => {
+    const x = Math.max(0, Math.min(1, s)) * last;
+    const i = Math.min(last - 1, Math.floor(x));
+    const f = x - i;
+    return levels[i][j] * (1 - f) + levels[i + 1][j] * f;
+  };
+  return { depths, weights, slopes, radiusAt };
 }
 
 // ---------------------------------------------------------------------------
@@ -1447,7 +1541,7 @@ function adaptiveRowTs(radiusAt, heights, tEnd) {
  * 후보를 SEAM_CANDIDATE_STEP_MM 간격으로 만든 뒤, 어느 열이든 옆모습이 ROW_TURN_DEG 꺾이면 행을 고른다.
  * @returns {{ rad: Float64Array, z: Float64Array }[]}
  */
-function seamRows({ zA, thetas, heights, smoothHeights, radiusAt, origProbe, seamDepth, tEnd }) {
+function seamRows({ zA, thetas, heights, smoothHeights, radiusAt, origProbe, seamDepth, tEnd, shelfSeam }) {
   const n = thetas.length;
   const top = Math.min(SEAM_TOP_DEPTH_MM, seamDepth / 2);
   // 맨 아래 이음 행은 일반 행이 끝나는 t(tEnd)에 둔다. 높이가 큰 열은 그 깊이가 seamDepth보다 깊고, 그 사이는 곡선 그대로다.
@@ -1483,7 +1577,14 @@ function seamRows({ zA, thetas, heights, smoothHeights, radiusAt, origProbe, sea
   // 높은 쪽 커프에서 곡선→원본 꺾임이 0.2mm 안에 몰려 마진 아래에 마진과 나란한 능선이 생긴다.
   const seamDepths = (() => {
     const half = heights.map((h) => Math.min(SEAM_BLEND_DEPTH_MM, h / 2));
-    return circularSmooth(half, TOP_SLOPE_SMOOTH_COLUMNS).map((d, j) => Math.max(top * 2, Math.min(d, half[j])));
+    const smooth = circularSmooth(half, TOP_SLOPE_SMOOTH_COLUMNS).map((d, j) => Math.max(top * 2, Math.min(d, half[j])));
+    if (!shelfSeam) return smooth;
+    // 원본 턱을 남긴 열은 곡선이 턱 아래 끝에서 이미 원본 접선을 따른다. 그 아래까지 섞으면 곡선을 원본 쪽으로 다시 끌어 S자가 된다.
+    return smooth.map((d, j) => {
+      const dJ = shelfSeam.depths[j];
+      const w = Math.min(1, dJ / SHELF_SLOPE_FADE_MM) * shelfSeam.weights[j];
+      return d * (1 - w) + Math.min(d, Math.max(top + SHELF_SEAM_EXTRA_MM, dJ)) * w;
+    });
   })();
   const blendSpan = Math.max(...seamDepths.map((d) => d - top));
   const tailSpan = Math.max(...bottoms.map((b, j) => b - seamDepths[j]));
@@ -1532,7 +1633,8 @@ function seamRows({ zA, thetas, heights, smoothHeights, radiusAt, origProbe, sea
     return m.frame(o, d, nrm, SEAM_FRAME_REACH_MM);
   });
   // 곡선은 섞는 구간 위 끝(top 깊이)~아래 끝(seamDepth)을, 원본은 같은 top 깊이 점~곡선 아래 끝과 같은 접선 거리를 쓴다.
-  // 원본 위 끝도 높이로 top만큼 아래라 새 꼭짓점이 피니시라인과 떨어진다. 둘 사이는 접선 거리를 선형으로 맞춘다.
+  // 원본 위 끝은 위 끝 접선 거리 top이고, 높이로도 SEAM_TOP_MIN_DROP_MM 아래라 새 꼭짓점이 피니시라인과 떨어진다.
+  // 둘 사이는 접선 거리를 선형으로 맞춘다.
   const curveTop = curveAt(0);
   const curveBottom = curveAt(1);
   const uCurveTop = heights.map((_, j) => toFrame(j, curveTop.rad[j], curveTop.z[j])[0]);
@@ -1540,8 +1642,8 @@ function seamRows({ zA, thetas, heights, smoothHeights, radiusAt, origProbe, sea
   const uOrigTop = angularLowPass(
     meridians.map((m, i) => {
       const j = i * MEASURE_STRIDE;
-      const z = zA + heights[j] - top;
-      return toFrame(j, m(z), z)[0];
+      const z = zA + heights[j] - Math.min(top, SEAM_TOP_MIN_DROP_MM);
+      return Math.max(top, toFrame(j, m(z), z)[0]);
     }),
     n,
   );
@@ -1703,7 +1805,7 @@ function bandSmoothKeep(t, height) {
  * Z_a 평면 ~ 위쪽 레벨면(topLevel) 사이 외곽 면을 지우고 profiles로 만든 띠를 붙인다.
  * @param {(theta: number, t: number) => number} radiusAt t∈[0,1] (0=Z_a, 1=위)
  */
-function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut, origProbe, crease }) {
+function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut, origProbe, crease, shelfSeam = null }) {
   let cut = splitByLevel(mesh, (x, y, z) => z - zA);
   if (!crease) cut = splitByLevel(cut, (x, y, z) => z - topZOf(angleOf(x, y)));
   const { verts, faces, faceAttr, faceMain } = cut;
@@ -1841,7 +1943,9 @@ function replaceBand(mesh, { zA, ra, topZOf, radiusAt, rCut, origProbe, crease }
     }
     rowData.push({ rad, z });
   }
-  if (origProbe) rowData.push(...seamRows({ zA, thetas, heights, smoothHeights, radiusAt, origProbe, seamDepth, tEnd }));
+  if (origProbe) {
+    rowData.push(...seamRows({ zA, thetas, heights, smoothHeights, radiusAt, origProbe, seamDepth, tEnd, shelfSeam }));
+  }
   const meshColumns = selectMeshColumns(rowData, thetas);
   const grid = rowData.map(({ rad, z }) =>
     meshColumns.map((j) => {
@@ -2175,27 +2279,65 @@ export function blendCuffJunction(buffer, options = {}) {
       ? angularLowPass(below.map((b) => b.r), STRIP_COLUMNS)
       : tops.map((t, j) => t.r + Math.max(-SMOOTH_MAX_SHIFT_MM, Math.min(SMOOTH_MAX_SHIFT_MM, r1avg[j] - t.r)));
     const coneSlope = Number.isFinite(taper.slope) ? taper.slope : TAPER_SLOPE;
-    const profiles = tops.map((t, j) => {
-      const h = hs[j];
-      const dR = r1s[j] - ra;
+    const shelf = belowSlopes ? measureMarginShelf(probe, thetas, topZ, hs) : null;
+    const bowlOf = (rTop, eSlope, hb) => {
+      const dR = rTop - ra;
       // 반경 차가 작으면 출발 기울기를 줄여 범위를 벗어나지 않게 한다.
-      const m0 = Math.max(0, Math.min(coneSlope * h, dR - CONCAVE_MARGIN * h));
-      const eTarget = belowSlopes ? belowSlopes[j] * h : END_SLOPE_BOOST * (2 * dR - m0);
-      const p = concaveHermiteProfile(ra, m0, r1s[j], eTarget, h);
-      return p ? p.fn : concaveBridgeProfile(ra, m0, r1s[j], h);
+      const m0 = Math.max(0, Math.min(coneSlope * hb, dR - CONCAVE_MARGIN * hb));
+      const eTarget = eSlope != null ? eSlope * hb : END_SLOPE_BOOST * (2 * dR - m0);
+      const p = concaveHermiteProfile(ra, m0, rTop, eTarget, hb);
+      return p ? { fn: p.fn, endSlope: p.endSlope } : { fn: concaveBridgeProfile(ra, m0, rTop, hb), endSlope: NaN };
+    };
+    const bowls = tops.map((t, j) => bowlOf(r1s[j], belowSlopes ? belowSlopes[j] : null, hs[j]).fn);
+    // 턱을 남긴 곡선: 턱 아래 끝(높이 hJ)까지 오목 곡선, 그 위는 원본 턱.
+    const kepts = tops.map((t, j) => {
+      const dJ = shelf ? shelf.depths[j] : 0;
+      if (!(dJ > 0) || !(shelf.weights[j] > 0)) return null;
+      const h = hs[j];
+      const hJ = h - dJ;
+      const tJ = hJ / h;
+      const fade = Math.min(1, dJ / SHELF_SLOPE_FADE_MM);
+      const target = belowSlopes[j] * (1 - fade) + shelf.slopes[j] * fade;
+      const below = bowlOf(shelf.radiusAt(j, 1), target, hJ);
+      // 오목 곡선이 턱 아래 끝 원본 기울기보다 서서 끝나면 거기서 옆모습이 되돌아간다. 그만큼 턱 비중을 줄인다.
+      const overDeg = Number.isFinite(below.endSlope)
+        ? ((Math.atan(below.endSlope) - Math.atan(shelf.slopes[j])) * 180) / Math.PI
+        : Infinity;
+      const fit = Math.max(0, Math.min(1, 1 - (overDeg - SHELF_FIT_FREE_DEG) / SHELF_FIT_SPAN_DEG));
+      return { fit, fn: (tt) => (tt <= tJ ? below.fn(tt / tJ) : shelf.radiusAt(j, ((1 - tt) * h) / dJ)) };
+    });
+    const shelfWeights = shelf
+      ? circularSmooth(
+          kepts.map((k, j) => (k ? k.fit * shelf.weights[j] : 0)),
+          TOP_SLOPE_SMOOTH_COLUMNS,
+        )
+      : null;
+    const profiles = tops.map((t, j) => {
+      const bowl = bowls[j];
+      const ws = shelfWeights ? shelfWeights[j] : 0;
+      if (!kepts[j] || !(ws > 1e-3)) return bowl;
+      const kept = kepts[j].fn;
+      // 같은 t에서 섞으면 두 곡선의 기울기가 각각 한 방향으로만 변하므로 섞은 곡선도 그렇다.
+      return ws >= 1 - 1e-3 ? kept : (tt) => bowl(tt) * (1 - ws) + kept(tt) * ws;
     });
     let maxSlope = 0;
     let minWall = Infinity;
     const chAtZ = channelRadiusByZ(mesh, zA - 0.3, zTopMax + 0.3, ra);
     for (let j = 0; j < profiles.length; j += 1) {
       const h = hs[j];
+      const tJ = shelf ? 1 - shelf.depths[j] / h : 1;
       const lo = Math.min(ra, tops[j].r) - MAX_OVERSHOOT_MM;
       const hi = Math.max(ra, tops[j].r) + MAX_OVERSHOOT_MM;
       let prev = profiles[j](0);
+      let prevBowl = bowls[j](0);
       for (let i = 1; i <= 50; i += 1) {
         const r = profiles[j](i / 50);
+        const rb = bowls[j](i / 50);
         if (r < lo || r > hi) fail("manual-review", "이음 곡면이 커넥션·커프 범위를 벗어납니다.");
-        maxSlope = Math.max(maxSlope, Math.abs(r - prev) / (h / 50));
+        // 위에 남긴 원본 턱은 기공소 디자인 그대로라, 그 높이에서는 턱 없이 만든 곡선의 기울기로 잰다.
+        const slope = i / 50 <= tJ + 1e-9 ? Math.abs(r - prev) : Math.abs(rb - prevBowl);
+        maxSlope = Math.max(maxSlope, slope / (h / 50));
+        prevBowl = rb;
         // 벽 두께는 같은 높이의 채널 반경과 비교한다(채널이 위에서 벌어져도 아래 원뿔 벽은 영향 없음).
         minWall = Math.min(minWall, r - chAtZ(zA + (i / 50) * h));
         prev = r;
@@ -2217,13 +2359,14 @@ export function blendCuffJunction(buffer, options = {}) {
       rCut,
       origProbe: probe,
       crease: crease && offsetMm === 0 ? crease : null,
+      shelfSeam: shelf ? { depths: shelf.depths, weights: shelfWeights } : null,
     });
       return { out, zTopMax, maxSlope };
     };
     // 메시 모서리를 선형으로 자르면 곡선 경계가 수 µm 어긋난다. 새 꼭짓점이 피니시라인과 최소 여유를 갖도록 확인하고, 모자라면 띠 위 끝을 더 내려 한 번 다시 만든다(2번 안에 안 되면 manual-review).
     // 마진 모서리를 찾으면 이음 위 끝을 그 모서리 꼭짓점에 그대로 붙인다(모서리를 자르지 않아 선이 하나만 남는다). 새 꼭짓점은 모서리 아래 첫 행부터다.
     let offsetMm = crease ? 0 : FINISH_KINK_OFFSET_MM;
-    const minClearanceFor = (off) => (crease && off === 0 ? SEAM_TOP_DEPTH_MM / 2 : FINISH_MIN_CLEARANCE_MM);
+    const minClearanceFor = (off) => (crease && off === 0 ? SEAM_TOP_MIN_DROP_MM / 2 : FINISH_MIN_CLEARANCE_MM);
     let built = attempt(offsetMm);
     let clearance = finishLineClearance(buffer, built.out.buffer, seamZ);
     for (let i = 0; i < 1 && clearance < minClearanceFor(offsetMm); i += 1) {
