@@ -197,13 +197,12 @@
 - 보정 곡면 삼각형 attribute는 `0x4342`. HF 패치(`0x4846`)는 유지된다.
 - SSOT: `services/abutmentStl/{cuffConnectionSpecs,cuffBlend,cuffBlend.service}.js`, `tests/unit/cuffBlend.test.js`, `.cursor/rules/cuff-connection-spec.mdc`
 
-### 포스트 축면 재분할 (피니시라인 위)
+### 포스트 축면 봉우리 보정 (피니시라인 위)
 
-- 커프가 매끈해 보이는 것은 피니시라인 아래를 0.025mm 간격으로 다시 만들었기 때문이다. 그 위 포스트의 세로·가로 줄은 성긴 삼각형이다.
-- `fairPostAboveFinishLine`은 피니시라인과 교합면 사이 **바깥 축면만** 커프와 같은 밀도(둘레 720, 높이 0.025mm)로 다시 깐다. 스크류홀·교합면·커프는 그대로다.
-- 반경을 원본 구간 안으로 눌러 끼우면 큰 삼각형의 평면이 남아 줄무늬가 안 사라진다. 아래·위 경계 사이 높이를 0~1로 나눈 좌표에서 둘레 12°·높이 0.5mm로 강하게 평활하고, 원본보다 밖으로 나간 양의 매끈한 상한만큼 전체를 안쪽으로 내린다(내접). 밖으로는 2µm를 넘지 않는다(크라운보다 커지지 않는다). 안쪽 안전 상한은 200µm다.
-- 강평활이 80µm 넘게 어긋나는 자리(홈·턱)는 형상으로 보고, 내접량이 새는 창만큼 범위를 넓혀 원본을 지킨다. 경계 고리의 꺾임이 세로줄로 새지 않게 표본·출력 높이의 경계만 펴서 쓴다.
-- 자동 파이프라인에는 넣지 않는다. 샘플 확인: `node scripts/abutment-stl-js/fair-post.js --request CA261019-BQM --out /tmp/post.stl`. `--write`는 그 의뢰만 새 S3 키로 바꾼다. 공유 중인 filled 키는 덮어쓰지 않는다.
+- 커프 이음은 피니시라인 아래를 새 곡면으로 바꾼다. 그 위 포스트는 크라운 내면이 닿으므로 삼각형을 더하거나 지우지 않는다.
+- `fairPostAboveFinishLine`은 같은 세로줄에서 **위와 아래보다 동시에 8µm 이상 굵은 점**만 반경을 줄인다. 골·경사·피니시라인 아래는 그대로다.
+- 바깥(반경 증가)은 2µm까지. 안쪽은 30µm까지. 마진에서 0.27mm 구간은 이동량을 0으로 붙인다.
+- 자동 파이프라인에는 넣지 않는다. 샘플 확인: `node scripts/abutment-stl-js/fair-post.js --request CA261019-BQM --out /tmp/post.stl` (`--write`는 그 의뢰 filled STL을 덮어쓴다).
 - SSOT: `services/abutmentStl/postFair.js`, `tests/unit/postFair.test.js`
 
 ### 디자인 파트너 클레임·마감
