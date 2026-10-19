@@ -140,6 +140,25 @@ describe("connectionTaperFill", () => {
     expect(cuff.rMean).toBeGreaterThan(2.4);
   });
 
+  it("헥스 끝이 같은 반경의 원기둥이어도 11°로 보지 않고 원뿔을 붙인다", () => {
+    const corner = FLAT / Math.sqrt(3);
+    const mesh = Mesh.fromTriangleSoup(
+      solidOf([
+        [-4, hexRadius],
+        [-0.4, hexRadius],
+        [-0.4, corner],
+        [0.3, corner],
+        [0.3, 2.4],
+        [6, 3.2],
+      ]),
+    );
+    const result = addMissingConnectionTaper(mesh, { implantProfile: PROFILE });
+    expect(result.applied).toBe(true);
+    const atOrigin = outerMetrics(mesh, 0);
+    expect(atOrigin.rMean * 2).toBeCloseTo(3.35, 2);
+    expect(atOrigin.hexRatio).toBeLessThan(1.04);
+  });
+
   it("11° 원뿔이 이미 있으면 메시를 바꾸지 않는다", () => {
     const mesh = Mesh.fromTriangleSoup(designedSoup());
     const faces = mesh.faceCount;

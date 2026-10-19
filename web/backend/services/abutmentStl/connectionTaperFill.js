@@ -155,15 +155,40 @@ function hexRun(mesh, hexSize) {
   return best;
 }
 
+/** 헥스 바로 위가 모서리 반경에서 시작하는 11° 원뿔인지. 반경이 그대로인 원기둥은 아니다. */
 function taperAlreadyAbove(mesh, hexTop, cornerR) {
-  let hits = 0;
-  for (let z = hexTop + SAMPLE_STEP_MM; z <= hexTop + 0.7; z += SAMPLE_STEP_MM) {
+  const pts = [];
+  for (let z = hexTop + SAMPLE_STEP_MM; z <= hexTop + 0.8; z += SAMPLE_STEP_MM) {
     const m = metricsAt(mesh, z);
     if (!m || m.hexRatio >= 1.05) continue;
-    const expected = cornerR + TAPER_SLOPE * (z - hexTop);
-    if (Math.abs(m.rMean - expected) <= TAPER_MATCH_MM) hits += 1;
+    pts.push([z, m.rMean]);
   }
-  return hits >= 4;
+  if (pts.length < 5) return false;
+  const n = pts.length;
+  const mz = pts.reduce((s, p) => s + p[0], 0) / n;
+  const mr = pts.reduce((s, p) => s + p[1], 0) / n;
+  const num = pts.reduce((s, p) => s + (p[0] - mz) * (p[1] - mr), 0);
+  const den = pts.reduce((s, p) => s + (p[0] - mz) ** 2, 0);
+  if (!(den > 1e-6)) return false;
+  const slope = num / den;
+  const deg = (Math.atan(slope) * 180) / Math.PI;
+  if (deg < 8 || deg > 15) return false;
+  const atTop = mr + slope * (hexTop - mz);
+  return Math.abs(atTop - cornerR) <= TAPER_MATCH_MM + 0.05;
+}
+
+function channelRadius(mesh, z0, z1) {
+  const radii = [];
+  for (let z = z0; z <= z1; z += 0.2) {
+    let inner = null;
+    for (const pl of meshZSection(mesh, z)) {
+      const m = sectionMetrics(pl);
+      if (!m) continue;
+      if (!inner || m.rMax < inner) inner = m.rMax;
+    }
+    if (inner) radii.push(inner);
+  }
+  return median(radii);
 }
 
 function radiusOf(p) {
@@ -408,7 +433,6 @@ export function addMissingConnectionTaper(mesh, options = {}) {
   const hexTop = found.run[found.run.length - 1].z;
   const hexLen = hexTop - hexBottom;
   const cornerR = median(found.run.map((s) => s.m.rMax));
-  const flatR = median(found.run.map((s) => s.m.rMin));
   const originR = geo.originDiameter / 2;
   const coneBelow = (originR - cornerR) / TAPER_SLOPE;
   const canonicalHexLen = geo.l2 - coneBelow;
@@ -439,13 +463,16 @@ export function addMissingConnectionTaper(mesh, options = {}) {
   const zTop = originZ + geo.taperHeightMm;
   const zLab = found.next ? found.next.z : hexTop;
   const zShift = -originZ;
+  const outerMin = Math.min(...found.run.map((s) => s.m.rMin));
+  const channel = channelRadius(mesh, hexBottom, hexTop);
+  const rSplit =
+    channel && channel < outerMin - 0.05 ? (channel + outerMin) / 2 : outerMin * 0.9;
   const snapshot = mesh.toTriangleSoup();
   mesh.translate(0, 0, zShift);
   const cut = zCut + zShift;
   const top = zTop + zShift;
   const lab = zLab + zShift;
   const keep = Math.max(lab, top);
-  const rSplit = Math.min(flatR, geo.hexSize / 2) * 0.96;
 
   try {
     const kept = [];
