@@ -77,6 +77,34 @@ export function compositeFinishStepsMatch(postMm: number, gingivaMm: number): bo
   return Math.abs(postMm - gingivaMm) < 1e-6;
 }
 
+export function resolveEffectiveCompositeSteps(caseInfos?: {
+  retentionGroove?: "none" | "shallow" | "deep";
+  compositeStepIncrementPostOverrideMm?: unknown;
+  compositeStepIncrementGingivaOverrideMm?: unknown;
+} | null): { post: CompositeFinishStepMm; gingiva: CompositeFinishStepMm } {
+  return {
+    post: resolveCompositePostStepMm(
+      caseInfos?.retentionGroove,
+      caseInfos?.compositeStepIncrementPostOverrideMm,
+    ),
+    gingiva: resolveCompositeGingivaStepMm(
+      caseInfos?.compositeStepIncrementGingivaOverrideMm,
+    ),
+  };
+}
+
+/** NC·ESPRIT 적용 여부 — caseInfos.onePassEnabled와 포스트·치은 스텝 일치. */
+export function resolveOnePassEnabled(caseInfos?: {
+  onePassEnabled?: boolean;
+  retentionGroove?: "none" | "shallow" | "deep";
+  compositeStepIncrementPostOverrideMm?: unknown;
+  compositeStepIncrementGingivaOverrideMm?: unknown;
+} | null): boolean {
+  if (caseInfos?.onePassEnabled !== true) return false;
+  const { post, gingiva } = resolveEffectiveCompositeSteps(caseInfos);
+  return compositeFinishStepsMatch(post, gingiva);
+}
+
 export function displayedCompositeStepMm(
   draft: CompositeFinishStepDraft,
   effectiveMm: number,

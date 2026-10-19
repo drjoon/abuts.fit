@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-10-20: 프리뷰 다운로드는 공정 파일 형식 그대로 저장. NC는 .nc, 세척·포장 이미지는 png/jpg.
+// - 2026-10-20: One Pass 체크는 caseInfos 저장값 표시(공정 동일). 스텝 불일치 시에도 준비에서 토글·저장 가능.
 // - 2026-10-20: One Pass는 포스트·치은 스텝이 같을 때만. 다르면 2–3단 Finish.
 // - 2026-10-19: 헤더 Wide Split 토글을 One Pass로 교체. 기본 OFF. ON이면 Finish는 마지막 Back_Finish 한 번에.
 // - 2026-10-17: 안내 off 시 프론트포인트(녹색점)도 피니시라인과 함께 숨김(FP 편집 중은 유지).
@@ -137,6 +138,7 @@ import {
   compositeFinishStepsMatch,
   compositeStepTriggerLabel,
   displayedCompositeStepMm,
+  resolveOnePassEnabled,
   draftToOverrideMm,
   overrideMmToDraft,
   resolveCompositeGingivaStepMm,
@@ -3055,25 +3057,10 @@ export const PreviewModal = ({
   const handleToggleOnePassEnabled = async (checked: boolean) => {
     const prepStages = new Set(["준비", "의뢰", "CAM", "request", "cam"]);
     const mfgStage = String(activeReq?.manufacturerStage || "").trim();
-    const caseInfos = (activeReq?.caseInfos || {}) as Record<string, unknown>;
-    const postMm = displayedCompositeStepMm(
-      compositePostStepDraft,
-      resolveCompositePostStepMm(
-        caseInfos.retentionGroove as "none" | "shallow" | "deep" | undefined,
-        caseInfos.compositeStepIncrementPostOverrideMm,
-      ),
-    );
-    const gingivaMm = displayedCompositeStepMm(
-      compositeGingivaStepDraft,
-      resolveCompositeGingivaStepMm(
-        caseInfos.compositeStepIncrementGingivaOverrideMm,
-      ),
-    );
     if (
       !onSaveOnePassEnabledOverride ||
       onePassSaving ||
       approveBusy ||
-      !compositeFinishStepsMatch(postMm, gingivaMm) ||
       !(currentReviewStageKey === "request" || currentReviewStageKey === "cam") ||
       !prepStages.has(mfgStage)
     ) {
@@ -3224,13 +3211,19 @@ export const PreviewModal = ({
       effectiveCompositeGingivaStepMm,
     ),
   );
-  const onePassEffective = onePassStepsMatch && Boolean(onePassEnabledDraft);
+  const onePassAppliedToNc = resolveOnePassEnabled({
+    onePassEnabled: onePassEnabledDraft,
+    retentionGroove: retentionGrooveRaw,
+    compositeStepIncrementPostOverrideMm: (activeReq?.caseInfos as any)
+      ?.compositeStepIncrementPostOverrideMm,
+    compositeStepIncrementGingivaOverrideMm: (activeReq?.caseInfos as any)
+      ?.compositeStepIncrementGingivaOverrideMm,
+  });
   const onePassControlEnabled =
     canOverrideSafeSplit &&
     !approveBusy &&
     !onePassSaving &&
-    Boolean(onSaveOnePassEnabledOverride) &&
-    onePassStepsMatch;
+    Boolean(onSaveOnePassEnabledOverride);
 
   const renderCompositeStepMenu = (
     current: CompositeFinishStepDraft,
@@ -3640,17 +3633,21 @@ export const PreviewModal = ({
                     : "border-slate-200 bg-slate-100 text-slate-400"
                 }`}
                 title={
-                  onePassStepsMatch
-                    ? "포스트와 치은 스텝이 같습니다. Finish를 마지막 Back_Finish에서 한 번에 깎습니다. 준비 단계에서만 변경할 수 있습니다."
-                    : onePassEnabledDraft
-                      ? "포스트와 치은 스텝이 달라 One Pass를 적용하지 않습니다. 값이 같아지면 다시 적용됩니다."
-                      : "포스트와 치은 스텝이 같을 때만 One Pass를 적용합니다. 지금은 2–3단으로 나눕니다."
+                  onePassEnabledDraft && !onePassStepsMatch
+                    ? "One Pass는 켜 두었지만 포스트·치은 스텝이 달라 NC에는 2–3단으로 적용됩니다."
+                    : onePassEnabledDraft && onePassAppliedToNc
+                      ? "포스트와 치은 스텝이 같습니다. Finish를 마지막 Back_Finish에서 한 번에 깎습니다."
+                      : onePassEnabledDraft
+                        ? "One Pass 설정은 켜져 있습니다."
+                        : onePassStepsMatch
+                          ? "One Pass가 꺼져 있습니다. Finish는 2–3단으로 나눕니다."
+                          : "One Pass가 꺼져 있습니다. 포스트·치은 스텝이 같을 때만 한 번에 깎을 수 있습니다."
                 }
               >
                 <input
                   type="checkbox"
                   className="h-3.5 w-3.5 rounded border-slate-300"
-                  checked={onePassEffective}
+                  checked={Boolean(onePassEnabledDraft)}
                   disabled={!onePassControlEnabled}
                   onChange={(e) => {
                     void handleToggleOnePassEnabled(Boolean(e.target.checked));
@@ -3658,7 +3655,7 @@ export const PreviewModal = ({
                 />
                 <span className="whitespace-nowrap">One Pass</span>
                 <span className="text-[10px] font-semibold text-slate-500">
-                  {onePassEffective ? "O" : "X"}
+                  {onePassEnabledDraft ? "O" : "X"}
                 </span>
               </label>
               <label
