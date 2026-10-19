@@ -257,99 +257,104 @@ export const AdminMailComposePanel = ({ onSent, draft }: Props) => {
           <MailComposeHtmlEditor value={bodyHtml} onChange={setBodyHtml} />
         </div>
 
-        <div className="space-y-3 rounded-md border px-3 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="space-y-0.5">
-              <Label htmlFor="mail-schedule-toggle" className="flex items-center gap-2">
-                <Clock className="h-4 w-4" />
-                예약 발송
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                선택한 시각(KST)에 자동으로 발송됩니다.
-              </p>
-            </div>
-            <Switch
-              id="mail-schedule-toggle"
-              checked={scheduleEnabled}
-              onCheckedChange={(checked) => {
-                setScheduleEnabled(checked);
-                if (checked && !scheduledLocal) {
-                  setScheduledLocal(kstNowDatetimeLocalValue());
-                }
-              }}
-            />
-          </div>
-          {scheduleEnabled ? (
-            <div className="space-y-2">
-              <Label htmlFor="mail-scheduled-at">발송 예약 시각 (KST)</Label>
-              <Input
-                id="mail-scheduled-at"
-                type="datetime-local"
-                value={scheduledLocal}
-                min={kstNowDatetimeLocalValue()}
-                onChange={(e) => setScheduledLocal(e.target.value)}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:items-start">
+          <div className="space-y-3 rounded-md border px-3 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <Label
+                  htmlFor="mail-schedule-toggle"
+                  className="flex items-center gap-2"
+                >
+                  <Clock className="h-4 w-4" />
+                  예약 발송
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  선택한 시각(KST)에 자동으로 발송됩니다.
+                </p>
+              </div>
+              <Switch
+                id="mail-schedule-toggle"
+                checked={scheduleEnabled}
+                onCheckedChange={(checked) => {
+                  setScheduleEnabled(checked);
+                  if (checked && !scheduledLocal) {
+                    setScheduledLocal(kstNowDatetimeLocalValue());
+                  }
+                }}
               />
             </div>
-          ) : null}
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <Label className="flex items-center gap-2">
-              <Paperclip className="h-4 w-4" />
-              첨부
-            </Label>
-            <div className="text-xs text-muted-foreground">
-              {pendingUploads ? "업로드 중..." : ""}
-            </div>
+            {scheduleEnabled ? (
+              <div className="space-y-2">
+                <Label htmlFor="mail-scheduled-at">발송 예약 시각 (KST)</Label>
+                <Input
+                  id="mail-scheduled-at"
+                  type="datetime-local"
+                  value={scheduledLocal}
+                  min={kstNowDatetimeLocalValue()}
+                  onChange={(e) => setScheduledLocal(e.target.value)}
+                />
+              </div>
+            ) : null}
           </div>
-          <Input
-            type="file"
-            multiple
-            onChange={(e) => uploadFiles(e.target.files)}
-          />
 
-          {attachments.length ? (
-            <div className="space-y-2">
-              {attachments.map((a, idx) => (
-                <div
-                  key={`${a.file.name}-${idx}`}
-                  className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <div className="text-sm truncate">{a.file.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {formatBytes(a.file.size)}
+          <div className="space-y-2 rounded-md border px-3 py-3">
+            <div className="flex items-center justify-between gap-2">
+              <Label className="flex items-center gap-2">
+                <Paperclip className="h-4 w-4" />
+                첨부
+              </Label>
+              <div className="text-xs text-muted-foreground">
+                {pendingUploads ? "업로드 중..." : ""}
+              </div>
+            </div>
+            <Input
+              type="file"
+              multiple
+              onChange={(e) => uploadFiles(e.target.files)}
+            />
+
+            {attachments.length ? (
+              <div className="max-h-48 space-y-2 overflow-y-auto px-1.5 py-1.5">
+                {attachments.map((a, idx) => (
+                  <div
+                    key={`${a.file.name}-${idx}`}
+                    className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm truncate">{a.file.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {formatBytes(a.file.size)}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={
+                          a.status === "done"
+                            ? "secondary"
+                            : a.status === "error"
+                              ? "destructive"
+                              : "outline"
+                        }
+                      >
+                        {a.status}
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeUploadingAttachment(idx)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant={
-                        a.status === "done"
-                          ? "secondary"
-                          : a.status === "error"
-                          ? "destructive"
-                          : "outline"
-                      }
-                    >
-                      {a.status}
-                    </Badge>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeUploadingAttachment(idx)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-sm text-muted-foreground">
-              첨부파일이 없습니다.
-            </div>
-          )}
+                ))}
+              </div>
+            ) : (
+              <div className="text-sm text-muted-foreground">
+                첨부파일이 없습니다.
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex justify-end">
