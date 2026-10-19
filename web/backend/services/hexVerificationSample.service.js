@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js (PTX 준비 등록 시에도 미확정 제조사 샘플 생성)
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-10-20: 복사샘플 filled STL 복사는 $set만 한다. One Pass 등 샘플 설정은 원본 저장으로 덮지 않는다.
 // - 2026-09-03: PTX 원본은 designCompletedAt(어벗 STL 핸드오프) 이후에만 헥스 샘플 생성.
 // - 2026-09-03: 헥스 샘플에 designCompletedAt을 두어 PTX 디자인대기 가드에 가려지지 않게 함.
 // - 2026-09-03: PTX/배치 취소용 원본→활성 헥스 샘플 ObjectId 조회 헬퍼.
@@ -33,6 +34,7 @@ import {
 } from "../utils/designSoftwareHex.js";
 import {
   applyFilledStlFileToCaseInfos,
+  mongoSetFilledStlFile,
   pickFilledStlFileForClone,
   resolveFilledStlFile,
 } from "../utils/filledStlFile.js";
@@ -703,13 +705,16 @@ export async function copyFilledStlToHexVerificationSamples(sourceRequest) {
   // 원본이 camFile만 채워진 레거시 콜백이면 stlFile SSOT도 맞춘다.
   if (
     sourceRequest?.caseInfos &&
-    typeof sourceRequest.save === "function" &&
+    sourceRequest?._id &&
     !String(sourceRequest.caseInfos?.stlFile?.s3Key || "").trim()
   ) {
-    applyFilledStlFileToCaseInfos(sourceRequest.caseInfos, cloneJson(filledStl));
-    sourceRequest.markModified("caseInfos");
+    const healed = cloneJson(filledStl);
     try {
-      await sourceRequest.save();
+      await Request.updateOne(
+        { _id: sourceRequest._id },
+        { $set: mongoSetFilledStlFile(healed) },
+      );
+      applyFilledStlFileToCaseInfos(sourceRequest.caseInfos, healed);
     } catch (healErr) {
       console.warn(
         "[copyFilledStlToHexVerificationSamples] source dual-write heal failed",
@@ -740,14 +745,14 @@ export async function copyFilledStlToHexVerificationSamples(sourceRequest) {
 
   const updated = [];
   for (const sample of samples) {
-    if (!sample.caseInfos) sample.caseInfos = {};
-    // stlFile SSOT + legacy camFile mirror
-    applyFilledStlFileToCaseInfos(sample.caseInfos, cloneJson(filledStl));
-
+    // One Pass·스텝·아노다이징은 샘플 문서 값이다. 원본 caseInfos 통째 저장으로 덮지 않는다.
+    const $set = {
+      ...mongoSetFilledStlFile(cloneJson(filledStl)),
+    };
     for (const key of geometryKeys) {
       const v = sourceRequest?.caseInfos?.[key];
       if (v !== undefined) {
-        sample.caseInfos[key] = cloneJson(v);
+        $set[`caseInfos.${key}`] = cloneJson(v);
       }
     }
 
@@ -759,15 +764,18 @@ export async function copyFilledStlToHexVerificationSamples(sourceRequest) {
     ).trim();
     const sourceHex = sourceRequest?.caseInfos?.hexRotation;
     if (sourceHex && typeof sourceHex === "object") {
-      sample.caseInfos.hexRotation = {
+      $set["caseInfos.hexRotation"] = {
         ...cloneJson(sourceHex),
         ...(preservedMode ? { mode: preservedMode } : {}),
       };
     }
 
-    sample.markModified("caseInfos");
-    await sample.save();
-    updated.push(sample);
+    const saved = await Request.findOneAndUpdate(
+      { _id: sample._id },
+      { $set },
+      { new: true },
+    ).lean();
+    if (saved) updated.push(saved);
   }
 
   return updated;

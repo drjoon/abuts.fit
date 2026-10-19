@@ -66,6 +66,17 @@ describe("composite step NC ownership", () => {
         retentionGroove: "none",
       }),
     ).toBe(false);
+    expect(
+      resolveOnePassEnabled({
+        onePassEnabled: true,
+        retentionGroove: "none",
+      }),
+    ).not.toBe(
+      resolveOnePassEnabled({
+        onePassEnabled: false,
+        retentionGroove: "none",
+      }),
+    );
   });
 
   it("복사한 NC에는 원본 피치를 찍는다", () => {

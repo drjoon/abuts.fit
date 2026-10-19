@@ -109,6 +109,7 @@ import {
   compositeStepsMatch,
   normalizeCompositeFinishStepOverrideMm,
   resolveEffectiveCompositeSteps,
+  resolveOnePassEnabled,
   stampCompositeStepsOnNcFile,
 } from "../../utils/compositeStepIncrement.js";
 import {
@@ -1730,6 +1731,7 @@ export async function getAllRequests(req, res) {
       "designClaim",
       "caseInfos.manufacturerHexRotation",
       "caseInfos.anodizingEnabled",
+      "caseInfos.onePassEnabled",
       "caseInfos.retentionGroove",
       "caseInfos.compositeStepIncrementPostOverrideMm",
       "caseInfos.compositeStepIncrementGingivaOverrideMm",
@@ -1879,6 +1881,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.designSoftware",
       "caseInfos.manufacturerHexRotation",
       "caseInfos.anodizingEnabled",
+      "caseInfos.onePassEnabled",
       "caseInfos.retentionGroove",
       "caseInfos.connectionDiameter",
       "caseInfos.requestorHexRotation",
@@ -3876,10 +3879,64 @@ export const updateRequestOnePassOverride = asyncHandler(async (req, res) => {
     });
   }
 
+  const previousApplied = resolveOnePassEnabled(request.caseInfos);
+  const hadNc = Boolean(
+    request?.caseInfos?.ncFile?.s3Key ||
+      request?.caseInfos?.ncFile?.filePath ||
+      request?.caseInfos?.ncFile?.fileName,
+  );
+  const reviewApproved =
+    String(request?.caseInfos?.reviewByStage?.request?.status || "")
+      .trim()
+      .toUpperCase() === "APPROVED";
+
   request.set("caseInfos.onePassEnabled", onePassEnabled);
+
+  const nextCaseInfosForApply = {
+    ...(request.caseInfos?.toObject?.() || request.caseInfos || {}),
+    onePassEnabled,
+  };
+  const nextApplied = resolveOnePassEnabled(nextCaseInfosForApply);
+  const toolpathChanged = previousApplied !== nextApplied;
+
+  let ncCleared = false;
+  if (toolpathChanged && hadNc) {
+    request.set("caseInfos.ncFile", undefined);
+    request.set("caseInfos.espFile", undefined);
+    ncCleared = true;
+    if (reviewApproved) {
+      request.set("productionSchedule.ncPreload", {
+        status: "GENERATING",
+        updatedAt: new Date(),
+      });
+    }
+  }
+
   await request.save();
 
+  if (ncCleared && reviewApproved) {
+    const regenRequest = request;
+    void import("./common.review.esprit.js")
+      .then(({ triggerEspritForNc }) =>
+        triggerEspritForNc({ request: regenRequest, force: true }),
+      )
+      .catch((error) => {
+        console.warn("[request-one-pass] NC regenerate failed", {
+          requestId: regenRequest?.requestId || null,
+          message: error?.message || String(error),
+        });
+      });
+  }
+
   const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
+  const caseInfosPayload = {
+    ...(request.caseInfos?.toObject?.() || request.caseInfos || {}),
+    onePassEnabled,
+  };
+  if (ncCleared) {
+    delete caseInfosPayload.ncFile;
+    delete caseInfosPayload.espFile;
+  }
 
   res.status(200).json({
     success: true,
@@ -3887,6 +3944,7 @@ export const updateRequestOnePassOverride = asyncHandler(async (req, res) => {
       requestId: request.requestId,
       manufacturerStage: request.manufacturerStage,
       onePassEnabled,
+      ncCleared,
     },
   });
 
@@ -3898,16 +3956,15 @@ export const updateRequestOnePassOverride = asyncHandler(async (req, res) => {
       requestMongoId: String(request._id || "").trim() || null,
       requestorBusinessAnchorId: requestorBusinessAnchorId || null,
       onePassEnabled,
+      ncCleared,
       request: {
         _id: request._id,
         requestId: request.requestId,
         manufacturerStage: request.manufacturerStage,
         businessAnchorId: request.businessAnchorId,
         requestorBusinessAnchorId: requestorBusinessAnchorId || null,
-        caseInfos: {
-          ...(request.caseInfos || {}),
-          onePassEnabled,
-        },
+        productionSchedule: request.productionSchedule,
+        caseInfos: caseInfosPayload,
       },
     },
   );

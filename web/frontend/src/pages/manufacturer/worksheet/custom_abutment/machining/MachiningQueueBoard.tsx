@@ -1241,21 +1241,69 @@ export const MachiningQueueBoard = ({
           ? Boolean((camPreviewFiles.request as any).caseInfos.onePassEnabled)
           : null;
 
-      setCamPreviewFiles((prev) => {
-        const currentReq = prev?.request || null;
-        if (!currentReq) return prev;
-        return {
-          ...prev,
-          request: {
-            ...currentReq,
-            _id: requestMongoId,
-            caseInfos: {
-              ...(currentReq.caseInfos || {}),
-              onePassEnabled: nextValue,
-            },
-          },
+      const patchOnePassCaseInfos = (
+        caseInfos: Record<string, unknown> | undefined,
+        onePass: boolean,
+        clearNc = false,
+      ) => {
+        const nextCaseInfos = {
+          ...(caseInfos || {}),
+          onePassEnabled: onePass,
         };
-      });
+        if (clearNc) {
+          delete nextCaseInfos.ncFile;
+          delete nextCaseInfos.espFile;
+        }
+        return nextCaseInfos;
+      };
+
+      const syncCamPreviewOnePass = (onePass: boolean, clearNc = false) => {
+        setCamPreviewFiles((prev) => {
+          const currentReq = prev?.request || null;
+          if (!currentReq) return prev;
+          return {
+            ...prev,
+            request: {
+              ...currentReq,
+              _id: requestMongoId,
+              caseInfos: patchOnePassCaseInfos(
+                (currentReq.caseInfos || {}) as Record<string, unknown>,
+                onePass,
+                clearNc,
+              ) as ManufacturerRequest["caseInfos"],
+              ...(clearNc
+                ? {
+                    productionSchedule: {
+                      ...(currentReq.productionSchedule || {}),
+                      ncPreload: {
+                        status: "GENERATING",
+                        updatedAt: new Date().toISOString(),
+                      },
+                    },
+                  }
+                : {}),
+            },
+          };
+        });
+        if (clearNc) {
+          setCamPreviewNcText("");
+          setCamPreviewNcName("");
+          if (requestId) {
+            markNcRegenerationPending(requestId);
+            window.dispatchEvent(
+              new CustomEvent("nc-regeneration-started", {
+                detail: {
+                  requestId,
+                  requestMongoId,
+                  ncCleared: true,
+                },
+              }),
+            );
+          }
+        }
+      };
+
+      syncCamPreviewOnePass(nextValue);
 
       try {
         const res = await fetch(
@@ -1286,21 +1334,18 @@ export const MachiningQueueBoard = ({
               )
             : nextValue;
 
-        setCamPreviewFiles((prev) => {
-          const currentReq = prev?.request || null;
-          if (!currentReq) return prev;
-          return {
-            ...prev,
-            request: {
-              ...currentReq,
-              _id: requestMongoId,
-              caseInfos: {
-                ...(currentReq.caseInfos || {}),
-                onePassEnabled: savedValue,
-              },
-            },
-          };
-        });
+        const ncCleared =
+          (body as { data?: { ncCleared?: boolean } })?.data?.ncCleared ===
+          true;
+
+        syncCamPreviewOnePass(savedValue, ncCleared);
+        if (ncCleared) {
+          toast({
+            title: "CAM 재생성",
+            description:
+              "One Pass 변경으로 NC를 삭제하고 CAM 재생성을 시작했습니다.",
+          });
+        }
       } catch (error) {
         setCamPreviewFiles((prev) => {
           const currentReq = prev?.request || null;
@@ -1325,7 +1370,7 @@ export const MachiningQueueBoard = ({
         throw error;
       }
     },
-    [token, camPreviewFiles],
+    [token, camPreviewFiles, toast],
   );
 
   const handleSaveCompositeStepIncrementOverrideFromCamPreview = useCallback(

@@ -2187,19 +2187,95 @@ export const RequestPage = ({
           ? req.caseInfos.onePassEnabled
           : null;
 
-      setOnePassSavingMap((prev) => ({ ...prev, [requestMongoId]: true }));
-      pageState.setRequests((prev) =>
-        prev.map((item) => {
-          if (String(item?._id || "").trim() !== requestMongoId) return item;
+      const requestId = String(req.requestId || "").trim();
+
+      const patchOnePassCaseInfos = (
+        caseInfos: ManufacturerRequest["caseInfos"] | undefined,
+        onePass: boolean,
+        clearNc = false,
+      ) => {
+        const nextCaseInfos = {
+          ...(caseInfos || {}),
+          onePassEnabled: onePass,
+        };
+        if (clearNc) {
+          delete nextCaseInfos.ncFile;
+          delete nextCaseInfos.espFile;
+        }
+        return nextCaseInfos;
+      };
+
+      const syncOnePassLocal = (onePass: boolean, clearNc = false) => {
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            const nextItem: ManufacturerRequest = {
+              ...item,
+              caseInfos: patchOnePassCaseInfos(item.caseInfos, onePass, clearNc),
+            };
+            if (clearNc) {
+              nextItem.productionSchedule = {
+                ...(item.productionSchedule || {}),
+                ncPreload: {
+                  status: "GENERATING",
+                  updatedAt: new Date().toISOString(),
+                },
+              };
+            }
+            return nextItem;
+          }),
+        );
+        pageState.setPreviewFiles((prev) => {
+          const openReq = prev?.request as ManufacturerRequest | undefined;
+          if (
+            !openReq ||
+            String(openReq._id || "").trim() !== requestMongoId
+          ) {
+            return prev;
+          }
           return {
-            ...item,
-            caseInfos: {
-              ...(item.caseInfos || {}),
-              onePassEnabled: nextValue,
+            ...prev,
+            request: {
+              ...openReq,
+              caseInfos: patchOnePassCaseInfos(
+                openReq.caseInfos,
+                onePass,
+                clearNc,
+              ),
+              ...(clearNc
+                ? {
+                    productionSchedule: {
+                      ...(openReq.productionSchedule || {}),
+                      ncPreload: {
+                        status: "GENERATING",
+                        updatedAt: new Date().toISOString(),
+                      },
+                    },
+                  }
+                : {}),
             },
           };
-        }),
-      );
+        });
+        if (clearNc) {
+          pageState.setPreviewNcText("");
+          pageState.setPreviewNcName("");
+          if (requestId) {
+            markNcRegenerationPending(requestId);
+            window.dispatchEvent(
+              new CustomEvent("nc-regeneration-started", {
+                detail: {
+                  requestId,
+                  requestMongoId,
+                  ncCleared: true,
+                },
+              }),
+            );
+          }
+        }
+      };
+
+      setOnePassSavingMap((prev) => ({ ...prev, [requestMongoId]: true }));
+      syncOnePassLocal(nextValue);
 
       try {
         const res = await fetch(
@@ -2222,19 +2298,16 @@ export const RequestPage = ({
           typeof data?.data?.onePassEnabled === "boolean"
             ? Boolean(data.data.onePassEnabled)
             : nextValue;
+        const ncCleared = data?.data?.ncCleared === true;
 
-        pageState.setRequests((prev) =>
-          prev.map((item) => {
-            if (String(item?._id || "").trim() !== requestMongoId) return item;
-            return {
-              ...item,
-              caseInfos: {
-                ...(item.caseInfos || {}),
-                onePassEnabled: savedValue,
-              },
-            };
-          }),
-        );
+        syncOnePassLocal(savedValue, ncCleared);
+        if (ncCleared) {
+          toast({
+            title: "CAM 재생성",
+            description:
+              "One Pass 변경으로 NC를 삭제하고 CAM 재생성을 시작했습니다.",
+          });
+        }
       } catch (e: any) {
         pageState.setRequests((prev) =>
           prev.map((item) => {
