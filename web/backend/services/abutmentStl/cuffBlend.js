@@ -89,6 +89,8 @@ const AUTO_MAX_SLOPE = Math.tan((70 * Math.PI) / 180);
 const PROFILE_MAX_SLOPE = Math.tan((67 * Math.PI) / 180);
 /** 70° 이하 맞춤을 위한 볼록 변형은 커넥션 원점(Z=0) 상방 이 높이(mm) 아래로는 적용하지 않는다. */
 const CUFF_DEFORM_MIN_Z_MM = 0.3;
+/** 피니시라인 min_z가 이 높이(mm) 이하일 때만 70° 초과 커프 볼록 변형·급경사 seamOrigScale을 켠다(낮은 마진·불완전 가공에 가까운 케이스). */
+const CUFF_CONVEX_DEFORM_MAX_FINISH_MIN_Z_MM = 1.0;
 /** 마진 아래 원본 기울기가 이 값(58°)을 넘기 시작하면 65°까지 원본 이음 섞기 비중을 0으로 줄여 70° 초과 턱을 없앤다. */
 const SEAM_ORIG_FADE_START_SLOPE = Math.tan((48 * Math.PI) / 180);
 const SEAM_ORIG_FADE_END_SLOPE = Math.tan((60 * Math.PI) / 180);
@@ -2208,6 +2210,7 @@ export function blendCuffJunction(buffer, options = {}) {
     let { mesh, probe } = prepared;
     const flMin = finishLineMinZ(options.finishLine);
     if (!Number.isFinite(flMin)) fail("manual-review", "피니시라인이 없어 커프 보호 범위를 정할 수 없습니다.");
+    const convexCuffDeform = flMin <= CUFF_CONVEX_DEFORM_MAX_FINISH_MIN_Z_MM;
     // 피니시라인(크라운 안착)과 그 위는 절대 건드리지 않는다.
     // 단차 직경은 무시하고, 원뿔 끝에서 피니시라인 곡선 −0.05mm까지 오목한 곡선으로 잇는다(수평 평면 Z_b는 쓰지 않는다).
     const ra = taper.coneAt(zA);
@@ -2286,8 +2289,9 @@ export function blendCuffJunction(buffer, options = {}) {
     const rawCreaseR = crease && offsetMm === 0 ? thetas.map((theta) => crease.rOf(theta)) : null;
     const smoothCreaseR =
       rawCreaseR && rawCreaseR.every(Number.isFinite) ? angularLowPass(rawCreaseR, STRIP_COLUMNS) : null;
-    // 마진 아래 원본 기울기가 가파른 곳(70° 초과 턱 등)은 원본 턱으로 섞지 않고 70° 이하 볼록 변형 곡선을 마진까지 바로 잇는다.
-    const seamOrigScale = (() => {
+    // 낮은 피니시라인(불완전 가공에 가까운 케이스)에서만: 마진 아래 원본 기울기가 가파른 곳(70° 초과 턱 등)은 원본 턱으로 섞지 않고 70° 이하 볼록 변형 곡선을 마진까지 바로 잇는다.
+    const seamOrigScale = convexCuffDeform
+      ? (() => {
       if (!belowOk) return null;
       const rawKeep = measureCols.map((j, i) => {
         const bSlope = below[i]?.slope ?? 0;
@@ -2304,7 +2308,8 @@ export function blendCuffJunction(buffer, options = {}) {
       });
       const lp = angularLowPass(fillMissingCircular(rawKeep), STRIP_COLUMNS) || rawKeep;
       return circularSmooth(lp, TOP_SLOPE_SMOOTH_COLUMNS).map((w) => Math.max(0, Math.min(1, w)));
-    })();
+    })()
+      : null;
     const r1s = belowR.map((r, j) => {
       if (!smoothCreaseR || !seamOrigScale) return r;
       const w = seamOrigScale[j];
@@ -2333,6 +2338,15 @@ export function blendCuffJunction(buffer, options = {}) {
       };
     };
     const bowlOf = (rTop, rTopBase, eSlope, hb, scaleOrig) => {
+      if (!convexCuffDeform) {
+        const fn = legacyConcaveOf(rTop, eSlope, hb);
+        if (!fn) {
+          const dR = rTop - ra;
+          const m0 = Math.max(0, Math.min(coneSlope * hb, dR - CONCAVE_MARGIN * hb));
+          return { fn: concaveBridgeProfile(ra, m0, rTop, hb), endSlope: NaN };
+        }
+        return { fn, endSlope: NaN };
+      }
       const dR = rTop - ra;
       // 반경 차가 작으면 출발 기울기를 줄여 범위를 벗어나지 않게 한다.
       const m0 = Math.max(0, Math.min(coneSlope * hb, dR - CONCAVE_MARGIN * hb));

@@ -187,6 +187,25 @@ describe("blendCuffJunction", () => {
     expect(attributes.some((a) => a === CUFF_BLEND_PATCH_ATTRIBUTE)).toBe(true);
   });
 
+  it("keeps a concave blend when the finish line is above 1mm even on a steep shelf", () => {
+    const input = steepMarginShelfAbutment();
+    const low = blendCuffJunction(input, {
+      ...megagen,
+      specKey: megagen.key,
+      finishLine: ringFinishLine(2.55, 0.77),
+    });
+    const high = blendCuffJunction(input, {
+      ...megagen,
+      specKey: megagen.key,
+      finishLine: ringFinishLine(2.51, 1.2),
+    });
+    expect(low.ok).toBe(true);
+    expect(high.ok).toBe(true);
+    const lowProbe = _prepare(low.buffer).probe;
+    const highProbe = _prepare(high.buffer).probe;
+    expect(lowProbe.rayRadius(0.1, 0.65)).toBeGreaterThan(highProbe.rayRadius(0.1, 0.65));
+  });
+
   it("deforms a nearly 90° gingival cuff outward (more convex) to stay <= 70° without deforming below z=0.3mm", () => {
     const input = steepMarginShelfAbutment();
     const res = blendCuffJunction(input, {
