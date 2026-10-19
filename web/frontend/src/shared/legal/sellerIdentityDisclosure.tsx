@@ -8,6 +8,7 @@ import {
   COMPANY_BUSINESS_REGISTRATION_NUMBER,
   COMPANY_CEO_NAME,
   COMPANY_MAIL_ORDER_REPORT_NUMBER,
+  COMPANY_MEDICAL_DEVICE_SALES_REPORT_NUMBER,
   COMPANY_NAME,
   COMPANY_PHONE,
   CONTACT_EMAIL,
@@ -87,6 +88,9 @@ export function SellerIdentityDisclosure({
       </div>
       <div>
         통신판매업신고: {COMPANY_MAIL_ORDER_REPORT_NUMBER}
+      </div>
+      <div>
+        의료기기판매업신고: {COMPANY_MEDICAL_DEVICE_SALES_REPORT_NUMBER}
       </div>
       <div>
         주소: {COMPANY_ADDRESS} | 전화: {COMPANY_PHONE}

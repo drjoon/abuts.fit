@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 import { useCallback, useEffect, useState } from "react";
+import type { PackLabelBranding } from "../utils/packLabelRenderer";
 
 export const usePackingPrintSettings = ({
   token,
@@ -36,6 +37,8 @@ export const usePackingPrintSettings = ({
     ll: number;
     dpi: number;
   }>({ pw: 640, ll: 520, dpi: 203 });
+  const [packLabelBranding, setPackLabelBranding] =
+    useState<PackLabelBranding | null>(null);
 
   useEffect(() => {
     const storedProfile = localStorage.getItem(
@@ -112,6 +115,11 @@ export const usePackingPrintSettings = ({
         });
       }
 
+      const nextBranding = data?.data?.branding;
+      if (nextBranding && typeof nextBranding === "object") {
+        setPackLabelBranding(nextBranding as PackLabelBranding);
+      }
+
       const options = Array.isArray(data?.data?.paper?.options)
         ? data.data.paper.options
         : [];
@@ -157,6 +165,10 @@ export const usePackingPrintSettings = ({
   }, [printerProfile, token]);
 
   useEffect(() => {
+    void fetchPaperSettings();
+  }, [fetchPaperSettings]);
+
+  useEffect(() => {
     if (!printerModalOpen) return;
     void fetchPaperSettings();
   }, [printerModalOpen, fetchPaperSettings]);
@@ -186,6 +198,7 @@ export const usePackingPrintSettings = ({
     packLabelDpi,
     packLabelDots,
     packLabelDesignDots,
+    packLabelBranding,
     fetchPaperSettings,
     fetchPrinters,
   };

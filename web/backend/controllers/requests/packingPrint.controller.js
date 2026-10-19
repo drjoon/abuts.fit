@@ -6,6 +6,7 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
 import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
+import SystemSettings from "../../models/systemSettings.model.js";
 
 const PACK_PRINT_SERVER_BASE = String(
   process.env.PACK_PRINT_SERVER_BASE || "http://localhost:8004",
@@ -69,6 +70,16 @@ export async function getPackPrintSettings(req, res) {
       }
     : null;
 
+  let branding = null;
+  try {
+    const doc = await SystemSettings.findOne({ key: "global" })
+      .select("packLabelBranding")
+      .lean();
+    branding = doc?.packLabelBranding || null;
+  } catch (err) {
+    console.warn("[packingPrint] branding read failed", err?.message);
+  }
+
   return res.status(200).json({
     success: true,
     data: {
@@ -82,6 +93,7 @@ export async function getPackPrintSettings(req, res) {
         dots,
         designDots,
       },
+      branding,
     },
   });
 }

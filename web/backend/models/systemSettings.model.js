@@ -287,7 +287,7 @@ const systemSettingsSchema = new mongoose.Schema(
       },
       manufacturerPermitNo: { type: String, default: "제3583호" },
       sellerName: { type: String, default: "어벗츠 주식회사" },
-      sellerPermit: { type: String, default: "제00001호" },
+      sellerPermit: { type: String, default: "제 2026-5370025-00020 호" },
       sellerAddr: {
         type: String,
         default: "경남 거제시 거제중앙로29길 6, 3층",

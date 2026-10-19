@@ -11,6 +11,7 @@ import {
   renderPackLabelToCanvas,
   resolveManufacturingDate,
   canvasToPngBlob,
+  type PackLabelBranding,
   type PackLabelRenderOptions,
 } from "./packLabelRenderer";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
@@ -47,11 +48,13 @@ export const buildPackLabelRenderOptions = ({
   packLabelDpi,
   packLabelDots,
   packLabelDesignDots,
+  branding,
 }: {
   req: ManufacturerRequest;
   packLabelDpi: number;
   packLabelDots?: { pw: number; ll: number };
   packLabelDesignDots?: { pw: number; ll: number; dpi: number };
+  branding?: PackLabelBranding | null;
 }): PackLabelRenderOptions => {
   const caseInfos = req.caseInfos || {};
   const fullLotNumber = resolvePackFullLotNumber(req);
@@ -155,6 +158,8 @@ export const buildPackLabelRenderOptions = ({
     dpi: packLabelDpi,
     targetDots: packLabelDots,
     designDots: packLabelDesignDots,
+    ...(branding || {}),
+    modelName,
   };
 };
 
@@ -163,11 +168,13 @@ export const savePackingLabelsAsZip = async ({
   packLabelDpi,
   packLabelDots,
   packLabelDesignDots,
+  branding,
 }: {
   requests: ManufacturerRequest[];
   packLabelDpi: number;
   packLabelDots?: { pw: number; ll: number };
   packLabelDesignDots?: { pw: number; ll: number; dpi: number };
+  branding?: PackLabelBranding | null;
 }) => {
   const list = Array.isArray(requests) ? requests.filter(Boolean) : [];
   if (!list.length) {
@@ -188,6 +195,7 @@ export const savePackingLabelsAsZip = async ({
       packLabelDpi,
       packLabelDots,
       packLabelDesignDots,
+      branding,
     });
     const canvas = await renderPackLabelToCanvas(opts);
     const blob = await canvasToPngBlob(canvas);

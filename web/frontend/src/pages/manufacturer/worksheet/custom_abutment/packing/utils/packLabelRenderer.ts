@@ -32,6 +32,45 @@ export type PackLabelRenderOptions = {
   dpi?: number;
   targetDots?: { pw: number; ll: number };
   designDots?: { pw: number; ll: number; dpi: number };
+  /** DB SystemSettings.packLabelBranding. 있으면 VITE_PACK_* 보다 우선. */
+  productName?: string;
+  licenseNo?: string;
+  manufacturerName?: string;
+  manufacturerAddr?: string;
+  manufacturerTelFax?: string;
+  manufacturerPermitNo?: string;
+  sellerName?: string;
+  sellerPermit?: string;
+  sellerAddr?: string;
+  sellerTel?: string;
+  manualQrLabel?: string;
+  udiGtin?: string;
+  certInfo?: string;
+  homepageUrl?: string;
+};
+
+export type PackLabelBranding = Pick<
+  PackLabelRenderOptions,
+  | "productName"
+  | "licenseNo"
+  | "manufacturerName"
+  | "manufacturerAddr"
+  | "manufacturerTelFax"
+  | "manufacturerPermitNo"
+  | "sellerName"
+  | "sellerPermit"
+  | "sellerAddr"
+  | "sellerTel"
+  | "manualQrLabel"
+  | "udiGtin"
+  | "certInfo"
+  | "homepageUrl"
+>;
+
+const brandingOrEnv = (override: string | undefined, envValue: string | undefined) => {
+  const fromOpts = String(override ?? "").trim();
+  if (fromOpts) return fromOpts;
+  return String(envValue ?? "");
 };
 
 export const downloadPngFromCanvas = async (
@@ -236,41 +275,62 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   ctx.textBaseline = "top";
 
   const env = import.meta.env;
-  // 법정 기재 항목 (환경변수)
-  const PRODUCT_NAME = (
-    env.VITE_PACK_PRODUCT_NAME || "임플란트 상부구조물"
+  // 법정 기재 항목. 인쇄 SSOT는 DB packLabelBranding(opts). VITE_PACK_* 는 폴백.
+  const PRODUCT_NAME = brandingOrEnv(
+    opts.productName,
+    env.VITE_PACK_PRODUCT_NAME || "임플란트 상부구조물",
   ).replace(/['"]/g, "");
   const MODEL_NAME = (opts.modelName || env.VITE_PACK_MODEL_NAME || "").replace(
     /['"]/g,
     "",
   );
-  const LICENSE_NO = env.VITE_PACK_LICENSE_NO || "";
-  const COMPANY_NAME = (env.VITE_PACK_MANUFACTURER_NAME || "").replace(
-    /['"]/g,
-    "",
-  );
-  const COMPANY_ADDR = (env.VITE_PACK_MANUFACTURER_ADDR || "").replace(
-    /['"]/g,
-    "",
-  );
-  const COMPANY_TEL_FAX = (env.VITE_PACK_MANUFACTURER_TEL_FAX || "").replace(
-    /['"]/g,
-    "",
-  );
-  const SELLER_NAME = (env.VITE_PACK_SELLER_NAME || "").replace(/['"]/g, "");
-  const SELLER_PERMIT = (env.VITE_PACK_SELLER_PERMIT || "").replace(
-    /['"]/g,
-    "",
-  );
-  const SELLER_ADDR = (env.VITE_PACK_SELLER_ADDR || "").replace(/['"]/g, "");
-  const SELLER_TEL = (env.VITE_PACK_SELLER_TEL || "").replace(/['"]/g, "");
-  const MANUAL_QR_LABEL = env.VITE_PACK_MANUAL_QR_LABEL || "사용자매뉴얼";
+  const LICENSE_NO = brandingOrEnv(opts.licenseNo, env.VITE_PACK_LICENSE_NO);
+  const COMPANY_NAME = brandingOrEnv(
+    opts.manufacturerName,
+    env.VITE_PACK_MANUFACTURER_NAME,
+  ).replace(/['"]/g, "");
+  const COMPANY_ADDR = brandingOrEnv(
+    opts.manufacturerAddr,
+    env.VITE_PACK_MANUFACTURER_ADDR,
+  ).replace(/['"]/g, "");
+  const COMPANY_TEL_FAX = brandingOrEnv(
+    opts.manufacturerTelFax,
+    env.VITE_PACK_MANUFACTURER_TEL_FAX,
+  ).replace(/['"]/g, "");
+  const SELLER_NAME = brandingOrEnv(
+    opts.sellerName,
+    env.VITE_PACK_SELLER_NAME,
+  ).replace(/['"]/g, "");
+  const SELLER_PERMIT = brandingOrEnv(
+    opts.sellerPermit,
+    env.VITE_PACK_SELLER_PERMIT,
+  ).replace(/['"]/g, "");
+  const SELLER_ADDR = brandingOrEnv(
+    opts.sellerAddr,
+    env.VITE_PACK_SELLER_ADDR,
+  ).replace(/['"]/g, "");
+  const SELLER_TEL = brandingOrEnv(
+    opts.sellerTel,
+    env.VITE_PACK_SELLER_TEL,
+  ).replace(/['"]/g, "");
+  const MANUAL_QR_LABEL =
+    brandingOrEnv(opts.manualQrLabel, env.VITE_PACK_MANUAL_QR_LABEL) ||
+    "사용자매뉴얼";
   // UDI: (01) GTIN 모델별 고유번호
-  const UDI_GTIN = env.VITE_PACK_UDI_GTIN || "";
+  const UDI_GTIN = brandingOrEnv(opts.udiGtin, env.VITE_PACK_UDI_GTIN);
   const MANUFACTURER_PERMIT_NO =
-    env.VITE_PACK_MANUFACTURER_PERMIT_NO || LICENSE_NO;
-  const CERT_INFO = (env.VITE_PACK_CERT_INFO || "").replace(/['"]/g, "");
-  const HOMEPAGE_URL = (env.VITE_PACK_HOMEPAGE_URL || "").replace(/['"]/g, "");
+    brandingOrEnv(
+      opts.manufacturerPermitNo,
+      env.VITE_PACK_MANUFACTURER_PERMIT_NO,
+    ) || LICENSE_NO;
+  const CERT_INFO = brandingOrEnv(opts.certInfo, env.VITE_PACK_CERT_INFO).replace(
+    /['"]/g,
+    "",
+  );
+  const HOMEPAGE_URL = brandingOrEnv(
+    opts.homepageUrl,
+    env.VITE_PACK_HOMEPAGE_URL,
+  ).replace(/['"]/g, "");
 
   // ── 유틸리티 함수 ─────────────────────────────────────────────
 
@@ -436,10 +496,13 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
 
   // 하단 박스 높이를 먼저 계산해서 baseHeight를 콘텐츠에 맞게 역산
   const botLineH = 18;
-  const botPadTop = 7;
-  const botPadBot = 7;
-  const _mfgBoxH = botPadTop + 3 * botLineH + botPadBot;
-  const _sellerBoxH = botPadTop + 3 * botLineH + botPadBot;
+  const mfgLines = 3;
+  // 판매업신고가 있으면 주소 다음 줄. 80×65mm(디자인 520dot)에 맞추려 패딩을 줄인다.
+  const sellerLines = SELLER_PERMIT ? 4 : 3;
+  const botPadTop = sellerLines === 4 ? 4 : 7;
+  const botPadBot = sellerLines === 4 ? 4 : 7;
+  const _mfgBoxH = botPadTop + mfgLines * botLineH + botPadBot;
+  const _sellerBoxH = botPadTop + sellerLines * botLineH + botPadBot;
   const _bottomH = _mfgBoxH + _sellerBoxH;
 
   // 각 행 높이
@@ -645,11 +708,9 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
   curY = legalTopY + legalBodyH;
 
   // ── 6구역: 제조자/판매원 세로 적층(좌) + UDI+QR 통합박스(우) ──
-  // 상단에서 미리 계산한 botLineH/botPadTop/botPadBot 사용
-  const mfgLines = 1 + 1 + 1; // 제목 + 주소1줄 + 전화
-  const selLines = 1 + 1 + 1; // 제목 + 주소1줄 + 허가/전화 (여백 없음)
-  const mfgBoxH = botPadTop + mfgLines * botLineH + botPadBot;
-  const sellerBoxH = botPadTop + selLines * botLineH + botPadBot;
+  // 상단에서 미리 계산한 박스 높이 사용
+  const mfgBoxH = _mfgBoxH;
+  const sellerBoxH = _sellerBoxH;
   const bottomH = mfgBoxH + sellerBoxH;
   const bottomY = curY + 2;
   const leftColW = Math.round(W * 0.56);
@@ -696,10 +757,20 @@ export const renderPackLabelToCanvas = async (opts: PackLabelRenderOptions) => {
     sellerBoxY + botPadTop + botLineH,
     leftColW - 12,
   );
+  let sellerNextLine = 2;
+  if (SELLER_PERMIT) {
+    fillTextLeft(
+      "판매업신고 " + SELLER_PERMIT,
+      M + 6,
+      sellerBoxY + botPadTop + botLineH * sellerNextLine,
+      leftColW - 12,
+    );
+    sellerNextLine += 1;
+  }
   fillTextLeft(
     SELLER_TEL,
     M + 6,
-    sellerBoxY + botPadTop + botLineH * 2,
+    sellerBoxY + botPadTop + botLineH * sellerNextLine,
     leftColW - 12,
   );
 

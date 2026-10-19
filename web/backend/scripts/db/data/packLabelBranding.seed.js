@@ -15,7 +15,8 @@ export const PACK_LABEL_BRANDING_SEED = {
   manufacturerTelFax: "T 055-314-4607  F 055-901-0241",
   manufacturerPermitNo: "제3583호",
   sellerName: "어벗츠 주식회사",
-  sellerPermit: "제00001호",
+  // 의료기기 판매업 신고번호(2026-10-15). 통신판매업 신고번호와 다른 항목.
+  sellerPermit: "제 2026-5370025-00020 호",
   sellerAddr: "경남 거제시 거제중앙로29길 6, 3층",
   sellerTel: "1588-3948",
   udiGtin: "08800123600154",

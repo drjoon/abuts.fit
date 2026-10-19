@@ -5,13 +5,27 @@
 // - web/frontend/src/pages/public/ContactPage.tsx
 export const COMPANY_PHONE = "1588-3948";
 export const COMPANY_NAME = "어벗츠 주식회사";
-export const COMPANY_CEO_NAME = "배태완";
+/** 사업자등록증 각자대표 (2026-10-19 정정). 배태완, 안승갑 순. */
+export const COMPANY_CEO_NAME = "배태완, 안승갑";
+export const COMPANY_CEO_KIND = "각자대표";
 export const COMPANY_BUSINESS_REGISTRATION_NUMBER = "358-87-03514";
+export const COMPANY_CORP_REGISTRATION_NUMBER = "194911-0007687";
+export const COMPANY_OPENING_DATE_LABEL = "2025년 10월 20일";
+
+/** 사업자등록증 업태·종목 (2026-10-19 정정. 종목에 치과기공소 추가) */
+export const COMPANY_BUSINESS_TYPES = "정보통신업, 제조업, 도소매";
+export const COMPANY_BUSINESS_ITEMS =
+  "소프트웨어 개발, 치과기공소, 의료용품 및 의료기기";
 
 /** 통신판매업 신고증(2026-10-13) */
 export const COMPANY_MAIL_ORDER_REPORT_NUMBER = "제 2026-경남거제-0377 호";
 export const COMPANY_MAIL_ORDER_REPORT_AUTHORITY = "경상남도 거제시";
 export const COMPANY_MAIL_ORDER_REPORT_AUTHORITY_PHONE = "055-639-4126";
+
+/** 의료기기 판매업 신고증(2026-10-15, 경상남도 거제시장). 라벨 sellerPermit과 같은 번호. */
+export const COMPANY_MEDICAL_DEVICE_SALES_REPORT_NUMBER =
+  "제 2026-5370025-00020 호";
+export const COMPANY_MEDICAL_DEVICE_SALES_REPORT_AUTHORITY = "경상남도 거제시장";
 
 /** 통신판매 신고·표시용 */
 export const COMPANY_SERVICE_DOMAIN = "abuts.fit";

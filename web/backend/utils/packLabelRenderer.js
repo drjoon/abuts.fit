@@ -159,10 +159,13 @@ const renderPackLabelToCanvas = async (opts) => {
   const W = baseWidth - M * 2;
 
   const botLineH = 18;
-  const botPadTop = 7;
-  const botPadBot = 7;
-  const _mfgBoxH = botPadTop + 3 * botLineH + botPadBot;
-  const _sellerBoxH = botPadTop + 3 * botLineH + botPadBot;
+  const mfgLines = 3;
+  // 판매업신고가 있으면 주소 다음 줄. 80×65mm(디자인 520dot)에 맞추려 패딩을 줄인다.
+  const sellerLines = SELLER_PERMIT ? 4 : 3;
+  const botPadTop = sellerLines === 4 ? 4 : 7;
+  const botPadBot = sellerLines === 4 ? 4 : 7;
+  const _mfgBoxH = botPadTop + mfgLines * botLineH + botPadBot;
+  const _sellerBoxH = botPadTop + sellerLines * botLineH + botPadBot;
   const _bottomH = _mfgBoxH + _sellerBoxH;
 
   const row1H = 62;
@@ -486,8 +489,8 @@ const renderPackLabelToCanvas = async (opts) => {
   curY = legalTopY + legalBodyH;
 
   // ── 6구역: 제조자/판매원 세로 적층(좌) + UDI+QR 통합박스(우) ──
-  const mfgBoxH = botPadTop + 3 * botLineH + botPadBot;
-  const sellerBoxH = botPadTop + 3 * botLineH + botPadBot;
+  const mfgBoxH = _mfgBoxH;
+  const sellerBoxH = _sellerBoxH;
   const bottomH = mfgBoxH + sellerBoxH;
   const bottomY = curY + 2;
   const leftColW = Math.round(W * 0.56);
@@ -507,10 +510,36 @@ const renderPackLabelToCanvas = async (opts) => {
   const sellerBoxY = bottomY + mfgBoxH;
   drawBox(M, sellerBoxY, leftColW, sellerBoxH);
   ctx.font = FONT_6PT_BOLD;
-  ctx.fillText("판매원: " + SELLER_NAME, M + 6, sellerBoxY + botPadTop);
+  const sellerTextMaxW = leftColW - 12;
+  fillTextLeft(
+    "판매원: " + SELLER_NAME,
+    M + 6,
+    sellerBoxY + botPadTop,
+    sellerTextMaxW,
+  );
   ctx.font = FONT_6PT;
-  ctx.fillText(SELLER_ADDR, M + 6, sellerBoxY + botPadTop + botLineH);
-  ctx.fillText(SELLER_TEL, M + 6, sellerBoxY + botPadTop + botLineH * 2);
+  fillTextLeft(
+    SELLER_ADDR,
+    M + 6,
+    sellerBoxY + botPadTop + botLineH,
+    sellerTextMaxW,
+  );
+  let sellerNextLine = 2;
+  if (SELLER_PERMIT) {
+    fillTextLeft(
+      "판매업신고 " + SELLER_PERMIT,
+      M + 6,
+      sellerBoxY + botPadTop + botLineH * sellerNextLine,
+      sellerTextMaxW,
+    );
+    sellerNextLine += 1;
+  }
+  fillTextLeft(
+    SELLER_TEL,
+    M + 6,
+    sellerBoxY + botPadTop + botLineH * sellerNextLine,
+    sellerTextMaxW,
+  );
 
   // UDI + QR 통합박스 (우측 전체 높이)
   drawBox(udiColX, bottomY, udiColW, bottomH);

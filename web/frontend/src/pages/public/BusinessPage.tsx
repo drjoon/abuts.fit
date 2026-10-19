@@ -14,13 +14,20 @@ import { Building, MapPin, Phone, Mail, FileText } from "lucide-react";
 import {
   BUSINESS_EMAIL,
   COMPANY_ADDRESS,
+  COMPANY_BUSINESS_ITEMS,
   COMPANY_BUSINESS_REGISTRATION_NUMBER,
+  COMPANY_BUSINESS_TYPES,
+  COMPANY_CEO_KIND,
   COMPANY_CEO_NAME,
+  COMPANY_CORP_REGISTRATION_NUMBER,
   COMPANY_HOSTING_LOCATION,
   COMPANY_MAIL_ORDER_REPORT_AUTHORITY,
   COMPANY_MAIL_ORDER_REPORT_AUTHORITY_PHONE,
   COMPANY_MAIL_ORDER_REPORT_NUMBER,
+  COMPANY_MEDICAL_DEVICE_SALES_REPORT_AUTHORITY,
+  COMPANY_MEDICAL_DEVICE_SALES_REPORT_NUMBER,
   COMPANY_NAME,
+  COMPANY_OPENING_DATE_LABEL,
   COMPANY_PHONE,
   COMPANY_SERVICE_DOMAIN,
   CONTACT_EMAIL,
@@ -59,6 +66,7 @@ export const BusinessPage = () => {
                 <div>
                   <h4 className="font-medium text-slate-900 mb-2">대표자</h4>
                   <p>{COMPANY_CEO_NAME}</p>
+                  <p className="mt-1 text-sm text-slate-500">{COMPANY_CEO_KIND}</p>
                 </div>
                 <div>
                   <h4 className="font-medium text-slate-900 mb-2">
@@ -74,6 +82,15 @@ export const BusinessPage = () => {
                   <p className="mt-1 text-sm text-slate-500">
                     신고기관: {COMPANY_MAIL_ORDER_REPORT_AUTHORITY} (
                     {COMPANY_MAIL_ORDER_REPORT_AUTHORITY_PHONE})
+                  </p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-slate-900 mb-2">
+                    의료기기판매업신고번호
+                  </h4>
+                  <p>{COMPANY_MEDICAL_DEVICE_SALES_REPORT_NUMBER}</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    신고기관: {COMPANY_MEDICAL_DEVICE_SALES_REPORT_AUTHORITY}
                   </p>
                 </div>
                 <div>
@@ -98,13 +115,21 @@ export const BusinessPage = () => {
                   <h4 className="font-medium text-slate-900 mb-2">
                     법인등록번호
                   </h4>
-                  <p>194911-0007687</p>
+                  <p>{COMPANY_CORP_REGISTRATION_NUMBER}</p>
                 </div>
                 <div>
                   <h4 className="font-medium text-slate-900 mb-2">
                     개업연월일
                   </h4>
-                  <p>2025년 10월 20일</p>
+                  <p>{COMPANY_OPENING_DATE_LABEL}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-slate-900 mb-2">업태</h4>
+                  <p>{COMPANY_BUSINESS_TYPES}</p>
+                </div>
+                <div>
+                  <h4 className="font-medium text-slate-900 mb-2">종목</h4>
+                  <p>{COMPANY_BUSINESS_ITEMS}</p>
                 </div>
               </div>
             </CardContent>
@@ -169,10 +194,7 @@ export const BusinessPage = () => {
                 <h4 className="font-medium text-slate-900 mb-2">
                   사업자 정보 공시
                 </h4>
-                <p>
-                  본 사업자 정보는 관계 법령에 따라 공시되며, 통신판매업 신고 및
-                  관련 행정 절차를 완료했습니다.
-                </p>
+                <p>본 사업자 정보는 관계 법령에 따라 공시됩니다.</p>
               </div>
 
               <div>

@@ -228,6 +228,7 @@ export const PackingPageContent = ({
     packLabelDpi,
     packLabelDots,
     packLabelDesignDots,
+    packLabelBranding,
     fetchPrinters,
   } = usePackingPrintSettings({ token });
   const { uploadFiles } = useS3TempUpload({ token });
@@ -1155,6 +1156,8 @@ export const PackingPageContent = ({
 
       const canvas = await renderPackLabelToCanvas({
         ...payload,
+        ...(packLabelBranding || {}),
+        modelName: payload.modelName,
         dpi: packLabelDpi,
         targetDots: packLabelDots,
         designDots: packLabelDesignDots,
@@ -1193,6 +1196,7 @@ export const PackingPageContent = ({
       }
     },
     [
+      packLabelBranding,
       packLabelDesignDots,
       packLabelDots,
       packLabelDpi,
@@ -1334,6 +1338,7 @@ export const PackingPageContent = ({
           packLabelDpi,
           packLabelDots,
           packLabelDesignDots,
+          branding: packLabelBranding,
         });
         toast({
           title: "패킹 라벨 저장 완료",
@@ -1399,6 +1404,7 @@ export const PackingPageContent = ({
       setIsPrintingPackingLabels(false);
     }
   }, [
+    packLabelBranding,
     packLabelDesignDots,
     packLabelDots,
     packLabelDpi,
