@@ -24,23 +24,11 @@ function implantProfileOf(ci) {
 
 export async function resolveAbutmentStlInputs(caseInfos) {
   const ci = caseInfos || {};
-  let connectionPrcFileName = String(ci.connectionPrcFileName || "").trim();
-  if (!connectionPrcFileName) {
-    try {
-      connectionPrcFileName =
-        (await resolvePrcFileNames(ci))?.connectionPrcFileName || "";
-    } catch {
-      connectionPrcFileName = "";
-    }
-  }
-  let targetDiameter = null;
-  try {
-    targetDiameter = await resolveConnectionTargetDiameter(ci, {
-      connectionPrcFileName,
-    });
-  } catch {
-    targetDiameter = null;
-  }
+  const [targetFromDb, connection] = await Promise.all([
+    resolveTargetDiameter(ci),
+    resolveHexConnection(ci),
+  ]);
+  let targetDiameter = targetFromDb;
   const profile = implantProfileOf(ci);
   if (!(Number(targetDiameter) > 0)) {
     const key = [
@@ -54,8 +42,27 @@ export async function resolveAbutmentStlInputs(caseInfos) {
   return {
     targetDiameter: Number(targetDiameter) > 0 ? Number(targetDiameter) : null,
     implantProfile: profile,
-    connection: await resolveHexConnection(ci),
+    connection,
   };
+}
+
+async function resolveTargetDiameter(ci) {
+  let connectionPrcFileName = String(ci.connectionPrcFileName || "").trim();
+  if (!connectionPrcFileName) {
+    try {
+      connectionPrcFileName =
+        (await resolvePrcFileNames(ci))?.connectionPrcFileName || "";
+    } catch {
+      connectionPrcFileName = "";
+    }
+  }
+  try {
+    return await resolveConnectionTargetDiameter(ci, {
+      connectionPrcFileName,
+    });
+  } catch {
+    return null;
+  }
 }
 
 /** 헥스 대변·L2. 11° 테이퍼를 생략한 긴 헥스에 커넥션을 붙일 때 쓴다. */

@@ -117,6 +117,13 @@ async function recordJsFailure(requestId, reason, detail) {
  * 예외는 던진다(호출부가 카드에 JS 실패를 남긴다).
  */
 export async function processRequestWithJsPipeline({ requestId, fileName }) {
+  const stages = {};
+  let mark = Date.now();
+  const lap = (name) => {
+    const now = Date.now();
+    stages[name] = now - mark;
+    mark = now;
+  };
   const request = await Request.findOne({ requestId }).select({ caseInfos: 1, manufacturerStage: 1 }).lean();
   if (!request) throw new JsPipelineProblem("request_not_found", "의뢰를 찾지 못했습니다.");
   if (String(request.manufacturerStage || "").trim() === "취소") return { skipped: "cancelled" };
@@ -130,6 +137,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
     getObjectBufferFromS3(originalS3Key),
     resolveAbutmentStlInputs(ci),
   ]);
+  lap("load");
   const storedFinishLine = isUserCapturedFinishLine(ci.finishLine) ? ci.finishLine : null;
   // 수동 피니시라인은 검사 때 만든 결과와 다르다. 그 경우만 파이프라인을 다시 돌린다.
   let fromPrep = false;
@@ -151,6 +159,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
     js.tightCorner = { ...js.tightCorner, needsCorrectionReview: false, correctionSolid: null };
   }
   assertJsResultUsable(js);
+  lap("pipeline");
 
   const originalName = sanitizeStlName(fileName || ci.file?.filePath || ci.file?.originalName || "input.stl");
   const outName = filledNameOf(originalName);
@@ -175,11 +184,13 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
     }
     if (blended?.ok && blended.buffer?.length) output = blended.buffer;
   }
+  lap("cuff");
   const uploaded = await uploadFileToS3(
     output,
     s3Key,
     cuffBlendResult?.record?.status === "applied" ? "application/sla" : "application/octet-stream",
   );
+  lap("upload");
 
   const { registerProcessedFile } = await import("../../controllers/bg/bg.controller.js");
 
@@ -217,8 +228,9 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
       ...(js.hexRotation ? { hexRotation: js.hexRotation } : {}),
     },
   });
+  lap("register");
   await Request.updateOne({ requestId }, { $unset: { "productionSchedule.stlJsFallback": "" } }).catch(() => null);
-  return { ok: true, outName, perf: js.perf, fromPrep };
+  return { ok: true, outName, perf: js.perf, fromPrep, stages, outBytes: output.length };
 }
 
 /**
@@ -250,8 +262,9 @@ export async function runJsPrimaryThenFallback({ requestId, fileName }) {
     });
     const prep = result.fromPrep ? " prep=hit" : result.skipped ? "" : " prep=miss";
     const perf = !result.fromPrep && result.perf ? ` perf=${JSON.stringify(result.perf)}` : "";
+    const stages = result.stages ? ` stagesMs=${JSON.stringify(result.stages)} outBytes=${result.outBytes}` : "";
     console.log(
-      `[abutment-stl-js] requestId=${requestId} ${result.skipped ? `skipped=${result.skipped}` : `ok ${Date.now() - started}ms${prep}${perf}`}`,
+      `[abutment-stl-js] requestId=${requestId} ${result.skipped ? `skipped=${result.skipped}` : `ok ${Date.now() - started}ms${prep}${stages}${perf}`}`,
     );
   } catch (error) {
     const reason = error?.reason || "js_error";

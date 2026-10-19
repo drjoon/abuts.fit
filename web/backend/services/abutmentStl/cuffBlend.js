@@ -27,7 +27,8 @@ const FINISH_MIN_CLEARANCE_MM = 0.003;
 const WELD_EPS = 1e-5;
 const MEASURE_BINS = 72;
 const PROFILE_BINS = 720;
-const STRIP_COLUMNS = 720;
+const STRIP_COLUMNS = 240;
+const columnsForDeg = (deg) => Math.max(1, Math.round((STRIP_COLUMNS * deg) / 360));
 const ROW_PITCH_MM = 0.025;
 /** 이음 위 끝에서 이만큼 아래까지는 새 곡선을 원본 곡면에 서서히 섞는다(위 끝 접선·반경이 원본과 같아져 선이 둘로 보이지 않는다). */
 const SEAM_BLEND_DEPTH_MM = 0.3;
@@ -559,15 +560,15 @@ const CORNER_END_SLOPE = Math.tan((65 * Math.PI) / 180);
 const CORNER_MIN_END_SLOPE = Math.tan((35 * Math.PI) / 180);
 /** 모서리(퍼지기 시작) 선호 위치. 낮을수록 원본처럼 일찍 퍼진다. */
 const CORNER_PREF_T = 0.3;
-/** 열 평균 반폭(열 수, 720열 기준 약 ±12°). */
-const SMOOTH_HALF_COLUMNS = 24;
+/** 열 평균 반폭(약 ±12°). */
+const SMOOTH_HALF_COLUMNS = columnsForDeg(12);
 /** 긴 띠(mm) 기준과 그때의 시작 기울기(약 8°). */
 const SMOOTH_MAX_SHIFT_MM = 0.04;
 /** 위 끝 접선을 잴 때 쓰는 위 끝 아래 원본 구간(mm)과, 모서리 바로 아래 건너뛸 틈(mm). */
 const TOP_BELOW_WINDOW_MM = 0.1;
 const TOP_BELOW_GAP_MM = 0.005;
-/** 위 끝 기울기 열 평균 반폭(열). */
-const TOP_SLOPE_SMOOTH_COLUMNS = 24;
+/** 위 끝 기울기 열 평균 반폭(약 ±12°). */
+const TOP_SLOPE_SMOOTH_COLUMNS = columnsForDeg(12);
 /** 위 끝 반경을 저주파(조화 K차 이하)만 남겨 매끈하게 한다. */
 const TOP_RADIUS_HARMONICS = 6;
 /** 끝 기울기를 2차 호(2d − m0)보다 이만큼 더 세워 늦게 벌어지게(더 오목하게) 한다. */
@@ -575,8 +576,8 @@ const END_SLOPE_BOOST = 1.5;
 /** 둘째 제어점 간격 / 첫째 간격(작을수록 출발 후 더 빨리 수직에 가까워진다). */
 const BEZIER_DIP = 0.05;
 const LONG_BAND_MM = 2;
-/** 띠 면 평균: 반폭(열)과 위쪽 보존 지수(t^p). */
-const BAND_SMOOTH_HALF_COLUMNS = 60;
+/** 띠 면 평균: 반폭(약 ±30°)과 위쪽 보존 지수(t^p). */
+const BAND_SMOOTH_HALF_COLUMNS = columnsForDeg(30);
 const BAND_SMOOTH_TOP_POWER = 3;
 const BAND_SMOOTH_FADE_MM = 0.4;
 const LONG_BAND_START_SLOPE = Math.tan((8 * Math.PI) / 180);
