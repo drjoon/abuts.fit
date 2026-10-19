@@ -2286,6 +2286,9 @@ export const PreviewModal = ({
       void onDownloadNcFile(activeReq);
       return;
     }
+    const localFile =
+      isCamStage || isImageStage ? filledViewer || leftViewer : leftViewer;
+    if (downloadLoadedPreviewFile(localFile)) return;
     if (isCamStage || isImageStage) {
       void onDownloadCamStl(activeReq);
       return;
@@ -2314,10 +2317,7 @@ export const PreviewModal = ({
       void onDownloadNcFile(activeReq);
       return;
     }
-    if (!hasRightFile) {
-      if (downloadLoadedPreviewFile(rightViewer)) return;
-      return;
-    }
+    if (downloadLoadedPreviewFile(rightViewer)) return;
     void onDownloadCamStl(activeReq);
   };
 

@@ -490,9 +490,27 @@ export const useRequestFileHandlers = ({
     [setRequests],
   );
 
+  const openSignedDownloadUrl = (url: string) => {
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
   const downloadByEndpoint = useCallback(
     async (endpoint: string, errorMessage: string) => {
-      if (!token) return;
+      if (!token) {
+        toast({
+          title: "다운로드 실패",
+          description: "로그인이 필요합니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      let signedUrl = "";
       try {
         const res = await fetch(endpoint, {
           headers: {
@@ -503,19 +521,24 @@ export const useRequestFileHandlers = ({
         if (!res.ok) {
           throw new Error(String(data?.message || errorMessage));
         }
-        const url = String(data?.data?.url || "").trim();
-        if (!url) {
+        signedUrl = String(data?.data?.url || "").trim();
+        if (!signedUrl) {
           throw new Error(errorMessage);
         }
         const rawName = String(data?.data?.fileName || "").trim();
-        const fileRes = await fetch(url);
-        if (!fileRes.ok) {
-          throw new Error(errorMessage);
-        }
-        const blob = await fileRes.blob();
         const baseName = (rawName || "download").split("/").pop() || "download";
         const fileName = baseName.includes(".") ? baseName : `${baseName}.stl`;
-        downloadBlobFile(blob, fileName);
+        try {
+          const fileRes = await fetch(signedUrl);
+          if (!fileRes.ok) {
+            throw new Error(errorMessage);
+          }
+          const blob = await fileRes.blob();
+          downloadBlobFile(blob, fileName);
+        } catch {
+          // S3 CORS 등으로 blob fetch가 막히면 서명 URL 직접 열기(attachment disposition).
+          openSignedDownloadUrl(signedUrl);
+        }
       } catch (err: any) {
         toast({
           title: "다운로드 실패",
