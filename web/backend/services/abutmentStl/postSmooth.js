@@ -20,6 +20,8 @@ const FEATURE_DEG = 30;
 /** 국소 2차 곡면 가중치 폭. 기공소 메시 한 칸(약 0.18mm)보다 넓어야 계단이 평균된다. */
 const FIT_SIGMA_MM = 0.2;
 const FIT_RADIUS_MM = FIT_SIGMA_MM * 2.5;
+/** 포스트 꼭짓점이 그 각도의 마진 모서리 높이보다 이만큼 넘게 낮으면 포스트가 아니다. */
+const BELOW_MARGIN_MM = 0.1;
 /** 마진 모서리에서 이 높이까지 원본 → 다듬은 면으로 넘어간다. */
 const MARGIN_RAMP_MM = 0.25;
 /** 디자인 모서리에서 이 거리까지 원본 → 다듬은 면으로 넘어간다. */
@@ -390,6 +392,15 @@ function selectPostRegion(mesh, crease, fn) {
   }
   if (!stack.length) skip("마진 모서리 위 포스트 면을 찾지 못했습니다.");
   const cosFeature = Math.cos((FEATURE_DEG * Math.PI) / 180);
+  // 스크류홀 입구가 완만하게 이어지면 채널 벽을 타고 커넥션까지 번진다. 마진 모서리 아래로 내려가는 면은 영역에 넣지 않는다.
+  const belowMargin = (g) => {
+    for (let k = 0; k < 3; k += 1) {
+      const v = faces[g * 3 + k];
+      if (creaseSet.has(v)) continue;
+      if (verts[v * 3 + 2] < crease.zOf(Math.atan2(verts[v * 3 + 1], verts[v * 3])) - BELOW_MARGIN_MM) return true;
+    }
+    return false;
+  };
   while (stack.length) {
     const f = stack.pop();
     for (let k = 0; k < 3; k += 1) {
@@ -401,6 +412,7 @@ function selectPostRegion(mesh, crease, fn) {
       if (list.length !== 2) continue;
       const g = list[0] === f ? list[1] : list[0];
       if (inRegion[g]) continue;
+      if (belowMargin(g)) continue;
       const dot = fn[f * 3] * fn[g * 3] + fn[f * 3 + 1] * fn[g * 3 + 1] + fn[f * 3 + 2] * fn[g * 3 + 2];
       if (dot < cosFeature) continue;
       inRegion[g] = 1;
@@ -413,8 +425,12 @@ function selectPostRegion(mesh, crease, fn) {
       const v = faces[f * 3 + k];
       if (creaseSet.has(v)) continue;
       const theta = Math.atan2(verts[v * 3 + 1], verts[v * 3]);
-      if (verts[v * 3 + 2] < crease.zOf(theta) - 0.02) {
-        skip("마진 모서리가 끊겨 포스트 면이 커프 아래로 이어집니다.");
+      const below = crease.zOf(theta) - verts[v * 3 + 2];
+      if (below > BELOW_MARGIN_MM) {
+        skip("마진 모서리가 끊겨 포스트 면이 커프 아래로 이어집니다.", {
+          belowUm: Math.round(below * 1e3),
+          at: [verts[v * 3], verts[v * 3 + 1], verts[v * 3 + 2]].map((x) => Math.round(x * 1e3) / 1e3),
+        });
       }
     }
   }
