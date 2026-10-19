@@ -95,6 +95,20 @@ export async function sendLoggedOutboundMail({
   }
 }
 
+/** 발송 대기 중인 예약 발신 메일 조회 조건 */
+export function pendingScheduledOutboundMailQuery() {
+  return {
+    direction: "outbound",
+    folder: "sent",
+    status: "pending",
+    scheduledSendAt: { $ne: null },
+  };
+}
+
+export async function countPendingScheduledOutboundMails() {
+  return Mail.countDocuments(pendingScheduledOutboundMailQuery());
+}
+
 /** 예약 시각이 지난 발신 대기 메일을 전송한다. */
 export async function processDueScheduledOutboundMails({ limit = 20 } = {}) {
   const now = new Date();

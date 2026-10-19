@@ -42,7 +42,7 @@ type UploadingAttachment = {
 };
 
 type Props = {
-  onSent: () => void;
+  onSent: (opts?: { scheduled?: boolean }) => void;
   draft?: MailComposeDraft | null;
 };
 
@@ -209,7 +209,7 @@ export const AdminMailComposePanel = ({ onSent, draft }: Props) => {
       setAttachments([]);
       setScheduleEnabled(false);
       setScheduledLocal("");
-      onSent();
+      onSent({ scheduled: Boolean(scheduledSendAt) });
     } catch (err: any) {
       toast({
         title: "메일 발송 실패",

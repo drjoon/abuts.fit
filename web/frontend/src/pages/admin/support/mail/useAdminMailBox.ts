@@ -7,6 +7,7 @@ import {
   createDownloadUrl,
   fetchMail,
   fetchMails,
+  fetchScheduledMailCount,
   markAsRead,
   markAsUnread,
   moveToSpam,
@@ -17,7 +18,13 @@ import {
 } from "@/features/admin/mail/mailApi";
 import { useToast } from "@/shared/hooks/use-toast";
 
-export type MailTab = "inbox" | "sent" | "trash" | "spam" | "compose";
+export type MailTab =
+  | "inbox"
+  | "sent"
+  | "trash"
+  | "spam"
+  | "scheduled"
+  | "compose";
 
 export const useAdminMailBox = (options?: { initialUnreadOnly?: boolean }) => {
   const { toast } = useToast();
@@ -38,15 +45,19 @@ export const useAdminMailBox = (options?: { initialUnreadOnly?: boolean }) => {
 
   const [cursor, setCursor] = useState<{
     cursorCreatedAt?: string;
+    cursorScheduledSendAt?: string;
     cursorId?: string;
   } | null>(null);
   const cursorRef = useRef<{
     cursorCreatedAt?: string;
+    cursorScheduledSendAt?: string;
     cursorId?: string;
   } | null>(null);
 
   const [mails, setMails] = useState<MailItem[]>([]);
   const [listLoading, setListLoading] = useState(false);
+  const [scheduledCount, setScheduledCount] = useState(0);
+  const [scheduledOnly, setScheduledOnly] = useState(false);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<MailItem | null>(null);
@@ -60,35 +71,76 @@ export const useAdminMailBox = (options?: { initialUnreadOnly?: boolean }) => {
     if (tab === "inbox") {
       setDirection("inbound");
       setFolder("inbox");
+      setScheduledOnly(false);
     }
     if (tab === "sent") {
       setDirection("outbound");
       setFolder("sent");
+      setScheduledOnly(false);
     }
     if (tab === "trash") {
       setDirection(null);
       setFolder("trash");
+      setScheduledOnly(false);
     }
     if (tab === "spam") {
       setDirection(null);
       setFolder("spam");
+      setScheduledOnly(false);
+    }
+    if (tab === "scheduled") {
+      setDirection("outbound");
+      setFolder("sent");
+      setScheduledOnly(true);
     }
   }, [tab]);
+
+  const refreshScheduledCount = useCallback(async () => {
+    try {
+      const count = await fetchScheduledMailCount();
+      setScheduledCount(count);
+    } catch {
+      // 목록 조회 실패 토스트와 중복하지 않음
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshScheduledCount();
+  }, [refreshScheduledCount]);
 
   const loadList = useCallback(
     async (reset = false) => {
       try {
         setListLoading(true);
-        const params = {
-          direction: direction || undefined,
-          folder: folder || undefined,
-          q: queryRef.current || undefined,
-          ...(reset ? {} : cursorRef.current || {}),
-        };
+        const cursor = reset ? null : cursorRef.current;
+        const params = scheduledOnly
+          ? {
+              scheduled: true,
+              q: queryRef.current || undefined,
+              ...(cursor?.cursorScheduledSendAt
+                ? {
+                    cursorScheduledSendAt: cursor.cursorScheduledSendAt,
+                    cursorId: cursor.cursorId,
+                  }
+                : {}),
+            }
+          : {
+              direction: direction || undefined,
+              folder: folder || undefined,
+              q: queryRef.current || undefined,
+              ...(cursor?.cursorCreatedAt
+                ? {
+                    cursorCreatedAt: cursor.cursorCreatedAt,
+                    cursorId: cursor.cursorId,
+                  }
+                : {}),
+            };
         const res = await fetchMails(params);
-        let filtered = folder
-          ? res.data.filter((m) => m.folder === folder)
-          : res.data;
+        let filtered = scheduledOnly
+          ? res.data
+          : folder
+            ? res.data.filter((m) => m.folder === folder)
+            : res.data;
         if (unreadOnly && folder === "inbox") {
           filtered = filtered.filter((m) => !m.isRead);
         }
@@ -103,9 +155,10 @@ export const useAdminMailBox = (options?: { initialUnreadOnly?: boolean }) => {
         });
       } finally {
         setListLoading(false);
+        void refreshScheduledCount();
       }
     },
-    [direction, folder, unreadOnly, toast]
+    [direction, folder, scheduledOnly, unreadOnly, toast, refreshScheduledCount]
   );
 
   useEffect(() => {
@@ -114,7 +167,8 @@ export const useAdminMailBox = (options?: { initialUnreadOnly?: boolean }) => {
     cursorRef.current = null;
     setCursor(null);
     loadList(true);
-  }, [folder, direction, unreadOnly, loadList]);
+    void refreshScheduledCount();
+  }, [folder, direction, scheduledOnly, unreadOnly, loadList, refreshScheduledCount]);
 
   const loadDetail = useCallback(
     async (id: string) => {
@@ -321,5 +375,7 @@ export const useAdminMailBox = (options?: { initialUnreadOnly?: boolean }) => {
     handleRestoreToInbox,
     handleTrash,
     handleRestoreToSent,
+    scheduledCount,
+    refreshScheduledCount,
   };
 };

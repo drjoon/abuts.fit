@@ -160,6 +160,7 @@ import {
 } from "../../controllers/admin/adminFreeCreditGrant.controller.js";
 import {
   adminListMails,
+  adminCountScheduledMails,
   adminGetMail,
   adminSendMail,
   adminGetMailUploadUrl,
@@ -695,6 +696,7 @@ router.get("/security-logs", authorize(["admin"]), getSecurityLogs);
 
 // 메일 관리
 router.get("/mails", adminListMails);
+router.get("/mails/scheduled/count", adminCountScheduledMails);
 router.get("/mails/:id", adminGetMail);
 router.post("/mails/send", adminSendMail);
 router.post("/mails/upload-url", adminGetMailUploadUrl);

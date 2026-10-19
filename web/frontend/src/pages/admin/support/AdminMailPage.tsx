@@ -11,7 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Inbox, Mail, Send, AlertOctagon, RefreshCw } from "lucide-react";
+import { Inbox, Mail, Send, AlertOctagon, RefreshCw, Clock } from "lucide-react";
 import { AdminMailDetailPanel } from "./mail/AdminMailDetailPanel";
 import { AdminMailListPanel } from "./mail/AdminMailListPanel";
 import { AdminMailComposePanel } from "./mail/AdminMailComposePanel";
@@ -76,6 +76,8 @@ export const AdminMailPage = ({
     folder,
     unreadOnly,
     setUnreadOnly,
+    scheduledCount,
+    refreshScheduledCount,
   } = useAdminMailBox({ initialUnreadOnly });
 
   useEffect(() => {
@@ -252,6 +254,15 @@ export const AdminMailPage = ({
             <AlertOctagon className="h-4 w-4" />
             스팸함
           </TabsTrigger>
+          <TabsTrigger value="scheduled" className="relative gap-2 pr-6">
+            <Clock className="h-4 w-4" />
+            예약발송
+            {scheduledCount > 0 ? (
+              <span className="absolute right-1 top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold text-white">
+                {scheduledCount > 99 ? "99+" : scheduledCount}
+              </span>
+            ) : null}
+          </TabsTrigger>
           {tab === "inbox" && (
             <Button
               variant={unreadOnly ? "default" : "outline"}
@@ -300,7 +311,10 @@ export const AdminMailPage = ({
                 variant="outline"
                 size="sm"
                 className="gap-2 h-8 px-3 text-sm"
-                onClick={onSearch}
+                onClick={() => {
+                  onSearch();
+                  void refreshScheduledCount();
+                }}
                 disabled={listLoading}
               >
                 <RefreshCw
@@ -336,13 +350,18 @@ export const AdminMailPage = ({
           {renderMailPanels("inbox")}
         </TabsContent>
 
+        <TabsContent value="scheduled" className={mailTabContentClass}>
+          {renderMailPanels("sent")}
+        </TabsContent>
+
         <TabsContent value="compose" className={mailComposeTabContentClass}>
           <AdminMailComposePanel
             key={composeDraftKey}
             draft={composeDraft}
-            onSent={() => {
+            onSent={({ scheduled }) => {
               setComposeDraft(null);
-              setTab("sent");
+              void refreshScheduledCount();
+              setTab(scheduled ? "scheduled" : "sent");
             }}
           />
         </TabsContent>

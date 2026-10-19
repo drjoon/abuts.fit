@@ -14,6 +14,10 @@ import {
 } from "../../utils/s3.utils.js";
 import { emitMailUnreadBadge } from "../../services/adminCommBadge.service.js";
 import { recordMailSenderAsNotSpam } from "../../services/mailSenderNotSpam.service.js";
+import {
+  countPendingScheduledOutboundMails,
+  pendingScheduledOutboundMailQuery,
+} from "../../services/outboundMailRecord.service.js";
 
 const PAGE_SIZE = 20;
 
@@ -27,24 +31,55 @@ function isInboxUnreadMail(mail) {
   );
 }
 
+export async function adminCountScheduledMails(req, res) {
+  try {
+    const count = await countPendingScheduledOutboundMails();
+    return res.status(200).json({ success: true, data: { count } });
+  } catch (error) {
+    console.error("[adminCountScheduledMails] failed", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "예약 발송 건수 조회 실패" });
+  }
+}
+
 export async function adminListMails(req, res) {
   try {
     const {
       direction,
       folder,
+      scheduled,
       q,
       from,
       to,
       cursorCreatedAt,
+      cursorScheduledSendAt,
       cursorId,
       limit,
       startDate,
       endDate,
     } = req.query;
 
+    const scheduledOnly = String(scheduled || "") === "1";
     const query = {};
-    if (folder) query.folder = folder;
-    if (direction) query.direction = direction;
+
+    if (scheduledOnly) {
+      Object.assign(query, pendingScheduledOutboundMailQuery());
+    } else {
+      if (folder) query.folder = folder;
+      if (direction) query.direction = direction;
+      if (folder === "sent") {
+        query.$and = [
+          ...(query.$and || []),
+          {
+            $or: [
+              { scheduledSendAt: null },
+              { status: { $ne: "pending" } },
+            ],
+          },
+        ];
+      }
+    }
     if (from) query.from = from;
     if (to) query.to = to;
     if (q) query.$text = { $search: q };
@@ -54,7 +89,17 @@ export async function adminListMails(req, res) {
       if (endDate) query.createdAt.$lte = new Date(endDate);
     }
 
-    if (cursorCreatedAt && cursorId) {
+    if (scheduledOnly) {
+      if (cursorScheduledSendAt && cursorId) {
+        query.$or = [
+          { scheduledSendAt: { $gt: new Date(cursorScheduledSendAt) } },
+          {
+            scheduledSendAt: new Date(cursorScheduledSendAt),
+            _id: { $gt: cursorId },
+          },
+        ];
+      }
+    } else if (cursorCreatedAt && cursorId) {
       query.$or = [
         { createdAt: { $lt: new Date(cursorCreatedAt) } },
         {
@@ -66,19 +111,28 @@ export async function adminListMails(req, res) {
 
     const size = Math.min(Number(limit) || PAGE_SIZE, 100);
     console.log("[adminListMails] query:", JSON.stringify(query));
+    const sort = scheduledOnly
+      ? { scheduledSendAt: 1, _id: 1 }
+      : { createdAt: -1, _id: -1 };
     const items = await Mail.find(query)
-      .sort({ createdAt: -1, _id: -1 })
+      .sort(sort)
       .limit(size + 1)
       .lean();
     console.log("[adminListMails] found:", items.length, "items");
 
     const hasMore = items.length > size;
     const data = hasMore ? items.slice(0, size) : items;
+    const last = data[data.length - 1];
     const nextCursor = hasMore
-      ? {
-          cursorCreatedAt: data[data.length - 1].createdAt,
-          cursorId: data[data.length - 1]._id,
-        }
+      ? scheduledOnly
+        ? {
+            cursorScheduledSendAt: last.scheduledSendAt,
+            cursorId: last._id,
+          }
+        : {
+            cursorCreatedAt: last.createdAt,
+            cursorId: last._id,
+          }
       : null;
 
     return res.status(200).json({ success: true, data, nextCursor });
