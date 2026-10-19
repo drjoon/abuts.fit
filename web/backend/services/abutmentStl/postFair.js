@@ -5,33 +5,48 @@
 // - web/backend/tests/unit/postFair.test.js
 //
 // 피니시라인 위 포스트 축면을 커프와 같은 밀도로 다시 만든다.
-// 줄무늬는 성긴 삼각형의 접힘각이라, 꼭짓점만 눌러서는 화면의 줄이 사라지지 않는다.
+// 줄무늬는 성긴 삼각형 자체다. 평활한 반경을 원본 반경 구간 안으로만 눌러 끼우면
+// 꼭짓점이 원래 면 위에 남아 큰 삼각형의 평면이 그대로 보인다.
+// 그래서 아래·위 경계 사이 높이를 0~1로 나눈 좌표에서 반경을 강하게 평활하고,
+// 평활 곡면이 원본보다 밖으로 나간 양의 매끈한 상한만큼 전체를 안쪽으로 내린다(내접).
+// 봉우리는 깎이고 골은 원본보다 커지지 않으며, 홈·턱 같은 큰 형상은 원본을 지킨다.
 // 스크류홀·교합면·커프는 그대로 두고, 그 사이 바깥 축면만 바꾼다.
-// 새 곡면 반경은 원래 면보다 바깥 2µm, 안쪽 50µm를 넘지 않는다. 크라운보다 커지지 않게.
 import { parseStl, writeBinaryStl, HOLE_FILL_PATCH_ATTRIBUTE } from "../../utils/screwHoleFill.js";
 import { CUFF_BLEND_PATCH_ATTRIBUTE } from "./cuffBlend.js";
 
-export const POST_FAIR_VERSION = "post-fair-2";
+export const POST_FAIR_VERSION = "post-fair-3";
 /** 크라운 쪽. 반경이 이보다 커지면 조기 접촉한다. */
 export const POST_FAIR_MAX_OUT_MM = 0.002;
-/** 안쪽. 성긴 면의 모서리를 둥글게 누르는 한도. */
-export const POST_FAIR_MAX_IN_MM = 0.05;
+/** 안쪽 안전 상한. 내접량이 이보다 크면 그 자리만 원본을 따라 매끈함이 남지 않는다. */
+export const POST_FAIR_MAX_IN_MM = 0.2;
 /** 다시 깐 축면 삼각형. */
 export const POST_FAIR_PATCH_ATTRIBUTE = 0x5053;
 
 const TWO_PI = Math.PI * 2;
 const WELD_EPS = 1e-5;
+/** 커프와 같은 둘레 칸 수. 더 잘게 나누면 float32 좌표 오차가 법선을 거칠게 한다. */
 const COLUMNS = 720;
 const ROW_PITCH_MM = 0.025;
 const MAX_ROWS = 240;
 const SCREW_R_MM = 1.7;
-const FIELD_BINS = 360;
-const FIELD_DZ_MM = 0.04;
-/** 둘레 4°. 축면의 1~2° 면 접힘을 지우고, 타원 단면은 남긴다. */
-const SMOOTH_SIGMA_COL = 4;
-/** 0.22mm. 가로 줄(한 칸 0.1~0.2mm)을 지우고, 긴 테이퍼는 그대로다. */
-const SMOOTH_SIGMA_ROW = 0.22 / FIELD_DZ_MM;
-const RIM_BLEND_MM = 0.08;
+const FIELD_BINS = 720;
+/** 경계 사이 높이를 나눈 칸 수. z가 아니라 비율이라 경계가 기울어도 섞이지 않는다. */
+const FIELD_T_ROWS = 240;
+/** 둘레 12°. 성긴 면과 단면의 잔물결을 지우고, 타원 같은 큰 형상은 남긴다. */
+const SMOOTH_SIGMA_COL_DEG = 12;
+/** 0.5mm. 높게 긴 삼각형의 가로 접힘을 지우고, 곧은 테이퍼는 그대로다. */
+const SMOOTH_SIGMA_ROW_MM = 0.5;
+/** 평활 곡면이 원본보다 밖으로 나간 양을 재는 창. 성긴 면 한 장을 덮는 크기다. */
+const ENVELOPE_HALF_COL_DEG = 10;
+const ENVELOPE_HALF_ROW_MM = 0.3;
+/** 밖으로 나간 양의 상한을 매끈하게 펴는 정도. 면 접힘보다 넓어 내린 곡면이 다시 접히지 않는다. */
+const ENVELOPE_SIGMA_COL_DEG = 4;
+const ENVELOPE_SIGMA_ROW_MM = 0.22;
+/** 강평활이 이만큼 어긋나는 자리는 홈·턱 같은 진짜 형상으로 보고 원본을 지킨다. */
+const FEATURE_MM = 0.08;
+const FEATURE_FEATHER_COL_DEG = 5;
+const FEATURE_FEATHER_ROW_MM = 0.25;
+const RIM_BLEND_MM = 0.25;
 
 const wrap = (a) => {
   let t = a % TWO_PI;
@@ -501,72 +516,222 @@ function fillCircular(row) {
   }
 }
 
-function buildSmoothField(probe, z0, z1) {
-  const zs = [];
-  for (let z = z0; z <= z1 + 1e-9; z += FIELD_DZ_MM) zs.push(z);
-  if (zs.length < 3) return null;
-  const grid = zs.map((z) => {
-    const row = new Float64Array(FIELD_BINS);
-    for (let j = 0; j < FIELD_BINS; j += 1) row[j] = probe.rayRadius((j / FIELD_BINS) * TWO_PI, z);
-    fillCircular(row);
-    return row;
+/** 상자 평균 한 번(둘레는 원형). 세 번 겹치면 가우시안과 비슷해진다. */
+function boxColumns(grid, half) {
+  const width = half * 2 + 1;
+  return grid.map((row) => {
+    const out = new Float64Array(FIELD_BINS);
+    let sum = 0;
+    for (let k = -half; k <= half; k += 1) sum += row[(k + FIELD_BINS) % FIELD_BINS];
+    for (let j = 0; j < FIELD_BINS; j += 1) {
+      out[j] = sum / width;
+      sum += row[(j + half + 1) % FIELD_BINS] - row[(j - half + FIELD_BINS) % FIELD_BINS];
+    }
+    return out;
   });
-  const smooth = grid.map((row) => Float64Array.from(row));
-  const colW = [];
-  const colR = Math.ceil(SMOOTH_SIGMA_COL * 3);
-  let colSum = 0;
-  for (let k = -colR; k <= colR; k += 1) {
-    const g = Math.exp(-0.5 * (k / SMOOTH_SIGMA_COL) ** 2);
-    colW.push(g);
-    colSum += g;
+}
+
+/** 상자 평균 한 번(높이). 표본 밖은 빼고 다시 나누어 끝이 끌려가지 않게 한다. */
+function boxRows(grid, half) {
+  const rows = grid.length;
+  const out = grid.map((row) => Float64Array.from(row));
+  const sum = new Float64Array(FIELD_BINS);
+  const hi0 = Math.min(rows - 1, half);
+  for (let zi = 0; zi <= hi0; zi += 1) {
+    for (let j = 0; j < FIELD_BINS; j += 1) sum[j] += grid[zi][j];
   }
-  for (let i = 0; i < colW.length; i += 1) colW[i] /= colSum;
-  const rowW = [];
-  const rowR = Math.ceil(SMOOTH_SIGMA_ROW * 3);
-  let rowSum = 0;
-  for (let k = -rowR; k <= rowR; k += 1) {
-    const g = Math.exp(-0.5 * (k / SMOOTH_SIGMA_ROW) ** 2);
-    rowW.push(g);
-    rowSum += g;
+  for (let zi = 0; zi < rows; zi += 1) {
+    const lo = Math.max(0, zi - half);
+    const hi = Math.min(rows - 1, zi + half);
+    for (let j = 0; j < FIELD_BINS; j += 1) out[zi][j] = sum[j] / (hi - lo + 1);
+    const drop = zi - half;
+    if (drop >= 0) for (let j = 0; j < FIELD_BINS; j += 1) sum[j] -= grid[drop][j];
+    const add = zi + half + 1;
+    if (add < rows) for (let j = 0; j < FIELD_BINS; j += 1) sum[j] += grid[add][j];
   }
-  for (let i = 0; i < rowW.length; i += 1) rowW[i] /= rowSum;
-  const tmp = grid.map(() => new Float64Array(FIELD_BINS));
-  for (let zi = 0; zi < grid.length; zi += 1) {
+  return out;
+}
+
+/** σ만큼 평활. 상자 평균 세 번으로 가우시안을 대신한다(칸 수에 비례하지 않는 속도). */
+function smoothGrid(grid, sigmaColBins, sigmaRowCells) {
+  let out = grid;
+  const halfCol = Math.max(1, Math.round(sigmaColBins));
+  const halfRow = Math.max(1, Math.round(sigmaRowCells));
+  for (let pass = 0; pass < 3; pass += 1) out = boxRows(boxColumns(out, halfCol), halfRow);
+  return out;
+}
+
+/** 창 안 최댓값(둘레→높이 순). 평활 곡면이 원본보다 밖으로 나간 양의 상한을 잰다. */
+function maxFilterGrid(grid, halfColBins, halfRowCells) {
+  const across = grid.map((row) => {
+    const out = new Float64Array(FIELD_BINS);
     for (let j = 0; j < FIELD_BINS; j += 1) {
-      let s = 0;
-      for (let k = -colR; k <= colR; k += 1) s += grid[zi][(j + k + FIELD_BINS) % FIELD_BINS] * colW[k + colR];
-      tmp[zi][j] = s;
-    }
-  }
-  for (let zi = 0; zi < grid.length; zi += 1) {
-    for (let j = 0; j < FIELD_BINS; j += 1) {
-      let s = 0;
-      let w = 0;
-      for (let k = -rowR; k <= rowR; k += 1) {
-        const zz = zi + k;
-        if (zz < 0 || zz >= grid.length) continue;
-        const g = rowW[k + rowR];
-        s += tmp[zz][j] * g;
-        w += g;
+      let best = -Infinity;
+      for (let k = -halfColBins; k <= halfColBins; k += 1) {
+        best = Math.max(best, row[(j + k + FIELD_BINS) % FIELD_BINS]);
       }
-      smooth[zi][j] = w > 0 ? s / w : tmp[zi][j];
+      out[j] = best;
+    }
+    return out;
+  });
+  const out = across.map((row) => Float64Array.from(row));
+  for (let ti = 0; ti < grid.length; ti += 1) {
+    for (let j = 0; j < FIELD_BINS; j += 1) {
+      let best = -Infinity;
+      for (let k = -halfRowCells; k <= halfRowCells; k += 1) {
+        const tt = Math.max(0, Math.min(grid.length - 1, ti + k));
+        best = Math.max(best, across[tt][j]);
+      }
+      out[ti][j] = best;
     }
   }
-  return {
-    sample(theta, z) {
-      const tz = (z - zs[0]) / FIELD_DZ_MM;
-      const z0i = Math.max(0, Math.min(smooth.length - 1, Math.floor(tz)));
-      const z1i = Math.max(0, Math.min(smooth.length - 1, z0i + 1));
-      const wz = Math.max(0, Math.min(1, tz - z0i));
-      const p = (wrap(theta) / TWO_PI) * FIELD_BINS;
-      const j0 = Math.floor(p) % FIELD_BINS;
-      const wj = p - Math.floor(p);
-      const j1 = (j0 + 1) % FIELD_BINS;
-      const a = smooth[z0i][j0] * (1 - wj) + smooth[z0i][j1] * wj;
-      const b = smooth[z1i][j0] * (1 - wj) + smooth[z1i][j1] * wj;
-      return a * (1 - wz) + b * wz;
-    },
+  return out;
+}
+
+/** 원형 1차원 평활(상자 평균 세 번). */
+function smoothCircular1D(values, sigmaBins) {
+  let row = Float64Array.from(values);
+  const half = Math.max(1, Math.round(sigmaBins));
+  for (let pass = 0; pass < 3; pass += 1) {
+    row = boxColumns([row], half)[0];
+  }
+  return row;
+}
+
+function buildSmoothField(probe, zBottom, zTop) {
+  const degToBins = FIELD_BINS / 360;
+  // 경계 고리는 성긴 메시의 꼭짓점을 이은 꺾인 선이다. 그대로 나눗셈 좌표로 쓰면
+  // 꺾임이 반경 표본에 세로줄로 새므로, 표본용 경계만 펴 둔다(출력 끝은 원본 고리 그대로).
+  const zbArr = new Float64Array(FIELD_BINS);
+  const ztArr = new Float64Array(FIELD_BINS);
+  for (let j = 0; j < FIELD_BINS; j += 1) {
+    const theta = (j / FIELD_BINS) * TWO_PI;
+    zbArr[j] = zBottom(theta);
+    ztArr[j] = zTop(theta);
+  }
+  const zbS = smoothCircular1D(zbArr, 6 * degToBins);
+  const ztS = smoothCircular1D(ztArr, 6 * degToBins);
+  let meanH = 0;
+  for (let j = 0; j < FIELD_BINS; j += 1) meanH += ztS[j] - zbS[j];
+  meanH /= FIELD_BINS;
+  if (!(meanH > 0.1)) return null;
+  const mmToCells = (mm) => (mm / meanH) * (FIELD_T_ROWS - 1);
+  const raw = [];
+  for (let ti = 0; ti < FIELD_T_ROWS; ti += 1) {
+    const t = ti / (FIELD_T_ROWS - 1);
+    const row = new Float64Array(FIELD_BINS);
+    for (let j = 0; j < FIELD_BINS; j += 1) {
+      const theta = (j / FIELD_BINS) * TWO_PI;
+      row[j] = probe.rayRadius(theta, zbS[j] + t * (ztS[j] - zbS[j]));
+    }
+    fillCircular(row);
+    raw.push(row);
+  }
+  // 광선이 닿지 않은 칸은 위·아래 칸에서 채운다.
+  for (let j = 0; j < FIELD_BINS; j += 1) {
+    let prev = -1;
+    for (let ti = 0; ti <= FIELD_T_ROWS; ti += 1) {
+      const finite = ti < FIELD_T_ROWS && Number.isFinite(raw[ti][j]);
+      if (!finite && ti < FIELD_T_ROWS) continue;
+      if (prev >= 0 && ti - prev > 1) {
+        const a = raw[prev][j];
+        const b = finite ? raw[ti][j] : a;
+        for (let k = prev + 1; k < Math.min(ti, FIELD_T_ROWS); k += 1) {
+          raw[k][j] = a + ((b - a) * (k - prev)) / (ti - prev);
+        }
+      }
+      if (finite) prev = ti;
+    }
+  }
+  let rest = 0;
+  let restN = 0;
+  for (const row of raw) {
+    for (let j = 0; j < FIELD_BINS; j += 1) {
+      if (Number.isFinite(row[j])) {
+        rest += row[j];
+        restN += 1;
+      }
+    }
+  }
+  if (!restN) return null;
+  const restMean = rest / restN;
+  for (const row of raw) {
+    for (let j = 0; j < FIELD_BINS; j += 1) if (!Number.isFinite(row[j])) row[j] = restMean;
+  }
+
+  const strong = smoothGrid(raw, SMOOTH_SIGMA_COL_DEG * degToBins, mmToCells(SMOOTH_SIGMA_ROW_MM));
+  // 강평활이 크게 어긋나는 자리(홈·턱)는 평활 대상이 아니라 지킬 형상이다.
+  // 경계를 번지게 해 평활 곡면이 형상 옆에서 파이지 않게 한다.
+  let mask = raw.map((row, ti) => {
+    const out = new Float64Array(FIELD_BINS);
+    for (let j = 0; j < FIELD_BINS; j += 1) out[j] = Math.abs(strong[ti][j] - row[j]) > FEATURE_MM ? 1 : 0;
+    return out;
+  });
+  // 내접량이 형상 밖으로 새는 창만큼 보호 범위를 넓힌 뒤 경계를 번지게 한다.
+  mask = maxFilterGrid(
+    mask,
+    Math.round(ENVELOPE_HALF_COL_DEG * degToBins),
+    Math.round(mmToCells(ENVELOPE_HALF_ROW_MM)),
+  );
+  mask = smoothGrid(mask, FEATURE_FEATHER_COL_DEG * degToBins, mmToCells(FEATURE_FEATHER_ROW_MM));
+  // 내접: 평활 곡면이 원본보다 밖으로 나간 양(strong − raw)의 매끈한 상한만큼
+  // 곡면 전체를 안쪽으로 내린다. 원본에 붙이는 방식과 달리 내린 곡면은
+  // 큰 삼각형의 평면을 따라가지 않아 접힘이 남지 않는다.
+  const excess = raw.map((row, ti) => {
+    const out = new Float64Array(FIELD_BINS);
+    for (let j = 0; j < FIELD_BINS; j += 1) out[j] = strong[ti][j] - row[j];
+    return out;
+  });
+  let envelope = maxFilterGrid(
+    excess,
+    Math.round(ENVELOPE_HALF_COL_DEG * degToBins),
+    Math.round(mmToCells(ENVELOPE_HALF_ROW_MM)),
+  );
+  envelope = smoothGrid(envelope, ENVELOPE_SIGMA_COL_DEG * degToBins, mmToCells(ENVELOPE_SIGMA_ROW_MM));
+  let field = raw.map((row, ti) => {
+    const out = new Float64Array(FIELD_BINS);
+    for (let j = 0; j < FIELD_BINS; j += 1) out[j] = strong[ti][j] - envelope[ti][j];
+    return out;
+  });
+  // 상한을 자른 자리가 다시 접히지 않게 살짝 펴고 다시 자른다.
+  for (let pass = 0; pass < 2; pass += 1) {
+    field = smoothGrid(field, 1.5 * degToBins, mmToCells(0.06));
+    for (let ti = 0; ti < FIELD_T_ROWS; ti += 1) {
+      for (let j = 0; j < FIELD_BINS; j += 1) {
+        field[ti][j] = Math.min(
+          Math.max(field[ti][j], raw[ti][j] - POST_FAIR_MAX_IN_MM),
+          raw[ti][j] + POST_FAIR_MAX_OUT_MM,
+        );
+      }
+    }
+  }
+  // 지킬 형상(홈·턱)은 원본 그대로 둔다.
+  for (let ti = 0; ti < FIELD_T_ROWS; ti += 1) {
+    for (let j = 0; j < FIELD_BINS; j += 1) {
+      const m = Math.max(0, Math.min(1, mask[ti][j]));
+      if (m > 0) field[ti][j] = field[ti][j] * (1 - m) + raw[ti][j] * m;
+    }
+  }
+  const sampler = (grid) => (theta, t) => {
+    const tt = Math.max(0, Math.min(1, t)) * (FIELD_T_ROWS - 1);
+    const t0 = Math.floor(tt);
+    const t1 = Math.min(FIELD_T_ROWS - 1, t0 + 1);
+    const wt = tt - t0;
+    const p = (wrap(theta) / TWO_PI) * FIELD_BINS;
+    const j0 = Math.floor(p) % FIELD_BINS;
+    const wj = p - Math.floor(p);
+    const j1 = (j0 + 1) % FIELD_BINS;
+    const a = grid[t0][j0] * (1 - wj) + grid[t0][j1] * wj;
+    const b = grid[t1][j0] * (1 - wj) + grid[t1][j1] * wj;
+    return a * (1 - wt) + b * wt;
   };
+  const atBin = (arr) => (theta) => {
+    const p = (wrap(theta) / TWO_PI) * FIELD_BINS;
+    const j0 = Math.floor(p) % FIELD_BINS;
+    const wj = p - Math.floor(p);
+    return arr[j0] * (1 - wj) + arr[(j0 + 1) % FIELD_BINS] * wj;
+  };
+  return { sampleT: sampler(field), rawT: sampler(raw), zBottomAt: atBin(zbS), zTopAt: atBin(ztS) };
 }
 
 function rowSampler(row, verts, pick) {
@@ -740,7 +905,7 @@ export function fairPostAboveFinishLine(buffer, options = {}) {
     maxH = Math.max(maxH, zTop(th) - zBottom(th));
   }
   const rows = Math.max(8, Math.min(MAX_ROWS, Math.ceil(maxH / ROW_PITCH_MM)));
-  const field = buildSmoothField(probe, bottom.meanZ - 0.1, top.meanZ + 0.1);
+  const field = buildSmoothField(probe, zBottom, zTop);
   if (!field) return unchanged(buffer, triCount, "축면 반경을 읽지 못했습니다.");
 
   const grid = [];
@@ -755,13 +920,18 @@ export function fairPostAboveFinishLine(buffer, options = {}) {
       const theta = (j / COLUMNS) * TWO_PI;
       const zb = zBottom(theta);
       const zt = zTop(theta);
-      const z = zb + t * (zt - zb);
-      const heightEdge = Math.min(z - zb, zt - z);
+      const zExact = zb + t * (zt - zb);
+      const heightEdge = Math.min(zExact - zb, zt - zExact);
       const w = smoothstep(heightEdge / RIM_BLEND_MM);
-      const rs = field.sample(theta, z);
+      // 안쪽 행 높이는 편 경계로 잡는다. 성긴 경계 고리의 꺾임이 세로줄로 남지 않게.
+      // 경계 바로 옆에서는 원래 고리 높이에 붙어 이음선이 생기지 않는다.
+      const zbF = field.zBottomAt(theta);
+      const zSmooth = zbF + t * (field.zTopAt(theta) - zbF);
+      const z = zSmooth * w + zExact * (1 - w);
+      const rs = field.sampleT(theta, t);
       const rim = z - zb <= zt - z ? rBottom(theta) : rTop(theta);
       let rad = (Number.isFinite(rs) ? rs : rim) * w + rim * (1 - w);
-      const ro = probe.rayRadius(theta, z);
+      const ro = field.rawT(theta, t);
       if (Number.isFinite(ro)) {
         const lo = ro - POST_FAIR_MAX_IN_MM;
         const hi = ro + POST_FAIR_MAX_OUT_MM;

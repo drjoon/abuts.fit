@@ -14,14 +14,14 @@ function soupOf(tris) {
  * z<2 커프(r=2.6)와 z>=2 포스트(r=2). z=4 한 줄만 25µm 밖으로 튀어 있다.
  * 골은 z=5 한 줄이 25µm 안쪽이다. 위·아래는 열려 있다.
  */
-function ridgedPostSoup() {
+function ridgedPostSoup(ridge = 2.025, valley = 1.975) {
   const seg = 72;
   const rows = [];
   for (let z = 0; z <= 6.0001; z += 0.2) rows.push(+z.toFixed(4));
   const rAt = (z) => {
     if (z < 2) return 2.6;
-    if (Math.abs(z - 4) < 1e-6) return 2.025;
-    if (Math.abs(z - 5) < 1e-6) return 1.975;
+    if (Math.abs(z - 4) < 1e-6) return ridge;
+    if (Math.abs(z - 5) < 1e-6) return valley;
     return 2;
   };
   const at = (z, i) => {
@@ -108,6 +108,18 @@ describe("fairPostAboveFinishLine", () => {
     expect(Math.max(...wall)).toBeLessThanOrEqual(2 + POST_FAIR_MAX_OUT_MM + 1e-3);
     expect(out.maxOutwardMm).toBeLessThanOrEqual(POST_FAIR_MAX_OUT_MM + 1e-4);
     expect(out.movedCount).toBeGreaterThan(0);
+  });
+
+  it("깊은 봉우리는 50µm 넘게 깎아도 골은 키우지 않는다", () => {
+    const deep = writeBinaryStl({ positions: ridgedPostSoup(2.08, 1.92), attributes: null });
+    const out = fairPostAboveFinishLine(deep, { finishLinePoints: fl });
+    expect(out.reason).toBe("");
+    const ridge = weldedRadiiNearZ(out.buffer, 4);
+    const valley = weldedRadiiNearZ(out.buffer, 5);
+    expect(Math.max(...ridge)).toBeLessThan(2.03);
+    expect(out.maxInwardMm).toBeGreaterThan(0.05);
+    expect(Math.max(...valley)).toBeLessThanOrEqual(1.92 + POST_FAIR_MAX_OUT_MM + 0.01);
+    expect(out.maxOutwardMm).toBeLessThanOrEqual(POST_FAIR_MAX_OUT_MM + 1e-4);
   });
 
   it("피니시라인이 없으면 버퍼를 그대로 돌려준다", () => {
