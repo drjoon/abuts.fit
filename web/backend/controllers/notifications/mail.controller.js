@@ -334,7 +334,21 @@ export async function adminSendMail(req, res) {
       bodyHtml = "",
       bodyText = "",
       attachments = [],
+      scheduledSendAt = null,
     } = req.body || {};
+
+    if (scheduledSendAt != null && scheduledSendAt !== "") {
+      const scheduleDate = new Date(scheduledSendAt);
+      if (
+        Number.isNaN(scheduleDate.getTime()) ||
+        scheduleDate.getTime() <= Date.now()
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "예약 시간은 현재 이후(KST)여야 합니다.",
+        });
+      }
+    }
 
     const normalizedTo = Array.isArray(to) ? to : [to];
     const normalizedCc = Array.isArray(cc) ? cc : [cc];
@@ -350,6 +364,7 @@ export async function adminSendMail(req, res) {
         bodyHtml,
         bodyText,
         attachments,
+        scheduledSendAt,
       });
     } catch (error) {
       console.error("[adminSendMail] send failed", error);

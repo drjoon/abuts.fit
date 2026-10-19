@@ -28,6 +28,11 @@ import {
 } from "@/features/admin/mail/mailApi";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { cn } from "@/shared/ui/cn";
+import {
+  buildReplyDraft,
+  type MailComposeDraft,
+} from "./mail/mailComposeHelpers";
+import type { MailItem } from "@/features/admin/mail/mailApi";
 
 export const AdminMailPage = ({
   embedded = false,
@@ -37,6 +42,10 @@ export const AdminMailPage = ({
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const [mobileShowList, setMobileShowList] = useState(true);
+  const [composeDraft, setComposeDraft] = useState<MailComposeDraft | null>(
+    null,
+  );
+  const [composeDraftKey, setComposeDraftKey] = useState(0);
   const { period, setPeriod } = usePeriodStore();
   const [searchParams] = useSearchParams();
   const initialUnreadOnly = useMemo(
@@ -98,6 +107,23 @@ export const AdminMailPage = ({
     setMobileShowList(true);
   }, []);
 
+  const handleReply = useCallback(
+    (mail: MailItem) => {
+      setComposeDraft(buildReplyDraft(mail));
+      setComposeDraftKey((k) => k + 1);
+      setTab("compose");
+      if (isMobile) {
+        setMobileShowList(true);
+      }
+    },
+    [isMobile, setTab],
+  );
+
+  const openBlankCompose = useCallback(() => {
+    setComposeDraft(null);
+    setComposeDraftKey((k) => k + 1);
+  }, []);
+
   const showListPanel = !isMobile || mobileShowList;
   const showDetailPanel = !isMobile || !mobileShowList;
 
@@ -129,6 +155,7 @@ export const AdminMailPage = ({
           onRestoreToInbox={handleRestoreToInbox}
           onTrash={handleTrash}
           onRestoreToSent={handleRestoreToSent}
+          onReply={handleReply}
           showBackButton={isMobile && !mobileShowList}
           onBack={handleBackToList}
         />
@@ -190,6 +217,10 @@ export const AdminMailPage = ({
 
   const mailTabContentClass =
     "mt-4 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden";
+  const mailComposeTabContentClass = cn(
+    mailTabContentClass,
+    "overflow-y-auto px-1.5 py-1.5",
+  );
 
   return (
     <div
@@ -202,7 +233,7 @@ export const AdminMailPage = ({
       <Tabs
         value={tab}
         onValueChange={(v) => setTab(v as any)}
-        className="flex min-h-0 flex-1 flex-col"
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
       >
         <TabsList className="flex w-full shrink-0 flex-wrap items-center gap-2">
           <TabsTrigger value="inbox" className="gap-2">
@@ -281,6 +312,7 @@ export const AdminMailPage = ({
             <TabsTrigger
               value="compose"
               className="gap-2 bg-primary text-white hover:bg-primary/90"
+              onClick={openBlankCompose}
             >
               <Mail className="h-4 w-4" />
               작성
@@ -304,8 +336,15 @@ export const AdminMailPage = ({
           {renderMailPanels("inbox")}
         </TabsContent>
 
-        <TabsContent value="compose" className={mailTabContentClass}>
-          <AdminMailComposePanel onSent={() => setTab("sent")} />
+        <TabsContent value="compose" className={mailComposeTabContentClass}>
+          <AdminMailComposePanel
+            key={composeDraftKey}
+            draft={composeDraft}
+            onSent={() => {
+              setComposeDraft(null);
+              setTab("sent");
+            }}
+          />
         </TabsContent>
       </Tabs>
     </div>

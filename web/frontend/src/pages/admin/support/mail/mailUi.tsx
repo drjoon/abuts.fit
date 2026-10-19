@@ -30,7 +30,17 @@ export const getDirectionBadge = (direction: MailItem["direction"]) => {
   );
 };
 
-export const getStatusBadge = (status: MailItem["status"]) => {
+export const getStatusBadge = (
+  status: MailItem["status"],
+  mail?: Pick<MailItem, "scheduledSendAt" | "direction">,
+) => {
+  if (
+    status === "pending" &&
+    mail?.direction === "outbound" &&
+    mail?.scheduledSendAt
+  ) {
+    return <Badge variant="outline">예약</Badge>;
+  }
   switch (status) {
     case "received":
       return <Badge variant="secondary">수신완료</Badge>;

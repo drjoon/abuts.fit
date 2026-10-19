@@ -29,6 +29,7 @@ export type MailItem = {
   messageId?: string;
   receivedAt?: string;
   sentAt?: string;
+  scheduledSendAt?: string | null;
   trashedAt?: string;
   readAt?: string;
   createdAt?: string;
@@ -208,6 +209,7 @@ export async function sendMail(payload: {
   bodyHtml?: string;
   bodyText?: string;
   attachments?: MailAttachment[];
+  scheduledSendAt?: string | null;
 }) {
   const res = await request<ApiEnvelope<any>>({
     path: "/api/admin/mails/send",

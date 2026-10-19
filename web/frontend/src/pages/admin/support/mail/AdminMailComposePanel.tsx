@@ -4,6 +4,12 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useMemo, useState } from "react";
 import {
+  type MailComposeDraft,
+  kstDatetimeLocalToIso,
+  kstNowDatetimeLocalValue,
+  formatKstScheduledLabel,
+} from "./mailComposeHelpers";
+import {
   createUploadUrl,
   sendMail,
   type MailAttachment,
@@ -19,9 +25,14 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/shared/hooks/use-toast";
-import { Paperclip, Send, X } from "lucide-react";
+import { MailComposeHtmlEditor } from "./MailComposeHtmlEditor";
+import {
+  htmlToPlainText,
+  resolveInitialComposeHtml,
+} from "./mailHtml.util";
+import { Paperclip, Send, X, Clock } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { formatBytes } from "./mailUi";
 
 type UploadingAttachment = {
@@ -32,16 +43,21 @@ type UploadingAttachment = {
 
 type Props = {
   onSent: () => void;
+  draft?: MailComposeDraft | null;
 };
 
-export const AdminMailComposePanel = ({ onSent }: Props) => {
+export const AdminMailComposePanel = ({ onSent, draft }: Props) => {
   const { toast } = useToast();
 
-  const [to, setTo] = useState("");
-  const [cc, setCc] = useState("");
+  const [to, setTo] = useState(draft?.to ?? "");
+  const [cc, setCc] = useState(draft?.cc ?? "");
   const [bcc, setBcc] = useState("");
-  const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
+  const [subject, setSubject] = useState(draft?.subject ?? "");
+  const [bodyHtml, setBodyHtml] = useState(() =>
+    resolveInitialComposeHtml(draft ?? undefined),
+  );
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduledLocal, setScheduledLocal] = useState("");
   const [attachments, setAttachments] = useState<UploadingAttachment[]>([]);
   const [sending, setSending] = useState(false);
 
@@ -140,6 +156,28 @@ export const AdminMailComposePanel = ({ onSent }: Props) => {
         return;
       }
 
+      let scheduledSendAt: string | undefined;
+      if (scheduleEnabled) {
+        const iso = kstDatetimeLocalToIso(scheduledLocal);
+        if (!iso) {
+          toast({
+            title: "예약 시간 확인",
+            description: "예약 발송 시각을 선택해 주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+        if (new Date(iso).getTime() <= Date.now()) {
+          toast({
+            title: "예약 시간 확인",
+            description: "예약 시각은 현재 이후여야 합니다.",
+            variant: "destructive",
+          });
+          return;
+        }
+        scheduledSendAt = iso;
+      }
+
       await sendMail({
         to: normalizedTo,
         cc: cc
@@ -151,18 +189,26 @@ export const AdminMailComposePanel = ({ onSent }: Props) => {
           .map((v) => v.trim())
           .filter(Boolean),
         subject,
-        bodyHtml: body,
-        bodyText: body,
+        bodyHtml,
+        bodyText: htmlToPlainText(bodyHtml),
         attachments: parsedAttachments,
+        scheduledSendAt,
       });
 
-      toast({ title: "메일 발송 완료" });
+      toast({
+        title: scheduledSendAt ? "발송 예약 완료" : "메일 발송 완료",
+        description: scheduledSendAt
+          ? `${formatKstScheduledLabel(scheduledSendAt)} (KST)에 발송됩니다.`
+          : undefined,
+      });
       setTo("");
       setCc("");
       setBcc("");
       setSubject("");
-      setBody("");
+      setBodyHtml("");
       setAttachments([]);
+      setScheduleEnabled(false);
+      setScheduledLocal("");
       onSent();
     } catch (err: any) {
       toast({
@@ -179,7 +225,9 @@ export const AdminMailComposePanel = ({ onSent }: Props) => {
     <Card>
       <CardHeader>
         <CardTitle className="text-base">메일 작성</CardTitle>
-        <CardDescription>첨부파일을 포함해 메일을 발송합니다.</CardDescription>
+        <CardDescription>
+          표·서식이 포함된 HTML 본문을 붙여 넣을 수 있습니다.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -205,12 +253,44 @@ export const AdminMailComposePanel = ({ onSent }: Props) => {
         </div>
 
         <div className="space-y-2">
-          <Label>본문</Label>
-          <Textarea
-            rows={10}
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-          />
+          <Label>본문 (HTML)</Label>
+          <MailComposeHtmlEditor value={bodyHtml} onChange={setBodyHtml} />
+        </div>
+
+        <div className="space-y-3 rounded-md border px-3 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="mail-schedule-toggle" className="flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                예약 발송
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                선택한 시각(KST)에 자동으로 발송됩니다.
+              </p>
+            </div>
+            <Switch
+              id="mail-schedule-toggle"
+              checked={scheduleEnabled}
+              onCheckedChange={(checked) => {
+                setScheduleEnabled(checked);
+                if (checked && !scheduledLocal) {
+                  setScheduledLocal(kstNowDatetimeLocalValue());
+                }
+              }}
+            />
+          </div>
+          {scheduleEnabled ? (
+            <div className="space-y-2">
+              <Label htmlFor="mail-scheduled-at">발송 예약 시각 (KST)</Label>
+              <Input
+                id="mail-scheduled-at"
+                type="datetime-local"
+                value={scheduledLocal}
+                min={kstNowDatetimeLocalValue()}
+                onChange={(e) => setScheduledLocal(e.target.value)}
+              />
+            </div>
+          ) : null}
         </div>
 
         <div className="space-y-2">
@@ -279,7 +359,13 @@ export const AdminMailComposePanel = ({ onSent }: Props) => {
             className="gap-2"
           >
             <Send className="h-4 w-4" />
-            {sending ? "발송 중..." : "발송"}
+            {sending
+              ? scheduleEnabled
+                ? "예약 중..."
+                : "발송 중..."
+              : scheduleEnabled
+                ? "예약"
+                : "발송"}
           </Button>
         </div>
       </CardContent>

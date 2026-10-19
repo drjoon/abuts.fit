@@ -23,6 +23,7 @@ import {
   AlertOctagon,
   Trash2,
   Inbox,
+  Reply,
 } from "lucide-react";
 import {
   formatBytes,
@@ -30,6 +31,7 @@ import {
   getDirectionBadge,
   getStatusBadge,
 } from "./mailUi";
+import { formatKstScheduledLabel } from "./mailComposeHelpers";
 import { MailMessageBody } from "./MailMessageBody";
 
 type Props = {
@@ -44,6 +46,7 @@ type Props = {
   onRestoreToSent?: (id: string) => void;
   onBack?: () => void;
   showBackButton?: boolean;
+  onReply?: (mail: MailItem) => void;
 };
 
 export const AdminMailDetailPanel = ({
@@ -58,6 +61,7 @@ export const AdminMailDetailPanel = ({
   onRestoreToSent,
   onBack,
   showBackButton = false,
+  onReply,
 }: Props) => {
   const selectedDate =
     selected?.createdAt || selected?.receivedAt || selected?.sentAt;
@@ -94,7 +98,7 @@ export const AdminMailDetailPanel = ({
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   {getDirectionBadge(selected.direction)}
-                  {getStatusBadge(selected.status)}
+                  {getStatusBadge(selected.status, selected)}
                   {selectedDate ? (
                     <span className="text-xs text-muted-foreground">
                       {formatDateTime(selectedDate)}
@@ -110,10 +114,30 @@ export const AdminMailDetailPanel = ({
                   {selected.cc?.length ? (
                     <div>Cc: {selected.cc.join(", ")}</div>
                   ) : null}
+                  {selected.status === "pending" &&
+                  selected.scheduledSendAt &&
+                  selected.direction === "outbound" ? (
+                    <div>
+                      예약 발송: {formatKstScheduledLabel(selected.scheduledSendAt)}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {onReply &&
+                selected.direction === "inbound" &&
+                selected.folder !== "trash" ? (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => onReply(selected)}
+                  >
+                    <Reply className="h-4 w-4" />
+                    회신
+                  </Button>
+                ) : null}
                 {onMarkAsUnread &&
                 selected.isRead &&
                 selected.direction === "inbound" ? (

@@ -50,6 +50,7 @@ const MailSchema = new mongoose.Schema(
     error: { type: String },
     receivedAt: { type: Date },
     sentAt: { type: Date },
+    scheduledSendAt: { type: Date, default: null, index: true },
     trashedAt: { type: Date },
     readAt: { type: Date },
   },

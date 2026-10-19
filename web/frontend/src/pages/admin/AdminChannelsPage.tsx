@@ -48,7 +48,7 @@ export default function AdminChannelsPage() {
           { value: "mail", label: "메일", badge: counts.mail },
         ]}
       />
-      <div className="flex h-full min-h-0 flex-1 flex-col">
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {tab === "chat" ? <AdminChatManagement embedded /> : null}
         {tab === "sms" ? <AdminSmsPage embedded /> : null}
         {tab === "mail" ? <AdminMailPage embedded /> : null}

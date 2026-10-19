@@ -13,7 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Paperclip, Search } from "lucide-react";
-import { formatDateTime } from "./mailUi";
+import { formatDateTime, getStatusBadge } from "./mailUi";
 
 type Props = {
   q: string;
@@ -108,10 +108,21 @@ export const AdminMailListPanel = ({
                             {mail.attachments.length}
                           </Badge>
                         ) : null}
+                        {variant === "sent" &&
+                        mail.status === "pending" &&
+                        mail.scheduledSendAt ? (
+                          getStatusBadge(mail.status, mail)
+                        ) : null}
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {formatDateTime(
-                          mail.createdAt || mail.receivedAt || mail.sentAt
+                          mail.scheduledSendAt &&
+                            mail.status === "pending" &&
+                            variant === "sent"
+                            ? mail.scheduledSendAt
+                            : mail.createdAt ||
+                                mail.receivedAt ||
+                                mail.sentAt,
                         )}
                       </div>
                     </div>
