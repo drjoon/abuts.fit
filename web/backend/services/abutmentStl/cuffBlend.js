@@ -655,7 +655,7 @@ const START_MAX_SLOPE = Math.tan((40 * Math.PI) / 180);
 /** 위쪽 접선 최대 기울기(약 65°). */
 const CORNER_MAX_END_SLOPE = Math.tan((65 * Math.PI) / 180);
 /** 위쪽 끝 기울기 상한(65°). 예전 70° 상한보다 덜 눕혀 원본에 가깝게 퍼진다. */
-const CORNER_END_SLOPE = Math.tan((65 * Math.PI) / 180);
+const CORNER_END_SLOPE = Math.tan(((Number(process.env.XP_END) || 65) * Math.PI) / 180);
 /** 위쪽 최소 기울기(약 30°): 접시처럼 평평해지지 않게. */
 const CORNER_MIN_END_SLOPE = Math.tan((35 * Math.PI) / 180);
 /** 모서리(퍼지기 시작) 선호 위치. 낮을수록 원본처럼 일찍 퍼진다. */
