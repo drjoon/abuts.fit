@@ -171,13 +171,11 @@
   - `L` 산출 (`GetFrontFaceEndOffsetFromFrontMm`):
     - env `ABUTS_FRONT_FACE_END_OFFSET_MM` 강제값 우선
     - 삽입축이 Z에서 기울수록 FrontPoint가 팁(원점) 아래로 내려간다. 구치는 위에 가깝고, 전치는 더 아래인 편이다. 내려온 거리 = `max(0, FrontPointX)`
-    - 긴 여유 `L_long` = `R_tip` 기반 `clamp(0.45·R_tip + 0.85, 1.2, 2.5)`, fallback 2.0. `R_tip` = `ABUTS_MAX_DIAMETER`×0.20 → `HighY`×0.45 → `BarDiameter`×0.20 (각 [1.2, 3.5])
-    - `L`은 하강 0에서 `1.0`(FACE.prc `BM_D2` 반경)이고, 하강 1.5mm에서 `L_long`이 된다. 그 사이는 선형. 1.0보다 짧으면 팁 미가공으로 D1.2가 부러진다
-    - 구간 길이 = `FrontPointX + L` 이라, 포인트가 내려올수록 Face가 길어진다. 팁 근처(구치)만 겹침 단차를 줄인다
-    - `Face.RightX` 하한은 1.0 (팁 코너)
+    - `L = 0.8` = Front_Finish 볼 반경 0.6 + 여유 0.2. Front_Finish가 팁부터 전체를 깎으므로 Face는 Finish 진입 자리만 비운다 (2026-10-19, 기존 동적 1.0~2.5 폐기)
+    - 구간 길이 = `FrontPointX + L` 이라, 포인트가 내려올수록 Face가 길어진다
+    - `Face.RightX` 하한은 1.0 (FACE.prc `BM_D2` 반경, 팁 코너). 이보다 짧으면 팁 미가공으로 D1.2가 부러진다
   - `LastAppliedFrontFaceDepthMm = 0.5mm`
   - 구현: `ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2` / `TryApplyFaceRightEndGuard`
-  - `ABUTS_MAX_DIAMETER`은 `StlFileProcessor`가 request-meta `maxDiameter`로 주입
 
 - Back Turn 시작점/퇴출 정책(현행 SSOT):
   - 시작점은 `FrontPointX` anchor로 통일한다. (`Front_Turn`과 동일 기준)

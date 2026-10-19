@@ -1773,19 +1773,16 @@ namespace DentalAddin
         private static double LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm;
 
         // Front Face 종료점: Face.RightX = FrontPointX + L.
-        // 삽입축이 Z에서 기울수록 FrontPoint가 팁(원점) 아래로 내려간다. 전치가 그렇다.
-        // 포인트가 팁 근처(구치)면 L은 BM_D2 반경. 내려올수록 L은 동적 1.2~2.5로 늘어 구간이 길어진다.
+        // 삽입축이 Z에서 기울수록 FrontPoint가 팁(원점) 아래로 내려가고, 구간도 그만큼 길어진다.
+        // Front_Finish가 팁부터 전체를 깎으므로 Face는 Finish 볼(R0.6) 진입 자리만 비운다.
         private const string FrontFaceEndOffsetEnv = "ABUTS_FRONT_FACE_END_OFFSET_MM";
-        private const string MaxDiameterEnv = "ABUTS_MAX_DIAMETER";
-        private const double FrontFaceEndOffsetMinMm = 1.2;
-        private const double FrontFaceEndOffsetMaxMm = 2.5;
-        private const double FrontFaceEndOffsetFallbackMm = 2.0;
+        private const double FrontFinishBallRadiusMm = 0.6;
+        private const double FrontFaceFinishEntryClearanceMm = 0.2;
+        private const double FrontFaceEndOffsetMm = FrontFinishBallRadiusMm + FrontFaceFinishEntryClearanceMm;
         private const double FrontFaceTipClearanceMm = 1.0;
         private const double FrontFaceEndOffsetFromFrontLegacyCapMm = 3.0;
-        // FACE.prc 공구 BM_D2 반경. 이보다 짧게 끊으면 팁 코너에 미가공이 남아 D1.2가 부러진다.
+        // Face.RightX 하한 = FACE.prc 공구 BM_D2 반경. 이보다 짧게 끊으면 팁 코너에 미가공이 남아 D1.2가 부러진다.
         private const double FrontFaceShortPastFrontMm = 1.0;
-        // FrontPointX(팁=원점 기준 하강)가 이 값에 닿으면 여유를 동적 L 전부로 되돌린다. 그 사이는 선형.
-        private const double FrontPointDropForFullLongMm = 1.5;
 
         /// <summary>
         /// tip 구간 하한 = 원점 0 (레거시). tipMesh+0.3 밀기 없음.
@@ -1804,79 +1801,25 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// 포인트가 아래로 내려왔을 때의 Face 여유. R_tip 기반 1.2~2.5, 추정 실패 시 2.0.
-        /// </summary>
-        private static double ResolveFrontFaceLongOffsetMm(out double rTipEst, out string tipSource)
-        {
-            rTipEst = 0.0;
-            tipSource = "fallback";
-
-            string rawMaxDia = Environment.GetEnvironmentVariable(MaxDiameterEnv);
-            if (!string.IsNullOrWhiteSpace(rawMaxDia)
-                && double.TryParse(rawMaxDia, NumberStyles.Float, CultureInfo.InvariantCulture, out double maxDia)
-                && maxDia > 1.0)
-            {
-                rTipEst = Clamp(maxDia * 0.20, 1.2, 3.5);
-                tipSource = $"maxDiameter={maxDia:F3}";
-            }
-            else if (HighY > 0.8)
-            {
-                rTipEst = Clamp(HighY * 0.45, 1.2, 3.5);
-                tipSource = $"HighY={HighY:F3}";
-            }
-            else
-            {
-                double barDia = Document?.LatheMachineSetup?.BarDiameter ?? 0.0;
-                if (barDia > 1.0)
-                {
-                    rTipEst = Clamp(barDia * 0.20, 1.2, 3.5);
-                    tipSource = $"BarDiameter={barDia:F3}";
-                }
-            }
-
-            if (rTipEst <= 0.0)
-            {
-                return FrontFaceEndOffsetFallbackMm;
-            }
-
-            return Clamp(rTipEst * 0.45 + 0.85, FrontFaceEndOffsetMinMm, FrontFaceEndOffsetMaxMm);
-        }
-
-        /// <summary>
         /// Face 축 끝 오프셋 L. Face.RightX = FrontPointX + L.
-        /// 우선순위: env → FrontPoint 하강에 따라 BM_D2 반경(1.0)에서 동적 L(1.2~2.5)까지.
-        /// 하강 0(팁)이면 1.0, FrontPointDropForFullLongMm 이상이면 동적 L 전부.
+        /// 우선순위: env → Finish 볼 반경 0.6 + 여유 0.2 = 0.8.
         /// </summary>
         private static double GetFrontFaceEndOffsetFromFrontMm()
         {
-            try
+            string rawOverride = Environment.GetEnvironmentVariable(FrontFaceEndOffsetEnv);
+            if (!string.IsNullOrWhiteSpace(rawOverride)
+                && double.TryParse(rawOverride, NumberStyles.Float, CultureInfo.InvariantCulture, out double envOffset)
+                && !double.IsNaN(envOffset)
+                && !double.IsInfinity(envOffset)
+                && envOffset >= 0.0)
             {
-                string rawOverride = Environment.GetEnvironmentVariable(FrontFaceEndOffsetEnv);
-                if (!string.IsNullOrWhiteSpace(rawOverride)
-                    && double.TryParse(rawOverride, NumberStyles.Float, CultureInfo.InvariantCulture, out double envOffset)
-                    && !double.IsNaN(envOffset)
-                    && !double.IsInfinity(envOffset)
-                    && envOffset >= 0.0)
-                {
-                    double forced = Clamp(envOffset, 0.0, FrontFaceEndOffsetFromFrontLegacyCapMm);
-                    DentalLogger.Log($"FrontFaceOffset - env override {FrontFaceEndOffsetEnv}={forced:F3}");
-                    return forced;
-                }
+                double forced = Clamp(envOffset, 0.0, FrontFaceEndOffsetFromFrontLegacyCapMm);
+                DentalLogger.Log($"FrontFaceOffset - env override {FrontFaceEndOffsetEnv}={forced:F3}");
+                return forced;
+            }
 
-                double frontX = MoveSTL_Module.FrontPointX;
-                double dropMm = (double.IsNaN(frontX) || double.IsInfinity(frontX)) ? 0.0 : Math.Max(0.0, frontX);
-                double longL = ResolveFrontFaceLongOffsetMm(out double rTipEst, out string tipSource);
-                double t = Clamp(dropMm / FrontPointDropForFullLongMm, 0.0, 1.0);
-                double offset = FrontFaceShortPastFrontMm + (longL - FrontFaceShortPastFrontMm) * t;
-                offset = Clamp(offset, FrontFaceShortPastFrontMm, Math.Max(FrontFaceShortPastFrontMm, longL));
-                DentalLogger.Log($"FrontFaceOffset - frontX={frontX:F3} drop={dropMm:F3} t={t:F3} L={offset:F3} (short={FrontFaceShortPastFrontMm:F3}, long={longL:F3}, fullDrop={FrontPointDropForFullLongMm:F3}, R_tip≈{rTipEst:F3}, src={tipSource})");
-                return offset;
-            }
-            catch (Exception ex)
-            {
-                DentalLogger.Log($"FrontFaceOffset - 계산 실패, fallback={FrontFaceEndOffsetFallbackMm:F3}: {ex.GetType().Name}:{ex.Message}");
-                return FrontFaceEndOffsetFallbackMm;
-            }
+            DentalLogger.Log($"FrontFaceOffset - frontX={MoveSTL_Module.FrontPointX:F3} L={FrontFaceEndOffsetMm:F3} (Finish R={FrontFinishBallRadiusMm:F3} + {FrontFaceFinishEntryClearanceMm:F3})");
+            return FrontFaceEndOffsetMm;
         }
 
         // Face.RightX ≤ Splitline_2 ≡ FinishLine top 상방(tip) 0.5mm
@@ -2126,7 +2069,7 @@ namespace DentalAddin
         /// <summary>
         /// Front Face(ParallelPlanes): tip 시작 원점 0, 끝은 FrontPointX+L.
         /// - 시작: Face.StartX = 0 (원점). TopZ는 FACE.prc 유지(1.0)
-        /// - L: FrontPoint가 팁에 가까우면 BM_D2 반경 1.0mm, 1.5mm 내려오면 동적 1.2~2.5mm
+        /// - L: Front_Finish 볼 반경 0.6 + 여유 0.2 = 0.8mm (Finish 진입 자리만)
         /// - 끝 하한: Face.RightX ≥ 1.0 (팁 코너). 상한: Face.RightX ≤ Splitline_2 (= FL top 상방 0.5mm)
         /// - LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm(0.5mm)
         /// </summary>
