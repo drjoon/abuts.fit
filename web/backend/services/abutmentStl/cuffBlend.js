@@ -1575,7 +1575,10 @@ function seamRows({
   const curveAt = (v) => {
     const depths = depthsAt(v);
     const ts = heights.map((h, j) => 1 - depths[j] / h);
-    const keeps = ts.map((t, j) => bandSmoothKeep(t, heights[j]));
+    const keeps = ts.map((t, j) => {
+      const scale = seamOrigScale ? seamOrigScale[j] : 1;
+      return 1 - (1 - bandSmoothKeep(t, heights[j])) * scale;
+    });
     const rad = Float64Array.from(ts, (t, j) => radiusAt(j, t) * keeps[j] + avgAt(j, t) * (1 - keeps[j]));
     const z = Float64Array.from(ts, (t, j) => zA + t * (heights[j] * keeps[j] + smoothHeights[j] * (1 - keeps[j])));
     return { rad, z };
@@ -1902,7 +1905,8 @@ function replaceBand(
     const rad = new Float64Array(STRIP_COLUMNS);
     const z = new Float64Array(STRIP_COLUMNS);
     for (let j = 0; j < STRIP_COLUMNS; j += 1) {
-      const keep = bandSmoothKeep(t, heights[j]);
+      const scale = seamOrigScale ? seamOrigScale[j] : 1;
+      const keep = 1 - (1 - bandSmoothKeep(t, heights[j])) * scale;
       rad[j] = raw[j] * keep + avg[j] * (1 - keep);
       z[j] = zA + t * (heights[j] * keep + smoothHeights[j] * (1 - keep));
     }
@@ -2377,7 +2381,7 @@ export function blendCuffJunction(buffer, options = {}) {
       }
       return { fn: p.fn, endSlope: p.endSlope };
     };
-    const profiles = tops.map((t, j) =>
+    const baseProfiles = tops.map((t, j) =>
       bowlOf(
         r1s[j],
         belowR[j],
@@ -2386,13 +2390,59 @@ export function blendCuffJunction(buffer, options = {}) {
         seamOrigScale ? seamOrigScale[j] : 1,
       ).fn,
     );
+    // 기본 오목 프로파일은 위 끝 기울기가 원본보다 가파르게 끝나(예: 55° vs 36°) 마진 아래 이음에서 원본으로 되돌아가며 오목 골이 생긴다.
+    // 그런 열은 오목 프로파일을 그대로 따라가다 마진 직전 TAIL_MM만, 위 끝 원본 기울기로 닿는 완만한 볼록 곡선(3차 Hermite)으로 바꾸고
+    // 이음 섞기는 끈다(원본으로 되돌리지 않는다).
+    const TAIL_MM = 0.45;
+    const tailWeights = circularSmooth(
+      baseProfiles.map((fn, j) => {
+        if (convexCuffDeform || !belowSlopes) return 0;
+        const eps = 1e-3;
+        const sEnd = (fn(1) - fn(1 - eps)) / (eps * hs[j]);
+        const diff = sEnd - belowSlopes[j];
+        return Math.max(0, Math.min(1, (diff - 0.05) / 0.15));
+      }),
+      TOP_SLOPE_SMOOTH_COLUMNS,
+    ).map((w) => Math.max(0, Math.min(1, w)));
+    const profiles = baseProfiles.map((fn, j) => {
+      const w = tailWeights[j];
+      if (!(w > 1e-3)) return fn;
+      const h = hs[j];
+      const dT = Math.min(TAIL_MM, h * 0.5);
+      const t0 = 1 - dT / h;
+      const eps = 1e-3;
+      const r0 = fn(t0);
+      const s0 = (fn(t0 + eps) - fn(t0 - eps)) / (2 * eps * h);
+      const r1 = fn(1);
+      // 기울기가 중간에 s0보다 커지지 않도록(오버슈트 → 오목 골) 끝 기울기를 현 기울기 기준 포물선 값 이하로 둔다.
+      const chord = (r1 - r0) / dT;
+      const s1 = Math.max(0, Math.min(s0, belowSlopes[j], 2 * chord - s0));
+      const tail = (t) => {
+        const u = Math.max(0, Math.min(1, (t - t0) / (1 - t0)));
+        const u2 = u * u;
+        const u3 = u2 * u;
+        return (
+          (2 * u3 - 3 * u2 + 1) * r0 +
+          (u3 - 2 * u2 + u) * s0 * dT +
+          (-2 * u3 + 3 * u2) * r1 +
+          (u3 - u2) * s1 * dT
+        );
+      };
+      return (t) => (t <= t0 ? fn(t) : fn(t) * (1 - w) + tail(t) * w);
+    });
+    const finalSeamOrigScale = seamOrigScale
+      ? seamOrigScale.map((w, j) => w * (1 - tailWeights[j]))
+      : tailWeights.some((w) => w > 1e-3)
+        ? tailWeights.map((w) => 1 - w)
+        : null;
     let maxSlope = 0;
     let minWall = Infinity;
     const chAtZ = channelRadiusByZ(mesh, zA - 0.3, zTopMax + 0.3, ra);
     for (let j = 0; j < profiles.length; j += 1) {
       const h = hs[j];
-      const lo = Math.min(ra, tops[j].r, r1s[j]) - MAX_OVERSHOOT_MM;
-      const hi = Math.max(ra, tops[j].r, r1s[j]) + MAX_OVERSHOOT_MM;
+      const rTopJ = smoothCreaseR ? smoothCreaseR[j] : r1s[j];
+      const lo = Math.min(ra, tops[j].r, r1s[j], rTopJ) - MAX_OVERSHOOT_MM;
+      const hi = Math.max(ra, tops[j].r, r1s[j], rTopJ) + MAX_OVERSHOOT_MM;
       let prev = profiles[j](0);
       for (let i = 1; i <= 50; i += 1) {
         const r = profiles[j](i / 50);
@@ -2421,7 +2471,7 @@ export function blendCuffJunction(buffer, options = {}) {
       rCut,
       origProbe: probe,
       crease: crease && offsetMm === 0 ? crease : null,
-      seamOrigScale,
+      seamOrigScale: finalSeamOrigScale,
     });
       return { out, zTopMax, maxSlope };
     };

@@ -73,6 +73,21 @@ function steepMarginShelfAbutment() {
   ]);
 }
 
+/** 하부는 오목하게 올라가고 마진 아래 상부(z=1.8~3.2)는 다각형 볼록으로 이어지는 커프. */
+function convexUpperCuffAbutment() {
+  return revolve([
+    ...coneRows(-1.2, 0.2),
+    [cone(0.2) + 0.05, 0.22],
+    [2.1, 1.0],
+    [2.38, 1.4],
+    [3.04, 1.95],
+    [3.42, 2.4],
+    [3.73, 2.8],
+    [4.04, 3.2],
+    [3.7, 5.0],
+  ]);
+}
+
 /** 원뿔 위 접시(거의 수평)로 퍼졌다가 수직 커프로 피니시라인까지. */
 function dishAbutment() {
   return revolve([
@@ -225,6 +240,30 @@ describe("blendCuffJunction", () => {
       const deg = (Math.atan2(postProbe.rayRadius(0.1, z + 0.02) - postProbe.rayRadius(0.1, z), 0.02) * 180) / Math.PI;
       expect(deg).toBeLessThanOrEqual(70);
     }
+  });
+
+  it("keeps a convex upper cuff smoothly convex without creating a concave groove below the finish line", () => {
+    const input = convexUpperCuffAbutment();
+    const res = blendCuffJunction(input, {
+      ...osstem,
+      specKey: osstem.key,
+      finishLine: ringFinishLine(4.04, 3.2),
+    });
+    expect(res.ok).toBe(true);
+    expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
+    const postProbe = _prepare(res.buffer).probe;
+    const step = 0.08;
+    const slopes = [];
+    for (let z = 2.2; z <= 3.04; z += step) {
+      slopes.push((postProbe.rayRadius(0.1, z + step) - postProbe.rayRadius(0.1, z)) / step);
+    }
+    // Base concave profile is kept; only the last stretch near the finish line turns slightly convex
+    const peak = Math.max(...slopes);
+    const last = slopes[slopes.length - 1];
+    expect(slopes[0]).toBeLessThan(peak);
+    expect(last).toBeLessThan(slopes[slopes.length - 2]);
+    expect(peak - last).toBeGreaterThan(0.05);
+    expect(peak - last).toBeLessThan(0.6);
   });
 
   it("marks unregistered connections as spec-pending without touching the mesh", () => {
