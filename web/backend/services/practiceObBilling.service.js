@@ -78,10 +78,11 @@ export function resolveScheduledTransferDateForYearMonth(yearMonth) {
 
 /**
  * 특정 기간(월) 치과 OB 정산 예정액 집계.
- * - 기공물(PTX labFee): 수행 기공소(협력·하청·어벗츠 기공소 포함) 계좌로 직접 이체.
- * - 커스텀어벗(Request): 기공실 없는 치과만 OB로 어벗츠 법인에 이체.
+ * - 외부 기공소가 수행한 기공물: 그 기공소 계좌로 이체.
+ * - 어벗츠 기공사업부(internalLab)가 수행한 기공물·커스텀어벗·스토어: 어벗츠 법인(admin) 계좌.
+ *   개인 어벗츠기공소 계좌는 쓰지 않는다.
+ * - 커스텀어벗(Request): 기공실 없는 치과만 OB로 법인에 이체.
  *   기공실 있는 치과·기공소는 선결제 크레딧이라 이 집계에 넣지 않는다.
- * - PTX 어벗·스토어 기성품: 어벗츠 법인(admin) 계좌로 이체.
  */
 export async function aggregatePracticeMonthUsage({
   practiceAnchorId,
@@ -150,7 +151,11 @@ export async function aggregatePracticeMonthUsage({
     practiceAnchor?.practiceHasInHouseLab === true;
 
   const directLabMap = new Map();
+  const internalLabId = internalLabAnchor?._id
+    ? String(internalLabAnchor._id)
+    : "";
   let abutmentAmount = 0;
+  let labDivisionAmount = 0;
   let storeSupplyAmount = 0;
   let storeVatAmount = 0;
   let storeTotalAmount = 0;
@@ -178,7 +183,11 @@ export async function aggregatePracticeMonthUsage({
       const performerId = resolvePerformingLabAnchorId(t);
       if (performerId) {
         const labKey = String(performerId);
-        directLabMap.set(labKey, (directLabMap.get(labKey) || 0) + labTotal);
+        if (internalLabId && labKey === internalLabId) {
+          labDivisionAmount += labTotal;
+        } else {
+          directLabMap.set(labKey, (directLabMap.get(labKey) || 0) + labTotal);
+        }
       }
     }
     if (abutmentTotal > 0) {
@@ -207,7 +216,8 @@ export async function aggregatePracticeMonthUsage({
     storeVatAmount += supply > 0 ? vat : 0;
   }
 
-  const abutsCorpAmount = abutmentAmount + storeTotalAmount;
+  const abutsCorpAmount =
+    abutmentAmount + storeTotalAmount + labDivisionAmount;
 
   const directLabIds = Array.from(directLabMap.keys()).map(
     (id) => new Types.ObjectId(id),
@@ -272,6 +282,7 @@ export async function aggregatePracticeMonthUsage({
     storeVatAmount,
     storeTotalAmount,
     abutmentAmount,
+    labDivisionAmount,
   };
 }
 
@@ -311,6 +322,7 @@ export async function confirmPracticeMonthlySettlement({
         storeVatAmount: Math.max(0, Math.round(usage.storeVatAmount || 0)),
         storeTotalAmount: Math.max(0, Math.round(usage.storeTotalAmount || 0)),
         abutmentAmount: Math.max(0, Math.round(usage.abutmentAmount || 0)),
+        labDivisionAmount: Math.max(0, Math.round(usage.labDivisionAmount || 0)),
       };
 
   const doc = await PracticeMonthlySettlement.findOneAndUpdate(
@@ -520,7 +532,8 @@ export async function runPracticeMonthlySettlementTransfer({
       let invoiceSplit = settlement.invoiceSplit;
       const splitReady =
         Number(invoiceSplit?.storeTotalAmount) > 0 ||
-        Number(invoiceSplit?.abutmentAmount) > 0;
+        Number(invoiceSplit?.abutmentAmount) > 0 ||
+        Number(invoiceSplit?.labDivisionAmount) > 0;
       if (!splitReady) {
         const usage = await aggregatePracticeMonthUsage({
           practiceAnchorId: settlement.practiceAnchorId,
@@ -531,6 +544,7 @@ export async function runPracticeMonthlySettlementTransfer({
           storeVatAmount: usage.storeVatAmount,
           storeTotalAmount: usage.storeTotalAmount,
           abutmentAmount: usage.abutmentAmount,
+          labDivisionAmount: usage.labDivisionAmount,
         };
       }
       await issuePracticeObPaymentInvoices({
@@ -731,8 +745,7 @@ export async function getPracticeObBillingOverview({
           if (!seen.has(id)) {
             seen.set(id, {
               labAnchorId: id,
-              name:
-                l.payeeKind === "abuts_corp" ? "어벗츠기공소" : l.payeeName,
+              name: l.payeeName || "어벗츠 주식회사",
             });
           }
         }

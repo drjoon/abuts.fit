@@ -1491,8 +1491,8 @@ async function resolveDevopsEscrowOwnerId(session = null) {
 let _cachedLabEscrowOwnerId = null;
 /**
  * 기공비(lab share) 에스크로 소유.
- * flag `ABUTS_LAB_ESCROW_OWNER` on: 어벗츠기공소(internalLab, 개인 개설) — 대금 수취·계약 주체.
- * off 또는 앵커 없음: 기존 devops. 어벗·배송 몫은 항상 devops.
+ * flag `ABUTS_LAB_ESCROW_OWNER`는 개인 기공소 공급자용이라 켜지 않는다.
+ * off: 기존 devops. 어벗츠 수행 기공의 치과 입금은 OB에서 법인으로 간다.
  * 반환 role은 hold meta(`escrowOwnerRole`)에 같이 남겨 release가 hold 소유자를 따른다.
  */
 async function resolveLabShareEscrowOwner(session = null) {

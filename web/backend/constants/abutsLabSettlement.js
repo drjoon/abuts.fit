@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-19: 개인 기공소 공급자 모델은 폐기. flag는 끄고 둔다. 기공사업부 계산서는 법인(ABUTS_TO_CUSTOMER).
 // - 2026-10-15: 어벗츠기공소(개인 개설) 정산 구조 정렬용 feature flag.
 // related files:
 // - web/backend/services/customerMonthlyInvoice.service.js
@@ -6,10 +7,9 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - rules.md §2.3
 //
-// 법적 구조: 치과기공소 개설 주체는 면허를 가진 개인이다.
-// - 어벗츠기공소(`internalLab`, 개인 개설) = 치과와 직계약하는 면세 기공 공급자.
-// - 어벗츠 주식회사 = 플랫폼·장비 공급자. 어벗츠기공소에 정액/건당으로 과세 청구한다.
-// 세무사·변호사 확인 전에는 기본 off(기존 동작 유지). 켜기 전 백필·팝빌 수탁 설정을 확인한다.
+// 법적 구조(2026-10-19): 개인 어벗츠기공소는 열지 않는다.
+// 기공소업은 어벗츠 주식회사의 기공사업부다. 치과 입금·계산서 공급자는 법인.
+// 아래 flag는 개인 기공소를 공급자로 만들던 경로라 켜지 않는다.
 
 function envOn(name) {
   return String(process.env[name] || "").trim().toLowerCase() === "true";

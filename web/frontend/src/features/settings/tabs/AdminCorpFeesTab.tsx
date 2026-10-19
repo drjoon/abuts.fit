@@ -185,7 +185,9 @@ export const AdminCorpFeesTab = () => {
         <CardHeader>
           <CardTitle className="text-base">월 정액</CardTitle>
           <p className="text-[12px] leading-snug text-muted-foreground">
-            금액은 부가세 포함입니다.
+            기공사업은 어벗츠 주식회사 기공사업부입니다.
+            <br />
+            개인 기공소에 청구하지 않으며, 이 단가는 정산·계산서에 쓰이지 않습니다.
           </p>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2">

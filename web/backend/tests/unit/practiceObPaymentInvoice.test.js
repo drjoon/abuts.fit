@@ -26,6 +26,25 @@ describe("allocateAbutsPaymentInvoice", () => {
       storeVat: 1_818,
       storeTotal: 20_000,
       abutment: 125_000,
+      labDivision: 0,
+    });
+  });
+
+  test("기공사업부 기공과 커스텀어벗을 면세 한 덩어리로 나눈다", () => {
+    expect(
+      allocateAbutsPaymentInvoice(350_000, {
+        storeSupplyAmount: 18_182,
+        storeVatAmount: 1_818,
+        storeTotalAmount: 20_000,
+        abutmentAmount: 130_000,
+        labDivisionAmount: 200_000,
+      }),
+    ).toEqual({
+      storeSupply: 18_182,
+      storeVat: 1_818,
+      storeTotal: 20_000,
+      abutment: 130_000,
+      labDivision: 200_000,
     });
   });
 });
@@ -62,6 +81,7 @@ describe("issuePracticeObPaymentInvoices", () => {
       storeVatAmount: 1_818,
       storeTotalAmount: 20_000,
       abutmentAmount: 30_000,
+      labDivisionAmount: 80_000,
     };
     const settlement = {
       _id: settlementId,
@@ -82,7 +102,7 @@ describe("issuePracticeObPaymentInvoices", () => {
         },
         {
           payeeKind: "abuts_corp",
-          amount: 50_000,
+          amount: 130_000,
           transferStatus: "SUCCESS",
         },
       ],
@@ -121,8 +141,10 @@ describe("issuePracticeObPaymentInvoices", () => {
     });
     expect(abutmentDraft).toMatchObject({
       issuanceMode: "SELF",
-      supplyAmount: 30_000,
+      supplyAmount: 110_000,
       vatAmount: 0,
+      totalAmount: 110_000,
+      itemName: "기공서비스·커스텀어벗(면세 계산서)",
     });
 
     const second = await issuePracticeObPaymentInvoices({
@@ -159,7 +181,7 @@ describe("aggregatePracticeMonthUsage prepaid custom abutment", () => {
       targetLabAnchorId: lab._id,
       status: "active",
       createdAt,
-      billing: { labFeeTotal: 80_000, abutmentTotal: 15_000 },
+      billing: { labFeeTotal: 80_000, abutmentRetailTotal: 15_000 },
     });
     await Request.create({
       businessAnchorId: practice._id,

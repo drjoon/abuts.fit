@@ -197,6 +197,14 @@
 - 보정 곡면 삼각형 attribute는 `0x4342`. HF 패치(`0x4846`)는 유지된다.
 - SSOT: `services/abutmentStl/{cuffConnectionSpecs,cuffBlend,cuffBlend.service}.js`, `tests/unit/cuffBlend.test.js`, `.cursor/rules/cuff-connection-spec.mdc`
 
+### 포스트 축면 봉우리 보정 (피니시라인 위)
+
+- 커프 이음은 피니시라인 아래를 새 곡면으로 바꾼다. 그 위 포스트는 크라운 내면이 닿으므로 삼각형을 더하거나 지우지 않는다.
+- `fairPostAboveFinishLine`은 같은 세로줄에서 **위와 아래보다 동시에 8µm 이상 굵은 점**만 반경을 줄인다. 골·경사·피니시라인 아래는 그대로다.
+- 바깥(반경 증가)은 2µm까지. 안쪽은 30µm까지. 마진에서 0.27mm 구간은 이동량을 0으로 붙인다.
+- 자동 파이프라인에는 넣지 않는다. 샘플 확인: `node scripts/abutment-stl-js/fair-post.js --request CA261019-BQM --out /tmp/post.stl` (`--write`는 그 의뢰 filled STL을 덮어쓴다).
+- SSOT: `services/abutmentStl/postFair.js`, `tests/unit/postFair.test.js`
+
 ### 디자인 파트너 클레임·마감
 
 - 접근: `BusinessAnchor.designAccessEnabled` (`/api/devops/design-access`). 제조사 큐 엔드포인트는
@@ -341,7 +349,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - **PTX 협력/하청 수가·할증 vs 정산(강제):**
     - **협력**(`assigneeKind=cooperation`): 수가표·할증=**수행 기공소**. 견적·보류·청구는 치과↔지정 기공소와 동일.
     - **하청**(`assigneeKind=subcontract`)·어벗츠 자체: 수가표·할증=**원청 어벗츠**.
-    - **정산(공통):** 치과→**수행 기공소** 직접(`resolvePracticeTransferSettlementParties`, OB `aggregatePracticeMonthUsage`). 커스텀어벗→어벗츠 법인. 신규 생성 `resolveCreateMatchingTarget`=픽커 lab이 `targetLabAnchorId`. 레거시 cooperation·`ABUTS_LAB_*` flag는 호환만.
+    - **정산(공통):** 외부 수행 기공소→그 기공소. 어벗츠 기공사업부(`internalLab`)가 수행한 기공·커스텀어벗·스토어→**어벗츠 법인**(`aggregatePracticeMonthUsage`의 `labDivisionAmount`는 법인 줄). 신규 생성 `resolveCreateMatchingTarget`=픽커 lab이 `targetLabAnchorId`. `ABUTS_LAB_*` flag(개인 기공소 공급자)는 켜지 않는다.
     - **실무(공통):** 원청도 기공한다. 수신 범위는 `target` 또는 `assignee`(협력·하청 포함). 어벗츠기공소 UI는 원청·협력·하청 표시/숨김. 협력은 수행 기공소만 작업하고 원청 화면에서는 작업 버튼(작업시작·취소·업로드)을 숨긴다. 채팅 헤더 AI 디자인은 어벗츠기공소가 모든 케이스에서 연다(`canLabUsePracticeTransferAiDesign`). 채팅은 원청도 참여한다. 하청·자체 수행은 원청도 작업·채팅한다. 생산비 크레딧·수취는 수행 기공소(`resolvePerformingLabAnchorId`). assignee가 없으면 원청이 직접 수행한다.
     - 헬퍼: `resolveFeeScheduleLabAnchorId` / `resolveLabFeeMultiplierLabAnchorId`. `isPracticeTransferSubcontracted`만으로 협력 수가를 어벗츠에 두지 말 것. Cursor `.cursor/rules/ptx-cooperation-fee-ssot.mdc` · 루트 `rules.md` §2.
   - PracticeTransfer 에스크로 SSOT: **생성(`POST /api/practice/transfers`)** 시 잔액 검사(`assertPracticeTransferPaidCreditSufficient`) + `holdPracticeTransferCredits`로 기공비 보류(`billing.heldAt`, `PRACTICE_TRANSFER_SPEND_HOLD`) — 수락 전 정산 페이지에 치과「결제 보류」/기공소「적립 보류」. **수락(`mark-accepted`)** 시 `adjustPracticeTransferHold`(보류액 확정) 직후 `releasePracticeTransferLabShare`로 정산(어벗츠기공소 원청 gross→하청 매입; 레거시 외부 직접 지정만 수행 기공소 전액). **커스텀어벗은 치아별 디자인 STL이 있고 어벗 생산비가 어벗츠에 지급된 뒤에만** 이 확정 정산과 기공소 payout에 넣는다. 그 전에도 치과「결제 보류」·기공소「적립 보류」·기간 소비(보류)는 노출하고, 확정 적립·payout만 빼며, 조건 충족 시 그 시점 저널로 정산한다. UI 견적: `GET /api/practice/transfers/quote-context`(지정 기공소 스케줄·수수료율·어벗 단가) + 치식별 합산(`labFeeSchedule.js`). **신규 의뢰는 지정 기공소(어벗츠기공소 포함)만** — **수가·할증 앵커:** 협력(`assigneeKind=cooperation`)=수행 기공소(`labFeeSchedule`×`labFeeMultiplier`), 하청·어벗츠 자체=원청(어벗츠). 생성 시점 스냅샷·소급 금지. `resolveFeeScheduleLabAnchorId` / `resolveLabFeeMultiplierLabAnchorId`. 정산만 어벗츠기공소 gross→수행 기공소 매입(크레딧 경유). 플랫폼 평균수가·별점 기공비 배수·평균수가 워커는 쓰지 않음. **치과 별점 하한·상한**(기본 3~4)은 지정 픽커·생성 게이트(어벗츠 포함 유효 별점이 구간 안인 기공소만). 치과 평가 별점은 **수행 기공소**(하청 `assignee` 우선)에 남기며, 하청 시 치과에는 「인증 협력 기공소에서 처리」만 표시(실명 비공개·확정 후에도 동일). **우리 치과 1점**은 검색 가능·지정 주문 불가. **어벗츠기공소 지정 의뢰**는 기공팀이 원하면 `open-subcontract`로 인증·수가설정 협력 기공소 하청 풀을 연다(별점 구간·1점 제외 없음). 치과 표시·과금은 원청(어벗츠) 수가+할증 유지. **수락(`mark-accepted`)** 시 보류 조정(`PRACTICE_TRANSFER_HOLD_ADJUST`)·`billing.billedAt` 확정. **기공소 발송=`mark-complete`** → 이미 수락 시 정산됐으면 release no-op(레거시 미정산만 lab share 해제), **제조사 발송=packing** → abutment share 해제. 목록 `feeQuote`: 치과=크레딧 소비(`total`), 기공소=설정 수가(`labFeeTotal`).
@@ -557,7 +565,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 적용 파일: `controllers/admin/admin.users.controller.js`
   - `validRoles` 기준은 루트 규칙(사업자 타입 허용값)과 동기화합니다. (`internalLab`·`labTeam`·`salesTeam` 포함)
   - 기존 `practice` 계정은 `requestor`+`practice` 마이그레이션 대상입니다.
-  - `internalLab`(어벗츠기공소): 어벗츠 기공소 직접 운영. 디자인 파트너·기공의뢰 수신·사업자/크레딧 API 허용. 공개 가입 없음.
+  - `internalLab`(어벗츠기공소): 어벗츠 주식회사 **기공사업부** 작업 화면. 개인 기공소가 아니다. 디자인 파트너·기공의뢰 수신·사업자/크레딧 API 허용. 공개 가입 없음. 어벗츠가 수행한 기공비의 치과 입금·계산서는 법인.
   - 동일 법인 BN 공유: `BusinessAnchor` unique는 `{ businessNumberNormalized, businessType }`. 하위조직 `parentBusinessAnchorId`(예: admin「어벗츠 주식회사」← internalLab「기공사업부」). `ensureBusinessAnchor`도 type 스코프.
 
 - 의뢰자 역할·서비스 · 가입/온보딩 SSOT (2026-08, 루트 §2.4 상세)

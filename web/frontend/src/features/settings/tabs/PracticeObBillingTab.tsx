@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-19: 어벗츠 기공사업부 기공은 법인 이체. 칩은 기공소 / 어벗츠.
 // - 2026-10-17: 자동정산 탭 — 후불 OB만, 보증금 UI 제거·문구·상태 배너 정리.
 // related files:
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
@@ -395,22 +396,26 @@ export function PracticeObBillingTab() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="cursor-default rounded-lg border border-slate-200/80 bg-white/90 px-2.5 py-1 text-xs tabular-nums text-slate-700">
-                  기공물{" "}
+                  기공소{" "}
                   {formatRequestorWon(currentMonthEstimate.directLabTotal)}원
                 </span>
               </TooltipTrigger>
               <TooltipContent className="max-w-xs text-xs">
-                거래 기공소 계좌로 이체됩니다.
+                다른 기공소가 수행한 기공비입니다.
+                <br />
+                그 기공소 계좌로 이체됩니다.
               </TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="cursor-default rounded-lg border border-slate-200/80 bg-white/90 px-2.5 py-1 text-xs tabular-nums text-slate-700">
-                  커스텀어벗{" "}
+                  어벗츠{" "}
                   {formatRequestorWon(currentMonthEstimate.abutsCorpTotal)}원
                 </span>
               </TooltipTrigger>
               <TooltipContent className="max-w-xs text-xs">
+                기공사업부 기공·커스텀어벗·스토어입니다.
+                <br />
                 어벗츠 법인 계좌로 이체됩니다.
               </TooltipContent>
             </Tooltip>

@@ -25,7 +25,7 @@ import {
 } from "../../utils/creditLock.util.js";
 
 describe("practiceObBilling & checkCreditLock", () => {
-  test("aggregatePracticeMonthUsage — 기공물은 수행 기공소, 커스텀어벗만 법인", async () => {
+  test("aggregatePracticeMonthUsage — 외부 기공물은 수행 기공소, 어벗츠 기공사업부·커스텀어벗·스토어는 법인", async () => {
     const practice = await BusinessAnchor.create({
       businessNumberNormalized: "5234567890",
       businessType: "requestor",
@@ -123,17 +123,20 @@ describe("practiceObBilling & checkCreditLock", () => {
       practiceAnchorId: practice._id,
       yearMonth: "2026-09",
     });
-    expect(usage.directLabTotal).toBe(300_000);
-    expect(usage.abutsCorpTotal).toBe(145_000);
+    expect(usage.directLabTotal).toBe(100_000);
+    expect(usage.labDivisionAmount).toBe(200_000);
+    expect(usage.abutsCorpTotal).toBe(345_000);
     expect(usage.storeTotalAmount).toBe(20_000);
     expect(usage.storeSupplyAmount).toBe(18_182);
     expect(usage.storeVatAmount).toBe(1_818);
     expect(usage.abutmentAmount).toBe(125_000);
     const directLines = usage.lines.filter((l) => l.payeeKind === "direct_lab");
-    expect(directLines).toHaveLength(2);
+    expect(directLines).toHaveLength(1);
+    expect(String(directLines[0].payeeAnchorId)).toBe(String(partnerLab._id));
     const corpLine = usage.lines.find((l) => l.payeeKind === "abuts_corp");
     expect(corpLine?.payeeName).toBe("어벗츠 주식회사");
-    expect(corpLine?.amount).toBe(145_000);
+    expect(corpLine?.accountNumber).toBe("140-999-888777");
+    expect(corpLine?.amount).toBe(345_000);
   });
 
   test("현금 보증금 없이 한도 없이 OB 장기동의 등록 → 정산일 자동이체 실패 시 즉시 Hold → Face ID 1탭 재이체 및 90일 재인증 시 해제", async () => {

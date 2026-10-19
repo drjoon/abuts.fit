@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-19: 어벗츠 기공사업부가 수행한 기공비는 법인 면세 계산서(커스텀어벗과 한 장).
+//   외부 기공소 수행분만 LAB_TO_PRACTICE.
 // - 2026-10-18: 치과 OB 이체 성공분과 같은 금액으로 계산서 발행.
 //   스토어=어벗츠 법인 과세(SELF), 기공서비스=수행 기공소 면세(팝빌 위수탁),
 //   커스텀어벗=어벗츠 법인 면세(SELF).
@@ -52,7 +54,8 @@ async function resolveContactUser(anchor) {
 }
 
 /**
- * 어벗츠 법인으로 이체된 금액을 스토어(과세)와 커스텀어벗(면세)으로 나눈다.
+ * 어벗츠 법인으로 이체된 금액을 스토어(과세)·커스텀어벗(면세)·기공사업부 기공(면세)으로 나눈다.
+ * 기공사업부 기공과 커스텀어벗은 같은 면세 계산서 한 장이다.
  * 분해 합계와 이체액이 같으면 주문 공급가·세액을 그대로 쓴다.
  * 분해가 없으면 이체액 전체를 면세(커스텀어벗)로 둔다.
  */
@@ -62,38 +65,68 @@ export function allocateAbutsPaymentInvoice(paidAmount, split) {
   const storeSupply = Math.max(0, Math.round(Number(split?.storeSupplyAmount) || 0));
   const storeVat = Math.max(0, Math.round(Number(split?.storeVatAmount) || 0));
   const abutment = Math.max(0, Math.round(Number(split?.abutmentAmount) || 0));
-  if (paid <= 0) {
-    return { storeSupply: 0, storeVat: 0, storeTotal: 0, abutment: 0 };
+  const labDivision = Math.max(0, Math.round(Number(split?.labDivisionAmount) || 0));
+  const empty = {
+    storeSupply: 0,
+    storeVat: 0,
+    storeTotal: 0,
+    abutment: 0,
+    labDivision: 0,
+  };
+  if (paid <= 0) return empty;
+  const natural = storeTotal + abutment + labDivision;
+  if (natural <= 0) return { ...empty, abutment: paid };
+
+  let nextStore = storeTotal;
+  let nextAbutment = abutment;
+  let nextLab = labDivision;
+  if (natural !== paid) {
+    const ratio = paid / natural;
+    nextStore = Math.min(paid, Math.round(storeTotal * ratio));
+    nextAbutment = Math.min(paid - nextStore, Math.round(abutment * ratio));
+    nextLab = paid - nextStore - nextAbutment;
+    if (nextLab < 0) {
+      nextAbutment = Math.max(0, nextAbutment + nextLab);
+      nextLab = paid - nextStore - nextAbutment;
+    }
   }
-  const natural = storeTotal + abutment;
-  if (natural <= 0 || storeTotal <= 0) {
-    return { storeSupply: 0, storeVat: 0, storeTotal: 0, abutment: paid };
+
+  let supply = 0;
+  let vat = 0;
+  if (nextStore > 0 && storeTotal > 0) {
+    if (nextStore === storeTotal) {
+      supply = storeSupply;
+      vat = nextStore - supply;
+      if (vat < 0) {
+        supply = nextStore;
+        vat = 0;
+      }
+    } else {
+      supply = Math.round(storeSupply * (nextStore / storeTotal));
+      vat = nextStore - supply;
+      if (supply < 0) supply = 0;
+      if (vat < 0) {
+        supply = nextStore;
+        vat = 0;
+      }
+    }
+  } else if (nextStore > 0) {
+    supply = nextStore;
   }
-  if (natural === paid) {
-    return { storeSupply, storeVat, storeTotal, abutment };
-  }
-  const nextStoreTotal = Math.min(
-    paid,
-    Math.round((paid * storeTotal) / natural),
-  );
-  const nextAbutment = paid - nextStoreTotal;
-  if (nextStoreTotal <= 0) {
-    return { storeSupply: 0, storeVat: 0, storeTotal: 0, abutment: paid };
-  }
-  const ratio = nextStoreTotal / storeTotal;
-  let supply = Math.round(storeSupply * ratio);
-  let vat = nextStoreTotal - supply;
-  if (supply < 0) supply = 0;
-  if (vat < 0) {
-    supply = nextStoreTotal;
-    vat = 0;
-  }
+
   return {
     storeSupply: supply,
     storeVat: vat,
-    storeTotal: nextStoreTotal,
+    storeTotal: nextStore,
     abutment: nextAbutment,
+    labDivision: nextLab,
   };
+}
+
+function exemptItemName(abutment, labDivision) {
+  if (labDivision > 0 && abutment > 0) return "기공서비스·커스텀어벗(면세 계산서)";
+  if (labDivision > 0) return "기공서비스(면세 계산서)";
+  return "커스텀어벗 대금(면세 계산서)";
 }
 
 async function createDraft(payload) {
@@ -210,13 +243,14 @@ export async function issuePracticeObPaymentInvoices({
         itemName: "스토어 기성품(과세 세금계산서)",
       });
     }
-    if (allocated.abutment > 0) {
+    const exemptTotal = allocated.abutment + allocated.labDivision;
+    if (exemptTotal > 0) {
       corpDrafts.push({
         taxType: "면세",
-        supplyAmount: allocated.abutment,
+        supplyAmount: exemptTotal,
         vatAmount: 0,
-        totalAmount: allocated.abutment,
-        itemName: "커스텀어벗 대금(면세 계산서)",
+        totalAmount: exemptTotal,
+        itemName: exemptItemName(allocated.abutment, allocated.labDivision),
       });
     }
     for (const spec of corpDrafts) {

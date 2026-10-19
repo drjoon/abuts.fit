@@ -655,12 +655,12 @@ Notes:
   - UI: `settlementUi` 요약 카드·수식 부호 + `creditPageUi` 패널/타일.
 
 - 어벗츠기공소(`internalLab`) UI SSOT:
-  - Role: top-level `User.role=internalLab`(제조사와 대칭). 공개 가입 없음·관리자 생성. UI 라벨 「어벗츠기공소」.
+  - Role: top-level `User.role=internalLab`(제조사와 대칭). 공개 가입 없음·관리자 생성. UI 라벨 「어벗츠기공소」. 실체는 어벗츠 주식회사 기공사업부(개인 기공소 없음).
   - 사이드: 기공의뢰수신(`/dashboard/lab-work`, 디자인 큐 포함) · 설정(`/dashboard/settings`).
   - 상단 `LabDashboardTopBanners`(가입 이유)는 미표시.
   - 페이지: `src/pages/internalLab/labWork` — 기공의뢰수신 셸. 구 `/dashboard/abut-design` → `/dashboard/lab-work`.
   - 랜딩: `/dashboard/lab-work`.
-  - 조직: 법인「어벗츠 주식회사」하위 「기공사업부」(`parentBusinessAnchorId` + 설정 `InternalLabOrgBanner`). 사업자등록증·BN은 법인과 공유(type별 앵커).
+  - 조직: 법인「어벗츠 주식회사」의 「기공사업부」(`parentBusinessAnchorId` + 설정 `InternalLabOrgBanner`). 사업자등록증·BN은 법인과 같다. 치과 입금·계산서는 법인.
 
 - 제조사 워크시트 크레딧 승인/롤백 정책:
   - 가공 진입 승인으로 `가공` 단계 이동 시 의뢰 크레딧 소비가 발생합니다.

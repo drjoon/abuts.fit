@@ -11,8 +11,8 @@ import mongoose from "mongoose";
 // - ABUTS_TO_CUSTOMER: 치과/기공소가 어벗츠(주식회사)에 결제한 사용분(어벗·배송=면세 계산서, 스토어=과세 세금계산서)의 반대방향. 어벗츠가 실제 공급자(SELF). buyerKind로 치과/기공소 구분. PTX 기공비는 flag off일 때만 여기 포함(on이면 ABUTS_LAB_TO_CUSTOMER).
 // - LAB_TO_PRACTICE: 기공소→치과 기공서비스 면세 위수탁. 치과 OB 이체 성공 때 생성. 월 원장 재집계는 하지 않는다.
 // - AFFILIATE_TO_ABUTS: 관계사→어벗츠 매입/정산(기공소=하청 매입 기공비 면세, 제조·딜러·개발운영=과세). 어벗츠=수탁자(TRUSTEE).
-// - ABUTS_LAB_TO_CUSTOMER: (2026-10-15) 어벗츠기공소(개인 개설, internalLab)→치과/기공소 PTX 기공비 면세 월합.
-//   공급자=어벗츠기공소(sellerAnchorId), 어벗츠 주식회사는 팝빌 수탁자(TRUSTEE). `ABUTS_LAB_SELLER_INVOICE_ENABLED`일 때만 생성.
+// - ABUTS_LAB_TO_CUSTOMER: (폐기, flag off) 예전 개인 기공소 공급자 월합. 켜지 않는다.
+//   기공사업부 기공은 ABUTS_TO_CUSTOMER 면세(법인 SELF)에 커스텀어벗과 함께 넣는다.
 export const TAX_INVOICE_DIRECTIONS = [
   "ABUTS_TO_CUSTOMER",
   "LAB_TO_PRACTICE",

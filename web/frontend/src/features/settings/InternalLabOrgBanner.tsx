@@ -58,7 +58,9 @@ export function InternalLabOrgBanner() {
         <div>
           <p className="text-sm font-semibold text-slate-900">조직</p>
           <p className="text-xs text-muted-foreground">
-            동일 사업자등록 · 하위 사업부
+            어벗츠 주식회사의 기공사업부입니다.
+            <br />
+            개인 기공소 계좌는 쓰지 않습니다.
           </p>
         </div>
       </div>

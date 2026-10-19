@@ -5,17 +5,19 @@ alwaysApply: true
 
 # PTX fees & settlement (강제)
 
-기공의뢰(`PracticeTransfer`)는 **치과→지정 기공소** 관계다. 어벗츠 법인 경유·「어벗츠 · {파트너}」 표시는 신규에 쓰지 않는다.
+기공의뢰(`PracticeTransfer`)는 **치과→지정 기공소** 관계다. 어벗츠가 수행하는 기공은 주식회사의 **기공사업부**이고, 그 기공비의 입금·계산서는 **어벗츠 법인**이다. 개인 어벗츠기공소는 열지 않는다. 「어벗츠 · {파트너}」 표시는 신규에 쓰지 않는다.
 
 ## SSOT
 
 | 구분 | 수가·할증 | 크레딧 정산 gross | OB 월 이체(기공물) |
 | --- | --- | --- | --- |
-| **지정 기공소** | `targetLabAnchorId`(=수행) | 수행 기공소 | 수행 기공소 |
-| **어벗츠 하청** (`assigneeKind=subcontract`) | 수행(`assignee`) | 수행 | 수행 |
-| **레거시 협력** (`cooperation`, prime≠assignee) | 수행(`assignee`) | 수행 | 수행 |
+| **외부 지정 기공소** | `targetLabAnchorId`(=수행) | 수행 기공소 | 수행 기공소 |
+| **어벗츠 기공사업부 수행** (`internalLab`) | 기공사업부 | 기공사업부 장부 | **어벗츠 법인** |
+| **어벗츠 하청** (`assigneeKind=subcontract`) | 수행(`assignee`) | 수행 | 수행 기공소(외부) |
+| **레거시 협력** (`cooperation`, prime≠assignee) | 수행(`assignee`) | 수행 | 수행 기공소(외부) |
 
-- 커스텀어벗(Request·PTX abutment): **어벗츠 법인** (`admin`) — OB·장부 SSOT는 루트 `rules.md` §2.3.
+- 커스텀어벗(Request·PTX abutment)·스토어·기공사업부 수행 기공: **어벗츠 법인** (`admin`). OB·계산서 SSOT는 루트 `rules.md` §2.3.
+- 기공사업부 기공과 커스텀어벗은 법인 면세 계산서 한 장. 스토어는 법인 과세 세금계산서. 외부 기공소 수행분만 `LAB_TO_PRACTICE`.
 - 헬퍼: `resolveFeeScheduleLabAnchorId` · `resolveLabFeeMultiplierLabAnchorId` · `resolvePerformingLabAnchorId` · `resolvePracticeTransferSettlementParties` (`practiceTransferAutoMatchCore.js`)
 - 생성: `resolveCreateMatchingTarget` — 외부 lab 선택 시 `targetLabAnchorId`=해당 lab, `assignee` 없음.
 - **실무:** 하청 풀·어벗츠기공소 UI(원청 화면·하청 전환)는 유지. 작업·적립·수가는 **수행 기공소** 기준.

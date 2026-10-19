@@ -234,8 +234,8 @@ const systemSettingsSchema = new mongoose.Schema(
       defaultRequestFreeCredit: { type: Number, default: 0 },
       defaultShippingFreeCredit: { type: Number, default: 0 },
     },
-    // 법인(어벗츠 주식회사)→어벗츠기공소 정액 청구 단가. 금액은 부가세 포함. 제품 단위는 어벗츠 기공수가 항목 id 기준.
-    // 법인·기공소 협의로 관리자가 언제든 변경. 정률 금지(CORP_FEE_FIXED_ONLY). 현재 청구·정산 연동 없음(설정만).
+    // 예전 법인→개인 기공소 정액 단가. 기공사업은 법인 기공사업부라 청구·정산에 연결하지 않는다.
+    // 정률 금지(CORP_FEE_FIXED_ONLY). 설정 화면은 남겨 두되 쓰지 않는다.
     // related: web/backend/services/corpPlatformFee.service.js
     corpPlatformFees: {
       platformUsageMonthlyFee: { type: Number, default: 0 },
