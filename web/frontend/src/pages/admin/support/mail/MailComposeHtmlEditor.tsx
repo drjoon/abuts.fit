@@ -2,7 +2,7 @@
 // - web/frontend/src/pages/admin/support/mail/AdminMailComposePanel.tsx
 import { useCallback, useLayoutEffect, useRef } from "react";
 import { cn } from "@/shared/ui/cn";
-import { htmlToPlainText, sanitizeMailHtml } from "./mailHtml.util";
+import { htmlToPlainText, resolvePasteHtml } from "./mailHtml.util";
 
 type Props = {
   value: string;
@@ -29,6 +29,16 @@ export const MailComposeHtmlEditor = ({
     }
   }, [value]);
 
+  useLayoutEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    try {
+      document.execCommand("defaultParagraphSeparator", false, "p");
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const syncFromDom = useCallback(() => {
     const el = editorRef.current;
     if (!el) return;
@@ -43,9 +53,7 @@ export const MailComposeHtmlEditor = ({
       const clip = e.clipboardData;
       const html = clip.getData("text/html");
       const text = clip.getData("text/plain");
-      const toInsert = html
-        ? sanitizeMailHtml(html)
-        : text.replace(/\n/g, "<br>");
+      const toInsert = resolvePasteHtml(html, text);
 
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0) {
@@ -99,6 +107,8 @@ export const MailComposeHtmlEditor = ({
           "[&_th]:border [&_th]:border-border [&_th]:bg-muted/50 [&_th]:p-1.5 [&_th]:text-left [&_th]:break-words",
           "[&_img]:max-w-full [&_img]:h-auto",
           "[&_a]:text-primary [&_a]:underline",
+          "[&_p]:my-1 [&_p]:block [&_div]:my-0.5",
+          "[&_p:empty]:min-h-[1.25em]",
           className,
         )}
       />
