@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 // change-log:
+// - 2026-10-19: 남은 machiningQty는 process-file에 batchContinue를 실어, 완료 직후 중복 차단을 통과한다.
 // - 2026-10-17: machiningQty>1이면 완료 후 수량만 깎고 같은 의뢰를 auto-next로 이어 가공한다.
 // - 2026-10-13: 더미 가공 완료는 세척.패킹으로 넘기지 않고 대기열에서 뺀다.
 // - 2026-10-13: 가공 tick의 ALARM은 진행 상태만 갱신한다. 알람 건은 fail 알림 하나다.
@@ -78,6 +79,7 @@ import {
   normalizeDiameterGroupValue,
   inferDiameterGroupFromValue,
 } from "./distribution.utils.js";
+import { shouldRequeueSameRequestAfterComplete } from "./machiningBatchContinue.js";
 import { toKstYmd } from "../../utils/krBusinessDays.js";
 import { getTtlMapValue, observeTimestampMap, setTtlMapValue } from "../../utils/boundedTtlMap.js";
 
@@ -1593,6 +1595,9 @@ export async function triggerNextAutoMachiningAfterComplete({
     }
 
     const requestId = String(pick.requestId || "").trim();
+    const batchContinue = shouldRequeueSameRequestAfterComplete(
+      pick?.productionSchedule,
+    );
     const bridgePath = String(
       pick?.ncFile?.filePath || pick?.caseInfos?.ncFile?.filePath || "",
     ).trim();
@@ -1724,7 +1729,7 @@ export async function triggerNextAutoMachiningAfterComplete({
     // ──────────────────────────────────────────────────────────────────────────
     const triggerUrl = `${base0}/api/bridge/process-file`;
     console.log(
-      `[bridge:auto-next] process-file request machine=${mid} requestId=${requestId} fileName=${fileName} elapsedMs=${Date.now() - startedAt}`,
+      `[bridge:auto-next] process-file request machine=${mid} requestId=${requestId} fileName=${fileName} batchContinue=${batchContinue} elapsedMs=${Date.now() - startedAt}`,
     );
     const triggerResp = await fetch(triggerUrl, {
       method: "POST",
@@ -1737,10 +1742,18 @@ export async function triggerNextAutoMachiningAfterComplete({
         bridgePath: bridgePath || null,
         s3Key: s3Key || null,
         s3Bucket: s3Bucket || null,
+        batchContinue,
       }),
     });
+    const triggerText = await triggerResp.text().catch(() => "");
+    let triggerBody = {};
+    try {
+      triggerBody = triggerText ? JSON.parse(triggerText) : {};
+    } catch {
+      triggerBody = {};
+    }
     if (!triggerResp.ok) {
-      const txt = await triggerResp.text().catch(() => "");
+      const txt = triggerText;
       const errPayload = {
         machineId: mid,
         requestId,
@@ -1760,8 +1773,22 @@ export async function triggerNextAutoMachiningAfterComplete({
     // [정책 4.8.6] process-file 성공 후 브리지 큐 스냅샷을 DB에 저장하지 않는다.
     // 브리지가 의뢰건을 자체 큐에 추가하더라도 백엔드 스냅샷에는 반영하지 않아
     // 장비 페이지 예약목록이 오염되지 않는다.
+    const bridgeStatus = String(triggerBody?.status || "").trim();
+    if (bridgeStatus === "IGNORED_DUPLICATE") {
+      console.warn(
+        "[bridge:auto-next] process-file ignored",
+        JSON.stringify({
+          machineId: mid,
+          requestId,
+          batchContinue,
+          reason: triggerBody?.reason || null,
+          elapsedMs: Date.now() - startedAt,
+        }),
+      );
+      return;
+    }
     console.log(
-      `[bridge:auto-next] process-file success machine=${mid} requestId=${requestId} elapsedMs=${Date.now() - startedAt} (snapshot NOT updated per policy 4.8.6)`,
+      `[bridge:auto-next] process-file success machine=${mid} requestId=${requestId} batchContinue=${batchContinue} bridgeStatus=${bridgeStatus || "ok"} elapsedMs=${Date.now() - startedAt} (snapshot NOT updated per policy 4.8.6)`,
     );
   } catch (e) {
     console.warn(
@@ -2534,7 +2561,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
             lastTickAt: now,
             elapsedSeconds: 0,
           };
-          delete request.productionSchedule.actualMachiningComplete;
+          request.productionSchedule.actualMachiningComplete = null;
           autoNextCompletedRequestIdToSkip = "";
           console.log(
             "[bridge:machining:complete] batch qty decremented, staying in queue",

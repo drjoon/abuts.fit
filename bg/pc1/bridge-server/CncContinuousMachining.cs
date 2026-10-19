@@ -3,6 +3,7 @@
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/cnc/production.js
 // change-log:
+// - 2026-10-19: 수량 반복(batchContinue)은 완료 직후 120초 중복 차단을 한 번 통과해 다음 개를 큐에 넣는다.
 // - 2026-10-13: 가공 실패는 fail 통지 한 번. ALARM tick을 같이 보내지 않는다.
 // - 2026-10-10: Next Up 파일은 시작 직전에 S3에서 temp로 흘린다. 바이트 배열로 올리지 않는다.
 // - 2026-09-29: 가공 완료 시 register-file(sourceStep=cnc) 통지를 뺀다. 완료 신호는 machining/complete 하나.
@@ -402,11 +403,13 @@ public static bool TryEnqueueProcessRequest(
     string bridgePath,
     string s3Key,
     string s3Bucket,
+    bool batchContinue,
     out CncJobItem job,
     out string ignoreReason)
 {
     job = null;
     ignoreReason = null;
+    var batchRepeatClaimed = false;
 
     var mid = (machineId ?? string.Empty).Trim();
     var fn = (fileName ?? string.Empty).Trim();
@@ -445,7 +448,8 @@ public static bool TryEnqueueProcessRequest(
                 }
             }
 
-            // 2) 방금 완료한 동일 요청의 짧은 시간 내 재수신은 레이스/중복으로 간주해 무시
+            // 2) 방금 완료한 동일 요청의 짧은 시간 내 재수신은 레이스/중복으로 간주해 무시.
+            //    수량 반복(batchContinue)은 완료 1회당 한 번만 통과시켜 다음 개를 넣는다.
             var justCompletedAgo = state.LastCompletedRequestAtUtc == DateTime.MinValue
                 ? TimeSpan.MaxValue
                 : (DateTime.UtcNow - state.LastCompletedRequestAtUtc);
@@ -454,8 +458,13 @@ public static bool TryEnqueueProcessRequest(
             {
                 if (!string.IsNullOrEmpty(rid) && !string.IsNullOrEmpty(state.LastCompletedRequestId) && string.Equals(state.LastCompletedRequestId, rid, StringComparison.OrdinalIgnoreCase))
                 {
-                    ignoreReason = "just-completed-request";
-                    return false;
+                    if (!batchContinue || state.BatchContinueAccepted)
+                    {
+                        ignoreReason = "just-completed-request";
+                        return false;
+                    }
+                    state.BatchContinueAccepted = true;
+                    batchRepeatClaimed = true;
                 }
 
                 if (string.IsNullOrEmpty(rid) && !string.IsNullOrEmpty(key) && !string.IsNullOrEmpty(state.LastCompletedFileKey) && string.Equals(state.LastCompletedFileKey, key, StringComparison.OrdinalIgnoreCase))
@@ -477,6 +486,7 @@ public static bool TryEnqueueProcessRequest(
             var qRid = NormalizeRequestId(q.requestId, q.fileName, q.originalFileName);
             if (!string.IsNullOrEmpty(qRid) && string.Equals(qRid, rid, StringComparison.OrdinalIgnoreCase))
             {
+                ReleaseBatchRepeatClaim(mid, batchRepeatClaimed);
                 ignoreReason = "already-queued-request";
                 return false;
             }
@@ -490,6 +500,7 @@ public static bool TryEnqueueProcessRequest(
             var qKey = BuildJobIdentityKey(q.fileName, q.originalFileName, q.bridgePath);
             if (!string.IsNullOrEmpty(qKey) && string.Equals(qKey, key, StringComparison.OrdinalIgnoreCase))
             {
+                ReleaseBatchRepeatClaim(mid, batchRepeatClaimed);
                 ignoreReason = "already-queued-file";
                 return false;
             }
@@ -499,6 +510,7 @@ public static bool TryEnqueueProcessRequest(
     job = CncJobQueue.EnqueueFileBack(mid, fn, string.IsNullOrWhiteSpace(requestId) ? null : requestId, string.IsNullOrWhiteSpace(ofn) ? fn : ofn);
     if (job == null)
     {
+        ReleaseBatchRepeatClaim(mid, batchRepeatClaimed);
         ignoreReason = "enqueue-failed";
         return false;
     }
@@ -510,6 +522,20 @@ public static bool TryEnqueueProcessRequest(
     if (!string.IsNullOrEmpty(sb)) job.s3Bucket = sb;
 
     return true;
+}
+
+private static void ReleaseBatchRepeatClaim(string machineId, bool claimed)
+{
+    if (!claimed) return;
+    var mid = (machineId ?? string.Empty).Trim();
+    if (string.IsNullOrEmpty(mid)) return;
+    lock (StateLock)
+    {
+        if (MachineStates.TryGetValue(mid, out var state) && state != null)
+        {
+            state.BatchContinueAccepted = false;
+        }
+    }
 }
 
 private class MachineState
@@ -549,6 +575,8 @@ public DateTime LastCompletedAtUtc;
 public string LastCompletedRequestId;
 public string LastCompletedFileKey;
 public DateTime LastCompletedRequestAtUtc;
+// 수량 반복: 완료 1회당 batchContinue enqueue를 한 번만 허용
+public bool BatchContinueAccepted;
 // 마지막 관측 MachineStatusType (로그 변화 감지)
 public MachineStatusType LastObservedStatus;
 public bool HasLastObservedStatus;
@@ -1797,6 +1825,7 @@ private static void MarkJobCompletedLocal(MachineState state, CncJobItem complet
         state.LastCompletedRequestId = NormalizeRequestId(completedJob?.requestId, completedJob?.fileName, completedJob?.originalFileName);
         state.LastCompletedFileKey = BuildJobIdentityKey(completedJob?.fileName, completedJob?.originalFileName, completedJob?.bridgePath);
         state.LastCompletedRequestAtUtc = completedAt;
+        state.BatchContinueAccepted = false;
         state.NeedsPostCompleteAutoTrigger = true;
         state.CurrentJob = null;
         state.HasLastObservedStatus = false;

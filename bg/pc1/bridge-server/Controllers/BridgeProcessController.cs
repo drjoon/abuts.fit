@@ -25,6 +25,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             public string bridgePath { get; set; }
             public string s3Key { get; set; }
             public string s3Bucket { get; set; }
+            public bool batchContinue { get; set; }
         }
 
         [HttpPost]
@@ -55,6 +56,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                     req.bridgePath,
                     req.s3Key,
                     req.s3Bucket,
+                    req.batchContinue,
                     out job,
                     out ignoreReason
                 ))
