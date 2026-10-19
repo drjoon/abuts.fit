@@ -4,8 +4,10 @@
 // - web/backend/services/abutmentStl/pipeline.worker.js
 //
 // Rhino 없이 1-stl → 2-filled를 만든다. 순서는 process_abutment_stl.main과 같다:
-// import → align → finishline → 스크류홀 패치 → (explode/join: 기하 변화 없음) → 직경 → fill_steps → export → 메타.
-import { Mesh, writeBinaryStl, parseStl, identity, multiply } from "./meshCore.js";
+// import → align → (제조사 준비) 생략된 11° 커넥션 추가 → finishline → 스크류홀 패치 → 직경 → fill_steps → export → 메타.
+// 11° 커넥션 추가는 preflight·의뢰 전 보정 STL에서는 하지 않는다.
+import { Mesh, writeBinaryStl, parseStl, identity, multiply, translation } from "./meshCore.js";
+import { addMissingConnectionTaper } from "./connectionTaperFill.js";
 import { alignMeshToOrigin, ALIGN_MODULE_VERSION, JS_ALIGN_PORT_VERSION } from "./align.js";
 import { detectFinishLine, finishlineZExtrema, sanitizeFinishlinePoints } from "./finishline.js";
 import { buildScrewholePatch, SCREWHOLE_PARAMS } from "./fillScrewholes.js";
@@ -13,7 +15,7 @@ import { buildVerticalBandSolid } from "./fillSteps.js";
 import { calculateStlMetadataFromBuffer, tiltAxisFromMesh } from "./stlMetadata.js";
 import { correctTightCornerFillet, detectTightCorners } from "./tightCorner.js";
 
-export const ABUTMENT_STL_JS_VERSION = `abutment-stl-js-1+align-${ALIGN_MODULE_VERSION}+${JS_ALIGN_PORT_VERSION}`;
+export const ABUTMENT_STL_JS_VERSION = `abutment-stl-js-1+align-${ALIGN_MODULE_VERSION}+${JS_ALIGN_PORT_VERSION}+conn-taper-1`;
 
 /**
  * align이 mesh.transform으로 쌓는 행렬. aligned = M * original.
@@ -234,14 +236,39 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
   mark("import", t0);
 
   t0 = performance.now();
-  const { align, alignMatrix } = alignWithMatrix(mesh, () =>
+  const aligned = alignWithMatrix(mesh, () =>
     alignMeshToOrigin(mesh, { targetDiameter, implantProfile, log }),
   );
+  const align = aligned.align;
+  let alignMatrix = aligned.alignMatrix;
   if (!align.ok) log(`[align] warning: ${align.message}; continue to finishline detection`);
   mark("align", t0);
 
+  let connectionTaper = null;
+  if (!options.preflight && !options.correctDesign) {
+    t0 = performance.now();
+    try {
+      connectionTaper = addMissingConnectionTaper(mesh, {
+        implantProfile,
+        connection: options.connection,
+        log,
+      });
+      if (connectionTaper?.applied && connectionTaper.zShift) {
+        alignMatrix = multiply(translation(0, 0, connectionTaper.zShift), alignMatrix);
+      }
+    } catch (error) {
+      log(`[connection-taper] failed: ${error?.message || error}`);
+    }
+    mark("connection_taper", t0);
+  }
+
   t0 = performance.now();
   let finishLine = finishLineFromStoredPoints(options.finishLinePoints, log);
+  if (finishLine && connectionTaper?.applied && connectionTaper.zShift) {
+    const dz = connectionTaper.zShift;
+    finishLine.points = finishLine.points.map((p) => [p[0], p[1], p[2] + dz]);
+    Object.assign(finishLine, finishlineZExtrema(finishLine.points));
+  }
   if (!finishLine) {
     try {
       const fl = detectFinishLine(mesh.unweldedByAngle(), { log });
@@ -375,6 +402,7 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
     diameter,
     screwhole: screw.result,
     fillSteps,
+    connectionTaper,
     stlMetadata,
     tightCorner,
     perf,

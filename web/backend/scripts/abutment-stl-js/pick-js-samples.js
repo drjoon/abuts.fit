@@ -84,6 +84,7 @@ async function scoreOne(doc) {
   const js = await runAbutmentStlPipelineInWorker(input, {
     targetDiameter: inputs.targetDiameter,
     implantProfile: inputs.implantProfile,
+    ...(inputs.connection ? { connection: inputs.connection } : {}),
   });
   const bad = usable(js);
   const add = addedArea(js.outputBuffer, js.bodyTriangleCount);
@@ -222,6 +223,7 @@ for (const lab of picks) {
     const js = await runAbutmentStlPipelineInWorker(await getObjectBufferFromS3(source.caseInfos.file.s3Key), {
       targetDiameter: inputs.targetDiameter,
       implantProfile: inputs.implantProfile,
+      ...(inputs.connection ? { connection: inputs.connection } : {}),
     });
     const base = String(source.caseInfos?.file?.filePath || source.caseInfos?.file?.originalName || "input.stl")
       .replace(/[^a-zA-Z0-9._\-가-힣]/g, "_")

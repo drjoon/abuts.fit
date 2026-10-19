@@ -71,6 +71,7 @@ export async function evaluateAgainstRhino(args) {
   const options = {
     targetDiameter: inputs?.targetDiameter ?? null,
     implantProfile: inputs?.implantProfile || {},
+    ...(inputs?.connection ? { connection: inputs.connection } : {}),
     ...(screwholeParams ? { screwholeParams } : {}),
   };
   let js;

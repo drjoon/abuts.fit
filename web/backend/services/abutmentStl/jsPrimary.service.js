@@ -142,6 +142,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
     js = await runAbutmentStlPipelineInWorker(inputBuffer, {
       targetDiameter: inputs.targetDiameter,
       implantProfile: inputs.implantProfile,
+      ...(inputs.connection ? { connection: inputs.connection } : {}),
       ...(storedFinishLine ? { finishLinePoints: storedFinishLine.points } : {}),
       ...(designAlreadyCorrected ? { designAlreadyCorrected: true } : {}),
     });

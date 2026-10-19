@@ -10,6 +10,8 @@ import {
   resolvePrcFileNames,
   STATIC_CONNECTION_DIAMETER_MAP,
 } from "../../controllers/requests/prcMapping.utils.js";
+import { normalizeImplantFields } from "../../utils/implantCanonical.js";
+import Connection from "../../models/connection.model.js";
 
 function implantProfileOf(ci) {
   return {
@@ -52,5 +54,37 @@ export async function resolveAbutmentStlInputs(caseInfos) {
   return {
     targetDiameter: Number(targetDiameter) > 0 ? Number(targetDiameter) : null,
     implantProfile: profile,
+    connection: await resolveHexConnection(ci),
   };
+}
+
+/** 헥스 대변·L2. 11° 테이퍼를 생략한 긴 헥스에 커넥션을 붙일 때 쓴다. */
+async function resolveHexConnection(caseInfos) {
+  const normalized = normalizeImplantFields(caseInfos || {});
+  const manufacturer = normalized.implantManufacturer;
+  const brand = normalized.implantBrand;
+  const family = normalized.implantFamily;
+  if (!manufacturer || !brand || !family) return null;
+  try {
+    const connection = await Connection.findOne({
+      manufacturer,
+      brand,
+      family,
+      type: "Hex",
+      category: "hanhwa-connection",
+    })
+      .select({ hexSize: 1, l2: 1, diameter: 1 })
+      .lean();
+    const hexSize = Number(connection?.hexSize);
+    const l2 = Number(connection?.l2);
+    if (!(hexSize > 0) || !(l2 > 0)) return null;
+    const diameter = Number(connection?.diameter);
+    return {
+      hexSize,
+      l2,
+      ...(diameter > 0 ? { originDiameter: diameter } : {}),
+    };
+  } catch {
+    return null;
+  }
 }

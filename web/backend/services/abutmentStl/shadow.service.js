@@ -89,6 +89,7 @@ export async function enqueueAbutmentStlShadow(request, { trigger = "register-fi
         rhinoFilledUploadedAt: uploadedAt,
         targetDiameter: inputs.targetDiameter,
         implantProfile: inputs.implantProfile,
+        connection: inputs.connection || null,
         screwholeParams: SCREWHOLE_PARAMS,
       },
       rhino: rhinoSnapshotOf(ci),
@@ -143,7 +144,11 @@ export async function buildRemoteShadowJob(run) {
     runId: String(run._id),
     requestId: run.requestId,
     rhino: run.rhino,
-    inputs: { targetDiameter: run.input.targetDiameter, implantProfile: run.input.implantProfile },
+    inputs: {
+      targetDiameter: run.input.targetDiameter,
+      implantProfile: run.input.implantProfile,
+      connection: run.input.connection || null,
+    },
     screwholeParams: run.input.screwholeParams,
     downloads: { original: original.url, rhinoFilled: rhinoFilled.url },
     upload: upload ? { url: upload.url, key: upload.key } : null,
@@ -201,7 +206,11 @@ export async function runNextAbutmentStlShadow() {
       inputBuffer,
       rhinoFilledBuffer,
       rhino: run.rhino,
-      inputs: { targetDiameter: run.input.targetDiameter, implantProfile: run.input.implantProfile },
+      inputs: {
+        targetDiameter: run.input.targetDiameter,
+        implantProfile: run.input.implantProfile,
+        connection: run.input.connection || null,
+      },
       screwholeParams: run.input.screwholeParams,
     });
     let jsOutputS3Key = null;

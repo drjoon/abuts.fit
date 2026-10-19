@@ -108,6 +108,7 @@ export function scheduleFilledStlPrep(buffer, inputs) {
   slot.promise = runAbutmentStlPipelineInWorker(buffer, {
     targetDiameter: inputs?.targetDiameter ?? null,
     implantProfile: inputs?.implantProfile || {},
+    ...(inputs?.connection ? { connection: inputs.connection } : {}),
   })
     .then(async (js) => {
       if (js?.outputBuffer?.length && isCuffBlendAutoEnabled()) {

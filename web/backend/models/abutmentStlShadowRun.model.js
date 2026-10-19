@@ -30,6 +30,7 @@ const abutmentStlShadowRunSchema = new mongoose.Schema(
       rhinoFilledUploadedAt: Date,
       targetDiameter: Number,
       implantProfile: { type: mongoose.Schema.Types.Mixed, default: undefined },
+      connection: { type: mongoose.Schema.Types.Mixed, default: undefined },
       screwholeParams: { type: mongoose.Schema.Types.Mixed, default: undefined },
     },
     /** 등록 시점 Rhino 기준값(finishLine·hexRotation·메타). */
