@@ -230,7 +230,7 @@ function finishCorrectedDesign({ mesh, finishLine, align, alignMatrix, logs, per
  * @param {Buffer} inputBuffer 1-stl 원본
  * @param {{ targetDiameter?: number|null, implantProfile?: object, screwholeParams?: object, finishLinePoints?: number[][], preflight?: boolean, log?: Function }} options
  * finishLinePoints가 있으면 검출을 건너뛰고 그 점을 메타데이터에 쓴다.
- * preflight면 8곳 필레 검사만 한다.
+ * preflight면 32곳 필레 검사만 한다.
  * correctDesign이면 의뢰 전 다운로드용 보정 STL만 만든다.
  */
 export async function runAbutmentStlPipeline(inputBuffer, options = {}) {

@@ -16,9 +16,12 @@ export const FINISH_BALL_RADIUS_MM = FINISH_BALL_DIAMETER_MM / 2;
 const DIST_TOL = 1e-8;
 const FL_SAMPLE_MAX = 80;
 const FL_SAMPLE_MIN = 12;
-/** 접수 모달 검사. 한 바퀴 8곳(45°)을 재고, 구간마다 가운데를 한 번 더 재서 보간과 어긋나면 쪼갠다. */
-const PREFLIGHT_SCREEN_COUNT = 8;
-/** 가운데 측정이 양 끝 보간과 이만큼 어긋나면 그 구간을 더 쪼갠다. 최대 8·2^깊이 곳. */
+/**
+ * 접수 모달 검사. 한 바퀴를 이 개수로 나누고, 구간마다 가운데를 한 번 더 잰다.
+ * 32곳이면 가운데까지 약 5.6° 간격이라, 8° 안쪽의 좁은 필렛도 샘플 사이에 빠지지 않는다.
+ */
+const PREFLIGHT_SCREEN_COUNT = 32;
+/** 가운데 측정이 양 끝 보간과 이만큼 어긋나면 그 구간을 더 쪼갠다. */
 const PREFLIGHT_REFINE_DEPTH = 3;
 const PREFLIGHT_REFINE_R_MM = 0.03;
 const PREFLIGHT_REFINE_CORNER_MM = 0.04;
@@ -1048,7 +1051,7 @@ function filletRadiusOf(row) {
 }
 
 /**
- * 접수 모달용. 축은 한 번만 자르고, 8곳을 잰 뒤 구간 가운데를 재서 보간과 어긋나는 구간만 더 쪼갠다.
+ * 접수 모달용. 축은 한 번만 자르고, 32곳을 잰 뒤 구간 가운데를 재서 보간과 어긋나는 구간만 더 쪼갠다.
  * 마진 높이·R이 변하는 곳을 듬성듬성 이으면 보정 띠가 마진에서 뜨거나 가라앉는다.
  */
 function collectScreenSamples(mesh, finishLinePoints, options = {}) {
