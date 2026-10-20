@@ -1578,7 +1578,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
                         // [SSOT] SharedFinishSplitX
                         //   Splitline_2 = finishLineTopX - 0.5 (Rough/Turn seam)
-                        //   Finish_Front 끝 = 경계(max_z 또는 Splitline_2). Back_Finish 시작 = 경계 − 1피치
+                        //   Finish_Front 끝 = 경계(max_z+0.5 ≡ Splitline_2). Back_Finish 시작 = 경계 − 1피치
                         //   Front_Rough끝 = Splitline_2 + 0.8
                         //   finishLineTopX = backX - finishLineTopZ  (MoveSTL 이후, X=-Z)
                         // MainModuleComposite.SharedFinishSplitOffsetFromFinishLineTopMm 과 동일해야 한다.
@@ -1596,7 +1596,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         Environment.SetEnvironmentVariable(AppConfig.RoughfreeformSplitEnableEnv, "1");
                         Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_X", splitX.ToString(CultureInfo.InvariantCulture));
 
-                        AppLogger.Log($"DentalAddin: SharedFinishSplit 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top+0.5):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, topX:{topX.ToString("F4", CultureInfo.InvariantCulture)} (=Back-Z), rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, sharedSplitX:{splitX.ToString("F4", CultureInfo.InvariantCulture)}, clamped:{clamped}, retentionGroove:{_backendRetentionGroove ?? ""} (=Splitline_2, deep Finish Front끝=Back시작=Splitline_2, none은 finishline max_z, Front_Rough끝=+0.8, FL상방0.5mm) (xRange:[{xMin.ToString("F4", CultureInfo.InvariantCulture)}~{xMax.ToString("F4", CultureInfo.InvariantCulture)}], Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
+                        AppLogger.Log($"DentalAddin: SharedFinishSplit 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top+0.5):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, topX:{topX.ToString("F4", CultureInfo.InvariantCulture)} (=Back-Z), rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, sharedSplitX:{splitX.ToString("F4", CultureInfo.InvariantCulture)}, clamped:{clamped}, retentionGroove:{_backendRetentionGroove ?? ""} (=Splitline_2, Finish Front/Back seam=max_z+0.5, Front_Rough끝=+0.8) (xRange:[{xMin.ToString("F4", CultureInfo.InvariantCulture)}~{xMax.ToString("F4", CultureInfo.InvariantCulture)}], Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
                             }
                             catch (Exception ex)
                             {

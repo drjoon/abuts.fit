@@ -91,8 +91,8 @@
     - 후행 Rough 시작 = 선행 Rough 끝 − 2.0 (`GetRoughAdjacentOverlapMm`)
     - D1.2 Finish는 경계에서 끝나므로 치은 쪽은 이미 황삭된 면만 깎는다
   - Finish (2026-10-20): **Front 끝 = 경계**, **Back 시작 = 경계 − 1피치**(StepIncrement, tip 쪽 X−)
-    - `none` 경계 = finishline max_z. `deep` 경계 = Splitline_2
-    - none Front_Finish 끝 X = `FinishLineX` = `BackPointX - max_z` (팁쪽). Back_Finish 시작 = 그 X − 1피치
+    - `none`/`deep` Finish 경계 = finishline max_z + 0.5mm (Z+, ≡ `Splitline_2` = `FinishLineX - 0.5`)
+    - none Front_Finish 끝 X = `FinishLineX - 0.5`. Back_Finish 시작 = 그 X − 1피치
     - none 마진 띠(max_z~min_z, 커프쪽)는 Back만 깎는다. Front를 min_z까지 내리지 않는다
     - safe split이어도 Finish는 `Xk`로 나누지 않는다. `Xk`는 Turn/Rough만.
     - `GetFinishAdjacentOverlapMm()` = `0.8` — StepIncrement 해석 실패 시 Back 시작 fallback만
@@ -110,7 +110,7 @@
   - 내부 region 코드는 Middle=`BACK`, Back=`BACK2`(T05·레이어·경계 로직 공유). 표시명만 바뀐다.
   - Middle_Rough 끝 `Xk+0.6`, Middle_Turn 끝 = Rough 끝 + D4 반경 + 보정 (황삭 끝+D4 반경 2.0+칩 0.2)
   - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX]`(경계 `RoughBoundryBack2`)
-  - none Back_Finish `[finishline max_z − 1피치 ~ BackPointX]`. deep Back_Finish `[Splitline_2 − 1피치 ~ BackPointX]`. 스텝오버는 커넥션에서 포스트 팁 쪽 (`ReverseStepOverDirection`)
+  - none/deep Back_Finish `[finishline max_z+0.5 − 1피치 ~ BackPointX]` (= Splitline_2 − 1피치). 스텝오버는 커넥션에서 포스트 팁 쪽 (`ReverseStepOverDirection`)
 - Middle_Turn 끝(`Xk+3.0`)은 **클램프하지 않는다**. 줄이면 D4 러프가 원소재를 물고, Xk를 당기면 seam이 마진으로 들어간다.
 - 포기 조건(기존 단일 Back 유지): FL min_z 없음, `Xk < Splitline_2+1.5`, Middle_Turn 끝 > `BackPointX+1.5` (= 치은 파트 FL min_z < 1.7mm). 로그 `SafeSplit[...]`.
 - 원칙: Turn은 Rough 끝보다 D4 반경+칩(2.2) 이상 더 깎는다. 선행 3D 황삭은 Finish seam보다 0.8mm 더 깎아 D1.2가 미황삭을 물지 않게 한다.
@@ -140,8 +140,7 @@
 - 구현:
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
   - Rough: `frontEnd = splitline2 + GetRoughPastFinishSeamMm()` (`0.8`) / wide 시 `Front_Face` end, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle은 wide 시만
-  - Finish none: `Front_Finish` 끝 = `Back_Finish` 시작 = finishline max_z X (`TryResolveFinishLineMaxX`). min_z~max_z는 Back만
-  - Finish deep: `Front_Finish` 끝 = `Back_Finish` 시작 = `Splitline_2`
+  - Finish none/deep: `Front_Finish` 끝 = max_z+0.5 X (`TryResolveFinishLineMaxX` + `SharedFinishSplitOffsetFromFinishLineTopMm`). Back 시작 = 그 X − 1피치. min_z~max_z+0.5는 Back만
   - Middle 끝 = `Xk`, safe split `Back_Finish` 시작 = `Xk - 0.8`, Middle_Rough 끝 = `Xk + 0.8`
   - Finish_Front StepIncrement: `none`은 `5axisComposite_Front.prc` 값 유지, `deep`만 COM SetProperty 0.20 (`TrySetCompositeStepIncrement`)
   - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
