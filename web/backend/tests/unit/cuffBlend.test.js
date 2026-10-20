@@ -102,12 +102,13 @@ function convexUpperCuffAbutment() {
   ]);
 }
 
-/** 마진이 높이 있고 벌어짐이 11°를 띠 높이로 연장한 것보다 작다. 여유가 딱 맞는 열이다. */
+/** 마진이 높이 있고 하부 수직 벽 위에서 상부만 벌어져 전체 벌어짐이 11° 연장보다 작은 열이다. */
 function tallModestFlareAbutment() {
   const rTop = cone(0.2) + 1.05;
   return revolve([
     ...coneRows(-1.2, 0.2),
     [cone(0.2) + 0.04, 0.22],
+    [cone(0.2) + 0.04, 3.3],
     [rTop, 6.5],
     [rTop - 0.2, 8],
   ]);
@@ -309,7 +310,7 @@ describe("blendCuffJunction", () => {
     }
   });
 
-  it("builds the seam on a tall modest flare instead of dropping the whole blend", () => {
+  it("builds the seam on a tall modest flare without a step below the finish line", () => {
     const rTop = cone(0.2) + 1.05;
     const input = tallModestFlareAbutment();
     const res = blendCuffJunction(input, {
@@ -323,6 +324,14 @@ describe("blendCuffJunction", () => {
     const ra = probe.rayRadius(0.1, res.detail.zA);
     for (let z = res.detail.zA; z <= 6.4; z += 0.4) {
       expect(probe.rayRadius(0.1, z)).toBeGreaterThan(ra - 0.05);
+    }
+    const step = 0.08;
+    const slopes = [];
+    for (let z = 5.9; z <= 6.42; z += step) {
+      slopes.push((probe.rayRadius(0.1, z + step) - probe.rayRadius(0.1, z)) / step);
+    }
+    for (let i = 1; i < slopes.length; i += 1) {
+      expect(Math.abs(slopes[i] - slopes[i - 1])).toBeLessThan(0.03);
     }
   });
 

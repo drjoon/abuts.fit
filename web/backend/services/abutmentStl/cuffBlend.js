@@ -1701,21 +1701,26 @@ function seamRows({
     });
     const ws = wsRaw.map((w, j) => w * (seamBlendScale ? seamBlendScale[j] : 1));
     if (!(Math.max(...wsRaw) > 0)) return { rad: rc, z: zc };
+    const hasOrigBlend = Math.max(...ws) > 0;
     // 같은 높이에서 반경을 섞지 않고, 위 끝 접선 틀에서 곡선 점과 원본 점을 통째로 섞는다.
     // 마진 아래 원본이 거의 수평인 턱이면 같은 높이의 반경 차가 높이에 따라 크게 출렁여 옆모습이 되돌아간다.
-    const curve = heights.map((_, j) => toFrame(j, rc[j], zc[j]));
-    const uOrig = curve.map(([u], j) => {
-      const span = uCurveBottom[j] - uCurveTop[j];
-      if (!uOrigTop || !(span > 1e-9) || u >= uCurveBottom[j]) return u;
-      return uOrigTop[j] + ((u - uCurveTop[j]) / span) * (uCurveBottom[j] - uOrigTop[j]);
-    });
-    const vOrig = radial
-      ? null
-      : angularLowPass(fillMissingCircular(meridianFrames.map((at, i) => at(uOrig[i * MEASURE_STRIDE]))), n);
+    const curve = hasOrigBlend ? heights.map((_, j) => toFrame(j, rc[j], zc[j])) : null;
+    const uOrig = curve
+      ? curve.map(([u], j) => {
+          const span = uCurveBottom[j] - uCurveTop[j];
+          if (!uOrigTop || !(span > 1e-9) || u >= uCurveBottom[j]) return u;
+          return uOrigTop[j] + ((u - uCurveTop[j]) / span) * (uCurveBottom[j] - uOrigTop[j]);
+        })
+      : null;
+    const vOrig =
+      !hasOrigBlend || radial
+        ? null
+        : angularLowPass(fillMissingCircular(meridianFrames.map((at, i) => at(uOrig[i * MEASURE_STRIDE]))), n);
     // 접선 틀로 원본을 못 읽으면 예전처럼 같은 높이 반경을 섞는다.
-    const rOrig = vOrig
-      ? null
-      : angularLowPass(fillMissingCircular(meridians.map((m, i) => m(zc[i * MEASURE_STRIDE]))), n);
+    const rOrig =
+      !hasOrigBlend || vOrig
+        ? null
+        : angularLowPass(fillMissingCircular(meridians.map((m, i) => m(zc[i * MEASURE_STRIDE]))), n);
     const rad = new Float64Array(n);
     const z = new Float64Array(n);
     for (let j = 0; j < n; j += 1) {
@@ -2425,15 +2430,18 @@ export function blendCuffJunction(buffer, options = {}) {
       }),
       TOP_SLOPE_SMOOTH_COLUMNS,
     ).map((w) => Math.max(0, Math.min(1, w)));
-    const finalSeamOrigScale = seamOrigScale
-      ? seamOrigScale.map((w, j) => w * (1 - tailWeights[j]))
-      : tailWeights.some((w) => w > 1e-3)
-        ? tailWeights.map((w) => 1 - w)
-        : null;
+    const finalSeamOrigScale = smoothCreaseR
+      ? thetas.map(() => 0)
+      : seamOrigScale
+        ? seamOrigScale.map((w, j) => w * (1 - tailWeights[j]))
+        : tailWeights.some((w) => w > 1e-3)
+          ? tailWeights.map((w) => 1 - w)
+          : null;
     const r1s = belowR.map((r, j) => {
-      if (!smoothCreaseR || !finalSeamOrigScale) return r;
-      const w = finalSeamOrigScale[j];
-      return r * w + (convexCuffDeform ? Math.max(r, smoothCreaseR[j]) : smoothCreaseR[j]) * (1 - w);
+      if (!smoothCreaseR) return r;
+      if (!convexCuffDeform || !seamOrigScale) return smoothCreaseR[j];
+      const w = seamOrigScale[j];
+      return smoothCreaseR[j] * w + Math.max(r, smoothCreaseR[j]) * (1 - w);
     });
     const legacyConcaveOf = (rTop, eSlope, hb, relax = 0) => {
       const d = rTop - ra;
