@@ -87,6 +87,20 @@ function steepMarginShelfAbutment() {
   ]);
 }
 
+/** 원뿔 끝(Z≈0.3) 수평 턱 위로 S자 어깨가 붙고, 0.45mm 위 낮은 마진 아래가 80°쯤 누운 커프. */
+function lowMarginShoulderAbutment() {
+  return revolve([
+    ...coneRows(-1.2, 0.295),
+    [1.85, 0.3],
+    [1.95, 0.36],
+    [2.02, 0.45],
+    [2.1, 0.6],
+    [2.2, 0.66],
+    [2.6, 0.73],
+    [2.3, 3.0],
+  ]);
+}
+
 /** 하부는 오목하게 올라가고 마진 아래 상부(z=1.8~3.2)는 다각형 볼록으로 이어지는 커프. */
 function convexUpperCuffAbutment() {
   return revolve([
@@ -292,6 +306,45 @@ describe("blendCuffJunction", () => {
         const concaveR = Math.pow(1 + dr * dr, 1.5) / d2r;
         expect(concaveR).toBeGreaterThanOrEqual(0.65);
       }
+    }
+  });
+
+  it("replaces a shoulder above a low connection top with one smooth flare even when the margin underside is past 70°", () => {
+    const input = lowMarginShoulderAbutment();
+    const dentisSq = resolveCuffConnectionSpec({
+      implantManufacturer: "DENTIS",
+      implantBrand: "SQ",
+      implantFamily: "Regular",
+    });
+    const res = blendCuffJunction(input, {
+      ...dentisSq,
+      specKey: dentisSq.key,
+      finishLine: ringFinishLine(2.6, 0.73),
+    });
+    expect(res).toMatchObject({ ok: true, status: "applied" });
+    expect(res.detail.zA).toBeLessThan(0.3);
+    expect(res.detail.maxAngleDeg).toBeGreaterThan(70);
+    const probe = _prepare(res.buffer).probe;
+    const dz = 0.01;
+    const degs = [];
+    for (let z = res.detail.zA; z <= 0.68; z += dz) {
+      degs.push((Math.atan((probe.rayRadius(0.1, z + dz) - probe.rayRadius(0.1, z)) / dz) * 180) / Math.PI);
+    }
+    expect(Math.abs(degs[0] - 11)).toBeLessThan(2);
+    // 어깨(기울기가 섰다가 크게 다시 눕는 곳) 없이 마진까지 벌어진다.
+    let peak = 0;
+    for (const d of degs) {
+      peak = Math.max(peak, d);
+      expect(peak - d).toBeLessThan(5);
+    }
+    // 원뿔 바로 위가 꺾이지 않는다(Z=0.3 바닥 보호에서 곡률이 튀지 않음).
+    for (let z = res.detail.zA + 0.02; z <= 0.45; z += 0.01) {
+      const r0 = probe.rayRadius(0.1, z - 0.02);
+      const r1 = probe.rayRadius(0.1, z);
+      const r2 = probe.rayRadius(0.1, z + 0.02);
+      const dr = (r2 - r0) / 0.04;
+      const d2r = (r2 - 2 * r1 + r0) / 0.0004;
+      if (d2r > 1e-6) expect(Math.pow(1 + dr * dr, 1.5) / d2r).toBeGreaterThan(0.12);
     }
   });
 

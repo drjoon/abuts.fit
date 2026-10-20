@@ -88,10 +88,16 @@ const CLEAN_MAX_JUMP_MM = 0.02;
 const CLEAN_MAX_SLOPE_CHANGE = 0.6;
 const AUTO_MAX_MEAN_SLOPE = Math.tan((60 * Math.PI) / 180);
 const AUTO_MAX_SLOPE = Math.tan((70 * Math.PI) / 180);
+/** auto 이음 기울기 상한을 마진 아래 원본 기울기로 올릴 때 더 허용하는 여유(dr/dz). */
+const AUTO_BELOW_SLOPE_TOL = 0.05;
 /** 커프 기울기가 70°를 넘지 않도록 프로파일 제어점 기울기를 묶는 상한(약 67.5°). */
 const PROFILE_MAX_SLOPE = Math.tan((67 * Math.PI) / 180);
 /** 70° 이하 맞춤을 위한 볼록 변형은 커넥션 원점(Z=0) 상방 이 높이(mm) 아래로는 적용하지 않는다. */
 const CUFF_DEFORM_MIN_Z_MM = 0.3;
+/** Z=0.3부터 볼록 변형 곡선으로 넘어가는 높이(mm). 넘어가기는 열 높이의 이 비율(t) 안에서 끝나고, 이보다 짧으면 넘어가지 않는다. 짧게 넘어가면 넘어가는 끝에서 기울기가 70°를 넘쳤다가 다시 눕는다. */
+const CUFF_DEFORM_RAMP_MM = 0.4;
+const CUFF_DEFORM_RAMP_MAX_T = 1;
+const CUFF_DEFORM_RAMP_MIN_T = 0.05;
 /** 피니시라인 min_z가 이 높이(mm) 이하일 때만 70° 초과 커프 볼록 변형·급경사 seamOrigScale을 켠다(낮은 마진·불완전 가공에 가까운 케이스). */
 const CUFF_CONVEX_DEFORM_MAX_FINISH_MIN_Z_MM = 1.0;
 /** 마진 아래 원본 기울기가 이 값(58°)을 넘기 시작하면 65°까지 원본 이음 섞기 비중을 0으로 줄여 70° 초과 턱을 없앤다. */
@@ -2803,49 +2809,56 @@ export function blendCuffJunction(buffer, options = {}) {
       const eTarget = eSlope != null ? eSlope * hb : END_SLOPE_BOOST * (2 * dR - m0);
       const p = concaveHermiteProfile(ra, m0, rTop, eTarget, hb);
       if (!p) return { fn: concaveBridgeProfile(ra, m0, rTop, hb), endSlope: NaN };
-      // 커넥션 상방 0.3mm(Z=0.3) 아래로는 70° 이하 볼록 변형을 적용하지 않는다.
-      if (zA < CUFF_DEFORM_MIN_Z_MM && (p.convexDeformed || scaleOrig < 1 - 1e-3)) {
-        const zFloor = CUFF_DEFORM_MIN_Z_MM;
-        const hUpper = zA + hb - zFloor;
-        const tFloor = (zFloor - zA) / hb;
-        const baseFn = legacyConcaveOf(rTopBase, eSlope, hb);
-        if (baseFn && hUpper >= MIN_FOLLOW_BAND_MM && tFloor > 0 && tFloor < 0.85) {
-          const rFloor = baseFn(tFloor);
-          const eps = 1e-4;
-          const slopeFloor = (baseFn(Math.min(1, tFloor + eps)) - rFloor) / (eps * hb);
-          const dUpper = rTop - rFloor;
-          const m0Upper = Math.max(0, Math.min(slopeFloor * hUpper, dUpper - CONCAVE_MARGIN * hUpper));
-          const eTargetUpper = eSlope != null ? eSlope * hUpper : END_SLOPE_BOOST * (2 * dUpper - m0Upper);
-          const upper = concaveHermiteProfile(rFloor, m0Upper, rTop, eTargetUpper, hUpper);
-          if (upper) {
-            return {
-              endSlope: upper.endSlope,
-              fn: (t) => (t <= tFloor ? baseFn(t) : upper.fn((t - tFloor) / (1 - tFloor))),
-            };
-          }
-        }
-      }
-      return { fn: p.fn, endSlope: p.endSlope };
+      // 커넥션 상방 0.3mm(Z=0.3) 아래로는 70° 이하 볼록 변형을 적용하지 않는다(floorBase, 공구 반경 보정 뒤 withDeformFloor).
+      const floorBase = zA < CUFF_DEFORM_MIN_Z_MM ? legacyConcaveOf(rTopBase, eSlope, hb) : null;
+      const floorOn = Boolean(floorBase) && (p.convexDeformed || scaleOrig < 1 - 1e-3);
+      return { fn: p.fn, endSlope: p.endSlope, floorBase, floorOn };
     };
-    const profiles = enforceMinToolRadiusOnProfiles(
-      smoothProfilesAcrossColumns(
-        tops.map((t, j) =>
-          bowlOf(
-            r1s[j],
-            belowR[j],
-            belowSlopes ? belowSlopes[j] : null,
-            hs[j],
-            seamOrigScale ? seamOrigScale[j] : 1,
-            0.1 * tailWeights[j],
-          ).fn,
-        ),
+    // Z=0.3에서 두 곡선을 기울기만 맞춰 이으면 곡률이 튀어 원뿔 바로 위가 꺾인다. 기본 곡선에서 C2 가중치로 서서히 넘어간다.
+    // 공구 반경 보정은 4차 베지어 제어점을 역산하므로, 섞은 곡선이 아니라 4차 곡선에 먼저 걸고 그 뒤에 섞는다.
+    const withDeformFloor = (fn, baseFn, keep, hb) => {
+      if (!baseFn || !(keep > 1e-3)) return fn;
+      const tFloor = (CUFF_DEFORM_MIN_Z_MM - zA) / hb;
+      const tEnd = Math.min(CUFF_DEFORM_RAMP_MAX_T, tFloor + CUFF_DEFORM_RAMP_MM / hb);
+      if (!(tFloor > 0) || tEnd - tFloor < CUFF_DEFORM_RAMP_MIN_T) return fn;
+      const span = tEnd - tFloor;
+      return (t) => {
+        const r = fn(t);
+        if (t >= tEnd) return r;
+        const u = t <= tFloor ? 0 : (t - tFloor) / span;
+        const w = u * u * u * (10 + u * (6 * u - 15));
+        return r + keep * (1 - w) * (baseFn(t) - r);
+      };
+    };
+    const bowls = tops.map((t, j) =>
+      bowlOf(
+        r1s[j],
+        belowR[j],
+        belowSlopes ? belowSlopes[j] : null,
+        hs[j],
+        seamOrigScale ? seamOrigScale[j] : 1,
+        0.1 * tailWeights[j],
       ),
+    );
+    // 바닥 보호가 열마다 켜지고 꺼지면 Z=0.3 근처에 세로 단차가 생기므로 비중을 둘레로 고른다.
+    const floorKeep = bowls.some((b) => b.floorOn)
+      ? circularSmooth(
+          bowls.map((b) => (b.floorOn ? 1 : 0)),
+          TOP_SLOPE_SMOOTH_COLUMNS,
+        ).map((w, j) => (bowls[j].floorBase ? w : 0))
+      : null;
+    const enforcedProfiles = enforceMinToolRadiusOnProfiles(
+      smoothProfilesAcrossColumns(bowls.map((b) => b.fn)),
       hs,
       zA,
       convexCuffDeform && zA >= CUFF_DEFORM_MIN_Z_MM - 1e-6,
       tailWeights,
     );
+    const profiles = floorKeep
+      ? enforcedProfiles.map((fn, j) => withDeformFloor(fn, bowls[j].floorBase, floorKeep[j], hs[j]))
+      : enforcedProfiles;
     let maxSlope = 0;
+    let maxExcess = 0;
     let minWall = Infinity;
     const chAtZ = channelRadiusByZ(mesh, zA - 0.3, zTopMax + 0.3, ra);
     for (let j = 0; j < profiles.length; j += 1) {
@@ -2853,18 +2866,21 @@ export function blendCuffJunction(buffer, options = {}) {
       const rTopJ = smoothCreaseR ? smoothCreaseR[j] : r1s[j];
       const lo = Math.min(ra, tops[j].r, r1s[j], rTopJ) - MAX_OVERSHOOT_MM;
       const hi = Math.max(ra, tops[j].r, r1s[j], rTopJ) + MAX_OVERSHOOT_MM;
+      // 마진 아래 원본 커프가 이미 70°보다 누운 열은, 곡선이 그 기울기로 마진에 붙어야 하므로 원본 기울기까지 허용한다.
+      const slopeCap = Math.max(AUTO_MAX_SLOPE, belowSlopes ? belowSlopes[j] + AUTO_BELOW_SLOPE_TOL : 0);
       let prev = profiles[j](0);
       for (let i = 1; i <= 50; i += 1) {
         const r = profiles[j](i / 50);
         if (r < lo || r > hi) fail("manual-review", "이음 곡면이 커넥션·커프 범위를 벗어납니다.");
-        const slope = Math.abs(r - prev);
-        maxSlope = Math.max(maxSlope, slope / (h / 50));
+        const slope = Math.abs(r - prev) / (h / 50);
+        maxSlope = Math.max(maxSlope, slope);
+        maxExcess = Math.max(maxExcess, slope - slopeCap);
         // 벽 두께는 같은 높이의 채널 반경과 비교한다(채널이 위에서 벌어져도 아래 원뿔 벽은 영향 없음).
         minWall = Math.min(minWall, r - chAtZ(zA + (i / 50) * h));
         prev = r;
       }
     }
-    if (maxSlope > AUTO_MAX_SLOPE) {
+    if (maxExcess > 0) {
       fail("manual-review", "단차가 커서 이음 곡면이 너무 가파릅니다.", {
         maxAngleDeg: round3((Math.atan(maxSlope) * 180) / Math.PI),
       });
