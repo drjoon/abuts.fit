@@ -28,7 +28,9 @@ import {
 } from "./utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import {
+  buildInsufficientCreditSubmissionAdvice,
   buildStandardStlFileName,
+  countAffordableRequestSubmissions,
   getBusinessCreditBalanceBreakdown,
 } from "./creation.helpers.controller.js";
 import { positiveSpendableCredit } from "../../services/creditBalance.service.js";
@@ -855,36 +857,59 @@ export async function createRequestsBulk(req, res) {
           : 0;
 
       if (machiningShortfall > 0 || shippingShortfall > 0) {
-        let message = "";
-        const details = [];
+        const requestCount = items.length;
+        const casesForAffordability = items.map((raw, idx) => ({
+          computedPrice: priceCalculations[idx]?.price,
+          caseInfos: raw?.caseInfos || {},
+          shippingMode: resolvedShippingModes[idx] || "normal",
+        }));
+        const affordableRequestCount = countAffordableRequestSubmissions({
+          cases: casesForAffordability,
+          totalAvailable,
+          totalShippingFee,
+          designFeePerTooth,
+        });
+        const submissionAdvice =
+          machiningShortfall > 0
+            ? buildInsufficientCreditSubmissionAdvice({
+                requestCount,
+                affordableRequestCount,
+                totalAvailable: availableForMachining,
+              })
+            : null;
 
-        const needCreditLabel = labCaHoldPolicy.freeCreditOnly
-          ? "커스텀어벗 의뢰는 무료 크레딧이 있어야 합니다."
-          : "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.";
-        if (machiningShortfall > 0 && shippingShortfall > 0) {
-          message = needCreditLabel;
-          details.push(
-            `의뢰비 필요: ${totalMachiningFee.toLocaleString()}원 (보유: ${availableForMachining.toLocaleString()}원)`,
-          );
-          details.push(
-            `배송비 필요: ${totalShippingFee.toLocaleString()}원 (보유: ${availableForShipping.toLocaleString()}원)`,
-          );
-        } else if (machiningShortfall > 0) {
-          message = needCreditLabel;
-          details.push(
-            `필요: ${totalMachiningFee.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
-          );
-        } else {
-          message = labCaHoldPolicy.freeCreditOnly
-            ? "커스텀어벗 배송비는 무료 크레딧이 있어야 합니다."
-            : "커스텀어벗 배송비는 충전된 크레딧이 있어야 합니다.";
-          details.push(
-            `필요: ${totalShippingFee.toLocaleString()}원, 보유: ${availableForShipping.toLocaleString()}원`,
-          );
+        let message = submissionAdvice || "";
+        if (!message) {
+          const details = [];
+          const needCreditLabel = labCaHoldPolicy.freeCreditOnly
+            ? "커스텀어벗 의뢰는 무료 크레딧이 있어야 합니다."
+            : "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.";
+          if (machiningShortfall > 0 && shippingShortfall > 0) {
+            message = needCreditLabel;
+            details.push(
+              `의뢰비 필요: ${totalMachiningFee.toLocaleString()}원 (보유: ${availableForMachining.toLocaleString()}원)`,
+            );
+            details.push(
+              `배송비 필요: ${totalShippingFee.toLocaleString()}원 (보유: ${availableForShipping.toLocaleString()}원)`,
+            );
+          } else if (machiningShortfall > 0) {
+            message = needCreditLabel;
+            details.push(
+              `필요: ${totalMachiningFee.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
+            );
+          } else {
+            message = labCaHoldPolicy.freeCreditOnly
+              ? "커스텀어벗 배송비는 무료 크레딧이 있어야 합니다."
+              : "커스텀어벗 배송비는 충전된 크레딧이 있어야 합니다.";
+            details.push(
+              `필요: ${totalShippingFee.toLocaleString()}원, 보유: ${availableForShipping.toLocaleString()}원`,
+            );
+          }
+          message +=
+            " " +
+            details.join(", ") +
+            ". 크레딧을 충전한 뒤 다시 시도해주세요.";
         }
-
-        message +=
-          " " + details.join(", ") + ". 크레딧을 충전한 뒤 다시 시도해주세요.";
 
         return res.status(402).json({
           success: false,
@@ -903,6 +928,8 @@ export async function createRequestsBulk(req, res) {
               feePerBox: shippingFeePerBox,
             },
             reason: "insufficient_credit",
+            requestCount,
+            affordableRequestCount,
           },
         });
       }

@@ -716,37 +716,25 @@ export const useNewRequestSubmitV2 = ({
         // 크레딧 부족 토스트는 서버 payload.requestCount를 노출해 사용자가 현재 제출 건수를 즉시 확인할 수 있게 한다.
         if (res.status === 402) {
           const payload = errData?.data;
-          const machiningFee = payload?.machiningFee;
-          const shippingFee = payload?.shippingFee;
           const requestCount = Number(payload?.requestCount || 0);
+          const affordableRequestCount = Number(
+            payload?.affordableRequestCount ?? NaN,
+          );
+          const serverMessage = String(errData?.message || "").trim();
+          const shouldReduceCount =
+            requestCount > 0 &&
+            Number.isFinite(affordableRequestCount) &&
+            affordableRequestCount < requestCount;
 
-          let description = errData?.message || "크레딧이 부족합니다.";
-
-          // 상세 정보가 있으면 추가 안내
-          if (machiningFee || shippingFee) {
-            const details = [];
-            if (requestCount > 0) {
-              details.push(`현재 제출 건수: ${requestCount}건`);
-            }
-            if (machiningFee?.shortfall > 0) {
-              details.push(
-                `의뢰비 부족: ${machiningFee.shortfall.toLocaleString()}원`,
-              );
-            }
-            // [LEGACY] 배송비 판매자 부담 — 배송비 부족 안내 중단. 회귀 시 복구.
-            // if (shippingFee?.shortfall > 0) {
-            //   details.push(
-            //     `배송비 부족: ${shippingFee.shortfall.toLocaleString()}원`,
-            //   );
-            // }
-            if (details.length > 0) {
-              description += "\n\n" + details.join("\n");
-            }
-          }
+          const description =
+            serverMessage ||
+            (shouldReduceCount
+              ? `현재 잔액으로는 ${affordableRequestCount}건까지 의뢰할 수 있습니다. 제출 건수를 ${affordableRequestCount}건 이하로 줄인 뒤 다시 시도해주세요.`
+              : "크레딧이 부족합니다.");
 
           dismiss();
           toast({
-            title: "크레딧 부족",
+            title: shouldReduceCount ? "제출 건수를 줄여주세요" : "크레딧 부족",
             description,
             variant: "destructive",
             duration: 10000, // 10초

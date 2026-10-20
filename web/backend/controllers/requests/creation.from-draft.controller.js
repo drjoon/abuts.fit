@@ -91,7 +91,9 @@ import { computeLabDemoSettlementCredit } from "../../services/labDemoCredit.ser
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import { emitDesignClaimChanged } from "../../utils/designClaimRealtime.js";
 import {
+  buildInsufficientCreditSubmissionAdvice,
   buildStandardStlFileName,
+  countAffordableRequestSubmissions,
   getBusinessCreditBalanceBreakdown,
   isDuplicateKeyError,
 } from "./creation.helpers.controller.js";
@@ -1597,45 +1599,62 @@ export async function createRequestsFromDraft(req, res) {
           : 0;
 
       if (machiningShortfall > 0 || shippingShortfall > 0) {
-        let message = "";
-        const details = [];
         const requestCount = preparedCasesForCreate.length;
-        const needCreditLabel = labCaHoldPolicy?.freeCreditOnly
-          ? "커스텀어벗 의뢰는 무료 크레딧이 있어야 합니다."
-          : "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.";
-        if (machiningShortfall > 0 && shippingShortfall > 0) {
-          message = needCreditLabel;
-          details.push(
-            `의뢰비 필요: ${requiredMachiningFee.toLocaleString()}원 (${requestCount}건 합계${
-              totalExpressFee > 0
-                ? `, 신속 ${expressCount}건 +${totalExpressFee.toLocaleString()}원`
-                : ""
-            }, 보유: ${availableForMachining.toLocaleString()}원)`,
-          );
-          details.push(
-            `배송비 필요: ${totalShippingFee.toLocaleString()}원 (보유: ${availableForShipping.toLocaleString()}원)`,
-          );
-        } else if (machiningShortfall > 0) {
-          message = needCreditLabel;
-          details.push(
-            `필요: ${requiredMachiningFee.toLocaleString()}원 (${requestCount}건 합계${
-              totalExpressFee > 0
-                ? `, 신속 ${expressCount}건 +${totalExpressFee.toLocaleString()}원`
-                : ""
-            }), 보유: ${availableForMachining.toLocaleString()}원`,
-          );
-        } else {
-          message = labCaHoldPolicy?.freeCreditOnly
-            ? "커스텀어벗 배송비는 무료 크레딧이 있어야 합니다."
-            : "커스텀어벗 배송비는 충전된 크레딧이 있어야 합니다.";
-          details.push(
-            `필요: ${totalShippingFee.toLocaleString()}원, 보유: ${availableForShipping.toLocaleString()}원`,
-          );
+        const affordableRequestCount = countAffordableRequestSubmissions({
+          cases: preparedCasesForCreate,
+          totalAvailable,
+          totalShippingFee,
+          designFeePerTooth,
+        });
+        const submissionAdvice =
+          machiningShortfall > 0
+            ? buildInsufficientCreditSubmissionAdvice({
+                requestCount,
+                affordableRequestCount,
+                totalAvailable: availableForMachining,
+              })
+            : null;
+
+        let message = submissionAdvice || "";
+        if (!message) {
+          const details = [];
+          const needCreditLabel = labCaHoldPolicy?.freeCreditOnly
+            ? "커스텀어벗 의뢰는 무료 크레딧이 있어야 합니다."
+            : "커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.";
+          if (machiningShortfall > 0 && shippingShortfall > 0) {
+            message = needCreditLabel;
+            details.push(
+              `의뢰비 필요: ${requiredMachiningFee.toLocaleString()}원 (${requestCount}건 합계${
+                totalExpressFee > 0
+                  ? `, 신속 ${expressCount}건 +${totalExpressFee.toLocaleString()}원`
+                  : ""
+              }, 보유: ${availableForMachining.toLocaleString()}원)`,
+            );
+            details.push(
+              `배송비 필요: ${totalShippingFee.toLocaleString()}원 (보유: ${availableForShipping.toLocaleString()}원)`,
+            );
+          } else if (machiningShortfall > 0) {
+            message = needCreditLabel;
+            details.push(
+              `필요: ${requiredMachiningFee.toLocaleString()}원 (${requestCount}건 합계${
+                totalExpressFee > 0
+                  ? `, 신속 ${expressCount}건 +${totalExpressFee.toLocaleString()}원`
+                  : ""
+              }), 보유: ${availableForMachining.toLocaleString()}원`,
+            );
+          } else {
+            message = labCaHoldPolicy?.freeCreditOnly
+              ? "커스텀어벗 배송비는 무료 크레딧이 있어야 합니다."
+              : "커스텀어벗 배송비는 충전된 크레딧이 있어야 합니다.";
+            details.push(
+              `필요: ${totalShippingFee.toLocaleString()}원, 보유: ${availableForShipping.toLocaleString()}원`,
+            );
+          }
+          message +=
+            " " +
+            details.join(", ") +
+            ". 크레딧을 충전한 뒤 다시 시도해주세요.";
         }
-        message +=
-          " " +
-          details.join(", ") +
-          ". 크레딧을 충전한 뒤 다시 시도해주세요.";
         return res.status(402).json({
           success: false,
           message,
@@ -1657,6 +1676,7 @@ export async function createRequestsFromDraft(req, res) {
             },
             reason: "insufficient_credit",
             requestCount,
+            affordableRequestCount,
           },
         });
       }
