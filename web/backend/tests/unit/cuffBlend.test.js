@@ -8,6 +8,7 @@ import {
   redesignCuffBowl,
   CUFF_BLEND_PATCH_ATTRIBUTE,
   _prepare,
+  _smoothProfilesAcrossColumns,
 } from "../../services/abutmentStl/cuffBlend.js";
 import { resolveCuffConnectionSpec, TAPER_SLOPE } from "../../services/abutmentStl/cuffConnectionSpecs.js";
 import { parseStl, writeBinaryStl } from "../../utils/screwHoleFill.js";
@@ -98,6 +99,17 @@ function convexUpperCuffAbutment() {
     [3.73, 2.8],
     [4.04, 3.2],
     [3.7, 5.0],
+  ]);
+}
+
+/** 마진이 높이 있고 벌어짐이 11°를 띠 높이로 연장한 것보다 작다. 여유가 딱 맞는 열이다. */
+function tallModestFlareAbutment() {
+  const rTop = cone(0.2) + 1.05;
+  return revolve([
+    ...coneRows(-1.2, 0.2),
+    [cone(0.2) + 0.04, 0.22],
+    [rTop, 6.5],
+    [rTop - 0.2, 8],
   ]);
 }
 
@@ -285,13 +297,33 @@ describe("blendCuffJunction", () => {
     for (let z = 2.2; z <= 3.04; z += step) {
       slopes.push((postProbe.rayRadius(0.1, z + step) - postProbe.rayRadius(0.1, z)) / step);
     }
-    // Base concave profile is kept; only the last stretch near the finish line turns slightly convex
+    // Base concave profile is kept; only the last stretch near the finish line turns slightly convex without any slope kink
     const peak = Math.max(...slopes);
     const last = slopes[slopes.length - 1];
     expect(slopes[0]).toBeLessThan(peak);
     expect(last).toBeLessThan(slopes[slopes.length - 2]);
-    expect(peak - last).toBeGreaterThan(0.05);
-    expect(peak - last).toBeLessThan(0.6);
+    expect(peak - last).toBeGreaterThan(0.03);
+    expect(peak - last).toBeLessThan(0.3);
+    for (let i = 1; i < slopes.length; i += 1) {
+      expect(Math.abs(slopes[i] - slopes[i - 1])).toBeLessThan(0.06);
+    }
+  });
+
+  it("builds the seam on a tall modest flare instead of dropping the whole blend", () => {
+    const rTop = cone(0.2) + 1.05;
+    const input = tallModestFlareAbutment();
+    const res = blendCuffJunction(input, {
+      ...osstem,
+      specKey: osstem.key,
+      finishLine: ringFinishLine(rTop, 6.5),
+    });
+    expect(res.ok).toBe(true);
+    expect(res.status).toBe("applied");
+    const probe = _prepare(res.buffer).probe;
+    const ra = probe.rayRadius(0.1, res.detail.zA);
+    for (let z = res.detail.zA; z <= 6.4; z += 0.4) {
+      expect(probe.rayRadius(0.1, z)).toBeGreaterThan(ra - 0.05);
+    }
   });
 
   it("marks unregistered connections as spec-pending without touching the mesh", () => {
@@ -306,6 +338,27 @@ describe("blendCuffJunction", () => {
   it("sends files without a finish line to manual review", () => {
     const res = blendCuffJunction(steppedAbutment(), { ...osstem, specKey: osstem.key, finishLine: null });
     expect(res).toMatchObject({ ok: false, status: "manual-review" });
+  });
+
+  it("smooths column profiles around the axis without moving the cone start or the top radius", () => {
+    const n = 960;
+    const ra = 1.7;
+    // 열 사이에서 프로파일 분기가 바뀌는 곳: 중간 반경이 각도에 대해 꺾인다(세로 꺾임선).
+    const profiles = Array.from({ length: n }, (_, j) => {
+      const theta = (j / n) * 2 * Math.PI;
+      const r1 = 3.5 + 0.2 * Math.cos(theta);
+      const bump = 0.08 * Math.abs(theta - Math.PI);
+      return (t) => ra + 0.4 * t + (r1 - ra - 0.4) * t ** 3 + bump * t ** 3 * (1 - t);
+    });
+    const smooth = _smoothProfilesAcrossColumns(profiles);
+    const kinkAt = (fns, j, t) => Math.abs(fns[j + 1](t) - 2 * fns[j](t) + fns[j - 1](t));
+    expect(kinkAt(profiles, n / 2, 0.6)).toBeGreaterThan(5e-5);
+    expect(kinkAt(smooth, n / 2, 0.6)).toBeLessThan(kinkAt(profiles, n / 2, 0.6) / 5);
+    for (const j of [0, n / 4, n / 2, (3 * n) / 4]) {
+      expect(smooth[j](0)).toBeCloseTo(profiles[j](0), 9);
+      expect(smooth[j](1)).toBeCloseTo(profiles[j](1), 9);
+      expect((smooth[j](1e-3) - smooth[j](0)) / 1e-3).toBeCloseTo((profiles[j](1e-3) - profiles[j](0)) / 1e-3, 4);
+    }
   });
 });
 

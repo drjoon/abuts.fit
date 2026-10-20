@@ -750,12 +750,13 @@ const LONG_BAND_START_SLOPE = Math.tan((8 * Math.PI) / 180);
  */
 export function concaveHermiteProfile(ra, m0, r1, eTarget, h, endSlopeCap = CORNER_END_SLOPE) {
   const d = r1 - ra;
-  if (d < m0 + CONCAVE_MARGIN * h) return null;
+  // m0가 d−여유 로 잘린 뒤 d < m0+여유 는 부동소수점으로 참이 된다. 그 열은 여유가 딱 맞는 곡선이라 버린다.
+  if (d + 1e-6 < m0 + CONCAVE_MARGIN * h) return null;
   const dMax = (PROFILE_MAX_SLOPE * h) / 4;
   let d0 = Math.min(dMax, Math.max(0, m0 / 4));
   const d1Min = d0 * BEZIER_DIP;
   const rest = d - d0 - d1Min;
-  if (rest < 2 * d1Min) return null;
+  if (rest + 1e-6 < 2 * d1Min) return null;
   const eClamped = Math.max(CORNER_MIN_END_SLOPE * h, Math.min(endSlopeCap * h, eTarget));
   let d1;
   let d2;
@@ -823,6 +824,51 @@ function angularLowPass(values, outN = values?.length) {
     (k) => (k <= ANGULAR_PASS_HARMONICS ? 1 : 0.5 + 0.5 * Math.cos((Math.PI * (k - ANGULAR_PASS_HARMONICS)) / span)),
     outN,
   );
+}
+
+/** 이음 프로파일 둘레 평활에 쓰는 t 단계 수(사이는 3차 보간). */
+const PROFILE_SMOOTH_LEVELS = 128;
+const PROFILE_START_SLOPE_EPS = 1e-4;
+
+/**
+ * 열마다 따로 만든 이음 프로파일을 둘레 방향으로 저역 통과한다.
+ * 프로파일 식의 상한·분기(끝 기울기 상한, 볼록 변형 분기 등)가 열 사이에서 바뀌면 반경이 각도에 대해 꺾여
+ * 커프에 세로 꺾임선이 남는다. 둘레 평활(bandSmoothKeep)이 꺼진 열(seamOrigScale=0)에서는 그대로 보인다.
+ * 열마다 시작 반경·시작 기울기·위 끝 반경으로 정한 3차 기준 곡선(시작 곡률 0)과의 차만 평활하므로
+ * 원뿔 끝 G2 출발과 위 끝 반경은 바뀌지 않는다.
+ * @param {((t: number) => number)[]} profiles 등간격 열의 t∈[0,1] 반경 함수
+ */
+function smoothProfilesAcrossColumns(profiles) {
+  const ends = profiles.map((p) => {
+    const r0 = p(0);
+    return { r0, r1: p(1), s0: (p(PROFILE_START_SLOPE_EPS) - r0) / PROFILE_START_SLOPE_EPS };
+  });
+  if (!ends.every(({ r0, r1, s0 }) => Number.isFinite(r0) && Number.isFinite(r1) && Number.isFinite(s0))) return profiles;
+  const base = (j, t) => {
+    const { r0, r1, s0 } = ends[j];
+    return r0 + s0 * t + (r1 - r0 - s0) * t * t * t;
+  };
+  const L = PROFILE_SMOOTH_LEVELS;
+  const levels = [];
+  for (let i = 0; i <= L; i += 1) {
+    const t = i / L;
+    const q = profiles.map((p, j) => p(t) - base(j, t));
+    const lp = angularLowPass(q);
+    if (!lp) return profiles;
+    levels.push(lp);
+  }
+  return profiles.map((_, j) => (t) => {
+    const x = Math.min(1, Math.max(0, t));
+    const u = x * L;
+    const i = Math.min(L - 1, Math.floor(u));
+    const f = u - i;
+    const p0 = levels[Math.max(0, i - 1)][j];
+    const p1 = levels[i][j];
+    const p2 = levels[i + 1][j];
+    const p3 = levels[Math.min(L, i + 2)][j];
+    const q = p1 + 0.5 * f * (p2 - p0 + f * (2 * p0 - 5 * p1 + 4 * p2 - p3 + f * (3 * (p1 - p2) + p3 - p0)));
+    return base(j, x) + q;
+  });
 }
 
 /** 원형 열 값의 빈 칸(NaN)을 양옆 값으로 선형 보간한다. 빈 칸이 MISSING_FILL_MAX_RATIO를 넘으면 null. */
@@ -1542,6 +1588,7 @@ function seamRows({
   seamDepth,
   tEnd,
   seamOrigScale,
+  seamBlendScale = seamOrigScale,
 }) {
   const n = thetas.length;
   const top = Math.min(SEAM_TOP_DEPTH_MM, seamDepth / 2);
@@ -1652,7 +1699,7 @@ function seamRows({
       const s = Math.min(1, Math.max(0, (sd - (zA + heights[j] - zj)) / (sd - top)));
       return s * s * s * (10 - 15 * s + 6 * s * s);
     });
-    const ws = wsRaw.map((w, j) => w * (seamOrigScale ? seamOrigScale[j] : 1));
+    const ws = wsRaw.map((w, j) => w * (seamBlendScale ? seamBlendScale[j] : 1));
     if (!(Math.max(...wsRaw) > 0)) return { rad: rc, z: zc };
     // 같은 높이에서 반경을 섞지 않고, 위 끝 접선 틀에서 곡선 점과 원본 점을 통째로 섞는다.
     // 마진 아래 원본이 거의 수평인 턱이면 같은 높이의 반경 차가 높이에 따라 크게 출렁여 옆모습이 되돌아간다.
@@ -1673,7 +1720,7 @@ function seamRows({
     const z = new Float64Array(n);
     for (let j = 0; j < n; j += 1) {
       const w = ws[j];
-      const wCrease = wsRaw[j] * (1 - (seamOrigScale ? seamOrigScale[j] : 1));
+      const wCrease = wsRaw[j] * (1 - (seamBlendScale ? seamBlendScale[j] : 1));
       const drTop = rawCreaseR && Number.isFinite(rawCreaseR[j]) ? (rawCreaseR[j] - radiusAt(j, 1)) * wCrease : 0;
       const dzTop = rawHeights ? (rawHeights[j] - heights[j]) * wCrease : 0;
       if (!vOrig || !(w > 0)) {
@@ -1697,13 +1744,18 @@ function seamRows({
     ...Array.from({ length: tailCount + 1 }, (_, i) => 1 + i / tailCount),
   ];
   const pickRows = (rows) => {
-    // 행 간격은 가장 좁은 열의 실제 점 거리로 잰다. 넓은 열로 재면 낮은 열이나 섞는 구간 끝에 µm 간격 행이 생겨 가는 삼각형 법선이 튄다.
-    const gapMm = (a, b) => {
-      let g = Infinity;
-      for (let j = 0; j < n; j += 1) g = Math.min(g, Math.hypot(rows[a].rad[j] - rows[b].rad[j], rows[a].z[j] - rows[b].z[j]));
-      return g;
+    // 행 최소 간격은 가장 좁은 열로 재서 µm 간격 행을 막고, 최대 간격은 가장 넓은 열로 재서 높은 열에 빈 구간이 안 생기게 한다.
+    const gapsMm = (a, b) => {
+      let minG = Infinity;
+      let maxG = 0;
+      for (let j = 0; j < n; j += 1) {
+        const d = Math.hypot(rows[a].rad[j] - rows[b].rad[j], rows[a].z[j] - rows[b].z[j]);
+        if (d < minG) minG = d;
+        if (d > maxG) maxG = d;
+      }
+      return { minG, maxG };
     };
-    // 꺾임은 열마다 따로 누적한다. 열마다 가장 큰 꺾임을 더하면 서로 다른 깊이의 꺾임이 겹쳐 행이 두 배 가까이 는다.
+    // 꺾임은 열마다 따로 누적한다. 열마다 가장 큰 꺾임을 더하면 서로 다른 깊이의 꺾임을 겹쳐 행이 두 배 가까이 는다.
     const angle = (i, j) => Math.atan2(rows[i].rad[j] - rows[i + 1].rad[j], rows[i].z[j] - rows[i + 1].z[j]);
     const prevAngle = Float64Array.from({ length: n }, (_, j) => angle(0, j));
     const acc = new Float64Array(n);
@@ -1719,12 +1771,12 @@ function seamRows({
           if (acc[j] > worst) worst = acc[j];
         }
       }
-      const gap = gapMm(i, picked[picked.length - 1]);
+      const { minG: gap, maxG } = gapsMm(i, picked[picked.length - 1]);
       if (i === rows.length - 1) {
         // 맨 아래 행은 일반 행에 붙으므로 꼭 둔다. 바로 앞 행과 너무 붙으면 앞 행을 뺀다.
         if (gap < SEAM_MIN_PITCH_MM && picked.length > 1) picked.pop();
         picked.push(i);
-      } else if ((worst >= step && gap >= SEAM_MIN_PITCH_MM) || gap >= ROW_MAX_PITCH_MM) {
+      } else if (gap >= SEAM_MIN_PITCH_MM && (worst >= step || maxG >= ROW_MAX_PITCH_MM)) {
         picked.push(i);
         acc.fill(0);
       }
@@ -1808,7 +1860,7 @@ function bandSmoothKeep(t, height) {
  */
 function replaceBand(
   mesh,
-  { zA, ra, topZOf, radiusAt, rawCreaseR = null, rCut, origProbe, crease, seamOrigScale = null },
+  { zA, ra, topZOf, radiusAt, rawCreaseR = null, rCut, origProbe, crease, seamOrigScale = null, seamBlendScale = seamOrigScale },
 ) {
   let cut = splitByLevel(mesh, (x, y, z) => z - zA);
   if (!crease) cut = splitByLevel(cut, (x, y, z) => z - topZOf(angleOf(x, y)));
@@ -1962,6 +2014,7 @@ function replaceBand(
         seamDepth,
         tEnd,
         seamOrigScale,
+        seamBlendScale,
       }),
     );
   }
@@ -2352,23 +2405,49 @@ export function blendCuffJunction(buffer, options = {}) {
       return circularSmooth(lp, TOP_SLOPE_SMOOTH_COLUMNS).map((w) => Math.max(0, Math.min(1, w)));
     })()
       : null;
-    const r1s = belowR.map((r, j) => {
-      if (!smoothCreaseR || !seamOrigScale) return r;
-      const w = seamOrigScale[j];
-      return r * w + Math.max(r, smoothCreaseR[j]) * (1 - w);
-    });
     const coneSlope = Number.isFinite(taper.slope) ? taper.slope : TAPER_SLOPE;
-    const legacyConcaveOf = (rTop, eSlope, hb) => {
+    // 기본 오목 프로파일의 끝 기울기가 원본 상부보다 가파르면(예: 55° vs 36°) 마진 아래 이음에서 원본으로 되돌아가며 오목 골이 생긴다.
+    // 중간에서 별도 곡선을 이어 붙이면 곡률(2차 미분) 불연속으로 희미한 가로 경계가 보이므로,
+    // 하나의 4차 베지어 곡선 안에서 위 끝 제어점 비중만 살짝 낮춰(relax) 하부 오목에서 상부 약한 볼록으로 경계 없이(C∞) 이어지게 한다.
+    const tailWeights = circularSmooth(
+      tops.map((_, j) => {
+        if (convexCuffDeform || !belowSlopes) return 0;
+        const rTop = smoothCreaseR ? smoothCreaseR[j] : belowR[j];
+        const hb = hs[j];
+        const d = rTop - ra;
+        const m0 = Math.max(0, Math.min(coneSlope * hb, d - CONCAVE_MARGIN * hb));
+        const d0 = m0 / 4;
+        const d1 = d0 * BEZIER_DIP;
+        const rest = d - d0 - d1;
+        const sEnd = (2 * rest) / hb;
+        const diff = sEnd - belowSlopes[j];
+        return Math.max(0, Math.min(1, (diff - 0.05) / 0.15));
+      }),
+      TOP_SLOPE_SMOOTH_COLUMNS,
+    ).map((w) => Math.max(0, Math.min(1, w)));
+    const finalSeamOrigScale = seamOrigScale
+      ? seamOrigScale.map((w, j) => w * (1 - tailWeights[j]))
+      : tailWeights.some((w) => w > 1e-3)
+        ? tailWeights.map((w) => 1 - w)
+        : null;
+    const r1s = belowR.map((r, j) => {
+      if (!smoothCreaseR || !finalSeamOrigScale) return r;
+      const w = finalSeamOrigScale[j];
+      return r * w + (convexCuffDeform ? Math.max(r, smoothCreaseR[j]) : smoothCreaseR[j]) * (1 - w);
+    });
+    const legacyConcaveOf = (rTop, eSlope, hb, relax = 0) => {
       const d = rTop - ra;
       const m0 = Math.max(0, Math.min(coneSlope * hb, d - CONCAVE_MARGIN * hb));
       const eTarget = eSlope != null ? eSlope * hb : END_SLOPE_BOOST * (2 * d - m0);
-      if (d < m0 + CONCAVE_MARGIN * hb) return null;
+      // m0가 d−여유 로 잘리면 d < m0+여유 가 1ulp 로 참이 되어, 높은 마진 열을 통째로 버린다.
+      if (d + 1e-6 < m0 + CONCAVE_MARGIN * hb) return null;
       const d0 = m0 / 4;
       const d1 = d0 * BEZIER_DIP;
       const rest = d - d0 - d1;
-      if (rest < 2 * d1) return null;
+      if (rest + 1e-6 < 2 * d1) return null;
       let e = Math.max(CORNER_MIN_END_SLOPE * hb, Math.min(CORNER_END_SLOPE * hb, eTarget));
-      e = Math.max(2 * rest, Math.min(4 * (rest - d1), e));
+      const minE = (2 - 4 * relax) * rest;
+      e = Math.max(minE, Math.min(4 * (rest - d1), e));
       const d3 = e / 4;
       const d2 = rest - d3;
       const c = [ra, ra + d0, ra + d0 + d1, ra + d0 + d1 + d2, rTop];
@@ -2379,9 +2458,9 @@ export function blendCuffJunction(buffer, options = {}) {
         );
       };
     };
-    const bowlOf = (rTop, rTopBase, eSlope, hb, scaleOrig) => {
+    const bowlOf = (rTop, rTopBase, eSlope, hb, scaleOrig, relax = 0) => {
       if (!convexCuffDeform) {
-        const fn = legacyConcaveOf(rTop, eSlope, hb);
+        const fn = legacyConcaveOf(rTop, eSlope, hb, relax);
         if (!fn) {
           const dR = rTop - ra;
           const m0 = Math.max(0, Math.min(coneSlope * hb, dR - CONCAVE_MARGIN * hb));
@@ -2419,60 +2498,18 @@ export function blendCuffJunction(buffer, options = {}) {
       }
       return { fn: p.fn, endSlope: p.endSlope };
     };
-    const baseProfiles = tops.map((t, j) =>
-      bowlOf(
-        r1s[j],
-        belowR[j],
-        belowSlopes ? belowSlopes[j] : null,
-        hs[j],
-        seamOrigScale ? seamOrigScale[j] : 1,
-      ).fn,
+    const profiles = smoothProfilesAcrossColumns(
+      tops.map((t, j) =>
+        bowlOf(
+          r1s[j],
+          belowR[j],
+          belowSlopes ? belowSlopes[j] : null,
+          hs[j],
+          seamOrigScale ? seamOrigScale[j] : 1,
+          0.1 * tailWeights[j],
+        ).fn,
+      ),
     );
-    // 기본 오목 프로파일은 위 끝 기울기가 원본보다 가파르게 끝나(예: 55° vs 36°) 마진 아래 이음에서 원본으로 되돌아가며 오목 골이 생긴다.
-    // 그런 열은 오목 프로파일을 그대로 따라가다 마진 직전 TAIL_MM만, 위 끝 원본 기울기로 닿는 완만한 볼록 곡선(3차 Hermite)으로 바꾸고
-    // 이음 섞기는 끈다(원본으로 되돌리지 않는다).
-    const TAIL_MM = 0.45;
-    const tailWeights = circularSmooth(
-      baseProfiles.map((fn, j) => {
-        if (convexCuffDeform || !belowSlopes) return 0;
-        const eps = 1e-3;
-        const sEnd = (fn(1) - fn(1 - eps)) / (eps * hs[j]);
-        const diff = sEnd - belowSlopes[j];
-        return Math.max(0, Math.min(1, (diff - 0.05) / 0.15));
-      }),
-      TOP_SLOPE_SMOOTH_COLUMNS,
-    ).map((w) => Math.max(0, Math.min(1, w)));
-    const profiles = baseProfiles.map((fn, j) => {
-      const w = tailWeights[j];
-      if (!(w > 1e-3)) return fn;
-      const h = hs[j];
-      const dT = Math.min(TAIL_MM, h * 0.5);
-      const t0 = 1 - dT / h;
-      const eps = 1e-3;
-      const r0 = fn(t0);
-      const s0 = (fn(t0 + eps) - fn(t0 - eps)) / (2 * eps * h);
-      const r1 = fn(1);
-      // 기울기가 중간에 s0보다 커지지 않도록(오버슈트 → 오목 골) 끝 기울기를 현 기울기 기준 포물선 값 이하로 둔다.
-      const chord = (r1 - r0) / dT;
-      const s1 = Math.max(0, Math.min(s0, belowSlopes[j], 2 * chord - s0));
-      const tail = (t) => {
-        const u = Math.max(0, Math.min(1, (t - t0) / (1 - t0)));
-        const u2 = u * u;
-        const u3 = u2 * u;
-        return (
-          (2 * u3 - 3 * u2 + 1) * r0 +
-          (u3 - 2 * u2 + u) * s0 * dT +
-          (-2 * u3 + 3 * u2) * r1 +
-          (u3 - u2) * s1 * dT
-        );
-      };
-      return (t) => (t <= t0 ? fn(t) : fn(t) * (1 - w) + tail(t) * w);
-    });
-    const finalSeamOrigScale = seamOrigScale
-      ? seamOrigScale.map((w, j) => w * (1 - tailWeights[j]))
-      : tailWeights.some((w) => w > 1e-3)
-        ? tailWeights.map((w) => 1 - w)
-        : null;
     let maxSlope = 0;
     let minWall = Infinity;
     const chAtZ = channelRadiusByZ(mesh, zA - 0.3, zTopMax + 0.3, ra);
@@ -2509,7 +2546,8 @@ export function blendCuffJunction(buffer, options = {}) {
       rCut,
       origProbe: probe,
       crease: crease && offsetMm === 0 ? crease : null,
-      seamOrigScale: finalSeamOrigScale,
+      seamOrigScale,
+      seamBlendScale: finalSeamOrigScale,
     });
       return { out, zTopMax, maxSlope };
     };
@@ -2777,6 +2815,7 @@ export {
   prepare as _prepare,
   finishLineZByAngle as _finishLineZByAngle,
   findFinishCrease as _findFinishCrease,
+  smoothProfilesAcrossColumns as _smoothProfilesAcrossColumns,
   prepare as prepareCuffMesh,
   finishLineZByAngle,
   findFinishCrease,
