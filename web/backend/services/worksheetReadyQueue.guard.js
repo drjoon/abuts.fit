@@ -76,6 +76,7 @@ export function buildWorksheetReadyQueueGuard() {
           { designCompletedAt: { $type: "date" } },
         ],
       },
+      { "caseInfos.unsupportedConnection.pendingCancel": { $ne: true } },
     ],
   };
 }
@@ -88,5 +89,8 @@ export function isWorksheetReadyQueueRequest(requestLike) {
   const relatedPtxId =
     requestLike?.partnerBilling?.relatedPracticeTransferId ?? null;
   if (relatedPtxId && !requestLike?.designCompletedAt) return false;
+  if (requestLike?.caseInfos?.unsupportedConnection?.pendingCancel === true) {
+    return false;
+  }
   return true;
 }

@@ -219,6 +219,12 @@ import {
 import { createPortal } from "react-dom";
 import { ChevronRight, Search, X } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { UnsupportedConnectionCancelDialog } from "@/shared/components/practice/UnsupportedConnectionCancelDialog";
+import {
+  loadStashedUnsupportedCancelItems,
+  stashUnsupportedCancelItems,
+  type UnsupportedConnectionCancelItem,
+} from "@/shared/practice/unsupportedConnectionCancel";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
 import {
@@ -1066,6 +1072,18 @@ export function RequestorPracticeReceivePage({
   const designHandoffInFlightRef = useRef(false);
   /** 다치아 큐에서 병렬 handoff Promise — 마지막 확인 시 Promise.allSettled */
   const designHandoffPromisesRef = useRef<Promise<void>[]>([]);
+  const unsupportedHandoffRef = useRef<UnsupportedConnectionCancelItem[]>([]);
+  const [unsupportedCancelItems, setUnsupportedCancelItems] = useState<
+    UnsupportedConnectionCancelItem[]
+  >([]);
+  const [unsupportedCancelBusy, setUnsupportedCancelBusy] = useState(false);
+  useEffect(() => {
+    const stashed = loadStashedUnsupportedCancelItems("practice");
+    if (stashed.length) setUnsupportedCancelItems(stashed);
+  }, []);
+  useEffect(() => {
+    stashUnsupportedCancelItems("practice", unsupportedCancelItems);
+  }, [unsupportedCancelItems]);
   const [designConfirmQueue, setDesignConfirmQueue] = useState<
     Array<{
       file: File;
@@ -6389,6 +6407,7 @@ export function RequestorPracticeReceivePage({
       setDesignConfirmQueue(queue);
       setDesignConfirmQueueIndex(0);
       designHandoffPromisesRef.current = [];
+      unsupportedHandoffRef.current = [];
       setDesignConfirmOpen(true);
     },
     [
@@ -6925,6 +6944,40 @@ export function RequestorPracticeReceivePage({
                 .filter(Boolean)
             : [];
           const createdRequestId = String(data.requestId || "").trim();
+          const unsupportedRaw = data.unsupportedConnection;
+          if (
+            unsupportedRaw &&
+            typeof unsupportedRaw === "object" &&
+            !Array.isArray(unsupportedRaw)
+          ) {
+            const unsupported = unsupportedRaw as Record<string, unknown>;
+            const mongoId = String(
+              unsupported.requestMongoId || createdRequestId || "",
+            ).trim();
+            const label = String(unsupported.label || "").trim();
+            if (mongoId && label) {
+              unsupportedHandoffRef.current.push({
+                requestMongoId: mongoId,
+                tooth: String(
+                  unsupported.tooth || toothForHandoff || "",
+                ).trim(),
+                label,
+                cancelVia: "design-handoff-tooth",
+                rndRequestId: String(unsupported.rndRequestId || "").trim(),
+                transferId: String(
+                  transfer.transferId || transfer._id || "",
+                ).trim(),
+              });
+            }
+          }
+          if (data.unsupportedConnectionRndFailed === true) {
+            toast({
+              title: "R&D 저장 실패",
+              description:
+                "제공하지 않는 커넥션을 R&D에 남기지 못해 이 건은 취소하지 않았습니다.",
+              variant: "destructive",
+            });
+          }
           if (relatedFromRes.length > 0 || createdRequestId) {
             const mergeRelatedOnly = (
               row: ReceivedPracticeTransfer,
@@ -7005,6 +7058,10 @@ export function RequestorPracticeReceivePage({
           const pending = designHandoffPromisesRef.current;
           designHandoffPromisesRef.current = [];
           void Promise.allSettled(pending).then(() => {
+            const pendingUnsupported = unsupportedHandoffRef.current.splice(0);
+            if (pendingUnsupported.length > 0) {
+              setUnsupportedCancelItems(pendingUnsupported);
+            }
             const pendingProsthetic =
               pendingProstheticAfterAbutmentRef.current;
             pendingProstheticAfterAbutmentRef.current = null;
@@ -7344,6 +7401,72 @@ export function RequestorPracticeReceivePage({
       token,
     ],
   );
+
+  const confirmUnsupportedConnectionCancel = useCallback(async () => {
+    if (!token || unsupportedCancelBusy || unsupportedCancelItems.length === 0) {
+      return;
+    }
+    setUnsupportedCancelBusy(true);
+    try {
+      for (const item of unsupportedCancelItems) {
+        const mongoId = String(item.requestMongoId || "").trim();
+        const toothKey = String(item.tooth || "").trim();
+        if (!mongoId || !toothKey) continue;
+        const cancelRes = await apiFetch<{ success?: boolean; message?: string }>({
+          path: `/api/requests/${encodeURIComponent(mongoId)}/design-handoff/cancel`,
+          method: "POST",
+          token,
+          jsonBody: { tooth: toothKey },
+        });
+        if (!cancelRes.ok) {
+          const body =
+            cancelRes.data && typeof cancelRes.data === "object"
+              ? (cancelRes.data as Record<string, unknown>)
+              : {};
+          throw new Error(
+            String(body.message || "해당 건 의뢰 취소에 실패했습니다."),
+          );
+        }
+        const transferKey = String(item.transferId || "").trim();
+        if (transferKey) {
+          setTransfers((prev) =>
+            prev.map((row) => {
+              const key = String(row.transferId || row._id || "");
+              return key === transferKey
+                ? buildToothCancelLocalPatch(row, toothKey)
+                : row;
+            }),
+          );
+          setSelectedTransfer((prev) => {
+            if (!prev) return prev;
+            const key = String(prev.transferId || prev._id || "");
+            return key === transferKey
+              ? buildToothCancelLocalPatch(prev, toothKey)
+              : prev;
+          });
+        }
+      }
+      setUnsupportedCancelItems([]);
+      toast({ title: "해당 건을 의뢰 취소했습니다" });
+    } catch (error) {
+      toast({
+        title: "의뢰 취소 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "해당 건만 취소하지 못했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setUnsupportedCancelBusy(false);
+    }
+  }, [
+    buildToothCancelLocalPatch,
+    toast,
+    token,
+    unsupportedCancelBusy,
+    unsupportedCancelItems,
+  ]);
 
   const routeLabWorkFiles = useCallback(
     (
@@ -9546,6 +9669,14 @@ export function RequestorPracticeReceivePage({
         onCancel={() => {
           clearPendingProstheticAfterAbutment();
           clearDesignConfirmState();
+        }}
+      />
+      <UnsupportedConnectionCancelDialog
+        open={unsupportedCancelItems.length > 0}
+        items={unsupportedCancelItems}
+        busy={unsupportedCancelBusy}
+        onConfirm={() => {
+          void confirmUnsupportedConnectionCancel();
         }}
       />
       <ConfirmDialog

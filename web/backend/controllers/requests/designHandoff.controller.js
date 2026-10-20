@@ -113,7 +113,8 @@ import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import { scheduleRequestReadyBadgeEmit } from "../../services/adminCommBadge.service.js";
 import { resolvePrcFileNames } from "./prcMapping.utils.js";
 import { triggerRhinoProcessFileForRequest } from "../rhino/rhino.controller.js";
-import { ensureLotNumberOnReadyEnter, assertOrderableImplantPresetOrThrow } from "./utils.js";
+import { ensureLotNumberOnReadyEnter, classifyImplantPreset } from "./utils.js";
+import { cloneUnsupportedConnectionToRnd } from "../../services/unsupportedConnectionRnd.service.js";
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
 import { alertAdminImplantCatalogMismatch } from "../../utils/implantCatalogMismatchAlert.js";
 
@@ -840,45 +841,7 @@ export async function handoffDesignToProduction(req, res) {
         implantFamily = normalized.implantFamily;
         implantType = normalized.implantType;
       }
-      // 미도입/비활성 스펙은 제조사로 보내지 않는다. 폴백 금지 — 실패 시 관리자 alert.
-      try {
-        await assertOrderableImplantPresetOrThrow({
-          implantManufacturer,
-          implantBrand,
-          implantFamily,
-          implantType,
-        });
-      } catch (presetErr) {
-        alertAdminImplantCatalogMismatch({
-          reason: "handoff_non_orderable_implant",
-          source: "designHandoff.handoffDesignToProduction",
-          transferId: relatedTransferIdEarly || "",
-          requestId: String(request.requestId || "").trim(),
-          tooth,
-          patientName,
-          clinicName,
-          implantManufacturer,
-          implantBrand,
-          implantFamily,
-          implantType,
-          attempted: caseInfosPatchRaw
-            ? {
-                implantManufacturer: caseInfosPatchRaw.implantManufacturer,
-                implantBrand: caseInfosPatchRaw.implantBrand,
-                implantFamily: caseInfosPatchRaw.implantFamily,
-                implantType: caseInfosPatchRaw.implantType,
-              }
-            : null,
-          message: String(presetErr?.message || "").trim(),
-          actorUserId: userId,
-        });
-        return res.status(409).json({
-          success: false,
-          code: "implant_catalog_mismatch",
-          message:
-            "불편을 끼쳐드려 죄송합니다만 의뢰건 처리 중 에러가 발생했습니다. 플랫폼 개발팀에게 관련 내용 전달하였고, 빠른 시간 내에 조치하겠습니다.",
-        });
-      }
+      // 미제공 커넥션도 업로드·제출은 받는다. 다른 brand로 폴백하지 않는다.
       const retentionGroove =
         retentionGrooveFromBody ||
         normalizeRetentionGrooveOrNull(request.caseInfos.retentionGroove);
@@ -916,6 +879,17 @@ export async function handoffDesignToProduction(req, res) {
       if (typeof caseInfosPatchRaw?.anodizingEnabled === "boolean") {
         request.caseInfos.anodizingEnabled = caseInfosPatchRaw.anodizingEnabled;
       }
+    }
+
+    // 미제공 커넥션도 파일은 받는다. 제조 준비 큐에는 올리지 않고 R&D에 보관한 뒤 해당 건만 취소한다.
+    const implantPreset = await classifyImplantPreset(request.caseInfos);
+    const unsupportedConnectionLabel =
+      implantPreset.kind === "unsupported" ? implantPreset.label : "";
+    if (unsupportedConnectionLabel) {
+      request.caseInfos.unsupportedConnection = {
+        label: unsupportedConnectionLabel,
+        pendingCancel: true,
+      };
     }
 
     // 헥스·디자인SW 스탬프는 hold에 불필요 — 응답 후 labMeta로 처리(critical path ~1s 절감).
@@ -1031,8 +1005,8 @@ export async function handoffDesignToProduction(req, res) {
 
       const lotSaveT0 = Date.now();
       await ensureLotNumberOnReadyEnter(request);
-      // Rhino enqueue 전에 GENERATING을 남겨 준비 탭·pending-stl이 즉시 잡게 한다.
-      if (rhinoFileName) {
+      // 미제공 커넥션은 준비 큐·Rhino에 올리지 않는다.
+      if (rhinoFileName && !unsupportedConnectionLabel) {
         if (!request.productionSchedule) request.productionSchedule = {};
         request.productionSchedule.stlPreload = {
           status: "GENERATING",
@@ -1040,6 +1014,29 @@ export async function handoffDesignToProduction(req, res) {
         };
       }
       await request.save();
+      let unsupportedRnd = null;
+      if (unsupportedConnectionLabel) {
+        try {
+          unsupportedRnd = await cloneUnsupportedConnectionToRnd(request, userId);
+        } catch (rndErr) {
+          console.error(
+            "[DESIGN_HANDOFF] unsupported connection R&D clone failed",
+            rndErr,
+          );
+          alertAdminImplantCatalogMismatch({
+            reason: "unsupported_connection_rnd_failed",
+            source: "designHandoff.handoffDesignToProduction",
+            requestId: String(request.requestId || "").trim(),
+            tooth: String(request.caseInfos?.tooth || "").trim(),
+            implantManufacturer: request.caseInfos?.implantManufacturer,
+            implantBrand: request.caseInfos?.implantBrand,
+            implantFamily: request.caseInfos?.implantFamily,
+            implantType: request.caseInfos?.implantType,
+            message: String(rndErr?.message || rndErr),
+            actorUserId: userId,
+          });
+        }
+      }
       handoffTiming.lotSaveMs = Date.now() - lotSaveT0;
 
       if (process.env.NODE_ENV !== "production") {
@@ -1066,9 +1063,25 @@ export async function handoffDesignToProduction(req, res) {
           shippingMode: request.shippingMode || null,
           price: request.price || null,
           abutmentDesignFee: null,
+          ...(unsupportedRnd
+            ? {
+                unsupportedConnection: {
+                  label: unsupportedConnectionLabel,
+                  tooth: String(request.caseInfos?.tooth || "").trim(),
+                  requestMongoId: String(request._id),
+                  cancelVia: "design-handoff-tooth",
+                  rndRequestId: unsupportedRnd.requestId,
+                },
+              }
+            : {}),
+          ...(unsupportedConnectionLabel && !unsupportedRnd
+            ? { unsupportedConnectionRndFailed: true }
+            : {}),
         },
       });
 
+      // 미제공 커넥션은 헥스 확인 샘플을 만들지 않는다(해당 건만 취소).
+      if (!unsupportedConnectionLabel) {
       // 어벗 STL 핸드오프 후에만 헥스 확인 샘플 생성(구강스캔 준비 건으로는 만들지 않음)
       void maybeCreateHexVerificationSampleForFirstOrder({
         sourceRequests: [request],
@@ -1084,6 +1097,7 @@ export async function handoffDesignToProduction(req, res) {
           hexErr?.message || hexErr,
         );
       });
+      }
 
       const labConfirmPayload =
         transferDoc && isAcceptingLab
@@ -1113,7 +1127,7 @@ export async function handoffDesignToProduction(req, res) {
       void (async () => {
         // 미러/labMeta보다 Rhino를 먼저 — enqueue 누락·고스트「라이노 작업중」방지
         try {
-          if (rhinoFileName) {
+          if (rhinoFileName && !unsupportedConnectionLabel) {
             await seedPrcFieldsAfterHandoff(request);
             triggerRhinoProcessFileForRequest({
               requestId: request.requestId,
@@ -1483,11 +1497,13 @@ export async function handoffDesignToProduction(req, res) {
         }
 
         try {
-          emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
-            reason: "ptx-design-handoff",
-            requestId: String(request._id),
-          });
-          scheduleRequestReadyBadgeEmit();
+          if (!unsupportedConnectionLabel) {
+            emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
+              reason: "ptx-design-handoff",
+              requestId: String(request._id),
+            });
+            scheduleRequestReadyBadgeEmit();
+          }
         } catch (emitErr) {
           console.error("[DESIGN_HANDOFF] worksheet count emit failed", emitErr);
         }
@@ -1505,6 +1521,40 @@ export async function handoffDesignToProduction(req, res) {
     }
 
     await request.save();
+
+    if (unsupportedConnectionLabel) {
+      let unsupportedRnd = null;
+      try {
+        unsupportedRnd = await cloneUnsupportedConnectionToRnd(request, userId);
+      } catch (rndErr) {
+        console.error(
+          "[DESIGN_HANDOFF] unsupported connection R&D clone failed",
+          rndErr,
+        );
+      }
+      if (!unsupportedRnd) {
+        return res.status(500).json({
+          success: false,
+          message:
+            "제공하지 않는 커넥션을 R&D에 저장하지 못했습니다. 제조 큐에는 올리지 않았습니다.",
+        });
+      }
+      return res.status(200).json({
+        success: true,
+        message: "제공하지 않는 커넥션입니다. 해당 건만 의뢰 취소해 주세요.",
+        data: {
+          requestId: String(request._id),
+          manufacturerStage: String(request.manufacturerStage || "준비"),
+          unsupportedConnection: {
+            label: unsupportedConnectionLabel,
+            tooth: String(request.caseInfos?.tooth || "").trim(),
+            requestMongoId: String(request._id),
+            cancelVia: "status",
+            rndRequestId: unsupportedRnd.requestId,
+          },
+        },
+      });
+    }
 
     // 제조사 준비→가공 진입 SSOT 재사용 (비PTX)
     req.body = {

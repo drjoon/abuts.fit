@@ -8,6 +8,7 @@
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
+// - 2026-10-21: 미제공 커넥션은 classifyImplantPreset. 제출은 허용하고 준비 큐에는 올리지 않는다.
 // - 2026-10-07: 커스텀어벗 리메이크 — 어벗츠로 건당 10,000원(월 3건 무료 폐지).
 // - 2026-10-07: 커스텀어벗 리메이크 — KST 월 3건 무료, 4건부터 건당 10,000원(폐지).
 // - 2026-10-01: 조직 스코프 캐시는 만료·상한으로 걷는다.
@@ -645,19 +646,35 @@ export async function normalizeCaseInfosImplantFields(
   });
 }
 
+export function formatUnsupportedConnectionLabel(caseInfos) {
+  const normalized = normalizeImplantFields(caseInfos || {});
+  return [
+    normalized.implantManufacturer,
+    normalized.implantBrand,
+    normalized.implantFamily,
+    normalized.implantType,
+  ]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join(" / ");
+}
+
 /**
- * 신규 주문/수정 시점 주문 가능 프리셋 검증.
- * - isActive=true 조합만 주문 가능
+ * 활성 커넥션 여부.
+ * - incomplete: 제조사/브랜드/패밀리/타입 중 빈 값
+ * - orderable: isActive 커넥션
+ * - unsupported: 조합은 있으나 제공하지 않음(업로드·제출은 허용, R&D 보관 후 해당 건만 취소)
  */
-export async function assertOrderableImplantPresetOrThrow(caseInfos) {
+export async function classifyImplantPreset(caseInfos) {
   const normalized = normalizeImplantFields(caseInfos || {});
   const manufacturer = String(normalized.implantManufacturer || "").trim();
   const brand = String(normalized.implantBrand || "").trim();
   const family = String(normalized.implantFamily || "").trim();
   const type = String(normalized.implantType || "").trim();
+  const label = formatUnsupportedConnectionLabel(normalized);
 
   if (!manufacturer || !brand || !family || !type) {
-    throw new Error("임플란트 제조사/브랜드/패밀리/타입이 모두 필요합니다.");
+    return { kind: "incomplete", normalized, label };
   }
 
   const activeConnection = await Connection.findOne({
@@ -670,10 +687,23 @@ export async function assertOrderableImplantPresetOrThrow(caseInfos) {
     .select({ _id: 1 })
     .lean();
 
-  if (activeConnection) return normalized;
+  if (activeConnection) return { kind: "orderable", normalized, label };
+  return { kind: "unsupported", normalized, label };
+}
 
+/**
+ * 신규 주문/수정 시점 주문 가능 프리셋 검증.
+ * - isActive=true 조합만 주문 가능
+ * - 제출·핸드오프의 미제공 커넥션은 classifyImplantPreset(kind=unsupported)로 받는다.
+ */
+export async function assertOrderableImplantPresetOrThrow(caseInfos) {
+  const preset = await classifyImplantPreset(caseInfos);
+  if (preset.kind === "orderable") return preset.normalized;
+  if (preset.kind === "incomplete") {
+    throw new Error("임플란트 제조사/브랜드/패밀리/타입이 모두 필요합니다.");
+  }
   throw new Error(
-    `현재 주문이 비활성화된 임플란트 조합입니다: ${manufacturer} / ${brand} / ${family} / ${type}`,
+    `현재 주문이 비활성화된 임플란트 조합입니다: ${preset.label}`,
   );
 }
 

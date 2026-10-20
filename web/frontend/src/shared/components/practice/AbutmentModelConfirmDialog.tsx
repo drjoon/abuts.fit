@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-21: 신규 임플란트 입력은 프리셋과 XOR. 요청/취소·단건 제출 없이 의뢰하기에서 함께 보낸다.
 // - 2026-10-20: 가공 tight 경고 시 확인 & 다음 위 안내·화살표·진행 확인 문구.
 // - 2026-10-18: 유지홈 저장값이 비어 있으면 화면에 보이는 「없음」을 바로 저장.
 // - 2026-09-20: 유지홈 아래 아노다이징 ON/OFF(계정 기본값 저장).
@@ -236,54 +237,111 @@ export function AbutmentModelConfirmDialog({
       ? Math.max(0, Math.min(100, Math.round(fileUploadPercent)))
       : null;
   const uploadLabel = String(fileUploadLabel || "").trim();
-  const [showNewSystemForm, setShowNewSystemForm] = useState(false);
   const [newSystemManufacturer, setNewSystemManufacturer] = useState("");
   const [newSystemBrand, setNewSystemBrand] = useState("");
   const [newSystemFamily, setNewSystemFamily] = useState("");
-  const [confirmNewSystemOpen, setConfirmNewSystemOpen] = useState(false);
   const [correctedDownloadOpen, setCorrectedDownloadOpen] = useState(false);
   const [correctedDownloading, setCorrectedDownloading] = useState(false);
 
-  const [pendingNewSystem, setPendingNewSystem] = useState<{
-    manufacturer: string;
-    brand: string;
-    family: string;
-  } | null>(null);
-
-  const newSystemInfoCopy = useMemo(
-    () =>
-      "개발을 위해 랩 아날로그와 기성 어벗먼트 샘플을 보내주세요. 무료 크레딧을 충전해드립니다.",
-    [],
+  const catalogEngaged = connections.some((connection) => {
+    const manufacturer = String(detailCaseInfos?.implantManufacturer || "").trim();
+    if (!manufacturer) return false;
+    if (
+      String(connection.manufacturer || "").trim().toLowerCase() !==
+      manufacturer.toLowerCase()
+    ) {
+      return false;
+    }
+    const brand = String(detailCaseInfos?.implantBrand || "").trim();
+    if (!brand) return true;
+    return (
+      String(connection.brand || "").trim().toLowerCase() === brand.toLowerCase()
+    );
+  });
+  const customEngaged = Boolean(
+    newSystemManufacturer.trim() ||
+      newSystemBrand.trim() ||
+      newSystemFamily.trim(),
   );
 
-  const resetNewSystemForm = useCallback(() => {
-    setShowNewSystemForm(false);
-    setNewSystemManufacturer("");
-    setNewSystemBrand("");
-    setNewSystemFamily("");
-    setDetailCaseInfos({ newSystemRequest: undefined });
-  }, [setDetailCaseInfos]);
-
-  const handleNewSystemRequestClick = useCallback(() => {
-    const manufacturer = newSystemManufacturer.trim();
-    const brand = newSystemBrand.trim();
-    const family = newSystemFamily.trim();
-
-    if (!manufacturer || !brand || !family) {
-      toast({
-        title: "신규 임플란트 입력 필요",
-        description: "Manufacturer, Brand, Family를 모두 입력해주세요.",
-        variant: "destructive",
-        duration: 4000,
+  const commitCustomImplant = useCallback(
+    (next: { manufacturer: string; brand: string; family: string }) => {
+      setNewSystemManufacturer(next.manufacturer);
+      setNewSystemBrand(next.brand);
+      setNewSystemFamily(next.family);
+      const manufacturer = next.manufacturer.trim();
+      const brand = next.brand.trim();
+      const family = next.family.trim();
+      const engaged = Boolean(manufacturer || brand || family);
+      setDetailCaseInfos({
+        ...(engaged
+          ? {
+              implantManufacturer: "",
+              implantBrand: "",
+              implantFamily: "",
+              implantType: "",
+            }
+          : {}),
+        newSystemRequest: engaged
+          ? {
+              requested: Boolean(manufacturer && brand && family),
+              manufacturer,
+              brand,
+              family,
+              message: "랩아날로그와 기존 어벗 샘플을 요청드립니다",
+              free: true,
+              tag: "신규 임플란트 의뢰",
+            }
+          : undefined,
       });
-      return;
-    }
+      if (engaged) {
+        setImplantManufacturer("");
+        setImplantBrand("");
+        setImplantFamily("");
+        setImplantType("");
+      }
+    },
+    [
+      setDetailCaseInfos,
+      setImplantBrand,
+      setImplantFamily,
+      setImplantManufacturer,
+      setImplantType,
+    ],
+  );
 
-    setPendingNewSystem({ manufacturer, brand, family });
-    setConfirmNewSystemOpen(true);
-  }, [newSystemBrand, newSystemFamily, newSystemManufacturer, toast]);
-
-  const persistedNewSystemRequest = detailCaseInfos?.newSystemRequest;
+  const setCatalogCaseInfos = useCallback(
+    (updates: Partial<CaseInfos>) => {
+      const manufacturer = String(
+        updates.implantManufacturer ??
+          detailCaseInfos?.implantManufacturer ??
+          "",
+      ).trim();
+      const brand = String(
+        updates.implantBrand ?? detailCaseInfos?.implantBrand ?? "",
+      ).trim();
+      const touchesChosenCatalog =
+        ("implantManufacturer" in updates &&
+          Boolean(String(updates.implantManufacturer || "").trim())) ||
+        ("implantBrand" in updates &&
+          Boolean(String(updates.implantBrand || "").trim())) ||
+        (("implantFamily" in updates || "implantType" in updates) &&
+          Boolean(manufacturer || brand));
+      if (touchesChosenCatalog) {
+        setNewSystemManufacturer("");
+        setNewSystemBrand("");
+        setNewSystemFamily("");
+        setDetailCaseInfos({ ...updates, newSystemRequest: undefined });
+        return;
+      }
+      setDetailCaseInfos(updates);
+    },
+    [
+      detailCaseInfos?.implantBrand,
+      detailCaseInfos?.implantManufacturer,
+      setDetailCaseInfos,
+    ],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -291,15 +349,6 @@ export function AbutmentModelConfirmDialog({
     if (stored === "none" || stored === "shallow" || stored === "deep") return;
     setDetailCaseInfos({ retentionGroove: "none" });
   }, [detailCaseInfos?.retentionGroove, open, setDetailCaseInfos]);
-
-  useEffect(() => {
-    if (persistedNewSystemRequest?.requested) {
-      setShowNewSystemForm(true);
-      setNewSystemManufacturer(persistedNewSystemRequest.manufacturer || "");
-      setNewSystemBrand(persistedNewSystemRequest.brand || "");
-      setNewSystemFamily(persistedNewSystemRequest.family || "");
-    }
-  }, [persistedNewSystemRequest]);
 
   const showImplantSelect = true;
   const productMode: NewRequestProductMode = lockProductionProductMode
@@ -327,6 +376,56 @@ export function AbutmentModelConfirmDialog({
     detailIndex != null && selectablePreviewIndices.includes(detailIndex)
       ? detailIndex
       : (selectablePreviewIndices[0] ?? null);
+
+  useEffect(() => {
+    if (!open) return;
+    const nsr = detailCaseInfos?.newSystemRequest;
+    setNewSystemManufacturer(String(nsr?.manufacturer || ""));
+    setNewSystemBrand(String(nsr?.brand || ""));
+    setNewSystemFamily(String(nsr?.family || ""));
+    const hasCustom = Boolean(
+      String(nsr?.manufacturer || "").trim() ||
+        String(nsr?.brand || "").trim() ||
+        String(nsr?.family || "").trim(),
+    );
+    if (
+      hasCustom &&
+      (String(detailCaseInfos?.implantManufacturer || "").trim() ||
+        String(detailCaseInfos?.implantBrand || "").trim())
+    ) {
+      setDetailCaseInfos({
+        implantManufacturer: "",
+        implantBrand: "",
+        implantFamily: "",
+        implantType: "",
+      });
+    }
+    // 파일 전환 시에만 저장된 신규 임플란트 입력을 되돌린다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, activePreviewIndex]);
+
+  useEffect(() => {
+    if (!open || connections.length === 0) return;
+    const manufacturer = String(detailCaseInfos?.implantManufacturer || "").trim();
+    if (!manufacturer) return;
+    const offered = connections.some(
+      (connection) =>
+        String(connection.manufacturer || "").trim().toLowerCase() ===
+        manufacturer.toLowerCase(),
+    );
+    if (offered) return;
+    setDetailCaseInfos({
+      implantManufacturer: "",
+      implantBrand: "",
+      implantFamily: "",
+      implantType: "",
+    });
+  }, [
+    connections,
+    detailCaseInfos?.implantManufacturer,
+    open,
+    setDetailCaseInfos,
+  ]);
 
   const retentionIdPrefix = isLabHandoff ? "lab-handoff-rg" : "new-req-rg";
 
@@ -423,14 +522,23 @@ export function AbutmentModelConfirmDialog({
     const rg = String(detailCaseInfos?.retentionGroove || "").trim();
     const retentionReady =
       rg === "none" || rg === "shallow" || rg === "deep" || rg === "";
+    const nsr = detailCaseInfos?.newSystemRequest;
+    const customReady = Boolean(
+      String(nsr?.manufacturer || "").trim() &&
+        String(nsr?.brand || "").trim() &&
+        String(nsr?.family || "").trim(),
+    );
+    const catalogReady = Boolean(
+      (detailCaseInfos?.implantManufacturer || implantManufacturer) &&
+        (detailCaseInfos?.implantBrand || implantBrand) &&
+        (detailCaseInfos?.implantFamily || implantFamily) &&
+        (detailCaseInfos?.implantType || implantType),
+    );
     return !(
       detailCaseInfos?.clinicName &&
       detailCaseInfos?.patientName &&
       detailCaseInfos?.tooth &&
-      (detailCaseInfos?.implantManufacturer || implantManufacturer) &&
-      (detailCaseInfos?.implantBrand || implantBrand) &&
-      (detailCaseInfos?.implantFamily || implantFamily) &&
-      (detailCaseInfos?.implantType || implantType) &&
+      (customReady || catalogReady) &&
       retentionReady
     );
   }, [
@@ -616,9 +724,10 @@ export function AbutmentModelConfirmDialog({
 
                       <NewRequestPatientImplantFields
                         caseInfos={detailCaseInfos}
-                        setCaseInfos={setDetailCaseInfos}
+                        setCaseInfos={setCatalogCaseInfos}
                         showImplantSelect={showImplantSelect}
                         readOnly={!detailFile || confirming}
+                        implantFieldsLocked={customEngaged}
                         implantSelectSource="caseInfos"
                         connections={connections}
                         familyOptions={familyOptions}
@@ -644,6 +753,57 @@ export function AbutmentModelConfirmDialog({
                         handleAddOrSelectClinic={handleAddOrSelectClinic}
                         onImplantCatalogIssue={onImplantCatalogIssue}
                       />
+
+                      {!isLabHandoff ? (
+                        <div className="flex flex-col gap-2 rounded-lg border border-primary-soft bg-primary-soft/60 px-3 py-2">
+                          <span className="text-sm font-semibold text-slate-700">
+                            찾으시는 임플란트가 없나요?
+                          </span>
+                          <p className="text-xs leading-relaxed text-slate-600">
+                            지금은 가공할 수 없지만, 추가 개발을 위해 랩아날로그와 기존 어벗 샘플을 제공해주세요. 무료 크레딧을 충전해드리겠습니다.
+                            <br />
+                            요청하시면 어벗츠에서 연락드리겠습니다.
+                          </p>
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                            <Input
+                              placeholder="Manufacturer"
+                              value={newSystemManufacturer}
+                              onChange={(e) =>
+                                commitCustomImplant({
+                                  manufacturer: e.target.value,
+                                  brand: newSystemBrand,
+                                  family: newSystemFamily,
+                                })
+                              }
+                              disabled={confirming || catalogEngaged}
+                            />
+                            <Input
+                              placeholder="Brand"
+                              value={newSystemBrand}
+                              onChange={(e) =>
+                                commitCustomImplant({
+                                  manufacturer: newSystemManufacturer,
+                                  brand: e.target.value,
+                                  family: newSystemFamily,
+                                })
+                              }
+                              disabled={confirming || catalogEngaged}
+                            />
+                            <Input
+                              placeholder="Family"
+                              value={newSystemFamily}
+                              onChange={(e) =>
+                                commitCustomImplant({
+                                  manufacturer: newSystemManufacturer,
+                                  brand: newSystemBrand,
+                                  family: e.target.value,
+                                })
+                              }
+                              disabled={confirming || catalogEngaged}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
 
                       <RetentionGrooveField
                         value={
@@ -674,68 +834,6 @@ export function AbutmentModelConfirmDialog({
                         idPrefix={`${retentionIdPrefix}-ano`}
                       />
 
-                      <div className="flex flex-col gap-2 rounded-lg border border-primary-soft bg-primary-soft/60 px-3 py-2">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <span className="text-sm font-semibold text-slate-700">
-                            찾으시는 임플란트가 없나요?
-                          </span>
-                          {!showNewSystemForm ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="secondary"
-                              className="bg-white text-primary-strong border-primary-muted hover:bg-primary-soft"
-                              onClick={() => setShowNewSystemForm(true)}
-                              disabled={confirming}
-                            >
-                              신규 임플란트 요청
-                            </Button>
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              <Button
-                                type="button"
-                                size="sm"
-                                onClick={handleNewSystemRequestClick}
-                                disabled={confirming}
-                              >
-                                요청
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={resetNewSystemForm}
-                                disabled={confirming}
-                              >
-                                취소
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-
-                        {showNewSystemForm && (
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                            <Input
-                              placeholder="Manufacturer"
-                              value={newSystemManufacturer}
-                              onChange={(e) => setNewSystemManufacturer(e.target.value)}
-                              disabled={confirming}
-                            />
-                            <Input
-                              placeholder="Brand"
-                              value={newSystemBrand}
-                              onChange={(e) => setNewSystemBrand(e.target.value)}
-                              disabled={confirming}
-                            />
-                            <Input
-                              placeholder="Family"
-                              value={newSystemFamily}
-                              onChange={(e) => setNewSystemFamily(e.target.value)}
-                              disabled={confirming}
-                            />
-                          </div>
-                        )}
-                      </div>
                     </div>
                   )}
 
@@ -909,74 +1007,6 @@ export function AbutmentModelConfirmDialog({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog
-        open={confirmNewSystemOpen}
-        onOpenChange={(next) => {
-          if (!next) {
-            setConfirmNewSystemOpen(false);
-            setPendingNewSystem(null);
-          }
-        }}
-      >
-        <AlertDialogContent
-          className="new-request-page z-[330]"
-          overlayClassName="z-[325]"
-        >
-          <AlertDialogHeader>
-            <AlertDialogTitle>신규 임플란트 의뢰로 접수할까요?</AlertDialogTitle>
-            <AlertDialogDescription>{newSystemInfoCopy}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => {
-                setConfirmNewSystemOpen(false);
-                setPendingNewSystem(null);
-              }}
-            >
-              취소
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                if (!pendingNewSystem) return;
-                const { manufacturer, brand, family } = pendingNewSystem;
-                const message = "랩 아날로그 샘플 한 개를 요청드립니다";
-
-                setDetailCaseInfos({
-                  implantManufacturer: manufacturer,
-                  implantBrand: brand,
-                  implantFamily: family,
-                  newSystemRequest: {
-                    requested: true,
-                    manufacturer,
-                    brand,
-                    family,
-                    message,
-                    free: true,
-                    tag: "신규 임플란트 의뢰",
-                  },
-                });
-
-                toast({
-                  title: "신규 임플란트로 접수",
-                  description: "무상 처리 및 랩 아날로그 샘플 요청으로 전달됩니다.",
-                  duration: 3500,
-                });
-
-                setShowNewSystemForm(false);
-                setConfirmNewSystemOpen(false);
-                setPendingNewSystem(null);
-
-                const nextIndex = detailIndex ?? selectedPreviewIndex;
-                if (nextIndex !== null && nextIndex >= 0) {
-                  await onVerifyAndNext(nextIndex);
-                }
-              }}
-            >
-              확인
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

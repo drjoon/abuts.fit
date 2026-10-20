@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-10-21: 신규 커넥션 요청 카드 — 클릭 시 의뢰자 연락처·커넥션·의뢰 내용.
 // - 2026-10-14: 거래+이용·매출 통합·알림 c6r3·하단 불완전|가공 c3·배송 c6 1열 스크롤.
 // - 2026-10-14: 하단 벤토 재배치(전송·가공·어벗 한 줄, 배송 c6r2)·그리드 gap 축소.
 // - 2026-10-14: 카드 span을 중요도 기준으로 재조정(은행 잔액·빈 알림·배송 방식 등). 12열 빈칸 최소화.
@@ -190,6 +191,51 @@ type PlatformGrowthStats = {
   periodRevenue?: number;
 };
 
+type NewConnectionRequestItem = {
+  id: string;
+  requestId?: string;
+  createdAt?: string | null;
+  status?: string;
+  manufacturerStage?: string;
+  clinicName?: string;
+  patientName?: string;
+  tooth?: string;
+  memo?: string;
+  fileName?: string;
+  connectionLabel?: string;
+  source?: "unsupported" | "new_implant";
+  requesterName?: string;
+  requesterPhone?: string;
+  requesterEmail?: string;
+  businessName?: string;
+  businessPhone?: string;
+  representativeName?: string;
+};
+
+type NewConnectionRequestStats = {
+  total?: number;
+  items?: NewConnectionRequestItem[];
+};
+
+const formatNewConnectionRequestWhen = (value?: string | null) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+};
+
+const phoneHref = (value?: string) => {
+  const digits = String(value || "").replace(/[^\d+]/g, "");
+  return digits ? `tel:${digits}` : "";
+};
+
 type AdminDashboardResponseData = {
   happyCallSummary?: HappyCallSummary;
   unmachinableSummary?: {
@@ -220,6 +266,7 @@ type AdminDashboardResponseData = {
   systemAlerts?: DashboardData["systemAlerts"];
   practiceTransferStats?: PracticeTransferStats;
   unsupportedAbutmentStats?: UnsupportedAbutmentStats;
+  newConnectionRequestStats?: NewConnectionRequestStats;
   prosthesisFeeItemRequestStats?: ProsthesisFeeItemRequestStats;
 };
 
@@ -738,6 +785,10 @@ export const AdminDashboardPage = () => {
     useState(false);
   const [unsupportedAbutmentStatsDialogOpen, setUnsupportedAbutmentStatsDialogOpen] =
     useState(false);
+  const [newConnectionRequestOpen, setNewConnectionRequestOpen] = useState(false);
+  const [newConnectionRequestId, setNewConnectionRequestId] = useState<string | null>(
+    null,
+  );
   const [unsupportedAbutmentDetailItem, setUnsupportedAbutmentDetailItem] =
     useState<UnsupportedAbutmentItem | null>(null);
   const [prosthesisFeeItemRequestDialogOpen, setProsthesisFeeItemRequestDialogOpen] =
@@ -1291,6 +1342,19 @@ export const AdminDashboardPage = () => {
     unsupportedAbutmentPending +
       unsupportedAbutmentAdoptedCnc +
       unsupportedAbutmentAdoptedRoundBar;
+  const newConnectionRequestStats =
+    ((adminDashboardResponse?.data as
+      | { newConnectionRequestStats?: NewConnectionRequestStats }
+      | undefined)?.newConnectionRequestStats as
+      | NewConnectionRequestStats
+      | undefined) || {};
+  const newConnectionRequestItems = Array.isArray(newConnectionRequestStats.items)
+    ? newConnectionRequestStats.items
+    : [];
+  const newConnectionRequestTotal = newConnectionRequestItems.length;
+  const selectedNewConnectionRequest =
+    newConnectionRequestItems.find((item) => item.id === newConnectionRequestId) ||
+    null;
 
   const getUnsupportedAbutmentToneClasses = (
     status: UnsupportedAbutmentStatus,
@@ -2548,6 +2612,24 @@ export const AdminDashboardPage = () => {
               </DashTile>
               <DashTile
                 className={DASH_SPAN.c3r2}
+                title="신규 커넥션 요청"
+                icon={<PhoneCall className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => {
+                  setNewConnectionRequestId(newConnectionRequestItems[0]?.id || null);
+                  setNewConnectionRequestOpen(true);
+                }}
+              >
+                <div className="flex h-full flex-col justify-end gap-1">
+                  <div className="text-2xl font-semibold text-slate-800">
+                    {newConnectionRequestTotal.toLocaleString()}건
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    전화할 의뢰를 확인합니다.
+                  </p>
+                </div>
+              </DashTile>
+              <DashTile
+                className={DASH_SPAN.c3r2}
                 title="미제공 어벗"
                 icon={<Puzzle className="h-4 w-4 text-muted-foreground" />}
                 bodyClassName="overflow-y-auto px-1.5 py-1.5"
@@ -2717,6 +2799,139 @@ export const AdminDashboardPage = () => {
         open={machiningStatsDialogOpen}
         onOpenChange={setMachiningStatsDialogOpen}
         token={token}
+      />
+
+      <MultiActionDialog
+        open={newConnectionRequestOpen}
+        onClose={() => {
+          setNewConnectionRequestOpen(false);
+          setNewConnectionRequestId(null);
+        }}
+        title="신규 커넥션 요청"
+        panelClassName="!w-[min(920px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)]"
+        actions={[
+          {
+            label: "닫기",
+            variant: "secondary",
+            onClick: () => {
+              setNewConnectionRequestOpen(false);
+              setNewConnectionRequestId(null);
+            },
+          },
+        ]}
+        description={
+          <div className="grid gap-3 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
+            <ul className="max-h-[28rem] space-y-1.5 overflow-y-auto px-1.5 py-1.5">
+              {newConnectionRequestItems.length === 0 ? (
+                <li className="px-2 py-3 text-sm text-slate-500">요청이 없습니다.</li>
+              ) : (
+                newConnectionRequestItems.map((item) => {
+                  const selected = item.id === selectedNewConnectionRequest?.id;
+                  const who = [item.clinicName, item.patientName, item.tooth]
+                    .map((part) => String(part || "").trim())
+                    .filter(Boolean)
+                    .join(" · ");
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => setNewConnectionRequestId(item.id)}
+                        className={`w-full rounded-lg border px-2.5 py-2 text-left ${
+                          selected
+                            ? "border-primary-strong bg-primary-soft"
+                            : "border-slate-200 bg-white hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="truncate text-sm font-semibold text-slate-800">
+                          {who || item.requestId || "의뢰"}
+                        </div>
+                        <div className="truncate text-xs text-slate-500">
+                          {item.connectionLabel || "커넥션 없음"}
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+            {selectedNewConnectionRequest ? (
+              <div className="space-y-3 rounded-lg border border-slate-200 px-3 py-3 text-sm text-slate-700">
+                <div>
+                  <div className="text-xs text-slate-500">의뢰자</div>
+                  <div className="font-semibold text-slate-900">
+                    {selectedNewConnectionRequest.requesterName || "이름 없음"}
+                  </div>
+                  <div>{selectedNewConnectionRequest.businessName || "사업자 없음"}</div>
+                  {phoneHref(selectedNewConnectionRequest.requesterPhone) ? (
+                    <a
+                      className="font-semibold text-primary-strong underline"
+                      href={phoneHref(selectedNewConnectionRequest.requesterPhone)}
+                    >
+                      {selectedNewConnectionRequest.requesterPhone}
+                    </a>
+                  ) : (
+                    <div>전화번호 없음</div>
+                  )}
+                  {selectedNewConnectionRequest.businessPhone &&
+                  selectedNewConnectionRequest.businessPhone !==
+                    selectedNewConnectionRequest.requesterPhone ? (
+                    <div>사업장 {selectedNewConnectionRequest.businessPhone}</div>
+                  ) : null}
+                  {selectedNewConnectionRequest.requesterEmail ? (
+                    <div>{selectedNewConnectionRequest.requesterEmail}</div>
+                  ) : null}
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500">요청 커넥션</div>
+                  <div className="font-semibold text-slate-900">
+                    {selectedNewConnectionRequest.connectionLabel || "없음"}
+                  </div>
+                  <div>
+                    {selectedNewConnectionRequest.source === "new_implant"
+                      ? "신규 임플란트 의뢰"
+                      : "제공하지 않는 커넥션"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500">의뢰 내용</div>
+                  <div>
+                    {[
+                      selectedNewConnectionRequest.clinicName,
+                      selectedNewConnectionRequest.patientName,
+                      selectedNewConnectionRequest.tooth
+                        ? `${selectedNewConnectionRequest.tooth}번`
+                        : "",
+                    ]
+                      .map((part) => String(part || "").trim())
+                      .filter(Boolean)
+                      .join(" · ") || "없음"}
+                  </div>
+                  {selectedNewConnectionRequest.fileName ? (
+                    <div className="truncate">{selectedNewConnectionRequest.fileName}</div>
+                  ) : null}
+                  {selectedNewConnectionRequest.memo ? (
+                    <div>{selectedNewConnectionRequest.memo}</div>
+                  ) : null}
+                  <div>
+                    {selectedNewConnectionRequest.requestId || ""}
+                    {selectedNewConnectionRequest.manufacturerStage
+                      ? ` · ${selectedNewConnectionRequest.manufacturerStage}`
+                      : ""}
+                  </div>
+                  <div>
+                    {formatNewConnectionRequestWhen(
+                      selectedNewConnectionRequest.createdAt,
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-sm text-slate-500">
+                왼쪽에서 의뢰를 고르면 연락처와 커넥션이 나옵니다.
+              </div>
+            )}
+          </div>
+        }
       />
 
       <MultiActionDialog

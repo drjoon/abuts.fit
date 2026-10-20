@@ -610,10 +610,28 @@ export function NewRequestDetailsSection({
         if (!fileCaseInfos?.clinicName) missingFields.push("치과이름");
         if (!fileCaseInfos?.patientName) missingFields.push("환자이름");
         if (!fileCaseInfos?.tooth) missingFields.push("치아번호");
-        if (!fileCaseInfos?.implantManufacturer) missingFields.push("임플란트 제조사");
-        if (!fileCaseInfos?.implantBrand) missingFields.push("임플란트 브랜드");
-        if (!fileCaseInfos?.implantFamily) missingFields.push("Family");
-        if (!fileCaseInfos?.implantType) missingFields.push("Type");
+        const nsr = fileCaseInfos?.newSystemRequest;
+        const customMode = Boolean(
+          String(nsr?.manufacturer || "").trim() ||
+            String(nsr?.brand || "").trim() ||
+            String(nsr?.family || "").trim(),
+        );
+        if (customMode) {
+          if (!String(nsr?.manufacturer || "").trim()) {
+            missingFields.push("임플란트 제조사");
+          }
+          if (!String(nsr?.brand || "").trim()) {
+            missingFields.push("임플란트 브랜드");
+          }
+          if (!String(nsr?.family || "").trim()) {
+            missingFields.push("Family");
+          }
+        } else {
+          if (!fileCaseInfos?.implantManufacturer) missingFields.push("임플란트 제조사");
+          if (!fileCaseInfos?.implantBrand) missingFields.push("임플란트 브랜드");
+          if (!fileCaseInfos?.implantFamily) missingFields.push("Family");
+          if (!fileCaseInfos?.implantType) missingFields.push("Type");
+        }
         // 라디오는 값이 비어도 「없음」이 선택된 것처럼 보인다. 그 표시를 저장값으로 맞춘다.
         const rg = String(fileCaseInfos?.retentionGroove || "").trim();
         if (rg !== "none" && rg !== "shallow" && rg !== "deep") {

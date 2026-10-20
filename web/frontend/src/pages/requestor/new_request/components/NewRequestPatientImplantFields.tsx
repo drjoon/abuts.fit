@@ -5,6 +5,8 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // change-log:
+// - 2026-10-21: 카탈로그에 없는 제조사·브랜드·패밀리·타입은 프리셋 목록에 넣지 않는다.
+// - 2026-10-21: implantFieldsLocked — 신규 임플란트 직접 입력 중에는 프리셋 Select를 잠근다.
 // - 2026-09-10: Manufacturer 등 SelectValue children 제거 — 미선택 시 placeholder 빈칸 방지.
 // - 2026-09-04: 카탈로그 불일치 시 brand 폴백 금지 — 에러 콜백(의뢰 차단)·관리자 alert용.
 // - 2026-09-04: 카탈로그 불일치 시 brand를 제조사 첫 항목으로 덮어쓰지 않음(TS3→US 회귀).
@@ -56,7 +58,7 @@ const resolveSelectValue = (current: string, options: string[]) => {
   if (!raw) return undefined;
   const exact = options.find((option) => option === raw);
   if (exact) return exact;
-  return options.find((option) => sameManufacturer(option, raw)) || raw;
+  return options.find((option) => sameManufacturer(option, raw));
 };
 
 const resolveBrandSelectValue = (current: string, options: string[]) => {
@@ -64,7 +66,7 @@ const resolveBrandSelectValue = (current: string, options: string[]) => {
   if (!raw) return undefined;
   const exact = options.find((option) => option === raw);
   if (exact) return exact;
-  return options.find((option) => sameBrand(option, raw)) || raw;
+  return options.find((option) => sameBrand(option, raw));
 };
 
 type Props = {
@@ -113,6 +115,8 @@ type Props = {
       reason: "brand_not_in_catalog";
     } | null,
   ) => void;
+  /** 신규 임플란트 직접 입력 중이면 프리셋 Select를 잠근다. */
+  implantFieldsLocked?: boolean;
 };
 
 export function NewRequestPatientImplantFields({
@@ -144,6 +148,7 @@ export function NewRequestPatientImplantFields({
   clearAllTeethPresets,
   handleAddOrSelectClinic,
   onImplantCatalogIssue,
+  implantFieldsLocked = false,
 }: Props) {
   const caseInfos = rawCaseInfos;
   const setCaseInfos = useCallback(
@@ -153,7 +158,9 @@ export function NewRequestPatientImplantFields({
     [setCaseInfosRaw],
   );
   const hasClinicName = Boolean((caseInfos?.clinicName || "").trim());
-  const implantDisabled = Boolean(readOnly || !hasClinicName);
+  const implantDisabled = Boolean(
+    readOnly || !hasClinicName || implantFieldsLocked,
+  );
 
   const currentManufacturer =
     implantSelectSource === "caseInfos"
@@ -202,42 +209,21 @@ export function NewRequestPatientImplantFields({
       )
       .map((c) => String(c.type || "").trim())
       .filter(Boolean);
-    const merged = [...new Set([...fromCatalog, ...fromProp])];
-    const current = String(currentType || "").trim();
-    if (
-      current &&
-      !merged.some((type) => fieldKey(type) === fieldKey(current))
-    ) {
-      return [current, ...merged];
-    }
-    return merged;
+    return [...new Set([...fromCatalog, ...fromProp])];
   }, [
     typeOptions,
     connectionOptions,
     currentManufacturer,
     currentBrand,
     currentFamily,
-    currentType,
   ]);
 
   const manufacturerOptions = useMemo(() => {
-    const fromCatalog = [
-      ...new Set(connectionOptions.map((c) => c.manufacturer)),
-    ];
-    const current = String(currentManufacturer || "").trim();
-    if (
-      current &&
-      !fromCatalog.some((manufacturer) =>
-        sameManufacturer(manufacturer, current),
-      )
-    ) {
-      return [current, ...fromCatalog];
-    }
-    return fromCatalog;
-  }, [connectionOptions, currentManufacturer]);
+    return [...new Set(connectionOptions.map((c) => c.manufacturer))];
+  }, [connectionOptions]);
 
   const brandOptions = useMemo(() => {
-    const fromCatalog = [
+    return [
       ...new Set(
         connectionOptions
           .filter((c) => sameManufacturer(c.manufacturer, currentManufacturer))
@@ -245,12 +231,7 @@ export function NewRequestPatientImplantFields({
           .filter((brand): brand is string => Boolean(brand)),
       ),
     ];
-    const current = String(currentBrand || "").trim();
-    if (current && !fromCatalog.some((brand) => sameBrand(brand, current))) {
-      return [current, ...fromCatalog];
-    }
-    return fromCatalog;
-  }, [connectionOptions, currentManufacturer, currentBrand]);
+  }, [connectionOptions, currentManufacturer]);
 
   const currentFamilyOptions = useMemo(() => {
     const base = connectionOptions
@@ -261,19 +242,8 @@ export function NewRequestPatientImplantFields({
       )
       .map((c) => c.family)
       .filter((family): family is string => Boolean(family));
-    const merged = [...new Set(base.length ? base : familyOptions)];
-    const current = String(currentFamily || "").trim();
-    if (current && !merged.some((family) => sameFamily(family, current))) {
-      return [current, ...merged];
-    }
-    return merged;
-  }, [
-    connectionOptions,
-    currentManufacturer,
-    currentBrand,
-    currentFamily,
-    familyOptions,
-  ]);
+    return [...new Set(base.length ? base : familyOptions)];
+  }, [connectionOptions, currentManufacturer, currentBrand, familyOptions]);
 
   const manufacturerLabelMap = useMemo(() => {
     return new Map(

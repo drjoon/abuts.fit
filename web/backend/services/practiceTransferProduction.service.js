@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-10-21: 미제공 커넥션도 CA Request를 만든다. R&D 보관·해당 치아 취소는 design-handoff.
 // - 2026-09-29: abutmentToothStages — 연동 CA Request 치아별 제조사 공정(기공소 채팅 `43(준비), 44(세척.패킹)`).
 // - 2026-09-28: CA Request 대상은 치아당 1행(임시치아+CA와 단독 커스텀어벗 중복 입력 시 생산·과금 1회).
 // - 2026-09-27: PTX CA 주문 기공소 = 수행 기공소(assignee). 원청 잔액으로 생산 hold 하지 않음.
@@ -96,7 +97,7 @@ import {
 } from "./hexVerificationSample.service.js";
 import {
   normalizeCaseInfosImplantFields,
-  assertOrderableImplantPresetOrThrow,
+  classifyImplantPreset,
   addKoreanBusinessDays,
   getTodayYmdInKst,
   toKstYmd,
@@ -1260,29 +1261,18 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       );
     }
 
-    // 미도입/비활성 스펙은 Request 생성 금지(폴백으로 다른 brand 넣지 않음).
-    try {
-      await assertOrderableImplantPresetOrThrow({
-        implantManufacturer,
-        implantBrand,
-        implantFamily,
-        implantType,
-      });
-    } catch (presetErr) {
-      const err = new Error(
-        String(presetErr?.message || "").trim() ||
-          `치아 #${tooth} 임플란트 스펙을 제조 카탈로그에서 확인할 수 없습니다.`,
+    // 미제공 커넥션도 Request는 만든다. 폴백으로 다른 brand를 넣지 않는다.
+    // STL 핸드오프에서 R&D 보관 후 해당 치아만 취소한다.
+    const implantPreset = await classifyImplantPreset({
+      implantManufacturer,
+      implantBrand,
+      implantFamily,
+      implantType,
+    });
+    if (implantPreset.kind === "incomplete") {
+      throw new Error(
+        `치아 #${tooth} 임플란트 규격(Manufacturer/Brand/Family/Type)이 부족합니다.`,
       );
-      err.statusCode = 409;
-      err.code = "implant_catalog_mismatch";
-      err.implant = {
-        implantManufacturer,
-        implantBrand,
-        implantFamily,
-        implantType,
-        tooth,
-      };
-      throw err;
     }
 
     // Abuts-first: Request는 생산만(custom_abutment). 디자인은 수주 기공소·labFeeSchedule.

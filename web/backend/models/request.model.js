@@ -89,6 +89,11 @@ const requestSchema = new mongoose.Schema(
       implantBrand: String,
       implantFamily: String, // e.g. Regular, Mini
       implantType: String, // e.g. Hex, Non-hex (type)
+      // 제공하지 않는 커넥션. pendingCancel이면 제조 준비 큐에서 빼고, 의뢰자 확인 후 해당 건만 취소.
+      unsupportedConnection: {
+        label: String,
+        pendingCancel: { type: Boolean, default: false },
+      },
       maxDiameter: Number,
       connectionDiameter: Number,
       totalLength: Number,
@@ -146,6 +151,7 @@ const requestSchema = new mongoose.Schema(
         requested: { type: Boolean, default: false },
         manufacturer: String,
         brand: String,
+        family: String,
         message: String,
         free: { type: Boolean, default: false },
         tag: String,

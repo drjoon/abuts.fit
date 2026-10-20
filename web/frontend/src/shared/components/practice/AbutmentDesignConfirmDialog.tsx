@@ -13,7 +13,7 @@
 // - 2026-08-16: 다파일 큐 progress·확인 버튼 라벨 전달.
 // - 2026-08-16: AbutmentModelConfirmDialog(lab-handoff) 어댑터로 통합.
 // - 2026-08-16: 유지홈 공통 필드·안내 모달. 계정 기본값(없음) 적용.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import type { CaseInfos, Connection } from "@/pages/requestor/new_request/hooks/newRequestTypes";
 import {
@@ -21,8 +21,6 @@ import {
 } from "@/shared/components/practice/AbutmentModelConfirmDialog";
 import type { RetentionGrooveChoice } from "@/shared/components/practice/RetentionGrooveField";
 import { mergeCncImplantSpecs } from "@/shared/practice/cncImplantCatalog";
-import { apiFetch } from "@/shared/api/apiClient";
-import { useAuthStore } from "@/store/useAuthStore";
 
 export type AbutmentDesignConfirmCaseInfos = {
   clinicName?: string;
@@ -118,12 +116,8 @@ export function AbutmentDesignConfirmDialog({
   fileUploadLabel = null,
   onConfirm,
   onCancel,
-  reportTransferId = null,
-  reportRequestId = null,
-  reportLabName = null,
 }: Props) {
   const { toast } = useToast();
-  const token = useAuthStore((s) => s.token);
   const [detailCaseInfos, setDetailCaseInfosState] = useState<CaseInfos>(() =>
     emptyCaseInfos(defaultRetentionGroove, defaultAnodizingEnabled),
   );
@@ -131,14 +125,6 @@ export function AbutmentDesignConfirmDialog({
   const [implantBrand, setImplantBrandState] = useState("");
   const [implantFamily, setImplantFamilyState] = useState("");
   const [implantType, setImplantTypeState] = useState("");
-  const [catalogIssue, setCatalogIssue] = useState<{
-    manufacturer: string;
-    brand: string;
-    family: string;
-    type: string;
-    reason: "brand_not_in_catalog";
-  } | null>(null);
-  const reportedIssueKeyRef = useRef("");
 
   /** CNC 표 + API. 미도입(도입중) 환봉/공개 스펙은 제외 — 핸드오프에서 TS3→US 오염 방지. */
   const handoffConnections = useMemo((): Connection[] => {
@@ -207,8 +193,6 @@ export function AbutmentDesignConfirmDialog({
     setImplantBrandState(String(next.implantBrand || ""));
     setImplantFamilyState(String(next.implantFamily || ""));
     setImplantTypeState(String(next.implantType || ""));
-    setCatalogIssue(null);
-    reportedIssueKeyRef.current = "";
   }, [
     open,
     initialCaseInfos,
@@ -217,65 +201,9 @@ export function AbutmentDesignConfirmDialog({
     defaultAnodizingEnabled,
   ]);
 
-  const handleImplantCatalogIssue = useCallback(
-    (
-      issue: {
-        manufacturer: string;
-        brand: string;
-        family: string;
-        type: string;
-        reason: "brand_not_in_catalog";
-      } | null,
-    ) => {
-      setCatalogIssue(issue);
-      if (!issue) {
-        reportedIssueKeyRef.current = "";
-        return;
-      }
-      const key = [
-        issue.manufacturer,
-        issue.brand,
-        issue.family,
-        issue.type,
-        reportTransferId || "",
-        reportRequestId || "",
-      ].join("|");
-      if (reportedIssueKeyRef.current === key) return;
-      reportedIssueKeyRef.current = key;
-      void apiFetch({
-        path: "/api/practice/transfers/implant-catalog-mismatch",
-        method: "POST",
-        token,
-        jsonBody: {
-          reason: issue.reason,
-          source: "fe.AbutmentDesignConfirmDialog",
-          transferId: reportTransferId,
-          requestId: reportRequestId,
-          tooth: detailCaseInfos.tooth,
-          patientName: detailCaseInfos.patientName,
-          clinicName: detailCaseInfos.clinicName,
-          labName: reportLabName,
-          implantManufacturer: issue.manufacturer,
-          implantBrand: issue.brand,
-          implantFamily: issue.family,
-          implantType: issue.type,
-          message:
-            "핸드오프 확인 모달: 임플란트 brand가 CNC 카탈로그에 없어 폴백 없이 의뢰를 차단했습니다.",
-        },
-      }).catch(() => {
-        // best-effort admin alert
-      });
-    },
-    [
-      token,
-      reportTransferId,
-      reportRequestId,
-      reportLabName,
-      detailCaseInfos.tooth,
-      detailCaseInfos.patientName,
-      detailCaseInfos.clinicName,
-    ],
-  );
+  const handleImplantCatalogIssue = useCallback(() => {
+    // 미제공 커넥션도 확인을 막지 않는다. 서버가 R&D 보관 후 해당 건만 취소를 묻는다.
+  }, []);
 
   const setDetailCaseInfos = useCallback((updates: Partial<CaseInfos>) => {
     setDetailCaseInfosState((prev) => {
@@ -400,15 +328,6 @@ export function AbutmentDesignConfirmDialog({
   );
 
   const handleVerifyAndNext = useCallback(async () => {
-    if (catalogIssue) {
-      toast({
-        title: "의뢰 처리 중 오류",
-        description:
-          "불편을 끼쳐드려 죄송합니다만 의뢰건 처리 중 에러가 발생했습니다. 플랫폼 개발팀에게 관련 내용 전달하였고, 빠른 시간 내에 조치하겠습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
     const missing: string[] = [];
     if (!String(detailCaseInfos.clinicName || "").trim()) missing.push("치과명");
     if (!String(detailCaseInfos.patientName || "").trim()) missing.push("환자명");
@@ -442,7 +361,7 @@ export function AbutmentDesignConfirmDialog({
           ? detailCaseInfos.anodizingEnabled
           : defaultAnodizingEnabled !== false,
     });
-  }, [catalogIssue, defaultAnodizingEnabled, detailCaseInfos, onConfirm, toast]);
+  }, [defaultAnodizingEnabled, detailCaseInfos, onConfirm, toast]);
 
   return (
     <AbutmentModelConfirmDialog
@@ -486,7 +405,7 @@ export function AbutmentDesignConfirmDialog({
       toast={toast}
       lockProductionProductMode
       confirming={confirming}
-      confirmDisabled={s3UploadBlocking || Boolean(catalogIssue)}
+      confirmDisabled={s3UploadBlocking}
       confirmLabel={queueProgress.confirmLabel}
       progressLabel={queueProgress.progressLabel}
       fileUploadPercent={fileUploadPercent}

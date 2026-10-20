@@ -8,6 +8,7 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // change-log:
+// - 2026-10-21: newConnectionRequestStats — 신규 커넥션 요청 카드.
 // - 2026-08-21: unsupportedAbutmentStats — 미제공(요청중) 어벗 대시보드 집계.
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
@@ -32,6 +33,7 @@ import {
 } from "../../services/requestDashboardCache.service.js";
 import { collectHappyCallReasonCodes } from "./happyCallReasons.js";
 import { buildUnsupportedAbutmentDashboardStats } from "../../services/unsupportedAbutmentDashboardStats.service.js";
+import { buildNewConnectionRequestDashboardStats } from "../../services/newConnectionRequestDashboard.service.js";
 import { buildProsthesisFeeItemRequestDashboardStats } from "../../services/prosthesisFeeItemRequestDashboardStats.service.js";
 import {
   getPlatformGrowthDetail,
@@ -361,6 +363,7 @@ async function buildAdminDashboardPayload(req) {
       practiceTransferTopLabsRaw,
       practiceTransferRecentRaw,
       unsupportedAbutmentStats,
+      newConnectionRequestStats,
       prosthesisFeeItemRequestStats,
       platformGrowthStatsBase,
     ] = await Promise.all([
@@ -700,6 +703,7 @@ async function buildAdminDashboardPayload(req) {
         },
       ]),
       buildUnsupportedAbutmentDashboardStats(),
+      buildNewConnectionRequestDashboardStats({ start, end }),
       buildProsthesisFeeItemRequestDashboardStats(),
       getPlatformGrowthStats({ start, end }),
     ]);
@@ -1267,6 +1271,10 @@ async function buildAdminDashboardPayload(req) {
           pending: 0,
           adoptedCnc: 0,
           adoptedRoundBar: 0,
+          total: 0,
+          items: [],
+        },
+        newConnectionRequestStats: newConnectionRequestStats || {
           total: 0,
           items: [],
         },

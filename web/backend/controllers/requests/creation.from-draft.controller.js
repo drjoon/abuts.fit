@@ -8,6 +8,7 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/backend/rules.md
 // change-log:
+// - 2026-10-21: 미제공 커넥션도 접수한다. R&D 보관 후 해당 건만 취소 확인.
 // - 2026-10-18: 접수 응답은 검증·잔액 402만 기다린다. 저널 보류·출고일은 201 뒤.
 // - 2026-10-18: 로컬에만 남은 draftId는 제출 시 같은 id로 다시 만든다. 만료 토스트 없이 접수.
 // - 2026-09-28: credit hold를 201 전으로. 실패 시 취소하고 402/500 한 번으로 응답(201 뒤 조용한 취소 없음).
@@ -48,8 +49,10 @@ import {
   normalizeCaseInfosImplantFields,
   ensureReviewByStageDefaults,
   assertOrderableImplantPresetOrThrow,
+  classifyImplantPreset,
   ensureLotNumbersOnReadyEnter,
 } from "./utils.js";
+import { cloneUnsupportedConnectionToRnd } from "../../services/unsupportedConnectionRnd.service.js";
 import {
   computePriceForRequest,
   resolveRequestorPricingBaseDate,
@@ -784,23 +787,48 @@ export async function createRequestsFromDraft(req, res) {
           };
         }
 
+        let unsupportedConnection = null;
         if (!isNewSystemRequest) {
-          try {
-            const presetKey = implantPresetKey(normalizedCi);
-            if (earlyOrderableByKey.has(presetKey)) {
-              const orderableError = earlyOrderableByKey.get(presetKey);
-              if (orderableError) throw orderableError;
+          const presetKey = implantPresetKey(normalizedCi);
+          let preset = null;
+          if (earlyOrderableByKey.has(presetKey)) {
+            const orderableError = earlyOrderableByKey.get(presetKey);
+            const orderableMessage = String(orderableError?.message || "");
+            if (!orderableError) {
+              preset = { kind: "orderable" };
+            } else if (orderableMessage.includes("모두 필요")) {
+              preset = { kind: "incomplete" };
+            } else if (orderableMessage.includes("비활성화된 임플란트")) {
+              preset = {
+                kind: "unsupported",
+                label: [
+                  normalizedCi.implantManufacturer,
+                  normalizedCi.implantBrand,
+                  normalizedCi.implantFamily,
+                  normalizedCi.implantType,
+                ]
+                  .map((part) => String(part || "").trim())
+                  .filter(Boolean)
+                  .join(" / "),
+              };
             } else {
-              await assertOrderableImplantPresetOrThrow(normalizedCi);
+              throw orderableError;
             }
-          } catch (orderableError) {
+          } else {
+            preset = await classifyImplantPreset(normalizedCi);
+          }
+          if (preset?.kind === "incomplete") {
             const fileName = ci?.file?.originalName || `파일 ${idx + 1}`;
             return {
               skip: true,
               fileName,
-              missingFields: [
-                orderableError?.message || "주문 불가 임플란트 조합",
-              ],
+              missingFields: ["임플란트 제조사/브랜드/패밀리/타입"],
+            };
+          }
+          if (preset?.kind === "unsupported") {
+            unsupportedConnection = {
+              label: preset.label,
+              pendingCancel: true,
             };
           }
         }
@@ -937,6 +965,9 @@ export async function createRequestsFromDraft(req, res) {
               newSystemRequest,
               practiceRouting,
             };
+        if (unsupportedConnection) {
+          caseInfosWithFile.unsupportedConnection = unsupportedConnection;
+        }
 
         return {
           idx,
@@ -2055,9 +2086,12 @@ export async function createRequestsFromDraft(req, res) {
       // 헥스 확인용 복사샘플·credit hold·대시보드 refresh는 201 finish 이후.
       // LotCounter/추가 Request 저장이 제출 트랜잭션과 겹치면 write conflict 재시도가 나므로
       // 트랜잭션 밖·응답 뒤로 둔다.
+      const hexSampleCandidates = createdRequests.filter(
+        (doc) => doc?.caseInfos?.unsupportedConnection?.pendingCancel !== true,
+      );
       const hexSampleSourceRequests =
-        !isPracticeRoutingSubmission && createdRequests.length > 0
-          ? [...createdRequests]
+        !isPracticeRoutingSubmission && hexSampleCandidates.length > 0
+          ? hexSampleCandidates
           : null;
       const hexSampleUserId = req.user?._id || null;
       const hexSampleBusinessAnchorId =
@@ -2068,6 +2102,9 @@ export async function createRequestsFromDraft(req, res) {
       // 의뢰별로 STL이 있으면 각각 트리거. 실패해도 의뢰 생성은 그대로 성공 응답된다.
       const rhinoJobs = createdRequests
         .filter((doc) => doc?.caseInfos?.hexVerificationSample !== true)
+        .filter(
+          (doc) => doc?.caseInfos?.unsupportedConnection?.pendingCancel !== true,
+        )
         .map((doc) => {
           const filePath = doc?.caseInfos?.file?.filePath;
           if (!filePath) return null;
@@ -2223,6 +2260,30 @@ export async function createRequestsFromDraft(req, res) {
       );
     }
 
+    const unsupportedConnections = [];
+    for (const doc of createdRequests) {
+      if (doc?.caseInfos?.unsupportedConnection?.pendingCancel !== true) continue;
+      try {
+        const rnd = await cloneUnsupportedConnectionToRnd(
+          doc,
+          req.user?._id || null,
+        );
+        unsupportedConnections.push({
+          requestMongoId: String(doc._id),
+          requestId: String(doc.requestId || "").trim(),
+          tooth: String(doc.caseInfos?.tooth || "").trim(),
+          label: String(doc.caseInfos?.unsupportedConnection?.label || "").trim(),
+          cancelVia: "status",
+          rndRequestId: rnd.requestId,
+        });
+      } catch (rndErr) {
+        console.error(
+          "[createRequestsFromDraft] unsupported connection R&D clone failed",
+          rndErr,
+        );
+      }
+    }
+
     const leanCreated = {
       count: createdRequests.length,
       requestIds: createdRequests
@@ -2231,6 +2292,7 @@ export async function createRequestsFromDraft(req, res) {
       requestMongoIds: createdRequests
         .map((row) => String(row?._id || "").trim())
         .filter(Boolean),
+      ...(unsupportedConnections.length > 0 ? { unsupportedConnections } : {}),
     };
 
     if (

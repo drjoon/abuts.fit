@@ -45,6 +45,7 @@ import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules
 import { clearLocalDraft } from "./utils/localDraftStorage";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { UnsupportedConnectionCancelDialog } from "@/shared/components/practice/UnsupportedConnectionCancelDialog";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
@@ -202,6 +203,9 @@ const NewRequestPageContent = () => {
     handleSubmit,
     isSubmitting,
     handleCancel,
+    unsupportedCancelItems,
+    unsupportedCancelBusy,
+    confirmUnsupportedCancel,
     invalidateInFlightDuplicateCheck,
     caseInfos,
     setCaseInfos,
@@ -1669,6 +1673,20 @@ const NewRequestPageContent = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        <UnsupportedConnectionCancelDialog
+          open={(unsupportedCancelItems || []).length > 0}
+          items={(unsupportedCancelItems || []).map((item) => ({
+            requestMongoId: String(item.requestMongoId || ""),
+            requestId: item.requestId,
+            tooth: item.tooth,
+            label: String(item.label || ""),
+            cancelVia: "status",
+          }))}
+          busy={Boolean(unsupportedCancelBusy)}
+          onConfirm={() => {
+            void confirmUnsupportedCancel?.();
+          }}
+        />
         <ConfirmDialog
           open={oversizedPendingFiles.length > 0}
           panelClassName="max-w-xl"

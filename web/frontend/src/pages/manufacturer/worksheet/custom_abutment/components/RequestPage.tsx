@@ -58,6 +58,8 @@ import { AutoApprovalGateSwitch } from "../shared/autoApproval/AutoApprovalGateS
 import { useToast } from "@/shared/hooks/use-toast";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { UnsupportedConnectionCancelDialog } from "@/shared/components/practice/UnsupportedConnectionCancelDialog";
+import type { UnsupportedConnectionCancelItem } from "@/shared/practice/unsupportedConnectionCancel";
 import {
   type ManufacturerRequest,
   deriveStageForFilter,
@@ -2643,6 +2645,10 @@ export const RequestPage = ({
     productMode === PRODUCT_MODE.DESIGN_CUSTOM_ABUTMENT &&
     user?.role === "requestor";
 
+  const [unsupportedCancelItems, setUnsupportedCancelItems] = useState<
+    UnsupportedConnectionCancelItem[]
+  >([]);
+  const [unsupportedCancelBusy, setUnsupportedCancelBusy] = useState(false);
   const [designClaimBusyIds, setDesignClaimBusyIds] = useState<
     Record<string, boolean>
   >({});
@@ -2771,6 +2777,29 @@ export const RequestPage = ({
           );
         }
 
+        const unsupported = json?.data?.unsupportedConnection;
+        if (unsupported && typeof unsupported === "object") {
+          const mongoId = String(
+            unsupported.requestMongoId || id || "",
+          ).trim();
+          const label = String(unsupported.label || "").trim();
+          if (mongoId && label) {
+            setUnsupportedCancelItems([
+              {
+                requestMongoId: mongoId,
+                tooth: String(unsupported.tooth || req.caseInfos?.tooth || "").trim(),
+                label,
+                cancelVia:
+                  unsupported.cancelVia === "design-handoff-tooth"
+                    ? "design-handoff-tooth"
+                    : "status",
+                rndRequestId: String(unsupported.rndRequestId || "").trim(),
+              },
+            ]);
+            return;
+          }
+        }
+
         pageState.setRequests((prev) =>
           prev.filter((row) => String(row._id) !== id),
         );
@@ -2807,6 +2836,65 @@ export const RequestPage = ({
       fetchRequestsCore,
     ],
   );
+
+  const confirmUnsupportedConnectionCancel = useCallback(async () => {
+    if (!token || unsupportedCancelBusy || unsupportedCancelItems.length === 0) {
+      return;
+    }
+    setUnsupportedCancelBusy(true);
+    try {
+      for (const item of unsupportedCancelItems) {
+        const mongoId = String(item.requestMongoId || "").trim();
+        if (!mongoId) continue;
+        const path =
+          item.cancelVia === "design-handoff-tooth"
+            ? `/api/requests/${encodeURIComponent(mongoId)}/design-handoff/cancel`
+            : `/api/requests/${encodeURIComponent(mongoId)}/status`;
+        const res = await fetch(path, {
+          method: item.cancelVia === "design-handoff-tooth" ? "POST" : "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(
+            item.cancelVia === "design-handoff-tooth"
+              ? { tooth: item.tooth }
+              : { manufacturerStage: "취소" },
+          ),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || json?.success === false) {
+          throw new Error(
+            String(json?.message || "해당 건 의뢰 취소에 실패했습니다."),
+          );
+        }
+        pageState.setRequests((prev) =>
+          prev.filter((row) => String(row._id) !== mongoId),
+        );
+      }
+      setUnsupportedCancelItems([]);
+      toast({ title: "해당 건을 의뢰 취소했습니다" });
+      void fetchRequestsCore(true);
+    } catch (error) {
+      toast({
+        title: "의뢰 취소 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "해당 건만 취소하지 못했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setUnsupportedCancelBusy(false);
+    }
+  }, [
+    fetchRequestsCore,
+    pageState,
+    toast,
+    token,
+    unsupportedCancelBusy,
+    unsupportedCancelItems,
+  ]);
 
   const { handleDownloadOriginal } = useRequestCardHandlers(
     token,
@@ -3665,6 +3753,14 @@ export const RequestPage = ({
         onSelectStage={handleSubmitRemake}
       />
 
+      <UnsupportedConnectionCancelDialog
+        open={unsupportedCancelItems.length > 0}
+        items={unsupportedCancelItems}
+        busy={unsupportedCancelBusy}
+        onConfirm={() => {
+          void confirmUnsupportedConnectionCancel();
+        }}
+      />
       <ConfirmDialog
         open={pageState.confirmOpen}
         title={pageState.confirmTitle}

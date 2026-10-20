@@ -22,6 +22,10 @@
  * - 참고: rules.legacy-full.md 섹션 4.3.2 "신규 의뢰 생성 엔드포인트 (SSOT)"
  */
 import { useEffect, useRef, useState } from "react";
+import {
+  loadStashedUnsupportedCancelItems,
+  stashUnsupportedCancelItems,
+} from "@/shared/practice/unsupportedConnectionCancel";
 import { useToast } from "@/shared/hooks/use-toast";
 import { type ClinicPreset, type CaseInfos } from "./newRequestTypes";
 import { clearFileCache } from "@/shared/files/fileCache";
@@ -114,6 +118,23 @@ export const useNewRequestSubmitV2 = ({
 }: UseNewRequestSubmitV2Params) => {
   const { toast, dismiss } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [unsupportedCancelItems, setUnsupportedCancelItems] = useState<
+    Array<{
+      requestMongoId: string;
+      requestId?: string;
+      tooth?: string;
+      label: string;
+      cancelVia?: string;
+    }>
+  >([]);
+  const [unsupportedCancelBusy, setUnsupportedCancelBusy] = useState(false);
+  useEffect(() => {
+    const stashed = loadStashedUnsupportedCancelItems("new-request");
+    if (stashed.length) setUnsupportedCancelItems(stashed);
+  }, []);
+  useEffect(() => {
+    stashUnsupportedCancelItems("new-request", unsupportedCancelItems);
+  }, [unsupportedCancelItems]);
   const submittingRef = useRef(false);
   const resolveCorrectedRef = useRef(resolveCorrectedDesignUpload);
   resolveCorrectedRef.current = resolveCorrectedDesignUpload;
@@ -325,7 +346,9 @@ export const useNewRequestSubmitV2 = ({
       hasDuplicateResolutions: Boolean(duplicateResolutions?.length),
     });
 
-    const finishSuccessfulSubmit = async () => {
+    const finishSuccessfulSubmit = async (options?: {
+      deferNavigate?: boolean;
+    }) => {
       saveParseLogs().catch((err) => {
         console.warn("[useNewRequestSubmitV2] Failed to save parse logs:", err);
       });
@@ -377,6 +400,7 @@ export const useNewRequestSubmitV2 = ({
 
       dismiss();
       toast({ title: "의뢰가 제출되었습니다" });
+      if (options?.deferNavigate) return;
       console.log("[NewRequestSubmit] navigate", {
         t: Date.now() - submitStart,
       });
@@ -573,6 +597,9 @@ export const useNewRequestSubmitV2 = ({
               implantBrand: ci.implantBrand,
               implantFamily: ci.implantFamily,
               implantType: ci.implantType,
+              newSystemRequest: ci.newSystemRequest?.requested
+                ? ci.newSystemRequest
+                : undefined,
               maxDiameter: ci.maxDiameter,
               connectionDiameter: ci.connectionDiameter,
               totalLength: ci.totalLength,
@@ -854,6 +881,21 @@ export const useNewRequestSubmitV2 = ({
         throw new Error(`${detailMsg}${errorContext}`);
       }
 
+      const okBody = await res.json().catch(() => ({}));
+      const unsupportedRaw = okBody?.data?.unsupportedConnections;
+      const unsupportedConnections = Array.isArray(unsupportedRaw)
+        ? unsupportedRaw.filter(
+            (row: { requestMongoId?: string; label?: string }) =>
+              String(row?.requestMongoId || "").trim() &&
+              String(row?.label || "").trim(),
+          )
+        : [];
+      if (unsupportedConnections.length > 0) {
+        setUnsupportedCancelItems(unsupportedConnections);
+        await finishSuccessfulSubmit({ deferNavigate: true });
+        return;
+      }
+
       await finishSuccessfulSubmit();
     } catch (err: any) {
       const rawMessage = err?.message || "";
@@ -895,10 +937,54 @@ export const useNewRequestSubmitV2 = ({
     await submitFromDraft(opts);
   };
 
+  const confirmUnsupportedCancel = async () => {
+    if (!token || unsupportedCancelBusy || unsupportedCancelItems.length === 0) {
+      return;
+    }
+    setUnsupportedCancelBusy(true);
+    try {
+      for (const item of unsupportedCancelItems) {
+        const mongoId = String(item.requestMongoId || "").trim();
+        if (!mongoId) continue;
+        const res = await fetch(
+          `${API_BASE_URL}/requests/${encodeURIComponent(mongoId)}/status`,
+          {
+            method: "PATCH",
+            headers: getHeaders(),
+            body: JSON.stringify({ manufacturerStage: "취소" }),
+          },
+        );
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(
+            String(body?.message || "해당 건 의뢰 취소에 실패했습니다."),
+          );
+        }
+      }
+      setUnsupportedCancelItems([]);
+      toast({ title: "해당 건을 의뢰 취소했습니다" });
+      navigate(`/dashboard`);
+    } catch (error) {
+      toast({
+        title: "의뢰 취소 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "해당 건만 취소하지 못했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setUnsupportedCancelBusy(false);
+    }
+  };
+
   return {
     handleSubmit,
     handleSubmitWithDuplicateResolutions,
     handleCancel,
     isSubmitting,
+    unsupportedCancelItems,
+    unsupportedCancelBusy,
+    confirmUnsupportedCancel,
   };
 };
