@@ -130,4 +130,46 @@ describe("smoothPostAboveFinishLine", () => {
   it("skips without a finish line", () => {
     expect(smoothPostAboveFinishLine(input, { finishLine: null }).status).toBe("skipped");
   });
+
+  it("holds a local deep cut and still smooths the rest of the post", () => {
+    const rows = profile();
+    const at = (i, j) => {
+      const [r0, z] = rows[i];
+      const t = (2 * Math.PI * (j % SEGMENTS)) / SEGMENTS;
+      const wrap = Math.min(t, 2 * Math.PI - t);
+      const ridge = Math.exp(-(wrap * wrap) / (0.06 * 0.06));
+      const band = z > 3.2 && z < 3.8 ? Math.sin((Math.PI * (z - 3.2)) / 0.6) : 0;
+      const r = r0 + 0.4 * ridge * band;
+      return [r * Math.cos(t), r * Math.sin(t), z];
+    };
+    const positions = [];
+    for (let i = 0; i + 1 < rows.length; i += 1) {
+      for (let j = 0; j < SEGMENTS; j += 1) {
+        const a = at(i, j);
+        const b = at(i, j + 1);
+        const c = at(i + 1, j + 1);
+        const d = at(i + 1, j);
+        if (rows[i][0] > 0) positions.push(...a, ...b, ...c);
+        if (rows[i + 1][0] > 0) positions.push(...a, ...c, ...d);
+      }
+    }
+    const ridged = writeBinaryStl({
+      positions: Float32Array.from(positions),
+      attributes: new Uint16Array(positions.length / 9),
+    });
+    const out = smoothPostAboveFinishLine(ridged, { finishLine });
+    expect(out.status).toBe("applied");
+    expect(out.detail.heldDeepVertices).toBeGreaterThan(0);
+    expect(out.detail.maxInwardUm).toBeLessThanOrEqual(50);
+    const away = (verts) =>
+      stairRoughness(
+        verts.filter((p) => {
+          const a = Math.atan2(p[1], p[0]);
+          return Math.abs(a) > 1;
+        }),
+      );
+    const before = away(readTriangles(ridged).verts);
+    const after = away(readTriangles(out.buffer).verts);
+    expect(after).toBeLessThan(before * 0.5);
+  });
 });

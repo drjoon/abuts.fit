@@ -8,6 +8,7 @@
 // - 나머지 포스트 꼭짓점은 원본 면 안쪽으로만 옮긴다. 새 면의 어느 점도 원본 면 밖으로 나가지 않는다.
 // - 삼각형을 한 번 4등분하고, 원본 면에 국소 2차 곡면을 맞춘 뒤 원본 면 안쪽에 들어갈 만큼만 함께 내린다.
 // - 슬롯·스크류홀 메움 테두리처럼 30° 넘게 꺾이는 모서리는 디자인으로 보고 그대로 둔다.
+// - 50µm보다 깊이 들어가야 하는 꼭짓점은 그 자리만 고정한다. 그 때문에 포스트 전체를 건너뛰지 않는다.
 import { writeBinaryStl } from "../../utils/screwHoleFill.js";
 import { findFinishCrease, finishLineZByAngle, prepareCuffMesh } from "./cuffBlend.js";
 
@@ -35,7 +36,7 @@ const LIFT_OVERSHOOT = 1.25;
 const STUCK_RATIO = 0.5;
 /** 원본 면 밖으로 이만큼도 나가지 않는다(float32 반올림 여유 포함). */
 const OUTSIDE_TOL_MM = 2e-5;
-/** 이보다 깊이 들어가야 하면 디자인을 바꾸는 것이라 적용하지 않는다. */
+/** 이보다 깊이 들어가야 하는 꼭짓점은 고정한다. 포스트 전체를 건너뛰지는 않는다. */
 const MAX_INWARD_MM = 0.05;
 /** 면 안쪽 이 깊이들에 다른 면(스크류 채널 등)이 먼저 나오면 얇은 벽이라 그 꼭짓점은 고정한다. */
 const THIN_PROBE_MM = [0.03, 0.06, 0.1];
@@ -916,11 +917,22 @@ function run(buffer, { finishLine }) {
     liftGrid = new PointGrid(pos, moving, LIFT_RADIUS_MM * 2);
     place();
   };
-  place();
-  let worst = measure();
-  let rounds = 0;
-  let prev = Float64Array.from(excess);
-  while (worst > OUTSIDE_TOL_MM / 2 && rounds < LIFT_ROUNDS) {
+  const inwardOf = (v) => -sd.query(X[v * 3], X[v * 3 + 1], X[v * 3 + 2], vOrig[v]);
+  const inwardStats = () => {
+    let maxInward = 0;
+    let sumInward = 0;
+    let movedCount = 0;
+    const deep = [];
+    for (const v of moving) {
+      const d = inwardOf(v);
+      if (d > maxInward) maxInward = d;
+      sumInward += Math.max(0, d);
+      movedCount += 1;
+      if (d > MAX_INWARD_MM) deep.push(v);
+    }
+    return { maxInward, sumInward, movedCount, deep };
+  };
+  const liftOnce = () => {
     for (const v of moving) if (excess[v] > 0) excess[v] = excess[v] * LIFT_OVERSHOOT + OUTSIDE_TOL_MM;
     const add = majorant(excess);
     for (const v of moving) lift[v] += add[v];
@@ -933,22 +945,38 @@ function run(buffer, { finishLine }) {
       worst = measure();
     }
     prev = Float64Array.from(excess);
-  }
+  };
+
+  place();
+  let worst = measure();
+  let rounds = 0;
+  let prev = Float64Array.from(excess);
+  while (worst > OUTSIDE_TOL_MM / 2 && rounds < LIFT_ROUNDS) liftOnce();
   lap("lift");
   if (worst > OUTSIDE_TOL_MM / 2) {
     skip("다듬은 면이 원본 밖으로 나가는 곳을 다 없애지 못했습니다.", { outsideUm: Math.round(worst * 1e4) / 10 });
   }
 
-  let maxInward = 0;
-  let sumInward = 0;
-  let movedCount = 0;
-  for (const v of moving) {
-    const d = -sd.query(X[v * 3], X[v * 3 + 1], X[v * 3 + 2], vOrig[v]);
-    if (d > maxInward) maxInward = d;
-    sumInward += Math.max(0, d);
-    movedCount += 1;
+  // 한 곳이 50µm를 넘으면 포스트 전체를 포기하지 않는다. 그 꼭짓점만 디자인 모서리로 고정하고
+  // 0.12mm 안은 원본으로 넘긴 뒤, 나머지 계단은 다듬는다.
+  let heldDeep = 0;
+  let stats = inwardStats();
+  let holdPasses = 0;
+  while (stats.deep.length && holdPasses < 6) {
+    heldDeep += stats.deep.length;
+    freeze(stats.deep);
+    worst = measure();
+    prev = Float64Array.from(excess);
+    const budget = rounds + LIFT_ROUNDS;
+    while (worst > OUTSIDE_TOL_MM / 2 && rounds < budget) liftOnce();
+    if (worst > OUTSIDE_TOL_MM / 2) {
+      skip("다듬은 면이 원본 밖으로 나가는 곳을 다 없애지 못했습니다.", { outsideUm: Math.round(worst * 1e4) / 10 });
+    }
+    stats = inwardStats();
+    holdPasses += 1;
   }
-  if (maxInward > MAX_INWARD_MM) {
+  const { maxInward, sumInward, movedCount } = stats;
+  if (maxInward > MAX_INWARD_MM || movedCount === 0) {
     skip("포스트를 너무 깊이 깎아야 해서 적용하지 않았습니다.", { maxInwardUm: Math.round(maxInward * 1e4) / 10 });
   }
 
@@ -985,6 +1013,7 @@ function run(buffer, { finishLine }) {
       maxInwardUm: Math.round(maxInward * 1e4) / 10,
       meanInwardUm: movedCount ? Math.round((sumInward / movedCount) * 1e4) / 10 : 0,
       frozenVertices,
+      heldDeepVertices: heldDeep,
       liftRounds: rounds,
       ms: Date.now() - started,
       stagesMs: stages,
