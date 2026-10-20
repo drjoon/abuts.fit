@@ -596,6 +596,7 @@ export function NewRequestDetailsSection({
       const fileKey = toNormalizedFileKey(file);
       const fileCaseInfos = caseInfosMap?.[fileKey] || caseInfos;
       const group = findGroupByFileKey(patientGroups, fileKey);
+      const customMode = isCustomImplantCaseInfos(fileCaseInfos);
       const missingFields: string[] = [];
       const isDesignCustomMode = false; // design_custom_abutment 폐기 — 생산만 검증
 
@@ -614,7 +615,6 @@ export function NewRequestDetailsSection({
         if (!fileCaseInfos?.clinicName) missingFields.push("치과이름");
         if (!fileCaseInfos?.patientName) missingFields.push("환자이름");
         if (!fileCaseInfos?.tooth) missingFields.push("치아번호");
-        const customMode = isCustomImplantCaseInfos(fileCaseInfos);
         const nsr = fileCaseInfos?.newSystemRequest;
         if (customMode) {
           if (!String(nsr?.manufacturer || "").trim()) {
