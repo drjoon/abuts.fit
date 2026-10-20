@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-10-21: 지연 위험 ↔ 신규 커넥션 요청 카드 그리드 위치 교환.
 // - 2026-10-21: 신규 커넥션 요청 — 건수 있을 때 warn(노란) 타일·목록 신규/미제공 색 구분.
 // - 2026-10-21: 신규 커넥션 요청 카드 — 클릭 시 의뢰자 연락처·커넥션·의뢰 내용.
 // - 2026-10-14: 거래+이용·매출 통합·알림 c6r3·하단 불완전|가공 c3·배송 c6 1열 스크롤.
@@ -2294,31 +2295,48 @@ export const AdminDashboardPage = () => {
               </DashTile>
 
               <DashTile
-                className={DASH_SPAN.c3r2}
-                title="지연 위험"
-                tone={riskDelayedCount > 0 ? "danger" : riskWarningCount > 0 ? "warn" : "default"}
-                icon={<AlertCircle className="h-4 w-4 text-muted-foreground" />}
-                onClick={() => setRiskSummaryDialogOpen(true)}
+                className={
+                  newConnectionRequestTotal > 0
+                    ? `${DASH_SPAN.c3r2} hover:bg-amber-50/90`
+                    : DASH_SPAN.c3r2
+                }
+                title="신규 커넥션 요청"
+                tone={newConnectionRequestTotal > 0 ? "warn" : "default"}
+                icon={
+                  <PhoneCall
+                    className={
+                      newConnectionRequestTotal > 0
+                        ? "h-4 w-4 text-amber-700"
+                        : "h-4 w-4 text-muted-foreground"
+                    }
+                  />
+                }
+                onClick={() => {
+                  setNewConnectionRequestId(newConnectionRequestItems[0]?.id || null);
+                  setNewConnectionRequestOpen(true);
+                }}
               >
-                <div className="grid h-full grid-cols-2 content-center gap-2">
-                  <DashStat
-                    label="지연 가능"
-                    value={`${riskWarningCount.toLocaleString()}건`}
-                    tone={riskWarningCount > 0 ? "warn" : undefined}
-                  />
-                  <DashStat
-                    label="지연 확정"
-                    value={`${riskDelayedCount.toLocaleString()}건`}
-                    tone={riskDelayedCount > 0 ? "danger" : undefined}
-                  />
-                  <DashStat
-                    label={`택배 정시${riskNormalEvaluatedCount > 0 ? ` · ${riskNormalEvaluatedCount.toLocaleString()}건` : ""}`}
-                    value={`${riskNormalOnTimeRate.toLocaleString()}%`}
-                  />
-                  <DashStat
-                    label={`딜리버리 정시${riskExpressEvaluatedCount > 0 ? ` · ${riskExpressEvaluatedCount.toLocaleString()}건` : ""}`}
-                    value={`${riskExpressOnTimeRate.toLocaleString()}%`}
-                  />
+                <div className="flex h-full flex-col justify-end gap-1">
+                  <div
+                    className={
+                      newConnectionRequestTotal > 0
+                        ? "text-2xl font-semibold text-amber-900"
+                        : "text-2xl font-semibold text-slate-800"
+                    }
+                  >
+                    {newConnectionRequestTotal.toLocaleString()}건
+                  </div>
+                  <p
+                    className={
+                      newConnectionRequestTotal > 0
+                        ? "text-[11px] font-medium text-amber-800"
+                        : "text-[11px] text-muted-foreground"
+                    }
+                  >
+                    {newConnectionRequestTotal > 0
+                      ? "전화·추가 개발 확인이 필요합니다."
+                      : "전화할 의뢰를 확인합니다."}
+                  </p>
                 </div>
               </DashTile>
 
@@ -2612,48 +2630,31 @@ export const AdminDashboardPage = () => {
                 </div>
               </DashTile>
               <DashTile
-                className={
-                  newConnectionRequestTotal > 0
-                    ? `${DASH_SPAN.c3r2} hover:bg-amber-50/90`
-                    : DASH_SPAN.c3r2
-                }
-                title="신규 커넥션 요청"
-                tone={newConnectionRequestTotal > 0 ? "warn" : "default"}
-                icon={
-                  <PhoneCall
-                    className={
-                      newConnectionRequestTotal > 0
-                        ? "h-4 w-4 text-amber-700"
-                        : "h-4 w-4 text-muted-foreground"
-                    }
-                  />
-                }
-                onClick={() => {
-                  setNewConnectionRequestId(newConnectionRequestItems[0]?.id || null);
-                  setNewConnectionRequestOpen(true);
-                }}
+                className={DASH_SPAN.c3r2}
+                title="지연 위험"
+                tone={riskDelayedCount > 0 ? "danger" : riskWarningCount > 0 ? "warn" : "default"}
+                icon={<AlertCircle className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => setRiskSummaryDialogOpen(true)}
               >
-                <div className="flex h-full flex-col justify-end gap-1">
-                  <div
-                    className={
-                      newConnectionRequestTotal > 0
-                        ? "text-2xl font-semibold text-amber-900"
-                        : "text-2xl font-semibold text-slate-800"
-                    }
-                  >
-                    {newConnectionRequestTotal.toLocaleString()}건
-                  </div>
-                  <p
-                    className={
-                      newConnectionRequestTotal > 0
-                        ? "text-[11px] font-medium text-amber-800"
-                        : "text-[11px] text-muted-foreground"
-                    }
-                  >
-                    {newConnectionRequestTotal > 0
-                      ? "전화·추가 개발 확인이 필요합니다."
-                      : "전화할 의뢰를 확인합니다."}
-                  </p>
+                <div className="grid h-full grid-cols-2 content-center gap-2">
+                  <DashStat
+                    label="지연 가능"
+                    value={`${riskWarningCount.toLocaleString()}건`}
+                    tone={riskWarningCount > 0 ? "warn" : undefined}
+                  />
+                  <DashStat
+                    label="지연 확정"
+                    value={`${riskDelayedCount.toLocaleString()}건`}
+                    tone={riskDelayedCount > 0 ? "danger" : undefined}
+                  />
+                  <DashStat
+                    label={`택배 정시${riskNormalEvaluatedCount > 0 ? ` · ${riskNormalEvaluatedCount.toLocaleString()}건` : ""}`}
+                    value={`${riskNormalOnTimeRate.toLocaleString()}%`}
+                  />
+                  <DashStat
+                    label={`딜리버리 정시${riskExpressEvaluatedCount > 0 ? ` · ${riskExpressEvaluatedCount.toLocaleString()}건` : ""}`}
+                    value={`${riskExpressOnTimeRate.toLocaleString()}%`}
+                  />
                 </div>
               </DashTile>
               <DashTile
