@@ -821,7 +821,7 @@ namespace DentalAddin
             double splitPercent = Clamp(splitRatio * 100.0, firstPercent, effectiveLastPercent);
 
             // Splitline_2 = SharedFinishSplitX. Rough/Turn seam.
-            // Finish 경계: none은 Front 끝 = Back 시작 = finishline max_z, deep은 Splitline_2 / Splitline_2-0.1.
+            // Finish 경계: none은 Front 끝 = Back 시작 = finishline max_z, deep은 둘 다 Splitline_2.
             // Finish A/B는 피처 재해석 없이 그 X를 StartEndScale(20mm)로만 환산한다.
             if (!TryResolveSharedFinishSplitX(out double sharedSplitX, out string sharedSplitSource))
             {
@@ -1002,12 +1002,13 @@ namespace DentalAddin
             // none: Front 끝 = Back 시작 = finishline max_z X.
             //   min_z까지 Front를 내리면 max_z~min_z 마진 띠를 Front/Back이 같이 깎는다.
             //   그 띠는 Back만 깎고, Front는 max_z에서 멈춘다.
-            // deep(유지홈 있음): Front 끝 = Splitline_2, Back 시작 = Splitline_2 - 0.1mm.
+            // deep(유지홈 있음): Front 끝 = Back 시작 = Splitline_2. 0.1mm 겹침 없음.
+            //   D1.2(R0.6)에서 경계가 한 스텝(deep 0.20) 어긋나도 골 높이는 약 0.008mm로, 면 전체 스텝과 같다.
             // Finish는 Front/Back만. safe split의 Xk는 Turn/Rough 전용이라 Finish 경계를 자르지 않는다.
             double finishOverlapMm = ResolveFinishSeamOverlapMm(opA, runB ? opB : null);
             const double compositeEndOffsetFromBackPointMm = 0.0;
-            // deep Finish_Back 시작을 Splitline_2보다 팁쪽(X-)으로 당기는 겹침.
-            const double deepFinishBackOverlapMm = 0.1;
+            // deep도 Front 끝과 Back 시작을 같은 X에 둔다. 스텝보다 짧은 겹침은 미삭제를 막지 않는다.
+            const double deepFinishBackOverlapMm = 0.0;
 
             double finishFrontEndX = splitX;
             string finishFrontEndSource = "Splitline_2-fallback";
@@ -1021,7 +1022,7 @@ namespace DentalAddin
                 finishFrontEndX = splitX;
                 finishFrontEndSource = "Splitline_2";
                 finishBackStartX = splitX - deepFinishBackOverlapMm;
-                finishBackStartSource = "Splitline_2-0.1";
+                finishBackStartSource = "Splitline_2";
             }
             else
             {
@@ -1921,7 +1922,7 @@ namespace DentalAddin
         //                           Back_Rough [Xk-roughR ~ BackPointX]
         //   Finish                : none Front_Finish [팁 ~ finishline max_z], deep [팁 ~ Splitline_2]
         //                           none Back_Finish [finishline max_z ~ BackPointX]
-        //                           deep Back_Finish [Splitline_2-0.1 ~ BackPointX], 스텝은 커넥션 → 포스트 팁
+        //                           deep Back_Finish [Splitline_2 ~ BackPointX], 스텝은 커넥션 → 포스트 팁
         //   Xk = (BackPointX - FL min_z) + 0.2  (Turn/Rough 경계. Finish seam은 피니시라인)
         // Middle_Turn 끝이 BackPointX + 1.5를 넘으면(커프가 짧음) Xk를 마진 쪽으로 당기지 않고 분할을 포기한다.
         private const string SafeSplitEnableEnv = "ABUTS_SAFE_SPLIT_ENABLE";
@@ -1932,7 +1933,7 @@ namespace DentalAddin
         //   none Front_Finish  끝 = finishline max_z X (Back 시작과 같은 면. min_z~max_z는 Back만)
         //   none Back_Finish   시작 = finishline max_z X
         //   deep Front_Finish  끝 = Splitline_2
-        //   deep Back_Finish   시작 = Splitline_2 - 0.1mm
+        //   deep Back_Finish   시작 = Splitline_2
         //   Back_Finish   끝 = BackPointX
         //   스텝오버: 커넥션(끝) → 포스트 팁(시작). ReverseStepOverDirection.
         private const double FinishAdjacentOverlapMm = 1.2 * 2.0 / 3.0;
@@ -3138,7 +3139,7 @@ namespace DentalAddin
         //   Rough: 선행 끝=경계+GetRoughPastFinishSeamMm(0.8), 후행(Back) 시작=경계 tip쪽(X-) 공구반경
         //     Rough(Back): GetRoughAdjacentOverlapMm() = D4→2.0 / D2→1.0
         //   Finish none: Front 끝=Back 시작=finishline max_z X (min_z~max_z는 Back만)
-        //   Finish deep: Front 끝=Splitline_2, Back 시작=Splitline_2-0.1
+        //   Finish deep: Front 끝=Back 시작=Splitline_2
         //     safe split Middle 끝=Xk, Back(B2) 시작=Xk-0.8
         // - Splitline_2>5mm: Front(Turn/Rough/Face) + Middle(Turn/Rough) + Back
         // - Splitline_2<=5mm: Front+Back만 (Middle 미생성)
@@ -3244,7 +3245,7 @@ namespace DentalAddin
 
         /// <summary>
         /// [SSOT] Splitline_2 = finishLineTopX - 0.5mm. Rough/Turn seam.
-        /// none Finish는 Front 끝 = Back 시작 = TryResolveFinishLineMaxX. deep Finish_Front 끝 = Splitline_2, Back 시작 = Splitline_2-0.1.
+        /// none Finish는 Front 끝 = Back 시작 = TryResolveFinishLineMaxX. deep도 Front 끝 = Back 시작 = Splitline_2.
         /// 식: finishLineTopX + SharedFinishSplitOffsetFromFinishLineTopMm (-0.5mm, tip 쪽).
         /// 좌표: FrontPointX = -FrontPoint.z → finishLineTopX = -finishLineTopZ (+ MoveSTL).
         /// </summary>
