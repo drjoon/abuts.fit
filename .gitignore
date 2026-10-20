@@ -42,6 +42,16 @@ __pycache__
 
 # local research/scratch workspace
 RnD/
+
+# Cursor agent scratch (STL/PNG/bench; .cursor/rules/ stays tracked)
+.cursor/tmp-*
+.cursor/za-*
+
+# local alignment / cuff bench artifacts
+.tmp-abuts-align/
+
+# TypeScript incremental build
+*.tsbuildinfo
 # lab CAD helper local paths
 bg/lab-cad-helper/config.json
 bg/lab-cad-helper/mac/dist/
