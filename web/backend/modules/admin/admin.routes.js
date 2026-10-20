@@ -49,8 +49,10 @@ import {
   addHappyCallCompletionMemo,
 } from "../../controllers/admin/admin.dashboard.controller.js";
 import {
-  acknowledgeAdminNewConnectionRequest,
-  restoreAdminNewConnectionRequest,
+  mergeAdminNewConnectionGroups,
+  updateAdminNewConnectionGroupCanonical,
+  updateAdminNewConnectionGroupWorkflow,
+  updateAdminNewConnectionRequestImplant,
 } from "../../controllers/admin/admin.newConnectionRequest.controller.js";
 import {
   addAdminDashboardNoticeImage,
@@ -416,13 +418,21 @@ router.post(
   "/dashboard/happy-call/completions/:id/memo",
   addHappyCallCompletionMemo,
 );
-router.post(
-  "/dashboard/new-connection-requests/:id/acknowledge",
-  acknowledgeAdminNewConnectionRequest,
+router.patch(
+  "/dashboard/new-connection-groups/:groupKey/workflow",
+  updateAdminNewConnectionGroupWorkflow,
+);
+router.patch(
+  "/dashboard/new-connection-groups/:groupKey/canonical",
+  updateAdminNewConnectionGroupCanonical,
 );
 router.post(
-  "/dashboard/new-connection-requests/:id/restore",
-  restoreAdminNewConnectionRequest,
+  "/dashboard/new-connection-groups/merge",
+  mergeAdminNewConnectionGroups,
+);
+router.patch(
+  "/dashboard/new-connection-requests/:id/implant",
+  updateAdminNewConnectionRequestImplant,
 );
 
 // ExoCAD 헥스 확인 (관리자) — User × 임플란트 제조사

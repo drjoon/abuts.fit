@@ -1276,9 +1276,9 @@ async function buildAdminDashboardPayload(req) {
         },
         newConnectionRequestStats: newConnectionRequestStats || {
           total: 0,
+          openGroupCount: 0,
+          groups: [],
           items: [],
-          archivedTotal: 0,
-          archivedItems: [],
         },
         prosthesisFeeItemRequestStats: prosthesisFeeItemRequestStats || {
           pending: 0,

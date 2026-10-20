@@ -1,16 +1,24 @@
 // related files:
 // - web/backend/controllers/admin/admin.dashboard.controller.js
 // - web/backend/models/request.model.js
-// - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
+// - web/backend/services/newConnectionImplantGroup.service.js
 // change-log:
-// - 2026-10-21: 확인(휴지통) 분리 — adminNewConnectionAcknowledgedAt.
-// - 2026-10-21: 관리자 대시보드 신규 커넥션 요청 — 미제공 커넥션·신규 임플란트 의뢰와 연락처.
+// - 2026-10-21: 제조사·브랜드 묶음 + 진행 상태(읽음·개발중·개발완료).
 import { Types } from "mongoose";
 import Request from "../models/request.model.js";
 import User from "../models/user.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
+import {
+  buildGroupLookupMaps,
+  buildImplantGroupKey,
+  ensureNewConnectionImplantGroup,
+  extractNewConnectionImplantPair,
+  loadAllNewConnectionImplantGroups,
+  mapGroupToWorkflowDto,
+  resolveGroupKeyForPair,
+} from "./newConnectionImplantGroup.service.js";
 
-const ITEM_LIMIT = 80;
+const ITEM_LIMIT = 200;
 
 const text = (value) => String(value || "").trim();
 
@@ -21,13 +29,6 @@ const NEW_CONNECTION_MATCH = {
   ],
 };
 
-const NOT_ACKNOWLEDGED_MATCH = {
-  $or: [
-    { adminNewConnectionAcknowledgedAt: null },
-    { adminNewConnectionAcknowledgedAt: { $exists: false } },
-  ],
-};
-
 const REQUEST_SELECT = {
   requestId: 1,
   createdAt: 1,
@@ -35,7 +36,6 @@ const REQUEST_SELECT = {
   manufacturerStage: 1,
   requestor: 1,
   businessAnchorId: 1,
-  adminNewConnectionAcknowledgedAt: 1,
   "caseInfos.clinicName": 1,
   "caseInfos.patientName": 1,
   "caseInfos.tooth": 1,
@@ -49,12 +49,18 @@ const REQUEST_SELECT = {
   "caseInfos.file.originalName": 1,
 };
 
-const connectionLabelOf = (caseInfos) => {
+const connectionLabelOf = (caseInfos, pair) => {
   const unsupported = text(caseInfos?.unsupportedConnection?.label);
   if (unsupported) return unsupported;
   const nsr = caseInfos?.newSystemRequest;
   if (nsr?.requested) {
     return [nsr.manufacturer, nsr.brand, nsr.family]
+      .map(text)
+      .filter(Boolean)
+      .join(" / ");
+  }
+  if (pair) {
+    return [pair.manufacturer, pair.brand, pair.family, pair.implantType]
       .map(text)
       .filter(Boolean)
       .join(" / ");
@@ -65,8 +71,9 @@ const connectionLabelOf = (caseInfos) => {
     .join(" / ");
 };
 
-const mapDocToItem = (doc, userById, anchorById) => {
+const mapDocToItem = (doc, userById, anchorById, groupKey) => {
   const caseInfos = doc.caseInfos || {};
+  const pair = extractNewConnectionImplantPair(caseInfos);
   const user = userById.get(String(doc.requestor || ""));
   const anchor = anchorById.get(String(doc.businessAnchorId || ""));
   const profile = user?.practiceProfile || {};
@@ -75,7 +82,6 @@ const mapDocToItem = (doc, userById, anchorById) => {
     id: String(doc._id),
     requestId: text(doc.requestId),
     createdAt: doc.createdAt || null,
-    acknowledgedAt: doc.adminNewConnectionAcknowledgedAt || null,
     status: text(doc.status),
     manufacturerStage: text(doc.manufacturerStage),
     clinicName: text(caseInfos.clinicName),
@@ -83,8 +89,13 @@ const mapDocToItem = (doc, userById, anchorById) => {
     tooth: text(caseInfos.tooth),
     memo: text(caseInfos.memo),
     fileName: text(caseInfos.file?.originalName),
-    connectionLabel: connectionLabelOf(caseInfos),
+    connectionLabel: connectionLabelOf(caseInfos, pair),
     source: unsupported ? "unsupported" : "new_implant",
+    groupKey: groupKey || "",
+    implantManufacturer: pair.manufacturer,
+    implantBrand: pair.brand,
+    implantFamily: pair.family,
+    implantType: pair.implantType,
     requesterName:
       text(user?.name) ||
       text(profile.staffName) ||
@@ -105,7 +116,7 @@ const mapDocToItem = (doc, userById, anchorById) => {
   };
 };
 
-async function enrichDocsToItems(docs) {
+async function enrichDocsToItems(docs, lookup) {
   const userIds = [
     ...new Set(
       docs
@@ -152,44 +163,109 @@ async function enrichDocsToItems(docs) {
   const userById = new Map(users.map((user) => [String(user._id), user]));
   const anchorById = new Map(anchors.map((anchor) => [String(anchor._id), anchor]));
 
-  return docs.map((doc) => mapDocToItem(doc, userById, anchorById));
+  const pairKeys = new Set();
+  for (const doc of docs) {
+    const pair = extractNewConnectionImplantPair(doc.caseInfos || {});
+    pairKeys.add(`${pair.manufacturer}::${pair.brand}`);
+  }
+  await Promise.all(
+    [...pairKeys].map((raw) => {
+      const [manufacturer, brand] = raw.split("::");
+      return ensureNewConnectionImplantGroup(manufacturer, brand, { lookup });
+    }),
+  );
+
+  const freshLookupAfterEnsure = buildGroupLookupMaps(
+    await loadAllNewConnectionImplantGroups(),
+  );
+
+  const items = [];
+  for (const doc of docs) {
+    const pair = extractNewConnectionImplantPair(doc.caseInfos || {});
+    const groupKey = await resolveGroupKeyForPair(
+      pair.manufacturer,
+      pair.brand,
+      freshLookupAfterEnsure,
+    );
+    items.push(mapDocToItem(doc, userById, anchorById, groupKey));
+  }
+  return items;
+}
+
+function buildGroupsFromItems(items, lookup) {
+  const groupMap = new Map();
+
+  for (const item of items) {
+    const key =
+      item.groupKey ||
+      buildImplantGroupKey(item.implantManufacturer, item.implantBrand).groupKey;
+    const bucket = groupMap.get(key) || {
+      ...mapGroupToWorkflowDto(lookup.byKey.get(key)),
+      groupKey: key,
+      requestCount: 0,
+      items: [],
+      hasNewImplant: false,
+      hasUnsupported: false,
+      latestCreatedAt: null,
+    };
+    bucket.requestCount += 1;
+    bucket.items.push(item);
+    if (item.source === "new_implant") bucket.hasNewImplant = true;
+    if (item.source === "unsupported") bucket.hasUnsupported = true;
+    const createdAt = item.createdAt ? new Date(item.createdAt) : null;
+    if (createdAt && (!bucket.latestCreatedAt || createdAt > bucket.latestCreatedAt)) {
+      bucket.latestCreatedAt = createdAt;
+    }
+    groupMap.set(key, bucket);
+  }
+
+  const groups = [...groupMap.values()].sort((a, b) => {
+    const aTime = a.latestCreatedAt ? a.latestCreatedAt.getTime() : 0;
+    const bTime = b.latestCreatedAt ? b.latestCreatedAt.getTime() : 0;
+    return bTime - aTime;
+  });
+
+  for (const group of groups) {
+    group.items.sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime;
+    });
+  }
+
+  return groups;
 }
 
 /**
- * 기간 안의 미제공 커넥션·신규 임플란트 의뢰.
- * 관리자가 의뢰자에게 전화할 수 있도록 연락처와 의뢰 내용을 붙인다.
- * 확인한 건은 archivedItems(휴지통)로 분리한다.
+ * 기간 안의 미제공 커넥션·신규 임플란트 의뢰를 제조사·브랜드로 묶어 반환한다.
  */
 export async function buildNewConnectionRequestDashboardStats({ start, end }) {
-  const [activeDocs, archivedDocs] = await Promise.all([
-    Request.find({
-      createdAt: { $gte: start, $lte: end },
-      ...NEW_CONNECTION_MATCH,
-      ...NOT_ACKNOWLEDGED_MATCH,
-    })
-      .select(REQUEST_SELECT)
-      .sort({ createdAt: -1 })
-      .limit(ITEM_LIMIT)
-      .lean(),
-    Request.find({
-      ...NEW_CONNECTION_MATCH,
-      adminNewConnectionAcknowledgedAt: { $ne: null },
-    })
-      .select(REQUEST_SELECT)
-      .sort({ adminNewConnectionAcknowledgedAt: -1 })
-      .limit(ITEM_LIMIT)
-      .lean(),
-  ]);
+  const docs = await Request.find({
+    createdAt: { $gte: start, $lte: end },
+    ...NEW_CONNECTION_MATCH,
+  })
+    .select(REQUEST_SELECT)
+    .sort({ createdAt: -1 })
+    .limit(ITEM_LIMIT)
+    .lean();
 
-  const [items, archivedItems] = await Promise.all([
-    enrichDocsToItems(activeDocs),
-    enrichDocsToItems(archivedDocs),
-  ]);
+  const groupDocs = await loadAllNewConnectionImplantGroups();
+  const lookup = buildGroupLookupMaps(groupDocs);
+
+  const items = await enrichDocsToItems(docs, lookup);
+  const freshGroups = await loadAllNewConnectionImplantGroups();
+  const freshLookup = buildGroupLookupMaps(freshGroups);
+  const groups = buildGroupsFromItems(items, freshLookup);
+
+  const openGroupCount = groups.filter((g) => !g.developmentComplete).length;
+  const openRequestCount = groups
+    .filter((g) => !g.developmentComplete)
+    .reduce((sum, g) => sum + g.requestCount, 0);
 
   return {
-    total: items.length,
+    total: openRequestCount,
+    openGroupCount,
+    groups,
     items,
-    archivedTotal: archivedItems.length,
-    archivedItems,
   };
 }

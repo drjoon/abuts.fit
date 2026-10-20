@@ -7,6 +7,7 @@
 // - 2026-09-14: dimmed 사이드 칩 하이라이트 제거·활성 패널 테두리 강조(XOR).
 // - 2026-09-14: 임플란트·스캔바디·심플어벗/힐링·직접입력 공통 칩 UI(ChoiceChip·추가·헤더·인라인·드래그 훅).
 import {
+  useEffect,
   useRef,
   useState,
   type DragEvent,
@@ -173,6 +174,8 @@ export type PracticeToothChipInlineEditorProps = {
   /** narrow=직경/높이, wide=회사·제조사 등 */
   size?: "narrow" | "wide";
   grow?: boolean;
+  implantSuggestField?: "manufacturer" | "brand";
+  implantSuggestManufacturer?: string;
   onChange: (next: string) => void;
   onCancel: () => void;
   onConfirm: () => void;
@@ -184,63 +187,116 @@ export const PracticeToothChipInlineEditor = ({
   busy = false,
   size = "wide",
   grow = false,
+  implantSuggestField,
+  implantSuggestManufacturer,
   onChange,
   onCancel,
   onConfirm,
-}: PracticeToothChipInlineEditorProps) => (
-  <div
-    className={cn(
-      "flex items-center gap-1.5",
-      grow ? "min-w-0 flex-1" : "shrink-0",
-    )}
-  >
-    <Input
-      value={value}
-      placeholder={placeholder}
-      className={cn(
-        "h-9 text-sm",
-        size === "narrow"
-          ? grow
-            ? "w-full min-w-0 max-w-[5.5rem]"
-            : "w-20"
-          : grow
-            ? "w-full min-w-0 max-w-[10rem]"
-            : "w-32 max-w-[10rem]",
-      )}
-      autoFocus
-      onChange={(e) => onChange(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          onConfirm();
-        }
-        if (e.key === "Escape") {
-          e.preventDefault();
-          onCancel();
-        }
-      }}
-    />
-    <Button
-      type="button"
-      size="sm"
-      variant="outline"
-      className="h-9 shrink-0 px-2 text-xs"
-      disabled={busy}
-      onClick={onCancel}
-    >
-      취소
-    </Button>
-    <Button
-      type="button"
-      size="sm"
-      className="h-9 shrink-0 px-2 text-xs"
-      disabled={busy || !String(value || "").trim()}
-      onClick={onConfirm}
-    >
-      저장
-    </Button>
-  </div>
-);
+}: PracticeToothChipInlineEditorProps) => {
+  const [implantSuggestions, setImplantSuggestions] = useState<
+    Array<{ manufacturer: string; brand: string }>
+  >([]);
+
+  useEffect(() => {
+    if (!implantSuggestField) {
+      setImplantSuggestions([]);
+      return;
+    }
+    const q = String(value || "").trim();
+    if (q.length < 1) {
+      setImplantSuggestions([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void import("@/shared/admin/newConnectionRequestInbox").then((mod) =>
+        mod
+          .suggestImplantNameRegistry({
+            field: implantSuggestField,
+            q,
+            manufacturer: implantSuggestManufacturer,
+          })
+          .then(setImplantSuggestions),
+      );
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [value, implantSuggestField, implantSuggestManufacturer]);
+
+  const suggestionLabels =
+    implantSuggestField === "brand"
+      ? implantSuggestions.map((row) => row.brand).filter(Boolean)
+      : implantSuggestions.map((row) => row.manufacturer).filter(Boolean);
+
+  return (
+    <div className={cn(grow ? "min-w-0 flex-1" : "shrink-0", "space-y-1")}>
+      <div
+        className={cn(
+          "flex items-center gap-1.5",
+          grow ? "min-w-0 flex-1" : "shrink-0",
+        )}
+      >
+        <Input
+          value={value}
+          placeholder={placeholder}
+          className={cn(
+            "h-9 text-sm",
+            size === "narrow"
+              ? grow
+                ? "w-full min-w-0 max-w-[5.5rem]"
+                : "w-20"
+              : grow
+                ? "w-full min-w-0 max-w-[10rem]"
+                : "w-32 max-w-[10rem]",
+          )}
+          autoFocus
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              onConfirm();
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              onCancel();
+            }
+          }}
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-9 shrink-0 px-2 text-xs"
+          disabled={busy}
+          onClick={onCancel}
+        >
+          취소
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          className="h-9 shrink-0 px-2 text-xs"
+          disabled={busy || !String(value || "").trim()}
+          onClick={onConfirm}
+        >
+          저장
+        </Button>
+      </div>
+      {suggestionLabels.length > 0 ? (
+        <div className="flex max-w-full flex-wrap gap-1 px-0.5">
+          {suggestionLabels.map((label) => (
+            <button
+              key={label}
+              type="button"
+              className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50"
+              onClick={() => onChange(label)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+};
 
 export const PracticeToothChipSectionHeader = ({
   heading,

@@ -772,6 +772,14 @@ export const PracticeToothImplantChipFields = ({
                 placeholder={label}
                 busy={favoritesBusy}
                 size="wide"
+                implantSuggestField={
+                  kind === "manufacturer" || kind === "brand"
+                    ? kind
+                    : undefined
+                }
+                implantSuggestManufacturer={
+                  kind === "brand" ? manufacturer : undefined
+                }
                 onChange={edit.setAddDraft}
                 onCancel={edit.cancelAdd}
                 onConfirm={() => void confirmAdd()}

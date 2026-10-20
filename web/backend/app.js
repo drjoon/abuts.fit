@@ -330,6 +330,7 @@ import rhinoRoutes from "./modules/rhino/rhino.routes.js";
 import bgRoutes from "./modules/bg/bg.routes.js";
 import clinicRoutes from "./modules/clinic/clinic.routes.js";
 import implantPresetRoutes from "./modules/implantPresets/implantPreset.routes.js";
+import implantNameRegistryRoutes from "./modules/implantNameRegistry/implantNameRegistry.routes.js";
 import scanbodyLibraryRoutes from "./modules/scanbodyLibraries/scanbodyLibrary.routes.js";
 import labDesignPresetRoutes from "./modules/labDesignPresets/labDesignPreset.routes.js";
 
@@ -380,6 +381,7 @@ app.use("/api/bg", bgRoutes);
 
 app.use("/api/clinics", clinicRoutes);
 app.use("/api/implant-presets", implantPresetRoutes);
+app.use("/api/implant-name-registry", implantNameRegistryRoutes);
 app.use("/api/scanbody-libraries", scanbodyLibraryRoutes);
 app.use("/api/lab-design-presets", labDesignPresetRoutes);
 
