@@ -3,7 +3,7 @@ BEGIN_OPERATION; 507; Back_Finish; 0;
    4437; 4437; 0;  SOURCE; 0; TECHCODETYPE; 2;
    4420; 4420; 2026;  SOURCE; 0; TECHCODETYPE; 2;
    CollisionDetection; 6630; 0;  CAPTION; 충돌 감지; SOURCE; 2; TECHCODETYPE; 520;
-   LimitAngleBetweenPoints; 6511; 0;  CAPTION; 두점사이 각도 제한; SOURCE; 1; TECHCODETYPE; 67;
+   LimitAngleBetweenPoints; 6511; 0;  CAPTION; 두점사이 각도 제한; SOURCE; 2; TECHCODETYPE; 67;
    ReferenceDepthOfCut; 1768; 0.20000000000000001;  HIDDEN; CAPTION; 참조 가공 깊이; SOURCE; 1; TECHCODETYPE; 2;
    RoughPass; 238; 0;  CAPTION; 황삭 경로; SOURCE; 0; TECHCODETYPE; 67;
    ThroughPointX; 3247; 0;  HIDDEN; CAPTION; 쓰루 포인트 X|쓰루 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
@@ -130,7 +130,7 @@ BEGIN_OPERATION; 507; Back_Finish; 0;
 	END_STRING
    SpindleID; 793; 1;  CAPTION; 스핀들 이름; SOURCE; 1; TECHCODETYPE; 1;
    OutputZValue; 1218; 0;  CAPTION; Z값 출력; SOURCE; 0; TECHCODETYPE; 118;
-   FirstPassPercent; 3462; 37.847266692735147;  CAPTION; 첫 패스 퍼센트; SOURCE; 2; TECHCODETYPE; 2;
+   FirstPassPercent; 3462; 0.25;  CAPTION; 첫 패스 퍼센트; SOURCE; 2; TECHCODETYPE; 2;
    ToolCenterPercent; 3445; 100;  HIDDEN; CAPTION; 공구 중심 직경의 %값; SOURCE; 2; TECHCODETYPE; 2;
    CustomSetting10; 640; 0;  CAPTION; 사용자 정의 설정 10; SOURCE; 1; TECHCODETYPE; 2;
    AutoTiltMode; 3411; 1;  HIDDEN; CAPTION; 자동틸트 모드; SOURCE; 0; TECHCODETYPE; 484;
@@ -139,13 +139,13 @@ BEGIN_OPERATION; 507; Back_Finish; 0;
    FixedAngle; 3258; 90;  CAPTION; 고정 각도; SOURCE; 2; TECHCODETYPE; 2;
    DriveSurface; 3224; ;  CAPTION; 드라이브 곡면; SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 3224;;
-		:19,22000001
+		:19,21000001
 	END_STRING
    4904; 4904; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4904;;
 		:
 	END_STRING
-   4003; 4003; 14;  SOURCE; 0; TECHCODETYPE; 1;
+   4003; 4003; 9;  SOURCE; 0; TECHCODETYPE; 1;
    OptimizationMode; 3323; 0;  HIDDEN; CAPTION; 최적화 켜기; SOURCE; 3; TECHCODETYPE; 496;
    CustomSetting7; 637; 0;  CAPTION; 사용자 정의 설정 7; SOURCE; 1; TECHCODETYPE; 2;
    LimitPassesToStock; 3408; 1;  HIDDEN; CAPTION; 소재로의 경로 리미트; SOURCE; 1; TECHCODETYPE; 67;
@@ -229,7 +229,7 @@ BEGIN_OPERATION; 507; Back_Finish; 0;
    CuttingStrategy; 1390; 0;  HIDDEN; CAPTION; 절삭 단계 설정; SOURCE; 1; TECHCODETYPE; 185;
    TiltReferenceAxis; 3413; 1;  HIDDEN; CAPTION; 참조축; SOURCE; 1; TECHCODETYPE; 417;
    UseApproachPoint; 3260; 0;  HIDDEN; CAPTION; 접근 포인트 사용; SOURCE; 0; TECHCODETYPE; 67;
-   StepIncrement; 217; 0.05;  CAPTION; 스텝 간격; SOURCE; 2; TECHCODETYPE; 2;
+   StepIncrement; 217; 0.050000000000000003;  CAPTION; 스텝 간격; SOURCE; 2; TECHCODETYPE; 2;
    SpineEndPointX; 3243; 0;  HIDDEN; CAPTION; 끝 포인트 X|끝 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
    LoopAroundCorners; 3209; 0;  HIDDEN; CAPTION; 코너 주변으로 루프; SOURCE; 1; TECHCODETYPE; 67;
    4430; 4430; 5;  SOURCE; 0; TECHCODETYPE; 2;
@@ -281,7 +281,7 @@ BEGIN_OPERATION; 507; Back_Finish; 0;
    PassMovement; 1361; 0;  CAPTION; 패스 이동; SOURCE; 3; TECHCODETYPE; 415;
    OrientationProfile; 3265; ;  HIDDEN; CAPTION; 오리엔테이션 프로파일; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 3265;;
-		:
+		:6,10
 	END_STRING
    OperationName; 613; ;  CAPTION; 작업 이름; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 613;;
@@ -372,7 +372,7 @@ BEGIN_OPERATION; 507; Back_Finish; 0;
 	BEGIN_STRING; 4908;;
 		:
 	END_STRING
-   LastPassPercent; 3463; 53.391979817096846;  CAPTION; 마지막 패스 퍼센트; SOURCE; 2; TECHCODETYPE; 2;
+   LastPassPercent; 3463; 51.233152213151776;  CAPTION; 마지막 패스 퍼센트; SOURCE; 2; TECHCODETYPE; 2;
    ShankClearance; 3225; 0;  CAPTION; 섕크 여유; SOURCE; 1; TECHCODETYPE; 2;
    MaximumTiltAngle; 3412; 20;  HIDDEN; CAPTION; 최대 기울기 각도; SOURCE; 1; TECHCODETYPE; 2;
    SpineStartPointZ; 3242; 0;  HIDDEN; CAPTION; 시작 지점 Z|시작 지점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
