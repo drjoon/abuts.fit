@@ -828,26 +828,66 @@ function angularLowPass(values, outN = values?.length) {
 
 /** 커프 곡면 최소 오목 곡률 반경(mm). 공구 반경 0.65mm 이상이 되도록 여유를 둔 목표 반경. */
 export const CUFF_MIN_CONCAVE_RADIUS_MM = 0.78;
+/** 제어점 보정량을 둘레로 고르는 이동 평균 반폭(열). 열마다 따로 메우면 이웃 열과 보정량이 달라 세로 주름이 진다. */
+const MIN_RADIUS_DELTA_SMOOTH_HALF = columnsForDeg(3);
+/** 보정 → 둘레 평활 → 남은 부족분 재보정 반복 횟수. 평활로 깎인 만큼을 다음 회에 다시 채운다. */
+const MIN_RADIUS_ROUNDS = 24;
 
 /**
  * 4차 베지어 이음 프로파일의 제어점을 조정해 자오선(종단면) 및 둘레 방향(3D 주곡률) 오목 곡률 반경이
  * CUFF_MIN_CONCAVE_RADIUS_MM(실효 공구 반경 ≥0.65mm) 이상이 되도록 한다.
  * 커넥션 원점 상방 CUFF_DEFORM_MIN_Z_MM(0.3mm) 아래는 건드리지 않으며, 피니시라인 위 끝 반경(c4)도 그대로 둔다.
+ * 원래 프로파일에 제어점 보정량만 더하고, 보정량은 매 회 둘레로 평활한다(열마다 갈아 끼우면 보정 열 경계가 세로 주름이 된다).
  */
 function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tailWeights = null) {
   const n = profiles.length;
-  const eps = 1e-4;
-  const ctrl = profiles.map((fn) => {
+  // 4차 베지어 제어점은 양 끝과 t=¼·½·¾ 세 점으로 푼다. 끝 미분을 차분으로 재면 둘레 평활(3차 보간)된 곡선에서 어긋난다.
+  const ctrl0 = profiles.map((fn) => {
     const c0 = fn(0);
     const c4 = fn(1);
-    const d0 = (fn(eps) - c0) / eps / 4;
-    const d3 = (c4 - fn(1 - eps)) / eps / 4;
-    const c1 = c0 + d0;
-    const c3 = c4 - d3;
-    const c2 = (16 * fn(0.5) - c0 - 4 * c1 - 4 * c3 - c4) / 6;
-    return [c0, c1, c2, c3, c4];
+    const q1 = 256 * fn(0.25) - 81 * c0 - c4;
+    const q2 = 16 * fn(0.5) - c0 - c4;
+    const q3 = 256 * fn(0.75) - c0 - 81 * c4;
+    // q1 = 108·c1 + 54·c2 + 12·c3, q2 = 4·c1 + 6·c2 + 4·c3, q3 = 12·c1 + 54·c2 + 108·c3
+    const c1mc3 = (q1 - q3) / 96;
+    const c1pc3 = ((q1 + q3) / 2 - 9 * q2) / 24;
+    const c2 = (q2 - 4 * c1pc3) / 6;
+    return [c0, (c1pc3 + c1mc3) / 2, c2, (c1pc3 - c1mc3) / 2, c4];
   });
-  if (!ctrl.every((c) => c.every(Number.isFinite))) return profiles;
+  if (!ctrl0.every((c) => c.every(Number.isFinite))) return profiles;
+  const cur = ctrl0.map((c) => c.slice());
+  let changed = false;
+  for (let round = 0; round < MIN_RADIUS_ROUNDS; round += 1) {
+    const next = cur.map((c) => c.slice());
+    if (!enforceMinToolRadiusOnCtrl(next, hs, zA, canLiftD0, tailWeights)) break;
+    changed = true;
+    for (let k = 1; k <= 3; k += 1) {
+      const step = circularSmooth(
+        circularSmooth(
+          next.map((c, j) => c[k] - cur[j][k]),
+          MIN_RADIUS_DELTA_SMOOTH_HALF,
+        ),
+        MIN_RADIUS_DELTA_SMOOTH_HALF,
+      );
+      for (let j = 0; j < n; j += 1) cur[j][k] += step[j];
+    }
+  }
+  if (!changed) return profiles;
+  return profiles.map((fn, j) => {
+    const e1 = cur[j][1] - ctrl0[j][1];
+    const e2 = cur[j][2] - ctrl0[j][2];
+    const e3 = cur[j][3] - ctrl0[j][3];
+    if (Math.abs(e1) + Math.abs(e2) + Math.abs(e3) < 1e-9) return fn;
+    return (t) => {
+      const u = 1 - t;
+      return fn(t) + 4 * e1 * u ** 3 * t + 6 * e2 * u ** 2 * t ** 2 + 4 * e3 * u * t ** 3;
+    };
+  });
+}
+
+/** enforceMinToolRadiusOnProfiles 한 회: 열별 4차 베지어 제어점(ctrl)을 제자리에서 고친다. 고친 열이 있으면 true. */
+function enforceMinToolRadiusOnCtrl(ctrl, hs, zA, canLiftD0, tailWeights) {
+  const n = ctrl.length;
   const modified = new Uint8Array(n);
   const dMaxs = hs.map((h) => (PROFILE_MAX_SLOPE * h) / 4);
   const stepLim = (h, dLo, dHi) => {
@@ -963,7 +1003,7 @@ function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tai
       });
     });
     const dth = TWO_PI / n;
-    const step = 2 * dth;
+    const step = dth;
     const kLim = 1 / CUFF_MIN_CONCAVE_RADIUS_MM;
     const rs = new Float64Array(n);
     const rzs = new Float64Array(n);
@@ -995,8 +1035,8 @@ function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tai
         for (let j = 0; j < n; j += 1) {
           const a = row[j];
           if (!a) continue;
-          const jm = (j - 2 + n) % n;
-          const jp = (j + 2) % n;
+          const jm = (j - 1 + n) % n;
+          const jp = (j + 1) % n;
           const rm = rs[jm];
           const r = rs[j];
           const rp = rs[jp];
@@ -1016,7 +1056,13 @@ function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tai
           const W = Math.sqrt(W2);
           const L = (r * (rThth - r) - 2 * rTh * rTh) / W;
           const M = (r * rThz - rTh * rz) / W;
-          const kTh = (G * L - 2 * F * M) / (2 * W2) + Math.hypot((G * L - 2 * F * M) / (2 * W2), M / W);
+          // 자오선 오목(N)도 넣은 최대 주곡률. 둘레만 보면 두 방향이 같이 오목한 곳(커넥션 바로 위 골)을 놓친다.
+          const c = ctrl[j];
+          const rzz = a.s2 * (a.u2 * (c[2] - 2 * c[1] + c[0]) + a.ut * (c[3] - 2 * c[2] + c[1]) + a.t2 * (c[4] - 2 * c[3] + c[2]));
+          const N = (r * rzz) / W;
+          const Hc = (E * N - 2 * F * M + G * L) / (2 * W2);
+          const Kc = (L * N - M * M) / W2;
+          const kTh = Hc + Math.sqrt(Math.max(0, Hc * Hc - Kc));
           if (kTh > kLim) {
             const need = 0.5 * step * step * (kTh - kLim) * ((W * E) / r);
             if (need > 1e-6) {
@@ -1029,6 +1075,10 @@ function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tai
         }
       }
       if (!any) break;
+      for (const dc of [dc1, dc2, dc3]) {
+        const sm = circularSmooth(circularSmooth(dc, MIN_RADIUS_DELTA_SMOOTH_HALF), MIN_RADIUS_DELTA_SMOOTH_HALF);
+        for (let j = 0; j < n; j += 1) dc[j] = Math.max(dc[j] * 0.5, sm[j]);
+      }
       for (let j = 0; j < n; j += 1) {
         if (!(dc1[j] > 1e-6 || dc2[j] > 1e-6 || dc3[j] > 1e-6)) continue;
         modified[j] = 1;
@@ -1073,13 +1123,7 @@ function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tai
       }
     }
   }
-  return ctrl.map((c, j) => {
-    if (!modified[j]) return profiles[j];
-    return (t) => {
-      const u = 1 - t;
-      return c[0] * u ** 4 + 4 * c[1] * u ** 3 * t + 6 * c[2] * u ** 2 * t ** 2 + 4 * c[3] * u * t ** 3 + c[4] * t ** 4;
-    };
-  });
+  return modified.some(Boolean);
 }
 
 /** 이음 프로파일 둘레 평활에 쓰는 t 단계 수(사이는 3차 보간). */
@@ -1100,6 +1144,12 @@ function smoothProfilesAcrossColumns(profiles) {
     return { r0, r1: p(1), s0: (p(PROFILE_START_SLOPE_EPS) - r0) / PROFILE_START_SLOPE_EPS };
   });
   if (!ends.every(({ r0, r1, s0 }) => Number.isFinite(r0) && Number.isFinite(r1) && Number.isFinite(s0))) return profiles;
+  // 시작 기울기는 반경 차가 작은 열에서 m0 상한(d − 여유)에 잘려 열 사이에서 꺾인다. 그대로 두면 그 꺾임이 기준 곡선으로 빠져 평활되지 않는다.
+  const s0s = angularLowPass(ends.map((e) => e.s0));
+  if (!s0s) return profiles;
+  ends.forEach((e, j) => {
+    e.s0 = s0s[j];
+  });
   const base = (j, t) => {
     const { r0, r1, s0 } = ends[j];
     return r0 + s0 * t + (r1 - r0 - s0) * t * t * t;
