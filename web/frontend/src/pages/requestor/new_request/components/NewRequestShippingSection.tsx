@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-20: 의뢰할 파일이 있으면 의뢰하기 버튼 하이라이트를 깜빡인다(scroll-halo-blue).
 // - 2026-10-13: 택배 배송(기본)·딜리버리 배송(월 100건 이상) 두 카드 복구. 요일 선택 제거. 방식은 딜러·영업팀·관리자가 지정하므로 카드는 읽기 전용.
 // - 2026-10-09: 진행 도안을 오늘 의뢰 → 바로 생산 → 내일 도착으로, 제목을 익일 도착 딜리버리로.
 // - 2026-10-08: 택배 묶음 출고 폐지. 딜리버리 익일 도착만 남기고(배송비는 딜러/어벗츠 부담) 상단에 진행 도안 추가.
@@ -27,6 +28,8 @@ type Props = {
   disabled?: boolean;
   /** 거래처에 지정된 배송 방식(딜러·영업팀·관리자가 정함). */
   defaultShippingMode: ShippingMode;
+  /** 의뢰할 파일이 있으면 버튼 하이라이트를 깜빡인다. */
+  highlight?: boolean;
   onSubmit: () => void;
 };
 
@@ -65,6 +68,7 @@ function ModeCard({
 export function NewRequestShippingSection({
   disabled,
   defaultShippingMode,
+  highlight,
   onSubmit,
 }: Props) {
   const isDisabled = !!disabled;
@@ -106,7 +110,12 @@ export function NewRequestShippingSection({
             type="button"
             onClick={onSubmit}
             size="lg"
-            className="mx-auto w-full text-lg sm:w-1/2"
+            className={cn(
+              "mx-auto w-full text-lg sm:w-1/2",
+              highlight &&
+                !isDisabled &&
+                "animate-scroll-halo-blue motion-reduce:animate-none",
+            )}
             disabled={isDisabled}
           >
             {isDisabled ? "접수 중..." : "의뢰하기"}

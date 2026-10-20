@@ -2070,6 +2070,7 @@ const NewRequestPageContent = () => {
             <NewRequestShippingSection
               disabled={isSubmitting}
               defaultShippingMode={defaultShippingMode}
+              highlight={files.length > 0}
               onSubmit={() => {
                 if (isSubmitting || submitClickGuardRef.current) return;
                 if (!files.length) {
