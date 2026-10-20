@@ -6,12 +6,14 @@
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // change-log:
 // - 2026-10-21: 카탈로그에 없는 제조사·브랜드·패밀리·타입은 프리셋 목록에 넣지 않는다.
+// - 2026-10-21: implantFieldsLockedPassive — 잠금 시 Select disabled 대신 pointer-events-none.
+// - 2026-10-21: renderImplantSelectSection — 카탈로그 Select를 부모 통합 섹션으로 감쌀 때.
 // - 2026-10-21: implantFieldsLocked — 신규 임플란트 직접 입력 중에는 프리셋 Select를 잠근다.
 // - 2026-09-10: Manufacturer 등 SelectValue children 제거 — 미선택 시 placeholder 빈칸 방지.
 // - 2026-09-04: 카탈로그 불일치 시 brand 폴백 금지 — 에러 콜백(의뢰 차단)·관리자 alert용.
 // - 2026-09-04: 카탈로그 불일치 시 brand를 제조사 첫 항목으로 덮어쓰지 않음(TS3→US 회귀).
 //   제조사/브랜드 대소문자·TS↔TS3 별칭 매칭. Select value를 카탈로그 토큰으로 정렬.
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, type ReactNode } from "react";
 import {
   Select,
   SelectContent,
@@ -20,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import LabeledAutocompleteField from "@/shared/ui/forms/LabeledAutocompleteField";
+import { cn } from "@/shared/ui/cn";
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
 
 type Option = { id: string; label: string };
@@ -117,6 +120,10 @@ type Props = {
   ) => void;
   /** 신규 임플란트 직접 입력 중이면 프리셋 Select를 잠근다. */
   implantFieldsLocked?: boolean;
+  /** 잠금 시 disabled 대신 pointer-events-none — 통합 섹션에서 비활성 pane 클릭 전환용 */
+  implantFieldsLockedPassive?: boolean;
+  /** 카탈로그 Select 4칸을 부모 통합 섹션으로 감쌀 때 */
+  renderImplantSelectSection?: (catalogSelects: ReactNode) => ReactNode;
 };
 
 export function NewRequestPatientImplantFields({
@@ -149,6 +156,8 @@ export function NewRequestPatientImplantFields({
   handleAddOrSelectClinic,
   onImplantCatalogIssue,
   implantFieldsLocked = false,
+  implantFieldsLockedPassive = false,
+  renderImplantSelectSection,
 }: Props) {
   const caseInfos = rawCaseInfos;
   const setCaseInfos = useCallback(
@@ -158,8 +167,13 @@ export function NewRequestPatientImplantFields({
     [setCaseInfosRaw],
   );
   const hasClinicName = Boolean((caseInfos?.clinicName || "").trim());
+  const implantPassiveLocked = Boolean(
+    implantFieldsLockedPassive && implantFieldsLocked,
+  );
   const implantDisabled = Boolean(
-    readOnly || !hasClinicName || implantFieldsLocked,
+    readOnly ||
+      !hasClinicName ||
+      (implantFieldsLocked && !implantFieldsLockedPassive),
   );
 
   const currentManufacturer =
@@ -490,140 +504,13 @@ export function NewRequestPatientImplantFields({
     setImplantType,
   ]);
 
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-1 gap-2 text-foreground md:grid-cols-3">
-        <div className="min-w-0">
-          <LabeledAutocompleteField
-            value={caseInfos?.clinicName || ""}
-            onChange={(value) => {
-              if (readOnly) return;
-              setCaseInfos({
-                clinicName: value,
-              });
-            }}
-            options={clinicNameOptions}
-            placeholder="치과명"
-              onOptionSelect={(label) => {
-                if (readOnly) return;
-                handleAddOrSelectClinic(label);
-                addClinicPreset(label);
-              }}
-              onClear={() => {
-                if (readOnly) return;
-                setCaseInfos({
-                  clinicName: "",
-                });
-              }}
-              onDelete={() => {
-                if (readOnly) return;
-                clearAllClinicPresets();
-                setCaseInfos({
-                  clinicName: "",
-                });
-              }}
-              onBlur={() => {
-                if (readOnly) return;
-                if (caseInfos?.clinicName) {
-                  handleAddOrSelectClinic(caseInfos.clinicName);
-                  addClinicPreset(caseInfos.clinicName);
-                }
-              }}
-              inputClassName="h-8 text-xs w-full pr-10"
-              disabled={readOnly}
-            />
-          </div>
-
-          <div className="min-w-0">
-            <LabeledAutocompleteField
-              // 표시용 값은 검증된 한글 1~4글자만 보여주고, 그렇지 않으면 빈 문자열로 남김
-              value={displayedPatientName}
-              onChange={(value) => {
-                if (readOnly) return;
-                // 사용자가 직접 입력한 경우는 그대로 caseInfos에 반영
-                setCaseInfos({
-                  patientName: value,
-                });
-              }}
-              options={patientNameOptions}
-              placeholder="환자명"
-              onOptionSelect={(label) => {
-                if (readOnly) return;
-                setCaseInfos({
-                  patientName: label,
-                });
-                addPatientPreset(label);
-              }}
-              onClear={() => {
-                if (readOnly) return;
-                setCaseInfos({
-                  patientName: "",
-                });
-              }}
-              onDelete={() => {
-                if (readOnly) return;
-                clearAllPatientPresets();
-                setCaseInfos({
-                  patientName: "",
-                });
-              }}
-              onBlur={() => {
-                if (readOnly) return;
-                // 업로드로 채워진(또는 props로 들어온) 비검증 환자명은 추가하지 않도록 displayedPatientName 기준으로 검사
-                if (displayedPatientName) {
-                  addPatientPreset(displayedPatientName);
-                }
-              }}
-              inputClassName="h-8 text-xs w-full pr-10"
-              disabled={readOnly}
-            />
-          </div>
-
-          <div className="min-w-0">
-            <LabeledAutocompleteField
-              value={caseInfos?.tooth || ""}
-              onChange={(value) => {
-                if (readOnly) return;
-                setCaseInfos({
-                  tooth: value,
-                });
-              }}
-              options={teethOptions}
-              placeholder="치아번호 (직접 입력)"
-              onOptionSelect={(label) => {
-                if (readOnly) return;
-                setCaseInfos({
-                  tooth: label,
-                });
-                addTeethPreset(label);
-              }}
-              onClear={() => {
-                if (readOnly) return;
-                setCaseInfos({
-                  tooth: "",
-                });
-              }}
-              onDelete={() => {
-                if (readOnly) return;
-                clearAllTeethPresets();
-                setCaseInfos({
-                  tooth: "",
-                });
-              }}
-              onBlur={() => {
-                if (readOnly) return;
-                if (caseInfos?.tooth) {
-                  addTeethPreset(caseInfos.tooth);
-                }
-              }}
-              inputClassName="h-8 text-xs w-full pr-10"
-              disabled={readOnly}
-            />
-          </div>
-        </div>
-
-      {showImplantSelect ? (
-        <div className="grid grid-cols-1 gap-2 text-[10px] md:grid-cols-2 md:text-[11px] lg:grid-cols-4">
+  const implantCatalogSelectGrid = showImplantSelect ? (
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-2 text-[10px] md:grid-cols-2 md:text-[11px] lg:grid-cols-4",
+            implantPassiveLocked && "pointer-events-none",
+          )}
+        >
               <div className="min-w-0 space-y-1">
                 <Select
                   value={resolveSelectValue(
@@ -876,7 +763,144 @@ export function NewRequestPatientImplantFields({
                 </Select>
               </div>
             </div>
-      ) : null}
+  ) : null;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-1 gap-2 text-foreground md:grid-cols-3">
+        <div className="min-w-0">
+          <LabeledAutocompleteField
+            value={caseInfos?.clinicName || ""}
+            onChange={(value) => {
+              if (readOnly) return;
+              setCaseInfos({
+                clinicName: value,
+              });
+            }}
+            options={clinicNameOptions}
+            placeholder="치과명"
+              onOptionSelect={(label) => {
+                if (readOnly) return;
+                handleAddOrSelectClinic(label);
+                addClinicPreset(label);
+              }}
+              onClear={() => {
+                if (readOnly) return;
+                setCaseInfos({
+                  clinicName: "",
+                });
+              }}
+              onDelete={() => {
+                if (readOnly) return;
+                clearAllClinicPresets();
+                setCaseInfos({
+                  clinicName: "",
+                });
+              }}
+              onBlur={() => {
+                if (readOnly) return;
+                if (caseInfos?.clinicName) {
+                  handleAddOrSelectClinic(caseInfos.clinicName);
+                  addClinicPreset(caseInfos.clinicName);
+                }
+              }}
+              inputClassName="h-8 text-xs w-full pr-10"
+              disabled={readOnly}
+            />
+          </div>
+
+          <div className="min-w-0">
+            <LabeledAutocompleteField
+              // 표시용 값은 검증된 한글 1~4글자만 보여주고, 그렇지 않으면 빈 문자열로 남김
+              value={displayedPatientName}
+              onChange={(value) => {
+                if (readOnly) return;
+                // 사용자가 직접 입력한 경우는 그대로 caseInfos에 반영
+                setCaseInfos({
+                  patientName: value,
+                });
+              }}
+              options={patientNameOptions}
+              placeholder="환자명"
+              onOptionSelect={(label) => {
+                if (readOnly) return;
+                setCaseInfos({
+                  patientName: label,
+                });
+                addPatientPreset(label);
+              }}
+              onClear={() => {
+                if (readOnly) return;
+                setCaseInfos({
+                  patientName: "",
+                });
+              }}
+              onDelete={() => {
+                if (readOnly) return;
+                clearAllPatientPresets();
+                setCaseInfos({
+                  patientName: "",
+                });
+              }}
+              onBlur={() => {
+                if (readOnly) return;
+                // 업로드로 채워진(또는 props로 들어온) 비검증 환자명은 추가하지 않도록 displayedPatientName 기준으로 검사
+                if (displayedPatientName) {
+                  addPatientPreset(displayedPatientName);
+                }
+              }}
+              inputClassName="h-8 text-xs w-full pr-10"
+              disabled={readOnly}
+            />
+          </div>
+
+          <div className="min-w-0">
+            <LabeledAutocompleteField
+              value={caseInfos?.tooth || ""}
+              onChange={(value) => {
+                if (readOnly) return;
+                setCaseInfos({
+                  tooth: value,
+                });
+              }}
+              options={teethOptions}
+              placeholder="치아번호 (직접 입력)"
+              onOptionSelect={(label) => {
+                if (readOnly) return;
+                setCaseInfos({
+                  tooth: label,
+                });
+                addTeethPreset(label);
+              }}
+              onClear={() => {
+                if (readOnly) return;
+                setCaseInfos({
+                  tooth: "",
+                });
+              }}
+              onDelete={() => {
+                if (readOnly) return;
+                clearAllTeethPresets();
+                setCaseInfos({
+                  tooth: "",
+                });
+              }}
+              onBlur={() => {
+                if (readOnly) return;
+                if (caseInfos?.tooth) {
+                  addTeethPreset(caseInfos.tooth);
+                }
+              }}
+              inputClassName="h-8 text-xs w-full pr-10"
+              disabled={readOnly}
+            />
+          </div>
+        </div>
+
+      {renderImplantSelectSection && implantCatalogSelectGrid
+        ? renderImplantSelectSection(implantCatalogSelectGrid)
+        : implantCatalogSelectGrid}
+
     </div>
   );
 }
