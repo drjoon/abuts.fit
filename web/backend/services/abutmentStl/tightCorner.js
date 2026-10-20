@@ -16,9 +16,12 @@ export const FINISH_BALL_RADIUS_MM = FINISH_BALL_DIAMETER_MM / 2;
 const DIST_TOL = 1e-8;
 const FL_SAMPLE_MAX = 80;
 const FL_SAMPLE_MIN = 12;
-/** 접수 모달 검사. 한 바퀴 8곳(45°). 공구 R 근처 구간만 가운데를 한 번 더 잰다. */
+/** 접수 모달 검사. 한 바퀴 8곳(45°)을 재고, 구간마다 가운데를 한 번 더 재서 보간과 어긋나면 쪼갠다. */
 const PREFLIGHT_SCREEN_COUNT = 8;
-const PREFLIGHT_NEAR_TOOL_MM = 0.15;
+/** 가운데 측정이 양 끝 보간과 이만큼 어긋나면 그 구간을 더 쪼갠다. 최대 8·2^깊이 곳. */
+const PREFLIGHT_REFINE_DEPTH = 3;
+const PREFLIGHT_REFINE_R_MM = 0.03;
+const PREFLIGHT_REFINE_CORNER_MM = 0.04;
 /** 보정 스테이션. 피니시라인 정점마다 단면을 자르면 고해상도 STL에서 수 초가 걸린다. */
 const STATION_SAMPLE_MAX = 96;
 const PROFILE_W_BIN_MM = 0.06;
@@ -1009,7 +1012,8 @@ function filletRadiusOf(row) {
 }
 
 /**
- * 접수 모달용. 축은 한 번만 자르고, 8곳만 잰 뒤 공구 R 근처 호의 가운데만 다시 잰다.
+ * 접수 모달용. 축은 한 번만 자르고, 8곳을 잰 뒤 구간 가운데를 재서 보간과 어긋나는 구간만 더 쪼갠다.
+ * 마진 높이·R이 변하는 곳을 듬성듬성 이으면 보정 띠가 마진에서 뜨거나 가라앉는다.
  */
 function collectScreenSamples(mesh, finishLinePoints, options = {}) {
   const toolR = Number(options.toolRadiusMm) > 0 ? Number(options.toolRadiusMm) : FINISH_BALL_RADIUS_MM;
@@ -1018,25 +1022,51 @@ function collectScreenSamples(mesh, finishLinePoints, options = {}) {
   if (raw.length < FL_SAMPLE_MIN) return { toolR, axis, raw, sampled: [], samples: [] };
   const measure = (fl) =>
     analyzeMarginAtPoint(mesh, fl, toolR, axis, options.log, { singleAxis: true });
-  const nearTool = (row) => {
-    const r = filletRadiusOf(row);
-    return r != null && Math.abs(r - toolR) <= PREFLIGHT_NEAR_TOOL_MM;
+  const at = (fraction) => {
+    const fl = finishLineAtFraction(raw, fraction);
+    return { fraction, fl, row: measure(fl) };
+  };
+  const radiusOf = (row) => filletRadiusOf(row);
+  /** 가운데가 양 끝 보간과 어긋나면(R·코너 위치·타이트 여부) 더 쪼갠다. 매끈한 구간은 그대로 둔다. */
+  const needsSplit = (lo, mid, hi) => {
+    if (Boolean(lo.row?.tight) !== Boolean(mid.row?.tight)) return true;
+    if (Boolean(hi.row?.tight) !== Boolean(mid.row?.tight)) return true;
+    const rl = radiusOf(lo.row);
+    const rm = radiusOf(mid.row);
+    const rh = radiusOf(hi.row);
+    if (rl == null || rm == null || rh == null) return rl !== rm || rm !== rh;
+    if (Math.abs(rm - (rl + rh) / 2) > PREFLIGHT_REFINE_R_MM) return true;
+    const cl = lo.row?.cornerPoint;
+    const cm = mid.row?.cornerPoint;
+    const ch = hi.row?.cornerPoint;
+    if (cl && cm && ch) {
+      // 둘레 방향 호는 3D 평균이 아니라 (반경, 높이)로 비교한다.
+      const ru = (c) => Math.hypot(c[0], c[1]);
+      return (
+        Math.hypot(ru(cm) - (ru(cl) + ru(ch)) / 2, cm[2] - (cl[2] + ch[2]) / 2) >
+        PREFLIGHT_REFINE_CORNER_MM
+      );
+    }
+    return false;
+  };
+  const stations = [];
+  const refine = (lo, hi, depth) => {
+    const mid = at((lo.fraction + hi.fraction) / 2);
+    stations.push(mid);
+    if (depth >= PREFLIGHT_REFINE_DEPTH || !needsSplit(lo, mid, hi)) return;
+    refine(lo, mid, depth + 1);
+    refine(mid, hi, depth + 1);
   };
   const coarse = [];
-  for (let i = 0; i < PREFLIGHT_SCREEN_COUNT; i += 1) {
-    const fraction = i / PREFLIGHT_SCREEN_COUNT;
-    const fl = finishLineAtFraction(raw, fraction);
-    coarse.push({ fraction, fl, row: measure(fl) });
-  }
-  const stations = [];
+  for (let i = 0; i < PREFLIGHT_SCREEN_COUNT; i += 1) coarse.push(at(i / PREFLIGHT_SCREEN_COUNT));
+  stations.push(...coarse);
   for (let i = 0; i < coarse.length; i += 1) {
-    stations.push(coarse[i]);
     const next = coarse[(i + 1) % coarse.length];
-    if (!nearTool(coarse[i].row) && !nearTool(next.row)) continue;
-    const fraction = (i + 0.5) / PREFLIGHT_SCREEN_COUNT;
-    const fl = finishLineAtFraction(raw, fraction);
-    stations.push({ fraction, fl, row: measure(fl) });
+    refine(coarse[i], { ...next, fraction: next.fraction + (i === coarse.length - 1 ? 1 : 0) }, 1);
   }
+  stations.forEach((st) => {
+    st.fraction = ((st.fraction % 1) + 1) % 1;
+  });
   stations.sort((a, b) => a.fraction - b.fraction);
   const samples = [];
   stations.forEach((st, sampleIndex) => {
