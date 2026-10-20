@@ -1,4 +1,5 @@
 import type { CaseInfos } from "@/pages/requestor/new_request/hooks/newRequestTypes";
+import { NEW_IMPLANT_DEVELOPMENT_REQUEST_MESSAGE } from "@/shared/practice/newImplantQuickPresets";
 
 const text = (value: unknown) => String(value || "").trim();
 
@@ -27,7 +28,8 @@ export function buildNewSystemRequestPayload(
     manufacturer,
     brand,
     family,
-    message: text(nsr?.message) || "랩아날로그와 기존 어벗 샘플을 요청드립니다",
+    message:
+      text(nsr?.message) || NEW_IMPLANT_DEVELOPMENT_REQUEST_MESSAGE,
     free: true,
     tag: text(nsr?.tag) || "신규 임플란트 의뢰",
   };
@@ -46,6 +48,32 @@ export function finalizeCustomImplantCaseUpdates(
     implantType: "",
     newSystemRequest,
   };
+}
+
+export type NewImplantAckDisplayLine = {
+  patient: string;
+  tooth: string;
+  spec: string;
+  raw: string;
+};
+
+export function parseNewImplantAckDisplayLine(
+  line: string,
+): NewImplantAckDisplayLine {
+  const raw = String(line || "").trim();
+  const parts = raw
+    .split(" · ")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length >= 3) {
+    return {
+      patient: parts[0] ?? "",
+      tooth: parts[1] ?? "",
+      spec: parts.slice(2).join(" · "),
+      raw,
+    };
+  }
+  return { patient: "", tooth: "", spec: raw, raw };
 }
 
 export function collectNewImplantAckLines(

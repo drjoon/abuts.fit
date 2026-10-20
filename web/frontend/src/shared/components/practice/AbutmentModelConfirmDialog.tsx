@@ -66,7 +66,11 @@ import {
   fetchCorrectedStlBlob,
   triggerBrowserFileDownload,
 } from "@/features/requests/utils/downloadCorrectedStl";
-import { NEW_IMPLANT_QUICK_PRESETS } from "@/shared/practice/newImplantQuickPresets";
+import {
+  NEW_IMPLANT_DEVELOPMENT_ENTRY_HINT_MESSAGES,
+  NEW_IMPLANT_DEVELOPMENT_REQUEST_MESSAGE,
+  NEW_IMPLANT_QUICK_PRESETS,
+} from "@/shared/practice/newImplantQuickPresets";
 
 export type AbutmentModelConfirmVariant = "new-request" | "lab-handoff";
 
@@ -317,7 +321,7 @@ export function AbutmentModelConfirmDialog({
               manufacturer,
               brand,
               family,
-              message: "랩아날로그와 기존 어벗 샘플을 요청드립니다",
+              message: NEW_IMPLANT_DEVELOPMENT_REQUEST_MESSAGE,
               free: true,
               tag: "신규 임플란트 의뢰",
             }
@@ -896,9 +900,14 @@ export function AbutmentModelConfirmDialog({
                                           </button>
                                         </TooltipTrigger>
                                         <TooltipContent className="max-w-[min(100vw-2rem,26rem)] text-xs leading-relaxed">
-                                          추가 개발을 위해 랩아날로그와 기존 어벗 샘플을 제공해주세요.
-                                          <br />
-                                          무료 크레딧을 충전해드리겠습니다.
+                                          {NEW_IMPLANT_DEVELOPMENT_ENTRY_HINT_MESSAGES.map(
+                                            (line) => (
+                                              <span key={line}>
+                                                {line}
+                                                <br />
+                                              </span>
+                                            ),
+                                          )}
                                         </TooltipContent>
                                       </Tooltip>
                                       </div>
