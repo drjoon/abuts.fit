@@ -21,7 +21,7 @@
  * - 백엔드: creation.from-draft.controller.js의 createRequestsFromDraft
  * - 참고: rules.legacy-full.md 섹션 4.3.2 "신규 의뢰 생성 엔드포인트 (SSOT)"
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   loadStashedUnsupportedCancelItems,
   stashUnsupportedCancelItems,
@@ -38,6 +38,10 @@ import {
   buildAttachmentListItems,
   getPrimaryFileKey,
 } from "../utils/patientGroups";
+import {
+  buildNewSystemRequestPayload,
+  collectNewImplantAckLines,
+} from "@/shared/practice/newImplantCaseInfos";
 
 const NEW_REQUEST_DRAFT_ID_STORAGE_KEY = "abutsfit:new-request-draft-id:v1";
 const API_BASE_URL =
@@ -128,6 +132,7 @@ export const useNewRequestSubmitV2 = ({
     }>
   >([]);
   const [unsupportedCancelBusy, setUnsupportedCancelBusy] = useState(false);
+  const [newImplantAckLines, setNewImplantAckLines] = useState<string[]>([]);
   useEffect(() => {
     const stashed = loadStashedUnsupportedCancelItems("new-request");
     if (stashed.length) setUnsupportedCancelItems(stashed);
@@ -348,6 +353,7 @@ export const useNewRequestSubmitV2 = ({
 
     const finishSuccessfulSubmit = async (options?: {
       deferNavigate?: boolean;
+      skipSuccessToast?: boolean;
     }) => {
       saveParseLogs().catch((err) => {
         console.warn("[useNewRequestSubmitV2] Failed to save parse logs:", err);
@@ -399,7 +405,9 @@ export const useNewRequestSubmitV2 = ({
       }
 
       dismiss();
-      toast({ title: "의뢰가 제출되었습니다" });
+      if (!options?.deferNavigate && !options?.skipSuccessToast) {
+        toast({ title: "의뢰가 제출되었습니다" });
+      }
       if (options?.deferNavigate) return;
       console.log("[NewRequestSubmit] navigate", {
         t: Date.now() - submitStart,
@@ -496,6 +504,10 @@ export const useNewRequestSubmitV2 = ({
           }
         }
       }
+      const pendingNewImplantAckLines = collectNewImplantAckLines(
+        filteredMap,
+        validFileKeys,
+      );
 
       const uploadFingerprint = buildUploadFingerprint(files);
       const canReusePreparedDraft =
@@ -589,17 +601,19 @@ export const useNewRequestSubmitV2 = ({
                 s3Key: temp.key,
               }));
 
+            const newSystemRequest = buildNewSystemRequestPayload(ci);
             return {
               clinicName: ci.clinicName,
               patientName: ci.patientName,
               tooth: ci.tooth,
-              implantManufacturer: ci.implantManufacturer,
-              implantBrand: ci.implantBrand,
-              implantFamily: ci.implantFamily,
-              implantType: ci.implantType,
-              newSystemRequest: ci.newSystemRequest?.requested
-                ? ci.newSystemRequest
-                : undefined,
+              implantManufacturer: newSystemRequest
+                ? undefined
+                : ci.implantManufacturer,
+              implantBrand: newSystemRequest ? undefined : ci.implantBrand,
+              implantFamily: newSystemRequest ? undefined : ci.implantFamily,
+              implantType: newSystemRequest ? undefined : ci.implantType,
+              implantInputMode: newSystemRequest ? "custom" : ci.implantInputMode,
+              newSystemRequest,
               maxDiameter: ci.maxDiameter,
               connectionDiameter: ci.connectionDiameter,
               totalLength: ci.totalLength,
@@ -896,6 +910,15 @@ export const useNewRequestSubmitV2 = ({
         return;
       }
 
+      if (pendingNewImplantAckLines.length > 0) {
+        setNewImplantAckLines(pendingNewImplantAckLines);
+        await finishSuccessfulSubmit({
+          deferNavigate: true,
+          skipSuccessToast: true,
+        });
+        return;
+      }
+
       await finishSuccessfulSubmit();
     } catch (err: any) {
       const rawMessage = err?.message || "";
@@ -936,6 +959,12 @@ export const useNewRequestSubmitV2 = ({
   ) => {
     await submitFromDraft(opts);
   };
+
+  const confirmNewImplantAck = useCallback(() => {
+    setNewImplantAckLines([]);
+    toast({ title: "의뢰가 제출되었습니다" });
+    navigate(`/dashboard`);
+  }, [navigate, toast]);
 
   const confirmUnsupportedCancel = async () => {
     if (!token || unsupportedCancelBusy || unsupportedCancelItems.length === 0) {
@@ -986,5 +1015,7 @@ export const useNewRequestSubmitV2 = ({
     unsupportedCancelItems,
     unsupportedCancelBusy,
     confirmUnsupportedCancel,
+    newImplantAckLines,
+    confirmNewImplantAck,
   };
 };

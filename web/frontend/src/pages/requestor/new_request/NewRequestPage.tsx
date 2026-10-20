@@ -46,6 +46,7 @@ import { clearLocalDraft } from "./utils/localDraftStorage";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { UnsupportedConnectionCancelDialog } from "@/shared/components/practice/UnsupportedConnectionCancelDialog";
+import { NewImplantDevelopmentAckDialog } from "@/shared/components/practice/NewImplantDevelopmentAckDialog";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
@@ -206,6 +207,8 @@ const NewRequestPageContent = () => {
     unsupportedCancelItems,
     unsupportedCancelBusy,
     confirmUnsupportedCancel,
+    newImplantAckLines,
+    confirmNewImplantAck,
     invalidateInFlightDuplicateCheck,
     caseInfos,
     setCaseInfos,
@@ -1685,6 +1688,13 @@ const NewRequestPageContent = () => {
           busy={Boolean(unsupportedCancelBusy)}
           onConfirm={() => {
             void confirmUnsupportedCancel?.();
+          }}
+        />
+        <NewImplantDevelopmentAckDialog
+          open={(newImplantAckLines || []).length > 0}
+          lines={newImplantAckLines || []}
+          onConfirm={() => {
+            confirmNewImplantAck?.();
           }}
         />
         <ConfirmDialog

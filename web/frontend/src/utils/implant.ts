@@ -7,6 +7,12 @@ export type ImplantDisplaySource = {
   implantBrand?: string | null;
   implantFamily?: string | null;
   implantType?: string | null;
+  newSystemRequest?: {
+    requested?: boolean;
+    manufacturer?: string | null;
+    brand?: string | null;
+    family?: string | null;
+  } | null;
 };
 
 function normalizeImplantPart(value?: string | null) {
@@ -27,6 +33,16 @@ function isKnownImplantFamily(value?: string | null) {
 }
 
 export function formatImplantDisplay(source?: ImplantDisplaySource | null) {
+  const nsr = source?.newSystemRequest;
+  if (nsr?.requested) {
+    const parts = [nsr.manufacturer, nsr.brand, nsr.family]
+      .map(normalizeImplantPart)
+      .filter(Boolean);
+    if (parts.length > 0) {
+      return parts.join(" / ");
+    }
+  }
+
   const manufacturer = normalizeImplantPart(source?.implantManufacturer);
   const rawBrand = normalizeImplantPart(source?.implantBrand);
   const rawFamily = normalizeImplantPart(source?.implantFamily);

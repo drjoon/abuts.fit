@@ -399,6 +399,23 @@ export function NewRequestPatientImplantFields({
   const displayedPatientName = caseInfos?.patientName || "";
 
   useEffect(() => {
+    if (
+      caseInfos?.implantInputMode === "custom" ||
+      caseInfos?.newSystemRequest?.requested === true
+    ) {
+      onImplantCatalogIssue?.(null);
+      return;
+    }
+    const nsr = caseInfos?.newSystemRequest;
+    if (
+      String(nsr?.manufacturer || "").trim() ||
+      String(nsr?.brand || "").trim() ||
+      String(nsr?.family || "").trim()
+    ) {
+      onImplantCatalogIssue?.(null);
+      return;
+    }
+
     const manufacturer = String(caseInfos?.implantManufacturer || "").trim();
     if (!manufacturer) {
       onImplantCatalogIssue?.(null);
@@ -490,6 +507,8 @@ export function NewRequestPatientImplantFields({
     setImplantFamily(familyFromCase);
     setImplantType(typeFromCase);
   }, [
+    caseInfos?.implantInputMode,
+    caseInfos?.newSystemRequest,
     caseInfos?.implantManufacturer,
     caseInfos?.implantBrand,
     caseInfos?.implantFamily,

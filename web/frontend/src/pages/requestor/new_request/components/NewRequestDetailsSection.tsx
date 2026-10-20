@@ -14,6 +14,10 @@ import {
   isLikelyCustomAbutDesignSize,
   isLikelyOralScanSize,
 } from "../utils/patientGroups";
+import {
+  finalizeCustomImplantCaseUpdates,
+  isCustomImplantCaseInfos,
+} from "@/shared/practice/newImplantCaseInfos";
 
 // change-log:
 // - 2026-10-18: 유지홈 라디오가 「없음」인데 저장값이 비면 없음으로 저장. 만료 토스트처럼 막지 않음.
@@ -610,12 +614,8 @@ export function NewRequestDetailsSection({
         if (!fileCaseInfos?.clinicName) missingFields.push("치과이름");
         if (!fileCaseInfos?.patientName) missingFields.push("환자이름");
         if (!fileCaseInfos?.tooth) missingFields.push("치아번호");
+        const customMode = isCustomImplantCaseInfos(fileCaseInfos);
         const nsr = fileCaseInfos?.newSystemRequest;
-        const customMode = Boolean(
-          String(nsr?.manufacturer || "").trim() ||
-            String(nsr?.brand || "").trim() ||
-            String(nsr?.family || "").trim(),
-        );
         if (customMode) {
           if (!String(nsr?.manufacturer || "").trim()) {
             missingFields.push("임플란트 제조사");
@@ -658,6 +658,30 @@ export function NewRequestDetailsSection({
           variant: "destructive",
         });
         return;
+      }
+
+      const persistKeys = group ? group.fileKeys : [fileKey];
+      if (customMode) {
+        const finalized = finalizeCustomImplantCaseUpdates(fileCaseInfos || {});
+        if (!finalized.newSystemRequest?.requested) {
+          toast({
+            title: "신규 임플란트 정보를 확인해주세요",
+            description:
+              "제조사·브랜드·Family를 모두 입력한 뒤 확인 & 다음을 눌러주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+        for (const key of persistKeys) {
+          updateCaseInfos(key, finalized);
+        }
+      } else {
+        for (const key of persistKeys) {
+          updateCaseInfos(key, {
+            implantInputMode: "catalog",
+            newSystemRequest: undefined,
+          });
+        }
       }
 
       const nextStatus: Record<string, boolean> = {

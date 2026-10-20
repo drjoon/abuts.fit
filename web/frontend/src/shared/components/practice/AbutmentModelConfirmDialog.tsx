@@ -66,6 +66,7 @@ import {
   fetchCorrectedStlBlob,
   triggerBrowserFileDownload,
 } from "@/features/requests/utils/downloadCorrectedStl";
+import { NEW_IMPLANT_QUICK_PRESETS } from "@/shared/practice/newImplantQuickPresets";
 
 export type AbutmentModelConfirmVariant = "new-request" | "lab-handoff";
 
@@ -261,12 +262,16 @@ export function AbutmentModelConfirmDialog({
     setNewSystemManufacturer("");
     setNewSystemBrand("");
     setNewSystemFamily("");
-    setDetailCaseInfos({ newSystemRequest: undefined });
+    setDetailCaseInfos({
+      implantInputMode: "catalog",
+      newSystemRequest: undefined,
+    });
   }, [setDetailCaseInfos]);
 
   const selectCustomMode = useCallback(() => {
     setImplantEntryMode("custom");
     setDetailCaseInfos({
+      implantInputMode: "custom",
       implantManufacturer: "",
       implantBrand: "",
       implantFamily: "",
@@ -305,6 +310,7 @@ export function AbutmentModelConfirmDialog({
               implantType: "",
             }
           : {}),
+        ...(engaged ? { implantInputMode: "custom" as const } : {}),
         newSystemRequest: engaged
           ? {
               requested: Boolean(manufacturer && brand && family),
@@ -355,7 +361,11 @@ export function AbutmentModelConfirmDialog({
         setNewSystemManufacturer("");
         setNewSystemBrand("");
         setNewSystemFamily("");
-        setDetailCaseInfos({ ...updates, newSystemRequest: undefined });
+        setDetailCaseInfos({
+          ...updates,
+          implantInputMode: "catalog",
+          newSystemRequest: undefined,
+        });
         return;
       }
       setDetailCaseInfos(updates);
@@ -424,7 +434,14 @@ export function AbutmentModelConfirmDialog({
         implantType: "",
       });
     }
-    setImplantEntryMode(hasCustom ? "custom" : "catalog");
+    const modeFromStore =
+      detailCaseInfos?.implantInputMode === "custom" ||
+      detailCaseInfos?.implantInputMode === "catalog"
+        ? detailCaseInfos.implantInputMode
+        : hasCustom
+          ? "custom"
+          : "catalog";
+    setImplantEntryMode(modeFromStore);
     // 파일 전환 시에만 저장된 신규 임플란트 입력을 되돌린다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, activePreviewIndex]);
@@ -559,16 +576,19 @@ export function AbutmentModelConfirmDialog({
         (detailCaseInfos?.implantFamily || implantFamily) &&
         (detailCaseInfos?.implantType || implantType),
     );
+    const implantReady =
+      implantEntryMode === "custom" ? customReady : catalogReady;
     return !(
       detailCaseInfos?.clinicName &&
       detailCaseInfos?.patientName &&
       detailCaseInfos?.tooth &&
-      (customReady || catalogReady) &&
+      implantReady &&
       retentionReady
     );
   }, [
     detailCaseInfos,
     implantBrand,
+    implantEntryMode,
     implantFamily,
     implantManufacturer,
     implantType,
@@ -887,6 +907,43 @@ export function AbutmentModelConfirmDialog({
                                           선택됨
                                         </span>
                                       ) : null}
+                                    </div>
+                                    <div
+                                      className={cn(
+                                        "flex flex-wrap gap-2",
+                                        implantEntryMode !== "custom" &&
+                                          "pointer-events-none",
+                                      )}
+                                    >
+                                      {NEW_IMPLANT_QUICK_PRESETS.map((preset) => {
+                                        const active =
+                                          newSystemManufacturer ===
+                                            preset.manufacturer &&
+                                          newSystemBrand === preset.brand &&
+                                          newSystemFamily === preset.family;
+                                        return (
+                                          <Button
+                                            key={preset.label}
+                                            type="button"
+                                            size="sm"
+                                            variant={active ? "default" : "outline"}
+                                            className="h-8 shrink-0"
+                                            disabled={confirming}
+                                            onPointerDown={(e) =>
+                                              e.stopPropagation()
+                                            }
+                                            onClick={() =>
+                                              commitCustomImplant({
+                                                manufacturer: preset.manufacturer,
+                                                brand: preset.brand,
+                                                family: preset.family,
+                                              })
+                                            }
+                                          >
+                                            {preset.label}
+                                          </Button>
+                                        );
+                                      })}
                                     </div>
                                     <div
                                       className={cn(

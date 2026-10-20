@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-10-21: 신규 커넥션 요청 — 건수 있을 때 warn(노란) 타일·목록 신규/미제공 색 구분.
 // - 2026-10-21: 신규 커넥션 요청 카드 — 클릭 시 의뢰자 연락처·커넥션·의뢰 내용.
 // - 2026-10-14: 거래+이용·매출 통합·알림 c6r3·하단 불완전|가공 c3·배송 c6 1열 스크롤.
 // - 2026-10-14: 하단 벤토 재배치(전송·가공·어벗 한 줄, 배송 c6r2)·그리드 gap 축소.
@@ -2611,20 +2612,47 @@ export const AdminDashboardPage = () => {
                 </div>
               </DashTile>
               <DashTile
-                className={DASH_SPAN.c3r2}
+                className={
+                  newConnectionRequestTotal > 0
+                    ? `${DASH_SPAN.c3r2} hover:bg-amber-50/90`
+                    : DASH_SPAN.c3r2
+                }
                 title="신규 커넥션 요청"
-                icon={<PhoneCall className="h-4 w-4 text-muted-foreground" />}
+                tone={newConnectionRequestTotal > 0 ? "warn" : "default"}
+                icon={
+                  <PhoneCall
+                    className={
+                      newConnectionRequestTotal > 0
+                        ? "h-4 w-4 text-amber-700"
+                        : "h-4 w-4 text-muted-foreground"
+                    }
+                  />
+                }
                 onClick={() => {
                   setNewConnectionRequestId(newConnectionRequestItems[0]?.id || null);
                   setNewConnectionRequestOpen(true);
                 }}
               >
                 <div className="flex h-full flex-col justify-end gap-1">
-                  <div className="text-2xl font-semibold text-slate-800">
+                  <div
+                    className={
+                      newConnectionRequestTotal > 0
+                        ? "text-2xl font-semibold text-amber-900"
+                        : "text-2xl font-semibold text-slate-800"
+                    }
+                  >
                     {newConnectionRequestTotal.toLocaleString()}건
                   </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    전화할 의뢰를 확인합니다.
+                  <p
+                    className={
+                      newConnectionRequestTotal > 0
+                        ? "text-[11px] font-medium text-amber-800"
+                        : "text-[11px] text-muted-foreground"
+                    }
+                  >
+                    {newConnectionRequestTotal > 0
+                      ? "전화·추가 개발 확인이 필요합니다."
+                      : "전화할 의뢰를 확인합니다."}
                   </p>
                 </div>
               </DashTile>
@@ -2827,10 +2855,14 @@ export const AdminDashboardPage = () => {
               ) : (
                 newConnectionRequestItems.map((item) => {
                   const selected = item.id === selectedNewConnectionRequest?.id;
+                  const isNewImplant = item.source === "new_implant";
                   const who = [item.clinicName, item.patientName, item.tooth]
                     .map((part) => String(part || "").trim())
                     .filter(Boolean)
                     .join(" · ");
+                  const listTone = isNewImplant
+                    ? "border-amber-300 bg-amber-50/90 hover:bg-amber-50"
+                    : "border-rose-300 bg-rose-50/90 hover:bg-rose-50";
                   return (
                     <li key={item.id}>
                       <button
@@ -2838,15 +2870,22 @@ export const AdminDashboardPage = () => {
                         onClick={() => setNewConnectionRequestId(item.id)}
                         className={`w-full rounded-lg border px-2.5 py-2 text-left ${
                           selected
-                            ? "border-primary-strong bg-primary-soft"
-                            : "border-slate-200 bg-white hover:bg-slate-50"
+                            ? isNewImplant
+                              ? "border-amber-500 bg-amber-100 ring-1 ring-amber-400/50"
+                              : "border-rose-500 bg-rose-100 ring-1 ring-rose-400/50"
+                            : listTone
                         }`}
                       >
                         <div className="truncate text-sm font-semibold text-slate-800">
                           {who || item.requestId || "의뢰"}
                         </div>
-                        <div className="truncate text-xs text-slate-500">
+                        <div
+                          className={`truncate text-xs ${
+                            isNewImplant ? "text-amber-900" : "text-rose-900"
+                          }`}
+                        >
                           {item.connectionLabel || "커넥션 없음"}
+                          {isNewImplant ? " · 신규 임플란트" : " · 미제공 커넥션"}
                         </div>
                       </button>
                     </li>
@@ -2855,7 +2894,13 @@ export const AdminDashboardPage = () => {
               )}
             </ul>
             {selectedNewConnectionRequest ? (
-              <div className="space-y-3 rounded-lg border border-slate-200 px-3 py-3 text-sm text-slate-700">
+              <div
+                className={`space-y-3 rounded-lg border px-3 py-3 text-sm text-slate-700 ${
+                  selectedNewConnectionRequest.source === "new_implant"
+                    ? "border-amber-300 bg-amber-50/50"
+                    : "border-rose-300 bg-rose-50/50"
+                }`}
+              >
                 <div>
                   <div className="text-xs text-slate-500">의뢰자</div>
                   <div className="font-semibold text-slate-900">

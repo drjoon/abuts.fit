@@ -783,8 +783,12 @@ export const useNewRequestPage = (
     onDefaultImplantChange: (fields) => {
       // Family/Type 기본값만 기록. Manufacturer/Brand는 이미 설정된 값 보존.
       // 신규 임플란트 직접 입력 중이면 프리셋을 다시 채우지 않는다.
+      if (currentCaseInfos?.implantInputMode === "custom") {
+        return;
+      }
       const nsr = currentCaseInfos?.newSystemRequest;
       if (
+        nsr?.requested === true ||
         String(nsr?.manufacturer || "").trim() ||
         String(nsr?.brand || "").trim() ||
         String(nsr?.family || "").trim()
@@ -1374,6 +1378,8 @@ export const useNewRequestPage = (
     unsupportedCancelItems,
     unsupportedCancelBusy,
     confirmUnsupportedCancel,
+    newImplantAckLines,
+    confirmNewImplantAck,
   } = useNewRequestSubmitV2({
     existingRequestId,
     draftId,
@@ -1560,5 +1566,7 @@ export const useNewRequestPage = (
     unsupportedCancelItems,
     unsupportedCancelBusy,
     confirmUnsupportedCancel,
+    newImplantAckLines,
+    confirmNewImplantAck,
   };
 };

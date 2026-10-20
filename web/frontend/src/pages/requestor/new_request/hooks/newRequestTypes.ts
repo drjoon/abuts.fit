@@ -83,6 +83,8 @@ export type CaseInfos = {
   designSoftware?: string;
   /** 의뢰건 아노다이징. 미설정 시 생성 단계에서 사업체 기본값(기본 ON)으로 보정 */
   anodizingEnabled?: boolean;
+  /** 카탈로그 4칸 vs 신규 임플란트 직접 입력 — XOR */
+  implantInputMode?: "catalog" | "custom";
   newSystemRequest?: {
     requested: boolean;
     manufacturer?: string;
