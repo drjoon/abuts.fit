@@ -96,9 +96,10 @@ namespace DentalAddin
                 CustomCycle();
 
                 // 순서:
-                // Front: Turn -> Rough -> Front Face -> Front_Finish
-                // Back:  Turn -> Rough -> Back_Finish
-                // Wide Split(safe split) ON: Back 대신 Middle(Turn/Rough/Finish) -> Back(Turn/Rough/Finish)
+                // Front: Turn -> Rough -> Front Face
+                // Back:  Turn -> Rough
+                // Wide Split(safe split) ON: Back 대신 Middle(Turn/Rough) -> Back(Turn/Rough). Finish에는 Middle 없음.
+                // Finish는 항상 Front_Finish → Back_Finish. Front_Finish는 Back_Finish 바로 앞.
                 NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-FRONT");
                 using (DentalLogger.Measure("OperationSeq.FRONT_TurnRough"))
                 {
@@ -114,13 +115,35 @@ namespace DentalAddin
                     FrontFaceMill();
                 }
 
-                // 요청 반영:
-                // Front_Finish는 Front Face와 Back_Turn(safe split: Middle_Turn) 사이에 생성한다.
-                // One Pass(ABUTS_FINISH_ONE_PASS=1): 아래 A/B FreeFormMill은 Finish 툴패스를 만들지 않는다.
-                // 마지막 Back_Finish(B2, safe split 없으면 B)가 Front 시작~BackPointX를 한 번에 깎는다.
+                // Finish는 Turn/Rough 뒤에만 둔다.
+                // One Pass(ABUTS_FINISH_ONE_PASS=1): Front_Finish는 만들지 않고 Back_Finish가 팁~BackPointX를 한 번에 깎는다.
+                // safe split이면 Back_Finish는 B2. 범위는 Middle 없이 finishline max_z~BackPointX.
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
                 try
                 {
+                    NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-BACK");
+                    using (DentalLogger.Measure("OperationSeq.BACK_TurnRough"))
+                    {
+                        ExecuteTwoPhaseTurning("BACK");
+                        NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.after-BACK_Turn");
+                        ExecuteTwoPhaseRough("BACK");
+                    }
+
+                    // Safe split(Wide Split): 위 BACK은 Middle_Turn/Middle_Rough.
+                    // Middle_Rough는 Xk+0.8까지 먼저 깎아 D1.2가 미황삭을 물지 않는다.
+                    // 부시쪽 목은 BACK2(Back_Turn/Back_Rough)에서 마지막에 깎는다. Finish Middle은 없다.
+                    bool safeSplitBack = TryResolveSafeSplitBackZoneX("OperationSeq", out _);
+                    if (safeSplitBack)
+                    {
+                        NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-BACK2");
+                        using (DentalLogger.Measure("OperationSeq.BACK2_TurnRough"))
+                        {
+                            ExecuteTwoPhaseTurning("BACK2");
+                            NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.after-BACK2_Turn");
+                            ExecuteTwoPhaseRough("BACK2");
+                        }
+                    }
+
                     NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-FINISH_FRONT");
                     Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "A_PHASE");
                     using (DentalLogger.Measure("OperationSeq.FINISH_FRONT"))
@@ -130,44 +153,13 @@ namespace DentalAddin
                         TryNormalizeCompositeFinishOrderAfterFreeForm();
                     }
 
-                    NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-BACK");
-                    using (DentalLogger.Measure("OperationSeq.BACK_TurnRough"))
-                    {
-                        ExecuteTwoPhaseTurning("BACK");
-                        NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.after-BACK_Turn");
-                        ExecuteTwoPhaseRough("BACK");
-                    }
-
                     NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-FINISH_BACK");
-                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "B_PHASE");
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", safeSplitBack ? "B2_PHASE" : "B_PHASE");
                     using (DentalLogger.Measure("OperationSeq.FINISH_BACK"))
                     {
                         ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
                         FreeFormMill();
                         TryNormalizeCompositeFinishOrderAfterFreeForm();
-                    }
-
-                    // Safe split(Wide Split 토글): 위 BACK 구간은 Middle_Turn/Middle_Rough/Middle_Finish.
-                    // Middle_Finish는 Xk에서 끝나고, Middle_Rough는 Xk+0.8까지 먼저 깎아 D1.2가 미황삭을 물지 않는다.
-                    // 부시쪽 목(커프~헥스 너머)은 여기 BACK2 구간(Back_Turn/Back_Rough/Back_Finish)에서 마지막에 깎는다.
-                    if (TryResolveSafeSplitBackZoneX("OperationSeq", out _))
-                    {
-                        NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-BACK2");
-                        using (DentalLogger.Measure("OperationSeq.BACK2_TurnRough"))
-                        {
-                            ExecuteTwoPhaseTurning("BACK2");
-                            NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.after-BACK2_Turn");
-                            ExecuteTwoPhaseRough("BACK2");
-                        }
-
-                        NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-FINISH_BACK2");
-                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "B2_PHASE");
-                        using (DentalLogger.Measure("OperationSeq.FINISH_BACK2"))
-                        {
-                            ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
-                            FreeFormMill();
-                            TryNormalizeCompositeFinishOrderAfterFreeForm();
-                        }
                     }
                 }
                 finally

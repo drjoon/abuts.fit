@@ -68,15 +68,15 @@
 - 기존 A/B 2분할 공정을 Front/Back 2-way로 고정한다.
   - Front: `Turn -> Rough -> Front Face -> Finish`
   - Back: `Turn -> Rough -> Finish`
-  - Wide Split(safe split) ON: Back 대신 Middle(`Turn -> Rough -> Finish`) → Back(`Turn -> Rough -> Finish`) (§4.3.0)
+  - Wide Split(safe split) ON: Back 대신 Middle(`Turn -> Rough`) → Back(`Turn -> Rough`). Finish는 Middle 없이 Front/Back만 (§4.3.0)
   - 구 `Splitline_2 > 5mm` Front/Middle 분할(`caseInfos.wideSplitEnabled`, `ABUTS_WIDE_SPLIT_ENABLE`)은 2026-09-29 제거.
-- Finish 정책: 항상 `Front_Finish` + `Back_Finish` 2단 (`All_Finish` 단일 패스 미사용)
+- Finish 정책: 항상 `Front_Finish` + `Back_Finish` 2단 (`Middle_Finish`·`All_Finish` 없음). `Front_Finish`는 `Back_Finish` 바로 앞. `Back_Finish` 스텝오버는 커넥션 → 포스트 팁 (`ReverseStepOverDirection`).
 
 ### 4.2 라벨명 SSOT
 
 - 모든 라벨은 `{구간}_{공정}` 형식으로 통일한다.
   - `Front_Turn`, `Front_Rough`, `Front_Face`, `Front_Finish`
-  - Wide Split ON: `Middle_Turn`, `Middle_Rough`, `Middle_Finish`
+  - Wide Split ON: `Middle_Turn`, `Middle_Rough` (Finish Middle 없음)
   - `Back_Turn`, `Back_Rough`, `Back_Finish`
 - 내부 토큰은 `FINISH_FRONT` / `FINISH_MIDDLE` / `FINISH_BACK`. 정규화는 레거시 `Finish_Front`/`Finish_Back` 표기도 인식한다.
 
@@ -87,14 +87,14 @@
 - 인접 툴패스:
   - Rough: **선행 끝 = 경계 + 0.8mm** (`GetRoughPastFinishSeamMm`, Finish seam 너머 3D 황삭), **후행 시작 = 경계 tip쪽(그림 왼쪽, X-) 공구 반경**
     - `GetRoughAdjacentOverlapMm()` = 활성 rough 반경 (D4→`2.0`, `ROUGH_20` D2→`1.0`)
-    - Front_Rough 끝 = Front_Finish 끝(`Splitline_2`) + 0.6, Middle_Rough 끝 = Middle_Finish 끝(`Xk`) + 0.6 (D1.2 볼 반경, 2026-10-13). Back_Rough 끝 = BackPointX(Finish와 일치 유지)
+    - Front_Rough 끝 = Front_Finish 끝(`Splitline_2`) + 0.6, Middle_Rough 끝 = `Xk` + 0.6 (D1.2 볼 반경, 2026-10-13). Back_Rough 끝 = BackPointX(Finish와 일치 유지)
     - 후행 Rough 시작 = 선행 Rough 끝 − 2.0 (`GetRoughAdjacentOverlapMm`)
     - D1.2 Finish는 경계에서 끝나므로 치은 쪽은 이미 황삭된 면만 깎는다
   - Finish (2026-10-20): **Front 끝 = finishline min_z**, **Back 시작 = finishline max_z**
     - Front_Finish 끝 X = `BackPointX - min_z` (커프쪽)
     - Back_Finish 시작 X = `FinishLineX` = `BackPointX - max_z` (팁쪽)
     - 마진 띠(max_z~min_z)는 양쪽이 겹친다. Splitline_2는 Rough/Turn 전용
-    - safe split: Middle 끝 = `Xk`, Back_Finish(B2) 시작 = `Xk − 0.8`
+    - safe split이어도 Finish는 `Xk`로 나누지 않는다. `Xk`는 Turn/Rough만.
     - `GetFinishAdjacentOverlapMm()` = `0.8`. StepIncrement와 별개.
     - StepIncrement SSOT: 백엔드 `retentionGroove` (`none`→`5axisComposite_Front.prc` StepIncrement 그대로, `deep`→`0.20`) via `ABUTS_RETENTION_GROOVE`
     - `ABUTS_COMPOSITE_STEP_INCREMENT_A` **미사용**. none/deep 미수신 시 NC 중단 + 프론트 토스트
@@ -103,13 +103,14 @@
 
 ### 4.3.0 Safe split — PreviewModal「Wide Split」(2026-09-30, 기본 ON)
 
-- 토글: `caseInfos.safeSplitEnabled` → request-meta → `ABUTS_SAFE_SPLIT_ENABLE`. 미수신=ON. `false`만 OFF.
+- Wide Split은 항상 ON. `caseInfos.safeSplitEnabled=false`여도 `ABUTS_SAFE_SPLIT_ENABLE=1`. Xk를 둘 수 없을 때만 단일 Back.
 - 목적: Back_Turn(헥스 너머 LowerY 연장)·Back_Rough가 부시쪽 목을 먼저 얇게 만들어 Finish 크로스가 떨리는(wobble) 것 방지.
-- 경계 `Xk = (BackPointX - FL min_z) + 0.2` (마진 띠는 Middle_Finish 한 번에, seam은 커프).
-- 순서: `Front_Turn → Front_Rough → Front_Face → Front_Finish → Middle_Turn → Middle_Rough → Middle_Finish → Back_Turn → Back_Rough → Back_Finish → Connection`
+- 경계 `Xk = (BackPointX - FL min_z) + 0.2` (Turn/Rough만. Finish seam은 피니시라인).
+- 순서: `Front_Turn → Front_Rough → Front_Face → Middle_Turn → Middle_Rough → Back_Turn → Back_Rough → Front_Finish → Back_Finish → Connection`
   - 내부 region 코드는 Middle=`BACK`, Back=`BACK2`(T05·레이어·경계 로직 공유). 표시명만 바뀐다.
-  - Middle_Finish 끝 `Xk`, Middle_Rough 끝 `Xk+0.6`, Middle_Turn 끝 = Rough 끝 + D4 반경 + 보정 (황삭 끝+D4 반경 2.0+칩 0.2)
-  - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX]`(경계 `RoughBoundryBack2`), Back_Finish `[Xk-0.8 ~ BackPointX]`(`B2_PHASE`)
+  - Middle_Rough 끝 `Xk+0.6`, Middle_Turn 끝 = Rough 끝 + D4 반경 + 보정 (황삭 끝+D4 반경 2.0+칩 0.2)
+  - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX]`(경계 `RoughBoundryBack2`)
+  - Back_Finish `[finishline max_z ~ BackPointX]`. 스텝오버는 커넥션에서 포스트 팁 쪽 (`ReverseStepOverDirection`)
 - Middle_Turn 끝(`Xk+3.0`)은 **클램프하지 않는다**. 줄이면 D4 러프가 원소재를 물고, Xk를 당기면 seam이 마진으로 들어간다.
 - 포기 조건(기존 단일 Back 유지): FL min_z 없음, `Xk < Splitline_2+1.5`, Middle_Turn 끝 > `BackPointX+1.5` (= 치은 파트 FL min_z < 1.7mm). 로그 `SafeSplit[...]`.
 - 원칙: Turn은 Rough 끝보다 D4 반경+칩(2.2) 이상 더 깎는다. 선행 3D 황삭은 Finish seam보다 0.8mm 더 깎아 D1.2가 미황삭을 물지 않게 한다.
@@ -125,7 +126,7 @@
   - `SharedFinishSplitX = finishLineTopX - 0.5` (tip 쪽 0.5mm, Z+0.5 ≡ X-0.5). 축에 수직인 한 평면이라 피니시라인 둘레 높낮이는 따라가지 않는다.
 - 인접 후행 시작:
   - `Back_Rough` 시작 = `Splitline_2 - roughRadius` (D4→2.0)
-  - `Finish_Back` / Middle 시작 = `SharedFinishSplitX - GetFinishAdjacentOverlapMm()` (`0.8`, tip 쪽)
+  - `Back_Finish` 시작 = finishline max_z X. finishline이 없을 때만 `SharedFinishSplitX - GetFinishAdjacentOverlapMm()` (`0.8`, tip 쪽)
     - StepIncrement: `TryResolveFinishFrontStepIncrementOverrideMm()` (`none`→`5axisComposite_Front.prc` 그대로, `deep`→0.20). 겹침과 별개.
     - `StlFileProcessor.RequireBackendRetentionGrooveOrThrow` — none/deep만 허용, 미수신 시 예외
     - 실패 보고: `NotifyBackendFailure` → `/bg/register-file` status=failed → `request:async-action-failed` 토스트

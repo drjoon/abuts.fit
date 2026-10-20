@@ -332,10 +332,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         _backendCompositeStepGingivaOverrideMm =
                             TryNormalizeCompositeStepOverrideMm(
                                 requestMeta.compositeStepIncrementGingivaOverrideMm);
-                        bool safeSplitEnabled = requestMeta.safeSplitEnabled ?? true;
-                        Environment.SetEnvironmentVariable(
-                            "ABUTS_SAFE_SPLIT_ENABLE",
-                            safeSplitEnabled ? "1" : "0");
+                        bool safeSplitEnabled = true;
+                        if (requestMeta.safeSplitEnabled == false)
+                        {
+                            AppLogger.Log("StlFileProcessor: safeSplitEnabled=false 무시, Wide Split 항상 ON");
+                        }
+                        Environment.SetEnvironmentVariable("ABUTS_SAFE_SPLIT_ENABLE", "1");
                         bool onePassRequested = requestMeta.onePassEnabled == true;
                         double onePassPostMm = _backendCompositeStepPostOverrideMm
                             ?? (string.Equals(_backendRetentionGroove, "deep", StringComparison.OrdinalIgnoreCase) ? 0.2 : 0.05);

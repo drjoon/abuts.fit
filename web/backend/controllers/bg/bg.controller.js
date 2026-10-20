@@ -2131,7 +2131,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
             typeof ci.compositeStepIncrementGingivaOverrideMm === "number"
               ? ci.compositeStepIncrementGingivaOverrideMm
               : null,
-          safeSplitEnabled: ci.safeSplitEnabled !== false,
+          safeSplitEnabled: true,
           // 체크여도 포스트·치은 스텝이 다르면 OFF. Esprit는 2–3단 Finish.
           onePassEnabled: resolveOnePassEnabled(ci),
           lotNumber: lotValue,
