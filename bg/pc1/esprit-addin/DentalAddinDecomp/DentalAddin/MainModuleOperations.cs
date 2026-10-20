@@ -117,7 +117,7 @@ namespace DentalAddin
 
                 // Finish는 Turn/Rough 뒤에만 둔다.
                 // One Pass(ABUTS_FINISH_ONE_PASS=1): Front_Finish는 만들지 않고 Back_Finish가 팁~BackPointX를 한 번에 깎는다.
-                // safe split이면 Back_Finish는 B2. 범위는 Middle 없이 finishline max_z+0.5~BackPointX.
+                // safe split이면 Back_Finish는 B2. none은 max_z−0.1(팁), deep은 max_z+0.5−1피치 ~ BackPointX.
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
                 try
                 {
