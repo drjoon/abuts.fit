@@ -70,6 +70,9 @@ const TAPER_FIT_TOL_MM = 0.008;
 const TAPER_ROUND_TOL_MM = 0.012;
 const TAPER_MATCH_BELOW_MM = 0.05;
 const TAPER_MATCH_ABOVE_MM = 0.08;
+/** 원뿔 이탈: 72개 bin 중 이 개수 이상이 허용치(최소 3µm)를 넘으면 벗어난 것으로 본다. */
+const CONE_DEPART_MIN_BINS = 2;
+const CONE_DEPART_MIN_TOL_MM = 0.003;
 const ALT_SPEC_DIAMETER_TOL_MM = 0.02;
 
 const MIN_BAND_MM = 0.15;
@@ -470,7 +473,37 @@ export function measureConnectionTaper(probe) {
       miss = 0;
     } else if (++miss > 2) break;
   }
-  return { r0, slope: taperSlope, originDiameter: 2 * r0, coneAt, measuredTopZ: top };
+  return { r0, slope: taperSlope, originDiameter: 2 * r0, coneAt, measuredTopZ: top, departZ: coneDepartZ(probe, coneAt, top) };
+}
+
+/**
+ * 원뿔에서 실제로 벗어나기 시작하는 높이. measuredTopZ는 둘레 80%가 ±12µm 안이면 원뿔로 보므로,
+ * 일부 열이 이미 벌어진 뒤에야 끝난다. 그 사이를 원본으로 두고 이음을 11°로 다시 출발시키면 볼록한 어깨가 된다.
+ * 허용치는 원점 아래 원뿔 면의 메시 오차에서 정한다.
+ */
+function coneDepartZ(probe, coneAt, top) {
+  const maxDev = (z) => {
+    const devs = Array.from(probe.bins(z, MEASURE_BINS))
+      .filter(Number.isFinite)
+      .map((r) => Math.abs(r - coneAt(z)))
+      .sort((a, b) => b - a);
+    return devs.length >= CONE_DEPART_MIN_BINS ? devs[CONE_DEPART_MIN_BINS - 1] : NaN;
+  };
+  let noise = 0;
+  for (let z = -0.3; z <= -0.049; z += 0.01) {
+    const d = maxDev(z);
+    if (Number.isFinite(d)) noise = Math.max(noise, d);
+  }
+  const tol = Math.max(CONE_DEPART_MIN_TOL_MM, 1.5 * noise + 0.001);
+  let last = 0;
+  let miss = 0;
+  for (let z = 0.01; z <= top + 1e-9; z += 0.01) {
+    if (maxDev(z) <= tol) {
+      last = z;
+      miss = 0;
+    } else if (++miss > 1) break;
+  }
+  return Math.max(0, last - 0.01);
 }
 
 /**
@@ -2153,7 +2186,9 @@ function setup(buffer, { spec, specKey }) {
   try {
     if (!taper) fail("manual-review", "원점 아래 11° 커넥션 테이퍼를 찾지 못했습니다.");
     const top = resolveConnectionTop(taper, spec, specKey);
-    return { mesh, probe, triCount, taper, ...top };
+    // 스펙 Z_a보다 원뿔이 먼저 벌어지면 벌어지기 전에서 잇는다. 그 사이 원본 커프를 남기면 이음이 11°로 다시 출발해 어깨가 진다.
+    const zA = taper.departZ > 0 ? Math.min(top.zA, taper.departZ) : top.zA;
+    return { mesh, probe, triCount, taper, ...top, zA };
   } catch (error) {
     // 기공소가 11° 원뿔을 스펙보다 짧게 끝내고 수직 구간(fill_steps 포함)을 둔 설계: 첫 계단 바로 아래에서 잇는다.
     const stepTaper = error instanceof CuffBlendError ? measureConnectionStepTop(probe) : null;

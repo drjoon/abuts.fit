@@ -190,6 +190,7 @@
 - auto: `registerProcessedFile`(2-filled 성공)에서 DB 갱신·소켓 **전에** `applyAutoCuffBlendSafely`로 보정하고 같은 S3 키에 덮어쓴다(프론트가 보정 전 STL을 캐시하지 않게). worker_threads, 건당 0.1~0.2초. 실패해도 등록은 계속된다. 끄기: `CUFF_BLEND_AUTO_DISABLED=true`.
   - 단차가 끝나고 곡률 |r''|≤4/mm가 되는 가장 낮은 Z_b까지 5차 Hermite(값·기울기·곡률)로 잇는다.
 - 커넥션↔커프 경계: 이음 베지어의 첫 두 제어점 간격을 같게 둔다(`BEZIER_DIP = 1`). 출발 곡률이 0이라 원뿔에 G2로 붙고 위로 갈수록 벌어지기만 한다. 둘째 간격을 줄이면 원뿔 끝에서 안으로 꺾였다가 다시 벌어져 경계가 볼록한 어깨로 보인다.
+- Z_a는 원뿔이 실제로 벗어나기 시작하는 높이(`departZ`)를 넘지 않는다. 72개 bin 중 2개 이상이 원뿔에서 허용치(원점 아래 메시 오차 기준, 최소 3µm)를 넘는 첫 높이 −0.01mm다. 스펙·`measuredTopZ`(둘레 80% ±12µm)만 쓰면 일부 열이 이미 벌어진 원본 커프가 Z_a 아래에 남고, 그 위에서 곡선이 11°로 다시 출발해 볼록한 어깨가 된다.
 - Re(재디자인): 70°보다 누운(접시형) 커프가 있을 때만 피니시라인-0.2mm ~ Z_a를 5차 Hermite(아래 원뿔 G2, 위는 기공소 곡면 기울기·곡률, 70° 넘으면 70°로)로 바꾼다. 결과도 70°보다 눕지 않아야 한다. 기공소 디자인 변경이라 자동 적용하지 않는다.
   - 제조사: `POST /api/requests/by-request/:requestId/stl-file/redesign-cuff`(프리뷰 Re).
   - 의뢰자: 2-filled 등록 응답 뒤 `proposeCuffRedesignForRequest`가 준비 단계·의뢰자 업로드 커스텀어벗만 분석해 `caseInfos.cuffProposal`(가장 누운 방향 옆모습 곡선 before/after)을 남기고 `request:cuff-proposal-updated`로 알린다. 수락 `POST /:id/cuff-proposal/accept`(준비만, filled 재디자인 + 기존 NC $unset), 거절 `.../decline`. 의뢰자 프리뷰는 수락 뒤 `GET /:id/filled-file-url`. 새 filled 등록 시 이전 제안은 $unset, 제조사 Re가 먼저면 `applied-by-manufacturer`.

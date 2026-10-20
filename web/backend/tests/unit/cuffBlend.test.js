@@ -62,6 +62,19 @@ function steppedAbutment() {
   ]);
 }
 
+/** 원뿔이 스펙 Z_a(0.2)보다 먼저(0.15) 20°로 서서히 벌어지는 커프. 12µm 허용치로는 0.2 넘어서까지 원뿔로 보인다. */
+function earlyFlareAbutment() {
+  const flare = Math.tan((20 * Math.PI) / 180);
+  return revolve([
+    ...coneRows(-1.2, 0.15),
+    ...[0.2, 0.25, 0.3].map((z) => [cone(0.15) + flare * (z - 0.15), z]),
+    [2.0, 1.2],
+    [2.3, 2.5],
+    [2.3, 3.0],
+    [2.1, 5.0],
+  ]);
+}
+
 /** 마진 바로 아래가 거의 90°(약 86°)로 꺾여 나가는 커프. */
 function steepMarginShelfAbutment() {
   return revolve([
@@ -200,6 +213,21 @@ describe("blendCuffJunction", () => {
     expect(untouchedOutside(input, res.buffer, res.detail.zA, 3.001)).toBe(true);
     const { attributes } = parseStl(res.buffer);
     expect(attributes.some((a) => a === CUFF_BLEND_PATCH_ATTRIBUTE)).toBe(true);
+  });
+
+  it("starts the blend where the cone actually departs so the side profile rises from 11° without a shoulder", () => {
+    const input = earlyFlareAbutment();
+    const res = blendCuffJunction(input, { ...osstem, specKey: osstem.key, finishLine: ringFinishLine(2.3, 3.0) });
+    expect(res.ok).toBe(true);
+    expect(res.detail.zA).toBeLessThanOrEqual(0.15);
+    const probe = _prepare(res.buffer).probe;
+    const step = 0.02;
+    const degs = [];
+    for (let z = 0.1; z <= 0.6; z += step) {
+      degs.push((Math.atan((probe.rayRadius(0.1, z + step) - probe.rayRadius(0.1, z)) / step) * 180) / Math.PI);
+    }
+    expect(degs[0]).toBeCloseTo(11, 0);
+    for (let i = 1; i < degs.length; i += 1) expect(degs[i]).toBeGreaterThan(degs[i - 1] - 0.3);
   });
 
   it("keeps a concave blend when the finish line is above 1mm even on a steep shelf", () => {
