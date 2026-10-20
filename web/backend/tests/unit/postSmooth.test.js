@@ -1,4 +1,5 @@
 import { writeBinaryStl } from "../../utils/screwHoleFill.js";
+import { findFinishCrease, finishLineZByAngle, prepareCuffMesh } from "../../services/abutmentStl/cuffBlend.js";
 import { POST_SMOOTH_PATCH_ATTRIBUTE, smoothPostAboveFinishLine } from "../../services/abutmentStl/postSmooth.js";
 
 const SEGMENTS = 96;
@@ -171,5 +172,25 @@ describe("smoothPostAboveFinishLine", () => {
     const before = away(readTriangles(ridged).verts);
     const after = away(readTriangles(out.buffer).verts);
     expect(after).toBeLessThan(before * 0.5);
+  });
+
+  it("still smooths when one vertex hangs off the margin crease", () => {
+    const { verts } = readTriangles(input);
+    const positions = [];
+    for (const v of verts) positions.push(...v);
+    const A = [MARGIN.r, 0, MARGIN.z];
+    const V = [MARGIN.r - 0.02, 0.015, MARGIN.z + 0.012];
+    const P = [MARGIN.r, 0.4, MARGIN.z];
+    const Q = [MARGIN.r, -0.4, MARGIN.z];
+    positions.push(...A, ...V, ...P, ...A, ...V, ...Q);
+    const spur = writeBinaryStl({
+      positions: Float32Array.from(positions),
+      attributes: new Uint16Array(positions.length / 9),
+    });
+    const crease = findFinishCrease(prepareCuffMesh(spur).mesh, finishLineZByAngle(finishLine));
+    expect(crease?.loop.length).toBe(SEGMENTS);
+    const out = smoothPostAboveFinishLine(spur, { finishLine });
+    expect(out.status).toBe("applied");
+    expect(out.detail.fixedFinishVertices).toBe(SEGMENTS);
   });
 });

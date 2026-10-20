@@ -2430,6 +2430,7 @@ function finishLineZByAngle(finishLine) {
 /**
  * 피니시라인 점 근처에서 메시의 실제 마진 모서리(날카로운 모서리 한 바퀴)를 찾는다.
  * 피니시라인 점을 각도로 선형 보간한 곡선은 실제 모서리와 수십 µm 어긋나므로, 이음 위 끝은 이 모서리에 붙인다.
+ * 고리에 꼭짓점 하나가 더 붙어 있으면(차수 1) 그 가지만 떼고 닫힌 고리는 쓴다.
  * @returns {{ loop: number[], edges: Set<string>, zOf: (theta: number) => number, meanOffsetMm: number } | null}
  */
 function creaseRayIntersector(loop, verts) {
@@ -2498,6 +2499,21 @@ function findFinishCrease(mesh, flZ) {
     if (!adj.has(b)) adj.set(b, []);
     adj.get(a).push(b);
     adj.get(b).push(a);
+  }
+  // 닫힌 고리에 붙은 짧은 가지(끝점) 때문에 모서리 전체를 버리지 않는다.
+  const pending = [];
+  for (const [v, ns] of adj) if (ns.length < 2) pending.push(v);
+  while (pending.length) {
+    const v = pending.pop();
+    const ns = adj.get(v);
+    if (!ns || ns.length >= 2) continue;
+    adj.delete(v);
+    for (const w of ns) {
+      const next = (adj.get(w) || []).filter((x) => x !== v);
+      if (next.length) adj.set(w, next);
+      else adj.delete(w);
+      if (next.length < 2) pending.push(w);
+    }
   }
   let best = null;
   const seen = new Set();
