@@ -693,8 +693,11 @@ const HEIGHT_SMOOTH_OVERSHOOT_MM = 0.005;
 const MEASURE_STRIDE = 4;
 /** 끝 기울기를 2차 호(2d − m0)보다 이만큼 더 세워 늦게 벌어지게(더 오목하게) 한다. */
 const END_SLOPE_BOOST = 1.5;
-/** 둘째 제어점 간격 / 첫째 간격(작을수록 출발 후 더 빨리 수직에 가까워진다). */
-const BEZIER_DIP = 0.05;
+/**
+ * 둘째 제어점 간격 / 첫째 간격. 1이면 출발 곡률이 0이라 커넥션 원뿔에 G2로 붙는다.
+ * 1보다 작으면 원뿔 끝에서 곡선이 안으로 꺾였다가 다시 벌어져 커넥션↔커프 경계가 볼록한 어깨로 보인다.
+ */
+const BEZIER_DIP = 1;
 const LONG_BAND_MM = 2;
 /** 띠 면 평균: 반폭(약 ±30°)과 위쪽 보존 지수(t^p). */
 const BAND_SMOOTH_HALF_COLUMNS = columnsForDeg(30);
