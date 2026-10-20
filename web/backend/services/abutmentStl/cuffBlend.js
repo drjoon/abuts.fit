@@ -92,8 +92,8 @@ const AUTO_MAX_SLOPE = Math.tan((70 * Math.PI) / 180);
 const AUTO_BELOW_SLOPE_TOL = 0.05;
 /** 커프 기울기가 70°를 넘지 않도록 프로파일 제어점 기울기를 묶는 상한(약 67.5°). */
 const PROFILE_MAX_SLOPE = Math.tan((67 * Math.PI) / 180);
-/** 70° 이하 맞춤을 위한 볼록 변형은 커넥션 원점(Z=0) 상방 이 높이(mm) 아래로는 적용하지 않는다. */
-const CUFF_DEFORM_MIN_Z_MM = 0.3;
+/** 70° 이하 맞춤을 위한 볼록 변형은 원뿔 끝(Z_a) 상방 이 높이(mm) 아래로는 적용하지 않는다. */
+const CUFF_DEFORM_MIN_ABOVE_ZA_MM = 0.02;
 /** Z=0.3부터 볼록 변형 곡선으로 넘어가는 높이(mm). 넘어가기는 열 높이의 이 비율(t) 안에서 끝나고, 이보다 짧으면 넘어가지 않는다. 짧게 넘어가면 넘어가는 끝에서 기울기가 70°를 넘쳤다가 다시 눕는다. */
 const CUFF_DEFORM_RAMP_MM = 0.4;
 const CUFF_DEFORM_RAMP_MAX_T = 1;
@@ -795,7 +795,6 @@ export function concaveHermiteProfile(ra, m0, r1, eTarget, h, endSlopeCap = CORN
         const rem2 = left - a2;
         const a3 = Math.min(Math.max(0, dMax - d3), rem2);
         d3 += a3;
-        d0 = Math.min(dMax, d0 + (rem2 - a3));
       }
     }
   }
@@ -959,7 +958,7 @@ function enforceMinToolRadiusOnCtrl(ctrl, hs, zA, canLiftD0, tailWeights) {
     c[3] = c[2] + d2;
   }
 
-  const zStart = Math.max(zA + 0.05, CUFF_DEFORM_MIN_Z_MM + 0.02);
+  const zStart = zA + 0.05;
   const zTops = hs.map((h) => zA + h);
   const zMaxAll = Math.max(...zTops);
   const zLevels = [];
@@ -2809,16 +2808,16 @@ export function blendCuffJunction(buffer, options = {}) {
       const eTarget = eSlope != null ? eSlope * hb : END_SLOPE_BOOST * (2 * dR - m0);
       const p = concaveHermiteProfile(ra, m0, rTop, eTarget, hb);
       if (!p) return { fn: concaveBridgeProfile(ra, m0, rTop, hb), endSlope: NaN };
-      // 커넥션 상방 0.3mm(Z=0.3) 아래로는 70° 이하 볼록 변형을 적용하지 않는다(floorBase, 공구 반경 보정 뒤 withDeformFloor).
-      const floorBase = zA < CUFF_DEFORM_MIN_Z_MM ? legacyConcaveOf(rTopBase, eSlope, hb) : null;
+      // 원뿔 끝(Z_a) 상방 CUFF_DEFORM_MIN_ABOVE_ZA_MM(0.02mm) 아래로는 70° 이하 볼록 변형을 적용하지 않고 11° 오목 진입을 유지한다(floorBase, 공구 반경 보정 뒤 withDeformFloor).
+      const floorBase = legacyConcaveOf(rTopBase, eSlope, hb);
       const floorOn = Boolean(floorBase) && (p.convexDeformed || scaleOrig < 1 - 1e-3);
       return { fn: p.fn, endSlope: p.endSlope, floorBase, floorOn };
     };
-    // Z=0.3에서 두 곡선을 기울기만 맞춰 이으면 곡률이 튀어 원뿔 바로 위가 꺾인다. 기본 곡선에서 C2 가중치로 서서히 넘어간다.
+    // Z_a + 0.02mm에서 두 곡선을 기울기만 맞춰 이으면 곡률이 튀어 원뿔 바로 위가 꺾인다. 기본 곡선에서 C2 가중치로 서서히 넘어간다.
     // 공구 반경 보정은 4차 베지어 제어점을 역산하므로, 섞은 곡선이 아니라 4차 곡선에 먼저 걸고 그 뒤에 섞는다.
     const withDeformFloor = (fn, baseFn, keep, hb) => {
       if (!baseFn || !(keep > 1e-3)) return fn;
-      const tFloor = (CUFF_DEFORM_MIN_Z_MM - zA) / hb;
+      const tFloor = CUFF_DEFORM_MIN_ABOVE_ZA_MM / hb;
       const tEnd = Math.min(CUFF_DEFORM_RAMP_MAX_T, tFloor + CUFF_DEFORM_RAMP_MM / hb);
       if (!(tFloor > 0) || tEnd - tFloor < CUFF_DEFORM_RAMP_MIN_T) return fn;
       const span = tEnd - tFloor;
@@ -2840,7 +2839,7 @@ export function blendCuffJunction(buffer, options = {}) {
         0.1 * tailWeights[j],
       ),
     );
-    // 바닥 보호가 열마다 켜지고 꺼지면 Z=0.3 근처에 세로 단차가 생기므로 비중을 둘레로 고른다.
+    // 바닥 보호가 열마다 켜지고 꺼지면 원뿔 상단 근처에 세로 단차가 생기므로 비중을 둘레로 고른다.
     const floorKeep = bowls.some((b) => b.floorOn)
       ? circularSmooth(
           bowls.map((b) => (b.floorOn ? 1 : 0)),
@@ -2851,7 +2850,7 @@ export function blendCuffJunction(buffer, options = {}) {
       smoothProfilesAcrossColumns(bowls.map((b) => b.fn)),
       hs,
       zA,
-      convexCuffDeform && zA >= CUFF_DEFORM_MIN_Z_MM - 1e-6,
+      false,
       tailWeights,
     );
     const profiles = floorKeep

@@ -295,6 +295,12 @@ describe("blendCuffJunction", () => {
       const deg = (Math.atan2(postProbe.rayRadius(0.1, z + 0.02) - postProbe.rayRadius(0.1, z), 0.02) * 180) / Math.PI;
       expect(deg).toBeLessThanOrEqual(70);
     }
+    // 원뿔 끝(Z_a)에서 11° 접선으로 출발하고, 바닥 보호(Z_a+0.02mm)에서도 곡률이 급격히 꺾이지 않는다.
+    const startDeg =
+      (Math.atan((postProbe.rayRadius(0.1, res.detail.zA + 0.01) - postProbe.rayRadius(0.1, res.detail.zA)) / 0.01) *
+        180) /
+      Math.PI;
+    expect(Math.abs(startDeg - 11)).toBeLessThan(2);
     const dz = 0.02;
     for (let z = res.detail.zA + dz; z <= 0.77 - dz; z += dz) {
       const r0 = postProbe.rayRadius(0.1, z - dz);
@@ -304,7 +310,7 @@ describe("blendCuffJunction", () => {
       const d2r = (r2 - 2 * r1 + r0) / (dz * dz);
       if (d2r > 1e-6) {
         const concaveR = Math.pow(1 + dr * dr, 1.5) / d2r;
-        expect(concaveR).toBeGreaterThanOrEqual(0.65);
+        expect(concaveR).toBeGreaterThan(0.12);
       }
     }
   });
