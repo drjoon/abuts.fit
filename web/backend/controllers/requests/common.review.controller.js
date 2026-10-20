@@ -1271,6 +1271,8 @@ export async function updateReviewStatusByStage(req, res) {
     let camRunQueueId = null;
     let camRunAlreadyQueued = false;
     let camRunTriggerErrorMessage = null;
+    /** 트랜잭션 밖에서 placeRequestAtPolicyQueuePosition — 동일 장비 큐 전체 갱신이 txn 안에 있으면 write conflict 재시도 루프 */
+    let pendingPolicyQueuePlacement = null;
 
     await session.withTransaction(async () => {
       const request = await Request.findById(id)
@@ -2022,19 +2024,17 @@ export async function updateReviewStatusByStage(req, res) {
           });
 
           request.productionSchedule.assignedMachine = selected.machineId;
-          const policyQueuePosition = await placeRequestAtPolicyQueuePosition({
+          pendingPolicyQueuePlacement = {
             machineId: selected.machineId,
             requestMongoId: request._id,
             anodizingEnabled: request?.caseInfos?.anodizingEnabled,
             shippingMode: resolveEffectiveShippingMode(request),
-            RequestModel: Request,
-            session,
-          });
+          };
           request.productionSchedule.queuePosition =
-            Number.isFinite(Number(policyQueuePosition)) &&
-            Number(policyQueuePosition) > 0
-              ? Number(policyQueuePosition)
-              : selected.queuePosition;
+            Number.isFinite(Number(selected.queuePosition)) &&
+            Number(selected.queuePosition) > 0
+              ? Number(selected.queuePosition)
+              : 1;
           request.assignedMachine = selected.machineId;
           if (selected.diameterGroup) {
             request.productionSchedule.diameterGroup = selected.diameterGroup;
@@ -2132,6 +2132,44 @@ export async function updateReviewStatusByStage(req, res) {
         console.warn("[REVIEW] dummy queue renumber failed", {
           machineId: releasedDummyMachineId,
           message: err?.message || String(err),
+        });
+      }
+    }
+
+    if (pendingPolicyQueuePlacement && resultRequest?._id) {
+      try {
+        const policyQueuePosition = await placeRequestAtPolicyQueuePosition({
+          machineId: pendingPolicyQueuePlacement.machineId,
+          requestMongoId: pendingPolicyQueuePlacement.requestMongoId,
+          anodizingEnabled: pendingPolicyQueuePlacement.anodizingEnabled,
+          shippingMode: pendingPolicyQueuePlacement.shippingMode,
+          RequestModel: Request,
+        });
+        const finalPos =
+          Number.isFinite(Number(policyQueuePosition)) &&
+          Number(policyQueuePosition) > 0
+            ? Number(policyQueuePosition)
+            : null;
+        if (finalPos != null) {
+          const currentPos = Number(
+            resultRequest?.productionSchedule?.queuePosition,
+          );
+          if (!Number.isFinite(currentPos) || currentPos !== finalPos) {
+            await Request.updateOne(
+              { _id: resultRequest._id },
+              { $set: { "productionSchedule.queuePosition": finalPos } },
+            );
+            resultRequest.productionSchedule =
+              resultRequest.productionSchedule || {};
+            resultRequest.productionSchedule.queuePosition = finalPos;
+          }
+        }
+      } catch (queueErr) {
+        console.error("[REVIEW] deferred policy queue placement failed", {
+          requestId: resultRequest?.requestId || null,
+          requestMongoId: String(resultRequest?._id || ""),
+          machineId: pendingPolicyQueuePlacement?.machineId || null,
+          message: queueErr?.message || String(queueErr || ""),
         });
       }
     }
