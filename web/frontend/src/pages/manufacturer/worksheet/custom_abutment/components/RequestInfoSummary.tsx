@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-10-17: 의뢰카드 임플란트 줄에 Finish 포스트/치은 스텝(mm) read-only 표시.
+// - 2026-10-20: 의뢰카드·요약에서 Finish 포스트/치은 스텝(mm) 표시 제거.
 // - 2026-08-29: MetaRow를 인라인 텍스트 흐름으로 바꿔 flex 항목 경계에서 강제 줄바꿈되지 않게 함.
 // - 2026-08-29: 환자·임플란트 섹션을 한 MetaRow로 묶어 가로폭 내에서 자연 줄바꿈.
 // - 2026-08-29: 주문일시 옆에 출고일시(shippedAt) 표시. 없으면 출고예정일(estimatedShipYmd) 유지.
@@ -31,12 +31,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { formatKstDateTimeToKo } from "@/shared/date/kst";
-import {
-  compositeStepTriggerLabel,
-  overrideMmToDraft,
-  resolveCompositeGingivaStepMm,
-  resolveCompositePostStepMm,
-} from "../utils/compositeStepIncrement";
 
 /** lovable-tagger가 Fragment에 data-lov-id를 붙여 경고가 나므로 DOM 노드로 감싼다. */
 function InlineGroup({
@@ -62,11 +56,6 @@ export type RequestInfoSummaryProps = {
   maxLength?: number | null;
   implantParts?: Array<string | null | undefined>;
   retentionGrooveLabel?: string | null;
-  /** Finish composite step — 카드 등 read-only 표시 */
-  showCompositeStepLabels?: boolean;
-  retentionGroove?: "none" | "shallow" | "deep" | null;
-  compositeStepIncrementPostOverrideMm?: number | null;
-  compositeStepIncrementGingivaOverrideMm?: number | null;
   productionMetaItems?: string[];
   /** STL 오버레이에 동일 치수가 있을 때 요약에서 생략 */
   omitGeometryMetrics?: boolean;
@@ -203,10 +192,6 @@ export function RequestInfoSummary({
   maxLength,
   implantParts,
   retentionGrooveLabel,
-  showCompositeStepLabels = false,
-  retentionGroove,
-  compositeStepIncrementPostOverrideMm,
-  compositeStepIncrementGingivaOverrideMm,
   productionMetaItems,
   omitGeometryMetrics = false,
   layout = "stack",
@@ -234,29 +219,6 @@ export function RequestInfoSummary({
     .join(" / ");
   const implantLine = joinParts(implantParts || []);
   const retention = String(retentionGrooveLabel || "").trim();
-  const retentionGrooveRaw =
-    retentionGroove === "none" ||
-    retentionGroove === "shallow" ||
-    retentionGroove === "deep"
-      ? retentionGroove
-      : undefined;
-  const compositePostStepLabel = showCompositeStepLabels
-    ? compositeStepTriggerLabel(
-        "포스트",
-        overrideMmToDraft(compositeStepIncrementPostOverrideMm),
-        resolveCompositePostStepMm(
-          retentionGrooveRaw,
-          compositeStepIncrementPostOverrideMm,
-        ),
-      )
-    : "";
-  const compositeGingivaStepLabel = showCompositeStepLabels
-    ? compositeStepTriggerLabel(
-        "치은",
-        overrideMmToDraft(compositeStepIncrementGingivaOverrideMm),
-        resolveCompositeGingivaStepMm(compositeStepIncrementGingivaOverrideMm),
-      )
-    : "";
   const productionItems = (productionMetaItems || [])
     .map((item) => String(item || "").trim())
     .filter(Boolean);
@@ -305,11 +267,7 @@ export function RequestInfoSummary({
     !!tooth ||
     hasScheduleMeta;
   const hasImplant =
-    !!implantLine ||
-    geometryItems.length > 0 ||
-    !!retention ||
-    !!compositePostStepLabel ||
-    !!compositeGingivaStepLabel;
+    !!implantLine || geometryItems.length > 0 || !!retention;
   const hasProduction = productionItems.length > 0;
   const isRow = layout === "row";
   const sectionCount = [
@@ -462,29 +420,6 @@ export function RequestInfoSummary({
             <span className="tabular-nums text-slate-600">{item}</span>
           </InlineGroup>
         ))}
-        {compositePostStepLabel ? (
-          <InlineGroup>
-            {implantLine || retention || geometryItems.length > 0 ? (
-              <Dot />
-            ) : null}
-            <span className="tabular-nums text-slate-600">
-              {compositePostStepLabel}
-            </span>
-          </InlineGroup>
-        ) : null}
-        {compositeGingivaStepLabel ? (
-          <InlineGroup>
-            {implantLine ||
-            retention ||
-            geometryItems.length > 0 ||
-            compositePostStepLabel ? (
-              <Dot />
-            ) : null}
-            <span className="tabular-nums text-slate-600">
-              {compositeGingivaStepLabel}
-            </span>
-          </InlineGroup>
-        ) : null}
       </MetaRow>
     </Section>
   ) : null;
