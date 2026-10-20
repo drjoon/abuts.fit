@@ -833,9 +833,13 @@ export function AbutmentModelConfirmDialog({
             <AlertDialogTitle>보정 디자인으로 계속 진행할까요?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                확인을 누르면 공구에 맞게 바꾼 디자인으로 의뢰를 이어갑니다.
+                공구에 맞춘 디자인으로 변경해드립니다.
                 <br />
-                보정 STL을 받은 뒤 보철 내면을 다시 만들어 주세요.
+                보정 STL을 받은 뒤{" "}
+                <strong className="font-semibold text-foreground">
+                  보철 내면을 다시
+                </strong>{" "}
+                만들어 주세요.
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
