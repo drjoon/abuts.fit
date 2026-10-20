@@ -886,6 +886,17 @@ const requestSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // 관리자 대시보드 「신규 커넥션 요청」 확인(휴지통) SSOT
+    adminNewConnectionAcknowledgedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    adminNewConnectionAcknowledgedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
 
     manufacturerStage: {
       type: String,

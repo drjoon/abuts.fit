@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-10-21: 신규 커넥션 요청 — 확인 시 휴지통·복원.
 // - 2026-10-21: 지연 위험 ↔ 신규 커넥션 요청 카드 그리드 위치 교환.
 // - 2026-10-21: 신규 커넥션 요청 — 건수 있을 때 warn(노란) 타일·목록 신규/미제공 색 구분.
 // - 2026-10-21: 신규 커넥션 요청 카드 — 클릭 시 의뢰자 연락처·커넥션·의뢰 내용.
@@ -63,6 +64,10 @@ import {
   renameProsthesisFeeItemRequest,
   revertProsthesisFeeItemRequest,
 } from "@/shared/practice/prosthesisFeeItemRequest";
+import {
+  acknowledgeAdminNewConnectionRequest,
+  restoreAdminNewConnectionRequest,
+} from "@/shared/admin/newConnectionRequestInbox";
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
@@ -197,6 +202,7 @@ type NewConnectionRequestItem = {
   id: string;
   requestId?: string;
   createdAt?: string | null;
+  acknowledgedAt?: string | null;
   status?: string;
   manufacturerStage?: string;
   clinicName?: string;
@@ -217,7 +223,11 @@ type NewConnectionRequestItem = {
 type NewConnectionRequestStats = {
   total?: number;
   items?: NewConnectionRequestItem[];
+  archivedTotal?: number;
+  archivedItems?: NewConnectionRequestItem[];
 };
+
+type NewConnectionRequestInboxView = "inbox" | "archive";
 
 const formatNewConnectionRequestWhen = (value?: string | null) => {
   if (!value) return "";
@@ -791,6 +801,10 @@ export const AdminDashboardPage = () => {
   const [newConnectionRequestId, setNewConnectionRequestId] = useState<string | null>(
     null,
   );
+  const [newConnectionRequestView, setNewConnectionRequestView] =
+    useState<NewConnectionRequestInboxView>("inbox");
+  const [newConnectionRequestActingId, setNewConnectionRequestActingId] =
+    useState<string | null>(null);
   const [unsupportedAbutmentDetailItem, setUnsupportedAbutmentDetailItem] =
     useState<UnsupportedAbutmentItem | null>(null);
   const [prosthesisFeeItemRequestDialogOpen, setProsthesisFeeItemRequestDialogOpen] =
@@ -1353,9 +1367,27 @@ export const AdminDashboardPage = () => {
   const newConnectionRequestItems = Array.isArray(newConnectionRequestStats.items)
     ? newConnectionRequestStats.items
     : [];
+  const newConnectionRequestArchivedItems = Array.isArray(
+    newConnectionRequestStats.archivedItems,
+  )
+    ? newConnectionRequestStats.archivedItems
+    : [];
   const newConnectionRequestTotal = newConnectionRequestItems.length;
+  const newConnectionRequestArchivedTotal =
+    Number(newConnectionRequestStats.archivedTotal || 0) ||
+    newConnectionRequestArchivedItems.length;
+  const newConnectionRequestVisibleItems =
+    newConnectionRequestView === "archive"
+      ? newConnectionRequestArchivedItems
+      : newConnectionRequestItems;
   const selectedNewConnectionRequest =
+    newConnectionRequestVisibleItems.find(
+      (item) => item.id === newConnectionRequestId,
+    ) ||
     newConnectionRequestItems.find((item) => item.id === newConnectionRequestId) ||
+    newConnectionRequestArchivedItems.find(
+      (item) => item.id === newConnectionRequestId,
+    ) ||
     null;
 
   const getUnsupportedAbutmentToneClasses = (
@@ -1846,6 +1878,61 @@ export const AdminDashboardPage = () => {
     void refetchAdminDashboardFresh();
   };
 
+  const pickNextNewConnectionRequestId = (
+    removedId: string,
+    sourceItems: NewConnectionRequestItem[],
+  ) => {
+    const idx = sourceItems.findIndex((row) => row.id === removedId);
+    if (idx < 0) return sourceItems[0]?.id || null;
+    return sourceItems[idx + 1]?.id || sourceItems[idx - 1]?.id || null;
+  };
+
+  const handleAcknowledgeNewConnectionRequest = async (
+    item: NewConnectionRequestItem,
+  ) => {
+    const requestId = String(item.id || "").trim();
+    if (!requestId || newConnectionRequestActingId) return;
+    setNewConnectionRequestActingId(requestId);
+    const ok = await acknowledgeAdminNewConnectionRequest(requestId);
+    setNewConnectionRequestActingId(null);
+    if (!ok) {
+      toast({
+        title: "확인 처리 실패",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({ title: "확인함", description: "휴지통에서 다시 열 수 있습니다." });
+    setNewConnectionRequestId(
+      pickNextNewConnectionRequestId(requestId, newConnectionRequestItems),
+    );
+    void refetchAdminDashboardFresh();
+  };
+
+  const handleRestoreNewConnectionRequest = async (
+    item: NewConnectionRequestItem,
+  ) => {
+    const requestId = String(item.id || "").trim();
+    if (!requestId || newConnectionRequestActingId) return;
+    setNewConnectionRequestActingId(requestId);
+    const ok = await restoreAdminNewConnectionRequest(requestId);
+    setNewConnectionRequestActingId(null);
+    if (!ok) {
+      toast({
+        title: "복원 실패",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({ title: "대기 목록으로 복원" });
+    setNewConnectionRequestId(
+      pickNextNewConnectionRequestId(requestId, newConnectionRequestArchivedItems),
+    );
+    void refetchAdminDashboardFresh();
+  };
+
   const handleRestorePracticeTransfer = async () => {
     if (restoringTransfer || !restoreTransferTarget || !token) return;
     setRestoringTransfer(true);
@@ -2312,6 +2399,7 @@ export const AdminDashboardPage = () => {
                   />
                 }
                 onClick={() => {
+                  setNewConnectionRequestView("inbox");
                   setNewConnectionRequestId(newConnectionRequestItems[0]?.id || null);
                   setNewConnectionRequestOpen(true);
                 }}
@@ -2835,65 +2923,153 @@ export const AdminDashboardPage = () => {
         onClose={() => {
           setNewConnectionRequestOpen(false);
           setNewConnectionRequestId(null);
+          setNewConnectionRequestView("inbox");
         }}
         title="신규 커넥션 요청"
         panelClassName="!w-[min(920px,calc(100vw-2rem))] !max-w-[calc(100vw-2rem)]"
         actions={[
+          ...(newConnectionRequestView === "inbox" && selectedNewConnectionRequest
+            ? [
+                {
+                  label:
+                    newConnectionRequestActingId === selectedNewConnectionRequest.id
+                      ? "처리 중…"
+                      : "확인함",
+                  variant: "primary" as const,
+                  disabled: Boolean(newConnectionRequestActingId),
+                  onClick: () => {
+                    void handleAcknowledgeNewConnectionRequest(
+                      selectedNewConnectionRequest,
+                    );
+                  },
+                },
+              ]
+            : []),
+          ...(newConnectionRequestView === "archive" && selectedNewConnectionRequest
+            ? [
+                {
+                  label:
+                    newConnectionRequestActingId === selectedNewConnectionRequest.id
+                      ? "처리 중…"
+                      : "복원",
+                  variant: "primary" as const,
+                  disabled: Boolean(newConnectionRequestActingId),
+                  onClick: () => {
+                    void handleRestoreNewConnectionRequest(selectedNewConnectionRequest);
+                  },
+                },
+              ]
+            : []),
           {
             label: "닫기",
             variant: "secondary",
             onClick: () => {
               setNewConnectionRequestOpen(false);
               setNewConnectionRequestId(null);
+              setNewConnectionRequestView("inbox");
             },
           },
         ]}
         description={
           <div className="grid gap-3 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
-            <ul className="max-h-[28rem] space-y-1.5 overflow-y-auto px-1.5 py-1.5">
-              {newConnectionRequestItems.length === 0 ? (
-                <li className="px-2 py-3 text-sm text-slate-500">요청이 없습니다.</li>
-              ) : (
-                newConnectionRequestItems.map((item) => {
-                  const selected = item.id === selectedNewConnectionRequest?.id;
-                  const isNewImplant = item.source === "new_implant";
-                  const who = [item.clinicName, item.patientName, item.tooth]
-                    .map((part) => String(part || "").trim())
-                    .filter(Boolean)
-                    .join(" · ");
-                  const listTone = isNewImplant
-                    ? "border-amber-300 bg-amber-50/90 hover:bg-amber-50"
-                    : "border-rose-300 bg-rose-50/90 hover:bg-rose-50";
-                  return (
-                    <li key={item.id}>
-                      <button
-                        type="button"
-                        onClick={() => setNewConnectionRequestId(item.id)}
-                        className={`w-full rounded-lg border px-2.5 py-2 text-left ${
-                          selected
-                            ? isNewImplant
-                              ? "border-amber-500 bg-amber-100 ring-1 ring-amber-400/50"
-                              : "border-rose-500 bg-rose-100 ring-1 ring-rose-400/50"
-                            : listTone
-                        }`}
-                      >
-                        <div className="truncate text-sm font-semibold text-slate-800">
-                          {who || item.requestId || "의뢰"}
-                        </div>
-                        <div
-                          className={`truncate text-xs ${
-                            isNewImplant ? "text-amber-900" : "text-rose-900"
+            <div className="flex min-w-0 flex-col gap-2">
+              <div className="flex flex-wrap gap-1.5 px-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewConnectionRequestView("inbox");
+                    setNewConnectionRequestId(newConnectionRequestItems[0]?.id || null);
+                  }}
+                  className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
+                    newConnectionRequestView === "inbox"
+                      ? "border-slate-500 bg-white text-slate-800 ring-1 ring-slate-400"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  대기 ({newConnectionRequestTotal.toLocaleString()})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewConnectionRequestView("archive");
+                    setNewConnectionRequestId(
+                      newConnectionRequestArchivedItems[0]?.id || null,
+                    );
+                  }}
+                  className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
+                    newConnectionRequestView === "archive"
+                      ? "border-slate-500 bg-white text-slate-800 ring-1 ring-slate-400"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <Trash2 className="h-3 w-3" aria-hidden />
+                  휴지통 ({newConnectionRequestArchivedTotal.toLocaleString()})
+                </button>
+              </div>
+              <ul className="max-h-[28rem] space-y-1.5 overflow-y-auto px-1.5 py-1.5">
+                {newConnectionRequestVisibleItems.length === 0 ? (
+                  <li className="px-2 py-3 text-sm text-slate-500">
+                    {newConnectionRequestView === "archive"
+                      ? "확인한 요청이 없습니다."
+                      : "대기 중인 요청이 없습니다."}
+                  </li>
+                ) : (
+                  newConnectionRequestVisibleItems.map((item) => {
+                    const selected = item.id === selectedNewConnectionRequest?.id;
+                    const isNewImplant = item.source === "new_implant";
+                    const isArchive = newConnectionRequestView === "archive";
+                    const who = [item.clinicName, item.patientName, item.tooth]
+                      .map((part) => String(part || "").trim())
+                      .filter(Boolean)
+                      .join(" · ");
+                    const listTone = isArchive
+                      ? "border-slate-200 bg-slate-50/90 hover:bg-slate-50"
+                      : isNewImplant
+                        ? "border-amber-300 bg-amber-50/90 hover:bg-amber-50"
+                        : "border-rose-300 bg-rose-50/90 hover:bg-rose-50";
+                    return (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          onClick={() => setNewConnectionRequestId(item.id)}
+                          className={`w-full rounded-lg border px-2.5 py-2 text-left ${
+                            selected
+                              ? isArchive
+                                ? "border-slate-500 bg-slate-100 ring-1 ring-slate-400/50"
+                                : isNewImplant
+                                  ? "border-amber-500 bg-amber-100 ring-1 ring-amber-400/50"
+                                  : "border-rose-500 bg-rose-100 ring-1 ring-rose-400/50"
+                              : listTone
                           }`}
                         >
-                          {item.connectionLabel || "커넥션 없음"}
-                          {isNewImplant ? " · 신규 임플란트" : " · 미제공 커넥션"}
-                        </div>
-                      </button>
-                    </li>
-                  );
-                })
-              )}
-            </ul>
+                          <div className="truncate text-sm font-semibold text-slate-800">
+                            {who || item.requestId || "의뢰"}
+                          </div>
+                          <div
+                            className={`truncate text-xs ${
+                              isArchive
+                                ? "text-slate-600"
+                                : isNewImplant
+                                  ? "text-amber-900"
+                                  : "text-rose-900"
+                            }`}
+                          >
+                            {item.connectionLabel || "커넥션 없음"}
+                            {isNewImplant ? " · 신규 임플란트" : " · 미제공 커넥션"}
+                          </div>
+                          {isArchive && item.acknowledgedAt ? (
+                            <div className="mt-0.5 truncate text-[10px] text-slate-500">
+                              확인{" "}
+                              {formatNewConnectionRequestWhen(item.acknowledgedAt)}
+                            </div>
+                          ) : null}
+                        </button>
+                      </li>
+                    );
+                  })
+                )}
+              </ul>
+            </div>
             {selectedNewConnectionRequest ? (
               <div
                 className={`space-y-3 rounded-lg border px-3 py-3 text-sm text-slate-700 ${
@@ -2965,15 +3141,26 @@ export const AdminDashboardPage = () => {
                       : ""}
                   </div>
                   <div>
+                    접수{" "}
                     {formatNewConnectionRequestWhen(
                       selectedNewConnectionRequest.createdAt,
                     )}
                   </div>
+                  {selectedNewConnectionRequest.acknowledgedAt ? (
+                    <div>
+                      확인{" "}
+                      {formatNewConnectionRequestWhen(
+                        selectedNewConnectionRequest.acknowledgedAt,
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ) : (
               <div className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-sm text-slate-500">
-                왼쪽에서 의뢰를 고르면 연락처와 커넥션이 나옵니다.
+                {newConnectionRequestView === "archive"
+                  ? "휴지통에서 의뢰를 고르면 내용을 다시 볼 수 있습니다."
+                  : "왼쪽에서 의뢰를 고르면 연락처와 커넥션이 나옵니다."}
               </div>
             )}
           </div>
