@@ -163,6 +163,8 @@ export type AbutmentModelConfirmDialogProps = {
   onTakePreparedCorrectedDesign?: (
     correctedId: string,
   ) => Promise<File | null> | null;
+  /** 평균 R 0.50mm 이상에서 보정 STL 없이 원본으로 진행한다. */
+  onKeepOriginalDesign?: (file: File) => void;
 };
 
 export function AbutmentModelConfirmDialog({
@@ -220,6 +222,7 @@ export function AbutmentModelConfirmDialog({
   machiningPreflight = null,
   onPrepareCorrectedDesign,
   onTakePreparedCorrectedDesign,
+  onKeepOriginalDesign,
 }: AbutmentModelConfirmDialogProps) {
   const isLabHandoff = variant === "lab-handoff";
   const labConfirmLabel = String(confirmLabel || "").trim() || "확인";
@@ -330,6 +333,7 @@ export function AbutmentModelConfirmDialog({
     Boolean(machiningPreflight?.correctedId) &&
     Boolean(detailFile);
   const machiningCheckPending = !isLabHandoff && machiningPreflight?.status === "checking";
+  const proceedAsIsAllowed = Boolean(machiningPreflight?.proceedAsIsAllowed);
   const showTightCornerConfirmCue =
     !isLabHandoff && machiningPreflight?.status === "tight" && !machiningCheckPending;
   const highlightConfirmButton =
@@ -459,6 +463,14 @@ export function AbutmentModelConfirmDialog({
     setCorrectedDownloadOpen(false);
     await onVerifyAndNextRef.current(index);
   }, [detailIndex, runCorrectedStlDownload]);
+
+  const handleProceedAsIs = useCallback(async () => {
+    const index = detailIndex;
+    if (index === null || !detailFile) return;
+    onKeepOriginalDesign?.(detailFile);
+    setCorrectedDownloadOpen(false);
+    await onVerifyAndNextRef.current(index);
+  }, [detailFile, detailIndex, onKeepOriginalDesign]);
 
   return (
     <>
@@ -778,7 +790,9 @@ export function AbutmentModelConfirmDialog({
                                 role="status"
                               >
                                 <p className="whitespace-nowrap text-xs leading-none text-rose-800">
-                                  보정해 의뢰하시겠습니까? 확인 & 다음을 눌러 주세요.
+                                  {proceedAsIsAllowed
+                                    ? "확인 & 다음에서 보정 또는 그대로 진행을 고르세요."
+                                    : "보정해 의뢰하시겠습니까? 확인 & 다음을 눌러 주세요."}
                                 </p>
                                 <ArrowDown
                                   className="h-4 w-4 shrink-0 animate-bounce text-rose-600"
@@ -831,21 +845,49 @@ export function AbutmentModelConfirmDialog({
           overlayClassName="z-[325]"
         >
           <AlertDialogHeader className="space-y-3">
-            <AlertDialogTitle>보정 디자인으로 의뢰하시겠습니까?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {proceedAsIsAllowed
+                ? "이대로 의뢰하시겠습니까?"
+                : "보정 디자인으로 의뢰하시겠습니까?"}
+            </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                공구에 맞게 디자인을 바꿔 보정 STL을 드립니다.
-                <br />
-                진행하시면{" "}
-                <strong className="font-semibold text-red-600">
-                  보철 내면을 다시
-                </strong>{" "}
-                만드셔야 합니다.
+                {proceedAsIsAllowed ? (
+                  <>
+                    평균 코너 반경이 0.50mm 이상입니다.
+                    <br />
+                    그대로 진행하면 마진 근처에 과삭제 구간이 생길 수 있습니다.
+                    <br />
+                    보정하면 보철 내면을 다시 만드셔야 합니다.
+                  </>
+                ) : (
+                  <>
+                    공구에 맞게 디자인을 바꿔 보정 STL을 드립니다.
+                    <br />
+                    진행하시면{" "}
+                    <strong className="font-semibold text-red-600">
+                      보철 내면을 다시
+                    </strong>{" "}
+                    만드셔야 합니다.
+                  </>
+                )}
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={correctedDownloading}>취소</AlertDialogCancel>
+            {proceedAsIsAllowed ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={correctedDownloading}
+                onClick={() => {
+                  void handleProceedAsIs();
+                }}
+              >
+                그대로 진행
+              </Button>
+            ) : null}
             <AlertDialogAction
               disabled={correctedDownloading}
               onClick={(event) => {
@@ -853,7 +895,11 @@ export function AbutmentModelConfirmDialog({
                 void handleCorrectedProceed();
               }}
             >
-              {correctedDownloading ? "만드는 중…" : "확인"}
+              {correctedDownloading
+                ? "만드는 중…"
+                : proceedAsIsAllowed
+                  ? "보정해서 의뢰"
+                  : "확인"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

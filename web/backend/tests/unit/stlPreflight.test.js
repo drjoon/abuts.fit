@@ -3,6 +3,7 @@
 // - web/backend/services/abutmentStl/tightCorner.js
 import { describe, expect, it } from "@jest/globals";
 import { rotationAxisAngle } from "../../services/abutmentStl/meshCore.js";
+import { canProceedAsIs } from "../../services/abutmentStl/marginFilletReview.js";
 import {
   invertRigidMatrix,
   suggestedFilletRadiusMm,
@@ -32,6 +33,27 @@ describe("stlPreflight summarizeTightCorner", () => {
     expect(summary.minFilletRadiusMm).toBe(0.43);
     expect(summary.toolRadiusMm).toBe(0.6);
     expect(summary.suggestedFilletRadiusMm).toBe(0.65);
+    expect(summary.proceedAsIsAllowed).toBe(false);
+  });
+
+  it("평균 R이 0.50mm 이상인 타이트만 그대로 진행할 수 있다", () => {
+    expect(canProceedAsIs(0.5)).toBe(true);
+    expect(canProceedAsIs(0.49)).toBe(false);
+    const allowed = summarizeTightCorner({
+      toolDiameterMm: 1.2,
+      tightCount: 2,
+      averageFilletRadiusMm: 0.52,
+      samples: [{ filletRadiusMm: 0.5 }, { filletRadiusMm: 0.54 }],
+    });
+    expect(allowed.status).toBe("tight");
+    expect(allowed.proceedAsIsAllowed).toBe(true);
+    const blocked = summarizeTightCorner({
+      toolDiameterMm: 1.2,
+      tightCount: 1,
+      averageFilletRadiusMm: 0.4,
+      samples: [{ filletRadiusMm: 0.4 }],
+    });
+    expect(blocked.proceedAsIsAllowed).toBe(false);
   });
 
   it("정렬 행렬을 되돌리면 보정 면이 원본 좌표로 돌아온다", () => {

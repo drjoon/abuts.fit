@@ -18,6 +18,8 @@ export type StlMachiningPreflight = {
   overlay?: StlMetadata["tightCorner"];
   /** 백그라운드에서 만드는 완전한 보정 STL. 확인 전에 이 id로 받는다. */
   correctedId?: string;
+  /** 평균 필렛 R이 0.50mm 이상. 보정 없이 진행할 수 있다. */
+  proceedAsIsAllowed?: boolean;
 };
 
 /** 접수 전 가공 검사 결과 안내. tight여도 접수를 막지 않는다. */
@@ -70,9 +72,19 @@ export function StlMachiningPreflightNotice({
         <p className="text-center text-xs leading-5 text-rose-900/80">
           코너 반경이 가공 공구보다 좁습니다.
           <br />
-          공구에 맞게 디자인을 보정해 의뢰하시겠습니까?
-          <br />
-          진행하시면 보정 STL을 받은 뒤 보철 내면을 다시 만드셔야 합니다.
+          {preflight.proceedAsIsAllowed ? (
+            <>
+              평균이 0.50mm 이상이면 그대로 진행할 수 있습니다.
+              <br />
+              확인 & 다음에서 고르세요.
+            </>
+          ) : (
+            <>
+              공구에 맞게 디자인을 보정해 의뢰하시겠습니까?
+              <br />
+              진행하시면 보정 STL을 받은 뒤 보철 내면을 다시 만드셔야 합니다.
+            </>
+          )}
         </p>
       </div>
     );

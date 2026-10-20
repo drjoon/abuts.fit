@@ -4,9 +4,9 @@
 // - web/backend/controllers/files/stlPreflight.controller.js
 // - web/frontend/src/pages/requestor/new_request/hooks/useStlMachiningPreflight.ts
 //
-// 의뢰 모달은 EBS 워커에서 필레 보정을 바로 돌린다(파일당 1초 안쪽). 정점을 옮겼을 때만
-// 불완전 가공으로 경고하고, 그 보정 STL을 S3에 남겨 의뢰가 그 객체를 쓴다.
-// 람다는 캐시가 없는 POST /stl-corrected 경로에서만 같은 보정 코드를 돌린다.
+// 업로드 직후는 간이 검사(screenMarginFillet)만 기다린다.
+// 타이트면 확인 전까지 correctMarginFillet 보정 STL을 뒤에서 만든다. 제조사 준비와 같은 함수다.
+// 람다는 캐시가 없는 POST /stl-corrected 경로에서만 그 보정을 돌린다.
 import crypto from "crypto";
 import { resolveAbutmentStlInputs } from "./abutmentStlInputs.js";
 import { applyAutoCuffBlendSafely, isCuffBlendAutoEnabled } from "./cuffBlend.service.js";
@@ -18,6 +18,7 @@ import {
 import { headObjectSizeInS3, putObjectToS3 } from "../../utils/s3.utils.js";
 import { identity } from "./meshCore.js";
 import { FINISH_BALL_RADIUS_MM } from "./tightCorner.js";
+import { canProceedAsIs } from "./marginFilletReview.js";
 
 /** 디자인 수정 권고 여유(mm). 공구 R에 이만큼 더한 값을 권한다. */
 export const PREFLIGHT_FILLET_MARGIN_MM = 0.05;
@@ -438,14 +439,17 @@ export function summarizeTightCorner(tightCorner) {
         ? round2(radii.reduce((a, b) => a + b, 0) / radii.length)
         : null;
 
+  const status = tightCount > 0 ? "tight" : "ok";
   return {
-    status: tightCount > 0 ? "tight" : "ok",
+    status,
     tightCount,
     averageFilletRadiusMm,
     minFilletRadiusMm: radii.length ? round2(Math.min(...radii)) : averageFilletRadiusMm,
     toolDiameterMm: round2(toolDiameterMm),
     toolRadiusMm,
     suggestedFilletRadiusMm: suggestedFilletRadiusMm(toolRadiusMm),
+    /** 평균 R이 0.50mm 이상인 타이트만 보정 없이 진행할 수 있다. */
+    proceedAsIsAllowed: status === "tight" && canProceedAsIs(averageFilletRadiusMm),
   };
 }
 
@@ -481,8 +485,8 @@ export async function buildCorrectedDesignStlBuffer({
 }
 
 /**
- * 접수 모달 가공 검사. 보정을 바로 돌려, 정점을 옮긴 경우만 불완전 가공으로 본다.
- * 그 결과가 곧 보정 STL이라 검출과 다운로드가 어긋나지 않는다.
+ * 업로드 직후 간이 검사. screenMarginFillet만 기다린다.
+ * 타이트면 확인 버튼 전까지 쓸 보정 STL을 같은 correctMarginFillet로 뒤에서 만든다.
  * 파이프라인이 실패해도 의뢰를 막지 않도록 unknown으로 돌려준다.
  * @param {{ buffer: Buffer, caseInfos?: object, userId?: string, originalFileName?: string }} args
  */
@@ -493,27 +497,21 @@ export async function runStlMachiningPreflight({
   originalFileName,
 } = {}) {
   if (!buffer?.length) {
-    return { status: "unknown", reason: "empty_file", tightCount: 0 };
+    return { status: "unknown", reason: "empty_file", tightCount: 0, proceedAsIsAllowed: false };
   }
   try {
     const inputs = await resolveAbutmentStlInputs(caseInfos || {});
     const js = await runAbutmentStlPipelineInWorker(buffer, {
       targetDiameter: inputs.targetDiameter,
       implantProfile: inputs.implantProfile,
-      correctDesign: true,
+      preflight: true,
     });
     const elapsed = Number(js?.perf?.total);
     if (Number.isFinite(elapsed) && elapsed > 2.5) {
       console.info("[stl-preflight] slow", js.perf);
     }
     if (!Array.isArray(js?.finishLine?.points) || js.finishLine.points.length < 4) {
-      return { status: "unknown", reason: "finishline_missing", tightCount: 0 };
-    }
-    if (js?.correctionFailed) {
-      return { status: "unknown", reason: "correction_failed", tightCount: 0 };
-    }
-    if (!js?.tightCorner || !js?.outputBuffer?.length) {
-      return summarizeTightCorner(null);
+      return { status: "unknown", reason: "finishline_missing", tightCount: 0, proceedAsIsAllowed: false };
     }
     const summary = summarizeTightCorner(js.tightCorner);
     const overlay = tightCornerOverlayInOriginalFrame(
@@ -521,12 +519,16 @@ export async function runStlMachiningPreflight({
       js.alignMatrix,
       js.filletSurface || null,
     );
-    const correctedId = rememberCorrectedDesignStl({
-      hash: correctedDesignCacheKey(buffer, caseInfos),
-      buffer: js.outputBuffer,
-      fileName: originalFileName,
-      userId,
-    });
+    const correctedId =
+      summary.status === "tight"
+        ? scheduleCorrectedDesignStl({
+            buffer,
+            caseInfos,
+            userId,
+            fileName: originalFileName,
+            inputs,
+          })
+        : null;
     return {
       ...summary,
       ...(overlay ? { overlay } : {}),
@@ -534,6 +536,6 @@ export async function runStlMachiningPreflight({
     };
   } catch (error) {
     console.warn("[stl-preflight] failed:", error?.message || error);
-    return { status: "unknown", reason: "pipeline_failed", tightCount: 0 };
+    return { status: "unknown", reason: "pipeline_failed", tightCount: 0, proceedAsIsAllowed: false };
   }
 }

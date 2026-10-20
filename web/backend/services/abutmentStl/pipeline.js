@@ -14,11 +14,10 @@ import { buildScrewholePatch, SCREWHOLE_PARAMS } from "./fillScrewholes.js";
 import { buildVerticalBandSolid } from "./fillSteps.js";
 import { calculateStlMetadataFromBuffer, tiltAxisFromMesh } from "./stlMetadata.js";
 import {
-  correctTightCornerFillet,
-  detectTightCorners,
-  movedFilletSurface,
-  tightCornerMetaFromCorrection,
-} from "./tightCorner.js";
+  correctMarginFillet,
+  emptyMarginFilletReview,
+  screenMarginFillet,
+} from "./marginFilletReview.js";
 
 export const ABUTMENT_STL_JS_VERSION = `abutment-stl-js-1+align-${ALIGN_MODULE_VERSION}+${JS_ALIGN_PORT_VERSION}+conn-taper-1`;
 
@@ -122,13 +121,14 @@ function analyzeDiameters(mesh) {
 }
 
 /**
- * 접수 모달 검사. 정렬·피니시라인 다음, 그 위 필레만 8곳으로 본다.
- * 스크류홀 패치·보정 STL·filled는 만들지 않는다. 그건 제조사 준비의 전체 파이프라인이 한다.
+ * 업로드 직후 간이 검사. screenMarginFillet만 호출한다.
+ * 스크류홀 패치·보정 STL·filled는 만들지 않는다.
  */
 function finishPreflight({ mesh, finishLine, align, alignMatrix, logs, perf, mark, total0, log }) {
   const t0 = performance.now();
   let tiltAxisVector = null;
   let tightCorner = null;
+  let filletSurface = null;
   if (finishLine?.points?.length) {
     try {
       tiltAxisVector = tiltAxisFromMesh(mesh, finishLine.points);
@@ -136,10 +136,9 @@ function finishPreflight({ mesh, finishLine, align, alignMatrix, logs, perf, mar
       log(`[stl-preflight] tilt failed: ${error?.message || error}`);
     }
     try {
-      tightCorner = detectTightCorners(mesh, finishLine.points, {
-        tiltAxisVector,
-        screen: true,
-      });
+      const screened = screenMarginFillet(mesh, finishLine.points, { tiltAxisVector });
+      tightCorner = screened.tightCorner;
+      filletSurface = screened.filletSurface;
     } catch (error) {
       log(`[tight-corner] failed: ${error?.message || error}`);
     }
@@ -160,7 +159,7 @@ function finishPreflight({ mesh, finishLine, align, alignMatrix, logs, perf, mar
     finishLine,
     tightCorner,
     /** 정렬 좌표계의 표시용 필렛 띠. 보정 STL은 아니다. */
-    filletSurface: tightCorner?.reliefOverlay || null,
+    filletSurface,
     stlMetadata: tiltAxisVector ? { tiltAxisVector } : null,
     perf,
     logs,
@@ -169,9 +168,8 @@ function finishPreflight({ mesh, finishLine, align, alignMatrix, logs, perf, mar
 }
 
 /**
- * 접수 검사이자 의뢰 전 보정 STL. 필레를 피니시라인 한 바퀴로 다시 재고 정점을 옮긴다.
- * 옮긴 정점이 있을 때만 불완전 가공이다. 검출과 보정 결과가 어긋나지 않는다.
- * 스크류홀 패치는 넣지 않는다. 제조사 준비의 filled와 별개다.
+ * 확인 전 보정 STL. correctMarginFillet로 정점을 옮긴다. 제조사 준비와 같은 함수다.
+ * 옮긴 정점이 있을 때만 불완전 가공이다.
  */
 function finishCorrectedDesign({ mesh, finishLine, align, alignMatrix, logs, perf, mark, total0, log }) {
   const t0 = performance.now();
@@ -187,13 +185,13 @@ function finishCorrectedDesign({ mesh, finishLine, align, alignMatrix, logs, per
       log(`[stl-correct] tilt failed: ${error?.message || error}`);
     }
     try {
-      const corrected = correctTightCornerFillet(mesh, finishLine.points, { tiltAxisVector });
-      if (corrected?.mesh) {
-        filletSurface = movedFilletSurface(corrected);
-        tightCorner = tightCornerMetaFromCorrection(corrected, filletSurface);
-        corrected.mesh.transform(invertRigidMatrix(alignMatrix));
+      const built = correctMarginFillet(mesh, finishLine.points, { tiltAxisVector });
+      if (built.corrected?.mesh) {
+        filletSurface = built.filletSurface;
+        tightCorner = built.tightCorner;
+        built.corrected.mesh.transform(invertRigidMatrix(alignMatrix));
         outputBuffer = writeBinaryStl({
-          positions: corrected.mesh.toTriangleSoup(),
+          positions: built.corrected.mesh.toTriangleSoup(),
           attributes: null,
         });
       } else {
@@ -374,16 +372,19 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
       log(`[stl_metadata] failed: ${error?.message || error}`);
     }
     try {
-      // 필레 정점은 여기서 다시 옮기지 않는다. 이미 보정된 의뢰 STL이면 재검토도 하지 않는다.
-      tightCorner = detectTightCorners(combined, finishLine.points, {
-        tiltAxisVector: stlMetadata?.tiltAxisVector,
-        log,
-      });
+      // 확인 전 보정과 같은 correctMarginFillet. 메시 본체는 바꾸지 않고 보정 면만 메타에 담는다.
+      // 의뢰 STL이 이미 그 보정이면 다시 만들지 않는다.
+      if (options.designAlreadyCorrected) {
+        tightCorner = emptyMarginFilletReview();
+      } else {
+        const built = correctMarginFillet(combined, finishLine.points, {
+          tiltAxisVector: stlMetadata?.tiltAxisVector,
+          log,
+        });
+        tightCorner = built.tightCorner || emptyMarginFilletReview();
+      }
       if (tightCorner?.tightCount > 0) {
         log(`[tight-corner] flagged ${tightCorner.tightCount} samples`);
-      }
-      if (options.designAlreadyCorrected && tightCorner) {
-        tightCorner = { ...tightCorner, needsCorrectionReview: false, correctionSolid: null };
       }
     } catch (error) {
       log(`[tight-corner] failed: ${error?.message || error}`);
