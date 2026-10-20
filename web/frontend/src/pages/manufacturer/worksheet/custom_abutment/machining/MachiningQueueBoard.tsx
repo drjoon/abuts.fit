@@ -2745,7 +2745,8 @@ export const MachiningQueueBoard = ({
                     : {};
                 setQueueMap(map);
                 const rawNext = Array.isArray(map?.[mid]) ? map[mid] : [];
-                setPlaylistJobs(buildPlaylistJobsFromQueue(rawNext));
+                const hint = nowPlayingHintMap?.[mid] ?? null;
+                setPlaylistJobs(buildPlaylistJobsFromQueue(rawNext, hint));
                 await loadProductionQueueForMachine(mid, rawNext);
                 return;
               }
@@ -2794,7 +2795,8 @@ export const MachiningQueueBoard = ({
                     : {};
                 setQueueMap(map);
                 const rawNext = Array.isArray(map?.[mid]) ? map[mid] : [];
-                setPlaylistJobs(buildPlaylistJobsFromQueue(rawNext));
+                const hint = nowPlayingHintMap?.[mid] ?? null;
+                setPlaylistJobs(buildPlaylistJobsFromQueue(rawNext, hint));
                 await loadProductionQueueForMachine(mid, rawNext);
                 return;
               }
@@ -2845,7 +2847,8 @@ export const MachiningQueueBoard = ({
                     : {};
                 setQueueMap(map);
                 const rawNext = Array.isArray(map?.[mid]) ? map[mid] : [];
-                setPlaylistJobs(buildPlaylistJobsFromQueue(rawNext));
+                const hint = nowPlayingHintMap?.[mid] ?? null;
+                setPlaylistJobs(buildPlaylistJobsFromQueue(rawNext, hint));
                 await loadProductionQueueForMachine(mid, rawNext);
                 return;
               }

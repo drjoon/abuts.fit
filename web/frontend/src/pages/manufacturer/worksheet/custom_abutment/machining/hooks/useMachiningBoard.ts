@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-10-20: 예약 관리 목록에서 Now Playing(가공중) 건을 제외해 Next Up과 맞춘다.
 // - 2026-10-13: 장비 알람 지우기는 같은 가공 오류의 재표시를 막는다.
 // - 2026-10-13: 같은 가공 중단의 tick·fail·alarm 알림은 한 건으로 합친다.
 // - 2026-10-10: 가공 알람은 장비별로 쌓고, 알람 원문(헤드·type·no)을 함께 저장한다.
@@ -213,6 +214,25 @@ const queueItemMatchesHint = (
       "",
   );
   return Boolean(hintPath && itemPath && hintPath === itemPath);
+};
+
+/** MachineQueueCard Now Playing 인덱스와 동일 — 예약 관리에서 가공중 건 제외용 */
+const findNowPlayingQueueIndex = (
+  items: QueueItem[],
+  hint?: NowPlayingHint | null,
+): number => {
+  const list = Array.isArray(items) ? items : [];
+  const hasHint = Boolean(
+    hint &&
+      (String(hint.requestId || "").trim() ||
+        String(hint.jobId || "").trim() ||
+        String(hint.bridgePath || "").trim()),
+  );
+  const hintedIdx = hasHint
+    ? list.findIndex((item) => queueItemMatchesHint(item, hint))
+    : -1;
+  const runningIdx = list.findIndex((item) => isQueueItemRunning(item));
+  return hintedIdx >= 0 ? hintedIdx : runningIdx >= 0 ? runningIdx : -1;
 };
 
 const patchQueueListRunning = (
@@ -1356,10 +1376,19 @@ export const useMachiningBoard = ({
     [loadProgramCode],
   );
 
-  const buildPlaylistJobsFromQueue = useCallback((raw: QueueItem[]) => {
-    const jobs = (Array.isArray(raw) ? raw : [])
-      .filter((q) => isMachiningStatus(q?.status))
-      .map((q) => {
+  const buildPlaylistJobsFromQueue = useCallback(
+    (raw: QueueItem[], hint?: NowPlayingHint | null) => {
+      const machiningItems = (Array.isArray(raw) ? raw : []).filter((q) =>
+        isMachiningStatus(q?.status),
+      );
+      const playingIdx = findNowPlayingQueueIndex(machiningItems, hint);
+      const waitingItems =
+        playingIdx >= 0
+          ? machiningItems.filter((_, i) => i !== playingIdx)
+          : machiningItems;
+
+      const jobs = waitingItems
+        .map((q) => {
         const rid = String(q?.requestId || "").trim();
         if (!rid) return null;
         const requestMongoId =
@@ -1430,20 +1459,23 @@ export const useMachiningBoard = ({
           lotShortCode: lotShortCode || undefined,
           ridSuffix: ridSuffix || undefined,
         } satisfies PlaylistJobItem;
-      })
-      .filter(Boolean) as PlaylistJobItem[];
-    return jobs;
-  }, []);
+        })
+        .filter(Boolean) as PlaylistJobItem[];
+      return jobs;
+    },
+    [],
+  );
 
   const loadProductionQueueForMachine = useCallback(
     async (machineId: string, rawOverride?: QueueItem[]) => {
       const mid = String(machineId || "").trim();
       if (!mid) return;
       const raw = rawOverride ?? queueMap?.[mid] ?? [];
-      const nextJobs = buildPlaylistJobsFromQueue(raw);
+      const hint = nowPlayingHintMap?.[mid] ?? null;
+      const nextJobs = buildPlaylistJobsFromQueue(raw, hint);
       setPlaylistJobs(nextJobs);
     },
-    [buildPlaylistJobsFromQueue, queueMap],
+    [buildPlaylistJobsFromQueue, nowPlayingHintMap, queueMap],
   );
 
   // 예약 관리가 열린 동안 큐 NC 메타가 바뀌면(재생성 시작/완료) 목록을 즉시 동기화한다.
@@ -1452,9 +1484,11 @@ export const useMachiningBoard = ({
     const mid = String(playlistMachineId || "").trim();
     if (!mid) return;
     const raw = Array.isArray(queueMap?.[mid]) ? queueMap[mid] : [];
-    setPlaylistJobs(buildPlaylistJobsFromQueue(raw));
+    const hint = nowPlayingHintMap?.[mid] ?? null;
+    setPlaylistJobs(buildPlaylistJobsFromQueue(raw, hint));
   }, [
     buildPlaylistJobsFromQueue,
+    nowPlayingHintMap,
     playlistMachineId,
     playlistOpen,
     queueMap,
