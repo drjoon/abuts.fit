@@ -16,7 +16,10 @@ import { runAbutmentStlPipeline } from "../../services/abutmentStl/pipeline.js";
 import {
   analyzeMarginAtPoint,
   applyTightCornerCorrectionToMesh,
+  correctTightCornerFillet,
   detectTightCorners,
+  movedFilletSurface,
+  tightCornerMetaFromCorrection,
   gougeDepthForCorner,
   metalInteriorAngleRad,
   planTightCornerCorrection,
@@ -310,6 +313,29 @@ describe("abutmentStl tightCorner", () => {
     expect(screened.tightCount).toBeLessThanOrEqual(16);
   });
 
+  it("접수 검사는 정점을 옮긴 보정만 불완전 가공으로 본다", () => {
+    const flPts = [];
+    for (let i = 0; i < 48; i += 1) {
+      const a = (i / 48) * Math.PI * 2;
+      flPts.push([3.6 * Math.cos(a), 3.6 * Math.sin(a), 2.0]);
+    }
+    const meshOf = (soup) =>
+      Mesh.fromStlBuffer(writeBinaryStl({ positions: soup, attributes: null }));
+
+    const tight = correctTightCornerFillet(meshOf(marginWallSoup(0.43)), flPts, {});
+    expect(tight?.movedCount).toBeGreaterThan(0);
+    const meta = tightCornerMetaFromCorrection(tight, movedFilletSurface(tight));
+    expect(meta.tightCount).toBe(tight.tightSamples.length);
+    expect(meta.tightCount).toBeGreaterThan(0);
+    expect(meta.averageFilletRadiusMm).toBeLessThan(0.6);
+    expect(meta.samples[0].cornerPoint).toHaveLength(3);
+    expect(meta.correctionSolid.positions.length).toBeGreaterThan(0);
+
+    const wide = correctTightCornerFillet(meshOf(marginWallSoup(0.8)), flPts, {});
+    expect(wide).toBeNull();
+    expect(tightCornerMetaFromCorrection(wide, null)).toBeNull();
+  });
+
   it("회전체 샘플(R>0.6)은 보정면 없음", async () => {
     const smoothBuffer = writeBinaryStl({ positions: revolvedAbutmentSoup(), attributes: null });
     const smoothPipe = await runAbutmentStlPipeline(smoothBuffer, { targetDiameter: 3.33 });
@@ -342,5 +368,14 @@ describe("abutmentStl pipeline", () => {
     expect(out.outputBuffer.length).toBe(0);
     expect(out.perf.screwhole).toBeUndefined();
     expect(out.tightCorner).toBeTruthy();
+  });
+
+  it("보정 검사에서 옮길 코너가 없으면 보정 STL도 불완전 가공 메타도 없다", async () => {
+    const buffer = writeBinaryStl({ positions: revolvedAbutmentSoup(), attributes: null });
+    const out = await runAbutmentStlPipeline(buffer, { targetDiameter: 3.33, correctDesign: true });
+    expect(out.correctDesign).toBe(true);
+    expect(out.correctionFailed).toBe(false);
+    expect(out.outputBuffer.length).toBe(0);
+    expect(out.tightCorner).toBeNull();
   });
 });

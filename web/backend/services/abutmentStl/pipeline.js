@@ -13,7 +13,12 @@ import { detectFinishLine, finishlineZExtrema, sanitizeFinishlinePoints } from "
 import { buildScrewholePatch, SCREWHOLE_PARAMS } from "./fillScrewholes.js";
 import { buildVerticalBandSolid } from "./fillSteps.js";
 import { calculateStlMetadataFromBuffer, tiltAxisFromMesh } from "./stlMetadata.js";
-import { correctTightCornerFillet, detectTightCorners } from "./tightCorner.js";
+import {
+  correctTightCornerFillet,
+  detectTightCorners,
+  movedFilletSurface,
+  tightCornerMetaFromCorrection,
+} from "./tightCorner.js";
 
 export const ABUTMENT_STL_JS_VERSION = `abutment-stl-js-1+align-${ALIGN_MODULE_VERSION}+${JS_ALIGN_PORT_VERSION}+conn-taper-1`;
 
@@ -164,13 +169,17 @@ function finishPreflight({ mesh, finishLine, align, alignMatrix, logs, perf, mar
 }
 
 /**
- * 의뢰 전에 내려받을 보정 STL. 필레를 피니시라인 한 바퀴로 다시 재고 정점을 옮긴다.
+ * 접수 검사이자 의뢰 전 보정 STL. 필레를 피니시라인 한 바퀴로 다시 재고 정점을 옮긴다.
+ * 옮긴 정점이 있을 때만 불완전 가공이다. 검출과 보정 결과가 어긋나지 않는다.
  * 스크류홀 패치는 넣지 않는다. 제조사 준비의 filled와 별개다.
  */
 function finishCorrectedDesign({ mesh, finishLine, align, alignMatrix, logs, perf, mark, total0, log }) {
   const t0 = performance.now();
   let tiltAxisVector = null;
   let outputBuffer = Buffer.alloc(0);
+  let tightCorner = null;
+  let filletSurface = null;
+  let correctionFailed = false;
   if (finishLine?.points?.length) {
     try {
       tiltAxisVector = tiltAxisFromMesh(mesh, finishLine.points);
@@ -180,6 +189,8 @@ function finishCorrectedDesign({ mesh, finishLine, align, alignMatrix, logs, per
     try {
       const corrected = correctTightCornerFillet(mesh, finishLine.points, { tiltAxisVector });
       if (corrected?.mesh) {
+        filletSurface = movedFilletSurface(corrected);
+        tightCorner = tightCornerMetaFromCorrection(corrected, filletSurface);
         corrected.mesh.transform(invertRigidMatrix(alignMatrix));
         outputBuffer = writeBinaryStl({
           positions: corrected.mesh.toTriangleSoup(),
@@ -189,6 +200,8 @@ function finishCorrectedDesign({ mesh, finishLine, align, alignMatrix, logs, per
         log("[stl-correct] no vertex move");
       }
     } catch (error) {
+      correctionFailed = true;
+      outputBuffer = Buffer.alloc(0);
       log(`[stl-correct] failed: ${error?.message || error}`);
     }
   } else {
@@ -203,6 +216,11 @@ function finishCorrectedDesign({ mesh, finishLine, align, alignMatrix, logs, per
     align: { ok: align.ok, message: align.message },
     alignMatrix,
     finishLine,
+    /** 보정으로 옮긴 코너만 담는다. 옮긴 정점이 없으면 null. */
+    tightCorner,
+    /** 정렬 좌표계의 보정 필렛 면. */
+    filletSurface,
+    correctionFailed,
     stlMetadata: tiltAxisVector ? { tiltAxisVector } : null,
     perf,
     logs,

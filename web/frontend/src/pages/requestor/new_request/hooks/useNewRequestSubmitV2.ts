@@ -54,8 +54,8 @@ type UseNewRequestSubmitV2Params = {
   patientGroups?: PatientFileGroup[];
   patchDraftImmediately?: (map: Record<string, CaseInfos>) => Promise<void>;
   /**
-   * 좁은 코너면 람다가 S3에 남긴 보정 STL을 반환한다.
-   * null이면 올린 원본을 쓴다. 준비 실패는 throw.
+   * 좁은 코너면 접수 검사가 S3에 남긴 보정 STL을 반환한다.
+   * null이면 올린 원본을 쓴다. 실패해도 접수는 막지 않는다.
    */
   resolveCorrectedDesignUpload?: (file: File) => Promise<TempUploadedFile | null>;
   /** 사전 업로드 캐시 재사용 (useFilePreUpload.ensureFilesUploaded) */
@@ -497,25 +497,14 @@ export const useNewRequestSubmitV2 = ({
         );
       } else {
         let tempFiles: TempUploadedFile[] = [];
-        let correctedFiles: Array<TempUploadedFile | null> = [];
-        try {
-          correctedFiles = await Promise.all(
-            files.map((file) =>
-              resolveCorrectedRef.current
-                ? resolveCorrectedRef.current(file)
-                : Promise.resolve(null),
-            ),
-          );
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "";
-          toast({
-            title: "보정 STL을 준비하지 못했습니다.",
-            description: message || "잠시 후 다시 의뢰해주세요.",
-            variant: "destructive",
-            duration: 4500,
-          });
-          return;
-        }
+        // 보정 STL이 없거나 실패해도 원본으로 접수한다.
+        const correctedFiles: Array<TempUploadedFile | null> = await Promise.all(
+          files.map((file) =>
+            resolveCorrectedRef.current
+              ? resolveCorrectedRef.current(file).catch(() => null)
+              : Promise.resolve(null),
+          ),
+        );
         try {
           tempFiles =
             files.length > 0

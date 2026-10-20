@@ -4,8 +4,9 @@
 // - web/backend/controllers/files/stlPreflight.controller.js
 // - web/frontend/src/pages/requestor/new_request/hooks/useStlMachiningPreflight.ts
 //
-// 의뢰 모달은 EBS에서 정렬·피니시라인·필레 8곳만 검사하고, 좁으면 바로 경고한다.
-// 완전한 보정 STL은 그 응답 뒤 람다가 만들어 S3에 남기고, 의뢰는 그 객체를 쓴다.
+// 의뢰 모달은 EBS 워커에서 필레 보정을 바로 돌린다(파일당 1초 안쪽). 정점을 옮겼을 때만
+// 불완전 가공으로 경고하고, 그 보정 STL을 S3에 남겨 의뢰가 그 객체를 쓴다.
+// 람다는 캐시가 없는 POST /stl-corrected 경로에서만 같은 보정 코드를 돌린다.
 import crypto from "crypto";
 import { resolveAbutmentStlInputs } from "./abutmentStlInputs.js";
 import { applyAutoCuffBlendSafely, isCuffBlendAutoEnabled } from "./cuffBlend.service.js";
@@ -14,7 +15,7 @@ import {
   buildCorrectedDesignOffRequest,
   correctedDesignS3Key,
 } from "./correctLambda.service.js";
-import { headObjectSizeInS3 } from "../../utils/s3.utils.js";
+import { headObjectSizeInS3, putObjectToS3 } from "../../utils/s3.utils.js";
 import { identity } from "./meshCore.js";
 import { FINISH_BALL_RADIUS_MM } from "./tightCorner.js";
 
@@ -164,7 +165,8 @@ export async function takeFilledStlPrep(hash) {
 }
 
 /**
- * 검사에서 만든 보정 STL. 같은 사용자·같은 파일이면 id를 유지한다.
+ * 검사에서 만든 보정 STL. 다운로드는 바로 되고, 의뢰용 S3 객체는 뒤에서 올린다.
+ * 같은 사용자·같은 파일이면 id를 유지한다.
  * @returns {string|null}
  */
 export function rememberCorrectedDesignStl({ hash, buffer, fileName, userId } = {}) {
@@ -174,23 +176,34 @@ export function rememberCorrectedDesignStl({ hash, buffer, fileName, userId } = 
   const slot = correctedSlot(hash, uid);
   const existingId = correctedByHash.get(slot);
   const existing = existingId ? correctedById.get(existingId) : null;
-  if (existing && existing.expires > Date.now()) {
-    existing.buffer = buffer;
-    existing.fileName = String(fileName || existing.fileName || "corrected.stl");
+  if (existing && (existing.expires > Date.now() || existing.promise) && existing.buffer?.length) {
     existing.expires = Date.now() + CORRECTED_TTL_MS;
-    correctedById.delete(existingId);
-    correctedById.set(existingId, existing);
     return existingId;
   }
   const id = crypto.randomBytes(16).toString("hex");
-  correctedById.set(id, {
+  const row = {
     hash,
     slot,
     buffer,
+    size: buffer.length,
     fileName: String(fileName || "corrected.stl"),
     userId: uid,
     expires: Date.now() + CORRECTED_TTL_MS,
-  });
+    promise: null,
+    errorReason: null,
+  };
+  row.s3Key = correctedDesignS3Key(id);
+  row.promise = putObjectToS3(row.s3Key, buffer, { contentType: "model/stl" })
+    .then(() => buffer)
+    .catch((error) => {
+      row.errorReason = "upload_failed";
+      console.warn("[stl-correct] S3 upload failed:", error?.message || error);
+      return null;
+    })
+    .finally(() => {
+      row.promise = null;
+    });
+  correctedById.set(id, row);
   correctedByHash.set(slot, id);
   pruneCorrectedDesignCache();
   return id;
@@ -276,7 +289,7 @@ export async function awaitCorrectedDesignMeta(id, userId) {
     await Promise.race([row.promise, timeout]);
     clearTimeout(timer);
   }
-  if (row?.errorReason && !row?.buffer?.length) {
+  if (row?.errorReason) {
     const error = new Error(row.errorReason);
     error.reason = row.errorReason;
     throw error;
@@ -468,7 +481,8 @@ export async function buildCorrectedDesignStlBuffer({
 }
 
 /**
- * 접수 모달 가공 검사. 정렬·피니시라인·필레 8곳만 돌린다.
+ * 접수 모달 가공 검사. 보정을 바로 돌려, 정점을 옮긴 경우만 불완전 가공으로 본다.
+ * 그 결과가 곧 보정 STL이라 검출과 다운로드가 어긋나지 않는다.
  * 파이프라인이 실패해도 의뢰를 막지 않도록 unknown으로 돌려준다.
  * @param {{ buffer: Buffer, caseInfos?: object, userId?: string, originalFileName?: string }} args
  */
@@ -486,31 +500,32 @@ export async function runStlMachiningPreflight({
     const js = await runAbutmentStlPipelineInWorker(buffer, {
       targetDiameter: inputs.targetDiameter,
       implantProfile: inputs.implantProfile,
-      preflight: true,
+      correctDesign: true,
     });
-    if (!Array.isArray(js?.finishLine?.points) || js.finishLine.points.length < 4) {
-      return { status: "unknown", reason: "finishline_missing", tightCount: 0 };
-    }
-    if (!js?.tightCorner) {
-      return { status: "unknown", reason: "tightcorner_missing", tightCount: 0 };
-    }
-    const summary = summarizeTightCorner(js.tightCorner);
     const elapsed = Number(js?.perf?.total);
     if (Number.isFinite(elapsed) && elapsed > 2.5) {
       console.info("[stl-preflight] slow", js.perf);
     }
-    if (summary.status !== "tight") return summary;
+    if (!Array.isArray(js?.finishLine?.points) || js.finishLine.points.length < 4) {
+      return { status: "unknown", reason: "finishline_missing", tightCount: 0 };
+    }
+    if (js?.correctionFailed) {
+      return { status: "unknown", reason: "correction_failed", tightCount: 0 };
+    }
+    if (!js?.tightCorner || !js?.outputBuffer?.length) {
+      return summarizeTightCorner(null);
+    }
+    const summary = summarizeTightCorner(js.tightCorner);
     const overlay = tightCornerOverlayInOriginalFrame(
       js.tightCorner,
       js.alignMatrix,
       js.filletSurface || null,
     );
-    const correctedId = scheduleCorrectedDesignStl({
-      buffer,
-      caseInfos,
-      userId,
+    const correctedId = rememberCorrectedDesignStl({
+      hash: correctedDesignCacheKey(buffer, caseInfos),
+      buffer: js.outputBuffer,
       fileName: originalFileName,
-      inputs,
+      userId,
     });
     return {
       ...summary,

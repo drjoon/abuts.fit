@@ -266,20 +266,23 @@ const NewRequestPageContent = () => {
           correctedId,
           fallbackName: file.name,
           token: tokenRef.current,
-        }).then((result) => {
-          if (!result.ok) {
+        })
+          .then((result) => {
+            if (result.ok === false) {
+              correctedJobsRef.current.delete(key);
+              console.warn("[resolveCorrected] 원본으로 접수", result.message);
+              return null;
+            }
+            return result.file;
+          })
+          .catch((error) => {
             correctedJobsRef.current.delete(key);
-            throw new Error(result.message);
-          }
-          return result.file;
-        });
+            console.warn("[resolveCorrected] 원본으로 접수", error);
+            return null;
+          });
         correctedJobsRef.current.set(key, job);
       }
       return job;
-    }
-    const late = preflightStateRef.current[key];
-    if (late?.status === "tight" && late.correctedId) {
-      throw new Error("보정 STL을 준비하는 중입니다. 잠시 후 다시 의뢰해주세요.");
     }
     return null;
   };

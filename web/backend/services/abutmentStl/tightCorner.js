@@ -1390,7 +1390,40 @@ function filletCorrectionAboutAxis(mesh, raw, toolR, axis) {
   }
   if (!movedCount) return null;
   next.invalidate();
-  return { mesh: next, movedVertices, movedCount, filletRadiusMm: targetR, axis };
+  const n = stations.length;
+  const tightSamples = stations
+    .map((st, i) => ({ st, i }))
+    .filter(({ st }) => st.measuredR < toolR - FILLET_R_TOLERANCE_MM)
+    .map(({ st, i }) => ({
+      sampleIndex: Math.round((i * FL_SAMPLE_MAX) / n),
+      filletRadiusMm: Math.round(Math.max(0, st.measuredR) * 1000) / 1000,
+      cornerPoint: fromPlaneCoords(st.corner.u, st.corner.w, st.radial, st.axis).slice(),
+    }));
+  return { mesh: next, movedVertices, movedCount, filletRadiusMm: targetR, axis, tightSamples };
+}
+
+/**
+ * 보정 결과를 접수 검사 메타로 바꾼다. 정점을 옮긴 보정만 불완전 가공으로 본다.
+ * @returns {object|null} tightCount 0이면 null
+ */
+export function tightCornerMetaFromCorrection(corrected, filletSurface) {
+  const samples = Array.isArray(corrected?.tightSamples) ? corrected.tightSamples : [];
+  if (!corrected?.movedCount || !samples.length) return null;
+  const rValues = samples.map((s) => s.filletRadiusMm).filter((v) => Number.isFinite(v));
+  return {
+    version: TIGHT_CORNER_VERSION,
+    toolDiameterMm: FINISH_BALL_DIAMETER_MM,
+    tightCount: samples.length,
+    averageFilletRadiusMm: rValues.length
+      ? Math.round((rValues.reduce((a, b) => a + b, 0) / rValues.length) * 1000) / 1000
+      : null,
+    samples,
+    tightFinishLineSegments: [],
+    ballPassPolylines: [],
+    reliefOverlay: null,
+    correctionSolid: filletSurface || null,
+    needsCorrectionReview: true,
+  };
 }
 
 /**
