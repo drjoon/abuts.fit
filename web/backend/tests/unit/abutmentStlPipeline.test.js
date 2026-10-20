@@ -270,6 +270,31 @@ describe("abutmentStl tightCorner", () => {
     expect(moved).toBeGreaterThan(48);
   });
 
+  it("기울기 축이 정렬 z축과 달라도 보정 띠는 마진 코너에 붙고 피니시라인을 넘지 않는다", () => {
+    // 실제 케이스(20261020-PKSQCLFK): 기울기 축 ≈9°, R은 z축 단면에서 재는데 띠를 기울기 축으로 놓아 떴다.
+    const flPts = [];
+    for (let i = 0; i < 48; i += 1) {
+      const a = (i / 48) * Math.PI * 2;
+      flPts.push([3.6 * Math.cos(a), 3.6 * Math.sin(a), 2.0]);
+    }
+    const mesh = Mesh.fromStlBuffer(
+      writeBinaryStl({ positions: marginWallSoup(0.25), attributes: null }),
+    );
+    const tc = detectTightCorners(mesh, flPts, {
+      tiltAxisVector: { x: -0.127, y: -0.092, z: 0.988 },
+    });
+    expect(tc.tightCount).toBeGreaterThan(20);
+    const pos = tc.reliefOverlay.positions;
+    expect(pos.length).toBeGreaterThan(100);
+    for (let i = 0; i < pos.length; i += 3) {
+      const r = Math.hypot(pos[i], pos[i + 1]);
+      const z = pos[i + 2];
+      expect(r).toBeLessThan(3.6 + 0.03);
+      expect(r).toBeGreaterThan(2.4 - 0.03);
+      expect(z).toBeGreaterThan(2.0 - 0.03);
+    }
+  });
+
   it("필렛 정점이 없는 날카로운 코너는 덧붙여 메우지 않는다", () => {
     const flPts = [];
     for (let i = 0; i < 48; i += 1) {
@@ -357,7 +382,7 @@ describe("abutmentStl pipeline", () => {
       expect(out.finishLine.points.length).toBeGreaterThanOrEqual(8);
       expect(out.stlMetadata?.connectionDiameter).toBe(3.33);
       expect(out.tightCorner).toBeTruthy();
-      expect(out.tightCorner.version).toBe(6);
+      expect(out.tightCorner.version).toBe(7);
     }
   });
 

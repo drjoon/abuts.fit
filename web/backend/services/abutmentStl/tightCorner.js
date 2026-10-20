@@ -9,7 +9,7 @@
 // 뷰어에서 토글을 켰을 때만 원본 위에 빨갛게 덧입혀 보여준다.
 import { cross, meshAxisPlaneSection, normalize } from "./meshCore.js";
 
-export const TIGHT_CORNER_VERSION = 6;
+export const TIGHT_CORNER_VERSION = 7;
 export const FINISH_BALL_DIAMETER_MM = 1.2;
 export const FINISH_BALL_RADIUS_MM = FINISH_BALL_DIAMETER_MM / 2;
 
@@ -271,8 +271,9 @@ const RELIEF_SMOOTH_HALF_WINDOW = 3;
 /**
  * 오목 코너(공기 쪽 쐐기)를 φ볼 반경 필렛으로 메운 단면. 항상 같은 점 수(어깨 리드인 → 호 → 벽 리드아웃).
  * rayLedge/rayWall: 코너에서 각 면을 따라 뻗는 단위벡터. 호 중심은 두 광선 사이(공기 쪽)에 있다.
+ * ledgeMaxMm: 코너→피니시라인 거리. 마진 쪽은 여기서 끊는다(넘으면 마진 아래 허공에 뜬다).
  */
-export function filletConcaveCorner2d(corner, rayLedge, rayWall, toolR) {
+export function filletConcaveCorner2d(corner, rayLedge, rayWall, toolR, ledgeMaxMm = Infinity) {
   const cosExt = clamp(rayWall.u * rayLedge.u + rayWall.w * rayLedge.w, -1, 1);
   const extAngle = Math.acos(cosExt);
   if (!(extAngle > 0.04) || extAngle >= Math.PI - 0.04) return null;
@@ -295,10 +296,13 @@ export function filletConcaveCorner2d(corner, rayLedge, rayWall, toolR) {
   let da = a2 - a1;
   while (da <= -Math.PI) da += Math.PI * 2;
   while (da > Math.PI) da -= Math.PI * 2;
-  const pts = [at(rayLedge, trim + RELIEF_LEAD_MM)];
+  const ledgeMax = Number.isFinite(ledgeMaxMm) && ledgeMaxMm > 0 ? ledgeMaxMm : Infinity;
+  const pts = [at(rayLedge, Math.min(trim + RELIEF_LEAD_MM, ledgeMax))];
   for (let i = 0; i <= RELIEF_ARC_STEPS; i += 1) {
     const ang = a1 + (da * i) / RELIEF_ARC_STEPS;
-    pts.push({ u: cx + toolR * Math.cos(ang), w: cw + toolR * Math.sin(ang) });
+    const p = { u: cx + toolR * Math.cos(ang), w: cw + toolR * Math.sin(ang) };
+    const along = (p.u - corner.u) * rayLedge.u + (p.w - corner.w) * rayLedge.w;
+    pts.push(along > ledgeMax ? at(rayLedge, ledgeMax) : p);
   }
   pts.push(at(rayWall, trim + RELIEF_LEAD_MM));
   return pts.map((p) => [round3(p.u), round3(p.w)]);
@@ -363,29 +367,54 @@ function reliefRuns(tightRows, total) {
   return runs;
 }
 
+/**
+ * 묶음의 보정 단면을 3D 점으로 편다. 행마다 R을 잰 단면(기울기 축 또는 정렬 z축)의 프레임을 쓴다.
+ * 다른 축 프레임에 놓으면 띠가 축 기울기만큼 돌아가 마진에서 뜨거나 묻힌다.
+ * 평활은 정렬 z축 원통 좌표(반경·높이)로 하고 각 점의 둘레 각은 그대로 둔다.
+ */
+function reliefRun3d(run, axis, inset = 0) {
+  const raw = run.map((row) => {
+    const radial = Array.isArray(row.profileRadial)
+      ? row.profileRadial
+      : radialFromFinishPoint(row.finishLinePoint, axis);
+    const ax = Array.isArray(row.profileAxis) ? row.profileAxis : axis;
+    return row.reliefProfile.map(([u, w]) =>
+      fromPlaneCoords(inset > 0 ? Math.max(u - inset, 0.25) : u, w, radial, ax),
+    );
+  });
+  const n = raw.length;
+  return raw.map((rowPts, i) => {
+    const lo = Math.max(0, i - RELIEF_SMOOTH_HALF_WINDOW);
+    const hi = Math.min(n - 1, i + RELIEF_SMOOTH_HALF_WINDOW);
+    return rowPts.map((p, c) => {
+      let sr = 0;
+      let sz = 0;
+      for (let k = lo; k <= hi; k += 1) {
+        sr += Math.hypot(raw[k][c][0], raw[k][c][1]);
+        sz += raw[k][c][2];
+      }
+      const cnt = hi - lo + 1;
+      const r = Math.hypot(p[0], p[1]);
+      const s = r > 1e-9 ? sr / cnt / r : 1;
+      return [p[0] * s, p[1] * s, sz / cnt];
+    });
+  });
+}
+
 /** 프리뷰용 필렛 보정면 연속 띠. 보정 솔리드의 바깥면과 같은 면이다. */
 export function buildTightCornerReliefOverlay(tightRows, axis, options = {}) {
   const toolR =
     Number(options.toolRadiusMm) > 0 ? Number(options.toolRadiusMm) : FINISH_BALL_RADIUS_MM;
   const total = Number(options.sampleTotal) || 0;
-  const rows = (Array.isArray(tightRows) ? tightRows : []).filter(
-    (r) => Array.isArray(r?.reliefProfile) && r.reliefProfile.length >= 4 && Number.isInteger(r.sampleIndex),
-  );
-  if (!rows.length || !total) return null;
   const positions = [];
   const indices = [];
-  for (const run of groupConsecutiveRows(rows, total)) {
-    if (run.length < 2) continue;
-    const smooth = smoothRunProfiles(run);
-    const cols = smooth[0].length;
+  for (const { run } of reliefRuns(tightRows, total)) {
+    const rows3 = reliefRun3d(run, axis);
+    const cols = rows3[0].length;
     const base = positions.length / 3;
-    run.forEach((row, ri) => {
-      const radial = radialFromFinishPoint(row.finishLinePoint, axis);
-      for (const [u, w] of smooth[ri]) {
-        const p = fromPlaneCoords(u, w, radial, axis);
-        positions.push(round3(p[0]), round3(p[1]), round3(p[2]));
-      }
-    });
+    for (const rowPts of rows3) {
+      for (const p of rowPts) positions.push(round3(p[0]), round3(p[1]), round3(p[2]));
+    }
     for (let ri = 0; ri < run.length - 1; ri += 1) {
       for (let c = 0; c < cols - 1; c += 1) {
         const i0 = base + ri * cols + c;
@@ -418,18 +447,15 @@ export function buildTightCornerReliefSolid(tightRows, axis, options = {}) {
     if (flip) indices.push(a, b, c, b, d, c);
     else indices.push(a, c, b, b, c, d);
   };
-  for (const { run, smooth } of reliefRuns(tightRows, total)) {
-    const cols = smooth[0].length;
+  for (const { run } of reliefRuns(tightRows, total)) {
+    const layers = [reliefRun3d(run, axis), reliefRun3d(run, axis, RELIEF_SOLID_DEPTH_MM)];
+    const cols = layers[0][0].length;
     const cyclic = run.length >= total;
     const rowCount = cyclic ? run.length + 1 : run.length;
     const outerBase = positions.length / 3;
-    for (let layer = 0; layer < 2; layer += 1) {
+    for (const rows3 of layers) {
       for (let ri = 0; ri < rowCount; ri += 1) {
-        const src = ri % run.length;
-        const radial = radialFromFinishPoint(run[src].finishLinePoint, axis);
-        for (const [u0, w] of smooth[src]) {
-          const u = layer === 0 ? u0 : Math.max(u0 - RELIEF_SOLID_DEPTH_MM, 0.25);
-          const p = fromPlaneCoords(u, w, radial, axis);
+        for (const p of rows3[ri % run.length]) {
           positions.push(round3(p[0]), round3(p[1]), round3(p[2]));
         }
       }
@@ -836,7 +862,7 @@ export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log, measureOptions 
         filletRadiusMm: Math.round(Math.max(0, measuredR) * 1000) / 1000,
       };
     }
-    const reliefProfile = filletConcaveCorner2d(corner, rayLedge, rayWall, toolR);
+    const reliefProfile = filletConcaveCorner2d(corner, rayLedge, rayWall, toolR, station.distFl);
     if (!reliefProfile) return no("relief-null");
     log?.(`[tight-corner] tight az=${azDeg}° R=${measuredR.toFixed(3)}mm<${toolR}`);
     return {
@@ -846,6 +872,8 @@ export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log, measureOptions 
       airAngleDeg: Math.round((ext * 1800) / Math.PI) / 10,
       filletRadiusMm: Math.round(Math.max(0, measuredR) * 1000) / 1000,
       reliefProfile,
+      profileAxis: station.axis.slice(),
+      profileRadial: station.radial.slice(),
     };
   }
   const pts = extractProfileAboveFl(mesh, fl, radial, axis, n);
@@ -934,7 +962,13 @@ export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log, measureOptions 
     };
   }
 
-  const reliefProfile = filletConcaveCorner2d(corner, rayLedge, rayWall, toolR);
+  const reliefProfile = filletConcaveCorner2d(
+    corner,
+    rayLedge,
+    rayWall,
+    toolR,
+    Math.hypot(pts[0].u - corner.u, pts[0].w - corner.w),
+  );
   if (!reliefProfile) return no("relief-null");
   const cornerPoint3 = fromPlaneCoords(corner.u, corner.w, radial, axis);
   log?.(
@@ -948,6 +982,8 @@ export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log, measureOptions 
     airAngleDeg: Math.round((ext * 1800) / Math.PI) / 10,
     filletRadiusMm: Math.round(Math.max(0, measuredR) * 1000) / 1000,
     reliefProfile,
+    profileAxis: axis.slice(),
+    profileRadial: radial.slice(),
   };
 }
 
@@ -1102,7 +1138,7 @@ function tightCornerMeta({ toolR, axis, raw, sampled, samples }, { solids = true
     averageFilletRadiusMm: rValues.length
       ? Math.round((rValues.reduce((a, b) => a + b, 0) / rValues.length) * 1000) / 1000
       : null,
-    samples: samples.map(({ reliefProfile, ...rest }) => rest),
+    samples: samples.map(({ reliefProfile, profileAxis, profileRadial, ...rest }) => rest),
     tightFinishLineSegments: buildTightFinishLineSegments(raw, samples),
     /** @deprecated v2 — 프리뷰는 reliefOverlay만 사용. */
     ballPassPolylines: [],
