@@ -2,6 +2,7 @@
 // - 2026-10-07: getShapes/replaceShapes. 작업 파일은 메타데이터로 다시 연다.
 // - 2026-10-01: 표시 본체를 끌면 평행이동. 모서리는 크기.
 // - 2026-10-01: 표시는 모서리로 크기를 바꾼다. 3D 뷰에서는 모델에 붙어 화면을 돌리면 같이 돈다.
+// - 2026-10-20: 순번 뱃지 (1) X 를 드래그해 위치를 옮긴다. `labelOffset` 으로 저장·이미지에 반영.
 // - 2026-09-30: 표시마다 (1)(2) 순번. X로 그 순번만 지운다. 저장·첨부 이미지에도 순번을 넣는다.
 // - 2026-09-29: 펜·화살표·사각형·원·점·글자. 도형은 뷰 비율 좌표로 두고 크기가 바뀌면 다시 그린다. 되돌리기.
 // related files:
@@ -35,6 +36,7 @@ import {
   shapeHandles,
   shapeHitPx,
   shapeLabelPoint,
+  shapeMarkDisplayPoint,
   textSize,
   toUV,
   type InkScale,
@@ -216,21 +218,23 @@ function drawShape(
 function drawMarkLabel(
   ctx: CanvasRenderingContext2D,
   index: number,
-  anchor: ScreenPoint,
+  at: ScreenPoint,
   w: number,
   h: number,
   scale: number,
 ) {
   const label = `(${index + 1})`;
+  const x = at.x * w;
+  const y = at.y * h;
   ctx.save();
   ctx.font = `700 ${12 * scale}px system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif`;
   ctx.textBaseline = "middle";
   ctx.lineWidth = 4 * scale;
   ctx.lineJoin = "round";
   ctx.strokeStyle = "rgba(255,255,255,0.95)";
-  ctx.strokeText(label, anchor.x * w + 10 * scale, anchor.y * h - 12 * scale);
+  ctx.strokeText(label, x, y);
   ctx.fillStyle = "#111827";
-  ctx.fillText(label, anchor.x * w + 10 * scale, anchor.y * h - 12 * scale);
+  ctx.fillText(label, x, y);
   ctx.restore();
 }
 
@@ -261,6 +265,17 @@ type TextDraft = {
 
 type ResizeDrag = { index: number; id: string; start: PaintShape };
 type MoveDrag = { index: number; start: PaintShape; x: number; y: number; world: Vec3 | null };
+type LabelDrag = { index: number; startOff: ScreenPoint; x: number; y: number };
+
+/** 순번 뱃지 기본 위치(앵커 대비). 화면 rem 기준. */
+function defaultMarkOffset(anchor: ScreenPoint, rect: DOMRect): ScreenPoint {
+  const scale = uiScale();
+  const rem = 16 * scale;
+  return {
+    x: (0.35 * rem) / Math.max(rect.width, 1),
+    y: ((anchor.y < 0.08 ? 0.25 : -1.35) * rem) / Math.max(rect.height, 1),
+  };
+}
 
 function roundKey(value: number) {
   return Math.round(value * 10000);
@@ -283,6 +298,7 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
     const selectedRef = useRef<number | null>(null);
     const resizeRef = useRef<ResizeDrag | null>(null);
     const moveRef = useRef<MoveDrag | null>(null);
+    const labelDragRef = useRef<LabelDrag | null>(null);
     const viewDragRef = useRef<{
       pointerId: number;
       x: number;
@@ -346,6 +362,8 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       syncPaintInk(group, list, current.viewSize());
     };
 
+    const markRect = () => canvasRef.current?.getBoundingClientRect() ?? null;
+
     const publishOverlay = () => {
       const current = spaceRef.current;
       const projector = current ? (point: Vec3) => current.project(point) : null;
@@ -353,7 +371,12 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
         for (const shape of shapesRef.current) refreshShapeScreen(shape, projector);
         if (draftRef.current) refreshShapeScreen(draftRef.current, projector);
       }
-      const nextMarks = shapesRef.current.map((shape) => shapeLabelPoint(shape, projector));
+      const rect = markRect();
+      const nextMarks = shapesRef.current.map((shape) => {
+        const anchor = shapeLabelPoint(shape, projector);
+        if (!anchor || !rect) return null;
+        return shapeMarkDisplayPoint(shape, projector, defaultMarkOffset(anchor, rect));
+      });
       const index = selectedRef.current;
       const shape = index != null ? shapesRef.current[index] : null;
       const nextHandles =
@@ -425,6 +448,7 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       selectedRef.current = null;
       resizeRef.current = null;
       moveRef.current = null;
+      labelDragRef.current = null;
       setShapes([], opts);
     };
 
@@ -469,12 +493,15 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
           ctx.drawImage(base, 0, 0);
           const cssWidth = canvasRef.current?.getBoundingClientRect().width ?? 0;
           const scale = (cssWidth > 0 ? out.width / cssWidth : 1) * uiScale();
+          const rect = canvasRef.current?.getBoundingClientRect();
           shapesRef.current.forEach((shape, index) => {
             if (drawsOnCanvas(shape)) {
               drawShape(ctx, shape, out.width, out.height, scale);
             }
             const anchor = shapeLabelPoint(shape, projector);
-            if (anchor) drawMarkLabel(ctx, index, anchor, out.width, out.height, scale);
+            if (!anchor || !rect) return;
+            const at = shapeMarkDisplayPoint(shape, projector, defaultMarkOffset(anchor, rect));
+            if (at) drawMarkLabel(ctx, index, at, out.width, out.height, scale);
           });
           out.toBlob((blob) => resolve(blob), "image/png");
         }),
@@ -560,6 +587,7 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       draftRef.current = null;
       resizeRef.current = null;
       moveRef.current = null;
+      labelDragRef.current = null;
       redraw();
       publishOverlay();
       // commitText·redraw는 ref만 읽는다.
@@ -672,6 +700,19 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
       );
       syncInk();
       redraw();
+      publishOverlay();
+    };
+
+    const applyLabelDrag = (clientX: number, clientY: number) => {
+      const drag = labelDragRef.current;
+      if (!drag) return;
+      const shape = shapesRef.current[drag.index];
+      const point = pointAt(clientX, clientY);
+      if (!shape || !point) return;
+      shape.labelOffset = {
+        x: drag.startOff.x + (point.x - drag.x),
+        y: drag.startOff.y + (point.y - drag.y),
+      };
       publishOverlay();
     };
 
@@ -843,6 +884,10 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
               }
               return;
             }
+            if (labelDragRef.current) {
+              applyLabelDrag(event.clientX, event.clientY);
+              return;
+            }
             if (moveRef.current) {
               applyMove(event.clientX, event.clientY);
               return;
@@ -910,6 +955,11 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
               spaceRef.current?.view({ type: "end" });
               return;
             }
+            if (labelDragRef.current) {
+              labelDragRef.current = null;
+              notifyShapes();
+              return;
+            }
             if (moveRef.current) {
               moveRef.current = null;
               const canvas = canvasRef.current;
@@ -943,6 +993,7 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
               spaceRef.current?.view({ type: "end" });
             }
             moveRef.current = null;
+            labelDragRef.current = null;
             draftRef.current = null;
             syncInk();
             redraw();
@@ -979,18 +1030,56 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
           mark ? (
             <div
               key={`mark-${index}`}
-              className="pointer-events-auto absolute z-[9] flex items-center gap-0.5 rounded-full border border-slate-300 bg-white/95 py-0.5 pl-1.5 pr-0.5 text-[0.6875rem] font-semibold leading-none text-slate-900 shadow-sm"
+              className={cn(
+                "pointer-events-auto absolute z-[9] flex items-center gap-0.5 rounded-full border border-slate-300 bg-white/95 py-0.5 pl-1.5 pr-0.5 text-[0.6875rem] font-semibold leading-none text-slate-900 shadow-sm",
+                enabled && "cursor-grab active:cursor-grabbing",
+              )}
               style={{
                 left: `${mark.x * 100}%`,
                 top: `${mark.y * 100}%`,
-                transform: mark.y < 0.08 ? "translate(0.35rem, 0.25rem)" : "translate(0.35rem, -1.35rem)",
               }}
+              title={enabled ? "드래그해서 순번 위치 옮기기" : undefined}
               onPointerDown={(event) => {
                 if (!enabled || event.button !== 0) return;
+                if ((event.target as HTMLElement).closest("button")) return;
                 event.preventDefault();
                 event.stopPropagation();
                 selectedRef.current = index;
+                const shape = shapesRef.current[index];
+                const canvas = canvasRef.current;
+                const rect = canvas?.getBoundingClientRect();
+                const projector = spaceRef.current
+                  ? (point: Vec3) => spaceRef.current?.project(point) ?? null
+                  : null;
+                const point = pointAt(event.clientX, event.clientY);
+                const anchor = shape ? shapeLabelPoint(shape, projector) : null;
+                if (!shape || !rect || !point || !anchor) {
+                  publishOverlay();
+                  return;
+                }
+                const startOff = shape.labelOffset ?? defaultMarkOffset(anchor, rect);
+                if (!shape.labelOffset) shape.labelOffset = { ...startOff };
+                labelDragRef.current = {
+                  index,
+                  startOff: { ...startOff },
+                  x: point.x,
+                  y: point.y,
+                };
+                event.currentTarget.setPointerCapture(event.pointerId);
                 publishOverlay();
+              }}
+              onPointerMove={(event) => {
+                if (!labelDragRef.current || labelDragRef.current.index !== index) return;
+                applyLabelDrag(event.clientX, event.clientY);
+              }}
+              onPointerUp={(event) => {
+                if (!labelDragRef.current || labelDragRef.current.index !== index) return;
+                labelDragRef.current = null;
+                notifyShapes();
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }}
+              onPointerCancel={() => {
+                if (labelDragRef.current?.index === index) labelDragRef.current = null;
               }}
             >
               <span>({index + 1})</span>

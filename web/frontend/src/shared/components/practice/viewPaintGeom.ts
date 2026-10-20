@@ -19,6 +19,9 @@ export type PenSample = { u: number; v: number; lift: number };
 /** 그릴 때의 화면 배율. 선 굵기·점 크기를 그 시점 크기로 고정한다. */
 export type InkScale = { px: number; lift: number };
 
+/** 순번 뱃지 위치. 앵커 대비 화면 비율 오프셋. 없으면 UI 기본값. */
+type ShapeMark = { labelOffset?: ScreenPoint };
+
 type BoxShape = {
   color: string;
   width: number;
@@ -33,7 +36,7 @@ type BoxShape = {
 };
 
 export type PaintShape =
-  | {
+  | ({
       kind: "pen";
       color: string;
       width: number;
@@ -41,11 +44,11 @@ export type PaintShape =
       pose?: Pose;
       samples?: PenSample[];
       ink?: InkScale;
-    }
-  | ({ kind: "arrow" } & BoxShape)
-  | ({ kind: "rect" } & BoxShape)
-  | ({ kind: "ellipse" } & BoxShape)
-  | {
+    } & ShapeMark)
+  | ({ kind: "arrow" } & BoxShape & ShapeMark)
+  | ({ kind: "rect" } & BoxShape & ShapeMark)
+  | ({ kind: "ellipse" } & BoxShape & ShapeMark)
+  | ({
       kind: "dot";
       color: string;
       width: number;
@@ -56,8 +59,8 @@ export type PaintShape =
       /** 점 반지름. 3D면 모델 단위, 2D면 CSS px. 없으면 굵기에서 계산한다. */
       radius?: number;
       ink?: InkScale;
-    }
-  | {
+    } & ShapeMark)
+  | ({
       kind: "text";
       color: string;
       width: number;
@@ -68,7 +71,7 @@ export type PaintShape =
       av?: number;
       scale?: number;
       ink?: InkScale;
-    };
+    } & ShapeMark);
 
 export const TEXT_FONT =
   "600 {size}px system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif";
@@ -757,6 +760,18 @@ export function shapeLabelPoint(
   if (shape.kind === "arrow") return shape.to;
   if (shape.kind === "dot" || shape.kind === "text") return shape.at;
   return null;
+}
+
+/** 순번 뱃지 표시 위치. `defaultOffset`은 `labelOffset`이 없을 때만 쓴다. */
+export function shapeMarkDisplayPoint(
+  shape: PaintShape,
+  project: ((point: Vec3) => ScreenPoint | null) | null,
+  defaultOffset?: ScreenPoint,
+): ScreenPoint | null {
+  const anchor = shapeLabelPoint(shape, project);
+  if (!anchor) return null;
+  const off = shape.labelOffset ?? defaultOffset ?? { x: 0, y: 0 };
+  return { x: anchor.x + off.x, y: anchor.y + off.y };
 }
 
 /** 화면 좌표를 모델 투영으로 다시 맞춘다. 순번·손잡이 위치. */
