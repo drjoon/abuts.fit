@@ -826,6 +826,262 @@ function angularLowPass(values, outN = values?.length) {
   );
 }
 
+/** 커프 곡면 최소 오목 곡률 반경(mm). 공구 반경 0.65mm 이상이 되도록 여유를 둔 목표 반경. */
+export const CUFF_MIN_CONCAVE_RADIUS_MM = 0.78;
+
+/**
+ * 4차 베지어 이음 프로파일의 제어점을 조정해 자오선(종단면) 및 둘레 방향(3D 주곡률) 오목 곡률 반경이
+ * CUFF_MIN_CONCAVE_RADIUS_MM(실효 공구 반경 ≥0.65mm) 이상이 되도록 한다.
+ * 커넥션 원점 상방 CUFF_DEFORM_MIN_Z_MM(0.3mm) 아래는 건드리지 않으며, 피니시라인 위 끝 반경(c4)도 그대로 둔다.
+ */
+function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tailWeights = null) {
+  const n = profiles.length;
+  const eps = 1e-4;
+  const ctrl = profiles.map((fn) => {
+    const c0 = fn(0);
+    const c4 = fn(1);
+    const d0 = (fn(eps) - c0) / eps / 4;
+    const d3 = (c4 - fn(1 - eps)) / eps / 4;
+    const c1 = c0 + d0;
+    const c3 = c4 - d3;
+    const c2 = (16 * fn(0.5) - c0 - 4 * c1 - 4 * c3 - c4) / 6;
+    return [c0, c1, c2, c3, c4];
+  });
+  if (!ctrl.every((c) => c.every(Number.isFinite))) return profiles;
+  const modified = new Uint8Array(n);
+  const dMaxs = hs.map((h) => (PROFILE_MAX_SLOPE * h) / 4);
+  const stepLim = (h, dLo, dHi) => {
+    const s = (4 * Math.min(dLo, dHi)) / h;
+    return (h * h * Math.pow(1 + s * s, 1.5)) / (12 * CUFF_MIN_CONCAVE_RADIUS_MM);
+  };
+  for (let j = 0; j < n; j += 1) {
+    const c = ctrl[j];
+    const h = hs[j];
+    const dMax = dMaxs[j];
+    let d0 = c[1] - c[0];
+    let d1 = c[2] - c[1];
+    let d2 = c[3] - c[2];
+    let d3 = c[4] - c[3];
+    const hasConvexTail = tailWeights && tailWeights[j] > 1e-3 && d3 < d2;
+    for (let pass = 0; pass < 40; pass += 1) {
+      let changed = false;
+      const lim23 = stepLim(h, d2, d3);
+      if (d3 - d2 > lim23 + 1e-6) {
+        const ex = d3 - d2 - lim23;
+        d3 -= 0.5 * ex;
+        d2 += 0.5 * ex;
+        changed = true;
+      }
+      const lim12 = stepLim(h, d1, d2);
+      if (d2 - d1 > lim12 + 1e-6) {
+        const ex = d2 - d1 - lim12;
+        if (hasConvexTail) {
+          d2 -= 0.5 * ex;
+          d1 += 0.5 * ex;
+        } else {
+          const to3 = Math.min(ex, Math.max(0, Math.min(dMax, d2 + lim23) - d3));
+          d2 -= to3;
+          d3 += to3;
+          const rem1 = ex - to3;
+          d2 -= 0.5 * rem1;
+          d1 += 0.5 * rem1;
+        }
+        changed = true;
+      }
+      const lim01 = stepLim(h, d0, d1);
+      if (d1 - d0 > lim01 + 1e-6) {
+        const ex = d1 - d0 - lim01;
+        const to2 = Math.min(ex, Math.max(0, Math.min(dMax, d1 + lim12) - d2));
+        d1 -= to2;
+        d2 += to2;
+        const rem1 = ex - to2;
+        const to3 = hasConvexTail ? 0 : Math.min(rem1, Math.max(0, Math.min(dMax, d2 + lim23) - d3));
+        d1 -= to3;
+        d3 += to3;
+        const rem2 = rem1 - to3;
+        if (canLiftD0 && rem2 > 0) {
+          d1 -= 0.5 * rem2;
+          d0 += 0.5 * rem2;
+        }
+        changed = true;
+      }
+      if (!changed) break;
+      modified[j] = 1;
+    }
+    c[1] = c[0] + d0;
+    c[2] = c[1] + d1;
+    c[3] = c[2] + d2;
+  }
+
+  const zStart = Math.max(zA + 0.05, CUFF_DEFORM_MIN_Z_MM + 0.02);
+  const zTops = hs.map((h) => zA + h);
+  const zMaxAll = Math.max(...zTops);
+  const zLevels = [];
+  for (let z = zStart; z <= zMaxAll - 0.04; z += 0.06) zLevels.push(z);
+  const nz = zLevels.length;
+  if (nz > 0) {
+    const active = Array.from({ length: nz }, (_, iz) => {
+      const z = zLevels[iz];
+      return Array.from({ length: n }, (_, j) => {
+        if (z >= zTops[j] - 0.02) return null;
+        const h = hs[j];
+        const invH = 1 / h;
+        const invH2 = invH * invH;
+        const t = (z - zA) * invH;
+        const u = 1 - t;
+        const u2 = u * u;
+        const u3 = u2 * u;
+        const u4 = u2 * u2;
+        const t2 = t * t;
+        const t3 = t2 * t;
+        const t4 = t2 * t2;
+        const b0 = u4;
+        const b1 = canLiftD0 ? 4 * u3 * t : 0;
+        const b2 = 6 * u2 * t2;
+        const b3 = 4 * u * t3;
+        const b4 = t4;
+        const norm = b1 * b1 + b2 * b2 + b3 * b3 + 1e-6;
+        return {
+          b0,
+          b1: 4 * u3 * t,
+          b2,
+          b3,
+          b4,
+          u3,
+          u2t: 3 * u2 * t,
+          ut2: 3 * u * t2,
+          t3,
+          u2,
+          ut: 2 * u * t,
+          t2,
+          s1: 4 * invH,
+          s2: 12 * invH2,
+          w1: b1 / norm,
+          w2: b2 / norm,
+          w3: b3 / norm,
+        };
+      });
+    });
+    const dth = TWO_PI / n;
+    const step = 2 * dth;
+    const kLim = 1 / CUFF_MIN_CONCAVE_RADIUS_MM;
+    const rs = new Float64Array(n);
+    const rzs = new Float64Array(n);
+    const dc1 = new Float64Array(n);
+    const dc2 = new Float64Array(n);
+    const dc3 = new Float64Array(n);
+    for (let iter = 0; iter < 80; iter += 1) {
+      dc1.fill(0);
+      dc2.fill(0);
+      dc3.fill(0);
+      let any = false;
+      for (let iz = 0; iz < nz; iz += 1) {
+        const row = active[iz];
+        for (let j = 0; j < n; j += 1) {
+          const a = row[j];
+          if (!a) {
+            rs[j] = NaN;
+            rzs[j] = NaN;
+            continue;
+          }
+          const c = ctrl[j];
+          const d0 = c[1] - c[0];
+          const d1 = c[2] - c[1];
+          const d2 = c[3] - c[2];
+          const d3 = c[4] - c[3];
+          rs[j] = a.b0 * c[0] + a.b1 * c[1] + a.b2 * c[2] + a.b3 * c[3] + a.b4 * c[4];
+          rzs[j] = a.s1 * (a.u3 * d0 + a.u2t * d1 + a.ut2 * d2 + a.t3 * d3);
+        }
+        for (let j = 0; j < n; j += 1) {
+          const a = row[j];
+          if (!a) continue;
+          const jm = (j - 2 + n) % n;
+          const jp = (j + 2) % n;
+          const rm = rs[jm];
+          const r = rs[j];
+          const rp = rs[jp];
+          const rzm = rzs[jm];
+          const rz = rzs[j];
+          const rzp = rzs[jp];
+          if (!Number.isFinite(rm) || !Number.isFinite(rp) || !Number.isFinite(rzm) || !Number.isFinite(rzp)) continue;
+          const rTh = (rp - rm) / (2 * step);
+          const rThth = (rp - 2 * r + rm) / (step * step);
+          // 둘레가 오목하게 들어간 골(rThth > r + 2·rTh²/r, L > 0)만 바깥으로 메운다.
+          if (r * (rThth - r) - 2 * rTh * rTh <= 0) continue;
+          const rThz = (rzp - rzm) / (2 * step);
+          const E = r * r + rTh * rTh;
+          const F = rTh * rz;
+          const G = 1 + rz * rz;
+          const W2 = E * G - F * F;
+          const W = Math.sqrt(W2);
+          const L = (r * (rThth - r) - 2 * rTh * rTh) / W;
+          const M = (r * rThz - rTh * rz) / W;
+          const kTh = (G * L - 2 * F * M) / (2 * W2) + Math.hypot((G * L - 2 * F * M) / (2 * W2), M / W);
+          if (kTh > kLim) {
+            const need = 0.5 * step * step * (kTh - kLim) * ((W * E) / r);
+            if (need > 1e-6) {
+              any = true;
+              if (need * a.w1 > dc1[j]) dc1[j] = need * a.w1;
+              if (need * a.w2 > dc2[j]) dc2[j] = need * a.w2;
+              if (need * a.w3 > dc3[j]) dc3[j] = need * a.w3;
+            }
+          }
+        }
+      }
+      if (!any) break;
+      for (let j = 0; j < n; j += 1) {
+        if (!(dc1[j] > 1e-6 || dc2[j] > 1e-6 || dc3[j] > 1e-6)) continue;
+        modified[j] = 1;
+        const c = ctrl[j];
+        const dMax = dMaxs[j];
+        const h = hs[j];
+        c[1] = Math.min(c[0] + dMax, c[1] + 0.5 * dc1[j]);
+        c[2] = Math.min(c[1] + dMax, c[2] + 0.5 * dc2[j]);
+        c[3] = Math.min(c[2] + dMax, c[4], c[3] + 0.5 * dc3[j]);
+        let d0 = c[1] - c[0];
+        let d1 = c[2] - c[1];
+        let d2 = c[3] - c[2];
+        let d3 = c[4] - c[3];
+        for (let pass = 0; pass < 6; pass += 1) {
+          const lim23 = stepLim(h, d2, d3);
+          if (d3 - d2 > lim23) {
+            const ex = d3 - d2 - lim23;
+            d3 -= 0.5 * ex;
+            d2 += 0.5 * ex;
+          }
+          const lim12 = stepLim(h, d1, d2);
+          if (d2 - d1 > lim12) {
+            const ex = d2 - d1 - lim12;
+            d2 -= 0.5 * ex;
+            d1 += 0.5 * ex;
+          }
+          const lim01 = stepLim(h, d0, d1);
+          if (d1 - d0 > lim01) {
+            const ex = d1 - d0 - lim01;
+            if (canLiftD0) {
+              d1 -= 0.5 * ex;
+              d0 += 0.5 * ex;
+            } else {
+              d1 -= ex;
+              d2 = Math.min(dMax, d2 + ex);
+            }
+          }
+        }
+        c[1] = c[0] + d0;
+        c[2] = c[1] + d1;
+        c[3] = c[2] + d2;
+      }
+    }
+  }
+  return ctrl.map((c, j) => {
+    if (!modified[j]) return profiles[j];
+    return (t) => {
+      const u = 1 - t;
+      return c[0] * u ** 4 + 4 * c[1] * u ** 3 * t + 6 * c[2] * u ** 2 * t ** 2 + 4 * c[3] * u * t ** 3 + c[4] * t ** 4;
+    };
+  });
+}
+
 /** 이음 프로파일 둘레 평활에 쓰는 t 단계 수(사이는 3차 보간). */
 const PROFILE_SMOOTH_LEVELS = 128;
 const PROFILE_START_SLOPE_EPS = 1e-4;
@@ -1589,6 +1845,7 @@ function seamRows({
   tEnd,
   seamOrigScale,
   seamBlendScale = seamOrigScale,
+  convexCuffDeform = false,
 }) {
   const n = thetas.length;
   const top = Math.min(SEAM_TOP_DEPTH_MM, seamDepth / 2);
@@ -1659,6 +1916,7 @@ function seamRows({
     const depths = depthsAt(v);
     const ts = heights.map((h, j) => 1 - depths[j] / h);
     const keeps = ts.map((t, j) => {
+      if (convexCuffDeform) return 1;
       const scale = seamOrigScale ? seamOrigScale[j] : 1;
       return 1 - (1 - bandSmoothKeep(t, heights[j])) * scale;
     });
@@ -1865,7 +2123,19 @@ function bandSmoothKeep(t, height) {
  */
 function replaceBand(
   mesh,
-  { zA, ra, topZOf, radiusAt, rawCreaseR = null, rCut, origProbe, crease, seamOrigScale = null, seamBlendScale = seamOrigScale },
+  {
+    zA,
+    ra,
+    topZOf,
+    radiusAt,
+    rawCreaseR = null,
+    rCut,
+    origProbe,
+    crease,
+    seamOrigScale = null,
+    seamBlendScale = seamOrigScale,
+    convexCuffDeform = false,
+  },
 ) {
   let cut = splitByLevel(mesh, (x, y, z) => z - zA);
   if (!crease) cut = splitByLevel(cut, (x, y, z) => z - topZOf(angleOf(x, y)));
@@ -1999,7 +2269,7 @@ function replaceBand(
     const z = new Float64Array(STRIP_COLUMNS);
     for (let j = 0; j < STRIP_COLUMNS; j += 1) {
       const scale = seamOrigScale ? seamOrigScale[j] : 1;
-      const keep = 1 - (1 - bandSmoothKeep(t, heights[j])) * scale;
+      const keep = convexCuffDeform ? 1 : 1 - (1 - bandSmoothKeep(t, heights[j])) * scale;
       rad[j] = raw[j] * keep + avg[j] * (1 - keep);
       z[j] = zA + t * (heights[j] * keep + smoothHeights[j] * (1 - keep));
     }
@@ -2020,6 +2290,7 @@ function replaceBand(
         tEnd,
         seamOrigScale,
         seamBlendScale,
+        convexCuffDeform,
       }),
     );
   }
@@ -2506,17 +2777,23 @@ export function blendCuffJunction(buffer, options = {}) {
       }
       return { fn: p.fn, endSlope: p.endSlope };
     };
-    const profiles = smoothProfilesAcrossColumns(
-      tops.map((t, j) =>
-        bowlOf(
-          r1s[j],
-          belowR[j],
-          belowSlopes ? belowSlopes[j] : null,
-          hs[j],
-          seamOrigScale ? seamOrigScale[j] : 1,
-          0.1 * tailWeights[j],
-        ).fn,
+    const profiles = enforceMinToolRadiusOnProfiles(
+      smoothProfilesAcrossColumns(
+        tops.map((t, j) =>
+          bowlOf(
+            r1s[j],
+            belowR[j],
+            belowSlopes ? belowSlopes[j] : null,
+            hs[j],
+            seamOrigScale ? seamOrigScale[j] : 1,
+            0.1 * tailWeights[j],
+          ).fn,
+        ),
       ),
+      hs,
+      zA,
+      convexCuffDeform && zA >= CUFF_DEFORM_MIN_Z_MM - 1e-6,
+      tailWeights,
     );
     let maxSlope = 0;
     let minWall = Infinity;
@@ -2556,6 +2833,7 @@ export function blendCuffJunction(buffer, options = {}) {
       crease: crease && offsetMm === 0 ? crease : null,
       seamOrigScale,
       seamBlendScale: finalSeamOrigScale,
+      convexCuffDeform,
     });
       return { out, zTopMax, maxSlope };
     };
