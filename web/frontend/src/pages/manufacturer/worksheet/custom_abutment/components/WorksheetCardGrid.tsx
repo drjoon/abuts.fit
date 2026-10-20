@@ -511,13 +511,9 @@ export const WorksheetCardGrid = ({
             isFinishLineCaptureBad);
         const showCuffReviewBadge = isCuffManualReview && !rhinoWorkPending;
         const requestorAllowedTightCorner =
-          filletOvercutAllowedByRequestor &&
-          isTightCornerCorrectionNeeded &&
-          !isFinishLineMinZRisky &&
-          !isFinishLineCaptureBad &&
-          !isUnmachinableSample;
+          filletOvercutAllowedByRequestor && isTightCornerCorrectionNeeded;
         const incompleteMachiningBadgeLabel = requestorAllowedTightCorner
-          ? "불완전 & 의뢰자 허용"
+          ? "불완전. 의뢰자 컨펌"
           : "불완전";
         const incompleteMachiningBadgeTitle = (() => {
           if (requestorAllowedTightCorner) {
