@@ -358,6 +358,16 @@ const NewRequestPageContent = () => {
     return preparedCorrectedRef.current.get(String(correctedId || "").trim()) ?? null;
   }, []);
 
+  // 업로드·검사 직후(모달 열기 전)부터 보정 STL을 백그라운드로 받아 둔다.
+  useEffect(() => {
+    for (const file of files) {
+      const preflight = machiningPreflightByFileKey[getFileKey(file)];
+      const id = String(preflight?.correctedId || "").trim();
+      if (preflight?.status !== "tight" || !id) continue;
+      prepareCorrectedDesign(id, file.name);
+    }
+  }, [files, machiningPreflightByFileKey, prepareCorrectedDesign]);
+
   const handleRequestSettingsDefaultsChange = useCallback(
     (next: {
       designSoftware?: string;

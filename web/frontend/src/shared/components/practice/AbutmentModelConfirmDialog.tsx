@@ -454,8 +454,9 @@ export function AbutmentModelConfirmDialog({
   const handleCorrectedProceed = useCallback(async () => {
     const index = detailIndex;
     if (index === null) return;
-    const ok = await runCorrectedStlDownload();
-    if (!ok) return;
+    // 보정 STL 준비를 기다리며 멈추지 않는다. 다운로드는 뒤에서 이어가고 다음 단계로 바로 간다.
+    void runCorrectedStlDownload();
+    setCorrectedDownloadOpen(false);
     await onVerifyAndNextRef.current(index);
   }, [detailIndex, runCorrectedStlDownload]);
 

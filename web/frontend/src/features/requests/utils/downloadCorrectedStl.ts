@@ -70,6 +70,7 @@ export async function fetchCorrectedStlBlob({
     headers: effectiveToken ? { Authorization: `Bearer ${effectiveToken}` } : {},
     body: form,
     cache: "no-store",
+    signal: AbortSignal.timeout(170_000),
   });
 
   if (!res.ok) {
@@ -119,6 +120,7 @@ export async function fetchCorrectedDesignUpload({
     method: "GET",
     headers: effectiveToken ? { Authorization: `Bearer ${effectiveToken}` } : {},
     cache: "no-store",
+    signal: AbortSignal.timeout(170_000),
   });
   if (!res.ok) {
     let message = "보정 STL이 없거나 만료되었습니다.";
@@ -178,6 +180,7 @@ export async function fetchCachedCorrectedStlBlob({
     method: "GET",
     headers: effectiveToken ? { Authorization: `Bearer ${effectiveToken}` } : {},
     cache: "no-store",
+    signal: AbortSignal.timeout(170_000),
   });
   if (!res.ok) {
     return { ok: false, message: "보정 STL이 없거나 만료되었습니다." };
