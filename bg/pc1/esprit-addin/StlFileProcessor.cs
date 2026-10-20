@@ -127,7 +127,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private double? _backendHexRotationAppliedDeg;
         // 유지홈(retentionGroove) — request-meta none/deep 필수.
         // Finish_Front StepIncrement: none=5axisComposite_Front.prc 그대로, deep=0.20.
-        // Finish 인접 겹침(0.8mm)은 retentionGroove와 별개.
+        // Finish 경계: none=finishline min_z/max_z. deep=Front 끝 Splitline_2, Back 시작 Splitline_2-0.1.
         private string _backendRetentionGroove;
         private double? _backendCompositeStepPostOverrideMm;
         private double? _backendCompositeStepGingivaOverrideMm;
@@ -1577,9 +1577,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         double xMax = Math.Max(frontX, backX);
 
                         // [SSOT] SharedFinishSplitX
-                        //   Splitline_2 = Finish_Front끝
+                        //   Splitline_2 = finishLineTopX - 0.5 (Rough/Turn seam)
+                        //   deep Finish_Front 끝 = Splitline_2, Back 시작 = Splitline_2 - 0.1
+                        //   none Finish_Front 끝 = finishline min_z, Back 시작 = finishline max_z
                         //   Front_Rough끝 = Splitline_2 + 0.8
-                        //   = finishLineTopX - 0.5 (tip 쪽; Z+0.5 ≡ X-0.5)
                         //   finishLineTopX = backX - finishLineTopZ  (MoveSTL 이후, X=-Z)
                         // MainModuleComposite.SharedFinishSplitOffsetFromFinishLineTopMm 과 동일해야 한다.
                         // 금지: backX + finishLineTopZ - stlTopZ (FL 하방 침범)
@@ -1596,7 +1597,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         Environment.SetEnvironmentVariable(AppConfig.RoughfreeformSplitEnableEnv, "1");
                         Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_X", splitX.ToString(CultureInfo.InvariantCulture));
 
-                        AppLogger.Log($"DentalAddin: SharedFinishSplit 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top+0.5):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, topX:{topX.ToString("F4", CultureInfo.InvariantCulture)} (=Back-Z), rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, sharedSplitX:{splitX.ToString("F4", CultureInfo.InvariantCulture)}, clamped:{clamped} (=Splitline_2/Finish seam, Front_Rough끝=+0.8, FL상방0.5mm) (xRange:[{xMin.ToString("F4", CultureInfo.InvariantCulture)}~{xMax.ToString("F4", CultureInfo.InvariantCulture)}], Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
+                        AppLogger.Log($"DentalAddin: SharedFinishSplit 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top+0.5):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, topX:{topX.ToString("F4", CultureInfo.InvariantCulture)} (=Back-Z), rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, sharedSplitX:{splitX.ToString("F4", CultureInfo.InvariantCulture)}, clamped:{clamped}, retentionGroove:{_backendRetentionGroove ?? ""} (=Splitline_2, deep Finish_Front끝=Splitline_2 Back시작=-0.1, none은 finishline min/max, Front_Rough끝=+0.8, FL상방0.5mm) (xRange:[{xMin.ToString("F4", CultureInfo.InvariantCulture)}~{xMax.ToString("F4", CultureInfo.InvariantCulture)}], Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
                             }
                             catch (Exception ex)
                             {

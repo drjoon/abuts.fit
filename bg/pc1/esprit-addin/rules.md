@@ -90,10 +90,11 @@
     - Front_Rough 끝 = Front_Finish 끝(`Splitline_2`) + 0.6, Middle_Rough 끝 = `Xk` + 0.6 (D1.2 볼 반경, 2026-10-13). Back_Rough 끝 = BackPointX(Finish와 일치 유지)
     - 후행 Rough 시작 = 선행 Rough 끝 − 2.0 (`GetRoughAdjacentOverlapMm`)
     - D1.2 Finish는 경계에서 끝나므로 치은 쪽은 이미 황삭된 면만 깎는다
-  - Finish (2026-10-20): **Front 끝 = finishline min_z**, **Back 시작 = finishline max_z**
-    - Front_Finish 끝 X = `BackPointX - min_z` (커프쪽)
-    - Back_Finish 시작 X = `FinishLineX` = `BackPointX - max_z` (팁쪽)
-    - 마진 띠(max_z~min_z)는 양쪽이 겹친다. Splitline_2는 Rough/Turn 전용
+  - Finish (2026-10-20): `none`은 **Front 끝 = finishline min_z**, **Back 시작 = finishline max_z**. `deep`(유지홈 있음)은 **Front 끝 = Splitline_2**, **Back 시작 = Splitline_2 − 0.1mm**
+    - none Front_Finish 끝 X = `BackPointX - min_z` (커프쪽)
+    - none Back_Finish 시작 X = `FinishLineX` = `BackPointX - max_z` (팁쪽)
+    - none 마진 띠(max_z~min_z)는 양쪽이 겹친다
+    - deep은 피니시라인 대신 Splitline_2에서 끊고, Back만 0.1mm 겹친다
     - safe split이어도 Finish는 `Xk`로 나누지 않는다. `Xk`는 Turn/Rough만.
     - `GetFinishAdjacentOverlapMm()` = `0.8`. StepIncrement와 별개.
     - StepIncrement SSOT: 백엔드 `retentionGroove` (`none`→`5axisComposite_Front.prc` StepIncrement 그대로, `deep`→`0.20`) via `ABUTS_RETENTION_GROOVE`
@@ -110,7 +111,7 @@
   - 내부 region 코드는 Middle=`BACK`, Back=`BACK2`(T05·레이어·경계 로직 공유). 표시명만 바뀐다.
   - Middle_Rough 끝 `Xk+0.6`, Middle_Turn 끝 = Rough 끝 + D4 반경 + 보정 (황삭 끝+D4 반경 2.0+칩 0.2)
   - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX]`(경계 `RoughBoundryBack2`)
-  - Back_Finish `[finishline max_z ~ BackPointX]`. 스텝오버는 커넥션에서 포스트 팁 쪽 (`ReverseStepOverDirection`)
+  - none Back_Finish `[finishline max_z ~ BackPointX]`. deep Back_Finish `[Splitline_2-0.1 ~ BackPointX]`. 스텝오버는 커넥션에서 포스트 팁 쪽 (`ReverseStepOverDirection`)
 - Middle_Turn 끝(`Xk+3.0`)은 **클램프하지 않는다**. 줄이면 D4 러프가 원소재를 물고, Xk를 당기면 seam이 마진으로 들어간다.
 - 포기 조건(기존 단일 Back 유지): FL min_z 없음, `Xk < Splitline_2+1.5`, Middle_Turn 끝 > `BackPointX+1.5` (= 치은 파트 FL min_z < 1.7mm). 로그 `SafeSplit[...]`.
 - 원칙: Turn은 Rough 끝보다 D4 반경+칩(2.2) 이상 더 깎는다. 선행 3D 황삭은 Finish seam보다 0.8mm 더 깎아 D1.2가 미황삭을 물지 않게 한다.
@@ -121,12 +122,13 @@
 - 목적: **한 식**으로 아래를 동일 경계 좌표에 둔다.
   - `Splitline_2` / `TwoPhaseSplitLine` (Rough/Turn seam)
   - `Front_Rough` 끝 = 그 경계 + `GetRoughPastFinishSeamMm()` (`0.6`)
-  - Finish Front 끝·Back 시작은 Splitline_2가 아니다 (§4.3, min_z / max_z)
+  - Finish Front 끝·Back 시작: none은 min_z / max_z (§4.3). deep은 Splitline_2 / Splitline_2−0.1
 - 기준식:
   - `SharedFinishSplitX = finishLineTopX - 0.5` (tip 쪽 0.5mm, Z+0.5 ≡ X-0.5). 축에 수직인 한 평면이라 피니시라인 둘레 높낮이는 따라가지 않는다.
 - 인접 후행 시작:
   - `Back_Rough` 시작 = `Splitline_2 - roughRadius` (D4→2.0)
-  - `Back_Finish` 시작 = finishline max_z X. finishline이 없을 때만 `SharedFinishSplitX - GetFinishAdjacentOverlapMm()` (`0.8`, tip 쪽)
+  - none `Back_Finish` 시작 = finishline max_z X. finishline이 없을 때만 `SharedFinishSplitX - GetFinishAdjacentOverlapMm()` (`0.8`, tip 쪽)
+    - deep `Back_Finish` 시작 = `Splitline_2 - 0.1`. Front 끝 = `Splitline_2`
     - StepIncrement: `TryResolveFinishFrontStepIncrementOverrideMm()` (`none`→`5axisComposite_Front.prc` 그대로, `deep`→0.20). 겹침과 별개.
     - `StlFileProcessor.RequireBackendRetentionGrooveOrThrow` — none/deep만 허용, 미수신 시 예외
     - 실패 보고: `NotifyBackendFailure` → `/bg/register-file` status=failed → `request:async-action-failed` 토스트
@@ -140,7 +142,8 @@
 - 구현:
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
   - Rough: `frontEnd = splitline2 + GetRoughPastFinishSeamMm()` (`0.8`) / wide 시 `Front_Face` end, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle은 wide 시만
-  - Finish: `Front_Finish` 끝 = finishline min_z X, `Back_Finish` 시작 = finishline max_z X (`TryResolveFinishLineMinX` / `TryResolveFinishLineMaxX`)
+  - Finish none: `Front_Finish` 끝 = finishline min_z X, `Back_Finish` 시작 = finishline max_z X (`TryResolveFinishLineMinX` / `TryResolveFinishLineMaxX`)
+  - Finish deep: `Front_Finish` 끝 = `Splitline_2`, `Back_Finish` 시작 = `Splitline_2 - 0.1`
   - Middle 끝 = `Xk`, safe split `Back_Finish` 시작 = `Xk - 0.8`, Middle_Rough 끝 = `Xk + 0.8`
   - Finish_Front StepIncrement: `none`은 `5axisComposite_Front.prc` 값 유지, `deep`만 COM SetProperty 0.20 (`TrySetCompositeStepIncrement`)
   - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
@@ -279,7 +282,7 @@
   - Back: Finish 끝 = Rough 끝 = `BackPointX`, Turn 체인 수평 끝 = `BackPointX + R + 0.5 + ZStock`
     - 체인은 트림된 프로파일 끝(`EndXValue`, `LowerY`)까지만 쓰고 `ExtendTurning` 꼬리(EndX+Extend 수평, Exit angle 80 상승)는 버린다.
     - `Turning.prc` ZStock(0.3)만큼 툴패스 45도 모서리가 tip 쪽으로 당겨지므로 체인에 더한다. 0.5는 Back_Rough 툴패스가 BackPointX를 조금 넘는 몫.
-- Finish 겹침 (2026-10-20): Front_Finish 끝 = finishline min_z X, Back_Finish 시작 = finishline max_z X. safe split Back_Finish 시작 = `Xk − overlap`.
+- Finish 겹침 (2026-10-20): none Front_Finish 끝 = finishline min_z X, Back_Finish 시작 = finishline max_z X. deep Front 끝 = `Splitline_2`, Back 시작 = `Splitline_2 − 0.1`. safe split Back_Finish 시작 = `Xk − overlap`은 Turn/Rough용이며 Finish는 나누지 않는다.
 - 퇴출: Front/Middle/Back 모두 Turn 끝에서 45도로 올라가 소재 반경(topY)에 닿은 뒤 90도(수직)로 빠진다 (`BuildTurningRangeChain`).
 - `Tech_Default_Path.xml` Turning Extend(NumData[5])·Exit angle(80)은 3-stage Turn 끝점에 쓰지 않는다. XML 값은 2.0으로 두고 주석으로 기록.
 - 구현: `GetTurnPastRoughEndMm`, `GetTurnPastFinishSeamMm`, `ResolveBackTurnExitAllowance`, `TryPrepareTurningRegionRange`, `aEndOffsetFromSplitMm`(Front_Finish 끝)
