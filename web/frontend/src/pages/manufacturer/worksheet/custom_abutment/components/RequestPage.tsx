@@ -1883,9 +1883,6 @@ export const RequestPage = ({
   const [anodizingSavingMap, setAnodizingSavingMap] = useState<
     Record<string, boolean>
   >({});
-  const [onePassSavingMap, setOnePassSavingMap] = useState<
-    Record<string, boolean>
-  >({});
   const [compositeStepSavingMap, setCompositeStepSavingMap] = useState<
     Record<string, boolean>
   >({});
@@ -2162,179 +2159,6 @@ export const RequestPage = ({
       }
     },
     [anodizingSavingMap, pageState, toast, token],
-  );
-
-  const handleSaveOnePassEnabledOverride = useCallback(
-    async (req: ManufacturerRequest, nextValue: boolean) => {
-      if (!req?._id) return;
-      const requestMongoId = String(req._id || "").trim();
-      if (!requestMongoId) return;
-
-      const stageLabel = String(req.manufacturerStage || "").trim();
-      if (!["준비", "의뢰", "CAM", "request", "cam"].includes(stageLabel)) {
-        toast({
-          title: "변경 불가",
-          description: "One Pass 설정은 준비 단계에서만 변경할 수 있습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      if (onePassSavingMap[requestMongoId]) return;
-
-      const prevValue =
-        typeof req.caseInfos?.onePassEnabled === "boolean"
-          ? req.caseInfos.onePassEnabled
-          : null;
-
-      const requestId = String(req.requestId || "").trim();
-
-      const patchOnePassCaseInfos = (
-        caseInfos: ManufacturerRequest["caseInfos"] | undefined,
-        onePass: boolean,
-        clearNc = false,
-      ) => {
-        const nextCaseInfos = {
-          ...(caseInfos || {}),
-          onePassEnabled: onePass,
-        };
-        if (clearNc) {
-          delete nextCaseInfos.ncFile;
-          delete nextCaseInfos.espFile;
-        }
-        return nextCaseInfos;
-      };
-
-      const syncOnePassLocal = (onePass: boolean, clearNc = false) => {
-        pageState.setRequests((prev) =>
-          prev.map((item) => {
-            if (String(item?._id || "").trim() !== requestMongoId) return item;
-            const nextItem: ManufacturerRequest = {
-              ...item,
-              caseInfos: patchOnePassCaseInfos(item.caseInfos, onePass, clearNc),
-            };
-            if (clearNc) {
-              nextItem.productionSchedule = {
-                ...(item.productionSchedule || {}),
-                ncPreload: {
-                  status: "GENERATING",
-                  updatedAt: new Date().toISOString(),
-                },
-              };
-            }
-            return nextItem;
-          }),
-        );
-        pageState.setPreviewFiles((prev) => {
-          const openReq = prev?.request as ManufacturerRequest | undefined;
-          if (
-            !openReq ||
-            String(openReq._id || "").trim() !== requestMongoId
-          ) {
-            return prev;
-          }
-          return {
-            ...prev,
-            request: {
-              ...openReq,
-              caseInfos: patchOnePassCaseInfos(
-                openReq.caseInfos,
-                onePass,
-                clearNc,
-              ),
-              ...(clearNc
-                ? {
-                    productionSchedule: {
-                      ...(openReq.productionSchedule || {}),
-                      ncPreload: {
-                        status: "GENERATING",
-                        updatedAt: new Date().toISOString(),
-                      },
-                    },
-                  }
-                : {}),
-            },
-          };
-        });
-        if (clearNc) {
-          pageState.setPreviewNcText("");
-          pageState.setPreviewNcName("");
-          if (requestId) {
-            markNcRegenerationPending(requestId);
-            window.dispatchEvent(
-              new CustomEvent("nc-regeneration-started", {
-                detail: {
-                  requestId,
-                  requestMongoId,
-                  ncCleared: true,
-                },
-              }),
-            );
-          }
-        }
-      };
-
-      setOnePassSavingMap((prev) => ({ ...prev, [requestMongoId]: true }));
-      syncOnePassLocal(nextValue);
-
-      try {
-        const res = await fetch(
-          `/api/requests/${req._id}/one-pass-override`,
-          {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ onePassEnabled: nextValue }),
-          },
-        );
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || data?.success === false) {
-          throw new Error(data?.message || "One Pass 설정 저장에 실패했습니다.");
-        }
-
-        const savedValue =
-          typeof data?.data?.onePassEnabled === "boolean"
-            ? Boolean(data.data.onePassEnabled)
-            : nextValue;
-        const ncCleared = data?.data?.ncCleared === true;
-
-        syncOnePassLocal(savedValue, ncCleared);
-        if (ncCleared) {
-          toast({
-            title: "CAM 재생성",
-            description:
-              "One Pass 변경으로 NC를 삭제하고 CAM 재생성을 시작했습니다.",
-          });
-        }
-      } catch (e: any) {
-        pageState.setRequests((prev) =>
-          prev.map((item) => {
-            if (String(item?._id || "").trim() !== requestMongoId) return item;
-            const nextCaseInfos = { ...(item.caseInfos || {}) };
-            if (typeof prevValue === "boolean") {
-              nextCaseInfos.onePassEnabled = prevValue;
-            } else {
-              delete nextCaseInfos.onePassEnabled;
-            }
-            return {
-              ...item,
-              caseInfos: nextCaseInfos,
-            };
-          }),
-        );
-        toast({
-          title: "One Pass 저장 실패",
-          description: e?.message || "네트워크 오류",
-          variant: "destructive",
-        });
-        throw e;
-      } finally {
-        setOnePassSavingMap((prev) => ({ ...prev, [requestMongoId]: false }));
-      }
-    },
-    [pageState, toast, token, onePassSavingMap],
   );
 
   const handleSaveCompositeStepIncrementOverride = useCallback(
@@ -3819,7 +3643,6 @@ export const RequestPage = ({
           onRestoreUnmachinable={handleRestoreUnmachinable}
           onSaveManufacturerHexRotation={handleSaveManufacturerHexRotation}
           onSaveAnodizingEnabledOverride={handleSaveAnodizingEnabledOverride}
-          onSaveOnePassEnabledOverride={handleSaveOnePassEnabledOverride}
           onSaveCompositeStepIncrementOverride={
             handleSaveCompositeStepIncrementOverride
           }

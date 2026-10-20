@@ -44,11 +44,9 @@ export function resolveEffectiveCompositeSteps(caseInfos) {
   };
 }
 
-/** One Pass는 포스트·치은 Finish 스텝이 같을 때만. 다르면 2–3단. */
-export function resolveOnePassEnabled(caseInfos) {
-  if (caseInfos?.onePassEnabled !== true) return false;
-  const { post, gingiva } = resolveEffectiveCompositeSteps(caseInfos);
-  return Math.abs(post - gingiva) < 1e-6;
+/** One Pass — 제품 정책상 항상 OFF(2–3단 Finish). 레거시 caseInfos.onePassEnabled는 무시. */
+export function resolveOnePassEnabled(_caseInfos) {
+  return false;
 }
 
 export function readStampedCompositeSteps(ncFile) {

@@ -1,8 +1,6 @@
 // change-log:
 // - 2026-10-20: 프리뷰 다운로드는 공정 파일 형식 그대로 저장. NC는 .nc, 세척·포장 이미지는 png/jpg.
-// - 2026-10-20: One Pass 체크는 caseInfos 저장값 표시(공정 동일). 스텝 불일치 시에도 준비에서 토글·저장 가능.
-// - 2026-10-20: One Pass는 포스트·치은 스텝이 같을 때만. 다르면 2–3단 Finish.
-// - 2026-10-19: 헤더 Wide Split 토글을 One Pass로 교체. 기본 OFF. ON이면 Finish는 마지막 Back_Finish 한 번에.
+// - 2026-10-20: 헤더 One Pass 토글 제거. Finish는 항상 2–3단(Back_Finish 분할).
 // - 2026-10-17: 안내 off 시 프론트포인트(녹색점)도 피니시라인과 함께 숨김(FP 편집 중은 유지).
 // - 2026-10-17: 그리드·메타·안내(피니시라인 등) on/off를 localStorage에 저장.
 // - 2026-10-16: ESP 버튼은 짧은 주소만 받고, 파일은 브라우저 다운로드로 바로 저장한다.
@@ -135,10 +133,7 @@ import { resolveDownloadFileName } from "../utils/previewDownloadName";
 import {
   COMPOSITE_FINISH_STEP_MM_OPTIONS,
   type CompositeFinishStepDraft,
-  compositeFinishStepsMatch,
   compositeStepTriggerLabel,
-  displayedCompositeStepMm,
-  resolveOnePassEnabled,
   draftToOverrideMm,
   overrideMmToDraft,
   resolveCompositeGingivaStepMm,
@@ -633,10 +628,6 @@ type PreviewModalProps = {
     req: ManufacturerRequest,
     value: boolean,
   ) => Promise<void>;
-  onSaveOnePassEnabledOverride?: (
-    req: ManufacturerRequest,
-    value: boolean,
-  ) => Promise<void>;
   onSaveCompositeStepIncrementOverride?: (
     req: ManufacturerRequest,
     value: {
@@ -687,7 +678,6 @@ export const PreviewModal = ({
   onRestoreUnmachinable,
   onSaveManufacturerHexRotation,
   onSaveAnodizingEnabledOverride,
-  onSaveOnePassEnabledOverride,
   onSaveCompositeStepIncrementOverride,
   onSaveLotEngravingTargetOverride,
   onOpenNextRequest,
@@ -781,8 +771,6 @@ export const PreviewModal = ({
   const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] =
     useState<ManufacturerHexRotationDraftMode>("");
   const [anodizingEnabledDraft, setAnodizingEnabledDraft] = useState<boolean>(true);
-  const [onePassEnabledDraft, setOnePassEnabledDraft] = useState<boolean>(false);
-  const [onePassSaving, setOnePassSaving] = useState(false);
   const [compositePostStepDraft, setCompositePostStepDraft] =
     useState<CompositeFinishStepDraft>("requestor");
   const [compositeGingivaStepDraft, setCompositeGingivaStepDraft] =
@@ -1057,7 +1045,6 @@ export const PreviewModal = ({
       setAnodizingEnabledDraft(true);
     }
 
-    setOnePassEnabledDraft((req as any)?.caseInfos?.onePassEnabled === true);
     setCompositePostStepDraft(
       overrideMmToDraft(
         (req as any)?.caseInfos?.compositeStepIncrementPostOverrideMm,
@@ -3054,39 +3041,6 @@ export const PreviewModal = ({
     }
   };
 
-  const handleToggleOnePassEnabled = async (checked: boolean) => {
-    const prepStages = new Set(["준비", "의뢰", "CAM", "request", "cam"]);
-    const mfgStage = String(activeReq?.manufacturerStage || "").trim();
-    if (
-      !onSaveOnePassEnabledOverride ||
-      onePassSaving ||
-      approveBusy ||
-      !(currentReviewStageKey === "request" || currentReviewStageKey === "cam") ||
-      !prepStages.has(mfgStage)
-    ) {
-      return;
-    }
-
-    const prev = onePassEnabledDraft;
-    setOnePassEnabledDraft(checked);
-    setOnePassSaving(true);
-    try {
-      await onSaveOnePassEnabledOverride(activeReq, checked);
-    } catch (error) {
-      setOnePassEnabledDraft(prev);
-      toast({
-        title: "One Pass 저장 실패",
-        description:
-          error instanceof Error
-            ? error.message
-            : "잠시 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setOnePassSaving(false);
-    }
-  };
-
   // 2026-09-18: 포스트면 각인 포기. UI·저장 경로 비활성 (추후 Connection PRC).
   const handleToggleLotEngravingOnPost = async (_checked: boolean) => {
     return;
@@ -3204,27 +3158,6 @@ export const PreviewModal = ({
     Boolean(onSaveCompositeStepIncrementOverride) &&
     !compositeStepSaving &&
     !approveBusy;
-  const onePassStepsMatch = compositeFinishStepsMatch(
-    displayedCompositeStepMm(compositePostStepDraft, effectiveCompositePostStepMm),
-    displayedCompositeStepMm(
-      compositeGingivaStepDraft,
-      effectiveCompositeGingivaStepMm,
-    ),
-  );
-  const onePassAppliedToNc = resolveOnePassEnabled({
-    onePassEnabled: onePassEnabledDraft,
-    retentionGroove: retentionGrooveRaw,
-    compositeStepIncrementPostOverrideMm: (activeReq?.caseInfos as any)
-      ?.compositeStepIncrementPostOverrideMm,
-    compositeStepIncrementGingivaOverrideMm: (activeReq?.caseInfos as any)
-      ?.compositeStepIncrementGingivaOverrideMm,
-  });
-  const onePassControlEnabled =
-    canOverrideSafeSplit &&
-    !approveBusy &&
-    !onePassSaving &&
-    Boolean(onSaveOnePassEnabledOverride);
-
   const renderCompositeStepMenu = (
     current: CompositeFinishStepDraft,
     onSelect: (next: CompositeFinishStepDraft) => void,
@@ -3626,38 +3559,6 @@ export const PreviewModal = ({
               {/* 2026-09-18: 포스트면 각인 포기 — UI 숨김. 추후 Connection PRC.
               <label ...>포스트면</label>
               */}
-              <label
-                className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${
-                  onePassControlEnabled
-                    ? "border-slate-200 bg-white text-slate-700"
-                    : "border-slate-200 bg-slate-100 text-slate-400"
-                }`}
-                title={
-                  onePassEnabledDraft && !onePassStepsMatch
-                    ? "One Pass는 켜 두었지만 포스트·치은 스텝이 달라 NC에는 2–3단으로 적용됩니다."
-                    : onePassEnabledDraft && onePassAppliedToNc
-                      ? "포스트와 치은 스텝이 같습니다. Finish를 마지막 Back_Finish에서 한 번에 깎습니다."
-                      : onePassEnabledDraft
-                        ? "One Pass 설정은 켜져 있습니다."
-                        : onePassStepsMatch
-                          ? "One Pass가 꺼져 있습니다. Finish는 2–3단으로 나눕니다."
-                          : "One Pass가 꺼져 있습니다. 포스트·치은 스텝이 같을 때만 한 번에 깎을 수 있습니다."
-                }
-              >
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 rounded border-slate-300"
-                  checked={Boolean(onePassEnabledDraft)}
-                  disabled={!onePassControlEnabled}
-                  onChange={(e) => {
-                    void handleToggleOnePassEnabled(Boolean(e.target.checked));
-                  }}
-                />
-                <span className="whitespace-nowrap">One Pass</span>
-                <span className="text-[10px] font-semibold text-slate-500">
-                  {onePassEnabledDraft ? "O" : "X"}
-                </span>
-              </label>
               <label
                 className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${
                   canOverrideAnodizing && !approveBusy && !anodizingSaving

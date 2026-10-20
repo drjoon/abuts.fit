@@ -93,16 +93,9 @@ export function resolveEffectiveCompositeSteps(caseInfos?: {
   };
 }
 
-/** NC·ESPRIT 적용 여부 — caseInfos.onePassEnabled와 포스트·치은 스텝 일치. */
-export function resolveOnePassEnabled(caseInfos?: {
-  onePassEnabled?: boolean;
-  retentionGroove?: "none" | "shallow" | "deep";
-  compositeStepIncrementPostOverrideMm?: unknown;
-  compositeStepIncrementGingivaOverrideMm?: unknown;
-} | null): boolean {
-  if (caseInfos?.onePassEnabled !== true) return false;
-  const { post, gingiva } = resolveEffectiveCompositeSteps(caseInfos);
-  return compositeFinishStepsMatch(post, gingiva);
+/** NC·ESPRIT One Pass — 제품 정책상 항상 OFF(2–3단 Finish). 레거시 caseInfos.onePassEnabled는 무시. */
+export function resolveOnePassEnabled(_caseInfos?: unknown): boolean {
+  return false;
 }
 
 export function displayedCompositeStepMm(

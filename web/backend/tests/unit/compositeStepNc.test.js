@@ -39,17 +39,11 @@ describe("composite step NC ownership", () => {
     ).toBe("20261017-COPY0001");
   });
 
-  it("One Pass는 포스트·치은 스텝이 같을 때만 적용한다", () => {
+  it("One Pass는 항상 비활성(2–3단 Finish)", () => {
     expect(
       resolveOnePassEnabled({
         onePassEnabled: true,
         retentionGroove: "none",
-      }),
-    ).toBe(true);
-    expect(
-      resolveOnePassEnabled({
-        onePassEnabled: true,
-        retentionGroove: "deep",
       }),
     ).toBe(false);
     expect(
@@ -59,24 +53,7 @@ describe("composite step NC ownership", () => {
         compositeStepIncrementPostOverrideMm: 0.1,
         compositeStepIncrementGingivaOverrideMm: 0.1,
       }),
-    ).toBe(true);
-    expect(
-      resolveOnePassEnabled({
-        onePassEnabled: false,
-        retentionGroove: "none",
-      }),
     ).toBe(false);
-    expect(
-      resolveOnePassEnabled({
-        onePassEnabled: true,
-        retentionGroove: "none",
-      }),
-    ).not.toBe(
-      resolveOnePassEnabled({
-        onePassEnabled: false,
-        retentionGroove: "none",
-      }),
-    );
   });
 
   it("복사한 NC에는 원본 피치를 찍는다", () => {

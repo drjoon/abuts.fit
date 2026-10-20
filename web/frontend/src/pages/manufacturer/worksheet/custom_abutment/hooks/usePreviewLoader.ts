@@ -1,5 +1,4 @@
 // change-log:
-// - 2026-10-20: One Pass가 목록에 없으면 full request로 보강. 의뢰·복사샘플 값을 각각 표시.
 // - 2026-10-10: 프리뷰를 닫으면 STL File·NC 문자열을 놓는다.
 // - 2026-09-03: 준비(request) 단계에서도 헥스 확정 미해석 시 full request 보강(cam/가공만 보강하던 회귀 수정).
 // - 2026-09-03: requestSettings merge 시 빈 hexByImplantManufacturer로 덮지 않음(헥스 확정/미정 뱃지).
@@ -319,14 +318,11 @@ export function usePreviewLoader({
           Boolean(requestMongoIdForEnrich) &&
           !String(resolveFilledStlFile(req?.caseInfos)?.s3Key || "").trim();
         // 준비 단계 lean 목록에 requestor hex 맵이 빠지면 뱃지가 미정으로 굳음 → full request 보강.
-        const onePassKnown =
-          typeof (req as any)?.caseInfos?.onePassEnabled === "boolean";
         const shouldEnrichFromFullRequest =
           forceRefresh ||
           tabStage === "tracking" ||
           ncMetaNeedsEnrich ||
           missingFilledStlForCamPreview ||
-          (Boolean(requestMongoIdForEnrich) && !onePassKnown) ||
           (Boolean(requestMongoIdForEnrich) && needsAdminHexVerification) ||
           ((isCamStage || isMachiningStage) &&
             Boolean(requestMongoIdForEnrich) &&
