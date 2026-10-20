@@ -836,7 +836,7 @@ export function AbutmentModelConfirmDialog({
                 공구에 맞춘 디자인으로 변경해드립니다.
                 <br />
                 보정 STL을 받은 뒤{" "}
-                <strong className="font-semibold text-foreground">
+                <strong className="font-semibold text-red-600">
                   보철 내면을 다시
                 </strong>{" "}
                 만들어 주세요.
