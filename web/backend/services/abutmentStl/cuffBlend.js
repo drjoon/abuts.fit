@@ -27,8 +27,8 @@ const FINISH_MIN_CLEARANCE_MM = 0.003;
 const WELD_EPS = 1e-5;
 const MEASURE_BINS = 72;
 const PROFILE_BINS = 720;
-/** 곡선을 계산하는 열(0.375°). 메시에는 이 중 selectMeshColumns가 고른 열만 쓴다. */
-const STRIP_COLUMNS = 960;
+/** 곡선·둘레 저역 통과 그리드(1°). Esprit 두점사이 각도 제한(1°)과 맞춘다. STL에는 selectMeshColumns가 고른 열만 쓴다. */
+const STRIP_COLUMNS = 360;
 const columnsForDeg = (deg) => Math.max(1, Math.round((STRIP_COLUMNS * deg) / 360));
 /** 행 사이 최소 간격(mm). */
 const ROW_PITCH_MM = 0.025;
@@ -722,8 +722,8 @@ const TOP_RADIUS_HARMONICS = 6;
 const ANGULAR_PASS_HARMONICS = 32;
 const ANGULAR_STOP_HARMONICS = 64;
 const HEIGHT_SMOOTH_OVERSHOOT_MM = 0.005;
-/** 원본 곡면은 이 열 간격(240열)으로만 광선을 쏘아 재고, 저역 통과하면서 전체 열로 늘린다. */
-const MEASURE_STRIDE = 4;
+/** 원본 곡면은 STRIP_COLUMNS/MEASURE_STRIDE 간격(360열 기준 2°)으로 광선을 쏘아 재고, 저역 통과로 전체 열로 늘린다. */
+const MEASURE_STRIDE = 2;
 /** 끝 기울기를 2차 호(2d − m0)보다 이만큼 더 세워 늦게 벌어지게(더 오목하게) 한다. */
 const END_SLOPE_BOOST = 1.5;
 /**

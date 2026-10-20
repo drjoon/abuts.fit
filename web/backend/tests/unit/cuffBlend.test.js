@@ -350,7 +350,7 @@ describe("blendCuffJunction", () => {
   });
 
   it("smooths column profiles around the axis without moving the cone start or the top radius", () => {
-    const n = 960;
+    const n = 360;
     const ra = 1.7;
     // 열 사이에서 프로파일 분기가 바뀌는 곳: 중간 반경이 각도에 대해 꺾인다(세로 꺾임선).
     const profiles = Array.from({ length: n }, (_, j) => {
