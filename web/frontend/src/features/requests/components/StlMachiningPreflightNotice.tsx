@@ -65,12 +65,14 @@ export function StlMachiningPreflightNotice({
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-rose-600 shadow-sm">
             <AlertTriangle className="h-4 w-4" />
           </span>
-          <p className="whitespace-nowrap text-sm font-semibold leading-5">코너가 좁아요</p>
+          <p className="whitespace-nowrap text-sm font-semibold leading-5">코너가 공구보다 좁아요</p>
         </div>
         <p className="text-center text-xs leading-5 text-rose-900/80">
-          공구에 맞는 디자인으로 바꿔 의뢰합니다.
+          코너 반경이 가공 공구보다 좁습니다.
           <br />
-          변경된 디자인을 다운로드해서 보철 내면을 새로 생성하셔야 합니다.
+          공구에 맞게 디자인을 보정해 의뢰하시겠습니까?
+          <br />
+          진행하시면 보정 STL을 받은 뒤 보철 내면을 다시 만드셔야 합니다.
         </p>
       </div>
     );

@@ -778,7 +778,7 @@ export function AbutmentModelConfirmDialog({
                                 role="status"
                               >
                                 <p className="whitespace-nowrap text-xs leading-none text-rose-800">
-                                  버튼 클릭 시 보정 디자인이 다운로드됩니다.
+                                  보정해 의뢰하시겠습니까? 확인 & 다음을 눌러 주세요.
                                 </p>
                                 <ArrowDown
                                   className="h-4 w-4 shrink-0 animate-bounce text-rose-600"
@@ -831,16 +831,16 @@ export function AbutmentModelConfirmDialog({
           overlayClassName="z-[325]"
         >
           <AlertDialogHeader className="space-y-3">
-            <AlertDialogTitle>보정 디자인으로 계속 진행할까요?</AlertDialogTitle>
+            <AlertDialogTitle>보정 디자인으로 의뢰하시겠습니까?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                공구에 맞춘 디자인으로 변경해드립니다.
+                공구에 맞게 디자인을 바꿔 보정 STL을 드립니다.
                 <br />
-                보정 STL을 받은 뒤{" "}
+                진행하시면{" "}
                 <strong className="font-semibold text-red-600">
                   보철 내면을 다시
                 </strong>{" "}
-                만들어 주세요.
+                만드셔야 합니다.
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
