@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-10-20: 가공 tight 경고 시 확인 & 다음 버튼 하이라이트·진행 확인 문구.
+// - 2026-10-20: 가공 tight 경고 시 확인 & 다음 위 안내·화살표·진행 확인 문구.
 // - 2026-10-18: 유지홈 저장값이 비어 있으면 화면에 보이는 「없음」을 바로 저장.
 // - 2026-09-20: 유지홈 아래 아노다이징 ON/OFF(계정 기본값 저장).
 // - 2026-09-02: lab-handoff 기본 확인 라벨「확인」(S3는 모달 중 사전 업로드). confirmDisabled.
@@ -15,7 +15,7 @@
 // - web/frontend/src/shared/components/practice/AbutmentDesignConfirmDialog.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestPatientImplantFields.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowDown } from "lucide-react";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import {
   AlertDialog,
@@ -770,27 +770,35 @@ export function AbutmentModelConfirmDialog({
                         </div>
 
                         <div className="flex items-center gap-2">
-                          {showTightCornerConfirmCue ? (
-                            <span
-                              className="hidden items-center text-rose-600 sm:flex"
-                              aria-hidden
+                          <div className="relative">
+                            {showTightCornerConfirmCue ? (
+                              <div
+                                className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-0.5 flex -translate-x-1/2 flex-col items-center gap-0.5"
+                                role="status"
+                              >
+                                <p className="whitespace-nowrap text-xs leading-none text-rose-800">
+                                  버튼 클릭 시 보정 디자인이 다운로드됩니다.
+                                </p>
+                                <ArrowDown
+                                  className="h-4 w-4 shrink-0 animate-bounce text-rose-600"
+                                  aria-hidden
+                                />
+                              </div>
+                            ) : null}
+                            <Button
+                              type="button"
+                              className={cn(
+                                highlightConfirmButton &&
+                                  (showTightCornerConfirmCue
+                                    ? "animate-pulse bg-primary text-white ring-2 ring-rose-400 ring-offset-2 ring-offset-background"
+                                    : "animate-bounce bg-primary text-white"),
+                              )}
+                              disabled={machiningCheckPending}
+                              onClick={handleConfirmAndNext}
                             >
-                              <ArrowLeft className="h-5 w-5 animate-pulse" />
-                            </span>
-                          ) : null}
-                          <Button
-                            type="button"
-                            className={cn(
-                              highlightConfirmButton &&
-                                (showTightCornerConfirmCue
-                                  ? "animate-pulse bg-primary text-white ring-2 ring-rose-400 ring-offset-2 ring-offset-background"
-                                  : "animate-bounce bg-primary text-white"),
-                            )}
-                            disabled={machiningCheckPending}
-                            onClick={handleConfirmAndNext}
-                          >
-                            {machiningCheckPending ? "검사 중…" : "확인 & 다음"}
-                          </Button>
+                              {machiningCheckPending ? "검사 중…" : "확인 & 다음"}
+                            </Button>
+                          </div>
                           <Button
                             type="button"
                             variant="ghost"
