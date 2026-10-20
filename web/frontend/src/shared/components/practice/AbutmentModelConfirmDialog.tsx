@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-20: 가공 tight 경고 시 확인 & 다음 버튼 하이라이트·진행 확인 문구.
 // - 2026-10-18: 유지홈 저장값이 비어 있으면 화면에 보이는 「없음」을 바로 저장.
 // - 2026-09-20: 유지홈 아래 아노다이징 ON/OFF(계정 기본값 저장).
 // - 2026-09-02: lab-handoff 기본 확인 라벨「확인」(S3는 모달 중 사전 업로드). confirmDisabled.
@@ -14,6 +15,7 @@
 // - web/frontend/src/shared/components/practice/AbutmentDesignConfirmDialog.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestPatientImplantFields.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import {
   AlertDialog,
@@ -328,6 +330,11 @@ export function AbutmentModelConfirmDialog({
     Boolean(machiningPreflight?.correctedId) &&
     Boolean(detailFile);
   const machiningCheckPending = !isLabHandoff && machiningPreflight?.status === "checking";
+  const showTightCornerConfirmCue =
+    !isLabHandoff && machiningPreflight?.status === "tight" && !machiningCheckPending;
+  const highlightConfirmButton =
+    !machiningCheckPending &&
+    (highlightUnverifiedArrows || showTightCornerConfirmCue);
 
   const onVerifyAndNextRef = useRef(onVerifyAndNext);
   onVerifyAndNextRef.current = onVerifyAndNext;
@@ -763,13 +770,22 @@ export function AbutmentModelConfirmDialog({
                         </div>
 
                         <div className="flex items-center gap-2">
+                          {showTightCornerConfirmCue ? (
+                            <span
+                              className="hidden items-center text-rose-600 sm:flex"
+                              aria-hidden
+                            >
+                              <ArrowLeft className="h-5 w-5 animate-pulse" />
+                            </span>
+                          ) : null}
                           <Button
                             type="button"
-                            className={
-                              highlightUnverifiedArrows && !machiningCheckPending
-                                ? "animate-bounce bg-primary text-white"
-                                : undefined
-                            }
+                            className={cn(
+                              highlightConfirmButton &&
+                                (showTightCornerConfirmCue
+                                  ? "animate-pulse bg-primary text-white ring-2 ring-rose-400 ring-offset-2 ring-offset-background"
+                                  : "animate-bounce bg-primary text-white"),
+                            )}
                             disabled={machiningCheckPending}
                             onClick={handleConfirmAndNext}
                           >
@@ -806,16 +822,13 @@ export function AbutmentModelConfirmDialog({
           overlayClassName="z-[325]"
         >
           <AlertDialogHeader className="space-y-3">
-            <AlertDialogTitle>보정 디자인으로 진행할까요?</AlertDialogTitle>
+            <AlertDialogTitle>보정 디자인으로 계속 진행할까요?</AlertDialogTitle>
             <AlertDialogDescription asChild>
-              <div className="space-y-3">
-                <p className="text-base font-semibold leading-relaxed text-primary sm:text-lg">
-                  다운로드된 디자인으로 보철을 재생성해주세요.
-                </p>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  다음부터는 라운드 반경 0.65mm 이상 설정해서 디자인해주세요.
-                </p>
-              </div>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                확인을 누르면 공구에 맞게 바꾼 디자인으로 의뢰를 이어갑니다.
+                <br />
+                보정 STL을 받은 뒤 보철 내면을 다시 만들어 주세요.
+              </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
