@@ -821,7 +821,7 @@ namespace DentalAddin
             double splitPercent = Clamp(splitRatio * 100.0, firstPercent, effectiveLastPercent);
 
             // Splitline_2 = SharedFinishSplitX. Rough/Turn seam.
-            // Finish 경계: none은 Front 끝 = Back 시작 = finishline max_z, deep은 둘 다 Splitline_2.
+            // Finish 경계: none/deep Front 끝=경계(max_z/Splitline_2). Back 시작=경계−1피치.
             // Finish A/B는 피처 재해석 없이 그 X를 StartEndScale(20mm)로만 환산한다.
             if (!TryResolveSharedFinishSplitX(out double sharedSplitX, out string sharedSplitSource))
             {
@@ -999,16 +999,13 @@ namespace DentalAddin
             DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, splitline1X={splitline1X:F3}, stlStartX={stlStartX:F3}, requestedStartX(stlMin+{finishFrontStartOffsetFromStlMinMm:F3})={requestedAStartX:F3}, appliedStartX={appliedAStartX:F3}, minFirst%={minAFirstPercentByStlStart:F2}, overrideGuardApplied={overrideGuardApplied}");
 
             // Finish seam:
-            // none: Front 끝 = Back 시작 = finishline max_z X.
+            // none: Front 끝 = finishline max_z X. Back 시작 = max_z X − 1피치(StepIncrement).
             //   min_z까지 Front를 내리면 max_z~min_z 마진 띠를 Front/Back이 같이 깎는다.
             //   그 띠는 Back만 깎고, Front는 max_z에서 멈춘다.
-            // deep(유지홈 있음): Front 끝 = Back 시작 = Splitline_2. 0.1mm 겹침 없음.
-            //   D1.2(R0.6)에서 경계가 한 스텝(deep 0.20) 어긋나도 골 높이는 약 0.008mm로, 면 전체 스텝과 같다.
+            // deep(유지홈 있음): Front 끝 = Splitline_2. Back 시작 = Splitline_2 − 1피치.
             // Finish는 Front/Back만. safe split의 Xk는 Turn/Rough 전용이라 Finish 경계를 자르지 않는다.
             double finishOverlapMm = ResolveFinishSeamOverlapMm(opA, runB ? opB : null);
             const double compositeEndOffsetFromBackPointMm = 0.0;
-            // deep도 Front 끝과 Back 시작을 같은 X에 둔다. 스텝보다 짧은 겹침은 미삭제를 막지 않는다.
-            const double deepFinishBackOverlapMm = 0.0;
 
             double finishFrontEndX = splitX;
             string finishFrontEndSource = "Splitline_2-fallback";
@@ -1021,16 +1018,16 @@ namespace DentalAddin
             {
                 finishFrontEndX = splitX;
                 finishFrontEndSource = "Splitline_2";
-                finishBackStartX = splitX - deepFinishBackOverlapMm;
-                finishBackStartSource = "Splitline_2";
+                finishBackStartX = splitX - finishOverlapMm;
+                finishBackStartSource = "Splitline_2-1pitch";
             }
             else
             {
                 bool hasFinishLineMin = TryResolveFinishLineMinX(out double finishLineMinX, out finishLineMinZ);
                 if (TryResolveFinishLineMaxX(out double finishLineMaxX, out finishLineMaxZ))
                 {
-                    finishBackStartX = finishLineMaxX;
-                    finishBackStartSource = "finishlineMaxZ";
+                    finishBackStartX = finishLineMaxX - finishOverlapMm;
+                    finishBackStartSource = "finishlineMaxZ-1pitch";
                     finishFrontEndX = finishLineMaxX;
                     finishFrontEndSource = "finishlineMaxZ";
                     if (hasFinishLineMin)
@@ -1545,8 +1542,8 @@ namespace DentalAddin
             }
         }
 
-        // Finish seam 겹침 = 2 × Finish 스텝 간격. Front(A)는 retentionGroove deep이면 0.20 오버라이드가 뒤에서 적용되므로 그 값을 쓴다.
-        private const int FinishSeamOverlapPitches = 2;
+        // Finish seam 겹침 = 1 × Finish 스텝 간격(Back 시작만 tip 쪽으로). Front(A) deep이면 0.20 오버라이드 값을 쓴다.
+        private const int FinishSeamOverlapPitches = 1;
 
         private static double ResolveFinishSeamOverlapMm(TechLatheMill5xComposite opA, TechLatheMill5xComposite opB)
         {
@@ -1928,12 +1925,12 @@ namespace DentalAddin
         private const string SafeSplitEnableEnv = "ABUTS_SAFE_SPLIT_ENABLE";
         private const double SafeSplitBackZonePastFinishLineMinMm = 0.2;
 
-        // 인접 Finish 겹침(mm). none에서 finishline이 없을 때 Back 시작 fallback에만 쓴다.
+        // Finish seam pitch 겹침 fallback(mm). StepIncrement 해석 실패 시만 사용.
         // = D1.2 직경의 2/3 = 0.8.
-        //   none Front_Finish  끝 = finishline max_z X (Back 시작과 같은 면. min_z~max_z는 Back만)
-        //   none Back_Finish   시작 = finishline max_z X
+        //   none Front_Finish  끝 = finishline max_z X (min_z~max_z는 Back만)
+        //   none Back_Finish   시작 = max_z X − 1피치
         //   deep Front_Finish  끝 = Splitline_2
-        //   deep Back_Finish   시작 = Splitline_2
+        //   deep Back_Finish   시작 = Splitline_2 − 1피치
         //   Back_Finish   끝 = BackPointX
         //   스텝오버: 커넥션(끝) → 포스트 팁(시작). ReverseStepOverDirection.
         private const double FinishAdjacentOverlapMm = 1.2 * 2.0 / 3.0;
@@ -3245,7 +3242,7 @@ namespace DentalAddin
 
         /// <summary>
         /// [SSOT] Splitline_2 = finishLineTopX - 0.5mm. Rough/Turn seam.
-        /// none Finish는 Front 끝 = Back 시작 = TryResolveFinishLineMaxX. deep도 Front 끝 = Back 시작 = Splitline_2.
+        /// Finish Front 끝 = 경계(max_z 또는 Splitline_2). Back 시작 = 경계 − 1피치(ResolveFinishSeamOverlapMm).
         /// 식: finishLineTopX + SharedFinishSplitOffsetFromFinishLineTopMm (-0.5mm, tip 쪽).
         /// 좌표: FrontPointX = -FrontPoint.z → finishLineTopX = -finishLineTopZ (+ MoveSTL).
         /// </summary>
