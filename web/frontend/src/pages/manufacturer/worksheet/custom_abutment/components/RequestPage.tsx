@@ -3643,9 +3643,6 @@ export const RequestPage = ({
           onRestoreUnmachinable={handleRestoreUnmachinable}
           onSaveManufacturerHexRotation={handleSaveManufacturerHexRotation}
           onSaveAnodizingEnabledOverride={handleSaveAnodizingEnabledOverride}
-          onSaveCompositeStepIncrementOverride={
-            handleSaveCompositeStepIncrementOverride
-          }
           onSaveLotEngravingTargetOverride={
             handleSaveLotEngravingTargetOverride
           }

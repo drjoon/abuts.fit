@@ -104,11 +104,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
   StlPreviewViewer,
   type StlPreviewViewerHandle,
 } from "@/features/requests/components/StlPreviewViewer";
@@ -130,16 +125,6 @@ import {
   markNcRegenerationPending,
 } from "../utils/regenerationPending";
 import { resolveDownloadFileName } from "../utils/previewDownloadName";
-import {
-  COMPOSITE_FINISH_STEP_MM_OPTIONS,
-  type CompositeFinishStepDraft,
-  compositeStepTriggerLabel,
-  draftToOverrideMm,
-  overrideMmToDraft,
-  resolveCompositeGingivaStepMm,
-  resolveCompositePostStepMm,
-  formatCompositeStepMmLabel,
-} from "../utils/compositeStepIncrement";
 import {
   type ManufacturerRequest,
   type ReviewStageKey,
@@ -628,13 +613,6 @@ type PreviewModalProps = {
     req: ManufacturerRequest,
     value: boolean,
   ) => Promise<void>;
-  onSaveCompositeStepIncrementOverride?: (
-    req: ManufacturerRequest,
-    value: {
-      compositeStepIncrementPostOverrideMm?: number | null;
-      compositeStepIncrementGingivaOverrideMm?: number | null;
-    },
-  ) => Promise<void>;
   onSaveLotEngravingTargetOverride?: (
     req: ManufacturerRequest,
     value: "hex" | "post",
@@ -678,7 +656,6 @@ export const PreviewModal = ({
   onRestoreUnmachinable,
   onSaveManufacturerHexRotation,
   onSaveAnodizingEnabledOverride,
-  onSaveCompositeStepIncrementOverride,
   onSaveLotEngravingTargetOverride,
   onOpenNextRequest,
   setSearchParams,
@@ -771,14 +748,6 @@ export const PreviewModal = ({
   const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] =
     useState<ManufacturerHexRotationDraftMode>("");
   const [anodizingEnabledDraft, setAnodizingEnabledDraft] = useState<boolean>(true);
-  const [compositePostStepDraft, setCompositePostStepDraft] =
-    useState<CompositeFinishStepDraft>("requestor");
-  const [compositeGingivaStepDraft, setCompositeGingivaStepDraft] =
-    useState<CompositeFinishStepDraft>("requestor");
-  const [compositeStepSaving, setCompositeStepSaving] = useState(false);
-  const [compositePostPopoverOpen, setCompositePostPopoverOpen] = useState(false);
-  const [compositeGingivaPopoverOpen, setCompositeGingivaPopoverOpen] =
-    useState(false);
   const [lotEngravingTargetDraft, setLotEngravingTargetDraft] = useState<
     "hex" | "post"
   >("hex");
@@ -1044,17 +1013,6 @@ export const PreviewModal = ({
     } else {
       setAnodizingEnabledDraft(true);
     }
-
-    setCompositePostStepDraft(
-      overrideMmToDraft(
-        (req as any)?.caseInfos?.compositeStepIncrementPostOverrideMm,
-      ),
-    );
-    setCompositeGingivaStepDraft(
-      overrideMmToDraft(
-        (req as any)?.caseInfos?.compositeStepIncrementGingivaOverrideMm,
-      ),
-    );
 
     // 2026-09-18: 포스트면 각인 포기 → 항상 hex (추후 Connection PRC).
     // const caseLotTarget = (req as any)?.caseInfos?.lotEngravingTarget;
@@ -3131,126 +3089,6 @@ export const PreviewModal = ({
   const canToggleLotEngravingTarget =
     Boolean(lotSerialCode) && !approveBusy && !lotEngravingTargetSaving;
 
-  const retentionGrooveRaw = (activeReq?.caseInfos as any)?.retentionGroove as
-    | "none"
-    | "shallow"
-    | "deep"
-    | undefined;
-  const effectiveCompositePostStepMm = resolveCompositePostStepMm(
-    retentionGrooveRaw,
-    (activeReq?.caseInfos as any)?.compositeStepIncrementPostOverrideMm,
-  );
-  const effectiveCompositeGingivaStepMm = resolveCompositeGingivaStepMm(
-    (activeReq?.caseInfos as any)?.compositeStepIncrementGingivaOverrideMm,
-  );
-  const compositePostStepLabel = compositeStepTriggerLabel(
-    "포스트",
-    compositePostStepDraft,
-    effectiveCompositePostStepMm,
-  );
-  const compositeGingivaStepLabel = compositeStepTriggerLabel(
-    "치은",
-    compositeGingivaStepDraft,
-    effectiveCompositeGingivaStepMm,
-  );
-  const canEditCompositeStep =
-    canOverrideSafeSplit &&
-    Boolean(onSaveCompositeStepIncrementOverride) &&
-    !compositeStepSaving &&
-    !approveBusy;
-  const renderCompositeStepMenu = (
-    current: CompositeFinishStepDraft,
-    onSelect: (next: CompositeFinishStepDraft) => void,
-  ) => {
-    const options: CompositeFinishStepDraft[] = [
-      "requestor",
-      ...COMPOSITE_FINISH_STEP_MM_OPTIONS,
-    ];
-    return (
-      <ul className="flex flex-col gap-0.5 p-1">
-        {options.map((opt) => {
-          const selected = current === opt;
-          const label =
-            opt === "requestor"
-              ? "의뢰자설정"
-              : formatCompositeStepMmLabel(opt);
-          return (
-            <li key={String(opt)}>
-              <button
-                type="button"
-                className={`w-full rounded-md px-2 py-1.5 text-left text-[12px] font-semibold ${
-                  selected
-                    ? "bg-primary-soft text-primary-strong"
-                    : "text-slate-700 hover:bg-slate-100"
-                }`}
-                disabled={!canEditCompositeStep}
-                onClick={() => {
-                  void onSelect(opt);
-                }}
-              >
-                {label}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    );
-  };
-
-  const handleSelectCompositePostStep = async (next: CompositeFinishStepDraft) => {
-    if (!canEditCompositeStep) return;
-    const prev = compositePostStepDraft;
-    if (prev === next) return;
-    setCompositePostStepDraft(next);
-    setCompositeStepSaving(true);
-    try {
-      await onSaveCompositeStepIncrementOverride!(activeReq, {
-        compositeStepIncrementPostOverrideMm: draftToOverrideMm(next),
-      });
-      setCompositePostPopoverOpen(false);
-    } catch (error) {
-      setCompositePostStepDraft(prev);
-      toast({
-        title: "포스트 스텝 저장 실패",
-        description:
-          error instanceof Error
-            ? error.message
-            : "잠시 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setCompositeStepSaving(false);
-    }
-  };
-
-  const handleSelectCompositeGingivaStep = async (
-    next: CompositeFinishStepDraft,
-  ) => {
-    if (!canEditCompositeStep) return;
-    const prev = compositeGingivaStepDraft;
-    if (prev === next) return;
-    setCompositeGingivaStepDraft(next);
-    setCompositeStepSaving(true);
-    try {
-      await onSaveCompositeStepIncrementOverride!(activeReq, {
-        compositeStepIncrementGingivaOverrideMm: draftToOverrideMm(next),
-      });
-      setCompositeGingivaPopoverOpen(false);
-    } catch (error) {
-      setCompositeGingivaStepDraft(prev);
-      toast({
-        title: "치은 스텝 저장 실패",
-        description:
-          error instanceof Error
-            ? error.message
-            : "잠시 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setCompositeStepSaving(false);
-    }
-  };
-
   const overlayCaseInfos = (activeReq?.caseInfos || {}) as Record<string, any>;
   const overlayFlat = (activeReq || {}) as Record<string, any>;
   const overlaySpec = (overlayFlat?.spec || {}) as Record<string, any>;
@@ -3478,56 +3316,6 @@ export const PreviewModal = ({
             </div>
 
             <div className="flex w-full shrink-0 flex-wrap items-center gap-2 md:w-auto md:flex-nowrap">
-              <Popover
-                open={compositePostPopoverOpen}
-                onOpenChange={setCompositePostPopoverOpen}
-              >
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    disabled={!canEditCompositeStep || compositeStepSaving}
-                    className={`inline-flex max-w-[9.5rem] items-center rounded-md border px-1.5 py-1 text-[11px] font-semibold truncate ${
-                      canEditCompositeStep
-                        ? "border-slate-200 bg-white text-slate-700"
-                        : "border-slate-200 bg-slate-100 text-slate-500"
-                    }`}
-                    title="Finish 포스트 스텝 간격(mm). 기본은 의뢰 유지홈(none 0.05 / deep 0.20)."
-                  >
-                    {compositePostStepLabel}
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-auto p-0">
-                  {renderCompositeStepMenu(
-                    compositePostStepDraft,
-                    handleSelectCompositePostStep,
-                  )}
-                </PopoverContent>
-              </Popover>
-              <Popover
-                open={compositeGingivaPopoverOpen}
-                onOpenChange={setCompositeGingivaPopoverOpen}
-              >
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    disabled={!canEditCompositeStep || compositeStepSaving}
-                    className={`inline-flex max-w-[9.5rem] items-center rounded-md border px-1.5 py-1 text-[11px] font-semibold truncate ${
-                      canEditCompositeStep
-                        ? "border-slate-200 bg-white text-slate-700"
-                        : "border-slate-200 bg-slate-100 text-slate-500"
-                    }`}
-                    title="Finish 치은 스텝 간격(mm). 기본 0.05(Back PRC)."
-                  >
-                    {compositeGingivaStepLabel}
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-auto p-0">
-                  {renderCompositeStepMenu(
-                    compositeGingivaStepDraft,
-                    handleSelectCompositeGingivaStep,
-                  )}
-                </PopoverContent>
-              </Popover>
               <label
                 className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${
                   lotSerialCode && !approveBusy

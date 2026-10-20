@@ -340,8 +340,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         Environment.SetEnvironmentVariable("ABUTS_SAFE_SPLIT_ENABLE", "1");
                         bool onePassRequested = requestMeta.onePassEnabled == true;
                         double onePassPostMm = _backendCompositeStepPostOverrideMm
-                            ?? (string.Equals(_backendRetentionGroove, "deep", StringComparison.OrdinalIgnoreCase) ? 0.2 : 0.05);
-                        double onePassGingivaMm = _backendCompositeStepGingivaOverrideMm ?? 0.05;
+                            ?? (string.Equals(_backendRetentionGroove, "deep", StringComparison.OrdinalIgnoreCase)
+                                ? 0.2
+                                : GetDefaultCompositeFrontStepIncrementMm());
+                        double onePassGingivaMm = _backendCompositeStepGingivaOverrideMm
+                            ?? GetDefaultCompositeBackStepIncrementMm();
                         bool onePassStepsMatch = Math.Abs(onePassPostMm - onePassGingivaMm) < 1e-6;
                         bool onePassEnabled = onePassRequested && onePassStepsMatch;
                         if (onePassRequested && !onePassStepsMatch)
@@ -2052,6 +2055,101 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private static readonly double[] AllowedCompositeStepIncrementMm =
             { 0.03, 0.05, 0.10, 0.20 };
 
+        private static string CompositePrcFrontPath =>
+            Path.Combine(
+                AppConfig.AddInRootDirectory,
+                "AcroDent",
+                "11_Composite prc",
+                "5axisComposite_Front.prc");
+
+        private static string CompositePrcBackPath =>
+            Path.Combine(
+                AppConfig.AddInRootDirectory,
+                "AcroDent",
+                "11_Composite prc",
+                "5axisComposite_Back.prc");
+
+        private static double? _cachedCompositeFrontStepIncrementMm;
+        private static double? _cachedCompositeBackStepIncrementMm;
+
+        private static double GetDefaultCompositeFrontStepIncrementMm()
+        {
+            if (_cachedCompositeFrontStepIncrementMm.HasValue)
+            {
+                return _cachedCompositeFrontStepIncrementMm.Value;
+            }
+
+            double parsed = TryReadStepIncrementMmFromCompositePrc(CompositePrcFrontPath);
+            _cachedCompositeFrontStepIncrementMm = parsed;
+            return parsed;
+        }
+
+        private static double GetDefaultCompositeBackStepIncrementMm()
+        {
+            if (_cachedCompositeBackStepIncrementMm.HasValue)
+            {
+                return _cachedCompositeBackStepIncrementMm.Value;
+            }
+
+            double parsed = TryReadStepIncrementMmFromCompositePrc(CompositePrcBackPath);
+            _cachedCompositeBackStepIncrementMm = parsed;
+            return parsed;
+        }
+
+        private static double TryReadStepIncrementMmFromCompositePrc(string prcPath)
+        {
+            const double fallbackMm = 0.05;
+            try
+            {
+                if (!File.Exists(prcPath))
+                {
+                    AppLogger.Log($"StlFileProcessor: Composite PRC 없음 - StepIncrement 폴백 {fallbackMm.ToString(CultureInfo.InvariantCulture)} ({prcPath})");
+                    return fallbackMm;
+                }
+
+                foreach (string line in File.ReadLines(prcPath))
+                {
+                    if (line.IndexOf("StepIncrement", StringComparison.OrdinalIgnoreCase) < 0)
+                    {
+                        continue;
+                    }
+
+                    string[] parts = line.Split(';');
+                    if (parts.Length < 3)
+                    {
+                        continue;
+                    }
+
+                    if (!string.Equals(parts[0].Trim(), "StepIncrement", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (double.TryParse(
+                            parts[2].Trim(),
+                            NumberStyles.Float,
+                            CultureInfo.InvariantCulture,
+                            out double stepMm)
+                        && stepMm > 0.0)
+                    {
+                        AppLogger.Log(
+                            $"StlFileProcessor: Composite PRC StepIncrement={stepMm.ToString(CultureInfo.InvariantCulture)} ({prcPath})");
+                        return stepMm;
+                    }
+                }
+
+                AppLogger.Log(
+                    $"StlFileProcessor: Composite PRC StepIncrement 파싱 실패 - 폴백 {fallbackMm.ToString(CultureInfo.InvariantCulture)} ({prcPath})");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log(
+                    $"StlFileProcessor: Composite PRC StepIncrement 읽기 실패 - {ex.GetType().Name}:{ex.Message} ({prcPath})");
+            }
+
+            return fallbackMm;
+        }
+
         private static double? TryNormalizeCompositeStepOverrideMm(double? raw)
         {
             if (!raw.HasValue || double.IsNaN(raw.Value) || double.IsInfinity(raw.Value))
@@ -2115,11 +2213,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 envA = "0.2";
             }
+            else
+            {
+                envA = GetDefaultCompositeFrontStepIncrementMm().ToString(CultureInfo.InvariantCulture);
+            }
 
             string envB = null;
             if (_backendCompositeStepGingivaOverrideMm.HasValue)
             {
                 envB = _backendCompositeStepGingivaOverrideMm.Value.ToString(CultureInfo.InvariantCulture);
+            }
+            else
+            {
+                envB = GetDefaultCompositeBackStepIncrementMm().ToString(CultureInfo.InvariantCulture);
             }
 
             Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, envA);
@@ -2141,7 +2247,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
 
             AppLogger.Log(
-                $"DentalAddin: retentionGroove 적용 - groove={normalizedGroove}, stepA env={(envA ?? "<Front PRC>")}, stepB env={(envB ?? "<Back PRC>")}, postOverride={(_backendCompositeStepPostOverrideMm.HasValue ? _backendCompositeStepPostOverrideMm.Value.ToString(CultureInfo.InvariantCulture) : "requestor")}, gingivaOverride={(_backendCompositeStepGingivaOverrideMm.HasValue ? _backendCompositeStepGingivaOverrideMm.Value.ToString(CultureInfo.InvariantCulture) : "requestor")}");
+                $"DentalAddin: retentionGroove 적용 - groove={normalizedGroove}, stepA env={envA}, stepB env={envB}, postOverride={(_backendCompositeStepPostOverrideMm.HasValue ? _backendCompositeStepPostOverrideMm.Value.ToString(CultureInfo.InvariantCulture) : "requestor")}, gingivaOverride={(_backendCompositeStepGingivaOverrideMm.HasValue ? _backendCompositeStepGingivaOverrideMm.Value.ToString(CultureInfo.InvariantCulture) : "requestor")}");
         }
 
         private void TryApplyCompositeFirstPassPercentEnv(string tooth)

@@ -2883,9 +2883,6 @@ export const MachiningQueueBoard = ({
         onSaveAnodizingEnabledOverride={
           handleSaveAnodizingEnabledOverrideFromCamPreview
         }
-        onSaveCompositeStepIncrementOverride={
-          handleSaveCompositeStepIncrementOverrideFromCamPreview
-        }
         onSaveLotEngravingTargetOverride={
           handleSaveLotEngravingTargetOverrideFromCamPreview
         }
