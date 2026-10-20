@@ -127,7 +127,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private double? _backendHexRotationAppliedDeg;
         // 유지홈(retentionGroove) — request-meta none/deep 필수.
         // Finish_Front StepIncrement: none=5axisComposite_Front.prc 그대로, deep=0.20.
-        // Finish 경계: none=finishline min_z/max_z. deep=Front 끝 Splitline_2, Back 시작 Splitline_2-0.1.
+        // Finish 경계: none=Front 끝=Back 시작=finishline max_z. deep=Front 끝 Splitline_2, Back 시작 Splitline_2-0.1.
         private string _backendRetentionGroove;
         private double? _backendCompositeStepPostOverrideMm;
         private double? _backendCompositeStepGingivaOverrideMm;
@@ -1579,7 +1579,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         // [SSOT] SharedFinishSplitX
                         //   Splitline_2 = finishLineTopX - 0.5 (Rough/Turn seam)
                         //   deep Finish_Front 끝 = Splitline_2, Back 시작 = Splitline_2 - 0.1
-                        //   none Finish_Front 끝 = finishline min_z, Back 시작 = finishline max_z
+                        //   none Finish_Front 끝 = Back 시작 = finishline max_z (min_z~max_z는 Back만)
                         //   Front_Rough끝 = Splitline_2 + 0.8
                         //   finishLineTopX = backX - finishLineTopZ  (MoveSTL 이후, X=-Z)
                         // MainModuleComposite.SharedFinishSplitOffsetFromFinishLineTopMm 과 동일해야 한다.
