@@ -644,7 +644,7 @@ export function AbutmentModelConfirmDialog({
       >
         <DialogContent
           // Above floating transfer panel (z-300). Same band as ModelPreviewDialog.
-          className="new-request-page z-[320] flex w-[calc(100vw-1rem)] max-h-[94vh] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-y-auto p-4 sm:w-[980px] sm:max-w-[980px] sm:p-5"
+          className="new-request-page z-[320] flex w-[calc(100vw-1rem)] max-h-[96vh] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-y-auto p-4 sm:w-[1080px] sm:max-w-[1080px] sm:p-5"
           overlayClassName="z-[310]"
         >
           <DialogHeader className="relative shrink-0 space-y-0 pr-8">
@@ -682,7 +682,7 @@ export function AbutmentModelConfirmDialog({
           <div className="grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 sm:pr-2 lg:grid-cols-[52%_48%] lg:items-start">
             <div className="app-glass-card app-glass-card--lg flex w-full flex-col !p-2 gap-2 lg:self-start">
               <div className="app-glass-card-content shrink-0">
-                <div className="relative aspect-[4/3] w-full min-h-[240px] overflow-hidden">
+                <div className="relative aspect-[4/3] w-full min-h-[280px] overflow-hidden">
                   {detailFile ? (
                     <StlPreviewViewer
                       file={detailFile}
@@ -1117,7 +1117,7 @@ export function AbutmentModelConfirmDialog({
                                 <p className="whitespace-nowrap text-xs leading-none text-rose-800">
                                   {proceedAsIsAllowed
                                     ? "확인 & 다음에서 보정 또는 그대로 진행을 고르세요."
-                                    : "보정해 의뢰하시겠습니까? 확인 & 다음을 눌러 주세요."}
+                                    : "보정해 의뢰하시겠습니까?"}
                                 </p>
                                 <ArrowDown
                                   className="h-4 w-4 shrink-0 animate-bounce text-rose-600"
