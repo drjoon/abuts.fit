@@ -4,12 +4,14 @@
 // - web/backend/services/abutmentStl/pipeline.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx (JS 실패 뱃지)
 // change-log:
+// - 2026-10-21: JS 계산은 람다(60초). 넘기거나 실패하면 준비 카드에 사유를 남긴다.
 // - 2026-10-10: JS 실패는 카드 뱃지만 남기고 원격 Rhino로 넘기지 않는다.
 // - 2026-10-10: 반자동으로 저장한 피니시라인(source=frontend-manual)은 재검출하지 않는다.
 // - 2026-10-09: 신설. 백엔드 JS 파이프라인이 1-stl → 2-filled를 먼저 처리한다.
 //
 // JS가 정상이면 Rhino는 호출하지 않는다. 문제가 나면 productionSchedule.stlJsFallback에
-// 사유를 남기고 stlPreload를 FAILED로 둔다. 준비 카드는 «JS 실패» 뱃지를 보여 준다.
+// 사유를 남기고 stlPreload를 FAILED로 둔다. 준비 카드는 «JS 실패»와 사유 문구를 보여 준다.
+// 계산은 ABUTMENT_STL_FILLED_LAMBDA가 있으면 람다(60초), 없으면 워커다.
 import path from "path";
 import Request from "../../models/request.model.js";
 import { getObjectBufferFromS3, uploadFileToS3 } from "../../utils/s3.utils.js";
@@ -19,7 +21,8 @@ import { resolveAbutmentStlInputs } from "./abutmentStlInputs.js";
 import { applyAutoCuffBlendSafely, isCuffBlendAutoEnabled } from "./cuffBlend.service.js";
 import { isPersistedCorrectedDesignKey } from "./correctLambda.service.js";
 import { correctedDesignCacheKey, takeFilledStlPrep } from "./preflight.service.js";
-import { runAbutmentStlPipelineInWorker } from "./runPipelineInWorker.js";
+import { runFilledStlOffRequest } from "./filledLambda.service.js";
+import { describeJsPipelineFailure } from "./runPipelineInWorker.js";
 
 /** 끄기: ABUTMENT_STL_JS_PRIMARY=false (Rhino만 사용) */
 export function isAbutmentStlJsPrimaryEnabled() {
@@ -147,7 +150,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
   if (js?.outputBuffer?.length) {
     fromPrep = true;
   } else {
-    js = await runAbutmentStlPipelineInWorker(inputBuffer, {
+    js = await runFilledStlOffRequest(inputBuffer, {
       targetDiameter: inputs.targetDiameter,
       implantProfile: inputs.implantProfile,
       ...(inputs.connection ? { connection: inputs.connection } : {}),
@@ -267,8 +270,9 @@ export async function runJsPrimaryThenFallback({ requestId, fileName }) {
       `[abutment-stl-js] requestId=${requestId} ${result.skipped ? `skipped=${result.skipped}` : `ok ${Date.now() - started}ms${prep}${stages}${perf}`}`,
     );
   } catch (error) {
-    const reason = error?.reason || "js_error";
-    const detail = String(error?.message || error);
+    const described = describeJsPipelineFailure(error);
+    const reason = described.reason;
+    const detail = described.detail;
     console.warn(`[abutment-stl-js] failed requestId=${requestId} reason=${reason}: ${detail}`);
     await recordJsFailure(requestId, reason, detail).catch((e) =>
       console.warn("[abutment-stl-js] recordJsFailure failed", e?.message || e),

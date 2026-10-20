@@ -172,7 +172,8 @@
 
 ### 어벗 STL JS 파이프라인 (Rhino 대체 · 섀도 모드)
 
-- **JS 우선 (2026-10-10~)**: 의뢰 생성·핸드오프의 `triggerRhinoProcessFileForRequest`와 수동 재생성(`process-file`, `engine` 없음)이 `services/abutmentStl/jsPrimary.service.js`를 돌린다. JS가 `2-filled` 업로드 후 `registerStlMetadata` → `registerProcessedFile`(Rhino 콜백과 같은 경로, 커프 보정 포함)로 등록한다. 예외·정렬 실패·피니시라인 없음/불량·메타데이터/직경 계산 실패면 `productionSchedule.stlJsFallback{reason,at}`와 `stlPreload=FAILED`만 남긴다. 준비 카드에 «JS 실패» 뱃지. 원격 Rhino는 호출하지 않는다. 카드 «Rhino 실행»(`engine=rhino`)과 `ABUTMENT_STL_JS_PRIMARY=false`만 Rhino로 간다.
+- **JS 우선 (2026-10-10~)**: 의뢰 생성·핸드오프의 `triggerRhinoProcessFileForRequest`와 수동 재생성(`process-file`, `engine` 없음)이 `services/abutmentStl/jsPrimary.service.js`를 돌린다. JS가 `2-filled` 업로드 후 `registerStlMetadata` → `registerProcessedFile`(Rhino 콜백과 같은 경로, 커프 보정 포함)로 등록한다. 예외·정렬 실패·피니시라인 없음/불량·메타데이터/직경 계산 실패·60초 초과면 `productionSchedule.stlJsFallback{reason,at}`와 `stlPreload=FAILED`만 남긴다. 준비 카드에 «JS 실패» 뱃지와 사유 문구. 원격 Rhino는 호출하지 않는다. 카드 «Rhino 실행»(`engine=rhino`)과 `ABUTMENT_STL_JS_PRIMARY=false`만 Rhino로 간다.
+- **계산은 람다**: `ABUTMENT_STL_FILLED_LAMBDA`가 있으면 `filledLambda.service.js`가 S3 `temp/stl-filled/`로 입력·결과·에러를 주고받고, 함수는 60초·2048MB·arm64다. 웹은 등록·커프 보정만 한다. 이름이 없으면(로컬) 같은 60초 한도의 워커다. 배포: `scripts/abutment-stl-js/deploy-stl-filled-lambda.sh`.
 
 - Rhino `process_abutment_stl.py`(1-stl → 2-filled)의 JS 이식. 순서: import → align → (제조사 준비) 생략된 11° 커넥션 추가 → finishline → 스크류홀 패치 → 직경 → fill_steps → export → stl-metadata. 11° 추가는 Rhino에 없다. 헥스가 스펙(L2)보다 길고 그 위가 11° 원뿔이 아니면 JS가 헥스를 기준 길이로 남기고 원뿔을 붙인다. 원뿔이 이미 있으면 그대로 둔다. 접수 검사·의뢰 전 보정 STL에서는 하지 않는다. 그 외 단계의 동작 SSOT는 아직 Rhino 스크립트다. 원본 스크립트를 고치면 같은 이름의 JS 모듈도 같이 고친다.
 - Rhino STL import는 22.5°로 용접한다. crease edge가 unwelded이고 피니시라인 edge 전략은 이 조각 경계를 쓴다(`RHINO_STL_WELD_ANGLE_DEG`, `Mesh.unweldedByAngle`). Rhino `ExtractMeshEdges(Unwelded)`는 조각 경계(naked)까지 돌려준다.

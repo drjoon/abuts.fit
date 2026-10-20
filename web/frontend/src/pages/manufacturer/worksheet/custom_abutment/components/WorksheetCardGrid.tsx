@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-21: 준비 카드 JS 실패는 뱃지와 함께 사유 문구를 본문에 남긴다.
 // - 2026-10-18: 준비 «제외» 뱃지는 자동 승인이 켜져 있을 때만 표시한다.
 // - 2026-10-14: 준비 카드 — 자동 승인에서 뺀 의뢰자의 의뢰에 «제외» 뱃지.
 // - 2026-10-10: JS 실패는 준비 카드 «JS 실패» 뱃지. 오버레이는 engine=rhino일 때만 «Rhino 작업중».
@@ -753,6 +754,7 @@ export const WorksheetCardGrid = ({
           (tabStage === "packing" && isPrinted);
         const jsFailed =
           tabStage === "request" &&
+          !rhinoWorkPending &&
           Boolean(request.productionSchedule?.stlJsFallback?.at);
         const jsFailedReason = String(
           request.productionSchedule?.stlJsFallback?.reason || "",
@@ -1401,6 +1403,17 @@ export const WorksheetCardGrid = ({
                     )}
                   </div>
                 )}
+
+                {jsFailed ? (
+                  <div className="mt-2 p-2 bg-destructive-soft border border-destructive rounded-lg text-xs text-destructive flex flex-col gap-1">
+                    <div className="font-bold">개발팀 확인 필요 — JS 실패</div>
+                    <div>
+                      JS가 Filled STL을 만들지 못했습니다.
+                      <br />
+                      {jsFailedReason || "사유가 기록되지 않았습니다."}
+                    </div>
+                  </div>
+                ) : null}
 
                 {/* 백그라운드 작업 실패 시 안내 메시지 */}
                 {((isCamStage &&
