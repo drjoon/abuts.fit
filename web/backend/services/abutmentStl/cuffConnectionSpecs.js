@@ -20,8 +20,12 @@
 // 제조사 준비 탭 의뢰카드에 빨간 테두리 +「개발팀 확인 필요」가 뜬다.
 // 개발팀이 해당 filled STL의 테이퍼 끝 높이를 재서 CUFF_CONNECTION_SPECS에 추가하고, 이 목록에서 뺀다.
 // 측정: scripts/abutment-stl-js/measure-cuff-connection.js --pending (턱 있는 샘플 3건 이상이 ±0.03mm로 모일 때만 등록).
-// - DIO UF Narrow                : 샘플 1건
-// - MEGAGEN AnyOne Mini / Mini Internal, NEOBIOTECH Small Narrow, DENTIS Mini·Narrow, MEGAGEN ARi : 샘플 없음·메타 오류
+// PRC(AcroDent/2_Connection)는 있는데 테이퍼 값이 없는 커넥션 (2026-10-20 Test DB 기준):
+// - DIO UF Narrow (UF_NH)                      : 샘플 1건 (원뿔 끝 0.42, 턱 없음)
+// - MEGAGEN AnyOne Internal Mini (AnyOne_MH)   : 샘플 1건 (원뿔 끝 0.82, 원점 3.093)
+// - MEGAGEN MiNi Internal (MiNi_H)             : 샘플 2건, 둘 다 11° 원뿔 없음
+// - NEOBIOTECH IS2·IS3·ALX Small Narrow (IS_SNH), DENTIS SQ·One-Q Mini (SQ_MH)·Narrow (SQ_NH) : 샘플 없음
+// - MEGAGEN ARi·ARO : PRC 없음
 // - NEOBIOTECH IS2 중 테이퍼가 더 긴 변형(끝 직경 약 3.45) : IS 스펙과 안 맞으면 spec-pending으로 뜬다
 
 export const TAPER_ANGLE_DEG = 11;
@@ -52,7 +56,12 @@ export const CUFF_CONNECTION_SPECS = [
   // 테이퍼 끝 직경 3.416
   {
     key: "NEOBIOTECH|IS|REGULAR",
-    aliases: ["NEOBIOTECH|ALX|REGULAR", "NEOBIOTECH|IS2|REGULAR", "NEOBIOTECH|ISALX|REGULAR"],
+    aliases: [
+      "NEOBIOTECH|ALX|REGULAR",
+      "NEOBIOTECH|IS2|REGULAR",
+      "NEOBIOTECH|IS3|REGULAR",
+      "NEOBIOTECH|ISALX|REGULAR",
+    ],
     originDiameter: 3.35,
     taperHeightMm: 0.17,
     samples: 17,
@@ -78,8 +87,15 @@ export const CUFF_CONNECTION_SPECS = [
     taperHeightMm: 0.3,
     samples: 13,
   },
-  // 테이퍼 끝 직경 2.866
-  { key: "OSSTEM|TS3|MINI", originDiameter: 2.6, taperHeightMm: 0.68, samples: 2 },
+  // 테이퍼 끝 직경 2.888. 원뿔 끝 0.72~0.74가 5건이고, 0.82(턱 0.1mm)·1.02처럼 기공소가 원뿔을 더 길게 그린 파일이 섞인다.
+  {
+    key: "OSSTEM|TS3|MINI",
+    aliases: ["OSSTEM|TS|MINI"],
+    originDiameter: 2.6,
+    taperHeightMm: 0.74,
+    labExtendsTaper: true,
+    samples: 7,
+  },
 ];
 
 const normalizeToken = (value) =>

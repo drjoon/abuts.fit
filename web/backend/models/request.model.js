@@ -638,6 +638,18 @@ const requestSchema = new mongoose.Schema(
           ms: Number,
         },
         s3Key: String,
+        // spec-pending(스펙 미등록) 샘플 분석 결과. cuffSpecSuggest.service.js 워커가 같은 specKey 카드 전체에 기록한다.
+        // - status: collecting(샘플 수집 중) | ready(다수 군집 값 제안) | mixed(한 값으로 안 모임)
+        specSuggestion: {
+          status: String,
+          sampleCount: Number,
+          needed: Number,
+          taperHeightMm: Number,
+          originDiameter: Number,
+          clusterCount: Number,
+          outlierCount: Number,
+          analyzedAt: Date,
+        },
         updatedAt: Date,
       },
       // 의뢰자에게 제안하는 커프 재디자인(70°보다 누운 접시형 커프). 2-filled 등록 후 백그라운드 분석.

@@ -14,6 +14,17 @@ export type CuffBlendRecord = {
   zA?: number | null;
   zB?: number | null;
   maxAngleDeg?: number | null;
+  /** spec-pending 샘플 분석(백그라운드 워커). ready면 taperHeightMm가 다수 군집 제안값. */
+  specSuggestion?: {
+    status?: "collecting" | "ready" | "mixed" | string;
+    sampleCount?: number;
+    needed?: number;
+    taperHeightMm?: number | null;
+    originDiameter?: number | null;
+    clusterCount?: number;
+    outlierCount?: number;
+    analyzedAt?: string | null;
+  } | null;
   updatedAt?: string | null;
 };
 

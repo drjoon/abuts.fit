@@ -130,6 +130,12 @@ export async function applyCuffBlendToFilledStl({
     const source = sourceBuffer?.length ? sourceBuffer : await getObjectBufferFromS3(s3Key);
     result = await runCuffBlendInWorker(source, mode, { ...blendOptions, spec, specKey: key, finishLine }, { queueTimeoutMs });
   }
+  // 스펙 미등록 샘플이 들어왔다. 미등록 스펙 전체를 다시 분석한다(결과는 호출부가 record를 저장한 뒤 읽히도록 워커가 지연한다).
+  if (!spec && result.status === "spec-pending") {
+    void import("../../jobs/cuffSpecSuggestWorker.js")
+      .then((m) => m.triggerCuffSpecSuggest())
+      .catch((error) => console.warn("[cuffSpecSuggest] trigger failed", error?.message || error));
+  }
   let fileSize = null;
   // 커프 보정이 안 돼도(manual-review·spec-pending) 포스트를 다듬었으면 버퍼가 있다.
   const blended = result.buffer?.length ? result.buffer : null;

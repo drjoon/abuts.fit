@@ -4,10 +4,15 @@
 // - web/backend/services/abutmentStl/cuffBlend.service.js
 // - web/backend/services/abutmentStl/postSmooth.js (커프 보정이 적용되면 이어서 포스트 계단 결 다듬기)
 import { parentPort, workerData } from "worker_threads";
-import { blendCuffJunction, proposeCuffRedesign, redesignCuffBowl } from "./cuffBlend.js";
+import { blendCuffJunction, measureCuffConnection, proposeCuffRedesign, redesignCuffBowl } from "./cuffBlend.js";
 import { smoothPostAboveFinishLine } from "./postSmooth.js";
 
-const RUNNERS = { auto: blendCuffJunction, redesign: redesignCuffBowl, propose: proposeCuffRedesign };
+/** measure: 스펙 미등록 샘플의 11° 원뿔 끝 높이만 잰다(cuffSpecSuggest.service.js). */
+const measure = (input) => {
+  const m = measureCuffConnection(input);
+  return m ? { ok: true, status: "measured", detail: { measure: m } } : { ok: false, status: "failed", reason: "11° 원뿔 없음" };
+};
+const RUNNERS = { auto: blendCuffJunction, redesign: redesignCuffBowl, propose: proposeCuffRedesign, measure };
 /** auto는 커프 보정이 안 돼도 포스트는 다듬는다. post는 커프 스펙이 없을 때 포스트만. */
 const POST_ON_INPUT_MODES = new Set(["auto", "post"]);
 

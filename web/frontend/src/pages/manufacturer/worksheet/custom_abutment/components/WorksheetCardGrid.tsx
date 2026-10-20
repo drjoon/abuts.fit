@@ -1392,6 +1392,27 @@ export const WorksheetCardGrid = ({
                       <br />
                       개발팀이 스펙을 등록하고 코드를 리팩터링해야 합니다.
                     </div>
+                    {cuffBlend?.specSuggestion?.status === "ready" && (
+                      <div className="font-semibold">
+                        샘플 {cuffBlend.specSuggestion.sampleCount}건 분석 완료 — 원뿔 끝 높이 {cuffBlend.specSuggestion.taperHeightMm}mm 제안
+                        <br />
+                        (원점 Ø{cuffBlend.specSuggestion.originDiameter}, outlier {cuffBlend.specSuggestion.outlierCount}건 제외)
+                      </div>
+                    )}
+                    {cuffBlend?.specSuggestion?.status === "mixed" && (
+                      <div>
+                        샘플 {cuffBlend.specSuggestion.sampleCount}건이 한 값으로 모이지 않았습니다.
+                        <br />
+                        샘플이 더 모이면 다시 분석합니다.
+                      </div>
+                    )}
+                    {cuffBlend?.specSuggestion?.status === "collecting" && (
+                      <div>
+                        샘플 {cuffBlend.specSuggestion.sampleCount}/{cuffBlend.specSuggestion.needed}건 수집 중
+                        <br />
+                        {cuffBlend.specSuggestion.needed}건이 모이면 자동으로 분석합니다.
+                      </div>
+                    )}
                   </div>
                 )}
 
