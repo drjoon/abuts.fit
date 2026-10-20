@@ -135,6 +135,11 @@ const draftCaseSchema = new mongoose.Schema(
         anodizingEnabled: {
           type: Boolean,
         },
+        // 의뢰자가 평균 필렛 R 0.50mm 이상 과삭제를 허용하고 원본으로 접수
+        filletOvercutAllowed: {
+          type: Boolean,
+          default: false,
+        },
         // 의뢰자 헥스 회전 선택값(canonical)
         requestorHexRotation: {
           type: String,

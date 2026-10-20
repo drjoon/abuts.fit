@@ -145,6 +145,20 @@ describe("evaluateAutoMachiningGate", () => {
     expect(r.verdict).toBe("hold");
     expect(r.reasons).toContain("tight_corner_correction");
   });
+  it("의뢰자가 0.50mm 과삭제를 허용하면 타이트 코너만으로 보류하지 않는다", () => {
+    const r = evaluateAutoMachiningGate(
+      okRequest({
+        filletOvercutAllowed: true,
+        tightCorner: {
+          tightCount: 3,
+          needsCorrectionReview: true,
+          correctionSolid: { positions: [0, 0, 0] },
+        },
+      }),
+    );
+    expect(r.reasons).not.toContain("tight_corner_correction");
+    expect(r.verdict).toBe("approved");
+  });
   it("커프 manual-review·NC 좌표 이탈·STL 누락은 보류", () => {
     expect(
       evaluateAutoMachiningGate(okRequest({ cuffBlend: { status: "manual-review" } }))

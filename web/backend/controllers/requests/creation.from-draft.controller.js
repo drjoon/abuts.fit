@@ -886,6 +886,7 @@ export async function createRequestsFromDraft(req, res) {
               retentionGroove: retentionGrooveValue,
               requestorHexRotation: requestorHexRotationValue,
               finalHexRotation: requestorHexRotationValue,
+              filletOvercutAllowed: ci?.filletOvercutAllowed === true,
               newSystemRequest,
               practiceRouting,
               file: {
@@ -932,6 +933,7 @@ export async function createRequestsFromDraft(req, res) {
               retentionGroove: retentionGrooveValue,
               requestorHexRotation: requestorHexRotationValue,
               finalHexRotation: requestorHexRotationValue,
+              filletOvercutAllowed: ci?.filletOvercutAllowed === true,
               newSystemRequest,
               practiceRouting,
             };

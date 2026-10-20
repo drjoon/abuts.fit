@@ -384,6 +384,9 @@ export const WorksheetCardGrid = ({
         const isTightCornerCorrectionNeeded = isTightCornerCorrectionRequired(
           (caseInfos as any)?.tightCorner,
         );
+        const filletOvercutAllowedByRequestor =
+          (caseInfos as { filletOvercutAllowed?: boolean })?.filletOvercutAllowed ===
+          true;
         const cuffBlend = resolveCuffBlend(caseInfos);
         const isPreMachiningTab = tabStage === "request" || tabStage === "cam";
         const isCuffManualReview =
@@ -507,7 +510,19 @@ export const WorksheetCardGrid = ({
             isUnmachinableSample ||
             isFinishLineCaptureBad);
         const showCuffReviewBadge = isCuffManualReview && !rhinoWorkPending;
+        const requestorAllowedTightCorner =
+          filletOvercutAllowedByRequestor &&
+          isTightCornerCorrectionNeeded &&
+          !isFinishLineMinZRisky &&
+          !isFinishLineCaptureBad &&
+          !isUnmachinableSample;
+        const incompleteMachiningBadgeLabel = requestorAllowedTightCorner
+          ? "불완전 & 의뢰자 허용"
+          : "불완전";
         const incompleteMachiningBadgeTitle = (() => {
+          if (requestorAllowedTightCorner) {
+            return "의뢰자가 평균 반경 0.50mm 이상 과삭제를 허용했습니다. 자동 승인됩니다.";
+          }
           if (isTightCornerCorrectionNeeded) {
             return "마진 fillet R이 φ1.2 볼(R0.6)보다 작습니다. 프리뷰에서 확인하세요.";
           }
@@ -1418,10 +1433,10 @@ export const WorksheetCardGrid = ({
                         {showIncompleteMachiningBadge ? (
                           <Badge
                             variant="outline"
-                            className="h-5 max-w-full truncate text-[10px] px-1.5 py-0 font-semibold leading-none border border-destructive/70 bg-destructive-soft text-destructive flex items-center"
+                            className="max-w-[8rem] whitespace-normal text-center text-[10px] px-1.5 py-0.5 font-semibold leading-tight border border-destructive/70 bg-destructive-soft text-destructive"
                             title={incompleteMachiningBadgeTitle}
                           >
-                            불완전
+                            {incompleteMachiningBadgeLabel}
                           </Badge>
                         ) : null}
                         {showCuffReviewBadge ? (
@@ -1455,12 +1470,12 @@ export const WorksheetCardGrid = ({
                           }}
                           aria-label={
                             showIncompleteMachiningBadge
-                              ? "불완전 — 프리뷰 열기"
+                              ? `${incompleteMachiningBadgeLabel} — 프리뷰 열기`
                               : "피니시라인 프리뷰 열기"
                           }
                           title={
                             showIncompleteMachiningBadge
-                              ? "불완전"
+                              ? incompleteMachiningBadgeLabel
                               : "피니시라인 프리뷰"
                           }
                         >

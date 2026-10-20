@@ -1750,6 +1750,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.finishLine",
       "caseInfos.tightCorner.tightCount",
       "caseInfos.tightCorner.needsCorrectionReview",
+      "caseInfos.filletOvercutAllowed",
       "caseInfos.cuffBlend",
       "caseInfos.cuffProposal",
       "autoMachiningReview",

@@ -164,9 +164,6 @@ const NewRequestPageContent = () => {
   >(async () => null);
   /** 그대로 진행을 고른 파일. 접수 때 보정 STL로 바꾸지 않는다. */
   const keepOriginalRef = useRef(new Set<string>());
-  const keepOriginalDesign = useCallback((file: File) => {
-    keepOriginalRef.current.add(getFileKey(file));
-  }, []);
   const resolveCorrectedDesignUpload = useCallback(
     (file: File) => resolveCorrectedRef.current(file),
     [],
@@ -239,6 +236,23 @@ const NewRequestPageContent = () => {
     resolveCorrectedDesignUpload,
   });
 
+  const keepOriginalDesign = useCallback(
+    (file: File) => {
+      const key = getFileKey(file);
+      keepOriginalRef.current.add(key);
+      updateCaseInfos(key, { filletOvercutAllowed: true });
+    },
+    [updateCaseInfos],
+  );
+  const useCorrectedDesign = useCallback(
+    (file: File) => {
+      const key = getFileKey(file);
+      keepOriginalRef.current.delete(key);
+      updateCaseInfos(key, { filletOvercutAllowed: false });
+    },
+    [updateCaseInfos],
+  );
+
   // STL 첨부 즉시 JS 파이프라인 가공 검사(불완전가공 사전 안내)
   const machiningPreflightByFileKey = useStlMachiningPreflight({
     files,
@@ -297,12 +311,17 @@ const NewRequestPageContent = () => {
     for (const file of files) {
       const key = getFileKey(file);
       const preflight = machiningPreflightByFileKey[key];
-      if (preflight?.status === "checking") keepOriginalRef.current.delete(key);
+      if (preflight?.status === "checking") {
+        keepOriginalRef.current.delete(key);
+        if (caseInfosMap?.[key]?.filletOvercutAllowed) {
+          updateCaseInfos(key, { filletOvercutAllowed: false });
+        }
+      }
       if (preflight?.status !== "tight" || !preflight.correctedId) continue;
       if (keepOriginalRef.current.has(key)) continue;
       void resolveCorrectedRef.current(file).catch(() => null);
     }
-  }, [files, machiningPreflightByFileKey]);
+  }, [caseInfosMap, files, machiningPreflightByFileKey, updateCaseInfos]);
 
   const countableFileKeys = useMemo(() => {
     if (!patientGroups?.length) return undefined;
@@ -2002,6 +2021,7 @@ const NewRequestPageContent = () => {
             onPrepareCorrectedDesign={prepareCorrectedDesign}
             onTakePreparedCorrectedDesign={takePreparedCorrectedDesign}
             onKeepOriginalDesign={keepOriginalDesign}
+            onUseCorrectedDesign={useCorrectedDesign}
               onDuplicateDetected={({ file, duplicate }) => {
                 const fileWithDraftCaseId = file as File & {
                   _draftCaseInfoId?: string;

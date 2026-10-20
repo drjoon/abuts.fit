@@ -584,6 +584,7 @@ export const useNewRequestSubmitV2 = ({
               memo: ci.memo,
               retentionGroove: ci.retentionGroove,
               requestorHexRotation: ci.requestorHexRotation,
+              filletOvercutAllowed: ci.filletOvercutAllowed === true,
               shippingMode: ci.shippingMode,
               requestedShipDate: ci.requestedShipDate,
               designSoftware: String(

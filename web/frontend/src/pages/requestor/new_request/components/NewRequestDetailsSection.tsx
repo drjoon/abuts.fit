@@ -130,6 +130,7 @@ type Props = {
   ) => Promise<File | null> | null;
   /** 평균 R 0.50mm 이상에서 원본 STL로 진행한다. */
   onKeepOriginalDesign?: (file: File) => void;
+  onUseCorrectedDesign?: (file: File) => void;
 };
 
 export function NewRequestDetailsSection({
@@ -205,6 +206,7 @@ export function NewRequestDetailsSection({
   onPrepareCorrectedDesign,
   onTakePreparedCorrectedDesign,
   onKeepOriginalDesign,
+  onUseCorrectedDesign,
 }: Props) {
   const { token } = useAuthStore();
   const listContainerRef = useRef<HTMLDivElement | null>(null);
@@ -826,6 +828,7 @@ export function NewRequestDetailsSection({
         onPrepareCorrectedDesign={onPrepareCorrectedDesign}
         onTakePreparedCorrectedDesign={onTakePreparedCorrectedDesign}
         onKeepOriginalDesign={onKeepOriginalDesign}
+        onUseCorrectedDesign={onUseCorrectedDesign}
       />
 
 

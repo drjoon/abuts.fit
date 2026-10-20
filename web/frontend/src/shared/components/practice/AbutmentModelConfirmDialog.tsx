@@ -165,6 +165,8 @@ export type AbutmentModelConfirmDialogProps = {
   ) => Promise<File | null> | null;
   /** 평균 R 0.50mm 이상에서 보정 STL 없이 원본으로 진행한다. */
   onKeepOriginalDesign?: (file: File) => void;
+  /** 보정 STL로 의뢰한다. 과삭제 허용을 끈다. */
+  onUseCorrectedDesign?: (file: File) => void;
 };
 
 export function AbutmentModelConfirmDialog({
@@ -223,6 +225,7 @@ export function AbutmentModelConfirmDialog({
   onPrepareCorrectedDesign,
   onTakePreparedCorrectedDesign,
   onKeepOriginalDesign,
+  onUseCorrectedDesign,
 }: AbutmentModelConfirmDialogProps) {
   const isLabHandoff = variant === "lab-handoff";
   const labConfirmLabel = String(confirmLabel || "").trim() || "확인";
@@ -458,11 +461,12 @@ export function AbutmentModelConfirmDialog({
   const handleCorrectedProceed = useCallback(async () => {
     const index = detailIndex;
     if (index === null) return;
+    if (detailFile) onUseCorrectedDesign?.(detailFile);
     // 보정 STL 준비를 기다리며 멈추지 않는다. 다운로드는 뒤에서 이어가고 다음 단계로 바로 간다.
     void runCorrectedStlDownload();
     setCorrectedDownloadOpen(false);
     await onVerifyAndNextRef.current(index);
-  }, [detailIndex, runCorrectedStlDownload]);
+  }, [detailFile, detailIndex, onUseCorrectedDesign, runCorrectedStlDownload]);
 
   const handleProceedAsIs = useCallback(async () => {
     const index = detailIndex;

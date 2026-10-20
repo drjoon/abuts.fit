@@ -144,8 +144,11 @@ export function evaluateAutoMachiningGate(request, cfg = AUTO_GATE_DEFAULTS) {
   const minZ = num(ci.finishLine?.min_z);
   if (minZ != null && minZ < cfg.minFinishLineZ) reasons.push("finishline_low_z");
 
-  // 마진 fillet R < φ1.2 볼(R0.6) — 보정 솔리드 필요. CAM 원본 유지·작업자 확인.
-  if (isTightCornerCorrectionRequired(ci.tightCorner)) {
+  // 마진 fillet R < φ1.2 볼(R0.6). 의뢰자가 0.50mm 이상 과삭제를 허용하면 자동 승인한다.
+  if (
+    isTightCornerCorrectionRequired(ci.tightCorner) &&
+    ci.filletOvercutAllowed !== true
+  ) {
     reasons.push("tight_corner_correction");
   }
 
