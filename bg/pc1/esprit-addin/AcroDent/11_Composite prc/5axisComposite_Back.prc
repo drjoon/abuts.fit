@@ -3,7 +3,7 @@ BEGIN_OPERATION; 507; Back_Finish; 0;
    4437; 4437; 0;  SOURCE; 0; TECHCODETYPE; 2;
    4420; 4420; 2026;  SOURCE; 0; TECHCODETYPE; 2;
    CollisionDetection; 6630; 0;  CAPTION; 충돌 감지; SOURCE; 2; TECHCODETYPE; 520;
-   LimitAngleBetweenPoints; 6511; 0;  CAPTION; 두점사이 각도 제한; SOURCE; 2; TECHCODETYPE; 67;
+   LimitAngleBetweenPoints; 6511; 1;  CAPTION; 두점사이 각도 제한; SOURCE; 2; TECHCODETYPE; 67;
    ReferenceDepthOfCut; 1768; 0.20000000000000001;  HIDDEN; CAPTION; 참조 가공 깊이; SOURCE; 1; TECHCODETYPE; 2;
    RoughPass; 238; 0;  CAPTION; 황삭 경로; SOURCE; 0; TECHCODETYPE; 67;
    ThroughPointX; 3247; 0;  HIDDEN; CAPTION; 쓰루 포인트 X|쓰루 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
