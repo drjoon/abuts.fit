@@ -185,12 +185,13 @@
     `TryPrepareBackTurnRangeFromLegacyTurnB` (legacy fallback),
     `TurningFeature_Extension.BackT` (legacy 체인 생성)
 
-### 4.7 Composite Orientation SSOT (2026-07-03)
+### 4.7 Composite Orientation SSOT (2026-07-03, Front/Back 공통 0 통일 2026-10-21)
 
 - `OrientationStrategy` 매직넘버는 코드 상수로 관리한다.
-  - `CompositeOrientationStrategyDefault = 1`
-  - `CompositeOrientationStrategyProfile = 4`
-  - 구현 위치: `DentalAddinDecomp/DentalAddin/MainModuleComposite.cs`
+  - `CompositeOrientationStrategyDefault = 0`
+  - `CompositeOrientationStrategyProfile = 0`
+  - `5axisComposite_Front.prc` 및 `5axisComposite_Back.prc` 모두 `OrientationStrategy; 3246; 0;`을 기본값으로 두고, 런타임(`TryRunComposite2SplitABCore`)에서도 `Front_Finish`(`opA`)와 `Back_Finish`(`opB`) 모두 `TryApplyCompositeOrientationProfileFromEnv`를 호출해 동일 전략(`0`)을 보장한다(평평한 마진 숄더 벽면에서 `Y`축 급점프 및 `C`축 역회전 방지).
+  - 구현 위치: `DentalAddinDecomp/DentalAddin/MainModuleComposite.cs`, `AcroDent/11_Composite prc/5axisComposite_Front.prc`, `AcroDent/11_Composite prc/5axisComposite_Back.prc`
 - `OrientationProfile` 시작점 X는 **STL Move와 반드시 동기화**한다.
   - 우선순위:
     1. `ABUTS_COMPOSITE_ORIENTATION_PROFILE_START_X` (권장, MoveSTL 직후 실제 STL 좌측 끝 `minX`)

@@ -1203,22 +1203,17 @@ namespace DentalAddin
 
 
 
-            // OrientationStrategy=프로파일(4) 지원:
-            // - backend 경사축 벡터(ABUTS_COMPOSITE_ORIENTATION_VECTOR)가 있으면
-            //   FINISH_FRONT(opA)에 OrientationProfile을 런타임 생성/적용한다.
-            // - 벡터가 없으면 PRC 기본값을 그대로 사용한다.
-            // - B_PHASE(!runA)에서는 A OrientationProfile 생성을 생략한다 (중복 비용).
+            // OrientationStrategy(0) 및 OrientationProfile 지원:
+            // - FINISH_FRONT(opA)와 FINISH_BACK(opB) 모두 동일한 OrientationStrategy(0)를 적용해
+            //   Back_Finish에서 평평한 마진 숄더 벽면을 지날 때 Y축 급점프 및 C축 역회전(H<0)이 발생하지 않도록 한다.
+            // - A_PHASE에서는 A만, B_PHASE/B2_PHASE에서는 B만, 동시 실행 시 A·B 모두 적용한다.
             if (runA)
             {
                 TryApplyCompositeOrientationProfileFromEnv(opA, "A");
             }
-            else if (onePassFullBack && opB != null)
+            if (runB && opB != null)
             {
-                TryApplyCompositeOrientationProfileFromEnv(opB, "OnePass");
-            }
-            else
-            {
-                DentalLogger.Log("Composite2SplitLine2 - phaseMode=B_PHASE, A OrientationProfile 생성 생략");
+                TryApplyCompositeOrientationProfileFromEnv(opB, onePassFullBack ? "OnePass" : "B");
             }
 
             // [중요] StockAllowance 적용 범위
