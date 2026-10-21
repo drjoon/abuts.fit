@@ -127,7 +127,7 @@ export async function applyCuffBlendToFilledStl({
   if (!spec) {
     // 커프는 못 고쳐도 auto면 포스트 계단 결은 다듬는다.
     const post =
-      mode === "auto"
+      mode === "auto" && !blendOptions.skipPostSmooth
         ? await runCuffBlendInWorker(
             sourceBuffer?.length ? sourceBuffer : await getObjectBufferFromS3(s3Key),
             "post",
@@ -261,6 +261,7 @@ export async function applyAutoCuffBlendSafely({
   finishLine,
   sourceBuffer = null,
   writeBack = true,
+  blendOptions = {},
 }) {
   if (!isCuffBlendAutoEnabled() || (!s3Key && !sourceBuffer?.length)) return null;
   const ci = { ...toPlain(caseInfos), ...(finishLine ? { finishLine } : {}) };
@@ -272,6 +273,7 @@ export async function applyAutoCuffBlendSafely({
       caseInfos: ci,
       mode: "auto",
       queueTimeoutMs: AUTO_QUEUE_TIMEOUT_MS,
+      blendOptions,
     });
     console.log("[cuff-blend] auto", { s3Key, status: out.status, reason: out.reason, ...out.detail });
     return out;

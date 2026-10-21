@@ -244,7 +244,7 @@ const NewRequestPageContent = () => {
   const useCorrectedDesign = useCallback(
     (file: File) => {
       const key = getFileKey(file);
-      updateCaseInfos(key, { filletOvercutAllowed: false });
+      updateCaseInfos(key, { filletOvercutAllowed: false, filletDesignChoice: "fix" });
     },
     [updateCaseInfos],
   );
@@ -257,6 +257,8 @@ const NewRequestPageContent = () => {
   });
   const preflightStateRef = useRef(machiningPreflightByFileKey);
   preflightStateRef.current = machiningPreflightByFileKey;
+  const caseInfosRef = useRef(caseInfosMap);
+  caseInfosRef.current = caseInfosMap;
   const correctedJobsRef = useRef(
     new Map<string, Promise<TempUploadedFile | null>>(),
   );
@@ -297,7 +299,10 @@ const NewRequestPageContent = () => {
           });
         correctedJobsRef.current.set(key, job);
       }
-      return job;
+      const uploaded = await job;
+      // 준비는 검사와 함께 해 두고, 의뢰 파일 교체는 「디자인 고치기」를 골랐을 때만 한다.
+      if (caseInfosRef.current?.[key]?.filletDesignChoice !== "fix") return null;
+      return uploaded;
     }
     return null;
   };
@@ -307,8 +312,9 @@ const NewRequestPageContent = () => {
       const key = getFileKey(file);
       const preflight = machiningPreflightByFileKey[key];
       if (preflight?.status === "checking") {
-        if (caseInfosMap?.[key]?.filletOvercutAllowed) {
-          updateCaseInfos(key, { filletOvercutAllowed: false });
+        const ci = caseInfosMap?.[key];
+        if (ci?.filletOvercutAllowed || ci?.filletDesignChoice) {
+          updateCaseInfos(key, { filletOvercutAllowed: false, filletDesignChoice: null });
         }
       }
       if (preflight?.status !== "tight" || !preflight.correctedId) continue;

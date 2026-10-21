@@ -177,11 +177,15 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
       }
     : null;
   if (!cuffBlendResult && isCuffBlendAutoEnabled()) {
+    // fix: 확인 전 보정 STL에 포스트 다듬기가 이미 있다. asis: 의뢰자가 원본 그대로 가공을 골랐다.
+    const filletChoice = String(ci.filletDesignChoice || "");
+    const skipPostSmooth = filletChoice === "fix" || filletChoice === "asis";
     const blended = await applyAutoCuffBlendSafely({
       s3Key,
       sourceBuffer: output,
       caseInfos: { ...ci, finishLine: js.finishLine },
       writeBack: false,
+      blendOptions: skipPostSmooth ? { skipPostSmooth: true } : {},
     });
     if (blended?.record) {
       cuffBlendResult = { record: blended.record, fileSize: blended.fileSize || null };

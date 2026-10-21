@@ -487,12 +487,12 @@ describe("abutmentStl pipeline", () => {
     expect(out.correctDesign).toBe(true);
     expect(out.outputBuffer.length).toBeGreaterThan(0);
     expect(out.tightCorner?.tightCount).toBeGreaterThan(0);
-    // 필렛 R만 바꾼다. 코너 띠 세분화로 면이 늘어도 상한(입력 ×4/회) 안에서만 큰다(커프·포스트 로직은 제조사 준비 몫).
+    // 필렛 R과 크라운 안착면 다듬기. 띠 세분화와 포스트 1회 분할로 면이 늘어도 입력의 12배 안에서만 큰다.
     const inTris = buffer.readUInt32LE(80);
     const outTris = out.outputBuffer.readUInt32LE(80);
     expect(outTris).toBeGreaterThan(0);
-    expect(outTris).toBeLessThan(inTris * 6);
-    expect(out.outputBuffer.length).toBeLessThan(buffer.length * 6);
+    expect(outTris).toBeLessThan(inTris * 12);
+    expect(out.outputBuffer.length).toBeLessThan(buffer.length * 12);
   });
 
   it("보정 검사에서 옮길 코너가 없으면 보정 STL도 불완전 가공 메타도 없다", async () => {

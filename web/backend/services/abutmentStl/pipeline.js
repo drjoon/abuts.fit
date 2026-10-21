@@ -19,6 +19,7 @@ import {
   screenMarginFillet,
 } from "./marginFilletReview.js";
 import { detectTightCorners } from "./tightCorner.js";
+import { smoothPostAboveFinishLine } from "./postSmooth.js";
 
 export const ABUTMENT_STL_JS_VERSION = `abutment-stl-js-1+align-${ALIGN_MODULE_VERSION}+${JS_ALIGN_PORT_VERSION}+conn-taper-1`;
 
@@ -169,8 +170,8 @@ function finishPreflight({ mesh, finishLine, align, alignMatrix, logs, perf, mar
 }
 
 /**
- * 확인 전 보정 STL. correctMarginFillet로 정점을 옮긴다. 정점을 옮기는 보정은 이 의뢰자 단계에서만 한다.
- * 옮긴 정점이 있을 때만 불완전 가공이다.
+ * 확인 전 보정 STL. 공구 R 필렛을 키운 뒤, 제조사 준비와 같은 포스트 다듬기로
+ * 크라운이 앉는 면의 계단만 편다. 스크류홀·커프·커넥션은 여기서 바꾸지 않는다.
  */
 function finishCorrectedDesign({ mesh, finishLine, align, alignMatrix, logs, perf, mark, total0, log }) {
   const t0 = performance.now();
@@ -190,9 +191,22 @@ function finishCorrectedDesign({ mesh, finishLine, align, alignMatrix, logs, per
       if (built.corrected?.mesh) {
         filletSurface = built.filletSurface;
         tightCorner = built.tightCorner;
-        built.corrected.mesh.transform(invertRigidMatrix(alignMatrix));
-        outputBuffer = writeBinaryStl({
+        // 필렛 띠의 울퉁불퉁함은 제조사 준비의 포스트 다듬기가 없앤다. 같은 함수를 정렬 좌표에서 돌린 뒤 원본 좌표로 되돌린다.
+        const alignedBuf = writeBinaryStl({
           positions: built.corrected.mesh.toTriangleSoup(),
+          attributes: null,
+        });
+        const smoothed = smoothPostAboveFinishLine(alignedBuf, { finishLine });
+        const outMesh =
+          smoothed.ok && smoothed.buffer?.length
+            ? Mesh.fromStlBuffer(smoothed.buffer)
+            : built.corrected.mesh;
+        if (!(smoothed.ok && smoothed.buffer?.length)) {
+          log(`[stl-correct] post smooth skipped: ${smoothed.reason || smoothed.status}`);
+        }
+        outMesh.transform(invertRigidMatrix(alignMatrix));
+        outputBuffer = writeBinaryStl({
+          positions: outMesh.toTriangleSoup(),
           attributes: null,
         });
       } else {

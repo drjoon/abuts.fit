@@ -58,9 +58,10 @@ function applyTaperSmooth(result, fallbackInput) {
 export function runCuffBlendJob(input, mode = "auto", options = {}) {
   let result = mode === "post" ? { ok: false, status: "skipped", reason: null } : (RUNNERS[mode] || blendCuffJunction)(input, options);
   const cuffBuffer = result.ok && result.buffer ? result.buffer : null;
-  if (cuffBuffer && mode !== "propose") {
+  // 의뢰자가 디자인을 고르면 포스트 다듬기는 확인 전 보정 STL에 이미 있다. 그대로 가공을 고르면 여기서도 하지 않는다.
+  if (!options.skipPostSmooth && cuffBuffer && mode !== "propose") {
     result = applyPostSmooth(result, cuffBuffer, options.finishLine || null);
-  } else if (!cuffBuffer && POST_ON_INPUT_MODES.has(mode)) {
+  } else if (!options.skipPostSmooth && !cuffBuffer && POST_ON_INPUT_MODES.has(mode)) {
     result = applyPostSmooth({ ...result, buffer: null }, input, options.finishLine || null);
   }
   if (mode !== "propose" && mode !== "measure") result = applyTaperSmooth(result, input);

@@ -626,6 +626,10 @@ export const useNewRequestSubmitV2 = ({
               retentionGroove: ci.retentionGroove,
               requestorHexRotation: ci.requestorHexRotation,
               filletOvercutAllowed: ci.filletOvercutAllowed === true,
+              filletDesignChoice:
+                ci.filletDesignChoice === "fix" || ci.filletDesignChoice === "asis"
+                  ? ci.filletDesignChoice
+                  : null,
               shippingMode: ci.shippingMode,
               requestedShipDate: ci.requestedShipDate,
               designSoftware: String(

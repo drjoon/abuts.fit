@@ -22,18 +22,8 @@
 // - web/frontend/src/shared/components/practice/AbutmentDesignConfirmDialog.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestPatientImplantFields.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, CircleHelp } from "lucide-react";
+import { CircleHelp } from "lucide-react";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -62,6 +52,7 @@ import { RetentionGrooveField } from "@/shared/components/practice/RetentionGroo
 import { AnodizingField } from "@/shared/components/practice/AnodizingField";
 import {
   StlMachiningPreflightNotice,
+  type FilletDesignChoice,
   type StlMachiningPreflight,
 } from "@/features/requests/components/StlMachiningPreflightNotice";
 import {
@@ -256,7 +247,12 @@ export function AbutmentModelConfirmDialog({
   const [newSystemBrand, setNewSystemBrand] = useState("");
   const [implantEntryMode, setImplantEntryMode] =
     useState<ImplantEntryMode>("catalog");
-  const [correctedDownloadOpen, setCorrectedDownloadOpen] = useState(false);
+  const [filletChoiceRequired, setFilletChoiceRequired] = useState(false);
+  const filletChoice: FilletDesignChoice | null =
+    detailCaseInfos?.filletDesignChoice === "fix" ||
+    detailCaseInfos?.filletDesignChoice === "asis"
+      ? detailCaseInfos.filletDesignChoice
+      : null;
   const [correctedDownloading, setCorrectedDownloading] = useState(false);
 
   const selectCatalogMode = useCallback(() => {
@@ -474,11 +470,10 @@ export function AbutmentModelConfirmDialog({
     Boolean(machiningPreflight?.correctedId) &&
     Boolean(detailFile);
   const machiningCheckPending = !isLabHandoff && machiningPreflight?.status === "checking";
-  const showTightCornerConfirmCue =
+  const showTightCornerChoice =
     !isLabHandoff && machiningPreflight?.status === "tight" && !machiningCheckPending;
   const highlightConfirmButton =
-    !machiningCheckPending &&
-    (highlightUnverifiedArrows || showTightCornerConfirmCue);
+    !machiningCheckPending && highlightUnverifiedArrows;
 
   const onVerifyAndNextRef = useRef(onVerifyAndNext);
   onVerifyAndNextRef.current = onVerifyAndNext;
@@ -529,9 +524,9 @@ export function AbutmentModelConfirmDialog({
         title: "보정 디자인을 내려받았습니다.",
         description: (
           <>
-            의뢰에는 이 파일을 사용합니다.
+            의뢰에는 고친 디자인을 사용합니다.
             <br />
-            원하시면 이 STL로 크라운 내면을 새로 만드세요.
+            이 STL로 크라운 내면을 새로 만드세요.
           </>
         ),
         duration: 3500,
@@ -548,7 +543,6 @@ export function AbutmentModelConfirmDialog({
       return false;
     } finally {
       setCorrectedDownloading(false);
-      setCorrectedDownloadOpen(false);
     }
   }, [
     correctedDownloading,
@@ -597,20 +591,16 @@ export function AbutmentModelConfirmDialog({
     isLabHandoff,
   ]);
 
-  const handleConfirmAndNext = useCallback(() => {
-    if (detailIndex === null || machiningCheckPending) return;
-    if (canOfferCorrectedDownload && !hasMissingRequiredInfo) {
-      setCorrectedDownloadOpen(true);
-      return;
-    }
-    void onVerifyAndNext(detailIndex);
-  }, [
-    canOfferCorrectedDownload,
-    detailIndex,
-    hasMissingRequiredInfo,
-    machiningCheckPending,
-    onVerifyAndNext,
-  ]);
+  const chooseFilletDesign = useCallback(
+    (next: FilletDesignChoice) => {
+      setFilletChoiceRequired(false);
+      setDetailCaseInfos({
+        filletDesignChoice: next,
+        filletOvercutAllowed: next === "asis",
+      });
+    },
+    [setDetailCaseInfos],
+  );
 
   const handleCorrectedProceed = useCallback(async () => {
     const index = detailIndex;
@@ -618,9 +608,29 @@ export function AbutmentModelConfirmDialog({
     if (detailFile) onUseCorrectedDesign?.(detailFile);
     // 보정 STL 준비를 기다리며 멈추지 않는다. 다운로드는 뒤에서 이어가고 다음 단계로 바로 간다.
     void runCorrectedStlDownload();
-    setCorrectedDownloadOpen(false);
     await onVerifyAndNextRef.current(index);
   }, [detailFile, detailIndex, onUseCorrectedDesign, runCorrectedStlDownload]);
+
+  const handleConfirmAndNext = useCallback(() => {
+    if (detailIndex === null || machiningCheckPending) return;
+    if (showTightCornerChoice && !filletChoice) {
+      setFilletChoiceRequired(true);
+      return;
+    }
+    if (showTightCornerChoice && filletChoice === "fix" && !hasMissingRequiredInfo) {
+      void handleCorrectedProceed();
+      return;
+    }
+    void onVerifyAndNext(detailIndex);
+  }, [
+    detailIndex,
+    filletChoice,
+    handleCorrectedProceed,
+    hasMissingRequiredInfo,
+    machiningCheckPending,
+    onVerifyAndNext,
+    showTightCornerChoice,
+  ]);
 
   return (
     <>
@@ -697,7 +707,10 @@ export function AbutmentModelConfirmDialog({
               {machiningPreflight ? (
                 <StlMachiningPreflightNotice
                   preflight={machiningPreflight}
-                  className="w-full shrink-0"
+                  className="w-fit max-w-full shrink-0 self-center"
+                  choice={showTightCornerChoice ? filletChoice : null}
+                  onChoice={showTightCornerChoice ? chooseFilletDesign : undefined}
+                  choiceRequired={showTightCornerChoice && filletChoiceRequired}
                 />
               ) : null}
               {selectablePreviewIndices.length > 1 ? (
@@ -1060,35 +1073,17 @@ export function AbutmentModelConfirmDialog({
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <div className="relative">
-                            {showTightCornerConfirmCue ? (
-                              <div
-                                className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-0.5 flex -translate-x-1/2 flex-col items-center gap-0.5"
-                                role="status"
-                              >
-                                <p className="whitespace-nowrap text-xs leading-none text-rose-800">
-                                  보정해 의뢰하시겠습니까?
-                                </p>
-                                <ArrowDown
-                                  className="h-4 w-4 shrink-0 animate-bounce text-rose-600"
-                                  aria-hidden
-                                />
-                              </div>
-                            ) : null}
-                            <Button
-                              type="button"
-                              className={cn(
-                                highlightConfirmButton &&
-                                  (showTightCornerConfirmCue
-                                    ? "animate-pulse bg-primary text-white ring-2 ring-rose-400 ring-offset-2 ring-offset-background"
-                                    : "animate-bounce bg-primary text-white"),
-                              )}
-                              disabled={machiningCheckPending}
-                              onClick={handleConfirmAndNext}
-                            >
-                              {machiningCheckPending ? "검사 중…" : "확인 & 다음"}
-                            </Button>
-                          </div>
+                          <Button
+                            type="button"
+                            className={cn(
+                              highlightConfirmButton &&
+                                "animate-bounce bg-primary text-white",
+                            )}
+                            disabled={machiningCheckPending}
+                            onClick={handleConfirmAndNext}
+                          >
+                            {machiningCheckPending ? "검사 중…" : "확인 & 다음"}
+                          </Button>
                           <Button
                             type="button"
                             variant="ghost"
@@ -1108,48 +1103,6 @@ export function AbutmentModelConfirmDialog({
           </div>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog
-        open={correctedDownloadOpen}
-        onOpenChange={(open) => {
-          if (!correctedDownloading) setCorrectedDownloadOpen(open);
-        }}
-      >
-        <AlertDialogContent
-          className="new-request-page z-[330] gap-5 sm:max-w-lg"
-          overlayClassName="z-[325]"
-        >
-          <AlertDialogHeader className="space-y-3">
-            <AlertDialogTitle>보정 디자인으로 의뢰하시겠습니까?</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                공구에 맞게 디자인을 바꿔 보정 STL을 드립니다.
-                <br />
-                보정하면 접착 공간이 커져{" "}
-                <strong className="font-semibold text-red-600">
-                  헐거워질 수 있습니다
-                </strong>
-                .
-                <br />
-                원하시면 내려받은 보정 STL로 크라운 내면을 새로 만드세요.
-              </p>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={correctedDownloading}>취소</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={correctedDownloading}
-              onClick={(event) => {
-                event.preventDefault();
-                void handleCorrectedProceed();
-              }}
-            >
-              {correctedDownloading ? "만드는 중…" : "확인"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
     </>
   );
 }

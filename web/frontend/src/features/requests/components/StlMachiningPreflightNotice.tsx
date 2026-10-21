@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: tight면 디자인 고치기 / 그대로 가공을 고른다.
 // - 2026-10-21: tight 안내는 평균 R과 관계없이 같은 보정 문구.
 // - 2026-10-21: tight 안내 — 접착 공간이 커져 헐거워질 수 있음, 원하면 보정 STL로 크라운 내면.
 // related files:
@@ -26,15 +27,23 @@ export type StlMachiningPreflight = {
 };
 
 /** 접수 전 가공 검사 결과 안내. tight여도 접수를 막지 않는다. */
+export type FilletDesignChoice = "fix" | "asis";
+
 export function StlMachiningPreflightNotice({
   preflight,
   className,
+  choice = null,
+  onChoice,
+  choiceRequired = false,
 }: {
   preflight?: StlMachiningPreflight | null;
   className?: string;
   /** @deprecated 보정 진행 확인은 확인 & 다음 단계에서 한다. */
   onCorrectedDownloadClick?: () => void;
   correctedDownloadBusy?: boolean;
+  choice?: FilletDesignChoice | null;
+  onChoice?: (choice: FilletDesignChoice) => void;
+  choiceRequired?: boolean;
 }) {
   if (!preflight) return null;
 
@@ -58,10 +67,12 @@ export function StlMachiningPreflightNotice({
   }
 
   if (preflight.status === "tight") {
+    const pick = (next: FilletDesignChoice) => onChoice?.(next);
     return (
       <div
         className={cn(
-          "flex flex-col items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-center text-rose-950",
+          "flex flex-col items-center gap-2 rounded-xl border bg-rose-50 px-3.5 py-3 text-center text-rose-950",
+          choiceRequired ? "border-rose-400 ring-2 ring-rose-300" : "border-rose-200",
           className,
         )}
         role="alert"
@@ -73,12 +84,43 @@ export function StlMachiningPreflightNotice({
           <p className="whitespace-nowrap text-sm font-semibold leading-5">코너가 공구보다 좁아요</p>
         </div>
         <p className="text-center text-xs leading-5 text-rose-900/80">
-          코너 반경이 가공 공구보다 좁습니다.
+          그대로 가공하면 그 코너가 덜 깎입니다.
           <br />
-          보정하면 접착 공간이 커져 헐거워질 수 있습니다.
-          <br />
-          원하시면 내려받은 보정 STL로 크라운 내면을 새로 만드세요.
+          디자인을 고치면 접착 공간이 커져 헐거워질 수 있습니다.
         </p>
+        {onChoice ? (
+          <div className="grid w-full max-w-sm grid-cols-2 gap-2 pt-0.5">
+            <button
+              type="button"
+              className={cn(
+                "rounded-lg border px-2 py-2 text-xs font-semibold transition-colors",
+                choice === "fix"
+                  ? "border-rose-700 bg-rose-700 text-white shadow-sm"
+                  : "border-rose-200 bg-white text-rose-950 hover:border-rose-300 hover:bg-rose-100/70",
+              )}
+              aria-pressed={choice === "fix"}
+              onClick={() => pick("fix")}
+            >
+              디자인 고치기
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "rounded-lg border px-2 py-2 text-xs font-semibold transition-colors",
+                choice === "asis"
+                  ? "border-slate-800 bg-slate-800 text-white shadow-sm"
+                  : "border-rose-200 bg-white text-rose-950 hover:border-rose-300 hover:bg-rose-100/70",
+              )}
+              aria-pressed={choice === "asis"}
+              onClick={() => pick("asis")}
+            >
+              그대로 가공
+            </button>
+          </div>
+        ) : null}
+        {choiceRequired ? (
+          <p className="text-xs font-medium text-rose-700">가공 방법을 고르세요.</p>
+        ) : null}
       </div>
     );
   }

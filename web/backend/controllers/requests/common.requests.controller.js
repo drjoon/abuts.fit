@@ -1753,6 +1753,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.tightCorner.tightCount",
       "caseInfos.tightCorner.needsCorrectionReview",
       "caseInfos.filletOvercutAllowed",
+      "caseInfos.filletDesignChoice",
       "caseInfos.cuffBlend",
       "caseInfos.cuffProposal",
       "autoMachiningReview",

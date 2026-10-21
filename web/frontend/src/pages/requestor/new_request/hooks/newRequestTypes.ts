@@ -105,8 +105,10 @@ export type CaseInfos = {
 
   // 헥스 회전 모드값 SSOT
   requestorHexRotation?: "STL모델대로" | "헥스30도회전";
-  /** 평균 필렛 R 0.50mm 이상에서 의뢰자가 과삭제를 허용하고 원본 STL로 접수 */
+  /** 공구보다 좁은 코너를 원본 그대로 가공 */
   filletOvercutAllowed?: boolean;
+  /** 공구보다 좁은 코너에서 의뢰자 선택 */
+  filletDesignChoice?: "fix" | "asis" | null;
 };
 
 export type DraftFileMeta = {

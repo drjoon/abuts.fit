@@ -276,10 +276,16 @@ const requestSchema = new mongoose.Schema(
             "manufacturerHexRotation은 'STL모델대로' | '헥스30도회전' | 'STL모델+' | '헥스30+' 형식이어야 합니다.",
         },
       },
-      // 의뢰자가 평균 필렛 R 0.50mm 이상 과삭제를 허용하고 원본 STL로 접수한 경우.
+      // 의뢰자가 공구보다 좁은 코너를 원본 그대로 가공하기로 한 경우.
       filletOvercutAllowed: {
         type: Boolean,
         default: false,
+      },
+      // 공구보다 좁은 코너에서 의뢰자 선택. fix=디자인 고치기, asis=그대로 가공.
+      filletDesignChoice: {
+        type: String,
+        enum: ["fix", "asis", null],
+        default: null,
       },
       // 의뢰자 헥스 회전 선택값
       requestorHexRotation: {

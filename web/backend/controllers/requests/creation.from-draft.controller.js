@@ -915,6 +915,10 @@ export async function createRequestsFromDraft(req, res) {
               requestorHexRotation: requestorHexRotationValue,
               finalHexRotation: requestorHexRotationValue,
               filletOvercutAllowed: ci?.filletOvercutAllowed === true,
+              filletDesignChoice:
+                ci?.filletDesignChoice === "fix" || ci?.filletDesignChoice === "asis"
+                  ? ci.filletDesignChoice
+                  : null,
               newSystemRequest,
               practiceRouting,
               file: {
@@ -962,6 +966,10 @@ export async function createRequestsFromDraft(req, res) {
               requestorHexRotation: requestorHexRotationValue,
               finalHexRotation: requestorHexRotationValue,
               filletOvercutAllowed: ci?.filletOvercutAllowed === true,
+              filletDesignChoice:
+                ci?.filletDesignChoice === "fix" || ci?.filletDesignChoice === "asis"
+                  ? ci.filletDesignChoice
+                  : null,
               newSystemRequest,
               practiceRouting,
             };
