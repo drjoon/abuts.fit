@@ -126,5 +126,7 @@ export async function runFilledStlOffRequest(buffer, options = {}) {
   return runAbutmentStlPipelineInWorker(buffer, {
     ...options,
     queueTimeoutMs: FILLED_STL_JS_LIMIT_MS,
+    // 보정본은 정렬 뒤에 포스트 다듬기가 붙는다. 기본 60초로는 잘린다.
+    ...(options.surfacePrepared ? { timeoutMs: 120 * 1000 } : {}),
   });
 }
