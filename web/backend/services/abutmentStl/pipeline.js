@@ -5,8 +5,8 @@
 //
 // Rhino 없이 1-stl → 2-filled를 만든다. 순서는 process_abutment_stl.main과 같다:
 // import → align → 11° 커넥션 추가 → finishline → 스크류홀 패치 → 직경 → fill_steps → export → 메타.
-// 의뢰자 보정은 날카로운 마진이 있을 때 제조사 준비와 같은 포스트 다듬기를 먼저 하고, 그다음 코너 필레를 한다.
-// preflight는 필레 검사만 한다. 이미 보정된 STL(surfacePrepared)은 정렬만 한다.
+// preflight는 필레 검사만 한다. 마진 코너 정점은 옮기지 않는다.
+// 커프·포스트 다듬기는 제조사 준비에서만 한다. 이미 보정된 STL(surfacePrepared)은 정렬만 한다.
 import { Mesh, writeBinaryStl, parseStl, identity, multiply, translation } from "./meshCore.js";
 import { addMissingConnectionTaper } from "./connectionTaperFill.js";
 import { alignMeshToOrigin, ALIGN_MODULE_VERSION, JS_ALIGN_PORT_VERSION } from "./align.js";

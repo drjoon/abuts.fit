@@ -5,7 +5,7 @@
 //
 // 마진 필렛 검사·보정본의 한 곳.
 // 간이 검사(업로드 직후)는 screenMarginFillet만 쓴다.
-// 정점을 옮기는 correctMarginFillet는 의뢰자 동의 단계인 확인 전 보정 STL만 쓴다. 제조사 준비는 측정만 한다.
+// 업로드 검사는 측정만 한다. 의뢰 STL의 마진 코너는 옮기지 않는다. 매끈한 다듬기는 제조사 준비 파이프라인이다.
 import {
   FINISH_BALL_DIAMETER_MM,
   FINISH_BALL_RADIUS_MM,

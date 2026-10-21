@@ -76,12 +76,6 @@ import {
 } from "./utils/patientGroups";
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
 import { useStlMachiningPreflight } from "./hooks/useStlMachiningPreflight";
-import {
-  fetchCachedCorrectedStlBlob,
-  fetchCorrectedDesignUpload,
-} from "@/features/requests/utils/downloadCorrectedStl";
-import { getFileKey } from "./utils/localDraftStorage";
-import type { TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 
 
 // related files:
@@ -161,14 +155,6 @@ const NewRequestPageContent = () => {
     }
   }, []);
 
-  const resolveCorrectedRef = useRef<
-    (file: File) => Promise<TempUploadedFile | null>
-  >(async () => null);
-  const resolveCorrectedDesignUpload = useCallback(
-    (file: File) => resolveCorrectedRef.current(file),
-    [],
-  );
-
   const toNormalizedFileKey = useCallback(
     (f: File) => {
       return `${normalizeKeyPart(f.name)}:${f.size}`;
@@ -238,16 +224,7 @@ const NewRequestPageContent = () => {
     suppressLocalDraftForGuideTour,
   } = useNewRequestPage(existingRequestId, {
     enableOralScanGrouping: !isLabRequestor,
-    resolveCorrectedDesignUpload,
   });
-
-  const useCorrectedDesign = useCallback(
-    (file: File) => {
-      const key = getFileKey(file);
-      updateCaseInfos(key, { filletOvercutAllowed: false, filletDesignChoice: "fix" });
-    },
-    [updateCaseInfos],
-  );
 
   // STL 첨부 즉시 JS 파이프라인 가공 검사(불완전가공 사전 안내)
   const machiningPreflightByFileKey = useStlMachiningPreflight({
@@ -255,71 +232,6 @@ const NewRequestPageContent = () => {
     caseInfosMap,
     token,
   });
-  const preflightStateRef = useRef(machiningPreflightByFileKey);
-  preflightStateRef.current = machiningPreflightByFileKey;
-  const caseInfosRef = useRef(caseInfosMap);
-  caseInfosRef.current = caseInfosMap;
-  const correctedJobsRef = useRef(
-    new Map<string, Promise<TempUploadedFile | null>>(),
-  );
-  const tokenRef = useRef(token);
-  tokenRef.current = token;
-
-  resolveCorrectedRef.current = async (file) => {
-    if (!/\.stl$/i.test(file.name)) return null;
-    const key = getFileKey(file);
-    const deadline = Date.now() + 20_000;
-    while (Date.now() < deadline) {
-      const preflight = preflightStateRef.current[key];
-      if (!preflight || preflight.status === "checking") {
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        continue;
-      }
-      const correctedId = String(preflight.correctedId || "").trim();
-      if (preflight.status !== "tight" || !correctedId) return null;
-      if (caseInfosRef.current?.[key]?.filletDesignChoice !== "fix") return null;
-      let job = correctedJobsRef.current.get(key);
-      if (!job) {
-        job = fetchCorrectedDesignUpload({
-          correctedId,
-          fallbackName: file.name,
-          token: tokenRef.current,
-        })
-          .then((result) => {
-            if (result.ok === false) {
-              correctedJobsRef.current.delete(key);
-              console.warn("[resolveCorrected] 원본으로 접수", result.message);
-              return null;
-            }
-            return result.file;
-          })
-          .catch((error) => {
-            correctedJobsRef.current.delete(key);
-            console.warn("[resolveCorrected] 원본으로 접수", error);
-            return null;
-          });
-        correctedJobsRef.current.set(key, job);
-      }
-      return job;
-    }
-    return null;
-  };
-
-  useEffect(() => {
-    for (const file of files) {
-      const key = getFileKey(file);
-      const preflight = machiningPreflightByFileKey[key];
-      if (preflight?.status === "checking") {
-        const ci = caseInfosMap?.[key];
-        if (ci?.filletOvercutAllowed || ci?.filletDesignChoice) {
-          updateCaseInfos(key, { filletOvercutAllowed: false, filletDesignChoice: null });
-        }
-      }
-      if (preflight?.status !== "tight" || !preflight.correctedId) continue;
-      if (caseInfosMap?.[key]?.filletDesignChoice !== "fix") continue;
-      void resolveCorrectedRef.current(file).catch(() => null);
-    }
-  }, [caseInfosMap, files, machiningPreflightByFileKey, updateCaseInfos]);
 
   const countableFileKeys = useMemo(() => {
     if (!patientGroups?.length) return undefined;
@@ -347,44 +259,6 @@ const NewRequestPageContent = () => {
     files,
     countableFileKeys,
   });
-
-  const preparedCorrectedRef = useRef(
-    new Map<string, Promise<File | null>>(),
-  );
-
-  const prepareCorrectedDesign = useCallback(
-    (correctedId: string, sourceName: string) => {
-      const id = String(correctedId || "").trim();
-      if (!id || preparedCorrectedRef.current.has(id)) return;
-      const job = (async (): Promise<File | null> => {
-        const result = await fetchCachedCorrectedStlBlob({
-          correctedId: id,
-          fallbackName: sourceName,
-          token,
-        });
-        if (!result.ok) return null;
-        return new File([result.blob], result.fileName, {
-          type: "model/stl",
-          lastModified: Date.now(),
-        });
-      })()
-        .then((file) => {
-          if (!file) preparedCorrectedRef.current.delete(id);
-          return file;
-        })
-        .catch((error) => {
-          console.warn("[prepareCorrectedDesign] failed", error);
-          preparedCorrectedRef.current.delete(id);
-          return null;
-        });
-      preparedCorrectedRef.current.set(id, job);
-    },
-    [token],
-  );
-
-  const takePreparedCorrectedDesign = useCallback((correctedId: string) => {
-    return preparedCorrectedRef.current.get(String(correctedId || "").trim()) ?? null;
-  }, []);
 
   const handleRequestSettingsDefaultsChange = useCallback(
     (next: {
@@ -2027,9 +1901,6 @@ const NewRequestPageContent = () => {
               onUngroupPatientFiles={handleUngroupPatientFiles}
               onRemoveFileFromPatientGroup={handleRemoveFileFromPatientGroup}
               machiningPreflightByFileKey={machiningPreflightByFileKey}
-            onPrepareCorrectedDesign={prepareCorrectedDesign}
-            onTakePreparedCorrectedDesign={takePreparedCorrectedDesign}
-            onUseCorrectedDesign={useCorrectedDesign}
               onDuplicateDetected={({ file, duplicate }) => {
                 const fileWithDraftCaseId = file as File & {
                   _draftCaseInfoId?: string;

@@ -420,16 +420,11 @@ export async function buildCorrectedDesignStlBuffer({
 
 /**
  * 업로드 직후 간이 검사. screenMarginFillet만 기다린다.
- * 타이트면 확인 버튼 전까지 쓸 보정 STL을 같은 correctMarginFillet로 뒤에서 만든다.
+ * 코너는 표시용으로만 돌리고, 정점은 옮기지 않는다. 매끈한 다듬기는 제조사 준비에서 한다.
  * 파이프라인이 실패해도 의뢰를 막지 않도록 unknown으로 돌려준다.
- * @param {{ buffer: Buffer, caseInfos?: object, userId?: string, originalFileName?: string }} args
+ * @param {{ buffer: Buffer, caseInfos?: object }} args
  */
-export async function runStlMachiningPreflight({
-  buffer,
-  caseInfos,
-  userId,
-  originalFileName,
-} = {}) {
+export async function runStlMachiningPreflight({ buffer, caseInfos } = {}) {
   if (!buffer?.length) {
     return { status: "unknown", reason: "empty_file", tightCount: 0, proceedAsIsAllowed: false };
   }
@@ -453,21 +448,9 @@ export async function runStlMachiningPreflight({
       js.alignMatrix,
       js.filletSurface || null,
     );
-    const correctedId =
-      summary.status === "tight"
-        ? scheduleCorrectedDesignStl({
-            buffer,
-            caseInfos,
-            userId,
-            fileName: originalFileName,
-            inputs,
-            defer: true,
-          })
-        : null;
     return {
       ...summary,
       ...(overlay ? { overlay } : {}),
-      ...(correctedId ? { correctedId } : {}),
     };
   } catch (error) {
     console.warn("[stl-preflight] failed:", error?.message || error);

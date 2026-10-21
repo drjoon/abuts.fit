@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: 좁은 코너는 표시와 경고만. 원본 STL은 고치지 않고 내려받지 않는다.
 // - 2026-10-21: 보정 확인 모달은 평균 R과 관계없이 같은 문구·확인만.
 // - 2026-10-21: 보정 확인 — 접착 공간이 커져 헐거워질 수 있음. 원하면 보정 STL로 크라운 내면.
 // - 2026-10-21: 임플란트 통합 섹션 — 비활성 pane 흐림 대신 테두리·선택됨 뱃지.
@@ -52,14 +53,8 @@ import { RetentionGrooveField } from "@/shared/components/practice/RetentionGroo
 import { AnodizingField } from "@/shared/components/practice/AnodizingField";
 import {
   StlMachiningPreflightNotice,
-  type FilletDesignChoice,
   type StlMachiningPreflight,
 } from "@/features/requests/components/StlMachiningPreflightNotice";
-import {
-  fetchCorrectedStlBlob,
-  startCorrectedDesign,
-  triggerBrowserFileDownload,
-} from "@/features/requests/utils/downloadCorrectedStl";
 import {
   NEW_IMPLANT_DEVELOPMENT_ENTRY_HINT_MESSAGES,
   NEW_IMPLANT_DEVELOPMENT_REQUEST_MESSAGE,
@@ -166,16 +161,6 @@ export type AbutmentModelConfirmDialogProps = {
   fileUploadLabel?: string | null;
   /** 접수 전 가공 검사 결과(신규의뢰만 전달). tight여도 확인을 막지 않는다. */
   machiningPreflight?: StlMachiningPreflight | null;
-  /** 보정 디자인을 확인하면 접수 파일을 그 STL로 바꾼다(S3 재업로드 포함). */
-  onApplyCorrectedDesign?: (index: number, file: File) => void | Promise<void>;
-  /** 3D 확인 모달이 열린 동안 보정 STL을 받아 S3에 올려 둔다. */
-  onPrepareCorrectedDesign?: (correctedId: string, sourceName: string) => void;
-  /** 준비된 보정 파일. 아직이면 그 작업을 기다린다. 없으면 null. */
-  onTakePreparedCorrectedDesign?: (
-    correctedId: string,
-  ) => Promise<File | null> | null;
-  /** 보정 STL로 의뢰한다. 과삭제 허용을 끈다. */
-  onUseCorrectedDesign?: (file: File) => void;
 };
 
 export function AbutmentModelConfirmDialog({
@@ -216,7 +201,7 @@ export function AbutmentModelConfirmDialog({
   handleRemoveFile,
   onVerifyAndNext,
   onSkip,
-  toast,
+  toast: _toast,
   onRetentionGrooveAccountSave,
   defaultAnodizingEnabled = true,
   onAnodizingAccountSave,
@@ -231,9 +216,6 @@ export function AbutmentModelConfirmDialog({
   fileUploadPercent = null,
   fileUploadLabel = null,
   machiningPreflight = null,
-  onPrepareCorrectedDesign,
-  onTakePreparedCorrectedDesign,
-  onUseCorrectedDesign,
 }: AbutmentModelConfirmDialogProps) {
   const isLabHandoff = variant === "lab-handoff";
   const labConfirmLabel = String(confirmLabel || "").trim() || "확인";
@@ -248,13 +230,6 @@ export function AbutmentModelConfirmDialog({
   const [newSystemBrand, setNewSystemBrand] = useState("");
   const [implantEntryMode, setImplantEntryMode] =
     useState<ImplantEntryMode>("catalog");
-  const [filletChoiceRequired, setFilletChoiceRequired] = useState(false);
-  const filletChoice: FilletDesignChoice | null =
-    detailCaseInfos?.filletDesignChoice === "fix" ||
-    detailCaseInfos?.filletDesignChoice === "asis"
-      ? detailCaseInfos.filletDesignChoice
-      : null;
-  const [correctedDownloading, setCorrectedDownloading] = useState(false);
 
   const selectCatalogMode = useCallback(() => {
     setImplantEntryMode("catalog");
@@ -465,168 +440,15 @@ export function AbutmentModelConfirmDialog({
 
   const retentionIdPrefix = isLabHandoff ? "lab-handoff-rg" : "new-req-rg";
 
-  const canOfferCorrectedDownload =
-    !isLabHandoff &&
-    machiningPreflight?.status === "tight" &&
-    Boolean(machiningPreflight?.correctedId) &&
-    Boolean(detailFile);
   const machiningCheckPending = !isLabHandoff && machiningPreflight?.status === "checking";
-  const showTightCornerChoice =
-    !isLabHandoff && machiningPreflight?.status === "tight" && !machiningCheckPending;
   const highlightConfirmButton =
     !machiningCheckPending && highlightUnverifiedArrows;
 
-  const onVerifyAndNextRef = useRef(onVerifyAndNext);
-  onVerifyAndNextRef.current = onVerifyAndNext;
-
-  const runCorrectedStlDownload = useCallback(async () => {
-    if (!detailFile || correctedDownloading) return false;
-    setCorrectedDownloading(true);
-    try {
-      const correctedId = String(machiningPreflight?.correctedId || "").trim();
-      if (correctedId) onPrepareCorrectedDesign?.(correctedId, detailFile.name);
-      const pending = correctedId
-        ? onTakePreparedCorrectedDesign?.(correctedId)
-        : null;
-      const prepared = pending ? await pending : null;
-      if (prepared) {
-        triggerBrowserFileDownload(prepared, prepared.name);
-      } else {
-        const result = await fetchCorrectedStlBlob({
-          file: detailFile,
-          caseInfos: detailCaseInfos,
-        });
-        if (!result.ok) {
-          toast({
-            title: "다운로드 실패",
-            description: result.message,
-            variant: "destructive",
-            duration: 4500,
-          });
-          return false;
-        }
-        triggerBrowserFileDownload(result.blob, result.fileName);
-      }
-      toast({
-        title: "보정 디자인을 내려받았습니다.",
-        description: (
-          <>
-            의뢰에는 고친 디자인을 사용합니다.
-            <br />
-            이 STL로 크라운 내면을 새로 만드세요.
-          </>
-        ),
-        duration: 3500,
-      });
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      toast({
-        title: "보정 디자인을 적용하지 못했습니다.",
-        description: message || "잠시 후 다시 시도해주세요.",
-        variant: "destructive",
-        duration: 4500,
-      });
-      return false;
-    } finally {
-      setCorrectedDownloading(false);
-    }
-  }, [
-    correctedDownloading,
-    detailCaseInfos,
-    detailFile,
-    machiningPreflight?.correctedId,
-    onPrepareCorrectedDesign,
-    onTakePreparedCorrectedDesign,
-    toast,
-  ]);
-
-  /** 부모(handleVerifyFile)와 같은 필수 항목이 비었으면 보정 확인보다 입력 안내가 먼저다. */
-  const hasMissingRequiredInfo = useMemo(() => {
-    if (isLabHandoff || isDesignCustomMode) return false;
-    const rg = String(detailCaseInfos?.retentionGroove || "").trim();
-    const retentionReady =
-      rg === "none" || rg === "shallow" || rg === "deep" || rg === "";
-    const nsr = detailCaseInfos?.newSystemRequest;
-    const customReady = Boolean(
-      String(nsr?.manufacturer || "").trim() &&
-        String(nsr?.brand || "").trim(),
-    );
-    const catalogReady = Boolean(
-      (detailCaseInfos?.implantManufacturer || implantManufacturer) &&
-        (detailCaseInfos?.implantBrand || implantBrand) &&
-        (detailCaseInfos?.implantFamily || implantFamily) &&
-        (detailCaseInfos?.implantType || implantType),
-    );
-    const implantReady =
-      implantEntryMode === "custom" ? customReady : catalogReady;
-    return !(
-      detailCaseInfos?.clinicName &&
-      detailCaseInfos?.patientName &&
-      detailCaseInfos?.tooth &&
-      implantReady &&
-      retentionReady
-    );
-  }, [
-    detailCaseInfos,
-    implantBrand,
-    implantEntryMode,
-    implantFamily,
-    implantManufacturer,
-    implantType,
-    isDesignCustomMode,
-    isLabHandoff,
-  ]);
-
-  const chooseFilletDesign = useCallback(
-    (next: FilletDesignChoice | null) => {
-      setFilletChoiceRequired(false);
-      setDetailCaseInfos({
-        filletDesignChoice: next,
-        filletOvercutAllowed: next === "asis",
-      });
-      if (next === "fix" && detailFile) {
-        const id = String(machiningPreflight?.correctedId || "").trim();
-        if (id) {
-          startCorrectedDesign(id);
-          onPrepareCorrectedDesign?.(id, detailFile.name);
-        }
-      }
-    },
-    [detailFile, machiningPreflight?.correctedId, onPrepareCorrectedDesign, setDetailCaseInfos],
-  );
-
-  const handleCorrectedProceed = useCallback(async () => {
-    const index = detailIndex;
-    if (index === null) return;
-    if (detailFile) onUseCorrectedDesign?.(detailFile);
-    // 보정 STL 준비를 기다리며 멈추지 않는다. 다운로드는 뒤에서 이어가고 다음 단계로 바로 간다.
-    void runCorrectedStlDownload();
-    await onVerifyAndNextRef.current(index);
-  }, [detailFile, detailIndex, onUseCorrectedDesign, runCorrectedStlDownload]);
-
   const handleConfirmAndNext = useCallback(() => {
     if (detailIndex === null || machiningCheckPending) return;
-    if (showTightCornerChoice && !filletChoice) {
-      setFilletChoiceRequired(true);
-      return;
-    }
-    if (showTightCornerChoice && filletChoice === "fix" && !hasMissingRequiredInfo) {
-      void handleCorrectedProceed();
-      return;
-    }
     void onVerifyAndNext(detailIndex);
-  }, [
-    detailIndex,
-    filletChoice,
-    handleCorrectedProceed,
-    hasMissingRequiredInfo,
-    machiningCheckPending,
-    onVerifyAndNext,
-    showTightCornerChoice,
-  ]);
+  }, [detailIndex, machiningCheckPending, onVerifyAndNext]);
   // 치과명 목록이 열린 채로 누르면 blur가 모달을 다시 그려 click이 사라진다.
-  // pointerdown에서 먼저 처리해, 한 번에 「가공 방법을 고르세요」가 나오게 한다.
   const confirmFromPointerRef = useRef(false);
   const handleConfirmPointerDown = useCallback(
     (event: PointerEvent<HTMLButtonElement>) => {
@@ -720,9 +542,6 @@ export function AbutmentModelConfirmDialog({
                 <StlMachiningPreflightNotice
                   preflight={machiningPreflight}
                   className="w-fit max-w-full shrink-0 self-center"
-                  choice={showTightCornerChoice ? filletChoice : null}
-                  onChoice={showTightCornerChoice ? chooseFilletDesign : undefined}
-                  choiceRequired={showTightCornerChoice && filletChoiceRequired}
                 />
               ) : null}
               {selectablePreviewIndices.length > 1 ? (

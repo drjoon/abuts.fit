@@ -141,9 +141,9 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
   ]);
   lap("load");
   const storedFinishLine = isUserCapturedFinishLine(ci.finishLine) ? ci.finishLine : null;
-  const filletChoice = String(ci.filletDesignChoice || "");
-  // fix: 의뢰 STL에 날카로운 마진 기준의 포스트 다듬기가 이미 들어 있다. 정렬만 하고 다시 다듬지 않는다.
-  const surfacePrepared = filletChoice === "fix" && designAlreadyCorrected;
+  // 의뢰 STL은 원본이다. 마진 코너는 옮기지 않는다.
+  // 예전에 보정본 키로 저장된 파일만 커프·포스트가 이미 들어 있어 다시 다듬지 않는다.
+  const surfacePrepared = designAlreadyCorrected;
   const js = await runFilledStlOffRequest(inputBuffer, {
     targetDiameter: inputs.targetDiameter,
     implantProfile: inputs.implantProfile,
@@ -171,7 +171,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
   const originalName = sanitizeStlName(fileName || ci.file?.filePath || ci.file?.originalName || "input.stl");
   const outName = filledNameOf(originalName);
   const s3Key = `requests/${requestId}/2-filled/${outName}`;
-  // 공구 R 필렛 보정은 의뢰자가 동의했을 때 그 STL에 이미 들어 있다. 여기서는 새로 적용하지 않고 스크류홀·fill만 만든다.
+  // 마진 코너는 그대로 두고, 커프·커넥션·포스트 다듬기는 제조사 준비에서만 한다.
   let output = js.outputBuffer;
   let cuffBlendResult = js.cuffBlendResult?.record
     ? {
@@ -179,8 +179,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
         fileSize: js.cuffBlendResult.fileSize || null,
       }
     : null;
-  // fix는 보정본에 커프·커넥션·포스트가 이미 있다. asis는 의뢰자가 원본 그대로 가공을 골랐다.
-  if (!cuffBlendResult && isCuffBlendAutoEnabled() && filletChoice !== "fix" && filletChoice !== "asis") {
+  if (!cuffBlendResult && isCuffBlendAutoEnabled() && !surfacePrepared) {
     const blended = await applyAutoCuffBlendSafely({
       s3Key,
       sourceBuffer: output,
