@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // change-log:
+// - 2026-10-21: 행 6.75rem·c12. 1행 숫자+두 줄이 잘리지 않게 하고, 전폭 타일을 둔다.
 // - 2026-10-14: grid-flow-dense·c8r2·c6r3 — 중요도별 span 조정 시 빈 칸을 메운다.
 // - 2026-10-08: 관리자 대시보드 타일(벤토) 공통. 높이는 행 단위로 고정하고 내용은 타일 안에서만 스크롤한다.
 import type { KeyboardEvent, ReactNode } from "react";
@@ -8,7 +9,7 @@ import { cn } from "@/shared/ui/cn";
 
 /** 12열 벤토. 행 높이 고정 → 타일이 내용 때문에 세로로 늘어나지 않는다. */
 export const DASH_GRID_CLASS =
-  "grid grid-flow-dense grid-cols-2 auto-rows-[6.25rem] gap-2 lg:grid-cols-12";
+  "grid grid-flow-dense grid-cols-2 auto-rows-[6.75rem] gap-2 lg:grid-cols-12 [&>*]:min-h-0 [&>*]:min-w-0";
 
 /** 타일 크기(열×행). 모바일은 작은 타일 1열, 큰 타일 2열. */
 export const DASH_SPAN = {
@@ -21,6 +22,7 @@ export const DASH_SPAN = {
   c4r2: "col-span-2 row-span-2 lg:col-span-4",
   c5r2: "col-span-2 row-span-2 lg:col-span-5",
   c6: "col-span-2 lg:col-span-6",
+  c12: "col-span-2 lg:col-span-12",
   c6r2: "col-span-2 row-span-2 lg:col-span-6",
   c6r3: "col-span-2 row-span-3 lg:col-span-6",
   c6r4: "col-span-2 row-span-4 lg:col-span-6",
@@ -63,7 +65,7 @@ export function DashTile({
   return (
     <div
       className={cn(
-        "app-glass-card app-glass-card--lg flex h-full min-h-0 flex-col gap-1.5 rounded-2xl",
+        "app-glass-card app-glass-card--lg flex h-full min-h-0 min-w-0 flex-col gap-1.5 overflow-hidden rounded-2xl !px-3 !py-2.5",
         interactive && "cursor-pointer transition hover:bg-slate-50/70",
         TONE_CLASS[tone],
         className,

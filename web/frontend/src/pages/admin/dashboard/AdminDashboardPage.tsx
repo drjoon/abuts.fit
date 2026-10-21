@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-10-21: 대시보드 타일 — 잘린 막대·배송 목록을 카드 안에 맞추고, 빈 카드는 줄이고 확인할 카드만 키운다.
 // - 2026-10-21: 짧은 커프 카드 — 50건 통과·실패 0이면 준비 경고를 끈다.
 // - 2026-10-21: 신규 커넥션 요청 — 확인 시 휴지통·복원.
 // - 2026-10-21: 지연 위험 ↔ 신규 커넥션 요청 카드 그리드 위치 교환.
@@ -548,27 +549,6 @@ function KpiTile({
         {sub ? <p className="truncate text-[11px] text-muted-foreground">{sub}</p> : null}
       </div>
     </DashTile>
-  );
-}
-
-function DashMini({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: "primary";
-}) {
-  return (
-    <div className="min-w-0">
-      <div className="truncate text-[11px] text-muted-foreground">{label}</div>
-      <div
-        className={`truncate text-lg font-semibold leading-tight ${tone === "primary" ? "text-primary-strong" : ""}`}
-      >
-        {value}
-      </div>
-    </div>
   );
 }
 
@@ -2271,7 +2251,7 @@ export const AdminDashboardPage = () => {
                   setNewConnectionRequestOpen(true);
                 }}
               >
-                <div className="flex h-full flex-col justify-end gap-1">
+                <div className="flex h-full flex-col justify-center gap-1">
                   <div
                     className={
                       newConnectionRequestTotal > 0
@@ -2356,7 +2336,7 @@ export const AdminDashboardPage = () => {
                 </div>
               </DashTile>
               <DashTile
-                className={DASH_SPAN.c3}
+                className={DASH_SPAN.c2}
                 title="이번 주 해피콜"
                 icon={<PhoneCall className="h-4 w-4 text-muted-foreground" />}
                 onClick={() => {
@@ -2379,7 +2359,7 @@ export const AdminDashboardPage = () => {
               </DashTile>
               <NoOrderAlertBanner
                 variant="tile"
-                className={DASH_SPAN.c3}
+                className={DASH_SPAN.c2}
                 data={noOrderAlertsData}
                 loading={noOrderAlertsLoading}
               />
@@ -2409,9 +2389,9 @@ export const AdminDashboardPage = () => {
                 sub={`치과 ${Number(platformGrowthStats?.practiceBusinessCount || 0).toLocaleString()} · 기공소 ${Number(platformGrowthStats?.labBusinessCount || 0).toLocaleString()}`}
                 onClick={() => setGrowthDetailMetric("totalUsers")}
               />
-              {/* 3) 금액 · 알림 — 이용건수·매출은 거래금액에 통합, 알림은 c6r3로 우측 높이 확장 */}
+              {/* 3) 금액 · 알림 — 거래와 같은 높이. 알림이 적어도 옆 카드와 끝이 맞는다. */}
               <DashTile
-                className={DASH_SPAN.c6r3}
+                className={DASH_SPAN.c6r2}
                 title={
                   <>
                     시스템 알림
@@ -2527,20 +2507,20 @@ export const AdminDashboardPage = () => {
                 </div>
               </DashTile>
               <DashTile
-                className={DASH_SPAN.c6}
+                className={DASH_SPAN.c12}
                 title="의뢰 전송"
                 icon={<UploadCloud className="h-4 w-4 text-muted-foreground" />}
                 onClick={() => setPracticeTransferStatsDialogOpen(true)}
               >
-                <div className="grid h-full grid-cols-4 items-end gap-1">
-                  <DashMini label="전송" value={practiceTransferTotal.toLocaleString()} />
-                  <DashMini label="파일" value={practiceTransferTotalFiles.toLocaleString()} />
-                  <DashMini
+                <div className="grid h-full grid-cols-4 items-end gap-2">
+                  <DashStat label="전송" value={practiceTransferTotal.toLocaleString()} />
+                  <DashStat label="파일" value={practiceTransferTotalFiles.toLocaleString()} />
+                  <DashStat
                     label="치과"
                     value={practiceTransferTotalPractices.toLocaleString()}
                     tone="primary"
                   />
-                  <DashMini
+                  <DashStat
                     label="기공소"
                     value={practiceTransferTotalLabs.toLocaleString()}
                     tone="primary"
@@ -2548,30 +2528,29 @@ export const AdminDashboardPage = () => {
                 </div>
               </DashTile>
 
-              {/* 4) 통계 · 설정 (자주 안 봄) */}
+              {/* 4) 위험·통계는 같은 높이. 설정·바로가기는 한 줄. 목록 카드만 두 줄. */}
               <DashTile
-                className={DASH_SPAN.c3r2}
+                className={DASH_SPAN.c4r2}
                 title="디자인 소프트웨어"
                 icon={<Code2 className="h-4 w-4 text-muted-foreground" />}
-                bodyClassName="overflow-y-auto px-1.5 py-1.5"
                 onClick={() => {
                   setDesignSoftwareStatsFilter("all");
                   setDesignSoftwareStatsDialogOpen(true);
                 }}
               >
-                <div className="space-y-2">
+                <div className="flex h-full min-h-0 flex-col justify-between gap-1.5">
                   {designSoftwareStatRows.map((row) => {
                     const ratio = Math.max(0, Math.min(1, row.count / designSoftwareMaxCount));
                     const tone = getDesignSoftwareToneClasses(row.key);
                     return (
-                      <div key={row.key} className="space-y-1">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-muted-foreground">{row.label}</span>
-                          <span className={`font-semibold ${tone.count}`}>
+                      <div key={row.key} className="min-w-0">
+                        <div className="flex items-center justify-between gap-2 text-[11px] leading-none">
+                          <span className="truncate text-muted-foreground">{row.label}</span>
+                          <span className={`shrink-0 font-semibold ${tone.count}`}>
                             {row.count.toLocaleString()}개
                           </span>
                         </div>
-                        <div className="h-1.5 w-full overflow-hidden rounded bg-slate-100">
+                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-slate-100">
                           <div
                             className={`h-full rounded ${tone.bar}`}
                             style={{ width: `${ratio * 100}%` }}
@@ -2580,13 +2559,13 @@ export const AdminDashboardPage = () => {
                       </div>
                     );
                   })}
-                  <div className="text-[11px] text-muted-foreground">
+                  <div className="shrink-0 text-[11px] leading-none text-muted-foreground">
                     총 {designSoftwareTotalCount.toLocaleString()}개 사업자
                   </div>
                 </div>
               </DashTile>
               <DashTile
-                className={DASH_SPAN.c3r2}
+                className={DASH_SPAN.c4r2}
                 title="지연 위험"
                 tone={riskDelayedCount > 0 ? "danger" : riskWarningCount > 0 ? "warn" : "default"}
                 icon={<AlertCircle className="h-4 w-4 text-muted-foreground" />}
@@ -2614,16 +2593,15 @@ export const AdminDashboardPage = () => {
                 </div>
               </DashTile>
               <DashTile
-                className={DASH_SPAN.c3r2}
+                className={DASH_SPAN.c4r2}
                 title="미제공 어벗"
                 icon={<Puzzle className="h-4 w-4 text-muted-foreground" />}
-                bodyClassName="overflow-y-auto px-1.5 py-1.5"
                 onClick={() => {
                   setUnsupportedAbutmentStatsFilter("all");
                   setUnsupportedAbutmentStatsDialogOpen(true);
                 }}
               >
-                <div className="space-y-2">
+                <div className="flex h-full min-h-0 flex-col justify-between gap-1.5">
                   {unsupportedAbutmentStatRows.map((row) => {
                     const ratio = Math.max(
                       0,
@@ -2631,14 +2609,14 @@ export const AdminDashboardPage = () => {
                     );
                     const tone = getUnsupportedAbutmentToneClasses(row.key);
                     return (
-                      <div key={row.key} className="space-y-1">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-muted-foreground">{row.label}</span>
-                          <span className={`font-semibold ${tone.count}`}>
+                      <div key={row.key} className="min-w-0">
+                        <div className="flex items-center justify-between gap-2 text-[11px] leading-none">
+                          <span className="truncate text-muted-foreground">{row.label}</span>
+                          <span className={`shrink-0 font-semibold ${tone.count}`}>
                             {row.count.toLocaleString()}건
                           </span>
                         </div>
-                        <div className="h-1.5 w-full overflow-hidden rounded bg-slate-100">
+                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-slate-100">
                           <div
                             className={`h-full rounded ${tone.bar}`}
                             style={{ width: `${ratio * 100}%` }}
@@ -2647,19 +2625,15 @@ export const AdminDashboardPage = () => {
                       </div>
                     );
                   })}
-                  <div className="text-[11px] text-muted-foreground">
+                  <div className="shrink-0 text-[11px] leading-none text-muted-foreground">
                     총 {unsupportedAbutmentTotal.toLocaleString()}건
                   </div>
                 </div>
               </DashTile>
-              <div
-                className={`${DASH_SPAN.c3r2} grid min-h-0 grid-rows-2 gap-2`}
-              >
-                <DirectAbutmentSettingsCard className="min-h-0" />
-                <IndirectAbutmentCard className="min-h-0" />
-              </div>
+              <DirectAbutmentSettingsCard className={DASH_SPAN.c3} />
+              <IndirectAbutmentCard className={DASH_SPAN.c3} />
               <DashTile
-                className={DASH_SPAN.c3r2}
+                className={DASH_SPAN.c3}
                 title="운영보고서"
                 icon={<FileText className="h-4 w-4 text-muted-foreground" />}
                 onClick={() => navigate("/dashboard/ops-report")}
@@ -2669,10 +2643,23 @@ export const AdminDashboardPage = () => {
                 </div>
               </DashTile>
               <DashTile
-                className={DASH_SPAN.c3r3}
+                className={DASH_SPAN.c3}
+                title="가공 통계"
+                icon={<BarChart3 className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => setMachiningStatsDialogOpen(true)}
+              >
+                <div className="flex h-full flex-col justify-end gap-0.5">
+                  <div className="truncate text-sm font-semibold text-slate-800">
+                    직경별 제작 · 소요시간
+                  </div>
+                  <p className="truncate text-[11px] text-muted-foreground">6 · 8 · 10 · 12mm</p>
+                </div>
+              </DashTile>
+              <DashTile
+                className={DASH_SPAN.c6r2}
                 title="불완전가공 의뢰"
                 tone={Number(unmachinableSummary?.judgedCount || 0) > 0 ? "warn" : "default"}
-                bodyClassName="flex flex-col gap-2"
+                bodyClassName="flex min-h-0 flex-col gap-2"
               >
                 <div className="grid shrink-0 grid-cols-3 gap-2">
                   <DashStat
@@ -2690,7 +2677,7 @@ export const AdminDashboardPage = () => {
                     tone="primary"
                   />
                 </div>
-                <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-1.5 py-1.5">
+                <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-1.5 py-1.5">
                   {unmachinableItems.map((rawItem, idx) => {
                     const item = rawItem as Record<string, unknown>;
                     const code = String(
@@ -2746,26 +2733,13 @@ export const AdminDashboardPage = () => {
                     );
                   })}
                   {unmachinableItems.length === 0 ? (
-                    <div className="py-3 text-center text-xs text-muted-foreground">
+                    <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">
                       표시할 의뢰가 없습니다.
                     </div>
                   ) : null}
                 </div>
               </DashTile>
-              <DashTile
-                className={DASH_SPAN.c3r3}
-                title="가공 통계"
-                icon={<BarChart3 className="h-4 w-4 text-muted-foreground" />}
-                onClick={() => setMachiningStatsDialogOpen(true)}
-              >
-                <div className="flex h-full flex-col justify-end gap-0.5">
-                  <div className="truncate text-sm font-semibold text-slate-800">
-                    직경별 제작 · 소요시간
-                  </div>
-                  <p className="truncate text-[11px] text-muted-foreground">6 · 8 · 10 · 12mm</p>
-                </div>
-              </DashTile>
-              <RequestorShippingModeCard className={DASH_SPAN.c6r3} />
+              <RequestorShippingModeCard className={DASH_SPAN.c6r2} />
             </div>
           </>
         }

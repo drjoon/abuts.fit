@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-21: 목록 높이를 카드 안에 맞춘다. 고정 높이가 카드 밖으로 나가 마지막 행이 잘렸다.
 // - 2026-10-14: 1열·3.5행 높이·세로 스크롤 고정.
 // - 2026-10-13: 의뢰자별 배송 방식(택배/딜리버리) 지정 카드. 딜리버리 지정·월 의뢰 많은 순.
 // related files:
@@ -113,7 +114,7 @@ export function RequestorShippingModeCard({ className }: { className?: string })
           딜리버리 {deliveryCount.toLocaleString()}곳 · {DELIVERY_CONDITION_LINE}
         </span>
       </div>
-      <div className="h-[12.25rem] shrink-0 overflow-y-scroll px-1.5 py-1.5 [scrollbar-gutter:stable]">
+      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5 [scrollbar-gutter:stable]">
         {items === null ? (
           <p className="text-xs text-slate-500">불러오는 중…</p>
         ) : error ? (
