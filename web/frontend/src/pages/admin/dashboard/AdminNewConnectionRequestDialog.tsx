@@ -254,8 +254,8 @@ export function AdminNewConnectionRequestDialog({
       description={
         <div className="grid gap-3 md:grid-cols-[minmax(0,17rem)_minmax(0,1fr)]">
           <div className="flex min-w-0 flex-col gap-2">
-            <p className="px-1.5 text-xs text-slate-500">
-              제조사·브랜드별 묶음 ({groups.length.toLocaleString()}개)
+            <p className="px-1.5 text-xs font-medium text-slate-600">
+              묶음 {groups.length.toLocaleString()}개
             </p>
             <ul className="max-h-[28rem] space-y-1.5 overflow-y-auto px-1.5 py-1.5">
               {groups.length === 0 ? (
@@ -291,10 +291,7 @@ export function AdminNewConnectionRequestDialog({
                         <div className="truncate text-xs text-slate-600">
                           {group.requestCount?.toLocaleString() || 0}건
                           {group.hasNewImplant ? " · 신규 임플란트" : ""}
-                          {group.hasUnsupported ? " · 미제공 커넥션" : ""}
-                        </div>
-                        <div className="truncate text-[10px] text-slate-400">
-                          {group.groupKey}
+                          {group.hasUnsupported ? " · 미제공" : ""}
                         </div>
                         <div className="mt-1 flex flex-wrap gap-1.5 text-[10px] font-medium text-slate-600">
                           {group.read ? (
@@ -321,173 +318,54 @@ export function AdminNewConnectionRequestDialog({
 
           {selectedGroup ? (
             <div className="space-y-3 rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700">
-              <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50/80 px-2.5 py-2">
-                <div className="text-xs font-semibold text-slate-600">묶음 진행</div>
-                <div className="flex flex-wrap gap-3">
-                  <label className="flex items-center gap-2 text-xs">
-                    <Checkbox
-                      checked={Boolean(selectedGroup.read)}
-                      disabled={groupBusy}
-                      onCheckedChange={(checked) => {
-                        void patchGroupWorkflow({ read: checked === true });
-                      }}
-                    />
-                    읽음
-                  </label>
-                  <label className="flex items-center gap-2 text-xs">
-                    <Checkbox
-                      checked={Boolean(selectedGroup.inDevelopment)}
-                      disabled={groupBusy}
-                      onCheckedChange={(checked) => {
-                        void patchGroupWorkflow({ inDevelopment: checked === true });
-                      }}
-                    />
-                    개발중
-                  </label>
-                  <label className="flex items-center gap-2 text-xs">
-                    <Checkbox
-                      checked={Boolean(selectedGroup.developmentComplete)}
-                      disabled={groupBusy}
-                      onCheckedChange={(checked) => {
-                        void patchGroupWorkflow({
-                          developmentComplete: checked === true,
-                        });
-                      }}
-                    />
-                    개발완료
-                  </label>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-xs font-semibold text-slate-600">
-                  묶음 표시 이름 (전역 SSOT)
-                </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <div>
-                    <Label className="text-xs">제조사</Label>
-                    <Input
-                      value={canonicalDraft.manufacturer}
-                      onChange={(e) =>
-                        setCanonicalDraft((prev) => ({
-                          ...prev,
-                          manufacturer: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">브랜드</Label>
-                    <Input
-                      value={canonicalDraft.brand}
-                      onChange={(e) =>
-                        setCanonicalDraft((prev) => ({
-                          ...prev,
-                          brand: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                  disabled={groupBusy}
-                  onClick={() => void saveCanonical()}
-                >
-                  {groupBusy ? "저장 중…" : "묶음 이름 저장"}
-                </button>
-                {(selectedGroup.aliases || []).length > 0 ? (
-                  <div className="text-xs text-slate-500">
-                    동의어:{" "}
-                    {(selectedGroup.aliases || [])
-                      .map((row) => `${row.manufacturer} · ${row.brand}`)
-                      .join(" / ")}
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="space-y-2 border-t border-slate-100 pt-2">
-                <div className="text-xs font-semibold text-slate-600">
-                  다른 묶음과 합치기
-                </div>
-                <div className="flex flex-wrap items-end gap-2">
-                  <div className="min-w-[10rem] flex-1">
-                    <Label className="text-xs">대상 묶음</Label>
-                    <select
-                      className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm"
-                      value={mergeTargetKey}
-                      onChange={(e) => setMergeTargetKey(e.target.value)}
-                    >
-                      <option value="">선택…</option>
-                      {groups
-                        .filter((row) => row.groupKey !== selectedGroup.groupKey)
-                        .map((row) => {
-                          const label = [
-                            row.canonicalManufacturer,
-                            row.canonicalBrand,
-                          ]
-                            .map((part) => String(part || "").trim())
-                            .filter(Boolean)
-                            .join(" · ");
-                          return (
-                            <option key={row.groupKey} value={row.groupKey}>
-                              {label || row.groupKey}
-                            </option>
-                          );
-                        })}
-                    </select>
-                  </div>
-                  <button
-                    type="button"
-                    className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                    disabled={groupBusy || !mergeTargetKey.trim()}
-                    onClick={() => void mergeIntoGroup()}
-                  >
-                    합치기
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-1 border-t border-slate-100 pt-2">
-                <div className="text-xs font-semibold text-slate-600">의뢰 목록</div>
-                <ul className="max-h-32 space-y-1 overflow-y-auto px-0.5 py-0.5">
-                  {groupItems.map((item) => {
-                    const who = [item.clinicName, item.patientName, item.tooth]
-                      .map((part) => String(part || "").trim())
-                      .filter(Boolean)
-                      .join(" · ");
-                    return (
-                      <li key={item.id}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedRequestId(item.id)}
-                          className={`w-full rounded-md border px-2 py-1.5 text-left text-xs ${
-                            item.id === selectedRequest?.id
-                              ? "border-slate-400 bg-slate-100"
-                              : "border-slate-200 bg-white hover:bg-slate-50"
-                          }`}
-                        >
-                          <div className="truncate font-semibold">{who || item.requestId}</div>
-                          <div className="truncate text-slate-500">
-                            {item.connectionLabel}
-                          </div>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-100 pb-2">
+                <span className="text-xs font-semibold text-slate-600">진행</span>
+                <label className="flex items-center gap-2 text-xs">
+                  <Checkbox
+                    checked={Boolean(selectedGroup.read)}
+                    disabled={groupBusy}
+                    onCheckedChange={(checked) => {
+                      void patchGroupWorkflow({ read: checked === true });
+                    }}
+                  />
+                  읽음
+                </label>
+                <label className="flex items-center gap-2 text-xs">
+                  <Checkbox
+                    checked={Boolean(selectedGroup.inDevelopment)}
+                    disabled={groupBusy}
+                    onCheckedChange={(checked) => {
+                      void patchGroupWorkflow({ inDevelopment: checked === true });
+                    }}
+                  />
+                  개발중
+                </label>
+                <label className="flex items-center gap-2 text-xs">
+                  <Checkbox
+                    checked={Boolean(selectedGroup.developmentComplete)}
+                    disabled={groupBusy}
+                    onCheckedChange={(checked) => {
+                      void patchGroupWorkflow({
+                        developmentComplete: checked === true,
+                      });
+                    }}
+                  />
+                  개발완료
+                </label>
               </div>
 
               {selectedRequest ? (
-                <div className="space-y-2 border-t border-slate-100 pt-2">
-                  <div className="text-xs font-semibold text-slate-600">선택 의뢰</div>
-                  <div>
-                    <div className="text-xs text-slate-500">의뢰자</div>
-                    <div className="font-semibold text-slate-900">
-                      {selectedRequest.requesterName || "이름 없음"}
-                    </div>
-                    <div>{selectedRequest.businessName || "사업자 없음"}</div>
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold text-slate-600">연락</div>
+                  <div className="rounded-md border border-slate-200 bg-slate-50/80 px-2.5 py-2 text-xs">
+                    {selectedRequest.requesterName ? (
+                      <div className="font-semibold text-slate-900">
+                        {selectedRequest.requesterName}
+                      </div>
+                    ) : null}
+                    {selectedRequest.businessName ? (
+                      <div className="text-slate-700">{selectedRequest.businessName}</div>
+                    ) : null}
                     {phoneHref(selectedRequest.requesterPhone) ? (
                       <a
                         className="font-semibold text-primary-strong underline"
@@ -495,14 +373,19 @@ export function AdminNewConnectionRequestDialog({
                       >
                         {selectedRequest.requesterPhone}
                       </a>
-                    ) : (
-                      <div>전화번호 없음</div>
-                    )}
+                    ) : null}
                     {selectedRequest.requesterEmail ? (
-                      <div>{selectedRequest.requesterEmail}</div>
+                      <div className="text-slate-600">{selectedRequest.requesterEmail}</div>
+                    ) : null}
+                    {!selectedRequest.requesterName &&
+                    !selectedRequest.businessName &&
+                    !phoneHref(selectedRequest.requesterPhone) &&
+                    !selectedRequest.requesterEmail ? (
+                      <div className="text-slate-500">연락처 없음</div>
                     ) : null}
                   </div>
 
+                  <div className="text-xs font-semibold text-slate-600">임플란트</div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <div>
                       <Label className="text-xs">제조사</Label>
@@ -559,21 +442,141 @@ export function AdminNewConnectionRequestDialog({
                     disabled={groupBusy}
                     onClick={() => void saveRequestImplant()}
                   >
-                    {groupBusy ? "저장 중…" : "임플란트 정보 저장"}
+                    {groupBusy ? "저장 중…" : "저장"}
                   </button>
                   <div className="text-xs text-slate-500">
                     접수 {formatWhen(selectedRequest.createdAt)}
                     {selectedRequest.requestId ? ` · ${selectedRequest.requestId}` : ""}
                   </div>
                   {selectedRequest.memo ? (
-                    <div className="text-xs">{selectedRequest.memo}</div>
+                    <div className="text-xs text-slate-600">{selectedRequest.memo}</div>
                   ) : null}
                 </div>
               ) : null}
+
+              <div className="space-y-1 border-t border-slate-100 pt-2">
+                <div className="text-xs font-semibold text-slate-600">
+                  의뢰 {groupItems.length.toLocaleString()}건
+                </div>
+                <ul className="max-h-28 space-y-1 overflow-y-auto px-0.5 py-0.5">
+                  {groupItems.map((item) => {
+                    const who = [item.clinicName, item.patientName, item.tooth]
+                      .map((part) => String(part || "").trim())
+                      .filter(Boolean)
+                      .join(" · ");
+                    return (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedRequestId(item.id)}
+                          className={`w-full rounded-md border px-2 py-1.5 text-left text-xs ${
+                            item.id === selectedRequest?.id
+                              ? "border-slate-400 bg-slate-100"
+                              : "border-slate-200 bg-white hover:bg-slate-50"
+                          }`}
+                        >
+                          <div className="truncate font-semibold">{who || item.requestId}</div>
+                          {item.connectionLabel ? (
+                            <div className="truncate text-slate-500">
+                              {item.connectionLabel}
+                            </div>
+                          ) : null}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+
+              <div className="space-y-2 border-t border-slate-100 pt-2">
+                <div className="text-xs font-semibold text-slate-600">묶음 이름</div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div>
+                    <Label className="text-xs">제조사</Label>
+                    <Input
+                      value={canonicalDraft.manufacturer}
+                      onChange={(e) =>
+                        setCanonicalDraft((prev) => ({
+                          ...prev,
+                          manufacturer: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">브랜드</Label>
+                    <Input
+                      value={canonicalDraft.brand}
+                      onChange={(e) =>
+                        setCanonicalDraft((prev) => ({
+                          ...prev,
+                          brand: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  disabled={groupBusy}
+                  onClick={() => void saveCanonical()}
+                >
+                  {groupBusy ? "저장 중…" : "이름 저장"}
+                </button>
+                {(selectedGroup.aliases || []).length > 0 ? (
+                  <div className="text-xs text-slate-500">
+                    동의어{" "}
+                    {(selectedGroup.aliases || [])
+                      .map((row) => `${row.manufacturer} · ${row.brand}`)
+                      .join(" / ")}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="space-y-2 border-t border-slate-100 pt-2">
+                <div className="text-xs font-semibold text-slate-600">묶음 합치기</div>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="min-w-[10rem] flex-1">
+                    <Label className="text-xs">합칠 묶음</Label>
+                    <select
+                      className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm"
+                      value={mergeTargetKey}
+                      onChange={(e) => setMergeTargetKey(e.target.value)}
+                    >
+                      <option value="">선택…</option>
+                      {groups
+                        .filter((row) => row.groupKey !== selectedGroup.groupKey)
+                        .map((row) => {
+                          const label = [
+                            row.canonicalManufacturer,
+                            row.canonicalBrand,
+                          ]
+                            .map((part) => String(part || "").trim())
+                            .filter(Boolean)
+                            .join(" · ");
+                          return (
+                            <option key={row.groupKey} value={row.groupKey}>
+                              {label || row.groupKey}
+                            </option>
+                          );
+                        })}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    disabled={groupBusy || !mergeTargetKey.trim()}
+                    onClick={() => void mergeIntoGroup()}
+                  >
+                    합치기
+                  </button>
+                </div>
+              </div>
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-sm text-slate-500">
-              왼쪽에서 묶음을 고르면 진행 상태와 의뢰 목록이 나옵니다.
+              왼쪽에서 묶음을 선택하세요.
             </div>
           )}
         </div>

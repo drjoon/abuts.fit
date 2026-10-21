@@ -2287,8 +2287,8 @@ export const AdminDashboardPage = () => {
                     }
                   >
                     {newConnectionRequestTotal > 0
-                      ? `미완료 ${newConnectionRequestOpenGroupCount.toLocaleString()}묶음 · 전화·개발 확인`
-                      : "제조사·브랜드별로 묶어 확인합니다."}
+                      ? `미완료 ${newConnectionRequestOpenGroupCount.toLocaleString()}묶음 · 연락·개발`
+                      : "제조사·브랜드별 묶음입니다."}
                   </p>
                 </div>
               </DashTile>
