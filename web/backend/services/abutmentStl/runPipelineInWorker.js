@@ -57,10 +57,10 @@ export async function evaluateAgainstRhinoInWorker({ inputBuffer, rhinoFilledBuf
 
 /** @returns {Promise<object>} runAbutmentStlPipeline 결과(outputBuffer는 Buffer) */
 export async function runAbutmentStlPipelineInWorker(inputBuffer, options = {}) {
-  const { log, queueTimeoutMs, ...serializable } = options;
+  const { log, queueTimeoutMs, timeoutMs, ...serializable } = options;
   const msg = await runMeshWorker(WORKER_URL, {
     label: "abutment STL JS pipeline",
-    timeoutMs: FILLED_STL_JS_LIMIT_MS,
+    timeoutMs: Number(timeoutMs) > 0 ? Number(timeoutMs) : FILLED_STL_JS_LIMIT_MS,
     queueTimeoutMs: Number(queueTimeoutMs) > 0 ? Number(queueTimeoutMs) : 0,
     buildWorkerData: () => {
       const input = copyBytes(inputBuffer);

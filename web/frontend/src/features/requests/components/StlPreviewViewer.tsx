@@ -3354,7 +3354,12 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     >
       <div ref={containerRef} className="absolute inset-0 h-full w-full" />
       {correctionSolidVisible && averageFilletRadiusMm != null && !error ? (
-        <div className="pointer-events-none absolute right-2 top-14 z-10 rounded-md border border-red-200 bg-white/92 px-2.5 py-1.5 text-right shadow-sm">
+        <div
+          className={cn(
+            "pointer-events-none absolute right-2 z-10 rounded-md border border-red-200 bg-white/92 px-2.5 py-1.5 text-right shadow-sm",
+            showOverlay ? "bottom-16" : "bottom-3",
+          )}
+        >
           <div className="text-[10px] font-medium leading-tight text-slate-500">
             전체 평균 fillet R
           </div>

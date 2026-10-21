@@ -487,7 +487,7 @@ describe("abutmentStl pipeline", () => {
     expect(out.correctDesign).toBe(true);
     expect(out.outputBuffer.length).toBeGreaterThan(0);
     expect(out.tightCorner?.tightCount).toBeGreaterThan(0);
-    // 필렛 R과 크라운 안착면 다듬기. 띠 세분화와 포스트 1회 분할로 면이 늘어도 입력의 12배 안에서만 큰다.
+    // 필렛 뒤에 제조사 준비와 같은 커프·커넥션·포스트 보정. 면이 늘어도 입력의 12배 안에서만 큰다.
     const inTris = buffer.readUInt32LE(80);
     const outTris = out.outputBuffer.readUInt32LE(80);
     expect(outTris).toBeGreaterThan(0);

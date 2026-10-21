@@ -62,6 +62,7 @@ export async function handler(event) {
       ...(event?.connection ? { connection: event.connection } : {}),
       ...(Array.isArray(event?.finishLinePoints) ? { finishLinePoints: event.finishLinePoints } : {}),
       ...(event?.designAlreadyCorrected ? { designAlreadyCorrected: true } : {}),
+      ...(event?.surfacePrepared ? { surfacePrepared: true } : {}),
     });
     if (!js?.outputBuffer?.length) {
       throw new Error("JS 출력 STL이 비어 있습니다.");

@@ -103,6 +103,7 @@ async function runOnLambda(buffer, options) {
         ...(options?.connection ? { connection: options.connection } : {}),
         ...(Array.isArray(options?.finishLinePoints) ? { finishLinePoints: options.finishLinePoints } : {}),
         ...(options?.designAlreadyCorrected ? { designAlreadyCorrected: true } : {}),
+        ...(options?.surfacePrepared ? { surfacePrepared: true } : {}),
       }),
     })
     .promise();

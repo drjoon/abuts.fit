@@ -141,13 +141,16 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
   ]);
   lap("load");
   const storedFinishLine = isUserCapturedFinishLine(ci.finishLine) ? ci.finishLine : null;
-  // filled·커프·포스트는 제조사 준비인 여기서만 만든다. 업로드 단계에서는 미리 만들지 않는다.
+  const filletChoice = String(ci.filletDesignChoice || "");
+  // fix: 의뢰 STL이 이미 제조사 준비와 같은 보정본이다. 정렬만 하고 보정을 다시 하지 않는다.
+  const surfacePrepared = filletChoice === "fix" && designAlreadyCorrected;
   const js = await runFilledStlOffRequest(inputBuffer, {
     targetDiameter: inputs.targetDiameter,
     implantProfile: inputs.implantProfile,
     ...(inputs.connection ? { connection: inputs.connection } : {}),
     ...(storedFinishLine ? { finishLinePoints: storedFinishLine.points } : {}),
     ...(designAlreadyCorrected ? { designAlreadyCorrected: true } : {}),
+    ...(surfacePrepared ? { surfacePrepared: true } : {}),
   });
   // 공구 R 필렛 보정의 동의 SSOT는 의뢰 파일이다. 보정본 키로 들어왔으면 의뢰자가 업로드 때 동의해
   // 이미 적용된 것이고, 아니면 미적용으로 기록한다. 제조사 준비에서는 보정을 새로 적용하지 않는다.
@@ -176,16 +179,13 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
         fileSize: js.cuffBlendResult.fileSize || null,
       }
     : null;
-  if (!cuffBlendResult && isCuffBlendAutoEnabled()) {
-    // fix: 확인 전 보정 STL에 포스트 다듬기가 이미 있다. asis: 의뢰자가 원본 그대로 가공을 골랐다.
-    const filletChoice = String(ci.filletDesignChoice || "");
-    const skipPostSmooth = filletChoice === "fix" || filletChoice === "asis";
+  // fix는 보정본에 커프·커넥션·포스트가 이미 있다. asis는 의뢰자가 원본 그대로 가공을 골랐다.
+  if (!cuffBlendResult && isCuffBlendAutoEnabled() && filletChoice !== "fix" && filletChoice !== "asis") {
     const blended = await applyAutoCuffBlendSafely({
       s3Key,
       sourceBuffer: output,
       caseInfos: { ...ci, finishLine: js.finishLine },
       writeBack: false,
-      blendOptions: skipPostSmooth ? { skipPostSmooth: true } : {},
     });
     if (blended?.record) {
       cuffBlendResult = { record: blended.record, fileSize: blended.fileSize || null };

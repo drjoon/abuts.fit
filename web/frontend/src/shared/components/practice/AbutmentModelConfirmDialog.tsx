@@ -478,20 +478,6 @@ export function AbutmentModelConfirmDialog({
   const onVerifyAndNextRef = useRef(onVerifyAndNext);
   onVerifyAndNextRef.current = onVerifyAndNext;
 
-  useEffect(() => {
-    if (!open || isLabHandoff) return;
-    const id = String(machiningPreflight?.correctedId || "").trim();
-    if (!id || machiningPreflight?.status !== "tight" || !detailFile) return;
-    onPrepareCorrectedDesign?.(id, detailFile.name);
-  }, [
-    open,
-    isLabHandoff,
-    machiningPreflight?.correctedId,
-    machiningPreflight?.status,
-    detailFile,
-    onPrepareCorrectedDesign,
-  ]);
-
   const runCorrectedStlDownload = useCallback(async () => {
     if (!detailFile || correctedDownloading) return false;
     setCorrectedDownloading(true);
@@ -592,14 +578,18 @@ export function AbutmentModelConfirmDialog({
   ]);
 
   const chooseFilletDesign = useCallback(
-    (next: FilletDesignChoice) => {
+    (next: FilletDesignChoice | null) => {
       setFilletChoiceRequired(false);
       setDetailCaseInfos({
         filletDesignChoice: next,
         filletOvercutAllowed: next === "asis",
       });
+      if (next === "fix" && detailFile) {
+        const id = String(machiningPreflight?.correctedId || "").trim();
+        if (id) onPrepareCorrectedDesign?.(id, detailFile.name);
+      }
     },
-    [setDetailCaseInfos],
+    [detailFile, machiningPreflight?.correctedId, onPrepareCorrectedDesign, setDetailCaseInfos],
   );
 
   const handleCorrectedProceed = useCallback(async () => {

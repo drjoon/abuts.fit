@@ -43,6 +43,7 @@ export async function handler(event) {
     const js = await runAbutmentStlPipeline(input, {
       targetDiameter: event?.targetDiameter ?? null,
       implantProfile: event?.implantProfile || {},
+      ...(event?.connection ? { connection: event.connection } : {}),
       correctDesign: true,
     });
     if (!js.outputBuffer?.length) {

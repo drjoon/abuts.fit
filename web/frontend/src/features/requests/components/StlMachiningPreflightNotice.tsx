@@ -42,7 +42,7 @@ export function StlMachiningPreflightNotice({
   onCorrectedDownloadClick?: () => void;
   correctedDownloadBusy?: boolean;
   choice?: FilletDesignChoice | null;
-  onChoice?: (choice: FilletDesignChoice) => void;
+  onChoice?: (choice: FilletDesignChoice | null) => void;
   choiceRequired?: boolean;
 }) {
   if (!preflight) return null;
@@ -67,7 +67,7 @@ export function StlMachiningPreflightNotice({
   }
 
   if (preflight.status === "tight") {
-    const pick = (next: FilletDesignChoice) => onChoice?.(next);
+    const pick = (next: FilletDesignChoice) => onChoice?.(choice === next ? null : next);
     return (
       <div
         className={cn(
@@ -119,7 +119,9 @@ export function StlMachiningPreflightNotice({
           </div>
         ) : null}
         {choiceRequired ? (
-          <p className="text-xs font-medium text-rose-700">가공 방법을 고르세요.</p>
+          <p className="animate-pulse rounded-md bg-rose-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm">
+            가공 방법을 고르세요.
+          </p>
         ) : null}
       </div>
     );

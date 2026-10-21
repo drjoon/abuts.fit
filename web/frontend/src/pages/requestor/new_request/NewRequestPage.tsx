@@ -277,6 +277,7 @@ const NewRequestPageContent = () => {
       }
       const correctedId = String(preflight.correctedId || "").trim();
       if (preflight.status !== "tight" || !correctedId) return null;
+      if (caseInfosRef.current?.[key]?.filletDesignChoice !== "fix") return null;
       let job = correctedJobsRef.current.get(key);
       if (!job) {
         job = fetchCorrectedDesignUpload({
@@ -299,10 +300,7 @@ const NewRequestPageContent = () => {
           });
         correctedJobsRef.current.set(key, job);
       }
-      const uploaded = await job;
-      // 준비는 검사와 함께 해 두고, 의뢰 파일 교체는 「디자인 고치기」를 골랐을 때만 한다.
-      if (caseInfosRef.current?.[key]?.filletDesignChoice !== "fix") return null;
-      return uploaded;
+      return job;
     }
     return null;
   };
@@ -318,6 +316,7 @@ const NewRequestPageContent = () => {
         }
       }
       if (preflight?.status !== "tight" || !preflight.correctedId) continue;
+      if (caseInfosMap?.[key]?.filletDesignChoice !== "fix") continue;
       void resolveCorrectedRef.current(file).catch(() => null);
     }
   }, [caseInfosMap, files, machiningPreflightByFileKey, updateCaseInfos]);
@@ -386,16 +385,6 @@ const NewRequestPageContent = () => {
   const takePreparedCorrectedDesign = useCallback((correctedId: string) => {
     return preparedCorrectedRef.current.get(String(correctedId || "").trim()) ?? null;
   }, []);
-
-  // 업로드·검사 직후(모달 열기 전)부터 보정 STL을 백그라운드로 받아 둔다.
-  useEffect(() => {
-    for (const file of files) {
-      const preflight = machiningPreflightByFileKey[getFileKey(file)];
-      const id = String(preflight?.correctedId || "").trim();
-      if (preflight?.status !== "tight" || !id) continue;
-      prepareCorrectedDesign(id, file.name);
-    }
-  }, [files, machiningPreflightByFileKey, prepareCorrectedDesign]);
 
   const handleRequestSettingsDefaultsChange = useCallback(
     (next: {

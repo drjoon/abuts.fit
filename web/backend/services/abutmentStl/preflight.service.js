@@ -132,40 +132,12 @@ export function readCorrectedDesignStl(id, userId) {
 
 const CORRECT_WAIT_MS = 150 * 1000;
 
-/**
- * 모달 검사가 타이트로 끝나면 id만 바로 돌려주고, 완전한 보정 STL은 뒤에서 채운다.
- * @returns {string|null}
- */
-export function scheduleCorrectedDesignStl({
-  buffer,
-  caseInfos,
-  userId,
-  fileName,
-  inputs,
-} = {}) {
-  const uid = correctedUserId(userId);
-  const hash = correctedDesignCacheKey(buffer, caseInfos);
-  if (!uid || !hash || !buffer?.length) return null;
-  pruneCorrectedDesignCache();
-  const slot = correctedSlot(hash, uid);
-  const existingId = correctedByHash.get(slot);
-  const existing = existingId ? correctedById.get(existingId) : null;
-  if (existing && (existing.expires > Date.now() || existing.promise)) {
-    if (existing.buffer?.length || existing.promise) return existingId;
-  }
-  const id = crypto.randomBytes(16).toString("hex");
-  const row = {
-    hash,
-    slot,
-    buffer: null,
-    fileName: String(fileName || "corrected.stl"),
-    userId: uid,
-    expires: Date.now() + CORRECTED_TTL_MS,
-    promise: null,
-    errorReason: null,
-  };
-  row.s3Key = correctedDesignS3Key(id);
-  row.promise = buildCorrectedDesignOffRequest(buffer, inputs, id)
+function beginCorrectedDesignJob(row, id) {
+  if (!row || row.buffer?.length || row.promise || !row.inputBuffer?.length) return;
+  const inputBuffer = row.inputBuffer;
+  const inputs = row.inputs;
+  row.inputBuffer = null;
+  row.promise = buildCorrectedDesignOffRequest(inputBuffer, inputs, id)
     .then((out) => {
       row.buffer = out;
       row.size = out?.length || 0;
@@ -179,9 +151,49 @@ export function scheduleCorrectedDesignStl({
       console.warn("[stl-correct] background failed:", error?.message || error);
       return null;
     });
+}
+
+/**
+ * 모달 검사가 타이트로 끝나면 id만 바로 돌려주고, 완전한 보정 STL은 「디자인 고치기」를 고른 뒤에 만든다.
+ * defer가 아니면 바로 시작한다.
+ * @returns {string|null}
+ */
+export function scheduleCorrectedDesignStl({
+  buffer,
+  caseInfos,
+  userId,
+  fileName,
+  inputs,
+  defer = false,
+} = {}) {
+  const uid = correctedUserId(userId);
+  const hash = correctedDesignCacheKey(buffer, caseInfos);
+  if (!uid || !hash || !buffer?.length) return null;
+  pruneCorrectedDesignCache();
+  const slot = correctedSlot(hash, uid);
+  const existingId = correctedByHash.get(slot);
+  const existing = existingId ? correctedById.get(existingId) : null;
+  if (existing && (existing.expires > Date.now() || existing.promise || existing.inputBuffer?.length)) {
+    if (existing.buffer?.length || existing.promise || existing.inputBuffer?.length) return existingId;
+  }
+  const id = crypto.randomBytes(16).toString("hex");
+  const row = {
+    hash,
+    slot,
+    buffer: null,
+    inputBuffer: buffer,
+    inputs,
+    fileName: String(fileName || "corrected.stl"),
+    userId: uid,
+    expires: Date.now() + CORRECTED_TTL_MS,
+    promise: null,
+    errorReason: null,
+    s3Key: correctedDesignS3Key(id),
+  };
   correctedById.set(id, row);
   correctedByHash.set(slot, id);
   pruneCorrectedDesignCache();
+  if (!defer) beginCorrectedDesignJob(row, id);
   return id;
 }
 
@@ -194,6 +206,7 @@ export async function awaitCorrectedDesignMeta(id, userId) {
   const row = readCorrectedDesignStl(keyId, userId);
   const stored = correctedById.get(keyId);
   if (stored && !row) return null;
+  if (row) beginCorrectedDesignJob(row, keyId);
   if (row?.promise) {
     let timer = null;
     const timeout = new Promise((resolve) => {
@@ -232,6 +245,7 @@ export async function awaitCorrectedDesignStl(id, userId) {
   const row = readCorrectedDesignStl(id, userId);
   if (!row) return null;
   if (row.buffer?.length) return row;
+  beginCorrectedDesignJob(row, String(id || ""));
   if (!row.promise) return null;
   let timer = null;
   const timeout = new Promise((resolve) => {
@@ -439,6 +453,7 @@ export async function runStlMachiningPreflight({
             userId,
             fileName: originalFileName,
             inputs,
+            defer: true,
           })
         : null;
     return {

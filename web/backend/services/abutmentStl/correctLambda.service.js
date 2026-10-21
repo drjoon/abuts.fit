@@ -44,7 +44,9 @@ async function buildOnWorker(buffer, inputs, id) {
   const js = await runAbutmentStlPipelineInWorker(buffer, {
     targetDiameter: inputs?.targetDiameter ?? null,
     implantProfile: inputs?.implantProfile || {},
+    ...(inputs?.connection ? { connection: inputs.connection } : {}),
     correctDesign: true,
+    timeoutMs: 120 * 1000,
   });
   if (!js?.outputBuffer?.length) {
     const error = new Error("보정 STL을 만들지 못했습니다.");
@@ -98,6 +100,7 @@ async function buildOnLambda(buffer, inputs, id) {
         errKey,
         targetDiameter: inputs?.targetDiameter ?? null,
         implantProfile: inputs?.implantProfile || {},
+        ...(inputs?.connection ? { connection: inputs.connection } : {}),
       }),
     })
     .promise();
