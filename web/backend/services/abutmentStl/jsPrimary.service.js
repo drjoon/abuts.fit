@@ -142,7 +142,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
   lap("load");
   const storedFinishLine = isUserCapturedFinishLine(ci.finishLine) ? ci.finishLine : null;
   const filletChoice = String(ci.filletDesignChoice || "");
-  // fix: 의뢰 STL이 이미 필레·스크류홀·fill·커프를 포함한다. 정렬 뒤 포스트·커넥션만 다듬고 커프는 다시 하지 않는다.
+  // fix: 의뢰 STL에 날카로운 마진 기준의 포스트 다듬기가 이미 들어 있다. 정렬만 하고 다시 다듬지 않는다.
   const surfacePrepared = filletChoice === "fix" && designAlreadyCorrected;
   const js = await runFilledStlOffRequest(inputBuffer, {
     targetDiameter: inputs.targetDiameter,

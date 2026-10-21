@@ -5,9 +5,8 @@
 //
 // Rhino 없이 1-stl → 2-filled를 만든다. 순서는 process_abutment_stl.main과 같다:
 // import → align → 11° 커넥션 추가 → finishline → 스크류홀 패치 → 직경 → fill_steps → export → 메타.
-// 의뢰자 보정은 그 전에 마진 코너 필레를 고친 뒤 이 파이프라인과 커프 작업을 그대로 돌리고, 원본 좌표로 되돌린다.
-// preflight는 필레 검사만 한다. 이미 보정된 STL(surfacePrepared)은 스크류홀·fill·커프를 다시 하지 않고,
-// 정렬한 뒤 제조사 준비와 같은 포스트·커넥션 다듬기만 한다.
+// 의뢰자 보정은 날카로운 마진이 있을 때 제조사 준비와 같은 포스트 다듬기를 먼저 하고, 그다음 코너 필레를 한다.
+// preflight는 필레 검사만 한다. 이미 보정된 STL(surfacePrepared)은 정렬만 한다.
 import { Mesh, writeBinaryStl, parseStl, identity, multiply, translation } from "./meshCore.js";
 import { addMissingConnectionTaper } from "./connectionTaperFill.js";
 import { alignMeshToOrigin, ALIGN_MODULE_VERSION, JS_ALIGN_PORT_VERSION } from "./align.js";
@@ -191,53 +190,69 @@ function finishPreflight({ mesh, finishLine, align, alignMatrix, logs, perf, mar
 }
 
 /**
- * 필레를 먼저 고친 STL(원본 CAD 좌표)에 제조사 준비와 같은 파이프라인을 돌리고, 다시 원본 좌표로 되돌린다.
- * 정렬·커넥션 원뿔·스크류홀·fill·메타는 runAbutmentStlPipeline, 커프·포스트·커넥션 다듬기는 runCuffBlendJob.
+ * 날카로운 마진이 남아 있는 정렬 메시에 제조사 준비와 같은 순서로 커넥션·스크류홀·fill·커프·포스트를 적용한다.
+ * 포스트 다듬기는 이 모서리를 기준으로 한다. 필레로 모서리를 없앤 뒤에 돌리면 표면이 거칠어진다.
  */
-async function manufacturerPipelineAfterFillet(filletedBuffer, { targetDiameter, implantProfile, connection, screwholeParams, log }) {
-  const prepared = await runAbutmentStlPipeline(filletedBuffer, {
-    targetDiameter,
-    implantProfile,
-    connection,
-    screwholeParams,
-    log,
-  });
-  let alignedBuf = prepared?.outputBuffer;
-  if (!alignedBuf?.length) {
-    const error = new Error("제조사 준비 파이프라인이 STL을 만들지 못했습니다.");
-    error.reason = "pipeline_failed";
-    throw error;
+function prepareSharpMeshLikeManufacturer({ mesh, finishLine, alignMatrix, implantProfile, connection, screwholeParams, log }) {
+  let matrix = alignMatrix;
+  let fl = finishLine;
+  try {
+    const connectionTaper = addMissingConnectionTaper(mesh, { implantProfile, connection, log });
+    if (connectionTaper?.applied && connectionTaper.zShift && fl?.points?.length) {
+      const dz = connectionTaper.zShift;
+      matrix = multiply(translation(0, 0, dz), matrix);
+      const points = fl.points.map((p) => [p[0], p[1], p[2] + dz]);
+      fl = { ...fl, points, ...finishlineZExtrema(points) };
+    }
+  } catch (error) {
+    log(`[stl-correct] connection taper failed: ${error?.message || error}`);
   }
+
+  let soup = mesh.toTriangleSoup();
+  try {
+    const screw = buildScrewholePatch(mesh, { params: screwholeParams, log });
+    if (screw.patch) soup = appendTriangles(soup, screw.patch);
+  } catch (error) {
+    log(`[stl-correct] screwhole failed: ${error?.message || error}`);
+  }
+  const combined = Mesh.fromTriangleSoup(soup);
+  try {
+    const res = buildVerticalBandSolid(combined, { log });
+    if (res.solid) soup = appendTriangles(soup, res.solid);
+  } catch (error) {
+    log(`[stl-correct] fill steps failed: ${error?.message || error}`);
+  }
+
+  let filledBuf = writeBinaryStl({ positions: soup, attributes: null });
   try {
     const { key, spec } = resolveCuffConnectionSpec(implantProfile || {});
-    const blended = runCuffBlendJob(alignedBuf, "auto", {
+    const blended = runCuffBlendJob(filledBuf, "auto", {
       spec,
       specKey: key,
-      finishLine: prepared.finishLine,
+      finishLine: fl,
     });
     const post = blended?.detail?.postSmooth;
     log(
       `[stl-correct] cuff ${blended?.status || ""} ${blended?.reason || ""} post=${post?.status || ""}/${post?.reason || ""}`.trim(),
     );
-    if (blended?.buffer?.length) alignedBuf = blended.buffer;
+    if (blended?.buffer?.length) filledBuf = blended.buffer;
   } catch (error) {
     log(`[stl-correct] cuff job failed: ${error?.message || error}`);
   }
-  return transformStlBuffer(alignedBuf, invertRigidMatrix(prepared.alignMatrix));
+  return { filledBuf, matrix, finishLine: fl };
 }
 
 /**
- * 확인 전 보정 STL. 마진 코너 필레를 먼저 고친 뒤, 그 메시에 제조사 준비 JS 파이프라인 전체를 돌린다.
- * 결과는 원본 CAD 좌표로 되돌린다. 제조사 준비는 이 파일을 다시 보정하지 않는다.
+ * 확인 전 보정 STL. 포스트 다듬기는 필레 전, 날카로운 마진 모서리로 제조사 준비와 같이 돌린다.
+ * 코너 필레는 그 뒤에 한다. 결과는 원본 CAD 좌표로 되돌린다. 제조사 준비는 이 파일을 다시 다듬지 않는다.
  */
-async function finishCorrectedDesign({
+function finishCorrectedDesign({
   mesh,
   finishLine,
   align,
   alignMatrix,
   implantProfile,
   connection,
-  targetDiameter,
   screwholeParams,
   logs,
   perf,
@@ -258,22 +273,37 @@ async function finishCorrectedDesign({
       log(`[stl-correct] tilt failed: ${error?.message || error}`);
     }
     try {
-      const built = correctMarginFillet(mesh, finishLine.points, { tiltAxisVector });
-      if (built.corrected?.mesh) {
+      const probe = mesh.clone();
+      const built = correctMarginFillet(probe, finishLine.points, { tiltAxisVector });
+      if (!built.corrected?.mesh) {
+        log("[stl-correct] no vertex move");
+      } else {
         filletSurface = built.filletSurface;
         tightCorner = built.tightCorner;
-        const filleted = built.corrected.mesh;
-        filleted.transform(invertRigidMatrix(alignMatrix));
-        const filletedBuffer = writeBinaryStl({ positions: filleted.toTriangleSoup(), attributes: null });
-        outputBuffer = await manufacturerPipelineAfterFillet(filletedBuffer, {
-          targetDiameter,
+        const prepared = prepareSharpMeshLikeManufacturer({
+          mesh,
+          finishLine,
+          alignMatrix,
           implantProfile,
           connection,
           screwholeParams,
           log,
         });
-      } else {
-        log("[stl-correct] no vertex move");
+        const smoothed = parseStl(prepared.filledBuf);
+        const filleted = Mesh.fromTriangleSoup(smoothed.positions);
+        const after = correctMarginFillet(filleted, prepared.finishLine.points, { tiltAxisVector });
+        const positions = after.corrected?.mesh
+          ? after.corrected.mesh.toTriangleSoup()
+          : filleted.toTriangleSoup();
+        if (after.filletSurface) filletSurface = after.filletSurface;
+        const attributes = new Uint16Array(positions.length / 9);
+        if (smoothed.attributes?.some((a) => a === POST_SMOOTH_PATCH_ATTRIBUTE)) {
+          attributes.fill(POST_SMOOTH_PATCH_ATTRIBUTE);
+        }
+        outputBuffer = transformStlBuffer(
+          writeBinaryStl({ positions, attributes }),
+          invertRigidMatrix(prepared.matrix),
+        );
       }
     } catch (error) {
       correctionFailed = true;
@@ -309,8 +339,8 @@ async function finishCorrectedDesign({
  * @param {{ targetDiameter?: number|null, implantProfile?: object, screwholeParams?: object, finishLinePoints?: number[][], preflight?: boolean, log?: Function }} options
  * finishLinePoints가 있으면 검출을 건너뛰고 그 점을 메타데이터에 쓴다.
  * preflight면 32곳 필레 검사만 한다.
- * correctDesign이면 마진 코너 필레를 먼저 고친 뒤 제조사 준비와 같은 파이프라인 전체를 돌리고, 원본 좌표로 되돌린다.
- * surfacePrepared면 스크류홀·fill·커넥션 추가·커프는 다시 하지 않고, 정렬한 뒤 포스트·커넥션 다듬기만 한다.
+ * correctDesign이면 날카로운 마진에서 제조사 준비와 같은 포스트 다듬기를 먼저 하고, 그다음 코너 필레를 한 뒤 원본 좌표로 되돌린다.
+ * surfacePrepared면 그 보정본을 정렬만 하고 스크류홀·fill·커넥션·포스트를 다시 하지 않는다.
  */
 export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
   const { targetDiameter = null, implantProfile = {}, screwholeParams = SCREWHOLE_PARAMS } = options;
@@ -326,11 +356,7 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
   const total0 = performance.now();
 
   let t0 = performance.now();
-  const parsed = parseStl(inputBuffer);
-  const postAlreadySmoothed = Boolean(
-    options.surfacePrepared && parsed.attributes?.some((a) => a === POST_SMOOTH_PATCH_ATTRIBUTE),
-  );
-  const mesh = Mesh.fromTriangleSoup(parsed.positions);
+  const mesh = Mesh.fromTriangleSoup(parseStl(inputBuffer).positions);
   if (mesh.faceCount < 100) throw new Error("STL 삼각형이 너무 적습니다.");
   mark("import", t0);
 
@@ -448,24 +474,8 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
   mark("fill_steps", t0);
 
   t0 = performance.now();
-  let outputBuffer = writeBinaryStl({ positions: soup, attributes: null });
+  const outputBuffer = writeBinaryStl({ positions: soup, attributes: null });
   mark("export", t0);
-
-  // 보정본은 스크류홀·fill·커프가 이미 있다. 포스트 축면과 마진 다듬기는 제조사 준비에서 이 정렬 메시에 한다.
-  if (options.surfacePrepared && !postAlreadySmoothed && finishLine?.points?.length) {
-    t0 = performance.now();
-    try {
-      const smoothed = runCuffBlendJob(outputBuffer, "post", { finishLine });
-      const post = smoothed?.detail?.postSmooth;
-      log(
-        `[surface-prepared] post=${post?.status || smoothed?.status || ""} ${post?.reason || ""}`.trim(),
-      );
-      if (smoothed?.buffer?.length) outputBuffer = smoothed.buffer;
-    } catch (error) {
-      log(`[surface-prepared] post failed: ${error?.message || error}`);
-    }
-    mark("post_smooth", t0);
-  }
 
   t0 = performance.now();
   let stlMetadata = null;

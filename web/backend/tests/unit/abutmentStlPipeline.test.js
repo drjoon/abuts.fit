@@ -487,12 +487,12 @@ describe("abutmentStl pipeline", () => {
     expect(out.correctDesign).toBe(true);
     expect(out.outputBuffer.length).toBeGreaterThan(0);
     expect(out.tightCorner?.tightCount).toBeGreaterThan(0);
-    // 필렛 뒤에 제조사 준비와 같은 커프·커넥션·포스트 보정. 면이 늘어도 입력의 12배 안에서만 큰다.
+    // 날카로운 마진에서 제조사와 같은 포스트 다듬기가 성긴 벽을 나눈다. 입력의 40배 안에서만 큰다.
     const inTris = buffer.readUInt32LE(80);
     const outTris = out.outputBuffer.readUInt32LE(80);
     expect(outTris).toBeGreaterThan(0);
-    expect(outTris).toBeLessThan(inTris * 12);
-    expect(out.outputBuffer.length).toBeLessThan(buffer.length * 12);
+    expect(outTris).toBeLessThan(inTris * 40);
+    expect(out.outputBuffer.length).toBeLessThan(buffer.length * 40);
   });
 
   it("보정 검사에서 옮길 코너가 없으면 보정 STL도 불완전 가공 메타도 없다", async () => {
