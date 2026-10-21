@@ -22,7 +22,7 @@ export function buildNewSystemRequestPayload(
   const manufacturer = text(nsr?.manufacturer);
   const brand = text(nsr?.brand);
   const family = text(nsr?.family);
-  if (!manufacturer || !brand || !family) return undefined;
+  if (!manufacturer || !brand) return undefined;
   return {
     requested: true,
     manufacturer,

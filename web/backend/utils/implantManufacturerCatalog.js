@@ -25,6 +25,7 @@ const MANUFACTURER_CANONICAL_OVERRIDES = {
 
 const MANUFACTURER_EXTRA_ALIASES = {
   NEOBIOTECH: ["NEO"],
+  ACRODENT: ["(주)애크로덴트", "애크로덴트"],
 };
 
 function normalizeToken(raw) {
@@ -82,6 +83,13 @@ function loadManufacturerCatalogFromConnectionDir() {
         ],
       };
     }
+  }
+
+  for (const [canonical, extras] of Object.entries(MANUFACTURER_EXTRA_ALIASES)) {
+    const existing = catalog[canonical]?.aliases || [canonical];
+    catalog[canonical] = {
+      aliases: [...new Set([...existing, canonical, ...extras])],
+    };
   }
 
   return catalog;

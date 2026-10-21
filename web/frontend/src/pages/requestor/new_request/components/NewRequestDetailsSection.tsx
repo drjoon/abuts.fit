@@ -623,9 +623,6 @@ export function NewRequestDetailsSection({
           if (!String(nsr?.brand || "").trim()) {
             missingFields.push("임플란트 브랜드");
           }
-          if (!String(nsr?.family || "").trim()) {
-            missingFields.push("Family");
-          }
         } else {
           if (!fileCaseInfos?.implantManufacturer) missingFields.push("임플란트 제조사");
           if (!fileCaseInfos?.implantBrand) missingFields.push("임플란트 브랜드");

@@ -3,6 +3,7 @@
 // - web/backend/utils/implantCanonical.js
 // - web/backend/services/newConnectionRequestDashboard.service.js
 import NewConnectionImplantGroup from "../models/newConnectionImplantGroup.model.js";
+import { IMPLANT_MANUFACTURER_CATALOG } from "../utils/implantManufacturerCatalog.js";
 import {
   normalizeImplantBrand,
   normalizeImplantManufacturer,
@@ -307,30 +308,72 @@ export async function mergeNewConnectionImplantGroups(fromGroupKey, toGroupKey) 
   return { ok: true, group: toDoc.toObject() };
 }
 
+function matchesImplantSuggestQuery(haystack, query) {
+  const h = text(haystack).normalize("NFC");
+  const q = text(query).normalize("NFC");
+  if (!h || !q) return false;
+  if (h.toLocaleLowerCase("ko-KR").includes(q.toLocaleLowerCase("ko-KR"))) {
+    return true;
+  }
+  const token = normalizeNameToken(q);
+  if (!token) return false;
+  return normalizeNameToken(h).includes(token);
+}
+
+function collectCatalogManufacturerLabels() {
+  const labels = new Set();
+  for (const def of Object.values(IMPLANT_MANUFACTURER_CATALOG)) {
+    for (const alias of def?.aliases || []) {
+      const label = text(alias);
+      if (label) labels.add(label);
+    }
+  }
+  return [...labels];
+}
+
 export async function suggestImplantNameRegistry({ field, query, manufacturer }) {
   const q = text(query);
   if (!q || q.length < 1) return [];
 
-  const token = normalizeNameToken(q);
   const groups = await NewConnectionImplantGroup.find({}).lean();
   const suggestions = new Map();
 
+  const parentCanonical = manufacturer
+    ? normalizeImplantManufacturer(manufacturer)
+    : "";
   const parentFilter = normalizeNameToken(manufacturer);
 
   const consider = (manufacturerValue, brandValue) => {
     const m = text(manufacturerValue);
     const b = text(brandValue);
     if (field === "brand") {
-      if (parentFilter && normalizeNameToken(m) !== parentFilter) return;
+      if (parentFilter) {
+        const rowCanonical = normalizeImplantManufacturer(m);
+        if (
+          parentCanonical &&
+          rowCanonical &&
+          rowCanonical !== parentCanonical &&
+          normalizeNameToken(m) !== parentFilter
+        ) {
+          return;
+        }
+        if (
+          !parentCanonical &&
+          normalizeNameToken(m) !== parentFilter &&
+          !matchesImplantSuggestQuery(m, manufacturer)
+        ) {
+          return;
+        }
+      }
       const target = b;
       if (!target) return;
-      if (!normalizeNameToken(target).includes(token)) return;
+      if (!matchesImplantSuggestQuery(target, q)) return;
       suggestions.set(`${m}::${b}`, { manufacturer: m, brand: b });
       return;
     }
     const target = m;
     if (!target) return;
-    if (!normalizeNameToken(target).includes(token)) return;
+    if (!matchesImplantSuggestQuery(target, q)) return;
     suggestions.set(m, { manufacturer: m, brand: "" });
   };
 
@@ -338,6 +381,12 @@ export async function suggestImplantNameRegistry({ field, query, manufacturer })
     consider(group.canonicalManufacturer, group.canonicalBrand);
     for (const alias of group.aliases || []) {
       consider(alias.manufacturer, alias.brand);
+    }
+  }
+
+  if (field === "manufacturer") {
+    for (const label of collectCatalogManufacturerLabels()) {
+      consider(label, "");
     }
   }
 

@@ -69,8 +69,8 @@ import {
 import {
   NEW_IMPLANT_DEVELOPMENT_ENTRY_HINT_MESSAGES,
   NEW_IMPLANT_DEVELOPMENT_REQUEST_MESSAGE,
-  NEW_IMPLANT_QUICK_PRESETS,
 } from "@/shared/practice/newImplantQuickPresets";
+import { ImplantCustomNameSuggestInput } from "@/shared/components/practice/ImplantCustomNameSuggestInput";
 
 export type AbutmentModelConfirmVariant = "new-request" | "lab-handoff";
 
@@ -255,7 +255,6 @@ export function AbutmentModelConfirmDialog({
   const uploadLabel = String(fileUploadLabel || "").trim();
   const [newSystemManufacturer, setNewSystemManufacturer] = useState("");
   const [newSystemBrand, setNewSystemBrand] = useState("");
-  const [newSystemFamily, setNewSystemFamily] = useState("");
   const [implantEntryMode, setImplantEntryMode] =
     useState<ImplantEntryMode>("catalog");
   const [correctedDownloadOpen, setCorrectedDownloadOpen] = useState(false);
@@ -265,7 +264,6 @@ export function AbutmentModelConfirmDialog({
     setImplantEntryMode("catalog");
     setNewSystemManufacturer("");
     setNewSystemBrand("");
-    setNewSystemFamily("");
     setDetailCaseInfos({
       implantInputMode: "catalog",
       newSystemRequest: undefined,
@@ -294,14 +292,12 @@ export function AbutmentModelConfirmDialog({
   ]);
 
   const commitCustomImplant = useCallback(
-    (next: { manufacturer: string; brand: string; family: string }) => {
+    (next: { manufacturer: string; brand: string }) => {
       setNewSystemManufacturer(next.manufacturer);
       setNewSystemBrand(next.brand);
-      setNewSystemFamily(next.family);
       const manufacturer = next.manufacturer.trim();
       const brand = next.brand.trim();
-      const family = next.family.trim();
-      const engaged = Boolean(manufacturer || brand || family);
+      const engaged = Boolean(manufacturer || brand);
       if (engaged) {
         setImplantEntryMode("custom");
       }
@@ -317,10 +313,10 @@ export function AbutmentModelConfirmDialog({
         ...(engaged ? { implantInputMode: "custom" as const } : {}),
         newSystemRequest: engaged
           ? {
-              requested: Boolean(manufacturer && brand && family),
+              requested: Boolean(manufacturer && brand),
               manufacturer,
               brand,
-              family,
+              family: "",
               message: NEW_IMPLANT_DEVELOPMENT_REQUEST_MESSAGE,
               free: true,
               tag: "신규 임플란트 의뢰",
@@ -420,11 +416,9 @@ export function AbutmentModelConfirmDialog({
     const nsr = detailCaseInfos?.newSystemRequest;
     setNewSystemManufacturer(String(nsr?.manufacturer || ""));
     setNewSystemBrand(String(nsr?.brand || ""));
-    setNewSystemFamily(String(nsr?.family || ""));
     const hasCustom = Boolean(
       String(nsr?.manufacturer || "").trim() ||
-        String(nsr?.brand || "").trim() ||
-        String(nsr?.family || "").trim(),
+        String(nsr?.brand || "").trim(),
     );
     if (
       hasCustom &&
@@ -571,8 +565,7 @@ export function AbutmentModelConfirmDialog({
     const nsr = detailCaseInfos?.newSystemRequest;
     const customReady = Boolean(
       String(nsr?.manufacturer || "").trim() &&
-        String(nsr?.brand || "").trim() &&
-        String(nsr?.family || "").trim(),
+        String(nsr?.brand || "").trim(),
     );
     const catalogReady = Boolean(
       (detailCaseInfos?.implantManufacturer || implantManufacturer) &&
@@ -806,7 +799,7 @@ export function AbutmentModelConfirmDialog({
                           isLabHandoff
                             ? undefined
                             : (catalogSelects) => (
-                                <div className="overflow-hidden rounded-lg border border-primary-soft bg-white/80">
+                                <div className="overflow-visible rounded-lg border border-primary-soft bg-white/80">
                                   <div
                                     role="button"
                                     tabIndex={
@@ -919,107 +912,70 @@ export function AbutmentModelConfirmDialog({
                                     </div>
                                     <div
                                       className={cn(
-                                        "flex flex-wrap gap-2",
+                                        "relative z-[2] grid grid-cols-1 gap-2 sm:grid-cols-2",
                                         implantEntryMode !== "custom" &&
                                           "pointer-events-none",
                                       )}
                                     >
-                                      {NEW_IMPLANT_QUICK_PRESETS.map((preset) => {
-                                        const active =
-                                          newSystemManufacturer ===
-                                            preset.manufacturer &&
-                                          newSystemBrand === preset.brand &&
-                                          newSystemFamily === preset.family;
-                                        return (
-                                          <Button
-                                            key={preset.label}
-                                            type="button"
-                                            size="sm"
-                                            variant={active ? "default" : "outline"}
-                                            className="h-8 shrink-0"
-                                            disabled={confirming}
-                                            onPointerDown={(e) =>
-                                              e.stopPropagation()
-                                            }
-                                            onClick={() =>
-                                              commitCustomImplant({
-                                                manufacturer: preset.manufacturer,
-                                                brand: preset.brand,
-                                                family: preset.family,
-                                              })
-                                            }
-                                          >
-                                            {preset.label}
-                                          </Button>
-                                        );
-                                      })}
-                                    </div>
-                                    <div
-                                      className={cn(
-                                        "grid grid-cols-1 gap-2 sm:grid-cols-3",
-                                        implantEntryMode !== "custom" &&
-                                          "pointer-events-none",
-                                      )}
-                                    >
-                                      <Input
+                                      <ImplantCustomNameSuggestInput
+                                        field="manufacturer"
                                         placeholder="Manufacturer"
                                         value={newSystemManufacturer}
                                         readOnly={
                                           confirming ||
                                           implantEntryMode !== "custom"
                                         }
-                                        onChange={(e) =>
-                                          commitCustomImplant({
-                                            manufacturer: e.target.value,
-                                            brand: newSystemBrand,
-                                            family: newSystemFamily,
-                                          })
-                                        }
                                         disabled={confirming}
                                         className={cn(
                                           implantEntryMode !== "custom" &&
                                             "cursor-pointer bg-white",
                                         )}
+                                        onChange={(manufacturer) =>
+                                          commitCustomImplant({
+                                            manufacturer,
+                                            brand: newSystemBrand,
+                                          })
+                                        }
+                                        onPickSuggestion={(row) => {
+                                          if (!row.brand) return;
+                                          commitCustomImplant({
+                                            manufacturer:
+                                              row.manufacturer || newSystemManufacturer,
+                                            brand: row.brand,
+                                          });
+                                        }}
                                       />
-                                      <Input
+                                      <ImplantCustomNameSuggestInput
+                                        field="brand"
                                         placeholder="Brand"
                                         value={newSystemBrand}
+                                        manufacturerContext={newSystemManufacturer}
                                         readOnly={
                                           confirming ||
                                           implantEntryMode !== "custom"
-                                        }
-                                        onChange={(e) =>
-                                          commitCustomImplant({
-                                            manufacturer: newSystemManufacturer,
-                                            brand: e.target.value,
-                                            family: newSystemFamily,
-                                          })
                                         }
                                         disabled={confirming}
                                         className={cn(
                                           implantEntryMode !== "custom" &&
                                             "cursor-pointer bg-white",
                                         )}
-                                      />
-                                      <Input
-                                        placeholder="Family"
-                                        value={newSystemFamily}
-                                        readOnly={
-                                          confirming ||
-                                          implantEntryMode !== "custom"
-                                        }
-                                        onChange={(e) =>
+                                        onChange={(brand) =>
                                           commitCustomImplant({
                                             manufacturer: newSystemManufacturer,
-                                            brand: newSystemBrand,
-                                            family: e.target.value,
+                                            brand,
                                           })
                                         }
-                                        disabled={confirming}
-                                        className={cn(
-                                          implantEntryMode !== "custom" &&
-                                            "cursor-pointer bg-white",
-                                        )}
+                                        onPickSuggestion={(row) => {
+                                          if (
+                                            row.manufacturer &&
+                                            !newSystemManufacturer.trim()
+                                          ) {
+                                            commitCustomImplant({
+                                              manufacturer: row.manufacturer,
+                                              brand: row.brand || newSystemBrand,
+                                            });
+                                          }
+                                        }}
                                       />
                                     </div>
                                   </div>
