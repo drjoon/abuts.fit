@@ -18,13 +18,18 @@ export const POST_SMOOTH_PATCH_ATTRIBUTE = 0x5053;
 
 /** 이보다 꺾인 모서리는 디자인 모서리. 매끈한 면의 계단은 10° 안이다. */
 const FEATURE_DEG = 30;
+/** 마진 바로 위 수직 칼라(시멘트 갭 경계, 약 0.05mm)에서 숄더로 꺾이는 고리는 디자인 경계로 막지 않는다. */
+const MARGIN_COLLAR_HEIGHT_MM = 0.15;
+const MARGIN_COLLAR_MAX_DEG = 55;
+/** 마진 위 곡률이 큰 숄더 구간(이 높이 안)은 한 번 더 4등분해 법선 꺾임을 줄인다. */
+const SHOULDER_REFINE_HEIGHT_MM = 1.2;
 /** 국소 2차 곡면 가중치 폭. 기공소 메시 한 칸(약 0.18mm)보다 넓어야 계단이 평균된다. */
 const FIT_SIGMA_MM = 0.2;
 const FIT_RADIUS_MM = FIT_SIGMA_MM * 2.5;
 /** 포스트 꼭짓점이 그 각도의 마진 모서리 높이보다 이만큼 넘게 낮으면 포스트가 아니다. */
 const BELOW_MARGIN_MM = 0.1;
 /** 마진 모서리에서 이 높이까지 원본 → 다듬은 면으로 넘어간다. */
-const MARGIN_RAMP_MM = 0.25;
+const MARGIN_RAMP_MM = 0.08;
 /** 디자인 모서리에서 이 거리까지 원본 → 다듬은 면으로 넘어간다. */
 const FEATURE_RAMP_MM = 0.12;
 /** 원본 밖으로 나간 양을 덮는 내림 폭. 이 반경 안에서 매끈하게 함께 내린다. */
@@ -393,6 +398,7 @@ function selectPostRegion(mesh, crease, fn) {
   }
   if (!stack.length) skip("마진 모서리 위 포스트 면을 찾지 못했습니다.");
   const cosFeature = Math.cos((FEATURE_DEG * Math.PI) / 180);
+  const cosCollar = Math.cos((MARGIN_COLLAR_MAX_DEG * Math.PI) / 180);
   // 스크류홀 입구가 완만하게 이어지면 채널 벽을 타고 커넥션까지 번진다. 마진 모서리 아래로 내려가는 면은 영역에 넣지 않는다.
   const belowMargin = (g) => {
     for (let k = 0; k < 3; k += 1) {
@@ -415,7 +421,11 @@ function selectPostRegion(mesh, crease, fn) {
       if (inRegion[g]) continue;
       if (belowMargin(g)) continue;
       const dot = fn[f * 3] * fn[g * 3] + fn[f * 3 + 1] * fn[g * 3 + 1] + fn[f * 3 + 2] * fn[g * 3 + 2];
-      if (dot < cosFeature) continue;
+      const mz = (verts[a * 3 + 2] + verts[b * 3 + 2]) / 2;
+      const mth = Math.atan2((verts[a * 3 + 1] + verts[b * 3 + 1]) / 2, (verts[a * 3] + verts[b * 3]) / 2);
+      const dz = mz - crease.zOf(mth);
+      const minCos = dz > 0 && dz < MARGIN_COLLAR_HEIGHT_MM && fn[g * 3 + 2] >= 0 ? cosCollar : cosFeature;
+      if (dot < minCos) continue;
       inRegion[g] = 1;
       stack.push(g);
     }
@@ -565,10 +575,15 @@ function run(buffer, { finishLine }) {
     const dot = fn[f * 3] * fn[g * 3] + fn[f * 3 + 1] * fn[g * 3 + 1] + fn[f * 3 + 2] * fn[g * 3 + 2];
     regionEdges.set(key, { a, b, w: (farea[f] + farea[g]) / 3 });
     if (dot < cosFeature) {
-      fixed[a] = 1;
-      fixed[b] = 1;
-      feature[a] = 1;
-      feature[b] = 1;
+      const mz = (P0[a * 3 + 2] + P0[b * 3 + 2]) / 2;
+      const mth = Math.atan2((P0[a * 3 + 1] + P0[b * 3 + 1]) / 2, (P0[a * 3] + P0[b * 3]) / 2);
+      const isMarginCollar = mz - crease.zOf(mth) < MARGIN_COLLAR_HEIGHT_MM;
+      if (!isMarginCollar) {
+        fixed[a] = 1;
+        fixed[b] = 1;
+        feature[a] = 1;
+        feature[b] = 1;
+      }
       continue;
     }
     for (const [p, q] of [[f, g], [g, f]]) {
@@ -599,6 +614,8 @@ function run(buffer, { finishLine }) {
       const v = faces[f * 3 + k];
       if (probed[v] || fixed[v]) continue;
       probed[v] = 1;
+      // 마진 쐐기 바로 위(수직 칼라 등)는 안쪽 탐사선이 바로 아래 커프 면에 닿으므로 얇은 벽 판정에서 뺀다.
+      if (P0[v * 3 + 2] - crease.zOf(Math.atan2(P0[v * 3 + 1], P0[v * 3])) < 0.25) continue;
       const l = Math.hypot(vnr[v * 3], vnr[v * 3 + 1], vnr[v * 3 + 2]) || 1;
       const thin = THIN_PROBE_MM.some((depth) => {
         const d = sd.queryGlobal(
@@ -618,16 +635,30 @@ function run(buffer, { finishLine }) {
   lap("region");
   const rfaces = [];
   for (const f of regionFaces) rfaces.push(faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2], f);
-  const refined = refineRegion(P0, rfaces, fixed);
+  const refined1 = refineRegion(P0, rfaces, fixed);
+  const fixed2 = new Uint8Array(refined1.pos.length / 3);
+  for (let v = 0; v < fixed.length; v += 1) if (fixed[v]) fixed2[v] = 1;
+  for (let v = 0; v < fixed2.length; v += 1) {
+    const z = refined1.pos[v * 3 + 2];
+    const th = Math.atan2(refined1.pos[v * 3 + 1], refined1.pos[v * 3]);
+    if (z - crease.zOf(th) > SHOULDER_REFINE_HEIGHT_MM) fixed2[v] = 1;
+  }
+  const refined = refineRegion(refined1.pos, refined1.tri, fixed2);
   const pos = refined.pos;
   const tri = refined.tri;
   const nv = pos.length / 3;
   const tc = tri.length / 4;
   lap("refine");
 
-  // 영역 꼭짓점, 각 꼭짓점이 놓인 원본 면
+  // 영역 꼭짓점, 각 꼭짓점이 놓인 원본 면(칼라 경계 꼭짓점은 숄더 쪽 면을 일관되게 쓴다)
   const vOrig = new Int32Array(nv).fill(-1);
-  for (let t = 0; t < tc; t += 1) for (let k = 0; k < 3; k += 1) if (vOrig[tri[t * 4 + k]] < 0) vOrig[tri[t * 4 + k]] = tri[t * 4 + 3];
+  for (let t = 0; t < tc; t += 1) {
+    const orig = tri[t * 4 + 3];
+    for (let k = 0; k < 3; k += 1) {
+      const v = tri[t * 4 + k];
+      if (vOrig[v] < 0 || fn[orig * 3 + 2] > fn[vOrig[v] * 3 + 2]) vOrig[v] = orig;
+    }
+  }
   const regionVerts = [];
   for (let v = 0; v < nv; v += 1) if (vOrig[v] >= 0) regionVerts.push(v);
   const isFixed = (v) => v < nv0 && fixed[v] === 1;

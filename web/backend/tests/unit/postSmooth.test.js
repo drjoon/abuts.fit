@@ -193,4 +193,41 @@ describe("smoothPostAboveFinishLine", () => {
     expect(out.status).toBe("applied");
     expect(out.detail.fixedFinishVertices).toBe(SEGMENTS);
   });
+
+  it("smooths the shoulder and post across a 0.05mm vertical margin collar", () => {
+    const rows = [[0, 0]];
+    for (let i = 0; i <= 20; i += 1) rows.push([2 + (0.5 * i) / 20, (2 * i) / 20]);
+    // 마진 바로 위 0.05mm 수직 칼라(11°) → 50° 숄더(약 39° 꺾임) → 포스트
+    rows.push([MARGIN.r - 0.01, MARGIN.z + 0.05]);
+    for (let i = 2; i <= 80; i += 1) {
+      const z = MARGIN.z + i * 0.05;
+      rows.push([postR(z), z]);
+    }
+    rows.push([1, 6]);
+    rows.push([0, 6]);
+    const at = (i, j) => {
+      const [r, z] = rows[i];
+      const t = (2 * Math.PI * (j % SEGMENTS)) / SEGMENTS;
+      return [r * Math.cos(t), r * Math.sin(t), z];
+    };
+    const positions = [];
+    for (let i = 0; i + 1 < rows.length; i += 1) {
+      for (let j = 0; j < SEGMENTS; j += 1) {
+        const a = at(i, j);
+        const b = at(i, j + 1);
+        const c = at(i + 1, j + 1);
+        const d = at(i + 1, j);
+        if (rows[i][0] > 0) positions.push(...a, ...b, ...c);
+        if (rows[i + 1][0] > 0) positions.push(...a, ...c, ...d);
+      }
+    }
+    const collared = writeBinaryStl({
+      positions: Float32Array.from(positions),
+      attributes: new Uint16Array(positions.length / 9),
+    });
+    const out = smoothPostAboveFinishLine(collared, { finishLine });
+    expect(out.status).toBe("applied");
+    expect(out.detail.movedVertices).toBeGreaterThan(SEGMENTS * 10);
+    expect(out.detail.maxInwardUm).toBeLessThanOrEqual(50);
+  });
 });
