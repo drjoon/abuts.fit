@@ -3234,6 +3234,10 @@ export {
   findFinishCrease as _findFinishCrease,
   smoothProfilesAcrossColumns as _smoothProfilesAcrossColumns,
   prepare as prepareCuffMesh,
+  splitByLevel,
+  chainBoundaryLoops,
+  angularRow,
+  zipperRows,
   finishLineZByAngle,
   findFinishCrease,
 };

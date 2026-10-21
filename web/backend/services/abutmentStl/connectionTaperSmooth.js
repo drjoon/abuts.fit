@@ -1,18 +1,26 @@
 // related files:
-// - web/backend/services/abutmentStl/cuffBlend.js (measureConnectionTaper · prepareCuffMesh)
+// - web/backend/services/abutmentStl/cuffBlend.js (measureConnectionTaper · prepareCuffMesh · 띠 잇기 헬퍼)
 // - web/backend/services/abutmentStl/cuffBlend.worker.js (커프 보정·포스트 다듬기 뒤 마지막 단계)
 // - web/backend/tests/unit/connectionTaperSmooth.test.js
 //
-// 커넥션 11° 원뿔 면의 메시 잡음을 없앤다.
-// - 원점 아래 원뿔(측정된 r0 + slope·z) 위에 있는 꼭짓점을 그 원뿔 면으로 정확히 옮긴다. Z는 그대로, 반경만 바뀐다.
-// - 원뿔 면 위 다각형 변(예: 46각)은 중점을 원뿔 면에 얹어 쪼갠다. 꼭짓점만 옮기면 면 하나하나가 평평해 세로 결이 남는다.
-// - 원뿔에서 허용치(CONE_SNAP_TOL_MM)보다 벗어난 꼭짓점(헥스·단차·커프)은 건드리지 않는다.
+// 커넥션 11° 원뿔 면의 세로 결을 없앤다. 형상(치수)은 그대로다.
+// - 원뿔(측정된 r0 + slope·z) 위 꼭짓점을 원뿔 면으로 정확히 옮긴다. Z는 그대로, 반경만 바뀐다.
+// - 원뿔 띠 가운데는 둘레 1° 간격의 가벼운 띠로 다시 만든다. 원뿔은 직선 면이라 위·아래 두 줄이면 된다.
+//   기공소 메시의 다각형(예: 46각) 면을 그대로 두면 면 하나하나가 평평해 결이 남고, 쪼개면 파일이 커진다.
+// - 원뿔에서 허용치(CONE_SNAP_TOL_MM)보다 벗어난 꼭짓점(헥스·단차·커프·스크류 채널)과 그 면은 건드리지 않는다.
 // - 원뿔이 끝나는 높이 바로 아래에서 옮기는 양을 0으로 줄여 위쪽 이음과 단차가 생기지 않게 한다.
 import { writeBinaryStl } from "../../utils/screwHoleFill.js";
-import { measureConnectionTaper, prepareCuffMesh } from "./cuffBlend.js";
+import {
+  angularRow,
+  chainBoundaryLoops,
+  measureConnectionTaper,
+  prepareCuffMesh,
+  splitByLevel,
+  zipperRows,
+} from "./cuffBlend.js";
 
-export const CONNECTION_TAPER_SMOOTH_VERSION = "conn-taper-smooth-2";
-/** 이 attribute의 삼각형은 커넥션 원뿔 다듬기로 꼭짓점이 옮겨진 면이다. */
+export const CONNECTION_TAPER_SMOOTH_VERSION = "conn-taper-smooth-3";
+/** 이 attribute의 삼각형은 커넥션 원뿔 다듬기로 다시 만든 면이다. */
 export const CONNECTION_TAPER_SMOOTH_ATTRIBUTE = 0x4354;
 
 /** 원뿔 아래 끝은 원점 아래로 내려가며 둘레가 원뿔에 맞는 데까지 찾는다(헥스 위 시작). */
@@ -24,10 +32,15 @@ const CONE_BINS = 72;
 const CONE_SNAP_TOL_MM = 0.02;
 /** 원뿔 끝 높이 아래 이 구간에서 옮기는 양을 1 → 0으로 줄인다. */
 const TOP_RAMP_MM = 0.04;
-/** 둘레 방향으로 이 각도보다 벌어진 원뿔 위 변은 쪼갠다. */
-const SPLIT_MIN_DEG = 1.5;
-const SPLIT_MAX_ROUNDS = 5;
-const MAX_TRIANGLES = 3_000_000;
+/** 다시 만드는 띠는 원뿔 아래 끝·옮김 전환 구간에서 이만큼 떨어진다. */
+const BAND_INSET_MM = 0.02;
+const BAND_MIN_HEIGHT_MM = 0.05;
+/** 새 띠 둘레 칸 수(1°). */
+const BAND_COLUMNS = 360;
+/** 기존 경계(다각형)와 새 1° 줄 사이 높이. 얇을수록 경계 부채꼴이 안 보인다. */
+const BAND_EDGE_ROW_MM = 0.01;
+
+const TWO_PI = Math.PI * 2;
 
 const smooth01 = (t) => {
   const x = Math.min(1, Math.max(0, t));
@@ -49,92 +62,105 @@ function coneBottomZ(probe, coneAt) {
   return bottom - CONE_SCAN_STEP_MM / 2;
 }
 
+/** 꼭짓점을 원뿔 면으로 옮긴다. 옮긴 양(mm)을 돌려준다. 원뿔에서 멀면 null. */
+function snapToCone(verts, v, coneAt, w = 1) {
+  const x = verts[v * 3];
+  const y = verts[v * 3 + 1];
+  const r = Math.hypot(x, y);
+  if (r < 1e-6) return null;
+  const dev = coneAt(verts[v * 3 + 2]) - r;
+  if (Math.abs(dev) > CONE_SNAP_TOL_MM) return null;
+  const rNew = r + dev * w;
+  verts[v * 3] = (x / r) * rNew;
+  verts[v * 3 + 1] = (y / r) * rNew;
+  return Math.abs(dev * w);
+}
+
 /**
- * 원뿔 위 꼭짓점끼리 이은 변 중 둘레로 많이 벌어진 변의 중점을 원뿔 면에 얹어 삼각형을 쪼갠다.
- * 변 단위로 쪼개므로 이웃 삼각형과 틈(T 접합)이 생기지 않는다.
+ * zLo~zHi 사이 원뿔 면을 지우고 둘레 1° 띠로 다시 잇는다. 경계가 한 바퀴 루프 2개가 아니면 null(원본 유지).
+ * @returns {{ faces: number[], faceAttr: number[], newFaceStart: number } | null}
  */
-function refineCone({ pos, tris, attrs, eligible, coneAt }) {
-  const minCos = Math.cos((SPLIT_MIN_DEG * Math.PI) / 180);
-  let splitCount = 0;
-  for (let round = 0; round < SPLIT_MAX_ROUNDS; round += 1) {
-    const mids = new Map();
-    const midOf = (a, b) => {
-      const key = a < b ? a * 4294967296 + b : b * 4294967296 + a;
-      const have = mids.get(key);
-      if (have !== undefined) return have;
-      const x = (pos[a * 3] + pos[b * 3]) / 2;
-      const y = (pos[a * 3 + 1] + pos[b * 3 + 1]) / 2;
-      const z = (pos[a * 3 + 2] + pos[b * 3 + 2]) / 2;
-      const r = Math.hypot(x, y);
-      const rt = coneAt(z);
-      const k = r > 1e-9 ? rt / r : 1;
-      const id = pos.length / 3;
-      pos.push(x * k, y * k, z);
-      eligible.push(1);
-      mids.set(key, id);
-      return id;
-    };
-    const wantSplit = (a, b) => {
-      if (!eligible[a] || !eligible[b]) return false;
-      const ra = Math.hypot(pos[a * 3], pos[a * 3 + 1]);
-      const rb = Math.hypot(pos[b * 3], pos[b * 3 + 1]);
-      if (ra < 1e-6 || rb < 1e-6) return false;
-      const cos = (pos[a * 3] * pos[b * 3] + pos[a * 3 + 1] * pos[b * 3 + 1]) / (ra * rb);
-      return cos < minCos;
-    };
-    const nextTris = [];
-    const nextAttrs = [];
-    let any = false;
-    const emit = (a, b, c, at) => {
-      nextTris.push(a, b, c);
-      nextAttrs.push(at);
-    };
-    const tc = tris.length / 3;
-    for (let t = 0; t < tc; t += 1) {
-      const v = [tris[t * 3], tris[t * 3 + 1], tris[t * 3 + 2]];
-      const at = attrs[t];
-      const sp = [wantSplit(v[0], v[1]), wantSplit(v[1], v[2]), wantSplit(v[2], v[0])];
-      const n = sp.filter(Boolean).length;
-      if (n === 0) {
-        emit(v[0], v[1], v[2], at);
-        continue;
-      }
-      any = true;
-      if (n === 1) {
-        const s = sp.indexOf(true);
-        const a = v[s];
-        const b = v[(s + 1) % 3];
-        const c = v[(s + 2) % 3];
-        const m = midOf(a, b);
-        emit(a, m, c, at);
-        emit(m, b, c, at);
-      } else if (n === 2) {
-        const u = sp.indexOf(false);
-        const a = v[(u + 1) % 3];
-        const b = v[(u + 2) % 3];
-        const c = v[u];
-        const m0 = midOf(a, b);
-        const m1 = midOf(b, c);
-        emit(m0, b, m1, at);
-        emit(a, m0, m1, at);
-        emit(a, m1, c, at);
-      } else {
-        const m0 = midOf(v[0], v[1]);
-        const m1 = midOf(v[1], v[2]);
-        const m2 = midOf(v[2], v[0]);
-        emit(v[0], m0, m2, at);
-        emit(m0, v[1], m1, at);
-        emit(m2, m1, v[2], at);
-        emit(m0, m1, m2, at);
-      }
-    }
-    if (!any) break;
-    splitCount += 1;
-    tris = nextTris;
-    attrs = nextAttrs;
-    if (tris.length / 3 > MAX_TRIANGLES) break;
+function rebuildConeBand(mesh, coneAt, zLo, zHi) {
+  let cut = splitByLevel(mesh, (x, y, z) => z - zLo);
+  cut = splitByLevel(cut, (x, y, z) => z - zHi);
+  const { verts, faces, faceAttr, faceMain } = cut;
+  // 자른 자리 꼭짓점은 다각형 변 위에 있어 원뿔보다 살짝 안쪽이다.
+  for (let v = mesh.verts.length / 3; v < verts.length / 3; v += 1) snapToCone(verts, v, coneAt);
+  const fc = faces.length / 3;
+  const removed = new Uint8Array(fc);
+  const onCone = (v) => {
+    const r = Math.hypot(verts[v * 3], verts[v * 3 + 1]);
+    return Math.abs(r - coneAt(verts[v * 3 + 2])) <= CONE_SNAP_TOL_MM;
+  };
+  for (let f = 0; f < fc; f += 1) {
+    if (!faceMain[f]) continue;
+    const a = faces[f * 3];
+    const b = faces[f * 3 + 1];
+    const c = faces[f * 3 + 2];
+    const cz = (verts[a * 3 + 2] + verts[b * 3 + 2] + verts[c * 3 + 2]) / 3;
+    if (cz > zLo && cz < zHi && onCone(a) && onCone(b) && onCone(c)) removed[f] = 1;
   }
-  return { tris, attrs, rounds: splitCount };
+  const keptEdges = new Set();
+  const removedEdges = [];
+  for (let f = 0; f < fc; f += 1) {
+    for (let k = 0; k < 3; k += 1) {
+      const a = faces[f * 3 + k];
+      const b = faces[f * 3 + ((k + 1) % 3)];
+      if (removed[f]) removedEdges.push([a, b]);
+      else keptEdges.add(`${a}_${b}`);
+    }
+  }
+  const boundary = [];
+  for (const [a, b] of removedEdges) {
+    if (keptEdges.has(`${b}_${a}`)) boundary.push([b, a]);
+  }
+  const loops = chainBoundaryLoops(boundary);
+  if (!loops || loops.length !== 2) return null;
+  const meanZ = (loop) => loop.reduce((s, v) => s + verts[v * 3 + 2], 0) / loop.length;
+  loops.sort((p, q) => meanZ(p) - meanZ(q));
+  const bottom = angularRow(loops[0], verts);
+  const top = angularRow(loops[1], verts);
+  if (!bottom || !top) return null;
+  if (Math.abs(meanZ(loops[0]) - zLo) > 1e-6 || Math.abs(meanZ(loops[1]) - zHi) > 1e-6) return null;
+
+  const edgeRow = Math.min(BAND_EDGE_ROW_MM, (zHi - zLo) / 4);
+  const ring = (z) => {
+    const r = coneAt(z);
+    const row = [];
+    for (let j = 0; j < BAND_COLUMNS; j += 1) {
+      const a = (j / BAND_COLUMNS) * TWO_PI;
+      row.push({ v: verts.length / 3, a });
+      verts.push(r * Math.cos(a), r * Math.sin(a), z);
+    }
+    return row;
+  };
+  const rings = [ring(zLo + edgeRow), ring(zHi - edgeRow)];
+
+  const outFaces = [];
+  const outAttr = [];
+  for (let f = 0; f < fc; f += 1) {
+    if (removed[f]) continue;
+    outFaces.push(faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2]);
+    outAttr.push(faceAttr[f] || 0);
+  }
+  const newFaceStart = outAttr.length;
+  // 원뿔 바깥 면: 법선이 축에서 멀어지는 쪽.
+  const emit = (a, b, c) => {
+    const pa = a * 3, pb = b * 3, pc = c * 3;
+    const ux = verts[pb] - verts[pa], uy = verts[pb + 1] - verts[pa + 1], uz = verts[pb + 2] - verts[pa + 2];
+    const vx = verts[pc] - verts[pa], vy = verts[pc + 1] - verts[pa + 1], vz = verts[pc + 2] - verts[pa + 2];
+    const nx = uy * vz - uz * vy;
+    const ny = uz * vx - ux * vz;
+    if (Math.hypot(nx, ny, ux * vy - uy * vx) < 1e-14) return;
+    const cx = verts[pa] + verts[pb] + verts[pc];
+    const cy = verts[pa + 1] + verts[pb + 1] + verts[pc + 1];
+    if (nx * cx + ny * cy >= 0) outFaces.push(a, b, c);
+    else outFaces.push(a, c, b);
+    outAttr.push(CONNECTION_TAPER_SMOOTH_ATTRIBUTE);
+  };
+  const stack = [bottom, ...rings, top];
+  for (let r = 0; r + 1 < stack.length; r += 1) zipperRows(stack[r], stack[r + 1], emit);
+  return { verts, faces: outFaces, faceAttr: outAttr, newFaceStart };
 }
 
 /**
@@ -143,68 +169,52 @@ function refineCone({ pos, tris, attrs, eligible, coneAt }) {
  */
 export function smoothConnectionTaper(buffer) {
   try {
-    const { mesh, probe } = prepareCuffMesh(buffer);
+    const { mesh, probe, triCount } = prepareCuffMesh(buffer);
     const taper = measureConnectionTaper(probe);
     if (!taper) return { ok: false, status: "skipped", reason: "11° 원뿔 없음", buffer: null };
     const zTop = taper.departZ > 0 ? taper.departZ : taper.measuredTopZ - 0.02;
     const zBottom = coneBottomZ(probe, taper.coneAt);
-    const { verts, faces, faceAttr } = mesh;
+    const verts = Array.from(mesh.verts);
     const nv = verts.length / 3;
-    const pos = Array.from(verts);
-    const eligible = new Array(nv).fill(0);
-    let count = 0;
+    let moved = 0;
     let maxUm = 0;
     for (let v = 0; v < nv; v += 1) {
-      const x = verts[v * 3];
-      const y = verts[v * 3 + 1];
       const z = verts[v * 3 + 2];
       if (z < zBottom || z > zTop) continue;
-      const r = Math.hypot(x, y);
-      if (r < 1e-6) continue;
-      const dev = taper.coneAt(z) - r;
-      if (Math.abs(dev) > CONE_SNAP_TOL_MM) continue;
       const w = 1 - smooth01((z - (zTop - TOP_RAMP_MM)) / TOP_RAMP_MM);
       if (w <= 0) continue;
-      const rNew = r + dev * w;
-      pos[v * 3] = (x / r) * rNew;
-      pos[v * 3 + 1] = (y / r) * rNew;
-      if (w >= 1 - 1e-9) eligible[v] = 1;
-      if (Math.abs(dev) >= 1e-7) {
-        count += 1;
-        maxUm = Math.max(maxUm, Math.abs(dev * w) * 1000);
-      }
+      const d = snapToCone(verts, v, taper.coneAt, w);
+      if (d == null || d < 1e-7) continue;
+      moved += 1;
+      maxUm = Math.max(maxUm, d * 1000);
     }
-    const refined = refineCone({
-      pos,
-      tris: Array.from(faces),
-      attrs: Array.from(faceAttr, (a) => a || 0),
-      eligible,
-      coneAt: taper.coneAt,
-    });
-    if (!count && !refined.rounds) return { ok: false, status: "skipped", reason: "다듬을 꼭짓점 없음", buffer: null };
-    const { tris, attrs } = refined;
-    const tc = tris.length / 3;
+    const snapped = { ...mesh, verts, faceAttr: Array.from(mesh.faceAttr) };
+    const zLo = zBottom + BAND_INSET_MM;
+    const zHi = zTop - TOP_RAMP_MM - BAND_INSET_MM / 4;
+    const band = zHi - zLo >= BAND_MIN_HEIGHT_MM ? rebuildConeBand(snapped, taper.coneAt, zLo, zHi) : null;
+    if (!moved && !band) return { ok: false, status: "skipped", reason: "다듬을 원뿔 면 없음", buffer: null };
+    const out = band || { verts, faces: mesh.faces, faceAttr: snapped.faceAttr };
+    const tc = out.faces.length / 3;
     const positions = new Float64Array(tc * 9);
     const attributes = new Uint16Array(tc);
     for (let f = 0; f < tc; f += 1) {
-      let touched = false;
       for (let k = 0; k < 3; k += 1) {
-        const v = tris[f * 3 + k];
-        positions[f * 9 + k * 3] = pos[v * 3];
-        positions[f * 9 + k * 3 + 1] = pos[v * 3 + 1];
-        positions[f * 9 + k * 3 + 2] = pos[v * 3 + 2];
-        if (eligible[v]) touched = true;
+        const v = out.faces[f * 3 + k];
+        positions[f * 9 + k * 3] = out.verts[v * 3];
+        positions[f * 9 + k * 3 + 1] = out.verts[v * 3 + 1];
+        positions[f * 9 + k * 3 + 2] = out.verts[v * 3 + 2];
       }
-      attributes[f] = touched ? CONNECTION_TAPER_SMOOTH_ATTRIBUTE : attrs[f];
+      attributes[f] = out.faceAttr[f] || 0;
     }
     return {
       ok: true,
       status: "applied",
       buffer: writeBinaryStl({ positions, attributes }),
       detail: {
-        movedVertices: count,
+        movedVertices: moved,
         maxMovedUm: Math.round(maxUm * 10) / 10,
-        splitRounds: refined.rounds,
+        bandRebuilt: !!band,
+        trianglesBefore: triCount,
         triangles: tc,
         zTop: Math.round(zTop * 1000) / 1000,
         zBottom: Math.round(zBottom * 1000) / 1000,

@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/services/abutmentStl/cuffBlend.js
 // - web/backend/services/abutmentStl/cuffConnectionSpecs.js
+// - web/backend/services/abutmentStl/cuffBlendLambda.service.js (ABUTMENT_STL_CUFF_LAMBDA가 있으면 람다에서 계산)
 // - web/backend/controllers/bg/bg.controller.js (2-filled 등록 직후 auto)
 // - web/backend/controllers/requests/common.files.controller.js (Re 버튼 · 의뢰자 제안 수락/거절)
 // - web/frontend/src/features/requests/components/CuffProposalPanel.tsx
@@ -16,6 +17,7 @@ import { triggerDashboardSummaryRefreshForAnchorId } from "../requestSnapshotTri
 import { CUFF_BLEND_VERSION } from "./cuffBlend.js";
 import { resolveCuffConnectionSpec } from "./cuffConnectionSpecs.js";
 import { MeshWorkerQueueTimeoutError, MeshWorkerTimeoutError, runMeshWorker } from "./workerSlots.js";
+import { CuffLambdaTimeoutError, cuffBlendLambdaName, runCuffBlendOnLambda } from "./cuffBlendLambda.service.js";
 
 const WORKER_URL = new URL("./cuffBlend.worker.js", import.meta.url);
 const TIMEOUT_MS = Number(process.env.CUFF_BLEND_TIMEOUT_MS || 30 * 1000);
@@ -30,11 +32,24 @@ const AUTO_QUEUE_TIMEOUT_MS = Number(process.env.CUFF_BLEND_AUTO_QUEUE_TIMEOUT_M
 const INTERACTIVE_QUEUE_TIMEOUT_MS = Number(process.env.CUFF_BLEND_QUEUE_TIMEOUT_MS || 30 * 1000);
 
 /**
- * timeout은 메시 worker 슬롯을 얻은 뒤부터 센다(workerSlots.js).
- * @param {"auto"|"redesign"|"propose"|"post"} mode
+ * ABUTMENT_STL_CUFF_LAMBDA가 있으면 람다, 없거나 람다 호출 자체가 실패하면 로컬 워커.
+ * 로컬 워커 timeout은 메시 worker 슬롯을 얻은 뒤부터 센다(workerSlots.js).
+ * @param {"auto"|"redesign"|"propose"|"post"|"measure"} mode
  * @param {{ queueTimeoutMs?: number }} [run]
  */
-export async function runCuffBlendInWorker(buffer, mode, options, { queueTimeoutMs = 0 } = {}) {
+export async function runCuffBlendInWorker(buffer, mode, options, run = {}) {
+  if (cuffBlendLambdaName()) {
+    try {
+      return await runCuffBlendOnLambda(buffer, mode, options, { timeoutMs: TIMEOUT_MS });
+    } catch (error) {
+      if (error instanceof CuffLambdaTimeoutError) return { ok: false, status: "failed", reason: error.message };
+      console.warn(`[cuff-blend] 람다 호출 실패, 로컬 워커로 돌립니다: ${error?.message || error}`);
+    }
+  }
+  return runCuffBlendOnLocalWorker(buffer, mode, options, run);
+}
+
+async function runCuffBlendOnLocalWorker(buffer, mode, options, { queueTimeoutMs = 0 } = {}) {
   try {
     const msg = await runMeshWorker(WORKER_URL, {
       label: `cuff-blend:${mode}`,
