@@ -21,8 +21,8 @@ const FEATURE_DEG = 30;
 /** 마진 바로 위 수직 칼라(시멘트 갭 경계, 약 0.05mm)에서 숄더로 꺾이는 고리는 디자인 경계로 막지 않는다. */
 const MARGIN_COLLAR_HEIGHT_MM = 0.15;
 const MARGIN_COLLAR_MAX_DEG = 55;
-/** 마진 위 곡률이 큰 숄더 구간(이 높이 안)은 한 번 더 4등분해 법선 꺾임을 줄인다. */
-const SHOULDER_REFINE_HEIGHT_MM = 1.2;
+/** 이보다 꺾인 고리(계단 결)와 만나는 모서리만 1회 나누어 정점을 보강한다. */
+const REFINE_RIDGE_MIN_DEG = 10.0;
 /** 국소 2차 곡면 가중치 폭. 기공소 메시 한 칸(약 0.18mm)보다 넓어야 계단이 평균된다. */
 const FIT_SIGMA_MM = 0.2;
 const FIT_RADIUS_MM = FIT_SIGMA_MM * 2.5;
@@ -453,11 +453,11 @@ function selectPostRegion(mesh, crease, fn) {
  * 고정 꼭짓점 둘을 잇는 모서리(마진 모서리·영역 경계)는 나누지 않는다. 나누면 바깥 면과 T자 이음이 생긴다.
  * 새 점은 원본 모서리 가운데라 원본 면 위에 있다.
  */
-function refineRegion(pos, tri, fixed) {
+function refineRegion(pos, tri, fixed, canSplitEdge = null) {
   const nv = pos.length / 3;
   const tc = tri.length / 4;
   const keyOf = (a, b) => (a < b ? a * nv + b : b * nv + a);
-  const splittable = (a, b) => !(fixed[a] && fixed[b]);
+  const splittable = (a, b) => !(fixed[a] && fixed[b]) && (!canSplitEdge || canSplitEdge(a, b));
   const mid = new Map();
   const next = Array.from(pos);
   const midOf = (a, b) => {
@@ -503,7 +503,26 @@ function refineRegion(pos, tri, fixed) {
       const ab = midOf(a, b);
       const bc = midOf(b, c);
       const ca = midOf(c, a);
-      out.push(a, ab, ca, orig, ab, b, bc, orig, ca, bc, c, orig, ab, bc, ca, orig);
+      const l0 = (pos[b * 3] - pos[a * 3]) ** 2 + (pos[b * 3 + 1] - pos[a * 3 + 1]) ** 2 + (pos[b * 3 + 2] - pos[a * 3 + 2]) ** 2;
+      const l1 = (pos[c * 3] - pos[b * 3]) ** 2 + (pos[c * 3 + 1] - pos[b * 3 + 1]) ** 2 + (pos[c * 3 + 2] - pos[b * 3 + 2]) ** 2;
+      const l2 = (pos[a * 3] - pos[c * 3]) ** 2 + (pos[a * 3 + 1] - pos[c * 3 + 1]) ** 2 + (pos[a * 3 + 2] - pos[c * 3 + 2]) ** 2;
+      const ux = pos[b * 3] - pos[a * 3], uy = pos[b * 3 + 1] - pos[a * 3 + 1], uz = pos[b * 3 + 2] - pos[a * 3 + 2];
+      const vx = pos[c * 3] - pos[a * 3], vy = pos[c * 3 + 1] - pos[a * 3 + 1], vz = pos[c * 3 + 2] - pos[a * 3 + 2];
+      const area2 = (uy * vz - uz * vy) ** 2 + (uz * vx - ux * vz) ** 2 + (ux * vy - uy * vx) ** 2;
+      const maxL2 = Math.max(l0, l1, l2);
+      // 거의 일직선으로 찌그러진 실삼각형은 짧은 변까지 4등분하면 긴 두 중점 변이 엇갈리며 법선이 뒤집힌다.
+      // 가장 긴 변의 중점(mLong)과 맞은편 꼭짓점(vOpp)을 먼저 이어 폭을 살린 채 나눈다.
+      if (maxL2 > 0 && area2 / (maxL2 * maxL2) < 4e-4) {
+        if (l0 >= l1 && l0 >= l2) {
+          out.push(a, ab, ca, orig, ca, ab, c, orig, ab, b, bc, orig, c, ab, bc, orig);
+        } else if (l1 >= l0 && l1 >= l2) {
+          out.push(b, bc, ab, orig, ab, bc, a, orig, bc, c, ca, orig, a, bc, ca, orig);
+        } else {
+          out.push(c, ca, bc, orig, bc, ca, b, orig, ca, a, ab, orig, b, ca, ab, orig);
+        }
+      } else {
+        out.push(a, ab, ca, orig, ab, b, bc, orig, ca, bc, c, orig, ab, bc, ca, orig);
+      }
     }
   }
   return { pos: Float64Array.from(next), tri: out };
@@ -561,6 +580,8 @@ function run(buffer, { finishLine }) {
   /** 원본 영역 면 이웃(디자인 모서리·경계는 -1). 국소 곡면 맞춤 범위를 넓힐 때 쓴다. */
   const nbr = new Int32Array(fc * 3).fill(-1);
   const regionEdges = new Map();
+  const vMaxDeg = new Float64Array(nv0);
+  const edgeDeg = new Map();
   for (const [key, fs] of edgeFaces) {
     const inside = fs.filter((f) => inRegion[f]);
     if (!inside.length) continue;
@@ -586,6 +607,10 @@ function run(buffer, { finishLine }) {
       }
       continue;
     }
+    const deg = (Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI;
+    edgeDeg.set(key, deg);
+    if (deg > vMaxDeg[a]) vMaxDeg[a] = deg;
+    if (deg > vMaxDeg[b]) vMaxDeg[b] = deg;
     for (const [p, q] of [[f, g], [g, f]]) {
       for (let k = 0; k < 3; k += 1) {
         const x = faces[p * 3 + k];
@@ -635,15 +660,7 @@ function run(buffer, { finishLine }) {
   lap("region");
   const rfaces = [];
   for (const f of regionFaces) rfaces.push(faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2], f);
-  const refined1 = refineRegion(P0, rfaces, fixed);
-  const fixed2 = new Uint8Array(refined1.pos.length / 3);
-  for (let v = 0; v < fixed.length; v += 1) if (fixed[v]) fixed2[v] = 1;
-  for (let v = 0; v < fixed2.length; v += 1) {
-    const z = refined1.pos[v * 3 + 2];
-    const th = Math.atan2(refined1.pos[v * 3 + 1], refined1.pos[v * 3]);
-    if (z - crease.zOf(th) > SHOULDER_REFINE_HEIGHT_MM) fixed2[v] = 1;
-  }
-  const refined = refineRegion(refined1.pos, refined1.tri, fixed2);
+  const refined = refineRegion(P0, rfaces, fixed, (a, b) => Math.max(vMaxDeg[a], vMaxDeg[b]) >= REFINE_RIDGE_MIN_DEG);
   const pos = refined.pos;
   const tri = refined.tri;
   const nv = pos.length / 3;
