@@ -164,8 +164,6 @@ const NewRequestPageContent = () => {
   const resolveCorrectedRef = useRef<
     (file: File) => Promise<TempUploadedFile | null>
   >(async () => null);
-  /** 그대로 진행을 고른 파일. 접수 때 보정 STL로 바꾸지 않는다. */
-  const keepOriginalRef = useRef(new Set<string>());
   const resolveCorrectedDesignUpload = useCallback(
     (file: File) => resolveCorrectedRef.current(file),
     [],
@@ -243,18 +241,9 @@ const NewRequestPageContent = () => {
     resolveCorrectedDesignUpload,
   });
 
-  const keepOriginalDesign = useCallback(
-    (file: File) => {
-      const key = getFileKey(file);
-      keepOriginalRef.current.add(key);
-      updateCaseInfos(key, { filletOvercutAllowed: true });
-    },
-    [updateCaseInfos],
-  );
   const useCorrectedDesign = useCallback(
     (file: File) => {
       const key = getFileKey(file);
-      keepOriginalRef.current.delete(key);
       updateCaseInfos(key, { filletOvercutAllowed: false });
     },
     [updateCaseInfos],
@@ -277,7 +266,6 @@ const NewRequestPageContent = () => {
   resolveCorrectedRef.current = async (file) => {
     if (!/\.stl$/i.test(file.name)) return null;
     const key = getFileKey(file);
-    if (keepOriginalRef.current.has(key)) return null;
     const deadline = Date.now() + 20_000;
     while (Date.now() < deadline) {
       const preflight = preflightStateRef.current[key];
@@ -319,13 +307,11 @@ const NewRequestPageContent = () => {
       const key = getFileKey(file);
       const preflight = machiningPreflightByFileKey[key];
       if (preflight?.status === "checking") {
-        keepOriginalRef.current.delete(key);
         if (caseInfosMap?.[key]?.filletOvercutAllowed) {
           updateCaseInfos(key, { filletOvercutAllowed: false });
         }
       }
       if (preflight?.status !== "tight" || !preflight.correctedId) continue;
-      if (keepOriginalRef.current.has(key)) continue;
       void resolveCorrectedRef.current(file).catch(() => null);
     }
   }, [caseInfosMap, files, machiningPreflightByFileKey, updateCaseInfos]);
@@ -2048,7 +2034,6 @@ const NewRequestPageContent = () => {
               machiningPreflightByFileKey={machiningPreflightByFileKey}
             onPrepareCorrectedDesign={prepareCorrectedDesign}
             onTakePreparedCorrectedDesign={takePreparedCorrectedDesign}
-            onKeepOriginalDesign={keepOriginalDesign}
             onUseCorrectedDesign={useCorrectedDesign}
               onDuplicateDetected={({ file, duplicate }) => {
                 const fileWithDraftCaseId = file as File & {

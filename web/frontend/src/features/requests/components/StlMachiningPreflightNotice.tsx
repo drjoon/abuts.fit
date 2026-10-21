@@ -1,3 +1,6 @@
+// change-log:
+// - 2026-10-21: tight 안내는 평균 R과 관계없이 같은 보정 문구.
+// - 2026-10-21: tight 안내 — 접착 공간이 커져 헐거워질 수 있음, 원하면 보정 STL로 크라운 내면.
 // related files:
 // - web/frontend/src/pages/requestor/new_request/hooks/useStlMachiningPreflight.ts
 // - web/backend/services/abutmentStl/preflight.service.js
@@ -72,19 +75,9 @@ export function StlMachiningPreflightNotice({
         <p className="text-center text-xs leading-5 text-rose-900/80">
           코너 반경이 가공 공구보다 좁습니다.
           <br />
-          {preflight.proceedAsIsAllowed ? (
-            <>
-              평균이 0.50mm 이상이면 그대로 진행할 수 있습니다.
-              <br />
-              확인 & 다음에서 고르세요.
-            </>
-          ) : (
-            <>
-              공구에 맞게 디자인을 보정해 의뢰하시겠습니까?
-              <br />
-              진행하시면 보정 STL을 받은 뒤 보철 내면을 다시 만드셔야 합니다.
-            </>
-          )}
+          보정하면 접착 공간이 커져 헐거워질 수 있습니다.
+          <br />
+          원하시면 내려받은 보정 STL로 크라운 내면을 새로 만드세요.
         </p>
       </div>
     );

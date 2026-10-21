@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-21: 보정 확인 모달은 평균 R과 관계없이 같은 문구·확인만.
+// - 2026-10-21: 보정 확인 — 접착 공간이 커져 헐거워질 수 있음. 원하면 보정 STL로 크라운 내면.
 // - 2026-10-21: 임플란트 통합 섹션 — 비활성 pane 흐림 대신 테두리·선택됨 뱃지.
 // - 2026-10-21: 프리셋·신규 임플란트 — 한 섹션, catalog/custom 상호 배타 선택.
 // - 2026-10-21: 신규 임플란트 안내 문구 — ? 툴팁으로 숨김.
@@ -180,8 +182,6 @@ export type AbutmentModelConfirmDialogProps = {
   onTakePreparedCorrectedDesign?: (
     correctedId: string,
   ) => Promise<File | null> | null;
-  /** 평균 R 0.50mm 이상에서 보정 STL 없이 원본으로 진행한다. */
-  onKeepOriginalDesign?: (file: File) => void;
   /** 보정 STL로 의뢰한다. 과삭제 허용을 끈다. */
   onUseCorrectedDesign?: (file: File) => void;
 };
@@ -241,7 +241,6 @@ export function AbutmentModelConfirmDialog({
   machiningPreflight = null,
   onPrepareCorrectedDesign,
   onTakePreparedCorrectedDesign,
-  onKeepOriginalDesign,
   onUseCorrectedDesign,
 }: AbutmentModelConfirmDialogProps) {
   const isLabHandoff = variant === "lab-handoff";
@@ -475,7 +474,6 @@ export function AbutmentModelConfirmDialog({
     Boolean(machiningPreflight?.correctedId) &&
     Boolean(detailFile);
   const machiningCheckPending = !isLabHandoff && machiningPreflight?.status === "checking";
-  const proceedAsIsAllowed = Boolean(machiningPreflight?.proceedAsIsAllowed);
   const showTightCornerConfirmCue =
     !isLabHandoff && machiningPreflight?.status === "tight" && !machiningCheckPending;
   const highlightConfirmButton =
@@ -529,7 +527,13 @@ export function AbutmentModelConfirmDialog({
       }
       toast({
         title: "보정 디자인을 내려받았습니다.",
-        description: "의뢰에는 이 파일을 사용합니다.",
+        description: (
+          <>
+            의뢰에는 이 파일을 사용합니다.
+            <br />
+            원하시면 이 STL로 크라운 내면을 새로 만드세요.
+          </>
+        ),
         duration: 3500,
       });
       return true;
@@ -617,14 +621,6 @@ export function AbutmentModelConfirmDialog({
     setCorrectedDownloadOpen(false);
     await onVerifyAndNextRef.current(index);
   }, [detailFile, detailIndex, onUseCorrectedDesign, runCorrectedStlDownload]);
-
-  const handleProceedAsIs = useCallback(async () => {
-    const index = detailIndex;
-    if (index === null || !detailFile) return;
-    onKeepOriginalDesign?.(detailFile);
-    setCorrectedDownloadOpen(false);
-    await onVerifyAndNextRef.current(index);
-  }, [detailFile, detailIndex, onKeepOriginalDesign]);
 
   return (
     <>
@@ -1071,9 +1067,7 @@ export function AbutmentModelConfirmDialog({
                                 role="status"
                               >
                                 <p className="whitespace-nowrap text-xs leading-none text-rose-800">
-                                  {proceedAsIsAllowed
-                                    ? "확인 & 다음에서 보정 또는 그대로 진행을 고르세요."
-                                    : "보정해 의뢰하시겠습니까?"}
+                                  보정해 의뢰하시겠습니까?
                                 </p>
                                 <ArrowDown
                                   className="h-4 w-4 shrink-0 animate-bounce text-rose-600"
@@ -1126,49 +1120,23 @@ export function AbutmentModelConfirmDialog({
           overlayClassName="z-[325]"
         >
           <AlertDialogHeader className="space-y-3">
-            <AlertDialogTitle>
-              {proceedAsIsAllowed
-                ? "이대로 의뢰하시겠습니까?"
-                : "보정 디자인으로 의뢰하시겠습니까?"}
-            </AlertDialogTitle>
+            <AlertDialogTitle>보정 디자인으로 의뢰하시겠습니까?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                {proceedAsIsAllowed ? (
-                  <>
-                    평균 코너 반경이 0.50mm 이상입니다.
-                    <br />
-                    그대로 진행하면 마진 근처에 과삭제 구간이 생길 수 있습니다.
-                    <br />
-                    보정하면 보철 내면을 다시 만드셔야 합니다.
-                  </>
-                ) : (
-                  <>
-                    공구에 맞게 디자인을 바꿔 보정 STL을 드립니다.
-                    <br />
-                    진행하시면{" "}
-                    <strong className="font-semibold text-red-600">
-                      보철 내면을 다시
-                    </strong>{" "}
-                    만드셔야 합니다.
-                  </>
-                )}
+                공구에 맞게 디자인을 바꿔 보정 STL을 드립니다.
+                <br />
+                보정하면 접착 공간이 커져{" "}
+                <strong className="font-semibold text-red-600">
+                  헐거워질 수 있습니다
+                </strong>
+                .
+                <br />
+                원하시면 내려받은 보정 STL로 크라운 내면을 새로 만드세요.
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={correctedDownloading}>취소</AlertDialogCancel>
-            {proceedAsIsAllowed ? (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={correctedDownloading}
-                onClick={() => {
-                  void handleProceedAsIs();
-                }}
-              >
-                그대로 진행
-              </Button>
-            ) : null}
             <AlertDialogAction
               disabled={correctedDownloading}
               onClick={(event) => {
@@ -1176,11 +1144,7 @@ export function AbutmentModelConfirmDialog({
                 void handleCorrectedProceed();
               }}
             >
-              {correctedDownloading
-                ? "만드는 중…"
-                : proceedAsIsAllowed
-                  ? "보정해서 의뢰"
-                  : "확인"}
+              {correctedDownloading ? "만드는 중…" : "확인"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
