@@ -1397,6 +1397,7 @@ function stationAtTheta(stations, theta, targetR) {
   for (let k = 0; k < n; k += 1) {
     const a = stations[k];
     const b = stations[(k + 1) % n];
+    if (!a || !b) continue;
     const span = k === n - 1 ? b.theta + Math.PI * 2 - a.theta : b.theta - a.theta;
     let off = theta - a.theta;
     while (off < 0) off += Math.PI * 2;
@@ -1424,6 +1425,105 @@ function stationAtTheta(stations, theta, targetR) {
     };
   }
   return null;
+}
+
+/** 보정 목표면을 만들 스테이션 필드의 균일 그리드 간격·평활 횟수. */
+const CORRECTION_FIELD_GRID = 720;
+const CORRECTION_FIELD_SMOOTH_RADIUS = 2;
+const CORRECTION_FIELD_SMOOTH_PASSES = 2;
+
+/**
+ * 스테이션을 촘촘한 균일 각도 그리드로 옮기고 둘레 방향으로 평활한다.
+ * 스테이션 사이를 곧바로 이으면 코너·원 중심 경로가 스테이션 간격마다 꺾여
+ * 투영된 띠 표면에 그 꺾임이 그대로 찍힌다. 목표면 자체를 매끄럽게 만들기 위함이다.
+ * 측정 공백(gap)에 걸친 그리드 칸은 비워 둔다.
+ */
+function resampleStationField(stations) {
+  const n = stations.length;
+  if (n < 3) return stations;
+  const N = CORRECTION_FIELD_GRID;
+  const grid = new Array(N).fill(null);
+  // 스테이션 각도 프레임(첫 스테이션 각도에서 한 바퀴)에 그리드를 맞춘다.
+  const t0 = stations[0].theta;
+  let j = 0;
+  for (let g = 0; g < N; g += 1) {
+    const theta = t0 + (g / N) * Math.PI * 2;
+    while (j < n - 1 && stations[j + 1].theta <= theta) j += 1;
+    const a = stations[j];
+    const b = stations[(j + 1) % n];
+    const bTheta = j === n - 1 ? b.theta + Math.PI * 2 : b.theta;
+    const span = bTheta - a.theta;
+    if (span > STATION_MAX_GAP_RAD || !(span > 1e-9)) continue;
+    const off = theta - a.theta;
+    if (off < -1e-12 || off > span + 1e-12) continue;
+    const t = Math.min(1, Math.max(0, off / span));
+    const lerp = (x, y) => x + t * (y - x);
+    const corner = { u: lerp(a.corner.u, b.corner.u), w: lerp(a.corner.w, b.corner.w) };
+    const rayWall = norm2({ u: lerp(a.rayWall.u, b.rayWall.u), w: lerp(a.rayWall.w, b.rayWall.w) });
+    const oldTrimW = lerp(a.oldTrimW, b.oldTrimW);
+    grid[g] = {
+      theta,
+      uFl: lerp(a.uFl, b.uFl),
+      wFl: lerp(a.wFl, b.wFl),
+      oldTrimL: lerp(a.oldTrimL, b.oldTrimL),
+      oldTrimW,
+      corner,
+      // 벽 직선 위 앵커. 코너는 평활 뒤 이 앵커와 광선으로 다시 계산한다.
+      anchor: { u: corner.u + rayWall.u * oldTrimW, w: corner.w + rayWall.w * oldTrimW },
+      rayLedge: norm2({ u: lerp(a.rayLedge.u, b.rayLedge.u), w: lerp(a.rayLedge.w, b.rayLedge.w) }),
+      rayWall,
+      measuredR: lerp(a.measuredR ?? 0, b.measuredR ?? 0),
+      blend: lerp(a.blend ?? 1, b.blend ?? 1),
+    };
+  }
+  const scalars = [
+    (s) => s.uFl, (s) => s.wFl, (s) => s.oldTrimL,
+    (s) => s.measuredR, (s) => s.blend, (s) => s.corner.u, (s) => s.corner.w,
+    (s) => s.anchor.u, (s) => s.anchor.w,
+    (s) => s.rayLedge.u, (s) => s.rayLedge.w, (s) => s.rayWall.u, (s) => s.rayWall.w,
+  ];
+  const setters = [
+    (s, v) => { s.uFl = v; }, (s, v) => { s.wFl = v; }, (s, v) => { s.oldTrimL = v; },
+    (s, v) => { s.measuredR = v; }, (s, v) => { s.blend = v; }, (s, v) => { s.corner.u = v; }, (s, v) => { s.corner.w = v; },
+    (s, v) => { s.anchor.u = v; }, (s, v) => { s.anchor.w = v; },
+    (s, v) => { s.rayLedge.u = v; }, (s, v) => { s.rayLedge.w = v; },
+    (s, v) => { s.rayWall.u = v; }, (s, v) => { s.rayWall.w = v; },
+  ];
+  for (let pass = 0; pass < CORRECTION_FIELD_SMOOTH_PASSES; pass += 1) {
+    for (let f = 0; f < scalars.length; f += 1) {
+      const src = grid.map((s) => (s ? scalars[f](s) : null));
+      for (let g = 0; g < N; g += 1) {
+        if (!grid[g]) continue;
+        let sum = 0;
+        let cnt = 0;
+        for (let d = -CORRECTION_FIELD_SMOOTH_RADIUS; d <= CORRECTION_FIELD_SMOOTH_RADIUS; d += 1) {
+          const v = src[(g + d + N) % N];
+          if (v == null) continue;
+          sum += v;
+          cnt += 1;
+        }
+        if (cnt) setters[f](grid[g], sum / cnt);
+      }
+    }
+  }
+  for (const s of grid) {
+    if (!s) continue;
+    s.rayLedge = norm2(s.rayLedge);
+    s.rayWall = norm2(s.rayWall);
+    // 코너 = 렛지 직선(FL점, -rayLedge)과 벽 직선(앵커, rayWall)의 교점. 따로 평활한 코너를 쓰면
+    // 광선과 어긋나 부채꼴 판정이 깨진다.
+    const mdu = -s.rayLedge.u;
+    const mdw = -s.rayLedge.w;
+    const det = mdu * s.rayWall.w - mdw * s.rayWall.u;
+    if (det < -0.05) {
+      const tm = ((s.anchor.u - s.uFl) * s.rayWall.w - (s.anchor.w - s.wFl) * s.rayWall.u) / det;
+      s.corner = { u: s.uFl + mdu * tm, w: s.wFl + mdw * tm };
+    }
+    s.distFl = Math.hypot(s.uFl - s.corner.u, s.wFl - s.corner.w);
+    s.oldTrimW = Math.hypot(s.anchor.u - s.corner.u, s.anchor.w - s.corner.w);
+    delete s.anchor;
+  }
+  return grid;
 }
 
 /**
@@ -1462,9 +1562,15 @@ function filletSectorCoords(st, u, w, targetR) {
 const CORRECTION_REFIT_PASSES = 4;
 /** 재투영에서 목표 R에 더하는 양. 재측정 평형점이 목표보다 낮게 잡히는 만큼만 올린다. */
 const CORRECTION_REFIT_TARGET_BONUS_MM = 0.05;
+/** 마무리 뒤 재투영에서 목표 R에 더하는 양. 마무리가 당긴 dip을 다시 여유 있게 올린다. */
+const CORRECTION_FINAL_TARGET_BONUS_MM = 0.08;
+/** 보정 트리거 헤드룸. 재검사가 낮게 읽는 편차만큼 목표보다 먼저 손댄다. */
+const CORRECTION_TRIGGER_HEADROOM_MM = 0.03;
 /** 보정 원호를 만들 코너 띠 세분화 기준. 이보다 긴 모서리를 가진 띠 삼각형은 나눈다. */
-const CORRECTION_SUBDIVIDE_EDGE_MM = 0.05;
-const CORRECTION_SUBDIVIDE_ROUNDS = 3;
+const CORRECTION_SUBDIVIDE_EDGE_MM = 0.06;
+/** 코너를 가로지르는 바깥 간선의 세분화 기준. 원호 자체보다 성겨도 된다. */
+const CORRECTION_SUBDIVIDE_HALO_EDGE_MM = 0.075;
+const CORRECTION_SUBDIVIDE_ROUNDS = 2;
 /** 세분화로 면이 입력의 이 배수를 넘으면 더 나누지 않는다(거친 합성 메시 등 병적 입력 방지). */
 const CORRECTION_SUBDIVIDE_MAX_GROWTH = 3;
 
@@ -1500,14 +1606,36 @@ function subdivideCornerBand(mesh, stations, frame, axis, targetR) {
       return bandCache.get(vi);
     };
     // 띠 면의 긴 모서리를 전역으로 표시한다. 이웃 면도 같은 모서리를 나눠 물린다.
+    // 정점이 모두 부채꼴 밖에 있어도 간선이 코너를 가로지르면 함께 표시한다.
+    // 그런 거친 삼각형이 남으면 원호를 현으로 자르거나 투영 때 접힌다.
+    const nearCorner = (a, b) => {
+      const mx = (verts[a * 3] + verts[b * 3]) / 2;
+      const my = (verts[a * 3 + 1] + verts[b * 3 + 1]) / 2;
+      const mz = (verts[a * 3 + 2] + verts[b * 3 + 2]) / 2;
+      const p = [mx, my, mz];
+      const w = dot3(p, axis);
+      const radialVec = sub3(p, scale3(axis, w));
+      const u = Math.hypot(radialVec[0], radialVec[1], radialVec[2]);
+      if (u < 0.2) return false;
+      const st = stationAtTheta(stations, thetaAboutAxis(p, axis, frame), targetR);
+      if (!st) return false;
+      if (!(targetR - (st.measuredR ?? targetR) > 0)) return false;
+      return Math.hypot(u - st.corner.u, w - st.corner.w) < targetR * 0.7 + 0.02;
+    };
     const marked = new Set();
     for (let fi = 0; fi < faces.length / 3; fi += 1) {
       const a = faces[fi * 3];
       const b = faces[fi * 3 + 1];
       const c = faces[fi * 3 + 2];
-      if (!(band(a) || band(b) || band(c))) continue;
+      const inFace = band(a) || band(b) || band(c);
       for (const [x, y] of [[a, b], [b, c], [c, a]]) {
-        if (edgeLen(x, y) > CORRECTION_SUBDIVIDE_EDGE_MM) marked.add(edgeKey(x, y));
+        const len = edgeLen(x, y);
+        if (inFace) {
+          if (len > CORRECTION_SUBDIVIDE_EDGE_MM) marked.add(edgeKey(x, y));
+        } else if (len > CORRECTION_SUBDIVIDE_HALO_EDGE_MM && nearCorner(x, y)) {
+          // 코너를 가로지르는 간선만 성기게 나눠도 현으로 잘리는 문제는 막을 수 있다.
+          marked.add(edgeKey(x, y));
+        }
       }
     }
     if (!marked.size) break;
@@ -1580,15 +1708,25 @@ function subdivideCornerBand(mesh, stations, frame, axis, targetR) {
 /** 측정 R이 목표에 이만큼 못 미치는 지점부터 투영량을 서서히 줄인다. */
 const FILLET_NEED_RAMP_MM = 0.1;
 
-function filletTargetInPlane(st, u, w, targetR, scaleW = 1, scaleL = 1) {
+/** 부채꼴 경계(접선)에서 변위를 0으로 줄이는 각도 폭. 경계에서 이동이 갑자기 끊기면 이음매가 생긴다. */
+const FILLET_EDGE_FADE_RAD = 0.18;
+
+function filletTargetInPlane(st, u, w, targetR, scaleW = 1, scaleL = 1, ignoreNeed = false) {
   // 이미 목표 R 이상인 스테이션은 건드리지 않는다. 큰 필렛을 목표 원호로 끌어내리면 오히려 타이트해진다.
+  // ignoreNeed(정착 패스)에서는 이미 보정된 띠를 평활 원호에 맞춰 펴는 것이라 이 게이트를 건너뛴다.
   const need = targetR - (st.measuredR ?? targetR);
-  if (!(need > 0)) return null;
-  const blend = (st.blend ?? 1) * Math.min(1, need / FILLET_NEED_RAMP_MM);
-  if (!(blend > 1e-3)) return null;
+  if (!ignoreNeed && !(need > 0)) return null;
   const sec = filletSectorCoords(st, u, w, targetR);
   if (!sec || !(sec.d > 1e-3)) return null;
   const { vx, vw, d, binU, binW, pU, pW, alpha, alphaW, alphaL } = sec;
+  // 접선 경계에 가까울수록 변위를 줄인다. 부채꼴 안팎 정점이 엇갈리며 생기는 링 이음매를 막는다.
+  // 폭은 부채꼴 반각에 비례시킨다(둔각 코너는 부채꼴이 좁아 고정 폭이면 원호가 사라진다).
+  const edgeDist = alpha >= 0 ? alphaW - alpha : alphaW + alpha;
+  const fadeSpan = Math.max(0.02, Math.min(FILLET_EDGE_FADE_RAD, 0.4 * alphaW));
+  const fade = smoothstep01(edgeDist / fadeSpan);
+  if (!(fade > 1e-3)) return null;
+  const blend = (st.blend ?? 1) * (ignoreNeed ? 1 : Math.min(1, need / FILLET_NEED_RAMP_MM)) * fade;
+  if (!(blend > 1e-3)) return null;
   let tu;
   let tw;
   if (scaleW === 1 && scaleL === 1) {
@@ -1633,25 +1771,50 @@ export function correctTightCornerFillet(mesh, finishLinePoints, options = {}) {
     if (best.flipped === 0) break;
   }
   if (!best || !best.movedCount) return null;
+  const adoptPass = (cur, nxt) => {
+    const merged = new Uint8Array(nxt.movedVertices.length);
+    merged.set(cur.movedVertices.subarray(0, Math.min(cur.movedVertices.length, merged.length)));
+    let mergedCount = 0;
+    for (let i = 0; i < merged.length; i += 1) {
+      if (nxt.movedVertices[i]) merged[i] = 1;
+      if (merged[i]) mergedCount += 1;
+    }
+    nxt.movedVertices = merged;
+    nxt.movedCount = mergedCount;
+    return nxt;
+  };
+  const refitPass = (cur, bonusMm = CORRECTION_REFIT_TARGET_BONUS_MM) => {
+    // 평활 창을 좁히고 목표 R을 조금 높인다. 평활 코너가 국소 dip에서 목표 원호를 안쪽으로 당겨
+    // 재측정 R이 목표보다 낮게 평형되는 것을 상쇄한다.
+    const again = filletCorrectionAboutAxis(cur.mesh, raw, toolR, cur.axis, {
+      smoothHalfWindow: 1,
+      targetBonusMm: bonusMm,
+    });
+    if (!again) return null;
+    again.flipped = revertFlippedFaces(cur.mesh, again);
+    if (!again.movedCount) return null;
+    return adoptPass(cur, again);
+  };
   // 재측정 코너가 만든 원호를 따라와 R이 공구 R에 조금 못 미치는 구간은,
   // 보정 메시를 다시 재고 같은 축으로 한 번 더 투영해 수렴시킨다.
   let current = best;
   for (let pass = 0; pass < CORRECTION_REFIT_PASSES; pass += 1) {
-    // 재투영에서는 방향 평활 창을 좁히고 목표 R을 조금 높인다. 평활 코너가 국소 dip에서
-    // 목표 원호를 안쪽으로 당겨 재측정 R이 목표보다 낮게 평형되는 것을 상쇄한다.
-    const again = filletCorrectionAboutAxis(current.mesh, raw, toolR, current.axis, 1, CORRECTION_REFIT_TARGET_BONUS_MM);
+    const again = refitPass(current);
     if (!again) break;
-    again.flipped = revertFlippedFaces(current.mesh, again);
-    if (!again.movedCount) break;
-    const merged = new Uint8Array(again.movedVertices.length);
-    merged.set(current.movedVertices.subarray(0, Math.min(current.movedVertices.length, merged.length)));
-    let mergedCount = 0;
-    for (let i = 0; i < merged.length; i += 1) {
-      if (again.movedVertices[i]) merged[i] = 1;
-      if (merged[i]) mergedCount += 1;
-    }
-    again.movedVertices = merged;
-    again.movedCount = mergedCount;
+    current = again;
+  }
+  // 깊은 dip은 목표를 더 높여 한 번 더 수렴시킨다.
+  for (let pass = 0; pass < CORRECTION_REFIT_PASSES; pass += 1) {
+    const again = refitPass(current, CORRECTION_FINAL_TARGET_BONUS_MM);
+    if (!again) break;
+    current = again;
+  }
+  // 마지막으로 띠 전체를 하나의 필드에 정착시켜 패스마다 달라진 원호가 섞인 표면을 편다.
+  current = settleCorrectedBand(current, raw, toolR);
+  // 정착이 경계 구간을 다시 타이트하게 만들었으면 그 구간만 가볍게 메운다.
+  for (let pass = 0; pass < 2; pass += 1) {
+    const again = refitPass(current, CORRECTION_FINAL_TARGET_BONUS_MM);
+    if (!again) break;
     current = again;
   }
   const { flipped, parent, baseVerts, ...out } = current;
@@ -1701,11 +1864,10 @@ function revertFlippedFaces(original, res) {
   return firstFlipped;
 }
 
-function filletCorrectionAboutAxis(mesh, raw, toolR, axis, smoothHalfWindow, targetBonusMm = 0) {
-  const targetR = toolR + CORRECTION_FILLET_MARGIN_MM + targetBonusMm;
-  const frame = axisFrame(axis);
+/** 보정 스테이션 원시 측정(정렬된 각도 순). 검출과 같은 측정기를 쓴다. */
+function measureCorrectionStations(mesh, raw, axis, frame) {
   const sampledFl = resampleFinishLine(raw, STATION_SAMPLE_MAX);
-  const rawStations = sampledFl
+  return sampledFl
     .map((fl) => {
       // 엄격한 단면 측정이 실패하는 emergence 프로파일은 검출과 같은 프로파일 폴백으로 잰다.
       const st = measureFilletStation(mesh, fl, axis) ?? measureProfileFilletStation(mesh, fl, axis);
@@ -1713,9 +1875,100 @@ function filletCorrectionAboutAxis(mesh, raw, toolR, axis, smoothHalfWindow, tar
     })
     .filter(Boolean)
     .sort((a, b) => a.theta - b.theta);
+}
+
+/** 정착 패스 반복 횟수. 이웃 평균→원호 재투영을 이만큼 반복해 분포를 편다. */
+const CORRECTION_SETTLE_PASSES = 6;
+const CORRECTION_SETTLE_DAMPING = 0.7;
+
+/**
+ * 보정이 끝난 띠를 마지막 필드 하나로 정착시킨다.
+ * 패스마다 다시 잰 스테이션으로 투영하면 정점이 서로 다른 원(반경·중심) 위에 섞여 표면이 운다.
+ * 이웃 평균으로 원호 방향 분포를 편 뒤, 각 정점을 자기 각도 필드의 목표 원호에 정확히 다시 얹는다.
+ * 원호 위에 다시 얹으므로 재측정 R은 그대로 유지된다.
+ */
+function settleCorrectedBand(cur, raw, toolR) {
+  const { mesh, movedVertices, axis } = cur;
+  const frame = axisFrame(axis);
+  const rawStations = measureCorrectionStations(mesh, raw, axis, frame);
+  if (rawStations.length < 3) return cur;
+  const stations = resampleStationField(
+    smoothStationsForCorrection(rawStations, STATION_RAY_SMOOTH_HALF_WINDOW),
+  );
+  const targetR = toolR + CORRECTION_FILLET_MARGIN_MM;
+  const work = mesh.clone();
+  const baseVerts = Float64Array.from(work.verts);
+  const neighbors = Array.from({ length: work.vertexCount }, () => []);
+  const seen = Array.from({ length: work.vertexCount }, () => new Set());
+  const link = (a, b) => {
+    if (!seen[a].has(b)) {
+      seen[a].add(b);
+      neighbors[a].push(b);
+    }
+  };
+  for (let fi = 0; fi < work.faceCount; fi += 1) {
+    const a = work.faces[fi * 3];
+    const b = work.faces[fi * 3 + 1];
+    const c = work.faces[fi * 3 + 2];
+    link(a, b); link(b, a); link(b, c); link(c, b); link(c, a); link(a, c);
+  }
+  const v = work.verts;
+  for (let pass = 0; pass < CORRECTION_SETTLE_PASSES; pass += 1) {
+    const prev = Float64Array.from(v);
+    for (let vi = 0; vi < work.vertexCount; vi += 1) {
+      if (!movedVertices[vi]) continue;
+      const nb = neighbors[vi];
+      if (!nb.length) continue;
+      let ax = prev[vi * 3];
+      let ay = prev[vi * 3 + 1];
+      let az = prev[vi * 3 + 2];
+      for (const ni of nb) {
+        ax += prev[ni * 3];
+        ay += prev[ni * 3 + 1];
+        az += prev[ni * 3 + 2];
+      }
+      const inv = 1 / (nb.length + 1);
+      const cand = [
+        prev[vi * 3] + CORRECTION_SETTLE_DAMPING * (ax * inv - prev[vi * 3]),
+        prev[vi * 3 + 1] + CORRECTION_SETTLE_DAMPING * (ay * inv - prev[vi * 3 + 1]),
+        prev[vi * 3 + 2] + CORRECTION_SETTLE_DAMPING * (az * inv - prev[vi * 3 + 2]),
+      ];
+      const w = dot3(cand, axis);
+      const radialVec = sub3(cand, scale3(axis, w));
+      const u = Math.hypot(...radialVec);
+      if (u < 0.2) continue;
+      const st = stationAtTheta(stations, thetaAboutAxis(cand, axis, frame), targetR);
+      if (!st) continue;
+      const to = filletTargetInPlane(st, u, w, targetR, 1, 1, true);
+      if (!to) continue;
+      const q = add3(scale3(radialVec, to.u / u), scale3(axis, to.w));
+      v[vi * 3] = q[0];
+      v[vi * 3 + 1] = q[1];
+      v[vi * 3 + 2] = q[2];
+    }
+  }
+  work.invalidate();
+  const identity = Int32Array.from({ length: work.faceCount }, (_, fi) => fi);
+  const res = {
+    mesh: work,
+    movedVertices: Uint8Array.from(movedVertices),
+    movedCount: cur.movedCount,
+    parent: identity,
+    baseVerts,
+  };
+  res.flipped = revertFlippedFaces(mesh, res);
+  return { ...cur, mesh: work, movedVertices: res.movedVertices, movedCount: res.movedCount };
+}
+
+function filletCorrectionAboutAxis(mesh, raw, toolR, axis, options = {}) {
+  const { smoothHalfWindow, targetBonusMm = 0 } = options;
+  const targetR = toolR + CORRECTION_FILLET_MARGIN_MM + targetBonusMm;
+  const frame = axisFrame(axis);
+  const rawStations = measureCorrectionStations(mesh, raw, axis, frame);
   if (rawStations.length < 3) return null;
-  if (!rawStations.some((s) => s.measuredR < toolR - FILLET_R_TOLERANCE_MM)) return null;
-  const stations = smoothStationsForCorrection(rawStations, smoothHalfWindow);
+  // 재검사(기울기 축·다른 샘플)가 보정 측정보다 낮게 읽는 만큼, 트리거에 헤드룸을 둔다.
+  if (!rawStations.some((s) => isTightFillet(s.measuredR, s.ext, toolR + CORRECTION_TRIGGER_HEADROOM_MM))) return null;
+  const stations = resampleStationField(smoothStationsForCorrection(rawStations, smoothHalfWindow));
 
   // 코너 띠를 잘게 나눈 뒤 투영한다. 성긴 원본 정점만 옮기면 원호가 현으로 잘려 효과가 사라진다.
   const work = subdivideCornerBand(mesh, stations, frame, axis, targetR);

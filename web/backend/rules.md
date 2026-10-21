@@ -177,6 +177,7 @@
 - **계산 실행 위치**: SSOT는 `services/abutmentStl/execution.js`. 로컬(`NODE_ENV=development`)만 백엔드 워커, 테스트·프로덕션(EBS)은 람다다(`ABUTMENT_STL_EXECUTION=local|lambda`로 강제 가능, 람다 이름이 없으면 워커). filled는 `filledLambda.service.js`가 S3 `temp/stl-filled/`로 주고받고 함수는 60초·2048MB·arm64다. 배포: `scripts/abutment-stl-js/deploy-stl-filled-lambda.sh`.
 - **커프 보정도 같은 분기**: `runCuffBlendInWorker`가 `cuffBlendLambda.service.js`로 S3 `temp/stl-cuff/`를 주고받는다(커프 보정 → 포스트 다듬기 → 커넥션 원뿔 다듬기, `cuffBlendJob.js` 하나를 워커·람다가 공유). 람다 호출 자체가 실패하면 EBS 워커로 돌리고, 시간 초과는 실패로 남긴다. 배포: `scripts/abutment-stl-js/deploy-stl-cuff-lambda.sh`.
 - **단계 분리**: 의뢰자 업로드에서는 간이 검사와 필렛 R 보정(코너 띠만 맞물리게 나눈 뒤 R0.65 원호로 투영, 의뢰자 로컬 다운로드)만 한다. 보정 STL은 띠 세분화만큼 커진다(보통 ×2~2.5, 상한 ×3/회). filled·커프·헥스·포스트는 제조사 준비(`jsPrimary`)에서만 만들고, 업로드 때 미리 만들지 않는다.
+- **보정 품질**: 투영 목표면은 스테이션을 균일 각도 그리드로 평활한 필드로 만들고, 접선 경계에서는 정점 변위를 0으로 줄이며(링 이음매 방지), 마지막에 띠 전체를 한 필드에 정착시켜 패스별 원호가 섞이지 않게 한다. 재검사(기울기 축·다른 샘플 위치)가 낮게 읽는 만큼 보정 트리거에 헤드룸(0.03mm)을 둬, 보정본 재업로드 간이 검사도 tight 0이 되게 한다.
 - **바깥 이동 금지**: 크라운이 닿는 면(포스트·마진·피니시라인 아래 커프 띠)은 원본보다 바깥으로 나가지 않는다. 포스트는 `postSmooth`, 커프 띠는 `cuffBlend.replaceBand`의 원본 자오선 클램프가 보장한다. 예외는 낮은 마진 볼록 변형(`convexCuffDeform`, 아래 70°용)과 의뢰자가 동의한 업로드 필렛 보정뿐이다.
 
 - Rhino `process_abutment_stl.py`(1-stl → 2-filled)의 JS 이식. 순서: import → align → (제조사 준비) 생략된 11° 커넥션 추가 → finishline → 스크류홀 패치 → 직경 → fill_steps → export → stl-metadata. 11° 추가는 Rhino에 없다. 헥스가 스펙(L2)보다 길고 그 위가 11° 원뿔이 아니면 JS가 헥스를 기준 길이로 남기고 원뿔을 붙인다. 원뿔이 이미 있으면 그대로 둔다. 접수 검사·의뢰 전 보정 STL에서는 하지 않는다. 그 외 단계의 동작 SSOT는 아직 Rhino 스크립트다. 원본 스크립트를 고치면 같은 이름의 JS 모듈도 같이 고친다.
