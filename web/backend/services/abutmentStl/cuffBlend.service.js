@@ -1,7 +1,7 @@
 // related files:
 // - web/backend/services/abutmentStl/cuffBlend.js
 // - web/backend/services/abutmentStl/cuffConnectionSpecs.js
-// - web/backend/services/abutmentStl/cuffBlendLambda.service.js (ABUTMENT_STL_CUFF_LAMBDA가 있으면 람다에서 계산)
+// - web/backend/services/abutmentStl/cuffBlendLambda.service.js (EBS에서만 람다 계산. execution.js)
 // - web/backend/controllers/bg/bg.controller.js (2-filled 등록 직후 auto)
 // - web/backend/controllers/requests/common.files.controller.js (Re 버튼 · 의뢰자 제안 수락/거절)
 // - web/frontend/src/features/requests/components/CuffProposalPanel.tsx
@@ -18,6 +18,7 @@ import { CUFF_BLEND_VERSION } from "./cuffBlend.js";
 import { resolveCuffConnectionSpec } from "./cuffConnectionSpecs.js";
 import { MeshWorkerQueueTimeoutError, MeshWorkerTimeoutError, runMeshWorker } from "./workerSlots.js";
 import { CuffLambdaTimeoutError, cuffBlendLambdaName, runCuffBlendOnLambda } from "./cuffBlendLambda.service.js";
+import { shouldUseStlLambda } from "./execution.js";
 
 const WORKER_URL = new URL("./cuffBlend.worker.js", import.meta.url);
 const TIMEOUT_MS = Number(process.env.CUFF_BLEND_TIMEOUT_MS || 30 * 1000);
@@ -32,13 +33,13 @@ const AUTO_QUEUE_TIMEOUT_MS = Number(process.env.CUFF_BLEND_AUTO_QUEUE_TIMEOUT_M
 const INTERACTIVE_QUEUE_TIMEOUT_MS = Number(process.env.CUFF_BLEND_QUEUE_TIMEOUT_MS || 30 * 1000);
 
 /**
- * ABUTMENT_STL_CUFF_LAMBDA가 있으면 람다, 없거나 람다 호출 자체가 실패하면 로컬 워커.
+ * 실행 위치는 execution.js가 정한다(EBS만 람다, 로컬·테스트는 워커). 람다 호출 자체가 실패하면 로컬 워커.
  * 로컬 워커 timeout은 메시 worker 슬롯을 얻은 뒤부터 센다(workerSlots.js).
  * @param {"auto"|"redesign"|"propose"|"post"|"measure"} mode
  * @param {{ queueTimeoutMs?: number }} [run]
  */
 export async function runCuffBlendInWorker(buffer, mode, options, run = {}) {
-  if (cuffBlendLambdaName()) {
+  if (shouldUseStlLambda(cuffBlendLambdaName())) {
     try {
       return await runCuffBlendOnLambda(buffer, mode, options, { timeoutMs: TIMEOUT_MS });
     } catch (error) {

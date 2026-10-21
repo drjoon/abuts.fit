@@ -18,6 +18,7 @@ import {
   emptyMarginFilletReview,
   screenMarginFillet,
 } from "./marginFilletReview.js";
+import { detectTightCorners } from "./tightCorner.js";
 
 export const ABUTMENT_STL_JS_VERSION = `abutment-stl-js-1+align-${ALIGN_MODULE_VERSION}+${JS_ALIGN_PORT_VERSION}+conn-taper-1`;
 
@@ -168,7 +169,7 @@ function finishPreflight({ mesh, finishLine, align, alignMatrix, logs, perf, mar
 }
 
 /**
- * 확인 전 보정 STL. correctMarginFillet로 정점을 옮긴다. 제조사 준비와 같은 함수다.
+ * 확인 전 보정 STL. correctMarginFillet로 정점을 옮긴다. 정점을 옮기는 보정은 이 의뢰자 단계에서만 한다.
  * 옮긴 정점이 있을 때만 불완전 가공이다.
  */
 function finishCorrectedDesign({ mesh, finishLine, align, alignMatrix, logs, perf, mark, total0, log }) {
@@ -372,16 +373,22 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
       log(`[stl_metadata] failed: ${error?.message || error}`);
     }
     try {
-      // 확인 전 보정과 같은 correctMarginFillet. 메시 본체는 바꾸지 않고 보정 면만 메타에 담는다.
-      // 의뢰 STL이 이미 그 보정이면 다시 만들지 않는다.
+      // 공구 R 필렛 보정(정점을 옮기는 일)은 의뢰자 동의 단계인 확인 전 보정 STL에서만 한다.
+      // 제조사 재생성인 여기서는 보정 메시를 만들지 않고 타이트 여부만 잰다. 포스트를 임의로 바꾸지 않기 위해서다.
+      // 의뢰 STL이 이미 그 보정이면 재지도 않는다.
       if (options.designAlreadyCorrected) {
-        tightCorner = emptyMarginFilletReview();
+        tightCorner = { ...emptyMarginFilletReview(), filletCorrectionApplied: true };
       } else {
-        const built = correctMarginFillet(combined, finishLine.points, {
+        const measured = detectTightCorners(combined, finishLine.points, {
           tiltAxisVector: stlMetadata?.tiltAxisVector,
+          solids: false,
           log,
         });
-        tightCorner = built.tightCorner || emptyMarginFilletReview();
+        tightCorner = {
+          ...measured,
+          needsCorrectionReview: Number(measured?.tightCount) > 0,
+          filletCorrectionApplied: false,
+        };
       }
       if (tightCorner?.tightCount > 0) {
         log(`[tight-corner] flagged ${tightCorner.tightCount} samples`);

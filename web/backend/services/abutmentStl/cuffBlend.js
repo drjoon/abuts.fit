@@ -2394,6 +2394,30 @@ function replaceBand(
       return { v: idx, a: thetas[j] };
     }),
   );
+  // 마진 아래 커프 띠도 포스트와 같은 규칙이다. 크라운 내면이 닿는 면이라 원본 외곽보다 바깥으로 나가면 안 된다.
+  // 열마다 원본 자오선을 읽어 두고, 새 꼭짓점 반경이 그 높이의 원본 반경을 넘으면(1µm 여유) 끌어내린다.
+  // 아래 경계(원뿔 위)·위 경계(마진 모서리)는 원본 꼭짓점 그대로라 건드리지 않는다.
+  // 예외: 낮은 마진의 볼록 변형(convexCuffDeform)은 커프 아래를 70° 이하로 만들려고 일부러 부풀리는 동작이라 그대로 둔다.
+  if (origProbe && !convexCuffDeform && grid.length) {
+    const meridians = meshColumns.map((j) => origProbe.meridian(thetas[j], zA, topZOf(thetas[j])));
+    for (const row of grid) {
+      for (let c = 0; c < row.length; c += 1) {
+        const vi = row[c].v * 3;
+        const x = verts[vi];
+        const y = verts[vi + 1];
+        const r = Math.hypot(x, y);
+        if (!(r > 0)) continue;
+        const ro = meridians[c](verts[vi + 2]);
+        if (!Number.isFinite(ro)) continue;
+        const cap = ro - 0.001;
+        if (r > cap && cap > 0) {
+          const s = cap / r;
+          verts[vi] = x * s;
+          verts[vi + 1] = y * s;
+        }
+      }
+    }
+  }
 
   const outward = outwardVotes >= 0 ? 1 : -1;
   const newFaces = [];

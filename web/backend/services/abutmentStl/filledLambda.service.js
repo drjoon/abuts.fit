@@ -3,10 +3,11 @@
 // - web/backend/services/abutmentStl/jsPrimary.service.js
 // - web/backend/services/abutmentStl/runPipelineInWorker.js
 //
-// Filled STL JS 계산은 람다에서 한다. 함수 이름이 없으면(로컬·테스트) 워커로 같은 코드를 돌린다.
+// Filled STL JS 계산 실행 위치는 execution.js가 정한다(EBS만 람다, 로컬·테스트는 워커).
 // 대기는 제한 시간 + 10초. 결과 JSON이 없으면 시간 초과로 보고 준비 카드에 남긴다.
 import crypto from "crypto";
 import AWS from "aws-sdk";
+import { shouldUseStlLambda } from "./execution.js";
 import {
   deleteFileFromS3,
   getObjectBufferFromS3,
@@ -114,12 +115,12 @@ async function runOnLambda(buffer, options) {
   }
 }
 
-/** Filled STL JS. 람다 이름이 있으면 람다, 없으면 로컬 워커. */
+/** Filled STL JS. EBS(프로덕션)에서만 람다, 그 외에는 로컬 워커(execution.js). */
 export async function runFilledStlOffRequest(buffer, options = {}) {
-  if (filledStlLambdaName()) return runOnLambda(buffer, options);
+  if (shouldUseStlLambda(filledStlLambdaName())) return runOnLambda(buffer, options);
   if (!warnedLocalWorker) {
     warnedLocalWorker = true;
-    console.warn("[stl-filled] ABUTMENT_STL_FILLED_LAMBDA가 없어 EBS 워커로 Filled STL을 만듭니다.");
+    console.warn("[stl-filled] 람다를 쓰지 않아 백엔드 워커로 Filled STL을 만듭니다.");
   }
   return runAbutmentStlPipelineInWorker(buffer, {
     ...options,

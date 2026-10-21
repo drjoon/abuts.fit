@@ -5,7 +5,7 @@
 //
 // 마진 필렛 검사·보정본의 한 곳.
 // 간이 검사(업로드 직후)는 screenMarginFillet만 쓴다.
-// 확인 전 보정 STL과 제조사 준비는 correctMarginFillet만 쓴다.
+// 정점을 옮기는 correctMarginFillet는 의뢰자 동의 단계인 확인 전 보정 STL만 쓴다. 제조사 준비는 측정만 한다.
 import {
   FINISH_BALL_DIAMETER_MM,
   FINISH_BALL_RADIUS_MM,
@@ -58,7 +58,7 @@ export function screenMarginFillet(mesh, finishLinePoints, options = {}) {
 
 /**
  * 완전한 검사와 보정본. 피니시라인 한 바퀴를 재고, 공구 R보다 좁은 코너 정점만 옮긴다.
- * 확인 전 보정 STL과 제조사 준비가 이 결과만 쓴다.
+ * 이 결과로 메시를 바꾸는 것은 확인 전 보정 STL(의뢰자 동의 단계)만 한다.
  * @returns {{ corrected: object|null, tightCorner: object|null, filletSurface: object|null }}
  */
 export function correctMarginFillet(mesh, finishLinePoints, options = {}) {

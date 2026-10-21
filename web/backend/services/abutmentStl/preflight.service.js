@@ -5,11 +5,10 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useStlMachiningPreflight.ts
 //
 // 업로드 직후는 간이 검사(screenMarginFillet)만 기다린다.
-// 타이트면 확인 전까지 correctMarginFillet 보정 STL을 뒤에서 만든다. 제조사 준비와 같은 함수다.
-// 람다는 캐시가 없는 POST /stl-corrected 경로에서만 그 보정을 돌린다.
+// 타이트면 확인 전까지 correctMarginFillet 보정 STL(필렛 R만 변경, 삼각형 수 그대로)을 뒤에서 만든다.
+// 커프·헥스 정렬·포스트 다듬기 같은 나머지 로직은 여기서 미리 만들지 않고 제조사 준비에서만 한다.
 import crypto from "crypto";
 import { resolveAbutmentStlInputs } from "./abutmentStlInputs.js";
-import { applyAutoCuffBlendSafely, isCuffBlendAutoEnabled } from "./cuffBlend.service.js";
 import { runAbutmentStlPipelineInWorker } from "./runPipelineInWorker.js";
 import {
   buildCorrectedDesignOffRequest,
@@ -76,93 +75,6 @@ export function correctedDesignCacheKey(buffer, caseInfos) {
 
 function correctedSlot(hash, userId) {
   return `${correctedUserId(userId)}:${hash}`;
-}
-
-const FILLED_PREP_TTL_MS = 15 * 60 * 1000;
-const FILLED_PREP_MAX = 4;
-/** hash -> { expires, promise, result } */
-const filledPrepByHash = new Map();
-
-function pruneFilledStlPrep(now = Date.now()) {
-  for (const [hash, slot] of filledPrepByHash) {
-    if (slot.expires <= now && !slot.promise) filledPrepByHash.delete(hash);
-  }
-  const settled = [];
-  for (const [hash, slot] of filledPrepByHash) {
-    if (!slot.promise) settled.push(hash);
-  }
-  while (filledPrepByHash.size > FILLED_PREP_MAX && settled.length) {
-    filledPrepByHash.delete(settled.shift());
-  }
-}
-
-/**
- * 검사 응답을 보낸 뒤, 접수에 쓸 STL로 filled 파이프라인을 미리 돌린다.
- * 의뢰 생성 뒤 JS 등록이 같은 바이트면 이 결과를 그대로 쓴다.
- */
-export function scheduleFilledStlPrep(buffer, inputs) {
-  if (!buffer?.length) return;
-  const hash = correctedDesignCacheKey(buffer, inputs?.implantProfile || {});
-  const now = Date.now();
-  const existing = filledPrepByHash.get(hash);
-  if (existing && existing.expires > now && (existing.result || existing.promise)) return;
-  const slot = { expires: now + FILLED_PREP_TTL_MS, promise: null, result: null };
-  slot.promise = runAbutmentStlPipelineInWorker(buffer, {
-    targetDiameter: inputs?.targetDiameter ?? null,
-    implantProfile: inputs?.implantProfile || {},
-    ...(inputs?.connection ? { connection: inputs.connection } : {}),
-  })
-    .then(async (js) => {
-      if (js?.outputBuffer?.length && isCuffBlendAutoEnabled()) {
-        try {
-          const blended = await applyAutoCuffBlendSafely({
-            s3Key: `prep/${hash}`,
-            sourceBuffer: js.outputBuffer,
-            caseInfos: {
-              ...(inputs?.implantProfile || {}),
-              finishLine: js.finishLine,
-            },
-            writeBack: false,
-          });
-          if (blended?.buffer?.length) js.outputBuffer = blended.buffer;
-          if (blended?.record) {
-            js.cuffBlendResult = {
-              record: blended.record,
-              fileSize: blended.fileSize || null,
-            };
-          }
-        } catch (error) {
-          console.warn("[filled-stl-prep] cuff failed", error?.message || error);
-        }
-      }
-      slot.result = js;
-      slot.promise = null;
-      return js;
-    })
-    .catch((error) => {
-      filledPrepByHash.delete(hash);
-      console.warn("[filled-stl-prep] failed", error?.message || error);
-      return null;
-    });
-  filledPrepByHash.set(hash, slot);
-  pruneFilledStlPrep();
-}
-
-/** 진행 중이면 그 실행이 끝날 때까지 기다린다. 없거나 실패면 null. */
-export async function takeFilledStlPrep(hash) {
-  const key = String(hash || "");
-  const slot = filledPrepByHash.get(key);
-  if (!slot) return null;
-  if (slot.expires <= Date.now() && !slot.promise) {
-    filledPrepByHash.delete(key);
-    return null;
-  }
-  if (slot.result?.outputBuffer?.length) return slot.result;
-  if (slot.promise) {
-    const js = await slot.promise;
-    return js?.outputBuffer?.length ? js : null;
-  }
-  return null;
 }
 
 /**

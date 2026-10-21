@@ -11,7 +11,7 @@
 //
 // JS가 정상이면 Rhino는 호출하지 않는다. 문제가 나면 productionSchedule.stlJsFallback에
 // 사유를 남기고 stlPreload를 FAILED로 둔다. 준비 카드는 «JS 실패»와 사유 문구를 보여 준다.
-// 계산은 ABUTMENT_STL_FILLED_LAMBDA가 있으면 람다(60초), 없으면 워커다.
+// 계산 실행 위치는 execution.js가 정한다(EBS만 람다 60초, 로컬·테스트는 워커).
 import path from "path";
 import Request from "../../models/request.model.js";
 import { getObjectBufferFromS3, uploadFileToS3 } from "../../utils/s3.utils.js";
@@ -20,7 +20,6 @@ import { emitBgRuntimeStatus } from "../../controllers/bg/bgRuntimeEvents.js";
 import { resolveAbutmentStlInputs } from "./abutmentStlInputs.js";
 import { applyAutoCuffBlendSafely, isCuffBlendAutoEnabled } from "./cuffBlend.service.js";
 import { isPersistedCorrectedDesignKey } from "./correctLambda.service.js";
-import { correctedDesignCacheKey, takeFilledStlPrep } from "./preflight.service.js";
 import { runFilledStlOffRequest } from "./filledLambda.service.js";
 import { describeJsPipelineFailure } from "./runPipelineInWorker.js";
 
@@ -142,24 +141,26 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
   ]);
   lap("load");
   const storedFinishLine = isUserCapturedFinishLine(ci.finishLine) ? ci.finishLine : null;
-  // 수동 피니시라인은 검사 때 만든 결과와 다르다. 그 경우만 파이프라인을 다시 돌린다.
-  let fromPrep = false;
-  let js = storedFinishLine
-    ? null
-    : await takeFilledStlPrep(correctedDesignCacheKey(inputBuffer, ci));
-  if (js?.outputBuffer?.length) {
-    fromPrep = true;
-  } else {
-    js = await runFilledStlOffRequest(inputBuffer, {
-      targetDiameter: inputs.targetDiameter,
-      implantProfile: inputs.implantProfile,
-      ...(inputs.connection ? { connection: inputs.connection } : {}),
-      ...(storedFinishLine ? { finishLinePoints: storedFinishLine.points } : {}),
-      ...(designAlreadyCorrected ? { designAlreadyCorrected: true } : {}),
-    });
-  }
-  if (designAlreadyCorrected && js?.tightCorner) {
-    js.tightCorner = { ...js.tightCorner, needsCorrectionReview: false, correctionSolid: null };
+  // filled·커프·포스트는 제조사 준비인 여기서만 만든다. 업로드 단계에서는 미리 만들지 않는다.
+  const js = await runFilledStlOffRequest(inputBuffer, {
+    targetDiameter: inputs.targetDiameter,
+    implantProfile: inputs.implantProfile,
+    ...(inputs.connection ? { connection: inputs.connection } : {}),
+    ...(storedFinishLine ? { finishLinePoints: storedFinishLine.points } : {}),
+    ...(designAlreadyCorrected ? { designAlreadyCorrected: true } : {}),
+  });
+  // 공구 R 필렛 보정의 동의 SSOT는 의뢰 파일이다. 보정본 키로 들어왔으면 의뢰자가 업로드 때 동의해
+  // 이미 적용된 것이고, 아니면 미적용으로 기록한다. 제조사 준비에서는 보정을 새로 적용하지 않는다.
+  if (js?.tightCorner) {
+    js.tightCorner = designAlreadyCorrected
+      ? {
+          ...js.tightCorner,
+          needsCorrectionReview: false,
+          correctionSolid: null,
+          filletCorrectionApplied: true,
+          filletCorrectionConsented: true,
+        }
+      : { ...js.tightCorner, filletCorrectionApplied: false, filletCorrectionConsented: false };
   }
   assertJsResultUsable(js);
   lap("pipeline");
@@ -167,7 +168,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
   const originalName = sanitizeStlName(fileName || ci.file?.filePath || ci.file?.originalName || "input.stl");
   const outName = filledNameOf(originalName);
   const s3Key = `requests/${requestId}/2-filled/${outName}`;
-  // 필레 보정은 의뢰 STL에 이미 들어 있다. 여기서는 스크류홀·fill만 만든다.
+  // 공구 R 필렛 보정은 의뢰자가 동의했을 때 그 STL에 이미 들어 있다. 여기서는 새로 적용하지 않고 스크류홀·fill만 만든다.
   let output = js.outputBuffer;
   let cuffBlendResult = js.cuffBlendResult?.record
     ? {
@@ -233,7 +234,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
   });
   lap("register");
   await Request.updateOne({ requestId }, { $unset: { "productionSchedule.stlJsFallback": "" } }).catch(() => null);
-  return { ok: true, outName, perf: js.perf, fromPrep, stages, outBytes: output.length };
+  return { ok: true, outName, perf: js.perf, stages, outBytes: output.length };
 }
 
 /**
@@ -263,11 +264,10 @@ export async function runJsPrimaryThenFallback({ requestId, fileName }) {
       tone: "blue",
       clear: true,
     });
-    const prep = result.fromPrep ? " prep=hit" : result.skipped ? "" : " prep=miss";
-    const perf = !result.fromPrep && result.perf ? ` perf=${JSON.stringify(result.perf)}` : "";
+    const perf = result.perf ? ` perf=${JSON.stringify(result.perf)}` : "";
     const stages = result.stages ? ` stagesMs=${JSON.stringify(result.stages)} outBytes=${result.outBytes}` : "";
     console.log(
-      `[abutment-stl-js] requestId=${requestId} ${result.skipped ? `skipped=${result.skipped}` : `ok ${Date.now() - started}ms${prep}${stages}${perf}`}`,
+      `[abutment-stl-js] requestId=${requestId} ${result.skipped ? `skipped=${result.skipped}` : `ok ${Date.now() - started}ms${stages}${perf}`}`,
     );
   } catch (error) {
     const described = describeJsPipelineFailure(error);

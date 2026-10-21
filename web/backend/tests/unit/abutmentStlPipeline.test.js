@@ -476,6 +476,26 @@ describe("abutmentStl pipeline", () => {
     expect(out.tightCorner).toBeTruthy();
   });
 
+  it("제조사 재생성(메인 파이프라인)은 공구 R 보정을 적용하지 않고 측정만 한다", async () => {
+    const buffer = writeBinaryStl({ positions: marginWallSoup(0.25), attributes: null });
+    const out = await runAbutmentStlPipeline(buffer, { targetDiameter: 3.33 });
+    expect(out.tightCorner?.tightCount).toBeGreaterThan(0);
+    expect(out.tightCorner?.filletCorrectionApplied).toBe(false);
+    expect(out.tightCorner?.correctionSolid).toBeNull();
+    expect(out.tightCorner?.needsCorrectionReview).toBe(true);
+  });
+
+  it("확인 전 보정(의뢰자 동의 단계)은 공구 R 보정 STL을 만든다", async () => {
+    const buffer = writeBinaryStl({ positions: marginWallSoup(0.25), attributes: null });
+    const out = await runAbutmentStlPipeline(buffer, { targetDiameter: 3.33, correctDesign: true });
+    expect(out.correctDesign).toBe(true);
+    expect(out.outputBuffer.length).toBeGreaterThan(0);
+    expect(out.tightCorner?.tightCount).toBeGreaterThan(0);
+    // 필렛 R만 바꾼다. 삼각형 수가 그대로라 파일 크기도 커지지 않는다(커프·포스트 로직은 제조사 준비 몫).
+    expect(out.outputBuffer.length).toBe(buffer.length);
+    expect(out.outputBuffer.readUInt32LE(80)).toBe(buffer.readUInt32LE(80));
+  });
+
   it("보정 검사에서 옮길 코너가 없으면 보정 STL도 불완전 가공 메타도 없다", async () => {
     const buffer = writeBinaryStl({ positions: revolvedAbutmentSoup(), attributes: null });
     const out = await runAbutmentStlPipeline(buffer, { targetDiameter: 3.33, correctDesign: true });

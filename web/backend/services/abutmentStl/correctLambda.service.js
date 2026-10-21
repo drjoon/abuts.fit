@@ -3,8 +3,9 @@
 // - web/backend/services/abutmentStl/preflight.service.js
 // - web/backend/services/abutmentStl/runPipelineInWorker.js
 //
-// 완전한 보정 STL은 람다에서 만든다. 함수 이름이 없으면(로컬·테스트) 워커로 같은 코드를 돌린다.
+// 완전한 보정 STL 실행 위치는 execution.js가 정한다(EBS만 람다, 로컬·테스트는 워커).
 import AWS from "aws-sdk";
+import { shouldUseStlLambda } from "./execution.js";
 import {
   deleteFileFromS3,
   getObjectBufferFromS3,
@@ -108,14 +109,14 @@ async function buildOnLambda(buffer, inputs, id) {
   }
 }
 
-/** 완전한 보정 STL. 람다 이름이 있으면 람다, 없으면 로컬 워커. out.stl은 의뢰용으로 남긴다. */
+/** 완전한 보정 STL. EBS(프로덕션)에서만 람다, 그 외에는 로컬 워커(execution.js). out.stl은 의뢰용으로 남긴다. */
 export async function buildCorrectedDesignOffRequest(buffer, inputs, id) {
   if (!/^[a-f0-9]{32}$/.test(String(id || ""))) {
     const error = new Error("보정 STL id가 없습니다.");
     error.reason = "correction_failed";
     throw error;
   }
-  if (correctedStlLambdaName()) return buildOnLambda(buffer, inputs, id);
-  console.warn("[stl-correct] ABUTMENT_STL_CORRECT_LAMBDA가 없어 EBS 워커로 보정 STL을 만듭니다.");
+  if (shouldUseStlLambda(correctedStlLambdaName())) return buildOnLambda(buffer, inputs, id);
+  console.warn("[stl-correct] 람다를 쓰지 않아 백엔드 워커로 보정 STL을 만듭니다.");
   return buildOnWorker(buffer, inputs, id);
 }

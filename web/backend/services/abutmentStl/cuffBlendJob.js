@@ -26,6 +26,7 @@ function applyPostSmooth(result, source, finishLine) {
     status: post.status,
     reason: post.reason || null,
     patchTriangles: d.patchTriangles ?? null,
+    refinePasses: d.refinePasses ?? null,
     maxInwardUm: d.maxInwardUm ?? null,
     meanInwardUm: d.meanInwardUm ?? null,
     ms: d.ms ?? null,

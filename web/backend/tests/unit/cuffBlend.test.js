@@ -242,6 +242,22 @@ describe("blendCuffJunction", () => {
     expect(attributes.some((a) => a === CUFF_BLEND_PATCH_ATTRIBUTE)).toBe(true);
   });
 
+  it("keeps the blended cuff inside the original outline (no outward move below the margin)", () => {
+    const input = steppedAbutment();
+    const res = blendCuffJunction(input, { ...osstem, specKey: osstem.key, finishLine: ringFinishLine(2.3, 3.0) });
+    expect(res.ok).toBe(true);
+    const preProbe = _prepare(input).probe;
+    const postProbe = _prepare(res.buffer).probe;
+    for (const theta of [0.1, 2.0, 4.0]) {
+      for (let z = res.detail.zA + 0.05; z <= 2.95; z += 0.05) {
+        const before = preProbe.rayRadius(theta, z);
+        const after = postProbe.rayRadius(theta, z);
+        if (!Number.isFinite(before) || !Number.isFinite(after)) continue;
+        expect(after).toBeLessThanOrEqual(before + 0.002);
+      }
+    }
+  });
+
   it("starts the blend where the cone actually departs so the side profile rises from 11° without a shoulder", () => {
     const input = earlyFlareAbutment();
     const res = blendCuffJunction(input, { ...osstem, specKey: osstem.key, finishLine: ringFinishLine(2.3, 3.0) });

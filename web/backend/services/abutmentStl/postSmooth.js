@@ -6,7 +6,7 @@
 // 피니시라인 위 포스트(크라운이 앉는 면)의 계단 결을 없앤다.
 // - 마진 모서리 꼭짓점과 그 아래는 하나도 옮기지 않는다.
 // - 나머지 포스트 꼭짓점은 원본 면 안쪽으로만 옮긴다. 새 면의 어느 점도 원본 면 밖으로 나가지 않는다.
-// - 삼각형을 한 번 4등분하고, 원본 면에 국소 2차 곡면을 맞춘 뒤 원본 면 안쪽에 들어갈 만큼만 함께 내린다.
+// - 삼각형을 전체 한 번 4등분하고 꺾임이 큰 곳만 골라 더 나눈 뒤, 원본 면에 국소 2차 곡면을 맞추고 원본 면 안쪽에 들어갈 만큼만 함께 내린다.
 // - 슬롯·스크류홀 메움 테두리처럼 30° 넘게 꺾이는 모서리는 디자인으로 보고 그대로 둔다.
 // - 50µm보다 깊이 들어가야 하는 꼭짓점은 그 자리만 고정한다. 그 때문에 포스트 전체를 건너뛰지 않는다.
 import { writeBinaryStl } from "../../utils/screwHoleFill.js";
@@ -18,20 +18,45 @@ export const POST_SMOOTH_PATCH_ATTRIBUTE = 0x5053;
 
 /** 이보다 꺾인 모서리는 디자인 모서리. 매끈한 면의 계단은 10° 안이다. */
 const FEATURE_DEG = 30;
+/**
+ * 축면→교합면 전이는 한 모서리가 30°를 조금 넘나들어 구간마다 끊기면 모서리가 우둘투둘해진다.
+ * 교합면(위쪽 법선)을 끼고 마진에서 이만큼보다 위에 있는 전이는 55°까지 디자인 모서리로 보지 않고 넘어간다.
+ * 스크류 채널 입구(교합면→수직 벽, 약 90°)는 이 기준에 안 걸려 그대로 남는다.
+ */
+const TOP_RIM_MAX_DEG = 55;
+const TOP_RIM_MIN_TOP_NZ = 0.5;
+const TOP_RIM_ABOVE_MARGIN_MM = 0.5;
+/**
+ * 업로드 직후 공구 R 보정은 마진 코너를 목표 R(공구 0.6 + 여유 0.05mm)로 키운다. 그 필렛 띠(마진 위 이 높이)에서는
+ * 안쪽 이동 상한을 낮춰 보정 여유를 먹지 않는다. 띠를 벗어나면 원래 상한으로 돌아간다.
+ */
+const FILLET_GUARD_HEIGHT_MM = 0.7;
+const FILLET_GUARD_MIN_RATIO = 0.3;
 /** 마진 바로 위 수직 칼라(시멘트 갭 경계, 약 0.05mm)에서 숄더로 꺾이는 고리는 디자인 경계로 막지 않는다. */
 const MARGIN_COLLAR_HEIGHT_MM = 0.15;
 const MARGIN_COLLAR_MAX_DEG = 55;
-/** 이보다 꺾인 고리(계단 결)와 만나는 모서리만 1회 나누어 정점을 보강한다. */
-const REFINE_RIDGE_MIN_DEG = 10.0;
+/**
+ * 곡면을 삼각형 평면으로 잘랐을 때 생기는 현 오차 상한(mm). 에스프릿 공차(0.01mm)의 1/10이다.
+ * 원본 모서리의 꺾임을 그대로 재면 계단 결까지 따라가 면만 폭발한다. 그래서 법선을 곡면 맞춤 폭(FIT_SIGMA_MM)만큼
+ * 평균해 진짜 곡률만 남기고, 현 오차(= 곡률 × 모서리 길이² / 8)가 이 값을 넘는 모서리만 더 나눈다.
+ * 완만한 면은 전체 1회 분할로 끝나 용량이 덜 는다.
+ */
+const MAX_CHORD_ERROR_MM = 0.001;
+/** 전체 1회 + 골라서 3회까지. 이보다 짧은 모서리는 더 나누지 않는다(커프 행 최소 간격과 같은 자릿수). */
+const REFINE_MAX_PASSES = 4;
+const REFINE_MIN_EDGE_MM = 0.02;
 /** 국소 2차 곡면 가중치 폭. 기공소 메시 한 칸(약 0.18mm)보다 넓어야 계단이 평균된다. */
 const FIT_SIGMA_MM = 0.2;
 const FIT_RADIUS_MM = FIT_SIGMA_MM * 2.5;
 /** 포스트 꼭짓점이 그 각도의 마진 모서리 높이보다 이만큼 넘게 낮으면 포스트가 아니다. */
 const BELOW_MARGIN_MM = 0.1;
-/** 마진 모서리에서 이 높이까지 원본 → 다듬은 면으로 넘어간다. */
-const MARGIN_RAMP_MM = 0.08;
-/** 디자인 모서리에서 이 거리까지 원본 → 다듬은 면으로 넘어간다. */
-const FEATURE_RAMP_MM = 0.12;
+/**
+ * 마진 모서리에서 이 높이까지 원본 → 다듬은 면으로 넘어간다. 짧으면(0.08) 필렛 테셀레이션 꺾임(원본 최대 ~14°)을
+ * 부분적으로만 다듬어 경계에서 최대 27°까지 집혀, 원본에 없던 우둘투둘이 마진 위에 남는다. 0.3이면 원본 수준을 넘지 않는다.
+ */
+const MARGIN_RAMP_MM = 0.3;
+/** 디자인 모서리에서 이 거리까지 원본 → 다듬은 면으로 넘어간다. 마진 전환과 같은 이유로 짧게 두지 않는다. */
+const FEATURE_RAMP_MM = 0.3;
 /** 원본 밖으로 나간 양을 덮는 내림 폭. 이 반경 안에서 매끈하게 함께 내린다. */
 const LIFT_RADIUS_MM = 0.1;
 const LIFT_ROUNDS = 5;
@@ -59,6 +84,14 @@ class PostSmoothSkip extends Error {
 const skip = (reason, detail) => {
   throw new PostSmoothSkip(reason, detail);
 };
+
+/** 삼각형 꼭짓점 순서에 맞춘 모서리 위 지점의 무게중심 가중치. */
+function edgeWeights(ids, x, y, s) {
+  const w = [0, 0, 0];
+  w[ids.indexOf(x)] = 1 - s;
+  w[ids.indexOf(y)] = s;
+  return w;
+}
 
 const smoothstep5 = (x) => {
   if (x <= 0) return 0;
@@ -399,6 +432,7 @@ function selectPostRegion(mesh, crease, fn) {
   if (!stack.length) skip("마진 모서리 위 포스트 면을 찾지 못했습니다.");
   const cosFeature = Math.cos((FEATURE_DEG * Math.PI) / 180);
   const cosCollar = Math.cos((MARGIN_COLLAR_MAX_DEG * Math.PI) / 180);
+  const cosTopRim = Math.cos((TOP_RIM_MAX_DEG * Math.PI) / 180);
   // 스크류홀 입구가 완만하게 이어지면 채널 벽을 타고 커넥션까지 번진다. 마진 모서리 아래로 내려가는 면은 영역에 넣지 않는다.
   const belowMargin = (g) => {
     for (let k = 0; k < 3; k += 1) {
@@ -424,7 +458,9 @@ function selectPostRegion(mesh, crease, fn) {
       const mz = (verts[a * 3 + 2] + verts[b * 3 + 2]) / 2;
       const mth = Math.atan2((verts[a * 3 + 1] + verts[b * 3 + 1]) / 2, (verts[a * 3] + verts[b * 3]) / 2);
       const dz = mz - crease.zOf(mth);
-      const minCos = dz > 0 && dz < MARGIN_COLLAR_HEIGHT_MM && fn[g * 3 + 2] >= 0 ? cosCollar : cosFeature;
+      let minCos = dz > 0 && dz < MARGIN_COLLAR_HEIGHT_MM && fn[g * 3 + 2] >= 0 ? cosCollar : cosFeature;
+      // 축면→교합면 전이는 끊지 않고 넘어간다. 교합면까지 영역에 들어와야 모서리가 한 면으로 다듬어진다.
+      if (dz > TOP_RIM_ABOVE_MARGIN_MM && Math.max(fn[f * 3 + 2], fn[g * 3 + 2]) >= TOP_RIM_MIN_TOP_NZ) minCos = Math.min(minCos, cosTopRim);
       if (dot < minCos) continue;
       inRegion[g] = 1;
       stack.push(g);
@@ -529,6 +565,73 @@ function refineRegion(pos, tri, fixed, canSplitEdge = null) {
 }
 
 /**
+ * 나눈 메시에서 모서리마다 양끝의 평균 법선이 도는 각도(°).
+ * 꼭짓점 법선(면 넓이 가중)을 이웃과 여러 번 평균해 계단 결을 지우고 진짜 곡률만 남긴다.
+ * 평균 횟수는 한 칸 크기에 맞춰 정한다(퍼지는 폭 ≈ FIT_SIGMA_MM). 디자인 모서리(30° 초과) 너머로는 평균하지 않는다.
+ */
+function smoothedEdgeTurnDeg(pos, tri) {
+  const nv = pos.length / 3;
+  const tc = tri.length / 4;
+  const fn = new Float64Array(tc * 3);
+  const farea = new Float64Array(tc);
+  for (let t = 0; t < tc; t += 1) farea[t] = faceNormalArea(pos, tri[t * 4], tri[t * 4 + 1], tri[t * 4 + 2], fn, t * 3);
+  const edgeFaces = new Map();
+  for (let t = 0; t < tc; t += 1) {
+    for (let k = 0; k < 3; k += 1) {
+      const a = tri[t * 4 + k];
+      const b = tri[t * 4 + ((k + 1) % 3)];
+      const key = a < b ? a * nv + b : b * nv + a;
+      const list = edgeFaces.get(key);
+      if (list) list.push(t);
+      else edgeFaces.set(key, [t]);
+    }
+  }
+  let vn = new Float64Array(nv * 3);
+  for (let t = 0; t < tc; t += 1) {
+    for (let k = 0; k < 3; k += 1) {
+      const v = tri[t * 4 + k];
+      for (let q = 0; q < 3; q += 1) vn[v * 3 + q] += fn[t * 3 + q] * farea[t];
+    }
+  }
+  const neighbors = Array.from({ length: nv }, () => []);
+  let edgeLenSum = 0;
+  for (const [key, fs] of edgeFaces) {
+    const a = Math.floor(key / nv);
+    const b = key - a * nv;
+    edgeLenSum += Math.hypot(pos[a * 3] - pos[b * 3], pos[a * 3 + 1] - pos[b * 3 + 1], pos[a * 3 + 2] - pos[b * 3 + 2]);
+    if (fs.length !== 2) continue;
+    const [f, g] = fs;
+    const dot = fn[f * 3] * fn[g * 3] + fn[f * 3 + 1] * fn[g * 3 + 1] + fn[f * 3 + 2] * fn[g * 3 + 2];
+    if (dot < Math.cos((FEATURE_DEG * Math.PI) / 180)) continue;
+    neighbors[a].push(b);
+    neighbors[b].push(a);
+  }
+  const meanEdgeMm = edgeFaces.size ? edgeLenSum / edgeFaces.size : FIT_SIGMA_MM;
+  const rounds = Math.max(2, Math.min(16, Math.round((FIT_SIGMA_MM / Math.max(meanEdgeMm, 1e-6)) ** 2)));
+  const normalize = (arr, v) => {
+    const l = Math.hypot(arr[v * 3], arr[v * 3 + 1], arr[v * 3 + 2]);
+    if (l > 0) for (let q = 0; q < 3; q += 1) arr[v * 3 + q] /= l;
+  };
+  for (let v = 0; v < nv; v += 1) normalize(vn, v);
+  for (let r = 0; r < rounds; r += 1) {
+    const next = Float64Array.from(vn);
+    for (let v = 0; v < nv; v += 1) {
+      for (const u of neighbors[v]) for (let q = 0; q < 3; q += 1) next[v * 3 + q] += vn[u * 3 + q];
+      normalize(next, v);
+    }
+    vn = next;
+  }
+  const turn = new Map();
+  for (const key of edgeFaces.keys()) {
+    const a = Math.floor(key / nv);
+    const b = key - a * nv;
+    const dot = vn[a * 3] * vn[b * 3] + vn[a * 3 + 1] * vn[b * 3 + 1] + vn[a * 3 + 2] * vn[b * 3 + 2];
+    turn.set(key, (Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI);
+  }
+  return turn;
+}
+
+/**
  * @param {Buffer} buffer filled STL(커프 보정 뒤)
  * @param {{ finishLine: object|null }} options
  * @returns {{ ok: boolean, status: "applied"|"skipped", reason: string|null, buffer?: Buffer, detail: object }}
@@ -580,8 +683,6 @@ function run(buffer, { finishLine }) {
   /** 원본 영역 면 이웃(디자인 모서리·경계는 -1). 국소 곡면 맞춤 범위를 넓힐 때 쓴다. */
   const nbr = new Int32Array(fc * 3).fill(-1);
   const regionEdges = new Map();
-  const vMaxDeg = new Float64Array(nv0);
-  const edgeDeg = new Map();
   for (const [key, fs] of edgeFaces) {
     const inside = fs.filter((f) => inRegion[f]);
     if (!inside.length) continue;
@@ -598,19 +699,21 @@ function run(buffer, { finishLine }) {
     if (dot < cosFeature) {
       const mz = (P0[a * 3 + 2] + P0[b * 3 + 2]) / 2;
       const mth = Math.atan2((P0[a * 3 + 1] + P0[b * 3 + 1]) / 2, (P0[a * 3] + P0[b * 3]) / 2);
-      const isMarginCollar = mz - crease.zOf(mth) < MARGIN_COLLAR_HEIGHT_MM;
-      if (!isMarginCollar) {
+      const aboveMargin = mz - crease.zOf(mth);
+      const isMarginCollar = aboveMargin < MARGIN_COLLAR_HEIGHT_MM;
+      // 축면→교합면 전이는 고정하지 않고 곡면 맞춤도 넘어가게 한다(아래 이웃 연결로 이어진다).
+      const isTopRim =
+        aboveMargin > TOP_RIM_ABOVE_MARGIN_MM &&
+        Math.max(fn[f * 3 + 2], fn[g * 3 + 2]) >= TOP_RIM_MIN_TOP_NZ &&
+        dot >= Math.cos((TOP_RIM_MAX_DEG * Math.PI) / 180);
+      if (!isMarginCollar && !isTopRim) {
         fixed[a] = 1;
         fixed[b] = 1;
         feature[a] = 1;
         feature[b] = 1;
       }
-      continue;
+      if (!isTopRim) continue;
     }
-    const deg = (Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI;
-    edgeDeg.set(key, deg);
-    if (deg > vMaxDeg[a]) vMaxDeg[a] = deg;
-    if (deg > vMaxDeg[b]) vMaxDeg[b] = deg;
     for (const [p, q] of [[f, g], [g, f]]) {
       for (let k = 0; k < 3; k += 1) {
         const x = faces[p * 3 + k];
@@ -660,7 +763,29 @@ function run(buffer, { finishLine }) {
   lap("region");
   const rfaces = [];
   for (const f of regionFaces) rfaces.push(faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2], f);
-  const refined = refineRegion(P0, rfaces, fixed, (a, b) => Math.max(vMaxDeg[a], vMaxDeg[b]) >= REFINE_RIDGE_MIN_DEG);
+  // 전체를 한 번 나누는 것이 기본이다. 곡면을 맞출 새 꼭짓점이 없으면 꺾임이 그대로 가공면에 남는다.
+  // 그 뒤 현 오차가 상한을 넘는 모서리만 더 나눈다. 나눌 때마다 현 오차는 1/4로 준다.
+  let refined = refineRegion(P0, rfaces, fixed);
+  let refinedFixed = fixed;
+  let refinePasses = 1;
+  for (let pass = 1; pass < REFINE_MAX_PASSES; pass += 1) {
+    const turn = smoothedEdgeTurnDeg(refined.pos, refined.tri);
+    const nvCur = refined.pos.length / 3;
+    const posCur = refined.pos;
+    const chordError = (a, b) => {
+      const len = Math.hypot(posCur[a * 3] - posCur[b * 3], posCur[a * 3 + 1] - posCur[b * 3 + 1], posCur[a * 3 + 2] - posCur[b * 3 + 2]);
+      if (len <= REFINE_MIN_EDGE_MM) return 0;
+      const turnRad = ((turn.get(a < b ? a * nvCur + b : b * nvCur + a) || 0) * Math.PI) / 180;
+      return (turnRad * len) / 8;
+    };
+    const nextRefined = refineRegion(refined.pos, refined.tri, refinedFixed, (a, b) => chordError(a, b) > MAX_CHORD_ERROR_MM);
+    if (nextRefined.tri.length === refined.tri.length) break;
+    const nextFixed = new Uint8Array(nextRefined.pos.length / 3);
+    nextFixed.set(refinedFixed);
+    refined = nextRefined;
+    refinedFixed = nextFixed;
+    refinePasses += 1;
+  }
   const pos = refined.pos;
   const tri = refined.tri;
   const nv = pos.length / 3;
@@ -900,27 +1025,36 @@ function run(buffer, { finishLine }) {
       }
     };
     for (const v of moving) blame([v], sd.query(X[v * 3], X[v * 3 + 1], X[v * 3 + 2], vOrig[v]));
+    // 꼭짓점·모서리 가운데·면 가운데만 보면 삼각형 안쪽에서 원본 밖으로 새는 곳(최대 수 µm)이 남는다.
+    // 모서리 1/3·2/3 지점과 안쪽 1/4 지점까지 재서, 크라운이 닿는 면 어디에도 바깥 점이 없게 한다.
+    const bary = (ids, orig, w0, w1, w2, blameIds) => {
+      const [a, b, c] = ids;
+      blame(
+        blameIds,
+        sd.query(
+          X[a * 3] * w0 + X[b * 3] * w1 + X[c * 3] * w2,
+          X[a * 3 + 1] * w0 + X[b * 3 + 1] * w1 + X[c * 3 + 1] * w2,
+          X[a * 3 + 2] * w0 + X[b * 3 + 2] * w1 + X[c * 3 + 2] * w2,
+          orig,
+        ),
+      );
+    };
     for (let t = 0; t < tc; t += 1) {
       const ids = [tri[t * 4], tri[t * 4 + 1], tri[t * 4 + 2]];
       if (!ids.some((v) => ramp[v] > 0)) continue;
       const orig = tri[t * 4 + 3];
-      let cx = 0;
-      let cy = 0;
-      let cz = 0;
       for (let k = 0; k < 3; k += 1) {
         const a = ids[k];
         const b = ids[(k + 1) % 3];
-        cx += X[a * 3];
-        cy += X[a * 3 + 1];
-        cz += X[a * 3 + 2];
-        if (a < b) {
-          blame(
-            [a, b],
-            sd.query((X[a * 3] + X[b * 3]) / 2, (X[a * 3 + 1] + X[b * 3 + 1]) / 2, (X[a * 3 + 2] + X[b * 3 + 2]) / 2, orig),
-          );
-        }
+        if (a >= b) continue;
+        bary(ids, orig, ...edgeWeights(ids, a, b, 1 / 2), [a, b]);
+        bary(ids, orig, ...edgeWeights(ids, a, b, 1 / 3), [a, b]);
+        bary(ids, orig, ...edgeWeights(ids, a, b, 2 / 3), [a, b]);
       }
-      blame(ids, sd.query(cx / 3, cy / 3, cz / 3, orig));
+      bary(ids, orig, 1 / 3, 1 / 3, 1 / 3, ids);
+      bary(ids, orig, 1 / 2, 1 / 4, 1 / 4, ids);
+      bary(ids, orig, 1 / 4, 1 / 2, 1 / 4, ids);
+      bary(ids, orig, 1 / 4, 1 / 4, 1 / 2, ids);
     }
     return worst;
   };
@@ -954,7 +1088,9 @@ function run(buffer, { finishLine }) {
   // 안쪽으로 내려도 줄지 않는 꼭짓점(스크류 채널이 면을 뚫고 지나가는 곳 등)은 고정하고 주변 전환 가중치를 다시 잡는다.
   let frozenVertices = 0;
   const freeze = (ids) => {
-    for (const v of ids) featureIds.push(v);
+    for (const v of ids) {
+      featureIds.push(v);
+    }
     frozenVertices += ids.length;
     computeRamp(featureIds);
     for (const v of moving) {
@@ -966,6 +1102,12 @@ function run(buffer, { finishLine }) {
     place();
   };
   const inwardOf = (v) => -sd.query(X[v * 3], X[v * 3 + 1], X[v * 3 + 2], vOrig[v]);
+  /** 공구 R 보정 필렛 띠에서는 안쪽 이동 상한이 낮다. 그 위부터 원래 상한으로 서서히 돌아간다. */
+  const inwardCapOf = (v) => {
+    const h = X[v * 3 + 2] - crease.zOf(Math.atan2(X[v * 3 + 1], X[v * 3]));
+    const t = Math.max(0, Math.min(1, h / FILLET_GUARD_HEIGHT_MM));
+    return MAX_INWARD_MM * (FILLET_GUARD_MIN_RATIO + (1 - FILLET_GUARD_MIN_RATIO) * smoothstep5(t));
+  };
   const inwardStats = () => {
     let maxInward = 0;
     let sumInward = 0;
@@ -976,7 +1118,7 @@ function run(buffer, { finishLine }) {
       if (d > maxInward) maxInward = d;
       sumInward += Math.max(0, d);
       movedCount += 1;
-      if (d > MAX_INWARD_MM) deep.push(v);
+      if (d > inwardCapOf(v)) deep.push(v);
     }
     return { maxInward, sumInward, movedCount, deep };
   };
@@ -1023,6 +1165,49 @@ function run(buffer, { finishLine }) {
     stats = inwardStats();
     holdPasses += 1;
   }
+  // 마지막 검증은 부모 면 이웃만 보지 않고 메시 전체에서 가장 가까운 면으로 잰다.
+  // 면이 작은 윗면 쪽에서는 이웃만 보면 바깥으로 샌 점(수 µm)을 놓친다. 걸린 꼭짓점은 원본으로 되돌리고 다시 내린다.
+  const measureGlobal = () => {
+    const offenders = new Set();
+    let worstG = 0;
+    const check = (ids, x, y, z) => {
+      const d = sd.queryGlobal(x, y, z);
+      if (d <= OUTSIDE_TOL_MM / 2) return;
+      worstG = Math.max(worstG, d);
+      for (const v of ids) if (ramp[v] > 0) offenders.add(v);
+    };
+    for (const v of moving) check([v], X[v * 3], X[v * 3 + 1], X[v * 3 + 2]);
+    for (let t = 0; t < tc; t += 1) {
+      const ids = [tri[t * 4], tri[t * 4 + 1], tri[t * 4 + 2]];
+      if (!ids.some((v) => ramp[v] > 0)) continue;
+      const [a, b, c] = ids;
+      const at = (w0, w1, w2) =>
+        check(ids, X[a * 3] * w0 + X[b * 3] * w1 + X[c * 3] * w2, X[a * 3 + 1] * w0 + X[b * 3 + 1] * w1 + X[c * 3 + 1] * w2, X[a * 3 + 2] * w0 + X[b * 3 + 2] * w1 + X[c * 3 + 2] * w2);
+      at(1 / 3, 1 / 3, 1 / 3);
+      at(1 / 2, 1 / 4, 1 / 4);
+      at(1 / 4, 1 / 2, 1 / 4);
+      at(1 / 4, 1 / 4, 1 / 2);
+    }
+    return { worst: worstG, offenders };
+  };
+  let heldGlobalVertices = 0;
+  let globalCheck = measureGlobal();
+  for (let pass = 0; globalCheck.worst > OUTSIDE_TOL_MM / 2 && globalCheck.offenders.size && pass < 3; pass += 1) {
+    heldGlobalVertices += globalCheck.offenders.size;
+    freeze([...globalCheck.offenders]);
+    worst = measure();
+    prev = Float64Array.from(excess);
+    const budget = rounds + LIFT_ROUNDS;
+    while (worst > OUTSIDE_TOL_MM / 2 && rounds < budget) liftOnce();
+    if (worst > OUTSIDE_TOL_MM / 2) {
+      skip("다듬은 면이 원본 밖으로 나가는 곳을 다 없애지 못했습니다.", { outsideUm: Math.round(worst * 1e4) / 10 });
+    }
+    globalCheck = measureGlobal();
+  }
+  if (globalCheck.worst > OUTSIDE_TOL_MM / 2) {
+    skip("다듬은 면이 원본 밖으로 나가는 곳을 다 없애지 못했습니다.", { outsideUm: Math.round(globalCheck.worst * 1e4) / 10 });
+  }
+  stats = inwardStats();
   const { maxInward, sumInward, movedCount } = stats;
   if (maxInward > MAX_INWARD_MM || movedCount === 0) {
     skip("포스트를 너무 깊이 깎아야 해서 적용하지 않았습니다.", { maxInwardUm: Math.round(maxInward * 1e4) / 10 });
@@ -1055,6 +1240,7 @@ function run(buffer, { finishLine }) {
       version: POST_SMOOTH_VERSION,
       regionTriangles: regionFaces.length,
       patchTriangles: tc,
+      refinePasses,
       movedVertices: movedCount,
       fixedFinishVertices: crease.loop.length,
       thinVertices,
@@ -1062,6 +1248,7 @@ function run(buffer, { finishLine }) {
       meanInwardUm: movedCount ? Math.round((sumInward / movedCount) * 1e4) / 10 : 0,
       frozenVertices,
       heldDeepVertices: heldDeep,
+      heldGlobalVertices,
       liftRounds: rounds,
       ms: Date.now() - started,
       stagesMs: stages,
