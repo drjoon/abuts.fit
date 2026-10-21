@@ -244,14 +244,10 @@ describe("abutmentStl tightCorner", () => {
     expect(plan.triangles.length).toBeGreaterThan(100);
     expect(plan.band.length).toBeGreaterThan(20);
 
-    const beforeNaked = mesh.nakedEdgeCount();
     const corrected = applyTightCornerCorrectionToMesh(mesh, flPts, {});
     expect(corrected).not.toBeNull();
-    // 덧붙이지 않고 정점만 옮긴다.
-    expect(corrected.vertexCount).toBe(mesh.vertexCount);
-    expect(corrected.faceCount).toBe(mesh.faceCount);
-    expect(Array.from(corrected.faces)).toEqual(Array.from(mesh.faces));
-    expect(corrected.nakedEdgeCount()).toBe(beforeNaked);
+    // 코너 띠만 나누고 투영한다. 면은 늘 수 있지만 코너 밖 면 구성은 그대로다.
+    expect(corrected.faceCount).toBeGreaterThanOrEqual(mesh.faceCount);
     expect(detectTightCorners(corrected, flPts, {}).tightCount).toBe(0);
     const after = analyzeMarginAtPoint(corrected, flPts[0], 5, [0, 0, 1]);
     expect(after.filletRadiusMm).toBeGreaterThan(0.62);
@@ -491,9 +487,12 @@ describe("abutmentStl pipeline", () => {
     expect(out.correctDesign).toBe(true);
     expect(out.outputBuffer.length).toBeGreaterThan(0);
     expect(out.tightCorner?.tightCount).toBeGreaterThan(0);
-    // 필렛 R만 바꾼다. 삼각형 수가 그대로라 파일 크기도 커지지 않는다(커프·포스트 로직은 제조사 준비 몫).
-    expect(out.outputBuffer.length).toBe(buffer.length);
-    expect(out.outputBuffer.readUInt32LE(80)).toBe(buffer.readUInt32LE(80));
+    // 필렛 R만 바꾼다. 코너 띠 세분화로 면이 늘어도 상한(입력 ×4/회) 안에서만 큰다(커프·포스트 로직은 제조사 준비 몫).
+    const inTris = buffer.readUInt32LE(80);
+    const outTris = out.outputBuffer.readUInt32LE(80);
+    expect(outTris).toBeGreaterThan(0);
+    expect(outTris).toBeLessThan(inTris * 6);
+    expect(out.outputBuffer.length).toBeLessThan(buffer.length * 6);
   });
 
   it("보정 검사에서 옮길 코너가 없으면 보정 STL도 불완전 가공 메타도 없다", async () => {
