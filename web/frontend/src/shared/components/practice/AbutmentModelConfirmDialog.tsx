@@ -57,6 +57,7 @@ import {
 } from "@/features/requests/components/StlMachiningPreflightNotice";
 import {
   fetchCorrectedStlBlob,
+  startCorrectedDesign,
   triggerBrowserFileDownload,
 } from "@/features/requests/utils/downloadCorrectedStl";
 import {
@@ -586,7 +587,10 @@ export function AbutmentModelConfirmDialog({
       });
       if (next === "fix" && detailFile) {
         const id = String(machiningPreflight?.correctedId || "").trim();
-        if (id) onPrepareCorrectedDesign?.(id, detailFile.name);
+        if (id) {
+          startCorrectedDesign(id);
+          onPrepareCorrectedDesign?.(id, detailFile.name);
+        }
       }
     },
     [detailFile, machiningPreflight?.correctedId, onPrepareCorrectedDesign, setDetailCaseInfos],

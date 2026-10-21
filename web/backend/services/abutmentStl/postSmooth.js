@@ -647,6 +647,103 @@ export function smoothPostAboveFinishLine(buffer, options = {}) {
   }
 }
 
+/** 필레로 날카로운 모서리가 없어진 뒤, 피니시라인에 가장 가까운 꼭짓점을 각도마다 이어 고리를 만든다. */
+function traceFinishRing(mesh, flZ) {
+  const { verts, faces, faceMain } = mesh;
+  const nv = verts.length / 3;
+  const signed = new Float64Array(nv);
+  const ang = new Float64Array(nv);
+  for (let v = 0; v < nv; v += 1) {
+    ang[v] = Math.atan2(verts[v * 3 + 1], verts[v * 3]);
+    signed[v] = verts[v * 3 + 2] - flZ(ang[v]);
+  }
+  const band = 0.5;
+  const adj = Array.from({ length: nv }, () => []);
+  const link = (a, b) => {
+    if (Math.abs(signed[a]) > band || Math.abs(signed[b]) > band) return;
+    adj[a].push(b);
+  };
+  for (let f = 0; f < faces.length / 3; f += 1) {
+    if (!faceMain[f]) continue;
+    const a = faces[f * 3];
+    const b = faces[f * 3 + 1];
+    const c = faces[f * 3 + 2];
+    link(a, b);
+    link(b, a);
+    link(b, c);
+    link(c, b);
+    link(c, a);
+    link(a, c);
+  }
+  const bins = 180;
+  const pick = new Int32Array(bins).fill(-1);
+  for (let v = 0; v < nv; v += 1) {
+    if (Math.abs(signed[v]) > 0.3 || adj[v].length === 0) continue;
+    const b = Math.floor(((ang[v] + Math.PI) / TWO_PI) * bins) % bins;
+    const cur = pick[b];
+    if (cur < 0 || Math.abs(signed[v]) < Math.abs(signed[cur])) pick[b] = v;
+  }
+  const seeds = [];
+  for (let b = 0; b < bins; b += 1) {
+    const v = pick[b];
+    if (v < 0 || seeds[seeds.length - 1] === v) continue;
+    seeds.push(v);
+  }
+  if (seeds.length >= 2 && seeds[0] === seeds[seeds.length - 1]) seeds.pop();
+  if (seeds.length < 24) return null;
+
+  const pathBetween = (from, to) => {
+    if (from === to) return [from];
+    const prev = new Int32Array(nv).fill(-2);
+    const queue = [from];
+    prev[from] = -1;
+    for (let qi = 0; qi < queue.length; qi += 1) {
+      const v = queue[qi];
+      if (v === to) break;
+      for (const n of adj[v]) {
+        if (prev[n] !== -2) continue;
+        prev[n] = v;
+        queue.push(n);
+      }
+    }
+    if (prev[to] === -2) return null;
+    const path = [];
+    let v = to;
+    while (v !== -1) {
+      path.push(v);
+      v = prev[v];
+      if (path.length > 500) return null;
+    }
+    path.reverse();
+    return path;
+  };
+
+  const loop = [];
+  for (let i = 0; i < seeds.length; i += 1) {
+    const path = pathBetween(seeds[i], seeds[(i + 1) % seeds.length]);
+    if (!path || path.length < 2) return null;
+    loop.push(...(i === 0 ? path : path.slice(1)));
+  }
+  if (loop.length > 1 && loop[0] === loop[loop.length - 1]) loop.pop();
+  if (loop.length < 24) return null;
+  const zOf = (theta) => {
+    let best = loop[0];
+    let bestD = Infinity;
+    for (const v of loop) {
+      let d = ang[v] - theta;
+      if (d > Math.PI) d -= TWO_PI;
+      if (d < -Math.PI) d += TWO_PI;
+      d = Math.abs(d);
+      if (d < bestD) {
+        bestD = d;
+        best = v;
+      }
+    }
+    return verts[best * 3 + 2];
+  };
+  return { loop, zOf };
+}
+
 function run(buffer, { finishLine }) {
   const started = Date.now();
   const stages = {};
@@ -661,7 +758,8 @@ function run(buffer, { finishLine }) {
   const { mesh } = prepareCuffMesh(buffer);
   // Re 재디자인은 이미 다듬은 filled를 다시 받는다. 또 다듬으면 안쪽으로 누적해 들어간다.
   if (mesh.faceAttr.some((a) => a === POST_SMOOTH_PATCH_ATTRIBUTE)) skip("이미 다듬은 포스트입니다.");
-  const crease = findFinishCrease(mesh, flZ);
+  // 공구 R 필레를 먼저 키우면 20° 모서리가 없어진다. 그때는 피니시라인을 따라 고리를 잇는다.
+  const crease = findFinishCrease(mesh, flZ) || traceFinishRing(mesh, flZ);
   if (!crease) skip("마진 모서리를 찾지 못했습니다.");
   lap("prepare");
   const { verts, faces, faceAttr, faceMain } = mesh;

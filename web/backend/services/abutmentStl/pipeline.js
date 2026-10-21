@@ -4,8 +4,9 @@
 // - web/backend/services/abutmentStl/pipeline.worker.js
 //
 // Rhino 없이 1-stl → 2-filled를 만든다. 순서는 process_abutment_stl.main과 같다:
-// import → align → (제조사 준비) 생략된 11° 커넥션 추가 → finishline → 스크류홀 패치 → 직경 → fill_steps → export → 메타.
-// 11° 커넥션 추가는 preflight·의뢰 전 보정 STL에서는 하지 않는다.
+// import → align → 11° 커넥션 추가 → finishline → 스크류홀 패치 → 직경 → fill_steps → export → 메타.
+// 의뢰자 보정은 그 전에 마진 코너 필레를 고친 뒤 이 파이프라인과 커프 작업을 그대로 돌리고, 원본 좌표로 되돌린다.
+// preflight는 필레 검사만 한다. 이미 보정된 STL(surfacePrepared)은 정렬만 한다.
 import { Mesh, writeBinaryStl, parseStl, identity, multiply, translation } from "./meshCore.js";
 import { addMissingConnectionTaper } from "./connectionTaperFill.js";
 import { alignMeshToOrigin, ALIGN_MODULE_VERSION, JS_ALIGN_PORT_VERSION } from "./align.js";
@@ -171,70 +172,56 @@ function finishPreflight({ mesh, finishLine, align, alignMatrix, logs, perf, mar
 }
 
 /**
- * 정렬된 필렛 보정 메시에 제조사 준비 보정을 모두 적용하고, 원본 CAD 좌표 STL로 되돌린다.
- * 커프 스펙이 없어도 포스트·커넥션 다듬기는 cuffBlendJob이 이어서 한다.
+ * 필레를 먼저 고친 STL(원본 CAD 좌표)에 제조사 준비와 같은 파이프라인을 돌리고, 다시 원본 좌표로 되돌린다.
+ * 정렬·커넥션 원뿔·스크류홀·fill·메타는 runAbutmentStlPipeline, 커프·포스트·커넥션 다듬기는 runCuffBlendJob.
  */
-function manufacturerPreparedStl({ mesh, finishLine, alignMatrix, implantProfile, connection, log }) {
-  let matrix = alignMatrix;
-  let fl = finishLine;
-  try {
-    const connectionTaper = addMissingConnectionTaper(mesh, { implantProfile, connection, log });
-    if (connectionTaper?.applied && connectionTaper.zShift && fl?.points?.length) {
-      const dz = connectionTaper.zShift;
-      matrix = multiply(translation(0, 0, dz), matrix);
-      const points = fl.points.map((p) => [p[0], p[1], p[2] + dz]);
-      fl = { ...fl, points, ...finishlineZExtrema(points) };
-    }
-  } catch (error) {
-    log(`[stl-correct] connection taper failed: ${error?.message || error}`);
+async function manufacturerPipelineAfterFillet(filletedBuffer, { targetDiameter, implantProfile, connection, screwholeParams, log }) {
+  const prepared = await runAbutmentStlPipeline(filletedBuffer, {
+    targetDiameter,
+    implantProfile,
+    connection,
+    screwholeParams,
+    log,
+  });
+  let alignedBuf = prepared?.outputBuffer;
+  if (!alignedBuf?.length) {
+    const error = new Error("제조사 준비 파이프라인이 STL을 만들지 못했습니다.");
+    error.reason = "pipeline_failed";
+    throw error;
   }
-
-  let soup = mesh.toTriangleSoup();
-  try {
-    const screw = buildScrewholePatch(mesh, { params: SCREWHOLE_PARAMS, log });
-    if (screw.patch) soup = appendTriangles(soup, screw.patch);
-  } catch (error) {
-    log(`[stl-correct] screwhole failed: ${error?.message || error}`);
-  }
-  const combined = Mesh.fromTriangleSoup(soup);
-  try {
-    const res = buildVerticalBandSolid(combined, { log });
-    if (res.solid) soup = appendTriangles(soup, res.solid);
-  } catch (error) {
-    log(`[stl-correct] fill steps failed: ${error?.message || error}`);
-  }
-
-  let filledBuf = writeBinaryStl({ positions: soup, attributes: null });
   try {
     const { key, spec } = resolveCuffConnectionSpec(implantProfile || {});
-    const blended = runCuffBlendJob(filledBuf, "auto", {
+    const blended = runCuffBlendJob(alignedBuf, "auto", {
       spec,
       specKey: key,
-      finishLine: fl,
+      finishLine: prepared.finishLine,
     });
-    if (blended?.buffer?.length) filledBuf = blended.buffer;
-    else log(`[stl-correct] cuff job kept filled: ${blended?.status || ""} ${blended?.reason || ""}`.trim());
+    const post = blended?.detail?.postSmooth;
+    log(
+      `[stl-correct] cuff ${blended?.status || ""} ${blended?.reason || ""} post=${post?.status || ""}/${post?.reason || ""}`.trim(),
+    );
+    if (blended?.buffer?.length) alignedBuf = blended.buffer;
   } catch (error) {
     log(`[stl-correct] cuff job failed: ${error?.message || error}`);
   }
-
-  const outMesh = Mesh.fromStlBuffer(filledBuf);
-  outMesh.transform(invertRigidMatrix(matrix));
+  const outMesh = Mesh.fromStlBuffer(alignedBuf);
+  outMesh.transform(invertRigidMatrix(prepared.alignMatrix));
   return writeBinaryStl({ positions: outMesh.toTriangleSoup(), attributes: null });
 }
 
 /**
- * 확인 전 보정 STL. 필렛을 키운 뒤 제조사 준비와 같은 순서로
- * 커넥션 원뿔 추가, 스크류홀·fill, 커프 이음, 포스트 다듬기, 커넥션 면 다듬기를 한다.
+ * 확인 전 보정 STL. 마진 코너 필레를 먼저 고친 뒤, 그 메시에 제조사 준비 JS 파이프라인 전체를 돌린다.
  * 결과는 원본 CAD 좌표로 되돌린다. 제조사 준비는 이 파일을 다시 보정하지 않는다.
  */
-function finishCorrectedDesign({
+async function finishCorrectedDesign({
   mesh,
   finishLine,
   align,
   alignMatrix,
   implantProfile,
   connection,
+  targetDiameter,
+  screwholeParams,
   logs,
   perf,
   mark,
@@ -258,12 +245,14 @@ function finishCorrectedDesign({
       if (built.corrected?.mesh) {
         filletSurface = built.filletSurface;
         tightCorner = built.tightCorner;
-        outputBuffer = manufacturerPreparedStl({
-          mesh: built.corrected.mesh,
-          finishLine,
-          alignMatrix,
+        const filleted = built.corrected.mesh;
+        filleted.transform(invertRigidMatrix(alignMatrix));
+        const filletedBuffer = writeBinaryStl({ positions: filleted.toTriangleSoup(), attributes: null });
+        outputBuffer = await manufacturerPipelineAfterFillet(filletedBuffer, {
+          targetDiameter,
           implantProfile,
           connection,
+          screwholeParams,
           log,
         });
       } else {
@@ -303,7 +292,7 @@ function finishCorrectedDesign({
  * @param {{ targetDiameter?: number|null, implantProfile?: object, screwholeParams?: object, finishLinePoints?: number[][], preflight?: boolean, log?: Function }} options
  * finishLinePoints가 있으면 검출을 건너뛰고 그 점을 메타데이터에 쓴다.
  * preflight면 32곳 필레 검사만 한다.
- * correctDesign이면 의뢰 전 다운로드용 보정 STL을 만든다. 제조사 준비와 같은 보정을 모두 넣고 원본 좌표로 되돌린다.
+ * correctDesign이면 마진 코너 필레를 먼저 고친 뒤 제조사 준비와 같은 파이프라인 전체를 돌리고, 원본 좌표로 되돌린다.
  * surfacePrepared면 그 보정본을 정렬만 하고 스크류홀·fill·커넥션 추가를 다시 하지 않는다.
  */
 export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
@@ -399,6 +388,8 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
       alignMatrix,
       implantProfile,
       connection: options.connection,
+      targetDiameter,
+      screwholeParams,
       logs,
       perf,
       mark,

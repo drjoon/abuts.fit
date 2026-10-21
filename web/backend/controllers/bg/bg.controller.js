@@ -601,6 +601,8 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     fileSize: incomingFileSize,
     // JS 파이프라인이 업로드 전에 메모리에서 커프 보정한 결과. 있으면 S3를 다시 읽지 않는다.
     cuffBlendResult,
+    // 의뢰자가 필레 다음 제조사 준비 파이프라인까지 끝낸 보정본. 여기서 커프를 다시 돌리지 않는다.
+    skipCuffBlend,
   } = req.body;
 
   if (!fileName || !sourceStep) {
@@ -1129,7 +1131,9 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         // 메시 worker 슬롯 대기는 CUFF_BLEND_AUTO_QUEUE_TIMEOUT_MS(기본 15초)로 끊고, 넘으면 보정 없이 failed(「커프 확인」)로 등록한다.
         const cuff = cuffBlendResult
           ? cuffBlendResult
-          : await applyAutoCuffBlendSafely({
+          : skipCuffBlend
+            ? null
+            : await applyAutoCuffBlendSafely({
               s3Key: s3Info?.s3Key,
               caseInfos: request?.caseInfos,
               finishLine:

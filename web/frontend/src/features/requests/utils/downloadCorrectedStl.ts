@@ -91,6 +91,29 @@ export async function fetchCorrectedStlBlob({
   return { ok: true, blob, fileName };
 }
 
+function authHeaders(token?: string | null) {
+  let effectiveToken = token;
+  if (!effectiveToken) {
+    try {
+      effectiveToken = localStorage.getItem("abuts_auth_token") || undefined;
+    } catch {
+      // ignore
+    }
+  }
+  return effectiveToken ? { Authorization: `Bearer ${effectiveToken}` } : {};
+}
+
+/** 보정을 고르면 바로 파이프라인을 시작한다. 파일은 기다리지 않는다. */
+export function startCorrectedDesign(correctedId: string, token?: string | null) {
+  const id = String(correctedId || "").trim();
+  if (!/^[a-f0-9]{32}$/.test(id)) return;
+  void fetch(`/api/files/temp/stl-corrected-cache/${id}/start`, {
+    method: "POST",
+    headers: authHeaders(token),
+    cache: "no-store",
+  }).catch(() => null);
+}
+
 /** 람다가 S3에 남긴 보정 STL. 의뢰 파일은 이 키를 그대로 쓴다. */
 export async function fetchCorrectedDesignUpload({
   correctedId,

@@ -214,6 +214,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
     s3Url: uploaded.location,
     fileSize: output.length,
     ...(cuffBlendResult ? { cuffBlendResult } : {}),
+    ...(surfacePrepared ? { skipCuffBlend: true } : {}),
     stlMetadata: {
       maxDiameter: meta.maxDiameter,
       connectionDiameter: meta.connectionDiameter,

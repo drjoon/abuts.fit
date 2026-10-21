@@ -5,8 +5,8 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useStlMachiningPreflight.ts
 //
 // 업로드 직후는 간이 검사(screenMarginFillet)만 기다린다.
-// 타이트면 확인 전까지 correctMarginFillet 보정 STL(필렛 R만 변경, 삼각형 수 그대로)을 뒤에서 만든다.
-// 커프·헥스 정렬·포스트 다듬기 같은 나머지 로직은 여기서 미리 만들지 않고 제조사 준비에서만 한다.
+// 의뢰자가 보정을 고르면 마진 코너 필레를 먼저 고치고, 이어서 제조사 준비와 같은 JS 파이프라인 전체를 돌린다.
+// 그 결과는 원본 CAD 좌표 STL이라 의뢰자가 그대로 받는다. 제조사 준비는 이 파일을 다시 보정하지 않는다.
 import crypto from "crypto";
 import { resolveAbutmentStlInputs } from "./abutmentStlInputs.js";
 import { runAbutmentStlPipelineInWorker } from "./runPipelineInWorker.js";
@@ -120,6 +120,14 @@ export function rememberCorrectedDesignStl({ hash, buffer, fileName, userId } = 
   correctedByHash.set(slot, id);
   pruneCorrectedDesignCache();
   return id;
+}
+
+/** 보정을 고른 순간 완전한 파이프라인을 시작한다. 결과는 나중에 받는다. */
+export function kickCorrectedDesignStl(id, userId) {
+  const row = readCorrectedDesignStl(id, userId);
+  if (!row) return false;
+  beginCorrectedDesignJob(row, String(id || ""));
+  return Boolean(row.promise || row.buffer?.length);
 }
 
 export function readCorrectedDesignStl(id, userId) {

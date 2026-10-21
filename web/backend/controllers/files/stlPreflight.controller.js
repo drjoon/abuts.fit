@@ -13,6 +13,7 @@ import {
   buildCorrectedDesignStlBuffer,
   awaitCorrectedDesignMeta,
   awaitCorrectedDesignStl,
+  kickCorrectedDesignStl,
   runStlMachiningPreflight,
 } from "../../services/abutmentStl/preflight.service.js";
 import { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
@@ -129,6 +130,19 @@ export const downloadStlMachiningCorrected = asyncHandler(async (req, res) => {
   res.setHeader("Content-Type", "application/octet-stream");
   res.setHeader("Content-Disposition", attachmentDisposition(filename));
   return res.status(200).send(result.buffer);
+});
+
+/** POST /api/files/temp/stl-corrected-cache/:id/start — 보정을 고르면 파이프라인을 바로 시작한다. */
+export const startCachedCorrectedStl = asyncHandler(async (req, res) => {
+  const id = String(req.params?.id || "");
+  if (!/^[a-f0-9]{32}$/.test(id)) {
+    throw new ApiError(404, "보정 STL이 없거나 만료되었습니다.");
+  }
+  const started = kickCorrectedDesignStl(id, req.user?._id);
+  if (!started) {
+    throw new ApiError(404, "보정 STL이 없거나 만료되었습니다.");
+  }
+  return res.status(202).json(new ApiResponse(202, { id }, "보정 STL을 만들고 있습니다."));
 });
 
 /** GET /api/files/temp/stl-corrected-cache/:id/meta — 의뢰에 쓸 보정 STL의 S3 위치. */
