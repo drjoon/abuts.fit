@@ -1232,10 +1232,21 @@ function angDelta(a, b) {
 export const CORRECTION_FILLET_MARGIN_MM = 0.05;
 /** 이보다 벌어진 측정 구간 사이는 보간하지 않고 건드리지 않는다. */
 const STATION_MAX_GAP_RAD = 0.6;
+/** 비연속 스테이션 구간 양 끝에서 변위를 0으로 줄이는 각도 폭(라디안). */
+const STATION_GAP_RAMP_RAD = 0.16;
+/** 스테이션 접선 방향(rayLedge·rayWall) 둘레 평활 반창. */
+const STATION_RAY_SMOOTH_HALF_WINDOW = 3;
+const STATION_RAY_SMOOTH_MAX_GAP_RAD = 0.35;
 /** 마진 끝(FL)에 남겨 둘 직선 마진 길이(mm). */
 const LEDGE_KEEP_MM = 0.025;
-const RAY_ALIGN_DOT = 0.9995;
 const ON_LINE_EPS_MM = 0.005;
+/** 필렛 부채꼴 내 최대 각도 비율이 이보다 작으면(긴 단일 축면·마진 삼각형) 접점까지 각도를 늘린다. */
+const SPARSE_SECTOR_RATIO_MAX = 0.78;
+
+function smoothstep01(x) {
+  const t = clamp(x, 0, 1);
+  return t * t * (3 - 2 * t);
+}
 
 function norm2(v) {
   const l = Math.hypot(v.u, v.w) || 1;
@@ -1256,6 +1267,69 @@ function withFilletTarget(st, targetR) {
   };
 }
 
+/**
+ * 스테이션 간 단면 삼각형 대각선 분할로 생기는 rayLedge·rayWall 각도 떨림을 둘레 방향으로 평활하고,
+ * 비연속 구간(gap) 경계에서 변위가 갑자기 끊기지 않게 가중치(blend)를 부여한다.
+ */
+function smoothStationsForCorrection(stations) {
+  const n = stations.length;
+  if (!n) return stations;
+  const gapAngles = [];
+  for (let k = 0; k < n; k += 1) {
+    const a = stations[k];
+    const b = stations[(k + 1) % n];
+    const span = k === n - 1 ? b.theta + Math.PI * 2 - a.theta : b.theta - a.theta;
+    if (span > STATION_MAX_GAP_RAD) gapAngles.push(a.theta, b.theta);
+  }
+  return stations.map((st, i) => {
+    const wAnchorU = st.corner.u + st.rayWall.u * st.oldTrimW;
+    const wAnchorW = st.corner.w + st.rayWall.w * st.oldTrimW;
+    let lu = 0;
+    let lw = 0;
+    let wu = 0;
+    let ww = 0;
+    for (let d = -STATION_RAY_SMOOTH_HALF_WINDOW; d <= STATION_RAY_SMOOTH_HALF_WINDOW; d += 1) {
+      const j = (i + d + n) % n;
+      let da = Math.abs(stations[j].theta - st.theta);
+      if (da > Math.PI) da = Math.PI * 2 - da;
+      if (da > STATION_RAY_SMOOTH_MAX_GAP_RAD) continue;
+      const w = STATION_RAY_SMOOTH_HALF_WINDOW + 1 - Math.abs(d);
+      lu += w * stations[j].rayLedge.u;
+      lw += w * stations[j].rayLedge.w;
+      wu += w * stations[j].rayWall.u;
+      ww += w * stations[j].rayWall.w;
+    }
+    const rayLedge = norm2({ u: lu, w: lw });
+    const rayWall = norm2({ u: wu, w: ww });
+    const mdu = -rayLedge.u;
+    const mdw = -rayLedge.w;
+    const wdu = rayWall.u;
+    const wdw = rayWall.w;
+    const det = mdu * wdw - mdw * wdu;
+    let minGapD = Infinity;
+    for (const g of gapAngles) {
+      let d = Math.abs(st.theta - g);
+      if (d > Math.PI) d = Math.PI * 2 - d;
+      if (d < minGapD) minGapD = d;
+    }
+    const blend = gapAngles.length ? smoothstep01(minGapD / STATION_GAP_RAMP_RAD) : 1;
+    if (!(det < -0.05)) return { ...st, blend };
+    const tm = ((wAnchorU - st.uFl) * wdw - (wAnchorW - st.wFl) * wdu) / det;
+    const corner = { u: st.uFl + mdu * tm, w: st.wFl + mdw * tm };
+    const ext = Math.acos(clamp(rayLedge.u * rayWall.u + rayLedge.w * rayWall.w, -1, 1));
+    return {
+      ...st,
+      corner,
+      rayLedge,
+      rayWall,
+      ext,
+      distFl: Math.hypot(st.uFl - corner.u, st.wFl - corner.w),
+      oldTrimW: Math.hypot(wAnchorU - corner.u, wAnchorW - corner.w),
+      blend,
+    };
+  });
+}
+
 function stationAtTheta(stations, theta, targetR) {
   const n = stations.length;
   for (let k = 0; k < n; k += 1) {
@@ -1269,59 +1343,85 @@ function stationAtTheta(stations, theta, targetR) {
     const t = span > 1e-9 ? off / span : 0;
     const lerp = (x, y) => x + t * (y - x);
     const lerp2 = (p, q) => ({ u: lerp(p.u, q.u), w: lerp(p.w, q.w) });
-    return withFilletTarget(
-      {
-        uFl: lerp(a.uFl, b.uFl),
-        wFl: lerp(a.wFl, b.wFl),
-        distFl: lerp(a.distFl, b.distFl),
-        oldTrimL: lerp(a.oldTrimL, b.oldTrimL),
-        oldTrimW: lerp(a.oldTrimW, b.oldTrimW),
-        corner: lerp2(a.corner, b.corner),
-        rayLedge: norm2(lerp2(a.rayLedge, b.rayLedge)),
-        rayWall: norm2(lerp2(a.rayWall, b.rayWall)),
-      },
-      targetR,
-    );
+    return {
+      ...withFilletTarget(
+        {
+          uFl: lerp(a.uFl, b.uFl),
+          wFl: lerp(a.wFl, b.wFl),
+          distFl: lerp(a.distFl, b.distFl),
+          oldTrimL: lerp(a.oldTrimL, b.oldTrimL),
+          oldTrimW: lerp(a.oldTrimW, b.oldTrimW),
+          corner: lerp2(a.corner, b.corner),
+          rayLedge: norm2(lerp2(a.rayLedge, b.rayLedge)),
+          rayWall: norm2(lerp2(a.rayWall, b.rayWall)),
+        },
+        targetR,
+      ),
+      blend: lerp(a.blend ?? 1, b.blend ?? 1),
+    };
   }
   return null;
 }
 
 /**
- * 반경 평면 (u, w) 정점을 R 필렛 위로 옮긴 좌표. 안 옮기면 null.
- * 코너 꼭짓점에서 정점 방향 그대로 호까지 민다(마진·축면 직선은 그대로).
- * FL 쪽 마진 정점은 마진 직선 위에서만 미끄러진다.
+ * 점 (u, w)가 필렛 원 중심(st.center) 기준 부채꼴 안에 있으면 정규화 각도 정보를 돌려준다.
  */
-function filletTargetInPlane(st, u, w, targetR) {
+function filletSectorPoint(st, u, w, targetR) {
+  if (st.oldTrimL < 0.01 && st.oldTrimW < 0.01) return null;
   if (w <= st.wFl + ON_LINE_EPS_MM || u >= st.uFl - ON_LINE_EPS_MM) return null;
   const cu = u - st.corner.u;
   const cw = w - st.corner.w;
   const cLen = Math.hypot(cu, cw);
-  if (cLen < 1e-6) return null;
-  if (Math.hypot(u - st.center.u, w - st.center.w) > st.cd + 0.08) return null;
-  const dir = { u: cu / cLen, w: cw / cLen };
-  const dotL = dir.u * st.rayLedge.u + dir.w * st.rayLedge.w;
-  const dotW = dir.u * st.rayWall.u + dir.w * st.rayWall.w;
+  if (cLen < 1e-3) return null;
+  const vx = u - st.center.u;
+  const vw = w - st.center.w;
+  const d = Math.hypot(vx, vw);
+  if (d <= targetR + 1e-4 || d > st.cd + 0.08) return null;
+  if (vx * st.rayLedge.u + vw * st.rayLedge.w >= 0) return null;
+  if (vx * st.rayWall.u + vw * st.rayWall.w >= 0) return null;
   const effTrimL = Math.min(st.trim, st.distFl - LEDGE_KEEP_MM);
+  if (effTrimL <= 0.02) return null;
+  const binU = -st.bis.u;
+  const binW = -st.bis.w;
+  const bperpU = -st.bis.w;
+  const bperpW = st.bis.u;
+  const signW = st.rayWall.u * bperpU + st.rayWall.w * bperpW >= 0 ? 1 : -1;
+  const pU = bperpU * signW;
+  const pW = bperpW * signW;
+  const alpha = Math.atan2(vx * pU + vw * pW, vx * binU + vw * binW);
+  const alphaW = (Math.PI - st.ext) / 2;
+  const alphaL = alphaW - Math.atan2(Math.max(0, st.trim - effTrimL), targetR);
+  return { vx, vw, d, binU, binW, pU, pW, alpha, alphaW, alphaL };
+}
 
-  if (dotW > RAY_ALIGN_DOT && cLen > st.oldTrimW + 0.02) return null;
-  if (dotL > RAY_ALIGN_DOT && cLen >= st.oldTrimL - ON_LINE_EPS_MM) {
-    if (effTrimL <= st.oldTrimL || cLen >= st.distFl - ON_LINE_EPS_MM) return null;
-    const t = (cLen - st.oldTrimL) / Math.max(1e-6, st.distFl - st.oldTrimL);
-    const len = effTrimL + t * (st.distFl - effTrimL);
-    return { u: st.corner.u + st.rayLedge.u * len, w: st.corner.w + st.rayLedge.w * len };
+/**
+ * 반경 평면 (u, w) 정점을 R 필렛 위로 옮긴 좌표. 안 옮기면 null.
+ * 필렛 원 중심(st.center)에서 법선 방향으로 원호에 투영해 접선 방향 밀림·삼각형 뒤집힘을 막는다.
+ * 축면·마진이 분할 없는 단일 긴 삼각형인 메시는 부채꼴 각도 비율(scaleW·scaleL)로 접점까지 자연스럽게 잇는다.
+ */
+function filletTargetInPlane(st, u, w, targetR, scaleW = 1, scaleL = 1) {
+  const blend = st.blend ?? 1;
+  if (!(blend > 1e-3)) return null;
+  const sec = filletSectorPoint(st, u, w, targetR);
+  if (!sec) return null;
+  const { vx, vw, d, binU, binW, pU, pW, alpha, alphaW, alphaL } = sec;
+  let tu;
+  let tw;
+  if (scaleW === 1 && scaleL === 1) {
+    const s = targetR / d;
+    tu = st.center.u + vx * s;
+    tw = st.center.w + vw * s;
+  } else if (alpha >= 0) {
+    const aOut = Math.min(alphaW, alpha * scaleW);
+    tu = st.center.u + targetR * (Math.cos(aOut) * binU + Math.sin(aOut) * pU);
+    tw = st.center.w + targetR * (Math.cos(aOut) * binW + Math.sin(aOut) * pW);
+  } else {
+    const aOut = Math.min(alphaL, -alpha * scaleL);
+    tu = st.center.u + targetR * (Math.cos(aOut) * binU - Math.sin(aOut) * pU);
+    tw = st.center.w + targetR * (Math.cos(aOut) * binW - Math.sin(aOut) * pW);
   }
-  if (Math.hypot(u - st.center.u, w - st.center.w) <= targetR + 1e-4) return null;
-  const b = (st.center.u - st.corner.u) * dir.u + (st.center.w - st.corner.w) * dir.w;
-  let tArc = b - Math.sqrt(Math.max(0, b * b - st.trim * st.trim));
-  // FL이 가까워 호 접점이 마진 끝을 넘으면, 마진 쪽 절반만 접점을 FL 안쪽으로 당긴다.
-  const crossBis = st.bis.u * dir.w - st.bis.w * dir.u;
-  if (crossBis < 0 && effTrimL < st.trim) {
-    const angFromBis = Math.acos(clamp(dir.u * st.bis.u + dir.w * st.bis.w, -1, 1));
-    const s = Math.min(1, angFromBis / Math.max(1e-6, st.ext / 2));
-    tArc *= 1 - (1 - effTrimL / st.trim) * s * s;
-  }
-  if (tArc <= cLen + 1e-4) return null;
-  return { u: st.corner.u + dir.u * tArc, w: st.corner.w + dir.w * tArc };
+  if (Math.hypot(tu - u, tw - w) * blend <= 1e-4) return null;
+  return { u: u + blend * (tu - u), w: w + blend * (tw - w) };
 }
 
 /**
@@ -1396,15 +1496,35 @@ function filletCorrectionAboutAxis(mesh, raw, toolR, axis) {
   const targetR = toolR + CORRECTION_FILLET_MARGIN_MM;
   const frame = axisFrame(axis);
   const sampledFl = resampleFinishLine(raw, STATION_SAMPLE_MAX);
-  const stations = sampledFl
+  const rawStations = sampledFl
     .map((fl) => {
       const st = measureFilletStation(mesh, fl, axis);
       return st ? { ...st, theta: thetaAboutAxis(fl, axis, frame) } : null;
     })
     .filter(Boolean)
     .sort((a, b) => a.theta - b.theta);
-  if (stations.length < 3) return null;
-  if (!stations.some((s) => s.measuredR < toolR - FILLET_R_TOLERANCE_MM)) return null;
+  if (rawStations.length < 3) return null;
+  if (!rawStations.some((s) => s.measuredR < toolR - FILLET_R_TOLERANCE_MM)) return null;
+  const stations = smoothStationsForCorrection(rawStations);
+
+  let maxRatioW = 0;
+  let maxRatioL = 0;
+  const v0 = mesh.verts;
+  for (let vi = 0; vi < mesh.vertexCount; vi += 1) {
+    const p = [v0[vi * 3], v0[vi * 3 + 1], v0[vi * 3 + 2]];
+    const w = dot3(p, axis);
+    const radialVec = sub3(p, scale3(axis, w));
+    const u = Math.hypot(...radialVec);
+    if (u < 0.2) continue;
+    const st = stationAtTheta(stations, thetaAboutAxis(p, axis, frame), targetR);
+    if (!st) continue;
+    const sec = filletSectorPoint(st, u, w, targetR);
+    if (!sec) continue;
+    if (sec.alpha >= 0 && sec.alphaW > 1e-4) maxRatioW = Math.max(maxRatioW, sec.alpha / sec.alphaW);
+    if (sec.alpha < 0 && sec.alphaL > 1e-4) maxRatioL = Math.max(maxRatioL, -sec.alpha / sec.alphaL);
+  }
+  const scaleW = maxRatioW > 0.05 && maxRatioW < SPARSE_SECTOR_RATIO_MAX ? 1 / maxRatioW : 1;
+  const scaleL = maxRatioL > 0.05 && maxRatioL < SPARSE_SECTOR_RATIO_MAX ? 1 / maxRatioL : 1;
 
   const next = mesh.clone();
   const v = next.verts;
@@ -1418,7 +1538,7 @@ function filletCorrectionAboutAxis(mesh, raw, toolR, axis) {
     if (u < 0.2) continue;
     const st = stationAtTheta(stations, thetaAboutAxis(p, axis, frame), targetR);
     if (!st) continue;
-    const to = filletTargetInPlane(st, u, w, targetR);
+    const to = filletTargetInPlane(st, u, w, targetR, scaleW, scaleL);
     if (!to) continue;
     const q = add3(scale3(radialVec, to.u / u), scale3(axis, to.w));
     v[vi * 3] = q[0];
@@ -1429,8 +1549,8 @@ function filletCorrectionAboutAxis(mesh, raw, toolR, axis) {
   }
   if (!movedCount) return null;
   next.invalidate();
-  const n = stations.length;
-  const tightSamples = stations
+  const n = rawStations.length;
+  const tightSamples = rawStations
     .map((st, i) => ({ st, i }))
     .filter(({ st }) => st.measuredR < toolR - FILLET_R_TOLERANCE_MM)
     .map(({ st, i }) => ({

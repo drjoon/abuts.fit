@@ -361,6 +361,87 @@ describe("abutmentStl tightCorner", () => {
     expect(tightCornerMetaFromCorrection(wide, null)).toBeNull();
   });
 
+  it("축면·마진이 촘촘한 링으로 분할된 메시에서도 필렛-축면 경계가 우둘투둘해지지 않는다", () => {
+    // 실제 케이스(20261020-HFJXPGFD): 0.08mm 간격 축면 링이 oldTrimW~trim 구간에 있을 때
+    // 코너 광선 투영이 접선 방향으로 100µm 밀어 삼각형 뒤집힘·68° 꺾임을 만들던 문제 방지.
+    const C = [2.4, 2.6];
+    const fl = [3.6, 2.0];
+    const lx = fl[0] - C[0];
+    const lz = fl[1] - C[1];
+    const ll = Math.hypot(lx, lz);
+    const rayL = [lx / ll, lz / ll];
+    const rayW = [0, 1];
+    const ext = Math.acos(rayL[0] * rayW[0] + rayL[1] * rayW[1]);
+    const filletR = 0.42;
+    const trim = filletR / Math.tan(ext / 2);
+    const bx = rayL[0] + rayW[0];
+    const bz = rayL[1] + rayW[1];
+    const bl = Math.hypot(bx, bz);
+    const cd = filletR / Math.sin(ext / 2);
+    const c = [C[0] + (bx / bl) * cd, C[1] + (bz / bl) * cd];
+    const t1 = [C[0] + rayL[0] * trim, C[1] + rayL[1] * trim];
+    const t2 = [C[0] + rayW[0] * trim, C[1] + rayW[1] * trim];
+    const a1 = Math.atan2(t1[1] - c[1], t1[0] - c[0]);
+    let da = Math.atan2(t2[1] - c[1], t2[0] - c[0]) - a1;
+    while (da <= -Math.PI) da += Math.PI * 2;
+    while (da > Math.PI) da -= Math.PI * 2;
+    const ledgeRings = [];
+    for (let d = ll; d > trim + 0.03; d -= 0.08) {
+      ledgeRings.push([C[0] + rayL[0] * d, C[1] + rayL[1] * d]);
+    }
+    const arcRings = [];
+    for (let i = 0; i <= 8; i += 1) {
+      const a = a1 + (da * i) / 8;
+      arcRings.push([c[0] + filletR * Math.cos(a), c[1] + filletR * Math.sin(a)]);
+    }
+    const wallRings = [];
+    for (let d = trim + 0.08; d <= 1.2; d += 0.08) {
+      wallRings.push([C[0] + rayW[0] * d, C[1] + rayW[1] * d]);
+    }
+    const profile = [
+      [0, -3], [1.4, -3], [1.4, -1], [1.6, -1], [1.7, 1],
+      ...ledgeRings, ...arcRings, ...wallRings,
+      [2.4, 8], [0, 8],
+    ];
+    const seg = 96;
+    const tris = [];
+    const at = (r, z, i) => {
+      const a = (i / seg) * Math.PI * 2;
+      return [r * Math.cos(a), r * Math.sin(a), z];
+    };
+    for (let s = 0; s < profile.length - 1; s += 1) {
+      const [r0, z0] = profile[s];
+      const [r1, z1] = profile[s + 1];
+      for (let i = 0; i < seg; i += 1) {
+        const a = at(r0, z0, i);
+        const b = at(r0, z0, i + 1);
+        const cc = at(r1, z1, i + 1);
+        const d = at(r1, z1, i);
+        if (r0 > 0) tris.push([a, b, cc]);
+        if (r1 > 0) tris.push([a, cc, d]);
+      }
+    }
+    const flPts = Array.from({ length: 48 }, (_, i) => {
+      const a = (i / 48) * Math.PI * 2;
+      return [3.6 * Math.cos(a), 3.6 * Math.sin(a), 2.0];
+    });
+    const mesh = Mesh.fromStlBuffer(writeBinaryStl({ positions: soupOf(tris), attributes: null }));
+    const res = correctTightCornerFillet(mesh, flPts, {});
+    expect(res).not.toBeNull();
+    expect(res.movedCount).toBeGreaterThan(96);
+    // 정점 이동량이 법선 방향 여유(약 0.051mm) 이내이고, 접선 밀림(0.10mm+)이 없어야 한다.
+    for (let vi = 0; vi < mesh.vertexCount; vi += 1) {
+      if (!res.movedVertices[vi]) continue;
+      const disp = Math.hypot(
+        res.mesh.verts[vi * 3] - mesh.verts[vi * 3],
+        res.mesh.verts[vi * 3 + 1] - mesh.verts[vi * 3 + 1],
+        res.mesh.verts[vi * 3 + 2] - mesh.verts[vi * 3 + 2],
+      );
+      expect(disp).toBeLessThan(0.055);
+    }
+    expect(detectTightCorners(res.mesh, flPts, {}).tightCount).toBe(0);
+  });
+
   it("회전체 샘플(R>0.6)은 보정면 없음", async () => {
     const smoothBuffer = writeBinaryStl({ positions: revolvedAbutmentSoup(), attributes: null });
     const smoothPipe = await runAbutmentStlPipeline(smoothBuffer, { targetDiameter: 3.33 });
