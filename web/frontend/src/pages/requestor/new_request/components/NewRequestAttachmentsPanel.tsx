@@ -166,18 +166,19 @@ function renderMachiningPreflightBadge(
 ) {
   if (!preflight) return null;
   if (preflight.status === "tight") {
-    const suggested =
-      typeof preflight.suggestedFilletRadiusMm === "number"
-        ? preflight.suggestedFilletRadiusMm.toFixed(2)
-        : null;
+    const rawTool =
+      typeof preflight.toolRadiusMm === "number" && preflight.toolRadiusMm > 0
+        ? preflight.toolRadiusMm
+        : 0.6;
+    // 권고 여유 0.05가 붙은 0.65는 실제 공구 R 0.6으로 보여 준다.
+    const toolR = Math.abs(rawTool - 0.65) < 0.001 ? 0.6 : rawTool;
     return (
       <div onClick={(event) => event.stopPropagation()}>
         <Badge
           variant="secondary"
           className="bg-destructive-soft px-1.5 py-0.5 text-[10px] font-semibold text-destructive"
         >
-          불완전 가공
-          {suggested ? ` · R ${suggested}mm 이상` : ""}
+          {`불완전 가공 · 공구 R ${toolR.toFixed(2)}`}
         </Badge>
       </div>
     );

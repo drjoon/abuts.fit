@@ -525,7 +525,13 @@ export function AbutmentModelConfirmDialog({
                       correctionSolidVisible={Boolean(machiningPreflight?.overlay)}
                       metadata={
                         machiningPreflight?.overlay
-                          ? { tightCorner: machiningPreflight.overlay }
+                          ? {
+                              tightCorner: {
+                                ...machiningPreflight.overlay,
+                                correctionSolid: null,
+                                reliefOverlay: null,
+                              },
+                            }
                           : undefined
                       }
                       className="absolute inset-0 h-full w-full min-h-0 md:min-h-0"

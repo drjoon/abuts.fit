@@ -185,6 +185,14 @@ export type ViewSyncState = {
   pan: [number, number];
 };
 
+/** 화면의 공구 R. 여유 0.05가 붙은 0.65는 실제 공구 0.60으로 보여 준다. */
+function displayToolRadiusLabel(toolDiameterMm?: number | null) {
+  const diameter = Number(toolDiameterMm);
+  const radius = Number.isFinite(diameter) && diameter > 0 ? diameter / 2 : 0.6;
+  const shown = Math.abs(radius - 0.65) < 0.001 ? 0.6 : radius;
+  return shown.toFixed(2);
+}
+
 export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
   function StlPreviewViewer(
     {
@@ -3366,7 +3374,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           <div className="text-sm font-bold leading-tight tabular-nums text-red-600">
             {averageFilletRadiusMm.toFixed(2)} mm
             <span className="ml-1 text-[10px] font-medium text-slate-400">
-              / 공구 R 0.60
+              / 공구 R {displayToolRadiusLabel(resolvedMetadata?.tightCorner?.toolDiameterMm)}
             </span>
           </div>
         </div>
