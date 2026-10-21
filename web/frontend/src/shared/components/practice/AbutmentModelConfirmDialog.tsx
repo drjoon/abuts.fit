@@ -21,7 +21,7 @@
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailDialog.tsx
 // - web/frontend/src/shared/components/practice/AbutmentDesignConfirmDialog.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestPatientImplantFields.tsx
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { CircleHelp } from "lucide-react";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import {
@@ -621,6 +621,24 @@ export function AbutmentModelConfirmDialog({
     onVerifyAndNext,
     showTightCornerChoice,
   ]);
+  // 치과명 목록이 열린 채로 누르면 blur가 모달을 다시 그려 click이 사라진다.
+  // pointerdown에서 먼저 처리해, 한 번에 「가공 방법을 고르세요」가 나오게 한다.
+  const confirmFromPointerRef = useRef(false);
+  const handleConfirmPointerDown = useCallback(
+    (event: PointerEvent<HTMLButtonElement>) => {
+      if (event.button !== 0) return;
+      confirmFromPointerRef.current = true;
+      handleConfirmAndNext();
+    },
+    [handleConfirmAndNext],
+  );
+  const handleConfirmClick = useCallback(() => {
+    if (confirmFromPointerRef.current) {
+      confirmFromPointerRef.current = false;
+      return;
+    }
+    handleConfirmAndNext();
+  }, [handleConfirmAndNext]);
 
   return (
     <>
@@ -1070,7 +1088,8 @@ export function AbutmentModelConfirmDialog({
                                 "animate-bounce bg-primary text-white",
                             )}
                             disabled={machiningCheckPending}
-                            onClick={handleConfirmAndNext}
+                            onPointerDown={handleConfirmPointerDown}
+                            onClick={handleConfirmClick}
                           >
                             {machiningCheckPending ? "검사 중…" : "확인 & 다음"}
                           </Button>
