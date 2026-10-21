@@ -3,9 +3,11 @@
 // - web/backend/services/abutmentStl/cuffBlend.js
 // - web/backend/services/abutmentStl/cuffBlend.service.js
 // - web/backend/services/abutmentStl/postSmooth.js (커프 보정이 적용되면 이어서 포스트 계단 결 다듬기)
+// - web/backend/services/abutmentStl/connectionTaperSmooth.js (마지막에 커넥션 11° 원뿔 면 다듬기)
 import { parentPort, workerData } from "worker_threads";
 import { blendCuffJunction, measureCuffConnection, proposeCuffRedesign, redesignCuffBowl } from "./cuffBlend.js";
 import { smoothPostAboveFinishLine } from "./postSmooth.js";
+import { smoothConnectionTaper } from "./connectionTaperSmooth.js";
 
 /** measure: 스펙 미등록 샘플의 11° 원뿔 끝 높이만 잰다(cuffSpecSuggest.service.js). */
 const measure = (input) => {
@@ -35,6 +37,18 @@ function applyPostSmooth(result, source, finishLine) {
   };
 }
 
+/** 커넥션 원뿔 다듬기도 실패하면 앞 단계 결과를 그대로 쓴다. */
+function applyTaperSmooth(result, fallbackInput) {
+  const source = result.buffer || fallbackInput;
+  const t = smoothConnectionTaper(source);
+  const taperSmooth = { status: t.status, reason: t.reason || null, ...(t.detail || {}) };
+  return {
+    ...result,
+    buffer: t.ok && t.buffer ? t.buffer : result.buffer,
+    detail: { ...(result.detail || {}), taperSmooth },
+  };
+}
+
 try {
   const input = Buffer.from(workerData.input.buffer, workerData.input.byteOffset, workerData.input.byteLength);
   const mode = workerData.mode || "auto";
@@ -46,6 +60,7 @@ try {
   } else if (!cuffBuffer && POST_ON_INPUT_MODES.has(mode)) {
     result = applyPostSmooth({ ...result, buffer: null }, input, options.finishLine || null);
   }
+  if (mode !== "propose" && mode !== "measure") result = applyTaperSmooth(result, input);
   if (result.buffer) {
     const out = result.buffer;
     const bytes = new Uint8Array(out.buffer, out.byteOffset, out.byteLength).slice();
