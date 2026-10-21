@@ -4,6 +4,8 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
 // change-log:
+// - 2026-10-21: 목록 페이지가 아니면 다른 브라우저 창(최소화 포함)의 수신함을 헬퍼로 앞으로 올려 연다.
+// - 2026-10-21: 다른 페이지(작업현황 등)에서 보기 — location.assign 대신 pushState+popstate(SPA 이동).
 // - 2026-10-21: 보기 — 클릭한 창에서 연다. 다른 창 ack의 window.focus()는 채팅을 앞으로 못 가져옴.
 // - 2026-10-04: 보기 — 이미 이 탭 목록이면 BroadcastChannel/헬퍼 없이 바로 채팅 오픈.
 // - 2026-10-04: applyOpenHere — URL ba가 이 계정과 다르면 열지 않음.
@@ -231,7 +233,14 @@ const applyOpenHere = (
     requestOpenPracticeTransferChat(transferId, { panel: "chat" });
     return;
   }
-  if (path) window.location.assign(path);
+  if (!path) return;
+  // 전체 새로고침 대신 SPA 이동 — 재로딩 중 토큰·목록 경쟁으로 채팅이 안 열리는 문제 방지.
+  try {
+    window.history.pushState({}, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate", { state: {} }));
+  } catch {
+    window.location.assign(path);
+  }
 };
 
 /**
@@ -297,10 +306,13 @@ export const openPracticeTransferAlert = (
   if (!id || !path) return;
   const localFallback = options?.localFallback !== false;
   const myBa = resolvePracticeTransferAlertAccountId();
-  // 보기 버튼을 누른 창에서 연다. 다른 창이 ack해도 window.focus()는
-  // 백그라운드 창을 앞으로 못 가져와서 토스트만 사라진다.
-  // localFallback=false(역할이 다른 창)는 헬퍼·다른 탭만 찾고 이 창 URL은 유지.
-  if (localFallback && (!ba || !myBa || ba === myBa)) {
+  // 이 창이 이미 기공의뢰 목록이면 여기서 바로 연다.
+  // 그 외(작업현황 등)는 다른 브라우저 창의 수신함/발신함 탭이 열려 있으면 그쪽을 연다.
+  // 최소화된 창은 window.focus()가 안 되므로 헬퍼가 앞으로 올린다. 못 찾으면 이 창에서 연다.
+  const onList =
+    window.location.pathname.startsWith("/dashboard/practice-transfers") ||
+    window.location.pathname.startsWith("/practice/dashboard");
+  if (localFallback && onList && (!ba || !myBa || ba === myBa)) {
     applyOpenHere(id, mode, ba);
     return;
   }
