@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/practiceTransferAlertNotify.ts
 // - web/frontend/src/App.tsx
 // change-log:
+// - 2026-10-21: 다른 창이 포커스면 이 창은 OS 토스트를 띄우지 않음(보기가 채팅을 못 여는 겹침).
 // - 2026-10-04: 백그라운드는 헬퍼 OS 토스트, 포커스는 전역 공통 토스트(practiceTransferAlertNotify).
 // - 2026-10-04: 채팅 알림 보기에 ba(계정) 전달.
 // - 2026-10-03: 다른 창을 보고 있으면 채팅 토스트·보기. 포커스된 같은 방만 생략.
@@ -31,6 +32,7 @@ import { shouldPlayLabReceiveSound } from "@/shared/practice/labReceiveSoundPref
 import { normalizeRequestorKind } from "@/shared/business/requestorCapabilities";
 import {
   resolvePracticeTransferAlertAccountId,
+  subscribeWindowFocusQuery,
   type PracticeTransferAlertMode,
 } from "@/shared/practice/openPracticeTransferChat";
 import { notifyPracticeTransferAlert } from "@/shared/practice/practiceTransferAlertNotify";
@@ -86,6 +88,7 @@ export function useChatMessageSound() {
   useEffect(() => {
     if (!enabled) return;
     bindChatSoundUnlockOnGesture();
+    return subscribeWindowFocusQuery();
   }, [enabled]);
 
   useAppEventListener({

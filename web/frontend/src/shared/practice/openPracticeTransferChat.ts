@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
 // change-log:
+// - 2026-10-21: 보기 — 클릭한 창에서 연다. 다른 창 ack의 window.focus()는 채팅을 앞으로 못 가져옴.
 // - 2026-10-04: 보기 — 이미 이 탭 목록이면 BroadcastChannel/헬퍼 없이 바로 채팅 오픈.
 // - 2026-10-04: applyOpenHere — URL ba가 이 계정과 다르면 열지 않음.
 // - 2026-10-04: localFallback=false — 역할이 다른 창은 수신함 탭만 찾고 이 창 URL을 바꾸지 않음.
@@ -59,6 +60,56 @@ declare global {
 }
 
 const ALERT_CHANNEL = "abuts:practice-transfer-alert";
+const WINDOW_FOCUS_CHANNEL = "abuts:window-focus";
+
+type FocusQueryMsg = { type: "query"; id: string };
+type FocusYesMsg = { type: "yes"; id: string };
+type FocusMsg = FocusQueryMsg | FocusYesMsg;
+
+/** 포커스된 창이 다른 창의 "지금 보고 있나" 물음에 답한다. */
+export const subscribeWindowFocusQuery = (): (() => void) => {
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") {
+    return () => undefined;
+  }
+  const ch = new BroadcastChannel(WINDOW_FOCUS_CHANNEL);
+  const onMessage = (evt: MessageEvent<FocusMsg>) => {
+    const data = evt?.data;
+    if (!data || data.type !== "query") return;
+    if (typeof document.hasFocus !== "function" || !document.hasFocus()) return;
+    ch.postMessage({ type: "yes", id: data.id } satisfies FocusYesMsg);
+  };
+  ch.addEventListener("message", onMessage);
+  return () => {
+    ch.removeEventListener("message", onMessage);
+    ch.close();
+  };
+};
+
+/**
+ * 같은 브라우저의 다른 창이 포커스면 true.
+ * 포커스된 창에 이미 페이지 안 토스트가 있으므로, 백그라운드 창은 OS 토스트를 덮지 않는다.
+ */
+export const anySiblingWindowFocused = (): Promise<boolean> => {
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") {
+    return Promise.resolve(false);
+  }
+  return new Promise((resolve) => {
+    const ch = new BroadcastChannel(WINDOW_FOCUS_CHANNEL);
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    let yes = false;
+    const onMessage = (evt: MessageEvent<FocusMsg>) => {
+      const data = evt?.data;
+      if (data?.type === "yes" && data.id === id) yes = true;
+    };
+    ch.addEventListener("message", onMessage);
+    ch.postMessage({ type: "query", id } satisfies FocusQueryMsg);
+    window.setTimeout(() => {
+      ch.removeEventListener("message", onMessage);
+      ch.close();
+      resolve(yes);
+    }, 60);
+  });
+};
 
 type AlertOpenMsg = {
   type: "open";
@@ -72,6 +123,8 @@ type AlertOpenMsg = {
 type AlertAckMsg = {
   type: "ack";
   id: string;
+  /** 그 탭이 사용자 포커스를 갖고 있을 때만 true. 백그라운드 ack는 화면이 안 바뀐다. */
+  focused?: boolean;
 };
 
 type AlertMsg = AlertOpenMsg | AlertAckMsg;
@@ -203,7 +256,13 @@ export const subscribePracticeTransferAlert = (
     if (!msgBa || !myBa || msgBa !== myBa) return;
     const transferId = String(data.transferId || "").trim();
     if (!transferId) return;
-    ch.postMessage({ type: "ack", id: data.id } satisfies AlertAckMsg);
+    const focused =
+      typeof document.hasFocus === "function" && document.hasFocus();
+    ch.postMessage({
+      type: "ack",
+      id: data.id,
+      focused,
+    } satisfies AlertAckMsg);
     applyOpenHere(transferId, mode, myBa);
     onOpen?.(transferId);
   };
@@ -223,8 +282,8 @@ export type OpenPracticeTransferAlertOptions = {
 };
 
 /**
- * 같은 원점·같은 계정(ba)의 수신함/발신함 탭이 있으면 그쪽에서 채팅을 연다.
- * 계정 탭이 ack하면 헬퍼 open-href는 건너뛴다(다른 치과 탭을 앞으로 올리지 않음).
+ * 보기 버튼을 누른 창(같은 계정)에서 채팅을 연다.
+ * 역할이 다른 창만 수신함 탭·헬퍼로 넘긴다. 그때도 백그라운드 ack만으로 끝내지 않는다.
  */
 export const openPracticeTransferAlert = (
   transferId: string,
@@ -238,16 +297,10 @@ export const openPracticeTransferAlert = (
   if (!id || !path) return;
   const localFallback = options?.localFallback !== false;
   const myBa = resolvePracticeTransferAlertAccountId();
-  const onList =
-    window.location.pathname.startsWith("/dashboard/practice-transfers") ||
-    window.location.pathname.startsWith("/practice/dashboard");
-  // BroadcastChannel은 송신 탭에 전달되지 않음 — 이미 이 탭이면 바로 연다.
-  // localFallback=false(역할이 다른 창)는 헬퍼·다른 탭만 찾고 여기서 열지 않음.
-  if (
-    localFallback &&
-    onList &&
-    (!ba || !myBa || ba === myBa)
-  ) {
+  // 보기 버튼을 누른 창에서 연다. 다른 창이 ack해도 window.focus()는
+  // 백그라운드 창을 앞으로 못 가져와서 토스트만 사라진다.
+  // localFallback=false(역할이 다른 창)는 헬퍼·다른 탭만 찾고 이 창 URL은 유지.
+  if (localFallback && (!ba || !myBa || ba === myBa)) {
     applyOpenHere(id, mode, ba);
     return;
   }
@@ -255,10 +308,12 @@ export const openPracticeTransferAlert = (
   const href = practiceTransferAlertHref(id, mode, ba);
   const ch = alertChannel();
   const msgId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  let acked = false;
+  let ackFocused = false;
   const onAck = (evt: MessageEvent<AlertMsg>) => {
     const data = evt?.data;
-    if (data?.type === "ack" && data.id === msgId) acked = true;
+    if (data?.type === "ack" && data.id === msgId && data.focused) {
+      ackFocused = true;
+    }
   };
   ch?.addEventListener("message", onAck);
   ch?.postMessage({
@@ -269,18 +324,22 @@ export const openPracticeTransferAlert = (
     ba: ba || undefined,
   } satisfies AlertOpenMsg);
 
-  // 같은 프로필의 올바른 계정이 ack할 시간을 준 뒤, 없을 때만 헬퍼로 탭 탐색
+  const cleanup = () => {
+    ch?.removeEventListener("message", onAck);
+    ch?.close();
+  };
+
+  // 포커스된 다른 탭이 열었으면 그 창이 사용자 앞에 있다.
+  // 백그라운드 ack는 window.focus()가 막혀 채팅이 안 보이므로 헬퍼로 창을 앞으로 올린다.
   window.setTimeout(() => {
-    if (acked) {
-      ch?.removeEventListener("message", onAck);
-      ch?.close();
+    if (ackFocused) {
+      cleanup();
       return;
     }
     void openLabHelperHref(href).then((focused) => {
       window.setTimeout(() => {
-        ch?.removeEventListener("message", onAck);
-        ch?.close();
-        if (acked || focused) return;
+        cleanup();
+        if (ackFocused || focused) return;
         if (!localFallback) return;
         applyOpenHere(id, mode, ba);
       }, 120);

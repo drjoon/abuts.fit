@@ -1,3 +1,4 @@
+// - 2026-10-21: open-href — 창 하나에서 오류가 나도 나머지 창을 찾고, 고른 창을 앞으로.
 // - 2026-10-04: v16 — OS 토스트를 웹 전역 공통 default(border-2 primary)에 맞춤.
 // - 2026-10-04: v15 — 플랫폼 alert 토스트 룩 + 알림음 샘플(soundId)·WAV 합성.
 // - 2026-10-04: v14 — PC 알람을 서버 WS(/api/lab-helper/alarms/ws)로. 롱폴링 제거.
@@ -650,15 +651,48 @@ enum AlarmNotify {
       } catch (e2) {}
       return "fail";
     }
-    function activateChrome(app, win, idx) {
+    function bringAppFront(appName) {
+      try {
+        var sh = Application.currentApplication();
+        sh.includeStandardAdditions = true;
+        sh.doShellScript("open -a " + JSON.stringify(appName));
+      } catch (eOpen) {}
+    }
+    function raiseChromeWindow(app, win, idx) {
+      var wid = 0;
+      try { wid = win.id(); } catch (eId) {}
+      try { win.minimized = false; } catch (e0) {}
       try { win.activeTabIndex = idx + 1; } catch (e3) {}
-      try { app.activate(); } catch (e4) {}
       try { win.index = 1; } catch (e5) {}
+      if (!wid) return;
+      try {
+        var again = app.windows();
+        for (var i = 0; i < again.length; i++) {
+          try {
+            if (again[i].id() !== wid) continue;
+            again[i].minimized = false;
+            again[i].index = 1;
+            again[i].activeTabIndex = idx + 1;
+            break;
+          } catch (eW) {}
+        }
+      } catch (eWins) {}
+    }
+    function activateChrome(app, name, win, idx) {
+      raiseChromeWindow(app, win, idx);
+      try { app.activate(); } catch (e4) {}
+      bringAppFront(name);
+      raiseChromeWindow(app, win, idx);
     }
     function activateSafari(app, win, tabs, idx) {
+      try { win.minimized = false; } catch (e0) {}
       try { win.currentTab = tabs[idx]; } catch (e3) {}
       try { app.activate(); } catch (e4) {}
       try { win.index = 1; } catch (e5) {}
+      bringAppFront("Safari");
+      try { win.minimized = false; } catch (e1) {}
+      try { win.currentTab = tabs[idx]; } catch (e6) {}
+      try { win.index = 1; } catch (e7) {}
     }
     function openOnTab(tab, target, onActivate) {
       var result = "fail";
@@ -697,40 +731,46 @@ enum AlarmNotify {
     function scanChrome(name, target, pass) {
       var app = Application(name);
       if (!app.running()) return false;
-      var wins = app.windows();
+      var wins = [];
+      try { wins = app.windows(); } catch (eWins) { return false; }
       for (var wi = 0; wi < wins.length; wi++) {
-        var w = wins[wi];
-        var tabs = w.tabs();
-        for (var ti = 0; ti < tabs.length; ti++) {
-          var act = (function(win, idx) {
-            return function() { activateChrome(app, win, idx); };
-          })(w, ti);
-          if (pass === 1) {
-            if (tryListTab(tabs, w, ti, target, act)) return true;
-          } else {
-            if (tryAccountTab(tabs, w, ti, target, act)) return true;
+        try {
+          var w = wins[wi];
+          var tabs = w.tabs();
+          for (var ti = 0; ti < tabs.length; ti++) {
+            try {
+              var act = (function(win, idx) {
+                return function() { activateChrome(app, name, win, idx); };
+              })(w, ti);
+              if (pass === 1) {
+                if (tryListTab(tabs, w, ti, target, act)) return true;
+              } else if (tryAccountTab(tabs, w, ti, target, act)) return true;
+            } catch (eTab) {}
           }
-        }
+        } catch (eWin) {}
       }
       return false;
     }
     function scanSafari(target, pass) {
       var app = Application("Safari");
       if (!app.running()) return false;
-      var wins = app.windows();
+      var wins = [];
+      try { wins = app.windows(); } catch (eWins) { return false; }
       for (var wi = 0; wi < wins.length; wi++) {
-        var w = wins[wi];
-        var tabs = w.tabs();
-        for (var ti = 0; ti < tabs.length; ti++) {
-          var act = (function(win, tabsArr, idx) {
-            return function() { activateSafari(app, win, tabsArr, idx); };
-          })(w, tabs, ti);
-          if (pass === 1) {
-            if (tryListTab(tabs, w, ti, target, act)) return true;
-          } else {
-            if (tryAccountTab(tabs, w, ti, target, act)) return true;
+        try {
+          var w = wins[wi];
+          var tabs = w.tabs();
+          for (var ti = 0; ti < tabs.length; ti++) {
+            try {
+              var act = (function(win, tabsArr, idx) {
+                return function() { activateSafari(app, win, tabsArr, idx); };
+              })(w, tabs, ti);
+              if (pass === 1) {
+                if (tryListTab(tabs, w, ti, target, act)) return true;
+              } else if (tryAccountTab(tabs, w, ti, target, act)) return true;
+            } catch (eTab) {}
           }
-        }
+        } catch (eWin) {}
       }
       return false;
     }

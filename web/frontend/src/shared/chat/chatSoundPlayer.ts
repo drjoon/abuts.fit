@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
 // - web/frontend/src/shared/files/labHelperClient.ts
 // change-log:
+// - 2026-10-21: 같은 브라우저의 다른 창이 포커스면 OS 토스트를 띄우지 않음.
 // - 2026-10-04: 숨김·포커스 없음 → 헬퍼 OS 토스트·음. 포커스만 브라우저음.
 // - 2026-10-04: 알림음 샘플 5종 + prefs.soundId. 산뜻한 톤 스케치.
 // - 2026-10-03: 탁한 mp3·주파수 스윕 대신 고음 두 음 차임(유리 종).
@@ -21,6 +22,7 @@ import {
   type ChatNotifySoundId,
 } from "@/shared/chat/chatNotifySounds";
 import { notifyLabHelperAlarm } from "@/shared/files/labHelperClient";
+import { anySiblingWindowFocused } from "@/shared/practice/openPracticeTransferChat";
 import { getLabReceiveSoundPrefs } from "@/shared/practice/labReceiveSoundPrefs";
 
 /** 채팅·미확인 의뢰가 거의 동시에 올 때 한 번만 울리기 */
@@ -176,9 +178,13 @@ export const playChatNotifySound = (opts?: PlayChatNotifySoundOpts) => {
     typeof document.hasFocus === "function" &&
     !document.hasFocus();
   if (hidden || unfocused) {
-    void notifyLabHelperAlarm(helperOpts(opts, soundId)).then((ok) => {
-      if (ok) return;
-      playBrowserChatSound(opts, soundId);
+    void anySiblingWindowFocused().then((siblingFocused) => {
+      // 포커스된 창이 페이지 안 토스트를 이미 띄운다. OS 토스트 보기는 그 창을 가린다.
+      if (siblingFocused) return;
+      void notifyLabHelperAlarm(helperOpts(opts, soundId)).then((ok) => {
+        if (ok) return;
+        playBrowserChatSound(opts, soundId);
+      });
     });
     return;
   }
