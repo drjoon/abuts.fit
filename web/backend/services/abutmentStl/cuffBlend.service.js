@@ -1,7 +1,7 @@
 // related files:
 // - web/backend/services/abutmentStl/cuffBlend.js
 // - web/backend/services/abutmentStl/cuffConnectionSpecs.js
-// - web/backend/services/abutmentStl/cuffBlendLambda.service.js (EBS에서만 람다 계산. execution.js)
+// - web/backend/services/abutmentStl/cuffBlendLambda.service.js (로컬만 워커, 테스트·프로덕션은 람다. execution.js)
 // - web/backend/controllers/bg/bg.controller.js (2-filled 등록 직후 auto)
 // - web/backend/controllers/requests/common.files.controller.js (Re 버튼 · 의뢰자 제안 수락/거절)
 // - web/frontend/src/features/requests/components/CuffProposalPanel.tsx
@@ -33,7 +33,7 @@ const AUTO_QUEUE_TIMEOUT_MS = Number(process.env.CUFF_BLEND_AUTO_QUEUE_TIMEOUT_M
 const INTERACTIVE_QUEUE_TIMEOUT_MS = Number(process.env.CUFF_BLEND_QUEUE_TIMEOUT_MS || 30 * 1000);
 
 /**
- * 실행 위치는 execution.js가 정한다(EBS만 람다, 로컬·테스트는 워커). 람다 호출 자체가 실패하면 로컬 워커.
+ * 실행 위치는 execution.js가 정한다(로컬만 워커, 테스트·프로덕션은 람다). 람다 호출 자체가 실패하면 로컬 워커.
  * 로컬 워커 timeout은 메시 worker 슬롯을 얻은 뒤부터 센다(workerSlots.js).
  * @param {"auto"|"redesign"|"propose"|"post"|"measure"} mode
  * @param {{ queueTimeoutMs?: number }} [run]

@@ -11,7 +11,7 @@
 //
 // JS가 정상이면 Rhino는 호출하지 않는다. 문제가 나면 productionSchedule.stlJsFallback에
 // 사유를 남기고 stlPreload를 FAILED로 둔다. 준비 카드는 «JS 실패»와 사유 문구를 보여 준다.
-// 계산 실행 위치는 execution.js가 정한다(EBS만 람다 60초, 로컬·테스트는 워커).
+// 계산 실행 위치는 execution.js가 정한다(람다 60초. 로컬만 워커, 테스트·프로덕션은 람다).
 import path from "path";
 import Request from "../../models/request.model.js";
 import { getObjectBufferFromS3, uploadFileToS3 } from "../../utils/s3.utils.js";

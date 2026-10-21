@@ -16,13 +16,14 @@ afterEach(() => {
 });
 
 describe("stlExecutionMode", () => {
-  it("로컬·테스트는 워커, 프로덕션만 람다", () => {
+  it("로컬만 워커, 테스트·프로덕션은 람다", () => {
     delete process.env.ABUTMENT_STL_EXECUTION;
     process.env.NODE_ENV = "development";
     expect(stlExecutionMode()).toBe("local");
     expect(shouldUseStlLambda("abuts-stl-filled")).toBe(false);
     process.env.NODE_ENV = "test";
-    expect(stlExecutionMode()).toBe("local");
+    expect(stlExecutionMode()).toBe("lambda");
+    expect(shouldUseStlLambda("abuts-stl-filled")).toBe(true);
     process.env.NODE_ENV = "production";
     expect(stlExecutionMode()).toBe("lambda");
     expect(shouldUseStlLambda("abuts-stl-filled")).toBe(true);

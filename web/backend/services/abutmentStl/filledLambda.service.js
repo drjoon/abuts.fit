@@ -3,7 +3,7 @@
 // - web/backend/services/abutmentStl/jsPrimary.service.js
 // - web/backend/services/abutmentStl/runPipelineInWorker.js
 //
-// Filled STL JS 계산 실행 위치는 execution.js가 정한다(EBS만 람다, 로컬·테스트는 워커).
+// Filled STL JS 계산 실행 위치는 execution.js가 정한다(로컬만 워커, 테스트·프로덕션은 람다).
 // 대기는 제한 시간 + 10초. 결과 JSON이 없으면 시간 초과로 보고 준비 카드에 남긴다.
 import crypto from "crypto";
 import AWS from "aws-sdk";
@@ -115,7 +115,7 @@ async function runOnLambda(buffer, options) {
   }
 }
 
-/** Filled STL JS. EBS(프로덕션)에서만 람다, 그 외에는 로컬 워커(execution.js). */
+/** Filled STL JS. 로컬만 워커, 테스트·프로덕션은 람다(execution.js). */
 export async function runFilledStlOffRequest(buffer, options = {}) {
   if (shouldUseStlLambda(filledStlLambdaName())) return runOnLambda(buffer, options);
   if (!warnedLocalWorker) {

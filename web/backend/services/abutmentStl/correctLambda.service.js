@@ -3,7 +3,7 @@
 // - web/backend/services/abutmentStl/preflight.service.js
 // - web/backend/services/abutmentStl/runPipelineInWorker.js
 //
-// 완전한 보정 STL 실행 위치는 execution.js가 정한다(EBS만 람다, 로컬·테스트는 워커).
+// 완전한 보정 STL 실행 위치는 execution.js가 정한다(로컬만 워커, 테스트·프로덕션은 람다).
 import AWS from "aws-sdk";
 import { shouldUseStlLambda } from "./execution.js";
 import {
@@ -109,7 +109,7 @@ async function buildOnLambda(buffer, inputs, id) {
   }
 }
 
-/** 완전한 보정 STL. EBS(프로덕션)에서만 람다, 그 외에는 로컬 워커(execution.js). out.stl은 의뢰용으로 남긴다. */
+/** 완전한 보정 STL. 로컬만 워커, 테스트·프로덕션은 람다(execution.js). out.stl은 의뢰용으로 남긴다. */
 export async function buildCorrectedDesignOffRequest(buffer, inputs, id) {
   if (!/^[a-f0-9]{32}$/.test(String(id || ""))) {
     const error = new Error("보정 STL id가 없습니다.");
