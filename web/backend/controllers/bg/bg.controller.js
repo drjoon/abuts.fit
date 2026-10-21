@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-21: 피니시라인 1mm 미만은 짧은 커프 명단에 남긴다(응답 후).
 // - 2026-10-20: request-meta One Pass는 포스트·치은 스텝이 같을 때만 true.
 // - 2026-10-13: 더미 request-meta는 헥스 회전이 없으면 STL모델대로로 저장한 뒤 내려준다.
 // - 2026-10-10: 반자동 피니시라인(source=frontend-manual)은 2-filled·finish-line 콜백으로 덮지 않는다.
@@ -43,6 +44,7 @@ import fs from "fs/promises";
 import { Readable } from "stream";
 import { pipeStreamToResponse } from "../../utils/pipeStreamToResponse.js";
 import Request from "../../models/request.model.js";
+import { noteLowFinishLineRequest } from "../../services/lowFinishLineWatch.service.js";
 import Connection from "../../models/connection.model.js";
 import CncEvent from "../../models/cncEvent.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
@@ -1809,6 +1811,15 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     }
   } catch {
     // ignore
+  }
+
+  if (updatedRequest) {
+    void noteLowFinishLineRequest(updatedRequest).catch((error) => {
+      console.warn(
+        "[BG-Callback] low finish line watch failed",
+        error?.message || error,
+      );
+    });
   }
 
   return res

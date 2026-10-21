@@ -172,6 +172,7 @@
 
 ### 어벗 STL JS 파이프라인 (Rhino 대체 · 섀도 모드)
 
+- **짧은 커프 경고 (2026-10-21~)**: 피니시라인 `min_z` < 1mm 실의뢰는 제조사 준비 카드·프리뷰에 불완전 경고를 남긴다. 명단은 `LowFinishLineCase`. 세척.패킹 이후는 통과, 불완전가공 판정은 실패. 샘플은 제외. 통과 50건이고 실패가 0이면 경고를 끈다(`isLowFinishLineWarningOn`). 관리자 대시보드 «짧은 커프» 카드에서 통과/실패를 고정할 수 있다. 실패가 다시 생기면 경고가 돌아온다. SSOT: `services/lowFinishLineWatch.js`.
 - **JS 우선 (2026-10-10~)**: 의뢰 생성·핸드오프의 `triggerRhinoProcessFileForRequest`와 수동 재생성(`process-file`, `engine` 없음)이 `services/abutmentStl/jsPrimary.service.js`를 돌린다. JS가 `2-filled` 업로드 후 `registerStlMetadata` → `registerProcessedFile`(Rhino 콜백과 같은 경로, 커프 보정 포함)로 등록한다. 예외·정렬 실패·피니시라인 없음/불량·메타데이터/직경 계산 실패·60초 초과면 `productionSchedule.stlJsFallback{reason,at}`와 `stlPreload=FAILED`만 남긴다. 준비 카드에 «JS 실패» 뱃지와 사유 문구. 원격 Rhino는 호출하지 않는다. 카드 «Rhino 실행»(`engine=rhino`)과 `ABUTMENT_STL_JS_PRIMARY=false`만 Rhino로 간다.
 - **계산은 람다**: `ABUTMENT_STL_FILLED_LAMBDA`가 있으면 `filledLambda.service.js`가 S3 `temp/stl-filled/`로 입력·결과·에러를 주고받고, 함수는 60초·2048MB·arm64다. 웹은 등록·커프 보정만 한다. 이름이 없으면(로컬) 같은 60초 한도의 워커다. 배포: `scripts/abutment-stl-js/deploy-stl-filled-lambda.sh`.
 

@@ -3,6 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // change-log:
+// - 2026-10-21: 수동 피니시라인 저장 뒤 짧은 커프 명단을 맞춘다.
 // - 2026-10-20: trigger/process-file stlPreload GENERATING에 engine js|rhino 반영(준비 카드 라벨).
 // - 2026-10-10: JS 실패는 Rhino로 넘기지 않는다. engine=rhino일 때만 원격 Rhino.
 // - 2026-10-09: 수동 재생성(process-file)도 JS 우선·Rhino 폴백.
@@ -13,6 +14,7 @@
 // - 2026-09-03: 취소된 의뢰 process-file 거부(409) — GENERATING 고스트 방지.
 import axios from "axios";
 import { asyncHandler } from "../../utils/asyncHandler.js";
+import { noteLowFinishLineRequest } from "../../services/lowFinishLineWatch.service.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
 import { emitAppEventToRoles } from "../../socket.js";
@@ -341,6 +343,10 @@ export const saveManualFinishLine = asyncHandler(async (req, res) => {
     requestMongoId: String(request._id || "").trim() || null,
     metadata: eventMetadata,
     request: normalizedUpdatedRequest,
+  });
+
+  void noteLowFinishLineRequest(request).catch((error) => {
+    console.warn("[manual-finish-line] low finish line watch failed", error?.message || error);
   });
 
   return res.status(200).json({

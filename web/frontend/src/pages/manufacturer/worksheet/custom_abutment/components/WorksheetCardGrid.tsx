@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-21: 짧은 커프 경고는 50건 통과·실패 0 전까지 유지한다.
 // - 2026-10-21: 준비 카드 JS 실패는 뱃지와 함께 사유 문구를 본문에 남긴다.
 // - 2026-10-18: 준비 «제외» 뱃지는 자동 승인이 켜져 있을 때만 표시한다.
 // - 2026-10-14: 준비 카드 — 자동 승인에서 뺀 의뢰자의 의뢰에 «제외» 뱃지.
@@ -84,6 +85,10 @@ import {
 } from "../utils/hexRotation";
 import { isFinishLineDefective } from "../utils/finishLineQuality";
 import { isTightCornerCorrectionRequired } from "../utils/tightCornerReview";
+import {
+  LOW_FINISH_LINE_Z_MM,
+  useLowFinishLineWarning,
+} from "../utils/lowFinishLineWatch";
 import {
   isCuffBlendManualReview,
   isCuffProposalPending,
@@ -219,6 +224,7 @@ export const WorksheetCardGrid = ({
     const ms = range ? new Date(range.startDate).getTime() : NaN;
     return Number.isFinite(ms) ? ms : null;
   }, [headerPeriod, headerCustomStart, headerCustomEnd]);
+  const lowFinishLineWarning = useLowFinishLineWarning();
   const { token } = useAuthStore();
   const { state: autoGate } = useAutoApprovalGate(
     tabStage === "request" ? token : null,
@@ -378,7 +384,9 @@ export const WorksheetCardGrid = ({
         const isDeletingNc = !!deletingNc[request._id];
         const finishLineMinZRaw = Number((caseInfos as any)?.finishLine?.min_z);
         const isFinishLineMinZRisky =
-          Number.isFinite(finishLineMinZRaw) && finishLineMinZRaw < 1;
+          lowFinishLineWarning &&
+          Number.isFinite(finishLineMinZRaw) &&
+          finishLineMinZRaw < LOW_FINISH_LINE_Z_MM;
         const isFinishLineCaptureBad = isFinishLineDefective(
           (caseInfos as any)?.finishLine?.points,
         );

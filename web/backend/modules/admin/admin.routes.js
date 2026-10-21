@@ -40,6 +40,10 @@ import {
   fixMissingBusinessAnchorId,
 } from "../../controllers/admin/admin.requests.controller.js";
 import {
+  getAdminLowFinishLineWatch,
+  setAdminLowFinishLineVerdict,
+} from "../../controllers/admin/lowFinishLineWatch.controller.js";
+import {
   getDashboardStats,
   getAdminPlatformGrowthDetail,
   listHappyCallCompletions,
@@ -395,6 +399,11 @@ router.post("/popbill/bank/sync", adminSyncPopbillBank);
 
 // 대시보드 통계
 router.get("/dashboard", getDashboardStats);
+router.get("/low-finish-line-watch", getAdminLowFinishLineWatch);
+router.post(
+  "/low-finish-line-watch/:requestId/verdict",
+  setAdminLowFinishLineVerdict,
+);
 router.get("/dashboard/growth-detail", getAdminPlatformGrowthDetail);
 router.get("/no-order-alerts", getAdminNoOrderAlerts);
 router.get("/notices", listAdminDashboardNotices);

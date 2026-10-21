@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-21: 짧은 커프 경고는 50건 통과·실패 0 전까지 유지한다.
 // - 2026-10-20: 프리뷰 다운로드는 공정 파일 형식 그대로 저장. NC는 .nc, 세척·포장 이미지는 png/jpg.
 // - 2026-10-20: 헤더 One Pass 토글 제거. Finish는 항상 2–3단(Back_Finish 분할).
 // - 2026-10-17: 안내 off 시 프론트포인트(녹색점)도 피니시라인과 함께 숨김(FP 편집 중은 유지).
@@ -137,6 +138,10 @@ import {
 } from "../utils/request";
 import { isFinishLineDefective } from "../utils/finishLineQuality";
 import { isTightCornerCorrectionRequired } from "../utils/tightCornerReview";
+import {
+  LOW_FINISH_LINE_Z_MM,
+  useLowFinishLineWarning,
+} from "../utils/lowFinishLineWatch";
 import {
   loadPreviewOverlayPrefs,
   savePreviewOverlayPrefs,
@@ -663,6 +668,7 @@ export const PreviewModal = ({
 
   const { token } = useAuthStore();
   const { toast } = useToast();
+  const lowFinishLineWarning = useLowFinishLineWarning();
   const [regenerating, setRegenerating] = useState(false);
   const [espDownloading, setEspDownloading] = useState(false);
   const [holeFilling, setHoleFilling] = useState(false);
@@ -1393,7 +1399,9 @@ export const PreviewModal = ({
   const { maxZ: finishLineMaxZ, minZ: finishLineMinZ } = getFinishLineExtremaZ();
 
   const isFinishLineMinZRisky =
-    Number.isFinite(finishLineMinZ) && Number(finishLineMinZ) < 1;
+    lowFinishLineWarning &&
+    Number.isFinite(finishLineMinZ) &&
+    Number(finishLineMinZ) < LOW_FINISH_LINE_Z_MM;
   const isFinishLineCaptureBad = isFinishLineDefective(finishLinePoints);
   const isTightCornerCorrectionNeeded = isTightCornerCorrectionRequired(
     (activeReq as any)?.caseInfos?.tightCorner ?? viewerStlMetadata?.tightCorner,

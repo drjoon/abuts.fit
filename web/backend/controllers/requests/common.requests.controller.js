@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-21: 불완전가공 판정 뒤 짧은 커프 명단을 맞춘다(응답 전 필수 아님).
 // - 2026-10-20: worksheetSelect — stlPreload·stlJsFallback·ncPreload(준비「JS 작업중」·실패 뱃지).
 // - 2026-10-13: 더미 조회 시 비어 있는 헥스 회전은 STL모델대로로 저장한다.
 // - 2026-10-13: 워크시트 목록에서 더미는 빼고, 세척.패킹 이후에 들어간 더미는 대기 상태로 되돌린다.
@@ -55,6 +56,7 @@ import {
 import path from "path";
 import { createHash } from "crypto";
 import Request from "../../models/request.model.js";
+import { noteLowFinishLineRequest } from "../../services/lowFinishLineWatch.service.js";
 import Connection from "../../models/connection.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
@@ -3052,6 +3054,13 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
       },
     },
   );
+
+  void noteLowFinishLineRequest(request).catch((error) => {
+    console.warn(
+      "[rnd-unmachinable] low finish line watch failed",
+      error?.message || error,
+    );
+  });
 
   return res.status(200).json({
     success: true,

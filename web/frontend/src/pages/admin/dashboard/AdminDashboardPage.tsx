@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-10-21: 짧은 커프 카드 — 50건 통과·실패 0이면 준비 경고를 끈다.
 // - 2026-10-21: 신규 커넥션 요청 — 확인 시 휴지통·복원.
 // - 2026-10-21: 지연 위험 ↔ 신규 커넥션 요청 카드 그리드 위치 교환.
 // - 2026-10-21: 신규 커넥션 요청 — 건수 있을 때 warn(노란) 타일·목록 신규/미제공 색 구분.
@@ -90,6 +91,7 @@ import { AdminDemoConversionCard } from "@/pages/admin/dashboard/AdminDemoConver
 import { AdminBusinessVerificationCard } from "@/pages/admin/dashboard/AdminBusinessVerificationCard";
 import { AdminPopbillPointCard } from "@/pages/admin/dashboard/AdminPopbillPointCard";
 import { AdminPopbillBankCard } from "@/pages/admin/dashboard/AdminPopbillBankCard";
+import { LowFinishLineWatchCard } from "@/pages/admin/dashboard/LowFinishLineWatchCard";
 import {
   Users,
   FileText,
@@ -2311,6 +2313,7 @@ export const AdminDashboardPage = () => {
                 className={DASH_SPAN.c2}
                 enabled={Boolean(token) && user?.role === "admin"}
               />
+              <LowFinishLineWatchCard className={DASH_SPAN.c2} />
               <DashTile
                 className={DASH_SPAN.c2}
                 title="헥스 회전 확인"
