@@ -112,6 +112,8 @@ const MIN_WALL_MM = 0.3;
 /** 이보다 축 둘레로 넓게 걸친 삼각형은 곡면이 아니라 겹친 캡 조각이다. */
 const FIN_SPAN_RAD = (30 * Math.PI) / 180;
 const BOTTOM_ON_CONE_TOL_MM = 0.02;
+const BOTTOM_CHORD_BLEND_MM = 0.18;
+const BOTTOM_EDGE_MAX_RAD = (1.25 * Math.PI) / 180;
 
 /** Re 기준: 이보다 누운 커프를 접시형으로 보고, 재디자인 곡선도 이보다 눕지 않게 한다. */
 export const FLAT_SLOPE = Math.tan((70 * Math.PI) / 180);
@@ -1586,8 +1588,8 @@ function zipperRows(lower, upper, emit) {
   const angB = (k) => upper[k % B].a + Math.floor(k / B) * TWO_PI;
   // 시작 정렬: 두 행 모두 가장 작은 각에서 출발
   while (i < A || j < B) {
-    const nextA = i < A ? angA(i + 1) : Infinity;
-    const nextB = j < B ? angB(j + 1) : Infinity;
+    const nextA = i < A ? (angA(i) + angA(i + 1)) / 2 : Infinity;
+    const nextB = j < B ? (angB(j) + angB(j + 1)) / 2 : Infinity;
     if (nextA <= nextB) {
       emit(lower[i % A].v, lower[(i + 1) % A].v, upper[j % B].v);
       i += 1;
@@ -2292,7 +2294,39 @@ function replaceBand(
   }
   const meanZ = (loop) => loop.reduce((s, v) => s + verts[v * 3 + 2], 0) / loop.length;
   loops.sort((p, q) => meanZ(p) - meanZ(q));
-  const bottom = angularRow(loops[0], verts);
+  const rawBottomLoop = loops[0];
+  const bottomRayAt = creaseRayIntersector(rawBottomLoop, verts);
+  const bottomChordOffset = thetaColumns().map((theta) => {
+    const hit = bottomRayAt(theta);
+    return hit && Number.isFinite(hit.r) ? hit.r - ra : 0;
+  });
+  // 원뿔 경계(bottom)는 한 칸이 ~7.8°로 넓어 ~1° 간격인 첫 행과 바로 지퍼로 이으면 모서리 쪽 부채꼴 삼각형이 35° 이상 눕는다.
+  // 원뿔 삼각형의 위쪽 직선 모서리를 현 위에서 잘게 나누어 원뿔 평면은 바꾸지 않고 경계 정점 간격만 맞춘다.
+  const bottomEdgeSub = new Map();
+  const bottomLoop = [];
+  for (let i = 0; i < rawBottomLoop.length; i += 1) {
+    const a = rawBottomLoop[i];
+    const b = rawBottomLoop[(i + 1) % rawBottomLoop.length];
+    bottomLoop.push(a);
+    let da = Math.abs(angleOf(verts[b * 3], verts[b * 3 + 1]) - angleOf(verts[a * 3], verts[a * 3 + 1]));
+    if (da > Math.PI) da = TWO_PI - da;
+    const steps = Math.ceil(da / BOTTOM_EDGE_MAX_RAD);
+    if (steps <= 1) continue;
+    const mids = [];
+    for (let s = 1; s < steps; s += 1) {
+      const u = s / steps;
+      const idx = verts.length / 3;
+      verts.push(
+        verts[a * 3] + u * (verts[b * 3] - verts[a * 3]),
+        verts[a * 3 + 1] + u * (verts[b * 3 + 1] - verts[a * 3 + 1]),
+        verts[a * 3 + 2] + u * (verts[b * 3 + 2] - verts[a * 3 + 2]),
+      );
+      mids.push(idx);
+      bottomLoop.push(idx);
+    }
+    bottomEdgeSub.set(`${a}_${b}`, [a, ...mids, b]);
+  }
+  const bottom = angularRow(bottomLoop, verts);
   const top = angularRow(loops[1], verts);
   if (!bottom || !top) {
     fail("manual-review", "이음부 경계가 축 둘레로 한 바퀴 돌지 않습니다(언더컷).");
@@ -2325,8 +2359,11 @@ function replaceBand(
     for (let j = 0; j < STRIP_COLUMNS; j += 1) {
       const scale = seamOrigScale ? seamOrigScale[j] : 1;
       const keep = convexCuffDeform ? 1 : 1 - (1 - bandSmoothKeep(t, heights[j])) * scale;
-      rad[j] = raw[j] * keep + avg[j] * (1 - keep);
-      z[j] = zA + t * (heights[j] * keep + smoothHeights[j] * (1 - keep));
+      const zj = zA + t * (heights[j] * keep + smoothHeights[j] * (1 - keep));
+      const uChord = Math.min(1, Math.max(0, (zj - zA) / BOTTOM_CHORD_BLEND_MM));
+      const wChord = (1 - uChord) ** 3 * (1 + 3 * uChord);
+      rad[j] = raw[j] * keep + avg[j] * (1 - keep) + bottomChordOffset[j] * wChord;
+      z[j] = zj;
     }
     rowData.push({ rad, z });
   }
@@ -2379,7 +2416,20 @@ function replaceBand(
   const outAttr = [];
   for (let f = 0; f < fc; f += 1) {
     if (removed[f]) continue;
-    outFaces.push(faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2]);
+    const f0 = faces[f * 3], f1 = faces[f * 3 + 1], f2 = faces[f * 3 + 2];
+    const chain01 = bottomEdgeSub.get(`${f0}_${f1}`);
+    const chain12 = bottomEdgeSub.get(`${f1}_${f2}`);
+    const chain20 = bottomEdgeSub.get(`${f2}_${f0}`);
+    const chain = chain01 || chain12 || chain20;
+    if (chain) {
+      const opp = chain01 ? f2 : chain12 ? f0 : f1;
+      for (let s = 0; s + 1 < chain.length; s += 1) {
+        outFaces.push(chain[s], chain[s + 1], opp);
+        outAttr.push(faceAttr[f]);
+      }
+      continue;
+    }
+    outFaces.push(f0, f1, f2);
     outAttr.push(faceAttr[f]);
   }
   for (let i = 0; i < newFaces.length; i += 3) {

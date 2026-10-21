@@ -440,6 +440,53 @@ describe("blendCuffJunction", () => {
       expect((smooth[j](1e-3) - smooth[j](0)) / 1e-3).toBeCloseTo((profiles[j](1e-3) - profiles[j](0)) / 1e-3, 4);
     }
   });
+
+  it("subdivides coarse 46-gon connection edges at zA so the cuff start has no steep fan facets", () => {
+    const seg = 46;
+    const outer = [
+      ...coneRows(-1.2, 0.2),
+      [cone(0.2) + 0.06, 0.2],
+      [2.0, 1.2],
+      [2.3, 2.5],
+      [2.3, 3.0],
+      [2.1, 5.0],
+    ];
+    const zBottom = outer[0][1];
+    const zTop = outer[outer.length - 1][1];
+    const loop = [...outer, [R_CHANNEL, zTop], [R_CHANNEL, zBottom]];
+    const tris = [];
+    const at = ([r, z], i) => {
+      const a = (i / seg) * Math.PI * 2;
+      return [r * Math.cos(a), r * Math.sin(a), z];
+    };
+    for (let k = 0; k < loop.length; k += 1) {
+      const p = loop[k];
+      const q = loop[(k + 1) % loop.length];
+      for (let i = 0; i < seg; i += 1) {
+        tris.push([at(p, i), at(p, i + 1), at(q, i + 1)], [at(p, i), at(q, i + 1), at(q, i)]);
+      }
+    }
+    const positions = new Float64Array(tris.length * 9);
+    tris.forEach((t, i) => positions.set(t.flat(), i * 9));
+    const input = writeBinaryStl({ positions, attributes: new Uint16Array(tris.length) });
+    const res = blendCuffJunction(input, { ...osstem, specKey: osstem.key, finishLine: ringFinishLine(2.3, 3.0) });
+    expect(res.ok).toBe(true);
+    expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
+    const outPos = parseStl(res.buffer).positions;
+    let worstNz = 0;
+    for (let t = 0; t < outPos.length / 9; t += 1) {
+      const o = t * 9;
+      const cz = (outPos[o + 2] + outPos[o + 5] + outPos[o + 8]) / 3;
+      const cr = Math.hypot((outPos[o] + outPos[o + 3] + outPos[o + 6]) / 3, (outPos[o + 1] + outPos[o + 4] + outPos[o + 7]) / 3);
+      if (cr < 1.5 || cz < res.detail.zA || cz > res.detail.zA + 0.03) continue;
+      const ux = outPos[o + 3] - outPos[o], uy = outPos[o + 4] - outPos[o + 1], uz = outPos[o + 5] - outPos[o + 2];
+      const vx = outPos[o + 6] - outPos[o], vy = outPos[o + 7] - outPos[o + 1], vz = outPos[o + 8] - outPos[o + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      const len = Math.hypot(nx, ny, nz) || 1;
+      worstNz = Math.min(worstNz, nz / len);
+    }
+    expect(worstNz).toBeGreaterThan(-0.35);
+  });
 });
 
 describe("redesignCuffBowl", () => {

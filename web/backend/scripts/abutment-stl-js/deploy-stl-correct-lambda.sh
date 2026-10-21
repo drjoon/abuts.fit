@@ -119,6 +119,7 @@ if aws lambda get-function --function-name "$FUNCTION_NAME" --region "$REGION" >
   aws lambda update-function-code \
     --function-name "$FUNCTION_NAME" \
     --zip-file "fileb://$ZIP_PATH" \
+    --architectures arm64 \
     --region "$REGION" >/dev/null
   aws lambda wait function-updated-v2 --function-name "$FUNCTION_NAME" --region "$REGION"
   aws lambda update-function-configuration \
@@ -127,7 +128,6 @@ if aws lambda get-function --function-name "$FUNCTION_NAME" --region "$REGION" >
     --handler index.handler \
     --timeout "$TIMEOUT_SEC" \
     --memory-size "$MEMORY_MB" \
-    --architectures arm64 \
     --environment "$LAMBDA_ENV" \
     --region "$REGION" >/dev/null
   aws lambda wait function-updated-v2 --function-name "$FUNCTION_NAME" --region "$REGION"
