@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: 카탈로그 제조사 선택 — 없는 setNewSystemFamily 호출이 선택을 막던 것 제거.
 // - 2026-10-22: 좁은 코너는 표시와 경고만. 원본 STL은 고치지 않고 내려받지 않는다.
 // - 2026-10-21: 보정 확인 모달은 평균 R과 관계없이 같은 문구·확인만.
 // - 2026-10-21: 보정 확인 — 접착 공간이 커져 헐거워질 수 있음. 원하면 보정 STL로 크라운 내면.
@@ -331,7 +332,6 @@ export function AbutmentModelConfirmDialog({
         setImplantEntryMode("catalog");
         setNewSystemManufacturer("");
         setNewSystemBrand("");
-        setNewSystemFamily("");
         setDetailCaseInfos({
           ...updates,
           implantInputMode: "catalog",
