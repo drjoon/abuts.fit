@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: 선택 카드 썸네일 아래에 재생성. 누르면 STL·CAM을 고른다.
 // - 2026-10-22: 선택 카드 썸네일 아래에 STL·CAM 막대. 라벨은 STL.
 // - 2026-10-22: CAM 막대는 filled STL이 끝난 뒤에만 찬다. 진행 중 중단.
 // - 2026-10-22: 재생성 확인은 한 줄. 진행은 더미 카드의 filled STL·CAM 막대.
@@ -609,6 +610,13 @@ export function DummyMachiningModal({
   const current = saved.find((row) => row.diameterGroup === group) || null;
   const product = current?.product || null;
   const regen = product?.artifactRegen;
+  const regenBusy = Boolean(
+    regen &&
+      (regen.filledStl === "running" ||
+        regen.cam === "running" ||
+        regen.cam === "waiting"),
+  );
+  const regenSourceId = String(product?.sourceRequestId || "").trim();
   const showRegen = Boolean(
     regen &&
       (regenWatchId === product?.requestId ||
@@ -831,38 +839,47 @@ export function DummyMachiningModal({
                         <ProductSummary
                           item={product}
                           aside={
-                            showRegen && regen ? (
-                              <div className="mt-1 w-full space-y-1">
-                                {regen.filledStl !== "idle" ? (
-                                  <RegenBar
-                                    label="STL"
-                                    state={regen.filledStl === "waiting" ? "running" : regen.filledStl}
-                                    startedAt={regen.filledStartedAt || regen.requestedAt}
-                                    error={regen.filledError}
-                                  />
-                                ) : null}
-                                {regen.cam !== "idle" ? (
-                                  <RegenBar
-                                    label="CAM"
-                                    state={regen.cam}
-                                    startedAt={regen.camStartedAt}
-                                    error={regen.camError}
-                                  />
-                                ) : null}
-                                {regen.filledStl === "running" ||
-                                regen.cam === "running" ||
-                                regen.cam === "waiting" ? (
-                                  <button
-                                    type="button"
-                                    disabled={cancellingRegen}
-                                    className="w-full rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                                    onClick={() => void cancelRegen()}
-                                  >
-                                    {cancellingRegen ? "중단 중…" : "중단"}
-                                  </button>
-                                ) : null}
-                              </div>
-                            ) : null
+                            <div className="mt-1 w-full space-y-1">
+                              {showRegen && regen && regen.filledStl !== "idle" ? (
+                                <RegenBar
+                                  label="STL"
+                                  state={regen.filledStl === "waiting" ? "running" : regen.filledStl}
+                                  startedAt={regen.filledStartedAt || regen.requestedAt}
+                                  error={regen.filledError}
+                                />
+                              ) : null}
+                              {showRegen && regen && regen.cam !== "idle" ? (
+                                <RegenBar
+                                  label="CAM"
+                                  state={regen.cam}
+                                  startedAt={regen.camStartedAt}
+                                  error={regen.camError}
+                                />
+                              ) : null}
+                              {regenBusy ? (
+                                <button
+                                  type="button"
+                                  disabled={cancellingRegen}
+                                  className="w-full rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                  onClick={() => void cancelRegen()}
+                                >
+                                  {cancellingRegen ? "중단 중…" : "중단"}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={Boolean(selectingId) || !regenSourceId}
+                                  className="w-full rounded-md bg-slate-900 px-1.5 py-1 text-[10px] font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                                  onClick={() => {
+                                    setPendingRequestId(regenSourceId);
+                                    setRegenFilled(false);
+                                    setRegenCam(false);
+                                  }}
+                                >
+                                  재생성
+                                </button>
+                              )}
+                            </div>
                           }
                         />
                       ) : (
