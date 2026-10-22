@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: STL·CAM 막대 오른쪽에 재생성·중단. 진행 숫자는 92에서 멈추지 않는다.
 // - 2026-10-22: 선택 카드 썸네일 아래에 재생성. 누르면 STL·CAM을 고른다.
 // - 2026-10-22: 선택 카드 썸네일 아래에 STL·CAM 막대. 라벨은 STL.
 // - 2026-10-22: CAM 막대는 filled STL이 끝난 뒤에만 찬다. 진행 중 중단.
@@ -244,7 +245,7 @@ function ProductSummary({
           </p>
         ) : null}
       </div>
-      <div className={`ml-auto mr-2 flex shrink-0 flex-col items-center gap-1 ${aside ? "w-[9.5rem]" : ""}`}>
+      <div className={`ml-auto mr-2 flex shrink-0 flex-col items-center gap-1 ${aside ? "w-[13rem]" : ""}`}>
           <div
             className={`overflow-hidden rounded-md border border-slate-200 bg-slate-100 ${
               compact ? "h-16 w-16" : "h-[72px] w-[72px]"
@@ -273,15 +274,21 @@ function RegenBar({
   state,
   startedAt,
   error,
+  actionLabel,
+  actionDisabled,
+  onAction,
 }: {
   label: string;
-  state: "running" | "waiting" | "done" | "failed" | "cancelled";
+  state: "idle" | "running" | "waiting" | "done" | "failed" | "cancelled";
   startedAt?: string | null;
   error?: string;
+  actionLabel: string;
+  actionDisabled?: boolean;
+  onAction: () => void;
 }) {
-  const [pct, setPct] = useState(state === "running" ? 8 : state === "waiting" ? 0 : 100);
+  const [pct, setPct] = useState(state === "running" ? 4 : state === "done" || state === "failed" ? 100 : 0);
   useEffect(() => {
-    if (state === "waiting") {
+    if (state === "waiting" || state === "idle") {
       setPct(0);
       return;
     }
@@ -292,13 +299,14 @@ function RegenBar({
     const started = startedAt ? new Date(startedAt).getTime() : Date.now();
     const tick = () => {
       const elapsed = Math.max(0, Date.now() - (Number.isFinite(started) ? started : Date.now()));
-      setPct(Math.min(92, Math.round(8 + 84 * (1 - Math.exp(-elapsed / 18000)))));
+      // CAM은 수 분이 걸린다. 18초 안에 92로 붙으면 끝난 것처럼 보인다.
+      setPct(Math.min(99, Math.round(4 + 95 * (1 - Math.exp(-elapsed / 180000)))));
     };
     tick();
     const id = window.setInterval(tick, 400);
     return () => window.clearInterval(id);
   }, [state, startedAt]);
-  const width = state === "cancelled" ? "0%" : `${pct}%`;
+  const width = state === "cancelled" || state === "idle" || state === "waiting" ? "0%" : `${pct}%`;
   const caption =
     state === "failed"
       ? "실패"
@@ -308,23 +316,38 @@ function RegenBar({
           ? "완료"
           : state === "waiting"
             ? "대기"
-            : `${pct}%`;
+            : state === "idle"
+              ? ""
+              : `${pct}%`;
+  const stopping = actionLabel.startsWith("중단");
   return (
-    <div className="flex items-center gap-2" title={state === "failed" ? error || "실패" : undefined}>
+    <div className="flex w-full items-center gap-1" title={state === "failed" ? error || "실패" : undefined}>
       <span className="w-7 shrink-0 text-[10px] font-semibold text-slate-600">
         {label}
       </span>
       <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200">
         <div
           className={`h-full rounded-full transition-[width] duration-300 ${
-            state === "failed" ? "bg-destructive" : "bg-primary"
-          }`}
+            state === "running" ? "animate-pulse" : ""
+          } ${state === "failed" ? "bg-destructive" : "bg-primary"}`}
           style={{ width }}
         />
       </div>
-      <span className="w-7 shrink-0 text-right text-[10px] tabular-nums text-slate-500">
+      <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-slate-500">
         {caption}
       </span>
+      <button
+        type="button"
+        disabled={actionDisabled}
+        className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold disabled:opacity-50 ${
+          stopping
+            ? "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+            : "bg-slate-900 text-white hover:bg-slate-800"
+        }`}
+        onClick={onAction}
+      >
+        {actionLabel}
+      </button>
     </div>
   );
 }
@@ -377,7 +400,7 @@ export function DummyMachiningModal({
   const [loadingMore, setLoadingMore] = useState(false);
   const [selectingId, setSelectingId] = useState("");
   const [clearing, setClearing] = useState(false);
-  const [cancellingRegen, setCancellingRegen] = useState(false);
+  const [regenAction, setRegenAction] = useState("");
   const [pendingRequestId, setPendingRequestId] = useState("");
   const [regenFilled, setRegenFilled] = useState(false);
   const [regenCam, setRegenCam] = useState(false);
@@ -610,24 +633,6 @@ export function DummyMachiningModal({
   const current = saved.find((row) => row.diameterGroup === group) || null;
   const product = current?.product || null;
   const regen = product?.artifactRegen;
-  const regenBusy = Boolean(
-    regen &&
-      (regen.filledStl === "running" ||
-        regen.cam === "running" ||
-        regen.cam === "waiting"),
-  );
-  const regenSourceId = String(product?.sourceRequestId || "").trim();
-  const showRegen = Boolean(
-    regen &&
-      (regenWatchId === product?.requestId ||
-        regen.filledStl === "running" ||
-        regen.cam === "running" ||
-        regen.cam === "waiting" ||
-        regen.filledStl === "failed" ||
-        regen.cam === "failed" ||
-        regen.filledStl === "cancelled" ||
-        regen.cam === "cancelled"),
-  );
 
   useEffect(() => {
     if (!product?.requestId || !regen) return;
@@ -640,9 +645,19 @@ export function DummyMachiningModal({
     }
   }, [product?.requestId, regen, regenWatchId]);
 
-  const cancelRegen = async () => {
-    if (!token || !product?.requestId || cancellingRegen) return;
-    setCancellingRegen(true);
+  const patchSavedProduct = (nextProduct: DummyProduct | null) => {
+    if (!nextProduct) return;
+    setSaved((prev) =>
+      prev.map((row) =>
+        row.diameterGroup === group ? { ...row, product: nextProduct } : row,
+      ),
+    );
+    if (nextProduct.requestId) setRegenWatchId(String(nextProduct.requestId));
+  };
+
+  const cancelRegen = async (target: "stl" | "cam") => {
+    if (!token || !product?.requestId || regenAction) return;
+    setRegenAction(`${target}-stop`);
     try {
       const res = await fetch("/api/cnc-machines/dummy-product/cancel-regen", {
         method: "POST",
@@ -650,20 +665,13 @@ export function DummyMachiningModal({
           ...authHeaders(token),
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ requestId: product.requestId }),
+        body: JSON.stringify({ requestId: product.requestId, target }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || body?.success === false) {
         throw new Error(body?.message || "재생성을 중단하지 못했습니다.");
       }
-      const nextProduct = body?.data?.product || null;
-      if (nextProduct) {
-        setSaved((prev) =>
-          prev.map((row) =>
-            row.diameterGroup === group ? { ...row, product: nextProduct } : row,
-          ),
-        );
-      }
+      patchSavedProduct(body?.data?.product || null);
     } catch (error) {
       toast({
         title: "중단 실패",
@@ -672,7 +680,48 @@ export function DummyMachiningModal({
         variant: "destructive",
       });
     } finally {
-      setCancellingRegen(false);
+      setRegenAction("");
+    }
+  };
+
+  const restartRegen = async (target: "stl" | "cam") => {
+    if (!token || !product?.requestId || regenAction) return;
+    setRegenAction(`${target}-start`);
+    try {
+      const res = await fetch("/api/cnc-machines/dummy-product/regen", {
+        method: "POST",
+        headers: {
+          ...authHeaders(token),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requestId: product.requestId,
+          regenerateFilledStl: target === "stl",
+          regenerateCam: true,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        throw new Error(body?.message || "재생성을 시작하지 못했습니다.");
+      }
+      patchSavedProduct(body?.data?.product || null);
+      const started = body?.data?.regen;
+      if (started && !started.started) {
+        toast({
+          title: "재생성 실패",
+          description: started.message || "재생성은 시작하지 못했습니다.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "재생성 실패",
+        description:
+          error instanceof Error ? error.message : "재생성을 시작하지 못했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setRegenAction("");
     }
   };
 
@@ -840,45 +889,40 @@ export function DummyMachiningModal({
                           item={product}
                           aside={
                             <div className="mt-1 w-full space-y-1">
-                              {showRegen && regen && regen.filledStl !== "idle" ? (
-                                <RegenBar
-                                  label="STL"
-                                  state={regen.filledStl === "waiting" ? "running" : regen.filledStl}
-                                  startedAt={regen.filledStartedAt || regen.requestedAt}
-                                  error={regen.filledError}
-                                />
-                              ) : null}
-                              {showRegen && regen && regen.cam !== "idle" ? (
-                                <RegenBar
-                                  label="CAM"
-                                  state={regen.cam}
-                                  startedAt={regen.camStartedAt}
-                                  error={regen.camError}
-                                />
-                              ) : null}
-                              {regenBusy ? (
-                                <button
-                                  type="button"
-                                  disabled={cancellingRegen}
-                                  className="w-full rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                                  onClick={() => void cancelRegen()}
-                                >
-                                  {cancellingRegen ? "중단 중…" : "중단"}
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled={Boolean(selectingId) || !regenSourceId}
-                                  className="w-full rounded-md bg-slate-900 px-1.5 py-1 text-[10px] font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-                                  onClick={() => {
-                                    setPendingRequestId(regenSourceId);
-                                    setRegenFilled(false);
-                                    setRegenCam(false);
-                                  }}
-                                >
-                                  재생성
-                                </button>
-                              )}
+                              {(["stl", "cam"] as const).map((kind) => {
+                                const state =
+                                  kind === "stl"
+                                    ? regen?.filledStl || "idle"
+                                    : regen?.cam || "idle";
+                                const busy = state === "running" || state === "waiting";
+                                const actionKey = `${kind}-${busy ? "stop" : "start"}`;
+                                return (
+                                  <RegenBar
+                                    key={kind}
+                                    label={kind === "stl" ? "STL" : "CAM"}
+                                    state={state === "waiting" && kind === "stl" ? "running" : state}
+                                    startedAt={
+                                      kind === "stl"
+                                        ? regen?.filledStartedAt || regen?.requestedAt
+                                        : regen?.camStartedAt
+                                    }
+                                    error={kind === "stl" ? regen?.filledError : regen?.camError}
+                                    actionDisabled={Boolean(regenAction)}
+                                    actionLabel={
+                                      regenAction === actionKey
+                                        ? busy
+                                          ? "중단 중…"
+                                          : "시작…"
+                                        : busy
+                                          ? "중단"
+                                          : "재생성"
+                                    }
+                                    onAction={() =>
+                                      void (busy ? cancelRegen(kind) : restartRegen(kind))
+                                    }
+                                  />
+                                );
+                              })}
                             </div>
                           }
                         />

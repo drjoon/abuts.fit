@@ -46,6 +46,7 @@ import {
   assertDummyRegenPossible,
   cancelDummyArtifactRegen,
   resolveDummyRegenChoice,
+  restartDummyArtifactRegen,
   startDummyArtifactRegen,
 } from "./dummyArtifactRegen.js";
 
@@ -1025,10 +1026,61 @@ export async function selectDummyMachiningProduct(req, res) {
   }
 }
 
+export async function restartDummyMachiningRegen(req, res) {
+  try {
+    const requestId = String(req.body?.requestId || "").trim();
+    const choice = resolveDummyRegenChoice(req.body);
+    const regen = await restartDummyArtifactRegen(requestId, choice);
+    const rows = await readSavedRows();
+    const nextRows = rows
+      .map((row) => {
+        if (String(row?.requestId || "").trim() !== requestId) {
+          return compactSavedRow(row);
+        }
+        return compactSavedRow(row, {
+          artifactRegen: {
+            filledStl: choice.filledStl,
+            cam: choice.cam,
+            requestedAt: new Date(),
+          },
+        });
+      })
+      .filter((row) => row.diameterGroup && row.requestId);
+    await SystemSettings.findOneAndUpdate(
+      { key: "global" },
+      { $set: { dummyMachiningProducts: nextRows } },
+      { upsert: true },
+    );
+    const doc = await findRequestByRequestId(requestId);
+    return res.json({
+      success: true,
+      data: {
+        product: toDummyProductDto(doc),
+        regen: {
+          filledStl: choice.filledStl,
+          cam: choice.cam,
+          started: Boolean(regen.started),
+          message: regen.message || "",
+        },
+      },
+    });
+  } catch (error) {
+    console.error("restartDummyMachiningRegen failed", error);
+    const status = Number(error?.statusCode || 500);
+    return res.status(status >= 400 && status < 600 ? status : 500).json({
+      success: false,
+      message: error?.statusCode
+        ? error.message
+        : "재생성을 시작하지 못했습니다.",
+    });
+  }
+}
+
 export async function cancelDummyMachiningRegen(req, res) {
   try {
     const requestId = String(req.body?.requestId || "").trim();
-    await cancelDummyArtifactRegen(requestId);
+    const target = String(req.body?.target || "all").trim();
+    await cancelDummyArtifactRegen(requestId, target);
     const doc = await findRequestByRequestId(requestId);
     return res.json({
       success: true,

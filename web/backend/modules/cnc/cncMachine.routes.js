@@ -181,6 +181,11 @@ router.post(
   cncMachineController.cancelDummyMachiningRegen,
 );
 router.post(
+  "/dummy-product/regen",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.restartDummyMachiningRegen,
+);
+router.post(
   "/dummy-product/enqueue",
   authorizeRoles("manufacturer", "admin"),
   cncMachineController.enqueueDummyMachiningProduct,

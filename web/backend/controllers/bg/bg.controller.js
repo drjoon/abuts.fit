@@ -1979,6 +1979,34 @@ export const registerRuntimeStatus = asyncHandler(async (req, res) => {
     }
   }
 
+  if (
+    normalizedSource === "esprit-addin" &&
+    (normalizedStatus === "failed" || normalizedStatus === "cancelled") &&
+    resolvedRequestId
+  ) {
+    const nextStatus = normalizedStatus === "cancelled" ? "CANCELLED" : "FAILED";
+    const metaError =
+      metadata && typeof metadata === "object" ? metadata.error : "";
+    const errorText = String(metaError || normalizedLabel || nextStatus).slice(0, 300);
+    await Request.updateOne(
+      {
+        requestId: resolvedRequestId,
+        "productionSchedule.dummyArtifactRegen.cam": true,
+        "productionSchedule.ncPreload.status": { $in: ["GENERATING", "UPLOADING"] },
+      },
+      {
+        $set: {
+          "productionSchedule.ncPreload.status": nextStatus,
+          "productionSchedule.ncPreload.updatedAt": new Date(),
+          "productionSchedule.ncPreload.error": errorText,
+          "productionSchedule.dummyCamAfterFilled": false,
+        },
+      },
+    ).catch((error) => {
+      console.warn("[BG] dummy CAM status sync failed", error?.message || error);
+    });
+  }
+
   emitBgRuntimeStatus({
     requestId: resolvedRequestId || null,
     requestMongoId: resolvedMongoId || null,

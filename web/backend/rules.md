@@ -1137,7 +1137,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 대상은 더미 복사본(`source=dummy_sample`)이다. 원본 의뢰의 filled STL·NC는 덮지 않는다.
 - DB: 더미 의뢰 `caseInfos.stlFile`·`ncFile`, `productionSchedule.dummyArtifactRegen`. 직경 행 `SystemSettings.dummyMachiningProducts.artifactRegen`.
 - S3: `requests/{더미 requestId}/2-filled/`, `requests/{더미 requestId}/3-nc/`.
-- filled STL이 실패하거나 중단되면 CAM은 시작하지 않는다. 성공하면 더미 의뢰 S3의 새 filled STL로 Esprit을 잇는다. 진행 중 「중단」은 `POST /api/cnc-machines/dummy-product/cancel-regen`.
+- filled STL이 실패하거나 중단되면 CAM은 시작하지 않는다. 성공하면 더미 의뢰 S3의 새 filled STL로 Esprit을 잇는다. 선택 카드의 STL·CAM 줄 오른쪽 「재생성」은 `POST /api/cnc-machines/dummy-product/regen`(같은 더미 의뢰). 「중단」은 `POST /api/cnc-machines/dummy-product/cancel-regen`에 `target=stl|cam`. Esprit이 실패를 알리면 더미 CAM 상태를 실패로 남긴다.
 - 검색(`q`, 구 `lot`): 로트·환자·치과·치아·임플란트·기공소명.
 - 진행: 더미 의뢰 `stlPreload`·`ncPreload`를 `artifactRegen`으로 카드에 내려 준다.
 - SSOT: `controllers/cnc/dummyArtifactRegen.js`, `DummyMachiningModal.tsx`

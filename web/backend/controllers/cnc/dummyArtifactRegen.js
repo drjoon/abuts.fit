@@ -6,6 +6,7 @@
 // - web/backend/controllers/requests/common.review.esprit.js
 // - web/backend/rules.md
 // change-log:
+// - 2026-10-22: 선택 카드에서 STL·CAM을 각각 다시 만들거나 끊는다.
 // - 2026-10-22: CAM은 새 filled STL이 저장된 뒤에만 시작한다. 중단은 대기 중인 CAM도 끊는다.
 // - 2026-10-22: 더미 교체 시 filled STL·CAM 재생성. filled를 고르면 CAM을 이어서 더미 의뢰에만 저장.
 import Request from "../../models/request.model.js";
@@ -217,9 +218,47 @@ export async function continueDummyCamAfterFilled(request) {
   }
 }
 
-/** 진행 중인 filled STL·대기 CAM·CAM 생성을 끊는다. */
-export async function cancelDummyArtifactRegen(requestId) {
+/**
+ * 이미 고른 더미 의뢰에서 STL·CAM을 다시 만든다. 복사본은 새로 만들지 않는다.
+ * @param {string} requestId
+ * @param {{ filledStl: boolean, cam: boolean }} choice
+ */
+export async function restartDummyArtifactRegen(requestId, choice) {
   const rid = String(requestId || "").trim();
+  if (!rid) throw httpError(400, "requestId가 필요합니다.");
+  if (!choice?.filledStl && !choice?.cam) {
+    throw httpError(400, "다시 만들 항목을 선택해 주세요.");
+  }
+  const doc = await Request.findOne({ requestId: rid });
+  if (!doc) throw httpError(404, "더미 의뢰를 찾지 못했습니다.");
+  const source = String(doc.source || "").trim();
+  const category = String(doc.requestCategory || "").trim();
+  if (source !== "dummy_sample" && category !== "dummy_sample") {
+    throw httpError(409, "더미 의뢰만 다시 만들 수 있습니다.");
+  }
+  const stlStatus = String(
+    doc?.productionSchedule?.stlPreload?.status || "",
+  ).toUpperCase();
+  if (!choice.filledStl && choice.cam && stlStatus === "GENERATING") {
+    throw httpError(409, "STL이 끝난 뒤에 CAM을 다시 만듭니다.");
+  }
+  assertDummyRegenPossible(doc, choice);
+  const ncStatus = String(
+    doc?.productionSchedule?.ncPreload?.status || "",
+  ).toUpperCase();
+  if (ncStatus === "GENERATING" || ncStatus === "UPLOADING") {
+    const { abortEspritForNc } = await import(
+      "../requests/common.review.esprit.js"
+    );
+    await abortEspritForNc({ requestId: rid });
+  }
+  return startDummyArtifactRegen(doc, choice);
+}
+
+/** 진행 중인 filled STL·대기 CAM·CAM 생성을 끊는다. target은 stl·cam. */
+export async function cancelDummyArtifactRegen(requestId, target = "all") {
+  const rid = String(requestId || "").trim();
+  const which = target === "stl" || target === "cam" ? target : "all";
   if (!rid) throw httpError(400, "requestId가 필요합니다.");
   const doc = await Request.findOne({ requestId: rid })
     .select({
@@ -241,25 +280,25 @@ export async function cancelDummyArtifactRegen(requestId) {
   const camWaiting = Boolean(doc?.productionSchedule?.dummyCamAfterFilled);
   const stlRunning = stlStatus === "GENERATING";
   const camRunning = ncStatus === "GENERATING" || ncStatus === "UPLOADING";
+  const cancelStl = (which === "all" || which === "stl") && stlRunning;
+  const cancelCam =
+    (which === "all" || which === "cam" || (which === "stl" && camWaiting)) &&
+    (camWaiting || camRunning);
   const now = new Date();
   const cancelled = {
     status: "CANCELLED",
     updatedAt: now,
     error: "dummy_regen_cancelled",
   };
-  await Request.updateOne(
-    { requestId: rid },
-    {
-      $set: {
-        "productionSchedule.dummyCamAfterFilled": false,
-        ...(stlRunning ? { "productionSchedule.stlPreload": cancelled } : {}),
-        ...(camWaiting || camRunning
-          ? { "productionSchedule.ncPreload": cancelled }
-          : {}),
-      },
-    },
-  );
-  if (camRunning) {
+  const patch = {
+    ...(cancelCam ? { "productionSchedule.dummyCamAfterFilled": false } : {}),
+    ...(cancelStl ? { "productionSchedule.stlPreload": cancelled } : {}),
+    ...(cancelCam ? { "productionSchedule.ncPreload": cancelled } : {}),
+  };
+  if (Object.keys(patch).length > 0) {
+    await Request.updateOne({ requestId: rid }, { $set: patch });
+  }
+  if (cancelCam && camRunning) {
     const { abortEspritForNc } = await import(
       "../requests/common.review.esprit.js"
     );
