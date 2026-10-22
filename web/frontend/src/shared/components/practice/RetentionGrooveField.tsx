@@ -3,11 +3,14 @@
 // - web/frontend/src/shared/components/practice/AbutmentModelConfirmDialog.tsx
 // - web/frontend/src/shared/components/practice/AbutmentDesignConfirmDialog.tsx
 // - web/frontend/src/features/requestSettings/useRequestorRequestSettings.ts
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { CircleHelp } from "lucide-react";
 import { RetentionGrooveGuideDialog } from "./RetentionGrooveGuideDialog";
+
+/** 앱 툴팁과 같은 호버 대기 */
+const GUIDE_HOVER_OPEN_MS = 600;
 
 export type RetentionGrooveChoice = "none" | "deep";
 
@@ -31,8 +34,26 @@ export function RetentionGrooveField({
   className,
 }: RetentionGrooveFieldProps) {
   const [guideOpen, setGuideOpen] = useState(false);
+  const hoverTimerRef = useRef<number | null>(null);
   const normalized: RetentionGrooveChoice =
     value === "deep" ? "deep" : "none";
+
+  const clearHoverTimer = () => {
+    if (hoverTimerRef.current == null) return;
+    window.clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = null;
+  };
+
+  useEffect(() => () => clearHoverTimer(), []);
+
+  const scheduleGuideOpen = () => {
+    if (guideOpen) return;
+    clearHoverTimer();
+    hoverTimerRef.current = window.setTimeout(() => {
+      hoverTimerRef.current = null;
+      setGuideOpen(true);
+    }, GUIDE_HOVER_OPEN_MS);
+  };
 
   return (
     <>
@@ -42,7 +63,22 @@ export function RetentionGrooveField({
         }
       >
         <div className="flex flex-row items-center justify-between">
-          <div className="text-sm font-semibold text-slate-600">유지홈</div>
+          <div className="flex items-center gap-1">
+            <div className="text-sm font-semibold text-slate-600">유지홈</div>
+            <button
+              type="button"
+              className="inline-flex text-slate-400 transition-colors hover:text-primary"
+              aria-label="유지홈 선택 안내"
+              onPointerEnter={scheduleGuideOpen}
+              onPointerLeave={clearHoverTimer}
+              onClick={() => {
+                clearHoverTimer();
+                setGuideOpen(true);
+              }}
+            >
+              <CircleHelp className="h-4 w-4" />
+            </button>
+          </div>
           <RadioGroup
             value={normalized}
             onValueChange={(next) => {
@@ -79,16 +115,6 @@ export function RetentionGrooveField({
             </div>
           </RadioGroup>
         </div>
-
-        <button
-          type="button"
-          className="mt-1.5 inline-flex items-center gap-1.5 text-sm font-semibold text-primary-strong transition-colors hover:text-primary-strong"
-          aria-label="유지홈 선택 안내"
-          onClick={() => setGuideOpen(true)}
-        >
-          <CircleHelp className="h-4 w-4" />
-          유지구/유지홈 비교 보기
-        </button>
       </div>
 
       <RetentionGrooveGuideDialog

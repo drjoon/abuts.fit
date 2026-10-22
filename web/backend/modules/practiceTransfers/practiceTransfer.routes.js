@@ -66,6 +66,7 @@ import {
   removeReceivedPracticeTransferRequestFiles,
   restoreReceivedPracticeTransferRequestFiles,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
+import { setPracticeTransferScrewSupply } from "../../controllers/practiceTransfers/practiceTransferScrewSupply.controller.js";
 import { handoffPracticeTransferAbutmentDesign, reportImplantCatalogMismatch } from "../../controllers/requests/designHandoff.controller.js";
 import {
   getPracticeTransferSettings,
@@ -484,6 +485,13 @@ router.post(
   authenticate,
   receiveAuth,
   setPracticeTransferAbutmentShipYmd,
+);
+
+router.put(
+  "/:transferId/screw-supply",
+  authenticate,
+  receiveAuth,
+  setPracticeTransferScrewSupply,
 );
 
 router.post(

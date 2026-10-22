@@ -100,6 +100,10 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 import { isLabProsthesisUploadRequired } from "../../utils/practiceProsthesisUploadRequirement.js";
 import { isAutoMatchCompleted } from "../../utils/practiceTransferAutoMatchCore.js";
 import {
+  normalizeScrewSupply,
+  syncPracticeTransferScrewSupply,
+} from "../../utils/labPracticeScrewSupply.js";
+import {
   applyCaReuploadRemakeCharge,
   bumpCaDesignUploadCount,
   isCaDesignRemakeReupload,
@@ -878,6 +882,21 @@ export async function handoffDesignToProduction(req, res) {
       request.caseInfos.retentionGroove = retentionGroove;
       if (typeof caseInfosPatchRaw?.anodizingEnabled === "boolean") {
         request.caseInfos.anodizingEnabled = caseInfosPatchRaw.anodizingEnabled;
+      }
+      const screwSupplyFromBody = normalizeScrewSupply(
+        caseInfosPatchRaw?.screwSupply,
+      );
+      if (screwSupplyFromBody) {
+        request.caseInfos.screwSupply = screwSupplyFromBody;
+        if (transferDocEarly?._id) {
+          void syncPracticeTransferScrewSupply({
+            transfer: transferDocEarly,
+            screwSupply: screwSupplyFromBody,
+            practiceName: clinicName,
+          }).catch((err) => {
+            console.error("[DESIGN_HANDOFF] screw supply sync failed", err);
+          });
+        }
       }
     }
 

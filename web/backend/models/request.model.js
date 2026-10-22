@@ -226,6 +226,11 @@ const requestSchema = new mongoose.Schema(
         enum: ["none", "shallow", "deep"],
         default: "deep",
       },
+      // 스크류 공급. abuts=어벗츠 정품, manufacturer=임플란트 제조사 호환. 없으면 abuts.
+      screwSupply: {
+        type: String,
+        enum: ["abuts", "manufacturer"],
+      },
       // Finish Composite StepIncrement(mm) — 제조사 override. null=의뢰자설정(포스트=retentionGroove, 치은=PRC 0.05).
       compositeStepIncrementPostOverrideMm: {
         type: Number,

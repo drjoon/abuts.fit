@@ -102,6 +102,8 @@ export type CaseInfos = {
     s3Key?: string;
   }>;
   retentionGroove?: "none" | "shallow" | "deep";
+  /** abuts=어벗츠 정품, manufacturer=임플란트 제조사 호환 */
+  screwSupply?: "abuts" | "manufacturer";
 
   // 헥스 회전 모드값 SSOT
   requestorHexRotation?: "STL모델대로" | "헥스30도회전";

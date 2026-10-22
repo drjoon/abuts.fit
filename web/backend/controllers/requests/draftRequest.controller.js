@@ -8,6 +8,7 @@ import { ApiError } from "../../utils/ApiError.js";
 
 import { buildStandardStlFileName } from "./creation.helpers.controller.js";
 import { normalizeCaseInfosImplantFields } from "./utils.js";
+import { normalizeScrewSupply } from "../../utils/labPracticeScrewSupply.js";
 
 const normalizeRetentionGroove = (value) => {
   const rg = String(value || "")
@@ -60,11 +61,13 @@ async function buildNormalizedDraftCaseInfos(
   const normalizedCaseInfos = await Promise.all(
     incomingList.map(async (ci) => {
       const normalized = await normalizeCaseInfosImplantFields(ci || {}, false);
-      return {
+      const screwSupply = normalizeScrewSupply(ci?.screwSupply);
+      const next = {
         ...(ci || {}),
         ...normalized,
         workType: ((ci && ci.workType) || "abutment").trim(),
         retentionGroove: normalizeRetentionGroove(ci?.retentionGroove),
+        ...(screwSupply ? { screwSupply } : {}),
         requestorHexRotation: normalizeRequestorHexRotation(
           ci?.requestorHexRotation,
           opts?.defaultRequestorHexRotation,
@@ -72,6 +75,8 @@ async function buildNormalizedDraftCaseInfos(
         shippingMode:
           ci?.shippingMode === "express" ? "express" : "normal",
       };
+      if (!screwSupply) delete next.screwSupply;
+      return next;
     }),
   );
 

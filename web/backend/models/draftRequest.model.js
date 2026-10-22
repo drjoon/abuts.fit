@@ -122,6 +122,11 @@ const draftCaseSchema = new mongoose.Schema(
           enum: ["none", "shallow", "deep"],
           default: "deep",
         },
+        // 스크류 공급. abuts=어벗츠 정품, manufacturer=임플란트 제조사 호환.
+        screwSupply: {
+          type: String,
+          enum: ["abuts", "manufacturer"],
+        },
         // related files:
         // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
         // - web/backend/controllers/requests/creation.from-draft.controller.js

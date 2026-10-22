@@ -216,6 +216,7 @@ import {
   findLabPracticePartnerMemo,
   toLabPracticePartnerMemoPublicApi,
 } from "../../utils/labPracticePartnerMemo.js";
+import { normalizeScrewSupply } from "../../utils/labPracticeScrewSupply.js";
 import ChatRoom from "../../models/chatRoom.model.js";
 import {
   postPracticeTransferSystemChatMessage,
@@ -8453,6 +8454,7 @@ export async function getReceivedPracticeTransfers(req, res) {
             )
           : null,
         labBasketTag: normalizeLabBasketTag(doc?.labBasketTag) || null,
+        screwSupply: normalizeScrewSupply(doc?.screwSupply),
         ...toRemakeApiFields(doc),
       };
     });

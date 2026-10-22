@@ -230,6 +230,12 @@ const practiceTransferSchema = new mongoose.Schema(
       type: [mongoose.Schema.Types.Mixed],
       default: [],
     },
+    // 이번 기공의뢰 스크류. abuts=어벗츠 정품, manufacturer=임플란트 제조사 호환.
+    // 비어 있으면 기공소-치과 기본값(labPracticeScrewSupplies), 없으면 abuts.
+    screwSupply: {
+      type: String,
+      enum: ["abuts", "manufacturer"],
+    },
     // Abuts-first: 수락 시 Request 생성 → 어벗 디자인 → 기공소(·치과) 컨펌 → 생산
     production: {
       shippingMode: {

@@ -53,6 +53,11 @@ import { NewRequestDesignAbutmentFields } from "@/pages/requestor/new_request/co
 import { NewRequestPatientImplantFields } from "@/pages/requestor/new_request/components/NewRequestPatientImplantFields";
 import { RetentionGrooveField } from "@/shared/components/practice/RetentionGrooveField";
 import { AnodizingField } from "@/shared/components/practice/AnodizingField";
+import { ScrewSupplyField } from "@/shared/components/practice/ScrewSupplyField";
+import {
+  screwManufacturerLabel,
+  type ScrewSupply,
+} from "@/shared/practice/screwSupply";
 import {
   StlMachiningPreflightNotice,
   type StlMachiningPreflight,
@@ -147,6 +152,13 @@ export type AbutmentModelConfirmDialogProps = {
   defaultAnodizingEnabled?: boolean;
   /** 계정 아노다이징 기본값 변경 시 저장 */
   onAnodizingAccountSave?: (value: boolean) => void;
+  /** 기공소-치과 스크류 기본값. 치과명이 바뀌면 그 쌍의 기본으로 맞춘다. */
+  resolveDefaultScrewSupply?: (clinicName: string) => ScrewSupply;
+  /** false면 기본값을 아직 모르므로 빈 값을 어벗츠로 확정하지 않는다 */
+  screwPreferenceReady?: boolean;
+  /** 스크류를 바꾸면 기공소-치과 기본값으로 저장 */
+  onScrewSupplySave?: (value: ScrewSupply, clinicName: string) => void;
+  screwSupplySaving?: boolean;
   /** 프리뷰에서 전환 가능한 파일 인덱스(환자 케이스 멤버 등) */
   previewFileIndices?: number[];
   onSelectPreviewIndex?: (index: number) => void;
@@ -207,6 +219,10 @@ export function AbutmentModelConfirmDialog({
   onRetentionGrooveAccountSave,
   defaultAnodizingEnabled = true,
   onAnodizingAccountSave,
+  resolveDefaultScrewSupply,
+  screwPreferenceReady = true,
+  onScrewSupplySave,
+  screwSupplySaving = false,
   lockDesignProductMode = false,
   lockProductionProductMode = false,
   previewFileIndices,
@@ -355,6 +371,81 @@ export function AbutmentModelConfirmDialog({
     if (stored === "none" || stored === "shallow" || stored === "deep") return;
     setDetailCaseInfos({ retentionGroove: "none" });
   }, [detailCaseInfos?.retentionGroove, open, setDetailCaseInfos]);
+
+  const screwTouchedRef = useRef(false);
+  const screwPinnedRef = useRef(false);
+  const screwClinicRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open) {
+      screwTouchedRef.current = false;
+      screwPinnedRef.current = false;
+      screwClinicRef.current = null;
+      return;
+    }
+    if (!resolveDefaultScrewSupply) return;
+    const clinic = String(detailCaseInfos?.clinicName || "").trim();
+    const prevClinic = screwClinicRef.current;
+    const first = prevClinic === null;
+    if (!first && prevClinic !== clinic) {
+      if (screwTouchedRef.current && !prevClinic && clinic) {
+        const current: ScrewSupply =
+          detailCaseInfos?.screwSupply === "manufacturer" ? "manufacturer" : "abuts";
+        onScrewSupplySave?.(current, clinic);
+        screwClinicRef.current = clinic;
+        screwPinnedRef.current = true;
+        return;
+      }
+      screwTouchedRef.current = false;
+      screwPinnedRef.current = false;
+    }
+    screwClinicRef.current = clinic;
+    if (first && (detailCaseInfos?.screwSupply === "abuts" || detailCaseInfos?.screwSupply === "manufacturer")) {
+      screwPinnedRef.current = true;
+      return;
+    }
+    if (screwTouchedRef.current || screwPinnedRef.current) return;
+    if (!screwPreferenceReady) return;
+    const next = resolveDefaultScrewSupply(clinic);
+    if (detailCaseInfos?.screwSupply !== next) {
+      setDetailCaseInfos({ screwSupply: next });
+    }
+  }, [
+    open,
+    detailCaseInfos?.clinicName,
+    detailCaseInfos?.screwSupply,
+    onScrewSupplySave,
+    resolveDefaultScrewSupply,
+    screwPreferenceReady,
+    setDetailCaseInfos,
+  ]);
+
+  const screwMakerLabel = useMemo(() => {
+    const custom =
+      implantEntryMode === "custom"
+        ? String(
+            newSystemManufacturer ||
+              detailCaseInfos?.newSystemRequest?.manufacturer ||
+              "",
+          ).trim()
+        : "";
+    const catalogName = String(
+      detailCaseInfos?.implantManufacturer || implantManufacturer || "",
+    ).trim();
+    const raw = custom || catalogName;
+    const display = connections.find(
+      (row) =>
+        String(row.manufacturer || "").trim() === raw &&
+        String(row.displayManufacturer || "").trim(),
+    )?.displayManufacturer;
+    return screwManufacturerLabel([display || raw]);
+  }, [
+    connections,
+    detailCaseInfos?.implantManufacturer,
+    detailCaseInfos?.newSystemRequest?.manufacturer,
+    implantEntryMode,
+    implantManufacturer,
+    newSystemManufacturer,
+  ]);
 
   const showImplantSelect = true;
   const productMode: NewRequestProductMode = lockProductionProductMode
@@ -883,6 +974,26 @@ export function AbutmentModelConfirmDialog({
                         }}
                         disabled={!detailFile || confirming}
                         idPrefix={`${retentionIdPrefix}-ano`}
+                      />
+
+                      <ScrewSupplyField
+                        value={
+                          detailCaseInfos?.screwSupply === "manufacturer"
+                            ? "manufacturer"
+                            : "abuts"
+                        }
+                        manufacturerLabel={screwMakerLabel}
+                        disabled={!detailFile || confirming || screwSupplySaving}
+                        idPrefix={`${retentionIdPrefix}-screw`}
+                        onChange={(next) => {
+                          screwTouchedRef.current = true;
+                          screwPinnedRef.current = true;
+                          setDetailCaseInfos({ screwSupply: next });
+                          onScrewSupplySave?.(
+                            next,
+                            String(detailCaseInfos?.clinicName || "").trim(),
+                          );
+                        }}
                       />
 
                     </div>

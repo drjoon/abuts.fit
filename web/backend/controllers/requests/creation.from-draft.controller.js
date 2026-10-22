@@ -30,6 +30,7 @@
 // - 2026-08-10: caseInfos.files에서 primary s3Key 중복 저장 방지.
 // - 2026-08-08: 접수 시 신속 ETA 이점 없으면 express→normal 강등.
 import mongoose, { Types } from "mongoose";
+import { normalizeScrewSupply } from "../../utils/labPracticeScrewSupply.js";
 import crypto from "crypto";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -898,6 +899,7 @@ export async function createRequestsFromDraft(req, res) {
         const retentionGrooveValue = normalizeRetentionGroove(
           ci?.retentionGroove,
         );
+        const screwSupplyValue = normalizeScrewSupply(ci?.screwSupply);
         const requestorHexRotationValue = normalizeRequestorHexRotation(
           ci?.requestorHexRotation,
         );
@@ -912,6 +914,7 @@ export async function createRequestsFromDraft(req, res) {
               tiltAxisVector: ci.tiltAxisVector,
               frontPoint: ci.frontPoint,
               retentionGroove: retentionGrooveValue,
+              ...(screwSupplyValue ? { screwSupply: screwSupplyValue } : {}),
               requestorHexRotation: requestorHexRotationValue,
               finalHexRotation: requestorHexRotationValue,
               filletOvercutAllowed: ci?.filletOvercutAllowed === true,
@@ -963,6 +966,7 @@ export async function createRequestsFromDraft(req, res) {
               tiltAxisVector: ci.tiltAxisVector,
               frontPoint: ci.frontPoint,
               retentionGroove: retentionGrooveValue,
+              ...(screwSupplyValue ? { screwSupply: screwSupplyValue } : {}),
               requestorHexRotation: requestorHexRotationValue,
               finalHexRotation: requestorHexRotationValue,
               filletOvercutAllowed: ci?.filletOvercutAllowed === true,

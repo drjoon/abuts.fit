@@ -234,6 +234,8 @@ import {
 import { useLabWorkFolderSave } from "@/shared/files/useLabWorkFolderSave";
 import type { DcmDownloadFormat } from "@/shared/files/dcmDownloadFormat";
 import { RequestSettingsToolbar } from "@/features/requestSettings/RequestSettingsToolbar";
+import { useLabPracticeScrewSupply } from "@/features/requestSettings/useLabPracticeScrewSupply";
+import { screwManufacturerLabel } from "@/shared/practice/screwSupply";
 import { useRequestorRequestSettings } from "@/features/requestSettings/useRequestorRequestSettings";
 import {
   AbutmentDesignConfirmDialog,
@@ -394,6 +396,7 @@ import {
   getPracticeTransferLabReceiveDisplayStatus,
   isLabReceiveHiddenTerminalStatus,
   listPracticeTransferAbutsCustomAbutmentToothWorks,
+  listPracticeTransferCustomAbutmentToothWorks,
   listPracticeTransferPendingProstheticSlots,
   listPracticeTransferUploadedAbutmentTeeth,
   normalizeAbutmentToothStagesFromApi,
@@ -886,6 +889,7 @@ export function RequestorPracticeReceivePage({
       });
     },
   });
+  const labPracticeScrewSupply = useLabPracticeScrewSupply(Boolean(token));
   const { rooms, clearUnreadForTransferIds } = useChatRooms();
   const {
     ensureFilesUploaded,
@@ -1034,6 +1038,38 @@ export function RequestorPracticeReceivePage({
   const [abutmentRequestDetailBusy, setAbutmentRequestDetailBusy] =
     useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
+  const handleChatScrewSupplyChange = useCallback(
+    async (
+      next: "abuts" | "manufacturer",
+      transferOverride?: ReceivedPracticeTransfer | null,
+    ) => {
+      const transfer = transferOverride || selectedTransfer;
+      if (!transfer) return;
+      const transferId = String(transfer.transferId || "").trim();
+      const previous = transfer.screwSupply ?? null;
+      const patch = (row: ReceivedPracticeTransfer): ReceivedPracticeTransfer =>
+        row.transferId === transferId ? { ...row, screwSupply: next } : row;
+      setTransfers((rows) => rows.map(patch));
+      setSelectedTransfer((row) => (row ? patch(row) : row));
+      const ok = await labPracticeScrewSupply.save({
+        screwSupply: next,
+        transferId: transfer.transferId || transfer._id,
+        practiceAnchorId: transfer.practiceBusinessAnchorId,
+        practiceName: transfer.practice?.businessName,
+      });
+      if (ok) return;
+      const revert = (row: ReceivedPracticeTransfer): ReceivedPracticeTransfer =>
+        row.transferId === transferId ? { ...row, screwSupply: previous } : row;
+      setTransfers((rows) => rows.map(revert));
+      setSelectedTransfer((row) => (row ? revert(row) : row));
+      toast({
+        title: "스크류를 저장하지 못했습니다",
+        description: "다시 선택해 주세요.",
+        variant: "destructive",
+      });
+    },
+    [labPracticeScrewSupply.save, selectedTransfer, toast],
+  );
   /** 바구니 번호표 BA 저장 직후 목록·달력 칩 즉시 갱신(낙관적) */
   const [labBasketTagRevision, setLabBasketTagRevision] = useState(0);
   const [bookmarkItems, setBookmarkItems] = useState<PracticeTransferBookmarkItem[]>(
@@ -1610,6 +1646,10 @@ export function RequestorPracticeReceivePage({
             r.practicePartnerMemo,
           ),
           labBasketTag: normalizeLabBasketTag(r.labBasketTag) || null,
+          screwSupply:
+            r.screwSupply === "manufacturer" || r.screwSupply === "abuts"
+              ? r.screwSupply
+              : null,
           isRemake: Boolean(
             r.isRemake ||
               (r.remake &&
@@ -6186,6 +6226,10 @@ export function RequestorPracticeReceivePage({
           String(matchedToothRow?.implantType || "").trim() ||
           String(requestCaseInfos?.implantType || "").trim(),
         retentionGroove: "",
+        ...(transfer.screwSupply === "abuts" ||
+        transfer.screwSupply === "manufacturer"
+          ? { screwSupply: transfer.screwSupply }
+          : {}),
       };
     },
     [],
@@ -6878,6 +6922,8 @@ export function RequestorPracticeReceivePage({
                   typeof caseInfos.anodizingEnabled === "boolean"
                     ? caseInfos.anodizingEnabled
                     : undefined,
+                screwSupply:
+                  caseInfos.screwSupply === "manufacturer" ? "manufacturer" : "abuts",
               },
             },
           });
@@ -9649,6 +9695,19 @@ export function RequestorPracticeReceivePage({
         onRetentionGrooveAccountSave={saveRetentionGroove}
         defaultAnodizingEnabled={anodizingEnabled}
         onAnodizingAccountSave={saveAnodizingEnabled}
+        resolveDefaultScrewSupply={(clinicName) =>
+          labPracticeScrewSupply.resolve(designConfirmTransfer?.screwSupply, {
+            practiceAnchorId: designConfirmTransfer?.practiceBusinessAnchorId,
+            practiceName:
+              designConfirmTransfer?.practice?.businessName || clinicName,
+          })
+        }
+        screwPreferenceReady={labPracticeScrewSupply.loaded}
+        onScrewSupplySave={(value) => {
+          if (!designConfirmTransfer) return;
+          void handleChatScrewSupplyChange(value, designConfirmTransfer);
+        }}
+        screwSupplySaving={labPracticeScrewSupply.saving}
         connections={implantCatalog}
         confirming={designConfirmBusy}
         teethOptions={designConfirmTeethOptions}
@@ -10428,6 +10487,23 @@ export function RequestorPracticeReceivePage({
                   anodizingSaving={anodizingSaving}
                   onToggleAnodizing={handleToggleAnodizing}
                   menu
+                  screwSupply={labPracticeScrewSupply.resolve(
+                    selectedTransfer.screwSupply,
+                    {
+                      practiceAnchorId: selectedTransfer.practiceBusinessAnchorId,
+                      practiceName: selectedTransfer.practice?.businessName,
+                    },
+                  )}
+                  screwManufacturerLabel={screwManufacturerLabel(
+                    listPracticeTransferCustomAbutmentToothWorks(
+                      selectedTransfer,
+                      implantCatalog,
+                    ).map((row) => row.implantManufacturer),
+                  )}
+                  screwSaving={labPracticeScrewSupply.saving}
+                  onScrewSupplyChange={(value) => {
+                    void handleChatScrewSupplyChange(value);
+                  }}
                 />
               }
               stickyTrailingActions={labZirStartButton}

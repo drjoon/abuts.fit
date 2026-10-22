@@ -122,6 +122,10 @@ import {
 import { checkCreditLock } from "../utils/creditLock.util.js";
 import { resolvePerformingLabAnchorId } from "../utils/practiceTransferAutoMatchCore.js";
 import {
+  findLabPracticeScrewSupply,
+  resolveScrewSupply,
+} from "../utils/labPracticeScrewSupply.js";
+import {
   isPracticeTransferRushProcessing,
   normalizeConfiguredRushFeeMultiplier,
   resolveRushFeeMultiplier,
@@ -1137,6 +1141,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     .select({
       name: 1,
       "shippingPolicy.weeklyBatchDays": 1,
+      labPracticeScrewSupplies: 1,
     })
     .lean();
   const labOrg = {
@@ -1181,6 +1186,13 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     String(practiceAnchor?.name || "").trim() ||
     String(labOrg?.name || "").trim() ||
     "치과";
+  const screwSupply = resolveScrewSupply(
+    transferDoc?.screwSupply,
+    findLabPracticeScrewSupply(labOrgShipping?.labPracticeScrewSupplies, {
+      practiceAnchorId,
+      practiceName: clinicName,
+    }),
+  );
   const patientNameFallback =
     parsePatientNameFromMemo(transferDoc?.transferMemo) ||
     String(scanFiles[0]?.patientName || "").trim() ||
@@ -1303,6 +1315,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       designSoftware,
       anodizingEnabled,
       retentionGroove,
+      screwSupply,
       // 구강스캔은 어벗 디자인이 아님 — primary file에 넣지 않는다.
       // 취소 시 복원용으로 designSourceFiles에만 보관. 실제 STL은 design-handoff.
       ...(scanFile?.file?.s3Key

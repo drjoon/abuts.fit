@@ -20,6 +20,7 @@ import {
   AbutmentModelConfirmDialog,
 } from "@/shared/components/practice/AbutmentModelConfirmDialog";
 import type { RetentionGrooveChoice } from "@/shared/components/practice/RetentionGrooveField";
+import type { ScrewSupply } from "@/shared/practice/screwSupply";
 import { mergeCncImplantSpecs } from "@/shared/practice/cncImplantCatalog";
 
 export type AbutmentDesignConfirmCaseInfos = {
@@ -32,6 +33,7 @@ export type AbutmentDesignConfirmCaseInfos = {
   implantType?: string;
   retentionGroove?: RetentionGrooveChoice | "shallow" | "";
   anodizingEnabled?: boolean;
+  screwSupply?: ScrewSupply;
 };
 
 type Props = {
@@ -45,6 +47,10 @@ type Props = {
   /** 계정 아노다이징 기본값(없으면 true) */
   defaultAnodizingEnabled?: boolean;
   onAnodizingAccountSave?: (value: boolean) => void;
+  resolveDefaultScrewSupply?: (clinicName: string) => ScrewSupply;
+  screwPreferenceReady?: boolean;
+  onScrewSupplySave?: (value: ScrewSupply, clinicName: string) => void;
+  screwSupplySaving?: boolean;
   connections: Connection[];
   confirming?: boolean;
   /** 1-based index in multi-file queue */
@@ -107,6 +113,10 @@ export function AbutmentDesignConfirmDialog({
   onRetentionGrooveAccountSave,
   defaultAnodizingEnabled = true,
   onAnodizingAccountSave,
+  resolveDefaultScrewSupply,
+  screwPreferenceReady = true,
+  onScrewSupplySave,
+  screwSupplySaving = false,
   connections,
   confirming = false,
   queueCurrent,
@@ -187,6 +197,10 @@ export function AbutmentDesignConfirmDialog({
       implantType: String(initialCaseInfos?.implantType || "").trim(),
       retentionGroove: retention,
       anodizingEnabled: anodizing,
+      ...(initialCaseInfos?.screwSupply === "abuts" ||
+      initialCaseInfos?.screwSupply === "manufacturer"
+        ? { screwSupply: initialCaseInfos.screwSupply }
+        : {}),
     };
     setDetailCaseInfosState(next);
     setImplantManufacturerState(String(next.implantManufacturer || ""));
@@ -360,6 +374,8 @@ export function AbutmentDesignConfirmDialog({
         typeof detailCaseInfos.anodizingEnabled === "boolean"
           ? detailCaseInfos.anodizingEnabled
           : defaultAnodizingEnabled !== false,
+      screwSupply:
+        detailCaseInfos.screwSupply === "manufacturer" ? "manufacturer" : "abuts",
     });
   }, [defaultAnodizingEnabled, detailCaseInfos, onConfirm, toast]);
 
@@ -413,6 +429,10 @@ export function AbutmentDesignConfirmDialog({
       onRetentionGrooveAccountSave={onRetentionGrooveAccountSave}
       defaultAnodizingEnabled={defaultAnodizingEnabled}
       onAnodizingAccountSave={onAnodizingAccountSave}
+      resolveDefaultScrewSupply={resolveDefaultScrewSupply}
+      screwPreferenceReady={screwPreferenceReady}
+      onScrewSupplySave={onScrewSupplySave}
+      screwSupplySaving={screwSupplySaving}
     />
   );
 }

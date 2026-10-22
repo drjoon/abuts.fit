@@ -13,6 +13,8 @@ import { Droplets, Monitor, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/shared/ui/cn";
+import { ScrewSupplyField } from "@/shared/components/practice/ScrewSupplyField";
+import type { ScrewSupply } from "@/shared/practice/screwSupply";
 
 type RequestSettingsToolbarProps = {
   /** 선택된 디자인 SW. 비어 있으면 「디자인SW」 */
@@ -30,6 +32,11 @@ type RequestSettingsToolbarProps = {
   shortLabels?: boolean;
   /** 채팅 작업 줄 — 설정 아이콘 하나에 SW·아노를 넣는다 */
   menu?: boolean;
+  /** 이번 기공의뢰 스크류. 채팅 옵션에서만 넘긴다. */
+  screwSupply?: ScrewSupply;
+  screwManufacturerLabel?: string;
+  screwSaving?: boolean;
+  onScrewSupplyChange?: (value: ScrewSupply) => void;
 };
 
 /** 디자인 소프트웨어 · 아노다이징 기본값 버튼 (어벗생산의뢰 / 기공의뢰수신 공통) */
@@ -44,6 +51,10 @@ export function RequestSettingsToolbar({
   iconOnly = false,
   shortLabels = false,
   menu = false,
+  screwSupply = "abuts",
+  screwManufacturerLabel = "제조사",
+  screwSaving = false,
+  onScrewSupplyChange,
 }: RequestSettingsToolbarProps) {
   const fullLabel = String(designSoftwareLabel || "").trim() || "디자인SW";
   const label = shortLabels && !menu ? "SW" : fullLabel;
@@ -116,13 +127,25 @@ export function RequestSettingsToolbar({
             size="sm"
             className="h-8 w-8 shrink-0 px-0"
             aria-label="설정"
-            title="디자인 소프트웨어 · 아노다이징"
+            title="디자인 소프트웨어 · 아노다이징 · 스크류"
           >
             <Settings className="h-4 w-4" />
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="z-[360] w-auto p-2">
-          <div className="flex items-center gap-1.5">{controls}</div>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-1.5">{controls}</div>
+            {onScrewSupplyChange ? (
+              <ScrewSupplyField
+                value={screwSupply}
+                manufacturerLabel={screwManufacturerLabel}
+                disabled={screwSaving}
+                idPrefix="chat-screw"
+                className="border-0 bg-transparent px-0.5 py-0.5"
+                onChange={onScrewSupplyChange}
+              />
+            ) : null}
+          </div>
         </PopoverContent>
       </Popover>
     );

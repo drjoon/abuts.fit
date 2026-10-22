@@ -18,6 +18,7 @@ import {
   finalizeCustomImplantCaseUpdates,
   isCustomImplantCaseInfos,
 } from "@/shared/practice/newImplantCaseInfos";
+import type { ScrewSupply } from "@/shared/practice/screwSupply";
 
 // change-log:
 // - 2026-10-18: 유지홈 라디오가 「없음」인데 저장값이 비면 없음으로 저장. 만료 토스트처럼 막지 않음.
@@ -104,6 +105,10 @@ type Props = {
   onRetentionGrooveAccountSave?: (value: "none" | "deep") => void;
   anodizingEnabled?: boolean;
   onAnodizingAccountSave?: (value: boolean) => void;
+  resolveDefaultScrewSupply?: (clinicName: string) => ScrewSupply;
+  screwPreferenceReady?: boolean;
+  onScrewSupplySave?: (value: ScrewSupply, clinicName: string) => void;
+  screwSupplySaving?: boolean;
   onShippingModeChange?: (
     fileKeys: string[],
     mode: "normal" | "express",
@@ -183,6 +188,10 @@ export function NewRequestDetailsSection({
   onToggleAnodizing,
   onRetentionGrooveAccountSave,
   onAnodizingAccountSave,
+  resolveDefaultScrewSupply,
+  screwPreferenceReady = true,
+  onScrewSupplySave,
+  screwSupplySaving = false,
   onShippingModeChange,
   defaultShippingMode = "normal",
   expressSelectableGlobal = true,
@@ -841,6 +850,10 @@ export function NewRequestDetailsSection({
         onRetentionGrooveAccountSave={onRetentionGrooveAccountSave}
         defaultAnodizingEnabled={anodizingEnabled}
         onAnodizingAccountSave={onAnodizingAccountSave}
+        resolveDefaultScrewSupply={resolveDefaultScrewSupply}
+        screwPreferenceReady={screwPreferenceReady}
+        onScrewSupplySave={onScrewSupplySave}
+        screwSupplySaving={screwSupplySaving}
         lockDesignProductMode={lockDesignProductMode}
         lockProductionProductMode={lockProductionProductMode}
         previewFileIndices={previewFileIndices}

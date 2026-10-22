@@ -224,6 +224,8 @@ export type PracticeTransferLabReceiveItem = {
   practicePartnerMemo?: { memo: string; updatedAt?: string | null } | null;
   /** 기공소 바구니 번호표(01–99). PracticeTransfer.labBasketTag */
   labBasketTag?: string | null;
+  /** 이번 기공의뢰 스크류. 없으면 기공소-치과 기본값 */
+  screwSupply?: "abuts" | "manufacturer" | null;
   isRemake?: boolean;
   remakeSourceTransferId?: string;
 };

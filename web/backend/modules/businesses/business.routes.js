@@ -7,6 +7,7 @@ import { Router } from "express";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import * as businessController from "../../controllers/businesses/business.api.controller.js";
 import * as leadTimeController from "../../controllers/businesses/leadTime.controller.js";
+import * as labPracticeScrewSupplyController from "../../controllers/businesses/labPracticeScrewSupply.controller.js";
 
 const BUSINESS_ACCOUNT_ROLES = [
   "requestor",
@@ -36,6 +37,16 @@ router.get(
   leadTimeController.getManufacturerLeadTimes,
 );
 router.get("/me/request-settings", businessController.getMyRequestSettings);
+router.get(
+  "/me/lab-practice-screw-supplies",
+  authorize(["requestor", "internalLab", "practice", "admin", "labTeam"]),
+  labPracticeScrewSupplyController.getMyLabPracticeScrewSupplies,
+);
+router.put(
+  "/me/lab-practice-screw-supplies",
+  authorize(["requestor", "internalLab", "practice", "admin", "labTeam"]),
+  labPracticeScrewSupplyController.putMyLabPracticeScrewSupply,
+);
 
 // 사업자 정보 수정
 router.put(

@@ -288,6 +288,7 @@ export const useNewRequestSubmitV2 = ({
             toothWorks: base.toothWorks,
             memo: base.memo,
             retentionGroove: base.retentionGroove,
+            screwSupply: base.screwSupply,
             requestorHexRotation: base.requestorHexRotation,
             shippingMode: base.shippingMode,
             requestedShipDate: base.requestedShipDate,
@@ -622,6 +623,7 @@ export const useNewRequestSubmitV2 = ({
               toothWorks: ci.toothWorks,
               memo: ci.memo,
               retentionGroove: ci.retentionGroove,
+              screwSupply: ci.screwSupply,
               requestorHexRotation: ci.requestorHexRotation,
               filletOvercutAllowed: ci.filletOvercutAllowed === true,
               filletDesignChoice:

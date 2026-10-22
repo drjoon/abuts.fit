@@ -765,6 +765,29 @@ const businessAnchorSchema = new mongoose.Schema(
       ],
       default: [],
     },
+    // 기공소→치과별 스크류 기본값. abuts=어벗츠 정품, manufacturer=임플란트 제조사 호환.
+    // 다음 의뢰·기공의뢰 옵션의 기본. 이번 건은 PracticeTransfer.screwSupply / caseInfos.screwSupply.
+    // related: web/backend/utils/labPracticeScrewSupply.js
+    labPracticeScrewSupplies: {
+      type: [
+        {
+          _id: false,
+          practiceAnchorId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "BusinessAnchor",
+            default: null,
+          },
+          practiceNameKey: { type: String, default: "", trim: true },
+          screwSupply: {
+            type: String,
+            enum: ["abuts", "manufacturer"],
+            required: true,
+          },
+          updatedAt: { type: Date, default: null },
+        },
+      ],
+      default: [],
+    },
     // 기공소→치과 내부 메모. 치과당 1건(재저장 시 덮어쓰기). 기공소만 조회.
     labPracticePartnerMemos: {
       type: [
