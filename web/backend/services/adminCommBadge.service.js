@@ -54,7 +54,7 @@ export function emitAdminCommBadgeCount(key, count) {
   });
 }
 
-/** 수신함 미읽음 메일 배지 (±N) — 전 관리자 공유 inbox */
+/** 수신함·스팸함 inbound 미읽음 메일 배지 (±N) — 전 관리자 공유 */
 export function emitMailUnreadBadge(delta) {
   emitAdminCommBadgeToRoles("mail", delta);
 }

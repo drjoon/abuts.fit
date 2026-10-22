@@ -4,6 +4,7 @@
 // - web/backend/server.js
 // - web/backend/services/adminCommBadge.service.js
 // change-log:
+// - 2026-10-22: 수신함·스팸함 미읽음 배지 SSOT.
 // - 2026-09-18: 수신함 미읽음 증감 시 comm:badge-update(mail) emit.
 import Mail from "../../models/mail.model.js";
 import { sendLoggedOutboundMail } from "../../services/outboundMailRecord.service.js";
@@ -12,7 +13,7 @@ import {
   getUploadSignedUrl,
   deleteFileFromS3,
 } from "../../utils/s3.utils.js";
-import { emitMailUnreadBadge } from "../../services/adminCommBadge.service.js";
+import { emitMailUnreadBadgeFromTransition } from "../../services/mailUnreadBadge.service.js";
 import { recordMailSenderAsNotSpam } from "../../services/mailSenderNotSpam.service.js";
 import {
   countPendingScheduledOutboundMails,
@@ -20,16 +21,6 @@ import {
 } from "../../services/outboundMailRecord.service.js";
 
 const PAGE_SIZE = 20;
-
-/** 수신함 미읽음으로 배지에 잡히는 메일인지 */
-function isInboxUnreadMail(mail) {
-  return (
-    mail &&
-    mail.folder === "inbox" &&
-    mail.isRead !== true &&
-    (mail.direction == null || mail.direction === "inbound")
-  );
-}
 
 export async function adminCountScheduledMails(req, res) {
   try {
@@ -151,11 +142,11 @@ export async function adminMarkAsRead(req, res) {
     if (!mail) {
       return res.status(404).json({ success: false, message: "not found" });
     }
-    const wasInboxUnread = isInboxUnreadMail(mail);
+    const prev = mail.toObject();
     mail.isRead = true;
     mail.readAt = new Date();
     await mail.save();
-    if (wasInboxUnread) emitMailUnreadBadge(-1);
+    emitMailUnreadBadgeFromTransition(prev, mail);
     return res.status(200).json({ success: true, data: mail });
   } catch (error) {
     console.error("[adminMarkAsRead] failed", error);
@@ -170,7 +161,7 @@ export async function adminMarkAsUnread(req, res) {
     if (!mail) {
       return res.status(404).json({ success: false, message: "not found" });
     }
-    const wasInboxUnread = isInboxUnreadMail(mail);
+    const prev = mail.toObject();
     mail.isRead = false;
     mail.readAt = null;
     // 스팸/휴지통 등에서 안읽음 처리 시 기본 수신함으로 복귀
@@ -179,7 +170,7 @@ export async function adminMarkAsUnread(req, res) {
       mail.trashedAt = null;
     }
     await mail.save();
-    if (!wasInboxUnread && isInboxUnreadMail(mail)) emitMailUnreadBadge(1);
+    emitMailUnreadBadgeFromTransition(prev, mail);
     return res.status(200).json({ success: true, data: mail });
   } catch (error) {
     console.error("[adminMarkAsUnread] failed", error);
@@ -196,10 +187,10 @@ export async function adminMoveToSpam(req, res) {
     if (!mail) {
       return res.status(404).json({ success: false, message: "not found" });
     }
-    const wasInboxUnread = isInboxUnreadMail(mail);
+    const prev = mail.toObject();
     mail.folder = "spam";
     await mail.save();
-    if (wasInboxUnread) emitMailUnreadBadge(-1);
+    emitMailUnreadBadgeFromTransition(prev, mail);
     return res.status(200).json({ success: true, data: mail });
   } catch (error) {
     console.error("[adminMoveToSpam] failed", error);
@@ -214,11 +205,11 @@ export async function adminTrashMail(req, res) {
     if (!mail) {
       return res.status(404).json({ success: false, message: "not found" });
     }
-    const wasInboxUnread = isInboxUnreadMail(mail);
+    const prev = mail.toObject();
     mail.folder = "trash";
     mail.trashedAt = new Date();
     await mail.save();
-    if (wasInboxUnread) emitMailUnreadBadge(-1);
+    emitMailUnreadBadgeFromTransition(prev, mail);
     return res.status(200).json({ success: true, data: mail });
   } catch (error) {
     console.error("[adminTrashMail] failed", error);
@@ -265,9 +256,7 @@ export async function adminRestoreToInbox(req, res) {
     mail.trashedAt = null;
     await mail.save();
     await recordMailSenderAsNotSpam(mail.from, { sourceMailId: mail._id });
-    if (!isInboxUnreadMail(prev) && isInboxUnreadMail(mail)) {
-      emitMailUnreadBadge(1);
-    }
+    emitMailUnreadBadgeFromTransition(prev, mail);
     return res.status(200).json({ success: true, data: mail });
   } catch (error) {
     console.error("[adminRestoreToInbox] failed", error);

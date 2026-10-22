@@ -78,7 +78,15 @@ export const AdminMailPage = ({
     setUnreadOnly,
     scheduledCount,
     refreshScheduledCount,
+    folderUnreadCounts,
   } = useAdminMailBox({ initialUnreadOnly });
+
+  const renderFolderUnreadBadge = (count: number) =>
+    count > 0 ? (
+      <span className="absolute right-1 top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold text-white">
+        {count > 99 ? "99+" : count}
+      </span>
+    ) : null;
 
   useEffect(() => {
     setMobileShowList(true);
@@ -238,9 +246,10 @@ export const AdminMailPage = ({
         className="flex min-h-0 flex-1 flex-col overflow-hidden"
       >
         <TabsList className="flex w-full shrink-0 flex-wrap items-center gap-2">
-          <TabsTrigger value="inbox" className="gap-2">
+          <TabsTrigger value="inbox" className="relative gap-2 pr-6">
             <Inbox className="h-4 w-4" />
             수신함
+            {renderFolderUnreadBadge(folderUnreadCounts.inbox)}
           </TabsTrigger>
           <TabsTrigger value="sent" className="gap-2">
             <Send className="h-4 w-4" />
@@ -250,9 +259,10 @@ export const AdminMailPage = ({
             <Trash2 className="h-4 w-4" />
             휴지통
           </TabsTrigger>
-          <TabsTrigger value="spam" className="gap-2">
+          <TabsTrigger value="spam" className="relative gap-2 pr-6">
             <AlertOctagon className="h-4 w-4" />
             스팸함
+            {renderFolderUnreadBadge(folderUnreadCounts.spam)}
           </TabsTrigger>
           <TabsTrigger value="scheduled" className="relative gap-2 pr-6">
             <Clock className="h-4 w-4" />

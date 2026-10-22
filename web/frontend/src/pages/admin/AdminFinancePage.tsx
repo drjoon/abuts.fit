@@ -21,6 +21,7 @@ import {
   AdminPageShell,
   AdminSegmentTabs,
   setHubTabParam,
+  useHubUnreadTabRedirect,
 } from "@/pages/admin/adminUi";
 
 type FinanceTab = "credits" | "settings" | "payments" | "tax";
@@ -37,6 +38,12 @@ export default function AdminFinancePage() {
   const tab = parseTab(searchParams.get("tab"));
   const { counts } = useAdminCommBadges();
   const abutsFeePendingCount = useAdminAbutsFeePendingStore((s) => s.count);
+
+  useHubUnreadTabRedirect("credits", [
+    { value: "credits", badge: counts.finance },
+    { value: "settings", badge: abutsFeePendingCount },
+    { value: "tax", badge: counts.tax },
+  ]);
 
   const setTab = (next: FinanceTab) => {
     const nextParams = setHubTabParam(searchParams, next, "credits");

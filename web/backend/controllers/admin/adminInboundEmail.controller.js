@@ -4,19 +4,14 @@
 // - web/backend/server.js
 // - web/backend/services/adminCommBadge.service.js
 // change-log:
+// - 2026-10-22: 메일 배지 = 수신함·스팸함 미읽음 SSOT.
 // - 2026-09-18: Brevo 인바운드·읽음/이동 시 관리자 메일 unread 배지 동기화.
 import Mail from "../../models/mail.model.js";
-import { emitMailUnreadBadge } from "../../services/adminCommBadge.service.js";
+import {
+  emitMailUnreadBadgeFromTransition,
+  isMailUnreadBadgeMail,
+} from "../../services/mailUnreadBadge.service.js";
 import { resolveInboundMailFolder } from "../../services/mailSenderNotSpam.service.js";
-
-function isInboxUnreadMail(mail) {
-  return (
-    mail &&
-    mail.folder === "inbox" &&
-    mail.isRead !== true &&
-    (mail.direction == null || mail.direction === "inbound")
-  );
-}
 
 /**
  * Brevo 인바운드 이메일 webhook 핸들러
@@ -81,8 +76,8 @@ export async function handleInboundEmailWebhook(req, res) {
 
         await email.save();
         savedEmails.push(email._id);
-        if (isInboxUnreadMail(email)) {
-          emitMailUnreadBadge(1);
+        if (isMailUnreadBadgeMail(email)) {
+          emitMailUnreadBadgeFromTransition(null, email);
         }
 
         console.log(
@@ -263,15 +258,13 @@ export async function adminMarkInboundEmailAsRead(req, res) {
         message: "Email not found",
       });
     }
-    const wasInboxUnread = isInboxUnreadMail(prev);
-
     const email = await Mail.findByIdAndUpdate(
       id,
       { isRead: true, readAt: new Date() },
       { new: true },
     );
 
-    if (wasInboxUnread) emitMailUnreadBadge(-1);
+    emitMailUnreadBadgeFromTransition(prev, email);
 
     res.json({
       success: true,
@@ -302,15 +295,13 @@ export async function adminMarkInboundEmailAsUnread(req, res) {
         message: "Email not found",
       });
     }
-    const wasInboxUnread = isInboxUnreadMail(prev);
-
     const email = await Mail.findByIdAndUpdate(
       id,
       { isRead: false, $unset: { readAt: "" } },
       { new: true },
     );
 
-    if (!wasInboxUnread && isInboxUnreadMail(email)) emitMailUnreadBadge(1);
+    emitMailUnreadBadgeFromTransition(prev, email);
 
     res.json({
       success: true,
@@ -341,15 +332,13 @@ export async function adminMoveInboundEmailToSpam(req, res) {
         message: "Email not found",
       });
     }
-    const wasInboxUnread = isInboxUnreadMail(prev);
-
     const email = await Mail.findByIdAndUpdate(
       id,
       { folder: "spam" },
       { new: true },
     );
 
-    if (wasInboxUnread) emitMailUnreadBadge(-1);
+    emitMailUnreadBadgeFromTransition(prev, email);
 
     res.json({
       success: true,
@@ -380,15 +369,13 @@ export async function adminMoveInboundEmailToTrash(req, res) {
         message: "Email not found",
       });
     }
-    const wasInboxUnread = isInboxUnreadMail(prev);
-
     const email = await Mail.findByIdAndUpdate(
       id,
       { folder: "trash", trashedAt: new Date() },
       { new: true },
     );
 
-    if (wasInboxUnread) emitMailUnreadBadge(-1);
+    emitMailUnreadBadgeFromTransition(prev, email);
 
     res.json({
       success: true,
@@ -426,9 +413,7 @@ export async function adminRestoreInboundEmail(req, res) {
       { new: true },
     );
 
-    if (!isInboxUnreadMail(prev) && isInboxUnreadMail(email)) {
-      emitMailUnreadBadge(1);
-    }
+    emitMailUnreadBadgeFromTransition(prev, email);
 
     res.json({
       success: true,
@@ -461,7 +446,7 @@ export async function adminDeleteInboundEmail(req, res) {
       });
     }
 
-    if (isInboxUnreadMail(email)) emitMailUnreadBadge(-1);
+    emitMailUnreadBadgeFromTransition(email, null);
 
     res.json({
       success: true,

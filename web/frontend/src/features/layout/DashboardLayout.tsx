@@ -217,6 +217,7 @@ import {
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
+import { resolveDashboardHubHref } from "@/shared/dashboard/dashboardHubNavigation";
 import { loadBusinessMeCached } from "@/shared/components/business/settings/business/businessMeCache";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { useChatRooms } from "@/shared/hooks/useChatRooms";
@@ -787,18 +788,6 @@ export const DashboardLayout = () => {
     user?.lastDashboardPath,
   ]);
 
-  /** 사이드바 이동. `/dashboard` 홈은 last path를 먼저 pin해 허브 리다이렉트와 충돌하지 않게 한다. */
-  const goSidebarHref = useCallback(
-    (href: string) => {
-      if (href === "/dashboard") {
-        persistLastDashboardPath("/dashboard");
-      }
-      navigate(href);
-      setMobileNavOpen(false);
-    },
-    [navigate, persistLastDashboardPath],
-  );
-
   /** 데스크톱 접기/펼치기 아이콘 — 의도적 변경만 서버 저장 */
   const persistSidebarOpen = useCallback(
     (nextOpen: boolean) => {
@@ -1318,7 +1307,22 @@ export const DashboardLayout = () => {
         : null;
   const accountMenuItems = accountMenuItemsByRole[displayRole] || [];
 
-  const { getBadgeForHref, clearBadgeForPath } = useAdminCommBadges();
+  const { counts, getBadgeForHref, clearBadgeForPath } = useAdminCommBadges();
+
+  /** 사이드바 이동. `/dashboard` 홈은 last path를 먼저 pin해 허브 리다이렉트와 충돌하지 않게 한다. */
+  const goSidebarHref = useCallback(
+    (href: string) => {
+      if (href === "/dashboard") {
+        persistLastDashboardPath("/dashboard");
+      }
+      const target = resolveDashboardHubHref(href, counts, {
+        abutsFeePending: abutsFeePendingCount,
+      });
+      navigate(target);
+      setMobileNavOpen(false);
+    },
+    [abutsFeePendingCount, counts, navigate, persistLastDashboardPath],
+  );
 
   useEffect(() => {
     clearBadgeForPath(location.pathname, location.search);

@@ -16,6 +16,7 @@ import {
   AdminPageShell,
   AdminSegmentTabs,
   setHubTabParam,
+  useHubUnreadTabRedirect,
 } from "@/pages/admin/adminUi";
 
 type ChannelsTab = "chat" | "sms" | "mail";
@@ -29,6 +30,12 @@ export default function AdminChannelsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = parseTab(searchParams.get("tab"));
   const { counts } = useAdminCommBadges();
+
+  useHubUnreadTabRedirect("chat", [
+    { value: "chat", badge: counts.chat },
+    { value: "sms", badge: counts.sms },
+    { value: "mail", badge: counts.mail },
+  ]);
 
   const setTab = (next: ChannelsTab) => {
     setSearchParams(setHubTabParam(searchParams, next, "chat"), {

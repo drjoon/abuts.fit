@@ -7,6 +7,7 @@ import {
   createDownloadUrl,
   fetchMail,
   fetchMails,
+  fetchInboundMailUnreadStats,
   fetchScheduledMailCount,
   markAsRead,
   markAsUnread,
@@ -17,6 +18,7 @@ import {
   type MailItem,
 } from "@/features/admin/mail/mailApi";
 import { useToast } from "@/shared/hooks/use-toast";
+import { onAppEvent } from "@/shared/realtime/socket";
 
 export type MailTab =
   | "inbox"
@@ -57,6 +59,10 @@ export const useAdminMailBox = (options?: { initialUnreadOnly?: boolean }) => {
   const [mails, setMails] = useState<MailItem[]>([]);
   const [listLoading, setListLoading] = useState(false);
   const [scheduledCount, setScheduledCount] = useState(0);
+  const [folderUnreadCounts, setFolderUnreadCounts] = useState({
+    inbox: 0,
+    spam: 0,
+  });
   const [scheduledOnly, setScheduledOnly] = useState(false);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -108,6 +114,31 @@ export const useAdminMailBox = (options?: { initialUnreadOnly?: boolean }) => {
     void refreshScheduledCount();
   }, [refreshScheduledCount]);
 
+  const refreshFolderUnreadCounts = useCallback(async () => {
+    try {
+      const stats = await fetchInboundMailUnreadStats();
+      setFolderUnreadCounts({
+        inbox: stats.inbox,
+        spam: stats.spam,
+      });
+    } catch {
+      // silent — 목록 토스트와 중복하지 않음
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshFolderUnreadCounts();
+  }, [refreshFolderUnreadCounts]);
+
+  useEffect(() => {
+    const unsub = onAppEvent((evt) => {
+      if (String(evt?.type || "") !== "comm:badge-update") return;
+      const key = (evt.data as { key?: string } | undefined)?.key;
+      if (key === "mail") void refreshFolderUnreadCounts();
+    });
+    return unsub;
+  }, [refreshFolderUnreadCounts]);
+
   const loadList = useCallback(
     async (reset = false) => {
       try {
@@ -156,9 +187,18 @@ export const useAdminMailBox = (options?: { initialUnreadOnly?: boolean }) => {
       } finally {
         setListLoading(false);
         void refreshScheduledCount();
+        void refreshFolderUnreadCounts();
       }
     },
-    [direction, folder, scheduledOnly, unreadOnly, toast, refreshScheduledCount]
+    [
+      direction,
+      folder,
+      scheduledOnly,
+      unreadOnly,
+      toast,
+      refreshFolderUnreadCounts,
+      refreshScheduledCount,
+    ]
   );
 
   useEffect(() => {
@@ -377,5 +417,7 @@ export const useAdminMailBox = (options?: { initialUnreadOnly?: boolean }) => {
     handleRestoreToSent,
     scheduledCount,
     refreshScheduledCount,
+    folderUnreadCounts,
+    refreshFolderUnreadCounts,
   };
 };

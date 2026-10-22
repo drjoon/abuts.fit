@@ -219,6 +219,28 @@ export async function restoreToInbox(id: string) {
   return res.data!.data;
 }
 
+export type InboundMailUnreadStats = {
+  inbox: number;
+  spam: number;
+  trash: number;
+  total: number;
+};
+
+export async function fetchInboundMailUnreadStats() {
+  const res = await request<ApiEnvelope<InboundMailUnreadStats>>({
+    path: "/api/admin/inbound-email/stats/unread",
+    method: "GET",
+  });
+  if (!res.ok) throw new Error(res.data?.message || "미읽음 통계 조회 실패");
+  const data = res.data!.data;
+  return {
+    inbox: Math.max(0, Number(data.inbox || 0)),
+    spam: Math.max(0, Number(data.spam || 0)),
+    trash: Math.max(0, Number(data.trash || 0)),
+    total: Math.max(0, Number(data.total || 0)),
+  };
+}
+
 export async function sendMail(payload: {
   to: string[];
   cc?: string[];

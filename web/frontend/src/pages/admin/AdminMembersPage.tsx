@@ -14,6 +14,7 @@ import {
   AdminPageShell,
   AdminSegmentTabs,
   setHubTabParam,
+  useHubUnreadTabRedirect,
 } from "@/pages/admin/adminUi";
 
 type MembersTab = "businesses" | "users";
@@ -26,6 +27,10 @@ export default function AdminMembersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = parseTab(searchParams.get("tab"));
   const { counts } = useAdminCommBadges();
+
+  useHubUnreadTabRedirect("businesses", [
+    { value: "users", badge: counts.member },
+  ]);
 
   const setTab = (next: MembersTab) => {
     setSearchParams(setHubTabParam(searchParams, next, "businesses"), {

@@ -8,7 +8,8 @@
 // - 2026-09-06: 관리자 허브용 Sales 패턴 셸·세그먼트 탭·스플릿.
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { useEffect } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
 
@@ -276,6 +277,38 @@ export function AdminToolbar({
       {children}
     </div>
   );
+}
+
+/** URL에 tab이 없을 때 배지가 있는 탭으로 replace (사이드바·직접 진입). */
+export function useHubUnreadTabRedirect<T extends string>(
+  defaultTab: T,
+  tabs: Array<{ value: T; badge: number }>,
+) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const badgeKey = tabs
+    .map((row) => `${row.value}:${Math.max(0, Number(row.badge || 0))}`)
+    .join("|");
+
+  useEffect(() => {
+    if (searchParams.has("tab")) return;
+
+    let pick = defaultTab;
+    let max = 0;
+    for (const row of tabs) {
+      const n = Math.max(0, Number(row.badge || 0));
+      if (n > max) {
+        max = n;
+        pick = row.value;
+      }
+    }
+    if (max <= 0 || pick === defaultTab) return;
+
+    setSearchParams(setHubTabParam(searchParams, pick, defaultTab), {
+      replace: true,
+    });
+    // badgeKey: 배지 초기 로드 후 미읽음 탭으로 replace
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tabs는 badgeKey로 대표
+  }, [badgeKey, defaultTab, searchParams, setSearchParams]);
 }
 
 /** Shared ?tab= helpers for admin hub pages. */

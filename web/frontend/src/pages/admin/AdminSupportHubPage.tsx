@@ -13,6 +13,7 @@ import {
   AdminPageShell,
   AdminSegmentTabs,
   setHubTabParam,
+  useHubUnreadTabRedirect,
 } from "@/pages/admin/adminUi";
 
 type SupportTab = "remote" | "inquiries";
@@ -25,6 +26,11 @@ export default function AdminSupportHubPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = parseTab(searchParams.get("tab"));
   const { counts } = useAdminCommBadges();
+
+  useHubUnreadTabRedirect("remote", [
+    { value: "remote", badge: counts.remoteSupport },
+    { value: "inquiries", badge: counts.inquiry },
+  ]);
 
   const setTab = (next: SupportTab) => {
     const nextParams = setHubTabParam(searchParams, next, "remote");
