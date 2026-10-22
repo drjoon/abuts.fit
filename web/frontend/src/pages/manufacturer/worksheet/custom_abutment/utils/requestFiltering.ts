@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: 가공 탭 — Next Up에 올린 더미(dummyNextUpPinnedAt)는 직경 요약·건수에 포함.
 // - 2026-08-22: 작업용 샘플은 포장.발송·추적관리 탭에 정식 의뢰와 동일 노출(R&D 보관만 제외) 주석 명시.
 // - 2026-08-21: 준비 탭 정렬 — remainingMs(Date.now) 비교 제거. 동일 출고일에서 실시간 리렌더마다 카드 순서가 뒤바뀌던 race 수정.
 // - 2026-08-18: 준비 탭 의뢰카드 정렬 — 출고일(마감) 긴박한 순(위) → 여유 있는 순(아래).
@@ -180,7 +181,17 @@ export function filterRequestsByStage(
     const category = String(
       (req as { requestCategory?: string }).requestCategory || "",
     );
-    if (source === "dummy_sample" || category === "dummy_sample") return false;
+    if (source === "dummy_sample" || category === "dummy_sample") {
+      if (normalizedTabStage === "machining") {
+        const pinnedAt = (
+          req as {
+            productionSchedule?: { dummyNextUpPinnedAt?: unknown };
+          }
+        ).productionSchedule?.dummyNextUpPinnedAt;
+        return pinnedAt != null && String(pinnedAt).trim() !== "";
+      }
+      return false;
+    }
     if (!filterRequests) return true;
     try {
       return filterRequests(req);

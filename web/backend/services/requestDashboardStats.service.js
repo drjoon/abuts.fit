@@ -4,6 +4,7 @@
 // - web/backend/server.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // change-log:
+// - 2026-10-22: 가공(machiningCount) — getProductionQueues·Next Up SSOT(더미 Next Up pinned 포함).
 // - 2026-09-30: 세척.패킹 헤더 카운트 — 출고했거나 출고시간(16:00 KST)이 지난 불완전가공은 제외.
 // - 2026-09-02: 추적관리 워크시트 헤더 카운트 — TrackingPage 노출/기간 SSOT(trackingWorksheet*).
 // - 2026-08-27: 진행(inProgress*) — 준비 배지와 동일하게 PTX 디자인 미완료·레거시 design mode 제외.
@@ -17,6 +18,7 @@ import ShippingPackage from "../models/shippingPackage.model.js";
 import { getTodayYmdInKst } from "../utils/krBusinessDays.js";
 import { resolveHeaderMonthPeriodRange } from "../utils/dateRange.js";
 import { UNMACHINABLE_SHIP_CONTINUE_STAGES } from "./unmachinableShipPath.js";
+import { buildIsMachiningQueueRequestExpr } from "../controllers/cnc/distribution.utils.js";
 
 function buildHasMeaningfulValueExpr(fieldPath) {
   return {
@@ -699,7 +701,7 @@ export async function getAssignedLikeDashboardSummary({
             },
             machiningCount: {
               $sum: {
-                $cond: [{ $eq: ["$normalizedStage", "machining"] }, 1, 0],
+                $cond: [buildIsMachiningQueueRequestExpr(), 1, 0],
               },
             },
             packingCount: {

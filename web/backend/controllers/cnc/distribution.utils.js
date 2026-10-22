@@ -30,6 +30,24 @@ export const EXCLUDE_IDLE_DUMMY_SAMPLE_FILTER = {
   ],
 };
 
+/** 워크시트 가공 헤더 카운트·getProductionQueues find — 동일 SSOT */
+export function buildIsMachiningQueueRequestExpr() {
+  return {
+    $and: [
+      { $in: ["$manufacturerStage", MACHINING_QUEUE_STAGE_SET] },
+      { $eq: [{ $ifNull: ["$rnd.unmachinableAt", null] }, null] },
+      {
+        $or: [
+          { $ne: [{ $ifNull: ["$source", ""] }, "dummy_sample"] },
+          {
+            $eq: [{ $type: "$productionSchedule.dummyNextUpPinnedAt" }, "date"],
+          },
+        ],
+      },
+    ],
+  };
+}
+
 export function normalizeMachiningStageValue(value) {
   const raw = String(value || "").trim();
   return raw === "가공" ? "가공" : "";
