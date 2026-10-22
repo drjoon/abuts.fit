@@ -420,27 +420,36 @@ namespace DentalAddin
                 return;
             }
             DentalLogger.Log($"MoveSTL - shift 대상: STL={stlCount}, Surface={surfaceCount}, OrientationProfile={orientationProfileCount}");
-            FeatureList();
-            MainModule.Document.FeatureRecognition.CreatePartProfileShadow(selectionSet, MainModule.Document.Planes["XYZ"], espGraphicObjectReturnType.espFeatureChains);
-            FeatureChain featureChain = NewFeature();
-            if (featureChain == null)
+            FeatureChain featureChain = CreateStlShadowChainWithRetry(selectionSet);
+            double boundingBoxLength;
+            double stlMinX = 9999999.0;
+            double stlMaxX = -9999999.0;
+            if (featureChain != null)
             {
-                DentalLogger.Log("MoveSTL - FeatureChain 생성 실패(Shadow) - STL 모델 확인 필요");
-                return;
+                boundingBoxLength = featureChain.BoundingBoxLength;
+                double chainLen = featureChain.Length;
+                for (double t = 0.0; t <= chainLen; t += 0.01)
+                {
+                    Point pt = featureChain.PointAlong(t);
+                    if (pt.X < stlMinX) stlMinX = pt.X;
+                    if (pt.X > stlMaxX) stlMaxX = pt.X;
+                }
             }
-            double boundingBoxLength = featureChain.BoundingBoxLength;
+            else if (TryGetStlAxialRangeByRotation(selectionSet, out stlMinX, out stlMaxX))
+            {
+                // XYZ 평면 shadow가 비어 오는 경우(ESPRIT이 일부 메시에서 투영 윤곽을 못 만듦) 회전 우회로 X 범위를 잰다.
+                boundingBoxLength = stlMaxX - stlMinX;
+                DentalLogger.Log($"MoveSTL - 회전 우회로 X 범위 측정: minX={stlMinX:0.####}, maxX={stlMaxX:0.####}, length={boundingBoxLength:0.####}");
+            }
+            else
+            {
+                // 조용히 return하면 STL이 이동하지 않은 채 NC(#520 등)가 생성돼 오가공된다. 작업을 실패시킨다.
+                DentalLogger.Log("MoveSTL - FeatureChain 생성 실패(Shadow) - 재시도·우회 모두 실패, 작업 중단");
+                throw new InvalidOperationException("MoveSTL: STL shadow FeatureChain 생성 실패 - STL 이동 불가");
+            }
             if (MainModule.SpindleSide)
             {
-                double num = 9999999.0;
-                double length = featureChain.Length;
-                for (double num2 = 0.0; num2 <= length; num2 += 0.01)
-                {
-                    Point point = featureChain.PointAlong(num2);
-                    if (point.X < num)
-                    {
-                        num = point.X;
-                    }
-                }
+                double num = stlMinX;
                 FrontStock = 0.0 - boundingBoxLength;
                 double deltaX = 0.0 - boundingBoxLength - num;
                 double stlShift = AppConfig.DefaultStlShift;
@@ -462,16 +471,7 @@ namespace DentalAddin
             }
             else
             {
-                double num = -9999999.0;
-                double length2 = featureChain.Length;
-                for (double num2 = 0.0; num2 <= length2; num2 += 0.01)
-                {
-                    Point point = featureChain.PointAlong(num2);
-                    if (point.X > num)
-                    {
-                        num = point.X;
-                    }
-                }
+                double num = stlMaxX;
                 FrontStock = boundingBoxLength;
                 double deltaX = boundingBoxLength - num;
                 double stlShift = AppConfig.DefaultStlShift;
@@ -491,8 +491,107 @@ namespace DentalAddin
             }
 
             selectionSet.RemoveAll();
-            MainModule.Document.FeatureChains.Remove(featureChain.Key);
+            if (featureChain != null)
+            {
+                MainModule.Document.FeatureChains.Remove(featureChain.Key);
+            }
             featureChain = null;
+        }
+
+        /// <summary>
+        /// XYZ 평면 shadow가 비어 올 때의 우회. STL을 Y축 기준 +90° 돌려 축 방향(X)을 Z로 눕힌 뒤
+        /// 동작이 확인된 YZX 평면 shadow로 Z 범위를 재고, 원위치로 되돌린다.
+        /// 회전 부호는 선택 집합에 같이 넣은 탐침점 (1,0,0)이 어디로 가는지 읽어 결정한다.
+        /// 어떤 경우에도 STL은 원위치로 복원한다.
+        /// </summary>
+        private static bool TryGetStlAxialRangeByRotation(SelectionSet stlSet, out double minX, out double maxX)
+        {
+            minX = 0.0; maxX = 0.0;
+            const string layerName = "AbutsRotProbe";
+            Layer prevLayer = null;
+            bool rotated = false;
+            SelectionSet rotSet = null;
+            Segment yAxis = null;
+            FeatureChain chain = null;
+            try
+            {
+                prevLayer = MainModule.Document.ActiveLayer;
+                Layer layer;
+                try { layer = MainModule.Document.Layers.Add(layerName); }
+                catch { layer = MainModule.Document.Layers[layerName]; }
+                MainModule.Document.ActiveLayer = layer;
+
+                Point o = MainModule.Document.GetPoint(0, 0, 0);
+                Point oy = MainModule.Document.GetPoint(0, 1, 0);
+                yAxis = MainModule.Document.GetSegment(o, oy);
+                Point probe = MainModule.Document.GetPoint(1, 0, 0);
+
+                try { rotSet = MainModule.Document.SelectionSets.Add("RotProbeSet"); }
+                catch { rotSet = MainModule.Document.SelectionSets["RotProbeSet"]; }
+                rotSet.RemoveAll();
+                foreach (object g in stlSet) { rotSet.Add(g, RuntimeHelpers.GetObjectValue(Missing.Value)); }
+                rotSet.Add(probe, RuntimeHelpers.GetObjectValue(Missing.Value));
+
+                rotSet.Rotate(yAxis, Math.PI / 2.0, RuntimeHelpers.GetObjectValue(Missing.Value));
+                rotated = true;
+                double px = probe.X, py = probe.Y, pz = probe.Z;
+                DentalLogger.Log($"MoveSTL - 회전 탐침 (1,0,0)->({px:0.###},{py:0.###},{pz:0.###})");
+                if (Math.Abs(Math.Abs(pz) - 1.0) > 1e-3)
+                {
+                    DentalLogger.Log("MoveSTL - 회전 탐침이 Z축으로 가지 않음, 우회 불가");
+                    return false;
+                }
+                double sign = pz > 0 ? 1.0 : -1.0; // x = sign * z'
+
+                chain = null;
+                RemoveStaleTempChains();
+                FeatureList();
+                MainModule.Document.FeatureRecognition.CreatePartProfileShadow(stlSet, MainModule.Document.Planes["YZX"], espGraphicObjectReturnType.espFeatureChains);
+                MainModule.Document.Refresh(RuntimeHelpers.GetObjectValue(Missing.Value), RuntimeHelpers.GetObjectValue(Missing.Value));
+                chain = NewFeature();
+                if (chain == null || chain.Length <= 0.0)
+                {
+                    DentalLogger.Log("MoveSTL - 회전 후 YZX shadow 실패");
+                    return false;
+                }
+                double zMin = 1e9, zMax = -1e9;
+                double len = chain.Length;
+                double step = Math.Max(0.01, len / 4000.0);
+                for (double t = 0.0; t <= len; t += step)
+                {
+                    Point pt = chain.PointAlong(t);
+                    if (pt == null) continue;
+                    if (pt.Z < zMin) zMin = pt.Z;
+                    if (pt.Z > zMax) zMax = pt.Z;
+                }
+                if (zMax < zMin) return false;
+                if (sign > 0) { minX = zMin; maxX = zMax; }
+                else { minX = -zMax; maxX = -zMin; }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"MoveSTL - 회전 우회 예외: {ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
+            finally
+            {
+                try { if (chain != null) MainModule.Document.FeatureChains.Remove(chain.Key); } catch { }
+                try
+                {
+                    if (rotated && rotSet != null)
+                    {
+                        rotSet.Rotate(yAxis, -Math.PI / 2.0, RuntimeHelpers.GetObjectValue(Missing.Value));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DentalLogger.Log($"MoveSTL - 회전 복원 실패(치명): {ex.GetType().Name}:{ex.Message}");
+                }
+                try { if (rotSet != null) rotSet.RemoveAll(); } catch { }
+                try { if (prevLayer != null) MainModule.Document.ActiveLayer = prevLayer; } catch { }
+                try { MainModule.Document.Layers.Remove(layerName); } catch { }
+            }
         }
 
         public static void Boundry()
@@ -776,6 +875,163 @@ namespace DentalAddin
                 }
                 MainModule.Document.Refresh(RuntimeHelpers.GetObjectValue(Missing.Value), RuntimeHelpers.GetObjectValue(Missing.Value));
             }
+        }
+
+        /// <summary>
+        /// STL 그림자 윤곽(FeatureChain)을 만든다. ESPRIT은 Shadow 직후 컬렉션에 새 체인이 바로 안 보이거나
+        /// 한 번 no-op일 수 있어 Refresh 후 재조회, 같은 평면 재시도, XYZ 평면 재활성화 순으로 재시도한다.
+        /// 각 시도의 체인 수·길이를 로그로 남긴다.
+        /// </summary>
+        /// <summary>
+        /// 이전 단계(STL bounding 등)가 지우지 못하고 남긴 임시 체인을 제거한다.
+        /// CompositeOrientationProfile*은 MoveSTL과 같이 이동해야 하므로 남긴다.
+        /// </summary>
+        private static void RemoveStaleTempChains()
+        {
+            try
+            {
+                var keys = new System.Collections.Generic.List<string>();
+                foreach (FeatureChain fc in MainModule.Document.FeatureChains)
+                {
+                    if (fc == null) continue;
+                    string name = (fc.Name ?? string.Empty).Trim();
+                    if (name.StartsWith("CompositeOrientationProfile", StringComparison.OrdinalIgnoreCase)) continue;
+                    keys.Add(fc.Key);
+                }
+                foreach (string key in keys)
+                {
+                    try { MainModule.Document.FeatureChains.Remove(key); } catch { }
+                }
+                if (keys.Count > 0)
+                {
+                    DentalLogger.Log($"MoveSTL - 잔여 임시 FeatureChain {keys.Count}개 제거");
+                }
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"MoveSTL - 잔여 체인 정리 실패: {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Shadow가 모두 실패했을 때 원인 좁히기용 진단. 평면별로 STL 단독 shadow를 만들어 개수·XYZ 범위를 로그한다.
+        /// STL 그래픽 객체의 공개 속성도 함께 남긴다.
+        /// </summary>
+        private static void DiagnoseShadowFailure()
+        {
+            try
+            {
+                SelectionSet ss;
+                try { ss = MainModule.Document.SelectionSets.Add("DiagShadow"); }
+                catch { ss = MainModule.Document.SelectionSets["DiagShadow"]; }
+                ss.RemoveAll();
+                GraphicObject stl = null;
+                foreach (GraphicObject g in MainModule.Document.GraphicsCollection)
+                {
+                    if (g.GraphicObjectType == espGraphicObjectType.espSTL_Model) { stl = g; ss.Add(g, RuntimeHelpers.GetObjectValue(Missing.Value)); break; }
+                }
+                if (stl == null) { DentalLogger.Log("Diag - STL 그래픽 없음"); return; }
+                try
+                {
+                    var sb = new System.Text.StringBuilder();
+                    foreach (var p in stl.GetType().GetProperties())
+                    {
+                        try
+                        {
+                            if (p.GetIndexParameters().Length > 0) continue;
+                            object v = p.GetValue(stl, null);
+                            sb.Append(p.Name).Append('=').Append(v == null ? "null" : v.ToString()).Append("; ");
+                        }
+                        catch { }
+                    }
+                    DentalLogger.Log("Diag - STL props: " + sb);
+                }
+                catch { }
+                foreach (string pn in new[] { "XYZ", "YZX", "ZXY", "XZY", "YXZ", "ZYX" })
+                {
+                    try
+                    {
+                        Plane pl = MainModule.Document.Planes[pn];
+                        if (pl == null) { DentalLogger.Log($"Diag - plane {pn} 없음"); continue; }
+                        FeatureList();
+                        Array r = MainModule.Document.FeatureRecognition.CreatePartProfileShadow(ss, pl, espGraphicObjectReturnType.espFeatureChains);
+                        MainModule.Document.Refresh(RuntimeHelpers.GetObjectValue(Missing.Value), RuntimeHelpers.GetObjectValue(Missing.Value));
+                        FeatureChain c = NewFeature();
+                        if (c == null) { DentalLogger.Log($"Diag - plane {pn}: 결과 없음 (array={(r == null ? -1 : r.Length)})"); continue; }
+                        double minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, minZ = 1e9, maxZ = -1e9;
+                        double len = c.Length;
+                        double step = Math.Max(0.05, len / 800.0);
+                        for (double t = 0; t <= len; t += step)
+                        {
+                            Point pt = c.PointAlong(t);
+                            if (pt == null) continue;
+                            minX = Math.Min(minX, pt.X); maxX = Math.Max(maxX, pt.X);
+                            minY = Math.Min(minY, pt.Y); maxY = Math.Max(maxY, pt.Y);
+                            minZ = Math.Min(minZ, pt.Z); maxZ = Math.Max(maxZ, pt.Z);
+                        }
+                        DentalLogger.Log($"Diag - plane {pn}: len={len:0.###}, X[{minX:0.###},{maxX:0.###}] Y[{minY:0.###},{maxY:0.###}] Z[{minZ:0.###},{maxZ:0.###}]");
+                        try { MainModule.Document.FeatureChains.Remove(c.Key); } catch { }
+                    }
+                    catch (Exception ex)
+                    {
+                        DentalLogger.Log($"Diag - plane {pn} 예외: {ex.GetType().Name}:{ex.Message}");
+                    }
+                }
+                ss.RemoveAll();
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"Diag 실패: {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private static FeatureChain CreateStlShadowChainWithRetry(SelectionSet selectionSet)
+        {
+            const int maxAttempts = 4;
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                try
+                {
+                    Plane plane = MainModule.Document.Planes["XYZ"];
+                    if (attempt >= 3)
+                    {
+                        plane.Activate();
+                    }
+                    RemoveStaleTempChains();
+                    FeatureList();
+                    int before = MainModule.Document.FeatureChains.Count;
+                    Array shadowResult = MainModule.Document.FeatureRecognition.CreatePartProfileShadow(selectionSet, plane, espGraphicObjectReturnType.espFeatureChains);
+                    MainModule.Document.Refresh(RuntimeHelpers.GetObjectValue(Missing.Value), RuntimeHelpers.GetObjectValue(Missing.Value));
+                    int after = MainModule.Document.FeatureChains.Count;
+                    FeatureChain chain = NewFeature();
+                    if (chain == null && shadowResult != null)
+                    {
+                        // 컬렉션 diff로 못 찾으면 API가 돌려준 배열에서 직접 꺼낸다.
+                        foreach (object o in shadowResult)
+                        {
+                            FeatureChain fc = o as FeatureChain;
+                            if (fc != null) { chain = fc; break; }
+                        }
+                        DentalLogger.Log($"MoveSTL - Shadow 반환 배열 len={shadowResult.Length}, 사용={(chain != null)}");
+                    }
+                    double len = chain != null ? chain.Length : -1.0;
+                    DentalLogger.Log($"MoveSTL - Shadow 시도 {attempt}/{maxAttempts}: selection={selectionSet.Count}, chains {before}->{after}, new={(chain != null)}, length={len:0.###}");
+                    if (chain != null && len > 0.0)
+                    {
+                        return chain;
+                    }
+                    if (chain != null)
+                    {
+                        try { MainModule.Document.FeatureChains.Remove(chain.Key); } catch { }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DentalLogger.Log($"MoveSTL - Shadow 시도 {attempt}/{maxAttempts} 예외: {ex.GetType().Name}:{ex.Message}");
+                }
+            }
+            // 진단(DiagnoseShadowFailure)은 평면별 결과를 이미 확인했으므로 기본 경로에서는 돌리지 않는다.
+            return null;
         }
 
         public static FeatureChain NewFeature()

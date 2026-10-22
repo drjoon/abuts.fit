@@ -941,11 +941,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     try
                     {
-                        var chain = document.FeatureChains[key];
-                        if (chain != null)
-                        {
-                            document.FeatureChains.Remove(chain);
-                        }
+                        // Remove는 개체가 아니라 Key로 지워야 실제로 삭제된다(MoveSTL 등 기존 코드와 동일).
+                        document.FeatureChains.Remove(key);
                     }
                     catch { }
                 }
@@ -2355,6 +2352,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             if (!moveInvoked)
             {
                 AppLogger.Log("DentalAddin: MoveSTL 메서드 호출 실패");
+                // STL이 이동되지 않은 채 NC가 생성되면 오가공이므로 작업을 실패시킨다.
+                throw new InvalidOperationException("MoveSTL 실패 - STL 이동 불가, NC 생성 중단");
             }
         }
 

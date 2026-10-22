@@ -31,9 +31,9 @@ const PROFILE_BINS = 720;
 const STRIP_COLUMNS = 360;
 const columnsForDeg = (deg) => Math.max(1, Math.round((STRIP_COLUMNS * deg) / 360));
 /** 행 사이 최소 간격(mm). */
-const ROW_PITCH_MM = 0.025;
+const ROW_PITCH_MM = 0.02;
 /** 옆모습이 이만큼 꺾이면 행을 하나 둔다. */
-const ROW_TURN_DEG = 1.0;
+const ROW_TURN_DEG = 1.4;
 /** 곧은 구간 행 간격 상한(mm). */
 const ROW_MAX_PITCH_MM = 0.2;
 const ROW_TURN_SAMPLES = 400;
@@ -42,8 +42,8 @@ const ROW_TURN_COLUMN_STRIDE = columnsForDeg(3);
  * 둘레 곡선이 이만큼 꺾이면 열을 하나 둔다(행과 같은 기준). 열을 각도로 똑같이 나누면 어금니 단면 모서리에서
  * 한 칸이 6° 넘게 꺾여 가공면에 세로 결이 남는다.
  */
-const COLUMN_TURN_DEG = 1.0;
-const COLUMN_MAX_ARC_MM = 0.2;
+const COLUMN_TURN_DEG = 2.0;
+const COLUMN_MAX_ARC_MM = 0.22;
 const COLUMN_TURN_SMOOTH_HALF = columnsForDeg(1.5);
 /**
  * 이음 위 끝에서 이만큼 아래까지는 새 곡선을 원본 곡면에 서서히 섞는다(위 끝 접선·반경이 원본과 같아져 선이 둘로 보이지 않는다).
