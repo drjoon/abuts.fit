@@ -129,7 +129,7 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
 	BEGIN_STRING; 498;;
 		:BM_D4
 	END_STRING
-   IncrementalDepth; 175; 0.3;  CAPTION; 증분 깊이; SOURCE; 2; TECHCODETYPE; 2;
+   IncrementalDepth; 175; 0.4;  CAPTION; 증분 깊이; SOURCE; 2; TECHCODETYPE; 2;
    4422; 4422; 5;  SOURCE; 0; TECHCODETYPE; 2;
    Rough5SeamPointZ; 6666; 0;  HIDDEN; CAPTION; 실린더 심 포인트 Z | 실린더 심 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
    MinimumCornerRadius; 6615; 1.6000000000000001;  CAPTION; 최소 모서리 반경; SOURCE; 1; TECHCODETYPE; 2;
