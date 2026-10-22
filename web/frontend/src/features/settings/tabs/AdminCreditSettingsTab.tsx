@@ -2594,13 +2594,19 @@ export const AdminCreditSettingsTab = ({
               <CardContent className="space-y-5 p-5 sm:p-6">
                 <SectionHeader
                   icon={Gift}
-                  title="수동 무료크레딧 (관리자)"
-                  description="가입 환영 크레딧 자동 지급은 폐지되었습니다. 데모(가상 잔고)는 치과 90일만이며 기공소는 없습니다. 아래 금액은 관리자 수동 무료크레딧 지급 기본값입니다."
+                  title="수동 무료크레딧"
+                  description={
+                    <>
+                      직접 줄 때 기본으로 넣는 금액입니다.
+                      <br />
+                      가입하면 자동으로 주지 않습니다.
+                    </>
+                  }
                 />
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="max-w-md">
                   <AmountField
                     id="defaultRequestFreeCredit"
-                    label="수동 지급 기본액"
+                    label="지급 기본액"
                     icon={Gift}
                     value={settings.defaultRequestFreeCredit}
                     onChange={(next) =>
@@ -2611,7 +2617,6 @@ export const AdminCreditSettingsTab = ({
                       })
                     }
                     disabled={loading}
-                    help="자동 가입 지급은 하지 않습니다. 관리자가 수동으로 무료크레딧을 줄 때 기본 금액으로만 사용합니다."
                   />
                 </div>
               </CardContent>
@@ -2796,7 +2801,7 @@ export const AdminCreditSettingsTab = ({
                     value={settings.fmDentalMonthlyShippingFee ?? 0}
                     disabled={loading}
                     onChange={updateFmDentalMonthlyFee}
-                    help="VAT 포함. 0원이면 가입 불가. 치과·기공소 안내 기본 5.5만원."
+                    help="부가세 포함. 0원이면 가입할 수 없습니다."
                   />
                 </div>
               </CardContent>

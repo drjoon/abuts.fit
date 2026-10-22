@@ -5,13 +5,13 @@
 // - web/backend/controllers/admin/adminTaxInvoice.controller.js
 // - web/frontend/src/pages/admin/credits/creditPageUi.tsx
 // change-log:
+// - 2026-10-22: 발행 안내를 법인 계산서 한 장 기준으로 줄이고, 상태 칸은 정산 요약 카드와 맞춘다.
 // - 2026-09-23: 최신 발행 정책(기공비=어벗츠→고객)·CreditPanel UI·문구 정리. LAB_TO_PRACTICE 초안 생성 제거.
 // - 2026-09-20: 상태 요약 카드 그리드 p-0.5 — 선택 border가 overflow에 잘리지 않게.
 // - 2026-09-20: 재무 허브 embedded 스크롤(overflow-auto) — 목록이 잘리지 않게.
 // - 2026-09-20: 승인대기 탭·승인(승인 후 발행) 버튼.
 // - 2026-09-20: 월정산 콘솔 — 기간·방향·월합 초안 생성·메타 표시.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,6 +53,11 @@ import {
   CreditSectionHeader,
 } from "@/pages/admin/credits/creditPageUi";
 import { cn } from "@/shared/ui/cn";
+import {
+  SETTLEMENT_STAT_CARD_WIDTH_CLASS,
+  SETTLEMENT_STAT_ROW_CLASS,
+  SettlementStatCard,
+} from "@/shared/settlement/settlementUi";
 
 import {
   invoiceTaxTypeBadge,
@@ -757,18 +762,13 @@ export const AdminTaxInvoices = ({
               title="(세금)계산서"
               description={
                 <>
-                  치과 OB 이체 때 어벗츠 기공·스토어는 어벗츠가, 다른 기공소 수행분은 그 기공소가 발행합니다.
+                  스토어는 법인 과세 세금계산서입니다.
                   <br />
-                  어벗츠 커스텀어벗 선결제는 월말 사용분만큼 어벗츠가 발행합니다.
+                  기공사업부 기공과 커스텀어벗은 법인 면세 계산서 한 장입니다.
                   <br />
-                  관계사→어벗츠는{" "}
-                  <Link
-                    to="/dashboard/finance?tab=payments"
-                    className="underline underline-offset-2"
-                  >
-                    정산
-                  </Link>
-                  배치 확정 시 생성.
+                  다른 기공소가 수행한 기공은 그 기공소 면세 계산서입니다.
+                  <br />
+                  관계사 발행은 지급을 확정할 때 만들어집니다.
                 </>
               }
               trailing={
@@ -830,26 +830,17 @@ export const AdminTaxInvoices = ({
           </div>
         </CreditPanel>
 
-        <div className="grid grid-cols-2 gap-2 p-0.5 sm:grid-cols-3 lg:grid-cols-6">
+        <div className={cn(SETTLEMENT_STAT_ROW_CLASS, "p-0.5")}>
           {STATUS_TABS.map((s) => (
-            <button
+            <SettlementStatCard
               key={s}
-              type="button"
+              className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
+              label={STATUS_LABEL[s]}
+              value={(stats[s] ?? 0).toLocaleString()}
+              selected={tab === s}
               onClick={() => setTab(s)}
-              className={cn(
-                "cursor-pointer rounded-2xl border p-2.5 text-center transition-colors",
-                tab === s
-                  ? "border-primary bg-primary/5 shadow-sm"
-                  : "border-slate-200/80 bg-white/80 hover:bg-slate-50",
-              )}
-            >
-              <div className="text-lg font-bold tabular-nums leading-tight text-slate-900">
-                {stats[s] ?? 0}
-              </div>
-              <div className="mt-0.5 text-xs text-muted-foreground">
-                {STATUS_LABEL[s]}
-              </div>
-            </button>
+              compact
+            />
           ))}
         </div>
 
@@ -918,7 +909,7 @@ export const AdminTaxInvoices = ({
               <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-10 text-center text-sm text-muted-foreground">
                 {search
                   ? `"${search}" 검색 결과가 없습니다.`
-                  : "초안이 없습니다."}
+                  : `${STATUS_LABEL[tab]} 건이 없습니다.`}
               </div>
             ) : null}
 

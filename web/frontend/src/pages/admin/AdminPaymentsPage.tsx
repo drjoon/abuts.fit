@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: 요약 카드는 금액만. 기공사업부 수식은 원청−매입=순액. 기간 필터는 관리자 상단과 중복이라 허브에서는 숨김.
 // - 2026-10-13: 커스텀어벗 정산 규칙 — 딜러 적립 총액 입금, 딜리버리는 딜러사 직접 입금.
 // - 2026-10-07: 커스텀어벗 — 제조 49.5% 고정. 어벗츠 40% 대안 표기 제거.
 // - 2026-10-05: 기공사업부 정산 규칙 — 플랫폼 사용료·하청 수수료 안내 삭제(미부과).
@@ -49,7 +50,6 @@ import {
   SETTLEMENT_EXEMPT_INVOICE_LABEL,
   SETTLEMENT_TAXABLE_INVOICE_LABEL,
   formatWonWithUnit,
-  splitInclusiveVat,
 } from "@/shared/settlement/affiliateVat";
 import {
   GUIDE_FACT_GRID_CLASS,
@@ -276,18 +276,13 @@ function pctLabel(value?: number) {
   return `${Math.round(n * 10) / 10}%`;
 }
 
-function ShareRateHint({
-  parts,
-}: {
-  parts: Array<{ label: string; pct?: number }>;
-}) {
+function FactLines({ lines }: { lines: string[] }) {
   return (
-    <div className="tabular-nums">
-      {parts.map((p, i) => (
-        <span key={p.label}>
-          {i > 0 ? " · " : null}
-          {p.label} {pctLabel(p.pct)}
-        </span>
+    <div className="space-y-0.5 text-center text-[11px] leading-snug text-slate-500 sm:text-xs">
+      {lines.map((line) => (
+        <div key={line} className="tabular-nums">
+          {line}
+        </div>
       ))}
     </div>
   );
@@ -936,12 +931,10 @@ export default function AdminPaymentsPage({
     (sum, r) => sum + Number(r.wallet?.balanceAmountPeriod || 0),
     0,
   );
-  const salesmanUnpaidSplit = splitInclusiveVat(salesmanUnpaidInclusive);
   const devopsUnpaidInclusive = roleFinanceRows.devops.reduce(
     (sum, r) => sum + Number(r.wallet?.balanceAmountPeriod || 0),
     0,
   );
-  const devopsUnpaidSplit = splitInclusiveVat(devopsUnpaidInclusive);
 
   const storeRates = shareRates?.store;
   const labRates = shareRates?.labDivision;
@@ -972,11 +965,13 @@ export default function AdminPaymentsPage({
         subtitle="스토어 · 커스텀어벗 · 기공사업부"
         headerRight={
           <div className="flex w-full flex-wrap items-center gap-2">
-            <PeriodFilter
-              value={settlementPeriod}
-              onChange={setPeriod}
-              presets={SETTLEMENT_PERIOD_PRESETS}
-            />
+            {embedded ? null : (
+              <PeriodFilter
+                value={settlementPeriod}
+                onChange={setPeriod}
+                presets={SETTLEMENT_PERIOD_PRESETS}
+              />
+            )}
             <SettlementPolicyDialog
               title="정산 규칙"
               description="스토어 · 커스텀어벗 · 기공사업부"
@@ -1057,14 +1052,14 @@ export default function AdminPaymentsPage({
                 <TabsContent value="labDivision" className="mt-0 space-y-3">
                   <div className={GUIDE_FACT_GRID_CLASS}>
                     <SettlementPolicyFact label="면세">
-                      어벗츠기공소 기공료입니다.
+                      기공사업부가 수행한 기공료입니다.
                       <br />
-                      계산서를 발행합니다.
+                      법인 면세 계산서입니다.
                     </SettlementPolicyFact>
                     <SettlementPolicyFact label="분배">
-                      배송비를 먼저 뺍니다.
+                      원청 기공료에서 하청 매입을 뺍니다.
                       <br />
-                      기공사업부 · 영업팀 · 개발운영 · 어벗츠 비율입니다.
+                      비율 참고는 기공료 기준입니다.
                     </SettlementPolicyFact>
                   </div>
                 </TabsContent>
@@ -1082,17 +1077,7 @@ export default function AdminPaymentsPage({
               selected={selectedAxis === "store"}
               onClick={() => setSelectedAxis("store")}
               hint="기성품 · 과세"
-              hintTooltip="부가세 포함 매출. 분배는 설정 › 분배비율(스토어)."
-              footer={
-                <ShareRateHint
-                  parts={[
-                    { label: "제조", pct: storeRates?.manufacturerPercent },
-                    { label: "딜러", pct: storeRates?.salesmanPercent },
-                    { label: "개발", pct: storeRates?.devopsPercent },
-                    { label: "어벗츠", pct: storeRates?.abutsPercent },
-                  ]}
-                />
-              }
+              hintTooltip="부가세 포함 매출입니다. 제조·딜러·개발·어벗츠 비율은 아래 상세와 설정 › 분배비율에 있습니다."
             />
             <SettlementStatCard
               className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
@@ -1101,24 +1086,17 @@ export default function AdminPaymentsPage({
               selected={selectedAxis === "customAbut"}
               onClick={() => setSelectedAxis("customAbut")}
               hint="생산·공급"
-              hintTooltip="의뢰자 유료 소비. 하청은 제조사 약정 단가."
+              hintTooltip="기간 유료 소비입니다. 하청은 약정 단가, 판매가 분배는 정산 규칙에 있습니다."
               footer={
                 isLoading ? null : (
-                  <div className="space-y-0.5 text-[11px] leading-relaxed text-slate-500 sm:text-xs">
-                    <div className="tabular-nums">
-                      하청 {formatWonWithUnit(manufacturerEarn)} · 미정산{" "}
-                      {formatWonWithUnit(
+                  <FactLines
+                    lines={[
+                      `하청 ${formatWonWithUnit(manufacturerEarn)}`,
+                      `미정산 ${formatWonWithUnit(
                         manufacturerSummary?.periodBalanceAmount,
-                      )}
-                    </div>
-                    <div className="tabular-nums">
-                      제조 5,500원 · 딜러{" "}
-                      {DEALERSHIP_BAND_RANGE_LABEL}
-                    </div>
-                    <div className="tabular-nums">
-                      개발 1,000원
-                    </div>
-                  </div>
+                      )}`,
+                    ]}
+                  />
                 )
               }
             />
@@ -1128,28 +1106,20 @@ export default function AdminPaymentsPage({
               value={dash ?? Number(labRevenue || 0)}
               selected={selectedAxis === "labDivision"}
               onClick={() => setSelectedAxis("labDivision")}
-              hint="원청 기공료 · 하청 매입"
-              hintTooltip="어벗츠기공소 원청 기공료(매출) − 하청 매입 = 분배 재원. 면세 계산서."
+              hint="순액 · 면세"
+              hintTooltip="원청 기공료 − 하청 매입입니다. 법인 면세 계산서입니다."
               footer={
                 isLoading ? null : (
-                  <div className="space-y-0.5 text-[11px] leading-relaxed text-slate-500 sm:text-xs">
-                    <div className="tabular-nums">
-                      원청{" "}
-                      {formatWonWithUnit(labDivision?.periodSettlementEarn)} ·
-                      매입{" "}
-                      {formatWonWithUnit(
+                  <FactLines
+                    lines={[
+                      `원청 ${formatWonWithUnit(
+                        labDivision?.periodSettlementEarn,
+                      )}`,
+                      `매입 ${formatWonWithUnit(
                         labDivision?.subcontractPurchaseAmount,
-                      )}
-                    </div>
-                    <ShareRateHint
-                      parts={[
-                        { label: "기공", pct: labRates?.bizPercent },
-                        { label: "영업", pct: labRates?.salesTeamPercent },
-                        { label: "개발", pct: labRates?.devopsPercent },
-                        { label: "어벗츠", pct: labRates?.abutsPercent },
-                      ]}
-                    />
-                  </div>
+                      )}`,
+                    ]}
+                  />
                 )
               }
             />
@@ -1245,7 +1215,7 @@ export default function AdminPaymentsPage({
                   <CreditSectionHeader
                     icon={Factory}
                     title="커스텀어벗 · 생산·공급"
-                    description={`제조 5,500원 고정 · 딜러 판매가−1만원`}
+                    description="유료 소비에서 제조 매입을 뺀 잔여입니다."
                   />
                   <EquationRow
                     revenue={
@@ -1273,18 +1243,18 @@ export default function AdminPaymentsPage({
                       <SettlementStatCard
                         label="지출(하청)"
                         value={dash ?? manufacturerEarn}
-                        hint={`5,500원 · 미정산 ${formatWonWithUnit(
+                        hint={`미정산 ${formatWonWithUnit(
                           manufacturerSummary?.periodBalanceAmount,
                         )}`}
-                        hintTooltip={`단가 ${Number(
+                        hintTooltip={`어벗 ${Number(
                           customAbut?.manufacturerRequestUnitPrice ??
                             manufacturerSummary?.manufacturerRequestUnitPrice ??
                             8800,
-                        ).toLocaleString()} / ${Number(
+                        ).toLocaleString()}원 · 박스 ${Number(
                           customAbut?.manufacturerShippingUnitPrice ??
                             manufacturerSummary?.manufacturerShippingUnitPrice ??
                             3500,
-                        ).toLocaleString()} (어벗/박스) · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
+                        ).toLocaleString()}원 · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
                         compact
                       />
                     }
@@ -1361,42 +1331,42 @@ export default function AdminPaymentsPage({
                   <CreditSectionHeader
                     icon={FlaskConical}
                     title="기공사업부"
-                    description="기공료 · 분배비율"
+                    description="원청 기공료에서 하청 매입을 뺀 순액입니다."
                   />
                   <EquationRow
                     revenue={
                       <SettlementStatCard
-                        label="매출"
-                        value={dash ?? Number(labRevenue || 0)}
+                        label="원청 기공료"
+                        value={
+                          dash ??
+                          Number(labDivision?.periodSettlementEarn || 0)
+                        }
                         tone="primary"
-                        hint={`기공료 ${formatWonWithUnit(
-                          labDivision?.periodSettlementEarn,
-                        )}`}
+                        hint={`${(
+                          labDivision?.periodLineCount || 0
+                        ).toLocaleString()}건`}
                         hintTooltip={SETTLEMENT_EXEMPT_INVOICE_LABEL}
                         compact
                       />
                     }
                     expense={
                       <SettlementStatCard
-                        label="지출"
-                        value="배송비 선차감"
-                        hint="분배 재원에서 배송비 먼저 차감"
-                        hintTooltip="사업영역 · 기공사업 설정과 동일. 배송은 분배 UI에 기재하지 않습니다."
+                        label="하청 매입"
+                        value={
+                          dash ??
+                          Number(labDivision?.subcontractPurchaseAmount || 0)
+                        }
+                        hint={SETTLEMENT_EXEMPT_INVOICE_LABEL}
+                        hintTooltip="다른 기공소가 수행한 기공료입니다."
                         compact
                       />
                     }
                     distribution={
                       <SettlementStatCard
-                        label="분배"
-                        value={
-                          dash ??
-                          Number(labDivision?.plannedBizSupply || 0) +
-                            Number(labDivision?.plannedSalesTeamSupply || 0) +
-                            Number(labDivision?.plannedDevopsSupply || 0) +
-                            Number(labDivision?.plannedAbutsSupply || 0)
-                        }
-                        hint="기공 · 영업 · 개발 · 어벗츠"
-                        hintTooltip="기공비 대비 설정 분배비율(참고). 내부 면세 / 개발운영 +VAT."
+                        label="순액"
+                        value={dash ?? Number(labRevenue || 0)}
+                        hint="원청 − 매입"
+                        hintTooltip="기공사업부 수행분입니다. 아래 비율은 기공료 기준 참고입니다."
                         compact
                       />
                     }
@@ -1406,46 +1376,26 @@ export default function AdminPaymentsPage({
                       label={`기공사업부 ${pctLabel(labRates?.bizPercent)}`}
                       value={formatWonWithUnit(labDivision?.plannedBizSupply)}
                       tone="accent"
-                      hint={`적립 ${(
-                        labDivision?.periodLineCount || 0
-                      ).toLocaleString()}건`}
+                      hint="기공료 기준"
                     />
                     <CreditStatTile
                       label={`영업팀 ${pctLabel(labRates?.salesTeamPercent)}`}
                       value={formatWonWithUnit(
                         labDivision?.plannedSalesTeamSupply,
                       )}
-                      hint="설정 분배(참고)"
+                      hint="기공료 기준"
                     />
                     <CreditStatTile
                       label={`개발운영 ${pctLabel(labRates?.devopsPercent)}`}
                       value={formatWonWithUnit(
                         labDivision?.plannedDevopsSupply,
                       )}
-                      hint="설정 분배(참고) · +VAT"
+                      hint="기공료 기준 · 부가세 포함"
                     />
                     <CreditStatTile
                       label={`어벗츠 ${pctLabel(labRates?.abutsPercent)}`}
                       value={formatWonWithUnit(labDivision?.plannedAbutsSupply)}
-                      hint={`앵커 ${(
-                        labDivision?.anchorCount || 0
-                      ).toLocaleString()}곳 · ${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
-                    />
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <CreditStatTile
-                      label="하청 매입"
-                      value={formatWonWithUnit(
-                        labDivision?.subcontractPurchaseAmount,
-                      )}
-                      hint={`${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
-                    />
-                    <CreditStatTile
-                      label="기공료 수취"
-                      value={formatWonWithUnit(
-                        labDivision?.periodSettlementEarn,
-                      )}
-                      hint={`${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
+                      hint={`기공료 기준 · ${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
                     />
                   </div>
                 </div>
@@ -1486,29 +1436,21 @@ export default function AdminPaymentsPage({
                     </TabsList>
 
                     <TabsContent value="salesman" className="mt-4 space-y-4">
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <CreditStatTile
-                          label="사업자 수"
-                          value={`${filteredBySearch.salesman.length.toLocaleString()}곳`}
-                        />
-                        <CreditStatTile
-                          label="유료 미정산"
-                          value={formatWonWithUnit(salesmanUnpaidInclusive)}
-                          tone="accent"
-                          hint={`공급 ${formatWonWithUnit(
-                            salesmanUnpaidSplit.supply,
-                          )} · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
-                        />
-                        <CreditStatTile
-                          label="무료(참고)"
-                          value={formatWonWithUnit(
-                            roleFinanceRows.salesman.reduce(
-                              (sum, r) =>
-                                sum + Number(r.wallet?.freeAmountPeriod || 0),
-                              0,
-                            ),
-                          )}
-                        />
+                      <div className={SETTLEMENT_STAT_ROW_CLASS}>
+                        <div className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}>
+                          <CreditStatTile
+                            label="사업자"
+                            value={`${filteredBySearch.salesman.length.toLocaleString()}곳`}
+                          />
+                        </div>
+                        <div className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}>
+                          <CreditStatTile
+                            label="미정산"
+                            value={formatWonWithUnit(salesmanUnpaidInclusive)}
+                            tone="accent"
+                            hint={SETTLEMENT_TAXABLE_INVOICE_LABEL}
+                          />
+                        </div>
                       </div>
                       {filteredBySearch.salesman.length > 0 ? (
                         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1532,29 +1474,21 @@ export default function AdminPaymentsPage({
                     </TabsContent>
 
                     <TabsContent value="devops" className="mt-4 space-y-4">
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <CreditStatTile
-                          label="사업자 수"
-                          value={`${filteredBySearch.devops.length.toLocaleString()}곳`}
-                        />
-                        <CreditStatTile
-                          label="유료 미정산"
-                          value={formatWonWithUnit(devopsUnpaidInclusive)}
-                          tone="accent"
-                          hint={`공급 ${formatWonWithUnit(
-                            devopsUnpaidSplit.supply,
-                          )} · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
-                        />
-                        <CreditStatTile
-                          label="무료(참고)"
-                          value={formatWonWithUnit(
-                            roleFinanceRows.devops.reduce(
-                              (sum, r) =>
-                                sum + Number(r.wallet?.freeAmountPeriod || 0),
-                              0,
-                            ),
-                          )}
-                        />
+                      <div className={SETTLEMENT_STAT_ROW_CLASS}>
+                        <div className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}>
+                          <CreditStatTile
+                            label="사업자"
+                            value={`${filteredBySearch.devops.length.toLocaleString()}곳`}
+                          />
+                        </div>
+                        <div className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}>
+                          <CreditStatTile
+                            label="미정산"
+                            value={formatWonWithUnit(devopsUnpaidInclusive)}
+                            tone="accent"
+                            hint={SETTLEMENT_TAXABLE_INVOICE_LABEL}
+                          />
+                        </div>
                       </div>
                       {filteredBySearch.devops.length > 0 ? (
                         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1578,41 +1512,35 @@ export default function AdminPaymentsPage({
                     </TabsContent>
 
                     <TabsContent value="admin" className="mt-4 space-y-4">
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <CreditStatTile
-                          label="기간 정산 완료"
-                          value={formatWonWithUnit(
-                            adminFinanceRows.reduce(
-                              (sum, row) =>
-                                sum +
-                                Number(row.wallet?.paidOutAmountPeriod || 0),
-                              0,
-                            ),
-                          )}
-                        />
-                        <CreditStatTile
-                          label="유료 미정산"
-                          value={formatWonWithUnit(
-                            adminFinanceRows.reduce(
-                              (sum, row) =>
-                                sum +
-                                Number(row.wallet?.balanceAmountPeriod || 0),
-                              0,
-                            ),
-                          )}
-                          tone="accent"
-                          hint={`면세 · ${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
-                        />
-                        <CreditStatTile
-                          label="무료(참고)"
-                          value={formatWonWithUnit(
-                            adminFinanceRows.reduce(
-                              (sum, row) =>
-                                sum + Number(row.wallet?.freeAmountPeriod || 0),
-                              0,
-                            ),
-                          )}
-                        />
+                      <div className={SETTLEMENT_STAT_ROW_CLASS}>
+                        <div className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}>
+                          <CreditStatTile
+                            label="정산 완료"
+                            value={formatWonWithUnit(
+                              adminFinanceRows.reduce(
+                                (sum, row) =>
+                                  sum +
+                                  Number(row.wallet?.paidOutAmountPeriod || 0),
+                                0,
+                              ),
+                            )}
+                          />
+                        </div>
+                        <div className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}>
+                          <CreditStatTile
+                            label="미정산"
+                            value={formatWonWithUnit(
+                              adminFinanceRows.reduce(
+                                (sum, row) =>
+                                  sum +
+                                  Number(row.wallet?.balanceAmountPeriod || 0),
+                                0,
+                              ),
+                            )}
+                            tone="accent"
+                            hint={SETTLEMENT_EXEMPT_INVOICE_LABEL}
+                          />
+                        </div>
                       </div>
                       <MonthlyHistorySection
                         title="월단위 과거 내역 (어벗츠)"

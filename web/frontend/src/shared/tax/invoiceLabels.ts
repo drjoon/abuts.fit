@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: 기공사업부 수행분 라벨. 개인 어벗츠기공소 표기 제거.
 // - 2026-09-23: LAB_TO_PRACTICE 라벨·안내 — 이력. 기공비=어벗츠→고객 월합.
 // - 2026-09-20: 발행 레인 — 어벗츠→기공소/치과·기공소→치과. 면세=계산서·과세=세금계산서 분리.
 // - 2026-08-23: 겸영사업자 — 과세=세금계산서, 면세=계산서. 스토어 포함가 분해 헬퍼.
@@ -34,7 +35,7 @@ export type TaxInvoiceLane =
 export const TAX_INVOICE_LANE_LABEL: Record<TaxInvoiceLane, string> = {
   ABUTS_TO_LAB: "어벗츠 → 기공소",
   ABUTS_TO_PRACTICE: "어벗츠 → 치과",
-  ABUTS_LAB_TO_CUSTOMER: "어벗츠기공소 → 치과·기공소",
+  ABUTS_LAB_TO_CUSTOMER: "기공사업부 → 고객",
   LAB_TO_PRACTICE: "기공소 → 치과",
   AFFILIATE_TO_ABUTS: "관계사 → 어벗츠",
 };
@@ -43,7 +44,7 @@ export const TAX_INVOICE_LANE_LABEL: Record<TaxInvoiceLane, string> = {
 export const TAX_INVOICE_DIRECTION_LABEL: Record<TaxInvoiceDirection, string> =
   {
     ABUTS_TO_CUSTOMER: "어벗츠 → 고객",
-    ABUTS_LAB_TO_CUSTOMER: "어벗츠기공소 → 고객",
+    ABUTS_LAB_TO_CUSTOMER: "기공사업부 → 고객",
     LAB_TO_PRACTICE: "기공소 → 치과",
     AFFILIATE_TO_ABUTS: "관계사 → 어벗츠",
   };

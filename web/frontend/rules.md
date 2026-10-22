@@ -647,13 +647,14 @@ Notes:
   - 상단 합계는 2칸(`미정산` · `전월 지급`). `DashboardShell.statsGridClassName`을 `sm:grid-cols-2`로 두고 카드 높이는 compact.
 
 - 관리자 정산(`AdminPaymentsPage`) 표시 정책:
-  - 상단 3사업 축(선택형 `SettlementStatCard`): (1) 스토어 (2) 커스텀어벗 (3) 기공사업부. 각 축에 매출−지출=분배.
-  - 집계 API: `GET /api/admin/credits/settlement-business-overview` (기간=`period`/`startDate`/`endDate`).
+  - 상단 3사업 축(선택형 `SettlementStatCard`): (1) 스토어 (2) 커스텀어벗 (3) 기공사업부. 스토어·커스텀어벗은 매출−지출=분배. 기공사업부는 원청 기공료−하청 매입=순액. 비율 타일은 기공료 기준 참고.
+  - 요약 카드 푸터는 그 카드 금액에 없는 숫자만(하청·미정산, 원청·매입). 분배 비율 문장은 상세·정산 규칙에만 둔다.
+  - 집계 API: `GET /api/admin/credits/settlement-business-overview` (기간=`period`/`startDate`/`endDate`). 기간 필터는 관리자 상단 바와 같은 `usePeriodStore`. 허브에 들어 있을 때는 페이지 안 필터를 두지 않는다.
     - (1) 스토어: `REV_STORE_TAXABLE`(`STORE_SALE`/`REFUND`) 포함가·공급·VAT + `shareRates.store`·planned 몫(설정 분배비율 참고)
     - (2) 커스텀어벗: 의뢰자 유료 소비 + 제조사 하청 + 잔여(`REV_SALESMAN`/`REV_DEVOPS`/`REV_ADMIN`, `REQUEST_SPEND_COMMIT`만) + `shareRates.customAbut`
     - (3) 기공사업부: `internalLab` 원청 gross(`practice_transfer_lab_share_gross`) − 하청 매입 + `shareRates.labDivision`·planned 몫
-  - 카드 선택 시 해당 사업 상세. 커스텀어벗만「관계사 분배」(딜러·개발운영·어벗츠).
-  - 긴 안내는 `SettlementPolicyDialog`(정산규칙). 기간=`PeriodFilter`(KST). 커스텀어벗 탭=어벗츠 순몫 칩·표.
+  - 카드 선택 시 해당 사업 상세. 커스텀어벗만「관계사 분배」(딜러·개발운영·어벗츠). 관계사 「무료(참고)」카드는 두지 않는다.
+  - 긴 안내는 `SettlementPolicyDialog`(정산규칙). 커스텀어벗 탭=어벗츠 순몫 표.
   - UI: `settlementUi` 요약 카드·수식 부호 + `creditPageUi` 패널/타일.
 
 - 어벗츠기공소(`internalLab`) UI SSOT:

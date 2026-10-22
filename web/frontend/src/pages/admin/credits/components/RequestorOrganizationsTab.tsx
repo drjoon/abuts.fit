@@ -51,22 +51,17 @@ function MetricRow({
   paid: number;
   free: number;
 }) {
+  const total = paid + free;
   return (
-    <div className="grid grid-cols-[48px_1fr] items-center gap-2 rounded-xl bg-slate-50/80 px-2.5 py-2">
-      <div className="text-[11px] font-semibold text-slate-500">{label}</div>
-      <div className="grid grid-cols-2 gap-2 text-right">
-        <div>
-          <div className="text-[10px] text-muted-foreground">유료</div>
-          <div className="text-xs font-semibold tabular-nums">
-            {paid.toLocaleString()}원
-          </div>
-        </div>
-        <div>
-          <div className="text-[10px] text-muted-foreground">무료</div>
-          <div className="text-xs font-semibold tabular-nums">
-            {free.toLocaleString()}원
-          </div>
-        </div>
+    <div className="rounded-xl bg-slate-50/80 px-3 py-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-xs font-medium text-slate-500">{label}</span>
+        <span className="text-sm font-semibold tabular-nums text-slate-900">
+          {total.toLocaleString()}원
+        </span>
+      </div>
+      <div className="mt-0.5 text-right text-[11px] tabular-nums text-slate-500">
+        유료 {paid.toLocaleString()} · 무료 {free.toLocaleString()}
       </div>
     </div>
   );
@@ -94,8 +89,8 @@ export function RequestorOrganizationsTab({
         <div className="space-y-5 p-5 sm:p-6">
           <CreditSectionHeader
             icon={Building2}
-            title="치과 · 기공소 크레딧"
-            description="유료·무료 잔액과 충전·사용 현황입니다. 카드를 누르면 원장을 엽니다."
+            title="치과 · 기공소"
+            description="카드를 누르면 원장을 엽니다."
             trailing={
               <select
                 className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm"

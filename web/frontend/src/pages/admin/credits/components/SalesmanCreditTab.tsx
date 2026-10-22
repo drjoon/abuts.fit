@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: 요약 칸을 정산 카드와 맞춘다. 소개 매출과 보너스를 나누어 표시.
 // - 2026-09-20: 상단 스탯 그리드 p-0.5 — 카드 경계 overflow 클리핑 방지.
 // - 2026-08-13: 영업자 크레딧 탭 스타일·카피 모던화.
 // related files:
@@ -10,11 +11,13 @@ import { Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { TabsContent } from "@/components/ui/tabs";
 import type { SalesmanCreditRow } from "../adminCredit.types";
+import { CreditPanel, CreditSectionHeader } from "../creditPageUi";
 import {
-  CreditPanel,
-  CreditSectionHeader,
-  CreditStatTile,
-} from "../creditPageUi";
+  SETTLEMENT_STAT_CARD_WIDTH_CLASS,
+  SETTLEMENT_STAT_ROW_CLASS,
+  SettlementStatCard,
+} from "@/shared/settlement/settlementUi";
+import { cn } from "@/shared/ui/cn";
 
 type SalesmanSummary = {
   totalSalesmen: number;
@@ -87,43 +90,38 @@ export function SalesmanCreditTab({
 
   return (
     <TabsContent value="salesman" className="space-y-4">
-      <div className="grid gap-3 p-0.5 sm:grid-cols-2 lg:grid-cols-5">
-        <CreditStatTile
+      <div className={cn(SETTLEMENT_STAT_ROW_CLASS, "p-0.5")}>
+        <SettlementStatCard
+          className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
           label="딜러"
           value={loading ? "…" : summaryForView.totalSalesmen.toLocaleString()}
         />
-        <CreditStatTile
+        <SettlementStatCard
+          className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
           label="소개 매출"
           value={
-            loading
-              ? "…"
-              : won(
-                  Number(summaryForView.totalReferredRevenue30d || 0) +
-                    Number(summaryForView.totalReferredBonus30d || 0),
-                )
+            loading ? "…" : won(Number(summaryForView.totalReferredRevenue30d || 0))
           }
           hint={
-            <>
-              <div>
-                유료 {won(Number(summaryForView.totalReferredRevenue30d || 0))}
-              </div>
-              <div>
-                무료 {won(Number(summaryForView.totalReferredBonus30d || 0))}
-              </div>
-            </>
+            loading
+              ? undefined
+              : `보너스 ${won(Number(summaryForView.totalReferredBonus30d || 0))}`
           }
         />
-        <CreditStatTile
+        <SettlementStatCard
+          className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
           label="수수료"
           value={loading ? "…" : won(summaryForView.totalEarned)}
-          hint={<>판매가 − 1만원</>}
+          hint="판매가 − 1만원"
         />
-        <CreditStatTile
+        <SettlementStatCard
+          className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
           label="기간 잔액"
           value={loading ? "…" : won(summaryForView.totalBalance)}
         />
-        <CreditStatTile
-          label="정산"
+        <SettlementStatCard
+          className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
+          label="지급"
           value={loading ? "…" : won(summaryForView.totalPaidOut)}
         />
       </div>
@@ -132,8 +130,8 @@ export function SalesmanCreditTab({
         <div className="space-y-5 p-5 sm:p-6">
           <CreditSectionHeader
             icon={Users}
-            title="딜러 크레딧"
-            description="기간 잔액·수수료·소개 매출입니다. 카드를 누르면 원장을 엽니다."
+            title="딜러"
+            description="카드를 누르면 원장을 엽니다."
             trailing={
               <select
                 className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm"

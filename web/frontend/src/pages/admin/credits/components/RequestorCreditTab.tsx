@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: 요약 칸을 정산 카드와 맞추고, 누르면 해당 목록으로 이동.
 // - 2026-09-20: 상단 스탯 그리드 p-0.5 — 카드 경계 overflow 클리핑 방지.
 // - 2026-09-05: 상단 스탯 순서 충전|사용|잔여.
 // - 2026-08-14: 스탯 라벨 「치과 · 기공소」로 표기.
@@ -8,7 +9,7 @@
 // - web/frontend/src/pages/admin/credits/AdminCreditPage.tsx
 // - web/frontend/src/pages/admin/credits/creditPageUi.tsx
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
-import type { RefObject } from "react";
+import { useState, type RefObject } from "react";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AutoMatchVerificationTab } from "./AutoMatchVerificationTab";
@@ -16,7 +17,12 @@ import { RequestorFreeCreditTab } from "./RequestorFreeCreditTab";
 import { RequestorOrdersTab } from "./RequestorOrdersTab";
 import { RequestorOrganizationsTab } from "./RequestorOrganizationsTab";
 import { RequestorTransactionsTab } from "./RequestorTransactionsTab";
-import { CreditStatTile } from "../creditPageUi";
+import {
+  SETTLEMENT_STAT_CARD_WIDTH_CLASS,
+  SETTLEMENT_STAT_ROW_CLASS,
+  SettlementStatCard,
+} from "@/shared/settlement/settlementUi";
+import { cn } from "@/shared/ui/cn";
 import type {
   BankTransaction,
   FreeCreditGrantHistoryRow,
@@ -123,54 +129,78 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
   const totalSpentFree = Number(props.stats?.totalSpentFreeAmount ?? 0);
 
   const loading = props.loadingStats;
+  const [panel, setPanel] = useState("organizations");
 
   return (
     <>
-      <div className="grid gap-3 p-0.5 sm:grid-cols-2 lg:grid-cols-5">
-        <CreditStatTile
+      <div className={cn(SETTLEMENT_STAT_ROW_CLASS, "p-0.5")}>
+        <SettlementStatCard
+          className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
           label="치과 · 기공소"
           value={loading ? "…" : requestorBusinesses.length.toLocaleString()}
+          onClick={() => setPanel("organizations")}
         />
-        <CreditStatTile
+        <SettlementStatCard
+          className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
           label="충전"
-          value={
-            loading ? "…" : won(totalChargedPaid + totalChargedFree)
+          value={loading ? "…" : won(totalChargedPaid + totalChargedFree)}
+          footer={
+            loading ? null : (
+              <div className="space-y-0.5 text-center text-[11px] tabular-nums text-slate-500">
+                <div>유료 {won(totalChargedPaid)}</div>
+                <div>무료 {won(totalChargedFree)}</div>
+              </div>
+            )
           }
-          hint={
-            <>
-              <div>유료 {won(totalChargedPaid)}</div>
-              <div>무료 {won(totalChargedFree)}</div>
-            </>
-          }
+          onClick={() => setPanel("organizations")}
         />
-        <CreditStatTile
+        <SettlementStatCard
+          className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
           label="사용"
           value={loading ? "…" : won(totalSpentPaid + totalSpentFree)}
-          hint={
-            <>
-              <div>유료 {won(totalSpentPaid)}</div>
-              <div>무료 {won(totalSpentFree)}</div>
-            </>
+          footer={
+            loading ? null : (
+              <div className="space-y-0.5 text-center text-[11px] tabular-nums text-slate-500">
+                <div>유료 {won(totalSpentPaid)}</div>
+                <div>무료 {won(totalSpentFree)}</div>
+              </div>
+            )
           }
+          onClick={() => {
+            props.setOrgSortKey("spentPaid");
+            setPanel("organizations");
+          }}
         />
-        <CreditStatTile
+        <SettlementStatCard
+          className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
           label="잔여"
           value={loading ? "…" : won(totalPaidCredit + totalFreeCredit)}
-          hint={
-            <>
-              <div>유료 {won(totalPaidCredit)}</div>
-              <div>무료 {won(totalFreeCredit)}</div>
-            </>
+          footer={
+            loading ? null : (
+              <div className="space-y-0.5 text-center text-[11px] tabular-nums text-slate-500">
+                <div>유료 {won(totalPaidCredit)}</div>
+                <div>무료 {won(totalFreeCredit)}</div>
+              </div>
+            )
           }
+          onClick={() => {
+            props.setOrgSortKey("paidBalance");
+            setPanel("organizations");
+          }}
         />
-        <CreditStatTile
+        <SettlementStatCard
+          className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
           label="미매칭 입금"
-          value={loading ? "…" : props.stats?.newBankTransactions || 0}
-          tone="accent"
+          value={
+            loading
+              ? "…"
+              : Number(props.stats?.newBankTransactions || 0).toLocaleString()
+          }
+          onClick={() => setPanel("transactions")}
         />
       </div>
 
-      <Tabs defaultValue="organizations" className="space-y-4">
+      <Tabs value={panel} onValueChange={setPanel} className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <TabsList className="h-11 rounded-xl bg-slate-100/80 p-1">
             <TabsTrigger value="organizations" className="rounded-lg px-4">
