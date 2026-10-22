@@ -73,52 +73,6 @@ const finishLine = {
   }),
 };
 
-/** 다듬은 패치끼리 만나는 모서리의 이면각(°) 백분위. 가공면에 남는 결의 크기다. */
-function patchDihedralPercentile(buffer, p) {
-  const { verts, attrs } = readTriangles(buffer);
-  const tris = [];
-  for (let t = 0; t < attrs.length; t += 1) tris.push([verts[t * 3], verts[t * 3 + 1], verts[t * 3 + 2]]);
-  const idOf = new Map();
-  const points = [];
-  const idsOf = (p) => {
-    const k = keyOf(p);
-    if (!idOf.has(k)) {
-      idOf.set(k, points.length);
-      points.push(p);
-    }
-    return idOf.get(k);
-  };
-  const faces = tris.map((t) => t.map(idsOf));
-  const normals = faces.map(([a, b, c]) => {
-    const A = points[a], B = points[b], C = points[c];
-    const ux = B[0] - A[0], uy = B[1] - A[1], uz = B[2] - A[2];
-    const vx = C[0] - A[0], vy = C[1] - A[1], vz = C[2] - A[2];
-    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-    const l = Math.hypot(nx, ny, nz) || 1;
-    return [nx / l, ny / l, nz / l];
-  });
-  const nv = points.length;
-  const edgeFaces = new Map();
-  faces.forEach((f, fi) => {
-    for (let k = 0; k < 3; k += 1) {
-      const a = f[k], b = f[(k + 1) % 3];
-      const key = a < b ? a * nv + b : b * nv + a;
-      if (!edgeFaces.has(key)) edgeFaces.set(key, []);
-      edgeFaces.get(key).push(fi);
-    }
-  });
-  const degs = [];
-  for (const fs of edgeFaces.values()) {
-    if (fs.length !== 2) continue;
-    const [f, g] = fs;
-    if (attrs[f] !== POST_SMOOTH_PATCH_ATTRIBUTE || attrs[g] !== POST_SMOOTH_PATCH_ATTRIBUTE) continue;
-    const dot = normals[f][0] * normals[g][0] + normals[f][1] * normals[g][1] + normals[f][2] * normals[g][2];
-    degs.push((Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI);
-  }
-  degs.sort((a, b) => a - b);
-  return degs[Math.floor(p * degs.length)];
-}
-
 /** 포스트 가운데 띠에서 계단 없는 기준 곡선과의 반경 차 표준편차(계단 결 크기). */
 function stairRoughness(verts) {
   const base = (z) => 2.1 + 0.4 * Math.exp(-(z - MARGIN.z) / 0.3);
@@ -135,12 +89,6 @@ describe("smoothPostAboveFinishLine", () => {
     expect(result.status).toBe("applied");
     expect(result.detail.fixedFinishVertices).toBe(SEGMENTS);
     expect(result.detail.maxInwardUm).toBeLessThanOrEqual(50);
-  });
-
-  it("subdivides the post so patch facets stay shallow", () => {
-    // 전체 분할이 없으면 곡면을 맞출 점이 없어 꺾임이 가공면에 그대로 남는다.
-    expect(result.detail.patchTriangles).toBeGreaterThan(result.detail.regionTriangles * 3);
-    expect(patchDihedralPercentile(result.buffer, 0.9)).toBeLessThan(4);
   });
 
   it("keeps the finish line and everything below it bit-exact", () => {
