@@ -370,6 +370,12 @@ const systemSettingsSchema = new mongoose.Schema(
             ref: "User",
             default: null,
           },
+          // 이번 선택에서 다시 만들기로 한 항목. 파일 메타는 더미 의뢰, 파일은 그 의뢰 S3.
+          artifactRegen: {
+            filledStl: { type: Boolean, default: false },
+            cam: { type: Boolean, default: false },
+            requestedAt: { type: Date, default: null },
+          },
         },
       ],
       default: [],

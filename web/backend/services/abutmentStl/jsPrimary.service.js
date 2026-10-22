@@ -4,6 +4,7 @@
 // - web/backend/services/abutmentStl/pipeline.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx (JS 실패 뱃지)
 // change-log:
+// - 2026-10-22: JS filled STL 실패 시 더미에 예약된 CAM은 시작하지 않는다.
 // - 2026-10-21: JS 계산은 람다(60초). 넘기거나 실패하면 준비 카드에 사유를 남긴다.
 // - 2026-10-10: JS 실패는 카드 뱃지만 남기고 원격 Rhino로 넘기지 않는다.
 // - 2026-10-10: 반자동으로 저장한 피니시라인(source=frontend-manual)은 재검출하지 않는다.
@@ -280,6 +281,12 @@ export async function runJsPrimaryThenFallback({ requestId, fileName }) {
     console.warn(`[abutment-stl-js] failed requestId=${requestId} reason=${reason}: ${detail}`);
     await recordJsFailure(requestId, reason, detail).catch((e) =>
       console.warn("[abutment-stl-js] recordJsFailure failed", e?.message || e),
+    );
+    const { abortDummyCamAfterFilled } = await import(
+      "../../controllers/cnc/dummyArtifactRegen.js"
+    );
+    await abortDummyCamAfterFilled(requestId, detail).catch((e) =>
+      console.warn("[abutment-stl-js] abort dummy CAM failed", e?.message || e),
     );
   }
 }

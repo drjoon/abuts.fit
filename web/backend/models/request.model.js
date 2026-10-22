@@ -1150,6 +1150,13 @@ const requestSchema = new mongoose.Schema(
       // 더미 가공 확인 시 Next Up 맨 앞. 가공중·완료면 정렬에서 무시한다.
       dummyNextUpPinnedAt: Date,
       dummySampleSourceRequestId: String,
+      // 더미 교체 재생성. filled STL이 끝나면 dummyCamAfterFilled일 때만 CAM을 잇는다.
+      dummyCamAfterFilled: { type: Boolean, default: false },
+      dummyArtifactRegen: {
+        filledStl: Boolean,
+        cam: Boolean,
+        requestedAt: Date,
+      },
       machiningQty: {
         type: Number,
         default: 1,

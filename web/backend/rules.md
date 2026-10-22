@@ -1129,6 +1129,19 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 헥스 회전 문자열 SSOT: 신규/수정 코드에서 `보정`/`무보정` 사용 금지.
   - 발견 시 즉시 `STL모델대로`/`헥스30도회전`로 치환하고 변경 내역을 rules에 기록합니다.
 
+### 가공 더미 재생성
+
+제조사 가공 「더미설정」에서 직경별 제품을 바꾸면 filled STL·CAM을 다시 만들지 묻는다.
+
+- filled STL을 고르면 CAM도 반드시 한다. CAM만 고르면 CAM만 한다. 둘 다 아니면 복사본만 바꾼다.
+- 대상은 더미 복사본(`source=dummy_sample`)이다. 원본 의뢰의 filled STL·NC는 덮지 않는다.
+- DB: 더미 의뢰 `caseInfos.stlFile`·`ncFile`, `productionSchedule.dummyArtifactRegen`. 직경 행 `SystemSettings.dummyMachiningProducts.artifactRegen`.
+- S3: `requests/{더미 requestId}/2-filled/`, `requests/{더미 requestId}/3-nc/`.
+- filled STL이 실패하면 CAM은 시작하지 않는다. 성공하면 `dummyCamAfterFilled`로 Esprit을 잇는다.
+- 검색(`q`, 구 `lot`): 로트·환자·치과·치아·임플란트·기공소명.
+- 진행: 더미 의뢰 `stlPreload`·`ncPreload`를 `artifactRegen`으로 카드에 내려 준다.
+- SSOT: `controllers/cnc/dummyArtifactRegen.js`, `DummyMachiningModal.tsx`
+
 ## 3. 정리 원칙
 
 - 루트와 중복되는 정책은 여기 다시 쓰지 않습니다.

@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-10-22: 재생성 확인은 한 줄. 진행은 더미 카드의 filled STL·CAM 막대.
+// - 2026-10-22: 검색은 로트·환자·치과·기공소.
+// - 2026-10-22: 더미를 바꾸기 전에 filled STL·CAM 재생성을 묻는다. filled STL이면 CAM도 켠다.
 // - 2026-10-02: 갤러리는 끝까지 스크롤하면 다음 3개를 이어 붙인다.
 // - 2026-10-02: 갤러리 좌우 화살표로 3개씩 다음 페이지를 불러온다.
 // - 2026-10-02: 더미설정 모달은 내용 높이만큼 열어 세로 스크롤을 없앤다.
@@ -33,6 +36,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/FilledStlCardThumbnail.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
 // - web/backend/controllers/cnc/dummyProduct.js
+// - web/backend/controllers/cnc/dummyArtifactRegen.js
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import {
@@ -42,6 +46,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/shared/hooks/use-toast";
 import { FilledStlCardThumbnail } from "@/pages/manufacturer/worksheet/custom_abutment/components/FilledStlCardThumbnail";
 import type { ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
@@ -54,6 +59,14 @@ export type DummyProduct = {
   manufacturerStage: string | null;
   createdAt: string | null;
   hasNc: boolean;
+  sourceRequestId?: string;
+  artifactRegen?: {
+    filledStl: "idle" | "running" | "done" | "failed";
+    cam: "idle" | "running" | "done" | "failed";
+    requestedAt?: string | null;
+    filledError?: string;
+    camError?: string;
+  } | null;
   diameterFits?: boolean;
   durationSeconds?: number | null;
   requestor?: { name?: string; business?: string } | null;
@@ -247,6 +260,53 @@ function ProductSummary({
   );
 }
 
+function RegenBar({
+  label,
+  state,
+  requestedAt,
+  error,
+}: {
+  label: string;
+  state: "running" | "done" | "failed";
+  requestedAt?: string | null;
+  error?: string;
+}) {
+  const [pct, setPct] = useState(state === "running" ? 8 : 100);
+  useEffect(() => {
+    if (state !== "running") {
+      setPct(100);
+      return;
+    }
+    const started = requestedAt ? new Date(requestedAt).getTime() : Date.now();
+    const tick = () => {
+      const elapsed = Math.max(0, Date.now() - (Number.isFinite(started) ? started : Date.now()));
+      setPct(Math.min(92, Math.round(8 + 84 * (1 - Math.exp(-elapsed / 18000)))));
+    };
+    tick();
+    const id = window.setInterval(tick, 400);
+    return () => window.clearInterval(id);
+  }, [state, requestedAt]);
+  const width = `${pct}%`;
+  return (
+    <div className="flex items-center gap-2" title={state === "failed" ? error || "실패" : undefined}>
+      <span className="w-[4.5rem] shrink-0 text-[11px] font-semibold text-slate-600">
+        {label}
+      </span>
+      <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200">
+        <div
+          className={`h-full rounded-full transition-[width] duration-300 ${
+            state === "failed" ? "bg-destructive" : "bg-primary"
+          }`}
+          style={{ width }}
+        />
+      </div>
+      <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-slate-500">
+        {state === "failed" ? "실패" : state === "done" ? "완료" : `${pct}%`}
+      </span>
+    </div>
+  );
+}
+
 async function fetchDummyPage(params: {
   token: string;
   lot: string;
@@ -255,7 +315,7 @@ async function fetchDummyPage(params: {
   signal?: AbortSignal;
 }): Promise<{ items: DummyProduct[]; hasMore: boolean; nextSkip: number }> {
   const query = new URLSearchParams({
-    lot: params.lot,
+    q: params.lot,
     diameterGroup: params.diameterGroup,
     skip: String(params.skip),
     limit: String(SEARCH_PAGE_SIZE),
@@ -295,6 +355,10 @@ export function DummyMachiningModal({
   const [loadingMore, setLoadingMore] = useState(false);
   const [selectingId, setSelectingId] = useState("");
   const [clearing, setClearing] = useState(false);
+  const [pendingRequestId, setPendingRequestId] = useState("");
+  const [regenFilled, setRegenFilled] = useState(false);
+  const [regenCam, setRegenCam] = useState(false);
+  const [regenWatchId, setRegenWatchId] = useState("");
   const scrollerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLLIElement>(null);
   const loadingMoreRef = useRef(false);
@@ -312,6 +376,8 @@ export function DummyMachiningModal({
   const openGroup = (next: string) => {
     setGroup(next);
     setLotQuery("");
+    setPendingRequestId("");
+    setRegenWatchId("");
     resetGallery();
   };
 
@@ -320,6 +386,8 @@ export function DummyMachiningModal({
     let cancelled = false;
     setGroup("");
     setLotQuery("");
+    setPendingRequestId("");
+    setRegenWatchId("");
     resetGallery();
     setLoading(true);
     void (async () => {
@@ -398,6 +466,40 @@ export function DummyMachiningModal({
       ac.abort();
     };
   }, [open, lotQuery, token, toast, group]);
+
+  useEffect(() => {
+    if (!open || !token || !regenWatchId) return;
+    let cancelled = false;
+    let timer = 0;
+    const pull = async () => {
+      try {
+        const res = await fetch("/api/cnc-machines/dummy-product", {
+          headers: authHeaders(token),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (cancelled || !res.ok || body?.success === false) {
+          if (!cancelled) timer = window.setTimeout(pull, 2000);
+          return;
+        }
+        const items = Array.isArray(body?.data?.items) ? body.data.items : [];
+        setSaved(items);
+        const row = items.find(
+          (item: SavedDummy) => item?.product?.requestId === regenWatchId,
+        );
+        const regen = row?.product?.artifactRegen;
+        const running =
+          regen?.filledStl === "running" || regen?.cam === "running";
+        if (!cancelled && running) timer = window.setTimeout(pull, 2000);
+      } catch {
+        if (!cancelled) timer = window.setTimeout(pull, 2000);
+      }
+    };
+    timer = window.setTimeout(pull, 1200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [open, token, regenWatchId]);
 
   useEffect(() => {
     nextSkipRef.current = nextSkip;
@@ -482,11 +584,30 @@ export function DummyMachiningModal({
 
   const current = saved.find((row) => row.diameterGroup === group) || null;
   const product = current?.product || null;
+  const regen = product?.artifactRegen;
+  const showRegen = Boolean(
+    regen &&
+      (regenWatchId === product?.requestId ||
+        regen.filledStl === "running" ||
+        regen.cam === "running" ||
+        regen.filledStl === "failed" ||
+        regen.cam === "failed"),
+  );
+
+  useEffect(() => {
+    if (!product?.requestId || !regen) return;
+    const running = regen.filledStl === "running" || regen.cam === "running";
+    if (running && regenWatchId !== product.requestId) {
+      setRegenWatchId(product.requestId);
+    }
+  }, [product?.requestId, regen, regenWatchId]);
 
   const selectProduct = async (requestId: string) => {
     if (!token || selectingId || !group) return;
     const target = results.find((item) => item.requestId === requestId);
     if (target?.diameterFits === false) return;
+    const regenerateFilledStl = regenFilled;
+    const regenerateCam = regenFilled || regenCam;
     setSelectingId(requestId);
     try {
       const res = await fetch("/api/cnc-machines/dummy-product", {
@@ -495,7 +616,12 @@ export function DummyMachiningModal({
           ...authHeaders(token),
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ requestId, diameterGroup: group }),
+        body: JSON.stringify({
+          requestId,
+          diameterGroup: group,
+          regenerateFilledStl,
+          regenerateCam,
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || body?.success === false) {
@@ -509,7 +635,20 @@ export function DummyMachiningModal({
           { diameterGroup: group, product: nextProduct, missingRequestId: null },
         ];
       });
-      toast({ title: `Ø${group} 더미를 저장했습니다.` });
+      setPendingRequestId("");
+      const regen = body?.data?.regen;
+      if ((regen?.filledStl || regen?.cam) && nextProduct?.requestId && regen.started) {
+        setRegenWatchId(String(nextProduct.requestId));
+      }
+      if ((regen?.filledStl || regen?.cam) && !regen.started) {
+        toast({
+          title: `Ø${group} 더미를 바꿨습니다.`,
+          description: regen.message || "재생성은 시작하지 못했습니다.",
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: `Ø${group} 더미를 바꿨습니다.` });
+      }
     } catch (error) {
       toast({
         title: "저장 실패",
@@ -565,7 +704,7 @@ export function DummyMachiningModal({
           <DialogDescription className="mt-0.5 text-xs text-slate-500">
             {group
               ? lotQuery.trim()
-                ? `Ø${group} 소재에 맞는 제품을 로트번호로 찾습니다.`
+                ? "로트·환자·치과·기공소로 찾습니다."
                 : "가공 5분 이상 중 짧은 3개를 추천합니다."
               : "직경을 누르면 더미를 고릅니다."}
           </DialogDescription>
@@ -601,9 +740,9 @@ export function DummyMachiningModal({
                 <input
                   value={lotQuery}
                   onChange={(event) => setLotQuery(event.target.value)}
-                  placeholder="로트번호"
+                  placeholder="로트·이름·치과"
                   disabled={!group}
-                  className="h-8 w-36 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-800 outline-none focus:border-primary focus:ring-2 focus:ring-primary disabled:bg-slate-50"
+                  className="h-8 w-44 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-800 outline-none focus:border-primary focus:ring-2 focus:ring-primary disabled:bg-slate-50"
                 />
               </div>
               {group ? (
@@ -623,7 +762,29 @@ export function DummyMachiningModal({
                         <X className="h-5 w-5" />
                       </button>
                       {product ? (
-                        <ProductSummary item={product} />
+                        <>
+                          <ProductSummary item={product} />
+                          {showRegen && regen ? (
+                            <div className="mt-2 space-y-1.5 pr-2">
+                              {regen.filledStl !== "idle" ? (
+                                <RegenBar
+                                  label="filled STL"
+                                  state={regen.filledStl}
+                                  requestedAt={regen.requestedAt}
+                                  error={regen.filledError}
+                                />
+                              ) : null}
+                              {regen.cam !== "idle" ? (
+                                <RegenBar
+                                  label="CAM"
+                                  state={regen.cam}
+                                  requestedAt={regen.requestedAt}
+                                  error={regen.camError}
+                                />
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </>
                       ) : (
                         <p className="py-4 text-sm text-slate-500">
                           저장된 더미 제품을 찾지 못했습니다.
@@ -633,6 +794,56 @@ export function DummyMachiningModal({
                   ) : (
                     <p className="text-center text-sm text-slate-500">더미가 없습니다.</p>
                   )}
+                  {pendingRequestId ? (
+                    <div className="mx-auto flex w-full max-w-[40rem] flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                      <span className="text-xs font-semibold text-slate-700">
+                        다시 만들기
+                      </span>
+                      <label className="flex items-center gap-1.5 text-xs text-slate-800">
+                        <Checkbox
+                          checked={regenFilled}
+                          disabled={Boolean(selectingId)}
+                          onCheckedChange={(value) => {
+                            const on = value === true;
+                            setRegenFilled(on);
+                            if (on) setRegenCam(true);
+                          }}
+                        />
+                        filled STL
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs text-slate-800">
+                        <Checkbox
+                          checked={regenCam}
+                          disabled={Boolean(selectingId) || regenFilled}
+                          onCheckedChange={(value) => setRegenCam(value === true)}
+                        />
+                        CAM
+                      </label>
+                      {regenFilled ? (
+                        <span className="text-[11px] text-slate-500">
+                          STL을 고르면 CAM도 합니다.
+                        </span>
+                      ) : null}
+                      <span className="ml-auto flex gap-1.5">
+                        <button
+                          type="button"
+                          disabled={Boolean(selectingId)}
+                          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                          onClick={() => setPendingRequestId("")}
+                        >
+                          취소
+                        </button>
+                        <button
+                          type="button"
+                          disabled={Boolean(selectingId)}
+                          className="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                          onClick={() => void selectProduct(pendingRequestId)}
+                        >
+                          {selectingId ? "적용 중…" : "적용"}
+                        </button>
+                      </span>
+                    </div>
+                  ) : null}
                   <div className="relative mx-auto w-[calc(2.5*19rem+1.5rem)] max-w-full">
                     {results.length > 0 ? (
                       <>
@@ -672,7 +883,10 @@ export function DummyMachiningModal({
                             .filter((item) => item.diameterFits !== false)
                             .map((item) => {
                               const selected =
-                                product?.requestId === item.requestId;
+                                product?.requestId === item.requestId ||
+                                (Boolean(product?.sourceRequestId) &&
+                                  product?.sourceRequestId === item.requestId);
+                              const pending = pendingRequestId === item.requestId;
                               const busy = selectingId === item.requestId;
                               return (
                                 <li
@@ -684,15 +898,19 @@ export function DummyMachiningModal({
                                     type="button"
                                     disabled={Boolean(selectingId) || selected}
                                     className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
-                                    onClick={() =>
-                                      void selectProduct(item.requestId)
-                                    }
+                                    onClick={() => {
+                                      setPendingRequestId(item.requestId);
+                                      setRegenFilled(false);
+                                      setRegenCam(false);
+                                    }}
                                   >
                                     {selected
                                       ? "선택됨"
                                       : busy
                                         ? "저장 중…"
-                                        : "선택"}
+                                        : pending
+                                          ? "확인"
+                                          : "선택"}
                                   </button>
                                 </li>
                               );

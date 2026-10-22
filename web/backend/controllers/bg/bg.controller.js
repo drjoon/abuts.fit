@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: 더미 filled STL 재생성 성공 시 예약된 CAM을 더미 의뢰에 잇는다. 실패하면 CAM은 시작하지 않는다.
 // - 2026-10-21: 피니시라인 1mm 미만은 짧은 커프 명단에 남긴다(응답 후).
 // - 2026-10-20: request-meta One Pass는 포스트·치은 스텝이 같을 때만 true.
 // - 2026-10-13: 더미 request-meta는 헥스 회전이 없으면 STL모델대로로 저장한 뒤 내려준다.
@@ -1507,7 +1508,37 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     });
   }
 
+  if (
+    !isCallbackSuccess &&
+    callbackStep === "2-filled" &&
+    request?.productionSchedule?.dummyCamAfterFilled
+  ) {
+    void import("../cnc/dummyArtifactRegen.js")
+      .then(({ abortDummyCamAfterFilled }) =>
+        abortDummyCamAfterFilled(
+          request.requestId,
+          String(metadata?.error || "").trim() || "filled STL 재생성 실패",
+        ),
+      )
+      .catch((error) => {
+        console.warn(
+          "[BG-Callback] dummy CAM abort after filled STL failed",
+          error?.message || error,
+        );
+      });
+  }
+
   if (isCallbackSuccess && callbackStep === "2-filled" && updatedRequest) {
+    void import("../cnc/dummyArtifactRegen.js")
+      .then(({ continueDummyCamAfterFilled }) =>
+        continueDummyCamAfterFilled(updatedRequest),
+      )
+      .catch((error) => {
+        console.warn(
+          "[BG-Callback] dummy CAM after filled STL failed",
+          error?.message || error,
+        );
+      });
     void enqueueAbutmentStlShadow(updatedRequest).catch((error) => {
       console.warn("[BG-Callback] abutment STL shadow enqueue failed", error?.message || error);
     });

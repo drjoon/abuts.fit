@@ -5,6 +5,9 @@
 // - web/backend/controllers/requests/production.utils.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/DummyMachiningModal.tsx
 // change-log:
+// - 2026-10-22: 더미 검색은 로트·환자·치과·치아·임플란트·기공소.
+// - 2026-10-22: 더미 의뢰의 filled STL·CAM 재생성 상태를 카드에 내려준다.
+// - 2026-10-22: 더미를 바꾸면 filled STL·CAM 재생성 여부를 받아 더미 복사본에서 시작한다.
 // - 2026-10-13: 더미에 헥스 회전이 없으면 STL모델대로로 채운다. 가공 각도와 무관하다.
 // - 2026-10-13: 더미 가공이 끝나면 세척.패킹으로 넘기지 않고 대기열에서 뺀다. 더미설정은 유지.
 // - 2026-10-06: Next Up에서 더미를 빼도 더미설정은 유지한다.
@@ -35,7 +38,15 @@ import {
   normalizeDiameterGroupValue,
 } from "./distribution.utils.js";
 import { compareMachiningQueueOrder } from "../requests/production.utils.js";
-import { pickFilledStlFileForClone } from "../../utils/filledStlFile.js";
+import {
+  pickFilledStlFileForClone,
+  resolveFilledStlFile,
+} from "../../utils/filledStlFile.js";
+import {
+  assertDummyRegenPossible,
+  resolveDummyRegenChoice,
+  startDummyArtifactRegen,
+} from "./dummyArtifactRegen.js";
 
 const DUMMY_SAMPLE_HEX_ROTATION_MODE = "STL모델대로";
 const DIAMETER_GROUPS = ["6", "8", "10", "12", "14"];
@@ -53,6 +64,10 @@ const DUMMY_PRODUCT_SELECT = [
   "productionSchedule.assignedMachine",
   "productionSchedule.machiningRecord",
   "productionSchedule.machiningProgress.elapsedSeconds",
+  "productionSchedule.dummySampleSourceRequestId",
+  "productionSchedule.stlPreload",
+  "productionSchedule.ncPreload",
+  "productionSchedule.dummyArtifactRegen",
   "caseInfos.clinicName",
   "caseInfos.patientName",
   "caseInfos.tooth",
@@ -63,6 +78,7 @@ const DUMMY_PRODUCT_SELECT = [
   "caseInfos.maxDiameter",
   "caseInfos.connectionDiameter",
   "caseInfos.totalLength",
+  "caseInfos.file",
   "caseInfos.stlFile",
   "caseInfos.camFile",
   "caseInfos.ncFile",
@@ -138,6 +154,36 @@ function resolveNcLocator(doc) {
   return { hasNc: Boolean(fileName && (bridgePath || s3Key)) };
 }
 
+function trackArtifact(asked, status, hasFile) {
+  if (!asked) return "idle";
+  const state = String(status || "").trim().toUpperCase();
+  if (state === "FAILED") return "failed";
+  if (state === "GENERATING" || state === "UPLOADING") return "running";
+  if (hasFile) return "done";
+  return "running";
+}
+
+function toArtifactRegen(doc) {
+  const asked = doc?.productionSchedule?.dummyArtifactRegen;
+  if (!asked || (!asked.filledStl && !asked.cam)) return null;
+  const nc = resolveNcLocator(doc);
+  return {
+    filledStl: trackArtifact(
+      asked.filledStl,
+      doc?.productionSchedule?.stlPreload?.status,
+      Boolean(String(resolveFilledStlFile(doc?.caseInfos)?.s3Key || "").trim()),
+    ),
+    cam: trackArtifact(
+      asked.cam,
+      doc?.productionSchedule?.ncPreload?.status,
+      nc.hasNc,
+    ),
+    requestedAt: asked.requestedAt || null,
+    filledError: String(doc?.productionSchedule?.stlPreload?.error || "").trim(),
+    camError: String(doc?.productionSchedule?.ncPreload?.error || "").trim(),
+  };
+}
+
 function toDummyProductDto(doc) {
   if (!doc) return null;
   const caseInfos = doc.caseInfos || {};
@@ -153,6 +199,10 @@ function toDummyProductDto(doc) {
     manufacturerStage: String(doc.manufacturerStage || "").trim() || null,
     createdAt: doc.createdAt || null,
     hasNc: nc.hasNc,
+    sourceRequestId: String(
+      doc?.productionSchedule?.dummySampleSourceRequestId || "",
+    ).trim(),
+    artifactRegen: toArtifactRegen(doc),
     durationSeconds: resolveDurationSeconds(
       doc?._machiningRecord?.[0] ||
         (doc?.productionSchedule?.machiningRecord &&
@@ -581,6 +631,25 @@ async function materializeSavedRows(rows, userId) {
   return next;
 }
 
+function compactSavedRow(row, patch = {}) {
+  const merged = { ...(row || {}), ...patch };
+  const regen = merged.artifactRegen;
+  const out = {
+    diameterGroup: normalizeGroup(merged.diameterGroup),
+    requestId: String(merged.requestId || "").trim(),
+    selectedAt: merged.selectedAt || null,
+    selectedBy: merged.selectedBy || null,
+  };
+  if (regen && typeof regen === "object" && (regen.filledStl || regen.cam)) {
+    out.artifactRegen = {
+      filledStl: Boolean(regen.filledStl),
+      cam: Boolean(regen.cam),
+      requestedAt: regen.requestedAt || null,
+    };
+  }
+  return out;
+}
+
 async function readSavedRows() {
   const settings = await SystemSettings.findOne({ key: "global" })
     .select({ dummyMachiningProducts: 1 })
@@ -647,15 +716,51 @@ export async function getDummyMachiningProduct(req, res) {
 
 export async function searchDummyMachiningProducts(req, res) {
   try {
-    const lot = String(req.query?.lot || "").trim();
+    const queryText = String(req.query?.q || req.query?.lot || "").trim();
     const diameterGroup = normalizeGroup(req.query?.diameterGroup);
-    if (!lot && !diameterGroup) {
+    if (!queryText && !diameterGroup) {
       return res.json({
         success: true,
         data: { items: [], hasMore: false, nextSkip: 0 },
       });
     }
-    const regex = lot ? new RegExp(escapeRegex(lot), "i") : null;
+    const regex = queryText ? new RegExp(escapeRegex(queryText), "i") : null;
+    let matchedRequestorIds = [];
+    if (regex) {
+      const users = await User.find({
+        $or: [{ name: regex }, { business: regex }],
+      })
+        .select("_id")
+        .limit(40)
+        .lean();
+      matchedRequestorIds = users.map((user) => user._id);
+    }
+    const textMatch = regex
+      ? {
+          $or: [
+            { "lotNumber.value": regex },
+            { "caseInfos.patientName": regex },
+            { "caseInfos.clinicName": regex },
+            { "caseInfos.implantManufacturer": regex },
+            { "caseInfos.implantBrand": regex },
+            { "caseInfos.implantFamily": regex },
+            {
+              $expr: {
+                $regexMatch: {
+                  input: {
+                    $toString: { $ifNull: ["$caseInfos.tooth", ""] },
+                  },
+                  regex: escapeRegex(queryText),
+                  options: "i",
+                },
+              },
+            },
+            ...(matchedRequestorIds.length
+              ? [{ requestor: { $in: matchedRequestorIds } }]
+              : []),
+          ],
+        }
+      : null;
     const band = diameterGroup ? diameterBandQuery(diameterGroup) : null;
     const skip = Math.max(
       0,
@@ -666,7 +771,7 @@ export async function searchDummyMachiningProducts(req, res) {
       {
         $match: {
           source: { $ne: "dummy_sample" },
-          ...(regex ? { "lotNumber.value": regex } : {}),
+          ...(textMatch || {}),
           ...(band ? { "caseInfos.maxDiameter": band } : {}),
         },
       },
@@ -829,6 +934,8 @@ export async function selectDummyMachiningProduct(req, res) {
         message: `이 제품은 Ø${diameterGroup} 소재에 맞지 않습니다.`,
       });
     }
+    const choice = resolveDummyRegenChoice(req.body);
+    assertDummyRegenPossible(doc, choice);
 
     const current = await readSavedRows();
     const previous = current.find(
@@ -845,21 +952,27 @@ export async function selectDummyMachiningProduct(req, res) {
     if (previousId && previousId !== String(copy.requestId)) {
       await retireDummySample(previousId);
     }
+    const requestedAt = new Date();
     const nextRows = current
       .filter((row) => normalizeGroup(row?.diameterGroup) !== diameterGroup)
-      .map((row) => ({
-        diameterGroup: normalizeGroup(row?.diameterGroup),
-        requestId: String(row?.requestId || "").trim(),
-        selectedAt: row?.selectedAt || null,
-        selectedBy: row?.selectedBy || null,
-      }))
+      .map((row) => compactSavedRow(row))
       .filter((row) => row.diameterGroup && row.requestId);
-    nextRows.push({
-      diameterGroup,
-      requestId: String(copy.requestId),
-      selectedAt: new Date(),
-      selectedBy: req.user?._id || null,
-    });
+    nextRows.push(
+      compactSavedRow({
+        diameterGroup,
+        requestId: String(copy.requestId),
+        selectedAt: requestedAt,
+        selectedBy: req.user?._id || null,
+        artifactRegen:
+          choice.filledStl || choice.cam
+            ? {
+                filledStl: choice.filledStl,
+                cam: choice.cam,
+                requestedAt,
+              }
+            : null,
+      }),
+    );
 
     await SystemSettings.findOneAndUpdate(
       { key: "global" },
@@ -867,19 +980,31 @@ export async function selectDummyMachiningProduct(req, res) {
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
 
+    const regen = choice.filledStl || choice.cam
+      ? await startDummyArtifactRegen(copy, choice)
+      : { started: false, message: "" };
     const savedCopy = await findRequestByRequestId(copy.requestId);
     return res.json({
       success: true,
       data: {
         diameterGroup,
         product: toDummyProductDto(savedCopy || copy),
+        regen: {
+          filledStl: choice.filledStl,
+          cam: choice.cam,
+          started: Boolean(regen.started),
+          message: regen.message || "",
+        },
       },
     });
   } catch (error) {
     console.error("selectDummyMachiningProduct failed", error);
-    return res.status(500).json({
+    const status = Number(error?.statusCode || 500);
+    return res.status(status >= 400 && status < 600 ? status : 500).json({
       success: false,
-      message: "더미 제품 저장에 실패했습니다.",
+      message: error?.statusCode
+        ? error.message
+        : "더미 제품 저장에 실패했습니다.",
     });
   }
 }
@@ -899,12 +1024,7 @@ export async function clearDummyMachiningProduct(req, res) {
     const current = await readSavedRows();
     const nextRows = current
       .filter((row) => normalizeGroup(row?.diameterGroup) !== diameterGroup)
-      .map((row) => ({
-        diameterGroup: normalizeGroup(row?.diameterGroup),
-        requestId: String(row?.requestId || "").trim(),
-        selectedAt: row?.selectedAt || null,
-        selectedBy: row?.selectedBy || null,
-      }))
+      .map((row) => compactSavedRow(row))
       .filter((row) => row.diameterGroup && row.requestId);
 
     await SystemSettings.findOneAndUpdate(
