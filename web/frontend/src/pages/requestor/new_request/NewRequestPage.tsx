@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-23: 생산 의뢰 화면 라벨 — 치과·기공소 모두 커스텀어벗 의뢰하기. 치과 보철은 기공소에 의뢰하기.
 // - 2026-10-23: 기공소 이동 라벨 — 치과의뢰 수신하기. 중복 안내 — 커스텀어벗 의뢰하기.
 // - 2026-09-26: 기공소 구강스캔 안내 라벨 — 치과로부터 → 어벗츠로부터.
 // - 2026-08-21: 아노 토글 시 기존 첨부 카드에도 동기화(툴바 ON인데 제출 OFF race/혼선 방지). 첨부 시드는 툴바 값 우선.
@@ -126,10 +127,12 @@ const NewRequestPageContent = () => {
   const guideTour = useGuideTour();
   const isLabRequestor = requestorKind === "lab";
   const isPracticeRequestor = requestorKind === "practice";
-  /** 사이드바 SSOT: 치과=기공소에, 기공소=치과의뢰 수신하기 */
+  /** 사이드바 SSOT: 치과=기공소에 의뢰하기, 기공소=치과의뢰 수신하기 */
   const oralScanPageLabel = isLabRequestor
     ? "치과의뢰 수신하기"
-    : "기공소에";
+    : "기공소에 의뢰하기";
+  /** 사이드바 SSOT: 치과·기공소 모두 커스텀어벗 의뢰하기 */
+  const abutmentMenuLabel = "커스텀어벗 의뢰하기";
   const oralScanPageHref = isLabRequestor
     ? authUser?.role === "internalLab"
       ? "/dashboard/lab-work"
@@ -1181,7 +1184,7 @@ const NewRequestPageContent = () => {
       if (ext === ".ply" || ext === ".obj") {
         rejectedFiles.push({
           name: file.name,
-          reason: `어벗생산의뢰는 STL만 받을 수 있어요. PLY/OBJ는 ${oralScanPageLabel} 페이지를 이용해주세요.`,
+          reason: `${abutmentMenuLabel} 화면은 STL만 받습니다. PLY/OBJ는 ${oralScanPageLabel} 페이지를 이용해주세요.`,
         });
         return;
       }
@@ -1513,7 +1516,7 @@ const NewRequestPageContent = () => {
             onEscapeKeyDown={(e) => e.preventDefault()}
           >
             <DialogHeader>
-              <DialogTitle>어벗생산의뢰</DialogTitle>
+              <DialogTitle>{abutmentMenuLabel}</DialogTitle>
               <DialogDescription>
                 커스텀 어벗 디자인(STL) 파일로 CNC 생산을 의뢰하는 메뉴입니다.
               </DialogDescription>
@@ -1631,7 +1634,7 @@ const NewRequestPageContent = () => {
                   />
                 </div>
               ) : null}
-              <p>그래도 어벗생산의뢰로 첨부할까요?</p>
+              <p>그래도 {abutmentMenuLabel} 화면으로 첨부할까요?</p>
             </div>
           }
         />

@@ -105,7 +105,7 @@ export function NewRequestDesignAbutmentFields({
   const isLabRequestor = requestorKind === "lab";
   const oralScanPageLabel = isLabRequestor
     ? "치과의뢰 수신하기"
-    : "기공소에";
+    : "기공소에 의뢰하기";
   const oralScanPageHref = isLabRequestor
     ? authUser?.role === "internalLab"
       ? "/dashboard/lab-work"

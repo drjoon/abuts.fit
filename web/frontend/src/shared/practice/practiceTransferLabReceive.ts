@@ -292,7 +292,7 @@ export type PracticeTransferLabReceiveDisplayStatus =
   | "수신완료"
   | "발송완료";
 
-/** 사이드바「기공의뢰수신」과 동일: 작업시작 전 의뢰(1) + 채팅 unread.
+/** 사이드바「치과의뢰 수신하기」와 동일: 작업시작 전 의뢰(1) + 채팅 unread.
  * 열람(isRead)만으로는 빠지지 않음 — 작업시작 전에 놓치는 것을 막는다.
  * 치과 삭제(status=deleted|레거시 canceled)는 수신 미확인 집계에서 빠지므로 채팅 unread만 센다.
  */

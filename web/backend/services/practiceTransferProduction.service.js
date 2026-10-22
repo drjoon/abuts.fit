@@ -1154,7 +1154,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   const designSoftware = String(labMeta.designSoftware || "").trim();
   if (!designSoftware) {
     throw new Error(
-      "기공소 디자인 소프트웨어가 설정되지 않았습니다. 기공의뢰수신 또는 어벗생산의뢰에서 먼저 설정해주세요.",
+      "기공소 디자인 소프트웨어가 설정되지 않았습니다. 치과의뢰 수신하기 또는 커스텀어벗 의뢰하기에서 먼저 설정해주세요.",
     );
   }
   const exoCadVersion = labMeta.exoCadVersion || null;

@@ -211,7 +211,7 @@
   - 크레딧은 선불전자지급수단(선불페이)이 아니라 **B2B 거래 선수금/예치금**(플랫폼 내 계약 물품·용역: 기공·커스텀어벗·스토어 기성품만). 충전 화면·FAQ·약관·입금 확인에 `크레딧(거래 선수금)`을 명시한다.
   - 크레딧 충전: `vatAmount = 0`, `amountTotal = supplyAmount`. **입금(충전) 시점에는 (세금)계산서를 발행하지 않는다.** 선결제 크레딧은 **어벗츠 커스텀어벗 주문**에만 쓴다(기공소·기공실 있는 치과).
   - **치과 OB 결제 증빙**: 이체 성공 금액에 맞춘다. 스토어=어벗츠 법인 과세 세금계산서(`ABUTS_TO_CUSTOMER`, SELF). 어벗츠 기공사업부가 수행한 기공·커스텀어벗=법인 면세 계산서 한 장(`ABUTS_TO_CUSTOMER`, SELF). 다른 기공소가 수행한 기공=그 기공소 면세 계산서(`LAB_TO_PRACTICE`, 팝빌 위수탁 TRUSTEE). 한 장에 면세·과세를 섞지 않는다.
-  - **월말 선결제 증빙**: 기공소·기공실 있는 치과가 어벗츠에 주문한 커스텀어벗 사용분(`REQUEST_SPEND_COMMIT`)만 어벗츠 법인 면세 계산서(`ABUTS_TO_CUSTOMER`, SELF). 스토어·기공서비스·배송은 이 월합에 넣지 않는다.
+  - **월말 선결제 증빙**: 기공소·기공실 있는 치과가 커스텀어벗 의뢰하기로 올린 사용분(`REQUEST_SPEND_COMMIT`)만 어벗츠 법인 면세 계산서(`ABUTS_TO_CUSTOMER`, SELF). 스토어·기공서비스·배송은 이 월합에 넣지 않는다.
   - 의뢰자 소비·기공 `REV_ADMIN` 잔여: 공급가 기준, `vatAmount = 0`(면세). 제조사·딜러·개발운영 `REV_*`는 적립 시 공급가+VAT 기록, **잔액·미정산=포함가**.
   - 제조사·딜러사·개발운영사 장부=포함가. 지급은 잔액 그대로(`SETTLEMENT_PAYOUT`: `amount`/`amountIncludingVat`=입금=잔액 차감, `amountExcludingVat`/`vatAmount`=세금계산서 분해).
   - 보존식·의뢰자 잔액 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 제조사·딜러사·개발운영사 지급 VAT는 어벗츠 추가 지급분(의뢰자 크레딧에서 차감하지 않음).
@@ -244,7 +244,7 @@
   - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`, `STORE_SALE`, `REFUND`
   - `OB_MONTHLY_SETTLEMENT` (치과 오픈뱅킹 월말 일괄정산 완료)
 - **치과 기공의뢰 후불(OB 자동정산) + 커스텀어벗 의뢰하기 선불 크레딧 + 대형 치과 보증금 SSOT (2026-10-17)**:
-  - **월 후불 한도 없음**: 치과 기공의뢰(PTX) 기공비·PTX 어벗·어벗츠에 커스텀어벗은 OB 후불이다. 한도를 두지 않는다(`monthlyCreditLimit` 폐기). OB 장기동의가 **활성**이고 `paymentHold`가 없으면 마이너스 허용(`isPracticeObPostpaidActive`). 90일 재인증 만료·미납은 **신규 PTX**만 잠금(`checkPracticeSettlementLock`) — 데모 기간이 아니다.
+  - **월 후불 한도 없음**: 치과 기공의뢰(PTX) 기공비·PTX 어벗·커스텀어벗 의뢰하기는 OB 후불이다. 한도를 두지 않는다(`monthlyCreditLimit` 폐기). OB 장기동의가 **활성**이고 `paymentHold`가 없으면 마이너스 허용(`isPracticeObPostpaidActive`). 90일 재인증 만료·미납은 **신규 PTX**만 잠금(`checkPracticeSettlementLock`) — 데모 기간이 아니다.
   - **기공소 커스텀어벗 의뢰하기(커스텀어벗 `Request`)**: 치과→**어벗츠 법인** 정산(OB 월 이체 `abuts_corp`). 기공소는 **선충전·무료 크레딧만**(`resolveLabCustomAbutmentCreditHoldPolicy` — PTX 적립·OB overdraft 불가). **런칭 전 베타** ON이면 일반 기공소는 무료크레딧만·`테스트기공소`만 충전 테스트. 치과 `Request`·PTX abutment hold는 OB 후불. OB 정산 잠금은 `Request`에 적용하지 않는다(`checkCreditLock`은 ChargeOrder·거래처 가격 승인만).
   - **미납 시 다음 기공의뢰 즉시 제한**: `checkPracticeSettlementLock`(`utils/creditLock.util.js`)이 정산 예정일이 지났는데 `COMPLETED`가 아닌 월 정산, 자동이체 실패 Hold, 90일 재인증 만료를 잠근다. 신규 PTX 생성(`assertPracticeTransferPaidCreditSufficient({ enforceSettlementLock: true })`)에서만 적용하고 진행 중인 의뢰는 막지 않는다.
   - **OB 장기동의 + 가끔 재인증**: 최초 1회 출금계좌 연결 + 생체인증(Face ID/지문 패스키) 등록 시 90일 유효(`BusinessAnchor.openBankingConsent`). 만료 시 1탭 재인증(`POST /api/practice/billing/reauth`).
@@ -348,7 +348,7 @@
 - UI 라벨 SSOT(`REQUESTOR_KIND_LABEL` / `PRACTICE_IN_HOUSE_LAB_LABEL`):
   - 사업자등록증 검증 후 선택. 설정 > 사업자에서 변경.
   - `practice` + `practiceHasInHouseLab`가 true가 아님(기본): **기공실 없는 치과** — 사이드바는 「기공의뢰」만(내용은 기공소에)
-  - `practice` + `practiceHasInHouseLab: true`(테스트 DB는 평온치과만): **기공실 있는 치과** — 사이드바에 「어벗츠에」
+  - `practice` + `practiceHasInHouseLab: true`(테스트 DB는 평온치과만): **기공실 있는 치과** — 사이드바에 「커스텀어벗 의뢰하기」
   - `lab`: **기공소** — 기공실 유무 구분 없음
 - `requestorServices`는 **paid-only**. `free`(기공의뢰서) 옵션은 폐기. 읽기 시 레거시 `free`는 `paid`로 승격, 쓰기는 `{free:false,paid:true}`.
 - 가입·온보딩 흐름:

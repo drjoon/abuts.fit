@@ -30,6 +30,7 @@ import {
   DASHBOARD_WORK_OUTER_PAD_CLASS,
 } from "@/shared/ui/dashboardChrome";
 
+// - 2026-10-23: 치과 사이드 — 「기공의뢰」그룹 제거. 상위 `기공소에 의뢰하기` · `커스텀어벗 의뢰하기`.
 // - 2026-10-17: 기공소 수신·커스텀어벗 — `compactLabel` + 기공/어벗 accent 밑줄.
 // - 2026-10-17: 기공소·어벗츠기공소 사이드 — 「기공의뢰」그룹 제거. 상위 `치과의뢰 수신하기` · `커스텀어벗 의뢰하기`.
 // - 2026-10-08: 기공소 사이드「할인그룹」폐지.
@@ -200,8 +201,6 @@ import {
   Boxes,
   Package,
   CheckCircle,
-  ScanLine,
-  PenTool,
   Store,
   Headphones,
   Menu,
@@ -295,6 +294,34 @@ const buildLabSidebarRequestItems = (
   },
 ];
 
+const buildPracticeSidebarRequestItems = (options?: {
+  hideAbutment?: boolean;
+}): SidebarItem[] => {
+  const items: SidebarItem[] = [
+    {
+      icon: Building2,
+      label: "기공소에 의뢰하기",
+      href: PRACTICE_ORAL_SCAN_HREF,
+      tooltip: PRACTICE_ORAL_SCAN_REQUEST_TOOLTIP,
+      accent: "기공",
+      compactLabel: true,
+      guideTourSatellite: "oral_calendar",
+    },
+  ];
+  if (!options?.hideAbutment) {
+    items.push({
+      icon: FileText,
+      label: "커스텀어벗 의뢰하기",
+      href: PRACTICE_ABUTMENT_DESIGN_HREF,
+      tooltip: PRACTICE_ABUTMENT_DESIGN_REQUEST_TOOLTIP,
+      accent: "어벗",
+      compactLabel: true,
+      guideTourSatellite: "new_request_workspace",
+    });
+  }
+  return items;
+};
+
 const buildRequestorSidebarItems = (
   kind: "practice" | "lab" | null,
   options?: { hidePracticeAbutment?: boolean },
@@ -312,58 +339,10 @@ const buildRequestorSidebarItems = (
     ];
   }
 
-  if (options?.hidePracticeAbutment) {
-    return [
-      {
-        icon: Building2,
-        label: "기공의뢰",
-        href: PRACTICE_ORAL_SCAN_HREF,
-        tooltip: PRACTICE_ORAL_SCAN_REQUEST_TOOLTIP,
-        accent: "기공",
-        guideTourSatellite: "oral_calendar",
-      },
-      {
-        icon: Store,
-        label: "스토어",
-        href: STORE_HREF,
-        guideTourSatellite: "store_workspace",
-      },
-      {
-        icon: Wallet,
-        label: "정산",
-        href: CREDITS_HREF,
-        guideTourSatellite: "credits_workspace",
-      },
-      ...requestorSidebarCommonTail,
-    ];
-  }
-
   return [
-    {
-      icon: Building2,
-      label: "기공의뢰",
-      href: PRACTICE_ORAL_SCAN_HREF,
-      tooltip: "기공소 보철 의뢰와 어벗츠 CNC 생산 의뢰",
-      guideTourSatellite: ["oral_calendar", "new_request_workspace"],
-      children: [
-        {
-          icon: ScanLine,
-          label: "기공소에",
-          href: PRACTICE_ORAL_SCAN_HREF,
-          tooltip: PRACTICE_ORAL_SCAN_REQUEST_TOOLTIP,
-          accent: "기공",
-          guideTourSatellite: "oral_calendar",
-        },
-        {
-          icon: PenTool,
-          label: "어벗츠에",
-          href: PRACTICE_ABUTMENT_DESIGN_HREF,
-          tooltip: PRACTICE_ABUTMENT_DESIGN_REQUEST_TOOLTIP,
-          accent: "어벗",
-          guideTourSatellite: "new_request_workspace",
-        },
-      ],
-    },
+    ...buildPracticeSidebarRequestItems({
+      hideAbutment: options?.hidePracticeAbutment,
+    }),
     {
       icon: Store,
       label: "스토어",

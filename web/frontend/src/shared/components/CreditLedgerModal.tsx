@@ -517,12 +517,12 @@ type LedgerDisplayRow = {
   item: CreditLedgerItem;
 };
 
-/** 사이드바 SSOT: 치과 기공소에 ↔ 기공소 치과의뢰 수신하기 */
-const PRACTICE_TRANSFER_TYPE_LABEL = "기공의뢰-기공소에";
+/** 사이드바 SSOT: 치과 기공소에 의뢰하기 ↔ 기공소 치과의뢰 수신하기 */
+const PRACTICE_TRANSFER_TYPE_LABEL = "기공소에 의뢰하기";
 const LAB_RECEIVE_TYPE_LABEL = "치과의뢰 수신하기";
 const LAB_REMAKE_CHARGE_TYPE_LABEL = "리메이크 청구";
-/** 사이드바 SSOT: 치과 어벗츠에 ↔ 기공소 커스텀어벗 의뢰하기 */
-const ABUTMENT_DESIGN_TYPE_LABEL = "기공의뢰-어벗츠에";
+/** 사이드바 SSOT: 치과·기공소 커스텀어벗 의뢰하기 */
+const ABUTMENT_DESIGN_TYPE_LABEL = "커스텀어벗 의뢰하기";
 const LAB_ABUTS_REQUEST_TYPE_LABEL = "커스텀어벗 의뢰하기";
 
 const resolvePracticeTransferTypeLabel = (isLabViewer: boolean) =>

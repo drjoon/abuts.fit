@@ -12519,8 +12519,10 @@ export const PracticeFileTransferPage = ({
                 {PRE_PLATFORM_REMAKE_PRACTICE_SEND_HINT}
               </div>
               <div className="text-muted-foreground">
-                기공소에 리메이크비는 무료입니다. 커스텀어벗은 기본 제외이며,
-                작성 화면에서 넣으면 어벗츠에 리메이크는 건당 1만원입니다.
+                기공소에 의뢰하기 리메이크비는 무료입니다.
+                <br />
+                커스텀어벗은 기본 제외이며, 작성 화면에서 넣으면 커스텀어벗
+                의뢰하기 리메이크는 건당 1만원입니다.
                 <br />
                 배송비 판매자 부담.
               </div>

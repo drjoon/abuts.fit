@@ -146,7 +146,7 @@ const stageToPendingLabel = (stages: string[]): string | null => {
 };
 
 /**
- * 기공의뢰(구강스캔으로) 어벗 진행상황 표시 라벨.
+ * 기공소에 의뢰하기 어벗 진행상황 표시 라벨.
  * 한진 운송 현황이 있으면 우선, 없으면 연동 CA 제조 공정/생산 전 문구.
  */
 export const getPracticeAbutmentDeliveryLabel = (input: {

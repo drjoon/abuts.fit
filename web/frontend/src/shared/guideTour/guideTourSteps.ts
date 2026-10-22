@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-10-23: 치과 투어 — 사이드바 「기공소에 의뢰하기」「커스텀어벗 의뢰하기」.
 // - 2026-10-23: 기공소 투어 — 사이드바 「치과의뢰 수신하기」「커스텀어벗 의뢰하기」.
 // - 2026-09-26: lab_calendar — 제목 「기공의뢰 · 어벗츠로부터」.
 // - 2026-10-07: remake·lab_remake — 어벗츠로부터 무료·어벗츠로 건당 1만원.
@@ -163,7 +164,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   // —— 챕터1: 사이드바·캘린더(작성 패널 열기 전) ——
   {
     id: "oral_calendar",
-    title: "기공의뢰 · 기공소에",
+    title: "기공소에 의뢰하기",
     hint: "캘린더에서 기공물 도착 날짜를 눌러 신규 의뢰서를 작성합니다",
     path: PRACTICE_ORAL_PATH,
     target: "oral_calendar",
@@ -171,13 +172,13 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     chapter: 1,
     // 작성 패널(compose)은 열지 않음 — 다음 oral_* 영화형에서 openCompose
   },
-  // —— 챕터1: 「기공소에」기공의뢰 작성 (영화형) ——
+  // —— 챕터1: 「기공소에 의뢰하기」작성 (영화형) ——
   ...practiceOralMovieSteps,
   // —— 챕터1: 리메이크 ——
   {
     id: "remake",
     title: "리메이크 의뢰",
-    hint: "이전 의뢰·가입 전 건도 리메이크할 수 있습니다. 기공소에 리메이크비는 무료입니다.",
+    hint: "이전 의뢰·가입 전 건도 리메이크할 수 있습니다. 기공소에 의뢰하기 리메이크비는 무료입니다.",
     path: PRACTICE_ORAL_PATH,
     target: "practice_remake",
     advance: "next",
@@ -224,10 +225,10 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     chapter: 2,
     creditsTab: "autopay",
   },
-  // —— 챕터3: 커스텀어벗(사이드바「어벗츠에」) ——
+  // —— 챕터3: 커스텀어벗(사이드바「커스텀어벗 의뢰하기」) ——
   {
     id: "abutment",
-    title: "기공의뢰 · 어벗츠에",
+    title: "커스텀어벗 의뢰하기",
     hint: "완성된 어벗 디자인(STL)을 올려 CNC 생산을 의뢰합니다.",
     path: NEW_REQUEST_PATH,
     target: "new_request_workspace",
@@ -238,7 +239,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "complete",
     title: "가이드투어 완료",
-    hint: "투어를 모두 마쳤습니다. 확인하면 「기공소에」로 이동합니다.",
+    hint: "투어를 모두 마쳤습니다. 확인하면 「기공소에 의뢰하기」로 이동합니다.",
     target: null,
     advance: "next",
   },

@@ -750,7 +750,7 @@ export function PracticeObBillingTab() {
       ) : null}
 
       <p className="text-center text-[11px] text-slate-400">
-        CNC 생산 의뢰는 「어벗츠에」에서 별도로 진행합니다.
+        CNC 생산 의뢰는 「커스텀어벗 의뢰하기」에서 별도로 진행합니다.
       </p>
     </div>
   );

@@ -188,7 +188,7 @@ export function PracticeCustomAbutmentSpecsDialog({
   onCancel,
   onAbutmentProductModeChange,
   lockedAbutmentProductMode = null,
-  alternateAbutmentModePageLabel = "기공소에",
+  alternateAbutmentModePageLabel = "기공소에 의뢰하기",
   onAlternateAbutmentModeNavigate,
   implantConnections,
   implantFavorites,
@@ -522,7 +522,7 @@ export function PracticeCustomAbutmentSpecsDialog({
                 if (
                   lockedMode === ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION
                 ) {
-                  return `디자인+생산 의뢰가 선택됩니다. 생산만 의뢰는 어벗생산의뢰 페이지로 이동합니다. ${abutmentSideHint}`;
+                  return `디자인+생산 의뢰가 선택됩니다. 생산만 의뢰는 커스텀어벗 의뢰하기 페이지로 이동합니다. ${abutmentSideHint}`;
                 }
                 if (lockedMode === ABUTMENT_PRODUCT_MODE.PRODUCTION) {
                   return `생산만 의뢰가 선택됩니다. 디자인+생산 의뢰는 ${alternateAbutmentModePageLabel} 페이지로 이동합니다. ${abutmentSideHint}`;

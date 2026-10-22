@@ -145,7 +145,7 @@ export async function aggregatePracticeMonthUsage({
         .lean(),
     ]);
 
-  // 기공실 있는 치과가 어벗츠에 내는 커스텀어벗은 선결제 크레딧이다. OB 이체에 넣지 않는다.
+  // 기공실 있는 치과가 커스텀어벗 의뢰하기로 내는 건은 선결제 크레딧이다. OB 이체에 넣지 않는다.
   const customAbutmentOnPrepaidCredit =
     String(practiceAnchor?.requestorKind || "") === "practice" &&
     practiceAnchor?.practiceHasInHouseLab === true;

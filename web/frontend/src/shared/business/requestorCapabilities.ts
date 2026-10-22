@@ -286,7 +286,7 @@ export const coalesceRequestorKind = (
   return null;
 };
 
-/** 기공실 있는 치과(true)만 어벗츠에를 본다. 치과가 true가 아니면 숨긴다. */
+/** 기공실 있는 치과(true)만 커스텀어벗 의뢰하기를 본다. 치과가 true가 아니면 숨긴다. */
 export const practiceHidesAbutmentSidebar = (
   kind?: RequestorKind | string | null,
   practiceHasInHouseLab?: boolean | null,

@@ -886,7 +886,7 @@ export type PracticeTransferRequestIntakePanelProps = {
   onAlternateAbutmentModeNavigate?: () => void;
   /**
    * 생산만 고정일 때 디자인+생산 이동 안내 라벨.
-   * 치과=`기공소에`, 기공소=`치과의뢰 수신하기`. 기본=`기공소에`.
+   * 치과=`기공소에 의뢰하기`, 기공소=`치과의뢰 수신하기`. 기본=`기공소에 의뢰하기`.
    */
   alternateAbutmentModePageLabel?: string;
   /** 값이 바뀌면 치식 차트를 M(전치부) 위치로 되돌린다 (새로 작성 등) */
@@ -1030,7 +1030,7 @@ export const PracticeTransferRequestIntakePanel = ({
   onDefaultAbutmentProductModeChange,
   lockedAbutmentProductMode,
   onAlternateAbutmentModeNavigate,
-  alternateAbutmentModePageLabel = "기공소에",
+  alternateAbutmentModePageLabel = "기공소에 의뢰하기",
   toothChartResetNonce = 0,
   showFeeEstimate = false,
   remake = false,

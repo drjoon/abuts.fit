@@ -171,7 +171,7 @@ export const PricingPolicyDialog = ({
   const isRequestorPreview = variant === 'requestor';
   /**
    * 딜러 「의뢰자 정책」은 기공소 안내.
-   * 치과 본인 「가격 · 출고 정책」은 기공소에 무료 / 어벗츠에 건당 1만원.
+   * 치과 본인 「가격 · 출고 정책」은 기공소에 의뢰하기 무료 / 커스텀어벗 의뢰하기 건당 1만원.
    */
   const remakeAudience: RemakePolicyAudience =
     isRequestorPreview || isLab ? 'lab' : 'practice';

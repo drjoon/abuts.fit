@@ -45,7 +45,7 @@ const CHOICES: readonly Choice[] = [
   {
     key: "with",
     label: PRACTICE_IN_HOUSE_LAB_LABEL.with,
-    description: "어벗 생산도 어벗츠에 의뢰합니다.",
+    description: "어벗 생산은 커스텀어벗 의뢰하기에서 합니다.",
     icon: Microscope,
   },
   {
