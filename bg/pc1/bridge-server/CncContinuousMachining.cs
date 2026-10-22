@@ -3,6 +3,7 @@
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/cnc/production.js
 // change-log:
+// - 2026-10-22: 의뢰건 NC는 가공마다 S3(백엔드 presign)에서 새로 받는다. batchContinue·동일 jobId 연속(qty)만 로컬 캐시 재사용.
 // - 2026-10-19: 수량 반복(batchContinue)은 완료 직후 120초 중복 차단을 한 번 통과해 다음 개를 큐에 넣는다.
 // - 2026-10-13: 가공 실패는 fail 통지 한 번. ALARM tick을 같이 보내지 않는다.
 // - 2026-10-10: Next Up 파일은 시작 직전에 S3에서 temp로 흘린다. 바이트 배열로 올리지 않는다.
@@ -520,6 +521,7 @@ public static bool TryEnqueueProcessRequest(
     if (!string.IsNullOrEmpty(sk)) job.s3Key = sk;
     var sb = (s3Bucket ?? string.Empty).Trim();
     if (!string.IsNullOrEmpty(sb)) job.s3Bucket = sb;
+    job.batchContinue = batchContinue;
 
     return true;
 }
@@ -577,6 +579,8 @@ public string LastCompletedFileKey;
 public DateTime LastCompletedRequestAtUtc;
 // 수량 반복: 완료 1회당 batchContinue enqueue를 한 번만 허용
 public bool BatchContinueAccepted;
+// 동일 큐 jobId(qty>1) 연속 pop 시 NC 재다운로드 생략
+public string LastNcUploadedJobId;
 // 마지막 관측 MachineStatusType (로그 변화 감지)
 public MachineStatusType LastObservedStatus;
 public bool HasLastObservedStatus;
@@ -2081,6 +2085,66 @@ private static void TryArchiveMachiningNc(CncJobItem job, string content)
     }
 }
 
+private static bool IsRequestMachiningJob(CncJobItem job)
+{
+    var rid = NormalizeRequestId(job?.requestId, job?.fileName, job?.originalFileName);
+    return !string.IsNullOrEmpty(rid);
+}
+
+private static bool ShouldReuseCachedNcProgram(CncJobItem job, MachineState state)
+{
+    if (job == null) return false;
+    if (job.batchContinue) return true;
+    var jid = (job.id ?? string.Empty).Trim();
+    if (string.IsNullOrEmpty(jid) || state == null) return false;
+    var last = (state.LastNcUploadedJobId ?? string.Empty).Trim();
+    return !string.IsNullOrEmpty(last) && string.Equals(last, jid, StringComparison.OrdinalIgnoreCase);
+}
+
+private static async Task TryEnsureJobS3KeyFromBackend(string machineId, CncJobItem job)
+{
+    try
+    {
+        if (job == null) return;
+        if (!string.IsNullOrEmpty((job.s3Key ?? string.Empty).Trim())) return;
+        if (!IsRequestMachiningJob(job)) return;
+        var backendBase = Config.BackendBase;
+        if (string.IsNullOrEmpty(backendBase)) return;
+        var rid = NormalizeRequestId(job.requestId, job.fileName, job.originalFileName);
+        if (string.IsNullOrEmpty(rid)) return;
+        var url = backendBase.TrimEnd('/') + "/cnc-machines/bridge/nc-file-meta?requestId=" + Uri.EscapeDataString(rid);
+        string text;
+        using (var req = new HttpRequestMessage(HttpMethod.Get, url))
+        {
+            AddSecretHeader(req);
+            using (var resp = await BackendClient.SendAsync(req))
+            {
+                text = await resp.Content.ReadAsStringAsync();
+                if (!resp.IsSuccessStatusCode)
+                {
+                    Console.WriteLine("[CncMachining] nc-file-meta failed requestId={0} status={1}", rid, (int)resp.StatusCode);
+                    return;
+                }
+            }
+        }
+        var root = JObject.Parse(text);
+        if (root.Value<bool?>("success") != true) return;
+        var data = root["data"] as JObject;
+        var sk = (data?["s3Key"]?.ToString() ?? string.Empty).Trim();
+        var sb = (data?["s3Bucket"]?.ToString() ?? string.Empty).Trim();
+        if (!string.IsNullOrEmpty(sk)) job.s3Key = sk;
+        if (!string.IsNullOrEmpty(sb)) job.s3Bucket = sb;
+        if (!string.IsNullOrEmpty(sk))
+        {
+            Console.WriteLine("[CncMachining] nc-file-meta resolved requestId={0} s3Key={1}", rid, sk);
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("[CncMachining] TryEnsureJobS3KeyFromBackend error: {0}", ex.Message);
+    }
+}
+
 private static async Task<(bool Success, string Error)> UploadProgramToSlot(string machineId, CncJobItem job, int slotNo)
 {
     string error = null;
@@ -2088,6 +2152,18 @@ private static async Task<(bool Success, string Error)> UploadProgramToSlot(stri
     try
     {
         if (job == null) return (false, null);
+
+        MachineState uploadState = null;
+        lock (StateLock)
+        {
+            MachineStates.TryGetValue(machineId, out uploadState);
+        }
+        var reuseCachedNc = ShouldReuseCachedNcProgram(job, uploadState);
+        var isRequestJob = IsRequestMachiningJob(job);
+        if (isRequestJob)
+        {
+            await TryEnsureJobS3KeyFromBackend(machineId, job);
+        }
 
         // 더미 job: 파일 업로드 없이 programNo로 직접 활성화
         if (job.kind == CncJobKind.Dummy)
@@ -2109,9 +2185,21 @@ private static async Task<(bool Success, string Error)> UploadProgramToSlot(stri
             return (false, error);
         }
 
-        if (!File.Exists(fullPath))
+        var hasS3Key = !string.IsNullOrEmpty((job?.s3Key ?? string.Empty).Trim());
+        if (isRequestJob && hasS3Key && !reuseCachedNc)
         {
-            var hasS3Key = !string.IsNullOrEmpty((job?.s3Key ?? string.Empty).Trim());
+            TryDeleteFile(fullPath);
+            var refreshed = await TryDownloadAndCacheFromS3(machineId, job, fullPath);
+            if (!refreshed || !File.Exists(fullPath))
+            {
+                Console.WriteLine("[CncMachining] NC refresh from S3 failed machine={0} jobId={1} requestId={2} path={3}", machineId, job?.id, job?.requestId, fullPath);
+                error = "NC refresh from S3 failed: " + fullPath;
+                return (false, error);
+            }
+            Console.WriteLine("[CncMachining] NC refreshed from S3 machine={0} jobId={1} requestId={2}", machineId, job?.id, job?.requestId);
+        }
+        else if (!File.Exists(fullPath))
+        {
             if (hasS3Key)
             {
                 // S3 job은 temp 파일 경로가 초기에는 없는 것이 정상이다.
@@ -2171,6 +2259,12 @@ private static async Task<(bool Success, string Error)> UploadProgramToSlot(stri
                 }
             }
         }
+        else if (isRequestJob && !hasS3Key && !reuseCachedNc)
+        {
+            Console.WriteLine("[CncMachining] stale bridge-store NC rejected machine={0} jobId={1} requestId={2} path={3}", machineId, job?.id, job?.requestId, fullPath);
+            error = "request NC must be loaded from backend (missing s3Key)";
+            return (false, error);
+        }
 
         var isTempFile = !string.IsNullOrEmpty(job.s3Key);
         var content = File.ReadAllText(fullPath);
@@ -2201,6 +2295,16 @@ private static async Task<(bool Success, string Error)> UploadProgramToSlot(stri
 
         Console.WriteLine("[CncMachining] upload ok machine={0} jobId={1} slot=O{2} usedMode={3}", machineId, job?.id, slotNo, usedMode);
         TryArchiveMachiningNc(job, processedContent);
+        if (isRequestJob && uploadState != null && !string.IsNullOrEmpty(job?.id))
+        {
+            lock (StateLock)
+            {
+                if (MachineStates.TryGetValue(machineId, out var st) && st != null)
+                {
+                    st.LastNcUploadedJobId = job.id;
+                }
+            }
+        }
         if (isTempFile)
         {
             TryDeleteFile(fullPath);
@@ -2349,6 +2453,12 @@ paused = j?["paused"]?.Value<bool?>() ?? false;
 catch { paused = false; }
 // 백엔드 allowAutoStart가 오면 그대로 사용, 없으면 기본 false (Play로만 시작)
 var allowAutoStart = j?["allowAutoStart"]?.Value<bool?>() ?? false;
+var batchContinue = false;
+try
+{
+batchContinue = j?["batchContinue"]?.Value<bool?>() ?? false;
+}
+catch { batchContinue = false; }
 var qty = 1;
 try
 {
@@ -2373,6 +2483,7 @@ createdAtUtc = DateTime.UtcNow,
 source = string.IsNullOrEmpty(source) ? "backend_db" : source,
 paused = paused,
 allowAutoStart = allowAutoStart,
+batchContinue = batchContinue,
 });
 }
 try

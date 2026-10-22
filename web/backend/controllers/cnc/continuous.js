@@ -585,6 +585,12 @@ export async function enqueueBridgeContinuousJobFromDb(req, res) {
     }
 
     const bridgePath = String(reqDoc?.caseInfos?.ncFile?.filePath || "").trim();
+    const s3Key = String(reqDoc?.caseInfos?.ncFile?.s3Key || "").trim();
+    const s3Bucket = String(
+      reqDoc?.caseInfos?.ncFile?.s3Bucket ||
+        process.env.AWS_S3_BUCKET_NAME ||
+        "abuts-fit",
+    ).trim();
     const rawFileName = String(
       reqDoc?.caseInfos?.ncFile?.fileName || "",
     ).trim();
@@ -596,11 +602,11 @@ export async function enqueueBridgeContinuousJobFromDb(req, res) {
       : "";
     const fileName = rawFileName || derivedFileName;
 
-    if (!fileName || !bridgePath) {
+    if (!fileName || (!bridgePath && !s3Key)) {
       return res.status(400).json({
         success: false,
         message:
-          "NC 파일 정보(fileName/filePath)가 없어 enqueue 할 수 없습니다.",
+          "NC 파일 정보(fileName 및 bridgePath 또는 s3Key)가 없어 enqueue 할 수 없습니다.",
       });
     }
 
@@ -630,7 +636,9 @@ export async function enqueueBridgeContinuousJobFromDb(req, res) {
     const payload = {
       fileName,
       requestId,
-      bridgePath,
+      bridgePath: bridgePath || null,
+      s3Key: s3Key || null,
+      s3Bucket: s3Key ? s3Bucket : null,
     };
 
     const resp = await fetch(url, {

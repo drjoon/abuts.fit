@@ -129,6 +129,50 @@ export async function createCncLabDownloadPresign(req, res) {
  * 호출자: bridge-server CncContinuousMachining.TryDownloadAndCacheFromS3()
  * bridge가 가공 명령 시 S3에서 실시간 NC 파일을 내려받기 위해 사용
  */
+/**
+ * bridge-server: requestId로 최신 NC S3 위치 조회 (가공 시 stale bridge-store 파일 방지)
+ * GET /api/cnc-machines/bridge/nc-file-meta?requestId=...
+ */
+export async function getNcFileMetaForBridge(req, res) {
+  try {
+    const requestId = String(req.query?.requestId || "").trim();
+    if (!requestId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "requestId is required" });
+    }
+
+    const Request = (await import("../../models/request.model.js")).default;
+    const doc = await Request.findOne({ requestId })
+      .select("caseInfos.ncFile.s3Key caseInfos.ncFile.s3Bucket")
+      .lean();
+    const s3Key = String(doc?.caseInfos?.ncFile?.s3Key || "").trim();
+    if (!s3Key) {
+      return res.status(404).json({
+        success: false,
+        message: "NC s3Key not found for request",
+      });
+    }
+    const s3Bucket = String(
+      doc?.caseInfos?.ncFile?.s3Bucket ||
+        process.env.AWS_S3_BUCKET_NAME ||
+        "abuts-fit",
+    ).trim();
+
+    return res.status(200).json({
+      success: true,
+      data: { requestId, s3Key, s3Bucket },
+    });
+  } catch (error) {
+    console.error("Error in getNcFileMetaForBridge:", error);
+    return res.status(500).json({
+      success: false,
+      message: "NC 메타 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export async function createCncLabDownloadPresignForBridge(req, res) {
   try {
     const { machineId } = req.params;

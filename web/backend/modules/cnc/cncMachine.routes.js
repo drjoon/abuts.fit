@@ -50,6 +50,12 @@ router.get(
   cncMachineController.createCncLabDownloadPresignForBridge,
 );
 router.get(
+  "/bridge/nc-file-meta",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  cncMachineController.getNcFileMetaForBridge,
+);
+router.get(
   "/bridge/machine-flags/:machineId",
   requireBridgeIpAllowlist,
   requireBridgeSecret,

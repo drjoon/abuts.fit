@@ -27,6 +27,7 @@ import {
   createCncLabDownloadPresignForBridge,
   createCncLabUploadPresign,
   enqueueCncLabToDb,
+  getNcFileMetaForBridge,
 } from "../../controllers/cnc/direct.js";
 import {
   enqueueBridgeContinuousJob,
@@ -84,6 +85,7 @@ export {
   getDbBridgeQueueSnapshotForBridge,
   consumeBridgeQueueJobForBridge,
   createCncLabDownloadPresignForBridge,
+  getNcFileMetaForBridge,
   recordMachiningTickForBridge,
   triggerNextAutoMachiningManually,
   recordMachiningStartForBridge,

@@ -50,6 +50,9 @@ namespace HiLinkBridgeWebApi48
         public string source { get; set; }
 
         public bool paused { get; set; }
+
+        // machiningQty 연속 가공: 완료 직후 같은 NC를 bridge-store/S3 캐시에서 재사용
+        public bool batchContinue { get; set; }
     }
 
     public static class CncJobQueue
@@ -211,6 +214,7 @@ namespace HiLinkBridgeWebApi48
                         createdAtUtc = v.createdAtUtc,
                         source = v.source,
                         paused = v.paused,
+                        batchContinue = v.batchContinue,
                     };
                 }
 
