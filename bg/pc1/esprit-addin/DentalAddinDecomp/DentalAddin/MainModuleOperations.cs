@@ -130,7 +130,7 @@ namespace DentalAddin
                     }
 
                     // Safe split(Wide Split): 위 BACK은 Middle_Turn/Middle_Rough.
-                    // Middle_Rough는 Xk+0.8까지 먼저 깎아 D1.2가 미황삭을 물지 않는다.
+                    // Middle_Rough는 Xk+0.5까지 먼저 깎아 D1.0이 미황삭을 물지 않는다.
                     // 부시쪽 목은 BACK2(Back_Turn/Back_Rough)에서 마지막에 깎는다. Finish Middle은 없다.
                     bool safeSplitBack = TryResolveSafeSplitBackZoneX("OperationSeq", out _);
                     if (safeSplitBack)
@@ -1603,9 +1603,9 @@ namespace DentalAddin
                         rangeMaxX = Math.Min(xMax, splitline2 + GetTurnPastFinishSeamMm() + ResolveTurnToolpathCompMm("FRONT"));
                         break;
                     case "BACK" when TryResolveSafeSplitBackZoneX("TurningOp BACK", out double safeZoneEndX):
-                        // Safe split(Middle_Turn): Middle_Rough 끝(Xk+0.8)보다 2.2 더 깎고 퇴출. 헥스 너머 연장·45도 퇴출은 BACK2(Back_Turn)로 미룬다.
+                        // Safe split(Middle_Turn): Middle_Rough 끝(Xk+0.5)보다 D4 반경+보정만큼 더 깎고 퇴출. 헥스 너머 연장·45도 퇴출은 BACK2(Back_Turn)로 미룬다.
                         rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
-                        // Middle_Turn 끝 = Middle_Rough 끝(=Xk+0.6) + 황삭 공구 반경(D4 → 2.0)
+                        // Middle_Turn 끝 = Middle_Rough 끝(=Xk+0.5) + 황삭 공구 반경(D4 → 2.0)
                         rangeMaxX = safeZoneEndX + RoughPastFinishEndMm + GetTurnPastRoughEndMm() + ResolveTurnToolpathCompMm("MIDDLE");
                         break;
                     case "BACK2":
