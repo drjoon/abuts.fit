@@ -345,6 +345,12 @@ const systemSettingsSchema = new mongoose.Schema(
         { type: "C", lotNumber: "" },
         { type: "D", lotNumber: "" },
         { type: "E", lotNumber: "" },
+        { type: "DENTIUM", lotNumber: "" },
+        { type: "OSSTEM", lotNumber: "" },
+        { type: "MEGAGEN", lotNumber: "" },
+        { type: "NEOBIOTECH", lotNumber: "" },
+        { type: "DIO", lotNumber: "" },
+        { type: "DENTIS", lotNumber: "" },
       ],
     },
     // 디자인 클레임 마감 (파트너 → 마감 설정). 클레임 시각 + claimHours.

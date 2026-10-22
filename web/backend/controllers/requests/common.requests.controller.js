@@ -61,6 +61,10 @@ import { createHash } from "crypto";
 import Request from "../../models/request.model.js";
 import { noteLowFinishLineRequest } from "../../services/lowFinishLineWatch.service.js";
 import Connection from "../../models/connection.model.js";
+import {
+  DEFAULT_PACKING_SCREW_TYPES,
+  ensureCanonicalPackingScrewLotItems,
+} from "../../utils/labPracticeScrewSupply.js";
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
 import MachiningRecord from "../../models/machiningRecord.model.js";
@@ -429,7 +433,7 @@ const DEFAULT_MANUAL_PICKUP_REASON_OPTIONS = ["방문 전달"];
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
-const DEFAULT_PACKING_SCREW_TYPES = ["A", "B", "C", "D", "E"];
+// 로트 타입: 어벗츠 A–E + 제조사 풀네임. 헬퍼 labPracticeScrewSupply.js
 
 const normalizePackingScrewType = (value) =>
   String(value || "")
@@ -455,12 +459,14 @@ const normalizePackingScrewLotItems = (itemsRaw, { withDefault = false } = {}) =
     if (items.length >= 50) break;
   }
 
-  if (items.length > 0 || !withDefault) return items;
-
-  return DEFAULT_PACKING_SCREW_TYPES.map((type) => ({
-    type,
-    lotNumber: "",
-  }));
+  if (!withDefault) return items;
+  if (items.length === 0) {
+    return DEFAULT_PACKING_SCREW_TYPES.map((type) => ({
+      type,
+      lotNumber: "",
+    }));
+  }
+  return ensureCanonicalPackingScrewLotItems(items);
 };
 
 const normalizePackingScrewLotSettings = (raw, { withDefault = false } = {}) => {
@@ -1153,9 +1159,11 @@ export async function savePackingScrewLotSettings(req, res) {
 
     let nextItems;
     if (hasItemsPayload) {
-      nextItems = normalizePackingScrewLotSettings(req.body?.items, {
-        withDefault: false,
-      });
+      nextItems = ensureCanonicalPackingScrewLotItems(
+        normalizePackingScrewLotSettings(req.body?.items, {
+          withDefault: false,
+        }),
+      );
     } else {
       // backward compatibility: legacy { lots } payload는 patch merge로 처리
       nextItems = mergePackingScrewLotItems(existing?.packingScrewLotSettings, req.body?.lots);
@@ -1744,6 +1752,7 @@ export async function getAllRequests(req, res) {
       "designClaim",
       "caseInfos.manufacturerHexRotation",
       "caseInfos.anodizingEnabled",
+      "caseInfos.screwSupply",
       "caseInfos.onePassEnabled",
       "caseInfos.retentionGroove",
       "caseInfos.compositeStepIncrementPostOverrideMm",
@@ -1828,6 +1837,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.patientName",
       "caseInfos.tooth",
       "caseInfos.designSoftware",
+      "caseInfos.screwSupply",
       "caseInfos.manufacturerHexRotation",
       "caseInfos.requestorHexRotation",
       "caseInfos.finalHexRotation",
@@ -1894,6 +1904,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.patientName",
       "caseInfos.tooth",
       "caseInfos.designSoftware",
+      "caseInfos.screwSupply",
       "caseInfos.manufacturerHexRotation",
       "caseInfos.anodizingEnabled",
       "caseInfos.onePassEnabled",

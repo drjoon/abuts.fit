@@ -149,6 +149,10 @@ import {
   savePreviewOverlayPrefs,
 } from "../utils/previewOverlayPrefs";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
+import {
+  resolveCaseScrewType,
+  screwTypeOptionLabel,
+} from "@/shared/practice/screwSupply";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { RequestInfoSummary } from "./RequestInfoSummary";
@@ -1185,7 +1189,30 @@ export const PreviewModal = ({
 
     const trackedScrewType = String(activeReq?.screwTracking?.screwType || "").trim();
     const fallbackScrewType = String(
-      trackedScrewType || resolvedSpec?.screwType || "",
+      trackedScrewType ||
+        resolveCaseScrewType({
+          screwSupply: overlayCaseInfos.screwSupply,
+          implantManufacturer:
+            overlayCaseInfos.implantManufacturer ||
+            overlaySpec.implantCompany ||
+            overlayFlat.implantManufacturer,
+          implantBrand:
+            overlayCaseInfos.implantBrand ||
+            overlaySpec.implantBrand ||
+            overlaySpec.implantProduct ||
+            overlayFlat.implantBrand,
+          implantFamily:
+            overlayCaseInfos.implantFamily ||
+            overlaySpec.implantFamily ||
+            overlayFlat.implantFamily,
+          implantType:
+            overlayCaseInfos.implantType ||
+            overlaySpec.implantType ||
+            overlayFlat.implantType,
+          connectionDiameter: activeReq?.caseInfos?.connectionDiameter,
+          connectionScrewType: resolvedSpec?.screwType,
+        }) ||
+        "",
     )
       .trim()
       .toUpperCase();
@@ -3139,8 +3166,32 @@ export const PreviewModal = ({
     ).trim(),
     connectionDiameter: overlayCaseInfos?.connectionDiameter,
   });
-  const packScrewType = String(packResolvedSpec?.screwType || "").trim();
+  const packScrewType = resolveCaseScrewType({
+    screwSupply: overlayCaseInfos?.screwSupply,
+    implantManufacturer:
+      overlayCaseInfos?.implantManufacturer ||
+      overlaySpec?.implantCompany ||
+      overlayFlat?.implantManufacturer,
+    implantBrand:
+      overlayCaseInfos?.implantBrand ||
+      overlaySpec?.implantBrand ||
+      overlaySpec?.implantProduct ||
+      overlayFlat?.implantBrand,
+    implantFamily:
+      overlayCaseInfos?.implantFamily ||
+      overlaySpec?.implantFamily ||
+      overlayFlat?.implantFamily,
+    implantType:
+      overlayCaseInfos?.implantType ||
+      overlaySpec?.implantType ||
+      overlayFlat?.implantType,
+    connectionDiameter: overlayCaseInfos?.connectionDiameter,
+    connectionScrewType: packResolvedSpec?.screwType,
+  });
   const trackedScrewType = String((activeReq as any)?.screwTracking?.screwType || "").trim();
+  const packScrewTypeLabel = screwTypeOptionLabel(
+    packScrewType || trackedScrewType,
+  );
   const trackedScrewLotNumber = String(
     (activeReq as any)?.screwTracking?.lotNumber || "",
   ).trim();
@@ -3170,11 +3221,9 @@ export const PreviewModal = ({
 
   const overlayPackMetaItems = [
     packMailboxCode ? `메일함: ${packMailboxCode}` : "",
-    trackedScrewType
-      ? `스크류타입: ${trackedScrewType}`
-      : packScrewType && packScrewType !== "-"
-        ? `스크류타입: ${packScrewType}`
-        : "",
+    packScrewType || trackedScrewType
+      ? `스크류타입: ${packScrewType || trackedScrewType}`
+      : "",
     `스크류 로트번호: ${trackedScrewLotNumber || "미설정"}`,
     packMaterial ? `재질: ${packMaterial}` : "",
   ].filter(Boolean);
@@ -3395,6 +3444,16 @@ export const PreviewModal = ({
                   {requestorDesignSoftwareLabel}
                 </span>
               </div>
+              {packScrewTypeLabel ? (
+                <div
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-1"
+                  title="스크류 타입"
+                >
+                  <span className="whitespace-nowrap text-[12px] font-semibold text-slate-700">
+                    {packScrewTypeLabel}
+                  </span>
+                </div>
+              ) : null}
               <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-1">
                 <span className="whitespace-nowrap text-[11px] font-semibold text-slate-500">
                   헥스 회전

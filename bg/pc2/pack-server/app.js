@@ -287,7 +287,7 @@ const buildPackingLabelZpl = (payload) => {
 
   // Fallback: 간단한 텍스트 기반 ZPL (한글은 영문으로 표시)
   const mailboxCode = safeText(payload.mailboxCode || "-", 12).toUpperCase();
-  const screwType = safeText(payload.screwType || "-", 4).toUpperCase();
+  const screwType = safeText(payload.screwType || "-", 20).toUpperCase();
   const lotNumber = safeText(payload.lotNumber || "-", 26).toUpperCase();
   const lotSuffix = String(lotNumber || "").slice(-3) || "-";
   const labName = safeText(payload.labName || "-", 20);

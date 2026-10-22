@@ -4,12 +4,14 @@
 // - web/frontend/src/shared/components/PastRequestsModal.tsx
 // - web/frontend/src/features/requestSettings/RequestSettingsToolbar.tsx
 // change-log:
+// - 2026-10-23: 스크류 타입 뱃지 — 어벗츠 A–E, 제조사 풀네임.
 // - 2026-10-23: PTX 연동 CA 뱃지 «치과의뢰 수신하기».
 // - 2026-09-26: PTX 연동 CA 뱃지 «치과로부터» → «어벗츠로부터».
 // - 2026-08-22: PTX 연동 CA 뱃지 «기공의뢰» → «치과로부터 수신».
 // - 2026-08-21: 기공의뢰(PTX) 연동 CA에 «기공의뢰» 뱃지.
 // - 2026-08-16: secondary 배경이 카드에서 안 보여 muted+border 필로 명시(가시성).
 // - 2026-08-16: 어벗생산의뢰 파일카드·기공의뢰수신 카드 공통 메타 뱃지(디자인SW·아노).
+import { screwTypeOptionLabel } from "@/shared/practice/screwSupply";
 import { cn } from "@/shared/ui/cn";
 
 /**
@@ -22,6 +24,8 @@ export const REQUEST_CASE_META_BADGE_CLASS =
 export type RequestCaseMetaBadgesProps = {
   designSoftware?: string | null;
   anodizingEnabled?: boolean | null;
+  /** 어벗츠 A–E 또는 제조사 풀네임 */
+  screwType?: string | null;
   /** ExoCAD 첫의뢰 헥스 확인용 복사샘플 */
   hexVerificationSample?: boolean | null;
   /** 치과→기공의뢰수신 → 어벗츠 CA (partnerBilling.relatedPracticeTransferId) */
@@ -33,15 +37,17 @@ export type RequestCaseMetaBadgesProps = {
 export function RequestCaseMetaBadges({
   designSoftware,
   anodizingEnabled,
+  screwType,
   hexVerificationSample = false,
   practiceTransferLinked = false,
   className,
 }: RequestCaseMetaBadgesProps) {
   const software = String(designSoftware || "").trim();
   const hasAnodizing = typeof anodizingEnabled === "boolean";
+  const screwLabel = screwTypeOptionLabel(screwType);
   const isHexSample = Boolean(hexVerificationSample);
   const isPracticeTransfer = Boolean(practiceTransferLinked);
-  if (!software && !hasAnodizing && !isHexSample && !isPracticeTransfer) {
+  if (!software && !hasAnodizing && !screwLabel && !isHexSample && !isPracticeTransfer) {
     return null;
   }
 
@@ -74,6 +80,9 @@ export function RequestCaseMetaBadges({
         <span className={REQUEST_CASE_META_BADGE_CLASS}>
           {anodizingEnabled ? "아노 ON" : "아노 OFF"}
         </span>
+      ) : null}
+      {screwLabel ? (
+        <span className={REQUEST_CASE_META_BADGE_CLASS}>{screwLabel}</span>
       ) : null}
     </span>
   );

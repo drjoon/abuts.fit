@@ -29,6 +29,11 @@ import Request from "../../models/request.model.js";
 import Machine from "../../models/machine.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
 import Connection from "../../models/connection.model.js";
+import {
+  normalizeScrewSupply,
+  resolvePackingScrewType,
+  SCREW_SUPPLY_MANUFACTURER,
+} from "../../utils/labPracticeScrewSupply.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
@@ -265,7 +270,16 @@ const resolveScrewTypeByRequestCaseInfos = async (request) => {
 };
 
 const autoAssignPackingScrewLotIfPossible = async ({ request, actorUser }) => {
-  const screwType = await resolveScrewTypeByRequestCaseInfos(request);
+  const supply = normalizeScrewSupply(request?.caseInfos?.screwSupply);
+  const connectionScrewType =
+    supply === SCREW_SUPPLY_MANUFACTURER
+      ? ""
+      : await resolveScrewTypeByRequestCaseInfos(request);
+  const screwType = resolvePackingScrewType({
+    screwSupply: supply,
+    implantManufacturer: request?.caseInfos?.implantManufacturer,
+    connectionScrewType,
+  });
   if (!screwType) return;
 
   const settings = await SystemSettings.findOne({ key: "global" })

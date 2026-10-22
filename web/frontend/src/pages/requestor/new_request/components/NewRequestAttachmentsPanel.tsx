@@ -45,6 +45,7 @@
 // - web/frontend/src/shared/shipping/estimateShipDate.ts
 import { Badge } from "@/components/ui/badge";
 import { RequestCaseMetaBadges } from "@/features/requestSettings/RequestCaseMetaBadges";
+import { resolveCaseScrewType } from "@/shared/practice/screwSupply";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -209,6 +210,14 @@ function renderCaseMetaBadges(fileInfo?: CaseInfos | null) {
           ? fileInfo.anodizingEnabled
           : null
       }
+      screwType={resolveCaseScrewType({
+        screwSupply: fileInfo?.screwSupply,
+        implantManufacturer: fileInfo?.implantManufacturer,
+        implantBrand: fileInfo?.implantBrand,
+        implantFamily: fileInfo?.implantFamily,
+        implantType: fileInfo?.implantType,
+        connectionDiameter: fileInfo?.connectionDiameter,
+      })}
     />
   );
 }

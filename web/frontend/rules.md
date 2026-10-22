@@ -576,6 +576,9 @@ Notes:
   승인 요청 바디(`processBothHexVariants`)로 백엔드 복사 생성 분기를 전달합니다.
   - 관련 파일: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`, `src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts`
 
+- 스크류 타입 표시: 어벗츠 정품은 커넥션 `A`–`E`, 제조사 호환은 `DENTIUM` `OSSTEM` `MEGAGEN` `NEOBIOTECH` `DIO` `DENTIS`. 진행중·파일카드·워크시트 카드·`PreviewModal`에서 디자인SW·아노다이징 옆에 둔다. 세척.패킹 로트 설정도 같은 타입 목록.
+  - 헬퍼: `src/shared/practice/screwSupply.ts`, `web/backend/utils/labPracticeScrewSupply.js`
+
 - `PreviewModal` 상단 아노다이징 체크박스 표시/override 정책:
   - 의뢰건 SSOT는 `caseInfos.anodizingEnabled`. 신규의뢰에서 카드 단위로 저장·생성 시 스냅샷.
   - 표시 우선순위는 `caseInfos.anodizingEnabled` → (레거시 미설정만) `business.requestSettings.anodizingEnabled` → 기본 ON.

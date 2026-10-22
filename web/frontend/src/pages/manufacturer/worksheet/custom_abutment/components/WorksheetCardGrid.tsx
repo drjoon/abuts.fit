@@ -66,6 +66,10 @@ import {
 } from "lucide-react";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import {
+  resolveCaseScrewType,
+  screwTypeOptionLabel,
+} from "@/shared/practice/screwSupply";
+import {
   type ManufacturerRequest,
   computeStageLabel,
   deriveStageForFilter,
@@ -752,9 +756,22 @@ export const WorksheetCardGrid = ({
             tabStage === "packing") &&
           !rhinoWorkPending &&
           Boolean(String(resolveFilledStlFile(caseInfos)?.s3Key || "").trim());
+        const displayedScrewType = resolveCaseScrewType({
+          screwSupply: (caseInfos as { screwSupply?: unknown }).screwSupply,
+          implantManufacturer: caseInfos.implantManufacturer,
+          implantBrand: caseInfos.implantBrand,
+          implantFamily: caseInfos.implantFamily,
+          implantType: caseInfos.implantType,
+          connectionDiameter: (caseInfos as { connectionDiameter?: unknown })
+            .connectionDiameter,
+          connectionScrewType: resolvedConnectionSpec.screwType,
+        });
         const showScrewTypeBadge =
-          tabStage === "packing" &&
-          Boolean(resolvedConnectionSpec.screwType);
+          (tabStage === "request" ||
+            tabStage === "cam" ||
+            tabStage === "packing" ||
+            isMachiningStage) &&
+          Boolean(displayedScrewType);
         const showSideSpecBadges =
           shouldShowAnodizingOffBadge ||
           showLotShortBadge ||
@@ -1560,9 +1577,13 @@ export const WorksheetCardGrid = ({
                         {showScrewTypeBadge && (
                           <Badge
                             variant="outline"
-                            className="whitespace-nowrap text-[16px] px-3 py-1 font-extrabold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong"
+                            className={`whitespace-nowrap px-3 py-1 font-extrabold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong ${
+                              displayedScrewType.length > 2
+                                ? "text-[12px]"
+                                : "text-[16px]"
+                            }`}
                           >
-                            스크류 {resolvedConnectionSpec.screwType}
+                            {screwTypeOptionLabel(displayedScrewType)}
                           </Badge>
                         )}
                         {tabStage === "packing" && isPrinted && (

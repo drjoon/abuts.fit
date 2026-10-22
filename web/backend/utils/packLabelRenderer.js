@@ -370,14 +370,18 @@ const renderPackLabelToCanvas = async (opts) => {
   drawVLine(M + col1W + col2W, curY, row1H);
   ctx.font = FONT_HEADER;
   fillTextCenteredInBox(opts.mailboxCode || "-", M, curY, col1W, row1H, 8);
-  fillTextCenteredInBox(
-    opts.screwType || "-",
-    M + col1W,
-    curY,
-    col2W,
-    row1H,
-    8,
-  );
+  {
+    const screwLabel = String(opts.screwType || "-");
+    const screwMaxW = Math.max(0, col2W - 16);
+    let screwSize = 50;
+    while (screwSize > 16) {
+      ctx.font = `bold ${screwSize}px NotoSans, Arial`;
+      if (ctx.measureText(screwLabel).width <= screwMaxW) break;
+      screwSize -= 2;
+    }
+    fillTextCenteredInBox(screwLabel, M + col1W, curY, col2W, row1H, 8);
+  }
+  ctx.font = FONT_HEADER;
   fillTextCenteredInBox(lotSuffix, M + col1W + col2W, curY, col3W, row1H, 8);
 
   ctx.imageSmoothingEnabled = false;

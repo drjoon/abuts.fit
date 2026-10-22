@@ -54,6 +54,11 @@ import {
 } from "../utils/packLabelRenderer";
 import { savePackingLabelsAsZip } from "../utils/packLabelZip";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
+import {
+  DEFAULT_PACKING_SCREW_TYPES,
+  ensureCanonicalScrewLotItems,
+  resolveCaseScrewType,
+} from "@/shared/practice/screwSupply";
 
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
@@ -779,7 +784,9 @@ export const PackingPageContent = ({
 
   const parseScrewLotResponseItems = useCallback(
     (json: any): ScrewLotSettingItem[] => {
-      const itemsFromApi = normalizeScrewLotItems(json?.data?.items);
+      const itemsFromApi = ensureCanonicalScrewLotItems(
+        normalizeScrewLotItems(json?.data?.items),
+      );
       if (itemsFromApi.length > 0) return itemsFromApi;
 
       // backward compatibility: 레거시 { lots: { A: "..." } } 응답 허용
@@ -1116,7 +1123,16 @@ export const PackingPageContent = ({
         implantType,
         connectionDiameter: (caseInfos as any)?.connectionDiameter,
       });
-      const screwType = resolvedSpec.screwType || "-";
+      const screwType =
+        resolveCaseScrewType({
+          screwSupply: (caseInfos as { screwSupply?: unknown }).screwSupply,
+          implantManufacturer,
+          implantBrand,
+          implantFamily,
+          implantType,
+          connectionDiameter: (caseInfos as any)?.connectionDiameter,
+          connectionScrewType: resolvedSpec.screwType,
+        }) || "-";
       const connectionDiameter =
         resolvedSpec.connectionDiameter != null
           ? resolvedSpec.connectionDiameter
@@ -1852,6 +1868,8 @@ export const PackingPageContent = ({
               <DialogTitle>스크류 로트번호 설정</DialogTitle>
               <DialogDescription>
                 전역 설정입니다. 저장 후 새로 패킹 승인되는 의뢰에는 타입별 최신 로트번호가 스냅샷으로 기록됩니다.
+                <br />
+                어벗츠는 A–E, 제조사 스크류는 제조사 이름입니다.
               </DialogDescription>
             </DialogHeader>
 
@@ -1859,7 +1877,7 @@ export const PackingPageContent = ({
               {screwLotItems.map((row, idx) => (
                 <div
                   key={`${idx}-${row.type}`}
-                  className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[120px_minmax(0,1fr)_44px]"
+                  className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[11rem_minmax(0,1fr)_44px]"
                 >
                   <Input
                     value={row.type}
@@ -1868,6 +1886,16 @@ export const PackingPageContent = ({
                     }
                     placeholder="타입 (예: A)"
                     maxLength={30}
+                    readOnly={(DEFAULT_PACKING_SCREW_TYPES as readonly string[]).includes(
+                      row.type,
+                    )}
+                    className={
+                      (DEFAULT_PACKING_SCREW_TYPES as readonly string[]).includes(
+                        row.type,
+                      )
+                        ? "bg-slate-50 font-semibold"
+                        : undefined
+                    }
                   />
                   <Input
                     value={row.lotNumber}
@@ -1877,14 +1905,20 @@ export const PackingPageContent = ({
                     placeholder="로트번호"
                     maxLength={120}
                   />
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveScrewLotRow(idx)}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-destructive-muted text-destructive hover:bg-destructive-soft"
-                    aria-label={`스크류 타입 ${idx + 1} 삭제`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {(DEFAULT_PACKING_SCREW_TYPES as readonly string[]).includes(
+                    row.type,
+                  ) ? (
+                    <span className="inline-flex h-9 w-9" />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveScrewLotRow(idx)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-destructive-muted text-destructive hover:bg-destructive-soft"
+                      aria-label={`스크류 타입 ${row.type || idx + 1} 삭제`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               ))}
 

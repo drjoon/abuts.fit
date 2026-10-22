@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/table";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { RequestCaseMetaBadges } from "@/features/requestSettings/RequestCaseMetaBadges";
+import { resolveCaseScrewType } from "@/shared/practice/screwSupply";
 import { formatImplantDisplay } from "@/utils/implant";
 import {
   STAGE_BADGE_STYLES,
@@ -233,6 +234,7 @@ type ShippingItemApi = {
   diameter?: string;
   designSoftware?: string | null;
   anodizingEnabled?: boolean | null;
+  screwSupply?: "abuts" | "manufacturer" | null;
   hexVerificationSample?: boolean | null;
   practiceTransferLinked?: boolean | null;
   productMode?: string | null;
@@ -1037,6 +1039,13 @@ export const RequestorBulkShippingBannerCard = ({
                                         ? item.anodizingEnabled
                                         : null
                                     }
+                                    screwType={resolveCaseScrewType({
+                                      screwSupply: item.screwSupply,
+                                      implantManufacturer: item.implantManufacturer,
+                                      implantBrand: item.implantBrand,
+                                      implantFamily: item.implantFamily,
+                                      implantType: item.implantType,
+                                    })}
                                     hexVerificationSample={Boolean(
                                       item.hexVerificationSample,
                                     )}

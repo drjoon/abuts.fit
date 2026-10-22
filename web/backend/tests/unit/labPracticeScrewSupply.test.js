@@ -1,8 +1,10 @@
 // related files:
 // - web/backend/utils/labPracticeScrewSupply.js
 import {
+  ensureCanonicalPackingScrewLotItems,
   findLabPracticeScrewSupply,
   normalizeScrewSupply,
+  resolvePackingScrewType,
   resolveScrewSupply,
   toPracticeNameKey,
   upsertLabPracticeScrewSupplyList,
@@ -81,5 +83,58 @@ describe("labPracticeScrewSupply", () => {
     expect(resolveScrewSupply("manufacturer", "abuts")).toBe("manufacturer");
     expect(resolveScrewSupply("", "manufacturer")).toBe("manufacturer");
     expect(resolveScrewSupply("", "")).toBe("abuts");
+  });
+
+  test("packing screw type is A-E for abuts and a full manufacturer name otherwise", () => {
+    expect(
+      resolvePackingScrewType({
+        screwSupply: "abuts",
+        implantManufacturer: "NEOBIOTECH",
+        connectionScrewType: "a",
+      }),
+    ).toBe("A");
+    expect(
+      resolvePackingScrewType({
+        screwSupply: "manufacturer",
+        implantManufacturer: "네오바이오텍",
+        connectionScrewType: "A",
+      }),
+    ).toBe("NEOBIOTECH");
+    expect(
+      resolvePackingScrewType({
+        screwSupply: "manufacturer",
+        implantManufacturer: "osstem",
+      }),
+    ).toBe("OSSTEM");
+    expect(
+      resolvePackingScrewType({
+        screwSupply: "manufacturer",
+        implantManufacturer: "Unknown",
+      }),
+    ).toBe("");
+  });
+
+  test("canonical lot rows keep saved lots and append manufacturer types", () => {
+    const next = ensureCanonicalPackingScrewLotItems([
+      { type: "A", lotNumber: "JUN26-04" },
+      { type: "custom", lotNumber: "X" },
+    ]);
+    expect(next.map((row) => row.type)).toEqual([
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "DENTIUM",
+      "OSSTEM",
+      "MEGAGEN",
+      "NEOBIOTECH",
+      "DIO",
+      "DENTIS",
+      "CUSTOM",
+    ]);
+    expect(next[0].lotNumber).toBe("JUN26-04");
+    expect(next.find((row) => row.type === "NEOBIOTECH")?.lotNumber).toBe("");
+    expect(next.find((row) => row.type === "CUSTOM")?.lotNumber).toBe("X");
   });
 });

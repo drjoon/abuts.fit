@@ -15,6 +15,7 @@ import {
   type PackLabelRenderOptions,
 } from "./packLabelRenderer";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
+import { resolveCaseScrewType } from "@/shared/practice/screwSupply";
 
 const requireNonEmptyString = (
   value: unknown,
@@ -134,7 +135,17 @@ export const buildPackLabelRenderOptions = ({
 
   return {
     mailboxCode: resolvePackMailboxCode(req),
-    screwType: resolvedSpec.screwType || "-",
+    screwType:
+      resolveCaseScrewType({
+        screwSupply: (caseInfos as { screwSupply?: unknown }).screwSupply,
+        implantManufacturer,
+        implantBrand,
+        implantFamily,
+        implantType,
+        connectionDiameter: (caseInfos as { connectionDiameter?: unknown })
+          .connectionDiameter,
+        connectionScrewType: resolvedSpec.screwType,
+      }) || "-",
     lotNumber: fullLotNumber,
     requestId: req.requestId,
     clinicName,

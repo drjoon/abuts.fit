@@ -8,6 +8,7 @@ import {
   buildPackLabelBitmapZpl,
 } from "./packLabelRenderer.js";
 import SystemSettings from "../models/systemSettings.model.js";
+import { resolvePackingScrewType } from "./labPracticeScrewSupply.js";
 
 const PACK_PRINT_SERVER_BASE = (
   process.env.PACK_PRINT_SERVER_BASE || "http://localhost:8004"
@@ -482,8 +483,12 @@ function resolvePackImplantSpec(request) {
 
 export function resolveScrewTypeForPrint(request) {
   const matched = resolvePackImplantSpec(request);
-  if (matched?.screwType) return matched.screwType;
-  return "-";
+  const screwType = resolvePackingScrewType({
+    screwSupply: request?.caseInfos?.screwSupply,
+    implantManufacturer: request?.caseInfos?.implantManufacturer,
+    connectionScrewType: matched?.screwType,
+  });
+  return screwType || "-";
 }
 
 export function resolveConnectionDiameterForPrint(request) {

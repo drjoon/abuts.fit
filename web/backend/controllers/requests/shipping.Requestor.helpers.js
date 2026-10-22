@@ -740,6 +740,7 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
         typeof ci.designSoftware === "string" ? ci.designSoftware.trim() : "",
       anodizingEnabled:
         typeof ci.anodizingEnabled === "boolean" ? ci.anodizingEnabled : null,
+      screwSupply: ci.screwSupply === "manufacturer" ? "manufacturer" : "abuts",
       hexVerificationSample: Boolean(ci.hexVerificationSample === true),
       practiceTransferLinked: Boolean(
         r?.partnerBilling?.relatedPracticeTransferId,

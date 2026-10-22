@@ -46,6 +46,10 @@ const bulkShippingSnapshotItemSchema = new mongoose.Schema(
       type: Boolean,
       default: null,
     },
+    screwSupply: {
+      type: String,
+      default: "",
+    },
     productMode: {
       type: String,
       default: "",

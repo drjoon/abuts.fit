@@ -59,11 +59,30 @@ import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { getHanjinDeliveryStatusLabel } from "@/shared/shipping/hanjinTrackingLabel";
 import { RequestCaseMetaBadges } from "@/features/requestSettings/RequestCaseMetaBadges";
+import { resolveCaseScrewType } from "@/shared/practice/screwSupply";
 import {
   PRACTICE_TRANSFER_CANCEL_FROM_ABUTS_MESSAGE,
   isPracticeTransferLinkedRequest,
 } from "@/shared/practice/practiceTransferAbutsCancel";
 import { cn } from "@/shared/ui/cn";
+
+function caseMetaScrewType(ci: {
+  screwSupply?: unknown;
+  implantManufacturer?: unknown;
+  implantBrand?: unknown;
+  implantFamily?: unknown;
+  implantType?: unknown;
+  connectionDiameter?: unknown;
+} | null | undefined) {
+  return resolveCaseScrewType({
+    screwSupply: ci?.screwSupply,
+    implantManufacturer: ci?.implantManufacturer,
+    implantBrand: ci?.implantBrand,
+    implantFamily: ci?.implantFamily,
+    implantType: ci?.implantType,
+    connectionDiameter: ci?.connectionDiameter,
+  });
+}
 import {
   MobileActionCloseButton,
   mobileActionOverlayContentClassName,
@@ -880,6 +899,7 @@ export const PastRequestsModal = ({
                                 ? ci.anodizingEnabled
                                 : null
                             }
+                            screwType={caseMetaScrewType(ci)}
                             hexVerificationSample={Boolean(
                               (ci as { hexVerificationSample?: boolean })
                                 ?.hexVerificationSample,
@@ -1036,6 +1056,7 @@ export const PastRequestsModal = ({
                                 ? ci.anodizingEnabled
                                 : null
                             }
+                            screwType={caseMetaScrewType(ci)}
                             hexVerificationSample={Boolean(
                               (ci as { hexVerificationSample?: boolean })
                                 ?.hexVerificationSample,
