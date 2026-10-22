@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: 중단된 filled STL(stlPreload CANCELLED)의 늦은 2-filled는 저장하지 않는다.
 // - 2026-10-22: 더미 filled STL 재생성 성공 시 예약된 CAM을 더미 의뢰에 잇는다. 실패하면 CAM은 시작하지 않는다.
 // - 2026-10-21: 피니시라인 1mm 미만은 짧은 커프 명단에 남긴다(응답 후).
 // - 2026-10-20: request-meta One Pass는 포스트·치은 스텝이 같을 때만 true.
@@ -824,6 +825,30 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
 
   // 취소된 의뢰의 2-filled 콜백은 DB/UI를 다시 깨우지 않는다.
   // (Rhino는 완료 로그를 남기지만, 준비 탭 고스트「라이노 작업중」재발 방지)
+  if (
+    String(sourceStep || "").trim() === "2-filled" &&
+    String(request?.productionSchedule?.stlPreload?.status || "")
+      .trim()
+      .toUpperCase() === "CANCELLED"
+  ) {
+    console.warn("[BG-Callback] Ignored 2-filled after regen cancel", {
+      requestId: request?.requestId || null,
+      fileName,
+    });
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          found: true,
+          ignored: true,
+          reason: "filled_stl_regeneration_cancelled",
+          requestId: request?.requestId || null,
+        },
+        "중단된 filled STL 재생성 결과는 저장하지 않습니다.",
+      ),
+    );
+  }
+
   if (
     String(sourceStep || "").trim() === "2-filled" &&
     String(request?.manufacturerStage || "").trim() === "취소"

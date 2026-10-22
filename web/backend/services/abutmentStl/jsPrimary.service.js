@@ -4,6 +4,7 @@
 // - web/backend/services/abutmentStl/pipeline.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx (JS 실패 뱃지)
 // change-log:
+// - 2026-10-22: 중단된 filled STL은 업로드·등록하지 않는다.
 // - 2026-10-22: JS filled STL 실패 시 더미에 예약된 CAM은 시작하지 않는다.
 // - 2026-10-21: JS 계산은 람다(60초). 넘기거나 실패하면 준비 카드에 사유를 남긴다.
 // - 2026-10-10: JS 실패는 카드 뱃지만 남기고 원격 Rhino로 넘기지 않는다.
@@ -193,6 +194,16 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
     if (blended?.buffer?.length) output = blended.buffer;
   }
   lap("cuff");
+  const cancelled = await Request.findOne({ requestId })
+    .select({ "productionSchedule.stlPreload.status": 1 })
+    .lean();
+  if (
+    String(cancelled?.productionSchedule?.stlPreload?.status || "")
+      .trim()
+      .toUpperCase() === "CANCELLED"
+  ) {
+    return { skipped: "cancelled" };
+  }
   const uploaded = await uploadFileToS3(
     output,
     s3Key,

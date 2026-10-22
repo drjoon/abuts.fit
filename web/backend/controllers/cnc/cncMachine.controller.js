@@ -60,6 +60,7 @@ import {
   searchDummyMachiningProducts,
   selectDummyMachiningProduct,
   clearDummyMachiningProduct,
+  cancelDummyMachiningRegen,
   enqueueDummyMachiningProduct,
   dequeueDummyMachiningProduct,
 } from "../../controllers/cnc/dummyProduct.js";
@@ -124,6 +125,7 @@ export {
   searchDummyMachiningProducts,
   selectDummyMachiningProduct,
   clearDummyMachiningProduct,
+  cancelDummyMachiningRegen,
   enqueueDummyMachiningProduct,
   dequeueDummyMachiningProduct,
   initializeMachines,

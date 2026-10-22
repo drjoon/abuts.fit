@@ -44,6 +44,7 @@ import {
 } from "../../utils/filledStlFile.js";
 import {
   assertDummyRegenPossible,
+  cancelDummyArtifactRegen,
   resolveDummyRegenChoice,
   startDummyArtifactRegen,
 } from "./dummyArtifactRegen.js";
@@ -68,6 +69,7 @@ const DUMMY_PRODUCT_SELECT = [
   "productionSchedule.stlPreload",
   "productionSchedule.ncPreload",
   "productionSchedule.dummyArtifactRegen",
+  "productionSchedule.dummyCamAfterFilled",
   "caseInfos.clinicName",
   "caseInfos.patientName",
   "caseInfos.tooth",
@@ -158,27 +160,41 @@ function trackArtifact(asked, status, hasFile) {
   if (!asked) return "idle";
   const state = String(status || "").trim().toUpperCase();
   if (state === "FAILED") return "failed";
+  if (state === "CANCELLED") return "cancelled";
   if (state === "GENERATING" || state === "UPLOADING") return "running";
   if (hasFile) return "done";
+  return "running";
+}
+
+function trackCamArtifact(doc, asked) {
+  if (!asked?.cam) return "idle";
+  const status = doc?.productionSchedule?.ncPreload?.status;
+  const state = String(status || "").trim().toUpperCase();
+  if (state === "FAILED") return "failed";
+  if (state === "CANCELLED") return "cancelled";
+  if (state === "GENERATING" || state === "UPLOADING") return "running";
+  if (doc?.productionSchedule?.dummyCamAfterFilled) return "waiting";
+  if (resolveNcLocator(doc).hasNc) return "done";
+  if (asked.filledStl) return "waiting";
   return "running";
 }
 
 function toArtifactRegen(doc) {
   const asked = doc?.productionSchedule?.dummyArtifactRegen;
   if (!asked || (!asked.filledStl && !asked.cam)) return null;
-  const nc = resolveNcLocator(doc);
   return {
     filledStl: trackArtifact(
       asked.filledStl,
       doc?.productionSchedule?.stlPreload?.status,
       Boolean(String(resolveFilledStlFile(doc?.caseInfos)?.s3Key || "").trim()),
     ),
-    cam: trackArtifact(
-      asked.cam,
-      doc?.productionSchedule?.ncPreload?.status,
-      nc.hasNc,
-    ),
+    cam: trackCamArtifact(doc, asked),
     requestedAt: asked.requestedAt || null,
+    filledStartedAt: doc?.productionSchedule?.stlPreload?.updatedAt || asked.requestedAt || null,
+    camStartedAt:
+      String(doc?.productionSchedule?.ncPreload?.status || "").toUpperCase() === "GENERATING"
+        ? doc?.productionSchedule?.ncPreload?.updatedAt || null
+        : null,
     filledError: String(doc?.productionSchedule?.stlPreload?.error || "").trim(),
     camError: String(doc?.productionSchedule?.ncPreload?.error || "").trim(),
   };
@@ -1005,6 +1021,27 @@ export async function selectDummyMachiningProduct(req, res) {
       message: error?.statusCode
         ? error.message
         : "더미 제품 저장에 실패했습니다.",
+    });
+  }
+}
+
+export async function cancelDummyMachiningRegen(req, res) {
+  try {
+    const requestId = String(req.body?.requestId || "").trim();
+    await cancelDummyArtifactRegen(requestId);
+    const doc = await findRequestByRequestId(requestId);
+    return res.json({
+      success: true,
+      data: { product: toDummyProductDto(doc) },
+    });
+  } catch (error) {
+    console.error("cancelDummyMachiningRegen failed", error);
+    const status = Number(error?.statusCode || 500);
+    return res.status(status >= 400 && status < 600 ? status : 500).json({
+      success: false,
+      message: error?.statusCode
+        ? error.message
+        : "재생성을 중단하지 못했습니다.",
     });
   }
 }

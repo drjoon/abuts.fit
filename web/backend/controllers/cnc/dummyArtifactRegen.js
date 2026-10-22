@@ -6,6 +6,7 @@
 // - web/backend/controllers/requests/common.review.esprit.js
 // - web/backend/rules.md
 // change-log:
+// - 2026-10-22: CAM은 새 filled STL이 저장된 뒤에만 시작한다. 중단은 대기 중인 CAM도 끊는다.
 // - 2026-10-22: 더미 교체 시 filled STL·CAM 재생성. filled를 고르면 CAM을 이어서 더미 의뢰에만 저장.
 import Request from "../../models/request.model.js";
 import { resolveFilledStlFile } from "../../utils/filledStlFile.js";
@@ -113,22 +114,19 @@ export async function startDummyArtifactRegen(requestLike, choice) {
     ),
   };
   if (choice.filledStl) {
+    // CAM은 새 filled STL이 더미 의뢰에 저장된 뒤에만 시작한다.
     await Request.updateOne(
       { requestId },
       {
-        $set: {
-          ...baseSet,
-          ...(choice.cam
-            ? {
-                "productionSchedule.ncPreload": {
-                  status: "GENERATING",
-                  updatedAt: requestedAt,
-                },
-              }
-            : {}),
-        },
+        $set: baseSet,
         ...(choice.cam
-          ? { $unset: { "caseInfos.ncFile": 1, "caseInfos.espFile": 1 } }
+          ? {
+              $unset: {
+                "caseInfos.ncFile": 1,
+                "caseInfos.espFile": 1,
+                "productionSchedule.ncPreload": 1,
+              },
+            }
           : {}),
       },
     );
@@ -179,12 +177,95 @@ export async function continueDummyCamAfterFilled(request) {
   );
   const modified = Number(claimed?.modifiedCount ?? claimed?.nModified ?? 0);
   if (!modified) return;
+  const fresh = await Request.findOne({ requestId })
+    .select({
+      caseInfos: 1,
+      "productionSchedule.stlPreload.status": 1,
+      "productionSchedule.ncPreload.status": 1,
+    })
+    .lean();
+  const stlStatus = String(
+    fresh?.productionSchedule?.stlPreload?.status || "",
+  ).toUpperCase();
+  const ncStatus = String(
+    fresh?.productionSchedule?.ncPreload?.status || "",
+  ).toUpperCase();
+  if (
+    stlStatus === "CANCELLED" ||
+    stlStatus === "FAILED" ||
+    ncStatus === "CANCELLED"
+  ) {
+    return;
+  }
+  const filledKey = String(resolveFilledStlFile(fresh?.caseInfos)?.s3Key || "");
+  const ownsFilled = filledKey.includes(`requests/${requestId}/`);
+  if (!ownsFilled) {
+    const message = await markCamFailed(
+      requestId,
+      "새 filled STL이 없어 CAM을 시작하지 못했습니다.",
+    );
+    console.warn(
+      `[dummy-artifact] skip CAM until dummy filled STL exists requestId=${requestId} s3Key=${filledKey} ${message}`,
+    );
+    return;
+  }
   const result = await triggerCam(requestId);
   if (!result.started) {
     console.warn(
       `[dummy-artifact] CAM after filled STL failed requestId=${requestId}: ${result.message}`,
     );
   }
+}
+
+/** 진행 중인 filled STL·대기 CAM·CAM 생성을 끊는다. */
+export async function cancelDummyArtifactRegen(requestId) {
+  const rid = String(requestId || "").trim();
+  if (!rid) throw httpError(400, "requestId가 필요합니다.");
+  const doc = await Request.findOne({ requestId: rid })
+    .select({
+      source: 1,
+      requestCategory: 1,
+      "productionSchedule.stlPreload.status": 1,
+      "productionSchedule.ncPreload.status": 1,
+      "productionSchedule.dummyCamAfterFilled": 1,
+    })
+    .lean();
+  if (!doc) throw httpError(404, "더미 의뢰를 찾지 못했습니다.");
+  const source = String(doc.source || "").trim();
+  const category = String(doc.requestCategory || "").trim();
+  if (source !== "dummy_sample" && category !== "dummy_sample") {
+    throw httpError(409, "더미 의뢰만 중단할 수 있습니다.");
+  }
+  const stlStatus = String(doc?.productionSchedule?.stlPreload?.status || "").toUpperCase();
+  const ncStatus = String(doc?.productionSchedule?.ncPreload?.status || "").toUpperCase();
+  const camWaiting = Boolean(doc?.productionSchedule?.dummyCamAfterFilled);
+  const stlRunning = stlStatus === "GENERATING";
+  const camRunning = ncStatus === "GENERATING" || ncStatus === "UPLOADING";
+  const now = new Date();
+  const cancelled = {
+    status: "CANCELLED",
+    updatedAt: now,
+    error: "dummy_regen_cancelled",
+  };
+  await Request.updateOne(
+    { requestId: rid },
+    {
+      $set: {
+        "productionSchedule.dummyCamAfterFilled": false,
+        ...(stlRunning ? { "productionSchedule.stlPreload": cancelled } : {}),
+        ...(camWaiting || camRunning
+          ? { "productionSchedule.ncPreload": cancelled }
+          : {}),
+      },
+    },
+  );
+  if (camRunning) {
+    const { abortEspritForNc } = await import(
+      "../requests/common.review.esprit.js"
+    );
+    await abortEspritForNc({ requestId: rid });
+  }
+  return { cancelled: true };
 }
 
 /** filled STL이 실패하면 이어서 CAM을 만들지 않는다. */

@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-10-22: 선택 카드 썸네일 아래에 STL·CAM 막대. 라벨은 STL.
+// - 2026-10-22: CAM 막대는 filled STL이 끝난 뒤에만 찬다. 진행 중 중단.
 // - 2026-10-22: 재생성 확인은 한 줄. 진행은 더미 카드의 filled STL·CAM 막대.
 // - 2026-10-22: 검색은 로트·환자·치과·기공소.
 // - 2026-10-22: 더미를 바꾸기 전에 filled STL·CAM 재생성을 묻는다. filled STL이면 CAM도 켠다.
@@ -37,7 +39,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
 // - web/backend/controllers/cnc/dummyProduct.js
 // - web/backend/controllers/cnc/dummyArtifactRegen.js
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import {
   Dialog,
@@ -61,9 +63,11 @@ export type DummyProduct = {
   hasNc: boolean;
   sourceRequestId?: string;
   artifactRegen?: {
-    filledStl: "idle" | "running" | "done" | "failed";
-    cam: "idle" | "running" | "done" | "failed";
+    filledStl: "idle" | "running" | "waiting" | "done" | "failed" | "cancelled";
+    cam: "idle" | "running" | "waiting" | "done" | "failed" | "cancelled";
     requestedAt?: string | null;
+    filledStartedAt?: string | null;
+    camStartedAt?: string | null;
     filledError?: string;
     camError?: string;
   } | null;
@@ -198,9 +202,11 @@ function formatMachiningTime(seconds?: number | null): string {
 function ProductSummary({
   item,
   compact = false,
+  aside,
 }: {
   item: DummyProduct;
   compact?: boolean;
+  aside?: ReactNode;
 }) {
   const caseInfos = item.caseInfos;
   const lab =
@@ -237,7 +243,7 @@ function ProductSummary({
           </p>
         ) : null}
       </div>
-      <div className="ml-auto mr-2 flex shrink-0 flex-col items-center gap-1">
+      <div className={`ml-auto mr-2 flex shrink-0 flex-col items-center gap-1 ${aside ? "w-[9.5rem]" : ""}`}>
           <div
             className={`overflow-hidden rounded-md border border-slate-200 bg-slate-100 ${
               compact ? "h-16 w-16" : "h-[72px] w-[72px]"
@@ -255,6 +261,7 @@ function ProductSummary({
               {machiningTime}
             </p>
           ) : null}
+          {aside}
         </div>
     </div>
   );
@@ -263,21 +270,25 @@ function ProductSummary({
 function RegenBar({
   label,
   state,
-  requestedAt,
+  startedAt,
   error,
 }: {
   label: string;
-  state: "running" | "done" | "failed";
-  requestedAt?: string | null;
+  state: "running" | "waiting" | "done" | "failed" | "cancelled";
+  startedAt?: string | null;
   error?: string;
 }) {
-  const [pct, setPct] = useState(state === "running" ? 8 : 100);
+  const [pct, setPct] = useState(state === "running" ? 8 : state === "waiting" ? 0 : 100);
   useEffect(() => {
+    if (state === "waiting") {
+      setPct(0);
+      return;
+    }
     if (state !== "running") {
       setPct(100);
       return;
     }
-    const started = requestedAt ? new Date(requestedAt).getTime() : Date.now();
+    const started = startedAt ? new Date(startedAt).getTime() : Date.now();
     const tick = () => {
       const elapsed = Math.max(0, Date.now() - (Number.isFinite(started) ? started : Date.now()));
       setPct(Math.min(92, Math.round(8 + 84 * (1 - Math.exp(-elapsed / 18000)))));
@@ -285,11 +296,21 @@ function RegenBar({
     tick();
     const id = window.setInterval(tick, 400);
     return () => window.clearInterval(id);
-  }, [state, requestedAt]);
-  const width = `${pct}%`;
+  }, [state, startedAt]);
+  const width = state === "cancelled" ? "0%" : `${pct}%`;
+  const caption =
+    state === "failed"
+      ? "실패"
+      : state === "cancelled"
+        ? "중단"
+        : state === "done"
+          ? "완료"
+          : state === "waiting"
+            ? "대기"
+            : `${pct}%`;
   return (
     <div className="flex items-center gap-2" title={state === "failed" ? error || "실패" : undefined}>
-      <span className="w-[4.5rem] shrink-0 text-[11px] font-semibold text-slate-600">
+      <span className="w-7 shrink-0 text-[10px] font-semibold text-slate-600">
         {label}
       </span>
       <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200">
@@ -300,8 +321,8 @@ function RegenBar({
           style={{ width }}
         />
       </div>
-      <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-slate-500">
-        {state === "failed" ? "실패" : state === "done" ? "완료" : `${pct}%`}
+      <span className="w-7 shrink-0 text-right text-[10px] tabular-nums text-slate-500">
+        {caption}
       </span>
     </div>
   );
@@ -355,6 +376,7 @@ export function DummyMachiningModal({
   const [loadingMore, setLoadingMore] = useState(false);
   const [selectingId, setSelectingId] = useState("");
   const [clearing, setClearing] = useState(false);
+  const [cancellingRegen, setCancellingRegen] = useState(false);
   const [pendingRequestId, setPendingRequestId] = useState("");
   const [regenFilled, setRegenFilled] = useState(false);
   const [regenCam, setRegenCam] = useState(false);
@@ -488,7 +510,9 @@ export function DummyMachiningModal({
         );
         const regen = row?.product?.artifactRegen;
         const running =
-          regen?.filledStl === "running" || regen?.cam === "running";
+          regen?.filledStl === "running" ||
+          regen?.cam === "running" ||
+          regen?.cam === "waiting";
         if (!cancelled && running) timer = window.setTimeout(pull, 2000);
       } catch {
         if (!cancelled) timer = window.setTimeout(pull, 2000);
@@ -590,17 +614,59 @@ export function DummyMachiningModal({
       (regenWatchId === product?.requestId ||
         regen.filledStl === "running" ||
         regen.cam === "running" ||
+        regen.cam === "waiting" ||
         regen.filledStl === "failed" ||
-        regen.cam === "failed"),
+        regen.cam === "failed" ||
+        regen.filledStl === "cancelled" ||
+        regen.cam === "cancelled"),
   );
 
   useEffect(() => {
     if (!product?.requestId || !regen) return;
-    const running = regen.filledStl === "running" || regen.cam === "running";
+    const running =
+      regen.filledStl === "running" ||
+      regen.cam === "running" ||
+      regen.cam === "waiting";
     if (running && regenWatchId !== product.requestId) {
       setRegenWatchId(product.requestId);
     }
   }, [product?.requestId, regen, regenWatchId]);
+
+  const cancelRegen = async () => {
+    if (!token || !product?.requestId || cancellingRegen) return;
+    setCancellingRegen(true);
+    try {
+      const res = await fetch("/api/cnc-machines/dummy-product/cancel-regen", {
+        method: "POST",
+        headers: {
+          ...authHeaders(token),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ requestId: product.requestId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        throw new Error(body?.message || "재생성을 중단하지 못했습니다.");
+      }
+      const nextProduct = body?.data?.product || null;
+      if (nextProduct) {
+        setSaved((prev) =>
+          prev.map((row) =>
+            row.diameterGroup === group ? { ...row, product: nextProduct } : row,
+          ),
+        );
+      }
+    } catch (error) {
+      toast({
+        title: "중단 실패",
+        description:
+          error instanceof Error ? error.message : "재생성을 중단하지 못했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setCancellingRegen(false);
+    }
+  };
 
   const selectProduct = async (requestId: string) => {
     if (!token || selectingId || !group) return;
@@ -762,29 +828,43 @@ export function DummyMachiningModal({
                         <X className="h-5 w-5" />
                       </button>
                       {product ? (
-                        <>
-                          <ProductSummary item={product} />
-                          {showRegen && regen ? (
-                            <div className="mt-2 space-y-1.5 pr-2">
-                              {regen.filledStl !== "idle" ? (
-                                <RegenBar
-                                  label="filled STL"
-                                  state={regen.filledStl}
-                                  requestedAt={regen.requestedAt}
-                                  error={regen.filledError}
-                                />
-                              ) : null}
-                              {regen.cam !== "idle" ? (
-                                <RegenBar
-                                  label="CAM"
-                                  state={regen.cam}
-                                  requestedAt={regen.requestedAt}
-                                  error={regen.camError}
-                                />
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </>
+                        <ProductSummary
+                          item={product}
+                          aside={
+                            showRegen && regen ? (
+                              <div className="mt-1 w-full space-y-1">
+                                {regen.filledStl !== "idle" ? (
+                                  <RegenBar
+                                    label="STL"
+                                    state={regen.filledStl === "waiting" ? "running" : regen.filledStl}
+                                    startedAt={regen.filledStartedAt || regen.requestedAt}
+                                    error={regen.filledError}
+                                  />
+                                ) : null}
+                                {regen.cam !== "idle" ? (
+                                  <RegenBar
+                                    label="CAM"
+                                    state={regen.cam}
+                                    startedAt={regen.camStartedAt}
+                                    error={regen.camError}
+                                  />
+                                ) : null}
+                                {regen.filledStl === "running" ||
+                                regen.cam === "running" ||
+                                regen.cam === "waiting" ? (
+                                  <button
+                                    type="button"
+                                    disabled={cancellingRegen}
+                                    className="w-full rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                    onClick={() => void cancelRegen()}
+                                  >
+                                    {cancellingRegen ? "중단 중…" : "중단"}
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : null
+                          }
+                        />
                       ) : (
                         <p className="py-4 text-sm text-slate-500">
                           저장된 더미 제품을 찾지 못했습니다.
@@ -809,7 +889,7 @@ export function DummyMachiningModal({
                             if (on) setRegenCam(true);
                           }}
                         />
-                        filled STL
+                        STL
                       </label>
                       <label className="flex items-center gap-1.5 text-xs text-slate-800">
                         <Checkbox
