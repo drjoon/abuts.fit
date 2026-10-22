@@ -44,7 +44,8 @@ export function assertDummyRegenPossible(sourceDoc, choice) {
   }
   const filled = resolveFilledStlFile(sourceDoc?.caseInfos);
   const filePath = String(filled?.filePath || "").trim();
-  if (!filePath) {
+  const s3Key = String(filled?.s3Key || "").trim();
+  if (!filePath && !s3Key) {
     throw httpError(400, "filled STL이 없어 CAM만 다시 만들 수 없습니다.");
   }
 }
@@ -119,7 +120,13 @@ export async function startDummyArtifactRegen(requestLike, choice) {
     await Request.updateOne(
       { requestId },
       {
-        $set: baseSet,
+        $set: {
+          ...baseSet,
+          "productionSchedule.stlPreload": {
+            status: "GENERATING",
+            updatedAt: requestedAt,
+          },
+        },
         ...(choice.cam
           ? {
               $unset: {
@@ -156,7 +163,13 @@ export async function startDummyArtifactRegen(requestLike, choice) {
       $unset: { "caseInfos.ncFile": 1, "caseInfos.espFile": 1 },
     },
   );
-  return triggerCam(requestId);
+  void triggerCam(requestId).catch((error) => {
+    console.warn(
+      `[dummy-artifact] CAM trigger failed requestId=${requestId}:`,
+      error?.message || error,
+    );
+  });
+  return { started: true, message: "" };
 }
 
 /** filled STL 등록이 끝나면 예약된 CAM을 더미 의뢰에 건다. */
@@ -198,9 +211,11 @@ export async function continueDummyCamAfterFilled(request) {
   ) {
     return;
   }
-  const filledKey = String(resolveFilledStlFile(fresh?.caseInfos)?.s3Key || "");
+  const filled = resolveFilledStlFile(fresh?.caseInfos);
+  const filledKey = String(filled?.s3Key || "").trim();
+  const filledPath = String(filled?.filePath || "").trim();
   const ownsFilled = filledKey.includes(`requests/${requestId}/`);
-  if (!ownsFilled) {
+  if (!ownsFilled && !filledPath && !filledKey) {
     const message = await markCamFailed(
       requestId,
       "새 filled STL이 없어 CAM을 시작하지 못했습니다.",
@@ -209,6 +224,11 @@ export async function continueDummyCamAfterFilled(request) {
       `[dummy-artifact] skip CAM until dummy filled STL exists requestId=${requestId} s3Key=${filledKey} ${message}`,
     );
     return;
+  }
+  if (!ownsFilled) {
+    console.warn(
+      `[dummy-artifact] CAM uses shared filled STL requestId=${requestId} s3Key=${filledKey}`,
+    );
   }
   const result = await triggerCam(requestId);
   if (!result.started) {

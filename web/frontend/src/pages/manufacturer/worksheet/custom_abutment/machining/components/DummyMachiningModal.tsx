@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: STL·CAM 막대는 카드 전체 너비. 버튼은 짧은 라벨로 줄 안에 둔다.
 // - 2026-10-22: STL·CAM 막대 오른쪽에 재생성·중단. 진행 숫자는 92에서 멈추지 않는다.
 // - 2026-10-22: 선택 카드 썸네일 아래에 재생성. 누르면 STL·CAM을 고른다.
 // - 2026-10-22: 선택 카드 썸네일 아래에 STL·CAM 막대. 라벨은 STL.
@@ -245,7 +246,7 @@ function ProductSummary({
           </p>
         ) : null}
       </div>
-      <div className={`ml-auto mr-2 flex shrink-0 flex-col items-center gap-1 ${aside ? "w-[13rem]" : ""}`}>
+      <div className="ml-auto mr-2 flex shrink-0 flex-col items-center gap-1">
           <div
             className={`overflow-hidden rounded-md border border-slate-200 bg-slate-100 ${
               compact ? "h-16 w-16" : "h-[72px] w-[72px]"
@@ -319,13 +320,14 @@ function RegenBar({
             : state === "idle"
               ? ""
               : `${pct}%`;
-  const stopping = actionLabel.startsWith("중단");
+  const stopping = actionLabel === "끊기" || actionLabel === "…";
   return (
-    <div className="flex w-full items-center gap-1" title={state === "failed" ? error || "실패" : undefined}>
-      <span className="w-7 shrink-0 text-[10px] font-semibold text-slate-600">
-        {label}
-      </span>
-      <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200">
+    <div
+      className="grid w-full min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_2rem_2.25rem] items-center gap-x-1"
+      title={state === "failed" ? error || "실패" : undefined}
+    >
+      <span className="text-[10px] font-semibold text-slate-600">{label}</span>
+      <div className="h-1.5 min-w-0 overflow-hidden rounded-full bg-slate-200">
         <div
           className={`h-full rounded-full transition-[width] duration-300 ${
             state === "running" ? "animate-pulse" : ""
@@ -333,13 +335,13 @@ function RegenBar({
           style={{ width }}
         />
       </div>
-      <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-slate-500">
+      <span className="truncate text-right text-[10px] tabular-nums text-slate-500">
         {caption}
       </span>
       <button
         type="button"
         disabled={actionDisabled}
-        className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold disabled:opacity-50 ${
+        className={`w-full rounded-md px-0 py-0.5 text-[10px] font-semibold leading-none disabled:opacity-50 ${
           stopping
             ? "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
             : "bg-slate-900 text-white hover:bg-slate-800"
@@ -872,7 +874,7 @@ export function DummyMachiningModal({
                 <>
                   {product || current?.missingRequestId ? (
                     <div
-                      className="relative mx-auto w-full max-w-[28rem] rounded-2xl border border-sky-200 bg-sky-50 py-3 pl-3 pr-12 shadow-[0_12px_28px_rgba(14,116,144,0.16)]"
+                      className="relative mx-auto w-full max-w-[32rem] rounded-2xl border border-sky-200 bg-sky-50 py-3 pl-3 pr-12 shadow-[0_12px_28px_rgba(14,116,144,0.16)]"
                     >
                       <button
                         type="button"
@@ -885,47 +887,43 @@ export function DummyMachiningModal({
                         <X className="h-5 w-5" />
                       </button>
                       {product ? (
-                        <ProductSummary
-                          item={product}
-                          aside={
-                            <div className="mt-1 w-full space-y-1">
-                              {(["stl", "cam"] as const).map((kind) => {
-                                const state =
-                                  kind === "stl"
-                                    ? regen?.filledStl || "idle"
-                                    : regen?.cam || "idle";
-                                const busy = state === "running" || state === "waiting";
-                                const actionKey = `${kind}-${busy ? "stop" : "start"}`;
-                                return (
-                                  <RegenBar
-                                    key={kind}
-                                    label={kind === "stl" ? "STL" : "CAM"}
-                                    state={state === "waiting" && kind === "stl" ? "running" : state}
-                                    startedAt={
-                                      kind === "stl"
-                                        ? regen?.filledStartedAt || regen?.requestedAt
-                                        : regen?.camStartedAt
-                                    }
-                                    error={kind === "stl" ? regen?.filledError : regen?.camError}
-                                    actionDisabled={Boolean(regenAction)}
-                                    actionLabel={
-                                      regenAction === actionKey
-                                        ? busy
-                                          ? "중단 중…"
-                                          : "시작…"
-                                        : busy
-                                          ? "중단"
-                                          : "재생성"
-                                    }
-                                    onAction={() =>
-                                      void (busy ? cancelRegen(kind) : restartRegen(kind))
-                                    }
-                                  />
-                                );
-                              })}
-                            </div>
-                          }
-                        />
+                        <div className="min-w-0 space-y-2">
+                          <ProductSummary item={product} />
+                          <div className="min-w-0 space-y-1 pr-1">
+                            {(["stl", "cam"] as const).map((kind) => {
+                              const state =
+                                kind === "stl"
+                                  ? regen?.filledStl || "idle"
+                                  : regen?.cam || "idle";
+                              const busy = state === "running" || state === "waiting";
+                              const actionKey = `${kind}-${busy ? "stop" : "start"}`;
+                              return (
+                                <RegenBar
+                                  key={kind}
+                                  label={kind === "stl" ? "STL" : "CAM"}
+                                  state={state === "waiting" && kind === "stl" ? "running" : state}
+                                  startedAt={
+                                    kind === "stl"
+                                      ? regen?.filledStartedAt || regen?.requestedAt
+                                      : regen?.camStartedAt
+                                  }
+                                  error={kind === "stl" ? regen?.filledError : regen?.camError}
+                                  actionDisabled={Boolean(regenAction)}
+                                  actionLabel={
+                                    regenAction === actionKey
+                                      ? "…"
+                                      : busy
+                                        ? "끊기"
+                                        : "다시"
+                                  }
+                                  onAction={() =>
+                                    void (busy ? cancelRegen(kind) : restartRegen(kind))
+                                  }
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
                       ) : (
                         <p className="py-4 text-sm text-slate-500">
                           저장된 더미 제품을 찾지 못했습니다.

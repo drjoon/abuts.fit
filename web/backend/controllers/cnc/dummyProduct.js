@@ -173,9 +173,10 @@ function trackCamArtifact(doc, asked) {
   const state = String(status || "").trim().toUpperCase();
   if (state === "FAILED") return "failed";
   if (state === "CANCELLED") return "cancelled";
+  // NC 메타는 올라왔는데 ncPreload가 GENERATING에 남은 경우(콜백 레이스)는 완료로 본다.
+  if (resolveNcLocator(doc).hasNc) return "done";
   if (state === "GENERATING" || state === "UPLOADING") return "running";
   if (doc?.productionSchedule?.dummyCamAfterFilled) return "waiting";
-  if (resolveNcLocator(doc).hasNc) return "done";
   if (asked.filledStl) return "waiting";
   return "running";
 }
