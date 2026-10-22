@@ -5,6 +5,7 @@
 // - web/frontend/src/features/requestSettings/DesignSoftwareSettingsDialog.tsx
 // - web/backend/controllers/admin/admin.hexVerification.controller.js
 // change-log:
+// - 2026-10-22: ExoCAD 3.2 이상은 계정 defaultManufacturerHexRotation으로 덮지 않고 STL모델대로.
 // - 2026-10-13: 공통 적용은 제조사별 선택(0°/30°)을 직원들에게 복사. 6종을 한 회전으로 묶지 않음.
 // - 2026-09-09: ExoCAD≤3.0 + implantManufacturer 없음 → designSoftware/계정 폴백 제거(null). 조용히 30° 시드 금지.
 // - 2026-09-03: 제조사별 확정 SSOT만 사용(레거시 계정 확정으로 전 제조사 확정 번짐 제거). User 맵 행(미정 포함)이 있으면 BA로 번지지 않음. 초기값 30°·미정.
@@ -244,7 +245,8 @@ export const isHexVerificationPending = ({
  *   1) verifiedHex(제조사별) → 확정·잠금
  *   2) applyHex30 시드 (기본 true) — 미확정 기간만
  * ExoCAD 3.0 이하 + implantManufacturer 없음: null (designSoftware/계정 폴백 금지)
- * ExoCAD 3.2+ / 비-ExoCAD: manufacturerDefault || designSoftware
+ * ExoCAD 3.2+: designSoftware(STL모델대로). 계정 defaultManufacturerHexRotation으로 덮지 않음.
+ * 비-ExoCAD: manufacturerDefault || designSoftware
  *
  * @returns {string|null} canonical hex mode (미결정이면 null)
  */
@@ -265,7 +267,9 @@ export const resolveExoCadManufacturerHexRotation = ({
   }
 
   if (!isExoCadLe30(sw, exoCadVersion)) {
-    return mfg || designFallback;
+    // 3.2 이상은 STL 내보내기 헥스가 맞다. 의뢰 1건을 30°로 바꿔 심은
+    // defaultManufacturerHexRotation이 다음 가공을 전부 30°로 만들지 않게 한다.
+    return designFallback;
   }
 
   const hasImplant =

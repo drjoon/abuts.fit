@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: ExoCAD 3.2 이상 의뢰의 헥스 변경은 그 건만. 계정 기본값으로 심지 않음.
 // - 2026-10-21: 불완전가공 판정 뒤 짧은 커프 명단을 맞춘다(응답 전 필수 아님).
 // - 2026-10-20: worksheetSelect — stlPreload·stlJsFallback·ncPreload(준비「JS 작업중」·실패 뱃지).
 // - 2026-10-13: 더미 조회 시 비어 있는 헥스 회전은 STL모델대로로 저장한다.
@@ -128,7 +129,7 @@ import {
 } from "./common.review.helpers.js";
 import { releaseRequestCreditHoldsOnCancel } from "../../services/requestCreditHold.service.js";
 import { pickFilledStlFileForClone, mongoSetStlPreloadCancelled, applyStlPreloadCancelledOnRequest } from "../../utils/filledStlFile.js";
-import { resolveAdminVerifiedHexFromSettings, normalizeHexVerificationResultHex } from "../../utils/designSoftwareHex.js";
+import { resolveAdminVerifiedHexFromSettings, normalizeHexVerificationResultHex, normalizeExoCadVersion, EXOCAD_VERSION_GE_3_2 } from "../../utils/designSoftwareHex.js";
 import {
   findHexVerificationCancelSiblings,
   backfillMissingFilledStlOnHexSamplesInList,
@@ -4272,11 +4273,41 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   // 의뢰자 헥스 기본값 저장 SSOT:
   // - 개인 계정(User.requestSettings.defaultManufacturerHexRotation) 우선
   // - 개인 계정이 없으면 BusinessAnchor.requestSettings.defaultManufacturerHexRotation
-  // 신규 시드: 관리자 verifiedHex → applyHex30 → designSoftware(3.2+/비ExoCAD)
+  // ExoCAD 3.2 이상은 이 기본값으로 다음 시드를 덮지 않는다. 의뢰 1건 변경도 계정에 심지 않음.
   // 준비 단계 의뢰 단위 제조사 변경은 허용.
   const nowForDefault = new Date();
   let savedDefaultHexScope = null;
-  if (Types.ObjectId.isValid(requestorUserId)) {
+  const caseDesignSoftware = String(
+    request?.caseInfos?.designSoftware || "",
+  ).trim();
+  const caseExoCadVersion = normalizeExoCadVersion(
+    request?.caseInfos?.exoCadVersion,
+  );
+  let skipAccountHexDefault =
+    caseDesignSoftware === "ExoCAD" &&
+    caseExoCadVersion === EXOCAD_VERSION_GE_3_2;
+  if (!skipAccountHexDefault && Types.ObjectId.isValid(requestorUserId)) {
+    const requestorHexUser = await User.findById(requestorUserId)
+      .select({
+        "requestSettings.designSoftware": 1,
+        "requestSettings.exoCadVersion": 1,
+      })
+      .lean();
+    const userDesignSoftware = String(
+      requestorHexUser?.requestSettings?.designSoftware || "",
+    ).trim();
+    const userExoCadVersion = normalizeExoCadVersion(
+      requestorHexUser?.requestSettings?.exoCadVersion,
+    );
+    const effectiveDesignSoftware = caseDesignSoftware || userDesignSoftware;
+    const effectiveExoCadVersion = caseExoCadVersion || userExoCadVersion;
+    skipAccountHexDefault =
+      effectiveDesignSoftware === "ExoCAD" &&
+      effectiveExoCadVersion === EXOCAD_VERSION_GE_3_2;
+  }
+  if (skipAccountHexDefault) {
+    savedDefaultHexScope = "skipped-ge-3-2";
+  } else if (Types.ObjectId.isValid(requestorUserId)) {
     await User.updateOne(
       { _id: new Types.ObjectId(requestorUserId) },
       {

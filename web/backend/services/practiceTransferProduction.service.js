@@ -546,6 +546,7 @@ const normalizeManufacturerHexRotationOrNull = (value) => {
 /**
  * 제조사 헥스 기본값 SSOT (ExoCAD):
  * case별 implantManufacturer → verifiedHex / applyHex30.
+ * ExoCAD 3.2 이상은 STL모델대로. 계정 defaultManufacturerHexRotation으로 덮지 않음.
  * ExoCAD≤3.0 + implant 없음 → null (designSoftware 폴백 금지).
  * related: creation.from-draft.controller.js, common.requests.controller.js updateRndHexRotation
  */

@@ -507,7 +507,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   케이스별 `caseInfos.designSoftware`(+ExoCAD면 `exoCadVersion`)와
   `caseInfos.implantManufacturer`를 기준으로 계산합니다.
   - 케이스 디자인 소프트웨어가 비어 있으면 요청을 실패(400) 처리합니다.
-  - `ExoCAD` + `exoCadVersion=ge_3_2` / 비-ExoCAD => `STL모델대로` (제조사별 맵·샘플·잠금 해당 없음)
+  - `ExoCAD` + `exoCadVersion=ge_3_2` => `STL모델대로`. 계정 `defaultManufacturerHexRotation`(제조사가 의뢰 1건을 바꿔 심은 값)으로 덮지 않는다. 그 의뢰만 바꾸고, 다음 시드·계정 기본값에는 쓰지 않는다.
+  - 비-ExoCAD => `defaultManufacturerHexRotation` 또는 `STL모델대로` (제조사별 맵·샘플·잠금 해당 없음)
   - `ExoCAD` + `exoCadVersion=le_3_0`(또는 버전 미지정 레거시):
     1) `User.requestSettings.hexByImplantManufacturer[M].verifiedHex` 있으면 확정값으로 **신규 시드**
     2) 없으면 `applyHex30`(기본 true) → 시드 (`true`=헥스30도회전 / `false`=STL모델대로)
