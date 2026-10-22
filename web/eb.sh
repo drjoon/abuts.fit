@@ -5,7 +5,6 @@ WEB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARENT_DIR="$(dirname "$WEB_DIR")"
 FRONTEND_DIR="$WEB_DIR/frontend"
 BACKEND_DIR="$WEB_DIR/backend"
-DIST_DIR="$FRONTEND_DIR/dist"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 ZIP_NAME="deploy-$TIMESTAMP.zip"
 ZIP_PATH="$PARENT_DIR/$ZIP_NAME"
@@ -226,18 +225,10 @@ trap restore_backend_node_modules EXIT
 info "프론트엔드 빌드"
 (cd "$FRONTEND_DIR" && npm install && npm run build)
 
-# Keep prior hashed assets so old tabs / mixed-version requests can still
-# resolve chunks after cutover (new build wins on filename collision).
-ASSETS_CACHE_DIR="$PARENT_DIR/.eb_assets_cache"
-mkdir -p "$ASSETS_CACHE_DIR"
-if [[ -d "$DIST_DIR/assets" ]]; then
-  if compgen -G "$ASSETS_CACHE_DIR/*" > /dev/null; then
-    info "이전 Vite 해시 에셋을 dist에 병합 (캐시 → 신규)"
-    # -n: do not overwrite newly built files
-    cp -n "$ASSETS_CACHE_DIR"/* "$DIST_DIR/assets/" 2>/dev/null || true
-  fi
-  find "$ASSETS_CACHE_DIR" -type f -mtime +14 -delete 2>/dev/null || true
-  cp -f "$DIST_DIR/assets"/* "$ASSETS_CACHE_DIR/" 2>/dev/null || true
+# Vite가 dist를 비운 뒤 이번 빌드만 쓴다. 예전 해시 청크는 index.html이 가리키지 않는다.
+if [[ -d "$PARENT_DIR/.eb_assets_cache" ]]; then
+  rm -rf "$PARENT_DIR/.eb_assets_cache"
+  info "이전 Vite 해시 에셋 캐시 삭제 (배포 zip에 넣지 않음)"
 fi
 
 info "이전 dist 포함 zip 정리"
