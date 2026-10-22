@@ -337,7 +337,6 @@ const renderPackLabelToCanvas = async (opts) => {
   // ── 폰트 상수 ──────────────────────────────────────────────────
   const FONT_6PT = "18px NotoSans, Arial";
   const FONT_6PT_BOLD = "bold 18px NotoSans, Arial";
-  const FONT_HEADER = "bold 50px NotoSans, Arial";
   const FONT_LAB = "bold 38px NotoSans, Arial";
   const FONT_INFO = "bold 22px NotoSans, Arial";
   const FONT_LEGAL_TITLE = "bold 22px NotoSans, Arial";
@@ -363,25 +362,27 @@ const renderPackLabelToCanvas = async (opts) => {
   const contentW = W - qrTopSize - 8;
 
   drawBox(M, curY, contentW, row1H);
-  const col1W = Math.round(contentW * 0.36);
-  const col2W = Math.round(contentW * 0.29);
+  const screwLabel = String(opts.screwType || "-");
+  const longScrew = screwLabel.length > 2;
+  const col1W = Math.round(contentW * (longScrew ? 0.28 : 0.36));
+  const col2W = Math.round(contentW * (longScrew ? 0.46 : 0.29));
   const col3W = contentW - col1W - col2W;
   drawVLine(M + col1W, curY, row1H);
   drawVLine(M + col1W + col2W, curY, row1H);
-  ctx.font = FONT_HEADER;
-  fillTextCenteredInBox(opts.mailboxCode || "-", M, curY, col1W, row1H, 8);
-  {
-    const screwLabel = String(opts.screwType || "-");
-    const screwMaxW = Math.max(0, col2W - 16);
-    let screwSize = 50;
-    while (screwSize > 16) {
-      ctx.font = `bold ${screwSize}px NotoSans, Arial`;
-      if (ctx.measureText(screwLabel).width <= screwMaxW) break;
-      screwSize -= 2;
+  const fitHeader = (label, boxW) => {
+    const maxW = Math.max(0, boxW - 16);
+    let size = 50;
+    while (size > 16) {
+      ctx.font = `bold ${size}px NotoSans, Arial`;
+      if (ctx.measureText(label).width <= maxW) break;
+      size -= 2;
     }
-    fillTextCenteredInBox(screwLabel, M + col1W, curY, col2W, row1H, 8);
-  }
-  ctx.font = FONT_HEADER;
+  };
+  fitHeader(String(opts.mailboxCode || "-"), col1W);
+  fillTextCenteredInBox(opts.mailboxCode || "-", M, curY, col1W, row1H, 8);
+  fitHeader(screwLabel, col2W);
+  fillTextCenteredInBox(screwLabel, M + col1W, curY, col2W, row1H, 8);
+  fitHeader(lotSuffix, col3W);
   fillTextCenteredInBox(lotSuffix, M + col1W + col2W, curY, col3W, row1H, 8);
 
   ctx.imageSmoothingEnabled = false;

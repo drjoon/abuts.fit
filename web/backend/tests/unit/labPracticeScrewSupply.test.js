@@ -4,6 +4,7 @@ import {
   ensureCanonicalPackingScrewLotItems,
   findLabPracticeScrewSupply,
   normalizeScrewSupply,
+  formatPrintedScrewLine,
   resolvePackingScrewType,
   resolveScrewSupply,
   toPracticeNameKey,
@@ -136,5 +137,12 @@ describe("labPracticeScrewSupply", () => {
     expect(next[0].lotNumber).toBe("JUN26-04");
     expect(next.find((row) => row.type === "NEOBIOTECH")?.lotNumber).toBe("");
     expect(next.find((row) => row.type === "CUSTOM")?.lotNumber).toBe("X");
+  });
+
+  test("printed screw line keeps A-E then manufacturer names", () => {
+    expect(
+      formatPrintedScrewLine(["NEOBIOTECH", "-", "A", "neobiotech", "OSSTEM"]),
+    ).toBe("스크류 A · OSSTEM · NEOBIOTECH");
+    expect(formatPrintedScrewLine(["-", ""])).toBe("");
   });
 });

@@ -576,7 +576,7 @@ Notes:
   승인 요청 바디(`processBothHexVariants`)로 백엔드 복사 생성 분기를 전달합니다.
   - 관련 파일: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`, `src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts`
 
-- 스크류 타입 표시: 어벗츠 정품은 커넥션 `A`–`E`, 제조사 호환은 `DENTIUM` `OSSTEM` `MEGAGEN` `NEOBIOTECH` `DIO` `DENTIS`. 진행중·파일카드·워크시트 카드·`PreviewModal`에서 디자인SW·아노다이징 옆에 둔다. 세척.패킹 로트 설정도 같은 타입 목록.
+- 스크류 타입 표시: 어벗츠 정품은 커넥션 `A`–`E`, 제조사 호환은 `DENTIUM` `OSSTEM` `MEGAGEN` `NEOBIOTECH` `DIO` `DENTIS`. 진행중·파일카드·워크시트 카드·`PreviewModal`에서 디자인SW·아노다이징 옆에 둔다. 세척.패킹 로트·패킹 라벨 칸도 같은 문자열이다. 포장.발송 운송장은 품목 아래 `스크류 {타입}`으로 우편함 안 타입을 중복 없이 찍는다.
   - 헬퍼: `src/shared/practice/screwSupply.ts`, `web/backend/utils/labPracticeScrewSupply.js`
 
 - `PreviewModal` 상단 아노다이징 체크박스 표시/override 정책:

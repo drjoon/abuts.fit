@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-23: 폴백 ZPL 스크류 칸. 제조사 풀네임은 글자를 줄여 넣는다.
 // - 2026-08-06: process TZ=Asia/Seoul 강제(전역 KST 정책).
 // related files:
 // - bg/pc2/pack-server/rules.md
@@ -288,6 +289,14 @@ const buildPackingLabelZpl = (payload) => {
   // Fallback: 간단한 텍스트 기반 ZPL (한글은 영문으로 표시)
   const mailboxCode = safeText(payload.mailboxCode || "-", 12).toUpperCase();
   const screwType = safeText(payload.screwType || "-", 20).toUpperCase();
+  const screwFont =
+    screwType.length <= 1
+      ? 50
+      : screwType.length <= 4
+        ? 36
+        : screwType.length <= 8
+          ? 26
+          : 18;
   const lotNumber = safeText(payload.lotNumber || "-", 26).toUpperCase();
   const lotSuffix = String(lotNumber || "").slice(-3) || "-";
   const labName = safeText(payload.labName || "-", 20);
@@ -301,7 +310,7 @@ const buildPackingLabelZpl = (payload) => {
     "^LH0,0",
     "^CI28",
     `^FO100,100^A0N,50,50^FD${mailboxCode}^FS`,
-    `^FO100,200^A0N,50,50^FD${screwType}^FS`,
+    `^FO100,200^A0N,${screwFont},${screwFont}^FD${screwType}^FS`,
     `^FO100,300^A0N,50,50^FD${lotSuffix}^FS`,
     `^FO100,400^A0N,40,40^FD${labName}^FS`,
     `^FO100,500^A0N,30,30^FDLot: ${lotNumber}^FS`,

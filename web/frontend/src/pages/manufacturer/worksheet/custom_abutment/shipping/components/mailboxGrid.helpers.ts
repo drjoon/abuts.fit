@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-10-23: 운송장 품목 아래 스크류 줄. 어벗츠 A–E와 제조사 풀네임.
 // - 2026-08-17: 운송장 라벨에서 제품 건수 문구를 제거.
 import { request } from "@/shared/api/apiClient";
 
@@ -260,6 +261,10 @@ const recoverRowFromZpl = (row: any, zpl: string): any => {
     zpl,
     /\^FO74,418\^A0N,16,16\^FD([^\^]+)\^FS/,
   );
+  const screwLine = parseZplField(
+    zpl,
+    /\^FO74,514\^A0N,\d+,\d+\^FD([^\^]+)\^FS/,
+  );
 
   const [parsedHubCod = "", parsedTmlCod = ""] = mainLabel
     .split(/\s+/)
@@ -323,6 +328,7 @@ const recoverRowFromZpl = (row: any, zpl: string): any => {
     snd_hphn: row?.snd_hphn || row?.snd_tel || parsedSenderPhone || undefined,
     snd_add: row?.snd_add || row?.snd_addr || senderAddr || undefined,
     snd_addr: row?.snd_addr || row?.snd_add || senderAddr || undefined,
+    screw_line: row?.screw_line || screwLine || undefined,
   };
 };
 
@@ -429,6 +435,7 @@ const renderWaybillRowToPngBlob = async (row: any): Promise<Blob> => {
       row.msg_key ||
       "",
   ).trim();
+  const screwLine = String(row.screw_line || "").trim();
   const today = new Date().toISOString().slice(0, 10);
 
   const domRgnNum = parseInt(domRgn, 10);
@@ -557,6 +564,7 @@ const renderWaybillRowToPngBlob = async (row: any): Promise<Blob> => {
   zt(`${todayLabel} Type:S`, 734, 392 + DY, 18);
 
   zt("의료기기", 74, 486 + DY, 22);
+  if (screwLine) zt2(screwLine, 74, 514 + DY, 20, 500);
 
   zt2(remark, 74, 712 + DY, 16, 420);
 

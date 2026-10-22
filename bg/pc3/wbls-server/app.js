@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-23: ZPL 텍스트가 페이지를 넘으면 글자를 줄인다. 제조사 스크류 이름용.
 // - 2026-08-06: process TZ=Asia/Seoul 강제(전역 KST 정책).
 // related files:
 // - bg/pc3/wbls-server/rules.md
@@ -413,7 +414,7 @@ const renderZplAsKoreanPdf = async (zpl, pdfPath, koreanFontPath) => {
     const px = el.x * DOT_TO_PT;
     const py = el.y * DOT_TO_PT;
     if (el.type === "text") {
-      const fontSize = Math.max(6, el.h * DOT_TO_PT * 0.85);
+      let fontSize = Math.max(6, el.h * DOT_TO_PT * 0.85);
       if (hasKoreanFont) {
         try {
           doc.font("Korean");
@@ -422,7 +423,17 @@ const renderZplAsKoreanPdf = async (zpl, pdfPath, koreanFontPath) => {
         }
       }
       try {
-        doc.fontSize(fontSize).text(el.text, px, py, { lineBreak: false });
+        const maxW = Math.max(24, pageW - px - 6);
+        doc.fontSize(fontSize);
+        try {
+          while (fontSize > 6 && doc.widthOfString(el.text) > maxW) {
+            fontSize -= 0.5;
+            doc.fontSize(fontSize);
+          }
+        } catch {
+          // 너비 측정이 실패하면 ZPL 글자 크기로 찍는다.
+        }
+        doc.text(el.text, px, py, { lineBreak: false, width: maxW });
       } catch {
         // 렌더링 실패는 무시하고 계속
       }

@@ -1264,6 +1264,7 @@ export async function printHanjinLabels(req, res) {
         cachedZplLabels,
         cachedAddressList,
         wblPrintOptions,
+        requests: printRequests,
       });
 
       return res.status(200).json(

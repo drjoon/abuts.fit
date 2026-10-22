@@ -64,6 +64,33 @@ export function resolvePackingScrewType({
   return "";
 }
 
+/** 인쇄용 정렬. 어벗츠 A–E 다음 제조사 풀네임. 빈 값·`-` 는 뺀다. */
+export function orderPrintedScrewTypes(values) {
+  const found = new Set();
+  for (const value of Array.isArray(values) ? values : []) {
+    const type = String(value || "")
+      .trim()
+      .toUpperCase();
+    if (!type || type === "-") continue;
+    found.add(type);
+  }
+  const ordered = [];
+  for (const type of DEFAULT_PACKING_SCREW_TYPES) {
+    if (!found.has(type)) continue;
+    ordered.push(type);
+    found.delete(type);
+  }
+  for (const type of found) ordered.push(type);
+  return ordered;
+}
+
+/** 운송장 품목 아래 한 줄. 예: `스크류 A · NEOBIOTECH`. */
+export function formatPrintedScrewLine(values) {
+  const ordered = orderPrintedScrewTypes(values);
+  if (!ordered.length) return "";
+  return `스크류 ${ordered.join(" · ")}`;
+}
+
 /** 저장된 로트는 유지하고, 없는 기본 타입만 빈 로트로 뒤에 붙인다. */
 export function ensureCanonicalPackingScrewLotItems(items) {
   const list = Array.isArray(items) ? items : [];

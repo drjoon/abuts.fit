@@ -7,12 +7,14 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/utils/shippingReceiver.utils.js
 // change-log:
+// - 2026-10-23: 운송장 품목 아래 스크류 줄. 어벗츠 A–E와 제조사 풀네임.
 // - 2026-08-17: 운송장 비고는 우편함/사업자명만 (제품 건수는 웹앱에서 확인).
 import Request from "../../models/request.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import hanjinService from "../../services/hanjin.service.js";
 import { getTodayYmdInKst } from "./utils.js";
 import { getShippingReceiver } from "../../utils/shippingReceiver.utils.js";
+import { formatPrintedScrewLine } from "../../utils/labPracticeScrewSupply.js";
 
 export const HANJIN_CLIENT_ID = String(
   process.env.HANJIN_CLIENT_ID || "",
@@ -535,14 +537,73 @@ export const executeHanjinLabelPrint = async ({
   return { labelData, wblPrint };
 };
 
+const stampCachedScrewLines = async ({
+  requests,
+  addressList,
+  zplLabels,
+}) => {
+  const { resolveScrewTypeForPrint } = await import(
+    "../../utils/packPrint.utils.js"
+  );
+  const byMailbox = new Map();
+  for (const request of Array.isArray(requests) ? requests : []) {
+    const mailbox = String(request?.mailboxAddress || "").trim();
+    if (!mailbox) continue;
+    if (!byMailbox.has(mailbox)) byMailbox.set(mailbox, []);
+    byMailbox.get(mailbox).push(request);
+  }
+  const lineByMailbox = new Map();
+  for (const [mailbox, group] of byMailbox) {
+    lineByMailbox.set(
+      mailbox,
+      formatPrintedScrewLine(
+        group.map((request) => resolveScrewTypeForPrint(request)),
+      ),
+    );
+  }
+
+  const nextAddress = (Array.isArray(addressList) ? addressList : []).map(
+    (row) => {
+      const key = String(row?.mailbox_code || row?.msg_key || "").trim();
+      const screwLine = lineByMailbox.get(key) || String(row?.screw_line || "");
+      return screwLine ? { ...row, screw_line: screwLine } : row;
+    },
+  );
+
+  const nextZpl = (Array.isArray(zplLabels) ? zplLabels : []).map(
+    (value, index) => {
+      const zpl = String(value || "");
+      const screwLine = String(nextAddress[index]?.screw_line || "")
+        .replace(/[\^~\\]/g, " ")
+        .replace(/[\r\n]+/g, " ")
+        .trim();
+      if (!zpl || !screwLine || /\^FO74,514\^A0N/.test(zpl)) return zpl;
+      const screwFont =
+        screwLine.length > 36 ? 16 : screwLine.length > 22 ? 18 : 20;
+      const field = `^FO74,514^A0N,${screwFont},${screwFont}^FD${screwLine}^FS\n`;
+      const marker = "^FO74,486^A0N,22,22^FD의료기기^FS\n";
+      if (zpl.includes(marker)) return zpl.replace(marker, `${marker}${field}`);
+      return zpl.replace("^XZ", `${field}^XZ`);
+    },
+  );
+
+  return { addressList: nextAddress, zplLabels: nextZpl };
+};
+
 export const executeCachedLabelPrint = async ({
   cachedZplLabels = [],
   cachedAddressList = [],
   wblPrintOptions,
+  requests = [],
 }) => {
-  const zplLabels = Array.isArray(cachedZplLabels)
-    ? cachedZplLabels.map((value) => String(value || "")).filter(Boolean)
-    : [];
+  const stamped = await stampCachedScrewLines({
+    requests,
+    addressList: cachedAddressList,
+    zplLabels: cachedZplLabels,
+  });
+  const zplLabels = stamped.zplLabels
+    .map((value) => String(value || ""))
+    .filter(Boolean);
   if (!zplLabels.length) {
     throw Object.assign(
       new Error("재출력에 사용할 캐시 라벨 데이터가 없습니다."),
@@ -553,7 +614,7 @@ export const executeCachedLabelPrint = async ({
   }
 
   const labelData = {
-    address_list: Array.isArray(cachedAddressList) ? cachedAddressList : [],
+    address_list: stamped.addressList,
     zplLabels,
   };
   const shouldTriggerWblPrint =
@@ -858,6 +919,9 @@ export const buildHanjinInsertOrderBody = async ({
 
 const buildHanjinDraftPayload = async (requests) => {
   ensureHanjinEnv();
+  const { resolveScrewTypeForPrint } = await import(
+    "../../utils/packPrint.utils.js"
+  );
 
   const mailboxGroupMap = new Map();
   for (const r of requests) {
@@ -900,6 +964,9 @@ const buildHanjinDraftPayload = async (requests) => {
         remark: [resolveMailboxCode(first), organizationName]
           .filter(Boolean)
           .join(" / "),
+        screw_line: formatPrintedScrewLine(
+          group.map((request) => resolveScrewTypeForPrint(request)),
+        ),
       };
 
       return {
@@ -987,6 +1054,7 @@ const enrichHanjinAddressList = ({
         meta.organization_name || row?.organization_name || null,
       request_count: meta.request_count || row?.request_count || null,
       remark: meta.remark || row?.remark || null,
+      screw_line: meta.screw_line || row?.screw_line || null,
       receiver_name:
         row?.receiver_name ||
         payloadRow?.receiver_name ||
@@ -1009,6 +1077,12 @@ const enrichHanjinAddressList = ({
       snd_addr: senderAddress || null,
     };
   });
+
+const escapeZplText = (value) =>
+  String(value || "")
+    .replace(/[\^~\\]/g, " ")
+    .replace(/[\r\n]+/g, " ")
+    .trim();
 
 const buildHanjinWblZplLabels = ({ addressList }) => {
   const filtered = (Array.isArray(addressList) ? addressList : []).filter(
@@ -1056,6 +1130,12 @@ const buildHanjinWblZplLabels = ({ addressList }) => {
         [mailboxCode, orgName].filter(Boolean).join(" / ");
       const today = getTodayYmdInKst();
       const todayLabel = `${today.replace(/-/g, ".")}.`;
+      const screwLine = escapeZplText(row?.screw_line);
+      const screwFont =
+        screwLine.length > 36 ? 16 : screwLine.length > 22 ? 18 : 20;
+      const screwField = screwLine
+        ? `^FO74,514^A0N,${screwFont},${screwFont}^FD${screwLine}^FS\n`
+        : "";
 
       // 지방/수도권 표시
       const domRgnNum = parseInt(domRgn, 10);
@@ -1100,7 +1180,7 @@ const buildHanjinWblZplLabels = ({ addressList }) => {
 ^FO74,418^A0N,16,16^FD${senderAddr}^FS
 ^FO734,392^A0N,18,18^FD${todayLabel} Type:S^FS
 ^FO74,486^A0N,22,22^FD의료기기^FS
-^FO826,486^A0N,18,18^FD^FS
+${screwField}^FO826,486^A0N,18,18^FD^FS
 ^FO74,662^A0N,14,14^FD※ 개인정보 보호를 위하여 인수하신 화물의 운송장을 폐기하여 주시기 바랍니다. ⓗ^FS
 ^FO74,712^A0N,16,16^FD${remark}^FS
 ^FO602,552^BY2,2,94^BCN,94,N,N,N^FD${wblNum}^FS
@@ -1112,6 +1192,7 @@ const buildHanjinWblZplLabels = ({ addressList }) => {
         tmlNam: hubCod || tmlCod,
         terminalBarcodeValue,
         remark,
+        screwLine,
         grpRnk,
         mailboxCode,
       });
