@@ -25,6 +25,7 @@ import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules
 import { request } from "@/shared/api/apiClient";
 import { removeUploadedFile } from "../utils/localFileStorage";
 import { getLocalDraft, getFileKey } from "../utils/localDraftStorage";
+import { deleteFile } from "../utils/fileIndexedDB";
 
 const API_BASE_URL =
   (import.meta.env.DEV && (import.meta.env.VITE_API_BASE_URL as string)) ||
@@ -852,7 +853,6 @@ export const useNewRequestFilesV2 = ({
 
       // V3: IndexedDB와 로컬 스토리지에서 파일 제거
       try {
-        const { deleteFile } = await import("../utils/fileIndexedDB");
         await deleteFile(ssotKey);
       } catch {
         // noop

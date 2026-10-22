@@ -61,6 +61,19 @@ export default defineConfig(({ mode }) => {
           find: /^rhino3dm$/,
           replacement: path.resolve(__dirname, "node_modules/rhino3dm/rhino3dm.module.js"),
         },
+        // CAD wasm 래퍼가 Node 분기에만 쓰는 내장 모듈. 브라우저에서는 호출되지 않는다.
+        {
+          find: /^node:module$/,
+          replacement: path.resolve(__dirname, "src/shims/nodeModule.js"),
+        },
+        {
+          find: /^path$/,
+          replacement: path.resolve(__dirname, "src/shims/nodePath.js"),
+        },
+        {
+          find: /^crypto$/,
+          replacement: path.resolve(__dirname, "src/shims/nodeCrypto.js"),
+        },
       ],
     },
     optimizeDeps: {

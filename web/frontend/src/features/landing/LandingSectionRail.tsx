@@ -86,7 +86,7 @@ export function LandingSectionRail({ items }: { items?: LandingRailItem[] }) {
             }}
             className="group relative flex h-3 w-9 items-center justify-end outline-none"
           >
-            <span className="pointer-events-none absolute right-full mr-3 whitespace-nowrap rounded-full bg-[#0b2a5c] px-2.5 py-1 text-[11px] font-medium text-white opacity-0 shadow-md transition-opacity delay-0 group-hover:opacity-100 group-hover:delay-[600ms] group-focus-visible:opacity-100">
+            <span className="pointer-events-none absolute right-full mr-3 whitespace-nowrap rounded-full bg-[#0b2a5c] px-2.5 py-1 text-[11px] font-medium text-white opacity-0 shadow-md transition-opacity delay-0 group-hover:opacity-100 group-hover:[transition-delay:600ms] group-focus-visible:opacity-100">
               {entry.label}
             </span>
             <span

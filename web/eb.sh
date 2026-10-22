@@ -291,6 +291,11 @@ ENV_ARGS=()
 while IFS='=' read -r key value || [[ -n "$key" ]]; do
   # 빈 줄, 주석 무시
   [[ -z "$key" || "$key" =~ ^# ]] && continue
+  # test 배포는 NODE_ENV=test 라 앱이 MONGODB_URI_TEST만 쓴다.
+  # 프로덕션 URI를 setenv에 넣지 않아 CloudFormation 4KB 한도에 여유를 둔다.
+  if [[ "$ENV_MODE" != "prod" && ( "$key" == "MONGODB_URI" || "$key" == "MONGO_URI" ) ]]; then
+    continue
+  fi
   # 값에서 따옴표 제거
   value="${value%\"}"
   value="${value#\"}"

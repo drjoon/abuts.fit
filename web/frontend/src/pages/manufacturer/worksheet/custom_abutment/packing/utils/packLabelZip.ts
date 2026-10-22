@@ -149,7 +149,6 @@ export const buildPackLabelRenderOptions = ({
     patientName,
     toothNumber,
     material,
-    modelName,
     caseType: "Custom Abutment",
     printedAt: new Date().toISOString(),
     topBannerText: (caseInfos as any)?.hexVerificationSample

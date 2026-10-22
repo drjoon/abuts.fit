@@ -25,6 +25,7 @@
 // - 2026-08-20: 계정 preferences.labReceiveCalendarDateKey (기공의뢰 캘린더, 기본 도착일)
 // - 2026-08-15: 탭 간 localStorage 인증 SSOT — stale 탭이 다른 계정 세션을 덮어쓰지 않게 가드
 import { create } from "zustand";
+import { clearLabHelperAlarmSession } from "@/shared/files/labHelperClient";
 import { request } from "@/shared/api/apiClient";
 import type { AppUserRole } from "@/shared/types/role";
 import {
@@ -834,9 +835,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         }
       }
       if (helperToken) {
-        void import("@/shared/files/labHelperClient")
-          .then((m) => m.clearLabHelperAlarmSession(helperToken))
-          .catch(() => undefined);
+        void clearLabHelperAlarmSession(helperToken).catch(() => undefined);
       }
       set({
         user: null,

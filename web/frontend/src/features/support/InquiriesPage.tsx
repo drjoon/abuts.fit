@@ -22,6 +22,9 @@
 // 사이드메뉴 및 라우트 접근에서 제외되어 있습니다.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { INQUIRY_TYPE_LABEL } from "./inquiryTypeLabel";
+
+export { INQUIRY_TYPE_LABEL };
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -111,32 +114,6 @@ const faqVisibleForKind = (
   if (!item.audience) return true;
   if (!kind) return true;
   return item.audience === kind;
-};
-
-export const INQUIRY_TYPE_LABEL: Record<string, string> = {
-  manufacturing: "의뢰/제작",
-  delivery: "배송",
-  billing: "청구/결제",
-  credit: "크레딧",
-  design: "디자인",
-  file_transfer: "파일전송/기공의뢰서",
-  account: "계정/사업자",
-  order_intake: "의뢰 접수",
-  cam_machining: "가공",
-  equipment: "장비/소프트웨어",
-  packing: "패킹/출고",
-  settlement: "정산",
-  referral_commission: "소개/수당",
-  partnership: "제휴/파트너십",
-  operation: "운영",
-  system: "시스템/오류",
-  general: "일반",
-  other: "기타",
-  business_registration: "사업자등록",
-  user_registration: "사용자등록",
-  manufacturer_add_request: "임플란트 추가 요청",
-  lab_fee_item_add_request: "기공비 항목 추가 요청",
-  sales: "영업 상담",
 };
 
 const STATUS_CONFIG: Record<

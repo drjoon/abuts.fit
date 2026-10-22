@@ -42,6 +42,8 @@ import {
   buildNewSystemRequestPayload,
   collectNewImplantAckLines,
 } from "@/shared/practice/newImplantCaseInfos";
+import { clearLocalDraft } from "../utils/localDraftStorage";
+import { clearAllFiles } from "../utils/fileIndexedDB";
 
 const NEW_REQUEST_DRAFT_ID_STORAGE_KEY = "abutsfit:new-request-draft-id:v1";
 const API_BASE_URL =
@@ -238,7 +240,6 @@ export const useNewRequestSubmitV2 = ({
 
     // V3: 로컬 스토리지와 IndexedDB 정리
     try {
-      const { clearLocalDraft } = await import("../utils/localDraftStorage");
       await clearLocalDraft();
     } catch (err) {
       console.warn("[handleCancel] Failed to clear local draft:", err);
@@ -366,11 +367,8 @@ export const useNewRequestSubmitV2 = ({
       }
 
       try {
-        const { clearLocalDraft } = await import("../utils/localDraftStorage");
         clearLocalDraft();
-        void import("../utils/fileIndexedDB")
-          .then(({ clearAllFiles }) => clearAllFiles())
-          .catch(() => {});
+        void clearAllFiles().catch(() => {});
       } catch (err) {
         console.warn("[submitFromDraft] Failed to clear local draft:", err);
       }

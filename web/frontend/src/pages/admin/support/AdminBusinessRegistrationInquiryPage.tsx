@@ -41,7 +41,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
-import { INQUIRY_TYPE_LABEL } from "@/features/support/InquiriesPage";
+import { INQUIRY_TYPE_LABEL } from "@/features/support/inquiryTypeLabel";
 import { cn } from "@/shared/ui/cn";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { ArrowLeft, Download, Search } from "lucide-react";
