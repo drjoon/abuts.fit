@@ -548,7 +548,9 @@ export function LabRemakeChargeDialog({
               />
               <div className="space-y-0.5 text-[11px] text-muted-foreground">
                 <p>
-                  어벗츠로부터 리메이크비는 무료입니다. 어벗츠로는 건당 1만원.
+                  치과의뢰 수신하기 리메이크비는 무료입니다.
+                  <br />
+                  커스텀어벗 의뢰하기는 건당 1만원입니다.
                   <br />
                   배송비 판매자 부담.
                 </p>

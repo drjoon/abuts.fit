@@ -4986,7 +4986,7 @@ export async function buildPracticeTransferQuote({
   relationshipKind = undefined,
   labTradingPartnerId = undefined,
   remake = false,
-  /** 레거시 PTX 리메이크 고정가(원). 어벗츠로부터 기본은 null(LAB_FEE_REMAKE_FREE). */
+  /** 레거시 PTX 리메이크 고정가(원). 치과의뢰 수신하기 기본은 null(LAB_FEE_REMAKE_FREE). */
   remakeFixedAmount = null,
   skipAbutmentFees: skipAbutmentFeesInput = undefined,
   matchingMode = undefined,
@@ -6969,7 +6969,7 @@ export async function buildFeeQuotesForTransferDocs({
           practiceId,
         );
     // 기본 리메이크 견적=보철만(CA 제외). CA 포함 견적은 별도 필드.
-    // 어벗츠로부터 리메이크비: 무료(LAB_FEE_REMAKE_FREE).
+    // 치과의뢰 수신하기 리메이크비: 무료(LAB_FEE_REMAKE_FREE).
     const remakeToothWorksProsthesisOnly =
       stripCustomAbutmentFromToothWorks(toothWorks);
     const remakeFees = computePracticeTransferRetailFees({

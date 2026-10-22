@@ -11,6 +11,7 @@
 // - 2026-09-27: 지급 완료·적립 완료 옆 완료 뱃지 제거(원청·하청). 기공 지급 상세는 매출·하청 수수료·지급.
 // - 2026-09-27: 원청이 넘긴 완료 건은 한 줄. 금액란에 매출·지급을 같이 표시.
 // - 2026-09-27: 원청 장부 — 기공 매출·기공 지급을 분리. 지급 보류→지급 완료.
+// - 2026-10-23: 기공소 유형 — 치과의뢰 수신하기 / 커스텀어벗 의뢰하기.
 // - 2026-09-26: 기공소 수신 유형 — 기공의뢰-어벗츠하청 → 기공의뢰-어벗츠로부터.
 // - 2026-09-20: 정산 세부 내역 — 기공소 뷰로 플랫폼 수수료·수령액 표시.
 // - 2026-09-20: 소비·정산 적립 완료/보류 푸터 — 한 줄 줄바꿈 대신 항상 2줄.
@@ -516,13 +517,13 @@ type LedgerDisplayRow = {
   item: CreditLedgerItem;
 };
 
-/** 사이드바 SSOT: 치과 기공소에 ↔ 기공소 어벗츠로부터 */
+/** 사이드바 SSOT: 치과 기공소에 ↔ 기공소 치과의뢰 수신하기 */
 const PRACTICE_TRANSFER_TYPE_LABEL = "기공의뢰-기공소에";
-const LAB_RECEIVE_TYPE_LABEL = "기공의뢰-어벗츠로부터";
+const LAB_RECEIVE_TYPE_LABEL = "치과의뢰 수신하기";
 const LAB_REMAKE_CHARGE_TYPE_LABEL = "리메이크 청구";
-/** 사이드바 SSOT: 치과 어벗츠에 ↔ 기공소 어벗츠로 */
+/** 사이드바 SSOT: 치과 어벗츠에 ↔ 기공소 커스텀어벗 의뢰하기 */
 const ABUTMENT_DESIGN_TYPE_LABEL = "기공의뢰-어벗츠에";
-const LAB_ABUTS_REQUEST_TYPE_LABEL = "기공의뢰-어벗츠로";
+const LAB_ABUTS_REQUEST_TYPE_LABEL = "커스텀어벗 의뢰하기";
 
 const resolvePracticeTransferTypeLabel = (isLabViewer: boolean) =>
   isLabViewer ? LAB_RECEIVE_TYPE_LABEL : PRACTICE_TRANSFER_TYPE_LABEL;

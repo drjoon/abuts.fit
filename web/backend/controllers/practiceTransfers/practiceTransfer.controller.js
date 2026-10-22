@@ -3464,7 +3464,7 @@ export async function createPracticeTransfer(req, res) {
         message: "리메이크 원본 의뢰를 찾지 못했습니다.",
       });
     }
-    // 어벗츠로부터 리메이크: 무료(LAB_FEE_REMAKE_FREE). 미연결(플랫폼 이전)도 동일.
+    // 치과의뢰 수신하기 리메이크: 무료(LAB_FEE_REMAKE_FREE). 미연결(플랫폼 이전)도 동일.
     const remakePricing = Boolean(isRemakeRequest || remakeSourceDoc);
     const remakeFixedAmount = null;
     if (!arrivalPolicy.ok) {
@@ -7112,7 +7112,7 @@ export async function remakePracticeTransfers(req, res) {
             )
           : copiedFiles;
 
-      // 어벗츠로부터 리메이크비: 무료(LAB_FEE_REMAKE_FREE).
+      // 치과의뢰 수신하기 리메이크비: 무료(LAB_FEE_REMAKE_FREE).
       const remakePricing = true;
       const remakeFixedAmount = null;
 
@@ -7576,7 +7576,7 @@ const escapePracticeTransferPatientRegex = (value) =>
 /**
  * 리메이크 원본 검색.
  * - q 없음: 최근 180일(주문일·생성일) 작업시작 이후 의뢰 — 리메이크 정책 창과 동일
- * - q 있음: 환자명으로 전체 기간 검색(어벗츠로부터 리메이크비는 원본 기간과 무관하게 무료)
+ * - q 있음: 환자명으로 전체 기간 검색(치과의뢰 수신하기 리메이크비는 원본 기간과 무관하게 무료)
  * GET /api/practice/transfers/remake-candidates?q=&days=180&limit=30
  */
 export async function searchRemakePracticeTransfers(req, res) {

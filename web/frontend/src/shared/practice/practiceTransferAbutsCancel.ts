@@ -4,6 +4,7 @@
 // - web/frontend/src/features/requestSettings/RequestCaseMetaBadges.tsx
 // - web/backend/controllers/requests/common.requests.controller.js
 // change-log:
+// - 2026-10-23: 취소 안내 — 커스텀어벗 의뢰하기 / 치과의뢰 수신하기.
 // - 2026-08-21: 어벗츠로의뢰에서 PTX(치과 기공의뢰) CA 취소 안내 SSOT.
 
 /** 치과→기공의뢰수신→어벗츠 CA (partnerBilling.relatedPracticeTransferId) */
@@ -30,6 +31,6 @@ export const isPracticeTransferLinkedRequest = (row: unknown): boolean => {
   return Boolean(String(related).trim());
 };
 
-/** 어벗츠로의뢰 취소 클릭 시 안내 (취소 SSOT = 기공의뢰수신 작업취소) */
+/** 커스텀어벗 의뢰하기 취소 클릭 시 안내 (취소 SSOT = 치과의뢰 수신하기 작업취소) */
 export const PRACTICE_TRANSFER_CANCEL_FROM_ABUTS_MESSAGE =
-  "치과 기공의뢰로 들어온 건은 어벗츠로의뢰에서 취소할 수 없습니다. 기공의뢰수신에서 작업취소해 주세요.";
+  "치과 기공의뢰로 들어온 건은 커스텀어벗 의뢰하기에서 취소할 수 없습니다. 치과의뢰 수신하기에서 작업취소해 주세요.";

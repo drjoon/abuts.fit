@@ -432,7 +432,7 @@ export async function applyPracticeTransferRemakeCharge({
 
   // 청구 금액만 필요 — partner/budget/catalog 조회 생략. hold가 잔액 SSOT.
   // 협력: 수가·할증=수행 기공소. 하청·어벗츠: 원청. 정산은 어벗츠 경유.
-  // 어벗츠로부터 리메이크비: 무료(LAB_FEE_REMAKE_FREE).
+  // 치과의뢰 수신하기 리메이크비: 무료(LAB_FEE_REMAKE_FREE).
   const feeScheduleLabId =
     resolveFeeScheduleLabAnchorId(doc) || labAnchorId;
   const quote = await buildPracticeTransferQuote({

@@ -19,7 +19,7 @@ export type RequestorReferralStats = {
   effectiveUnitPrice?: number;
   baseUnitPrice?: number;
   rule?: string;
-  /** 커스텀어벗 리메이크 단가(원). 어벗츠로 고정 10,000 */
+  /** 커스텀어벗 리메이크 단가(원). 커스텀어벗 의뢰하기 고정 10,000 */
   remakeUnitPrice?: number;
 };
 

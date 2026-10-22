@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-23: 기공소 이동 라벨 — 치과의뢰 수신하기. 중복 안내 — 커스텀어벗 의뢰하기.
 // - 2026-09-26: 기공소 구강스캔 안내 라벨 — 치과로부터 → 어벗츠로부터.
 // - 2026-08-21: 아노 토글 시 기존 첨부 카드에도 동기화(툴바 ON인데 제출 OFF race/혼선 방지). 첨부 시드는 툴바 값 우선.
 // - 2026-08-19: 기공소·어벗츠기공소도 상단 생산 현황 헤더(기간·출고·완료·불완전가공). 가입 배너는 수신 페이지.
@@ -125,9 +126,9 @@ const NewRequestPageContent = () => {
   const guideTour = useGuideTour();
   const isLabRequestor = requestorKind === "lab";
   const isPracticeRequestor = requestorKind === "practice";
-  /** 사이드바 SSOT: 치과=기공소에, 기공소=어벗츠로부터 */
+  /** 사이드바 SSOT: 치과=기공소에, 기공소=치과의뢰 수신하기 */
   const oralScanPageLabel = isLabRequestor
-    ? "어벗츠로부터"
+    ? "치과의뢰 수신하기"
     : "기공소에";
   const oralScanPageHref = isLabRequestor
     ? authUser?.role === "internalLab"
@@ -1645,17 +1646,17 @@ const NewRequestPageContent = () => {
                 {ptxPendingPrompt?.patientName} {ptxPendingPrompt?.tooth}번은
                 기공의뢰로 이미 접수됐습니다.
                 <br />
-                어벗츠로 따로 올리면 기공의뢰가 남아 중복됩니다.
+                커스텀어벗 의뢰하기로 따로 올리면 기공의뢰가 남아 중복됩니다.
                 <br />
-                기공소에 페이지에서 디자인 파일을 올려 주세요.
+                {oralScanPageLabel} 페이지에서 디자인 파일을 올려 주세요.
                 <br />
-                동명이인 등 별개 건이면 어벗츠로 계속 진행합니다.
+                동명이인 등 별개 건이면 커스텀어벗 의뢰하기로 계속 진행합니다.
               </p>
             </div>
           }
           actions={[
             {
-              label: "별개 건, 어벗츠로 계속",
+              label: "별개 건, 커스텀어벗 의뢰하기",
               variant: "secondary",
               onClick: () => {
                 if (ptxPendingPrompt)
@@ -1664,15 +1665,15 @@ const NewRequestPageContent = () => {
               },
             },
             {
-              label: "기공소에 페이지에서 올리기",
+              label: `${oralScanPageLabel} 페이지에서 올리기`,
               variant: "primary",
               onClick: () => {
                 const p = ptxPendingPrompt;
                 setPtxPendingPrompt(null);
-                navigate("/dashboard/practice-transfers?mode=receive", {
+                navigate(oralScanPageHref, {
                   state: {
                     ptxUploadHint: p
-                      ? `${p.patientName} ${p.tooth}번 건의 디자인 파일을 기공소에 페이지에서 올려 주세요.`
+                      ? `${p.patientName} ${p.tooth}번 건의 디자인 파일을 ${oralScanPageLabel} 페이지에서 올려 주세요.`
                       : "",
                   },
                 });

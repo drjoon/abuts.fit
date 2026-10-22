@@ -1335,7 +1335,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     );
     let quotedPrice;
     if (isPtxRemake) {
-      // PTX 리메이크 → 어벗츠로: 건당 1만원. 배송비는 판매자 부담. 180일 조회 생략.
+      // PTX 리메이크 → 커스텀어벗 의뢰하기: 건당 1만원. 배송비는 판매자 부담. 180일 조회 생략.
       quotedPrice = await computePriceForRequest({
         requestorId: labUserId,
         requestorOrgId: labAnchorId,
@@ -2069,7 +2069,7 @@ export async function clearRelatedAbutmentProductionOnRelease(
     );
     canceledRequestCount = Number(cancelResult?.modifiedCount || 0);
 
-    // 어벗츠로의뢰 헤더 건수·진행중 목록이 PTX 작업취소 후에도 맞도록 갱신.
+    // 커스텀어벗 의뢰하기 헤더 건수·진행중 목록이 PTX 작업취소 후에도 맞도록 갱신.
     if (canceledRequestCount > 0) {
       const labAnchorId = resolvePerformingLabAnchorId(transferDoc);
       const canceledRows = await Request.find({ _id: { $in: objectIds } })
@@ -2793,7 +2793,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   );
   let quotedPrice;
   if (isPtxRemake) {
-    // PTX 리메이크·CA 재업로드 → 어벗츠로: 건당 1만원. 180일 조회 생략.
+    // PTX 리메이크·CA 재업로드 → 커스텀어벗 의뢰하기: 건당 1만원. 180일 조회 생략.
     quotedPrice = await computePriceForRequest({
       requestorId: requestDoc.requestor || null,
       requestorOrgId: labAnchorId,

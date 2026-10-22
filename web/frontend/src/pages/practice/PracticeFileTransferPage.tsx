@@ -1848,7 +1848,7 @@ export const PracticeFileTransferPage = ({
     labAnchorId: selectedLab?._id,
     toothWorks: syncToothWorks,
     implantFavorites,
-    // 리메이크 견적=어벗츠로부터 무료(서버 remakeFeeQuote)
+    // 리메이크 견적=치과의뢰 수신하기 무료(서버 remakeFeeQuote)
     remake:
       !linkedRemakeSource ||
       linkedRemakeSource.withinRemakePricingWindow !== false,

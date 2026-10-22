@@ -1332,7 +1332,7 @@ export async function computePriceForRequest({
 
   // 리메이크도 고정 1만원이 아니라 의뢰자 거래처가(딜러 설정가) 또는 기본가를 그대로 적용한다.
   // BASE_UNIT_PRICE 는 loadCreditSettingsDefaults({ requestorOrgId }) 가 거래처가를 반영한 값이다.
-  // 배송비는 판매자 부담. 어벗츠로부터(PTX)=LAB_FEE_REMAKE_FREE.
+  // 배송비는 판매자 부담. 치과의뢰 수신하기(PTX)=LAB_FEE_REMAKE_FREE.
   void forceRemakePricing;
   void forceNewOrderPricing;
 

@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/components/PastRequestsModal.tsx
 // - web/frontend/src/features/requestSettings/RequestSettingsToolbar.tsx
 // change-log:
+// - 2026-10-23: PTX 연동 CA 뱃지 «치과의뢰 수신하기».
 // - 2026-09-26: PTX 연동 CA 뱃지 «치과로부터» → «어벗츠로부터».
 // - 2026-08-22: PTX 연동 CA 뱃지 «기공의뢰» → «치과로부터 수신».
 // - 2026-08-21: 기공의뢰(PTX) 연동 CA에 «기공의뢰» 뱃지.
@@ -53,7 +54,7 @@ export function RequestCaseMetaBadges({
             "border-sky-300 bg-sky-50 text-sky-900 font-semibold",
           )}
         >
-          어벗츠로부터
+          치과의뢰 수신하기
         </span>
       ) : null}
       {isHexSample ? (

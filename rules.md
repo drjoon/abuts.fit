@@ -243,9 +243,9 @@
   - `PRACTICE_MEMBERSHIP_SPEND`(레거시 치과 멤버십 월 구독. 신규 과금 없음)
   - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`, `STORE_SALE`, `REFUND`
   - `OB_MONTHLY_SETTLEMENT` (치과 오픈뱅킹 월말 일괄정산 완료)
-- **치과 기공의뢰 후불(OB 자동정산) + 어벗츠로 선불 크레딧 + 대형 치과 보증금 SSOT (2026-10-17)**:
-  - **월 후불 한도 없음**: 치과 기공의뢰(PTX) 기공비·PTX 어벗·어벗츠로 커스텀어벗은 OB 후불이다. 한도를 두지 않는다(`monthlyCreditLimit` 폐기). OB 장기동의가 **활성**이고 `paymentHold`가 없으면 마이너스 허용(`isPracticeObPostpaidActive`). 90일 재인증 만료·미납은 **신규 PTX**만 잠금(`checkPracticeSettlementLock`) — 데모 기간이 아니다.
-  - **기공소 어벗츠로(커스텀어벗 `Request`)**: 치과→**어벗츠 법인** 정산(OB 월 이체 `abuts_corp`). 기공소는 **선충전·무료 크레딧만**(`resolveLabCustomAbutmentCreditHoldPolicy` — PTX 적립·OB overdraft 불가). **런칭 전 베타** ON이면 일반 기공소는 무료크레딧만·`테스트기공소`만 충전 테스트. 치과 `Request`·PTX abutment hold는 OB 후불. OB 정산 잠금은 `Request`에 적용하지 않는다(`checkCreditLock`은 ChargeOrder·거래처 가격 승인만).
+- **치과 기공의뢰 후불(OB 자동정산) + 커스텀어벗 의뢰하기 선불 크레딧 + 대형 치과 보증금 SSOT (2026-10-17)**:
+  - **월 후불 한도 없음**: 치과 기공의뢰(PTX) 기공비·PTX 어벗·어벗츠에 커스텀어벗은 OB 후불이다. 한도를 두지 않는다(`monthlyCreditLimit` 폐기). OB 장기동의가 **활성**이고 `paymentHold`가 없으면 마이너스 허용(`isPracticeObPostpaidActive`). 90일 재인증 만료·미납은 **신규 PTX**만 잠금(`checkPracticeSettlementLock`) — 데모 기간이 아니다.
+  - **기공소 커스텀어벗 의뢰하기(커스텀어벗 `Request`)**: 치과→**어벗츠 법인** 정산(OB 월 이체 `abuts_corp`). 기공소는 **선충전·무료 크레딧만**(`resolveLabCustomAbutmentCreditHoldPolicy` — PTX 적립·OB overdraft 불가). **런칭 전 베타** ON이면 일반 기공소는 무료크레딧만·`테스트기공소`만 충전 테스트. 치과 `Request`·PTX abutment hold는 OB 후불. OB 정산 잠금은 `Request`에 적용하지 않는다(`checkCreditLock`은 ChargeOrder·거래처 가격 승인만).
   - **미납 시 다음 기공의뢰 즉시 제한**: `checkPracticeSettlementLock`(`utils/creditLock.util.js`)이 정산 예정일이 지났는데 `COMPLETED`가 아닌 월 정산, 자동이체 실패 Hold, 90일 재인증 만료를 잠근다. 신규 PTX 생성(`assertPracticeTransferPaidCreditSufficient({ enforceSettlementLock: true })`)에서만 적용하고 진행 중인 의뢰는 막지 않는다.
   - **OB 장기동의 + 가끔 재인증**: 최초 1회 출금계좌 연결 + 생체인증(Face ID/지문 패스키) 등록 시 90일 유효(`BusinessAnchor.openBankingConsent`). 만료 시 1탭 재인증(`POST /api/practice/billing/reauth`).
   - **정산일 자동 일괄이체**: 매월 1일 KST 전월 사용분(외부 수행 기공소별 **기공물** N건 + **어벗츠 법인** 1건. 법인 건은 기공사업부 기공·커스텀어벗·스토어)을 `PracticeMonthlySettlement`로 확정, 5일 09:00 KST에 일괄출금(`jobs/monthlyPracticeObSettlementWorker.js`, `aggregatePracticeMonthUsage`). 실패 시 `paymentHold`, Face ID 재이체(`POST /api/practice/billing/retry-settlement/:id`)로 해제.
@@ -266,7 +266,7 @@
 - **의뢰비·딜러·배송 SSOT (2026-10-08, 이전 기술과 충돌하면 이 항목이 우선)**:
   - 건당 의뢰비는 치과·기공소 모두 **15,000원 단일가**. 딜러·영업팀이 거래처(`BusinessAnchor.dealerUnitPrice`, `select:false`)별로 **12,000~15,000원**을 정할 수 있고 거래처 본인에게만 보인다(외부 비공개). 서버·FE 모두 12,000 미만/15,000 초과 거절(`validateDealerUnitPrice`). 그룹할인·가입 90일 1만원·주문량 할인·런칭 이벤트 단가는 폐지. 영업팀(`salesTeam`)이 입력한 가격은 `dealerPriceApproval.status=pending`이 되어 본사(admin) 승인(`POST /api/admin/price-approvals/:anchorId`) 전까지 의뢰가 막힌다(`checkCreditLock`). 승인 시 `dealerUnitPrice` 반영. devops는 소개 거래처 등록 없이 고정 분배(1,000원/어벗).
   - 분배(어벗 1개당, 부가세 포함): 제조사 **5,500** · 개발운영 **1,000** · 어벗츠 **3,500** · 나머지 **딜러(판매가 − 10,000)**. 딜러 없음(직판·영업팀 소개)이면 딜러 몫은 어벗츠. 어벗츠가 거래처에 직접 공급(면세)하고 딜러에게는 수수료를 부가세 포함으로 지급. 구현 `resolveRevenueOwnerBaseAllocation` (`creditRevenuePolicy.service.js`).
-  - **구현(2026-10-09)**: 거래처 배송비 `REQUESTOR_SHIPPING_FEE_PER_BOX=0`(`requestorUnitPricePolicy.js`). 의뢰 사전 잔액검사·`SHIPPING_SPEND_HOLD`(`shouldSkipShippingHold`)·포장.발송 `SHIPPING_SPEND_COMMIT`(레거시 hold 없으면 skip) 모두 거래처 크레딧을 건드리지 않는다. 어벗츠로 리메이크도 고정 1만원이 아니라 거래처 개별가(`dealerUnitPrice`) 또는 기본 15,000원(`computePriceForRequest`).
+  - **구현(2026-10-09)**: 거래처 배송비 `REQUESTOR_SHIPPING_FEE_PER_BOX=0`(`requestorUnitPricePolicy.js`). 의뢰 사전 잔액검사·`SHIPPING_SPEND_HOLD`(`shouldSkipShippingHold`)·포장.발송 `SHIPPING_SPEND_COMMIT`(레거시 hold 없으면 skip) 모두 거래처 크레딧을 건드리지 않는다. 커스텀어벗 의뢰하기 리메이크도 고정 1만원이 아니라 거래처 개별가(`dealerUnitPrice`) 또는 기본 15,000원(`computePriceForRequest`).
   - 배송은 **택배(기본)와 딜리버리** 중 거래처별 하나(2026-10-13, §2.7). 거래처에게 배송비를 받지 않는다. 택배는 박스당 택배비를 딜러 적립에서 차감해 제조사에 환입한다. 딜리버리(월 100건 이상 안내)는 적립에서 빼지 않고, 딜러사가 딜리버리 회사에 직접 입금한다. 월정액 원가 저널은 중단(`deliveryMonthlyCost.service.js` reason `disabled`).
 - 롤백 원칙:
   - **제조사 의뢰비·배송비**(`REQUEST_SPEND_`* / `SHIPPING_SPEND_*`): 롤백·준비 취소 시 원본 저널/라인 **물리 삭제**(REFUND 추가 금지)

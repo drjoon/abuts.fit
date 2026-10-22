@@ -347,7 +347,7 @@ export function useRequestorRequestSettings(
         setNeedsBusinessAnodizingBootstrap(!hasBusinessAno && canEditBusinessAno);
 
         // 빈 개인값만 BA→draft 순으로 1회 승격(로드 시 재동기화·BA 덮어쓰기 없음)
-        // draft는 로컬 스냅샷이라 BA보다 뒤에 둠(어벗츠로/치과로부터 라벨 불일치 방지)
+        // draft는 로컬 스냅샷이라 BA보다 뒤에 둠(커스텀어벗 의뢰하기/치과의뢰 수신하기 라벨 불일치 방지)
         if (!requestorDefault && (businessDefault || draftDefault)) {
           const bootstrapDefault = businessDefault || draftDefault;
           const syncPayload: Record<string, string | null> = {
@@ -440,7 +440,7 @@ export function useRequestorRequestSettings(
     token,
   ]);
 
-  // Draft가 늦게 들어와도 계정값이 있으면 덮지 않음(어벗츠로 로컬 draft vs 치과로부터 불일치 방지)
+  // Draft가 늦게 들어와도 계정값이 있으면 덮지 않음(커스텀어벗 의뢰하기 로컬 draft vs 치과의뢰 수신하기 불일치 방지)
   useEffect(() => {
     const draftDefault = String(draftDesignSoftware || "").trim();
     if (!draftDefault) return;

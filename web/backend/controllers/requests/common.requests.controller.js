@@ -18,6 +18,7 @@
 // - 2026-08-26: 관리자 모니터링(view=monitoring) — 제조사 준비 큐(productModeNe)와 동일 제외(PTX 디자인 미완료·레거시 디자인 mode).
 // - 2026-08-26: 샘플 하드삭제 시 MachiningRecord.requestDeletedAt 마킹(완료 목록 라벨 유지).
 // - 2026-08-25: 관리자 헥스 확정 시 updateRndHexRotation 제조사 변경 차단.
+// - 2026-10-23: PTX 연동 CA 취소 거부 문구 — 커스텀어벗 의뢰하기 / 치과의뢰 수신하기.
 // - 2026-08-21: 의뢰자 어벗츠로의뢰 취소 — PTX(치과 기공의뢰) 연동 CA는 거부(기공의뢰수신 작업취소 SSOT).
 // - 2026-08-21: GET /my에 referenceIds 포함(헥스 확인 쌍 UI 동시 제거용)
 // - 2026-08-23: ExoCAD 헥스 확인 pending은 관리자 hexVerificationResultHex SSOT(취소 시 플래그 재활성 불필요)
@@ -153,9 +154,9 @@ const ESPRIT_BASE =
   process.env.ESPRIT_URL ||
   "http://localhost:8001";
 
-/** 어벗츠로의뢰에서의뢰자 취소 거부 — 취소 SSOT는 기공의뢰수신 작업취소 */
+/** 커스텀어벗 의뢰하기에서의 의뢰자 취소 거부 — 취소 SSOT는 치과의뢰 수신하기 작업취소 */
 const PRACTICE_TRANSFER_CANCEL_FROM_ABUTS_MESSAGE =
-  "치과 기공의뢰로 들어온 건은 어벗츠로의뢰에서 취소할 수 없습니다. 기공의뢰수신에서 작업취소해 주세요.";
+  "치과 기공의뢰로 들어온 건은 커스텀어벗 의뢰하기에서 취소할 수 없습니다. 치과의뢰 수신하기에서 작업취소해 주세요.";
 
 const MY_REQUESTS_CACHE_MAX_ENTRIES = 300;
 

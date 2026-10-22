@@ -683,7 +683,7 @@ export const LabFeeScheduleTab = () => {
         <p className="mt-2 text-[12px] leading-snug text-slate-500">
           {remakePolicySummaryLine("lab")}
           <br />
-          리메이크 단가 입력은 참고용이며 어벗츠로부터는 청구되지 않습니다.
+          리메이크 단가 입력은 참고용이며 치과의뢰 수신하기에서는 청구되지 않습니다.
         </p>
         {pendingChange?.effectiveFromYmd ? (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-[13px] text-amber-950">

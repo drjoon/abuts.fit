@@ -459,7 +459,7 @@ export function ChatRemakePromptDialog({
 
   const feeHelp = (
     <p>
-      어벗츠로부터(기공소에) 리메이크비는 무료입니다.
+      치과의뢰 수신하기(기공소에) 리메이크비는 무료입니다.
       <br />
       {isLab || isAbutmentRemake ? (
         "배송비 판매자 부담."

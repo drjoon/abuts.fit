@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-23: 기공소 통계 구역 — 치과의뢰 수신하기 / 커스텀어벗 의뢰하기.
 // - 2026-10-04: 요약 카드 폭 SSOT(11.5rem) 맞춤. 최소폭 미만일 때만 가로 스크롤.
 // - 2026-09-28: 요약 카드는 고정 폭 묶음. 차트는 작업영역 폭.
 // - 2026-09-26: 기공소 수신 구역 제목 — 어벗츠 하청 → 어벗츠로부터.
@@ -836,10 +837,10 @@ export function CreditStatisticsTab() {
         label="의뢰건수"
         value={`${settlementOrderCount.toLocaleString("ko-KR")}건`}
         hint="안내"
-        hintTooltip="어벗츠로부터 받은 기공의뢰 중 정산 적립이 확정된 건수입니다."
+        hintTooltip="치과의뢰 수신하기 중 정산 적립이 확정된 건수입니다."
         onClick={() =>
           openDrillDown({
-            title: "어벗츠로부터 내역",
+            title: "치과의뢰 수신하기 내역",
             filters: {
               ...filterBase,
               statsCategory: "settlement_earn",
@@ -855,7 +856,7 @@ export function CreditStatisticsTab() {
       {filterBar}
 
       <StatsFlowSection
-        title="어벗츠로부터"
+        title="치과의뢰 수신하기"
         subtitle="어벗츠 → 기공소 · 하청(매입) 정산"
         accent="기공"
         icon={Building2}
@@ -920,7 +921,7 @@ export function CreditStatisticsTab() {
           >
             <HorizontalBarList
               rows={stats?.byPartner || []}
-              emptyHint="어벗츠로부터 받은 기공의뢰의 정산 적립이 있을 때 병원별로 표시됩니다."
+              emptyHint="치과의뢰 수신하기 정산 적립이 있을 때 병원별로 표시됩니다."
               onRowClick={(row) =>
                 openDrillDown({
                   title: `${row.label} 내역`,
@@ -967,7 +968,7 @@ export function CreditStatisticsTab() {
       </StatsFlowSection>
 
       <StatsFlowSection
-        title="어벗츠로"
+        title="커스텀어벗 의뢰하기"
         subtitle="기공소 → 어벗츠 · 충전·소비"
         accent="어벗"
         icon={FileText}
@@ -975,7 +976,7 @@ export function CreditStatisticsTab() {
         {chargeSpendCards({
           spendTooltip: abutsSpendTooltip,
           orderCount: abutsOrderCount,
-          orderHint: "어벗츠로 의뢰한 어벗생산·배송 거래 건수입니다.",
+          orderHint: "커스텀어벗 의뢰하기의 어벗생산·배송 거래 건수입니다.",
           orderCategories: ABUTS_ORDER_STATS_CATEGORIES,
         })}
         <div className="grid min-w-0 gap-3 md:grid-cols-2">

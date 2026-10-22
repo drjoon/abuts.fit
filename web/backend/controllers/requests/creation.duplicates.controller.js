@@ -61,7 +61,7 @@ export async function checkDuplicateCaseInfo(req, res) {
       .sort({ createdAt: -1 })
       .lean();
 
-    // 기공의뢰(PTX)로 접수됐으나 디자인 파일이 아직 없는 건 — 어벗츠로 직접 올리면 PTX가 고아가 된다.
+    // 기공의뢰(PTX)로 접수됐으나 디자인 파일이 아직 없는 건 — 커스텀어벗 의뢰하기로 직접 올리면 PTX가 고아가 된다.
     // 치과명은 달라도 환자·치아가 같으면 잡는다.
     let ptxPending = null;
     try {
