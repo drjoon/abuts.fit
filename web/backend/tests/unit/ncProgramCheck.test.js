@@ -23,4 +23,8 @@ describe("ncProgramCheck", () => {
   it("좌표가 없으면 플래그", () => {
     expect(buildNcAnalysis("%\nM30\n").flags).toEqual(["nc_no_coordinates"]);
   });
+  it("용량이 지나치게 작으면 플래그", () => {
+    const tiny = buildNcAnalysis(nc(["G01 X0 Y0 Z0"]));
+    expect(tiny.flags).toContain("nc_suspiciously_small");
+  });
 });

@@ -114,7 +114,9 @@ import {
   resolveEffectiveCompositeSteps,
   resolveOnePassEnabled,
   stampCompositeStepsOnNcFile,
+  ncOwnerRequestId,
 } from "../../utils/compositeStepIncrement.js";
+import { triggerEspritForNc } from "./common.review.esprit.js";
 import {
   triggerDashboardSummaryRefreshForAnchorId,
   triggerPricingSnapshotForBusinessAnchorId,
@@ -5286,6 +5288,53 @@ function buildReviewByStageForStartStage(startStage, now = new Date()) {
   };
 }
 
+/**
+ * 재제작 복사본이 원본 의뢰번호 폴더의 NC(s3Key)를 가리키면 가공·브리지가 엇갈린다.
+ * 가공 시작 복사는 NC 메타를 비우고 Esprit 재생성을 건다.
+ */
+async function ensureClonedNcBelongsToRequestOrRegenerate({
+  clonedRequest,
+  startStage,
+}) {
+  const requestId = String(clonedRequest?.requestId || "").trim();
+  if (!requestId || !clonedRequest?._id) return;
+
+  const stage = String(startStage || "").trim();
+  if (stage !== "가공" && stage !== "세척.패킹") return;
+
+  const ownerId = ncOwnerRequestId(clonedRequest.caseInfos?.ncFile, requestId);
+  const ownerNorm = String(ownerId || "").trim().toLowerCase();
+  const selfNorm = requestId.toLowerCase();
+  if (!ownerNorm || ownerNorm === selfNorm) return;
+
+  const generating = { status: "GENERATING", updatedAt: new Date() };
+  await Request.updateOne(
+    { _id: clonedRequest._id },
+    {
+      $unset: { "caseInfos.ncFile": 1, "caseInfos.espFile": 1 },
+      $set: { "productionSchedule.ncPreload": generating },
+    },
+  );
+
+  const fresh = await Request.findById(clonedRequest._id);
+  if (!fresh) return;
+
+  console.warn("[cloneRequestsForRecall] NC path owner mismatch — retrigger Esprit", {
+    clonedRequestId: requestId,
+    ncOwnerRequestId: ownerId,
+    startStage: stage,
+  });
+
+  void triggerEspritForNc({ request: fresh, force: true, onePhase: false }).catch(
+    (err) => {
+      console.error("[cloneRequestsForRecall] Esprit retrigger failed", {
+        clonedRequestId: requestId,
+        message: err?.message || String(err),
+      });
+    },
+  );
+}
+
 function buildClonedCaseInfos(sourceCaseInfos, startStage, now = new Date()) {
   const base = {
     ...sourceCaseInfos,
@@ -5901,6 +5950,11 @@ export async function cloneRequestsForRecall(req, res) {
         await ensureLotNumberForMachining(clonedRequest);
 
         await clonedRequest.save();
+
+        await ensureClonedNcBelongsToRequestOrRegenerate({
+          clonedRequest,
+          startStage,
+        });
 
         emitAppEventToRoles(
           ["manufacturer", "admin"],

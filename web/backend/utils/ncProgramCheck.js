@@ -10,6 +10,9 @@
  *   X −9.4~60 / Y −9.6~10.4 / Z −17.5~40, 오버트래블 알람 건은 X −11.3.
  * 장비 행정 한계 확정값이 있으면 SystemSettings.autoMachiningGate.ncLimits로 대체한다.
  */
+/** 정상 어벗 NC(2026-09~10 실측)는 보통 700KB 이상. 이보다 작으면 Esprit 중단·2단계 미완료 가능성이 크다. */
+export const NC_SUSPICIOUSLY_SMALL_BYTES = 200_000;
+
 export const DEFAULT_NC_LIMITS = Object.freeze({
   xMin: -10.5,
   xMax: 61,
@@ -55,5 +58,13 @@ export function evaluateNcLimits(analysis, limits = DEFAULT_NC_LIMITS) {
 
 export function buildNcAnalysis(text, limits = DEFAULT_NC_LIMITS) {
   const a = analyzeNcText(text);
-  return { ...a, flags: evaluateNcLimits(a, limits), checkedAt: new Date() };
+  const flags = evaluateNcLimits(a, limits);
+  if (
+    Number.isFinite(a.bytes) &&
+    a.bytes > 0 &&
+    a.bytes < NC_SUSPICIOUSLY_SMALL_BYTES
+  ) {
+    flags.push("nc_suspiciously_small");
+  }
+  return { ...a, flags, checkedAt: new Date() };
 }

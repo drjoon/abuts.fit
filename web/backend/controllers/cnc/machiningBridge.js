@@ -1421,6 +1421,17 @@ export async function triggerNextAutoMachiningAfterComplete({
           continue;
         }
 
+        const ncFlags = Array.isArray(r?.caseInfos?.ncFile?.analysis?.flags)
+          ? r.caseInfos.ncFile.analysis.flags
+          : [];
+        if (
+          ncFlags.includes("nc_suspiciously_small") ||
+          ncFlags.includes("nc_no_coordinates")
+        ) {
+          skippedAutoBlocked += 1;
+          continue;
+        }
+
         const compatible = isRequestDiameterCompatibleWithMachine({
           requestDoc: r,
           machineMeta: cncRuntimeMeta,
