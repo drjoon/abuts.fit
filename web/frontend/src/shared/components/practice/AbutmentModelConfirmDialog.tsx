@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: STL 프리뷰 — 스캔색 토글 숨김. 가공 경고는 fillet R 아래 오른쪽, STL은 왼쪽·세로 꽉 참.
 // - 2026-10-22: 카탈로그 제조사 선택 — 없는 setNewSystemFamily 호출이 선택을 막던 것 제거.
 // - 2026-10-22: 좁은 코너는 표시와 경고만. 원본 STL은 고치지 않고 내려받지 않는다.
 // - 2026-10-21: 보정 확인 모달은 평균 R과 관계없이 같은 문구·확인만.
@@ -510,44 +511,49 @@ export function AbutmentModelConfirmDialog({
             </div>
           ) : null}
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 sm:pr-2 lg:grid-cols-[52%_48%] lg:items-start">
-            <div className="app-glass-card app-glass-card--lg flex w-full flex-col !p-2 gap-2 lg:self-start">
-              <div className="app-glass-card-content shrink-0">
-                <div className="relative aspect-[4/3] w-full min-h-[280px] overflow-hidden">
-                  {detailFile ? (
-                    <StlPreviewViewer
-                      file={detailFile}
-                      showOverlay={false}
-                      showGrid={false}
-                      showTightCorner={Boolean(machiningPreflight?.overlay)}
-                      correctionSolidVisible={Boolean(machiningPreflight?.overlay)}
-                      metadata={
-                        machiningPreflight?.overlay
-                          ? {
-                              tightCorner: {
-                                ...machiningPreflight.overlay,
-                                correctionSolid: null,
-                                reliefOverlay: null,
-                              },
-                            }
-                          : undefined
-                      }
-                      className="absolute inset-0 h-full w-full min-h-0 md:min-h-0"
-                      onDiameterComputed={handleDiameterComputed}
-                    />
-                  ) : (
-                    <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-                      3D Preview
+          <div className="grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 sm:pr-2 lg:grid-cols-[52%_48%]">
+            <div className="app-glass-card app-glass-card--lg flex min-h-0 w-full flex-col gap-2 !p-2">
+              <div className="app-glass-card-content flex min-h-[280px] min-w-0 flex-1 flex-col">
+                <div className="flex min-h-0 flex-1 flex-col gap-2 sm:flex-row sm:items-stretch">
+                  <div className="relative min-h-[240px] min-w-0 flex-1 overflow-hidden sm:min-h-0">
+                    {detailFile ? (
+                      <StlPreviewViewer
+                        file={detailFile}
+                        showOverlay={false}
+                        showGrid={false}
+                        showColorMappingToggle={false}
+                        showTightCorner={Boolean(machiningPreflight?.overlay)}
+                        correctionSolidVisible={Boolean(machiningPreflight?.overlay)}
+                        metadata={
+                          machiningPreflight?.overlay
+                            ? {
+                                tightCorner: {
+                                  ...machiningPreflight.overlay,
+                                  correctionSolid: null,
+                                  reliefOverlay: null,
+                                },
+                              }
+                            : undefined
+                        }
+                        className="absolute inset-0 h-full w-full min-h-0 md:min-h-0"
+                        onDiameterComputed={handleDiameterComputed}
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+                        3D Preview
+                      </div>
+                    )}
+                  </div>
+                  {machiningPreflight ? (
+                    <div className="flex shrink-0 flex-col justify-end sm:w-[11.75rem] sm:pb-3">
+                      <StlMachiningPreflightNotice
+                        preflight={machiningPreflight}
+                        className="w-full max-w-full"
+                      />
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
-              {machiningPreflight ? (
-                <StlMachiningPreflightNotice
-                  preflight={machiningPreflight}
-                  className="w-fit max-w-full shrink-0 self-center"
-                />
-              ) : null}
               {selectablePreviewIndices.length > 1 ? (
                 <div className="shrink-0 rounded-lg border border-slate-200 bg-white/80">
                   <ul className="max-h-[7.5rem] overflow-y-auto py-1">
