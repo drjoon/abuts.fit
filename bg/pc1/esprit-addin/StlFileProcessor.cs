@@ -439,7 +439,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     {
                     }
                 }
-                stlBoundingTopZ = TryComputeStlBoundingTopZ(document);
+                // ESPRIT shadow가 비는 STL에 대비해 파일에서 직접 잰 Z 범위를 준비한다.
+                // (filled STL 축=Z. Rotate90Degrees 후 ESPRIT X=-Z 이므로 minX=-zMax, maxX=-zMin.)
+                double? stlFileZMax = null;
+                double? stlFileMinX = null;
+                double? stlFileMaxX = null;
+                if (TryReadStlFileZRange(stlPath, out double fileZMin, out double fileZMax))
+                {
+                    stlFileZMax = fileZMax;
+                    stlFileMinX = -fileZMax;
+                    stlFileMaxX = -fileZMin;
+                    AppLogger.Log($"StlFileProcessor: STL 파일 측정 Z범위=({fileZMin:F4}~{fileZMax:F4}), 회전 후 X범위=({stlFileMinX.Value:F4}~{stlFileMaxX.Value:F4})");
+                }
+                stlBoundingTopZ = TryComputeStlBoundingTopZ(document, stlFileZMax);
                 AppLogger.Log($"StlFileProcessor: STL bounding topZ={(stlBoundingTopZ.HasValue ? stlBoundingTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
                 Connect.SetCurrentDocument(document);
                 UpdateLatheBarDiameter(document, stlPath, machineBarDiameter, backendCamDiameter);
@@ -500,7 +512,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 }
                 var addinSw = System.Diagnostics.Stopwatch.StartNew();
                 NcJobCancellation.ThrowIfCurrentCancelled("before-InvokeDentalAddin");
-                InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ, finishLineMinZ, finishLineEspritR, twoPhase);
+                InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ, finishLineMinZ, finishLineEspritR, twoPhase, stlFileMinX, stlFileMaxX);
                 addinSw.Stop();
                 AppLogger.Log($"[PERF] StlFileProcessor.InvokeDentalAddin END elapsedMs={addinSw.ElapsedMilliseconds}");
                 NcJobCancellation.ThrowIfCurrentCancelled("after-InvokeDentalAddin");
@@ -840,7 +852,64 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 cutDiameterX = cutX,
             };
         }
-        private static double? TryComputeStlBoundingTopZ(Document document)
+        /// <summary>바이너리/ASCII STL 파일에서 정점 Z 최소·최대를 직접 잰다. ESPRIT shadow 폴백용.</summary>
+        private static bool TryReadStlFileZRange(string stlPath, out double zMin, out double zMax)
+        {
+            zMin = double.PositiveInfinity;
+            zMax = double.NegativeInfinity;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(stlPath) || !File.Exists(stlPath))
+                {
+                    return false;
+                }
+                byte[] data = File.ReadAllBytes(stlPath);
+                bool parsed = false;
+                if (data.Length >= 84)
+                {
+                    uint triCount = BitConverter.ToUInt32(data, 80);
+                    if (triCount > 0 && 84L + (long)triCount * 50L == data.Length)
+                    {
+                        parsed = true;
+                        for (long t = 0; t < triCount; t++)
+                        {
+                            long off = 84L + t * 50L + 12;
+                            for (int k = 0; k < 9; k += 3)
+                            {
+                                float z = BitConverter.ToSingle(data, (int)(off + (k + 2) * 4));
+                                if (float.IsNaN(z) || float.IsInfinity(z)) continue;
+                                if (z < zMin) zMin = z;
+                                if (z > zMax) zMax = z;
+                            }
+                        }
+                    }
+                }
+                if (!parsed)
+                {
+                    // ASCII STL: vertex 줄의 세 번째 숫자가 Z.
+                    string text = System.Text.Encoding.ASCII.GetString(data);
+                    foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
+                        text, @"vertex\s+\S+\s+\S+\s+(\S+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                    {
+                        if (double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double z)
+                            && !double.IsNaN(z) && !double.IsInfinity(z))
+                        {
+                            parsed = true;
+                            if (z < zMin) zMin = z;
+                            if (z > zMax) zMax = z;
+                        }
+                    }
+                }
+                return parsed && !double.IsInfinity(zMin) && !double.IsInfinity(zMax) && zMax > zMin;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"StlFileProcessor: STL 파일 Z범위 측정 실패 - {ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
+        }
+
+        private static double? TryComputeStlBoundingTopZ(Document document, double? fallbackTopZ = null)
         {
             double? result = null;
             List<string> createdFeatureKeys = null;
@@ -906,6 +975,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 catch { }
                 if (created == null || created.Length <= 0)
                 {
+                    // ESPRIT이 이 STL을 솔리드로 인정하지 못하면 shadow가 비어 온다.
+                    // stlTopZ는 split 게이트·진단용이므로 파일에서 잰 Z 최대값으로 대신한다.
+                    if (fallbackTopZ.HasValue)
+                    {
+                        AppLogger.Log($"StlFileProcessor: STL bounding shadow 실패 - 파일 측정 topZ={fallbackTopZ.Value:F4} 폴백 사용");
+                        return fallbackTopZ;
+                    }
                     return null;
                 }
                 result = EspritDocumentHelper.TryComputeFeatureChainMaxZ(created, createdFeatureKeys);
@@ -1120,7 +1196,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             AppLogger.Log("StlFileProcessor: hexRotation.appliedDeg 없음 - telemetry 보정 0도 적용");
             return 0.0;
         }
-        private void InvokeDentalAddin(Document document, double frontLimitX, double backLimitX, double? stlTopZ, double? finishLineTopZ, double? finishLineMinZ, double? finishLineEspritR, bool twoPhase)
+        private void InvokeDentalAddin(Document document, double frontLimitX, double backLimitX, double? stlTopZ, double? finishLineTopZ, double? finishLineMinZ, double? finishLineEspritR, bool twoPhase, double? stlFileMinX = null, double? stlFileMaxX = null)
         {
             if (document == null || _espApp == null)
             {
@@ -1154,6 +1230,24 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 ApplyTurningParameters(mainModuleType);
                 EnsureMoveModuleDefaults(mainModuleType, document);
                 ApplyLimitPoints(mainModuleType, frontLimitX, backLimitX, finishLineTopZ, finishLineEspritR, stlTopZ);
+                // MoveSTL shadow 폴백: STL 파일에서 잰 축 범위(회전 후 X)를 모듈에 공유한다.
+                {
+                    Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
+                    bool hasFallback = moveModuleType != null && stlFileMinX.HasValue && stlFileMaxX.HasValue
+                        && stlFileMaxX.Value > stlFileMinX.Value;
+                    if (moveModuleType != null)
+                    {
+                        DentalAddinReflectionHelper.SetStaticField(moveModuleType, "HasFallbackStlRange", hasFallback);
+                        if (hasFallback)
+                        {
+                            DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FallbackStlMinX", stlFileMinX.Value);
+                            DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FallbackStlMaxX", stlFileMaxX.Value);
+                        }
+                    }
+                    AppLogger.Log(hasFallback
+                        ? $"DentalAddin: MoveSTL 파일 폴백 범위 설정 - minX:{stlFileMinX.Value:F4}, maxX:{stlFileMaxX.Value:F4}"
+                        : "DentalAddin: MoveSTL 파일 폴백 범위 없음 (STL 파일 측정 실패)");
+                }
 
                 AppLogger.Log("DentalAddin: MoveSurface 실행 시작 - NeedMoveY/Z 계산");
                 InvokeMoveSurface(mainModuleType);

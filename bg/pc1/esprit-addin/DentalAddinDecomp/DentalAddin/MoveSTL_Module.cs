@@ -51,6 +51,14 @@ namespace DentalAddin
 
         public static double FinishLineR;
 
+        // Shadow가 빈 결과를 주는 STL(커넥션 이음 링의 퇴화 슬리버 등)용 폴백.
+        // StlFileProcessor가 STL 파일에서 직접 잰 축 방향 X 범위(ESPRIT 회전 후 좌표)를 넣어 둔다.
+        public static bool HasFallbackStlRange;
+
+        public static double FallbackStlMinX;
+
+        public static double FallbackStlMaxX;
+
         private static int[] FeaList;
 
         public static void RotateSTL()
@@ -440,6 +448,15 @@ namespace DentalAddin
                 // XYZ 평면 shadow가 비어 오는 경우(ESPRIT이 일부 메시에서 투영 윤곽을 못 만듦) 회전 우회로 X 범위를 잰다.
                 boundingBoxLength = stlMaxX - stlMinX;
                 DentalLogger.Log($"MoveSTL - 회전 우회로 X 범위 측정: minX={stlMinX:0.####}, maxX={stlMaxX:0.####}, length={boundingBoxLength:0.####}");
+            }
+            else if (HasFallbackStlRange && FallbackStlMaxX > FallbackStlMinX)
+            {
+                // ESPRIT이 이 STL을 솔리드로 인정하지 못해 shadow가 모든 평면에서 비는 경우.
+                // STL 파일에서 직접 잰 범위(축 길이·양끝 X)는 shadow 측정값과 같은 양이므로 그대로 쓴다.
+                stlMinX = FallbackStlMinX;
+                stlMaxX = FallbackStlMaxX;
+                boundingBoxLength = stlMaxX - stlMinX;
+                DentalLogger.Log($"MoveSTL - 파일 측정 폴백으로 X 범위 사용: minX={stlMinX:0.####}, maxX={stlMaxX:0.####}, length={boundingBoxLength:0.####}");
             }
             else
             {

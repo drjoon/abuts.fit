@@ -8,6 +8,49 @@
 import { blendCuffJunction, measureCuffConnection, proposeCuffRedesign, redesignCuffBowl } from "./cuffBlend.js";
 import { smoothPostAboveFinishLine } from "./postSmooth.js";
 import { smoothConnectionTaper } from "./connectionTaperSmooth.js";
+import { parseStl, writeBinaryStl } from "./meshCore.js";
+
+/**
+ * 가장 짧은 변이 1e-6mm(≈float32 정밀도 한계) 미만인 퇴화 삼각형을 뺀다.
+ * 커넥션 이음 링에서 본체 정점과 새 띠 정점이 사실상 같은 자리(서브 nm)에 겹치면 이런 면이 생기고,
+ * ESPRIT이 STL을 솔리드로 인정하지 못해 PartProfileShadow가 빈 결과를 준다(2026-10-22 ZKCXTDQQ).
+ * 구멍이 나도 폭이 1e-6mm 이하라 가공에는 영향이 없다.
+ */
+export function dropDegenerateTriangles(buffer) {
+  if (!buffer?.length) return { buffer, dropped: 0 };
+  const { positions, attributes } = parseStl(buffer);
+  const triCount = Math.floor(positions.length / 9);
+  const keptPos = [];
+  const keptAttr = [];
+  let dropped = 0;
+  for (let t = 0; t < triCount; t += 1) {
+    const p = t * 9;
+    let minEdge2 = Infinity;
+    for (let k = 0; k < 3; k += 1) {
+      const a = p + k * 3;
+      const b = p + ((k + 1) % 3) * 3;
+      const dx = positions[b] - positions[a];
+      const dy = positions[b + 1] - positions[a + 1];
+      const dz = positions[b + 2] - positions[a + 2];
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < minEdge2) minEdge2 = d2;
+    }
+    if (minEdge2 < 1e-12) {
+      dropped += 1;
+      continue;
+    }
+    for (let k = 0; k < 9; k += 1) keptPos.push(positions[p + k]);
+    keptAttr.push(attributes?.[t] || 0);
+  }
+  if (!dropped) return { buffer, dropped: 0 };
+  return {
+    buffer: writeBinaryStl({
+      positions: Float64Array.from(keptPos),
+      attributes: Uint16Array.from(keptAttr),
+    }),
+    dropped,
+  };
+}
 
 /** measure: 스펙 미등록 샘플의 11° 원뿔 끝 높이만 잰다(cuffSpecSuggest.service.js). */
 const measure = (input) => {
@@ -65,5 +108,15 @@ export function runCuffBlendJob(input, mode = "auto", options = {}) {
     result = applyPostSmooth({ ...result, buffer: null }, input, options.finishLine || null);
   }
   if (mode !== "propose" && mode !== "measure") result = applyTaperSmooth(result, input);
+  if (result.buffer?.length) {
+    const cleaned = dropDegenerateTriangles(result.buffer);
+    if (cleaned.dropped > 0) {
+      result = {
+        ...result,
+        buffer: cleaned.buffer,
+        detail: { ...(result.detail || {}), degenerateDropped: cleaned.dropped },
+      };
+    }
+  }
   return result;
 }
