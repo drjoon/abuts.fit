@@ -298,7 +298,7 @@
 - 공구/기술 정책:
   - 기술은 Rough PRC(`PrcFilePath[3]`)를 사용한다.
   - `ROUGH_20=1`이면 `MillRough_3D_20.prc` 우선, 미존재 시 `PrcFilePath[3]` 폴백.
-  - 공구는 Finish_Back과 동일하게 D1.2 볼엔드밀(`BM_D1.2`, T07) 강제.
+  - 공구는 Finish_Back과 동일하게 D1.0 볼엔드밀(`BM_D1.0`, T07) 강제.
   - 오퍼레이션 이름은 `Finish_Cuff`로 생성한다.
 
 - 구현 위치:

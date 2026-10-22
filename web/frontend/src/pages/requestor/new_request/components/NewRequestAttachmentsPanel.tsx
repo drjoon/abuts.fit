@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: 타이트 뱃지 기준을 D1.2 실제 반경 0.5mm로. 추가 여유 없이 R 0.5mm 미만.
 // - 2026-10-22: 타이트 뱃지 문구를 「R 0.6mm 미만」으로. 권고 0.65mm 이상이 아니라 공구 R 미달이다.
 // - 2026-08-19: 업로드 완료 시 파일카드에 「업로드됨」+ 파란 바(첨부 직후 사전 업로드가 보임).
 // - 2026-08-19: 파일카드에 백그라운드 업로드 % 표시(기공의뢰 파일페인과 동일).
@@ -167,12 +168,10 @@ function renderMachiningPreflightBadge(
 ) {
   if (!preflight) return null;
   if (preflight.status === "tight") {
-    const rawTool =
+    const toolR =
       typeof preflight.toolRadiusMm === "number" && preflight.toolRadiusMm > 0
         ? preflight.toolRadiusMm
-        : 0.6;
-    // 권고 여유 0.05가 붙은 0.65는 실제 공구 R 0.6 미만으로 보여 준다.
-    const toolR = Math.abs(rawTool - 0.65) < 0.001 ? 0.6 : rawTool;
+        : 0.5;
     const rLabel = toolR.toFixed(2).replace(/(\.\d)0$/, "$1");
     return (
       <div onClick={(event) => event.stopPropagation()}>

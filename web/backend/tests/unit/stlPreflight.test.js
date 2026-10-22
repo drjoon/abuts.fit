@@ -12,8 +12,9 @@ import {
 } from "../../services/abutmentStl/preflight.service.js";
 
 describe("stlPreflight summarizeTightCorner", () => {
-  it("공구 R 0.60이면 권고 R은 0.65mm다", () => {
-    expect(suggestedFilletRadiusMm(0.6)).toBe(0.65);
+  it("권고 R은 공구 R과 같다. 추가 여유는 없다", () => {
+    expect(suggestedFilletRadiusMm(0.5)).toBe(0.5);
+    expect(suggestedFilletRadiusMm(0.6)).toBe(0.6);
   });
 
   it("타이트 샘플이 있으면 tight와 최소·평균 R을 요약한다", () => {
@@ -32,7 +33,7 @@ describe("stlPreflight summarizeTightCorner", () => {
     expect(summary.averageFilletRadiusMm).toBe(0.44);
     expect(summary.minFilletRadiusMm).toBe(0.43);
     expect(summary.toolRadiusMm).toBe(0.6);
-    expect(summary.suggestedFilletRadiusMm).toBe(0.65);
+    expect(summary.suggestedFilletRadiusMm).toBe(0.6);
     expect(summary.proceedAsIsAllowed).toBe(false);
   });
 

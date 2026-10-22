@@ -16,7 +16,7 @@ import {
   tightCornerMetaFromCorrection,
 } from "./tightCorner.js";
 
-/** 평균 필렛 R이 이 값 이상이면 간이 검사에서 보정 없이 진행할 수 있다. 공구 R은 0.6mm. */
+/** 평균 필렛 R이 이 값 이상이면 간이 검사에서 보정 없이 진행할 수 있다. 공구 R은 0.5mm. */
 export const PROCEED_AS_IS_MIN_AVERAGE_FILLET_MM = 0.5;
 
 export function canProceedAsIs(averageFilletRadiusMm) {

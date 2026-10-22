@@ -3,14 +3,16 @@
 // - web/backend/services/abutmentStl/pipeline.js
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 //
-// 마진 코너(어깨↔벽)에서 φ1.2 볼 엔드밀 미삭제 구간을 finish line 따라 검사하고,
-// 피니시라인 바로 위 마진↔축면 경계의 fillet R을 재고, R<공구R이면 공구 R 필렛 보정면을 만든다.
+// 마진 코너(어깨↔벽)에서 D1.2 볼 엔드밀(실제 직경 1.0mm, 반경 0.5mm) 미삭제 구간을
+// finish line 따라 검사하고, 피니시라인 바로 위 마진↔축면 경계의 fillet R을 재고,
+// R<0.5mm이면 같은 반경의 필렛 보정면을 만든다. 검출·보정에 추가 여유는 두지 않는다.
 // 보정 솔리드는 원본과 별개로 메타데이터에 담긴다. filled STL·CAM은 원본 그대로 두고,
 // 뷰어에서 토글을 켰을 때만 원본 위에 빨갛게 덧입혀 보여준다.
 import { Mesh, cross, meshAxisPlaneSection, normalize } from "./meshCore.js";
 
-export const TIGHT_CORNER_VERSION = 7;
-export const FINISH_BALL_DIAMETER_MM = 1.2;
+export const TIGHT_CORNER_VERSION = 8;
+/** D1.2 볼엔드밀의 실제 절삭 직경(mm). 호칭은 1.2이고, 검출·보정 기준 반경은 0.5mm. */
+export const FINISH_BALL_DIAMETER_MM = 1.0;
 export const FINISH_BALL_RADIUS_MM = FINISH_BALL_DIAMETER_MM / 2;
 
 const DIST_TOL = 1e-8;
@@ -34,7 +36,7 @@ const SHOULDER_MIN_SPAN_MM = 0.35;
 /** 피니시라인 z와 마진 꼭짓점 z가 어긋날 수 있어 위쪽으로 넉넉히 본다. */
 const CORNER_W_SEARCH_ABOVE_MM = 2.8;
 const CORNER_W_SEARCH_BELOW_MM = 0.35;
-/** 이 이상이면 φ1.2 볼이 설계 코너를 깎지 못해 CAM 오버컷이 예상된다. */
+/** 이 이상이면 반경 0.5mm 볼이 설계 코너를 깎지 못해 CAM 오버컷이 예상된다. */
 const GOUGE_TIGHT_THRESHOLD_MM = 0.018;
 /** 금속 쪽 내각(라디안). π에 가까울수록 둥글고, 작을수록 각짐. */
 const METAL_ANGLE_TIGHT_RAD = (138 * Math.PI) / 180;
@@ -1248,8 +1250,8 @@ function angDelta(a, b) {
   return d;
 }
 
-/** 보정 필렛 R = 공구 R + 이 여유(mm). */
-export const CORRECTION_FILLET_MARGIN_MM = 0.05;
+/** 보정 필렛 R = 공구 R + 이 여유(mm). 기준은 공구 반경 0.5mm이고 추가 여유는 없다. */
+export const CORRECTION_FILLET_MARGIN_MM = 0;
 /** 이보다 벌어진 측정 구간 사이는 보간하지 않고 건드리지 않는다. */
 const STATION_MAX_GAP_RAD = 0.6;
 /** 비연속 스테이션 구간 양 끝에서 변위를 0으로 줄이는 각도 폭(라디안). */
@@ -1705,7 +1707,7 @@ function filletTargetInPlane(st, u, w, targetR, scaleW = 1, scaleL = 1, ignoreNe
 }
 
 /**
- * 타이트 코너 필렛만 공구 R + 여유로 키운다. 코너 띠는 원호가 실제로 생기도록 나눈 뒤 투영하므로
+ * 타이트 코너 필렛만 공구 R(0.5mm)로 키운다. 코너 띠는 원호가 실제로 생기도록 나눈 뒤 투영하므로
  * 면이 늘 수 있다. 마진·축면 직선 위 정점과 FL 아래는 움직이지 않는다.
  * @returns {{ mesh: import("./meshCore.js").Mesh, movedVertices: Uint8Array, movedCount: number, filletRadiusMm: number } | null}
  */

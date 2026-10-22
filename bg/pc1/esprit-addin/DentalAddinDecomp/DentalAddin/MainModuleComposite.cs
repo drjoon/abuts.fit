@@ -26,8 +26,8 @@ namespace DentalAddin
         private static string CompositePrcAllPath => Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", "11_Composite prc", "5axisComposite_All.prc");
         private static string CompositePrcFrontPath => Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", "11_Composite prc", "5axisComposite_Front.prc");
 
-        private const string CompositeFinishCommonToolId = "BM_D1.2";
-        private const double CompositeFinishCommonToolDiameterMm = 1.2;
+        private const string CompositeFinishCommonToolId = "BM_D1.0";
+        private const double CompositeFinishCommonToolDiameterMm = 1.0;
 
         // Composite OrientationStrategy 정책 SSOT
         // - 운영 설정에 따라 법선 방향(0)을 사용한다.
@@ -118,7 +118,7 @@ namespace DentalAddin
                     }
                 }
 
-                // 2) D1.2 BallMill로 fallback
+                // 2) D1.0 BallMill로 fallback
                 foreach (Tool tool in (System.Collections.IEnumerable)Document.Tools)
                 {
                     if (tool == null || string.IsNullOrWhiteSpace(tool.ToolID))
@@ -139,7 +139,7 @@ namespace DentalAddin
             }
             catch (Exception ex)
             {
-                DentalLogger.Log($"Composite2SplitLine2 - Finish 공통 공구(D1.2) 탐색 실패: {ex.GetType().Name}:{ex.Message}");
+                DentalLogger.Log($"Composite2SplitLine2 - Finish 공통 공구(D1.0) 탐색 실패: {ex.GetType().Name}:{ex.Message}");
             }
 
             return null;
@@ -155,7 +155,7 @@ namespace DentalAddin
             string finishToolId = ResolveCompositeFinishCommonToolId();
             if (string.IsNullOrWhiteSpace(finishToolId))
             {
-                DentalLogger.Log($"Composite2SplitLine2 - {label} Finish 공통 공구(D1.2) 미발견: 기존 ToolID 유지('{op.ToolID ?? ""}')");
+                DentalLogger.Log($"Composite2SplitLine2 - {label} Finish 공통 공구(D1.0) 미발견: 기존 ToolID 유지('{op.ToolID ?? ""}')");
                 return;
             }
 
@@ -1189,7 +1189,7 @@ namespace DentalAddin
                 }
             }
 
-            // Finish_* 공통 공구 정책: D1.2 볼엔드밀(BM_D1.2) 강제
+            // Finish_* 공통 공구 정책: D1.0 볼엔드밀(BM_D1.0) 강제
             TryApplyCompositeFinishCommonTool(opA, "A");
             if (runB && opB != null)
             {

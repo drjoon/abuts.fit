@@ -2,7 +2,7 @@
 // - web/backend/utils/tightCornerReview.js
 // - web/frontend/src/features/requests/hooks/useStlMetadata.ts
 
-/** fillet R < 공구 R(0.6mm) — 보정 솔리드가 메타에 담긴 경우 */
+/** fillet R < 공구 R(0.5mm) — 보정 솔리드가 메타에 담긴 경우 */
 export function isTightCornerCorrectionRequired(
   tightCorner: {
     tightCount?: number;

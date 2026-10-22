@@ -185,12 +185,11 @@ export type ViewSyncState = {
   pan: [number, number];
 };
 
-/** 화면의 공구 R. 여유 0.05가 붙은 0.65는 실제 공구 0.60으로 보여 준다. */
+/** 화면의 공구 R. 메타 직경이 없으면 D1.2 실제 반경 0.50mm. */
 function displayToolRadiusLabel(toolDiameterMm?: number | null) {
   const diameter = Number(toolDiameterMm);
-  const radius = Number.isFinite(diameter) && diameter > 0 ? diameter / 2 : 0.6;
-  const shown = Math.abs(radius - 0.65) < 0.001 ? 0.6 : radius;
-  return shown.toFixed(2);
+  const radius = Number.isFinite(diameter) && diameter > 0 ? diameter / 2 : 0.5;
+  return radius.toFixed(2);
 }
 
 export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(

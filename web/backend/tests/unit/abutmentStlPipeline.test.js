@@ -16,6 +16,7 @@ import { runAbutmentStlPipeline } from "../../services/abutmentStl/pipeline.js";
 import {
   analyzeMarginAtPoint,
   applyTightCornerCorrectionToMesh,
+  FINISH_BALL_RADIUS_MM,
   correctTightCornerFillet,
   detectTightCorners,
   movedFilletSurface,
@@ -202,21 +203,22 @@ describe("abutmentStl tightCorner", () => {
     const len = Math.hypot(du, dw);
     const shoulderLine = { d: { u: du / len, w: dw / len } };
     const metal = metalInteriorAngleRad(wallLine, shoulderLine);
-    const gouge = gougeDepthForCorner(metal, 0.6);
+    const gouge = gougeDepthForCorner(metal, FINISH_BALL_RADIUS_MM);
     expect(gouge).toBeGreaterThan(0.018);
   });
 
-  it("피니시라인 위 마진↔축면 fillet R이 공구 R(0.6)보다 작을 때만 표시한다", () => {
+  it("피니시라인 위 마진↔축면 fillet R이 공구 R(0.5)보다 작을 때만 표시한다", () => {
     const fl = [3.6, 0, 2.0];
     const axis = [0, 0, 1];
     const analyze = (r) => {
       const mesh = Mesh.fromStlBuffer(
         writeBinaryStl({ positions: marginWallSoup(r), attributes: null }),
       );
-      return analyzeMarginAtPoint(mesh, fl, 0.6, axis);
+      return analyzeMarginAtPoint(mesh, fl, FINISH_BALL_RADIUS_MM, axis);
     };
+    expect(FINISH_BALL_RADIUS_MM).toBe(0.5);
     expect(analyze(0.9)?.tight).toBe(false);
-    expect(analyze(0.7)?.tight).toBe(false);
+    expect(analyze(0.55)?.tight).toBe(false);
     const small = analyze(0.25);
     expect(small?.tight).toBe(true);
     expect(small.filletRadiusMm).toBeLessThan(0.45);
@@ -250,8 +252,8 @@ describe("abutmentStl tightCorner", () => {
     expect(corrected.faceCount).toBeGreaterThanOrEqual(mesh.faceCount);
     expect(detectTightCorners(corrected, flPts, {}).tightCount).toBe(0);
     const after = analyzeMarginAtPoint(corrected, flPts[0], 5, [0, 0, 1]);
-    expect(after.filletRadiusMm).toBeGreaterThan(0.62);
-    expect(after.filletRadiusMm).toBeLessThan(0.68);
+    expect(after.filletRadiusMm).toBeGreaterThan(0.48);
+    expect(after.filletRadiusMm).toBeLessThan(0.58);
 
     // FL·FL 아래·필렛 위 축면 정점은 그대로다.
     let moved = 0;
@@ -327,7 +329,7 @@ describe("abutmentStl tightCorner", () => {
       flPts.push([3.6 * Math.cos(a), 3.6 * Math.sin(a), 2.0]);
     }
     const mesh = Mesh.fromStlBuffer(
-      writeBinaryStl({ positions: marginWallSoup(0.55), attributes: null }),
+      writeBinaryStl({ positions: marginWallSoup(0.45), attributes: null }),
     );
     const screened = detectTightCorners(mesh, flPts, { screen: true });
     expect(screened.tightCount).toBeGreaterThan(0);
@@ -348,7 +350,7 @@ describe("abutmentStl tightCorner", () => {
     const meta = tightCornerMetaFromCorrection(tight, movedFilletSurface(tight));
     expect(meta.tightCount).toBe(tight.tightSamples.length);
     expect(meta.tightCount).toBeGreaterThan(0);
-    expect(meta.averageFilletRadiusMm).toBeLessThan(0.6);
+    expect(meta.averageFilletRadiusMm).toBeLessThan(0.5);
     expect(meta.samples[0].cornerPoint).toHaveLength(3);
     expect(meta.correctionSolid.positions.length).toBeGreaterThan(0);
 
@@ -438,7 +440,7 @@ describe("abutmentStl tightCorner", () => {
     expect(detectTightCorners(res.mesh, flPts, {}).tightCount).toBe(0);
   });
 
-  it("회전체 샘플(R>0.6)은 보정면 없음", async () => {
+  it("회전체 샘플(R>0.5)은 보정면 없음", async () => {
     const smoothBuffer = writeBinaryStl({ positions: revolvedAbutmentSoup(), attributes: null });
     const smoothPipe = await runAbutmentStlPipeline(smoothBuffer, { targetDiameter: 3.33 });
     expect(smoothPipe.tightCorner?.tightCount ?? 0).toBe(0);
@@ -459,7 +461,7 @@ describe("abutmentStl pipeline", () => {
       expect(out.finishLine.points.length).toBeGreaterThanOrEqual(8);
       expect(out.stlMetadata?.connectionDiameter).toBe(3.33);
       expect(out.tightCorner).toBeTruthy();
-      expect(out.tightCorner.version).toBe(7);
+      expect(out.tightCorner.version).toBe(8);
     }
   });
 

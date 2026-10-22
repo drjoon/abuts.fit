@@ -3,7 +3,7 @@
 // - web/backend/services/autoMachiningGate.service.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/tightCornerReview.ts
 /**
- * φ1.2 볼(공구 R 0.6mm)로 깎지 못해 보정 솔리드가 붙는 타이트 코너.
+ * D1.2 볼(실제 반경 0.5mm)로 깎지 못해 보정 솔리드가 붙는 타이트 코너.
  * filled STL·CAM은 원본 그대로 두고, 작업자 확인·자동 승인 보류 SSOT.
  */
 export function isTightCornerCorrectionRequired(tightCorner) {

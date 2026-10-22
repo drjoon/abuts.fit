@@ -19,9 +19,9 @@ import { identity } from "./meshCore.js";
 import { FINISH_BALL_RADIUS_MM } from "./tightCorner.js";
 import { canProceedAsIs } from "./marginFilletReview.js";
 
-/** 디자인 수정 권고 여유(mm). 공구 R에 이만큼 더한 값을 권한다. */
-export const PREFLIGHT_FILLET_MARGIN_MM = 0.05;
-/** 권고 R 올림 단위(mm). 0.60 + 0.05 = 0.65처럼 0.05 단위로 올린다. */
+/** 디자인 수정 권고 여유(mm). 검출·보정 기준은 공구 반경 0.5mm이고 추가 여유는 없다. */
+export const PREFLIGHT_FILLET_MARGIN_MM = 0;
+/** 권고 R 올림 단위(mm). 여유 0이면 공구 반경 0.50 그대로다. */
 const SUGGEST_STEP_MM = 0.05;
 
 const round2 = (v) => Math.round(v * 100) / 100;
