@@ -14,6 +14,8 @@ logs
 .frontend_node_modules__eb_deploy_backup
 .backend_node_modules__eb_deploy_backup
 .eb_setenv_*.sha
+.eb_frontend_npm.sha
+.eb_frontend_src.sha
 
 *.zip
 # 기공소 연결 프로그램 설치 파일 (웹「설치 파일 받기」)

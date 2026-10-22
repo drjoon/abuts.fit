@@ -6,13 +6,14 @@ PARENT_DIR="$(dirname "$WEB_DIR")"
 FRONTEND_DIR="$WEB_DIR/frontend"
 BACKEND_DIR="$WEB_DIR/backend"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
-ZIP_NAME="deploy-$TIMESTAMP.zip"
-ZIP_PATH="$PARENT_DIR/$ZIP_NAME"
 
 BACKEND_NODE_MODULES_DIR="$BACKEND_DIR/node_modules"
 BACKEND_NODE_MODULES_BACKUP_DIR="$PARENT_DIR/.backend_node_modules__eb_deploy_backup"
 FRONTEND_NODE_MODULES_DIR="$FRONTEND_DIR/node_modules"
 FRONTEND_NODE_MODULES_BACKUP_DIR="$PARENT_DIR/.frontend_node_modules__eb_deploy_backup"
+FRONTEND_NPM_STAMP="$PARENT_DIR/.eb_frontend_npm.sha"
+FRONTEND_SRC_STAMP="$PARENT_DIR/.eb_frontend_src.sha"
+WORK_SCAN_BUNDLE="$BACKEND_DIR/vendor/workScanAutoAlign/workScanAutoAlign.mjs"
 
 # 로그 출력 함수
 info() {
@@ -222,19 +223,45 @@ restore_backend_node_modules() {
 
 trap restore_backend_node_modules EXIT
 
+frontend_tree_hash() {
+  (
+    cd "$FRONTEND_DIR" && \
+    find . \
+      \( -path ./node_modules -o -path ./dist -o -path ./.vite -o -path ./coverage -o -path ./test-results -o -path ./playwright-report \) -prune -o \
+      -type f -print0 \
+    | sort -z \
+    | xargs -0 shasum -a 256 \
+    | shasum -a 256 \
+    | awk '{print $1}'
+  )
+}
+
 info "프론트엔드 빌드"
-(cd "$FRONTEND_DIR" && npm install && npm run build)
+LOCK_HASH="$(shasum -a 256 "$FRONTEND_DIR/package-lock.json" | awk '{print $1}')"
+if [[ -d "$FRONTEND_NODE_MODULES_DIR" && -f "$FRONTEND_NPM_STAMP" && "$(tr -d '\n' < "$FRONTEND_NPM_STAMP")" == "$LOCK_HASH" ]]; then
+  info "프론트 node_modules 유지 (package-lock 변경 없음)"
+else
+  (cd "$FRONTEND_DIR" && npm install)
+  printf '%s' "$LOCK_HASH" > "$FRONTEND_NPM_STAMP"
+fi
+
+SRC_HASH="$(frontend_tree_hash)"
+if [[ -f "$FRONTEND_DIR/dist/index.html" && -f "$WORK_SCAN_BUNDLE" && -f "$FRONTEND_SRC_STAMP" && "$(tr -d '\n' < "$FRONTEND_SRC_STAMP")" == "$SRC_HASH" ]]; then
+  info "프론트 빌드 생략 (소스 변경 없음)"
+else
+  (cd "$FRONTEND_DIR" && npm run build)
+  printf '%s' "$SRC_HASH" > "$FRONTEND_SRC_STAMP"
+fi
 
 # Vite가 dist를 비운 뒤 이번 빌드만 쓴다. 예전 해시 청크는 index.html이 가리키지 않는다.
 if [[ -d "$PARENT_DIR/.eb_assets_cache" ]]; then
   rm -rf "$PARENT_DIR/.eb_assets_cache"
-  info "이전 Vite 해시 에셋 캐시 삭제 (배포 zip에 넣지 않음)"
+  info "이전 Vite 해시 에셋 캐시 삭제"
 fi
 
-info "이전 dist 포함 zip 정리"
-find "$PARENT_DIR" -maxdepth 1 -name 'deploy-*.zip' -type f -mtime +3 -delete || true
+find "$PARENT_DIR" -maxdepth 1 -name 'deploy-*.zip' -type f -delete || true
 
-info "zip 패키지 생성"
+# eb deploy 는 이 파일을 보고 web 디렉터리를 묶는다. 별도 zip 은 만들지 않는다.
 cat <<'EOF' > "$WEB_DIR/.ebignore"
 .git
 /package.json
@@ -257,25 +284,6 @@ backend/node_modules
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
 EOF
-
-rm -f "$ZIP_PATH"
-
-# web 폴더 내부를 zip 루트로 포함
-(cd "$WEB_DIR" && zip -r "$ZIP_PATH" \
-  backend \
-  Procfile \
-  .platform \
-  -x "**/node_modules/*" \
-  -x "backend/node_modules/*" \
-  -x "backend/coverage/*" \
-  -x "backend/.nyc_output/*" \
-  -x "backend/.git/*" \
-  -x "*/.DS_Store" \
-  -x "*.env" \
-  -x "*.env.*")
-
-info "zip에 dist 포함"
-(cd "$WEB_DIR" && zip -ur "$ZIP_PATH" frontend/dist)
 
 # 환경 파일에서 환경변수 읽기
 info "환경변수 파싱 ($ENV_MODE.env)"
@@ -384,4 +392,4 @@ fi
 
 restore_backend_node_modules
 
-info "배포 완료: $ZIP_PATH ($ENV_MODE 환경)"
+info "배포 완료 ($ENV_MODE 환경)"

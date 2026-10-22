@@ -3,21 +3,8 @@ set -euo pipefail
 
 echo "[predeploy] Running hook..."
 
-# 한글 폰트 설치 (Canvas 렌더링용)
-if ! fc-list 2>/dev/null | grep -qi "noto.*cjk\|noto.*kr"; then
-  echo "[predeploy] Installing Korean fonts (Noto Sans CJK)..."
-  # Amazon Linux 2023 - 여러 패키지명 시도
-  dnf install -y google-noto-sans-cjk-fonts 2>/dev/null || \
-  dnf install -y google-noto-cjk-fonts 2>/dev/null || \
-  yum install -y google-noto-sans-cjk-fonts 2>/dev/null || \
-  yum install -y google-noto-cjk-fonts 2>/dev/null || \
-  echo "[predeploy] Font installation failed (non-critical)"
-  
-  # 폰트 캐시 갱신
-  fc-cache -fv 2>/dev/null || true
-else
-  echo "[predeploy] Korean fonts already installed"
-fi
+# 한글 폰트는 backend/assets/fonts/NotoSansKR-VF.ttf 로 배포한다.
+# 인스턴스마다 dnf 로 Noto CJK 를 설치하지 않는다.
 
 mkdir -p /var/pids
 chown root:root /var/pids

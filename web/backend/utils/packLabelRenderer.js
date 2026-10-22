@@ -7,7 +7,16 @@
  * 600 DPI 기준으로 80x65mm = 1890x1535 dots
  *
  * @napi-rs/canvas 사용 (사전 빌드된 바이너리로 빠른 설치)
+ * 한글은 backend/assets/fonts 의 Noto Sans KR 를 먼저 등록한다.
  */
+
+import path from "path";
+import { fileURLToPath } from "url";
+
+const BUNDLED_NOTO_SANS_KR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../assets/fonts/NotoSansKR-VF.ttf",
+);
 
 let canvasModuleCache = null;
 
@@ -31,18 +40,19 @@ async function loadCanvasModule() {
     const canvasModule = await import("@napi-rs/canvas");
     const qrcodeModule = await import("qrcode");
 
-    // 한글 폰트 등록 (Linux 시스템 폰트 경로)
+    // 한글 폰트 등록. 배포 번들 폰트를 먼저 쓴다.
     try {
       const { GlobalFonts } = canvasModule;
       const { existsSync } = await import("fs");
 
-      // 시스템별 Noto Sans CJK 폰트 경로
+      // 번들 폰트 우선. 없으면 개발 머신 시스템 폰트.
       const fontPaths = [
-        "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc", // Amazon Linux
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc", // Ubuntu/Debian
+        BUNDLED_NOTO_SANS_KR,
+        "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/noto/NotoSansKR-Regular.otf",
-        "/System/Library/Fonts/AppleSDGothicNeo.ttc", // macOS
+        "/System/Library/Fonts/AppleSDGothicNeo.ttc",
       ];
 
       let fontRegistered = false;
