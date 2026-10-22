@@ -3,7 +3,10 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-10-22: body 포털 — 모달 portal과 같은 스택에서 z-index가 먹게 한다.
 // - 2026-10-04: alert 전용 레이아웃 제거 — 채팅·의뢰도 전역 공통 default 토스트.
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/shared/ui/cn";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
@@ -17,8 +20,13 @@ import {
 
 export function Toaster() {
   const { toasts } = useToast();
+  const [mounted, setMounted] = useState(false);
 
-  return (
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const tree = (
     <ToastProvider duration={4000}>
       {toasts.map(function ({
         id,
@@ -50,4 +58,7 @@ export function Toaster() {
       <ToastViewport />
     </ToastProvider>
   );
+
+  if (!mounted) return null;
+  return createPortal(tree, document.body);
 }

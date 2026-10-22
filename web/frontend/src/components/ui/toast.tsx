@@ -1,3 +1,4 @@
+// - 2026-10-22: z-[99999] SSOT — 모달 위 클릭. 뷰포트 pointer-events-none + 토스트 auto.
 // - 2026-10-04: alert 변형 제거 — 채팅·의뢰도 전역 공통 default(border-2 primary).
 // - 2026-10-03: 토스트 뷰포트 오른쪽 위. 클릭 가능한 알림 토스트.
 // related files:
@@ -10,6 +11,10 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { X } from "lucide-react";
 
 import { cn } from "@/shared/ui/cn";
+import {
+  APP_TOAST_ITEM_Z_CLASS,
+  APP_TOAST_VIEWPORT_Z_CLASS,
+} from "@/shared/ui/appToastLayer";
 
 const ToastProvider = ToastPrimitives.Provider;
 
@@ -21,7 +26,8 @@ const ToastViewport = React.forwardRef<
     ref={ref}
     data-app-toast-viewport=""
     className={cn(
-      "fixed top-0 right-0 z-[11000] flex max-h-screen w-full flex-col gap-2.5 p-4 sm:p-5 sm:w-auto sm:min-w-[340px] sm:max-w-[400px]",
+      "pointer-events-none fixed top-0 right-0 flex max-h-screen w-full flex-col gap-2.5 p-4 sm:p-5 sm:w-auto sm:min-w-[340px] sm:max-w-[400px]",
+      APP_TOAST_VIEWPORT_Z_CLASS,
       className,
     )}
     {...props}
@@ -30,7 +36,10 @@ const ToastViewport = React.forwardRef<
 ToastViewport.displayName = ToastPrimitives.Viewport.displayName;
 
 const toastVariants = cva(
-  "group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-md border p-6 pr-8 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full data-[state=open]:duration-300",
+  cn(
+    "group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-md border p-6 pr-8 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full data-[state=open]:duration-300",
+    APP_TOAST_ITEM_Z_CLASS,
+  ),
   {
     variants: {
       variant: {
