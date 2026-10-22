@@ -850,6 +850,17 @@ export const AdminUserManagement = ({
 
   const statsCards = [
     {
+      key: "pending",
+      label: "승인대기",
+      count: totalPending,
+      icon: UserCheck,
+      iconWrap: "bg-accent-soft",
+      iconClass: "text-accent-strong",
+      onClick: () => setSelectedStatus("pending"),
+      active: selectedStatus === "pending",
+      emphasis: true,
+    },
+    {
       key: "all",
       label: "전체",
       count: totalUsers,
@@ -858,6 +869,7 @@ export const AdminUserManagement = ({
       iconClass: "text-slate-600",
       onClick: () => setSelectedStatus("all"),
       active: selectedStatus === "all",
+      emphasis: false,
     },
     {
       key: "active",
@@ -868,16 +880,7 @@ export const AdminUserManagement = ({
       iconClass: "text-primary-strong",
       onClick: () => setSelectedStatus("active"),
       active: selectedStatus === "active",
-    },
-    {
-      key: "pending",
-      label: "승인대기",
-      count: totalPending,
-      icon: UserCheck,
-      iconWrap: "bg-accent-soft",
-      iconClass: "text-accent-strong",
-      onClick: () => setSelectedStatus("pending"),
-      active: selectedStatus === "pending",
+      emphasis: false,
     },
   ] as const;
 
@@ -900,50 +903,18 @@ export const AdminUserManagement = ({
           : "flex h-full min-h-0 flex-col px-2 pt-4 pb-2 sm:px-5 sm:pt-4"
       }
     >
-      <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
-        <div className="grid grid-cols-3 gap-2.5 p-0.5">
-          {statsCards.map((card) => {
-            const Icon = card.icon;
-            return (
-              <button
-                key={card.key}
-                type="button"
-                onClick={card.onClick}
-                className={`rounded-xl border bg-white px-3.5 py-3 text-left shadow-sm transition-colors ${
-                  card.active
-                    ? "border-slate-900 ring-1 ring-slate-900"
-                    : "border-slate-200/80 hover:border-slate-300 hover:bg-slate-50/60"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`rounded-lg p-2 ${card.iconWrap}`}>
-                    <Icon className={`h-4 w-4 ${card.iconClass}`} />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-medium text-slate-500">
-                      {card.label}
-                    </p>
-                    <p className="text-xl font-bold tabular-nums tracking-tight text-slate-900">
-                      {card.count.toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
+      <div className="flex w-full min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
         {unresolvedUsers.length > 0 && (
           <div className="rounded-2xl border border-accent-muted/80 bg-accent-soft/60 px-5 py-4 shadow-sm sm:px-6">
             <div className="mb-3">
-              <h2 className="text-sm font-bold tracking-tight text-slate-900">
-                사업자 정보 확인 필요
+              <h2 className="text-base font-semibold tracking-tight text-slate-900">
+                사업자 확인
               </h2>
               <p className="mt-0.5 text-xs text-slate-500">
-                사업자등록증 검증이 미처리된 사용자입니다.
+                사업자등록증 검증이 남은 사용자입니다.
               </p>
             </div>
-            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {unresolvedUsers.map((user) => (
                 <div
                   key={user.id}
@@ -971,11 +942,47 @@ export const AdminUserManagement = ({
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-3 pl-1.5 pr-0.5 sm:pl-2">
-          <div className="relative min-w-0 w-full flex-1 sm:min-w-[160px] sm:max-w-xs">
+        <div className="grid grid-cols-3 gap-2.5 p-0.5">
+          {statsCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <button
+                key={card.key}
+                type="button"
+                onClick={card.onClick}
+                className={`rounded-xl border bg-white px-3.5 py-3 text-left shadow-sm transition-colors ${
+                  card.active
+                    ? "border-slate-900 ring-1 ring-slate-900"
+                    : "border-slate-200/80 hover:border-slate-300 hover:bg-slate-50/60"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`rounded-lg p-2 ${card.iconWrap}`}>
+                    <Icon className={`h-4 w-4 ${card.iconClass}`} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-slate-500">
+                      {card.label}
+                    </p>
+                    <p
+                      className={`font-bold tabular-nums tracking-tight text-slate-900 ${
+                        card.emphasis ? "text-3xl" : "text-2xl"
+                      }`}
+                    >
+                      {card.count.toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 px-0.5">
+          <div className="relative min-w-[12rem] w-full flex-[1.4]">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
-              placeholder="사용자 검색..."
+              placeholder="이름 · 이메일"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm shadow-sm"
@@ -1029,7 +1036,7 @@ export const AdminUserManagement = ({
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-2.5">
                 {filteredUsers.map((user) => {
                   const displayEmail = getDisplayEmail(user);
                   const displayCompany = getDisplayCompany(user);

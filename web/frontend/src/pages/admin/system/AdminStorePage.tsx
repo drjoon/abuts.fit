@@ -1018,21 +1018,15 @@ export default function AdminStorePage() {
 
   return (
     <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
-      <div className="mx-auto w-full max-w-6xl space-y-5 p-1 pb-10">
-        <header className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-lg font-semibold tracking-tight">스토어</h1>
-              <Badge variant="outline" className="font-normal">
-                {STORE_PRICE_TAX_NOTE}
-              </Badge>
-              <Badge variant="secondary" className="font-normal">
-                매출 귀속 {STORE_REVENUE_OWNER_ROLE}
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              주문 풀필먼트 · 판매가 · 재고
-            </p>
+      <div className="w-full space-y-4 p-0.5 pb-10">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="font-normal">
+              {STORE_PRICE_TAX_NOTE}
+            </Badge>
+            <Badge variant="secondary" className="font-normal">
+              매출 {STORE_REVENUE_OWNER_ROLE}
+            </Badge>
           </div>
           <Button
             type="button"
@@ -1053,24 +1047,45 @@ export default function AdminStorePage() {
             label="입금 대기"
             value={stats.pending}
             tone={stats.pending > 0 ? "accent" : "default"}
-            hint="PENDING · MATCHED"
+            hint="입금 확인 전"
+            size="lg"
+            selected={tab === "orders" && orderFilter === "pending"}
+            onClick={() => {
+              setTab("orders");
+              setOrderFilter((cur) => (cur === "pending" ? "all" : "pending"));
+            }}
           />
           <CreditStatTile
             label="출고 대기"
             value={stats.ready}
             tone={stats.ready > 0 ? "accent" : "default"}
-            hint="결제 완료 · READY"
+            hint="결제 완료"
+            size="lg"
+            selected={tab === "orders" && orderFilter === "ready"}
+            onClick={() => {
+              setTab("orders");
+              setOrderFilter((cur) => (cur === "ready" ? "all" : "ready"));
+            }}
           />
           <CreditStatTile
             label="배송 중"
             value={stats.shipped}
-            hint="SHIPPED"
+            hint="송장 등록됨"
+            size="lg"
+            selected={tab === "orders" && orderFilter === "shipped"}
+            onClick={() => {
+              setTab("orders");
+              setOrderFilter((cur) => (cur === "shipped" ? "all" : "shipped"));
+            }}
           />
           <CreditStatTile
             label="저재고"
             value={stats.lowStock}
             tone={stats.lowStock > 0 ? "accent" : "default"}
-            hint="가용 ≤ 5"
+            hint="가용 5개 이하"
+            size="lg"
+            selected={tab === "products"}
+            onClick={() => setTab("products")}
           />
         </div>
 
@@ -1094,9 +1109,6 @@ export default function AdminStorePage() {
               {(
                 [
                   ["all", "전체"],
-                  ["pending", "입금 대기"],
-                  ["ready", "출고 대기"],
-                  ["shipped", "배송 중"],
                   ["closed", "종료"],
                 ] as const
               ).map(([key, label]) => (
@@ -1333,8 +1345,14 @@ export default function AdminStorePage() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <CreditSectionHeader
                 icon={Boxes}
-                title={`${STORE_AUDIENCE_LABEL[storeAudience]} · 상품 · 가격 · 재고`}
-                description="핸들로 드래그해 클러스터·순서를 바꿉니다. 가격·재고는 공유, 배치는 치과·기공소별로 저장합니다."
+                title={`${STORE_AUDIENCE_LABEL[storeAudience]} 상품`}
+                description={
+                  <>
+                    드래그로 순서와 묶음을 바꿉니다.
+                    <br />
+                    가격·재고는 같고, 배치는 치과와 기공소가 다릅니다.
+                  </>
+                }
               />
               <div className="flex flex-wrap gap-1.5">
                 <Button

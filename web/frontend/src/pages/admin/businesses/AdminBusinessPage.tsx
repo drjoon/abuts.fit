@@ -11,7 +11,6 @@ import {
   Search,
   Anchor,
   Wallet,
-  Users,
   AlertCircle,
   Trash2,
   Loader2,
@@ -526,36 +525,37 @@ export default function AdminBusinessPage({
           : "flex h-full min-h-0 flex-col px-4 pt-4 pb-2 sm:px-4 sm:pt-4"
       }
     >
-      <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-hidden">
+      <div className="flex w-full min-h-0 flex-1 flex-col gap-4 overflow-hidden">
         <div className="grid shrink-0 grid-cols-1 gap-2.5 p-0.5 sm:grid-cols-2 xl:grid-cols-4">
           {[
             {
-              label: "총 사업자",
+              label: "미연결",
+              count: missingAnchorCount,
+              icon: AlertCircle,
+              iconWrap: "bg-accent-soft",
+              iconClass: "text-accent-strong",
+              emphasis: true,
+            },
+            {
+              label: "전체",
               count: totalBusinesses,
               icon: Building2,
               iconWrap: "bg-primary-soft",
               iconClass: "text-primary-strong",
             },
             {
-              label: "Anchor 연결",
+              label: "연결됨",
               count: anchoredCount,
               icon: Anchor,
               iconWrap: "bg-primary-soft",
               iconClass: "text-primary-strong",
             },
             {
-              label: "Anchor 미연결",
-              count: missingAnchorCount,
-              icon: AlertCircle,
-              iconWrap: "bg-accent-soft",
-              iconClass: "text-accent-strong",
-            },
-            {
-              label: "표시 사업자",
+              label: "검색",
               count: filteredBusinesses.length,
               icon: Wallet,
-              iconWrap: "bg-primary-soft",
-              iconClass: "text-primary-strong",
+              iconWrap: "bg-slate-100",
+              iconClass: "text-slate-600",
             },
           ].map((card) => {
             const Icon = card.icon;
@@ -572,7 +572,13 @@ export default function AdminBusinessPage({
                     <p className="text-[11px] font-medium text-slate-500">
                       {card.label}
                     </p>
-                    <p className="text-xl font-bold tabular-nums tracking-tight text-slate-900">
+                    <p
+                      className={`font-bold tabular-nums tracking-tight text-slate-900 ${
+                        "emphasis" in card && card.emphasis
+                          ? "text-3xl"
+                          : "text-2xl"
+                      }`}
+                    >
                       {card.count.toLocaleString()}
                     </p>
                   </div>
@@ -586,16 +592,12 @@ export default function AdminBusinessPage({
           <div className="shrink-0 space-y-3 border-b border-slate-100 px-5 py-3.5 sm:px-6">
             <div className="flex items-baseline justify-between gap-3">
               <div>
-                <h2 className="text-sm font-bold tracking-tight text-slate-900">
-                  BusinessAnchor 목록
+                <h2 className="text-base font-semibold tracking-tight text-slate-900">
+                  사업자
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  사업자명 · 사업자번호 · 대표 계정 · Anchor ID
+                  이름 · 사업자번호 · 대표
                 </p>
-              </div>
-              <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                <Users className="h-3.5 w-3.5" />
-                <span>관리자 전용</span>
               </div>
             </div>
 
@@ -605,7 +607,7 @@ export default function AdminBusinessPage({
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="사업자명 / 사업자번호 / anchor ID / 대표자 검색"
+                  placeholder="이름 · 번호 · 대표"
                   className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm shadow-sm"
                 />
               </div>
@@ -654,7 +656,7 @@ export default function AdminBusinessPage({
                 </p>
               </div>
             ) : (
-              <div className="grid gap-2.5 xl:grid-cols-2">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(24rem,1fr))] gap-2.5">
                 {filteredBusinesses.map((business) => {
                   const anchorId = String(business.businessAnchorId || "").trim();
                   const isFocused =

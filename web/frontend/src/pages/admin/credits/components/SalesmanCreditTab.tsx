@@ -131,7 +131,6 @@ export function SalesmanCreditTab({
           <CreditSectionHeader
             icon={Users}
             title="딜러"
-            description="카드를 누르면 원장을 엽니다."
             trailing={
               <select
                 className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm"

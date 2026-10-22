@@ -433,14 +433,14 @@ export const AdminChatManagement = ({
     <div
       className={
         embedded
-          ? "flex h-full min-h-0 flex-col bg-gradient-subtle p-0 pt-2"
-          : "flex h-full min-h-0 flex-col bg-gradient-subtle p-4"
+          ? "flex h-full min-h-0 flex-col p-0 pt-2"
+          : "flex h-full min-h-0 flex-col"
       }
     >
-      <div className="max-w-7xl w-full mx-auto space-y-6 flex flex-col flex-1 min-h-0">
+      <div className="flex w-full min-h-0 flex-1 flex-col gap-3">
         {/* Header */}
 
-        <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-4 flex-1 min-h-0">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(20rem,26rem)_minmax(0,1fr)]">
           <Card className="flex flex-col overflow-hidden min-h-0 h-full">
             <CardHeader className="space-y-3 shrink-0">
               {/* Search and Filter */}

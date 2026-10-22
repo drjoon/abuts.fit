@@ -103,7 +103,7 @@ export function RequestorTransactionsTab(props: RequestorTransactionsTabProps) {
           <CreditSectionHeader
             icon={Landmark}
             title="입금 내역"
-            description="팝빌 웹훅 입금 기준으로 자동 매칭합니다. 실패 건만 수동 연결하세요."
+            description="실패 건만 직접 연결합니다."
           />
 
           <Tabs

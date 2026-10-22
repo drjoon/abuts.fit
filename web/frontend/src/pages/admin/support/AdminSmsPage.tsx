@@ -1061,11 +1061,9 @@ export default function AdminSmsPage({
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Phone className="h-4 w-4" />
-                수신자 정보
+                받는 사람
               </CardTitle>
-              <CardDescription>
-                템플릿과 수신 휴대폰 번호를 선택하세요. 유선전화는 제외됩니다.
-              </CardDescription>
+              <CardDescription>휴대폰 번호만 보냅니다.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2">
@@ -1076,7 +1074,7 @@ export default function AdminSmsPage({
                 />
                 <label htmlFor="useKakao" className="text-sm font-medium">
                   <MessageCircle className="h-4 w-4 inline mr-1" />
-                  카카오톡 알림톡 우선 전송 (실패 시 SMS/LMS 대체)
+                  알림톡 우선. 실패하면 문자.
                 </label>
               </div>
               {useKakao && selectedTemplate && (

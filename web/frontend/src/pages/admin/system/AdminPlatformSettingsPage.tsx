@@ -239,6 +239,8 @@ export const AdminPlatformSettingsPage = ({
         setSearchParams(nextParams, { replace: true });
       }}
       highlightTabKey={abutsPendingCount > 0 ? "abutsFees" : undefined}
+      contentMaxClassName="max-w-none"
+      tabsMaxClassName="max-w-none"
     />
   );
 };

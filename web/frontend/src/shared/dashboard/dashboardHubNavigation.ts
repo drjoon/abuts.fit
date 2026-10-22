@@ -7,7 +7,7 @@
 import type { CommBadgeCounts } from "@/shared/hooks/useAdminCommBadges";
 
 export type DashboardHubExtraCounts = {
-  /** 재무「설정」탭 — 기본 기공수가 검토 대기 */
+  /** 재무「요금」탭 — 기본 기공수가 검토 대기 */
   abutsFeePending?: number;
 };
 

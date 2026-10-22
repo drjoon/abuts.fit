@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/hooks/useAdminCommBadges.ts
 // change-log:
 // - 2026-09-23: 세금계산서 탭 라벨 → (세금)계산서.
+// - 2026-10-22: 재무 탭 「설정」→「요금」(사이드바 설정과 구분).
 // - 2026-09-23: 설정(구 설정·플랫폼)을 크레딧 오른쪽 탭으로 이동.
 // - 2026-09-18: 크레딧·세금계산서 승인대기 탭 배지.
 // - 2026-09-06: 크레딧·정산·세금계산서 허브(?tab=credits|payments|tax).
@@ -62,7 +63,7 @@ export default function AdminFinancePage() {
           { value: "credits", label: "크레딧", badge: counts.finance },
           {
             value: "settings",
-            label: "설정",
+            label: "요금",
             badge: abutsFeePendingCount,
           },
           { value: "payments", label: "정산" },

@@ -76,7 +76,7 @@ function StatCard({
   return (
     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
       <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
-      <div className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+      <div className="mt-1 text-3xl font-semibold tabular-nums text-slate-900">
         {value}
       </div>
       {hint ? (
@@ -258,11 +258,7 @@ export default function AdminEventsPage() {
           </AdminPanel>
         ) : (
           <div className="space-y-4">
-            <AdminPanel
-              title="수집 · 통계"
-              description="신청 치과·재료상 · 가입률 · 구강스캔(디지털화)"
-              bodyClassName="p-3 sm:p-4"
-            >
+            <AdminPanel title="신청" bodyClassName="p-3 sm:p-4">
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <StatCard
                   label="신청 치과"

@@ -524,8 +524,8 @@ export default function AdminRemoteSupportPage({
     <div
       className={
         embedded
-          ? "mx-auto flex w-full max-w-6xl flex-col gap-4 px-0 pt-2"
-          : "mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 lg:p-6"
+          ? "flex w-full flex-col gap-4 px-0 pt-2"
+          : "flex w-full flex-col gap-4"
       }
     >
       <div className="flex flex-wrap items-center justify-end gap-3">

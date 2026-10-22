@@ -3,6 +3,7 @@
 // - web/frontend/src/pages/admin/AdminMembersPage.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-10-22: 셸은 작업영역 전폭(`max-w-none`). 세그먼트 탭은 문구 너비.
 // - 2026-09-29: 셸 바깥 padding 제거 — 여백은 DashboardLayout(`dashboardChrome.ts`) 한 곳에서만.
 // - 2026-09-06: 페이지 제목/설명 헤더 제거(사이드·탭만으로 맥락).
 // - 2026-09-06: 관리자 허브용 Sales 패턴 셸·세그먼트 탭·스플릿.
@@ -42,7 +43,7 @@ export function AdminPageShell({
           : flush
             ? "p-0"
             : "p-0",
-        wide === false ? "max-w-3xl" : "max-w-7xl",
+        wide === false ? "max-w-3xl" : "max-w-none",
         className,
       )}
     >
@@ -214,8 +215,8 @@ export function AdminSegmentTabs<T extends string>({
   return (
     <div
       className={cn(
-        "flex gap-1 rounded-2xl border border-slate-200/80 bg-slate-100/80 p-1",
-        fit ? "w-full md:w-auto md:min-w-[16rem]" : "w-full",
+        "inline-flex max-w-full flex-wrap gap-1 rounded-2xl border border-slate-200/80 bg-slate-100/80 p-1",
+        fit ? "w-full md:w-fit" : "w-fit",
         className,
       )}
       role="tablist"
@@ -231,7 +232,7 @@ export function AdminSegmentTabs<T extends string>({
             aria-selected={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              "relative min-w-0 flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-colors md:px-4 md:py-2.5",
+              "relative shrink-0 rounded-xl px-4 py-2 text-sm font-medium transition-colors md:px-5 md:py-2.5",
               active
                 ? "bg-white text-slate-900 shadow-sm"
                 : "text-slate-500 hover:text-slate-800",
@@ -249,7 +250,7 @@ export function AdminSegmentTabs<T extends string>({
               </span>
             ) : null}
             {badge > 0 ? (
-              <span className="absolute right-1.5 top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold text-white">
+              <span className="absolute right-1.5 top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-white">
                 {badge > 99 ? "99+" : badge}
               </span>
             ) : null}

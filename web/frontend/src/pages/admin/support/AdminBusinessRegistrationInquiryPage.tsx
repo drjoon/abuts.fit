@@ -410,7 +410,7 @@ export const AdminBusinessRegistrationInquiryPage = ({
           "mx-auto flex w-full min-h-0 flex-1 flex-col",
           isSalesInbox
             ? "max-w-5xl space-y-4 sm:space-y-5"
-            : "max-w-7xl space-y-4 sm:space-y-6",
+            : "max-w-none space-y-4",
         )}
       >
         <div
@@ -418,7 +418,7 @@ export const AdminBusinessRegistrationInquiryPage = ({
             "grid flex-1 min-h-0 grid-cols-1 gap-4",
             isSalesInbox
               ? "lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.95fr)] xl:grid-cols-[minmax(0,1.05fr)_minmax(22rem,1fr)] lg:gap-5"
-              : "lg:grid-cols-[420px_1fr]",
+              : "lg:grid-cols-[minmax(20rem,26rem)_minmax(0,1fr)]",
           )}
         >
           {showListPanel ? (

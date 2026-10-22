@@ -45,18 +45,32 @@ export function CreditStatTile({
   value,
   hint,
   tone = "default",
+  onClick,
+  selected,
+  size = "md",
 }: {
   label: string;
   value: ReactNode;
   hint?: ReactNode;
   tone?: "default" | "accent";
+  onClick?: () => void;
+  selected?: boolean;
+  size?: "md" | "lg";
 }) {
-  return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-sm sm:p-4">
+  const className = cn(
+    "w-full rounded-2xl border bg-white/80 p-3 text-left shadow-sm sm:p-4",
+    selected
+      ? "border-slate-900 ring-1 ring-slate-900"
+      : "border-slate-200/80",
+    onClick && "transition-colors hover:border-slate-300 hover:bg-slate-50/70",
+  );
+  const body = (
+    <>
       <div className="text-xs font-medium text-slate-500">{label}</div>
       <div
         className={cn(
-          "mt-1.5 text-2xl font-bold tabular-nums tracking-tight",
+          "mt-1.5 font-bold tabular-nums tracking-tight",
+          size === "lg" ? "text-3xl" : "text-2xl",
           tone === "accent" ? "text-accent-strong" : "text-slate-900",
         )}
       >
@@ -67,7 +81,15 @@ export function CreditStatTile({
           {hint}
         </div>
       ) : null}
-    </div>
+    </>
+  );
+  if (!onClick) {
+    return <div className={className}>{body}</div>;
+  }
+  return (
+    <button type="button" onClick={onClick} className={className}>
+      {body}
+    </button>
   );
 }
 

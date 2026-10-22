@@ -387,7 +387,7 @@ export default function OpsMonthlyReportPage() {
   return (
     <AdminPageShell
       flush
-      className="max-w-4xl"
+      className="max-w-none"
       actions={
         <div className="ops-report-no-print flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-2 text-sm text-slate-700">

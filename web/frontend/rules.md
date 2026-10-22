@@ -195,6 +195,7 @@ Notes:
   - `src/shared/practice/usePracticeToothWorkEditor.ts`
   - `src/shared/practice/toothWorkDraft.ts`
   - `src/shared/components/PracticeTransferDetailChatDialog.tsx`
+- 관리자 작업영역 가로: `AdminPageShell`은 `max-w-none`(레이아웃 여백 안의 전폭). 목록·표·허브에 `max-w-7xl`을 다시 두지 않는다. 세그먼트 탭은 문구 너비. 재무 「요금」은 수가·분배·요율이고, 사이드바 「설정」은 계정·사업자·임직원·알림이다.
 - 관리자 사용자/사업자
   - `src/pages/admin/users/AdminUserManagement.tsx`
   - `src/pages/admin/businesses/AdminBusinessPage.tsx`

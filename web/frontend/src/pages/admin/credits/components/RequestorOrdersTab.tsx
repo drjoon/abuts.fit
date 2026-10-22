@@ -82,7 +82,6 @@ export function RequestorOrdersTab(props: RequestorOrdersTabProps) {
           <CreditSectionHeader
             icon={Receipt}
             title="충전 주문"
-            description="입금 매칭된 주문을 승인하거나 거절합니다."
             trailing={
               <div className="flex flex-wrap gap-1.5">
                 {FILTERS.map((f) => (

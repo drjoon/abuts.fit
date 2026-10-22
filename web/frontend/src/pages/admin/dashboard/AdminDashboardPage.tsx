@@ -2269,13 +2269,42 @@ export const AdminDashboardPage = () => {
                     }
                   >
                     {newConnectionRequestTotal > 0
-                      ? `미완료 ${newConnectionRequestOpenGroupCount.toLocaleString()}묶음 · 연락·개발`
-                      : "제조사·브랜드별 묶음입니다."}
+                      ? `미완료 ${newConnectionRequestOpenGroupCount.toLocaleString()}묶음`
+                      : "제조사 · 브랜드"}
                   </p>
                 </div>
               </DashTile>
 
               <NoticeAdminCard className={DASH_SPAN.c5r2} />
+
+              <DashTile
+                className={DASH_SPAN.c4r2}
+                title="지연 위험"
+                tone={riskDelayedCount > 0 ? "danger" : riskWarningCount > 0 ? "warn" : "default"}
+                icon={<AlertCircle className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => setRiskSummaryDialogOpen(true)}
+              >
+                <div className="grid h-full grid-cols-2 content-center gap-2">
+                  <DashStat
+                    label="지연 가능"
+                    value={`${riskWarningCount.toLocaleString()}건`}
+                    tone={riskWarningCount > 0 ? "warn" : undefined}
+                  />
+                  <DashStat
+                    label="지연 확정"
+                    value={`${riskDelayedCount.toLocaleString()}건`}
+                    tone={riskDelayedCount > 0 ? "danger" : undefined}
+                  />
+                  <DashStat
+                    label={`택배 정시${riskNormalEvaluatedCount > 0 ? ` · ${riskNormalEvaluatedCount.toLocaleString()}건` : ""}`}
+                    value={`${riskNormalOnTimeRate.toLocaleString()}%`}
+                  />
+                  <DashStat
+                    label={`딜리버리 정시${riskExpressEvaluatedCount > 0 ? ` · ${riskExpressEvaluatedCount.toLocaleString()}건` : ""}`}
+                    value={`${riskExpressOnTimeRate.toLocaleString()}%`}
+                  />
+                </div>
+              </DashTile>
 
               <AdminDemoConversionCard
                 className={DASH_SPAN.c2}
@@ -2562,34 +2591,6 @@ export const AdminDashboardPage = () => {
                   <div className="shrink-0 text-[11px] leading-none text-muted-foreground">
                     총 {designSoftwareTotalCount.toLocaleString()}개 사업자
                   </div>
-                </div>
-              </DashTile>
-              <DashTile
-                className={DASH_SPAN.c4r2}
-                title="지연 위험"
-                tone={riskDelayedCount > 0 ? "danger" : riskWarningCount > 0 ? "warn" : "default"}
-                icon={<AlertCircle className="h-4 w-4 text-muted-foreground" />}
-                onClick={() => setRiskSummaryDialogOpen(true)}
-              >
-                <div className="grid h-full grid-cols-2 content-center gap-2">
-                  <DashStat
-                    label="지연 가능"
-                    value={`${riskWarningCount.toLocaleString()}건`}
-                    tone={riskWarningCount > 0 ? "warn" : undefined}
-                  />
-                  <DashStat
-                    label="지연 확정"
-                    value={`${riskDelayedCount.toLocaleString()}건`}
-                    tone={riskDelayedCount > 0 ? "danger" : undefined}
-                  />
-                  <DashStat
-                    label={`택배 정시${riskNormalEvaluatedCount > 0 ? ` · ${riskNormalEvaluatedCount.toLocaleString()}건` : ""}`}
-                    value={`${riskNormalOnTimeRate.toLocaleString()}%`}
-                  />
-                  <DashStat
-                    label={`딜리버리 정시${riskExpressEvaluatedCount > 0 ? ` · ${riskExpressEvaluatedCount.toLocaleString()}건` : ""}`}
-                    value={`${riskExpressOnTimeRate.toLocaleString()}%`}
-                  />
                 </div>
               </DashTile>
               <DashTile

@@ -1133,7 +1133,6 @@ export default function AdminPaymentsPage({
                   <CreditSectionHeader
                     icon={Store}
                     title="스토어 · 기성품"
-                    description="과세 매출 · 분배비율(판매가 대비)"
                   />
                   <EquationRow
                     revenue={
@@ -1331,7 +1330,6 @@ export default function AdminPaymentsPage({
                   <CreditSectionHeader
                     icon={FlaskConical}
                     title="기공사업부"
-                    description="원청 기공료에서 하청 매입을 뺀 순액입니다."
                   />
                   <EquationRow
                     revenue={

@@ -226,8 +226,7 @@ export function AutoMatchVerificationTab() {
         <div className="space-y-5 p-5 sm:p-6">
           <CreditSectionHeader
             icon={ShieldCheck}
-            title="자동 매칭 검증"
-            description="자동 매칭된 충전 주문을 검증하거나 잠급니다."
+            title="자동 매칭"
             trailing={
               <div className="flex flex-wrap gap-1.5">
                 <CreditFilterChip

@@ -133,6 +133,8 @@ export const AdminSettingsPage = ({
         setSearchParams(nextParams, { replace: true });
       }}
       fillHeight={embedded}
+      contentMaxClassName="max-w-none"
+      tabsMaxClassName="max-w-none"
     />
   );
 };

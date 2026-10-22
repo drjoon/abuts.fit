@@ -268,7 +268,7 @@ export const AdminMailPage = ({
             <Clock className="h-4 w-4" />
             예약발송
             {scheduledCount > 0 ? (
-              <span className="absolute right-1 top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold text-white">
+              <span className="absolute right-1 top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-white">
                 {scheduledCount > 99 ? "99+" : scheduledCount}
               </span>
             ) : null}

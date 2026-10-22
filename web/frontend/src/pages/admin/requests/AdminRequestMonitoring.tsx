@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: 상태 칩과 요약 카드 중복 제거. 취소 카드 추가. 목록은 전폭.
 // - 2026-10-14: 준비 카드·사이드 배지 = comm-badges 준비 큐(기간 필터와 분리). 진입 시 배지 재조회.
 // - 2026-09-20: 요약 카드 그리드에 p-0.5 — 선택 border/ring이 overflow에 잘리지 않게.
 // - 2026-09-16: R&D·불완전가공 탭 추가(제조사 워크시트와 동일 버킷).
@@ -54,7 +55,7 @@ type StatusFilter =
   | "R&D"
   | "불완전가공";
 
-const OPS_STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: "all", label: "전체" },
   { key: "준비", label: "준비" },
   { key: "가공", label: "가공" },
@@ -62,14 +63,9 @@ const OPS_STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: "포장.발송", label: "포장.발송" },
   { key: "추적관리", label: "추적관리" },
   { key: "취소", label: "취소" },
-];
-
-const RND_STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: "R&D", label: "R&D" },
   { key: "불완전가공", label: "불완전가공" },
 ];
-
-const STATUS_FILTERS = [...OPS_STATUS_FILTERS, ...RND_STATUS_FILTERS];
 
 const STAGE_CHIP: Record<string, string> = {
   준비: "border-primary-muted bg-primary-soft text-primary-strong",
@@ -540,6 +536,7 @@ export const AdminRequestMonitoring = () => {
   const trackingCount = byStatus["추적관리"] || 0;
   const rndCount = byStatus["R&D"] || 0;
   const unmachinableCount = byStatus["불완전가공"] || 0;
+  const canceledCount = byStatus["취소"] || 0;
 
   const statsCards: {
     key: StatusFilter;
@@ -590,20 +587,28 @@ export const AdminRequestMonitoring = () => {
       iconClass: "text-slate-600",
     },
     {
+      key: "취소",
+      label: "취소",
+      count: canceledCount,
+      icon: XCircle,
+      iconWrap: "bg-destructive-soft",
+      iconClass: "text-destructive",
+    },
+    {
       key: "R&D",
       label: "R&D",
       count: rndCount,
       icon: FlaskConical,
-      iconWrap: "bg-violet-50",
-      iconClass: "text-violet-700",
+      iconWrap: "bg-slate-100",
+      iconClass: "text-slate-600",
     },
     {
       key: "불완전가공",
       label: "불완전가공",
       count: unmachinableCount,
       icon: AlertTriangle,
-      iconWrap: "bg-amber-50",
-      iconClass: "text-amber-700",
+      iconWrap: "bg-accent-soft",
+      iconClass: "text-accent-strong",
     },
   ];
 
@@ -617,61 +622,29 @@ export const AdminRequestMonitoring = () => {
   return (
     <AdminPageShell flush className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-full min-h-0 flex-col px-0 pt-1 pb-2">
-        <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
+        <div className="flex w-full min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
           <div className="flex flex-wrap items-center gap-3 px-0.5">
-            <div className="relative min-w-0 w-full flex-1 sm:min-w-[200px]">
+            <div className="relative min-w-0 w-full flex-1 sm:min-w-[16rem]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <Input
-                placeholder="환자·치과·의뢰자·의뢰번호 검색..."
+                placeholder="환자·치과·의뢰번호"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm shadow-sm"
+                className="h-10 rounded-lg border-slate-200 bg-white pl-9 text-sm shadow-sm"
               />
             </div>
-            <div className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-              {OPS_STATUS_FILTERS.map((filter) => {
-                const active = selectedStatus === filter.key;
-                return (
-                  <button
-                    key={filter.key}
-                    type="button"
-                    onClick={() => setSelectedStatus(filter.key)}
-                    className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                      active
-                        ? "bg-slate-900 text-white"
-                        : "text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {filter.label}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-              {RND_STATUS_FILTERS.map((filter) => {
-                const active = selectedStatus === filter.key;
-                const count =
-                  filter.key === "R&D" ? rndCount : unmachinableCount;
-                return (
-                  <button
-                    key={filter.key}
-                    type="button"
-                    onClick={() => setSelectedStatus(filter.key)}
-                    className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                      active
-                        ? "bg-slate-900 text-white"
-                        : "text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {filter.label}
-                    <span className="ml-1 tabular-nums opacity-70">{count}</span>
-                  </button>
-                );
-              })}
-            </div>
+            {selectedStatus !== "all" ? (
+              <button
+                type="button"
+                onClick={() => setSelectedStatus("all")}
+                className="h-10 shrink-0 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50"
+              >
+                전체
+              </button>
+            ) : null}
           </div>
 
-          <div className="grid grid-cols-2 gap-3 p-0.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+          <div className="grid grid-cols-2 gap-2 p-0.5 sm:grid-cols-4 xl:grid-cols-8">
             {statsCards.map((card) => {
               const Icon = card.icon;
               const active = selectedStatus === card.key;
@@ -696,9 +669,15 @@ export const AdminRequestMonitoring = () => {
                       <p className="text-[11px] font-medium text-slate-500">
                         {card.label}
                       </p>
-                      <p className="text-xl font-bold tabular-nums tracking-tight text-slate-900">
-                        {card.count.toLocaleString()}
-                      </p>
+                    <p
+                      className={`font-bold tabular-nums tracking-tight text-slate-900 ${
+                        card.key === "준비" || card.key === "불완전가공"
+                          ? "text-3xl"
+                          : "text-2xl"
+                      }`}
+                    >
+                      {card.count.toLocaleString()}
+                    </p>
                       {card.key === "준비" && readyOutsidePeriod > 0 ? (
                         <p className="text-[10px] text-slate-500">
                           기간 외 {readyOutsidePeriod.toLocaleString()}건
@@ -736,7 +715,7 @@ export const AdminRequestMonitoring = () => {
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-3">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-2.5">
                   {filteredRequests.slice(0, visibleCount).map((request) => {
                     const stage = getMonitoringStageLabel(request);
                     const isDeleting = deletingIds.has(request._id);
@@ -821,7 +800,7 @@ export const AdminRequestMonitoring = () => {
                             </div>
                             {selectedStatus === "불완전가공" &&
                             unmachinableReason ? (
-                              <p className="mt-1.5 line-clamp-2 text-[11px] text-amber-800">
+                              <p className="mt-1.5 line-clamp-2 text-[11px] text-accent-strong">
                                 {unmachinableReason}
                               </p>
                             ) : null}
