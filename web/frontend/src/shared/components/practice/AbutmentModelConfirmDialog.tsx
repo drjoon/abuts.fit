@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-10-22: STL 프리뷰 — 스캔색 토글 숨김. 가공 경고는 fillet R 아래 오른쪽, STL은 왼쪽·세로 꽉 참.
+// - 2026-10-22: STL 프리뷰 — 단일 뷰포트 + 하단 가공 도크(fillet R·경고). 스캔색 토글 숨김.
 // - 2026-10-22: 카탈로그 제조사 선택 — 없는 setNewSystemFamily 호출이 선택을 막던 것 제거.
 // - 2026-10-22: 좁은 코너는 표시와 경고만. 원본 STL은 고치지 않고 내려받지 않는다.
 // - 2026-10-21: 보정 확인 모달은 평균 R과 관계없이 같은 문구·확인만.
@@ -512,51 +512,73 @@ export function AbutmentModelConfirmDialog({
           ) : null}
 
           <div className="grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 sm:pr-2 lg:grid-cols-[52%_48%]">
-            <div className="app-glass-card app-glass-card--lg flex min-h-0 w-full flex-col gap-2 !p-2">
-              <div className="app-glass-card-content flex min-h-[280px] min-w-0 flex-1 flex-col">
-                <div className="flex min-h-0 flex-1 flex-col gap-2 sm:flex-row sm:items-stretch">
-                  <div className="relative min-h-[240px] min-w-0 flex-1 overflow-hidden sm:min-h-0">
-                    {detailFile ? (
-                      <StlPreviewViewer
-                        file={detailFile}
-                        showOverlay={false}
-                        showGrid={false}
-                        showColorMappingToggle={false}
-                        showTightCorner={Boolean(machiningPreflight?.overlay)}
-                        correctionSolidVisible={Boolean(machiningPreflight?.overlay)}
-                        metadata={
-                          machiningPreflight?.overlay
-                            ? {
-                                tightCorner: {
-                                  ...machiningPreflight.overlay,
-                                  correctionSolid: null,
-                                  reliefOverlay: null,
-                                },
-                              }
-                            : undefined
-                        }
-                        className="absolute inset-0 h-full w-full min-h-0 md:min-h-0"
-                        onDiameterComputed={handleDiameterComputed}
-                      />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-                        3D Preview
-                      </div>
-                    )}
-                  </div>
-                  {machiningPreflight ? (
-                    <div className="flex shrink-0 flex-col justify-end sm:w-[11.75rem] sm:pb-3">
-                      <StlMachiningPreflightNotice
-                        preflight={machiningPreflight}
-                        className="w-full max-w-full"
-                      />
-                    </div>
-                  ) : null}
-                </div>
+            <div className="app-glass-card app-glass-card--lg flex min-h-0 w-full flex-col gap-2.5 !p-2.5">
+              <div className="flex shrink-0 items-center justify-between gap-2 px-0.5">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                  3D 미리보기
+                </span>
+                {detailFile ? (
+                  <span
+                    className="min-w-0 truncate text-xs text-slate-500"
+                    title={detailFile.name}
+                  >
+                    {detailFile.name}
+                  </span>
+                ) : null}
               </div>
+
+              <div className="app-glass-card-content flex min-h-[280px] min-w-0 flex-1 flex-col gap-2">
+                <div
+                  className={cn(
+                    "relative min-h-[min(52vh,26rem)] min-w-0 flex-1 overflow-hidden rounded-xl",
+                    "border border-slate-200/90 bg-[radial-gradient(ellipse_at_50%_35%,#f8fafc_0%,#e2e8f0_100%)]",
+                    "shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]",
+                  )}
+                >
+                  {detailFile ? (
+                    <StlPreviewViewer
+                      file={detailFile}
+                      showOverlay={false}
+                      showGrid={false}
+                      showColorMappingToggle={false}
+                      showFilletStatsOverlay={false}
+                      showTightCorner={Boolean(machiningPreflight?.overlay)}
+                      correctionSolidVisible={Boolean(machiningPreflight?.overlay)}
+                      metadata={
+                        machiningPreflight?.overlay
+                          ? {
+                              tightCorner: {
+                                ...machiningPreflight.overlay,
+                                correctionSolid: null,
+                                reliefOverlay: null,
+                              },
+                            }
+                          : undefined
+                      }
+                      className="absolute inset-0 h-full w-full min-h-0 md:min-h-0"
+                      onDiameterComputed={handleDiameterComputed}
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
+                      <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                        Preview
+                      </span>
+                      <span>3D 파일을 선택하세요</span>
+                    </div>
+                  )}
+                </div>
+
+                {machiningPreflight ? (
+                  <StlMachiningPreflightNotice
+                    preflight={machiningPreflight}
+                    className="shrink-0"
+                  />
+                ) : null}
+              </div>
+
               {selectablePreviewIndices.length > 1 ? (
-                <div className="shrink-0 rounded-lg border border-slate-200 bg-white/80">
-                  <ul className="max-h-[7.5rem] overflow-y-auto py-1">
+                <div className="shrink-0 rounded-xl border border-slate-200/90 bg-slate-50/60 p-1">
+                  <ul className="max-h-[7.5rem] overflow-y-auto px-1 py-1">
                     {selectablePreviewIndices.map((fileIndex) => {
                       const file = files[fileIndex];
                       if (!file) return null;
@@ -566,10 +588,10 @@ export function AbutmentModelConfirmDialog({
                           <button
                             type="button"
                             className={cn(
-                              "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors",
+                              "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors",
                               selected
-                                ? "bg-primary/10 font-medium text-primary"
-                                : "text-slate-600 hover:bg-slate-50",
+                                ? "bg-white font-medium text-primary shadow-sm ring-1 ring-primary/20"
+                                : "text-slate-600 hover:bg-white/80",
                             )}
                             onClick={() => onSelectPreviewIndex?.(fileIndex)}
                             aria-current={selected ? "true" : undefined}

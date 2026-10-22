@@ -120,6 +120,8 @@ type Props = {
   guidesVisible?: boolean;
   /** 별도 보정 솔리드(타이트 코너 R0.6 필렛)를 원본 위에 덧입혀 표시. 기본 false(원본만). */
   correctionSolidVisible?: boolean;
+  /** 뷰포트 우하단 평균 fillet R 칩. 다이얼로그 하단 도크에 두면 false. 기본 true. */
+  showFilletStatsOverlay?: boolean;
   /**
    * 접수 전 검사처럼 정렬 전 원본 STL 위에 불완전 가공 구간을 표시한다.
    * metadata.tightCorner는 원본 좌표여야 한다.
@@ -209,6 +211,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       metaVisible = true,
       guidesVisible = true,
       correctionSolidVisible = false,
+      showFilletStatsOverlay = true,
       showTightCorner = false,
       onViewChange,
       finishLinePoints,
@@ -3360,7 +3363,10 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       )}
     >
       <div ref={containerRef} className="absolute inset-0 h-full w-full" />
-      {correctionSolidVisible && averageFilletRadiusMm != null && !error ? (
+      {showFilletStatsOverlay &&
+      correctionSolidVisible &&
+      averageFilletRadiusMm != null &&
+      !error ? (
         <div
           className={cn(
             "pointer-events-none absolute right-2 z-10 rounded-md border border-red-200 bg-white/92 px-2.5 py-1.5 text-right shadow-sm",
