@@ -643,16 +643,6 @@ function resampleUniform(pts, step) {
   return out;
 }
 
-/** FL에서 위로 올라가는 단면 폴리라인(부호 있는 u, w). 반경 평면 단면 루프를 그대로 따른다. */
-function extractProfileAboveFl(mesh, fl, radial, axis, n) {
-  const seq = sectionWalkAboveFl(mesh, fl, radial, axis, n);
-  if (!seq || seq.length < 2) return null;
-  const pts = resampleUniform(seq, PROFILE_STEP_MM).filter(
-    (p) => p.w <= dot3(fl, axis) + PROFILE_UP_MM,
-  );
-  return pts.length >= 40 ? pts : null;
-}
-
 /** 단면 루프 정점을 FL에서 위쪽(축면) 방향으로 리샘플 없이 따라간다. */
 function sectionWalkAboveFl(mesh, fl, radial, axis, n) {
   const loops = meshAxisPlaneSection(mesh, axis, [0, 0, 0], n);
@@ -752,11 +742,12 @@ const STATION_MIN_AIR_DEG = 60;
  * 단면 정점 그대로 마진 직선·축면 직선·필렛 R을 잰다(리샘플 없음).
  * 보정은 이 값으로 코너 근처 정점만 옮긴다.
  */
-function measureFilletStation(mesh, fl, axis) {
+function measureFilletStation(mesh, fl, axis, rawOverride) {
   const radial = radialFromFinishPoint(fl, axis);
   const n = sectionNormal(radial, axis);
   if (!n) return null;
-  const raw = sectionWalkAboveFl(mesh, fl, radial, axis, n);
+  // 호출부가 이미 자른 단면이면 같은 평면을 다시 자르지 않는다.
+  const raw = arguments.length >= 4 ? rawOverride : sectionWalkAboveFl(mesh, fl, radial, axis, n);
   if (!raw || raw.length < 3) return null;
   const pts = [raw[0]];
   for (let i = 1; i < raw.length; i += 1) {
@@ -849,8 +840,8 @@ function measureFilletStation(mesh, fl, axis) {
 /**
  * 기울기 축과 정렬 z축 단면 중 R이 큰 쪽. 디자인 자오선에서 비스듬히 자른 단면은 R을 작게 잰다.
  */
-function bestFilletStation(mesh, fl, axis) {
-  const a = measureFilletStation(mesh, fl, axis);
+function bestFilletStation(mesh, fl, axis, rawOverride) {
+  const a = measureFilletStation(mesh, fl, axis, rawOverride);
   if (dot3(axis, [0, 0, 1]) >= 1 - 1e-9) return a;
   const z = measureFilletStation(mesh, fl, [0, 0, 1]);
   if (!a || !z) return a || z;
@@ -863,12 +854,16 @@ function bestFilletStation(mesh, fl, axis) {
  * 첫 변 각도 조건에 걸려 자주 실패한다. 검출과 보정이 같은 값을 보도록 여기서 함께 쓴다.
  * @returns {object|null} measureFilletStation과 같은 모양의 스테이션
  */
-function measureProfileFilletStation(mesh, fl, axis, onSkip) {
+function measureProfileFilletStation(mesh, fl, axis, onSkip, rawOverride) {
   const radial = radialFromFinishPoint(fl, axis);
   const n = sectionNormal(radial, axis);
   if (!n) return null;
-  const pts = extractProfileAboveFl(mesh, fl, radial, axis, n);
-  if (!pts) {
+  const seq = arguments.length >= 5 ? rawOverride : sectionWalkAboveFl(mesh, fl, radial, axis, n);
+  const pts =
+    seq && seq.length >= 2
+      ? resampleUniform(seq, PROFILE_STEP_MM).filter((p) => p.w <= dot3(fl, axis) + PROFILE_UP_MM)
+      : null;
+  if (!pts || pts.length < 40) {
     onSkip?.("no-profile");
     return null;
   }
@@ -987,9 +982,11 @@ export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log, measureOptions 
     return { tight: false };
   };
   const azDeg = ((Math.atan2(fl[1], fl[0]) * 180) / Math.PI).toFixed(1);
+  // 정점 측정이 실패해도 같은 단면을 프로파일 폴백에 넘긴다.
+  const primaryWalk = sectionWalkAboveFl(mesh, fl, radial, axis, n);
   const station = measureOptions.singleAxis
-    ? measureFilletStation(mesh, fl, axis)
-    : bestFilletStation(mesh, fl, axis);
+    ? measureFilletStation(mesh, fl, axis, primaryWalk)
+    : bestFilletStation(mesh, fl, axis, primaryWalk);
   if (station) {
     const { corner, rayLedge, rayWall, ext, measuredR } = station;
     if (!isTightFillet(measuredR, ext, toolR)) {
@@ -1016,7 +1013,7 @@ export function analyzeMarginAtPoint(mesh, fl, toolR, axis, log, measureOptions 
   let skipReason = null;
   const prof = measureProfileFilletStation(mesh, fl, axis, (why) => {
     skipReason = why;
-  });
+  }, primaryWalk);
   if (!prof) {
     if (skipReason === "no-profile") {
       log?.("[tight-corner] skip: no-profile");

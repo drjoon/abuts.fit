@@ -163,11 +163,14 @@ function finishPreflight({
   let tightCorner = null;
   let filletSurface = null;
   if (finishLine?.points?.length) {
+    const tTilt = performance.now();
     try {
       tiltAxisVector = tiltAxisFromMesh(mesh, finishLine.points);
     } catch (error) {
       log(`[stl-preflight] tilt failed: ${error?.message || error}`);
     }
+    mark("tilt", tTilt);
+    const tScreen = performance.now();
     try {
       const screened = screenMarginFillet(mesh, finishLine.points, { tiltAxisVector });
       tightCorner = screened.tightCorner;
@@ -175,6 +178,7 @@ function finishPreflight({
     } catch (error) {
       log(`[tight-corner] failed: ${error?.message || error}`);
     }
+    mark("screen", tScreen);
     if (Number(tightCorner?.tightCount) > 0) {
       log(`[tight-corner] flagged ${tightCorner.tightCount} samples`);
     }
@@ -374,7 +378,12 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
 
   t0 = performance.now();
   const aligned = alignWithMatrix(mesh, () =>
-    alignMeshToOrigin(mesh, { targetDiameter, implantProfile, log }),
+    alignMeshToOrigin(mesh, {
+      targetDiameter,
+      implantProfile,
+      log,
+      preflight: Boolean(options.preflight),
+    }),
   );
   const align = aligned.align;
   let alignMatrix = aligned.alignMatrix;

@@ -234,7 +234,7 @@ async function calculateStlMetadata(buffer, finishLinePoints) {
 /**
  * Finish line 기반 테이퍼 계산 (프론트 로직 포팅)
  */
-function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
+function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox, { axisOnly = false } = {}) {
   // Finish line Z 좌표 계산
   const finishLineZs = finishLinePoints
     .filter((p) => Array.isArray(p) && p.length >= 3)
@@ -319,16 +319,15 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
   const seenTri = new Int32Array(triangleCount);
   let seenGen = 0;
 
-  // 1. Taper 계산 (12방향)
+  // 1. Taper 계산 (12방향). 슬라이스마다 삼각형은 한 번만 보고, 쐐기에 들어가는 방향만 갱신한다.
   const directions = [];
   const angles = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
-
-  for (const angleDeg of angles) {
-    const angleRad = (angleDeg * Math.PI) / 180;
-
-    // 각 방향의 finish line Z 찾기
-    let dirFinishLineZ = finishLineTopZ;
-    if (finishLinePoints.length > 0) {
+  const angleCount = angles.length;
+  const angleRad = angles.map((deg) => (deg * Math.PI) / 180);
+  const dirFinishLineZ = angles.map(() => finishLineTopZ);
+  if (finishLinePoints.length > 0) {
+    for (let d = 0; d < angleCount; d += 1) {
+      const angleDeg = angles[d];
       let minAngleDiff = Infinity;
       for (const p of finishLinePoints) {
         if (!Array.isArray(p) || p.length < 3) continue;
@@ -336,162 +335,139 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
         const cy = Number(p[1]) - center.y;
         let ptAngle = Math.atan2(cy, cx) * (180 / Math.PI);
         if (ptAngle < 0) ptAngle += 360;
-
         let angleDiff = Math.abs(ptAngle - angleDeg);
         if (angleDiff > 180) angleDiff = 360 - angleDiff;
         if (angleDiff < minAngleDiff) {
           minAngleDiff = angleDiff;
-          dirFinishLineZ = Number(p[2]);
+          dirFinishLineZ[d] = Number(p[2]);
         }
       }
     }
+  }
 
-    if (postHeight > 0.1) {
-      const dirSamples = [];
-      const surfacePoints = [];
-
-      const wrapPi = (d) => {
-        let x = d;
-        while (x > Math.PI) x -= Math.PI * 2;
-        while (x < -Math.PI) x += Math.PI * 2;
-        return x;
-      };
-
-      // 지지점(최대 투영)은 옆 날개로 건너뛴다. 이 방향 쐐기 안의 최대 반경만 축면이다.
-      const considerOuterPoint = (
-        x,
-        y,
-        z,
-        maxRadiusInDirRef,
-        bestSurfacePointRef,
-      ) => {
+  const dirSamples = angles.map(() => []);
+  const surfacePoints = angles.map(() => []);
+  if (postHeight > 0.1) {
+    const wrapPi = (d) => {
+      let x = d;
+      while (x > Math.PI) x -= Math.PI * 2;
+      while (x < -Math.PI) x += Math.PI * 2;
+      return x;
+    };
+    const maxRadius = new Float64Array(angleCount);
+    const bestX = new Float64Array(angleCount);
+    const bestY = new Float64Array(angleCount);
+    const bestZ = new Float64Array(angleCount);
+    const bestHit = new Uint8Array(angleCount);
+    for (let s = 0; s <= sliceCount; s += 1) {
+      const targetZ = postStartZ + (postHeight * s) / sliceCount;
+      const tolerance = postHeight / (sliceCount * 4);
+      maxRadius.fill(-Infinity);
+      bestHit.fill(0);
+      const loB = Math.max(0, Math.floor((targetZ - tolerance - z0) / slab));
+      const hiB = Math.min(bucketCount - 1, Math.floor((targetZ + tolerance - z0) / slab));
+      const gen = ++seenGen;
+      // 30° 간격·쐐기 14°라 한 점은 한 방향에만 들어간다. 가장 가까운 방향만 검사한다.
+      const considerOuterPoint = (x, y, z) => {
         const cx = x - axisCenter.x;
         const cy = y - axisCenter.y;
         const radial = Math.hypot(cx, cy);
         if (radial < outerPerimeterMinR) return;
-        if (Math.abs(wrapPi(Math.atan2(cy, cx) - angleRad)) > wedgeRad) return;
-        if (radial > maxRadiusInDirRef.value) {
-          maxRadiusInDirRef.value = radial;
-          bestSurfacePointRef.value = { x, y, z };
+        const ang = Math.atan2(cy, cx);
+        let deg = (ang * 180) / Math.PI;
+        if (deg < 0) deg += 360;
+        let bin = Math.round(deg / 30);
+        if (bin >= angleCount) bin = 0;
+        if (Math.abs(wrapPi(ang - angleRad[bin])) > wedgeRad) return;
+        if (radial > maxRadius[bin]) {
+          maxRadius[bin] = radial;
+          bestX[bin] = x;
+          bestY[bin] = y;
+          bestZ[bin] = z;
+          bestHit[bin] = 1;
         }
       };
-
-      for (let s = 0; s <= sliceCount; s++) {
-        const targetZ = postStartZ + (postHeight * s) / sliceCount;
-        const tolerance = postHeight / (sliceCount * 4);
-        const maxRadiusInDirRef = { value: -Infinity };
-        const bestSurfacePointRef = { value: null };
-
-        const loB = Math.max(0, Math.floor((targetZ - tolerance - z0) / slab));
-        const hiB = Math.min(bucketCount - 1, Math.floor((targetZ + tolerance - z0) / slab));
-        const gen = ++seenGen;
-        for (let b = loB; b <= hiB; b += 1) {
-          const bucket = zBuckets[b];
-          for (let bi = 0; bi < bucket.length; bi += 1) {
-            const tri = bucket[bi];
-            if (seenTri[tri] === gen) continue;
-            seenTri[tri] = gen;
-            const i0 = triVerts[tri * 3];
-            const i1 = triVerts[tri * 3 + 1];
-            const i2 = triVerts[tri * 3 + 2];
-            const v0 = readVertex(i0);
-            const v1 = readVertex(i1);
-            const v2 = readVertex(i2);
-
-            [v0, v1, v2].forEach((v) => {
-              if (Math.abs(v.z - targetZ) <= tolerance) {
-                considerOuterPoint(
-                  v.x,
-                  v.y,
-                  v.z,
-                  maxRadiusInDirRef,
-                  bestSurfacePointRef,
-                );
-              }
-            });
-
-            const intersectEdgeDir = (a, b) => {
-              if (
-                (a.z < targetZ && b.z < targetZ) ||
-                (a.z > targetZ && b.z > targetZ)
-              )
-                return;
-              if (Math.abs(a.z - b.z) < 1e-9) return;
-              const t = (targetZ - a.z) / (b.z - a.z);
-              if (t < 0 || t > 1) return;
-              const ix = a.x + t * (b.x - a.x);
-              const iy = a.y + t * (b.y - a.y);
-              considerOuterPoint(
-                ix,
-                iy,
-                targetZ,
-                maxRadiusInDirRef,
-                bestSurfacePointRef,
-              );
-            };
-
-            intersectEdgeDir(v0, v1);
-            intersectEdgeDir(v1, v2);
-            intersectEdgeDir(v2, v0);
-          }
-        }
-
-        const maxRadiusInDir = maxRadiusInDirRef.value;
-        if (maxRadiusInDir > -10 && bestSurfacePointRef.value) {
-          dirSamples.push({ z: targetZ, radius: maxRadiusInDir });
-          surfacePoints.push(bestSurfacePointRef.value);
+      const intersectEdgeDir = (ax, ay, az, bx, by, bz) => {
+        if ((az < targetZ && bz < targetZ) || (az > targetZ && bz > targetZ)) return;
+        if (Math.abs(az - bz) < 1e-9) return;
+        const t = (targetZ - az) / (bz - az);
+        if (t < 0 || t > 1) return;
+        considerOuterPoint(ax + t * (bx - ax), ay + t * (by - ay), targetZ);
+      };
+      for (let b = loB; b <= hiB; b += 1) {
+        const bucket = zBuckets[b];
+        for (let bi = 0; bi < bucket.length; bi += 1) {
+          const tri = bucket[bi];
+          if (seenTri[tri] === gen) continue;
+          seenTri[tri] = gen;
+          const i0 = triVerts[tri * 3];
+          const i1 = triVerts[tri * 3 + 1];
+          const i2 = triVerts[tri * 3 + 2];
+          const x0 = position.getX(i0);
+          const y0 = position.getY(i0);
+          const z0v = position.getZ(i0);
+          const x1 = position.getX(i1);
+          const y1 = position.getY(i1);
+          const z1v = position.getZ(i1);
+          const x2 = position.getX(i2);
+          const y2 = position.getY(i2);
+          const z2v = position.getZ(i2);
+          if (Math.abs(z0v - targetZ) <= tolerance) considerOuterPoint(x0, y0, z0v);
+          if (Math.abs(z1v - targetZ) <= tolerance) considerOuterPoint(x1, y1, z1v);
+          if (Math.abs(z2v - targetZ) <= tolerance) considerOuterPoint(x2, y2, z2v);
+          intersectEdgeDir(x0, y0, z0v, x1, y1, z1v);
+          intersectEdgeDir(x1, y1, z1v, x2, y2, z2v);
+          intersectEdgeDir(x2, y2, z2v, x0, y0, z0v);
         }
       }
-
-      // 회귀선 계산
-      if (dirSamples.length >= 6) {
-        const dirN = dirSamples.length;
-        const dirSumZ = dirSamples.reduce((acc, cur) => acc + cur.z, 0);
-        const dirSumR = dirSamples.reduce((acc, cur) => acc + cur.radius, 0);
-        const dirMeanZ = dirSumZ / dirN;
-        const dirMeanR = dirSumR / dirN;
-
-        let dirNum = 0;
-        let dirDenom = 0;
-        for (const sample of dirSamples) {
-          const dz = sample.z - dirMeanZ;
-          dirNum += dz * (sample.radius - dirMeanR);
-          dirDenom += dz * dz;
-        }
-
-        if (dirDenom > 1e-8) {
-          const dirSlope = dirNum / dirDenom;
-          const dirIntercept = dirMeanR - dirSlope * dirMeanZ;
-
-          // R² 계산
-          let ssRes = 0;
-          let ssTot = 0;
-          for (const sample of dirSamples) {
-            const predicted = dirSlope * sample.z + dirIntercept;
-            const residual = sample.radius - predicted;
-            ssRes += residual * residual;
-            const totalDev = sample.radius - dirMeanR;
-            ssTot += totalDev * totalDev;
-          }
-          const rSquared = ssTot > 1e-8 ? 1 - ssRes / ssTot : 0;
-
-          if (rSquared > 0.65) {
-            const dirTaperAngleSigned = Math.atan(dirSlope) * (180 / Math.PI);
-            directions.push({
-              angle: angleDeg,
-              slope: dirSlope,
-              intercept: dirIntercept,
-              taperAngle: dirTaperAngleSigned,
-              rSquared,
-              dirFinishLineZ,
-              dirAvailableHeight: postSpanAboveFl,
-              sampleStartZ: postStartZ,
-              sampleEndZ: postEndZ,
-              surfacePoints,
-            });
-          }
-        }
+      for (let d = 0; d < angleCount; d += 1) {
+        if (!(maxRadius[d] > -10) || !bestHit[d]) continue;
+        dirSamples[d].push({ z: targetZ, radius: maxRadius[d] });
+        surfacePoints[d].push({ x: bestX[d], y: bestY[d], z: bestZ[d] });
       }
+    }
+
+    for (let d = 0; d < angleCount; d += 1) {
+      const samples = dirSamples[d];
+      if (samples.length < 6) continue;
+      const dirN = samples.length;
+      const dirSumZ = samples.reduce((acc, cur) => acc + cur.z, 0);
+      const dirSumR = samples.reduce((acc, cur) => acc + cur.radius, 0);
+      const dirMeanZ = dirSumZ / dirN;
+      const dirMeanR = dirSumR / dirN;
+      let dirNum = 0;
+      let dirDenom = 0;
+      for (const sample of samples) {
+        const dz = sample.z - dirMeanZ;
+        dirNum += dz * (sample.radius - dirMeanR);
+        dirDenom += dz * dz;
+      }
+      if (!(dirDenom > 1e-8)) continue;
+      const dirSlope = dirNum / dirDenom;
+      const dirIntercept = dirMeanR - dirSlope * dirMeanZ;
+      let ssRes = 0;
+      let ssTot = 0;
+      for (const sample of samples) {
+        const predicted = dirSlope * sample.z + dirIntercept;
+        const residual = sample.radius - predicted;
+        ssRes += residual * residual;
+        const totalDev = sample.radius - dirMeanR;
+        ssTot += totalDev * totalDev;
+      }
+      const rSquared = ssTot > 1e-8 ? 1 - ssRes / ssTot : 0;
+      if (!(rSquared > 0.65)) continue;
+      directions.push({
+        angle: angles[d],
+        slope: dirSlope,
+        intercept: dirIntercept,
+        taperAngle: Math.atan(dirSlope) * (180 / Math.PI),
+        rSquared,
+        dirFinishLineZ: dirFinishLineZ[d],
+        dirAvailableHeight: postSpanAboveFl,
+        sampleStartZ: postStartZ,
+        sampleEndZ: postEndZ,
+        surfacePoints: surfacePoints[d],
+      });
     }
   }
 
@@ -575,6 +551,14 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
     return null;
   }
 
+  if (!tiltAxisVector) {
+    tiltAxisVector = { x: 0, y: 0, z: 1 };
+  }
+  // 접수 검사는 삽입축만 쓴다. 교점·각인 위치는 제조사 메타데이터에서만 계산한다.
+  if (axisOnly) {
+    return { taperAngle, tiltAxisVector };
+  }
+
   // 3. FrontPoint 계산 (Top/Side 교점 + side 방향 보정)
   //
   // 1단계: tiltAxisVector 기준 Top/Side 교점 탐색 (기존 방식)
@@ -584,9 +568,6 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
   // 2단계: 교점이 상방 홈 테두리에 떨어진 경우 보정
   //        - 교점 Z에서 tiltDir 반대 방향으로 sideOffset(0.5mm) 이동한 Z를 구함
   //        - 보정된 Z에서 frontDir(XY 경사 방향) 수평 ray로 mesh 재교차 → 포스트 측면 확정
-  if (!tiltAxisVector) {
-    tiltAxisVector = { x: 0, y: 0, z: 1 };
-  }
 
   // tiltDir 정규화
   const tiltDirLen = Math.sqrt(
@@ -980,7 +961,10 @@ export function tiltAxisFromMesh(mesh, finishLinePoints) {
     count: mesh.faces.length,
     getX: (i) => mesh.faces[i],
   };
-  return calculateTaperWithFinishLine(position, index, finishLinePoints, bbox)?.tiltAxisVector || null;
+  return (
+    calculateTaperWithFinishLine(position, index, finishLinePoints, bbox, { axisOnly: true })
+      ?.tiltAxisVector || null
+  );
 }
 
 /**

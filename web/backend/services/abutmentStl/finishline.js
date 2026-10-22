@@ -109,6 +109,8 @@ function meshMaxRadiusInZBand(mesh, low = Z_RATIO_LOW, high = Z_RATIO_HIGH) {
  */
 function explodeComponentsSortedByMaxZ(unwelded) {
   const pieces = unwelded.faceComponents();
+  // 한 덩이면 정점을 다시 복사하지 않는다. 면 순서는 위치 용접 사본과 같다.
+  if (pieces.length === 1) return [{ mesh: unwelded, faceList: pieces[0] }];
   const out = pieces.map((faceList) => {
     const sub = unwelded.subMesh(faceList);
     return { mesh: sub, faceList };
@@ -117,9 +119,7 @@ function explodeComponentsSortedByMaxZ(unwelded) {
   return out;
 }
 
-/** 조각의 경계 루프(위치 기준 naked edge) → 점 목록. GetNakedEdges와 같다. */
-function nakedEdgeLoops(pieceMesh) {
-  const welded = Mesh.fromTriangleSoup(pieceMesh.toTriangleSoup());
+function boundaryLoopsAsCurves(welded) {
   return welded.boundaryLoops().map(({ vertices, closed }) => ({
     points: vertices.map((vi) => [
       welded.verts[vi * 3],
@@ -130,9 +130,14 @@ function nakedEdgeLoops(pieceMesh) {
   }));
 }
 
+/** 조각의 경계 루프(위치 기준 naked edge) → 점 목록. GetNakedEdges와 같다. */
+function nakedEdgeLoops(pieceMesh) {
+  return boundaryLoopsAsCurves(pieceMesh.positionWeldedCopy());
+}
+
 /** 조각 안에서 양쪽 면이 정점을 공유하지 않는 edge(unwelded) 체인. */
-function internalUnweldedEdgeLoops(pieceMesh) {
-  const welded = Mesh.fromTriangleSoup(pieceMesh.toTriangleSoup());
+function internalUnweldedEdgeLoops(pieceMesh, weldedMesh = null) {
+  const welded = weldedMesh || pieceMesh.positionWeldedCopy();
   // 조각 메시의 면 순서는 soup 순서와 같다. 조각 코너 id로 unwelded 여부를 본다.
   const pf = pieceMesh.faces;
   const wf = welded.faces;
@@ -402,11 +407,13 @@ function detectFinishlinePointsEdge(mesh, log) {
     let bestStrategy = null;
     candidates.forEach((cand, idx) => {
       const target = cand.mesh;
+      // 위치 용접은 조각당 한 번. naked·unwelded 루프가 그 사본을 같이 쓴다.
+      const welded = target.positionWeldedCopy();
       // Rhino ExtractMeshEdges(Unwelded)는 조각 경계(naked)까지 돌려준다(골든 137건 edge 전략 일치).
-      let curves = [...internalUnweldedEdgeLoops(target), ...nakedEdgeLoops(target)];
+      let curves = [...internalUnweldedEdgeLoops(target, welded), ...boundaryLoopsAsCurves(welded)];
       let strategy = "C_EXTRACT_MESH_EDGES_UNWELDED";
       if (!curves.length) {
-        curves = nakedEdgeLoops(target);
+        curves = boundaryLoopsAsCurves(welded);
         strategy = "C_FALLBACK_NAKED_EDGES";
       }
       const bandR = meshMaxRadiusInZBand(target);

@@ -74,27 +74,24 @@ export class Mesh {
 
   static fromTriangleSoup(positions, eps = WELD_EPS) {
     const triCount = Math.floor(positions.length / 9);
-    const keyToIndex = new Map();
-    const verts = [];
-    const faces = new Int32Array(triCount * 3);
-    const inv = 1 / eps;
-    for (let t = 0; t < triCount; t += 1) {
-      for (let k = 0; k < 3; k += 1) {
-        const o = t * 9 + k * 3;
-        const x = positions[o];
-        const y = positions[o + 1];
-        const z = positions[o + 2];
-        const key = `${Math.round(x * inv)},${Math.round(y * inv)},${Math.round(z * inv)}`;
-        let idx = keyToIndex.get(key);
-        if (idx === undefined) {
-          idx = verts.length / 3;
-          verts.push(x, y, z);
-          keyToIndex.set(key, idx);
-        }
-        faces[t * 3 + k] = idx;
-      }
-    }
-    return new Mesh(Float64Array.from(verts), dropDegenerateFaces(faces));
+    return weldIndexedCorners(triCount, (t, k, out) => {
+      const o = t * 9 + k * 3;
+      out[0] = positions[o];
+      out[1] = positions[o + 1];
+      out[2] = positions[o + 2];
+    }, eps);
+  }
+
+  /** 위치 기준 용접 사본. 피니시라인은 조각마다 수프를 두 번 만들지 않고 이것을 쓴다. */
+  positionWeldedCopy(eps = WELD_EPS) {
+    const v = this.verts;
+    const f = this.faces;
+    return weldIndexedCorners(this.faceCount, (t, k, out) => {
+      const o = f[t * 3 + k] * 3;
+      out[0] = v[o];
+      out[1] = v[o + 1];
+      out[2] = v[o + 2];
+    }, eps);
   }
 
   static fromStlBuffer(buffer) {
@@ -460,6 +457,58 @@ export class Mesh {
   }
 }
 
+const WELD_CORNER = [0, 0, 0];
+
+/** 양자화 키가 같은 꼭짓점을 한 정점으로 모은다. 문자열 키 맵보다 접수 검사가 짧다. */
+function weldIndexedCorners(triCount, readXYZ, eps) {
+  const inv = 1 / eps;
+  let cap = 16;
+  const minCap = Math.max(16, triCount * 6);
+  while (cap < minCap) cap <<= 1;
+  const mask = cap - 1;
+  const kx = new Float64Array(cap);
+  const ky = new Float64Array(cap);
+  const kz = new Float64Array(cap);
+  const kid = new Int32Array(cap);
+  const used = new Uint8Array(cap);
+  const verts = [];
+  const faces = new Int32Array(triCount * 3);
+  let vertCount = 0;
+  for (let t = 0; t < triCount; t += 1) {
+    for (let k = 0; k < 3; k += 1) {
+      readXYZ(t, k, WELD_CORNER);
+      const xi = Math.round(WELD_CORNER[0] * inv);
+      const yi = Math.round(WELD_CORNER[1] * inv);
+      const zi = Math.round(WELD_CORNER[2] * inv);
+      let h = (Math.imul(xi | 0, 73856093) ^ Math.imul(yi | 0, 19349663) ^ Math.imul(zi | 0, 83492791)) & mask;
+      let guard = 0;
+      let idx = -1;
+      for (;;) {
+        if (!used[h]) {
+          used[h] = 1;
+          kx[h] = xi;
+          ky[h] = yi;
+          kz[h] = zi;
+          idx = vertCount;
+          kid[h] = idx;
+          verts.push(WELD_CORNER[0], WELD_CORNER[1], WELD_CORNER[2]);
+          vertCount += 1;
+          break;
+        }
+        if (kx[h] === xi && ky[h] === yi && kz[h] === zi) {
+          idx = kid[h];
+          break;
+        }
+        h = (h + 1) & mask;
+        guard += 1;
+        if (guard > cap) throw new Error("정점 용접 해시가 가득 찼습니다.");
+      }
+      faces[t * 3 + k] = idx;
+    }
+  }
+  return new Mesh(Float64Array.from(verts), dropDegenerateFaces(faces));
+}
+
 function dropDegenerateFaces(faces) {
   const out = [];
   for (let i = 0; i < faces.length; i += 3) {
@@ -534,45 +583,105 @@ export function chainAdjacency(adj) {
   return out;
 }
 
+function mixEdgeKey(key) {
+  const lo = key | 0;
+  const hi = (key / 4294967296) | 0;
+  return (Math.imul(lo, 0x85ebca6b) ^ Math.imul(hi, 0xc2b2ae35)) >>> 0;
+}
+
+/**
+ * 평면 단면용 재사용 버퍼. 정렬이 정점을 옮겨도 인덱스는 그대로라 변환 뒤에 비우지 않는다.
+ * 접수 검사는 z 단면을 수백 번 자르므로, 호출마다 Map을 만들지 않는다.
+ */
+function planeScratch(mesh) {
+  const nv = mesh.vertexCount;
+  const nf = mesh.faceCount;
+  let cap = 16;
+  const minCap = Math.max(16, nf * 4);
+  while (cap < minCap) cap <<= 1;
+  const pointCap = Math.max(16, nf * 2);
+  let s = mesh._planeScratch;
+  if (!s || s.nv < nv || s.cap < cap || s.pointCap < pointCap) {
+    const prevGen = s?.gen || 1;
+    s = {
+      nv,
+      cap,
+      mask: cap - 1,
+      pointCap,
+      stamp: new Int32Array(nv),
+      dist: new Float64Array(nv),
+      gen: prevGen,
+      hStamp: new Int32Array(cap),
+      hKey: new Float64Array(cap),
+      hId: new Int32Array(cap),
+      px: new Float64Array(pointCap),
+      py: new Float64Array(pointCap),
+      pz: new Float64Array(pointCap),
+    };
+    mesh._planeScratch = s;
+  }
+  let gen = s.gen + 1;
+  if (gen >= 0x7ffffffe) {
+    s.stamp.fill(0);
+    s.hStamp.fill(0);
+    gen = 1;
+  }
+  s.gen = gen;
+  return s;
+}
+
 /**
  * 메시 × 평면 단면. Rhino Intersection.MeshPlane처럼 닫힌 루프는 첫 점을 끝에 한 번 더 둔다.
  * @param {Mesh} mesh
  * @param {number[]} origin
  * @param {number[]} normal 단위 벡터
- * @param {Iterable<number>|null} faceSubset 후보 면
+ * @param {ArrayLike<number>|null} faceSubset 후보 면
  * @returns {number[][][]} polyline 배열([x,y,z] 목록)
  */
 export function meshPlaneSection(mesh, origin, normal, faceSubset = null) {
   const v = mesh.verts;
   const f = mesh.faces;
   const nv = mesh.vertexCount;
+  const s = planeScratch(mesh);
+  const gen = s.gen;
   const [nx, ny, nz] = normal;
   const d0 = nx * origin[0] + ny * origin[1] + nz * origin[2];
-  const dist = new Map();
   const signed = (vi) => {
-    let d = dist.get(vi);
-    if (d === undefined) {
-      d = nx * v[vi * 3] + ny * v[vi * 3 + 1] + nz * v[vi * 3 + 2] - d0;
+    if (s.stamp[vi] !== gen) {
+      s.stamp[vi] = gen;
+      let d = nx * v[vi * 3] + ny * v[vi * 3 + 1] + nz * v[vi * 3 + 2] - d0;
       // 평면 위 정점은 +쪽으로 민다(교차점이 정점에 겹쳐 두 번 잡히는 것 방지).
       if (d === 0) d = 1e-12;
-      dist.set(vi, d);
+      s.dist[vi] = d;
     }
-    return d;
+    return s.dist[vi];
   };
-  const points = new Map();
+  let pointCount = 0;
   const pointOf = (a, b, da, db) => {
     const key = a < b ? a * nv + b : b * nv + a;
-    let p = points.get(key);
-    if (!p) {
-      const t = da / (da - db);
-      p = [
-        v[a * 3] + t * (v[b * 3] - v[a * 3]),
-        v[a * 3 + 1] + t * (v[b * 3 + 1] - v[a * 3 + 1]),
-        v[a * 3 + 2] + t * (v[b * 3 + 2] - v[a * 3 + 2]),
-      ];
-      points.set(key, p);
+    let slot = mixEdgeKey(key) & s.mask;
+    let guard = 0;
+    for (;;) {
+      if (s.hStamp[slot] !== gen) {
+        const id = pointCount;
+        pointCount += 1;
+        if (id >= s.pointCap) throw new Error("평면 단면 교차점이 너무 많습니다.");
+        s.hStamp[slot] = gen;
+        s.hKey[slot] = key;
+        s.hId[slot] = id;
+        const t = da / (da - db);
+        const ao = a * 3;
+        const bo = b * 3;
+        s.px[id] = v[ao] + t * (v[bo] - v[ao]);
+        s.py[id] = v[ao + 1] + t * (v[bo + 1] - v[ao + 1]);
+        s.pz[id] = v[ao + 2] + t * (v[bo + 2] - v[ao + 2]);
+        return id;
+      }
+      if (s.hKey[slot] === key) return s.hId[slot];
+      slot = (slot + 1) & s.mask;
+      guard += 1;
+      if (guard > s.cap) throw new Error("평면 단면 해시가 가득 찼습니다.");
     }
-    return key;
   };
   const adj = new Map();
   const link = (a, b) => {
@@ -590,20 +699,43 @@ export function meshPlaneSection(mesh, origin, normal, faceSubset = null) {
     const da = signed(a);
     const db = signed(b);
     const dc = signed(c);
-    const crossings = [];
-    if (da > 0 !== db > 0) crossings.push(pointOf(a, b, da, db));
-    if (db > 0 !== dc > 0) crossings.push(pointOf(b, c, db, dc));
-    if (dc > 0 !== da > 0) crossings.push(pointOf(c, a, dc, da));
-    if (crossings.length === 2 && crossings[0] !== crossings[1]) {
-      link(crossings[0], crossings[1]);
+    let nCross = 0;
+    let c0 = 0;
+    let c1 = 0;
+    if (da > 0 !== db > 0) {
+      c0 = pointOf(a, b, da, db);
+      nCross = 1;
     }
+    if (db > 0 !== dc > 0) {
+      const id = pointOf(b, c, db, dc);
+      if (nCross === 0) c0 = id;
+      else c1 = id;
+      nCross += 1;
+    }
+    if (dc > 0 !== da > 0) {
+      const id = pointOf(c, a, dc, da);
+      if (nCross === 0) c0 = id;
+      else if (nCross === 1) c1 = id;
+      nCross += 1;
+    }
+    if (nCross === 2 && c0 !== c1) link(c0, c1);
   };
-  if (faceSubset) for (const i of faceSubset) visit(i);
-  else for (let i = 0; i < mesh.faceCount; i += 1) visit(i);
+  if (faceSubset) {
+    for (let ii = 0; ii < faceSubset.length; ii += 1) visit(faceSubset[ii]);
+  } else {
+    for (let i = 0; i < mesh.faceCount; i += 1) visit(i);
+  }
 
-  return chainAdjacency(adj).map(({ vertices }) =>
-    vertices.map((key) => points.get(key)),
-  );
+  const objs = new Array(pointCount);
+  const pointObj = (id) => {
+    let p = objs[id];
+    if (!p) {
+      p = [s.px[id], s.py[id], s.pz[id]];
+      objs[id] = p;
+    }
+    return p;
+  };
+  return chainAdjacency(adj).map(({ vertices }) => vertices.map(pointObj));
 }
 
 /**

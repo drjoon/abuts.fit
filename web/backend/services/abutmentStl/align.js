@@ -979,7 +979,7 @@ function translateZToTargetDiameterZero(mesh, targetDiameter, stage, preferNegat
  * align_mesh_to_origin 이식. mesh를 제자리에서 변환한다.
  * @returns {{ ok: boolean, message: string, translation: number[]|null, telemetry: object }}
  */
-export function alignMeshToOrigin(mesh, { targetDiameter = null, implantProfile = null, log = () => {} } = {}) {
+export function alignMeshToOrigin(mesh, { targetDiameter = null, implantProfile = null, log = () => {}, preflight = false } = {}) {
   if (!mesh || mesh.vertexCount === 0) {
     return { ok: false, message: "Invalid mesh", translation: null, telemetry: {} };
   }
@@ -1002,8 +1002,15 @@ export function alignMeshToOrigin(mesh, { targetDiameter = null, implantProfile 
   const z3 = translateZToTargetDiameterZero(mesh, resolved, "[Z-3]", true, log);
   if (!z3[0]) return { ok: false, message: z3[1] || "Z-3 alignment failed", translation: null, telemetry: {} };
 
-  const [okHex, hexMsg, hex] = measureHexTelemetry(mesh, explicit, log);
-  const residual = measureHexResidual(collectHexFaceNormalObservations(mesh, explicit));
+  // 헥스 각은 메시를 돌리지 않는 텔레메트리다. 접수 검사(필렛 R)에는 쓰지 않는다.
+  let okHex = false;
+  let hexMsg = "Hex telemetry skipped";
+  let hex = { method: "skipped", samples: 0 };
+  let residual = null;
+  if (!preflight) {
+    [okHex, hexMsg, hex] = measureHexTelemetry(mesh, explicit, log);
+    residual = measureHexResidual(collectHexFaceNormalObservations(mesh, explicit));
+  }
   const telemetry = {
     version: 1,
     moduleVersion: ALIGN_MODULE_VERSION,
