@@ -603,7 +603,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 공개 가입: `POST /api/auth/register`. 발신 프로필: `practiceProfile` → `ensureRequestorOrgAnchor`.
   - 백필: `scripts/db/backfill-requestor-capabilities.js` (`--apply`)
   - 크레딧/정산: 유료(paid+verified)만. synthetic BN 환영 크레딧 없음.
-    가입 환영 무료크레딧 자동 지급은 **폐지**. 관리자 수동 무료크레딧 override는 유지.
+    기공소 가입환영 크레딧은 실사업자번호 등록 시 **7만 원** 1회(`가입환영 크레딧 지급`). 치과는 제외. 관리자 수동 무료크레딧 override는 유지.
     CA 가입 무료 테스트(첫 2건)도 **폐지**(레거시 `signup_free_test_2` 의뢰만 0원 호환).
     치과·기공소 모두 데모 모드(30일·마이너스 허용). 정산 요약 「무료 충전」카드 제거.
 
@@ -862,8 +862,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 소비: `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`
   - `GET /api/credits/balance`는 `LedgerLine` 직접 집계(GL SSOT)만 사용합니다.
     - 프로세스 메모리 캐시를 사용하지 않아 승인/롤백 직후 잔액을 즉시 반영해야 합니다.
-  - 가입 환영 무료 크레딧(강제, 자동 지급) — **폐지**:
-    - `grantWelcomeFreeCreditIfEligible` no-op. `defaultRequestFreeCredit` 스키마 기본 0
+  - 가입 환영 무료 크레딧(강제, 자동 지급) — **기공소 7만 원**:
+    - `grantWelcomeFreeCreditIfEligible`: lab + 실사업자번호일 때 `LAB_WELCOME_FREE_CREDIT_WON`(70,000) 1회. 명목 `가입환영 크레딧 지급`. 치과 제외. 홈택스 보류 후 검증 승격 때도 지급.
+    - `defaultRequestFreeCredit` 스키마 기본 70,000(수동 지급 기본액). 저장 0은 로드 시 70,000. 자동 지급은 이 설정과 무관하게 7만 원.
     - **관리자 수동 무료크레딧 override는 유지**(adminOverrideRequestFreeCredit). list/cancel·기존 잔액·내역 유지
     - 정산 요약 UI 「무료 충전」제거(유료 [+정산] − 소비). 장부 행 FREE 필터는 유지
   - CA 가입 무료 테스트(첫 2건) — **폐지**:

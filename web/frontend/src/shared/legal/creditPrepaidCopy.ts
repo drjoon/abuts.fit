@@ -45,7 +45,7 @@ export const CREDIT_LEDGER_PREPAID_NOTICE_BODY =
 
 /** 내역 탭 — 무료 카드 툴팁. */
 export const CREDIT_LEDGER_FREE_NOTICE_BODY =
-  "이전에 적립된 무료 크레딧(잔여분)입니다. 기공의뢰·어벗 생산·배송 등에 다른 크레딧보다 먼저 사용되며, 환불 대상이 아닙니다. 신규 자동 무료 크레딧 지급은 없으며, 관리자가 수동으로 지급한 경우에만 적립됩니다.";
+  "무료 크레딧입니다. 기공의뢰·어벗 생산·배송에 다른 크레딧보다 먼저 쓰이며, 환불되지 않습니다. 기공소는 가입 시 7만 원이 지급되고, 그 외에는 관리자가 지급합니다.";
 
 /** 내역 탭 — 기공 카드 툴팁(기공소). */
 export const CREDIT_LEDGER_SETTLEMENT_NOTICE_BODY =

@@ -480,7 +480,7 @@ export function buildFreeCreditGrantReason(grant) {
   const overrideReason = String(grant?.overrideReason || "").trim();
   const grantType = String(grant?.type || "").trim().toUpperCase();
 
-  let reason = "환영 무료크레딧";
+  let reason = "가입환영 크레딧 지급";
   if (grantType === "DEMO_CREDIT") {
     reason = "데모 크레딧";
   } else if (

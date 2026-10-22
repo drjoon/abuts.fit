@@ -1118,8 +1118,7 @@ export async function updateMyBusiness(req, res) {
           "business-anchor-linked",
         );
 
-        // 가입 환영 무료크레딧 자동 지급 폐지(grantWelcomeFreeCreditIfEligible no-op).
-      // 대체: 치과·기공소 데모 모드 + 관리자 수동 무료크레딧.
+        // 기공소 + 실사업자번호면 가입환영 크레딧 7만 원 1회.
         const welcomeFreeCreditAmount =
           await grantWelcomeFreeCreditIfEligible({
             businessAnchorId: created._id,
@@ -1309,8 +1308,7 @@ export async function updateMyBusiness(req, res) {
       }
     }
 
-    // 가입 환영 무료크레딧 자동 지급 폐지(grantWelcomeFreeCreditIfEligible no-op).
-    // 대체: 치과·기공소 데모 모드 + 관리자 수동 무료크레딧.
+    // 임시 사업자번호가 실번호로 검증되면 기공소 가입환영 크레딧 7만 원 1회.
     let welcomeFreeCreditGranted = false;
     let welcomeFreeCreditAmount = 0;
     if (

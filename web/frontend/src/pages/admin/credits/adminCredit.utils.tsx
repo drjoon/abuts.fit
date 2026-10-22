@@ -67,7 +67,7 @@ export const refTypeLabel = (refType?: string) => {
   if (t === "DEMO_CREDIT") return "데모 크레딧";
   if (t === "DEMO_CREDIT_EXIT") return "데모 크레딧 회수";
   if (t === "FREE_REQUEST_CREDIT" || t === "REQUEST_FREE_CREDIT" || t === "WELCOME_BONUS") {
-    return "환영 무료크레딧";
+    return "가입환영 크레딧 지급";
   }
   if (t === "FREE_SHIPPING_CREDIT" || t === "SHIPPING_FREE_CREDIT") {
     return "환영 무료크레딧";

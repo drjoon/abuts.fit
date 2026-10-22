@@ -19,7 +19,7 @@ import mongoose from "mongoose";
 import crypto from "crypto";
 import FreeCreditGrant from "../../models/freeCreditGrant.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
+import { LAB_WELCOME_FREE_CREDIT_MEMO, LAB_WELCOME_FREE_CREDIT_WON } from "../../controllers/businesses/business.freeCredit.util.js";
 import { normalizeRequestorCapabilities, normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import { assertSafeToMutateDb } from "./_mongo.js";
@@ -145,7 +145,7 @@ async function createMissingLabGrant({ anchor, type, amount }) {
     refId: grant._id,
     createdBy: anchor.primaryContactUserId || null,
     meta: {
-      memo: "환영 무료크레딧",
+      memo: LAB_WELCOME_FREE_CREDIT_MEMO,
       freeCreditGrantId: String(grant._id),
       source: "requestor_welcome_credit_reconcile",
     },
@@ -182,7 +182,7 @@ async function main() {
 
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 15000 });
   try {
-    const [anchors, grants, defaults] = await Promise.all([
+    const [anchors, grants] = await Promise.all([
       BusinessAnchor.find({ businessType: "requestor" })
         .select({
           _id: 1,
@@ -195,7 +195,6 @@ async function main() {
         })
         .lean(),
       FreeCreditGrant.find({ type: { $in: WELCOME_TYPES } }).lean(),
-      loadCreditSettingsDefaults(),
     ]);
 
     const anchorsById = new Map(anchors.map((anchor) => [String(anchor._id), anchor]));
@@ -258,7 +257,7 @@ async function main() {
           missing.push({
             anchor,
             type: "REQUEST_FREE_CREDIT",
-            amount: defaults.defaultRequestFreeCredit,
+            amount: LAB_WELCOME_FREE_CREDIT_WON,
           });
         }
       }
@@ -270,7 +269,7 @@ async function main() {
       requestorAnchors: anchors.length,
       eligibleLabs: eligibleLabs.length,
       welcomeDefaults: {
-        freeCredit: defaults.defaultRequestFreeCredit,
+        freeCredit: LAB_WELCOME_FREE_CREDIT_WON,
       },
       practiceWelcomeGrantsToReverse: practiceGrants.length,
       practiceWelcomeAmountToReverse: practiceGrants.reduce((sum, { grant }) => sum + Number(grant.amount || 0), 0),

@@ -437,7 +437,7 @@ export const handleSave = async (
       );
       toast({
         title: "신규 사업자 등록 완료",
-        description: `무료크레딧 ${formatted}원이 적립되었어요.`,
+        description: `가입환영 크레딧 ${formatted}원이 적립되었어요.`,
       });
     }
 

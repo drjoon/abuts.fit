@@ -106,7 +106,7 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   abutmentDesignLabFee: 10000,
   abutmentRetailPrice: 40000,
   practiceMembershipMonthlyFee: ABUTS_PRACTICE_MEMBERSHIP_MONTHLY_FEE_DEFAULT,
-  defaultRequestFreeCredit: 0,
+  defaultRequestFreeCredit: 70000,
   defaultShippingFreeCredit: 0,
   membershipProductionPrice: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   regularProductionPrice: ABUTS_ABUTMENT_REGULAR_PRODUCTION_PRICE,
@@ -228,10 +228,15 @@ export const useSystemSettings = () => {
           raw.practiceMembershipMonthlyFee ??
             CREDIT_SETTINGS_DEFAULTS.practiceMembershipMonthlyFee,
         ),
-        defaultRequestFreeCredit: Number(
-          raw.defaultRequestFreeCredit ??
-            CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
-        ),
+        defaultRequestFreeCredit: (() => {
+          const n = Number(
+            raw.defaultRequestFreeCredit ??
+              CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
+          );
+          return Number.isFinite(n) && n > 0
+            ? n
+            : CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit;
+        })(),
         defaultShippingFreeCredit: 0,
         ...abutmentPrices,
         labProductionPrice: Number(

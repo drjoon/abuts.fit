@@ -9,10 +9,6 @@
 import FreeCreditGrant from "../../models/freeCreditGrant.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 
-import {
-  CREDIT_SETTINGS_SCHEMA_DEFAULTS,
-  loadCreditSettingsDefaults,
-} from "../../utils/creditSettingsDefaults.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import {
   normalizeRequestorCapabilities,
@@ -23,6 +19,10 @@ import {
   isDuplicateKeyError,
 } from "./business.validation.util.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
+
+/** 기공소 가입환영 크레딧. 설정값이 0이어도 이 금액을 지급한다. */
+export const LAB_WELCOME_FREE_CREDIT_WON = 70000;
+export const LAB_WELCOME_FREE_CREDIT_MEMO = "가입환영 크레딧 지급";
 
 /** 환영 무료 크레딧: 의뢰자·기공소(lab)만. 치과(practice) 제외. */
 function isWelcomeFreeCreditEligibleLabAnchor(businessAnchor) {
@@ -164,12 +164,76 @@ async function ensureFreeCreditGrant({
 }
 
 /**
- * 기공소 가입 환영 무료크레딧 — 폐지.
- * 대체: 치과 데모 모드(90일 마이너스 허용, 기공소 데모 없음) + 관리자 수동 무료크레딧.
- * 관리자 수동 무료크레딧 override는 adminFreeCreditGrant 경로 유지.
+ * 기공소 가입환영 크레딧 1회. 실사업자번호·lab만. 금액은 7만 원.
+ * 사업자번호당 1회(legacy WELCOME_BONUS·배송 환영도 기지급).
+ * 치과는 제외. 관리자 수동 지급은 adminFreeCreditGrant 경로.
  */
-export async function grantWelcomeFreeCreditIfEligible() {
-  return null;
+export async function grantWelcomeFreeCreditIfEligible({
+  businessAnchorId,
+  userId,
+  userRole,
+}) {
+  if (!businessAnchorId) return null;
+  if (userRole !== "requestor") return null;
+  const businessAnchor = await BusinessAnchor.findById(businessAnchorId)
+    .select({
+      businessType: 1,
+      requestorKind: 1,
+      requestorCapabilities: 1,
+      metadata: 1,
+    })
+    .lean();
+  if (!businessAnchor) return null;
+  if (!isWelcomeFreeCreditEligibleLabAnchor(businessAnchor)) return null;
+
+  const normalizedBusinessNumber = formatBusinessNumber(
+    businessAnchor?.metadata?.businessNumber,
+  );
+  if (!normalizedBusinessNumber) return null;
+
+  const amount = LAB_WELCOME_FREE_CREDIT_WON;
+  const grant = await ensureFreeCreditGrant({
+    businessAnchorId,
+    userId,
+    type: "REQUEST_FREE_CREDIT",
+    businessNumber: normalizedBusinessNumber,
+    amount,
+  });
+
+  if (!grant?._id) return null;
+  if (grant.grantJournalId) return null;
+
+  if (Number(grant.amount) !== amount) {
+    await FreeCreditGrant.updateOne({ _id: grant._id }, { $set: { amount } });
+  }
+
+  const postResult = await upsertFreeCreditLedger({
+    businessAnchorId,
+    userId,
+    amount,
+    refType: "FREE_REQUEST_CREDIT",
+    refId: grant._id,
+    memo: LAB_WELCOME_FREE_CREDIT_MEMO,
+  });
+  if (!postResult?.ok) return null;
+
+  if (!grant.grantJournalId && postResult.journalId) {
+    await FreeCreditGrant.updateOne(
+      { _id: grant._id },
+      { $set: { grantJournalId: String(postResult.journalId) } },
+    );
+  }
+
+  if (postResult.posted) {
+    await emitCreditBalanceUpdatedToBusiness({
+      businessAnchorId,
+      balanceDelta: amount,
+      reason: "welcome_free_credit",
+      refId: postResult.journalId || grant._id,
+    });
+  }
+
+  return amount;
 }
 
 /** @deprecated use grantWelcomeFreeCreditIfEligible */

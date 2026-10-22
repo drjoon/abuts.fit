@@ -295,9 +295,10 @@
 - 잔액 조회 SSOT:
   - `GET /api/credits/balance` 및 잔액 파생 조회는 `LedgerLine` 직접 집계값을 사용
   - `BusinessCreditBalance`는 레거시 스냅샷으로 취급하며 런타임 잔액 판정/표시에 사용하지 않음
-- 가입 환영 무료 크레딧(강제) — **폐지**:
-  - 기공소 가입 시 `defaultRequestFreeCredit`(구 30,000) / 배송 7,000 자동 지급 **중단**
-  - `grantWelcomeFreeCreditIfEligible`는 no-op. **관리자 수동 무료크레딧 override는 유지**(관리자→크레딧→무료 크레딧)
+- 가입 환영 무료 크레딧(강제) — **기공소만 7만 원**:
+  - 기공소가 실사업자번호로 사업자를 등록하면 `grantWelcomeFreeCreditIfEligible`가 `REQ_FREE_REQUEST_CREDIT` **70,000원**을 사업자번호당 1회 지급한다. 명목은 `가입환영 크레딧 지급`. 치과(practice)는 제외. 임시 사업자번호는 실번호 검증 후 지급.
+  - 자동 지급 금액은 `LAB_WELCOME_FREE_CREDIT_WON`(70,000). 설정값 `defaultRequestFreeCredit`이 0이어도 7만 원을 준다. 스키마 기본 70,000은 관리자 수동 지급 기본액.
+  - **관리자 수동 무료크레딧 override는 유지**(관리자→크레딧→무료 크레딧)
   - 정산 요약 UI: 「무료 충전」카드 제거. 치과 `현재 잔액 = 충전 − 소비`(소비=결제 보류 HOLD 포함), 기공소 `= 충전 + 정산 적립(확정) − 소비`. 기존 `REQ_FREE_*` 잔액·`CHARGE_FREE_*` 내역·list/cancel은 유지
   - **[폐지 2026-10-17] 치과 데모 모드는 폐지되었다.** 신규 가입은 `demoMode`를 켜지 않고, 데모 게이트(만료·전환 대기 차단, 가상 잔고 overdraft, 예약분 제외)와 치과 전환 UI(`/me/exit-demo`, 뱃지·안내 모달)를 제거했다. 기공의뢰는 OB 후불, 커스텀어벗은 선불 크레딧이다. 기존 플래그는 `scripts/db/clear-practice-demo-mode.js`로 해제한다. 아래 데모 서술은 이력이며, 기공소 전환 정산(`demoConversion`·`labDemoCredit`)·장부 라벨은 레거시 데이터용으로만 남아 있다.
   - 데모 모드(**치과 practice 전용**, 기공소 데모 없음): 가입 시 0원 시작·**가상 잔고**(마이너스 무제한, **기공비만**) **90일**. **커스텀어벗**(직접 의뢰·기공의뢰 어벗 소매)은 데모여도 **충전된 크레딧**이 있어야 한다.

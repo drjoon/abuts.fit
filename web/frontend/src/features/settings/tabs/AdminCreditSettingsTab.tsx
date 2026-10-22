@@ -1206,9 +1206,12 @@ function normalizeCreditSettings(
         fallback.practiceMembershipMonthlyFee ??
         50000,
     ),
-    defaultRequestFreeCredit: Number(
-      raw.defaultRequestFreeCredit ?? fallback.defaultRequestFreeCredit,
-    ),
+    defaultRequestFreeCredit: (() => {
+      const n = Number(
+        raw.defaultRequestFreeCredit ?? fallback.defaultRequestFreeCredit,
+      );
+      return Number.isFinite(n) && n > 0 ? n : 70000;
+    })(),
     // 환영 지급은 무료크레딧 단일. 레거시 배송 환영 설정값은 저장·표시 모두 0.
     defaultShippingFreeCredit: 0,
     ...abutmentPrices,
@@ -2597,9 +2600,11 @@ export const AdminCreditSettingsTab = ({
                   title="수동 무료크레딧"
                   description={
                     <>
-                      직접 줄 때 기본으로 넣는 금액입니다.
+                      기공소가 사업자를 등록하면 7만 원을 지급합니다.
                       <br />
-                      가입하면 자동으로 주지 않습니다.
+                      명목은 가입환영 크레딧 지급입니다.
+                      <br />
+                      아래 금액은 직접 줄 때 기본으로 넣는 값입니다.
                     </>
                   }
                 />

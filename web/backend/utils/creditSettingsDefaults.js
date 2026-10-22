@@ -846,10 +846,16 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
       creditSettings.practiceMembershipMonthlyFee ??
         SCHEMA_DEFAULTS.practiceMembershipMonthlyFee,
     ),
-    defaultRequestFreeCredit: Number(
-      creditSettings.defaultRequestFreeCredit ??
-        SCHEMA_DEFAULTS.defaultRequestFreeCredit,
-    ),
+    defaultRequestFreeCredit: (() => {
+      const raw = creditSettings.defaultRequestFreeCredit;
+      const n = Number(raw);
+      // 폐지 당시 저장 0은 수동 지급 기본액(7만)으로 되돌린다.
+      // 가입환영 자동 지급은 이 값과 무관하게 7만 원이다.
+      if (raw == null || raw === "" || !Number.isFinite(n) || n <= 0) {
+        return SCHEMA_DEFAULTS.defaultRequestFreeCredit;
+      }
+      return n;
+    })(),
     // 환영 배송 분리 지급 폐기. 로드 시에도 0으로 정규화.
     defaultShippingFreeCredit: 0,
     // 제조사 % = 판매가 대비 매입 비율(기본 50). 잔여 분배 비중과 별개.

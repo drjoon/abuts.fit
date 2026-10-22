@@ -230,8 +230,8 @@ const systemSettingsSchema = new mongoose.Schema(
       abutmentRetailPrice: { type: Number, default: 40000 },
       // 레거시. 치과 멤버십 월 구독 폐지. 신규 과금에 쓰지 않음.
       practiceMembershipMonthlyFee: { type: Number, default: 50000 },
-      // 기공소 가입 환영 무료크레딧 기본값: 0(자동 지급 폐지). 관리자 수동 지급 기본액으로만 사용.
-      defaultRequestFreeCredit: { type: Number, default: 0 },
+      // 관리자 수동 무료크레딧 기본액. 가입환영 자동 지급은 LAB_WELCOME_FREE_CREDIT_WON(7만).
+      defaultRequestFreeCredit: { type: Number, default: 70000 },
       defaultShippingFreeCredit: { type: Number, default: 0 },
     },
     // 예전 법인→개인 기공소 정액 단가. 기공사업은 법인 기공사업부라 청구·정산에 연결하지 않는다.

@@ -9,6 +9,7 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import User from "../models/user.model.js";
 import { verifyBusinessNumber } from "../services/hometax.service.js";
 import { activatePendingLabTradingPartnersForPractice } from "../utils/labTradingPartner.util.js";
+import { grantWelcomeFreeCreditIfEligible } from "../controllers/businesses/business.freeCredit.util.js";
 import { emitAppEventToRoles } from "../socket.js";
 
 const INTERVAL_MS = Math.max(
@@ -72,6 +73,17 @@ export async function promotePendingBusinessToVerified(row) {
   await activatePendingLabTradingPartnersForPractice({
     practiceAnchorId: row._id,
   }).catch(() => null);
+  if (String(row.businessType || "") === "requestor") {
+    try {
+      await grantWelcomeFreeCreditIfEligible({
+        businessAnchorId: row._id,
+        userId: row.primaryContactUserId || null,
+        userRole: "requestor",
+      });
+    } catch (err) {
+      console.error("[welcomeFreeCredit] pending promote", err);
+    }
+  }
   emitBusinessVerificationChanged("verified", row._id);
 }
 
