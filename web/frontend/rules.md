@@ -594,6 +594,7 @@ Notes:
   - ExoCAD는 버전(`exoCadVersion`: `le_3_0`=3.0 이하 / `ge_3_2`=3.2 이상)을 함께 설정한다.
     - 3.0 이하: 임플란트 제조사별 verifiedHex/applyHex30으로만 시드. **implantManufacturer 없으면 designSoftware→30° 폴백 금지** → 에러 토스트 + 준비 승인 차단.
     - 3.2 이상: 수정됨 → 기본 헥스=`STL모델대로`. 계정 `defaultManufacturerHexRotation`으로 덮지 않는다. 준비 단계 의뢰 1건 변경은 그 건만.
+    - `STL모델대로`/`헥스30도회전`: 제조사 변경은 그 의뢰만. 계정 default에 심지 않음. ExoCAD≤3.0 신규 시드는 관리자 대시보드 `applyHex30`/`verifiedHex` SSOT.
   - ExoCAD 첫 설정 후 첫 제조 의뢰는 반대 헥스 확인용 복사샘플(`caseInfos.hexVerificationSample`)을 함께 생성한다.
     준비 카드·세척.패킹 라벨 상단·진행중/출고예정에 **「헥스 확인용 무료 샘플」**을 표시한다.
     라이노(2-filled)는 원본만 실행하고 샘플에 stlFile(legacy camFile 미러)을 복사한다. Esprit NC(ncFile)는 샘플의 반대 헥스로 별도 생성.

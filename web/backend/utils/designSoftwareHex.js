@@ -5,6 +5,7 @@
 // - web/frontend/src/features/requestSettings/DesignSoftwareSettingsDialog.tsx
 // - web/backend/controllers/admin/admin.hexVerification.controller.js
 // change-log:
+// - 2026-10-22: STL/30°는 제조사 의뢰 변경으로 계정 default를 덮지 않음. 시드는 관리자 맵·디자인SW SSOT.
 // - 2026-10-22: ExoCAD 3.2 이상은 계정 defaultManufacturerHexRotation으로 덮지 않고 STL모델대로.
 // - 2026-10-13: 공통 적용은 제조사별 선택(0°/30°)을 직원들에게 복사. 6종을 한 회전으로 묶지 않음.
 // - 2026-09-09: ExoCAD≤3.0 + implantManufacturer 없음 → designSoftware/계정 폴백 제거(null). 조용히 30° 시드 금지.
@@ -211,6 +212,29 @@ export const hexModeFromApplyHex30 = (applyHex30) =>
   applyHex30 === false ? "STL모델대로" : "헥스30도회전";
 
 /**
+ * 제조사가 준비 단계에서 헥스를 바꿀 때 계정 defaultManufacturerHexRotation에 심지 않을지.
+ * STL모델대로/헥스30도회전은 의뢰 1건만 바뀌고, ExoCAD≤3.0 시드는 관리자 applyHex30/verifiedHex SSOT.
+ * ExoCAD 3.2+는 디자인SW(STL모델대로) SSOT.
+ */
+export const shouldSkipPersistDefaultManufacturerHexFromManufacturerChange = ({
+  designSoftware = null,
+  exoCadVersion = null,
+  manufacturerHexRotation = null,
+} = {}) => {
+  if (normalizeHexVerificationResultHex(manufacturerHexRotation)) {
+    return true;
+  }
+  const sw = String(designSoftware || "").trim();
+  if (
+    sw === "ExoCAD" &&
+    normalizeExoCadVersion(exoCadVersion) === EXOCAD_VERSION_GE_3_2
+  ) {
+    return true;
+  }
+  return false;
+};
+
+/**
  * 헥스 확인 pending SSOT.
  * ExoCAD 3.0 이하이고 해당 임플란트 제조사에 verifiedHex 가 없으면 true.
  * implantManufacturer 없으면 pending으로 보지 않음(시드 자체가 불가 — FE/의뢰 차단).
@@ -263,6 +287,10 @@ export const resolveExoCadManufacturerHexRotation = ({
   const mfg = String(manufacturerDefault || "").trim() || null;
 
   if (sw !== "ExoCAD") {
+    // 제조사가 과거에 심은 STL/30 계정 기본값은 신규 시드 SSOT가 아님(플러스 모드만 유지).
+    if (normalizeHexVerificationResultHex(mfg)) {
+      return designFallback;
+    }
     return mfg || designFallback;
   }
 

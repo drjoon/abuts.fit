@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { buildHexRowsFromManufacturerChoices, resolveExoCadManufacturerHexRotation } from "../../utils/designSoftwareHex.js";
+import {
+  buildHexRowsFromManufacturerChoices,
+  resolveExoCadManufacturerHexRotation,
+  shouldSkipPersistDefaultManufacturerHexFromManufacturerChange,
+} from "../../utils/designSoftwareHex.js";
 
 describe("buildHexRowsFromManufacturerChoices", () => {
   test("제조사마다 다른 회전을 유지한다", () => {
@@ -89,5 +93,44 @@ describe("resolveExoCadManufacturerHexRotation", () => {
       manufacturerDefault: "STL모델+",
     });
     assert.equal(mode, "STL모델+");
+  });
+
+  test("3Shape는 제조사가 심은 STL/30 계정 기본값으로 시드하지 않는다", () => {
+    const mode = resolveExoCadManufacturerHexRotation({
+      designSoftware: "3Shape",
+      manufacturerDefault: "헥스30도회전",
+    });
+    assert.equal(mode, "STL모델대로");
+  });
+});
+
+describe("shouldSkipPersistDefaultManufacturerHexFromManufacturerChange", () => {
+  test("STL/30° canonical 변경은 계정 default 저장을 스킵한다", () => {
+    assert.equal(
+      shouldSkipPersistDefaultManufacturerHexFromManufacturerChange({
+        designSoftware: "ExoCAD",
+        exoCadVersion: "le_3_0",
+        manufacturerHexRotation: "헥스30도회전",
+      }),
+      true,
+    );
+    assert.equal(
+      shouldSkipPersistDefaultManufacturerHexFromManufacturerChange({
+        designSoftware: "3Shape",
+        manufacturerHexRotation: "STL모델대로",
+      }),
+      true,
+    );
+  });
+
+  test("플러스 모드(ExoCAD 3.0 이하)는 계정 default 저장을 허용한다", () => {
+    assert.equal(
+      shouldSkipPersistDefaultManufacturerHexFromManufacturerChange({
+        designSoftware: "ExoCAD",
+        exoCadVersion: "le_3_0",
+        manufacturerHexRotation: "STL모델+",
+      }),
+      false,
+    );
   });
 });

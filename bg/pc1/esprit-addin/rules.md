@@ -323,8 +323,9 @@
   - 레거시 `"0"`/`"30"`, `헥스40도회전`/`헥스10도회전`/`헥스X도회전` → `STL모델+`(또는 헥스30).
   - **default fallback 주입 금지**: 빈값/미지원값은 즉시 예외 처리.
 - 제조사 헥스 기본값(다음 의뢰 시드):
-  - 저장: PreviewModal에서 제조사가 mode를 바꾸면 `User.requestSettings.defaultManufacturerHexRotation` 우선, 개인 계정 없으면 `BusinessAnchor.requestSettings.defaultManufacturerHexRotation`.
-  - 조회: User → BusinessAnchor → designSoftware(`ExoCAD`=`헥스30도회전`, 그 외=`STL모델대로`).
+  - `STL모델대로`/`헥스30도회전`은 PreviewModal 변경 시 계정 default에 저장하지 않음(의뢰 1건만). ExoCAD≤3.0 시드는 관리자 `hexByImplantManufacturer` SSOT.
+  - 플러스 모드만: PreviewModal 변경 시 `User.requestSettings.defaultManufacturerHexRotation` → 없으면 `BusinessAnchor.requestSettings.defaultManufacturerHexRotation`.
+  - 조회: ExoCAD≤3.0은 verifiedHex/applyHex30. 3.2+·비-ExoCAD STL/30°는 designSoftware SSOT. 플러스만 계정 default.
   - NC는 저장된 `caseInfos.hexRotation.mode`만 따르며 designSoftware를 직접 보지 않는다.
 - STL 회전 SSOT:
   - `STL모델대로` / `헥스30도회전` 모두 동일하게
