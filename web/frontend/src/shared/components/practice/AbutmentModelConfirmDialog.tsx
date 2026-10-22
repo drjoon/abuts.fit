@@ -440,14 +440,12 @@ export function AbutmentModelConfirmDialog({
 
   const retentionIdPrefix = isLabHandoff ? "lab-handoff-rg" : "new-req-rg";
 
-  const machiningCheckPending = !isLabHandoff && machiningPreflight?.status === "checking";
-  const highlightConfirmButton =
-    !machiningCheckPending && highlightUnverifiedArrows;
+  const highlightConfirmButton = highlightUnverifiedArrows;
 
   const handleConfirmAndNext = useCallback(() => {
-    if (detailIndex === null || machiningCheckPending) return;
+    if (detailIndex === null) return;
     void onVerifyAndNext(detailIndex);
-  }, [detailIndex, machiningCheckPending, onVerifyAndNext]);
+  }, [detailIndex, onVerifyAndNext]);
   // 치과명 목록이 열린 채로 누르면 blur가 모달을 다시 그려 click이 사라진다.
   const confirmFromPointerRef = useRef(false);
   const handleConfirmPointerDown = useCallback(
@@ -916,11 +914,10 @@ export function AbutmentModelConfirmDialog({
                               highlightConfirmButton &&
                                 "animate-bounce bg-primary text-white",
                             )}
-                            disabled={machiningCheckPending}
                             onPointerDown={handleConfirmPointerDown}
                             onClick={handleConfirmClick}
                           >
-                            {machiningCheckPending ? "검사 중…" : "확인 & 다음"}
+                            확인 & 다음
                           </Button>
                           <Button
                             type="button"

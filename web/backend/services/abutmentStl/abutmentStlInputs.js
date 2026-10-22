@@ -22,8 +22,26 @@ function implantProfileOf(ci) {
   };
 }
 
+const INPUTS_CACHE_TTL_MS = 5 * 60 * 1000;
+/** @type {Map<string, { expires: number, value: object }>} */
+const inputsCache = new Map();
+
+function inputsCacheKey(ci) {
+  const p = implantProfileOf(ci);
+  return [
+    p.implantManufacturer,
+    p.implantBrand,
+    p.implantFamily,
+    p.implantType,
+    String(ci?.connectionPrcFileName || "").trim(),
+  ].join("|");
+}
+
 export async function resolveAbutmentStlInputs(caseInfos) {
   const ci = caseInfos || {};
+  const cacheKey = inputsCacheKey(ci);
+  const cached = inputsCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) return cached.value;
   const [targetFromDb, connection] = await Promise.all([
     resolveTargetDiameter(ci),
     resolveHexConnection(ci),
@@ -39,11 +57,13 @@ export async function resolveAbutmentStlInputs(caseInfos) {
     ].join("/");
     targetDiameter = STATIC_CONNECTION_DIAMETER_MAP[key] ?? null;
   }
-  return {
+  const value = {
     targetDiameter: Number(targetDiameter) > 0 ? Number(targetDiameter) : null,
     implantProfile: profile,
     connection,
   };
+  inputsCache.set(cacheKey, { value, expires: Date.now() + INPUTS_CACHE_TTL_MS });
+  return value;
 }
 
 async function resolveTargetDiameter(ci) {

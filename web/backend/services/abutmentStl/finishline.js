@@ -559,7 +559,7 @@ function acceptOrNormalize(points, allowRawOutlier, log, label) {
   return [null, false];
 }
 
-function buildSectionPlanes(axisDir) {
+function buildSectionPlanes(axisDir, sectionCount = SECTION_COUNT) {
   let axis = normalize(axisDir || [0, 0, 1]);
   if (!axis[0] && !axis[1] && !axis[2]) axis = [0, 0, 1];
   let helper = [0, 0, 1];
@@ -571,10 +571,11 @@ function buildSectionPlanes(axisDir) {
   let v = cross(axis, u);
   if (Math.hypot(...v) < 1e-12) v = [0, 1, 0];
   v = normalize(v);
-  const step = Math.min(SECTION_STEP_DEG, 180 / SECTION_COUNT);
+  const count = Math.max(12, Math.floor(Number(sectionCount) || SECTION_COUNT));
+  const step = Math.min(SECTION_STEP_DEG, 180 / count);
   const planes = [];
   const seen = new Set();
-  for (let i = 0; i < SECTION_COUNT; i += 1) {
+  for (let i = 0; i < count; i += 1) {
     const ang = (step * i * Math.PI) / 180;
     const radial = [
       u[0] * Math.cos(ang) + v[0] * Math.sin(ang),

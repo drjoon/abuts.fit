@@ -146,7 +146,18 @@ function analyzeDiameters(mesh) {
  * 업로드 직후 간이 검사. screenMarginFillet만 호출한다.
  * 스크류홀 패치·보정 STL·filled는 만들지 않는다.
  */
-function finishPreflight({ mesh, finishLine, align, alignMatrix, logs, perf, mark, total0, log }) {
+function finishPreflight({
+  mesh,
+  finishLine,
+  align,
+  alignMatrix,
+  logs,
+  perf,
+  mark,
+  total0,
+  log,
+  bodyTriangleCount,
+}) {
   const t0 = performance.now();
   let tiltAxisVector = null;
   let tightCorner = null;
@@ -175,7 +186,7 @@ function finishPreflight({ mesh, finishLine, align, alignMatrix, logs, perf, mar
   return {
     version: ABUTMENT_STL_JS_VERSION,
     outputBuffer: Buffer.alloc(0),
-    bodyTriangleCount: mesh.faceCount,
+    bodyTriangleCount: bodyTriangleCount ?? mesh.faceCount,
     align: { ok: align.ok, message: align.message },
     alignMatrix,
     finishLine,
@@ -358,6 +369,7 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
   let t0 = performance.now();
   const mesh = Mesh.fromTriangleSoup(parseStl(inputBuffer).positions);
   if (mesh.faceCount < 100) throw new Error("STL 삼각형이 너무 적습니다.");
+  const bodyTriangleCount = mesh.faceCount;
   mark("import", t0);
 
   t0 = performance.now();
@@ -424,6 +436,7 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
       mark,
       total0,
       log,
+      bodyTriangleCount,
     });
   }
 

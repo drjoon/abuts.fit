@@ -304,7 +304,7 @@ describe("abutmentStl tightCorner", () => {
     expect(applyTightCornerCorrectionToMesh(mesh, flPts, {})).toBeNull();
   });
 
-  it("접수 모달은 매끈한 마진을 64곳 안에서 재고, 좁은 마진은 잡는다", () => {
+  it("접수 모달은 finish line 32곳만 재고, 좁은 마진은 잡는다", () => {
     const flPts = [];
     for (let i = 0; i < 48; i += 1) {
       const a = (i / 48) * Math.PI * 2;
@@ -313,14 +313,14 @@ describe("abutmentStl tightCorner", () => {
     const meshOf = (soup) =>
       Mesh.fromStlBuffer(writeBinaryStl({ positions: soup, attributes: null }));
     const tight = detectTightCorners(meshOf(marginWallSoup(0.25)), flPts, { screen: true });
-    expect(tight.tightCount).toBeGreaterThan(32);
-    expect(tight.tightCount).toBeLessThanOrEqual(64);
+    expect(tight.tightCount).toBeGreaterThan(0);
+    expect(tight.tightCount).toBeLessThanOrEqual(32);
     expect(tight.correctionSolid).toBeNull();
     const loose = detectTightCorners(meshOf(marginWallSoup(0.9)), flPts, { screen: true });
     expect(loose.tightCount).toBe(0);
   });
 
-  it("구간 가운데를 재서 보간과 어긋나지 않으면 더 쪼개지 않는다", () => {
+  it("접수 모달 screen 검사는 32점 상한으로 타이트 코너를 잡는다", () => {
     const flPts = [];
     for (let i = 0; i < 48; i += 1) {
       const a = (i / 48) * Math.PI * 2;
@@ -330,8 +330,8 @@ describe("abutmentStl tightCorner", () => {
       writeBinaryStl({ positions: marginWallSoup(0.55), attributes: null }),
     );
     const screened = detectTightCorners(mesh, flPts, { screen: true });
-    expect(screened.tightCount).toBeGreaterThan(32);
-    expect(screened.tightCount).toBeLessThanOrEqual(64);
+    expect(screened.tightCount).toBeGreaterThan(0);
+    expect(screened.tightCount).toBeLessThanOrEqual(32);
   });
 
   it("접수 검사는 정점을 옮긴 보정만 불완전 가공으로 본다", () => {

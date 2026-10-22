@@ -111,6 +111,7 @@ export class Mesh {
     this._zIndex = null;
     this._axisSection = null;
     this._cornerIds = null;
+    this._unweldedCache = null;
   }
 
   toTriangleSoup() {
@@ -258,6 +259,7 @@ export class Mesh {
 
   /** cornerIds 기준(=Rhino unwelded 기준)으로 다시 만든 메시. 정점은 복제된다. */
   unweldedByAngle(weldAngleDeg = RHINO_STL_WELD_ANGLE_DEG) {
+    if (this._unweldedCache?.angle === weldAngleDeg) return this._unweldedCache.mesh;
     const ids = this.cornerIds(weldAngleDeg);
     const count = this._cornerIds.count;
     const verts = new Float64Array(count * 3);
@@ -269,6 +271,7 @@ export class Mesh {
     }
     const mesh = new Mesh(verts, Int32Array.from(ids));
     mesh.float32 = this.float32;
+    this._unweldedCache = { angle: weldAngleDeg, mesh };
     return mesh;
   }
 

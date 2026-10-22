@@ -9,7 +9,7 @@
 // 그 결과는 원본 CAD 좌표 STL이라 의뢰자가 그대로 받는다. 제조사 준비는 이 파일을 다시 보정하지 않는다.
 import crypto from "crypto";
 import { resolveAbutmentStlInputs } from "./abutmentStlInputs.js";
-import { runAbutmentStlPipelineInWorker } from "./runPipelineInWorker.js";
+import { runAbutmentStlPipeline } from "./pipeline.js";
 import {
   buildCorrectedDesignOffRequest,
   correctedDesignS3Key,
@@ -430,7 +430,8 @@ export async function runStlMachiningPreflight({ buffer, caseInfos } = {}) {
   }
   try {
     const inputs = await resolveAbutmentStlInputs(caseInfos || {});
-    const js = await runAbutmentStlPipelineInWorker(buffer, {
+    // worker 슬롯 대기·스폰 없이 같은 프로세스에서 32점 검사만 돌린다(Lambda 미사용).
+    const js = await runAbutmentStlPipeline(buffer, {
       targetDiameter: inputs.targetDiameter,
       implantProfile: inputs.implantProfile,
       preflight: true,
