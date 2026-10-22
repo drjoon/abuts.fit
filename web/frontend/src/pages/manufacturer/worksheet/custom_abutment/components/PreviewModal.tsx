@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-22: body 포털 토스트 클릭 시 outside dismiss 막음(keepOpenOnToastInteract).
 // - 2026-10-21: 짧은 커프 경고는 50건 통과·실패 0 전까지 유지한다.
 // - 2026-10-20: 프리뷰 다운로드는 공정 파일 형식 그대로 저장. NC는 .nc, 세척·포장 이미지는 png/jpg.
 // - 2026-10-20: 헤더 One Pass 토글 제거. Finish는 항상 2–3단(Back_Finish 분할).
@@ -112,6 +113,7 @@ import { useStlMetadata } from "@/features/requests/hooks/useStlMetadata";
 import {
   PreviewPaintControls,
   PreviewPaintLayer,
+  keepOpenOnToastInteract,
   usePreviewPaint,
 } from "@/shared/components/PreviewAnnotateActions";
 import { downloadBlobFile } from "@/shared/components/practice/ViewPaintSurface";
@@ -3213,6 +3215,8 @@ export const PreviewModal = ({
             ? "border-accent-muted ring-2 ring-accent-muted/80"
             : "",
         )}
+        onInteractOutside={keepOpenOnToastInteract}
+        onPointerDownOutside={keepOpenOnToastInteract}
       >
         <DialogTitle className="sr-only">의뢰 미리보기</DialogTitle>
         <DialogDescription className="sr-only">
@@ -4635,7 +4639,12 @@ export const PreviewModal = ({
             : "w-[min(40rem,calc(100vw-2rem))] max-w-[min(40rem,calc(100vw-2rem))] sm:max-w-[min(40rem,calc(100vw-2rem))] sm:p-0",
         )}
         overlayClassName="z-[120] bg-black/45"
+        onInteractOutside={(event) => {
+          keepOpenOnToastInteract(event);
+          if (unmachinableSaving) event.preventDefault();
+        }}
         onPointerDownOutside={(event) => {
+          keepOpenOnToastInteract(event);
           if (unmachinableSaving) event.preventDefault();
         }}
         onEscapeKeyDown={(event) => {

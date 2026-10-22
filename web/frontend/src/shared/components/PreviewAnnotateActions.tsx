@@ -34,10 +34,18 @@ import { cn } from "@/shared/ui/cn";
 
 export const PREVIEW_HEADER_BUTTON_CLASS = "h-8 gap-1 px-2.5 [&_svg]:!size-3.5";
 
-/** 프리뷰 위 토스트를 눌러도 프리뷰가 닫히지 않게 `onInteractOutside`에 건다. */
-export function keepOpenOnToastInteract(event: { target: EventTarget | null; preventDefault: () => void }) {
+/** 프리뷰 위 토스트를 눌러도 프리뷰가 닫히지 않게 Dialog outside 핸들러에 건다. */
+export function keepOpenOnToastInteract(event: {
+  target: EventTarget | null;
+  preventDefault: () => void;
+}) {
   const target = event.target;
-  if (target instanceof Element && target.closest("[data-app-toast-viewport]")) {
+  if (!(target instanceof Element)) return;
+  if (
+    target.closest(
+      "[data-app-toast-viewport], [data-app-toast], [data-sonner-toast], [data-sonner-toaster]",
+    )
+  ) {
     event.preventDefault();
   }
 }
