@@ -786,6 +786,8 @@ const END_SLOPE_BOOST = 1.5;
  * 1보다 작으면 원뿔 끝에서 곡선이 안으로 꺾였다가 다시 벌어져 커넥션↔커프 경계가 볼록한 어깨로 보인다.
  */
 const BEZIER_DIP = 1;
+/** 11° 원뿔 연장(extendMm>0) 끝에서 베지어가 또 직선으로 끌리지 않고 바로 완만하게 벌어지도록 둘째 간격에 더하는 비율. */
+const CONE_LEAD_CURVE_START = 0.35;
 const LONG_BAND_MM = 2;
 /** 띠 면 평균: 반폭(약 ±30°)과 위쪽 보존 지수(t^p). */
 const BAND_SMOOTH_HALF_COLUMNS = columnsForDeg(30);
@@ -2403,26 +2405,44 @@ function replaceBand(
   // 원뿔 연장 끝에 행을 둔다. 곧은 11° 구간은 행 간격이 0.2mm라, 없으면 첫 면이 이음 곡선(언더)까지 한 장으로 건너뛴다.
   const ts = adaptiveRowTs(radiusAt, heights, tEnd);
   if (coneLeadMm > 0 && minHeight > coneLeadMm + 1e-6) {
-    const extra = [coneLeadMm / maxHeight, coneLeadMm / minHeight].filter((t) => t > 1e-4 && t < tEnd - 1e-4);
+    const midHeight = (minHeight + maxHeight) / 2;
+    const extraHeights = [coneLeadMm * 0.5, coneLeadMm, coneLeadMm + 0.05, coneLeadMm + 0.1, coneLeadMm + 0.16];
+    const extra = extraHeights
+      .flatMap((hz) => [hz / maxHeight, hz / midHeight, hz / minHeight])
+      .filter((t) => t > 1e-4 && t < tEnd - 1e-4);
     for (const t of extra) {
-      if (!ts.some((u) => Math.abs(u - t) < 1e-4)) ts.push(t);
+      if (!ts.some((u) => Math.abs(u - t) < 0.008)) ts.push(t);
     }
     ts.sort((a, b) => a - b);
   }
   for (const t of ts) {
-    const raw = Array.from({ length: STRIP_COLUMNS }, (_, j) => radiusAt(j, t));
+    const baseKeeps = Float64Array.from({ length: STRIP_COLUMNS }, (_, j) => {
+      const scale = seamOrigScale ? seamOrigScale[j] : 1;
+      return convexCuffDeform ? 1 : 1 - (1 - bandSmoothKeep(t, heights[j])) * scale;
+    });
+    const z = Float64Array.from({ length: STRIP_COLUMNS }, (_, j) =>
+      zA + t * (heights[j] * baseKeeps[j] + smoothHeights[j] * (1 - baseKeeps[j])),
+    );
+    const raw = Array.from({ length: STRIP_COLUMNS }, (_, j) =>
+      coneLeadMm > 0 ? radiusAt(j, Math.max(0, Math.min(1, (z[j] - zA) / heights[j]))) : radiusAt(j, t),
+    );
     const avg = circularSmooth(raw, BAND_SMOOTH_HALF_COLUMNS);
     const rad = new Float64Array(STRIP_COLUMNS);
-    const z = new Float64Array(STRIP_COLUMNS);
     for (let j = 0; j < STRIP_COLUMNS; j += 1) {
-      const scale = seamOrigScale ? seamOrigScale[j] : 1;
-      const onLead = coneLeadMm > 0 && t * heights[j] <= coneLeadMm + 1e-6;
-      const keep = onLead || convexCuffDeform ? 1 : 1 - (1 - bandSmoothKeep(t, heights[j])) * scale;
-      const zj = zA + t * (heights[j] * keep + smoothHeights[j] * (1 - keep));
-      const uChord = Math.min(1, Math.max(0, (zj - zA) / BOTTOM_CHORD_BLEND_MM));
-      const wChord = onLead ? 0 : (1 - uChord) ** 3 * (1 + 3 * uChord);
+      const dz = z[j] - zA;
+      let keep = baseKeeps[j];
+      if (coneLeadMm > 0) {
+        if (dz <= coneLeadMm + 1e-6) {
+          keep = 1;
+        } else if (dz < coneLeadMm + 0.25) {
+          const u = (dz - coneLeadMm) / 0.25;
+          const w = u * u * (3 - 2 * u);
+          keep = 1 - w * (1 - baseKeeps[j]);
+        }
+      }
+      const uChord = Math.min(1, Math.max(0, dz / BOTTOM_CHORD_BLEND_MM));
+      const wChord = coneLeadMm > 0 ? 0 : (1 - uChord) ** 3 * (1 + 3 * uChord);
       rad[j] = raw[j] * keep + avg[j] * (1 - keep) + bottomChordOffset[j] * wChord;
-      z[j] = zj;
     }
     rowData.push({ rad, z });
   }
@@ -2461,18 +2481,36 @@ function replaceBand(
   if (origProbe && !convexCuffDeform && grid.length) {
     const meridians = meshColumns.map((j) => origProbe.meridian(thetas[j], zA, topZOf(thetas[j])));
     const leadTopZ = zA + (coneLeadMm > 0 ? coneLeadMm : 0);
+    // 하부가 11° 원뿔보다 안쪽(수직 목·언더컷)인 열은, 그 언더컷이 끝나 원본 외곽(ro)이 새 베지어 곡선(r) 바깥으로
+    // 복귀하기 전까지 ro로 끌어내리면 안 된다. ro가 원뿔 직선을 막 넘는 높이에서 갑자기 ro로 끌어내리면
+    // 베지어 곡선에서 원뿔로 푹 꺼지는 가로 음각(V자 골)이 생긴다.
+    const inUndercut = new Uint8Array(meshColumns.length);
+    for (let c = 0; c < meshColumns.length; c += 1) {
+      const zCheck = Math.min(leadTopZ > zA ? leadTopZ : zA + 0.1, topZOf(thetas[meshColumns[c]]) - 0.05);
+      const ro0 = meridians[c](zCheck);
+      if (coneSlope > 0 && Number.isFinite(ro0) && ro0 < ra + coneSlope * (zCheck - zA) - 0.002) {
+        inUndercut[c] = 1;
+      }
+    }
     for (const row of grid) {
       for (let c = 0; c < row.length; c += 1) {
         const vi = row[c].v * 3;
-        if (coneLeadMm > 0 && verts[vi + 2] <= leadTopZ + 1e-4) continue;
+        const z = verts[vi + 2];
+        if (coneLeadMm > 0 && z <= leadTopZ + 1e-4) continue;
         const x = verts[vi];
         const y = verts[vi + 1];
         const r = Math.hypot(x, y);
         if (!(r > 0)) continue;
-        const ro = meridians[c](verts[vi + 2]);
+        const ro = meridians[c](z);
         if (!Number.isFinite(ro)) continue;
-        // 원본이 11° 연장보다 안쪽(수직 목)이면 끌어내리지 않는다. 끌어내리면 연장 끝이 다시 언더가 된다.
-        if (coneSlope > 0 && ro < ra + coneSlope * (verts[vi + 2] - zA) - 0.002) continue;
+        if (coneSlope > 0 && ro < ra + coneSlope * (z - zA) - 0.002) {
+          inUndercut[c] = 1;
+          continue;
+        }
+        if (inUndercut[c]) {
+          if (ro < r + 0.001) continue;
+          inUndercut[c] = 0;
+        }
         const cap = ro - 0.001;
         if (r > cap && cap > 0) {
           const s = cap / r;
@@ -2957,7 +2995,9 @@ export function blendCuffJunction(buffer, options = {}) {
       // m0가 d−여유 로 잘리면 d < m0+여유 가 1ulp 로 참이 되어, 높은 마진 열을 통째로 버린다.
       if (d + 1e-6 < m0 + CONCAVE_MARGIN * hb) return null;
       const d0 = m0 / 4;
-      const d1 = d0 * BEZIER_DIP;
+      const baseRest = d - 2 * d0;
+      const leadLift = extendMm > 0 && baseRest > 3 * d0 ? CONE_LEAD_CURVE_START * (baseRest / 3 - d0) : 0;
+      const d1 = d0 * BEZIER_DIP + Math.max(0, leadLift);
       const rest = d - d0 - d1;
       if (rest + 1e-6 < 2 * d1) return null;
       let e = Math.max(CORNER_MIN_END_SLOPE * hb, Math.min(CORNER_END_SLOPE * hb, eTarget));

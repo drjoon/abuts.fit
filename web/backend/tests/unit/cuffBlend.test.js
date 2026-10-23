@@ -307,6 +307,16 @@ describe("blendCuffJunction", () => {
       (Math.atan((probe.rayRadius(0.1, zA + lead - 0.02) - probe.rayRadius(0.1, zA + 0.02)) / (lead - 0.04)) * 180) /
       Math.PI;
     expect(Math.abs(deg - 11)).toBeLessThan(2);
+    // 원본 수직 목이 끝나고 원뿔 직선과 교차하는 높이(z≈0.6~0.85)에서도 안쪽으로 꺾이는 V자 음각 골이 없어야 한다.
+    let prevR = probe.rayRadius(0.1, 0.35);
+    let prevDeg = 11;
+    for (let z = 0.55; z <= 1.15; z += 0.2) {
+      const r = probe.rayRadius(0.1, z);
+      const segDeg = (Math.atan((r - prevR) / 0.2) * 180) / Math.PI;
+      expect(segDeg).toBeGreaterThanOrEqual(prevDeg - 0.3);
+      prevR = r;
+      prevDeg = segDeg;
+    }
     expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
   });
 

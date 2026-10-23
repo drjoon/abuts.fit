@@ -99,6 +99,10 @@ internal sealed class TurningFeature_Profile
 		double trimX = MoveSTL_Module.BackPointX;
 		string trimGateSource = "BackPointX(Back_Turn past-hex)";
 		DentalLogger.Log($"TurningProfile: trimX={trimX:F3} (FinishLineX={MoveSTL_Module.FinishLineX:F3}, BackPointX={MoveSTL_Module.BackPointX:F3}, gateSource={trimGateSource})");
+		double trimSegX0 = double.NaN;
+		double trimSegY0 = double.NaN;
+		double trimSegX1 = double.NaN;
+		double trimSegY1 = double.NaN;
 		for (i = 1; i <= count; i = checked(i + 1))
 		{
 			GraphicObject graphicObject = (GraphicObject)((IFeatureChain)MainModule.tfc).get_Item(i);
@@ -164,11 +168,19 @@ internal sealed class TurningFeature_Profile
 			{
 				if (((point2.X <= trimX) & (point3.X >= trimX)) || ((point2.X >= trimX) & (point3.X <= trimX)))
 				{
+					trimSegX0 = point2.X;
+					trimSegY0 = point2.Y;
+					trimSegX1 = point3.X;
+					trimSegY1 = point3.Y;
 					break;
 				}
 			}
 			else if (((point2.X <= trimX) & (point3.X >= trimX)) || ((point2.X >= trimX) & (point3.X <= trimX)))
 			{
+				trimSegX0 = point2.X;
+				trimSegY0 = point2.Y;
+				trimSegX1 = point3.X;
+				trimSegY1 = point3.Y;
 				break;
 			}
 		}
@@ -180,6 +192,29 @@ internal sealed class TurningFeature_Profile
 		else if (i <= MainModule.tfc.Count)
 		{
 			MainModule.tfc.RemoveEnd(i);
+			// 11° 원뿔 직선 구간이 길면 CreateTurningProfile이 원뿔 전체를 세그먼트 하나로 묶는다.
+			// RemoveEnd(i)만 호출하면 그 세그먼트가 통째로 지워져 EndXValue가 BackPointX보다 훨씬 앞(커프 쪽)에서 끊기고,
+			// Middle_Turn·Back_Turn이 원뿔 상단을 깎지 못해 수평 단차가 남는다. 지워진 세그먼트 위에서 trimX까지 선형 보간해 다시 붙인다.
+			if (MainModule.tfc.Count > 0
+				&& !double.IsNaN(trimSegX0)
+				&& !double.IsNaN(trimSegX1)
+				&& Math.Abs(trimSegX1 - trimSegX0) > 1e-6)
+			{
+				Point tailPt = MainModule.tfc.Extremity(espExtremityType.espExtremityEnd);
+				if (tailPt != null && Math.Abs(trimX - tailPt.X) > 1e-4)
+				{
+					double t = (trimX - trimSegX0) / (trimSegX1 - trimSegX0);
+					if (t < 0.0) t = 0.0;
+					if (t > 1.0) t = 1.0;
+					double trimY = trimSegY0 + (trimSegY1 - trimSegY0) * t;
+					Point pTrim = MainModule.Document.Points.Add(trimX, trimY, 0.0);
+					Segment segTrim = MainModule.Document.Segments.Add(tailPt, pTrim);
+					TurningFeature_Utility.TryAddSegment(MainModule.tfc, segTrim, "TurningProfile_Trim");
+					MainModule.Document.Points.Remove(pTrim.Key);
+					MainModule.Document.Segments.Remove(segTrim.Key);
+					DentalLogger.Log($"TurningProfile: 트림 세그먼트 보간 복원 ({tailPt.X:F3},{tailPt.Y:F3}) -> ({trimX:F3},{trimY:F3})");
+				}
+			}
 		}
 		point = MainModule.tfc.Extremity(espExtremityType.espExtremityEnd);
 		MainModule.LowerY = point.Y;

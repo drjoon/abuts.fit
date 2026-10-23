@@ -208,6 +208,7 @@
   - 코드에서 고정값(예: 6.0)이나 `finishLineMinZ` 계산으로 재override하지 않는다.
 - OD 프로파일 trim (필수 전제):
   - `TurningFeature_Profile.TurningProfile` trimX = **`BackPointX`(헥스 끝)**.
+  - `RemoveEnd(i)`가 `trimX`에 걸친 세그먼트를 지워 체인 끝이 `BackPointX`보다 앞에 멈추면(11° 원뿔 직선 구간이 길어 세그먼트 하나로 묶인 경우 등), 지워진 세그먼트 위에서 `X = trimX` 지점의 `Y`를 선형 보간해 `(trimX, trimY)` 세그먼트를 다시 붙여 `EndXValue = BackPointX`를 보장한다.
   - `FinishLineX`에서 자르면 `EndXValue`가 피니시라인이 되어 `ExtendTurning(4.0)`만으로는
     예전 Middle_Turn 수준에서 끝나고 헥스 이후까지 못 간다.
   - Front 구간 제한은 `BuildTurningRangeChain`이 담당한다 (여기서 FinishLineX로 미리 자르지 않음).
