@@ -673,18 +673,30 @@ function detectMaxRadiusTrack(mesh, planes, axisDir, refPt0) {
     if (!pool.length) return [];
     pool.sort((a, b) => b[0] - a[0]);
     const [, a0, p0] = pool[0];
+    const minSep = (120 * Math.PI) / 180;
+    // 반대편 실루엣이 크라운으로 벌어져 있으면 반경 최대점이 마진이 아니다.
+    // 마진 반경에 가까운 점 중 p0와 높이가 같은 점을 고른다.
+    const oppositeSep = (150 * Math.PI) / 180;
+    const radiusFloor = radius(p0) * 0.65;
     let best2 = null;
     let best2Key = null;
     for (const [r, ang, pt] of pool) {
       const sep = Math.abs(wrapPi(ang - a0));
-      const key = [-Math.abs(sep - Math.PI), r];
+      if (sep < minSep) continue;
+      const onMargin = r >= radiusFloor ? 1 : 0;
+      const key = [
+        sep >= oppositeSep ? 1 : 0,
+        onMargin,
+        onMargin ? -Math.abs(pt[2] - p0[2]) : 0,
+        r,
+      ];
       if (!best2Key || tupleGreater(key, best2Key)) {
         best2Key = key;
         best2 = pt;
       }
     }
     const out = [p0.slice()];
-    if (best2 && Math.abs(wrapPi(azimuth(best2) - a0)) >= (120 * Math.PI) / 180) out.push(best2.slice());
+    if (best2) out.push(best2.slice());
     return out;
   };
 
@@ -776,11 +788,22 @@ function extractLowestBoundaryLoopPoints(mesh, refPt0, refPt0Radius) {
   return validateFinishlinePoints(pts)[0] ? pts : null;
 }
 
+function explicitSectionAxis(axis) {
+  if (!Array.isArray(axis) || axis.length < 3) return null;
+  let dir = normalize(axis.slice(0, 3));
+  if (Math.hypot(dir[0], dir[1], dir[2]) < 0.5) return null;
+  if (dir[2] < 0) dir = dir.map((c) => -c);
+  return dir;
+}
+
 /**
  * detect_finish_line 이식.
  * @param {Mesh} mesh unweldedByAngle() 메시(정렬 완료)
+ * @param {{ log?: Function, axis?: number[]|null }} [options]
+ * axis가 있으면 단면은 그 삽입축을 쓴다. 정렬이 끝난 메시는 Z.
+ * 외형 주축은 크라운이 한쪽으로 치우치면 기울어, 반대편 마진 대신 스크류홀이 잡힌다.
  */
-export function detectFinishLine(mesh, { log = () => {} } = {}) {
+export function detectFinishLine(mesh, { log = () => {}, axis = null } = {}) {
   const pt0 = selectPt0(mesh);
   const pt0Radius = radiusXY(pt0);
   let [traced, strategy] = detectFinishlinePointsEdge(mesh, log);
@@ -791,11 +814,11 @@ export function detectFinishLine(mesh, { log = () => {} } = {}) {
   } else traced = null;
 
   if (!traced) {
-    const axis = estimateTiltAxis(mesh);
-    const planes = buildSectionPlanes(axis);
+    const sectionAxis = explicitSectionAxis(axis) || estimateTiltAxis(mesh);
+    const planes = buildSectionPlanes(sectionAxis);
     let sectionPts = null;
     try {
-      sectionPts = detectMaxRadiusTrack(mesh, planes, axis, pt0);
+      sectionPts = detectMaxRadiusTrack(mesh, planes, sectionAxis, pt0);
     } catch (error) {
       log(`[detect] section tracking raised exception: ${error?.message || error}`);
     }

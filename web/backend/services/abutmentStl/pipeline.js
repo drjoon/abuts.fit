@@ -417,7 +417,11 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
   }
   if (!finishLine) {
     try {
-      const fl = detectFinishLine(mesh.unweldedByAngle(), { log });
+      const fl = detectFinishLine(mesh.unweldedByAngle(), {
+        log,
+        // 정렬이 끝나면 삽입축은 Z다. 외형 주축은 치우친 크라운에서 기울어 마진을 놓친다.
+        ...(align.ok ? { axis: [0, 0, 1] } : {}),
+      });
       const pts = sanitizeFinishlinePoints(fl.points, log);
       finishLine = {
         version: 1,
