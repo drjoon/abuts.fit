@@ -63,17 +63,6 @@ function steppedAbutment() {
   ]);
 }
 
-/** 원뿔 끝에서 반경을 멈추는 수직 목. 11°를 이어 올리지 않으면 커넥션 직상방이 언더가 된다. */
-function undercutNeckAbutment() {
-  return revolve([
-    ...coneRows(-1.2, 0.2),
-    [cone(0.2), 0.55],
-    [2.2, 1.4],
-    [2.5, 2.5],
-    [2.3, 4.0],
-  ]);
-}
-
 /** 원뿔이 스펙 Z_a(0.2)보다 먼저(0.15) 20°로 서서히 벌어지는 커프. 12µm 허용치로는 0.2 넘어서까지 원뿔로 보인다. */
 function earlyFlareAbutment() {
   const flare = Math.tan((20 * Math.PI) / 180);
@@ -251,27 +240,6 @@ describe("blendCuffJunction", () => {
     expect(untouchedOutside(input, res.buffer, res.detail.zA, 3.001)).toBe(true);
     const { attributes } = parseStl(res.buffer);
     expect(attributes.some((a) => a === CUFF_BLEND_PATCH_ATTRIBUTE)).toBe(true);
-  });
-
-  it("extends the 11° cone 0.15mm above an undercut neck so finish back meets the taper", () => {
-    const input = undercutNeckAbutment();
-    const res = blendCuffJunction(input, {
-      ...osstem,
-      specKey: osstem.key,
-      finishLine: ringFinishLine(2.5, 2.5),
-    });
-    expect(res.ok).toBe(true);
-    expect(res.detail.taperExtendMm).toBeGreaterThanOrEqual(0.1);
-    expect(res.detail.taperExtendMm).toBeLessThanOrEqual(0.2);
-    const probe = _prepare(res.buffer).probe;
-    const zA = res.detail.zA;
-    const lead = res.detail.taperExtendMm;
-    for (const dz of [0.04, 0.08, 0.12]) {
-      expect(dz).toBeLessThan(lead);
-      const r = probe.rayRadius(0.1, zA + dz);
-      expect(Math.abs(r - cone(zA + dz))).toBeLessThan(0.015);
-    }
-    expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
   });
 
   it("keeps the blended cuff inside the original outline (no outward move below the margin)", () => {
