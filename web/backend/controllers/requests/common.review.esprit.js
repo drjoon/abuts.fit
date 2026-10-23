@@ -36,6 +36,15 @@ function missingFrontPointError() {
   return err;
 }
 
+// 운영 PC의 HttpListener.ContentEncoding은 한글 Windows 기본(CP949)이다.
+// UTF-8 본문을 그 인코딩으로 읽으면 치과·환자 이름이 JSON을 깨뜨려 Invalid JSON이 된다.
+// BMP 문자를 \uXXXX로 바꾸면 어느 인코딩으로 읽어도 같은 ASCII JSON이 된다.
+function stringifyEspritPayload(payload) {
+  return JSON.stringify(payload).replace(/[\u0080-\uFFFF]/g, (ch) => {
+    return `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`;
+  });
+}
+
 /**
  * caseInfos.frontPoint가 없으면 현재 filled STL로 다시 계산해 저장한다.
  * 좌표를 추정해서 채우지 않는다. 계산 결과가 없으면 예외.
@@ -276,7 +285,7 @@ export async function triggerEspritForNc({
     resp = await fetch(espritUrl, {
       method: "POST",
       headers,
-      body: JSON.stringify(payload),
+      body: stringifyEspritPayload(payload),
       signal: controller.signal,
     });
   } catch (error) {

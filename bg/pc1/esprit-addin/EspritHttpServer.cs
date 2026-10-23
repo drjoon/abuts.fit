@@ -408,8 +408,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 // POST / - NC 생성 요청
                 // DataContractJsonSerializer는 FrontPoint.source 같은 부가 멤버가 있으면
                 // 중첩 객체를 비우거나 요청 전체를 거절한다. Newtonsoft는 모르는 필드를 무시한다.
+                // ContentEncoding은 한글 Windows에서 CP949다. Node가 보낸 UTF-8을 그걸로 읽으면
+                // 치과·환자 이름에서 JSON이 깨진다. 본문은 항상 UTF-8로 읽는다.
                 string bodyJson;
-                using (var reader = new StreamReader(request.InputStream, request.ContentEncoding ?? Encoding.UTF8))
+                using (var reader = new StreamReader(request.InputStream, Encoding.UTF8))
                 {
                     bodyJson = reader.ReadToEnd() ?? string.Empty;
                 }
