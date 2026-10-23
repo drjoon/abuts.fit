@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 //
 // history:
+// - 2026-10-23: 채팅 스크류는 ExoCAD·아노와 같은 줄의 버튼.
 // - 2026-10-23: 스크류는 RequestScrewSupplySection으로 SW·아노 아래 항상 노출(팝오버 밖).
 // - 2026-09-30: 채팅 작업 줄은 설정 아이콘 하나에 SW·아노를 넣고 맨 왼쪽에 둔다.
 // - 2026-09-14: 모바일·좁은 폭 — 아이콘 우선(라벨은 sm+). 디자인SW·아노다이징 아이콘.
@@ -120,6 +121,7 @@ export function RequestSettingsToolbar({
 
   const screwSection = onScrewSupplyChange ? (
     <RequestScrewSupplySection
+      appearance="buttons"
       value={screwSupply}
       manufacturerLabel={screwManufacturerLabel}
       disabled={screwSaving}
@@ -131,13 +133,8 @@ export function RequestSettingsToolbar({
   if (menu) {
     if (screwSection) {
       return (
-        <div
-          className={cn(
-            "flex w-full min-w-0 basis-full flex-col gap-1.5 sm:basis-auto",
-            className,
-          )}
-        >
-          <div className="flex flex-wrap items-center gap-1.5">{controls}</div>
+        <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
+          {controls}
           {screwSection}
         </div>
       );

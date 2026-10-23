@@ -4,10 +4,22 @@
 // - web/frontend/src/features/requestSettings/RequestSettingsToolbar.tsx
 // change-log:
 // - 2026-10-23: RequestScrewSupplySection — 의뢰자 공통(3D 확인·채팅). copy는 screwSupply.ts SSOT.
-// - 2026-10-23: 라벨 — 「선택 사항 - 어벗츠 정품, {제조사} 호환」·옵션 정품/호환.
+// - 2026-10-23: 채팅 — 어벗츠 정품 버튼만. 클릭 시 스크류 선택 모달.
+// - 2026-10-23: appearance — card(3D 확인) / buttons(채팅 툴바).
+// - 2026-10-23: 카드 크롬은 className과 합친다(유지홈·아노와 동일).
+// - 2026-10-23: 필드 제목 「스크류 선택」·옵션 어벗츠 정품 / {제조사} 호환.
 // - 2026-10-23: 의뢰자 — 제조사 호환 선택 비활성(11월 중 오픈 예정), 어벗츠만.
 // - 2026-10-23: 스크류 — 어벗츠 정품 / 임플란트 제조사 호환.
+import { useState } from "react";
 import { CircleHelp } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
@@ -20,8 +32,8 @@ import {
   SCREW_SUPPLY_ABUTS_OPTION_LABEL,
   SCREW_SUPPLY_MANUFACTURER_COMING_SOON_LINE_1,
   SCREW_SUPPLY_MANUFACTURER_COMING_SOON_LINE_2,
+  SCREW_SUPPLY_FIELD_LABEL,
   screwCompatiblePhrase,
-  screwSupplySectionTitle,
   type ScrewSupply,
 } from "@/shared/practice/screwSupply";
 
@@ -32,6 +44,8 @@ type ScrewSupplyFieldProps = {
   manufacturerLabel?: string;
   /** false면 제조사 호환 선택 불가(의뢰자 화면 기본). */
   manufacturerEnabled?: boolean;
+  /** card: 3D 확인(유지홈·아노와 같은 카드). buttons: 채팅 툴바(ExoCAD·아노와 같은 버튼). */
+  appearance?: "card" | "buttons";
   disabled?: boolean;
   idPrefix?: string;
   className?: string;
@@ -78,6 +92,7 @@ export function ScrewSupplyField({
   onChange,
   manufacturerLabel = "제조사",
   manufacturerEnabled = false,
+  appearance = "card",
   disabled = false,
   idPrefix = "screw",
   className,
@@ -88,8 +103,54 @@ export function ScrewSupplyField({
     !manufacturerEnabled && rawSelected === "manufacturer" ? "abuts" : rawSelected;
   const makerLabel = String(manufacturerLabel || "").trim() || "제조사";
   const manufacturerCompatibleLabel = screwCompatiblePhrase(makerLabel);
-  const sectionTitle = screwSupplySectionTitle(makerLabel);
   const manufacturerChoiceDisabled = disabled || !manufacturerEnabled;
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const triggerLabel =
+    selected === "manufacturer"
+      ? manufacturerCompatibleLabel
+      : SCREW_SUPPLY_ABUTS_OPTION_LABEL;
+
+  if (appearance === "buttons") {
+    return (
+      <>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          className={cn("h-9 shrink-0 px-3", className)}
+          onClick={() => setPickerOpen(true)}
+        >
+          {triggerLabel}
+        </Button>
+        <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+          <DialogContent
+            className="z-[320] gap-4 sm:max-w-md"
+            overlayClassName="z-[320]"
+          >
+            <DialogHeader className="space-y-1 pr-8">
+              <DialogTitle>{SCREW_SUPPLY_FIELD_LABEL}</DialogTitle>
+              <DialogDescription className="sr-only">
+                스크류를 고릅니다.
+              </DialogDescription>
+            </DialogHeader>
+            <ScrewSupplyField
+              appearance="card"
+              value={selected}
+              manufacturerLabel={makerLabel}
+              manufacturerEnabled={manufacturerEnabled}
+              disabled={disabled}
+              idPrefix={`${idPrefix}-modal`}
+              onChange={(next) => {
+                onChange(next);
+                setPickerOpen(false);
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+      </>
+    );
+  }
 
   const manufacturerOption = (
     <>
@@ -116,19 +177,22 @@ export function ScrewSupplyField({
 
   return (
     <div
-      className={
-        className || "rounded-lg border border-slate-200 bg-white px-3 py-2"
-      }
+      className={cn(
+        "rounded-lg border border-slate-200 bg-white px-3 py-2",
+        className,
+      )}
     >
       <div className="flex flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="flex items-center gap-1">
-          <div className="text-sm font-semibold text-slate-600">{sectionTitle}</div>
+        <div className="flex shrink-0 items-center gap-1">
+          <div className="text-sm font-semibold text-slate-600">
+            {SCREW_SUPPLY_FIELD_LABEL}
+          </div>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 className="inline-flex text-slate-400 transition-colors hover:text-primary"
-                aria-label="선택 사항 안내"
+                aria-label="스크류 선택 안내"
               >
                 <CircleHelp className="h-4 w-4" />
               </button>
@@ -147,7 +211,7 @@ export function ScrewSupplyField({
             if (next === "manufacturer" && !manufacturerEnabled) return;
             if (next === "abuts" || next === "manufacturer") onChange(next);
           }}
-          className="flex flex-wrap items-center gap-6"
+          className="flex min-w-0 flex-wrap items-center gap-6"
           disabled={disabled}
         >
           <div className="flex items-center space-x-2">
@@ -203,7 +267,7 @@ export function RequestScrewSupplySection({
     <ScrewSupplyField
       {...rest}
       manufacturerEnabled={manufacturerEnabled}
-      className={cn("w-full min-w-0", className)}
+      className={className}
     />
   );
 }
