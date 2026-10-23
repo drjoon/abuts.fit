@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-23: 불완전 사유 카드는 오른쪽 STL 우하단. 전체 평균 fillet 칩은 숨김.
 // - 2026-10-22: body 포털 토스트 클릭 시 outside dismiss 막음(keepOpenOnToastInteract).
 // - 2026-10-21: 짧은 커프 경고는 50건 통과·실패 0 전까지 유지한다.
 // - 2026-10-20: 프리뷰 다운로드는 공정 파일 형식 그대로 저장. NC는 .nc, 세척·포장 이미지는 png/jpg.
@@ -139,6 +140,11 @@ import {
   resolveRequestCategory,
 } from "../utils/request";
 import { isFinishLineDefective } from "../utils/finishLineQuality";
+import {
+  incompleteMachiningReasonCard,
+  mergeTightCornerDetail,
+} from "../utils/incompleteMachiningReason";
+import { IncompleteMachiningReasonCardView } from "./IncompleteMachiningReasonCard";
 import { isTightCornerCorrectionRequired } from "../utils/tightCornerReview";
 import {
   LOW_FINISH_LINE_Z_MM,
@@ -1465,6 +1471,33 @@ export const PreviewModal = ({
         requestorContinueAtMs >= unmachinableEventAtMs));
   const shouldShowUnmachinableBadge =
     (shouldShowUnmachinableWarning || isUnmachinable) && !showLatestContinueBadge;
+  const incompleteReasonCard = showLatestContinueBadge
+    ? null
+    : incompleteMachiningReasonCard({
+        tightCorner: mergeTightCornerDetail(
+          (activeReq as any)?.caseInfos?.tightCorner,
+          viewerStlMetadata?.tightCorner,
+        ),
+        filletOvercutAllowed:
+          (activeReq as any)?.caseInfos?.filletOvercutAllowed === true,
+        lowFinishLine: isFinishLineMinZRisky,
+        finishLineMinZ,
+        finishLineDefective: isFinishLineCaptureBad,
+        unmachinable: isUnmachinable,
+        unmachinableReason: (activeReq as any)?.rnd?.unmachinableReason,
+      });
+  const incompleteReasonOverlay =
+    incompleteReasonCard &&
+    (incompleteReasonCard.stats.length > 0 || incompleteReasonCard.notes.length > 0) ? (
+      <div
+        className={cn(
+          "pointer-events-none absolute right-2 z-20 max-w-[calc(100%-1rem)]",
+          metaOn ? "bottom-[8.5rem]" : "bottom-2",
+        )}
+      >
+        <IncompleteMachiningReasonCardView card={incompleteReasonCard} />
+      </div>
+    ) : null;
 
 
   const currentReviewStageKey = getReviewStageKeyByTab({
@@ -4064,6 +4097,7 @@ export const PreviewModal = ({
                       metaVisible={metaOn}
                       guidesVisible={guidesOn || guidedFinishLineMode}
                       correctionSolidVisible={correctionSolidOn}
+                      showFilletStatsOverlay={false}
                       initialSideView
                       finishLineVisible={guidesOn || guidedFinishLineMode}
                       frontPointVisible={
@@ -4622,6 +4656,7 @@ export const PreviewModal = ({
                       metaVisible={metaOn}
                       guidesVisible={guidesOn || guidedFinishLineMode}
                       correctionSolidVisible={correctionSolidOn}
+                      showFilletStatsOverlay={false}
                       initialSideView
                       finishLineVisible={guidesOn || guidedFinishLineMode}
                       frontPointVisible={
@@ -4635,6 +4670,7 @@ export const PreviewModal = ({
                       }
                     />
                     {renderPaintOverlay("right")}
+                    {incompleteReasonOverlay}
                   </div>
                 ) : (
                   <div className="h-[300px] flex items-center justify-center text-xs text-slate-500">

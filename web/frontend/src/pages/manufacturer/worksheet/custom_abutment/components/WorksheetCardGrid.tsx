@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-23: 불완전 뱃지 툴팁을 프리뷰와 같은 사유 문장으로 맞춘다.
 // - 2026-10-21: 짧은 커프 경고는 50건 통과·실패 0 전까지 유지한다.
 // - 2026-10-21: 준비 카드 JS 실패는 뱃지와 함께 사유 문구를 본문에 남긴다.
 // - 2026-10-18: 준비 «제외» 뱃지는 자동 승인이 켜져 있을 때만 표시한다.
@@ -89,6 +90,7 @@ import {
   isHexVerificationSampleRequest,
 } from "../utils/hexRotation";
 import { isFinishLineDefective } from "../utils/finishLineQuality";
+import { incompleteMachiningReasonLines } from "../utils/incompleteMachiningReason";
 import { isTightCornerCorrectionRequired } from "../utils/tightCornerReview";
 import {
   LOW_FINISH_LINE_Z_MM,
@@ -529,24 +531,16 @@ export const WorksheetCardGrid = ({
         const incompleteMachiningBadgeLabel = requestorAllowedTightCorner
           ? "불완전. 의뢰자 컨펌"
           : "불완전";
-        const incompleteMachiningBadgeTitle = (() => {
-          if (requestorAllowedTightCorner) {
-            return "의뢰자가 평균 반경 0.50mm 이상 과삭제를 허용했습니다. 자동 승인됩니다.";
-          }
-          if (isTightCornerCorrectionNeeded) {
-            return "마진 fillet R이 φ1.2 볼(R0.6)보다 작습니다. 프리뷰에서 확인하세요.";
-          }
-          if (isFinishLineCaptureBad) {
-            return "피니시라인이 어깨를 따라가지 않습니다. 프리뷰에서 FL로 수정하세요.";
-          }
-          if (isFinishLineMinZRisky) {
-            return "피니시라인 높이가 낮습니다. 프리뷰에서 확인하세요.";
-          }
-          if (isUnmachinableSample) {
-            return "불완전가공 판정 건입니다.";
-          }
-          return "가공 전 확인이 필요합니다.";
-        })();
+        const incompleteMachiningBadgeTitle =
+          incompleteMachiningReasonLines({
+            tightCorner: (caseInfos as any)?.tightCorner,
+            filletOvercutAllowed: filletOvercutAllowedByRequestor,
+            lowFinishLine: isFinishLineMinZRisky,
+            finishLineMinZ: finishLineMinZRaw,
+            finishLineDefective: isFinishLineCaptureBad,
+            unmachinable: isUnmachinableSample,
+            unmachinableReason: (request as any)?.rnd?.unmachinableReason,
+          }).join(" ") || "가공 전 확인이 필요합니다.";
 
         const shouldShowFullLot =
           !isSampleRequest &&
