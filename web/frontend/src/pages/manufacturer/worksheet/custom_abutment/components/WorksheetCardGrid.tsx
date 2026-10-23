@@ -65,6 +65,7 @@ import {
   X,
 } from "lucide-react";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
+import { ScrewTypeHover } from "@/shared/practice/ScrewTypeHover";
 import {
   resolveCaseScrewType,
   screwTypeOptionLabel,
@@ -1575,16 +1576,14 @@ export const WorksheetCardGrid = ({
                           </Badge>
                         )}
                         {showScrewTypeBadge && (
-                          <Badge
-                            variant="outline"
-                            className={`whitespace-nowrap px-3 py-1 font-extrabold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong ${
-                              displayedScrewType.length > 2
-                                ? "text-[12px]"
-                                : "text-[16px]"
-                            }`}
-                          >
-                            {screwTypeOptionLabel(displayedScrewType)}
-                          </Badge>
+                          <ScrewTypeHover screwType={displayedScrewType}>
+                            <Badge
+                              variant="outline"
+                              className="whitespace-nowrap px-3 py-1 text-[16px] font-extrabold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong"
+                            >
+                              {screwTypeOptionLabel(displayedScrewType)}
+                            </Badge>
+                          </ScrewTypeHover>
                         )}
                         {tabStage === "packing" && isPrinted && (
                           <Badge

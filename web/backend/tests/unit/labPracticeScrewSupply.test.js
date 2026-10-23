@@ -100,13 +100,13 @@ describe("labPracticeScrewSupply", () => {
         implantManufacturer: "네오바이오텍",
         connectionScrewType: "A",
       }),
-    ).toBe("NEOBIOTECH");
+    ).toBe("4");
     expect(
       resolvePackingScrewType({
         screwSupply: "manufacturer",
         implantManufacturer: "osstem",
       }),
-    ).toBe("OSSTEM");
+    ).toBe("2");
     expect(
       resolvePackingScrewType({
         screwSupply: "manufacturer",
@@ -126,23 +126,34 @@ describe("labPracticeScrewSupply", () => {
       "C",
       "D",
       "E",
-      "DENTIUM",
-      "OSSTEM",
-      "MEGAGEN",
-      "NEOBIOTECH",
-      "DIO",
-      "DENTIS",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
       "CUSTOM",
     ]);
     expect(next[0].lotNumber).toBe("JUN26-04");
-    expect(next.find((row) => row.type === "NEOBIOTECH")?.lotNumber).toBe("");
+    expect(next.find((row) => row.type === "4")?.lotNumber).toBe("");
     expect(next.find((row) => row.type === "CUSTOM")?.lotNumber).toBe("X");
   });
 
-  test("printed screw line keeps A-E then manufacturer names", () => {
+  test("legacy manufacturer names remap onto numbers and keep the number lot", () => {
+    const next = ensureCanonicalPackingScrewLotItems([
+      { type: "DENTIUM", lotNumber: "FROM-NAME" },
+      { type: "1", lotNumber: "FROM-NUMBER" },
+      { type: "OSSTEM", lotNumber: "LOT-2" },
+    ]);
+    expect(next.find((row) => row.type === "1")?.lotNumber).toBe("FROM-NUMBER");
+    expect(next.find((row) => row.type === "2")?.lotNumber).toBe("LOT-2");
+    expect(next.some((row) => row.type === "DENTIUM")).toBe(false);
+  });
+
+  test("printed screw line keeps A-E then manufacturer numbers", () => {
     expect(
       formatPrintedScrewLine(["NEOBIOTECH", "-", "A", "neobiotech", "OSSTEM"]),
-    ).toBe("스크류 A · OSSTEM · NEOBIOTECH");
+    ).toBe("스크류 A · 2 · 4");
     expect(formatPrintedScrewLine(["-", ""])).toBe("");
   });
 });

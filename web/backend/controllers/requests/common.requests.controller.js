@@ -433,7 +433,7 @@ const DEFAULT_MANUAL_PICKUP_REASON_OPTIONS = ["방문 전달"];
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
-// 로트 타입: 어벗츠 A–E + 제조사 풀네임. 헬퍼 labPracticeScrewSupply.js
+// 로트 타입: 어벗츠 A–E + 제조사 번호 1–6. 헬퍼 labPracticeScrewSupply.js
 
 const normalizePackingScrewType = (value) =>
   String(value || "")

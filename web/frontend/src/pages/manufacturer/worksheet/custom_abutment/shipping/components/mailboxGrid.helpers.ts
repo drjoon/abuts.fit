@@ -5,7 +5,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
-// - 2026-10-23: 운송장 품목 아래 스크류 줄. 어벗츠 A–E와 제조사 풀네임.
+// - 2026-10-23: 운송장 품목 아래 스크류 줄. 어벗츠 A–E와 제조사 번호.
 // - 2026-08-17: 운송장 라벨에서 제품 건수 문구를 제거.
 import { request } from "@/shared/api/apiClient";
 

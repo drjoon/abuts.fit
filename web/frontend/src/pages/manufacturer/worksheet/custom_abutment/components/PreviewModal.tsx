@@ -149,9 +149,11 @@ import {
   savePreviewOverlayPrefs,
 } from "../utils/previewOverlayPrefs";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
+import { ScrewTypeHover } from "@/shared/practice/ScrewTypeHover";
 import {
   resolveCaseScrewType,
   screwTypeOptionLabel,
+  toPackingScrewTypeKey,
 } from "@/shared/practice/screwSupply";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
@@ -3189,9 +3191,8 @@ export const PreviewModal = ({
     connectionScrewType: packResolvedSpec?.screwType,
   });
   const trackedScrewType = String((activeReq as any)?.screwTracking?.screwType || "").trim();
-  const packScrewTypeLabel = screwTypeOptionLabel(
-    packScrewType || trackedScrewType,
-  );
+  const shownScrewType = toPackingScrewTypeKey(packScrewType || trackedScrewType);
+  const packScrewTypeLabel = screwTypeOptionLabel(shownScrewType);
   const trackedScrewLotNumber = String(
     (activeReq as any)?.screwTracking?.lotNumber || "",
   ).trim();
@@ -3221,9 +3222,7 @@ export const PreviewModal = ({
 
   const overlayPackMetaItems = [
     packMailboxCode ? `메일함: ${packMailboxCode}` : "",
-    packScrewType || trackedScrewType
-      ? `스크류타입: ${packScrewType || trackedScrewType}`
-      : "",
+    shownScrewType ? `스크류타입: ${shownScrewType}` : "",
     `스크류 로트번호: ${trackedScrewLotNumber || "미설정"}`,
     packMaterial ? `재질: ${packMaterial}` : "",
   ].filter(Boolean);
@@ -3445,14 +3444,13 @@ export const PreviewModal = ({
                 </span>
               </div>
               {packScrewTypeLabel ? (
-                <div
-                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-1"
-                  title="스크류 타입"
-                >
-                  <span className="whitespace-nowrap text-[12px] font-semibold text-slate-700">
-                    {packScrewTypeLabel}
-                  </span>
-                </div>
+                <ScrewTypeHover screwType={shownScrewType}>
+                  <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-1">
+                    <span className="whitespace-nowrap text-[12px] font-semibold text-slate-700">
+                      {packScrewTypeLabel}
+                    </span>
+                  </div>
+                </ScrewTypeHover>
               ) : null}
               <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-1">
                 <span className="whitespace-nowrap text-[11px] font-semibold text-slate-500">

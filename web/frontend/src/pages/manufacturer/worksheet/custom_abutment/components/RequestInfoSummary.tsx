@@ -31,6 +31,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { formatKstDateTimeToKo } from "@/shared/date/kst";
+import { ScrewTypeHover } from "@/shared/practice/ScrewTypeHover";
 
 /** lovable-tagger가 Fragment에 data-lov-id를 붙여 경고가 나므로 DOM 노드로 감싼다. */
 function InlineGroup({
@@ -436,12 +437,21 @@ export function RequestInfoSummary({
         .join(" ")}
     >
       <MetaRow>
-        {productionItems.map((item, idx) => (
-          <InlineGroup key={`${item}-${idx}`}>
-            {idx > 0 ? <Dot /> : null}
-            <span className="text-slate-600">{item}</span>
-          </InlineGroup>
-        ))}
+        {productionItems.map((item, idx) => {
+          const screwType = item.match(/^스크류타입:\s*(\S+)/)?.[1] || "";
+          return (
+            <InlineGroup key={`${item}-${idx}`}>
+              {idx > 0 ? <Dot /> : null}
+              {screwType ? (
+                <ScrewTypeHover screwType={screwType}>
+                  <span className="text-slate-600">{item}</span>
+                </ScrewTypeHover>
+              ) : (
+                <span className="text-slate-600">{item}</span>
+              )}
+            </InlineGroup>
+          );
+        })}
       </MetaRow>
     </Section>
   ) : null;

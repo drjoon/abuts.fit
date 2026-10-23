@@ -72,24 +72,28 @@ export function screwManufacturerLabel(
   return labels.join(" · ");
 }
 
-/** 세척.패킹 로트. 어벗츠 정품은 A–E, 제조사 호환은 풀네임. */
+/** 세척.패킹 로트. 어벗츠 정품은 A–E, 제조사 호환은 1–6. */
 export const ABUTS_PACKING_SCREW_TYPES = ["A", "B", "C", "D", "E"] as const;
 
-export const FIXTURE_MANUFACTURER_SCREW_TYPES = [
-  "DENTIUM",
-  "OSSTEM",
-  "MEGAGEN",
-  "NEOBIOTECH",
-  "DIO",
-  "DENTIS",
+/** 번호 순서는 로트 키와 툴팁이 같이 쓴다. */
+export const FIXTURE_MANUFACTURER_SCREW_ROWS = [
+  { number: "1", name: "DENTIUM" },
+  { number: "2", name: "OSSTEM" },
+  { number: "3", name: "MEGAGEN" },
+  { number: "4", name: "NEOBIOTECH" },
+  { number: "5", name: "DIO" },
+  { number: "6", name: "DENTIS" },
 ] as const;
 
-export const DEFAULT_PACKING_SCREW_TYPES = [
+export const FIXTURE_MANUFACTURER_SCREW_TYPES: readonly string[] =
+  FIXTURE_MANUFACTURER_SCREW_ROWS.map((row) => row.number);
+
+export const DEFAULT_PACKING_SCREW_TYPES: readonly string[] = [
   ...ABUTS_PACKING_SCREW_TYPES,
   ...FIXTURE_MANUFACTURER_SCREW_TYPES,
-] as const;
+];
 
-const FIXTURE_MANUFACTURER_ALIASES: Record<string, (typeof FIXTURE_MANUFACTURER_SCREW_TYPES)[number]> =
+const FIXTURE_MANUFACTURER_ALIASES: Record<string, (typeof FIXTURE_MANUFACTURER_SCREW_ROWS)[number]["name"]> =
   {
     OSSTEM: "OSSTEM",
     오스템: "OSSTEM",
@@ -107,14 +111,33 @@ const FIXTURE_MANUFACTURER_ALIASES: Record<string, (typeof FIXTURE_MANUFACTURER_
     덴티스: "DENTIS",
   };
 
-export function canonicalFixtureManufacturerScrewType(value: unknown): string {
+const FIXTURE_NAME_TO_NUMBER = Object.fromEntries(
+  FIXTURE_MANUFACTURER_SCREW_ROWS.map((row) => [row.name, row.number]),
+) as Record<string, string>;
+
+export function canonicalFixtureManufacturerName(value: unknown): string {
   const raw = String(value || "").trim();
   if (!raw) return "";
   const compact = raw.toUpperCase().replace(/\s+/g, "");
-  const fromCompact = FIXTURE_MANUFACTURER_ALIASES[compact];
-  if (fromCompact) return fromCompact;
-  const fromRaw = FIXTURE_MANUFACTURER_ALIASES[raw];
-  if (fromRaw) return fromRaw;
+  return FIXTURE_MANUFACTURER_ALIASES[compact] || FIXTURE_MANUFACTURER_ALIASES[raw] || "";
+}
+
+/** 로트·표시 키. 제조사 풀네임은 번호로 바꾼다. 그 외 문자열은 대문자 그대로. */
+export function toPackingScrewTypeKey(value: unknown): string {
+  const raw = String(value || "")
+    .trim()
+    .toUpperCase();
+  if (!raw || raw === "-") return "";
+  if ((ABUTS_PACKING_SCREW_TYPES as readonly string[]).includes(raw)) return raw;
+  if ((FIXTURE_MANUFACTURER_SCREW_TYPES as readonly string[]).includes(raw)) return raw;
+  const name = canonicalFixtureManufacturerName(raw);
+  if (name && FIXTURE_NAME_TO_NUMBER[name]) return FIXTURE_NAME_TO_NUMBER[name];
+  return raw;
+}
+
+export function manufacturerScrewHoverNumber(value: unknown): string {
+  const key = toPackingScrewTypeKey(value);
+  if ((FIXTURE_MANUFACTURER_SCREW_TYPES as readonly string[]).includes(key)) return key;
   return "";
 }
 
@@ -128,11 +151,11 @@ export type CaseScrewTypeInput = {
   connectionScrewType?: unknown;
 };
 
-/** 표시·로트 키. 어벗츠면 A–E, 제조사 호환이면 DENTIUM 같은 풀네임. */
+/** 표시·로트 키. 어벗츠면 A–E, 제조사 호환이면 1–6. */
 export function resolveCaseScrewType(input: CaseScrewTypeInput): string {
   const supply = normalizeScrewSupply(input.screwSupply) || "abuts";
   if (supply === "manufacturer") {
-    return canonicalFixtureManufacturerScrewType(input.implantManufacturer);
+    return manufacturerScrewHoverNumber(input.implantManufacturer);
   }
   const explicit = String(input.connectionScrewType || "")
     .trim()
@@ -158,7 +181,7 @@ export function resolveCaseScrewType(input: CaseScrewTypeInput): string {
 }
 
 export function screwTypeOptionLabel(type: unknown): string {
-  const value = String(type || "").trim();
+  const value = toPackingScrewTypeKey(type);
   if (!value) return "";
   return `스크류 ${value}`;
 }
@@ -168,11 +191,21 @@ export function ensureCanonicalScrewLotItems<T extends { type: string; lotNumber
 ): T[] {
   const byType = new Map<string, T>();
   for (const row of items) {
-    const type = String(row?.type || "")
-      .trim()
-      .toUpperCase();
-    if (!type || byType.has(type)) continue;
-    byType.set(type, { ...row, type });
+    const type = toPackingScrewTypeKey(row?.type);
+    if (!type) continue;
+    const prev = byType.get(type);
+    const lotNumber = String(row?.lotNumber || "");
+    const storedAsNumber = FIXTURE_MANUFACTURER_SCREW_TYPES.includes(
+      String(row?.type || "")
+        .trim()
+        .toUpperCase(),
+    );
+    if (!prev) {
+      byType.set(type, { ...row, type, lotNumber });
+      continue;
+    }
+    if (storedAsNumber && lotNumber) prev.lotNumber = lotNumber;
+    else if (!prev.lotNumber && lotNumber) prev.lotNumber = lotNumber;
   }
   const ordered: T[] = [];
   for (const type of DEFAULT_PACKING_SCREW_TYPES) {

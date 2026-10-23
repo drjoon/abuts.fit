@@ -7,7 +7,7 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/utils/shippingReceiver.utils.js
 // change-log:
-// - 2026-10-23: 운송장 품목 아래 스크류 줄. 어벗츠 A–E와 제조사 풀네임.
+// - 2026-10-23: 운송장 품목 아래 스크류 줄. 어벗츠 A–E와 제조사 번호.
 // - 2026-08-17: 운송장 비고는 우편함/사업자명만 (제품 건수는 웹앱에서 확인).
 import Request from "../../models/request.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";

@@ -54,6 +54,7 @@ import {
 } from "../utils/packLabelRenderer";
 import { savePackingLabelsAsZip } from "../utils/packLabelZip";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
+import { ScrewTypeHover } from "@/shared/practice/ScrewTypeHover";
 import {
   DEFAULT_PACKING_SCREW_TYPES,
   ensureCanonicalScrewLotItems,
@@ -1869,7 +1870,9 @@ export const PackingPageContent = ({
               <DialogDescription>
                 전역 설정입니다. 저장 후 새로 패킹 승인되는 의뢰에는 타입별 최신 로트번호가 스냅샷으로 기록됩니다.
                 <br />
-                어벗츠는 A–E, 제조사 스크류는 제조사 이름입니다.
+                어벗츠는 A–E입니다.
+                <br />
+                제조사 스크류는 번호입니다.
               </DialogDescription>
             </DialogHeader>
 
@@ -1877,26 +1880,24 @@ export const PackingPageContent = ({
               {screwLotItems.map((row, idx) => (
                 <div
                   key={`${idx}-${row.type}`}
-                  className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[11rem_minmax(0,1fr)_44px]"
+                  className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[4.5rem_minmax(0,1fr)_44px]"
                 >
-                  <Input
-                    value={row.type}
-                    onChange={(e) =>
-                      handleChangeScrewLotRow(idx, "type", e.target.value)
-                    }
-                    placeholder="타입 (예: A)"
-                    maxLength={30}
-                    readOnly={(DEFAULT_PACKING_SCREW_TYPES as readonly string[]).includes(
-                      row.type,
-                    )}
-                    className={
-                      (DEFAULT_PACKING_SCREW_TYPES as readonly string[]).includes(
-                        row.type,
-                      )
-                        ? "bg-slate-50 font-semibold"
-                        : undefined
-                    }
-                  />
+                  <ScrewTypeHover screwType={row.type} className="w-full min-w-0">
+                    <Input
+                      value={row.type}
+                      onChange={(e) =>
+                        handleChangeScrewLotRow(idx, "type", e.target.value)
+                      }
+                      placeholder="타입 (예: A)"
+                      maxLength={30}
+                      readOnly={DEFAULT_PACKING_SCREW_TYPES.includes(row.type)}
+                      className={
+                        DEFAULT_PACKING_SCREW_TYPES.includes(row.type)
+                          ? "bg-slate-50 font-semibold"
+                          : undefined
+                      }
+                    />
+                  </ScrewTypeHover>
                   <Input
                     value={row.lotNumber}
                     onChange={(e) =>
@@ -1905,9 +1906,7 @@ export const PackingPageContent = ({
                     placeholder="로트번호"
                     maxLength={120}
                   />
-                  {(DEFAULT_PACKING_SCREW_TYPES as readonly string[]).includes(
-                    row.type,
-                  ) ? (
+                  {DEFAULT_PACKING_SCREW_TYPES.includes(row.type) ? (
                     <span className="inline-flex h-9 w-9" />
                   ) : (
                     <button

@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-10-23: 폴백 ZPL 스크류 칸. 제조사 풀네임은 글자를 줄여 넣는다.
+// - 2026-10-23: 폴백 ZPL 스크류 칸. 제조사 타입은 번호.
 // - 2026-08-06: process TZ=Asia/Seoul 강제(전역 KST 정책).
 // related files:
 // - bg/pc2/pack-server/rules.md
