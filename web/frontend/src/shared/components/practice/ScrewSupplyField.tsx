@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/AbutmentModelConfirmDialog.tsx
 // - web/frontend/src/features/requestSettings/RequestSettingsToolbar.tsx
 // change-log:
+// - 2026-10-23: 의뢰자 — 제조사 호환 선택 비활성(11월 중 오픈 예정), 어벗츠만.
 // - 2026-10-23: 스크류 — 어벗츠 정품 / 임플란트 제조사 호환.
 import { CircleHelp } from "lucide-react";
 import { Label } from "@/components/ui/label";
@@ -23,17 +24,38 @@ type ScrewSupplyFieldProps = {
   onChange: (value: ScrewSupply) => void;
   /** 두 번째 선택 라벨. 임플란트 제조사명. 없으면 「제조사」 */
   manufacturerLabel?: string;
+  /** false면 제조사 호환 선택 불가(의뢰자 화면 기본). */
+  manufacturerEnabled?: boolean;
   disabled?: boolean;
   idPrefix?: string;
   className?: string;
 };
 
+const MANUFACTURER_COMING_SOON_TOOLTIP = (
+  <>
+    준비 중입니다.
+    <br />
+    11월 중 제공 예정입니다.
+  </>
+);
+
 export function ScrewSupplyHint({
   manufacturerLabel,
+  manufacturerEnabled = false,
 }: {
   manufacturerLabel: string;
+  manufacturerEnabled?: boolean;
 }) {
   const compatible = screwCompatiblePhrase(manufacturerLabel);
+  if (!manufacturerEnabled) {
+    return (
+      <>
+        <strong>어벗츠 정품</strong> 스크류가 기본입니다.
+        <br />
+        <strong>{compatible}</strong> 스크류는 준비 중이며, 11월 중 제공 예정입니다.
+      </>
+    );
+  }
   return (
     <>
       <strong>어벗츠 정품</strong> 스크류가 기본입니다.
@@ -48,12 +70,40 @@ export function ScrewSupplyField({
   value,
   onChange,
   manufacturerLabel = "제조사",
+  manufacturerEnabled = false,
   disabled = false,
   idPrefix = "screw",
   className,
 }: ScrewSupplyFieldProps) {
-  const selected: ScrewSupply = value === "manufacturer" ? "manufacturer" : "abuts";
+  const rawSelected: ScrewSupply =
+    value === "manufacturer" ? "manufacturer" : "abuts";
+  const selected: ScrewSupply =
+    !manufacturerEnabled && rawSelected === "manufacturer" ? "abuts" : rawSelected;
   const makerLabel = String(manufacturerLabel || "").trim() || "제조사";
+  const manufacturerChoiceDisabled = disabled || !manufacturerEnabled;
+
+  const manufacturerOption = (
+    <>
+      <RadioGroupItem
+        value="manufacturer"
+        id={`${idPrefix}-manufacturer`}
+        className="border-slate-300 text-primary-strong"
+        disabled={manufacturerChoiceDisabled}
+      />
+      <Label
+        htmlFor={`${idPrefix}-manufacturer`}
+        className={cn(
+          "text-sm text-slate-700",
+          manufacturerChoiceDisabled
+            ? "cursor-not-allowed opacity-50"
+            : "cursor-pointer",
+          disabled && manufacturerEnabled && "cursor-default opacity-60",
+        )}
+      >
+        {makerLabel}
+      </Label>
+    </>
+  );
 
   return (
     <div
@@ -75,13 +125,17 @@ export function ScrewSupplyField({
               </button>
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs text-left text-xs">
-              <ScrewSupplyHint manufacturerLabel={makerLabel} />
+              <ScrewSupplyHint
+                manufacturerLabel={makerLabel}
+                manufacturerEnabled={manufacturerEnabled}
+              />
             </TooltipContent>
           </Tooltip>
         </div>
         <RadioGroup
           value={selected}
           onValueChange={(next) => {
+            if (next === "manufacturer" && !manufacturerEnabled) return;
             if (next === "abuts" || next === "manufacturer") onChange(next);
           }}
           className="flex flex-wrap items-center gap-6"
@@ -103,22 +157,20 @@ export function ScrewSupplyField({
               어벗츠
             </Label>
           </div>
-          <div className="flex items-center space-x-2">
-            <RadioGroupItem
-              value="manufacturer"
-              id={`${idPrefix}-manufacturer`}
-              className="border-slate-300 text-primary-strong"
-            />
-            <Label
-              htmlFor={`${idPrefix}-manufacturer`}
-              className={cn(
-                "cursor-pointer text-sm text-slate-700",
-                disabled && "cursor-default opacity-60",
-              )}
-            >
-              {makerLabel}
-            </Label>
-          </div>
+          {!manufacturerEnabled ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex items-center space-x-2">
+                  {manufacturerOption}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-left text-xs">
+                {MANUFACTURER_COMING_SOON_TOOLTIP}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <div className="flex items-center space-x-2">{manufacturerOption}</div>
+          )}
         </RadioGroup>
       </div>
     </div>
