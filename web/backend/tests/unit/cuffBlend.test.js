@@ -3,6 +3,7 @@
 // - web/backend/services/abutmentStl/cuffConnectionSpecs.js
 import { describe, expect, it } from "@jest/globals";
 import {
+  angularRow,
   blendCuffJunction,
   proposeCuffRedesign,
   redesignCuffBowl,
@@ -525,6 +526,34 @@ describe("blendCuffJunction", () => {
       worstNz = Math.min(worstNz, nz / len);
     }
     expect(worstNz).toBeGreaterThan(-0.35);
+  });
+});
+
+describe("angularRow", () => {
+  const ring = (degrees) => {
+    const verts = [];
+    degrees.forEach((deg) => {
+      const a = (deg * Math.PI) / 180;
+      verts.push(Math.cos(a), Math.sin(a), 1);
+    });
+    return { loop: degrees.map((_, i) => i), verts };
+  };
+
+  it("keeps a one-step zigzag under 15° and a monotonic angle key", () => {
+    const degrees = Array.from({ length: 36 }, (_, i) => i * 10);
+    degrees[3] = 18;
+    const { loop, verts } = ring(degrees);
+    const row = angularRow(loop, verts);
+    expect(row).not.toBeNull();
+    expect(row.map((p) => p.v)).toContain(3);
+    for (let i = 1; i < row.length; i += 1) expect(row[i].a).toBeGreaterThan(row[i - 1].a);
+  });
+
+  it("rejects a fold that turns back more than 15°", () => {
+    const degrees = Array.from({ length: 36 }, (_, i) => i * 10);
+    degrees[3] = 0;
+    const { loop, verts } = ring(degrees);
+    expect(angularRow(loop, verts)).toBeNull();
   });
 });
 

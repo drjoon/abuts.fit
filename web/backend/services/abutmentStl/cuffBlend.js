@@ -111,6 +111,11 @@ const FIN_SPAN_RAD = (30 * Math.PI) / 180;
 const BOTTOM_ON_CONE_TOL_MM = 0.02;
 const BOTTOM_CHORD_BLEND_MM = 0.18;
 const BOTTOM_EDGE_MAX_RAD = (1.25 * Math.PI) / 180;
+/**
+ * 경계 각이 진행 방향 최고점에서 이만큼 이상 되돌아가면 언더컷이다.
+ * 자른 자리의 한 칸 귀(수 °, 20261024-SJJXCPAV는 1.7°)는 언더컷이 아니다.
+ */
+const ANGULAR_FOLD_MAX_RAD = (15 * Math.PI) / 180;
 
 /** Re 기준: 이보다 누운 커프를 접시형으로 보고, 재디자인 곡선도 이보다 눕지 않게 한다. */
 export const FLAT_SLOPE = Math.tan((70 * Math.PI) / 180);
@@ -1541,7 +1546,8 @@ function chainBoundaryLoops(directedEdges) {
 /**
  * 경계 루프를 각도가 커지는 방향의 루프 순서로 돌려준다(a는 누적 각, 시작 ∈ [0, 2π)).
  * 정렬하지 않는다: 루프 모서리를 그대로 써야 띠가 원래 메시와 빈틈없이 맞물린다.
- * 한 바퀴가 아니거나 크게 되돌아가면(언더컷) null.
+ * 한 바퀴가 아니거나, 진행 각이 ANGULAR_FOLD_MAX_RAD 넘게 되돌아가면(언더컷) null.
+ * 그보다 짧은 귀는 꼭짓점은 그대로 두고 각도 파라미터만 앞으로 눌러 지퍼가 접히지 않게 한다.
  */
 function angularRow(loop, verts) {
   const ang = loop.map((v) => angleOf(verts[v * 3], verts[v * 3 + 1]));
@@ -1553,7 +1559,16 @@ function angularRow(loop, verts) {
   });
   const turn = steps.reduce((s, d) => s + d, 0);
   const dir = Math.sign(turn);
-  if (Math.abs(Math.abs(turn) - TWO_PI) > 0.1 || steps.some((d) => d * dir < -0.02)) return null;
+  if (!dir || Math.abs(Math.abs(turn) - TWO_PI) > 0.1) return null;
+  let progress = 0;
+  let peak = 0;
+  let fold = 0;
+  for (const d of steps) {
+    progress += d * dir;
+    if (progress >= peak) peak = progress;
+    else fold = Math.max(fold, peak - progress);
+  }
+  if (fold > ANGULAR_FOLD_MAX_RAD) return null;
   let order = loop.map((_, i) => i);
   if (dir < 0) order = order.reverse();
   let start = 0;
@@ -1568,6 +1583,7 @@ function angularRow(loop, verts) {
       let d = ang[order[i]] - ang[order[i - 1]];
       if (d > Math.PI) d -= TWO_PI;
       if (d < -Math.PI) d += TWO_PI;
+      if (d <= 0) d = 1e-5;
       acc += d;
     }
     out.push({ v: loop[order[i]], a: acc });
