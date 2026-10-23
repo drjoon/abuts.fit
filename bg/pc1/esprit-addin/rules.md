@@ -70,7 +70,7 @@
   - Back: `Turn -> Rough -> Finish`
   - Wide Split(safe split) ON: Back 대신 Middle(`Turn -> Rough`) → Back(`Turn -> Rough`). Finish는 Middle 없이 Front/Back만 (§4.3.0)
   - 구 `Splitline_2 > 5mm` Front/Middle 분할(`caseInfos.wideSplitEnabled`, `ABUTS_WIDE_SPLIT_ENABLE`)은 2026-09-29 제거.
-- Finish 정책: 항상 `Front_Finish` + `Back_Finish` 2단 (`Middle_Finish`·`All_Finish` 없음). `Front_Finish`는 `Back_Finish` 바로 앞. `Back_Finish` 스텝오버는 커넥션 → 포스트 팁 (`ReverseStepOverDirection`).
+- Finish 정책: 항상 `Front_Finish` + `Back_Finish` 2단 (`Middle_Finish`·`All_Finish` 없음). `Front_Finish`는 `Front_Face` 다음. `Back_Finish` 스텝오버는 커넥션 → 포스트 팁 (`ReverseStepOverDirection`).
 
 ### 4.2 라벨명 SSOT
 
@@ -104,7 +104,7 @@
 - Wide Split은 항상 ON. `caseInfos.safeSplitEnabled=false`여도 `ABUTS_SAFE_SPLIT_ENABLE=1`. Xk를 둘 수 없을 때만 단일 Back.
 - 목적: Back_Turn(헥스 너머 LowerY 연장)·Back_Rough가 부시쪽 목을 먼저 얇게 만들어 Finish 크로스가 떨리는(wobble) 것 방지.
 - 경계 `Xk = (BackPointX - FL min_z) + 0.2` (Turn/Rough만. Finish seam은 피니시라인).
-- 순서: `Front_Turn → Front_Rough → Front_Face → Middle_Turn → Middle_Rough → Back_Turn → Back_Rough → Front_Finish → Back_Finish → Connection`
+- 순서: `Front_Turn → Front_Rough → Front_Face → Front_Finish → Middle_Turn → Middle_Rough → Back_Turn → Back_Rough → Back_Finish → Connection`
   - 내부 region 코드는 Middle=`BACK`, Back=`BACK2`(T05·레이어·경계 로직 공유). 표시명만 바뀐다.
   - Middle_Rough 끝 `Xk+0.5`, Middle_Turn 끝 = Rough 끝 + D4 반경 + 보정 (황삭 끝+D4 반경 2.0+보정 0.5)
   - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX]`(경계 `RoughBoundryBack2`)

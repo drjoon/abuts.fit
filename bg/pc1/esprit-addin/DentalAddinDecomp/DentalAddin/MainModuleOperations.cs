@@ -96,10 +96,10 @@ namespace DentalAddin
                 CustomCycle();
 
                 // 순서:
-                // Front: Turn -> Rough -> Front Face
-                // Back:  Turn -> Rough
+                // Front: Turn -> Rough -> Front Face -> Front_Finish
+                // Back:  Turn -> Rough -> Back_Finish
                 // Wide Split(safe split) ON: Back 대신 Middle(Turn/Rough) -> Back(Turn/Rough). Finish에는 Middle 없음.
-                // Finish는 항상 Front_Finish → Back_Finish. Front_Finish는 Back_Finish 바로 앞.
+                // Front_Finish는 Front_Face 다음. Back_Finish는 Turn/Rough 뒤.
                 NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-FRONT");
                 using (DentalLogger.Measure("OperationSeq.FRONT_TurnRough"))
                 {
@@ -115,12 +115,22 @@ namespace DentalAddin
                     FrontFaceMill();
                 }
 
-                // Finish는 Turn/Rough 뒤에만 둔다.
+                // Front_Finish는 Front Face 다음에 생성한다.
                 // One Pass(ABUTS_FINISH_ONE_PASS=1): Front_Finish는 만들지 않고 Back_Finish가 팁~BackPointX를 한 번에 깎는다.
                 // safe split이면 Back_Finish는 B2. none/deep은 Splitline_2−0.5−1피치 ~ BackPointX.
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
                 try
                 {
+                    NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-FINISH_FRONT");
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "A_PHASE");
+                    using (DentalLogger.Measure("OperationSeq.FINISH_FRONT"))
+                    {
+                        ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
+                        FreeFormMill();
+                        TryNormalizeCompositeFinishOrderAfterFreeForm();
+                    }
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
+
                     NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-BACK");
                     using (DentalLogger.Measure("OperationSeq.BACK_TurnRough"))
                     {
@@ -142,15 +152,6 @@ namespace DentalAddin
                             NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.after-BACK2_Turn");
                             ExecuteTwoPhaseRough("BACK2");
                         }
-                    }
-
-                    NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-FINISH_FRONT");
-                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "A_PHASE");
-                    using (DentalLogger.Measure("OperationSeq.FINISH_FRONT"))
-                    {
-                        ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
-                        FreeFormMill();
-                        TryNormalizeCompositeFinishOrderAfterFreeForm();
                     }
 
                     NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-FINISH_BACK");

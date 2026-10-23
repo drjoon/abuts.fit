@@ -1233,7 +1233,7 @@ namespace DentalAddin
             DentalLogger.Log($"Composite2SplitLine2 - Operation 추가 시작 (beforeCount={beforeAddCount})");
 
             // 공정 순서 정책:
-            // - A_PHASE: Front_Finish만 생성 (Back_Finish 바로 앞에서 호출)
+            // - A_PHASE: Front_Finish만 생성 (Front_Face 다음에 호출)
             // - B_PHASE / B2_PHASE: Back_Finish만 생성. Middle_Finish 없음
             // - 기본 모드: Front → Back 생성
             if (runA)
@@ -1245,7 +1245,7 @@ namespace DentalAddin
                 int afterA = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitLine2 - Operation 추가 완료: FINISH_FRONT(opA) (afterCount={afterA})");
 
-                TryMoveFrontFinishBeforeBackFinish();
+                TryMoveFrontFinishAfterFrontFace();
             }
             else
             {
@@ -1886,7 +1886,7 @@ namespace DentalAddin
         //       Back_Rough도 BackPointX까지 먼저 깎아, Back_Finish(D1.0 크로스)가 가이드부시에서 먼 tip쪽을
         //       깎을 때 부시쪽 목이 이미 얇아 떨린다(wobble).
         // 대책: Back을 피니시라인 하단(FL min_z) 부시쪽에서 끊어 Front → Middle → Back으로 황삭한다.
-        // Finish는 Middle 없이 Front_Finish / Back_Finish만. Front_Finish는 Back_Finish 바로 앞.
+        // Finish는 Middle 없이 Front_Finish / Back_Finish만. Front_Finish는 Front_Face 다음.
         //   Middle (region BACK)  : Middle_Rough  [Splitline_2-roughR ~ Xk+0.5]
         //                           Middle_Turn   [FrontPointX ~ Xk+3.0]         (황삭 끝+D4 반경 2.0+칩 0.2)
         //   Back   (region BACK2) : Back_Turn [Xk ~ xMax+exit] (기존 Back_Turn 끝 형상 유지)
@@ -2504,7 +2504,7 @@ namespace DentalAddin
             }
         }
 
-        private static void TryMoveFrontFinishBeforeBackFinish()
+        private static void TryMoveFrontFinishAfterFrontFace()
         {
             try
             {
@@ -2513,122 +2513,128 @@ namespace DentalAddin
                     return;
                 }
 
-                bool IsFinishMatch(int index, string token)
+                string ReadOpName(int index)
                 {
                     object op = null;
                     try { op = Document.Operations[index]; } catch { }
                     if (op == null)
                     {
-                        return false;
+                        return null;
                     }
 
-                    string name = null;
                     try
                     {
                         dynamic dynOp = op;
-                        name = dynOp.Name as string;
+                        return dynOp.Name as string;
                     }
                     catch
                     {
-                        try { name = (string)op.GetType().InvokeMember("Name", BindingFlags.GetProperty, null, op, null); } catch { }
+                        try { return (string)op.GetType().InvokeMember("Name", BindingFlags.GetProperty, null, op, null); } catch { }
                     }
 
-                    if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(token))
-                    {
-                        return false;
-                    }
-
-                    if (!IsCompositeNameLike(name))
-                    {
-                        return false;
-                    }
-
-                    return name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0;
+                    return null;
                 }
 
-                int FindFirstIndex(Func<int, bool> predicate)
+                bool NameHas(string name, string token)
                 {
-                    int count = Document.Operations.Count;
-                    for (int i = 1; i <= count; i++)
-                    {
-                        if (predicate(i))
-                        {
-                            return i;
-                        }
-                    }
-                    return -1;
+                    return !string.IsNullOrWhiteSpace(name)
+                        && !string.IsNullOrWhiteSpace(token)
+                        && name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0;
                 }
 
-                int finishIndex = FindFirstIndex(i => IsFinishMatch(i, "Front_Finish") || IsFinishMatch(i, "FINISH_FRONT"));
-                int turnBIndex = FindFirstIndex(i => IsFinishMatch(i, "Back_Finish") || IsFinishMatch(i, "FINISH_BACK"));
-
-                if (finishIndex < 1 || turnBIndex < 1)
+                int faceIndex = -1;
+                int finishIndex = -1;
+                int count = Document.Operations.Count;
+                for (int i = 1; i <= count; i++)
                 {
-                    DentalLogger.Log($"Composite2SplitLine2 - Front_Finish/Back_Finish 재정렬 스킵: frontIndex={finishIndex}, backIndex={turnBIndex}");
+                    string name = ReadOpName(i);
+                    if (faceIndex < 0 && NameHas(name, "Front_Face"))
+                    {
+                        faceIndex = i;
+                    }
+
+                    if (finishIndex < 0
+                        && IsCompositeNameLike(name)
+                        && (NameHas(name, "Front_Finish") || NameHas(name, "FINISH_FRONT")))
+                    {
+                        finishIndex = i;
+                    }
+                }
+
+                if (finishIndex < 1 || faceIndex < 1)
+                {
+                    DentalLogger.Log($"Composite2SplitLine2 - Front_Finish/Front_Face 재정렬 스킵: finishIndex={finishIndex}, faceIndex={faceIndex}");
                     return;
                 }
 
-                if (finishIndex == turnBIndex - 1)
+                if (finishIndex == faceIndex + 1)
                 {
-                    DentalLogger.Log($"Composite2SplitLine2 - Front_Finish/Back_Finish 재정렬 불필요(이미 바로 위): frontIndex={finishIndex}, backIndex={turnBIndex}");
+                    DentalLogger.Log($"Composite2SplitLine2 - Front_Finish/Front_Face 재정렬 불필요(이미 바로 다음): finishIndex={finishIndex}, faceIndex={faceIndex}");
                     return;
                 }
 
                 object finishOp = null;
-                object turnBOp = null;
+                object faceOp = null;
+                object nextAfterFaceOp = null;
                 try { finishOp = Document.Operations[finishIndex]; } catch { }
-                try { turnBOp = Document.Operations[turnBIndex]; } catch { }
+                try { faceOp = Document.Operations[faceIndex]; } catch { }
+                if (faceIndex + 1 <= count && faceIndex + 1 != finishIndex)
+                {
+                    try { nextAfterFaceOp = Document.Operations[faceIndex + 1]; } catch { }
+                }
 
                 bool moved = false;
                 object ops = Document.Operations;
 
-                // 시도 1: 컬렉션 MoveBefore(op, target)
-                try
+                // 시도 1: 컬렉션 MoveAfter(op, anchor)
+                if (finishOp != null && faceOp != null)
                 {
-                    ops.GetType().InvokeMember("MoveBefore", BindingFlags.InvokeMethod, null, ops, new object[] { finishOp, turnBOp });
-                    moved = true;
+                    try
+                    {
+                        ops.GetType().InvokeMember("MoveAfter", BindingFlags.InvokeMethod, null, ops, new object[] { finishOp, faceOp });
+                        moved = true;
+                    }
+                    catch { }
                 }
-                catch { }
 
-                // 시도 2: 컬렉션 MoveBefore(fromIndex, toIndex)
+                // 시도 2: 컬렉션 MoveAfter(fromIndex, anchorIndex)
                 if (!moved)
                 {
                     try
                     {
-                        ops.GetType().InvokeMember("MoveBefore", BindingFlags.InvokeMethod, null, ops, new object[] { finishIndex, turnBIndex });
+                        ops.GetType().InvokeMember("MoveAfter", BindingFlags.InvokeMethod, null, ops, new object[] { finishIndex, faceIndex });
                         moved = true;
                     }
                     catch { }
                 }
 
-                // 시도 3: 컬렉션 Move(fromIndex, toIndex)
-                if (!moved)
+                // 시도 3: Front_Face 다음 작업 앞으로 이동
+                if (!moved && finishOp != null && nextAfterFaceOp != null)
                 {
                     try
                     {
-                        int targetIndex = Math.Max(1, turnBIndex - 1);
-                        ops.GetType().InvokeMember("Move", BindingFlags.InvokeMethod, null, ops, new object[] { finishIndex, targetIndex });
+                        ops.GetType().InvokeMember("MoveBefore", BindingFlags.InvokeMethod, null, ops, new object[] { finishOp, nextAfterFaceOp });
                         moved = true;
                     }
                     catch { }
                 }
 
-                // 시도 4: Op 단위 MoveBefore(targetOp)
-                if (!moved && finishOp != null && turnBOp != null)
+                // 시도 4: Op 단위 MoveAfter(anchor)
+                if (!moved && finishOp != null && faceOp != null)
                 {
                     try
                     {
-                        finishOp.GetType().InvokeMember("MoveBefore", BindingFlags.InvokeMethod, null, finishOp, new object[] { turnBOp });
+                        finishOp.GetType().InvokeMember("MoveAfter", BindingFlags.InvokeMethod, null, finishOp, new object[] { faceOp });
                         moved = true;
                     }
                     catch { }
                 }
 
-                DentalLogger.Log($"Composite2SplitLine2 - Front_Finish/Back_Finish 재정렬 시도 결과: moved={moved}, frontIndex={finishIndex}, backIndex={turnBIndex}");
+                DentalLogger.Log($"Composite2SplitLine2 - Front_Finish/Front_Face 재정렬 시도 결과: moved={moved}, finishIndex={finishIndex}, faceIndex={faceIndex}");
             }
             catch (Exception ex)
             {
-                DentalLogger.Log($"Composite2SplitLine2 - Front_Finish/Back_Finish 재정렬 예외: {ex.GetType().Name}:{ex.Message}");
+                DentalLogger.Log($"Composite2SplitLine2 - Front_Finish/Front_Face 재정렬 예외: {ex.GetType().Name}:{ex.Message}");
             }
         }
 
@@ -2638,7 +2644,7 @@ namespace DentalAddin
             {
                 // FreeFormMill 종료 후 후처리 보정:
                 // 1) 이름 포맷 표준화(Front_Finish / Back_Finish / All_Finish)
-                // 2) Front_Finish를 Back_Finish 바로 위로 재정렬
+                // 2) Front_Finish를 Front_Face 다음으로 재정렬
                 if (Document?.Operations == null)
                 {
                     return;
@@ -2711,7 +2717,7 @@ namespace DentalAddin
                     }
                 }
 
-                TryMoveFrontFinishBeforeBackFinish();
+                TryMoveFrontFinishAfterFrontFace();
             }
             catch (Exception ex)
             {
