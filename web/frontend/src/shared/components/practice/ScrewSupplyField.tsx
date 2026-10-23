@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/AbutmentModelConfirmDialog.tsx
 // - web/frontend/src/features/requestSettings/RequestSettingsToolbar.tsx
 // change-log:
+// - 2026-10-23: RequestScrewSupplySection — 의뢰자 공통(3D 확인·채팅). copy는 screwSupply.ts SSOT.
 // - 2026-10-23: 라벨 — 「선택 사항 - 어벗츠 정품, {제조사} 호환」·옵션 정품/호환.
 // - 2026-10-23: 의뢰자 — 제조사 호환 선택 비활성(11월 중 오픈 예정), 어벗츠만.
 // - 2026-10-23: 스크류 — 어벗츠 정품 / 임플란트 제조사 호환.
@@ -16,7 +17,11 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import {
+  SCREW_SUPPLY_ABUTS_OPTION_LABEL,
+  SCREW_SUPPLY_MANUFACTURER_COMING_SOON_LINE_1,
+  SCREW_SUPPLY_MANUFACTURER_COMING_SOON_LINE_2,
   screwCompatiblePhrase,
+  screwSupplySectionTitle,
   type ScrewSupply,
 } from "@/shared/practice/screwSupply";
 
@@ -34,9 +39,9 @@ type ScrewSupplyFieldProps = {
 
 const MANUFACTURER_COMING_SOON_TOOLTIP = (
   <>
-    준비 중입니다.
+    {SCREW_SUPPLY_MANUFACTURER_COMING_SOON_LINE_1}
     <br />
-    11월 중 제공 예정입니다.
+    {SCREW_SUPPLY_MANUFACTURER_COMING_SOON_LINE_2}
   </>
 );
 
@@ -51,15 +56,16 @@ export function ScrewSupplyHint({
   if (!manufacturerEnabled) {
     return (
       <>
-        <strong>어벗츠 정품</strong> 스크류가 기본입니다.
+        <strong>{SCREW_SUPPLY_ABUTS_OPTION_LABEL}</strong> 스크류가 기본입니다.
         <br />
-        <strong>{compatible}</strong> 스크류는 준비 중이며, 11월 중 제공 예정입니다.
+        <strong>{compatible}</strong> 스크류는 준비 중이며,{" "}
+        {SCREW_SUPPLY_MANUFACTURER_COMING_SOON_LINE_2}
       </>
     );
   }
   return (
     <>
-      <strong>어벗츠 정품</strong> 스크류가 기본입니다.
+      <strong>{SCREW_SUPPLY_ABUTS_OPTION_LABEL}</strong> 스크류가 기본입니다.
       <br />
       원하시면 <strong>{compatible}</strong> 스크류로 바뀝니다.
     </>
@@ -82,7 +88,7 @@ export function ScrewSupplyField({
     !manufacturerEnabled && rawSelected === "manufacturer" ? "abuts" : rawSelected;
   const makerLabel = String(manufacturerLabel || "").trim() || "제조사";
   const manufacturerCompatibleLabel = screwCompatiblePhrase(makerLabel);
-  const sectionTitle = `선택 사항 - 어벗츠 정품, ${manufacturerCompatibleLabel}`;
+  const sectionTitle = screwSupplySectionTitle(makerLabel);
   const manufacturerChoiceDisabled = disabled || !manufacturerEnabled;
 
   const manufacturerOption = (
@@ -157,7 +163,7 @@ export function ScrewSupplyField({
                 disabled && "cursor-default opacity-60",
               )}
             >
-              어벗츠 정품
+              {SCREW_SUPPLY_ABUTS_OPTION_LABEL}
             </Label>
           </div>
           {!manufacturerEnabled ? (
@@ -177,5 +183,27 @@ export function ScrewSupplyField({
         </RadioGroup>
       </div>
     </div>
+  );
+}
+
+type RequestScrewSupplySectionProps = Omit<
+  ScrewSupplyFieldProps,
+  "manufacturerEnabled"
+> & {
+  manufacturerEnabled?: boolean;
+};
+
+/** 의뢰자 — 3D 확인·기공의뢰수신 채팅. 제조사 호환은 기본 비활성. */
+export function RequestScrewSupplySection({
+  manufacturerEnabled = false,
+  className,
+  ...rest
+}: RequestScrewSupplySectionProps) {
+  return (
+    <ScrewSupplyField
+      {...rest}
+      manufacturerEnabled={manufacturerEnabled}
+      className={cn("w-full min-w-0", className)}
+    />
   );
 }

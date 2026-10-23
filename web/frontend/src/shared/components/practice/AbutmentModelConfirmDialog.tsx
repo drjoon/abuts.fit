@@ -53,7 +53,7 @@ import { NewRequestDesignAbutmentFields } from "@/pages/requestor/new_request/co
 import { NewRequestPatientImplantFields } from "@/pages/requestor/new_request/components/NewRequestPatientImplantFields";
 import { RetentionGrooveField } from "@/shared/components/practice/RetentionGrooveField";
 import { AnodizingField } from "@/shared/components/practice/AnodizingField";
-import { ScrewSupplyField } from "@/shared/components/practice/ScrewSupplyField";
+import { RequestScrewSupplySection } from "@/shared/components/practice/ScrewSupplyField";
 import {
   screwManufacturerLabel,
   type ScrewSupply,
@@ -976,7 +976,7 @@ export function AbutmentModelConfirmDialog({
                         idPrefix={`${retentionIdPrefix}-ano`}
                       />
 
-                      <ScrewSupplyField
+                      <RequestScrewSupplySection
                         value={
                           detailCaseInfos?.screwSupply === "manufacturer"
                             ? "manufacturer"

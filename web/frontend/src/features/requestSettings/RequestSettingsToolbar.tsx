@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 //
 // history:
+// - 2026-10-23: 스크류는 RequestScrewSupplySection으로 SW·아노 아래 항상 노출(팝오버 밖).
 // - 2026-09-30: 채팅 작업 줄은 설정 아이콘 하나에 SW·아노를 넣고 맨 왼쪽에 둔다.
 // - 2026-09-14: 모바일·좁은 폭 — 아이콘 우선(라벨은 sm+). 디자인SW·아노다이징 아이콘.
 // - 2026-09-14: 버튼 라벨을 선택된 SW명으로 다시 표시(미설정 시 「디자인SW」).
@@ -13,7 +14,7 @@ import { Droplets, Monitor, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/shared/ui/cn";
-import { ScrewSupplyField } from "@/shared/components/practice/ScrewSupplyField";
+import { RequestScrewSupplySection } from "@/shared/components/practice/ScrewSupplyField";
 import type { ScrewSupply } from "@/shared/practice/screwSupply";
 
 type RequestSettingsToolbarProps = {
@@ -117,7 +118,30 @@ export function RequestSettingsToolbar({
     </>
   );
 
+  const screwSection = onScrewSupplyChange ? (
+    <RequestScrewSupplySection
+      value={screwSupply}
+      manufacturerLabel={screwManufacturerLabel}
+      disabled={screwSaving}
+      idPrefix="chat-screw"
+      onChange={onScrewSupplyChange}
+    />
+  ) : null;
+
   if (menu) {
+    if (screwSection) {
+      return (
+        <div
+          className={cn(
+            "flex w-full min-w-0 basis-full flex-col gap-1.5 sm:basis-auto",
+            className,
+          )}
+        >
+          <div className="flex flex-wrap items-center gap-1.5">{controls}</div>
+          {screwSection}
+        </div>
+      );
+    }
     return (
       <Popover>
         <PopoverTrigger asChild>
@@ -127,25 +151,13 @@ export function RequestSettingsToolbar({
             size="sm"
             className="h-8 w-8 shrink-0 px-0"
             aria-label="설정"
-            title="디자인 소프트웨어 · 아노다이징 · 스크류"
+            title="디자인 소프트웨어 · 아노다이징"
           >
             <Settings className="h-4 w-4" />
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="z-[360] w-auto p-2">
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-1.5">{controls}</div>
-            {onScrewSupplyChange ? (
-              <ScrewSupplyField
-                value={screwSupply}
-                manufacturerLabel={screwManufacturerLabel}
-                disabled={screwSaving}
-                idPrefix="chat-screw"
-                className="border-0 bg-transparent px-0.5 py-0.5"
-                onChange={onScrewSupplyChange}
-              />
-            ) : null}
-          </div>
+          <div className="flex items-center gap-1.5">{controls}</div>
         </PopoverContent>
       </Popover>
     );

@@ -221,3 +221,13 @@ export function screwCompatiblePhrase(manufacturerLabel: string): string {
   if (name === "제조사") return "제조사 호환";
   return `${name} 호환`;
 }
+
+/** 의뢰자 스크류 선택 — 어벗츠 라디오·섹션 제목 SSOT */
+export const SCREW_SUPPLY_ABUTS_OPTION_LABEL = "어벗츠 정품";
+
+export function screwSupplySectionTitle(manufacturerLabel: string): string {
+  return `선택 사항 - ${SCREW_SUPPLY_ABUTS_OPTION_LABEL}, ${screwCompatiblePhrase(manufacturerLabel)}`;
+}
+
+export const SCREW_SUPPLY_MANUFACTURER_COMING_SOON_LINE_1 = "준비 중입니다.";
+export const SCREW_SUPPLY_MANUFACTURER_COMING_SOON_LINE_2 = "11월 중 제공 예정입니다.";
