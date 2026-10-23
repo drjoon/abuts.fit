@@ -43,6 +43,9 @@ const OUTLIER_SEGMENT_RATIO = 2.8;
 const OUTLIER_SEGMENT_ABS_MM = 2.0;
 const OUTLIER_DZ_RATIO = 4.0;
 const OUTLIER_DZ_ABS_MM = 1.5;
+/** 단면 입술의 잔물결. 양옆 두 점(약 9°)을 두 번 섞는다. */
+const SECTION_LOOP_SMOOTH_HALF = 2;
+const SECTION_LOOP_SMOOTH_PASSES = 2;
 const EDGE_CANDIDATE_MAX_COUNT = 20;
 const EDGE_CANDIDATE_MIN_VERT_RATIO = 0.03;
 const EDGE_CANDIDATE_MIN_VERT_ABS = 40;
@@ -864,6 +867,43 @@ function extractLowestBoundaryLoopPoints(mesh, refPt0, refPt0Radius) {
   return validateFinishlinePoints(pts)[0] ? pts : null;
 }
 
+/**
+ * 단면마다 고른 마진 높이가 수직 벽의 미세한 요철을 따라 들쭉날쭉하다.
+ * 둘레의 이웃 점만 섞어 그 잔물결을 없애고, 치아를 한 바퀴 도는 스캘럽은 남긴다.
+ * 모서리(edge) 전략 결과는 Rhino와 맞추므로 여기 넣지 않는다.
+ */
+export function smoothFinishlineLoop(points) {
+  if (!points || points.length < 8) return points;
+  const core = points.map((p) => p.slice());
+  const closed = dist3(core[0], core[core.length - 1]) <= 1e-4;
+  if (closed) core.pop();
+  if (core.length < 8) return points;
+  const n = core.length;
+  const half = SECTION_LOOP_SMOOTH_HALF;
+  let cur = core;
+  for (let pass = 0; pass < SECTION_LOOP_SMOOTH_PASSES; pass += 1) {
+    const nxt = cur.map((p) => p.slice());
+    for (let i = 0; i < n; i += 1) {
+      let x = 0;
+      let y = 0;
+      let z = 0;
+      let w = 0;
+      for (let k = -half; k <= half; k += 1) {
+        const wk = half + 1 - Math.abs(k);
+        const q = cur[(i + k + n) % n];
+        x += wk * q[0];
+        y += wk * q[1];
+        z += wk * q[2];
+        w += wk;
+      }
+      nxt[i] = [x / w, y / w, z / w];
+    }
+    cur = nxt;
+  }
+  if (closed) cur.push(cur[0].slice());
+  return cur;
+}
+
 function explicitSectionAxis(axis) {
   if (!Array.isArray(axis) || axis.length < 3) return null;
   let dir = normalize(axis.slice(0, 3));
@@ -901,10 +941,11 @@ export function detectFinishLine(mesh, { log = () => {}, axis = null } = {}) {
     if (!sectionPts || sectionPts.length < 3) {
       const legacy = extractLowestBoundaryLoopPoints(mesh, pt0, pt0Radius);
       if (legacy) {
-        traced = legacy;
+        traced = smoothFinishlineLoop(legacy);
         strategy = "LEGACY_LOWEST_BOUNDARY";
       } else strategy = "SECTION_FAILED";
     } else {
+      sectionPts = smoothFinishlineLoop(sectionPts);
       const [accepted, ok] = acceptOrNormalize(sectionPts, true, log, "section result");
       if (ok) {
         traced = accepted;
