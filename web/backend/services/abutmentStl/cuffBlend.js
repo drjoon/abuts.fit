@@ -9,10 +9,12 @@
 // - auto: 커넥션 상단 Z_a ~ 단차가 끝난 Z_b 사이를 곡률까지 이어지는(G2) 곡면으로 교체
 // - redesign(Re): 70°보다 누운(접시형) 커프를 피니시라인-0.2mm ~ Z_a 사이 G2 곡면으로 교체(의뢰자 제안·제조사 Re 버튼)
 // 제조사 커넥션(Z_a 아래)과 피니시라인 아래 0.2mm 위쪽은 정점 하나도 옮기지 않는다.
+// Z_a 위 CONNECTION_TAPER_EXTEND_MM(0.15mm)는 11° 원뿔 그대로다. 이음 곡선은 그 위에서 G2로 출발한다.
+// 그 띠를 원뿔보다 크게 두면 단차가 생기고, 작게(언더) 두면 finish back이 BackPointX(커넥션 직상방)를 침범한다.
 import { parseStl, writeBinaryStl } from "../../utils/screwHoleFill.js";
 import { TAPER_SLOPE, taperTopDiameterOf, CUFF_CONNECTION_SPECS } from "./cuffConnectionSpecs.js";
 
-export const CUFF_BLEND_VERSION = "cuff-blend-1";
+export const CUFF_BLEND_VERSION = "cuff-blend-2";
 /** 이 attribute의 삼각형은 커프 보정 곡면이다. */
 export const CUFF_BLEND_PATCH_ATTRIBUTE = 0x4342;
 
@@ -94,6 +96,13 @@ const AUTO_BELOW_SLOPE_TOL = 0.05;
 const PROFILE_MAX_SLOPE = Math.tan((67 * Math.PI) / 180);
 /** 70° 이하 맞춤을 위한 볼록 변형은 원뿔 끝(Z_a) 상방 이 높이(mm) 아래로는 적용하지 않는다. */
 const CUFF_DEFORM_MIN_ABOVE_ZA_MM = 0.02;
+/**
+ * 커넥션 상단(Z_a) 위로 11° 원뿔을 이만큼 더 올린 뒤 커프 이음을 시작한다.
+ * 이 구간은 finish back이 깎는다. 원뿔보다 크면 단차, 작으면 BackPointX 침범.
+ */
+export const CONNECTION_TAPER_EXTEND_MM = 0.15;
+/** 원뿔 연장 뒤에 커프 이음이 남을 최소 높이. 그보다 짧으면 연장을 0.1mm까지 줄이고, 그것도 안 되면 두지 않는다. */
+const TAPER_EXTEND_MIN_REMAIN_MM = 0.08;
 /** Z=0.3부터 볼록 변형 곡선으로 넘어가는 높이(mm). 넘어가기는 열 높이의 이 비율(t) 안에서 끝나고, 이보다 짧으면 넘어가지 않는다. 짧게 넘어가면 넘어가는 끝에서 기울기가 70°를 넘쳤다가 다시 눕는다. */
 const CUFF_DEFORM_RAMP_MM = 0.4;
 const CUFF_DEFORM_RAMP_MAX_T = 1;
@@ -592,6 +601,44 @@ export function resolveConnectionTop(taper, spec, specKey) {
 
 // ---------------------------------------------------------------------------
 // 프로파일
+
+/** 원뿔 연장 위 이음의 직선 기울기 상한. 이보다 가파르면 성형 뒤 70°를 넘기므로 연장을 줄인다. */
+const TAPER_EXTEND_MEAN_SLOPE = Math.tan((62 * Math.PI) / 180);
+
+/**
+ * 띠가 짧거나 위 끝 반경이 원뿔 연장보다 작으면 0.1mm까지 줄인다.
+ * 이음이 0.08mm도 안 남거나, 남은 구간이 62°보다 가파르거나, 반경 여유가 0.1mm 치도 안 되면 원뿔을 더 올리지 않는다.
+ */
+export function taperExtendMm(minBandHeight, radialRoom = Infinity, slope = TAPER_SLOPE) {
+  if (!(minBandHeight > 0)) return 0;
+  const room = minBandHeight - TAPER_EXTEND_MIN_REMAIN_MM;
+  if (room < 0.1) return 0;
+  let extend = Math.min(CONNECTION_TAPER_EXTEND_MM, room);
+  if (slope > 1e-6 && Number.isFinite(radialRoom)) {
+    const radialCap = (radialRoom - 0.02) / slope;
+    if (!(radialCap >= 0.1)) return 0;
+    extend = Math.min(extend, radialCap);
+    const denom = TAPER_EXTEND_MEAN_SLOPE - slope;
+    const bySlope = denom > 0 ? (TAPER_EXTEND_MEAN_SLOPE * minBandHeight - radialRoom) / denom : 0;
+    if (!(bySlope >= 0.1)) return 0;
+    extend = Math.min(extend, bySlope);
+  }
+  return extend;
+}
+
+/**
+ * t∈[0,1]은 Z_a→위 끝. 아래 extendMm은 r = ra + slope·z 인 11° 원뿔이고, 그 위는 fnUpper(t')다.
+ * fnUpper(0)은 원뿔 끝 반경(ra + slope·extend)이어야 한다.
+ */
+function withConeLead(fnUpper, h, extend, ra, slope) {
+  if (!(extend > 0) || !(h > extend + 1e-6)) return fnUpper;
+  const hb = h - extend;
+  return (t) => {
+    const z = Math.max(0, Math.min(1, t)) * h;
+    if (z <= extend) return ra + slope * z;
+    return fnUpper((z - extend) / hb);
+  };
+}
 
 /** 5차 Hermite: 양끝 값·1차·2차 미분을 맞춘다(G2). */
 function quinticHermite(p0, v0, a0, p1, v1, a1, h) {
@@ -2192,6 +2239,7 @@ function replaceBand(
     seamOrigScale = null,
     seamBlendScale = seamOrigScale,
     convexCuffDeform = false,
+    coneLeadMm = 0,
   },
 ) {
   let cut = splitByLevel(mesh, (x, y, z) => z - zA);
@@ -2351,17 +2399,27 @@ function replaceBand(
   const maxHeight = Math.max(...heights);
   const seamDepth = origProbe ? Math.min(SEAM_BLEND_DEPTH_MM, minHeight / 2) : 0;
   const tEnd = origProbe ? 1 - (seamDepth + ROW_PITCH_MM) / minHeight : 1 - ROW_PITCH_MM / maxHeight;
-  for (const t of adaptiveRowTs(radiusAt, heights, tEnd)) {
+  // 원뿔 연장 끝에 행을 둔다. 곧은 11° 구간은 행 간격이 0.2mm라, 없으면 첫 면이 이음 곡선(언더)까지 한 장으로 건너뛴다.
+  const ts = adaptiveRowTs(radiusAt, heights, tEnd);
+  if (coneLeadMm > 0 && minHeight > coneLeadMm + 1e-6) {
+    const extra = [coneLeadMm / maxHeight, coneLeadMm / minHeight].filter((t) => t > 1e-4 && t < tEnd - 1e-4);
+    for (const t of extra) {
+      if (!ts.some((u) => Math.abs(u - t) < 1e-4)) ts.push(t);
+    }
+    ts.sort((a, b) => a - b);
+  }
+  for (const t of ts) {
     const raw = Array.from({ length: STRIP_COLUMNS }, (_, j) => radiusAt(j, t));
     const avg = circularSmooth(raw, BAND_SMOOTH_HALF_COLUMNS);
     const rad = new Float64Array(STRIP_COLUMNS);
     const z = new Float64Array(STRIP_COLUMNS);
     for (let j = 0; j < STRIP_COLUMNS; j += 1) {
       const scale = seamOrigScale ? seamOrigScale[j] : 1;
-      const keep = convexCuffDeform ? 1 : 1 - (1 - bandSmoothKeep(t, heights[j])) * scale;
+      const onLead = coneLeadMm > 0 && t * heights[j] <= coneLeadMm + 1e-6;
+      const keep = onLead || convexCuffDeform ? 1 : 1 - (1 - bandSmoothKeep(t, heights[j])) * scale;
       const zj = zA + t * (heights[j] * keep + smoothHeights[j] * (1 - keep));
       const uChord = Math.min(1, Math.max(0, (zj - zA) / BOTTOM_CHORD_BLEND_MM));
-      const wChord = (1 - uChord) ** 3 * (1 + 3 * uChord);
+      const wChord = onLead ? 0 : (1 - uChord) ** 3 * (1 + 3 * uChord);
       rad[j] = raw[j] * keep + avg[j] * (1 - keep) + bottomChordOffset[j] * wChord;
       z[j] = zj;
     }
@@ -2398,11 +2456,14 @@ function replaceBand(
   // 열마다 원본 자오선을 읽어 두고, 새 꼭짓점 반경이 그 높이의 원본 반경을 넘으면(1µm 여유) 끌어내린다.
   // 아래 경계(원뿔 위)·위 경계(마진 모서리)는 원본 꼭짓점 그대로라 건드리지 않는다.
   // 예외: 낮은 마진의 볼록 변형(convexCuffDeform)은 커프 아래를 70° 이하로 만들려고 일부러 부풀리는 동작이라 그대로 둔다.
+  // 예외: Z_a 위 11° 연장(coneLeadMm)은 finish back이 깎는 원뿔이라, 원본이 언더여도 원뿔 반경을 유지한다.
   if (origProbe && !convexCuffDeform && grid.length) {
     const meridians = meshColumns.map((j) => origProbe.meridian(thetas[j], zA, topZOf(thetas[j])));
+    const leadTopZ = zA + (coneLeadMm > 0 ? coneLeadMm : 0);
     for (const row of grid) {
       for (let c = 0; c < row.length; c += 1) {
         const vi = row[c].v * 3;
+        if (coneLeadMm > 0 && verts[vi + 2] <= leadTopZ + 1e-4) continue;
         const x = verts[vi];
         const y = verts[vi + 1];
         const r = Math.hypot(x, y);
@@ -2827,6 +2888,13 @@ export function blendCuffJunction(buffer, options = {}) {
     })()
       : null;
     const coneSlope = Number.isFinite(taper.slope) ? taper.slope : TAPER_SLOPE;
+    // Z_a 위 0.15mm는 11° 원뿔 그대로 두고, 이음 곡선은 그 끝에서 G2로 출발한다.
+    // 낮은 마진 볼록 변형은 띠가 이미 70° 한계라 여기서 높이를 빼지 않는다.
+    const extendMm = convexCuffDeform
+      ? 0
+      : taperExtendMm(Math.min(...hs), Math.min(...tops.map((t) => t.r)) - ra, coneSlope);
+    const raLead = ra + coneSlope * extendMm;
+    const hsLead = hs.map((h) => h - extendMm);
     // 기본 오목 프로파일의 끝 기울기가 원본 상부보다 가파르면(예: 55° vs 36°) 마진 아래 이음에서 원본으로 되돌아가며 오목 골이 생긴다.
     // 중간에서 별도 곡선을 이어 붙이면 곡률(2차 미분) 불연속으로 희미한 가로 경계가 보이므로,
     // 하나의 4차 베지어 곡선 안에서 위 끝 제어점 비중만 살짝 낮춰(relax) 하부 오목에서 상부 약한 볼록으로 경계 없이(C∞) 이어지게 한다.
@@ -2834,8 +2902,8 @@ export function blendCuffJunction(buffer, options = {}) {
       tops.map((_, j) => {
         if (convexCuffDeform || !belowSlopes) return 0;
         const rTop = smoothCreaseR ? smoothCreaseR[j] : belowR[j];
-        const hb = hs[j];
-        const d = rTop - ra;
+        const hb = hsLead[j];
+        const d = rTop - raLead;
         const m0 = Math.max(0, Math.min(coneSlope * hb, d - CONCAVE_MARGIN * hb));
         const d0 = m0 / 4;
         const d1 = d0 * BEZIER_DIP;
@@ -2860,7 +2928,7 @@ export function blendCuffJunction(buffer, options = {}) {
       return smoothCreaseR[j] * w + Math.max(r, smoothCreaseR[j]) * (1 - w);
     });
     const legacyConcaveOf = (rTop, eSlope, hb, relax = 0) => {
-      const d = rTop - ra;
+      const d = rTop - raLead;
       const m0 = Math.max(0, Math.min(coneSlope * hb, d - CONCAVE_MARGIN * hb));
       const eTarget = eSlope != null ? eSlope * hb : END_SLOPE_BOOST * (2 * d - m0);
       // m0가 d−여유 로 잘리면 d < m0+여유 가 1ulp 로 참이 되어, 높은 마진 열을 통째로 버린다.
@@ -2874,7 +2942,7 @@ export function blendCuffJunction(buffer, options = {}) {
       e = Math.max(minE, Math.min(4 * (rest - d1), e));
       const d3 = e / 4;
       const d2 = rest - d3;
-      const c = [ra, ra + d0, ra + d0 + d1, ra + d0 + d1 + d2, rTop];
+      const c = [raLead, raLead + d0, raLead + d0 + d1, raLead + d0 + d1 + d2, rTop];
       return (t) => {
         const u = 1 - t;
         return (
@@ -2886,18 +2954,18 @@ export function blendCuffJunction(buffer, options = {}) {
       if (!convexCuffDeform) {
         const fn = legacyConcaveOf(rTop, eSlope, hb, relax);
         if (!fn) {
-          const dR = rTop - ra;
+          const dR = rTop - raLead;
           const m0 = Math.max(0, Math.min(coneSlope * hb, dR - CONCAVE_MARGIN * hb));
-          return { fn: concaveBridgeProfile(ra, m0, rTop, hb), endSlope: NaN };
+          return { fn: concaveBridgeProfile(raLead, m0, rTop, hb), endSlope: NaN };
         }
         return { fn, endSlope: NaN };
       }
-      const dR = rTop - ra;
+      const dR = rTop - raLead;
       // 반경 차가 작으면 출발 기울기를 줄여 범위를 벗어나지 않게 한다.
       const m0 = Math.max(0, Math.min(coneSlope * hb, dR - CONCAVE_MARGIN * hb));
       const eTarget = eSlope != null ? eSlope * hb : END_SLOPE_BOOST * (2 * dR - m0);
-      const p = concaveHermiteProfile(ra, m0, rTop, eTarget, hb);
-      if (!p) return { fn: concaveBridgeProfile(ra, m0, rTop, hb), endSlope: NaN };
+      const p = concaveHermiteProfile(raLead, m0, rTop, eTarget, hb);
+      if (!p) return { fn: concaveBridgeProfile(raLead, m0, rTop, hb), endSlope: NaN };
       // 원뿔 끝(Z_a) 상방 CUFF_DEFORM_MIN_ABOVE_ZA_MM(0.02mm) 아래로는 70° 이하 볼록 변형을 적용하지 않고 11° 오목 진입을 유지한다(floorBase, 공구 반경 보정 뒤 withDeformFloor).
       const floorBase = legacyConcaveOf(rTopBase, eSlope, hb);
       const floorOn = Boolean(floorBase) && (p.convexDeformed || scaleOrig < 1 - 1e-3);
@@ -2924,7 +2992,7 @@ export function blendCuffJunction(buffer, options = {}) {
         r1s[j],
         belowR[j],
         belowSlopes ? belowSlopes[j] : null,
-        hs[j],
+        hsLead[j],
         seamOrigScale ? seamOrigScale[j] : 1,
         0.1 * tailWeights[j],
       ),
@@ -2938,14 +3006,15 @@ export function blendCuffJunction(buffer, options = {}) {
       : null;
     const enforcedProfiles = enforceMinToolRadiusOnProfiles(
       smoothProfilesAcrossColumns(bowls.map((b) => b.fn)),
-      hs,
-      zA,
+      hsLead,
+      zA + extendMm,
       false,
       tailWeights,
     );
-    const profiles = floorKeep
-      ? enforcedProfiles.map((fn, j) => withDeformFloor(fn, bowls[j].floorBase, floorKeep[j], hs[j]))
+    const blendProfiles = floorKeep
+      ? enforcedProfiles.map((fn, j) => withDeformFloor(fn, bowls[j].floorBase, floorKeep[j], hsLead[j]))
       : enforcedProfiles;
+    const profiles = blendProfiles.map((fn, j) => withConeLead(fn, hs[j], extendMm, ra, coneSlope));
     let maxSlope = 0;
     let maxExcess = 0;
     let minWall = Infinity;
@@ -2989,8 +3058,9 @@ export function blendCuffJunction(buffer, options = {}) {
       seamOrigScale,
       seamBlendScale: finalSeamOrigScale,
       convexCuffDeform,
+      coneLeadMm: extendMm,
     });
-      return { out, zTopMax, maxSlope };
+      return { out, zTopMax, maxSlope, extendMm };
     };
     // 메시 모서리를 선형으로 자르면 곡선 경계가 수 µm 어긋난다. 새 꼭짓점이 피니시라인과 최소 여유를 갖도록 확인하고, 모자라면 띠 위 끝을 더 내려 한 번 다시 만든다(2번 안에 안 되면 manual-review).
     // 마진 모서리를 찾으면 이음 위 끝을 그 모서리 꼭짓점에 그대로 붙인다(모서리를 자르지 않아 선이 하나만 남는다). 새 꼭짓점은 모서리 아래 첫 행부터다.
@@ -3006,7 +3076,7 @@ export function blendCuffJunction(buffer, options = {}) {
     if (clearance < minClearanceFor(offsetMm)) {
       fail("manual-review", "이음 곡면이 피니시라인과 너무 가까워 적용하지 않았습니다.", { clearanceMm: round3(clearance) });
     }
-    const { out, zTopMax, maxSlope } = built;
+    const { out, zTopMax, maxSlope, extendMm } = built;
     return {
       ok: true,
       status: "applied",
@@ -3023,6 +3093,7 @@ export function blendCuffJunction(buffer, options = {}) {
         finishLineClearanceMm: round3(clearance),
         measuredTaperTopZ: round3(taper.measuredTopZ),
         originDiameter: round3(taper.originDiameter),
+        taperExtendMm: round3(extendMm),
         maxAngleDeg: round3((Math.atan(maxSlope) * 180) / Math.PI),
         removedTriangles: out.removedTriangles,
         strippedFinTriangles: fins.stripped,
@@ -3103,8 +3174,12 @@ function planCuffRedesign(buffer, options) {
     (k) => angularLowPass(rawTops.map((t) => t[k])) || rawTops.map((t) => t[k]),
   );
   const tops = rawTops.map((_, j) => ({ r: topR[j], slope: topSlope[j], curvature: topCurvature[j] }));
+  const coneSlope = Number.isFinite(taper.slope) ? taper.slope : TAPER_SLOPE;
+  const extendMm = taperExtendMm(Math.min(...topZ) - zA, Math.min(...tops.map((t) => t.r)) - ra, coneSlope);
   const profiles = tops.map((t, j) => {
     const h = topZ[j] - zA;
+    const hb = h - extendMm;
+    const raLead = ra + coneSlope * extendMm;
     const gentle = Math.abs(t.slope) <= flatSlope;
     let slope = gentle ? t.slope : Math.sign(t.slope || 1) * flatSlope;
     // 실험용: 위 끝에서 안쪽으로 접히는 커프(slope<0)는 곡선이 부풀지 않게 수직(0)으로 붙인다.
@@ -3112,7 +3187,8 @@ function planCuffRedesign(buffer, options) {
     const curvature = gentle && !(options.monotonicEnd && t.slope < 0) ? clampCurvature(t.curvature) : 0;
     // 띠가 길면 위 끝 곡률 항(c·h²)이 곡선을 부풀린다. 범위를 벗어나면 곡률을 반씩 줄여 본다(0이면 G1).
     for (const scale of [1, 0.5, 0.25, 0]) {
-      const fn = quinticHermite(ra, TAPER_SLOPE, 0, t.r, slope, curvature * scale, h);
+      const upper = quinticHermite(raLead, coneSlope, 0, t.r, slope, curvature * scale, hb);
+      const fn = withConeLead(upper, h, extendMm, ra, coneSlope);
       let worst = 0;
       let low = Infinity;
       let inRange = true;
@@ -3170,6 +3246,7 @@ function planCuffRedesign(buffer, options) {
     mesh,
     zA,
     ra,
+    extendMm,
     flZ,
     flProtect,
     topZ,
@@ -3182,6 +3259,7 @@ function planCuffRedesign(buffer, options) {
       zB: round3(Math.min(...topZ)),
       measuredTaperTopZ: round3(taper.measuredTopZ),
       originDiameter: round3(taper.originDiameter),
+      taperExtendMm: round3(extendMm),
       maxAngleDeg: round3(maxDeg),
       maxCuffAngleDegBefore: round3(flatDeg),
     },
@@ -3215,6 +3293,7 @@ export function redesignCuffBowl(buffer, options = {}) {
       topZOf: (theta) => plan.flZ(theta) - plan.flProtect,
       radiusAt: (j, t) => plan.profiles[j].fn(t),
       rCut: plan.rCut,
+      coneLeadMm: plan.extendMm,
     });
     return {
       ok: true,
