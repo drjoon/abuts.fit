@@ -133,7 +133,7 @@ describe("evaluateAutoMachiningGate", () => {
     expect(inside("2026-09-11T02:08:03.682Z")).toBe(false);
     expect(inside("2026-09-02T11:58:28.005Z")).toBe(false);
   });
-  it("마진 fillet R<공구 R 보정 솔리드는 보류", () => {
+  it("마진 fillet만 약한 건은 보류하지 않는다", () => {
     const r = evaluateAutoMachiningGate(
       okRequest({
         tightCorner: {
@@ -142,8 +142,8 @@ describe("evaluateAutoMachiningGate", () => {
         },
       }),
     );
-    expect(r.verdict).toBe("hold");
-    expect(r.reasons).toContain("tight_corner_correction");
+    expect(r.reasons).not.toContain("tight_corner_correction");
+    expect(r.verdict).toBe("approved");
   });
   it("의뢰자가 0.50mm 과삭제를 허용하면 타이트 코너만으로 보류하지 않는다", () => {
     const r = evaluateAutoMachiningGate(

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 마진 필레 경고는 깊게 패일 수 있음·반경 0.5mm 재디자인 권고.
 // - 2026-10-22: tight 도크 — OK와 같이 2줄·한 줄 배치. fillet R은 경고 문구 왼쪽.
 // - 2026-10-22: 신규의뢰 3D 확인 — fillet R·경고를 하단 도크 한 장으로 통합.
 // - 2026-10-22: tight는 코너 표시와 깊게 패일 수 있다는 경고만. 원본은 고치지 않는다.
@@ -91,9 +92,9 @@ export function StlMachiningPreflightNotice({
             </div>
           ) : null}
           <p className="min-w-0 flex-1 leading-snug text-rose-900/90">
-            코너가 공구보다 좁아요
+            마진 코너가 깊게 패입니다.
             <br />
-            그 부위가 깊게 패일 수 있습니다.
+            반경 0.5mm 이상으로 둥글게 디자인해 주세요.
           </p>
         </div>
       </div>

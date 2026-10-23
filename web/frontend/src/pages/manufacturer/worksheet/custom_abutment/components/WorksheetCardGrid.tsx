@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 마진 필레만 약한 건은 불완전 뱃지에서 뺀다. 업로드 때 고지하고 동의 후 진행한다.
 // - 2026-10-23: 불완전 뱃지 툴팁을 프리뷰와 같은 사유 문장으로 맞춘다.
 // - 2026-10-21: 짧은 커프 경고는 50건 통과·실패 0 전까지 유지한다.
 // - 2026-10-21: 준비 카드 JS 실패는 뱃지와 함께 사유 문구를 본문에 남긴다.
@@ -91,7 +92,6 @@ import {
 } from "../utils/hexRotation";
 import { isFinishLineDefective } from "../utils/finishLineQuality";
 import { incompleteMachiningReasonLines } from "../utils/incompleteMachiningReason";
-import { isTightCornerCorrectionRequired } from "../utils/tightCornerReview";
 import {
   LOW_FINISH_LINE_Z_MM,
   useLowFinishLineWarning,
@@ -397,9 +397,6 @@ export const WorksheetCardGrid = ({
         const isFinishLineCaptureBad = isFinishLineDefective(
           (caseInfos as any)?.finishLine?.points,
         );
-        const isTightCornerCorrectionNeeded = isTightCornerCorrectionRequired(
-          (caseInfos as any)?.tightCorner,
-        );
         const filletOvercutAllowedByRequestor =
           (caseInfos as { filletOvercutAllowed?: boolean })?.filletOvercutAllowed ===
           true;
@@ -522,15 +519,10 @@ export const WorksheetCardGrid = ({
           !showLatestContinueBadge &&
           !rhinoWorkPending &&
           (isFinishLineMinZRisky ||
-            isTightCornerCorrectionNeeded ||
             isUnmachinableSample ||
             isFinishLineCaptureBad);
         const showCuffReviewBadge = isCuffManualReview && !rhinoWorkPending;
-        const requestorAllowedTightCorner =
-          filletOvercutAllowedByRequestor && isTightCornerCorrectionNeeded;
-        const incompleteMachiningBadgeLabel = requestorAllowedTightCorner
-          ? "불완전. 의뢰자 컨펌"
-          : "불완전";
+        const incompleteMachiningBadgeLabel = "불완전";
         const incompleteMachiningBadgeTitle =
           incompleteMachiningReasonLines({
             tightCorner: (caseInfos as any)?.tightCorner,

@@ -169,18 +169,13 @@ function renderMachiningPreflightBadge(
 ) {
   if (!preflight) return null;
   if (preflight.status === "tight") {
-    const toolR =
-      typeof preflight.toolRadiusMm === "number" && preflight.toolRadiusMm > 0
-        ? preflight.toolRadiusMm
-        : 0.5;
-    const rLabel = toolR.toFixed(2).replace(/(\.\d)0$/, "$1");
     return (
       <div onClick={(event) => event.stopPropagation()}>
         <Badge
           variant="secondary"
           className="bg-destructive-soft px-1.5 py-0.5 text-[10px] font-semibold text-destructive"
         >
-          {`불완전 가공 · R ${rLabel}mm 미만`}
+          마진 코너가 깊게 패입니다
         </Badge>
       </div>
     );

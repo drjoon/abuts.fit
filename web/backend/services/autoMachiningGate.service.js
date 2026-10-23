@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js (autoMachiningReview)
 // - web/backend/controllers/requests/common.review.controller.js (updateReviewStatusByStage)
 // change-log:
+// - 2026-10-24: 마진 필레만 약한 건은 보류하지 않는다. 업로드 때 고지하고 동의 후 진행한다.
 // - 2026-10-14: 제외 의뢰자(excludedRequestorAnchorIds)는 자동 승인하지 않는다. 작업자 수동 승인은 그대로다.
 // - 2026-10-10: 자동 승인을 켠 뒤 30초 유예 동안은 준비→가공 승인을 하지 않는다.
 // - 2026-10-09: 섀도 모드 제거. 스위치가 켜지면 통과 건을 바로 승인한다(장비별 자동 가공 OFF는 그 장비만 제외).
@@ -29,7 +30,6 @@ import {
 } from "../utils/testAccountMachining.js";
 import { updateReviewStatusByStage } from "../controllers/requests/common.review.controller.js";
 import { isAutoStartGraceActive } from "./autoStartGrace.js";
-import { isTightCornerCorrectionRequired } from "../utils/tightCornerReview.js";
 
 function anchorIdOf(request) {
   const raw = request?.businessAnchorId;
@@ -144,13 +144,7 @@ export function evaluateAutoMachiningGate(request, cfg = AUTO_GATE_DEFAULTS) {
   const minZ = num(ci.finishLine?.min_z);
   if (minZ != null && minZ < cfg.minFinishLineZ) reasons.push("finishline_low_z");
 
-  // 마진 fillet R < φ1.2 볼(R0.6). 의뢰자가 0.50mm 이상 과삭제를 허용하면 자동 승인한다.
-  if (
-    isTightCornerCorrectionRequired(ci.tightCorner) &&
-    ci.filletOvercutAllowed !== true
-  ) {
-    reasons.push("tight_corner_correction");
-  }
+  // 마진 필레만 약한 건은 보류하지 않는다. 업로드 때 깊게 패일 수 있음을 고지하고 동의 후 진행한다.
 
   // 이미 기록된 커프 상태(검출 못 하는 미가공과 별개로 모델이 남긴 신호만 사용)
   const cuff = String(ci.cuffBlend?.status || "").trim();

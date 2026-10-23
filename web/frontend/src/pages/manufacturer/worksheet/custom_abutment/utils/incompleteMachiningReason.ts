@@ -87,7 +87,6 @@ export type IncompleteMachiningReasonCard = {
 
 function tightCornerCard(
   tightCorner: IncompleteMachiningTightCorner,
-  filletOvercutAllowed: boolean,
 ): IncompleteMachiningReasonCard {
   const tool = toolRadiusMm(tightCorner.toolDiameterMm);
   const average = finite(tightCorner.averageFilletRadiusMm);
@@ -102,19 +101,12 @@ function tightCornerCard(
     stats.push({ label: "좁은 구간", value: `${Math.round(count)}곳` });
   }
 
-  if (filletOvercutAllowed) {
-    return {
-      stats,
-      notes: [
-        "의뢰자가 평균 반경 0.50mm 이상 과삭제를 허용했습니다.",
-        "자동 승인됩니다.",
-      ],
-    };
-  }
-
   return {
     stats,
-    notes: ["그 부위가 깊게 패일 수 있습니다."],
+    notes: [
+      "마진 코너가 깊게 패입니다.",
+      "반경 0.5mm 이상으로 둥글게 디자인해 주세요.",
+    ],
   };
 }
 
@@ -123,7 +115,6 @@ function tightCornerLines(card: IncompleteMachiningReasonCard): string[] {
   const tool = card.stats.find((stat) => stat.label === "공구 R");
   const narrowest = card.stats.find((stat) => stat.label === "가장 좁음");
   const count = card.stats.find((stat) => stat.label === "좁은 구간");
-  if (card.notes.some((note) => note.startsWith("의뢰자가"))) return card.notes;
   const lines: string[] = [];
   if (average && tool) {
     lines.push(`마진 fillet 평균 ${average.value}가 공구 R ${tool.value}보다 작습니다.`);
@@ -149,7 +140,7 @@ export function incompleteMachiningReasonCard(input: {
   const notes: string[] = [];
   const tight = isTightCornerCorrectionRequired(input.tightCorner);
   if (tight && input.tightCorner) {
-    const tightCard = tightCornerCard(input.tightCorner, input.filletOvercutAllowed === true);
+    const tightCard = tightCornerCard(input.tightCorner);
     stats.push(...tightCard.stats);
     notes.push(...tightCard.notes);
   }
