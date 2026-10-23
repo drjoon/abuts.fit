@@ -2242,7 +2242,6 @@ function replaceBand(
     seamBlendScale = seamOrigScale,
     convexCuffDeform = false,
     coneLeadMm = 0,
-    coneSlope = 0,
   },
 ) {
   let cut = splitByLevel(mesh, (x, y, z) => z - zA);
@@ -2481,17 +2480,10 @@ function replaceBand(
   if (origProbe && !convexCuffDeform && grid.length) {
     const meridians = meshColumns.map((j) => origProbe.meridian(thetas[j], zA, topZOf(thetas[j])));
     const leadTopZ = zA + (coneLeadMm > 0 ? coneLeadMm : 0);
-    // 하부가 11° 원뿔보다 안쪽(수직 목·언더컷)인 열은, 그 언더컷이 끝나 원본 외곽(ro)이 새 베지어 곡선(r) 바깥으로
-    // 복귀하기 전까지 ro로 끌어내리면 안 된다. ro가 원뿔 직선을 막 넘는 높이에서 갑자기 ro로 끌어내리면
-    // 베지어 곡선에서 원뿔로 푹 꺼지는 가로 음각(V자 골)이 생긴다.
-    const inUndercut = new Uint8Array(meshColumns.length);
-    for (let c = 0; c < meshColumns.length; c += 1) {
-      const zCheck = Math.min(leadTopZ > zA ? leadTopZ : zA + 0.1, topZOf(thetas[meshColumns[c]]) - 0.05);
-      const ro0 = meridians[c](zCheck);
-      if (coneSlope > 0 && Number.isFinite(ro0) && ro0 < ra + coneSlope * (zCheck - zA) - 0.002) {
-        inUndercut[c] = 1;
-      }
-    }
+    // 원뿔 연장보다 안쪽(수직 목·언더컷)인 열이라고 끌어내리기를 건너뛰면 안 된다. 건너뛴 구간은 원본보다
+    // 바깥으로 나가고, 끌어내리기가 열마다 다른 높이에서 다시 시작돼 그 경계가 커프를 가로지르는
+    // 출렁이는 가로 골과 세로 결이 된다(2026-10-23 FCAGQAZR 실케이스). 연장 구간(z <= leadTopZ)에서만
+    // 원뿔 반경을 유지하고, 그 위는 전 열에서 같은 규칙으로 원본 안쪽에 둔다.
     for (const row of grid) {
       for (let c = 0; c < row.length; c += 1) {
         const vi = row[c].v * 3;
@@ -2503,14 +2495,6 @@ function replaceBand(
         if (!(r > 0)) continue;
         const ro = meridians[c](z);
         if (!Number.isFinite(ro)) continue;
-        if (coneSlope > 0 && ro < ra + coneSlope * (z - zA) - 0.002) {
-          inUndercut[c] = 1;
-          continue;
-        }
-        if (inUndercut[c]) {
-          if (ro < r + 0.001) continue;
-          inUndercut[c] = 0;
-        }
         const cap = ro - 0.001;
         if (r > cap && cap > 0) {
           const s = cap / r;
@@ -3122,7 +3106,6 @@ export function blendCuffJunction(buffer, options = {}) {
       seamBlendScale: finalSeamOrigScale,
       convexCuffDeform,
       coneLeadMm: extendMm,
-      coneSlope,
     });
       return { out, zTopMax, maxSlope, extendMm };
     };
@@ -3359,7 +3342,6 @@ export function redesignCuffBowl(buffer, options = {}) {
       radiusAt: (j, t) => plan.profiles[j].fn(t),
       rCut: plan.rCut,
       coneLeadMm: plan.extendMm,
-      coneSlope: plan.coneSlope,
     });
     return {
       ok: true,
