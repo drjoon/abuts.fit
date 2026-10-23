@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-23: filled STL 캐시 키는 목록이 아니라 cam-file-url의 fileSize·uploadedAt. 재생성 후 구 blob 히트 방지.
 // - 2026-10-10: 프리뷰를 닫으면 STL File·NC 문자열을 놓는다.
 // - 2026-09-03: 준비(request) 단계에서도 헥스 확정 미해석 시 full request 보강(cam/가공만 보강하던 회귀 수정).
 // - 2026-09-03: requestSettings merge 시 빈 hexByImplantManufacturer로 덮지 않음(헥스 확정/미정 뱃지).
@@ -58,7 +59,16 @@ function resolveExpectedMaterialDiameter(req: ManufacturerRequest): number | nul
   return null;
 }
 
-const inFlightSignedUrlMap = new Map<string, Promise<{ url: string; fileName?: string }>>();
+const inFlightSignedUrlMap = new Map<
+  string,
+  Promise<{
+    url: string;
+    fileName?: string;
+    s3Key?: string;
+    fileSize?: unknown;
+    uploadedAt?: string;
+  }>
+>();
 const inFlightBlobMap = new Map<string, Promise<Blob>>();
 
 
@@ -205,12 +215,21 @@ export function usePreviewLoader({
             async () => {
               const res = await fetch(path, {
                 headers: { Authorization: `Bearer ${token}` },
+                cache: "no-store",
               });
               if (!res.ok) throw new Error(`signed url failed: ${path}`);
               const body = await res.json();
+              const fileSize = body?.data?.fileSize;
+              const uploadedAt = body?.data?.uploadedAt;
               return {
                 url: String(body?.data?.url || "").trim(),
                 fileName: String(body?.data?.fileName || "").trim() || undefined,
+                s3Key: String(body?.data?.s3Key || "").trim() || undefined,
+                fileSize:
+                  fileSize != null && String(fileSize).trim() !== ""
+                    ? fileSize
+                    : undefined,
+                uploadedAt: uploadedAt ? String(uploadedAt) : undefined,
               };
             },
           );
@@ -594,9 +613,23 @@ export function usePreviewLoader({
             : rawBase.toLowerCase().endsWith(".stl")
               ? rawBase.replace(/\.stl$/i, ".filled.stl")
               : `${rawBase}.filled.stl`;
+          // 목록의 fileSize·uploadedAt은 재생성 완료 전에 남을 수 있다.
+          // 같은 s3Key면 IndexedDB 키가 그대로라 구 filled STL을 연다.
+          const signed = await fetchSignedUrl(
+            `/api/requests/${requestMongoId}/cam-file-url`,
+          ).catch(() => null);
+          if (!signed?.url) return null;
+          const serverHasVersion =
+            signed.fileSize != null || Boolean(signed.uploadedAt);
+          const versionedKey = buildBlobCacheKey(
+            signed.s3Key || camCacheKeyBase,
+            serverHasVersion
+              ? { fileSize: signed.fileSize, uploadedAt: signed.uploadedAt }
+              : camFileMeta,
+          );
           return fetchAsFileWithCache(
-            camCacheKey,
-            () => fetchSignedUrl(`/api/requests/${requestMongoId}/cam-file-url`),
+            versionedKey || camCacheKey,
+            () => Promise.resolve(signed),
             camName,
           ).catch(() => null);
         };

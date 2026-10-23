@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-23: cam-file-url에 s3Key·fileSize·uploadedAt. 같은 키 덮어쓰기 후 프리뷰가 구 버전으로 캐시하지 않게.
 // - 2026-09-28: 커프 재디자인 — 제조사 Re, 의뢰자 제안 수락/거절(cuff-proposal), 의뢰자용 filled-file-url.
 // - 2026-09-28: HF(Hole Filling) — filled STL 상부 스크류홀을 서버에서 메워 같은 S3 키에 덮어쓴다.
 // - 2026-09-03: Filled STL 생성 중단(cancel-regeneration) — stlPreload CANCELLED·준비 탭 블러 해제.
@@ -223,7 +224,13 @@ export async function getCamFileUrl(req, res) {
 
     return res.status(200).json({
       success: true,
-      data: { url, fileName },
+      data: {
+        url,
+        fileName,
+        s3Key,
+        fileSize: camFile?.fileSize ?? null,
+        uploadedAt: camFile?.uploadedAt ?? null,
+      },
     });
   } catch (error) {
     res.status(500).json({

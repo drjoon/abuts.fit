@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-23: 카드 JS·Rhino 재생성도 filled STL IndexedDB를 지운다. 프리뷰가 구 blob을 열지 않게.
 // - 2026-10-09: 준비 탭 재생성 버튼 오른쪽에 가공과 같은 자동 승인 스위치. 상단에 JS→Rhino 폴백 alert.
 // - 2026-09-13: R&D 직경 행 중앙에 R&D/불완전가공 하위 탭(상단 공정 탭에서 불완전가공 분리).
 // - 2026-09-09: 관리자 헥스 확정 후에도 제조사가 준비 단계에서 의뢰 단위 헥스 변경 가능.
@@ -56,12 +57,14 @@ import {
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
 import { AutoApprovalGateSwitch } from "../shared/autoApproval/AutoApprovalGateSwitch";
 import { useToast } from "@/shared/hooks/use-toast";
+import { invalidateRequestPreviewCaches } from "@/shared/files/fileBlobCache";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { UnsupportedConnectionCancelDialog } from "@/shared/components/practice/UnsupportedConnectionCancelDialog";
 import type { UnsupportedConnectionCancelItem } from "@/shared/practice/unsupportedConnectionCancel";
 import {
   type ManufacturerRequest,
+  resolveFilledStlFile,
   deriveStageForFilter,
   stageOrder,
   getDiameterBucketIndex,
@@ -2994,6 +2997,12 @@ export const RequestPage = ({
           return;
         }
         patchFilledStlGenerating(requestId, engine);
+        await invalidateRequestPreviewCaches({
+          camS3Key: resolveFilledStlFile(req?.caseInfos)?.s3Key,
+          ncS3Key: req?.caseInfos?.ncFile?.s3Key,
+          requestMongoId: String(req?._id || "").trim(),
+          requestId,
+        });
         toast({
           title: `${engineLabel} 실행`,
           description: `${engineLabel}로 Filled STL 생성을 시작했습니다.`,
@@ -3147,6 +3156,12 @@ export const RequestPage = ({
           }
           if (tabStage === "request") {
             patchFilledStlGenerating(requestId);
+            await invalidateRequestPreviewCaches({
+              camS3Key: resolveFilledStlFile(req?.caseInfos)?.s3Key,
+              ncS3Key: req?.caseInfos?.ncFile?.s3Key,
+              requestMongoId: String(req?._id || "").trim(),
+              requestId,
+            });
           } else {
             markNcRegenerationPending(requestId);
           }

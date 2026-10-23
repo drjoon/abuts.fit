@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-10-23: 원본 자오선 클램프를 둘레 30°로 고른다. 이음·원본이 만나는 세로 결을 없앤다.
 // related files:
 // - web/backend/services/abutmentStl/cuffConnectionSpecs.js (Z_a 스펙 SSOT)
 // - web/backend/services/abutmentStl/cuffBlend.service.js (S3·DB·worker)
@@ -31,9 +33,9 @@ const PROFILE_BINS = 720;
 const STRIP_COLUMNS = 360;
 const columnsForDeg = (deg) => Math.max(1, Math.round((STRIP_COLUMNS * deg) / 360));
 /** 행 사이 최소 간격(mm). */
-const ROW_PITCH_MM = 0.02;
+const ROW_PITCH_MM = 0.025;
 /** 옆모습이 이만큼 꺾이면 행을 하나 둔다. */
-const ROW_TURN_DEG = 1.4;
+const ROW_TURN_DEG = 1.0;
 /** 곧은 구간 행 간격 상한(mm). */
 const ROW_MAX_PITCH_MM = 0.2;
 const ROW_TURN_SAMPLES = 400;
@@ -42,8 +44,8 @@ const ROW_TURN_COLUMN_STRIDE = columnsForDeg(3);
  * 둘레 곡선이 이만큼 꺾이면 열을 하나 둔다(행과 같은 기준). 열을 각도로 똑같이 나누면 어금니 단면 모서리에서
  * 한 칸이 6° 넘게 꺾여 가공면에 세로 결이 남는다.
  */
-const COLUMN_TURN_DEG = 2.0;
-const COLUMN_MAX_ARC_MM = 0.22;
+const COLUMN_TURN_DEG = 1.0;
+const COLUMN_MAX_ARC_MM = 0.2;
 const COLUMN_TURN_SMOOTH_HALF = columnsForDeg(1.5);
 /**
  * 이음 위 끝에서 이만큼 아래까지는 새 곡선을 원본 곡면에 서서히 섞는다(위 끝 접선·반경이 원본과 같아져 선이 둘로 보이지 않는다).
@@ -96,6 +98,46 @@ const PROFILE_MAX_SLOPE = Math.tan((67 * Math.PI) / 180);
 const CUFF_DEFORM_MIN_ABOVE_ZA_MM = 0.02;
 /** Z=0.3부터 볼록 변형 곡선으로 넘어가는 높이(mm). 넘어가기는 열 높이의 이 비율(t) 안에서 끝나고, 이보다 짧으면 넘어가지 않는다. 짧게 넘어가면 넘어가는 끝에서 기울기가 70°를 넘쳤다가 다시 눕는다. */
 const CUFF_DEFORM_RAMP_MM = 0.4;
+/** 클램프 뒤 둘레 이동 평균 반폭. 원본에 붙는 열과 이음 곡선 열의 세로 경계를 지운다. */
+const CLAMP_FAIR_HALF_DEG = 30;
+
+/**
+ * 열마다 원본 자오선에 붙이면, 이음 곡선과 원본이 만나는 자오선이 세로 결이 된다.
+ * 행마다 원본 안으로 막은 뒤 둘레 30°로 고르고, 원본 밖으로는 다시 막는다.
+ */
+function fairBandToOriginal(verts, grid, meridians) {
+  const cols = grid[0]?.length || 0;
+  if (cols < 8) return;
+  const half = Math.max(4, Math.round((cols * CLAMP_FAIR_HALF_DEG) / 360));
+  for (const row of grid) {
+    const radii = new Array(cols);
+    const caps = new Array(cols);
+    for (let c = 0; c < cols; c += 1) {
+      const vi = row[c].v * 3;
+      radii[c] = Math.hypot(verts[vi], verts[vi + 1]);
+      const ro = meridians[c](verts[vi + 2]);
+      caps[c] = Number.isFinite(ro) && ro > 0.001 ? ro - 0.001 : Number.NaN;
+    }
+    const capFilled = fillMissingCircular(caps);
+    const clamped = radii.map((r, c) => {
+      const cap = capFilled ? capFilled[c] : caps[c];
+      return cap > 0 && r > cap ? cap : r;
+    });
+    const faired = capFilled ? circularSmooth(clamped, half) : clamped;
+    for (let c = 0; c < cols; c += 1) {
+      const from = radii[c];
+      if (!(from > 0)) continue;
+      const cap = capFilled ? capFilled[c] : caps[c];
+      let next = faired[c];
+      if (cap > 0) next = Math.min(next, cap);
+      if (!(next > 0) || Math.abs(next - from) < 1e-9) continue;
+      const s = next / from;
+      const vi = row[c].v * 3;
+      verts[vi] *= s;
+      verts[vi + 1] *= s;
+    }
+  }
+}
 const CUFF_DEFORM_RAMP_MAX_T = 1;
 const CUFF_DEFORM_RAMP_MIN_T = 0.05;
 /** 피니시라인 min_z가 이 높이(mm) 이하일 때만 70° 초과 커프 볼록 변형·급경사 seamOrigScale을 켠다(낮은 마진·불완전 가공에 가까운 케이스). */
@@ -2400,23 +2442,7 @@ function replaceBand(
   // 예외: 낮은 마진의 볼록 변형(convexCuffDeform)은 커프 아래를 70° 이하로 만들려고 일부러 부풀리는 동작이라 그대로 둔다.
   if (origProbe && !convexCuffDeform && grid.length) {
     const meridians = meshColumns.map((j) => origProbe.meridian(thetas[j], zA, topZOf(thetas[j])));
-    for (const row of grid) {
-      for (let c = 0; c < row.length; c += 1) {
-        const vi = row[c].v * 3;
-        const x = verts[vi];
-        const y = verts[vi + 1];
-        const r = Math.hypot(x, y);
-        if (!(r > 0)) continue;
-        const ro = meridians[c](verts[vi + 2]);
-        if (!Number.isFinite(ro)) continue;
-        const cap = ro - 0.001;
-        if (r > cap && cap > 0) {
-          const s = cap / r;
-          verts[vi] = x * s;
-          verts[vi + 1] = y * s;
-        }
-      }
-    }
+    fairBandToOriginal(verts, grid, meridians);
   }
 
   const outward = outwardVotes >= 0 ? 1 : -1;
