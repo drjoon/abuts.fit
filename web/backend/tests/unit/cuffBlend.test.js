@@ -63,6 +63,17 @@ function steppedAbutment() {
   ]);
 }
 
+/** 11°가 원점에서 끝나고 그 위가 수직 목이다. 스펙(0.2mm)보다 짧아 계단 경로로 빠지면 0°로 이어진다. */
+function shortConeVerticalNeckAbutment() {
+  return revolve([
+    ...coneRows(-1.2, 0),
+    [cone(0), 0.55],
+    [2.2, 1.4],
+    [2.5, 2.5],
+    [2.3, 4.0],
+  ]);
+}
+
 /** 원뿔 끝에서 반경을 멈추는 수직 목. 11°를 이어 올리지 않으면 커넥션 직상방이 언더가 된다. */
 function undercutNeckAbutment() {
   return revolve([
@@ -271,6 +282,31 @@ describe("blendCuffJunction", () => {
       const r = probe.rayRadius(0.1, zA + dz);
       expect(Math.abs(r - cone(zA + dz))).toBeLessThan(0.015);
     }
+    expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
+  });
+
+  it("continues a short 11° cone for 0.15mm instead of following the vertical neck", () => {
+    const input = shortConeVerticalNeckAbutment();
+    const res = blendCuffJunction(input, {
+      ...osstem,
+      specKey: osstem.key,
+      finishLine: ringFinishLine(2.5, 2.5),
+    });
+    expect(res.ok).toBe(true);
+    expect(res.reason).toContain("원뿔이 끝난 곳");
+    expect(res.detail.zA).toBeLessThanOrEqual(0.05);
+    expect(res.detail.taperExtendMm).toBeGreaterThanOrEqual(0.1);
+    const probe = _prepare(res.buffer).probe;
+    const zA = res.detail.zA;
+    const lead = res.detail.taperExtendMm;
+    for (const dz of [0.04, 0.08, 0.12]) {
+      const r = probe.rayRadius(0.1, zA + dz);
+      expect(Math.abs(r - cone(zA + dz))).toBeLessThan(0.015);
+    }
+    const deg =
+      (Math.atan((probe.rayRadius(0.1, zA + lead - 0.02) - probe.rayRadius(0.1, zA + 0.02)) / (lead - 0.04)) * 180) /
+      Math.PI;
+    expect(Math.abs(deg - 11)).toBeLessThan(2);
     expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
   });
 

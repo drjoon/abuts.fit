@@ -2240,6 +2240,7 @@ function replaceBand(
     seamBlendScale = seamOrigScale,
     convexCuffDeform = false,
     coneLeadMm = 0,
+    coneSlope = 0,
   },
 ) {
   let cut = splitByLevel(mesh, (x, y, z) => z - zA);
@@ -2470,6 +2471,8 @@ function replaceBand(
         if (!(r > 0)) continue;
         const ro = meridians[c](verts[vi + 2]);
         if (!Number.isFinite(ro)) continue;
+        // 원본이 11° 연장보다 안쪽(수직 목)이면 끌어내리지 않는다. 끌어내리면 연장 끝이 다시 언더가 된다.
+        if (coneSlope > 0 && ro < ra + coneSlope * (verts[vi + 2] - zA) - 0.002) continue;
         const cap = ro - 0.001;
         if (r > cap && cap > 0) {
           const s = cap / r;
@@ -2725,8 +2728,28 @@ function setup(buffer, { spec, specKey }) {
     const zA = taper.departZ > 0 ? Math.min(top.zA, taper.departZ) : top.zA;
     return { mesh, probe, triCount, taper, ...top, zA };
   } catch (error) {
-    // 기공소가 11° 원뿔을 스펙보다 짧게 끝내고 수직 구간(fill_steps 포함)을 둔 설계: 첫 계단 바로 아래에서 잇는다.
-    const stepTaper = error instanceof CuffBlendError ? measureConnectionStepTop(probe) : null;
+    if (!(error instanceof CuffBlendError)) throw error;
+    // 11° 원뿔은 있는데 스펙 높이보다 짧다. 그 위 수직 목의 기울기(0°)로 잇으면 연장이 11°가 아니어서
+    // finish back이 커넥션 직상방을 침범한다. 원뿔이 끝난 높이에서 잇고, 이음 앞 0.15mm는 그 11°를 올린다.
+    if (
+      taper &&
+      error.status === "spec-pending" &&
+      taper.measuredTopZ < spec.taperHeightMm - TAPER_MATCH_BELOW_MM
+    ) {
+      const zA = taper.departZ > 0 ? taper.departZ : 0;
+      return {
+        mesh,
+        probe,
+        triCount,
+        taper,
+        zA,
+        matchedKey: specKey,
+        stripDetachedFill: true,
+        warning: "11° 원뿔이 스펙보다 짧아 원뿔이 끝난 곳에서 11°로 이어 이었습니다.",
+      };
+    }
+    // 원뿔 자체가 없을 때만 첫 계단 바로 아래(수직 또는 남은 기울기)에서 잇는다.
+    const stepTaper = measureConnectionStepTop(probe);
     if (!stepTaper) throw error;
     return {
       mesh,
@@ -2783,7 +2806,7 @@ function wrapResult(fn) {
 export function blendCuffJunction(buffer, options = {}) {
   return wrapResult(() => {
     const prepared = setup(buffer, options);
-    const { taper, zA, matchedKey, warning } = prepared;
+    const { taper, zA, matchedKey, warning, stripDetachedFill } = prepared;
     let { mesh, probe } = prepared;
     const flMin = finishLineMinZ(options.finishLine);
     if (!Number.isFinite(flMin)) fail("manual-review", "피니시라인이 없어 커프 보호 범위를 정할 수 없습니다.");
@@ -2806,7 +2829,7 @@ export function blendCuffJunction(buffer, options = {}) {
       probe = new RadialProbe(mesh.verts, mainFaces);
     }
     let strippedSolid = 0;
-    if (taper.fromStep) {
+    if (taper.fromStep || stripDetachedFill) {
       // 원뿔이 짧은 설계: 수직 구간을 덮은 예전 fill_steps 솔리드는 본체와 떨어져 있어 새 곡면 아래·위로 겹친다. 통째로 걷어 낸다.
       const rChPre = channelRadius(mesh, zA - 0.3, flMaxZ + 0.3, ra);
       const solid = stripDetachedFillSolid(mesh, -0.6, flMaxZ + 0.3, rChPre > 0 ? (rChPre + ra) / 2 : ra * 0.75);
@@ -3059,6 +3082,7 @@ export function blendCuffJunction(buffer, options = {}) {
       seamBlendScale: finalSeamOrigScale,
       convexCuffDeform,
       coneLeadMm: extendMm,
+      coneSlope,
     });
       return { out, zTopMax, maxSlope, extendMm };
     };
@@ -3247,6 +3271,7 @@ function planCuffRedesign(buffer, options) {
     zA,
     ra,
     extendMm,
+    coneSlope,
     flZ,
     flProtect,
     topZ,
@@ -3294,6 +3319,7 @@ export function redesignCuffBowl(buffer, options = {}) {
       radiusAt: (j, t) => plan.profiles[j].fn(t),
       rCut: plan.rCut,
       coneLeadMm: plan.extendMm,
+      coneSlope: plan.coneSlope,
     });
     return {
       ok: true,
