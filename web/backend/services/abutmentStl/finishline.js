@@ -673,8 +673,9 @@ function detectMaxRadiusTrack(mesh, planes, axisDir, refPt0) {
   };
   /**
    * 높이순 바깥 윤곽에서 마진 입술.
-   * 반경이 목으로 꺾이는 곳 중 가장 넓은 띠의 치은측 끝이다.
-   * 아직 넓어지는 크라운 경사와, 목 위에서 다시 넓어지는 봉우리는 따라가지 않는다.
+   * 반경이 목으로 꺾이는 곳의 치은측 끝이다.
+   * 아직 넓어지는 구간은 같은 어깨로 따라가고, 목 위에서 다시 넓어지는 크라운 봉우리는 버린다.
+   * 가장 넓은 입술만 고르면 크라운이 마진보다 넓을 때 봉우리로 올라간다.
    */
   const gingivalLip = (profile) => {
     if (profile.length < 6) return null;
@@ -696,12 +697,36 @@ function detectMaxRadiusTrack(mesh, planes, axisDir, refPt0) {
     if (!lips.length) return null;
     let rMax = 0;
     for (const p of lips) if (p.r > rMax) rMax = p.r;
-    let lip = null;
-    for (const p of lips) {
-      if (p.r < rMax - 0.05) continue;
-      if (!lip || p.z < lip.z) lip = p;
+    const minRBetween = (z0, z1) => {
+      const zLo = Math.min(z0, z1);
+      const zHi = Math.max(z0, z1);
+      let m = Infinity;
+      for (const q of profile) {
+        if (q.z < zLo || q.z > zHi) continue;
+        if (q.r < m) m = q.r;
+      }
+      return m;
+    };
+    let best = lips[0];
+    for (let k = 1; k < lips.length; k += 1) {
+      const p = lips[k];
+      const dz = p.z - best.z;
+      const dr = p.r - best.r;
+      const dip = best.r - minRBetween(best.z, p.z);
+      // 아래 어깨가 가장 넓은 입술의 70% 이상이고, 그 위로 목이 있으면 더 넓은 곳은 크라운이다.
+      // 커넥션 단차(반경이 훨씬 작음)는 여기 걸리지 않아 위쪽 마진으로 올라간다.
+      const crownAbove = dr > 0 && dz > 1.5 && dip > 0.1 && best.r >= rMax * 0.7;
+      if (crownAbove) break;
+      if (dr >= 0.02) best = p;
     }
-    return lip ? lip.point : null;
+    let lip = best;
+    for (const p of lips) {
+      if (p.z >= lip.z) continue;
+      if (p.r < best.r - 0.05) continue;
+      if (best.r - minRBetween(p.z, best.z) > 0.1) continue;
+      lip = p;
+    }
+    return lip.point;
   };
   /** 단면 양쪽 윤곽의 마진 입술을 모아 한 바퀴로 잇는다. */
   const shoulderLoop = () => {
