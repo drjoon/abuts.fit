@@ -6,6 +6,7 @@
 // - 2026-09-09: filled-stl-regeneration-started → stlPreload GENERATING 낙관 패치(재생성 블러).
 // - 2026-09-09: 준비 탭 Rhino GENERATING 고스트 — realtime hook에 requests/tabStage 전달(폴링 refetch).
 // - 2026-09-03: 라이노 중단 시 취소/원본STL 없는 고스트 카드 목록 제거.
+// - 2026-10-24: STL 생성 중지는 샘플도 삭제하지 않고 생성만 중단한다.
 // - 2026-09-03: 준비 탭「라이노 작업중」중단 — 샘플 삭제 / 일반 의뢰 stl cancel-regeneration.
 // - 2026-08-23: 워크시트 스크롤바 — 작업영역 카드 오른쪽 끝에 붙이도록 nested scroll breakout.
 // - 2026-08-18: Filled STL/NC 재생성 완료 상단 alert 제거.
@@ -1415,12 +1416,6 @@ export const RequestPage = ({
     async (req: ManufacturerRequest) => {
       if (!req?._id && !req?.requestId) return;
 
-      // 샘플 고스트: 삭제(블러 뒤 X와 동일). 일반 의뢰: Filled STL 생성만 중단.
-      if (isAnySampleRequest(req)) {
-        await handleCardDelete(req);
-        return;
-      }
-
       const requestId = String(req.requestId || "").trim();
       const cancelKey = String(req._id || requestId || "").trim();
       if (!requestId || !cancelKey || !token) {
@@ -1565,7 +1560,7 @@ export const RequestPage = ({
         });
       }
     },
-    [handleCardDelete, pageState, rhinoCancellingIds, toast, token],
+    [pageState, rhinoCancellingIds, toast, token],
   );
 
   const handleCardDone = useCallback(

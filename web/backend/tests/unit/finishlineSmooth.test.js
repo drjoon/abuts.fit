@@ -76,6 +76,15 @@ function revolution(rAt, z0, z1, step, columns) {
   return Mesh.fromTriangleSoup(positions);
 }
 
+describe("detectFinishLine timeout", () => {
+  it("제한 시간이 이미 지났으면 단면을 돌기 전에 멈춘다", () => {
+    const mesh = revolution((z) => 2, 0, 1, 0.5, 8);
+    expect(() => detectFinishLine(mesh.unweldedByAngle(), { timeoutMs: -1 })).toThrow(
+      /12초/,
+    );
+  });
+});
+
 describe("detectFinishLine crown wider than margin", () => {
   it("목으로 좁아진 뒤 더 넓은 크라운 봉우리는 따라가지 않는다", () => {
     // 전 구간 기울기가 연속이라 모서리 고리는 위·아래 경계뿐이다. 위는 좁아 어깨로 안 잡힌다.

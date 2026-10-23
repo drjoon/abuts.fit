@@ -52,6 +52,17 @@ const EDGE_CANDIDATE_MIN_VERT_ABS = 40;
 const EDGE_CLOSE_GAP_TOL_MM = 0.2;
 /** Rhino 문서 절대 공차(mm 템플릿). */
 const MODEL_ABSOLUTE_TOLERANCE = 0.001;
+/** 모서리·단면 탐색이 이 시간을 넘기면 중단한다. */
+export const FINISHLINE_DETECT_TIMEOUT_MS = 12_000;
+
+let detectDeadlineMs = 0;
+
+function checkDetectDeadline() {
+  if (!detectDeadlineMs || Date.now() < detectDeadlineMs) return;
+  const error = new Error("피니시라인 검출이 12초를 넘겼습니다.");
+  error.reason = "finishline_timeout";
+  throw error;
+}
 
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const radiusXY = (p) => Math.hypot(p[0], p[1]);
@@ -181,9 +192,11 @@ function joinCurves(curves, tol) {
     else openList.push(c);
   }
   while (openList.length) {
+    checkDetectDeadline();
     let cur = openList.shift();
     let changed = true;
     while (changed) {
+      checkDetectDeadline();
       changed = false;
       for (let i = 0; i < openList.length; i += 1) {
         const o = openList[i];
@@ -409,6 +422,7 @@ function detectFinishlinePointsEdge(mesh, log) {
     let bestPoints = null;
     let bestStrategy = null;
     candidates.forEach((cand, idx) => {
+      checkDetectDeadline();
       const target = cand.mesh;
       // 위치 용접은 조각당 한 번. naked·unwelded 루프가 그 사본을 같이 쓴다.
       const welded = target.positionWeldedCopy();
@@ -734,6 +748,7 @@ function detectMaxRadiusTrack(mesh, planes, axisDir, refPt0) {
     const solid = typeof mesh.positionWeldedCopy === "function" ? mesh.positionWeldedCopy() : mesh;
     const picked = [];
     for (const normal of planes) {
+      checkDetectDeadline();
       const sideDir = normalize(cross(axis, normal));
       if (Math.hypot(sideDir[0], sideDir[1], sideDir[2]) < 0.5) continue;
       const curves = meshAxisPlaneSection(solid, axis, [0, 0, 0], normal);
@@ -809,6 +824,7 @@ function detectMaxRadiusTrack(mesh, planes, axisDir, refPt0) {
   const duals = [];
   const reps = [];
   planes.forEach((normal, idx) => {
+    checkDetectDeadline();
     const all = meshAxisPlaneSection(mesh, axis, [0, 0, 0], normal).flat();
     const byAxis = all.filter((p) => aLow <= axial(p) && axial(p) <= aHigh);
     const byZ =
@@ -944,7 +960,19 @@ function explicitSectionAxis(axis) {
  * axis가 있으면 단면은 그 삽입축을 쓴다. 정렬이 끝난 메시는 Z.
  * 외형 주축은 크라운이 한쪽으로 치우치면 기울어, 반대편 마진 대신 스크류홀이 잡힌다.
  */
-export function detectFinishLine(mesh, { log = () => {}, axis = null } = {}) {
+export function detectFinishLine(mesh, { log = () => {}, axis = null, timeoutMs = FINISHLINE_DETECT_TIMEOUT_MS } = {}) {
+  const prevDeadline = detectDeadlineMs;
+  const ms = Number(timeoutMs);
+  detectDeadlineMs = Date.now() + (Number.isFinite(ms) ? ms : FINISHLINE_DETECT_TIMEOUT_MS);
+  try {
+    checkDetectDeadline();
+    return detectFinishLineBody(mesh, { log, axis });
+  } finally {
+    detectDeadlineMs = prevDeadline;
+  }
+}
+
+function detectFinishLineBody(mesh, { log, axis }) {
   const pt0 = selectPt0(mesh);
   const pt0Radius = radiusXY(pt0);
   let [traced, strategy] = detectFinishlinePointsEdge(mesh, log);
@@ -961,6 +989,7 @@ export function detectFinishLine(mesh, { log = () => {}, axis = null } = {}) {
     try {
       sectionPts = detectMaxRadiusTrack(mesh, planes, sectionAxis, pt0);
     } catch (error) {
+      if (error?.reason === "finishline_timeout") throw error;
       log(`[detect] section tracking raised exception: ${error?.message || error}`);
     }
     if (!sectionPts || sectionPts.length < 3) {

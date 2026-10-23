@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-10-06: 더미 샘플도 샘플 삭제·뱃지 대상.
+// - 2026-10-24: isRhinoWorkPending — 생성 시작 또는 의뢰 시각부터 12초가 지나면 오버레이를 끈다.
 // - 2026-10-20: isRhinoWorkPending — 준비·원본 STL·filled 없음 = 초기 JS/Rhino 진행(의뢰 직후). CANCELLED/FAILED·구강스캔 .ply 제외.
 // - 2026-09-09: isRhinoWorkPending — GENERATING 또는 filled 재생성 pending(프리뷰 재생성 블러). idle filled 미수신은 제외.
 // - 2026-09-04: isRhinoWorkPending — 원본이 .stl일 때만(구강스캔 .ply 고스트 블러 방지).
@@ -21,7 +22,10 @@
 // - web/backend/controllers/bg/bg.controller.js
 import type { RequestBase } from "@/types/request";
 import { getDeadlineSemanticClasses } from "@/shared/ui/semanticStatus";
-import { hasFilledStlRegenerationPending } from "./regenerationPending";
+import {
+  hasFilledStlRegenerationPending,
+  STL_WORK_PENDING_TIMEOUT_MS,
+} from "./regenerationPending";
 
 export type ManufacturerRequest = RequestBase & {
   referenceIds?: string[];
@@ -316,15 +320,23 @@ export const hasRhinoEligibleOriginalStl = (
   );
 };
 
+function pendingAnchorMs(value: unknown): number | null {
+  if (!value) return null;
+  const t = new Date(value as string | number).getTime();
+  return Number.isFinite(t) ? t : null;
+}
+
 /**
  * 제조사 생산 준비 카드: Filled STL 생성 중 오버레이(STL/Rhino「생성 중지」단일 버튼).
  * - DB/로컬 `stlPreload=GENERATING` 또는 재생성 in-memory pending
  * - 의뢰 직후 filled 없음(백그라운드 JS 파이프라인) — GET /api/bg/pending-stl 과 동일 SSOT
+ * 생성 시각(없으면 의뢰 시각)부터 12초가 지나면 끈다. 그 뒤에도 목록을 다시 묻지 않는다.
  * CANCELLED/FAILED·취소·구강스캔 .ply 제외. 기존 filled가 있어도 재생성 중이면 블러.
  */
 export const isRhinoWorkPending = (
   req?: ManufacturerRequest | null,
   tabStage?: string,
+  nowMs = Date.now(),
 ) => {
   if (String(tabStage || "").trim() !== "request") return false;
   if (String(req?.manufacturerStage || "").trim() === "취소") return false;
@@ -335,14 +347,20 @@ export const isRhinoWorkPending = (
     .toUpperCase();
   if (status === "CANCELLED" || status === "FAILED") return false;
 
-  if (
-    status === "GENERATING" ||
-    hasFilledStlRegenerationPending(req?.requestId)
-  ) {
-    return true;
+  const withinWindow = (anchor: number | null) =>
+    anchor == null || nowMs - anchor <= STL_WORK_PENDING_TIMEOUT_MS;
+
+  if (hasFilledStlRegenerationPending(req?.requestId, nowMs)) return true;
+
+  if (status === "GENERATING") {
+    return withinWindow(
+      pendingAnchorMs(req?.productionSchedule?.stlPreload?.updatedAt),
+    );
   }
 
-  if (!hasFilledStl(req)) return true;
+  if (!hasFilledStl(req)) {
+    return withinWindow(pendingAnchorMs(req?.createdAt));
+  }
 
   return false;
 };

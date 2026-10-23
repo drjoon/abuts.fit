@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: STL 생성 중 오버레이는 12초가 지나면 초 단위로 끈다.
 // - 2026-10-24: 마진 필레만 약한 건은 불완전 뱃지에서 뺀다. 업로드 때 고지하고 동의 후 진행한다.
 // - 2026-10-23: 불완전 뱃지 툴팁을 프리뷰와 같은 사유 문장으로 맞춘다.
 // - 2026-10-21: 짧은 커프 경고는 50건 통과·실패 0 전까지 유지한다.
@@ -244,11 +245,14 @@ export const WorksheetCardGrid = ({
     );
   }, [autoGate?.excludedRequestors]);
   const [claimTickMs, setClaimTickMs] = useState(() => Date.now());
+  const stlWorkPending = requests.some((request) =>
+    isRhinoWorkPending(request, tabStage, claimTickMs),
+  );
   useEffect(() => {
-    if (!enableDesignClaim) return;
+    if (!enableDesignClaim && !stlWorkPending) return;
     const id = window.setInterval(() => setClaimTickMs(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [enableDesignClaim]);
+  }, [enableDesignClaim, stlWorkPending]);
 
   const camDiaLogRef = useRef<Record<string, number | null>>({});
   const [rndMemoDrafts, setRndMemoDrafts] = useState<Record<string, string>>(
@@ -384,7 +388,11 @@ export const WorksheetCardGrid = ({
           ? caseInfos.ncFile?.filePath || caseInfos.ncFile?.originalName || ""
           : formatDisplayName(camFileName || originalFileName);
 
-        const rhinoWorkPending = isRhinoWorkPending(request, tabStage);
+        const rhinoWorkPending = isRhinoWorkPending(
+          request,
+          tabStage,
+          claimTickMs,
+        );
         const isDeletingCam = !!deletingCam[request._id];
 
         const hasNcFile = !!caseInfos.ncFile?.s3Key;

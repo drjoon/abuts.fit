@@ -553,18 +553,21 @@ export function chainAdjacency(adj) {
     let prev = start;
     let cur = next;
     used.add(edgeId(start, next));
-    while (true) {
+    // 차수 2 고리가 자기 자신으로만 이어지면 used 검사 전에 같은 정점을 반복한다.
+    const hopLimit = adj.size + 2;
+    for (let hops = 0; hops <= hopLimit; hops += 1) {
       path.push(cur);
       if (cur === start) return { vertices: path, closed: true };
       const nbrs = adj.get(cur) || [];
       if (nbrs.length !== 2) return { vertices: path, closed: false };
       const nxt = nbrs[0] === prev ? nbrs[1] : nbrs[0];
       const id = edgeId(cur, nxt);
-      if (used.has(id)) return { vertices: path, closed: false };
+      if (nxt == null || used.has(id)) return { vertices: path, closed: false };
       used.add(id);
       prev = cur;
       cur = nxt;
     }
+    return { vertices: path, closed: false };
   };
   // 끝점(차수 != 2)부터 열린 경로를 먼저 뽑고, 남은 것은 닫힌 루프다.
   for (const [v, nbrs] of adj) {

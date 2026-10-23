@@ -3,16 +3,25 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts
 // change-log:
+// - 2026-10-24: filled 재생성 pending은 12초가 지나면 오버레이·폴링에서 뺀다.
 // - 2026-09-09: reconcileFilledStlRegenerationPending — Rhino 타 서버 완료 후 폴링 정지.
-const pendingFilled = new Set<string>();
+export const STL_WORK_PENDING_TIMEOUT_MS = 12_000;
+
+const pendingFilled = new Map<string, number>();
 const pendingNc = new Set<string>();
+
+function pruneFilledPending(now = Date.now()) {
+  for (const [id, started] of pendingFilled) {
+    if (now - started > STL_WORK_PENDING_TIMEOUT_MS) pendingFilled.delete(id);
+  }
+}
 
 const normalizeRequestId = (requestId: unknown) =>
   String(requestId || "").trim();
 
 export function markFilledStlRegenerationPending(requestId: unknown) {
   const id = normalizeRequestId(requestId);
-  if (id) pendingFilled.add(id);
+  if (id) pendingFilled.set(id, Date.now());
 }
 
 export function markNcRegenerationPending(requestId: unknown) {
@@ -20,7 +29,8 @@ export function markNcRegenerationPending(requestId: unknown) {
   if (id) pendingNc.add(id);
 }
 
-export function hasFilledStlRegenerationPending(requestId?: unknown) {
+export function hasFilledStlRegenerationPending(requestId?: unknown, now = Date.now()) {
+  pruneFilledPending(now);
   if (requestId != null) {
     const id = normalizeRequestId(requestId);
     return Boolean(id && pendingFilled.has(id));
@@ -44,13 +54,14 @@ export function reconcileFilledStlRegenerationPending(
     caseInfos?: { stlFile?: { s3Key?: unknown }; camFile?: { s3Key?: unknown } };
   }>,
 ) {
+  pruneFilledPending();
   if (pendingFilled.size === 0) return;
   const byId = new Map<string, (typeof requests)[number]>();
   for (const req of requests || []) {
     const id = normalizeRequestId(req?.requestId);
     if (id) byId.set(id, req);
   }
-  for (const id of [...pendingFilled]) {
+  for (const id of [...pendingFilled.keys()]) {
     const req = byId.get(id);
     if (!req) {
       pendingFilled.delete(id);

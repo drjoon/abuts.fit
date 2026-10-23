@@ -434,6 +434,7 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
       };
     } catch (error) {
       log(`Finishline failed: ${error?.message || error}`);
+      if (error?.reason === "finishline_timeout") throw error;
     }
   }
   mark("finishline", t0);
