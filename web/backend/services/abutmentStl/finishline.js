@@ -669,87 +669,68 @@ function detectMaxRadiusTrack(mesh, planes, axisDir, refPt0) {
     return band.length ? band : [pts.reduce((a, p) => (radius(p) > radius(a) ? p : a), pts[0]).slice()];
   };
   /**
-   * 단면 곡선에서 마진 어깨. 크라운이 더 넓어도, 어깨 뒤로 한 번 좁아진 뒤의 높은 봉우리는 버린다.
-   * 반경이 계속 커지는 구간은 같은 어깨로 보고 따라간다.
+   * 높이순 바깥 윤곽에서 마진 입술.
+   * 반경이 목으로 꺾이는 곳 중 가장 넓은 띠의 치은측 끝이다.
+   * 아직 넓어지는 크라운 경사와, 목 위에서 다시 넓어지는 봉우리는 따라가지 않는다.
    */
-  const curveShoulder = (curve) => {
-    if (curve.length < 6) return null;
-    const rs = curve.map(radius);
-    const peaks = [];
-    for (let i = 2; i < curve.length - 2; i += 1) {
-      if (rs[i] < rs[i - 1] || rs[i] < rs[i + 1] || rs[i] < rs[i - 2] || rs[i] < rs[i + 2]) continue;
-      if (rs[i] - Math.min(rs[i - 2], rs[i + 2]) < 0.03) continue;
-      peaks.push(i);
+  const gingivalLip = (profile) => {
+    if (profile.length < 6) return null;
+    const span = Math.max(1e-6, aMax - aMin);
+    const lo = aMin + 0.14 * span;
+    const hi = aMin + 0.7 * span;
+    const lips = [];
+    for (let i = 0; i < profile.length; i += 1) {
+      const p = profile[i];
+      if (p.z < lo || p.z > hi || p.r < 1.3) continue;
+      if (i + 1 < profile.length && profile[i + 1].z < p.z + 0.35 && profile[i + 1].r > p.r + 0.02) continue;
+      let minAbove = p.r;
+      for (let j = i + 1; j < profile.length && profile[j].z <= p.z + 2.2; j += 1) {
+        if (profile[j].r < minAbove) minAbove = profile[j].r;
+      }
+      if (p.r - minAbove < 0.04) continue;
+      lips.push(p);
     }
-    if (!peaks.length) {
-      let best = 0;
-      for (let i = 1; i < rs.length; i += 1) if (rs[i] > rs[best]) best = i;
-      return curve[best].slice();
+    if (!lips.length) return null;
+    let rMax = 0;
+    for (const p of lips) if (p.r > rMax) rMax = p.r;
+    let lip = null;
+    for (const p of lips) {
+      if (p.r < rMax - 0.05) continue;
+      if (!lip || p.z < lip.z) lip = p;
     }
-    const merged = [];
-    for (const i of peaks) {
-      const last = merged[merged.length - 1];
-      if (last != null && i - last < 8) {
-        if (rs[i] > rs[last]) merged[merged.length - 1] = i;
-      } else merged.push(i);
-    }
-    const scale = Math.max(...merged.map((i) => rs[i]));
-    const ordered = merged.slice().sort((a, b) => curve[a][2] - curve[b][2]);
-    let best = ordered[0];
-    for (let k = 1; k < ordered.length; k += 1) {
-      const i = ordered[k];
-      const dz = curve[i][2] - curve[best][2];
-      const dr = rs[i] - rs[best];
-      let minR = rs[best];
-      const lo = Math.min(best, i);
-      const hi = Math.max(best, i);
-      for (let j = lo; j <= hi; j += 1) if (rs[j] < minR) minR = rs[j];
-      const dip = rs[best] - minR;
-      const crownAbove = dr > 0 && dz > 1.5 && dip > 0.1 && (rs[best] >= scale * 0.85 || dr < 0.25);
-      if (crownAbove) break;
-      if (dr >= 0.02) best = i;
-    }
-    return curve[best].slice();
+    return lip ? lip.point : null;
   };
-  /** 축 밴드 안의 가장 넓은 곡선 조각에서 어깨를 모아, 높이 중앙에서 많이 벗어난 점은 버린다. */
+  /** 단면 양쪽 윤곽의 마진 입술을 모아 한 바퀴로 잇는다. */
   const shoulderLoop = () => {
-    // 피니시라인 입력은 각도로 쪼개진 메시라 단면 곡선이 끊긴다. 어깨는 이어진 곡면에서 찾는다.
+    // 피니시라인 입력은 각도로 쪼개진 메시라 단면이 끊긴다. 입술은 이어진 곡면에서 찾는다.
     const solid = typeof mesh.positionWeldedCopy === "function" ? mesh.positionWeldedCopy() : mesh;
     const picked = [];
     for (const normal of planes) {
+      const sideDir = normalize(cross(axis, normal));
+      if (Math.hypot(sideDir[0], sideDir[1], sideDir[2]) < 0.5) continue;
       const curves = meshAxisPlaneSection(solid, axis, [0, 0, 0], normal);
+      const buckets = [new Map(), new Map()];
       for (const curve of curves) {
-        const runs = [];
-        let run = [];
-        const flush = () => {
-          if (run.length >= 8) runs.push(run);
-          run = [];
-        };
-        for (const p of curve) {
-          const a = axial(p);
-          if (a >= aLow && a <= aHigh) run.push(p);
-          else flush();
+        for (const point of curve) {
+          const r = radius(point);
+          if (r < 1.25) continue;
+          const height = axial(point);
+          const side = point[0] * sideDir[0] + point[1] * sideDir[1] + point[2] * sideDir[2] >= 0 ? 0 : 1;
+          const key = Math.round(height * 20);
+          const prev = buckets[side].get(key);
+          if (!prev || r > prev.r) buckets[side].set(key, { z: height, r, point });
         }
-        flush();
-        if (!runs.length) continue;
-        let bestRun = runs[0];
-        let bestR = -1;
-        for (const candidate of runs) {
-          let r = -1;
-          for (const p of candidate) r = Math.max(r, radius(p));
-          if (r > bestR) {
-            bestR = r;
-            bestRun = candidate;
-          }
-        }
-        const shoulder = curveShoulder(bestRun);
-        if (shoulder) picked.push(shoulder);
+      }
+      for (const bucket of buckets) {
+        const profile = [...bucket.values()].sort((a, b) => a.z - b.z);
+        const lip = gingivalLip(profile);
+        if (lip) picked.push(lip.slice());
       }
     }
     if (picked.length < 24) return null;
     const zs = picked.map((p) => p[2]).sort((a, b) => a - b);
     const zMed = zs[zs.length >> 1];
-    const kept = picked.filter((p) => Math.abs(p[2] - zMed) <= 1.35);
+    const kept = picked.filter((p) => Math.abs(p[2] - zMed) <= 2.0);
     if (kept.length < 24) return null;
     kept.sort((a, b) => azimuth(a) - azimuth(b));
     let dzMax = 0;
@@ -757,7 +738,7 @@ function detectMaxRadiusTrack(mesh, planes, axisDir, refPt0) {
       dzMax = Math.max(dzMax, Math.abs(kept[i][2] - kept[(i + 1) % kept.length][2]));
     }
     const cov = coverage(kept);
-    if (dzMax >= 1 || cov < 4.8) return null;
+    if (dzMax >= 1.8 || cov < 4.8) return null;
     kept.push(kept[0].slice());
     return kept;
   };
