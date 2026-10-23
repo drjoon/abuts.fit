@@ -31,9 +31,9 @@ const PROFILE_BINS = 720;
 const STRIP_COLUMNS = 360;
 const columnsForDeg = (deg) => Math.max(1, Math.round((STRIP_COLUMNS * deg) / 360));
 /** 행 사이 최소 간격(mm). */
-const ROW_PITCH_MM = 0.02;
+const ROW_PITCH_MM = 0.025;
 /** 옆모습이 이만큼 꺾이면 행을 하나 둔다. */
-const ROW_TURN_DEG = 1.4;
+const ROW_TURN_DEG = 1.0;
 /** 곧은 구간 행 간격 상한(mm). */
 const ROW_MAX_PITCH_MM = 0.2;
 const ROW_TURN_SAMPLES = 400;
@@ -42,8 +42,8 @@ const ROW_TURN_COLUMN_STRIDE = columnsForDeg(3);
  * 둘레 곡선이 이만큼 꺾이면 열을 하나 둔다(행과 같은 기준). 열을 각도로 똑같이 나누면 어금니 단면 모서리에서
  * 한 칸이 6° 넘게 꺾여 가공면에 세로 결이 남는다.
  */
-const COLUMN_TURN_DEG = 2.0;
-const COLUMN_MAX_ARC_MM = 0.22;
+const COLUMN_TURN_DEG = 1.0;
+const COLUMN_MAX_ARC_MM = 0.2;
 const COLUMN_TURN_SMOOTH_HALF = columnsForDeg(1.5);
 /**
  * 이음 위 끝에서 이만큼 아래까지는 새 곡선을 원본 곡면에 서서히 섞는다(위 끝 접선·반경이 원본과 같아져 선이 둘로 보이지 않는다).
@@ -2394,30 +2394,6 @@ function replaceBand(
       return { v: idx, a: thetas[j] };
     }),
   );
-  // 마진 아래 커프 띠도 포스트와 같은 규칙이다. 크라운 내면이 닿는 면이라 원본 외곽보다 바깥으로 나가면 안 된다.
-  // 열마다 원본 자오선을 읽어 두고, 새 꼭짓점 반경이 그 높이의 원본 반경을 넘으면(1µm 여유) 끌어내린다.
-  // 아래 경계(원뿔 위)·위 경계(마진 모서리)는 원본 꼭짓점 그대로라 건드리지 않는다.
-  // 예외: 낮은 마진의 볼록 변형(convexCuffDeform)은 커프 아래를 70° 이하로 만들려고 일부러 부풀리는 동작이라 그대로 둔다.
-  if (origProbe && !convexCuffDeform && grid.length) {
-    const meridians = meshColumns.map((j) => origProbe.meridian(thetas[j], zA, topZOf(thetas[j])));
-    for (const row of grid) {
-      for (let c = 0; c < row.length; c += 1) {
-        const vi = row[c].v * 3;
-        const x = verts[vi];
-        const y = verts[vi + 1];
-        const r = Math.hypot(x, y);
-        if (!(r > 0)) continue;
-        const ro = meridians[c](verts[vi + 2]);
-        if (!Number.isFinite(ro)) continue;
-        const cap = ro - 0.001;
-        if (r > cap && cap > 0) {
-          const s = cap / r;
-          verts[vi] = x * s;
-          verts[vi + 1] = y * s;
-        }
-      }
-    }
-  }
 
   const outward = outwardVotes >= 0 ? 1 : -1;
   const newFaces = [];
