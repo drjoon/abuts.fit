@@ -386,6 +386,7 @@ export async function processNextItem() {
       taskType: item.taskType,
       message,
       isRetryable,
+      permanent: err?.retryable === false,
     });
 
     return null;
@@ -629,6 +630,7 @@ function emitApprovalQueueFailure({
   taskType,
   message,
   isRetryable,
+  permanent = false,
 }) {
   const stageMap = {
     REQUEST_STAGE_APPROVED: "request",
@@ -647,7 +649,9 @@ function emitApprovalQueueFailure({
       stage: stageMap[taskType] || null,
       message: isRetryable
         ? `${message} (재시도 예정)`
-        : `${message} (최대 재시도 초과)`,
+        : permanent
+          ? message
+          : `${message} (최대 재시도 초과)`,
     },
   );
 }

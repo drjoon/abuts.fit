@@ -79,7 +79,10 @@ import {
   inferDiameterGroupFromDiameter,
   chooseMachineForCamMachining,
 } from "./common.review.machine.js";
-import { triggerEspritForNc } from "./common.review.esprit.js";
+import {
+  ensureFiniteFrontPoint,
+  triggerEspritForNc,
+} from "./common.review.esprit.js";
 import { enqueueApproval } from "../../services/reviewApprovalQueue.service.js";
 import { pickFilledStlFileForClone } from "../../utils/filledStlFile.js";
 import {
@@ -1287,6 +1290,46 @@ export async function updateReviewStatusByStage(req, res) {
     let camRunTriggerErrorMessage = null;
     /** 트랜잭션 밖에서 placeRequestAtPolicyQueuePosition — 동일 장비 큐 전체 갱신이 txn 안에 있으면 write conflict 재시도 루프 */
     let pendingPolicyQueuePlacement = null;
+
+    // Front Point가 없으면 filled STL에서 다시 계산한다. 그래도 없으면 단계를 바꾸지 않는다.
+    if (String(status || "").trim() === "APPROVED") {
+      const preview = await Request.findById(id)
+        .select({
+          requestId: 1,
+          manufacturerStage: 1,
+          "caseInfos.frontPoint": 1,
+          "caseInfos.finishLine": 1,
+          "caseInfos.stlFile": 1,
+          "caseInfos.camFile": 1,
+          "caseInfos.ncFile.s3Key": 1,
+          "productionSchedule.actualCamComplete": 1,
+        })
+        .lean();
+      const stageNow = String(preview?.manufacturerStage || "").trim();
+      const enteringMachining =
+        stageNow === "준비" &&
+        ((effectiveStage === "machining" && nextUpCamRunGuard === true) ||
+          effectiveStage === "cam");
+      const hasNc = Boolean(preview?.caseInfos?.ncFile?.s3Key);
+      const hasCamDone = Boolean(
+        preview?.productionSchedule?.actualCamComplete,
+      );
+      const startingNc =
+        stageNow === "준비" &&
+        effectiveStage === "request" &&
+        (forceReprocessFlag || (!hasNc && !hasCamDone));
+      if (preview && (enteringMachining || startingNc)) {
+        try {
+          await ensureFiniteFrontPoint(preview);
+        } catch (error) {
+          const message = enteringMachining
+            ? "Front Point가 없어 가공으로 넘길 수 없습니다."
+            : error?.message ||
+              "Front Point가 없어 NC 생성을 시작할 수 없습니다.";
+          return res.status(400).json({ success: false, message });
+        }
+      }
+    }
 
     await session.withTransaction(async () => {
       const request = await Request.findById(id)

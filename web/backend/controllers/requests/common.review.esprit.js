@@ -29,6 +29,82 @@ function readFiniteFrontPoint(raw) {
   return { x, y, z };
 }
 
+function missingFrontPointError() {
+  const err = new Error("Front Point가 없어 NC 생성을 시작할 수 없습니다.");
+  err.statusCode = 400;
+  err.retryable = false;
+  return err;
+}
+
+/**
+ * caseInfos.frontPoint가 없으면 현재 filled STL로 다시 계산해 저장한다.
+ * 좌표를 추정해서 채우지 않는다. 계산 결과가 없으면 예외.
+ */
+export async function ensureFiniteFrontPoint(request) {
+  const existing = readFiniteFrontPoint(request?.caseInfos?.frontPoint);
+  if (existing) return existing;
+
+  const filled = resolveFilledStlFile(request?.caseInfos);
+  const s3Key = String(filled?.s3Key || "").trim();
+  const points = request?.caseInfos?.finishLine?.points;
+  let computed = null;
+  if (s3Key && Array.isArray(points) && points.length >= 3) {
+    try {
+      const { getObjectBufferFromS3 } = await import("../../utils/s3.utils.js");
+      const { calculateStlMetadataFromBuffer } = await import(
+        "../../services/abutmentStl/stlMetadata.js"
+      );
+      const buffer = await getObjectBufferFromS3(s3Key);
+      const meta = await calculateStlMetadataFromBuffer(buffer, points);
+      const point = readFiniteFrontPoint(meta?.frontPoint);
+      if (point) computed = { point, meta };
+    } catch (error) {
+      console.warn("[ESPRIT] front point recompute failed", {
+        requestId: request?.requestId || null,
+        message: error?.message || String(error || ""),
+      });
+    }
+  }
+
+  if (!computed) throw missingFrontPointError();
+
+  const { point, meta } = computed;
+  const tilt = readFiniteFrontPoint(meta?.tiltAxisVector);
+  const taperAngle = Number(meta?.taperAngle);
+  request.caseInfos = request.caseInfos || {};
+  request.caseInfos.frontPoint = point;
+  if (tilt) request.caseInfos.tiltAxisVector = tilt;
+  if (Number.isFinite(taperAngle)) request.caseInfos.taperAngle = taperAngle;
+  if (meta?.taperGuide) request.caseInfos.taperGuide = meta.taperGuide;
+  if (meta?.lotEngravingSite) {
+    request.caseInfos.lotEngravingSite = meta.lotEngravingSite;
+  }
+
+  const $set = {
+    "caseInfos.frontPoint": point,
+    ...(tilt ? { "caseInfos.tiltAxisVector": tilt } : {}),
+    ...(Number.isFinite(taperAngle) ? { "caseInfos.taperAngle": taperAngle } : {}),
+    ...(meta?.taperGuide ? { "caseInfos.taperGuide": meta.taperGuide } : {}),
+    ...(meta?.lotEngravingSite
+      ? { "caseInfos.lotEngravingSite": meta.lotEngravingSite }
+      : {}),
+  };
+
+  if (typeof request.markModified === "function") {
+    request.markModified("caseInfos");
+  }
+  if (request?._id) {
+    const { default: Request } = await import("../../models/request.model.js");
+    await Request.updateOne({ _id: request._id }, { $set });
+  }
+
+  console.log("[ESPRIT] recomputed front point from filled STL", {
+    requestId: request?.requestId || null,
+    frontPointZ: point.z,
+  });
+  return point;
+}
+
 // Trigger Esprit for NC generation
 // 2026-06-08: Two-Phase is now default, One-Phase is explicit opt-in
 export async function triggerEspritForNc({
@@ -123,15 +199,7 @@ export async function triggerEspritForNc({
 
   await persistDummySampleHexRotation(request);
   const hexRotationMode = resolveCaseInfosHexRotationMode(request);
-  const frontPoint = readFiniteFrontPoint(request?.caseInfos?.frontPoint);
-  if (!frontPoint) {
-    const err = new Error(
-      "Front Point가 없어 NC 생성을 시작할 수 없습니다.",
-    );
-    err.statusCode = 400;
-    err.retryable = false;
-    throw err;
-  }
+  const frontPoint = await ensureFiniteFrontPoint(request);
 
   let resp;
   try {
