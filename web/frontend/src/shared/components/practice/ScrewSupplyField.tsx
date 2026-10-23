@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/AbutmentModelConfirmDialog.tsx
 // - web/frontend/src/features/requestSettings/RequestSettingsToolbar.tsx
 // change-log:
+// - 2026-10-23: 라벨 — 「선택 사항 - 어벗츠 정품, {제조사} 호환」·옵션 정품/호환.
 // - 2026-10-23: 의뢰자 — 제조사 호환 선택 비활성(11월 중 오픈 예정), 어벗츠만.
 // - 2026-10-23: 스크류 — 어벗츠 정품 / 임플란트 제조사 호환.
 import { CircleHelp } from "lucide-react";
@@ -80,6 +81,8 @@ export function ScrewSupplyField({
   const selected: ScrewSupply =
     !manufacturerEnabled && rawSelected === "manufacturer" ? "abuts" : rawSelected;
   const makerLabel = String(manufacturerLabel || "").trim() || "제조사";
+  const manufacturerCompatibleLabel = screwCompatiblePhrase(makerLabel);
+  const sectionTitle = `선택 사항 - 어벗츠 정품, ${manufacturerCompatibleLabel}`;
   const manufacturerChoiceDisabled = disabled || !manufacturerEnabled;
 
   const manufacturerOption = (
@@ -100,7 +103,7 @@ export function ScrewSupplyField({
           disabled && manufacturerEnabled && "cursor-default opacity-60",
         )}
       >
-        {makerLabel}
+        {manufacturerCompatibleLabel}
       </Label>
     </>
   );
@@ -113,13 +116,13 @@ export function ScrewSupplyField({
     >
       <div className="flex flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex items-center gap-1">
-          <div className="text-sm font-semibold text-slate-600">스크류</div>
+          <div className="text-sm font-semibold text-slate-600">{sectionTitle}</div>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 className="inline-flex text-slate-400 transition-colors hover:text-primary"
-                aria-label="스크류 안내"
+                aria-label="선택 사항 안내"
               >
                 <CircleHelp className="h-4 w-4" />
               </button>
@@ -154,7 +157,7 @@ export function ScrewSupplyField({
                 disabled && "cursor-default opacity-60",
               )}
             >
-              어벗츠
+              어벗츠 정품
             </Label>
           </div>
           {!manufacturerEnabled ? (
