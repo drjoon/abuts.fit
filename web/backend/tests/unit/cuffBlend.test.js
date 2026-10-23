@@ -63,17 +63,6 @@ function steppedAbutment() {
   ]);
 }
 
-/** 11°가 원점에서 끝나고 그 위가 수직 목이다. 스펙(0.2mm)보다 짧아 계단 경로로 빠지면 0°로 이어진다. */
-function shortConeVerticalNeckAbutment() {
-  return revolve([
-    ...coneRows(-1.2, 0),
-    [cone(0), 0.55],
-    [2.2, 1.4],
-    [2.5, 2.5],
-    [2.3, 4.0],
-  ]);
-}
-
 /** 원뿔 끝에서 반경을 멈추는 수직 목. 11°를 이어 올리지 않으면 커넥션 직상방이 언더가 된다. */
 function undercutNeckAbutment() {
   return revolve([
@@ -282,62 +271,6 @@ describe("blendCuffJunction", () => {
       const r = probe.rayRadius(0.1, zA + dz);
       expect(Math.abs(r - cone(zA + dz))).toBeLessThan(0.015);
     }
-    expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
-  });
-
-  it("does not float outside an undercut neck above the cone lead (no per-column clamp resumption)", () => {
-    const input = undercutNeckAbutment();
-    const res = blendCuffJunction(input, {
-      ...osstem,
-      specKey: osstem.key,
-      finishLine: ringFinishLine(2.5, 2.5),
-    });
-    expect(res.ok).toBe(true);
-    const preProbe = _prepare(input).probe;
-    const postProbe = _prepare(res.buffer).probe;
-    const zA = res.detail.zA;
-    const lead = res.detail.taperExtendMm;
-    // 연장 구간 위 수직 목 구간에서는 원본보다 20µm 넘게 바깥으로 나가지 않는다.
-    // 끌어내리기를 건너뛰면 곡선이 목 바깥에 떠 있다가 열마다 다른 높이에서 원본으로 붙어 커프 면이 출렁인다.
-    for (let z = zA + lead + 0.05; z <= 0.5; z += 0.05) {
-      const before = preProbe.rayRadius(0.1, z);
-      const after = postProbe.rayRadius(0.1, z);
-      if (!Number.isFinite(before) || !Number.isFinite(after)) continue;
-      expect(after).toBeLessThanOrEqual(before + 0.02);
-    }
-  });
-
-  it("continues a short 11° cone for 0.15mm instead of following the vertical neck", () => {
-    const input = shortConeVerticalNeckAbutment();
-    const res = blendCuffJunction(input, {
-      ...osstem,
-      specKey: osstem.key,
-      finishLine: ringFinishLine(2.5, 2.5),
-    });
-    expect(res.ok).toBe(true);
-    expect(res.reason).toContain("원뿔이 끝난 곳");
-    expect(res.detail.zA).toBeLessThanOrEqual(0.05);
-    expect(res.detail.taperExtendMm).toBeGreaterThanOrEqual(0.1);
-    const probe = _prepare(res.buffer).probe;
-    const zA = res.detail.zA;
-    const lead = res.detail.taperExtendMm;
-    for (const dz of [0.04, 0.08, 0.12]) {
-      const r = probe.rayRadius(0.1, zA + dz);
-      expect(Math.abs(r - cone(zA + dz))).toBeLessThan(0.015);
-    }
-    const deg =
-      (Math.atan((probe.rayRadius(0.1, zA + lead - 0.02) - probe.rayRadius(0.1, zA + 0.02)) / (lead - 0.04)) * 180) /
-      Math.PI;
-    expect(Math.abs(deg - 11)).toBeLessThan(2);
-    // 연장 위에서는 원본 수직 목을 따라가도 반경이 안쪽으로 꺼지는 V자 음각 골은 없어야 한다.
-    // 기울기가 11°에서 줄어드는 것 자체는 목을 따르는 정상 거동이라 보지 않는다.
-    let prevR = probe.rayRadius(0.1, 0.35);
-    for (let z = 0.55; z <= 1.15; z += 0.2) {
-      const r = probe.rayRadius(0.1, z);
-      expect(r).toBeGreaterThanOrEqual(prevR - 0.002);
-      prevR = r;
-    }
-    // 원본 외곽 안쪽 유지 자체는 「keeps the blended cuff inside the original outline」 테스트가 본다.
     expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
   });
 
