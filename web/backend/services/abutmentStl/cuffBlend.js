@@ -87,9 +87,6 @@ const CLEAN_STEP_MM = 0.02;
 const CLEAN_MAX_JUMP_MM = 0.02;
 const CLEAN_MAX_SLOPE_CHANGE = 0.6;
 const AUTO_MAX_MEAN_SLOPE = Math.tan((60 * Math.PI) / 180);
-const AUTO_MAX_SLOPE = Math.tan((70 * Math.PI) / 180);
-/** auto 이음 기울기 상한을 마진 아래 원본 기울기로 올릴 때 더 허용하는 여유(dr/dz). */
-const AUTO_BELOW_SLOPE_TOL = 0.05;
 /** 커프 기울기가 70°를 넘지 않도록 프로파일 제어점 기울기를 묶는 상한(약 67.5°). */
 const PROFILE_MAX_SLOPE = Math.tan((67 * Math.PI) / 180);
 /** 70° 이하 맞춤을 위한 볼록 변형은 원뿔 끝(Z_a) 상방 이 높이(mm) 아래로는 적용하지 않는다. */
@@ -2923,7 +2920,6 @@ export function blendCuffJunction(buffer, options = {}) {
       ? enforcedProfiles.map((fn, j) => withDeformFloor(fn, bowls[j].floorBase, floorKeep[j], hs[j]))
       : enforcedProfiles;
     let maxSlope = 0;
-    let maxExcess = 0;
     let minWall = Infinity;
     const chAtZ = channelRadiusByZ(mesh, zA - 0.3, zTopMax + 0.3, ra);
     for (let j = 0; j < profiles.length; j += 1) {
@@ -2931,24 +2927,16 @@ export function blendCuffJunction(buffer, options = {}) {
       const rTopJ = smoothCreaseR ? smoothCreaseR[j] : r1s[j];
       const lo = Math.min(ra, tops[j].r, r1s[j], rTopJ) - MAX_OVERSHOOT_MM;
       const hi = Math.max(ra, tops[j].r, r1s[j], rTopJ) + MAX_OVERSHOOT_MM;
-      // 마진 아래 원본 커프가 이미 70°보다 누운 열은, 곡선이 그 기울기로 마진에 붙어야 하므로 원본 기울기까지 허용한다.
-      const slopeCap = Math.max(AUTO_MAX_SLOPE, belowSlopes ? belowSlopes[j] + AUTO_BELOW_SLOPE_TOL : 0);
       let prev = profiles[j](0);
       for (let i = 1; i <= 50; i += 1) {
         const r = profiles[j](i / 50);
         if (r < lo || r > hi) fail("manual-review", "이음 곡면이 커넥션·커프 범위를 벗어납니다.");
         const slope = Math.abs(r - prev) / (h / 50);
         maxSlope = Math.max(maxSlope, slope);
-        maxExcess = Math.max(maxExcess, slope - slopeCap);
         // 벽 두께는 같은 높이의 채널 반경과 비교한다(채널이 위에서 벌어져도 아래 원뿔 벽은 영향 없음).
         minWall = Math.min(minWall, r - chAtZ(zA + (i / 50) * h));
         prev = r;
       }
-    }
-    if (maxExcess > 0) {
-      fail("manual-review", "단차가 커서 이음 곡면이 너무 가파릅니다.", {
-        maxAngleDeg: round3((Math.atan(maxSlope) * 180) / Math.PI),
-      });
     }
     if (rCh > 0 && minWall < MIN_WALL_MM) {
       fail("manual-review", "이음부 벽 두께가 스크류 채널 대비 너무 얇아집니다.");

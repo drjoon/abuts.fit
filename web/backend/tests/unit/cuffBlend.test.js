@@ -116,6 +116,16 @@ function convexUpperCuffAbutment() {
   ]);
 }
 
+/** 원뿔 위 짧은 높이에서 반경이 크게 벌어지는 커프. 이음 끝이 70°를 넘는다. */
+function wideStepAbutment() {
+  return revolve([
+    ...coneRows(-1.2, 0.2),
+    [cone(0.2) + 0.02, 0.22],
+    [4.2, 1.26],
+    [3.9, 3.0],
+  ]);
+}
+
 /** 마진이 높이 있고 하부 수직 벽 위에서 상부만 벌어져 전체 벌어짐이 11° 연장보다 작은 열이다. */
 function tallModestFlareAbutment() {
   const rTop = cone(0.2) + 1.05;
@@ -395,6 +405,19 @@ describe("blendCuffJunction", () => {
       for (let i = 1; i + 1 < slopes.length; i += 1) {
         expect(Math.abs(slopes[i] - slopes[i - 1])).toBeLessThan(0.06);
       }
+  });
+
+  it("still replaces a wide step whose blend ends steeper than 70°", () => {
+    const input = wideStepAbutment();
+    const res = blendCuffJunction(input, {
+      ...osstem,
+      specKey: osstem.key,
+      finishLine: ringFinishLine(4.2, 1.26),
+    });
+    expect(res).toMatchObject({ ok: true, status: "applied" });
+    expect(res.detail.maxAngleDeg).toBeGreaterThan(70);
+    expect(res.detail.patchTriangles).toBeGreaterThan(0);
+    expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
   });
 
   it("builds the seam on a tall modest flare without a step below the finish line", () => {
