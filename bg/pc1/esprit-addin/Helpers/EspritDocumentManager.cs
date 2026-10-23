@@ -349,6 +349,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                     {
                     }
 
+                    // key < 0 은 좌표축 같은 문서 기본 그래픽이다. Delete/Remove가 COM에 없어
+                    // UI 스레드가 그 호출에서 멈추면 이후 CAM 요청이 Process까지 가지 못한다.
+                    int parsedKey;
+                    if (int.TryParse(objKey, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsedKey)
+                        && parsedKey < 0)
+                    {
+                        continue;
+                    }
+
                     bool deleted = false;
                     string deleteMethod = "none";
 

@@ -466,6 +466,31 @@ export const MachiningQueueBoard = ({
   const lastAutoOpenedExpressRebalanceIdRef = useRef<string>("");
 
   useEffect(() => {
+    const onFailed = (evt: Event) => {
+      const detail =
+        evt && typeof evt === "object" && "detail" in evt
+          ? ((evt as CustomEvent).detail as Record<string, unknown> | null)
+          : null;
+      const requestId = String(detail?.requestId || "").trim();
+      if (!requestId) return;
+      const nextStatus =
+        String(detail?.status || "FAILED").trim().toUpperCase() === "CANCELLED"
+          ? "CANCELLED"
+          : "FAILED";
+      consumeNcRegenerationPending(requestId);
+      setPlaylistJobs((prev) =>
+        (Array.isArray(prev) ? prev : []).map((j) => {
+          const rid = String(j.requestId || j.id || "").trim();
+          if (rid !== requestId) return j;
+          return { ...j, ncPreloadStatus: nextStatus };
+        }),
+      );
+    };
+    window.addEventListener("nc-regeneration-failed", onFailed);
+    return () => window.removeEventListener("nc-regeneration-failed", onFailed);
+  }, [setPlaylistJobs]);
+
+  useEffect(() => {
     if (!alertMachineId) return;
     const still = machiningAlerts.some(
       (alert) => String(alert?.machineId || "") === alertMachineId,

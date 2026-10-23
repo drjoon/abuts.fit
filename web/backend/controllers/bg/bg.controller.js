@@ -1988,10 +1988,15 @@ export const registerRuntimeStatus = asyncHandler(async (req, res) => {
     const metaError =
       metadata && typeof metadata === "object" ? metadata.error : "";
     const errorText = String(metaError || normalizedLabel || nextStatus).slice(0, 300);
+    console.warn("[ESPRIT] runtime status", {
+      requestId: resolvedRequestId,
+      status: normalizedStatus,
+      label: normalizedLabel || null,
+      error: errorText,
+    });
     await Request.updateOne(
       {
         requestId: resolvedRequestId,
-        "productionSchedule.dummyArtifactRegen.cam": true,
         "productionSchedule.ncPreload.status": { $in: ["GENERATING", "UPLOADING"] },
       },
       {
@@ -2003,7 +2008,7 @@ export const registerRuntimeStatus = asyncHandler(async (req, res) => {
         },
       },
     ).catch((error) => {
-      console.warn("[BG] dummy CAM status sync failed", error?.message || error);
+      console.warn("[BG] CAM status sync failed", error?.message || error);
     });
   }
 

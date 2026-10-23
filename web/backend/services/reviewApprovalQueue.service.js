@@ -363,7 +363,8 @@ export async function processNextItem() {
       error: message,
     });
 
-    const isRetryable = item.attemptCount < item.maxAttempts;
+    const isRetryable =
+      err?.retryable !== false && item.attemptCount < item.maxAttempts;
 
     await ReviewApprovalQueue.findByIdAndUpdate(item._id, {
       $set: {

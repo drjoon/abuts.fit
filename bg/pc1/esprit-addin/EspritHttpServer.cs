@@ -406,10 +406,24 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 }
 
                 // POST / - NC 생성 요청
-                using (var reader = request.InputStream)
+                // DataContractJsonSerializer는 FrontPoint.source 같은 부가 멤버가 있으면
+                // 중첩 객체를 비우거나 요청 전체를 거절한다. Newtonsoft는 모르는 필드를 무시한다.
+                string bodyJson;
+                using (var reader = new StreamReader(request.InputStream, request.ContentEncoding ?? Encoding.UTF8))
                 {
-                    var serializer = new System.Runtime.Serialization.Json.DataContractJsonSerializer(typeof(NcGenerationRequest));
-                    req = (NcGenerationRequest)serializer.ReadObject(reader);
+                    bodyJson = reader.ReadToEnd() ?? string.Empty;
+                }
+                try
+                {
+                    req = Newtonsoft.Json.JsonConvert.DeserializeObject<NcGenerationRequest>(bodyJson);
+                }
+                catch (Exception parseEx)
+                {
+                    AppLogger.Log($"[HTTP Server] JSON parse error: {parseEx.Message}");
+                    response.StatusCode = (int)HttpStatusCode.BadRequest;
+                    byte[] badJson = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"Invalid JSON\"}");
+                    response.OutputStream.Write(badJson, 0, badJson.Length);
+                    return;
                 }
                 if (req == null || string.IsNullOrEmpty(req.StlPath) || string.IsNullOrEmpty(req.RequestId))
                 {
@@ -428,6 +442,17 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     AppLogger.Log($"[HTTP Server] Bad request: ManufacturerHexRotation missing for {req.RequestId}");
                     response.StatusCode = (int)HttpStatusCode.BadRequest;
                     byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"ManufacturerHexRotation is required\"}");
+                    response.OutputStream.Write(buffer, 0, buffer.Length);
+                    return;
+                }
+                if (req.FrontPoint == null
+                    || double.IsNaN(req.FrontPoint.x) || double.IsInfinity(req.FrontPoint.x)
+                    || double.IsNaN(req.FrontPoint.y) || double.IsInfinity(req.FrontPoint.y)
+                    || double.IsNaN(req.FrontPoint.z) || double.IsInfinity(req.FrontPoint.z))
+                {
+                    AppLogger.Log($"[HTTP Server] Bad request: FrontPoint missing for {req.RequestId}");
+                    response.StatusCode = (int)HttpStatusCode.BadRequest;
+                    byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"Front Point가 없어 NC 생성을 시작할 수 없습니다.\"}");
                     response.OutputStream.Write(buffer, 0, buffer.Length);
                     return;
                 }

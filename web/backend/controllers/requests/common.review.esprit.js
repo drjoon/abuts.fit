@@ -20,6 +20,15 @@ const ESPRIT_BASE =
   process.env.ESPRIT_URL ||
   "http://localhost:8001";
 
+function readFiniteFrontPoint(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const x = Number(raw.x);
+  const y = Number(raw.y);
+  const z = Number(raw.z);
+  if (![x, y, z].every((n) => Number.isFinite(n))) return null;
+  return { x, y, z };
+}
+
 // Trigger Esprit for NC generation
 // 2026-06-08: Two-Phase is now default, One-Phase is explicit opt-in
 export async function triggerEspritForNc({
@@ -114,6 +123,15 @@ export async function triggerEspritForNc({
 
   await persistDummySampleHexRotation(request);
   const hexRotationMode = resolveCaseInfosHexRotationMode(request);
+  const frontPoint = readFiniteFrontPoint(request?.caseInfos?.frontPoint);
+  if (!frontPoint) {
+    const err = new Error(
+      "Front Point가 없어 NC 생성을 시작할 수 없습니다.",
+    );
+    err.statusCode = 400;
+    err.retryable = false;
+    throw err;
+  }
 
   let resp;
   try {
@@ -144,7 +162,8 @@ export async function triggerEspritForNc({
       TotalLength: Number(request?.caseInfos?.totalLength || 0),
       TaperAngle: Number(request?.caseInfos?.taperAngle || 0),
       TiltAxisVector: request?.caseInfos?.tiltAxisVector || null,
-      FrontPoint: request?.caseInfos?.frontPoint || null,
+      // source 등 부가 필드는 DataContract 역직렬화에서 FrontPoint 전체를 버리므로 x,y,z만 보낸다.
+      FrontPoint: frontPoint,
       // 수동 Front Point 시 Face 끝 오프셋(mm). 없으면 Esprit 기본 +1.0mm.
       FrontFaceEndOffsetMm: (() => {
         const raw = Number(request?.caseInfos?.frontFaceEndOffsetMm);
@@ -177,6 +196,8 @@ export async function triggerEspritForNc({
       MaterialDiameterGroup: payload.MaterialDiameterGroup,
       OnePhase: payload.OnePhase,
       ManufacturerHexRotation: payload.ManufacturerHexRotation,
+      hasFrontPoint: Boolean(payload.FrontPoint),
+      frontPointZ: payload.FrontPoint?.z ?? null,
     });
     console.log("[ESPRIT] request headers", {
       url: espritUrl,

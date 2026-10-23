@@ -1782,6 +1782,10 @@ export const useMachiningBoard = ({
           : null;
       const cancelledRequestId = String(detail?.requestId || "").trim();
       const cancelledMongoId = String(detail?.requestMongoId || "").trim();
+      const nextStatus =
+        String(detail?.status || "CANCELLED").trim().toUpperCase() === "FAILED"
+          ? "FAILED"
+          : "CANCELLED";
       if (!cancelledRequestId && !cancelledMongoId) return;
       if (cancelledRequestId) {
         consumeNcRegenerationPending(cancelledRequestId);
@@ -1810,7 +1814,7 @@ export const useMachiningBoard = ({
                 espFile: null,
               },
               ncPreload: {
-                status: "CANCELLED",
+                status: nextStatus,
                 updatedAt: new Date().toISOString(),
               },
             };
@@ -1831,6 +1835,10 @@ export const useMachiningBoard = ({
       "nc-regeneration-cancelled",
       handleNcRegenerationCancelled as EventListener,
     );
+    window.addEventListener(
+      "nc-regeneration-failed",
+      handleNcRegenerationCancelled as EventListener,
+    );
     return () => {
       window.removeEventListener("cnc-queues-updated", handleQueuesUpdated);
       window.removeEventListener(
@@ -1839,6 +1847,10 @@ export const useMachiningBoard = ({
       );
       window.removeEventListener(
         "nc-regeneration-cancelled",
+        handleNcRegenerationCancelled as EventListener,
+      );
+      window.removeEventListener(
+        "nc-regeneration-failed",
         handleNcRegenerationCancelled as EventListener,
       );
     };

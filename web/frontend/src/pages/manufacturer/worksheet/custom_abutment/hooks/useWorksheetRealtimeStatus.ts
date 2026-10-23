@@ -652,6 +652,52 @@ export function useWorksheetRealtimeStatus({
           .trim()
           .toLowerCase();
         const label = String(payload?.label || "").trim();
+        const runtimeSource = String(payload?.source || "").trim();
+        if (
+          runtimeSource === "esprit-addin" &&
+          (status === "failed" || status === "cancelled") &&
+          requestId
+        ) {
+          consumeNcRegenerationPending(requestId);
+          const nextStatus = status === "cancelled" ? "CANCELLED" : "FAILED";
+          const errorText = String(
+            payload?.metadata?.error || label || "",
+          ).trim();
+          setRequests((prev) =>
+            prev.map((r) => {
+              if (String((r as any)?.requestId || "").trim() !== requestId) {
+                return r;
+              }
+              const schedule = (r as any).productionSchedule || {};
+              return {
+                ...(r as any),
+                realtimeProgress: null,
+                productionSchedule: {
+                  ...schedule,
+                  ncPreload: {
+                    ...(schedule.ncPreload || {}),
+                    status: nextStatus,
+                    updatedAt: new Date().toISOString(),
+                    error: errorText,
+                  },
+                },
+              } as any;
+            }),
+          );
+          window.dispatchEvent(
+            new CustomEvent("nc-regeneration-failed", {
+              detail: { requestId, status: nextStatus, error: errorText },
+            }),
+          );
+          if (status === "failed") {
+            toast({
+              title: "CAM 생성 실패",
+              description:
+                errorText || "Esprit에서 NC 생성을 시작하지 못했습니다.",
+              variant: "destructive",
+            });
+          }
+        }
         const tone = String(payload?.tone || "blue").trim();
         const startedAt = payload?.startedAt || null;
         const elapsedSeconds = Number.isFinite(
@@ -706,6 +752,16 @@ export function useWorksheetRealtimeStatus({
           prev.map((r) => {
             if (String((r as any)?.requestId || "").trim() !== requestId) {
               return r;
+            }
+            if (
+              runtimeSource === "esprit-addin" &&
+              (status === "failed" || status === "cancelled")
+            ) {
+              delete realtimeBaseRef.current[requestId];
+              return {
+                ...(r as any),
+                realtimeProgress: null,
+              } as any;
             }
             if (shouldClearRealtime) {
               delete realtimeBaseRef.current[requestId];
