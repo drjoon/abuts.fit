@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // change-log:
+// - 2026-10-24: 환자 한 줄 — 치아번호 칸을 더 줄이고 치과명 폭을 넓힌다.
 // - 2026-10-24: 환자 한 줄 — 치과명 폭을 넓히고 치아번호 칸은 좁힌다.
 // - 2026-10-24: 3D 확인 모달 — 환자 제목은 카드 밖, 치과·환자·치아는 한 줄.
 // - 2026-10-24: 3D 확인 모달 — 환자·카탈로그 칸에 라벨, 입력 높이, 2열 배치.
@@ -798,11 +799,11 @@ export function NewRequestPatientImplantFields({
   ) : null;
 
   return (
-    <div className="flex flex-col gap-3">
-      <section className="space-y-2">
+    <div className="flex flex-col gap-4">
+      <section className="space-y-2.5">
         <h3 className="px-0.5 text-sm font-semibold text-slate-900">환자</h3>
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
-        <div className="grid grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)_minmax(4.5rem,0.55fr)] gap-2 text-foreground">
+        <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+        <div className="grid grid-cols-[minmax(0,1.98fr)_minmax(0,1fr)_minmax(3rem,0.35fr)] gap-3 text-foreground">
         <div className="flex min-w-0 flex-col gap-1.5">
           <FieldCaption>치과</FieldCaption>
           <LabeledAutocompleteField
@@ -929,7 +930,7 @@ export function NewRequestPatientImplantFields({
                   addTeethPreset(caseInfos.tooth);
                 }
               }}
-              inputClassName="h-10 w-full pr-10 text-sm"
+              inputClassName="h-10 w-full px-1.5 text-center text-sm"
               disabled={readOnly}
             />
           </div>
@@ -938,7 +939,7 @@ export function NewRequestPatientImplantFields({
       </section>
 
       {implantCatalogSelectGrid ? (
-        <section className="space-y-2">
+        <section className="space-y-2.5">
           <h3 className="px-0.5 text-sm font-semibold text-slate-900">임플란트</h3>
           {renderImplantSelectSection
             ? renderImplantSelectSection(implantCatalogSelectGrid)
