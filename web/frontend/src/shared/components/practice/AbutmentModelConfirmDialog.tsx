@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 3D 확인 모달 — 미리보기·입력·하단 버튼을 나눠 읽기 쉽게.
 // - 2026-10-24: 스크류 선택 UI 제거. 타입은 연결 규격의 A–E를 그대로 쓴다.
 // - 2026-10-24: 유지홈·아노다이징은 한 줄 버튼. 포스트 3mm 이하만 사진 모달(기본 있음).
 // - 2026-10-22: STL 프리뷰 — 단일 뷰포트 + 하단 가공 도크(fillet R·경고). 스캔색 토글 숨김.
@@ -26,7 +27,15 @@
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailDialog.tsx
 // - web/frontend/src/shared/components/practice/AbutmentDesignConfirmDialog.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestPatientImplantFields.tsx
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 import { CircleHelp, Droplets, Rows3 } from "lucide-react";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import {
@@ -73,6 +82,74 @@ import { ImplantCustomNameSuggestInput } from "@/shared/components/practice/Impl
 export type AbutmentModelConfirmVariant = "new-request" | "lab-handoff";
 
 type ImplantEntryMode = "catalog" | "custom";
+
+function ImplantEntryCard({
+  selected,
+  disabled,
+  title,
+  titleExtra,
+  onSelect,
+  children,
+}: {
+  selected: boolean;
+  disabled: boolean;
+  title: string;
+  titleExtra?: ReactNode;
+  onSelect: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={selected || disabled ? -1 : 0}
+      aria-pressed={selected}
+      className={cn(
+        "rounded-xl border px-3.5 py-3.5 text-left transition-colors",
+        selected
+          ? "border-primary/40 bg-white shadow-sm"
+          : "cursor-pointer border-slate-200 bg-white hover:border-slate-300",
+        disabled && "cursor-default",
+      )}
+      onPointerDownCapture={() => {
+        if (disabled || selected) return;
+        onSelect();
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        if (disabled || selected) return;
+        event.preventDefault();
+        onSelect();
+      }}
+    >
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className={cn(
+              "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border",
+              selected ? "border-primary bg-primary" : "border-slate-300 bg-white",
+            )}
+            aria-hidden
+          >
+            {selected ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
+          </span>
+            <span
+            className={cn(
+              "min-w-0 text-sm font-semibold leading-snug",
+              selected ? "text-slate-900" : "text-slate-600",
+            )}
+          >
+            {title}
+          </span>
+          {titleExtra}
+        </div>
+        {selected ? (
+          <span className="shrink-0 text-xs font-medium text-primary">선택됨</span>
+        ) : null}
+      </div>
+      {children}
+    </div>
+  );
+}
 
 type ToastFn = (props: {
   title?: React.ReactNode;
@@ -542,18 +619,20 @@ export function AbutmentModelConfirmDialog({
       >
         <DialogContent
           // Above floating transfer panel (z-300). Same band as ModelPreviewDialog.
-          className="new-request-page z-[320] flex w-[calc(100vw-1rem)] max-h-[96vh] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-y-auto p-4 sm:w-[1080px] sm:max-w-[1080px] sm:p-5"
+          className="new-request-page z-[320] flex h-[min(92vh,1160px)] max-h-[min(92vh,1160px)] w-[min(1080px,calc(100vw-2rem))] max-w-[min(1080px,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0 sm:w-[min(1080px,calc(100vw-2rem))] sm:max-w-[min(1080px,calc(100vw-2rem))]"
           overlayClassName="z-[310]"
         >
-          <DialogHeader className="relative shrink-0 space-y-0 pr-8">
-            <DialogTitle className="text-lg font-semibold">
-              3D 모델 확인 및 정보 입력
+          <DialogHeader className="shrink-0 space-y-0 border-b border-slate-200 px-5 py-4 pr-12 text-left">
+            <div className="flex items-center gap-2.5">
+              <DialogTitle className="text-lg font-semibold tracking-tight">
+                3D 모델 확인 및 정보 입력
+              </DialogTitle>
               {labProgressLabel ? (
-                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium tabular-nums text-slate-600">
                   {labProgressLabel}
                 </span>
               ) : null}
-            </DialogTitle>
+            </div>
             <DialogDescription className="sr-only">
               {isLabHandoff
                 ? "3D 모델을 확인하고 환자/임플란트 정보를 입력한 뒤 확인합니다. 파일은 모달이 열린 동안 미리 업로드됩니다."
@@ -563,11 +642,11 @@ export function AbutmentModelConfirmDialog({
 
           {uploadPercent != null ? (
             <div
-              className="shrink-0 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2"
+              className="shrink-0 border-b border-slate-200 bg-slate-50 px-5 py-3"
               role="status"
               aria-live="polite"
             >
-              <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <div className="mb-1.5 flex items-center justify-between gap-2 text-sm text-muted-foreground">
                 <span className="truncate font-medium text-foreground">
                   {uploadLabel || "파일 업로드 중…"}
                 </span>
@@ -577,28 +656,26 @@ export function AbutmentModelConfirmDialog({
             </div>
           ) : null}
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 sm:pr-2 lg:grid-cols-[52%_48%]">
-            <div className="app-glass-card app-glass-card--lg flex min-h-0 w-full flex-col gap-2.5 !p-2.5">
-              <div className="flex shrink-0 items-center justify-between gap-2 px-0.5">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                  3D 미리보기
-                </span>
+          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1.08fr)_minmax(24rem,0.92fr)] lg:overflow-hidden">
+            <div className="flex min-h-0 flex-col gap-3 overflow-y-auto border-slate-200 p-4 lg:border-r lg:p-5">
+              <div className="shrink-0 px-0.5">
+                <p className="text-sm font-semibold text-slate-900">3D 미리보기</p>
                 {detailFile ? (
-                  <span
-                    className="min-w-0 truncate text-xs text-slate-500"
+                  <p
+                    className="mt-0.5 truncate text-xs text-slate-500"
                     title={detailFile.name}
                   >
                     {detailFile.name}
-                  </span>
+                  </p>
                 ) : null}
               </div>
 
-              <div className="app-glass-card-content flex min-h-[280px] min-w-0 flex-1 flex-col gap-2">
+              <div className="flex min-h-[18rem] min-w-0 flex-1 flex-col gap-3">
                 <div
                   className={cn(
-                    "relative min-h-[min(52vh,26rem)] min-w-0 flex-1 overflow-hidden rounded-xl",
-                    "border border-slate-200/90 bg-[radial-gradient(ellipse_at_50%_35%,#f8fafc_0%,#e2e8f0_100%)]",
-                    "shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]",
+                    "relative min-h-[18rem] min-w-0 flex-1 overflow-hidden rounded-2xl",
+                    "border border-slate-200 bg-[radial-gradient(ellipse_at_50%_32%,#ffffff_0%,#e8eef5_100%)]",
+                    "shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]",
                   )}
                 >
                   {detailFile ? (
@@ -643,8 +720,8 @@ export function AbutmentModelConfirmDialog({
               </div>
 
               {selectablePreviewIndices.length > 1 ? (
-                <div className="shrink-0 rounded-xl border border-slate-200/90 bg-slate-50/60 p-1">
-                  <ul className="max-h-[7.5rem] overflow-y-auto px-1 py-1">
+                <div className="shrink-0 rounded-xl border border-slate-200 bg-white p-1.5">
+                  <ul className="custom-scrollbar max-h-[7.5rem] overflow-y-auto px-1 py-1">
                     {selectablePreviewIndices.map((fileIndex) => {
                       const file = files[fileIndex];
                       if (!file) return null;
@@ -678,11 +755,9 @@ export function AbutmentModelConfirmDialog({
               ) : null}
             </div>
 
-            <div className="flex h-full min-h-0 flex-col">
-              <div className="app-glass-card app-glass-card--lg flex h-full min-h-0 flex-col !p-2">
-                <div className="app-glass-card-content flex min-h-0 flex-1 flex-col gap-2 pb-0 text-sm">
+            <div className="custom-scrollbar flex min-h-0 flex-col gap-4 overflow-y-auto bg-slate-50/90 p-4 lg:p-5">
                   {isDesignCustomMode ? (
-                    <div className="flex min-h-0 flex-1 flex-col">
+                    <div className="flex min-h-[28rem] flex-1 flex-col">
                       <NewRequestDesignAbutmentFields
                         caseInfos={detailCaseInfos}
                         setCaseInfos={setDetailCaseInfos}
@@ -697,11 +772,7 @@ export function AbutmentModelConfirmDialog({
                       />
                     </div>
                   ) : (
-                    <div className="flex min-h-0 flex-1 flex-col gap-2">
-                      <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                        임플란트/환자 정보
-                      </div>
-
+                    <div className="flex flex-col gap-4">
                       <NewRequestPatientImplantFields
                         caseInfos={detailCaseInfos}
                         setCaseInfos={setCatalogCaseInfos}
@@ -737,94 +808,29 @@ export function AbutmentModelConfirmDialog({
                           isLabHandoff
                             ? undefined
                             : (catalogSelects) => (
-                                <div className="overflow-visible rounded-lg border border-primary-soft bg-white/80">
-                                  <div
-                                    role="button"
-                                    tabIndex={
-                                      implantEntryMode === "catalog" || confirming || !detailFile
-                                        ? -1
-                                        : 0
-                                    }
-                                    aria-pressed={implantEntryMode === "catalog"}
-                                    className={cn(
-                                      "px-3 py-2 transition-colors",
-                                      implantEntryMode === "catalog"
-                                        ? "bg-primary-soft/50 ring-2 ring-inset ring-primary/40"
-                                        : "cursor-pointer bg-slate-50/80 ring-1 ring-inset ring-dashed ring-primary/30 hover:bg-primary-soft/25",
-                                    )}
-                                    onPointerDownCapture={() => {
-                                      if (confirming || !detailFile) return;
-                                      if (implantEntryMode !== "catalog") {
-                                        selectCatalogMode();
-                                      }
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key !== "Enter" && e.key !== " ") return;
-                                      if (confirming || !detailFile) return;
-                                      if (implantEntryMode !== "catalog") {
-                                        e.preventDefault();
-                                        selectCatalogMode();
-                                      }
-                                    }}
+                                <div className="flex flex-col gap-2.5">
+                                  <ImplantEntryCard
+                                    selected={implantEntryMode === "catalog"}
+                                    disabled={confirming || !detailFile}
+                                    title="카탈로그에서 선택"
+                                    onSelect={selectCatalogMode}
                                   >
-                                    <div className="mb-1.5 flex items-center justify-between gap-2">
-                                      <span className="text-xs font-medium text-slate-600">
-                                        카탈로그에서 선택
-                                      </span>
-                                      {implantEntryMode === "catalog" ? (
-                                        <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                                          선택됨
-                                        </span>
-                                      ) : null}
-                                    </div>
                                     {catalogSelects}
-                                  </div>
-                                  <div
-                                    className="border-t border-primary-soft/80"
-                                    aria-hidden
-                                  />
-                                  <div
-                                    role="button"
-                                    tabIndex={
-                                      implantEntryMode === "custom" || confirming || !detailFile
-                                        ? -1
-                                        : 0
-                                    }
-                                    aria-pressed={implantEntryMode === "custom"}
-                                    className={cn(
-                                      "flex flex-col gap-2 px-3 py-2 transition-colors",
-                                      implantEntryMode === "custom"
-                                        ? "bg-primary-soft/50 ring-2 ring-inset ring-primary/40"
-                                        : "cursor-pointer bg-slate-50/80 ring-1 ring-inset ring-dashed ring-primary/30 hover:bg-primary-soft/25",
-                                    )}
-                                    onPointerDownCapture={() => {
-                                      if (confirming || !detailFile) return;
-                                      if (implantEntryMode !== "custom") {
-                                        selectCustomMode();
-                                      }
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key !== "Enter" && e.key !== " ") return;
-                                      if (confirming || !detailFile) return;
-                                      if (implantEntryMode !== "custom") {
-                                        e.preventDefault();
-                                        selectCustomMode();
-                                      }
-                                    }}
-                                  >
-                                    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-                                      <div className="flex items-center gap-1.5">
-                                      <span className="text-sm font-semibold text-slate-700">
-                                        찾으시는 임플란트가 없나요?
-                                      </span>
+                                  </ImplantEntryCard>
+                                  <ImplantEntryCard
+                                    selected={implantEntryMode === "custom"}
+                                    disabled={confirming || !detailFile}
+                                    title="찾으시는 임플란트가 없나요?"
+                                    onSelect={selectCustomMode}
+                                    titleExtra={
                                       <Tooltip>
                                         <TooltipTrigger asChild>
                                           <button
                                             type="button"
-                                            className="inline-flex text-slate-500 transition-colors hover:text-slate-700"
+                                            className="inline-flex text-slate-400 transition-colors hover:text-slate-700"
                                             aria-label="신규 임플란트 개발 안내"
-                                            onPointerDown={(e) =>
-                                              e.stopPropagation()
+                                            onPointerDown={(event) =>
+                                              event.stopPropagation()
                                             }
                                           >
                                             <CircleHelp className="h-4 w-4" />
@@ -841,93 +847,104 @@ export function AbutmentModelConfirmDialog({
                                           )}
                                         </TooltipContent>
                                       </Tooltip>
-                                      </div>
-                                      {implantEntryMode === "custom" ? (
-                                        <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                                          선택됨
-                                        </span>
-                                      ) : null}
-                                    </div>
+                                    }
+                                  >
                                     <div
                                       className={cn(
-                                        "relative z-[2] grid grid-cols-1 gap-2 sm:grid-cols-2",
+                                        "grid grid-cols-1 gap-3 sm:grid-cols-2",
                                         implantEntryMode !== "custom" &&
                                           "pointer-events-none",
                                       )}
                                     >
-                                      <ImplantCustomNameSuggestInput
-                                        field="manufacturer"
-                                        placeholder="Manufacturer"
-                                        value={newSystemManufacturer}
-                                        readOnly={
-                                          confirming ||
-                                          implantEntryMode !== "custom"
-                                        }
-                                        disabled={confirming}
-                                        className={cn(
-                                          implantEntryMode !== "custom" &&
-                                            "cursor-pointer bg-white",
-                                        )}
-                                        onChange={(manufacturer) =>
-                                          commitCustomImplant({
-                                            manufacturer,
-                                            brand: newSystemBrand,
-                                          })
-                                        }
-                                        onPickSuggestion={(row) => {
-                                          if (!row.brand) return;
-                                          commitCustomImplant({
-                                            manufacturer:
-                                              row.manufacturer || newSystemManufacturer,
-                                            brand: row.brand,
-                                          });
-                                        }}
-                                      />
-                                      <ImplantCustomNameSuggestInput
-                                        field="brand"
-                                        placeholder="Brand"
-                                        value={newSystemBrand}
-                                        manufacturerContext={newSystemManufacturer}
-                                        readOnly={
-                                          confirming ||
-                                          implantEntryMode !== "custom"
-                                        }
-                                        disabled={confirming}
-                                        className={cn(
-                                          implantEntryMode !== "custom" &&
-                                            "cursor-pointer bg-white",
-                                        )}
-                                        onChange={(brand) =>
-                                          commitCustomImplant({
-                                            manufacturer: newSystemManufacturer,
-                                            brand,
-                                          })
-                                        }
-                                        onPickSuggestion={(row) => {
-                                          if (
-                                            row.manufacturer &&
-                                            !newSystemManufacturer.trim()
-                                          ) {
-                                            commitCustomImplant({
-                                              manufacturer: row.manufacturer,
-                                              brand: row.brand || newSystemBrand,
-                                            });
+                                      <label className="flex min-w-0 flex-col gap-1.5">
+                                        <span className="px-0.5 text-xs font-medium text-slate-500">
+                                          제조사
+                                        </span>
+                                        <ImplantCustomNameSuggestInput
+                                          field="manufacturer"
+                                          placeholder="제조사"
+                                          value={newSystemManufacturer}
+                                          readOnly={
+                                            confirming ||
+                                            implantEntryMode !== "custom"
                                           }
-                                        }}
-                                      />
+                                          disabled={confirming}
+                                          className={cn(
+                                            "h-10 text-sm",
+                                            implantEntryMode !== "custom" &&
+                                              "cursor-pointer bg-white",
+                                          )}
+                                          onChange={(manufacturer) =>
+                                            commitCustomImplant({
+                                              manufacturer,
+                                              brand: newSystemBrand,
+                                            })
+                                          }
+                                          onPickSuggestion={(row) => {
+                                            if (!row.brand) return;
+                                            commitCustomImplant({
+                                              manufacturer:
+                                                row.manufacturer ||
+                                                newSystemManufacturer,
+                                              brand: row.brand,
+                                            });
+                                          }}
+                                        />
+                                      </label>
+                                      <label className="flex min-w-0 flex-col gap-1.5">
+                                        <span className="px-0.5 text-xs font-medium text-slate-500">
+                                          브랜드
+                                        </span>
+                                        <ImplantCustomNameSuggestInput
+                                          field="brand"
+                                          placeholder="브랜드"
+                                          value={newSystemBrand}
+                                          manufacturerContext={newSystemManufacturer}
+                                          readOnly={
+                                            confirming ||
+                                            implantEntryMode !== "custom"
+                                          }
+                                          disabled={confirming}
+                                          className={cn(
+                                            "h-10 text-sm",
+                                            implantEntryMode !== "custom" &&
+                                              "cursor-pointer bg-white",
+                                          )}
+                                          onChange={(brand) =>
+                                            commitCustomImplant({
+                                              manufacturer: newSystemManufacturer,
+                                              brand,
+                                            })
+                                          }
+                                          onPickSuggestion={(row) => {
+                                            if (
+                                              row.manufacturer &&
+                                              !newSystemManufacturer.trim()
+                                            ) {
+                                              commitCustomImplant({
+                                                manufacturer: row.manufacturer,
+                                                brand: row.brand || newSystemBrand,
+                                              });
+                                            }
+                                          }}
+                                        />
+                                      </label>
                                     </div>
-                                  </div>
+                                  </ImplantEntryCard>
                                 </div>
                               )
                         }
                       />
 
-                      <div className="flex flex-wrap items-center gap-1.5">
+                      <div className="grid grid-cols-2 gap-2">
                         <Button
                           type="button"
                           variant="outline"
-                          size="sm"
-                          className="h-9 shrink-0 gap-1.5 px-3"
+                          className={cn(
+                            "h-10 justify-start gap-2 bg-white px-3 shadow-none",
+                            retentionValue === "deep" &&
+                              "border-primary/30 bg-primary-soft text-slate-900",
+                          )}
                           disabled={!detailFile || confirming}
                           onClick={() => setShortPostChoiceOpen(true)}
                         >
@@ -939,7 +956,7 @@ export function AbutmentModelConfirmDialog({
                             <Droplets
                               className={cn(
                                 "h-4 w-4 shrink-0",
-                                anodizingOn ? "text-sky-600" : "opacity-50",
+                                anodizingOn ? "text-sky-600" : "text-slate-400",
                               )}
                             />
                           }
@@ -950,6 +967,10 @@ export function AbutmentModelConfirmDialog({
                             { value: "off", label: "아노다이징 Off" },
                           ]}
                           disabled={!detailFile || confirming}
+                          className={cn(
+                            "h-10 w-full justify-start bg-white shadow-none",
+                            anodizingOn && "border-sky-200 bg-sky-50 text-slate-900",
+                          )}
                           onChange={(next) => {
                             const enabled = next === "on";
                             setDetailCaseInfos({ anodizingEnabled: enabled });
@@ -960,8 +981,10 @@ export function AbutmentModelConfirmDialog({
 
                     </div>
                   )}
+            </div>
+          </div>
 
-                  <DialogFooter className="mt-auto flex shrink-0 flex-col gap-2 !space-x-0 pt-2 sm:flex-row sm:items-center sm:justify-between">
+          <DialogFooter className="shrink-0 flex-col gap-2 border-t border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:space-x-0 sm:px-5">
                     {isLabHandoff ? (
                       <>
                         <Button
@@ -986,10 +1009,11 @@ export function AbutmentModelConfirmDialog({
                       </>
                     ) : (
                       <>
-                        <div className="flex items-center gap-2">
+                        <div className="flex w-full items-center gap-2 sm:w-auto">
                           <Button
                             type="button"
-                            variant="destructive"
+                            variant="outline"
+                            className="border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                             onClick={() => {
                               if (detailIndex !== null) {
                                 handleRemoveFile(detailIndex);
@@ -1008,18 +1032,7 @@ export function AbutmentModelConfirmDialog({
                           </Button>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          <Button
-                            type="button"
-                            className={cn(
-                              highlightConfirmButton &&
-                                "animate-bounce bg-primary text-white",
-                            )}
-                            onPointerDown={handleConfirmPointerDown}
-                            onClick={handleConfirmClick}
-                          >
-                            확인 & 다음
-                          </Button>
+                        <div className="flex w-full items-center gap-2 sm:w-auto">
                           <Button
                             type="button"
                             variant="ghost"
@@ -1029,14 +1042,22 @@ export function AbutmentModelConfirmDialog({
                           >
                             건너뛰기
                           </Button>
+                          <Button
+                            type="button"
+                            className={cn(
+                              "min-w-[8.5rem] flex-1 sm:flex-none",
+                              highlightConfirmButton &&
+                                "animate-bounce bg-primary text-white",
+                            )}
+                            onPointerDown={handleConfirmPointerDown}
+                            onClick={handleConfirmClick}
+                          >
+                            확인 & 다음
+                          </Button>
                         </div>
                       </>
                     )}
-                  </DialogFooter>
-                </div>
-              </div>
-            </div>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       <ShortPostRetentionDialog

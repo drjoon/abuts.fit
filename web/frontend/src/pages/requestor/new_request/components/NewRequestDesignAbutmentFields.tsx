@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
+// - 2026-10-24: 3D 확인 모달 — 환자 칸 제목·입력 높이를 확인 폼과 맞춘다.
 // - 2026-10-23: 디자인+생산 이동 라벨 — 기공소 치과의뢰 수신하기.
 // - 2026-09-26: 디자인+생산 이동 라벨 — 기공소 어벗츠로부터.
 // - 2026-09-05: 프리셋 삭제 — 로컬 dirty 중 서버 GET이 목록을 되살리지 않음.
@@ -405,12 +406,11 @@ export function NewRequestDesignAbutmentFields({
   } satisfies Partial<PracticeTransferRequestIntakePanelProps>;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
-        디자인 / 환자 정보
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <section className="shrink-0 rounded-xl border border-slate-200 bg-white p-3.5">
+      <h3 className="mb-3 text-sm font-semibold text-slate-900">환자</h3>
 
-      <div className="grid shrink-0 grid-cols-1 gap-2 text-foreground sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 text-foreground sm:grid-cols-2">
         <div className="min-w-0">
           <LabeledAutocompleteField
             value={caseInfos?.clinicName || ""}
@@ -441,7 +441,7 @@ export function NewRequestDesignAbutmentFields({
                 addClinicPreset(caseInfos.clinicName);
               }
             }}
-            inputClassName="h-8 w-full pr-10 text-xs"
+            inputClassName="h-10 w-full pr-10 text-sm"
             disabled={readOnly}
           />
         </div>
@@ -475,7 +475,7 @@ export function NewRequestDesignAbutmentFields({
                 addPatientPreset(caseInfos.patientName);
               }
             }}
-            inputClassName="h-8 w-full pr-10 text-xs"
+            inputClassName="h-10 w-full pr-10 text-sm"
             disabled={readOnly}
           />
         </div>
@@ -487,7 +487,7 @@ export function NewRequestDesignAbutmentFields({
             disabled={readOnly}
             onClick={() => setProsthesisModalOpen(true)}
             className={cn(
-              "h-8 w-full justify-start overflow-hidden px-3 text-left text-xs font-normal",
+              "h-10 w-full justify-start overflow-hidden px-3 text-left text-sm font-normal",
               toothNumbersLabel ? "text-foreground" : "text-muted-foreground",
             )}
             title={toothNumbersLabel || "치아번호"}
@@ -498,6 +498,7 @@ export function NewRequestDesignAbutmentFields({
           </Button>
         </div>
       </div>
+      </section>
 
       <div
         className={cn(

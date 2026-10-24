@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 가공 경고 — 수치와 안내를 위아래로 나눠 한 줄에 읽히게.
 // - 2026-10-24: 가공 검사 결과에 포스트 길이(max_z→포스트 탑)를 싣는다.
 // - 2026-10-24: 마진 필레 경고는 깊게 패일 수 있음·반경 0.5mm 재디자인 권고.
 // - 2026-10-22: tight 도크 — OK와 같이 2줄·한 줄 배치. fillet R은 경고 문구 왼쪽.
@@ -35,8 +36,7 @@ function formatToolRadiusMm(toolRadiusMm?: number | null) {
   return Number.isFinite(radius) && radius > 0 ? radius.toFixed(2) : "0.50";
 }
 
-const dockShell =
-  "overflow-hidden rounded-xl border bg-white shadow-sm";
+const dockShell = "overflow-hidden rounded-xl border";
 
 /** 접수 전 가공 검사 결과 안내. tight여도 접수를 막지 않고, 원본 STL은 그대로 둔다. */
 export function StlMachiningPreflightNotice({
@@ -58,7 +58,7 @@ export function StlMachiningPreflightNotice({
         className={cn(dockShell, "border-slate-200/90", className)}
         role="status"
       >
-        <div className="flex items-start gap-2.5 px-3 py-2.5 text-xs text-slate-600">
+        <div className="flex items-start gap-3 bg-slate-50 px-3.5 py-3 text-sm leading-relaxed text-slate-600">
           <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />
           <p>
             가공 검사 중입니다.
@@ -76,29 +76,28 @@ export function StlMachiningPreflightNotice({
         className={cn(dockShell, "border-rose-200/80", className)}
         role="alert"
       >
-        <div className="flex items-start gap-2.5 bg-rose-50/70 px-3 py-2.5 text-xs text-rose-950">
+        <div className="flex items-start gap-3 bg-rose-50 px-3.5 py-3 text-rose-950">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" aria-hidden />
-          {showFilletMetric ? (
-            <div className="shrink-0 border-r border-rose-200/90 pr-3">
-              <p className="font-medium leading-snug text-rose-950/90">
-                전체 평균 fillet R
-              </p>
-              <p className="mt-0.5 tabular-nums leading-snug">
-                <span className="font-semibold text-rose-600">
+          <div className="min-w-0 flex-1">
+            {showFilletMetric ? (
+              <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span className="text-xs font-medium text-rose-900/75">
+                  전체 평균 fillet R
+                </span>
+                <span className="text-base font-semibold tabular-nums text-rose-700">
                   {avgRadius.toFixed(2)} mm
                 </span>
-                <span className="text-rose-900/65">
-                  {" "}
-                  / 공구 R {formatToolRadiusMm(preflight.toolRadiusMm)}
+                <span className="text-xs text-rose-900/60">
+                  공구 R {formatToolRadiusMm(preflight.toolRadiusMm)}
                 </span>
               </p>
-            </div>
-          ) : null}
-          <p className="min-w-0 flex-1 leading-snug text-rose-900/90">
-            마진 코너가 깊게 패입니다.
-            <br />
-            반경 0.5mm 이상으로 둥글게 디자인해 주세요.
-          </p>
+            ) : null}
+            <p className={cn("text-sm leading-relaxed", showFilletMetric && "mt-1")}>
+              마진 코너가 깊게 패입니다.
+              <br />
+              반경 0.5mm 이상으로 둥글게 디자인해 주세요.
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -110,7 +109,7 @@ export function StlMachiningPreflightNotice({
         className={cn(dockShell, "border-emerald-200/80", className)}
         role="status"
       >
-        <div className="flex items-start gap-2.5 bg-emerald-50/70 px-3 py-2.5 text-xs text-emerald-800">
+        <div className="flex items-start gap-3 bg-emerald-50 px-3.5 py-3 text-sm leading-relaxed text-emerald-800">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
           <p>
             가공 검사 완료.
@@ -127,7 +126,7 @@ export function StlMachiningPreflightNotice({
       className={cn(dockShell, "border-slate-200/90", className)}
       role="status"
     >
-      <div className="flex items-start gap-2.5 bg-slate-50/80 px-3 py-2.5 text-xs text-slate-600">
+      <div className="flex items-start gap-3 bg-slate-50 px-3.5 py-3 text-sm leading-relaxed text-slate-600">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
         <p>
           가공 검사를 마치지 못했습니다.

@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // change-log:
+// - 2026-10-24: 3D 확인 모달 — 환자·카탈로그 칸에 라벨, 입력 높이, 2열 배치.
 // - 2026-10-21: 카탈로그에 없는 제조사·브랜드·패밀리·타입은 프리셋 목록에 넣지 않는다.
 // - 2026-10-21: implantFieldsLockedPassive — 잠금 시 Select disabled 대신 pointer-events-none.
 // - 2026-10-21: renderImplantSelectSection — 카탈로그 Select를 부모 통합 섹션으로 감쌀 때.
@@ -26,6 +27,12 @@ import { cn } from "@/shared/ui/cn";
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
 
 type Option = { id: string; label: string };
+
+function FieldCaption({ children }: { children: string }) {
+  return (
+    <span className="px-0.5 text-xs font-medium text-slate-500">{children}</span>
+  );
+}
 
 const fieldKey = (value: string) => String(value || "").trim().toLowerCase();
 const brandToken = (value: string) =>
@@ -526,11 +533,12 @@ export function NewRequestPatientImplantFields({
   const implantCatalogSelectGrid = showImplantSelect ? (
         <div
           className={cn(
-            "grid grid-cols-1 gap-2 text-[10px] md:grid-cols-2 md:text-[11px] lg:grid-cols-4",
+            "grid grid-cols-1 gap-3 sm:grid-cols-2",
             implantPassiveLocked && "pointer-events-none",
           )}
         >
-              <div className="min-w-0 space-y-1">
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <FieldCaption>제조사</FieldCaption>
                 <Select
                   value={resolveSelectValue(
                     currentManufacturer,
@@ -585,7 +593,7 @@ export function NewRequestPatientImplantFields({
                 >
                   <SelectTrigger disabled={implantDisabled}>
                     {/* SelectItem 라벨로 표시. children 넣으면 미선택 시 placeholder가 빈칸이 됨 */}
-                    <SelectValue placeholder="Manufacturer" />
+                    <SelectValue placeholder="선택" />
                   </SelectTrigger>
                   <SelectContent>
                     {manufacturerOptions.map((m) => (
@@ -597,7 +605,8 @@ export function NewRequestPatientImplantFields({
                 </Select>
               </div>
 
-              <div className="min-w-0 space-y-1">
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <FieldCaption>브랜드</FieldCaption>
                 <Select
                   value={resolveBrandSelectValue(currentBrand, brandOptions)}
                   onValueChange={(value) => {
@@ -652,7 +661,7 @@ export function NewRequestPatientImplantFields({
                   <SelectTrigger
                     disabled={implantDisabled || !currentManufacturer}
                   >
-                    <SelectValue placeholder="Brand" />
+                    <SelectValue placeholder="선택" />
                   </SelectTrigger>
                   <SelectContent>
                     {brandOptions.map((s) => (
@@ -664,7 +673,8 @@ export function NewRequestPatientImplantFields({
                 </Select>
               </div>
 
-              <div className="min-w-0 space-y-1">
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <FieldCaption>패밀리</FieldCaption>
                 <Select
                   value={resolveSelectValue(currentFamily, currentFamilyOptions)}
                   onValueChange={(value) => {
@@ -718,7 +728,7 @@ export function NewRequestPatientImplantFields({
                   disabled={implantDisabled || !currentBrand}
                 >
                   <SelectTrigger disabled={implantDisabled || !currentBrand}>
-                    <SelectValue placeholder="Family" />
+                    <SelectValue placeholder="선택" />
                   </SelectTrigger>
                   <SelectContent>
                     {currentFamilyOptions.map((family) => (
@@ -730,7 +740,8 @@ export function NewRequestPatientImplantFields({
                 </Select>
               </div>
 
-              <div className="min-w-0 space-y-1">
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <FieldCaption>타입</FieldCaption>
                 <Select
                   value={resolveSelectValue(currentType, currentTypeOptions)}
                   onValueChange={(value) => {
@@ -770,7 +781,7 @@ export function NewRequestPatientImplantFields({
                   disabled={implantDisabled || !currentFamily}
                 >
                   <SelectTrigger disabled={implantDisabled || !currentFamily}>
-                    <SelectValue placeholder="Type" />
+                    <SelectValue placeholder="선택" />
                   </SelectTrigger>
                   <SelectContent>
                     {currentTypeOptions.map((t) => (
@@ -785,9 +796,12 @@ export function NewRequestPatientImplantFields({
   ) : null;
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-1 gap-2 text-foreground md:grid-cols-3">
-        <div className="min-w-0">
+    <div className="flex flex-col gap-5">
+      <section className="rounded-xl border border-slate-200 bg-white p-3.5">
+        <h3 className="mb-3 text-sm font-semibold text-slate-900">환자</h3>
+        <div className="grid grid-cols-2 gap-3 text-foreground">
+        <div className="col-span-2 flex min-w-0 flex-col gap-1.5">
+          <FieldCaption>치과</FieldCaption>
           <LabeledAutocompleteField
             value={caseInfos?.clinicName || ""}
             onChange={(value) => {
@@ -823,12 +837,13 @@ export function NewRequestPatientImplantFields({
                   addClinicPreset(caseInfos.clinicName);
                 }
               }}
-              inputClassName="h-8 text-xs w-full pr-10"
+              inputClassName="h-10 w-full pr-10 text-sm"
               disabled={readOnly}
             />
           </div>
 
-          <div className="min-w-0">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <FieldCaption>환자</FieldCaption>
             <LabeledAutocompleteField
               // 표시용 값은 검증된 한글 1~4글자만 보여주고, 그렇지 않으면 빈 문자열로 남김
               value={displayedPatientName}
@@ -868,12 +883,13 @@ export function NewRequestPatientImplantFields({
                   addPatientPreset(displayedPatientName);
                 }
               }}
-              inputClassName="h-8 text-xs w-full pr-10"
+              inputClassName="h-10 w-full pr-10 text-sm"
               disabled={readOnly}
             />
           </div>
 
-          <div className="min-w-0">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <FieldCaption>치아</FieldCaption>
             <LabeledAutocompleteField
               value={caseInfos?.tooth || ""}
               onChange={(value) => {
@@ -883,7 +899,7 @@ export function NewRequestPatientImplantFields({
                 });
               }}
               options={teethOptions}
-              placeholder="치아번호 (직접 입력)"
+              placeholder="직접 입력"
               onOptionSelect={(label) => {
                 if (readOnly) return;
                 setCaseInfos({
@@ -910,15 +926,25 @@ export function NewRequestPatientImplantFields({
                   addTeethPreset(caseInfos.tooth);
                 }
               }}
-              inputClassName="h-8 text-xs w-full pr-10"
+              inputClassName="h-10 w-full pr-10 text-sm"
               disabled={readOnly}
             />
           </div>
         </div>
+      </section>
 
-      {renderImplantSelectSection && implantCatalogSelectGrid
-        ? renderImplantSelectSection(implantCatalogSelectGrid)
-        : implantCatalogSelectGrid}
+      {implantCatalogSelectGrid ? (
+        <section className="space-y-2.5">
+          <h3 className="px-0.5 text-sm font-semibold text-slate-900">임플란트</h3>
+          {renderImplantSelectSection
+            ? renderImplantSelectSection(implantCatalogSelectGrid)
+            : (
+              <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+                {implantCatalogSelectGrid}
+              </div>
+            )}
+        </section>
+      ) : null}
 
     </div>
   );
