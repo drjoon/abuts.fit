@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: SettlementPolicyDialog triggerClassName. 기공소 지급은 입금 계좌 버튼 아래.
 // - 2026-10-06: 안내 모달 공통 크롬·fact 카드 톤. 기본 폭 sm:max-w-2xl.
 // - 2026-10-05: SettlementPolicyFact(정산 규칙 모달 짧은 카드).
 // - 2026-10-05: SettlementPolicyDialog contentClassName(넓은 분배 표).
@@ -285,12 +286,14 @@ export function SettlementPolicyDialog({
   children,
   triggerLabel = "정산규칙",
   contentClassName,
+  triggerClassName,
 }: {
   title: string;
   description?: string;
   children: ReactNode;
   triggerLabel?: string;
   contentClassName?: string;
+  triggerClassName?: string;
 }) {
   return (
     <Dialog>
@@ -299,7 +302,7 @@ export function SettlementPolicyDialog({
           type="button"
           size="sm"
           variant="outline"
-          className="ml-auto h-9 rounded-xl"
+          className={cn("ml-auto h-9 rounded-xl", triggerClassName)}
         >
           {triggerLabel}
         </Button>

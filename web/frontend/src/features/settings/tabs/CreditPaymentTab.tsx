@@ -1,6 +1,9 @@
 // change-log:
 // - 2026-09-10: 추천 라벨「추천은 N유닛」(구「추천 N배」).
 // - 2026-09-10: 데모 모드 충전 기본·추천 = conversion-quote suggestedTotal(이용분+1/3).
+// - 2026-10-24: 충전하기 버튼 하이라이트 깜빡임. 카드 위 계산서·기공료 안내 삭제.
+// - 2026-10-24: 충전 화면 하단 회사 정보(판매자 신원) 제거.
+// - 2026-10-24: 충전 안내 두 줄. 입금자명 코드는 누르기 전·후를 나눠 안내.
 // - 2026-09-10: 충전 안내 — resolveCreditChargeNoticeBody(치과/기공소).
 // - 2026-09-05: 데모 중 충전하기 — 실사용 전환 ConfirmDialog.
 // - 2026-08-12: 충전 화면 제목·안내문에 기공료 선입금(선납) 명시. 선불페이와 구분.
@@ -42,10 +45,9 @@ import { AlertTriangle, ChevronDown, ChevronUp, Copy, Wallet } from "lucide-reac
 import {
   CREDIT_CHARGE_NOTICE_TITLE,
   CREDIT_PREPAID_BALANCE_LABEL,
-  resolveCreditChargeNoticeBody,
 } from "@/shared/legal/creditPrepaidCopy";
-import { SellerIdentityDisclosure } from "@/shared/legal/sellerIdentityDisclosure";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { cn } from "@/shared/ui/cn";
 
 type Props = {
   userData: {
@@ -764,9 +766,6 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
           <div className="text-sm font-semibold leading-snug text-slate-800">
             {CREDIT_CHARGE_NOTICE_TITLE}
           </div>
-          <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-muted-foreground">
-            {resolveCreditChargeNoticeBody(requestorKind)}
-          </p>
         </div>
         <div className="grid md:grid-cols-2">
           {/* 왼쪽: 입금 계좌 / 코드 */}
@@ -874,7 +873,9 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
                       : "mt-2 text-xs leading-relaxed text-muted-foreground"
                   }
                 >
-                  입금자명에 이 코드를 입력하면 자동으로 매칭됩니다.
+                  {pendingOrder
+                    ? "입금자명에 이 코드를 적어 주세요."
+                    : "충전하기를 누르면 입금자명 코드가 나옵니다."}
                 </div>
               </div>
 
@@ -994,7 +995,12 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
 
                 <Button
                   type="button"
-                  className="h-11 w-full text-base"
+                  className={cn(
+                    "h-11 w-full text-base",
+                    !pendingOrder &&
+                      !creatingOrder &&
+                      "animate-scroll-halo-blue motion-reduce:animate-none",
+                  )}
                   onClick={requestCharge}
                   disabled={creatingOrder || Boolean(pendingOrder)}
                 >
@@ -1104,11 +1110,6 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
           </div>
         </div>
       )}
-
-      <SellerIdentityDisclosure
-        tone="footer-light"
-        className="border-t border-border/60 px-1.5 pt-4"
-      />
     </div>
   );
 };

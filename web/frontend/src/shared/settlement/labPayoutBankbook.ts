@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/business/settings/PayoutAccountCard.tsx
 // - web/backend/jobs/monthlySettlementBatchWorker.js
 // change-log:
+// - 2026-10-24: 지급 안내 문구를 한 사실씩 줄임.
 // - 2026-10-24: 통장 사본 없으면 그 달 기공료 전달이 다음 달로 미뤄짐.
 // - 2026-10-05: 플랫폼 사용료·하청 수수료 미부과. 안내 문구는 휴면(LabDirectPlatformFeeNotice).
 // - 2026-09-27: 플랫폼 사용료 2% 복원. 이벤트 기간 면제(0%) 평문·resolveLabFeeDisplay.
@@ -96,7 +97,7 @@ export function markLabPayoutRemindShownToday(anchorId: string, now = new Date()
 }
 
 export const LAB_PAYOUT_BANKBOOK_DELAY_NOTICE =
-  "통장 사본·입금 계좌가 없으면 그 달 기공료는 다음 달로 미뤄집니다.";
+  "없으면 그 달 기공료는 다음 달로 미뤄집니다.";
 
 /** 설정 · 사업자 탭의 통장 사본·입금 계좌 카드로 스크롤. */
 export const PAYOUT_ACCOUNT_CARD_ID = "payout-account-card";
@@ -111,11 +112,11 @@ export const LAB_PAYOUT_SETTINGS_PATH = PAYOUT_SETTINGS_PATH;
 export const LAB_SETTLEMENT_PAYOUT_RESERVE_WON = 500_000;
 
 export const LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE =
-  "다음 달 초 사용을 위해 50만원은 남기고, 나머지 잔액만 지급합니다.";
+  "다음 달 주문용으로 50만원은 남깁니다.";
 
 /** 커스텀어벗 치과→기공소 정산 — 확정·지급만 STL·생산비 후. 적립 보류는 hold부터. */
 export const LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE =
-  "STL 업로드와 어벗츠 생산비 지급 뒤에 확정됩니다. 그전까지는 적립 보류입니다.";
+  "STL과 생산비 지급 뒤에 확정됩니다.";
 
 /** 플랫폼 사용료 기본 표시용(관리자 설정 미로드 시). */
 export const LAB_DIRECT_PLATFORM_FEE_POLICY_RATE_PCT = 2;

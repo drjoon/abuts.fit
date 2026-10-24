@@ -6,6 +6,11 @@
 // - web/frontend/src/shared/settlement/affiliateVat.ts
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
+// - 2026-10-24: 기간 필터는 기공크레딧 잔액 카드 왼쪽.
+// - 2026-10-24: 정산규칙은 입금 계좌 등록 버튼 아래.
+// - 2026-10-24: 입금 계좌 등록 버튼은 기본색(primary).
+// - 2026-10-24: 지급 상단 안내 삭제. 미등록 계좌는 기간 지급 오른쪽 「입금 계좌 등록」.
+// - 2026-10-24: 지급 안내 — 확인 시점만. 정산규칙은 배너에 없는 조건만.
 // - 2026-10-24: 지급 안내 — 치과 입금 확인 뒤 등록 계좌로 전달. 자동 이체 문구 제거.
 // - 2026-10-06: 정산규칙 — fact 카드·짧은 문장. 공통 안내 모달 폭.
 // - 2026-09-28: 정산규칙 — 보철 적립은 작업시작이 아니라 디자인 파일 업로드(작업완료) 시.
@@ -75,8 +80,11 @@ import {
 import { useLabPayoutBankbookReminder } from "@/shared/settlement/useLabPayoutBankbookReminder";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/shared/ui/cn";
-import { CONTENT_MEASURED_CHROME_CLASS } from "@/shared/ui/contentMeasuredChrome";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   loadBusinessMeCached,
 } from "@/shared/components/business/settings/business/businessMeCache";
@@ -526,46 +534,6 @@ export const LabSettlementPayoutTab = () => {
   return (
     <div className="mx-auto flex h-full min-h-0 w-full flex-col overflow-hidden">
       {bankbookRemindDialog}
-      <div
-        className={cn(
-          CONTENT_MEASURED_CHROME_CLASS,
-          "mx-3 mt-3 shrink-0 self-center rounded-2xl border border-slate-200/80 bg-white px-3 py-2.5",
-        )}
-      >
-        <p className="text-[13px] leading-relaxed text-slate-700">
-          치과 입금이 확인된 뒤 등록 계좌로 전달됩니다.
-          <br />
-          1차까지 확인된 금액은 다음 영업일입니다.
-          <br />
-          그 이후 확인분은 확인한 다음 영업일입니다.
-          <br />
-          일부만 들어온 금액은 전액 확인 뒤에 전달됩니다.
-        </p>
-      </div>
-      {!payoutReady ? (
-        <div
-          className={cn(
-            CONTENT_MEASURED_CHROME_CLASS,
-            "mx-3 mt-2 shrink-0 self-center rounded-2xl border border-amber-200/80 bg-amber-50/90 px-3 py-2.5",
-          )}
-        >
-          <p className="text-[13px] font-medium text-amber-950">
-            통장 사본·입금 계좌가 필요합니다
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
-            {LAB_PAYOUT_BANKBOOK_DELAY_NOTICE}
-          </p>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="mt-2 h-8 border-amber-300 bg-white text-amber-950 hover:bg-amber-100 hover:text-amber-950"
-            onClick={() => navigate(LAB_PAYOUT_SETTINGS_PATH)}
-          >
-            설정 · 사업자에서 등록
-          </Button>
-        </div>
-      ) : null}
       <DashboardShell
         title="지급"
         subtitle=""
@@ -573,6 +541,12 @@ export const LabSettlementPayoutTab = () => {
         statsGridClassName={SETTLEMENT_STAT_ROW_CLASS}
         stats={
           <>
+            <PeriodFilter
+              value={settlementPeriod}
+              onChange={setPeriod}
+              presets={SETTLEMENT_PERIOD_PRESETS}
+              className="shrink-0 self-center"
+            />
             <SettlementStatCard
               compact
               className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
@@ -628,64 +602,67 @@ export const LabSettlementPayoutTab = () => {
                 </div>
               }
             />
-          </>
-        }
-        mainLeft={
-          <div className="flex h-full min-h-0 min-w-0 flex-col gap-2">
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <PeriodFilter
-                value={settlementPeriod}
-                onChange={setPeriod}
-                presets={SETTLEMENT_PERIOD_PRESETS}
-              />
+            <div className="grid shrink-0 grid-cols-1 gap-1.5 self-center">
+              {!payoutReady ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      className="h-9 px-4"
+                      onClick={() => navigate(LAB_PAYOUT_SETTINGS_PATH)}
+                    >
+                      입금 계좌 등록
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                    <p>{LAB_PAYOUT_BANKBOOK_DELAY_NOTICE}</p>
+                  </TooltipContent>
+                </Tooltip>
+              ) : null}
               <SettlementPolicyDialog
-                title="기공크레딧 정산 규칙"
-                description="적립 · 지급 · 계산서"
+                title="지급 규칙"
+                description="적립 · 입금 · 계산서"
+                triggerClassName="ml-0 w-full"
               >
                 <div className={GUIDE_FACT_GRID_CLASS}>
                   <SettlementPolicyFact label="보철 적립">
-                    디자인 파일을 올려 작업완료되면 기공크레딧으로 적립합니다.
+                    작업완료되면 적립됩니다.
                     <br />
-                    업로드 전에는 적립 보류이며 정산·지급에서 빠집니다.
+                    파일 업로드 전에는 빠집니다.
                   </SettlementPolicyFact>
-                  <SettlementPolicyFact label="작업물 미수령">
-                    치과가 보철을 받지 않는 건은 작업시작 시 적립합니다.
+                  <SettlementPolicyFact label="보철 미수령">
+                    보철을 안 받는 건은 작업시작 때 적립됩니다.
                     <br />
-                    커스텀어벗은 STL 업로드 시점입니다.
+                    커스텀어벗은 STL을 올린 때입니다.
                   </SettlementPolicyFact>
                   <SettlementPolicyFact label="커스텀어벗">
                     {LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}
                   </SettlementPolicyFact>
                   <SettlementPolicyFact label="취소">
-                    취소·롤백 시 해당 적립은 삭제됩니다.
+                    취소하면 적립이 삭제됩니다.
                   </SettlementPolicyFact>
-                  <SettlementPolicyFact label="사용 · 상계">
-                    앱 내 차감 순서는 무료 → 기공 → 유료입니다.
-                    <br />
-                    기공크레딧 사용분은 월 정산에서 상계합니다.
+                  <SettlementPolicyFact label="주문에 사용">
+                    주문에 쓰면 지급액에서 빠집니다.
                   </SettlementPolicyFact>
-                  <SettlementPolicyFact label="기공료 전달">
-                    치과 입금이 확인된 뒤 등록 계좌로 전달됩니다.
-                    <br />
-                    1차까지 확인된 금액은 다음 영업일입니다.
-                    <br />
-                    그 이후 확인분은 확인한 다음 영업일입니다.
-                    <br />
-                    일부만 들어온 금액은 전액 확인 뒤에 전달됩니다.
+                  <SettlementPolicyFact label="일부 입금">
+                    전액이 확인된 뒤에 들어옵니다.
                   </SettlementPolicyFact>
-                  <SettlementPolicyFact label="잔액">
+                  <SettlementPolicyFact label="남기는 금액">
                     {LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE}
                   </SettlementPolicyFact>
                   <SettlementPolicyFact label="통장 사본">
                     {LAB_PAYOUT_BANKBOOK_DELAY_NOTICE}
                   </SettlementPolicyFact>
-                  <SettlementPolicyFact label="면세 · 계산서">
-                    {SETTLEMENT_VAT_POLICY.exempt}
+                  <SettlementPolicyFact label="계산서">
+                    부가세 없이 발행합니다.
                   </SettlementPolicyFact>
                 </div>
               </SettlementPolicyDialog>
             </div>
-
+          </>
+        }
+        mainLeft={
+          <div className="flex h-full min-h-0 min-w-0 flex-col">
             <SettlementTableFrame className="min-h-0 min-w-0 flex-1 overflow-y-auto">
               <Table>
                 <TableHeader>

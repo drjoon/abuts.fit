@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-10-24: 기공소 정산 투어 — 충전·지급 힌트를 화면 안내와 맞춤.
 // - 2026-10-23: 치과 투어 — 사이드바 「기공소에 의뢰하기」「커스텀어벗 의뢰하기」.
 // - 2026-10-23: 기공소 투어 — 사이드바 「치과의뢰 수신하기」「커스텀어벗 의뢰하기」.
 // - 2026-09-26: lab_calendar — 제목 「기공의뢰 · 어벗츠로부터」.
@@ -352,7 +353,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "credits_charge",
     title: "정산 · 충전",
-    hint: "커스텀어벗 주문용 크레딧을 충전합니다.\n치과 기공료는 이 충전이 아닙니다.",
+    hint: "커스텀어벗 주문용 크레딧을 충전합니다.\n기공료는 지급에서 받습니다.",
     path: `${CREDITS_PATH}?tab=charge`,
     target: "credits_charge",
     advance: "next",
@@ -362,7 +363,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "credits_payout",
     title: "정산 · 지급",
-    hint: "치과 입금이 확인된 뒤 기공소 계좌로 전달됩니다.",
+    hint: "확인된 기공료가 등록 계좌로 들어옵니다.",
     path: `${CREDITS_PATH}?tab=payout`,
     target: "credits_payout",
     advance: "next",
