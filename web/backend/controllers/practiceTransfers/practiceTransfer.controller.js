@@ -76,6 +76,8 @@ import {
   loadCertifiedSubcontractLabAnchorIds,
   redactAutoMatchLabIdentity,
   redactAutoMatchPracticeIdentity,
+  AUTO_MATCH_PRACTICE_DISPLAY_NAME,
+  SUBCONTRACT_PRACTICE_DISPLAY_NAME,
   resolveAbutsPrimeLabFields,
   resolveAssigneeKind,
   resolveCreateMatchingTarget,
@@ -8104,6 +8106,28 @@ export async function getPracticeTransferQuoteContext(req, res) {
   }
 }
 
+function practiceShipContact(practiceProfile, practiceBusiness, revealed) {
+  if (!revealed) {
+    return { address: "", addressDetail: "", zipCode: "", phone: "" };
+  }
+  const meta =
+    practiceBusiness?.metadata && typeof practiceBusiness.metadata === "object"
+      ? practiceBusiness.metadata
+      : {};
+  const profile =
+    practiceProfile && typeof practiceProfile === "object" ? practiceProfile : {};
+  return {
+    address: String(profile.address || meta.address || "").trim(),
+    addressDetail: String(
+      profile.addressDetail || meta.addressDetail || "",
+    ).trim(),
+    zipCode: String(profile.zipCode || meta.zipCode || "").trim(),
+    phone: String(
+      profile.clinicPhone || profile.phone || meta.phoneNumber || "",
+    ).trim(),
+  };
+}
+
 export async function getReceivedPracticeTransfers(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
@@ -8194,10 +8218,13 @@ export async function getReceivedPracticeTransfers(req, res) {
       listQuery.skip(skip).limit(limit);
     }
     listQuery
-      .populate("practiceBusinessAnchorId", "name")
+      .populate(
+        "practiceBusinessAnchorId",
+        "name metadata.address metadata.addressDetail metadata.zipCode metadata.phoneNumber",
+      )
       .populate(
         "practiceUserId",
-        "name practiceProfile.clinicName practiceProfile.staffName",
+        "name practiceProfile.clinicName practiceProfile.staffName practiceProfile.address practiceProfile.addressDetail practiceProfile.zipCode practiceProfile.phone practiceProfile.clinicPhone",
       );
 
     const [rawDocs, totalCount, unreadCount] = await Promise.all([
@@ -8396,7 +8423,16 @@ export async function getReceivedPracticeTransfers(req, res) {
             : {},
         ),
         abutmentDeliveryInfo,
-        practice: practiceIdentity,
+        practice: {
+          ...practiceIdentity,
+          ...practiceShipContact(
+            practiceProfile,
+            practiceBusiness,
+            Boolean(practiceIdentity?.businessName) &&
+              practiceIdentity.businessName !== AUTO_MATCH_PRACTICE_DISPLAY_NAME &&
+              practiceIdentity.businessName !== SUBCONTRACT_PRACTICE_DISPLAY_NAME,
+          ),
+        },
         practiceBusinessAnchorId: practiceAnchorIdForSurcharge,
         labFeeMultiplier: practiceAnchorIdForSurcharge
           ? resolveLabPracticeFeeMultiplier(

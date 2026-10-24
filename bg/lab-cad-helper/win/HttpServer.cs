@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: v17 — GET /printers · POST /print-png (택배 라벨).
 // - 2026-10-03: v7 — POST /open-href.
 // - 2026-10-04: v15 — /notify soundId 전달.
 // - 2026-10-03: v4 — POST /notify · /session · /session/clear (PC 알람).
@@ -24,6 +25,7 @@ namespace Abuts.LabHelper
     {
         private const int MaxHeaderBytes = 64 * 1024;
         private const int MaxJsonBytes = 1024 * 1024;
+        private const int MaxPrintJsonBytes = 8 * 1024 * 1024;
         private const long MaxFileBytes = 4L * 1024 * 1024 * 1024;
 
         private static readonly string[] DefaultOrigins =
@@ -174,6 +176,24 @@ namespace Abuts.LabHelper
                 case "GET /health":
                     SendJson(ns, 200, origin, Health());
                     return;
+                case "GET /printers":
+                    SendJson(ns, 200, origin, Ok(new Dictionary<string, object>
+                    {
+                        { "printers", LabelPrint.ListPrinters() },
+                        { "defaultPrinter", LabelPrint.DefaultPrinter() },
+                    }));
+                    return;
+                case "POST /print-png":
+                {
+                    var body = ReadJson(req, MaxPrintJsonBytes);
+                    var png = DecodePng(Str(body, "png"));
+                    LabelPrint.PrintPng(png, Str(body, "printer"), Str(body, "title"), Num(body, "widthMm"), Num(body, "heightMm"));
+                    SendJson(ns, 200, origin, Ok(new Dictionary<string, object>
+                    {
+                        { "printMode", "png" },
+                    }));
+                    return;
+                }
                 case "GET /work-folder":
                     SendJson(ns, 200, origin, Ok(new Dictionary<string, object>
                     {
@@ -354,6 +374,7 @@ namespace Abuts.LabHelper
                 { "service", "abuts-lab-helper" },
                 { "version", Program.Version },
                 { "os", "windows" },
+                { "print", true },
                 { "port", Program.Port },
                 { "workFolder", folder },
                 { "workFolderExists", CaseFolder.WorkFolderExists(folder) },
@@ -487,13 +508,42 @@ namespace Abuts.LabHelper
             }
         }
 
-        private static Dictionary<string, object> ReadJson(Request req)
+        private static Dictionary<string, object> ReadJson(Request req, int maxBytes = 0)
         {
-            var bytes = ReadBody(req, MaxJsonBytes);
+            var max = maxBytes > 0 ? maxBytes : MaxJsonBytes;
+            var bytes = ReadBody(req, max);
             if (bytes.Length == 0) return new Dictionary<string, object>();
             var text = Encoding.UTF8.GetString(bytes);
-            return new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(text)
+            var serializer = new JavaScriptSerializer { MaxJsonLength = max };
+            return serializer.Deserialize<Dictionary<string, object>>(text)
                 ?? new Dictionary<string, object>();
+        }
+
+        private static double Num(Dictionary<string, object> map, string key)
+        {
+            object v;
+            if (map == null || !map.TryGetValue(key, out v) || v == null) return 0;
+            double n;
+            return double.TryParse(
+                Convert.ToString(v),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out n)
+                ? n
+                : 0;
+        }
+
+        private static byte[] DecodePng(string raw)
+        {
+            var text = raw ?? "";
+            var comma = text.IndexOf(',');
+            if (text.StartsWith("data:", StringComparison.OrdinalIgnoreCase) && comma >= 0)
+            {
+                text = text.Substring(comma + 1);
+            }
+            text = text.Trim();
+            if (text.Length == 0) throw new InvalidOperationException("라벨 이미지가 없습니다.");
+            return Convert.FromBase64String(text);
         }
 
         private static string Str(Dictionary<string, object> map, string key)

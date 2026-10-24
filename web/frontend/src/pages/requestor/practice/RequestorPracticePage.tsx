@@ -1,4 +1,5 @@
 // related files:
+// - 2026-10-24: 치과의뢰 수신 — 택배 라벨. 보철 완료 후 출력 여부, 헤더에서 치과별 선택.
 // - 2026-10-04: 역할이 다른 openTransfer는 자식 마운트 전에 넘김 — 치과 창에 채팅이 열리지 않음.
 // - 2026-10-04: 역할이 다른 창의 openTransfer는 URL ba로 대상 탭만 찾고 이 창은 바꾸지 않음.
 // - 2026-10-03: 알림 보기 — 역할이 다른 창의 openTransfer는 수신함 탭으로 넘긴다.
@@ -217,7 +218,7 @@ import {
   type MouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight, Search, X } from "lucide-react";
+import { ChevronRight, Search, Truck, X } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { UnsupportedConnectionCancelDialog } from "@/shared/components/practice/UnsupportedConnectionCancelDialog";
 import {
@@ -440,6 +441,11 @@ import {
 import {
   pickPracticeTransferFilesViaInput,
 } from "@/shared/components/practice/PracticeTransferFileDropTarget";
+import {
+  LabShipLabelAskDialog,
+  LabShipLabelDialog,
+} from "@/shared/lab/LabShipLabelDialog";
+import { listLabShipLabelCases } from "@/shared/lab/labShipCases";
 import {
   PracticeTransferListPatientArrivalRow,
   formatPracticeTransferListPatientWithTeeth,
@@ -1144,6 +1150,15 @@ export function RequestorPracticeReceivePage({
     files: File[];
   } | null>(null);
   const [workUploadBusy, setWorkUploadBusy] = useState(false);
+  const [shipLabelOpen, setShipLabelOpen] = useState(false);
+  const [shipLabelFocusId, setShipLabelFocusId] = useState<string | null>(null);
+  const [shipLabelAsk, setShipLabelAsk] = useState<ReceivedPracticeTransfer | null>(
+    null,
+  );
+  const shipLabelCases = useMemo(
+    () => listLabShipLabelCases(transfers),
+    [transfers],
+  );
   /** 어벗 디자인 업로드 가드 — 비STL·≥3MB(구강스캔 의심). 다시 올리기 유도 */
   const [designUploadGate, setDesignUploadGate] = useState<{
     transfer: ReceivedPracticeTransfer;
@@ -1593,6 +1608,10 @@ export function RequestorPracticeReceivePage({
           practice: {
             businessName: String(practiceRaw.businessName || "").trim(),
             userName: String(practiceRaw.userName || "").trim(),
+            address: String(practiceRaw.address || "").trim(),
+            addressDetail: String(practiceRaw.addressDetail || "").trim(),
+            zipCode: String(practiceRaw.zipCode || "").trim(),
+            phone: String(practiceRaw.phone || "").trim(),
           },
           practiceBusinessAnchorId: String(
             r.practiceBusinessAnchorId || "",
@@ -4871,6 +4890,8 @@ export function RequestorPracticeReceivePage({
                   : "보철 파일 저장 중 오류가 발생했습니다.",
                 variant: "destructive",
               });
+            } else if (shouldComplete) {
+              setShipLabelAsk(transfer);
             }
           } catch {
             rollbackOptimistic();
@@ -9398,8 +9419,45 @@ export function RequestorPracticeReceivePage({
     />
   );
 
+  const openShipLabel = (focusId?: string | null) => {
+    setShipLabelFocusId(String(focusId || "").trim() || null);
+    setShipLabelOpen(true);
+  };
+
+  const shipLabelButton = (() => {
+    const count = shipLabelCases.length;
+    const showLabel = !isMobile && headerLabelsWide;
+    const button = (
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        aria-label="택배 라벨"
+        className={cn(
+          "h-8 shrink-0 gap-1 text-xs",
+          showLabel ? "px-2.5" : count > 0 ? "px-2" : "w-8 px-0",
+        )}
+        onClick={() => openShipLabel(null)}
+      >
+        <Truck className="h-3.5 w-3.5" />
+        {showLabel ? "택배 라벨" : null}
+        {count > 0 ? (
+          <span className="tabular-nums">{count}</span>
+        ) : null}
+      </Button>
+    );
+    if (isMobile) return button;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent>보철이 끝난 의뢰의 택배 라벨</TooltipContent>
+      </Tooltip>
+    );
+  })();
+
   const labMobileHeaderActionButtons = (
     <>
+      {shipLabelButton}
       {bookmarkNavigateButton()}
       {labAbutmentInProgressTrigger}
     </>
@@ -9457,6 +9515,7 @@ export function RequestorPracticeReceivePage({
         alwaysLabeled
       />
       <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-1.5">
+        {shipLabelButton}
         {bookmarkNavigateButton()}
         {labAbutmentInProgressTrigger}
         <LabReceiveAlarmSettingsButton
@@ -10939,6 +10998,30 @@ export function RequestorPracticeReceivePage({
           navigate(href);
         }}
         onCancel={() => setBilling402Dialog(null)}
+      />
+      <LabShipLabelAskDialog
+        open={shipLabelAsk != null}
+        practiceName={String(shipLabelAsk?.practice?.businessName || "").trim()}
+        onLater={() => setShipLabelAsk(null)}
+        onPrint={() => {
+          const id = String(
+            shipLabelAsk?.transferId || shipLabelAsk?._id || "",
+          ).trim();
+          setShipLabelAsk(null);
+          openShipLabel(id);
+        }}
+      />
+      <LabShipLabelDialog
+        open={shipLabelOpen}
+        onOpenChange={(next) => {
+          setShipLabelOpen(next);
+          if (!next) setShipLabelFocusId(null);
+        }}
+        transfers={transfers}
+        token={token}
+        businessType={user?.role === "internalLab" ? "internalLab" : "requestor"}
+        fallbackSenderName={String(user?.companyName || "").trim()}
+        focusTransferId={shipLabelFocusId}
       />
       </>
       ) : null}

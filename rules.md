@@ -489,6 +489,7 @@
   - `bg/pc2/lot-server/rules.md`
   - `bg/pc2/pack-server/rules.md`
   - `bg/lab-cad-helper/rules.md`
+  - `bg/lab-wbls/rules.md`
   - `bg/pc3/wbls-server/rules.md`
 
 
@@ -502,7 +503,8 @@
 - Bridge: `bg/pc1/bridge-server/rules.md`
 - LOT: `bg/pc2/lot-server/rules.md`
 - Pack: `bg/pc2/pack-server/rules.md`
-- Lab Helper (Windows·Mac 연결 프로그램 v3): `bg/lab-cad-helper/rules.md`
+- Lab Helper (Windows·Mac 연결 프로그램. Windows v17이 택배 라벨 출력): `bg/lab-cad-helper/rules.md`
+- Lab WBLS (기공소 택배 라벨): `bg/lab-wbls/rules.md`
 - WBL: `bg/pc3/wbls-server/rules.md`
 
 

@@ -52,7 +52,7 @@ node app.js
 ```json
 {
   "url": "https://example.com/label.pdf",
-  "printer": "ZebraZM400",
+  "printer": "XP-D4602B",
   "title": "Hanjin Waybill"
 }
 ```

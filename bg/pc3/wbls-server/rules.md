@@ -11,7 +11,9 @@
 
 ## 1) 역할/흐름
 
-- wbls-server는 운송장/라벨 출력의 최종 프린트 게이트웨이입니다.
+- wbls-server는 제조사 운송장/라벨 출력의 최종 프린트 게이트웨이입니다.
+- 기본 프린터는 `WBL_PRINTER_DEFAULT=XP-D4602B`(Xprinter, ZPL). Zebra ZM400이 아니다.
+- 기공소가 원거리 치과에 붙이는 택배·딜리버리 라벨은 Windows 연결 프로그램(`bg/lab-cad-helper` v17)이 찍는다. 이 서버의 한진 계정으로 찍지 않는다.
 - label 모드에서는 프론트 Canvas PNG 렌더링 후 백엔드 프록시를 통해 wbls-server가 출력합니다.
 - 한진 인증/주문/상태 SSOT는 백엔드이며, wbls는 출력 수행에 집중합니다.
 - 프로세스 TZ: 엔트리 `app.js`에서 `process.env.TZ = "Asia/Seoul"` (루트 §1.4).

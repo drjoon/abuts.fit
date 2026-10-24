@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-10-24: practice 납품 주소·전화 — 기공소 택배 라벨.
 // - 2026-09-27: 표시 단계 작업완료와 UI 완료 뱃지(isPracticeRecentFinishedBadgeStatus)를 주석으로 구분.
 // - 2026-09-27: 협력 원청은 작업 CTA 숨김(viewerOperatesLabReceiveWork). 하청·자체는 원청도 작업.
 // - 2026-09-29: abutmentToothStages — 치아별 제조사 공정(채팅 안내 `43(준비), 44(세척.패킹)`).
@@ -208,6 +209,11 @@ export type PracticeTransferLabReceiveItem = {
   practice: {
     businessName: string;
     userName: string;
+    /** 납품 주소. 치과 프로필, 없으면 사업자 주소 */
+    address?: string;
+    addressDetail?: string;
+    zipCode?: string;
+    phone?: string;
   };
   practiceBusinessAnchorId?: string | null;
   labFeeMultiplier?: number;

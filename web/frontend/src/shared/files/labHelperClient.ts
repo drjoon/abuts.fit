@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: Windows 택배 라벨은 연결 프로그램 v17. 공통 CURRENT는 16(Mac 자동 갱신과 맞춤).
 // - 2026-10-04: CURRENT_VERSION=16 — OS 토스트 = 웹 전역 공통 default(border-2 primary).
 // - 2026-10-04: CURRENT_VERSION=15 — 플랫폼 alert 토스트 룩·알림음 샘플(soundId).
 // - 2026-10-04: CURRENT_VERSION=14 — PC 알람 서버 WS(롱폴링 제거).
@@ -33,8 +34,10 @@ export const LAB_HELPER_MIN_VERSION = 3;
 export const LAB_HELPER_ALARM_MIN_VERSION = 4;
 /** Mac 시스템 설정 열기(/open-privacy-settings)에 필요한 최소 버전 */
 export const LAB_HELPER_PRIVACY_SETTINGS_MIN_VERSION = 10;
-/** 배포 중인 최신 연결 프로그램 버전(구버전이면 자동 갱신 유도) */
+/** 배포 중인 최신 연결 프로그램 버전(구버전이면 자동 갱신 유도). Mac과 version.json이 16이다. */
 export const LAB_HELPER_CURRENT_VERSION = 16;
+/** Windows 연결 프로그램의 택배 라벨(/printers·/print-png). Mac에는 없다. */
+export const LAB_HELPER_PRINT_MIN_VERSION = 17;
 const INSTALLED_KEY = "abuts.labHelperInstalled";
 const WORK_FOLDER_KEY = "abuts.labWorkFolder";
 
@@ -476,7 +479,9 @@ export function startLabHelperInstallerDownload(os: LabHelperOs) {
     const a = document.createElement("a");
     // 브라우저·중간 캐시로 옛 zip을 받지 않게 버전을 붙인다.
     const sep = installer.href.includes("?") ? "&" : "?";
-    a.href = `${installer.href}${sep}v=${LAB_HELPER_CURRENT_VERSION}`;
+    const cacheVersion =
+      os === "windows" ? LAB_HELPER_PRINT_MIN_VERSION : LAB_HELPER_CURRENT_VERSION;
+    a.href = `${installer.href}${sep}v=${cacheVersion}`;
     a.download = installer.fileName;
     a.rel = "noopener";
     document.body.appendChild(a);
@@ -497,10 +502,16 @@ export type LabHelperPresence = "unsupported" | "missing" | "outdated" | "ready"
 
 export async function resolveLabHelperPresence(opts?: {
   wake?: boolean;
+  /** 이 값 미만이면 outdated. 없으면 CURRENT. Windows 택배 라벨은 PRINT_MIN. */
+  minVersion?: number;
 }): Promise<LabHelperPresence> {
   if (!labHelperOs()) return "unsupported";
   const health = opts?.wake ? await findLabHelper() : await probeLabHelper();
   if (!health) return "missing";
-  if (Number(health.version || 0) < LAB_HELPER_CURRENT_VERSION) return "outdated";
+  const min =
+    typeof opts?.minVersion === "number" && opts.minVersion > 0
+      ? opts.minVersion
+      : LAB_HELPER_CURRENT_VERSION;
+  if (Number(health.version || 0) < min) return "outdated";
   return "ready";
 }

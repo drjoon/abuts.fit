@@ -13,6 +13,7 @@
  * - 2026-10-06: 숨길 요일 — 캘린더 툴바 → 보기·캘린더 선택 시 그 아래.
  * - 2026-10-04: 알림음 — 한 줄 항목 클릭 시 중첩 팝오버로 샘플 선택.
  * - 2026-10-04: 알림음 샘플 선택·미리듣기.
+ * - 2026-10-24: Windows 연결 프로그램 줄에 택배 라벨(v17)을 같이 본다.
  * - 2026-10-04: 연결 프로그램 설치·업데이트 항목.
  * - 2026-10-03: 전체 알림 켜면 미리듣기(제스처로 AudioContext unlock).
  * - 2026-10-03: 치과 발신 헤더에서도 재사용(보기·전체 알림).
@@ -51,6 +52,8 @@ import type { LabReceiveCalendarViewMode } from "@/shared/practice/labReceiveCal
 import { LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS } from "@/shared/practice/labReceiveCalendarWeekGrid";
 import { useLabHelperInstallPrompt } from "@/shared/hooks/useLabHelperInstallPrompt";
 import {
+  LAB_HELPER_PRINT_MIN_VERSION,
+  labHelperOs,
   resolveLabHelperPresence,
   supportsLabHelper,
   type LabHelperPresence,
@@ -130,6 +133,8 @@ export function LabReceiveAlarmSettingsButton({
     [hiddenWeekdays],
   );
   const showHelper = supportsLabHelper();
+  const helperPrint = labHelperOs() === "windows";
+  const helperMinVersion = helperPrint ? LAB_HELPER_PRINT_MIN_VERSION : undefined;
 
   useEffect(() => {
     if (!open) setSoundOpen(false);
@@ -140,7 +145,10 @@ export function LabReceiveAlarmSettingsButton({
     let cancelled = false;
     setPresenceBusy(true);
     void (async () => {
-      const next = await resolveLabHelperPresence({ wake: true });
+      const next = await resolveLabHelperPresence({
+        wake: true,
+        minVersion: helperMinVersion,
+      });
       if (!cancelled) {
         setPresence(next);
         setPresenceBusy(false);
@@ -149,7 +157,7 @@ export function LabReceiveAlarmSettingsButton({
     return () => {
       cancelled = true;
     };
-  }, [open, showHelper]);
+  }, [open, showHelper, helperMinVersion]);
 
   const toggleHiddenDow = (dow: number) => {
     if (!onHiddenWeekdaysChange || !Array.isArray(hiddenWeekdays)) return;
@@ -358,7 +366,9 @@ export function LabReceiveAlarmSettingsButton({
             <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-3 py-2.5">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-slate-900">연결 프로그램</p>
-                <p className="text-xs text-slate-500">폴더 열기·PC 알림</p>
+                <p className="text-xs text-slate-500">
+                  {helperPrint ? "폴더 열기·PC 알림·택배 라벨" : "폴더 열기·PC 알림"}
+                </p>
               </div>
               {presence === "ready" ? (
                 <span className="shrink-0 text-xs font-medium text-slate-500">
@@ -374,7 +384,7 @@ export function LabReceiveAlarmSettingsButton({
                   onClick={() => {
                     setOpen(false);
                     void (async () => {
-                      const next = await promptFromSettings();
+                      const next = await promptFromSettings(helperMinVersion);
                       setPresence(next);
                     })();
                   }}

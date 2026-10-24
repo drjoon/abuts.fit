@@ -105,6 +105,7 @@ bg/lab-cad-helper/mac/build.sh   # Xcode CLT → AbutsLabHelper-mac.zip (유니�
 - v14: PC 알람 — `GET /alarms/wait` 롱폴링 대신 서버 `WS /api/lab-helper/alarms/ws`(Bearer) push.
 - v15: OS 토스트를 웹 alert 토스트(소프트 sky)에 맞추고, 알림음 샘플 5종을 WAV로 합성한다. 웹 헤더 설정에서 고른 `soundId`를 session/notify로 받는다. auto-update는 `appOrigin`(Vite)·localhost:5173을 먼저 보고, origin이 낮아도 다음 origin을 계속 본다(로컬이 prod보다 앞설 때 prod v에서 멈추지 않음).
 - v16: OS 토스트를 웹 전역 공통 default 토스트(`border-2 primary`·A뱃지/액센트 없음·「보기」)에 맞춘다.
+- v17 (Windows만): `GET /printers` · `POST /print-png`. 치과의뢰 수신 택배 라벨이 이 연결 프로그램으로 출력된다. Mac `helperVersion`과 `downloads/lab-helper/version.json`은 16을 유지한다(공통 번호를 올리면 Mac이 같은 zip을 반복 갱신한다). 웹 `LAB_HELPER_CURRENT_VERSION`도 16이고, Windows 설정·라벨 화면만 `LAB_HELPER_PRINT_MIN_VERSION=17`로 업데이트 버튼을 연다.
 
 ## 6) 레거시
 

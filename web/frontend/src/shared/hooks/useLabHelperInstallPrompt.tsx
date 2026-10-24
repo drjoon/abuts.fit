@@ -8,6 +8,7 @@
  * - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
  * change-log:
  * - 2026-10-04: JSX 훅이라 .tsx (Vite SWC).
+ * - 2026-10-24: 설정에서 Windows 택배 라벨(v17) 미만이면 업데이트 모달.
  * - 2026-10-04: 헤더 설정·채팅 입력에서 미설치/구버전 안내.
  */
 import { useCallback, useRef, useState, type ReactNode } from "react";
@@ -57,12 +58,15 @@ export function useLabHelperInstallPrompt() {
   }, []);
 
   /** 설정 팝오버 — 미설치·구버전이면 해당 모달. 정상이면 false. */
-  const promptFromSettings = useCallback(async (): Promise<LabHelperPresence> => {
+  const promptFromSettings = useCallback(async (minVersion?: number): Promise<LabHelperPresence> => {
     if (!supportsLabHelper()) return "unsupported";
     if (busyRef.current) return "unsupported";
     busyRef.current = true;
     try {
-      const presence = await resolveLabHelperPresence({ wake: true });
+      const presence = await resolveLabHelperPresence({
+        wake: true,
+        minVersion,
+      });
       openForPresence(presence);
       return presence;
     } finally {
