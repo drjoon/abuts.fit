@@ -1,15 +1,19 @@
 // change-log:
+// - 2026-10-24: 한진 운송장과 같은 가로 123×98.5mm. 칸 위치는 wbls 운송장 캔버스와 같다.
 // - 2026-10-24: 100×150mm 납품 라벨. 받는 치과·보철 목록·보내는 기공소.
 // related files:
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/mailboxGrid.helpers.ts
 // - web/frontend/src/shared/lab/LabShipLabelDialog.tsx
 // - web/frontend/src/shared/lab/labWblsClient.ts
+import JsBarcode from "jsbarcode";
 
-export const LAB_SHIP_LABEL_WIDTH_MM = 100;
-export const LAB_SHIP_LABEL_HEIGHT_MM = 150;
+/** ZPL PW984 × LL787 @ 203dpi. wbls printPngWindows와 같은 용지. */
+export const LAB_SHIP_LABEL_WIDTH_MM = 123;
+export const LAB_SHIP_LABEL_HEIGHT_MM = 98.5;
 
-const PX_PER_MM = 8;
-const WIDTH = LAB_SHIP_LABEL_WIDTH_MM * PX_PER_MM;
-const HEIGHT = LAB_SHIP_LABEL_HEIGHT_MM * PX_PER_MM;
+const WAYBILL_S = 4;
+const WAYBILL_W = 984 * WAYBILL_S;
+const WAYBILL_H = 787 * WAYBILL_S;
 
 export type LabShipLabelMode = "parcel" | "delivery";
 
@@ -30,49 +34,55 @@ export type LabShipLabelInput = {
   senderAddress: string;
   senderPhone: string;
   items: LabShipLabelItem[];
+  /** 한진 운송장번호 12자리. 없으면 번호·바코드 칸은 비운다. */
+  waybillNumber?: string;
 };
 
-const FONT =
-  '"Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
+const KR = '"Nanum Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif';
 
-function wrapLines(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  maxWidth: number,
-  maxLines: number,
-): string[] {
-  const source = String(text || "").replace(/\s+/g, " ").trim();
-  if (!source) return [];
-  const lines: string[] = [];
-  let line = "";
-  for (const ch of source) {
-    const next = line + ch;
-    if (ctx.measureText(next).width > maxWidth && line) {
-      lines.push(line);
-      line = ch;
-      if (lines.length >= maxLines) break;
-    } else {
-      line = next;
-    }
+function formatWaybillDisplay(value: string) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length !== 12) return "";
+  return `${digits.slice(0, 4)}-${digits.slice(4, 8)}-${digits.slice(8, 12)}`;
+}
+
+function maskName(value: string) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const chars = Array.from(text);
+  if (chars.length === 1) return text;
+  if (chars.length === 2) return `${chars[0]}*`;
+  return `${chars[0]}${"*".repeat(chars.length - 2)}${chars[chars.length - 1]}`;
+}
+
+function maskPhone(value: string) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("02")) {
+    if (digits.length === 9) return `${digits.slice(0, 2)}-${"*".repeat(3)}-${digits.slice(5)}`;
+    if (digits.length === 10) return `${digits.slice(0, 2)}-${"*".repeat(4)}-${digits.slice(6)}`;
   }
-  if (lines.length < maxLines && line) lines.push(line);
-  return lines.slice(0, maxLines);
+  if (digits.length === 10) return `${digits.slice(0, 3)}-${"*".repeat(3)}-${digits.slice(6)}`;
+  if (digits.length === 11) return `${digits.slice(0, 3)}-${"*".repeat(4)}-${digits.slice(7)}`;
+  if (digits.length === 12) return `${digits.slice(0, 4)}-${"*".repeat(4)}-${digits.slice(8)}`;
+  const head = digits.slice(0, Math.max(0, digits.length - 8));
+  const middle = digits.slice(Math.max(0, digits.length - 8), Math.max(0, digits.length - 4));
+  const tail = digits.slice(-4);
+  if (!head || !middle || !tail) return String(value || "").trim();
+  return `${head}-${"*".repeat(middle.length)}-${tail}`;
 }
 
-function formatArrival(value: string): string {
-  const ymd = String(value || "").trim();
-  const match = ymd.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!match) return ymd;
-  return `${Number(match[2])}/${Number(match[3])} 도착`;
-}
-
-function kstNowLabel(): string {
-  return new Intl.DateTimeFormat("ko-KR", {
+function kstYmd(date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Seoul",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(new Date());
+  }).format(date);
+}
+
+function joinAddress(zip: string, address: string) {
+  return [zip, address].map((part) => String(part || "").trim()).filter(Boolean).join(" ");
 }
 
 export function renderLabShipLabel(input: LabShipLabelInput): {
@@ -80,147 +90,123 @@ export function renderLabShipLabel(input: LabShipLabelInput): {
   pngBase64: string;
 } {
   const canvas = document.createElement("canvas");
-  canvas.width = WIDTH;
-  canvas.height = HEIGHT;
+  canvas.width = WAYBILL_W;
+  canvas.height = WAYBILL_H;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("라벨을 그리지 못했습니다.");
 
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
-  ctx.strokeStyle = "#0f172a";
-  ctx.lineWidth = 4;
-  ctx.strokeRect(8, 8, WIDTH - 16, HEIGHT - 16);
-
-  const modeLabel = input.mode === "delivery" ? "딜리버리" : "택배";
-  ctx.fillStyle = "#0f172a";
-  ctx.fillRect(16, 16, WIDTH - 32, 88);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = `700 36px ${FONT}`;
-  ctx.textBaseline = "middle";
-  ctx.fillText(modeLabel, 36, 60);
-  ctx.font = `500 20px ${FONT}`;
-  ctx.textAlign = "right";
-  ctx.fillText(kstNowLabel(), WIDTH - 36, 60);
-  ctx.textAlign = "left";
-
-  let y = 132;
-  const inner = 36;
-  const maxText = WIDTH - inner * 2;
-
-  ctx.fillStyle = "#64748b";
-  ctx.font = `600 18px ${FONT}`;
-  ctx.textBaseline = "top";
-  ctx.fillText("받는 곳", inner, y);
-  y += 28;
-
-  ctx.fillStyle = "#0f172a";
-  ctx.font = `700 40px ${FONT}`;
-  const nameLines = wrapLines(
-    ctx,
-    input.recipientName || "치과",
-    maxText,
-    2,
-  );
-  for (const line of nameLines) {
-    ctx.fillText(line, inner, y);
-    y += 48;
-  }
-
-  ctx.font = `500 22px ${FONT}`;
-  ctx.fillStyle = "#334155";
-  const zip = String(input.recipientZip || "").trim();
-  const address = [zip, input.recipientAddress].filter(Boolean).join(" ");
-  const addressLines = wrapLines(ctx, address || "주소 없음", maxText, 3);
-  for (const line of addressLines) {
-    ctx.fillText(line, inner, y);
-    y += 30;
-  }
-  const phone = String(input.recipientPhone || "").trim();
-  if (phone) {
-    y += 4;
-    ctx.fillText(phone, inner, y);
-    y += 30;
-  }
-
-  y += 16;
-  ctx.strokeStyle = "#e2e8f0";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(inner, y);
-  ctx.lineTo(WIDTH - inner, y);
-  ctx.stroke();
-  y += 18;
-
-  ctx.fillStyle = "#64748b";
-  ctx.font = `600 18px ${FONT}`;
-  ctx.fillText("보철", inner, y);
-  y += 28;
-
-  const items = input.items.slice(0, 8);
-  const rest = input.items.length - items.length;
-  ctx.font = `600 22px ${FONT}`;
-  for (const item of items) {
-    const teeth = String(item.teeth || "").trim();
-    const left = teeth ? `${item.patient}  ${teeth}` : item.patient;
-    const arrival = formatArrival(item.arrival);
-    ctx.fillStyle = "#0f172a";
-    ctx.textAlign = "left";
-    const leftMax = arrival ? maxText - 120 : maxText;
-    const shown = wrapLines(ctx, left, leftMax, 1)[0] || item.patient;
-    ctx.fillText(shown, inner, y);
-    if (arrival) {
-      ctx.fillStyle = "#64748b";
-      ctx.font = `500 18px ${FONT}`;
-      ctx.textAlign = "right";
-      ctx.fillText(arrival, WIDTH - inner, y + 2);
-      ctx.textAlign = "left";
-      ctx.font = `600 22px ${FONT}`;
+  const S = WAYBILL_S;
+  const zt = (
+    text: string,
+    fx: number,
+    fy: number,
+    fh: number,
+    bold = false,
+  ) => {
+    const value = String(text || "").trim();
+    if (!value) return;
+    ctx.font = `${bold ? "700" : "400"} ${fh * S}px ${KR}`;
+    ctx.fillStyle = "#000000";
+    ctx.fillText(value, fx * S, (fy + fh) * S);
+  };
+  const zt2 = (
+    text: string,
+    fx: number,
+    fy: number,
+    fh: number,
+    maxW: number,
+    bold = false,
+  ) => {
+    const font = `${bold ? "700" : "400"} ${fh * S}px ${KR}`;
+    ctx.save();
+    ctx.font = font;
+    let o = String(text || "").trim();
+    if (!o) {
+      ctx.restore();
+      return;
     }
-    y += 34;
-  }
-  if (rest > 0) {
-    ctx.fillStyle = "#64748b";
-    ctx.font = `500 20px ${FONT}`;
-    ctx.fillText(`외 ${rest}건`, inner, y);
-    y += 30;
-  }
-  if (items.length === 0) {
-    ctx.fillStyle = "#94a3b8";
-    ctx.font = `500 22px ${FONT}`;
-    ctx.fillText("선택된 보철 없음", inner, y);
-    y += 32;
+    while (o.length > 1 && ctx.measureText(o).width > maxW * S) {
+      o = `${o.slice(0, -2).trimEnd()}…`;
+    }
+    ctx.fillStyle = "#000000";
+    ctx.fillText(o, fx * S, (fy + fh) * S);
+    ctx.restore();
+  };
+  const drawBarcode = (
+    value: string,
+    x: number,
+    y: number,
+    height: number,
+    format: "CODE128" | "ITF",
+  ) => {
+    const digits = String(value || "").replace(/\D/g, "");
+    if (!digits) return;
+    const c = document.createElement("canvas");
+    try {
+      JsBarcode(c, digits, {
+        format,
+        displayValue: false,
+        margin: 0,
+        height: height * S,
+        width: 2 * S,
+        background: "rgba(255,255,255,0)",
+        lineColor: "#000000",
+      });
+    } catch {
+      return;
+    }
+    ctx.drawImage(c, x * S, y * S, c.width, height * S);
+  };
+
+  const wblNum = String(input.waybillNumber || "").replace(/\D/g, "");
+  const formattedWbl = formatWaybillDisplay(wblNum);
+  const receiverAddr = joinAddress(input.recipientZip, input.recipientAddress);
+  const senderAddr = joinAddress(input.senderZip, input.senderAddress);
+  const receiverName = maskName(input.recipientName);
+  const receiverPhone = maskPhone(input.recipientPhone);
+  const senderName = maskName(input.senderName);
+  const senderPhone = maskPhone(input.senderPhone);
+  const senderSummary = [senderName, senderPhone].filter(Boolean).join(" / ");
+  const screwLine = input.items
+    .map((item) => [item.patient, item.teeth].filter(Boolean).join(" "))
+    .filter(Boolean)
+    .join(", ");
+  const remark = input.mode === "delivery" ? "딜리버리" : "택배";
+  const todayLabel = `${kstYmd().replace(/-/g, ".")}.`;
+  const DY = -20;
+
+  ctx.clearRect(0, 0, WAYBILL_W, WAYBILL_H);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, WAYBILL_W, WAYBILL_H);
+  ctx.imageSmoothingEnabled = false;
+  ctx.textBaseline = "alphabetic";
+
+  zt2(formattedWbl, 122, 6, 40, 350, true);
+  zt("P. 1", 498, 10, 22, true);
+  zt("1 / 1", 654, 10, 22, true);
+
+  zt(`발지:`, 74, 184 + DY, 24, true);
+  zt2(receiverName, 74, 228 + DY, 28, 330, true);
+  zt2(receiverPhone, 468, 230 + DY, 20, 180);
+  zt2(receiverAddr, 74, 264 + DY, 18, 585);
+  zt2(receiverAddr, 74, 314 + DY, 54, 500, true);
+
+  if (wblNum) {
+    drawBarcode(wblNum, 748, 236 + DY, 90, "CODE128");
   }
 
-  const senderTop = Math.max(y + 24, HEIGHT - 280);
-  ctx.strokeStyle = "#e2e8f0";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(inner, senderTop);
-  ctx.lineTo(WIDTH - inner, senderTop);
-  ctx.stroke();
+  zt2(senderSummary, 76, 394 + DY, 18, 610);
+  zt2(senderAddr, 74, 418 + DY, 16, 640);
+  zt(`${todayLabel} Type:S`, 734, 392 + DY, 18);
 
-  let sy = senderTop + 18;
-  ctx.fillStyle = "#64748b";
-  ctx.font = `600 18px ${FONT}`;
-  ctx.textAlign = "left";
-  ctx.fillText("보내는 곳", inner, sy);
-  sy += 28;
-  ctx.fillStyle = "#0f172a";
-  ctx.font = `700 26px ${FONT}`;
-  const senderName = wrapLines(ctx, input.senderName || "기공소", maxText, 1)[0] || "기공소";
-  ctx.fillText(senderName, inner, sy);
-  sy += 36;
-  ctx.font = `500 20px ${FONT}`;
-  ctx.fillStyle = "#334155";
-  const senderZip = String(input.senderZip || "").trim();
-  const senderAddress = [senderZip, input.senderAddress].filter(Boolean).join(" ");
-  const senderLines = wrapLines(ctx, senderAddress || "주소 없음", maxText, 2);
-  for (const line of senderLines) {
-    ctx.fillText(line, inner, sy);
-    sy += 28;
+  zt("의료기기", 74, 486 + DY, 22);
+  zt2(screwLine, 74, 514 + DY, 20, 500);
+  zt2(remark, 74, 712 + DY, 16, 420);
+
+  if (wblNum) {
+    drawBarcode(wblNum, 604, 552 + DY, 120, "ITF");
+    zt2(`운임Type:S  ${formattedWbl}`, 560, 684 + DY, 18, 380);
   }
-  const senderPhone = String(input.senderPhone || "").trim();
-  if (senderPhone) ctx.fillText(senderPhone, inner, sy);
 
   const dataUrl = canvas.toDataURL("image/png");
   const pngBase64 = dataUrl.replace(/^data:image\/png;base64,/, "");
@@ -238,7 +224,7 @@ export function downloadLabShipLabel(dataUrl: string, fileName: string) {
 }
 
 export function printLabShipLabelInBrowser(dataUrl: string): boolean {
-  const win = window.open("", "_blank", "noopener,noreferrer,width=480,height=760");
+  const win = window.open("", "_blank", "noopener,noreferrer,width=720,height=560");
   if (!win) return false;
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>택배 라벨</title>
 <style>

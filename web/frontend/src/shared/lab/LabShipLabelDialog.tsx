@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 라벨 칸은 한진 운송장(123×98.5mm)과 같다. Mac은 출력 프로그램이 없다.
 // - 2026-10-24: 출력 프로그램은 헤더 설정의 연결 프로그램(Windows v17).
 // - 2026-10-24: 치과의뢰 수신 — 보철 완료 건을 치과 탭으로 골라 택배·딜리버리 라벨 출력.
 // related files:
@@ -504,7 +505,7 @@ export function LabShipLabelDialog({
                 <img
                   src={label.dataUrl}
                   alt="라벨 미리보기"
-                  className="w-40 rounded-md border border-slate-200 bg-white shadow-md"
+                  className="w-full rounded-md border border-slate-200 bg-white shadow-md"
                 />
               ) : (
                 <p className="px-4 text-center text-xs leading-relaxed text-slate-500">
@@ -530,6 +531,13 @@ export function LabShipLabelDialog({
             <br />
             드라이버에서 ZPL을 고르세요.
           </p>
+          {agent === "other" ? (
+            <p className="text-xs leading-relaxed text-slate-600">
+              이 컴퓨터에서는 라벨을 출력하지 않습니다.
+              <br />
+              Windows 연결 프로그램에서 출력합니다.
+            </p>
+          ) : null}
           {agent === "ready" && printer && !isPc3ZplPrinterName(printer) ? (
             <p className="text-xs leading-relaxed text-amber-800">
               고른 프린터가 {LAB_WBLS_PRINTER_MODEL}가 아닙니다.
