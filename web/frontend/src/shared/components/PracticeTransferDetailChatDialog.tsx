@@ -20,6 +20,7 @@
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // change-log:
+// - 2026-10-24: 채팅 헤더 담당 기사 — 작업시작 계정, 수행 기공소는 변경.
 // - 2026-10-07: 작업 파일 페인트 채팅 첨부 — 썸네일 클릭 시 작업 파일을 연다.
 // - 2026-10-04: 채팅 입력 포커스 — 헬퍼 미설치·구버전이면 설치/업데이트 안내.
 // - 2026-10-03: 어벗·보철 클릭도 의뢰·작업 스캔과 같은 겹침 프리뷰로 연다(컨펌만 단건 유지).
@@ -355,6 +356,8 @@ import {
   LabBasketTagToolbar,
   normalizeLabBasketTag,
 } from "@/shared/components/practice/LabBasketTagToolbar";
+import { LabTechnicianAssignControl } from "@/shared/components/practice/LabTechnicianAssignControl";
+import type { LabTechnician } from "@/shared/practice/labTechnician";
 import { LAB_RECEIVE_ABUTMENT_UPLOAD_HINT } from "@/shared/components/practice/PracticeLabReceiveWorkActionsBar";
 import {
   getPracticeTransferFileExtension,
@@ -606,6 +609,12 @@ type PracticeTransferDetailChatDialogProps = {
   labBasketOccupiedTags?: ReadonlySet<string> | null;
   /** 번호표 선택/해제 시(목록·달력 즉시 갱신 + BA 저장) */
   onLabBasketTagChange?: (tag: string) => void;
+  /** 담당 기사. 작업시작 계정이 기본. */
+  labTechnician?: LabTechnician | null;
+  /** 수행 기공소만 같은 계정으로 바꾼다. 치과는 이름만. */
+  labTechnicianAssignable?: boolean;
+  labTechnicianBusy?: boolean;
+  onAssignLabTechnician?: (member: { id: string; name: string }) => void;
   /**
    * 열릴 때 스크롤 위치 힌트. detail=맨 위(의뢰), chat=맨 아래(진행).
    * 미지정 시 채팅 내역이 있으면 아래, 없으면 위.
@@ -915,6 +924,10 @@ export function PracticeTransferDetailChatDialog({
   labBasketTag: labBasketTagProp = null,
   labBasketOccupiedTags = null,
   onLabBasketTagChange,
+  labTechnician = null,
+  labTechnicianAssignable = false,
+  labTechnicianBusy = false,
+  onAssignLabTechnician,
   initialPanelTab,
   labAnchorId = null,
   cooperationPerformerLabName = null,
@@ -2932,6 +2945,19 @@ export function PracticeTransferDetailChatDialog({
     );
   })();
   const rearrivalControl = onAppendArrival ? renderRearrivalPopover() : null;
+  const showLabTechnician =
+    !workCanceled &&
+    (Boolean(String(labTechnician?.name || "").trim()) ||
+      Boolean(labTechnicianAssignable && onAssignLabTechnician));
+  const labTechnicianControl = showLabTechnician ? (
+    <LabTechnicianAssignControl
+      technician={labTechnician}
+      canAssign={Boolean(labTechnicianAssignable && onAssignLabTechnician)}
+      busy={labTechnicianBusy}
+      token={authToken}
+      onAssign={onAssignLabTechnician}
+    />
+  ) : null;
   const headerActionButtons =
     labIdentityDateRowActions || practiceHeaderActionButtons;
   /**
@@ -2941,7 +2967,9 @@ export function PracticeTransferDetailChatDialog({
    * 3줄: 프린트·번호표 | 작업시작·작업취소(또는 제작변경·취소·지르)
    */
   const renderIdentityDateRow = (className?: string) => {
-    if (!identityDateLabel && !rearrivalControl) return null;
+    if (!identityDateLabel && !rearrivalControl && !labTechnicianControl) {
+      return null;
+    }
     return (
       <div className={cn("flex min-w-0 items-center gap-2", className)}>
         {identityDateLabel ? (
@@ -2954,6 +2982,7 @@ export function PracticeTransferDetailChatDialog({
         ) : (
           <span className="min-w-0 flex-1" aria-hidden />
         )}
+        {labTechnicianControl}
         {rearrivalControl}
       </div>
     );

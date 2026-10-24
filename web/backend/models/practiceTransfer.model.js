@@ -2,6 +2,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - 2026-10-24: labTechnician — 작업시작 계정이 담당 기사. 수행 기공소가 변경.
 // - 2026-09-20: labBasketTag — 기공소 바구니 번호표(01–99). 기공소 BA 내 진행 중 unique.
 // - 2026-09-12: trashedFiles — 의뢰 파일 soft-delete(휴지통)·복원.
 // - 2026-09-12: files.uploadBatchId·uploadedAt — 업로드 시점(웨이브) 클러스터.
@@ -574,6 +575,14 @@ const practiceTransferSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    /** 담당 기사. 작업시작 계정으로 두고, 수행 기공소가 바꿀 수 있다. */
+    labTechnicianUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    labTechnicianName: { type: String, default: "", trim: true },
+    labTechnicianSetAt: { type: Date, default: null },
     // 기공소 「작업취소」(수락 해제). status=deleted(치과 의뢰 삭제)과 별개.
     workCanceledAt: {
       type: Date,

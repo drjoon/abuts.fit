@@ -53,6 +53,7 @@ import {
   acceptPracticeTransferProsthesisFollowUp,
   setPracticeTransferAbutmentShipYmd,
   setPracticeTransferLabBasketTag,
+  setPracticeTransferLabTechnician,
   appendPracticeTransferRequestFiles,
   setPracticeTransferScanRole,
   removePracticeTransferRequestFiles,
@@ -499,6 +500,13 @@ router.post(
   authenticate,
   receiveAuth,
   setPracticeTransferLabBasketTag,
+);
+
+router.post(
+  "/:transferId/lab-technician",
+  authenticate,
+  receiveAuth,
+  setPracticeTransferLabTechnician,
 );
 
 router.post(

@@ -417,6 +417,10 @@ import {
   type PracticeTransferLabReceiveItem as ReceivedPracticeTransfer,
 } from "@/shared/practice/practiceTransferLabReceive";
 import {
+  parseLabTechnician,
+  viewerCanAssignLabTechnician,
+} from "@/shared/practice/labTechnician";
+import {
   LabRemakeChargeDialog,
   type LabRemakeChargeResult,
 } from "@/features/chat/components/LabRemakeChargeDialog";
@@ -1087,6 +1091,7 @@ export function RequestorPracticeReceivePage({
     "detail" | "chat" | undefined
   >(undefined);
   const [acceptBusy, setAcceptBusy] = useState(false);
+  const [labTechnicianBusy, setLabTechnicianBusy] = useState(false);
   const [workStartUploadNoticeOpen, setWorkStartUploadNoticeOpen] =
     useState(false);
   const [workStartUploadNoticeHide, setWorkStartUploadNoticeHide] =
@@ -1646,6 +1651,10 @@ export function RequestorPracticeReceivePage({
             r.practicePartnerMemo,
           ),
           labBasketTag: normalizeLabBasketTag(r.labBasketTag) || null,
+          labTechnician: parseLabTechnician(r.labTechnician),
+          performingLabAnchorId:
+            String(r.performingLabAnchorId || "").trim() || null,
+          canAssignLabTechnician: Boolean(r.canAssignLabTechnician),
           screwSupply:
             r.screwSupply === "manufacturer" || r.screwSupply === "abuts"
               ? r.screwSupply
@@ -2140,6 +2149,39 @@ export function RequestorPracticeReceivePage({
           setLabBasketTagRevision((n) => n + 1);
           return;
         }
+        if (action === "lab-technician") {
+          const tech = parseLabTechnician(payload.labTechnician);
+          const performingId = payload.performingLabAnchorId
+            ? String(payload.performingLabAnchorId)
+            : null;
+          const patchTech = (
+            row: ReceivedPracticeTransfer,
+          ): ReceivedPracticeTransfer =>
+            row.transferId === transferId
+              ? {
+                  ...row,
+                  labTechnician: tech,
+                  ...(performingId
+                    ? { performingLabAnchorId: performingId }
+                    : {}),
+                  canAssignLabTechnician: viewerCanAssignLabTechnician(
+                    {
+                      ...row,
+                      labTechnician: tech,
+                      isAccepted: true,
+                      workCanceledAt: null,
+                      ...(performingId
+                        ? { performingLabAnchorId: performingId }
+                        : {}),
+                    },
+                    user?.businessAnchorId,
+                  ),
+                }
+              : row;
+          setTransfers((prev) => prev.map(patchTech));
+          setSelectedTransfer((prev) => (prev ? patchTech(prev) : prev));
+          return;
+        }
         if (action === "work-scan-auto-aligned") {
           if (!Array.isArray(payload.workScanFiles)) return;
           const rawWorkScans = payload.workScanFiles;
@@ -2261,6 +2303,8 @@ export function RequestorPracticeReceivePage({
               requestorDownloadedAt: null,
               requestorAcceptedAt: null,
               workCanceledAt,
+              labTechnician: null,
+              canAssignLabTechnician: false,
               manufacturerStage: isAutoRelease
                 ? "자동매칭"
                 : String(payload.manufacturerStage || "작업취소").trim() ||
@@ -2575,6 +2619,29 @@ export function RequestorPracticeReceivePage({
                   action === "downloaded" || action === "accepted"
                     ? requestorDownloadedAt || row.requestorAcceptedAt
                     : row.requestorAcceptedAt,
+                ...((action === "downloaded" || action === "accepted") &&
+                Object.prototype.hasOwnProperty.call(payload, "labTechnician")
+                  ? {
+                      labTechnician: parseLabTechnician(payload.labTechnician),
+                      canAssignLabTechnician: viewerCanAssignLabTechnician(
+                        {
+                          ...row,
+                          isAccepted: true,
+                          workCanceledAt: null,
+                          labTechnician: parseLabTechnician(payload.labTechnician),
+                          performingLabAnchorId: payload.performingLabAnchorId
+                            ? String(payload.performingLabAnchorId)
+                            : row.performingLabAnchorId,
+                        },
+                        user?.businessAnchorId,
+                      ),
+                    }
+                  : {}),
+                ...(payload.performingLabAnchorId
+                  ? {
+                      performingLabAnchorId: String(payload.performingLabAnchorId),
+                    }
+                  : {}),
                 ...(productionPatch ? { production: productionPatch } : {}),
               };
             }),
@@ -2611,6 +2678,29 @@ export function RequestorPracticeReceivePage({
                 action === "downloaded" || action === "accepted"
                   ? requestorDownloadedAt || prev.requestorAcceptedAt
                   : prev.requestorAcceptedAt,
+              ...((action === "downloaded" || action === "accepted") &&
+              Object.prototype.hasOwnProperty.call(payload, "labTechnician")
+                ? {
+                    labTechnician: parseLabTechnician(payload.labTechnician),
+                    canAssignLabTechnician: viewerCanAssignLabTechnician(
+                      {
+                        ...prev,
+                        isAccepted: true,
+                        workCanceledAt: null,
+                        labTechnician: parseLabTechnician(payload.labTechnician),
+                        performingLabAnchorId: payload.performingLabAnchorId
+                          ? String(payload.performingLabAnchorId)
+                          : prev.performingLabAnchorId,
+                      },
+                      user?.businessAnchorId,
+                    ),
+                  }
+                : {}),
+              ...(payload.performingLabAnchorId
+                ? {
+                    performingLabAnchorId: String(payload.performingLabAnchorId),
+                  }
+                : {}),
               ...(productionPatch ? { production: productionPatch } : {}),
             };
           });
@@ -3637,6 +3727,9 @@ export function RequestorPracticeReceivePage({
           requestorDownloadedAt: transfer.requestorDownloadedAt,
           requestorAcceptedAt: transfer.requestorAcceptedAt,
           workCanceledAt: transfer.workCanceledAt,
+          labTechnician: transfer.labTechnician ?? null,
+          performingLabAnchorId: transfer.performingLabAnchorId ?? null,
+          canAssignLabTechnician: transfer.canAssignLabTechnician,
           manufacturerStage: transfer.manufacturerStage,
           matchingMode: transfer.matchingMode,
           autoMatch: transfer.autoMatch,
@@ -3655,6 +3748,17 @@ export function RequestorPracticeReceivePage({
           requestorAcceptedAt: acceptedAtIso,
           workCanceledAt: null,
           manufacturerStage: "의뢰수락",
+          labTechnician: user?.id
+            ? {
+                userId: String(user.id),
+                name: String(user.name || "").trim(),
+              }
+            : transfer.labTechnician ?? null,
+          performingLabAnchorId:
+            String(user?.businessAnchorId || "").trim() ||
+            transfer.performingLabAnchorId ||
+            null,
+          canAssignLabTechnician: true,
           assigneeKind: claimingSubcontractPool
             ? "subcontract"
             : transfer.assigneeKind,
@@ -3845,6 +3949,7 @@ export function RequestorPracticeReceivePage({
                   )
                 : null;
 
+            const techFromAccept = parseLabTechnician(data.labTechnician);
             applyAcceptedLocalPatch(transfer, {
               isRead: true,
               requestorReadAt: readAt,
@@ -3854,6 +3959,12 @@ export function RequestorPracticeReceivePage({
               requestorAcceptedAt: acceptedAt,
               workCanceledAt: null,
               manufacturerStage: "의뢰수락",
+              labTechnician:
+                techFromAccept || optimisticPatch.labTechnician || null,
+              performingLabAnchorId: data.performingLabAnchorId
+                ? String(data.performingLabAnchorId)
+                : optimisticPatch.performingLabAnchorId,
+              canAssignLabTechnician: true,
               matchingMode:
                 String(data.matchingMode || transfer.matchingMode || "direct") ===
                 "auto"
@@ -3901,6 +4012,9 @@ export function RequestorPracticeReceivePage({
       settingsReady,
       toast,
       token,
+      user?.businessAnchorId,
+      user?.id,
+      user?.name,
     ],
   );
 
@@ -5326,6 +5440,8 @@ export function RequestorPracticeReceivePage({
         requestorDownloadedAt: transfer.requestorDownloadedAt,
         requestorAcceptedAt: transfer.requestorAcceptedAt,
         workCanceledAt: transfer.workCanceledAt,
+        labTechnician: transfer.labTechnician ?? null,
+        canAssignLabTechnician: transfer.canAssignLabTechnician,
         manufacturerStage: transfer.manufacturerStage,
         targetLabName: transfer.targetLabName,
         autoMatch: transfer.autoMatch,
@@ -5339,6 +5455,8 @@ export function RequestorPracticeReceivePage({
             requestorDownloadedAt: null,
             requestorAcceptedAt: null,
             workCanceledAt: canceledAt,
+            labTechnician: null,
+            canAssignLabTechnician: false,
             manufacturerStage: "자동매칭",
             targetLabName: "자동 매칭",
             autoMatch: {
@@ -5360,6 +5478,8 @@ export function RequestorPracticeReceivePage({
             requestorDownloadedAt: null,
             requestorAcceptedAt: null,
             workCanceledAt: canceledAt,
+            labTechnician: null,
+            canAssignLabTechnician: false,
             manufacturerStage: "작업취소",
             autoMatch: transfer.autoMatch
               ? {
@@ -5726,6 +5846,90 @@ export function RequestorPracticeReceivePage({
     workStartUploadNoticeHiddenKey,
     workStartUploadNoticeHide,
   ]);
+
+  const handleAssignLabTechnician = useCallback(
+    async (member: { id: string; name: string }) => {
+      if (!token || !selectedTransfer || labTechnicianBusy) return;
+      if (isGuideTourDemoTransfer(selectedTransfer)) {
+        toast({
+          title: "가이드투어",
+          description: "데모 의뢰에서는 담당 기사를 바꾸지 않습니다.",
+        });
+        return;
+      }
+      const transferId = String(selectedTransfer.transferId || "").trim();
+      if (!transferId) return;
+      const prevTech = selectedTransfer.labTechnician ?? null;
+      if (prevTech?.userId === member.id) return;
+      const nextTech = { userId: member.id, name: member.name };
+      const patch = (
+        row: ReceivedPracticeTransfer,
+      ): ReceivedPracticeTransfer =>
+        row.transferId === transferId ? { ...row, labTechnician: nextTech } : row;
+      setTransfers((prev) => prev.map(patch));
+      setSelectedTransfer((prev) => (prev ? patch(prev) : prev));
+      setLabTechnicianBusy(true);
+      try {
+        const res = await apiFetch<{
+          message?: string;
+          data?: { labTechnician?: unknown };
+        }>({
+          path: `/api/practice/transfers/${encodeURIComponent(transferId)}/lab-technician`,
+          method: "POST",
+          token,
+          jsonBody: { userId: member.id },
+        });
+        if (!res.ok) {
+          const revert = (
+            row: ReceivedPracticeTransfer,
+          ): ReceivedPracticeTransfer =>
+            row.transferId === transferId
+              ? { ...row, labTechnician: prevTech }
+              : row;
+          setTransfers((prev) => prev.map(revert));
+          setSelectedTransfer((prev) => (prev ? revert(prev) : prev));
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as { message?: string })
+              : {};
+          toast({
+            title: "담당 기사 변경 실패",
+            description: String(body.message || "다시 시도해 주세요."),
+            variant: "destructive",
+          });
+          return;
+        }
+        const confirmed = parseLabTechnician(res.data?.data?.labTechnician);
+        if (confirmed) {
+          const confirmPatch = (
+            row: ReceivedPracticeTransfer,
+          ): ReceivedPracticeTransfer =>
+            row.transferId === transferId
+              ? { ...row, labTechnician: confirmed }
+              : row;
+          setTransfers((prev) => prev.map(confirmPatch));
+          setSelectedTransfer((prev) => (prev ? confirmPatch(prev) : prev));
+        }
+      } catch (error) {
+        const revert = (
+          row: ReceivedPracticeTransfer,
+        ): ReceivedPracticeTransfer =>
+          row.transferId === transferId
+            ? { ...row, labTechnician: prevTech }
+            : row;
+        setTransfers((prev) => prev.map(revert));
+        setSelectedTransfer((prev) => (prev ? revert(prev) : prev));
+        toast({
+          title: "담당 기사 변경 실패",
+          description: error instanceof Error ? error.message : "네트워크 오류",
+          variant: "destructive",
+        });
+      } finally {
+        setLabTechnicianBusy(false);
+      }
+    },
+    [labTechnicianBusy, selectedTransfer, toast, token],
+  );
 
   const handleConfirmLabRemakeCreate = useCallback(
     async (result: ChatRemakePromptResult) => {
@@ -10396,6 +10600,15 @@ export function RequestorPracticeReceivePage({
           selectedTransfer,
           user?.role,
         )}
+        labTechnician={selectedTransfer?.labTechnician ?? null}
+        labTechnicianAssignable={viewerCanAssignLabTechnician(
+          selectedTransfer,
+          user?.businessAnchorId,
+        )}
+        labTechnicianBusy={labTechnicianBusy}
+        onAssignLabTechnician={(member) => {
+          void handleAssignLabTechnician(member);
+        }}
         workFileDrop={dialogWorkFileDrop}
         acceptedWorkActions={({ releaseAction }) => {
           if (!selectedTransfer) return releaseAction;

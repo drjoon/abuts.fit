@@ -209,6 +209,8 @@ export type PracticeTransferRequestCardMetaProps = {
   patientName?: string;
   /** 예: 11,21 — 보철 형태 등 세부는 상세 모달. 환자명 옆에 붙임 */
   toothNumbers?: string;
+  /** 기공소 담당 기사. 있을 때만 한 줄. */
+  technicianName?: string;
   layout?: "compact" | "comfortable";
   /** 기공비 등 필수 부가 행 */
   afterMeta?: ReactNode;
@@ -226,6 +228,7 @@ export function PracticeTransferRequestCardMeta({
   arrivalDate,
   patientName,
   toothNumbers,
+  technicianName,
   layout = "compact",
   afterMeta,
 }: PracticeTransferRequestCardMetaProps) {
@@ -236,6 +239,7 @@ export function PracticeTransferRequestCardMeta({
     patientName,
     toothNumbers,
   );
+  const technician = String(technicianName || "").trim();
   const comfortable = layout === "comfortable";
   const hasDates = Boolean(order || arrival);
 
@@ -291,6 +295,7 @@ export function PracticeTransferRequestCardMeta({
             tabular={Boolean(String(toothNumbers || "").trim())}
           />
         ) : null}
+        {technician ? <MetaField label="담당" value={technician} /> : null}
       </div>
 
       {afterMeta}

@@ -359,6 +359,7 @@ import {
   type PracticeRecentTransferFileItem,
   type PracticeRecentTransferItem,
 } from "@/shared/practice/practiceRecentTransferList";
+import { parseLabTechnician } from "@/shared/practice/labTechnician";
 import { buildPracticeSenderTransferDetailModel } from "@/shared/practice/practiceSenderTransferDetailModel";
 import {
   OPEN_PRACTICE_TRANSFER_CHAT_EVENT,
@@ -8303,6 +8304,26 @@ export const PracticeFileTransferPage = ({
         return;
       }
 
+      if (action === "lab-technician") {
+        const eventTransferId = String(payload.transferId || "").trim();
+        const tech = parseLabTechnician(payload.labTechnician);
+        if (eventTransferId) {
+          setRecentRequests((prev) =>
+            prev.map((row) =>
+              String(row.transferId || "").trim() === eventTransferId
+                ? { ...row, labTechnician: tech }
+                : row,
+            ),
+          );
+          setSelectedTransfer((prev) =>
+            prev && String(prev.transferId || "").trim() === eventTransferId
+              ? { ...prev, labTechnician: tech }
+              : prev,
+          );
+        }
+        return;
+      }
+
       if (action === "abutment-stage-changed") {
         const eventTransferId = String(payload.transferId || "").trim();
         const productionRaw =
@@ -8447,6 +8468,7 @@ export const PracticeFileTransferPage = ({
             return {
               ...prev,
               status: stage,
+              labTechnician: null,
               ...(labName && labName !== "-" ? { targetLab: labName } : {}),
               targetLabAnchorId: isAutoRelease ? "" : labAnchorId,
             };
@@ -8474,6 +8496,7 @@ export const PracticeFileTransferPage = ({
           targetLabAnchorId?: string;
           status?: string;
           feeQuote?: ReturnType<typeof parsePracticeTransferFeeQuote>;
+          labTechnician?: { userId: string; name: string } | null;
         }>(row: T): T => {
           if (String(row.transferId || "").trim() !== eventTransferId) return row;
           return {
@@ -8482,7 +8505,10 @@ export const PracticeFileTransferPage = ({
             ...(labAnchorId ? { targetLabAnchorId: labAnchorId } : {}),
             ...(stage ? { status: stage } : {}),
             ...(acceptedFeeQuote ? { feeQuote: acceptedFeeQuote } : {}),
-          };
+            ...(Object.prototype.hasOwnProperty.call(payload, "labTechnician")
+              ? { labTechnician: parseLabTechnician(payload.labTechnician) }
+              : {}),
+          } as T;
         };
         setRecentRequests((prev) => prev.map(patchRow));
         if (
@@ -11440,6 +11466,7 @@ export const PracticeFileTransferPage = ({
                           arrivalDate={transfer.arrivalDate}
                           patientName={resolvePracticeTransferListPatientName(transfer)}
                           toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
+                          technicianName={transfer.labTechnician?.name || ""}
                         />
                       </div>
                     );
@@ -11700,6 +11727,7 @@ export const PracticeFileTransferPage = ({
                           arrivalDate={transfer.arrivalDate}
                           patientName={resolvePracticeTransferListPatientName(transfer)}
                           toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
+                          technicianName={transfer.labTechnician?.name || ""}
                         />
                       </div>
                     );
@@ -11952,6 +11980,7 @@ export const PracticeFileTransferPage = ({
           remakeCharges={selectedTransfer?.remakeCharges || null}
           skipJig={Boolean(selectedTransferDetailModel?.skipJig)}
           feeViewer="practice"
+          labTechnician={selectedTransfer?.labTechnician ?? null}
           onChangeRequestScanRole={handleChangeRequestScanRole}
           labAnchorId={selectedTransferDetailModel?.labAnchorId || null}
           cooperationPerformerLabName={

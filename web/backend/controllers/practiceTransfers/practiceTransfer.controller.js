@@ -93,6 +93,14 @@ import {
   toAutoMatchApiFields,
   wantsAbutsPrimePool,
 } from "../../utils/practiceTransferAutoMatch.js";
+import {
+  applyLabTechnicianFields,
+  canViewerAssignLabTechnician,
+  hydrateLabTechnicianNames,
+  labTechnicianAssignFields,
+  labTechnicianClearFields,
+  toLabTechnicianApi,
+} from "../../utils/practiceTransferLabTechnician.js";
 import { isLabAiTrainingConsentAllowed } from "../../utils/practiceTransferAiTraining.js";
 import { parseTransferMongoIdsQuery } from "./practiceTransferBookmark.controller.js";
 import {
@@ -708,6 +716,7 @@ const clearAutoMatchClaimFields = (doc, { bumpRelease = true } = {}) => {
   doc.requestorReadBy = null;
   doc.requestorDownloadedAt = null;
   doc.requestorDownloadedBy = null;
+  applyLabTechnicianFields(doc, labTechnicianClearFields());
   doc.billing = {
     labFeeTotal: 0,
     abutmentRetailTotal: 0,
@@ -1262,6 +1271,7 @@ const toVirtualRequestRows = (transferDoc, { perFile = true } = {}) => {
     ),
     requestorDownloadedAt: transferDoc?.requestorDownloadedAt || null,
     requestorAcceptedAt: transferDoc?.requestorDownloadedAt || null,
+    ...toLabTechnicianApi(transferDoc),
     arrivalDeadlineExpiredAt: transferDoc?.arrivalDeadlineExpiredAt || null,
     arrivalDates,
     arrivalDate: currentArrivalYmd || null,
@@ -7463,6 +7473,8 @@ export async function getMyPracticeTransfers(req, res) {
       };
     };
 
+    await hydrateLabTechnicianNames(docs);
+
     let practiceRatings = [];
     if (!calendarRange) {
       if (loadOwnRatings) {
@@ -7678,6 +7690,7 @@ export async function searchRemakePracticeTransfers(req, res) {
     const [quotesById, abutmentDeliveryById] = await Promise.all([
       buildFeeQuotesForTransferDocs({ docs }),
       mapAbutmentDeliveryByTransferDocs(docs),
+      hydrateLabTechnicianNames(docs),
     ]);
 
     const requests = docs.flatMap((doc) => {
@@ -8245,6 +8258,8 @@ export async function getReceivedPracticeTransfers(req, res) {
           labAnchorId ? labRatingAggMap.get(String(labAnchorId)) : null,
         );
 
+    await hydrateLabTechnicianNames(docs);
+
     const transfers = docs.map((doc) => {
       const practiceBusiness =
         doc?.practiceBusinessAnchorId &&
@@ -8341,6 +8356,14 @@ export async function getReceivedPracticeTransfers(req, res) {
         isAccepted,
         requestorDownloadedAt: openPool ? null : doc?.requestorDownloadedAt || null,
         requestorAcceptedAt: openPool ? null : doc?.requestorDownloadedAt || null,
+        ...(openPool
+          ? { labTechnician: null }
+          : toLabTechnicianApi(doc)),
+        performingLabAnchorId:
+          String(resolvePerformingLabAnchorId(doc) || "").trim() || null,
+        canAssignLabTechnician: openPool
+          ? false
+          : canViewerAssignLabTechnician(doc, labAnchorId),
         workCanceledAt: doc?.workCanceledAt || null,
         arrivalDeadlineExpiredAt: doc?.arrivalDeadlineExpiredAt || null,
         matchingMode: autoFields.matchingMode,
@@ -8807,6 +8830,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
             billing: doc.billing || null,
             production: toProductionApiFields(doc.production),
             alreadyAccepted: true,
+            ...toLabTechnicianApi(doc),
             abutmentRequestIds: Array.isArray(doc.production?.relatedRequestIds)
               ? doc.production.relatedRequestIds.map((id) => String(id))
               : [],
@@ -8890,6 +8914,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
             requestorReadBy: req.user?._id || null,
             requestorDownloadedAt: now,
             requestorDownloadedBy: req.user?._id || null,
+            ...labTechnicianAssignFields(req.user, now),
             workCanceledAt: null,
             workCanceledBy: null,
             arrivalDeadlineExpiredAt: null,
@@ -8974,6 +8999,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
                 ...preClaimRead,
                 requestorDownloadedAt: null,
                 requestorDownloadedBy: null,
+                ...labTechnicianClearFields(),
                 "autoMatch.claimedAt": null,
                 "autoMatch.subcontractPoolOpen": true,
                 ...(preClaimBilling ? { billing: preClaimBilling } : {}),
@@ -9032,6 +9058,9 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         feeQuote: buildAcceptedFeeQuotePayload(billingResult, doc),
         production: toProductionApiFields(doc.production),
         updatedAt: doc.updatedAt || new Date(),
+        ...toLabTechnicianApi(doc),
+        performingLabAnchorId:
+          String(resolvePerformingLabAnchorId(doc) || "").trim() || null,
         ...toAutoMatchApiFields(doc, labAnchorId),
       };
       const practiceRealtimePayload = {
@@ -9074,6 +9103,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           abutmentRequestIds: Array.isArray(doc.production?.relatedRequestIds)
             ? doc.production.relatedRequestIds.map((id) => String(id))
             : [],
+          ...toLabTechnicianApi(doc),
           ...toTransferFilesApiFields(doc),
           ...toAutoMatchApiFields(doc, labAnchorId),
         },
@@ -9107,6 +9137,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           $set: {
             requestorDownloadedAt: null,
             requestorDownloadedBy: null,
+            ...labTechnicianClearFields(),
             ...(directPoolOpen
               ? { "autoMatch.subcontractPoolOpen": true, "autoMatch.claimedAt": null }
               : {}),
@@ -9131,6 +9162,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           $set: {
             requestorDownloadedAt: now,
             requestorDownloadedBy: req.user?._id || null,
+            ...labTechnicianAssignFields(req.user, now),
             ...(directPoolOpen
               ? { "autoMatch.subcontractPoolOpen": false, "autoMatch.claimedAt": now }
               : {}),
@@ -9227,11 +9259,13 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       doc.workCanceledAt = null;
       doc.workCanceledBy = null;
       doc.arrivalDeadlineExpiredAt = null;
+      applyLabTechnicianFields(doc, labTechnicianAssignFields(req.user, now));
       acceptSet.requestorDownloadedAt = now;
       acceptSet.requestorDownloadedBy = req.user?._id || null;
       acceptSet.workCanceledAt = null;
       acceptSet.workCanceledBy = null;
       acceptSet.arrivalDeadlineExpiredAt = null;
+      Object.assign(acceptSet, labTechnicianAssignFields(req.user, now));
       if (isSubcontractPoolOpen(doc)) {
         acceptSet["autoMatch.subcontractPoolOpen"] = false;
         acceptSet["autoMatch.claimedAt"] = now;
@@ -9244,8 +9278,10 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
     } else if (doc.workCanceledAt) {
       doc.workCanceledAt = null;
       doc.workCanceledBy = null;
+      applyLabTechnicianFields(doc, labTechnicianAssignFields(req.user, now));
       acceptSet.workCanceledAt = null;
       acceptSet.workCanceledBy = null;
+      Object.assign(acceptSet, labTechnicianAssignFields(req.user, now));
     }
 
     if (billingResult?.billed || billingResult?.fees) {
@@ -9337,6 +9373,9 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       feeQuote: buildAcceptedFeeQuotePayload(billingResult, doc),
       production: toProductionApiFields(doc.production),
       updatedAt: doc.updatedAt || new Date(),
+      ...toLabTechnicianApi(doc),
+      performingLabAnchorId:
+        String(resolvePerformingLabAnchorId(doc) || "").trim() || null,
     };
 
     emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
@@ -9369,6 +9408,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           ? doc.production.relatedRequestIds.map((id) => String(id))
           : [],
         unreadCount,
+        ...toLabTechnicianApi(doc),
         ...toTransferFilesApiFields(doc),
       },
     });
@@ -11135,6 +11175,154 @@ export async function setPracticeTransferLabBasketTag(req, res) {
   }
 }
 
+export async function setPracticeTransferLabTechnician(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferLabReceiverRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const userId = String(req.body?.userId || "").trim();
+    if (!userId || !Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "담당 기사를 선택해 주세요.",
+      });
+    }
+
+    const { scope, labAnchorId } = await buildReceivedScope(req);
+    if (scope === null || !labAnchorId) {
+      return res
+        .status(404)
+        .json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+    if (!doc) {
+      return res
+        .status(404)
+        .json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+    if (isPracticeTransferDeletedStatus(doc.status)) {
+      return res.status(409).json({
+        success: false,
+        message: "삭제된 기공의뢰는 담당 기사를 바꿀 수 없습니다.",
+      });
+    }
+    if (!doc.requestorDownloadedAt || doc.workCanceledAt) {
+      return res.status(409).json({
+        success: false,
+        message: "작업시작한 뒤에 담당 기사를 지정할 수 있습니다.",
+      });
+    }
+    if (!canViewerAssignLabTechnician(doc, labAnchorId)) {
+      return res.status(403).json({
+        success: false,
+        message: "수행하는 기공소만 담당 기사를 바꿀 수 있습니다.",
+      });
+    }
+
+    const performingId = String(resolvePerformingLabAnchorId(doc) || "").trim();
+    if (!performingId || !Types.ObjectId.isValid(performingId)) {
+      return res.status(409).json({
+        success: false,
+        message: "수행 기공소를 확인할 수 없습니다.",
+      });
+    }
+
+    const member = await User.findOne({
+      _id: new Types.ObjectId(userId),
+      businessAnchorId: new Types.ObjectId(performingId),
+      active: true,
+      approvedAt: { $ne: null },
+    })
+      .select({ name: 1 })
+      .lean();
+    if (!member) {
+      return res.status(400).json({
+        success: false,
+        message: "같은 기공소 계정만 담당 기사로 지정할 수 있습니다.",
+      });
+    }
+
+    const now = new Date();
+    const fields = labTechnicianAssignFields(
+      { _id: member._id, name: member.name },
+      now,
+    );
+    if (String(doc.labTechnicianUserId || "") === String(member._id)) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          transferId: String(doc.transferId || "").trim(),
+          labTechnician: {
+            userId: String(member._id),
+            name: String(doc.labTechnicianName || member.name || "").trim(),
+          },
+        },
+      });
+    }
+
+    await PracticeTransfer.updateOne({ _id: doc._id }, { $set: fields });
+    applyLabTechnicianFields(doc, fields);
+
+    const transferIdText = String(doc.transferId || "").trim();
+    const realtimePayload = {
+      action: "lab-technician",
+      transferId: transferIdText,
+      transferMongoId: String(doc._id || "").trim(),
+      targetLabAnchorId: labAnchorId,
+      practiceUserId: String(doc.practiceUserId || "").trim() || null,
+      ...toLabTechnicianApi(doc),
+      performingLabAnchorId: performingId,
+      updatedAt: now,
+    };
+
+    res.status(200).json({
+      success: true,
+      data: {
+        transferId: transferIdText,
+        ...toLabTechnicianApi(doc),
+      },
+    });
+
+    emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
+    void emitPracticeTransferEventToLabAnchors({
+      labAnchorIds: [labAnchorId, performingId, getPrimeLabAnchorId(doc)],
+      type: "practice:transfer-updated",
+      payload: realtimePayload,
+    }).catch((err) => {
+      console.warn("[practiceTransfer] lab-technician lab emit", err);
+    });
+    void emitPracticeTransferEventToPracticeUsers({
+      practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+      type: "practice:transfer-updated",
+      payload: realtimePayload,
+      extraUserIds: [doc.practiceUserId],
+    }).catch((err) => {
+      console.warn("[practiceTransfer] lab-technician practice emit", err);
+    });
+    return;
+  } catch (error) {
+    console.error("setPracticeTransferLabTechnician error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "담당 기사 설정에 실패했습니다.",
+    });
+  }
+}
+
 export async function confirmPracticeTransferAbutmentDesign(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
@@ -11692,6 +11880,7 @@ export async function markReceivedPracticeTransferRelease(req, res) {
             requestorReadBy: doc.requestorReadBy,
             requestorDownloadedAt: doc.requestorDownloadedAt,
             requestorDownloadedBy: doc.requestorDownloadedBy,
+            ...labTechnicianClearFields(),
             billing: doc.billing,
             autoMatch: doc.autoMatch,
             workCanceledAt: doc.workCanceledAt,
@@ -11730,6 +11919,7 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       };
       doc.requestorDownloadedAt = null;
       doc.requestorDownloadedBy = null;
+      applyLabTechnicianFields(doc, labTechnicianClearFields());
       doc.workCanceledAt = now;
       doc.workCanceledBy = req.user?._id || null;
       doc.billing = billingReset;
@@ -11743,6 +11933,7 @@ export async function markReceivedPracticeTransferRelease(req, res) {
           $set: {
             requestorDownloadedAt: null,
             requestorDownloadedBy: null,
+            ...labTechnicianClearFields(),
             workCanceledAt: now,
             workCanceledBy: req.user?._id || null,
             billing: billingReset,
@@ -12351,6 +12542,7 @@ export async function markReceivedPracticeTransferReject(req, res) {
 
     doc.requestorDownloadedAt = null;
     doc.requestorDownloadedBy = null;
+    applyLabTechnicianFields(doc, labTechnicianClearFields());
     doc.workCanceledAt = now;
     doc.workCanceledBy = req.user?._id || null;
     doc.labRejectedAt = now;
@@ -12363,6 +12555,7 @@ export async function markReceivedPracticeTransferReject(req, res) {
         $set: {
           requestorDownloadedAt: null,
           requestorDownloadedBy: null,
+          ...labTechnicianClearFields(),
           workCanceledAt: now,
           workCanceledBy: req.user?._id || null,
           labRejectedAt: now,
@@ -12710,6 +12903,7 @@ export async function retargetPracticeTransferLab(req, res) {
     doc.labRejectedByLabAnchorId = null;
     doc.requestorDownloadedAt = null;
     doc.requestorDownloadedBy = null;
+    applyLabTechnicianFields(doc, labTechnicianClearFields());
     doc.requestorReadAt = null;
     doc.requestorReadBy = null;
     doc.billing = billingPreview;
@@ -12732,6 +12926,7 @@ export async function retargetPracticeTransferLab(req, res) {
           labRejectedByLabAnchorId: null,
           requestorDownloadedAt: null,
           requestorDownloadedBy: null,
+          ...labTechnicianClearFields(),
           requestorReadAt: null,
           requestorReadBy: null,
           billing: billingPreview,

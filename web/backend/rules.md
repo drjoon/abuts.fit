@@ -547,6 +547,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - practice 전송 상태 표준(치과/의뢰자 공통)은 `발송완료 | 취소 | 수신완료 | 의뢰수락 | 자동매칭 | 작업완료 | 생산진행`을 사용합니다.
   - **완료 뱃지 SSOT** (`isPracticeTransferFinishedBadge`, FE `isPracticeRecentFinishedBadgeStatus`): 표시 단계가 `작업완료`(보철 업로드 또는 치과도착일 자동 완료)이고 어벗 뱃지(`isPracticeTransferAbutmentBadge` · 생산진행·포장.발송 또는 designFiles·designReadyAt)가 아닐 때. 집계·필터·목록·채팅·번호표 점유는 이 판정만 쓴다. 필터 문구는 의뢰·작업시작·완료·취소·어벗.
   - UI 라벨 SSOT: 내부 `의뢰수락` → 표시 **작업시작** (`.cursor/rules/work-start-not-accept.mdc`). CTA·뱃지·안내에 「수락」을 쓰지 않는다.
+  - **담당 기사:** 채팅에서 작업시작을 누른 계정(`labTechnician*`, 없으면 `requestorDownloadedBy`). 수행 기공소만 `POST .../lab-technician`로 같은 기공소 계정으로 바꾼다. 작업시작 취소·거부·기공소 변경 시 비운다.
   - 읽음 판정 SSOT: `PracticeTransfer.requestorReadAt`
     - 자동매칭 공개 풀(`openPool`)은 `POST .../mark-read`가 no-op(`requestorReadAt` 미설정).
       미클레임 건은 열람만으로 안읽음 배지가 줄지 않으며, 작업시작(claim) 시 읽음·배지 갱신.
@@ -602,6 +603,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 기공의뢰서: `practiceTransferAuth.middleware.js` — 발신 practice, 수신 lab
   - 생산의뢰: `paidRequestor.middleware.js` — `POST /api/requests`, `/from-draft`, `/bulk`
   - 공개 가입: `POST /api/auth/register`. 발신 프로필: `practiceProfile` → `ensureRequestorOrgAnchor`.
+  - 대표 직원 일괄 등록: `POST /api/businesses/staff/bulk`. 대표(`resolveOwnedBusiness`)만. 한 줄에 `이름` 또는 `이름, 영문아이디`. 아이디는 영문 소문자 3~20자(`loginId`). 이메일은 받지 않는다. 이름만이면 로마자 아이디를 만든다. 저장 메일은 `{loginId}@staff.abuts.fit`이고 화면에는 아이디만 보인다. 처음 비밀번호는 묶음당 영문 소문자 6자리(`abcdef`). `mustChangePassword`. 소개 귀속·환영 크레딧 없음. `subRole=staff`, 같은 role·`requestorKind`, 온보딩 생략, `members`에 넣는다. 비밀번호 분실은 `POST /api/businesses/staff/:userId/password`(같은 6자리). 로그인은 `loginId`.
   - 백필: `scripts/db/backfill-requestor-capabilities.js` (`--apply`)
   - 크레딧/정산: 유료(paid+verified)만. synthetic BN 환영 크레딧 없음.
     기공소 가입환영 크레딧은 실사업자번호 등록 시 **7만 원** 1회(`가입환영 크레딧 지급`). 치과는 제외. 관리자 수동 무료크레딧 override는 유지.

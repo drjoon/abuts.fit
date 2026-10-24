@@ -239,6 +239,7 @@ export function PracticeTransferLabReceiveCard({
         arrivalDate={transfer.arrivalDate}
         patientName={patientName}
         toothNumbers={resolvePracticeTransferListToothNumbers(transfer)}
+        technicianName={transfer.labTechnician?.name || ""}
         afterMeta={
           transfer.feeQuote ? (
             <div

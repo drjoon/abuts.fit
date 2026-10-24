@@ -142,6 +142,11 @@ export type PracticeTransferLabReceiveItem = {
   isAccepted: boolean;
   requestorDownloadedAt: string | null;
   requestorAcceptedAt: string | null;
+  /** 담당 기사. 작업시작 계정이 기본. */
+  labTechnician?: { userId: string; name: string } | null;
+  performingLabAnchorId?: string | null;
+  /** 수행 기공소 계정이면 채팅에서 담당을 바꿀 수 있다. */
+  canAssignLabTechnician?: boolean;
   workCanceledAt?: string | null;
   /** 치과도착일 경과 + CA 어벗 STL 미업로드 */
   arrivalDeadlineExpiredAt?: string | null;

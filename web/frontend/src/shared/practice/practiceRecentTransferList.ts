@@ -26,6 +26,7 @@
  * - web/frontend/src/store/usePeriodStore.ts
  */
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
+import { parseLabTechnician } from "@/shared/practice/labTechnician";
 import {
   parseWorkScanAlignment,
   type WorkScanAlignment,
@@ -164,6 +165,7 @@ export type PracticeRecentRequestItem = {
   requestorDownloadedAt?: string | null;
   requestorAcceptedAt?: string | null;
   arrivalDeadlineExpiredAt?: string | null;
+  labTechnician?: { userId: string; name: string } | null;
 };
 
 export type PracticeRecentTransferItem = {
@@ -271,6 +273,7 @@ export type PracticeRecentTransferItem = {
   requestorDownloadedAt?: string | null;
   requestorAcceptedAt?: string | null;
   arrivalDeadlineExpiredAt?: string | null;
+  labTechnician?: { userId: string; name: string } | null;
 };
 
 export type PracticeRecentStatusFilter =
@@ -1073,6 +1076,7 @@ export const mapMyPracticeTransferApiRows = (
           : r.requestorAcceptedAt
             ? String(r.requestorAcceptedAt)
             : null,
+        labTechnician: parseLabTechnician(r.labTechnician),
         requestorAcceptedAt: r.requestorAcceptedAt
           ? String(r.requestorAcceptedAt)
           : r.requestorDownloadedAt
@@ -1482,6 +1486,8 @@ export const mergeOpenPracticeTransferFromRequestRows = (
       prev.requestorDownloadedAt ||
       prev.requestorAcceptedAt ||
       null,
+    labTechnician:
+      openRows.find((r) => r.labTechnician)?.labTechnician || null,
     requestorAcceptedAt:
       openRows.find((r) => String(r.requestorAcceptedAt || r.requestorDownloadedAt || "").trim())
         ?.requestorAcceptedAt ||
@@ -1718,6 +1724,7 @@ export const groupPracticeRecentRequests = (
         requestorDownloadedAt: String(
           req.requestorDownloadedAt || req.requestorAcceptedAt || "",
         ).trim() || null,
+        labTechnician: req.labTechnician || null,
         requestorAcceptedAt: String(
           req.requestorAcceptedAt || req.requestorDownloadedAt || "",
         ).trim() || null,
@@ -1837,6 +1844,7 @@ export const groupPracticeRecentRequests = (
       existing.requestorDownloadedAt = reqAcceptedAt;
       existing.requestorAcceptedAt = reqAcceptedAt;
     }
+    if (req.labTechnician) existing.labTechnician = req.labTechnician;
     if (req.skipDesignConfirm === false) existing.skipDesignConfirm = false;
     if (req.skipJig === false) existing.skipJig = false;
     else if (req.skipJig) existing.skipJig = true;
