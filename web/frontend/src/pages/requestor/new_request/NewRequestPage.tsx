@@ -53,7 +53,6 @@ import { PageFileDropZone } from "@/features/requests/components/PageFileDropZon
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
 import { useRequestorRequestSettings } from "@/features/requestSettings/useRequestorRequestSettings";
-import { useLabPracticeScrewSupply } from "@/features/requestSettings/useLabPracticeScrewSupply";
 import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
 import { NewRequestShippingSection } from "./components/NewRequestShippingSection";
 import { NewRequestPageSkeleton } from "@/shared/ui/skeletons/NewRequestPageSkeleton";
@@ -345,21 +344,6 @@ const NewRequestPageContent = () => {
       handleIncomingFilesRef.current(files);
     },
   });
-  const labPracticeScrewSupply = useLabPracticeScrewSupply(Boolean(token));
-  const resolveDefaultScrewSupply = useCallback(
-    (clinicName: string) => labPracticeScrewSupply.lookup({ practiceName: clinicName }),
-    [labPracticeScrewSupply.lookup],
-  );
-  const handleScrewSupplySave = useCallback(
-    (value: "abuts" | "manufacturer", clinicName: string) => {
-      void labPracticeScrewSupply.save({
-        screwSupply: value,
-        practiceName: clinicName,
-      });
-    },
-    [labPracticeScrewSupply.save],
-  );
-
   // 파일 삭제는 rawHandleRemoveFile이 처리하고,
   // fileVerificationStatus cleanup은 useFileVerification의 effect가 자동으로 처리
   const handleRemoveFile = rawHandleRemoveFile;
@@ -1907,10 +1891,6 @@ const NewRequestPageContent = () => {
               onToggleAnodizing={handleToggleAnodizing}
               onRetentionGrooveAccountSave={saveRetentionGroove}
               onAnodizingAccountSave={saveAnodizingEnabled}
-              resolveDefaultScrewSupply={resolveDefaultScrewSupply}
-              screwPreferenceReady={labPracticeScrewSupply.loaded}
-              onScrewSupplySave={handleScrewSupplySave}
-              screwSupplySaving={labPracticeScrewSupply.saving}
               onShippingModeChange={handleShippingModeChange}
               defaultShippingMode={defaultShippingMode}
               expressSelectableGlobal={expressSelectableGlobal}

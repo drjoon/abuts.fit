@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/AbutmentModelConfirmDialog.tsx
 // - web/frontend/src/features/requestSettings/RequestSettingsToolbar.tsx
 // change-log:
+// - 2026-10-24: 3D 확인 모달에서는 쓰지 않는다. 채팅 옵션만.
 // - 2026-10-23: RequestScrewSupplySection — 의뢰자 공통(3D 확인·채팅). copy는 screwSupply.ts SSOT.
 // - 2026-10-23: 채팅 — 어벗츠 정품 버튼만. 클릭 시 스크류 선택 모달.
 // - 2026-10-23: appearance — card(3D 확인) / buttons(채팅 툴바).

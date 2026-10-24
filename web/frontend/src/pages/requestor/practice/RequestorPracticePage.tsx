@@ -9899,19 +9899,6 @@ export function RequestorPracticeReceivePage({
         onRetentionGrooveAccountSave={saveRetentionGroove}
         defaultAnodizingEnabled={anodizingEnabled}
         onAnodizingAccountSave={saveAnodizingEnabled}
-        resolveDefaultScrewSupply={(clinicName) =>
-          labPracticeScrewSupply.resolve(designConfirmTransfer?.screwSupply, {
-            practiceAnchorId: designConfirmTransfer?.practiceBusinessAnchorId,
-            practiceName:
-              designConfirmTransfer?.practice?.businessName || clinicName,
-          })
-        }
-        screwPreferenceReady={labPracticeScrewSupply.loaded}
-        onScrewSupplySave={(value) => {
-          if (!designConfirmTransfer) return;
-          void handleChatScrewSupplyChange(value, designConfirmTransfer);
-        }}
-        screwSupplySaving={labPracticeScrewSupply.saving}
         connections={implantCatalog}
         confirming={designConfirmBusy}
         teethOptions={designConfirmTeethOptions}
