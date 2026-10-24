@@ -64,7 +64,7 @@ export const STORE_ORDER_STATUS_LABEL: Record<string, string> = {
 export const STORE_PAYMENT_METHOD_LABEL: Record<string, string> = {
   BANK: "계좌이체",
   CREDIT: "선수금",
-  OB: "오픈뱅킹 자동정산",
+  OB: "월 후불",
 };
 
 export const STORE_SHELL_CLASS =

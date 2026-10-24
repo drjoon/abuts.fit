@@ -89,6 +89,7 @@ import { DirectAbutmentSettingsCard } from "@/pages/admin/dashboard/DirectAbutme
 import { RequestorShippingModeCard } from "@/pages/admin/dashboard/RequestorShippingModeCard";
 import { IndirectAbutmentCard } from "@/pages/admin/dashboard/IndirectAbutmentCard";
 import { AdminDemoConversionCard } from "@/pages/admin/dashboard/AdminDemoConversionCard";
+import { AdminPracticeDelinquencyCard } from "@/pages/admin/dashboard/AdminPracticeDelinquencyCard";
 import { AdminBusinessVerificationCard } from "@/pages/admin/dashboard/AdminBusinessVerificationCard";
 import { AdminPopbillPointCard } from "@/pages/admin/dashboard/AdminPopbillPointCard";
 import { AdminPopbillBankCard } from "@/pages/admin/dashboard/AdminPopbillBankCard";
@@ -2306,6 +2307,10 @@ export const AdminDashboardPage = () => {
                 </div>
               </DashTile>
 
+              <AdminPracticeDelinquencyCard
+                className={DASH_SPAN.c6}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
               <AdminDemoConversionCard
                 className={DASH_SPAN.c2}
                 enabled={Boolean(token) && user?.role === "admin"}

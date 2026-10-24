@@ -173,7 +173,7 @@ export default function RequestorStoreCartPage() {
       if (!res.ok && body?.code === "PRACTICE_OB_REQUIRED") {
         toast.error(
           body?.message ||
-            "오픈뱅킹 자동정산을 먼저 등록해 주세요.",
+            "정산 탭에서 기공료 안내를 확인해 주세요.",
         );
         navigate("/dashboard/credits?tab=autopay");
         return;
@@ -195,7 +195,7 @@ export default function RequestorStoreCartPage() {
       clear();
       toast.success(
         practiceObCheckout
-          ? "주문이 접수되었습니다. 금액은 월 자동정산에 포함됩니다."
+          ? "주문이 접수되었습니다. 이번 달 기공료에 포함됩니다."
           : "선수금으로 결제되었습니다.",
       );
       navigate(`/dashboard/store/orders/${body.data.order._id}`);
@@ -401,7 +401,10 @@ export default function RequestorStoreCartPage() {
               <p className="pt-1 text-xs text-muted-foreground">
                 {practiceObCheckout ? (
                   <>
-                    치과 스토어는 오픈뱅킹 자동정산(후불)로 결제합니다.
+                    치과 스토어는 월 기공료와 함께 후불로 결제합니다.
+                    <br />
+                    기한을 두 번 넘기거나 일부만 입금하면 이후 주문은 선불
+                    크레딧입니다.
                     <br />
                     기공·커스텀어벗과 장바구니를 합치지 않으며, (세금)계산서는
                     사용분 기준 월말 과세 발행됩니다.
@@ -424,7 +427,7 @@ export default function RequestorStoreCartPage() {
                 {submitting
                   ? "결제 중…"
                   : practiceObCheckout
-                    ? "자동정산으로 주문"
+                    ? "후불로 주문"
                     : "선수금으로 결제"}
               </Button>
             </div>

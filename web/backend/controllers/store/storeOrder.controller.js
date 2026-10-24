@@ -346,7 +346,7 @@ export async function createStoreOrder(req, res) {
         return res.status(400).json({
           success: false,
           message:
-            "치과 스토어는 오픈뱅킹 자동정산(후불)으로만 결제할 수 있습니다.",
+            "치과 스토어는 월 기공료와 함께 후불로만 결제할 수 있습니다.",
           code: "STORE_OB_ONLY",
         });
       }
@@ -355,7 +355,7 @@ export async function createStoreOrder(req, res) {
         return res.status(403).json({
           success: false,
           message:
-            "오픈뱅킹 자동정산을 먼저 등록해 주세요. 정산 · 자동정산 탭에서 설정할 수 있습니다.",
+            "정산 탭에서 기공료 안내를 확인해 주세요.",
           code: "PRACTICE_OB_REQUIRED",
         });
       }

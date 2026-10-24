@@ -15,6 +15,7 @@ import { useSearchParams } from "react-router-dom";
 import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
 import AdminPaymentsPage from "@/pages/admin/AdminPaymentsPage";
 import AdminTaxInvoices from "@/pages/admin/system/AdminTaxInvoices";
+import { AdminPracticeLabFeeTab } from "@/pages/admin/finance/AdminPracticeLabFeeTab";
 import { AdminPlatformSettingsPage } from "@/pages/admin/system/AdminPlatformSettingsPage";
 import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
 import { useAdminAbutsFeePendingStore } from "@/store/useAdminAbutsFeePendingStore";
@@ -25,10 +26,17 @@ import {
   useHubUnreadTabRedirect,
 } from "@/pages/admin/adminUi";
 
-type FinanceTab = "credits" | "settings" | "payments" | "tax";
+type FinanceTab = "credits" | "settings" | "labfee" | "payments" | "tax";
 
 function parseTab(raw: string | null): FinanceTab {
-  if (raw === "settings" || raw === "payments" || raw === "tax") return raw;
+  if (
+    raw === "settings" ||
+    raw === "labfee" ||
+    raw === "payments" ||
+    raw === "tax"
+  ) {
+    return raw;
+  }
   // 구 북마크: 설정·플랫폼
   if (raw === "platform") return "settings";
   return "credits";
@@ -66,6 +74,7 @@ export default function AdminFinancePage() {
             label: "요금",
             badge: abutsFeePendingCount,
           },
+          { value: "labfee", label: "기공료" },
           { value: "payments", label: "정산" },
           { value: "tax", label: "(세금)계산서", badge: counts.tax },
         ]}
@@ -75,6 +84,11 @@ export default function AdminFinancePage() {
         {tab === "settings" ? (
           <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
             <AdminPlatformSettingsPage embedded />
+          </div>
+        ) : null}
+        {tab === "labfee" ? (
+          <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
+            <AdminPracticeLabFeeTab />
           </div>
         ) : null}
         {tab === "payments" ? <AdminPaymentsPage embedded /> : null}

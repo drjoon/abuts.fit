@@ -4,45 +4,33 @@
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/server.js
 //
-// 1. 매월 1일 KST: 전월 치과 사용분(기공소별 기공물 N건 + 어벗츠 법인 커스텀어벗 1건) 정산서 확정 생성.
-// 2. 매월 5일 09:00 KST 이후: 확정된 정산서를 대상으로 OB 장기동의 자동 일괄이체 실행(실패 시 즉시 Hold).
+// 익월 1일 09:00 KST 이후: 전월 기공료 정산서 확정 + 안내 문자.
+// 1차 입금 영업일 12:00: 아직 확인되지 않으면 재안내 문자.
+// 계좌 이체는 하지 않는다. 담당자가 입금 확인·기공소 송금을 직접 한다.
 import BusinessAnchor from "../models/businessAnchor.model.js";
-import PracticeMonthlySettlement from "../models/practiceMonthlySettlement.model.js";
 import {
   confirmPracticeMonthlySettlement,
-  getKstYearMonth,
+  dispatchPracticeSettlementNotices,
   resolvePreviousKstYearMonth,
-  runPracticeMonthlySettlementTransfer,
 } from "../services/practiceObBilling.service.js";
+import { resolvePracticeSettlementCalendar } from "../utils/practiceSettlementCalendar.js";
 
 let timerHandle = null;
 let running = false;
-let lastConfirmMonthKey = "";
-let lastExecuteMonthKey = "";
-
-function getKstHour(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    hour: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
-  const hourPart = parts.find((p) => p.type === "hour");
-  return Number(hourPart?.value || 0);
-}
+let lastConfirmCycleKey = "";
 
 export async function runMonthlyObSettlementTick(now = new Date()) {
-  const { year, month, day } = getKstYearMonth(now);
-  const hour = getKstHour(now);
-  const monthKey = `${year}-${String(month).padStart(2, "0")}`;
   const prevYearMonth = resolvePreviousKstYearMonth(now);
-
+  const calendar = resolvePracticeSettlementCalendar(prevYearMonth);
   const summary = {
     confirmedCount: 0,
-    executedCount: 0,
+    noticed: 0,
+    reminded: 0,
   };
 
-  // 1) 매월 1일: 전월 정산서 확정 생성
-  if (day >= 1 && lastConfirmMonthKey !== monthKey) {
+  if (now < calendar.noticeAt) return summary;
+
+  if (lastConfirmCycleKey !== calendar.noticeYmd) {
     const practices = await BusinessAnchor.find({
       businessType: "requestor",
       $or: [
@@ -53,40 +41,20 @@ export async function runMonthlyObSettlementTick(now = new Date()) {
       .select({ _id: 1 })
       .lean();
 
-    for (const p of practices) {
+    for (const practice of practices) {
       await confirmPracticeMonthlySettlement({
-        practiceAnchorId: p._id,
+        practiceAnchorId: practice._id,
         yearMonth: prevYearMonth,
         now,
       });
       summary.confirmedCount += 1;
     }
-    lastConfirmMonthKey = monthKey;
+    lastConfirmCycleKey = calendar.noticeYmd;
   }
 
-  // 2) 매월 5일 09:00 KST 이후: CONFIRMED 상태의 정산서 자동 일괄이체 실행
-  if (
-    (day > 5 || (day === 5 && hour >= 9)) &&
-    lastExecuteMonthKey !== monthKey
-  ) {
-    const pendingSettlements = await PracticeMonthlySettlement.find({
-      yearMonth: prevYearMonth,
-      status: "CONFIRMED",
-      totalAmount: { $gt: 0 },
-    })
-      .select({ _id: 1 })
-      .lean();
-
-    for (const s of pendingSettlements) {
-      await runPracticeMonthlySettlementTransfer({
-        settlementId: s._id,
-        now,
-      });
-      summary.executedCount += 1;
-    }
-    lastExecuteMonthKey = monthKey;
-  }
-
+  const sent = await dispatchPracticeSettlementNotices({ now });
+  summary.noticed = sent.noticed;
+  summary.reminded = sent.reminded;
   return summary;
 }
 

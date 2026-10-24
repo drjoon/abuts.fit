@@ -763,7 +763,7 @@ export async function assertPracticeTransferPaidCreditSufficient({
     if (lockStatus?.isLocked) {
     const err = new Error(
       lockStatus.reason ||
-        "월 정산 미납으로 신규 기공의뢰가 제한되었습니다.",
+        "지난 기공료가 아직 확인되지 않았습니다.\n확인되는 대로 새 기공의뢰를 바로 보내실 수 있습니다.",
     );
     err.statusCode = 402;
     err.payload = {

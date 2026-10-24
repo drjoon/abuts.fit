@@ -38,13 +38,15 @@ export function resolvePracticeBilling402Dialog(
     const lines = message
       ? message.split(/\n+/).filter(Boolean)
       : [
-          "정산 미납 또는 재인증이 필요합니다.",
-          "자동정산 탭에서 Face ID(지문)로 입금·재인증을 완료해 주세요.",
+          "지난 기공료가 아직 확인되지 않았습니다.",
+          "확인되는 대로 새 기공의뢰를 바로 보내실 수 있습니다.",
+          "이미 입금해 주셨다면 확인 후 바로 열어 드립니다.",
+          "진행 중인 의뢰는 그대로 이어집니다.",
         ];
     return {
-      title: "기공의뢰를 보낼 수 없습니다",
+      title: "입금 확인 후 이어서 보내 주세요",
       descriptionLines: lines,
-      confirmLabel: "자동정산",
+      confirmLabel: "정산 안내",
       href: CREDITS_PRACTICE_AUTOPAY_HREF,
     };
   }
@@ -56,12 +58,13 @@ export function resolvePracticeBilling402Dialog(
       message.includes("크레딧이 부족"))
   ) {
     return {
-      title: "자동정산이 필요합니다",
+      title: "정산 안내",
       descriptionLines: [
-        "오픈뱅킹 장기동의를 등록하면 기공의뢰·어벗 비용을 후불로 이용할 수 있습니다.",
-        "자동정산 탭에서 출금 계좌를 연결해 주세요.",
+        "기공료는 후불입니다.",
+        "정산 탭에서 이번 달 사용분과 입금 계좌를 확인하실 수 있습니다.",
+        "기한을 두 번 넘기거나 일부만 입금하면 이후 주문은 선불 크레딧입니다.",
       ],
-      confirmLabel: "자동정산",
+      confirmLabel: "정산 안내",
       href: CREDITS_PRACTICE_AUTOPAY_HREF,
     };
   }

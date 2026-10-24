@@ -9,8 +9,8 @@ import {
   aggregatePracticeMonthUsage,
   confirmPracticeMonthlySettlement,
   getPracticeObBillingOverview,
-  reauthenticatePracticeOpenBanking,
-  runPracticeMonthlySettlementTransfer,
+  markPracticeSettlementLabPayout,
+  markPracticeSettlementPaymentReceived,
   setupPracticeOpenBankingConsent,
   transferPracticeLabDeposit,
   listPracticeLabDeposits,
@@ -139,7 +139,7 @@ describe("practiceObBilling & checkCreditLock", () => {
     expect(corpLine?.amount).toBe(345_000);
   });
 
-  test("현금 보증금 없이 한도 없이 OB 장기동의 등록 → 정산일 자동이체 실패 시 즉시 Hold → Face ID 1탭 재이체 및 90일 재인증 시 해제", async () => {
+  test("수기 정산 — 2차 기한 다음 날부터 신규 의뢰를 멈추고, 전액 입금 확인 후 기공소 지급을 기록한다", async () => {
     const practice = await BusinessAnchor.create({
       businessNumberNormalized: "1234567890",
       businessType: "requestor",
@@ -147,26 +147,12 @@ describe("practiceObBilling & checkCreditLock", () => {
       name: "테스트치과",
     });
 
-    // 1. 오픈뱅킹 장기동의 등록 + 패스키 연결
-    const consent = await setupPracticeOpenBankingConsent({
-      practiceAnchorId: practice._id,
-      bankCode: "088",
-      bankName: "신한은행",
-      accountNumber: "110123456789",
-      accountHolder: "테스트치과",
-      passkeyCredentialId: "pk-test-1",
-    });
-    expect(consent.status).toBe("active");
-    expect(consent.monthlyCapAmount).toBe(0);
-
-    // 정상 상태에서 잠금 없음
     const lockBefore = await checkPracticeSettlementLock(practice._id);
     expect(lockBefore.isLocked).toBe(false);
 
-    // 2. 매월 1일 정산서 확정 생성 (직거래 기공소 150만 + 어벗츠 법인 50만 = 200만)
     const settlement = await confirmPracticeMonthlySettlement({
       practiceAnchorId: practice._id,
-      yearMonth: "2026-09",
+      yearMonth: "2026-08",
       overrideLines: [
         {
           payeeKind: "direct_lab",
@@ -180,11 +166,11 @@ describe("practiceObBilling & checkCreditLock", () => {
         },
         {
           payeeKind: "abuts_corp",
-          payeeName: "어벗츠 주식회사(기공사업부)",
-          bankCode: "088",
-          bankName: "신한은행",
-          accountNumber: "140-000-111",
-          holderName: "주식회사 어벗츠",
+          payeeName: "어벗츠 주식회사",
+          bankCode: "081",
+          bankName: "하나은행",
+          accountNumber: "806-910009-00004",
+          holderName: "어벗츠 주식회사",
           amount: 500_000,
           transferStatus: "PENDING",
         },
@@ -192,63 +178,74 @@ describe("practiceObBilling & checkCreditLock", () => {
     });
     expect(settlement.status).toBe("CONFIRMED");
     expect(settlement.totalAmount).toBe(2_000_000);
+    expect(settlement.firstDueYmd).toBe("2026-09-07");
+    expect(settlement.secondDueYmd).toBe("2026-09-10");
+    expect(settlement.labPayoutOnYmd).toBe("2026-09-08");
 
-    // 3. 매월 5일 09:00 자동이체 실행 — 잔액 부족 실패 시뮬레이션
-    const failedAt = new Date("2026-10-05T00:00:00.000Z");
-    const afterFail = await runPracticeMonthlySettlementTransfer({
-      settlementId: settlement._id,
-      options: { simulateInsufficientFunds: true },
-      now: failedAt,
-    });
-    expect(afterFail.status).toBe("FAILED");
+    const duringGrace = await checkPracticeSettlementLock(
+      practice._id,
+      new Date("2026-09-10T23:00:00.000Z"),
+    );
+    expect(duringGrace.isLocked).toBe(false);
 
-    // 실패 즉시 신규 의뢰 Hold 작동 확인
-    const lockOnFail = await checkPracticeSettlementLock(practice._id);
-    expect(lockOnFail.isLocked).toBe(true);
-    expect(lockOnFail.reason).toContain("잔액 부족");
-    // 선불 크레딧 주문(커스텀어벗)은 기존 잠금만 적용되어 막히지 않는다
+    const paused = await checkPracticeSettlementLock(
+      practice._id,
+      new Date("2026-09-11T00:00:00.000Z"),
+    );
+    expect(paused.isLocked).toBe(true);
+    expect(paused.reason).toContain("2026-08");
+    expect(paused.reason).toContain("확인되는 대로");
     expect((await checkCreditLock(practice._id)).isLocked).toBe(false);
 
-    const overviewOnFail = await getPracticeObBillingOverview({
-      practiceAnchorId: practice._id,
-    });
-    expect(overviewOnFail.depositGuidance.required).toBe(false);
-    expect(overviewOnFail.openBankingConsent.paymentHold.isHeld).toBe(true);
+    await expect(
+      markPracticeSettlementLabPayout({ settlementId: settlement._id }),
+    ).rejects.toThrow("치과 입금");
 
-    // 4. 치과 앱에서 Face ID 1탭 재이체 성공 시 Hold 즉시 해제
-    const afterRetry = await runPracticeMonthlySettlementTransfer({
+    const received = await markPracticeSettlementPaymentReceived({
       settlementId: settlement._id,
-      options: { biometricVerified: true },
-      now: new Date("2026-10-06T00:00:00.000Z"),
+      now: new Date("2026-09-03T10:00:00+09:00"),
     });
-    expect(afterRetry.status).toBe("COMPLETED");
+    expect(received.status).toBe("COMPLETED");
+    expect(received.labPayoutDueYmd).toBe("2026-09-08");
+    expect(
+      received.lines.find((line) => line.payeeKind === "abuts_corp")
+        ?.transferStatus,
+    ).toBe("SUCCESS");
+    expect(
+      received.lines.find((line) => line.payeeKind === "direct_lab")
+        ?.transferStatus,
+    ).toBe("PENDING");
 
-    const lockAfterRetry = await checkPracticeSettlementLock(practice._id);
-    expect(lockAfterRetry.isLocked).toBe(false);
+    const lockAfterPay = await checkPracticeSettlementLock(
+      practice._id,
+      new Date("2026-09-12T00:00:00+09:00"),
+    );
+    expect(lockAfterPay.isLocked).toBe(false);
 
-    // 5. 90일 경과 시 재인증 만료로 Hold → Face ID 재인증 시 해제
-    const expiredCheck = await checkPracticeSettlementLock(
+    const paidOut = await markPracticeSettlementLabPayout({
+      settlementId: settlement._id,
+      now: new Date("2026-09-08T10:00:00+09:00"),
+    });
+    expect(paidOut.labPayoutMarkedAt).toBeTruthy();
+    expect(
+      paidOut.lines.find((line) => line.payeeKind === "direct_lab")
+        ?.transferStatus,
+    ).toBe("SUCCESS");
+
+    const later = await checkPracticeSettlementLock(
       practice._id,
       new Date(Date.now() + 95 * 24 * 60 * 60 * 1000),
     );
-    expect(expiredCheck.isLocked).toBe(true);
-    expect(expiredCheck.reason).toContain("90일");
+    expect(later.isLocked).toBe(false);
 
-    const reauthRes = await reauthenticatePracticeOpenBanking({
+    const overview = await getPracticeObBillingOverview({
       practiceAnchorId: practice._id,
-      passkeyAssertion: { credentialId: "pk-test-1" },
-      now: new Date(Date.now() + 95 * 24 * 60 * 60 * 1000),
     });
-    expect(reauthRes.status).toBe("active");
-
-    const lockAfterReauth = await checkPracticeSettlementLock(
-      practice._id,
-      new Date(Date.now() + 96 * 24 * 60 * 60 * 1000),
-    );
-    expect(lockAfterReauth.isLocked).toBe(false);
+    expect(overview.depositAccount.bankName).toBeTruthy();
+    expect(overview.depositGuidance.required).toBe(false);
   });
 
-  test("정산 예정일이 지나도 입금되지 않으면 다음 기공의뢰가 즉시 제한된다", async () => {
+  test("2차 입금일 다음 날부터 입금이 확인되지 않으면 신규 기공의뢰를 멈춘다", async () => {
     const practice = await BusinessAnchor.create({
       businessNumberNormalized: "2234567890",
       businessType: "requestor",
@@ -278,10 +275,11 @@ describe("practiceObBilling & checkCreditLock", () => {
     expect(before.isLocked).toBe(false);
     const after = await checkPracticeSettlementLock(
       practice._id,
-      new Date("2026-09-06T00:00:00.000Z"),
+      new Date("2026-09-11T00:00:00.000Z"),
     );
     expect(after.isLocked).toBe(true);
     expect(after.reason).toContain("2026-08");
+    expect(after.reason).toContain("진행 중인 의뢰는 그대로");
   });
 
   test("보증금은 Face ID 인증 후 개별 기공소로 직접 이체되고 100만원 단위만 허용한다", async () => {

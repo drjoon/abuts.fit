@@ -217,8 +217,8 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   },
   {
     id: "credits_autopay",
-    title: "정산 · 자동정산",
-    hint: "오픈뱅킹으로 기공의뢰 후불 정산일에 자동 이체됩니다.",
+    title: "정산 · 기공료",
+    hint: "익월 1일 오전 9시 문자 후, 5일과 10일까지 입금합니다.\n기한을 두 번 넘기거나 일부만 입금하면 이후는 선불 크레딧입니다.",
     path: `${CREDITS_PATH}?tab=autopay`,
     target: "credits_autopay",
     advance: "next",
@@ -352,7 +352,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "credits_charge",
     title: "정산 · 충전",
-    hint: "크레딧(선수금)을 충전합니다.",
+    hint: "커스텀어벗 주문용 크레딧을 충전합니다.\n치과 기공료는 이 충전이 아닙니다.",
     path: `${CREDITS_PATH}?tab=charge`,
     target: "credits_charge",
     advance: "next",
@@ -362,7 +362,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "credits_payout",
     title: "정산 · 지급",
-    hint: "기공크레딧 잔액과 월 지급 내역을 확인합니다.",
+    hint: "치과 입금이 확인된 뒤 기공소 계좌로 전달됩니다.",
     path: `${CREDITS_PATH}?tab=payout`,
     target: "credits_payout",
     advance: "next",

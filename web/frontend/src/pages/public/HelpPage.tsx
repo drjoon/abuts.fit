@@ -191,7 +191,12 @@ export const HelpPage = () => {
                         </span>
                       </AccordionTrigger>
                       <AccordionContent className="text-slate-600 leading-relaxed">
-                        {item.a}
+                        {item.a.split("\n").map((line, lineIndex) => (
+                          <span key={`${section.id}-${index}-${lineIndex}`}>
+                            {lineIndex > 0 ? <br /> : null}
+                            {line}
+                          </span>
+                        ))}
                       </AccordionContent>
                     </AccordionItem>
                   ))}

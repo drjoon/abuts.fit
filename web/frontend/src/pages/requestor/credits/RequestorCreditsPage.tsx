@@ -148,7 +148,7 @@ export default function RequestorCreditsPage() {
     if (!isLab) {
       next.push({
         key: "autopay",
-        label: "자동정산",
+        label: "기공료",
         icon: Landmark,
         content:
           activeTab === "autopay" ? (

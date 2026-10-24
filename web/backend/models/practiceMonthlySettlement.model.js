@@ -117,6 +117,25 @@ const practiceMonthlySettlementSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    /** 익월 1일 09:00 KST 안내 문자. */
+    noticeAt: { type: Date, default: null },
+    noticeSentAt: { type: Date, default: null },
+    /** 1차 입금 영업일 12:00 KST 미납 재안내. */
+    reminderAt: { type: Date, default: null },
+    reminderSentAt: { type: Date, default: null },
+    firstDueYmd: { type: String, default: "", trim: true },
+    secondDueYmd: { type: String, default: "", trim: true },
+    /** 1차까지 입금되면 기공소에 보내는 영업일. */
+    labPayoutOnYmd: { type: String, default: "", trim: true },
+    /** 입금 확인 시각 기준 실제 기공소 지급 예정일. */
+    labPayoutDueYmd: { type: String, default: "", trim: true },
+    /** 전액 확인 전 일부 입금. 전액이면 paymentReceivedAt을 쓴다. */
+    amountReceived: { type: Number, default: 0, min: 0 },
+    partialReceivedAt: { type: Date, default: null },
+    paymentReceivedAt: { type: Date, default: null },
+    labPayoutMarkedAt: { type: Date, default: null },
+    reopenNoticeSentAt: { type: Date, default: null },
+    /** 2차 입금일 다음 날 09:00 KST. 이 시각부터 미입금이면 신규 주문 정지. */
     scheduledTransferAt: {
       type: Date,
       default: null,

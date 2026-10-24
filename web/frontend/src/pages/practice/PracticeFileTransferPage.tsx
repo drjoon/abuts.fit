@@ -12621,7 +12621,7 @@ export const PracticeFileTransferPage = ({
               </div>
             ) : null
           }
-          confirmLabel={billing402Dialog?.confirmLabel ?? "자동정산"}
+          confirmLabel={billing402Dialog?.confirmLabel ?? "정산 안내"}
           cancelLabel="닫기"
           confirmTone="primary"
           onConfirm={() => {

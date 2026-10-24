@@ -243,12 +243,14 @@
   - `PRACTICE_MEMBERSHIP_SPEND`(레거시 치과 멤버십 월 구독. 신규 과금 없음)
   - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`, `STORE_SALE`, `REFUND`
   - `OB_MONTHLY_SETTLEMENT` (치과 오픈뱅킹 월말 일괄정산 완료)
-- **치과 기공의뢰 후불(OB 자동정산) + 커스텀어벗 의뢰하기 선불 크레딧 + 대형 치과 보증금 SSOT (2026-10-17)**:
-  - **월 후불 한도 없음**: 치과 기공의뢰(PTX) 기공비·PTX 어벗·커스텀어벗 의뢰하기는 OB 후불이다. 한도를 두지 않는다(`monthlyCreditLimit` 폐기). OB 장기동의가 **활성**이고 `paymentHold`가 없으면 마이너스 허용(`isPracticeObPostpaidActive`). 90일 재인증 만료·미납은 **신규 PTX**만 잠금(`checkPracticeSettlementLock`) — 데모 기간이 아니다.
-  - **기공소 커스텀어벗 의뢰하기(커스텀어벗 `Request`)**: 치과→**어벗츠 법인** 정산(OB 월 이체 `abuts_corp`). 기공소는 **선충전·무료 크레딧만**(`resolveLabCustomAbutmentCreditHoldPolicy` — PTX 적립·OB overdraft 불가). **런칭 전 베타** ON이면 일반 기공소는 무료크레딧만·`테스트기공소`만 충전 테스트. 치과 `Request`·PTX abutment hold는 OB 후불. OB 정산 잠금은 `Request`에 적용하지 않는다(`checkCreditLock`은 ChargeOrder·거래처 가격 승인만).
-  - **미납 시 다음 기공의뢰 즉시 제한**: `checkPracticeSettlementLock`(`utils/creditLock.util.js`)이 정산 예정일이 지났는데 `COMPLETED`가 아닌 월 정산, 자동이체 실패 Hold, 90일 재인증 만료를 잠근다. 신규 PTX 생성(`assertPracticeTransferPaidCreditSufficient({ enforceSettlementLock: true })`)에서만 적용하고 진행 중인 의뢰는 막지 않는다.
-  - **OB 장기동의 + 가끔 재인증**: 최초 1회 출금계좌 연결 + 생체인증(Face ID/지문 패스키) 등록 시 90일 유효(`BusinessAnchor.openBankingConsent`). 만료 시 1탭 재인증(`POST /api/practice/billing/reauth`).
-  - **정산일 자동 일괄이체**: 매월 1일 KST 전월 사용분(외부 수행 기공소별 **기공물** N건 + **어벗츠 법인** 1건. 법인 건은 기공사업부 기공·커스텀어벗·스토어)을 `PracticeMonthlySettlement`로 확정, 5일 09:00 KST에 일괄출금(`jobs/monthlyPracticeObSettlementWorker.js`, `aggregatePracticeMonthUsage`). 실패 시 `paymentHold`, Face ID 재이체(`POST /api/practice/billing/retry-settlement/:id`)로 해제.
+- **치과 기공의뢰 후불(수기 입금) + 커스텀어벗 의뢰하기 선불 크레딧 + 대형 치과 보증금 SSOT (2026-10-24)**:
+  - **월 후불 한도 없음**: 치과 기공의뢰(PTX) 기공비·PTX 어벗·커스텀어벗 의뢰하기·스토어는 후불이다. 한도를 두지 않는다(`monthlyCreditLimit` 폐기). 치과는 출금동의 없이 후불(`isPracticeObPostpaidActive`). 계좌 이체는 자동화하지 않는다.
+  - **기공소 커스텀어벗 의뢰하기(커스텀어벗 `Request`)**: 기공소는 **선충전·무료 크레딧만**(`resolveLabCustomAbutmentCreditHoldPolicy`). **런칭 전 베타** ON이면 일반 기공소는 무료크레딧만·`테스트기공소`만 충전 테스트. 치과 `Request`·PTX abutment hold는 후불. 정산 잠금은 `Request`에 적용하지 않는다(`checkCreditLock`은 ChargeOrder·거래처 가격 승인만).
+  - **안내·입금·정지**: 익월 1일 09:00 KST 전월분 문자. 5일(영업일)까지 1차 입금, 그날 12:00에 미확인이면 재안내. 10일(영업일)까지 2차. 그 다음 날 09:00부터 미확인이면 **신규 PTX만** 정지(`checkPracticeSettlementLock`, `scheduledTransferAt`). 자정이 아닌 오전 9시인 이유: 전날 입금을 담당자가 아침에 확인하기 전에 막지 않기 위해서다. 문구는 정중하게. 진행 중 의뢰는 막지 않는다. 담당자가 전액 입금 확인(`POST /api/admin/practice-lab-fees/:id/receive`)하면 즉시 해제하고, 정지 중이었으면 확인 문자를 보낸다. 문자 실패는 다음 시간 주기에 다시 보낸다. 일부 입금은 확인하지 않는다. 입금자명은 치과명. 이미 확정된 미입금 정산서의 기한은 워커가 이 달력으로 다시 맞춘다.
+  - **기공소 지급**: 1차까지 확인된 금액은 다음 영업일(보통 6일), 그 이후 확인분은 확인한 다음 영업일에 담당자가 기공소 계좌로 직접 송금하고 기록한다(`pay-labs`). 입금 확인 전에는 기공소에 보내지 않는다. 0원은 문자·정지 없음.
+  - **휴일**: 1일 09:00 문자는 달력 그대로. 5일·10일이 주말·공휴일이면 그 기한과 5일 낮 재안내만 다음 영업일로 민다. 정지는 민 2차 기한의 다음 날 09:00이다(`practiceSettlementCalendar.js`).
+  - **미납 구분**: 관리자 대시보드 「미납 치과」. 미납 지속은 기한을 넘기고 전액이 아직 없는 치과(후불 유지, 신규 PTX만 정지). 2회 이상 미납 기록은 기한 후 입금한 달까지 센다. 부분 납부는 `amountReceived`가 전액 미만인 달(`POST .../partial`). 일부만 들어온 동안에는 기공소로 보내지 않는다.
+  - **선불 전환**: 미납 기록이 2회 이상이거나 부분 납부가 있는 치과만 대상이다. 약관 제7조⑧·서비스 안내·정산 탭·FAQ에 같은 문장으로 적는다. 전환 후 새 기공의뢰·스토어만 선불 크레딧이고, 진행 중 의뢰는 유지하며, 남은 미납은 계좌로 마저 받은 뒤 기공소에 보낸다. 한 달만 늦은 치과는 후불을 유지한다. 주문 생성 때 자동으로 바꾸지 않고, 담당자가 대시보드 대상에서 바꾼다(`practiceSettlementDelinquency.js`).
   - **보증금(월 이용 1천만원 초과 치과)**: 딜러/영업 담당자가 안내한다(`PRACTICE_DEPOSIT_GUIDANCE_THRESHOLD`, 거래처 목록 `depositGuidance`). 보증금은 개별 기공소(어벗츠기공소 포함)가 직접 받는다. 치과는 OB + Face ID로 해당 기공소에 직접 이체한다(`POST /api/practice/billing/deposits`, `PracticeLabDeposit`). 어벗츠는 제3자 보증금을 보관하지 않고 의뢰도 막지 않는다(안내).
 - 수익 계정 SSOT:
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`

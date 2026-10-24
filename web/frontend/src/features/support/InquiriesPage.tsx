@@ -80,7 +80,7 @@ const REQUESTOR_FAQS: RequestorFaqItem[] = [
   },
   {
     q: "치과가 어벗츠를 쓰는 이유는?",
-    a: "기공의뢰·채팅으로 이메일 없이 소통하고, 오픈뱅킹 자동정산·계산서·인증 기공소 매칭·커스텀어벗 디자인 생산까지 한곳에서 이어갑니다.",
+    a: "기공의뢰·채팅으로 이메일 없이 소통하고, 월 기공료 안내·계산서·인증 기공소 매칭·커스텀어벗 디자인 생산까지 한곳에서 이어갑니다.",
     audience: "practice",
   },
   {
@@ -102,8 +102,13 @@ const REQUESTOR_FAQS: RequestorFaqItem[] = [
     a: "유료 잔액은 요청 시 전액 환불되고, 기발행 면세 계산서는 마이너스 수정 계산서로 처리됩니다. 무료·이벤트 크레딧은 제외입니다.",
   },
   {
+    q: "치과 기공료는 어떻게 내나요?",
+    a: "익월 1일 오전 9시에 문자로 안내합니다.\n5일까지 1차, 10일까지 2차로 어벗츠 계좌에 입금합니다.\n휴일이면 그 기한만 다음 영업일입니다.\n입금자명은 치과명으로 적어 주세요.\n한 달만 늦으면 후불을 유지합니다.\n기한을 두 번 넘기거나 일부만 입금하면 이후 주문은 선불 크레딧입니다.",
+    audience: "practice",
+  },
+  {
     q: "부가세가 붙나요?",
-    a: "어벗츠 커스텀어벗·기공서비스는 면세입니다. 스토어 기성품은 과세이며 표시는 부가세 포함가입니다. 커스텀어벗 선결제는 월말 사용분 계산서, 치과 스토어·기공서비스는 오픈뱅킹 이체 때 발행합니다.",
+    a: "어벗츠 커스텀어벗·기공서비스는 면세입니다.\n스토어 기성품은 과세이며 표시는 부가세 포함가입니다.\n커스텀어벗 선결제는 월말 사용분 계산서입니다.\n치과 스토어·기공서비스는 입금이 확인된 금액에 맞춥니다.",
   },
 ];
 
@@ -737,7 +742,12 @@ export const InquiriesPage = () => {
                           {item.q}
                         </AccordionTrigger>
                         <AccordionContent className="text-sm leading-relaxed text-muted-foreground">
-                          {item.a}
+                          {item.a.split("\n").map((line, lineIndex) => (
+                            <span key={`${item.q}-${lineIndex}`}>
+                              {lineIndex > 0 ? <br /> : null}
+                              {line}
+                            </span>
+                          ))}
                         </AccordionContent>
                       </AccordionItem>
                     ))}

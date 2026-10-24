@@ -218,6 +218,13 @@ import {
 import { adminOverrideOrganizationVerification } from "../../controllers/admin/admin.organization.controller.js";
 import { adminGetCommBadges } from "../../controllers/admin/adminCommBadges.controller.js";
 import {
+  adminListPracticeLabFees,
+  adminPayPracticeLabFee,
+  adminPracticeLabFeeDelinquency,
+  adminReceivePracticeLabFee,
+  adminRecordPracticeLabFeePartial,
+} from "../../controllers/admin/adminPracticeLabFee.controller.js";
+import {
   deleteBusinessAnchor,
   getBusinessAnchorLinkedUsers,
   adminCheckCreditReconcile,
@@ -539,6 +546,11 @@ router.delete(
 );
 
 // 크레딧 관리
+router.get("/practice-lab-fees", adminListPracticeLabFees);
+router.get("/practice-lab-fees/delinquency", adminPracticeLabFeeDelinquency);
+router.post("/practice-lab-fees/:id/partial", adminRecordPracticeLabFeePartial);
+router.post("/practice-lab-fees/:id/receive", adminReceivePracticeLabFee);
+router.post("/practice-lab-fees/:id/pay-labs", adminPayPracticeLabFee);
 router.get("/credits/stats", adminGetCreditStats);
 router.get("/credits/businesses", adminGetBusinessCredits);
 router.get("/credits/businesses/:id", adminGetBusinessCreditDetail);

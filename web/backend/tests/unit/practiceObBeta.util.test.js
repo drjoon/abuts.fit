@@ -35,7 +35,7 @@ describe("practiceObBeta (런칭 전)", () => {
     expect(lock.isLocked).toBe(false);
   });
 
-  test("테스트치과는 OB active 전에는 후불·잠금 해제 아님", async () => {
+  test("테스트치과도 계좌 연결 없이 후불이고, 정산서가 없으면 주문을 멈추지 않는다", async () => {
     const practice = await BusinessAnchor.create({
       businessNumberNormalized: "9999999002",
       businessType: "requestor",
@@ -43,7 +43,9 @@ describe("practiceObBeta (런칭 전)", () => {
       name: "테스트치과",
     });
     expect(await isPracticeBetaUnlimitedPostpaid(practice._id)).toBe(false);
-    expect(await isPracticeObPostpaidActive(practice._id)).toBe(false);
+    expect(await isPracticeObPostpaidActive(practice._id)).toBe(true);
+    const lock = await checkPracticeSettlementLock(practice._id);
+    expect(lock.isLocked).toBe(false);
   });
 
   test("일반 기공소 CA는 무료크레딧만, 테스트기공소는 선불(자동정산 테스트)", async () => {
@@ -84,7 +86,7 @@ describe("practiceObBeta (런칭 전)", () => {
       });
       expect(await isPracticeBetaUnlimitedPostpaid(practice._id)).toBe(false);
       expect(await isLabCustomAbutmentFreeCreditOnly(lab._id)).toBe(false);
-      expect(await isPracticeObPostpaidActive(practice._id)).toBe(false);
+      expect(await isPracticeObPostpaidActive(practice._id)).toBe(true);
       expect(await isPracticeObPostpaidActive(lab._id)).toBe(false);
     } finally {
       if (prev === undefined) delete process.env.PRACTICE_OB_LAUNCH_BETA;

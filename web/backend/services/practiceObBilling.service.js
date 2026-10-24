@@ -28,7 +28,21 @@ import {
 import { loadMonthlyRequestCounts } from "./requestorShipping.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../utils/creditRealtime.js";
 import { resolvePerformingLabAnchorId } from "../utils/practiceTransferAutoMatchCore.js";
+import User from "../models/user.model.js";
+import SystemSettings from "../models/systemSettings.model.js";
+import { sendPopbillXMS } from "../utils/popbill.util.js";
 import { issuePracticeObPaymentInvoices } from "./practiceObPaymentInvoice.service.js";
+import {
+  formatSettlementMonthDay,
+  kstYmdFromDate,
+  resolveLabPayoutYmd,
+  resolvePracticeSettlementCalendar,
+} from "../utils/practiceSettlementCalendar.js";
+import {
+  PREPAID_CONVERSION_PLAN_LINES,
+  assertPartialAmount,
+  classifyPracticeDelinquency,
+} from "../utils/practiceSettlementDelinquency.js";
 
 export function getKstYearMonth(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -66,14 +80,33 @@ export function resolvePreviousKstYearMonth(now = new Date()) {
 }
 
 export function resolveScheduledTransferDateForYearMonth(yearMonth) {
-  const [yStr, mStr] = String(yearMonth || "").split("-");
-  const y = Number(yStr);
-  const m = Number(mStr);
-  const nextY = m === 12 ? y + 1 : y;
-  const nextM = m === 12 ? 1 : m + 1;
-  const nextMStr = String(nextM).padStart(2, "0");
-  // 익월 5일 09:00 KST 자동 일괄이체
-  return new Date(`${nextY}-${nextMStr}-05T09:00:00+09:00`);
+  return resolvePracticeSettlementCalendar(yearMonth).suspendAt;
+}
+
+const PRACTICE_DEPOSIT_ACCOUNT_DEFAULTS = {
+  bankName: "하나은행",
+  accountNumber: "806-910009-00004",
+  holderName: "어벗츠 주식회사",
+};
+
+export async function getPracticeDepositAccount() {
+  const doc = await SystemSettings.findOne({ key: "global" })
+    .select({ bPlanDepositAccount: 1 })
+    .lean();
+  const info = doc?.bPlanDepositAccount || {};
+  return {
+    bankName: String(
+      info.bankName || PRACTICE_DEPOSIT_ACCOUNT_DEFAULTS.bankName,
+    ).trim(),
+    accountNumber: String(
+      info.accountNumber ||
+        process.env.B_PLAN_DEPOSIT_ACCOUNT_NO ||
+        PRACTICE_DEPOSIT_ACCOUNT_DEFAULTS.accountNumber,
+    ).trim(),
+    holderName: String(
+      info.holderName || PRACTICE_DEPOSIT_ACCOUNT_DEFAULTS.holderName,
+    ).trim(),
+  };
 }
 
 /**
@@ -300,6 +333,30 @@ export async function confirmPracticeMonthlySettlement({
     yearMonth,
   });
   if (existing && existing.status !== "DRAFT") {
+    if (
+      existing.status === "CONFIRMED" &&
+      !existing.paymentReceivedAt &&
+      Number(existing.totalAmount) > 0
+    ) {
+      const calendar = resolvePracticeSettlementCalendar(yearMonth);
+      const nextSuspend = calendar.suspendAt?.getTime?.() || 0;
+      const prevSuspend = existing.scheduledTransferAt
+        ? new Date(existing.scheduledTransferAt).getTime()
+        : 0;
+      const scheduleChanged =
+        existing.firstDueYmd !== calendar.firstDueYmd ||
+        existing.secondDueYmd !== calendar.secondDueYmd ||
+        prevSuspend !== nextSuspend;
+      if (scheduleChanged) {
+        existing.noticeAt = calendar.noticeAt;
+        existing.reminderAt = calendar.reminderAt;
+        existing.firstDueYmd = calendar.firstDueYmd;
+        existing.secondDueYmd = calendar.secondDueYmd;
+        existing.labPayoutOnYmd = calendar.labPayoutOnYmd;
+        existing.scheduledTransferAt = calendar.suspendAt;
+        await existing.save();
+      }
+    }
     return existing;
   }
 
@@ -313,7 +370,8 @@ export async function confirmPracticeMonthlySettlement({
       }
     : await aggregatePracticeMonthUsage({ practiceAnchorId, yearMonth });
 
-  const scheduledTransferAt = resolveScheduledTransferDateForYearMonth(yearMonth);
+  const calendar = resolvePracticeSettlementCalendar(yearMonth);
+  const scheduledTransferAt = calendar.suspendAt;
 
   const invoiceSplit = overrideLines
     ? null
@@ -334,6 +392,11 @@ export async function confirmPracticeMonthlySettlement({
         status: usage.totalAmount > 0 ? "CONFIRMED" : "COMPLETED",
         confirmedAt: now,
         scheduledTransferAt,
+        noticeAt: calendar.noticeAt,
+        reminderAt: calendar.reminderAt,
+        firstDueYmd: calendar.firstDueYmd,
+        secondDueYmd: calendar.secondDueYmd,
+        labPayoutOnYmd: calendar.labPayoutOnYmd,
         ...(invoiceSplit ? { invoiceSplit } : {}),
       },
     },
@@ -715,6 +778,8 @@ export async function getPracticeObBillingOverview({
       (anchor.dealerUnitPrice ?? REQUESTOR_UNIT_PRICE_BASE),
   );
 
+  const upcoming = resolvePracticeSettlementCalendar(currentYearMonth);
+  const depositAccount = await getPracticeDepositAccount();
   const consent = anchor.openBankingConsent || {};
   const expiresAt = consent.expiresAt ? new Date(consent.expiresAt) : null;
   const daysUntilReauth = expiresAt
@@ -783,8 +848,15 @@ export async function getPracticeObBillingOverview({
       directLabTotal: currentUsage.directLabTotal,
       abutsCorpTotal: currentUsage.abutsCorpTotal,
       lines: currentUsage.lines,
-      nextAutoTransferAt: resolveScheduledTransferDateForYearMonth(currentYearMonth),
+      nextAutoTransferAt: upcoming.noticeAt,
+      noticeAt: upcoming.noticeAt,
+      reminderAt: upcoming.reminderAt,
+      firstDueYmd: upcoming.firstDueYmd,
+      secondDueYmd: upcoming.secondDueYmd,
+      suspendAt: upcoming.suspendAt,
+      labPayoutOnYmd: upcoming.labPayoutOnYmd,
     },
+    depositAccount,
     settlements: settlements.map((s) => ({
       id: String(s._id),
       yearMonth: s.yearMonth,
@@ -792,6 +864,14 @@ export async function getPracticeObBillingOverview({
       totalAmount: s.totalAmount,
       confirmedAt: s.confirmedAt,
       scheduledTransferAt: s.scheduledTransferAt,
+      noticeAt: s.noticeAt || null,
+      reminderAt: s.reminderAt || null,
+      firstDueYmd: s.firstDueYmd || "",
+      secondDueYmd: s.secondDueYmd || "",
+      labPayoutOnYmd: s.labPayoutOnYmd || "",
+      labPayoutDueYmd: s.labPayoutDueYmd || "",
+      paymentReceivedAt: s.paymentReceivedAt || null,
+      labPayoutMarkedAt: s.labPayoutMarkedAt || null,
       failedAt: s.failedAt,
       lines: (s.lines || []).map((l) => ({
         id: String(l._id),
@@ -875,6 +955,473 @@ export async function transferPracticeLabDeposit({
     },
   );
   return deposit.toObject();
+}
+
+function digitsPhone(raw) {
+  return String(raw || "").replace(/\D/g, "");
+}
+
+async function listPracticeNoticePhones(anchor) {
+  const phones = new Set();
+  const add = (raw) => {
+    const digits = digitsPhone(raw);
+    if (digits.length >= 10 && digits.length <= 12) phones.add(digits);
+  };
+  add(anchor?.metadata?.phoneNumber);
+  if (anchor?.primaryContactUserId) {
+    const contact = await User.findById(anchor.primaryContactUserId)
+      .select({ phoneNumber: 1 })
+      .lean();
+    add(contact?.phoneNumber);
+  }
+  if (phones.size === 0 && anchor?._id) {
+    const users = await User.find({ businessAnchorId: anchor._id })
+      .select({ phoneNumber: 1 })
+      .limit(5)
+      .lean();
+    for (const user of users) add(user.phoneNumber);
+  }
+  return [...phones].slice(0, 3);
+}
+
+function wonLabel(amount) {
+  return `${Math.round(Number(amount) || 0).toLocaleString("ko-KR")}원`;
+}
+
+function buildSettlementSms({ kind, name, yearMonth, amount, account, calendar }) {
+  const who = name || "고객";
+  const month = String(yearMonth || "");
+  const money = wonLabel(amount);
+  const bankLine = [account?.bankName, account?.accountNumber, account?.holderName]
+    .filter(Boolean)
+    .join(" ");
+  if (kind === "reminder") {
+    return [
+      `${who}님, ${month} 기공료 ${money}이 아직 확인되지 않았습니다.`,
+      `${formatSettlementMonthDay(calendar.secondDueYmd)}까지 입금해 주시면 됩니다.`,
+      "이미 보내신 경우 이 안내는 지나치셔도 됩니다.",
+      bankLine,
+      "입금자명은 치과명으로 적어 주세요.",
+      "어벗츠",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (kind === "reopen") {
+    return [
+      `${who}님, ${month} 기공료 입금이 확인되었습니다.`,
+      "기공의뢰를 다시 보내실 수 있습니다.",
+      "어벗츠",
+    ].join("\n");
+  }
+  return [
+    `${who}님, ${month} 기공료 ${money}입니다.`,
+    `${formatSettlementMonthDay(calendar.firstDueYmd)}까지 입금해 주시면 됩니다.`,
+    bankLine,
+    "입금자명은 치과명으로 적어 주세요.",
+    "내역은 어벗츠.핏 정산에서 보실 수 있습니다.",
+    "어벗츠",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+async function deliverSettlementSms({ anchor, content }) {
+  const phones = await listPracticeNoticePhones(anchor);
+  if (!phones.length) return { ok: false, skipped: "no_phone" };
+  await sendPopbillXMS({
+    items: phones.map((phone) => ({
+      phone,
+      content,
+      name: anchor?.name || "",
+    })),
+    subject: "기공료 안내",
+  });
+  return { ok: true };
+}
+
+async function sendSettlementNoticeForRow(row, now, account) {
+  const reminderDue =
+    row.reminderAt &&
+    new Date(row.reminderAt).getTime() <= now.getTime() &&
+    !row.reminderSentAt;
+  const firstDue =
+    row.noticeAt &&
+    new Date(row.noticeAt).getTime() <= now.getTime() &&
+    !row.noticeSentAt;
+  if (!reminderDue && !firstDue) return null;
+
+  const anchor = await BusinessAnchor.findById(row.practiceAnchorId)
+    .select({ name: 1, metadata: 1, primaryContactUserId: 1 })
+    .lean();
+  const kind = reminderDue ? "reminder" : "first";
+  const content = buildSettlementSms({
+    kind,
+    name: anchor?.name,
+    yearMonth: row.yearMonth,
+    amount: row.totalAmount,
+    account,
+    calendar: {
+      firstDueYmd: row.firstDueYmd,
+      secondDueYmd: row.secondDueYmd,
+    },
+  });
+  try {
+    await deliverSettlementSms({ anchor, content });
+  } catch (error) {
+    console.error("[practiceSettlementNotice] sms failed", row.yearMonth, error?.message || error);
+    return null;
+  }
+  if (kind === "reminder") {
+    row.reminderSentAt = now;
+    if (!row.noticeSentAt) row.noticeSentAt = now;
+  } else {
+    row.noticeSentAt = now;
+  }
+  await row.save();
+  return kind;
+}
+
+async function sendReopenNoticeIfNeeded(row, now) {
+  const suspendAt = row?.scheduledTransferAt
+    ? new Date(row.scheduledTransferAt).getTime()
+    : NaN;
+  const receivedAt = row?.paymentReceivedAt
+    ? new Date(row.paymentReceivedAt).getTime()
+    : NaN;
+  if (!Number.isFinite(suspendAt) || !Number.isFinite(receivedAt)) return false;
+  if (suspendAt > receivedAt || row.reopenNoticeSentAt) return false;
+
+  const claimed = await PracticeMonthlySettlement.findOneAndUpdate(
+    {
+      _id: row._id,
+      reopenNoticeSentAt: null,
+      paymentReceivedAt: { $ne: null },
+    },
+    { $set: { reopenNoticeSentAt: now } },
+  );
+  if (!claimed) return false;
+  const suspendMs = claimed?.scheduledTransferAt
+    ? new Date(claimed.scheduledTransferAt).getTime()
+    : NaN;
+  const receivedMs = claimed?.paymentReceivedAt
+    ? new Date(claimed.paymentReceivedAt).getTime()
+    : NaN;
+  if (!Number.isFinite(suspendMs) || !Number.isFinite(receivedMs) || suspendMs > receivedMs) {
+    await PracticeMonthlySettlement.updateOne(
+      { _id: row._id, reopenNoticeSentAt: now },
+      { $set: { reopenNoticeSentAt: null } },
+    );
+    return false;
+  }
+
+  const anchor = await BusinessAnchor.findById(claimed.practiceAnchorId)
+    .select({ name: 1, metadata: 1, primaryContactUserId: 1 })
+    .lean();
+  const content = buildSettlementSms({
+    kind: "reopen",
+    name: anchor?.name,
+    yearMonth: claimed.yearMonth,
+    amount: claimed.totalAmount,
+    account: null,
+    calendar: claimed,
+  });
+  try {
+    await deliverSettlementSms({ anchor, content });
+    return true;
+  } catch (error) {
+    console.error(
+      "[practiceSettlementNotice] reopen sms failed",
+      claimed.yearMonth,
+      error?.message || error,
+    );
+    await PracticeMonthlySettlement.updateOne(
+      { _id: row._id },
+      { $set: { reopenNoticeSentAt: null } },
+    );
+    return false;
+  }
+}
+
+/** 안내·재안내 문자를 보낸다. 실패하면 다음 주기에 다시 시도한다. */
+export async function dispatchPracticeSettlementNotices({ now = new Date() } = {}) {
+  const rows = await PracticeMonthlySettlement.find({
+    status: "CONFIRMED",
+    totalAmount: { $gt: 0 },
+    paymentReceivedAt: null,
+    $or: [
+      { noticeSentAt: null, noticeAt: { $lte: now } },
+      { reminderSentAt: null, reminderAt: { $lte: now } },
+    ],
+  });
+  const account = rows.length ? await getPracticeDepositAccount() : null;
+  let noticed = 0;
+  let reminded = 0;
+  for (const row of rows) {
+    const kind = await sendSettlementNoticeForRow(row, now, account);
+    if (kind === "first") noticed += 1;
+    if (kind === "reminder") reminded += 1;
+  }
+
+  const reopenRows = await PracticeMonthlySettlement.find({
+    totalAmount: { $gt: 0 },
+    paymentReceivedAt: { $ne: null },
+    reopenNoticeSentAt: null,
+    $expr: { $lte: ["$scheduledTransferAt", "$paymentReceivedAt"] },
+  }).limit(50);
+  for (const row of reopenRows) {
+    await sendReopenNoticeIfNeeded(row, now);
+  }
+  return { noticed, reminded };
+}
+
+async function issueSettlementInvoicesLater(settlement, now) {
+  try {
+    await issuePracticeObPaymentInvoices({
+      settlement,
+      invoiceSplit: settlement.invoiceSplit,
+      now,
+    });
+  } catch (error) {
+    console.error("[practiceSettlementInvoice] failed", error?.message || error);
+  }
+}
+
+/**
+ * 담당자가 치과 입금을 전액 확인한다. 일부 입금은 확인하지 않는다.
+ * 입금 전에는 기공소로 보내지 않는다.
+ */
+export async function markPracticeSettlementPaymentReceived({
+  settlementId,
+  now = new Date(),
+}) {
+  const settlement = await PracticeMonthlySettlement.findById(settlementId);
+  if (!settlement) throw new Error("월간 정산 내역을 찾을 수 없습니다.");
+  if (settlement.paymentReceivedAt) return settlement;
+  if (!(Number(settlement.totalAmount) > 0)) {
+    throw new Error("입금할 금액이 없습니다.");
+  }
+
+  const wasPaused =
+    settlement.scheduledTransferAt &&
+    new Date(settlement.scheduledTransferAt).getTime() <= now.getTime();
+
+  settlement.paymentReceivedAt = now;
+  settlement.amountReceived = Math.round(Number(settlement.totalAmount) || 0);
+  settlement.status = "COMPLETED";
+  settlement.failedAt = null;
+  settlement.labPayoutDueYmd = resolveLabPayoutYmd({
+    receivedAt: now,
+    firstDueYmd: settlement.firstDueYmd,
+    labPayoutOnYmd: settlement.labPayoutOnYmd,
+  });
+  const hasLabLine = (settlement.lines || []).some(
+    (line) => line.payeeKind === "direct_lab" && Number(line.amount) > 0,
+  );
+  settlement.lines = settlement.lines.map((line) => {
+    const raw = line.toObject ? line.toObject() : line;
+    if (raw.payeeKind !== "abuts_corp") return raw;
+    return {
+      ...raw,
+      transferStatus: "SUCCESS",
+      failureReason: "",
+      transferredAt: now,
+    };
+  });
+  if (!hasLabLine) settlement.labPayoutMarkedAt = now;
+  await settlement.save();
+
+  await BusinessAnchor.updateOne(
+    { _id: settlement.practiceAnchorId },
+    {
+      $set: {
+        "openBankingConsent.paymentHold": {
+          isHeld: false,
+          reason: "",
+          heldAt: null,
+          failedBatchId: null,
+        },
+      },
+    },
+  );
+
+  if (wasPaused) {
+    void sendReopenNoticeIfNeeded(settlement, now).catch((error) => {
+      console.error("[practiceSettlementNotice] reopen sms failed", error?.message || error);
+    });
+  }
+
+  void issueSettlementInvoicesLater(settlement, now);
+  emitCreditBalanceUpdatedToBusiness({
+    businessAnchorId: settlement.practiceAnchorId,
+    reason: "practice_settlement_received",
+  });
+  return settlement;
+}
+
+/** 담당자가 거래 기공소 계좌로 송금을 마친 뒤 표시한다. */
+export async function markPracticeSettlementLabPayout({
+  settlementId,
+  now = new Date(),
+}) {
+  const settlement = await PracticeMonthlySettlement.findById(settlementId);
+  if (!settlement) throw new Error("월간 정산 내역을 찾을 수 없습니다.");
+  if (!settlement.paymentReceivedAt) {
+    throw new Error("치과 입금을 확인한 뒤에 기공소로 보내 주세요.");
+  }
+  settlement.lines = settlement.lines.map((line) => {
+    const raw = line.toObject ? line.toObject() : line;
+    if (raw.payeeKind !== "direct_lab") return raw;
+    if (raw.transferStatus === "SUCCESS") return raw;
+    return {
+      ...raw,
+      transferStatus: "SUCCESS",
+      failureReason: "",
+      transferredAt: now,
+    };
+  });
+  settlement.labPayoutMarkedAt = now;
+  if (!settlement.labPayoutDueYmd) {
+    settlement.labPayoutDueYmd = kstYmdFromDate(now);
+  }
+  await settlement.save();
+  void issueSettlementInvoicesLater(settlement, now);
+  return settlement;
+}
+
+export async function listPracticeLabFeeWorklist({ now = new Date() } = {}) {
+  const rows = await PracticeMonthlySettlement.find({
+    totalAmount: { $gt: 0 },
+    $or: [
+      { paymentReceivedAt: null, status: { $ne: "COMPLETED" } },
+      {
+        paymentReceivedAt: { $ne: null },
+        labPayoutMarkedAt: null,
+      },
+    ],
+  })
+    .sort({ yearMonth: 1, createdAt: 1 })
+    .limit(200)
+    .lean();
+
+  const anchorIds = rows.map((row) => row.practiceAnchorId).filter(Boolean);
+  const anchors = anchorIds.length
+    ? await BusinessAnchor.find({ _id: { $in: anchorIds } })
+        .select({ name: 1 })
+        .lean()
+    : [];
+  const nameById = new Map(anchors.map((a) => [String(a._id), a.name || ""]));
+
+  const items = rows.map((row) => {
+    const received = Boolean(row.paymentReceivedAt);
+    const suspendAt = row.scheduledTransferAt ? new Date(row.scheduledTransferAt) : null;
+    const reminderAt = row.reminderAt ? new Date(row.reminderAt) : null;
+    let phase = "awaiting_first";
+    if (received) phase = "payout";
+    else if (suspendAt && suspendAt.getTime() <= now.getTime()) phase = "paused";
+    else if (reminderAt && reminderAt.getTime() <= now.getTime()) phase = "awaiting_second";
+    const labLines = (row.lines || []).filter((line) => line.payeeKind === "direct_lab");
+    return {
+      id: String(row._id),
+      practiceAnchorId: String(row.practiceAnchorId || ""),
+      practiceName: nameById.get(String(row.practiceAnchorId)) || "치과",
+      yearMonth: row.yearMonth,
+      totalAmount: row.totalAmount,
+      amountReceived: Math.max(0, Math.round(Number(row.amountReceived) || 0)),
+      phase,
+      firstDueYmd: row.firstDueYmd || "",
+      secondDueYmd: row.secondDueYmd || "",
+      labPayoutOnYmd: row.labPayoutOnYmd || "",
+      labPayoutDueYmd: row.labPayoutDueYmd || "",
+      paymentReceivedAt: row.paymentReceivedAt || null,
+      labPayoutMarkedAt: row.labPayoutMarkedAt || null,
+      noticeSentAt: row.noticeSentAt || null,
+      reminderSentAt: row.reminderSentAt || null,
+      lines: labLines.map((line) => ({
+        id: String(line._id),
+        payeeName: line.payeeName,
+        bankName: line.bankName,
+        accountNumber: line.accountNumber,
+        holderName: line.holderName,
+        amount: line.amount,
+        transferStatus: line.transferStatus,
+      })),
+    };
+  });
+
+  const summary = await summarizePracticeLabFeeDelinquency({ now });
+  const clinicById = new Map(
+    (summary.clinics || []).map((clinic) => [clinic.practiceAnchorId, clinic]),
+  );
+  return items.map((item) => {
+    const clinic = clinicById.get(item.practiceAnchorId);
+    const kinds = new Set((clinic?.months || []).map((month) => month.kind));
+    return {
+      ...item,
+      watch: {
+        ongoing: kinds.has("ongoing") || kinds.has("ongoing_partial"),
+        repeat: (clinic?.unpaidRecordCount || 0) >= 2,
+        partial: kinds.has("partial") || kinds.has("ongoing_partial"),
+        prepaidCandidate: Boolean(clinic?.prepaidCandidate),
+        unpaidRecordCount: clinic?.unpaidRecordCount || 0,
+      },
+    };
+  });
+}
+
+export async function summarizePracticeLabFeeDelinquency({ now = new Date() } = {}) {
+  const rows = await PracticeMonthlySettlement.find({
+    totalAmount: { $gt: 0 },
+    $or: [
+      { paymentReceivedAt: null, status: { $ne: "COMPLETED" } },
+      {
+        $expr: {
+          $and: [
+            { $ne: ["$scheduledTransferAt", null] },
+            { $gt: ["$paymentReceivedAt", "$scheduledTransferAt"] },
+          ],
+        },
+      },
+    ],
+  })
+    .select({
+      practiceAnchorId: 1,
+      yearMonth: 1,
+      totalAmount: 1,
+      amountReceived: 1,
+      paymentReceivedAt: 1,
+      scheduledTransferAt: 1,
+    })
+    .limit(2000)
+    .lean();
+
+  const anchorIds = [...new Set(rows.map((row) => String(row.practiceAnchorId || "")).filter(Boolean))];
+  const anchors = anchorIds.length
+    ? await BusinessAnchor.find({ _id: { $in: anchorIds } }).select({ name: 1 }).lean()
+    : [];
+  const nameById = new Map(anchors.map((anchor) => [String(anchor._id), anchor.name || ""]));
+  const grouped = classifyPracticeDelinquency(rows, nameById, now);
+  return {
+    ...grouped,
+    planLines: PREPAID_CONVERSION_PLAN_LINES,
+  };
+}
+
+export async function markPracticeSettlementPartialPayment({
+  settlementId,
+  amountReceived,
+  now = new Date(),
+}) {
+  const settlement = await PracticeMonthlySettlement.findById(settlementId);
+  if (!settlement) throw new Error("월간 정산 내역을 찾을 수 없습니다.");
+  if (settlement.paymentReceivedAt) {
+    throw new Error("이미 전액이 확인된 달입니다.");
+  }
+  const amount = assertPartialAmount(settlement.totalAmount, amountReceived);
+  settlement.amountReceived = amount;
+  settlement.partialReceivedAt = amount > 0 ? now : null;
+  await settlement.save();
+  return settlement;
 }
 
 export async function listPracticeLabDeposits({ practiceAnchorId }) {

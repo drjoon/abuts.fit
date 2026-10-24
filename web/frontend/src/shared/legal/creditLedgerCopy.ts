@@ -13,9 +13,9 @@ export const PTX_CA_INSUFFICIENT_CREDIT_TITLE = "크레딧이 부족합니다";
 
 export const PTX_CA_INSUFFICIENT_CREDIT_DESCRIPTION_LINES = [
   "어벗 디자인·생산 비용을 후불로 정산할 수 없습니다.",
-  "자동정산 탭에서 오픈뱅킹 연결·미납 재이체를 확인해 주세요.",
+  "기공료 탭에서 입금 계좌와 안내를 확인해 주세요.",
 ] as const;
 
-export const PTX_CA_INSUFFICIENT_CREDIT_CONFIRM_LABEL = "자동정산";
+export const PTX_CA_INSUFFICIENT_CREDIT_CONFIRM_LABEL = "기공료";
 
 export const PTX_CA_INSUFFICIENT_CREDIT_REASON = "insufficient_credit_for_ptx_ca";

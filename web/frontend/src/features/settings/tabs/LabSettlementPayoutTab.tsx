@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/settlement/affiliateVat.ts
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
+// - 2026-10-24: 지급 안내 — 치과 입금 확인 뒤 등록 계좌로 전달. 자동 이체 문구 제거.
 // - 2026-10-06: 정산규칙 — fact 카드·짧은 문장. 공통 안내 모달 폭.
 // - 2026-09-28: 정산규칙 — 보철 적립은 작업시작이 아니라 디자인 파일 업로드(작업완료) 시.
 // - 2026-09-28: 통장 사본 안내 가로는 문구+여백. 카드는 가운데.
@@ -525,11 +526,27 @@ export const LabSettlementPayoutTab = () => {
   return (
     <div className="mx-auto flex h-full min-h-0 w-full flex-col overflow-hidden">
       {bankbookRemindDialog}
+      <div
+        className={cn(
+          CONTENT_MEASURED_CHROME_CLASS,
+          "mx-3 mt-3 shrink-0 self-center rounded-2xl border border-slate-200/80 bg-white px-3 py-2.5",
+        )}
+      >
+        <p className="text-[13px] leading-relaxed text-slate-700">
+          치과 입금이 확인된 뒤 등록 계좌로 전달됩니다.
+          <br />
+          1차까지 확인된 금액은 다음 영업일입니다.
+          <br />
+          그 이후 확인분은 확인한 다음 영업일입니다.
+          <br />
+          일부만 들어온 금액은 전액 확인 뒤에 전달됩니다.
+        </p>
+      </div>
       {!payoutReady ? (
         <div
           className={cn(
             CONTENT_MEASURED_CHROME_CLASS,
-            "mx-3 mt-3 shrink-0 self-center rounded-2xl border border-amber-200/80 bg-amber-50/90 px-3 py-2.5",
+            "mx-3 mt-2 shrink-0 self-center rounded-2xl border border-amber-200/80 bg-amber-50/90 px-3 py-2.5",
           )}
         >
           <p className="text-[13px] font-medium text-amber-950">
@@ -647,9 +664,16 @@ export const LabSettlementPayoutTab = () => {
                     <br />
                     기공크레딧 사용분은 월 정산에서 상계합니다.
                   </SettlementPolicyFact>
-                  <SettlementPolicyFact label="월 지급">
-                    KST 월별 집계 후 등록 계좌로 매월 자동 지급합니다.
+                  <SettlementPolicyFact label="기공료 전달">
+                    치과 입금이 확인된 뒤 등록 계좌로 전달됩니다.
                     <br />
+                    1차까지 확인된 금액은 다음 영업일입니다.
+                    <br />
+                    그 이후 확인분은 확인한 다음 영업일입니다.
+                    <br />
+                    일부만 들어온 금액은 전액 확인 뒤에 전달됩니다.
+                  </SettlementPolicyFact>
+                  <SettlementPolicyFact label="잔액">
                     {LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE}
                   </SettlementPolicyFact>
                   <SettlementPolicyFact label="통장 사본">
