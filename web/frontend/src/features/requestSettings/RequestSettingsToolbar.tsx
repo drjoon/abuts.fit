@@ -12,11 +12,13 @@
 // - 2026-09-14: 모바일·좁은 폭 — 아이콘 우선(라벨은 sm+). 디자인SW·아노다이징 아이콘.
 // - 2026-09-14: 버튼 라벨을 선택된 SW명으로 다시 표시(미설정 시 「디자인SW」).
 // - 2026-09-03: 버튼 라벨을 저장된 SW명(ExoCAD) 대신 고정 「디자인SW」로.
+import { useState } from "react";
 import { Droplets, Monitor, Rows3, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/shared/ui/cn";
 import { CaseOptionPopoverButton } from "@/shared/components/practice/CaseOptionPopoverButton";
+import { ShortPostRetentionDialog } from "@/shared/components/practice/ShortPostRetentionDialog";
 import { RequestScrewSupplySection } from "@/shared/components/practice/ScrewSupplyField";
 import type { ScrewSupply } from "@/shared/practice/screwSupply";
 import type { ShortPostRetentionChoice } from "@/pages/requestor/new_request/utils/shortPostRetention";
@@ -68,6 +70,7 @@ export function RequestSettingsToolbar({
   screwSaving = false,
   onScrewSupplyChange,
 }: RequestSettingsToolbarProps) {
+  const [retentionOpen, setRetentionOpen] = useState(false);
   const fullLabel = String(designSoftwareLabel || "").trim() || "디자인SW";
   const label = shortLabels && !menu ? "SW" : fullLabel;
   const anodizingFull = anodizingEnabled ? "아노다이징 ON" : "아노다이징 OFF";
@@ -98,18 +101,28 @@ export function RequestSettingsToolbar({
         </span>
       </Button>
       {menu && onRetentionGrooveChange ? (
-        <CaseOptionPopoverButton
-          className="h-8 px-2"
-          icon={<Rows3 className="h-3.5 w-3.5 shrink-0" />}
-          label={retentionGroove === "deep" ? "유지홈 있음" : "유지홈 없음"}
-          value={retentionGroove === "deep" ? "deep" : "none"}
-          options={[
-            { value: "deep", label: "유지홈 있음" },
-            { value: "none", label: "유지홈 없음" },
-          ]}
-          disabled={anodizingSaving}
-          onChange={onRetentionGrooveChange}
-        />
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0 gap-1.5 px-2"
+            disabled={anodizingSaving}
+            onClick={() => setRetentionOpen(true)}
+          >
+            <Rows3 className="h-3.5 w-3.5 shrink-0" />
+            {retentionGroove === "deep" ? "유지홈 있음" : "유지홈 없음"}
+          </Button>
+          <ShortPostRetentionDialog
+            open={retentionOpen}
+            onOpenChange={setRetentionOpen}
+            value={retentionGroove === "deep" ? "deep" : "none"}
+            onConfirm={(value) => {
+              onRetentionGrooveChange(value);
+              setRetentionOpen(false);
+            }}
+          />
+        </>
       ) : null}
       {menu && onAnodizingChange ? (
         <CaseOptionPopoverButton

@@ -23,3 +23,39 @@ export function formatPostLengthMm(lengthMm: number): string {
   const rounded = Math.round(lengthMm * 100) / 100;
   return String(rounded);
 }
+
+const SHORT_POST_RETENTION_STORAGE_KEY = "abuts.newRequest.shortPostRetention.v1";
+
+export function readShortPostRetentionChoices(): Record<
+  string,
+  ShortPostRetentionChoice
+> {
+  if (typeof localStorage === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(SHORT_POST_RETENTION_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object") return {};
+    const next: Record<string, ShortPostRetentionChoice> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (value === "deep" || value === "none") next[key] = value;
+    }
+    return next;
+  } catch {
+    return {};
+  }
+}
+
+export function writeShortPostRetentionChoice(
+  fileKey: string,
+  value: ShortPostRetentionChoice,
+): void {
+  const key = String(fileKey || "").trim();
+  if (!key || typeof localStorage === "undefined") return;
+  const next = { ...readShortPostRetentionChoices(), [key]: value };
+  try {
+    localStorage.setItem(SHORT_POST_RETENTION_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // 저장 공간이 없으면 이번 세션 값만 유지한다.
+  }
+}

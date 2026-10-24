@@ -18,15 +18,16 @@ import {
   finalizeCustomImplantCaseUpdates,
   isCustomImplantCaseInfos,
 } from "@/shared/practice/newImplantCaseInfos";
-import type { ScrewSupply } from "@/shared/practice/screwSupply";
 import {
   isShortPostLength,
   measuredPostLengthMm,
+  readShortPostRetentionChoices,
+  writeShortPostRetentionChoice,
   type ShortPostRetentionChoice,
 } from "../utils/shortPostRetention";
 
 // change-log:
-// - 2026-10-24: 포스트 3mm 초과는 유지홈 없음. 이하는 사진 모달, 모달 기본은 있음.
+// - 2026-10-24: 짧은 포스트 유지홈을 한 번 고르면 파일 키로 로컬 스토리지에 둔다.
 // - 2026-10-18: 유지홈 라디오가 「없음」인데 저장값이 비면 없음으로 저장. 만료 토스트처럼 막지 않음.
 // - 2026-09-08: 가이드투어 abutment — 확인 모달 자동 오픈 억제·draft 복원 bootstrap 대기.
 // - 2026-08-16: 신규 첨부 시 3D 확인 모달 자동 오픈. 생산모드 유지홈 필수.
@@ -111,10 +112,6 @@ type Props = {
   onRetentionGrooveAccountSave?: (value: "none" | "deep") => void;
   anodizingEnabled?: boolean;
   onAnodizingAccountSave?: (value: boolean) => void;
-  resolveDefaultScrewSupply?: (clinicName: string) => ScrewSupply;
-  screwPreferenceReady?: boolean;
-  onScrewSupplySave?: (value: ScrewSupply, clinicName: string) => void;
-  screwSupplySaving?: boolean;
   onShippingModeChange?: (
     fileKeys: string[],
     mode: "normal" | "express",
@@ -194,10 +191,6 @@ export function NewRequestDetailsSection({
   onToggleAnodizing,
   onRetentionGrooveAccountSave,
   onAnodizingAccountSave,
-  resolveDefaultScrewSupply,
-  screwPreferenceReady = true,
-  onScrewSupplySave,
-  screwSupplySaving = false,
   onShippingModeChange,
   defaultShippingMode = "normal",
   expressSelectableGlobal = true,
@@ -220,7 +213,7 @@ export function NewRequestDetailsSection({
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [shortPostChoiceByFileKey, setShortPostChoiceByFileKey] = useState<
     Record<string, ShortPostRetentionChoice>
-  >({});
+  >(readShortPostRetentionChoices);
   const [shouldRestoreDetailAfterDuplicate, setShouldRestoreDetailAfterDuplicate] =
     useState(false);
 
@@ -251,7 +244,15 @@ export function NewRequestDetailsSection({
     for (const [fileKey, preflight] of Object.entries(machiningPreflightByFileKey)) {
       if (!asksShortPostRetention(fileKey)) continue;
       if (!preflight || preflight.status === "checking") continue;
-      if (shortPostChoiceByFileKey[fileKey]) continue;
+      const chosen = shortPostChoiceByFileKey[fileKey];
+      if (chosen) {
+        const existing = String(caseInfosMap?.[fileKey]?.retentionGroove || "").trim();
+        const normalized = existing === "shallow" ? "none" : existing;
+        if (normalized !== chosen) {
+          updateCaseInfos(fileKey, { retentionGroove: chosen });
+        }
+        continue;
+      }
       const next = isShortPostLength(measuredPostLengthMm(preflight))
         ? "deep"
         : "none";
@@ -893,10 +894,6 @@ export function NewRequestDetailsSection({
         onRetentionGrooveAccountSave={onRetentionGrooveAccountSave}
         defaultAnodizingEnabled={anodizingEnabled}
         onAnodizingAccountSave={onAnodizingAccountSave}
-        resolveDefaultScrewSupply={resolveDefaultScrewSupply}
-        screwPreferenceReady={screwPreferenceReady}
-        onScrewSupplySave={onScrewSupplySave}
-        screwSupplySaving={screwSupplySaving}
         lockDesignProductMode={lockDesignProductMode}
         lockProductionProductMode={lockProductionProductMode}
         previewFileIndices={previewFileIndices}
@@ -909,6 +906,7 @@ export function NewRequestDetailsSection({
         }
         onShortPostRetentionChoice={(value) => {
           if (!detailFileKey) return;
+          writeShortPostRetentionChoice(detailFileKey, value);
           setShortPostChoiceByFileKey((prev) =>
             prev[detailFileKey] === value ? prev : { ...prev, [detailFileKey]: value },
           );

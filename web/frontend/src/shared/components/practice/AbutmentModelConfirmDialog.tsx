@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 스크류 선택 UI 제거. 타입은 연결 규격의 A–E를 그대로 쓴다.
 // - 2026-10-24: 유지홈·아노다이징은 한 줄 버튼. 포스트 3mm 이하만 사진 모달(기본 있음).
 // - 2026-10-22: STL 프리뷰 — 단일 뷰포트 + 하단 가공 도크(fillet R·경고). 스캔색 토글 숨김.
 // - 2026-10-22: 카탈로그 제조사 선택 — 없는 setNewSystemFamily 호출이 선택을 막던 것 제거.
@@ -59,11 +60,6 @@ import {
   measuredPostLengthMm,
   type ShortPostRetentionChoice,
 } from "@/pages/requestor/new_request/utils/shortPostRetention";
-import { RequestScrewSupplySection } from "@/shared/components/practice/ScrewSupplyField";
-import {
-  screwManufacturerLabel,
-  type ScrewSupply,
-} from "@/shared/practice/screwSupply";
 import {
   StlMachiningPreflightNotice,
   type StlMachiningPreflight,
@@ -158,13 +154,6 @@ export type AbutmentModelConfirmDialogProps = {
   defaultAnodizingEnabled?: boolean;
   /** 계정 아노다이징 기본값 변경 시 저장 */
   onAnodizingAccountSave?: (value: boolean) => void;
-  /** 기공소-치과 스크류 기본값. 치과명이 바뀌면 그 쌍의 기본으로 맞춘다. */
-  resolveDefaultScrewSupply?: (clinicName: string) => ScrewSupply;
-  /** false면 기본값을 아직 모르므로 빈 값을 어벗츠로 확정하지 않는다 */
-  screwPreferenceReady?: boolean;
-  /** 스크류를 바꾸면 기공소-치과 기본값으로 저장 */
-  onScrewSupplySave?: (value: ScrewSupply, clinicName: string) => void;
-  screwSupplySaving?: boolean;
   /** 프리뷰에서 전환 가능한 파일 인덱스(환자 케이스 멤버 등) */
   previewFileIndices?: number[];
   onSelectPreviewIndex?: (index: number) => void;
@@ -229,10 +218,6 @@ export function AbutmentModelConfirmDialog({
   onRetentionGrooveAccountSave,
   defaultAnodizingEnabled = true,
   onAnodizingAccountSave,
-  resolveDefaultScrewSupply,
-  screwPreferenceReady = true,
-  onScrewSupplySave,
-  screwSupplySaving = false,
   lockDesignProductMode = false,
   lockProductionProductMode = false,
   previewFileIndices,
@@ -379,81 +364,6 @@ export function AbutmentModelConfirmDialog({
     ],
   );
 
-  const screwTouchedRef = useRef(false);
-  const screwPinnedRef = useRef(false);
-  const screwClinicRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!open) {
-      screwTouchedRef.current = false;
-      screwPinnedRef.current = false;
-      screwClinicRef.current = null;
-      return;
-    }
-    if (!resolveDefaultScrewSupply) return;
-    const clinic = String(detailCaseInfos?.clinicName || "").trim();
-    const prevClinic = screwClinicRef.current;
-    const first = prevClinic === null;
-    if (!first && prevClinic !== clinic) {
-      if (screwTouchedRef.current && !prevClinic && clinic) {
-        const current: ScrewSupply =
-          detailCaseInfos?.screwSupply === "manufacturer" ? "manufacturer" : "abuts";
-        onScrewSupplySave?.(current, clinic);
-        screwClinicRef.current = clinic;
-        screwPinnedRef.current = true;
-        return;
-      }
-      screwTouchedRef.current = false;
-      screwPinnedRef.current = false;
-    }
-    screwClinicRef.current = clinic;
-    if (first && (detailCaseInfos?.screwSupply === "abuts" || detailCaseInfos?.screwSupply === "manufacturer")) {
-      screwPinnedRef.current = true;
-      return;
-    }
-    if (screwTouchedRef.current || screwPinnedRef.current) return;
-    if (!screwPreferenceReady) return;
-    const next = resolveDefaultScrewSupply(clinic);
-    if (detailCaseInfos?.screwSupply !== next) {
-      setDetailCaseInfos({ screwSupply: next });
-    }
-  }, [
-    open,
-    detailCaseInfos?.clinicName,
-    detailCaseInfos?.screwSupply,
-    onScrewSupplySave,
-    resolveDefaultScrewSupply,
-    screwPreferenceReady,
-    setDetailCaseInfos,
-  ]);
-
-  const screwMakerLabel = useMemo(() => {
-    const custom =
-      implantEntryMode === "custom"
-        ? String(
-            newSystemManufacturer ||
-              detailCaseInfos?.newSystemRequest?.manufacturer ||
-              "",
-          ).trim()
-        : "";
-    const catalogName = String(
-      detailCaseInfos?.implantManufacturer || implantManufacturer || "",
-    ).trim();
-    const raw = custom || catalogName;
-    const display = connections.find(
-      (row) =>
-        String(row.manufacturer || "").trim() === raw &&
-        String(row.displayManufacturer || "").trim(),
-    )?.displayManufacturer;
-    return screwManufacturerLabel([display || raw]);
-  }, [
-    connections,
-    detailCaseInfos?.implantManufacturer,
-    detailCaseInfos?.newSystemRequest?.manufacturer,
-    implantEntryMode,
-    implantManufacturer,
-    newSystemManufacturer,
-  ]);
-
   const showImplantSelect = true;
   const productMode: NewRequestProductMode = lockProductionProductMode
     ? "custom_abutment"
@@ -536,8 +446,6 @@ export function AbutmentModelConfirmDialog({
     open,
     setDetailCaseInfos,
   ]);
-
-  const retentionIdPrefix = isLabHandoff ? "lab-handoff-rg" : "new-req-rg";
 
   const detailFileKey = detailFile
     ? `${detailFile.name.normalize("NFC")}:${detailFile.size}`
@@ -1015,23 +923,17 @@ export function AbutmentModelConfirmDialog({
                       />
 
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <CaseOptionPopoverButton
-                          icon={<Rows3 className="h-4 w-4 shrink-0" />}
-                          label={
-                            retentionValue === "deep" ? "유지홈 있음" : "유지홈 없음"
-                          }
-                          value={retentionValue}
-                          options={[
-                            { value: "deep", label: "유지홈 있음" },
-                            { value: "none", label: "유지홈 없음" },
-                          ]}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-9 shrink-0 gap-1.5 px-3"
                           disabled={!detailFile || confirming}
-                          onChange={(next) => {
-                            setDetailCaseInfos({ retentionGroove: next });
-                            onRetentionGrooveAccountSave?.(next);
-                            onShortPostRetentionChoice?.(next);
-                          }}
-                        />
+                          onClick={() => setShortPostChoiceOpen(true)}
+                        >
+                          <Rows3 className="h-4 w-4 shrink-0" />
+                          {retentionValue === "deep" ? "유지홈 있음" : "유지홈 없음"}
+                        </Button>
                         <CaseOptionPopoverButton
                           icon={
                             <Droplets
@@ -1055,26 +957,6 @@ export function AbutmentModelConfirmDialog({
                           }}
                         />
                       </div>
-
-                      <RequestScrewSupplySection
-                        value={
-                          detailCaseInfos?.screwSupply === "manufacturer"
-                            ? "manufacturer"
-                            : "abuts"
-                        }
-                        manufacturerLabel={screwMakerLabel}
-                        disabled={!detailFile || confirming || screwSupplySaving}
-                        idPrefix={`${retentionIdPrefix}-screw`}
-                        onChange={(next) => {
-                          screwTouchedRef.current = true;
-                          screwPinnedRef.current = true;
-                          setDetailCaseInfos({ screwSupply: next });
-                          onScrewSupplySave?.(
-                            next,
-                            String(detailCaseInfos?.clinicName || "").trim(),
-                          );
-                        }}
-                      />
 
                     </div>
                   )}
@@ -1157,15 +1039,13 @@ export function AbutmentModelConfirmDialog({
           </div>
         </DialogContent>
       </Dialog>
-      {shortPost && postLengthMm != null ? (
-        <ShortPostRetentionDialog
-          open={shortPostChoiceOpen}
-          onOpenChange={setShortPostChoiceOpen}
-          postLengthMm={postLengthMm}
-          value={shortPostRetentionChoice ?? "deep"}
-          onConfirm={applyShortPostChoice}
-        />
-      ) : null}
+      <ShortPostRetentionDialog
+        open={shortPostChoiceOpen}
+        onOpenChange={setShortPostChoiceOpen}
+        postLengthMm={postLengthMm}
+        value={retentionValue}
+        onConfirm={applyShortPostChoice}
+      />
     </>
   );
 }

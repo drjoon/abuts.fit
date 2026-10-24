@@ -1,10 +1,10 @@
 // change-log:
-// - 2026-10-24: 짧은 포스트(≤3mm) 유지홈 선택. 없음/있음 참조 사진을 같이 보여 준다.
+// - 2026-10-24: 유지홈 버튼은 이 사진 모달로 고른다. 문구·사진·너비를 줄임.
 // related files:
 // - web/frontend/src/shared/components/practice/AbutmentModelConfirmDialog.tsx
 // - web/frontend/public/images/new-request/retention-post-none.jpg
 // - web/frontend/public/images/new-request/retention-post-groove.jpg
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -43,7 +43,7 @@ const CHOICES: {
 type ShortPostRetentionDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  postLengthMm: number;
+  postLengthMm?: number | null;
   value?: ShortPostRetentionChoice | null;
   onConfirm: (value: ShortPostRetentionChoice) => void;
 };
@@ -52,35 +52,58 @@ type ShortPostRetentionDialogProps = {
 export function ShortPostRetentionDialog({
   open,
   onOpenChange,
-  postLengthMm,
+  postLengthMm = null,
   value = null,
   onConfirm,
 }: ShortPostRetentionDialogProps) {
-  const [draft, setDraft] = useState<ShortPostRetentionChoice | null>(value);
+  const [draft, setDraft] = useState<ShortPostRetentionChoice | null>(value ?? "deep");
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const onConfirmRef = useRef(onConfirm);
+  onConfirmRef.current = onConfirm;
+  const confirmedRef = useRef(false);
+  const wasOpenRef = useRef(false);
 
   useEffect(() => {
-    if (!open) return;
-    setDraft(value ?? null);
+    if (open) {
+      if (!wasOpenRef.current) {
+        wasOpenRef.current = true;
+        confirmedRef.current = false;
+        setDraft(value ?? "deep");
+      }
+      return;
+    }
+    if (!wasOpenRef.current) return;
+    wasOpenRef.current = false;
+    if (confirmedRef.current) {
+      confirmedRef.current = false;
+      return;
+    }
+    onConfirmRef.current(draftRef.current ?? value ?? "deep");
   }, [open, value]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="z-[330] max-h-[90vh] w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] overflow-y-auto p-6 sm:w-[760px] sm:max-w-[760px]"
+        className="z-[330] max-h-[90vh] w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] overflow-y-auto p-4 sm:w-[520px] sm:max-w-[520px]"
         overlayClassName="z-[325]"
       >
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold text-slate-800">
             유지홈
           </DialogTitle>
-          <DialogDescription className="text-sm leading-relaxed text-slate-700">
-            포스트 길이가 {formatPostLengthMm(postLengthMm)}mm입니다.
-            <br />
-            유지홈을 넣을지 선택해 주세요.
+          <DialogDescription className="text-sm text-slate-700">
+            {typeof postLengthMm === "number" && Number.isFinite(postLengthMm) ? (
+              <>
+                포스트 길이 {formatPostLengthMm(postLengthMm)}mm.
+                <br />
+              </>
+            ) : null}
+            유지홈을 선택해 주세요.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-2">
           {CHOICES.map((choice) => {
             const selected = draft === choice.value;
             return (
@@ -89,7 +112,7 @@ export function ShortPostRetentionDialog({
                 type="button"
                 aria-pressed={selected}
                 className={cn(
-                  "rounded-lg border bg-white p-3 text-left transition-colors",
+                  "rounded-lg border bg-white p-2 text-left transition-colors",
                   selected
                     ? "border-primary ring-2 ring-primary/30"
                     : "border-slate-200 hover:border-slate-300",
@@ -99,7 +122,7 @@ export function ShortPostRetentionDialog({
                 <img
                   src={choice.src}
                   alt={choice.alt}
-                  className="h-52 w-full rounded-md border border-slate-200 bg-slate-50 object-contain sm:h-64"
+                  className="h-36 w-full rounded-md border border-slate-200 bg-slate-50 object-contain sm:h-40"
                 />
                 <span className="mt-2 flex items-center justify-center gap-2 text-sm font-semibold text-slate-700">
                   {choice.label}
@@ -120,6 +143,7 @@ export function ShortPostRetentionDialog({
             disabled={!draft}
             onClick={() => {
               if (!draft) return;
+              confirmedRef.current = true;
               onConfirm(draft);
             }}
           >
