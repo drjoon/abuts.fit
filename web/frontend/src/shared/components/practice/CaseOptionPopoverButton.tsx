@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 채팅 줄은 아이콘만. 라벨은 팝오버와 aria에 둔다.
 // - 2026-10-24: 유지홈·아노다이징 — 버튼 클릭 시 두 선택 팝오버.
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ export function CaseOptionPopoverButton<T extends string>({
   options,
   onChange,
   disabled = false,
+  hideLabel = false,
   className,
 }: {
   label: string;
@@ -20,6 +22,7 @@ export function CaseOptionPopoverButton<T extends string>({
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
   disabled?: boolean;
+  hideLabel?: boolean;
   className?: string;
 }) {
   return (
@@ -30,11 +33,16 @@ export function CaseOptionPopoverButton<T extends string>({
           variant="outline"
           size="sm"
           disabled={disabled}
-          className={cn("h-9 shrink-0 gap-1.5 px-3", className)}
+          className={cn(
+            "h-9 shrink-0 gap-1.5",
+            hideLabel ? "w-9 px-0" : "px-3",
+            className,
+          )}
           aria-label={label}
+          title={label}
         >
           {icon}
-          <span>{label}</span>
+          {hideLabel ? <span className="sr-only">{label}</span> : <span>{label}</span>}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-44 p-1.5">

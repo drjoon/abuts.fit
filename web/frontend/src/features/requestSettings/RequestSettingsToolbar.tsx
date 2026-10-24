@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 //
 // history:
+// - 2026-10-24: 수신 채팅 SW·유지홈·아노는 아이콘만. 문구는 호버.
 // - 2026-10-24: 수신 채팅에서 어벗츠 정품 버튼을 뺀다. SW·유지홈·아노는 그대로 둔다.
 // - 2026-10-24: 수신 채팅 유지홈·아노다이징은 버튼 팝오버.
 // - 2026-09-30: 채팅 작업 줄은 설정 아이콘 하나에 SW·아노를 넣고 맨 왼쪽에 둔다.
@@ -60,9 +61,11 @@ export function RequestSettingsToolbar({
   const [retentionOpen, setRetentionOpen] = useState(false);
   const fullLabel = String(designSoftwareLabel || "").trim() || "디자인SW";
   const label = shortLabels && !menu ? "SW" : fullLabel;
-  const anodizingFull = anodizingEnabled ? "아노다이징 ON" : "아노다이징 OFF";
+  const anodizingFull = anodizingEnabled ? "아노다이징 On" : "아노다이징 Off";
   const anodizingLabel = shortLabels && !menu ? "아노" : anodizingFull;
+  const retentionLabel = retentionGroove === "deep" ? "유지홈 있음" : "유지홈 없음";
   const compact = shortLabels && !menu;
+  const iconButton = menu || (iconOnly && !compact);
 
   const controls = (
     <>
@@ -74,16 +77,16 @@ export function RequestSettingsToolbar({
           "shrink-0 gap-1",
           compact
             ? "h-8 px-2 text-xs"
-            : iconOnly && !menu
-              ? "h-9 w-9 px-0 gap-1.5"
+            : iconButton
+              ? "h-8 w-8 px-0"
               : "h-9 w-9 px-0 gap-1.5 sm:w-auto sm:px-3",
         )}
         onClick={() => onOpenDesignSoftwareModal?.()}
         aria-label={fullLabel}
-        title="디자인 소프트웨어 설정"
+        title={fullLabel}
       >
-        <Monitor className={cn("shrink-0", compact ? "h-3.5 w-3.5" : "h-4 w-4")} />
-        <span className={cn(iconOnly && !compact && !menu ? "sr-only" : compact ? undefined : "hidden sm:inline")}>
+        <Monitor className={cn("shrink-0", compact || menu ? "h-3.5 w-3.5" : "h-4 w-4")} />
+        <span className={cn(iconButton && !compact ? "sr-only" : compact ? undefined : "hidden sm:inline")}>
           {label}
         </span>
       </Button>
@@ -93,12 +96,19 @@ export function RequestSettingsToolbar({
             type="button"
             variant="outline"
             size="sm"
-            className="h-8 shrink-0 gap-1.5 px-2"
+            className="h-8 w-8 shrink-0 px-0"
             disabled={anodizingSaving}
+            aria-label={retentionLabel}
+            title={retentionLabel}
             onClick={() => setRetentionOpen(true)}
           >
-            <Rows3 className="h-3.5 w-3.5 shrink-0" />
-            {retentionGroove === "deep" ? "유지홈 있음" : "유지홈 없음"}
+            <Rows3
+              className={cn(
+                "h-3.5 w-3.5 shrink-0",
+                retentionGroove === "deep" ? "text-slate-800" : "opacity-40",
+              )}
+            />
+            <span className="sr-only">{retentionLabel}</span>
           </Button>
           <ShortPostRetentionDialog
             open={retentionOpen}
@@ -113,7 +123,8 @@ export function RequestSettingsToolbar({
       ) : null}
       {menu && onAnodizingChange ? (
         <CaseOptionPopoverButton
-          className="h-8 px-2"
+          className="h-8 w-8 px-0"
+          hideLabel
           icon={
             <Droplets
               className={cn(
@@ -140,8 +151,8 @@ export function RequestSettingsToolbar({
           "shrink-0 gap-1",
           compact
             ? "h-8 px-2 text-xs"
-            : iconOnly && !menu
-              ? "h-9 w-9 px-0 gap-1.5"
+            : iconButton
+              ? "h-8 w-8 px-0"
               : "h-9 w-9 px-0 gap-1.5 sm:w-auto sm:px-3",
           !anodizingEnabled && "text-muted-foreground",
         )}
@@ -157,7 +168,7 @@ export function RequestSettingsToolbar({
             anodizingEnabled ? "text-sky-600" : "opacity-50",
           )}
         />
-        <span className={cn(iconOnly && !compact && !menu ? "sr-only" : compact ? undefined : "hidden sm:inline")}>
+        <span className={cn(iconButton && !compact ? "sr-only" : compact ? undefined : "hidden sm:inline")}>
           {anodizingLabel}
         </span>
       </Button>
