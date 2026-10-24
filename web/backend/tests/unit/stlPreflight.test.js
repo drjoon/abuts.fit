@@ -6,10 +6,26 @@ import { rotationAxisAngle } from "../../services/abutmentStl/meshCore.js";
 import { canProceedAsIs } from "../../services/abutmentStl/marginFilletReview.js";
 import {
   invertRigidMatrix,
+  postLengthAboveFinishLineMm,
   suggestedFilletRadiusMm,
   summarizeTightCorner,
   tightCornerOverlayInOriginalFrame,
 } from "../../services/abutmentStl/preflight.service.js";
+
+describe("postLengthAboveFinishLineMm", () => {
+  it("피니시라인 max_z에서 포스트 탑까지 거리를 mm로 반올림한다", () => {
+    expect(postLengthAboveFinishLineMm(5.2, 2)).toBe(3.2);
+    expect(postLengthAboveFinishLineMm(5, 2)).toBe(3);
+    expect(postLengthAboveFinishLineMm(4.004, 1)).toBe(3);
+    expect(postLengthAboveFinishLineMm(4.006, 1)).toBe(3.01);
+  });
+
+  it("탑이 피니시라인보다 낮거나 숫자가 아니면 null이다", () => {
+    expect(postLengthAboveFinishLineMm(1, 2)).toBeNull();
+    expect(postLengthAboveFinishLineMm(Number.NaN, 1)).toBeNull();
+    expect(postLengthAboveFinishLineMm(4, null)).toBeNull();
+  });
+});
 
 describe("stlPreflight summarizeTightCorner", () => {
   it("권고 R은 공구 R과 같다. 추가 여유는 없다", () => {

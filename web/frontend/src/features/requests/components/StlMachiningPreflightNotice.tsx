@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 가공 검사 결과에 포스트 길이(max_z→포스트 탑)를 싣는다.
 // - 2026-10-24: 마진 필레 경고는 깊게 패일 수 있음·반경 0.5mm 재디자인 권고.
 // - 2026-10-22: tight 도크 — OK와 같이 2줄·한 줄 배치. fillet R은 경고 문구 왼쪽.
 // - 2026-10-22: 신규의뢰 3D 확인 — fillet R·경고를 하단 도크 한 장으로 통합.
@@ -25,6 +26,8 @@ export type StlMachiningPreflight = {
   overlay?: StlMetadata["tightCorner"];
   /** 평균 필렛 R이 0.50mm 이상. */
   proceedAsIsAllowed?: boolean;
+  /** 피니시라인 max_z에서 포스트 탑까지(mm). 피니시라인이 없으면 null. */
+  postLengthMm?: number | null;
 };
 
 function formatToolRadiusMm(toolRadiusMm?: number | null) {

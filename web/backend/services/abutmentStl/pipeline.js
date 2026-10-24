@@ -187,6 +187,8 @@ function finishPreflight({
   }
   mark("inspect", t0);
   mark("total", total0);
+  // 포스트 길이 = 피니시라인 max_z → 정렬 bbox의 포스트 탑(+Z).
+  const postTopZ = Number(mesh?.bbox?.().max?.[2]);
   return {
     version: ABUTMENT_STL_JS_VERSION,
     outputBuffer: Buffer.alloc(0),
@@ -194,6 +196,7 @@ function finishPreflight({
     align: { ok: align.ok, message: align.message },
     alignMatrix,
     finishLine,
+    postTopZ: Number.isFinite(postTopZ) ? postTopZ : null,
     tightCorner,
     /** 정렬 좌표계의 표시용 필렛 띠. 보정 STL은 아니다. */
     filletSurface,

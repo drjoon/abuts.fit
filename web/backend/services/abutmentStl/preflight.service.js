@@ -21,6 +21,20 @@ import { canProceedAsIs } from "./marginFilletReview.js";
 
 /** 디자인 수정 권고 여유(mm). 검출·보정 기준은 공구 반경 0.5mm이고 추가 여유는 없다. */
 export const PREFLIGHT_FILLET_MARGIN_MM = 0;
+
+/**
+ * 정렬 좌표에서 피니시라인 max_z부터 포스트 탑(bbox max Z)까지 거리(mm).
+ * 음수·비숫자는 측정 불가로 null.
+ */
+export function postLengthAboveFinishLineMm(postTopZ, finishLineMaxZ) {
+  if (postTopZ == null || finishLineMaxZ == null) return null;
+  const top = Number(postTopZ);
+  const maxZ = Number(finishLineMaxZ);
+  if (!Number.isFinite(top) || !Number.isFinite(maxZ)) return null;
+  const length = Math.round((top - maxZ) * 100) / 100;
+  if (!Number.isFinite(length) || length < 0) return null;
+  return length;
+}
 /** 권고 R 올림 단위(mm). 여유 0이면 공구 반경 0.50 그대로다. */
 const SUGGEST_STEP_MM = 0.05;
 
@@ -440,8 +454,19 @@ export async function runStlMachiningPreflight({ buffer, caseInfos } = {}) {
     if (Number.isFinite(elapsed) && elapsed > 2.5) {
       console.info("[stl-preflight] slow", js.perf);
     }
-    if (!Array.isArray(js?.finishLine?.points) || js.finishLine.points.length < 4) {
-      return { status: "unknown", reason: "finishline_missing", tightCount: 0, proceedAsIsAllowed: false };
+    const hasFinishLine =
+      Array.isArray(js?.finishLine?.points) && js.finishLine.points.length >= 4;
+    const postLengthMm = hasFinishLine
+      ? postLengthAboveFinishLineMm(js?.postTopZ, js?.finishLine?.max_z)
+      : null;
+    if (!hasFinishLine) {
+      return {
+        status: "unknown",
+        reason: "finishline_missing",
+        tightCount: 0,
+        proceedAsIsAllowed: false,
+        postLengthMm: null,
+      };
     }
     const summary = summarizeTightCorner(js.tightCorner);
     const overlay = tightCornerOverlayInOriginalFrame(
@@ -452,9 +477,16 @@ export async function runStlMachiningPreflight({ buffer, caseInfos } = {}) {
     return {
       ...summary,
       ...(overlay ? { overlay } : {}),
+      postLengthMm,
     };
   } catch (error) {
     console.warn("[stl-preflight] failed:", error?.message || error);
-    return { status: "unknown", reason: "pipeline_failed", tightCount: 0, proceedAsIsAllowed: false };
+    return {
+      status: "unknown",
+      reason: "pipeline_failed",
+      tightCount: 0,
+      proceedAsIsAllowed: false,
+      postLengthMm: null,
+    };
   }
 }

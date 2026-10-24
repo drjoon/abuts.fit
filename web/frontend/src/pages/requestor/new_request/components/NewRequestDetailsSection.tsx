@@ -19,8 +19,14 @@ import {
   isCustomImplantCaseInfos,
 } from "@/shared/practice/newImplantCaseInfos";
 import type { ScrewSupply } from "@/shared/practice/screwSupply";
+import {
+  isShortPostLength,
+  measuredPostLengthMm,
+  type ShortPostRetentionChoice,
+} from "../utils/shortPostRetention";
 
 // change-log:
+// - 2026-10-24: 어벗 STL은 포스트 3mm 초과면 유지홈 없음. 이하면 확인 전 선택을 요구.
 // - 2026-10-18: 유지홈 라디오가 「없음」인데 저장값이 비면 없음으로 저장. 만료 토스트처럼 막지 않음.
 // - 2026-09-08: 가이드투어 abutment — 확인 모달 자동 오픈 억제·draft 복원 bootstrap 대기.
 // - 2026-08-16: 신규 첨부 시 3D 확인 모달 자동 오픈. 생산모드 유지홈 필수.
@@ -212,6 +218,10 @@ export function NewRequestDetailsSection({
 
   const [detailIndex, setDetailIndex] = useState<number | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [shortPostChoiceByFileKey, setShortPostChoiceByFileKey] = useState<
+    Record<string, ShortPostRetentionChoice>
+  >({});
+  const reopenedShortPostRef = useRef(new Set<string>());
   const [shouldRestoreDetailAfterDuplicate, setShouldRestoreDetailAfterDuplicate] =
     useState(false);
 
@@ -227,6 +237,71 @@ export function NewRequestDetailsSection({
     (file: File) => `${normalizeKeyPart(file.name)}:${file.size}`,
     [normalizeKeyPart],
   );
+
+  const asksShortPostRetention = useCallback(
+    (fileKey: string) => {
+      if (productionOnly) return true;
+      if (findGroupByFileKey(patientGroups, fileKey)) return false;
+      const size = files.find((file) => toNormalizedFileKey(file) === fileKey)?.size;
+      return !isLikelyOralScanSize(size);
+    },
+    [files, patientGroups, productionOnly, toNormalizedFileKey],
+  );
+
+  useEffect(() => {
+    let reopenKey: string | null = null;
+    for (const [fileKey, preflight] of Object.entries(machiningPreflightByFileKey)) {
+      if (!asksShortPostRetention(fileKey)) continue;
+      if (!preflight || preflight.status === "checking") continue;
+      const length = measuredPostLengthMm(preflight);
+      if (isShortPostLength(length)) {
+        if (!shortPostChoiceByFileKey[fileKey] && fileVerificationStatus[fileKey]) {
+          reopenKey = reopenKey || fileKey;
+        }
+        continue;
+      }
+      const existing = String(caseInfosMap?.[fileKey]?.retentionGroove || "").trim();
+      if (existing === "none") continue;
+      updateCaseInfos(fileKey, { retentionGroove: "none" });
+    }
+    if (!reopenKey) return;
+    setFileVerificationStatus((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [fileKey, preflight] of Object.entries(machiningPreflightByFileKey)) {
+        if (!asksShortPostRetention(fileKey)) continue;
+        if (!isShortPostLength(measuredPostLengthMm(preflight))) continue;
+        if (shortPostChoiceByFileKey[fileKey]) continue;
+        if (!next[fileKey]) continue;
+        next[fileKey] = false;
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+    setHighlightUnverifiedArrows(true);
+    if (suppressDetailAutoOpen || reopenedShortPostRef.current.has(reopenKey)) {
+      return;
+    }
+    const idx = files.findIndex((file) => toNormalizedFileKey(file) === reopenKey);
+    if (idx < 0) return;
+    reopenedShortPostRef.current.add(reopenKey);
+    setDetailIndex(idx);
+    setSelectedPreviewIndex(idx);
+    setIsDetailOpen(true);
+  }, [
+    asksShortPostRetention,
+    caseInfosMap,
+    fileVerificationStatus,
+    files,
+    machiningPreflightByFileKey,
+    setFileVerificationStatus,
+    setHighlightUnverifiedArrows,
+    setSelectedPreviewIndex,
+    shortPostChoiceByFileKey,
+    suppressDetailAutoOpen,
+    toNormalizedFileKey,
+    updateCaseInfos,
+  ]);
 
   const { fileDiameters, getEstimatedShipForDiameter, handleDiameterComputed, leadTimes } =
     useLeadTimeForecast({
@@ -652,6 +727,26 @@ export function NewRequestDetailsSection({
       }
 
       const persistKeys = group ? group.fileKeys : [fileKey];
+      const pendingShortKey = persistKeys.find((key) => {
+        if (!asksShortPostRetention(key)) return false;
+        const preflight = machiningPreflightByFileKey[key];
+        if (!preflight || preflight.status === "checking") return false;
+        return (
+          isShortPostLength(measuredPostLengthMm(preflight)) &&
+          !shortPostChoiceByFileKey[key]
+        );
+      });
+      if (pendingShortKey) {
+        const pendingIndex = files.findIndex(
+          (candidate) => toNormalizedFileKey(candidate) === pendingShortKey,
+        );
+        if (pendingIndex >= 0 && pendingIndex !== index) {
+          setDetailIndex(pendingIndex);
+          setSelectedPreviewIndex(pendingIndex);
+          setIsDetailOpen(true);
+        }
+        return;
+      }
       if (customMode) {
         const finalized = finalizeCustomImplantCaseUpdates(fileCaseInfos || {});
         if (!finalized.newSystemRequest?.requested) {
@@ -749,12 +844,15 @@ export function NewRequestDetailsSection({
       }
     },
     [
+      asksShortPostRetention,
       caseInfos,
       caseInfosMap,
       fileVerificationStatus,
       files,
+      machiningPreflightByFileKey,
       patientGroups,
       setFileVerificationStatus,
+      shortPostChoiceByFileKey,
       setHighlightUnverifiedArrows,
       setSelectedPreviewIndex,
       toast,
@@ -861,6 +959,16 @@ export function NewRequestDetailsSection({
         machiningPreflight={
           detailFileKey ? machiningPreflightByFileKey[detailFileKey] : undefined
         }
+        shortPostRetentionChoice={
+          detailFileKey ? shortPostChoiceByFileKey[detailFileKey] ?? null : null
+        }
+        onShortPostRetentionChoice={(value) => {
+          if (!detailFileKey) return;
+          setShortPostChoiceByFileKey((prev) =>
+            prev[detailFileKey] === value ? prev : { ...prev, [detailFileKey]: value },
+          );
+          updateCaseInfos(detailFileKey, { retentionGroove: value });
+        }}
       />
 
 

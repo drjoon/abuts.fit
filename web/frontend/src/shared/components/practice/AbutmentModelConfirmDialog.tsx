@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 신규의뢰 유지홈 라디오 제거. 포스트 길이 3mm 이하일 때만 참조 사진으로 선택.
 // - 2026-10-22: STL 프리뷰 — 단일 뷰포트 + 하단 가공 도크(fillet R·경고). 스캔색 토글 숨김.
 // - 2026-10-22: 카탈로그 제조사 선택 — 없는 setNewSystemFamily 호출이 선택을 막던 것 제거.
 // - 2026-10-22: 좁은 코너는 표시와 경고만. 원본 STL은 고치지 않고 내려받지 않는다.
@@ -52,6 +53,13 @@ import type {
 import { NewRequestDesignAbutmentFields } from "@/pages/requestor/new_request/components/NewRequestDesignAbutmentFields";
 import { NewRequestPatientImplantFields } from "@/pages/requestor/new_request/components/NewRequestPatientImplantFields";
 import { RetentionGrooveField } from "@/shared/components/practice/RetentionGrooveField";
+import { ShortPostRetentionDialog } from "@/shared/components/practice/ShortPostRetentionDialog";
+import {
+  formatPostLengthMm,
+  isShortPostLength,
+  measuredPostLengthMm,
+  type ShortPostRetentionChoice,
+} from "@/pages/requestor/new_request/utils/shortPostRetention";
 import { AnodizingField } from "@/shared/components/practice/AnodizingField";
 import { RequestScrewSupplySection } from "@/shared/components/practice/ScrewSupplyField";
 import {
@@ -175,6 +183,10 @@ export type AbutmentModelConfirmDialogProps = {
   fileUploadLabel?: string | null;
   /** 접수 전 가공 검사 결과(신규의뢰만 전달). tight여도 확인을 막지 않는다. */
   machiningPreflight?: StlMachiningPreflight | null;
+  /** 이 파일에서 짧은 포스트 유지홈을 이미 골랐으면 그 값 */
+  shortPostRetentionChoice?: ShortPostRetentionChoice | null;
+  /** 짧은 포스트 유지홈 선택. 현재 파일에만 저장한다. */
+  onShortPostRetentionChoice?: (value: ShortPostRetentionChoice) => void;
 };
 
 export function AbutmentModelConfirmDialog({
@@ -234,6 +246,8 @@ export function AbutmentModelConfirmDialog({
   fileUploadPercent = null,
   fileUploadLabel = null,
   machiningPreflight = null,
+  shortPostRetentionChoice = null,
+  onShortPostRetentionChoice,
 }: AbutmentModelConfirmDialogProps) {
   const isLabHandoff = variant === "lab-handoff";
   const labConfirmLabel = String(confirmLabel || "").trim() || "확인";
@@ -248,6 +262,8 @@ export function AbutmentModelConfirmDialog({
   const [newSystemBrand, setNewSystemBrand] = useState("");
   const [implantEntryMode, setImplantEntryMode] =
     useState<ImplantEntryMode>("catalog");
+  const [shortPostChoiceOpen, setShortPostChoiceOpen] = useState(false);
+  const shortPostPromptedRef = useRef(new Set<string>());
 
   const selectCatalogMode = useCallback(() => {
     setImplantEntryMode("catalog");
@@ -532,12 +548,62 @@ export function AbutmentModelConfirmDialog({
 
   const retentionIdPrefix = isLabHandoff ? "lab-handoff-rg" : "new-req-rg";
 
+  const detailFileKey = detailFile
+    ? `${detailFile.name.normalize("NFC")}:${detailFile.size}`
+    : "";
+  const postLengthMm = measuredPostLengthMm(machiningPreflight);
+  const shortPost =
+    !isLabHandoff &&
+    !isDesignCustomMode &&
+    isShortPostLength(postLengthMm);
+  const needsShortPostChoice = shortPost && !shortPostRetentionChoice;
+
+  const prevDetailFileKeyRef = useRef(detailFileKey);
+  useEffect(() => {
+    if (!open) {
+      setShortPostChoiceOpen(false);
+      return;
+    }
+    const keyChanged = prevDetailFileKeyRef.current !== detailFileKey;
+    if (keyChanged) prevDetailFileKeyRef.current = detailFileKey;
+    if (!needsShortPostChoice || !detailFileKey) {
+      if (keyChanged) setShortPostChoiceOpen(false);
+      return;
+    }
+    if (shortPostPromptedRef.current.has(detailFileKey)) {
+      if (keyChanged) setShortPostChoiceOpen(false);
+      return;
+    }
+    shortPostPromptedRef.current.add(detailFileKey);
+    setShortPostChoiceOpen(true);
+  }, [detailFileKey, needsShortPostChoice, open]);
+
   const highlightConfirmButton = highlightUnverifiedArrows;
 
   const handleConfirmAndNext = useCallback(() => {
     if (detailIndex === null) return;
+    if (needsShortPostChoice) {
+      setShortPostChoiceOpen(true);
+      return;
+    }
     void onVerifyAndNext(detailIndex);
-  }, [detailIndex, onVerifyAndNext]);
+  }, [detailIndex, needsShortPostChoice, onVerifyAndNext]);
+
+  const handleSkip = useCallback(() => {
+    if (needsShortPostChoice) {
+      setShortPostChoiceOpen(true);
+      return;
+    }
+    onSkip();
+  }, [needsShortPostChoice, onSkip]);
+
+  const applyShortPostChoice = useCallback(
+    (value: ShortPostRetentionChoice) => {
+      onShortPostRetentionChoice?.(value);
+      setShortPostChoiceOpen(false);
+    },
+    [onShortPostRetentionChoice],
+  );
   // 치과명 목록이 열린 채로 누르면 blur가 모달을 다시 그려 click이 사라진다.
   const confirmFromPointerRef = useRef(false);
   const handleConfirmPointerDown = useCallback(
@@ -947,20 +1013,49 @@ export function AbutmentModelConfirmDialog({
                         }
                       />
 
-                      <RetentionGrooveField
-                        value={
-                          detailCaseInfos?.retentionGroove === "deep"
-                            ? "deep"
-                            : "none"
-                        }
-                        onChange={(next) => {
-                          setDetailCaseInfos({ retentionGroove: next });
-                          onRetentionGrooveAccountSave?.(next);
-                        }}
-                        disabled={!detailFile || confirming}
-                        idPrefix={retentionIdPrefix}
-                        guideContentClassName="new-request-page w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-6 sm:w-[1120px] sm:max-w-[1120px]"
-                      />
+                      {isLabHandoff ? (
+                        <RetentionGrooveField
+                          value={
+                            detailCaseInfos?.retentionGroove === "deep"
+                              ? "deep"
+                              : "none"
+                          }
+                          onChange={(next) => {
+                            setDetailCaseInfos({ retentionGroove: next });
+                            onRetentionGrooveAccountSave?.(next);
+                          }}
+                          disabled={!detailFile || confirming}
+                          idPrefix={retentionIdPrefix}
+                          guideContentClassName="new-request-page w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-6 sm:w-[1120px] sm:max-w-[1120px]"
+                        />
+                      ) : shortPost && postLengthMm != null ? (
+                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm text-slate-700">
+                              {shortPostRetentionChoice ? (
+                                shortPostRetentionChoice === "deep"
+                                  ? "유지홈 있음"
+                                  : "유지홈 없음"
+                              ) : (
+                                <>
+                                  포스트 길이가 {formatPostLengthMm(postLengthMm)}mm입니다.
+                                  <br />
+                                  유지홈을 선택해 주세요.
+                                </>
+                              )}
+                            </p>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={shortPostRetentionChoice ? "outline" : "default"}
+                              disabled={!detailFile || confirming}
+                              onClick={() => setShortPostChoiceOpen(true)}
+                            >
+                              {shortPostRetentionChoice ? "변경" : "선택"}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
 
                       <AnodizingField
                         value={
@@ -1062,7 +1157,7 @@ export function AbutmentModelConfirmDialog({
                             type="button"
                             variant="ghost"
                             className="text-slate-500"
-                            onClick={onSkip}
+                            onClick={handleSkip}
                             disabled={!files.length}
                           >
                             건너뛰기
@@ -1077,6 +1172,15 @@ export function AbutmentModelConfirmDialog({
           </div>
         </DialogContent>
       </Dialog>
+      {shortPost && postLengthMm != null ? (
+        <ShortPostRetentionDialog
+          open={shortPostChoiceOpen}
+          onOpenChange={setShortPostChoiceOpen}
+          postLengthMm={postLengthMm}
+          value={shortPostRetentionChoice}
+          onConfirm={applyShortPostChoice}
+        />
+      ) : null}
     </>
   );
 }
