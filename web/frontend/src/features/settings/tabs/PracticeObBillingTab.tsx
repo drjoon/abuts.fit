@@ -1,4 +1,9 @@
 // change-log:
+// - 2026-10-24: 충전 페이지처럼 왼쪽 금액은 파란 그라데이션, 계좌번호는 크게.
+// - 2026-10-24: 금액은 왼쪽, 입금자명·계좌는 오른쪽. 입금자명은 라벨 옆.
+// - 2026-10-24: 기공료 카드가 세로 flex에서 줄어들며 입금자명·계좌가 잘리던 문제. shrink-0.
+// - 2026-10-24: 사용월은 현재까지 사용분. 익월 1일~1차 기한은 1차 입금, 그 다음 날은 2차+정지. 입금자명은 치과명.
+// - 2026-10-24: 어벗츠 입금 총액을 계좌 카드와 내역 합계에 표시. 안내는 입금 조건만.
 // - 2026-10-24: 수기 후불. 1일 9시 문자, 5일 1차·재안내, 10일 2차, 11일부터 신규 의뢰만 쉼.
 // - 2026-10-19: 어벗츠 기공사업부 기공은 법인 이체. 칩은 기공소 / 어벗츠.
 // related files:
@@ -19,17 +24,10 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import { formatRequestorWon } from "@/shared/pricing/requestorUnitPricePolicy";
-import {
-  PRACTICE_OB_BILLING_NOTICE_BODY,
-  PRACTICE_OB_BILLING_NOTICE_TITLE,
-} from "@/shared/legal/creditPrepaidCopy";
+import { PRACTICE_OB_BILLING_NOTICE_TITLE } from "@/shared/legal/creditPrepaidCopy";
+import { toKstYmd } from "@/shared/date/kst";
 
 type SettlementLine = {
   id?: string;
@@ -74,6 +72,41 @@ function formatYmd(ymd?: string) {
   if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return "";
   const [, month, day] = ymd.split("-");
   return `${Number(month)}월 ${Number(day)}일`;
+}
+
+function nextMonthStartYmd(yearMonth: string) {
+  const [y, m] = String(yearMonth || "").split("-").map(Number);
+  if (!y || !m) return "";
+  if (m === 12) return `${y + 1}-01-01`;
+  return `${y}-${String(m + 1).padStart(2, "0")}-01`;
+}
+
+/**
+ * 사용월 안에서는 기한을 숨긴다.
+ * 익월 1일부터 1차 기한까지는 1차 입금.
+ * 1차 기한 다음 날부터는 2차 입금과 미납 시 정지.
+ */
+function resolvePracticeDepositCue(opts: {
+  todayYmd: string;
+  usageYearMonth: string;
+  firstDueYmd?: string;
+  secondDueYmd?: string;
+}) {
+  const usage = String(opts.usageYearMonth || "");
+  const today = String(opts.todayYmd || "");
+  const inUsageMonth = Boolean(usage) && today.startsWith(`${usage}-`);
+  const usageLabel = inUsageMonth ? `${usage} 현재까지 사용분` : `${usage} 사용분`;
+  const payStart = nextMonthStartYmd(usage);
+  const first = String(opts.firstDueYmd || "");
+  const second = String(opts.secondDueYmd || "");
+  if (!payStart || !today || today < payStart || !first) {
+    return { usageLabel, dueLabel: "", late: false };
+  }
+  if (today <= first) {
+    return { usageLabel, dueLabel: `${formatYmd(first)}까지 입금`, late: false };
+  }
+  const secondDay = formatYmd(second) || formatYmd(first);
+  return { usageLabel, dueLabel: `${secondDay}까지 입금`, late: true };
 }
 
 function settlementPhase(row: MonthlySettlement, now = Date.now()) {
@@ -143,85 +176,24 @@ export function PracticeObBillingTab() {
     );
   }
 
-  const { currentMonthEstimate, settlements, depositAccount } = data;
+  const { currentMonthEstimate, settlements, depositAccount, practiceName } = data;
   const openBill = settlements.find(
     (row) => settlementPhase(row) !== "received" && row.totalAmount > 0,
   );
   const paused = openBill ? settlementPhase(openBill) === "paused" : false;
-  const noticeLines = PRACTICE_OB_BILLING_NOTICE_BODY.split("\n").filter(Boolean);
-  const heroAmount = openBill?.totalAmount ?? currentMonthEstimate.totalAmount;
-  const firstDue = formatYmd(openBill?.firstDueYmd || currentMonthEstimate.firstDueYmd);
-  const secondDue = formatYmd(
-    openBill?.secondDueYmd || currentMonthEstimate.secondDueYmd,
-  );
+  const depositAmount = openBill?.totalAmount ?? currentMonthEstimate.totalAmount;
+  const monthTotal = currentMonthEstimate.totalAmount;
+  const dueMonth = openBill?.yearMonth || currentMonthEstimate.yearMonth;
+  const cue = resolvePracticeDepositCue({
+    todayYmd: toKstYmd(new Date()) || "",
+    usageYearMonth: dueMonth,
+    firstDueYmd: openBill?.firstDueYmd || currentMonthEstimate.firstDueYmd,
+    secondDueYmd: openBill?.secondDueYmd || currentMonthEstimate.secondDueYmd,
+  });
+  const depositorName = practiceName?.trim() || "치과명";
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-1.5 py-2 pb-4">
-      <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-50/90 via-white to-primary/[0.04] shadow-sm">
-        <div className="p-5 sm:p-6">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-medium text-slate-500">
-                {openBill
-                  ? `${openBill.yearMonth} 기공료`
-                  : PRACTICE_OB_BILLING_NOTICE_TITLE}
-              </p>
-              <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-[2rem]">
-                {formatRequestorWon(heroAmount)}
-                <span className="ml-0.5 text-lg font-semibold text-slate-600">
-                  원
-                </span>
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                {openBill
-                  ? "어벗츠 계좌로 입금해 주세요."
-                  : `${currentMonthEstimate.yearMonth} 사용분 · 다음 달 1일 오전 9시 문자`}
-              </p>
-            </div>
-            <Badge
-              variant={paused ? "outline" : "secondary"}
-              className="rounded-lg px-2.5 py-1"
-            >
-              {paused ? "확인 중" : openBill ? "입금 기간" : "이번 달"}
-            </Badge>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="cursor-default rounded-lg border border-slate-200/80 bg-white/90 px-2.5 py-1 text-xs tabular-nums text-slate-700">
-                  기공소 {formatRequestorWon(currentMonthEstimate.directLabTotal)}원
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-xs text-xs">
-                다른 기공소가 수행한 기공비입니다.
-                <br />
-                입금 확인 후 어벗츠가 그 기공소로 전달합니다.
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="cursor-default rounded-lg border border-slate-200/80 bg-white/90 px-2.5 py-1 text-xs tabular-nums text-slate-700">
-                  어벗츠 {formatRequestorWon(currentMonthEstimate.abutsCorpTotal)}원
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-xs text-xs">
-                기공사업부 기공·커스텀어벗·스토어입니다.
-                <br />
-                어벗츠가 받습니다.
-              </TooltipContent>
-            </Tooltip>
-          </div>
-          <p className="mt-4 text-xs leading-relaxed text-slate-500">
-            {noticeLines.map((line, index) => (
-              <span key={line}>
-                {index > 0 ? <br /> : null}
-                {line}
-              </span>
-            ))}
-          </p>
-        </div>
-      </section>
-
+    <div className="mx-auto flex w-full max-w-4xl shrink-0 flex-col gap-3 self-start px-1.5 py-1 pb-2">
       {paused && openBill ? (
         <section className="rounded-2xl border border-amber-200/90 bg-amber-50/80 px-4 py-3 text-amber-950 shadow-sm">
           <p className="text-sm font-medium">
@@ -236,73 +208,96 @@ export function PracticeObBillingTab() {
         </section>
       ) : null}
 
-      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
-        <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
-            <Landmark className="h-4 w-4 text-primary" />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold tracking-tight text-slate-900">
-              입금 계좌
-            </h2>
-            <p className="text-xs text-slate-500">
-              {firstDue ? `${firstDue}까지 1차` : "5일까지 1차"}
-              {secondDue ? ` · ${secondDue}까지 2차` : " · 10일까지 2차"}
+      <section className="shrink-0 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+        <div className="grid sm:grid-cols-2">
+          <div className="bg-gradient-to-b from-primary-soft/80 to-white px-5 py-5 sm:px-6 sm:py-6">
+            <p className="text-xs font-medium text-primary-strong">
+              {PRACTICE_OB_BILLING_NOTICE_TITLE}
             </p>
+            <p className="mt-2 text-4xl font-bold tabular-nums tracking-tight text-primary">
+              {formatRequestorWon(depositAmount)}
+              <span className="text-2xl font-semibold">원</span>
+            </p>
+            <p className="mt-2 text-sm text-slate-600">{cue.usageLabel}</p>
+            {cue.dueLabel && !paused ? (
+              <p
+                className={cn(
+                  "mt-2 text-sm font-semibold",
+                  cue.late ? "text-amber-800" : "text-primary-strong",
+                )}
+              >
+                {cue.dueLabel}
+                {cue.late ? (
+                  <>
+                    <br />
+                    미납 시 추가 주문 정지
+                  </>
+                ) : null}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-col justify-center gap-3 border-t border-slate-200/80 px-5 py-5 sm:border-l sm:border-t-0 sm:px-6">
+            <p className="flex flex-wrap items-baseline gap-x-2">
+              <span className="text-xs text-slate-500">입금자명</span>
+              <span className="text-lg font-bold tracking-tight text-slate-950">
+                {depositorName}
+              </span>
+            </p>
+            <div className="rounded-xl bg-slate-50 px-4 py-3">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <Landmark className="h-3.5 w-3.5 text-primary" />
+                입금 계좌
+              </div>
+              <p className="mt-1.5 text-xs text-slate-500">
+                {depositAccount?.bankName || "하나은행"}
+              </p>
+              <p className="truncate text-lg font-semibold tracking-wide text-slate-950">
+                {depositAccount?.accountNumber || ""}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                예금주 {depositAccount?.holderName || "어벗츠 주식회사"}
+              </p>
+            </div>
           </div>
         </div>
-        <div className="mt-4 rounded-xl border border-slate-200/70 bg-slate-50/80 px-4 py-3.5">
-          <p className="font-semibold text-slate-900">
-            {depositAccount?.bankName || "하나은행"}{" "}
-            {depositAccount?.accountNumber || ""}
-          </p>
-          <p className="mt-1 text-xs text-slate-600">
-            예금주 {depositAccount?.holderName || "어벗츠 주식회사"}
-          </p>
-        </div>
-        <p className="mt-3 text-xs leading-relaxed text-slate-500">
-          1차까지 확인되면 다음 영업일에 기공소로 전달합니다.
-          <br />
-          그 이후 확인분은 확인한 다음 영업일에 전달합니다.
-          <br />
-          일부만 도착한 경우에는 전액이 확인된 뒤로 봅니다.
-          <br />
-          입금자명은 치과명으로 적어 주세요.
-          <br />
-          한 달만 늦으면 후불을 유지합니다.
-          <br />
-          기한을 두 번 넘기거나 일부만 입금하면 이후 주문은 선불 크레딧입니다.
-        </p>
       </section>
 
       {currentMonthEstimate.lines.length > 0 ? (
-        <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
-          <h2 className="text-base font-semibold tracking-tight text-slate-900">
-            이번 달 수취처
+        <section className="shrink-0 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm sm:px-5">
+          <h2 className="px-1 text-sm font-semibold tracking-tight text-slate-900">
+            기공소별
           </h2>
-          <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200/70 px-1.5 py-1.5">
+          <ul className="mt-1.5 divide-y divide-slate-100 rounded-xl border border-slate-200/70 px-1.5 py-0.5">
             {currentMonthEstimate.lines.map((line, idx) => (
               <li
                 key={`${line.payeeKind}-${idx}`}
-                className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-3"
+                className="flex items-center justify-between gap-3 px-2 py-2"
               >
                 <div className="flex min-w-0 items-center gap-2">
-                  <Building2 className="h-4 w-4 shrink-0 text-slate-400" />
-                  <span className="font-medium text-slate-900">{line.payeeName}</span>
+                  <Building2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                  <span className="truncate text-sm text-slate-800">
+                    {line.payeeName}
+                  </span>
                 </div>
-                <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">
+                <span className="shrink-0 text-sm tabular-nums text-slate-700">
                   {formatRequestorWon(line.amount)}원
                 </span>
               </li>
             ))}
           </ul>
+          <div className="mt-2 flex items-center justify-between rounded-lg bg-primary-soft/60 px-2.5 py-1.5">
+            <span className="text-sm text-slate-600">합계</span>
+            <span className="text-sm font-bold tabular-nums text-primary">
+              {formatRequestorWon(monthTotal)}원
+            </span>
+          </div>
         </section>
       ) : null}
 
       {settlements.length > 0 ? (
         <Collapsible open={historyOpen} onOpenChange={setHistoryOpen}>
-          <section className="rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-            <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 rounded-2xl px-5 py-4 text-left sm:px-6">
+          <section className="shrink-0 rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+            <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 rounded-2xl px-4 py-3 text-left sm:px-5">
               <div>
                 <h2 className="text-base font-semibold text-slate-900">지난 기공료</h2>
                 <p className="mt-0.5 text-xs text-slate-500">{settlements.length}건</p>
@@ -318,6 +313,12 @@ export function PracticeObBillingTab() {
               <Separator className="mb-2" />
               {settlements.map((row) => {
                 const phase = settlementPhase(row);
+                const rowCue = resolvePracticeDepositCue({
+                  todayYmd: toKstYmd(new Date()) || "",
+                  usageYearMonth: row.yearMonth,
+                  firstDueYmd: row.firstDueYmd,
+                  secondDueYmd: row.secondDueYmd,
+                });
                 return (
                   <div
                     key={row.id}
@@ -333,19 +334,22 @@ export function PracticeObBillingTab() {
                             ? "입금 확인"
                             : phase === "paused"
                               ? "확인 중"
-                              : "입금 기간"}
+                              : "입금"}
                         </Badge>
                       </div>
                       <span className="text-sm font-bold tabular-nums text-slate-900">
                         {formatRequestorWon(row.totalAmount)}원
                       </span>
                     </div>
-                    {row.firstDueYmd ? (
+                    {phase !== "received" && rowCue.dueLabel ? (
                       <p className="mt-1 text-xs text-slate-500">
-                        {formatYmd(row.firstDueYmd)}까지 1차
-                        {row.secondDueYmd
-                          ? ` · ${formatYmd(row.secondDueYmd)}까지 2차`
-                          : ""}
+                        {rowCue.dueLabel}
+                        {rowCue.late ? (
+                          <>
+                            <br />
+                            미납 시 추가 주문 정지
+                          </>
+                        ) : null}
                       </p>
                     ) : null}
                   </div>
@@ -355,10 +359,6 @@ export function PracticeObBillingTab() {
           </section>
         </Collapsible>
       ) : null}
-
-      <p className="text-center text-[11px] text-slate-400">
-        CNC 생산 의뢰는 「커스텀어벗 의뢰하기」에서 별도로 진행합니다.
-      </p>
     </div>
   );
 }

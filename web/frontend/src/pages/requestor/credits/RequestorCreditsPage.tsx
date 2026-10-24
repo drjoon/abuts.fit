@@ -152,7 +152,7 @@ export default function RequestorCreditsPage() {
         icon: Landmark,
         content:
           activeTab === "autopay" ? (
-            <div className="flex h-full min-h-0 justify-center overflow-y-auto overflow-x-hidden px-0.5 pb-2 pt-1 sm:pt-2">
+            <div className="h-full min-h-0 overflow-x-hidden overflow-y-auto px-0.5 pb-1 pt-1">
               <PracticeObBillingTab />
             </div>
           ) : null,
