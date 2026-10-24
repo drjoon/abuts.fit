@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/settlement/affiliateVat.ts
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
+// - 2026-10-24: 기간 필터는 표 바로 위 왼쪽.
 // - 2026-10-24: 기간 필터는 기공크레딧 잔액 카드 왼쪽.
 // - 2026-10-24: 정산규칙은 입금 계좌 등록 버튼 아래.
 // - 2026-10-24: 입금 계좌 등록 버튼은 기본색(primary).
@@ -541,12 +542,6 @@ export const LabSettlementPayoutTab = () => {
         statsGridClassName={SETTLEMENT_STAT_ROW_CLASS}
         stats={
           <>
-            <PeriodFilter
-              value={settlementPeriod}
-              onChange={setPeriod}
-              presets={SETTLEMENT_PERIOD_PRESETS}
-              className="shrink-0 self-center"
-            />
             <SettlementStatCard
               compact
               className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
@@ -662,7 +657,14 @@ export const LabSettlementPayoutTab = () => {
           </>
         }
         mainLeft={
-          <div className="flex h-full min-h-0 min-w-0 flex-col">
+          <div className="flex h-full min-h-0 min-w-0 flex-col gap-2">
+            <div className="flex shrink-0 justify-start">
+              <PeriodFilter
+                value={settlementPeriod}
+                onChange={setPeriod}
+                presets={SETTLEMENT_PERIOD_PRESETS}
+              />
+            </div>
             <SettlementTableFrame className="min-h-0 min-w-0 flex-1 overflow-y-auto">
               <Table>
                 <TableHeader>
