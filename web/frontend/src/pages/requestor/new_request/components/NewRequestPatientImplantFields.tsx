@@ -796,9 +796,9 @@ export function NewRequestPatientImplantFields({
   ) : null;
 
   return (
-    <div className="flex flex-col gap-5">
-      <section className="rounded-xl border border-slate-200 bg-white p-3.5">
-        <h3 className="mb-3 text-sm font-semibold text-slate-900">환자</h3>
+    <div className="flex flex-col gap-3">
+      <section className="rounded-xl border border-slate-200 bg-white p-3">
+        <h3 className="mb-2 text-sm font-semibold text-slate-900">환자</h3>
         <div className="grid grid-cols-2 gap-3 text-foreground">
         <div className="col-span-2 flex min-w-0 flex-col gap-1.5">
           <FieldCaption>치과</FieldCaption>
@@ -934,7 +934,7 @@ export function NewRequestPatientImplantFields({
       </section>
 
       {implantCatalogSelectGrid ? (
-        <section className="space-y-2.5">
+        <section className="space-y-2">
           <h3 className="px-0.5 text-sm font-semibold text-slate-900">임플란트</h3>
           {renderImplantSelectSection
             ? renderImplantSelectSection(implantCatalogSelectGrid)

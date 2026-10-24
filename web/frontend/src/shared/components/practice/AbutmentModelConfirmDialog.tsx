@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 3D 확인 모달은 내용 높이에 맞추고 세로 스크롤을 두지 않는다.
 // - 2026-10-24: 3D 확인 모달 — 미리보기·입력·하단 버튼을 나눠 읽기 쉽게.
 // - 2026-10-24: 스크류 선택 UI 제거. 타입은 연결 규격의 A–E를 그대로 쓴다.
 // - 2026-10-24: 유지홈·아노다이징은 한 줄 버튼. 포스트 3mm 이하만 사진 모달(기본 있음).
@@ -104,7 +105,7 @@ function ImplantEntryCard({
       tabIndex={selected || disabled ? -1 : 0}
       aria-pressed={selected}
       className={cn(
-        "rounded-xl border px-3.5 py-3.5 text-left transition-colors",
+        "rounded-xl border px-3 py-2.5 text-left transition-colors",
         selected
           ? "border-primary/40 bg-white shadow-sm"
           : "cursor-pointer border-slate-200 bg-white hover:border-slate-300",
@@ -121,7 +122,7 @@ function ImplantEntryCard({
         onSelect();
       }}
     >
-      <div className="mb-3 flex items-center justify-between gap-2">
+      <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <span
             className={cn(
@@ -619,10 +620,10 @@ export function AbutmentModelConfirmDialog({
       >
         <DialogContent
           // Above floating transfer panel (z-300). Same band as ModelPreviewDialog.
-          className="new-request-page z-[320] flex h-[min(92vh,1160px)] max-h-[min(92vh,1160px)] w-[min(1080px,calc(100vw-2rem))] max-w-[min(1080px,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0 sm:w-[min(1080px,calc(100vw-2rem))] sm:max-w-[min(1080px,calc(100vw-2rem))]"
+          className="new-request-page z-[320] flex w-[min(1080px,calc(100vw-2rem))] max-w-[min(1080px,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0 sm:w-[min(1080px,calc(100vw-2rem))] sm:max-w-[min(1080px,calc(100vw-2rem))]"
           overlayClassName="z-[310]"
         >
-          <DialogHeader className="shrink-0 space-y-0 border-b border-slate-200 px-5 py-4 pr-12 text-left">
+          <DialogHeader className="shrink-0 space-y-0 border-b border-slate-200 px-5 py-3 pr-12 text-left">
             <div className="flex items-center gap-2.5">
               <DialogTitle className="text-lg font-semibold tracking-tight">
                 3D 모델 확인 및 정보 입력
@@ -656,8 +657,8 @@ export function AbutmentModelConfirmDialog({
             </div>
           ) : null}
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1.08fr)_minmax(24rem,0.92fr)] lg:overflow-hidden">
-            <div className="flex min-h-0 flex-col gap-3 overflow-y-auto border-slate-200 p-4 lg:border-r lg:p-5">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.08fr)_minmax(24rem,0.92fr)]">
+            <div className="flex flex-col gap-2.5 border-slate-200 p-3 lg:border-r lg:p-4">
               <div className="shrink-0 px-0.5">
                 <p className="text-sm font-semibold text-slate-900">3D 미리보기</p>
                 {detailFile ? (
@@ -670,10 +671,10 @@ export function AbutmentModelConfirmDialog({
                 ) : null}
               </div>
 
-              <div className="flex min-h-[18rem] min-w-0 flex-1 flex-col gap-3">
+              <div className="flex min-h-[16rem] min-w-0 flex-1 flex-col gap-2.5">
                 <div
                   className={cn(
-                    "relative min-h-[18rem] min-w-0 flex-1 overflow-hidden rounded-2xl",
+                    "relative min-h-[16rem] min-w-0 flex-1 overflow-hidden rounded-2xl",
                     "border border-slate-200 bg-[radial-gradient(ellipse_at_50%_32%,#ffffff_0%,#e8eef5_100%)]",
                     "shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]",
                   )}
@@ -721,7 +722,7 @@ export function AbutmentModelConfirmDialog({
 
               {selectablePreviewIndices.length > 1 ? (
                 <div className="shrink-0 rounded-xl border border-slate-200 bg-white p-1.5">
-                  <ul className="custom-scrollbar max-h-[7.5rem] overflow-y-auto px-1 py-1">
+                  <ul className="px-1 py-1">
                     {selectablePreviewIndices.map((fileIndex) => {
                       const file = files[fileIndex];
                       if (!file) return null;
@@ -755,7 +756,7 @@ export function AbutmentModelConfirmDialog({
               ) : null}
             </div>
 
-            <div className="custom-scrollbar flex min-h-0 flex-col gap-4 overflow-y-auto bg-slate-50/90 p-4 lg:p-5">
+            <div className="flex flex-col gap-3 bg-slate-50/90 p-3 lg:p-4">
                   {isDesignCustomMode ? (
                     <div className="flex min-h-[28rem] flex-1 flex-col">
                       <NewRequestDesignAbutmentFields
@@ -772,7 +773,7 @@ export function AbutmentModelConfirmDialog({
                       />
                     </div>
                   ) : (
-                    <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-3">
                       <NewRequestPatientImplantFields
                         caseInfos={detailCaseInfos}
                         setCaseInfos={setCatalogCaseInfos}
