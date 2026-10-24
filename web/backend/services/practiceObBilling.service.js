@@ -37,6 +37,7 @@ import {
 import { sendPopbillXMS } from "../utils/popbill.util.js";
 import { issuePracticeObPaymentInvoices } from "./practiceObPaymentInvoice.service.js";
 import {
+  addSettlementDaysYmd,
   formatSettlementMonthDay,
   kstYmdFromDate,
   resolveLabPayoutYmd,
@@ -995,21 +996,47 @@ function wonLabel(amount) {
   return `${Math.round(Number(amount) || 0).toLocaleString("ko-KR")}원`;
 }
 
-function buildSettlementSms({ kind, name, yearMonth, amount, account, calendar }) {
+function formatUsageMonthLabel(yearMonth) {
+  const matched = /^(\d{4})-(\d{2})$/.exec(String(yearMonth || "").trim());
+  if (!matched) return String(yearMonth || "");
+  return `${Number(matched[2])}월`;
+}
+
+function formatDepositAccountLine(account) {
+  const bank = [account?.bankName, account?.accountNumber].filter(Boolean).join(" ");
+  const holder = String(account?.holderName || "").trim();
+  if (bank && holder) return `${bank} (${holder})`;
+  return bank || holder;
+}
+
+/** 2차 기한 다음 날. 같은 달이면 `13일`, 달이 바뀌면 `11월 1일`. */
+function formatUnpaidPauseLine(secondDueYmd) {
+  const dueLabel = formatSettlementMonthDay(secondDueYmd);
+  const suspendYmd = addSettlementDaysYmd(secondDueYmd, 1);
+  if (!dueLabel || !suspendYmd) return "";
+  const dueMonth = Number(String(secondDueYmd).split("-")[1]);
+  const [suspendMonth, suspendDay] = String(suspendYmd).split("-").slice(1).map(Number);
+  const fromLabel =
+    dueMonth === suspendMonth
+      ? `${suspendDay}일`
+      : formatSettlementMonthDay(suspendYmd);
+  return `(${dueLabel}까지 미입금시 ${fromLabel}부터 기공의뢰 불가)`;
+}
+
+export function buildSettlementSms({ kind, name, yearMonth, amount, account, calendar }) {
   const who = name || "고객";
-  const month = String(yearMonth || "");
+  const month = formatUsageMonthLabel(yearMonth);
   const money = wonLabel(amount);
-  const bankLine = [account?.bankName, account?.accountNumber, account?.holderName]
-    .filter(Boolean)
-    .join(" ");
+  const bankLine = formatDepositAccountLine(account);
+  const depositorLine = "입금자명은 치과명으로 하시면 자동 반영됩니다.";
   if (kind === "reminder") {
     return [
-      `${who}님, ${month} 기공료 ${money}이 아직 확인되지 않았습니다.`,
-      `${formatSettlementMonthDay(calendar.secondDueYmd)}까지 입금해 주시면 됩니다.`,
-      "이미 보내신 경우 이 안내는 지나치셔도 됩니다.",
+      "[어벗츠 발신]",
+      `${who}님, 안녕하세요?`,
+      `${month} 기공료 ${money} 입금을 다시 부탁드립니다.`,
+      formatUnpaidPauseLine(calendar?.secondDueYmd),
       bankLine,
-      "입금자명은 치과명으로 적어 주세요.",
-      "어벗츠",
+      depositorLine,
     ]
       .filter(Boolean)
       .join("\n");
@@ -1022,12 +1049,11 @@ function buildSettlementSms({ kind, name, yearMonth, amount, account, calendar }
     ].join("\n");
   }
   return [
-    `${who}님, ${month} 기공료 ${money}입니다.`,
-    `${formatSettlementMonthDay(calendar.firstDueYmd)}까지 입금해 주시면 됩니다.`,
+    "[어벗츠 발신]",
+    `${who}님, 안녕하세요?`,
+    `${month} 기공료 ${money}을 ${formatSettlementMonthDay(calendar.firstDueYmd)}까지 입금 부탁드립니다.`,
     bankLine,
-    "입금자명은 치과명으로 적어 주세요.",
-    "내역은 어벗츠.핏 정산에서 보실 수 있습니다.",
-    "어벗츠",
+    depositorLine,
   ]
     .filter(Boolean)
     .join("\n");
