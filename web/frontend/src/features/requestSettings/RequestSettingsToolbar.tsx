@@ -5,18 +5,21 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 //
 // history:
+// - 2026-10-24: 수신 채팅 유지홈·아노다이징은 버튼 팝오버.
 // - 2026-10-23: 채팅 스크류는 ExoCAD·아노와 같은 줄의 버튼.
 // - 2026-10-23: 스크류는 RequestScrewSupplySection으로 SW·아노 아래 항상 노출(팝오버 밖).
 // - 2026-09-30: 채팅 작업 줄은 설정 아이콘 하나에 SW·아노를 넣고 맨 왼쪽에 둔다.
 // - 2026-09-14: 모바일·좁은 폭 — 아이콘 우선(라벨은 sm+). 디자인SW·아노다이징 아이콘.
 // - 2026-09-14: 버튼 라벨을 선택된 SW명으로 다시 표시(미설정 시 「디자인SW」).
 // - 2026-09-03: 버튼 라벨을 저장된 SW명(ExoCAD) 대신 고정 「디자인SW」로.
-import { Droplets, Monitor, Settings } from "lucide-react";
+import { Droplets, Monitor, Rows3, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/shared/ui/cn";
+import { CaseOptionPopoverButton } from "@/shared/components/practice/CaseOptionPopoverButton";
 import { RequestScrewSupplySection } from "@/shared/components/practice/ScrewSupplyField";
 import type { ScrewSupply } from "@/shared/practice/screwSupply";
+import type { ShortPostRetentionChoice } from "@/pages/requestor/new_request/utils/shortPostRetention";
 
 type RequestSettingsToolbarProps = {
   /** 선택된 디자인 SW. 비어 있으면 「디자인SW」 */
@@ -25,6 +28,10 @@ type RequestSettingsToolbarProps = {
   anodizingEnabled?: boolean;
   anodizingSaving?: boolean;
   onToggleAnodizing?: () => void;
+  /** 채팅 작업 줄. 있으면 아노다이징은 팝오버로 고른다. */
+  onAnodizingChange?: (enabled: boolean) => void;
+  retentionGroove?: ShortPostRetentionChoice;
+  onRetentionGrooveChange?: (value: ShortPostRetentionChoice) => void;
   className?: string;
   /** 아노다이징 토글 title (기본: 사업체/계정 기본값 안내) */
   anodizingTitle?: string;
@@ -48,6 +55,9 @@ export function RequestSettingsToolbar({
   anodizingEnabled = true,
   anodizingSaving = false,
   onToggleAnodizing,
+  onAnodizingChange,
+  retentionGroove = "none",
+  onRetentionGrooveChange,
   className,
   anodizingTitle = "기공소 기본값으로 저장되며, 이후 제조 주문 메타데이터에 반영됩니다",
   iconOnly = false,
@@ -87,6 +97,41 @@ export function RequestSettingsToolbar({
           {label}
         </span>
       </Button>
+      {menu && onRetentionGrooveChange ? (
+        <CaseOptionPopoverButton
+          className="h-8 px-2"
+          icon={<Rows3 className="h-3.5 w-3.5 shrink-0" />}
+          label={retentionGroove === "deep" ? "유지홈 있음" : "유지홈 없음"}
+          value={retentionGroove === "deep" ? "deep" : "none"}
+          options={[
+            { value: "deep", label: "유지홈 있음" },
+            { value: "none", label: "유지홈 없음" },
+          ]}
+          disabled={anodizingSaving}
+          onChange={onRetentionGrooveChange}
+        />
+      ) : null}
+      {menu && onAnodizingChange ? (
+        <CaseOptionPopoverButton
+          className="h-8 px-2"
+          icon={
+            <Droplets
+              className={cn(
+                "h-3.5 w-3.5 shrink-0",
+                anodizingEnabled ? "text-sky-600" : "opacity-50",
+              )}
+            />
+          }
+          label={anodizingEnabled ? "아노다이징 On" : "아노다이징 Off"}
+          value={anodizingEnabled ? "on" : "off"}
+          options={[
+            { value: "on", label: "아노다이징 On" },
+            { value: "off", label: "아노다이징 Off" },
+          ]}
+          disabled={anodizingSaving}
+          onChange={(next) => onAnodizingChange(next === "on")}
+        />
+      ) : (
       <Button
         type="button"
         variant="outline"
@@ -116,6 +161,7 @@ export function RequestSettingsToolbar({
           {anodizingLabel}
         </span>
       </Button>
+      )}
     </>
   );
 

@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-10-24: 신규의뢰 유지홈 라디오 제거. 포스트 길이 3mm 이하일 때만 참조 사진으로 선택.
+// - 2026-10-24: 유지홈·아노다이징은 한 줄 버튼. 포스트 3mm 이하만 사진 모달(기본 있음).
 // - 2026-10-22: STL 프리뷰 — 단일 뷰포트 + 하단 가공 도크(fillet R·경고). 스캔색 토글 숨김.
 // - 2026-10-22: 카탈로그 제조사 선택 — 없는 setNewSystemFamily 호출이 선택을 막던 것 제거.
 // - 2026-10-22: 좁은 코너는 표시와 경고만. 원본 STL은 고치지 않고 내려받지 않는다.
@@ -26,7 +26,7 @@
 // - web/frontend/src/shared/components/practice/AbutmentDesignConfirmDialog.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestPatientImplantFields.tsx
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
-import { CircleHelp } from "lucide-react";
+import { CircleHelp, Droplets, Rows3 } from "lucide-react";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import {
   Dialog,
@@ -52,15 +52,13 @@ import type {
 } from "@/pages/requestor/new_request/hooks/newRequestTypes";
 import { NewRequestDesignAbutmentFields } from "@/pages/requestor/new_request/components/NewRequestDesignAbutmentFields";
 import { NewRequestPatientImplantFields } from "@/pages/requestor/new_request/components/NewRequestPatientImplantFields";
-import { RetentionGrooveField } from "@/shared/components/practice/RetentionGrooveField";
+import { CaseOptionPopoverButton } from "@/shared/components/practice/CaseOptionPopoverButton";
 import { ShortPostRetentionDialog } from "@/shared/components/practice/ShortPostRetentionDialog";
 import {
-  formatPostLengthMm,
   isShortPostLength,
   measuredPostLengthMm,
   type ShortPostRetentionChoice,
 } from "@/pages/requestor/new_request/utils/shortPostRetention";
-import { AnodizingField } from "@/shared/components/practice/AnodizingField";
 import { RequestScrewSupplySection } from "@/shared/components/practice/ScrewSupplyField";
 import {
   screwManufacturerLabel,
@@ -381,13 +379,6 @@ export function AbutmentModelConfirmDialog({
     ],
   );
 
-  useEffect(() => {
-    if (!open) return;
-    const stored = String(detailCaseInfos?.retentionGroove || "").trim();
-    if (stored === "none" || stored === "shallow" || stored === "deep") return;
-    setDetailCaseInfos({ retentionGroove: "none" });
-  }, [detailCaseInfos?.retentionGroove, open, setDetailCaseInfos]);
-
   const screwTouchedRef = useRef(false);
   const screwPinnedRef = useRef(false);
   const screwClinicRef = useRef<string | null>(null);
@@ -557,6 +548,24 @@ export function AbutmentModelConfirmDialog({
     !isDesignCustomMode &&
     isShortPostLength(postLengthMm);
   const needsShortPostChoice = shortPost && !shortPostRetentionChoice;
+  const retentionValue: ShortPostRetentionChoice =
+    detailCaseInfos?.retentionGroove === "deep" ? "deep" : "none";
+  const anodizingOn =
+    typeof detailCaseInfos?.anodizingEnabled === "boolean"
+      ? detailCaseInfos.anodizingEnabled
+      : defaultAnodizingEnabled;
+
+  useEffect(() => {
+    if (!open) return;
+    const stored = String(detailCaseInfos?.retentionGroove || "").trim();
+    if (stored === "none" || stored === "shallow" || stored === "deep") return;
+    setDetailCaseInfos({ retentionGroove: shortPost ? "deep" : "none" });
+  }, [
+    detailCaseInfos?.retentionGroove,
+    open,
+    setDetailCaseInfos,
+    shortPost,
+  ]);
 
   const prevDetailFileKeyRef = useRef(detailFileKey);
   useEffect(() => {
@@ -582,20 +591,12 @@ export function AbutmentModelConfirmDialog({
 
   const handleConfirmAndNext = useCallback(() => {
     if (detailIndex === null) return;
-    if (needsShortPostChoice) {
-      setShortPostChoiceOpen(true);
-      return;
-    }
     void onVerifyAndNext(detailIndex);
-  }, [detailIndex, needsShortPostChoice, onVerifyAndNext]);
+  }, [detailIndex, onVerifyAndNext]);
 
   const handleSkip = useCallback(() => {
-    if (needsShortPostChoice) {
-      setShortPostChoiceOpen(true);
-      return;
-    }
     onSkip();
-  }, [needsShortPostChoice, onSkip]);
+  }, [onSkip]);
 
   const applyShortPostChoice = useCallback(
     (value: ShortPostRetentionChoice) => {
@@ -1013,63 +1014,47 @@ export function AbutmentModelConfirmDialog({
                         }
                       />
 
-                      {isLabHandoff ? (
-                        <RetentionGrooveField
-                          value={
-                            detailCaseInfos?.retentionGroove === "deep"
-                              ? "deep"
-                              : "none"
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <CaseOptionPopoverButton
+                          icon={<Rows3 className="h-4 w-4 shrink-0" />}
+                          label={
+                            retentionValue === "deep" ? "유지홈 있음" : "유지홈 없음"
                           }
+                          value={retentionValue}
+                          options={[
+                            { value: "deep", label: "유지홈 있음" },
+                            { value: "none", label: "유지홈 없음" },
+                          ]}
+                          disabled={!detailFile || confirming}
                           onChange={(next) => {
                             setDetailCaseInfos({ retentionGroove: next });
                             onRetentionGrooveAccountSave?.(next);
+                            onShortPostRetentionChoice?.(next);
                           }}
-                          disabled={!detailFile || confirming}
-                          idPrefix={retentionIdPrefix}
-                          guideContentClassName="new-request-page w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-6 sm:w-[1120px] sm:max-w-[1120px]"
                         />
-                      ) : shortPost && postLengthMm != null ? (
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-sm text-slate-700">
-                              {shortPostRetentionChoice ? (
-                                shortPostRetentionChoice === "deep"
-                                  ? "유지홈 있음"
-                                  : "유지홈 없음"
-                              ) : (
-                                <>
-                                  포스트 길이가 {formatPostLengthMm(postLengthMm)}mm입니다.
-                                  <br />
-                                  유지홈을 선택해 주세요.
-                                </>
+                        <CaseOptionPopoverButton
+                          icon={
+                            <Droplets
+                              className={cn(
+                                "h-4 w-4 shrink-0",
+                                anodizingOn ? "text-sky-600" : "opacity-50",
                               )}
-                            </p>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={shortPostRetentionChoice ? "outline" : "default"}
-                              disabled={!detailFile || confirming}
-                              onClick={() => setShortPostChoiceOpen(true)}
-                            >
-                              {shortPostRetentionChoice ? "변경" : "선택"}
-                            </Button>
-                          </div>
-                        </div>
-                      ) : null}
-
-                      <AnodizingField
-                        value={
-                          typeof detailCaseInfos?.anodizingEnabled === "boolean"
-                            ? detailCaseInfos.anodizingEnabled
-                            : defaultAnodizingEnabled
-                        }
-                        onChange={(next) => {
-                          setDetailCaseInfos({ anodizingEnabled: next });
-                          onAnodizingAccountSave?.(next);
-                        }}
-                        disabled={!detailFile || confirming}
-                        idPrefix={`${retentionIdPrefix}-ano`}
-                      />
+                            />
+                          }
+                          label={anodizingOn ? "아노다이징 On" : "아노다이징 Off"}
+                          value={anodizingOn ? "on" : "off"}
+                          options={[
+                            { value: "on", label: "아노다이징 On" },
+                            { value: "off", label: "아노다이징 Off" },
+                          ]}
+                          disabled={!detailFile || confirming}
+                          onChange={(next) => {
+                            const enabled = next === "on";
+                            setDetailCaseInfos({ anodizingEnabled: enabled });
+                            onAnodizingAccountSave?.(enabled);
+                          }}
+                        />
+                      </div>
 
                       <RequestScrewSupplySection
                         value={
@@ -1177,7 +1162,7 @@ export function AbutmentModelConfirmDialog({
           open={shortPostChoiceOpen}
           onOpenChange={setShortPostChoiceOpen}
           postLengthMm={postLengthMm}
-          value={shortPostRetentionChoice}
+          value={shortPostRetentionChoice ?? "deep"}
           onConfirm={applyShortPostChoice}
         />
       ) : null}

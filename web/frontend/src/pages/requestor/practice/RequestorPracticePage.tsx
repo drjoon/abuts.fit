@@ -10698,7 +10698,15 @@ export function RequestorPracticeReceivePage({
                   onOpenDesignSoftwareModal={openLabDesignSoftwareModal}
                   anodizingEnabled={anodizingEnabled}
                   anodizingSaving={anodizingSaving}
-                  onToggleAnodizing={handleToggleAnodizing}
+                  onAnodizingChange={(enabled) => {
+                    void saveAnodizingEnabled(enabled);
+                  }}
+                  retentionGroove={
+                    retentionGrooveDefault === "deep" ? "deep" : "none"
+                  }
+                  onRetentionGrooveChange={(value) => {
+                    void saveRetentionGroove(value);
+                  }}
                   menu
                   screwSupply={labPracticeScrewSupply.resolve(
                     selectedTransfer.screwSupply,
