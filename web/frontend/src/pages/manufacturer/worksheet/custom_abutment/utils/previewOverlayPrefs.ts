@@ -1,4 +1,4 @@
-// 제조사 워크시트 PreviewModal STL 뷰어 — 그리드·메타·안내(피니시라인 등) on/off
+// 제조사 워크시트 PreviewModal STL 뷰어 — 그리드·메타·안내(피니시라인 등)·코너 필레 정보 on/off
 const STORAGE_KEY = "abuts_worksheet_preview_overlay_prefs_v1";
 
 export type PreviewOverlayPrefs = {
@@ -8,6 +8,8 @@ export type PreviewOverlayPrefs = {
   guides: boolean;
   /** 보정 솔리드 덧입혀 표시. 기본 off(원본만). */
   correctionSolid: boolean;
+  /** 오른쪽 STL 우하단 코너 필레·불완전 사유 카드. 기본 on. */
+  filletInfo: boolean;
 };
 
 const DEFAULT_PREFS: PreviewOverlayPrefs = {
@@ -16,6 +18,7 @@ const DEFAULT_PREFS: PreviewOverlayPrefs = {
   meta: true,
   guides: true,
   correctionSolid: false,
+  filletInfo: true,
 };
 
 function parseBool(value: unknown, fallback: boolean): boolean {
@@ -38,6 +41,7 @@ export function loadPreviewOverlayPrefs(): PreviewOverlayPrefs {
         parsed.correctionSolid,
         DEFAULT_PREFS.correctionSolid,
       ),
+      filletInfo: parseBool(parsed.filletInfo, DEFAULT_PREFS.filletInfo),
     };
   } catch {
     return DEFAULT_PREFS;
@@ -45,7 +49,9 @@ export function loadPreviewOverlayPrefs(): PreviewOverlayPrefs {
 }
 
 export function savePreviewOverlayPrefs(
-  patch: Partial<Pick<PreviewOverlayPrefs, "grid" | "meta" | "guides" | "correctionSolid">>,
+  patch: Partial<
+    Pick<PreviewOverlayPrefs, "grid" | "meta" | "guides" | "correctionSolid" | "filletInfo">
+  >,
 ) {
   if (typeof window === "undefined") return;
   const next: PreviewOverlayPrefs = { ...loadPreviewOverlayPrefs(), ...patch, v: 1 };

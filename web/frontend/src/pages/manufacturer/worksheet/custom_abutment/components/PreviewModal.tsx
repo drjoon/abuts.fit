@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-25: 코너 필레 정보 카드 on/off. 그리드·안내와 같이 저장.
 // - 2026-10-24: 마진 필레만 약한 건은 불완전가공 확인 뱃지에서 뺀다.
 // - 2026-10-23: 불완전 사유 카드는 오른쪽 STL 우하단. 전체 평균 fillet 칩은 숨김.
 // - 2026-10-22: body 포털 토스트 클릭 시 outside dismiss 막음(keepOpenOnToastInteract).
@@ -83,7 +84,7 @@
 // - web/backend/controllers/rhino/rhino.controller.js
 // - web/backend/modules/rhino/rhino.routes.js
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, Grid3x3, Info, Layers, Loader2, RefreshCw, Spline, X } from "lucide-react";
+import { Download, Grid3x3, Info, Layers, Loader2, Radius, RefreshCw, Spline, X } from "lucide-react";
 import { mirrorShapes } from "@/shared/components/practice/viewPaintMirror";
 import type { PaintShape } from "@/shared/components/practice/viewPaintGeom";
 import {
@@ -720,6 +721,9 @@ export const PreviewModal = ({
   const [correctionSolidOn, setCorrectionSolidOn] = useState(
     () => loadPreviewOverlayPrefs().correctionSolid,
   );
+  const [filletInfoOn, setFilletInfoOn] = useState(
+    () => loadPreviewOverlayPrefs().filletInfo,
+  );
 
   useEffect(() => {
     savePreviewOverlayPrefs({
@@ -727,8 +731,9 @@ export const PreviewModal = ({
       meta: metaOn,
       guides: guidesOn,
       correctionSolid: correctionSolidOn,
+      filletInfo: filletInfoOn,
     });
-  }, [gridOn, metaOn, guidesOn, correctionSolidOn]);
+  }, [gridOn, metaOn, guidesOn, correctionSolidOn, filletInfoOn]);
 
   const toggleCorrectionSolid = () => {
     if (!correctionSolidOn) {
@@ -1486,9 +1491,12 @@ export const PreviewModal = ({
         unmachinable: isUnmachinable,
         unmachinableReason: (activeReq as any)?.rnd?.unmachinableReason,
       });
-  const incompleteReasonOverlay =
+  const hasFilletInfoCard = Boolean(
     incompleteReasonCard &&
-    (incompleteReasonCard.stats.length > 0 || incompleteReasonCard.notes.length > 0) ? (
+      (incompleteReasonCard.stats.length > 0 || incompleteReasonCard.notes.length > 0),
+  );
+  const incompleteReasonOverlay =
+    filletInfoOn && hasFilletInfoCard && incompleteReasonCard ? (
       <div
         className={cn(
           "pointer-events-none absolute right-2 z-20 max-w-[calc(100%-1rem)]",
@@ -1731,6 +1739,22 @@ export const PreviewModal = ({
           >
             <Spline className="h-4 w-4" />
           </button>
+          {hasFilletInfoCard && side === "right" ? (
+            <button
+              type="button"
+              className={`${iconBtn} w-8 ${
+                filletInfoOn
+                  ? "border-primary-muted text-primary-strong"
+                  : "border-slate-200 text-slate-400"
+              }`}
+              aria-pressed={filletInfoOn}
+              aria-label="코너 필레 정보 켜기/끄기"
+              title={filletInfoOn ? "코너 필레 정보 끄기" : "코너 필레 정보 켜기"}
+              onClick={() => setFilletInfoOn((on) => !on)}
+            >
+              <Radius className="h-4 w-4" />
+            </button>
+          ) : null}
           {hasCorrectionSolid && side === filledSide ? (
             <button
               type="button"
