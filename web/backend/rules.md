@@ -603,7 +603,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 기공의뢰서: `practiceTransferAuth.middleware.js` — 발신 practice, 수신 lab
   - 생산의뢰: `paidRequestor.middleware.js` — `POST /api/requests`, `/from-draft`, `/bulk`
   - 공개 가입: `POST /api/auth/register`. 발신 프로필: `practiceProfile` → `ensureRequestorOrgAnchor`.
-  - 대표 직원 일괄 등록: `POST /api/businesses/staff/bulk`. 대표(`resolveOwnedBusiness`)만. 한 줄에 `이름` 또는 `이름, 영문아이디`. 아이디는 영문 소문자 3~20자(`loginId`). 이메일은 받지 않는다. 이름만이면 로마자 아이디를 만든다. 저장 메일은 `{loginId}@staff.abuts.fit`이고 화면에는 아이디만 보인다. 처음 비밀번호는 묶음당 영문 소문자 6자리(`abcdef`). `mustChangePassword`. 소개 귀속·환영 크레딧 없음. `subRole=staff`, 같은 role·`requestorKind`, 온보딩 생략, `members`에 넣는다. 비밀번호 분실은 `POST /api/businesses/staff/:userId/password`(같은 6자리). 로그인은 `loginId`.
+  - 대표 직원 일괄 등록: `POST /api/businesses/staff/bulk`. 대표(`resolveOwnedBusiness`)만. 한 줄에 한글 이름. 아이디는 그 이름(`loginId`). 다른 회사 포함 같은 이름이 있으면 `1`, `2`를 붙인다. 이메일은 받지 않는다. 저장 메일은 아이디로 만든 `@staff.abuts.fit` 내부 주소이고, 화면에는 아이디만 보인다. 처음 비밀번호는 묶음당 영문 소문자 6자리(`abcdef`). `mustChangePassword`. 소개 귀속·환영 크레딧 없음. `subRole=staff`, 같은 role·`requestorKind`, 온보딩·가이드투어 생략, `members`에 넣는다. 비밀번호 분실은 `POST /api/businesses/staff/:userId/password`(같은 6자리). 로그인은 `loginId`.
   - 백필: `scripts/db/backfill-requestor-capabilities.js` (`--apply`)
   - 크레딧/정산: 유료(paid+verified)만. synthetic BN 환영 크레딧 없음.
     기공소 가입환영 크레딧은 실사업자번호 등록 시 **7만 원** 1회(`가입환영 크레딧 지급`). 치과는 제외. 관리자 수동 무료크레딧 override는 유지.

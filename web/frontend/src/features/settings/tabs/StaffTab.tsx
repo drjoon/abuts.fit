@@ -14,6 +14,10 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { Building2, Info, Loader2, Pencil, Plus, UserCheck, UserPlus, Users } from "lucide-react";
 import {
+  StaffBulkRegisterDialog,
+  StaffPasswordResetDialog,
+} from "@/features/settings/tabs/StaffBulkRegisterDialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -25,9 +29,18 @@ type StaffMember = {
   _id: string;
   name?: string;
   email?: string;
+  loginId?: string;
   internalDepartmentId?: string | null;
   departmentName?: string;
 };
+
+function memberLoginLabel(member: { email?: string; loginId?: string }) {
+  const loginId = String(member.loginId || "").trim();
+  if (loginId) return loginId;
+  const email = String(member.email || "").trim();
+  if (email.toLowerCase().endsWith("@staff.abuts.fit")) return "";
+  return email;
+}
 
 type DepartmentOption = {
   _id: string;
@@ -80,7 +93,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [pending, setPending] = useState<PendingJoinRequest[]>([]);
   const [representatives, setRepresentatives] = useState<
-    Array<{ _id: string; name?: string; email?: string }>
+    Array<{ _id: string; name?: string; email?: string; loginId?: string }>
   >([]);
   const [loading, setLoading] = useState(false);
   const [actionUserId, setActionUserId] = useState<string>("");
@@ -95,6 +108,8 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
   const [editingDepartmentName, setEditingDepartmentName] = useState("");
   const [savingDepartmentId, setSavingDepartmentId] = useState("");
   const [deletingDepartmentId, setDeletingDepartmentId] = useState("");
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [resetStaff, setResetStaff] = useState<StaffMember | null>(null);
 
   const mockHeaders = useMemo(() => {
     return {} as Record<string, string>;
@@ -164,6 +179,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
             _id: String(r._id),
             name: r.name,
             email: r.email,
+            loginId: r.loginId ? String(r.loginId) : "",
             internalDepartmentId: r.internalDepartmentId
               ? String(r.internalDepartmentId)
               : null,
@@ -825,9 +841,15 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                     </p>
                   </div>
                 </div>
-                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600 ring-1 ring-slate-200/80">
-                  {visibleMemberCount}명
-                </span>
+                <div className="flex items-center gap-2">
+                  <Button type="button" size="sm" onClick={() => setBulkOpen(true)}>
+                    <UserPlus className="mr-1.5 h-4 w-4" />
+                    직원 등록
+                  </Button>
+                  <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600 ring-1 ring-slate-200/80">
+                    {visibleMemberCount}명
+                  </span>
+                </div>
               </div>
 
               {loading && visibleMemberCount === 0 ? (
@@ -843,14 +865,14 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                     등록된 임직원이 없습니다
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    가입 신청을 승인하면 이곳에 표시됩니다.
+                    직원을 등록하거나, 가입 신청을 승인하면 표시됩니다.
                   </p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {visibleRepresentatives.map((entry) => {
                     const name = String(entry.name || "").trim() || entry._id;
-                    const email = String(entry.email || "").trim();
+                    const email = memberLoginLabel(entry);
                     return (
                       <div
                         key={entry._id}
@@ -892,7 +914,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
 
                   {staffEntries.map((m) => {
                     const name = String(m.name || "").trim() || m._id;
-                    const email = String(m.email || "").trim();
+                    const email = memberLoginLabel(m);
                     const label = `${name}${email ? ` (${email})` : ""}`;
                     return (
                       <FunctionalItemCard
@@ -937,6 +959,18 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                                 </div>
                               ) : null}
                             </div>
+                          </div>
+                          <div className="px-3.5 pb-3">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 rounded-lg text-xs"
+                              disabled={actionUserId === m._id}
+                              onClick={() => setResetStaff(m)}
+                            >
+                              비밀번호
+                            </Button>
                           </div>
                           {supportsDepartments ? (
                             <div className="px-3.5 pb-3">
@@ -1094,6 +1128,35 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                 </div>
               )}
             </section>
+            <StaffBulkRegisterDialog
+              open={bulkOpen}
+              token={token || ""}
+              businessType={businessType}
+              departments={sortedDepartments}
+              onOpenChange={setBulkOpen}
+              onCreated={() => {
+                void refreshStaff();
+                void refreshRepresentatives();
+              }}
+            />
+            <StaffPasswordResetDialog
+              open={Boolean(resetStaff)}
+              token={token || ""}
+              businessType={businessType}
+              userId={resetStaff?._id || ""}
+              label={
+                resetStaff
+                  ? `${String(resetStaff.name || "").trim() || resetStaff._id}${
+                      memberLoginLabel(resetStaff)
+                        ? ` (${memberLoginLabel(resetStaff)})`
+                        : ""
+                    }`
+                  : ""
+              }
+              onOpenChange={(open) => {
+                if (!open) setResetStaff(null);
+              }}
+            />
           </>
         )}
       </CardContent>

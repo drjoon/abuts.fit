@@ -845,6 +845,7 @@ export function RequestorPracticeReceivePage({
   const {
     requestWorkFolder: requestLabWorkFolder,
     requestHelperInstall: requestLabHelperInstall,
+    requestHelperUpdate: requestLabHelperUpdate,
     toastSaved: toastLabWorkFolderSaved,
     dialogs: labWorkFolderDialogs,
   } = useLabWorkFolderSave();
@@ -882,7 +883,8 @@ export function RequestorPracticeReceivePage({
     handleModalOpenChange: handleRequestSettingsModalOpenChange,
   } = useRequestorRequestSettings({
     enabled: true,
-    forceOnEntry: true,
+    // 수신 목록을 열 때 묻지 않는다. 작업시작·업로드에서 설정이 없으면 그때 연다.
+    forceOnEntry: false,
     onGateComplete: (files) => {
       const transfer = designSettingsGateTransferRef.current;
       designSettingsGateTransferRef.current = null;
@@ -8297,11 +8299,13 @@ export function RequestorPracticeReceivePage({
         caseFolder: selectedTransferCaseFolder,
         resolveWorkFolder: requestLabWorkFolder,
         onNeedHelperInstall: requestLabHelperInstall,
+        onNeedHelperUpdate: requestLabHelperUpdate,
         onSaved: toastLabWorkFolderSaved,
       });
     },
     [
       requestLabHelperInstall,
+      requestLabHelperUpdate,
       requestLabWorkFolder,
       saveToLabWorkFolder,
       selectedTransfer,
@@ -8330,11 +8334,13 @@ export function RequestorPracticeReceivePage({
         caseFolder: selectedTransferCaseFolder,
         resolveWorkFolder: requestLabWorkFolder,
         onNeedHelperInstall: requestLabHelperInstall,
+        onNeedHelperUpdate: requestLabHelperUpdate,
         onSaved: toastLabWorkFolderSaved,
       });
     },
     [
       requestLabHelperInstall,
+      requestLabHelperUpdate,
       requestLabWorkFolder,
       saveToLabWorkFolder,
       selectedTransferCaseFolder,
@@ -8403,12 +8409,14 @@ export function RequestorPracticeReceivePage({
         caseFolder: selectedTransferCaseFolder,
         resolveWorkFolder: requestLabWorkFolder,
         onNeedHelperInstall: requestLabHelperInstall,
+        onNeedHelperUpdate: requestLabHelperUpdate,
         onSaved: toastLabWorkFolderSaved,
       });
     },
     [
       designSoftwareValue,
       requestLabHelperInstall,
+      requestLabHelperUpdate,
       requestLabWorkFolder,
       saveToLabWorkFolder,
       selectedTransfer,

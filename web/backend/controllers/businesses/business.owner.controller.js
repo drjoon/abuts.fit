@@ -16,6 +16,11 @@ import {
   loadAnchorDepartmentsForStaff,
   resolveApprovedDepartmentId,
 } from "./business.department.controller.js";
+import {
+  createOwnerStaffAccounts,
+  resetOwnedStaffPassword,
+} from "../../services/staffBulkRegister.service.js";
+import { toStaffListFields } from "../../services/staffBulkRegister.core.js";
 
 export async function getPendingJoinRequestsForOwner(req, res) {
   try {
@@ -85,12 +90,12 @@ export async function getRepresentatives(req, res) {
     const full = await BusinessAnchor.findById(anchor._id)
       .populate({
         path: "primaryContactUserId",
-        select: "name email internalDepartmentId",
+        select: "name email loginId internalDepartmentId",
         match: { deletedAt: null },
       })
       .populate({
         path: "owners",
-        select: "name email internalDepartmentId",
+        select: "name email loginId internalDepartmentId",
         match: { deletedAt: null },
       })
       .select({ name: 1, primaryContactUserId: 1, owners: 1, businessType: 1 })
@@ -113,7 +118,7 @@ export async function getRepresentatives(req, res) {
           : {
               _id: id,
               name: String(row.name || ""),
-              email: String(row.email || ""),
+              ...toStaffListFields(row),
             },
       );
     };
@@ -324,17 +329,17 @@ export async function getMyStaffMembers(req, res) {
     const anchor = await BusinessAnchor.findById(anchorDoc._id)
       .populate({
         path: "members",
-        select: "name email internalDepartmentId",
+        select: "name email loginId internalDepartmentId",
         match: { deletedAt: null },
       })
       .populate({
         path: "primaryContactUserId",
-        select: "name email internalDepartmentId",
+        select: "name email loginId internalDepartmentId",
         match: { deletedAt: null },
       })
       .populate({
         path: "owners",
-        select: "name email internalDepartmentId",
+        select: "name email loginId internalDepartmentId",
         match: { deletedAt: null },
       })
       .select({
@@ -377,7 +382,7 @@ export async function getMyStaffMembers(req, res) {
           : {
               _id: ownerId,
               name: String((row && row.name) || ""),
-              email: String((row && row.email) || ""),
+              ...toStaffListFields(row),
             },
       );
     }
@@ -392,7 +397,7 @@ export async function getMyStaffMembers(req, res) {
             : {
                 _id: id,
                 name: String((c && c.name) || ""),
-                email: String((c && c.email) || ""),
+                ...toStaffListFields(c),
               },
         );
       });
@@ -411,7 +416,7 @@ export async function getMyStaffMembers(req, res) {
             : {
                 _id: id,
                 name: String((m && m.name) || ""),
-                email: String((m && m.email) || ""),
+                ...toStaffListFields(m),
               },
         );
       });
@@ -647,6 +652,114 @@ export async function removeMember(req, res) {
     return res.status(500).json({
       success: false,
       message: "직원 삭제 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function bulkCreateStaff(req, res) {
+  try {
+    const roleCheck = assertBusinessRole(req, res);
+    if (!roleCheck) return;
+    const { businessType } = roleCheck;
+
+    const anchor = await resolveOwnedBusiness(req, businessType);
+    if (!anchor) {
+      return res.status(403).json({
+        success: false,
+        message: "대표자 계정만 직원을 등록할 수 있습니다.",
+      });
+    }
+
+    const owner = await User.findById(req.user._id)
+      .select({
+        role: 1,
+        requestorKind: 1,
+        practiceHasInHouseLab: 1,
+        requestorServices: 1,
+      })
+      .lean();
+    if (!owner) {
+      return res.status(403).json({
+        success: false,
+        message: "대표자 계정만 직원을 등록할 수 있습니다.",
+      });
+    }
+
+    let departmentId = null;
+    const deptContext = await loadAnchorDepartmentsForStaff(anchor._id);
+    if (deptContext.usesDepartments) {
+      const deptResolved = await resolveApprovedDepartmentId(
+        anchor._id,
+        req.body?.departmentId,
+      );
+      if (deptResolved.error) {
+        return res.status(400).json({
+          success: false,
+          message:
+            deptResolved.error === "승인할 부서를 선택해주세요."
+              ? "배치할 부서를 선택해주세요."
+              : deptResolved.error,
+        });
+      }
+      departmentId = deptResolved.departmentId || null;
+    }
+
+    const result = await createOwnerStaffAccounts({
+      anchor,
+      owner,
+      password: String(req.body?.password || ""),
+      text: String(req.body?.text || ""),
+      departmentId,
+    });
+
+    return res.status(result.status).json({
+      success: result.status < 400,
+      message: result.message || undefined,
+      data: {
+        created: result.created || [],
+        failed: result.failed || [],
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "직원 등록 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function resetStaffPassword(req, res) {
+  try {
+    const roleCheck = assertBusinessRole(req, res);
+    if (!roleCheck) return;
+    const { businessType } = roleCheck;
+
+    const anchor = await resolveOwnedBusiness(req, businessType);
+    if (!anchor) {
+      return res.status(403).json({
+        success: false,
+        message: "대표자 계정만 비밀번호를 다시 정할 수 있습니다.",
+      });
+    }
+
+    const result = await resetOwnedStaffPassword({
+      anchor,
+      userId: req.params.userId,
+      password: String(req.body?.password || ""),
+    });
+    if (result.status >= 400) {
+      return res.status(result.status).json({
+        success: false,
+        message: result.message,
+      });
+    }
+    return res.json({ success: true, data: { reset: true } });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "비밀번호를 다시 정하지 못했습니다.",
       error: error.message,
     });
   }

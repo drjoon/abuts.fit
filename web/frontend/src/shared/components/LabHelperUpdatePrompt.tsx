@@ -1,61 +1,13 @@
 /**
- * 기공소·치과 로그인 시 연결 프로그램이 구버전이면 업데이트 안내 모달.
+ * 로그인·화면 진입 때 연결 프로그램 업데이트를 열지 않는다.
+ * 폴더 저장(`useLabWorkFolderSave`)·알림 설정·채팅 입력이 `LabHelperUpdateDialog`를 연다.
  * related files:
  * - web/frontend/src/shared/components/LabHelperUpdateDialog.tsx
- * - web/frontend/src/shared/hooks/useLabHelperAlarmSession.ts
- * - web/frontend/src/App.tsx
+ * - web/frontend/src/shared/files/useLabWorkFolderSave.tsx
+ * - web/frontend/src/shared/hooks/useLabHelperInstallPrompt.tsx
  * change-log:
- * - 2026-10-04: 치과(practice)도 구버전 안내(PC 알림).
- * - 2026-10-03: zip만 받지 말고 설치 안내 모달.
+ * - 2026-10-24: 로그인 자동 오픈 제거. 작업을 시작할 때 구버전이면 안내.
  */
-import { useEffect, useState } from "react";
-import { useAuthStore } from "@/store/useAuthStore";
-import { normalizeRequestorKind } from "@/shared/business/requestorCapabilities";
-import { needsLabHelperUpdate } from "@/shared/files/labHelperClient";
-import { LabHelperUpdateDialog } from "@/shared/components/LabHelperUpdateDialog";
-
-const canPromptLabHelperUpdate = (user: {
-  role?: string | null;
-  requestorKind?: string | null;
-} | null): boolean => {
-  if (!user) return false;
-  const role = String(user.role || "").trim();
-  if (role === "internalLab") return true;
-  if (role === "practice") return true;
-  if (role === "requestor") {
-    const kind = normalizeRequestorKind(user.requestorKind);
-    return kind === "lab" || kind === "practice";
-  }
-  return false;
-};
-
 export function LabHelperUpdatePrompt() {
-  const { user, isAuthenticated, token } = useAuthStore();
-  const [open, setOpen] = useState(false);
-  const enabled =
-    Boolean(token && isAuthenticated) && canPromptLabHelperUpdate(user as any);
-
-  useEffect(() => {
-    if (!enabled) {
-      setOpen(false);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      const needs = await needsLabHelperUpdate();
-      if (!cancelled && needs) setOpen(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled, token]);
-
-  if (!enabled) return null;
-
-  return (
-    <LabHelperUpdateDialog
-      open={open}
-      onResolved={() => setOpen(false)}
-    />
-  );
+  return null;
 }

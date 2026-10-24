@@ -168,6 +168,16 @@ router.get(
   authorize(BUSINESS_ORG_ROLES),
   businessController.getMyStaffMembers,
 );
+router.post(
+  "/staff/bulk",
+  authorize(BUSINESS_ORG_ROLES),
+  businessController.bulkCreateStaff,
+);
+router.post(
+  "/staff/:userId/password",
+  authorize(BUSINESS_ORG_ROLES),
+  businessController.resetStaffPassword,
+);
 router.delete(
   "/staff/:userId",
   authorize(BUSINESS_ORG_ROLES),

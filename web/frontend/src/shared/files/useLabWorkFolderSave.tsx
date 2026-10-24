@@ -14,6 +14,7 @@ import {
   type LabWorkFolderDialogReason,
 } from "@/shared/components/LabWorkFolderDialog";
 import { LabHelperInstallDialog } from "@/shared/components/LabHelperInstallDialog";
+import { LabHelperUpdateDialog } from "@/shared/components/LabHelperUpdateDialog";
 import { supportsLabHelper } from "@/shared/files/labHelperClient";
 import type {
   LabWorkFolderMode,
@@ -37,6 +38,8 @@ export function useLabWorkFolderSave(opts?: {
   >(null);
   const [helperInstallOpen, setHelperInstallOpen] = useState(false);
   const helperInstallResolveRef = useRef<null | ((connected: boolean) => void)>(null);
+  const [helperUpdateOpen, setHelperUpdateOpen] = useState(false);
+  const helperUpdateResolveRef = useRef<null | ((updated: boolean) => void)>(null);
   const lastModeRef = useRef<LabWorkFolderMode>("browser");
 
   const requestWorkFolder = useCallback<LabWorkFolderResolver>(
@@ -86,6 +89,23 @@ export function useLabWorkFolderSave(opts?: {
     helperInstallResolveRef.current = null;
     setHelperInstallOpen(false);
     resolve?.(connected);
+  }, []);
+
+  const requestHelperUpdate = useCallback(
+    () =>
+      new Promise<boolean>((resolve) => {
+        helperUpdateResolveRef.current?.(false);
+        helperUpdateResolveRef.current = resolve;
+        setHelperUpdateOpen(true);
+      }),
+    [],
+  );
+
+  const settleHelperUpdate = useCallback((updated: boolean) => {
+    const resolve = helperUpdateResolveRef.current;
+    helperUpdateResolveRef.current = null;
+    setHelperUpdateOpen(false);
+    resolve?.(updated);
   }, []);
 
   const toastSaved = useCallback(
@@ -148,8 +168,15 @@ export function useLabWorkFolderSave(opts?: {
         onCancel={() => settleWorkFolder(null)}
       />
       <LabHelperInstallDialog open={helperInstallOpen} onResolved={settleHelperInstall} />
+      <LabHelperUpdateDialog open={helperUpdateOpen} onResolved={settleHelperUpdate} />
     </>
   );
 
-  return { requestWorkFolder, requestHelperInstall, toastSaved, dialogs };
+  return {
+    requestWorkFolder,
+    requestHelperInstall,
+    requestHelperUpdate,
+    toastSaved,
+    dialogs,
+  };
 }

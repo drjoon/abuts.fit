@@ -19,7 +19,7 @@
 - UI copy 간결·중복 금지(강제): 문구는 짧게, 카드·표에 있는 금액·기간·건수는 문단에 다시 쓰지 않는다 — `.cursor/rules/ui-copy-concise.mdc`
 - 영업 방문 주체 카피(강제): **영업 담당자** (not 담당 영업자) — `.cursor/rules/sales-rep-copy.mdc`
 - 기공소 작업 폴더(강제): 채팅 「작업열기」·「다운로드」는 의뢰·디자인·보철 파일 전부를 작업 폴더 안 케이스 폴더(`buildLabCaseFolderName` = `YYYYMMDD_치과명-환자명-치아번호`)에 **풀어서** 저장한다(`useS3FileDownload.saveToLabWorkFolder`). 순서: 연결 프로그램 v3+(Windows·Mac, `labHelperClient.ts`)가 있으면 저장 후 탐색기·Finder로 폴더 열기 → 없는 Windows·Mac은 브라우저와 무관하게 `LabHelperInstallDialog`(OS별 설치 파일 자동 받기, 연결되면 이어서 저장; 닫으면 Chrome·Edge는 `showDirectoryPicker` 핸들(`labWorkFolder.ts`), Firefox·Safari는 케이스 폴더 이름 zip으로 저장하고 다시 묻지 않음) → 설치할 수 없는 기기는 폴더 핸들 또는 zip. 「작업열기」는 이미 받은 케이스면 받지 않고 폴더만 연다(`reuseSaved`), 「다운로드」는 다시 받는다. 버튼은 「저장 중 N%」 + 하단 진행 막대(`labSaveProgress`). 디자인 SW 실행·주문 등록은 하지 않는다(3Shape·exocad 모두 인자 등록 불가). 연결 프로그램: `bg/lab-cad-helper/rules.md`.
-- 기공소·치과 PC 알람(강제): 탭 숨김·브라우저 종료·다른 창 포커스 시에도 의뢰·채팅 알람은 연결 프로그램 v4+(`notify`·계정별 `session` + v14 `WS /api/lab-helper/alarms/ws`, 구버전 `GET /alarms/wait`)로 OS 알림음. 보이는 탭은 `AudioContext`(제스처 resume)로 브라우저음 + in-app 토스트(포커스 없어도). 숨긴 탭만 헬퍼 `/notify`·서버 WS. `browserAlive`는 탭 visible 여부(포커스 무관). 치과는 작업시작·완료·작업파일도 같은 플레이어. prefs=`labReceiveSoundPrefs`(전체 on/off + `soundId` 샘플 5종, 켜거나 고르면 미리듣기). 헤더 설정=`LabReceiveAlarmSettingsButton`(보기·전체 알림·**알림음**·**연결 프로그램 설치/업데이트**). 채팅 입력 포커스 시 미설치·구버전이면 `useLabHelperInstallPrompt`로 설치/업데이트 모달(탭 세션당 한 번). 구버전은 `LabHelperUpdatePrompt`(기공소·치과) 모달로도 안내, v5+는 `version.json` 자동 갱신(현재 v16). 헬퍼 OS 토스트는 웹 전역 공통 default 토스트(`border-2 primary`)와 같은 룩. 알림 **보기**는 헬퍼 `POST /open-href`로 수신함/발신함 창을 앞으로(`ba=`·BroadcastChannel로 같은 계정만). Mac 「설정 열기」는 v10+ `POST /open-privacy-settings`(헬퍼 없으면 ConfirmDialog 수동 안내). SSOT: `labHelperClient.ts`, `useLabHelperInstallPrompt.tsx`, `LabHelperUpdateDialog.tsx`, `MacPrivacySettingsOpenButton.tsx`, `chatSoundPlayer.ts`, `bg/lab-cad-helper/rules.md`.
+- 기공소·치과 PC 알람(강제): 탭 숨김·브라우저 종료·다른 창 포커스 시에도 의뢰·채팅 알람은 연결 프로그램 v4+(`notify`·계정별 `session` + v14 `WS /api/lab-helper/alarms/ws`, 구버전 `GET /alarms/wait`)로 OS 알림음. 보이는 탭은 `AudioContext`(제스처 resume)로 브라우저음 + in-app 토스트(포커스 없어도). 숨긴 탭만 헬퍼 `/notify`·서버 WS. `browserAlive`는 탭 visible 여부(포커스 무관). 치과는 작업시작·완료·작업파일도 같은 플레이어. prefs=`labReceiveSoundPrefs`(전체 on/off + `soundId` 샘플 5종, 켜거나 고르면 미리듣기). 헤더 설정=`LabReceiveAlarmSettingsButton`(보기·전체 알림·**알림음**·**연결 프로그램 설치/업데이트**). 채팅 입력 포커스 시 미설치·구버전이면 `useLabHelperInstallPrompt`로 설치/업데이트 모달(탭 세션당 한 번). 구버전은 로그인 때 열지 않는다. 폴더 저장·알림 설정·채팅 입력에서 `LabHelperUpdateDialog`로 안내. v5+는 `version.json` 자동 갱신(현재 v16). 헬퍼 OS 토스트는 웹 전역 공통 default 토스트(`border-2 primary`)와 같은 룩. 알림 **보기**는 헬퍼 `POST /open-href`로 수신함/발신함 창을 앞으로(`ba=`·BroadcastChannel로 같은 계정만). Mac 「설정 열기」는 v10+ `POST /open-privacy-settings`(헬퍼 없으면 ConfirmDialog 수동 안내). SSOT: `labHelperClient.ts`, `useLabHelperInstallPrompt.tsx`, `LabHelperUpdateDialog.tsx`, `MacPrivacySettingsOpenButton.tsx`, `chatSoundPlayer.ts`, `bg/lab-cad-helper/rules.md`.
 - 최근 변경 목록 파일: `web/frontend/modified_prep_stage_changes_2026-08-03.txt` (작업 공정 변경 이력, 프론트 표시 레벨)
 - 제조사 가공 더미 교체: 「선택」 뒤 다시 만들기는 한 줄(STL·CAM). 선택 카드 아래 STL·CAM 막대 오른쪽 「다시」·「끊기」. CAM API는 Esprit 접수만 기다린다. 검색은 로트·환자·치과·치아·임플란트·기공소. `DummyMachiningModal.tsx`
 
@@ -75,7 +75,7 @@ Notes:
   - SSOT: `src/shared/settlement/settlementUi.tsx`, `CreditLedgerModal.tsx`,
     `CreditStatisticsTab.tsx`, `.cursor/rules/ui-summary-cards.mdc`.
 - Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.
-- 모바일 PC 안내 (로그인 후 1회): 가로 768px 미만이고 로그인된 경우에만 확인 모달. 로그인·가입·비밀번호·OAuth 화면에서는 띄우지 않는다. `localStorage` `abutsfit:mobile-pc-optimized-notice:v1`=`seen` 이면 다시 띄우지 않는다. SSOT: `src/features/layout/MobilePcOptimizedNotice.tsx`.
+- 좁은 화면: PC 전용 안내 모달은 두지 않는다. 가로가 좁으면 사이드바를 접고 본문·설정을 그대로 쓴다. 대시보드 상단 메뉴는 `xl` 미만에서 연다.
 - 의뢰 취소 정책 SSOT: **준비 단계에서만** 취소 가능(불완전가공 판정 예외 유지). 레거시 '의뢰/CAM 단계 취소' 문구·판정 금지.
   - UI: `RequestorRecentRequestsCard` 취소 버튼/툴팁, `RequestorDashboardPage` 실패 토스트, `PricingPolicyDialog` 6절,
     `RequestorAbutmentPageHeader`+`PastRequestsModal`(건별·체크박스 일괄 취소, 취소 후 목록 모달 유지)
@@ -224,7 +224,7 @@ Notes:
   - 의뢰자(기공소) 설정: `requestorKind=lab`일 때 알림 **왼쪽**에 「기공비」 탭
     - `src/pages/requestor/settings/SettingsPage.tsx`
     - 구 `?tab=auto-match`·`trading-partners` → 계정. 인증 신청 UI 제거(관리자 `PracticeTransferAutoMatchTab`). 구 `?tab=ai` → 계정. 학습 안내는 약관·개인정보. 기공의뢰에 동의 버튼·모달을 두지 않는다
-    - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — 항목 카드(이름·단위·수가/리메이크). 하단 저장 버튼 없음, 항목 변경은 디바운스 자동 저장. 제목 오른쪽 마스터 On/Off(기본 off, 켜면 설정 완료·즉시 저장). **리메이크 과금은 치과의뢰 수신하기=무료·커스텀어벗 의뢰하기=건당 1만원**(기공소 무료기간 설정 없음). 수가 미설정 안내는 가입 직후가 아니라 치과 PTX 의뢰를 처음 받았을 때(미확인 수신 건) 뜬다(2026-10-12). **작업시작 클릭 시 미설정이면** `?tab=lab-fees&setup=1&from=accept`로 포워드·안내 모달. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 끊기면 별도). 임시치아는 카드 두 장(이름 모두 「임시치아」, 3치·6치 이하). 청구는 의뢰서 「임시치아」에 치아 수 구간으로 합산. **카탈로그에 없는 신규 항목 저장 시 어벗츠 수가에 Off로 동기화·관리자 알림.**
+    - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — 항목 카드(이름·단위·수가/리메이크). 하단 저장 버튼 없음, 항목 변경은 디바운스 자동 저장. 제목 오른쪽 마스터 On/Off(기본 off, 켜면 설정 완료·즉시 저장). **리메이크 과금은 치과의뢰 수신하기=무료·커스텀어벗 의뢰하기=건당 1만원**(기공소 무료기간 설정 없음). 수가 미설정 안내는 화면을 열거나 미확인 수신이 있을 때 뜨지 않는다. **작업시작 클릭 시 미설정이면** `?tab=lab-fees&setup=1&from=accept`로 포워드·안내 모달. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 끊기면 별도). 임시치아는 카드 두 장(이름 모두 「임시치아」, 3치·6치 이하). 청구는 의뢰서 「임시치아」에 치아 수 구간으로 합산. **카탈로그에 없는 신규 항목 저장 시 어벗츠 수가에 Off로 동기화·관리자 알림.**
     - 가입 이유 배너: `LabDashboardTopBanners` — 기공소 사이드 설정과 계정 팝업 사이(짧은 카피).
       - 가입 이유 (`LabPlatformBenefitsBanner`) → 클릭 시 모달
       - 대시보드 `[정책 안내]` 옆 `[가입 이유]`로도 동일 모달 열기(기공소)
@@ -246,7 +246,7 @@ Notes:
   - `src/pages/admin/support/AdminSmsPage.tsx` (로컬 SMS 템플릿 CRUD·사업자/사용자 휴대폰 수신자 선택)
 - 역할별 정산
   - 공통 UI: `src/shared/settlement/settlementUi.tsx` · VAT 카피 `src/shared/settlement/affiliateVat.ts` (의뢰자 크레딧/기공크레딧 최신 스타일)
-  - 기공소/어벗츠기공소: 정산(`/dashboard/credits`)「지급」탭 — `LabSettlementPayoutTab.tsx`(기공크레딧 잔액·**월별** 적립/지급/상태(지급·계산서), 면세 계산서, max-w-4xl). 월 지급은 **다음 달 초 사용 유보 50만원** 제외 후 잔액만(`LAB_SETTLEMENT_PAYOUT_RESERVE_WON`). 통장 사본·입금 계좌는 설정>사업자(`PayoutAccountCard`, 기공소·딜러사 공통). 미등록 시 지급 진입·정산일 7일 전 일 1회 안내, 지급일까지 미등록이면 1개월 이월. 구 `/dashboard/payments`·`?tab=settlement`는 `?tab=payout`으로 호환.
+  - 기공소/어벗츠기공소: 정산(`/dashboard/credits`)「지급」탭 — `LabSettlementPayoutTab.tsx`(기공크레딧 잔액·**월별** 적립/지급/상태(지급·계산서), 면세 계산서, max-w-4xl). 월 지급은 **다음 달 초 사용 유보 50만원** 제외 후 잔액만(`LAB_SETTLEMENT_PAYOUT_RESERVE_WON`). 통장 사본·입금 계좌는 설정>사업자(`PayoutAccountCard`, 기공소·딜러사 공통). 미등록 시 지급 탭에 들어갔을 때 일 1회 안내, 지급일까지 미등록이면 1개월 이월. 구 `/dashboard/payments`·`?tab=settlement`는 `?tab=payout`으로 호환.
   - 딜러(salesman): 설정>사업자에서 동일 `PayoutAccountCard`·위수탁 카드. 구 설정 `?tab=payment|payout` → 사업자.
   - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·지급상태·금액·잔액·거래내역). 유형 열은 생략(모두 커스텀어벗 생산+배송비). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 **배송자 BA**(requestor businessAnchor·우편함)별. PTX는 치과명이 아니라 기공소 BA로 표기. 장부·미정산=부가세 포함가(어벗 1개당 매입가 기본 8,800, 리메이크 6,600). 무료 크레딧 결제 포함 약정 단가가 미정산으로 쌓이며 말일 일괄 지급(재가산 없음·세금계산서÷1.1). 정산규칙 모달은 딜러와 같은 칩·표(제조 49.5% 고정·부가세 포함).
   - 딜러: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 부가세 포함가 장부·미정산, 지급=적립 총액·세금계산서(÷1.1). 정산규칙=거래처 판매가 − 1만원. 딜리버리 월정액은 적립에서 빼지 않고 딜러사가 딜리버리 회사에 직접 입금. 거래처 카드의 판매가는 그 거래처 `dealerUnitPrice`(없으면 1.5만). 기간 수수료는 그 기간 합계.
@@ -702,7 +702,7 @@ Notes:
   - 가입 role: `requestor` | `salesman`만. `practice` role **제거**.
   - 공개 가입(`/signup`): `requestor` | `salesman`. 복원 draft에 `practice`가 있으면 requestor로 전환.
   - 이메일·소셜 가입 중간 단계에 소개자 코드 입력(선택, 확인 후 다음·미입력은 건너뛰기). 직원 가입(`/signup/staff`)과 URL `ref`는 생략. 건너뛰면 대표가 가입 후 14일간 설정-사업자에서 등록하고, 그 이후에는 어벗츠 소개(`AAA`)로 고정된다. 같은 기한은 딜러십 정책·영업팀 의뢰자 정책·약관·서비스·도움말에 둔다(`dealershipPolicyCopy`).
-  - 온보딩(`/dashboard/wizard`): 휴대전화 → 역할 → 사업자. 사업자등록은 가입 시 필수(크레딧 선결제·의뢰 가능 요건, 통신판매업 면제 법적 요건). 통장은 정산할 금액이 있을 때만, 수가표는 첫 PTX 수신 때 안내.
+  - 온보딩(`/dashboard/wizard`): 휴대전화 → 역할 → 사업자. 사업자등록은 가입 시 필수(크레딧 선결제·의뢰 가능 요건, 통신판매업 면제 법적 요건). 통장은 지급 탭에 들어갔을 때, 수가표는 작업시작 때 미설정이면 안내.
     - **치과 대표(owner)**: 사업자등록(검증) 직후 **구강 스캔 사용 여부**(필수 예/아니오). 직원(member)·기공소는 생략.
     - SSOT: `PracticeOralScanStep` · `practiceProfile.usesOralScan` / `BusinessAnchor.usesOralScan`. 설정「디지털」탭(키 `digital`, 구 `oral-scan`은 같은 탭)에서 구강 스캐너와 보철 작업물(`requireLabProsthesisUpload`, 기본 켬)을 체크 즉시 저장. 없음=요구. 협력 기공소 의뢰만 생성 때 `billing` 스냅샷을 따른다. 어벗츠기공본부 내부·하청은 완성 보철 업로드가 필수다.
     - 어벗츠 출시 행사 신청 폼은 구강 스캔 사용 여부를 항상 받는다. 프로필·사업자에 값이 있으면 그 값을 기본 선택한다.

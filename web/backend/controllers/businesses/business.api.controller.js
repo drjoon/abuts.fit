@@ -42,6 +42,8 @@ export const {
   removeMember,
   approveJoinRequest,
   rejectJoinRequest,
+  bulkCreateStaff,
+  resetStaffPassword,
 } = ownerController;
 
 export const {
@@ -75,6 +77,8 @@ export default {
   removeMember,
   approveJoinRequest,
   rejectJoinRequest,
+  bulkCreateStaff,
+  resetStaffPassword,
   listDepartments,
   createDepartment,
   updateDepartment,

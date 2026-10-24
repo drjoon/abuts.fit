@@ -15,7 +15,7 @@
 // - 2026-08-21: 설정 GET과 아노 토글 race — 사용자 변경 후 stale 로드가 ON→OFF로 덮지 않음.
 // - 2026-08-16: 미설정 게이트 모달 — 당장은 X/취소로 닫기 가능. 재진입·새로고침 시 재노출.
 // - 2026-08-16: internalLab(어벗츠기공소)도 사업체 기본값으로 로드·저장. 개인(requestor*) 필드 미전송.
-// - 2026-08-16: 의뢰자·internalLab 미설정 시 기공의뢰수신/어벗생산의뢰 진입 모달 강제.
+// - 2026-10-24: 진입 시 모달 강제 해제. 작업시작·업로드·파일 첨부 때 미설정이면 연다.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -35,7 +35,7 @@ export type RequestSettingsDefaults = {
 type UseRequestorRequestSettingsOptions = {
   /** false면 API/강제 게이트 비활성 */
   enabled?: boolean;
-  /** 진입 시 미설정이면 모달 강제 */
+  /** true면 화면 진입 시 미설정 모달을 연다. 기본은 사용 시점에만. */
   forceOnEntry?: boolean;
   /** Draft __default__ 등 외부 시드와 동기화 */
   onDefaultsChange?: (next: Partial<RequestSettingsDefaults>) => void;
@@ -104,7 +104,7 @@ export function useRequestorRequestSettings(
 ) {
   const {
     enabled = true,
-    forceOnEntry = true,
+    forceOnEntry = false,
     onDefaultsChange,
     onGateComplete,
     draftDesignSoftware,

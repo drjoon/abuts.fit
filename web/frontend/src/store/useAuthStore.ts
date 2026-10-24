@@ -64,6 +64,10 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  /** 대표가 만든 직원 계정의 짧은 로그인 아이디 */
+  loginId?: string;
+  /** 처음 비밀번호. 본인 비밀번호로 바꾸기 전에는 true */
+  mustChangePassword?: boolean;
   role: UserRole;
   subRole?: string | null;
   avatar?: string;
@@ -144,6 +148,8 @@ const normalizeApiUser = (u: unknown): User | null => {
     id,
     name: String(row.name || ""),
     email: String(row.email || ""),
+    loginId: row.loginId ? String(row.loginId) : "",
+    mustChangePassword: Boolean(row.mustChangePassword),
     role: row.role as UserRole,
     subRole: row.subRole ? String(row.subRole) : null,
     profileImage:

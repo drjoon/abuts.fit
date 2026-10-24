@@ -3,6 +3,7 @@
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
+// - 2026-10-24: 미확인 수신·카탈로그 공백으로는 안 연다. 작업시작(from=accept)에서 수가가 없을 때만.
 // - 2026-10-12: 수가 미설정 안내는 치과 PTX 의뢰를 처음 받았을 때(미확인 수신 건)·작업시작 시점에만.
 // - 2026-10-07: freeRemakeYears 게이트 제거(리메이크 무료기간 설정 폐지).
 // - 2026-09-21: freeRemakeYears 미설정 시 설정 탭 포워드·하이라이트.
@@ -188,10 +189,12 @@ export const LabFeeSetupPrompt = ({
       return;
     }
 
+    if (!fromAccept) {
+      setOpen(false);
+      return;
+    }
     const userId = String(user.id);
-    const skipUnconfigured = readSessionFlag(sessionKeyUnconfigured(userId));
-    const skipCatalog = readSessionFlag(sessionKeyCatalog(userId));
-    if (!fromAccept && skipUnconfigured && skipCatalog) {
+    if (readSessionFlag(sessionKeyUnconfigured(userId))) {
       setOpen(false);
       return;
     }
@@ -206,51 +209,12 @@ export const LabFeeSetupPrompt = ({
       if (cancelled) return;
       if (!res.ok) return;
       const configured = readLabFeeScheduleConfigured(res.data);
-      const setupNames = readLabFeeNeedSetupNames(res.data);
-
       if (configured === false) {
-        if (skipUnconfigured) {
-          setOpen(false);
-          return;
-        }
-        // 가입 직후엔 띄우지 않는다. 치과 PTX 의뢰를 처음 받았을 때(미확인 수신 건 존재)
-        // 또는 작업시작 시점(from=accept)에 안내.
-        if (fromAccept) {
-          setMode("unconfigured");
-          setCatalogNeedNames([]);
-          setOpen(true);
-          return;
-        }
-        void apiFetch<unknown>({
-          path: "/api/practice/transfers/received-unread-count",
-          method: "GET",
-          token,
-        }).then((countRes) => {
-          if (cancelled || !countRes.ok) return;
-          const body =
-            countRes.data && typeof countRes.data === "object"
-              ? (countRes.data as Record<string, unknown>)
-              : {};
-          const inner =
-            body.data && typeof body.data === "object"
-              ? (body.data as Record<string, unknown>)
-              : body;
-          if (Number(inner.unreadCount || 0) > 0) {
-            setMode("unconfigured");
-            setCatalogNeedNames([]);
-            setOpen(true);
-          }
-        });
-        return;
-      }
-
-      if (setupNames.length && !skipCatalog) {
-        setMode("catalog");
-        setCatalogNeedNames(setupNames);
+        setMode("unconfigured");
+        setCatalogNeedNames([]);
         setOpen(true);
         return;
       }
-
       setOpen(false);
     });
 

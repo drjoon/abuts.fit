@@ -23,11 +23,39 @@ const userSchema = new mongoose.Schema(
         "유효한 이메일 주소를 입력해주세요.",
       ],
     },
+    /** 대표가 만든 직원 계정의 짧은 로그인 아이디. 이메일이 있으면 비운다. */
+    loginId: {
+      type: String,
+      lowercase: true,
+      trim: true,
+      unique: true,
+      sparse: true,
+    },
     password: {
       type: String,
       required: [true, "비밀번호는 필수 입력 항목입니다."],
-      minlength: [8, "비밀번호는 최소 8자 이상이어야 합니다."],
       select: false, // 쿼리 결과에서 비밀번호 필드 제외
+      validate: {
+        validator(value) {
+          if (typeof value !== "string") return false;
+          // pre-save 해시가 다시 검증될 때는 길이를 보지 않는다.
+          if (/^\$2[aby]\$/.test(value)) return true;
+          // 직원 로그인 아이디 계정은 영문 소문자 6자리. 일반 계정은 8자 이상.
+          if (this.loginId) return /^[a-z]{6}$/.test(value);
+          return value.length >= 8;
+        },
+        message() {
+          if (this.loginId) {
+            return "처음 비밀번호는 영문 소문자 6자리로 적어 주세요. 예: abcdef";
+          }
+          return "비밀번호는 최소 8자 이상이어야 합니다.";
+        },
+      },
+    },
+    /** 대표가 알려 준 처음 비밀번호. 본인 비밀번호로 바꾸면 해제. */
+    mustChangePassword: {
+      type: Boolean,
+      default: false,
     },
     role: {
       type: String,

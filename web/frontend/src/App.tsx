@@ -5,7 +5,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppLayout } from "@/features/layout/AppLayout";
 import { CookieConsentBanner } from "@/features/layout/CookieConsentBanner";
-import { MobilePcOptimizedNotice } from "@/features/layout/MobilePcOptimizedNotice";
 import { ScrollToTop } from "@/features/layout/ScrollToTop";
 import { LoadingScreen } from "@/shared/ui/feedback/LoadingScreen";
 import {
@@ -24,7 +23,6 @@ import { useSocket } from "@/shared/hooks/useSocket";
 import { useChatMessageSound } from "@/shared/hooks/useChatMessageSound";
 import { useLabReceiveUnreadSound } from "@/shared/hooks/useLabReceiveUnreadSound";
 import { useLabHelperAlarmSession } from "@/shared/hooks/useLabHelperAlarmSession";
-import { LabHelperUpdatePrompt } from "@/shared/components/LabHelperUpdatePrompt";
 import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 // related files:
@@ -46,7 +44,8 @@ import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPa
 // - 2026-10-17: 치과 스토어 복원 — 결제는 OB 후불(기공소는 선수금 유지).
 // - 2026-10-08: 할인그룹 폐지 — `/dashboard/discount-group`은 대시보드로 이동.
 // - 2026-10-03: 치과 role=practice도 기공의뢰서 URL(`/dashboard/practice-transfers`)로 알림 보기가 열리게.
-// - 2026-09-30: 로그인 후 모바일 1회 — PC 최적화 안내 확인 모달.
+// - 2026-10-24: 연결 프로그램 업데이트는 로그인 때 열지 않는다. 폴더 저장·알림 설정·채팅 입력에서 묻는다.
+// - 2026-10-24: PC 전용 안내 모달 제거. 좁은 화면은 접히는 사이드바로 그대로 쓴다.
 // - 2026-09-28: 쿠키 동의 배너 — 문구 너비에 맞추고 가용 영역 중앙.
 // - 2026-09-26: 하단 쿠키 동의 배너 — 동의 후 localStorage로 재노출 생략.
 // - 2026-09-23: 관리자 설정 평탄 탭 — /settings·/partners 구 URL을 account|business|platform… 로 전달.
@@ -618,7 +617,6 @@ const App = () => {
           <Toaster />
           <Sonner />
           <UiTextZoomShortcuts />
-          <LabHelperUpdatePrompt />
           <AppLayout>
             <Suspense fallback={<LoadingScreen />}>
               <Routes>
@@ -1215,7 +1213,6 @@ const App = () => {
               </Routes>
             </Suspense>
             <CookieConsentBanner />
-            <MobilePcOptimizedNotice />
             <NewChatWidget />
           </AppLayout>
         </BrowserRouter>

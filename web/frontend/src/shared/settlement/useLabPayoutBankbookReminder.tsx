@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/settlement/LabPayoutBankbookRemindDialog.tsx
 // - web/frontend/src/shared/components/business/settings/business/businessMeCache.ts
 // change-log:
+// - 2026-10-24: 대시보드 진입에서는 열지 않는다. 지급 탭(forceOnMount)에서만.
 // - 2026-10-12: 정산받을 기공크레딧 잔액이 있을 때만 안내.
 // - 2026-09-16: 기공소 통장사본 미등록 안내(지급 진입·정산일 7일 전, 일 1회).
 import { useCallback, useEffect, useState } from "react";

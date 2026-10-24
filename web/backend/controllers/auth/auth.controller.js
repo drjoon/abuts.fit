@@ -28,6 +28,14 @@ import { Types } from "mongoose";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { defaultProfileImageForSeed } from "../../utils/defaultProfileImage.js";
+import { toAsciiSlug } from "../../utils/hangulSlug.js";
+import {
+  isStaffInitialPassword,
+  isStrongPassword,
+  PASSWORD_POLICY_MESSAGE,
+  STAFF_INITIAL_PASSWORD_MESSAGE,
+} from "../../utils/passwordPolicy.js";
+import { classifyLoginCredential } from "../../services/staffBulkRegister.core.js";
 import {
   assertSignupVerifications,
   consumeSignupVerifications,
@@ -268,132 +276,6 @@ async function resolveReferrerTargets({
     allowedSignupRoles,
   };
 }
-
-// $ 는 .env 파일의 변수 확장 문자이므로 비밀번호에 사용하지 않는다.
-// 이 규칙은 시딩(PASSWORD_ALPHABET), 회원가입, 비밀번호 재설정 모두에 동일하게 적용한다.
-const isStrongPassword = (password) => {
-  const p = String(password || "");
-  if (p.length < 10) return false;
-  if (p.includes("$")) return false;
-  if (!/[!@#%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(p)) return false;
-  return true;
-};
-
-const HANGUL_BASE = 0xac00;
-const HANGUL_END = 0xd7a3;
-const CHOSEONG = [
-  "g",
-  "kk",
-  "n",
-  "d",
-  "tt",
-  "r",
-  "m",
-  "b",
-  "pp",
-  "s",
-  "ss",
-  "",
-  "j",
-  "jj",
-  "ch",
-  "k",
-  "t",
-  "p",
-  "h",
-];
-const JUNGSEONG = [
-  "a",
-  "ae",
-  "ya",
-  "yae",
-  "eo",
-  "e",
-  "yeo",
-  "ye",
-  "o",
-  "wa",
-  "wae",
-  "oe",
-  "yo",
-  "u",
-  "wo",
-  "we",
-  "wi",
-  "yu",
-  "eu",
-  "ui",
-  "i",
-];
-const JONGSEONG = [
-  "",
-  "k",
-  "k",
-  "ks",
-  "n",
-  "nj",
-  "nh",
-  "t",
-  "l",
-  "lk",
-  "lm",
-  "lb",
-  "ls",
-  "lt",
-  "lp",
-  "lh",
-  "m",
-  "p",
-  "ps",
-  "t",
-  "t",
-  "ng",
-  "t",
-  "t",
-  "k",
-  "t",
-  "p",
-  "h",
-];
-
-const romanizeHangulSyllable = (ch) => {
-  const code = ch.charCodeAt(0);
-  if (code < HANGUL_BASE || code > HANGUL_END) return "";
-
-  const sIndex = code - HANGUL_BASE;
-  const cho = Math.floor(sIndex / (21 * 28));
-  const jung = Math.floor((sIndex % (21 * 28)) / 28);
-  const jong = sIndex % 28;
-
-  return `${CHOSEONG[cho]}${JUNGSEONG[jung]}${JONGSEONG[jong]}`;
-};
-
-const toAsciiSlug = (value = "") => {
-  const raw = String(value || "").trim().toLowerCase();
-  if (!raw) return "";
-
-  let out = "";
-  for (const ch of raw) {
-    const code = ch.charCodeAt(0);
-    if (code >= 0xac00 && code <= 0xd7a3) {
-      out += romanizeHangulSyllable(ch);
-      continue;
-    }
-    if ((code >= 97 && code <= 122) || (code >= 48 && code <= 57)) {
-      out += ch;
-      continue;
-    }
-    if (ch === " " || ch === "-" || ch === "_") {
-      out += "-";
-      continue;
-    }
-  }
-
-  return out
-    .replace(/-+/g, "-")
-    .replace(/^-+/, "")
-    .replace(/-+$/, "");
-};
 
 const createPracticePseudoEmail = (seed = "practice") => {
   const base = toAsciiSlug(seed).slice(0, 32);
@@ -1009,15 +891,15 @@ async function login(req, res) {
     const clientIp =
       req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "";
 
-    // 이메일 정규화
-    const normalizedEmail = String(email || "")
-      .trim()
-      .toLowerCase();
+    const credential = classifyLoginCredential(email);
+    const normalizedEmail = credential.value;
 
-    // 이메일로 사용자 찾기
-    const user = await User.findOne({ email: normalizedEmail }).select(
-      "+password",
-    );
+    const user =
+      credential.kind === "loginId"
+        ? await User.findOne({ loginId: credential.value }).select("+password")
+        : credential.kind === "email"
+          ? await User.findOne({ email: credential.value }).select("+password")
+          : null;
     if (!user) {
       await logSecurityEvent({
         action: "LOGIN_FAILED_USER_NOT_FOUND",
@@ -1028,7 +910,7 @@ async function login(req, res) {
       });
       return res.status(401).json({
         success: false,
-        message: "이메일 또는 비밀번호가 올바르지 않습니다.",
+        message: "아이디 또는 비밀번호가 올바르지 않습니다.",
       });
     }
 
@@ -1056,7 +938,7 @@ async function login(req, res) {
         });
         return res.status(401).json({
           success: false,
-          message: "이메일 또는 비밀번호가 올바르지 않습니다.",
+          message: "아이디 또는 비밀번호가 올바르지 않습니다.",
         });
       }
     } catch (error) {
@@ -1551,6 +1433,7 @@ async function practiceChangePassword(req, res) {
 
     const user = matched[0];
     user.password = newPassword;
+    user.mustChangePassword = false;
     await user.save();
 
     return res.status(200).json({
@@ -1754,11 +1637,24 @@ async function changePassword(req, res) {
       });
     }
 
-    // 새 비밀번호 설정
+    const staffPassword = Boolean(user.mustChangePassword || user.loginId);
+    if (staffPassword) {
+      if (!isStaffInitialPassword(newPassword)) {
+        return res.status(400).json({
+          success: false,
+          message: STAFF_INITIAL_PASSWORD_MESSAGE,
+        });
+      }
+    } else if (!isStrongPassword(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: PASSWORD_POLICY_MESSAGE,
+      });
+    }
+
     user.password = newPassword;
-    console.log("[changePassword] 저장 전 비밀번호:", user.password);
+    user.mustChangePassword = false;
     await user.save();
-    console.log("[changePassword] 저장 후 비밀번호:", user.password);
 
     res.status(200).json({
       success: true,
@@ -1919,6 +1815,7 @@ async function resetPassword(req, res) {
 
     // 새 비밀번호 설정
     user.password = newPassword;
+    user.mustChangePassword = false;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
     await user.save();

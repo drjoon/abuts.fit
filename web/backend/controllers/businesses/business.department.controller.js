@@ -8,6 +8,7 @@ import User from "../../models/user.model.js";
 import { Types } from "mongoose";
 import { resolveOwnedBusiness } from "./business.utils.js";
 import { assertBusinessRole } from "./businessRole.util.js";
+import { toStaffListFields } from "../../services/staffBulkRegister.core.js";
 import {
   ensureDefaultDepartments,
   findDepartmentById,
@@ -393,10 +394,12 @@ export function enrichMemberWithDepartment(member, departmentMap) {
   const deptId = member?.internalDepartmentId
     ? String(member.internalDepartmentId)
     : "";
+  const identity = toStaffListFields(member);
   return {
     _id: String(member._id || member.id || ""),
     name: String(member.name || ""),
-    email: String(member.email || ""),
+    email: identity.email,
+    loginId: identity.loginId,
     internalDepartmentId: deptId || null,
     departmentName: deptId ? departmentMap.get(deptId) || "" : "",
   };

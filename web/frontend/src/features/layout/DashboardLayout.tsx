@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
+import { MustChangePasswordDialog } from "@/features/auth/MustChangePasswordDialog";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { useAdminAbutsFeePendingStore } from "@/store/useAdminAbutsFeePendingStore";
 import { AdminPeriodDateFilter } from "@/shared/ui/AdminPeriodDateFilter";
@@ -45,6 +46,7 @@ import {
 // - 2026-09-21: 딜러·영업팀 사이드 IA 통일(현장·성과·협업·지원). 대시보드·오늘·거래처 / 성과·요구사항·정산 / 문의·설정.
 // - 2026-09-18: 기본 기공수가 대기 카운트를 공유 스토어로 설정 허브 탭 배지와 동기화.
 // - 2026-09-16: 어벗츠기공소 사이드 — 크레딧·정산 이중 메뉴를「정산」(/dashboard/credits)로 통합. 지급은 크레딧「지급」탭.
+// - 2026-10-24: 통장사본 안내는 대시보드 진입이 아니라 지급 탭에서만.
 // - 2026-09-16: 기공소 통장사본 미등록 — 정산일 7일 전 일 1회 안내 모달.
 // - 2026-09-13: CNC 워크시트 — 불완전가공을 상단 공정 탭에서 제거하고 R&D 하위 탭으로 이동.
 // - 2026-09-13: 관리자「스토어」사이드바 액션 대기 배지(PENDING·READY·SHIPPED).
@@ -159,7 +161,6 @@ import { LabFeeSetupPrompt } from "@/features/settings/LabFeeSetupPrompt";
 import { LabDashboardTopBanners } from "@/features/lab/LabDashboardTopBanners";
 import { GuideTourProvider } from "@/shared/guideTour/GuideTourProvider";
 import { GuideTourSidebarButton } from "@/shared/guideTour/GuideTourSidebarButton";
-import { useLabPayoutBankbookReminder } from "@/shared/settlement/useLabPayoutBankbookReminder";
 import {
   coalescePracticeHasInHouseLab,
   coalesceRequestorKind,
@@ -655,8 +656,6 @@ export const DashboardLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const { dialog: labPayoutBankbookRemindDialog } =
-    useLabPayoutBankbookReminder();
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [paidCredit, setPaidCredit] = useState<number | null>(null);
   const [freeCredit, setFreeCredit] = useState<number | null>(null);
@@ -1072,7 +1071,8 @@ export const DashboardLayout = () => {
   useEffect(() => {
     if (!user) return;
     if (isPracticeUser || user.role !== "requestor") return;
-    if (user.approvedAt) return;
+    // 대표가 만든 직원은 이미 승인된 계정이다.
+    if (user.approvedAt || user.loginId) return;
     if (isMockUser) return;
     if (location.pathname.startsWith("/dashboard")) {
       navigate("/signup?mode=social_complete", { replace: true });
@@ -1760,11 +1760,11 @@ export const DashboardLayout = () => {
     >
     <RemoteSupportProvider>
     <div className="min-h-dvh overflow-hidden bg-background">
+      <MustChangePasswordDialog />
       <LabFeeSetupPrompt
         isLab={requestorKind === "lab" || user.role === "internalLab"}
         ready={!requestorAccessLoading || user.role === "internalLab"}
       />
-      {labPayoutBankbookRemindDialog}
       {user.role === "requestor" && requestorKind === "lab" ? (
         <LabDemoConversionConfirmModal />
       ) : null}
@@ -1877,7 +1877,7 @@ export const DashboardLayout = () => {
                       {user.name}
                     </p>
                     <p className="text-xs leading-none text-muted-foreground">
-                      {user.email}
+                      {user.loginId || user.email}
                     </p>
                     <Badge
                       variant={getRoleBadgeVariant(displayRole)}

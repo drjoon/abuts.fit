@@ -1478,6 +1478,7 @@ export const PracticeFileTransferPage = ({
   const {
     requestWorkFolder,
     requestHelperInstall,
+    requestHelperUpdate,
     toastSaved: toastWorkFolderSaved,
     dialogs: workFolderDialogs,
   } = useLabWorkFolderSave({ counterpartLabel: "기공소명" });
@@ -6518,12 +6519,14 @@ export const PracticeFileTransferPage = ({
         caseFolder: selectedTransferCaseFolder,
         resolveWorkFolder: requestWorkFolder,
         onNeedHelperInstall: requestHelperInstall,
+        onNeedHelperUpdate: requestHelperUpdate,
         onSaved: toastWorkFolderSaved,
       });
     },
     [
       accountDesignSoftware,
       requestHelperInstall,
+      requestHelperUpdate,
       requestWorkFolder,
       saveToLabWorkFolder,
       selectedTransferCaseFolder,
@@ -6552,11 +6555,13 @@ export const PracticeFileTransferPage = ({
         caseFolder: selectedTransferCaseFolder,
         resolveWorkFolder: requestWorkFolder,
         onNeedHelperInstall: requestHelperInstall,
+        onNeedHelperUpdate: requestHelperUpdate,
         onSaved: toastWorkFolderSaved,
       });
     },
     [
       requestHelperInstall,
+      requestHelperUpdate,
       requestWorkFolder,
       saveToLabWorkFolder,
       selectedTransferCaseFolder,

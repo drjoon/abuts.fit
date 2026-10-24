@@ -199,7 +199,8 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
     Boolean(kind) &&
     user?.role === "requestor" &&
     (kind === "practice" || kind === "lab") &&
-    !completed;
+    !completed &&
+    !user?.mustChangePassword;
 
   const steps = useMemo(
     () => (kind ? getGuideTourSteps(kind, { hidePracticeAbutment }) : []),
@@ -210,7 +211,6 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
   const [stepId, setStepId] = useState<string | null>(null);
   const [spotlightCopyOverride, setSpotlightCopyOverride] =
     useState<GuideTourSpotlightCopyOverride>(null);
-  const autoStartedRef = useRef(false);
   const persistSeq = useRef(0);
 
   const stepIndex = (() => {
@@ -347,17 +347,7 @@ export function GuideTourProvider({ kind, children }: ProviderProps) {
     goToStep(prev.id);
   }, [kind, step, stepIndex, steps, goToStep]);
 
-  // 첫 진입 자동 시작: 미수료 + resume 없음
-  useEffect(() => {
-    if (!eligible || !kind) return;
-    if (autoStartedRef.current) return;
-    if (resumeStepId) return;
-    if (active) return;
-    autoStartedRef.current = true;
-    const first = steps[0]?.id;
-    if (!first) return;
-    goToStep(first);
-  }, [eligible, kind, resumeStepId, active, steps, goToStep]);
+  // 첫 진입에 투어를 열지 않는다. 사이드바에서 직접 시작한다.
 
   // 스텝 path로 맞추기 (resume 후 페이지 로드)
   useEffect(() => {

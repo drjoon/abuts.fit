@@ -3,7 +3,7 @@
  * related files:
  * - web/frontend/src/shared/components/LabHelperInstallDialog.tsx
  * - web/frontend/src/shared/files/labHelperClient.ts
- * - web/frontend/src/shared/components/LabHelperUpdatePrompt.tsx
+ * - web/frontend/src/shared/files/useLabWorkFolderSave.tsx
  * change-log:
  * - 2026-10-04: 대기 중 현재/필요 버전 표시(구버전이면 스피너만 도는 혼동 방지).
  * - 2026-10-04: Mac 2단계 — 휴지통 안내 삭제, 「완료」만 → 「완료」를.

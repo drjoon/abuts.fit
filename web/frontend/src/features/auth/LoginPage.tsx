@@ -62,10 +62,13 @@ const DEV_ADMIN_ACCOUNT = DEV_ACCOUNTS.find(({ label }) =>
   /관리자|admin/i.test(label),
 );
 
-const isValidEmail = (value: string) => {
-  const email = String(value || "").trim();
-  if (!email) return false;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+const isLoginIdentifier = (value: string) => {
+  const credential = String(value || "").trim().toLowerCase();
+  if (!credential) return false;
+  if (credential.includes("@")) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(credential);
+  }
+  return /^[0-9a-z가-힣]{1,24}$/.test(credential);
 };
 
 export const LoginPage = () => {
@@ -106,10 +109,10 @@ export const LoginPage = () => {
     const credential = String(email || "").trim().toLowerCase();
 
     if (step === "email") {
-      if (!isValidEmail(credential)) {
+      if (!isLoginIdentifier(credential)) {
         toast({
-          title: "이메일을 확인해주세요",
-          description: "올바른 이메일 형식으로 입력해주세요.",
+          title: "아이디를 확인해주세요",
+          description: "이메일 또는 아이디로 입력해주세요.",
           variant: "destructive",
         });
         return;
@@ -134,7 +137,7 @@ export const LoginPage = () => {
       } else {
         toast({
           title: "로그인 실패",
-          description: result.message || "이메일 또는 비밀번호를 확인하세요.",
+          description: result.message || "아이디 또는 비밀번호를 확인하세요.",
           variant: "destructive",
         });
       }
@@ -263,8 +266,8 @@ export const LoginPage = () => {
                           <Mail className="absolute left-3 top-3 h-4 w-4 text-white/50" />
                           <Input
                             id="email"
-                            type="email"
-                            placeholder="이메일을 입력하세요"
+                            type="text"
+                            placeholder="이메일 또는 아이디"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             className="h-11 pl-10 border-white/10 bg-white/5 text-white placeholder:text-white/40"

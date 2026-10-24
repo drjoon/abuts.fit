@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 커스텀어벗 의뢰 소개 모달은 화면을 열 때 띄우지 않는다.
 // - 2026-10-23: 생산 의뢰 화면 라벨 — 치과·기공소 모두 커스텀어벗 의뢰하기. 치과 보철은 기공소에 의뢰하기.
 // - 2026-10-23: 기공소 이동 라벨 — 치과의뢰 수신하기. 중복 안내 — 커스텀어벗 의뢰하기.
 // - 2026-09-26: 기공소 구강스캔 안내 라벨 — 치과로부터 → 어벗츠로부터.
@@ -326,7 +327,7 @@ const NewRequestPageContent = () => {
     handleModalOpenChange: handleDesignSoftwareModalOpenChange,
   } = useRequestorRequestSettings({
     enabled: user?.role === "requestor",
-    forceOnEntry: true,
+    forceOnEntry: false,
     draftDesignSoftware: String(caseInfosMap?.__default__?.designSoftware || ""),
     draftAnodizingEnabled:
       typeof caseInfosMap?.__default__?.anodizingEnabled === "boolean"
@@ -1093,27 +1094,6 @@ const NewRequestPageContent = () => {
     }
     setPracticeIntroOpen(false);
   }, [practiceAuthUserId]);
-
-  useEffect(() => {
-    if (!isPracticeRequestor) return;
-    if (draftStatus === "loading") return;
-    if (!practiceAuthUserId) return;
-    if (guideTour.active) return;
-
-    try {
-      if (
-        localStorage.getItem(
-          buildPracticeNewRequestIntroSeenKey(practiceAuthUserId),
-        ) === "1"
-      ) {
-        return;
-      }
-    } catch {
-      // ignore
-    }
-
-    setPracticeIntroOpen(true);
-  }, [isPracticeRequestor, draftStatus, practiceAuthUserId, guideTour.active]);
 
   useEffect(() => {
     if (!guideTour.active) return;

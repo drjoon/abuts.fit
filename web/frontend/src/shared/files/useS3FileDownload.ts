@@ -49,6 +49,7 @@ import {
 import {
   checkLabHelperCase,
   findLabHelper,
+  LAB_HELPER_CURRENT_VERSION,
   LabHelperError,
   putLabHelperCaseFile,
   readLabHelperInstallDeclined,
@@ -180,6 +181,7 @@ export function useS3FileDownload(token?: string | null) {
   const [labSaveProgress, setLabSaveProgress] = useState<number | null>(null);
   const downloadZipBusyRef = useRef(false);
   const labSaveBusyRef = useRef(false);
+  const helperUpdateAskedRef = useRef(false);
   const downloadingKeysRef = useRef<Set<string>>(new Set());
 
   const beginBusy = useCallback((busyKey: string) => {
@@ -361,6 +363,8 @@ export function useS3FileDownload(token?: string | null) {
       resolveWorkFolder?: LabWorkFolderResolver;
       /** 연결 프로그램 설치 안내. 연결되면 true */
       onNeedHelperInstall?: () => Promise<boolean>;
+      /** 구버전 연결 프로그램. 갱신하면 true */
+      onNeedHelperUpdate?: () => Promise<boolean>;
       onSaved?: (result: LabWorkFolderSaveResult) => void;
     }) => {
       if (labSaveBusyRef.current) return;
@@ -554,7 +558,18 @@ export function useS3FileDownload(token?: string | null) {
 
       try {
         let result: LabWorkFolderSaveResult | null;
-        const health = await findLabHelper();
+        let health = await findLabHelper();
+        if (
+          health &&
+          Number(health.version || 0) < LAB_HELPER_CURRENT_VERSION &&
+          opts.onNeedHelperUpdate &&
+          !helperUpdateAskedRef.current
+        ) {
+          helperUpdateAskedRef.current = true;
+          setLabSaveProgress(null);
+          const updated = await opts.onNeedHelperUpdate();
+          if (updated) health = (await findLabHelper()) || health;
+        }
         if (health) {
           result = await saveWithHelper(health);
         } else if (
