@@ -109,6 +109,17 @@ process.once("SIGINT", () => {
 dbReady
   .then(async () => {
     console.log("MongoDB 연결 준비 완료");
+    try {
+      const { refreshPracticeLaunchMode } = await import(
+        "./utils/practiceObBeta.util.js"
+      );
+      await refreshPracticeLaunchMode({ force: true });
+    } catch (error) {
+      console.error(
+        "[startup] practice launch mode load failed",
+        error?.message || error,
+      );
+    }
 
     // subRole null 사용자 자동 수정 (1회성)
     (async () => {

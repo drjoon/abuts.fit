@@ -363,6 +363,42 @@ const systemSettingsSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: null,
     },
+    // 런칭 베타 → 실사용. 관리자 대시보드 확인 시 live. 목록은 전환 시각의 기록.
+    // related: services/practiceLaunch.service.js, utils/practiceObBeta.util.js
+    practiceLaunch: {
+      status: { type: String, enum: ["beta", "live"], default: "beta" },
+      switchedAt: { type: Date, default: null },
+      switchedByUserId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      switchedByName: { type: String, default: "" },
+      adminTasks: {
+        type: [
+          new mongoose.Schema(
+            {
+              id: { type: String, default: "" },
+              text: { type: String, default: "" },
+            },
+            { _id: false },
+          ),
+        ],
+        default: undefined,
+      },
+      platformTasks: {
+        type: [
+          new mongoose.Schema(
+            {
+              id: { type: String, default: "" },
+              text: { type: String, default: "" },
+            },
+            { _id: false },
+          ),
+        ],
+        default: undefined,
+      },
+    },
     // 가공 화면 더미 제품. 소재 직경 그룹(6·8·10·12·14)마다 로트로 고른 requestId.
     // related: controllers/cnc/dummyProduct.js
     dummyMachiningProducts: {

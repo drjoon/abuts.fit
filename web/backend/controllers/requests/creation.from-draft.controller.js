@@ -88,6 +88,7 @@ import {
 import { isPracticeObPostpaidActiveFromAnchor } from "../../utils/practiceObPostpaid.util.js";
 import {
   buildCustomAbutmentSpendBuckets,
+  refreshPracticeLaunchMode,
   resolveLabCustomAbutmentCreditHoldPolicyFromAnchor,
 } from "../../utils/practiceObBeta.util.js";
 import { positiveSpendableCredit } from "../../services/creditBalance.service.js";
@@ -513,6 +514,7 @@ export async function createRequestsFromDraft(req, res) {
       earlyOrderableCases.push([key, ci]);
     }
     const [
+      ,
       loadedDraft,
       chargeLockOrder,
       creditSettingsBase,
@@ -522,6 +524,7 @@ export async function createRequestsFromDraft(req, res) {
       earlyDuplicateCandidates,
       earlyOrderableRows,
     ] = await Promise.all([
+      refreshPracticeLaunchMode(),
       DraftRequest.findById(draftId).lean(),
       creditAnchorReady
         ? ChargeOrder.findOne({

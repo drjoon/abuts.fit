@@ -14,6 +14,7 @@ import {
   redactMongoUri,
   resolveJestMongoUri,
 } from "./mongoSafety.js";
+import { resetPracticeLaunchModeCache } from "../utils/practiceObBeta.util.js";
 
 if (String(process.env.NODE_ENV || "").trim() === "production") {
   throw new Error("Jest refuses to run with NODE_ENV=production.");
@@ -126,6 +127,7 @@ beforeAll(async () => {
 
 // 각 테스트 후 컬렉션 정리 — 로컬 연결일 때만
 afterEach(async () => {
+  resetPracticeLaunchModeCache();
   await clearCollections();
 });
 

@@ -4,21 +4,63 @@
 // - web/backend/utils/guideTour.util.js
 // - web/backend/services/requestCreditHold.service.js
 //
-// 런칭 전 베타: OB 자동정산·PTX 잠금은 테스트치과·테스트기공소만. 그 외는 무제한(마이너스 허용).
-// 베타 종료: 치과 PTX는 OB 후불(`isPracticeObPostpaidActive`). 기공소 Request CA는 선충전·무료만(`resolveLabCustomAbutmentCreditHoldPolicy`).
+// 런칭 전 베타: 미납이어도 신규 기공의뢰를 막지 않는다. 일반 기공소 CA는 무료크레딧만.
+// 실사용: 관리자 대시보드 전환(`practiceLaunch.status=live`) 또는 PRACTICE_OB_LAUNCH_BETA=false.
+// 베타 종료: 미납 정지는 `checkPracticeSettlementLock`. 기공소 Request CA는 선충전·무료(`resolveLabCustomAbutmentCreditHoldPolicy`).
 import BusinessAnchor from "../models/businessAnchor.model.js";
+import SystemSettings from "../models/systemSettings.model.js";
 import { isGuideTourAlwaysOnBusiness } from "./guideTour.util.js";
+
+const PRACTICE_LAUNCH_MODE_TTL_MS = 5000;
+let practiceLaunchCache = { loaded: false, live: false, at: 0 };
+
+/** `PRACTICE_OB_LAUNCH_BETA=false|0|off` 이면 DB와 무관하게 실사용. 테스트·긴급 종료용. */
+export function envForcesPracticeLaunchLive() {
+  const raw = String(process.env.PRACTICE_OB_LAUNCH_BETA ?? "")
+    .trim()
+    .toLowerCase();
+  return raw === "false" || raw === "0" || raw === "off";
+}
+
+export function notePracticeLaunchLive(live) {
+  practiceLaunchCache = {
+    loaded: true,
+    live: Boolean(live),
+    at: Date.now(),
+  };
+}
+
+export function resetPracticeLaunchModeCache() {
+  practiceLaunchCache = { loaded: false, live: false, at: 0 };
+}
+
+/** SystemSettings.practiceLaunch.status === live 이면 실사용. 짧은 캐시. */
+export async function refreshPracticeLaunchMode({ force = false } = {}) {
+  if (
+    !force &&
+    practiceLaunchCache.loaded &&
+    Date.now() - practiceLaunchCache.at < PRACTICE_LAUNCH_MODE_TTL_MS
+  ) {
+    return { live: practiceLaunchCache.live };
+  }
+  const doc = await SystemSettings.findOne({ key: "global" })
+    .select({ practiceLaunch: 1 })
+    .lean();
+  const live = String(doc?.practiceLaunch?.status || "") === "live";
+  notePracticeLaunchLive(live);
+  return { live };
+}
 
 /**
  * 런칭 전 베타 과금 완화 ON/OFF.
- * - true(기본): 테스트 계정만 OB·PTX 잠금, 그 외 치과 무제한 후불·일반 기공소 CA 무료크레딧
- * - false: 치과 PTX OB 후불 overdraft. 기공소 CA는 항상 선충전·무료만
+ * - true(기본): 미납으로 신규 기공의뢰를 막지 않음. 일반 기공소 CA는 무료크레딧만
+ * - false: 미납 정지 적용. 기공소 CA는 선충전·무료
+ * 환경변수가 실사용을 강제하면 그 값이 우선. 아니면 관리자 전환 기록.
  */
 export function isPracticeObLaunchBetaActive() {
-  const raw = String(process.env.PRACTICE_OB_LAUNCH_BETA ?? "true")
-    .trim()
-    .toLowerCase();
-  return raw !== "false" && raw !== "0" && raw !== "off";
+  if (envForcesPracticeLaunchLive()) return false;
+  if (practiceLaunchCache.loaded && practiceLaunchCache.live) return false;
+  return true;
 }
 
 /** OB 자동정산(장기동의·월 정산·Hold)을 적용할 사업자명 SSOT */
@@ -53,6 +95,7 @@ export async function loadBusinessAnchorBillingGateContext(anchorId) {
 
 /** 베타: 테스트치과만 OB 후불·PTX 잠금 대상. 그 외 치과는 OB 없이 후불(overdraft) */
 export async function isPracticeBetaUnlimitedPostpaid(practiceAnchorId) {
+  await refreshPracticeLaunchMode();
   if (!isPracticeObLaunchBetaActive()) return false;
   const ctx = await loadBusinessAnchorBillingGateContext(practiceAnchorId);
   if (!ctx || ctx.isLab) return false;
@@ -61,6 +104,7 @@ export async function isPracticeBetaUnlimitedPostpaid(practiceAnchorId) {
 
 /** 베타: 테스트기공소만 기공소 CA 선불(자동정산 테스트). 그 외 기공소는 무료크레딧만 사용 */
 export async function isLabObAutopayPrepaidTestAnchor(labAnchorId) {
+  await refreshPracticeLaunchMode();
   if (!isPracticeObLaunchBetaActive()) return false;
   const ctx = await loadBusinessAnchorBillingGateContext(labAnchorId);
   if (!ctx?.isLab) return false;
@@ -69,6 +113,7 @@ export async function isLabObAutopayPrepaidTestAnchor(labAnchorId) {
 
 /** 일반 기공소 커스텀어벗(Request): 유료·기공크레딧 없이 무료크레딧 버킷만 차감 */
 export async function isLabCustomAbutmentFreeCreditOnly(labAnchorId) {
+  await refreshPracticeLaunchMode();
   if (!isPracticeObLaunchBetaActive()) return false;
   const ctx = await loadBusinessAnchorBillingGateContext(labAnchorId);
   if (!ctx?.isLab) return false;
@@ -103,6 +148,7 @@ export function resolveLabCustomAbutmentCreditHoldPolicyFromAnchor(anchor) {
 }
 
 export async function resolveLabCustomAbutmentCreditHoldPolicy(anchorId) {
+  await refreshPracticeLaunchMode({ force: true });
   const ctx = await loadBusinessAnchorBillingGateContext(anchorId);
   return resolveLabCustomAbutmentCreditHoldPolicyFromAnchor(ctx?.anchor || null);
 }

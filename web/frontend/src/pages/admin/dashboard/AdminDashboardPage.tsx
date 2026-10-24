@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-10-24: 런칭 - 실사용 전환 버튼. 베타 중에는 미납으로 주문을 막지 않는다.
 // - 2026-10-21: 대시보드 타일 — 잘린 막대·배송 목록을 카드 안에 맞추고, 빈 카드는 줄이고 확인할 카드만 키운다.
 // - 2026-10-21: 짧은 커프 카드 — 50건 통과·실패 0이면 준비 경고를 끈다.
 // - 2026-10-21: 신규 커넥션 요청 — 확인 시 휴지통·복원.
@@ -90,6 +91,7 @@ import { RequestorShippingModeCard } from "@/pages/admin/dashboard/RequestorShip
 import { IndirectAbutmentCard } from "@/pages/admin/dashboard/IndirectAbutmentCard";
 import { AdminDemoConversionCard } from "@/pages/admin/dashboard/AdminDemoConversionCard";
 import { AdminPracticeDelinquencyCard } from "@/pages/admin/dashboard/AdminPracticeDelinquencyCard";
+import { AdminPracticeLaunchButton } from "@/pages/admin/dashboard/AdminPracticeLaunchButton";
 import { AdminBusinessVerificationCard } from "@/pages/admin/dashboard/AdminBusinessVerificationCard";
 import { AdminPopbillPointCard } from "@/pages/admin/dashboard/AdminPopbillPointCard";
 import { AdminPopbillBankCard } from "@/pages/admin/dashboard/AdminPopbillBankCard";
@@ -2188,7 +2190,11 @@ export const AdminDashboardPage = () => {
       <DashboardShell
         title={`안녕하세요, ${user.name}님!`}
         subtitle="시스템 관리 대시보드입니다."
-        headerRight={undefined}
+        headerRight={
+          user?.role === "admin" ? (
+            <AdminPracticeLaunchButton token={token} />
+          ) : undefined
+        }
         statsGridClassName="flex flex-col gap-3"
         topSection={undefined}
         stats={

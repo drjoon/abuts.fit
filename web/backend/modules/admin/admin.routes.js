@@ -129,6 +129,10 @@ import {
   adminGetPopbillPointChargeUrl,
 } from "../../controllers/admin/admin.popbillPoint.controller.js";
 import {
+  adminGetPracticeLaunch,
+  adminSwitchPracticeLaunch,
+} from "../../controllers/admin/adminPracticeLaunch.controller.js";
+import {
   adminGetPopbillBank,
   adminSyncPopbillBank,
 } from "../../controllers/admin/admin.popbillBank.controller.js";
@@ -403,6 +407,10 @@ router.get("/popbill/point", adminGetPopbillPoint);
 router.post("/popbill/point/charge-url", adminGetPopbillPointChargeUrl);
 router.get("/popbill/bank", adminGetPopbillBank);
 router.post("/popbill/bank/sync", adminSyncPopbillBank);
+
+// 런칭 베타 → 실사용. 미납 주문 거부는 전환 뒤에만.
+router.get("/practice-launch", adminGetPracticeLaunch);
+router.post("/practice-launch/switch", adminSwitchPracticeLaunch);
 
 // 대시보드 통계
 router.get("/dashboard", getDashboardStats);

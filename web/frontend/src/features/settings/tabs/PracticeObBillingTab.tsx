@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 베타 중에는 미납 주문 정지 문구를 숨긴다.
 // - 2026-10-24: 입금할 금액은 하이라이트. 미확인 안내는 두 줄.
 // - 2026-10-24: 충전 페이지처럼 왼쪽 금액은 파란 그라데이션, 계좌번호는 크게.
 // - 2026-10-24: 금액은 왼쪽, 입금자명·계좌는 오른쪽. 입금자명은 라벨 옆.
@@ -52,6 +53,8 @@ type MonthlySettlement = {
 
 type PracticeBillingOverview = {
   practiceName: string;
+  /** 실사용 전환 뒤에만 미납으로 새 기공의뢰를 막는다. */
+  unpaidOrderPause?: boolean;
   depositAccount?: {
     bankName: string;
     accountNumber: string;
@@ -142,6 +145,7 @@ export function PracticeObBillingTab() {
         const next = res.data.data;
         setData(next);
         if (
+          next.unpaidOrderPause !== false &&
           next.settlements.some((row) => settlementPhase(row) === "paused")
         ) {
           setHistoryOpen(true);
@@ -178,10 +182,16 @@ export function PracticeObBillingTab() {
   }
 
   const { currentMonthEstimate, settlements, depositAccount, practiceName } = data;
+  const pauseOrders = data.unpaidOrderPause !== false;
+  const visiblePhase = (row: MonthlySettlement) => {
+    const phase = settlementPhase(row);
+    if (!pauseOrders && phase === "paused") return "open";
+    return phase;
+  };
   const openBill = settlements.find(
-    (row) => settlementPhase(row) !== "received" && row.totalAmount > 0,
+    (row) => visiblePhase(row) !== "received" && row.totalAmount > 0,
   );
-  const paused = openBill ? settlementPhase(openBill) === "paused" : false;
+  const paused = openBill ? visiblePhase(openBill) === "paused" : false;
   const depositAmount = openBill?.totalAmount ?? currentMonthEstimate.totalAmount;
   const monthTotal = currentMonthEstimate.totalAmount;
   const dueMonth = openBill?.yearMonth || currentMonthEstimate.yearMonth;
@@ -222,7 +232,7 @@ export function PracticeObBillingTab() {
               <span className="text-2xl font-semibold">원</span>
             </p>
             <p className="mt-2 text-sm text-slate-600">{cue.usageLabel}</p>
-            {cue.dueLabel && !paused ? (
+                {cue.dueLabel && !paused ? (
               <p
                 className={cn(
                   "mt-2 text-sm font-semibold",
@@ -230,7 +240,7 @@ export function PracticeObBillingTab() {
                 )}
               >
                 {cue.dueLabel}
-                {cue.late ? (
+                {pauseOrders && cue.late ? (
                   <>
                     <br />
                     미납 시 추가 주문 정지
@@ -315,7 +325,7 @@ export function PracticeObBillingTab() {
             <CollapsibleContent className="space-y-2.5 px-5 pb-5 sm:px-6 sm:pb-6">
               <Separator className="mb-2" />
               {settlements.map((row) => {
-                const phase = settlementPhase(row);
+                const phase = visiblePhase(row);
                 const rowCue = resolvePracticeDepositCue({
                   todayYmd: toKstYmd(new Date()) || "",
                   usageYearMonth: row.yearMonth,
@@ -347,7 +357,7 @@ export function PracticeObBillingTab() {
                     {phase !== "received" && rowCue.dueLabel ? (
                       <p className="mt-1 text-xs text-slate-500">
                         {rowCue.dueLabel}
-                        {rowCue.late ? (
+                        {pauseOrders && rowCue.late ? (
                           <>
                             <br />
                             미납 시 추가 주문 정지

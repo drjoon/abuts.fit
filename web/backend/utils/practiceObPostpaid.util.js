@@ -5,7 +5,10 @@
 // - web/backend/utils/practiceObBeta.util.js
 // - rules.md (치과 OB 후불 SSOT)
 import BusinessAnchor from "../models/businessAnchor.model.js";
-import { isPracticeObLaunchBetaActive } from "./practiceObBeta.util.js";
+import {
+  isPracticeObLaunchBetaActive,
+  refreshPracticeLaunchMode,
+} from "./practiceObBeta.util.js";
 
 /**
  * 치과 기공료·스토어는 계좌 자동이체 없이 후불이다.
@@ -22,6 +25,7 @@ export function isPracticeObPostpaidActiveFromAnchor(anchor) {
 }
 
 export async function isPracticeObPostpaidActive(practiceAnchorId) {
+  await refreshPracticeLaunchMode({ force: true });
   const id = String(practiceAnchorId || "").trim();
   if (!id) return false;
   const anchor = await BusinessAnchor.findById(id)

@@ -25,6 +25,16 @@ import {
 } from "../../utils/creditLock.util.js";
 
 describe("practiceObBilling & checkCreditLock", () => {
+  // 이 파일은 실사용 정산 잠금을 검증한다. 베타 기본값에서는 미납 거부를 하지 않는다.
+  const prevBeta = process.env.PRACTICE_OB_LAUNCH_BETA;
+  beforeAll(() => {
+    process.env.PRACTICE_OB_LAUNCH_BETA = "false";
+  });
+  afterAll(() => {
+    if (prevBeta === undefined) delete process.env.PRACTICE_OB_LAUNCH_BETA;
+    else process.env.PRACTICE_OB_LAUNCH_BETA = prevBeta;
+  });
+
   test("aggregatePracticeMonthUsage — 외부 기공물은 수행 기공소, 어벗츠 기공사업부·커스텀어벗·스토어는 법인", async () => {
     const practice = await BusinessAnchor.create({
       businessNumberNormalized: "5234567890",

@@ -1236,6 +1236,6 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - API: 치과 `GET /api/practice/billing/overview`. 담당자 `GET/POST /api/admin/practice-lab-fees`.
   - 워커: `jobs/monthlyPracticeObSettlementWorker.js` (1일 09:00 KST 이후 확정·문자, 재안내는 매시간 재시도).
   - 후불 활성: `utils/practiceObPostpaid.util.js` — 치과는 항상 후불. 기공소 Request CA는 `isPracticeOnlyObPostpaidActive`로 사전검사 생략하지 않음.
-  - **런칭 전 베타**: `PRACTICE_OB_LAUNCH_BETA`(기본 `true`). 일반 기공소 CA는 무료크레딧만. 치과 미입금 정지는 베타와 무관하게 적용.
+  - **런칭 전 베타**: 기본 ON. `SystemSettings.practiceLaunch.status=live` 또는 `PRACTICE_OB_LAUNCH_BETA=false`면 종료. 베타 중에는 미납으로 신규 PTX를 막지 않고, 일반 기공소 CA는 무료크레딧만. 관리자 `POST /api/admin/practice-launch/switch`가 할 일 목록을 기록하고 실사용으로 켠다.
   - 게이트: `checkCreditLock`은 ChargeOrder·거래처 가격 승인만. 기공료 정지는 `checkPracticeSettlementLock`, **신규 PTX 생성만**(`enforceSettlementLock: true`).
   - 보증금: 월 이용 1천만원 초과(`PRACTICE_DEPOSIT_GUIDANCE_THRESHOLD`)는 안내만. 개별 기공소 직접 수취, 플랫폼 미보관.

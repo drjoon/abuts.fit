@@ -30,6 +30,10 @@ import { emitCreditBalanceUpdatedToBusiness } from "../utils/creditRealtime.js";
 import { resolvePerformingLabAnchorId } from "../utils/practiceTransferAutoMatchCore.js";
 import User from "../models/user.model.js";
 import SystemSettings from "../models/systemSettings.model.js";
+import {
+  isPracticeObLaunchBetaActive,
+  refreshPracticeLaunchMode,
+} from "../utils/practiceObBeta.util.js";
 import { sendPopbillXMS } from "../utils/popbill.util.js";
 import { issuePracticeObPaymentInvoices } from "./practiceObPaymentInvoice.service.js";
 import {
@@ -779,6 +783,7 @@ export async function getPracticeObBillingOverview({
   );
 
   const upcoming = resolvePracticeSettlementCalendar(currentYearMonth);
+  await refreshPracticeLaunchMode({ force: true });
   const depositAccount = await getPracticeDepositAccount();
   const consent = anchor.openBankingConsent || {};
   const expiresAt = consent.expiresAt ? new Date(consent.expiresAt) : null;
@@ -857,6 +862,8 @@ export async function getPracticeObBillingOverview({
       labPayoutOnYmd: upcoming.labPayoutOnYmd,
     },
     depositAccount,
+    /** 실사용 전환 뒤에만 미납으로 신규 기공의뢰를 막는다. 베타 중에는 false. */
+    unpaidOrderPause: !isPracticeObLaunchBetaActive(),
     settlements: settlements.map((s) => ({
       id: String(s._id),
       yearMonth: s.yearMonth,
@@ -1083,6 +1090,8 @@ async function sendSettlementNoticeForRow(row, now, account) {
 }
 
 async function sendReopenNoticeIfNeeded(row, now) {
+  await refreshPracticeLaunchMode({ force: true });
+  if (isPracticeObLaunchBetaActive()) return false;
   const suspendAt = row?.scheduledTransferAt
     ? new Date(row.scheduledTransferAt).getTime()
     : NaN;
