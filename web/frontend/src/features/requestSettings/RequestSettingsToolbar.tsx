@@ -5,22 +5,18 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 //
 // history:
+// - 2026-10-24: 수신 채팅에서 어벗츠 정품 버튼을 뺀다. SW·유지홈·아노는 그대로 둔다.
 // - 2026-10-24: 수신 채팅 유지홈·아노다이징은 버튼 팝오버.
-// - 2026-10-23: 채팅 스크류는 ExoCAD·아노와 같은 줄의 버튼.
-// - 2026-10-23: 스크류는 RequestScrewSupplySection으로 SW·아노 아래 항상 노출(팝오버 밖).
 // - 2026-09-30: 채팅 작업 줄은 설정 아이콘 하나에 SW·아노를 넣고 맨 왼쪽에 둔다.
 // - 2026-09-14: 모바일·좁은 폭 — 아이콘 우선(라벨은 sm+). 디자인SW·아노다이징 아이콘.
 // - 2026-09-14: 버튼 라벨을 선택된 SW명으로 다시 표시(미설정 시 「디자인SW」).
 // - 2026-09-03: 버튼 라벨을 저장된 SW명(ExoCAD) 대신 고정 「디자인SW」로.
 import { useState } from "react";
-import { Droplets, Monitor, Rows3, Settings } from "lucide-react";
+import { Droplets, Monitor, Rows3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/shared/ui/cn";
 import { CaseOptionPopoverButton } from "@/shared/components/practice/CaseOptionPopoverButton";
 import { ShortPostRetentionDialog } from "@/shared/components/practice/ShortPostRetentionDialog";
-import { RequestScrewSupplySection } from "@/shared/components/practice/ScrewSupplyField";
-import type { ScrewSupply } from "@/shared/practice/screwSupply";
 import type { ShortPostRetentionChoice } from "@/pages/requestor/new_request/utils/shortPostRetention";
 
 type RequestSettingsToolbarProps = {
@@ -41,13 +37,8 @@ type RequestSettingsToolbarProps = {
   iconOnly?: boolean;
   /** true면 라벨을 SW·아노로 축약(채팅 어벗 CTA 옆) */
   shortLabels?: boolean;
-  /** 채팅 작업 줄 — 설정 아이콘 하나에 SW·아노를 넣는다 */
+  /** 채팅 작업 줄 — SW·유지홈·아노를 버튼으로 둔다 */
   menu?: boolean;
-  /** 이번 기공의뢰 스크류. 채팅 옵션에서만 넘긴다. */
-  screwSupply?: ScrewSupply;
-  screwManufacturerLabel?: string;
-  screwSaving?: boolean;
-  onScrewSupplyChange?: (value: ScrewSupply) => void;
 };
 
 /** 디자인 소프트웨어 · 아노다이징 기본값 버튼 (어벗생산의뢰 / 기공의뢰수신 공통) */
@@ -65,10 +56,6 @@ export function RequestSettingsToolbar({
   iconOnly = false,
   shortLabels = false,
   menu = false,
-  screwSupply = "abuts",
-  screwManufacturerLabel = "제조사",
-  screwSaving = false,
-  onScrewSupplyChange,
 }: RequestSettingsToolbarProps) {
   const [retentionOpen, setRetentionOpen] = useState(false);
   const fullLabel = String(designSoftwareLabel || "").trim() || "디자인SW";
@@ -178,44 +165,11 @@ export function RequestSettingsToolbar({
     </>
   );
 
-  const screwSection = onScrewSupplyChange ? (
-    <RequestScrewSupplySection
-      appearance="buttons"
-      value={screwSupply}
-      manufacturerLabel={screwManufacturerLabel}
-      disabled={screwSaving}
-      idPrefix="chat-screw"
-      onChange={onScrewSupplyChange}
-    />
-  ) : null;
-
   if (menu) {
-    if (screwSection) {
-      return (
-        <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
-          {controls}
-          {screwSection}
-        </div>
-      );
-    }
     return (
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 w-8 shrink-0 px-0"
-            aria-label="설정"
-            title="디자인 소프트웨어 · 아노다이징"
-          >
-            <Settings className="h-4 w-4" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="z-[360] w-auto p-2">
-          <div className="flex items-center gap-1.5">{controls}</div>
-        </PopoverContent>
-      </Popover>
+      <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
+        {controls}
+      </div>
     );
   }
 
