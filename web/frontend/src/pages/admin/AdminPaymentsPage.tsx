@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 정산규칙은 요약 카드 오른쪽. 카드 안내는 한 사실.
 // - 2026-10-22: 요약 카드는 금액만. 기공사업부 수식은 원청−매입=순액. 기간 필터는 관리자 상단과 중복이라 허브에서는 숨김.
 // - 2026-10-13: 커스텀어벗 정산 규칙 — 딜러 적립 총액 입금, 딜리버리는 딜러사 직접 입금.
 // - 2026-10-07: 커스텀어벗 — 제조 49.5% 고정. 어벗츠 40% 대안 표기 제거.
@@ -972,10 +973,70 @@ export default function AdminPaymentsPage({
                 presets={SETTLEMENT_PERIOD_PRESETS}
               />
             )}
+          </div>
+        }
+        statsGridClassName={SETTLEMENT_STAT_ROW_CLASS}
+        stats={
+          <>
+            <SettlementStatCard
+              className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
+              label="1. 스토어"
+              value={dash ?? Number(store?.periodGrossInclusive || 0)}
+              selected={selectedAxis === "store"}
+              onClick={() => setSelectedAxis("store")}
+              hint="기성품 · 과세"
+              hintTooltip="부가세 포함 매출입니다."
+            />
+            <SettlementStatCard
+              className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
+              label="2. 커스텀어벗"
+              value={dash ?? Number(customAbut?.periodPaidSpend || 0)}
+              selected={selectedAxis === "customAbut"}
+              onClick={() => setSelectedAxis("customAbut")}
+              hint="생산·공급"
+              hintTooltip="이 기간의 유료 소비입니다."
+              footer={
+                isLoading ? null : (
+                  <FactLines
+                    lines={[
+                      `하청 ${formatWonWithUnit(manufacturerEarn)}`,
+                      `미정산 ${formatWonWithUnit(
+                        manufacturerSummary?.periodBalanceAmount,
+                      )}`,
+                    ]}
+                  />
+                )
+              }
+            />
+            <SettlementStatCard
+              className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
+              label="3. 기공사업부"
+              value={dash ?? Number(labRevenue || 0)}
+              selected={selectedAxis === "labDivision"}
+              onClick={() => setSelectedAxis("labDivision")}
+              hint="순액 · 면세"
+              hintTooltip="원청 기공료에서 하청 매입을 뺀 금액입니다."
+              footer={
+                isLoading ? null : (
+                  <FactLines
+                    lines={[
+                      `원청 ${formatWonWithUnit(
+                        labDivision?.periodSettlementEarn,
+                      )}`,
+                      `매입 ${formatWonWithUnit(
+                        labDivision?.subcontractPurchaseAmount,
+                      )}`,
+                    ]}
+                  />
+                )
+              }
+            />
+            <div className="grid shrink-0 grid-cols-1 self-center">
             <SettlementPolicyDialog
               title="정산 규칙"
               description="스토어 · 커스텀어벗 · 기공사업부"
               contentClassName="sm:max-w-3xl"
+              triggerClassName="ml-0"
             >
               <Tabs defaultValue="customAbut" className="min-w-0 space-y-3">
                 <TabsList className="grid h-10 w-full grid-cols-3 rounded-xl bg-slate-100 p-1">
@@ -1065,64 +1126,7 @@ export default function AdminPaymentsPage({
                 </TabsContent>
               </Tabs>
             </SettlementPolicyDialog>
-          </div>
-        }
-        statsGridClassName={SETTLEMENT_STAT_ROW_CLASS}
-        stats={
-          <>
-            <SettlementStatCard
-              className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
-              label="1. 스토어"
-              value={dash ?? Number(store?.periodGrossInclusive || 0)}
-              selected={selectedAxis === "store"}
-              onClick={() => setSelectedAxis("store")}
-              hint="기성품 · 과세"
-              hintTooltip="부가세 포함 매출입니다. 제조·딜러·개발·어벗츠 비율은 아래 상세와 설정 › 분배비율에 있습니다."
-            />
-            <SettlementStatCard
-              className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
-              label="2. 커스텀어벗"
-              value={dash ?? Number(customAbut?.periodPaidSpend || 0)}
-              selected={selectedAxis === "customAbut"}
-              onClick={() => setSelectedAxis("customAbut")}
-              hint="생산·공급"
-              hintTooltip="기간 유료 소비입니다. 하청은 약정 단가, 판매가 분배는 정산 규칙에 있습니다."
-              footer={
-                isLoading ? null : (
-                  <FactLines
-                    lines={[
-                      `하청 ${formatWonWithUnit(manufacturerEarn)}`,
-                      `미정산 ${formatWonWithUnit(
-                        manufacturerSummary?.periodBalanceAmount,
-                      )}`,
-                    ]}
-                  />
-                )
-              }
-            />
-            <SettlementStatCard
-              className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
-              label="3. 기공사업부"
-              value={dash ?? Number(labRevenue || 0)}
-              selected={selectedAxis === "labDivision"}
-              onClick={() => setSelectedAxis("labDivision")}
-              hint="순액 · 면세"
-              hintTooltip="원청 기공료 − 하청 매입입니다. 법인 면세 계산서입니다."
-              footer={
-                isLoading ? null : (
-                  <FactLines
-                    lines={[
-                      `원청 ${formatWonWithUnit(
-                        labDivision?.periodSettlementEarn,
-                      )}`,
-                      `매입 ${formatWonWithUnit(
-                        labDivision?.subcontractPurchaseAmount,
-                      )}`,
-                    ]}
-                  />
-                )
-              }
-            />
+            </div>
           </>
         }
         mainLeft={
@@ -1143,7 +1147,7 @@ export default function AdminPaymentsPage({
                         hint={`${SETTLEMENT_TAXABLE_INVOICE_LABEL} · ${(
                           store?.periodSaleCount || 0
                         ).toLocaleString()}건`}
-                        hintTooltip="부가세 포함가. 공급가·VAT는 아래 타일."
+                        hintTooltip="부가세 포함가입니다."
                         compact
                       />
                     }
@@ -1154,7 +1158,7 @@ export default function AdminPaymentsPage({
                           dash ?? Number(store?.plannedManufacturerSupply || 0)
                         }
                         hint={`${pctLabel(storeRates?.manufacturerPercent)} · 설정 기준`}
-                        hintTooltip="기간 공급가 × 스토어 제조사 분배비율(재무 › 설정 › 분배비율)."
+                        hintTooltip="설정한 제조 비율입니다."
                         compact
                       />
                     }
@@ -1168,7 +1172,7 @@ export default function AdminPaymentsPage({
                             Number(store?.plannedAbutsSupply || 0)
                         }
                         hint="딜러 · 개발운영 · 어벗츠"
-                        hintTooltip="판매가 대비 설정 비율. 장부 귀속은 월말 세금계산서(어벗츠)와 별도 확인."
+                        hintTooltip="설정한 비율입니다."
                         compact
                       />
                     }
@@ -1234,7 +1238,7 @@ export default function AdminPaymentsPage({
                             )}
                           </>
                         }
-                        hintTooltip="의뢰자 유료 소비(의뢰+배송). 분배는 배송 제외."
+                        hintTooltip="의뢰와 배송의 유료 소비입니다."
                         compact
                       />
                     }
@@ -1264,7 +1268,7 @@ export default function AdminPaymentsPage({
                           dash ?? Number(customAbut?.residualTotalSupply || 0)
                         }
                         hint={`딜러 ${DEALERSHIP_BAND_RANGE_LABEL} · 개발 1,000원 · 어벗츠 순`}
-                        hintTooltip="판매가 − 제조 매입 − 딜러. 개발운영은 어벗츠 몫에서 뺍니다."
+                        hintTooltip="판매가에서 제조·딜러를 뺀 금액입니다."
                         compact
                       />
                     }
@@ -1364,7 +1368,7 @@ export default function AdminPaymentsPage({
                         label="순액"
                         value={dash ?? Number(labRevenue || 0)}
                         hint="원청 − 매입"
-                        hintTooltip="기공사업부 수행분입니다. 아래 비율은 기공료 기준 참고입니다."
+                        hintTooltip="기공사업부가 수행한 금액입니다."
                         compact
                       />
                     }

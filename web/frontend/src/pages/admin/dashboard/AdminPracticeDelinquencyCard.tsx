@@ -1,11 +1,14 @@
+// change-log:
+// - 2026-10-24: 미납 치과 창 — 구간 색·금액 오른쪽. 안내는 한 사실.
 // related files:
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // - web/backend/utils/practiceSettlementDelinquency.js
 // - web/frontend/src/pages/admin/finance/AdminPracticeLabFeeTab.tsx
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { Wallet } from "lucide-react";
 import { DashStat, DashTile } from "@/shared/ui/dashboard/DashTile";
+import { cn } from "@/shared/ui/cn";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { formatRequestorWon } from "@/shared/pricing/requestorUnitPricePolicy";
@@ -67,41 +70,110 @@ function won(amount: number) {
 function ClinicList({
   clinics,
   empty,
+  amountClassName,
   onOpen,
 }: {
   clinics: ClinicRow[];
   empty: string;
+  amountClassName: string;
   onOpen: (practiceAnchorId: string) => void;
 }) {
   if (!clinics.length) {
-    return <p className="px-1 text-xs text-slate-500">{empty}</p>;
+    return <p className="text-xs text-slate-500">{empty}</p>;
   }
   return (
-    <ul className="flex flex-col gap-2">
+    <ul className="mt-2 flex flex-col gap-2">
       {clinics.map((clinic) => (
-        <li key={clinic.practiceAnchorId} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+        <li
+          key={clinic.practiceAnchorId}
+          className="rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 shadow-sm"
+        >
           <button
             type="button"
-            className="w-full text-left"
+            className="flex w-full items-baseline justify-between gap-3 text-left"
             onClick={() => onOpen(clinic.practiceAnchorId)}
           >
-            <span className="font-medium text-slate-900">{clinic.practiceName}</span>
-            <span className="ml-2 text-xs tabular-nums text-slate-500">
-              미납 기록 {clinic.unpaidRecordCount}회
+            <span className="min-w-0">
+              <span className="font-semibold text-slate-950">{clinic.practiceName}</span>
+              <span className="ml-2 text-xs tabular-nums text-slate-500">
+                {clinic.unpaidRecordCount}회
+              </span>
             </span>
           </button>
-          <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
+          <ul className="mt-1.5 space-y-1">
             {clinic.months.map((month) => (
-              <li key={`${clinic.practiceAnchorId}-${month.id || month.yearMonth}`}>
-                {month.yearMonth}
-                {KIND_LABEL[month.kind] ? ` · ${KIND_LABEL[month.kind]}` : ""}
-                {month.remaining > 0 ? ` · 남은 ${won(month.remaining)}` : ""}
+              <li
+                key={`${clinic.practiceAnchorId}-${month.id || month.yearMonth}`}
+                className="flex items-baseline justify-between gap-3 text-xs"
+              >
+                <span className="text-slate-500">
+                  {month.yearMonth}
+                  {KIND_LABEL[month.kind] ? ` · ${KIND_LABEL[month.kind]}` : ""}
+                </span>
+                {month.remaining > 0 ? (
+                  <span className={cn("shrink-0 font-semibold tabular-nums", amountClassName)}>
+                    {won(month.remaining)}
+                  </span>
+                ) : null}
               </li>
             ))}
           </ul>
         </li>
       ))}
     </ul>
+  );
+}
+
+function DelinquencySection({
+  title,
+  hint,
+  count,
+  tone,
+  children,
+}: {
+  title: string;
+  hint: string;
+  count: number;
+  tone: "danger" | "warn" | "neutral";
+  children: ReactNode;
+}) {
+  const active = count > 0 && tone !== "neutral";
+  return (
+    <section
+      className={cn(
+        "rounded-2xl border px-3 py-3",
+        active && tone === "danger" && "border-rose-200 bg-rose-50/80",
+        active && tone === "warn" && "border-amber-200 bg-amber-50/80",
+        !active && "border-slate-200 bg-white",
+      )}
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <h3
+          className={cn(
+            "text-sm font-semibold",
+            active && tone === "danger" && "text-rose-900",
+            active && tone === "warn" && "text-amber-950",
+            !active && "text-slate-900",
+          )}
+        >
+          {title}
+        </h3>
+        <span
+          className={cn(
+            "text-sm font-semibold tabular-nums",
+            active && tone === "danger" && "text-rose-700",
+            active && tone === "warn" && "text-amber-800",
+            !active && "text-slate-500",
+          )}
+        >
+          {count.toLocaleString("ko-KR")}곳
+        </span>
+      </div>
+      {hint ? (
+        <p className="mt-1 text-xs leading-relaxed text-slate-600">{hint}</p>
+      ) : null}
+      {children}
+    </section>
   );
 }
 
@@ -180,81 +252,99 @@ export function AdminPracticeDelinquencyCard({
         </div>
       </DashTile>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto">
-          <div className="pr-6">
-            <DialogHeader>
-              <DialogTitle>미납 치과</DialogTitle>
-              <DialogDescription>
-                한 치과가 여러 묶음에 나올 수 있습니다.
-                <br />
-                이름을 누르면 기공료 화면으로 갑니다.
-              </DialogDescription>
-            </DialogHeader>
-            <section className="mt-4">
-              <h3 className="text-sm font-semibold text-slate-900">미납 지속</h3>
-              <p className="mb-2 text-xs leading-relaxed text-slate-500">
-                2차 기한이 지났는데 전액이 아직 확인되지 않았습니다.
-                <br />
-                새 기공의뢰만 잠시 쉬고, 후불은 유지합니다.
-              </p>
-              <ClinicList clinics={data.ongoing} empty="해당 치과가 없습니다." onOpen={openPractice} />
-            </section>
-            <section className="mt-4">
-              <h3 className="text-sm font-semibold text-slate-900">2회 이상 미납 기록</h3>
-              <p className="mb-2 text-xs leading-relaxed text-slate-500">
-                기한을 넘긴 달이 2번 이상입니다.
-                <br />
-                나중에 입금한 달도 기록에 남습니다.
-              </p>
-              <ClinicList clinics={data.repeat} empty="해당 치과가 없습니다." onOpen={openPractice} />
-            </section>
-            <section className="mt-4">
-              <h3 className="text-sm font-semibold text-slate-900">부분 납부</h3>
-              <p className="mb-2 text-xs leading-relaxed text-slate-500">
-                전액보다 적게 들어온 금액이 기록된 치과입니다.
-                <br />
-                남은 금액이 확인되기 전에는 기공소로 보내지 않습니다.
-              </p>
-              <ClinicList clinics={data.partial} empty="해당 치과가 없습니다." onOpen={openPractice} />
-            </section>
-            <section className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-              <h3 className="text-sm font-semibold text-slate-900">
-                선불 전환 대상 {data.prepaidCandidates.length.toLocaleString("ko-KR")}곳
-              </h3>
+        <DialogContent className="max-h-[85vh] overflow-y-auto px-5 py-5 sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>미납 치과</DialogTitle>
+            <DialogDescription>
+              한 치과가 여러 묶음에 나올 수 있습니다.
+              <br />
+              이름을 누르면 기공료 화면으로 갑니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-3 flex flex-col gap-3">
+            <DelinquencySection
+              title="미납 지속"
+              hint="2차 기한이 지났고, 전액이 아직 확인되지 않았습니다."
+              count={ongoingCount}
+              tone="danger"
+            >
+              <ClinicList
+                clinics={data.ongoing}
+                empty="없습니다."
+                amountClassName="text-rose-700"
+                onOpen={openPractice}
+              />
+            </DelinquencySection>
+            <DelinquencySection
+              title="2회 이상"
+              hint="기한을 넘긴 달이 2번 이상입니다."
+              count={repeatCount}
+              tone="warn"
+            >
+              <ClinicList
+                clinics={data.repeat}
+                empty="없습니다."
+                amountClassName="text-amber-800"
+                onOpen={openPractice}
+              />
+            </DelinquencySection>
+            <DelinquencySection
+              title="부분 납부"
+              hint="일부만 들어온 금액은 전액 확인 뒤에 기공소로 보냅니다."
+              count={partialCount}
+              tone="warn"
+            >
+              <ClinicList
+                clinics={data.partial}
+                empty="없습니다."
+                amountClassName="text-amber-800"
+                onOpen={openPractice}
+              />
+            </DelinquencySection>
+            <DelinquencySection
+              title="선불 전환"
+              hint=""
+              count={data.prepaidCandidates.length}
+              tone="neutral"
+            >
               <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                {(data.planLines.length ? data.planLines : EMPTY.planLines).map((line, index) => (
+                {(data.planLines.length ? data.planLines : []).map((line, index) => (
                   <span key={line}>
                     {index > 0 ? <br /> : null}
                     {line}
                   </span>
                 ))}
               </p>
-              <ul className="mt-2 space-y-1 text-xs text-slate-700">
-                {data.prepaidCandidates.length === 0 ? (
-                  <li>대상 치과가 없습니다.</li>
-                ) : (
-                  data.prepaidCandidates.map((clinic) => (
+              {data.prepaidCandidates.length === 0 ? (
+                <p className="mt-2 text-xs text-slate-500">없습니다.</p>
+              ) : (
+                <ul className="mt-2 flex flex-col gap-2">
+                  {data.prepaidCandidates.map((clinic) => (
                     <li key={clinic.practiceAnchorId}>
                       <button
                         type="button"
-                        className="text-left font-medium text-slate-900"
+                        className="flex w-full items-baseline justify-between gap-3 text-left"
                         onClick={() => openPractice(clinic.practiceAnchorId)}
                       >
-                        {clinic.practiceName}
+                        <span className="font-semibold text-slate-950">
+                          {clinic.practiceName}
+                          {clinic.unpaidRecordCount >= 2 ? (
+                            <span className="ml-2 text-xs font-medium text-slate-500">
+                              {clinic.unpaidRecordCount}회
+                            </span>
+                          ) : null}
+                        </span>
+                        {clinic.partialRemaining > 0 ? (
+                          <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-800">
+                            {won(clinic.partialRemaining)}
+                          </span>
+                        ) : null}
                       </button>
-                      <span className="text-slate-500">
-                        {clinic.unpaidRecordCount >= 2
-                          ? ` · 미납 ${clinic.unpaidRecordCount}회`
-                          : ""}
-                        {clinic.partialRemaining > 0
-                          ? ` · 남은 ${won(clinic.partialRemaining)}`
-                          : ""}
-                      </span>
                     </li>
-                  ))
-                )}
-              </ul>
-            </section>
+                  ))}
+                </ul>
+              )}
+            </DelinquencySection>
           </div>
         </DialogContent>
       </Dialog>

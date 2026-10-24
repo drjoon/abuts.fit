@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 지급 카드 — 무료 사용분은 빠짐.
 // - 2026-10-13: 정산 규칙 배송 — 택배는 적립 차감, 딜리버리는 직접 입금.
 // - 2026-10-13: 정산 규칙에 딜리버리 카드 — 적립 총액 입금, 딜러사가 직접 입금.
 // - 2026-10-09: 지급 카드 — 무료 의뢰만 제외.
@@ -35,7 +36,7 @@ export function DealerSettlementRulesContent({
           <br />
           적립 총액을 입금합니다.
           <br />
-          무료 크레딧 사용분은 지급 대상이 아닙니다.
+          무료 사용분은 빠집니다.
         </SettlementPolicyFact>
         <SettlementPolicyFact label="배송">
           {PARCEL_DEALER_DEDUCT_LINE}

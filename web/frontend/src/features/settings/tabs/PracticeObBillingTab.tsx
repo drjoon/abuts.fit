@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 입금할 금액은 하이라이트. 미확인 안내는 두 줄.
 // - 2026-10-24: 충전 페이지처럼 왼쪽 금액은 파란 그라데이션, 계좌번호는 크게.
 // - 2026-10-24: 금액은 왼쪽, 입금자명·계좌는 오른쪽. 입금자명은 라벨 옆.
 // - 2026-10-24: 기공료 카드가 세로 flex에서 줄어들며 입금자명·계좌가 잘리던 문제. shrink-0.
@@ -199,11 +200,7 @@ export function PracticeObBillingTab() {
           <p className="text-sm font-medium">
             {openBill.yearMonth} 기공료가 아직 확인되지 않았습니다.
             <br />
-            확인되는 대로 새 기공의뢰를 바로 보내실 수 있습니다.
-            <br />
-            이미 입금해 주셨다면 확인 후 바로 열어 드립니다.
-            <br />
-            진행 중인 의뢰는 그대로 이어집니다.
+            확인되면 새 기공의뢰를 바로 보낼 수 있습니다.
           </p>
         </section>
       ) : null}
@@ -214,7 +211,13 @@ export function PracticeObBillingTab() {
             <p className="text-xs font-medium text-primary-strong">
               {PRACTICE_OB_BILLING_NOTICE_TITLE}
             </p>
-            <p className="mt-2 text-4xl font-bold tabular-nums tracking-tight text-primary">
+            <p
+              className={cn(
+                "mt-2 w-fit text-4xl font-bold tabular-nums tracking-tight text-primary",
+                (paused || Boolean(cue.dueLabel)) &&
+                  "animate-scroll-halo-blue rounded-xl px-1 motion-reduce:animate-none",
+              )}
+            >
               {formatRequestorWon(depositAmount)}
               <span className="text-2xl font-semibold">원</span>
             </p>

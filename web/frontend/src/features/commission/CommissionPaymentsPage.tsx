@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 정산규칙은 요약 카드 오른쪽.
 // - 2026-10-13: 거래처 카드에 택배비 차감(박스 수·금액)을 표시. 기간 수수료는 택배비 차감 후.
 // - 2026-10-09: 거래처 카드에 그 거래처 판매가를 표시. 기간 수수료는 기간 합계.
 // - 2026-10-09: 딜러 정산 규칙 모달 폭 sm:max-w-md.
@@ -169,6 +170,44 @@ export function CommissionPaymentsPage({
               </div>
             }
           />
+          <div className="grid shrink-0 grid-cols-1 self-center">
+            <SettlementPolicyDialog
+              title={`${title} 규칙`}
+              description={DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD}
+              contentClassName={isSalesman ? "sm:max-w-md" : "sm:max-w-3xl"}
+              triggerClassName="ml-0"
+            >
+              {isSalesman ? (
+                <DealerSettlementRulesContent
+                  payoutDayOfMonth={Number(data?.payoutDayOfMonth || 1)}
+                />
+              ) : (
+                <div className="space-y-4">
+                  <CustomAbutmentDevopsSplitTable />
+                  <div className={GUIDE_FACT_GRID_CLASS}>
+                    <SettlementPolicyFact label="분배">
+                      어벗 1개당 1,000원입니다.
+                      <br />
+                      어벗츠 몫에서 뗍니다.
+                    </SettlementPolicyFact>
+                    <SettlementPolicyFact label="제외">
+                      기공 · 스토어 · 배송비
+                    </SettlementPolicyFact>
+                    <SettlementPolicyFact label="세금계산서">
+                      지급은 잔액 그대로입니다.
+                      <br />
+                      ÷1.1로 공급가·세액을 나눕니다.
+                    </SettlementPolicyFact>
+                    <SettlementPolicyFact label="지급">
+                      매월 {Number(data?.payoutDayOfMonth || 1)}일
+                      <br />
+                      무료 사용분은 빠집니다.
+                    </SettlementPolicyFact>
+                  </div>
+                </div>
+              )}
+            </SettlementPolicyDialog>
+          </div>
           </>
         )
       }
@@ -187,42 +226,6 @@ export function CommissionPaymentsPage({
                 presets={SETTLEMENT_PERIOD_PRESETS}
                 className="shrink-0"
               />
-              <SettlementPolicyDialog
-                title={`${title} 규칙`}
-                description={DEALERSHIP_SETTLEMENT_RULE_DIALOG_LEAD}
-                contentClassName={isSalesman ? "sm:max-w-md" : "sm:max-w-3xl"}
-              >
-                {isSalesman ? (
-                  <DealerSettlementRulesContent
-                    payoutDayOfMonth={Number(data?.payoutDayOfMonth || 1)}
-                  />
-                ) : (
-                  <div className="space-y-4">
-                    <CustomAbutmentDevopsSplitTable />
-                    <div className={GUIDE_FACT_GRID_CLASS}>
-                      <SettlementPolicyFact label="분배">
-                        어벗 1개당 1,000원입니다.
-                        <br />
-                        어벗츠 몫에서 뗍니다.
-                      </SettlementPolicyFact>
-                      <SettlementPolicyFact label="제외">
-                        기공 · 스토어 · 배송비
-                      </SettlementPolicyFact>
-                      <SettlementPolicyFact label="세금계산서">
-                        지급은 잔액 그대로입니다.
-                        <br />
-                        ÷1.1로 공급가·세액을 나눕니다.
-                      </SettlementPolicyFact>
-                      <SettlementPolicyFact label="지급">
-                        사업자 단위 · 매월{" "}
-                        {Number(data?.payoutDayOfMonth || 1)}일
-                        <br />
-                        무료 크레딧 사용분은 지급 대상이 아닙니다.
-                      </SettlementPolicyFact>
-                    </div>
-                  </div>
-                )}
-              </SettlementPolicyDialog>
             </div>
 
             <TabsContent value="businesses" className="mt-0">

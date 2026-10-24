@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 내역 카드 안내를 한 사실로 줄임.
 // - 2026-10-05: 플랫폼 사용료·하청 수수료 행 숨김(미부과).
 // - 2026-10-04: 적립(결제) 완료/보류 필터 — 셀렉트 대신 토글 버튼 2개(둘 다 켜면 보류↑·완료↓).
 // - 2026-10-04: 기공소 실사용 전환 행 — 치과명 / 기공소 지급. 보류·완료 구분선 유지.
@@ -167,7 +168,7 @@ import {
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
 import { formatWon } from "@/shared/settlement/affiliateVat";
-import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE, CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES } from "@/shared/settlement/labPayoutBankbook";
+import { CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES } from "@/shared/settlement/labPayoutBankbook";
 import {
   Tooltip,
   TooltipContent,
@@ -3223,16 +3224,16 @@ export const CreditLedgerModal = ({
   const freeBucketTooltip = CREDIT_LEDGER_FREE_NOTICE_BODY;
   const showResidualFreeBucket = freeCreditTotal > 0;
   const balanceHintTooltip = showSettlementCredit
-    ? "충전과 기공 정산 적립(확정)에서 기공·스토어 소비를 뺀 잔여액입니다. 적립 보류는 아직 잔액에 포함되지 않습니다."
-    : "충전에서 소비액(결제 보류·완료 포함)을 뺀 선불금 잔여액입니다.";
+    ? "확정 적립만 잔액에 들어갑니다."
+    : "소비를 뺀 잔액입니다.";
   const periodChargeLabel = CREDIT_LEDGER_CHARGE_LABEL;
   const periodChargeDetailTitle = CREDIT_LEDGER_CHARGE_DETAIL_TITLE;
-  const periodPaidChargeTooltip = "선택한 기간에 충전된 금액 합계입니다.";
+  const periodPaidChargeTooltip = "이 기간에 충전한 금액입니다.";
   const periodSettlementEarnTooltip =
-    `선택한 기간의 기공 정산 적립입니다. 카드 금액은 확정(적립 완료)만이며, 적립 보류는 하단에 따로 표시합니다. ${LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}`;
+    "확정된 적립입니다. 보류는 아래에 있습니다.";
   const periodSpendTooltip = showSettlementCredit
-    ? "선택한 기간에 지출한 어벗 생산·배송·스토어와, 협력·하청으로 넘긴 기공 지급 합계입니다."
-    : "선택한 기간에 지출한 기공료·스토어 결제 합계입니다. 결제 보류(잔액 차감분)를 포함합니다.";
+    ? "이 기간에 쓴 금액입니다."
+    : "이 기간에 쓴 금액입니다. 결제 보류를 포함합니다.";
 
   const statusSplitFooter = (settled: number, pending: number) => (
     <div className="mt-0.5 flex flex-col items-center gap-0.5 text-[10px] tabular-nums leading-snug sm:text-[11px]">

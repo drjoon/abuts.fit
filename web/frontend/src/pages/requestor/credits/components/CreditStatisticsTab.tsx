@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-24: 통계 카드 안내를 한 사실로 줄임.
 // - 2026-10-23: 기공소 통계 구역 — 치과의뢰 수신하기 / 커스텀어벗 의뢰하기.
 // - 2026-10-04: 요약 카드 폭 SSOT(11.5rem) 맞춤. 최소폭 미만일 때만 가로 스크롤.
 // - 2026-09-28: 요약 카드는 고정 폭 묶음. 차트는 작업영역 폭.
@@ -71,7 +72,6 @@ import {
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
 import { formatWonWithUnit, roundWon } from "@/shared/settlement/affiliateVat";
-import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from "@/shared/settlement/labPayoutBankbook";
 import {
   ChartContainer,
   ChartLegend,
@@ -715,13 +715,12 @@ export function CreditStatisticsTab() {
 
   const statCardClass = SETTLEMENT_STAT_CARD_WIDTH_CLASS;
 
-  const abutsSpendTooltip =
-    "선택한 기간에 지출한 어벗 생산·배송·스토어 결제 합계입니다.";
+  const abutsSpendTooltip = "이 기간에 쓴 금액입니다.";
   const practiceSpendTooltip =
-    "선택한 기간에 지출한 기공료·스토어 결제 합계입니다. 결제 보류(잔액 차감분)를 포함합니다.";
+    "이 기간에 쓴 금액입니다. 결제 보류를 포함합니다.";
   const chargeLabel = CREDIT_LEDGER_CHARGE_LABEL;
   const chargeDetailTitle = CREDIT_LEDGER_CHARGE_DETAIL_TITLE;
-  const chargeTooltip = "선택한 기간에 충전된 금액 합계입니다.";
+  const chargeTooltip = "이 기간에 충전한 금액입니다.";
 
   const settlementOrderCount = Number(
     stats?.summary.settlementOrderCount ?? stats?.summary.orderCount ?? 0,
@@ -821,7 +820,7 @@ export function CreditStatisticsTab() {
         label="정산 적립"
         value={settlementEarnTotal}
         hint="안내"
-        hintTooltip={`선택한 기간에 확정 적립된 기공 정산 합계입니다. 적립 보류는 포함하지 않습니다. ${LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}`}
+        hintTooltip="확정된 적립입니다. 보류는 빠집니다."
         onClick={() =>
           openDrillDown({
             title: "정산 적립 내역",
@@ -837,7 +836,7 @@ export function CreditStatisticsTab() {
         label="의뢰건수"
         value={`${settlementOrderCount.toLocaleString("ko-KR")}건`}
         hint="안내"
-        hintTooltip="치과의뢰 수신하기 중 정산 적립이 확정된 건수입니다."
+        hintTooltip="확정된 수신 건수입니다."
         onClick={() =>
           openDrillDown({
             title: "치과의뢰 수신하기 내역",
@@ -976,7 +975,7 @@ export function CreditStatisticsTab() {
         {chargeSpendCards({
           spendTooltip: abutsSpendTooltip,
           orderCount: abutsOrderCount,
-          orderHint: "커스텀어벗 의뢰하기의 어벗생산·배송 거래 건수입니다.",
+          orderHint: "어벗 생산·배송 건수입니다.",
           orderCategories: ABUTS_ORDER_STATS_CATEGORIES,
         })}
         <div className="grid min-w-0 gap-3 md:grid-cols-2">
@@ -1031,7 +1030,7 @@ export function CreditStatisticsTab() {
       {chargeSpendCards({
         spendTooltip: practiceSpendTooltip,
         orderCount: Number(stats?.summary.orderCount || 0),
-        orderHint: "기공의뢰·어벗생산·배송 거래 건수입니다.",
+        orderHint: "기공의뢰·어벗 생산·배송 건수입니다.",
         orderCategories: PRACTICE_ORDER_STATS_CATEGORIES,
       })}
       {filterBar}

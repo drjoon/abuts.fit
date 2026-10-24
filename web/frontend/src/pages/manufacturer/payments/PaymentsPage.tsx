@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
+// - 2026-10-24: 정산규칙은 요약 카드 오른쪽. 부가세 안내는 한 줄.
 // - 2026-10-07: 정산규칙 기준 — 의뢰비 1만원(표·안내 동일).
 // - 2026-10-07: 정산규칙 — 배송 카드→의뢰비·49.5% 기준. 표 하단 안내 제거.
 // - 2026-10-07: 정산규칙 — 제조 49.5%(부가세 포함) 고정. 제조44%/어벗츠40% 탭 제거.
@@ -898,6 +899,29 @@ export const ManufacturerPaymentPage = () => {
               </div>
             }
           />
+          <div className="grid shrink-0 grid-cols-1 self-center">
+            <SettlementPolicyDialog
+              title="제조사 정산 규칙"
+              description="커스텀어벗"
+              triggerClassName="ml-0"
+            >
+              <div className="space-y-3">
+                <CustomAbutmentManufacturerSplitTable />
+                <div className={GUIDE_FACT_GRID_CLASS}>
+                  <SettlementPolicyFact label="적립">
+                    가공 승인 때 적립됩니다.
+                    <br />
+                    리메이크·무료도 같습니다.
+                  </SettlementPolicyFact>
+                  <SettlementPolicyFact label="지급">
+                    매달 말일에 지급합니다.
+                    <br />
+                    세금계산서는 잔액 ÷1.1입니다.
+                  </SettlementPolicyFact>
+                </div>
+              </div>
+            </SettlementPolicyDialog>
+          </div>
         </>
       }
       mainLeft={
@@ -920,26 +944,6 @@ export const ManufacturerPaymentPage = () => {
                 placeholder="검색 (메모/외부ID/키)"
                 className="h-9 w-full rounded-xl border-slate-200 sm:w-[280px]"
               />
-              <SettlementPolicyDialog
-                title="제조사 정산 규칙"
-                description="커스텀어벗"
-              >
-                <div className="space-y-3">
-                  <CustomAbutmentManufacturerSplitTable />
-                  <div className={GUIDE_FACT_GRID_CLASS}>
-                    <SettlementPolicyFact label="적립">
-                      가공 승인 때 적립합니다.
-                      <br />
-                      리메이크·무료 크레딧도 같습니다.
-                    </SettlementPolicyFact>
-                    <SettlementPolicyFact label="지급">
-                      KST 매달 말일에 일괄 지급합니다.
-                      <br />
-                      세금계산서는 잔액 ÷1.1로 나눕니다.
-                    </SettlementPolicyFact>
-                  </div>
-                </div>
-              </SettlementPolicyDialog>
             </div>
 
             <TabsContent

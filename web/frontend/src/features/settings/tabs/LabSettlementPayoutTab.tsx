@@ -551,7 +551,7 @@ export const LabSettlementPayoutTab = () => {
               selected={view === "all"}
               onClick={() => setView("all")}
               hint="면세"
-              hintTooltip={`${SETTLEMENT_VAT_POLICY.exempt} 기간 적립 ${formatWon(snapshotTotals.earnTotal)} · ${snapshotTotals.earnCount}건`}
+              hintTooltip={`${SETTLEMENT_VAT_POLICY.exempt}`}
               footer={
                 <div className="text-[11px] tabular-nums text-slate-600">
                   <span className="text-slate-400">기간 적립</span>{" "}
