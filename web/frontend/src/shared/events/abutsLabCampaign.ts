@@ -40,4 +40,5 @@ export const ABUTS_LAB_IMAGES = {
   step: "/events/abuts-lab/machining-step.jpg",
   smooth: "/events/abuts-lab/machining-smooth.jpg",
   fillet: "/events/abuts-lab/fillet-warning.jpg",
+  gouge: "/events/abuts-lab/corner-gouge.jpg",
 } as const;

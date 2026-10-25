@@ -64,53 +64,70 @@ const EMPTY_DEALER: EventPlaceFields = {
   lng: null,
 };
 
-function WideCompare({
+const EVENT_MEDIA_CARD_CLASS =
+  "h-full overflow-hidden rounded-[1.75rem] border border-slate-200/90 bg-gradient-to-b from-white to-[#f4f7fb] p-4 sm:p-5";
+
+/** 단차 구역. 디자인 반쪽(512×416)과 같은 칸에 사진을 맞춘다. */
+const MACHINING_FRAME_CLASS =
+  "relative aspect-[512/416] overflow-hidden rounded-2xl bg-[#f4f7fb]";
+
+const CORNER_FRAME_CLASS =
+  "relative aspect-[512/465] overflow-hidden rounded-2xl bg-[#f4f7fb]";
+
+function HalfImage({
   src,
   alt,
-  left,
-  right,
+  shift,
+  framed,
 }: {
   src: string;
   alt: string;
-  left: string;
-  right: string;
+  shift?: boolean;
+  /** 가공 사진과 같은 칸 크기로 맞출 때 */
+  framed?: boolean;
 }) {
-  const frame =
-    "overflow-hidden rounded-[1.75rem] border border-slate-200/90 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.05)]";
+  if (!framed) {
+    return (
+      <div className="overflow-hidden rounded-2xl bg-[#f4f7fb]">
+        <img
+          src={src}
+          alt={alt}
+          className={cn("w-[200%] max-w-none", shift && "-translate-x-1/2")}
+        />
+      </div>
+    );
+  }
   return (
-    <figure>
-      <div className="grid gap-4 sm:hidden">
-        <div className={frame}>
-          <img src={src} alt="" className="w-[200%] max-w-none" />
-        </div>
-        <p className="break-keep text-xs leading-snug text-slate-600">
-          <span className="font-semibold text-slate-900">왼쪽</span> {left}
-        </p>
-        <div className={frame}>
-          <img
-            src={src}
-            alt={alt}
-            className="w-[200%] max-w-none -translate-x-1/2"
-          />
-        </div>
-        <p className="break-keep text-xs leading-snug text-slate-600">
-          <span className="font-semibold text-slate-900">오른쪽</span> {right}
-        </p>
-      </div>
-      <div className="hidden sm:block">
-        <div className={frame}>
-          <img src={src} alt={alt} className="w-full" />
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-600">
-          <p className="min-w-0 break-keep">
-            <span className="font-semibold text-slate-900">왼쪽</span> {left}
-          </p>
-          <p className="min-w-0 break-keep">
-            <span className="font-semibold text-slate-900">오른쪽</span> {right}
-          </p>
-        </div>
-      </div>
-    </figure>
+    <div className={MACHINING_FRAME_CLASS}>
+      <img
+        src={src}
+        alt={alt}
+        className={cn(
+          "absolute top-0 h-full w-[200%] max-w-none object-cover",
+          shift ? "right-0 object-right" : "left-0 object-left",
+        )}
+      />
+    </div>
+  );
+}
+
+function PhotoFrame({ src, alt }: { src: string; alt: string }) {
+  return (
+    <div className={MACHINING_FRAME_CLASS}>
+      <img
+        src={src}
+        alt={alt}
+        className="absolute inset-0 h-full w-full object-cover object-center"
+      />
+    </div>
+  );
+}
+
+function MediaCardTitle({ children }: { children: string }) {
+  return (
+    <p className="mt-4 break-keep text-center text-lg font-semibold text-slate-900">
+      {children}
+    </p>
   );
 }
 
@@ -736,48 +753,44 @@ export default function AbutsLabEventPage() {
             </p>
           </LandingReveal>
 
-          <LandingReveal className="mt-10">
-            <WideCompare
-              src={ABUTS_LAB_IMAGES.design}
-              alt="기공사 디자인과 어벗츠가 곡면을 맞춘 디자인. 왼쪽은 기공사 디자인이고, 오른쪽은 소프트웨어로 맞춘 디자인입니다."
-              left="기공사 디자인"
-              right="어벗츠가 맞춘 곡면"
-            />
-          </LandingReveal>
-
-          <div className="mt-8 grid gap-4 md:grid-cols-2">
+          <div className="mt-10 grid gap-4 md:grid-cols-2">
             <LandingReveal>
-              <LandingSpotlightCard className="h-full overflow-hidden rounded-[1.75rem] border border-slate-200/90 bg-gradient-to-b from-white to-[#f4f7fb] p-4 sm:p-5">
-                <div className="overflow-hidden rounded-2xl bg-[#f4f7fb]">
-                  <img
-                    src={ABUTS_LAB_IMAGES.step}
-                    alt="가공 후 단차가 남은 어벗먼트. 표시된 홈이 단차입니다."
-                    className="h-56 w-full object-contain sm:h-72 md:h-80"
-                  />
-                </div>
-                <h3 className="mt-4 text-lg font-semibold text-slate-900">
-                  일반 가공
-                </h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  단차가 남을 수 있습니다.
-                </p>
+              <LandingSpotlightCard className={EVENT_MEDIA_CARD_CLASS}>
+                <HalfImage
+                  src={ABUTS_LAB_IMAGES.design}
+                  alt="일반 기공사 디자인"
+                  framed
+                />
+                <MediaCardTitle>일반 기공사 디자인</MediaCardTitle>
               </LandingSpotlightCard>
             </LandingReveal>
             <LandingReveal delay={90}>
-              <LandingSpotlightCard className="h-full overflow-hidden rounded-[1.75rem] border border-slate-200/90 bg-gradient-to-b from-white to-[#f4f7fb] p-4 sm:p-5">
-                <div className="overflow-hidden rounded-2xl bg-[#eef2f4]">
-                  <img
-                    src={ABUTS_LAB_IMAGES.smooth}
-                    alt="곡면 처리 후 매끈하게 가공된 어벗먼트"
-                    className="h-56 w-full object-contain sm:h-72 md:h-80"
-                  />
-                </div>
-                <h3 className="mt-4 text-lg font-semibold text-slate-900">
-                  어벗츠 가공
-                </h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  매끈하게 가공됩니다.
-                </p>
+              <LandingSpotlightCard className={EVENT_MEDIA_CARD_CLASS}>
+                <PhotoFrame
+                  src={ABUTS_LAB_IMAGES.step}
+                  alt="일반 기공사 가공. 가공 후 단차가 남은 어벗먼트입니다."
+                />
+                <MediaCardTitle>일반 기공사 가공</MediaCardTitle>
+              </LandingSpotlightCard>
+            </LandingReveal>
+            <LandingReveal delay={120}>
+              <LandingSpotlightCard className={EVENT_MEDIA_CARD_CLASS}>
+                <HalfImage
+                  src={ABUTS_LAB_IMAGES.design}
+                  alt="어벗츠 디자인"
+                  shift
+                  framed
+                />
+                <MediaCardTitle>어벗츠 디자인</MediaCardTitle>
+              </LandingSpotlightCard>
+            </LandingReveal>
+            <LandingReveal delay={180}>
+              <LandingSpotlightCard className={EVENT_MEDIA_CARD_CLASS}>
+                <PhotoFrame
+                  src={ABUTS_LAB_IMAGES.smooth}
+                  alt="어벗츠 가공. 곡면 처리 후 매끈하게 가공된 어벗먼트입니다."
+                />
+                <MediaCardTitle>어벗츠 가공</MediaCardTitle>
               </LandingSpotlightCard>
             </LandingReveal>
           </div>
@@ -803,14 +816,32 @@ export default function AbutsLabEventPage() {
             </p>
           </LandingReveal>
 
-          <LandingReveal className="mt-10">
-            <WideCompare
-              src={ABUTS_LAB_IMAGES.fillet}
-              alt="마진·축면 코너. 왼쪽은 받은 디자인이고, 오른쪽은 필레 반지름이 공구보다 작아 경고가 표시된 화면입니다."
-              left="받은 디자인"
-              right="필레 반지름 경고"
-            />
-          </LandingReveal>
+          <div className="mt-10 grid gap-4 md:grid-cols-2">
+            <LandingReveal>
+              <LandingSpotlightCard className={EVENT_MEDIA_CARD_CLASS}>
+                <div className={CORNER_FRAME_CLASS}>
+                  <img
+                    src={ABUTS_LAB_IMAGES.fillet}
+                    alt="필레 반지름 경고"
+                    className="absolute top-0 right-0 h-full w-[200%] max-w-none object-cover object-right"
+                  />
+                </div>
+                <MediaCardTitle>필레 반지름 경고</MediaCardTitle>
+              </LandingSpotlightCard>
+            </LandingReveal>
+            <LandingReveal delay={90}>
+              <LandingSpotlightCard className={EVENT_MEDIA_CARD_CLASS}>
+                <div className={CORNER_FRAME_CLASS}>
+                  <img
+                    src={ABUTS_LAB_IMAGES.gouge}
+                    alt="움푹 패인 가공. 코너가 패여 가공된 어벗먼트입니다."
+                    className="absolute inset-0 h-full w-full object-cover object-center"
+                  />
+                </div>
+                <MediaCardTitle>움푹 패인 가공</MediaCardTitle>
+              </LandingSpotlightCard>
+            </LandingReveal>
+          </div>
 
         </div>
       </section>
@@ -830,7 +861,7 @@ export default function AbutsLabEventPage() {
             <p className="mt-4 max-w-xl break-keep text-sm leading-relaxed text-slate-600 sm:max-w-2xl sm:text-base">
               수많은 커스텀 어벗 디자인을 분석했습니다. 정확하고 편안한 임상을
               위해서는 computational design이 필요합니다. 앞의 단차와 코너는
-              그중 예시이며, 어벗츠는 이런 문제를 계속 풀어 갑니다.
+              단지 예시이며, 어벗츠는 이런 문제를 계속 풀어 갑니다.
             </p>
             <p className="mt-6 break-keep text-lg font-semibold tracking-tight text-slate-900">
               어벗츠와 함께하시겠습니까?
