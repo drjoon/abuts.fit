@@ -34,6 +34,7 @@ export type ColleagueAccount = {
   id: string;
   name: string;
   email: string;
+  loginId?: string;
   role: string;
   subRole?: string | null;
   profileImage?: string | null;
@@ -57,6 +58,29 @@ const getSubRoleLabel = (subRole?: string | null) => {
   if (subRole === "staff") return "직원";
   return null;
 };
+
+function colleagueLoginLabel(colleague: {
+  name?: string;
+  email?: string;
+  loginId?: string;
+}) {
+  const loginId = String(colleague.loginId || "").trim();
+  if (loginId) return loginId;
+  const email = String(colleague.email || "").trim();
+  if (!email || email.toLowerCase().endsWith("@staff.abuts.fit")) return "";
+  return email;
+}
+
+function colleagueSwitchLabel(colleague: {
+  name?: string;
+  email?: string;
+  loginId?: string;
+}) {
+  const name = String(colleague.name || "").trim();
+  const login = colleagueLoginLabel(colleague);
+  if (name && login && login !== name) return `${name} (${login})`;
+  return name || login;
+}
 
 type AccountSwitcherMenuSectionProps = {
   menuOpen: boolean;
@@ -146,6 +170,7 @@ export function AccountSwitcherMenuSection({
       ) : (
         colleagues.map((colleague) => {
           const subLabel = getSubRoleLabel(colleague.subRole);
+          const loginLabel = colleagueLoginLabel(colleague);
           return (
             <DropdownMenuItem
               key={colleague.id}
@@ -154,7 +179,7 @@ export function AccountSwitcherMenuSection({
             >
               <Avatar className="h-6 w-6 mr-2 flex-shrink-0">
                 <AvatarImage
-                  seed={colleague.email || colleague.id}
+                  seed={loginLabel || colleague.email || colleague.id}
                   fallbackInitial={colleague.name}
                   src={colleague.profileImage || undefined}
                   alt={colleague.name}
@@ -175,9 +200,11 @@ export function AccountSwitcherMenuSection({
                     </Badge>
                   ) : null}
                 </div>
-                <div className="text-xs text-muted-foreground truncate">
-                  {colleague.email}
-                </div>
+                {loginLabel ? (
+                  <div className="text-xs text-muted-foreground truncate">
+                    {loginLabel}
+                  </div>
+                ) : null}
               </div>
             </DropdownMenuItem>
           );
@@ -272,7 +299,7 @@ export function AccountSwitchPasswordDialog({
           <DialogTitle>계정 전환</DialogTitle>
           <DialogDescription>
             {colleague
-              ? `${colleague.name} 계정의 비밀번호를 입력하면 전환됩니다.`
+              ? `${colleagueSwitchLabel(colleague)} 계정의 비밀번호를 입력하면 전환됩니다.`
               : "전환할 계정의 비밀번호를 입력해주세요."}
           </DialogDescription>
         </DialogHeader>
@@ -281,7 +308,7 @@ export function AccountSwitchPasswordDialog({
           <div className="flex items-center gap-3 rounded-md border border-border p-3">
             <Avatar className="h-10 w-10">
               <AvatarImage
-                seed={colleague.email || colleague.id}
+                seed={colleagueLoginLabel(colleague) || colleague.email || colleague.id}
                 fallbackInitial={colleague.name}
                 src={colleague.profileImage || undefined}
                 alt={colleague.name}
@@ -292,9 +319,11 @@ export function AccountSwitchPasswordDialog({
             </Avatar>
             <div className="min-w-0">
               <div className="text-sm font-medium truncate">{colleague.name}</div>
-              <div className="text-xs text-muted-foreground truncate">
-                {colleague.email}
-              </div>
+              {colleagueLoginLabel(colleague) ? (
+                <div className="text-xs text-muted-foreground truncate">
+                  {colleagueLoginLabel(colleague)}
+                </div>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -304,7 +333,7 @@ export function AccountSwitchPasswordDialog({
           type="text"
           name="username"
           autoComplete="username"
-          value={colleague?.email || ""}
+          value={colleague ? colleagueLoginLabel(colleague) || colleague.email || "" : ""}
           readOnly
           tabIndex={-1}
           aria-hidden

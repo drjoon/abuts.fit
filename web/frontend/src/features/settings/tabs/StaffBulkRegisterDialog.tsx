@@ -42,6 +42,42 @@ type DepartmentOption = {
   name: string;
 };
 
+function copyWithExecCommand(value: string) {
+  const area = document.createElement("textarea");
+  area.value = value;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.top = "0";
+  area.style.left = "0";
+  document.body.appendChild(area);
+  area.focus();
+  area.select();
+  area.setSelectionRange(0, area.value.length);
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  }
+  area.remove();
+  return copied;
+}
+
+async function writeClipboard(value: string) {
+  // 클립보드 API가 거절된 뒤에 execCommand를 호출하면 클릭 권한이 사라져 복사가 실패한다.
+  const clipboardWrite = navigator.clipboard?.writeText(value);
+  if (copyWithExecCommand(value)) {
+    void clipboardWrite?.catch(() => undefined);
+    return true;
+  }
+  try {
+    await clipboardWrite;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 interface StaffBulkRegisterDialogProps {
   open: boolean;
   token: string;
@@ -74,7 +110,8 @@ export function StaffBulkRegisterDialog({
 
   const copyText = useMemo(() => {
     if (!created.length) return "";
-    const lines = created.map((row) => `${row.name}  ${row.login}`);
+    const lines = ["이름  아이디"];
+    for (const row of created) lines.push(`${row.name}  ${row.login}`);
     lines.push(`처음 비밀번호: ${password}`);
     return lines.join("\n");
   }, [created, password]);
@@ -82,14 +119,20 @@ export function StaffBulkRegisterDialog({
   const resetForm = () => {
     setText("");
     setPassword("");
+    setShowPassword(true);
     setDepartmentId("");
     setCreated([]);
     setFailed([]);
     setSaving(false);
   };
 
+  const [seenOpen, setSeenOpen] = useState(open);
+  if (open !== seenOpen) {
+    setSeenOpen(open);
+    if (open) resetForm();
+  }
+
   const handleOpenChange = (next: boolean) => {
-    if (!next) resetForm();
     onOpenChange(next);
   };
 
@@ -139,15 +182,15 @@ export function StaffBulkRegisterDialog({
   };
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(copyText);
+    const copied = await writeClipboard(copyText);
+    if (copied) {
       toast({ title: "복사했습니다" });
-    } catch {
-      toast({
-        title: "복사하지 못했습니다",
-        variant: "destructive",
-      });
+      return;
     }
+    toast({
+      title: "복사하지 못했습니다",
+      variant: "destructive",
+    });
   };
 
   return (
@@ -155,11 +198,13 @@ export function StaffBulkRegisterDialog({
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>직원 등록</DialogTitle>
-          <DialogDescription>
-            이름을 한 줄에 하나씩 적습니다.
-            <br />
-            같은 이름이 있으면 아이디 뒤에 1, 2를 붙입니다.
-          </DialogDescription>
+          {created.length ? null : (
+            <DialogDescription>
+              이름을 한 줄에 하나씩 적습니다.
+              <br />
+              같은 이름이 있으면 아이디 뒤에 1, 2를 붙입니다.
+            </DialogDescription>
+          )}
         </DialogHeader>
 
         {created.length ? (
@@ -170,6 +215,10 @@ export function StaffBulkRegisterDialog({
               첫 로그인 후 본인 비밀번호로 바꿉니다.
             </p>
             <div className="max-h-56 space-y-1 overflow-y-auto rounded-xl border px-3 py-2 text-sm">
+              <div className="flex justify-between gap-3 text-xs text-muted-foreground">
+                <span>이름</span>
+                <span>아이디</span>
+              </div>
               {created.map((row) => (
                 <div key={row.userId} className="flex justify-between gap-3">
                   <span className="truncate font-medium">{row.name}</span>
@@ -244,7 +293,11 @@ export function StaffBulkRegisterDialog({
             {needsDepartment ? (
               <div className="space-y-2">
                 <Label>부서</Label>
-                <Select value={departmentId} onValueChange={setDepartmentId}>
+                <Select
+                  value={departmentId}
+                  onValueChange={setDepartmentId}
+                  disabled={saving}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="부서 선택" />
                   </SelectTrigger>

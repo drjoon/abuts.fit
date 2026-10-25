@@ -35,7 +35,10 @@ import {
   PASSWORD_POLICY_MESSAGE,
   STAFF_INITIAL_PASSWORD_MESSAGE,
 } from "../../utils/passwordPolicy.js";
-import { classifyLoginCredential } from "../../services/staffBulkRegister.core.js";
+import {
+  classifyLoginCredential,
+  toStaffListFields,
+} from "../../services/staffBulkRegister.core.js";
 import {
   assertSignupVerifications,
   consumeSignupVerifications,
@@ -2046,6 +2049,7 @@ async function listColleagues(req, res) {
       .select({
         name: 1,
         email: 1,
+        loginId: 1,
         role: 1,
         subRole: 1,
         profileImage: 1,
@@ -2055,22 +2059,26 @@ async function listColleagues(req, res) {
       .sort({ subRole: 1, name: 1 })
       .lean();
 
-    const colleagues = (Array.isArray(rows) ? rows : []).map((row) => ({
-      id: String(row._id),
-      name: String(row.name || ""),
-      email: String(row.email || ""),
-      role: String(row.role || ""),
-      subRole: row.subRole ? String(row.subRole) : null,
-      profileImage:
-        typeof row.profileImage === "string" ? row.profileImage : null,
-      companyName: String(row.business || ""),
-      internalDepartmentId: row.internalDepartmentId
-        ? String(row.internalDepartmentId)
-        : null,
-      departmentName: usesDepartments
-        ? resolveDepartmentLabel(anchor, row.internalDepartmentId)
-        : "",
-    }));
+    const colleagues = (Array.isArray(rows) ? rows : []).map((row) => {
+      const identity = toStaffListFields(row);
+      return {
+        id: String(row._id),
+        name: String(row.name || ""),
+        email: identity.email,
+        loginId: identity.loginId,
+        role: String(row.role || ""),
+        subRole: row.subRole ? String(row.subRole) : null,
+        profileImage:
+          typeof row.profileImage === "string" ? row.profileImage : null,
+        companyName: String(row.business || ""),
+        internalDepartmentId: row.internalDepartmentId
+          ? String(row.internalDepartmentId)
+          : null,
+        departmentName: usesDepartments
+          ? resolveDepartmentLabel(anchor, row.internalDepartmentId)
+          : "",
+      };
+    });
 
     // owner를 staff보다 앞에 두기 (subRole 알파벳 정렬로는 owner가 뒤로 감)
     colleagues.sort((a, b) => {

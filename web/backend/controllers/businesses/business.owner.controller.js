@@ -643,9 +643,18 @@ export async function removeMember(req, res) {
 
     await anchor.save();
 
-    await User.findByIdAndUpdate(userId, {
+    const removed = await User.findById(userId).select({ loginId: 1 }).lean();
+    const update = {
       $set: { businessAnchorId: null, business: "" },
-    });
+    };
+    // 대표가 만든 아이디 계정은 로그인되지 않게 하고, 같은 이름을 다시 등록할 수 있게 한다.
+    // 아이디만 지워도 합성 이메일이 남아 같은 이름 재등록이 막힌다.
+    if (String(removed?.loginId || "").trim()) {
+      update.$set.active = false;
+      update.$set.email = `retired-${userId}@staff.abuts.fit`;
+      update.$unset = { loginId: "" };
+    }
+    await User.findByIdAndUpdate(userId, update);
 
     return res.json({ success: true, data: { removed: true } });
   } catch (error) {

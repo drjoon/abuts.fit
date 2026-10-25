@@ -623,6 +623,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
 
   const visibleMemberCount =
     visibleRepresentatives.length + staffEntries.length;
+  const showDepartmentSelect = supportsDepartments && departments.length > 0;
 
   const pendingEntries = useMemo(() => {
     return pending.filter((r) => {
@@ -648,11 +649,20 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
         </CardTitle>
         <CardDescription className="text-[13px] leading-relaxed">
           부서와 대표·직원 계정, 가입 신청을 함께 관리합니다.
-          {supportsDepartments
-            ? " 사이드바 계정 전환은 같은 부서 계정만 표시됩니다."
-            : ""}{" "}
-          영업본부 포털은 사용자 역할이「영업본부」(`salesTeam`)인 계정에 노출됩니다.
-          관리자「사용자」에서 역할을 지정하고, 필요 시「마케팅영업부」등 부서에 배치하세요.
+          {supportsDepartments ? (
+            <>
+              <br />
+              사이드바 계정 전환은 같은 부서 계정만 표시됩니다.
+            </>
+          ) : null}
+          {businessType === "admin" ? (
+            <>
+              <br />
+              영업본부 포털은 역할이 영업본부인 계정에 보입니다.
+              <br />
+              관리자 사용자 화면에서 역할을 지정하고, 부서에 배치하세요.
+            </>
+          ) : null}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -872,7 +882,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {visibleRepresentatives.map((entry) => {
                     const name = String(entry.name || "").trim() || entry._id;
-                    const email = memberLoginLabel(entry);
+                    const login = memberLoginLabel(entry);
                     return (
                       <div
                         key={entry._id}
@@ -887,19 +897,19 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                             <div className="truncate text-sm font-semibold leading-tight text-slate-900">
                               {name}
                             </div>
-                            {email ? (
+                            {login && login !== name ? (
                               <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                                {email}
+                                {login}
                               </div>
                             ) : null}
-                            {entry.departmentName ? (
+                            {entry.departmentName && !showDepartmentSelect ? (
                               <div className="mt-1 text-xs text-primary-strong">
                                 {entry.departmentName}
                               </div>
                             ) : null}
                           </div>
                         </div>
-                        {supportsDepartments ? (
+                        {showDepartmentSelect ? (
                           <div className="px-3.5 pb-3">
                             {renderDepartmentControl(
                               entry._id,
@@ -914,8 +924,8 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
 
                   {staffEntries.map((m) => {
                     const name = String(m.name || "").trim() || m._id;
-                    const email = memberLoginLabel(m);
-                    const label = `${name}${email ? ` (${email})` : ""}`;
+                    const login = memberLoginLabel(m);
+                    const label = login && login !== name ? `${name} (${login})` : name;
                     return (
                       <FunctionalItemCard
                         key={m._id}
@@ -943,12 +953,12 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                               <div className="truncate text-sm font-semibold leading-tight text-slate-900">
                                 {name}
                               </div>
-                              {email ? (
+                              {login && login !== name ? (
                                 <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                                  {email}
+                                  {login}
                                 </div>
                               ) : null}
-                              {m.departmentName ? (
+                              {m.departmentName && !showDepartmentSelect ? (
                                 <div className="mt-1 text-xs text-primary-strong">
                                   {m.departmentName}
                                 </div>
@@ -972,7 +982,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                               비밀번호
                             </Button>
                           </div>
-                          {supportsDepartments ? (
+                          {showDepartmentSelect ? (
                             <div className="px-3.5 pb-3">
                               {renderDepartmentControl(
                                 m._id,
@@ -1146,11 +1156,12 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
               userId={resetStaff?._id || ""}
               label={
                 resetStaff
-                  ? `${String(resetStaff.name || "").trim() || resetStaff._id}${
-                      memberLoginLabel(resetStaff)
-                        ? ` (${memberLoginLabel(resetStaff)})`
-                        : ""
-                    }`
+                  ? (() => {
+                      const name =
+                        String(resetStaff.name || "").trim() || resetStaff._id;
+                      const login = memberLoginLabel(resetStaff);
+                      return login && login !== name ? `${name} (${login})` : name;
+                    })()
                   : ""
               }
               onOpenChange={(open) => {
