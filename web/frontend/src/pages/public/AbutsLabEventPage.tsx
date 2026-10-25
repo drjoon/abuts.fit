@@ -36,7 +36,7 @@ import {
   ABUTS_LAB_EVENT_PATH,
   ABUTS_LAB_EVENT_SLUG,
   ABUTS_LAB_HERO_EYEBROW,
-  ABUTS_LAB_HERO_SUB_LINES,
+  ABUTS_LAB_HERO_SUB,
   ABUTS_LAB_IMAGES,
 } from "@/shared/events/abutsLabCampaign";
 import EventPlaceSuggestInput from "@/shared/events/EventPlaceSuggestInput";
@@ -267,7 +267,9 @@ function OralScanFields({
         </CardTitle>
         <div className="flex gap-2 rounded-2xl border border-sky-100 bg-sky-50/80 px-3 py-2.5 text-sm leading-relaxed text-sky-900">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
-          <p>스캔을 쓰시는 치과와 아닌 치과에 맞춰 안내합니다.</p>
+          <p>
+            스캔을 쓰는 치과와 쓰지 않는 치과에 맞춰, 방문 때 안내가 달라집니다.
+          </p>
         </div>
       </CardHeader>
       <CardContent>
@@ -652,9 +654,8 @@ export default function AbutsLabEventPage() {
               신청이 완료되었습니다
             </h2>
             <p className="max-w-md break-keep text-sm leading-relaxed text-slate-600">
-              {ABUTS_LAB_EVENT_HEADLINE} 상담을 접수했습니다.
-              <br />
-              영업 담당자가 곧 연락드리고 방문하겠습니다.
+              상담을 접수했습니다. 영업 담당자가 연락드린 뒤 치과로 방문해
+              안내합니다.
             </p>
             <Button asChild className="mt-3 rounded-full">
               <Link to="/">홈으로</Link>
@@ -696,10 +697,8 @@ export default function AbutsLabEventPage() {
               {ABUTS_LAB_EVENT_HEADLINE}
             </span>
           </h1>
-          <p className="mt-5 max-w-3xl text-base leading-relaxed text-slate-600 sm:text-lg">
-            {ABUTS_LAB_HERO_SUB_LINES[0]}
-            <br />
-            {ABUTS_LAB_HERO_SUB_LINES[1]}
+          <p className="mt-5 max-w-xl break-keep text-base leading-relaxed text-slate-600 sm:max-w-2xl sm:text-lg">
+            {ABUTS_LAB_HERO_SUB}
           </p>
           <div className="mt-8 w-full sm:w-auto">
             <LandingMagnetic>
@@ -730,11 +729,10 @@ export default function AbutsLabEventPage() {
             <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
               단차가 나는 곡면
             </h2>
-            <p className="mt-4 max-w-3xl break-keep text-sm leading-relaxed text-slate-600 sm:text-base">
-              기공사 선생님이 성의껏 예쁘게 디자인해 주셔도, 가공하면 단차가 날
-              수 있습니다.
-              <br />
-              어벗츠기공소는 자체 개발한 소프트웨어로 그 문제를 해결합니다.
+            <p className="mt-4 max-w-xl break-keep text-sm leading-relaxed text-slate-600 sm:max-w-2xl sm:text-base">
+              기공사 선생님이 성의껏 디자인해 주셔도, 가공하면 단차가 날 수
+              있습니다. 어벗츠기공소는 자체 소프트웨어로 그 곡면을 맞춰
+              매끈하게 가공합니다.
             </p>
           </LandingReveal>
 
@@ -798,11 +796,10 @@ export default function AbutsLabEventPage() {
             <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
               공구보다 작은 코너
             </h2>
-            <p className="mt-4 max-w-3xl break-keep text-sm leading-relaxed text-slate-600 sm:text-base">
-              마진과 축면이 만나는 코너의 필레 반지름이 공구보다 작으면, 그
-              자리는 움푹 패여 가공됩니다.
-              <br />
-              어벗츠 소프트웨어는 이 반지름을 재고, 작으면 경고합니다.
+            <p className="mt-4 max-w-xl break-keep text-sm leading-relaxed text-slate-600 sm:max-w-2xl sm:text-base">
+              마진과 축면이 만나는 코너가 공구보다 작으면 그 자리는 움푹 패여
+              나옵니다. 어벗츠 소프트웨어는 필레 반지름을 재서, 작으면 가공 전에
+              경고합니다.
             </p>
           </LandingReveal>
 
@@ -827,20 +824,16 @@ export default function AbutsLabEventPage() {
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">
               Design
             </p>
-            <h2 className="mt-2 max-w-3xl text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-              정확한 임상을 위한 디자인
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+              임상에 맞춘 디자인
             </h2>
-            <p className="mt-4 max-w-3xl break-keep text-sm leading-relaxed text-slate-600 sm:text-base">
-              수많은 커스텀 어벗 디자인을 분석했습니다.
-              <br />
-              정확하고 편안한 임상을 위해서는 computational design이 필요합니다.
-              <br />
-              앞의 단차와 코너는 예시일 뿐입니다.
-              <br />
-              어벗츠는 수많은 디자인 문제를 해결해 왔고, 앞으로도 그럴 것입니다.
+            <p className="mt-4 max-w-xl break-keep text-sm leading-relaxed text-slate-600 sm:max-w-2xl sm:text-base">
+              수많은 커스텀 어벗 디자인을 분석했습니다. 정확하고 편안한 임상을
+              위해서는 computational design이 필요합니다. 앞의 단차와 코너는
+              그중 예시이며, 어벗츠는 이런 문제를 계속 풀어 갑니다.
             </p>
-            <p className="mt-6 max-w-3xl break-keep text-lg font-semibold tracking-tight text-slate-900">
-              어벗츠기공소와 함께하시겠습니까?
+            <p className="mt-6 break-keep text-lg font-semibold tracking-tight text-slate-900">
+              어벗츠와 함께하시겠습니까?
             </p>
             <div className="mt-6 w-full sm:w-auto">
               <LandingMagnetic>
@@ -872,24 +865,10 @@ export default function AbutsLabEventPage() {
             <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
               상담 신청
             </h2>
-            <p className="break-keep text-sm leading-relaxed text-slate-600">
-              {isAuthenticated && !requestorUser ? (
-                "의뢰자(치과, 기공소)만 신청할 수 있습니다."
-              ) : requestorUser ? (
-                <>
-                  상담을 신청하면 영업 담당자가 치과를 방문합니다.
-                  <br />
-                  곡면 가공을 설명하고, 어벗츠를 부담 없이 시작하실 수 있게
-                  안내합니다.
-                </>
-              ) : (
-                <>
-                  회원가입 후 상담을 신청하면 영업 담당자가 치과를 방문합니다.
-                  <br />
-                  곡면 가공을 설명하고, 어벗츠를 부담 없이 시작하실 수 있게
-                  안내합니다.
-                </>
-              )}
+            <p className="max-w-xl break-keep text-sm leading-relaxed text-slate-600">
+              {isAuthenticated && !requestorUser
+                ? "의뢰자(치과, 기공소)만 신청할 수 있습니다."
+                : "상담을 신청하면 영업 담당자가 치과를 방문합니다. 곡면 가공을 설명하고, 부담 없이 어벗츠를 시작하실 수 있게 안내합니다."}
             </p>
           </LandingReveal>
 

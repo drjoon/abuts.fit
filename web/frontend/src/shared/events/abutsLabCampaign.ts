@@ -31,10 +31,9 @@ export const ABUTS_LAB_EVENT_HEADLINE = "어벗츠기공소 소개";
 
 export const ABUTS_LAB_HERO_EYEBROW = "Abuts Lab";
 
-export const ABUTS_LAB_HERO_SUB_LINES = [
-  "디자인이 예뻐 보여도, 가공하면 다르게 나오기도 합니다.",
-  "어벗츠 소프트웨어가 그 문제를 해결하여 매끈하게 가공합니다.",
-] as const;
+/** 히어로 본문. 가입 신청은 치과. 문장 사이 강제 줄바꿈 없음. */
+export const ABUTS_LAB_HERO_SUB =
+  "디자인이 좋아 보여도 가공하면 다르게 나올 수 있습니다. 어벗츠 소프트웨어가 곡면을 맞춰 매끈하게 가공합니다.";
 
 export const ABUTS_LAB_IMAGES = {
   design: "/events/abuts-lab/design-compare.png",
