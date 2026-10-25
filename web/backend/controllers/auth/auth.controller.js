@@ -28,7 +28,6 @@ import { Types } from "mongoose";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { defaultProfileImageForSeed } from "../../utils/defaultProfileImage.js";
-import { toAsciiSlug } from "../../utils/hangulSlug.js";
 import {
   isStaffInitialPassword,
   isStrongPassword,
@@ -279,12 +278,6 @@ async function resolveReferrerTargets({
     allowedSignupRoles,
   };
 }
-
-const createPracticePseudoEmail = (seed = "practice") => {
-  const base = toAsciiSlug(seed).slice(0, 32);
-  const suffix = `${Date.now()}${crypto.randomInt(1000, 9999)}`;
-  return `practice.${base || "clinic"}-${suffix}@abuts.fit`;
-};
 
 const normalizeDigits = (value) => String(value || "").replace(/\D/g, "");
 
@@ -565,22 +558,14 @@ async function register(req, res) {
       socialProvider,
       socialProviderUserId,
       socialToken,
-      signupChannel,
-      clinicName,
     } = req.body;
 
     const normalizedRole = String(role || "requestor").trim();
-    const isPracticeSignup =
-      String(signupChannel || "").trim() === "practice_dropzone";
 
     const normalizedEmailInput = String(email || "")
       .trim()
       .toLowerCase();
-    const normalizedEmail =
-      normalizedEmailInput ||
-      (isPracticeSignup
-        ? createPracticePseudoEmail(clinicName || name || "practice")
-        : "");
+    const normalizedEmail = normalizedEmailInput;
 
     // 필수 필드 검증
     if (!name || !normalizedEmail || (!password && !socialProvider)) {
@@ -624,37 +609,19 @@ async function register(req, res) {
       });
     }
 
-    const referralCodeLength =
-      normalizedRole === "salesman" ||
-      normalizedRole === "devops" ||
-      normalizedRole === "salesTeam"
-        ? 3
-        : 5;
-    const referralCodeAlphaOnly = normalizedRole === "salesTeam";
     const referralCode = await ensureUniqueReferralCode(
-      referralCodeLength,
-      referralCodeAlphaOnly,
+      normalizedRole === "salesman" ? 3 : 5,
     );
 
-    if (
-      normalizedRole !== "requestor" &&
-      normalizedRole !== "manufacturer" &&
-      normalizedRole !== "admin" &&
-      normalizedRole !== "salesman" &&
-      normalizedRole !== "devops" &&
-      normalizedRole !== "practice" &&
-      normalizedRole !== "labTeam" &&
-      normalizedRole !== "salesTeam"
-    ) {
+    if (normalizedRole !== "requestor" && normalizedRole !== "salesman") {
       return res.status(400).json({
         success: false,
-        message: "유효하지 않은 역할입니다.",
+        message: "공개 가입은 의뢰자 또는 딜러만 가능합니다.",
       });
     }
 
     // 모든 역할 이메일 인증 통일 (소셜 로그인 제외)
-    // 단, practice 공개 드롭존 signupChannel은 치과명+비밀번호 가입 UX를 위해 이메일 인증을 생략한다.
-    if (!socialProvider && !isPracticeSignup) {
+    if (!socialProvider) {
       const ok = await assertSignupVerifications({
         email: normalizedEmail,
       });
@@ -695,16 +662,8 @@ async function register(req, res) {
     const user = new User(userDoc);
     await user.save();
 
-    if (normalizedRole === "admin") {
-      const ensured = await ensureAbutsAdminReferralCode();
-      if (ensured?.userId && String(ensured.userId) === String(user._id)) {
-        user.referralCode = ABUTS_ADMIN_REFERRAL_CODE;
-        await user.save();
-      }
-    }
-
     // 모든 역할 이메일 인증 consume 처리 통일 (소셜 로그인 제외)
-    if (!socialProvider && !isPracticeSignup) {
+    if (!socialProvider) {
       try {
         await consumeSignupVerifications({
           email: normalizedEmail,
@@ -1123,164 +1082,6 @@ async function practiceLogin(req, res) {
     res.status(500).json({
       success: false,
       message: "로그인 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
-/**
- * 드롭존 최소 가입 — 의뢰인(requestor) + practice 무료 경로
- * 필수: 치과명·담당자명·이메일·비밀번호·휴대폰(치과 공용 혹은 담당자)(+인증).
- * 주소/Org 앵커는 온보딩에서 완성.
- * @route POST /api/auth/practice/register
- *
- * related files:
- * - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
- * - web/frontend/rules.md
- * - web/backend/utils/requestorCapabilities.js
- */
-async function practiceRegister(req, res) {
-  try {
-    const password = String(req.body?.password || "");
-    const phone = String(req.body?.phone || "").trim();
-    const clinicName = String(req.body?.clinicName || "").trim();
-    const directorName = String(req.body?.directorName || "").trim();
-    const staffName = String(req.body?.staffName || "").trim();
-    const normalizedEmail = String(req.body?.email || "")
-      .trim()
-      .toLowerCase();
-
-    if (
-      !password ||
-      !phone ||
-      !normalizedEmail ||
-      !clinicName ||
-      !directorName ||
-      !staffName
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "치과명, 원장님명, 담당자명, 이메일, 비밀번호, 휴대폰(치과 공용 혹은 담당자)은 필수입니다.",
-      });
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      return res.status(400).json({
-        success: false,
-        message: "이메일 형식이 올바르지 않습니다.",
-      });
-    }
-
-    const phoneDigits = normalizeDigits(phone);
-    if (!/^01[016789]\d{7,8}$/.test(phoneDigits)) {
-      return res.status(400).json({
-        success: false,
-        message: "휴대폰 번호 형식이 올바르지 않습니다.",
-      });
-    }
-
-    if (!isStrongPassword(password)) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "비밀번호는 10자 이상이며 특수문자(!@#%^&* 등)를 포함해야 합니다. $는 사용할 수 없습니다.",
-      });
-    }
-
-    const existingByEmail = await User.findOne({ email: normalizedEmail })
-      .select({ _id: 1 })
-      .lean();
-    if (existingByEmail) {
-      return res.status(400).json({
-        success: false,
-        message: "이미 등록된 이메일입니다.",
-      });
-    }
-
-    const verified = await assertSignupVerifications({
-      email: normalizedEmail,
-      phone: phoneDigits,
-    });
-    if (!verified) {
-      return res.status(400).json({
-        success: false,
-        message: "이메일과 휴대폰 인증을 완료해주세요.",
-      });
-    }
-
-    const { referredByAnchorId } = await resolveReferrerTargets({
-      referredByEmail: "",
-      referredByReferralCode: "",
-      socialToken: "",
-      signupRole: "requestor",
-    });
-
-    const referralCode = await ensureUniqueReferralCode(5);
-
-    // 최소 가입: role=requestor + practice. 주소/Org 앵커는 온보딩에서 완성.
-    const user = new User({
-      name: staffName,
-      email: normalizedEmail,
-      password,
-      role: "requestor",
-      subRole: "owner",
-      referralCode,
-      referredByAnchorId: referredByAnchorId || null,
-      requestorKind: "practice",
-      requestorServices: { free: false, paid: true },
-      signupChannel: "practice_dropzone",
-      onboardingWizardCompleted: false,
-      approvedAt: new Date(),
-      active: true,
-      isVerified: true,
-      profileImage: defaultProfileImageForSeed(normalizedEmail),
-      phoneNumber: phone,
-      phoneVerifiedAt: new Date(),
-      practiceProfile: {
-        clinicName,
-        directorName,
-        staffName,
-        phone,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    });
-    await user.save();
-
-    try {
-      await consumeSignupVerifications({
-        email: normalizedEmail,
-        phone: phoneDigits,
-        userId: user._id,
-      });
-    } catch (e) {
-      console.error("[practiceRegister] consumeSignupVerifications failed", e);
-    }
-
-    const freshUser = await User.findById(user._id).select("-password");
-    const userWithoutPassword = {
-      ...(freshUser ? freshUser.toObject() : user.toObject()),
-    };
-    delete userWithoutPassword.password;
-
-    const token = generateToken({ userId: user._id, role: user.role });
-    const refreshToken = generateRefreshToken(user._id);
-
-    return res.status(201).json({
-      success: true,
-      message: "회원가입이 완료되었습니다.",
-      data: {
-        user: userWithoutPassword,
-        token,
-        refreshToken,
-      },
-    });
-  } catch (error) {
-    console.error("[practiceRegister] failed", error);
-    return res.status(500).json({
-      success: false,
-      message: "의뢰인 가입 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -2310,7 +2111,6 @@ export default {
   validateReferral,
   login,
   practiceLogin,
-  practiceRegister,
   practiceFindPassword,
   practiceChangePassword,
   refreshToken,

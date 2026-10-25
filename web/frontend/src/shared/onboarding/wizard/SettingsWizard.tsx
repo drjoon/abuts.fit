@@ -13,7 +13,6 @@ import { request } from "@/shared/api/apiClient";
 import { defaultAvatarUrlFromSeed } from "@/shared/lib/avatarOptions";
 
 import { PhoneStep } from "./steps/PhoneStep";
-import { RoleStep } from "./steps/RoleStep";
 import { BusinessStep } from "./steps/BusinessStep";
 import { clearOnboardingLocalStorage } from "../clearOnboardingLocalStorage";
 
@@ -26,7 +25,7 @@ interface SettingsWizardProps {
 
 export type WizardStepId = "profile" | "phone" | "role" | "business";
 
-const FULL_STEP_ORDER: WizardStepId[] = ["phone", "role", "business"];
+const FULL_STEP_ORDER: WizardStepId[] = ["phone", "business"];
 
 const createStepCompletionState = (): Record<WizardStepId, boolean> => ({
   profile: false,
@@ -34,32 +33,6 @@ const createStepCompletionState = (): Record<WizardStepId, boolean> => ({
   role: false,
   business: false,
 });
-
-const readStoredWizardRole = (
-  keys: {
-    roleStorageKey: string;
-    legacyRoleStorageKey: string;
-    fallbackRoleStorageKey: string;
-  },
-  dbVersion?: string,
-): "owner" | "member" | null => {
-  if (typeof window === "undefined") return null;
-
-  const localDbVersion = window.localStorage.getItem("dbVersion");
-  // readStoredStep과 동일: dbVersion이 아직 없으면(초기 로딩) 저장값을 유지
-  if (dbVersion && dbVersion !== localDbVersion) {
-    return null;
-  }
-
-  const storedRole =
-    window.localStorage.getItem(keys.roleStorageKey) ||
-    window.localStorage.getItem(keys.legacyRoleStorageKey) ||
-    window.localStorage.getItem(keys.fallbackRoleStorageKey);
-
-  return storedRole === "owner" || storedRole === "member"
-    ? storedRole
-    : null;
-};
 
 export const SettingsWizard = ({
   mode,
@@ -98,15 +71,6 @@ export const SettingsWizard = ({
         "anonymous",
     );
   }, [token, user]);
-  const roleStorageKey = useMemo(() => {
-    return `onboarding:wizard-role:${effectiveBusinessType}:${mode}:${storageIdentity}`;
-  }, [effectiveBusinessType, mode, storageIdentity]);
-  const legacyRoleStorageKey = useMemo(() => {
-    return `onboarding:wizard-role:${effectiveBusinessType}:${storageIdentity}`;
-  }, [effectiveBusinessType, storageIdentity]);
-  const fallbackRoleStorageKey = useMemo(() => {
-    return `onboarding:wizard-role:${effectiveBusinessType}:${mode}`;
-  }, [effectiveBusinessType, mode]);
   const stepStorageKey = useMemo(() => {
     return `onboarding:wizard-step:${effectiveBusinessType}:${mode}:${storageIdentity}`;
   }, [effectiveBusinessType, mode, storageIdentity]);
@@ -142,7 +106,12 @@ export const SettingsWizard = ({
       window.localStorage.getItem(legacyStepStorageKey) ||
       window.localStorage.getItem(fallbackStepStorageKey) ||
       "";
-    const raw = storedRaw === "profile" ? "phone" : storedRaw;
+    const raw =
+      storedRaw === "profile"
+        ? "phone"
+        : storedRaw === "role"
+          ? "business"
+          : storedRaw;
 
     console.log("[wizard-readStoredStep] reading from localStorage:", {
       fallbackStepStorageKey,
@@ -182,9 +151,6 @@ export const SettingsWizard = ({
     fallbackStepStorageKey,
     legacyStepStorageKey,
     stepStorageKey,
-    roleStorageKey,
-    legacyRoleStorageKey,
-    fallbackRoleStorageKey,
   ]);
   const [currentStep, setCurrentStep] = useState<WizardStepId | null>(() => {
     // DB 버전 체크 후 localStorage에 저장된 단계 또는 첫 단계부터 시작
@@ -201,34 +167,7 @@ export const SettingsWizard = ({
     });
     return initial;
   });
-  const readStoredRole = useCallback(
-    () =>
-      readStoredWizardRole(
-        {
-          roleStorageKey,
-          legacyRoleStorageKey,
-          fallbackRoleStorageKey,
-        },
-        dbVersion,
-      ),
-    [
-      dbVersion,
-      fallbackRoleStorageKey,
-      legacyRoleStorageKey,
-      roleStorageKey,
-    ],
-  );
-  const [selectedRole, setSelectedRole] = useState<"owner" | "member" | null>(
-    () =>
-      readStoredWizardRole(
-        {
-          roleStorageKey,
-          legacyRoleStorageKey,
-          fallbackRoleStorageKey,
-        },
-        dbVersion,
-      ),
-  );
+  const selectedRole = "owner" as const;
   const [stepCompleted, setStepCompleted] = useState<
     Record<WizardStepId, boolean>
   >(() => createStepCompletionState());
@@ -345,35 +284,6 @@ export const SettingsWizard = ({
     window.localStorage.setItem(stepStorageKey, currentStep);
   }, [currentStep, fallbackStepStorageKey, stepStorageKey]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!selectedRole) return;
-    window.localStorage.setItem(roleStorageKey, selectedRole);
-    window.localStorage.setItem(fallbackRoleStorageKey, selectedRole);
-  }, [fallbackRoleStorageKey, roleStorageKey, selectedRole]);
-
-  // storageIdentity/user 지연 로딩 후에도 역할 복원
-  useEffect(() => {
-    if (selectedRole) return;
-    const storedRole = readStoredRole();
-    if (storedRole) {
-      setSelectedRole(storedRole);
-    }
-  }, [readStoredRole, selectedRole]);
-
-  // 사업자 단계인데 등록 방식이 없으면 역할 선택으로 되돌림
-  // (stale localStorage로 business에 바로 진입해 등록증 UI가 뜨는 것 방지)
-  useEffect(() => {
-    if (currentStep !== "business") return;
-    if (selectedRole) return;
-    const storedRole = readStoredRole();
-    if (storedRole) {
-      setSelectedRole(storedRole);
-      return;
-    }
-    setCurrentStep("role");
-  }, [currentStep, readStoredRole, selectedRole]);
-
   const handleNext = useCallback(async () => {
     if (!currentStep) return;
     if (
@@ -389,10 +299,6 @@ export const SettingsWizard = ({
           return;
         }
       }
-    }
-    if (currentStep === "role") {
-      if (!selectedRole) return;
-      handleStepComplete("role");
     }
     const currentIndex = STEP_ORDER.indexOf(currentStep);
     if (currentIndex < STEP_ORDER.length - 1) {
@@ -491,8 +397,6 @@ export const SettingsWizard = ({
     switch (currentStep) {
       case "phone":
         return "휴대전화 인증";
-      case "role":
-        return "등록 방식 선택";
       case "business":
         if (oralScanPhase) {
           return "구강 스캔";
@@ -503,7 +407,7 @@ export const SettingsWizard = ({
         ) {
           return "치과 정보";
         }
-        return selectedRole === "owner" ? "사업자 등록" : "사업자 가입";
+        return "사업자 등록";
       default:
         return "";
     }
@@ -519,8 +423,6 @@ export const SettingsWizard = ({
     switch (currentStep) {
       case "phone":
         return "max-w-md";
-      case "role":
-        return "max-w-2xl";
       case "business":
         return "max-w-3xl";
       default:
@@ -597,15 +499,6 @@ export const SettingsWizard = ({
                 registerGoNextAction={registerGoNextAction}
               />
             )}
-            {currentStep === "role" && (
-              <RoleStep
-                selectedRole={selectedRole}
-                onRoleSelect={(role) => {
-                  setSelectedRole(role);
-                }}
-                onComplete={() => handleStepComplete("role")}
-              />
-            )}
             {currentStep === "business" && (
               <BusinessStep
                 role={selectedRole}
@@ -640,9 +533,7 @@ export const SettingsWizard = ({
                   <div className="hidden sm:block" />
                 )}
                 <div className="flex gap-3 sm:ml-auto">
-                  {(currentStep === "phone" ||
-                    currentStep === "role" ||
-                    currentStep === "business") && (
+                  {(currentStep === "phone" || currentStep === "business") && (
                     <Button
                       onClick={() => {
                         void handleNext();
@@ -650,7 +541,6 @@ export const SettingsWizard = ({
                       disabled={
                         nextLoading ||
                         stepBusy ||
-                        (currentStep === "role" && !selectedRole) ||
                         (currentStep === "business" && !canProceedBusinessStep)
                       }
                       className="h-11 w-full sm:w-20"
@@ -669,11 +559,7 @@ export const SettingsWizard = ({
             className="text-slate-500 hover:text-slate-900"
             type="button"
             onClick={() => {
-              if (currentStep === "business" && canProceedBusinessStep) {
-                onWizardComplete();
-              } else {
-                navigate("/");
-              }
+              navigate("/");
             }}
           >
             홈으로 돌아가기

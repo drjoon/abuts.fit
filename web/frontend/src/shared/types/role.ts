@@ -29,31 +29,10 @@ export const APP_USER_ROLE_SET = new Set<string>(APP_USER_ROLES);
 export const isAppUserRole = (value: unknown): value is AppUserRole =>
   APP_USER_ROLE_SET.has(String(value || "").trim());
 
-export const STAFF_SIGNUP_ROLES = [
-  "manufacturer",
-  "devops",
-  "admin",
-  "labTeam",
-  "salesTeam",
-] as const;
-
-export type StaffSignupRole = (typeof STAFF_SIGNUP_ROLES)[number];
-
-export const STAFF_SIGNUP_ROLE_SET = new Set<string>(STAFF_SIGNUP_ROLES);
-
-export const isStaffSignupRole = (value: unknown): value is StaffSignupRole =>
-  STAFF_SIGNUP_ROLE_SET.has(String(value || "").trim());
-
-/** 가입 화면에서 고를 수 있는 역할. internalLab은 관리자 생성만. */
+/** 공개 가입에서 고를 수 있는 역할. 임직원은 대표가 설정에서 등록. */
 export const SELECTABLE_SIGNUP_ROLES = [
   "requestor",
-  "practice",
   "salesman",
-  "manufacturer",
-  "admin",
-  "devops",
-  "labTeam",
-  "salesTeam",
 ] as const;
 
 export type SelectableSignupRole = (typeof SELECTABLE_SIGNUP_ROLES)[number];

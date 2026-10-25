@@ -135,7 +135,7 @@ Notes:
   - `src/shared/realtime/creditBalanceEvent.ts`
   - `websocket-realtime-update-checklist.md` (웹소켓 실시간 업데이트 자동 점검 체크리스트)
 - 의뢰자 가입·유형·게이트
-  - `src/features/auth/SignupPage.tsx` (공개 가입: requestor|salesman. `/signup/staff`: manufacturer|devops|admin|labTeam|salesTeam)
+  - `src/features/auth/SignupPage.tsx` (공개 가입: requestor|salesman. `/signup/staff`는 `/signup`으로 보냄. 임직원은 대표가 설정-임직원-직원등록)
   - `src/shared/business/requestorCapabilities.ts`
   - `src/shared/business/useRequestorBusinessAccess.ts`
   - `src/shared/business/BusinessPaidAccessGate.tsx`
@@ -703,7 +703,7 @@ Notes:
 - 의뢰자 역할·서비스·유료게이트 SSOT (2026-08, 루트 §2.4 상세)
   - 가입 role: `requestor` | `salesman`만. `practice` role **제거**.
   - 공개 가입(`/signup`): `requestor` | `salesman`. 복원 draft에 `practice`가 있으면 requestor로 전환.
-  - 이메일·소셜 가입 중간 단계에 소개자 코드 입력(선택, 확인 후 다음·미입력은 건너뛰기). 직원 가입(`/signup/staff`)과 URL `ref`는 생략. 건너뛰면 대표가 가입 후 14일간 설정-사업자에서 등록하고, 그 이후에는 어벗츠 소개(`AAA`)로 고정된다. 같은 기한은 딜러십 정책·영업팀 의뢰자 정책·약관·서비스·도움말에 둔다(`dealershipPolicyCopy`).
+  - 이메일·소셜 가입 중간 단계에 소개자 코드 입력(선택, 확인 후 다음·미입력은 건너뛰기). URL `ref`는 생략. 임직원은 공개 가입이 없고 대표가 설정-임직원-직원등록. 건너뛰면 대표가 가입 후 14일간 설정-사업자에서 등록하고, 그 이후에는 어벗츠 소개(`AAA`)로 고정된다. 같은 기한은 딜러십 정책·영업팀 의뢰자 정책·약관·서비스·도움말에 둔다(`dealershipPolicyCopy`).
   - 온보딩(`/dashboard/wizard`): 휴대전화 → 역할 → 사업자. 사업자등록은 가입 시 필수(크레딧 선결제·의뢰 가능 요건, 통신판매업 면제 법적 요건). 통장은 지급 탭에 들어갔을 때, 수가표는 작업시작 때 미설정이면 안내.
     - **치과 대표(owner)**: 사업자등록(검증) 직후 **구강 스캔 사용 여부**(필수 예/아니오). 직원(member)·기공소는 생략.
     - SSOT: `PracticeOralScanStep` · `practiceProfile.usesOralScan` / `BusinessAnchor.usesOralScan`. 설정「디지털」탭(키 `digital`, 구 `oral-scan`은 같은 탭)에서 구강 스캐너와 보철 작업물(`requireLabProsthesisUpload`, 기본 켬)을 체크 즉시 저장. 없음=요구. 협력 기공소 의뢰만 생성 때 `billing` 스냅샷을 따른다. 어벗츠기공본부 내부·하청은 완성 보철 업로드가 필수다.
@@ -743,17 +743,12 @@ Notes:
   - CA 연동 「어벗 진행상황」(`getPracticeAbutmentDeliveryLabel` / `PRACTICE_ABUTMENT_PROGRESS_FIELD_LABEL`): 한진 운송·배송완료 우선, 없으면 제조 `manufacturerStages`를 준비·가공·세척·패킹·포장·발송·추적관리로 표시(구「생산 중」합침 없음). SSOT=`src/shared/shipping/hanjinTrackingLabel.ts`.
 
 
-- 드롭존 가입(치과 전용, requestor+practice)
+- 드롭존(치과 전용, requestor+practice)
   - 공개 드롭존(`PracticeDropzonePage`)은 기공의뢰서 **발신(치과)** 전용. kind/lab 선택 UI 없음.
-  - Step 2 임베디드 로그인/가입/비밀번호 변경. 라벨은 「의뢰인 계정」.
-  - 최소 가입: `POST /api/auth/practice/register` → `role=requestor` + `requestorKind=practice` + `requestorServices={free:false,paid:true}`.
-    필수: `email`, `password`, `phone`, `clinicName`, `staffName`.
-    `practiceProfile.clinicName/staffName/phone`과 계정 `name(=staffName)`을 저장. 주소/Org 앵커는 온보딩에서 완성.
-  - 가입 전 이메일·담당자 휴대폰 인증 필수(공통 signup verification API). 로컬 캐시: `practice_dropzone_signup_verification_v1`.
-  - 가입 직후 같은 페이지에서 **첫 PracticeTransfer** 전송. 성공 시 대시보드로 이동하지 않고 드롭존 성공 UI 유지.
-  - 게이트: 전송 이력 ≥ 1건이고 `onboardingWizardCompleted` 미완료면 추가 의뢰 시 `/dashboard/wizard?mode=account`로 유도(로그인 세션과 무관, 첫 전송 성공이 기준).
+  - Step 2는 로그인·비밀번호 변경만. 가입은 `/signup`. 라벨은 「의뢰인 계정」.
   - 로그인: `POST /api/auth/login` — `requestor` + practice 발신 가능 계정만 허용.
   - 비밀번호 변경: `POST /api/auth/practice/password/change`(`email`+`phone`+`newPassword`, requestor).
+  - 게이트: `onboardingWizardCompleted` 미완료면 추가 의뢰 시 `/dashboard/wizard?mode=account`로 유도. 대표는 사업자등록증·BA 검증 후 위저드 종료.
   - 드롭존 의뢰 폼은 대시보드와 동일 localStorage(`practice_transfer_form_local_v1`). 첨부 캐시(`practice_dropzone_file_cache_meta_v1` + IndexedDB) 공유.
   - 비회원 문의(`GuestChatModal`): 드롭존 라이트 테마 유지.
   - 레거시 `practice` role·`/practice/dashboard`·치과명 로그인 UI는 제거 대상(마이그레이션 후 삭제).

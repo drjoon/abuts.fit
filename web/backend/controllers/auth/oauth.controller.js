@@ -279,7 +279,11 @@ async function googleStart(req, res) {
   }
 
   const intent = String(req.query.intent || "").trim();
-  const role = String(req.query.role || "").trim();
+  const role = ["requestor", "salesman"].includes(
+    String(req.query.role || "").trim(),
+  )
+    ? String(req.query.role).trim()
+    : "requestor";
   const ref = String(req.query.ref || "").trim();
   const state =
     intent === "signup"
@@ -445,7 +449,11 @@ async function kakaoStart(req, res) {
   }
 
   const intent = String(req.query.intent || "").trim();
-  const role = String(req.query.role || "").trim();
+  const role = ["requestor", "salesman"].includes(
+    String(req.query.role || "").trim(),
+  )
+    ? String(req.query.role).trim()
+    : "requestor";
   const ref = String(req.query.ref || "").trim();
   const state =
     intent === "signup"

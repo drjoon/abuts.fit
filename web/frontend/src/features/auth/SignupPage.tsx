@@ -4,7 +4,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/onboarding/SharedOnboardingWizardPage.tsx
-// - 2026-08-17: /signup/staff에 기공팀(labTeam)·영업팀(salesTeam) 추가.
+// - 공개 가입은 의뢰자·딜러만. 임직원은 대표가 설정에서 등록.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,8 +15,6 @@ import { useAuthStore } from "@/store/useAuthStore";
 import {
   getAppUserRoleLabel,
   isSelectableSignupRole,
-  isStaffSignupRole,
-  STAFF_SIGNUP_ROLES,
   type AppUserRole,
 } from "@/shared/types/role";
 import { AuthMarketingPanel } from "@/features/auth/AuthMarketingPanel";
@@ -114,22 +112,6 @@ const clearSignupProgress = (sessionId?: string) => {
 };
 
 
-const STAFF_SIGNUP_LABEL: Record<(typeof STAFF_SIGNUP_ROLES)[number], string> = {
-  manufacturer: getAppUserRoleLabel("manufacturer"),
-  devops: getAppUserRoleLabel("devops"),
-  admin: getAppUserRoleLabel("admin"),
-  labTeam: getAppUserRoleLabel("labTeam"),
-  salesTeam: getAppUserRoleLabel("salesTeam"),
-};
-
-const STAFF_SIGNUP_HINT: Record<(typeof STAFF_SIGNUP_ROLES)[number], string> = {
-  manufacturer: "워크시트, 생산장비, 출하 관리 권한을 제공합니다.",
-  devops: "시스템 개발 및 운영 관리 권한을 제공합니다.",
-  admin: "요청 모니터링, 정산, 조직 관리 기능을 포함합니다.",
-  labTeam: "어벗츠기공소 기공 작업과 내부 인센티브를 담당합니다.",
-  salesTeam: "영업본부 임직원 — 거래처·방문·소개 실적을 담당합니다.",
-};
-
 export const SignupPage = () => {
   type SignupRole = AppUserRole;
   const navigate = useNavigate();
@@ -167,13 +149,8 @@ export const SignupPage = () => {
   }, [labPartnerToken]);
 
   const isReferralSignupRoute = location.pathname === "/signup/referral";
-  const isStaffSignupRoute = location.pathname === "/signup/staff";
   const oauthReturnTo =
-    referralCode || isReferralSignupRoute
-      ? "/signup/referral"
-      : isStaffSignupRoute
-        ? "/signup/staff"
-        : "/signup";
+    referralCode || isReferralSignupRoute ? "/signup/referral" : "/signup";
 
   const { token, user, loginWithToken, logout } = useAuthStore();
   const [formData, setFormData] = useState({
@@ -196,16 +173,11 @@ export const SignupPage = () => {
 
   const [signupRole, setSignupRole] = useState<SignupRole>(() => {
     const role = restoredProgress?.signupRole;
-    // 공개 가입 UI에서 치과(practice) 옵션 제거 — 복원값도 의뢰자로 전환
-    if (role === "practice" && location.pathname !== "/signup/staff") {
-      return "requestor";
-    }
     if (isSelectableSignupRole(role)) {
       return role;
     }
-    return location.pathname === "/signup/staff" ? "admin" : "requestor";
+    return "requestor";
   });
-  const prevPathRef = useRef(location.pathname);
   const [wizardStep, setWizardStep] = useState<SignupWizardStep>(() => {
     const mode = (searchParams.get("mode") || "").trim();
     if (mode === "social_new" || mode === "social_complete") return 1;
@@ -299,18 +271,6 @@ export const SignupPage = () => {
       setSignupRole("requestor");
     }
   }, [isSocialNewMode, searchParams]);
-
-  useEffect(() => {
-    if (isSocialNewMode) {
-      prevPathRef.current = location.pathname;
-      return;
-    }
-    const prevPath = prevPathRef.current;
-    if (location.pathname === "/signup/staff" && prevPath !== "/signup/staff") {
-      setSignupRole("admin");
-    }
-    prevPathRef.current = location.pathname;
-  }, [isSocialNewMode, location.pathname]);
 
   const cardTitle = useMemo(() => {
     if (isWizardMode) {
@@ -437,16 +397,11 @@ export const SignupPage = () => {
   );
 
   const allowedSignupRoles = useMemo<SignupRole[]>(() => {
-    // /signup/staff 경로는 제조사/개발운영사/관리자/기공팀/영업팀만 허용
-    if (isStaffSignupRoute) {
-      return [...STAFF_SIGNUP_ROLES];
-    }
-    // /signup 경로는 의뢰자/딜러만 허용 (치과는 별도 경로)
     if (typeof effectiveReferralCode !== "string")
       return ["requestor", "salesman"];
     const roles = referrerInfo?.allowedSignupRoles || [];
     return roles.filter(isSelectableSignupRole);
-  }, [effectiveReferralCode, referrerInfo, isStaffSignupRoute]);
+  }, [effectiveReferralCode, referrerInfo]);
 
   const isSalesmanDisabled = useMemo(() => {
     if (typeof effectiveReferralCode !== "string") return false;
@@ -454,10 +409,8 @@ export const SignupPage = () => {
   }, [allowedSignupRoles, effectiveReferralCode]);
 
   const skipReferralCodeStep =
-    isStaffSignupRoute ||
-    signupRole === "practice" ||
-    (typeof referralCode === "string" &&
-      enteredReferralCode === referralCode.trim());
+    typeof referralCode === "string" &&
+    enteredReferralCode === referralCode.trim();
 
   const clearEnteredReferralCode = useCallback(() => {
     setEnteredReferralCode(undefined);
@@ -1301,55 +1254,36 @@ export const SignupPage = () => {
                 <>
                   {wizardStep === 1 && (
                     <div className="space-y-6">
-                      {isStaffSignupRoute ? (
-                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                          {STAFF_SIGNUP_ROLES.map((role) => (
-                            <button
-                              key={role}
-                              type="button"
-                              onClick={() => setSignupRole(role)}
-                              className={`min-h-11 rounded-md border px-1 text-xs font-medium transition-colors sm:text-sm ${
-                                signupRole === role
-                                  ? "border-white/10 bg-white/15 text-white"
-                                  : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
-                              }`}
-                            >
-                              {STAFF_SIGNUP_LABEL[role]}
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setSignupRole("requestor")}
-                            className={`min-h-11 rounded-md border text-sm font-medium transition-colors ${
-                              signupRole === "requestor"
-                                ? "border-white/10 bg-white/15 text-white"
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSignupRole("requestor")}
+                          className={`min-h-11 rounded-md border text-sm font-medium transition-colors ${
+                            signupRole === "requestor"
+                              ? "border-white/10 bg-white/15 text-white"
+                              : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                          }`}
+                        >
+                          의뢰자
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isSalesmanDisabled) return;
+                            setSignupRole("salesman");
+                          }}
+                          disabled={isSalesmanDisabled}
+                          className={`min-h-11 rounded-md border text-sm font-medium transition-colors ${
+                            signupRole === "salesman"
+                              ? "border-white/10 bg-white/15 text-white"
+                              : isSalesmanDisabled
+                                ? "cursor-not-allowed border-white/10 bg-white/5 text-white/35"
                                 : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
-                            }`}
-                          >
-                            의뢰자
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (isSalesmanDisabled) return;
-                              setSignupRole("salesman");
-                            }}
-                            disabled={isSalesmanDisabled}
-                            className={`min-h-11 rounded-md border text-sm font-medium transition-colors ${
-                              signupRole === "salesman"
-                                ? "border-white/10 bg-white/15 text-white"
-                                : isSalesmanDisabled
-                                  ? "cursor-not-allowed border-white/10 bg-white/5 text-white/35"
-                                  : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
-                            }`}
-                          >
-                            {getAppUserRoleLabel("salesman")}
-                          </button>
-                        </div>
-                      )}
+                          }`}
+                        >
+                          {getAppUserRoleLabel("salesman")}
+                        </button>
+                      </div>
                       {isSalesmanDisabled ? (
                         <p className="text-sm text-white/55">
                           소개 코드로는 의뢰자만 가입할 수 있습니다. 딜러 가입은
@@ -1366,11 +1300,6 @@ export const SignupPage = () => {
                           딜러사로 활동하는 개인사업자 혹은 법인
                         </p>
                       )}
-                      {isStaffSignupRole(signupRole) ? (
-                        <p className="text-sm text-white/70">
-                          {STAFF_SIGNUP_HINT[signupRole]}
-                        </p>
-                      ) : null}
 
                       <SignupWizardStep1
                         googleUrl={oauthStartUrl("google")}

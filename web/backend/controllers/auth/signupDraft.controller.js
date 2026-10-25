@@ -7,16 +7,7 @@ import SignupDraft from "../../models/signupDraft.model.js";
 
 const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-const ALLOWED_ROLES = new Set([
-  "requestor",
-  "practice",
-  "salesman",
-  "manufacturer",
-  "admin",
-  "devops",
-  "labTeam",
-  "salesTeam",
-]);
+const ALLOWED_ROLES = new Set(["requestor", "salesman"]);
 
 const toSafeDraft = (doc) => {
   if (!doc) return null;

@@ -10,6 +10,8 @@ export const BUSINESS_ALLOWED_ROLES = [
   "admin",
   "devops",
   "practice",
+  "labTeam",
+  "salesTeam",
 ] as const;
 
 export type BusinessRole = (typeof BUSINESS_ALLOWED_ROLES)[number];

@@ -640,7 +640,10 @@ const App = () => {
                 />
                 <Route path="/refer" element={<ReferRoute />} />
                 <Route path="/signup/referral" element={<SignupPage />} />
-                <Route path="/signup/staff" element={<SignupPage />} />
+                <Route
+                  path="/signup/staff"
+                  element={<Navigate to="/signup" replace />}
+                />
                 <Route
                   path="/forgot-password"
                   element={<ForgotPasswordPage />}

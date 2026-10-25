@@ -81,6 +81,53 @@ describe("인증 API 테스트", () => {
       expect(response.body.message).toContain("이미 등록된 이메일");
     });
 
+    it("직원·레거시 역할은 공개 가입할 수 없다", async () => {
+      const deniedRoles = [
+        "practice",
+        "admin",
+        "manufacturer",
+        "devops",
+        "labTeam",
+        "salesTeam",
+        "internalLab",
+      ];
+      for (const role of deniedRoles) {
+        const email = `denied-${role}@example.com`;
+        await SignupVerification.create({
+          purpose: "signup",
+          channel: "email",
+          target: email,
+          verifiedAt: new Date(),
+        });
+        const response = await request(app)
+          .post("/api/auth/register")
+          .send({
+            name: "차단 사용자",
+            email,
+            password: newStrongPassword,
+            role,
+          })
+          .expect(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.message).toContain("공개 가입");
+      }
+    });
+
+    it("드롭존 가입 API는 제거되었다", async () => {
+      const response = await request(app)
+        .post("/api/auth/practice/register")
+        .send({
+          email: "dropzone@example.com",
+          password: newStrongPassword,
+          phone: "01012345678",
+          clinicName: "테스트치과",
+          directorName: "원장",
+          staffName: "담당",
+        })
+        .expect(404);
+      expect(response.body?.success).not.toBe(true);
+    });
+
     it("필수 필드 누락 시 실패", async () => {
       const incompleteUser = {
         name: "불완전 사용자",

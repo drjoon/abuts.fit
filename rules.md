@@ -157,7 +157,7 @@
   - `admin`(어벗츠 법인·주식회사): 플랫폼·스토어·커스텀어벗·기공사업. 기공소업은 이 법인의 기공사업부다. 개인 어벗츠기공소는 열지 않는다. 스토어·커스텀어벗·어벗츠가 수행한 기공의 OB 입금과 계산서는 법인. 치과→법인→제조사·딜러·개발운영사.
   - `internalLab`(어벗츠기공소): **법인 기공사업부의 작업 화면**(`businessType=internalLab`). 별도 개인 사업자가 아니다. 사업자번호는 법인과 같다(`parentBusinessAnchorId`). 신규 PTX 픽커 **최상단 고정**. 메뉴=기공의뢰(수신·어벗 생산)·크레딧·정산·문의·설정. 하청 전환·우선창·원청 UI는 이 화면 전용. 관리자 생성만(공개 가입 없음).
     - 어벗츠가 수행한 기공비의 치과 입금·면세 계산서는 **법인**(`admin`)이다. 다른 기공소가 수행한 기공비만 그 기공소로 간다. `corpPlatformFees`(법인→개인 기공소 청구)는 쓰지 않는다.
-  - `labTeam`(기공팀)·`salesTeam`(영업본부): 내부 직원. `/signup/staff`에서 가입. 사업영역 수익 분배 주체. `salesTeam`은 딜러(`salesman`)와 별개. 영업본부 포털=`/dashboard/sales` (거래처·일정·동선·실적·일일보고·소개). 소개코드=영문 3글자.
+  - `labTeam`(기공팀)·`salesTeam`(영업본부): 내부 직원. 공개 가입 없음. 어벗츠 대표(관리자)가 설정-임직원-직원등록. 사업영역 수익 분배 주체. `salesTeam`은 딜러(`salesman`)와 별개. 영업본부 포털=`/dashboard/sales` (거래처·일정·동선·실적·일일보고·소개). 소개코드=영문 3글자.
   - 딜러(`salesman`) 일일보고: 딜러사 **대표·담당자만** 열람. **어벗츠 관계자**(admin/salesTeam/devops 등)는 조회 불가. SSOT `web/backend/utils/salesDailyReportAccess.js` · FE `SalesDailyReportPrivacyBanner`.
   - `practice` role은 제거. 기존 계정은 `requestor`+`requestorCapabilities.practice` 마이그레이션 대상(신규 생성 금지). 백필: `scripts/db/backfill-requestor-capabilities.js --apply`.
 
@@ -256,7 +256,7 @@
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
   - **제조사(하청)**: % 분배 금지. **어벗 1개당** 고정 매입가(부가세 포함) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800)·`manufacturerRemakeUnitPrice`(기본 6,600, 리메이크)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 장부·미정산·지급=포함가(재가산 없음)·세금계산서(÷1.1). **리메이크도 제조사 지급(기본 6,600)**. 그 외(무료 크레딧 결제 포함)는 **약정 단가 전액 지급**. 매달 말일 일괄 지급 전까지는 미정산 잔액으로 적립.
   - **어벗 생산 분배**: 판매가(배송비 제외)에서 제조사 매입 공급가(기본 8,000=포함 8,800÷1.1)를 선차감하고, 잔여를 딜러/개발운영/어벗츠 비중(기본 딜러 포함 30:10:40 · 없으면 20:80)으로 분배. 제조사·개발운영사·딜러사 장부=포함가·지급=잔액 그대로. 특별주문가는 주체별 배분액. 설정 UI: 관리자「플랫폼 설정 · 커스텀어벗」가격·분배 비율 / 「사업영역」어벗사업. 제조사 박스당 배송 지급은 장부 출고 룰이며 사업영역 분배 UI에는 기재하지 않음.
-  - **딜러십(salesman) 파트너 조건**: 영업 수수료=거래처 판매가 − 1만원(부가세 포함, 어벗 1개당). 대시보드·관리자 집계=`dealerCommissionFromQuotedPrice`. **스토어(심플웨이)·기공 제외**(배송비·월정액 제외). 안내 카피=`dealershipPolicyCopy`. **90일 무주문이면 소개 코드 리셋**(누구든 다시 영업 가능, `referredByAnchorId` 해제). 리셋 후 재유치하면 소개만 다시 붙는다. 배송비=수신자(치과 또는 기공소) 부담. 시계=`max(referralAssignedAt || BA.createdAt, 최근 Request.createdAt, 최근 소비 occurredAt)`, KST 일자. 공개 가입(의뢰자·딜러)은 이메일·소셜 중간에 소개자 코드를 입력할 수 있다(선택, 건너뛰기 가능). 직원 가입과 URL `ref`는 이 단계를 생략한다. 코드 없이 가입하면 소개 귀속은 null이다. 개발운영사를 기본 소개자로 넣지 않는다. 대표가 가입 후 14일간 설정-사업자에서 소개자 코드(의뢰자·딜러·영업본부·어벗츠 `AAA`)를 등록한다(`POST /api/businesses/me/apply-referral`, 대표만, 귀속 null일 때). 14일이 지나면 어벗츠 관리자 소개 코드 `AAA`로 영구 고정한다(90일 영업 리셋 재등록은 예외). 어벗츠 관리자 소개 코드는 `AAA`로 생성한다. 잡=`jobs/dailyReferralOwnershipResetWorker.js`. 과거 `REV_SALESMAN` 불변.
+  - **딜러십(salesman) 파트너 조건**: 영업 수수료=거래처 판매가 − 1만원(부가세 포함, 어벗 1개당). 대시보드·관리자 집계=`dealerCommissionFromQuotedPrice`. **스토어(심플웨이)·기공 제외**(배송비·월정액 제외). 안내 카피=`dealershipPolicyCopy`. **90일 무주문이면 소개 코드 리셋**(누구든 다시 영업 가능, `referredByAnchorId` 해제). 리셋 후 재유치하면 소개만 다시 붙는다. 배송비=수신자(치과 또는 기공소) 부담. 시계=`max(referralAssignedAt || BA.createdAt, 최근 Request.createdAt, 최근 소비 occurredAt)`, KST 일자. 공개 가입(의뢰자·딜러)은 이메일·소셜 중간에 소개자 코드를 입력할 수 있다(선택, 건너뛰기 가능). URL `ref`는 이 단계를 생략한다. 임직원은 공개 가입이 없고 대표가 설정-임직원-직원등록한다. 코드 없이 가입하면 소개 귀속은 null이다. 개발운영사를 기본 소개자로 넣지 않는다. 대표가 가입 후 14일간 설정-사업자에서 소개자 코드(의뢰자·딜러·영업본부·어벗츠 `AAA`)를 등록한다(`POST /api/businesses/me/apply-referral`, 대표만, 귀속 null일 때). 14일이 지나면 어벗츠 관리자 소개 코드 `AAA`로 영구 고정한다(90일 영업 리셋 재등록은 예외). 어벗츠 관리자 소개 코드는 `AAA`로 생성한다. 잡=`jobs/dailyReferralOwnershipResetWorker.js`. 과거 `REV_SALESMAN` 불변.
   - **배송 분배**: 사업영역 분배 재원에서 제외. 매출에서 배송비를 먼저 차감한 나머지만 분배. 제조사 배송 매입가(부가세 포함)·고객 배송비 잔여는 출고 장부 흐름.
   - **플랫폼 분배**: 사용료·하청 수수료는 미부과(재원 0). 휴면 시 어벗츠 90% / 개발운영사 10%(비율 수정 가능). 개발운영사 장부=포함가·지급=잔액 그대로.
   - **기공(어벗츠기공소) 분배**: 내부기공소(기공사업부)에 배당된 건만, 배송비를 공통 지출로 먼저 차감한 뒤 나머지를 주체(role) 비율 → 주체 내 팀원 비율로 배분. 초기 주체 기공팀·영업팀·개발운영사. 설정 UI: 관리자「사업영역」기공사업.
@@ -337,12 +337,10 @@
   - `requestorCapabilities.practice` (레거시 키 `clinic`은 normalize·백필에서만 호환)
   - `clinicName`/`clinicPhone` 등 **연락처 필드**는 별도(점진 개명). filename-rule·묶음배송·Clinic CRUD 엔티티의 `clinic`은 해당 도메인 유지.
 - 드롭존(치과 전용 공개 전송):
-  - 가입·로그인도 `requestor`로 통일
+  - 가입 없음. 로그인은 `requestor` + practice 발신 계정만. 신규 가입은 `/signup`
   - `requestorCapabilities`는 **practice만** 체크(`{ practice: true, lab: false }`) — 수신(lab) 선택 UI/저장 없음
-  - 최소 가입: 이메일(+인증) + 비밀번호 + 담당자 휴대폰(+인증). `practiceProfile`/Org 앵커는 만들지 않음
-  - 가입 직후 **첫 PracticeTransfer**까지 드롭존에서 전송 가능(성공 후 대시보드로 보내지 않음)
-  - 게이트: **성공한 첫 전송 이후** 추가 의뢰 작성·대시보드 진입 시 온보딩 유도(`onboardingWizardCompleted` 미완료). 로그인 세션(~3년)과 무관
-  - 온보딩에서 `practiceProfile` 완료 시 **BusinessAnchor를 생성**한다(첫 가입자=`owner`). 사업자등록번호가 없으면 synthetic `practice-`* BN. 이후 설정에서 lab을 추가·검증하면 **동일 앵커**에 실BN·license를 올린다.
+  - 게이트: 온보딩 미완료면 추가 의뢰·대시보드 진입 시 위저드 유도. 대표는 사업자등록증 업로드·BA 검증 후 위저드 종료
+  - 온보딩에서 **BusinessAnchor를 생성**한다(첫 가입자=`owner`). 사업자등록증 검증 필수. 이후 설정에서 lab을 추가·검증하면 **동일 앵커**에 실BN·license를 올린다.
 - 유형 SSOT(체크박스 OR, 최소 1개): `requestorCapabilities = { practice: boolean, lab: boolean }`
   - Org SSOT: `BusinessAnchor` (`businessType: "requestor"`). practice/lab은 같은 조직의 캡일 뿐이며 “무앵커 발신 전용 조직” 경로는 없다.
   - 캡 SSOT: `BusinessAnchor.requestorCapabilities` (User 필드는 미링크·온보딩 중 미러)
@@ -354,11 +352,10 @@
   - `lab`: **기공소** — 기공실 유무 구분 없음
 - `requestorServices`는 **paid-only**. `free`(기공의뢰서) 옵션은 폐기. 읽기 시 레거시 `free`는 `paid`로 승격, 쓰기는 `{free:false,paid:true}`.
 - 가입·온보딩 흐름:
-  1. `/signup` → 계정(이메일·비번) → 로그인. 드롭존 → 계정(이메일·비번·담당자 휴대폰 인증) → **첫 기공의뢰 전송**
-  2. `/dashboard/wizard` 온보딩: 프로필 → 휴대전화(드롭존에서 이미 인증되면 스킵) → 역할(owner/staff) → 사업자
-  3. 사업자 단계에서 `RequestorCapabilitiesPicker`로 practice/lab 선택(드롭존 가입자는 practice 고정). 서비스 체크 UI 없음(paid 고정)
-  4. 역할 선택 시 사업자등록증 등록·검증 필수
-  5. 온보딩 완료 후 → `/dashboard` (생산의뢰는 `paid` + 사업자 검증)
+  1. `/signup` → 의뢰자 또는 딜러 대표 계정(이메일·비번) → 로그인. 임직원은 대표가 설정-임직원-직원등록
+  2. `/dashboard/wizard` 온보딩: 휴대전화 → 사업자 등록. 대표는 사업자등록증 업로드·BA 검증 필수
+  3. 사업자 단계에서 `RequestorCapabilitiesPicker`로 practice/lab 선택. 서비스 체크 UI 없음(paid 고정)
+  4. 온보딩 완료 후 → `/dashboard` (생산의뢰는 `paid` + 사업자 검증)
 - 접근성 게이트:
   - **생산의뢰**: `requestorServices.paid`(레거시 free는 paid 승격) AND `BusinessAnchor.status === "verified"`
   - 미검증이면 설정 > 사업자에서 사업자등록증 검증 필요

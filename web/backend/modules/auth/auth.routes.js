@@ -34,7 +34,6 @@ router.post("/referral/validate", authController.validateReferral);
 // 로그인
 router.post("/login", authController.login);
 router.post("/practice/login", authController.practiceLogin);
-router.post("/practice/register", authController.practiceRegister);
 router.post("/practice/password/find", authController.practiceFindPassword);
 router.post("/practice/password/change", authController.practiceChangePassword);
 

@@ -4,7 +4,7 @@
  *
  * 입력 순서:
  * 1) 의뢰서 작성 (기공소·환자·보철물·메모 + 파일첨부)
- * 2) 의뢰인 계정 (로그인/회원가입)
+ * 2) 의뢰인 계정 (로그인). 가입은 /signup.
  *
  * related files:
  * - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
@@ -47,7 +47,6 @@ import {
   ArrowRight,
   ChevronsUpDown,
   Check,
-  CheckCircle2,
   Eye,
   EyeOff,
   Plus,
@@ -191,7 +190,6 @@ import {
 const PRACTICE_DRAFT_STORAGE_KEY = PRACTICE_DROPZONE_DRAFT_KEY;
 const PRACTICE_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
 const PRACTICE_SESSION_META_KEY = "practice_dropzone_session_meta_v1";
-const PRACTICE_SIGNUP_VERIFICATION_KEY = "practice_dropzone_signup_verification_v1";
 /**
  * FileTransfer와 동일 캐시 키.
  * SSOT는 사업자 BA(`practiceTransferSettings`). localStorage는 비로그인 캐시·오프라인용.
@@ -340,18 +338,7 @@ type ApiSuccessMessagePayload = {
   message?: string;
 };
 
-type RegisterResponsePayload = {
-  success?: boolean;
-  message?: string;
-  data?: {
-    token?: string;
-    refreshToken?: string;
-  };
-};
-
-
-
-type PracticeAuthMode = "checking" | "session" | "login" | "signup" | "recover";
+type PracticeAuthMode = "checking" | "session" | "login" | "recover";
 
 type PracticeSessionMeta = {
   issuedAt: number;
@@ -374,82 +361,10 @@ const canUseDropzoneSenderAccount = (user: User | null | undefined) => {
   );
 };
 
-type PracticeSignupVerificationCache = {
-  email?: { value: string; verifiedAt: string };
-  phone?: { value: string; verifiedAt: string };
-};
-
-const readSignupVerificationCache = (): PracticeSignupVerificationCache => {
-  try {
-    const raw = localStorage.getItem(PRACTICE_SIGNUP_VERIFICATION_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as PracticeSignupVerificationCache;
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-};
-
-const writeSignupVerificationCache = (next: PracticeSignupVerificationCache) => {
-  try {
-    localStorage.setItem(PRACTICE_SIGNUP_VERIFICATION_KEY, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
-};
-
-const clearSignupVerificationCache = () => {
-  try {
-    localStorage.removeItem(PRACTICE_SIGNUP_VERIFICATION_KEY);
-  } catch {
-    // ignore
-  }
-};
-
-const persistEmailVerificationCache = (value: string, verifiedAt = new Date().toISOString()) => {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (!normalized) return;
-  const prev = readSignupVerificationCache();
-  writeSignupVerificationCache({
-    ...prev,
-    email: { value: normalized, verifiedAt },
-  });
-};
-
-const persistPhoneVerificationCache = (value: string, verifiedAt = new Date().toISOString()) => {
-  const digits = String(value || "").replace(/\D/g, "");
-  if (!digits) return;
-  const prev = readSignupVerificationCache();
-  writeSignupVerificationCache({
-    ...prev,
-    phone: { value: digits, verifiedAt },
-  });
-};
-
-const clearEmailVerificationCache = () => {
-  const prev = readSignupVerificationCache();
-  if (!prev.email) return;
-  const { email: _removed, ...rest } = prev;
-  writeSignupVerificationCache(rest);
-};
-
-const clearPhoneVerificationCache = () => {
-  const prev = readSignupVerificationCache();
-  if (!prev.phone) return;
-  const { phone: _removed, ...rest } = prev;
-  writeSignupVerificationCache(rest);
-};
-
 const asApiMessagePayload = (value: unknown): ApiSuccessMessagePayload => {
   if (!value || typeof value !== "object") return {};
   return value as ApiSuccessMessagePayload;
 };
-
-const asRegisterPayload = (value: unknown): RegisterResponsePayload => {
-  if (!value || typeof value !== "object") return {};
-  return value as RegisterResponsePayload;
-};
-
 
 const makeTransferId = () => {
   const t = Date.now().toString(36).toUpperCase();
@@ -1083,22 +998,9 @@ export const PracticeDropzonePage = () => {
   const [showAccessPassword, setShowAccessPassword] = useState(false);
   const [phone, setPhone] = useState("");
 
-  const [signupSubmitting, setSignupSubmitting] = useState(false);
-  const [signupCompleted, setSignupCompleted] = useState(false);
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [requestSubmitted, setRequestSubmitted] = useState(false);
   const [onboardingGateChecking, setOnboardingGateChecking] = useState(false);
-
-  const [emailVerified, setEmailVerified] = useState(false);
-  const [emailCodeSent, setEmailCodeSent] = useState(false);
-  const [emailCode, setEmailCode] = useState("");
-  const [emailSending, setEmailSending] = useState(false);
-  const [emailVerifying, setEmailVerifying] = useState(false);
-  const [phoneVerified, setPhoneVerified] = useState(false);
-  const [phoneCodeSent, setPhoneCodeSent] = useState(false);
-  const [phoneCode, setPhoneCode] = useState("");
-  const [phoneSending, setPhoneSending] = useState(false);
-  const [phoneVerifying, setPhoneVerifying] = useState(false);
 
   const [authMode, setAuthMode] = useState<PracticeAuthMode>("checking");
   const [recoverNewPassword, setRecoverNewPassword] = useState("");
@@ -1107,22 +1009,11 @@ export const PracticeDropzonePage = () => {
   const [showGuestChat, setShowGuestChat] = useState(false);
   const consumedPrefillLocationKeyRef = useRef<string | null>(null);
   const suppressDraftPersistRef = useRef(false);
-  /** 초안 복원 시에만 서버/캐시 인증상태를 되살린다. 사용자가 번호를 수정하면 false. */
-  const allowEmailVerificationRestoreRef = useRef(true);
-  const allowPhoneVerificationRestoreRef = useRef(true);
   /** BA GET이 진행 중 로컬 프리셋 편집을 덮지 않도록 */
   const favoritesDirtyRef = useRef(false);
 
   const isEmailValid = isValidEmail(email);
   const isPhoneValid = isValidMobilePhone(phone);
-
-  const isStrongPassword = useMemo(() => {
-    const p = String(accessPassword || "");
-    if (p.length < 10) return false;
-    if (p.includes("$")) return false;
-    if (!/[!@#%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(p)) return false;
-    return true;
-  }, [accessPassword]);
 
   const isRecoverPasswordStrong = useMemo(() => {
     const p = String(recoverNewPassword || "");
@@ -1398,22 +1289,6 @@ export const PracticeDropzonePage = () => {
 
   const canSubmitBase = missingStep1Fields.length === 0;
 
-  const trimmedClinicName = String(clinicName || "").trim();
-  const trimmedDirectorName = String(directorName || "").trim();
-  const trimmedStaffName = String(staffName || "").trim();
-
-  const canSubmitSignup = Boolean(
-    canSubmitBase &&
-      trimmedClinicName &&
-      trimmedDirectorName &&
-      trimmedStaffName &&
-      isEmailValid &&
-      emailVerified &&
-      isPhoneValid &&
-      phoneVerified &&
-      isStrongPassword,
-  );
-
   const canSubmitLogin = Boolean(
     canSubmitBase && isEmailValid && String(accessPassword || "").trim(),
   );
@@ -1427,9 +1302,7 @@ export const PracticeDropzonePage = () => {
       ? canSubmitBase
       : authMode === "login"
         ? canSubmitLogin
-        : authMode === "signup"
-          ? canSubmitSignup
-          : false;
+        : false;
 
 
 
@@ -1668,110 +1541,6 @@ export const PracticeDropzonePage = () => {
 
   useEffect(() => {
     if (!draftHydrated) return;
-
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      const restore = async () => {
-        const normalizedEmail = String(email || "").trim().toLowerCase();
-        const phoneDigits = String(phone || "").replace(/\D/g, "");
-        const cache = readSignupVerificationCache();
-        const allowEmailRestore = allowEmailVerificationRestoreRef.current;
-        const allowPhoneRestore = allowPhoneVerificationRestoreRef.current;
-
-        if (
-          allowEmailRestore &&
-          isEmailValid &&
-          cache.email?.value === normalizedEmail &&
-          cache.email.verifiedAt
-        ) {
-          if (!cancelled) setEmailVerified(true);
-        }
-
-        if (
-          allowPhoneRestore &&
-          isPhoneValid &&
-          cache.phone?.value === phoneDigits &&
-          cache.phone.verifiedAt
-        ) {
-          if (!cancelled) setPhoneVerified(true);
-        }
-
-        if (allowEmailRestore && isEmailValid) {
-          try {
-            const res = await apiFetch<{
-              success?: boolean;
-              data?: { verified?: boolean; verifiedAt?: string | null };
-            }>({
-              path: `/api/auth/signup/email-verification/status?email=${encodeURIComponent(normalizedEmail)}`,
-              method: "GET",
-            });
-            const payload = (res.data || {}) as {
-              success?: boolean;
-              data?: { verified?: boolean; verifiedAt?: string | null };
-            };
-            if (!cancelled && allowEmailVerificationRestoreRef.current) {
-              if (res.ok && payload.data?.verified) {
-                setEmailVerified(true);
-                persistEmailVerificationCache(
-                  normalizedEmail,
-                  payload.data.verifiedAt
-                    ? String(payload.data.verifiedAt)
-                    : undefined,
-                );
-              } else if (res.ok && cache.email?.value === normalizedEmail) {
-                setEmailVerified(false);
-                clearEmailVerificationCache();
-              }
-            }
-          } catch {
-            // keep local cache fallback
-          }
-        }
-
-        if (allowPhoneRestore && isPhoneValid) {
-          try {
-            const res = await apiFetch<{
-              success?: boolean;
-              data?: { verified?: boolean; verifiedAt?: string | null };
-            }>({
-              path: `/api/auth/signup/phone-verification/status?phone=${encodeURIComponent(phoneDigits)}`,
-              method: "GET",
-            });
-            const payload = (res.data || {}) as {
-              success?: boolean;
-              data?: { verified?: boolean; verifiedAt?: string | null };
-            };
-            if (!cancelled && allowPhoneVerificationRestoreRef.current) {
-              if (res.ok && payload.data?.verified) {
-                setPhoneVerified(true);
-                persistPhoneVerificationCache(
-                  phoneDigits,
-                  payload.data.verifiedAt
-                    ? String(payload.data.verifiedAt)
-                    : undefined,
-                );
-              } else if (res.ok && cache.phone?.value === phoneDigits) {
-                setPhoneVerified(false);
-                clearPhoneVerificationCache();
-              }
-            }
-          } catch {
-            // keep local cache fallback
-          }
-        }
-      };
-
-      void restore();
-    }, 250);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [draftHydrated, email, phone, isEmailValid, isPhoneValid]);
-
-  useEffect(() => {
-    if (!draftHydrated) return;
     if (suppressDraftPersistRef.current) return;
 
     const payload: PracticeDropzoneDraft = {
@@ -1869,7 +1638,6 @@ export const PracticeDropzonePage = () => {
         issuedAt: now,
         userId: String(authUser?.id || ""),
       });
-      setSignupCompleted(true);
       setAuthMode("session");
       return;
     }
@@ -1877,7 +1645,6 @@ export const PracticeDropzonePage = () => {
     if (hadExpiredSession) {
       clearPracticeSessionMeta();
       logout();
-      setSignupCompleted(false);
       setAuthMode((prev) =>
         prev === "checking" || prev === "session" ? "login" : prev,
       );
@@ -1885,14 +1652,13 @@ export const PracticeDropzonePage = () => {
     }
 
     if (sessionMeta?.issuedAt) {
-      setSignupCompleted(false);
       setAuthMode((prev) =>
         prev === "checking" || prev === "session" ? "login" : prev,
       );
       return;
     }
 
-    setAuthMode((prev) => (prev === "checking" ? "signup" : prev));
+    setAuthMode((prev) => (prev === "checking" ? "login" : prev));
   }, [draftHydrated, authToken, authUser, logout, email, phone]);
 
   const extractDataFromResponse = <T,>(raw: unknown): T | null => {
@@ -2435,7 +2201,6 @@ export const PracticeDropzonePage = () => {
       setEmail(String(latestUser.email || email || "").trim().toLowerCase());
       setPhone(formatPhoneNumberInput(String(pp?.phone || phone || "")));
 
-      setSignupCompleted(true);
       setAuthMode("session");
 
       const gated = await redirectToOnboardingIfSecondRequest(latestToken);
@@ -2501,317 +2266,6 @@ export const PracticeDropzonePage = () => {
     }
   };
 
-  const resetEmailVerification = () => {
-    allowEmailVerificationRestoreRef.current = false;
-    setEmailVerified(false);
-    setEmailCodeSent(false);
-    setEmailCode("");
-    clearEmailVerificationCache();
-  };
-
-  const resetPhoneVerification = () => {
-    allowPhoneVerificationRestoreRef.current = false;
-    setPhoneVerified(false);
-    setPhoneCodeSent(false);
-    setPhoneCode("");
-    clearPhoneVerificationCache();
-  };
-
-  const handleSendEmailVerification = async () => {
-    const normalized = String(email || "").trim().toLowerCase();
-    if (!isValidEmail(normalized)) {
-      toast({
-        title: "이메일 확인",
-        description: "올바른 이메일 형식으로 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setEmailSending(true);
-    try {
-      const res = await apiFetch<{ success?: boolean; message?: string }>({
-        path: "/api/auth/signup/email-verification/send",
-        method: "POST",
-        jsonBody: { email: normalized },
-      });
-      const body = (res.data || {}) as { success?: boolean; message?: string };
-      if (!res.ok || !body.success) {
-        toast({
-          title: "인증 메일 발송 실패",
-          description: String(body.message || "잠시 후 다시 시도해주세요."),
-          variant: "destructive",
-        });
-        return;
-      }
-      setEmailCodeSent(true);
-      setEmailCode("");
-      toast({
-        title: "인증 메일 발송",
-        description: "메일함의 4자리 코드를 입력해주세요.",
-      });
-    } catch {
-      toast({
-        title: "인증 메일 발송 실패",
-        description: "네트워크 상태를 확인 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setEmailSending(false);
-    }
-  };
-
-  const handleVerifyEmailCode = async () => {
-    const normalized = String(email || "").trim().toLowerCase();
-    const code = String(emailCode || "").trim();
-    if (!/^\d{4}$/.test(code)) {
-      toast({
-        title: "인증 코드 확인",
-        description: "4자리 숫자를 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setEmailVerifying(true);
-    try {
-      const res = await apiFetch<{ success?: boolean; message?: string }>({
-        path: "/api/auth/signup/email-verification/verify",
-        method: "POST",
-        jsonBody: { email: normalized, code },
-      });
-      const body = (res.data || {}) as { success?: boolean; message?: string };
-      if (!res.ok || !body.success) {
-        toast({
-          title: "이메일 인증 실패",
-          description: String(body.message || "인증 코드가 일치하지 않습니다."),
-          variant: "destructive",
-        });
-        return;
-      }
-      setEmailVerified(true);
-      setEmailCode("");
-      persistEmailVerificationCache(normalized);
-      toast({
-        title: "이메일 인증 완료",
-        description: "이메일 인증이 완료되었습니다.",
-      });
-    } catch {
-      toast({
-        title: "이메일 인증 실패",
-        description: "네트워크 상태를 확인 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setEmailVerifying(false);
-    }
-  };
-
-  const handleSendPhoneVerification = async () => {
-    if (!isPhoneValid) {
-      toast({
-        title: "휴대폰 확인",
-        description: "올바른 휴대폰 번호 형식으로 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setPhoneSending(true);
-    try {
-      const res = await apiFetch<{
-        success?: boolean;
-        message?: string;
-        data?: { code?: string };
-      }>({
-        path: "/api/auth/signup/phone-verification/send",
-        method: "POST",
-        jsonBody: { phone: String(phone || "").trim() },
-      });
-      const body = (res.data || {}) as {
-        success?: boolean;
-        message?: string;
-        data?: { code?: string };
-      };
-      if (!res.ok || !body.success) {
-        toast({
-          title: "인증번호 발송 실패",
-          description: String(body.message || "잠시 후 다시 시도해주세요."),
-          variant: "destructive",
-        });
-        return;
-      }
-
-      setPhoneVerified(false);
-      setPhoneCodeSent(true);
-      setPhoneCode("");
-      toast({
-        title: "인증번호 발송",
-        description: body.data?.code
-          ? `개발용 코드: ${body.data.code}`
-          : "문자로 받은 4자리 코드를 입력해주세요.",
-      });
-    } catch {
-      toast({
-        title: "인증번호 발송 실패",
-        description: "네트워크 상태를 확인 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setPhoneSending(false);
-    }
-  };
-
-  const handleVerifyPhoneCode = async () => {
-    const code = String(phoneCode || "").trim();
-    if (!/^\d{4}$/.test(code)) {
-      toast({
-        title: "인증 코드 확인",
-        description: "4자리 숫자를 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setPhoneVerifying(true);
-    try {
-      const res = await apiFetch<{ success?: boolean; message?: string }>({
-        path: "/api/auth/signup/phone-verification/verify",
-        method: "POST",
-        jsonBody: { phone: String(phone || "").trim(), code },
-      });
-      const body = (res.data || {}) as { success?: boolean; message?: string };
-      if (!res.ok || !body.success) {
-        toast({
-          title: "휴대폰 인증 실패",
-          description: String(body.message || "인증 코드가 일치하지 않습니다."),
-          variant: "destructive",
-        });
-        return;
-      }
-      setPhoneVerified(true);
-      setPhoneCode("");
-      persistPhoneVerificationCache(phone);
-      toast({
-        title: "휴대폰 인증 완료",
-        description: "휴대폰 인증이 완료되었습니다.",
-      });
-    } catch {
-      toast({
-        title: "휴대폰 인증 실패",
-        description: "네트워크 상태를 확인 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setPhoneVerifying(false);
-    }
-  };
-
-  const handleSignupAndContinue = async () => {
-    if (!canSubmitSignup) {
-      toast({
-        title: "입력 확인",
-        description:
-          emailVerified && phoneVerified
-            ? "치과명, 원장님명, 담당자명, 이메일, 휴대폰(치과 공용 혹은 담당자), 비밀번호를 포함해 필수값을 모두 입력해주세요."
-            : "이메일·휴대폰 인증을 완료하고 치과명·원장님명·담당자명 등 필수값을 모두 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!isStrongPassword) {
-      toast({
-        title: "비밀번호 형식을 확인해주세요",
-        description: "10자 이상 + 특수문자 포함, $ 문자는 사용할 수 없습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (signupCompleted) {
-      const token = String(authToken || "").trim();
-      if (!token) {
-        toast({
-          title: "로그인이 필요합니다",
-          description: "다시 로그인 후 의뢰 제출을 시도해주세요.",
-          variant: "destructive",
-        });
-        return;
-      }
-      await syncLocalFavoritesToServer(token);
-      await submitPracticeRequest(token);
-      return;
-    }
-
-    setSignupSubmitting(true);
-    try {
-      const registerRes = await apiFetch<unknown>({
-        path: "/api/auth/practice/register",
-        method: "POST",
-        jsonBody: {
-          email: String(email || "").trim().toLowerCase(),
-          password: accessPassword,
-          phone: String(phone || "").trim(),
-          clinicName: trimmedClinicName,
-          directorName: trimmedDirectorName,
-          staffName: trimmedStaffName,
-        },
-      });
-
-      const registerBody = asRegisterPayload(registerRes.data);
-      if (!registerRes.ok || !registerBody?.success) {
-        toast({
-          title: "회원가입 실패",
-          description: String(registerBody?.message || "다시 시도해주세요."),
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const token = String(registerBody?.data?.token || "").trim();
-      const refreshToken = registerBody?.data?.refreshToken
-        ? String(registerBody.data.refreshToken)
-        : null;
-      if (!token) {
-        toast({
-          title: "회원가입 완료",
-          description: "로그인 토큰이 없어 자동 로그인하지 못했습니다. 로그인 후 계속 진행해주세요.",
-        });
-        return;
-      }
-
-      await loginWithToken(token, refreshToken);
-      const latestUser = useAuthStore.getState().user;
-      if (latestUser?.id) {
-        writePracticeSessionMeta({
-          issuedAt: Date.now(),
-          userId: String(latestUser.id),
-        });
-      }
-
-      setSignupCompleted(true);
-      setAuthMode("session");
-      clearSignupVerificationCache();
-      toast({
-        title: "회원가입 완료",
-        description: "이어서 현재 작성한 의뢰서를 전송합니다.",
-      });
-
-      await syncLocalFavoritesToServer(token);
-      // 가입 직후는 전송 이력이 없으므로 첫 의뢰 게이트를 건너뛴다.
-      await submitPracticeRequest(token, { skipSecondRequestGate: true });
-    } catch {
-      toast({
-        title: "회원가입 실패",
-        description: "네트워크 상태를 확인 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setSignupSubmitting(false);
-    }
-  };
-
   const handleStep2PrimaryAction = async () => {
     if (authMode === "session") {
       const token = String(authToken || "").trim();
@@ -2833,11 +2287,6 @@ export const PracticeDropzonePage = () => {
 
     if (authMode === "login") {
       await handlePracticeLoginAndContinue();
-      return;
-    }
-
-    if (authMode === "signup") {
-      await handleSignupAndContinue();
     }
   };
 
@@ -3218,6 +2667,20 @@ export const PracticeDropzonePage = () => {
                         </h2>
                         <p className="mt-1 text-sm text-slate-500">
                           의뢰서를 제출한 뒤에도 이어서 확인할 수 있도록 계정을 연결합니다.
+                          {authMode === "login" || authMode === "recover" ? (
+                            <>
+                              <br />
+                              계정이 없으면{" "}
+                              <button
+                                type="button"
+                                className="font-medium text-primary-strong underline underline-offset-2"
+                                onClick={() => navigate("/signup")}
+                              >
+                                회원가입
+                              </button>
+                              에서 의뢰자로 가입하세요.
+                            </>
+                          ) : null}
                         </p>
                       </div>
                       {authMode !== "checking" && authMode !== "session" ? (
@@ -3225,7 +2688,6 @@ export const PracticeDropzonePage = () => {
                           {(
                             [
                               { key: "login", label: "로그인" },
-                              { key: "signup", label: "회원가입" },
                               { key: "recover", label: "비밀번호" },
                             ] as const
                           ).map((tab) => (
@@ -3442,271 +2904,6 @@ export const PracticeDropzonePage = () => {
                         </div>
                       </div>
                     )}
-
-                    {authMode === "signup" && (
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                          <div className="space-y-2">
-                            <Label htmlFor="clinicName" className="flex h-5 items-center text-sm font-medium text-slate-700">
-                              치과명 <span className="ml-0.5 text-destructive">*</span>
-                            </Label>
-                            <Input
-                              id="clinicName"
-                              type="text"
-                              autoComplete="organization"
-                              className="box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm"
-                              value={clinicName}
-                              onChange={(e) => setClinicName(e.target.value)}
-                              placeholder="예: 향기로운치과"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="directorName" className="flex h-5 items-center text-sm font-medium text-slate-700">
-                              원장님명 <span className="ml-0.5 text-destructive">*</span>
-                            </Label>
-                            <Input
-                              id="directorName"
-                              type="text"
-                              autoComplete="name"
-                              className="box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm"
-                              value={directorName}
-                              onChange={(e) => setDirectorName(e.target.value)}
-                              placeholder="예: 김원장"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="staffName" className="flex h-5 items-center text-sm font-medium text-slate-700">
-                              담당자명 <span className="ml-0.5 text-destructive">*</span>
-                            </Label>
-                            <Input
-                              id="staffName"
-                              type="text"
-                              autoComplete="name"
-                              className="box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm"
-                              value={staffName}
-                              onChange={(e) => setStaffName(e.target.value)}
-                              placeholder="예: 홍길동"
-                            />
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                          <div className="space-y-2">
-                            <Label htmlFor="practiceEmail" className="flex h-5 items-center text-sm font-medium text-slate-700">
-                              이메일 <span className="ml-0.5 text-destructive">*</span>
-                            </Label>
-                            <div className="relative">
-                              <Input
-                                id="practiceEmail"
-                                type="email"
-                                autoComplete="email"
-                                disabled={emailVerified}
-                                className={cn(
-                                  "box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm",
-                                  emailVerified ? "pr-[4.75rem]" : "pr-[5.75rem]",
-                                  email.trim() && !isEmailValid
-                                    ? "border-destructive focus-visible:ring-destructive"
-                                    : "",
-                                )}
-                                value={email}
-                                onChange={(e) => {
-                                  setEmail(e.target.value.trim());
-                                  resetEmailVerification();
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key !== "Enter") return;
-                                  e.preventDefault();
-                                  if (emailVerified || !isEmailValid || emailSending) return;
-                                  void handleSendEmailVerification();
-                                }}
-                                placeholder="name@clinic.com"
-                              />
-                              {emailVerified ? (
-                                <span className="pointer-events-none absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 text-xs font-medium text-primary-strong">
-                                  <CheckCircle2 className="h-3.5 w-3.5" />
-                                  인증 완료
-                                </span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="absolute right-1.5 top-1/2 h-8 -translate-y-1/2 rounded-lg bg-primary-strong px-2.5 text-xs font-medium leading-none text-white hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-50"
-                                  disabled={!isEmailValid || emailSending}
-                                  onClick={() => void handleSendEmailVerification()}
-                                >
-                                  {emailSending
-                                    ? "발송 중..."
-                                    : emailCodeSent
-                                      ? "재발송"
-                                      : "인증 발송"}
-                                </button>
-                              )}
-                            </div>
-                            {email.trim() && !isEmailValid ? (
-                              <p className="text-xs text-destructive">
-                                올바른 이메일 형식으로 입력해주세요.
-                              </p>
-                            ) : null}
-                            {emailCodeSent && !emailVerified ? (
-                              <div className="relative">
-                                <Input
-                                  inputMode="numeric"
-                                  maxLength={4}
-                                  className="box-border h-11 rounded-xl border-slate-200 bg-white py-0 pr-[4.75rem] text-center text-lg tracking-[0.35em] shadow-sm"
-                                  value={emailCode}
-                                  onChange={(e) =>
-                                    setEmailCode(e.target.value.replace(/\D/g, "").slice(0, 4))
-                                  }
-                                  onKeyDown={(e) => {
-                                    if (e.key !== "Enter") return;
-                                    e.preventDefault();
-                                    if (emailCode.length !== 4 || emailVerifying) return;
-                                    void handleVerifyEmailCode();
-                                  }}
-                                  placeholder="0000"
-                                  aria-label="이메일 인증번호"
-                                />
-                                <button
-                                  type="button"
-                                  className="absolute right-1.5 top-1/2 h-8 -translate-y-1/2 rounded-lg bg-primary-strong px-3 text-xs font-medium leading-none text-white hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-50"
-                                  disabled={emailCode.length !== 4 || emailVerifying}
-                                  onClick={() => void handleVerifyEmailCode()}
-                                >
-                                  {emailVerifying ? "확인 중..." : "확인"}
-                                </button>
-                              </div>
-                            ) : null}
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="accessPassword" className="flex h-5 items-center text-sm font-medium text-slate-700">
-                              비밀번호 <span className="ml-0.5 text-destructive">*</span>
-                            </Label>
-                            <div className="relative">
-                              <Input
-                                id="accessPassword"
-                                type={showAccessPassword ? "text" : "password"}
-                                autoComplete="new-password"
-                                className={cn(
-                                  "box-border h-11 rounded-xl border-slate-200 bg-white py-0 pr-10 text-base shadow-sm",
-                                  accessPassword && !isStrongPassword
-                                    ? "border-destructive focus-visible:ring-destructive"
-                                    : "",
-                                )}
-                                value={accessPassword}
-                                onChange={(e) => setAccessPassword(e.target.value)}
-                                placeholder="10자 이상 + 특수문자"
-                              />
-                              <button
-                                type="button"
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
-                                onClick={() => setShowAccessPassword((prev) => !prev)}
-                                aria-label="비밀번호 보기"
-                              >
-                                {showAccessPassword ? (
-                                  <EyeOff className="h-4 w-4" />
-                                ) : (
-                                  <Eye className="h-4 w-4" />
-                                )}
-                              </button>
-                            </div>
-                            {accessPassword && !isStrongPassword ? (
-                              <p className="text-xs text-destructive">
-                                10자 이상 + 특수문자 포함, `$` 불가
-                              </p>
-                            ) : null}
-                          </div>
-                          <div className="space-y-2">
-                            <Label
-                              htmlFor="phone"
-                              className="flex min-h-5 items-center text-sm font-medium text-slate-700"
-                            >
-                              휴대폰(치과 공용 혹은 담당자){" "}
-                              <span className="text-destructive">*</span>
-                            </Label>
-                            <div className="relative">
-                              <Input
-                                id="phone"
-                                disabled={phoneVerified}
-                                className={cn(
-                                  "box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm",
-                                  phoneVerified ? "pr-[4.75rem]" : "pr-[5.75rem]",
-                                  phone.trim() && !isPhoneValid
-                                    ? "border-destructive focus-visible:ring-destructive"
-                                    : "",
-                                )}
-                                value={phone}
-                                onChange={(e) => {
-                                  setPhone(formatPhoneNumberInput(e.target.value));
-                                  resetPhoneVerification();
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key !== "Enter") return;
-                                  e.preventDefault();
-                                  if (phoneVerified || !isPhoneValid || phoneSending) return;
-                                  void handleSendPhoneVerification();
-                                }}
-                                placeholder="010-1234-5678"
-                              />
-                              {phoneVerified ? (
-                                <span className="pointer-events-none absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 text-xs font-medium text-primary-strong">
-                                  <CheckCircle2 className="h-3.5 w-3.5" />
-                                  인증 완료
-                                </span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="absolute right-1.5 top-1/2 h-8 -translate-y-1/2 rounded-lg bg-primary-strong px-2.5 text-xs font-medium leading-none text-white hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-50"
-                                  disabled={!isPhoneValid || phoneSending}
-                                  onClick={() => void handleSendPhoneVerification()}
-                                >
-                                  {phoneSending
-                                    ? "발송 중..."
-                                    : phoneCodeSent
-                                      ? "재발송"
-                                      : "인증 발송"}
-                                </button>
-                              )}
-                            </div>
-                            {phone.trim() && !isPhoneValid ? (
-                              <p className="text-xs text-destructive">
-                                휴대폰 번호(010 등) 형식으로 입력해주세요.
-                              </p>
-                            ) : null}
-                            {phoneCodeSent && !phoneVerified ? (
-                              <div className="relative">
-                                <Input
-                                  inputMode="numeric"
-                                  maxLength={4}
-                                  className="box-border h-11 rounded-xl border-slate-200 bg-white py-0 pr-[4.75rem] text-center text-lg tracking-[0.35em] shadow-sm"
-                                  value={phoneCode}
-                                  onChange={(e) =>
-                                    setPhoneCode(e.target.value.replace(/\D/g, "").slice(0, 4))
-                                  }
-                                  onKeyDown={(e) => {
-                                    if (e.key !== "Enter") return;
-                                    e.preventDefault();
-                                    if (phoneCode.length !== 4 || phoneVerifying) return;
-                                    void handleVerifyPhoneCode();
-                                  }}
-                                  placeholder="0000"
-                                  aria-label="휴대폰 인증번호"
-                                />
-                                <button
-                                  type="button"
-                                  className="absolute right-1.5 top-1/2 h-8 -translate-y-1/2 rounded-lg bg-primary-strong px-3 text-xs font-medium leading-none text-white hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-50"
-                                  disabled={phoneCode.length !== 4 || phoneVerifying}
-                                  onClick={() => void handleVerifyPhoneCode()}
-                                >
-                                  {phoneVerifying ? "확인 중..." : "확인"}
-                                </button>
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                        <p className="text-xs leading-relaxed text-slate-500">
-                          주소·사업자번호 등 상세 정보는 첫 의뢰 전송 후 계정 등록
-                          단계에서 이어서 입력합니다.
-                        </p>
-                      </div>
-                    )}
                   </div>
                 </div>
               </form>
@@ -3905,7 +3102,6 @@ export const PracticeDropzonePage = () => {
                 className="h-11 rounded-xl bg-primary-strong px-6 text-base text-white shadow-sm hover:bg-primary-strong"
                 disabled={
                   !canPrimaryAction ||
-                  signupSubmitting ||
                   requestSubmitting ||
                   requestSubmitted ||
                   authSubmitting ||
@@ -3919,22 +3115,14 @@ export const PracticeDropzonePage = () => {
                   : onboardingGateChecking
                     ? "확인 중..."
                     : authSubmitting
-                      ? authMode === "login"
-                        ? "로그인 처리 중..."
-                        : "처리 중..."
-                      : signupSubmitting
-                        ? "회원가입 처리 중..."
-                        : requestSubmitting
-                          ? "의뢰 제출 중..."
-                          : authMode === "session"
-                            ? "의뢰 제출하기"
-                            : authMode === "login"
-                              ? "로그인 후 계속하기"
-                              : authMode === "recover"
-                                ? "비밀번호 변경"
-                                : signupCompleted
-                                  ? "의뢰 제출하기"
-                                  : "회원가입 후 계속하기"}
+                      ? "로그인 처리 중..."
+                      : requestSubmitting
+                        ? "의뢰 제출 중..."
+                        : authMode === "session"
+                          ? "의뢰 제출하기"
+                          : authMode === "login"
+                            ? "로그인 후 계속하기"
+                            : "비밀번호 변경"}
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             )}

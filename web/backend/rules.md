@@ -323,7 +323,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - **90일 무주문이면 소개 리셋**: `jobs/dailyReferralOwnershipResetWorker.js` + `services/referralOwnershipReset.service.js`
     - 대상: `businessType=requestor` 이고 추천인 BA가 `salesman|salesTeam`
     - 시계: `max(referralAssignedAt || BA.createdAt, 최근 Request.createdAt, 최근 크레딧 소비 COMMIT occurredAt)` < KST 오늘 자정−90일 → `referredByAnchorId=null` (+ 멤버 User 미러)
-    - 공개 가입 중간에 소개자 코드 입력(선택). 직원 가입·URL `ref`는 생략. 코드 없이 가입하면 귀속은 null. 개발운영사를 기본 소개자로 넣지 않는다. 대표만 가입 후 14일간 `POST /api/businesses/me/apply-referral` (의뢰자·딜러·영업본부·어벗츠 `AAA`, 귀속 null일 때). 14일이 지나면 어벗츠 관리자 코드 `AAA`로 영구 고정(`services/abutsAdminReferral.service.js`). 90일 영업 리셋 뒤 재등록은 유지. 관리자 소개 코드는 `AAA`.
+    - 공개 가입 중간에 소개자 코드 입력(선택). URL `ref`는 생략. 임직원은 공개 가입이 없고 대표가 설정-임직원-직원등록. 코드 없이 가입하면 귀속은 null. 개발운영사를 기본 소개자로 넣지 않는다. 대표만 가입 후 14일간 `POST /api/businesses/me/apply-referral` (의뢰자·딜러·영업본부·어벗츠 `AAA`, 귀속 null일 때). 14일이 지나면 어벗츠 관리자 코드 `AAA`로 영구 고정(`services/abutsAdminReferral.service.js`). 90일 영업 리셋 뒤 재등록은 유지. 관리자 소개 코드는 `AAA`.
     - 락: `worker:daily-referral-ownership-reset` / done `…:done:<ymd>`
     - FE 카피: `PricingPolicyDialog`(salesman) · `DealershipTermsCard`
   - 가격 SSOT 자동 점검(`runPricingSsotConsistencyCheck`)은 워커/관리자 대시보드/CI 스케줄에서 제외
@@ -590,7 +590,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 동일 법인 BN 공유: `BusinessAnchor` unique는 `{ businessNumberNormalized, businessType }`. 하위조직 `parentBusinessAnchorId`(예: admin「어벗츠 주식회사」← internalLab「기공사업부」). `ensureBusinessAnchor`도 type 스코프.
 
 - 의뢰자 역할·서비스 · 가입/온보딩 SSOT (2026-08, 루트 §2.4 상세)
-  - `labTeam`(기공팀)·`salesTeam`(영업본부): 내부 직원. `/signup/staff`에서 가입. 사업영역 수익 분배 주체. `salesTeam`은 딜러와 별개. 영업본부 포털 `/api/sales-team` · FE `/dashboard/sales`. 소개코드 영문 3글자.
+  - `labTeam`(기공팀)·`salesTeam`(영업본부): 내부 직원. 공개 가입 없음. 어벗츠 대표(관리자)가 설정-임직원-직원등록. 사업영역 수익 분배 주체. `salesTeam`은 딜러와 별개. 영업본부 포털 `/api/sales-team` · FE `/dashboard/sales`. 소개코드 영문 3글자.
   - 딜러 일일보고 ACL: `utils/salesDailyReportAccess.js` — 작성자(담당자)·같은 BA 대표만, 어벗츠 관계자 403. `GET|PUT /api/sales-team/daily-reports*`.
   - 필드 SSOT: `BusinessAnchor.requestorKind` (`practice|lab`) + `requestorServices` (paid-only). User 미러 동일.
   - 레거시 `requestorCapabilities`는 resolve/백필 폴백만. 신규 쓰기 금지.
@@ -610,16 +610,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     CA 가입 무료 테스트(첫 2건)도 **폐지**(레거시 `signup_free_test_2` 의뢰만 0원 호환).
     치과·기공소 모두 데모 모드(30일·마이너스 허용). 정산 요약 「무료 충전」카드 제거.
 
-- 드롭존 가입(치과 전용, requestor+practice):
-  - `POST /api/auth/practice/register`는 **practice role을 만들지 않는다**.
-    `role=requestor` + `requestorKind=practice` + `requestorServices={free:false,paid:true}` + 휴대폰 인증·치과명·담당자명을 저장.
-    완전한 주소/Org 앵커는 온보딩(`PUT /api/users/profile` → `ensureRequestorOrgAnchor`)에서 생성.
-  - 필수: `email` + `password` + `phone` + `clinicName` + `staffName`. 로그인 식별은 이메일.
-    `name`/`practiceProfile.staffName`=담당자명, `practiceProfile.clinicName`=치과명.
-  - `assertSignupVerifications({ email, phone })` 강제 후 `consumeSignupVerifications` 소진.
-    - 이메일: `POST /api/auth/signup/email-verification/send|verify`, `GET .../status` (일 10회)
-    - 휴대폰: `POST /api/auth/signup/phone-verification/send|verify`, `GET .../status` (일 5회; 개발모드 자동완료 금지)
-    - status API는 `verifiedAt` 있고 `consumedAt` 없을 때만 `verified: true`
+- 드롭존은 로그인·비밀번호 찾기만. 가입 API(`POST /api/auth/practice/register`)는 제거. 신규는 `POST /api/auth/register`(의뢰자·딜러).
   - 비밀번호 찾기/변경(`POST /api/auth/practice/password/find|change`) 대상은 `requestor`(practice).
   - 치과명 로그인(`POST /api/auth/practice/login`)은 마이그레이션 호환용: `practice` 또는 `requestor`+`clinic`(business/`practiceProfile.clinicName` 매칭). 장기적으로 제거 대상.
   - 같은 사업자 계정 전환(모든 role):

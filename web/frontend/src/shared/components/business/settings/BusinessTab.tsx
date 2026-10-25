@@ -207,13 +207,6 @@ export const BusinessTab = ({
     if (setupMode !== null) return;
 
     if (selectedRole === "owner") {
-      // 치과 온보딩 owner는 BusinessStep에서 치과 정보 폼으로 분기되므로
-      // 여기까지 오면 일반 role만 해당. practice는 등록증 경로를 쓰지 않음.
-      if (businessType === "practice") {
-        setSetupMode("search");
-        setSetupModeLocked(true);
-        return;
-      }
       setSetupMode("license");
       setSetupModeLocked(true);
       return;
@@ -230,7 +223,6 @@ export const BusinessTab = ({
   }, [
     allowLocalDraft,
     authUserId,
-    businessType,
     membershipMgmt.membership,
     setupMode,
     selectedRole,
@@ -442,7 +434,7 @@ export const BusinessTab = ({
         return;
       }
       registerValidationState({
-        passed: isOnboarding ? true : verified,
+        passed: verified,
         validating: false,
       });
     } else if (selectedRole === "member" && isOnboarding) {
@@ -881,8 +873,8 @@ export const BusinessTab = ({
           <ReferralCodeCard businessType={businessType} />
         ) : null}
 
-        {/* 온보딩에서만 표시. 설정 화면은 RoleStep에서 이미 등록/가입을 선택했으므로 숨김. */}
-        {isOnboarding &&
+        {/* 설정 화면에서만 표시. 온보딩 대표는 신규 사업자 등록으로 바로 간다. */}
+        {!isOnboarding &&
           membershipMgmt.membership === "none" &&
           !setupMode &&
           showSelectionChoices &&
