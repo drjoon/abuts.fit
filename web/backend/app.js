@@ -176,7 +176,8 @@ const shouldSkipRequestLog = (req) => {
   // CNC bridge tick · Lab Helper PC 알람 롱폴링 — 정상 동작인데 로그를 가득 채움.
   return (
     path.startsWith("/api/cnc/machines/bridge/machining/tick/") ||
-    path === "/api/lab-helper/alarms/wait"
+    path === "/api/lab-helper/alarms/wait" ||
+    (path.startsWith("/api/events/") && path.endsWith("/visits"))
   );
 };
 

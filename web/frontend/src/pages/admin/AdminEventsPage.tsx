@@ -25,6 +25,7 @@ import {
 } from "@/shared/events/eventsApi";
 import { cn } from "@/shared/ui/cn";
 import { ExternalLink, RefreshCw } from "lucide-react";
+import AdminEventVisitsPanel from "@/pages/admin/AdminEventVisitsPanel";
 
 const STATUS_LABEL: Record<EventApplication["status"], string> = {
   received: "접수",
@@ -97,6 +98,7 @@ export default function AdminEventsPage() {
   const [loadingApps, setLoadingApps] = useState(false);
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [section, setSection] = useState<"stats" | "applications">("stats");
 
   const loadEvents = useCallback(async () => {
     setLoadingEvents(true);
@@ -243,6 +245,8 @@ export default function AdminEventsPage() {
                     <span>{EVENT_STATUS_LABEL[ev.status]}</span>
                     <span>·</span>
                     <span>신청 {ev.applicationCount ?? 0}</span>
+                    <span>·</span>
+                    <span>방문 {ev.visitCount ?? 0}</span>
                   </div>
                 </button>
               ))
@@ -258,6 +262,35 @@ export default function AdminEventsPage() {
           </AdminPanel>
         ) : (
           <div className="space-y-4">
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={section === "stats" ? "default" : "outline"}
+                className="h-8"
+                onClick={() => setSection("stats")}
+              >
+                통계
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={section === "applications" ? "default" : "outline"}
+                className="h-8"
+                onClick={() => setSection("applications")}
+              >
+                신청
+              </Button>
+            </div>
+            {section === "stats" ? (
+              <AdminEventVisitsPanel
+                key={selected.id}
+                token={token}
+                eventId={selected.id}
+              />
+            ) : null}
+            {section === "applications" ? (
+            <>
             <AdminPanel title="신청" bodyClassName="p-3 sm:p-4">
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <StatCard
@@ -505,6 +538,8 @@ export default function AdminEventsPage() {
                 )}
               </div>
             </AdminPanel>
+            </>
+            ) : null}
           </div>
         )}
       </div>

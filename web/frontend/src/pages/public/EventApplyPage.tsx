@@ -69,6 +69,10 @@ import { LandingReveal } from "@/features/landing/LandingReveal";
 import { LandingScrollProgress } from "@/features/landing/LandingScrollProgress";
 import { LandingSectionRail } from "@/features/landing/LandingSectionRail";
 import { LandingSpotlightCard } from "@/features/landing/LandingSpotlightCard";
+import {
+  readEventVisitSessionId,
+  useEventPageVisit,
+} from "@/shared/events/useEventPageVisit";
 
 const emptyPlace = (): EventPlaceFields => emptyEventApplyDealer();
 
@@ -332,6 +336,7 @@ function LaunchEventApplyPage() {
     return draft?.dealer ?? emptyPlace();
   });
 
+  useEventPageVisit(slug);
   const isSimpleway = slug === SIMPLEWAY_SAMPLE_SLUG;
   const canApply = event?.status === "open";
   const signupHref = eventApplySignupHref(slug);
@@ -493,6 +498,7 @@ function LaunchEventApplyPage() {
           dealer,
           applicantPhone: prefill.applicantPhone || prefill.practice.phone,
           usesOralScan,
+          visitSessionId: readEventVisitSessionId(event.slug),
         },
         token,
       );

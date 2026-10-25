@@ -26,6 +26,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
+  readEventVisitSessionId,
+  useEventPageVisit,
+} from "@/shared/events/useEventPageVisit";
+import {
   eventsApi,
   type EventPlaceFields,
   type EventPlaceSuggest,
@@ -335,6 +339,7 @@ function OralScanFields({
 }
 
 export default function AbutsLabEventPage() {
+  useEventPageVisit(ABUTS_LAB_EVENT_SLUG);
   const location = useLocation();
   const { toast } = useToast();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -582,6 +587,7 @@ export default function AbutsLabEventPage() {
             dealer: EMPTY_DEALER,
             applicantPhone: prefill.applicantPhone || prefill.practice.phone,
             usesOralScan: usesOralScan as boolean,
+            visitSessionId: readEventVisitSessionId(event.slug),
           },
           token,
         );
@@ -601,6 +607,7 @@ export default function AbutsLabEventPage() {
           lng: manual ? null : place!.lng ?? null,
           usesOralScan: usesOralScan as boolean,
           manualAddress: manual,
+          visitSessionId: readEventVisitSessionId(event.slug),
         });
         if (signed.token) {
           try {

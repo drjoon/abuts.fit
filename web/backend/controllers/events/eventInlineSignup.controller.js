@@ -26,6 +26,7 @@ import {
   ensureDefaultMarketingEvents,
 } from "./marketingEvent.controller.js";
 import { findClinicIdentityDuplicate } from "./eventApplicationDuplicate.js";
+import { markEventVisitConverted } from "../../services/eventVisitLog.service.js";
 
 function trimStr(value, max = 200) {
   return String(value || "")
@@ -319,6 +320,12 @@ export async function signupApplyToEvent(req, res) {
     } catch (consumeError) {
       console.error("[events.signupApply] consume phone verification", consumeError);
     }
+
+    void markEventVisitConverted(event._id, req.body?.visitSessionId).catch(
+      (err) => {
+        console.error("[events.signupApply] visit convert", err?.message || err);
+      },
+    );
 
     const token = generateToken({
       userId: createdUser._id,

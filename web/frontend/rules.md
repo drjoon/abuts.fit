@@ -113,7 +113,7 @@ Notes:
   - `src/pages/public/Index.tsx` — 홈 히어로 + 오퍼 타일 + `#events` + 스토리 밴드
   - `src/pages/public/OfferPage.tsx` — 오퍼 상세 (`landingOffers` · `LandingOfferPage`)
   - `src/pages/public/EventsPage.tsx` — `/events` → `/#events` 리다이렉트
-  - `src/pages/public/EventApplyPage.tsx` — 행사 신청 (`/events/:slug`)
+  - `src/pages/public/EventApplyPage.tsx` — 행사 신청 (`/events/:slug`). 방문은 세션 하나(`useEventPageVisit`: 유입·지역·체류·신청 구간·입력·접수). 대시보드 `/dashboard/events` 통계 탭. 추이 차트는 방문·신청·방문 대비 신청율(날짜·시간대, KST).
   - `src/pages/public/PlatformPage.tsx` — 레거시 `/platform` → `/offer/platform` 리다이렉트
   - 메뉴: 플랫폼 · 어벗츠기공소 (`landingOffers` 2개). 이벤트는 랜딩 `#events` (`LandingEventsSection`). lg 미만(햄버거)에서는 두 오퍼를 `/` 아래에 이어 붙이고 메뉴·갤러리는 `#offer-platform`·`#offer-lab`로 스크롤한다. `/offer/:slug` 직접 진입은 그 앵커로 보낸다. lg 이상은 별도 페이지. 레거시 `/offer/simple-way`→플랫폼, `/offer/custom-abutment`→어벗츠기공소.
   - `src/pages/public/AboutPage.tsx` — 레거시 `/about` → `/` 리다이렉트

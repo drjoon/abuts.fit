@@ -13,6 +13,10 @@ import {
   syncPracticeUsesOralScan,
 } from "../businesses/requestorOrgAnchor.util.js";
 import { findClinicIdentityDuplicate } from "./eventApplicationDuplicate.js";
+import {
+  countEventVisits,
+  markEventVisitConverted,
+} from "../../services/eventVisitLog.service.js";
 
 const SIMPLEWAY_SAMPLE_SLUG = "abuts-launch";
 const SIMPLEWAY_SAMPLE_SLUGS_LEGACY = [
@@ -168,11 +172,12 @@ function toPublicEvent(doc) {
   };
 }
 
-function toAdminEvent(doc, applicationCount = 0) {
+function toAdminEvent(doc, applicationCount = 0, visitCount) {
   return {
     ...toPublicEvent(doc),
     sortOrder: doc.sortOrder || 0,
     applicationCount,
+    ...(visitCount != null ? { visitCount } : {}),
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
@@ -745,6 +750,10 @@ export async function applyToEvent(req, res) {
       });
     }
 
+    void markEventVisitConverted(event._id, body.visitSessionId).catch((err) => {
+      console.error("[events.apply] visit convert", err?.message || err);
+    });
+
     return res.status(201).json({
       success: true,
       data: toApplicationRow(created),
@@ -836,16 +845,23 @@ export async function adminListEvents(req, res) {
       .sort({ sortOrder: 1, createdAt: -1 })
       .lean();
     const ids = items.map((it) => it._id);
-    const counts = await MarketingEventApplication.aggregate([
-      { $match: { eventId: { $in: ids } } },
-      { $group: { _id: "$eventId", count: { $sum: 1 } } },
+    const [counts, visitCounts] = await Promise.all([
+      MarketingEventApplication.aggregate([
+        { $match: { eventId: { $in: ids } } },
+        { $group: { _id: "$eventId", count: { $sum: 1 } } },
+      ]),
+      countEventVisits(ids),
     ]);
     const countMap = new Map(counts.map((c) => [String(c._id), c.count]));
     return res.json({
       success: true,
       data: {
         items: items.map((it) =>
-          toAdminEvent(it, countMap.get(String(it._id)) || 0),
+          toAdminEvent(
+            it,
+            countMap.get(String(it._id)) || 0,
+            visitCounts.get(String(it._id)) || 0,
+          ),
         ),
       },
     });

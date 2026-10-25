@@ -77,6 +77,12 @@
 
 ## 2. 구현 메모
 
+### 마케팅 이벤트 방문 로그
+
+- 공개 신청 페이지 `POST /api/events/:slug/visits`. 세션 1건(`MarketingEventVisit`)만 갱신한다. 진입·신청 구간·입력 시작·이탈(최대 1분 간격 체류)만 받고 중간 핑은 쌓지 않는다. S3 `analytics/event-visits/YYYY/MM/DD/*.ndjson.gz`에는 세션이 끝날 때 요약 한 줄, 포인터는 `MarketingEventVisitChunk`. 신청 접수는 `visitSessionId`로 그 세션을 전환 처리.
+- 지역은 CloudFront `cloudfront-viewer-*`가 있으면 그 값, 없으면 `geoip-lite`. 원문 IP는 저장하지 않고 `ipHash`만 둔다.
+- 관리자 `GET /api/admin/events/:id/visits?date=YYYY-MM-DD`. 화면은 `/dashboard/events`.
+
 ### 구강스캔 · 기공의뢰서 경로
 
 - **3Shape/TRIOS**: 스캔 데이터는 Communicate로 치과→지정 기공소(어벗츠기공소 포함) 직송. 어벗츠는 중간 플랫폼으로 스캔을 받지 않음.

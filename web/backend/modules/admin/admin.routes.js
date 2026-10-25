@@ -292,6 +292,7 @@ import {
   adminListApplications,
   adminUpdateApplication,
 } from "../../controllers/events/marketingEvent.controller.js";
+import { adminGetEventVisits } from "../../controllers/events/eventVisit.controller.js";
 
 // Brevo 인바운드 이메일 webhook (인증 불필요 - 미들웨어 전에 정의)
 router.post("/inbound-email/webhook", handleInboundEmailWebhook);
@@ -872,6 +873,7 @@ router.patch(
   "/events/applications/:applicationId",
   adminUpdateApplication,
 );
+router.get("/events/:id/visits", adminGetEventVisits);
 router.get("/events/:id/applications", adminListApplications);
 router.patch("/events/:id", adminUpdateEvent);
 

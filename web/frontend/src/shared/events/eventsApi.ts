@@ -63,6 +63,7 @@ export type MarketingEvent = {
     dealerHelpText: string;
   };
   applicationCount?: number;
+  visitCount?: number;
   sortOrder?: number;
 };
 
@@ -94,6 +95,58 @@ export type EventApplicationStats = {
   practiceSignupRate: number;
   dealerRegistered: number;
   dealerSignupRate: number;
+};
+
+export type EventVisitReport = {
+  eventId: string;
+  slug: string;
+  days: number;
+  from: string;
+  to: string;
+  summary: {
+    pageViews: number;
+    sessions: number;
+    uniqueVisitors: number;
+    returning: number;
+    applications: number;
+    conversionRate: number;
+    avgDwellMs: number;
+    bounces: number;
+  };
+  funnel: {
+    sessions: number;
+    reachedApply: number;
+    formStarted: number;
+    converted: number;
+  };
+  hours: {
+    hour: number;
+    pageViews: number;
+    sessions: number;
+    applications: number;
+    rate: number;
+  }[];
+  daily: {
+    date: string;
+    pageViews: number;
+    sessions: number;
+    applications: number;
+    converted: number;
+    rate: number;
+  }[];
+  regions: { label: string; country: string; sessions: number; converted: number }[];
+  sources: { label: string; sessions: number; converted: number }[];
+  devices: { device: string; sessions: number }[];
+  recent: {
+    id: string;
+    startedAt?: string;
+    dwellMs: number;
+    place: string;
+    device: string;
+    source: string;
+    stage: string;
+    returning: boolean;
+  }[];
 };
 
 export const eventsApi = {
@@ -128,6 +181,7 @@ export const eventsApi = {
       usesOralScan: boolean;
       /** 카카오에서 주소를 찾지 못해 직접 입력한 경우 */
       manualAddress?: boolean;
+      visitSessionId?: string;
     },
   ) =>
     eventsFetch<{ token: string; refreshToken?: string | null }>(
@@ -149,6 +203,7 @@ export const eventsApi = {
        * 있으면 신청 시 스냅샷.
        */
       usesOralScan?: boolean;
+      visitSessionId?: string;
     },
     token?: string | null,
   ) =>
@@ -201,6 +256,22 @@ export const eventsApi = {
       stats?: EventApplicationStats;
     }>(
       `/api/admin/events/${encodeURIComponent(eventId)}/applications${
+        qs ? `?${qs}` : ""
+      }`,
+      { token },
+    );
+  },
+
+  adminVisits: (
+    token: string | null,
+    eventId: string,
+    days: 1 | 7 | 30,
+  ) => {
+    const sp = new URLSearchParams();
+    sp.set("days", String(days));
+    const qs = sp.toString();
+    return eventsFetch<EventVisitReport>(
+      `/api/admin/events/${encodeURIComponent(eventId)}/visits${
         qs ? `?${qs}` : ""
       }`,
       { token },

@@ -75,6 +75,14 @@ async function shutdown(signal) {
   shuttingDown = true;
   console.log(`[shutdown] ${signal} — closing http + mongoose`);
   try {
+    const { flushEventVisitRaw } = await import(
+      "./services/eventVisitLog.service.js"
+    );
+    await flushEventVisitRaw();
+  } catch (err) {
+    console.warn("[shutdown] event visit flush failed:", err?.message || err);
+  }
+  try {
     const io = getIO();
     if (io) io.close();
   } catch (err) {
