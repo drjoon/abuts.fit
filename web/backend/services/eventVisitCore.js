@@ -232,6 +232,30 @@ export function sanitizePages(value) {
     .map(([label, index]) => ({ label, index }));
 }
 
+/** 로컬 개발 주소. 방문 집계에 넣지 않는다. */
+export function isLocalDevHost(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return false;
+  let host = raw;
+  try {
+    if (raw.includes("://")) host = new URL(raw).hostname;
+    else if (raw.startsWith("[")) {
+      const end = raw.indexOf("]");
+      host = end > 1 ? raw.slice(1, end) : raw;
+    } else host = raw.split("/")[0].split(":")[0];
+  } catch {
+    host = raw.split("/")[0].split(":")[0];
+  }
+  host = host.replace(/^\[|\]$/g, "");
+  return (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host === "0.0.0.0" ||
+    host.endsWith(".localhost")
+  );
+}
+
 export function referrerHost(referrer) {
   const raw = clip(referrer, 500);
   if (!raw) return "";

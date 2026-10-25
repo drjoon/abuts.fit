@@ -20,6 +20,7 @@ import {
   classifyDevice,
   clientIp,
   countryLabel,
+  isLocalDevHost,
   kstParts,
   placeLabel,
   regionName,
@@ -46,6 +47,14 @@ let flushing = false;
 let flushTimer = null;
 let flushSeq = 0;
 let geoipMod;
+
+function isLocalDevVisit(req) {
+  const origin = header(req, "origin");
+  if (origin) return isLocalDevHost(origin);
+  const forwarded = header(req, "x-forwarded-host").split(",")[0];
+  if (forwarded) return isLocalDevHost(forwarded);
+  return isLocalDevHost(header(req, "host"));
+}
 
 function header(req, name) {
   const value = req?.headers?.[name];
@@ -370,6 +379,7 @@ function summaryLine({ event, visit, geo, now }) {
  * Mongo는 세션 1건을 갱신한다. S3에는 세션이 끝날 때 요약 한 줄만 올린다.
  */
 export async function ingestEventVisit(req) {
+  if (isLocalDevVisit(req)) return { ok: true };
   const slug = String(req.params?.slug || "")
     .trim()
     .toLowerCase();

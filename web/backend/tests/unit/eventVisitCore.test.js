@@ -7,6 +7,7 @@ import {
   kstParts,
   placeLabel,
   regionName,
+  isLocalDevHost,
   sanitizeVisitBody,
   shiftKstDate,
 } from "../../services/eventVisitCore.js";
@@ -44,6 +45,15 @@ describe("eventVisitCore", () => {
     expect(placeLabel({ country: "KR", regionName: "서울", city: "Seoul" })).toBe(
       "서울 · Seoul",
     );
+  });
+
+  test("local dev hosts are not visit traffic", () => {
+    expect(isLocalDevHost("localhost")).toBe(true);
+    expect(isLocalDevHost("http://localhost:5173/events/abuts-lab")).toBe(true);
+    expect(isLocalDevHost("127.0.0.1:8080")).toBe(true);
+    expect(isLocalDevHost("[::1]:5173")).toBe(true);
+    expect(isLocalDevHost("abuts.fit")).toBe(false);
+    expect(isLocalDevHost("https://www.abuts.fit/events/abuts-lab")).toBe(false);
   });
 
   test("rejects a visit body without a session id", () => {

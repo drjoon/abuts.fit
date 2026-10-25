@@ -15,6 +15,21 @@ function uuid() {
   return crypto.randomUUID();
 }
 
+function isLocalDevHost(value: string) {
+  const host = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .split(":")[0];
+  return (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host === "0.0.0.0" ||
+    host.endsWith(".localhost")
+  );
+}
+
 function readStorage(key: string) {
   try {
     return sessionStorage.getItem(key) || localStorage.getItem(key) || "";
@@ -82,7 +97,7 @@ export function useEventPageVisit(slug: string) {
     const clean = String(slug || "")
       .trim()
       .toLowerCase();
-    if (!clean) return;
+    if (!clean || isLocalDevHost(window.location.hostname)) return;
     try {
       sessionStorage.setItem(ACTIVE_KEY, clean);
     } catch {
@@ -309,6 +324,7 @@ export function EventVisitRouteTracker() {
   const location = useLocation();
 
   useEffect(() => {
+    if (isLocalDevHost(window.location.hostname)) return;
     let slug = "";
     try {
       slug = sessionStorage.getItem(ACTIVE_KEY) || "";
