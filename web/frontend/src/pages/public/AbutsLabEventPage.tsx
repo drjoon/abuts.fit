@@ -319,7 +319,6 @@ export default function AbutsLabEventPage() {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   const loginWithToken = useAuthStore((s) => s.loginWithToken);
-  const setUser = useAuthStore((s) => s.setUser);
 
   const [event, setEvent] = useState<MarketingEvent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -396,15 +395,9 @@ export default function AbutsLabEventPage() {
       .then((res) => {
         if (cancelled) return;
         setAlreadyApplied(Boolean(res.applied));
-        setUsesOralScan(
-          typeof res.usesOralScan === "boolean" ? res.usesOralScan : null,
-        );
       })
       .catch(() => {
-        if (!cancelled) {
-          setAlreadyApplied(false);
-          setUsesOralScan(null);
-        }
+        if (!cancelled) setAlreadyApplied(false);
       })
       .finally(() => {
         if (!cancelled) setApplicationCheckLoading(false);
@@ -566,20 +559,10 @@ export default function AbutsLabEventPage() {
             directorName: prefill.directorName,
             dealer: EMPTY_DEALER,
             applicantPhone: prefill.applicantPhone || prefill.practice.phone,
-            usesOralScan,
+            usesOralScan: usesOralScan as boolean,
           },
           token,
         );
-        if (user) {
-          setUser({
-            ...user,
-            practiceProfile: {
-              ...(user.practiceProfile || {}),
-              usesOralScan,
-              updatedAt: new Date().toISOString(),
-            },
-          });
-        }
       } else if (
         addressMode === "manual" ||
         (place && place.lat != null && place.lng != null)
@@ -594,7 +577,7 @@ export default function AbutsLabEventPage() {
           address: manual ? manualAddress.trim() : place!.address,
           lat: manual ? null : place!.lat ?? null,
           lng: manual ? null : place!.lng ?? null,
-          usesOralScan,
+          usesOralScan: usesOralScan as boolean,
           manualAddress: manual,
         });
         if (signed.token) {
@@ -1235,7 +1218,7 @@ export default function AbutsLabEventPage() {
               type="submit"
               className="landing-btn h-12 w-full rounded-full bg-[#2563eb] text-base font-semibold hover:bg-[#1d4ed8]"
               size="lg"
-              disabled={submitting || !canApply}
+              disabled={submitting || !canApply || usesOralScan == null}
             >
               {!canApply
                 ? "신청 마감"
