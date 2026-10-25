@@ -2,14 +2,17 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
-<title>abuts.fit 기공소 영업 브로셔 (A4 3단 · 양면)</title>
+<title>abuts.fit 기공소 영업 브로셔 (A4 3단)</title>
 <!--
-  A4 가로(297×210mm) 양면 3단 접지(C-fold).
+  A4 가로(297×210mm) 3단 접지(C-fold).
   1쪽 = 겉면  [왼쪽: 안쪽 날개 | 가운데: 뒷표지 | 오른쪽: 앞표지]
-  2쪽 = 속면  [왼쪽 | 가운데 | 오른쪽]
-  인쇄: 양면, 긴 변 뒤집기(좌우 넘김). 여백 없음(Chrome: 배율 100%, 머리글/바닥글 끔).
+  2쪽 = 속면  [01 주문 | 02 배송·충전 | 03 정산]
+  3쪽 = 가공  [04 단차 | 05 코너 | 06 순서]
+  1–2쪽 인쇄: 양면, 긴 변 뒤집기(좌우 넘김). 3쪽은 단면 추가.
+  여백 없음(Chrome: 배율 100%, 머리글/바닥글 끔).
   로고·색: src/components/branding/AbutsLogo.tsx, src/features/landing/landingTheme.ts
   회사 정보: src/shared/lib/contactInfo.ts
+  배송 문구: src/shared/shipping/shippingPolicyCopy.ts
 -->
 <style>
   @page { size: 297mm 210mm; margin: 0; }
@@ -171,6 +174,17 @@
       linear-gradient(135deg, transparent 49.7%, #e8eef6 50%, transparent 50.3%) 0 0/6mm 6mm;
   }
   .cardslot span { background: #fff; padding: 1.2mm 3mm; border-radius: 99mm; }
+
+  /* ---------- 3쪽 · 단차 · 코너 ---------- */
+  .shot img { height: 46mm; object-fit: contain; background: #eceff3; }
+  .shot.wide img { height: 38mm; }
+  .shot.screen img { height: 52mm; object-fit: contain; object-position: center top; background: #fff; }
+  .split { display: grid; grid-template-columns: 1fr 5mm 1fr; align-items: start; margin-top: 2.2mm; }
+  .split .mini { padding: 1mm; }
+  .split .mini img { width: 100%; height: 30mm; object-fit: contain; background: #eceff3; border-radius: 1.8mm; }
+  .split .go { align-self: center; text-align: center; color: var(--blue); font-size: 11pt; font-weight: 800; }
+  .cap2 { text-align: center; font-size: 6.4pt; font-weight: 700; color: var(--muted); padding: 1.1mm 0 .2mm; }
+  .cap2.on { color: var(--blue); }
 </style>
 </head>
 <body>
@@ -294,14 +308,15 @@
       <span class="grad" style="margin-top:1.5mm">CNC·배송·정산은<br />어벗츠가.</span>
     </h1>
     <p class="sub">
-      STL을 올리면 바로 생산하고,<br />
-      내일 도착합니다.
+      STL을 올리면 바로 생산합니다.<br />
+      택배는 내일 16시 출고,<br />
+      월 100건 이상은 내일 도착합니다.
     </p>
 
     <div class="chips">
       <div class="chip"><i>1</i><div>오늘 의뢰<small>STL 업로드 · 의뢰하기</small></div></div>
       <div class="chip"><i>2</i><div>바로 생산<small>애크로덴트 CNC 가공</small></div></div>
-      <div class="chip"><i>3</i><div>내일 도착<small>익일 도착 딜리버리</small></div></div>
+      <div class="chip"><i>3</i><div>배송<small>택배 출고 · 딜리버리 도착</small></div></div>
     </div>
     <div class="url"><span>치과 ↔ 기공소 ↔ 어벗츠</span><span>abuts.fit</span></div>
   </div>
@@ -348,24 +363,15 @@
   <div class="panel">
     <div style="display:flex;align-items:flex-end;gap:2.5mm">
       <span class="num grad">02</span>
-      <span class="eyebrow">DELIVERY · CREDIT</span>
+      <span class="eyebrow">SHIPPING · CREDIT</span>
     </div>
-    <h2>익일 도착 배송,<br />크레딧으로 간편 결제.</h2>
+    <h2>택배는 내일 출고,<br />결제는 크레딧으로.</h2>
 
-    <div class="delivery">
-      <div class="t">익일 도착 딜리버리</div>
-      <div class="h">오늘 주문하면 내일 도착합니다.</div>
-      <div class="s">배송비는 판매자 부담입니다.</div>
-    </div>
-    <div class="route">
-      <div><i>1</i>오늘 의뢰</div><span class="ar">›</span>
-      <div><i>2</i>바로 생산</div><span class="ar">›</span>
-      <div><i>3</i>내일 도착</div>
-    </div>
-    <p class="lead" style="margin-top:2.6mm;font-size:7.4pt">
-      가상 우편함·배송 추적으로<br />
-      “지금 어디?” 문의가 줄어듭니다.
-    </p>
+    <dl class="facts">
+      <div class="fact"><dt>택배</dt><dd>기본 배송입니다.<br />오늘 의뢰하면 내일 16시 출고합니다.</dd></div>
+      <div class="fact"><dt>딜리버리</dt><dd>월 100건 이상이면 적용합니다.<br />오늘 의뢰하면 내일 도착합니다.</dd></div>
+      <div class="fact"><dt>배송비</dt><dd>판매자가 부담합니다.</dd></div>
+    </dl>
 
     <figure class="card fig" style="margin-top:3mm">
       <img src="assets/fig2.png" alt="크레딧 충전 화면" />
@@ -374,7 +380,7 @@
 
     <dl class="facts">
       <div class="fact"><dt>충전</dt><dd>50만원 단위로 충전합니다.<br />입금자명 코드로 자동 매칭됩니다.</dd></div>
-      <div class="fact"><dt>성격</dt><dd>선불페이가 아닌 B2B 거래 선수금입니다.<br />미사용 잔액은 요청 시 환불합니다.</dd></div>
+      <div class="fact"><dt>성격</dt><dd>커스텀어벗 주문용 선결제입니다.<br />선불페이가 아니며, 남은 금액은 환불됩니다.</dd></div>
       <div class="fact"><dt>계산서</dt><dd>충전 시에는 발행하지 않습니다.<br />사용분을 월 합산해 면세 계산서로 발행합니다.</dd></div>
     </dl>
 
@@ -406,7 +412,7 @@
       <div class="fact"><dt>커스텀어벗</dt><dd>STL 업로드와 어벗츠 생산비 지급 뒤 확정됩니다.<br />그전까지는 적립 보류입니다.</dd></div>
       <div class="fact"><dt>월 지급</dt><dd>매월 등록 계좌로 자동 지급합니다.<br />다음 달 초 사용을 위해 50만원은 남깁니다.</dd></div>
       <div class="fact"><dt>통장 사본</dt><dd>지급일까지 없으면 이번 달 지급분은<br />다음 달로 이월됩니다.<br />설정 › 사업자에서 등록합니다.</dd></div>
-      <div class="fact"><dt>사용·상계</dt><dd>차감 순서는 무료 → 기공 → 유료입니다.<br />기공크레딧 사용분은 월 정산에서 상계합니다.</dd></div>
+      <div class="fact"><dt>결제</dt><dd>커스텀어벗은 충전·무료 크레딧으로 결제합니다.<br />기공크레딧은 월 지급으로 받습니다.</dd></div>
       <div class="fact"><dt>취소</dt><dd>취소·롤백 시 해당 적립은 삭제됩니다.</dd></div>
       <div class="fact"><dt>계산서</dt><dd>부가세 없는 면세 계산서입니다.</dd></div>
     </dl>
@@ -417,6 +423,100 @@
     </div>
 
     <div class="foot"><div class="logo"><svg><use href="#hexL"/></svg><b class="grad">abuts.fit</b></div><span>기공소 영업 안내 · 3/3</span></div>
+  </div>
+</section>
+
+<!-- ================= 3쪽 · 단차 · 코너 ================= -->
+<section class="sheet" id="machining">
+
+  <div class="panel">
+    <div style="display:flex;align-items:flex-end;gap:2.5mm">
+      <span class="num grad">04</span>
+      <span class="eyebrow">STEP</span>
+    </div>
+    <h2>급한 곡면은<br />단차 없이 가공.</h2>
+    <p class="lead">
+      디자인이 맞아도, 곡면이 급하면 단차가 납니다.<br />
+      어벗츠 소프트웨어가 그 곡면을 맞춰 가공합니다.
+    </p>
+
+    <figure class="card fig shot">
+      <img src="assets/metal-step.jpg" alt="단차가 남은 가공" />
+      <figcaption><span class="tag">전</span>곡면이 급할 때 · 단차 있음</figcaption>
+    </figure>
+    <figure class="card fig shot">
+      <img src="assets/metal-smooth.jpg" alt="단차 없이 가공된 면" />
+      <figcaption><span class="tag">후</span>곡면을 맞춘 뒤 · 단차 없음</figcaption>
+    </figure>
+
+    <div class="band" style="margin-top:auto">
+      <b>의뢰하면 매끈한 면으로 가공합니다.</b>
+    </div>
+
+    <div class="foot"><div class="logo"><svg><use href="#hexL"/></svg><b class="grad">abuts.fit</b></div><span>가공 안내 · 단차</span></div>
+  </div>
+
+  <div class="panel">
+    <div style="display:flex;align-items:flex-end;gap:2.5mm">
+      <span class="num grad">05</span>
+      <span class="eyebrow">CORNER</span>
+    </div>
+    <h2>작은 코너는<br />올리자마자 알려 줍니다.</h2>
+    <p class="lead">
+      마진 코너가 공구보다 작으면 깊게 패입니다.<br />
+      반경 0.5mm 이상으로 둥글게 디자인해 주세요.
+    </p>
+
+    <div class="split">
+      <figure class="card mini">
+        <img src="assets/design-fillet.png" alt="필레가 작은 디자인" />
+        <figcaption class="cap2">디자인</figcaption>
+      </figure>
+      <div class="go" aria-hidden="true">›</div>
+      <figure class="card mini">
+        <img src="assets/photo-gouge.jpg" alt="코너가 패인 가공" />
+        <figcaption class="cap2">패임</figcaption>
+      </figure>
+    </div>
+
+    <figure class="card fig shot screen">
+      <img src="assets/screen-corner.png" alt="업로드 직후 코너 필레 검사 화면" />
+      <figcaption><span class="tag">검사</span>업로드 직후 · 코너 결과</figcaption>
+    </figure>
+
+    <div class="band" style="margin-top:auto">
+      <b>원본 STL은 그대로 둡니다.</b><br />
+      결과를 보고 다시 디자인할 수 있습니다.
+    </div>
+
+    <div class="foot"><div class="logo"><svg><use href="#hexL"/></svg><b class="grad">abuts.fit</b></div><span>가공 안내 · 코너</span></div>
+  </div>
+
+  <div class="panel">
+    <div style="display:flex;align-items:flex-end;gap:2.5mm">
+      <span class="num grad">06</span>
+      <span class="eyebrow">THEN</span>
+    </div>
+    <h2>검사 뒤에도<br />의뢰는 이어집니다.</h2>
+
+    <figure class="card fig shot wide">
+      <img src="assets/metal-normal.jpg" alt="정상 가공된 커스텀 어벗" />
+      <figcaption><span class="tag">결과</span>정상 가공</figcaption>
+    </figure>
+
+    <div class="steps" style="margin-top:2.4mm">
+      <div class="step"><span class="no">1</span><div><b>업로드</b><br />STL을 올리면 코너 검사가 바로 나옵니다.</div></div>
+      <div class="step"><span class="no">2</span><div><b>코너</b><br />작으면 알려 줍니다. 고친 파일을 다시 올립니다.</div></div>
+      <div class="step"><span class="no">3</span><div><b>단차</b><br />급한 곡면은 가공할 때 소프트웨어가 맞춥니다.</div></div>
+      <div class="step"><span class="no">4</span><div><b>생산</b><br />검사 결과가 나와도 의뢰는 이어집니다.</div></div>
+    </div>
+
+    <div class="band dark" style="margin-top:auto">
+      <b>받은 STL을 올리면 됩니다.</b><br />
+      치과가 플랫폼을 쓰지 않아도 됩니다.
+    </div>
+
+    <div class="foot"><div class="logo"><svg><use href="#hexL"/></svg><b class="grad">abuts.fit</b></div><span>가공 안내 · 순서</span></div>
   </div>
 </section>
 
