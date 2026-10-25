@@ -123,9 +123,11 @@ export const eventsApi = {
       phone: string;
       clinicName: string;
       address: string;
-      lat: number;
-      lng: number;
+      lat: number | null;
+      lng: number | null;
       usesOralScan: boolean;
+      /** 카카오에서 주소를 찾지 못해 직접 입력한 경우 */
+      manualAddress?: boolean;
     },
   ) =>
     eventsFetch<{ token: string; refreshToken?: string | null }>(

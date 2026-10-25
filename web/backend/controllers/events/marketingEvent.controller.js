@@ -12,6 +12,7 @@ import {
   readPracticeOralScanAnswer,
   syncPracticeUsesOralScan,
 } from "../businesses/requestorOrgAnchor.util.js";
+import { findClinicIdentityDuplicate } from "./eventApplicationDuplicate.js";
 
 const SIMPLEWAY_SAMPLE_SLUG = "abuts-launch";
 const SIMPLEWAY_SAMPLE_SLUGS_LEGACY = [
@@ -27,10 +28,10 @@ export const ABUTS_LAB_EVENT_SLUG = "abuts-lab";
 
 const ABUTS_LAB_EVENT_COPY = {
   title: "어벗츠기공소 소개",
-  summary: "상담을 신청하면 영업 담당자가 방문해 곡면 가공을 안내합니다.",
+  summary: "상담을 신청하면 영업 담당자가 방문해 안내합니다.",
   description: [
-    "기공사 디자인은 예쁘지만, 가공에서 단차가 나는 경우가 있습니다.",
-    "어벗츠기공소는 곡면을 소프트웨어로 처리해 매끈하게 가공합니다.",
+    "디자인이 예뻐 보여도, 가공하면 다르게 나오기도 합니다.",
+    "어벗츠 소프트웨어가 그 문제를 해결하여 매끈하게 가공합니다.",
     "",
     "신청 항목: 이메일, 비밀번호, 원장님 성함, 휴대폰 인증, 카카오 치과 주소, 구강 스캐너 사용 여부.",
     "사업자등록 등 나머지 절차는 영업 담당자 방문 때 안내합니다.",
@@ -520,6 +521,12 @@ export async function suggestEventPlaces(req, res) {
   }
 }
 
+function isAbutsLabRequestor(user) {
+  if (!user) return false;
+  const role = String(user.role || "");
+  return role === "requestor" || role === "practice";
+}
+
 /** POST /api/events/:slug/applications — 모집 중만 접수. 초안은 없는 행사 */
 export async function applyToEvent(req, res) {
   try {
@@ -541,6 +548,16 @@ export async function applyToEvent(req, res) {
 
     const body = req.body || {};
     const authUser = req.user || null;
+    if (
+      slug === ABUTS_LAB_EVENT_SLUG &&
+      !isAbutsLabRequestor(authUser)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "의뢰자(치과, 기공소)만 신청할 수 있습니다.",
+      });
+    }
+
     const authPp =
       authUser?.practiceProfile && typeof authUser.practiceProfile === "object"
         ? authUser.practiceProfile
@@ -681,14 +698,14 @@ export async function applyToEvent(req, res) {
       }
     }
 
-    const dup = await MarketingEventApplication.findOne({
+    const dup = await findClinicIdentityDuplicate(MarketingEventApplication, {
       eventId: event._id,
-      "practice.name": practice.name,
+      clinicName: practice.name,
       directorName,
-      status: { $ne: "rejected" },
-    })
-      .select({ _id: 1 })
-      .lean();
+      address: practice.address,
+      applicantPhone,
+      practicePhone: practice.phone,
+    });
     if (dup) {
       return res.status(409).json({
         success: false,

@@ -24,6 +24,10 @@ type EventPlaceSuggestInputProps = {
   suppressSuggestToken?: number | string;
   emptyText?: string;
   id?: string;
+  /** 검색 결과가 없을 때 직접 입력. 넘기면 빈 목록에 버튼을 둔다. */
+  onManual?: (query: string) => void;
+  /** 선택 후 입력칸에 넣을 값. 기본은 장소 이름. */
+  pickValue?: (item: EventPlaceSuggest) => string;
 };
 
 export default function EventPlaceSuggestInput({
@@ -39,6 +43,8 @@ export default function EventPlaceSuggestInput({
   suppressSuggestToken,
   emptyText = "결과가 없습니다. 상호를 그대로 입력하거나 「지역명 상호」로 다시 검색해 보세요.",
   id,
+  onManual,
+  pickValue,
 }: EventPlaceSuggestInputProps) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -124,7 +130,7 @@ export default function EventPlaceSuggestInput({
     setOpen(false);
     setItems([]);
     setLoading(false);
-    onChange(item.name);
+    onChange(pickValue ? pickValue(item) : item.name);
     onPick(item);
   };
 
@@ -202,8 +208,21 @@ export default function EventPlaceSuggestInput({
           )}
         >
           {visibleItems.length === 0 && !loading ? (
-            <li className="px-3 py-2 text-xs text-muted-foreground">
-              {emptyText}
+            <li className="space-y-2 px-3 py-2">
+              <p className="text-xs text-muted-foreground">{emptyText}</p>
+              {onManual ? (
+                <button
+                  type="button"
+                  className="text-xs font-medium text-sky-700 hover:text-sky-800"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setOpen(false);
+                    onManual(value.trim());
+                  }}
+                >
+                  주소 직접 입력
+                </button>
+              ) : null}
             </li>
           ) : visibleItems.length === 0 && loading ? (
             <li className="px-3 py-2 text-xs text-muted-foreground">검색 중…</li>

@@ -70,7 +70,7 @@ export function LandingSectionRail({ items }: { items?: LandingRailItem[] }) {
   return createPortal(
     <nav
       aria-label="섹션 이동"
-      className="fixed right-3 top-1/2 z-40 hidden -translate-y-1/2 flex-col items-end gap-3.5 md:flex lg:right-5"
+      className="fixed right-3 top-1/2 z-40 hidden -translate-y-1/2 flex-col items-end gap-3.5 lg:flex lg:right-5"
     >
       {entries.map((entry) => {
         const on = entry.key === active;

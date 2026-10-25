@@ -4,6 +4,7 @@
 // - web/backend/services/kakaoPlaceSearch.service.js
 // - web/frontend/src/pages/public/AbutsLabEventPage.tsx
 import crypto from "crypto";
+import { Types } from "mongoose";
 import MarketingEvent from "../../models/marketingEvent.model.js";
 import MarketingEventApplication from "../../models/marketingEventApplication.model.js";
 import User from "../../models/user.model.js";
@@ -19,10 +20,12 @@ import {
   PASSWORD_POLICY_MESSAGE,
 } from "../../utils/passwordPolicy.js";
 import { isReservedReferralCode } from "../../utils/requestorReferralWindow.util.js";
+import { resolveAbutsAdminReferralAnchorId } from "../../services/abutsAdminReferral.service.js";
 import {
   ABUTS_LAB_EVENT_SLUG,
   ensureDefaultMarketingEvents,
 } from "./marketingEvent.controller.js";
+import { findClinicIdentityDuplicate } from "./eventApplicationDuplicate.js";
 
 function trimStr(value, max = 200) {
   return String(value || "")
@@ -83,7 +86,9 @@ async function ensureUniqueReferralCode(length = 5) {
 
 /**
  * 어벗츠기공소 소개 — 페이지 안에서 최소 가입과 상담 신청을 함께 받는다.
- * 이메일 인증·사업자등록은 받지 않는다. 휴대폰과 카카오 치과 주소는 확인한다.
+ * 이메일 인증·사업자등록은 받지 않는다. 휴대폰은 확인한다.
+ * 치과 주소는 카카오 검색 결과를 확인하고, 결과가 없으면 직접 입력(manualAddress)을 받는다.
+ * 소개 코드는 어벗츠 주식회사(AAA)로 고정한다. 본인 소개 코드는 따로 발급한다.
  * @route POST /api/events/:slug/signup-apply
  */
 export async function signupApplyToEvent(req, res) {
@@ -117,6 +122,7 @@ export async function signupApplyToEvent(req, res) {
     const lat = Number(body.lat);
     const lng = Number(body.lng);
     const usesOralScan = body.usesOralScan;
+    const manualAddress = body.manualAddress === true;
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({
@@ -148,10 +154,22 @@ export async function signupApplyToEvent(req, res) {
         message: "구강 스캐너 사용 여부를 선택해 주세요.",
       });
     }
-    if (!clinicName || address.length < 5 || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    if (manualAddress) {
+      if (clinicName.length < 2 || address.length < 5) {
+        return res.status(400).json({
+          success: false,
+          message: "치과명과 주소를 입력해 주세요.",
+        });
+      }
+    } else if (
+      !clinicName ||
+      address.length < 5 ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng)
+    ) {
       return res.status(400).json({
         success: false,
-        message: "검색 결과에서 치과를 선택해 주세요.",
+        message: "검색 결과에서 주소를 선택해 주세요.",
       });
     }
 
@@ -163,27 +181,38 @@ export async function signupApplyToEvent(req, res) {
       });
     }
 
-    const kakao = await searchKakaoPlaces(clinicName, {
-      mode: "practice",
-      limit: 40,
-    });
-    if (kakao.keyMissing || kakao.authError) {
-      return res.status(503).json({
-        success: false,
-        message: "주소 확인을 잠시 후 다시 시도해 주세요.",
+    let place = null;
+    if (manualAddress) {
+      place = {
+        name: clinicName,
+        address,
+        lat: null,
+        lng: null,
+        phone: "",
+      };
+    } else {
+      const kakao = await searchKakaoPlaces(clinicName, {
+        mode: "practice",
+        limit: 40,
       });
-    }
-    const place = matchKakaoPracticePlace(kakao.items, {
-      name: clinicName,
-      address,
-      lat,
-      lng,
-    });
-    if (!place) {
-      return res.status(400).json({
-        success: false,
-        message: "검색 결과에서 치과를 다시 선택해 주세요.",
+      if (kakao.keyMissing || kakao.authError) {
+        return res.status(503).json({
+          success: false,
+          message: "주소 확인을 잠시 후 다시 시도해 주세요. 주소를 직접 입력할 수도 있습니다.",
+        });
+      }
+      place = matchKakaoPracticePlace(kakao.items, {
+        name: clinicName,
+        address,
+        lat,
+        lng,
       });
+      if (!place) {
+        return res.status(400).json({
+          success: false,
+          message: "검색 결과에서 주소를 다시 선택해 주세요.",
+        });
+      }
     }
 
     const existingByEmail = await User.findOne({ email }).select({ _id: 1 }).lean();
@@ -194,18 +223,26 @@ export async function signupApplyToEvent(req, res) {
       });
     }
 
-    const dup = await MarketingEventApplication.findOne({
+    const dup = await findClinicIdentityDuplicate(MarketingEventApplication, {
       eventId: event._id,
-      "practice.name": place.name,
+      clinicName: place.name,
       directorName,
-      status: { $ne: "rejected" },
-    })
-      .select({ _id: 1 })
-      .lean();
+      address: place.address,
+      applicantPhone: phone,
+      practicePhone: place.phone,
+    });
     if (dup) {
       return res.status(409).json({
         success: false,
         message: "이미 신청하신 내역이 있습니다. 영업 담당자에게 문의해 주세요.",
+      });
+    }
+
+    const adminAnchorId = await resolveAbutsAdminReferralAnchorId();
+    if (!adminAnchorId || !Types.ObjectId.isValid(String(adminAnchorId))) {
+      return res.status(503).json({
+        success: false,
+        message: "소개 코드를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.",
       });
     }
 
@@ -220,6 +257,7 @@ export async function signupApplyToEvent(req, res) {
       subRole: "owner",
       business: place.name,
       referralCode,
+      referredByAnchorId: new Types.ObjectId(String(adminAnchorId)),
       requestorKind: "practice",
       requestorServices: { free: false, paid: true },
       signupChannel: "event_abuts_lab",
@@ -254,8 +292,8 @@ export async function signupApplyToEvent(req, res) {
         representativeName: directorName,
         phone: clinicPhone || phone,
         address: place.address,
-        lat: Number(place.lat),
-        lng: Number(place.lng),
+        lat: place.lat == null ? null : Number(place.lat),
+        lng: place.lng == null ? null : Number(place.lng),
       },
       directorName,
       dealer: {

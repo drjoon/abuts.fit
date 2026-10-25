@@ -12,6 +12,10 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeLastDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import {
+  ABUTS_LAB_EVENT_PATH,
+  isAbutsLabVisitPending,
+} from "@/shared/events/abutsLabCampaign";
+import {
   DEFAULT_SIDEBAR_OPEN,
   normalizeSidebarOpen,
 } from "@/shared/layout/sidebarOpen";
@@ -790,8 +794,16 @@ export const DashboardLayout = () => {
   }, [user?.id]);
 
   useEffect(() => {
+    if (!token || !user?.id) return;
+    if (!isAbutsLabVisitPending(user)) return;
+    if (isWizardRoute) return;
+    navigate(ABUTS_LAB_EVENT_PATH, { replace: true });
+  }, [isWizardRoute, navigate, token, user]);
+
+  useEffect(() => {
     if (!token) return;
     if (!user || !user.id) return;
+    if (isAbutsLabVisitPending(user)) return;
     if (!shouldForceOnboarding) return;
     if (isWizardRoute) return;
     if (onboardingCompleted) return;

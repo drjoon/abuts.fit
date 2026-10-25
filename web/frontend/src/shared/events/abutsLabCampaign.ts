@@ -8,17 +8,37 @@
 /** 어벗츠기공소 소개 */
 export const ABUTS_LAB_EVENT_SLUG = "abuts-lab";
 
+export const ABUTS_LAB_EVENT_PATH = "/events/abuts-lab";
+
+/** 이벤트 가입 계정. 방문 전 온보딩 대신 안내 페이지를 보여 준다. */
+export const ABUTS_LAB_SIGNUP_CHANNEL = "event_abuts_lab";
+
+export function isAbutsLabVisitPending(
+  user:
+    | {
+        signupChannel?: string | null;
+        onboardingWizardCompleted?: boolean;
+        businessVerified?: boolean;
+      }
+    | null
+    | undefined,
+): boolean {
+  if (!user || user.signupChannel !== ABUTS_LAB_SIGNUP_CHANNEL) return false;
+  return !(user.onboardingWizardCompleted || user.businessVerified);
+}
+
 export const ABUTS_LAB_EVENT_HEADLINE = "어벗츠기공소 소개";
 
 export const ABUTS_LAB_HERO_EYEBROW = "Abuts Lab";
 
 export const ABUTS_LAB_HERO_SUB_LINES = [
-  "디자인은 예쁜데, 가공에서 단차가 나는 경우가 있습니다.",
-  "곡면을 소프트웨어로 다듬어 매끈하게 가공합니다.",
+  "디자인이 예뻐 보여도, 가공하면 다르게 나오기도 합니다.",
+  "어벗츠 소프트웨어가 그 문제를 해결하여 매끈하게 가공합니다.",
 ] as const;
 
 export const ABUTS_LAB_IMAGES = {
   design: "/events/abuts-lab/design-compare.png",
   step: "/events/abuts-lab/machining-step.jpg",
   smooth: "/events/abuts-lab/machining-smooth.jpg",
+  fillet: "/events/abuts-lab/fillet-warning.jpg",
 } as const;

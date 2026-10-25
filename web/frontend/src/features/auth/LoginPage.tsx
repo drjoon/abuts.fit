@@ -12,6 +12,10 @@ import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { landingPathIfOnboardingDone } from "@/shared/navigation/postOnboardingReturn";
+import {
+  ABUTS_LAB_EVENT_PATH,
+  isAbutsLabVisitPending,
+} from "@/shared/events/abutsLabCampaign";
 import { AuthMarketingPanel } from "@/features/auth/AuthMarketingPanel";
 import { SellerIdentityDisclosure } from "@/shared/legal/sellerIdentityDisclosure";
 
@@ -27,10 +31,19 @@ const resolveSharedCaseNextPath = (): string | null => {
   return /^\/(cases|share\/case)\/[A-Za-z0-9_-]+$/.test(next) ? next : null;
 };
 
+/** 기공소 소개 「로그인 후 신청하기」는 신청 완료 안내로 되돌린다. */
+const resolveAbutsLabLoginNext = (): string | null => {
+  const next = new URLSearchParams(window.location.search).get("next") || "";
+  return next === ABUTS_LAB_EVENT_PATH ? ABUTS_LAB_EVENT_PATH : null;
+};
+
 const resolvePostLoginPath = () => {
+  const user = useAuthStore.getState().user;
   return (
+    resolveAbutsLabLoginNext() ||
+    (isAbutsLabVisitPending(user) ? ABUTS_LAB_EVENT_PATH : null) ||
     resolveSharedCaseNextPath() ||
-    resolveEntryDashboardPath(useAuthStore.getState().user)
+    resolveEntryDashboardPath(user)
   );
 };
 
@@ -131,7 +144,8 @@ export const LoginPage = () => {
       if (result.success) {
         const user = useAuthStore.getState().user;
         navigate(
-          landingPathIfOnboardingDone(user, resolvePostLoginPath()),
+          resolveAbutsLabLoginNext() ||
+            landingPathIfOnboardingDone(user, resolvePostLoginPath()),
           { replace: true },
         );
       } else {
