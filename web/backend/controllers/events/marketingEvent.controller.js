@@ -523,8 +523,11 @@ export async function suggestEventPlaces(req, res) {
 
 function isAbutsLabRequestor(user) {
   if (!user) return false;
-  const role = String(user.role || "");
-  return role === "requestor" || role === "practice";
+  const kind = String(user.requestorKind || "");
+  if (kind === "practice") return true;
+  if (String(user.role || "") === "practice") return true;
+  if (kind === "lab") return false;
+  return user.requestorCapabilities?.practice === true;
 }
 
 /** POST /api/events/:slug/applications — 모집 중만 접수. 초안은 없는 행사 */
@@ -554,7 +557,7 @@ export async function applyToEvent(req, res) {
     ) {
       return res.status(403).json({
         success: false,
-        message: "의뢰자(치과, 기공소)만 신청할 수 있습니다.",
+        message: "치과만 상담을 신청할 수 있습니다.",
       });
     }
 

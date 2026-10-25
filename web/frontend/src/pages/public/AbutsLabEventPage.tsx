@@ -131,10 +131,13 @@ function MediaCardTitle({ children }: { children: string }) {
   );
 }
 
-/** 의뢰자(치과·기공소). 관리자·제조사·영업 계정은 신청할 수 없다. */
+/** 치과만. 기공소·관리자·제조사·영업 계정은 신청할 수 없다. */
 function isRequestorApplicant(user: User | null | undefined): boolean {
   if (!user) return false;
-  return user.role === "requestor" || user.role === "practice";
+  if (user.requestorKind === "practice") return true;
+  if (user.role === "practice") return true;
+  if (user.requestorKind === "lab") return false;
+  return Boolean(user.requestorCapabilities?.practice);
 }
 
 type FieldErrors = Partial<
@@ -898,7 +901,7 @@ export default function AbutsLabEventPage() {
             </h2>
             <p className="max-w-xl break-keep text-sm leading-relaxed text-slate-600">
               {isAuthenticated && !requestorUser
-                ? "의뢰자(치과, 기공소)만 신청할 수 있습니다."
+                ? "치과만 상담을 신청할 수 있습니다."
                 : "상담을 신청하면 영업 담당자가 치과를 방문합니다. 곡면 가공을 설명하고, 부담 없이 어벗츠를 시작하실 수 있게 안내합니다."}
             </p>
           </LandingReveal>
