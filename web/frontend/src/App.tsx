@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppLayout } from "@/features/layout/AppLayout";
 import { CookieConsentBanner } from "@/features/layout/CookieConsentBanner";
 import { ScrollToTop } from "@/features/layout/ScrollToTop";
+import { EventVisitRouteTracker } from "@/shared/events/useEventPageVisit";
 import { LoadingScreen } from "@/shared/ui/feedback/LoadingScreen";
 import {
   BrowserRouter,
@@ -624,6 +625,7 @@ const App = () => {
       <TooltipProvider delayDuration={600} skipDelayDuration={0}>
         <BrowserRouter>
           <ScrollToTop />
+          <EventVisitRouteTracker />
           <Toaster />
           <Sonner />
           <UiTextZoomShortcuts />

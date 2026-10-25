@@ -231,9 +231,11 @@ function CountList({
 export default function AdminEventVisitsPanel({
   token,
   eventId,
+  reloadToken = 0,
 }: {
   token: string | null;
   eventId: string;
+  reloadToken?: number;
 }) {
   const { toast } = useToast();
   const [days, setDays] = useState<1 | 7 | 30>(7);
@@ -258,7 +260,7 @@ export default function AdminEventVisitsPanel({
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, reloadToken]);
 
   const summary = report?.summary;
   const funnel = report?.funnel;
@@ -327,6 +329,28 @@ export default function AdminEventVisitsPanel({
                   { label: "신청 완료", value: funnel?.converted ?? 0 },
                 ]}
               />
+              {(report?.pages || []).length > 0 ? (
+                <div>
+                  <div className="mb-1 text-xs font-medium text-slate-700">
+                    방문한 페이지
+                  </div>
+                  <Funnel
+                    steps={(report?.pages || []).map((row) => ({
+                      label: row.label,
+                      value: row.sessions,
+                    }))}
+                  />
+                </div>
+              ) : null}
+              {(report?.routes || []).length > 0 ? (
+                <CountList
+                  title="다른 페이지"
+                  rows={(report?.routes || []).map((row) => ({
+                    label: row.label,
+                    value: `${row.sessions}`,
+                  }))}
+                />
+              ) : null}
               {days > 1 ? (
                 <div>
                   <div className="mb-1 text-xs font-medium text-slate-700">날짜</div>
@@ -377,12 +401,14 @@ export default function AdminEventVisitsPanel({
                 />
               </div>
               <div className="overflow-x-auto px-1.5 py-1.5">
-                <table className="w-full min-w-[36rem] text-left text-sm">
+                <table className="w-full min-w-[42rem] text-left text-sm">
                   <thead className="border-b border-slate-100 text-xs text-muted-foreground">
                     <tr>
                       <th className="px-2 py-2 font-medium">시간</th>
                       <th className="px-2 py-2 font-medium">지역</th>
                       <th className="px-2 py-2 font-medium">유입</th>
+                      <th className="px-2 py-2 font-medium">방문한 페이지</th>
+                      <th className="px-2 py-2 font-medium">다른 페이지</th>
                       <th className="px-2 py-2 font-medium">체류</th>
                       <th className="px-2 py-2 font-medium">단계</th>
                     </tr>
@@ -399,6 +425,12 @@ export default function AdminEventVisitsPanel({
                           {row.returning ? (
                             <span className="text-muted-foreground"> · 재방문</span>
                           ) : null}
+                        </td>
+                        <td className="px-2 py-2">
+                          {row.pages?.length ? row.pages.join(" · ") : "-"}
+                        </td>
+                        <td className="px-2 py-2">
+                          {row.routes?.length ? row.routes.join(" · ") : "-"}
                         </td>
                         <td className="whitespace-nowrap px-2 py-2 tabular-nums">
                           {formatDwell(row.dwellMs)}

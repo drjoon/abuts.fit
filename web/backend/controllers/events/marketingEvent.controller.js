@@ -37,8 +37,8 @@ const ABUTS_LAB_EVENT_COPY = {
     "디자인이 예뻐 보여도, 가공하면 다르게 나오기도 합니다.",
     "어벗츠 소프트웨어가 그 문제를 해결하여 매끈하게 가공합니다.",
     "",
-    "신청 항목: 이메일, 비밀번호, 원장님 성함, 휴대폰 인증, 카카오 치과 주소, 구강 스캐너 사용 여부.",
-    "사업자등록 등 나머지 절차는 영업 담당자 방문 때 안내합니다.",
+    "신청 항목: 원장님 성함, 휴대폰 번호, 카카오 치과 주소, 구강 스캐너 사용 여부.",
+    "회원가입은 영업 담당자 방문 때 합니다.",
   ].join("\n"),
 };
 
@@ -556,19 +556,16 @@ export async function applyToEvent(req, res) {
 
     const body = req.body || {};
     const authUser = req.user || null;
-    if (
-      slug === ABUTS_LAB_EVENT_SLUG &&
-      !isAbutsLabRequestor(authUser)
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "치과만 상담을 신청할 수 있습니다.",
-      });
-    }
+    // 소개 상담은 계정 없이 받는다. 치과 계정이면 그 신청에만 연결한다.
+    const linkedUser =
+      slug === ABUTS_LAB_EVENT_SLUG && !isAbutsLabRequestor(authUser)
+        ? null
+        : authUser;
 
     const authPp =
-      authUser?.practiceProfile && typeof authUser.practiceProfile === "object"
-        ? authUser.practiceProfile
+      linkedUser?.practiceProfile &&
+      typeof linkedUser.practiceProfile === "object"
+        ? linkedUser.practiceProfile
         : {};
 
     let practice = normalizePlace(body.practice);
@@ -579,14 +576,14 @@ export async function applyToEvent(req, res) {
     );
     const dealer = normalizePlace(body.dealer);
     const applicantEmail = trimStr(
-      body.applicantEmail || authUser?.email || "",
+      body.applicantEmail || linkedUser?.email || "",
       120,
     );
     const memo = trimStr(body.memo, 1000);
     // 구강 스캔: 행사 신청은 항상 예/아니오를 받는다. 저장된 값이 있으면 기본값.
     // 본문이 없으면 저장값 스냅샷. 미응답인데 본문도 없으면 거절.
-    const oralScan = authUser?._id
-      ? await readPracticeOralScanAnswer(authUser._id)
+    const oralScan = linkedUser?._id
+      ? await readPracticeOralScanAnswer(linkedUser._id)
       : {
           isPractice: false,
           needsAnswer: false,
@@ -606,17 +603,17 @@ export async function applyToEvent(req, res) {
       bodyUsesOralScan != null ? bodyUsesOralScan : Boolean(oralScan.value);
 
     // 로그인 치과: 본문 미입력이면 프로필·계정으로 채움
-    if (authUser) {
+    if (linkedUser) {
       const profileName = trimStr(
-        authPp.clinicName || authUser.business || "",
+        authPp.clinicName || linkedUser.business || "",
         120,
       );
       const profileDirector = trimStr(
-        authPp.directorName || authPp.staffName || authUser.name || "",
+        authPp.directorName || authPp.staffName || linkedUser.name || "",
         80,
       );
       const profilePhone = trimStr(
-        authPp.phone || authPp.clinicPhone || authUser.phoneNumber || "",
+        authPp.phone || authPp.clinicPhone || linkedUser.phoneNumber || "",
         40,
       );
       const profileAddress = trimStr(
@@ -656,13 +653,34 @@ export async function applyToEvent(req, res) {
         });
       }
       // 로그인 신청: 원장명 미기재 시 담당자/계정명으로 대체한 뒤에도 없으면 치과명 사용
-      if (!directorName && authUser) {
+      if (!directorName && linkedUser) {
         directorName = trimStr(practice.name, 80);
       }
       if (!directorName) {
         return res.status(400).json({
           success: false,
           message: "원장명을 입력해 주세요.",
+        });
+      }
+    }
+
+    if (slug === ABUTS_LAB_EVENT_SLUG) {
+      if (bodyUsesOralScan == null) {
+        return res.status(400).json({
+          success: false,
+          message: "구강 스캐너 사용 여부를 선택해 주세요.",
+        });
+      }
+      if (!/^01[016789]\d{7,8}$/.test(normalizePhoneDigits(applicantPhone))) {
+        return res.status(400).json({
+          success: false,
+          message: "휴대폰 번호를 확인해 주세요.",
+        });
+      }
+      if (!practice.address) {
+        return res.status(400).json({
+          success: false,
+          message: "치과 주소를 선택해 주세요.",
         });
       }
     }
@@ -688,7 +706,7 @@ export async function applyToEvent(req, res) {
       }
     }
 
-    const applicantUserId = authUser?._id || null;
+    const applicantUserId = linkedUser?._id || null;
 
     if (applicantUserId) {
       const dupByUser = await MarketingEventApplication.findOne({
@@ -743,7 +761,7 @@ export async function applyToEvent(req, res) {
       void syncPracticeUsesOralScan({
         userId: applicantUserId,
         businessAnchorId:
-          oralScan.businessAnchorId || authUser?.businessAnchorId || null,
+          oralScan.businessAnchorId || linkedUser?.businessAnchorId || null,
         usesOralScan,
       }).catch((err) => {
         console.error("[events.apply] syncPracticeUsesOralScan", err);

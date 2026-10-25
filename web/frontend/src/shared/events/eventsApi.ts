@@ -137,6 +137,8 @@ export type EventVisitReport = {
   regions: { label: string; country: string; sessions: number; converted: number }[];
   sources: { label: string; sessions: number; converted: number }[];
   devices: { device: string; sessions: number }[];
+  pages: { label: string; sessions: number }[];
+  routes: { path: string; label: string; sessions: number }[];
   recent: {
     id: string;
     startedAt?: string;
@@ -146,6 +148,8 @@ export type EventVisitReport = {
     source: string;
     stage: string;
     returning: boolean;
+    pages: string[];
+    routes: string[];
   }[];
 };
 

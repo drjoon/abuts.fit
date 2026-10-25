@@ -62,5 +62,41 @@ describe("eventVisitCore", () => {
     expect(ok.value.referrerHost).toBe("google.com");
     expect(ok.value.dwellMs).toBe(1500);
     expect(ok.value.viewportW).toBeUndefined();
+    expect(ok.value.pages).toEqual([]);
+    const pages = sanitizeVisitBody({
+      sessionId: SESSION,
+      type: "progress",
+      pageStep: true,
+      pages: [
+        { label: "신청", index: 4 },
+        { label: "시작", index: 0 },
+        { label: "시작", index: 3 },
+        { label: "<script>", index: 1 },
+      ],
+    });
+    expect(pages.ok).toBe(true);
+    if (!pages.ok) return;
+    expect(pages.value.pageStep).toBe(true);
+    expect(pages.value.pages).toEqual([
+      { label: "시작", index: 0 },
+      { label: "신청", index: 4 },
+    ]);
+    const routes = sanitizeVisitBody({
+      sessionId: SESSION,
+      type: "progress",
+      routeStep: true,
+      routes: [
+        { path: "/offer/platform" },
+        { path: "https://evil.example" },
+        { path: "/offer/platform" },
+        { path: "/#events" },
+      ],
+    });
+    expect(routes.ok).toBe(true);
+    if (!routes.ok) return;
+    expect(routes.value.routes).toEqual([
+      { path: "/offer/platform", index: 0 },
+      { path: "/#events", index: 1 },
+    ]);
   });
 });

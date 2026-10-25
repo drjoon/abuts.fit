@@ -17,6 +17,28 @@ const marketingEventVisitSchema = new mongoose.Schema(
     /** 브라우저 localStorage 방문자. 재방문 구분용이고 계정과 무관하다. */
     visitorId: { type: String, default: "", trim: true },
     returning: { type: Boolean, default: false },
+    /** 이벤트 페이지를 벗어난 뒤 본 경로. path 만 두고 표시 이름은 조회 때 붙인다. */
+    routes: {
+      type: [
+        {
+          _id: false,
+          path: { type: String, trim: true },
+          index: { type: Number, default: 0 },
+        },
+      ],
+      default: [],
+    },
+    /** 화면에 들어온 랜딩 섹션. label 은 data-rail-label, index 는 페이지 순서. */
+    pages: {
+      type: [
+        {
+          _id: false,
+          label: { type: String, trim: true },
+          index: { type: Number, default: 0 },
+        },
+      ],
+      default: [],
+    },
     /** 신청 폼 구간이 화면에 들어옴 */
     reachedApply: { type: Boolean, default: false },
     /** 신청 입력을 시작함 */

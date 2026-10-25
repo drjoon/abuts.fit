@@ -45,7 +45,20 @@ describe("eventVisitLog", () => {
     expect(entered.ok).toBe(true);
     const step = req("progress", 4000);
     step.body.reachedApply = true;
+    step.body.pageStep = true;
+    step.body.pages = [
+      { label: "시작", index: 0 },
+      { label: "가공", index: 1 },
+    ];
     expect((await ingestEventVisit(step)).ok).toBe(true);
+    const further = req("progress", 8000);
+    further.body.pageStep = true;
+    further.body.pages = [
+      { label: "시작", index: 0 },
+      { label: "신청", index: 4 },
+      { label: "가공", index: 1 },
+    ];
+    expect((await ingestEventVisit(further)).ok).toBe(true);
     const stayed = await ingestEventVisit(req("leave", 12500));
     expect(stayed.ok).toBe(true);
 
@@ -53,6 +66,7 @@ describe("eventVisitLog", () => {
     expect(saved.pageViews).toBe(1);
     expect(saved.dwellMs).toBe(12500);
     expect(saved.reachedApply).toBe(true);
+    expect(saved.pages.map((page) => page.label)).toEqual(["시작", "가공", "신청"]);
     expect(saved.regionName).toBe("서울");
     expect(saved.device).toBe("mobile");
     expect(saved.referrerHost).toBe("google.com");
@@ -73,6 +87,24 @@ describe("eventVisitLog", () => {
     expect(report.summary.pageViews).toBe(1);
     expect(report.summary.avgDwellMs).toBe(12500);
     expect(report.funnel.reachedApply).toBe(1);
+    expect(report.pages.map((page) => page.label)).toEqual(["시작", "가공", "신청"]);
+    expect(report.pages[0].sessions).toBe(1);
+    expect(report.recent[0].pages).toEqual(["시작", "가공", "신청"]);
+    const moved = req("progress", 9000);
+    moved.body.routeStep = true;
+    moved.body.routes = [{ path: "/offer/platform" }, { path: "/" }];
+    expect((await ingestEventVisit(moved)).ok).toBe(true);
+    const withRoutes = await MarketingEventVisit.findOne({ sessionId: SESSION }).lean();
+    expect(withRoutes.routes.map((route) => route.path)).toEqual([
+      "/offer/platform",
+      "/",
+    ]);
+    const routed = await loadEventVisitReport(saved.eventId, {
+      from: kstDate,
+      to: kstDate,
+    });
+    expect(routed.routes.map((route) => route.label)).toEqual(["플랫폼", "홈"]);
+    expect(routed.recent[0].routes).toEqual(["플랫폼", "홈"]);
     expect(report.funnel.converted).toBe(1);
     expect(report.regions[0].label.startsWith("서울")).toBe(true);
     expect(report.sources[0].label).toBe("google.com");

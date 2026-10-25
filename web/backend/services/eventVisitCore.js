@@ -140,6 +140,98 @@ function num(value, max) {
   return Math.min(max, Math.round(n));
 }
 
+const PAGE_LABEL_RE = /^[\p{L}\p{N} .·・\-_/()]{1,24}$/u;
+
+/** 랜딩 섹션 라벨. 순서(index)를 유지하고 같은 라벨은 한 번만. */
+const ROUTE_PATH_RE =
+  /^\/(?:[\p{L}\p{N}_~.-]{1,40}(?:\/[\p{L}\p{N}_~.-]{1,40}){0,3})?(?:#[\p{L}\p{N}_-]{1,32})?$/u;
+
+const ROUTE_LABELS = {
+  "/": "홈",
+  "/#events": "이벤트 목록",
+  "/events": "이벤트 목록",
+  "/offer/platform": "플랫폼",
+  "/offer/lab": "어벗츠기공소",
+  "/login": "로그인",
+  "/signup": "회원가입",
+  "/help": "도움말",
+  "/contact": "문의",
+  "/manual": "매뉴얼",
+  "/about": "소개",
+  "/credits": "크레딧",
+  "/terms": "이용약관",
+  "/privacy": "개인정보처리방침",
+  "/security": "보안 정책",
+  "/cookies": "쿠키 정책",
+  "/service": "서비스 안내",
+  "/business": "사업자 정보",
+  "/refund-policy": "환불·청약철회",
+  "/dashboard": "대시보드",
+  "/refer": "추천",
+};
+
+/** 통계에 보일 다른 페이지 이름. 모르는 경로는 경로 그대로. */
+export function routeLabel(path) {
+  const clean = String(path || "");
+  if (ROUTE_LABELS[clean]) return ROUTE_LABELS[clean];
+  if (clean.startsWith("/offer/")) return "오퍼";
+  if (clean.startsWith("/events/")) return "다른 이벤트";
+  if (clean.startsWith("/dashboard")) return "대시보드";
+  if (clean.startsWith("/signup")) return "회원가입";
+  return clean || "다른 페이지";
+}
+
+function redactRoutePath(raw) {
+  const hashIndex = raw.indexOf("#");
+  const base = hashIndex >= 0 ? raw.slice(0, hashIndex) : raw;
+  const hash = hashIndex >= 0 ? raw.slice(hashIndex) : "";
+  const parts = base
+    .split("/")
+    .filter(Boolean)
+    .slice(0, 4)
+    .map((seg) => {
+      if (/^[0-9a-f]{24}$/i.test(seg)) return "id";
+      if (seg.length > 40) return "token";
+      return seg.slice(0, 40);
+    });
+  const path = parts.length ? `/${parts.join("/")}` : "/";
+  const safeHash = /^#[\p{L}\p{N}_-]{1,32}$/u.test(hash) ? hash : "";
+  return `${path}${safeHash}`.slice(0, 80);
+}
+
+/** 이벤트 페이지를 벗어난 경로. 쿼리·식별자는 받지 않는다. */
+export function sanitizeRoutes(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const item of value) {
+    const path = redactRoutePath(String(item?.path ?? item ?? "").trim());
+    if (path !== "/" && !ROUTE_PATH_RE.test(path)) continue;
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    out.push({ path, index: out.length });
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+export function sanitizePages(value) {
+  if (!Array.isArray(value)) return [];
+  const byLabel = new Map();
+  for (const item of value) {
+    const src = item && typeof item === "object" ? item : { label: item };
+    const label = clip(src.label, 24);
+    if (!label || !PAGE_LABEL_RE.test(label)) continue;
+    const index = num(src.index, 11);
+    const prev = byLabel.get(label);
+    if (prev == null || index < prev) byLabel.set(label, index);
+    if (byLabel.size >= 12) break;
+  }
+  return [...byLabel.entries()]
+    .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0], "ko"))
+    .map(([label, index]) => ({ label, index }));
+}
+
 export function referrerHost(referrer) {
   const raw = clip(referrer, 500);
   if (!raw) return "";
@@ -183,6 +275,10 @@ export function sanitizeVisitBody(body) {
       returning: Boolean(src.returning),
       reachedApply: Boolean(src.reachedApply),
       formStarted: Boolean(src.formStarted),
+      pageStep: Boolean(src.pageStep),
+      pages: sanitizePages(src.pages),
+      routeStep: Boolean(src.routeStep),
+      routes: sanitizeRoutes(src.routes),
     },
   };
 }

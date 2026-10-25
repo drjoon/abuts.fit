@@ -1,29 +1,30 @@
 // related files:
 // - web/frontend/src/shared/events/abutsLabCampaign.ts
 // - web/frontend/src/pages/public/EventApplyPage.tsx
-// - web/backend/controllers/events/eventInlineSignup.controller.js
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+// - web/frontend/src/shared/events/abutsLabApplyLocalDraft.ts
+// - web/backend/controllers/events/marketingEvent.controller.js
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   ArrowDown,
   ArrowLeft,
   CheckCircle2,
-  Eye,
-  EyeOff,
-  Info,
+  MapPin,
+  Phone,
   ScanLine,
+  UserRound,
+  type LucideIcon,
 } from "lucide-react";
 import {
   PublicPageLayout,
   PUBLIC_CARD_CLASS,
 } from "./components/PublicPageLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   readEventVisitSessionId,
@@ -37,20 +38,22 @@ import {
 } from "@/shared/events/eventsApi";
 import {
   ABUTS_LAB_EVENT_HEADLINE,
-  ABUTS_LAB_EVENT_PATH,
   ABUTS_LAB_EVENT_SLUG,
   ABUTS_LAB_HERO_EYEBROW,
   ABUTS_LAB_HERO_SUB,
   ABUTS_LAB_IMAGES,
 } from "@/shared/events/abutsLabCampaign";
 import EventPlaceSuggestInput from "@/shared/events/EventPlaceSuggestInput";
-import { apiFetch } from "@/shared/api/apiClient";
+import {
+  abutsLabApplyDraftHasContent,
+  clearAbutsLabApplyLocalDraft,
+  readAbutsLabApplyLocalDraft,
+  writeAbutsLabApplyLocalDraft,
+  type AbutsLabApplyLocalDraft,
+} from "@/shared/events/abutsLabApplyLocalDraft";
 import { cn } from "@/shared/ui/cn";
 import { useAuthStore, type User } from "@/store/useAuthStore";
-import {
-  formatPhoneNumberInput,
-  isValidEmail,
-} from "@/shared/components/business/settings/business/validations";
+import { formatPhoneNumberInput } from "@/shared/components/business/settings/business/validations";
 import { LandingSkyWash } from "@/features/landing/LandingSkyWash";
 import { LandingMagnetic } from "@/features/landing/LandingMagnetic";
 import { LandingParticleField } from "@/features/landing/LandingParticleField";
@@ -145,17 +148,7 @@ function isRequestorApplicant(user: User | null | undefined): boolean {
 }
 
 type FieldErrors = Partial<
-  Record<
-    | "email"
-    | "password"
-    | "director"
-    | "address"
-    | "clinicName"
-    | "phone"
-    | "oral"
-    | "profile",
-    string
-  >
+  Record<"director" | "address" | "clinicName" | "phone" | "oral", string>
 >;
 
 function FieldErrorText({ message }: { message?: string }) {
@@ -167,28 +160,21 @@ function FieldErrorText({ message }: { message?: string }) {
   );
 }
 
-function signupFieldErrors(draft: {
-  email: string;
-  password: string;
+function consultFieldErrors(draft: {
   directorName: string;
+  phone: string;
   addressMode: "search" | "manual";
   manualAddress: string;
   manualClinicName: string;
   place: EventPlaceSuggest | null;
-  phone: string;
-  phoneVerified: boolean;
   usesOralScan: boolean | null;
 }): FieldErrors {
   const next: FieldErrors = {};
-  if (!draft.email.trim()) next.email = "이메일을 입력해 주세요.";
-  else if (!isValidEmail(draft.email))
-    next.email = "이메일 형식을 확인해 주세요.";
-  if (!draft.password) next.password = "비밀번호를 입력해 주세요.";
-  else if (!isStrongPassword(draft.password)) {
-    next.password = "10자 이상, 특수문자 포함. $는 쓸 수 없습니다.";
-  }
   if (draft.directorName.trim().length < 2) {
     next.director = "원장님 성함을 입력해 주세요.";
+  }
+  if (!isMobilePhone(draft.phone)) {
+    next.phone = "휴대폰 번호를 확인해 주세요.";
   }
   if (draft.addressMode === "manual") {
     if (draft.manualAddress.trim().length < 5) {
@@ -204,11 +190,6 @@ function signupFieldErrors(draft: {
     draft.place.lng == null
   ) {
     next.address = "검색 결과에서 주소를 선택해 주세요.";
-  }
-  if (!isMobilePhone(draft.phone)) {
-    next.phone = "휴대폰 번호를 확인해 주세요.";
-  } else if (!draft.phoneVerified) {
-    next.phone = "휴대폰 인증을 완료해 주세요.";
   }
   if (draft.usesOralScan == null) {
     next.oral = "구강 스캐너 사용 여부를 선택해 주세요.";
@@ -250,19 +231,31 @@ function isMobilePhone(value: string) {
   return /^01[016789]\d{7,8}$/.test(phoneDigits(value));
 }
 
-function isStrongPassword(password: string) {
-  const p = String(password || "");
-  if (p.length < 10) return false;
-  if (p.includes("$")) return false;
-  if (!/[!@#%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(p)) return false;
-  return true;
-}
-
 function scrollToApply() {
   document.getElementById("event-apply")?.scrollIntoView({
     behavior: "smooth",
     block: "start",
   });
+}
+
+function FieldLabel({
+  htmlFor,
+  icon: Icon,
+  children,
+}: {
+  htmlFor?: string;
+  icon: LucideIcon;
+  children: string;
+}) {
+  return (
+    <Label
+      htmlFor={htmlFor}
+      className="flex items-center gap-2 text-base text-slate-900"
+    >
+      <Icon className="h-4 w-4 shrink-0 text-sky-600" />
+      {children}
+    </Label>
+  );
 }
 
 function OralScanFields({
@@ -277,64 +270,41 @@ function OralScanFields({
   error?: string;
 }) {
   return (
-    <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
-      <CardHeader className="space-y-2">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-base text-slate-900">
-          <ScanLine className="h-4 w-4 text-sky-600" />
-          구강 스캐너 사용 여부
-          <Badge
-            variant="secondary"
-            className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800 ring-1 ring-sky-100"
-          >
-            필수
-          </Badge>
-        </CardTitle>
-        <div className="flex gap-2 rounded-2xl border border-sky-100 bg-sky-50/80 px-3 py-2.5 text-sm leading-relaxed text-sky-900">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
-          <p>
-            스캔을 쓰는 치과와 쓰지 않는 치과에 맞춰, 방문 때 안내가 달라집니다.
-          </p>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <RadioGroup
-          value={
-            usesOralScan == null ? undefined : usesOralScan ? "yes" : "no"
-          }
-          onValueChange={(v) => onChange(v === "yes")}
-          className="grid gap-3 sm:grid-cols-2"
-          disabled={disabled}
+    <div className="space-y-2">
+      <FieldLabel icon={ScanLine}>구강 스캐너 사용 여부</FieldLabel>
+      <RadioGroup
+        value={usesOralScan == null ? undefined : usesOralScan ? "yes" : "no"}
+        onValueChange={(v) => onChange(v === "yes")}
+        className="grid grid-cols-2 gap-2"
+        disabled={disabled}
+      >
+        <label
+          htmlFor="lab-oral-scan-yes"
+          className={cn(
+            "flex cursor-pointer items-center gap-2 rounded-2xl border bg-white px-3 py-2.5 transition-colors",
+            usesOralScan === true
+              ? "border-sky-300 bg-sky-50/80"
+              : "border-slate-200",
+          )}
         >
-          <label
-            htmlFor="lab-oral-scan-yes"
-            className={cn(
-              "flex cursor-pointer items-center gap-3 rounded-2xl border bg-white px-4 py-3.5 transition-colors",
-              usesOralScan === true
-                ? "border-sky-300 bg-sky-50/80"
-                : "border-slate-200",
-            )}
-          >
-            <RadioGroupItem value="yes" id="lab-oral-scan-yes" />
-            <span className="text-sm font-medium text-slate-900">사용함</span>
-          </label>
-          <label
-            htmlFor="lab-oral-scan-no"
-            className={cn(
-              "flex cursor-pointer items-center gap-3 rounded-2xl border bg-white px-4 py-3.5 transition-colors",
-              usesOralScan === false
-                ? "border-sky-300 bg-sky-50/80"
-                : "border-slate-200",
-            )}
-          >
-            <RadioGroupItem value="no" id="lab-oral-scan-no" />
-            <span className="text-sm font-medium text-slate-900">
-              사용 안 함
-            </span>
-          </label>
-        </RadioGroup>
-        <FieldErrorText message={error} />
-      </CardContent>
-    </Card>
+          <RadioGroupItem value="yes" id="lab-oral-scan-yes" />
+          <span className="text-sm font-medium text-slate-900">사용함</span>
+        </label>
+        <label
+          htmlFor="lab-oral-scan-no"
+          className={cn(
+            "flex cursor-pointer items-center gap-2 rounded-2xl border bg-white px-3 py-2.5 transition-colors",
+            usesOralScan === false
+              ? "border-sky-300 bg-sky-50/80"
+              : "border-slate-200",
+          )}
+        >
+          <RadioGroupItem value="no" id="lab-oral-scan-no" />
+          <span className="text-sm font-medium text-slate-900">사용 안 함</span>
+        </label>
+      </RadioGroup>
+      <FieldErrorText message={error} />
+    </div>
   );
 }
 
@@ -345,7 +315,7 @@ export default function AbutsLabEventPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
-  const loginWithToken = useAuthStore((s) => s.loginWithToken);
+  const userId = user?.id || null;
 
   const [event, setEvent] = useState<MarketingEvent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -353,27 +323,35 @@ export default function AbutsLabEventPage() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [alreadyApplied, setAlreadyApplied] = useState(false);
-  const [usesOralScan, setUsesOralScan] = useState<boolean | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [applicationCheckLoading, setApplicationCheckLoading] = useState(
     () => Boolean(isAuthenticated && isRequestorApplicant(user)),
   );
+  const [boundUserId, setBoundUserId] = useState<string | null>(userId);
+  const [storedDraft] = useState(() => readAbutsLabApplyLocalDraft(userId));
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [directorName, setDirectorName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [phoneCode, setPhoneCode] = useState("");
-  const [phoneCodeSent, setPhoneCodeSent] = useState(false);
-  const [phoneVerified, setPhoneVerified] = useState(false);
-  const [phoneSending, setPhoneSending] = useState(false);
-  const [phoneVerifying, setPhoneVerifying] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [clinicQuery, setClinicQuery] = useState("");
-  const [place, setPlace] = useState<EventPlaceSuggest | null>(null);
-  const [addressMode, setAddressMode] = useState<"search" | "manual">("search");
-  const [manualAddress, setManualAddress] = useState("");
-  const [manualClinicName, setManualClinicName] = useState("");
+  const [directorName, setDirectorName] = useState(
+    () => storedDraft?.directorName ?? "",
+  );
+  const [phone, setPhone] = useState(() => storedDraft?.phone ?? "");
+  const [clinicQuery, setClinicQuery] = useState(
+    () => storedDraft?.clinicQuery ?? "",
+  );
+  const [place, setPlace] = useState<EventPlaceSuggest | null>(
+    () => storedDraft?.place ?? null,
+  );
+  const [addressMode, setAddressMode] = useState<"search" | "manual">(
+    () => storedDraft?.addressMode ?? "search",
+  );
+  const [manualAddress, setManualAddress] = useState(
+    () => storedDraft?.manualAddress ?? "",
+  );
+  const [manualClinicName, setManualClinicName] = useState(
+    () => storedDraft?.manualClinicName ?? "",
+  );
+  const [usesOralScan, setUsesOralScan] = useState<boolean | null>(
+    () => storedDraft?.usesOralScan ?? null,
+  );
 
   const requestorUser = isRequestorApplicant(user);
   const prefill = useMemo(
@@ -448,73 +426,104 @@ export default function AbutsLabEventPage() {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [done, alreadyApplied]);
 
-  const sendPhoneCode = async () => {
-    if (!isMobilePhone(phone) || phoneSending || phoneVerified) return;
-    setPhoneSending(true);
-    try {
-      const res = await apiFetch<{
-        success?: boolean;
-        message?: string;
-      }>({
-        path: "/api/auth/signup/phone-verification/send",
-        method: "POST",
-        jsonBody: { phone: phone.trim() },
-      });
-      const body = res.data;
-      if (!res.ok || !body?.success) {
-        toast({
-          title: "인증번호 발송 실패",
-          description: body?.message || "잠시 후 다시 시도해 주세요.",
-          variant: "destructive",
-        });
-        return;
-      }
-      setPhoneCodeSent(true);
-      setPhoneCode("");
-      toast({ title: "인증번호를 발송했습니다" });
-    } catch {
-      toast({
-        title: "인증번호 발송 실패",
-        description: "네트워크 상태를 확인해 주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setPhoneSending(false);
-    }
+  const applyStoredDraft = (draft: AbutsLabApplyLocalDraft) => {
+    setDirectorName(draft.directorName);
+    setPhone(draft.phone);
+    setClinicQuery(draft.clinicQuery);
+    setPlace(draft.place);
+    setAddressMode(draft.addressMode);
+    setManualAddress(draft.manualAddress);
+    setManualClinicName(draft.manualClinicName);
+    setUsesOralScan(draft.usesOralScan);
   };
 
-  const verifyPhoneCode = async () => {
-    const code = phoneCode.trim();
-    if (code.length !== 4 || phoneVerifying || phoneVerified) return;
-    setPhoneVerifying(true);
-    try {
-      const res = await apiFetch<{ success?: boolean; message?: string }>({
-        path: "/api/auth/signup/phone-verification/verify",
-        method: "POST",
-        jsonBody: { phone: phone.trim(), code },
-      });
-      const body = res.data;
-      if (!res.ok || !body?.success) {
-        toast({
-          title: "휴대폰 인증 실패",
-          description: body?.message || "인증 코드가 일치하지 않습니다.",
-          variant: "destructive",
-        });
+  useEffect(() => {
+    const keyed = readAbutsLabApplyLocalDraft(userId);
+    const anon = userId ? readAbutsLabApplyLocalDraft(null) : null;
+    const draft = abutsLabApplyDraftHasContent(keyed)
+      ? keyed
+      : abutsLabApplyDraftHasContent(anon)
+        ? anon
+        : null;
+    if (userId === boundUserId) {
+      if (draft && userId && !abutsLabApplyDraftHasContent(keyed)) {
+        applyStoredDraft(draft);
+        writeAbutsLabApplyLocalDraft(draft, userId);
+        clearAbutsLabApplyLocalDraft(null);
+      }
+      return;
+    }
+    if (draft) {
+      applyStoredDraft(draft);
+      if (userId && !abutsLabApplyDraftHasContent(keyed)) {
+        writeAbutsLabApplyLocalDraft(draft, userId);
+        clearAbutsLabApplyLocalDraft(null);
+      }
+    }
+    setBoundUserId(userId);
+  }, [boundUserId, userId]);
+
+  const skipEmptyClear = useRef(true);
+  useEffect(() => {
+    if (done || alreadyApplied) {
+      clearAbutsLabApplyLocalDraft(userId);
+      clearAbutsLabApplyLocalDraft(null);
+      return;
+    }
+    const draft = {
+      directorName,
+      phone,
+      clinicQuery,
+      place,
+      addressMode,
+      manualAddress,
+      manualClinicName,
+      usesOralScan,
+    };
+    if (!abutsLabApplyDraftHasContent({ ...draft, updatedAt: 0 })) {
+      if (skipEmptyClear.current) {
+        skipEmptyClear.current = false;
         return;
       }
-      setPhoneVerified(true);
-      setPhoneCode("");
-      clearField("phone");
-    } catch {
-      toast({
-        title: "휴대폰 인증 실패",
-        description: "네트워크 상태를 확인해 주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setPhoneVerifying(false);
+      clearAbutsLabApplyLocalDraft(userId);
+      return;
     }
-  };
+    skipEmptyClear.current = false;
+    writeAbutsLabApplyLocalDraft(draft, userId);
+  }, [
+    addressMode,
+    alreadyApplied,
+    clinicQuery,
+    directorName,
+    done,
+    manualAddress,
+    manualClinicName,
+    phone,
+    place,
+    userId,
+    usesOralScan,
+  ]);
+
+  const prefillOnce = useRef(false);
+  useEffect(() => {
+    if (prefillOnce.current || !prefill) return;
+    prefillOnce.current = true;
+    const saved = readAbutsLabApplyLocalDraft(userId);
+    const anon = userId ? readAbutsLabApplyLocalDraft(null) : null;
+    if (
+      abutsLabApplyDraftHasContent(saved) ||
+      abutsLabApplyDraftHasContent(anon)
+    ) {
+      return;
+    }
+    if (prefill.directorName) setDirectorName(prefill.directorName);
+    if (prefill.applicantPhone) {
+      setPhone(formatPhoneNumberInput(prefill.applicantPhone));
+    }
+    if (prefill.practice.address || prefill.practice.name) {
+      setClinicQuery(prefill.practice.address || prefill.practice.name);
+    }
+  }, [prefill, userId]);
 
   const clearField = (key: keyof FieldErrors) => {
     setFieldErrors((prev) => {
@@ -528,45 +537,16 @@ export default function AbutsLabEventPage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!event || submitting || !canApply) return;
-    if (isAuthenticated && !requestorUser) return;
 
-    const signingUp = !(requestorUser && prefill);
-    if (requestorUser && !token) {
-      toast({
-        title: "로그인이 필요합니다",
-        description: "다시 로그인한 뒤 신청해 주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const errors: FieldErrors = signingUp
-      ? signupFieldErrors({
-          email,
-          password,
-          directorName,
-          addressMode,
-          manualAddress,
-          manualClinicName,
-          place,
-          phone,
-          phoneVerified,
-          usesOralScan,
-        })
-      : {
-          ...( !prefill?.practice.name ||
-          String(prefill.directorName || "").trim().length < 2
-            ? {
-                profile:
-                  user?.requestorKind === "lab"
-                    ? "기공소명과 담당자 성함을 확인해 주세요."
-                    : "치과명과 원장님 성함을 확인해 주세요.",
-              }
-            : {}),
-          ...(usesOralScan == null
-            ? { oral: "구강 스캐너 사용 여부를 선택해 주세요." }
-            : {}),
-        };
+    const errors = consultFieldErrors({
+      directorName,
+      phone,
+      addressMode,
+      manualAddress,
+      manualClinicName,
+      place,
+      usesOralScan,
+    });
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
       toast({
@@ -576,47 +556,30 @@ export default function AbutsLabEventPage() {
       return;
     }
 
+    const manual = addressMode === "manual";
     setSubmitting(true);
     try {
-      if (!signingUp && prefill && token) {
-        await eventsApi.apply(
-          event.slug,
-          {
-            practice: prefill.practice,
-            directorName: prefill.directorName,
-            dealer: EMPTY_DEALER,
-            applicantPhone: prefill.applicantPhone || prefill.practice.phone,
-            usesOralScan: usesOralScan as boolean,
-            visitSessionId: readEventVisitSessionId(event.slug),
+      await eventsApi.apply(
+        event.slug,
+        {
+          practice: {
+            name: manual ? manualClinicName.trim() : place!.name,
+            representativeName: directorName.trim(),
+            phone: phone.trim(),
+            address: manual ? manualAddress.trim() : place!.address || "",
+            lat: manual ? null : place!.lat ?? null,
+            lng: manual ? null : place!.lng ?? null,
           },
-          token,
-        );
-      } else if (
-        addressMode === "manual" ||
-        (place && place.lat != null && place.lng != null)
-      ) {
-        const manual = addressMode === "manual";
-        const signed = await eventsApi.signupApply(event.slug, {
-          email: email.trim().toLowerCase(),
-          password,
           directorName: directorName.trim(),
-          phone: phone.trim(),
-          clinicName: manual ? manualClinicName.trim() : place!.name,
-          address: manual ? manualAddress.trim() : place!.address,
-          lat: manual ? null : place!.lat ?? null,
-          lng: manual ? null : place!.lng ?? null,
+          dealer: EMPTY_DEALER,
+          applicantPhone: phone.trim(),
           usesOralScan: usesOralScan as boolean,
-          manualAddress: manual,
           visitSessionId: readEventVisitSessionId(event.slug),
-        });
-        if (signed.token) {
-          try {
-            await loginWithToken(signed.token, signed.refreshToken);
-          } catch {
-            // 접수는 끝났고, 방문 때 로그인하면 된다.
-          }
-        }
-      }
+        },
+        requestorUser ? token : undefined,
+      );
+      clearAbutsLabApplyLocalDraft(userId);
+      clearAbutsLabApplyLocalDraft(null);
       setDone(true);
       setAlreadyApplied(true);
       toast({
@@ -910,349 +873,194 @@ export default function AbutsLabEventPage() {
               상담 신청
             </h2>
             <p className="max-w-xl break-keep text-sm leading-relaxed text-slate-600">
-              {isAuthenticated && !requestorUser
-                ? "치과만 상담을 신청할 수 있습니다."
-                : "상담을 신청하면 영업 담당자가 치과를 방문합니다. 곡면 가공을 설명하고, 부담 없이 어벗츠를 시작하실 수 있게 안내합니다."}
+              신청해주시면 영업 담당자가 연락드리고 찾아뵙겠습니다.
             </p>
           </LandingReveal>
 
-          {isAuthenticated && !requestorUser ? null : !isAuthenticated ? (
-            <div className="mb-5 rounded-3xl border border-sky-200 bg-sky-50 p-4 sm:p-5">
-              <Button
-                asChild
-                className="landing-btn h-12 w-full rounded-full bg-[#2563eb] text-base font-semibold hover:bg-[#1d4ed8]"
-                size="lg"
-              >
-                <Link
-                  to={`/login?next=${encodeURIComponent(ABUTS_LAB_EVENT_PATH)}`}
-                >
-                  로그인 후 신청하기
-                </Link>
-              </Button>
-            </div>
-          ) : null}
-
-          {isAuthenticated && !requestorUser ? null : (
           <form onSubmit={onSubmit} className="space-y-5">
-            {requestorUser && prefill ? (
-              <FieldErrorText message={fieldErrors.profile} />
-            ) : (
-              <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
-                <CardContent className="space-y-4 py-6">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="lab-email">이메일</Label>
+            <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
+              <CardContent className="grid items-start gap-4 py-6 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <FieldLabel htmlFor="lab-director" icon={UserRound}>
+                    원장님 성함
+                  </FieldLabel>
+                  <Input
+                    id="lab-director"
+                    value={directorName}
+                    onChange={(e) => {
+                      setDirectorName(e.target.value);
+                      clearField("director");
+                    }}
+                    autoComplete="name"
+                    disabled={!canApply || submitting}
+                    aria-invalid={Boolean(fieldErrors.director)}
+                    className={
+                      fieldErrors.director ? "border-red-400" : undefined
+                    }
+                  />
+                  <FieldErrorText message={fieldErrors.director} />
+                </div>
+                <div className="space-y-2">
+                  <FieldLabel htmlFor="lab-phone" icon={Phone}>
+                    휴대폰번호
+                  </FieldLabel>
+                  <Input
+                    id="lab-phone"
+                    value={phone}
+                    onChange={(e) => {
+                      setPhone(formatPhoneNumberInput(e.target.value));
+                      clearField("phone");
+                    }}
+                    aria-invalid={Boolean(fieldErrors.phone)}
+                    className={
+                      fieldErrors.phone ? "border-red-400" : undefined
+                    }
+                    inputMode="tel"
+                    autoComplete="tel"
+                    placeholder="010-0000-0000"
+                    disabled={!canApply || submitting}
+                  />
+                  <FieldErrorText message={fieldErrors.phone} />
+                </div>
+                <div className="space-y-2">
+                  <FieldLabel htmlFor="lab-clinic" icon={MapPin}>
+                    치과명 (주소검색)
+                  </FieldLabel>
+                  {addressMode === "manual" ? (
+                    <>
                       <Input
-                        id="lab-email"
-                        type="email"
-                        autoComplete="email"
-                        value={email}
+                        id="lab-clinic"
+                        value={manualAddress}
                         onChange={(e) => {
-                          setEmail(e.target.value);
-                          clearField("email");
+                          setManualAddress(e.target.value);
+                          clearField("address");
                         }}
-                        placeholder="name@clinic.com"
+                        autoComplete="street-address"
+                        placeholder="도로명 주소"
                         disabled={!canApply || submitting}
-                        aria-invalid={Boolean(fieldErrors.email)}
-                        className={fieldErrors.email ? "border-red-400" : undefined}
-                      />
-                      <FieldErrorText message={fieldErrors.email} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="lab-password">비밀번호</Label>
-                      <div className="relative">
-                        <Input
-                          id="lab-password"
-                          type={showPassword ? "text" : "password"}
-                          autoComplete="new-password"
-                          value={password}
-                          onChange={(e) => {
-                            setPassword(e.target.value);
-                            clearField("password");
-                          }}
-                          disabled={!canApply || submitting}
-                          aria-invalid={Boolean(fieldErrors.password)}
-                          className={
-                            fieldErrors.password
-                              ? "border-red-400 pr-10"
-                              : "pr-10"
-                          }
-                        />
-                        <button
-                          type="button"
-                          aria-label={
-                            showPassword ? "비밀번호 숨기기" : "비밀번호 보기"
-                          }
-                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-700 disabled:opacity-40"
-                          onClick={() => setShowPassword((prev) => !prev)}
-                          disabled={!canApply || submitting}
-                        >
-                          {showPassword ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </button>
-                      </div>
-                      <p className="text-xs text-slate-500">
-                        10자 이상, 특수문자 포함. $는 쓸 수 없습니다.
-                      </p>
-                      <FieldErrorText message={fieldErrors.password} />
-                    </div>
-                  </div>
-                  <div className="grid items-start gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="lab-director">원장님 성함</Label>
-                      <Input
-                        id="lab-director"
-                        value={directorName}
-                        onChange={(e) => {
-                          setDirectorName(e.target.value);
-                          clearField("director");
-                        }}
-                        autoComplete="name"
-                        disabled={!canApply || submitting}
-                        aria-invalid={Boolean(fieldErrors.director)}
+                        aria-invalid={Boolean(fieldErrors.address)}
                         className={
-                          fieldErrors.director ? "border-red-400" : undefined
+                          fieldErrors.address ? "border-red-400" : undefined
                         }
                       />
-                      <FieldErrorText message={fieldErrors.director} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="lab-clinic">치과주소</Label>
-                      {addressMode === "manual" ? (
-                        <>
-                          <Input
-                            id="lab-clinic"
-                            value={manualAddress}
-                            onChange={(e) => {
-                              setManualAddress(e.target.value);
-                              clearField("address");
-                            }}
-                            autoComplete="street-address"
-                            placeholder="도로명 주소"
-                            disabled={!canApply || submitting}
-                            aria-invalid={Boolean(fieldErrors.address)}
-                            className={
-                              fieldErrors.address ? "border-red-400" : undefined
-                            }
-                          />
-                          <FieldErrorText message={fieldErrors.address} />
-                          <Label htmlFor="lab-clinic-name">치과명</Label>
-                          <Input
-                            id="lab-clinic-name"
-                            value={manualClinicName}
-                            onChange={(e) => {
-                              setManualClinicName(e.target.value);
-                              clearField("clinicName");
-                            }}
-                            placeholder="치과명"
-                            disabled={!canApply || submitting}
-                            aria-invalid={Boolean(fieldErrors.clinicName)}
-                            className={
-                              fieldErrors.clinicName
-                                ? "border-red-400"
-                                : undefined
-                            }
-                          />
-                          <FieldErrorText message={fieldErrors.clinicName} />
-                          <p className="text-xs leading-relaxed text-slate-500">
-                            검색 결과가 없어 직접 입력합니다.
-                            <br />
-                            <button
-                              type="button"
-                              className="font-medium text-sky-700 hover:text-sky-800"
-                              onClick={() => {
-                                setAddressMode("search");
-                                setClinicQuery("");
-                                setManualAddress("");
-                                setManualClinicName("");
-                                setPlace(null);
-                              }}
-                            >
-                              다시 검색
-                            </button>
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <EventPlaceSuggestInput
-                            id="lab-clinic"
-                            value={clinicQuery}
-                            onChange={(value) => {
-                              setClinicQuery(value);
-                              clearField("address");
-                              setPlace((prev) =>
-                                prev &&
-                                (prev.address === value || prev.name === value)
-                                  ? prev
-                                  : null,
-                              );
-                            }}
-                            onPick={(item) => {
-                              if (
-                                !item.address ||
-                                item.lat == null ||
-                                item.lng == null
-                              ) {
-                                setPlace(null);
-                                setAddressMode("manual");
-                                setManualAddress(item.address || clinicQuery);
-                                setManualClinicName(item.name || "");
-                                return;
-                              }
-                              setAddressMode("search");
-                              setPlace(item);
-                            }}
-                            pickValue={(item) => item.address || item.name}
-                            onManual={(query) => {
-                              setAddressMode("manual");
-                              setPlace(null);
-                              setManualAddress(query);
-                              setManualClinicName("");
-                            }}
-                            kind="practice"
-                            inputClassName={
-                              fieldErrors.address ? "border-red-400" : undefined
-                            }
-                            placeholder="주소 또는 치과명 검색"
-                            listMode="inline"
-                            emptyText="검색 결과가 없습니다."
-                          />
-                          {fieldErrors.address ? (
-                            <FieldErrorText message={fieldErrors.address} />
-                          ) : (
-                            <p className="text-xs leading-relaxed text-slate-500">
-                              {place?.address
-                                ? place.name
-                                : "검색 결과에서 주소를 선택해 주세요."}
-                            </p>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="lab-phone">휴대폰번호</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id="lab-phone"
-                          value={phone}
-                          onChange={(e) => {
-                            setPhone(formatPhoneNumberInput(e.target.value));
-                            setPhoneVerified(false);
-                            setPhoneCodeSent(false);
-                            setPhoneCode("");
-                            clearField("phone");
+                      <FieldErrorText message={fieldErrors.address} />
+                      <Label htmlFor="lab-clinic-name">치과명</Label>
+                      <Input
+                        id="lab-clinic-name"
+                        value={manualClinicName}
+                        onChange={(e) => {
+                          setManualClinicName(e.target.value);
+                          clearField("clinicName");
+                        }}
+                        placeholder="치과명"
+                        disabled={!canApply || submitting}
+                        aria-invalid={Boolean(fieldErrors.clinicName)}
+                        className={
+                          fieldErrors.clinicName ? "border-red-400" : undefined
+                        }
+                      />
+                      <FieldErrorText message={fieldErrors.clinicName} />
+                      <p className="text-xs leading-relaxed text-slate-500">
+                        검색 결과가 없어 직접 입력합니다.
+                        <br />
+                        <button
+                          type="button"
+                          className="font-medium text-sky-700 hover:text-sky-800"
+                          onClick={() => {
+                            setAddressMode("search");
+                            setClinicQuery("");
+                            setManualAddress("");
+                            setManualClinicName("");
+                            setPlace(null);
                           }}
-                          aria-invalid={Boolean(fieldErrors.phone)}
-                          className={
-                            fieldErrors.phone
-                              ? "min-w-0 flex-1 border-red-400"
-                              : "min-w-0 flex-1"
-                          }
-                          inputMode="tel"
-                          autoComplete="tel"
-                          placeholder="010-0000-0000"
-                          disabled={!canApply || submitting || phoneVerified}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="shrink-0 rounded-full"
-                          disabled={
-                            !canApply ||
-                            submitting ||
-                            phoneVerified ||
-                            phoneSending ||
-                            !isMobilePhone(phone)
-                          }
-                          onClick={() => void sendPhoneCode()}
                         >
-                          {phoneVerified
-                            ? "인증됨"
-                            : phoneSending
-                              ? "발송 중…"
-                              : "발송"}
-                          </Button>
-                      </div>
-                      <FieldErrorText message={fieldErrors.phone} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="lab-phone-code">인증번호</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id="lab-phone-code"
-                          className="min-w-0 flex-1"
-                          value={phoneCode}
-                          onChange={(e) =>
-                            setPhoneCode(
-                              e.target.value.replace(/\D/g, "").slice(0, 4),
-                            )
+                          다시 검색
+                        </button>
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <EventPlaceSuggestInput
+                        id="lab-clinic"
+                        value={clinicQuery}
+                        onChange={(value) => {
+                          setClinicQuery(value);
+                          clearField("address");
+                          setPlace((prev) =>
+                            prev &&
+                            (prev.address === value || prev.name === value)
+                              ? prev
+                              : null,
+                          );
+                        }}
+                        onPick={(item) => {
+                          if (
+                            !item.address ||
+                            item.lat == null ||
+                            item.lng == null
+                          ) {
+                            setPlace(null);
+                            setAddressMode("manual");
+                            setManualAddress(item.address || clinicQuery);
+                            setManualClinicName(item.name || "");
+                            return;
                           }
-                          inputMode="numeric"
-                          placeholder="4자리"
-                          disabled={
-                            !canApply ||
-                            submitting ||
-                            phoneVerified ||
-                            !phoneCodeSent
-                          }
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="shrink-0 rounded-full"
-                          disabled={
-                            phoneVerified ||
-                            !phoneCodeSent ||
-                            phoneCode.length !== 4 ||
-                            phoneVerifying ||
-                            submitting
-                          }
-                          onClick={() => void verifyPhoneCode()}
-                        >
-                          {phoneVerified
-                            ? "인증됨"
-                            : phoneVerifying
-                              ? "확인 중…"
-                              : "확인"}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            <OralScanFields
-              usesOralScan={usesOralScan}
-              onChange={(value) => {
-                setUsesOralScan(value);
-                clearField("oral");
-              }}
-              disabled={!canApply || submitting}
-              error={fieldErrors.oral}
-            />
+                          setAddressMode("search");
+                          setPlace(item);
+                          setClinicQuery(item.address || item.name);
+                        }}
+                        pickValue={(item) => item.address || item.name}
+                        onManual={(query) => {
+                          setAddressMode("manual");
+                          setPlace(null);
+                          setManualAddress(query);
+                          setManualClinicName("");
+                        }}
+                        kind="practice"
+                        inputClassName={
+                          fieldErrors.address ? "border-red-400" : undefined
+                        }
+                        placeholder="주소 또는 치과명 검색"
+                        listMode="inline"
+                        emptyText="검색 결과가 없습니다."
+                      />
+                      {fieldErrors.address ? (
+                        <FieldErrorText message={fieldErrors.address} />
+                      ) : (
+                        <p className="text-xs leading-relaxed text-slate-500">
+                          {place?.address
+                            ? place.name
+                            : "검색 결과에서 주소를 선택해 주세요."}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+                <OralScanFields
+                  usesOralScan={usesOralScan}
+                  onChange={(value) => {
+                    setUsesOralScan(value);
+                    clearField("oral");
+                  }}
+                  disabled={!canApply || submitting}
+                  error={fieldErrors.oral}
+                />
+              </CardContent>
+            </Card>
 
             <Button
               type="submit"
               className="landing-btn h-12 w-full rounded-full bg-[#2563eb] text-base font-semibold hover:bg-[#1d4ed8]"
               size="lg"
-              disabled={submitting || !canApply || usesOralScan == null}
+              disabled={submitting || !canApply}
             >
               {!canApply
                 ? "신청 마감"
                 : submitting
                   ? "처리 중…"
-                  : requestorUser
-                    ? "상담 신청하기"
-                    : "가입하고 상담 신청"}
+                  : "상담 신청하기"}
             </Button>
           </form>
-          )}
         </div>
       </section>
     </PublicPageLayout>

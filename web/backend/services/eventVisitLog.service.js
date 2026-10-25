@@ -23,6 +23,7 @@ import {
   kstParts,
   placeLabel,
   regionName,
+  routeLabel,
   sanitizeVisitBody,
   shiftKstDate,
 } from "./eventVisitCore.js";
@@ -297,6 +298,34 @@ async function upsertSession({ event, visit, geo, actor, ipHash, now }) {
   if (visit.reachedApply) set.reachedApply = true;
   if (visit.formStarted) set.formStarted = true;
   if (visit.converted) set.converted = true;
+  if (visit.pages?.length) {
+    set.pages = {
+      $cond: [
+        {
+          $gt: [
+            visit.pages.length,
+            { $size: { $ifNull: ["$pages", []] } },
+          ],
+        },
+        { $literal: visit.pages },
+        { $ifNull: ["$pages", []] },
+      ],
+    };
+  }
+  if (visit.routes?.length) {
+    set.routes = {
+      $cond: [
+        {
+          $gt: [
+            visit.routes.length,
+            { $size: { $ifNull: ["$routes", []] } },
+          ],
+        },
+        { $literal: visit.routes },
+        { $ifNull: ["$routes", []] },
+      ],
+    };
+  }
 
   const filter = { eventId: event._id, sessionId: visit.sessionId };
   const pipeline = [{ $set: set }];
@@ -331,6 +360,8 @@ function summaryLine({ event, visit, geo, now }) {
     converted: Boolean(visit.converted),
     returning: Boolean(visit.returning),
     visitorId: visit.visitorId || "",
+    pages: (visit.pages || []).map((page) => page.label),
+    routes: (visit.routes || []).map((route) => route.path),
   };
 }
 
@@ -356,7 +387,11 @@ export async function ingestEventVisit(req) {
   const sessionKey = `${event._id}:${visit.sessionId}`;
   const recent = lastMongoWrite.get(sessionKey) || 0;
   const funnel =
-    visit.reachedApply || visit.formStarted || visit.type === "leave";
+    visit.reachedApply ||
+    visit.formStarted ||
+    visit.pageStep ||
+    visit.routeStep ||
+    visit.type === "leave";
   const skipMongo =
     !funnel &&
     visit.type === "progress" &&
@@ -412,6 +447,8 @@ export async function markEventVisitConverted(eventId, sessionId) {
     converted: true,
     returning: Boolean(doc.returning),
     visitorId: doc.visitorId || "",
+    pages: (doc.pages || []).map((page) => page.label),
+    routes: (doc.routes || []).map((route) => route.path),
   });
 }
 
@@ -477,6 +514,22 @@ function stageLabel(row) {
   return "둘러봄";
 }
 
+function routeNames(routes) {
+  if (!Array.isArray(routes)) return [];
+  return [...routes]
+    .filter((route) => route?.path)
+    .sort((a, b) => Number(a.index || 0) - Number(b.index || 0))
+    .map((route) => routeLabel(route.path));
+}
+
+function pageLabels(pages) {
+  if (!Array.isArray(pages)) return [];
+  return [...pages]
+    .filter((page) => page?.label)
+    .sort((a, b) => Number(a.index || 0) - Number(b.index || 0))
+    .map((page) => String(page.label));
+}
+
 export async function loadEventVisitReport(eventId, range) {
   const id = new Types.ObjectId(String(eventId));
   const to = range.to;
@@ -487,7 +540,7 @@ export async function loadEventVisitReport(eventId, range) {
     end: new Date(`${to}T23:59:59.999+09:00`),
   };
   const appMatch = { eventId: id, createdAt: { $gte: start, $lte: end } };
-  const [stats, hours, days, regions, sources, devices, recent, appByDay, appByHour] =
+  const [stats, hours, days, regions, sources, devices, pageRows, routeRows, recent, appByDay, appByHour] =
     await Promise.all([
       MarketingEventVisit.aggregate([
         { $match: match },
@@ -600,11 +653,37 @@ export async function loadEventVisitReport(eventId, range) {
         { $match: match },
         { $group: { _id: "$device", sessions: { $sum: 1 } } },
       ]),
+      MarketingEventVisit.aggregate([
+        { $match: match },
+        { $unwind: "$pages" },
+        {
+          $group: {
+            _id: "$pages.label",
+            sessions: { $sum: 1 },
+            index: { $min: "$pages.index" },
+          },
+        },
+        { $sort: { index: 1, _id: 1 } },
+        { $limit: 12 },
+      ]),
+      MarketingEventVisit.aggregate([
+        { $match: match },
+        { $unwind: "$routes" },
+        {
+          $group: {
+            _id: "$routes.path",
+            sessions: { $sum: 1 },
+            index: { $min: "$routes.index" },
+          },
+        },
+        { $sort: { sessions: -1, index: 1 } },
+        { $limit: 12 },
+      ]),
       MarketingEventVisit.find(match)
         .sort({ lastSeenAt: -1 })
         .limit(12)
         .select(
-          "startedAt dwellMs country regionName device referrerHost utmSource utmCampaign reachedApply formStarted converted returning",
+          "startedAt dwellMs country regionName device referrerHost utmSource utmCampaign reachedApply formStarted converted returning pages routes",
         )
         .lean(),
       MarketingEventApplication.aggregate([
@@ -697,6 +776,15 @@ export async function loadEventVisitReport(eventId, range) {
       device: String(row._id || "desktop"),
       sessions: row.sessions || 0,
     })),
+    pages: pageRows.map((row) => ({
+      label: String(row._id || ""),
+      sessions: row.sessions || 0,
+    })),
+    routes: routeRows.map((row) => ({
+      path: String(row._id || ""),
+      label: routeLabel(row._id),
+      sessions: row.sessions || 0,
+    })),
     recent: recent.map((row) => ({
       id: String(row._id),
       startedAt: row.startedAt,
@@ -706,6 +794,8 @@ export async function loadEventVisitReport(eventId, range) {
       source: row.utmSource || row.referrerHost || "직접",
       stage: stageLabel(row),
       returning: Boolean(row.returning),
+      pages: pageLabels(row.pages),
+      routes: routeNames(row.routes),
     })),
   };
 }

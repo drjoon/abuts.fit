@@ -99,6 +99,7 @@ export default function AdminEventsPage() {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [section, setSection] = useState<"stats" | "applications">("stats");
+  const [detailRevision, setDetailRevision] = useState(0);
 
   const loadEvents = useCallback(async () => {
     setLoadingEvents(true);
@@ -155,7 +156,7 @@ export default function AdminEventsPage() {
       return;
     }
     void loadApplications(selectedId);
-  }, [selectedId, loadApplications]);
+  }, [selectedId, loadApplications, detailRevision]);
 
   const selected = events.find((e) => e.id === selectedId) || null;
 
@@ -210,7 +211,10 @@ export default function AdminEventsPage() {
               size="icon"
               variant="ghost"
               className="h-8 w-8"
-              onClick={() => void loadEvents()}
+              onClick={() => {
+                void loadEvents();
+                setDetailRevision((n) => n + 1);
+              }}
               aria-label="새로고침"
             >
               <RefreshCw className="h-3.5 w-3.5" />
@@ -287,6 +291,7 @@ export default function AdminEventsPage() {
                 key={selected.id}
                 token={token}
                 eventId={selected.id}
+                reloadToken={detailRevision}
               />
             ) : null}
             {section === "applications" ? (

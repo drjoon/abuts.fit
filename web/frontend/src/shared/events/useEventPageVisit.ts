@@ -3,10 +3,13 @@
 // - web/frontend/src/pages/public/AbutsLabEventPage.tsx
 // - web/backend/controllers/events/eventVisit.controller.js
 import { useEffect } from "react";
+import { useLocation } from "react-router-dom";
 
 type VisitType = "enter" | "progress" | "leave";
 
 const VISITOR_KEY = "abuts.eventVisitor";
+const ACTIVE_KEY = "abuts.eventVisit.active";
+const ROUTES_PREFIX = "abuts.eventVisit.routes.";
 
 function uuid() {
   return crypto.randomUUID();
@@ -72,7 +75,7 @@ function authHeaders(): Record<string, string> {
 
 /**
  * 공개 이벤트 신청 페이지.
- * 같은 탭은 세션 하나. 진입·신청 구간·입력·이탈만 보내고, 중간 핑은 보내지 않는다.
+ * 같은 탭은 세션 하나. 진입·본 섹션·신청 구간·입력·이탈만 보내고, 중간 핑은 보내지 않는다.
  */
 export function useEventPageVisit(slug: string) {
   useEffect(() => {
@@ -80,6 +83,11 @@ export function useEventPageVisit(slug: string) {
       .trim()
       .toLowerCase();
     if (!clean) return;
+    try {
+      sessionStorage.setItem(ACTIVE_KEY, clean);
+    } catch {
+      // 세션을 못 남기면 다른 페이지 기록도 이번 탭에서는 끊긴다.
+    }
 
     const sessionId = readEventVisitSessionId(clean);
     const visitor = visitorId();
@@ -96,9 +104,11 @@ export function useEventPageVisit(slug: string) {
     let scrollMax = 0;
     let reachedApply = false;
     let formStarted = false;
+    let pageStep = false;
     let stopped = false;
     let lastSentDwell = 0;
     let lastSentScroll = 0;
+    const seenPages = new Map<string, number>();
 
     const measureScroll = () => {
       const el = document.documentElement;
@@ -107,8 +117,27 @@ export function useEventPageVisit(slug: string) {
       if (pct > scrollMax) scrollMax = Math.min(100, Math.max(0, pct));
     };
 
+    const notePage = (el: Element) => {
+      const label = String(el.getAttribute("data-rail-label") || "").trim();
+      if (!label || seenPages.has(label)) return false;
+      const index = Math.max(
+        0,
+        [...document.querySelectorAll("[data-rail-label]")].indexOf(el),
+      );
+      seenPages.set(label, index);
+      return true;
+    };
+
+    const sectionInView = (el: Element) => {
+      const rect = el.getBoundingClientRect();
+      const vh = window.innerHeight || 1;
+      return rect.height > 0 && rect.bottom > vh * 0.12 && rect.top < vh * 0.88;
+    };
+
     const payload = (type: VisitType) => {
       const params = new URLSearchParams(window.location.search);
+      const step = pageStep;
+      pageStep = false;
       return {
         sessionId,
         visitorId: visitor,
@@ -123,6 +152,10 @@ export function useEventPageVisit(slug: string) {
         utmCampaign: params.get("utm_campaign") || "",
         reachedApply,
         formStarted,
+        pageStep: step,
+        pages: [...seenPages.entries()]
+          .sort((a, b) => a[1] - b[1])
+          .map(([label, index]) => ({ label, index })),
       };
     };
 
@@ -142,10 +175,36 @@ export function useEventPageVisit(slug: string) {
     };
 
     measureScroll();
+    document.querySelectorAll("[data-rail-label]").forEach((el) => {
+      if (sectionInView(el)) notePage(el);
+    });
     send("enter");
 
     const onScroll = () => measureScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
+
+    const sectionObserver = new IntersectionObserver(
+      (entries) => {
+        let added = false;
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          if (notePage(entry.target)) added = true;
+        }
+        if (!added) return;
+        pageStep = true;
+        send("progress");
+      },
+      { threshold: 0, rootMargin: "-12% 0px -12% 0px" },
+    );
+    const observedSections = new WeakSet<Element>();
+    const watchSections = () => {
+      document.querySelectorAll("[data-rail-label]").forEach((el) => {
+        if (observedSections.has(el)) return;
+        observedSections.add(el);
+        sectionObserver.observe(el);
+      });
+    };
+    watchSections();
 
     let applyObserver: IntersectionObserver | null = null;
     const watchApply = () => {
@@ -165,7 +224,10 @@ export function useEventPageVisit(slug: string) {
       applyObserver.observe(el);
     };
     watchApply();
-    const formObserver = new MutationObserver(() => watchApply());
+    const formObserver = new MutationObserver(() => {
+      watchApply();
+      watchSections();
+    });
     formObserver.observe(document.body, { childList: true, subtree: true });
 
     const onFocus = (event: FocusEvent) => {
@@ -204,8 +266,86 @@ export function useEventPageVisit(slug: string) {
       document.removeEventListener("focusin", onFocus);
       formObserver.disconnect();
       applyObserver?.disconnect();
+      sectionObserver.disconnect();
       measureScroll();
       send("leave");
     };
   }, [slug]);
+}
+
+function compactVisitPath(pathname: string, hash: string) {
+  const parts = String(pathname || "/")
+    .split("?")[0]
+    .split("#")[0]
+    .split("/")
+    .filter(Boolean)
+    .slice(0, 4)
+    .map((seg) => {
+      if (/^[0-9a-f]{24}$/i.test(seg)) return ":id";
+      if (seg.length > 40) return ":token";
+      return seg.slice(0, 40);
+    });
+  const base = parts.length ? `/${parts.join("/")}` : "/";
+  const h = /^#[A-Za-z0-9_-]{1,32}$/.test(hash) ? hash : "";
+  return `${base}${h}`.slice(0, 80);
+}
+
+function readStoredRoutes(slug: string): { path: string }[] {
+  try {
+    const raw = sessionStorage.getItem(ROUTES_PREFIX + slug);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((row) => row && typeof row.path === "string");
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 이벤트 페이지를 벗어난 뒤 같은 탭에서 연 경로.
+ * 이벤트 세션이 있을 때만 보내고, 그 이벤트 주소 자체는 넣지 않는다.
+ */
+export function EventVisitRouteTracker() {
+  const location = useLocation();
+
+  useEffect(() => {
+    let slug = "";
+    try {
+      slug = sessionStorage.getItem(ACTIVE_KEY) || "";
+    } catch {
+      return;
+    }
+    if (!slug) return;
+    const path = compactVisitPath(location.pathname, location.hash);
+    if (path.split("#")[0] === `/events/${slug}`) return;
+    const routes = readStoredRoutes(slug);
+    if (routes.some((row) => row.path === path)) return;
+    const next = [...routes, { path }].slice(0, 12);
+    try {
+      sessionStorage.setItem(ROUTES_PREFIX + slug, JSON.stringify(next));
+    } catch {
+      // 목록을 못 남겨도 이번 경로는 보낸다.
+    }
+    let sessionId = "";
+    try {
+      sessionId = sessionStorage.getItem(`abuts.eventVisit.${slug}`) || "";
+    } catch {
+      sessionId = "";
+    }
+    if (!sessionId) return;
+    void fetch(`/api/events/${encodeURIComponent(slug)}/visits`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        sessionId,
+        type: "progress",
+        routeStep: true,
+        routes: next.map((row, index) => ({ path: row.path, index })),
+      }),
+      keepalive: true,
+      credentials: "same-origin",
+    }).catch(() => {});
+  }, [location.hash, location.pathname]);
+
+  return null;
 }
