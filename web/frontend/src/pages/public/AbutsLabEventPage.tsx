@@ -862,9 +862,12 @@ export default function AbutsLabEventPage() {
               임상에 맞춘 디자인
             </h2>
             <p className="mt-4 max-w-xl break-keep text-sm leading-relaxed text-slate-600 sm:max-w-2xl sm:text-base">
-              수많은 커스텀 어벗 디자인을 분석했습니다. 정확하고 편안한 임상을
-              위해서는 computational design이 필요합니다. 앞의 단차와 코너는
-              단지 예시이며, 어벗츠는 이런 문제를 계속 풀어 갑니다.
+              수많은 커스텀 어벗 디자인을 분석했습니다.
+              <br />
+              정확하고 편안한 임상을 위해서는 computational design이 필요합니다.
+              <br />
+              단차와 코너는 어벗츠가 해결한 많은 문제 중 하나이며, 어벗츠는 이런
+              문제를 계속 풀어 갑니다.
             </p>
             <p className="mt-6 break-keep text-lg font-semibold tracking-tight text-slate-900">
               어벗츠와 함께하시겠습니까?
