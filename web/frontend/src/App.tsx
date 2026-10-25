@@ -26,6 +26,7 @@ import { useChatMessageSound } from "@/shared/hooks/useChatMessageSound";
 import { useLabReceiveUnreadSound } from "@/shared/hooks/useLabReceiveUnreadSound";
 import { useLabHelperAlarmSession } from "@/shared/hooks/useLabHelperAlarmSession";
 import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPath";
+import { PRACTICE_STORE_OPEN } from "@/shared/store/practiceStoreAccess";
 
 // related files:
 // - web/frontend/src/shared/types/role.ts
@@ -43,6 +44,7 @@ import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPa
 // - web/frontend/src/pages/admin/AdminFinancePage.tsx
 // - web/frontend/src/pages/admin/AdminSettingsHubPage.tsx
 // change-log:
+// - 2026-10-26: 치과 스토어 비공개 — `/dashboard/store`는 대시보드로 이동.
 // - 2026-10-17: 치과 스토어 복원 — 결제는 OB 후불(기공소는 선수금 유지).
 // - 2026-10-08: 할인그룹 폐지 — `/dashboard/discount-group`은 대시보드로 이동.
 // - 2026-10-03: 치과 role=practice도 기공의뢰서 URL(`/dashboard/practice-transfers`)로 알림 보기가 열리게.
@@ -1126,41 +1128,61 @@ const App = () => {
                   <Route
                     path="store"
                     element={
-                      <RoleProtectedRoute roles={["requestor"]}>
-                        <RequestorStorePage />
-                      </RoleProtectedRoute>
+                      PRACTICE_STORE_OPEN ? (
+                        <RoleProtectedRoute roles={["requestor"]}>
+                          <RequestorStorePage />
+                        </RoleProtectedRoute>
+                      ) : (
+                        <Navigate to="/dashboard" replace />
+                      )
                     }
                   />
                   <Route
                     path="store/cart"
                     element={
-                      <RoleProtectedRoute roles={["requestor"]}>
-                        <RequestorStoreCartPage />
-                      </RoleProtectedRoute>
+                      PRACTICE_STORE_OPEN ? (
+                        <RoleProtectedRoute roles={["requestor"]}>
+                          <RequestorStoreCartPage />
+                        </RoleProtectedRoute>
+                      ) : (
+                        <Navigate to="/dashboard" replace />
+                      )
                     }
                   />
                   <Route
                     path="store/orders"
                     element={
-                      <RoleProtectedRoute roles={["requestor"]}>
-                        <RequestorStoreOrdersPage />
-                      </RoleProtectedRoute>
+                      PRACTICE_STORE_OPEN ? (
+                        <RoleProtectedRoute roles={["requestor"]}>
+                          <RequestorStoreOrdersPage />
+                        </RoleProtectedRoute>
+                      ) : (
+                        <Navigate to="/dashboard" replace />
+                      )
                     }
                   />
                   <Route
                     path="store/orders/:orderId"
                     element={
-                      <RoleProtectedRoute roles={["requestor"]}>
-                        <RequestorStoreOrderDetailPage />
-                      </RoleProtectedRoute>
+                      PRACTICE_STORE_OPEN ? (
+                        <RoleProtectedRoute roles={["requestor"]}>
+                          <RequestorStoreOrderDetailPage />
+                        </RoleProtectedRoute>
+                      ) : (
+                        <Navigate to="/dashboard" replace />
+                      )
                     }
                   />
                   <Route
                     path="store/:productId"
                     element={
-                      <RoleProtectedRoute roles={["requestor"]}>
-                        <RequestorStoreProductPage />
-                      </RoleProtectedRoute>
+                      PRACTICE_STORE_OPEN ? (
+                        <RoleProtectedRoute roles={["requestor"]}>
+                          <RequestorStoreProductPage />
+                        </RoleProtectedRoute>
+                      ) : (
+                        <Navigate to="/dashboard" replace />
+                      )
                     }
                   />
                   <Route

@@ -35,6 +35,7 @@ import {
   DASHBOARD_WORK_OUTER_PAD_CLASS,
 } from "@/shared/ui/dashboardChrome";
 
+// - 2026-10-26: 치과 사이드「스토어」숨김 — PRACTICE_STORE_OPEN.
 // - 2026-10-23: 치과 사이드 — 「기공의뢰」그룹 제거. 상위 `기공소에 의뢰하기` · `커스텀어벗 의뢰하기`.
 // - 2026-10-17: 기공소 수신·커스텀어벗 — `compactLabel` + 기공/어벗 accent 밑줄.
 // - 2026-10-17: 기공소·어벗츠기공소 사이드 — 「기공의뢰」그룹 제거. 상위 `치과의뢰 수신하기` · `커스텀어벗 의뢰하기`.
@@ -243,6 +244,7 @@ import {
   type DashboardSidebarItem,
   type DashboardSidebarSection,
 } from "@/features/layout/DashboardSidebarNav";
+import { PRACTICE_STORE_OPEN } from "@/shared/store/practiceStoreAccess";
 
 /** DashboardLayout StrictMode remount에도 토큰당 unread 시드 API 1회만 */
 const practiceUnreadSeededTokens = new Set<string>();
@@ -344,16 +346,20 @@ const buildRequestorSidebarItems = (
     ];
   }
 
-  return [
+  const items: SidebarItem[] = [
     ...buildPracticeSidebarRequestItems({
       hideAbutment: options?.hidePracticeAbutment,
     }),
-    {
+  ];
+  if (PRACTICE_STORE_OPEN) {
+    items.push({
       icon: Store,
       label: "스토어",
       href: STORE_HREF,
       guideTourSatellite: "store_workspace",
-    },
+    });
+  }
+  items.push(
     {
       icon: Wallet,
       label: "정산",
@@ -361,7 +367,8 @@ const buildRequestorSidebarItems = (
       guideTourSatellite: "credits_workspace",
     },
     ...requestorSidebarCommonTail,
-  ];
+  );
+  return items;
 };
 
 const sidebarItems = {

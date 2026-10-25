@@ -3,10 +3,17 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/features/dashboard/DashboardHome.tsx
 // - web/frontend/src/store/useAuthStore.ts
+// - web/frontend/src/shared/store/practiceStoreAccess.ts
+// - 2026-10-26: 치과 스토어 비공개 동안 `/dashboard/store`는 최근 경로에서 뺀다.
 // - 2026-09-21: salesTeam 기본 랜딩·bare `/dashboard` → 성과(소개코드 SSOT). 딜러 수수료 대시보드 미사용.
 // - 2026-08-19: 기공소·어벗츠기공소 `/dashboard` last path는 기공의뢰수신으로 보정(대기보드 제거).
 // - 2026-08-18: 치과 requestor `/dashboard` last path는 구강스캔으로 보정(대시보드 메뉴 제거).
 // - 2026-08-17: internalLab `/dashboard` = 대기보드 허용(기본 랜딩은 lab-work).
+
+import {
+  isPracticeStorePath,
+  PRACTICE_STORE_OPEN,
+} from "@/shared/store/practiceStoreAccess";
 
 /**
  * 최근 대시보드 경로 정규화/검증 (프론트 ↔ 백엔드 SSOT 규칙 동기).
@@ -31,6 +38,7 @@ export function normalizeLastDashboardPath(
     }
     if (pathname.includes("//")) return null;
     if (pathname.startsWith("/dashboard/wizard")) return null;
+    if (!PRACTICE_STORE_OPEN && isPracticeStorePath(pathname)) return null;
     if (pathname.includes("social_complete")) return null;
     // 제거된 딜러 소개 페이지 — 저장된 last path 호환
     if (
