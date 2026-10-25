@@ -410,6 +410,22 @@ export async function consumeSignupVerifications({ email, phone, userId }) {
   }
 }
 
+/** 휴대폰 인증만 확인. 이벤트 최소 가입은 이메일 인증을 받지 않는다. */
+export async function assertSignupPhoneVerified(phone) {
+  const phoneTarget = normalizePhoneDigits(phone);
+  if (!phoneTarget) return false;
+  const phoneDoc = await SignupVerification.findOne({
+    purpose: "signup",
+    channel: "phone",
+    target: phoneTarget,
+    verifiedAt: { $ne: null },
+    consumedAt: null,
+  })
+    .select({ _id: 1 })
+    .lean();
+  return Boolean(phoneDoc?._id);
+}
+
 export async function assertSignupVerifications({ email, phone }) {
   const emailDoc = await SignupVerification.findOne({
     purpose: "signup",

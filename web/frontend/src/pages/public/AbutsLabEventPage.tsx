@@ -1,0 +1,940 @@
+// related files:
+// - web/frontend/src/shared/events/abutsLabCampaign.ts
+// - web/frontend/src/pages/public/EventApplyPage.tsx
+// - web/backend/controllers/events/eventInlineSignup.controller.js
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { ArrowDown, ArrowLeft, CheckCircle2, Info, ScanLine } from "lucide-react";
+import {
+  PublicPageLayout,
+  PUBLIC_CARD_CLASS,
+} from "./components/PublicPageLayout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/shared/hooks/use-toast";
+import {
+  eventsApi,
+  type EventPlaceFields,
+  type EventPlaceSuggest,
+  type MarketingEvent,
+} from "@/shared/events/eventsApi";
+import {
+  ABUTS_LAB_EVENT_HEADLINE,
+  ABUTS_LAB_EVENT_SLUG,
+  ABUTS_LAB_HERO_EYEBROW,
+  ABUTS_LAB_HERO_SUB_LINES,
+  ABUTS_LAB_IMAGES,
+} from "@/shared/events/abutsLabCampaign";
+import EventPlaceSuggestInput from "@/shared/events/EventPlaceSuggestInput";
+import { apiFetch } from "@/shared/api/apiClient";
+import { cn } from "@/shared/ui/cn";
+import { useAuthStore, type User } from "@/store/useAuthStore";
+import {
+  formatPhoneNumberInput,
+  isValidEmail,
+} from "@/shared/components/business/settings/business/validations";
+import { LandingSkyWash } from "@/features/landing/LandingSkyWash";
+import { LandingMagnetic } from "@/features/landing/LandingMagnetic";
+import { LandingParticleField } from "@/features/landing/LandingParticleField";
+import { LandingReveal } from "@/features/landing/LandingReveal";
+import { LandingScrollProgress } from "@/features/landing/LandingScrollProgress";
+import { LandingSectionRail } from "@/features/landing/LandingSectionRail";
+import { LandingSpotlightCard } from "@/features/landing/LandingSpotlightCard";
+
+const EMPTY_DEALER: EventPlaceFields = {
+  name: "",
+  representativeName: "",
+  phone: "",
+  address: "",
+  lat: null,
+  lng: null,
+};
+
+function isPracticeApplicant(user: User | null | undefined): boolean {
+  if (!user) return false;
+  if (user.requestorKind === "practice") return true;
+  if (user.role === "practice") return true;
+  if (user.requestorKind === "lab") return false;
+  return Boolean(user.requestorCapabilities?.practice);
+}
+
+function practicePrefillFromUser(user: User) {
+  const pp = user.practiceProfile || {};
+  const name = String(pp.clinicName || user.companyName || "").trim();
+  const directorName = String(
+    pp.directorName || pp.staffName || user.name || name || "",
+  ).trim();
+  const clinicPhone = String(pp.clinicPhone || "").trim();
+  const mobile = String(pp.phone || "").trim();
+  const address = [pp.address, pp.addressDetail]
+    .map((s) => String(s || "").trim())
+    .filter(Boolean)
+    .join(" ");
+  return {
+    practice: {
+      name,
+      representativeName: directorName,
+      phone: clinicPhone || mobile,
+      address,
+      lat: null,
+      lng: null,
+    },
+    directorName,
+    applicantPhone: mobile || clinicPhone,
+  };
+}
+
+function phoneDigits(value: string) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function isMobilePhone(value: string) {
+  return /^01[016789]\d{7,8}$/.test(phoneDigits(value));
+}
+
+function isStrongPassword(password: string) {
+  const p = String(password || "");
+  if (p.length < 10) return false;
+  if (p.includes("$")) return false;
+  if (!/[!@#%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(p)) return false;
+  return true;
+}
+
+function scrollToApply() {
+  document.getElementById("event-apply")?.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+}
+
+function OralScanFields({
+  usesOralScan,
+  onChange,
+  disabled,
+}: {
+  usesOralScan: boolean | null;
+  onChange: (value: boolean) => void;
+  disabled: boolean;
+}) {
+  return (
+    <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
+      <CardHeader className="space-y-2">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-base text-slate-900">
+          <ScanLine className="h-4 w-4 text-sky-600" />
+          구강 스캐너 사용 여부
+          <Badge
+            variant="secondary"
+            className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800 ring-1 ring-sky-100"
+          >
+            필수
+          </Badge>
+        </CardTitle>
+        <div className="flex gap-2 rounded-2xl border border-sky-100 bg-sky-50/80 px-3 py-2.5 text-sm leading-relaxed text-sky-900">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+          <p>스캔을 쓰시는 치과와 아닌 치과에 맞춰 안내합니다.</p>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <RadioGroup
+          value={
+            usesOralScan == null ? undefined : usesOralScan ? "yes" : "no"
+          }
+          onValueChange={(v) => onChange(v === "yes")}
+          className="grid gap-3 sm:grid-cols-2"
+          disabled={disabled}
+        >
+          <label
+            htmlFor="lab-oral-scan-yes"
+            className={cn(
+              "flex cursor-pointer items-center gap-3 rounded-2xl border bg-white px-4 py-3.5 transition-colors",
+              usesOralScan === true
+                ? "border-sky-300 bg-sky-50/80"
+                : "border-slate-200",
+            )}
+          >
+            <RadioGroupItem value="yes" id="lab-oral-scan-yes" />
+            <span className="text-sm font-medium text-slate-900">사용함</span>
+          </label>
+          <label
+            htmlFor="lab-oral-scan-no"
+            className={cn(
+              "flex cursor-pointer items-center gap-3 rounded-2xl border bg-white px-4 py-3.5 transition-colors",
+              usesOralScan === false
+                ? "border-sky-300 bg-sky-50/80"
+                : "border-slate-200",
+            )}
+          >
+            <RadioGroupItem value="no" id="lab-oral-scan-no" />
+            <span className="text-sm font-medium text-slate-900">
+              사용 안 함
+            </span>
+          </label>
+        </RadioGroup>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function AbutsLabEventPage() {
+  const location = useLocation();
+  const { toast } = useToast();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
+  const loginWithToken = useAuthStore((s) => s.loginWithToken);
+  const setUser = useAuthStore((s) => s.setUser);
+
+  const [event, setEvent] = useState<MarketingEvent | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+  const [alreadyApplied, setAlreadyApplied] = useState(false);
+  const [usesOralScan, setUsesOralScan] = useState<boolean | null>(null);
+  const [applicationCheckLoading, setApplicationCheckLoading] = useState(
+    () => Boolean(isAuthenticated && isPracticeApplicant(user)),
+  );
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [directorName, setDirectorName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [phoneCode, setPhoneCode] = useState("");
+  const [phoneCodeSent, setPhoneCodeSent] = useState(false);
+  const [phoneVerified, setPhoneVerified] = useState(false);
+  const [phoneSending, setPhoneSending] = useState(false);
+  const [phoneVerifying, setPhoneVerifying] = useState(false);
+  const [clinicQuery, setClinicQuery] = useState("");
+  const [place, setPlace] = useState<EventPlaceSuggest | null>(null);
+
+  const practiceUser = isPracticeApplicant(user);
+  const prefill = useMemo(
+    () => (user && practiceUser ? practicePrefillFromUser(user) : null),
+    [user, practiceUser],
+  );
+  const canApply = event?.status === "open";
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    void eventsApi
+      .getPublic(ABUTS_LAB_EVENT_SLUG)
+      .then((ev) => {
+        if (cancelled) return;
+        setEvent(ev);
+        setError(null);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setEvent(null);
+        setError(
+          e instanceof Error ? e.message : "이벤트를 불러오지 못했습니다.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (done || !isAuthenticated || !token || !practiceUser) {
+      if (!practiceUser) {
+        setAlreadyApplied(false);
+        setApplicationCheckLoading(false);
+      }
+      return;
+    }
+    let cancelled = false;
+    setApplicationCheckLoading(true);
+    void eventsApi
+      .myApplication(ABUTS_LAB_EVENT_SLUG, token)
+      .then((res) => {
+        if (cancelled) return;
+        setAlreadyApplied(Boolean(res.applied));
+        setUsesOralScan(
+          typeof res.usesOralScan === "boolean" ? res.usesOralScan : null,
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAlreadyApplied(false);
+          setUsesOralScan(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setApplicationCheckLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [done, isAuthenticated, token, practiceUser]);
+
+  useEffect(() => {
+    if (loading || applicationCheckLoading) return;
+    if (location.hash !== "#event-apply") return;
+    document.getElementById("event-apply")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [applicationCheckLoading, loading, location.hash]);
+
+  useLayoutEffect(() => {
+    if (!done && !alreadyApplied) return;
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [done, alreadyApplied]);
+
+  const sendPhoneCode = async () => {
+    if (!isMobilePhone(phone) || phoneSending || phoneVerified) return;
+    setPhoneSending(true);
+    try {
+      const res = await apiFetch<{
+        success?: boolean;
+        message?: string;
+      }>({
+        path: "/api/auth/signup/phone-verification/send",
+        method: "POST",
+        jsonBody: { phone: phone.trim() },
+      });
+      const body = res.data;
+      if (!res.ok || !body?.success) {
+        toast({
+          title: "인증번호 발송 실패",
+          description: body?.message || "잠시 후 다시 시도해 주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setPhoneCodeSent(true);
+      setPhoneCode("");
+      toast({ title: "인증번호를 발송했습니다" });
+    } catch {
+      toast({
+        title: "인증번호 발송 실패",
+        description: "네트워크 상태를 확인해 주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setPhoneSending(false);
+    }
+  };
+
+  const verifyPhoneCode = async () => {
+    const code = phoneCode.trim();
+    if (code.length !== 4 || phoneVerifying || phoneVerified) return;
+    setPhoneVerifying(true);
+    try {
+      const res = await apiFetch<{ success?: boolean; message?: string }>({
+        path: "/api/auth/signup/phone-verification/verify",
+        method: "POST",
+        jsonBody: { phone: phone.trim(), code },
+      });
+      const body = res.data;
+      if (!res.ok || !body?.success) {
+        toast({
+          title: "휴대폰 인증 실패",
+          description: body?.message || "인증 코드가 일치하지 않습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setPhoneVerified(true);
+      setPhoneCode("");
+    } catch {
+      toast({
+        title: "휴대폰 인증 실패",
+        description: "네트워크 상태를 확인해 주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setPhoneVerifying(false);
+    }
+  };
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!event || submitting || !canApply) return;
+    if (usesOralScan == null) {
+      toast({
+        title: "구강 스캐너 사용 여부를 선택해 주세요",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const signingUp = !(practiceUser && prefill);
+    if (practiceUser && prefill && !token) {
+      toast({
+        title: "로그인이 필요합니다",
+        description: "다시 로그인한 뒤 신청해 주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!signingUp && (!prefill?.practice.name || !prefill.directorName)) {
+      toast({
+        title: "치과 정보가 없습니다",
+        description: "설정에서 치과명과 원장님 성함을 입력해 주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (signingUp) {
+      if (!isValidEmail(email)) {
+        toast({
+          title: "이메일 형식을 확인해 주세요",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!isStrongPassword(password)) {
+        toast({
+          title: "비밀번호 형식을 확인해 주세요",
+          description: "10자 이상, 특수문자 포함. $는 쓸 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (directorName.trim().length < 2) {
+        toast({
+          title: "원장님 성함을 입력해 주세요",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!phoneVerified) {
+        toast({
+          title: "휴대폰 인증을 완료해 주세요",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (
+        !place?.name ||
+        !place.address ||
+        place.lat == null ||
+        place.lng == null
+      ) {
+        toast({
+          title: "검색 결과에서 치과를 선택해 주세요",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    setSubmitting(true);
+    try {
+      if (!signingUp && prefill && token) {
+        await eventsApi.apply(
+          event.slug,
+          {
+            practice: prefill.practice,
+            directorName: prefill.directorName,
+            dealer: EMPTY_DEALER,
+            applicantPhone: prefill.applicantPhone || prefill.practice.phone,
+            usesOralScan,
+          },
+          token,
+        );
+        if (user) {
+          setUser({
+            ...user,
+            practiceProfile: {
+              ...(user.practiceProfile || {}),
+              usesOralScan,
+              updatedAt: new Date().toISOString(),
+            },
+          });
+        }
+      } else if (place && place.lat != null && place.lng != null) {
+        const signed = await eventsApi.signupApply(event.slug, {
+          email: email.trim().toLowerCase(),
+          password,
+          directorName: directorName.trim(),
+          phone: phone.trim(),
+          clinicName: place.name,
+          address: place.address,
+          lat: place.lat,
+          lng: place.lng,
+          usesOralScan,
+        });
+        if (signed.token) {
+          await loginWithToken(signed.token, signed.refreshToken);
+        }
+      }
+      setDone(true);
+      setAlreadyApplied(true);
+      toast({
+        title: "신청이 접수되었습니다",
+        description: "영업 담당자가 확인 후 방문해 안내합니다.",
+      });
+    } catch (err) {
+      toast({
+        title: "신청 실패",
+        description:
+          err instanceof Error ? err.message : "잠시 후 다시 시도해 주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!done && (loading || applicationCheckLoading)) {
+    return (
+      <PublicPageLayout
+        plain
+        contentClassName="relative z-10 mx-auto w-full max-w-3xl space-y-4 px-4 pt-24 pb-16 sm:px-6"
+      >
+        <Skeleton className="h-10 w-2/3" />
+        <Skeleton className="h-56 w-full rounded-3xl" />
+        <Skeleton className="h-40 w-full rounded-3xl" />
+      </PublicPageLayout>
+    );
+  }
+
+  if (error || !event || event.status === "draft") {
+    return (
+      <PublicPageLayout
+        plain
+        contentClassName="relative z-10 mx-auto w-full max-w-2xl px-4 pt-24 pb-16 sm:px-6"
+      >
+        <Card className={PUBLIC_CARD_CLASS}>
+          <CardContent className="space-y-3 py-10 text-center">
+            <p className="text-sm text-slate-600">
+              {error || "이벤트를 찾을 수 없습니다."}
+            </p>
+            <Button asChild variant="outline">
+              <Link to="/#events">목록으로</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </PublicPageLayout>
+    );
+  }
+
+  if (done || alreadyApplied) {
+    return (
+      <PublicPageLayout
+        plain
+        contentClassName="relative z-10 mx-auto w-full max-w-2xl px-4 pb-16 pt-28 sm:px-6 sm:pt-32"
+      >
+        <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
+          <CardContent className="flex flex-col items-center gap-3 px-6 pb-14 pt-14 text-center">
+            <CheckCircle2 className="h-11 w-11 shrink-0 text-emerald-600" />
+            <h2 className="text-2xl font-semibold text-slate-900">
+              신청이 완료되었습니다
+            </h2>
+            <p className="max-w-md text-sm leading-relaxed text-slate-600">
+              {ABUTS_LAB_EVENT_HEADLINE} 상담을 접수했습니다.
+              <br />
+              영업 담당자가 방문해 곡면 가공을 안내합니다.
+            </p>
+            <Button asChild className="mt-3 rounded-full">
+              <Link to="/">홈으로</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </PublicPageLayout>
+    );
+  }
+
+  return (
+    <PublicPageLayout
+      plain
+      navOverlay
+      footerSurface="sky"
+      contentClassName="relative z-10 w-full space-y-0 px-0 pb-0 pt-0"
+    >
+      <LandingScrollProgress />
+      <LandingSectionRail />
+      <section
+        data-rail-label="시작"
+        className="relative overflow-hidden border-b border-slate-200/80"
+      >
+        <LandingSkyWash />
+        <LandingParticleField tone="onLight" />
+        <div className="relative z-10 mx-auto flex min-h-[72vh] max-w-5xl flex-col justify-center px-4 pb-16 pt-20 sm:px-6 sm:pb-20 sm:pt-24 lg:px-8">
+          <Link
+            to="/#events"
+            className="mb-8 inline-flex w-fit items-center gap-1 text-sm text-slate-500 transition-colors hover:text-slate-800"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            이벤트 목록
+          </Link>
+          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-700">
+            {ABUTS_LAB_HERO_EYEBROW}
+          </p>
+          <h1 className="mt-4 max-w-3xl break-keep font-semibold leading-[1.12] tracking-tight text-[#0b2a5c]">
+            <span className="block text-[clamp(2.1rem,5.5vw,3.75rem)]">
+              {ABUTS_LAB_EVENT_HEADLINE}
+            </span>
+          </h1>
+          <p className="mt-5 max-w-3xl text-base leading-relaxed text-slate-600 sm:text-lg">
+            {ABUTS_LAB_HERO_SUB_LINES[0]}
+            <br />
+            {ABUTS_LAB_HERO_SUB_LINES[1]}
+          </p>
+          <div className="mt-8">
+            <LandingMagnetic>
+              <Button
+                type="button"
+                size="lg"
+                className="landing-btn h-12 rounded-full bg-[#2563eb] px-7 text-base font-semibold text-white shadow-[0_12px_32px_rgba(37,99,235,0.28)] hover:bg-[#1d4ed8]"
+                onClick={scrollToApply}
+                disabled={!canApply}
+              >
+                {canApply ? "상담 신청하기" : "신청 마감"}
+                {canApply ? <ArrowDown className="ml-2 h-4 w-4" /> : null}
+              </Button>
+            </LandingMagnetic>
+          </div>
+        </div>
+      </section>
+
+      <section
+        data-rail-label="가공"
+        className="border-b border-slate-100 bg-white py-16 sm:py-20"
+      >
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+          <LandingReveal>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">
+              Machining
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+              예쁜 디자인, 다른 가공 결과
+            </h2>
+            <p className="mt-4 max-w-3xl break-keep text-sm leading-relaxed text-slate-600 sm:text-base">
+              기공사 선생님이 왼쪽처럼 디자인해 주셔도, 가공에서 단차가 나는
+              경우가 있습니다.
+              <br />
+              단차는 그중 한 예이고, 다른 가공 문제도 함께 납니다.
+            </p>
+          </LandingReveal>
+
+          <LandingReveal className="mt-10">
+            <figure className="overflow-hidden rounded-[1.75rem] border border-slate-200/90 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.05)]">
+              <img
+                src={ABUTS_LAB_IMAGES.design}
+                alt="기공사 디자인과 어벗츠 곡면 처리 디자인. 왼쪽은 기공사 디자인이고, 오른쪽은 곡면을 소프트웨어로 처리한 디자인입니다."
+                className="w-full"
+              />
+            </figure>
+            <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-600">
+              <p>
+                <span className="font-semibold text-slate-900">왼쪽</span>{" "}
+                기공사 디자인
+              </p>
+              <p className="text-right sm:text-left">
+                <span className="font-semibold text-slate-900">오른쪽</span>{" "}
+                어벗츠 곡면 처리
+              </p>
+            </div>
+          </LandingReveal>
+
+          <LandingReveal className="mt-6">
+            <p className="max-w-3xl break-keep text-sm leading-relaxed text-slate-600 sm:text-base">
+              오른쪽처럼 곡면을 소프트웨어로 맞춥니다.
+              <br />
+              단차 외의 곡면에도 같은 처리를 씁니다.
+            </p>
+          </LandingReveal>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-2">
+            <LandingReveal>
+              <LandingSpotlightCard className="h-full overflow-hidden rounded-[1.75rem] border border-slate-200/90 bg-gradient-to-b from-white to-[#f4f7fb] p-4 sm:p-5">
+                <div className="overflow-hidden rounded-2xl bg-[#f4f7fb]">
+                  <img
+                    src={ABUTS_LAB_IMAGES.step}
+                    alt="가공 후 단차가 남은 어벗먼트. 표시된 홈이 단차입니다."
+                    className="h-72 w-full object-contain sm:h-80"
+                  />
+                </div>
+                <h3 className="mt-4 text-lg font-semibold text-slate-900">
+                  일반 가공
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  단차가 남는 경우가 있습니다.
+                </p>
+              </LandingSpotlightCard>
+            </LandingReveal>
+            <LandingReveal delay={90}>
+              <LandingSpotlightCard className="h-full overflow-hidden rounded-[1.75rem] border border-slate-200/90 bg-gradient-to-b from-white to-[#f4f7fb] p-4 sm:p-5">
+                <div className="overflow-hidden rounded-2xl bg-[#eef2f4]">
+                  <img
+                    src={ABUTS_LAB_IMAGES.smooth}
+                    alt="곡면 처리 후 매끈하게 가공된 어벗먼트"
+                    className="h-72 w-full object-contain sm:h-80"
+                  />
+                </div>
+                <h3 className="mt-4 text-lg font-semibold text-slate-900">
+                  어벗츠 가공
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  매끈하게 가공됩니다.
+                </p>
+              </LandingSpotlightCard>
+            </LandingReveal>
+          </div>
+        </div>
+      </section>
+
+      <section
+        data-rail-label="방문"
+        className="border-b border-sky-100 bg-[#eef6ff] py-16 sm:py-20"
+      >
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+          <LandingReveal>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">
+              Visit
+            </p>
+            <h2 className="mt-2 max-w-xl text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+              방문해서 안내합니다
+            </h2>
+          </LandingReveal>
+          <LandingReveal className="mt-8">
+            <LandingSpotlightCard className="rounded-[1.75rem] border border-slate-200/90 bg-gradient-to-br from-[#0b2a5c] to-[#163a72] p-6 text-white sm:p-8">
+              <p className="max-w-2xl text-sm leading-relaxed text-white/80 sm:text-base">
+                회원가입 후 상담을 신청하면 영업 담당자가 치과를 방문합니다.
+                <br />
+                곡면 가공을 설명하고, 어벗츠를 부담 없이 시작하실 수 있게
+                안내합니다.
+              </p>
+            </LandingSpotlightCard>
+          </LandingReveal>
+        </div>
+      </section>
+
+      <section
+        id="event-apply"
+        data-rail-label="신청"
+        className="scroll-mt-24 border-t border-slate-200 bg-white py-14 sm:py-20"
+      >
+        <div className="mx-auto max-w-2xl px-4 sm:px-6">
+          <LandingReveal className="mb-8 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">
+              Apply
+            </p>
+            <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+              상담 신청
+            </h2>
+            <p className="text-sm leading-relaxed text-slate-600">
+              {practiceUser ? (
+                "가입된 치과 정보로 신청합니다."
+              ) : (
+                <>
+                  사업자등록 등 나머지 절차는 방문 때 안내합니다.
+                </>
+              )}
+            </p>
+          </LandingReveal>
+
+          <form onSubmit={onSubmit} className="space-y-5">
+            {practiceUser && prefill ? (
+              <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
+                <CardContent className="space-y-1 py-5 text-sm text-slate-700">
+                  <p className="font-semibold text-slate-900">
+                    {prefill.practice.name || "치과"}
+                  </p>
+                  <p>원장 {prefill.directorName || "-"}</p>
+                  {prefill.practice.address ? (
+                    <p className="text-slate-500">{prefill.practice.address}</p>
+                  ) : null}
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
+                <CardContent className="space-y-4 py-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="lab-email">이메일</Label>
+                    <Input
+                      id="lab-email"
+                      type="email"
+                      autoComplete="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="name@clinic.com"
+                      disabled={!canApply || submitting}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lab-password">비밀번호</Label>
+                    <Input
+                      id="lab-password"
+                      type="password"
+                      autoComplete="new-password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={!canApply || submitting}
+                    />
+                    <p className="text-xs text-slate-500">
+                      10자 이상, 특수문자 포함. $는 쓸 수 없습니다.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lab-director">원장님 성함</Label>
+                    <Input
+                      id="lab-director"
+                      value={directorName}
+                      onChange={(e) => setDirectorName(e.target.value)}
+                      autoComplete="name"
+                      disabled={!canApply || submitting}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lab-phone">휴대폰번호</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="lab-phone"
+                        value={phone}
+                        onChange={(e) => {
+                          setPhone(formatPhoneNumberInput(e.target.value));
+                          setPhoneVerified(false);
+                          setPhoneCodeSent(false);
+                          setPhoneCode("");
+                        }}
+                        inputMode="tel"
+                        autoComplete="tel"
+                        placeholder="010-0000-0000"
+                        disabled={!canApply || submitting || phoneVerified}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="shrink-0 rounded-full"
+                        disabled={
+                          !canApply ||
+                          submitting ||
+                          phoneVerified ||
+                          phoneSending ||
+                          !isMobilePhone(phone)
+                        }
+                        onClick={() => void sendPhoneCode()}
+                      >
+                        {phoneVerified
+                          ? "인증됨"
+                          : phoneSending
+                            ? "발송 중…"
+                            : "인증번호"}
+                      </Button>
+                    </div>
+                    {phoneCodeSent && !phoneVerified ? (
+                      <div className="flex gap-2">
+                        <Input
+                          value={phoneCode}
+                          onChange={(e) =>
+                            setPhoneCode(
+                              e.target.value.replace(/\D/g, "").slice(0, 4),
+                            )
+                          }
+                          inputMode="numeric"
+                          placeholder="인증번호 4자리"
+                          disabled={!canApply || submitting}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="shrink-0 rounded-full"
+                          disabled={
+                            phoneCode.length !== 4 ||
+                            phoneVerifying ||
+                            submitting
+                          }
+                          onClick={() => void verifyPhoneCode()}
+                        >
+                          {phoneVerifying ? "확인 중…" : "확인"}
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lab-clinic">치과</Label>
+                    <EventPlaceSuggestInput
+                      id="lab-clinic"
+                      value={clinicQuery}
+                      onChange={(value) => {
+                        setClinicQuery(value);
+                        setPlace((prev) =>
+                          prev && prev.name === value ? prev : null,
+                        );
+                      }}
+                      onPick={(item) => {
+                        if (
+                          !item.address ||
+                          item.lat == null ||
+                          item.lng == null
+                        ) {
+                          setPlace(null);
+                          toast({
+                            title: "주소가 없는 장소입니다",
+                            description: "다른 검색 결과를 선택해 주세요.",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                        setPlace(item);
+                      }}
+                      kind="practice"
+                      placeholder="치과명으로 검색"
+                      listMode="inline"
+                      emptyText="결과가 없습니다. 치과명이나 「지역명 치과명」으로 다시 검색해 주세요."
+                    />
+                    <p className="text-xs leading-relaxed text-slate-500">
+                      {place?.address ? (
+                        <>
+                          주소가 확인되었습니다.
+                          <br />
+                          {place.address}
+                        </>
+                      ) : (
+                        "검색 결과에서 치과를 선택해 주세요."
+                      )}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            <OralScanFields
+              usesOralScan={usesOralScan}
+              onChange={setUsesOralScan}
+              disabled={!canApply || submitting}
+            />
+
+            <Button
+              type="submit"
+              className="landing-btn h-12 w-full rounded-full bg-[#2563eb] text-base font-semibold hover:bg-[#1d4ed8]"
+              size="lg"
+              disabled={submitting || !canApply}
+            >
+              {!canApply
+                ? "신청 마감"
+                : submitting
+                  ? "처리 중…"
+                  : practiceUser
+                    ? "상담 신청하기"
+                    : "가입하고 상담 신청"}
+            </Button>
+            {!practiceUser ? (
+              <p className="text-center text-sm text-slate-500">
+                이미 가입하셨다면{" "}
+                <Link to="/login" className="font-medium text-sky-700">
+                  로그인
+                </Link>
+                후 신청해 주세요.
+              </p>
+            ) : null}
+          </form>
+        </div>
+      </section>
+    </PublicPageLayout>
+  );
+}

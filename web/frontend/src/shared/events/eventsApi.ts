@@ -114,6 +114,25 @@ export const eventsApi = {
     }>(`/api/events/places/suggest?${sp.toString()}`);
   },
 
+  signupApply: (
+    slug: string,
+    body: {
+      email: string;
+      password: string;
+      directorName: string;
+      phone: string;
+      clinicName: string;
+      address: string;
+      lat: number;
+      lng: number;
+      usesOralScan: boolean;
+    },
+  ) =>
+    eventsFetch<{ token: string; refreshToken?: string | null }>(
+      `/api/events/${encodeURIComponent(slug)}/signup-apply`,
+      { method: "POST", jsonBody: body },
+    ),
+
   apply: (
     slug: string,
     body: {

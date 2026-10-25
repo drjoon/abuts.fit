@@ -37,6 +37,7 @@ import {
   type EventPlaceFields,
   type MarketingEvent,
 } from "@/shared/events/eventsApi";
+import { ABUTS_LAB_EVENT_SLUG } from "@/shared/events/abutsLabCampaign";
 import {
   GRIBO_HERO_EYEBROW,
   SIMPLEWAY_EVENT_HEADLINE,
@@ -46,6 +47,7 @@ import {
   resolveSimplewayEventSlug,
   SIMPLEWAY_SAMPLE_SLUG,
 } from "@/shared/events/simplewaySampleCampaign";
+import AbutsLabEventPage from "./AbutsLabEventPage";
 import {
   clearEventApplyLocalDraft,
   emptyEventApplyDealer,
@@ -304,7 +306,7 @@ function ExtrasSection() {
   );
 }
 
-export default function EventApplyPage() {
+function LaunchEventApplyPage() {
   const { slug: rawSlug = "" } = useParams();
   const slug = resolveSimplewayEventSlug(rawSlug);
   const location = useLocation();
@@ -831,4 +833,11 @@ export default function EventApplyPage() {
       </section>
     </PublicPageLayout>
   );
+}
+
+export default function EventApplyPage() {
+  const { slug: rawSlug = "" } = useParams();
+  const slug = resolveSimplewayEventSlug(rawSlug);
+  if (slug === ABUTS_LAB_EVENT_SLUG) return <AbutsLabEventPage />;
+  return <LaunchEventApplyPage />;
 }

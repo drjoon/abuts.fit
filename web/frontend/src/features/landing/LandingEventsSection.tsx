@@ -10,6 +10,10 @@ import { CalendarDays, ChevronRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { eventsApi, type MarketingEvent } from "@/shared/events/eventsApi";
 import {
+  ABUTS_LAB_EVENT_HEADLINE,
+  ABUTS_LAB_EVENT_SLUG,
+} from "@/shared/events/abutsLabCampaign";
+import {
   SIMPLEWAY_EVENT_HEADLINE,
   SIMPLEWAY_SAMPLE_SLUG,
 } from "@/shared/events/simplewaySampleCampaign";
@@ -76,10 +80,17 @@ export function LandingEventsSection() {
             <ul className="space-y-3">
               {items.map((ev) => {
                 const isSimpleway = ev.slug === SIMPLEWAY_SAMPLE_SLUG;
+                const isLabIntro = ev.slug === ABUTS_LAB_EVENT_SLUG;
                 const title = isSimpleway
                   ? SIMPLEWAY_EVENT_HEADLINE
-                  : ev.title;
-                const meta = isSimpleway ? "출시 행사 신청" : "행사 신청";
+                  : isLabIntro
+                    ? ABUTS_LAB_EVENT_HEADLINE
+                    : ev.title;
+                const meta = isSimpleway
+                  ? "출시 행사 신청"
+                  : isLabIntro
+                    ? "상담 신청"
+                    : "행사 신청";
                 return (
                   <li key={ev.id}>
                     <Link
@@ -88,7 +99,7 @@ export function LandingEventsSection() {
                     >
                       <div className="flex flex-col gap-3 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-5">
                         <div className="min-w-0 space-y-1.5">
-                          {!isSimpleway ? (
+                          {!isSimpleway && !isLabIntro ? (
                             <p className="text-[12px] font-medium text-sky-600">
                               행사
                             </p>

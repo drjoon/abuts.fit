@@ -22,6 +22,8 @@ type EventPlaceSuggestInputProps = {
   maxItems?: number;
   /** 값이 바뀔 때 다음 자동완성을 1회 억제(로그인 프리필 등). */
   suppressSuggestToken?: number | string;
+  emptyText?: string;
+  id?: string;
 };
 
 export default function EventPlaceSuggestInput({
@@ -35,6 +37,8 @@ export default function EventPlaceSuggestInput({
   listMode = "overlay",
   maxItems = 12,
   suppressSuggestToken,
+  emptyText = "결과가 없습니다. 상호를 그대로 입력하거나 「지역명 상호」로 다시 검색해 보세요.",
+  id,
 }: EventPlaceSuggestInputProps) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -140,6 +144,7 @@ export default function EventPlaceSuggestInput({
       <div className="relative">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
         <Input
+          id={id}
           value={value}
           autoComplete="off"
           role="combobox"
@@ -198,8 +203,7 @@ export default function EventPlaceSuggestInput({
         >
           {visibleItems.length === 0 && !loading ? (
             <li className="px-3 py-2 text-xs text-muted-foreground">
-              결과가 없습니다. 상호를 그대로 입력하거나 「지역명 상호」로 다시
-              검색해 보세요.
+              {emptyText}
             </li>
           ) : visibleItems.length === 0 && loading ? (
             <li className="px-3 py-2 text-xs text-muted-foreground">검색 중…</li>

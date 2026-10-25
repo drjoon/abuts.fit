@@ -23,6 +23,70 @@ const SIMPLEWAY_SAMPLE_SLUGS_LEGACY = [
 const SIMPLEWAY_DEALER_HELP =
   "친한 재료 사장님을 소개해 주세요. 그분께 지역 영업권을 드립니다.";
 
+export const ABUTS_LAB_EVENT_SLUG = "abuts-lab";
+
+const ABUTS_LAB_EVENT_COPY = {
+  title: "어벗츠기공소 소개",
+  summary: "상담을 신청하면 영업 담당자가 방문해 곡면 가공을 안내합니다.",
+  description: [
+    "기공사 디자인은 예쁘지만, 가공에서 단차가 나는 경우가 있습니다.",
+    "어벗츠기공소는 곡면을 소프트웨어로 처리해 매끈하게 가공합니다.",
+    "",
+    "신청 항목: 이메일, 비밀번호, 원장님 성함, 휴대폰 인증, 카카오 치과 주소, 구강 스캐너 사용 여부.",
+    "사업자등록 등 나머지 절차는 영업 담당자 방문 때 안내합니다.",
+  ].join("\n"),
+};
+
+async function ensureAbutsLabMarketingEvent() {
+  const existing = await MarketingEvent.findOne({ slug: ABUTS_LAB_EVENT_SLUG });
+  if (existing) {
+    let dirty = false;
+    if (existing.title !== ABUTS_LAB_EVENT_COPY.title) {
+      existing.title = ABUTS_LAB_EVENT_COPY.title;
+      dirty = true;
+    }
+    if (existing.summary !== ABUTS_LAB_EVENT_COPY.summary) {
+      existing.summary = ABUTS_LAB_EVENT_COPY.summary;
+      dirty = true;
+    }
+    if (existing.description !== ABUTS_LAB_EVENT_COPY.description) {
+      existing.description = ABUTS_LAB_EVENT_COPY.description;
+      dirty = true;
+    }
+    if (!existing.formConfig) existing.formConfig = {};
+    if (existing.formConfig.requirePractice !== true) {
+      existing.formConfig.requirePractice = true;
+      dirty = true;
+    }
+    if (existing.formConfig.requireDealer !== false) {
+      existing.formConfig.requireDealer = false;
+      dirty = true;
+    }
+    if (dirty) await existing.save();
+    return existing;
+  }
+
+  try {
+    return await MarketingEvent.create({
+      slug: ABUTS_LAB_EVENT_SLUG,
+      ...ABUTS_LAB_EVENT_COPY,
+      status: "open",
+      sortOrder: 2,
+      startsAt: new Date(),
+      formConfig: {
+        requirePractice: true,
+        requireDealer: false,
+        dealerHelpText: "",
+      },
+    });
+  } catch (err) {
+    if (err?.code === 11000) {
+      return MarketingEvent.findOne({ slug: ABUTS_LAB_EVENT_SLUG });
+    }
+    throw err;
+  }
+}
+
 /** 공개 카피 SSOT — 샘플 배포·피드백 조건부 편익 문구 금지(출시 행사·제품 소개) */
 const SIMPLEWAY_EVENT_COPY = {
   title: "어벗츠 신제품 출시 행사",
@@ -290,8 +354,9 @@ function buildApplicationStats(items) {
   };
 }
 
-/** 첫 이벤트(어벗츠 출시 행사)를 DB에 보장·카피 동기화한다. */
+/** 첫 이벤트(어벗츠 출시 행사)와 기공소 소개 행사를 DB에 보장·카피 동기화한다. */
 export async function ensureDefaultMarketingEvents() {
+  await ensureAbutsLabMarketingEvent();
   let existing = await MarketingEvent.findOne({
     slug: SIMPLEWAY_SAMPLE_SLUG,
   });

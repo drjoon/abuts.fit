@@ -9,6 +9,7 @@ import {
   applyToEvent,
   getMyEventApplication,
 } from "../../controllers/events/marketingEvent.controller.js";
+import { signupApplyToEvent } from "../../controllers/events/eventInlineSignup.controller.js";
 import {
   authenticate,
   authenticateOptional,
@@ -21,5 +22,6 @@ router.get("/", listPublicEvents);
 router.get("/:slug/my-application", authenticate, getMyEventApplication);
 router.get("/:slug", getPublicEvent);
 router.post("/:slug/applications", authenticateOptional, applyToEvent);
+router.post("/:slug/signup-apply", signupApplyToEvent);
 
 export default router;
