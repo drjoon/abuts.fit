@@ -73,6 +73,7 @@ export interface User {
   avatar?: string;
   profileImage?: string;
   companyName?: string;
+  phoneNumber?: string;
   referralCode?: string;
   approvedAt?: string | null;
   createdAt?: string | null;
@@ -155,6 +156,7 @@ const normalizeApiUser = (u: unknown): User | null => {
     profileImage:
       typeof row.profileImage === "string" ? row.profileImage : undefined,
     companyName: String(row.business || row.companyName || ""),
+    phoneNumber: String(row.phoneNumber || ""),
     referralCode: String(row.referralCode || ""),
     approvedAt: row.approvedAt ? String(row.approvedAt) : null,
     createdAt: row.createdAt ? String(row.createdAt) : null,

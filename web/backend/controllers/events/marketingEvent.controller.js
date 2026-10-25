@@ -120,17 +120,21 @@ function trimStr(v, max = 200) {
     .slice(0, max);
 }
 
+function placeCoord(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 function normalizePlace(raw) {
   const src = raw && typeof raw === "object" ? raw : {};
-  const lat = Number(src.lat);
-  const lng = Number(src.lng);
   return {
     name: trimStr(src.name, 120),
     representativeName: trimStr(src.representativeName, 80),
     phone: trimStr(src.phone, 40),
     address: trimStr(src.address, 240),
-    lat: Number.isFinite(lat) ? lat : null,
-    lng: Number.isFinite(lng) ? lng : null,
+    lat: placeCoord(src.lat),
+    lng: placeCoord(src.lng),
   };
 }
 
@@ -143,7 +147,9 @@ function normalizeMatchKey(value) {
 }
 
 function normalizePhoneDigits(value) {
-  return String(value || "").replace(/\D+/g, "");
+  let digits = String(value || "").replace(/\D+/g, "");
+  if (digits.startsWith("82")) digits = `0${digits.slice(2)}`;
+  return digits;
 }
 
 function dealerHasAny(dealer) {

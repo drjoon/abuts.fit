@@ -168,13 +168,28 @@ function consultFieldErrors(draft: {
   manualClinicName: string;
   place: EventPlaceSuggest | null;
   usesOralScan: boolean | null;
+  /** 치과 계정 프로필로 채운 항목은 다시 받지 않는다. */
+  fromProfile?: { director?: boolean; phone?: boolean; address?: boolean };
 }): FieldErrors {
   const next: FieldErrors = {};
-  if (draft.directorName.trim().length < 2) {
+  const fromProfile = draft.fromProfile || {};
+  if (fromProfile.director && fromProfile.phone && fromProfile.address) {
+    if (draft.usesOralScan == null) {
+      next.oral = "구강 스캐너 사용 여부를 선택해 주세요.";
+    }
+    return next;
+  }
+  if (!fromProfile.director && draft.directorName.trim().length < 2) {
     next.director = "원장님 성함을 입력해 주세요.";
   }
-  if (!isMobilePhone(draft.phone)) {
+  if (!fromProfile.phone && !isMobilePhone(draft.phone)) {
     next.phone = "휴대폰 번호를 확인해 주세요.";
+  }
+  if (fromProfile.address) {
+    if (draft.usesOralScan == null) {
+      next.oral = "구강 스캐너 사용 여부를 선택해 주세요.";
+    }
+    return next;
   }
   if (draft.addressMode === "manual") {
     if (draft.manualAddress.trim().length < 5) {
@@ -204,7 +219,7 @@ function practicePrefillFromUser(user: User) {
     pp.directorName || pp.staffName || user.name || name || "",
   ).trim();
   const clinicPhone = String(pp.clinicPhone || "").trim();
-  const mobile = String(pp.phone || "").trim();
+  const mobile = String(pp.phone || user.phoneNumber || "").trim();
   const address = [pp.address, pp.addressDetail]
     .map((s) => String(s || "").trim())
     .filter(Boolean)
@@ -224,7 +239,9 @@ function practicePrefillFromUser(user: User) {
 }
 
 function phoneDigits(value: string) {
-  return String(value || "").replace(/\D/g, "");
+  let digits = String(value || "").replace(/\D/g, "");
+  if (digits.startsWith("82")) digits = `0${digits.slice(2)}`;
+  return digits;
 }
 
 function isMobilePhone(value: string) {
@@ -358,6 +375,17 @@ export default function AbutsLabEventPage() {
     () => (user && requestorUser ? practicePrefillFromUser(user) : null),
     [user, requestorUser],
   );
+  const fromProfile = {
+    director: Boolean(prefill && prefill.directorName.trim().length >= 2),
+    phone: Boolean(prefill && isMobilePhone(prefill.applicantPhone)),
+    address: Boolean(
+      prefill &&
+        prefill.practice.name.trim().length >= 2 &&
+        prefill.practice.address.trim().length >= 5,
+    ),
+  };
+  const profileOnlyScanner =
+    fromProfile.director && fromProfile.phone && fromProfile.address;
   const canApply = event?.status === "open";
 
   useEffect(() => {
@@ -546,6 +574,7 @@ export default function AbutsLabEventPage() {
       manualClinicName,
       place,
       usesOralScan,
+      fromProfile,
     });
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
@@ -557,22 +586,38 @@ export default function AbutsLabEventPage() {
     }
 
     const manual = addressMode === "manual";
+    const director = fromProfile.director
+      ? prefill!.directorName.trim()
+      : directorName.trim();
+    const applicantPhone = fromProfile.phone
+      ? prefill!.applicantPhone.trim()
+      : phone.trim();
+    const practice = fromProfile.address
+      ? {
+          name: prefill!.practice.name.trim(),
+          representativeName: director,
+          phone: applicantPhone,
+          address: prefill!.practice.address.trim(),
+          lat: null,
+          lng: null,
+        }
+      : {
+          name: manual ? manualClinicName.trim() : place!.name,
+          representativeName: director,
+          phone: applicantPhone,
+          address: manual ? manualAddress.trim() : place!.address || "",
+          lat: manual ? null : place!.lat ?? null,
+          lng: manual ? null : place!.lng ?? null,
+        };
     setSubmitting(true);
     try {
       await eventsApi.apply(
         event.slug,
         {
-          practice: {
-            name: manual ? manualClinicName.trim() : place!.name,
-            representativeName: directorName.trim(),
-            phone: phone.trim(),
-            address: manual ? manualAddress.trim() : place!.address || "",
-            lat: manual ? null : place!.lat ?? null,
-            lng: manual ? null : place!.lng ?? null,
-          },
-          directorName: directorName.trim(),
+          practice,
+          directorName: director,
           dealer: EMPTY_DEALER,
-          applicantPhone: phone.trim(),
+          applicantPhone,
           usesOralScan: usesOralScan as boolean,
           visitSessionId: readEventVisitSessionId(event.slug),
         },
@@ -879,7 +924,13 @@ export default function AbutsLabEventPage() {
 
           <form onSubmit={onSubmit} className="space-y-5">
             <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
-              <CardContent className="grid items-start gap-4 py-6 sm:grid-cols-2">
+              <CardContent
+                className={cn(
+                  "grid items-start gap-4 py-6",
+                  profileOnlyScanner ? "" : "sm:grid-cols-2",
+                )}
+              >
+                {fromProfile.director ? null : (
                 <div className="space-y-2">
                   <FieldLabel htmlFor="lab-director" icon={UserRound}>
                     원장님 성함
@@ -900,6 +951,8 @@ export default function AbutsLabEventPage() {
                   />
                   <FieldErrorText message={fieldErrors.director} />
                 </div>
+                )}
+                {fromProfile.phone ? null : (
                 <div className="space-y-2">
                   <FieldLabel htmlFor="lab-phone" icon={Phone}>
                     휴대폰번호
@@ -922,6 +975,8 @@ export default function AbutsLabEventPage() {
                   />
                   <FieldErrorText message={fieldErrors.phone} />
                 </div>
+                )}
+                {fromProfile.address ? null : (
                 <div className="space-y-2">
                   <FieldLabel htmlFor="lab-clinic" icon={MapPin}>
                     치과명 (주소검색)
@@ -1036,6 +1091,7 @@ export default function AbutsLabEventPage() {
                     </>
                   )}
                 </div>
+                )}
                 <OralScanFields
                   usesOralScan={usesOralScan}
                   onChange={(value) => {
