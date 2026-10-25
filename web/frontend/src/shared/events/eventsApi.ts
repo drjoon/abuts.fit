@@ -148,6 +148,7 @@ export type EventVisitReport = {
     source: string;
     stage: string;
     returning: boolean;
+    visits: number;
     pages: string[];
     routes: string[];
   }[];

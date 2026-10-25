@@ -517,6 +517,35 @@ function sourceLabel(row) {
   return campaign ? `${source} · ${campaign}` : source;
 }
 
+function quartile(sorted, p) {
+  const idx = (sorted.length - 1) * p;
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] * (hi - idx) + sorted[hi] * (idx - lo);
+}
+
+/** 평균 체류. 4건 이상이면 Tukey 울타리(1.5 IQR) 밖은 뺀다. */
+export function averageDwellExcludingOutliers(values) {
+  const dwells = (values || [])
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .sort((a, b) => a - b);
+  if (!dwells.length) return 0;
+  let kept = dwells;
+  if (dwells.length >= 4) {
+    const q1 = quartile(dwells, 0.25);
+    const q3 = quartile(dwells, 0.75);
+    const iqr = q3 - q1;
+    const low = q1 - 1.5 * iqr;
+    const high = q3 + 1.5 * iqr;
+    const trimmed = dwells.filter((n) => n >= low && n <= high);
+    if (trimmed.length) kept = trimmed;
+  }
+  const sum = kept.reduce((total, n) => total + n, 0);
+  return Math.round(sum / kept.length);
+}
+
 function stageLabel(row) {
   if (row.converted) return "신청 완료";
   if (row.formStarted) return "입력";
@@ -538,6 +567,76 @@ function pageLabels(pages) {
     .filter((page) => page?.label)
     .sort((a, b) => Number(a.index || 0) - Number(b.index || 0))
     .map((page) => String(page.label));
+}
+
+const RECENT_SCAN = 200;
+const RECENT_GROUPS = 12;
+
+function stageRank(row) {
+  if (row.converted) return 3;
+  if (row.formStarted) return 2;
+  if (row.reachedApply) return 1;
+  return 0;
+}
+
+function uniqueLabels(lists) {
+  const seen = new Set();
+  const out = [];
+  for (const list of lists) {
+    for (const label of list) {
+      const text = String(label || "").trim();
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      out.push(text);
+    }
+  }
+  return out;
+}
+
+function visitSource(row) {
+  return row.utmSource || row.referrerHost || "직접";
+}
+
+/** 같은 IP(ipHash)의 세션을 한 줄로 묶는다. 해시가 없으면 세션을 그대로 둔다. */
+function groupRecentByIp(rows) {
+  const groups = [];
+  const byKey = new Map();
+  for (const row of rows) {
+    const hash = String(row.ipHash || "").trim();
+    const key = hash || `session:${row._id}`;
+    let group = byKey.get(key);
+    if (!group) {
+      group = [];
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    group.push(row);
+  }
+  return groups.slice(0, RECENT_GROUPS).map((group) => {
+    const latest = group[0];
+    const chronological = [...group].reverse();
+    const furthest = group.reduce((best, row) =>
+      stageRank(row) > stageRank(best) ? row : best,
+    );
+    const placed =
+      group.find((row) => placeLabel(row) !== "알 수 없음") || latest;
+    const hash = String(latest.ipHash || "").trim();
+    return {
+      id: hash ? `ip:${hash}` : String(latest._id),
+      startedAt: latest.lastSeenAt || latest.startedAt,
+      dwellMs: group.reduce((sum, row) => sum + Number(row.dwellMs || 0), 0),
+      place: placeLabel(placed),
+      device: latest.device || "desktop",
+      source: uniqueLabels(chronological.map((row) => [visitSource(row)])).join(
+        " · ",
+      ),
+      stage: stageLabel(furthest),
+      returning: group.some((row) => row.returning),
+      visits: group.length,
+      pages: uniqueLabels(chronological.map((row) => pageLabels(row.pages))),
+      routes: uniqueLabels(chronological.map((row) => routeNames(row.routes))),
+    };
+  });
 }
 
 export async function loadEventVisitReport(eventId, range) {
@@ -578,9 +677,10 @@ export async function loadEventVisitReport(eventId, range) {
                 ],
               },
             },
-            dwellSum: { $sum: "$dwellMs" },
-            dwellCount: {
-              $sum: { $cond: [{ $gt: ["$dwellMs", 0] }, 1, 0] },
+            dwells: {
+              $push: {
+                $cond: [{ $gt: ["$dwellMs", 0] }, "$dwellMs", null],
+              },
             },
             visitors: {
               $addToSet: {
@@ -691,9 +791,9 @@ export async function loadEventVisitReport(eventId, range) {
       ]),
       MarketingEventVisit.find(match)
         .sort({ lastSeenAt: -1 })
-        .limit(12)
+        .limit(RECENT_SCAN)
         .select(
-          "startedAt dwellMs country regionName device referrerHost utmSource utmCampaign reachedApply formStarted converted returning pages routes",
+          "startedAt lastSeenAt dwellMs country regionName city device referrerHost utmSource utmCampaign reachedApply formStarted converted returning pages routes ipHash",
         )
         .lean(),
       MarketingEventApplication.aggregate([
@@ -741,7 +841,6 @@ export async function loadEventVisitReport(eventId, range) {
     : [];
   const sessions = Number(stat.sessions || 0);
   const converted = Number(stat.converted || 0);
-  const dwellCount = Number(stat.dwellCount || 0);
   return {
     from,
     to,
@@ -754,9 +853,7 @@ export async function loadEventVisitReport(eventId, range) {
       conversionRate: sessions
         ? Math.round((applicationTotal / sessions) * 100)
         : 0,
-      avgDwellMs: dwellCount
-        ? Math.round(Number(stat.dwellSum || 0) / dwellCount)
-        : 0,
+      avgDwellMs: averageDwellExcludingOutliers(stat.dwells),
       bounces: Number(stat.bounces || 0),
     },
     funnel: {
@@ -795,18 +892,7 @@ export async function loadEventVisitReport(eventId, range) {
       label: routeLabel(row._id),
       sessions: row.sessions || 0,
     })),
-    recent: recent.map((row) => ({
-      id: String(row._id),
-      startedAt: row.startedAt,
-      dwellMs: row.dwellMs || 0,
-      place: placeLabel(row),
-      device: row.device || "desktop",
-      source: row.utmSource || row.referrerHost || "직접",
-      stage: stageLabel(row),
-      returning: Boolean(row.returning),
-      pages: pageLabels(row.pages),
-      routes: routeNames(row.routes),
-    })),
+    recent: groupRecentByIp(recent),
   };
 }
 

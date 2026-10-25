@@ -85,14 +85,17 @@ const trendConfig = {
   rate: { label: "신청율", color: "hsl(var(--foreground))" },
 };
 
-function TrendChart({
-  data,
-}: {
-  data: { label: string; sessions: number; applications: number; rate: number }[];
-}) {
+type TrendPoint = {
+  label: string;
+  sessions: number;
+  applications: number;
+  rate: number;
+};
+
+function TrendChart({ data }: { data: TrendPoint[] }) {
   return (
     <div className="overflow-x-auto px-1.5 py-1.5">
-      <ChartContainer config={trendConfig} className="aspect-auto h-56 min-w-[20rem] w-full">
+      <ChartContainer config={trendConfig} className="aspect-auto h-56 w-full">
         <ComposedChart data={data} margin={{ left: 0, right: 4, top: 8, bottom: 0 }}>
           <CartesianGrid vertical={false} />
           <XAxis
@@ -100,7 +103,7 @@ function TrendChart({
             tickLine={false}
             axisLine={false}
             interval="preserveStartEnd"
-            minTickGap={16}
+            minTickGap={12}
           />
           <YAxis
             yAxisId="count"
@@ -112,7 +115,7 @@ function TrendChart({
           <YAxis
             yAxisId="rate"
             orientation="right"
-            width={36}
+            width={32}
             tickLine={false}
             axisLine={false}
             tickFormatter={(value) => `${value}%`}
@@ -166,18 +169,23 @@ function TrendChart({
 function Funnel({
   steps,
 }: {
-  steps: { label: string; value: number }[];
+  steps: { label: string; value: number; hint?: string }[];
 }) {
-  const top = Math.max(1, steps[0]?.value || 0);
+  const top = Math.max(1, ...steps.map((step) => step.value));
   return (
     <ol className="space-y-2">
       {steps.map((step) => {
         const width = Math.max(step.value > 0 ? 8 : 0, Math.round((step.value / top) * 100));
         return (
           <li key={step.label}>
-            <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
-              <span>{step.label}</span>
-              <span className="tabular-nums">{step.value}</span>
+            <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
+              <span className="min-w-0 truncate">{step.label}</span>
+              <span className="shrink-0 tabular-nums">
+                {step.value}
+                {step.hint ? (
+                  <span className="ml-1 text-[11px] text-muted-foreground">{step.hint}</span>
+                ) : null}
+              </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-slate-100">
               <div
@@ -239,6 +247,7 @@ export default function AdminEventVisitsPanel({
 }) {
   const { toast } = useToast();
   const [days, setDays] = useState<1 | 7 | 30>(7);
+  const [trend, setTrend] = useState<"day" | "hour">("day");
   const [report, setReport] = useState<EventVisitReport | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -321,27 +330,63 @@ export default function AdminEventVisitsPanel({
             </p>
           ) : (
             <>
-              <Funnel
-                steps={[
-                  { label: "방문", value: funnel?.sessions ?? 0 },
-                  { label: "신청 구간", value: funnel?.reachedApply ?? 0 },
-                  { label: "입력 시작", value: funnel?.formStarted ?? 0 },
-                  { label: "신청 완료", value: funnel?.converted ?? 0 },
-                ]}
-              />
-              {(report?.pages || []).length > 0 ? (
-                <div>
+              <div className="grid grid-cols-4 gap-8">
+                <div className="min-w-0">
+                  <div className="mb-1 text-xs font-medium text-slate-700">방문</div>
+                  <Funnel
+                    steps={[
+                      { label: "방문", value: funnel?.sessions ?? 0 },
+                      { label: "신청 구간", value: funnel?.reachedApply ?? 0 },
+                      { label: "입력 시작", value: funnel?.formStarted ?? 0 },
+                      { label: "신청 완료", value: funnel?.converted ?? 0 },
+                    ]}
+                  />
+                </div>
+                <div className="min-w-0">
                   <div className="mb-1 text-xs font-medium text-slate-700">
                     방문한 페이지
                   </div>
-                  <Funnel
-                    steps={(report?.pages || []).map((row) => ({
-                      label: row.label,
-                      value: row.sessions,
-                    }))}
-                  />
+                  {(report?.pages || []).length > 0 ? (
+                    <Funnel
+                      steps={(report?.pages || []).map((row) => ({
+                        label: row.label,
+                        value: row.sessions,
+                      }))}
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">없음</p>
+                  )}
                 </div>
-              ) : null}
+                <div className="min-w-0">
+                  <div className="mb-1 text-xs font-medium text-slate-700">지역</div>
+                  {(report?.regions || []).length > 0 ? (
+                    <Funnel
+                      steps={(report?.regions || []).map((row) => ({
+                        label: row.label,
+                        value: row.sessions,
+                        hint: row.converted ? `신청 ${row.converted}` : undefined,
+                      }))}
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">없음</p>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="mb-1 text-xs font-medium text-slate-700">기기</div>
+                  {(report?.devices || []).length > 0 ? (
+                    <Funnel
+                      steps={[...(report?.devices || [])]
+                        .sort((a, b) => b.sessions - a.sessions)
+                        .map((row) => ({
+                          label: DEVICE_LABEL[row.device] || row.device,
+                          value: row.sessions,
+                        }))}
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">없음</p>
+                  )}
+                </div>
+              </div>
               {(report?.routes || []).length > 0 ? (
                 <CountList
                   title="다른 페이지"
@@ -351,63 +396,52 @@ export default function AdminEventVisitsPanel({
                   }))}
                 />
               ) : null}
-              {days > 1 ? (
-                <div>
-                  <div className="mb-1 text-xs font-medium text-slate-700">날짜</div>
-                  <TrendChart
-                    data={(report?.daily || []).map((row) => ({
-                      label: row.date.slice(5),
-                      sessions: row.sessions,
-                      applications: row.applications,
-                      rate: row.rate,
-                    }))}
-                  />
-                </div>
-              ) : null}
               <div>
-                <div className="mb-1 text-xs font-medium text-slate-700">시간대</div>
+                <div className="mb-1 flex gap-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={trend === "day" ? "default" : "outline"}
+                    className="h-8"
+                    onClick={() => setTrend("day")}
+                  >
+                    날짜
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={trend === "hour" ? "default" : "outline"}
+                    className="h-8"
+                    onClick={() => setTrend("hour")}
+                  >
+                    시간
+                  </Button>
+                </div>
                 <TrendChart
-                  data={(report?.hours || []).map((row) => ({
-                    label: String(row.hour),
-                    sessions: row.sessions,
-                    applications: row.applications,
-                    rate: row.rate,
-                  }))}
-                />
-              </div>
-              <div className="grid gap-4 lg:grid-cols-3">
-                <CountList
-                  title="지역"
-                  rows={(report?.regions || []).map((row) => ({
-                    label: row.label,
-                    value: `${row.sessions}`,
-                    hint: row.converted ? `신청 ${row.converted}` : undefined,
-                  }))}
-                />
-                <CountList
-                  title="유입"
-                  rows={(report?.sources || []).map((row) => ({
-                    label: row.label,
-                    value: `${row.sessions}`,
-                    hint: row.converted ? `신청 ${row.converted}` : undefined,
-                  }))}
-                />
-                <CountList
-                  title="기기"
-                  rows={(report?.devices || []).map((row) => ({
-                    label: DEVICE_LABEL[row.device] || row.device,
-                    value: `${row.sessions}`,
-                  }))}
+                  data={
+                    trend === "day"
+                      ? (report?.daily || []).map((row) => ({
+                          label: row.date.slice(5),
+                          sessions: row.sessions,
+                          applications: row.applications,
+                          rate: row.rate,
+                        }))
+                      : (report?.hours || []).map((row) => ({
+                          label: String(row.hour),
+                          sessions: row.sessions,
+                          applications: row.applications,
+                          rate: row.rate,
+                        }))
+                  }
                 />
               </div>
               <div className="overflow-x-auto px-1.5 py-1.5">
-                <table className="w-full min-w-[42rem] text-left text-sm">
+                <table className="w-full min-w-[32rem] text-left text-sm">
                   <thead className="border-b border-slate-100 text-xs text-muted-foreground">
                     <tr>
                       <th className="px-2 py-2 font-medium">시간</th>
                       <th className="px-2 py-2 font-medium">지역</th>
-                      <th className="px-2 py-2 font-medium">유입</th>
-                      <th className="px-2 py-2 font-medium">방문한 페이지</th>
+                      <th className="px-2 py-2 font-medium">방문횟수</th>
                       <th className="px-2 py-2 font-medium">다른 페이지</th>
                       <th className="px-2 py-2 font-medium">체류</th>
                       <th className="px-2 py-2 font-medium">단계</th>
@@ -420,14 +454,11 @@ export default function AdminEventVisitsPanel({
                           {formatWhen(row.startedAt)}
                         </td>
                         <td className="px-2 py-2">{row.place}</td>
-                        <td className="px-2 py-2">
-                          {row.source}
+                        <td className="whitespace-nowrap px-2 py-2 tabular-nums">
+                          {row.visits || 1}
                           {row.returning ? (
                             <span className="text-muted-foreground"> · 재방문</span>
                           ) : null}
-                        </td>
-                        <td className="px-2 py-2">
-                          {row.pages?.length ? row.pages.join(" · ") : "-"}
                         </td>
                         <td className="px-2 py-2">
                           {row.routes?.length ? row.routes.join(" · ") : "-"}
