@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-25: 포스트 3mm 이하 유지홈 창은 3D 확인 모달 포커스에 바로 닫히지 않게 연다.
 // - 2026-10-24: 3D 확인 모달은 내용 높이에 맞추고 세로 스크롤을 두지 않는다.
 // - 2026-10-24: 3D 확인 모달 — 미리보기·입력·하단 버튼을 나눠 읽기 쉽게.
 // - 2026-10-24: 스크류 선택 UI 제거. 타입은 연결 규격의 A–E를 그대로 쓴다.
@@ -324,7 +325,9 @@ export function AbutmentModelConfirmDialog({
   const [implantEntryMode, setImplantEntryMode] =
     useState<ImplantEntryMode>("catalog");
   const [shortPostChoiceOpen, setShortPostChoiceOpen] = useState(false);
+  const [shortPostPromptGeneration, setShortPostPromptGeneration] = useState(0);
   const shortPostPromptedRef = useRef(new Set<string>());
+  const shortPostPrematureCountRef = useRef(0);
 
   const selectCatalogMode = useCallback(() => {
     setImplantEntryMode("catalog");
@@ -556,22 +559,31 @@ export function AbutmentModelConfirmDialog({
   const prevDetailFileKeyRef = useRef(detailFileKey);
   useEffect(() => {
     if (!open) {
+      shortPostPrematureCountRef.current = 0;
       setShortPostChoiceOpen(false);
       return;
     }
     const keyChanged = prevDetailFileKeyRef.current !== detailFileKey;
-    if (keyChanged) prevDetailFileKeyRef.current = detailFileKey;
+    if (keyChanged) {
+      prevDetailFileKeyRef.current = detailFileKey;
+      shortPostPrematureCountRef.current = 0;
+    }
     if (!needsShortPostChoice || !detailFileKey) {
       if (keyChanged) setShortPostChoiceOpen(false);
       return;
     }
-    if (shortPostPromptedRef.current.has(detailFileKey)) {
-      if (keyChanged) setShortPostChoiceOpen(false);
-      return;
-    }
-    shortPostPromptedRef.current.add(detailFileKey);
-    setShortPostChoiceOpen(true);
-  }, [detailFileKey, needsShortPostChoice, open]);
+    if (shortPostChoiceOpen) return;
+    if (shortPostPromptedRef.current.has(detailFileKey)) return;
+    if (shortPostPrematureCountRef.current >= 3) return;
+    const timer = window.setTimeout(() => setShortPostChoiceOpen(true), 0);
+    return () => window.clearTimeout(timer);
+  }, [
+    detailFileKey,
+    needsShortPostChoice,
+    open,
+    shortPostChoiceOpen,
+    shortPostPromptGeneration,
+  ]);
 
   const highlightConfirmButton = highlightUnverifiedArrows;
 
@@ -586,10 +598,11 @@ export function AbutmentModelConfirmDialog({
 
   const applyShortPostChoice = useCallback(
     (value: ShortPostRetentionChoice) => {
+      if (detailFileKey) shortPostPromptedRef.current.add(detailFileKey);
       onShortPostRetentionChoice?.(value);
       setShortPostChoiceOpen(false);
     },
-    [onShortPostRetentionChoice],
+    [detailFileKey, onShortPostRetentionChoice],
   );
   // 치과명 목록이 열린 채로 누르면 blur가 모달을 다시 그려 click이 사라진다.
   const confirmFromPointerRef = useRef(false);
@@ -615,6 +628,7 @@ export function AbutmentModelConfirmDialog({
         open={open}
         onOpenChange={(next) => {
           if (confirming) return;
+          if (!next && shortPostChoiceOpen) return;
           onOpenChange(next);
         }}
       >
@@ -622,6 +636,15 @@ export function AbutmentModelConfirmDialog({
           // Above floating transfer panel (z-300). Same band as ModelPreviewDialog.
           className="new-request-page z-[320] flex w-[min(1080px,calc(100vw-2rem))] max-w-[min(1080px,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0 sm:w-[min(1080px,calc(100vw-2rem))] sm:max-w-[min(1080px,calc(100vw-2rem))]"
           overlayClassName="z-[310]"
+          onFocusOutside={(event) => {
+            if (shortPostChoiceOpen) event.preventDefault();
+          }}
+          onInteractOutside={(event) => {
+            if (shortPostChoiceOpen) event.preventDefault();
+          }}
+          onPointerDownOutside={(event) => {
+            if (shortPostChoiceOpen) event.preventDefault();
+          }}
         >
           <DialogHeader className="shrink-0 space-y-0 border-b border-slate-200 px-5 py-3 pr-12 text-left">
             <div className="flex items-center gap-2.5">
@@ -1065,8 +1088,15 @@ export function AbutmentModelConfirmDialog({
         open={shortPostChoiceOpen}
         onOpenChange={setShortPostChoiceOpen}
         postLengthMm={postLengthMm}
-        value={retentionValue}
+        value={shortPostRetentionChoice ?? (shortPost ? "deep" : retentionValue)}
         onConfirm={applyShortPostChoice}
+        onPrematureClose={() => {
+          shortPostPrematureCountRef.current += 1;
+          if (detailFileKey && shortPostPrematureCountRef.current >= 3) {
+            shortPostPromptedRef.current.add(detailFileKey);
+          }
+          setShortPostPromptGeneration((generation) => generation + 1);
+        }}
       />
     </>
   );

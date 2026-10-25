@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-25: 3D 확인 모달 위에서는 포커스가 빠져도 닫지 않는다. 보이기 전에 닫히면 선택으로 치지 않는다.
 // - 2026-10-24: 유지홈 버튼은 이 사진 모달로 고른다. 문구·사진·너비를 줄임.
 // related files:
 // - web/frontend/src/shared/components/practice/AbutmentModelConfirmDialog.tsx
@@ -46,6 +47,8 @@ type ShortPostRetentionDialogProps = {
   postLengthMm?: number | null;
   value?: ShortPostRetentionChoice | null;
   onConfirm: (value: ShortPostRetentionChoice) => void;
+  /** 포커스 이동으로 뜨자마자 닫힌 경우. 선택으로 저장하지 않는다. */
+  onPrematureClose?: () => void;
 };
 
 /** 짧은 포스트일 때 유지홈 없음/있음을 참조 사진과 함께 고른다. */
@@ -55,20 +58,25 @@ export function ShortPostRetentionDialog({
   postLengthMm = null,
   value = null,
   onConfirm,
+  onPrematureClose,
 }: ShortPostRetentionDialogProps) {
   const [draft, setDraft] = useState<ShortPostRetentionChoice | null>(value ?? "deep");
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const onConfirmRef = useRef(onConfirm);
   onConfirmRef.current = onConfirm;
+  const onPrematureCloseRef = useRef(onPrematureClose);
+  onPrematureCloseRef.current = onPrematureClose;
   const confirmedRef = useRef(false);
   const wasOpenRef = useRef(false);
+  const openedAtRef = useRef(0);
 
   useEffect(() => {
     if (open) {
       if (!wasOpenRef.current) {
         wasOpenRef.current = true;
         confirmedRef.current = false;
+        openedAtRef.current = Date.now();
         setDraft(value ?? "deep");
       }
       return;
@@ -79,6 +87,11 @@ export function ShortPostRetentionDialog({
       confirmedRef.current = false;
       return;
     }
+    // 부모 3D 확인 모달이 포커스를 가져가면 이 창이 그려지기 전에 닫힌다.
+    if (Date.now() - openedAtRef.current < 350) {
+      onPrematureCloseRef.current?.();
+      return;
+    }
     onConfirmRef.current(draftRef.current ?? value ?? "deep");
   }, [open, value]);
 
@@ -87,6 +100,9 @@ export function ShortPostRetentionDialog({
       <DialogContent
         className="z-[330] max-h-[90vh] w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] overflow-y-auto p-4 sm:w-[520px] sm:max-w-[520px]"
         overlayClassName="z-[325]"
+        onFocusOutside={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
+        onPointerDownOutside={(event) => event.preventDefault()}
       >
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold text-slate-800">

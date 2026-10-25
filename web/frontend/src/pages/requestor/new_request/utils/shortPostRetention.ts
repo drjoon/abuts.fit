@@ -24,7 +24,8 @@ export function formatPostLengthMm(lengthMm: number): string {
   return String(rounded);
 }
 
-const SHORT_POST_RETENTION_STORAGE_KEY = "abuts.newRequest.shortPostRetention.v1";
+// v1은 사진 모달이 보이기 전에 닫히며 기본값이 저장되던 키. 그 기록으로는 다시 묻지 않는다.
+const SHORT_POST_RETENTION_STORAGE_KEY = "abuts.newRequest.shortPostRetention.v2";
 
 export function readShortPostRetentionChoices(): Record<
   string,
