@@ -44,6 +44,9 @@ export function initializeSocket(server) {
       if (!user) {
         return next(new Error("사용자를 찾을 수 없습니다."));
       }
+      if (user.active === false) {
+        return next(new Error("비활성화된 계정입니다."));
+      }
 
       socket.userId = user._id.toString();
       socket.userRole = user.role;

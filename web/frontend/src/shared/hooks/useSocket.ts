@@ -34,7 +34,14 @@ export const useSocket = () => {
       return;
     }
 
-    initializeSocket(normalizedToken);
+    const socket = initializeSocket(normalizedToken);
+    const onConnectError = (error: { message?: string }) => {
+      const message = String(error?.message || "");
+      if (!message.includes("비활성화된 계정")) return;
+      if (useAuthStore.getState().token !== normalizedToken) return;
+      useAuthStore.getState().logout();
+    };
+    socket.on("connect_error", onConnectError);
 
     // 알림 수신(토큰 변경/재연결 시에도 공통 구독 레이어가 자동 재바인딩)
     const unsubscribeNotification = onNotification(
@@ -70,11 +77,22 @@ export const useSocket = () => {
     });
 
     return () => {
+      socket.off("connect_error", onConnectError);
       unsubscribeNotification();
       unsubscribeCncFailed();
       unsubscribeCncAlarm();
     };
   }, [token, toast]);
+
+  useAppEventListener({
+    enabled: Boolean(token),
+    eventTypes: ["auth:session-revoked"],
+    requireVisible: false,
+    deferWhenEditing: false,
+    onMatch: () => {
+      useAuthStore.getState().logout();
+    },
+  });
 
   useAppEventListener({
     enabled: Boolean(token),

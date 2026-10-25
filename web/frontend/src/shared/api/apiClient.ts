@@ -42,6 +42,13 @@ export interface ApiRequestOptions extends RequestInit {
   cacheTtlMs?: number;
 }
 
+type ApiUnauthorizedHandler = (reason: string) => void;
+let apiUnauthorizedHandler: ApiUnauthorizedHandler | null = null;
+
+export function setApiUnauthorizedHandler(handler: ApiUnauthorizedHandler | null) {
+  apiUnauthorizedHandler = handler;
+}
+
 export function invalidateApiGetCache(pathSubstring: string) {
   const needle = String(pathSubstring || "").trim();
   if (!needle) return;
@@ -172,6 +179,13 @@ export async function apiFetch<T = any>(
       data: data as T | null,
       raw: response,
     };
+
+    if (response.status === 401) {
+      const reason = String(response.headers.get("x-abuts-auth-reason") || "");
+      if (reason === "user_inactive") {
+        apiUnauthorizedHandler?.(reason);
+      }
+    }
 
     if (method === "GET" && response.ok) {
       SHORT_CACHE.set(requestKey, {

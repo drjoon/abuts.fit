@@ -20,6 +20,7 @@ import { NewChatWidget } from "@/features/chat/components/NewChatWidget";
 import { Suspense, lazy, useEffect } from "react";
 import { loadRulesFromBackend } from "@/shared/filename/filenameRules";
 import { useSocket } from "@/shared/hooks/useSocket";
+import { setApiUnauthorizedHandler } from "@/shared/api/apiClient";
 import { useChatMessageSound } from "@/shared/hooks/useChatMessageSound";
 import { useLabReceiveUnreadSound } from "@/shared/hooks/useLabReceiveUnreadSound";
 import { useLabHelperAlarmSession } from "@/shared/hooks/useLabHelperAlarmSession";
@@ -589,6 +590,15 @@ const App = () => {
   // 앱 시작 시 백엔드에서 파일명 파싱 룰 로드
   useEffect(() => {
     loadRulesFromBackend();
+  }, []);
+
+  useEffect(() => {
+    setApiUnauthorizedHandler((reason) => {
+      if (reason !== "user_inactive") return;
+      if (!useAuthStore.getState().token) return;
+      useAuthStore.getState().logout();
+    });
+    return () => setApiUnauthorizedHandler(null);
   }, []);
 
   useEffect(() => {

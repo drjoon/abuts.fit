@@ -1629,15 +1629,23 @@ async function changePassword(req, res) {
 
     // 사용자 조회 (비밀번호 포함)
     const user = await User.findById(userId).select("+password");
-
-    // 현재 비밀번호 확인
-    const isPasswordValid = await user.comparePassword(currentPassword);
-    if (!isPasswordValid) {
-      await logAuthFailure(req, "CHANGE_PASSWORD_BAD_CURRENT", user);
-      return res.status(400).json({
+    if (!user) {
+      return res.status(401).json({
         success: false,
-        message: "현재 비밀번호가 올바르지 않습니다.",
+        message: "인증에 실패했습니다.",
       });
+    }
+
+    // 대표가 준 첫 비밀번호로 들어온 뒤에는 새 비밀번호만 받는다.
+    if (!user.mustChangePassword) {
+      const isPasswordValid = await user.comparePassword(currentPassword);
+      if (!isPasswordValid) {
+        await logAuthFailure(req, "CHANGE_PASSWORD_BAD_CURRENT", user);
+        return res.status(400).json({
+          success: false,
+          message: "현재 비밀번호가 올바르지 않습니다.",
+        });
+      }
     }
 
     const staffPassword = Boolean(user.mustChangePassword || user.loginId);

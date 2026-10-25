@@ -21,6 +21,8 @@ import {
   resetOwnedStaffPassword,
 } from "../../services/staffBulkRegister.service.js";
 import { toStaffListFields } from "../../services/staffBulkRegister.core.js";
+import { invalidateAuthUserCache } from "../../middlewares/auth.middleware.js";
+import { emitAppEventToUser } from "../../socket.js";
 
 export async function getPendingJoinRequestsForOwner(req, res) {
   try {
@@ -655,6 +657,8 @@ export async function removeMember(req, res) {
       update.$unset = { loginId: "" };
     }
     await User.findByIdAndUpdate(userId, update);
+    invalidateAuthUserCache(userId);
+    emitAppEventToUser(userId, "auth:session-revoked", { reason: "removed" });
 
     return res.json({ success: true, data: { removed: true } });
   } catch (error) {

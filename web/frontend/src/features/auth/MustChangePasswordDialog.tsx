@@ -27,7 +27,6 @@ export function MustChangePasswordDialog() {
   const logout = useAuthStore((state) => state.logout);
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -43,19 +42,18 @@ export function MustChangePasswordDialog() {
         path: "/api/auth/change-password",
         method: "PUT",
         token,
-        jsonBody: { currentPassword, newPassword },
+        jsonBody: { newPassword },
       });
       if (!res.ok) {
         const message = String(res.data?.message || "").trim();
         toast({
           title: "비밀번호를 바꾸지 못했습니다",
-          description: message || "지금 비밀번호와 새 비밀번호를 확인해 주세요.",
+          description: message || "새 비밀번호를 확인해 주세요.",
           variant: "destructive",
         });
         return;
       }
       setUser({ ...user, mustChangePassword: false });
-      setCurrentPassword("");
       setNewPassword("");
       toast({ title: "비밀번호를 바꿨습니다" });
     } finally {
@@ -81,18 +79,6 @@ export function MustChangePasswordDialog() {
               영문 소문자 6자리로 새 비밀번호를 정해 주세요.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="current-staff-password">지금 비밀번호</Label>
-            <Input
-              id="current-staff-password"
-              type="password"
-              autoComplete="current-password"
-              value={currentPassword}
-              onChange={(event) => setCurrentPassword(event.target.value)}
-              disabled={saving}
-              required
-            />
-          </div>
           <div className="space-y-2">
             <Label htmlFor="new-staff-password">새 비밀번호</Label>
             <div className="relative">
@@ -129,7 +115,7 @@ export function MustChangePasswordDialog() {
             >
               로그아웃
             </Button>
-            <Button type="submit" disabled={saving || !currentPassword || !newPassword}>
+            <Button type="submit" disabled={saving || !newPassword}>
               {saving ? "변경 중..." : "비밀번호 변경"}
             </Button>
           </DialogFooter>
