@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Abuts.fit — 기공소 안내</title>
+  <style>
+    @page { size: 297mm 210mm; margin: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      background: #d5dee8;
+      color: #0b2a5c;
+      font-family: "Apple SD Gothic Neo", "Apple SD 산돌고딕 Neo", sans-serif;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .sheet {
+      width: 297mm;
+      height: 210mm;
+      margin: 0 auto 6mm;
+      display: flex;
+      position: relative;
+      overflow: hidden;
+      background: #f5f8fb;
+      box-shadow: 0 8px 28px rgba(15, 23, 42, 0.12);
+    }
+    .sheet:last-child { margin-bottom: 0; }
+    .panel { width: 99mm; height: 210mm; position: relative; overflow: hidden; }
+    .fold {
+      position: absolute;
+      top: 0; bottom: 0; width: 0;
+      border-left: 0.18mm dashed #c5d0dc;
+      z-index: 3;
+      pointer-events: none;
+    }
+    img { display: block; width: 100%; height: 100%; }
+    .mark { width: 7mm; height: 7mm; flex: none; }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 1.8mm;
+      font-size: 4.8mm;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: #1e3a8a;
+    }
+    .idx {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 7mm;
+      height: 7mm;
+      border-radius: 999px;
+      background: #2563eb;
+      color: #fff;
+      font-size: 3.3mm;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+    .head {
+      display: flex;
+      align-items: center;
+      gap: 2mm;
+    }
+    h1 {
+      font-size: 9.4mm;
+      font-weight: 800;
+      letter-spacing: -0.05em;
+      line-height: 1.12;
+    }
+    h2 {
+      font-size: 6.4mm;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.15;
+    }
+    .say {
+      font-size: 3.9mm;
+      font-weight: 600;
+      line-height: 1.4;
+      letter-spacing: -0.02em;
+      color: #334155;
+    }
+    .cap {
+      margin-top: 1mm;
+      text-align: center;
+      font-size: 3.15mm;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: #64748b;
+    }
+    .cap.on { color: #2563eb; }
+    .frame {
+      border-radius: 1.8mm;
+      overflow: hidden;
+      background: #fff;
+      border: 0.25mm solid #e2e8f0;
+    }
+    .frame.coverfit img { object-fit: cover; object-position: center; }
+    .frame.contain img { object-fit: contain; object-position: center; }
+
+    .story {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      padding: 5mm 4.6mm 5mm;
+    }
+    .story .lead { margin-top: 2.2mm; }
+    .story .mid {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 2mm;
+      padding-top: 3mm;
+    }
+    .story .end { margin-top: auto; padding-top: 3.5mm; }
+
+    .pair {
+      display: grid;
+      grid-template-columns: 1fr 5mm 1fr;
+      align-items: center;
+    }
+    .metal { height: 56mm; background: #eceff3; }
+    .metal img { object-fit: contain; }
+    .half { height: 40mm; }
+    .screen { height: 54mm; }
+    .screen img { object-fit: contain; object-position: center top; }
+
+    .rows { display: flex; flex-direction: column; gap: 1.8mm; }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 4.5mm 1fr;
+      align-items: center;
+    }
+    .thumb { height: 28mm; }
+    .labs {
+      display: grid;
+      grid-template-columns: 1fr 4.5mm 1fr;
+      margin-bottom: 0.4mm;
+    }
+    .arrow { display: flex; align-items: center; justify-content: center; }
+    .arrow svg { width: 4.2mm; height: 4.2mm; }
+
+    .cover, .flap, .back {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      padding: 6mm 5mm 5.5mm;
+    }
+    .cover { justify-content: center; }
+    .cover h1 { margin-top: 5mm; }
+    .cover .say { margin-top: 3.5mm; }
+    .cover .pair { margin-top: 5mm; }
+    .cover .normal { height: 48mm; margin-top: 5mm; background: #eceff3; }
+    .cover .normal img { object-fit: contain; object-position: center; }
+    .rule {
+      width: 12mm;
+      height: 0.7mm;
+      margin-top: 5mm;
+      border-radius: 999px;
+      background: #2563eb;
+    }
+    .flap { justify-content: center; gap: 2.4mm; }
+    .flap h2 { margin-bottom: 0.4mm; }
+    .flap .more { margin-top: 0.4mm; }
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr 4mm 1fr 4mm 1fr;
+      align-items: stretch;
+      gap: 0.6mm;
+    }
+    .flow b, .flow small { display: block; text-align: center; }
+    .flow > div {
+      background: #fff;
+      border: 0.25mm solid #e2e8f0;
+      border-radius: 2mm;
+      padding: 2.2mm 1mm;
+    }
+    .flow b { font-size: 3.3mm; letter-spacing: -0.03em; color: #0b2a5c; }
+    .flow small { margin-top: 0.4mm; font-size: 2.7mm; font-weight: 600; color: #64748b; }
+    .flow .ar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #2563eb;
+      font-size: 4mm;
+      font-weight: 700;
+    }
+    .card {
+      display: grid;
+      grid-template-columns: 9mm 1fr;
+      gap: 2.2mm;
+      align-items: center;
+      padding: 2.8mm 3mm;
+      border-radius: 2.2mm;
+      background: #fff;
+      border: 0.25mm solid #e2e8f0;
+    }
+    .card b {
+      display: block;
+      font-size: 4.1mm;
+      letter-spacing: -0.03em;
+    }
+    .card span {
+      display: block;
+      margin-top: 0.5mm;
+      font-size: 3.3mm;
+      font-weight: 600;
+      color: #64748b;
+    }
+
+    .facts { margin-top: 4mm; display: flex; flex-direction: column; gap: 2.2mm; }
+    .fact {
+      display: grid;
+      grid-template-columns: 18mm 1fr;
+      gap: 2mm;
+      font-size: 3.7mm;
+      letter-spacing: -0.02em;
+    }
+    .fact dt { color: #64748b; font-weight: 700; }
+    .fact dd { font-weight: 700; color: #0b2a5c; }
+    .slot {
+      margin-top: auto;
+      height: 50mm;
+      border: 0.4mm dashed #94a3b8;
+      border-radius: 2.2mm;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.2mm;
+    }
+    .slot b {
+      font-size: 4.2mm;
+      letter-spacing: 0.06em;
+      color: #64748b;
+    }
+    .slot span { font-size: 3.2mm; color: #94a3b8; font-weight: 600; }
+    .back .say { margin-top: 3.5mm; }
+    .back .flow { margin-top: 3.5mm; }
+    .back .shot { margin-top: 3mm; height: 32mm; }
+    .back .shot img { object-fit: contain; object-position: center top; background: #fff; }
+    .trio {
+      margin-top: 3.5mm;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1.6mm;
+    }
+    .trio .frame { height: 24mm; }
+    .trio .cap { font-size: 2.9mm; }
+
+    @media print {
+      html, body { background: #fff; }
+      .sheet {
+        margin: 0;
+        box-shadow: none;
+        page-break-after: always;
+        break-after: page;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- 바깥. 왼쪽 뒷면, 가운데 날개, 오른쪽 앞표지 -->
+  <section class="sheet">
+    <div class="panel back">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+          <defs>
+            <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#6E8BFF"/>
+              <stop offset="50%" stop-color="#A278FF"/>
+              <stop offset="100%" stop-color="#FF9D62"/>
+            </linearGradient>
+          </defs>
+          <path d="M32 4.5 56.5 18v28L32 59.5 7.5 46V18z" fill="#050b1d" fill-opacity="0.55" stroke="url(#g)" stroke-width="2.5" stroke-linejoin="round"/>
+          <path d="M32 13 48.5 22.5v19L32 51 15.5 41.5v-19z" fill="url(#g)" fill-opacity="0.18" stroke="url(#g)" stroke-width="1.4" stroke-linejoin="round"/>
+        </svg>
+        <span>Abuts.fit</span>
+      </div>
+      <dl class="facts">
+        <div class="fact">
+          <dt>홈페이지</dt>
+          <dd>abuts.fit</dd>
+        </div>
+        <div class="fact">
+          <dt>전화</dt>
+          <dd>1588-3948</dd>
+        </div>
+        <div class="fact">
+          <dt>이메일</dt>
+          <dd>contact@abuts.fit</dd>
+        </div>
+        <div class="fact">
+          <dt>주소</dt>
+          <dd>
+            경상남도 거제시 거제중앙로29길 6,
+            <br />
+            3층(고현동)
+          </dd>
+        </div>
+      </dl>
+      <p class="say">
+        기공소 디자인을
+        <br />
+        가공에 맞게 고칩니다.
+      </p>
+      <div class="flow">
+        <div>
+          <b>오늘 의뢰</b>
+          <small>STL 업로드</small>
+        </div>
+        <span class="ar" aria-hidden="true">›</span>
+        <div>
+          <b>바로 생산</b>
+          <small>CNC 가공</small>
+        </div>
+        <span class="ar" aria-hidden="true">›</span>
+        <div>
+          <b>내일 도착</b>
+          <small>익일 배송</small>
+        </div>
+      </div>
+      <p class="say">
+        오늘 주문하면 내일 도착합니다.
+        <br />
+        배송비는 판매자 부담입니다.
+      </p>
+      <div>
+        <div class="frame shot contain">
+          <img src="img/screen-upload.png" alt="가공 검사 완료 화면" />
+        </div>
+        <p class="cap on">가공 검사 완료</p>
+      </div>
+      <p class="say">
+        불완전 가공이 없으면
+        <br />
+        바로 생산에 들어갑니다.
+      </p>
+      <div class="slot">
+        <b>딜러 명함</b>
+        <span>여기에 붙여 주세요</span>
+      </div>
+    </div>
+
+    <div class="panel flap">
+      <h2>안내</h2>
+      <div class="card">
+        <span class="idx">01</span>
+        <div>
+          <b>단차 없이 가공</b>
+          <span>어벗츠에 의뢰하면 단차가 없습니다.</span>
+        </div>
+      </div>
+      <div class="card">
+        <span class="idx">02</span>
+        <div>
+          <b>코너는 즉시 분석</b>
+          <span>업로드하면 결과를 바로 봅니다.</span>
+        </div>
+      </div>
+      <div class="card">
+        <span class="idx">03</span>
+        <div>
+          <b>커프는 실시간 리터치</b>
+          <span>기공사 디자인을 바로 고칩니다.</span>
+        </div>
+      </div>
+      <p class="say more">
+        이 밖에도 자동 처리가 많습니다.
+        <br />
+        피니시라인, 포스트, 유지홈을 검사합니다.
+      </p>
+      <p class="say">
+        받은 STL을 올리면 생산합니다.
+        <br />
+        치과가 플랫폼을 쓰지 않아도 됩니다.
+      </p>
+      <p class="say">
+        접수는 기공소가 합니다.
+        <br />
+        CNC와 배송은 어벗츠가 합니다.
+      </p>
+    </div>
+
+    <div class="panel cover">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+          <path d="M32 4.5 56.5 18v28L32 59.5 7.5 46V18z" fill="#050b1d" fill-opacity="0.55" stroke="url(#g)" stroke-width="2.5" stroke-linejoin="round"/>
+          <path d="M32 13 48.5 22.5v19L32 51 15.5 41.5v-19z" fill="url(#g)" fill-opacity="0.18" stroke="url(#g)" stroke-width="1.4" stroke-linejoin="round"/>
+        </svg>
+        <span>Abuts.fit</span>
+      </div>
+      <h1>
+        단차 없이
+        <br />
+        가공합니다
+      </h1>
+      <i class="rule"></i>
+      <p class="say">
+        커프는 실시간으로 고칩니다.
+        <br />
+        코너는 올리자마자 알려 줍니다.
+      </p>
+      <div>
+        <div class="frame normal contain">
+          <img src="img/metal-normal.jpg" alt="정상 가공된 커스텀 어벗" />
+        </div>
+        <p class="cap on">정상 가공</p>
+      </div>
+    </div>
+    <i class="fold" style="left:99mm"></i>
+    <i class="fold" style="left:198mm"></i>
+  </section>
+
+  <!-- 안쪽. 펼치면 왼쪽부터 01 → 03 -->
+  <section class="sheet">
+    <div class="panel story">
+      <div class="head">
+        <span class="idx">01</span>
+        <h2>단차</h2>
+      </div>
+      <p class="say lead">곡면이 급하면 단차가 납니다.</p>
+      <div class="mid">
+        <div>
+          <div class="frame metal">
+            <img src="img/metal-step.jpg" alt="단차가 남은 가공" />
+          </div>
+          <p class="cap">단차 있음</p>
+        </div>
+        <div>
+          <div class="frame metal">
+            <img src="img/metal-smooth.jpg" alt="단차 없이 가공된 면" />
+          </div>
+          <p class="cap on">단차 없음</p>
+        </div>
+      </div>
+      <p class="say end">
+        어벗츠에 의뢰하면
+        <br />
+        단차 없이 가공됩니다.
+      </p>
+    </div>
+
+    <div class="panel story">
+      <div class="head">
+        <span class="idx">02</span>
+        <h2>코너 필레</h2>
+      </div>
+      <p class="say lead">공구보다 작으면 패입니다.</p>
+      <div class="mid">
+        <div class="pair">
+          <div>
+            <div class="frame half contain">
+              <img src="img/design-fillet.png" alt="필레가 작은 디자인" />
+            </div>
+            <p class="cap">디자인</p>
+          </div>
+          <div class="arrow" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div>
+            <div class="frame half coverfit">
+              <img src="img/photo-gouge.jpg" alt="코너가 패인 가공" />
+            </div>
+            <p class="cap">패임</p>
+          </div>
+        </div>
+        <div>
+          <div class="frame screen">
+            <img src="img/screen-corner.png" alt="업로드 직후 코너 필레 검증 화면" />
+          </div>
+          <p class="cap on">업로드 직후</p>
+        </div>
+      </div>
+      <p class="say end">
+        업로드하면 분석이 바로 나옵니다.
+        <br />
+        보고 다시 디자인할 수 있습니다.
+      </p>
+    </div>
+
+    <div class="panel story">
+      <div class="head">
+        <span class="idx">03</span>
+        <h2>커프</h2>
+      </div>
+      <p class="say lead">
+        단, 굴곡, 턱을
+        <br />
+        곡면으로 바꿉니다.
+      </p>
+      <div class="mid">
+        <div class="labs">
+          <p class="cap">기공사 디자인</p>
+          <span></span>
+          <p class="cap on">어벗츠 리터치</p>
+        </div>
+        <div class="rows">
+          <div class="row">
+            <div class="frame thumb contain"><img src="img/shoulder-before.png" alt="단이 있는 일반 커프" /></div>
+            <div class="arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="frame thumb contain"><img src="img/shoulder-after.png" alt="단을 곡면으로 리터치한 커프" /></div>
+          </div>
+          <div class="row">
+            <div class="frame thumb contain"><img src="img/ridge-before.png" alt="굴곡이 있는 일반 커프" /></div>
+            <div class="arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="frame thumb contain"><img src="img/ridge-after.png" alt="굴곡을 완만하게 리터치한 커프" /></div>
+          </div>
+          <div class="row">
+            <div class="frame thumb contain"><img src="img/flare-before.png" alt="턱이 있는 일반 커프" /></div>
+            <div class="arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="frame thumb contain"><img src="img/flare-after.png" alt="턱을 둥글게 리터치한 커프" /></div>
+          </div>
+          <div class="row">
+            <div class="frame thumb contain"><img src="img/lip-before.png" alt="얇은 기공사 디자인 커프" /></div>
+            <div class="arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="frame thumb contain"><img src="img/lip-after.png" alt="두껍게 리터치한 커프" /></div>
+          </div>
+        </div>
+      </div>
+      <p class="say end">
+        소프트웨어가
+        <br />
+        실시간으로 처리합니다.
+      </p>
+    </div>
+    <i class="fold" style="left:99mm"></i>
+    <i class="fold" style="left:198mm"></i>
+  </section>
+</body>
+</html>
