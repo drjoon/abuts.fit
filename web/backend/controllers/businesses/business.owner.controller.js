@@ -354,9 +354,8 @@ export async function getMyStaffMembers(req, res) {
       });
     }
 
-    const { usesDepartments, departmentMap } = await loadAnchorDepartmentsForStaff(
-      anchor._id,
-    );
+    const { usesDepartments, departmentMap, departments } =
+      await loadAnchorDepartmentsForStaff(anchor._id);
 
     const ownerId = String(
       (anchor.primaryContactUserId && anchor.primaryContactUserId._id) ||
@@ -425,6 +424,7 @@ export async function getMyStaffMembers(req, res) {
         representatives,
         staffMembers,
         usesDepartments,
+        departments,
       },
     });
   } catch (error) {
@@ -589,11 +589,11 @@ export async function removeMember(req, res) {
     if (!roleCheck) return;
     const { businessType } = roleCheck;
 
-    const anchor = await resolveOwnedBusiness(req, businessType);
+    const anchor = await resolveAffiliatedBusiness(req, businessType);
     if (!anchor) {
       return res.status(403).json({
         success: false,
-        message: "대표자 계정만 직원을 삭제할 수 있습니다.",
+        message: "소속된 사업자가 없습니다.",
       });
     }
 
@@ -669,11 +669,11 @@ export async function bulkCreateStaff(req, res) {
     if (!roleCheck) return;
     const { businessType } = roleCheck;
 
-    const anchor = await resolveOwnedBusiness(req, businessType);
+    const anchor = await resolveAffiliatedBusiness(req, businessType);
     if (!anchor) {
       return res.status(403).json({
         success: false,
-        message: "대표자 계정만 직원을 등록할 수 있습니다.",
+        message: "소속된 사업자가 없습니다.",
       });
     }
 
@@ -784,11 +784,11 @@ export async function resetStaffPassword(req, res) {
     if (!roleCheck) return;
     const { businessType } = roleCheck;
 
-    const anchor = await resolveOwnedBusiness(req, businessType);
+    const anchor = await resolveAffiliatedBusiness(req, businessType);
     if (!anchor) {
       return res.status(403).json({
         success: false,
-        message: "대표자 계정만 비밀번호를 다시 정할 수 있습니다.",
+        message: "소속된 사업자가 없습니다.",
       });
     }
 

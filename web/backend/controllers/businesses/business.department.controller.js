@@ -6,10 +6,7 @@
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import { Types } from "mongoose";
-import {
-  resolveAffiliatedBusiness,
-  resolveOwnedBusiness,
-} from "./business.utils.js";
+import { resolveAffiliatedBusiness } from "./business.utils.js";
 import { assertBusinessRole } from "./businessRole.util.js";
 import { toStaffListFields } from "../../services/staffBulkRegister.core.js";
 import { invalidateAuthUserCache } from "../../middlewares/auth.middleware.js";
@@ -30,9 +27,9 @@ async function resolveDepartmentOwnedAnchor(req, businessType) {
   if (!DEPARTMENT_BUSINESS_TYPE_SET.has(businessType)) {
     return { error: "부서 관리를 지원하지 않는 사업자 유형입니다." };
   }
-  const anchor = await resolveOwnedBusiness(req, businessType);
+  const anchor = await resolveAffiliatedBusiness(req, businessType);
   if (!anchor) {
-    return { error: "대표자 계정만 부서를 관리할 수 있습니다." };
+    return { error: "소속된 사업자가 없습니다." };
   }
   await ensureDefaultDepartments(anchor);
   return { anchor };

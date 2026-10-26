@@ -129,7 +129,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     businessType,
   });
   const membership = membershipMgmt.membership;
-  const canManage = membership === "owner";
+  const canManage = membership === "owner" || membership === "member";
   const showDirectory = membership === "owner" || membership === "member";
 
   const businessSearch = useBusinessSearch({
@@ -235,6 +235,15 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     const data = body.data || body;
     setStaff(Array.isArray(data?.staffMembers) ? data.staffMembers : []);
     setUsesDepartments(Boolean(data?.usesDepartments));
+    if (Array.isArray(data?.departments) && data.departments.length > 0) {
+      setDepartments(
+        data.departments.map((row: any) => ({
+          _id: String(row._id),
+          name: String(row.name || ""),
+          sortOrder: Number(row.sortOrder ?? 0),
+        })),
+      );
+    }
   }, [mockHeaders, businessType, token]);
 
   useEffect(() => {
