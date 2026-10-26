@@ -26,9 +26,12 @@ type ReferralOwnership = {
 export function ReferralCodeCard({
   businessType = "requestor",
   className,
+  embedded = false,
 }: {
   businessType?: string;
   className?: string;
+  /** 가입 정보 칸 안의 필드로 둔다. */
+  embedded?: boolean;
 }) {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -116,7 +119,35 @@ export function ReferralCodeCard({
     }
   };
 
+  const assignedCopy = ownership?.adminDefault ? (
+    "어벗츠 소개로 등록되어 있습니다."
+  ) : ownership?.salesAssigned ? (
+    <>
+      등록되어 있습니다.
+      <br />
+      90일 무주문이면 소개가 리셋됩니다.
+    </>
+  ) : (
+    "등록되어 있습니다."
+  );
+
   if (loading) {
+    if (embedded) {
+      return (
+        <div
+          className={cn(
+            "rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2.5",
+            className,
+          )}
+        >
+          <p className="text-xs text-muted-foreground">소개자 코드</p>
+          <p className="mt-1 flex items-center text-sm text-muted-foreground">
+            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+            확인 중…
+          </p>
+        </div>
+      );
+    }
     return (
       <div className="flex h-16 items-center text-sm text-muted-foreground">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -126,6 +157,21 @@ export function ReferralCodeCard({
   }
 
   if (ownership?.assigned && !ownership?.canRegister) {
+    if (embedded) {
+      return (
+        <div
+          className={cn(
+            "rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2.5",
+            className,
+          )}
+        >
+          <p className="text-xs text-muted-foreground">소개자 코드</p>
+          <p className="mt-0.5 text-sm font-semibold leading-snug text-slate-900">
+            {assignedCopy}
+          </p>
+        </div>
+      );
+    }
     return (
       <section
         className={cn(
@@ -135,19 +181,51 @@ export function ReferralCodeCard({
       >
         <p className="text-sm font-semibold text-slate-900">소개자 코드</p>
         <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-          {ownership?.adminDefault ? (
-            "어벗츠 소개로 등록되어 있습니다."
-          ) : ownership?.salesAssigned ? (
-            <>
-              등록되어 있습니다.
-              <br />
-              90일 무주문이면 소개가 리셋됩니다.
-            </>
-          ) : (
-            "등록되어 있습니다."
-          )}
+          {assignedCopy}
         </p>
       </section>
+    );
+  }
+
+  if (embedded) {
+    return (
+      <form
+        className={cn(
+          "rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2.5",
+          className,
+        )}
+        onSubmit={handleSubmit}
+      >
+        <Label
+          htmlFor="sales-referral-code"
+          className="text-xs font-normal text-muted-foreground"
+        >
+          소개자 코드
+        </Label>
+        {ownership?.withinSelfSetWindow ? null : (
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            대표만 등록할 수 있습니다.
+          </p>
+        )}
+        <div className="mt-1.5 flex gap-2">
+          <Input
+            id="sales-referral-code"
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            placeholder="소개자 코드"
+            autoComplete="off"
+            disabled={saving}
+            className="h-9 flex-1 rounded-lg bg-white"
+          />
+          <Button
+            type="submit"
+            disabled={saving || !code.trim()}
+            className="h-9 shrink-0"
+          >
+            {saving ? "등록 중..." : "등록"}
+          </Button>
+        </div>
+      </form>
     );
   }
 

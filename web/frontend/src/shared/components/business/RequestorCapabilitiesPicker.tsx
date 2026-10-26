@@ -24,6 +24,8 @@ type Props = {
   forcePracticeOnly?: boolean;
   /** 이미 정해진 역할이면 그 역할의 카드만 보인다(치과=2장, 기공소=1장). */
   restrictToKind?: boolean;
+  /** 가입 정보 옆 칸. 선택지를 세로로 쌓아 칸 높이를 채운다. */
+  stackChoices?: boolean;
 };
 
 type ChoiceKey = "without" | "with" | "lab";
@@ -63,6 +65,7 @@ export const RequestorCapabilitiesPicker = ({
   className,
   forcePracticeOnly = false,
   restrictToKind = false,
+  stackChoices = false,
 }: Props) => {
   const kind = normalizeRequestorKind(value.kind);
   const services: RequestorServices = (() => {
@@ -121,12 +124,16 @@ export const RequestorCapabilitiesPicker = ({
         role="radiogroup"
         aria-label="역할 선택"
         className={cn(
-          "grid flex-1 grid-cols-1 gap-3",
-          choices.length === 3
-            ? "md:grid-cols-3"
-            : choices.length === 2
-              ? "md:grid-cols-2"
-              : "",
+          "grid min-h-0 flex-1 grid-cols-1 gap-3",
+          stackChoices
+            ? choices.length === 2
+              ? "h-full grid-rows-2"
+              : "h-full"
+            : choices.length === 3
+              ? "md:grid-cols-3"
+              : choices.length === 2
+                ? "md:grid-cols-2"
+                : "",
         )}
       >
         {choices.map((opt) => {
@@ -142,7 +149,7 @@ export const RequestorCapabilitiesPicker = ({
               onClick={() => choose(opt.key)}
               className={cn(
                 "group relative flex items-start gap-3 rounded-2xl border p-3.5 text-left shadow-sm outline-none transition-all",
-                choices.length === 1
+                stackChoices || choices.length === 1
                   ? "h-full flex-row items-center"
                   : "min-h-[5.5rem] flex-col",
                 "focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2",

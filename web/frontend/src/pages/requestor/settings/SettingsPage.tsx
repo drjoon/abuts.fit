@@ -112,7 +112,7 @@ export const RequestorSettingsPage = () => {
             {user?.role === "internalLab" ? <InternalLabOrgBanner /> : null}
             <BusinessTab
               userData={user}
-              summarySlot={
+              summarySlot={({ referral }) => (
                 <section className="flex h-full flex-col rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
                   <div className="mb-3 flex items-center gap-2">
                     <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
@@ -139,9 +139,10 @@ export const RequestorSettingsPage = () => {
                           : `${pricingElapsedDays}일`}
                       </dd>
                     </div>
+                    {referral ? <div>{referral}</div> : null}
                   </dl>
                 </section>
-              }
+              )}
             />
           </div>
         ),

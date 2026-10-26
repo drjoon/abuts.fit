@@ -56,12 +56,14 @@ export const BusinessMemberView = ({
       <div className="flex gap-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
         <p className="text-[13px] leading-relaxed text-muted-foreground">
-          사업자 정보는 대표자만 수정할 수 있습니다. 여기서는 확인만 가능합니다.
+          사업자 정보는 대표자만 수정할 수 있습니다.
+          <br />
+          여기서는 확인만 가능합니다.
         </p>
       </div>
 
-      <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-4">
-        <div className="flex items-center justify-between gap-3">
+      <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-slate-50/50">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200/80 px-4 py-3 sm:px-5">
           <div className="flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
               <Building2 className="h-4 w-4 text-primary-strong" />
@@ -84,50 +86,56 @@ export const BusinessMemberView = ({
           </span>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            { label: "대표자명", value: metadata.representativeName },
-            { label: "사업자명", value: businessData.companyName },
-            { label: "전화번호", value: businessData.phone },
-            { label: "사업자등록번호", value: businessData.businessNumber },
-            { label: "업태", value: metadata.businessType },
-            { label: "종목", value: metadata.businessItem },
-            { label: "세금계산서 이메일", value: metadata.email, className: "sm:col-span-2" },
-          ].map(({ label, value, className }) => (
-            <div key={label} className={cn("space-y-1.5", className)}>
-              <Label className="text-xs text-muted-foreground">{label}</Label>
-              <Input
-                value={value || ""}
-                readOnly
-                className="h-10 rounded-xl bg-white/80"
-              />
-            </div>
-          ))}
-        </div>
-      </section>
+        <div className="space-y-4 px-4 py-4 sm:px-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              { label: "대표자명", value: metadata.representativeName },
+              { label: "사업자명", value: businessData.companyName },
+              { label: "전화번호", value: businessData.phone },
+              { label: "사업자등록번호", value: businessData.businessNumber },
+              { label: "업태", value: metadata.businessType },
+              { label: "종목", value: metadata.businessItem },
+              {
+                label: "세금계산서 이메일",
+                value: metadata.email,
+                className: "sm:col-span-2",
+              },
+            ].map(({ label, value, className }) => (
+              <div key={label} className={cn("space-y-1.5", className)}>
+                <Label className="text-xs text-muted-foreground">{label}</Label>
+                <Input
+                  value={value || ""}
+                  readOnly
+                  className="h-10 rounded-xl bg-white/80"
+                />
+              </div>
+            ))}
+          </div>
 
-      <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-4">
-        <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
-            <MapPin className="h-4 w-4 text-primary-strong" />
-          </span>
-          <p className="text-sm font-semibold text-slate-900">사업장 주소</p>
-        </div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          {[
-            { label: "주소", value: businessData.address },
-            { label: "상세 주소", value: businessData.addressDetail },
-            { label: "우편번호", value: businessData.zipCode },
-          ].map(({ label, value }) => (
-            <div key={label} className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">{label}</Label>
-              <Input
-                value={value || ""}
-                readOnly
-                className="h-10 rounded-xl bg-white/80"
-              />
+          <div className="space-y-4 border-t border-slate-200/80 pt-4">
+            <div className="flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+                <MapPin className="h-4 w-4 text-primary-strong" />
+              </span>
+              <p className="text-sm font-semibold text-slate-900">사업장 주소</p>
             </div>
-          ))}
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              {[
+                { label: "주소", value: businessData.address },
+                { label: "상세 주소", value: businessData.addressDetail },
+                { label: "우편번호", value: businessData.zipCode },
+              ].map(({ label, value }) => (
+                <div key={label} className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">{label}</Label>
+                  <Input
+                    value={value || ""}
+                    readOnly
+                    className="h-10 rounded-xl bg-white/80"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
     </div>

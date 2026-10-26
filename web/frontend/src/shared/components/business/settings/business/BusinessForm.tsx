@@ -222,8 +222,8 @@ export const BusinessForm = ({
 
   return (
     <div className="space-y-4">
-    <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-      <section className="h-full rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-4">
+    <div className="grid grid-cols-1 items-start lg:grid-cols-2 lg:divide-x lg:divide-slate-200/80">
+      <section className="space-y-4 lg:pr-6">
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
             <Building2 className="h-4 w-4 text-primary-strong" />
@@ -586,7 +586,7 @@ export const BusinessForm = ({
       </div>
       </section>
 
-      <section className="h-full rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-4">
+      <section className="mt-4 space-y-4 border-t border-slate-200/80 pt-4 lg:mt-0 lg:border-t-0 lg:pl-6 lg:pt-0">
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
             <MapPin className="h-4 w-4 text-primary-strong" />
@@ -695,7 +695,7 @@ export const BusinessForm = ({
       </section>
     </div>
 
-      <div>
+      <div className="border-t border-slate-200/80 pt-4">
         <div className="relative">
           {(() => {
             const actionsNode = renderActions?.({ disabled }) ?? null;

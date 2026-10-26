@@ -88,8 +88,10 @@ interface BusinessTabProps {
   }) => void;
   registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
   isOnboarding?: boolean;
-  /** 설정 상단. 소개 코드·역할과 한 줄에 둔다. */
-  summarySlot?: ReactNode;
+  /** 설정 상단. 함수면 소개 코드를 가입 정보 안에 넣는다. */
+  summarySlot?:
+    | ReactNode
+    | ((ctx: { referral: ReactNode | null }) => ReactNode);
 }
 
 export const BusinessTab = ({
@@ -909,12 +911,16 @@ export const BusinessTab = ({
     (selectedRole === "owner" ||
       membershipMgmt.membership === "owner" ||
       membershipMgmt.membership === "none");
-  const singleRole =
-    showRole &&
-    !isOnboarding &&
-    normalizeRequestorKind(requestorProfile.kind) === "lab";
-  const metaCount = [summarySlot, showReferral, singleRole].filter(Boolean)
-    .length;
+  const referralEmbedded = typeof summarySlot === "function";
+  const summary =
+    typeof summarySlot === "function"
+      ? summarySlot({
+          referral: showReferral ? (
+            <ReferralCodeCard businessType={businessType} embedded />
+          ) : null,
+        })
+      : summarySlot;
+  const roleBesideSummary = Boolean(showRole && summary);
 
   const rolePicker = showRole ? (
     <RequestorCapabilitiesPicker
@@ -931,31 +937,33 @@ export const BusinessTab = ({
         String(user?.signupChannel || "").trim() === "practice_dropzone"
       }
       restrictToKind={!isOnboarding}
-      className={singleRole ? "h-full" : undefined}
+      stackChoices={roleBesideSummary}
+      className={roleBesideSummary ? "h-full" : undefined}
     />
   ) : null;
 
+  const showStandaloneReferral = showReferral && !referralEmbedded;
+  const topCount = [summary, showStandaloneReferral, roleBesideSummary].filter(
+    Boolean,
+  ).length;
+
   const tabBody = (
     <div className="space-y-4">
-        {metaCount > 0 ? (
+        {topCount > 0 ? (
           <div
             className={cn(
               "grid grid-cols-1 items-stretch gap-4",
-              metaCount >= 3
-                ? "lg:grid-cols-3"
-                : metaCount === 2
-                  ? "lg:grid-cols-2"
-                  : "lg:max-w-md",
+              topCount >= 2 ? "lg:grid-cols-2" : "lg:max-w-xl",
             )}
           >
-            {summarySlot}
-            {showReferral ? (
+            {summary}
+            {showStandaloneReferral ? (
               <ReferralCodeCard
                 businessType={businessType}
                 className="h-full"
               />
             ) : null}
-            {singleRole ? rolePicker : null}
+            {roleBesideSummary ? rolePicker : null}
           </div>
         ) : null}
 
@@ -1019,8 +1027,19 @@ export const BusinessTab = ({
               setupMode === "license" ||
               setupMode === "manual") && (
               <div className="space-y-4">
+                {showRole && !roleBesideSummary ? rolePicker : null}
+
+                <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-slate-50/50">
                 {setupMode !== "manual" && (
-                  <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 px-4 py-3 sm:px-5">
+                  <div
+                    className={cn(
+                      "px-4 py-3 sm:px-5",
+                      (membershipMgmt.membership === "owner" ||
+                        businessDataMgmt.licenseStatus === "ready" ||
+                        setupMode === "manual") &&
+                        "border-b border-slate-200/80",
+                    )}
+                  >
                   <BusinessLicenseUpload
                     ref={licenseUploadRef}
                     membership={membershipMgmt.membership}
@@ -1035,11 +1054,10 @@ export const BusinessTab = ({
                   </div>
                 )}
 
-                {showRole && !singleRole ? rolePicker : null}
-
                 {(membershipMgmt.membership === "owner" ||
                   businessDataMgmt.licenseStatus === "ready" ||
                   setupMode === "manual") && (
+                  <div className="px-4 py-4 sm:px-5">
                   <BusinessForm
                     businessData={businessDataMgmt.businessData}
                     metadata={businessDataMgmt.metadata}
@@ -1097,7 +1115,9 @@ export const BusinessTab = ({
                       ) : null
                     }
                   />
+                  </div>
                 )}
+                </section>
 
                 {!isOnboarding &&
                 membershipMgmt.membership === "owner" &&
