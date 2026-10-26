@@ -229,11 +229,14 @@ export function LabAdvantagesSection({
 /** 구강스캔 · AI 검수 — 생성 이미지 스토리 2. */
 export function LabStoriesSection({
   stories,
+  id,
 }: {
   stories: LabOfferExtras["stories"];
+  id?: string;
 }) {
   return (
     <section
+      id={id}
       data-rail-label="방식"
       className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
     >

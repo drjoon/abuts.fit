@@ -193,10 +193,10 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
         label: "FOR PRACTICE · 치과",
         title: "거래 기공소를 골라 의뢰",
         body: [
-          "협력 기공소로도, 어벗츠기공소로도 의뢰합니다.",
+          "가입된 기공소로 의뢰합니다.",
           "진행·작업물·출고는 전화 없이 목록에서 확인합니다.",
         ],
-        tags: ["협력 기공소", "어벗츠기공소", "상태 보드"],
+        tags: ["가입 기공소", "상태 보드"],
       },
       {
         icon: "lab",

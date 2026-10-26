@@ -9,10 +9,7 @@ import { Link } from "react-router-dom";
 import { CalendarDays, ChevronRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { eventsApi, type MarketingEvent } from "@/shared/events/eventsApi";
-import {
-  ABUTS_LAB_EVENT_HEADLINE,
-  ABUTS_LAB_EVENT_SLUG,
-} from "@/shared/events/abutsLabCampaign";
+import { ABUTS_LAB_EVENT_SLUG } from "@/shared/events/abutsLabCampaign";
 import {
   SIMPLEWAY_EVENT_HEADLINE,
   SIMPLEWAY_SAMPLE_SLUG,
@@ -84,7 +81,7 @@ export function LandingEventsSection() {
                 const title = isSimpleway
                   ? SIMPLEWAY_EVENT_HEADLINE
                   : isLabIntro
-                    ? ABUTS_LAB_EVENT_HEADLINE
+                    ? "커스텀어벗 소개"
                     : ev.title;
                 const meta = isSimpleway
                   ? "출시 행사 신청"

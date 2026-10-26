@@ -211,15 +211,19 @@ function ApplyButton({ onApply }: { onApply?: () => void }) {
 /** 가공 단차 · 코너 · 임상 디자인. 이벤트 페이지의 신청 폼은 포함하지 않는다. */
 export function AbutsLabIntroSections({
   onApply,
+  asPlatform = false,
 }: {
   /** 있으면 그 자리에서 신청으로 스크롤. 없으면 이벤트 신청으로 이동. */
   onApply?: () => void;
+  /** 랜딩에서는 어벗츠 플랫폼 기능으로 말한다. */
+  asPlatform?: boolean;
 }) {
   return (
     <>
       <section
+        id="offer-lab"
         data-rail-label="가공"
-        className="border-b border-slate-100 bg-white py-16 sm:py-20"
+        className="scroll-mt-20 border-b border-slate-100 bg-white py-16 sm:py-20"
       >
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
           <LandingReveal>
@@ -231,8 +235,11 @@ export function AbutsLabIntroSections({
             </h2>
             <p className="mt-4 max-w-xl break-keep text-sm leading-relaxed text-slate-600 sm:max-w-2xl sm:text-base">
               기공사 선생님이 성의껏 디자인해 주셔도, 가공하면 단차가 날 수
-              있습니다. 어벗츠기공소는 자체 소프트웨어로 그 곡면을 맞춰
-              매끈하게 가공합니다.
+              있습니다.
+              <br />
+              {asPlatform
+                ? "어벗츠 플랫폼이 그 곡면을 맞춰 매끈하게 가공합니다."
+                : "어벗츠기공소는 자체 소프트웨어로 그 곡면을 맞춰 매끈하게 가공합니다."}
             </p>
           </LandingReveal>
 
@@ -281,8 +288,9 @@ export function AbutsLabIntroSections({
       </section>
 
       <section
+        id="abutment-corner"
         data-rail-label="코너"
-        className="border-b border-slate-100 bg-[#f7f9fc] py-16 sm:py-20"
+        className="scroll-mt-20 border-b border-slate-100 bg-[#f7f9fc] py-16 sm:py-20"
       >
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
           <LandingReveal>
@@ -329,8 +337,9 @@ export function AbutsLabIntroSections({
       </section>
 
       <section
+        id="abutment-design"
         data-rail-label="함께"
-        className="border-b border-sky-100 bg-[#eef6ff] py-16 sm:py-20"
+        className="scroll-mt-20 border-b border-sky-100 bg-[#eef6ff] py-16 sm:py-20"
       >
         <div className="grid items-center gap-10 px-4 sm:px-6 lg:grid-cols-[minmax(18rem,42rem)_minmax(18rem,1fr)] lg:gap-10 lg:pl-[max(2rem,calc((100%-64rem)/2+2rem))] lg:pr-8">
           <LandingReveal>

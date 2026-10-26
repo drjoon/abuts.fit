@@ -5,16 +5,14 @@
 // - web/frontend/src/pages/public/components/PublicPageLayout.tsx
 import { PublicPageLayout } from "./components/PublicPageLayout";
 import { LandingHome } from "@/features/landing/LandingHome";
-import { useLandingOfferInline } from "@/features/landing/landingOfferInline";
 
-/** `/` — Waveon 구조 랜딩. lg 미만은 플랫폼·어벗츠기공소를 이 페이지에 붙인다. */
+/** `/` — 플랫폼·어벗츠기공소 설명을 포함한 랜딩. 마감 밴드는 하늘색이라 푸터는 흰색. */
 const Index = () => {
-  const offerInline = useLandingOfferInline();
   return (
     <PublicPageLayout
       tone="light"
       plain
-      footerSurface={offerInline ? "sky" : "white"}
+      footerSurface="white"
       contentClassName="relative z-10 w-full max-w-none px-0 pb-0 pt-14 sm:pt-16"
     >
       <LandingHome />

@@ -13,7 +13,6 @@
 // - web/frontend/src/features/landing/landingTheme.ts
 // - web/frontend/src/index.css (pf-* 이펙트)
 import type { CSSProperties } from "react";
-import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   BadgeCheck,
@@ -47,8 +46,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
 import {
-  offerSectionId,
-  scrollToLandingSection,
   useLandingOfferEmbedded,
   useScopedSectionId,
 } from "./landingOfferInline";
@@ -228,15 +225,26 @@ export function PlatformOfferHero({
 /** 히어로 직후 — 치과/기공소 장점. */
 export function PlatformGlanceSection({
   glance,
+  id,
+  surface = "sky",
 }: {
   glance: PlatformOfferExtras["glance"];
+  /** 랜딩 앵커. 없으면 오퍼 스코프 id. */
+  id?: string;
+  /** 위 밴드와 번갈아 갈 때. */
+  surface?: "white" | "sky";
 }) {
-  const sectionId = useScopedSectionId("after-hero");
+  const scopedId = useScopedSectionId("after-hero");
+  const sectionId = id ?? scopedId;
   return (
     <section
       id={sectionId}
       data-rail-label="대상"
-      className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
+      className={cn(
+        "scroll-mt-20",
+        surface === "white" ? "bg-white" : SKY.band,
+        landingSectionY.bandTight,
+      )}
     >
       <div className={landingContent}>
         <LandingReveal className={cn(landingProse, "text-center")}>
@@ -299,13 +307,18 @@ export function PlatformGlanceSection({
 /** 실제 UI 캡처 스토리 3. */
 export function PlatformStoriesSection({
   stories,
+  id,
+  className,
 }: {
   stories: PlatformOfferExtras["stories"];
+  id?: string;
+  className?: string;
 }) {
   return (
     <section
+      id={id}
       data-rail-label="화면"
-      className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
+      className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight, className)}
     >
       <div className={landingContent}>
         <LandingReveal className={cn(landingProse, "text-center")}>
@@ -369,8 +382,6 @@ export function PlatformPipelineSection({
 }: {
   pipeline: PlatformOfferExtras["pipeline"];
 }) {
-  const embedded = useLandingOfferEmbedded();
-  const navigate = useNavigate();
   return (
     <section
       id="custom-abutment"
@@ -451,24 +462,6 @@ export function PlatformPipelineSection({
                   </li>
                 ))}
               </ul>
-              <Link
-                to="/offer/lab"
-                onClick={(event) => {
-                  if (!embedded) return;
-                  event.preventDefault();
-                  const id = offerSectionId("lab");
-                  navigate({ pathname: "/", hash: `#${id}` }, { replace: true });
-                  scrollToLandingSection(id);
-                }}
-                className={cn(
-                  "mt-6 inline-flex items-center gap-1 self-start underline-offset-4 hover:underline",
-                  TYPO.link,
-                  SKY.accentStrong,
-                )}
-              >
-                어벗츠기공소 이어서 보기
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
             </LandingSpotlightCard>
           </LandingReveal>
         </div>
@@ -480,14 +473,21 @@ export function PlatformPipelineSection({
 /** 하나의 크레딧 — 허브(맥동 링) + 사용처 3 + 정책 사실 4. */
 export function PlatformCreditSection({
   credit,
+  surface = "white",
 }: {
   credit: PlatformOfferExtras["credit"];
+  /** 랜딩에 붙일 때 위·아래 밴드와 번갈아 가게 한다. */
+  surface?: "white" | "sky";
 }) {
   return (
     <section
       id="credit"
       data-rail-label="크레딧"
-      className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
+      className={cn(
+        "scroll-mt-20",
+        surface === "sky" ? SKY.band : "bg-white",
+        landingSectionY.bandTight,
+      )}
     >
       <div className={landingContent}>
         <LandingReveal className={cn(landingProse, "text-center")}>

@@ -1,12 +1,14 @@
+// change-log:
+// - 2026-10-27: 어벗츠기공소 표현 제거. 행사·커스텀어벗 소개·후불/선불 입금. 구강스캔 이야기·용어·옛 크레딧 허브 제거.
+// - 2026-10-27: 플랫폼·어벗츠기공소 오퍼를 랜딩 본문에 통합. 히어로·중복 FAQ·마감 배너·장점 카드(스토리와 동일)는 넣지 않음.
 // related files:
 // - web/frontend/src/pages/public/Index.tsx
 // - web/frontend/src/features/landing/landingTheme.ts
 // - web/frontend/src/features/landing/LandingEventsSection.tsx
 // - web/frontend/src/features/layout/Navigation.tsx
-// - web/frontend/src/features/landing/landingAssets.ts
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+// - web/frontend/src/features/landing/PlatformOfferSections.tsx
+// - web/frontend/src/features/landing/LabOfferSections.tsx
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   Accordion,
@@ -19,7 +21,6 @@ import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath
 import { cn } from "@/shared/ui/cn";
 import {
   landingHome,
-  landingHomeBusinessTabs,
   landingHomeFaq,
   landingContent,
   landingProse,
@@ -27,29 +28,35 @@ import {
   landingSky,
   landingTypo,
 } from "./landingTheme";
+import { AbutsLabIntroSections } from "./AbutsLabIntroSections";
 import { LandingEventsSection } from "./LandingEventsSection";
 import { LandingHero } from "./LandingHero";
 import { LandingMagnetic } from "./LandingMagnetic";
 import { LandingReveal } from "./LandingReveal";
 import { LandingScrollProgress } from "./LandingScrollProgress";
 import { LandingSectionRail, type LandingRailItem } from "./LandingSectionRail";
-import { LandingOfferPage } from "./LandingOfferPage";
-import { landingOffers } from "./landingOffers";
+import { LandingSpotlightCard } from "./LandingSpotlightCard";
+import { PLATFORM_OFFER_EXTRAS } from "./platformOfferContent";
 import {
-  offerSectionId,
-  scrollToLandingSection,
-  useLandingOfferInline,
-} from "./landingOfferInline";
+  PlatformGlanceSection,
+  PlatformPipelineSection,
+  PlatformStoriesSection,
+} from "./PlatformOfferSections";
 
 const TYPO = landingTypo;
 const SKY = landingSky;
-const GALLERY_SLIDE_MS = 7000;
 
 /** 우측 섹션 레일 — 각 섹션 `id` 와 일치해야 한다. */
 const RAIL_ITEMS: LandingRailItem[] = [
   { id: "hero", label: "시작" },
-  { id: "business", label: "워크플로우" },
   { id: "events", label: "행사" },
+  { id: "offer-platform", label: "플랫폼" },
+  { id: "screens", label: "화면" },
+  { id: "custom-abutment", label: "커스텀어벗" },
+  { id: "offer-lab", label: "가공" },
+  { id: "abutment-corner", label: "코너" },
+  { id: "abutment-design", label: "디자인" },
+  { id: "settlement", label: "입금" },
   { id: "faq", label: "자주 묻는 질문" },
   { id: "contact", label: "시작하기" },
 ];
@@ -77,236 +84,11 @@ function SectionEyebrow({
   return <p className={cn(TYPO.eyebrow, SKY.accent, className)}>{children}</p>;
 }
 
-function usePrefersReducedMotion() {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const apply = () => setReduced(mq.matches);
-    apply();
-    mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
-  }, []);
-  return reduced;
-}
-
-function WorkflowGallery() {
-  const slides = landingHomeBusinessTabs;
-  const count = slides.length;
-  const [index, setIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const reduced = usePrefersReducedMotion();
-  const offerInline = useLandingOfferInline();
-  const navigate = useNavigate();
-  const dragX = useRef<number | null>(null);
-  const slide = slides[index] ?? slides[0];
-
-  const go = (next: number) => {
-    if (count < 1) return;
-    setIndex(((next % count) + count) % count);
-  };
-
-  useEffect(() => {
-    if (reduced || paused || count < 2) return;
-    let id = 0;
-    const arm = () => {
-      id = window.setTimeout(() => {
-        if (document.hidden) {
-          arm();
-          return;
-        }
-        setIndex((current) => (current + 1) % count);
-      }, GALLERY_SLIDE_MS);
-    };
-    arm();
-    return () => window.clearTimeout(id);
-  }, [count, index, paused, reduced]);
-
-  return (
-    <div
-      className={cn(
-        "mt-8 overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb] focus-visible:ring-offset-2 sm:mt-10",
-        SKY.card,
-      )}
-      role="region"
-      aria-roledescription="갤러리"
-      aria-label="서비스 흐름"
-      tabIndex={0}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocusCapture={() => setPaused(true)}
-      onBlurCapture={(event) => {
-        const next = event.relatedTarget;
-        if (next instanceof Node && event.currentTarget.contains(next)) return;
-        setPaused(false);
-      }}
-      onKeyDown={(event) => {
-        if (event.target !== event.currentTarget) return;
-        if (event.key === "ArrowRight") {
-          event.preventDefault();
-          go(index + 1);
-        } else if (event.key === "ArrowLeft") {
-          event.preventDefault();
-          go(index - 1);
-        }
-      }}
-    >
-      <div className="lg:grid lg:grid-cols-[minmax(0,1.45fr)_minmax(17.5rem,22.5rem)]">
-        <div
-          className={cn(
-            "relative aspect-[16/10] overflow-hidden sm:aspect-[16/8] lg:aspect-auto lg:min-h-[24rem] min-[1600px]:min-h-[28rem] min-[1920px]:min-h-[34rem]",
-            slide.id === "platform" ? "bg-[#f4f7fb]" : "bg-[#071937]",
-          )}
-          onPointerDown={(event) => {
-            if (event.button !== 0) return;
-            if ((event.target as HTMLElement).closest("button")) return;
-            dragX.current = event.clientX;
-            event.currentTarget.setPointerCapture(event.pointerId);
-          }}
-          onPointerUp={(event) => {
-            if (dragX.current == null) return;
-            const delta = event.clientX - dragX.current;
-            dragX.current = null;
-            if (delta > 48) go(index - 1);
-            else if (delta < -48) go(index + 1);
-          }}
-          onPointerCancel={() => {
-            dragX.current = null;
-          }}
-        >
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[3px] bg-white/45">
-            <div
-              key={index}
-              className={cn(
-                "h-full bg-[#2563eb]",
-                reduced ? "w-full" : "workflow-gallery-progress",
-                paused && "is-paused",
-              )}
-              style={
-                reduced
-                  ? undefined
-                  : { animationDuration: `${GALLERY_SLIDE_MS}ms` }
-              }
-            />
-          </div>
-
-          {slides.map((item, itemIndex) => {
-            const active = itemIndex === index;
-            const uiShot = item.id === "platform";
-            const zoom = !uiShot;
-            return (
-              <img
-                key={item.id}
-                src={item.image.src}
-                alt={active ? item.image.alt : ""}
-                className={cn(
-                  "absolute max-w-none object-center transition-opacity duration-700",
-                  uiShot
-                    ? "inset-0 h-full w-full object-cover object-top"
-                    : "inset-0 h-full w-full object-cover",
-                  active ? "opacity-100" : "opacity-0",
-                  active && !reduced && zoom && "workflow-gallery-zoom",
-                  active && paused && "is-paused",
-                )}
-                style={
-                  active && !reduced && zoom
-                    ? { animationDuration: `${GALLERY_SLIDE_MS}ms` }
-                    : undefined
-                }
-                draggable={false}
-              />
-            );
-          })}
-          <p className="absolute left-4 top-5 z-10 rounded-full bg-white/90 px-3 py-1 text-[11px] font-semibold tracking-[0.16em] text-[#0b2a5c] shadow-sm">
-            {String(index + 1).padStart(2, "0")}
-            <span className="text-sky-400">
-              {" "}
-              / {String(count).padStart(2, "0")}
-            </span>
-          </p>
-
-          <button
-            type="button"
-            aria-label="이전"
-            className="absolute left-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200/80 bg-white/90 text-[#0b2a5c] shadow-md backdrop-blur-sm transition hover:bg-white sm:left-4 sm:h-11 sm:w-11"
-            onClick={() => go(index - 1)}
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-          <button
-            type="button"
-            aria-label="다음"
-            className="absolute right-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200/80 bg-white/90 text-[#0b2a5c] shadow-md backdrop-blur-sm transition hover:bg-white sm:right-4 sm:h-11 sm:w-11"
-            onClick={() => go(index + 1)}
-          >
-            <ChevronRight className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="flex flex-col justify-center border-t border-sky-100 px-5 py-6 sm:px-8 sm:py-7 lg:border-l lg:border-t-0 lg:px-8 lg:py-8">
-          <div
-            key={slide.id}
-            className={reduced ? undefined : "workflow-gallery-fade"}
-          >
-            <p className={cn(TYPO.eyebrow, SKY.accent)}>{slide.eyebrow}</p>
-            <h3 className={cn(TYPO.h3, "mt-2", SKY.ink)}>{slide.title}</h3>
-            <Lines lines={[...slide.body]} className={cn("mt-3", TYPO.body)} />
-            {offerInline && slide.href.startsWith("/offer/") ? (
-              <button
-                type="button"
-                className={cn(
-                  "mt-5 inline-flex items-center gap-1 underline-offset-4 hover:underline",
-                  TYPO.link,
-                  SKY.accentStrong,
-                )}
-                onClick={() => {
-                  const slug = slide.href.replace(/^\/offer\//, "");
-                  const id = offerSectionId(slug);
-                  navigate({ pathname: "/", hash: `#${id}` }, { replace: true });
-                  scrollToLandingSection(id);
-                }}
-              >
-                {slide.cta}
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
-            ) : (
-              <Link
-                to={slide.href}
-                className={cn(
-                  "mt-5 inline-flex items-center gap-1 underline-offset-4 hover:underline",
-                  TYPO.link,
-                  SKY.accentStrong,
-                )}
-              >
-                {slide.cta}
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** `/` — Waveon 구조 · 포토 히어로 · 작은 타이포 · 하늘색 · 둥근 모서리 */
+/** `/` — 플랫폼·어벗츠기공소 설명을 이 페이지 흐름에 붙인다. */
 export function LandingHome() {
   const navigate = useNavigate();
-  const offerInline = useLandingOfferInline();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
-  const railItems = useMemo(
-    () =>
-      offerInline
-        ? [
-            ...RAIL_ITEMS,
-            ...landingOffers.map((offer) => ({
-              id: offerSectionId(offer.slug),
-              label: offer.navLabel,
-            })),
-          ]
-        : RAIL_ITEMS,
-    [offerInline],
-  );
   const goStart = () => {
     navigate(isAuthenticated ? resolveEntryDashboardPath(user) : "/signup");
   };
@@ -314,43 +96,78 @@ export function LandingHome() {
   return (
     <div className="bg-white text-slate-900">
       <LandingScrollProgress />
-      <LandingSectionRail items={railItems} />
-      {/* 풀블리드 히어로 — 파티클 브랜드 워드 · 마우스 반응 · 스크롤 분산 */}
+      <LandingSectionRail items={RAIL_ITEMS} />
       <LandingHero
         onMore={() =>
           document
-            .getElementById("business")
+            .getElementById("events")
             ?.scrollIntoView({ behavior: "smooth", block: "start" })
         }
         onConsult={() => navigate("/contact")}
       />
 
-      {/* ABUTS WORKFLOW — 사진 갤러리 슬라이드쇼 */}
+      <LandingEventsSection />
+
+      <PlatformGlanceSection
+        id="offer-platform"
+        glance={PLATFORM_OFFER_EXTRAS.glance}
+        surface="white"
+      />
+      <PlatformStoriesSection
+        id="screens"
+        className="border-t border-sky-100"
+        stories={PLATFORM_OFFER_EXTRAS.stories}
+      />
+      <PlatformPipelineSection pipeline={PLATFORM_OFFER_EXTRAS.pipeline} />
+      <AbutsLabIntroSections asPlatform />
+
       <section
-        id="business"
+        id="settlement"
         className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
       >
         <div className={landingContent}>
           <LandingReveal className={cn(landingProse, "text-center")}>
-            <SectionEyebrow>{landingHome.browseEyebrow}</SectionEyebrow>
+            <SectionEyebrow>SETTLEMENT</SectionEyebrow>
             <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>
-              {landingHome.browseHeading}
+              입금은 역할마다 다릅니다.
             </h2>
-            <p className={cn("mt-2.5", TYPO.lead)}>{landingHome.browseLead}</p>
+            <p className={cn("mt-2.5", TYPO.lead)}>
+              기공 결제와 스토어는 잠시 닫혀 있습니다.
+            </p>
           </LandingReveal>
-
-          <LandingReveal delay={120}>
-            <WorkflowGallery />
-          </LandingReveal>
+          <ul className="mx-auto mt-8 grid max-w-4xl gap-3 sm:mt-10 sm:grid-cols-2 lg:gap-4">
+            <LandingReveal as="li">
+              <LandingSpotlightCard
+                className={cn(SKY.card, "h-full bg-[#eef6ff] px-5 py-6 sm:px-6")}
+              >
+                <p className={cn(TYPO.eyebrow, SKY.accent)}>PRACTICE</p>
+                <h3 className={cn(TYPO.h3, "mt-2", SKY.ink)}>치과</h3>
+                <p className={cn("mt-3", TYPO.body)}>
+                  기공료는 후불 정산으로 입금합니다.
+                </p>
+              </LandingSpotlightCard>
+            </LandingReveal>
+            <LandingReveal as="li" delay={90}>
+              <LandingSpotlightCard
+                className={cn(SKY.card, "h-full bg-[#eef6ff] px-5 py-6 sm:px-6")}
+              >
+                <p className={cn(TYPO.eyebrow, SKY.accent)}>LAB</p>
+                <h3 className={cn(TYPO.h3, "mt-2", SKY.ink)}>기공실 · 기공소</h3>
+                <p className={cn("mt-3", TYPO.body)}>
+                  커스텀어벗 생산비는 선불 크레딧으로 입금합니다.
+                </p>
+              </LandingSpotlightCard>
+            </LandingReveal>
+          </ul>
         </div>
       </section>
 
-      <LandingEventsSection />
-
-      {/* FAQ — 행사(파랑) 다음 흰 밴드 */}
       <section
         id="faq"
-        className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
+        className={cn(
+          "scroll-mt-20 border-t border-sky-100 bg-white",
+          landingSectionY.bandTight,
+        )}
       >
         <div
           className={cn(
@@ -380,7 +197,11 @@ export function LandingHome() {
                     {item.q}
                   </AccordionTrigger>
                   <AccordionContent className={cn("pb-4", TYPO.body)}>
-                    {item.a}
+                    {Array.isArray(item.a) ? (
+                      <Lines lines={[...item.a]} />
+                    ) : (
+                      item.a
+                    )}
                   </AccordionContent>
                 </AccordionItem>
               ))}
@@ -389,7 +210,6 @@ export function LandingHome() {
         </div>
       </section>
 
-      {/* CTA — FAQ(흰) 다음 파란 밴드 */}
       <section id="contact" className={cn("scroll-mt-20", SKY.band)}>
         <div
           className={cn(
@@ -439,13 +259,6 @@ export function LandingHome() {
           </LandingReveal>
         </div>
       </section>
-      {offerInline ? (
-        <>
-          {landingOffers.map((offer) => (
-            <LandingOfferPage key={offer.slug} offer={offer} embedded />
-          ))}
-        </>
-      ) : null}
     </div>
   );
 }
