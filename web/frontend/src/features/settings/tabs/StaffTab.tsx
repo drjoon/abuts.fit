@@ -14,6 +14,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { Building2, Info, Loader2, Pencil, Plus, UserPlus, Users } from "lucide-react";
 import {
+  loginIdDisplay,
   StaffBulkRegisterDialog,
   StaffPasswordResetDialog,
 } from "@/features/settings/tabs/StaffBulkRegisterDialog";
@@ -538,52 +539,79 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
   ) => {
     const name = String(member.name || "").trim() || member._id;
     const login = memberLoginLabel(member);
+    const loginParts = login ? loginIdDisplay(name, login) : null;
     const departmentLabel =
       !hideDepartmentName && member.departmentName && !allowMove
         ? member.departmentName
         : "";
-    const identity = (
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold leading-tight text-slate-900">
-          {name}
+    const busy = member.kind === "staff" && actionUserId === member._id;
+    const body = (
+      <div
+        className={`min-w-0 px-3.5 pb-3 pt-3 ${member.kind === "staff" ? "pr-8" : ""}`}
+      >
+        <div className="flex items-center gap-2">
+          {member.kind === "representative" ? (
+            <Badge className="shrink-0 rounded-md border-0 bg-primary-soft px-2 py-0.5 text-primary-strong">
+              대표
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="shrink-0 rounded-md px-2 py-0.5">
+              직원
+            </Badge>
+          )}
+          <div className="min-w-0 truncate text-sm font-semibold leading-tight text-slate-900">
+            {name}
+          </div>
         </div>
-        {login && login !== name ? (
-          <div className="mt-0.5 truncate text-xs text-muted-foreground">
-            {login}
+        {loginParts ? (
+          <div className="mt-3 rounded-lg bg-slate-50 px-2.5 py-2">
+            <div className="text-xs text-muted-foreground">로그인 아이디</div>
+            <div
+              className="mt-0.5 truncate text-sm font-semibold tracking-tight text-foreground"
+              title={login}
+            >
+              {loginParts.stem}
+              {loginParts.suffix ? (
+                <span className="text-primary-strong">{loginParts.suffix}</span>
+              ) : null}
+            </div>
           </div>
         ) : null}
         {departmentLabel ? (
-          <div className="mt-1 text-xs text-primary-strong">{departmentLabel}</div>
+          <div className="mt-2 truncate text-xs text-muted-foreground">{departmentLabel}</div>
         ) : null}
-        {member.kind === "staff" && actionUserId === member._id ? (
-          <div className="mt-0.5 text-xs text-muted-foreground">처리 중...</div>
+        {busy ? <div className="mt-2 text-xs text-muted-foreground">처리 중...</div> : null}
+        {member.kind === "staff" || allowMove ? (
+          <div className="mt-3 flex items-center gap-2">
+            {member.kind === "staff" ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 shrink-0 rounded-lg px-2.5 text-xs"
+                disabled={busy}
+                onClick={() => setResetStaff(member)}
+              >
+                비밀번호
+              </Button>
+            ) : null}
+            {allowMove ? (
+              <div className="min-w-0 flex-1">
+                {renderDepartmentControl(member._id, member.internalDepartmentId, true)}
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </div>
     );
-    const moveControl = allowMove ? (
-      <div className="px-3.5 pb-3">
-        {renderDepartmentControl(
-          member._id,
-          member.internalDepartmentId,
-          true,
-        )}
-      </div>
-    ) : null;
 
     if (member.kind === "representative") {
       return (
         <div
           key={member._id}
-          className="overflow-hidden rounded-2xl border border-primary-muted/70 bg-white/80 shadow-sm"
+          className="overflow-hidden rounded-xl border border-slate-200 bg-white"
         >
-          <div className="h-1 w-full bg-primary-strong" />
-          <div className="flex items-start gap-2.5 px-3.5 py-3">
-            <Badge className="shrink-0 rounded-md border-0 bg-primary-soft px-2 py-0.5 text-primary-strong">
-              대표
-            </Badge>
-            {identity}
-          </div>
-          {moveControl}
+          {body}
         </div>
       );
     }
@@ -592,7 +620,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     return (
       <FunctionalItemCard
         key={member._id}
-        className="overflow-hidden rounded-2xl border-slate-200/80 bg-white/80 p-0 shadow-sm"
+        className="overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-none hover:bg-white"
         onRemove={() => handleRemoveStaff(member._id)}
         confirmTitle="직원을 삭제할까요?"
         confirmDescription={
@@ -600,29 +628,9 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
         }
         confirmLabel="삭제"
         cancelLabel="닫기"
-        disabled={actionUserId === member._id}
+        disabled={busy}
       >
-        <div className="border-t-4 border-slate-300">
-          <div className="flex items-start gap-2.5 px-3.5 py-3 pr-8">
-            <Badge variant="outline" className="shrink-0 rounded-md px-2 py-0.5">
-              직원
-            </Badge>
-            {identity}
-          </div>
-          <div className="px-3.5 pb-3">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 rounded-lg text-xs"
-              disabled={actionUserId === member._id}
-              onClick={() => setResetStaff(member)}
-            >
-              비밀번호
-            </Button>
-          </div>
-          {moveControl}
-        </div>
+        {body}
       </FunctionalItemCard>
     );
   };

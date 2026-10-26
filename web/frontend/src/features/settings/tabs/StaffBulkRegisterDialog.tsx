@@ -42,6 +42,15 @@ type DepartmentOption = {
   name: string;
 };
 
+export function loginIdDisplay(name: string, login: string) {
+  const stemName = String(name || "").trim().replace(/\s+/g, "");
+  const id = String(login || "").trim();
+  if (!stemName || !id.startsWith(stemName)) return { stem: id, suffix: "" };
+  const suffix = id.slice(stemName.length);
+  if (!/^\d+$/.test(suffix)) return { stem: id, suffix: "" };
+  return { stem: stemName, suffix };
+}
+
 function copyWithExecCommand(value: string) {
   const area = document.createElement("textarea");
   area.value = value;
@@ -110,7 +119,7 @@ export function StaffBulkRegisterDialog({
 
   const copyText = useMemo(() => {
     if (!created.length) return "";
-    const lines = ["이름  아이디"];
+    const lines = ["이름  로그인 아이디"];
     for (const row of created) lines.push(`${row.name}  ${row.login}`);
     lines.push(`처음 비밀번호: ${password}`);
     return lines.join("\n");
@@ -174,7 +183,7 @@ export function StaffBulkRegisterDialog({
       onCreated();
       toast({
         title: `${nextCreated.length}명을 등록했습니다`,
-        description: "아이디와 처음 비밀번호를 직원에게 전달하세요.",
+        description: "로그인 아이디와 처음 비밀번호를 직원에게 전달하세요.",
       });
     } finally {
       setSaving(false);
@@ -210,23 +219,40 @@ export function StaffBulkRegisterDialog({
         {created.length ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              아래 아이디와 처음 비밀번호를 직원에게 전달하세요.
+              로그인할 때 아래 아이디를 입력합니다.
+              <br />
+              처음 비밀번호와 함께 직원에게 전달하세요.
               <br />
               첫 로그인 후 본인 비밀번호로 바꿉니다.
             </p>
-            <div className="max-h-56 space-y-1 overflow-y-auto rounded-xl border px-3 py-2 text-sm">
-              <div className="flex justify-between gap-3 text-xs text-muted-foreground">
-                <span>이름</span>
-                <span>아이디</span>
-              </div>
-              {created.map((row) => (
-                <div key={row.userId} className="flex justify-between gap-3">
-                  <span className="truncate font-medium">{row.name}</span>
-                  <span className="shrink-0 text-sm">{row.login}</span>
+            <div className="max-h-80 space-y-2 overflow-y-auto px-1.5 py-1.5">
+              {created.map((row) => {
+                const { stem, suffix } = loginIdDisplay(row.name, row.login);
+                return (
+                  <div key={row.userId} className="rounded-xl border px-3 py-3">
+                    <div className="text-xs text-muted-foreground">로그인 아이디</div>
+                    <div className="mt-1 text-2xl font-semibold leading-none tracking-tight text-foreground">
+                      {stem}
+                      {suffix ? (
+                        <span className="ml-0.5 rounded-md bg-primary-soft px-1.5 text-primary-strong">
+                          {suffix}
+                        </span>
+                      ) : null}
+                    </div>
+                    {suffix ? (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        같은 이름이 있어 아이디 뒤에 숫자를 붙였습니다.
+                      </p>
+                    ) : null}
+                    <div className="mt-2 text-xs text-muted-foreground">이름 {row.name}</div>
+                  </div>
+                );
+              })}
+              <div className="rounded-xl border px-3 py-3">
+                <div className="text-xs text-muted-foreground">처음 비밀번호</div>
+                <div className="mt-1 font-mono text-lg font-semibold tracking-wide">
+                  {password}
                 </div>
-              ))}
-              <div className="border-t pt-2 font-mono text-xs">
-                처음 비밀번호: {password}
               </div>
             </div>
             {failed.length ? (
