@@ -541,6 +541,37 @@ function isAbutsLabRequestor(user) {
   return user.requestorCapabilities?.practice === true;
 }
 
+/** 로그인 치과의 행사 치과명·주소. 이름은 사업자(BA)가 기준. */
+async function practiceBusinessAnchorSnapshot(user) {
+  const anchorId = user?.businessAnchorId;
+  let name = "";
+  let address = "";
+  let lat = null;
+  let lng = null;
+  if (anchorId) {
+    const anchor = await BusinessAnchor.findById(anchorId)
+      .select({
+        name: 1,
+        "metadata.companyName": 1,
+        "metadata.address": 1,
+        "metadata.addressDetail": 1,
+        "metadata.lat": 1,
+        "metadata.lng": 1,
+      })
+      .lean();
+    const meta = anchor?.metadata || {};
+    name = trimStr(anchor?.name || meta.companyName || "", 120);
+    address = trimStr(
+      [meta.address, meta.addressDetail].filter(Boolean).join(" "),
+      240,
+    );
+    lat = placeCoord(meta.lat);
+    lng = placeCoord(meta.lng);
+  }
+  if (!name) name = trimStr(user?.business || "", 120);
+  return { name, address, lat, lng };
+}
+
 /** POST /api/events/:slug/applications — 모집 중만 접수. 초안은 없는 행사 */
 export async function applyToEvent(req, res) {
   try {
@@ -608,7 +639,8 @@ export async function applyToEvent(req, res) {
     const usesOralScan =
       bodyUsesOralScan != null ? bodyUsesOralScan : Boolean(oralScan.value);
 
-    // 로그인 치과: 본문 미입력이면 프로필·계정으로 채움
+    // 로그인 치과: 본문 미입력이면 프로필·계정으로 채움.
+    // 치과명은 검색·프로필이 아니라 사업자(BA) 이름으로 덮어쓴다.
     if (linkedUser) {
       const profileName = trimStr(
         authPp.clinicName || linkedUser.business || "",
@@ -646,6 +678,21 @@ export async function applyToEvent(req, res) {
       }
       if (!directorName && profileDirector) directorName = profileDirector;
       if (!applicantPhone && profilePhone) applicantPhone = profilePhone;
+      if (
+        slug === ABUTS_LAB_EVENT_SLUG &&
+        isAbutsLabRequestor(linkedUser)
+      ) {
+        const ba = await practiceBusinessAnchorSnapshot(linkedUser);
+        if (ba.name) practice = { ...practice, name: ba.name };
+        if (!practice.address && ba.address) {
+          practice = {
+            ...practice,
+            address: ba.address,
+            lat: practice.lat ?? ba.lat,
+            lng: practice.lng ?? ba.lng,
+          };
+        }
+      }
     }
 
     const needPractice = event.formConfig?.requirePractice !== false;
@@ -653,9 +700,15 @@ export async function applyToEvent(req, res) {
 
     if (needPractice) {
       if (!practice.name) {
+        const loggedInPractice =
+          slug === ABUTS_LAB_EVENT_SLUG &&
+          linkedUser &&
+          isAbutsLabRequestor(linkedUser);
         return res.status(400).json({
           success: false,
-          message: "치과명을 입력해 주세요.",
+          message: loggedInPractice
+            ? "계정에 저장된 사업자명이 없습니다."
+            : "치과명을 입력해 주세요.",
         });
       }
       // 로그인 신청: 원장명 미기재 시 담당자/계정명으로 대체한 뒤에도 없으면 치과명 사용
@@ -813,6 +866,15 @@ export async function getMyEventApplication(req, res) {
       });
     }
 
+    const pp =
+      req.user?.practiceProfile &&
+      typeof req.user.practiceProfile === "object"
+        ? req.user.practiceProfile
+        : {};
+    const accountBa = isAbutsLabRequestor(req.user)
+      ? await practiceBusinessAnchorSnapshot(req.user)
+      : null;
+
     let app = await MarketingEventApplication.findOne({
       eventId: event._id,
       applicantUserId: userId,
@@ -822,17 +884,18 @@ export async function getMyEventApplication(req, res) {
       .lean();
 
     if (!app) {
-      const pp =
-        req.user?.practiceProfile &&
-        typeof req.user.practiceProfile === "object"
-          ? req.user.practiceProfile
-          : {};
-      const practiceName = trimStr(pp.clinicName || req.user.business || "", 120);
+      const practiceNames = [
+        ...new Set(
+          [accountBa?.name, pp.clinicName, req.user.business]
+            .map((name) => trimStr(name, 120))
+            .filter(Boolean),
+        ),
+      ];
       const directorName = trimStr(pp.directorName, 80);
-      if (practiceName && directorName) {
+      if (practiceNames.length && directorName) {
         app = await MarketingEventApplication.findOne({
           eventId: event._id,
-          "practice.name": practiceName,
+          "practice.name": { $in: practiceNames },
           directorName,
           status: { $ne: "rejected" },
         })
@@ -842,6 +905,10 @@ export async function getMyEventApplication(req, res) {
     }
 
     const oralScan = await readPracticeOralScanAnswer(userId);
+    const profileAddress = trimStr(
+      [pp.address, pp.addressDetail].filter(Boolean).join(" "),
+      240,
+    );
 
     return res.json({
       success: true,
@@ -850,6 +917,8 @@ export async function getMyEventApplication(req, res) {
         application: app ? toApplicationRow(app) : null,
         event: toPublicEvent(event),
         usesOralScan: oralScan.value,
+        businessName: accountBa?.name || "",
+        businessAddress: profileAddress || accountBa?.address || "",
       },
     });
   } catch (error) {

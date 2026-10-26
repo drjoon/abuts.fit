@@ -82,7 +82,7 @@
 - 공개 신청 페이지 `POST /api/events/:slug/visits`. localhost·127.0.0.1 방문은 집계하지 않는다. 세션 1건(`MarketingEventVisit`)만 갱신한다. 진입·화면에 들어온 섹션(`pages`, `data-rail-label`)·이벤트 페이지를 벗어난 경로(`routes`)·신청 구간·입력 시작·이탈(최대 1분 간격 체류)만 받고 중간 핑은 쌓지 않는다. 관리자 통계는 방문한 페이지·다른 페이지 건수와 최근 방문 행에 그 목록을 보여 준다. S3 `analytics/event-visits/YYYY/MM/DD/*.ndjson.gz`에는 세션이 끝날 때 요약 한 줄, 포인터는 `MarketingEventVisitChunk`. 신청 접수는 `visitSessionId`로 그 세션을 전환 처리.
 - 지역은 CloudFront `cloudfront-viewer-*`가 있으면 그 값, 없으면 `geoip-lite`. 원문 IP는 저장하지 않고 `ipHash`만 둔다.
 - 관리자 `GET /api/admin/events/:id/visits?date=YYYY-MM-DD`. 화면은 `/dashboard/events`. 왼쪽 새로고침은 카드 건수와 오른쪽 통계·신청을 함께 다시 받는다.
-- `abuts-lab` 공개 신청은 계정 없이 원장명·휴대폰(인증 없음)·카카오 치과 주소·구강 스캐너만 받는다. 치과 계정이면 그 신청에 연결한다. 신청 후 안내는 원격지원 또는 방문상담이고, 회원가입은 그 안내 때 한다.
+- `abuts-lab` 공개 신청은 계정 없이 원장명·휴대폰(인증 없음)·카카오 치과 주소·구강 스캐너만 받는다. 치과 계정이면 그 신청에 연결하고, 치과명은 입력값·프로필이 아니라 사업자(BA) `name`으로 저장한다. 프로필 주소가 없으면 사업자 주소를 쓴다. 신청 후 안내는 원격지원 또는 방문상담이고, 회원가입은 그 안내 때 한다.
 
 ### 구강스캔 · 기공의뢰서 경로
 

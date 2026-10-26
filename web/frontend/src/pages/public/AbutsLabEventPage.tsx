@@ -169,11 +169,14 @@ function consultFieldErrors(draft: {
   manualClinicName: string;
   place: EventPlaceSuggest | null;
   usesOralScan: boolean | null;
+  /** 로그인 치과는 치과명을 받지 않는다. 사업자명이 저장된다. */
+  skipClinicName?: boolean;
   /** 치과 계정 프로필로 채운 항목은 다시 받지 않는다. */
   fromProfile?: { director?: boolean; phone?: boolean; address?: boolean };
 }): FieldErrors {
   const next: FieldErrors = {};
   const fromProfile = draft.fromProfile || {};
+  const skipClinicName = Boolean(draft.skipClinicName);
   if (fromProfile.director && fromProfile.phone && fromProfile.address) {
     if (draft.usesOralScan == null) {
       next.oral = "구강 스캐너 사용 여부를 선택해 주세요.";
@@ -196,12 +199,12 @@ function consultFieldErrors(draft: {
     if (draft.manualAddress.trim().length < 5) {
       next.address = "주소를 입력해 주세요.";
     }
-    if (draft.manualClinicName.trim().length < 2) {
+    if (!skipClinicName && draft.manualClinicName.trim().length < 2) {
       next.clinicName = "치과명을 입력해 주세요.";
     }
   } else if (
-    !draft.place?.name ||
-    !draft.place.address ||
+    (!skipClinicName && !draft.place?.name) ||
+    !draft.place?.address ||
     draft.place.lat == null ||
     draft.place.lng == null
   ) {
@@ -215,7 +218,7 @@ function consultFieldErrors(draft: {
 
 function practicePrefillFromUser(user: User) {
   const pp = user.practiceProfile || {};
-  const name = String(pp.clinicName || user.companyName || "").trim();
+  const name = String(user.companyName || "").trim();
   const directorName = String(
     pp.directorName || pp.staffName || user.name || name || "",
   ).trim();
@@ -247,6 +250,32 @@ function phoneDigits(value: string) {
 
 function isMobilePhone(value: string) {
   return /^01[016789]\d{7,8}$/.test(phoneDigits(value));
+}
+
+const APPLY_LEAD_BODY =
+  "구강 스캐너 사용 여부 체크와 함께 상담 신청하시면 빠른 시일 내로 연락드리겠습니다.";
+
+function ApplyLead({
+  practiceMember,
+  businessName,
+  directorName,
+}: {
+  practiceMember: boolean;
+  businessName: string;
+  directorName: string;
+}) {
+  const who = [businessName, directorName].filter(Boolean).join(" ");
+  return (
+    <p className="max-w-xl break-keep text-sm leading-relaxed text-slate-600">
+      {practiceMember && who ? (
+        <>
+          {who} 원장님,
+          <br />
+        </>
+      ) : null}
+      {APPLY_LEAD_BODY}
+    </p>
+  );
 }
 
 function scrollToApply() {
@@ -345,6 +374,10 @@ export default function AbutsLabEventPage() {
   const [applicationCheckLoading, setApplicationCheckLoading] = useState(
     () => Boolean(isAuthenticated && isRequestorApplicant(user)),
   );
+  const [accountBusiness, setAccountBusiness] = useState({
+    name: "",
+    address: "",
+  });
   const [boundUserId, setBoundUserId] = useState<string | null>(userId);
   const [storedDraft] = useState(() => readAbutsLabApplyLocalDraft(userId));
 
@@ -376,14 +409,20 @@ export default function AbutsLabEventPage() {
     () => (user && requestorUser ? practicePrefillFromUser(user) : null),
     [user, requestorUser],
   );
+  const accountName = (
+    accountBusiness.name ||
+    prefill?.practice.name ||
+    ""
+  ).trim();
+  const accountAddress = (
+    prefill?.practice.address ||
+    accountBusiness.address ||
+    ""
+  ).trim();
   const fromProfile = {
     director: Boolean(prefill && prefill.directorName.trim().length >= 2),
     phone: Boolean(prefill && isMobilePhone(prefill.applicantPhone)),
-    address: Boolean(
-      prefill &&
-        prefill.practice.name.trim().length >= 2 &&
-        prefill.practice.address.trim().length >= 5,
-    ),
+    address: Boolean(requestorUser && accountAddress.length >= 5),
   };
   const profileOnlyScanner =
     fromProfile.director && fromProfile.phone && fromProfile.address;
@@ -429,6 +468,10 @@ export default function AbutsLabEventPage() {
       .then((res) => {
         if (cancelled) return;
         setAlreadyApplied(Boolean(res.applied));
+        setAccountBusiness({
+          name: String(res.businessName || "").trim(),
+          address: String(res.businessAddress || "").trim(),
+        });
       })
       .catch(() => {
         if (!cancelled) setAlreadyApplied(false);
@@ -549,8 +592,8 @@ export default function AbutsLabEventPage() {
     if (prefill.applicantPhone) {
       setPhone(formatPhoneNumberInput(prefill.applicantPhone));
     }
-    if (prefill.practice.address || prefill.practice.name) {
-      setClinicQuery(prefill.practice.address || prefill.practice.name);
+    if (prefill.practice.address) {
+      setClinicQuery(prefill.practice.address);
     }
   }, [prefill, userId]);
 
@@ -575,6 +618,7 @@ export default function AbutsLabEventPage() {
       manualClinicName,
       place,
       usesOralScan,
+      skipClinicName: requestorUser,
       fromProfile,
     });
     setFieldErrors(errors);
@@ -595,15 +639,19 @@ export default function AbutsLabEventPage() {
       : phone.trim();
     const practice = fromProfile.address
       ? {
-          name: prefill!.practice.name.trim(),
+          name: accountName,
           representativeName: director,
           phone: applicantPhone,
-          address: prefill!.practice.address.trim(),
+          address: accountAddress,
           lat: null,
           lng: null,
         }
       : {
-          name: manual ? manualClinicName.trim() : place!.name,
+          name: requestorUser
+            ? accountName
+            : manual
+              ? manualClinicName.trim()
+              : place!.name,
           representativeName: director,
           phone: applicantPhone,
           address: manual ? manualAddress.trim() : place!.address || "",
@@ -919,9 +967,11 @@ export default function AbutsLabEventPage() {
             <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
               상담 신청
             </h2>
-            <p className="max-w-xl break-keep text-sm leading-relaxed text-slate-600">
-              신청하시면 {ABUTS_LAB_APPLY_FOLLOWUP}
-            </p>
+            <ApplyLead
+              practiceMember={requestorUser}
+              businessName={accountName}
+              directorName={prefill?.directorName || ""}
+            />
           </LandingReveal>
 
           <form onSubmit={onSubmit} className="space-y-5">
@@ -981,7 +1031,7 @@ export default function AbutsLabEventPage() {
                 {fromProfile.address ? null : (
                 <div className="space-y-2">
                   <FieldLabel htmlFor="lab-clinic" icon={MapPin}>
-                    치과명 (주소검색)
+                    {requestorUser ? "주소" : "치과명 (주소검색)"}
                   </FieldLabel>
                   {addressMode === "manual" ? (
                     <>
@@ -1001,22 +1051,28 @@ export default function AbutsLabEventPage() {
                         }
                       />
                       <FieldErrorText message={fieldErrors.address} />
-                      <Label htmlFor="lab-clinic-name">치과명</Label>
-                      <Input
-                        id="lab-clinic-name"
-                        value={manualClinicName}
-                        onChange={(e) => {
-                          setManualClinicName(e.target.value);
-                          clearField("clinicName");
-                        }}
-                        placeholder="치과명"
-                        disabled={!canApply || submitting}
-                        aria-invalid={Boolean(fieldErrors.clinicName)}
-                        className={
-                          fieldErrors.clinicName ? "border-red-400" : undefined
-                        }
-                      />
-                      <FieldErrorText message={fieldErrors.clinicName} />
+                      {requestorUser ? null : (
+                        <>
+                          <Label htmlFor="lab-clinic-name">치과명</Label>
+                          <Input
+                            id="lab-clinic-name"
+                            value={manualClinicName}
+                            onChange={(e) => {
+                              setManualClinicName(e.target.value);
+                              clearField("clinicName");
+                            }}
+                            placeholder="치과명"
+                            disabled={!canApply || submitting}
+                            aria-invalid={Boolean(fieldErrors.clinicName)}
+                            className={
+                              fieldErrors.clinicName
+                                ? "border-red-400"
+                                : undefined
+                            }
+                          />
+                          <FieldErrorText message={fieldErrors.clinicName} />
+                        </>
+                      )}
                       <p className="text-xs leading-relaxed text-slate-500">
                         검색 결과가 없어 직접 입력합니다.
                         <br />
@@ -1077,7 +1133,9 @@ export default function AbutsLabEventPage() {
                         inputClassName={
                           fieldErrors.address ? "border-red-400" : undefined
                         }
-                        placeholder="주소 또는 치과명 검색"
+                        placeholder={
+                          requestorUser ? "주소 검색" : "주소 또는 치과명 검색"
+                        }
                         listMode="inline"
                         emptyText="검색 결과가 없습니다."
                       />
@@ -1086,7 +1144,9 @@ export default function AbutsLabEventPage() {
                       ) : (
                         <p className="text-xs leading-relaxed text-slate-500">
                           {place?.address
-                            ? place.name
+                            ? requestorUser
+                              ? "선택한 주소로 신청합니다."
+                              : place.name
                             : "검색 결과에서 주소를 선택해 주세요."}
                         </p>
                       )}

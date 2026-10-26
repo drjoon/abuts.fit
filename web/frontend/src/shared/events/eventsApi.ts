@@ -224,6 +224,10 @@ export const eventsApi = {
       event: MarketingEvent;
       /** 저장된 구강 스캔 값. 없으면 null — 신청 폼은 항상 표시하고 이 값으로 기본 선택 */
       usesOralScan?: boolean | null;
+      /** 로그인 치과 사업자(BA) 이름. 신청 치과명으로 저장한다. */
+      businessName?: string;
+      /** 프로필 주소가 없으면 사업자 주소. 있으면 그 주소로 검색을 생략한다. */
+      businessAddress?: string;
     }>(`/api/events/${encodeURIComponent(slug)}/my-application`, { token }),
 
   adminList: (token: string | null) =>
