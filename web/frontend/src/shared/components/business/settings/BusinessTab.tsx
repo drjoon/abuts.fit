@@ -1067,7 +1067,8 @@ export const BusinessTab = ({
                   />
                 )}
 
-                {membershipMgmt.membership === "owner" &&
+                {!isOnboarding &&
+                membershipMgmt.membership === "owner" &&
                 (requestorProfile.kind === "lab" ||
                   user?.role === "internalLab") ? (
                   <>

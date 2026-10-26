@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/business/settings/BusinessTab.tsx
 // - web/backend/controllers/ai/ai.controller.js
 // change-log:
+// - 2026-10-27: 계좌 자동입력·대표자 안내 문단 삭제.
 // - 2026-09-21: 기공소·딜러사(영업자) 공통 컴포넌트로 추출(LabPayoutAccountCard 별칭 유지).
 // - 2026-09-16: 기공소 정산 입금 계좌·통장 사본 등록(설정>사업자). focus=payout 시 카드로 스크롤.
 // - 2026-09-16: 통장 사본 업로드 시 Gemini OCR 자동입력 + 팝빌 예금주조회.
@@ -548,10 +549,6 @@ export function PayoutAccountCard({ onSaved, canEdit = true }: Props) {
         <div>
           <p className="text-sm font-semibold text-slate-900">
             정산 입금 계좌 · 통장 사본
-          </p>
-          <p className="text-xs text-muted-foreground">
-            통장 사본을 올리면 AI가 계좌를 채우고, 팝빌로 예금주를 확인합니다.
-            등록·변경·삭제는 대표자만 가능합니다.
           </p>
         </div>
       </div>

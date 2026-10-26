@@ -3,6 +3,7 @@
 // - web/frontend/src/pages/devops/components/DevopsDepositAccountTab.tsx
 // - web/backend/controllers/businesses/business.update.controller.js
 // change-log:
+// - 2026-10-27: 기본값·발행 방식 안내 문단 삭제.
 // - 2026-09-21: 딜러사(salesman) 위수탁 카드는 설정>사업자에서 PayoutAccountCard와 함께 노출.
 // - 2026-09-20: 위수탁 대신발행 옵트아웃 토글(기본 ON).
 import { useCallback, useEffect, useState } from "react";
@@ -109,11 +110,6 @@ export function TrusteeIssueSettingCard({ businessTypeOverride }: Props) {
         </div>
         <div className="min-w-0 flex-1 space-y-1">
           <p className="text-sm font-medium">어벗츠 위수탁 (세금)계산서 발행</p>
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            기본값: 켜짐. 어벗츠가 수탁자로 귀사 명의 월합 (세금)계산서를 대신
-            발행합니다. 끄면 귀사가 직접 발행하고, 어벗츠는 지급 시 수취만
-            합니다.
-          </p>
         </div>
       </div>
       <div className="flex items-center justify-between gap-3 pl-11">
