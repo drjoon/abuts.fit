@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-26: AI 디자인 다크 밴드 카피 제거. 소개 본문은 AbutsLabIntroSections.
 // - 2026-10-05: 장점 — 기존 기공소와 다른 두 가지(구강스캔 특화 · AI 지향). FIT TOGETHER 제외.
 // - 2026-10-05: 장점 카피 — 구강스캔 도입 도움·호흡, AI는 전부가 아님.
 // - 2026-10-05: 구강스캔 특화 · 맞춤 소통 · AI+검수 축으로 리팩터. 생성 이미지 3컷.
@@ -20,16 +21,7 @@ import {
   LANDING_LAB_ORAL_SCAN,
 } from "./landingAssets";
 
-export type LabIconKey =
-  | "ai"
-  | "align"
-  | "axis"
-  | "margin"
-  | "scanbody"
-  | "crown"
-  | "check"
-  | "design"
-  | "save";
+export type LabIconKey = "ai" | "align";
 
 export type LabAdvantage = {
   icon: LabIconKey;
@@ -44,12 +36,6 @@ export type LabStory = {
   line: string;
   body: string[];
   image: { src: string; alt: string };
-};
-
-export type LabStep = {
-  icon: LabIconKey;
-  title: string;
-  line: string;
 };
 
 export type LabOfferExtras = {
@@ -71,22 +57,10 @@ export type LabOfferExtras = {
     lead: string[];
     items: LabStory[];
   };
-  ai: {
-    eyebrow: string;
-    title: string[];
-    lead: string[];
-    steps: LabStep[];
-    points: Array<{ icon: LabIconKey; title: string; line: string }>;
-  };
   faq: {
     eyebrow: string;
     heading: string;
     items: Array<{ q: string; a: string[] }>;
-  };
-  closing: {
-    eyebrow: string;
-    title: string;
-    body: string[];
   };
 };
 
@@ -165,64 +139,6 @@ export const LAB_OFFER_EXTRAS: LabOfferExtras = {
     ],
   },
 
-  ai: {
-    eyebrow: "AI DESIGN",
-    title: ["의뢰서 값으로 시작하고,", "사람이 마칩니다."],
-    lead: [
-      "환자·임플란트·보철·스캔은 의뢰서에 이미 있습니다.",
-      "AI가 초안을 잡고, 기공사가 검수하고 다듬습니다.",
-    ],
-    steps: [
-      {
-        icon: "align",
-        title: "스캔 정렬",
-        line: "상·하악과 바이트 스캔을 자동으로 맞춥니다.",
-      },
-      {
-        icon: "axis",
-        title: "삽입축",
-        line: "삽입축을 자동으로 잡고, 화면을 보며 직접 다듬을 수 있습니다.",
-      },
-      {
-        icon: "margin",
-        title: "마진",
-        line: "치아와 잇몸이 갈라지는 곳을 마진으로 잡고, 점과 펜으로 고칩니다.",
-      },
-      {
-        icon: "scanbody",
-        title: "스캔바디 매칭",
-        line: "의뢰 임플란트에 맞는 스캔바디와 심플어벗 형상을 골라 겹칩니다.",
-      },
-      {
-        icon: "crown",
-        title: "보철 생성",
-        line: "크라운·브리지·인레이·온레이를 만들고 기공소 프리셋 값을 적용합니다.",
-      },
-      {
-        icon: "check",
-        title: "검수 · 밀링",
-        line: "언더컷·교합·두께를 사람이 확인하고 밀링 배치까지 마칩니다.",
-      },
-    ],
-    points: [
-      {
-        icon: "check",
-        title: "사람의 검수",
-        line: "AI 초안을 기공사가 보고 맞는지 확인합니다.",
-      },
-      {
-        icon: "design",
-        title: "필요한 수작업",
-        line: "마진·교합처럼 아직 손이 가는 구간이 있습니다.",
-      },
-      {
-        icon: "save",
-        title: "쌓이는 경험",
-        line: "치과와의 시간이 쌓일수록 작업 결과가 정확하고 빨라집니다.",
-      },
-    ],
-  },
-
   faq: {
     eyebrow: "FAQ",
     heading: "자주 묻는 질문",
@@ -263,15 +179,6 @@ export const LAB_OFFER_EXTRAS: LabOfferExtras = {
           "구강스캔 의뢰는 어벗츠기공소에도 보낼 수 있습니다.",
         ],
       },
-    ],
-  },
-
-  closing: {
-    eyebrow: "START ABUTS LAB",
-    title: "구강스캔에 진심이라면, 여기서 맞춥니다.",
-    body: [
-      "구강스캔 의뢰에 특화되어 있습니다.",
-      "케이스가 쌓일수록 AI 디자인도 정확하고 빨라집니다.",
     ],
   },
 };

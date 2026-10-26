@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-26: AI 디자인 다크 밴드 제거. 소개 본문은 AbutsLabIntroSections.
 // - 2026-10-11: 랜딩에 붙을 때는 헤더 여백을 뺀다.
 // - 2026-10-05: 장점 2(구강스캔 특화 · AI 지향) · 스토리 2. FIT TOGETHER 제외.
 // - 2026-10-05: 커스텀어벗 플로우·하나의 크레딧 섹션은 플랫폼 오퍼로 이동.
@@ -11,18 +12,7 @@
 // - web/frontend/src/features/landing/landingTheme.ts
 // - web/frontend/src/index.css (lab-* 이펙트)
 import type { CSSProperties } from "react";
-import {
-  ArrowRight,
-  Crosshair,
-  Crown,
-  Layers,
-  PenTool,
-  ScanLine,
-  Save,
-  ShieldCheck,
-  Sparkles,
-  Spline,
-} from "lucide-react";
+import { ScanLine, Sparkles } from "lucide-react";
 import {
   Accordion,
   AccordionContent,
@@ -46,7 +36,6 @@ import {
 import type { LabIconKey, LabOfferExtras } from "./labOfferContent";
 import { LabScanField } from "./LabScanField";
 import { LandingMagnetic } from "./LandingMagnetic";
-import { LandingParticleField } from "./LandingParticleField";
 import { LandingReveal } from "./LandingReveal";
 import { LandingScrollCue } from "./LandingScrollCue";
 import { LandingSpotlightCard } from "./LandingSpotlightCard";
@@ -57,18 +46,10 @@ const SKY = landingSky;
 
 const rise = (delay: number) =>
   ({ "--rise-delay": `${delay}ms` }) as CSSProperties;
-const stepIndex = (index: number) => ({ "--i": index }) as CSSProperties;
 
 const ICONS: Record<LabIconKey, typeof ScanLine> = {
   ai: Sparkles,
   align: ScanLine,
-  axis: Crosshair,
-  margin: Spline,
-  scanbody: Layers,
-  crown: Crown,
-  check: ShieldCheck,
-  design: PenTool,
-  save: Save,
 };
 
 /**
@@ -78,16 +59,12 @@ const ICONS: Record<LabIconKey, typeof ScanLine> = {
 export function LabOfferHero({
   hero,
   eyebrow,
-  startLabel,
   consultLabel,
-  onStart,
   onConsult,
 }: {
   hero: LabOfferExtras["hero"];
   eyebrow: string;
-  startLabel: string;
   consultLabel: string;
-  onStart: () => void;
   onConsult: () => void;
 }) {
   const embedded = useLandingOfferEmbedded();
@@ -151,20 +128,6 @@ export function LabOfferHero({
                   className={cn(
                     "landing-btn h-10 w-full px-6 text-[14px] font-semibold sm:w-auto",
                     landingTheme.ctaOnDark,
-                  )}
-                  onClick={onStart}
-                >
-                  {startLabel}
-                  <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-                </Button>
-              </LandingMagnetic>
-              <LandingMagnetic className="w-full sm:w-auto">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className={cn(
-                    "landing-btn h-10 w-full px-6 text-[14px] font-semibold sm:w-auto",
-                    landingTheme.ctaGhostOnDark,
                   )}
                   onClick={onConsult}
                 >
@@ -325,100 +288,6 @@ export function LabStoriesSection({
             </LandingReveal>
           ))}
         </div>
-      </div>
-    </section>
-  );
-}
-
-/** AI 디자인 — 다크 밴드 + 스캔 라인 + 단계 순차 글로우. */
-export function LabAiDesignSection({ ai }: { ai: LabOfferExtras["ai"] }) {
-  return (
-    <section
-      id="ai-design"
-      data-rail-label="AI 디자인"
-      className={cn(
-        "relative scroll-mt-20 overflow-hidden bg-[#071937]",
-        landingSectionY.bandTight,
-      )}
-    >
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_15%_0%,rgba(56,189,248,0.22),transparent_55%),radial-gradient(ellipse_at_90%_20%,rgba(37,99,235,0.28),transparent_55%)]"
-      />
-      <LandingParticleField />
-      <span aria-hidden className="lab-scan-line" />
-
-      <div className={cn("relative z-10", landingContent)}>
-        <LandingReveal className={cn(landingProse, "text-center")}>
-          <SectionEyebrow className="!text-sky-300">{ai.eyebrow}</SectionEyebrow>
-          <h2 className={cn(TYPO.h2, "mt-2.5 text-white")}>
-            {ai.title.map((line, index) => (
-              <span key={line}>
-                {index > 0 ? <br /> : null}
-                {line}
-              </span>
-            ))}
-          </h2>
-          <Lines
-            lines={ai.lead}
-            className="mt-2.5 text-[14px] leading-6 text-white/80 sm:text-[15px]"
-          />
-        </LandingReveal>
-
-        <ol className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
-          {ai.steps.map((step, index) => {
-            const Icon = ICONS[step.icon];
-            return (
-              <LandingReveal as="li" key={step.title} delay={(index % 3) * 90}>
-                <LandingSpotlightCard
-                  style={stepIndex(index)}
-                  className="lab-step-glow h-full rounded-2xl border border-white/[0.12] bg-white/[0.06] px-4 py-5 backdrop-blur-sm sm:px-5 sm:py-6"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-400/15 text-sky-300 ring-1 ring-inset ring-sky-300/30">
-                      <Icon className="h-[18px] w-[18px]" aria-hidden />
-                    </span>
-                    <span className="text-[13px] font-bold tracking-[0.12em] text-sky-300/90">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                  </div>
-                  <h3 className="mt-4 break-keep text-base font-semibold tracking-tight text-white sm:text-lg">
-                    {step.title}
-                  </h3>
-                  <p className="mt-1.5 break-keep text-[14px] leading-6 text-white/75 sm:text-[15px] sm:leading-[1.65]">
-                    {step.line}
-                  </p>
-                </LandingSpotlightCard>
-              </LandingReveal>
-            );
-          })}
-        </ol>
-
-        <LandingReveal delay={120}>
-          <ul className="mt-6 grid gap-3 sm:mt-8 md:grid-cols-3">
-            {ai.points.map((point) => {
-              const Icon = ICONS[point.icon];
-              return (
-                <li
-                  key={point.title}
-                  className="flex items-start gap-3 rounded-2xl border border-sky-300/20 bg-sky-400/[0.08] px-4 py-4 sm:px-5"
-                >
-                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[#2563eb]">
-                    <Icon className="h-4 w-4" aria-hidden />
-                  </span>
-                  <div>
-                    <p className="text-[14px] font-semibold text-white sm:text-[15px]">
-                      {point.title}
-                    </p>
-                    <p className="mt-1 break-keep text-[13px] leading-5 text-white/75">
-                      {point.line}
-                    </p>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </LandingReveal>
       </div>
     </section>
   );

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-26: 기공소 오퍼에서 AI 디자인·용어를 빼고 소개 본문(AbutsLabIntroSections)을 붙임.
 // - 2026-10-11: `embedded` — lg 미만 랜딩에 같은 오퍼를 이어 붙인다(진행바·레일·헤더 여백 없음).
 // - 2026-10-06: 플랫폼 월말 정산 카톡 사례 섹션을 크레딧 앞에 둠.
 // - 2026-10-05: 플랫폼 섹션 배경 교차 — 용어 파랑, 시작하기 파랑. 기공소 오퍼 배경은 그대로.
@@ -59,9 +60,10 @@ import {
   landingTypo,
 } from "./landingTheme";
 import { LANDING_HERO_POSTER, LANDING_HERO_VIDEO } from "./landingAssets";
+import { AbutsLabApplySection } from "./AbutsLabApplySection";
+import { AbutsLabIntroSections } from "./AbutsLabIntroSections";
 import {
   LabAdvantagesSection,
-  LabAiDesignSection,
   LabFaqSection,
   LabOfferHero,
   LabStoriesSection,
@@ -1217,6 +1219,8 @@ export function LandingOfferPage({
     ? offer.heroBody
     : [offer.line];
   const scope = embedded ? offerSectionId(offer.slug) : null;
+  const labConsultId = scope ? `${scope}-consult` : "consult";
+  const scrollLabConsult = () => scrollToLandingSection(labConsultId);
 
   useEffect(() => {
     if (!scope) return;
@@ -1249,13 +1253,8 @@ export function LandingOfferPage({
         <LabOfferHero
           hero={offer.lab.hero}
           eyebrow={heroEyebrow}
-          startLabel={offer.cta?.label ?? landingHome.ctaStart}
           consultLabel={landingHome.ctaConsult}
-          onStart={() => {
-            if (offer.cta) onBuy(offer.cta);
-            else goStart();
-          }}
-          onConsult={() => navigate("/contact")}
+          onConsult={scrollLabConsult}
         />
       ) : fullBleedHero ? (
         <section data-rail-label="시작" className="bg-white">
@@ -1442,7 +1441,7 @@ export function LandingOfferPage({
         <>
           <LabAdvantagesSection advantages={offer.lab.advantages} />
           <LabStoriesSection stories={offer.lab.stories} />
-          <LabAiDesignSection ai={offer.lab.ai} />
+          <AbutsLabIntroSections onApply={scrollLabConsult} />
         </>
       ) : null}
 
@@ -1596,8 +1595,10 @@ export function LandingOfferPage({
         <GlossarySection glossary={offer.glossary} band={!!offer.platform} />
       ) : null}
       {offer.platform ? <PlatformFaqSection faq={offer.platform.faq} /> : null}
-      {offer.lab ? <LabFaqSection faq={offer.lab.faq} /> : null}
 
+      {offer.lab ? (
+        <AbutsLabApplySection sectionId={labConsultId} />
+      ) : (
       <section
         id={scope ? `${scope}-contact` : "contact"}
         data-rail-label="시작하기"
@@ -1614,19 +1615,14 @@ export function LandingOfferPage({
         >
           <LandingReveal className="max-w-lg">
             <SectionEyebrow>
-              {offer.platform?.closing.eyebrow ??
-                offer.lab?.closing.eyebrow ??
-                "START WITH ABUTS"}
+              {offer.platform?.closing.eyebrow ?? "START WITH ABUTS"}
             </SectionEyebrow>
             <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>
-              {offer.platform?.closing.title ??
-                offer.lab?.closing.title ??
-                landingHome.ctaBandTitle}
+              {offer.platform?.closing.title ?? landingHome.ctaBandTitle}
             </h2>
             <Lines
               lines={
-                offer.platform?.closing.body ??
-                offer.lab?.closing.body ?? [...landingHome.ctaBandBody]
+                offer.platform?.closing.body ?? [...landingHome.ctaBandBody]
               }
               className={cn("mt-3", TYPO.lead)}
             />
@@ -1663,6 +1659,8 @@ export function LandingOfferPage({
           </LandingReveal>
         </div>
       </section>
+      )}
+      {offer.lab ? <LabFaqSection faq={offer.lab.faq} /> : null}
     </div>
     </LandingOfferEmbedProvider>
   );

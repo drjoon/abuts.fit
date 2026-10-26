@@ -1054,62 +1054,7 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
   }
 }
 
-/* ── 어벗츠기공소 오퍼(/offer/lab): AI 스캔 라인 · 단계 글로우 · 플로우 라인 · 크레딧 허브 링 ── */
-@keyframes lab-scan-sweep {
-  0% {
-    top: 0;
-    opacity: 0;
-  }
-  8%,
-  92% {
-    opacity: 0.9;
-  }
-  100% {
-    top: 100%;
-    opacity: 0;
-  }
-}
-
-.lab-scan-line {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  z-index: 0;
-  height: 2px;
-  pointer-events: none;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(56, 189, 248, 0.85),
-    transparent
-  );
-  box-shadow: 0 0 24px 6px rgba(56, 189, 248, 0.35);
-  animation: lab-scan-sweep 7s linear infinite;
-}
-
-/* 단계 카드가 2초 간격으로 차례로 빛난다(6단계 = 12초 순환) */
-@keyframes lab-step-glow {
-  0%,
-  22%,
-  100% {
-    border-color: rgba(255, 255, 255, 0.12);
-    box-shadow: none;
-  }
-  4%,
-  16% {
-    border-color: rgba(56, 189, 248, 0.65);
-    box-shadow:
-      0 0 0 1px rgba(56, 189, 248, 0.35),
-      0 0 32px rgba(56, 189, 248, 0.22);
-  }
-}
-
-.lab-step-glow {
-  animation: lab-step-glow 12s ease-in-out infinite;
-  animation-delay: calc(var(--i, 0) * 2s);
-}
-
+/* ── 플랫폼 오퍼: 플로우 라인 · 크레딧 허브 링 ── */
 /* 리빌 래퍼가 `.is-in` 이 되면 연결선이 차오르고 점이 순서대로 켜진다 */
 .lab-flow-fill-x {
   width: 0;
@@ -1162,14 +1107,8 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lab-scan-line,
-  .lab-step-glow,
   .lab-hub-ring {
     animation: none;
-  }
-
-  .lab-scan-line,
-  .lab-hub-ring {
     display: none;
   }
 
