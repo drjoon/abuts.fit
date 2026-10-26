@@ -37,6 +37,7 @@ import {
   type MarketingEvent,
 } from "@/shared/events/eventsApi";
 import {
+  ABUTS_LAB_APPLY_FOLLOWUP,
   ABUTS_LAB_EVENT_HEADLINE,
   ABUTS_LAB_EVENT_SLUG,
   ABUTS_LAB_HERO_EYEBROW,
@@ -629,7 +630,7 @@ export default function AbutsLabEventPage() {
       setAlreadyApplied(true);
       toast({
         title: "신청이 접수되었습니다",
-        description: "영업 담당자가 방문해 안내합니다.",
+        description: ABUTS_LAB_APPLY_FOLLOWUP,
       });
     } catch (err) {
       toast({
@@ -689,8 +690,9 @@ export default function AbutsLabEventPage() {
               신청이 완료되었습니다
             </h2>
             <p className="max-w-md break-keep text-sm leading-relaxed text-slate-600">
-              상담을 접수했습니다. 영업 담당자가 연락드린 뒤 치과로 방문해
-              안내합니다.
+              상담을 접수했습니다.
+              <br />
+              {ABUTS_LAB_APPLY_FOLLOWUP}
             </p>
             <Button asChild className="mt-3 rounded-full">
               <Link to="/">홈으로</Link>
@@ -918,7 +920,7 @@ export default function AbutsLabEventPage() {
               상담 신청
             </h2>
             <p className="max-w-xl break-keep text-sm leading-relaxed text-slate-600">
-              신청해주시면 영업 담당자가 연락드리고 찾아뵙겠습니다.
+              신청하시면 {ABUTS_LAB_APPLY_FOLLOWUP}
             </p>
           </LandingReveal>
 
