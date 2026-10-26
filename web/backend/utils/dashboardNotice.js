@@ -18,7 +18,7 @@ export const NOTICE_AUDIENCE_LABEL = {
   lab: "기공소",
   manufacturer: "제조사",
   dealer: "딜러",
-  salesTeam: "영업팀",
+  salesTeam: "마케팅영업부",
   labHq: "기공본부팀",
 };
 

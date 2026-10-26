@@ -37,6 +37,10 @@ export const buildBusinessTypeQuery = (businessType) => {
 
 export const resolveBusinessType = (user, preferredType) => {
   if (!user) return null;
+  // 마케팅영업부 화면은 세션 role이 salesTeam이다. 소속 사업자는 어벗츠(admin).
+  if (String(user.role || "") === "salesTeam") {
+    return ADMIN_FALLBACK_BUSINESS_TYPE;
+  }
   if (BUSINESS_ALLOWED_ROLE_SET.has(user.role)) {
     return user.role;
   }

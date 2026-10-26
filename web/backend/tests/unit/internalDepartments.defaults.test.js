@@ -37,5 +37,6 @@ describe("getDefaultDepartmentNames", () => {
       "마케팅영업부",
       "기공사업부",
     ]);
+    expect(getDefaultDepartmentNames({ businessType: "salesTeam" })).toEqual([]);
   });
 });

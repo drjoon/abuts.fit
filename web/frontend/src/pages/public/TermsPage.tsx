@@ -301,7 +301,7 @@ export const TermsPage = () => {
                 <p>
                   4. {DEALER_CODE_REGISTER_WINDOW_LINE}
                   <br />
-                  딜러사·영업본부 소개로 가입한 의뢰자가
+                  딜러사·마케팅영업부 소개로 가입한 의뢰자가
                   <br />
                   90일 무주문이면 소개가 리셋됩니다. 상세는 서비스 화면의
                   딜러십·영업 정책 안내를 따릅니다.

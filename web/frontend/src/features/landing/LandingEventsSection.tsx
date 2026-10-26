@@ -88,6 +88,9 @@ export function LandingEventsSection() {
                   : isLabIntro
                     ? "상담 신청"
                     : "행사 신청";
+                const summary = isLabIntro
+                  ? "상담 신청하시면 전화 드리겠습니다."
+                  : ev.summary;
                 return (
                   <li key={ev.id}>
                     <Link
@@ -104,9 +107,9 @@ export function LandingEventsSection() {
                           <h3 className="break-keep text-lg font-semibold tracking-tight text-[#0b2a5c] sm:text-xl">
                             {title}
                           </h3>
-                          {!isSimpleway && ev.summary ? (
+                          {!isSimpleway && summary ? (
                             <p className="break-keep text-[14px] leading-6 text-slate-600 sm:text-[15px]">
-                              {ev.summary}
+                              {summary}
                             </p>
                           ) : null}
                           <p className="inline-flex items-center gap-1.5 pt-0.5 text-[12px] text-slate-500">

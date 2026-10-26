@@ -892,7 +892,6 @@ export const AdminUserManagement = ({
     ["admin", "관리자"],
     ["manufacturer", "제조사"],
     ["labTeam", "어벗츠기공팀"],
-    ["salesTeam", "영업본부"],
   ] as const;
 
   return (
@@ -1520,7 +1519,6 @@ export const AdminUserManagement = ({
                           <SelectItem value="internalLab">어벗츠기공소</SelectItem>
                           <SelectItem value="admin">관리자</SelectItem>
                           <SelectItem value="labTeam">기공팀</SelectItem>
-                          <SelectItem value="salesTeam">영업본부</SelectItem>
                         </SelectContent>
                       </Select>
 

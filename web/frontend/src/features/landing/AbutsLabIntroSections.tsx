@@ -107,7 +107,7 @@ function ClinicalDesignSlideshow() {
   return (
     <div className="min-w-0">
       <div className="mx-auto mb-2 grid w-[78%] grid-cols-2 text-center text-xs font-semibold text-slate-600 sm:text-sm">
-        <p>일반 기공사 디자인</p>
+        <p>기존 디자인</p>
         <p>어벗츠 디자인</p>
       </div>
       <div className="relative">
@@ -135,7 +135,7 @@ function ClinicalDesignSlideshow() {
           setApi={setApi}
           opts={{ align: "center", loop: true, containScroll: false }}
           className="w-full cursor-grab select-none active:cursor-grabbing"
-          aria-label="일반 기공사 디자인과 어벗츠 디자인 비교"
+          aria-label="기존 디자인과 어벗츠 디자인 비교"
         >
           <CarouselContent className="-ml-2">
             {ABUTS_LAB_CLINICAL_SLIDES.map((src, i) => (
@@ -145,7 +145,7 @@ function ClinicalDesignSlideshow() {
                     src={src}
                     alt={
                       i === index
-                        ? "일반 기공사 디자인과 어벗츠 디자인"
+                        ? "기존 디자인과 어벗츠 디자인"
                         : ""
                     }
                     draggable={false}
@@ -211,12 +211,9 @@ function ApplyButton({ onApply }: { onApply?: () => void }) {
 /** 가공 단차 · 코너 · 임상 디자인. 이벤트 페이지의 신청 폼은 포함하지 않는다. */
 export function AbutsLabIntroSections({
   onApply,
-  asPlatform = false,
 }: {
   /** 있으면 그 자리에서 신청으로 스크롤. 없으면 이벤트 신청으로 이동. */
   onApply?: () => void;
-  /** 랜딩에서는 어벗츠 플랫폼 기능으로 말한다. */
-  asPlatform?: boolean;
 }) {
   return (
     <>
@@ -231,15 +228,13 @@ export function AbutsLabIntroSections({
               Machining
             </p>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-              단차가 나는 곡면
+              단차 있는 곡면
             </h2>
             <p className="mt-4 max-w-xl break-keep text-sm leading-relaxed text-slate-600 sm:max-w-2xl sm:text-base">
-              기공사 선생님이 성의껏 디자인해 주셔도, 가공하면 단차가 날 수
+              기공사 선생님이 성의껏 디자인해 주셔도, 가공하면 단차가 발생할 수
               있습니다.
               <br />
-              {asPlatform
-                ? "어벗츠 플랫폼이 그 곡면을 맞춰 매끈하게 가공합니다."
-                : "어벗츠기공소는 자체 소프트웨어로 그 곡면을 맞춰 매끈하게 가공합니다."}
+              어벗츠 소프트웨어 덕분에 매끈하게 가공됩니다.
             </p>
           </LandingReveal>
 
@@ -248,19 +243,19 @@ export function AbutsLabIntroSections({
               <LandingSpotlightCard className={EVENT_MEDIA_CARD_CLASS}>
                 <HalfImage
                   src={ABUTS_LAB_IMAGES.design}
-                  alt="일반 기공사 디자인"
+                  alt="기존 디자인"
                   framed
                 />
-                <MediaCardTitle>일반 기공사 디자인</MediaCardTitle>
+                <MediaCardTitle>기존 디자인</MediaCardTitle>
               </LandingSpotlightCard>
             </LandingReveal>
             <LandingReveal delay={90}>
               <LandingSpotlightCard className={EVENT_MEDIA_CARD_CLASS}>
                 <PhotoFrame
                   src={ABUTS_LAB_IMAGES.step}
-                  alt="일반 기공사 가공. 가공 후 단차가 남은 어벗먼트입니다."
+                  alt="기존 가공. 가공 후 단차가 남은 어벗먼트입니다."
                 />
-                <MediaCardTitle>일반 기공사 가공</MediaCardTitle>
+                <MediaCardTitle>기존 가공</MediaCardTitle>
               </LandingSpotlightCard>
             </LandingReveal>
             <LandingReveal delay={120}>
@@ -302,8 +297,10 @@ export function AbutsLabIntroSections({
             </h2>
             <p className="mt-4 max-w-xl break-keep text-sm leading-relaxed text-slate-600 sm:max-w-2xl sm:text-base">
               마진과 축면이 만나는 코너가 공구보다 작으면 그 자리는 움푹 패여
-              나옵니다. 어벗츠 소프트웨어는 필레 반지름을 재서, 작으면 가공 전에
-              경고합니다.
+              나옵니다.
+              <br />
+              어벗츠 소프트웨어는 필레 반지름을 재서, 작으면 디자인 파일 업로드
+              즉시 알려줍니다.
             </p>
           </LandingReveal>
 
@@ -351,8 +348,6 @@ export function AbutsLabIntroSections({
             </h2>
             <p className="mt-4 max-w-xl break-keep text-sm leading-relaxed text-slate-600 sm:max-w-2xl sm:text-base">
               수많은 커스텀 어벗 디자인을 분석했습니다.
-              <br />
-              정확하고 편안한 임상을 위해서는 computational design이 필요합니다.
               <br />
               단차와 코너는 어벗츠가 해결한 많은 문제 중 하나이며, 어벗츠는 이런
               문제를 계속 풀어 갑니다.

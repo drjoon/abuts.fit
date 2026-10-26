@@ -37,6 +37,8 @@ export function getDefaultDepartmentNames(anchor) {
     if (kind === "lab") return ["기공소"];
     return ["치과"];
   }
+  // 영업 조직은 어벗츠 마케팅영업부. 별도 부서를 만들지 않는다.
+  if (businessType === "salesTeam") return [];
   const label = getUserRoleLabel(businessType);
   if (!label || label === "사용자") return [];
   return [label];

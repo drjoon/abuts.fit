@@ -27,7 +27,7 @@ export function isAbutsLabVisitPending(
   return !(user.onboardingWizardCompleted || user.businessVerified);
 }
 
-export const ABUTS_LAB_EVENT_HEADLINE = "어벗츠기공소 소개";
+export const ABUTS_LAB_EVENT_HEADLINE = "어벗츠 소프트웨어 소개";
 
 export const ABUTS_LAB_HERO_EYEBROW = "Abuts Lab";
 

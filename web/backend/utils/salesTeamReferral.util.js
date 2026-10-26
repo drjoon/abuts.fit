@@ -1,62 +1,15 @@
 // related files:
 // - web/backend/controllers/salesTeam/salesTeam.controller.js
 // - web/backend/controllers/auth/auth.controller.js
-import BusinessAnchor from "../models/businessAnchor.model.js";
 import User from "../models/user.model.js";
 import { isReservedReferralCode } from "./requestorReferralWindow.util.js";
 
 /**
- * Ensure salesTeam user has a personal BusinessAnchor for referral attribution.
- * Does not overwrite an existing non-salesTeam businessAnchorId (e.g. admin org membership).
- * Returns the salesTeam referral anchor id.
+ * salesTeam 전용 사업자는 두지 않는다.
+ * 마케팅영업부 소개 귀속은 계정에 이미 연결된 어벗츠 앵커를 쓴다.
  */
-export async function ensureSalesTeamPersonalAnchor(userDoc) {
-  if (!userDoc?._id) return null;
-  if (String(userDoc.role || "") !== "salesTeam") return null;
-
-  const existingOwned = await BusinessAnchor.findOne({
-    businessType: "salesTeam",
-    $or: [
-      { primaryContactUserId: userDoc._id },
-      { owners: userDoc._id },
-    ],
-  })
-    .select({ _id: 1 })
-    .lean();
-
-  if (existingOwned?._id) {
-    if (!userDoc.businessAnchorId) {
-      userDoc.businessAnchorId = existingOwned._id;
-      userDoc.subRole = userDoc.subRole || "owner";
-      await userDoc.save();
-    }
-    return existingOwned._id;
-  }
-
-  const syntheticBn = `salesTeam-${String(userDoc._id)}`.slice(0, 40);
-  const anchor = await BusinessAnchor.create({
-    businessNumberNormalized: syntheticBn,
-    name: `${String(userDoc.name || "영업").trim()} (영업본부)`,
-    businessType: "salesTeam",
-    status: "active",
-    primaryContactUserId: userDoc._id,
-    owners: [userDoc._id],
-    members: [userDoc._id],
-    metadata: {
-      companyName: `${String(userDoc.name || "영업").trim()} (영업본부)`,
-      representativeName: String(userDoc.name || "").trim(),
-      email: String(userDoc.email || "").trim(),
-      phoneNumber: String(userDoc.phoneNumber || "").trim(),
-    },
-  });
-
-  if (!userDoc.businessAnchorId) {
-    userDoc.businessAnchorId = anchor._id;
-    userDoc.subRole = userDoc.subRole || "owner";
-    await userDoc.save();
-  }
-
-  return anchor._id;
+export async function ensureSalesTeamPersonalAnchor() {
+  return null;
 }
 
 export async function ensureSalesTeamReferralCode(userDoc) {
@@ -90,16 +43,7 @@ export async function ensureSalesTeamReferralCode(userDoc) {
     .toUpperCase();
 }
 
-/** Prefer personal salesTeam BA for referral; fall back to businessAnchorId. */
+/** 소개 귀속 앵커. 마케팅영업부는 어벗츠 소속 앵커다. */
 export async function resolveSalesTeamReferralAnchorId(userLeanOrDoc) {
-  const userId = userLeanOrDoc?._id;
-  if (!userId) return null;
-  const owned = await BusinessAnchor.findOne({
-    businessType: "salesTeam",
-    $or: [{ primaryContactUserId: userId }, { owners: userId }],
-  })
-    .select({ _id: 1 })
-    .lean();
-  if (owned?._id) return owned._id;
-  return userLeanOrDoc.businessAnchorId || null;
+  return userLeanOrDoc?.businessAnchorId || null;
 }

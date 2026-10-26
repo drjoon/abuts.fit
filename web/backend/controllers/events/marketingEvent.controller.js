@@ -31,13 +31,13 @@ const SIMPLEWAY_DEALER_HELP =
 export const ABUTS_LAB_EVENT_SLUG = "abuts-lab";
 
 const ABUTS_LAB_EVENT_COPY = {
-  title: "어벗츠기공소 소개",
+  title: "어벗츠 소프트웨어 소개",
   summary: "상담을 신청하면 원격지원 또는 방문상담으로 안내합니다.",
   description: [
     "디자인이 예뻐 보여도, 가공하면 다르게 나오기도 합니다.",
     "어벗츠 소프트웨어가 그 문제를 해결하여 매끈하게 가공합니다.",
     "",
-    "신청 항목: 원장님 성함, 휴대폰 번호.",
+    "신청 항목: 성함, 휴대폰 번호.",
     "치과 계정은 주소와 구강 스캐너 사용 여부도 받습니다.",
     "회원가입은 원격지원 또는 방문상담 때 합니다.",
   ].join("\n"),

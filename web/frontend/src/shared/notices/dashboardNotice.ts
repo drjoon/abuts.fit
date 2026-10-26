@@ -3,7 +3,7 @@ export const NOTICE_AUDIENCE_OPTIONS = [
   { id: "lab", label: "기공소" },
   { id: "manufacturer", label: "제조사" },
   { id: "dealer", label: "딜러" },
-  { id: "salesTeam", label: "영업팀" },
+  { id: "salesTeam", label: "마케팅영업부" },
   { id: "labHq", label: "기공본부팀" },
 ] as const;
 

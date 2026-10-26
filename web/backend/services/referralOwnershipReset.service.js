@@ -406,7 +406,7 @@ export async function applyReferralCodeToUnownedRequestor({
   const role = String(refUser.role || "").trim();
   const adminReferral = role === "admin" && isReservedReferralCode(code);
   if (!adminReferral && !["requestor", "salesman", "salesTeam"].includes(role)) {
-    throw new Error("의뢰자·딜러·영업본부·어벗츠 코드만 등록할 수 있습니다.");
+    throw new Error("의뢰자·딜러·마케팅영업부·어벗츠 코드만 등록할 수 있습니다.");
   }
 
   let referrerAnchorId = String(refUser.businessAnchorId || "").trim();

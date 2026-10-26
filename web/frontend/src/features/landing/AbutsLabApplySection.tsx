@@ -92,7 +92,7 @@ function consultFieldErrors(draft: {
   const fromProfile = draft.fromProfile || {};
   const skipClinicName = Boolean(draft.skipClinicName);
   if (!fromProfile.director && draft.directorName.trim().length < 2) {
-    next.director = "원장님 성함을 입력해 주세요.";
+    next.director = "성함을 입력해 주세요.";
   }
   if (!fromProfile.phone && !isMobilePhone(draft.phone)) {
     next.phone = "휴대폰 번호를 확인해 주세요.";
@@ -682,7 +682,7 @@ export function AbutsLabApplySection({
                         htmlFor={`${fieldPrefix}-director`}
                         icon={UserRound}
                       >
-                        원장님 성함
+                        성함
                       </FieldLabel>
                       <Input
                         id={`${fieldPrefix}-director`}

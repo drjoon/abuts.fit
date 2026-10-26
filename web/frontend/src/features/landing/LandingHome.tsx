@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-27: 입금 영역과 단차·코너·디자인 소개를 랜딩에서 뺀다. 소개는 이벤트 페이지에 둔다.
 // - 2026-10-27: 어벗츠기공소 표현 제거. 행사·커스텀어벗 소개·후불/선불 입금. 구강스캔 이야기·용어·옛 크레딧 허브 제거.
 // - 2026-10-27: 플랫폼·어벗츠기공소 오퍼를 랜딩 본문에 통합. 히어로·중복 FAQ·마감 배너·장점 카드(스토리와 동일)는 넣지 않음.
 // related files:
@@ -23,19 +24,16 @@ import {
   landingHome,
   landingHomeFaq,
   landingContent,
-  landingProse,
   landingSectionY,
   landingSky,
   landingTypo,
 } from "./landingTheme";
-import { AbutsLabIntroSections } from "./AbutsLabIntroSections";
 import { LandingEventsSection } from "./LandingEventsSection";
 import { LandingHero } from "./LandingHero";
 import { LandingMagnetic } from "./LandingMagnetic";
 import { LandingReveal } from "./LandingReveal";
 import { LandingScrollProgress } from "./LandingScrollProgress";
 import { LandingSectionRail, type LandingRailItem } from "./LandingSectionRail";
-import { LandingSpotlightCard } from "./LandingSpotlightCard";
 import { PLATFORM_OFFER_EXTRAS } from "./platformOfferContent";
 import {
   PlatformGlanceSection,
@@ -53,10 +51,6 @@ const RAIL_ITEMS: LandingRailItem[] = [
   { id: "offer-platform", label: "플랫폼" },
   { id: "screens", label: "화면" },
   { id: "custom-abutment", label: "커스텀어벗" },
-  { id: "offer-lab", label: "가공" },
-  { id: "abutment-corner", label: "코너" },
-  { id: "abutment-design", label: "디자인" },
-  { id: "settlement", label: "입금" },
   { id: "faq", label: "자주 묻는 질문" },
   { id: "contact", label: "시작하기" },
 ];
@@ -119,55 +113,10 @@ export function LandingHome() {
         stories={PLATFORM_OFFER_EXTRAS.stories}
       />
       <PlatformPipelineSection pipeline={PLATFORM_OFFER_EXTRAS.pipeline} />
-      <AbutsLabIntroSections asPlatform />
-
-      <section
-        id="settlement"
-        className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
-      >
-        <div className={landingContent}>
-          <LandingReveal className={cn(landingProse, "text-center")}>
-            <SectionEyebrow>SETTLEMENT</SectionEyebrow>
-            <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>
-              입금은 역할마다 다릅니다.
-            </h2>
-            <p className={cn("mt-2.5", TYPO.lead)}>
-              기공 결제와 스토어는 잠시 닫혀 있습니다.
-            </p>
-          </LandingReveal>
-          <ul className="mx-auto mt-8 grid max-w-4xl gap-3 sm:mt-10 sm:grid-cols-2 lg:gap-4">
-            <LandingReveal as="li">
-              <LandingSpotlightCard
-                className={cn(SKY.card, "h-full bg-[#eef6ff] px-5 py-6 sm:px-6")}
-              >
-                <p className={cn(TYPO.eyebrow, SKY.accent)}>PRACTICE</p>
-                <h3 className={cn(TYPO.h3, "mt-2", SKY.ink)}>치과</h3>
-                <p className={cn("mt-3", TYPO.body)}>
-                  기공료는 후불 정산으로 입금합니다.
-                </p>
-              </LandingSpotlightCard>
-            </LandingReveal>
-            <LandingReveal as="li" delay={90}>
-              <LandingSpotlightCard
-                className={cn(SKY.card, "h-full bg-[#eef6ff] px-5 py-6 sm:px-6")}
-              >
-                <p className={cn(TYPO.eyebrow, SKY.accent)}>LAB</p>
-                <h3 className={cn(TYPO.h3, "mt-2", SKY.ink)}>기공실 · 기공소</h3>
-                <p className={cn("mt-3", TYPO.body)}>
-                  커스텀어벗 생산비는 선불 크레딧으로 입금합니다.
-                </p>
-              </LandingSpotlightCard>
-            </LandingReveal>
-          </ul>
-        </div>
-      </section>
 
       <section
         id="faq"
-        className={cn(
-          "scroll-mt-20 border-t border-sky-100 bg-white",
-          landingSectionY.bandTight,
-        )}
+        className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
       >
         <div
           className={cn(

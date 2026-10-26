@@ -158,7 +158,6 @@ export async function createUser(req, res) {
       "salesman",
       "devops",
       "labTeam",
-      "salesTeam",
     ];
     if (!validRoles.includes(role)) {
       return res
@@ -453,7 +452,6 @@ export async function changeUserRole(req, res) {
       "salesman",
       "devops",
       "labTeam",
-      "salesTeam",
     ];
     // 레거시: admin UI/클라이언트가 practice role을 보내면 requestor+practice(발신·무료)로 승격
     const normalizedRole = role === "practice" ? "requestor" : role;

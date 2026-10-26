@@ -140,7 +140,7 @@ export async function signupApplyToEvent(req, res) {
     if (directorName.length < 2) {
       return res.status(400).json({
         success: false,
-        message: "원장님 성함을 입력해 주세요.",
+        message: "성함을 입력해 주세요.",
       });
     }
     if (!isMobilePhone(digits)) {

@@ -16,6 +16,9 @@ const OfferPage = () => {
   const legacyTarget = slug ? LEGACY_OFFER_REDIRECTS[slug] : undefined;
   const offer = getLandingOffer(legacyTarget ?? slug);
   if (!offer) return <Navigate to="/" replace />;
+  if (offer.slug === "lab") {
+    return <Navigate to="/events/abuts-lab" replace />;
+  }
   return (
     <Navigate
       to={{ pathname: "/", hash: `#${offerSectionId(offer.slug)}` }}

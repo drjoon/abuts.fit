@@ -567,7 +567,7 @@ export const REQUIREMENT_TARGET_LABEL: Record<
   admin: "관리자",
   internalLab: "기공사업부",
   devops: "개발운영팀",
-  salesTeam: "영업본부",
+  salesTeam: "마케팅영업부",
 };
 
 export const REQUIREMENT_DOC_STATUS_LABEL: Record<
