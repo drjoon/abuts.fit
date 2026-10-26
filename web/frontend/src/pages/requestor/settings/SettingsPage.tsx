@@ -123,21 +123,25 @@ export const RequestorSettingsPage = () => {
                     </p>
                   </div>
                   <dl className="grid flex-1 content-start gap-2">
-                    <div className="rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2.5">
-                      <dt className="text-xs text-muted-foreground">가입일시</dt>
-                      <dd className="mt-0.5 text-sm font-semibold leading-snug text-slate-900">
-                        {joinDate ? formatKstDateTimeToKo(joinDate) : "-"}
-                      </dd>
-                    </div>
-                    <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2.5">
-                      <dt className="text-xs text-muted-foreground">
-                        가입 후 경과일
-                      </dt>
-                      <dd className="text-sm font-semibold text-slate-900">
-                        {pricingElapsedDays == null
-                          ? "-"
-                          : `${pricingElapsedDays}일`}
-                      </dd>
+                    <div className="flex items-start justify-between gap-3 rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <dt className="text-xs text-muted-foreground">
+                          가입일시
+                        </dt>
+                        <dd className="mt-0.5 text-sm font-semibold leading-snug text-slate-900">
+                          {joinDate ? formatKstDateTimeToKo(joinDate) : "-"}
+                        </dd>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <dt className="text-xs text-muted-foreground">
+                          가입 후 경과일
+                        </dt>
+                        <dd className="mt-0.5 text-sm font-semibold text-slate-900">
+                          {pricingElapsedDays == null
+                            ? "-"
+                            : `${pricingElapsedDays}일`}
+                        </dd>
+                      </div>
                     </div>
                     {referral ? <div>{referral}</div> : null}
                   </dl>

@@ -124,11 +124,12 @@ export const RequestorCapabilitiesPicker = ({
         role="radiogroup"
         aria-label="역할 선택"
         className={cn(
-          "grid min-h-0 flex-1 grid-cols-1 gap-3",
+          "mt-3 grid min-h-0 grid-cols-1 gap-3",
+          choices.length === 1 ? "content-start" : "flex-1",
           stackChoices
             ? choices.length === 2
               ? "h-full grid-rows-2"
-              : "h-full"
+              : ""
             : choices.length === 3
               ? "md:grid-cols-3"
               : choices.length === 2
@@ -148,10 +149,12 @@ export const RequestorCapabilitiesPicker = ({
               disabled={disabled}
               onClick={() => choose(opt.key)}
               className={cn(
-                "group relative flex items-start gap-3 rounded-2xl border p-3.5 text-left shadow-sm outline-none transition-all",
-                stackChoices || choices.length === 1
-                  ? "h-full flex-row items-center"
-                  : "min-h-[5.5rem] flex-col",
+                "group relative flex items-start gap-3 rounded-2xl border text-left shadow-sm outline-none transition-all",
+                choices.length === 1
+                  ? "flex-row items-center py-2.5 pl-3.5 pr-10"
+                  : stackChoices
+                    ? "h-full flex-row items-center p-3.5"
+                    : "min-h-[5.5rem] flex-col p-3.5",
                 "focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2",
                 checked
                   ? "border-primary/60 bg-primary-soft/40 ring-1 ring-primary/30"
@@ -180,7 +183,10 @@ export const RequestorCapabilitiesPicker = ({
               <span
                 aria-hidden
                 className={cn(
-                  "absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full border transition-all",
+                  "absolute right-3 flex h-5 w-5 items-center justify-center rounded-full border transition-all",
+                  choices.length === 1
+                    ? "top-1/2 -translate-y-1/2"
+                    : "top-3",
                   checked
                     ? "scale-100 border-primary bg-primary text-primary-foreground"
                     : "scale-90 border-slate-300 bg-white text-transparent",
