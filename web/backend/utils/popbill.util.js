@@ -3,6 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // change-log:
+// - 2026-10-26: SDK IsTest=false 고정. 토큰 /POPBILL/Token, API popbill.linkhub.co.kr.
 // - 2026-10-14: 계좌조회 RequestJob·GetJobState·Search 래퍼.
 // - 2026-10-13: 팝빌 테스트/운영 구분을 잔액 카드와 같이 쓰도록 노출.
 // - 2026-09-23: registIssue forceIssue — 작성일이 오늘(KST) 이전이면 지연발행 허용.
@@ -12,13 +13,11 @@ import popbill from "popbill";
 
 const LinkID = process.env.POPBILL_LINK_ID;
 const SecretKey = process.env.POPBILL_SECRET_KEY;
-const isTestEnvDefined = Object.prototype.hasOwnProperty.call(
-  process.env,
-  "POPBILL_IS_TEST",
-);
-const IsTest = isTestEnvDefined
-  ? process.env.POPBILL_IS_TEST === "true"
-  : process.env.NODE_ENV !== "production";
+// SDK IsTest=false만 쓴다.
+// true면 토큰이 https://auth.linkhub.co.kr/POPBILL_TEST/Token,
+// API가 popbill-test.linkhub.co.kr 이라 국외 IP 허용이 운영과 다르다.
+// false면 토큰 https://auth.linkhub.co.kr/POPBILL/Token, API https://popbill.linkhub.co.kr.
+const IsTest = false;
 
 if (!LinkID || !SecretKey) {
   console.warn(
