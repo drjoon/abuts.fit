@@ -8,7 +8,6 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -58,6 +57,20 @@ import {
 import { SettingsCardSkeleton } from "@/features/components/SettingsSkeletons";
 import { useAvatarCarousel } from "@/shared/hooks/useAvatarCarousel";
 import { avatarSeedFromUrl } from "@/shared/lib/avatarOptions";
+import { formatPhoneNumberInput } from "@/shared/components/business/settings/business/validations";
+
+const formatAccountPhoneInput = (dialCode: string, input: string) => {
+  const digits = String(input || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (String(dialCode || "") === "82") {
+    const domestic = digits.startsWith("0") ? digits : `0${digits}`;
+    return formatPhoneNumberInput(domestic);
+  }
+  const capped = digits.slice(0, 15);
+  if (capped.length <= 3) return capped;
+  if (capped.length <= 7) return `${capped.slice(0, 3)}-${capped.slice(3)}`;
+  return `${capped.slice(0, 3)}-${capped.slice(3, 7)}-${capped.slice(7)}`;
+};
 
 interface AccountTabProps {
   userData: {
@@ -305,7 +318,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     avatarOptions,
     refreshAvatars,
     isPrefetchReady,
-  } = useAvatarCarousel(avatarSeedBase);
+  } = useAvatarCarousel(avatarSeedBase, 5);
 
   const [accountLoading, setAccountLoading] = useState(Boolean(token));
 
@@ -334,7 +347,10 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
             name: data?.name ?? prev.name,
             email: data?.email ?? prev.email,
             phoneDialCode: nextPhone.dialCode,
-            phoneNationalNumber: nextPhone.nationalNumber,
+            phoneNationalNumber: formatAccountPhoneInput(
+              nextPhone.dialCode,
+              nextPhone.nationalNumber,
+            ),
             profileImage: data?.profileImage ?? prev.profileImage,
           };
         });
@@ -719,29 +735,24 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     <Card className="app-glass-card app-glass-card--lg">
       <CardHeader className="space-y-1 pb-3 pt-1 sm:pt-0">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1.5">
-            <CardTitle className="flex flex-wrap items-center gap-2 text-base leading-snug">
-              <User className="h-5 w-5 shrink-0 text-primary-strong" />
-              계정 설정
-              <Badge
-                variant={
-                  userData?.role === "admin" ? "destructive" : "default"
-                }
-                className="rounded-md"
-              >
-                {userData?.role === "requestor" ||
-                userData?.role === "practice"
-                  ? getRequestorRoleBadgeLabel(
-                      requestorKind ??
-                        (userData?.role === "practice" ? "practice" : null),
-                    )
-                  : getAppUserRoleLabel(String(userData?.role || ""))}
-              </Badge>
-            </CardTitle>
-            <CardDescription className="text-[13px] leading-relaxed">
-              프로필, 연락처, 로그인 방식을 관리합니다.
-            </CardDescription>
-          </div>
+          <CardTitle className="flex flex-wrap items-center gap-2 text-base leading-snug">
+            <User className="h-5 w-5 shrink-0 text-primary-strong" />
+            계정 설정
+            <Badge
+              variant={
+                userData?.role === "admin" ? "destructive" : "default"
+              }
+              className="rounded-md"
+            >
+              {userData?.role === "requestor" ||
+              userData?.role === "practice"
+                ? getRequestorRoleBadgeLabel(
+                    requestorKind ??
+                      (userData?.role === "practice" ? "practice" : null),
+                  )
+                : getAppUserRoleLabel(String(userData?.role || ""))}
+            </Badge>
+          </CardTitle>
           <Button
             type="button"
             variant="outline"
@@ -754,143 +765,156 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="space-y-5">
-        <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
-              <Camera className="h-4 w-4 text-primary-strong" />
-            </span>
-            <div>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
+          <section className="flex h-full flex-col rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+                <Camera className="h-4 w-4 text-primary-strong" />
+              </span>
               <p className="text-sm font-semibold text-slate-900">프로필 이미지</p>
-              <p className="text-xs text-muted-foreground">
-                아바타를 선택하거나 새 그룹을 불러옵니다
-              </p>
             </div>
-          </div>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <Avatar className="h-20 w-20 ring-2 ring-white shadow-sm">
-              <AvatarImage
-                src={accountData.profileImage || undefined}
-                alt={accountData.name}
-              />
-              <AvatarFallback className="bg-primary-soft">
-                <Camera className="h-8 w-8 text-primary-strong" />
-              </AvatarFallback>
-            </Avatar>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-              {avatarOptions.map((opt) => (
+            <div className="flex flex-1 items-center justify-center gap-3">
+              <Avatar className="h-16 w-16 shrink-0 ring-2 ring-white shadow-sm">
+                <AvatarImage
+                  src={accountData.profileImage || undefined}
+                  alt={accountData.name}
+                />
+                <AvatarFallback className="bg-primary-soft">
+                  <Camera className="h-7 w-7 text-primary-strong" />
+                </AvatarFallback>
+              </Avatar>
+              <div className="grid w-fit grid-cols-3 grid-rows-2 gap-1.5">
+                {avatarOptions.map((opt) => (
+                  <button
+                    key={opt.url}
+                    type="button"
+                    className={cn(
+                      "justify-self-center rounded-full border bg-white/80 p-0.5 shadow-sm transition-all",
+                      accountData.profileImage === opt.url
+                        ? "border-primary-strong ring-2 ring-primary-muted"
+                        : "border-slate-200/80 hover:border-primary-muted",
+                    )}
+                    onClick={() => {
+                      setAccountData((prev) => ({
+                        ...prev,
+                        profileImage: opt.url,
+                      }));
+                      scheduleSave();
+                    }}
+                  >
+                    <Avatar className="h-9 w-9">
+                      <AvatarImage
+                        seed={opt.seed || avatarSeedFromUrl(opt.url)}
+                        fallbackInitial={accountData.name}
+                        src={opt.url}
+                        alt={accountData.name}
+                      />
+                      <AvatarFallback />
+                    </Avatar>
+                  </button>
+                ))}
+
                 <button
-                  key={opt.url}
                   type="button"
                   className={cn(
-                    "rounded-full border bg-white/80 p-0.5 transition-all shadow-sm",
-                    accountData.profileImage === opt.url
-                      ? "border-primary-strong ring-2 ring-primary-muted"
-                      : "border-slate-200/80 hover:border-primary-muted",
+                    "justify-self-center rounded-full border bg-white/80 p-0.5 shadow-sm transition-colors",
+                    isPrefetchReady
+                      ? "border-slate-200/80 hover:border-primary-muted"
+                      : "border-dashed border-slate-200 opacity-70",
                   )}
-                  onClick={() => {
+                  onClick={refreshAvatars}
+                  aria-label="새 이미지 그룹 불러오기"
+                >
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/80">
+                    <RefreshCcw className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="flex h-full flex-col rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 lg:col-span-2">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+                <User className="h-4 w-4 text-primary-strong" />
+              </span>
+              <p className="text-sm font-semibold text-slate-900">기본 정보</p>
+            </div>
+            <div className="grid flex-1 content-center grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="name">이름</Label>
+                <Input
+                  id="name"
+                  value={accountData.name}
+                  className={cn(
+                    "h-10 rounded-xl bg-white/80",
+                    fieldErrors.name &&
+                      "border-destructive focus-visible:ring-destructive",
+                  )}
+                  onChange={(e) =>
                     setAccountData((prev) => ({
                       ...prev,
-                      profileImage: opt.url,
-                    }));
-                    scheduleSave();
-                  }}
-                >
-                  <Avatar className="h-10 w-10">
-                    <AvatarImage
-                      seed={opt.seed || avatarSeedFromUrl(opt.url)}
-                      fallbackInitial={accountData.name}
-                      src={opt.url}
-                      alt={accountData.name}
-                    />
-                    <AvatarFallback />
-                  </Avatar>
-                </button>
-              ))}
-
-              <button
-                type="button"
-                className={cn(
-                  "rounded-full border bg-white/80 p-0.5 transition-colors shadow-sm",
-                  isPrefetchReady
-                    ? "border-slate-200/80 hover:border-primary-muted"
-                    : "border-dashed border-slate-200 opacity-70",
-                )}
-                onClick={refreshAvatars}
-                aria-label="새 이미지 그룹 불러오기"
-              >
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80">
-                  <RefreshCcw className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-4">
-          <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
-              <User className="h-4 w-4 text-primary-strong" />
-            </span>
-            <p className="text-sm font-semibold text-slate-900">기본 정보</p>
-          </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="name">이름</Label>
-              <Input
-                id="name"
-                value={accountData.name}
-                className={cn(
-                  "h-10 rounded-xl",
-                  fieldErrors.name &&
-                    "border-destructive focus-visible:ring-destructive",
-                )}
-                onChange={(e) =>
-                  setAccountData((prev) => ({
-                    ...prev,
-                    name: e.target.value,
-                  }))
-                }
-                onChangeCapture={() =>
-                  setFieldErrors((prev) => ({ ...prev, name: undefined }))
-                }
-                onBlur={() => {
-                  const savedKey = JSON.stringify({
-                    name: accountData.name,
-                    phoneNumber: phoneValidation.normalized,
-                    profileImage: accountData.profileImage,
-                  });
-                  if (savedKey !== lastSavedKeyRef.current) {
-                    scheduleSave();
+                      name: e.target.value,
+                    }))
                   }
-                }}
-              />
-              {!!fieldErrors.name && (
-                <p className="text-xs text-destructive">{fieldErrors.name}</p>
-              )}
+                  onChangeCapture={() =>
+                    setFieldErrors((prev) => ({ ...prev, name: undefined }))
+                  }
+                  onBlur={() => {
+                    const savedKey = JSON.stringify({
+                      name: accountData.name,
+                      phoneNumber: phoneValidation.normalized,
+                      profileImage: accountData.profileImage,
+                    });
+                    if (savedKey !== lastSavedKeyRef.current) {
+                      scheduleSave();
+                    }
+                  }}
+                />
+                {!!fieldErrors.name && (
+                  <p className="text-xs text-destructive">{fieldErrors.name}</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="email">이메일</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={accountData.email}
+                  readOnly
+                  className="h-10 rounded-xl bg-white/60"
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">이메일</Label>
-              <Input
-                id="email"
-                type="email"
-                value={accountData.email}
-                readOnly
-                className="h-10 rounded-xl bg-white/60"
-              />
-            </div>
-          </div>
-        </section>
+          </section>
+        </div>
 
-        <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-4">
-          <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
-              <Phone className="h-4 w-4 text-primary-strong" />
-            </span>
-            <p className="text-sm font-semibold text-slate-900">휴대폰 인증</p>
-          </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <div className="space-y-2">
+        <div
+          className={cn(
+            "grid grid-cols-1 items-start gap-4",
+            hasAnyAuthMethod && "lg:grid-cols-3",
+          )}
+        >
+          <section
+            className={cn(
+              "flex h-full flex-col rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4",
+              hasAnyAuthMethod && "lg:col-span-2",
+            )}
+          >
+            <div className="mb-3 flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+                <Phone className="h-4 w-4 text-primary-strong" />
+              </span>
+              <p className="text-sm font-semibold text-slate-900">휴대폰 인증</p>
+            </div>
+            <div
+              className={cn(
+                "grid grid-cols-1 gap-3 sm:grid-cols-2",
+                verificationSent ? "" : "xl:grid-cols-3",
+              )}
+            >
+              <div className="space-y-1.5">
                 <Label>국가</Label>
                 <Popover open={countryOpen} onOpenChange={setCountryOpen}>
                   <PopoverTrigger asChild>
@@ -898,7 +922,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                       variant="outline"
                       role="combobox"
                       aria-expanded={countryOpen}
-                      className="w-full justify-between"
+                      className="h-10 w-full justify-between rounded-xl bg-white/80"
                     >
                       <span className="truncate">
                         {selectedCountry.country} (+{selectedCountry.dialCode})
@@ -906,7 +930,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[200px] p-0">
+                  <PopoverContent className="w-[220px] p-0">
                     <Command>
                       <CommandInput placeholder="국가 검색..." />
                       <CommandList>
@@ -920,6 +944,10 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                                 setAccountData((prev) => ({
                                   ...prev,
                                   phoneDialCode: c.dialCode,
+                                  phoneNationalNumber: formatAccountPhoneInput(
+                                    c.dialCode,
+                                    prev.phoneNationalNumber,
+                                  ),
                                 }));
                                 setCountryOpen(false);
                                 setPhoneVerifiedAt(null);
@@ -946,17 +974,17 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                 </Popover>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <Label htmlFor="phone">휴대폰번호</Label>
                 <Input
                   ref={phoneInputRef}
                   id="phone"
                   type="tel"
                   inputMode="tel"
-                  placeholder="01012345678"
+                  placeholder="010-1234-5678"
                   value={accountData.phoneNationalNumber}
                   className={cn(
-                    "h-10",
+                    "h-10 rounded-xl bg-white/80",
                     fieldErrors.phone || !phoneValidation.ok
                       ? "border-destructive focus-visible:ring-destructive"
                       : "",
@@ -965,7 +993,10 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                     setFieldErrors((prev) => ({ ...prev, phone: undefined }));
                     setAccountData((prev) => ({
                       ...prev,
-                      phoneNationalNumber: e.target.value,
+                      phoneNationalNumber: formatAccountPhoneInput(
+                        prev.phoneDialCode,
+                        e.target.value,
+                      ),
                     }));
                     setPhoneVerifiedAt(null);
                     setVerificationSent(false);
@@ -985,215 +1016,215 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                 />
               </div>
 
-              <div className="space-y-2">
+              <div
+                className={cn(
+                  "space-y-1.5",
+                  verificationSent
+                    ? "sm:col-span-2"
+                    : "sm:col-span-2 xl:col-span-1",
+                )}
+              >
                 <Label>확인</Label>
-
-                <div className="h-10">
-                  {phoneVerifiedAt ? (
-                    <Button
-                      variant="outline"
-                      className="w-full h-10 cursor-default border-primary-muted bg-white text-primary-strong hover:bg-white hover:text-primary-strong disabled:opacity-100"
-                      disabled
-                    >
-                      <Check className="mr-2 h-4 w-4" />
-                      <span>인증 완료</span>
-                    </Button>
-                  ) : verificationSent ? (
-                    <div className="flex gap-2 h-10">
-                      <Input
-                        ref={phoneCodeInputRef}
-                        value={phoneVerificationCode}
-                        onChange={(e) =>
-                          setPhoneVerificationCode(e.target.value)
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key !== "Enter") return;
-                          e.preventDefault();
-                          handleVerifyPhoneVerification();
-                        }}
-                        inputMode="numeric"
-                        placeholder="인증번호"
-                        className="flex-1 h-10"
-                      />
-                      <div className="flex items-center gap-2">
-                        <Button
-                          type="button"
-                          variant="default"
-                          onClick={handleVerifyPhoneVerification}
-                          className="h-10"
-                          disabled={
-                            phoneVerificationLoading !== "idle" ||
-                            !phoneVerificationCode.trim()
-                          }
-                        >
-                          {phoneVerificationLoading === "verifying"
-                            ? "..."
-                            : "확인"}
-                        </Button>
-                        {timeLeft > 0 && (
-                          <span className="text-xs text-destructive font-mono">
-                            {formatTime(timeLeft)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
+                {phoneVerifiedAt ? (
+                  <Button
+                    variant="outline"
+                    className="h-10 w-full cursor-default rounded-xl border-primary-muted bg-white text-primary-strong hover:bg-white hover:text-primary-strong disabled:opacity-100"
+                    disabled
+                  >
+                    <Check className="mr-2 h-4 w-4" />
+                    <span>인증 완료</span>
+                  </Button>
+                ) : verificationSent ? (
+                  <div className="flex h-10 gap-2">
+                    <Input
+                      ref={phoneCodeInputRef}
+                      value={phoneVerificationCode}
+                      onChange={(e) =>
+                        setPhoneVerificationCode(e.target.value)
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault();
+                        handleVerifyPhoneVerification();
+                      }}
+                      inputMode="numeric"
+                      placeholder="인증번호"
+                      className="h-10 flex-1 rounded-xl bg-white/80"
+                    />
                     <Button
                       type="button"
-                      variant="outline"
-                      className="h-10 w-full rounded-xl"
-                      onClick={handleSendPhoneVerification}
-                      disabled={!canSendPhoneVerification}
+                      variant="default"
+                      onClick={handleVerifyPhoneVerification}
+                      className="h-10 shrink-0 rounded-xl"
+                      disabled={
+                        phoneVerificationLoading !== "idle" ||
+                        !phoneVerificationCode.trim()
+                      }
                     >
-                      {phoneVerificationLoading === "sending"
-                        ? "발송 중..."
-                        : "인증번호 발송"}
+                      {phoneVerificationLoading === "verifying"
+                        ? "..."
+                        : "확인"}
                     </Button>
-                  )}
-                </div>
+                    {timeLeft > 0 && (
+                      <span className="flex items-center font-mono text-xs text-destructive">
+                        {formatTime(timeLeft)}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-10 w-full rounded-xl bg-white/80"
+                    onClick={handleSendPhoneVerification}
+                    disabled={!canSendPhoneVerification}
+                  >
+                    {phoneVerificationLoading === "sending"
+                      ? "발송 중..."
+                      : "인증번호 발송"}
+                  </Button>
+                )}
               </div>
-          </div>
-          {!!phoneValidation.message && !phoneValidation.ok && (
-            <p className="text-xs text-destructive">
-              {phoneValidation.message}
-            </p>
-          )}
-        </section>
-
-        {hasAnyAuthMethod && (
-          <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-4">
-            <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
-                <KeyRound className="h-4 w-4 text-primary-strong" />
-              </span>
-              <p className="text-sm font-semibold text-slate-900">
-                로그인 · 보안
-              </p>
             </div>
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-              <div className="space-y-2">
-                <Label>연결된 로그인</Label>
-                <div className="flex flex-wrap gap-2">
+            {!!phoneValidation.message && !phoneValidation.ok && (
+              <p className="mt-2 text-xs text-destructive">
+                {phoneValidation.message}
+              </p>
+            )}
+          </section>
+
+          {hasAnyAuthMethod && (
+            <section className="flex h-full flex-col rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+                  <KeyRound className="h-4 w-4 text-primary-strong" />
+                </span>
+                <p className="text-sm font-semibold text-slate-900">로그인 · 보안</p>
+              </div>
+              <div className="flex flex-1 flex-col gap-3">
+                <div className="flex flex-wrap gap-1.5">
                   {authMethods.email && (
                     <Badge
                       variant="secondary"
-                      className="flex items-center gap-1"
+                      className="flex items-center gap-1 rounded-lg"
                     >
                       <Link2 className="h-3 w-3" />
                       이메일
                     </Badge>
                   )}
                   {authMethods.google && (
-                    <Badge variant="outline">Google</Badge>
+                    <Badge variant="outline" className="rounded-lg bg-white/80">
+                      Google
+                    </Badge>
                   )}
-                  {authMethods.kakao && <Badge variant="outline">카카오</Badge>}
+                  {authMethods.kakao && (
+                    <Badge variant="outline" className="rounded-lg bg-white/80">
+                      카카오
+                    </Badge>
+                  )}
                   {!authMethods.email &&
                     !authMethods.google &&
                     !authMethods.kakao && (
                       <Badge
                         variant="secondary"
-                        className="flex items-center gap-1"
+                        className="flex items-center gap-1 rounded-lg"
                       >
                         <Link2 className="h-3 w-3" />
                         이메일
                       </Badge>
                     )}
                 </div>
-              </div>
 
-              {authMethods.email && (
-                <>
-                  {!showPasswordFields ? (
-                    <div className="space-y-2 lg:col-span-3">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-10 w-full rounded-xl"
-                        onClick={() => {
-                          setShowPasswordFields(true);
-                          setTimeout(() => {
-                            passwordInputRef.current?.focus();
-                          }, 0);
-                        }}
-                      >
-                        <KeyRound className="mr-2 h-4 w-4" />
-                        비밀번호 변경
-                      </Button>
-                    </div>
-                  ) : (
-                    <form
-                      className="contents"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        if (
-                          !passwordData.currentPassword ||
-                          !passwordData.newPassword
-                        )
-                          return;
-                        handleChangePassword();
-                      }}
-                    >
-                      <input
-                        type="text"
-                        name="username"
-                        value={accountData.email}
-                        readOnly
-                        autoComplete="username"
-                        className="sr-only"
-                        tabIndex={-1}
+                {authMethods.email && !showPasswordFields && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-auto h-10 w-full rounded-xl bg-white/80"
+                    onClick={() => {
+                      setShowPasswordFields(true);
+                      setTimeout(() => {
+                        passwordInputRef.current?.focus();
+                      }, 0);
+                    }}
+                  >
+                    <KeyRound className="mr-2 h-4 w-4" />
+                    비밀번호 변경
+                  </Button>
+                )}
+
+                {authMethods.email && showPasswordFields && (
+                  <form
+                    className="space-y-3"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (
+                        !passwordData.currentPassword ||
+                        !passwordData.newPassword
+                      )
+                        return;
+                      handleChangePassword();
+                    }}
+                  >
+                    <input
+                      type="text"
+                      name="username"
+                      value={accountData.email}
+                      readOnly
+                      autoComplete="username"
+                      className="sr-only"
+                      tabIndex={-1}
+                    />
+                    <div className="space-y-1.5">
+                      <Label htmlFor="currentPassword">현재 비밀번호</Label>
+                      <Input
+                        ref={passwordInputRef}
+                        id="currentPassword"
+                        type="password"
+                        value={passwordData.currentPassword}
+                        onChange={(e) =>
+                          setPasswordData((prev) => ({
+                            ...prev,
+                            currentPassword: e.target.value,
+                          }))
+                        }
+                        autoComplete="current-password"
+                        className="h-10 rounded-xl bg-white/80"
                       />
-                      <div className="space-y-2">
-                        <Label htmlFor="currentPassword">현재 비밀번호</Label>
-                        <Input
-                          ref={passwordInputRef}
-                          id="currentPassword"
-                          type="password"
-                          value={passwordData.currentPassword}
-                          onChange={(e) =>
-                            setPasswordData((prev) => ({
-                              ...prev,
-                              currentPassword: e.target.value,
-                            }))
-                          }
-                          autoComplete="current-password"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="newPassword">새 비밀번호</Label>
-                        <Input
-                          id="newPassword"
-                          type="password"
-                          value={passwordData.newPassword}
-                          onChange={(e) =>
-                            setPasswordData((prev) => ({
-                              ...prev,
-                              newPassword: e.target.value,
-                            }))
-                          }
-                          autoComplete="new-password"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Button
-                          type="submit"
-                          variant="outline"
-                          className="h-10 w-full rounded-xl"
-                          disabled={
-                            !passwordData.currentPassword ||
-                            !passwordData.newPassword
-                          }
-                        >
-                          <KeyRound className="mr-2 h-4 w-4" />
-                          비밀번호 변경
-                        </Button>
-                      </div>
-                    </form>
-                  )}
-                </>
-              )}
-            </div>
-          </section>
-        )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="newPassword">새 비밀번호</Label>
+                      <Input
+                        id="newPassword"
+                        type="password"
+                        value={passwordData.newPassword}
+                        onChange={(e) =>
+                          setPasswordData((prev) => ({
+                            ...prev,
+                            newPassword: e.target.value,
+                          }))
+                        }
+                        autoComplete="new-password"
+                        className="h-10 rounded-xl bg-white/80"
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      variant="outline"
+                      className="h-10 w-full rounded-xl bg-white/80"
+                      disabled={
+                        !passwordData.currentPassword ||
+                        !passwordData.newPassword
+                      }
+                    >
+                      <KeyRound className="mr-2 h-4 w-4" />
+                      비밀번호 변경
+                    </Button>
+                  </form>
+                )}
+              </div>
+            </section>
+          )}
+        </div>
 
         <MultiActionDialog
             open={withdrawDialogOpen}

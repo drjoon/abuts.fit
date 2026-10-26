@@ -13,8 +13,6 @@ import {
   getLocalAvatarUrl,
 } from "@/shared/lib/avatarOptions";
 
-const BATCH_COUNT = DEFAULT_AVATAR_TOTAL / AVATAR_BATCH_SIZE;
-
 const hashSeed = (seed: string) => {
   let hash = 0;
   for (let i = 0; i < seed.length; i += 1) {
@@ -34,14 +32,19 @@ const prefetchImages = (urls: string[]) => {
 };
 
 /**
- * Cycles through the local 64-avatar pack in batches of 4.
+ * Cycles through the local 64-avatar pack.
  * seedBase only picks the starting batch so users see different first rows.
  */
-export const useAvatarCarousel = (seedBase: string) => {
+export const useAvatarCarousel = (
+  seedBase: string,
+  batchSize: number = AVATAR_BATCH_SIZE,
+) => {
+  const size = Math.max(1, Math.min(batchSize, DEFAULT_AVATAR_TOTAL));
+  const batchCount = Math.ceil(DEFAULT_AVATAR_TOTAL / size) || 1;
   const normalizedSeed = seedBase.trim().slice(0, 50) || "user";
   const startBatch = useMemo(
-    () => hashSeed(normalizedSeed) % BATCH_COUNT,
-    [normalizedSeed],
+    () => hashSeed(normalizedSeed) % batchCount,
+    [normalizedSeed, batchCount],
   );
 
   const [batchIndex, setBatchIndex] = useState(startBatch);
@@ -51,22 +54,19 @@ export const useAvatarCarousel = (seedBase: string) => {
   }, [startBatch]);
 
   const avatars = useMemo(
-    () => getAvatarBatchUrls(batchIndex, AVATAR_BATCH_SIZE),
-    [batchIndex],
+    () => getAvatarBatchUrls(batchIndex, size),
+    [batchIndex, size],
   );
 
   useEffect(() => {
     prefetchImages(avatars);
-    const next = getAvatarBatchUrls(
-      (batchIndex + 1) % BATCH_COUNT,
-      AVATAR_BATCH_SIZE,
-    );
+    const next = getAvatarBatchUrls((batchIndex + 1) % batchCount, size);
     prefetchImages(next);
-  }, [avatars, batchIndex]);
+  }, [avatars, batchIndex, batchCount, size]);
 
   const refreshAvatars = useCallback(() => {
-    setBatchIndex((prev) => (prev + 1) % BATCH_COUNT);
-  }, []);
+    setBatchIndex((prev) => (prev + 1) % batchCount);
+  }, [batchCount]);
 
   return {
     avatars,

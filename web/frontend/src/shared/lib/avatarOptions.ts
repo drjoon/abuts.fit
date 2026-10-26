@@ -25,10 +25,10 @@ export const getAvatarBatchUrls = (
   batchSize: number = AVATAR_BATCH_SIZE,
 ) => {
   const size = Math.max(1, Math.min(batchSize, DEFAULT_AVATAR_TOTAL));
-  const batchCount = Math.floor(DEFAULT_AVATAR_TOTAL / size) || 1;
+  const batchCount = Math.ceil(DEFAULT_AVATAR_TOTAL / size) || 1;
   const safeBatch =
     ((Math.trunc(batchIndex) % batchCount) + batchCount) % batchCount;
-  const start = safeBatch * size;
+  const start = (safeBatch * size) % DEFAULT_AVATAR_TOTAL;
   return Array.from({ length: size }, (_, i) =>
     getLocalAvatarUrl(start + i + 1),
   );
