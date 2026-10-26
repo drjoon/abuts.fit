@@ -15,7 +15,7 @@
  * 다시 필수로 되돌리려면 `.cursor/rules/practice-oral-scan-optional.mdc` — 경고 후 재확인.
  */
 export const ORAL_SCAN_OPTIONAL_NOTE_PRIMARY =
-  "3D 스캔(DCM·PLY·STL·OBJ)은 선택입니다.";
+  "3D 스캔(STL·PLY·OBJ)과 ExoCAD·3Shape 파일은 선택입니다.";
 
 export const ORAL_SCAN_OPTIONAL_NOTE_SECONDARY =
   "러버인상(석고모델)은 파일 없이 기공소로 보낼 수 있습니다.";

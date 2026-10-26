@@ -86,10 +86,9 @@
 
 ### 구강스캔 · 기공의뢰서 경로
 
-- **3Shape/TRIOS**: 스캔 데이터는 Communicate로 치과→지정 기공소(어벗츠기공소 포함) 직송. 어벗츠는 중간 플랫폼으로 스캔을 받지 않음.
 - **기공의뢰서**: 치식·메모·수가·매칭 등은 어벗츠 기공의뢰(PracticeTransfer)로 작성.
-- **3D 스캔은 선택**: 생성·수정(`assertOralScanFilesForCreate`)은 DCM/PLY/STL/OBJ가 없어도 통과한다. 첨부가 없거나 사진만 있는 러버인상(석고모델)도 전송된다. 다시 필수로 바꾸려면 사용자 경고와 재확인 전 `oral_scan_required` 거절을 넣지 않는다. SSOT: `.cursor/rules/practice-oral-scan-optional.mdc`
-- **비 3Shape**: STL/PLY/OBJ 등 현행처럼 웹앱에 업로드해 기공의뢰와 함께 전송.
+- **3D 스캔은 선택**: 생성·수정(`assertOralScanFilesForCreate`)은 스캔 파일이 없어도 통과한다. 첨부가 없거나 사진만 있는 러버인상(석고모델)도 전송된다. 다시 필수로 바꾸려면 사용자 경고와 재확인 전 `oral_scan_required` 거절을 넣지 않는다. SSOT: `.cursor/rules/practice-oral-scan-optional.mdc`
+- **스캐너 파일**: 프라임스캔·샤이닝 Aoralscan·3Shape TRIOS 저장분을 기공의뢰에 받는다. 메시는 STL·PLY·OBJ다. ExoCAD는 `.dentalProject`. 3Shape(TRIOS)는 `.dcm`·`.3ox`·`.3oxz`다. 저장·다운로드는 원본 바이트와 파일명이다. 기공소가 ExoCAD로 열 때 `.dcm`만 PLY·STL로 바꿀 수 있다.
 - **UI**: Communicate/TRIOS 전용 안내 탭·배너·문구 없음.
 - **작업 스캔 자동 정렬**: 의뢰 상악·하악·바이트가 모두 있으면 `jobs/workScanAutoAlignWorker.js`가 AI 디자인 모델 정렬(바이트 맞춤 + 교합 원점)을 돌려 `production.labWorkScanFiles`에 작업 DCM 3역할을 넣는다. 치과·기공소 모두 작업 파일로 보고, AI 디자인은 이 좌표에서 시작한다.
   - 대기열: **새 스캔 업로드 직후 한 번만** `queueWorkScanAutoAlign`(생성·리메이크·파일 추가 `schedulePracticeScanAlignment(id, { newUpload: true })`, 작업시작 첨부). 기존 의뢰는 백필하지 않는다. AI 디자인이 열 때 브라우저에서 맞춘다. 휴지통·복원·역할 변경은 재계산 없이 `dropStaleWorkScanAutoAlign`으로 예전 자동 작업 스캔만 비운다. 워커는 `source: "upload"` 대기만 맡고, 건 사이 `WORK_SCAN_AUTO_ALIGN_COOLDOWN_MS`(기본 5초) 쉰다. 워커 힙 기본 1024MB. 상태는 `production.workScanAutoAlign`.

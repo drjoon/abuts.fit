@@ -363,6 +363,7 @@ import {
   getPracticeTransferFileExtension,
   isPracticeTransferModelFileName,
   partitionDetailAttachFiles,
+  practiceTransferCadProjectLabel,
   partitionLabChatDropFiles,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
   PRACTICE_TRANSFER_STL_ACCEPT,
@@ -423,6 +424,8 @@ function resolvePreviewKind(fileName: string): ModelPreviewKind | null {
 }
 
 function fileTypeLabel(fileName: string): string {
+  const cad = practiceTransferCadProjectLabel(fileName);
+  if (cad) return cad;
   const ext = getPracticeTransferFileExtension(fileName).replace(/^\./, "");
   return ext ? ext.toUpperCase() : "FILE";
 }

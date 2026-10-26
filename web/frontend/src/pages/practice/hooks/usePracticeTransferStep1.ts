@@ -20,6 +20,7 @@ import {
 // - 2026-09-20: 지정 기공소 픽커 표시「어벗츠 협력 · {이름}」(레거시).
 // - 2026-09-05: 기공소 미선택 시 테스트기공소 자동 선택(resolveTestLabByName).
 import {
+  isPracticeTransferCadProjectFileName,
   PRACTICE_ACCEPTED_HINT,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
   PRACTICE_TRANSFER_MODEL_EXTENSIONS,
@@ -875,14 +876,19 @@ export const usePracticeTransferStep1 = (options?: Options) => {
         return;
       }
 
-      if (isPracticeModelExt(ext) || isPracticeImageExt(ext)) {
+      if (
+        isPracticeModelExt(ext) ||
+        isPracticeImageExt(ext) ||
+        isPracticeTransferCadProjectFileName(file.name)
+      ) {
         modelFiles.push(file);
         return;
       }
 
       rejectedFiles.push({
         name: file.name,
-        reason: "3D 모델(STL, PLY, OBJ, DCM) 및 그림 파일만 업로드할 수 있어요.",
+        reason:
+          "STL, PLY, OBJ, ExoCAD, 3Shape, 그림 파일만 올릴 수 있습니다.",
       });
     });
 

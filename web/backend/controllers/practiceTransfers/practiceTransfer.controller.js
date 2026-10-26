@@ -396,7 +396,14 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - 2026-08-18: 수락 전 의뢰 내용 수정 POST /:transferId/update-content.
 // - 2026-08-19: mark-accepted — 기공비 미설정(마스터 Off·항목 Off·해당 보철 0원)이면 409 lab_fee_unconfigured.
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
+// .dcm은 메시가 아니라 TRIOS(3Shape) 파일. 미리보기만 형상을 읽는다.
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj", ".dcm"]);
+// 프라임스캔·Aoralscan·TRIOS가 ExoCAD/3Shape로 저장한 프로젝트. 원본 그대로 저장·다운로드.
+const PRACTICE_ALLOWED_CAD_PROJECT_EXTENSIONS = new Set([
+  ".dentalproject",
+  ".3ox",
+  ".3oxz",
+]);
 const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
   ".png",
   ".jpg",
@@ -407,6 +414,7 @@ const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
 ]);
 const PRACTICE_ALLOWED_EXTENSIONS = new Set([
   ...PRACTICE_ALLOWED_MODEL_EXTENSIONS,
+  ...PRACTICE_ALLOWED_CAD_PROJECT_EXTENSIONS,
   ...PRACTICE_ALLOWED_IMAGE_EXTENSIONS,
 ]);
 

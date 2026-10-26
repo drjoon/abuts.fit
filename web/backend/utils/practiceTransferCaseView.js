@@ -32,7 +32,8 @@ export const PRACTICE_TRANSFER_CASE_VIEW_SELECT = {
   createdAt: 1,
 };
 
-const SHAREABLE_EXT_RE = /\.(stl|ply|obj|dcm|mtl|jpe?g|png|webp|bmp)$/i;
+const SHAREABLE_EXT_RE =
+  /\.(stl|ply|obj|dcm|dentalproject|3oxz?|mtl|jpe?g|png|webp|bmp)$/i;
 const MODEL_EXT_RE = /\.(stl|ply|obj|dcm)$/i;
 
 export const buildTransferLookupFilter = (rawTransferKey) => {

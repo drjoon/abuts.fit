@@ -73,11 +73,14 @@ const normalizeOriginalName = (name) => {
   }
 };
 
+const KEEP_LONG_UPLOAD_EXT = new Set([".dentalproject"]);
+
 const getExtFromName = (name) => {
   const n = String(name || "");
   if (!n.includes(".")) return "";
   const ext = `.${n.split(".").pop().toLowerCase()}`;
-  return ext.length > 10 ? "" : ext;
+  if (ext.length > 10 && !KEEP_LONG_UPLOAD_EXT.has(ext)) return "";
+  return ext;
 };
 
 // [정책] uploadToRhinoServer / uploadS3ToRhinoServer 제거
