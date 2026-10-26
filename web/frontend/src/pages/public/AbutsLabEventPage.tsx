@@ -9,6 +9,8 @@ import {
   ArrowDown,
   ArrowLeft,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   MapPin,
   Phone,
   ScanLine,
@@ -21,6 +23,12 @@ import {
 } from "./components/PublicPageLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  type CarouselApi,
+} from "@/components/ui/carousel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -38,6 +46,7 @@ import {
 } from "@/shared/events/eventsApi";
 import {
   ABUTS_LAB_APPLY_FOLLOWUP,
+  ABUTS_LAB_CLINICAL_SLIDES,
   ABUTS_LAB_EVENT_HEADLINE,
   ABUTS_LAB_EVENT_SLUG,
   ABUTS_LAB_HERO_EYEBROW,
@@ -127,6 +136,99 @@ function PhotoFrame({ src, alt }: { src: string; alt: string }) {
         alt={alt}
         className="absolute inset-0 h-full w-full object-cover object-center"
       />
+    </div>
+  );
+}
+
+/** 가운데 한 장. 양옆 슬라이드가 조금 보이게 넘겨 본다. */
+function ClinicalDesignSlideshow() {
+  const [api, setApi] = useState<CarouselApi>();
+  const [index, setIndex] = useState(0);
+  const count = ABUTS_LAB_CLINICAL_SLIDES.length;
+
+  useEffect(() => {
+    if (!api) return undefined;
+    const sync = () => setIndex(api.selectedScrollSnap());
+    sync();
+    api.on("select", sync);
+    api.on("reInit", sync);
+    return () => {
+      api.off("select", sync);
+      api.off("reInit", sync);
+    };
+  }, [api]);
+
+  return (
+    <div className="min-w-0">
+      <div className="mx-auto mb-2 grid w-[78%] grid-cols-2 text-center text-xs font-semibold text-slate-600 sm:text-sm">
+        <p>일반 기공사 디자인</p>
+        <p>어벗츠 디자인</p>
+      </div>
+      <div className="relative">
+        <div className="pointer-events-none absolute left-1/2 top-0 z-10 w-[78%] -translate-x-1/2">
+          <div className="relative aspect-[1024/390]">
+            <button
+              type="button"
+              className="pointer-events-auto absolute left-0 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-slate-800 shadow-md ring-1 ring-slate-200/80 hover:bg-white"
+              aria-label="이전 디자인"
+              onClick={() => api?.scrollPrev()}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              className="pointer-events-auto absolute right-0 top-1/2 flex h-9 w-9 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-slate-800 shadow-md ring-1 ring-slate-200/80 hover:bg-white"
+              aria-label="다음 디자인"
+              onClick={() => api?.scrollNext()}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+        <Carousel
+          setApi={setApi}
+          opts={{ align: "center", loop: true, containScroll: false }}
+          className="w-full cursor-grab select-none active:cursor-grabbing"
+          aria-label="일반 기공사 디자인과 어벗츠 디자인 비교"
+        >
+          <CarouselContent className="-ml-2">
+            {ABUTS_LAB_CLINICAL_SLIDES.map((src, i) => (
+              <CarouselItem key={src} className="basis-[78%] pl-2">
+                <div className="relative aspect-[1024/390] overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_10px_28px_rgba(15,23,42,0.07)]">
+                  <img
+                    src={src}
+                    alt={
+                      i === index
+                        ? "일반 기공사 디자인과 어벗츠 디자인"
+                        : ""
+                    }
+                    draggable={false}
+                    className="absolute inset-0 h-full w-full object-contain"
+                  />
+                </div>
+              </CarouselItem>
+            ))}
+          </CarouselContent>
+        </Carousel>
+      </div>
+      <div className="mt-3 flex justify-center gap-1.5">
+        {ABUTS_LAB_CLINICAL_SLIDES.map((src, i) => (
+          <button
+            key={src}
+            type="button"
+            aria-label={`${i + 1}번째 비교`}
+            aria-current={i === index ? "true" : undefined}
+            className={cn(
+              "h-1.5 rounded-full",
+              i === index ? "w-5 bg-slate-900/80" : "w-1.5 bg-slate-900/25",
+            )}
+            onClick={() => api?.scrollTo(i)}
+          />
+        ))}
+      </div>
+      <p className="sr-only">
+        {index + 1} / {count}
+      </p>
     </div>
   );
 }
@@ -918,7 +1020,7 @@ export default function AbutsLabEventPage() {
         data-rail-label="함께"
         className="border-b border-sky-100 bg-[#eef6ff] py-16 sm:py-20"
       >
-        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+        <div className="grid items-center gap-10 px-4 sm:px-6 lg:grid-cols-[minmax(18rem,42rem)_minmax(18rem,1fr)] lg:gap-10 lg:pl-[max(2rem,calc((100%-64rem)/2+2rem))] lg:pr-8">
           <LandingReveal>
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">
               Design
@@ -950,6 +1052,9 @@ export default function AbutsLabEventPage() {
                 </Button>
               </LandingMagnetic>
             </div>
+          </LandingReveal>
+          <LandingReveal delay={90} className="min-w-0">
+            <ClinicalDesignSlideshow />
           </LandingReveal>
         </div>
       </section>

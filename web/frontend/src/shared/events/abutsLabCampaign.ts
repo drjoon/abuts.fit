@@ -46,3 +46,14 @@ export const ABUTS_LAB_IMAGES = {
   fillet: "/events/abuts-lab/fillet-warning.jpg",
   gouge: "/events/abuts-lab/corner-gouge.jpg",
 } as const;
+
+/** 임상에 맞춘 디자인 비교. 각 장의 왼쪽은 일반 기공사, 오른쪽은 어벗츠. */
+export const ABUTS_LAB_CLINICAL_SLIDES = [
+  "/events/abuts-lab/clinical/01.jpg",
+  "/events/abuts-lab/clinical/02.jpg",
+  "/events/abuts-lab/clinical/03.jpg",
+  "/events/abuts-lab/clinical/04.jpg",
+  "/events/abuts-lab/clinical/05.jpg",
+  "/events/abuts-lab/clinical/06.jpg",
+  "/events/abuts-lab/clinical/07.jpg",
+] as const;
