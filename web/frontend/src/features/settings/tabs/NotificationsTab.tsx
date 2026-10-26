@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/chat/chatSoundPrefs.ts
 // change-log:
+// - 2026-10-27: 채팅 알림음·수신 방법·알림 유형 구역을 넓은 화면에서 2열로.
 // - 2026-09-07: 채팅 알림음 — 전체 on/off만(클릭 토글). 미리듣기·방별은 채팅창.
 // - 2026-09-07: 채팅 알림음 전체 on/off · 미리듣기.
 import { useEffect, useMemo, useState } from "react";
@@ -259,7 +260,8 @@ export const NotificationsTab = () => {
           수신 방법과 알림 유형을 선택합니다. 변경 시 자동 저장됩니다.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent>
+        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
         <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
           <div className="mb-4 flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
@@ -270,8 +272,9 @@ export const NotificationsTab = () => {
                 채팅 알림음
               </h3>
               <p className="text-xs text-muted-foreground">
-                새 메시지 도착 시 소리로 알립니다. 채팅방마다 개별 끄기는 채팅창에서
-                설정합니다.
+                새 메시지 도착 시 소리로 알립니다.
+                <br />
+                채팅방마다 개별 끄기는 채팅창에서 설정합니다.
               </p>
             </div>
           </div>
@@ -334,7 +337,7 @@ export const NotificationsTab = () => {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
+        <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 lg:col-span-2">
           <div className="mb-4 flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
               <Bell className="h-4 w-4 text-primary-strong" />
@@ -348,7 +351,7 @@ export const NotificationsTab = () => {
               </p>
             </div>
           </div>
-          <div className="space-y-2.5">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             <ToggleRow
               id="newRequests"
               icon={FileText}
@@ -378,6 +381,7 @@ export const NotificationsTab = () => {
             />
           </div>
         </section>
+        </div>
       </CardContent>
     </Card>
   );
