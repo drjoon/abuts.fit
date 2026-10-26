@@ -454,8 +454,11 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox, {
         const totalDev = sample.radius - dirMeanR;
         ssTot += totalDev * totalDev;
       }
-      const rSquared = ssTot > 1e-8 ? 1 - ssRes / ssTot : 0;
-      if (!(rSquared > 0.65)) continue;
+      const residualRms = Math.sqrt(ssRes / dirN);
+      // 수직 축면은 반지름이 거의 일정해 ssTot≈0 이다. 그때 R²를 0으로 두면 방향이 전부 버려지고
+      // 교합 림 앞점까지 계산하지 않는다. 잔차가 작으면 기울기 0인 직선으로 본다.
+      const rSquared = ssTot > 1e-8 ? 1 - ssRes / ssTot : 1;
+      if (!(rSquared > 0.65 || residualRms <= 0.12)) continue;
       directions.push({
         angle: angles[d],
         slope: dirSlope,
@@ -471,8 +474,10 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox, {
     }
   }
 
+  // 방향이 모자라면 삽입축은 비우고, 교합 림 앞점은 아래에서 계산한다.
   if (directions.length < 6) {
-    return null;
+    if (axisOnly) return null;
+    directions.length = 0;
   }
 
   // 2. Tilt axis vector 계산 (180도 쌍 분석)
@@ -547,7 +552,7 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox, {
     if (!directions[i].paired) directions.splice(i, 1);
     else delete directions[i].paired;
   }
-  if (directions.length < 6) {
+  if (directions.length < 6 && axisOnly) {
     return null;
   }
 
@@ -559,15 +564,8 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox, {
     return { taperAngle, tiltAxisVector };
   }
 
-  // 3. FrontPoint 계산 (Top/Side 교점 + side 방향 보정)
-  //
-  // 1단계: tiltAxisVector 기준 Top/Side 교점 탐색 (기존 방식)
-  //        - top face: tiltDir 방향 법선이 0.5 초과 & proj > topProjThreshold
-  //        - side face: 그 외
-  //        - 교점 정점 = top+side 양쪽 face에 속하는 정점
-  // 2단계: 교점이 상방 홈 테두리에 떨어진 경우 보정
-  //        - 교점 Z에서 tiltDir 반대 방향으로 sideOffset(0.5mm) 이동한 Z를 구함
-  //        - 보정된 Z에서 frontDir(XY 경사 방향) 수평 ray로 mesh 재교차 → 포스트 측면 확정
+  // 교합면과 축면이 만나는 림에서 가장 낮은 점을 앞점으로 잡는다.
+  // 전역 최고점에서 2mm만 보면 기울어진 교합면의 낮은 쪽이 빠진다.
 
   // tiltDir 정규화
   const tiltDirLen = Math.sqrt(
@@ -600,65 +598,126 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox, {
   }
 
   const totalLength = bbox.max.z - bbox.min.z;
-  const topProjThreshold = maxProj - Math.min(2.0, totalLength * 0.2);
 
-  // 정점 분류 (Top/Side)
+  // 정점 분류 (Top/Side). 삼각형 평균 높이가 아니라 정점 높이로 림을 본다.
+  // 교합면이 약 60°까지 기울어도 축면(법선이 삽입축과 거의 수직)과 구분된다.
+  const OCCLUSAL_DOT = 0.5;
   const vertexFaceTypes = new Map();
   const getVertexHash = (v) =>
     `${v.x.toFixed(4)},${v.y.toFixed(4)},${v.z.toFixed(4)}`;
+  const provisionalTop = [];
+  const aboveMargin = finishLineTopZ + 0.35;
+
+  const faceDot = (v0, v1, v2) => {
+    const e1x = v1.x - v0.x;
+    const e1y = v1.y - v0.y;
+    const e1z = v1.z - v0.z;
+    const e2x = v2.x - v0.x;
+    const e2y = v2.y - v0.y;
+    const e2z = v2.z - v0.z;
+    let nx = e1y * e2z - e1z * e2y;
+    let ny = e1z * e2x - e1x * e2z;
+    let nz = e1x * e2y - e1y * e2x;
+    const normalLen = Math.hypot(nx, ny, nz);
+    if (!(normalLen > 1e-9)) return null;
+    nx /= normalLen;
+    ny /= normalLen;
+    nz /= normalLen;
+    return nx * tiltDir.x + ny * tiltDir.y + nz * tiltDir.z;
+  };
 
   for (let tri = 0; tri < triangleCount; tri++) {
     const i0 = index ? index.getX(tri * 3) : tri * 3;
     const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
     const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
-
     const v0 = readVertex(i0);
     const v1 = readVertex(i1);
     const v2 = readVertex(i2);
+    const dot = faceDot(v0, v1, v2);
+    if (dot == null || !(dot > OCCLUSAL_DOT)) continue;
+    for (const vertex of [v0, v1, v2]) {
+      if (vertex.z >= aboveMargin) provisionalTop.push(vertex);
+    }
+  }
 
-    const avgProj =
-      ((v0.x + v1.x + v2.x) * tiltDir.x +
-        (v0.y + v1.y + v2.y) * tiltDir.y +
-        (v0.z + v1.z + v2.z) * tiltDir.z) /
-      3;
+  let maxTopZ = -Infinity;
+  for (const v of provisionalTop) {
+    if (v.z > maxTopZ) maxTopZ = v.z;
+  }
+  let highR = 0;
+  if (Number.isFinite(maxTopZ)) {
+    for (const v of provisionalTop) {
+      if (v.z < maxTopZ - 1.5) continue;
+      const r = Math.hypot(v.x - center.x, v.y - center.y);
+      if (r > highR) highR = r;
+    }
+  }
+  const postSpan = Number.isFinite(maxTopZ) ? Math.max(0, maxTopZ - finishLineTopZ) : 0;
+  // 45° 교합면의 높이 차(직경)까지 포함하고, 마진 쪽 이머전스는 남긴다.
+  const drop = Math.min(Math.max(3, highR * 2), Math.max(1.5, postSpan * 0.85));
+  const zCut = Number.isFinite(maxTopZ) ? maxTopZ - drop : Infinity;
 
-    if (avgProj > topProjThreshold - 2.0) {
-      const e1 = { x: v1.x - v0.x, y: v1.y - v0.y, z: v1.z - v0.z };
-      const e2 = { x: v2.x - v0.x, y: v2.y - v0.y, z: v2.z - v0.z };
-      const normal = {
-        x: e1.y * e2.z - e1.z * e2.y,
-        y: e1.z * e2.x - e1.x * e2.z,
-        z: e1.x * e2.y - e1.y * e2.x,
-      };
-      const normalLen = Math.sqrt(
-        normal.x * normal.x + normal.y * normal.y + normal.z * normal.z,
-      );
-      if (normalLen > 1e-9) {
-        normal.x /= normalLen;
-        normal.y /= normalLen;
-        normal.z /= normalLen;
-      }
+  const noteVertex = (vertex, faceType) => {
+    if (!(vertex.z >= zCut)) return;
+    const hash = getVertexHash(vertex);
+    let entry = vertexFaceTypes.get(hash);
+    if (!entry) {
+      entry = { v: vertex, types: new Set() };
+      vertexFaceTypes.set(hash, entry);
+    }
+    entry.types.add(faceType);
+  };
 
-      let faceType = "none";
-      const dotProduct =
-        normal.x * tiltDir.x + normal.y * tiltDir.y + normal.z * tiltDir.z;
-      if (dotProduct > 0.5) {
-        if (avgProj > topProjThreshold) {
-          faceType = "top";
-        }
-      } else {
-        faceType = "side";
-      }
+  for (const vertex of provisionalTop) noteVertex(vertex, "top");
 
-      if (faceType !== "none") {
-        for (const vertex of [v0, v1, v2]) {
-          const hash = getVertexHash(vertex);
-          if (!vertexFaceTypes.has(hash)) {
-            vertexFaceTypes.set(hash, { v: vertex, types: new Set() });
+  for (let tri = 0; tri < triangleCount; tri++) {
+    const i0 = index ? index.getX(tri * 3) : tri * 3;
+    const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+    const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
+    const v0 = readVertex(i0);
+    const v1 = readVertex(i1);
+    const v2 = readVertex(i2);
+    if (v0.z < zCut && v1.z < zCut && v2.z < zCut) continue;
+    const dot = faceDot(v0, v1, v2);
+    if (dot == null || dot > OCCLUSAL_DOT) continue;
+    for (const vertex of [v0, v1, v2]) noteVertex(vertex, "side");
+  }
+
+  // 림 정점이 0.15mm 이하로 벌어져 있으면 같은 교점으로 본다.
+  const CELL = 0.15;
+  const sideBins = new Map();
+  const cellKey = (v) =>
+    `${Math.floor(v.x / CELL)},${Math.floor(v.y / CELL)},${Math.floor(v.z / CELL)}`;
+  for (const entry of vertexFaceTypes.values()) {
+    if (!entry.types.has("side")) continue;
+    const key = cellKey(entry.v);
+    const list = sideBins.get(key);
+    if (list) list.push(entry.v);
+    else sideBins.set(key, [entry.v]);
+  }
+  const hasNearSide = (v) => {
+    const ix = Math.floor(v.x / CELL);
+    const iy = Math.floor(v.y / CELL);
+    const iz = Math.floor(v.z / CELL);
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dz = -1; dz <= 1; dz += 1) {
+          const list = sideBins.get(`${ix + dx},${iy + dy},${iz + dz}`);
+          if (!list) continue;
+          for (const s of list) {
+            const ex = s.x - v.x;
+            const ey = s.y - v.y;
+            const ez = s.z - v.z;
+            if (ex * ex + ey * ey + ez * ez <= CELL * CELL) return true;
           }
-          vertexFaceTypes.get(hash).types.add(faceType);
         }
       }
+    }
+    return false;
+  };
+  for (const entry of vertexFaceTypes.values()) {
+    if (entry.types.has("top") && !entry.types.has("side") && hasNearSide(entry.v)) {
+      entry.types.add("side");
     }
   }
 
@@ -695,6 +754,24 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox, {
       if (proj >= strictProjMin) {
         strictCandidates.push(candidate);
       }
+    }
+  }
+
+  // 축면과 정점을 공유하지 않아도 교합면 바깥 림의 최저점을 앞점으로 쓴다.
+  if (relaxedCandidates.length === 0 && provisionalTop.length > 0) {
+    let maxDist = 0;
+    const tops = [];
+    for (const v of provisionalTop) {
+      const dx = v.x - center.x;
+      const dy = v.y - center.y;
+      const distToAxis = Math.hypot(dx, dy);
+      if (distToAxis <= minRadius) continue;
+      tops.push({ v, dx, dy, distToAxis, proj: v.z });
+      if (distToAxis > maxDist) maxDist = distToAxis;
+    }
+    const outerCut = Math.max(minRadius, maxDist * 0.72);
+    for (const c of tops) {
+      if (c.distToAxis >= outerCut) relaxedCandidates.push(c);
     }
   }
 
