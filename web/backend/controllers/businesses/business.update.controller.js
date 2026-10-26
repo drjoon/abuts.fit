@@ -32,7 +32,10 @@ import {
   formatBusinessNumber,
 } from "./business.validation.util.js";
 import { normalizeBusinessAddressFields } from "./business.address.util.js";
-import { findBusinessByAnchors } from "./business.find.util.js";
+import {
+  findBusinessByAnchors,
+  findConflictingBusinessAnchor,
+} from "./business.find.util.js";
 import { grantWelcomeFreeCreditIfEligible } from "./business.freeCredit.util.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
 import { invalidateMyBusinessCache } from "./business.controller.js";
@@ -915,14 +918,11 @@ export async function updateMyBusiness(req, res) {
 
     if (businessNumber && !attachToBusinessAnchor) {
       const businessNumberNormalized = businessNumber.replace(/\D/g, "").trim();
-      const query = {
+      // 유형이 달라도 기존 BA가 있으면 막는다. 같은 법인의 부모·자식·형제만 예외.
+      const dup = await findConflictingBusinessAnchor({
         businessNumberNormalized,
-        ...typeFilter,
-      };
-      if (businessAnchor?._id) {
-        query._id = { $ne: businessAnchor._id };
-      }
-      const dup = await BusinessAnchor.findOne(query).select({ _id: 1 }).lean();
+        selfAnchorId: businessAnchor?._id || null,
+      });
       if (dup) {
         console.info("[BusinessAnchor] updateMyBusiness conflict", {
           reason: "duplicate_business_number_post_patch",

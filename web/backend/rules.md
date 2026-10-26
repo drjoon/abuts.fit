@@ -594,7 +594,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - `validRoles` 기준은 루트 규칙(사업자 타입 허용값)과 동기화합니다. (`internalLab`·`labTeam`·`salesTeam` 포함)
   - 기존 `practice` 계정은 `requestor`+`practice` 마이그레이션 대상입니다.
   - `internalLab`(어벗츠기공소): 어벗츠 주식회사 **기공사업부** 작업 화면. 개인 기공소가 아니다. 디자인 파트너·기공의뢰 수신·사업자/크레딧 API 허용. 공개 가입 없음. 어벗츠가 수행한 기공비의 치과 입금·계산서는 법인.
-  - 동일 법인 BN 공유: `BusinessAnchor` unique는 `{ businessNumberNormalized, businessType }`. 하위조직 `parentBusinessAnchorId`(예: admin「어벗츠 주식회사」← internalLab「기공사업부」). `ensureBusinessAnchor`도 type 스코프.
+  - 동일 법인 BN 공유: `BusinessAnchor` unique는 `{ businessNumberNormalized, businessType }`. 하위조직 `parentBusinessAnchorId`(예: admin「어벗츠 주식회사」← internalLab「기공사업부」)만 같은 번호를 나눈다. 공개 가입·사업자 저장의 중복 검사는 유형이 달라도 기존 BA를 본다(`findConflictingBusinessAnchor`). 부모·자식·같은 부모의 형제가 아니면 409.
 
 - 의뢰자 역할·서비스 · 가입/온보딩 SSOT (2026-08, 루트 §2.4 상세)
   - `labTeam`(기공팀)·`salesTeam`(영업본부): 내부 직원. 공개 가입 없음. 어벗츠 대표(관리자)가 설정-임직원-직원등록. 사업영역 수익 분배 주체. `salesTeam`은 딜러와 별개. 영업본부 포털 `/api/sales-team` · FE `/dashboard/sales`. 소개코드 영문 3글자.

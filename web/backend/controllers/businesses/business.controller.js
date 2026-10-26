@@ -20,7 +20,10 @@ import {
   lookupPostalCodeByAddress,
   normalizeBusinessAddressFields,
 } from "./business.address.util.js";
-import { findBusinessByAnchors } from "./business.find.util.js";
+import {
+  findBusinessByAnchors,
+  findConflictingBusinessAnchor,
+} from "./business.find.util.js";
 import { buildOrgBusinessTypeQuery } from "../../utils/orgBusinessType.util.js";
 import { getTtlMapValue, setTtlMapValue } from "../../utils/boundedTtlMap.js";
 import {
@@ -95,21 +98,28 @@ export async function checkBusinessNumberDuplicate(req, res) {
     const effectiveBusinessAnchorId =
       freshUser?.businessAnchorId || req.user.businessAnchorId || null;
 
-    const existingAnchor = await BusinessAnchor.findOne({
-      businessType,
+    const existingAnchor = await findConflictingBusinessAnchor({
       businessNumberNormalized: businessNumber,
-      ...(effectiveBusinessAnchorId
-        ? { _id: { $ne: effectiveBusinessAnchorId } }
-        : {}),
-    })
-      .select({ _id: 1, primaryContactUserId: 1 })
-      .lean();
+      selfAnchorId: effectiveBusinessAnchorId,
+    });
 
     if (existingAnchor) {
       const meId = String(req.user._id);
-      const existingOwnerId = String(existingAnchor.primaryContactUserId || "");
+      const sameType =
+        String(existingAnchor.businessType || "") === String(businessType);
+      const existingOwnerId = String(
+        existingAnchor.primaryContactUserId || "",
+      );
+      const isOwner =
+        Array.isArray(existingAnchor.owners) &&
+        existingAnchor.owners.some((ownerId) => String(ownerId) === meId);
+      const isMember =
+        Array.isArray(existingAnchor.members) &&
+        existingAnchor.members.some((memberId) => String(memberId) === meId);
+      const isMine =
+        sameType && (existingOwnerId === meId || isOwner || isMember);
 
-      if (existingOwnerId !== meId) {
+      if (!isMine) {
         return res.status(409).json({
           success: false,
           reason: "duplicate_business_number",
