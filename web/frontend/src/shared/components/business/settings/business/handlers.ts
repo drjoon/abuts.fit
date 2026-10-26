@@ -2,6 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+import { createElement, Fragment } from "react";
 import { request } from "@/shared/api/apiClient";
 import {
   normalizeBusinessNumber,
@@ -63,6 +64,8 @@ interface HandleSaveResult {
   welcomeBonusAmount?: number;
   verification?: {
     verified?: boolean;
+    pending?: boolean;
+    retried?: boolean;
     provider?: string;
     message?: string;
     checkedAt?: string;
@@ -409,6 +412,7 @@ export const handleSave = async (
       ? {
           verified: Boolean(verificationRaw?.verified),
           pending: Boolean(verificationRaw?.pending),
+          retried: Boolean(verificationRaw?.retried),
           provider: String(verificationRaw?.provider || "").trim() || undefined,
           message: String(verificationRaw?.message || "").trim() || undefined,
           checkedAt:
@@ -426,7 +430,15 @@ export const handleSave = async (
     if (verification?.pending) {
       toast({
         title: "홈택스 장애로 사업자 확인이 지연되고 있어요",
-        description: "복구되면 자동으로 처리됩니다. 별도 조치는 필요 없어요.",
+        description: verification.retried
+          ? createElement(
+              Fragment,
+              null,
+              "한 번 더 확인했지만 아직 응답이 없어요.",
+              createElement("br"),
+              "복구되면 자동으로 처리됩니다.",
+            )
+          : "복구되면 자동으로 처리됩니다. 별도 조치는 필요 없어요.",
         duration: 6000,
       });
     }

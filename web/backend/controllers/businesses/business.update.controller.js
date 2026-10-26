@@ -11,7 +11,12 @@ import { verifyBusinessNumber } from "../../services/hometax.service.js";
 import {
   ensureBusinessVerificationRetryScheduled,
   emitBusinessVerificationChanged,
+  retryOnePendingBusinessVerification,
 } from "../../jobs/businessVerificationRetryWorker.js";
+import {
+  hasSubmittedBusinessRegistration,
+  verifyBusinessNumberRetryingOutageOnce,
+} from "../../utils/businessVerificationDefer.js";
 import {
   assertBusinessRole,
   buildBusinessTypeFilter,
@@ -416,11 +421,31 @@ export async function updateMyBusiness(req, res) {
         !isVerifiedBusiness &&
         !hasLicenseInRegistrationRequest
       ) {
-        return res.status(400).json({
-          success: false,
-          reason: "business_license_required",
-          message: "사업자등록증을 등록·검증해야 합니다.",
-        });
+        // 등록증은 이미 제출됐고 홈택스만 지연된 경우. 여기서 한 번 더 조회한 뒤 역할 저장을 막지 않는다.
+        if (!hasSubmittedBusinessRegistration(businessAnchor)) {
+          return res.status(400).json({
+            success: false,
+            reason: "business_license_required",
+            message: "사업자등록증을 등록·검증해야 합니다.",
+          });
+        }
+        const state = await retryOnePendingBusinessVerification(businessAnchor);
+        if (state === "rejected") {
+          const fresh = await BusinessAnchor.findById(businessAnchor._id)
+            .select({ verificationMessage: 1 })
+            .lean();
+          return res.status(400).json({
+            success: false,
+            reason: "business_verification_failed",
+            message:
+              String(fresh?.verificationMessage || "").trim() ||
+              "사업자등록번호 검증에 실패했습니다. 정보를 다시 확인해주세요.",
+          });
+        }
+        if (state === "verified" && businessAnchor) {
+          businessAnchor.status = "verified";
+          businessAnchor.verificationPendingAt = null;
+        }
       }
 
       const onlyProfileUpdate =
@@ -793,7 +818,8 @@ export async function updateMyBusiness(req, res) {
         requiresBusinessLicense(nextRequestorProfile.services) &&
         businessAnchor?.status !== "verified" &&
         !businessNumberProvided &&
-        !businessLicense
+        !businessLicense &&
+        !hasSubmittedBusinessRegistration(businessAnchor)
       ) {
         return res.status(400).json({
           success: false,
@@ -919,13 +945,16 @@ export async function updateMyBusiness(req, res) {
     // (주소·전화번호 등 단순 정보 수정 시 홈택스 API 타임아웃/장애로 저장이 차단되는 문제 방지)
     const skipVerification = isVerifiedBusiness && !isBusinessNumberChanging;
     if (businessNumber && !skipVerification) {
-      verificationResult = await verifyBusinessNumber({
-        businessNumber,
-        companyName: nextName || businessAnchor?.name || "",
-        representativeName,
-        startDate,
-        deferOnOutage: true,
-      });
+      verificationResult = await verifyBusinessNumberRetryingOutageOnce(
+        verifyBusinessNumber,
+        {
+          businessNumber,
+          companyName: nextName || businessAnchor?.name || "",
+          representativeName,
+          startDate,
+          deferOnOutage: true,
+        },
+      );
       if (verificationResult?.pending) {
         // 저장 직후 보류 건이 생기므로 잠시 뒤 재검증 워커를 켠다.
         setTimeout(() => {
@@ -1047,6 +1076,12 @@ export async function updateMyBusiness(req, res) {
             ? {
                 verificationPendingAt: new Date(),
                 verificationMessage: verificationResult.message || "",
+                ...(verificationResult.retried
+                  ? {
+                      verificationRetryCount: 1,
+                      verificationLastCheckedAt: new Date(),
+                    }
+                  : {}),
               }
             : {}),
           ...createdPersist,
@@ -1144,7 +1179,12 @@ export async function updateMyBusiness(req, res) {
               created.status === "verified"
                 ? { verified: true }
                 : verificationResult?.pending
-                  ? { verified: false, pending: true, message: verificationResult.message || "" }
+                  ? {
+                      verified: false,
+                      pending: true,
+                      retried: Boolean(verificationResult.retried),
+                      message: verificationResult.message || "",
+                    }
                   : null,
             welcomeFreeCreditGranted: welcomeGranted,
             welcomeFreeCreditAmount: welcomeAmount,
@@ -1180,6 +1220,13 @@ export async function updateMyBusiness(req, res) {
       if (verificationResult.pending) {
         patch.verificationPendingAt = new Date();
         patch.verificationMessage = verificationResult.message || "";
+        if (verificationResult.retried) {
+          patch.verificationRetryCount = Math.max(
+            1,
+            Number(businessAnchor?.verificationRetryCount) || 0,
+          );
+          patch.verificationLastCheckedAt = new Date();
+        }
       } else {
         patch.verificationPendingAt = null;
         patch.verificationMessage = "";
@@ -1360,6 +1407,7 @@ export async function updateMyBusiness(req, res) {
           ? {
               verified: !!verificationResult.verified,
               pending: !!verificationResult.pending,
+              retried: !!verificationResult.retried,
               provider: verificationResult.provider || "hometax",
               message: verificationResult.message || "",
               checkedAt: new Date(),

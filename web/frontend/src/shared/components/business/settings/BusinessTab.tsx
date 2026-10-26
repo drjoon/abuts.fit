@@ -355,6 +355,32 @@ export const BusinessTab = ({
         });
         if (!res.ok) {
           const body: any = res.data || {};
+          const reason = String(body?.reason || "").trim();
+          const alreadySubmitted =
+            businessDataMgmt.validationSucceeded || businessDataMgmt.isVerified;
+          if (reason === "business_license_required" && alreadySubmitted) {
+            toast({
+              title: "사업자 확인이 아직 끝나지 않았어요",
+              description: (
+                <>
+                  등록증은 이미 제출되었습니다.
+                  <br />
+                  홈택스 응답을 한 번 더 확인한 뒤에도 이어서 저장하지 못했어요.
+                </>
+              ),
+              variant: "destructive",
+            });
+            return false;
+          }
+          if (reason === "business_verification_failed") {
+            toast({
+              title: "사업자 확인에 실패했어요",
+              description:
+                body?.message || "입력한 정보를 다시 확인해주세요.",
+              variant: "destructive",
+            });
+            return false;
+          }
           toast({
             title: "저장 실패",
             description:
@@ -533,8 +559,13 @@ export const BusinessTab = ({
   const handleSave = async () => {
     const savingToast = toast({
       title: "저장 중...",
-      description:
-        "사업자 정보를 검증하는 중입니다. 최대 10초 정도 소요될 수 있습니다.",
+      description: (
+        <>
+          사업자 정보를 확인하는 중입니다.
+          <br />
+          응답이 없으면 한 번 더 확인합니다.
+        </>
+      ),
       duration: 60000,
     });
 
