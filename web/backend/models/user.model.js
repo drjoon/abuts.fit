@@ -4,6 +4,11 @@
 // - web/backend/server.js
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
+import {
+  isStrongPassword,
+  PASSWORD_POLICY_MESSAGE,
+  STAFF_INITIAL_PASSWORD_MESSAGE,
+} from "../utils/passwordPolicy.js";
 
 const userSchema = new mongoose.Schema(
   {
@@ -40,14 +45,19 @@ const userSchema = new mongoose.Schema(
           if (typeof value !== "string") return false;
           // pre-save 해시가 다시 검증될 때는 길이를 보지 않는다.
           if (/^\$2[aby]\$/.test(value)) return true;
-          // 직원 로그인 아이디 계정은 영문 소문자 6자리. 일반 계정은 8자 이상.
-          if (this.loginId) return /^[a-z]{6}$/.test(value);
+          // 대표가 정하는 처음 비밀번호만 영문 소문자 6자리.
+          // 본인이 바꾸는 비밀번호는 일반 규칙.
+          if (this.loginId && this.mustChangePassword) {
+            return /^[a-z]{6}$/.test(value);
+          }
+          if (this.loginId) return isStrongPassword(value);
           return value.length >= 8;
         },
         message() {
-          if (this.loginId) {
-            return "처음 비밀번호는 영문 소문자 6자리로 적어 주세요. 예: abcdef";
+          if (this.loginId && this.mustChangePassword) {
+            return STAFF_INITIAL_PASSWORD_MESSAGE;
           }
+          if (this.loginId) return PASSWORD_POLICY_MESSAGE;
           return "비밀번호는 최소 8자 이상이어야 합니다.";
         },
       },

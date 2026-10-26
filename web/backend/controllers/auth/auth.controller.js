@@ -29,10 +29,8 @@ import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { defaultProfileImageForSeed } from "../../utils/defaultProfileImage.js";
 import {
-  isStaffInitialPassword,
   isStrongPassword,
   PASSWORD_POLICY_MESSAGE,
-  STAFF_INITIAL_PASSWORD_MESSAGE,
 } from "../../utils/passwordPolicy.js";
 import {
   classifyLoginCredential,
@@ -1438,7 +1436,7 @@ async function changePassword(req, res) {
       });
     }
 
-    // 대표가 준 첫 비밀번호로 들어온 뒤에는 새 비밀번호만 받는다.
+    // 대표가 준 첫 비밀번호로 들어온 뒤에는 현재 비밀번호를 받지 않는다.
     if (!user.mustChangePassword) {
       const isPasswordValid = await user.comparePassword(currentPassword);
       if (!isPasswordValid) {
@@ -1450,15 +1448,7 @@ async function changePassword(req, res) {
       }
     }
 
-    const staffPassword = Boolean(user.mustChangePassword || user.loginId);
-    if (staffPassword) {
-      if (!isStaffInitialPassword(newPassword)) {
-        return res.status(400).json({
-          success: false,
-          message: STAFF_INITIAL_PASSWORD_MESSAGE,
-        });
-      }
-    } else if (!isStrongPassword(newPassword)) {
+    if (!isStrongPassword(newPassword)) {
       return res.status(400).json({
         success: false,
         message: PASSWORD_POLICY_MESSAGE,

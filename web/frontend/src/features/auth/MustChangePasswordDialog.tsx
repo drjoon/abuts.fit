@@ -76,7 +76,7 @@ export function MustChangePasswordDialog() {
             <DialogDescription>
               대표가 알려 준 비밀번호로 로그인했습니다.
               <br />
-              영문 소문자 6자리로 새 비밀번호를 정해 주세요.
+              10자 이상, 특수문자를 포함한 비밀번호로 바꿔 주세요.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -86,7 +86,7 @@ export function MustChangePasswordDialog() {
                 id="new-staff-password"
                 type={showNew ? "text" : "password"}
                 autoComplete="new-password"
-                placeholder="영문 소문자 6자리. 예: qwerty"
+                placeholder="10자 이상, 특수문자 포함"
                 value={newPassword}
                 onChange={(event) => setNewPassword(event.target.value)}
                 disabled={saving}
