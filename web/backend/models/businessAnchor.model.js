@@ -422,6 +422,7 @@ const businessAnchorSchema = new mongoose.Schema(
     businessLicense: {
       s3Key: { type: String, default: "" },
       fileId: { type: String, default: "" },
+      originalName: { type: String, default: "" },
       uploadedAt: { type: Date, default: null },
     },
     payoutAccount: {

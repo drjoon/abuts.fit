@@ -40,6 +40,17 @@ export const BusinessLicenseUpload = forwardRef<
     const licenseInputRef = useRef<HTMLInputElement | null>(null);
     const uploadButtonRef = useRef<HTMLButtonElement | null>(null);
     const canEdit = membership === "owner" || membership === "none";
+    const busy =
+      licenseStatus === "uploading" || licenseStatus === "processing";
+    const uploaded =
+      licenseStatus === "ready" || licenseStatus === "uploaded";
+    const statusLabel = busy
+      ? licenseStatus === "uploading"
+        ? "업로드 중"
+        : "인식 중"
+      : uploaded
+        ? "업로드됨"
+        : "미업로드";
 
     useImperativeHandle(
       ref,
@@ -59,14 +70,30 @@ export const BusinessLicenseUpload = forwardRef<
           </span>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-slate-900">사업자등록증</p>
-            {licenseFileName &&
-            licenseStatus !== "uploading" &&
-            licenseStatus !== "processing" ? (
-              <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-slate-600">
-                {licenseStatus === "ready" ? (
-                  <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-primary-strong" />
-                ) : null}
-                <span className="truncate">{licenseFileName}</span>
+            <p className="mt-0.5 flex min-w-0 items-center gap-1 text-xs">
+              {uploaded ? (
+                <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-primary-strong" />
+              ) : null}
+              <span
+                className={
+                  uploaded
+                    ? "shrink-0 font-medium text-primary-strong"
+                    : busy
+                      ? "shrink-0 text-slate-500"
+                      : "shrink-0 font-medium text-accent-strong"
+                }
+              >
+                {statusLabel}
+              </span>
+              {uploaded && licenseFileName ? (
+                <span className="truncate text-slate-600">{licenseFileName}</span>
+              ) : null}
+              {!uploaded && !busy ? (
+                <span className="truncate text-slate-400">
+                  JPG, PNG · 최대 10MB
+                </span>
+              ) : null}
+              {uploaded ? (
                 <button
                   type="button"
                   className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-200 hover:text-slate-700 disabled:opacity-50"
@@ -76,12 +103,8 @@ export const BusinessLicenseUpload = forwardRef<
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
-              </p>
-            ) : (
-              <p className="mt-0.5 text-xs text-slate-400">
-                JPG, PNG · 최대 10MB
-              </p>
-            )}
+              ) : null}
+            </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">

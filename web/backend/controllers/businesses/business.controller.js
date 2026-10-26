@@ -291,6 +291,25 @@ function abutsLabCertifiedPayload(anchor) {
   };
 }
 
+/** 스키마에 파일명이 없던 기존 등록증은 File.originalName으로 채운다. */
+async function withBusinessLicenseOriginalName(license) {
+  if (!license) return null;
+  const plain =
+    typeof license.toObject === "function" ? license.toObject() : { ...license };
+  const fileId = String(plain.fileId || "").trim();
+  let originalName = String(plain.originalName || "").trim();
+  if (!originalName && fileId && Types.ObjectId.isValid(fileId)) {
+    const file = await File.findById(fileId).select("originalName").lean();
+    originalName = String(file?.originalName || "").trim();
+  }
+  return {
+    s3Key: String(plain.s3Key || ""),
+    fileId,
+    originalName,
+    uploadedAt: plain.uploadedAt || null,
+  };
+}
+
 export async function getMyBusiness(req, res) {
   try {
     res.set("x-abuts-handler", "business.getMyBusiness");
@@ -625,6 +644,10 @@ export async function getMyBusiness(req, res) {
         signupAt: requestorSignupAt,
       });
 
+    const businessLicense = await withBusinessLicenseOriginalName(
+      anchor?.businessLicense,
+    );
+
     const responseData = {
       success: true,
       data: {
@@ -639,7 +662,7 @@ export async function getMyBusiness(req, res) {
         // 홈택스 장애로 검증 보류 중(복구 후 자동 처리)
         verificationPending: !businessVerified && !!anchor?.verificationPendingAt,
         metadata, // SSOT
-        businessLicense: anchor?.businessLicense || null,
+        businessLicense,
         payoutAccount: anchor?.payoutAccount || {},
         taxInvoice: {
           trusteeIssueEnabled:

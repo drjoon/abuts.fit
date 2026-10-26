@@ -248,7 +248,7 @@ export const useBusinessDataManagement = (
           setLicenseFileName(licName);
           setLicenseFileId(nextLicenseFileId);
           setLicenseS3Key(nextLicenseS3Key);
-          setLicenseStatus(licName ? "ready" : "missing");
+          setLicenseStatus("ready");
           setIsVerified(!!data?.businessVerified);
         } else {
           setLicenseFileName("");
