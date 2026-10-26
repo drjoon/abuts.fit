@@ -9,6 +9,18 @@ import {
   isCompatibleOrgBusinessType,
 } from "../../utils/orgBusinessType.util.js";
 
+function anchorIncludesUser(entries, meId) {
+  const me = String(meId || "");
+  if (!me) return false;
+  return (Array.isArray(entries) ? entries : []).some((entry) => {
+    if (entry == null) return false;
+    if (typeof entry === "object") {
+      return String(entry._id || entry.id || entry.userId || "") === me;
+    }
+    return String(entry) === me;
+  });
+}
+
 export async function resolveOwnedBusiness(req, businessType) {
   const meId = req.user?._id;
   const businessAnchorId = req.user?.businessAnchorId;
@@ -27,6 +39,38 @@ export async function resolveOwnedBusiness(req, businessType) {
     ...buildOrgBusinessTypeQuery(businessType),
     $or: [{ primaryContactUserId: meId }, { owners: meId }],
   }).sort({ updatedAt: -1, createdAt: -1 });
+}
+
+/** 대표 또는 소속 직원이 조직도·임직원 목록을 조회할 때. */
+export async function resolveAffiliatedBusiness(req, businessType) {
+  const owned = await resolveOwnedBusiness(req, businessType);
+  if (owned) return owned;
+
+  const meId = req.user?._id;
+  const businessAnchorId = req.user?.businessAnchorId;
+
+  if (businessAnchorId) {
+    const byAnchor = await BusinessAnchor.findById(businessAnchorId);
+    if (
+      byAnchor &&
+      isCompatibleOrgBusinessType(businessType, byAnchor) &&
+      anchorIncludesUser(byAnchor.members, meId)
+    ) {
+      return byAnchor;
+    }
+  }
+
+  const candidates = await BusinessAnchor.find({
+    ...buildOrgBusinessTypeQuery(businessType),
+    members: meId,
+  })
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .limit(5);
+
+  return (
+    candidates.find((anchor) => anchorIncludesUser(anchor.members, meId)) ||
+    null
+  );
 }
 
 export async function resolvePrimaryOwnedBusiness(req, businessType) {

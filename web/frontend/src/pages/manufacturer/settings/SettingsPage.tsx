@@ -45,7 +45,7 @@ export const ManufacturerSettingsPage = () => {
         key: "staff",
         label: "임직원",
         icon: Users,
-        content: <StaffTab userData={user} />,
+        content: <StaffTab userData={user} businessTypeOverride="manufacturer" />,
       },
       {
         key: "notifications",

@@ -224,7 +224,8 @@ export const BusinessTab = ({
 
     if (!authUserId || !allowLocalDraft) return;
     const stored = readStoredSetupMode(authUserId);
-    if (stored) setSetupMode(stored);
+    // 소속 신청은 임직원 탭. 설정에 남아 있던 search 모드는 복원하지 않는다.
+    if (stored === "license" || stored === "manual") setSetupMode(stored);
   }, [
     allowLocalDraft,
     authUserId,
@@ -973,44 +974,25 @@ export const BusinessTab = ({
           !setupMode &&
           showSelectionChoices &&
           !setupModeLocked && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  className="app-surface app-surface--panel w-full text-left p-4 transition-colors hover:bg-white"
-                  onClick={() => {
-                    setSetupModeLocked(true);
-                    businessDataMgmt.resetLocalBusinessState();
-                    updateSetupMode("license");
-                    requestAnimationFrame(() => {
-                      licenseUploadRef.current?.focusUpload();
-                    });
-                  }}
-                >
-                  <div className="text-sm font-medium">신규 사업자 등록</div>
-                </button>
-                <button
-                  type="button"
-                  className="app-surface app-surface--panel w-full text-left p-4 transition-colors hover:bg-white"
-                  onClick={() => {
-                    setSetupModeLocked(true);
-                    updateSetupMode("search");
-                  }}
-                >
-                  <div className="text-sm font-medium">기존 사업자 가입</div>
-                </button>
-              </div>
-
-              <JoinRequestsSection
-                myJoinRequests={membershipMgmt.myJoinRequests}
-                cancelLoadingBusinessId={membershipMgmt.cancelLoadingBusinessId}
-                onCancelJoinRequest={handleCancelJoinRequest}
-                onLeaveBusiness={handleLeaveBusiness}
-              />
-            </div>
+            <button
+              type="button"
+              className="app-surface app-surface--panel w-full max-w-xl text-left p-4 transition-colors hover:bg-white"
+              onClick={() => {
+                setSetupModeLocked(true);
+                businessDataMgmt.resetLocalBusinessState();
+                updateSetupMode("license");
+                requestAnimationFrame(() => {
+                  licenseUploadRef.current?.focusUpload();
+                });
+              }}
+            >
+              <div className="text-sm font-medium">신규 사업자 등록</div>
+            </button>
           )}
 
-        {membershipMgmt.membership === "none" && showJoinRequestSection && (
+        {isOnboarding &&
+          membershipMgmt.membership === "none" &&
+          showJoinRequestSection && (
           <JoinRequestsSection
             myJoinRequests={membershipMgmt.myJoinRequests || []}
             cancelLoadingBusinessId={membershipMgmt.cancelLoadingBusinessId}
@@ -1021,7 +1003,7 @@ export const BusinessTab = ({
 
         {(membershipMgmt.membership !== "none" ||
           !!setupMode ||
-          showJoinRequestSection) && (
+          (isOnboarding && showJoinRequestSection)) && (
           <div className="space-y-6">
             {(membershipMgmt.membership === "owner" ||
               setupMode === "license" ||
@@ -1154,19 +1136,37 @@ export const BusinessTab = ({
               </div>
             )}
 
-            {(membershipMgmt.membership === "member" ||
-              membershipMgmt.membership === "pending") && (
+            {membershipMgmt.membership === "member" && (
               <BusinessMemberView
                 currentBusinessName={currentBusinessName}
                 licenseStatus={businessDataMgmt.licenseStatus}
                 isVerified={businessDataMgmt.isVerified}
                 metadata={businessDataMgmt.metadata}
                 businessData={businessDataMgmt.businessData}
-                isPending={membershipMgmt.membership === "pending"}
               />
             )}
 
-            {(membershipMgmt.membership === "none"
+            {!isOnboarding && membershipMgmt.membership === "pending" && (
+              <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 px-4 py-3.5">
+                <p className="text-[13px] leading-relaxed text-slate-700">
+                  대표자 승인 후 사업자 정보를 확인할 수 있습니다.
+                </p>
+              </div>
+            )}
+
+            {isOnboarding && membershipMgmt.membership === "pending" && (
+              <BusinessMemberView
+                currentBusinessName={currentBusinessName}
+                licenseStatus={businessDataMgmt.licenseStatus}
+                isVerified={businessDataMgmt.isVerified}
+                metadata={businessDataMgmt.metadata}
+                businessData={businessDataMgmt.businessData}
+                isPending
+              />
+            )}
+
+            {isOnboarding &&
+            (membershipMgmt.membership === "none"
               ? setupMode === "search" && showSelectionChoices
               : membershipMgmt.membership !== "owner") && (
               <>

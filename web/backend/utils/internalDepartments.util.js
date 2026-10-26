@@ -3,15 +3,12 @@
 // - web/backend/controllers/businesses/business.department.controller.js
 // - web/backend/controllers/auth/auth.controller.js
 
+import { BUSINESS_ALLOWED_ROLES } from "../controllers/businesses/businessRole.util.js";
 import {
   resolveOrgKindForDefaults,
 } from "./orgBusinessType.util.js";
 
-export const INTERNAL_DEPARTMENT_BUSINESS_TYPES = [
-  "admin",
-  "practice",
-  "requestor",
-];
+export const INTERNAL_DEPARTMENT_BUSINESS_TYPES = [...BUSINESS_ALLOWED_ROLES];
 
 export const DEFAULT_ADMIN_DEPARTMENT_NAMES = [
   "플랫폼관리부",
@@ -22,7 +19,6 @@ export const DEFAULT_ADMIN_DEPARTMENT_NAMES = [
 export function supportsInternalDepartments(anchor) {
   if (!anchor) return false;
   const businessType = String(anchor.businessType || "");
-  if (businessType === "practice") return true;
   return INTERNAL_DEPARTMENT_BUSINESS_TYPES.includes(businessType);
 }
 

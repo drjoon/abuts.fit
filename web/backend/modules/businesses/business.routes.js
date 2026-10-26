@@ -194,32 +194,30 @@ router.post(
   businessController.rejectJoinRequest,
 );
 
-// 임직원 부서 (admin · practice · requestor)
-const DEPARTMENT_BUSINESS_ROLES = ["admin", "practice", "requestor"];
-
+// 임직원 부서 — 설정 임직원 탭을 쓰는 모든 사업자 역할
 router.get(
   "/departments",
-  authorize(DEPARTMENT_BUSINESS_ROLES),
+  authorize(BUSINESS_ORG_ROLES),
   businessController.listDepartments,
 );
 router.post(
   "/departments",
-  authorize(DEPARTMENT_BUSINESS_ROLES),
+  authorize(BUSINESS_ORG_ROLES),
   businessController.createDepartment,
 );
 router.patch(
   "/departments/:departmentId",
-  authorize(DEPARTMENT_BUSINESS_ROLES),
+  authorize(BUSINESS_ORG_ROLES),
   businessController.updateDepartment,
 );
 router.delete(
   "/departments/:departmentId",
-  authorize(DEPARTMENT_BUSINESS_ROLES),
+  authorize(BUSINESS_ORG_ROLES),
   businessController.deleteDepartment,
 );
 router.patch(
   "/staff/:userId/department",
-  authorize(DEPARTMENT_BUSINESS_ROLES),
+  authorize(BUSINESS_ORG_ROLES),
   businessController.assignStaffDepartment,
 );
 

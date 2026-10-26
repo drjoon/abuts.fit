@@ -167,7 +167,7 @@ const userSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
-    /** 어벗츠(admin) 임직원 부서 — BusinessAnchor.internalDepartments._id */
+    /** 소속 사업자 임직원 부서 — BusinessAnchor.internalDepartments._id */
     internalDepartmentId: {
       type: mongoose.Schema.Types.ObjectId,
       default: null,

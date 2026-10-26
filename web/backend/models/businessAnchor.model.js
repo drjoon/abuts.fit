@@ -1126,7 +1126,7 @@ const businessAnchorSchema = new mongoose.Schema(
         index: true,
       },
     ],
-    /** 어벗츠(admin) 임직원 부서. related: business.department.controller.js */
+    /** 임직원 부서. 설정 임직원 탭의 조직도. */
     internalDepartments: {
       type: [
         {

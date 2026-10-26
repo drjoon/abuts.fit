@@ -11,7 +11,7 @@ import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
-import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
+import { resolveBusinessType, BUSINESS_ALLOWED_ROLES } from "@/shared/utils/resolveBusinessType";
 import { Building2, Loader2, Pencil, Plus, Trash2, UserPlus, Users } from "lucide-react";
 import { BusinessSearchSection } from "@/shared/components/business/settings/business/BusinessSearchSection";
 import { JoinRequestsSection } from "@/shared/components/business/settings/business/JoinRequestsSection";
@@ -62,12 +62,6 @@ type DepartmentOption = {
   name: string;
   sortOrder?: number;
 };
-
-const DEPARTMENT_ENABLED_BUSINESS_TYPES = new Set([
-  "admin",
-  "practice",
-  "requestor",
-]);
 
 type DirectoryMember = StaffMember & {
   kind: "representative" | "staff";
@@ -126,7 +120,9 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     return resolveBusinessType(user?.role || userData?.role, "requestor");
   }, [businessTypeOverride, user?.role, userData?.role]);
 
-  const supportsDepartments = DEPARTMENT_ENABLED_BUSINESS_TYPES.has(businessType);
+  const supportsDepartments = (BUSINESS_ALLOWED_ROLES as readonly string[]).includes(
+    businessType,
+  );
 
   const membershipMgmt = useMembershipManagement({
     token,
