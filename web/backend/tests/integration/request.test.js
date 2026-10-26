@@ -710,6 +710,16 @@ describe("기공의뢰(PracticeTransfer) API", () => {
       );
       expect(row).toMatchObject({ assigneeKind: "cooperation", isAccepted: false });
 
+      const primeReceived = await request(app)
+        .get("/api/practice/transfers/received")
+        .set(bearer(abutsLab.token))
+        .expect(200);
+      expect(
+        primeReceived.body.data.transfers.find(
+          (t) => t.transferId === body.transferId,
+        ),
+      ).toBeUndefined();
+
       // 협력 건: 원청(어벗츠)은 작업하지 않는다.
       const primeDenied = await request(app)
         .post(`/api/practice/transfers/${body.transferId}/mark-accepted`)

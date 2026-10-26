@@ -12,6 +12,7 @@ import {
   isAutoMatchPriorityLabAnchorId,
   isInternalLabBusinessType,
   isPracticeTransferLabReceiverRole,
+  isPartnerCooperationHiddenFromPrimeInbox,
   collectSubcontractDirectBlockedLabIds,
   isLabIdBlockedAsDirectPracticeTarget,
   isPracticeTransferSubcontracted,
@@ -389,5 +390,58 @@ describe("practiceTransferAutoMatch priority (core)", () => {
       { directTargetDocs: [] },
     );
     expect(blocked).toEqual([OID_B]);
+  });
+});
+
+describe("prime inbox hides partner cooperation", () => {
+  const prime = OID_A;
+  const partner = OID_B;
+
+  test("직접 수행과 하청은 남기고, 파트너 협력은 뺀다", () => {
+    expect(
+      isPartnerCooperationHiddenFromPrimeInbox(
+        { targetLabAnchorId: prime },
+        prime,
+      ),
+    ).toBe(false);
+    expect(
+      isPartnerCooperationHiddenFromPrimeInbox(
+        {
+          targetLabAnchorId: prime,
+          assigneeLabAnchorId: partner,
+          assigneeKind: "subcontract",
+        },
+        prime,
+      ),
+    ).toBe(false);
+    expect(
+      isPartnerCooperationHiddenFromPrimeInbox(
+        {
+          targetLabAnchorId: prime,
+          assigneeLabAnchorId: partner,
+          assigneeKind: "cooperation",
+        },
+        prime,
+      ),
+    ).toBe(true);
+    expect(
+      isPartnerCooperationHiddenFromPrimeInbox(
+        {
+          targetLabAnchorId: prime,
+          assigneeLabAnchorId: partner,
+        },
+        prime,
+      ),
+    ).toBe(true);
+    expect(
+      isPartnerCooperationHiddenFromPrimeInbox(
+        {
+          targetLabAnchorId: prime,
+          assigneeLabAnchorId: partner,
+          autoMatch: { claimedAt: new Date() },
+        },
+        prime,
+      ),
+    ).toBe(false);
   });
 });

@@ -671,6 +671,7 @@ Notes:
   - 페이지: `src/pages/internalLab/labWork` — 기공의뢰수신 셸. 구 `/dashboard/abut-design` → `/dashboard/lab-work`.
   - 랜딩: `/dashboard/lab-work`.
   - 조직: 법인「어벗츠 주식회사」의 「기공사업부」(`parentBusinessAnchorId` + 설정 `InternalLabOrgBanner`). 사업자등록증·BN은 법인과 같다. 치과 입금·계산서는 법인.
+  - 수신함: 어벗츠기공소로 들어온 의뢰(직접 수행·하청)만. 치과가 파트너를 지정한 협력은 수행 기공소 목록에만 있다.
 
 - 제조사 워크시트 크레딧 승인/롤백 정책:
   - 가공 진입 승인으로 `가공` 단계 이동 시 의뢰 크레딧 소비가 발생합니다.

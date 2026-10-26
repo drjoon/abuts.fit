@@ -110,6 +110,7 @@ const buildLabReceivedScope = async (req) => {
     scope: buildReceivedScopeWithAutoMatch({
       labAnchorId,
       autoMatchEligible,
+      hidePartnerCooperation: role === "internalLab",
     }),
     labAnchorId,
   };

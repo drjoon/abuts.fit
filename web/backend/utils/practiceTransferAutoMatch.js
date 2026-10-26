@@ -290,18 +290,39 @@ export const buildAutoMatchDeadlineAt = (
 ) => null;
 
 /**
- * 수신 목록: 내 지정 건(지정·클레임 거부 제외) ∪ (eligible이면) 아직 거부하지 않은 공개 풀
+ * 어벗츠기공소 수신함: 다른 기공소가 수행하는 협력은 제외.
+ * 직접 수행·하청·원청이 assignee인 건은 남긴다.
+ * 레거시(assigneeKind 없음 + claimedAt)는 하청으로 본다.
+ */
+const partnerCooperationHiddenFromPrimeClause = (labOid) => ({
+  $or: [
+    { assigneeLabAnchorId: labOid },
+    { assigneeLabAnchorId: null },
+    { assigneeLabAnchorId: { $exists: false } },
+    { assigneeKind: ASSIGNEE_KIND_SUBCONTRACT },
+    {
+      $and: [
+        { assigneeKind: { $nin: [ASSIGNEE_KIND_COOPERATION] } },
+        { "autoMatch.claimedAt": { $type: "date" } },
+      ],
+    },
+  ],
+});
+
+/**
+ * 수신 목록: 내 지정 건(지정·클레임 거부 제외) ∪ (eligible이면) 아직 거부하지 않은 공개 풀.
+ * hidePartnerCooperation: 어벗츠기공소 수신함은 직접 수행·하청만.
  */
 export const buildReceivedScopeWithAutoMatch = ({
   labAnchorId,
   autoMatchEligible,
+  hidePartnerCooperation = false,
   now = new Date(),
 }) => {
   const labId = String(labAnchorId || "").trim();
   if (!labId || !Types.ObjectId.isValid(labId)) return null;
 
   const labOid = new Types.ObjectId(labId);
-  // 원청은 자기에게 들어온 건(직접 수행·협력·하청)을 모두 본다. 표시는 UI 토글.
   const mine = {
     $and: [
       {
@@ -323,8 +344,13 @@ export const buildReceivedScopeWithAutoMatch = ({
     ],
   };
 
+  const scoped = (scope) =>
+    hidePartnerCooperation
+      ? { $and: [scope, partnerCooperationHiddenFromPrimeClause(labOid)] }
+      : scope;
+
   if (!autoMatchEligible) {
-    return mine;
+    return scoped(mine);
   }
 
   // 공개 풀: 생성 시 스냅샷된 적격 목록에 내가 있어야 함.
@@ -374,7 +400,7 @@ export const buildReceivedScopeWithAutoMatch = ({
     $and: unassignedIncomplete,
   };
 
-  return {
+  return scoped({
     $or: [
       mine,
       // 아직 거부하지 않은 공개 풀
@@ -393,7 +419,7 @@ export const buildReceivedScopeWithAutoMatch = ({
         ],
       },
     ],
-  };
+  });
 };
 
 /** 원자 클레임 조건: 공개 풀(미배정) + (있으면) 예산 적격 스냅샷 + 우선창 */

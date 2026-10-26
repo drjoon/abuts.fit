@@ -1456,6 +1456,8 @@ const buildReceivedScope = async (req) => {
   const scope = buildReceivedScopeWithAutoMatch({
     labAnchorId: targetLabAnchorId,
     autoMatchEligible,
+    // 기공사업부 수신함은 어벗츠기공소로 들어온 의뢰(직접 수행·하청)만.
+    hidePartnerCooperation: role === "internalLab",
   });
 
   return {

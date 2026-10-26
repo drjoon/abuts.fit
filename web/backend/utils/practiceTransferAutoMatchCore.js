@@ -189,6 +189,22 @@ export const resolveAssigneeKind = (transfer) => {
 export const isCooperationAssignee = (transfer) =>
   resolveAssigneeKind(transfer) === ASSIGNEE_KIND_COOPERATION;
 
+/**
+ * 어벗츠기공소 수신함에서 빼는 건.
+ * 다른 기공소가 수행하는 협력(치과가 파트너를 지정)이다.
+ * 직접 수행·하청·원청이 assignee인 건은 남긴다.
+ */
+export const isPartnerCooperationHiddenFromPrimeInbox = (
+  transfer,
+  primeLabAnchorId,
+) => {
+  const assignee = String(getAssigneeLabAnchorId(transfer) || "").trim();
+  const prime = String(primeLabAnchorId || "").trim();
+  if (!assignee || assignee === prime) return false;
+  if (isSubcontractAssignee(transfer)) return false;
+  return isCooperationAssignee(transfer);
+};
+
 export const isSubcontractAssignee = (transfer) =>
   resolveAssigneeKind(transfer) === ASSIGNEE_KIND_SUBCONTRACT;
 
