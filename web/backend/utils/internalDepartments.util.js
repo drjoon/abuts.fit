@@ -3,7 +3,9 @@
 // - web/backend/controllers/businesses/business.department.controller.js
 // - web/backend/controllers/auth/auth.controller.js
 
+import User from "../models/user.model.js";
 import { BUSINESS_ALLOWED_ROLES } from "../controllers/businesses/businessRole.util.js";
+import { getUserRoleLabel } from "./roleLabels.js";
 import {
   resolveOrgKindForDefaults,
 } from "./orgBusinessType.util.js";
@@ -35,7 +37,28 @@ export function getDefaultDepartmentNames(anchor) {
     if (kind === "lab") return ["기공소"];
     return ["치과"];
   }
-  return [];
+  const label = getUserRoleLabel(businessType);
+  if (!label || label === "사용자") return [];
+  return [label];
+}
+
+async function placeStaffInSoleDepartment(anchorDoc) {
+  const departments = Array.isArray(anchorDoc?.internalDepartments)
+    ? anchorDoc.internalDepartments
+    : [];
+  if (departments.length !== 1 || !anchorDoc?._id) return;
+  const departmentId = departments[0]?._id;
+  if (!departmentId) return;
+  await User.updateMany(
+    {
+      businessAnchorId: anchorDoc._id,
+      $and: [
+        { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] },
+        { internalDepartmentId: { $ne: departmentId } },
+      ],
+    },
+    { $set: { internalDepartmentId: departmentId } },
+  );
 }
 
 export function anchorUsesInternalDepartments(anchor) {
@@ -79,6 +102,7 @@ export async function ensureDefaultDepartments(anchorDoc) {
     Array.isArray(anchorDoc.internalDepartments) &&
     anchorDoc.internalDepartments.length > 0
   ) {
+    await placeStaffInSoleDepartment(anchorDoc);
     return anchorDoc;
   }
 
@@ -93,6 +117,7 @@ export async function ensureDefaultDepartments(anchorDoc) {
     createdAt: new Date(),
   }));
   await anchorDoc.save();
+  await placeStaffInSoleDepartment(anchorDoc);
   return anchorDoc;
 }
 

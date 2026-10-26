@@ -408,9 +408,15 @@ export async function loadAnchorDepartmentsForStaff(anchorId) {
 }
 
 export function enrichMemberWithDepartment(member, departmentMap) {
-  const deptId = member?.internalDepartmentId
+  let deptId = member?.internalDepartmentId
     ? String(member.internalDepartmentId)
     : "";
+  if (departmentMap.size === 1) {
+    const onlyId = String(departmentMap.keys().next().value || "");
+    if (!deptId || !departmentMap.has(deptId)) deptId = onlyId;
+  } else if (deptId && !departmentMap.has(deptId)) {
+    deptId = "";
+  }
   const identity = toStaffListFields(member);
   return {
     _id: String(member._id || member.id || ""),
