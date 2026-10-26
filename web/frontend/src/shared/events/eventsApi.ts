@@ -74,7 +74,7 @@ export type EventApplication = {
   practice: EventPlaceFields;
   directorName: string;
   dealer: EventPlaceFields;
-  usesOralScan?: boolean;
+  usesOralScan?: boolean | null;
   applicantPhone: string;
   applicantEmail: string;
   memo: string;

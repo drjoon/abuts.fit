@@ -37,7 +37,8 @@ const ABUTS_LAB_EVENT_COPY = {
     "디자인이 예뻐 보여도, 가공하면 다르게 나오기도 합니다.",
     "어벗츠 소프트웨어가 그 문제를 해결하여 매끈하게 가공합니다.",
     "",
-    "신청 항목: 원장님 성함, 휴대폰 번호, 카카오 치과 주소, 구강 스캐너 사용 여부.",
+    "신청 항목: 원장님 성함, 휴대폰 번호.",
+    "치과 계정은 주소와 구강 스캐너 사용 여부도 받습니다.",
     "회원가입은 원격지원 또는 방문상담 때 합니다.",
   ].join("\n"),
 };
@@ -197,7 +198,10 @@ function toApplicationRow(doc, extras = {}) {
     practice: doc.practice || {},
     directorName: doc.directorName || "",
     dealer: doc.dealer || {},
-    usesOralScan: Boolean(doc.usesOralScan),
+    usesOralScan:
+      doc.usesOralScan === true || doc.usesOralScan === false
+        ? doc.usesOralScan
+        : null,
     applicantPhone: doc.applicantPhone || "",
     applicantEmail: doc.applicantEmail || "",
     memo: doc.memo || "",
@@ -350,7 +354,10 @@ function isDealerRegistered(app, maps) {
 function buildApplicationStats(items) {
   const total = items.length;
   const withDealer = items.filter((it) => dealerHasAny(it.dealer)).length;
-  const oralScanYes = items.filter((it) => it.usesOralScan).length;
+  const oralAnswered = items.filter(
+    (it) => it.usesOralScan === true || it.usesOralScan === false,
+  ).length;
+  const oralScanYes = items.filter((it) => it.usesOralScan === true).length;
   const practiceRegistered = items.filter((it) => it.practiceRegistered).length;
   const dealerRegistered = items.filter((it) => it.dealerRegistered).length;
   const pct = (n, d) => (d > 0 ? Math.round((n / d) * 1000) / 10 : 0);
@@ -358,7 +365,7 @@ function buildApplicationStats(items) {
     total,
     withDealer,
     oralScanYes,
-    oralScanRate: pct(oralScanYes, total),
+    oralScanRate: pct(oralScanYes, oralAnswered),
     practiceRegistered,
     practiceSignupRate: pct(practiceRegistered, total),
     dealerRegistered,
@@ -598,6 +605,9 @@ export async function applyToEvent(req, res) {
       slug === ABUTS_LAB_EVENT_SLUG && !isAbutsLabRequestor(authUser)
         ? null
         : authUser;
+    /** 어벗츠기공소 상담 중 치과 계정이 아닌 신청. 성함·휴대폰만 받는다. */
+    const labContactOnly =
+      slug === ABUTS_LAB_EVENT_SLUG && !isAbutsLabRequestor(linkedUser);
 
     const authPp =
       linkedUser?.practiceProfile &&
@@ -636,8 +646,11 @@ export async function applyToEvent(req, res) {
         message: "구강 스캔 사용 여부를 선택해 주세요.",
       });
     }
-    const usesOralScan =
-      bodyUsesOralScan != null ? bodyUsesOralScan : Boolean(oralScan.value);
+    const usesOralScan = labContactOnly
+      ? null
+      : bodyUsesOralScan != null
+        ? bodyUsesOralScan
+        : Boolean(oralScan.value);
 
     // 로그인 치과: 본문 미입력이면 프로필·계정으로 채움.
     // 치과명은 검색·프로필이 아니라 사업자(BA) 이름으로 덮어쓴다.
@@ -699,7 +712,7 @@ export async function applyToEvent(req, res) {
     const needDealer = Boolean(event.formConfig?.requireDealer);
 
     if (needPractice) {
-      if (!practice.name) {
+      if (!practice.name && !labContactOnly) {
         const loggedInPractice =
           slug === ABUTS_LAB_EVENT_SLUG &&
           linkedUser &&
@@ -715,7 +728,7 @@ export async function applyToEvent(req, res) {
       if (!directorName && linkedUser) {
         directorName = trimStr(practice.name, 80);
       }
-      if (!directorName) {
+      if (!directorName || (labContactOnly && directorName.length < 2)) {
         return res.status(400).json({
           success: false,
           message: "원장명을 입력해 주세요.",
@@ -724,7 +737,7 @@ export async function applyToEvent(req, res) {
     }
 
     if (slug === ABUTS_LAB_EVENT_SLUG) {
-      if (bodyUsesOralScan == null) {
+      if (!labContactOnly && bodyUsesOralScan == null) {
         return res.status(400).json({
           success: false,
           message: "구강 스캐너 사용 여부를 선택해 주세요.",
@@ -736,10 +749,16 @@ export async function applyToEvent(req, res) {
           message: "휴대폰 번호를 확인해 주세요.",
         });
       }
-      if (!practice.address) {
+      if (!labContactOnly && !practice.address) {
         return res.status(400).json({
           success: false,
           message: "치과 주소를 선택해 주세요.",
+        });
+      }
+      if (labContactOnly) {
+        practice = normalizePlace({
+          representativeName: directorName,
+          phone: applicantPhone,
         });
       }
     }
@@ -796,6 +815,25 @@ export async function applyToEvent(req, res) {
         success: false,
         message: "이미 신청하신 내역이 있습니다. 영업팀에 문의해 주세요.",
       });
+    }
+
+    if (labContactOnly) {
+      const digits = normalizePhoneDigits(applicantPhone);
+      const prior = await MarketingEventApplication.find({
+        eventId: event._id,
+        status: { $ne: "rejected" },
+      })
+        .select({ applicantPhone: 1 })
+        .lean();
+      const samePhone = prior.some(
+        (row) => normalizePhoneDigits(row.applicantPhone) === digits,
+      );
+      if (samePhone) {
+        return res.status(409).json({
+          success: false,
+          message: "이미 신청하신 내역이 있습니다. 영업팀에 문의해 주세요.",
+        });
+      }
     }
 
     const created = await MarketingEventApplication.create({

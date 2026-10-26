@@ -464,6 +464,11 @@ export default function AdminEventsPage() {
                             )}
                           </td>
                           <td className="px-3 py-2.5">
+                            {app.usesOralScan == null ? (
+                              <span className="text-xs text-muted-foreground">
+                                -
+                              </span>
+                            ) : (
                             <Badge
                               variant="outline"
                               className={
@@ -474,6 +479,7 @@ export default function AdminEventsPage() {
                             >
                               {app.usesOralScan ? "사용" : "미사용"}
                             </Badge>
+                            )}
                           </td>
                           <td className="px-3 py-2.5">
                             <div className="flex flex-col gap-1">

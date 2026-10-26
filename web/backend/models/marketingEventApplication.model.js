@@ -37,8 +37,8 @@ const marketingEventApplicationSchema = new mongoose.Schema(
     directorName: { type: String, default: "", trim: true },
     /** 지역 재료상 (옵션) */
     dealer: { type: placeSnapshotSchema, default: () => ({}) },
-    /** 구강 스캔 사용 여부 (신청 시 필수) */
-    usesOralScan: { type: Boolean, default: false, index: true },
+    /** 구강 스캔 사용 여부. 치과 신청만 기록하고, 그 외 상담은 null. */
+    usesOralScan: { type: Boolean, default: null, index: true },
     applicantPhone: { type: String, default: "", trim: true },
     applicantEmail: { type: String, default: "", trim: true },
     memo: { type: String, default: "", trim: true },

@@ -273,23 +273,26 @@ function consultFieldErrors(draft: {
   usesOralScan: boolean | null;
   /** 로그인 치과는 치과명을 받지 않는다. 사업자명이 저장된다. */
   skipClinicName?: boolean;
+  /** 치과가 아닌 신청은 성함·휴대폰만 받는다. */
+  contactOnly?: boolean;
   /** 치과 계정 프로필로 채운 항목은 다시 받지 않는다. */
   fromProfile?: { director?: boolean; phone?: boolean; address?: boolean };
 }): FieldErrors {
   const next: FieldErrors = {};
   const fromProfile = draft.fromProfile || {};
   const skipClinicName = Boolean(draft.skipClinicName);
-  if (fromProfile.director && fromProfile.phone && fromProfile.address) {
-    if (draft.usesOralScan == null) {
-      next.oral = "구강 스캐너 사용 여부를 선택해 주세요.";
-    }
-    return next;
-  }
   if (!fromProfile.director && draft.directorName.trim().length < 2) {
     next.director = "원장님 성함을 입력해 주세요.";
   }
   if (!fromProfile.phone && !isMobilePhone(draft.phone)) {
     next.phone = "휴대폰 번호를 확인해 주세요.";
+  }
+  if (draft.contactOnly) return next;
+  if (fromProfile.director && fromProfile.phone && fromProfile.address) {
+    if (draft.usesOralScan == null) {
+      next.oral = "구강 스캐너 사용 여부를 선택해 주세요.";
+    }
+    return next;
   }
   if (fromProfile.address) {
     if (draft.usesOralScan == null) {
@@ -354,8 +357,10 @@ function isMobilePhone(value: string) {
   return /^01[016789]\d{7,8}$/.test(phoneDigits(value));
 }
 
-const APPLY_LEAD_BODY =
+const APPLY_LEAD_CLINIC =
   "구강 스캐너 사용 여부 체크와 함께 상담 신청하시면 빠른 시일 내로 연락드리겠습니다.";
+const APPLY_LEAD_CONTACT =
+  "상담 신청하시면 빠른 시일 내로 연락드리겠습니다.";
 
 function ApplyLead({
   practiceMember,
@@ -375,7 +380,7 @@ function ApplyLead({
           <br />
         </>
       ) : null}
-      {APPLY_LEAD_BODY}
+      {practiceMember ? APPLY_LEAD_CLINIC : APPLY_LEAD_CONTACT}
     </p>
   );
 }
@@ -507,6 +512,7 @@ export default function AbutsLabEventPage() {
   );
 
   const requestorUser = isRequestorApplicant(user);
+  const contactOnly = !requestorUser;
   const prefill = useMemo(
     () => (user && requestorUser ? practicePrefillFromUser(user) : null),
     [user, requestorUser],
@@ -721,6 +727,7 @@ export default function AbutsLabEventPage() {
       place,
       usesOralScan,
       skipClinicName: requestorUser,
+      contactOnly,
       fromProfile,
     });
     setFieldErrors(errors);
@@ -739,27 +746,36 @@ export default function AbutsLabEventPage() {
     const applicantPhone = fromProfile.phone
       ? prefill!.applicantPhone.trim()
       : phone.trim();
-    const practice = fromProfile.address
+    const practice = contactOnly
       ? {
-          name: accountName,
+          name: "",
           representativeName: director,
           phone: applicantPhone,
-          address: accountAddress,
+          address: "",
           lat: null,
           lng: null,
         }
-      : {
-          name: requestorUser
-            ? accountName
-            : manual
-              ? manualClinicName.trim()
-              : place!.name,
-          representativeName: director,
-          phone: applicantPhone,
-          address: manual ? manualAddress.trim() : place!.address || "",
-          lat: manual ? null : place!.lat ?? null,
-          lng: manual ? null : place!.lng ?? null,
-        };
+      : fromProfile.address
+        ? {
+            name: accountName,
+            representativeName: director,
+            phone: applicantPhone,
+            address: accountAddress,
+            lat: null,
+            lng: null,
+          }
+        : {
+            name: requestorUser
+              ? accountName
+              : manual
+                ? manualClinicName.trim()
+                : place!.name,
+            representativeName: director,
+            phone: applicantPhone,
+            address: manual ? manualAddress.trim() : place!.address || "",
+            lat: manual ? null : place!.lat ?? null,
+            lng: manual ? null : place!.lng ?? null,
+          };
     setSubmitting(true);
     try {
       await eventsApi.apply(
@@ -769,7 +785,7 @@ export default function AbutsLabEventPage() {
           directorName: director,
           dealer: EMPTY_DEALER,
           applicantPhone,
-          usesOralScan: usesOralScan as boolean,
+          ...(contactOnly ? {} : { usesOralScan: usesOralScan as boolean }),
           visitSessionId: readEventVisitSessionId(event.slug),
         },
         requestorUser ? token : undefined,
@@ -1133,7 +1149,7 @@ export default function AbutsLabEventPage() {
                   <FieldErrorText message={fieldErrors.phone} />
                 </div>
                 )}
-                {fromProfile.address ? null : (
+                {contactOnly || fromProfile.address ? null : (
                 <div className="space-y-2">
                   <FieldLabel htmlFor="lab-clinic" icon={MapPin}>
                     {requestorUser ? "주소" : "치과명 (주소검색)"}
@@ -1259,6 +1275,7 @@ export default function AbutsLabEventPage() {
                   )}
                 </div>
                 )}
+                {contactOnly ? null : (
                 <OralScanFields
                   usesOralScan={usesOralScan}
                   onChange={(value) => {
@@ -1268,6 +1285,7 @@ export default function AbutsLabEventPage() {
                   disabled={!canApply || submitting}
                   error={fieldErrors.oral}
                 />
+                )}
               </CardContent>
             </Card>
 
