@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -41,6 +42,12 @@ function memberLoginLabel(member: { email?: string; loginId?: string }) {
   const email = String(member.email || "").trim();
   if (email.toLowerCase().endsWith("@staff.abuts.fit")) return "";
   return email;
+}
+
+function memberConfirmLabel(member: { _id: string; name?: string; email?: string; loginId?: string }) {
+  const name = String(member.name || "").trim() || member._id;
+  const login = memberLoginLabel(member);
+  return login && login !== name ? `${name} (${login})` : name;
 }
 
 type DepartmentOption = {
@@ -104,6 +111,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
   const [deletingDepartmentId, setDeletingDepartmentId] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
   const [resetStaff, setResetStaff] = useState<StaffMember | null>(null);
+  const [removeStaff, setRemoveStaff] = useState<DirectoryMember | null>(null);
 
   const mockHeaders = useMemo(() => {
     return {} as Record<string, string>;
@@ -546,9 +554,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
         : "";
     const busy = member.kind === "staff" && actionUserId === member._id;
     const body = (
-      <div
-        className={`min-w-0 px-3.5 pb-3 pt-3 ${member.kind === "staff" ? "pr-8" : ""}`}
-      >
+      <div className="min-w-0 px-3.5 pb-3 pt-3">
         <div className="flex items-center gap-2">
           {member.kind === "representative" ? (
             <Badge className="shrink-0 rounded-md border-0 bg-primary-soft px-2 py-0.5 text-primary-strong">
@@ -584,16 +590,28 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
         {member.kind === "staff" || allowMove ? (
           <div className="mt-3 flex items-center gap-2">
             {member.kind === "staff" ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 shrink-0 rounded-lg px-2.5 text-xs"
-                disabled={busy}
-                onClick={() => setResetStaff(member)}
-              >
-                비밀번호
-              </Button>
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0 rounded-lg px-2.5 text-xs"
+                  disabled={busy}
+                  onClick={() => setResetStaff(member)}
+                >
+                  비밀번호
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0 rounded-lg px-2.5 text-xs"
+                  disabled={busy}
+                  onClick={() => setRemoveStaff(member)}
+                >
+                  삭제
+                </Button>
+              </>
             ) : null}
             {allowMove ? (
               <div className="min-w-0 flex-1">
@@ -616,22 +634,13 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
       );
     }
 
-    const label = login && login !== name ? `${name} (${login})` : name;
     return (
-      <FunctionalItemCard
+      <div
         key={member._id}
-        className="overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-none hover:bg-white"
-        onRemove={() => handleRemoveStaff(member._id)}
-        confirmTitle="직원을 삭제할까요?"
-        confirmDescription={
-          <div className="text-sm text-muted-foreground">{label}</div>
-        }
-        confirmLabel="삭제"
-        cancelLabel="닫기"
-        disabled={busy}
+        className="overflow-hidden rounded-xl border border-slate-200 bg-white"
       >
         {body}
-      </FunctionalItemCard>
+      </div>
     );
   };
 
@@ -879,21 +888,35 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                 void refreshRepresentatives();
               }}
             />
+            <ConfirmDialog
+              open={Boolean(removeStaff)}
+              title="직원을 삭제할까요?"
+              description={
+                removeStaff ? (
+                  <div className="text-sm text-muted-foreground">
+                    {memberConfirmLabel(removeStaff)}
+                  </div>
+                ) : null
+              }
+              confirmLabel="삭제"
+              cancelLabel="닫기"
+              busy={Boolean(removeStaff && actionUserId === removeStaff._id)}
+              onConfirm={async () => {
+                if (!removeStaff) return;
+                await handleRemoveStaff(removeStaff._id);
+                setRemoveStaff(null);
+              }}
+              onCancel={() => {
+                if (removeStaff && actionUserId === removeStaff._id) return;
+                setRemoveStaff(null);
+              }}
+            />
             <StaffPasswordResetDialog
               open={Boolean(resetStaff)}
               token={token || ""}
               businessType={businessType}
               userId={resetStaff?._id || ""}
-              label={
-                resetStaff
-                  ? (() => {
-                      const name =
-                        String(resetStaff.name || "").trim() || resetStaff._id;
-                      const login = memberLoginLabel(resetStaff);
-                      return login && login !== name ? `${name} (${login})` : name;
-                    })()
-                  : ""
-              }
+              label={resetStaff ? memberConfirmLabel(resetStaff) : ""}
               onOpenChange={(open) => {
                 if (!open) setResetStaff(null);
               }}
