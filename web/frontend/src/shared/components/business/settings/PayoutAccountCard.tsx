@@ -35,6 +35,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { request } from "@/shared/api/apiClient";
+import { cn } from "@/shared/ui/cn";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
@@ -66,6 +67,7 @@ type Props = {
   onSaved?: (account: LabPayoutAccountSnapshot | null) => void;
   /** 대표자만 true. false면 조회만. */
   canEdit?: boolean;
+  className?: string;
 };
 
 type UploadStatus = "idle" | "uploading" | "ocr" | "validating";
@@ -75,7 +77,11 @@ const isImageFile = (file: File) =>
   /\.(jpe?g|png|webp)$/i.test(file.name);
 
 /** 정산 입금 계좌·통장 사본(기공소·딜러사 공통). BA `payoutAccount` PATCH. */
-export function PayoutAccountCard({ onSaved, canEdit = true }: Props) {
+export function PayoutAccountCard({
+  onSaved,
+  canEdit = true,
+  className,
+}: Props) {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
@@ -518,7 +524,10 @@ export function PayoutAccountCard({ onSaved, canEdit = true }: Props) {
       <div
         id={PAYOUT_ACCOUNT_CARD_ID}
         ref={cardRef}
-        className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 text-sm text-muted-foreground sm:p-5"
+        className={cn(
+          "rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 text-sm text-muted-foreground sm:p-5",
+          className,
+        )}
       >
         입금 계좌 정보를 불러오는 중…
       </div>
@@ -540,7 +549,10 @@ export function PayoutAccountCard({ onSaved, canEdit = true }: Props) {
     <div
       id={PAYOUT_ACCOUNT_CARD_ID}
       ref={cardRef}
-      className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5"
+      className={cn(
+        "rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5",
+        className,
+      )}
     >
       <div className="mb-3 flex items-start gap-2">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">

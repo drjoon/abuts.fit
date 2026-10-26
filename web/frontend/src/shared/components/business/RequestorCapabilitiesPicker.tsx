@@ -102,26 +102,31 @@ export const RequestorCapabilitiesPicker = ({
         ? CHOICES.filter((c) => c.key === "lab")
         : CHOICES;
 
+  const hint = forcePracticeOnly
+    ? "드롭존 가입 계정은 치과로 고정됩니다."
+    : null;
+
   return (
-    <div className={cn("space-y-3", className)}>
+    <div
+      className={cn(
+        "flex h-full flex-col rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5",
+        className,
+      )}
+    >
       <div className="space-y-0.5">
         <p className="text-sm font-semibold text-slate-900">역할</p>
-        <p className="text-xs text-slate-500">
-          {forcePracticeOnly
-            ? "드롭존 가입 계정은 치과로 고정됩니다."
-            : "설정에서 언제든 바꿀 수 있습니다."}
-        </p>
+        {hint ? <p className="text-xs text-slate-500">{hint}</p> : null}
       </div>
       <div
         role="radiogroup"
         aria-label="역할 선택"
         className={cn(
-          "grid grid-cols-1 gap-3",
+          "grid flex-1 grid-cols-1 gap-3",
           choices.length === 3
             ? "md:grid-cols-3"
             : choices.length === 2
               ? "md:grid-cols-2"
-              : "md:max-w-[50%]",
+              : "",
         )}
       >
         {choices.map((opt) => {
@@ -136,7 +141,10 @@ export const RequestorCapabilitiesPicker = ({
               disabled={disabled}
               onClick={() => choose(opt.key)}
               className={cn(
-                "group relative flex min-h-[5.5rem] flex-col items-start gap-2 rounded-2xl border p-4 text-left shadow-sm outline-none transition-all",
+                "group relative flex items-start gap-3 rounded-2xl border p-3.5 text-left shadow-sm outline-none transition-all",
+                choices.length === 1
+                  ? "h-full flex-row items-center"
+                  : "min-h-[5.5rem] flex-col",
                 "focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2",
                 checked
                   ? "border-primary/60 bg-primary-soft/40 ring-1 ring-primary/30"

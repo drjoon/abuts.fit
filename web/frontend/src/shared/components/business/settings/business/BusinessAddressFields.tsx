@@ -69,7 +69,7 @@ type BusinessAddressFieldsProps = {
   onAddressDetailKeyDown?: KeyboardEventHandler<HTMLInputElement>;
   onZipCodeKeyDown?: KeyboardEventHandler<HTMLInputElement>;
   onAddressSelected?: () => void;
-  rowLayout?: "default" | "address-detail-zip";
+  rowLayout?: "default" | "address-detail-zip" | "detail-zip";
   openMode?: "embed" | "popup";
   inputClassName?: string;
 };
@@ -310,6 +310,54 @@ export const BusinessAddressFields = ({
             onKeyDown={onZipCodeKeyDown}
             disabled={disabled}
           />
+        </div>
+      ) : rowLayout === "detail-zip" ? (
+        <div ref={addressFieldsAnchorRef} className="space-y-3">
+          <Input
+            id="address"
+            ref={addressInputRef}
+            className={cn(
+              inputClassName,
+              addressError && "border-destructive focus-visible:ring-destructive",
+            )}
+            value={address}
+            placeholder="주소1 (도로명 주소) - 클릭하여 검색"
+            onClick={() => {
+              void handleOpenAddressSearch();
+            }}
+            onChange={(e) => onChangeAddress(e.target.value)}
+            onBlur={onAddressBlur}
+            onKeyDown={onAddressKeyDown}
+            disabled={disabled}
+          />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Input
+              id="addressDetail"
+              ref={addressDetailInputRef}
+              className={cn("sm:col-span-2", inputClassName)}
+              value={addressDetail}
+              placeholder="주소2 (동, 호수 등 상세주소)"
+              onChange={(e) => onChangeAddressDetail(e.target.value)}
+              onBlur={onAddressDetailBlur}
+              onKeyDown={onAddressDetailKeyDown}
+              disabled={disabled}
+            />
+            <Input
+              id="zipCode"
+              ref={zipCodeInputRef}
+              className={cn(
+                inputClassName,
+                zipCodeError &&
+                  "border-destructive focus-visible:ring-destructive",
+              )}
+              value={zipCode}
+              placeholder="우편번호"
+              onChange={(e) => onChangeZipCode(e.target.value)}
+              onBlur={onZipCodeBlur}
+              onKeyDown={onZipCodeKeyDown}
+              disabled={disabled}
+            />
+          </div>
         </div>
       ) : (
         <div ref={addressFieldsAnchorRef} className="space-y-3">

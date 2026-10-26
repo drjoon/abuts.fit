@@ -2,16 +2,16 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -73,7 +73,7 @@ import {
 import { PayoutAccountCard } from "@/shared/components/business/settings/PayoutAccountCard";
 import { TrusteeIssueSettingCard } from "@/shared/components/business/settings/TrusteeIssueSettingCard";
 import { ReferralCodeCard } from "@/shared/components/business/settings/ReferralCodeCard";
-import { Building2 } from "lucide-react";
+import { cn } from "@/shared/ui/cn";
 
 interface BusinessTabProps {
   userData?: {
@@ -88,6 +88,8 @@ interface BusinessTabProps {
   }) => void;
   registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
   isOnboarding?: boolean;
+  /** 설정 상단. 소개 코드·역할과 한 줄에 둔다. */
+  summarySlot?: ReactNode;
 }
 
 export const BusinessTab = ({
@@ -97,6 +99,7 @@ export const BusinessTab = ({
   registerValidationState,
   registerGoNextAction,
   isOnboarding = false,
+  summarySlot = null,
 }: BusinessTabProps) => {
   const { toast } = useToast();
   const { token, user, setUser, loginWithToken } = useAuthStore();
@@ -896,12 +899,64 @@ export const BusinessTab = ({
     void handleFileUpload(file);
   };
 
+  const showReferral =
+    !isOnboarding &&
+    canEditSalesReferral &&
+    membershipMgmt.membership === "owner";
+  const showRole =
+    isRequestorBusiness &&
+    (businessDataMgmt.validationSucceeded || businessDataMgmt.isVerified) &&
+    (selectedRole === "owner" ||
+      membershipMgmt.membership === "owner" ||
+      membershipMgmt.membership === "none");
+  const singleRole =
+    showRole &&
+    !isOnboarding &&
+    normalizeRequestorKind(requestorProfile.kind) === "lab";
+  const metaCount = [summarySlot, showReferral, singleRole].filter(Boolean)
+    .length;
+
+  const rolePicker = showRole ? (
+    <RequestorCapabilitiesPicker
+      value={requestorProfile}
+      onChange={handleCapabilitiesChange}
+      disabled={
+        capabilitiesSaving ||
+        (membershipMgmt.membership !== "owner" &&
+          membershipMgmt.membership !== "none" &&
+          selectedRole !== "owner")
+      }
+      forcePracticeOnly={
+        isOnboarding &&
+        String(user?.signupChannel || "").trim() === "practice_dropzone"
+      }
+      restrictToKind={!isOnboarding}
+      className={singleRole ? "h-full" : undefined}
+    />
+  ) : null;
+
   const tabBody = (
-    <div className="space-y-5">
-        {!isOnboarding &&
-        canEditSalesReferral &&
-        membershipMgmt.membership === "owner" ? (
-          <ReferralCodeCard businessType={businessType} />
+    <div className="space-y-4">
+        {metaCount > 0 ? (
+          <div
+            className={cn(
+              "grid grid-cols-1 items-stretch gap-4",
+              metaCount >= 3
+                ? "lg:grid-cols-3"
+                : metaCount === 2
+                  ? "lg:grid-cols-2"
+                  : "lg:max-w-md",
+            )}
+          >
+            {summarySlot}
+            {showReferral ? (
+              <ReferralCodeCard
+                businessType={businessType}
+                className="h-full"
+              />
+            ) : null}
+            {singleRole ? rolePicker : null}
+          </div>
         ) : null}
 
         {/* 설정 화면에서만 표시. 온보딩 대표는 신규 사업자 등록으로 바로 간다. */}
@@ -963,9 +1018,9 @@ export const BusinessTab = ({
             {(membershipMgmt.membership === "owner" ||
               setupMode === "license" ||
               setupMode === "manual") && (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {setupMode !== "manual" && (
-                  <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
+                  <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 px-4 py-3 sm:px-5">
                   <BusinessLicenseUpload
                     ref={licenseUploadRef}
                     membership={membershipMgmt.membership}
@@ -980,30 +1035,7 @@ export const BusinessTab = ({
                   </div>
                 )}
 
-                {isRequestorBusiness &&
-                (businessDataMgmt.validationSucceeded ||
-                  businessDataMgmt.isVerified) &&
-                (selectedRole === "owner" ||
-                  membershipMgmt.membership === "owner" ||
-                  membershipMgmt.membership === "none") ? (
-                  <RequestorCapabilitiesPicker
-                    value={requestorProfile}
-                    onChange={handleCapabilitiesChange}
-                    disabled={
-                      capabilitiesSaving ||
-                      (membershipMgmt.membership !== "owner" &&
-                        membershipMgmt.membership !== "none" &&
-                        selectedRole !== "owner")
-                    }
-                    forcePracticeOnly={
-                      isOnboarding &&
-                      String(user?.signupChannel || "").trim() ===
-                        "practice_dropzone"
-                    }
-                    restrictToKind={!isOnboarding}
-                    className="space-y-4"
-                  />
-                ) : null}
+                {showRole && !singleRole ? rolePicker : null}
 
                 {(membershipMgmt.membership === "owner" ||
                   businessDataMgmt.licenseStatus === "ready" ||
@@ -1071,24 +1103,33 @@ export const BusinessTab = ({
                 membershipMgmt.membership === "owner" &&
                 (requestorProfile.kind === "lab" ||
                   user?.role === "internalLab") ? (
-                  <>
-                    <PayoutAccountCard canEdit />
-                    <TrusteeIssueSettingCard businessTypeOverride="requestor" />
-                  </>
+                  <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
+                    <PayoutAccountCard canEdit className="h-full lg:col-span-2" />
+                    <TrusteeIssueSettingCard
+                      businessTypeOverride="requestor"
+                      className="h-full"
+                    />
+                  </div>
                 ) : null}
 
                 {membershipMgmt.membership === "owner" &&
                 (user?.role === "salesman" || businessType === "salesman") ? (
-                  <>
-                    <PayoutAccountCard canEdit />
-                    <TrusteeIssueSettingCard businessTypeOverride="salesman" />
-                  </>
+                  <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
+                    <PayoutAccountCard canEdit className="h-full lg:col-span-2" />
+                    <TrusteeIssueSettingCard
+                      businessTypeOverride="salesman"
+                      className="h-full"
+                    />
+                  </div>
                 ) : null}
 
                 {membershipMgmt.membership === "owner" &&
                 (user?.role === "manufacturer" ||
                   businessType === "manufacturer") ? (
-                  <TrusteeIssueSettingCard businessTypeOverride="manufacturer" />
+                  <TrusteeIssueSettingCard
+                    businessTypeOverride="manufacturer"
+                    className="lg:max-w-md"
+                  />
                 ) : null}
               </div>
             )}
@@ -1147,22 +1188,7 @@ export const BusinessTab = ({
       onFiles={handleLicenseFilesDrop}
       activeClassName="ring-2 ring-primary/30"
     >
-      {isOnboarding ? (
-        tabBody
-      ) : (
-        <Card className="app-glass-card app-glass-card--lg">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Building2 className="h-5 w-5 text-primary-strong" />
-              사업자 정보
-            </CardTitle>
-            <CardDescription className="text-[13px] leading-relaxed">
-              사업자등록증을 검증한 뒤 역할을 선택합니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>{tabBody}</CardContent>
-        </Card>
-      )}
+      {tabBody}
 
       <AlertDialog
         open={deleteConfirmOpen || verifiedResetConfirmOpen}

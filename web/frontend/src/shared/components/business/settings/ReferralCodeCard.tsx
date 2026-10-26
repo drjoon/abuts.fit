@@ -13,6 +13,7 @@ import {
   invalidateBusinessMeCache,
   loadBusinessMeCached,
 } from "@/shared/components/business/settings/business/businessMeCache";
+import { cn } from "@/shared/ui/cn";
 
 type ReferralOwnership = {
   canRegister?: boolean;
@@ -24,8 +25,10 @@ type ReferralOwnership = {
 
 export function ReferralCodeCard({
   businessType = "requestor",
+  className,
 }: {
   businessType?: string;
+  className?: string;
 }) {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -124,7 +127,12 @@ export function ReferralCodeCard({
 
   if (ownership?.assigned && !ownership?.canRegister) {
     return (
-      <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
+      <section
+        className={cn(
+          "flex h-full flex-col rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5",
+          className,
+        )}
+      >
         <p className="text-sm font-semibold text-slate-900">소개자 코드</p>
         <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
           {ownership?.adminDefault ? (
@@ -145,24 +153,21 @@ export function ReferralCodeCard({
 
   return (
     <form
-      className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-3"
+      className={cn(
+        "flex h-full flex-col gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5",
+        className,
+      )}
       onSubmit={handleSubmit}
     >
       <div>
         <p className="text-sm font-semibold text-slate-900">소개자 코드</p>
-        <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-          {ownership?.withinSelfSetWindow ? (
-            <>
-              가입 후 14일 안에 등록할 수 있습니다.
-              <br />
-              이후에는 어벗츠 소개로 고정됩니다.
-            </>
-          ) : (
-            "대표만 등록할 수 있습니다."
-          )}
-        </p>
+        {ownership?.withinSelfSetWindow ? null : (
+          <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+            대표만 등록할 수 있습니다.
+          </p>
+        )}
       </div>
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="mt-auto flex flex-col gap-2 sm:flex-row">
         <div className="flex-1 space-y-1.5">
           <Label htmlFor="sales-referral-code" className="sr-only">
             소개자 코드

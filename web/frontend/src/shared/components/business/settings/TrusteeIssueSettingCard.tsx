@@ -18,13 +18,18 @@ import {
   loadBusinessMeCached,
 } from "@/shared/components/business/settings/business/businessMeCache";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
+import { cn } from "@/shared/ui/cn";
 
 type Props = {
   /** override when role resolution is ambiguous */
   businessTypeOverride?: string;
+  className?: string;
 };
 
-export function TrusteeIssueSettingCard({ businessTypeOverride }: Props) {
+export function TrusteeIssueSettingCard({
+  businessTypeOverride,
+  className,
+}: Props) {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
   const businessType = resolveBusinessType(
@@ -103,16 +108,21 @@ export function TrusteeIssueSettingCard({ businessTypeOverride }: Props) {
   };
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5 rounded-lg bg-muted p-2">
-          <FileText className="h-4 w-4 text-muted-foreground" />
-        </div>
-        <div className="min-w-0 flex-1 space-y-1">
-          <p className="text-sm font-medium">어벗츠 위수탁 (세금)계산서 발행</p>
-        </div>
+    <div
+      className={cn(
+        "flex h-full flex-col rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5",
+        className,
+      )}
+    >
+      <div className="mb-3 flex items-center gap-2">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+          <FileText className="h-4 w-4 text-primary-strong" />
+        </span>
+        <p className="text-sm font-semibold leading-snug text-slate-900">
+          어벗츠 위수탁 (세금)계산서 발행
+        </p>
       </div>
-      <div className="flex items-center justify-between gap-3 pl-11">
+      <div className="mt-auto flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2.5">
         <Label htmlFor="trustee-issue-enabled" className="text-sm">
           {enabled ? "대신 발행 사용" : "직접 발행"}
         </Label>

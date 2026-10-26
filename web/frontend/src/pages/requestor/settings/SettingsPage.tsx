@@ -108,40 +108,41 @@ export const RequestorSettingsPage = () => {
         label: "사업자",
         icon: Building2,
         content: (
-          <div className="space-y-5">
+          <div className="space-y-4">
             {user?.role === "internalLab" ? <InternalLabOrgBanner /> : null}
-            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
-              <div className="mb-3 flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
-                  <Building2 className="h-4 w-4 text-primary-strong" />
-                </span>
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">가입 정보</p>
-                  <p className="text-xs text-muted-foreground">
-                    계정 가입일
-                  </p>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="rounded-xl border border-slate-200/80 bg-white/70 px-4 py-3">
-                  <p className="text-xs text-muted-foreground">가입일시</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900">
-                    {joinDate ? formatKstDateTimeToKo(joinDate) : "-"}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-slate-200/80 bg-white/70 px-4 py-3">
-                  <p className="text-xs text-muted-foreground">가입 후 경과일</p>
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
+            <BusinessTab
+              userData={user}
+              summarySlot={
+                <section className="flex h-full flex-col rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
+                      <Building2 className="h-4 w-4 text-primary-strong" />
+                    </span>
                     <p className="text-sm font-semibold text-slate-900">
-                      {pricingElapsedDays == null
-                        ? "-"
-                        : `${pricingElapsedDays}일`}
+                      가입 정보
                     </p>
                   </div>
-                </div>
-              </div>
-            </div>
-            <BusinessTab userData={user} />
+                  <dl className="grid flex-1 content-start gap-2">
+                    <div className="rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2.5">
+                      <dt className="text-xs text-muted-foreground">가입일시</dt>
+                      <dd className="mt-0.5 text-sm font-semibold leading-snug text-slate-900">
+                        {joinDate ? formatKstDateTimeToKo(joinDate) : "-"}
+                      </dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2.5">
+                      <dt className="text-xs text-muted-foreground">
+                        가입 후 경과일
+                      </dt>
+                      <dd className="text-sm font-semibold text-slate-900">
+                        {pricingElapsedDays == null
+                          ? "-"
+                          : `${pricingElapsedDays}일`}
+                      </dd>
+                    </div>
+                  </dl>
+                </section>
+              }
+            />
           </div>
         ),
       },

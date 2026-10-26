@@ -221,8 +221,9 @@ export const BusinessForm = ({
   }, [focusFieldKey, focusFirstMissingSignal]);
 
   return (
-    <div className="space-y-5">
-      <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-4">
+    <div className="space-y-4">
+    <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+      <section className="h-full rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-4">
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
             <Building2 className="h-4 w-4 text-primary-strong" />
@@ -235,7 +236,7 @@ export const BusinessForm = ({
           </div>
         </div>
       <div className="space-y-2">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="repName">대표자명</Label>
             <div className="relative rounded-xl p-1">
@@ -585,7 +586,7 @@ export const BusinessForm = ({
       </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-4">
+      <section className="h-full rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-4">
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
             <MapPin className="h-4 w-4 text-primary-strong" />
@@ -600,6 +601,7 @@ export const BusinessForm = ({
 
         <BusinessAddressFields
           className="relative"
+          rowLayout="detail-zip"
           address={businessData.address}
           addressDetail={businessData.addressDetail}
           zipCode={businessData.zipCode}
@@ -691,9 +693,9 @@ export const BusinessForm = ({
           }}
         />
       </section>
+    </div>
 
-      <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-4 sm:p-5">
-        <div className="space-y-2">
+      <div>
         <div className="relative">
           {(() => {
             const actionsNode = renderActions?.({ disabled }) ?? null;
@@ -739,7 +741,6 @@ export const BusinessForm = ({
               {successNote}
             </p>
           )}
-        </div>
         </div>
       </div>
     </div>
