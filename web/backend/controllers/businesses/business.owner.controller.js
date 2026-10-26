@@ -6,6 +6,7 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import { Types } from "mongoose";
 import {
+  resolveAffiliatedBusiness,
   resolveOwnedBusiness,
   resolvePrimaryOwnedBusiness,
   seedUserRequestSettingsFromAnchor,
@@ -81,11 +82,11 @@ export async function getRepresentatives(req, res) {
     if (!roleCheck) return;
     const { businessType } = roleCheck;
 
-    const anchor = await resolveOwnedBusiness(req, businessType);
+    const anchor = await resolveAffiliatedBusiness(req, businessType);
     if (!anchor) {
       return res.status(403).json({
         success: false,
-        message: "대표자 계정만 조회할 수 있습니다.",
+        message: "소속된 사업자가 없습니다.",
       });
     }
 
@@ -312,19 +313,11 @@ export async function getMyStaffMembers(req, res) {
     if (!roleCheck) return;
     const { businessType } = roleCheck;
 
-    const myBusinessAnchorId = String(req.user?.businessAnchorId || "").trim();
-    if (!myBusinessAnchorId) {
-      return res.status(403).json({
-        success: false,
-        message: "사업자 정보가 설정되지 않았습니다.",
-      });
-    }
-
-    const anchorDoc = await resolveOwnedBusiness(req, businessType);
+    const anchorDoc = await resolveAffiliatedBusiness(req, businessType);
     if (!anchorDoc) {
       return res.status(403).json({
         success: false,
-        message: "대표자 계정만 조회할 수 있습니다.",
+        message: "소속된 사업자가 없습니다.",
       });
     }
 
@@ -357,7 +350,7 @@ export async function getMyStaffMembers(req, res) {
     if (!anchor) {
       return res.status(403).json({
         success: false,
-        message: "대표자 계정만 조회할 수 있습니다.",
+        message: "소속된 사업자가 없습니다.",
       });
     }
 
@@ -699,9 +692,50 @@ export async function bulkCreateStaff(req, res) {
       });
     }
 
-    let departmentId = null;
     const deptContext = await loadAnchorDepartmentsForStaff(anchor._id);
-    if (deptContext.usesDepartments) {
+    const rawGroups = Array.isArray(req.body?.groups) ? req.body.groups : null;
+    let groups = null;
+    let departmentId = null;
+    let text = String(req.body?.text || "");
+
+    if (rawGroups) {
+      groups = [];
+      for (const item of rawGroups) {
+        const groupText = String(item?.text || "");
+        if (!groupText.trim()) continue;
+        let groupDepartmentId = null;
+        let departmentName = "";
+        if (deptContext.usesDepartments) {
+          const deptResolved = await resolveApprovedDepartmentId(
+            anchor._id,
+            item?.departmentId,
+          );
+          if (deptResolved.error) {
+            return res.status(400).json({
+              success: false,
+              message:
+                deptResolved.error === "승인할 부서를 선택해주세요."
+                  ? "배치할 부서를 선택해주세요."
+                  : deptResolved.error,
+            });
+          }
+          groupDepartmentId = deptResolved.departmentId || null;
+          departmentName = deptResolved.departmentName || "";
+        }
+        groups.push({
+          departmentId: groupDepartmentId,
+          departmentName,
+          text: groupText,
+        });
+      }
+      if (!groups.length) {
+        return res.status(400).json({
+          success: false,
+          message: "등록할 직원 이름을 적어 주세요.",
+        });
+      }
+      text = "";
+    } else if (deptContext.usesDepartments) {
       const deptResolved = await resolveApprovedDepartmentId(
         anchor._id,
         req.body?.departmentId,
@@ -722,8 +756,9 @@ export async function bulkCreateStaff(req, res) {
       anchor,
       owner,
       password: String(req.body?.password || ""),
-      text: String(req.body?.text || ""),
+      text,
       departmentId,
+      groups,
     });
 
     return res.status(result.status).json({

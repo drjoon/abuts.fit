@@ -7,13 +7,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
-import { Building2, Info, Loader2, Pencil, Plus, UserPlus, Users } from "lucide-react";
+import { Building2, Loader2, Plus, Trash2, UserPlus, Users } from "lucide-react";
+import { BusinessSearchSection } from "@/shared/components/business/settings/business/BusinessSearchSection";
+import { JoinRequestsSection } from "@/shared/components/business/settings/business/JoinRequestsSection";
+import { useBusinessSearch } from "@/shared/components/business/settings/business/useBusinessSearch";
+import { useMembershipManagement } from "@/shared/components/business/settings/business/useMembershipManagement";
+import {
+  handleJoinOrLeave,
+  handleJoinRequest as handleJoinRequestImpl,
+} from "@/shared/components/business/settings/business/handlers";
 import {
   loginIdDisplay,
   StaffBulkRegisterDialog,
@@ -93,10 +100,6 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     );
   }, []);
 
-  const [membership, setMembership] = useState<
-    "none" | "owner" | "member" | "pending"
-  >("none");
-
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [representatives, setRepresentatives] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(false);
@@ -112,6 +115,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [resetStaff, setResetStaff] = useState<StaffMember | null>(null);
   const [removeStaff, setRemoveStaff] = useState<DirectoryMember | null>(null);
+  const [removeDepartment, setRemoveDepartment] = useState<DepartmentOption | null>(null);
 
   const mockHeaders = useMemo(() => {
     return {} as Record<string, string>;
@@ -124,6 +128,20 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
 
   const supportsDepartments = DEPARTMENT_ENABLED_BUSINESS_TYPES.has(businessType);
 
+  const membershipMgmt = useMembershipManagement({
+    token,
+    businessType,
+  });
+  const membership = membershipMgmt.membership;
+  const canManage = membership === "owner";
+  const showDirectory = membership === "owner" || membership === "member";
+
+  const businessSearch = useBusinessSearch({
+    token,
+    businessType,
+    membership,
+  });
+
   const sortedDepartments = useMemo(() => {
     return [...departments].sort((a, b) => {
       const orderDiff = Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0);
@@ -131,27 +149,6 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
       return String(a.name).localeCompare(String(b.name), "ko");
     });
   }, [departments]);
-
-  const refreshMembership = useCallback(async () => {
-    if (!token) return;
-    const res = await request<any>({
-      path: `/api/businesses/me?businessType=${encodeURIComponent(
-        businessType,
-      )}`,
-      method: "GET",
-      token,
-      headers: mockHeaders,
-    });
-    if (!res.ok) return;
-    const body: any = res.data || {};
-    const data = body.data || body;
-    const next = (data?.membership || "none") as
-      | "none"
-      | "owner"
-      | "member"
-      | "pending";
-    setMembership(next);
-  }, [mockHeaders, businessType, token]);
 
   const refreshRepresentatives = useCallback(async () => {
     if (!token) return;
@@ -246,21 +243,8 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
 
   useEffect(() => {
     const load = async () => {
-      try {
-        if (!token) return;
-        setLoading(true);
-        await refreshMembership();
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, [refreshMembership, token]);
-
-  useEffect(() => {
-    const load = async () => {
       if (!token) return;
-      if (membership !== "owner") return;
+      if (!showDirectory) return;
       setLoading(true);
       try {
         await Promise.all([
@@ -274,8 +258,8 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     };
     load();
   }, [
-    membership,
     refreshDepartments,
+    showDirectory,
     refreshRepresentatives,
     refreshStaff,
     token,
@@ -569,7 +553,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
             {name}
           </div>
         </div>
-        {loginParts ? (
+        {canManage && loginParts ? (
           <div className="mt-3 rounded-lg bg-slate-50 px-2.5 py-2">
             <div className="text-xs text-muted-foreground">로그인 아이디</div>
             <div
@@ -587,7 +571,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
           <div className="mt-2 truncate text-xs text-muted-foreground">{departmentLabel}</div>
         ) : null}
         {busy ? <div className="mt-2 text-xs text-muted-foreground">처리 중...</div> : null}
-        {member.kind === "staff" || allowMove ? (
+        {canManage && (member.kind === "staff" || allowMove) ? (
           <div className="mt-3 flex items-center gap-2">
             {member.kind === "staff" ? (
               <>
@@ -665,6 +649,49 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     );
   };
 
+  const handleCancelJoinRequest = async (businessId: string) => {
+    if (!token) return;
+    await handleJoinOrLeave({
+      token,
+      businessId,
+      action: "cancel",
+      businessType,
+      toast,
+      setCancelLoadingBusinessId: membershipMgmt.setCancelLoadingBusinessId,
+      refreshMyJoinRequests: membershipMgmt.refreshMyJoinRequests,
+      refreshMembership: membershipMgmt.refreshMembership,
+    });
+  };
+
+  const handleLeaveBusiness = async (businessId: string) => {
+    if (!token) return;
+    await handleJoinOrLeave({
+      token,
+      businessId,
+      action: "leave",
+      businessType,
+      toast,
+      setCancelLoadingBusinessId: membershipMgmt.setCancelLoadingBusinessId,
+      refreshMyJoinRequests: membershipMgmt.refreshMyJoinRequests,
+      refreshMembership: membershipMgmt.refreshMembership,
+    });
+  };
+
+  const handleJoinRequest = async () => {
+    await handleJoinRequestImpl({
+      token,
+      selectedBusinessId: businessSearch.selectedBusiness?._id,
+      businessType,
+      toast,
+      setJoinLoading: membershipMgmt.setJoinLoading,
+      setBusinessSearch: businessSearch.setBusinessSearch,
+      setBusinessSearchResults: businessSearch.setBusinessSearchResults,
+      setSelectedBusiness: businessSearch.setSelectedBusiness,
+      refreshMembership: membershipMgmt.refreshMembership,
+      refreshMyJoinRequests: membershipMgmt.refreshMyJoinRequests,
+    });
+  };
+
   return (
     <Card className="app-glass-card app-glass-card--lg">
       <CardHeader className="pb-3">
@@ -674,22 +701,46 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
-        {membership !== "owner" && (
-          <div className="flex gap-3 rounded-2xl border border-slate-200/90 bg-slate-50/60 px-4 py-3.5">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-            <p className="text-[13px] leading-relaxed text-muted-foreground">
-              대표 계정만 임직원을 관리할 수 있습니다.
-            </p>
+        {!membershipMgmt.joinRequestsLoaded ? (
+          <div className="rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-8 text-center text-sm text-muted-foreground">
+            불러오는 중...
           </div>
+        ) : (
+          <>
+            {!canManage && membership === "none" ? (
+              <BusinessSearchSection
+                businessType={businessType}
+                businessSearch={businessSearch.businessSearch}
+                setBusinessSearch={businessSearch.setBusinessSearch}
+                businessSearchResults={businessSearch.businessSearchResults}
+                selectedBusiness={businessSearch.selectedBusiness}
+                setSelectedBusiness={businessSearch.setSelectedBusiness}
+                businessOpen={businessSearch.businessOpen}
+                setBusinessOpen={businessSearch.setBusinessOpen}
+                joinLoading={membershipMgmt.joinLoading}
+                onJoinRequest={() => void handleJoinRequest()}
+              />
+            ) : null}
+            {!canManage ? (
+              <JoinRequestsSection
+                myJoinRequests={membershipMgmt.myJoinRequests || []}
+                cancelLoadingBusinessId={membershipMgmt.cancelLoadingBusinessId}
+                onCancelJoinRequest={(businessId) =>
+                  void handleCancelJoinRequest(businessId)
+                }
+                onLeaveBusiness={(businessId) => void handleLeaveBusiness(businessId)}
+              />
+            ) : null}
+          </>
         )}
 
-        {membership === "owner" && (
+        {showDirectory && (
           <>
             <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                {supportsDepartments ? (
-                  <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-end">
-                    <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-16">
+                {canManage && supportsDepartments ? (
+                  <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-end">
+                    <div className="w-full space-y-2 sm:w-52">
                       <label className="text-xs font-medium text-muted-foreground">
                         새 부서 이름
                       </label>
@@ -721,11 +772,13 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                     </Button>
                   </div>
                 ) : null}
-                <div className="flex shrink-0 items-center gap-2">
-                  <Button type="button" className="shrink-0" onClick={() => setBulkOpen(true)}>
-                    <UserPlus className="mr-2 h-4 w-4" />
-                    직원 등록
-                  </Button>
+                <div className="flex shrink-0 items-center gap-2 lg:ml-auto">
+                  {canManage ? (
+                    <Button type="button" className="shrink-0" onClick={() => setBulkOpen(true)}>
+                      <UserPlus className="mr-2 h-4 w-4" />
+                      직원 등록
+                    </Button>
+                  ) : null}
                   <span className="inline-flex h-10 items-center rounded-md bg-white px-4 text-sm font-semibold tabular-nums text-slate-600 ring-1 ring-slate-200/80">
                     {visibleMemberCount}명
                   </span>
@@ -743,104 +796,98 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                   <>
                     {sortedDepartments.map((row) => {
                       const isEditing = editingDepartmentId === row._id;
-                      const canMove = sortedDepartments.length > 1;
+                      const canMove = canManage && sortedDepartments.length > 1;
                       return (
                         <div
                           key={row._id}
                           className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/70"
                         >
-                          <FunctionalItemCard
-                            className="rounded-none border-0 bg-white/80 shadow-none hover:bg-white"
-                            onRemove={() => handleDeleteDepartment(row._id)}
-                            confirmTitle="부서를 삭제할까요?"
-                            confirmDescription={
-                              <div className="text-sm text-muted-foreground">
-                                {row.name}
-                                <div className="mt-1 text-xs">
-                                  소속 임직원이 있으면 삭제할 수 없습니다.
-                                </div>
-                              </div>
-                            }
-                            confirmLabel="삭제"
-                            cancelLabel="닫기"
-                            disabled={
-                              deletingDepartmentId === row._id ||
-                              savingDepartmentId === row._id
-                            }
-                          >
-                            <div className="border-t-4 border-primary-strong">
-                              <div className="px-3.5 py-3 pr-8">
-                                {isEditing ? (
-                                  <div className="space-y-3">
-                                    <Input
-                                      value={editingDepartmentName}
-                                      onChange={(event) =>
-                                        setEditingDepartmentName(event.target.value)
+                          <div className="border-t-4 border-primary-strong bg-white/80">
+                            <div className="flex items-center gap-2 px-3.5 py-2.5">
+                              <Building2 className="h-4 w-4 shrink-0 text-primary-strong" />
+                              {isEditing ? (
+                                <>
+                                  <Input
+                                    value={editingDepartmentName}
+                                    autoFocus
+                                    disabled={savingDepartmentId === row._id}
+                                    className="h-8 w-44"
+                                    onChange={(event) =>
+                                      setEditingDepartmentName(event.target.value)
+                                    }
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") {
+                                        event.preventDefault();
+                                        void handleSaveDepartmentEdit(row._id);
                                       }
-                                      disabled={savingDepartmentId === row._id}
-                                      onKeyDown={(event) => {
-                                        if (event.key === "Enter") {
-                                          event.preventDefault();
-                                          void handleSaveDepartmentEdit(row._id);
-                                        }
-                                      }}
-                                    />
-                                    <div className="flex gap-2">
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        className="h-8 flex-1 rounded-lg text-xs"
-                                        disabled={
-                                          savingDepartmentId === row._id ||
-                                          !editingDepartmentName.trim()
-                                        }
-                                        onClick={() =>
-                                          void handleSaveDepartmentEdit(row._id)
-                                        }
-                                      >
-                                        저장
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-8 flex-1 rounded-lg text-xs"
-                                        disabled={savingDepartmentId === row._id}
-                                        onClick={() => {
-                                          setEditingDepartmentId("");
-                                          setEditingDepartmentName("");
-                                        }}
-                                      >
-                                        취소
-                                      </Button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div className="flex min-w-0 items-center gap-2">
-                                      <Building2 className="h-4 w-4 shrink-0 text-primary-strong" />
-                                      <div className="truncate text-sm font-semibold text-slate-900">
-                                        {row.name}
-                                      </div>
-                                    </div>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8 shrink-0"
-                                      disabled={deletingDepartmentId === row._id}
-                                      onClick={() => {
-                                        setEditingDepartmentId(row._id);
-                                        setEditingDepartmentName(row.name);
-                                      }}
-                                    >
-                                      <Pencil className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                )}
-                              </div>
+                                      if (event.key === "Escape") {
+                                        event.preventDefault();
+                                        setEditingDepartmentId("");
+                                        setEditingDepartmentName("");
+                                      }
+                                    }}
+                                  />
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className="h-8 shrink-0 rounded-lg px-3 text-xs"
+                                    disabled={
+                                      savingDepartmentId === row._id ||
+                                      !editingDepartmentName.trim()
+                                    }
+                                    onClick={() => void handleSaveDepartmentEdit(row._id)}
+                                  >
+                                    저장
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 shrink-0 rounded-lg px-3 text-xs"
+                                    disabled={savingDepartmentId === row._id}
+                                    onClick={() => {
+                                      setEditingDepartmentId("");
+                                      setEditingDepartmentName("");
+                                    }}
+                                  >
+                                    취소
+                                  </Button>
+                                </>
+                              ) : canManage ? (
+                                <button
+                                  type="button"
+                                  className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-slate-900 hover:text-primary-strong"
+                                  disabled={deletingDepartmentId === row._id}
+                                  onClick={() => {
+                                    setEditingDepartmentId(row._id);
+                                    setEditingDepartmentName(row.name);
+                                  }}
+                                >
+                                  {row.name}
+                                </button>
+                              ) : (
+                                <div className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">
+                                  {row.name}
+                                </div>
+                              )}
+                              {canManage ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="ml-auto h-8 w-8 shrink-0 text-slate-400 hover:text-destructive"
+                                aria-label="부서 삭제"
+                                disabled={
+                                  deletingDepartmentId === row._id ||
+                                  savingDepartmentId === row._id
+                                }
+                                onClick={() => setRemoveDepartment(row)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                              ) : null}
                             </div>
-                          </FunctionalItemCard>
+                          </div>
                           <div className="border-t border-slate-200/80 p-3 sm:p-4">
                             {renderMemberGrid(
                               membersForDepartment(row._id),
@@ -856,7 +903,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                         <h3 className="mb-3 text-sm font-semibold text-slate-900">
                           미배치
                         </h3>
-                        {renderMemberGrid(looseMembers, true, false)}
+                        {renderMemberGrid(looseMembers, canManage, false)}
                       </div>
                     ) : null}
                   </>
@@ -868,9 +915,11 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                     <p className="mt-3 text-sm font-medium text-slate-700">
                       등록된 임직원이 없습니다
                     </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      직원을 등록하면 표시됩니다.
-                    </p>
+                    {canManage ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        직원을 등록하면 표시됩니다.
+                      </p>
+                    ) : null}
                   </div>
                 ) : (
                   renderMemberGrid(directoryMembers, false, false)
@@ -886,6 +935,33 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
               onCreated={() => {
                 void refreshStaff();
                 void refreshRepresentatives();
+              }}
+            />
+            <ConfirmDialog
+              open={Boolean(removeDepartment)}
+              title="부서를 삭제할까요?"
+              description={
+                removeDepartment ? (
+                  <div className="text-sm text-muted-foreground">
+                    {removeDepartment.name}
+                    <br />
+                    소속 임직원이 있으면 삭제할 수 없습니다.
+                  </div>
+                ) : null
+              }
+              confirmLabel="삭제"
+              cancelLabel="닫기"
+              busy={Boolean(
+                removeDepartment && deletingDepartmentId === removeDepartment._id,
+              )}
+              onConfirm={async () => {
+                if (!removeDepartment) return;
+                await handleDeleteDepartment(removeDepartment._id);
+                setRemoveDepartment(null);
+              }}
+              onCancel={() => {
+                if (removeDepartment && deletingDepartmentId === removeDepartment._id) return;
+                setRemoveDepartment(null);
               }}
             />
             <ConfirmDialog

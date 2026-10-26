@@ -16,6 +16,7 @@ import {
   loginIdBaseFromName,
   loginIdLookupClauses,
   parseStaffBulkText,
+  STAFF_BULK_MAX,
 } from "./staffBulkRegister.core.js";
 
 function ownerMirror(owner) {
@@ -61,12 +62,24 @@ async function loadTakenIdentities(drafts) {
   return { takenLoginIds, takenEmails };
 }
 
+function resolveStaffGroups({ text, departmentId, groups }) {
+  if (Array.isArray(groups) && groups.length) return groups;
+  return [
+    {
+      departmentId: departmentId || null,
+      departmentName: "",
+      text,
+    },
+  ];
+}
+
 export async function createOwnerStaffAccounts({
   anchor,
   owner,
   password,
   text,
   departmentId,
+  groups,
 }) {
   if (!isStaffInitialPassword(password)) {
     return {
@@ -77,13 +90,37 @@ export async function createOwnerStaffAccounts({
     };
   }
 
-  const parsed = parseStaffBulkText(text);
-  if (parsed.fatal) {
-    return { status: 400, message: parsed.fatal, created: [], failed: [] };
+  const drafts = [];
+  for (const group of resolveStaffGroups({ text, departmentId, groups })) {
+    const parsed = parseStaffBulkText(group.text, { limit: false });
+    if (parsed.fatal) continue;
+    for (const draft of parsed.drafts) {
+      drafts.push({
+        ...draft,
+        departmentId: group.departmentId || null,
+        departmentName: String(group.departmentName || "").trim(),
+      });
+    }
+  }
+  if (!drafts.length) {
+    return {
+      status: 400,
+      message: "등록할 직원 이름을 적어 주세요.",
+      created: [],
+      failed: [],
+    };
+  }
+  if (drafts.length > STAFF_BULK_MAX) {
+    return {
+      status: 400,
+      message: `한 번에 ${STAFF_BULK_MAX}명까지 등록할 수 있습니다.`,
+      created: [],
+      failed: [],
+    };
   }
 
-  const taken = await loadTakenIdentities(parsed.drafts);
-  const planned = finalizeStaffBulkDrafts(parsed.drafts, taken);
+  const taken = await loadTakenIdentities(drafts);
+  const planned = finalizeStaffBulkDrafts(drafts, taken);
   if (!planned.ready.length) {
     return {
       status: 400,
@@ -120,7 +157,7 @@ export async function createOwnerStaffAccounts({
         ...mirror,
       };
       if (row.loginId) doc.loginId = row.loginId;
-      if (departmentId) doc.internalDepartmentId = departmentId;
+      if (row.departmentId) doc.internalDepartmentId = row.departmentId;
       const user = await User.create(doc);
       createdUsers.push(user);
       created.push({
@@ -129,6 +166,8 @@ export async function createOwnerStaffAccounts({
         loginId: row.loginId || "",
         email: row.loginId ? "" : row.email,
         login: row.login,
+        departmentId: row.departmentId ? String(row.departmentId) : "",
+        departmentName: row.departmentName || "",
       });
     } catch (error) {
       const duplicate = Number(error?.code) === 11000;
@@ -140,6 +179,7 @@ export async function createOwnerStaffAccounts({
       failed.push({
         line: row.line,
         name: row.name,
+        departmentName: row.departmentName || "",
         message: duplicate
           ? "이미 등록된 아이디입니다."
           : validationMessage || "계정을 만들지 못했습니다.",

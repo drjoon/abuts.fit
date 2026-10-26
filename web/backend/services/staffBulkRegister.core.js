@@ -69,7 +69,7 @@ function splitStaffLine(line) {
     .filter(Boolean);
 }
 
-export function parseStaffBulkText(text) {
+export function parseStaffBulkText(text, { limit = true } = {}) {
   const lines = String(text || "").split(/\r?\n/);
   const drafts = [];
   for (let index = 0; index < lines.length; index += 1) {
@@ -108,7 +108,7 @@ export function parseStaffBulkText(text) {
   if (!drafts.length) {
     return { fatal: "등록할 직원 이름을 적어 주세요.", drafts: [] };
   }
-  if (drafts.length > STAFF_BULK_MAX) {
+  if (limit && drafts.length > STAFF_BULK_MAX) {
     return {
       fatal: `한 번에 ${STAFF_BULK_MAX}명까지 등록할 수 있습니다.`,
       drafts: [],
@@ -128,7 +128,12 @@ export function finalizeStaffBulkDrafts(drafts, { takenLoginIds, takenEmails }) 
   const failed = [];
 
   const fail = (draft, message) => {
-    failed.push({ line: draft.lineNo, name: draft.name, message });
+    failed.push({
+      line: draft.lineNo,
+      name: draft.name,
+      departmentName: draft.departmentName || "",
+      message,
+    });
   };
 
   for (const draft of drafts) {
@@ -159,6 +164,8 @@ export function finalizeStaffBulkDrafts(drafts, { takenLoginIds, takenEmails }) 
       loginId,
       email,
       login: loginId,
+      departmentId: draft.departmentId || null,
+      departmentName: draft.departmentName || "",
     });
   }
 

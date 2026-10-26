@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import User from "../../models/user.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
@@ -124,5 +125,58 @@ describe("staff bulk register persistence", () => {
       password: "Changed1!ok",
     });
     expect(ownerReset.status).toBe(404);
+  });
+
+  test("부서마다 다른 소속으로 등록하고 같은 이름은 번호를 붙인다", async () => {
+    const owner = await User.create({
+      name: "대표",
+      email: "owner-bulk-dept@example.com",
+      password: PASSWORD,
+      role: "requestor",
+      requestorKind: "practice",
+      subRole: "owner",
+      active: true,
+      approvedAt: new Date(),
+    });
+    const anchor = await BusinessAnchor.create({
+      name: "테스트치과",
+      businessNumberNormalized: "1234567891",
+      businessType: "requestor",
+      requestorKind: "practice",
+      primaryContactUserId: owner._id,
+      owners: [owner._id],
+      members: [],
+    });
+    const marketing = new mongoose.Types.ObjectId();
+    const platform = new mongoose.Types.ObjectId();
+
+    const result = await createOwnerStaffAccounts({
+      anchor,
+      owner: owner.toObject(),
+      password: PASSWORD,
+      groups: [
+        { departmentId: marketing, departmentName: "마케팅영업부", text: "\n" },
+        { departmentId: marketing, departmentName: "마케팅영업부", text: "이준호" },
+        {
+          departmentId: platform,
+          departmentName: "플랫폼관리부",
+          text: "이준호\n김영희",
+        },
+      ],
+    });
+
+    expect(result.status).toBe(201);
+    expect(
+      result.created.map((row) => [row.login, row.departmentName]),
+    ).toEqual([
+      ["이준호", "마케팅영업부"],
+      ["이준호1", "플랫폼관리부"],
+      ["김영희", "플랫폼관리부"],
+    ]);
+
+    const second = await User.findOne({ loginId: "이준호1" });
+    expect(String(second.internalDepartmentId)).toBe(String(platform));
+    const first = await User.findOne({ loginId: "이준호" });
+    expect(String(first.internalDepartmentId)).toBe(String(marketing));
   });
 });
