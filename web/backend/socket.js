@@ -14,6 +14,7 @@ import {
   enqueueLabHelperAlarm,
   labHelperAlarmFromAppEvent,
 } from "./services/labHelperAlarm.service.js";
+import { applyAdminDepartmentWorkspace } from "./utils/adminDepartmentWorkspace.js";
 
 let io;
 
@@ -39,15 +40,16 @@ export function initializeSocket(server) {
       if (!decodedId) {
         return next(new Error("사용자를 찾을 수 없습니다."));
       }
-      const user = await User.findById(decodedId).select("-password").lean();
+      const loaded = await User.findById(decodedId).select("-password").lean();
 
-      if (!user) {
+      if (!loaded) {
         return next(new Error("사용자를 찾을 수 없습니다."));
       }
-      if (user.active === false) {
+      if (loaded.active === false) {
         return next(new Error("비활성화된 계정입니다."));
       }
 
+      const user = await applyAdminDepartmentWorkspace(loaded);
       socket.userId = user._id.toString();
       socket.userRole = user.role;
       socket.userName = user.name;

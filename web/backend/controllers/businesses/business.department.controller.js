@@ -9,6 +9,7 @@ import { Types } from "mongoose";
 import { resolveOwnedBusiness } from "./business.utils.js";
 import { assertBusinessRole } from "./businessRole.util.js";
 import { toStaffListFields } from "../../services/staffBulkRegister.core.js";
+import { invalidateAuthUserCache } from "../../middlewares/auth.middleware.js";
 import {
   ensureDefaultDepartments,
   findDepartmentById,
@@ -338,6 +339,7 @@ export async function assignStaffDepartment(req, res) {
           : null,
       },
     });
+    invalidateAuthUserCache(userId);
 
     return res.json({
       success: true,

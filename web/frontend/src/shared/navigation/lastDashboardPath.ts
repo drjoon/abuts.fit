@@ -4,6 +4,7 @@
 // - web/frontend/src/features/dashboard/DashboardHome.tsx
 // - web/frontend/src/store/useAuthStore.ts
 // - web/frontend/src/shared/store/practiceStoreAccess.ts
+// - 2026-10-26: 어벗츠 임직원 부서 화면(기공사업부·영업팀)은 관리자 경로를 최근 경로로 쓰지 않는다.
 // - 2026-10-26: 치과 스토어 비공개 동안 `/dashboard/store`는 최근 경로에서 뺀다.
 // - 2026-09-21: salesTeam 기본 랜딩·bare `/dashboard` → 성과(소개코드 SSOT). 딜러 수수료 대시보드 미사용.
 // - 2026-08-19: 기공소·어벗츠기공소 `/dashboard` last path는 기공의뢰수신으로 보정(대기보드 제거).
@@ -58,6 +59,39 @@ export function normalizeLastDashboardPath(
   } catch {
     return null;
   }
+}
+
+/** 부서 화면으로 들어온 역할. 관리자 메뉴가 최근 경로에 남아 있으면 허브가 왕복한다. */
+const WORKSPACE_LAST_PATH_PREFIXES: Record<string, readonly string[]> = {
+  internalLab: [
+    "/dashboard/lab-work",
+    "/dashboard/practice-transfers",
+    "/dashboard/new-request",
+    "/dashboard/credits",
+    "/dashboard/inquiries",
+    "/dashboard/settings",
+    "/dashboard/sales/requirements",
+  ],
+  salesTeam: [
+    "/dashboard/sales",
+    "/dashboard/payments",
+    "/dashboard/inquiries",
+    "/dashboard/settings",
+  ],
+};
+
+function pathHasPrefix(pathname: string, prefix: string) {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
+function lastPathAllowedForRole(
+  role: string | null | undefined,
+  last: string,
+) {
+  const prefixes = role ? WORKSPACE_LAST_PATH_PREFIXES[role] : undefined;
+  if (!prefixes) return true;
+  const pathname = last.split("?")[0];
+  return prefixes.some((prefix) => pathHasPrefix(pathname, prefix));
 }
 
 /** 역할별 기본 랜딩 (last path 없을 때) */
@@ -134,6 +168,8 @@ export function resolveEntryDashboardPath(user: {
   ) {
     return "/dashboard/practice-transfers?mode=receive";
   }
+
+  if (!lastPathAllowedForRole(role, last)) return roleDefault;
 
   return last;
 }

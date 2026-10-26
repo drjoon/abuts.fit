@@ -8,6 +8,7 @@ import User from "../models/user.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import { Types } from "mongoose";
 import { resolveDesignAccessForUser } from "../utils/designAccess.js";
+import { applyAdminDepartmentWorkspace } from "../utils/adminDepartmentWorkspace.js";
 import { voidRecordUserAccessDay } from "../services/userAccess.service.js";
 import { getTtlMapValue, setTtlMapValue } from "../utils/boundedTtlMap.js";
 
@@ -31,7 +32,8 @@ const loadAuthUser = async (userId) => {
   const user = await User.findById(userId).select("-password").lean();
   if (!user) return null;
   if (user._id != null) user.id = String(user._id);
-  return user;
+  // 어벗츠 임직원은 부서 화면(영업팀·기공사업부·관리자)으로 요청을 처리한다.
+  return applyAdminDepartmentWorkspace(user);
 };
 
 /** 계정 상태 변경 직후 즉시 반영이 필요할 때 호출 */

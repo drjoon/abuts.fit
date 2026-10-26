@@ -54,6 +54,7 @@ import { sendEmail } from "../../utils/email.util.js";
 import { getFrontendBaseUrl } from "../../utils/url.util.js";
 import { getUserRoleLabel } from "../../utils/roleLabels.js";
 import { applyGuideTourAlwaysOnToUserPayload } from "../../utils/guideTour.util.js";
+import { applyAdminDepartmentWorkspace } from "../../utils/adminDepartmentWorkspace.js";
 import {
   ensureSalesTeamPersonalAnchor,
   resolveSalesTeamReferralAnchorId,
@@ -306,15 +307,14 @@ const sendLoginSuccessResponse = async ({
   }
   await user.save();
 
-  voidRecordUserAccessDay({ userId: user._id, role: user.role });
-
   const token = generateToken({ userId: user._id, role: user.role });
   const refreshToken = generateRefreshToken(user._id);
 
-  const userWithoutPassword = applyGuideTourAlwaysOnToUserPayload({
-    ...user.toObject(),
-  });
-  delete userWithoutPassword.password;
+  const plainUser = user.toObject();
+  delete plainUser.password;
+  const workspaceUser = await applyAdminDepartmentWorkspace(plainUser);
+  voidRecordUserAccessDay({ userId: user._id, role: workspaceUser?.role });
+  const userWithoutPassword = applyGuideTourAlwaysOnToUserPayload(workspaceUser);
 
   res.status(200).json({
     success: true,
@@ -1342,10 +1342,11 @@ async function getCurrentUser(req, res) {
     const { getDbVersion } = await import("../../config/dbVersion.js");
     const dbVersion = getDbVersion();
 
+    const workspaceUser = await applyAdminDepartmentWorkspace(freshUser);
     res.status(200).json({
       success: true,
       data: {
-        ...applyGuideTourAlwaysOnToUserPayload(freshUser),
+        ...applyGuideTourAlwaysOnToUserPayload(workspaceUser),
         dbVersion,
       },
     });

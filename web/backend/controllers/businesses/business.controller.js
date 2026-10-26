@@ -311,8 +311,10 @@ export async function getMyBusiness(req, res) {
         createdAt: 1,
       })
       .lean();
-    let businessAnchorId =
-      freshUser?.businessAnchorId || req.user.businessAnchorId;
+    // 기공사업부 임직원은 세션에서만 어벗츠기공사업부 앵커를 본다.
+    let businessAnchorId = req.user?.accountBusinessAnchorId
+      ? req.user.businessAnchorId
+      : freshUser?.businessAnchorId || req.user.businessAnchorId;
 
     let anchor = null;
     if (businessAnchorId) {
