@@ -96,6 +96,69 @@ async function getProfile(req, res) {
   }
 }
 
+/**
+ * 문자 인증 없이 휴대전화 번호를 저장한다.
+ * phoneVerifiedAt을 채워 온보딩·의뢰 게이트를 통과시킨다.
+ */
+async function savePhoneNumber(req, res) {
+  try {
+    const userId = req.user?._id;
+    const phoneNumber = String(req.body?.phoneNumber || "").trim();
+
+    if (!userId) {
+      return res
+        .status(401)
+        .json({ success: false, message: "인증이 필요합니다." });
+    }
+
+    if (!/^(\+\d{7,15})$/.test(phoneNumber)) {
+      return res.status(400).json({
+        success: false,
+        message: "전화번호 형식을 확인해주세요.",
+      });
+    }
+
+    if (!phoneNumber.startsWith("+82")) {
+      return res.status(400).json({
+        success: false,
+        message: "현재는 국내(+82) 번호만 지원합니다.",
+      });
+    }
+
+    const savedAt = new Date();
+    await User.findByIdAndUpdate(
+      userId,
+      {
+        $set: {
+          phoneNumber,
+          phoneVerifiedAt: savedAt,
+          phoneVerification: {
+            codeHash: null,
+            expiresAt: null,
+            sentAt: null,
+            dailySendDate: "",
+            dailySendCount: 0,
+            attempts: 0,
+            pendingPhoneNumber: "",
+          },
+        },
+      },
+      { new: false },
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: { phoneNumber, phoneVerifiedAt: savedAt },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "휴대전화 번호 저장 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 async function sendPhoneVerification(req, res) {
   try {
     const userId = req.user?._id;
@@ -1438,6 +1501,7 @@ async function updateGuideTour(req, res) {
 export {
   getProfile,
   updateProfile,
+  savePhoneNumber,
   sendPhoneVerification,
   verifyPhoneVerification,
   getNotificationSettings,

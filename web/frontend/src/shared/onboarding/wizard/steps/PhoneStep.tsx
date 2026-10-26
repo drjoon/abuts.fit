@@ -1,7 +1,7 @@
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/onboarding/wizard/SettingsWizard.tsx
+// 문자 인증 없이 휴대전화 번호만 저장한다.
 import {
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
@@ -11,7 +11,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -28,36 +27,25 @@ interface PhoneStepProps {
 
 const PHONE_DRAFT_KEY = "wizard.phoneDraft";
 
-type PhoneDraft = {
-  phone?: string;
-  code?: string;
-};
-
-const readPhoneDraft = (): PhoneDraft | null => {
-  if (typeof window === "undefined") return null;
+const readPhoneDraft = (): string => {
+  if (typeof window === "undefined") return "";
   try {
     const raw = window.localStorage.getItem(PHONE_DRAFT_KEY);
-    if (!raw) return null;
+    if (!raw) return "";
     const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object") {
-      return {
-        phone: typeof parsed.phone === "string" ? parsed.phone : "",
-        code: typeof parsed.code === "string" ? parsed.code : "",
-      };
-    }
-    return null;
+    return typeof parsed?.phone === "string" ? parsed.phone : "";
   } catch {
-    return null;
+    return "";
   }
 };
 
-const savePhoneDraft = (draft: PhoneDraft | null) => {
+const savePhoneDraft = (phone: string) => {
   if (typeof window === "undefined") return;
-  if (!draft || (!draft.phone && !draft.code)) {
+  if (!phone) {
     window.localStorage.removeItem(PHONE_DRAFT_KEY);
     return;
   }
-  window.localStorage.setItem(PHONE_DRAFT_KEY, JSON.stringify(draft));
+  window.localStorage.setItem(PHONE_DRAFT_KEY, JSON.stringify({ phone }));
 };
 
 const toKoreanDigits = (value: string) => {
@@ -103,31 +91,28 @@ export const PhoneStep = ({
 }: PhoneStepProps) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
-  const draft = useMemo(() => readPhoneDraft(), []);
   const [loading, setLoading] = useState(true);
-  const [phone, setPhone] = useState(draft?.phone || "");
-  const [code, setCode] = useState(draft?.code || "");
+  const [phone, setPhone] = useState(readPhoneDraft);
   const [phoneError, setPhoneError] = useState("");
-  const [codeError, setCodeError] = useState("");
-  const [sending, setSending] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [verificationSent, setVerificationSent] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [completed, setCompleted] = useState(Boolean(defaultCompleted));
-  const [timeLeft, setTimeLeft] = useState(0);
-  const [expiresAt, setExpiresAt] = useState<number | null>(null);
   const phoneInputRef = useRef<HTMLInputElement | null>(null);
-  const codeInputRef = useRef<HTMLInputElement | null>(null);
-  const isExpired = verificationSent && !completed && timeLeft <= 0;
+  const completedRef = useRef(completed);
+  const loadingRef = useRef(true);
+  completedRef.current = completed;
+  loadingRef.current = loading;
 
-  const markCompleted = () => {
-    if (completed) return;
+  const markCompleted = useCallback(() => {
+    if (completedRef.current) return;
+    completedRef.current = true;
     setCompleted(true);
     onComplete?.();
-  };
+  }, [onComplete]);
 
   useEffect(() => {
     if (defaultCompleted) {
       setCompleted(true);
+      completedRef.current = true;
     }
   }, [defaultCompleted]);
 
@@ -147,7 +132,8 @@ export const PhoneStep = ({
         const body: any = res.data || {};
         const data = body.data || body;
         if (cancelled) return;
-        setPhone(formatKoreanPhone(String(data?.phoneNumber || "")));
+        const formatted = formatKoreanPhone(String(data?.phoneNumber || ""));
+        if (formatted) setPhone(formatted);
         if (data?.phoneVerifiedAt) {
           markCompleted();
         }
@@ -160,196 +146,67 @@ export const PhoneStep = ({
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [markCompleted, token]);
 
   const normalizedPhone = useMemo(() => normalizePhone(phone), [phone]);
   const phoneFormatError =
     phone && !normalizedPhone ? "010-0000-0000 형식으로 입력하세요." : "";
 
-  const sendCode = useCallback(async () => {
-    if (!token) return;
+  const savePhone = useCallback(async () => {
+    if (!token || loadingRef.current) return false;
+    if (completedRef.current) return true;
     if (!normalizedPhone) {
       const errorMessage = phoneFormatError || "휴대전화 번호를 입력해주세요";
       setPhoneError(errorMessage);
       phoneInputRef.current?.focus();
       return false;
     }
-    setSending(true);
+    setSaving(true);
     try {
-      const e164Phone = toE164Korea(normalizedPhone);
       const res = await request<any>({
-        path: "/api/users/phone-verification/send",
+        path: "/api/users/phone",
         method: "POST",
         token,
-        jsonBody: { phoneNumber: e164Phone },
+        jsonBody: { phoneNumber: toE164Korea(normalizedPhone) },
       });
       if (!res.ok) {
         const body: any = res.data || {};
-        throw new Error(body?.message || "인증번호 발송에 실패했습니다.");
+        throw new Error(body?.message || "휴대전화 번호 저장에 실패했습니다.");
       }
-      const expiresAtRaw = res.data?.data?.expiresAt;
-      const nextExpiresAt = expiresAtRaw
-        ? new Date(expiresAtRaw).getTime()
-        : Date.now() + 3 * 60 * 1000;
-      setExpiresAt(nextExpiresAt);
-      setTimeLeft(Math.max(0, Math.floor((nextExpiresAt - Date.now()) / 1000)));
-      toast({ title: "인증번호를 보냈어요" });
-      setVerificationSent(true);
-      setCode("");
-      savePhoneDraft({ phone });
+      savePhoneDraft("");
+      markCompleted();
       return true;
     } catch (error: any) {
       toast({
-        title: "발송 실패",
+        title: "저장 실패",
         description: String(error?.message || "잠시 후 다시 시도해주세요."),
         variant: "destructive",
       });
       return false;
     } finally {
-      setSending(false);
+      setSaving(false);
     }
-  }, [normalizedPhone, token, toast]);
-
-  const verifyCode = useCallback(async () => {
-    if (!token) return;
-    if (!code.trim()) {
-      setCodeError("인증번호를 입력하세요");
-      codeInputRef.current?.focus();
-      return false;
-    }
-    setVerifying(true);
-    try {
-      const res = await request<any>({
-        path: "/api/users/phone-verification/verify",
-        method: "POST",
-        token,
-        jsonBody: { code: code.trim() },
-      });
-      if (!res.ok) {
-        const body: any = res.data || {};
-        throw new Error(body?.message || "인증에 실패했습니다.");
-      }
-      toast({ title: "인증 완료" });
-      markCompleted();
-      savePhoneDraft(null);
-      return true;
-    } catch (error: any) {
-      toast({
-        title: "인증 실패",
-        description: String(error?.message || "코드를 확인해주세요."),
-        variant: "destructive",
-      });
-      return false;
-    } finally {
-      setVerifying(false);
-    }
-  }, [code, markCompleted, token, toast]);
-
-  const focusCodeInput = useCallback(() => {
-    const input = codeInputRef.current;
-    if (!input) return;
-    input.focus();
-    input.select?.();
-  }, []);
-
-  const handleNextAction = useCallback(async () => {
-    if (completed) return true;
-    if (!verificationSent) {
-      await sendCode();
-      return false;
-    }
-    if (isExpired) {
-      return false;
-    }
-    if (!code.trim()) {
-      toast({ title: "인증번호를 입력하세요", variant: "destructive" });
-      return false;
-    }
-    return verifyCode();
-  }, [
-    code,
-    completed,
-    isExpired,
-    sendCode,
-    toast,
-    verificationSent,
-    verifyCode,
-  ]);
-
-  const handlePhoneInputKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLInputElement>) => {
-      if (event.key !== "Enter") return;
-      event.preventDefault();
-      if (!verificationSent) {
-        void (async () => {
-          const ok = await sendCode();
-          if (ok) {
-            focusCodeInput();
-          }
-        })();
-        return;
-      }
-      focusCodeInput();
-    },
-    [focusCodeInput, sendCode, verificationSent],
-  );
-
-  const handleCodeInputKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLInputElement>) => {
-      if (event.key !== "Enter") return;
-      event.preventDefault();
-      if (code.trim().length !== 4) return;
-      void handleNextAction();
-    },
-    [code, handleNextAction],
-  );
+  }, [markCompleted, normalizedPhone, phoneFormatError, token, toast]);
 
   useEffect(() => {
-    registerGoNextAction?.(() => handleNextAction());
+    registerGoNextAction?.(() => savePhone());
     return () => registerGoNextAction?.(null);
-  }, [handleNextAction, registerGoNextAction]);
+  }, [registerGoNextAction, savePhone]);
 
   useEffect(() => {
     if (loading) return;
-    const draftPayload: PhoneDraft = {
-      phone: phone || undefined,
-      code: code || undefined,
-    };
-    if (!draftPayload.phone && !draftPayload.code) {
-      savePhoneDraft(null);
-      return;
-    }
-    savePhoneDraft(draftPayload);
-  }, [code, loading, phone]);
+    savePhoneDraft(phone);
+  }, [loading, phone]);
 
-  useEffect(() => {
-    if (!verificationSent || !expiresAt) return;
-
-    const tick = () => {
-      const next = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
-      setTimeLeft(next);
-    };
-
-    tick();
-    const timer = window.setInterval(tick, 1000);
-    return () => window.clearInterval(timer);
-  }, [expiresAt, verificationSent]);
-
-  useEffect(() => {
-    if (verificationSent && !completed && !isExpired) {
-      focusCodeInput();
-    }
-  }, [completed, focusCodeInput, isExpired, verificationSent]);
-
-  const formatTimeLeft = (value: number) => {
-    const minutes = Math.floor(value / 60);
-    const seconds = value % 60;
-    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  const handlePhoneInputKeyDown = (
+    event: ReactKeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    void handleNextAction();
   };
 
   if (loading) {
@@ -378,9 +235,14 @@ export const PhoneStep = ({
           onChange={(e) => {
             setPhone(formatKoreanPhone(e.target.value));
             if (phoneError) setPhoneError("");
+            if (completed) {
+              completedRef.current = false;
+              setCompleted(false);
+            }
           }}
           onKeyDown={handlePhoneInputKeyDown}
           placeholder="010-####-####"
+          disabled={saving}
           className={cn(
             "placeholder:text-slate-300",
             phoneError || phoneFormatError ? "border-destructive" : "",
@@ -388,82 +250,9 @@ export const PhoneStep = ({
         />
       </div>
 
-      {!completed && !verificationSent && (
-        <Button
-          type="button"
-          className="w-full"
-          onClick={() => {
-            void sendCode();
-          }}
-          disabled={sending || !normalizedPhone}
-        >
-          {sending ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            "인증번호 받기"
-          )}
-        </Button>
-      )}
-
-      {verificationSent && !completed && !isExpired && (
-        <p className="text-xs text-slate-500">
-          유효시간 {formatTimeLeft(timeLeft)}
-        </p>
-      )}
-
-      {isExpired && (
-        <p className="text-xs text-accent">
-          유효시간이 만료되었습니다. 재발송이 필요합니다.
-        </p>
-      )}
-
-      {verificationSent && !completed && !isExpired && (
-        <div className="space-y-2">
-          <Label htmlFor="phone-code" className="text-xs text-slate-500">
-            인증번호
-            {codeError && (
-              <span className="ml-2 text-xs font-medium text-destructive">
-                {codeError}
-              </span>
-            )}
-          </Label>
-          <Input
-            id="phone-code"
-            ref={codeInputRef}
-            value={code}
-            onChange={(e) => {
-              setCode(e.target.value.replace(/\D/g, "").slice(0, 4));
-              if (codeError) setCodeError("");
-            }}
-            placeholder="4자리"
-            inputMode="numeric"
-            maxLength={4}
-            onKeyDown={handleCodeInputKeyDown}
-            className={cn(codeError ? "border-destructive" : "")}
-          />
-        </div>
-      )}
-
-      {isExpired && (
-        <Button
-          type="button"
-          className="w-full"
-          onClick={() => {
-            void sendCode();
-          }}
-          disabled={sending || !normalizedPhone}
-        >
-          {sending ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            "인증번호 재발송"
-          )}
-        </Button>
-      )}
-
-      {completed && (
+      {completed && !saving && (
         <div className="flex items-center gap-2 rounded-xl border border-primary-muted bg-primary-soft px-4 py-2 text-sm text-primary-strong">
-          <Check className="h-4 w-4 shrink-0" /> 휴대전화 인증 완료
+          <Check className="h-4 w-4 shrink-0" /> 휴대전화 번호를 저장했습니다.
         </div>
       )}
     </form>

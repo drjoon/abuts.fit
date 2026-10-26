@@ -16,6 +16,9 @@ router.get("/profile", userController.getProfile);
 // 사용자 프로필 수정
 router.put("/profile", userController.updateProfile);
 
+// 문자 인증 없이 휴대전화 번호 저장
+router.post("/phone", userController.savePhoneNumber);
+
 // 전화번호 인증번호 발송
 router.post("/phone-verification/send", userController.sendPhoneVerification);
 
