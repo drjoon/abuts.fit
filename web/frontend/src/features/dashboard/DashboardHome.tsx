@@ -16,6 +16,7 @@ import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath
 // - 2026-09-21: salesTeam `/dashboard` → 성과(소개코드·가입 SSOT). 딜러 대시보드 미사용(고정급).
 // - 2026-09-21: salesTeam `/dashboard` = SalesmanDashboardPage. 딜러십 파트너 조건·정책은 숨김(고정급).
 // - 2026-09-21: salesTeam `/dashboard` = SalesmanDashboardPage (딜러 대시보드 그대로).
+// - 2026-10-27: 기공소 가입 후 최근 경로가 없으면 커스텀어벗 의뢰하기. 어벗츠기공소 기본은 수신.
 // - 2026-08-19: 기공소·어벗츠기공소 `/dashboard`는 기공의뢰수신으로. 제출 후 어벗생산의뢰. 대기보드 제거.
 // - 2026-08-18: 치과 `/dashboard`는 구강스캔(또는 제출 후 어벗디자인)으로 보냄. 대시보드 페이지 미사용.
 // - 2026-08-17: internalLab `/dashboard` = 대기보드(RequestorDashboardPage). 기본 랜딩은 lab-work 유지.
@@ -86,7 +87,7 @@ export const DashboardHome = () => {
       }
       const dest =
         !entry || entry === "/dashboard" || entry === "/dashboard/"
-          ? "/dashboard/practice-transfers?mode=receive"
+          ? "/dashboard/new-request"
           : entry;
       return <Navigate to={dest} replace />;
     }

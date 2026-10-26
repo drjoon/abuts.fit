@@ -720,7 +720,7 @@ Notes:
     - 변경 후 `notifyRequestorAccessUpdated`
   - 기공의뢰서: 발신=`kind===practice`, 수신=`kind===lab` (`PracticeTransferRoleTabs`)
   - 치과 사이드: 상위 `기공소에 의뢰하기`(`/dashboard/practice-transfers?mode=send`) · `커스텀어벗 의뢰하기`(`/dashboard/new-request`). 기공실 없는 치과는 `기공소에 의뢰하기`만. 대시보드 메뉴 없음.
-  - 기공소·어벗츠기공소 사이드: 상위 `치과의뢰 수신하기`(lab=`/dashboard/practice-transfers?mode=receive`, 어벗츠기공소=`/dashboard/lab-work`) · `커스텀어벗 의뢰하기`(`/dashboard/new-request`). 대시보드/대기보드 메뉴 없음(`/dashboard` → 수신, 제출 후 커스텀어벗 의뢰하기).
+  - 기공소·어벗츠기공소 사이드: 상위 `치과의뢰 수신하기`(lab=`/dashboard/practice-transfers?mode=receive`, 어벗츠기공소=`/dashboard/lab-work`) · `커스텀어벗 의뢰하기`(`/dashboard/new-request`). 대시보드/대기보드 메뉴 없음. 가입 후 최근 경로가 없으면 기공소는 커스텀어벗 의뢰하기, 어벗츠기공소는 치과의뢰 수신하기. 제출 후 커스텀어벗 의뢰하기.
   - 치과 대시보드 요약 행 라벨: `구강스캔` / `어벗디자인` (기공소는 `기공` / `어벗`). 액센트는 기공·어벗 토큰. 치과·기공소는 대시보드 페이지를 쓰지 않고 같은 기간 건수를 커스텀어벗 의뢰하기 헤더 버튼으로 연다. 기공 수신 건수는 치과의뢰 수신하기 상태 탭.
   - 접근 훅: `useRequestorBusinessAccess` (kind/services + verified)
   - 계정 전환: `AccountSwitcher`

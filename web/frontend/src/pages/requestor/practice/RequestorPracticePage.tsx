@@ -1,4 +1,5 @@
 // related files:
+// - 2026-10-27: 택배 라벨 헤더 버튼·완료 후 출력 확인은 어벗츠기공소(internalLab)만.
 // - 2026-10-24: 치과의뢰 수신 — 택배 라벨. 보철 완료 후 출력 여부, 헤더에서 치과별 선택.
 // - 2026-10-04: 역할이 다른 openTransfer는 자식 마운트 전에 넘김 — 치과 창에 채팅이 열리지 않음.
 // - 2026-10-04: 역할이 다른 창의 openTransfer는 URL ba로 대상 탭만 찾고 이 창은 바꾸지 않음.
@@ -4890,7 +4891,7 @@ export function RequestorPracticeReceivePage({
                   : "보철 파일 저장 중 오류가 발생했습니다.",
                 variant: "destructive",
               });
-            } else if (shouldComplete) {
+            } else if (shouldComplete && viewerIsPrimeLab) {
               setShipLabelAsk(transfer);
             }
           } catch {
@@ -9424,7 +9425,7 @@ export function RequestorPracticeReceivePage({
     setShipLabelOpen(true);
   };
 
-  const shipLabelButton = (() => {
+  const shipLabelButton = !viewerIsPrimeLab ? null : (() => {
     const count = shipLabelCases.length;
     const showLabel = !isMobile && headerLabelsWide;
     const button = (
