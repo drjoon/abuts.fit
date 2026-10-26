@@ -12,7 +12,7 @@ import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
-import { Building2, Loader2, Plus, Trash2, UserPlus, Users } from "lucide-react";
+import { Building2, Loader2, Pencil, Plus, Trash2, UserPlus, Users } from "lucide-react";
 import { BusinessSearchSection } from "@/shared/components/business/settings/business/BusinessSearchSection";
 import { JoinRequestsSection } from "@/shared/components/business/settings/business/JoinRequestsSection";
 import { useBusinessSearch } from "@/shared/components/business/settings/business/useBusinessSearch";
@@ -871,20 +871,38 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                                 </div>
                               )}
                               {canManage ? (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="ml-auto h-8 w-8 shrink-0 text-slate-400 hover:text-destructive"
-                                aria-label="부서 삭제"
-                                disabled={
-                                  deletingDepartmentId === row._id ||
-                                  savingDepartmentId === row._id
-                                }
-                                onClick={() => setRemoveDepartment(row)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                                <div className="ml-auto flex shrink-0 items-center">
+                                  {isEditing ? null : (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-slate-400 hover:text-slate-700"
+                                      aria-label="부서 이름 수정"
+                                      disabled={deletingDepartmentId === row._id}
+                                      onClick={() => {
+                                        setEditingDepartmentId(row._id);
+                                        setEditingDepartmentName(row.name);
+                                      }}
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-slate-400 hover:text-destructive"
+                                    aria-label="부서 삭제"
+                                    disabled={
+                                      deletingDepartmentId === row._id ||
+                                      savingDepartmentId === row._id
+                                    }
+                                    onClick={() => setRemoveDepartment(row)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
                               ) : null}
                             </div>
                           </div>
