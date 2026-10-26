@@ -16,9 +16,6 @@ router.get("/profile", userController.getProfile);
 // 사용자 프로필 수정
 router.put("/profile", userController.updateProfile);
 
-// 임시: 팝빌 국외 IP 등록 전까지 번호만 저장
-router.post("/phone", userController.savePhoneNumber);
-
 // 전화번호 인증번호 발송
 router.post("/phone-verification/send", userController.sendPhoneVerification);
 

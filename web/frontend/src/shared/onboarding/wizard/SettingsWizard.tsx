@@ -396,7 +396,7 @@ export const SettingsWizard = ({
   const stepTitle = useMemo(() => {
     switch (currentStep) {
       case "phone":
-        return "휴대전화";
+        return "휴대전화 인증";
       case "business":
         if (oralScanPhase) {
           return "구강 스캔";
