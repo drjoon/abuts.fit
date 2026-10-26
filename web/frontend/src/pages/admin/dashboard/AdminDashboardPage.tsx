@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-10-26: 신규 회원 카드. 가입 후 7일간 표시.
 // - 2026-10-24: 런칭 - 실사용 전환 버튼. 베타 중에는 미납으로 주문을 막지 않는다.
 // - 2026-10-21: 대시보드 타일 — 잘린 막대·배송 목록을 카드 안에 맞추고, 빈 카드는 줄이고 확인할 카드만 키운다.
 // - 2026-10-21: 짧은 커프 카드 — 50건 통과·실패 0이면 준비 경고를 끈다.
@@ -93,6 +94,7 @@ import { AdminDemoConversionCard } from "@/pages/admin/dashboard/AdminDemoConver
 import { AdminPracticeDelinquencyCard } from "@/pages/admin/dashboard/AdminPracticeDelinquencyCard";
 import { AdminPracticeLaunchButton } from "@/pages/admin/dashboard/AdminPracticeLaunchButton";
 import { AdminBusinessVerificationCard } from "@/pages/admin/dashboard/AdminBusinessVerificationCard";
+import { AdminNewMembersCard } from "@/pages/admin/dashboard/AdminNewMembersCard";
 import { AdminPopbillPointCard } from "@/pages/admin/dashboard/AdminPopbillPointCard";
 import { AdminPopbillBankCard } from "@/pages/admin/dashboard/AdminPopbillBankCard";
 import { LowFinishLineWatchCard } from "@/pages/admin/dashboard/LowFinishLineWatchCard";
@@ -2322,6 +2324,10 @@ export const AdminDashboardPage = () => {
                 enabled={Boolean(token) && user?.role === "admin"}
               />
               <AdminBusinessVerificationCard
+                className={DASH_SPAN.c2}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
+              <AdminNewMembersCard
                 className={DASH_SPAN.c2}
                 enabled={Boolean(token) && user?.role === "admin"}
               />

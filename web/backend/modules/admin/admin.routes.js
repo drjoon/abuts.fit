@@ -68,6 +68,7 @@ import {
 } from "../../controllers/dashboardNotice.controller.js";
 import { s3Upload } from "../../utils/s3.utils.js";
 import { getAdminNoOrderAlerts } from "../../controllers/admin/admin.noOrderAlerts.controller.js";
+import { listAdminNewMembers } from "../../controllers/admin/admin.newMembers.controller.js";
 import {
   listHexVerificationInProgress,
   completeHexVerification,
@@ -415,6 +416,7 @@ router.post("/practice-launch/switch", adminSwitchPracticeLaunch);
 
 // 대시보드 통계
 router.get("/dashboard", getDashboardStats);
+router.get("/new-members", listAdminNewMembers);
 router.get("/low-finish-line-watch", getAdminLowFinishLineWatch);
 router.post(
   "/low-finish-line-watch/:requestId/verdict",
