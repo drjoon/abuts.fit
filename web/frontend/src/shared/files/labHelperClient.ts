@@ -34,8 +34,8 @@ export const LAB_HELPER_MIN_VERSION = 3;
 export const LAB_HELPER_ALARM_MIN_VERSION = 4;
 /** Mac 시스템 설정 열기(/open-privacy-settings)에 필요한 최소 버전 */
 export const LAB_HELPER_PRIVACY_SETTINGS_MIN_VERSION = 10;
-/** 배포 중인 최신 연결 프로그램 버전(구버전이면 자동 갱신 유도). Mac과 version.json이 16이다. */
-export const LAB_HELPER_CURRENT_VERSION = 16;
+/** 배포 중인 최신 연결 프로그램 버전(구버전이면 자동 갱신 유도). Mac·version.json·Windows가 17이다. */
+export const LAB_HELPER_CURRENT_VERSION = 17;
 /** Windows 연결 프로그램의 택배 라벨(/printers·/print-png). Mac에는 없다. */
 export const LAB_HELPER_PRINT_MIN_VERSION = 17;
 const INSTALLED_KEY = "abuts.labHelperInstalled";

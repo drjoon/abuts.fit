@@ -1,3 +1,4 @@
+// - 2026-10-27: v17 — 알람 WS는 URLSession 하나. 실패하면 백오프(세션을 시도마다 만들면 메모리가 쌓인다).
 // - 2026-10-21: open-href — 창 하나에서 오류가 나도 나머지 창을 찾고, 고른 창을 앞으로.
 // - 2026-10-04: v16 — OS 토스트를 웹 전역 공통 default(border-2 primary)에 맞춤.
 // - 2026-10-04: v15 — 플랫폼 alert 토스트 룩 + 알림음 샘플(soundId)·WAV 합성.
@@ -24,7 +25,7 @@ import Foundation
 import Network
 import QuartzCore
 
-let helperVersion = 16
+let helperVersion = 17
 /** macOS 13+ 「개인정보 보호 및 보안」 */
 let macPrivacySettingsURL =
   "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
@@ -847,6 +848,20 @@ final class AlarmNotifCenter: NSObject, NSUserNotificationCenterDelegate {
 
 enum AlarmSocket {
   private static let pingInterval: TimeInterval = 20
+  /// 연결이 바로 끊기면 1→2→4… 최대 30초. 서버가 내려가 있어도 세션을 초당 여러 개 만들지 않는다.
+  private static let retryMax: TimeInterval = 30
+
+  /// 시도마다 `URLSession(configuration:)`를 만들고 `invalidateAndCancel`하면
+  /// 연결이 열리기 전에 끊긴 WS가 세션을 놓지 않는다. 프로세스는 이 세션만 쓴다.
+  private static let socketSession: URLSession = {
+    let config = URLSessionConfiguration.ephemeral
+    config.timeoutIntervalForRequest = 120
+    config.timeoutIntervalForResource = 60 * 60 * 24
+    config.urlCache = nil
+    config.requestCachePolicy = .reloadIgnoringLocalCacheData
+    config.httpMaximumConnectionsPerHost = 8
+    return URLSession(configuration: config)
+  }()
 
   private final class StopFlag {
     private let lock = NSLock()
@@ -862,18 +877,31 @@ enum AlarmSocket {
 
   static func start(key: String) {
     DispatchQueue.global(qos: .utility).async {
+      var backoff: TimeInterval = 1
       while true {
         if !AlarmSession.shared.shouldListen(key) {
+          backoff = 1
           Thread.sleep(forTimeInterval: 2)
           continue
         }
         guard let snap = AlarmSession.shared.snapshot(key),
               snap.enabled, !snap.apiOrigin.isEmpty, !snap.token.isEmpty else {
+          backoff = 1
           Thread.sleep(forTimeInterval: 2)
           continue
         }
-        runSession(key: key, snap: snap)
-        Thread.sleep(forTimeInterval: 0.5)
+        let heard = runSession(key: key, snap: snap)
+        if !AlarmSession.shared.shouldListen(key) {
+          backoff = 1
+          continue
+        }
+        if heard {
+          backoff = 1
+          Thread.sleep(forTimeInterval: 0.5)
+        } else {
+          Thread.sleep(forTimeInterval: backoff)
+          backoff = min(backoff * 2, retryMax)
+        }
       }
     }
   }
@@ -891,23 +919,19 @@ enum AlarmSocket {
     return URL(string: origin + "/api/lab-helper/alarms/ws")
   }
 
-  private static func runSession(key: String, snap: AlarmSession.Row) {
-    guard let url = wsURL(apiOrigin: snap.apiOrigin) else {
-      Thread.sleep(forTimeInterval: 3)
-      return
-    }
+  /// true면 메시지를 한 번이라도 받았다. 바로 끊기면 false — 호출부가 백오프한다.
+  private static func runSession(key: String, snap: AlarmSession.Row) -> Bool {
+    guard let url = wsURL(apiOrigin: snap.apiOrigin) else { return false }
     var req = URLRequest(url: url)
     req.setValue("Bearer \(snap.token)", forHTTPHeaderField: "Authorization")
     req.setValue("AbutsLabHelper/\(helperVersion)", forHTTPHeaderField: "User-Agent")
-    let session = URLSession(configuration: .default)
-    let task = session.webSocketTask(with: req)
+    let task = socketSession.webSocketTask(with: req)
     task.resume()
 
     let flag = StopFlag()
     defer {
       flag.stop()
       task.cancel(with: .goingAway, reason: nil)
-      session.invalidateAndCancel()
     }
 
     DispatchQueue.global(qos: .utility).async {
@@ -930,6 +954,7 @@ enum AlarmSocket {
       }
     }
 
+    var heard = false
     while !flag.isStopped {
       let sem = DispatchSemaphore(value: 0)
       var message: URLSessionWebSocketTask.Message?
@@ -943,10 +968,13 @@ enum AlarmSocket {
       }
       _ = sem.wait(timeout: .distantFuture)
       if let err = recvError {
-        log("alarm-ws recv: \(err.localizedDescription)")
+        if AlarmSession.shared.shouldListen(key) {
+          log("alarm-ws recv: \(err.localizedDescription)")
+        }
         break
       }
       guard let message = message else { break }
+      heard = true
       let text: String?
       switch message {
       case .string(let s): text = s
@@ -977,6 +1005,7 @@ enum AlarmSocket {
       )
     }
     flag.stop()
+    return heard
   }
 }
 
