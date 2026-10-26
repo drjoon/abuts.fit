@@ -3,7 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
-import { Building2, Info, Loader2, Pencil, Plus, UserCheck, UserPlus, Users } from "lucide-react";
+import { Building2, Info, Loader2, Pencil, Plus, UserPlus, Users } from "lucide-react";
 import {
   StaffBulkRegisterDialog,
   StaffPasswordResetDialog,
@@ -54,9 +54,8 @@ const DEPARTMENT_ENABLED_BUSINESS_TYPES = new Set([
   "requestor",
 ]);
 
-type PendingJoinRequest = {
-  user: { _id: string; name?: string; email?: string } | string;
-  createdAt?: string;
+type DirectoryMember = StaffMember & {
+  kind: "representative" | "staff";
 };
 
 interface StaffTabProps {
@@ -91,17 +90,11 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
   >("none");
 
   const [staff, setStaff] = useState<StaffMember[]>([]);
-  const [pending, setPending] = useState<PendingJoinRequest[]>([]);
-  const [representatives, setRepresentatives] = useState<
-    Array<{ _id: string; name?: string; email?: string; loginId?: string }>
-  >([]);
+  const [representatives, setRepresentatives] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionUserId, setActionUserId] = useState<string>("");
   const [usesDepartments, setUsesDepartments] = useState(false);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
-  const [pendingDepartmentByUserId, setPendingDepartmentByUserId] = useState<
-    Record<string, string>
-  >({});
   const [newDepartmentName, setNewDepartmentName] = useState("");
   const [creatingDepartment, setCreatingDepartment] = useState(false);
   const [editingDepartmentId, setEditingDepartmentId] = useState("");
@@ -129,9 +122,6 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
       return String(a.name).localeCompare(String(b.name), "ko");
     });
   }, [departments]);
-
-  const defaultPendingDepartmentId =
-    sortedDepartments.length === 1 ? sortedDepartments[0]._id : "";
 
   const refreshMembership = useCallback(async () => {
     if (!token) return;
@@ -245,25 +235,6 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     setUsesDepartments(Boolean(data?.usesDepartments));
   }, [mockHeaders, businessType, token]);
 
-  const refreshPending = useCallback(async () => {
-    if (!token) return;
-    const res = await request<any>({
-      path: `/api/businesses/join-requests/pending?businessType=${encodeURIComponent(
-        businessType,
-      )}`,
-      method: "GET",
-      token,
-      headers: mockHeaders,
-    });
-    if (!res.ok) {
-      setPending([]);
-      return;
-    }
-    const body: any = res.data || {};
-    const data = body.data || body;
-    setPending(Array.isArray(data?.joinRequests) ? data.joinRequests : []);
-  }, [mockHeaders, businessType, token]);
-
   useEffect(() => {
     const load = async () => {
       try {
@@ -286,7 +257,6 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
         await Promise.all([
           refreshRepresentatives(),
           refreshStaff(),
-          refreshPending(),
           refreshDepartments(),
         ]);
       } finally {
@@ -297,7 +267,6 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
   }, [
     membership,
     refreshDepartments,
-    refreshPending,
     refreshRepresentatives,
     refreshStaff,
     token,
@@ -493,101 +462,6 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     }
   };
 
-  const handleApprove = async (
-    userId: string,
-    role: "representative" | "staff",
-  ) => {
-    try {
-      if (!token) return;
-      const id = String(userId || "").trim();
-      if (!id) return;
-
-      let departmentId =
-        pendingDepartmentByUserId[id] || defaultPendingDepartmentId || "";
-      if (supportsDepartments && !departmentId) {
-        toast({
-          title: "부서를 선택해주세요",
-          description: "승인 전에 배치할 부서를 선택해야 합니다.",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-
-      setActionUserId(id);
-      const res = await request<any>({
-        path: `/api/businesses/join-requests/${id}/approve`,
-        method: "POST",
-        token,
-        headers: mockHeaders,
-        jsonBody: {
-          role,
-          businessType,
-          ...(supportsDepartments ? { departmentId } : {}),
-        },
-      });
-
-      if (!res.ok) {
-        const message = String((res.data as any)?.message || "").trim();
-        toast({
-          title: "승인에 실패했어요",
-          description: message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-
-      toast({
-        title:
-          role === "representative"
-            ? "대표로 승인되었습니다"
-            : "직원으로 승인되었습니다",
-      });
-      await Promise.all([
-        refreshPending(),
-        refreshStaff(),
-        refreshRepresentatives(),
-        refreshMembership(),
-      ]);
-    } finally {
-      setActionUserId("");
-    }
-  };
-
-  const handleReject = async (userId: string) => {
-    try {
-      if (!token) return;
-      const id = String(userId || "").trim();
-      if (!id) return;
-
-      setActionUserId(id);
-      const res = await request<any>({
-        path: `/api/businesses/join-requests/${id}/reject`,
-        method: "POST",
-        token,
-        headers: mockHeaders,
-        jsonBody: { businessType },
-      });
-
-      if (!res.ok) {
-        const message = String((res.data as any)?.message || "").trim();
-        toast({
-          title: "거절에 실패했어요",
-          description: message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-
-      toast({ title: "신청이 거절되었습니다" });
-      await refreshPending();
-    } finally {
-      setActionUserId("");
-    }
-  };
-
   const representativeEntries = useMemo(() => {
     return representatives
       .filter((entry) => Boolean(entry && entry._id))
@@ -623,22 +497,156 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
 
   const visibleMemberCount =
     visibleRepresentatives.length + staffEntries.length;
-  const showDepartmentSelect = supportsDepartments && departments.length > 0;
 
-  const pendingEntries = useMemo(() => {
-    return pending.filter((r) => {
-      const u: any = (r as any)?.user;
-      const userId = typeof u === "string" ? u : String(u?._id || "");
-      const email = typeof u === "string" ? "" : String(u?.email || "");
-      const name = typeof u === "string" ? "" : String(u?.name || "");
-      return (
-        Boolean(userId) &&
-        !isDeletedAccount(userId) &&
-        !isDeletedAccount(email) &&
-        !isDeletedAccount(name)
-      );
+  const directoryMembers = useMemo<DirectoryMember[]>(() => {
+    return [
+      ...visibleRepresentatives.map((entry) => ({
+        ...entry,
+        kind: "representative" as const,
+      })),
+      ...staffEntries.map((entry) => ({
+        ...entry,
+        kind: "staff" as const,
+      })),
+    ];
+  }, [staffEntries, visibleRepresentatives]);
+
+  const groupedByDepartment =
+    supportsDepartments && sortedDepartments.length > 0;
+
+  const looseMembers = useMemo(() => {
+    if (!groupedByDepartment) return directoryMembers;
+    const ids = new Set(sortedDepartments.map((row) => row._id));
+    return directoryMembers.filter((member) => {
+      const id = String(member.internalDepartmentId || "");
+      return !id || !ids.has(id);
     });
-  }, [isDeletedAccount, pending]);
+  }, [directoryMembers, groupedByDepartment, sortedDepartments]);
+
+  const membersForDepartment = useCallback(
+    (departmentId: string) =>
+      directoryMembers.filter(
+        (member) => String(member.internalDepartmentId || "") === departmentId,
+      ),
+    [directoryMembers],
+  );
+
+  const renderMemberCard = (
+    member: DirectoryMember,
+    allowMove: boolean,
+    hideDepartmentName = false,
+  ) => {
+    const name = String(member.name || "").trim() || member._id;
+    const login = memberLoginLabel(member);
+    const departmentLabel =
+      !hideDepartmentName && member.departmentName && !allowMove
+        ? member.departmentName
+        : "";
+    const identity = (
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold leading-tight text-slate-900">
+          {name}
+        </div>
+        {login && login !== name ? (
+          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+            {login}
+          </div>
+        ) : null}
+        {departmentLabel ? (
+          <div className="mt-1 text-xs text-primary-strong">{departmentLabel}</div>
+        ) : null}
+        {member.kind === "staff" && actionUserId === member._id ? (
+          <div className="mt-0.5 text-xs text-muted-foreground">처리 중...</div>
+        ) : null}
+      </div>
+    );
+    const moveControl = allowMove ? (
+      <div className="px-3.5 pb-3">
+        {renderDepartmentControl(
+          member._id,
+          member.internalDepartmentId,
+          true,
+        )}
+      </div>
+    ) : null;
+
+    if (member.kind === "representative") {
+      return (
+        <div
+          key={member._id}
+          className="overflow-hidden rounded-2xl border border-primary-muted/70 bg-white/80 shadow-sm"
+        >
+          <div className="h-1 w-full bg-primary-strong" />
+          <div className="flex items-start gap-2.5 px-3.5 py-3">
+            <Badge className="shrink-0 rounded-md border-0 bg-primary-soft px-2 py-0.5 text-primary-strong">
+              대표
+            </Badge>
+            {identity}
+          </div>
+          {moveControl}
+        </div>
+      );
+    }
+
+    const label = login && login !== name ? `${name} (${login})` : name;
+    return (
+      <FunctionalItemCard
+        key={member._id}
+        className="overflow-hidden rounded-2xl border-slate-200/80 bg-white/80 p-0 shadow-sm"
+        onRemove={() => handleRemoveStaff(member._id)}
+        confirmTitle="직원을 삭제할까요?"
+        confirmDescription={
+          <div className="text-sm text-muted-foreground">{label}</div>
+        }
+        confirmLabel="삭제"
+        cancelLabel="닫기"
+        disabled={actionUserId === member._id}
+      >
+        <div className="border-t-4 border-slate-300">
+          <div className="flex items-start gap-2.5 px-3.5 py-3 pr-8">
+            <Badge variant="outline" className="shrink-0 rounded-md px-2 py-0.5">
+              직원
+            </Badge>
+            {identity}
+          </div>
+          <div className="px-3.5 pb-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-lg text-xs"
+              disabled={actionUserId === member._id}
+              onClick={() => setResetStaff(member)}
+            >
+              비밀번호
+            </Button>
+          </div>
+          {moveControl}
+        </div>
+      </FunctionalItemCard>
+    );
+  };
+
+  const renderMemberGrid = (
+    members: DirectoryMember[],
+    allowMove: boolean,
+    hideDepartmentName = false,
+  ) => {
+    if (members.length === 0) {
+      return (
+        <div className="rounded-xl border border-dashed border-slate-200/90 bg-white/50 px-4 py-6 text-center text-sm text-muted-foreground">
+          임직원이 없습니다
+        </div>
+      );
+    }
+    return (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {members.map((member) =>
+          renderMemberCard(member, allowMove, hideDepartmentName),
+        )}
+      </div>
+    );
+  };
 
   return (
     <Card className="app-glass-card app-glass-card--lg">
@@ -647,23 +655,6 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
           <Users className="h-5 w-5 text-primary-strong" />
           임직원 · 부서
         </CardTitle>
-        <CardDescription className="text-[13px] leading-relaxed">
-          부서와 대표·직원 계정, 가입 신청을 함께 관리합니다.
-          {supportsDepartments ? (
-            <>
-              <br />
-              사이드바 계정 전환은 같은 부서 계정만 표시됩니다.
-            </>
-          ) : null}
-          {businessType === "admin" ? (
-            <>
-              <br />
-              영업본부 포털은 역할이 영업본부인 계정에 보입니다.
-              <br />
-              관리자 사용자 화면에서 역할을 지정하고, 부서에 배치하세요.
-            </>
-          ) : null}
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         {membership !== "owner" && (
@@ -677,466 +668,197 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
 
         {membership === "owner" && (
           <>
-            {supportsDepartments && (
-              <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
-                <div className="mb-4 flex items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
-                    <Building2 className="h-4 w-4 text-primary-strong" />
-                  </span>
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-900">부서</h3>
-                    <p className="text-xs text-muted-foreground">
-                      임직원을 배치할 부서를 관리합니다
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-                  <div className="flex-1 space-y-2">
-                    <label className="text-xs font-medium text-muted-foreground">
-                      새 부서 이름
-                    </label>
-                    <Input
-                      value={newDepartmentName}
-                      onChange={(event) => setNewDepartmentName(event.target.value)}
-                      placeholder="예: 진료팀"
-                      disabled={creatingDepartment}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void handleCreateDepartment();
-                        }
-                      }}
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    className="shrink-0"
-                    disabled={creatingDepartment || !newDepartmentName.trim()}
-                    onClick={() => void handleCreateDepartment()}
-                  >
-                    {creatingDepartment ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Plus className="mr-2 h-4 w-4" />
-                    )}
-                    부서 추가
-                  </Button>
-                </div>
-
-                {loading && sortedDepartments.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-8 text-center text-sm text-muted-foreground">
-                    불러오는 중...
-                  </div>
-                ) : sortedDepartments.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-8 text-center text-sm text-muted-foreground">
-                    등록된 부서가 없습니다.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {sortedDepartments.map((row) => {
-                      const isEditing = editingDepartmentId === row._id;
-                      return (
-                        <FunctionalItemCard
-                          key={row._id}
-                          className="overflow-hidden rounded-2xl border-slate-200/80 bg-white/80 p-0 shadow-sm"
-                          onRemove={() => handleDeleteDepartment(row._id)}
-                          confirmTitle="부서를 삭제할까요?"
-                          confirmDescription={
-                            <div className="text-sm text-muted-foreground">
-                              {row.name}
-                              <div className="mt-1 text-xs">
-                                소속 임직원이 있으면 삭제할 수 없습니다.
-                              </div>
-                            </div>
-                          }
-                          confirmLabel="삭제"
-                          cancelLabel="닫기"
-                          disabled={
-                            deletingDepartmentId === row._id ||
-                            savingDepartmentId === row._id
-                          }
-                        >
-                          <div className="border-t-4 border-primary-strong">
-                            <div className="space-y-3 px-3.5 py-3 pr-8">
-                              {isEditing ? (
-                                <>
-                                  <Input
-                                    value={editingDepartmentName}
-                                    onChange={(event) =>
-                                      setEditingDepartmentName(event.target.value)
-                                    }
-                                    disabled={savingDepartmentId === row._id}
-                                    onKeyDown={(event) => {
-                                      if (event.key === "Enter") {
-                                        event.preventDefault();
-                                        void handleSaveDepartmentEdit(row._id);
-                                      }
-                                    }}
-                                  />
-                                  <div className="flex gap-2">
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      className="h-8 flex-1 rounded-lg text-xs"
-                                      disabled={
-                                        savingDepartmentId === row._id ||
-                                        !editingDepartmentName.trim()
-                                      }
-                                      onClick={() =>
-                                        void handleSaveDepartmentEdit(row._id)
-                                      }
-                                    >
-                                      저장
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-8 flex-1 rounded-lg text-xs"
-                                      disabled={savingDepartmentId === row._id}
-                                      onClick={() => {
-                                        setEditingDepartmentId("");
-                                        setEditingDepartmentName("");
-                                      }}
-                                    >
-                                      취소
-                                    </Button>
-                                  </div>
-                                </>
-                              ) : (
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0 flex-1">
-                                    <div className="truncate text-sm font-semibold text-slate-900">
-                                      {row.name}
-                                    </div>
-                                  </div>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 shrink-0"
-                                    disabled={deletingDepartmentId === row._id}
-                                    onClick={() => {
-                                      setEditingDepartmentId(row._id);
-                                      setEditingDepartmentName(row.name);
-                                    }}
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </FunctionalItemCard>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-            )}
-
             <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
-                    <UserCheck className="h-4 w-4 text-primary-strong" />
-                  </span>
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-900">
-                      등록된 임직원
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      대표와 직원 계정
-                    </p>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                {supportsDepartments ? (
+                  <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-end">
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <label className="text-xs font-medium text-muted-foreground">
+                        새 부서 이름
+                      </label>
+                      <Input
+                        value={newDepartmentName}
+                        onChange={(event) => setNewDepartmentName(event.target.value)}
+                        placeholder="예: 진료팀"
+                        disabled={creatingDepartment}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void handleCreateDepartment();
+                          }
+                        }}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      className="shrink-0"
+                      disabled={creatingDepartment || !newDepartmentName.trim()}
+                      onClick={() => void handleCreateDepartment()}
+                    >
+                      {creatingDepartment ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Plus className="mr-2 h-4 w-4" />
+                      )}
+                      부서 추가
+                    </Button>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button type="button" size="sm" onClick={() => setBulkOpen(true)}>
-                    <UserPlus className="mr-1.5 h-4 w-4" />
+                ) : null}
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button type="button" className="shrink-0" onClick={() => setBulkOpen(true)}>
+                    <UserPlus className="mr-2 h-4 w-4" />
                     직원 등록
                   </Button>
-                  <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600 ring-1 ring-slate-200/80">
+                  <span className="inline-flex h-10 items-center rounded-md bg-white px-4 text-sm font-semibold tabular-nums text-slate-600 ring-1 ring-slate-200/80">
                     {visibleMemberCount}명
                   </span>
                 </div>
               </div>
 
-              {loading && visibleMemberCount === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-8 text-center text-sm text-muted-foreground">
-                  불러오는 중...
-                </div>
-              ) : visibleMemberCount === 0 ? (
-                <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-10 text-center">
-                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200/80">
-                    <Users className="h-5 w-5 text-slate-400" />
-                  </span>
-                  <p className="mt-3 text-sm font-medium text-slate-700">
-                    등록된 임직원이 없습니다
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    직원을 등록하거나, 가입 신청을 승인하면 표시됩니다.
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {visibleRepresentatives.map((entry) => {
-                    const name = String(entry.name || "").trim() || entry._id;
-                    const login = memberLoginLabel(entry);
-                    return (
-                      <div
-                        key={entry._id}
-                        className="overflow-hidden rounded-2xl border border-primary-muted/70 bg-white/80 shadow-sm"
-                      >
-                        <div className="h-1 w-full bg-primary-strong" />
-                        <div className="flex items-start gap-2.5 px-3.5 py-3">
-                          <Badge className="shrink-0 rounded-md border-0 bg-primary-soft px-2 py-0.5 text-primary-strong">
-                            대표
-                          </Badge>
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-semibold leading-tight text-slate-900">
-                              {name}
+              <div className="mt-4 space-y-3">
+                {loading &&
+                visibleMemberCount === 0 &&
+                sortedDepartments.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-8 text-center text-sm text-muted-foreground">
+                    불러오는 중...
+                  </div>
+                ) : groupedByDepartment ? (
+                  <>
+                    {sortedDepartments.map((row) => {
+                      const isEditing = editingDepartmentId === row._id;
+                      const canMove = sortedDepartments.length > 1;
+                      return (
+                        <div
+                          key={row._id}
+                          className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/70"
+                        >
+                          <FunctionalItemCard
+                            className="rounded-none border-0 bg-white/80 shadow-none hover:bg-white"
+                            onRemove={() => handleDeleteDepartment(row._id)}
+                            confirmTitle="부서를 삭제할까요?"
+                            confirmDescription={
+                              <div className="text-sm text-muted-foreground">
+                                {row.name}
+                                <div className="mt-1 text-xs">
+                                  소속 임직원이 있으면 삭제할 수 없습니다.
+                                </div>
+                              </div>
+                            }
+                            confirmLabel="삭제"
+                            cancelLabel="닫기"
+                            disabled={
+                              deletingDepartmentId === row._id ||
+                              savingDepartmentId === row._id
+                            }
+                          >
+                            <div className="border-t-4 border-primary-strong">
+                              <div className="px-3.5 py-3 pr-8">
+                                {isEditing ? (
+                                  <div className="space-y-3">
+                                    <Input
+                                      value={editingDepartmentName}
+                                      onChange={(event) =>
+                                        setEditingDepartmentName(event.target.value)
+                                      }
+                                      disabled={savingDepartmentId === row._id}
+                                      onKeyDown={(event) => {
+                                        if (event.key === "Enter") {
+                                          event.preventDefault();
+                                          void handleSaveDepartmentEdit(row._id);
+                                        }
+                                      }}
+                                    />
+                                    <div className="flex gap-2">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        className="h-8 flex-1 rounded-lg text-xs"
+                                        disabled={
+                                          savingDepartmentId === row._id ||
+                                          !editingDepartmentName.trim()
+                                        }
+                                        onClick={() =>
+                                          void handleSaveDepartmentEdit(row._id)
+                                        }
+                                      >
+                                        저장
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-8 flex-1 rounded-lg text-xs"
+                                        disabled={savingDepartmentId === row._id}
+                                        onClick={() => {
+                                          setEditingDepartmentId("");
+                                          setEditingDepartmentName("");
+                                        }}
+                                      >
+                                        취소
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex min-w-0 items-center gap-2">
+                                      <Building2 className="h-4 w-4 shrink-0 text-primary-strong" />
+                                      <div className="truncate text-sm font-semibold text-slate-900">
+                                        {row.name}
+                                      </div>
+                                    </div>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 shrink-0"
+                                      disabled={deletingDepartmentId === row._id}
+                                      onClick={() => {
+                                        setEditingDepartmentId(row._id);
+                                        setEditingDepartmentName(row.name);
+                                      }}
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                            {login && login !== name ? (
-                              <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                                {login}
-                              </div>
-                            ) : null}
-                            {entry.departmentName && !showDepartmentSelect ? (
-                              <div className="mt-1 text-xs text-primary-strong">
-                                {entry.departmentName}
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                        {showDepartmentSelect ? (
-                          <div className="px-3.5 pb-3">
-                            {renderDepartmentControl(
-                              entry._id,
-                              entry.internalDepartmentId,
+                          </FunctionalItemCard>
+                          <div className="border-t border-slate-200/80 p-3 sm:p-4">
+                            {renderMemberGrid(
+                              membersForDepartment(row._id),
+                              canMove,
                               true,
                             )}
                           </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-
-                  {staffEntries.map((m) => {
-                    const name = String(m.name || "").trim() || m._id;
-                    const login = memberLoginLabel(m);
-                    const label = login && login !== name ? `${name} (${login})` : name;
-                    return (
-                      <FunctionalItemCard
-                        key={m._id}
-                        className="overflow-hidden rounded-2xl border-slate-200/80 bg-white/80 p-0 shadow-sm"
-                        onRemove={() => handleRemoveStaff(m._id)}
-                        confirmTitle="직원을 삭제할까요?"
-                        confirmDescription={
-                          <div className="text-sm text-muted-foreground">
-                            {label}
-                          </div>
-                        }
-                        confirmLabel="삭제"
-                        cancelLabel="닫기"
-                        disabled={actionUserId === m._id}
-                      >
-                        <div className="border-t-4 border-slate-300">
-                          <div className="flex items-start gap-2.5 px-3.5 py-3 pr-8">
-                            <Badge
-                              variant="outline"
-                              className="shrink-0 rounded-md px-2 py-0.5"
-                            >
-                              직원
-                            </Badge>
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-semibold leading-tight text-slate-900">
-                                {name}
-                              </div>
-                              {login && login !== name ? (
-                                <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                                  {login}
-                                </div>
-                              ) : null}
-                              {m.departmentName && !showDepartmentSelect ? (
-                                <div className="mt-1 text-xs text-primary-strong">
-                                  {m.departmentName}
-                                </div>
-                              ) : null}
-                              {actionUserId === m._id ? (
-                                <div className="mt-0.5 text-xs text-muted-foreground">
-                                  처리 중...
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="px-3.5 pb-3">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8 rounded-lg text-xs"
-                              disabled={actionUserId === m._id}
-                              onClick={() => setResetStaff(m)}
-                            >
-                              비밀번호
-                            </Button>
-                          </div>
-                          {showDepartmentSelect ? (
-                            <div className="px-3.5 pb-3">
-                              {renderDepartmentControl(
-                                m._id,
-                                m.internalDepartmentId,
-                                true,
-                              )}
-                            </div>
-                          ) : null}
                         </div>
-                      </FunctionalItemCard>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
-                    <UserPlus className="h-4 w-4 text-amber-600" />
-                  </span>
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-900">
-                      등록 신청
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      승인 대기 중인 가입 신청
+                      );
+                    })}
+                    {looseMembers.length > 0 ? (
+                      <div className="rounded-2xl border border-dashed border-slate-200/90 bg-white/40 p-3 sm:p-4">
+                        <h3 className="mb-3 text-sm font-semibold text-slate-900">
+                          미배치
+                        </h3>
+                        {renderMemberGrid(looseMembers, true, false)}
+                      </div>
+                    ) : null}
+                  </>
+                ) : visibleMemberCount === 0 ? (
+                  <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-10 text-center">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200/80">
+                      <Users className="h-5 w-5 text-slate-400" />
+                    </span>
+                    <p className="mt-3 text-sm font-medium text-slate-700">
+                      등록된 임직원이 없습니다
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      직원을 등록하면 표시됩니다.
                     </p>
                   </div>
-                </div>
-                {pendingEntries.length > 0 ? (
-                  <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold tabular-nums text-amber-800 ring-1 ring-amber-200">
-                    {pendingEntries.length}건
-                  </span>
-                ) : null}
+                ) : (
+                  renderMemberGrid(directoryMembers, false, false)
+                )}
               </div>
-
-              {loading && pendingEntries.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-8 text-center text-sm text-muted-foreground">
-                  불러오는 중...
-                </div>
-              ) : pendingEntries.length === 0 ? (
-                <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200/90 bg-white/50 px-6 py-10 text-center">
-                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200/80">
-                    <UserPlus className="h-5 w-5 text-slate-400" />
-                  </span>
-                  <p className="mt-3 text-sm font-medium text-slate-700">
-                    대기 중인 신청이 없습니다
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {pendingEntries.map((r, idx) => {
-                    const u: any = (r as any)?.user;
-                    const userId =
-                      typeof u === "string" ? u : String(u?._id || "");
-                    const name =
-                      typeof u === "string"
-                        ? u
-                        : String(u?.name || "").trim() || userId;
-                    const email =
-                      typeof u === "string" ? "" : String(u?.email || "").trim();
-                    const label = `${name}${email ? ` (${email})` : ""}`;
-                    return (
-                      <FunctionalItemCard
-                        key={`${userId}-${idx}`}
-                        className="overflow-hidden rounded-2xl border-amber-200/70 bg-white/80 p-0 shadow-sm"
-                        onRemove={() => handleReject(userId)}
-                        confirmTitle="신청을 거절할까요?"
-                        confirmDescription={
-                          <div className="text-sm text-muted-foreground">
-                            {label || userId}
-                          </div>
-                        }
-                        confirmLabel="거절"
-                        cancelLabel="닫기"
-                        disabled={!userId || actionUserId === userId}
-                      >
-                        <div className="border-t-4 border-amber-400">
-                          <div className="space-y-3 px-3.5 py-3 pr-8">
-                            <div className="flex items-start gap-2.5">
-                              <Badge className="shrink-0 rounded-md border-0 bg-amber-50 px-2 py-0.5 text-amber-800">
-                                신청
-                              </Badge>
-                              <div className="min-w-0 flex-1">
-                                <div className="truncate text-sm font-semibold leading-tight text-slate-900">
-                                  {name || userId}
-                                </div>
-                                {email ? (
-                                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                                    {email}
-                                  </div>
-                                ) : null}
-                              </div>
-                            </div>
-                            {supportsDepartments ? (
-                              <div className="space-y-2">
-                                <Select
-                                  value={
-                                    pendingDepartmentByUserId[userId] ||
-                                    defaultPendingDepartmentId ||
-                                    undefined
-                                  }
-                                  onValueChange={(next) =>
-                                    setPendingDepartmentByUserId((prev) => ({
-                                      ...prev,
-                                      [userId]: next,
-                                    }))
-                                  }
-                                >
-                                  <SelectTrigger className="h-8 text-xs">
-                                    <SelectValue placeholder="승인 부서 선택" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {sortedDepartments.map((dept) => (
-                                      <SelectItem key={dept._id} value={dept._id}>
-                                        {dept.name}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            ) : null}
-                            <div className="flex gap-2">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-8 flex-1 rounded-lg text-xs"
-                                onClick={() =>
-                                  handleApprove(userId, "representative")
-                                }
-                                disabled={!userId || actionUserId === userId}
-                              >
-                                대표 승인
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                className="h-8 flex-1 rounded-lg text-xs"
-                                onClick={() => handleApprove(userId, "staff")}
-                                disabled={!userId || actionUserId === userId}
-                              >
-                                직원 승인
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      </FunctionalItemCard>
-                    );
-                  })}
-                </div>
-              )}
             </section>
             <StaffBulkRegisterDialog
               open={bulkOpen}
