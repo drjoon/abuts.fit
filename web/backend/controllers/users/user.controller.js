@@ -10,7 +10,10 @@ import crypto from "crypto";
 import User from "../../models/user.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import { messageService } from "../../utils/popbill.util.js";
+import {
+  isPopbillMessageConfigured,
+  sendPopbillXMS,
+} from "../../utils/popbill.util.js";
 import { Types } from "mongoose";
 import { toKstYmd } from "../../utils/krBusinessDays.js";
 import { ensureRequestorOrgAnchor, syncPracticeUsesOralScan } from "../businesses/requestorOrgAnchor.util.js";
@@ -97,8 +100,8 @@ async function getProfile(req, res) {
 }
 
 /**
- * 문자 인증 없이 휴대전화 번호를 저장한다.
- * phoneVerifiedAt을 채워 온보딩·의뢰 게이트를 통과시킨다.
+ * 휴대전화 번호만 저장한다. 인증 완료(`phoneVerifiedAt`)는 문자 확인 뒤에만 채운다.
+ * 번호가 바뀌면 기존 인증을 지운다.
  */
 async function savePhoneNumber(req, res) {
   try {
@@ -125,30 +128,29 @@ async function savePhoneNumber(req, res) {
       });
     }
 
-    const savedAt = new Date();
-    await User.findByIdAndUpdate(
-      userId,
-      {
-        $set: {
-          phoneNumber,
-          phoneVerifiedAt: savedAt,
-          phoneVerification: {
-            codeHash: null,
-            expiresAt: null,
-            sentAt: null,
-            dailySendDate: "",
-            dailySendCount: 0,
-            attempts: 0,
-            pendingPhoneNumber: "",
-          },
-        },
-      },
-      { new: false },
-    );
+    const prev = await User.findById(userId)
+      .select("phoneNumber phoneVerifiedAt")
+      .lean();
+    const sameNumber = String(prev?.phoneNumber || "") === phoneNumber;
+    const phoneVerifiedAt = sameNumber ? prev?.phoneVerifiedAt || null : null;
+    const $set = { phoneNumber, phoneVerifiedAt };
+    if (!sameNumber) {
+      $set.phoneVerification = {
+        codeHash: null,
+        expiresAt: null,
+        sentAt: null,
+        dailySendDate: "",
+        dailySendCount: 0,
+        attempts: 0,
+        pendingPhoneNumber: "",
+      };
+    }
+
+    await User.findByIdAndUpdate(userId, { $set }, { new: false });
 
     return res.status(200).json({
       success: true,
-      data: { phoneNumber, phoneVerifiedAt: savedAt },
+      data: { phoneNumber, phoneVerifiedAt },
     });
   } catch (error) {
     return res.status(500).json({
@@ -248,38 +250,15 @@ async function sendPhoneVerification(req, res) {
       { new: false },
     );
 
-    const corpNum = String(process.env.POPBILL_CORP_NUM || "")
-      .replace(/\D/g, "")
-      .trim();
-    const sender = String(process.env.POPBILL_SENDER_NUM || "")
-      .replace(/\D/g, "")
-      .trim();
-    const popbillUserId = String(process.env.POPBILL_USER_ID || "").trim();
-    const popbillLinkId = String(process.env.POPBILL_LINK_ID || "").trim();
-    const popbillSecret = String(process.env.POPBILL_SECRET_KEY || "").trim();
-    const popbillEnabled =
-      popbillLinkId && popbillSecret && corpNum && sender && popbillUserId;
-
-    if (popbillEnabled) {
+    if (isPopbillMessageConfigured()) {
       const to = `0${phoneNumber.slice(3)}`;
       const text = `[abuts.fit] 인증번호: ${code}`;
 
       try {
-        await new Promise((resolve, reject) => {
-          messageService.sendSMS(
-            corpNum,
-            sender,
-            to,
-            "",
-            text,
-            "",
-            false,
-            "",
-            "",
-            popbillUserId,
-            (result) => resolve(result),
-            (error) => reject(error),
-          );
+        await sendPopbillXMS({
+          to,
+          content: text,
+          subject: "인증번호",
         });
       } catch (sendError) {
         console.error("[sms] phone verification send failed", {
@@ -310,6 +289,28 @@ async function sendPhoneVerification(req, res) {
           message: "인증번호 발송에 실패했습니다.",
         });
       }
+    } else if (isProd) {
+      await User.findByIdAndUpdate(
+        userId,
+        {
+          $set: {
+            phoneVerification: {
+              codeHash: null,
+              expiresAt: null,
+              sentAt: null,
+              dailySendDate: todayKey,
+              dailySendCount: nextDailyCount,
+              attempts: 0,
+              pendingPhoneNumber: "",
+            },
+          },
+        },
+        { new: false },
+      );
+      return res.status(500).json({
+        success: false,
+        message: "문자 발송 설정이 없습니다.",
+      });
     } else {
       if (devLogCode) {
         console.log("[sms-dev] phone verification", { phoneNumber, code });

@@ -3,6 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // change-log:
+// - 2026-10-27: 문자 설정 여부 `isPopbillMessageConfigured`. 인증 문자는 sendPopbillXMS.
 // - 2026-10-26: SDK IsTest=false 고정. 토큰 /POPBILL/Token, API popbill.linkhub.co.kr.
 // - 2026-10-14: 계좌조회 RequestJob·GetJobState·Search 래퍼.
 // - 2026-10-13: 팝빌 테스트/운영 구분을 잔액 카드와 같이 쓰도록 노출.
@@ -115,6 +116,15 @@ const getPopbillMessageConfig = () => {
   }
 
   return { corpNum, sender, userId: userId || null };
+};
+
+export const isPopbillMessageConfigured = () => {
+  try {
+    getPopbillMessageConfig();
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 /** 문자 바이트 대략치(한글 2byte) — SMS 90byte 기준 */

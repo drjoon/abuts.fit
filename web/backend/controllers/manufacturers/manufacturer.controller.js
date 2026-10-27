@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-27: 긴급 문자는 큐가 아니라 팝빌 즉시 전송.
 // - 2026-09-06: 배송 FREE_REQUEST도 배송 무료 집계(settleBucket). 미정산·잔액 정합.
 // - 2026-09-06: 미정산·장부·스냅샷=부가세 포함가. 지급 재가산 없음.
 // - 2026-08-23: 원장 상세 컨텍스트 — 패키지 businessAnchorId로 배송자 이름 조회(칸 재사용 대비).
@@ -25,7 +26,10 @@ import LedgerJournal from "../../models/ledgerJournal.model.js";
 import Request from "../../models/request.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import { sendNotificationViaQueue } from "../../utils/notificationQueue.js";
+import {
+  sendPopbillKakaoATS,
+  sendPopbillXMS,
+} from "../../utils/popbill.util.js";
 import User from "../../models/user.model.js";
 import {
   collectManufacturerLedgerLookupIds,
@@ -1016,15 +1020,18 @@ export async function sendUrgentMessage(req, res) {
       });
     }
 
-    const targetUser = await User.findById(targetUserId).select("phone").lean();
-    if (!targetUser || !targetUser.phone) {
+    const targetUser = await User.findById(targetUserId)
+      .select("phone phoneNumber")
+      .lean();
+    const rawPhone = String(targetUser?.phone || targetUser?.phoneNumber || "");
+    if (!rawPhone) {
       return res.status(404).json({
         success: false,
         message: "수신자의 전화번호를 찾을 수 없습니다.",
       });
     }
 
-    const cleanedPhone = targetUser.phone.replace(/[^0-9+]/g, "");
+    const cleanedPhone = rawPhone.replace(/[^0-9+]/g, "");
     if (cleanedPhone.length < 10) {
       return res.status(400).json({
         success: false,
@@ -1032,28 +1039,42 @@ export async function sendUrgentMessage(req, res) {
       });
     }
 
-    // 큐를 통한 발송
-    const type =
-      message.length > 90 ? "LMS" : useKakao && templateCode ? "KAKAO" : "SMS";
-
-    await sendNotificationViaQueue({
-      type,
-      to: cleanedPhone,
-      content: message,
-      templateCode: type === "KAKAO" ? templateCode : undefined,
-      subject: type === "LMS" ? "긴급 알림" : "",
-      priority: 10, // 긴급이므로 우선순위 높임
-    });
+    const useKakaoSend = Boolean(useKakao && templateCode);
+    try {
+      if (useKakaoSend) {
+        await sendPopbillKakaoATS({
+          to: cleanedPhone,
+          content: message,
+          templateCode,
+        });
+      } else {
+        await sendPopbillXMS({
+          to: cleanedPhone,
+          content: message,
+          subject: "긴급 알림",
+        });
+      }
+    } catch (sendError) {
+      if (!useKakaoSend) throw sendError;
+      console.error("[manufacturer] urgent kakao failed, fallback XMS", {
+        message: sendError?.message,
+      });
+      await sendPopbillXMS({
+        to: cleanedPhone,
+        content: message,
+        subject: "긴급 알림",
+      });
+    }
 
     return res.status(200).json({
       success: true,
-      message: "긴급 메시지가 발송 요청되었습니다.",
+      message: "긴급 메시지를 발송했습니다.",
     });
   } catch (error) {
     console.error("긴급 메시지 발송 실패:", error);
     return res.status(500).json({
       success: false,
-      message: "긴급 메시지 발송 요청에 실패했습니다.",
+      message: "긴급 메시지 발송에 실패했습니다.",
       error: error.message,
     });
   }

@@ -16,7 +16,7 @@ router.get("/profile", userController.getProfile);
 // 사용자 프로필 수정
 router.put("/profile", userController.updateProfile);
 
-// 문자 인증 없이 휴대전화 번호 저장
+// 휴대전화 번호 저장. 인증 완료는 phone-verification 확인 뒤에만 반영된다.
 router.post("/phone", userController.savePhoneNumber);
 
 // 전화번호 인증번호 발송

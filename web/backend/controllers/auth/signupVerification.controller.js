@@ -6,7 +6,10 @@ import crypto from "crypto";
 import SignupVerification from "../../models/signupVerification.model.js";
 import User from "../../models/user.model.js";
 import { sendEmail } from "../../utils/email.util.js";
-import { messageService } from "../../utils/popbill.util.js";
+import {
+  isPopbillMessageConfigured,
+  sendPopbillXMS,
+} from "../../utils/popbill.util.js";
 import { toKstYmd } from "../../utils/krBusinessDays.js";
 import { getFrontendBaseUrl, getBackendBaseUrl } from "../../utils/url.util.js";
 
@@ -712,37 +715,14 @@ export async function sendSignupPhoneVerification(req, res) {
       },
     );
 
-    const corpNum = String(process.env.POPBILL_CORP_NUM || "")
-      .replace(/\D/g, "")
-      .trim();
-    const sender = String(process.env.POPBILL_SENDER_NUM || "")
-      .replace(/\D/g, "")
-      .trim();
-    const popbillUserId = String(process.env.POPBILL_USER_ID || "").trim();
-    const popbillLinkId = String(process.env.POPBILL_LINK_ID || "").trim();
-    const popbillSecret = String(process.env.POPBILL_SECRET_KEY || "").trim();
-    const popbillEnabled =
-      popbillLinkId && popbillSecret && corpNum && sender && popbillUserId;
-
-    if (popbillEnabled) {
+    if (isPopbillMessageConfigured()) {
       const to = `0${e164.slice(3)}`;
       const text = `[abuts.fit] 인증번호: ${verificationCode}`;
       try {
-        await new Promise((resolve, reject) => {
-          messageService.sendSMS(
-            corpNum,
-            sender,
-            to,
-            "",
-            text,
-            "",
-            false,
-            "",
-            "",
-            popbillUserId,
-            (result) => resolve(result),
-            (error) => reject(error),
-          );
+        await sendPopbillXMS({
+          to,
+          content: text,
+          subject: "인증번호",
         });
       } catch (sendError) {
         console.error("[sms] signup phone verification send failed", {
