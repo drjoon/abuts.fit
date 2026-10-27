@@ -7,6 +7,7 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { focusOnEnter, isConfirmingEnter } from "@/shared/ui/enterToNextField";
 
 interface SignupSocialWizardStep1Props {
   formData: {
@@ -62,11 +63,15 @@ export const SignupSocialWizardStep1 = ({
     onNext();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !isLoading) {
-      e.preventDefault();
-      handleNext();
-    }
+  const handleNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (isLoading) return;
+    focusOnEnter(e, emailRef.current);
+  };
+
+  const handleEmailKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!isConfirmingEnter(e) || isLoading) return;
+    e.preventDefault();
+    handleNext();
   };
 
   return (
@@ -97,7 +102,7 @@ export const SignupSocialWizardStep1 = ({
             if (nameError) setNameError("");
           }}
           ref={nameRef}
-          onKeyDown={handleKeyDown}
+          onKeyDown={handleNameKeyDown}
           disabled={isLoading}
           autoComplete="name"
           className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${nameError ? "border-destructive/80" : ""}`}
@@ -124,7 +129,7 @@ export const SignupSocialWizardStep1 = ({
             if (emailError) setEmailError("");
           }}
           ref={emailRef}
-          onKeyDown={handleKeyDown}
+          onKeyDown={handleEmailKeyDown}
           disabled={isLoading}
           autoComplete="email"
           className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${emailError ? "border-destructive/80" : ""}`}

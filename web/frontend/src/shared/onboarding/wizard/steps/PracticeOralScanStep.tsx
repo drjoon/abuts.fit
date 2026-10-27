@@ -13,8 +13,10 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Info, ScanLine } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
+import { isConfirmingEnter } from "@/shared/ui/enterToNextField";
 
 interface PracticeOralScanStepProps {
+  onRequestNext?: () => void;
   registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
   registerBusyState?: (busy: boolean) => void;
   registerValidationState?: (state: {
@@ -24,6 +26,7 @@ interface PracticeOralScanStepProps {
 }
 
 export const PracticeOralScanStep = ({
+  onRequestNext,
   registerGoNextAction,
   registerBusyState,
   registerValidationState,
@@ -154,6 +157,12 @@ export const PracticeOralScanStep = ({
             usesOralScan == null ? undefined : usesOralScan ? "yes" : "no"
           }
           onValueChange={(v) => setUsesOralScan(v === "yes")}
+          onKeyDown={(event) => {
+            if (!isConfirmingEnter(event) || saving) return;
+            if (usesOralScan == null) return;
+            event.preventDefault();
+            onRequestNext?.();
+          }}
           className="grid gap-3 sm:grid-cols-2"
         >
           <label

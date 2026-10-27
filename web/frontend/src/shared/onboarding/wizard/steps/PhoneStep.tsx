@@ -20,11 +20,13 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { Check, Loader2 } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
+import { focusOnEnter, isConfirmingEnter } from "@/shared/ui/enterToNextField";
 
 interface PhoneStepProps {
   defaultCompleted?: boolean;
   onComplete?: () => void;
   registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
+  onRequestNext?: () => void;
 }
 
 const PHONE_DRAFT_KEY = "wizard.phoneDraft";
@@ -90,6 +92,7 @@ export const PhoneStep = ({
   defaultCompleted,
   onComplete,
   registerGoNextAction,
+  onRequestNext,
 }: PhoneStepProps) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -100,6 +103,7 @@ export const PhoneStep = ({
   const [verifying, setVerifying] = useState(false);
   const [codeSent, setCodeSent] = useState(false);
   const [code, setCode] = useState("");
+  const [codeFocusNonce, setCodeFocusNonce] = useState(0);
   const [completed, setCompleted] = useState(Boolean(defaultCompleted));
   const [verifiedDigits, setVerifiedDigits] = useState("");
   const phoneInputRef = useRef<HTMLInputElement | null>(null);
@@ -197,11 +201,11 @@ export const PhoneStep = ({
       setCode("");
       setCodeSent(true);
       setPhoneError("");
+      setCodeFocusNonce((nonce) => nonce + 1);
       toast({
         title: "인증번호를 발송했습니다.",
         description: "문자로 받은 번호를 입력해주세요.",
       });
-      window.setTimeout(() => codeInputRef.current?.focus(), 0);
       return true;
     } catch (error: any) {
       toast({
@@ -278,12 +282,31 @@ export const PhoneStep = ({
     savePhoneDraft(phone);
   }, [completed, loading, phone]);
 
+  useEffect(() => {
+    if (!codeFocusNonce || !codeSent) return;
+    const timer = window.setTimeout(() => {
+      codeInputRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [codeFocusNonce, codeSent]);
+
+  const busy = sending || verifying;
+
   const handlePhoneInputKeyDown = (
     event: ReactKeyboardEvent<HTMLInputElement>,
   ) => {
-    if (event.key !== "Enter") return;
+    if (!isConfirmingEnter(event) || busy) return;
+    if (codeSent && !matchesVerified) {
+      focusOnEnter(event, codeInputRef.current);
+      return;
+    }
+    if (matchesVerified) {
+      event.preventDefault();
+      onRequestNext?.();
+      return;
+    }
     event.preventDefault();
-    if (!codeSent) void sendCode();
+    void sendCode();
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -297,8 +320,6 @@ export const PhoneStep = ({
       </div>
     );
   }
-
-  const busy = sending || verifying;
 
   return (
     <form className="space-y-6" onSubmit={handleSubmit}>
@@ -366,8 +387,9 @@ export const PhoneStep = ({
               if (phoneError) setPhoneError("");
             }}
             onKeyDown={(event) => {
-              if (event.key !== "Enter") return;
+              if (!isConfirmingEnter(event) || busy) return;
               event.preventDefault();
+              onRequestNext?.();
             }}
             inputMode="numeric"
             placeholder="4자리"

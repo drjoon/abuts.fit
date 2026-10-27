@@ -7,6 +7,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { focusOnEnter } from "@/shared/ui/enterToNextField";
 
 interface SignupWizardAccountStepProps {
   formData: {
@@ -73,6 +74,7 @@ export const SignupWizardAccountStep = ({
           value={formData.name}
           onChange={onFormChange}
           ref={nameRef}
+          onKeyDown={(event) => focusOnEnter(event, passwordRef.current)}
           disabled={isLoading}
           autoComplete="name"
           className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${errors?.name ? "border-destructive/80" : ""}`}

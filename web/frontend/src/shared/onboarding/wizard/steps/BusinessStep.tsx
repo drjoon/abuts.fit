@@ -20,6 +20,7 @@ interface BusinessStepProps {
   onPracticeProfilePhaseChange?: (active: boolean) => void;
   /** 치과 대표: 사업자등록 직후 구강 스캔 단계 */
   oralScanPhase?: boolean;
+  onRequestNext?: () => void;
   registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
   registerBusyState?: (busy: boolean) => void;
   registerValidationState?: (state: {
@@ -35,6 +36,7 @@ export const BusinessStep = ({
   practiceProfilePhase = false,
   onPracticeProfilePhaseChange,
   oralScanPhase = false,
+  onRequestNext,
   registerGoNextAction,
   registerBusyState,
   registerValidationState,
@@ -71,6 +73,7 @@ export const BusinessStep = ({
   if (oralScanPhase) {
     return (
       <PracticeOralScanStep
+        onRequestNext={onRequestNext}
         registerGoNextAction={registerGoNextAction}
         registerBusyState={registerBusyState}
         registerValidationState={registerValidationState}
@@ -89,6 +92,7 @@ export const BusinessStep = ({
   if (isPracticeOwner) {
     return (
       <PracticeBusinessProfileStep
+        onRequestNext={onRequestNext}
         registerGoNextAction={registerGoNextAction}
         registerBusyState={registerBusyState}
         registerValidationState={registerValidationState}
@@ -99,6 +103,7 @@ export const BusinessStep = ({
   if (isRequestorOwner && practiceProfilePhase) {
     return (
       <PracticeBusinessProfileStep
+        onRequestNext={onRequestNext}
         registerGoNextAction={registerGoNextAction}
         registerBusyState={registerBusyState}
         registerValidationState={registerValidationState}

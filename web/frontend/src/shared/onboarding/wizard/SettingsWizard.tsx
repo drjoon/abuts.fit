@@ -364,12 +364,15 @@ export const SettingsWizard = ({
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      if (event.key !== "Enter") return;
-      if (!currentStep || currentStep !== "phone") {
+      if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) {
         return;
       }
+      if (event.defaultPrevented || !currentStep) return;
       const target = event.target as HTMLElement | null;
-      if (target && ["INPUT", "TEXTAREA", "BUTTON"].includes(target.tagName)) {
+      if (
+        target &&
+        ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName)
+      ) {
         return;
       }
       event.preventDefault();
@@ -497,6 +500,9 @@ export const SettingsWizard = ({
                 defaultCompleted={stepCompleted.phone}
                 onComplete={() => handleStepComplete("phone")}
                 registerGoNextAction={registerGoNextAction}
+                onRequestNext={() => {
+                  void handleNext();
+                }}
               />
             )}
             {currentStep === "business" && (
@@ -508,6 +514,9 @@ export const SettingsWizard = ({
                 practiceProfilePhase={practiceProfilePhase}
                 onPracticeProfilePhaseChange={handlePracticeProfilePhaseChange}
                 oralScanPhase={oralScanPhase}
+                onRequestNext={() => {
+                  void handleNext();
+                }}
                 registerGoNextAction={registerGoNextAction}
                 registerBusyState={registerStepBusyState}
                 registerValidationState={registerValidationState}

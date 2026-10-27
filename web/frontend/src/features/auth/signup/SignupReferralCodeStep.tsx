@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -26,6 +27,34 @@ export const SignupReferralCodeStep = ({
   onPrevious,
   onNext,
 }: SignupReferralCodeStepProps) => {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) {
+        return;
+      }
+      if (event.defaultPrevented || isValidating) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.tagName === "BUTTON") return;
+      if (!confirmedLabel && value.trim()) {
+        event.preventDefault();
+        onValidate();
+        return;
+      }
+      if (nextDisabled) return;
+      event.preventDefault();
+      onNext();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [
+    confirmedLabel,
+    isValidating,
+    nextDisabled,
+    onNext,
+    onValidate,
+    value,
+  ]);
+
   return (
     <div className="space-y-6">
       <p className="text-sm text-white/70">
@@ -55,12 +84,6 @@ export const SignupReferralCodeStep = ({
             placeholder="소개 코드 입력"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onValidate();
-              }
-            }}
             disabled={isValidating}
             className="h-11 flex-1 border-white/10 bg-white/5 text-white placeholder:text-slate-300"
           />

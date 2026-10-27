@@ -8,6 +8,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { Input } from "@/components/ui/input";
@@ -25,6 +26,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { CheckCircle2, Info, ScanLine } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
+import { focusOnEnter, isConfirmingEnter } from "@/shared/ui/enterToNextField";
 
 type PracticeForm = {
   clinicName: string;
@@ -42,6 +44,7 @@ type PracticeForm = {
 type PracticeField = Exclude<keyof PracticeForm, "usesOralScan">;
 
 interface PracticeBusinessProfileStepProps {
+  onRequestNext?: () => void;
   registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
   registerBusyState?: (busy: boolean) => void;
   registerValidationState?: (state: {
@@ -134,6 +137,7 @@ const isFormComplete = (form: PracticeForm) => {
 };
 
 export const PracticeBusinessProfileStep = ({
+  onRequestNext,
   registerGoNextAction,
   registerBusyState,
   registerValidationState,
@@ -146,6 +150,14 @@ export const PracticeBusinessProfileStep = ({
   );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const clinicNameRef = useRef<HTMLInputElement | null>(null);
+  const directorNameRef = useRef<HTMLInputElement | null>(null);
+  const clinicPhoneRef = useRef<HTMLInputElement | null>(null);
+  const staffNameRef = useRef<HTMLInputElement | null>(null);
+  const addressRef = useRef<HTMLInputElement | null>(null);
+  const addressDetailRef = useRef<HTMLInputElement | null>(null);
+  const zipCodeRef = useRef<HTMLInputElement | null>(null);
+  const oralScanYesRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -433,8 +445,10 @@ export const PracticeBusinessProfileStep = ({
           </Label>
           <Input
             id="practice-clinic-name"
+            ref={clinicNameRef}
             value={form.clinicName}
             onChange={(e) => setField("clinicName", e.target.value)}
+            onKeyDown={(event) => focusOnEnter(event, directorNameRef.current)}
             placeholder="예: OO치과의원"
             className={errors.clinicName ? "border-destructive" : ""}
           />
@@ -451,8 +465,10 @@ export const PracticeBusinessProfileStep = ({
           </Label>
           <Input
             id="practice-director-name"
+            ref={directorNameRef}
             value={form.directorName}
             onChange={(e) => setField("directorName", e.target.value)}
+            onKeyDown={(event) => focusOnEnter(event, clinicPhoneRef.current)}
             placeholder="예: 김원장"
             className={errors.directorName ? "border-destructive" : ""}
           />
@@ -469,10 +485,12 @@ export const PracticeBusinessProfileStep = ({
           </Label>
           <Input
             id="practice-clinic-phone"
+            ref={clinicPhoneRef}
             value={form.clinicPhone}
             onChange={(e) =>
               setField("clinicPhone", formatPhoneNumberInput(e.target.value))
             }
+            onKeyDown={(event) => focusOnEnter(event, staffNameRef.current)}
             placeholder="예: 02-123-4567"
             className={errors.clinicPhone ? "border-destructive" : ""}
           />
@@ -489,8 +507,10 @@ export const PracticeBusinessProfileStep = ({
           </Label>
           <Input
             id="practice-staff-name"
+            ref={staffNameRef}
             value={form.staffName}
             onChange={(e) => setField("staffName", e.target.value)}
+            onKeyDown={(event) => focusOnEnter(event, addressRef.current)}
             placeholder="예: 김담당"
             className={errors.staffName ? "border-destructive" : ""}
           />
@@ -530,6 +550,16 @@ export const PracticeBusinessProfileStep = ({
         onChangeAddress={(next) => setField("address", next)}
         onChangeAddressDetail={(next) => setField("addressDetail", next)}
         onChangeZipCode={(next) => setField("zipCode", next)}
+        addressInputRef={addressRef}
+        addressDetailInputRef={addressDetailRef}
+        zipCodeInputRef={zipCodeRef}
+        onAddressKeyDown={(event) => focusOnEnter(event, zipCodeRef.current)}
+        onAddressDetailKeyDown={(event) =>
+          focusOnEnter(event, oralScanYesRef.current)
+        }
+        onZipCodeKeyDown={(event) =>
+          focusOnEnter(event, addressDetailRef.current)
+        }
         addressLabel={errors.address ? "치과 주소 * (필수)" : "치과 주소 *"}
         addressError={Boolean(errors.address)}
         zipCodeError={Boolean(errors.zipCode)}
@@ -568,6 +598,12 @@ export const PracticeBusinessProfileStep = ({
           onValueChange={(v) =>
             setForm((prev) => ({ ...prev, usesOralScan: v === "yes" }))
           }
+          onKeyDown={(event) => {
+            if (!isConfirmingEnter(event) || saving) return;
+            if (form.usesOralScan == null) return;
+            event.preventDefault();
+            onRequestNext?.();
+          }}
           className="grid gap-3 sm:grid-cols-2"
         >
           <label
@@ -579,7 +615,11 @@ export const PracticeBusinessProfileStep = ({
                 : "border-slate-200",
             )}
           >
-            <RadioGroupItem value="yes" id="onboarding-oral-scan-yes" />
+            <RadioGroupItem
+              value="yes"
+              id="onboarding-oral-scan-yes"
+              ref={oralScanYesRef}
+            />
             <span className="text-sm font-medium text-slate-900">사용함</span>
           </label>
           <label

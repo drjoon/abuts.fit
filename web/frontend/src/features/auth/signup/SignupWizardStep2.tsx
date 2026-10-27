@@ -2,11 +2,12 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CheckCircle2, ExternalLink, Mail } from "lucide-react";
+import { focusOnEnter, isConfirmingEnter } from "@/shared/ui/enterToNextField";
 
 interface SignupWizardStep2Props {
   formData: {
@@ -57,11 +58,24 @@ export const SignupWizardStep2 = ({
   const handleEmailFieldKeyDown = (
     e: React.KeyboardEvent<HTMLInputElement>,
   ) => {
-    if (e.key === "Enter" && !isLoading && !emailVerifiedAt && formData.email) {
-      e.preventDefault();
-      onSendEmailVerification();
+    if (!isConfirmingEnter(e) || isLoading || emailVerifiedAt) return;
+    if (emailVerificationSent) {
+      focusOnEnter(e, codeInputRef.current);
+      return;
     }
+    if (!formData.email) return;
+    e.preventDefault();
+    onSendEmailVerification();
   };
+
+  const wasEmailCodeSentRef = useRef(emailVerificationSent);
+  useEffect(() => {
+    const becameSent = emailVerificationSent && !wasEmailCodeSentRef.current;
+    wasEmailCodeSentRef.current = emailVerificationSent;
+    if (!becameSent || emailVerifiedAt) return;
+    const timer = window.setTimeout(() => codeInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [emailVerificationSent, emailVerifiedAt]);
 
   const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.replace(/\D/g, "").slice(0, 4);
@@ -87,9 +101,9 @@ export const SignupWizardStep2 = ({
   };
 
   const handleCodeKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== "Enter") return;
+    if (!isConfirmingEnter(e)) return;
     e.preventDefault();
-    handleVerifyCode();
+    void handleVerifyCode();
   };
 
   const handleSendVerification = () => {
