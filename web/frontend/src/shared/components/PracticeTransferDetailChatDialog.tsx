@@ -300,6 +300,10 @@ import {
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
 import { StlPreviewThumbnail } from "@/features/requests/components/StlPreviewThumbnail";
 import {
+  expandCadProjectPreview,
+  isCadPackageFileName,
+} from "@/shared/files/cadProjectPreview";
+import {
   fileFromImageBlob,
   fileFromModelBlob,
   getModelExtLower,
@@ -415,10 +419,25 @@ function mimeTypeForImageFileName(name: string): string {
   return "application/octet-stream";
 }
 
+function firstPreviewMesh(
+  lists: Array<PracticeTransferDialogFileItem[] | undefined>,
+): PracticeTransferDialogFileItem | null {
+  let packageFile: PracticeTransferDialogFileItem | null = null;
+  for (const list of lists) {
+    for (const file of list || []) {
+      if (!String(file.s3Key || "").trim()) continue;
+      if (isAbutsWorkScanFileName(file.fileName)) continue;
+      if (isModelPreviewExt(getModelExtLower(file.fileName))) return file;
+      if (!packageFile && isCadPackageFileName(file.fileName)) packageFile = file;
+    }
+  }
+  return packageFile;
+}
+
 function resolvePreviewKind(fileName: string): ModelPreviewKind | null {
   const ext =
     getModelExtLower(fileName) || getPracticeTransferFileExtension(fileName);
-  if (isModelPreviewExt(ext)) return "model";
+  if (isModelPreviewExt(ext) || isCadPackageFileName(fileName)) return "model";
   if (isImagePreviewExt(ext)) return "image";
   return null;
 }
@@ -1559,6 +1578,13 @@ export function PracticeTransferDetailChatDialog({
     {},
   );
   const modelThumbFilesRef = useRef<Record<string, File>>({});
+  /** 3Shape 묶음에서 꺼낸 나머지 스캔·사진. 썸네일은 첫 스캔과 같이 그린다. */
+  const [modelThumbExtras, setModelThumbExtras] = useState<
+    Record<string, { extras: File[]; images: File[] }>
+  >({});
+  const modelThumbExtrasRef = useRef<
+    Record<string, { extras: File[]; images: File[] }>
+  >({});
 
   const collectImageThumbFiles = useCallback(() => {
     const out: PracticeTransferDialogFileItem[] = [];
@@ -1604,7 +1630,12 @@ export function PracticeTransferDetailChatDialog({
       for (const file of Array.isArray(list) ? list : []) {
         const s3Key = String(file.s3Key || "").trim();
         if (!s3Key || seen.has(s3Key)) continue;
-        if (!isModelPreviewExt(getModelExtLower(file.fileName))) continue;
+        if (
+          !isModelPreviewExt(getModelExtLower(file.fileName)) &&
+          !isCadPackageFileName(file.fileName)
+        ) {
+          continue;
+        }
         seen.add(s3Key);
         out.push(file);
       }
@@ -1666,7 +1697,9 @@ export function PracticeTransferDetailChatDialog({
 
   const clearModelThumbs = useCallback(() => {
     modelThumbFilesRef.current = {};
+    modelThumbExtrasRef.current = {};
     setModelThumbFiles({});
+    setModelThumbExtras({});
   }, []);
 
   // 모달 닫힐 때만 전체 정리. 목록 갱신 cleanup에서 revoke하면 이미 로드된 썸네일이 깜빡인다.
@@ -1766,14 +1799,18 @@ export function PracticeTransferDetailChatDialog({
 
     let pruned = false;
     const kept: Record<string, File> = { ...modelThumbFilesRef.current };
+    const keptExtras = { ...modelThumbExtrasRef.current };
     for (const key of Object.keys(kept)) {
       if (wanted.has(key)) continue;
       delete kept[key];
+      delete keptExtras[key];
       pruned = true;
     }
     if (pruned) {
       modelThumbFilesRef.current = kept;
+      modelThumbExtrasRef.current = keptExtras;
       setModelThumbFiles(kept);
+      setModelThumbExtras(keptExtras);
     }
 
     const missing = modelFiles.filter((file) => {
@@ -1800,11 +1837,27 @@ export function PracticeTransferDetailChatDialog({
             signal: ac.signal,
           });
           if (cancelled || ac.signal.aborted) return;
+          let previewFile = fileFromModelBlob(blob, fileName);
+          let extras: File[] = [];
+          let images: File[] = [];
+          if (isCadPackageFileName(fileName)) {
+            const expanded = await expandCadProjectPreview(previewFile);
+            if (cancelled || ac.signal.aborted) return;
+            if (expanded.models.length === 0) return;
+            previewFile = expanded.models[0];
+            extras = expanded.models.slice(1);
+            images = expanded.images;
+          }
           modelThumbFilesRef.current = {
             ...modelThumbFilesRef.current,
-            [s3Key]: fileFromModelBlob(blob, fileName),
+            [s3Key]: previewFile,
+          };
+          modelThumbExtrasRef.current = {
+            ...modelThumbExtrasRef.current,
+            [s3Key]: { extras, images },
           };
           setModelThumbFiles({ ...modelThumbFilesRef.current });
+          setModelThumbExtras({ ...modelThumbExtrasRef.current });
         } catch {
           // 썸네일 실패 시 Box placeholder
         }
@@ -2110,6 +2163,24 @@ export function PracticeTransferDetailChatDialog({
         (busyKey ? downloadingFileKeys.includes(busyKey) : false);
       if (isBusy) return;
 
+      if (getModelExtLower(file.fileName) === ".dentalproject") {
+        const mesh = firstPreviewMesh([
+          files,
+          designFiles,
+          resultFiles,
+          workScanFiles,
+        ]);
+        if (mesh) {
+          void openFilePreview(mesh, "model");
+          return;
+        }
+        toast({
+          title: "스캔 형상이 없습니다.",
+          description: "프로젝트와 함께 STL·PLY·DCM을 올려 주세요.",
+        });
+        return;
+      }
+
       const kind = resolvePreviewKind(file.fileName);
       if (kind) {
         void openFilePreview(file, kind);
@@ -2121,9 +2192,14 @@ export function PracticeTransferDetailChatDialog({
       downloadAllBusy,
       downloadAllWorkFilesBusy,
       openInCadBusy,
+      designFiles,
       downloadingFileKeys,
+      files,
       onDownloadTransferFile,
       openFilePreview,
+      resultFiles,
+      toast,
+      workScanFiles,
     ],
   );
 
@@ -3093,7 +3169,14 @@ export function PracticeTransferDetailChatDialog({
       Boolean(busyKey) &&
       !locked;
     const progress = busyKey ? Number(downloadProgressByKey[busyKey] ?? 0) : 0;
-    const isMesh = isModelPreviewExt(getModelExtLower(file.fileName));
+    const isPackage = isCadPackageFileName(file.fileName);
+    const isDentalProject = getModelExtLower(file.fileName) === ".dentalproject";
+    const projectHasMesh = isDentalProject
+      ? Boolean(
+          firstPreviewMesh([files, designFiles, resultFiles, workScanFiles]),
+        )
+      : false;
+    const isMesh = isModelPreviewExt(getModelExtLower(file.fileName)) || isPackage;
     const isImage = isImagePreviewExt(
       getPracticeTransferFileExtension(file.fileName),
     );
@@ -3102,7 +3185,7 @@ export function PracticeTransferDetailChatDialog({
     const typeLabel = fileTypeLabel(file.fileName);
     const title = locked
       ? requestFilesDownloadLockedReason
-      : isMesh
+      : isMesh || projectHasMesh
         ? "클릭하여 3D 미리보기"
         : isImage
           ? "클릭하여 이미지 미리보기"
@@ -3170,7 +3253,11 @@ export function PracticeTransferDetailChatDialog({
             {isMesh && modelThumbFile ? (
               <StlPreviewThumbnail
                 file={modelThumbFile}
-                companionFiles={imageCompanionFiles}
+                extraFiles={modelThumbExtras[busyKey]?.extras}
+                companionFiles={[
+                  ...imageCompanionFiles,
+                  ...(modelThumbExtras[busyKey]?.images || []),
+                ]}
                 className="pointer-events-none"
               />
             ) : isImage && thumbUrl ? (
@@ -3353,7 +3440,9 @@ export function PracticeTransferDetailChatDialog({
   };
 
   const renderPendingRequestFileTile = (item: BackgroundUploadItem) => {
-    const isMesh = isModelPreviewExt(getModelExtLower(item.file.name));
+    const isMesh =
+      isModelPreviewExt(getModelExtLower(item.file.name)) ||
+      isCadPackageFileName(item.file.name);
     const typeLabel = fileTypeLabel(item.file.name);
     return (
       <div

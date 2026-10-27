@@ -1,5 +1,6 @@
 // 의뢰·작업 스캔·어벗·보철을 한 번에 띄운다. 3D는 같은 좌표로 겹치고, 사진은 오른쪽 패널에서 연다.
 // change-log:
+// - 2026-10-27: 3Shape .3ox·.3oxz 묶음의 스캔을 뷰어 레이어로 연다.
 // - 2026-10-14: 전체 화면 프리뷰는 translate·줌 없이 붙인다. 배율 있는 모니터에서 3D가 타원이 되지 않게.
 // - 2026-10-07: 프리뷰 닫을 때 clear가 빈 표시를 저장하던 버그 수정. 표시는 메타데이터로 유지.
 // - 2026-10-07: 3D 페인트를 의뢰 메타데이터에 남겨 다시 연다. 채팅 첨부는 작업 파일을 연다.
@@ -55,6 +56,10 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
 import { formatKstDateTimeToKo } from "@/shared/date/kst";
+import {
+  expandCadProjectPreview,
+  isCadPackageFileName,
+} from "@/shared/files/cadProjectPreview";
 import {
   fileFromImageBlob,
   fileFromModelBlob,
@@ -237,7 +242,7 @@ const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"]);
 
 function kindOf(fileName: string): "model" | "image" | null {
   const ext = getModelExtLower(fileName);
-  if (isModelPreviewExt(ext)) return "model";
+  if (isModelPreviewExt(ext) || isCadPackageFileName(fileName)) return "model";
   const dot = fileName.lastIndexOf(".");
   const plain = dot >= 0 ? fileName.slice(dot).toLowerCase() : "";
   if (IMAGE_EXTS.has(plain)) return "image";
@@ -524,7 +529,11 @@ export function RequestFilesPreviewDialog({
   const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
   const [loads, setLoads] = useState<Record<string, LoadState>>({});
   const [modelFiles, setModelFiles] = useState<
-    Record<string, { file: File; companionFiles: File[] }>
+    Record<
+      string,
+      | { skip: true }
+      | { file: File; companionFiles: File[]; extraFiles: File[] }
+    >
   >({});
   const [imageFiles, setImageFiles] = useState<Record<string, File>>({});
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
@@ -884,6 +893,41 @@ export function RequestFilesPreviewDialog({
             (v): v is { item: Item; file: File } => Boolean(v),
           );
           const ext = getModelExtLower(item.file.fileName);
+          const sourceFile = fileFromModelBlob(blob, item.file.fileName);
+          if (isCadPackageFileName(item.file.fileName)) {
+            const expanded = await expandCadProjectPreview(sourceFile);
+            if (ac.signal.aborted) return;
+            if (expanded.models.length === 0) {
+              const hasOtherMesh = itemsRef.current.some(
+                (row) =>
+                  row.key !== item.key &&
+                  row.kind === "model" &&
+                  isModelPreviewExt(getModelExtLower(row.file.fileName)),
+              );
+              if (!hasOtherMesh) {
+                throw new Error(
+                  "스캔 형상이 없습니다. 프로젝트와 함께 STL·PLY·DCM을 올려 주세요.",
+                );
+              }
+              setModelFiles((prev) => ({
+                ...prev,
+                [item.key]: { skip: true },
+              }));
+              setLoads((prev) => ({ ...prev, [item.key]: { status: "ready" } }));
+              return;
+            }
+            const [first, ...extraFiles] = expanded.models;
+            setModelFiles((prev) => ({
+              ...prev,
+              [item.key]: {
+                file: first,
+                extraFiles,
+                companionFiles: expanded.images,
+              },
+            }));
+            setLoads((prev) => ({ ...prev, [item.key]: { status: "ready" } }));
+            return;
+          }
           let companionFiles: File[] = [];
           if ((ext === ".ply" || ext === ".obj") && images.length > 0) {
             const preferred =
@@ -903,8 +947,9 @@ export function RequestFilesPreviewDialog({
           setModelFiles((prev) => ({
             ...prev,
             [item.key]: {
-              file: fileFromModelBlob(blob, item.file.fileName),
+              file: sourceFile,
               companionFiles,
+              extraFiles: [],
             },
           }));
           setLoads((prev) => ({ ...prev, [item.key]: { status: "ready" } }));
@@ -1032,13 +1077,22 @@ export function RequestFilesPreviewDialog({
     const out: CaseLayerModel[] = [];
     for (const m of models) {
       const loaded = modelFiles[m.key];
-      if (!loaded) continue;
+      if (!loaded || "skip" in loaded) continue;
       out.push({
         id: m.key,
         file: loaded.file,
         companionFiles: loaded.companionFiles,
         tone: m.tone,
         visible: !hidden[m.key],
+      });
+      loaded.extraFiles.forEach((file, index) => {
+        out.push({
+          id: `${m.key}::scan:${index}`,
+          file,
+          companionFiles: loaded.companionFiles,
+          tone: m.tone,
+          visible: !hidden[m.key],
+        });
       });
     }
     return out;
