@@ -8,6 +8,8 @@ import {
   proposeCuffRedesign,
   redesignCuffBowl,
   verticalEmergenceProfile,
+  verticalHoldProfile,
+  blendEmergenceWithOriginal,
   CUFF_BLEND_PATCH_ATTRIBUTE,
   _prepare,
   _smoothProfilesAcrossColumns,
@@ -261,6 +263,26 @@ describe("verticalEmergenceProfile", () => {
   });
 });
 
+describe("blendEmergenceWithOriginal", () => {
+  it("rises near-vertically off the cone and meets the original cuff at the margin", () => {
+    const h = 2;
+    const ra = 1.7;
+    const orig = Array.from({ length: 49 }, (_, i) => ra + 0.55 * (i / 48) * h);
+    const hold = verticalHoldProfile(ra, TAPER_SLOPE, h);
+    const fn = blendEmergenceWithOriginal(hold, orig);
+    expect(fn(0)).toBeCloseTo(ra, 6);
+    expect(fn(1)).toBeCloseTo(orig[48], 6);
+    expect((fn(1e-4) - fn(0)) / 1e-4 / h).toBeCloseTo(TAPER_SLOPE, 2);
+    expect((fn(1) - fn(1 - 1e-4)) / 1e-4 / h).toBeCloseTo(0.55, 2);
+    // 픽스처 직상방은 11° 안쪽, 중간은 4° 상승선과 원본 사이.
+    expect(fn(0.5 / h) - ra).toBeLessThan(0.5 * TAPER_SLOPE);
+    for (const t of [0.3, 0.5, 0.7]) {
+      expect(fn(t)).toBeGreaterThan(hold(t));
+      expect(fn(t)).toBeLessThan(ra + 0.55 * t * h);
+    }
+  });
+});
+
 describe("blendCuffJunction", () => {
   it("replaces the step above the connection with a closed band and keeps both protected zones", () => {
     const input = steppedAbutment();
@@ -418,10 +440,13 @@ describe("blendCuffJunction", () => {
     expect(res.ok).toBe(true);
     expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
     const postProbe = _prepare(res.buffer).probe;
+    const preProbe = _prepare(input).probe;
     const ra = postProbe.rayRadius(0.1, res.detail.zA);
-    const rBone = postProbe.rayRadius(0.1, res.detail.zA + 1);
-    expect(rBone).toBeLessThan(ra + TAPER_SLOPE - 0.02);
-    expect(rBone).toBeGreaterThan(ra + Math.tan((2 * Math.PI) / 180));
+    // 픽스처 직상방은 11° 연장선 안쪽에서 수직에 가깝게 서고, 그 위는 원본 커프 쪽으로 벌어지되 원본보다 안쪽이다.
+    const rNear = postProbe.rayRadius(0.1, res.detail.zA + 0.7);
+    expect(rNear).toBeLessThan(ra + 0.7 * TAPER_SLOPE);
+    expect(rNear).toBeGreaterThan(ra + 0.7 * Math.tan((2 * Math.PI) / 180));
+    expect(postProbe.rayRadius(0.1, res.detail.zA + 1)).toBeLessThan(preProbe.rayRadius(0.1, res.detail.zA + 1) - 0.02);
     const step = 0.08;
     const slopes = [];
     for (let z = res.detail.zA + 1.4; z <= 3.04; z += step) {

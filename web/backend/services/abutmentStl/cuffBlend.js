@@ -751,6 +751,8 @@ const EMERGENCE_EASE_MM = 0.5;
 const EMERGENCE_BONE_MM = 1.35;
 /** 이보다 가파라야 마진에 닿으면 수직 구간을 줄인다. 그래도 모자라면 위쪽만 더 세운다. */
 const EMERGENCE_FLARE_MAX_SLOPE = Math.tan((75 * Math.PI) / 180);
+/** 4° 상승선에 섞을 원본 커프 옆모습 표본 수(원뿔 끝~이음 위 끝 등간격). */
+const EMERGENCE_ORIG_SAMPLES = 48;
 const LONG_BAND_MM = 2;
 /** 띠 면 평균: 반폭(약 ±30°)과 위쪽 보존 지수(t^p). */
 const BAND_SMOOTH_HALF_COLUMNS = columnsForDeg(30);
@@ -917,6 +919,70 @@ export function verticalEmergenceProfile(ra, coneSlope, rTop, h, endSlope = null
   };
 }
 
+/** 3×3 연립방정식(부분 피벗 가우스 소거). 특이하면 null. */
+function solve3(A, B) {
+  const m = A.map((row, i) => [...row, B[i]]);
+  for (let c = 0; c < 3; c += 1) {
+    let p = c;
+    for (let r = c + 1; r < 3; r += 1) if (Math.abs(m[r][c]) > Math.abs(m[p][c])) p = r;
+    if (Math.abs(m[p][c]) < 1e-12) return null;
+    [m[c], m[p]] = [m[p], m[c]];
+    for (let r = 0; r < 3; r += 1) {
+      if (r === c) continue;
+      const f = m[r][c] / m[c][c];
+      for (let k = c; k < 4; k += 1) m[r][k] -= f * m[c][k];
+    }
+  }
+  return [m[0][3] / m[0][0], m[1][3] / m[1][1], m[2][3] / m[2][2]];
+}
+
+/**
+ * 원뿔 끝에서 기울기 coneSlope·곡률 0으로 떠나 4°로 곧게 올라가는 선(마진까지 넓히지 않음). t∈[0,1] → 반경.
+ * @returns {(t: number) => number}
+ */
+export function verticalHoldProfile(ra, coneSlope, h) {
+  const m0 = Math.max(0, coneSlope);
+  const se = Math.min(EMERGENCE_HOLD_SLOPE, m0);
+  const e = Math.min(EMERGENCE_EASE_MM, Math.max(0.15, h * 0.34), h);
+  const rEase = ra + (e * (m0 + se)) / 2;
+  return (t) => {
+    const z = Math.max(0, Math.min(1, t)) * h;
+    if (z <= e) return ra + m0 * z + (se - m0) * e * integrateSmoother(e > 1e-9 ? z / e : 1);
+    return rEase + se * (z - e);
+  };
+}
+
+/**
+ * 4° 수직 상승선과 원본 커프 옆모습을 원뿔 끝 0 → 위 끝 1 비중(양 끝 기울기·곡률 0인 5차식)으로 섞는다.
+ * 픽스처 직상방은 수직에 가깝게 서고 마진 아래는 원본처럼 벌어진다. 원뿔 끝 G2 출발과 위 끝 원본 접선은 그대로다.
+ * 4°로 세웠다가 남은 높이에서 한꺼번에 눕히면 무릎 곡률 반경이 공구 반경보다 작은 접시 모양이 된다.
+ * @param {(t: number) => number} hold
+ * @param {ArrayLike<number>} orig t=0..1 등간격 원본 반경(2개 이상)
+ */
+export function blendEmergenceWithOriginal(hold, orig) {
+  const n = orig.length - 1;
+  if (!hold || !(n >= 1)) return hold;
+  const s = (i) => orig[Math.max(0, Math.min(n, i))];
+  const origAt = (t) => {
+    const x = t * n;
+    const i = Math.min(n - 1, Math.floor(x));
+    const u = x - i;
+    const p0 = s(i);
+    const p1 = s(i + 1);
+    const m0 = (s(i + 1) - s(i - 1)) / (i === 0 ? 1 : 2);
+    const m1 = (s(i + 2) - s(i)) / (i + 1 === n ? 1 : 2);
+    const u2 = u * u;
+    const u3 = u2 * u;
+    return (2 * u3 - 3 * u2 + 1) * p0 + (u3 - 2 * u2 + u) * m0 + (-2 * u3 + 3 * u2) * p1 + (u3 - u2) * m1;
+  };
+  return (t) => {
+    const u = Math.max(0, Math.min(1, t));
+    const v = hold(u);
+    const w = u * u * u * (10 - 15 * u + 6 * u * u);
+    return v + w * (origAt(u) - v);
+  };
+}
+
 /**
  * 원본 곡면에서 둘레로 잰 값을 기공소 메시 열 간격과 무관하게 만든다.
  * 원본 꼭짓점 사이 현(chord)만큼 처진 값이 그대로 들어가면 원본 열 간격(보통 3°)마다 세로 결이 생긴다.
@@ -945,6 +1011,96 @@ export const CUFF_MIN_CONCAVE_RADIUS_MM = 0.78;
  */
 const QUARTIC_FIT_MAX_RESIDUAL_MM = 0.02;
 
+/** 원본을 섞은 열의 위 끝은 원본 커프 그대로라 원본 마진 라운드 곡률이 잡힌다. 위 끝 반경은 보정에서 고정이라 메울 수도 없다. */
+const MERIDIAN_CHECK_SKIP_TOP_MM = 0.1;
+
+/** 이음 프로파일(t∈[0,1] → 반경, 높이 h)의 가장 작은 오목 자오선 곡률 반경(mm). 오목한 곳이 없으면 Infinity. */
+function minConcaveMeridianRadius(fn, h, samples = 200, skipTopMm = 0) {
+  const dz = h / samples;
+  const last = Math.min(samples - 1, Math.floor((h - skipTopMm) / dz));
+  let kMax = 0;
+  for (let i = 1; i <= last; i += 1) {
+    const rm = fn((i - 1) / samples);
+    const r = fn(i / samples);
+    const rp = fn((i + 1) / samples);
+    const r1 = (rp - rm) / (2 * dz);
+    const r2 = (rp - 2 * r + rm) / (dz * dz);
+    if (!Number.isFinite(r2)) return 0;
+    const k = r2 / Math.pow(1 + r1 * r1, 1.5);
+    if (k > kMax) kMax = k;
+  }
+  return kMax > 0 ? 1 / kMax : Infinity;
+}
+
+const RELAX_SAMPLES = 240;
+/** 볼 굴리기로 메운 뒤 곡률 이음을 펴는 가우스 폭(mm). 메운 양에만 건다. */
+const RELAX_SMOOTH_SIGMA_MM = 0.04;
+/** 메운 경계를 펴면 곡률이 조금 다시 줄어서, 볼은 기준보다 조금 크게 굴린다. */
+const RELAX_TARGET_MARGIN = 1.08;
+
+/**
+ * 자오선 오목 곡률 반경이 공구 기준보다 작은 곳만, 반경 R 볼이 바깥에서 닿는 면(형태학적 닫힘)으로 메운다.
+ * 볼엔드밀이 실제로 남기는 면과 같아 최소로만 바깥으로 나간다. 4차 제어 다각형 보정은 같은 곡선을 0.2mm 넘게 메워 원본 밖으로 부푼다.
+ * 끝 밖은 끝 기울기 직선으로 잇고, 위 끝 MERIDIAN_CHECK_SKIP_TOP_MM 안에서는 메운 양을 0으로 줄여 위 끝 반경·기울기를 지킨다.
+ */
+function relaxMeridianConcavity(fn, h, R) {
+  if (minConcaveMeridianRadius(fn, h, 200, MERIDIAN_CHECK_SKIP_TOP_MM) >= R) return fn;
+  const n = RELAX_SAMPLES;
+  const dz = h / n;
+  const ext = Math.ceil(R / dz);
+  const s0 = (fn(1 / n) - fn(0)) / dz;
+  const s1 = (fn(1) - fn(1 - 1 / n)) / dz;
+  const f = new Float64Array(n + 1 + 2 * ext);
+  for (let i = -ext; i <= n + ext; i += 1) {
+    f[i + ext] = i < 0 ? fn(0) + s0 * i * dz : i > n ? fn(1) + s1 * (i - n) * dz : fn(i / n);
+  }
+  const disc = Array.from({ length: 2 * ext + 1 }, (_, k) => {
+    const s = (k - ext) * dz;
+    return Math.sqrt(Math.max(0, R * R - s * s));
+  });
+  const m = f.length;
+  const dil = new Float64Array(m).fill(-Infinity);
+  for (let i = 0; i < m; i += 1) {
+    for (let k = -ext; k <= ext; k += 1) {
+      const q = i + k;
+      if (q < 0 || q >= m) continue;
+      const v = f[q] + disc[k + ext];
+      if (v > dil[i]) dil[i] = v;
+    }
+  }
+  const fill = new Float64Array(n + 1);
+  for (let i = 0; i <= n; i += 1) {
+    let lo = Infinity;
+    for (let k = -ext; k <= ext; k += 1) {
+      const v = dil[i + ext + k] - disc[k + ext];
+      if (v < lo) lo = v;
+    }
+    fill[i] = Math.max(0, lo - f[i + ext]);
+  }
+  const half = Math.ceil((3 * RELAX_SMOOTH_SIGMA_MM) / dz);
+  const weights = Array.from({ length: 2 * half + 1 }, (_, k) => Math.exp(-0.5 * (((k - half) * dz) / RELAX_SMOOTH_SIGMA_MM) ** 2));
+  const wSum = weights.reduce((a, b) => a + b, 0);
+  const vals = Array.from({ length: n + 1 }, (_, i) => {
+    let acc = 0;
+    for (let k = -half; k <= half; k += 1) acc += weights[k + half] * fill[Math.max(0, Math.min(n, i + k))];
+    const zTop = h - i * dz;
+    const u = Math.max(0, Math.min(1, zTop / MERIDIAN_CHECK_SKIP_TOP_MM));
+    const keepTop = u * u * u * (10 - 15 * u + 6 * u * u);
+    return f[i + ext] + keepTop * (acc / wSum);
+  });
+  return (t) => {
+    const x = Math.max(0, Math.min(1, t)) * n;
+    const i = Math.min(n - 1, Math.floor(x));
+    const u = x - i;
+    const s = (k) => vals[Math.max(0, Math.min(n, k))];
+    const m0 = (s(i + 1) - s(i - 1)) / (i === 0 ? 1 : 2);
+    const m1 = (s(i + 2) - s(i)) / (i + 1 === n ? 1 : 2);
+    const u2 = u * u;
+    const u3 = u2 * u;
+    return (2 * u3 - 3 * u2 + 1) * s(i) + (u3 - 2 * u2 + u) * m0 + (-2 * u3 + 3 * u2) * s(i + 1) + (u3 - u2) * m1;
+  };
+}
+
 function quarticFitResidual(c, fn) {
   let residual = 0;
   for (let i = 0; i <= 16; i += 1) {
@@ -967,8 +1123,16 @@ const MIN_RADIUS_ROUNDS = 24;
  * 커넥션 원점 상방 CUFF_DEFORM_MIN_Z_MM(0.3mm) 아래는 건드리지 않으며, 피니시라인 위 끝 반경(c4)도 그대로 둔다.
  * 원래 프로파일에 제어점 보정량만 더하고, 보정량은 매 회 둘레로 평활한다(열마다 갈아 끼우면 보정 열 경계가 세로 주름이 된다).
  */
-function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tailWeights = null) {
+function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tailWeights = null, measuredMeridian = null) {
   const n = profiles.length;
+  // 4차 제어 다각형 검사는 실제 곡선보다 보수적이다. 4차로 설계하지 않은 열은 실제 자오선 곡률로 보고, 이미 넉넉하면 자오선은 메우지 않는다.
+  const meridianOk = measuredMeridian
+    ? profiles.map(
+        (fn, j) =>
+          Boolean(measuredMeridian[j]) &&
+          minConcaveMeridianRadius(fn, hs[j], 200, MERIDIAN_CHECK_SKIP_TOP_MM) >= CUFF_MIN_CONCAVE_RADIUS_MM,
+      )
+    : null;
   // 4차 베지어 제어점은 양 끝과 t=¼·½·¾ 세 점으로 푼다. 끝 미분을 차분으로 재면 둘레 평활(3차 보간)된 곡선에서 어긋난다.
   const ctrl0 = profiles.map((fn) => {
     const c0 = fn(0);
@@ -987,7 +1151,7 @@ function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tai
   let changed = false;
   for (let round = 0; round < MIN_RADIUS_ROUNDS; round += 1) {
     const next = cur.map((c) => c.slice());
-    if (!enforceMinToolRadiusOnCtrl(next, hs, zA, canLiftD0, tailWeights)) break;
+    if (!enforceMinToolRadiusOnCtrl(next, hs, zA, canLiftD0, tailWeights, meridianOk)) break;
     changed = true;
     for (let k = 1; k <= 3; k += 1) {
       const step = circularSmooth(
@@ -1016,7 +1180,7 @@ function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tai
 }
 
 /** enforceMinToolRadiusOnProfiles 한 회: 열별 4차 베지어 제어점(ctrl)을 제자리에서 고친다. 고친 열이 있으면 true. */
-function enforceMinToolRadiusOnCtrl(ctrl, hs, zA, canLiftD0, tailWeights) {
+function enforceMinToolRadiusOnCtrl(ctrl, hs, zA, canLiftD0, tailWeights, meridianOk = null) {
   const n = ctrl.length;
   const modified = new Uint8Array(n);
   const dMaxs = hs.map((h) => (PROFILE_MAX_SLOPE * h) / 4);
@@ -1033,7 +1197,7 @@ function enforceMinToolRadiusOnCtrl(ctrl, hs, zA, canLiftD0, tailWeights) {
     let d2 = c[3] - c[2];
     let d3 = c[4] - c[3];
     const hasConvexTail = tailWeights && tailWeights[j] > 1e-3 && d3 < d2;
-    for (let pass = 0; pass < 40; pass += 1) {
+    for (let pass = 0; pass < (meridianOk?.[j] ? 0 : 40); pass += 1) {
       let changed = false;
       const lim23 = stepLim(h, d2, d3);
       if (d3 - d2 > lim23 + 1e-6) {
@@ -3044,8 +3208,8 @@ export function blendCuffJunction(buffer, options = {}) {
           TOP_SLOPE_SMOOTH_COLUMNS,
         )
       : null;
-    // 볼록(부푼) 구간은 뼈에 걸린다. 이음 높이가 0.8mm 이상이면 원뿔 끝에서 곡률 0으로 떠난 뒤
-    // 약 1.35mm를 4°로 올리고, 그 위만 마진까지 조금씩 넓힌다(verticalEmergenceProfile).
+    // 볼록(부푼) 구간은 뼈에 걸린다. 이음 높이가 0.8mm 이상이면 원뿔 끝에서 곡률 0으로 떠나 4°로 서는 선을
+    // 위로 갈수록 원본 커프 옆모습으로 섞는다(blendEmergenceWithOriginal). 원본을 못 읽은 열만 verticalEmergenceProfile.
     // 11°를 이어 넓히면 픽스처 직상방 뼈에 걸린다. 둘째 제어점 간격을 줄여 경계에서 바로 꺾지 않는다.
     // 0.8mm보다 짧은 띠만 기존 4차 오목 곡선을 쓴다. 단차 직경은 따르지 않는다.
     // 열마다 들쭉날쭉하면 면에 주름이 생기므로, 위 끝 반경은 저주파 성분만 남겨 매끈하게 한다.
@@ -3111,9 +3275,50 @@ export function blendCuffJunction(buffer, options = {}) {
       const w = seamOrigScale[j];
       return smoothCreaseR[j] * w + Math.max(r, smoothCreaseR[j]) * (1 - w);
     });
-    const legacyConcaveOf = (rTop, eSlope, hb, relax = 0) => {
-      // 마진까지 높이가 있는 열은 11°를 이어 넓히지 않는다. 픽스처 직상방을 4°로 올리고 그 위에서 마진까지 넓힌다.
+    const blendedCols = new Uint8Array(thetas.length);
+    // 원본 커프 옆모습(원뿔 끝~이음 위 끝)을 위 끝 반경·기울기를 고정한 4차식으로 맞춘다.
+    // 광선 값을 그대로 쓰면 기공소 메시 면 꺾임이 곡률 튐으로 남는다. 광선이 많이 빗나가면 null.
+    const origColumnOf = (j, hb, rTop, eSlope) => {
+      const n = EMERGENCE_ORIG_SAMPLES;
+      const pts = [];
+      for (let i = 0; i <= n; i += 1) {
+        const r = probe.rayRadius(thetas[j], zA + (i / n) * hb);
+        if (Number.isFinite(r)) pts.push([i / n, r]);
+      }
+      if (pts.length < n * 0.75) return null;
+      const sT = (Number.isFinite(eSlope) ? Math.max(0, eSlope) : (rTop - pts[0][1]) / hb) * hb;
+      // r(t) = rTop + sT·(t−1) + (t−1)²·(a + b·t + c·t²)
+      const A = [
+        [0, 0, 0],
+        [0, 0, 0],
+        [0, 0, 0],
+      ];
+      const B = [0, 0, 0];
+      for (const [t, r] of pts) {
+        const q = (t - 1) * (t - 1);
+        const basis = [q, q * t, q * t * t];
+        const y = r - rTop - sT * (t - 1);
+        for (let a = 0; a < 3; a += 1) {
+          B[a] += basis[a] * y;
+          for (let b = 0; b < 3; b += 1) A[a][b] += basis[a] * basis[b];
+        }
+      }
+      const coef = solve3(A, B);
+      if (!coef) return null;
+      return Array.from({ length: n + 1 }, (_, i) => {
+        const t = i / n;
+        return rTop + sT * (t - 1) + (t - 1) * (t - 1) * (coef[0] + coef[1] * t + coef[2] * t * t);
+      });
+    };
+    const legacyConcaveOf = (rTop, eSlope, hb, relax = 0, j = -1) => {
+      // 마진까지 높이가 있는 열은 11°를 이어 넓히지 않는다. 픽스처 직상방을 4°로 올리고, 위로 갈수록 원본 커프에 맞춘다.
       if (hb >= 0.8) {
+        const orig = j >= 0 ? origColumnOf(j, hb, rTop, eSlope) : null;
+        if (orig) {
+          blendedCols[j] = 1;
+          const blended = blendEmergenceWithOriginal(verticalHoldProfile(ra, coneSlope, hb), orig);
+          return relaxMeridianConcavity(blended, hb, CUFF_MIN_CONCAVE_RADIUS_MM * RELAX_TARGET_MARGIN);
+        }
         const emerged = verticalEmergenceProfile(ra, coneSlope, rTop, hb, eSlope);
         if (emerged) return emerged;
       }
@@ -3139,9 +3344,9 @@ export function blendCuffJunction(buffer, options = {}) {
         );
       };
     };
-    const bowlOf = (rTop, rTopBase, eSlope, hb, scaleOrig, relax = 0) => {
+    const bowlOf = (rTop, rTopBase, eSlope, hb, scaleOrig, relax = 0, j = -1) => {
       if (!convexCuffDeform) {
-        const fn = legacyConcaveOf(rTop, eSlope, hb, relax);
+        const fn = legacyConcaveOf(rTop, eSlope, hb, relax, j);
         if (!fn) {
           const dR = rTop - ra;
           const m0 = Math.max(0, Math.min(coneSlope * hb, dR - CONCAVE_MARGIN * hb));
@@ -3184,6 +3389,7 @@ export function blendCuffJunction(buffer, options = {}) {
         hs[j],
         seamOrigScale ? seamOrigScale[j] : 1,
         0.1 * tailWeights[j],
+        j,
       ),
     );
     // 바닥 보호가 열마다 켜지고 꺼지면 원뿔 상단 근처에 세로 단차가 생기므로 비중을 둘레로 고른다.
@@ -3199,6 +3405,7 @@ export function blendCuffJunction(buffer, options = {}) {
       zA,
       false,
       tailWeights,
+      blendedCols,
     );
     const profiles = floorKeep
       ? enforcedProfiles.map((fn, j) => withDeformFloor(fn, bowls[j].floorBase, floorKeep[j], hs[j]))
