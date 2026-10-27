@@ -963,7 +963,7 @@ Notes:
   - 요소(카드/첨부 UI) 클릭+로컬 드롭: `@/shared/components/practice/PracticeTransferFileDropTarget`
   - 치과 intake 첨부 UI: `@/shared/components/practice/PracticeTransferFilePane` (DropTarget 래핑, 카드에 사전 업로드 프로그레스바)
   - 드롭 파일 추출: `@/shared/files/extractDroppedFiles.ts`
-  - 확장자 SSOT: `@/shared/practice/practiceTransferAccept.ts` — 메시는 STL·PLY·OBJ. ExoCAD는 `.dentalProject`. 3Shape(TRIOS)는 `.dcm`·`.3ox`·`.3oxz`. 이미지. 디자인 SW 파일은 의뢰 파일로 저장하고 같은 이름으로 다운로드한다. `.dcm` 타일 뱃지는 3Shape. 뷰어는 `.3ox`·`.3oxz` 안의 스캔을 연다. `.dentalProject`를 누르면 같이 올린 STL·PLY·DCM을 연다.
+  - 확장자 SSOT: `@/shared/practice/practiceTransferAccept.ts` — 메시는 STL·PLY·OBJ. ExoCAD는 `.dentalProject`. 3Shape(TRIOS)는 `.dcm`·`.3ox`·`.3oxz`. 이미지. 기공소가 받으면 스캔은 고른 포맷(DCM·PLY·STL, 기본은 디자인 SW)으로 저장한다. `.3ox`·`.3oxz`는 안의 스캔을 그 포맷으로 푼다. 어벗 디자인·보철물은 올린 이름 그대로다. `.dcm` 타일 뱃지는 3Shape. 뷰어는 `.3ox`·`.3oxz` 안의 스캔을 연다. `.dentalProject`를 누르면 같이 올린 STL·PLY·DCM을 연다.
   - 상세 패널 드롭·클립: 3D/이미지→의뢰 파일(`POST .../request-files`), 그 외→채팅. 타일 X=`.../request-files/remove`→휴지통(`trashedFiles`, soft-delete)·썸네일 끝 휴지통+카운터·`.../request-files/restore` 복원(치과·기공소 `received`). `partitionDetailAttachFiles`. 채팅 버블에서는 3D·이미지 첨부를 숨김(의뢰 파일 섹션 SSOT). 섹션 라벨=`의뢰 파일 (N개)`. 의뢰 파일은 `uploadBatchId` 웨이브로 첫/두 번째/… 클러스터(`practiceTransferFileWaves.ts`).
 - UI에서 `requestId`는 서버 문자열을 그대로 표시합니다.
 

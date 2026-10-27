@@ -8264,22 +8264,30 @@ export function RequestorPracticeReceivePage({
       busy: "open" | "download";
       reuseSaved: boolean;
     }) => {
+      const toTarget = (
+        file: { s3Key?: string | null; originalName?: string | null; size?: number | null },
+        labFormat: boolean,
+      ) => ({
+        s3Key: String(file.s3Key || "").trim(),
+        fileName: String(file.originalName || "download").trim() || "download",
+        busyKey: String(file.s3Key || "").trim(),
+        size: Number(file.size || 0),
+        labFormat,
+      });
       const files = [
-        ...(Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : []),
+        ...(Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : []).map((file) =>
+          toTarget(file, true),
+        ),
         ...(Array.isArray(selectedTransfer?.production?.designFiles)
           ? selectedTransfer.production.designFiles
-          : []),
-        ...(Array.isArray(selectedTransfer?.resultFiles)
-          ? selectedTransfer.resultFiles
-          : []),
+          : []
+        ).map((file) => toTarget(file, false)),
+        ...(Array.isArray(selectedTransfer?.resultFiles) ? selectedTransfer.resultFiles : []).map(
+          (file) => toTarget(file, false),
+        ),
       ];
       await saveToLabWorkFolder({
-        files: files.map((file) => ({
-          s3Key: String(file.s3Key || "").trim(),
-          fileName: String(file.originalName || "download").trim() || "download",
-          busyKey: String(file.s3Key || "").trim(),
-          size: Number(file.size || 0),
-        })),
+        files,
         dcmFormat: opts.dcmFormat,
         busy: opts.busy,
         reuseSaved: opts.reuseSaved,
@@ -8304,7 +8312,12 @@ export function RequestorPracticeReceivePage({
   /** 프리뷰 「다운로드」: 고른 파일만 같은 케이스 폴더에 다시 받는다. */
   const saveFilesToCaseFolder = useCallback(
     async (
-      files: Array<{ s3Key?: string | null; fileName?: string | null; size?: number | null }>,
+      files: Array<{
+        s3Key?: string | null;
+        fileName?: string | null;
+        size?: number | null;
+        labFormat?: boolean;
+      }>,
       opts?: { dcmFormat?: DcmDownloadFormat },
     ) => {
       if (!files.length) return;
@@ -8314,6 +8327,7 @@ export function RequestorPracticeReceivePage({
           fileName: String(file.fileName || "download").trim() || "download",
           busyKey: String(file.s3Key || "").trim(),
           size: Number(file.size || 0),
+          labFormat: file.labFormat,
         })),
         dcmFormat: opts?.dcmFormat,
         busy: "download",
@@ -8348,7 +8362,8 @@ export function RequestorPracticeReceivePage({
 
   /**
    * 「폴더 열기」는 이미 받은 파일은 받지 않고 폴더만 연다.
-   * DCM 종류를 안 고르면 설정 디자인 SW에 맞춘다(3Shape=원본, 그 외=PLY). 미설정이면 마지막 선택.
+   * 포맷을 안 고르면 설정 디자인 SW에 맞춘다(3Shape=DCM, 그 외=PLY). 미설정이면 마지막 선택.
+   * 어벗 디자인·보철물은 올린 파일 그대로 둔다.
    */
   const handleOpenWork = useCallback(
     (opts?: { dcmFormat?: DcmDownloadFormat }) => {

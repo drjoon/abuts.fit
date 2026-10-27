@@ -10,6 +10,7 @@
 // - 2026-09-27: 열기 — 헬퍼 대기·파일 준비가 길면 onOpenPhase로 화면 상태.
 // - 2026-09-24: openInDesignSoftware — 로컬 CAD 헬퍼로 3D 모델 열기(3Shape/ExoCAD).
 // - 2026-09-20: downloadAsZip — 여러 S3 파일을 DEFLATE zip 하나로 저장.
+// - 2026-10-27: 기공소 저장은 고른 포맷(DCM·PLY·STL). .3ox·.3oxz 스캔도 그 포맷으로 푼다.
 // - 2026-09-10: DCM 다운로드 시 PLY(칼라) 클라이언트 변환 옵션.
 // - 2026-08-16: IndexedDB(s3:key) 캐시 — 다운로드·프리뷰 공통.
 // - 2026-08-16: fetchS3Blob — 프리뷰용 blob fetch(저장 없음).
@@ -30,15 +31,19 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { saveBlobAsDownload } from "@/shared/files/downloadWithProgress";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import {
-  isDcmFileName,
   readDcmDownloadFormat,
   writeDcmDownloadFormat,
   type DcmDownloadFormat,
 } from "@/shared/files/dcmDownloadFormat";
-import { convertHpsDcmBuffer, replaceExt } from "@/shared/files/hpsDcmToPly";
+import { replaceExt } from "@/shared/files/hpsDcmToPly";
+import {
+  materializeLabDownload,
+  planLabDownloadFile,
+} from "@/shared/files/labDownloadMeshes";
 import {
   clearLabWorkFolderHandle,
   dedupeLabCaseFiles,
+  uniqueLabCaseFileName,
   ensureLabWorkFolderPermission,
   findMissingInLabCaseFolder,
   labCaseFolderLabel,
@@ -94,8 +99,14 @@ export type S3DownloadTarget = {
   busyKey?: string;
   /** 원본 크기(byte). 진행률 가중치·이미 받은 파일 확인에 쓴다. */
   size?: number;
-  /** DCM만: 원본 또는 PLY 변환. 생략 시 localStorage 선호. */
+  /** 받을 포맷. 생략 시 localStorage 선호. */
   dcmFormat?: DcmDownloadFormat;
+  /**
+   * true: 의뢰·작업 스캔 메시를 포맷에 맞춘다.
+   * false: 어벗 디자인·보철물은 올린 그대로.
+   * 생략: DCM·PLY·OBJ·묶음과, 이름이 스캔인 STL만.
+   */
+  labFormat?: boolean;
 };
 
 export type ZipDownloadGroup = {
@@ -255,21 +266,30 @@ export function useS3FileDownload(token?: string | null) {
 
       try {
         const blob = await loadCachedBlob(file);
-        const want = isDcmFileName(fileName)
-          ? file.dcmFormat || readDcmDownloadFormat()
-          : "dcm";
-        if (want === "ply" || want === "stl") {
-          writeDcmDownloadFormat(want);
-          const converted = await convertHpsDcmBuffer(
-            await blob.arrayBuffer(),
-            want,
-          );
-          saveBlobAsDownload(converted, replaceExt(fileName, want));
+        const format = file.dcmFormat || readDcmDownloadFormat();
+        if (file.dcmFormat) writeDcmDownloadFormat(file.dcmFormat);
+        const pieces = await materializeLabDownload({
+          blob,
+          fileName,
+          format,
+          labFormat: file.labFormat,
+        });
+        if (pieces.length <= 1) {
+          const piece = pieces[0];
+          saveBlobAsDownload(piece?.blob || blob, piece?.fileName || fileName);
         } else {
-          if (isDcmFileName(fileName) && file.dcmFormat === "dcm") {
-            writeDcmDownloadFormat("dcm");
+          const { default: JSZip } = await import("jszip");
+          const zip = new JSZip();
+          const used = new Set<string>();
+          for (const piece of pieces) {
+            zip.file(uniqueLabCaseFileName(used, piece.fileName), piece.blob);
           }
-          saveBlobAsDownload(blob, fileName);
+          const zipBlob = await zip.generateAsync({
+            type: "blob",
+            compression: "DEFLATE",
+            compressionOptions: { level: 6 },
+          });
+          saveBlobAsDownload(zipBlob, replaceExt(fileName, "zip"));
         }
       } catch (err) {
         if ((err as { name?: string })?.name === "AbortError") return;
@@ -388,13 +408,19 @@ export function useS3FileDownload(token?: string | null) {
       const planned = dedupeLabCaseFiles(
         targets.map((file) => {
           const original = String(file.fileName || "download").trim() || "download";
-          const want = isDcmFileName(original) ? file.dcmFormat || dcmFormat : "dcm";
-          const convertTo = want === "ply" || want === "stl" ? want : null;
+          const format = file.dcmFormat || dcmFormat;
+          const plan = planLabDownloadFile({
+            fileName: original,
+            format,
+            labFormat: file.labFormat,
+            size: Number(file.size) || 0,
+          });
           return {
             target: file,
-            convertTo,
-            fileName: convertTo ? replaceExt(original, convertTo) : original,
-            size: convertTo ? 0 : Math.max(0, Number(file.size) || 0),
+            format,
+            refresh: plan.refresh,
+            fileName: plan.fileName,
+            size: plan.size,
           };
         }),
       );
@@ -402,7 +428,7 @@ export function useS3FileDownload(token?: string | null) {
 
       const fetchPlanned = async (
         rows: Planned[],
-        write: (row: Planned, blob: Blob) => Promise<void>,
+        write: (fileName: string, blob: Blob) => Promise<void>,
       ) => {
         const weights = rows.map((row) => Math.max(1, Number(row.target.size) || 0));
         const total = weights.reduce((a, b) => a + b, 0);
@@ -412,30 +438,52 @@ export function useS3FileDownload(token?: string | null) {
           setLabSaveProgress(Math.min(99, Math.round(done)));
         };
         setLabSaveProgress(0);
-        await Promise.all(
+        const produced = await Promise.all(
           rows.map(async (row, i) => {
             const busyKey = String(row.target.busyKey || row.target.s3Key || "").trim();
             beginBusy(busyKey);
             try {
-              let blob = await loadCachedBlob({
+              const blob = await loadCachedBlob({
                 ...row.target,
                 onPercent: (p) => {
                   percents[i] = Math.max(0, Math.min(100, p));
                   report();
                 },
               });
-              if (row.convertTo) {
-                blob = await convertHpsDcmBuffer(await blob.arrayBuffer(), row.convertTo);
-              }
-              await write(row, blob);
+              const outputs = await materializeLabDownload({
+                blob,
+                fileName: String(row.target.fileName || row.fileName),
+                format: row.format,
+                labFormat: row.target.labFormat,
+              });
               percents[i] = 100;
               report();
+              return { row, outputs };
             } finally {
               endBusy(busyKey);
             }
           }),
         );
+        const used = new Set(
+          planned.filter((row) => !row.refresh).map((row) => row.fileName.toLowerCase()),
+        );
+        const named: Array<{ fileName: string; blob: Blob }> = [];
+        for (const item of produced) {
+          if (!item.row.refresh) {
+            const piece = item.outputs[0];
+            if (piece) named.push({ fileName: item.row.fileName, blob: piece.blob });
+            continue;
+          }
+          for (const piece of item.outputs) {
+            named.push({
+              fileName: uniqueLabCaseFileName(used, piece.fileName),
+              blob: piece.blob,
+            });
+          }
+        }
+        await Promise.all(named.map((item) => write(item.fileName, item.blob)));
         setLabSaveProgress(100);
+        return named.length;
       };
 
       const askFolder = async <K extends LabWorkFolderPick["kind"]>(
@@ -481,17 +529,19 @@ export function useS3FileDownload(token?: string | null) {
         writeLabHelperWorkFolder(workFolder);
         const ref = { workFolder, caseFolder: opts.caseFolder };
         const missing = new Set(check.missing);
-        const todo = opts.reuseSaved ? planned.filter((row) => missing.has(row.fileName)) : planned;
-        if (todo.length) {
-          await fetchPlanned(todo, (row, blob) =>
-            putLabHelperCaseFile({ ...ref, name: row.fileName, blob }),
-          );
-        }
+        const todo = opts.reuseSaved
+          ? planned.filter((row) => row.refresh || missing.has(row.fileName))
+          : planned;
+        const written = todo.length
+          ? await fetchPlanned(todo, (fileName, blob) =>
+              putLabHelperCaseFile({ ...ref, name: fileName, blob }),
+            )
+          : 0;
         const folder = await revealLabHelperCase(ref).catch(() => "");
         return {
           mode: "helper",
           folder: folder || check.folder,
-          count: todo.length,
+          count: written,
           revealed: Boolean(folder),
         };
       };
@@ -519,29 +569,29 @@ export function useS3FileDownload(token?: string | null) {
         const dir = root;
         const missingSet = new Set(missing);
         const todo = opts.reuseSaved
-          ? planned.filter((row) => missingSet.has(row.fileName))
+          ? planned.filter((row) => row.refresh || missingSet.has(row.fileName))
           : planned;
-        if (todo.length) {
-          await fetchPlanned(todo, (row, blob) =>
-            writeLabCaseFile({
-              root: dir,
-              caseFolder: opts.caseFolder,
-              file: { fileName: row.fileName, blob },
-            }),
-          );
-        }
+        const written = todo.length
+          ? await fetchPlanned(todo, (fileName, blob) =>
+              writeLabCaseFile({
+                root: dir,
+                caseFolder: opts.caseFolder,
+                file: { fileName, blob },
+              }),
+            )
+          : 0;
         return {
           mode: "folder",
           folder: labCaseFolderLabel(dir, opts.caseFolder),
-          count: todo.length,
+          count: written,
           revealed: false,
         };
       };
 
       const saveAsZip = async (): Promise<LabWorkFolderSaveResult> => {
         const blobs: Array<{ fileName: string; blob: Blob }> = [];
-        await fetchPlanned(planned, async (row, blob) => {
-          blobs.push({ fileName: row.fileName, blob });
+        const written = await fetchPlanned(planned, async (fileName, blob) => {
+          blobs.push({ fileName, blob });
         });
         const { default: JSZip } = await import("jszip");
         const zip = new JSZip();
@@ -553,7 +603,7 @@ export function useS3FileDownload(token?: string | null) {
         });
         const zipName = sanitizeZipArchiveName(opts.caseFolder);
         saveBlobAsDownload(zipBlob, zipName);
-        return { mode: "zip", folder: zipName, count: blobs.length, revealed: false };
+        return { mode: "zip", folder: zipName, count: written, revealed: false };
       };
 
       try {

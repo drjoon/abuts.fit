@@ -6499,20 +6499,31 @@ export const PracticeFileTransferPage = ({
   /**
    * 의뢰·작업 스캔·디자인·보철 파일을 작업 폴더 안 케이스 폴더에 저장한다.
    * 「폴더 열기」는 이미 받은 파일은 건너뛰고 폴더만 연다.
-   * DCM 종류를 안 고르면 계정 디자인 SW에 맞춘다(3Shape=원본, ExoCAD·그외=PLY).
+   * DCM 종류를 안 고르면 계정 디자인 SW에 맞춘다(3Shape=DCM, ExoCAD·그외=PLY).
+   * 어벗 디자인·보철물은 올린 파일 그대로 둔다.
    */
   const handleOpenWork = useCallback(
     async (opts?: { dcmFormat?: DcmDownloadFormat; reuseSaved?: boolean }) => {
-      const files = selectedTransferDetailModel?.downloadAllFiles || [];
-      if (!files.length || !selectedTransferCaseFolder) return;
+      const model = selectedTransferDetailModel;
+      if (!model?.downloadAllFiles.length || !selectedTransferCaseFolder) return;
       const sw = String(accountDesignSoftware || "").trim();
+      const toTarget = (
+        file: { s3Key?: string | null; fileName?: string | null; size?: number | null },
+        labFormat: boolean,
+      ) => ({
+        s3Key: String(file.s3Key || "").trim(),
+        fileName: String(file.fileName || "첨부파일").trim() || "첨부파일",
+        busyKey: String(file.s3Key || "").trim(),
+        size: Number(file.size || 0),
+        labFormat,
+      });
       await saveToLabWorkFolder({
-        files: files.map((file) => ({
-          s3Key: String(file.s3Key || "").trim(),
-          fileName: String(file.fileName || "첨부파일").trim() || "첨부파일",
-          busyKey: String(file.s3Key || "").trim(),
-          size: Number(file.size || 0),
-        })),
+        files: [
+          ...model.files.map((file) => toTarget(file, true)),
+          ...model.workScanFiles.map((file) => toTarget(file, true)),
+          ...model.designFiles.map((file) => toTarget(file, false)),
+          ...model.resultFiles.map((file) => toTarget(file, false)),
+        ],
         dcmFormat:
           opts?.dcmFormat || (sw ? dcmFormatForDesignSoftware(sw) : undefined),
         busy: opts?.reuseSaved === false ? "download" : "open",
@@ -6539,7 +6550,12 @@ export const PracticeFileTransferPage = ({
   /** 프리뷰 「다운로드」: 고른 파일만 같은 케이스 폴더에 다시 받는다. */
   const handleSaveFilesToCaseFolder = useCallback(
     async (
-      files: Array<{ s3Key?: string | null; fileName?: string | null; size?: number | null }>,
+      files: Array<{
+        s3Key?: string | null;
+        fileName?: string | null;
+        size?: number | null;
+        labFormat?: boolean;
+      }>,
       opts?: { dcmFormat?: DcmDownloadFormat },
     ) => {
       if (!files.length || !selectedTransferCaseFolder) return;
@@ -6549,6 +6565,7 @@ export const PracticeFileTransferPage = ({
           fileName: String(file.fileName || "첨부파일").trim() || "첨부파일",
           busyKey: String(file.s3Key || "").trim(),
           size: Number(file.size || 0),
+          labFormat: file.labFormat,
         })),
         dcmFormat: opts?.dcmFormat,
         busy: "download",

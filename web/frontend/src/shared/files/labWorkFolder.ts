@@ -139,7 +139,7 @@ function sanitizeFolderSegment(value: string): string {
     .replace(/\.+$/, "");
 }
 
-function uniqueFileName(used: Set<string>, fileName: string): string {
+export function uniqueLabCaseFileName(used: Set<string>, fileName: string): string {
   const base = sanitizeFolderSegment(fileName) || "file";
   const dot = base.lastIndexOf(".");
   const stem = dot > 0 ? base.slice(0, dot) : base;
@@ -157,7 +157,10 @@ function uniqueFileName(used: Set<string>, fileName: string): string {
 /** 같은 이름이 겹치면 「이름 (2).ext」로 나눈다. 이름은 Windows 연결 프로그램과 같은 규칙으로 정리. */
 export function dedupeLabCaseFiles<T extends { fileName: string }>(files: T[]): T[] {
   const used = new Set<string>();
-  return files.map((file) => ({ ...file, fileName: uniqueFileName(used, file.fileName) }));
+  return files.map((file) => ({
+    ...file,
+    fileName: uniqueLabCaseFileName(used, file.fileName),
+  }));
 }
 
 export function labCaseFolderSegment(caseFolder: string): string {

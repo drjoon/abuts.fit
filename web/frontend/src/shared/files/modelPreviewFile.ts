@@ -615,6 +615,8 @@ export type ParseModelPreviewOptions = {
   textureFile?: File | null;
   /** MTL 등 부가 파일 (이름으로 매칭) */
   companionFiles?: File[] | null;
+  /** 다운로드 변환은 화면용 색 보정을 하지 않는다. */
+  skipColorEnhance?: boolean;
 };
 
 export type ParsedModelPreview = {
@@ -658,7 +660,7 @@ export async function parseModelPreview(
 
   if (ext === ".dcm") {
     const geometry = await parseHpsDcmGeometry(buffer);
-    if (!geometry.userData.abutsWork) {
+    if (!geometry.userData.abutsWork && !options.skipColorEnhance) {
       enhanceScanPreviewColors(geometry, null);
     }
     if (import.meta.env.DEV) {
@@ -691,7 +693,7 @@ export async function parseModelPreview(
         texture = null;
       }
     }
-    enhanceScanPreviewColors(geometry, texture);
+    if (!options.skipColorEnhance) enhanceScanPreviewColors(geometry, texture);
 
     if (import.meta.env.DEV) {
       console.info("[modelPreview][ply]", {
@@ -819,7 +821,7 @@ export async function parseModelPreview(
     if (texture && !geometryHasUv(geometry)) {
       texture = null;
     }
-    enhanceScanPreviewColors(geometry, texture);
+    if (!options.skipColorEnhance) enhanceScanPreviewColors(geometry, texture);
 
     if (import.meta.env.DEV) {
       console.info("[modelPreview][obj]", {

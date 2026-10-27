@@ -31,7 +31,7 @@
 // - 2026-09-29: 작업 파일 섹션에도 「폴더 열기」(기공소만, onOpenWorkFilesFolder). 치과는 작업 파일을 받지 않는다.
 // - 2026-09-28: 환자·치아번호 줄 오른쪽에 케이스 공유(플랫폼 내·외부 링크) 버튼.
 // - 2026-09-28: 상단 헤더의 폴더 열기·톱니 제거. 의뢰 파일 섹션에만 둔다.
-// - 2026-09-28: 「폴더 열기」는 일반 버튼. 옆 톱니에서 DCM 받을 포맷(DCM·PLY·STL)을 고르고 저장.
+// - 2026-10-27: 「폴더 열기」옆 톱니의 받을 포맷(DCM·PLY·STL)으로 스캔을 저장.
 // - 2026-09-28: 작업시작 자리가 작업취소로 바뀐다. 작업열기·다운로드를 「폴더 열기」 하나로(DCM이면 원본·PLY 선택, 받은 파일은 건너뛰고 폴더만).
 // - 2026-09-27: 작업시작 후 그 자리에 파란 「작업열기」. 의뢰 파일 열기도 같은 버튼.
 // - 2026-09-27: 채팅 「완료」뱃지. 판정은 isPracticeRecentFinishedBadgeStatus.
@@ -314,7 +314,7 @@ import {
 } from "@/shared/files/modelPreviewFile";
 import {
   DCM_DOWNLOAD_FORMAT_OPTIONS,
-  isDcmFileName,
+  isLabFormatSourceName,
   readStoredDcmDownloadFormat,
   writeDcmDownloadFormat,
   type DcmDownloadFormat,
@@ -736,7 +736,7 @@ type PracticeTransferDetailChatDialogProps = {
    * 미전달 시 브라우저 다운로드(onDownloadTransferFile).
    */
   onSaveFilesToCaseFolder?: (
-    files: PracticeTransferDialogFileItem[],
+    files: Array<PracticeTransferDialogFileItem & { labFormat?: boolean }>,
     opts?: { dcmFormat?: DcmDownloadFormat },
   ) => void | Promise<void>;
   /** 기공소 의뢰수락 (수신 페이지에서만 전달). 미수락이면 채팅 상단 CTA */
@@ -2697,7 +2697,7 @@ export function PracticeTransferDetailChatDialog({
       ? `저장 중 ${downloadAllProgress}%`
       : "저장 중..."
     : downloadAllFilesLabel;
-  /** 케이스 폴더에 받고 연다. 이미 받은 파일은 건너뛰고 폴더만 연다. DCM은 톱니에서 고른 포맷으로. */
+  /** 케이스 폴더에 받고 연다. 이미 받은 파일은 건너뛰고 폴더만 연다. 스캔은 톱니에서 고른 포맷으로. */
   const renderOpenWorkButton = () => {
     if (!canOpenInDesignSoftware) return null;
     return (
@@ -2736,15 +2736,15 @@ export function PracticeTransferDetailChatDialog({
               variant="outline"
               className="h-8 w-8 p-0"
               disabled={openInCadBusy}
-              aria-label="다운로드 파일 포맷"
-              title={`DCM 받을 포맷: ${openWorkDcmFormat.toUpperCase()}`}
+              aria-label="받을 포맷"
+              title={`받을 포맷: ${openWorkDcmFormat.toUpperCase()}`}
             >
               <Settings className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="z-[400] min-w-[10rem]">
             <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-              DCM 받을 포맷
+              받을 포맷
             </DropdownMenuLabel>
             <DropdownMenuRadioGroup
               value={openWorkDcmFormat}
@@ -3944,7 +3944,7 @@ export function PracticeTransferDetailChatDialog({
                             {canOpenInDesignSoftware ? (
                               renderOpenWorkButton()
                             ) : requestFilesShown.length > 0 ? (
-                              files.some((f) => isDcmFileName(f.fileName)) ? (
+                              files.some((f) => isLabFormatSourceName(f.fileName)) ? (
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
                                     <Button
@@ -4508,8 +4508,16 @@ export function PracticeTransferDetailChatDialog({
             ...designFileList,
             ...resultFileList,
           ].filter((f) => keys.has(f.s3Key));
+          const scanKeys = new Set(
+            [...requestFilesShown, ...workScanFileList].map((f) => f.s3Key),
+          );
           if (onSaveFilesToCaseFolder) {
-            await onSaveFilesToCaseFolder(originals);
+            await onSaveFilesToCaseFolder(
+              originals.map((file) => ({
+                ...file,
+                labFormat: scanKeys.has(file.s3Key),
+              })),
+            );
             return;
           }
           for (const file of originals) await onDownloadTransferFile(file);
@@ -4542,13 +4550,30 @@ export function PracticeTransferDetailChatDialog({
           previewMeta
             ? (opts) =>
                 void (onSaveFilesToCaseFolder
-                  ? onSaveFilesToCaseFolder([previewMeta], {
-                      dcmFormat: opts?.dcmFormat,
-                    })
+                  ? onSaveFilesToCaseFolder(
+                      [
+                        {
+                          ...previewMeta,
+                          labFormat: ![
+                            ...designFileList,
+                            ...resultFileList,
+                          ].some((file) => file.s3Key === previewMeta.s3Key),
+                        },
+                      ],
+                      {
+                        dcmFormat: opts?.dcmFormat,
+                      },
+                    )
                   : onDownloadTransferFile(previewMeta, {
                       dcmFormat: opts?.dcmFormat,
                     }))
             : undefined
+        }
+        chooseFormat={
+          !previewMeta ||
+          ![...designFileList, ...resultFileList].some(
+            (file) => file.s3Key === previewMeta.s3Key,
+          )
         }
         previewIndex={previewIndex}
         previewCount={previewCount}

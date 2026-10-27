@@ -72,7 +72,7 @@ import {
 } from "@/shared/components/ResizablePanelHandle";
 import {
   DCM_DOWNLOAD_FORMAT_OPTIONS,
-  isDcmFileName,
+  isLabFormatSourceName,
   type DcmDownloadFormat,
 } from "@/shared/files/dcmDownloadFormat";
 import {
@@ -105,6 +105,8 @@ export type ModelPreviewDialogProps = {
   loading?: boolean;
   progress?: number;
   onDownload?: (opts?: ModelPreviewDownloadOptions) => void | Promise<void>;
+  /** false면 포맷 메뉴 없이 원본을 받는다. 어벗 디자인·보철물. */
+  chooseFormat?: boolean;
   downloadBusy?: boolean;
   /** 0-based. 없으면 네비 숨김 */
   previewIndex?: number;
@@ -135,6 +137,7 @@ export function ModelPreviewDialog({
   loading = false,
   progress = 0,
   onDownload,
+  chooseFormat = true,
   downloadBusy = false,
   previewIndex = -1,
   previewCount = 0,
@@ -151,7 +154,7 @@ export function ModelPreviewDialog({
 }: ModelPreviewDialogProps) {
   const panel = useResizablePanelWidth("abuts.modelPreviewPanelWidth.v1");
   const isImage = kind === "image";
-  const isDcm = isDcmFileName(fileName);
+  const offerLabFormat = chooseFormat && isLabFormatSourceName(fileName);
   const title =
     String(fileName || "").trim() ||
     (isImage ? "이미지 미리보기" : "3D 미리보기");
@@ -188,7 +191,7 @@ export function ModelPreviewDialog({
     const className = cn(PREVIEW_HEADER_BUTTON_CLASS, opts?.className);
     const variant = opts?.variant || "outline";
 
-    if (!isDcm) {
+    if (!offerLabFormat) {
       return (
         <Button
           type="button"
