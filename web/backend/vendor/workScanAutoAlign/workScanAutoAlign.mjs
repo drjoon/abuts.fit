@@ -15034,7 +15034,7 @@ async function parseModelPreview(file, options = {}) {
   };
   if (ext === ".dcm") {
     const geometry = await parseHpsDcmGeometry(buffer);
-    if (!geometry.userData.abutsWork) {
+    if (!geometry.userData.abutsWork && !options.skipColorEnhance) {
       enhanceScanPreviewColors(geometry, null);
     }
     return { geometry, texture: null, textureFileName: null };
@@ -15057,7 +15057,7 @@ async function parseModelPreview(file, options = {}) {
         texture = null;
       }
     }
-    enhanceScanPreviewColors(geometry, texture);
+    if (!options.skipColorEnhance) enhanceScanPreviewColors(geometry, texture);
     return {
       geometry,
       texture,
@@ -15157,7 +15157,7 @@ async function parseModelPreview(file, options = {}) {
     if (texture && !geometryHasUv(geometry)) {
       texture = null;
     }
-    enhanceScanPreviewColors(geometry, texture);
+    if (!options.skipColorEnhance) enhanceScanPreviewColors(geometry, texture);
     return { geometry, texture, textureFileName: preferredTex };
   }
   return {
