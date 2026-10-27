@@ -741,6 +741,16 @@ const END_SLOPE_BOOST = 1.5;
  * 1보다 작으면 원뿔 끝에서 곡선이 안으로 꺾였다가 다시 벌어져 커넥션↔커프 경계가 볼록한 어깨로 보인다.
  */
 const BEZIER_DIP = 1;
+/**
+ * 픽스처 직상방. 원뿔(11°)을 곡률 0으로 떠난 뒤 이 기울기(4°)로 더 수직하게 올라간다.
+ * 11°를 그대로 이어 넓히면 플랫폼 바로 위 뼈에 걸려 안착하지 못한다.
+ */
+const EMERGENCE_HOLD_SLOPE = Math.tan((4 * Math.PI) / 180);
+const EMERGENCE_EASE_MM = 0.5;
+/** 원뿔 끝에서 이 높이까지는 4° 상승을 유지하고, 그 위만 마진까지 넓힌다. */
+const EMERGENCE_BONE_MM = 1.35;
+/** 이보다 가파라야 마진에 닿으면 수직 구간을 줄인다. 그래도 모자라면 위쪽만 더 세운다. */
+const EMERGENCE_FLARE_MAX_SLOPE = Math.tan((75 * Math.PI) / 180);
 const LONG_BAND_MM = 2;
 /** 띠 면 평균: 반폭(약 ±30°)과 위쪽 보존 지수(t^p). */
 const BAND_SMOOTH_HALF_COLUMNS = columnsForDeg(30);
@@ -815,6 +825,94 @@ export function concaveHermiteProfile(ra, m0, r1, eTarget, h, endSlopeCap = CORN
   };
 }
 
+/** ∫_0^u smootherstep. smootherstep(1)의 적분은 1/2. */
+const integrateSmoother = (u) => {
+  const x = u <= 0 ? 0 : u >= 1 ? 1 : u;
+  const x2 = x * x;
+  return x2 * x2 * (x * x - 3 * x + 2.5);
+};
+
+/**
+ * 원뿔 끝에서 기울기 coneSlope·곡률 0으로 출발한 뒤, 픽스처 직상방은 약 4°로 더 수직하게 올라가고
+ * 그 위만 마진 반경까지 조금씩 넓어진다. 11° 연장보다 좁아서 플랫폼 바로 위 뼈에 걸리지 않는다.
+ * 높이 여유가 없으면 위쪽 기울기만 올리고 시작 기울기는 원뿔을 유지한다. t∈[0,1] → 반경.
+ * @returns {((t: number) => number) | null}
+ */
+export function verticalEmergenceProfile(ra, coneSlope, rTop, h) {
+  const gain = rTop - ra;
+  if (!(h > 1e-4) || !Number.isFinite(ra) || !Number.isFinite(rTop) || !Number.isFinite(gain)) return null;
+  if (gain <= 1e-6) return () => ra;
+  const m0 = Math.max(0, coneSlope);
+  const target = Math.min(EMERGENCE_HOLD_SLOPE, m0);
+  const ease = Math.min(EMERGENCE_EASE_MM, Math.max(0.15, h * 0.34));
+  const gainedBefore = (se, bone) => {
+    const e = Math.min(ease, bone);
+    return { e, g: (e * (m0 + se)) / 2 + se * Math.max(0, bone - e) };
+  };
+  const sendAt = (se, boneZ) => {
+    const { g } = gainedBefore(se, boneZ);
+    const flare = h - boneZ;
+    if (flare < 1e-3) return se;
+    return (2 * (gain - g)) / flare - se;
+  };
+
+  let e;
+  let bone;
+  let se;
+  let send;
+  const full = gainedBefore(target, h);
+  if (full.g >= gain - 1e-8) {
+    e = Math.min(ease, h);
+    se = (gain - (e * m0) / 2) / Math.max(1e-6, h - e / 2);
+    if (se < 0) {
+      e = Math.min(e, (2 * gain) / Math.max(m0, 1e-6));
+      se = 0;
+    }
+    bone = h;
+    send = se;
+  } else {
+    se = target;
+    bone = Math.min(h - 0.05, Math.max(ease, EMERGENCE_BONE_MM));
+    if (!(bone > ease)) bone = Math.min(ease, h);
+    send = sendAt(se, bone);
+    if (send > EMERGENCE_FLARE_MAX_SLOPE && bone > ease + 1e-4) {
+      if (sendAt(se, ease) <= EMERGENCE_FLARE_MAX_SLOPE) {
+        let lo = ease;
+        let hi = bone;
+        let best = ease;
+        for (let i = 0; i < 30; i += 1) {
+          const mid = (lo + hi) / 2;
+          if (sendAt(se, mid) <= EMERGENCE_FLARE_MAX_SLOPE) {
+            best = mid;
+            lo = mid;
+          } else hi = mid;
+        }
+        bone = best;
+        send = sendAt(se, bone);
+      } else {
+        bone = ease;
+        send = sendAt(se, bone);
+      }
+    }
+    e = Math.min(ease, bone);
+  }
+
+  const boneZ = Math.min(Math.max(bone, e), h);
+  const rEase = ra + (e * (m0 + se)) / 2;
+  const rBone = rEase + se * Math.max(0, boneZ - e);
+  return (t) => {
+    const z = Math.max(0, Math.min(1, t)) * h;
+    if (z <= e) {
+      const u = e > 1e-9 ? z / e : 1;
+      return ra + m0 * z + (se - m0) * e * integrateSmoother(u);
+    }
+    if (z <= boneZ) return rEase + se * (z - e);
+    const flare = h - boneZ;
+    const u = flare > 1e-9 ? (z - boneZ) / flare : 1;
+    return rBone + se * (z - boneZ) + (send - se) * flare * integrateSmoother(u);
+  };
+}
+
 /**
  * 원본 곡면에서 둘레로 잰 값을 기공소 메시 열 간격과 무관하게 만든다.
  * 원본 꼭짓점 사이 현(chord)만큼 처진 값이 그대로 들어가면 원본 열 간격(보통 3°)마다 세로 결이 생긴다.
@@ -837,6 +935,23 @@ function angularLowPass(values, outN = values?.length) {
 
 /** 커프 곡면 최소 오목 곡률 반경(mm). 공구 반경 0.65mm 이상이 되도록 여유를 둔 목표 반경. */
 export const CUFF_MIN_CONCAVE_RADIUS_MM = 0.78;
+/**
+ * 제어점 보정은 곡선을 4차로 맞춰 두고 한다. 맞춤이 이보다 어긋나면
+ * 보정은 실제 곡률이 아니라 맞춤 오차를 메워, 픽스처 직상방(4° 구간)까지 넓힌다.
+ */
+const QUARTIC_FIT_MAX_RESIDUAL_MM = 0.02;
+
+function quarticFitResidual(c, fn) {
+  let residual = 0;
+  for (let i = 0; i <= 16; i += 1) {
+    const t = i / 16;
+    const u = 1 - t;
+    const q =
+      c[0] * u ** 4 + 4 * c[1] * u ** 3 * t + 6 * c[2] * u ** 2 * t ** 2 + 4 * c[3] * u * t ** 3 + c[4] * t ** 4;
+    residual = Math.max(residual, Math.abs(q - fn(t)));
+  }
+  return residual;
+}
 /** 제어점 보정량을 둘레로 고르는 이동 평균 반폭(열). 열마다 따로 메우면 이웃 열과 보정량이 달라 세로 주름이 진다. */
 const MIN_RADIUS_DELTA_SMOOTH_HALF = columnsForDeg(3);
 /** 보정 → 둘레 평활 → 남은 부족분 재보정 반복 횟수. 평활로 깎인 만큼을 다음 회에 다시 채운다. */
@@ -887,6 +1002,8 @@ function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tai
     const e2 = cur[j][2] - ctrl0[j][2];
     const e3 = cur[j][3] - ctrl0[j][3];
     if (Math.abs(e1) + Math.abs(e2) + Math.abs(e3) < 1e-9) return fn;
+    // 4차가 아닌 에머전스 곡선은 맞춘 제어점의 보정을 더하면 뼈 구간이 11° 쪽으로 다시 넓어진다.
+    if (quarticFitResidual(ctrl0[j], fn) > QUARTIC_FIT_MAX_RESIDUAL_MM) return fn;
     return (t) => {
       const u = 1 - t;
       return fn(t) + 4 * e1 * u ** 3 * t + 6 * e2 * u ** 2 * t ** 2 + 4 * e3 * u * t ** 3;
@@ -2780,12 +2897,11 @@ export function blendCuffJunction(buffer, options = {}) {
           TOP_SLOPE_SMOOTH_COLUMNS,
         )
       : null;
-    // 볼록(부푼) 구간은 뼈에 걸리므로 오목 프로파일로 바로잡는다.
-    // 커넥션 쪽(피니시라인에서 먼 쪽)은 원뿔 접선에서 오목하게 벌어지고, 위 끝은 커프 접선에 맞춘다.
-    // 단차 직경은 따르지 않는다: 원뿔에서 커프까지 항상 살짝 오목하게 부드럽게 올린다.
-    // 원뿔 접선에서 시작해 Z_b에서 원본 곡면 접선에 이어지는 G1 오목 곡선. 불가능한 열만 단순 오목 곡선.
+    // 볼록(부푼) 구간은 뼈에 걸린다. 이음 높이가 0.8mm 이상이면 원뿔 끝에서 곡률 0으로 떠난 뒤
+    // 약 1.35mm를 4°로 올리고, 그 위만 마진까지 조금씩 넓힌다(verticalEmergenceProfile).
+    // 11°를 이어 넓히면 픽스처 직상방 뼈에 걸린다. 둘째 제어점 간격을 줄여 경계에서 바로 꺾지 않는다.
+    // 0.8mm보다 짧은 띠만 기존 4차 오목 곡선을 쓴다. 단차 직경은 따르지 않는다.
     // 열마다 들쭉날쭉하면 면에 주름이 생기므로, 위 끝 반경은 저주파 성분만 남겨 매끈하게 한다.
-    // 출발 기울기는 커넥션 원뿔 기울기(11° 등)를 그대로 이어 받고, 곡선이 기울기를 줄여 가며 오목하게 오른다.
     // 평균값이 원본 반경에서 ±SMOOTH_MAX_SHIFT_MM 넘게 벗어나면 위 끝에 단차가 생기므로 그 안으로 제한한다.
     const r1avg = fourierLowPass(tops.map((t) => t.r), TOP_RADIUS_HARMONICS);
     const belowR = belowSlopes
@@ -2849,6 +2965,11 @@ export function blendCuffJunction(buffer, options = {}) {
       return smoothCreaseR[j] * w + Math.max(r, smoothCreaseR[j]) * (1 - w);
     });
     const legacyConcaveOf = (rTop, eSlope, hb, relax = 0) => {
+      // 마진까지 높이가 있는 열은 11°를 이어 넓히지 않는다. 픽스처 직상방을 4°로 올리고 그 위에서 마진까지 넓힌다.
+      if (hb >= 0.8) {
+        const emerged = verticalEmergenceProfile(ra, coneSlope, rTop, hb);
+        if (emerged) return emerged;
+      }
       const d = rTop - ra;
       const m0 = Math.max(0, Math.min(coneSlope * hb, d - CONCAVE_MARGIN * hb));
       const eTarget = eSlope != null ? eSlope * hb : END_SLOPE_BOOST * (2 * d - m0);

@@ -7,6 +7,7 @@ import {
   blendCuffJunction,
   proposeCuffRedesign,
   redesignCuffBowl,
+  verticalEmergenceProfile,
   CUFF_BLEND_PATCH_ATTRIBUTE,
   _prepare,
   _smoothProfilesAcrossColumns,
@@ -238,6 +239,28 @@ describe("resolveCuffConnectionSpec", () => {
   });
 });
 
+describe("verticalEmergenceProfile", () => {
+  it("leaves the 11° cone, stays near 4° through the bone zone, then meets the margin", () => {
+    const h = 3.2;
+    const ra = 1.7;
+    const rTop = 2.55;
+    const fn = verticalEmergenceProfile(ra, TAPER_SLOPE, rTop, h);
+    expect(fn(0)).toBeCloseTo(ra, 6);
+    expect(fn(1)).toBeCloseTo(rTop, 5);
+    expect((fn(1e-4) - fn(0)) / 1e-4 / h).toBeCloseTo(TAPER_SLOPE, 2);
+    const rBone = fn(1 / h);
+    const gain = rBone - ra;
+    expect(gain).toBeLessThan(Math.tan((8 * Math.PI) / 180));
+    expect(gain).toBeGreaterThan(Math.tan((3 * Math.PI) / 180));
+    let prev = fn(0);
+    for (let i = 1; i <= 40; i += 1) {
+      const r = fn(i / 40);
+      expect(r).toBeGreaterThanOrEqual(prev - 1e-6);
+      prev = r;
+    }
+  });
+});
+
 describe("blendCuffJunction", () => {
   it("replaces the step above the connection with a closed band and keeps both protected zones", () => {
     const input = steppedAbutment();
@@ -269,7 +292,7 @@ describe("blendCuffJunction", () => {
     }
   });
 
-  it("starts the blend where the cone actually departs so the side profile rises from 11° without a shoulder", () => {
+  it("eases off the 11° cone into a more vertical emergence without a shoulder", () => {
     const input = earlyFlareAbutment();
     const res = blendCuffJunction(input, { ...osstem, specKey: osstem.key, finishLine: ringFinishLine(2.3, 3.0) });
     expect(res.ok).toBe(true);
@@ -281,7 +304,11 @@ describe("blendCuffJunction", () => {
       degs.push((Math.atan((probe.rayRadius(0.1, z + step) - probe.rayRadius(0.1, z)) / step) * 180) / Math.PI);
     }
     expect(degs[0]).toBeCloseTo(11, 0);
-    for (let i = 1; i < degs.length; i += 1) expect(degs[i]).toBeGreaterThan(degs[i - 1] - 0.3);
+    for (let i = 1; i < degs.length; i += 1) expect(Math.abs(degs[i] - degs[i - 1])).toBeLessThan(3);
+    expect(degs[degs.length - 1]).toBeLessThan(9);
+    const zBone = res.detail.zA + 1;
+    const ra = probe.rayRadius(0.1, res.detail.zA);
+    expect(probe.rayRadius(0.1, zBone)).toBeLessThan(ra + TAPER_SLOPE * 1 - 0.02);
   });
 
   it("keeps a concave blend when the finish line is above 1mm even on a steep shelf", () => {
@@ -381,7 +408,7 @@ describe("blendCuffJunction", () => {
     }
   });
 
-  it("keeps a convex upper cuff smoothly convex without creating a concave groove below the finish line", () => {
+  it("stays inside the 11° cone just above the fixture and widens smoothly up to the margin", () => {
     const input = convexUpperCuffAbutment();
     const res = blendCuffJunction(input, {
       ...osstem,
@@ -391,21 +418,21 @@ describe("blendCuffJunction", () => {
     expect(res.ok).toBe(true);
     expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
     const postProbe = _prepare(res.buffer).probe;
+    const ra = postProbe.rayRadius(0.1, res.detail.zA);
+    const rBone = postProbe.rayRadius(0.1, res.detail.zA + 1);
+    expect(rBone).toBeLessThan(ra + TAPER_SLOPE - 0.02);
+    expect(rBone).toBeGreaterThan(ra + Math.tan((2 * Math.PI) / 180));
     const step = 0.08;
     const slopes = [];
-    for (let z = 2.2; z <= 3.04; z += step) {
+    for (let z = res.detail.zA + 1.4; z <= 3.04; z += step) {
       slopes.push((postProbe.rayRadius(0.1, z + step) - postProbe.rayRadius(0.1, z)) / step);
     }
-    // Base concave profile is kept; only the last stretch near the finish line turns slightly convex without any slope kink
-    const peak = Math.max(...slopes);
-    const last = slopes[slopes.length - 1];
-    expect(slopes[0]).toBeLessThan(peak);
-    expect(last).toBeLessThan(slopes[slopes.length - 2]);
-    expect(peak - last).toBeGreaterThan(0.03);
-    expect(peak - last).toBeLessThan(0.3);
-      for (let i = 1; i + 1 < slopes.length; i += 1) {
-        expect(Math.abs(slopes[i] - slopes[i - 1])).toBeLessThan(0.06);
-      }
+    expect(slopes.length).toBeGreaterThan(3);
+    // 넓은 마진의 4°→마진 확대는 0.08mm마다 기울기가 조금씩 가팔라진다. 단차(0.3 이상)는 없다.
+    for (let i = 1; i < slopes.length; i += 1) {
+      expect(Math.abs(slopes[i] - slopes[i - 1])).toBeLessThan(0.3);
+    }
+    expect(slopes[slopes.length - 1]).toBeGreaterThan(0.05);
   });
 
   it("still replaces a wide step whose blend ends steeper than 70°", () => {
