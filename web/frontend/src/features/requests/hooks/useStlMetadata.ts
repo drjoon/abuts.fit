@@ -47,7 +47,7 @@ export interface StlMetadata {
     points?: number[][];
   } | null;
   taperGuide?: unknown;
-  /** φ1.2 볼 마진 타이트 코너 — finish line 추적 + 별도 보정 솔리드(토글 표시, CAM 원본 유지). */
+  /** D1.2 볼(실제 절삭 반경 0.5mm) 마진 타이트 코너 — finish line 추적 + 별도 보정 솔리드. */
   tightCorner?: {
     version?: number;
     toolDiameterMm?: number;

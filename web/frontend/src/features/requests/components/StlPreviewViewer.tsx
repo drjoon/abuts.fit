@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-27: 공구 R 표시는 실제 절삭 반경 0.5mm. 예전 메타의 호칭 직경 1.2는 0.6으로 나누지 않는다.
 // - 2026-10-17: 프론트포인트(녹색점)를 finishLineVisible(또는 frontPointVisible)과 함께 on/off.
 // - 2026-10-14: 캔버스 픽셀 비율을 화면 칸에 맞춰 원이 타원이 되지 않게.
 // - 2026-10-01: onPaintSpace — 페인트 표시를 모델에 붙인다. 화면을 돌리면 같이 돈다.
@@ -60,6 +61,7 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { cn } from "@/shared/ui/cn";
+import { finishToolRadiusMm } from "@/features/requests/utils/finishToolRadius";
 import { PreviewColorMappingToggle } from "@/shared/components/PreviewAnnotateActions";
 import {
   createModelPreviewMaterial,
@@ -118,7 +120,7 @@ type Props = {
   metaVisible?: boolean;
   /** 삽입축·각도 가이드. 기본 true. 피니시라인은 finishLineVisible. */
   guidesVisible?: boolean;
-  /** 별도 보정 솔리드(타이트 코너 R0.6 필렛)를 원본 위에 덧입혀 표시. 기본 false(원본만). */
+  /** 별도 보정 솔리드(타이트 코너 R0.5 필렛)를 원본 위에 덧입혀 표시. 기본 false(원본만). */
   correctionSolidVisible?: boolean;
   /** 뷰포트 우하단 평균 fillet R 칩. 다이얼로그 하단 도크에 두면 false. 기본 true. */
   showFilletStatsOverlay?: boolean;
@@ -186,13 +188,6 @@ export type ViewSyncState = {
   /** 맞춤 위치에서 벗어난 이동량. 화면 오른쪽·위 방향, 프러스텀 반높이 단위. */
   pan: [number, number];
 };
-
-/** 화면의 공구 R. 메타 직경이 없으면 D1.2 실제 반경 0.50mm. */
-function displayToolRadiusLabel(toolDiameterMm?: number | null) {
-  const diameter = Number(toolDiameterMm);
-  const radius = Number.isFinite(diameter) && diameter > 0 ? diameter / 2 : 0.5;
-  return radius.toFixed(2);
-}
 
 export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
   function StlPreviewViewer(
@@ -3379,7 +3374,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           <div className="text-sm font-bold leading-tight tabular-nums text-red-600">
             {averageFilletRadiusMm.toFixed(2)} mm
             <span className="ml-1 text-[10px] font-medium text-slate-400">
-              / 공구 R {displayToolRadiusLabel(resolvedMetadata?.tightCorner?.toolDiameterMm)}
+              / 공구 R {finishToolRadiusMm(resolvedMetadata?.tightCorner?.toolDiameterMm).toFixed(2)}
             </span>
           </div>
         </div>

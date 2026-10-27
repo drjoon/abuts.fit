@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-27: 공구 R이 예전 0.60으로 오면 실제 절삭 반경 0.50으로 보여 준다.
 // - 2026-10-24: 가공 경고 — 수치와 안내를 위아래로 나눠 한 줄에 읽히게.
 // - 2026-10-24: 가공 검사 결과에 포스트 길이(max_z→포스트 탑)를 싣는다.
 // - 2026-10-24: 마진 필레 경고는 깊게 패일 수 있음·반경 0.5mm 재디자인 권고.
@@ -14,6 +15,10 @@
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 import type { StlMetadata } from "@/features/requests/hooks/useStlMetadata";
+import {
+  FINISH_TOOL_RADIUS_MM,
+  displayFinishToolRadiusMm,
+} from "@/features/requests/utils/finishToolRadius";
 
 export type StlMachiningPreflight = {
   status: "checking" | "tight" | "ok" | "unknown";
@@ -32,8 +37,7 @@ export type StlMachiningPreflight = {
 };
 
 function formatToolRadiusMm(toolRadiusMm?: number | null) {
-  const radius = Number(toolRadiusMm);
-  return Number.isFinite(radius) && radius > 0 ? radius.toFixed(2) : "0.50";
+  return displayFinishToolRadiusMm(toolRadiusMm).toFixed(2);
 }
 
 const dockShell = "overflow-hidden rounded-xl border";
@@ -95,7 +99,7 @@ export function StlMachiningPreflightNotice({
             <p className={cn("text-sm leading-relaxed", showFilletMetric && "mt-1")}>
               마진 코너가 깊게 패입니다.
               <br />
-              반경 0.5mm 이상으로 둥글게 디자인해 주세요.
+              반경 {FINISH_TOOL_RADIUS_MM.toFixed(1)}mm 이상으로 둥글게 디자인해 주세요.
             </p>
           </div>
         </div>

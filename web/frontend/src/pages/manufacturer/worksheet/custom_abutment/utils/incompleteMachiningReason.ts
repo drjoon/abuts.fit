@@ -4,10 +4,11 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/tightCornerReview.ts
 
+import {
+  FINISH_TOOL_RADIUS_MM,
+  finishToolRadiusMm,
+} from "@/features/requests/utils/finishToolRadius";
 import { isTightCornerCorrectionRequired } from "./tightCornerReview";
-
-/** 메타에 공구 직경이 없을 때. φ1.0 볼 반경. */
-const DEFAULT_TOOL_RADIUS_MM = 0.5;
 
 export type IncompleteMachiningTightCorner = {
   tightCount?: number;
@@ -29,8 +30,7 @@ function mm(value: number): string {
 }
 
 function toolRadiusMm(toolDiameterMm: unknown): number {
-  const diameter = finite(toolDiameterMm);
-  return diameter != null && diameter > 0 ? diameter / 2 : DEFAULT_TOOL_RADIUS_MM;
+  return finishToolRadiusMm(finite(toolDiameterMm));
 }
 
 function minFilletRadiusMm(
@@ -105,7 +105,7 @@ function tightCornerCard(
     stats,
     notes: [
       "마진 코너가 깊게 패입니다.",
-      "반경 0.5mm 이상으로 둥글게 디자인해 주세요.",
+      `반경 ${FINISH_TOOL_RADIUS_MM.toFixed(1)}mm 이상으로 둥글게 디자인해 주세요.`,
     ],
   };
 }
