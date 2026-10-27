@@ -6,6 +6,7 @@
  * - 상단: 기간필터 + 요약(좌 2x2) + 최근 의뢰(우)
  * - 하단: 스캔 전송 섹션이 남은 영역을 채움
  * - 최근 전송 카드 클릭 시 의뢰 정보 + 기공소 채팅 모달 제공
+ * - 2026-10-27: 신규의뢰 드롭존 — ExoCAD(.dentalProject)·3Shape(.3ox·.3oxz·.dcm) 안내.
  * - 2026-10-04: 수신(mode=receive)·다른 계정 ba의 openTransfer는 무시(기공소 탭으로).
  * - 2026-10-03: 알림 보기 — 목록에 없어도 의뢰를 불러 채팅을 연다.
  * - 2026-10-03: 헤더 오른쪽 끝 — 북마크·휴지통·설정은 항상 아이콘만(그 순서).
@@ -9696,11 +9697,11 @@ export const PracticeFileTransferPage = ({
         <span className="font-bold text-foreground">DCM (제일 추천)</span>
         {" · "}
         <span className="font-semibold text-foreground">PLY(두번째 추천)</span>
-        {" · STL · OBJ · 이미지"}
+        {" · STL · OBJ"}
+        <br />
+        ExoCAD · 3Shape · 이미지
       </>
     ),
-    // TRIOS 안내 한 줄(text 11px leading-snug + gap-1)만큼 빈 드롭존을 늘림
-    dropZoneGrowClassName: "h-[calc(0.25rem+15.125px)]",
                     fileInputId: "practice-file-transfer-input",
                     requirementNote:
                       "모바일에서 환자 사진 찍어 첨부할 수 있어요.",

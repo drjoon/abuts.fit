@@ -9,7 +9,10 @@ import {
 import {
   PracticeTransferFileDropTarget,
 } from "@/shared/components/practice/PracticeTransferFileDropTarget";
-import { PRACTICE_ACCEPTED_HINT } from "@/shared/practice/practiceTransferAccept";
+import {
+  PRACTICE_ACCEPTED_HINT,
+  practiceTransferCadProjectLabel,
+} from "@/shared/practice/practiceTransferAccept";
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
 import { cn } from "@/shared/ui/cn";
 import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
@@ -32,6 +35,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-20: 썸네일 클릭 시 크게 보기. 파일명도 같은 미리보기.
 // - 2026-08-20: fillHeight — 메모 옆 열에서 빈 드롭존 높이 맞춤.
 // - 2026-09-29: requirementNoteExtra는 ReactNode. 3D 스캔 선택 안내는 문장마다 `<br />`.
+// - 2026-10-27: 첨부 카드에 ExoCAD·3Shape 라벨.
 // - 2026-09-19: 치과 신규의뢰 — PLY·DCM 추천 강조, TRIOS 안내 제거·드롭존 높이 보정.
 // - 2026-09-05: oral_memo_files primary는 Intake 메모|파일 그리드 — 파일 단독 satellite 제거.
 // - 2026-09-05: data-guide-tour=oral_files — 가이드투어 파일드롭 하이라이트.
@@ -226,6 +230,7 @@ export const PracticeTransferFilePane = ({
             <div className="grid grid-cols-1 gap-1.5 auto-rows-[3.5rem] sm:grid-cols-2 lg:grid-cols-3">
               {files.map((file) => {
                 const meta = resolveFileMeta(file);
+                const cadLabel = practiceTransferCadProjectLabel(file.name);
                 const showBar = file.uploadStatus === "uploading";
                 const showErrorBar = file.uploadStatus === "error";
                 const barPercent = Math.max(
@@ -313,6 +318,7 @@ export const PracticeTransferFilePane = ({
                         )}
                       >
                         {formatAttachmentSize(file.size)}
+                        {cadLabel ? ` · ${cadLabel}` : ""}
                         {meta ? ` · ${meta}` : ""}
                       </p>
                     </div>
