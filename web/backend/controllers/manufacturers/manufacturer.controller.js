@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-27: 긴급 문자는 제조사 대표와 관리자 이준호만, 한 시간에 다른 내용 10건.
 // - 2026-10-27: 긴급 문자는 큐가 아니라 팝빌 즉시 전송.
 // - 2026-09-06: 배송 FREE_REQUEST도 배송 무료 집계(settleBucket). 미정산·잔액 정합.
 // - 2026-09-06: 미정산·장부·스냅샷=부가세 포함가. 지급 재가산 없음.
@@ -30,6 +31,11 @@ import {
   sendPopbillKakaoATS,
   sendPopbillXMS,
 } from "../../utils/popbill.util.js";
+import {
+  consumeActorSmsBudget,
+  isPopbillSmsGuardError,
+  SMS_LOOP_ALERT_PHONE,
+} from "../../utils/popbillSmsGuard.js";
 import User from "../../models/user.model.js";
 import {
   collectManufacturerLedgerLookupIds,
@@ -1001,13 +1007,32 @@ export async function listManufacturerPayments(req, res) {
   }
 }
 
+function phoneDigits(raw) {
+  let digits = String(raw || "").replace(/\D/g, "");
+  if (digits.startsWith("82") && digits.length >= 11) {
+    digits = `0${digits.slice(2)}`;
+  }
+  return digits;
+}
+
+function canSendManufacturerUrgent(user) {
+  const role = String(user?.role || "");
+  if (role === "manufacturer") return String(user?.subRole || "") === "owner";
+  if (role === "admin") {
+    const phone = phoneDigits(user?.phoneNumber || user?.phone);
+    const name = String(user?.name || "").trim();
+    return phone === SMS_LOOP_ALERT_PHONE || name === "이준호";
+  }
+  return false;
+}
+
 export async function sendUrgentMessage(req, res) {
   try {
     const senderId = req.user?._id;
-    if (!senderId || req.user?.role !== "manufacturer") {
+    if (!senderId || !canSendManufacturerUrgent(req.user)) {
       return res.status(403).json({
         success: false,
-        message: "제조사 권한이 필요합니다.",
+        message: "긴급 문자를 보낼 수 없습니다.",
       });
     }
 
@@ -1036,6 +1061,18 @@ export async function sendUrgentMessage(req, res) {
       return res.status(400).json({
         success: false,
         message: "올바른 전화번호가 아닙니다.",
+      });
+    }
+
+    const actorBudget = consumeActorSmsBudget({
+      actorId: senderId,
+      content: message,
+    });
+    if (!actorBudget.ok) {
+      return res.status(429).json({
+        success: false,
+        code: actorBudget.code,
+        message: actorBudget.message,
       });
     }
 
@@ -1072,10 +1109,16 @@ export async function sendUrgentMessage(req, res) {
     });
   } catch (error) {
     console.error("긴급 메시지 발송 실패:", error);
+    if (isPopbillSmsGuardError(error)) {
+      return res.status(429).json({
+        success: false,
+        code: error.code,
+        message: error.message,
+      });
+    }
     return res.status(500).json({
       success: false,
       message: "긴급 메시지 발송에 실패했습니다.",
-      error: error.message,
     });
   }
 }

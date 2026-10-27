@@ -16,6 +16,7 @@ import {
   sendPopbillKakaoATS,
   approxMessageBytes,
 } from "../../utils/popbill.util.js";
+import { isPopbillSmsGuardError } from "../../utils/popbillSmsGuard.js";
 
 const SMS_TEMPLATE_SEED_VERSION = 6;
 
@@ -668,6 +669,13 @@ export async function adminSendSms(req, res) {
         sentBy: req.user?._id,
         note: "Popbill XMS failed",
       });
+      if (isPopbillSmsGuardError(sendError)) {
+        return res.status(429).json({
+          success: false,
+          code: sendError.code,
+          message: sendError.message,
+        });
+      }
       return res.status(500).json({
         success: false,
         message: "문자 발송 실패",
@@ -809,6 +817,13 @@ export async function adminSendKakaoOrSms(req, res) {
         sentBy: req.user?._id,
         note: "Popbill send failed",
       });
+      if (isPopbillSmsGuardError(sendError)) {
+        return res.status(429).json({
+          success: false,
+          code: sendError.code,
+          message: sendError.message,
+        });
+      }
       return res.status(500).json({
         success: false,
         message: "메시지 발송 실패",

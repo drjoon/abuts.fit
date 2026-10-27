@@ -4,9 +4,15 @@
 // - web/backend/modules/credits/credit.routes.js
 // - web/backend/modules/manufacturer/manufacturer.routes.js
 // change-log:
+// - 2026-10-27: 인증 문자는 번호당 하루 5건, 발송 후 5분. 초과는 429.
 // - 2026-10-27: 인증 문자는 큐가 아니라 팝빌 즉시 전송(sendPopbillXMS).
 import { sendPopbillXMS } from "../../utils/popbill.util.js";
 import { pruneTtlMap } from "../../utils/boundedTtlMap.js";
+import {
+  consumeEphemeralPhoneSms,
+  isPopbillSmsGuardError,
+} from "../../utils/popbillSmsGuard.js";
+import { toKstYmd } from "../../utils/krBusinessDays.js";
 
 const verificationCodes = new Map();
 const CODE_EXPIRY_MS = 5 * 60 * 1000;
@@ -49,15 +55,43 @@ export async function sendVerificationCode(req, res) {
       });
     }
 
+    const slot = consumeEphemeralPhoneSms({
+      phone: cleanedPhone,
+      todayKey: toKstYmd(new Date()),
+    });
+    if (!slot.ok) {
+      return res.status(429).json({
+        success: false,
+        code: slot.code,
+        message: slot.message,
+        ...(slot.retryAfterSec ? { retryAfterSec: slot.retryAfterSec } : {}),
+      });
+    }
+
     const code = generateVerificationCode();
     const expiresAt = Date.now() + CODE_EXPIRY_MS;
     const message = `[어벗츠] 인증번호는 ${code}입니다. 5분 내에 입력해주세요.`;
 
-    await sendPopbillXMS({
-      to: cleanedPhone,
-      content: message,
-      subject: "인증번호",
-    });
+    try {
+      await sendPopbillXMS({
+        to: cleanedPhone,
+        content: message,
+        subject: "인증번호",
+      });
+    } catch (sendError) {
+      slot.rollback();
+      if (isPopbillSmsGuardError(sendError)) {
+        return res.status(429).json({
+          success: false,
+          code: sendError.code,
+          message: sendError.message,
+          ...(sendError.retryAfterSec
+            ? { retryAfterSec: sendError.retryAfterSec }
+            : {}),
+        });
+      }
+      throw sendError;
+    }
 
     rememberVerificationCode(cleanedPhone, {
       code,

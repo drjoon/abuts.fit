@@ -3,6 +3,8 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // change-log:
+// - 2026-10-27: 50명 단위로 나누고, 10초 100건을 넘으면 관리자에게 한 번만 알린다.
+// - 2026-10-27: sendPopbillXMS는 동일 내용 5분·폭주 가드를 통과한 뒤에만 팝빌을 호출한다.
 // - 2026-10-27: 문자 설정 여부 `isPopbillMessageConfigured`. 인증 문자는 sendPopbillXMS.
 // - 2026-10-26: SDK IsTest=false 고정. 토큰 /POPBILL/Token, API popbill.linkhub.co.kr.
 // - 2026-10-14: 계좌조회 RequestJob·GetJobState·Search 래퍼.
@@ -11,6 +13,8 @@
 // - 2026-09-23: formatDateYYYYMMDD — 이미 YYYYMMDD인 writeDate 문자열 통과(Invalid Date 방지).
 // - 2026-09-16: AccountCheckService 예금주 성명/실명조회 래퍼.
 import popbill from "popbill";
+import { chunkSmsMessages, isPopbillSmsGuardError, reservePopbillSmsMessages, SMS_LOOP_ALERT_PHONE } from "./popbillSmsGuard.js";
+import { recordHeldSms } from "../services/heldSms.service.js";
 
 const LinkID = process.env.POPBILL_LINK_ID;
 const SecretKey = process.env.POPBILL_SECRET_KEY;
@@ -147,6 +151,7 @@ export const sendPopbillXMS = async ({
   content,
   subject = "알림",
   items = null,
+  bypassGuard = false,
 } = {}) => {
   const { corpNum, sender, userId } = getPopbillMessageConfig();
 
@@ -182,26 +187,75 @@ export const sendPopbillXMS = async ({
     throw new Error("수신번호/내용을 확인하세요.");
   }
 
-  const sampleText = messages[0].Contents;
-  const method = approxMessageBytes(sampleText) > 90 ? "LMS" : "SMS";
-  const sharedContent =
-    messages.every((m) => m.Contents === sampleText) ? sampleText : "";
+  let reserved;
+  if (bypassGuard) {
+    reserved = { messages, release() {} };
+  } else {
+    try {
+      reserved = reservePopbillSmsMessages(messages);
+    } catch (error) {
+      if (isPopbillSmsGuardError(error)) {
+        await recordHeldSms({ reason: error.code, subject, messages }).catch((holdError) => {
+          console.error("[popbill-sms] hold failed", holdError?.message || holdError);
+        });
+        if (error.alertAdmin) {
+          await sendSmsLoopAlertToAdmin({ corpNum, sender, userId });
+        }
+      }
+      throw error;
+    }
+  }
 
-  const receiptNum = await new Promise((resolve, reject) => {
-    if (messages.length === 1) {
+  const outbound = reserved.messages;
+  const sampleText = outbound[0].Contents;
+  const method = approxMessageBytes(sampleText) > 90 ? "LMS" : "SMS";
+
+  try {
+    const receipts = [];
+    for (const chunk of chunkSmsMessages(outbound)) {
+      const sharedContent = chunk.every((m) => m.Contents === chunk[0].Contents)
+        ? chunk[0].Contents
+        : "";
+      const receiptNum = await sendPopbillXmsChunk({
+        corpNum,
+        sender,
+        userId,
+        subject,
+        chunk,
+        sharedContent,
+      });
+      if (receiptNum) receipts.push(receiptNum);
+    }
+
+    return { receiptNum: receipts.join(","), method };
+  } finally {
+    reserved.release();
+  }
+};
+
+function sendPopbillXmsChunk({
+  corpNum,
+  sender,
+  userId,
+  subject,
+  chunk,
+  sharedContent,
+}) {
+  return new Promise((resolve, reject) => {
+    if (chunk.length === 1) {
       messageService.sendXMS(
         corpNum,
         sender,
-        messages[0].Receiver,
-        messages[0].ReceiverName || "",
+        chunk[0].Receiver,
+        chunk[0].ReceiverName || "",
         subject,
-        messages[0].Contents,
+        chunk[0].Contents,
         "",
         false,
         "",
         "",
         userId || "",
-        (result) => resolve(result),
+        (result) => resolve(String(result || "")),
         (error) => reject(error),
       );
       return;
@@ -212,19 +266,42 @@ export const sendPopbillXMS = async ({
       sender,
       subject,
       sharedContent,
-      messages,
+      chunk,
       "",
       false,
       "",
       "",
       userId || "",
-      (result) => resolve(result),
+      (result) => resolve(String(result || "")),
       (error) => reject(error),
     );
   });
+}
 
-  return { receiptNum: String(receiptNum || ""), method };
-};
+async function sendSmsLoopAlertToAdmin({ corpNum, sender, userId }) {
+  const text = "[어벗츠] 문자 발송이 10초 동안 100건을 넘겨 중단했습니다.\n관리자 대시보드에서 보류 문자를 확인하세요.";
+  try {
+    await new Promise((resolve, reject) => {
+      messageService.sendXMS(
+        corpNum,
+        sender,
+        SMS_LOOP_ALERT_PHONE,
+        "이준호",
+        "문자 중단",
+        text,
+        "",
+        false,
+        "",
+        "",
+        userId || "",
+        (result) => resolve(result),
+        (error) => reject(error),
+      );
+    });
+  } catch (error) {
+    console.error("[popbill-sms] loop alert failed", error?.message || error);
+  }
+}
 
 /**
  * 팝빌 알림톡 즉시 발송 (실패 시 동일 내용 SMS/LMS 대체: altSendType=C)

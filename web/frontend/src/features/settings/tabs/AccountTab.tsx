@@ -431,13 +431,13 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
 
       if (!res.ok) {
         const body: any = res.data || {};
-        const msg =
+        const msg = String(
           body?.message ||
-          body?.error ||
-          (typeof body === "string" ? body : "인증번호 발송에 실패했습니다.");
+            body?.error ||
+            (typeof body === "string" ? body : "인증번호 발송에 실패했습니다."),
+        );
         toast({
-          title: "인증번호 발송 실패",
-          description: String(msg),
+          title: msg,
           variant: "destructive",
           duration: 3000,
         });

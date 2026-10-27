@@ -185,7 +185,14 @@ export const PhoneStep = ({
       });
       if (!res.ok) {
         const body: any = res.data || {};
-        throw new Error(body?.message || "인증번호 발송에 실패했습니다.");
+        const message = String(
+          body?.message || "인증번호 발송에 실패했습니다.",
+        );
+        toast({
+          title: message,
+          variant: "destructive",
+        });
+        return false;
       }
       setCode("");
       setCodeSent(true);

@@ -349,7 +349,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 목록 조회 시 팝빌 알림톡 형식 기본 템플릿 7종 시드(#{변수}/강조표기, seedVersion) + 빈 코드는 팝빌 승인 템플릿명 자동매칭/env(`POPBILL_ATS_*`)로 연결
     - `ats_credit_charged`: 입금 매칭 후 기공료 선입금 반영 안내. SMS(90byte/한글 45자) 한 줄. 자동 발송 `utils/creditBPlanMatching.js` `notifyChargePrepaidApplied`. 알림톡 코드가 있으면 우선, 없으면 문자.
     - 관리자 문자/알림톡 발송은 큐가 아니라 팝빌 즉시 전송(`sendPopbillXMS` / `sendPopbillKakaoATS`)
-    - 휴대폰 인증 문자도 같은 즉시 전송. 발신번호는 `POPBILL_SENDER_NUM`(승인 대표번호 1588-3948). 가입 전 `POST /api/auth/signup/phone-verification/send`, 로그인 후 `POST /api/users/phone-verification/send`. `POST /api/users/phone`은 번호만 저장하고 `phoneVerifiedAt`을 채우지 않는다.
+    - 휴대폰 인증 문자도 같은 즉시 전송. 발신번호는 `POPBILL_SENDER_NUM`(승인 대표번호 1588-3948). 가입 전 `POST /api/auth/signup/phone-verification/send`는 번호당 KST 하루 5건, 6번째부터 429 `하루 5건까지 문자를 보낼 수 있습니다.` 발송 후 5분은 같은 번호 재전송을 막고, 같은 내용도 `sendPopbillXMS`에서 5분간 다시 나가지 않는다. IP당 하루 40건·서로 다른 번호 10개. 인증번호 오입력 5회, IP당 10분에 50회. 로그인 후 `POST /api/users/phone-verification/send`도 같은 하루 5건·5분. 한 호출이 50명을 넘으면 50명씩 나눠 보낸다. 프로세스 전체가 10초에 100건을 넘으면 팝빌을 호출하지 않고 `01090744656`에 중단 문자를 한 번만 보낸다. 막힌 묶음은 `HeldSms`에 남고, 관리자 대시보드 보류 문자에서 이유별로 본 뒤 `POST /api/admin/sms/held/:id/send`로 바로 보낸다. 제조사 긴급 문자는 대표와 관리자 이준호만, 발신자당 한 시간에 서로 다른 내용 10건. `POST /api/users/phone`은 번호만 저장하고 `phoneVerifiedAt`을 채우지 않는다. 화면 토스트는 온보딩 휴대폰 단계와 계정 설정이 서버 `message`를 그대로 띄운다.
 
 - 커스텀 어벗 의뢰 단가 SSOT:
   - 관리자「플랫폼 설정 · 커스텀어벗」은 레거시 표시용. 청구 단가는 하단 「의뢰비·딜러·배송 정책 변경」이 우선(런칭 이벤트 폐지).

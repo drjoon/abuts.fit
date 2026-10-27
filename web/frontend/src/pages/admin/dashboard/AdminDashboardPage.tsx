@@ -97,6 +97,7 @@ import { AdminBusinessVerificationCard } from "@/pages/admin/dashboard/AdminBusi
 import { AdminNewMembersCard } from "@/pages/admin/dashboard/AdminNewMembersCard";
 import { AdminPopbillPointCard } from "@/pages/admin/dashboard/AdminPopbillPointCard";
 import { AdminPopbillBankCard } from "@/pages/admin/dashboard/AdminPopbillBankCard";
+import { HeldSmsCard } from "@/pages/admin/dashboard/HeldSmsCard";
 import { LowFinishLineWatchCard } from "@/pages/admin/dashboard/LowFinishLineWatchCard";
 import {
   Users,
@@ -2336,6 +2337,10 @@ export const AdminDashboardPage = () => {
                 enabled={Boolean(token) && user?.role === "admin"}
               />
               <AdminPopbillBankCard
+                className={DASH_SPAN.c2}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
+              <HeldSmsCard
                 className={DASH_SPAN.c2}
                 enabled={Boolean(token) && user?.role === "admin"}
               />

@@ -10,6 +10,16 @@ import {
   isPopbillMessageConfigured,
   sendPopbillXMS,
 } from "../../utils/popbill.util.js";
+import {
+  SMS_COOLDOWN_MESSAGE,
+  SMS_COOLDOWN_MS,
+  SMS_DAILY_LIMIT_MESSAGE,
+  SIGNUP_SMS_DAILY_MAX,
+  consumeSignupSmsIpBudget,
+  consumeSignupVerifyIpBudget,
+  isPopbillSmsGuardError,
+  readClientIp,
+} from "../../utils/popbillSmsGuard.js";
 import { toKstYmd } from "../../utils/krBusinessDays.js";
 import { getFrontendBaseUrl, getBackendBaseUrl } from "../../utils/url.util.js";
 
@@ -77,7 +87,7 @@ const ensureVerificationDoc = async ({ channel, target }) => {
 
 const MAX_DAILY_VERIFICATION_BY_CHANNEL = {
   email: 10,
-  phone: 5,
+  phone: SIGNUP_SMS_DAILY_MAX,
 };
 
 const canSend = ({ existing, now, channel }) => {
@@ -94,22 +104,120 @@ const canSend = ({ existing, now, channel }) => {
     MAX_DAILY_VERIFICATION_BY_CHANNEL[channel] ??
     MAX_DAILY_VERIFICATION_BY_CHANNEL.email;
   const channelLabel = channel === "phone" ? "인증 문자" : "인증 메일";
+  const isPhone = channel === "phone";
 
   if (nextDailyCount >= maxDaily) {
     return {
       ok: false,
       status: 429,
-      message: `하루 ${maxDaily}회까지만 ${channelLabel}을 받을 수 있습니다.`,
+      code: isPhone ? "SMS_DAILY_LIMIT" : "EMAIL_DAILY_LIMIT",
+      message: isPhone
+        ? SMS_DAILY_LIMIT_MESSAGE
+        : `하루 ${maxDaily}회까지만 ${channelLabel}을 받을 수 있습니다.`,
     };
   }
 
   const lastSentAt = existing?.sentAt ? new Date(existing.sentAt).getTime() : 0;
-  if (lastSentAt && now - lastSentAt < 30_000) {
-    return { ok: false, status: 429, message: "잠시 후 다시 시도해주세요." };
+  const cooldownMs = isPhone ? SMS_COOLDOWN_MS : 30_000;
+  if (lastSentAt && now - lastSentAt < cooldownMs) {
+    return {
+      ok: false,
+      status: 429,
+      code: isPhone ? "SMS_COOLDOWN" : "EMAIL_COOLDOWN",
+      retryAfterSec: Math.max(1, Math.ceil((cooldownMs - (now - lastSentAt)) / 1000)),
+      message: isPhone ? SMS_COOLDOWN_MESSAGE : "잠시 후 다시 시도해주세요.",
+    };
   }
 
   return { ok: true, todayKey, nextDailyCount };
 };
+
+function smsDenied(res, gate) {
+  return res.status(gate.status || 429).json({
+    success: false,
+    code: gate.code,
+    message: gate.message,
+    ...(gate.retryAfterSec ? { retryAfterSec: gate.retryAfterSec } : {}),
+  });
+}
+
+async function claimSignupPhoneSend({
+  phoneDigits,
+  e164,
+  codeHash,
+  expiresAt,
+  sentAt,
+  todayKey,
+}) {
+  const cooldownBefore = new Date(sentAt.getTime() - SMS_COOLDOWN_MS);
+  return SignupVerification.findOneAndUpdate(
+    {
+      purpose: "signup",
+      channel: "phone",
+      target: phoneDigits,
+      $expr: {
+        $and: [
+          {
+            $lt: [
+              {
+                $cond: [
+                  { $eq: ["$dailySendDate", todayKey] },
+                  { $ifNull: ["$dailySendCount", 0] },
+                  0,
+                ],
+              },
+              SIGNUP_SMS_DAILY_MAX,
+            ],
+          },
+          {
+            $or: [
+              { $eq: [{ $ifNull: ["$sentAt", null] }, null] },
+              { $lte: ["$sentAt", cooldownBefore] },
+            ],
+          },
+        ],
+      },
+    },
+    [
+      {
+        $set: {
+          phoneE164: e164,
+          codeHash,
+          confirmTokenHash: null,
+          confirmTokenExpiresAt: null,
+          expiresAt,
+          sentAt,
+          dailySendDate: todayKey,
+          dailySendCount: {
+            $add: [
+              {
+                $cond: [
+                  { $eq: ["$dailySendDate", todayKey] },
+                  { $ifNull: ["$dailySendCount", 0] },
+                  0,
+                ],
+              },
+              1,
+            ],
+          },
+          attempts: 0,
+          verifiedAt: null,
+          consumedAt: null,
+          consumedByUserId: null,
+        },
+      },
+    ],
+    { new: true },
+  );
+}
+
+async function rollbackSignupPhoneDailyCount(id) {
+  if (!id) return;
+  await SignupVerification.updateOne(
+    { _id: id, dailySendCount: { $gt: 0 } },
+    { $inc: { dailySendCount: -1 }, $set: { codeHash: null } },
+  );
+}
 
 const getSesClient = () => {
   if (sesClient) return sesClient;
@@ -675,45 +783,51 @@ export async function sendSignupPhoneVerification(req, res) {
 
     const e164 = toE164Korea(phoneDigits);
     const isProd = process.env.NODE_ENV === "production";
+    const now = nowMs();
+    const todayKey = toKstYmd(new Date(now));
+    const ipBudget = consumeSignupSmsIpBudget({
+      ip: readClientIp(req),
+      phone: phoneDigits,
+      todayKey,
+    });
+    if (!ipBudget.ok) {
+      return smsDenied(res, { status: 429, ...ipBudget });
+    }
 
     const existing = await ensureVerificationDoc({
       channel: "phone",
       target: phoneDigits,
     });
-    const now = nowMs();
     const gate = canSend({ existing, now, channel: "phone" });
     if (!gate.ok) {
-      return res
-        .status(gate.status)
-        .json({
-          success: false,
-          message: String(gate.message || "").replace("인증 메일", "인증 문자"),
-        });
+      return smsDenied(res, gate);
     }
 
     const verificationCode = String(crypto.randomInt(1000, 10000));
-    const expiresAt = new Date(now + 5 * 60 * 1000);
+    const expiresAt = new Date(now + SMS_COOLDOWN_MS);
     const sentAt = new Date(now);
-
-    await SignupVerification.updateOne(
-      { purpose: "signup", channel: "phone", target: phoneDigits },
-      {
-        $set: {
-          phoneE164: e164,
-          codeHash: sha256(verificationCode),
-          confirmTokenHash: null,
-          confirmTokenExpiresAt: null,
-          expiresAt,
-          sentAt,
-          dailySendDate: gate.todayKey || toKstYmd(new Date(now)),
-          dailySendCount: (gate.nextDailyCount || 0) + 1,
-          attempts: 0,
-          verifiedAt: null,
-          consumedAt: null,
-          consumedByUserId: null,
-        },
-      },
-    );
+    const claimed = await claimSignupPhoneSend({
+      phoneDigits,
+      e164,
+      codeHash: sha256(verificationCode),
+      expiresAt,
+      sentAt,
+      todayKey: gate.todayKey || todayKey,
+    });
+    if (!claimed?._id) {
+      const latest = await SignupVerification.findOne({
+        purpose: "signup",
+        channel: "phone",
+        target: phoneDigits,
+      }).lean();
+      const again = canSend({ existing: latest, now: nowMs(), channel: "phone" });
+      if (!again.ok) return smsDenied(res, again);
+      return smsDenied(res, {
+        status: 429,
+        code: "SMS_COOLDOWN",
+        message: SMS_COOLDOWN_MESSAGE,
+      });
+    }
 
     if (isPopbillMessageConfigured()) {
       const to = `0${e164.slice(3)}`;
@@ -727,14 +841,25 @@ export async function sendSignupPhoneVerification(req, res) {
       } catch (sendError) {
         console.error("[sms] signup phone verification send failed", {
           phone: phoneDigits,
+          code: sendError?.code,
           message: sendError?.message,
         });
+        await rollbackSignupPhoneDailyCount(claimed._id);
+        if (isPopbillSmsGuardError(sendError)) {
+          return smsDenied(res, {
+            status: 429,
+            code: sendError.code,
+            message: sendError.message,
+            retryAfterSec: sendError.retryAfterSec,
+          });
+        }
         return res.status(500).json({
           success: false,
           message: "인증 문자 발송에 실패했습니다.",
         });
       }
     } else if (isProd) {
+      await rollbackSignupPhoneDailyCount(claimed._id);
       return res.status(500).json({
         success: false,
         message: "문자 발송 설정이 없습니다.",
@@ -777,6 +902,11 @@ export async function verifySignupPhoneCode(req, res) {
       });
     }
 
+    const verifyBudget = consumeSignupVerifyIpBudget({ ip: readClientIp(req) });
+    if (!verifyBudget.ok) {
+      return smsDenied(res, { status: 429, ...verifyBudget });
+    }
+
     const doc = await SignupVerification.findOne({
       purpose: "signup",
       channel: "phone",
@@ -812,11 +942,27 @@ export async function verifySignupPhoneCode(req, res) {
       });
     }
 
+    if ((doc.attempts || 0) >= 5) {
+      return res.status(429).json({
+        success: false,
+        code: "SMS_VERIFY_LIMIT",
+        message: "인증 시도 횟수를 초과했습니다. 인증번호를 다시 받아주세요.",
+      });
+    }
+
     if (sha256(code) !== doc.codeHash) {
-      await SignupVerification.updateOne(
-        { _id: doc._id },
+      const bumped = await SignupVerification.findOneAndUpdate(
+        { _id: doc._id, attempts: { $lt: 5 } },
         { $inc: { attempts: 1 } },
-      );
+        { new: true },
+      ).lean();
+      if (!bumped) {
+        return res.status(429).json({
+          success: false,
+          code: "SMS_VERIFY_LIMIT",
+          message: "인증 시도 횟수를 초과했습니다. 인증번호를 다시 받아주세요.",
+        });
+      }
       return res.status(400).json({
         success: false,
         message: "인증 코드가 일치하지 않습니다.",

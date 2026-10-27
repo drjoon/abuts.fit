@@ -248,6 +248,11 @@ import {
   adminDeleteSmsTemplate,
 } from "../../controllers/admin/adminSms.controller.js";
 import {
+  adminDismissHeldSms,
+  adminListHeldSms,
+  adminSendHeldSms,
+} from "../../controllers/admin/adminHeldSms.controller.js";
+import {
   adminGetCreditStats,
   adminGetBusinessLedger,
   adminGetBusinessCredits,
@@ -842,6 +847,9 @@ router.post(
 // 문자(SMS) 발송/이력
 router.post("/sms/send", adminSendSms);
 router.get("/sms/history", adminListSms);
+router.get("/sms/held", adminListHeldSms);
+router.post("/sms/held/:id/send", adminSendHeldSms);
+router.post("/sms/held/:id/dismiss", adminDismissHeldSms);
 
 // 문자 메시지 템플릿 (로컬 SSOT, 기본 템플릿 시드 포함)
 router.get("/sms/templates", adminListSmsTemplates);

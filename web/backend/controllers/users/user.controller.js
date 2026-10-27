@@ -14,6 +14,13 @@ import {
   isPopbillMessageConfigured,
   sendPopbillXMS,
 } from "../../utils/popbill.util.js";
+import {
+  SMS_COOLDOWN_MESSAGE,
+  SMS_COOLDOWN_MS,
+  SMS_DAILY_LIMIT_MESSAGE,
+  SIGNUP_SMS_DAILY_MAX,
+  isPopbillSmsGuardError,
+} from "../../utils/popbillSmsGuard.js";
 import { Types } from "mongoose";
 import { toKstYmd } from "../../utils/krBusinessDays.js";
 import { ensureRequestorOrgAnchor, syncPracticeUsesOralScan } from "../businesses/requestorOrgAnchor.util.js";
@@ -167,8 +174,6 @@ async function sendPhoneVerification(req, res) {
     const phoneNumber = String(req.body?.phoneNumber || "").trim();
 
     const isProd = process.env.NODE_ENV === "production";
-    const forceAutoVerify =
-      !isProd && process.env.SMS_DEV_FORCE_AUTO_VERIFY !== "false";
 
     if (!userId) {
       return res
@@ -207,48 +212,113 @@ async function sendPhoneVerification(req, res) {
         ? prevDailyCountRaw
         : 0;
     const nextDailyCount = prevDailyKey === todayKey ? prevDailyCount : 0;
-    if (!forceAutoVerify && nextDailyCount >= 5) {
+    if (nextDailyCount >= SIGNUP_SMS_DAILY_MAX) {
       return res.status(429).json({
         success: false,
-        message:
-          "하루 5회까지만 인증 문자를 받을 수 있습니다. 내일 다시 시도해주세요.",
+        code: "SMS_DAILY_LIMIT",
+        message: SMS_DAILY_LIMIT_MESSAGE,
       });
     }
     const lastSentAt = user?.phoneVerification?.sentAt
       ? new Date(user.phoneVerification.sentAt).getTime()
       : 0;
-    if (!forceAutoVerify && lastSentAt && now - lastSentAt < 30_000) {
+    if (lastSentAt && now - lastSentAt < SMS_COOLDOWN_MS) {
       return res.status(429).json({
         success: false,
-        message: "잠시 후 다시 시도해주세요.",
+        code: "SMS_COOLDOWN",
+        retryAfterSec: Math.max(
+          1,
+          Math.ceil((SMS_COOLDOWN_MS - (now - lastSentAt)) / 1000),
+        ),
+        message: SMS_COOLDOWN_MESSAGE,
       });
     }
 
     const code = String(crypto.randomInt(1000, 10000));
     const codeHash = crypto.createHash("sha256").update(code).digest("hex");
-    const expiresAt = new Date(now + 5 * 60_000);
+    const expiresAt = new Date(now + SMS_COOLDOWN_MS);
     const sentAt = new Date(now);
+    const cooldownBefore = new Date(now - SMS_COOLDOWN_MS);
     const devLogCode = !isProd && process.env.SMS_DEV_LOG_CODE !== "false";
     const devExposeCode =
       !isProd && process.env.SMS_DEV_EXPOSE_CODE !== "false";
 
-    await User.findByIdAndUpdate(
-      userId,
+    const claimed = await User.findOneAndUpdate(
       {
-        $set: {
-          phoneVerification: {
-            codeHash,
-            expiresAt,
-            sentAt,
-            dailySendDate: todayKey,
-            dailySendCount: nextDailyCount + 1,
-            attempts: 0,
-            pendingPhoneNumber: phoneNumber,
-          },
+        _id: userId,
+        $expr: {
+          $and: [
+            {
+              $lt: [
+                {
+                  $cond: [
+                    { $eq: ["$phoneVerification.dailySendDate", todayKey] },
+                    { $ifNull: ["$phoneVerification.dailySendCount", 0] },
+                    0,
+                  ],
+                },
+                SIGNUP_SMS_DAILY_MAX,
+              ],
+            },
+            {
+              $or: [
+                {
+                  $eq: [
+                    { $ifNull: ["$phoneVerification.sentAt", null] },
+                    null,
+                  ],
+                },
+                { $lte: ["$phoneVerification.sentAt", cooldownBefore] },
+              ],
+            },
+          ],
         },
       },
-      { new: false },
+      [
+        {
+          $set: {
+            phoneVerification: {
+              codeHash,
+              expiresAt,
+              sentAt,
+              dailySendDate: todayKey,
+              dailySendCount: {
+                $add: [
+                  {
+                    $cond: [
+                      { $eq: ["$phoneVerification.dailySendDate", todayKey] },
+                      { $ifNull: ["$phoneVerification.dailySendCount", 0] },
+                      0,
+                    ],
+                  },
+                  1,
+                ],
+              },
+              attempts: 0,
+              pendingPhoneNumber: phoneNumber,
+            },
+          },
+        },
+      ],
+      { new: true },
     );
+    if (!claimed?._id) {
+      return res.status(429).json({
+        success: false,
+        code: "SMS_COOLDOWN",
+        message: SMS_COOLDOWN_MESSAGE,
+      });
+    }
+
+    const releaseDailyCount = async () => {
+      await User.updateOne(
+        { _id: userId, "phoneVerification.dailySendCount": { $gt: 0 } },
+        {
+          $inc: { "phoneVerification.dailySendCount": -1 },
+          $set: { "phoneVerification.codeHash": null },
+        },
+      );
+    };
 
     if (isPopbillMessageConfigured()) {
       const to = `0${phoneNumber.slice(3)}`;
@@ -263,50 +333,27 @@ async function sendPhoneVerification(req, res) {
       } catch (sendError) {
         console.error("[sms] phone verification send failed", {
           userId: String(userId),
-          phoneNumber,
+          code: sendError?.code,
           message: sendError?.message,
         });
-        await User.findByIdAndUpdate(
-          userId,
-          {
-            $set: {
-              phoneVerification: {
-                codeHash: null,
-                expiresAt: null,
-                sentAt: null,
-                dailySendDate: todayKey,
-                dailySendCount: nextDailyCount,
-                attempts: 0,
-                pendingPhoneNumber: "",
-              },
-            },
-          },
-          { new: false },
-        );
-
+        await releaseDailyCount();
+        if (isPopbillSmsGuardError(sendError)) {
+          return res.status(429).json({
+            success: false,
+            code: sendError.code,
+            message: sendError.message,
+            ...(sendError.retryAfterSec
+              ? { retryAfterSec: sendError.retryAfterSec }
+              : {}),
+          });
+        }
         return res.status(500).json({
           success: false,
           message: "인증번호 발송에 실패했습니다.",
         });
       }
     } else if (isProd) {
-      await User.findByIdAndUpdate(
-        userId,
-        {
-          $set: {
-            phoneVerification: {
-              codeHash: null,
-              expiresAt: null,
-              sentAt: null,
-              dailySendDate: todayKey,
-              dailySendCount: nextDailyCount,
-              attempts: 0,
-              pendingPhoneNumber: "",
-            },
-          },
-        },
-        { new: false },
-      );
+      await releaseDailyCount();
       return res.status(500).json({
         success: false,
         message: "문자 발송 설정이 없습니다.",
@@ -396,11 +443,18 @@ async function verifyPhoneVerification(req, res) {
     }
 
     if (!codeMatches) {
-      await User.findByIdAndUpdate(
-        userId,
-        { $set: { "phoneVerification.attempts": attempts + 1 } },
-        { new: false },
-      );
+      const bumped = await User.findOneAndUpdate(
+        { _id: userId, "phoneVerification.attempts": { $lt: 5 } },
+        { $inc: { "phoneVerification.attempts": 1 } },
+        { new: true },
+      ).lean();
+      if (!bumped) {
+        return res.status(429).json({
+          success: false,
+          code: "SMS_VERIFY_LIMIT",
+          message: "시도 횟수를 초과했습니다. 인증번호를 다시 받아주세요.",
+        });
+      }
       return res.status(400).json({
         success: false,
         message: "인증번호가 올바르지 않습니다.",
@@ -421,7 +475,7 @@ async function verifyPhoneVerification(req, res) {
           phoneVerification: {
             codeHash: null,
             expiresAt: null,
-            sentAt: null,
+            sentAt: pv.sentAt || null,
             dailySendDate: String(pv.dailySendDate || ""),
             dailySendCount:
               typeof pv.dailySendCount === "number" &&
