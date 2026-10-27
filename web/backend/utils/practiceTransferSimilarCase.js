@@ -3,6 +3,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/frontend/src/shared/components/practice/PracticeSimilarCaseRemakeDialog.tsx
 // change-log:
+// - 2026-10-27: 리메이크 자동 연결 — 정렬된 후보 중 치아 overlap 첫 건.
 // - 2026-10-07: 어벗츠로부터 리메이크=무료. 월 3건 쿼터 과금 퇴역.
 // - 2026-10-07: 유료/무료=월 3건 쿼터. freeRemakeYears 과금 퇴역(폐지).
 // - 2026-09-21: 감지 기본=무료기간 상한(년×365). 수가 창은 lab freeRemakeYears.
@@ -69,6 +70,18 @@ export const toothNumbersOverlap = (left, right) => {
   const rightSet = new Set(right);
   return left.some((t) => rightSet.has(t));
 };
+
+/** createdAt 내림차순으로 이미 정렬된 문서 중 치아가 겹치는 첫 건. */
+export function pickLatestOverlappingTransfer(docs, toothNumbers) {
+  const teeth = Array.isArray(toothNumbers) ? toothNumbers : [];
+  if (teeth.length === 0) return null;
+  for (const doc of Array.isArray(docs) ? docs : []) {
+    if (toothNumbersOverlap(teeth, collectToothNumbersFromToothWorks(doc?.toothWorks))) {
+      return doc;
+    }
+  }
+  return null;
+}
 
 /**
  * KST 달력 기준 감지 컷오프(지금−days 00:00+09:00).

@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/prosthesisFollowUp.ts
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - 2026-10-27: 리메이크 연결 — 원본 칩에 이후 base, 채팅은 이전·이후 1건.
 // - 2026-09-15: Stage SSOT — 같은 날=temp만(지르는 채팅). 다른 날 재도착만 zir 칩.
 // - 2026-09-15: latest-zir same-day fallback 제거. prosthesisStageKey 명시.
 import {
@@ -200,3 +201,133 @@ export const attachProsthesisFollowUpFocusToCalendarChips = <
 };
 
 export const calendarChipTransferBaseId = chipTransferBaseId;
+
+/** 리메이크 칩에는 이전 의뢰, 원본 칩에는 이후 의뢰 base id를 붙인다. 데이터는 복사하지 않는다. */
+export function withRemakeCaseLinks<
+  T extends {
+    id: string;
+    isPriorArrival?: boolean;
+    orderDate?: string | null;
+    linkedCaseBaseId?: string | null;
+    linkedNextCaseBaseId?: string | null;
+  },
+>(chips: readonly T[], sourceBaseByRemakeBase: ReadonlyMap<string, string>): T[] {
+  if (sourceBaseByRemakeBase.size === 0) return chips as T[];
+  const remakeBasesBySource = new Map<string, string[]>();
+  for (const [remakeBase, sourceBase] of sourceBaseByRemakeBase) {
+    const list = remakeBasesBySource.get(sourceBase) || [];
+    list.push(remakeBase);
+    remakeBasesBySource.set(sourceBase, list);
+  }
+  const latestRemakeBase = (sourceBase: string) => {
+    const bases = remakeBasesBySource.get(sourceBase) || [];
+    let picked = "";
+    let bestYmd = "";
+    for (const base of bases) {
+      const row = chips.find(
+        (chip) =>
+          !chip.isPriorArrival && chipTransferBaseId(chip.id) === base,
+      );
+      const ymd = String(row?.orderDate || "").trim();
+      if (!picked || ymd >= bestYmd) {
+        picked = base;
+        bestYmd = ymd;
+      }
+    }
+    return picked;
+  };
+  return chips.map((chip) => {
+    if (chip.isPriorArrival) return chip;
+    const base = chipTransferBaseId(chip.id);
+    const sourceBase = String(sourceBaseByRemakeBase.get(base) || "").trim();
+    const nextBase = latestRemakeBase(base);
+    const linkedCaseBaseId =
+      sourceBase && sourceBase !== base ? sourceBase : null;
+    const linkedNextCaseBaseId = nextBase && nextBase !== base ? nextBase : null;
+    if (!linkedCaseBaseId && !linkedNextCaseBaseId) return chip;
+    return {
+      ...chip,
+      ...(linkedCaseBaseId ? { linkedCaseBaseId } : {}),
+      ...(linkedNextCaseBaseId ? { linkedNextCaseBaseId } : {}),
+    };
+  });
+}
+
+const neighborIdsOf = (row: {
+  id?: string | null;
+  _id?: string | null;
+  transferId?: string | null;
+  transferMongoIds?: readonly string[] | null;
+  practiceTransferId?: string | null;
+  requestMongoId?: string | null;
+}) => {
+  const ids = new Set<string>();
+  const add = (raw: unknown) => {
+    const value = String(raw || "").trim();
+    if (!value) return;
+    ids.add(value);
+    const head = value.split(":")[0];
+    if (head) ids.add(head);
+  };
+  add(row.transferId);
+  add(row.id);
+  add(row._id);
+  add(row.practiceTransferId);
+  add(row.requestMongoId);
+  for (const mongo of row.transferMongoIds || []) add(mongo);
+  return ids;
+};
+
+const sameTransferRow = (
+  a: { transferId?: string | null; id?: string | null },
+  b: { transferId?: string | null; id?: string | null },
+) => {
+  if (a === b) return true;
+  const aId = String(a.transferId || a.id || "").trim();
+  const bId = String(b.transferId || b.id || "").trim();
+  return Boolean(aId) && aId === bId;
+};
+
+type RemakeNeighborRow = {
+  id?: string | null;
+  _id?: string | null;
+  transferId?: string | null;
+    transferMongoIds?: readonly string[] | null;
+    practiceTransferId?: string | null;
+    requestMongoId?: string | null;
+    remakeSourceTransferId?: string | null;
+  orderDate?: string | null;
+  orderDates?: readonly string[] | null;
+};
+
+/** 채팅 바로가기 — 이 의뢰의 이전(원본)·이후(리메이크) 1건. */
+export function findRemakeCaseNeighbors<T extends RemakeNeighborRow>(
+  current: RemakeNeighborRow,
+  rows: readonly T[],
+): { previous: T | null; next: T | null } {
+  const selfIds = neighborIdsOf(current);
+  const sourceKey = String(current.remakeSourceTransferId || "").trim();
+  const previous = sourceKey
+    ? rows.find((row) => {
+        if (sameTransferRow(row, current)) return false;
+        const ids = neighborIdsOf(row);
+        return ids.has(sourceKey) || ids.has(sourceKey.split(":")[0]);
+      }) || null
+    : null;
+  const nextCandidates = rows.filter((row) => {
+    if (sameTransferRow(row, current)) return false;
+    const src = String(row.remakeSourceTransferId || "").trim();
+    if (!src) return false;
+    return selfIds.has(src) || selfIds.has(src.split(":")[0]);
+  });
+  nextCandidates.sort((a, b) => {
+    const aYmd = String(
+      a.orderDate || a.orderDates?.[a.orderDates.length - 1] || "",
+    );
+    const bYmd = String(
+      b.orderDate || b.orderDates?.[b.orderDates.length - 1] || "",
+    );
+    return aYmd < bYmd ? 1 : aYmd > bYmd ? -1 : 0;
+  });
+  return { previous, next: nextCandidates[0] || null };
+}

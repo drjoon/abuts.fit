@@ -148,6 +148,8 @@ import {
   collectToothNumbersFromToothWorks,
   escapePatientNameForMemoRegex,
   parseToothNumbersQuery,
+  pickLatestOverlappingTransfer,
+  resolvePracticeTransferPatientName,
   similarCaseDetectCutoffDate,
   toSimilarCaseMatchApi,
   toothNumbersOverlap,
@@ -3376,10 +3378,12 @@ export async function createPracticeTransfer(req, res) {
         String(req.body?.isRemake || "").trim() === "true" ||
         String(req.body?.remake || "").trim() === "true",
     );
+    // 새 주문에 적힌 커스텀어벗은 그 의뢰의 데이터다. 원본에서 복사하지 않고 새로 만든다.
     const includeCustomAbutmentRemake = Boolean(
       req.body?.includeCustomAbutment === true ||
         req.body?.includeCa === true ||
-        req.body?.includeCustomAbutmentRemake === true,
+        req.body?.includeCustomAbutmentRemake === true ||
+        countCustomAbutmentWorks(toothWorksRaw) > 0,
     );
     const remakeSourceMongoIdRaw = String(
       req.body?.remakeSourceTransferMongoId ||
@@ -3401,7 +3405,7 @@ export async function createPracticeTransfer(req, res) {
       });
     }
 
-    // PTX 리메이크 기본: 커스텀어벗 제외. 포함 시에만 CA 유지·리메이크 수가 강제.
+    // 플래그 없이 CA가 없으면 보철만. 새 주문의 CA는 위에서 유지.
     if (isRemakeRequest && !includeCustomAbutmentRemake) {
       const stripped = stripCustomAbutmentFromToothWorks(toothWorksRaw);
       if (
@@ -3452,7 +3456,9 @@ export async function createPracticeTransfer(req, res) {
       isRemakeRequest &&
       remakeSourceMongoIdRaw &&
       Types.ObjectId.isValid(remakeSourceMongoIdRaw);
-    const [starBand, arrivalPolicy, practiceLabRatings, remakeSourceDoc, practiceAnchorDoc] =
+    const shouldAutoLinkRemake =
+      isRemakeRequest && !needRemakeSource && !remakeSourceTransferIdRaw;
+    const [starBand, arrivalPolicy, practiceLabRatings, remakeSourceFromId, autoRemakeSource, practiceAnchorDoc] =
       await Promise.all([
         loadStarBandForPracticeRequest({
           practiceAnchorId,
@@ -3474,6 +3480,18 @@ export async function createPracticeTransfer(req, res) {
                 .lean(),
             )
           : Promise.resolve(null),
+        shouldAutoLinkRemake
+          ? buildPracticeOwnedScope(req).then(({ scope }) =>
+              findLatestSimilarPracticeTransfer({
+                scope,
+                patientName: resolvePracticeTransferPatientName({
+                  files,
+                  transferMemo,
+                }),
+                toothNumbers: collectToothNumbersFromToothWorks(toothWorksRaw),
+              }),
+            )
+          : Promise.resolve(null),
         practiceAnchorId && Types.ObjectId.isValid(String(practiceAnchorId))
           ? BusinessAnchor.findById(practiceAnchorId)
               .select({ requireLabProsthesisUpload: 1 })
@@ -3481,12 +3499,13 @@ export async function createPracticeTransfer(req, res) {
           : Promise.resolve(null),
       ]);
     __t = __mark("star+arrival+remakeSource", __t);
-    if (needRemakeSource && !remakeSourceDoc) {
+    if (needRemakeSource && !remakeSourceFromId) {
       return res.status(404).json({
         success: false,
         message: "리메이크 원본 의뢰를 찾지 못했습니다.",
       });
     }
+    const remakeSourceDoc = remakeSourceFromId || autoRemakeSource || null;
     // 치과의뢰 수신하기 리메이크: 무료(LAB_FEE_REMAKE_FREE). 미연결(플랫폼 이전)도 동일.
     const remakePricing = Boolean(isRemakeRequest || remakeSourceDoc);
     const remakeFixedAmount = null;
@@ -4141,7 +4160,8 @@ export async function updatePracticeTransferContent(req, res) {
     const includeCustomAbutmentRemake = Boolean(
       req.body?.includeCustomAbutment === true ||
         req.body?.includeCa === true ||
-        req.body?.includeCustomAbutmentRemake === true,
+        req.body?.includeCustomAbutmentRemake === true ||
+        countCustomAbutmentWorks(toothWorksRaw) > 0,
     );
     const remakeSourceMongoIdRaw = String(
       req.body?.remakeSourceTransferMongoId ||
@@ -4195,13 +4215,32 @@ export async function updatePracticeTransferContent(req, res) {
           message: "리메이크 원본 의뢰를 찾지 못했습니다.",
         });
       }
+    } else if (
+      isRemakeRequest &&
+      !remakeSourceTransferIdRaw &&
+      !String(doc?.remake?.sourceTransferMongoId || "").trim()
+    ) {
+      remakeSourceDoc = await findLatestSimilarPracticeTransfer({
+        scope,
+        patientName: resolvePracticeTransferPatientName({
+          files,
+          transferMemo,
+        }),
+        toothNumbers: collectToothNumbersFromToothWorks(toothWorksRaw),
+        excludeId: doc?._id,
+      });
     }
 
     const prevRemakeMongo = String(
       doc?.remake?.sourceTransferMongoId || "",
     ).trim();
     const nextRemakeMongo = isRemakeRequest
-      ? String(remakeSourceDoc?._id || remakeSourceMongoIdRaw || "").trim()
+      ? String(
+          remakeSourceDoc?._id ||
+            remakeSourceMongoIdRaw ||
+            doc?.remake?.sourceTransferMongoId ||
+            "",
+        ).trim()
       : "";
     const prevRemakeTransferId = String(
       doc?.remake?.sourceTransferId || "",
@@ -4210,6 +4249,7 @@ export async function updatePracticeTransferContent(req, res) {
       ? String(
           remakeSourceTransferIdRaw ||
             remakeSourceDoc?.transferId ||
+            doc?.remake?.sourceTransferId ||
             "",
         ).trim()
       : "";
@@ -4536,7 +4576,11 @@ export async function updatePracticeTransferContent(req, res) {
           doc.remake && typeof doc.remake === "object" ? doc.remake : {};
         nextSet.remake = {
           sourceTransferId: nextRemakeTransferId,
-          sourceTransferMongoId: remakeSourceDoc?._id || null,
+          sourceTransferMongoId:
+            remakeSourceDoc?._id ||
+            (nextRemakeMongo && Types.ObjectId.isValid(nextRemakeMongo)
+              ? new Types.ObjectId(nextRemakeMongo)
+              : null),
           requestedAt: prevRemake.requestedAt || now,
           requestedBy: prevRemake.requestedBy || req.user?._id || null,
           includeCustomAbutment:
@@ -5021,6 +5065,125 @@ export async function appendPracticeTransferArrival(req, res) {
     return res.status(500).json({
       success: false,
       message: "치과도착일 반영 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+/**
+ * 마지막 다음 도착일(재주문일·재도착일 한 쌍)만 제거. 처음 주문·보철·파일은 유지.
+ * POST /api/practice/transfers/:transferId/revert-arrival
+ */
+export async function revertPracticeTransferArrival(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const { scope } = await buildPracticeOwnedScope(req);
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+      ...practiceTransferNotDeletedMongoFilter(),
+    });
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+
+    const orderDates = resolvePracticeOrderDates({
+      orderDates: doc.orderDates,
+      transferMemo: doc.transferMemo,
+    });
+    const arrivalDates = resolvePracticeArrivalDates({
+      arrivalDates: doc.arrivalDates,
+      transferMemo: doc.transferMemo,
+    });
+    if (orderDates.length < 2 && arrivalDates.length < 2) {
+      return res.status(409).json({
+        success: false,
+        message: "제거할 다음 도착일이 없습니다.",
+      });
+    }
+
+    const reverted = revertPracticeArrivalAppend({
+      transferMemo: doc.transferMemo,
+      arrivalDates,
+      orderDates,
+      appendedArrivalYmd: arrivalDates[arrivalDates.length - 1] || "",
+      appendedOrderYmd: orderDates.length > 1 ? orderDates[orderDates.length - 1] : "",
+      previousArrivalYmd: arrivalDates[arrivalDates.length - 2] || "",
+      previousOrderYmd: orderDates.length > 1 ? orderDates[orderDates.length - 2] : "",
+    });
+
+    const updated = await PracticeTransfer.findOneAndUpdate(
+      { _id: doc._id, ...practiceTransferNotDeletedMongoFilter() },
+      {
+        $set: {
+          transferMemo: reverted.transferMemo,
+          arrivalDates: reverted.arrivalDates,
+          orderDates: reverted.orderDates,
+          requestorReadAt: null,
+          requestorReadBy: null,
+        },
+      },
+      { new: true },
+    );
+    if (!updated) {
+      return res.status(409).json({
+        success: false,
+        message: "다음 도착일을 제거하지 못했습니다.",
+      });
+    }
+
+    const payload = {
+      _id: String(updated._id || ""),
+      transferId: String(updated.transferId || "").trim(),
+      arrivalDates: reverted.arrivalDates,
+      arrivalDate: reverted.arrivalDate,
+      orderDates: reverted.orderDates,
+      orderDate: reverted.orderDate,
+      transferMemo: String(updated.transferMemo || ""),
+      requestorReadAt: null,
+      billingUnchanged: true,
+    };
+
+    res.status(200).json({
+      success: true,
+      message: "다음 도착일을 제거했습니다.",
+      data: payload,
+    });
+
+    const removedOrder = orderDates.length > 1 ? orderDates[orderDates.length - 1] : "";
+    const removedArrival = arrivalDates.length > 1 ? arrivalDates[arrivalDates.length - 1] : "";
+    void postPracticeTransferSystemChatMessage({
+      transferMongoId: String(updated._id),
+      senderUserId: req.user?._id,
+      content: `다음 도착일 제거\n주문일 ${removedOrder || "-"}\n치과도착일 ${removedArrival || "-"}`,
+      systemEvent: "practice_transfer_arrival_reverted",
+    }).catch((chatErr) => {
+      console.warn(
+        "[practiceTransfer] revert-arrival chat failed",
+        String(updated._id || ""),
+        chatErr?.message || chatErr,
+      );
+    });
+    return;
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "다음 도착일 제거 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }
@@ -7740,6 +7903,47 @@ export async function searchRemakePracticeTransfers(req, res) {
       error: error?.message,
     });
   }
+}
+
+/**
+ * 리메이크 신규 주문 — 원본 id가 없으면 같은 환자·겹치는 치아의 최근 의뢰.
+ * 스캔·보철·어벗은 복사하지 않고 id만 연결한다.
+ */
+async function findLatestSimilarPracticeTransfer({
+  scope,
+  patientName,
+  toothNumbers,
+  excludeId,
+}) {
+  const name = String(patientName || "").trim().normalize("NFC");
+  const teeth = Array.isArray(toothNumbers)
+    ? toothNumbers.map((t) => String(t || "").trim()).filter(Boolean)
+    : [];
+  if (!name || teeth.length === 0 || !scope) return null;
+  const fromDate = similarCaseDetectCutoffDate(SIMILAR_CASE_DETECT_WINDOW_DAYS);
+  const memoRe = new RegExp(
+    `\\[\\s*환자명\\s*:\\s*${escapePatientNameForMemoRegex(name)}\\s*\\]`,
+  );
+  const exclude = String(excludeId || "").trim();
+  const fetched = await PracticeTransfer.find({
+    $and: [
+      scope,
+      practiceTransferNotDeletedMongoFilter(),
+      { status: { $nin: ["deleted", "canceled"] } },
+      { createdAt: { $gte: fromDate } },
+      {
+        $or: [{ "files.patientName": name }, { transferMemo: memoRe }],
+      },
+      ...(exclude && Types.ObjectId.isValid(exclude)
+        ? [{ _id: { $ne: new Types.ObjectId(exclude) } }]
+        : []),
+    ],
+  })
+    .select({ transferId: 1, toothWorks: 1, createdAt: 1 })
+    .sort({ createdAt: -1, _id: -1 })
+    .limit(40)
+    .lean();
+  return pickLatestOverlappingTransfer(fetched, teeth);
 }
 
 /**

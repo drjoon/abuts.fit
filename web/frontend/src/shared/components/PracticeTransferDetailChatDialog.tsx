@@ -860,6 +860,9 @@ type PracticeTransferDetailChatDialogProps = {
   onAppendArrival?: (arrivalYmd: string) => void;
   appendArrivalDisabled?: boolean;
   appendArrivalBusy?: boolean;
+  /** 마지막 다음 도착일(재주문일·재도착일) 제거. 없으면 버튼을 숨긴다. */
+  onRevertArrival?: () => void;
+  revertArrivalBusy?: boolean;
   /**
    * 틀니 등 다단계 플랜. 있으면 진행 상황 탭 재도착일 옆에 다음 공정 표시.
    * 재도착 반영 시 서버가 currentIndex를 올림.
@@ -901,6 +904,9 @@ type PracticeTransferDetailChatDialogProps = {
   onCancelRemakeCharge?: (chargeIndex: number | null) => void;
   /** 채팅의 재도착일·헤더 날짜 클릭 → 그 날짜의 의뢰를 채팅에 연다 */
   onSelectLinkedYmd?: (ymd: string) => void;
+  /** 리메이크로 이어진 이전·이후 의뢰. 채팅 헤더 바로가기. */
+  onOpenPreviousLinkedCase?: () => void;
+  onOpenNextLinkedCase?: () => void;
   remakeChargeCancelBusy?: boolean;
   /** 치과: 수락 전·작업취소 건을 휴지통으로 */
   onCancelRequest?: () => void;
@@ -1059,6 +1065,8 @@ export function PracticeTransferDetailChatDialog({
   onAppendArrival,
   appendArrivalDisabled = false,
   appendArrivalBusy = false,
+  onRevertArrival,
+  revertArrivalBusy = false,
   labRequestStagePlans = null,
   onAppendProsthesis,
   appendProsthesisDisabled = false,
@@ -1080,6 +1088,8 @@ export function PracticeTransferDetailChatDialog({
   prosthesisFollowUpWorkPending = false,
   onCancelRemakeCharge,
   onSelectLinkedYmd,
+  onOpenPreviousLinkedCase,
+  onOpenNextLinkedCase,
   remakeChargeCancelBusy = false,
   onCancelRequest,
   cancelRequestDisabled = false,
@@ -1449,6 +1459,20 @@ export function PracticeTransferDetailChatDialog({
 
   const renderRearrivalPopover = () =>
     onAppendArrival ? (
+      <div className="flex shrink-0 items-center gap-1">
+      {onRevertArrival ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 shrink-0 px-1.5 text-xs font-medium text-slate-500 hover:bg-destructive/10 hover:text-destructive"
+          disabled={revertArrivalBusy || appendArrivalBusy}
+          title="마지막 다음 도착일을 캘린더에서 뺍니다."
+          onClick={() => onRevertArrival()}
+        >
+          {revertArrivalBusy ? "제거 중…" : "제거"}
+        </Button>
+      ) : null}
       <Popover open={rearrivalOpen} onOpenChange={setRearrivalOpen}>
         <Tooltip open={rearrivalOpen ? false : undefined}>
           <TooltipTrigger asChild>
@@ -1486,21 +1510,13 @@ export function PracticeTransferDetailChatDialog({
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <div className="border-b px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-            선택일=다음 도착일, 오늘=재주문일로 반영됩니다.
-            {onAppendProsthesis && !appendProsthesisDisabled ? (
-              <>
-                <br />
-                적용 시{" "}
-                {String(appendProsthesisLabel || "").trim() === "주문 변경"
-                  ? "주문을 바꿀지"
-                  : "지르 보철로 바꿀지"}{" "}
-                묻고, 아니면 현재 보철로 계속합니다(추가 과금 없음).
-              </>
-            ) : null}
+            날짜를 고른 뒤 확인해야 추가됩니다.
+            <br />
+            선택일이 다음 도착일, 오늘이 재주문일입니다.
             {nextStageSegments.length > 0 ? (
               <>
                 <br />
-                적용 시 다음 공정으로 진행됩니다.
+                추가하면 다음 공정으로 진행됩니다.
               </>
             ) : null}
           </div>
@@ -1544,11 +1560,12 @@ export function PracticeTransferDetailChatDialog({
               disabled={!rearrivalDraft || appendArrivalBusy}
               onClick={() => confirmRearrival()}
             >
-              적용
+              다음
             </Button>
           </div>
         </PopoverContent>
       </Popover>
+      </div>
     ) : null;
   const [previewKind, setPreviewKind] = useState<ModelPreviewKind>("model");
   const [previewFile, setPreviewFile] = useState<File | null>(null);
@@ -3042,39 +3059,76 @@ export function PracticeTransferDetailChatDialog({
   /**
    * 헤더 1줄: 타이틀 + 아이콘
    * 2줄: 주문/도착(+다음도착일)
+   * 3줄: 커스텀어벗 배송 · 담당 기사 — 다음 도착일 아래, 같은 줄
    * ─── 경계선
-   * 3줄: 프린트·번호표 | 작업시작·작업취소(또는 제작변경·취소·지르)
+   * 4줄: 프린트·번호표 | 작업시작·작업취소(또는 제작변경·취소·지르)
    */
   const renderIdentityDateRow = (className?: string) => {
-    if (!identityDateLabel && !rearrivalControl && !labTechnicianControl) {
+    if (
+      !identityDateLabel &&
+      !rearrivalControl &&
+      !labTechnicianControl &&
+      !onOpenPreviousLinkedCase &&
+      !onOpenNextLinkedCase &&
+      !customAbutmentShippingLine
+    ) {
       return null;
     }
+    const linkedCaseJumpClass =
+      "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[13px] text-primary hover:bg-primary/10";
     return (
-      <div className={cn("flex min-w-0 items-center gap-2", className)}>
-        {identityDateLabel ? (
-          <span className="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground">
-            <PracticeTransferLinkedYmdText
-              text={identityDateLabel}
-              onSelectYmd={onSelectLinkedYmd}
-            />
-          </span>
-        ) : (
-          <span className="min-w-0 flex-1" aria-hidden />
-        )}
-        {labTechnicianControl}
-        {rearrivalControl}
+      <div className={cn("min-w-0", className)}>
+        <div className="flex min-w-0 items-center gap-2">
+          {onOpenPreviousLinkedCase ? (
+            <button
+              type="button"
+              className={linkedCaseJumpClass}
+              aria-label="이전 의뢰 열기"
+              title="이전 의뢰"
+              onClick={() => onOpenPreviousLinkedCase()}
+            >
+              ↙
+            </button>
+          ) : null}
+          {onOpenNextLinkedCase ? (
+            <button
+              type="button"
+              className={linkedCaseJumpClass}
+              aria-label="이후 의뢰 열기"
+              title="이후 의뢰"
+              onClick={() => onOpenNextLinkedCase()}
+            >
+              ↗
+            </button>
+          ) : null}
+          {identityDateLabel ? (
+            <span className="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground">
+              <PracticeTransferLinkedYmdText
+                text={identityDateLabel}
+                onSelectYmd={onSelectLinkedYmd}
+              />
+            </span>
+          ) : (
+            <span className="min-w-0 flex-1" aria-hidden />
+          )}
+          {rearrivalControl}
+        </div>
+        {labTechnicianControl || customAbutmentShippingLine ? (
+          <div className="mt-1 flex min-w-0 items-center gap-2">
+            {customAbutmentShippingLine ? (
+              <p
+                className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
+                title={customAbutmentShippingLine}
+              >
+                {customAbutmentShippingLine}
+              </p>
+            ) : (
+              <span className="min-w-0 flex-1" aria-hidden />
+            )}
+            {labTechnicianControl}
+          </div>
+        ) : null}
       </div>
-    );
-  };
-  const renderCustomAbutmentShippingLine = () => {
-    if (!customAbutmentShippingLine) return null;
-    return (
-      <p
-        className="mt-0.5 truncate text-xs text-muted-foreground"
-        title={customAbutmentShippingLine}
-      >
-        {customAbutmentShippingLine}
-      </p>
     );
   };
   const renderHeaderActionRow = () => {
@@ -3715,7 +3769,6 @@ export function PracticeTransferDetailChatDialog({
                             {identityChromeActions}
                           </div>
                           {renderIdentityDateRow("mt-0.5")}
-                          {renderCustomAbutmentShippingLine()}
                         </>
                       ) : (
                         <>
@@ -3726,7 +3779,6 @@ export function PracticeTransferDetailChatDialog({
                             {identityChromeActions}
                           </div>
                           {renderIdentityDateRow("mt-0.5")}
-                          {renderCustomAbutmentShippingLine()}
                         </>
                       )}
                     </div>

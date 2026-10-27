@@ -4,6 +4,7 @@
 import {
   collectToothNumbersFromToothWorks,
   parseToothNumbersQuery,
+  pickLatestOverlappingTransfer,
   resolvePracticeTransferPatientName,
   toothNumbersOverlap,
   toSimilarCaseMatchApi,
@@ -49,5 +50,14 @@ describe("practiceTransferSimilarCase", () => {
     expect(api.patientName).toBe("김환자");
     expect(api.toothNumbers).toEqual(["16"]);
     expect(api.transferId).toBe("PTX-1");
+  });
+
+  test("pickLatestOverlappingTransfer keeps list order and skips non-overlap", () => {
+    const older = { transferId: "old", toothWorks: [{ toothNumber: "35", bridgeLinkedTeeth: ["36"] }] };
+    const newer = { transferId: "new", toothWorks: [{ toothNumber: "11" }] };
+    const match = { transferId: "match", toothWorks: [{ toothNumber: "36" }] };
+    expect(pickLatestOverlappingTransfer([newer, match, older], ["36"])).toBe(match);
+    expect(pickLatestOverlappingTransfer([newer, older], ["35"])).toBe(older);
+    expect(pickLatestOverlappingTransfer([newer], ["35"])).toBeNull();
   });
 });

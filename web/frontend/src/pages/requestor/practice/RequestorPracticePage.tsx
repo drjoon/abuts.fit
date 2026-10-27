@@ -499,6 +499,8 @@ import {
 } from "@/shared/practice/prosthesisFollowUp";
 import {
   attachProsthesisFollowUpFocusToCalendarChips,
+  findRemakeCaseNeighbors,
+  withRemakeCaseLinks,
 } from "@/shared/practice/prosthesisFollowUpCalendarChips";
 import {
   PracticeStatusFilterBadges,
@@ -3097,7 +3099,7 @@ export function RequestorPracticeReceivePage({
       base,
       calendarDateKey,
     );
-    return attachProsthesisFollowUpFocusToCalendarChips({
+    const focused = attachProsthesisFollowUpFocusToCalendarChips({
       chips: expanded,
       dateKey: calendarDateKey,
       getFollowUps: (transferBaseId) => {
@@ -3108,6 +3110,28 @@ export function RequestorPracticeReceivePage({
         return row?.prosthesisFollowUps;
       },
     });
+    const chipBaseByKey = new Map<string, string>();
+    for (const transfer of sortedFilteredTransfers) {
+      const base = String(transfer.transferId || transfer._id || "").trim();
+      if (!base) continue;
+      chipBaseByKey.set(base, base);
+      const virtualId = String(transfer._id || "").trim();
+      if (virtualId) {
+        chipBaseByKey.set(virtualId, base);
+        const head = virtualId.split(":")[0];
+        if (head) chipBaseByKey.set(head, base);
+      }
+    }
+    const sourceBaseByRemakeBase = new Map<string, string>();
+    for (const transfer of sortedFilteredTransfers) {
+      const self = String(transfer.transferId || transfer._id || "").trim();
+      const key = String(transfer.remakeSourceTransferId || "").trim();
+      if (!self || !key) continue;
+      const sourceBase = chipBaseByKey.get(key) || chipBaseByKey.get(key.split(":")[0]);
+      if (!sourceBase || sourceBase === self) continue;
+      sourceBaseByRemakeBase.set(self, sourceBase);
+    }
+    return withRemakeCaseLinks(focused, sourceBaseByRemakeBase);
   }, [
     badgeClearedIds,
     calendarDateKey,
@@ -3210,6 +3234,14 @@ export function RequestorPracticeReceivePage({
       .find(Boolean);
     return fromFiles || "";
   }, [selectedTransfer?.files, selectedTransfer?.rawTransferMemo]);
+
+  const remakeCaseNeighbors = useMemo(
+    () =>
+      selectedTransfer
+        ? findRemakeCaseNeighbors(selectedTransfer, transfers)
+        : { previous: null, next: null },
+    [selectedTransfer, transfers],
+  );
 
   const selectedTransferDoctorName = useMemo(
     () =>
@@ -10410,6 +10442,20 @@ export function RequestorPracticeReceivePage({
           setRemakeChargeCancelConfirm({ chargeIndex });
         }}
         onSelectLinkedYmd={openLinkedYmdFromChat}
+        onOpenPreviousLinkedCase={
+          remakeCaseNeighbors.previous
+            ? () => {
+                void openTransferDialog(remakeCaseNeighbors.previous!);
+              }
+            : undefined
+        }
+        onOpenNextLinkedCase={
+          remakeCaseNeighbors.next
+            ? () => {
+                void openTransferDialog(remakeCaseNeighbors.next!);
+              }
+            : undefined
+        }
         remakeChargeCancelBusy={remakeChargeCancelBusy}
         skipJig={Boolean(selectedTransfer?.production?.skipJig)}
         feeViewer="lab"
@@ -10635,7 +10681,11 @@ export function RequestorPracticeReceivePage({
           selectedTransfer,
           user?.role,
         )}
-        labTechnician={selectedTransfer?.labTechnician ?? null}
+        labTechnician={
+          selectedTransfer?.labTechnician ||
+          remakeCaseNeighbors.previous?.labTechnician ||
+          null
+        }
         labTechnicianAssignable={viewerCanAssignLabTechnician(
           selectedTransfer,
           user?.businessAnchorId,

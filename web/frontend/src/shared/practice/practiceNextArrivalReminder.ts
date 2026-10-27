@@ -89,7 +89,7 @@ export function getPracticeNextArrivalReminderTooltip(
   reminder: PracticeNextArrivalReminder | null | undefined,
 ): string {
   if (!reminder) {
-    return "다음 도착일 선택 시 오늘이 재주문일로 함께 반영됩니다. 오늘 이후 다음 도착일 1개만 두며, 다시 고르면 수정되고 크레딧은 추가 차감되지 않습니다.";
+    return "날짜를 고른 뒤 확인해야 추가됩니다. 오늘이 재주문일입니다. 넣은 뒤에는 제거로 마지막 날짜만 뺄 수 있습니다.";
   }
   if (reminder.level === "due_today") {
     return "오늘이 지난 공정 제품의 치과도착일입니다. 다음 공정 진행을 위해 「다음 도착일」을 지정해 주세요.";

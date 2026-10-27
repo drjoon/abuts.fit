@@ -156,7 +156,10 @@ import {
   collectProsthesisFollowUpArrivalYmds,
   resolveProsthesisFollowUpFocusIndex,
 } from "@/shared/practice/prosthesisFollowUp";
-import { attachProsthesisFollowUpFocusToCalendarChips } from "@/shared/practice/prosthesisFollowUpCalendarChips";
+import {
+  attachProsthesisFollowUpFocusToCalendarChips,
+  withRemakeCaseLinks,
+} from "@/shared/practice/prosthesisFollowUpCalendarChips";
 import {
   PracticeStatusFilterBadges,
   type PracticeStatusFilterBadgeItem,
@@ -699,7 +702,7 @@ export function PracticeRecentTransfersAllModal({
       };
     });
     const expanded = expandPracticeCalendarChipsByArrivalDates(base, dateKey);
-    return attachProsthesisFollowUpFocusToCalendarChips({
+    const focused = attachProsthesisFollowUpFocusToCalendarChips({
       chips: expanded,
       dateKey,
       getFollowUps: (transferBaseId) => {
@@ -709,6 +712,28 @@ export function PracticeRecentTransfersAllModal({
         return row?.prosthesisFollowUps;
       },
     });
+    const chipBaseByKey = new Map<string, string>();
+    for (const transfer of filteredTransfers) {
+      const base = `${transfer.id}:${transfer.transferId}`;
+      if (transfer.transferId) chipBaseByKey.set(transfer.transferId, base);
+      for (const mongo of transfer.transferMongoIds || []) {
+        const raw = String(mongo || "").trim();
+        if (!raw) continue;
+        chipBaseByKey.set(raw, base);
+        const head = raw.split(":")[0];
+        if (head) chipBaseByKey.set(head, base);
+      }
+    }
+    const sourceBaseByRemakeBase = new Map<string, string>();
+    for (const transfer of filteredTransfers) {
+      const key = String(transfer.remakeSourceTransferId || "").trim();
+      if (!key) continue;
+      const self = `${transfer.id}:${transfer.transferId}`;
+      const sourceBase = chipBaseByKey.get(key) || chipBaseByKey.get(key.split(":")[0]);
+      if (!sourceBase || sourceBase === self) continue;
+      sourceBaseByRemakeBase.set(self, sourceBase);
+    }
+    return withRemakeCaseLinks(focused, sourceBaseByRemakeBase);
   }, [badgeClearedIds, dateKey, filteredTransfers]);
 
   const calendarItemById = useMemo(() => {

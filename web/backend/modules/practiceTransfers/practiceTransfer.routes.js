@@ -47,6 +47,7 @@ import {
   upsertPracticeTransferLabRating,
   updatePracticeTransferContent,
   appendPracticeTransferArrival,
+  revertPracticeTransferArrival,
   appendPracticeTransferProsthesis,
   cancelPracticeTransferProsthesisFollowUp,
   updatePracticeTransferProsthesisFollowUp,
@@ -311,6 +312,13 @@ router.post(
   authenticate,
   sendAuth,
   appendPracticeTransferArrival,
+);
+
+router.post(
+  "/:transferId/revert-arrival",
+  authenticate,
+  sendAuth,
+  revertPracticeTransferArrival,
 );
 
 router.post(

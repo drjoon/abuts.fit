@@ -32,6 +32,7 @@
  * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-10-27: 다음 도착일은 확인 후에만 추가. 마지막 다음 도착일은 제거 가능.
  * - 2026-09-29: 다음 도착일 「주문 변경」확인 문구를 짧게.
  * - 2026-09-29: 채팅 「폴더 열기」DCM 기본값 — 계정 디자인SW(3Shape=DCM, ExoCAD·그외=PLY).
  * - 2026-09-28: 프리뷰 다운로드(의뢰 파일·작업 스캔)도 「폴더 열기」와 같은 케이스 폴더에 받는다.
@@ -298,6 +299,7 @@ import {
   getLatestPendingProsthesisFollowUp,
   resolveProsthesisFollowUpFocusIndex,
 } from "@/shared/practice/prosthesisFollowUp";
+import { findRemakeCaseNeighbors } from "@/shared/practice/prosthesisFollowUpCalendarChips";
 import { PracticeLabRatingControl } from "@/shared/components/practice/PracticeLabRatingControl";
 import { PracticeTransferBookmarkControl } from "@/shared/components/practice/PracticeTransferBookmarkControl";
 import { PracticeTransferBookmarkNavigateButton } from "@/shared/components/practice/PracticeTransferBookmarkNavigateButton";
@@ -1487,12 +1489,13 @@ export const PracticeFileTransferPage = ({
   const [deleteTargetTransfer, setDeleteTargetTransfer] = useState<RecentTransferItem | null>(null);
   const [deletingTransfer, setDeletingTransfer] = useState(false);
   const [appendArrivalBusy, setAppendArrivalBusy] = useState(false);
+  const [arrivalConfirmOpen, setArrivalConfirmOpen] = useState(false);
+  const [arrivalConfirmYmd, setArrivalConfirmYmd] = useState("");
+  const [revertArrivalConfirmOpen, setRevertArrivalConfirmOpen] = useState(false);
+  const [revertArrivalBusy, setRevertArrivalBusy] = useState(false);
   const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
   const [followUpDialogMode, setFollowUpDialogMode] = useState<"create" | "edit">("create");
   const [appendProsthesisBusy, setAppendProsthesisBusy] = useState(false);
-  /** 재도착 적용 직전 — 지르 최종 보철 전환 제안 */
-  const [followUpOfferOpen, setFollowUpOfferOpen] = useState(false);
-  const [followUpOfferArrivalYmd, setFollowUpOfferArrivalYmd] = useState("");
   /** 제안·CTA에서 연 후속 모달의 기본 도착일 */
   const [followUpPreferredArrivalYmd, setFollowUpPreferredArrivalYmd] = useState<
     string | null
@@ -1975,6 +1978,68 @@ export const PracticeFileTransferPage = ({
     composeRemakeMode,
     composeToothNumbersKey,
     editingSentTransfer,
+    normalizedPatientName,
+    similarCaseFingerprint,
+  ]);
+
+  // 리메이크 신규 주문 — 같은 환자·치아의 최근 의뢰에 연결만 한다. 스캔·보철은 복사하지 않는다.
+  const remakeAutoLinkGenRef = useRef(0);
+  const remakeAutoLinkedFpRef = useRef("");
+  useEffect(() => {
+    if (!composeOpen || !composeRemakeMode || editingSentTransfer) return;
+    if (!authToken || !similarCaseFingerprint) return;
+    if (
+      linkedRemakeSource &&
+      remakeAutoLinkedFpRef.current &&
+      remakeAutoLinkedFpRef.current !== similarCaseFingerprint
+    ) {
+      remakeAutoLinkedFpRef.current = "";
+      setLinkedRemakeSource(null);
+      return;
+    }
+    if (linkedRemakeSource) return;
+
+    const gen = ++remakeAutoLinkGenRef.current;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const qs = new URLSearchParams({
+            patientName: normalizedPatientName,
+            teeth: composeToothNumbersKey,
+            days: String(365 * 30),
+            limit: "5",
+          });
+          const res = await apiFetch<{
+            success?: boolean;
+            data?: {
+              matches?: PracticeSimilarCaseMatch[];
+            };
+          }>({
+            path: `/api/practice/transfers/check-similar?${qs}`,
+            method: "GET",
+            token: authToken,
+          });
+          if (remakeAutoLinkGenRef.current !== gen) return;
+          const matches = Array.isArray(res.data?.data?.matches)
+            ? res.data.data.matches
+            : [];
+          const picked = matches[0];
+          if (!res.ok || !picked?._id) return;
+          remakeAutoLinkedFpRef.current = similarCaseFingerprint;
+          setLinkedRemakeSource(picked);
+        } catch {
+          // 조회 실패는 전송을 막지 않는다. 서버가 저장 때 다시 찾는다.
+        }
+      })();
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [
+    authToken,
+    composeOpen,
+    composeRemakeMode,
+    composeToothNumbersKey,
+    editingSentTransfer,
+    linkedRemakeSource,
     normalizedPatientName,
     similarCaseFingerprint,
   ]);
@@ -4886,11 +4951,22 @@ export const PracticeFileTransferPage = ({
             : row,
         ),
       );
+      const prevOrderKey = (selectedTransfer.orderDates || [])
+        .map((d) => String(d || "").trim())
+        .filter(Boolean)
+        .join(",");
+      const prevArrivalKey = (selectedTransfer.arrivalDates || [])
+        .map((d) => String(d || "").trim())
+        .filter(Boolean)
+        .join(",");
+      const datesUnchanged =
+        nextOrderDates.join(",") === prevOrderKey &&
+        nextDates.join(",") === prevArrivalKey;
       toast({
-        title: "다음 도착일 반영",
-        description: nextArrival
-          ? `재주문일 ${nextOrder || "오늘"} · 다음 도착일 ${nextArrival}. 이전 일자는 캘린더에 유지되며 크레딧은 추가 차감되지 않습니다.`
-          : "동일 건에 도착일이 누적되었습니다.",
+        title: datesUnchanged ? "다음 도착일" : "다음 도착일 추가",
+        description: datesUnchanged
+          ? "이미 그 날짜입니다."
+          : `재주문일 ${nextOrder || "오늘"}. 다음 도착일 ${nextArrival || "선택한 날"}.`,
       });
       void loadRecentRequests({ silent: true });
     } catch (error) {
@@ -4903,6 +4979,92 @@ export const PracticeFileTransferPage = ({
       setAppendArrivalBusy(false);
     }
   }, [authToken, loadRecentRequests, selectedTransfer, toast]);
+
+  const handleRevertArrival = useCallback(async () => {
+    if (!authToken || !selectedTransfer || revertArrivalBusy) return;
+    const transferId = String(selectedTransfer.transferId || "").trim();
+    if (!transferId || transferId === "-") return;
+    setRevertArrivalBusy(true);
+    try {
+      const res = await apiFetch<{
+        message?: string;
+        data?: {
+          arrivalDates?: string[];
+          arrivalDate?: string;
+          orderDates?: string[];
+          orderDate?: string | null;
+          transferMemo?: string;
+        };
+      }>({
+        path: `/api/practice/transfers/${encodeURIComponent(transferId)}/revert-arrival`,
+        method: "POST",
+        token: authToken,
+      });
+      if (!res.ok) {
+        const body = res.data && typeof res.data === "object" ? res.data : {};
+        toast({
+          title: "다음 도착일 제거 실패",
+          description:
+            String((body as { message?: string }).message || "").trim() ||
+            "다음 도착일을 제거하지 못했습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const data = res.data?.data || {};
+      const nextArrival = String(data.arrivalDate || "").trim();
+      const nextDates = Array.isArray(data.arrivalDates)
+        ? data.arrivalDates.map((d) => String(d || "").trim()).filter(Boolean)
+        : [];
+      const nextOrder = String(data.orderDate || "").trim();
+      const nextOrderDates = Array.isArray(data.orderDates)
+        ? data.orderDates.map((d) => String(d || "").trim()).filter(Boolean)
+        : [];
+      const nextMemo = String(data.transferMemo || "").trim();
+      setSelectedTransfer((prev) =>
+        prev
+          ? {
+              ...prev,
+              arrivalDate: nextArrival || prev.arrivalDate,
+              arrivalDates: nextDates,
+              orderDate: nextOrder || prev.orderDate,
+              orderDates: nextOrderDates,
+              transferMemo: nextMemo || prev.transferMemo,
+              rawTransferMemo: nextMemo || prev.rawTransferMemo,
+            }
+          : prev,
+      );
+      setRecentRequests((prev) =>
+        prev.map((row) =>
+          String(row.transferId || "").trim() === transferId
+            ? {
+                ...row,
+                arrivalDate: nextArrival || row.arrivalDate,
+                arrivalDates: nextDates,
+                orderDate: nextOrder || row.orderDate,
+                orderDates: nextOrderDates,
+                transferMemo: nextMemo || row.transferMemo,
+                rawTransferMemo: nextMemo || row.rawTransferMemo,
+              }
+            : row,
+        ),
+      );
+      setRevertArrivalConfirmOpen(false);
+      toast({
+        title: "다음 도착일 제거",
+        description: "마지막 재주문일·다음 도착일을 캘린더에서 뺐습니다.",
+      });
+      void loadRecentRequests({ silent: true });
+    } catch (error) {
+      toast({
+        title: "다음 도착일 제거 실패",
+        description: error instanceof Error ? error.message : "네트워크 오류",
+        variant: "destructive",
+      });
+    } finally {
+      setRevertArrivalBusy(false);
+    }
+  }, [authToken, loadRecentRequests, revertArrivalBusy, selectedTransfer, toast]);
 
   const applyProsthesisFollowUpToRecentRequests = useCallback(
     (patch: ProsthesisFollowUpRecentRequestPatch) => {
@@ -5399,6 +5561,14 @@ export const PracticeFileTransferPage = ({
     selectedTransfer,
     selectedTransferDetailModel,
   ]);
+
+  const remakeCaseNeighbors = useMemo(
+    () =>
+      selectedTransfer
+        ? findRemakeCaseNeighbors(selectedTransfer, recentRequests)
+        : { previous: null, next: null },
+    [recentRequests, selectedTransfer],
+  );
 
   const openLinkedYmdFromChat = useCallback(
     (ymdRaw: string) => {
@@ -5994,16 +6164,24 @@ export const PracticeFileTransferPage = ({
     (transferIdRaw: string, panel: "chat" | "detail" = "chat") => {
       const transferId = String(transferIdRaw || "").trim();
       if (!transferId) return;
+      const rowHasTransferKey = (row: {
+        transferId?: string | null;
+        id?: string | null;
+        requestMongoId?: string | null;
+        transferMongoIds?: readonly string[] | null;
+      }) => {
+        const keys = [
+          row.transferId,
+          row.id,
+          row.requestMongoId,
+          ...(row.transferMongoIds || []),
+        ].map((value) => String(value || "").trim());
+        return keys.includes(transferId);
+      };
       const transfer =
-        groupedTransfers.find(
-          (row) => String(row.transferId || "").trim() === transferId,
-        ) ||
-        draftGroupedTransfers.find(
-          (row) => String(row.transferId || "").trim() === transferId,
-        ) ||
-        bookmarkedTransferCache.find(
-          (row) => String(row.transferId || "").trim() === transferId,
-        ) ||
+        groupedTransfers.find((row) => rowHasTransferKey(row)) ||
+        draftGroupedTransfers.find((row) => rowHasTransferKey(row)) ||
+        bookmarkedTransferCache.find((row) => rowHasTransferKey(row)) ||
         null;
       const openFound = (row: RecentTransferItem) => {
         void handleOpenTransferDialog(row, { panel });
@@ -6012,8 +6190,8 @@ export const PracticeFileTransferPage = ({
         openFound(transfer);
         return;
       }
-      const matchedRequests = recentRequests.filter(
-        (row) => String(row.transferId || "").trim() === transferId,
+      const matchedRequests = recentRequests.filter((row) =>
+        rowHasTransferKey(row),
       );
       if (matchedRequests.length) {
         const [item] = groupPracticeRecentRequests(matchedRequests, chatRooms);
@@ -11782,6 +11960,27 @@ export const PracticeFileTransferPage = ({
           authToken={authToken}
           caseIdentity={selectedTransferCaseIdentity}
           onSelectLinkedYmd={openLinkedYmdFromChat}
+          onOpenPreviousLinkedCase={
+            remakeCaseNeighbors.previous ||
+            String(selectedTransfer?.remakeSourceTransferId || "").trim()
+              ? () =>
+                  openTransferWorkStatusById(
+                    String(
+                      remakeCaseNeighbors.previous?.transferId ||
+                        selectedTransfer?.remakeSourceTransferId ||
+                        "",
+                    ),
+                  )
+              : undefined
+          }
+          onOpenNextLinkedCase={
+            remakeCaseNeighbors.next
+              ? () =>
+                  openTransferWorkStatusById(
+                    String(remakeCaseNeighbors.next?.transferId || ""),
+                  )
+              : undefined
+          }
           shareTransferKey={
             String(selectedTransfer?.transferMongoIds?.[0] || "").trim() || null
           }
@@ -11798,16 +11997,24 @@ export const PracticeFileTransferPage = ({
             selectedTransfer.status !== "취소" &&
             selectedTransfer.status !== "작업취소"
               ? (arrivalYmd) => {
-                  if (prosthesisFollowUpEligibility.ok) {
-                    setFollowUpOfferArrivalYmd(arrivalYmd);
-                    setFollowUpOfferOpen(true);
-                    return;
-                  }
-                  void handleAppendArrival(arrivalYmd);
+                  setArrivalConfirmYmd(String(arrivalYmd || "").trim());
+                  setArrivalConfirmOpen(true);
                 }
               : undefined
           }
           appendArrivalBusy={appendArrivalBusy}
+          onRevertArrival={
+            selectedTransfer &&
+            (((selectedTransfer.orderDates || []).filter((d) =>
+              String(d || "").trim(),
+            ).length > 1) ||
+              (selectedTransfer.arrivalDates || []).filter((d) =>
+                String(d || "").trim(),
+              ).length > 1)
+              ? () => setRevertArrivalConfirmOpen(true)
+              : undefined
+          }
+          revertArrivalBusy={revertArrivalBusy}
           labRequestStagePlans={
             selectedTransfer?.labRequestStagePlans || null
           }
@@ -12003,7 +12210,11 @@ export const PracticeFileTransferPage = ({
           remakeCharges={selectedTransfer?.remakeCharges || null}
           skipJig={Boolean(selectedTransferDetailModel?.skipJig)}
           feeViewer="practice"
-          labTechnician={selectedTransfer?.labTechnician ?? null}
+          labTechnician={
+            selectedTransfer?.labTechnician ||
+            remakeCaseNeighbors.previous?.labTechnician ||
+            null
+          }
           onChangeRequestScanRole={handleChangeRequestScanRole}
           labAnchorId={selectedTransferDetailModel?.labAnchorId || null}
           cooperationPerformerLabName={
@@ -12198,56 +12409,53 @@ export const PracticeFileTransferPage = ({
         />
 
         <ConfirmDialog
-          open={followUpOfferOpen}
-          title={
-            prosthesisFollowUpEligibility.followUpKind === "typeChange"
-              ? "주문을 변경할까요?"
-              : "지르 보철로 변경할까요?"
-          }
+          open={arrivalConfirmOpen}
+          title="다음 도착일을 추가할까요?"
           description={
-            prosthesisFollowUpEligibility.followUpKind === "typeChange" ? (
-              <>
-                변경하면 기공비는 단계 중 가장 비싼 금액만 청구합니다.
-                <br />
-                그대로 두면 다음 도착일만 바뀝니다.
-              </>
-            ) : (
-              <>
-                예: 이번 단계에 브리지·크라운 기공비가 추가됩니다. 남은
-                임시치아가 있으면 이번 단계 기공비만 보이고, 전부 지르로 바꾼
-                뒤에 최종 기공비(처음부터 지르·커스텀어벗 합계)가 표시됩니다.
-                <br />
-                아니오: 임시치아로 계속 진행합니다(다음 도착일만 반영, 추가 과금
-                없음). 임시치아를 한 번 더 만든 뒤에도, 다음 도착일을 지정할 때
-                다시 물어볼 수 있습니다.
-                <br />
-                지르로 바꾸지 않으면 견적은 임시치아 비용으로 유지됩니다.
-              </>
-            )
+            <>
+              재주문일은 {todayDate || "오늘"}입니다.
+              <br />
+              다음 도착일은 {arrivalConfirmYmd || "선택한 날"}입니다.
+              <br />
+              이전 날짜는 캘린더에 남습니다.
+            </>
           }
-          confirmLabel={
-            prosthesisFollowUpEligibility.followUpKind === "typeChange"
-              ? "주문 변경"
-              : "지르로 변경"
-          }
-          cancelLabel={
-            prosthesisFollowUpEligibility.followUpKind === "typeChange"
-              ? "현재 보철로 계속"
-              : "임시치아로 계속"
-          }
+          confirmLabel="추가"
+          cancelLabel="취소"
           confirmTone="primary"
+          busy={appendArrivalBusy}
           onConfirm={() => {
-            const ymd = String(followUpOfferArrivalYmd || "").trim();
-            setFollowUpOfferOpen(false);
-            setFollowUpPreferredArrivalYmd(ymd || null);
-            setFollowUpDialogMode("create");
-            setFollowUpDialogOpen(true);
+            const ymd = String(arrivalConfirmYmd || "").trim();
+            setArrivalConfirmOpen(false);
+            if (ymd) void handleAppendArrival(ymd);
           }}
           onCancel={() => {
-            const ymd = String(followUpOfferArrivalYmd || "").trim();
-            setFollowUpOfferOpen(false);
-            setFollowUpOfferArrivalYmd("");
-            if (ymd) void handleAppendArrival(ymd);
+            if (appendArrivalBusy) return;
+            setArrivalConfirmOpen(false);
+            setArrivalConfirmYmd("");
+          }}
+        />
+
+        <ConfirmDialog
+          open={revertArrivalConfirmOpen}
+          title="다음 도착일을 제거할까요?"
+          description={
+            <>
+              마지막으로 넣은 재주문일과 다음 도착일을 캘린더에서 뺍니다.
+              <br />
+              처음 주문일은 그대로입니다.
+            </>
+          }
+          confirmLabel="제거"
+          cancelLabel="취소"
+          confirmTone="danger"
+          busy={revertArrivalBusy}
+          onConfirm={() => {
+            void handleRevertArrival();
+          }}
+          onCancel={() => {
+            if (revertArrivalBusy) return;
+            setRevertArrivalConfirmOpen(false);
           }}
         />
 

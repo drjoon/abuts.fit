@@ -22,6 +22,7 @@
  * - 2026-08-28: 「도착일 클릭으로 신규의뢰」안내 — 헤더 검색 자리(PracticeRecentTransfersAllModal).
  * - 2026-08-28: 검색 입력 — 주문일·도착일 뱃지 왼쪽(헤더와 위치 교환).
  * - 2026-08-27: 캘린더 날짜키 뱃지 「도착일」(치과도착일) — 작은 글씨에서 치과의사 오인 방지.
+ * - 2026-10-27: 리메이크 연결 — 원본 ↗(이후), 리메이크 ↙(이전). 같은 문서 날짜 화살표와 같이 둔다.
  * - 2026-08-28: 누적 연결 칩 — 이전=↗(보냄)·최종=↙(받음) 표시.
  * - 2026-08-27: 누적 도착일 칩 — 이전 날짜 흐리게·연결 표시.
  * - 2026-09-23: 숨길 요일 — 인라인 토글 → 버튼+팝오버.
@@ -116,6 +117,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
+import { calendarChipTransferBaseId } from "@/shared/practice/prosthesisFollowUpCalendarChips";
 import { cn } from "@/shared/ui/cn";
 import { WIDE_CLUSTER_ROW_CLASS } from "@/shared/ui/contentMeasuredChrome";
 import {
@@ -195,6 +197,13 @@ export type PracticeCalendarChipItem = {
   linkedArrivalDates?: string[];
   /** 연결 주문일 전체(툴팁·주문일 캘린더 다중 칩) */
   linkedOrderDates?: string[];
+  /**
+   * 다른 의뢰(리메이크) 연결. 칩 id의 transfer base.
+   * linkedCaseBaseId = 이전 의뢰(들어오는 화살표).
+   * linkedNextCaseBaseId = 이후 의뢰(나가는 화살표).
+   */
+  linkedCaseBaseId?: string | null;
+  linkedNextCaseBaseId?: string | null;
   sortLabel: string;
   line: string;
   /** 사이드바·상단과 동일 — 칩 빨간 숫자=채팅 unread만 */
@@ -739,6 +748,20 @@ function PracticeCalendarChipHover({
             이전 일정(연결).
             <br />
             화살표를 누르면 연결된 의뢰가 채팅에 열립니다.
+          </p>
+        ) : null}
+        {item.linkedCaseBaseId && !item.isPriorArrival ? (
+          <p className="text-muted-foreground">
+            이전 의뢰 연결.
+            <br />
+            ↙ 를 누르면 이전 의뢰가 채팅에 열립니다.
+          </p>
+        ) : null}
+        {item.linkedNextCaseBaseId && !item.isPriorArrival ? (
+          <p className="text-muted-foreground">
+            이후 의뢰 연결.
+            <br />
+            ↗ 를 누르면 이후 의뢰가 채팅에 열립니다.
           </p>
         ) : null}
       </HoverCardContent>
@@ -1711,6 +1734,7 @@ export function PracticeRecentTransfersCalendar({
       visibleColumnIndex: number;
       visibleColumnCount: number;
     },
+    direction?: "prev" | "next",
   ) => {
     const raw =
       dateKey === "orderDate" ? item.linkedOrderDates : item.linkedArrivalDates;
@@ -1719,6 +1743,31 @@ export function PracticeRecentTransfersCalendar({
           .map((d) => String(d || "").trim())
           .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
       : [];
+    const caseBase = String(
+      (direction === "next" ? item.linkedNextCaseBaseId : item.linkedCaseBaseId) ||
+        "",
+    ).trim();
+    if (direction && caseBase) {
+      const target =
+        items.find(
+          (row) =>
+            calendarChipTransferBaseId(row.id) === caseBase &&
+            !row.isPriorArrival,
+        ) ||
+        items.find((row) => calendarChipTransferBaseId(row.id) === caseBase);
+      if (target) {
+        const ymd = String(
+          (dateKey === "orderDate" ? target.orderDate : target.arrivalDate) ||
+            "",
+        ).trim();
+        onSelectItem(target, {
+          ...ctx,
+          ymd: ymd || ctx.ymd,
+          dow: kstYmdWeekday(ymd) ?? ctx.dow,
+        });
+      }
+      return;
+    }
     const target =
       chain.length < 2
         ? ""
@@ -1758,23 +1807,55 @@ export function PracticeRecentTransfersCalendar({
     const chain =
       dateKey === "orderDate" ? item.linkedOrderDates : item.linkedArrivalDates;
     const hasLinkedChain = Array.isArray(chain) && chain.length > 1;
-    if (!hasLinkedChain) return null;
-    return (
+    const prevBase = String(item.linkedCaseBaseId || "").trim();
+    const nextBase = String(item.linkedNextCaseBaseId || "").trim();
+    const buttonClass = cn(
+      "mt-0.5 inline-flex shrink-0 items-center justify-center rounded text-primary hover:bg-primary/10",
+      size === "chip" ? "h-4 w-4 text-[11px]" : "h-5 w-5 text-[13px]",
+    );
+    const caseButton = (
+      direction: "prev" | "next",
+      glyph: string,
+      label: string,
+    ) => (
       <button
+        key={direction}
         type="button"
-        className={cn(
-          "mt-0.5 inline-flex shrink-0 items-center justify-center rounded text-primary hover:bg-primary/10",
-          size === "chip" ? "h-4 w-4 text-[11px]" : "h-5 w-5 text-[13px]",
-        )}
-        aria-label="연결된 의뢰를 채팅에 열기"
-        title="연결된 의뢰를 채팅에 열기"
+        className={buttonClass}
+        aria-label={label}
+        title={label}
         onClick={(e) => {
           e.stopPropagation();
-          openLinkedCase(item, ctx);
+          openLinkedCase(item, ctx, direction);
         }}
       >
-        {item.isPriorArrival ? "↗" : "↙"}
+        {glyph}
       </button>
+    );
+    if (!hasLinkedChain && !prevBase && !nextBase) return null;
+    return (
+      <>
+        {prevBase
+          ? caseButton("prev", "↙", "이전 의뢰를 채팅에 열기")
+          : null}
+        {hasLinkedChain ? (
+          <button
+            type="button"
+            className={buttonClass}
+            aria-label="연결된 의뢰를 채팅에 열기"
+            title="연결된 의뢰를 채팅에 열기"
+            onClick={(e) => {
+              e.stopPropagation();
+              openLinkedCase(item, ctx);
+            }}
+          >
+            {item.isPriorArrival ? "↗" : "↙"}
+          </button>
+        ) : null}
+        {nextBase
+          ? caseButton("next", "↗", "이후 의뢰를 채팅에 열기")
+          : null}
+      </>
     );
   };
 

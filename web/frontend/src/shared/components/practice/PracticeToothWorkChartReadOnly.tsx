@@ -25,6 +25,8 @@
 // - 2026-09-15: 부분 후속(남은 임시치아) — 변경 기공비 라벨.
 // - 2026-09-15: 최종 기공비 — toothWorksForFinalProsthesisFeeQuote(followUp CA 스킵 우회).
 // - 2026-09-27: compact 보철 카드·견적을 가로 가운데. 넘치면 공통 가로 스크롤.
+// - 2026-10-27: 하악만 있는 차트 — 견적을 카드 아래로. embedded는 금액 blur 해제.
+// - 2026-10-27: 브리지 이음 — 연결 마크를 다음 카드 위로. 맞닿은 면 테두리·링을 없앤다.
 // - 2026-09-02: byTooth가 연결치에 첫 행을 덮어 13-12-11 브리지에서 11 연결·스펙이 끊기던 버그 수정.
 import { useMemo, useState, useRef, useEffect, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowRight } from "lucide-react";
@@ -856,10 +858,10 @@ export const PracticeToothWorkChartReadOnly = ({
         <div className={BRIDGE_GAP_LINKED_CLASS}>
           <span
             aria-hidden
-            className="pointer-events-none absolute inset-y-3 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-primary/70"
+            className="pointer-events-none absolute inset-y-0 left-1/2 w-[3px] -translate-x-1/2 bg-primary/70"
           />
           <span
-            className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border border-primary bg-primary text-white ring-2 ring-primary-soft"
+            className="absolute left-1/2 top-1/2 z-10 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-primary bg-primary text-white ring-2 ring-primary-soft"
             title={`${toothNumber}–${chartNext} 연결`}
           >
             <span className="h-0.5 w-2.5 rounded-full bg-white" />
@@ -894,10 +896,10 @@ export const PracticeToothWorkChartReadOnly = ({
       aria-hidden
     >
       <span
-        className="pointer-events-none absolute inset-y-3 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-primary/70"
+        className="pointer-events-none absolute inset-y-0 left-1/2 w-[3px] -translate-x-1/2 bg-primary/70"
       />
       <span
-        className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full border border-primary bg-primary text-white ring-2 ring-primary-soft"
+        className="absolute left-1/2 top-1/2 z-10 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-primary bg-primary text-white ring-2 ring-primary-soft"
       >
         <span className="h-0.5 w-2.5 rounded-full bg-white" />
       </span>
@@ -931,17 +933,17 @@ export const PracticeToothWorkChartReadOnly = ({
                 : "rounded-xl border-slate-300 bg-slate-50"
               : spanSelected
                 ? isLinked
-                  ? "border-primary bg-gradient-to-b from-primary-soft via-primary-soft/95 to-white ring-1 ring-primary/40"
+                  ? "border-primary bg-gradient-to-b from-primary-soft via-primary-soft/95 to-white"
                   : "rounded-xl border-primary/90 bg-gradient-to-b from-primary-soft via-white to-primary-soft/40 ring-1 ring-primary-muted/40"
                 : isLinked
                   ? "border-slate-300 bg-slate-50"
                   : "rounded-xl border-slate-300 bg-slate-50",
-            isLinked && spanSelected && isFirst && isLast && "rounded-xl",
-            isLinked && spanSelected && isFirst && !isLast && "rounded-l-xl rounded-r-none",
-            isLinked && spanSelected && !isFirst && isLast && "rounded-r-xl rounded-l-none",
-            isLinked && spanSelected && !isFirst && !isLast && "rounded-none",
-            isLinked && spanSelected && !isFirst && "border-l-0",
-            isLinked && spanSelected && !isLast && "border-r-0",
+            isLinked && isFirst && isLast && "rounded-xl",
+            isLinked && isFirst && !isLast && "rounded-l-xl rounded-r-none",
+            isLinked && !isFirst && isLast && "rounded-r-xl rounded-l-none",
+            isLinked && !isFirst && !isLast && "rounded-none",
+            isLinked && !isFirst && "border-l-0",
+            isLinked && !isLast && "border-r-0",
           )}
         >
           {isMissingTooth ? (
@@ -1201,7 +1203,12 @@ export const PracticeToothWorkChartReadOnly = ({
                 <div
                   key={`ro-tooth-slot-${archDisplayLabel || toothNumber}`}
                   className={
-                    fullLayout ? "contents" : "flex shrink-0 items-stretch"
+                    fullLayout
+                      ? "contents"
+                      : cn(
+                          "flex shrink-0 items-stretch",
+                          showBridgeConnector && "relative z-30",
+                        )
                   }
                 >
                   <div className={cn("relative", slotClass)}>
@@ -1247,17 +1254,17 @@ export const PracticeToothWorkChartReadOnly = ({
                             : "rounded-xl border-slate-300 bg-slate-50"
                           : spanSelected
                             ? isLinked
-                              ? "border-primary bg-gradient-to-b from-primary-soft via-primary-soft/95 to-white ring-1 ring-primary/40"
+                              ? "border-primary bg-gradient-to-b from-primary-soft via-primary-soft/95 to-white"
                               : "rounded-xl border-primary/90 bg-gradient-to-b from-primary-soft via-white to-primary-soft/40 ring-1 ring-primary-muted/40"
                             : isLinked
                               ? "border-slate-300 bg-slate-50"
                               : "rounded-xl border-slate-300 bg-slate-50",
-                        isLinked && spanSelected && !linkedChartPrev && !linkedChartNext && "rounded-xl",
-                        isLinked && spanSelected && linkedChartPrev && linkedChartNext && "rounded-none",
-                        isLinked && spanSelected && linkedChartPrev && !linkedChartNext && "rounded-r-xl rounded-l-none",
-                        isLinked && spanSelected && !linkedChartPrev && linkedChartNext && "rounded-l-xl rounded-r-none",
-                        isLinked && spanSelected && linkedChartPrev && "border-l-0",
-                        isLinked && spanSelected && linkedChartNext && "border-r-0",
+                        isLinked && !linkedChartPrev && !linkedChartNext && "rounded-xl",
+                        isLinked && linkedChartPrev && linkedChartNext && "rounded-none",
+                        isLinked && linkedChartPrev && !linkedChartNext && "rounded-r-xl rounded-l-none",
+                        isLinked && !linkedChartPrev && linkedChartNext && "rounded-l-xl rounded-r-none",
+                        isLinked && linkedChartPrev && "border-l-0",
+                        isLinked && linkedChartNext && "border-r-0",
                       )}
                     >
                       {selectable && isAnchorTooth ? (
@@ -1401,6 +1408,7 @@ export const PracticeToothWorkChartReadOnly = ({
       feeStages={feeStages}
       feeStageFocusIndex={feeStageFocusIndex}
       showFinalFee={showFinalFee}
+      revealAmounts={embedded}
       className={
         embedded
           ? "w-full justify-center border-0 bg-transparent px-0 py-1 shadow-none"
@@ -1411,29 +1419,25 @@ export const PracticeToothWorkChartReadOnly = ({
 
   const inlineChartBody = isMobile ? (
     <div className="space-y-3">
-      {renderMobileArchSection("상악", upperSpanEntries)}
-      <PracticeTransferFeeEstimate
-        quote={feeQuoteForStages}
-        viewer={feeViewer}
-        skipJig={skipJig}
-        labEffectiveStars={labEffectiveStars}
-        confirmedFeeLabel={confirmedFeeLabel}
-        feeStages={feeStages}
-        feeStageFocusIndex={feeStageFocusIndex}
-        showFinalFee={showFinalFee}
-        className={
-          embedded
-          ? "w-full justify-center border-0 bg-transparent px-0 py-1 shadow-none"
-          : "w-full justify-center"
-        }
-      />
-      {renderMobileArchSection("하악", lowerSpanEntries)}
+      {upperSpanEntries.length > 0
+        ? renderMobileArchSection("상악", upperSpanEntries)
+        : null}
+      {upperSpanEntries.length > 0 && lowerSpanEntries.length > 0
+        ? feeEstimate
+        : null}
+      {lowerSpanEntries.length > 0
+        ? renderMobileArchSection("하악", lowerSpanEntries)
+        : null}
+      {upperSpanEntries.length > 0 && lowerSpanEntries.length > 0
+        ? null
+        : feeEstimate}
     </div>
   ) : (
     <div className="space-y-2">
       {upperInlineRow}
-      {feeEstimate}
+      {upperInlineRow && lowerInlineRow ? feeEstimate : null}
       {lowerInlineRow}
+      {upperInlineRow && lowerInlineRow ? null : feeEstimate}
     </div>
   );
 
@@ -1451,6 +1455,7 @@ export const PracticeToothWorkChartReadOnly = ({
         feeStages={feeStages}
         feeStageFocusIndex={feeStageFocusIndex}
         showFinalFee={showFinalFee}
+        revealAmounts={embedded}
         className={
           embedded
             ? "w-full justify-center border-0 bg-transparent px-0 py-1 shadow-none"
