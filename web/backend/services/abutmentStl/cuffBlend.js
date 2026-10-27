@@ -838,7 +838,7 @@ const integrateSmoother = (u) => {
  * 높이 여유가 없으면 위쪽 기울기만 올리고 시작 기울기는 원뿔을 유지한다. t∈[0,1] → 반경.
  * @returns {((t: number) => number) | null}
  */
-export function verticalEmergenceProfile(ra, coneSlope, rTop, h) {
+export function verticalEmergenceProfile(ra, coneSlope, rTop, h, endSlope = null) {
   const gain = rTop - ra;
   if (!(h > 1e-4) || !Number.isFinite(ra) || !Number.isFinite(rTop) || !Number.isFinite(gain)) return null;
   if (gain <= 1e-6) return () => ra;
@@ -900,6 +900,10 @@ export function verticalEmergenceProfile(ra, coneSlope, rTop, h) {
   const boneZ = Math.min(Math.max(bone, e), h);
   const rEase = ra + (e * (m0 + se)) / 2;
   const rBone = rEase + se * Math.max(0, boneZ - e);
+  const flare = h - boneZ;
+  const sAvg = flare > 1e-3 ? (rTop - rBone) / flare : se;
+  const sEnd = Number.isFinite(endSlope) ? Math.max(se, Math.min(send, endSlope)) : send;
+  const sMidCorr = sAvg - 0.5 * (se + sEnd);
   return (t) => {
     const z = Math.max(0, Math.min(1, t)) * h;
     if (z <= e) {
@@ -907,9 +911,9 @@ export function verticalEmergenceProfile(ra, coneSlope, rTop, h) {
       return ra + m0 * z + (se - m0) * e * integrateSmoother(u);
     }
     if (z <= boneZ) return rEase + se * (z - e);
-    const flare = h - boneZ;
     const u = flare > 1e-9 ? (z - boneZ) / flare : 1;
-    return rBone + se * (z - boneZ) + (send - se) * flare * integrateSmoother(u);
+    const b = u * u * u * (10 - 15 * u + 6 * u * u);
+    return rBone + se * (z - boneZ) + flare * ((sEnd - se) * integrateSmoother(u) + sMidCorr * b);
   };
 }
 
@@ -1577,17 +1581,47 @@ function splitByLevel(mesh, levelOf) {
   }
   const values = Array.from(fv);
   const cache = new Map();
-  const mid = (a, b) => {
-    const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+  const at = (ia, t, ib) => [
+    verts[ia * 3] + t * (verts[ib * 3] - verts[ia * 3]),
+    verts[ia * 3 + 1] + t * (verts[ib * 3 + 1] - verts[ia * 3 + 1]),
+    verts[ia * 3 + 2] + t * (verts[ib * 3 + 2] - verts[ia * 3 + 2]),
+  ];
+  const mid = (ia, ib) => {
+    const key = ia < ib ? `${ia}_${ib}` : `${ib}_${ia}`;
     const hit = cache.get(key);
     if (hit !== undefined) return hit;
-    const t = values[a] / (values[a] - values[b]);
+    // 끝점 레벨을 직선으로 나눈 지점은 평면 절단에서만 레벨 0이다.
+    // 피니시라인처럼 각도에 따라 높이가 바뀌면 그 지점에 레벨이 남으므로, 모서리 위에서 레벨이 0이 되는 점을 찾는다.
+    let lo = 0;
+    let hi = 1;
+    let flo = values[ia];
+    let fhi = values[ib];
+    let t = flo === 0 ? 0 : fhi === 0 ? 1 : flo / (flo - fhi);
+    if (flo * fhi < 0) {
+      const lin = at(ia, t, ib);
+      if (Math.abs(levelOf(lin[0], lin[1], lin[2])) > 1e-6) {
+        for (let i = 0; i < 28; i += 1) {
+          const midT = (lo + hi) / 2;
+          const p = at(ia, midT, ib);
+          const f = levelOf(p[0], p[1], p[2]);
+          if (Math.abs(f) <= 1e-7) {
+            lo = hi = midT;
+            break;
+          }
+          if (f * flo > 0) {
+            lo = midT;
+            flo = f;
+          } else {
+            hi = midT;
+            fhi = f;
+          }
+        }
+        t = (lo + hi) / 2;
+      }
+    }
+    const p = at(ia, t, ib);
     const idx = verts.length / 3;
-    verts.push(
-      verts[a * 3] + t * (verts[b * 3] - verts[a * 3]),
-      verts[a * 3 + 1] + t * (verts[b * 3 + 1] - verts[a * 3 + 1]),
-      verts[a * 3 + 2] + t * (verts[b * 3 + 2] - verts[a * 3 + 2]),
-    );
+    verts.push(p[0], p[1], p[2]);
     values.push(0);
     cache.set(key, idx);
     return idx;
@@ -2324,8 +2358,21 @@ function replaceBand(
     convexCuffDeform = false,
   },
 ) {
-  let cut = splitByLevel(mesh, (x, y, z) => z - zA);
-  if (!crease) cut = splitByLevel(cut, (x, y, z) => z - topZOf(angleOf(x, y)));
+  const cutBottom = splitByLevel(mesh, (x, y, z) => z - zA);
+  let cut = cutBottom;
+  let bottomValues = cutBottom.values;
+  let topValues = null;
+  if (!crease) {
+    // top split이 새 정점을 추가할 때 그 정점의 bottom 레벨(z - zA)도 함께 이어 붙인다.
+    cut = splitByLevel(cutBottom, (x, y, z) => z - topZOf(angleOf(x, y)));
+    topValues = cut.values;
+    bottomValues = new Float64Array(cut.verts.length / 3);
+    for (let v = 0; v < bottomValues.length; v += 1) {
+      let f = cut.verts[v * 3 + 2] - zA;
+      if (Math.abs(f) < 1e-7) f = 0;
+      bottomValues[v] = f;
+    }
+  }
   const { verts, faces, faceAttr, faceMain } = cut;
   const fc = faces.length / 3;
   const removed = new Uint8Array(fc);
@@ -2383,7 +2430,24 @@ function replaceBand(
     }
   } else {
     for (let f = 0; f < fc; f += 1) {
-      if (faceMain[f] && inBandOuter(f, 0)) removed[f] = 1;
+      if (!faceMain[f]) continue;
+      const i0 = faces[f * 3];
+      const i1 = faces[f * 3 + 1];
+      const i2 = faces[f * 3 + 2];
+      // splitByLevel로 잘린 정점 레벨 부호를 그대로 써야 절단 곡선과 구멍 경계가 어긋나지 않는다.
+      if (bottomValues[i0] < 0 || bottomValues[i1] < 0 || bottomValues[i2] < 0) continue;
+      if (topValues[i0] > 0 || topValues[i1] > 0 || topValues[i2] > 0) continue;
+      if (!(bottomValues[i0] > 0 || bottomValues[i1] > 0 || bottomValues[i2] > 0)) continue;
+      if (!(topValues[i0] < 0 || topValues[i1] < 0 || topValues[i2] < 0)) continue;
+      let outer = true;
+      for (let k = 0; k < 3; k += 1) {
+        const v = faces[f * 3 + k] * 3;
+        if (Math.hypot(verts[v], verts[v + 1]) <= rCut) {
+          outer = false;
+          break;
+        }
+      }
+      if (outer) removed[f] = 1;
     }
   }
   let outwardVotes = 0;
@@ -2457,7 +2521,32 @@ function replaceBand(
     bottomEdgeSub.set(`${a}_${b}`, [a, ...mids, b]);
   }
   const bottom = angularRow(bottomLoop, verts);
-  const top = angularRow(loops[1], verts);
+  const rawTopLoop = loops[1];
+  const topEdgeSub = new Map();
+  const topLoop = [];
+  for (let i = 0; i < rawTopLoop.length; i += 1) {
+    const a = rawTopLoop[i];
+    const b = rawTopLoop[(i + 1) % rawTopLoop.length];
+    topLoop.push(a);
+    let da = Math.abs(angleOf(verts[b * 3], verts[b * 3 + 1]) - angleOf(verts[a * 3], verts[a * 3 + 1]));
+    if (da > Math.PI) da = TWO_PI - da;
+    const steps = Math.ceil(da / BOTTOM_EDGE_MAX_RAD);
+    if (steps <= 1) continue;
+    const mids = [];
+    for (let s = 1; s < steps; s += 1) {
+      const u = s / steps;
+      const idx = verts.length / 3;
+      verts.push(
+        verts[a * 3] + u * (verts[b * 3] - verts[a * 3]),
+        verts[a * 3 + 1] + u * (verts[b * 3 + 1] - verts[a * 3 + 1]),
+        verts[a * 3 + 2] + u * (verts[b * 3 + 2] - verts[a * 3 + 2]),
+      );
+      mids.push(idx);
+      topLoop.push(idx);
+    }
+    topEdgeSub.set(`${a}_${b}`, [a, ...mids, b]);
+  }
+  const top = angularRow(topLoop, verts);
   if (!bottom || !top) {
     fail("manual-review", "이음부 경계가 축 둘레로 한 바퀴 돌지 않습니다(언더컷).");
   }
@@ -2547,9 +2636,9 @@ function replaceBand(
   for (let f = 0; f < fc; f += 1) {
     if (removed[f]) continue;
     const f0 = faces[f * 3], f1 = faces[f * 3 + 1], f2 = faces[f * 3 + 2];
-    const chain01 = bottomEdgeSub.get(`${f0}_${f1}`);
-    const chain12 = bottomEdgeSub.get(`${f1}_${f2}`);
-    const chain20 = bottomEdgeSub.get(`${f2}_${f0}`);
+    const chain01 = bottomEdgeSub.get(`${f0}_${f1}`) || topEdgeSub.get(`${f0}_${f1}`);
+    const chain12 = bottomEdgeSub.get(`${f1}_${f2}`) || topEdgeSub.get(`${f1}_${f2}`);
+    const chain20 = bottomEdgeSub.get(`${f2}_${f0}`) || topEdgeSub.get(`${f2}_${f0}`);
     const chain = chain01 || chain12 || chain20;
     if (chain) {
       const opp = chain01 ? f2 : chain12 ? f0 : f1;
@@ -2757,6 +2846,64 @@ function zByAngle(points) {
   };
 }
 
+/**
+ * 날카로운 모서리(crease)가 없는 둥근 마진(3Shape 등)에서 피니시라인 곡선이 마진 챔퍼 위쪽에 찍혀 있으면,
+ * 반경이 최대가 되는 실제 마진 외곽 능선 아래까지 내려 피니시라인·마진 능선을 자르지 않게 한다.
+ */
+function marginCrestZByAngle(probe, flZ) {
+  const n = STRIP_COLUMNS;
+  const rawZ = new Float64Array(n);
+  let crestHits = 0;
+  const step = 0.005;
+  for (let j = 0; j < n; j += 1) {
+    const theta = (j / n) * TWO_PI;
+    const z0 = flZ(theta);
+    rawZ[j] = z0;
+    let bestZ = z0;
+    let bestR = -Infinity;
+    for (let dz = -0.35; dz <= 0.35 + 1e-9; dz += step) {
+      const r = probe.rayRadius(theta, z0 + dz);
+      if (Number.isFinite(r) && r > bestR) {
+        bestR = r;
+        bestZ = z0 + dz;
+      }
+    }
+    if (!Number.isFinite(bestR)) continue;
+    const rPrev = probe.rayRadius(theta, bestZ - step);
+    const rNext = probe.rayRadius(theta, bestZ + step);
+    if (Number.isFinite(rPrev) && Number.isFinite(rNext)) {
+      const denom = rPrev - 2 * bestR + rNext;
+      if (denom < -1e-9) {
+        const shift = Math.max(-step, Math.min(step, (0.5 * (rPrev - rNext) * step) / denom));
+        bestZ += shift;
+      }
+    }
+    const rAbove = probe.rayRadius(theta, bestZ + 0.06);
+    const rBelow = probe.rayRadius(theta, bestZ - 0.06);
+    // 위(포스트·챔퍼)로도 좁아지고 아래(커프)로도 좁아지는 실제 마진 외곽 능선일 때만 그 능선 라운드 하단(-0.04mm)을 따른다.
+    if (
+      Number.isFinite(rAbove) &&
+      Number.isFinite(rBelow) &&
+      bestR - rAbove >= 0.005 &&
+      bestR - rBelow >= 0.005
+    ) {
+      rawZ[j] = bestZ - 0.04;
+      crestHits += 1;
+    }
+  }
+  if (crestHits < n * 0.75) return flZ;
+  const smoothZ = circularSmooth(
+    angularLowPass(Array.from(rawZ), n) || Array.from(rawZ),
+    TOP_SLOPE_SMOOTH_COLUMNS,
+  );
+  return zByAngle(
+    smoothZ.map((z, j) => ({
+      a: (j / n) * TWO_PI,
+      z,
+    })),
+  );
+}
+
 function setup(buffer, { spec, specKey }) {
   if (!spec) {
     fail("spec-pending", `커넥션 스펙이 등록되지 않은 임플란트입니다(${specKey || "스펙 없음"}). 개발팀 확인이 필요합니다.`);
@@ -2859,7 +3006,7 @@ export function blendCuffJunction(buffer, options = {}) {
       strippedSolid = solid.stripped;
     }
     const crease = findFinishCrease(mesh, flZ);
-    const seamZ = crease ? crease.zOf : flZ;
+    const seamZ = crease ? crease.zOf : marginCrestZByAngle(probe, flZ);
     const attempt = (offsetMm) => {
       let topZ;
       let topZOf;
@@ -2967,7 +3114,7 @@ export function blendCuffJunction(buffer, options = {}) {
     const legacyConcaveOf = (rTop, eSlope, hb, relax = 0) => {
       // 마진까지 높이가 있는 열은 11°를 이어 넓히지 않는다. 픽스처 직상방을 4°로 올리고 그 위에서 마진까지 넓힌다.
       if (hb >= 0.8) {
-        const emerged = verticalEmergenceProfile(ra, coneSlope, rTop, hb);
+        const emerged = verticalEmergenceProfile(ra, coneSlope, rTop, hb, eSlope);
         if (emerged) return emerged;
       }
       const d = rTop - ra;
