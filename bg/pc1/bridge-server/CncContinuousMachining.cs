@@ -3,6 +3,7 @@
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/cnc/production.js
 // change-log:
+// - 2026-10-27: CAM 재생성은 같은 s3Key에 덮어쓴다. 의뢰건은 업로드 직전 nc-file-meta uploadedAt이 마지막 업로드보다 새로우면 캐시를 버리고 다시 받는다.
 // - 2026-10-22: 의뢰건 NC는 가공마다 S3(백엔드 presign)에서 새로 받는다. batchContinue·동일 jobId 연속(qty)만 로컬 캐시 재사용.
 // - 2026-10-19: 수량 반복(batchContinue)은 완료 직후 120초 중복 차단을 한 번 통과해 다음 개를 큐에 넣는다.
 // - 2026-10-13: 가공 실패는 fail 통지 한 번. ALARM tick을 같이 보내지 않는다.
@@ -14,6 +15,7 @@
 // - 2026-08-07: 정상 완료 후 로컬 큐가 비면 백엔드 auto-trigger를 재요청한다.
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.IO;
 using System.Net.Http;
@@ -581,6 +583,7 @@ public DateTime LastCompletedRequestAtUtc;
 public bool BatchContinueAccepted;
 // 동일 큐 jobId(qty>1) 연속 pop 시 NC 재다운로드 생략
 public string LastNcUploadedJobId;
+public DateTime LastNcUploadedAtUtc;
 // 마지막 관측 MachineStatusType (로그 변화 감지)
 public MachineStatusType LastObservedStatus;
 public bool HasLastObservedStatus;
@@ -2101,17 +2104,22 @@ private static bool ShouldReuseCachedNcProgram(CncJobItem job, MachineState stat
     return !string.IsNullOrEmpty(last) && string.Equals(last, jid, StringComparison.OrdinalIgnoreCase);
 }
 
-private static async Task TryEnsureJobS3KeyFromBackend(string machineId, CncJobItem job)
+private struct NcMetaRefresh
+{
+    public bool Found;
+    public DateTime? UploadedAtUtc;
+}
+
+// CAM 재생성은 같은 s3Key에 덮어쓴다. 키가 이미 있어도 최신 메타로 맞춘다.
+private static async Task<NcMetaRefresh> TryRefreshJobNcMetaFromBackend(CncJobItem job)
 {
     try
     {
-        if (job == null) return;
-        if (!string.IsNullOrEmpty((job.s3Key ?? string.Empty).Trim())) return;
-        if (!IsRequestMachiningJob(job)) return;
+        if (job == null || !IsRequestMachiningJob(job)) return default(NcMetaRefresh);
         var backendBase = Config.BackendBase;
-        if (string.IsNullOrEmpty(backendBase)) return;
+        if (string.IsNullOrEmpty(backendBase)) return default(NcMetaRefresh);
         var rid = NormalizeRequestId(job.requestId, job.fileName, job.originalFileName);
-        if (string.IsNullOrEmpty(rid)) return;
+        if (string.IsNullOrEmpty(rid)) return default(NcMetaRefresh);
         var url = backendBase.TrimEnd('/') + "/cnc-machines/bridge/nc-file-meta?requestId=" + Uri.EscapeDataString(rid);
         string text;
         using (var req = new HttpRequestMessage(HttpMethod.Get, url))
@@ -2123,25 +2131,40 @@ private static async Task TryEnsureJobS3KeyFromBackend(string machineId, CncJobI
                 if (!resp.IsSuccessStatusCode)
                 {
                     Console.WriteLine("[CncMachining] nc-file-meta failed requestId={0} status={1}", rid, (int)resp.StatusCode);
-                    return;
+                    return default(NcMetaRefresh);
                 }
             }
         }
         var root = JObject.Parse(text);
-        if (root.Value<bool?>("success") != true) return;
+        if (root.Value<bool?>("success") != true) return default(NcMetaRefresh);
         var data = root["data"] as JObject;
         var sk = (data?["s3Key"]?.ToString() ?? string.Empty).Trim();
         var sb = (data?["s3Bucket"]?.ToString() ?? string.Empty).Trim();
         if (!string.IsNullOrEmpty(sk)) job.s3Key = sk;
         if (!string.IsNullOrEmpty(sb)) job.s3Bucket = sb;
+        DateTime? uploadedAt = null;
+        var uploadedToken = data?["uploadedAt"];
+        if (uploadedToken != null && uploadedToken.Type != JTokenType.Null)
+        {
+            if (DateTime.TryParse(
+                uploadedToken.ToString(),
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal,
+                out var parsed))
+            {
+                uploadedAt = parsed.ToUniversalTime();
+            }
+        }
         if (!string.IsNullOrEmpty(sk))
         {
-            Console.WriteLine("[CncMachining] nc-file-meta resolved requestId={0} s3Key={1}", rid, sk);
+            Console.WriteLine("[CncMachining] nc-file-meta resolved requestId={0} s3Key={1} uploadedAt={2}", rid, sk, uploadedAt?.ToString("o") ?? "-");
         }
+        return new NcMetaRefresh { Found = !string.IsNullOrEmpty(sk), UploadedAtUtc = uploadedAt };
     }
     catch (Exception ex)
     {
-        Console.WriteLine("[CncMachining] TryEnsureJobS3KeyFromBackend error: {0}", ex.Message);
+        Console.WriteLine("[CncMachining] TryRefreshJobNcMetaFromBackend error: {0}", ex.Message);
+        return default(NcMetaRefresh);
     }
 }
 
@@ -2160,9 +2183,28 @@ private static async Task<(bool Success, string Error)> UploadProgramToSlot(stri
         }
         var reuseCachedNc = ShouldReuseCachedNcProgram(job, uploadState);
         var isRequestJob = IsRequestMachiningJob(job);
-        if (isRequestJob)
+        if (isRequestJob && !job.batchContinue)
         {
-            await TryEnsureJobS3KeyFromBackend(machineId, job);
+            var previousKey = (job.s3Key ?? string.Empty).Trim();
+            var meta = await TryRefreshJobNcMetaFromBackend(job);
+            if (reuseCachedNc && meta.Found)
+            {
+                var keyChanged = !string.Equals(previousKey, (job.s3Key ?? string.Empty).Trim(), StringComparison.Ordinal);
+                var lastAt = uploadState?.LastNcUploadedAtUtc ?? DateTime.MinValue;
+                var newerNc = meta.UploadedAtUtc.HasValue && meta.UploadedAtUtc.Value > lastAt;
+                if (keyChanged || newerNc)
+                {
+                    reuseCachedNc = false;
+                    Console.WriteLine(
+                        "[CncMachining] NC cache skipped machine={0} jobId={1} requestId={2} keyChanged={3} uploadedAt={4} lastUpload={5}",
+                        machineId,
+                        job?.id,
+                        job?.requestId,
+                        keyChanged,
+                        meta.UploadedAtUtc?.ToString("o") ?? "-",
+                        lastAt == DateTime.MinValue ? "-" : lastAt.ToString("o"));
+                }
+            }
         }
 
         // 더미 job: 파일 업로드 없이 programNo로 직접 활성화
@@ -2302,6 +2344,7 @@ private static async Task<(bool Success, string Error)> UploadProgramToSlot(stri
                 if (MachineStates.TryGetValue(machineId, out var st) && st != null)
                 {
                     st.LastNcUploadedJobId = job.id;
+                    st.LastNcUploadedAtUtc = DateTime.UtcNow;
                 }
             }
         }

@@ -144,7 +144,9 @@ export async function getNcFileMetaForBridge(req, res) {
 
     const Request = (await import("../../models/request.model.js")).default;
     const doc = await Request.findOne({ requestId })
-      .select("caseInfos.ncFile.s3Key caseInfos.ncFile.s3Bucket")
+      .select(
+        "caseInfos.ncFile.s3Key caseInfos.ncFile.s3Bucket caseInfos.ncFile.uploadedAt",
+      )
       .lean();
     const s3Key = String(doc?.caseInfos?.ncFile?.s3Key || "").trim();
     if (!s3Key) {
@@ -158,10 +160,11 @@ export async function getNcFileMetaForBridge(req, res) {
         process.env.AWS_S3_BUCKET_NAME ||
         "abuts-fit",
     ).trim();
+    const uploadedAt = doc?.caseInfos?.ncFile?.uploadedAt || null;
 
     return res.status(200).json({
       success: true,
-      data: { requestId, s3Key, s3Bucket },
+      data: { requestId, s3Key, s3Bucket, uploadedAt },
     });
   } catch (error) {
     console.error("Error in getNcFileMetaForBridge:", error);
