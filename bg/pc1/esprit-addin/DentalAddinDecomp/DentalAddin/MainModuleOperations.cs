@@ -24,7 +24,6 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
 
 #pragma warning disable CS0162, CS0164, CS0649
 
@@ -1858,33 +1857,12 @@ namespace DentalAddin
                     return null;
                 }
 
-                // Back_Turn만: 로드된 커넥션 PRC의 11° 테이퍼(면 직경)에서 프로파일을 끊는다.
-                // 오스템·네오·덴티움·디오·메가젠·덴티스 Regular와 미니/내로우는 같은 파서다. 각 파일의 Finish Connection 면 직경을 쓴다.
-                // 이음 띠는 Back_Finish, 원뿔은 커넥션 사이클. 수평·45도 뒤에 한 번 더 면 반경 아래로 들어간 점을 올린다.
-                double taperFaceRadius = 0.0;
-                double taperStartX = double.NaN;
-                string taperSource = null;
-                if (maxX > MoveSTL_Module.BackPointX + 0.2 && !MoveSTL_Module.NonConnection
-                    && TryResolveConnectionTaperGuard(out taperFaceRadius, out taperSource))
-                {
-                    if (TryClipTurningTailAtTaperFace(region, taperFaceRadius, MoveSTL_Module.BackPointX, out taperStartX))
-                    {
-                        double[] handoff = region[region.Count - 1];
-                        DentalLogger.Log($"BuildTurningRangeChain - 11° 테이퍼 밖 핸드오프 {taperSource} faceDia={taperFaceRadius * 2.0:0.###} at ({handoff[0]:0.###},{handoff[1]:0.###}). 이음은 Back_Finish.");
-                    }
-                    else
-                    {
-                        DentalLogger.Log($"BuildTurningRangeChain - 11° 면 교차 없음, 프로파일 유지 ({taperSource})");
-                    }
-                }
-
                 // 퇴출 SSOT (2026-10-12): Front/Middle/Back 모두 끝점에서 45도로 올라가 소재 반경(topY)에 닿은 뒤 90도(수직)로 빠진다.
                 // Tech_Default_Path.xml Exit angle(80)은 이 3-stage 구간 체인에서 쓰지 않는다.
                 double exitTopY = (Document?.LatheMachineSetup?.BarDiameter ?? 0.0) / 2.0;
                 double[] lastPt = region[region.Count - 1];
-                // 11° 핸드오프가 있으면 last Y는 면 반경이다. 그 반경으로 maxX(BackPointX+R+0.5)까지
-                // 수평을 이어 황삭 공구 반경(D4 → 2.0)이 미선삭 소재와 간섭하지 않게 한 뒤 45도로 올라간다.
-                // 핸드오프에서 바로 45도로 빼면 그 여유가 없다. LowerY(프로파일 끝)로 내리지도 않는다.
+                // Back_Turn: 프로파일 끝(EndXValue, TurningProfile trim이 BackPointX 세그먼트를 제거해 BackPointX보다 짧음)에서
+                // maxX(= BackPointX + 황삭 공구 반경)까지 같은 반경으로 수평 연장한 뒤 45도로 퇴출한다.
                 if (maxX - lastPt[0] > 1e-4)
                 {
                     region.Add(new[] { maxX, lastPt[1], lastPt[2] });
@@ -1900,15 +1878,6 @@ namespace DentalAddin
                     }
                     double[] atTop = region[region.Count - 1];
                     region.Add(new[] { atTop[0], exitTopY + 1.0, atTop[2] });
-                }
-
-                if (!double.IsNaN(taperStartX) && taperFaceRadius > 0.0)
-                {
-                    int lifted = EnforceTaperRadiusFloor(region, taperStartX, taperFaceRadius);
-                    if (lifted > 0)
-                    {
-                        DentalLogger.Log($"BuildTurningRangeChain - 11° 테이퍼 침범 {lifted}점을 면 반경 {taperFaceRadius:0.###} 밖으로 올림 ({taperSource})");
-                    }
                 }
 
                 Point startPt = Document.GetPoint(region[0][0], region[0][1], region[0][2]);
@@ -1929,186 +1898,6 @@ namespace DentalAddin
                 DentalLogger.Log($"BuildTurningRangeChain 실패: {ex.GetType().Name}:{ex.Message}");
                 return null;
             }
-        }
-
-        // Finish Connection의 첫 11° 이동. 면 `G1 X… F0.01` 다음 `G1 X… W…` 기울기가 11°일 때만 보호한다.
-        // Rough(U0.1)는 Finish Connection 밖이다. 브랜드마다 면 직경이 다르다.
-        private static readonly Regex ConnectionFinishFaceRegex = new Regex(
-            @"G1\s+X(?<dia>\d+(?:\.\d+)?)\s+F0\.01",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
-        private static readonly Regex ConnectionFinishTaperRegex = new Regex(
-            @"G1\s+X(?<dia>\d+(?:\.\d+)?)\s+W(?<w>\d+(?:\.\d+)?)",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
-        private const double ConnectionTaperAngleDeg = 11.0;
-        private const double ConnectionTaperAngleTolDeg = 0.5;
-        // 프로파일 샘플은 짧아서 기울기가 조금 흔들린다. 수평(0°)·45도 퇴출은 여기서 걸리지 않는다.
-        private const double ProfileTaperAngleTolDeg = 3.0;
-        // 가장 긴 정삭 11°(덴티스 Mini W1.794)보다 넉넉히. 이보다 멀면 커프를 자른 것으로 보고 포기한다.
-        private const double TaperKeepOutMaxFromBackPointMm = 3.0;
-
-        private static bool TryResolveConnectionTaperGuard(out double faceRadius, out string sourceFile)
-        {
-            faceRadius = 0.0;
-            sourceFile = null;
-            try
-            {
-                string path = PrcFilePath != null && PrcFilePath.Length > 8 ? PrcFilePath[8] : null;
-                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-                {
-                    DentalLogger.Log("BuildTurningRangeChain - 커넥션 PRC 없음, 11° 보호 생략");
-                    return false;
-                }
-
-                sourceFile = Path.GetFileName(path);
-                string text = File.ReadAllText(path);
-                if (!TryParseConnectionFinishTaper(text, out double faceDia, out double endDia, out double axialMm, out double angleDeg))
-                {
-                    DentalLogger.Log($"BuildTurningRangeChain - 11° 테이퍼 없음 ({sourceFile}), 보호 생략");
-                    return false;
-                }
-
-                faceRadius = faceDia / 2.0;
-                if (!(faceRadius > 0.5) || !(faceRadius < 4.0)) return false;
-                DentalLogger.Log($"BuildTurningRangeChain - 11° 보호 {sourceFile} faceDia={faceDia:0.###} → {endDia:0.###} W{axialMm:0.###} ({angleDeg:0.##}°)");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                DentalLogger.Log($"BuildTurningRangeChain - 11° 테이퍼 읽기 실패: {ex.GetType().Name}:{ex.Message}");
-                return false;
-            }
-        }
-
-        internal static bool TryParseConnectionFinishTaper(string prcText, out double faceDiameterMm, out double endDiameterMm, out double axialMm, out double angleDeg)
-        {
-            faceDiameterMm = 0.0;
-            endDiameterMm = 0.0;
-            axialMm = 0.0;
-            angleDeg = 0.0;
-            if (string.IsNullOrEmpty(prcText)) return false;
-
-            int finishAt = prcText.IndexOf("Finish Connection", StringComparison.OrdinalIgnoreCase);
-            if (finishAt < 0) return false;
-            int blockStart = finishAt + "Finish Connection".Length;
-            int blockEnd = prcText.IndexOf(":(", blockStart, StringComparison.Ordinal);
-            string block = blockEnd > blockStart ? prcText.Substring(blockStart, blockEnd - blockStart) : prcText.Substring(blockStart);
-
-            foreach (Match face in ConnectionFinishFaceRegex.Matches(block))
-            {
-                if (!double.TryParse(face.Groups["dia"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double faceDia))
-                {
-                    continue;
-                }
-
-                Match taper = ConnectionFinishTaperRegex.Match(block, face.Index + face.Length);
-                if (!taper.Success) continue;
-                if (!double.TryParse(taper.Groups["dia"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double taperDia)) continue;
-                if (!double.TryParse(taper.Groups["w"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double w)) continue;
-                if (!(taperDia < faceDia - 1e-6) || !(w > 0.0)) continue;
-
-                double slope = ((faceDia - taperDia) / 2.0) / w;
-                double deg = Math.Atan(slope) * 180.0 / Math.PI;
-                if (Math.Abs(deg - ConnectionTaperAngleDeg) > ConnectionTaperAngleTolDeg) continue;
-
-                faceDiameterMm = faceDia;
-                endDiameterMm = taperDia;
-                axialMm = w;
-                angleDeg = deg;
-                return true;
-            }
-
-            return false;
-        }
-
-        private static bool IsProfileConnectionTaperSlope(double[] cuffPt, double[] hexPt)
-        {
-            if (cuffPt == null || hexPt == null) return false;
-            double dx = hexPt[0] - cuffPt[0];
-            if (dx <= 1e-4) return false;
-            double slope = (Math.Abs(cuffPt[1]) - Math.Abs(hexPt[1])) / dx;
-            if (!(slope > 0.0)) return false;
-            double deg = Math.Atan(slope) * 180.0 / Math.PI;
-            return Math.Abs(deg - ConnectionTaperAngleDeg) <= ProfileTaperAngleTolDeg;
-        }
-
-        // 샘플 간격이 짧으면 기울기가 흔들린다. 헥스 점에서 커프 쪽으로 약 0.2mm를 묶어 11°인지 본다.
-        private static bool IsTaperSlopeAcross(List<double[]> region, int hexIndex)
-        {
-            if (region == null || hexIndex < 1 || hexIndex >= region.Count) return false;
-            double[] hexPt = region[hexIndex];
-            int cuffIndex = hexIndex - 1;
-            while (cuffIndex > 0)
-            {
-                double span = hexPt[0] - region[cuffIndex - 1][0];
-                if (!(span > 0.0) || span >= 0.2) break;
-                cuffIndex--;
-            }
-
-            return IsProfileConnectionTaperSlope(region[cuffIndex], hexPt);
-        }
-
-        // 헥스 쪽 11° 세그먼트가 면 반경 아래로 들어가는 지점에서 자른다. 수평·급경사 교차는 테이퍼가 아니다.
-        // 잘린 점 이후(헥스 방향)는 면 반경을 유지해 11° 원뿔 안으로 들어가지 않는다.
-        private static bool TryClipTurningTailAtTaperFace(List<double[]> region, double faceRadius, double backPointX, out double taperStartX)
-        {
-            taperStartX = double.NaN;
-            if (region == null || region.Count < 2 || !(faceRadius > 0.0)) return false;
-
-            for (int i = region.Count - 1; i >= 1; i--)
-            {
-                double[] cuffPt = region[i - 1];
-                double[] hexPt = region[i];
-                double radiusHex = Math.Abs(hexPt[1]);
-                double radiusCuff = Math.Abs(cuffPt[1]);
-                if (!(radiusHex < faceRadius - 1e-4) || !(radiusCuff >= faceRadius - 1e-4)) continue;
-                if (!IsTaperSlopeAcross(region, i)) continue;
-
-                double denom = radiusHex - radiusCuff;
-                double t = Math.Abs(denom) < 1e-9 ? 0.0 : (faceRadius - radiusCuff) / denom;
-                if (t < 0.0) t = 0.0;
-                if (t > 1.0) t = 1.0;
-
-                double clipX = cuffPt[0] + (hexPt[0] - cuffPt[0]) * t;
-                if (clipX > backPointX + 0.05 || backPointX - clipX > TaperKeepOutMaxFromBackPointMm)
-                {
-                    DentalLogger.Log($"BuildTurningRangeChain - 11° 핸드오프 기각 clipX={clipX:0.###} BackPointX={backPointX:0.###} faceR={faceRadius:0.###}");
-                    return false;
-                }
-
-                int sign = Math.Abs(cuffPt[1]) >= Math.Abs(hexPt[1]) ? Math.Sign(cuffPt[1]) : Math.Sign(hexPt[1]);
-                if (sign == 0) sign = 1;
-                region.RemoveRange(i, region.Count - i);
-                region.Add(new[]
-                {
-                    clipX,
-                    sign * faceRadius,
-                    cuffPt[2] + (hexPt[2] - cuffPt[2]) * t,
-                });
-                taperStartX = clipX;
-                return region.Count >= 2;
-            }
-
-            return false;
-        }
-
-        // 핸드오프보다 헥스 쪽에서 면 반경보다 가는 점은 11° 원뿔 안이다. 면 반경으로 올려 선삭이 테이퍼를 파지 않게 한다.
-        private static int EnforceTaperRadiusFloor(List<double[]> region, double taperStartX, double faceRadius)
-        {
-            if (region == null || !(faceRadius > 0.0)) return 0;
-            int lifted = 0;
-            for (int i = 0; i < region.Count; i++)
-            {
-                double[] point = region[i];
-                if (point == null || point.Length < 2) continue;
-                if (point[0] < taperStartX - 1e-4) continue;
-                if (Math.Abs(point[1]) >= faceRadius - 1e-4) continue;
-                int sign = Math.Sign(point[1]);
-                if (sign == 0) sign = 1;
-                point[1] = sign * faceRadius;
-                lifted++;
-            }
-
-            return lifted;
         }
 
         // 두 점 a,b 사이에서 x=targetX인 지점을 선형 보간으로 구한다. (각 점은 [x,y,z])
