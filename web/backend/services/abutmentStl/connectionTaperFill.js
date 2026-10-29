@@ -6,7 +6,9 @@
 //
 // 기공소가 11° 커넥션을 생략하고 헥스만 길게 넘기면, 제조사 준비 파이프라인이
 // 헥스를 L2 길이로 남기고 그 위에 스펙 11° 원뿔을 붙인다.
-// 원뿔이 이미 있으면 메시를 바꾸지 않는다. 접수 검사(preflight)·의뢰 전 보정 STL에서는 호출하지 않는다.
+// 원뿔이 짧아 브랜드 원점 직경(자체검사 diameterRef)이 메시 위에 없으면
+// 11°를 스펙 끝(originDiameter + 2·tan(11°)·taperHeightMm)까지 연장하고,
+// 그 원점 직경이 되는 높이를 Z=0으로 옮긴다. 접수 검사(preflight)·의뢰 전 보정 STL에서는 호출하지 않는다.
 import { Mesh, meshZSection } from "./meshCore.js";
 import { CONNECTIONS_SEED } from "../../scripts/db/data/connections.seed.js";
 import {
@@ -20,6 +22,12 @@ const SAMPLE_STEP_MM = 0.05;
 const CONE_ROW_MM = 0.15;
 const TAPER_MATCH_MM = 0.12;
 const FLAT_TOL_MM = 0.2;
+const CONE_FIT_TOL_MM = 0.015;
+const ORIGIN_SHIFT_TOL_MM = 0.015;
+const CONE_EXTEND_TOL_MM = 0.02;
+const Z_ORIGIN_MAX_MM = 2.5;
+const CONE_SNAP_TOL_MM = 0.06;
+const SCREW_CHANNEL_R = 1.15;
 
 const BRAND_ALIAS = {
   OSSTEM: { TS: "TS3" },
@@ -548,5 +556,191 @@ export function addMissingConnectionTaper(mesh, options = {}) {
     canonicalHexLengthMm: canonicalHexLen,
     taperHeightMm: geo.taperHeightMm,
     specKey: geo.specKey,
+  };
+}
+
+/** 정렬된 메시에서 11° 원뿔(절편 r0, 실측 상단)을 잰다. */
+function measureExistingCone(mesh) {
+  const { min, max } = mesh.bbox();
+  const samples = [];
+  const z0 = Math.max(min[2], -3);
+  const z1 = Math.min(max[2], 2.2);
+  for (let z = z0; z <= z1; z += SAMPLE_STEP_MM) {
+    const m = metricsAt(mesh, z);
+    if (!m || m.hexRatio >= 1.06) continue;
+    samples.push({ z, r: m.rMean });
+  }
+  if (samples.length < 5) return null;
+  const below = samples.filter((s) => s.z >= -1.2 && s.z <= -0.05);
+  const pool = below.length >= 5 ? below : samples.filter((s) => s.z <= 0.05);
+  if (pool.length < 5) return null;
+  const r0 = median(pool.map((s) => s.r - TAPER_SLOPE * s.z));
+  if (!(r0 > 0.8)) return null;
+  const onCone = (z, r) => Math.abs(r - (r0 + TAPER_SLOPE * z)) <= CONE_FIT_TOL_MM;
+  const fitted = samples.filter((s) => onCone(s.z, s.r));
+  if (fitted.length < 5) return null;
+  let top = fitted[fitted.length - 1].z;
+  let miss = 0;
+  for (let z = top + 0.01; z <= top + 1.2; z += 0.01) {
+    const m = metricsAt(mesh, z);
+    if (m && onCone(z, m.rMean)) {
+      top = z;
+      miss = 0;
+    } else if (++miss > 2) break;
+  }
+  return { r0, slope: TAPER_SLOPE, measuredTopZ: top, bottomZ: fitted[0].z };
+}
+
+function replaceOuterBandWithCone(mesh, zLo, zHi, radiusAt, rSplit) {
+  const snapshot = mesh.toTriangleSoup();
+  try {
+    const kept = [];
+    const v = mesh.verts;
+    const f = mesh.faces;
+    for (let i = 0; i < mesh.faceCount; i += 1) {
+      const tri = [0, 1, 2].map((k) => {
+        const o = f[i * 3 + k] * 3;
+        return [v[o], v[o + 1], v[o + 2]];
+      });
+      const outer = tri.every((p) => radiusOf(p) > rSplit);
+      if (!outer) {
+        pushTri(kept, tri[0], tri[1], tri[2]);
+        continue;
+      }
+      fan(clipHalf(tri, zLo, true), kept);
+      fan(clipHalf(tri, zHi, false), kept);
+    }
+    replaceMesh(mesh, Float64Array.from(kept));
+    const loops = boundaryLoops(mesh)
+      .map((idx) => loopPoints(mesh, idx))
+      .filter((pts) => pts.length >= 6 && meanR(pts) > rSplit);
+    const bottom = loops
+      .filter((pts) => Math.abs(meanZ(pts) - zLo) < 0.08)
+      .sort((a, b) => meanR(b) - meanR(a))[0];
+    const upper = loops
+      .filter((pts) => Math.abs(meanZ(pts) - zHi) < 0.08)
+      .sort((a, b) => meanR(b) - meanR(a))[0];
+    if (!bottom) throw new Error("extend-boundary");
+    const rings = [asCcw(bottom)];
+    for (let z = zLo + CONE_ROW_MM; z < zHi - 1e-4; z += CONE_ROW_MM) {
+      rings.push(circleRing(z, radiusAt(z), 72));
+    }
+    rings.push(circleRing(zHi, radiusAt(zHi), 72));
+    if (upper) rings.push(asCcw(upper));
+    let loft = [];
+    for (let i = 0; i < rings.length - 1; i += 1) loft.push(...stitch(rings[i], rings[i + 1]));
+    loft = ensureOutward(loft);
+    const soup = Array.from(mesh.toTriangleSoup());
+    for (const [a, b, c] of loft) pushTri(soup, a, b, c);
+    replaceMesh(mesh, Float64Array.from(soup));
+    return true;
+  } catch {
+    replaceMesh(mesh, snapshot);
+    return false;
+  }
+}
+
+function snapConeVertices(mesh, originR, zLo, zHi) {
+  const v = mesh.verts;
+  let moved = 0;
+  for (let i = 0; i < v.length; i += 3) {
+    const z = v[i + 2];
+    if (z < zLo - 1e-4 || z > zHi + 1e-4) continue;
+    const r = Math.hypot(v[i], v[i + 1]);
+    if (r < SCREW_CHANNEL_R) continue;
+    const target = originR + TAPER_SLOPE * z;
+    if (Math.abs(r - target) > CONE_SNAP_TOL_MM) continue;
+    const s = target / r;
+    v[i] *= s;
+    v[i + 1] *= s;
+    moved += 1;
+  }
+  if (moved) mesh.invalidate();
+  return moved;
+}
+
+/**
+ * 짧은 11° 원뿔을 스펙 끝까지 연장하고, 브랜드 원점 직경이 되는 높이를 Z=0으로 둔다.
+ * 원뿔이 이미 스펙이면 메시를 바꾸지 않는다.
+ */
+export function ensureConnectionTaperSpec(mesh, options = {}) {
+  const log = options.log || (() => {});
+  const geo = resolveGeometry(options);
+  if (!geo.originDiameter || !geo.taperHeightMm) {
+    log("[connection-taper] 원점 스펙 없음. 짧은 원뿔은 연장하지 않습니다.");
+    return { applied: false, reason: "no-spec" };
+  }
+  const cone = measureExistingCone(mesh);
+  if (!cone) {
+    log("[connection-taper] 11° 원뿔을 찾지 못해 원점 재정렬을 건너뜁니다.");
+    return { applied: false, reason: "no-cone" };
+  }
+  const originR = geo.originDiameter / 2;
+  const zOrigin = (originR - cone.r0) / TAPER_SLOPE;
+  if (!Number.isFinite(zOrigin) || Math.abs(zOrigin) > Z_ORIGIN_MAX_MM) {
+    log(`[connection-taper] 원점 높이 ${zOrigin} 가 범위를 넘습니다.`);
+    return { applied: false, reason: "origin-out-of-range" };
+  }
+  const topAfter = cone.measuredTopZ - zOrigin;
+  const needsShift = Math.abs(zOrigin) > ORIGIN_SHIFT_TOL_MM;
+  const needsExtend = topAfter < geo.taperHeightMm - CONE_EXTEND_TOL_MM;
+  if (!needsShift && !needsExtend) {
+    log("[connection-taper] 원점·11° 길이가 스펙과 같습니다.");
+    return { applied: false, reason: "already-spec" };
+  }
+
+  const snapshot = mesh.toTriangleSoup();
+  try {
+    if (needsShift) mesh.translate(0, 0, -zOrigin);
+    if (needsExtend) {
+      const zLo = Math.min(topAfter - 0.01, geo.taperHeightMm - 0.02);
+      const zHi = geo.taperHeightMm;
+      const channel = channelRadius(mesh, Math.min(-0.4, zLo), Math.max(0.6, zHi));
+      const rSplit =
+        channel && channel < originR - 0.2 ? (channel + originR) / 2 : Math.max(SCREW_CHANNEL_R, originR * 0.72);
+      const ok = replaceOuterBandWithCone(
+        mesh,
+        zLo,
+        zHi,
+        (z) => originR + TAPER_SLOPE * z,
+        rSplit,
+      );
+      if (!ok) throw new Error("extend-failed");
+    }
+    snapConeVertices(mesh, originR, cone.bottomZ - zOrigin, geo.taperHeightMm);
+  } catch (error) {
+    replaceMesh(mesh, snapshot);
+    log(`[connection-taper] 원점 재정렬 실패(${error?.message || error}). 원본 형상을 유지합니다.`);
+    return { applied: false, reason: "build-failed" };
+  }
+
+  log(
+    `[connection-taper] 원점 직경 ${geo.originDiameter.toFixed(3)}mm` +
+      `${needsShift ? ` Z${(-zOrigin).toFixed(3)}` : ""}` +
+      `${needsExtend ? ` · 11°를 z=${geo.taperHeightMm.toFixed(2)}(Ø${(2 * (originR + TAPER_SLOPE * geo.taperHeightMm)).toFixed(3)})까지 연장` : ""}`,
+  );
+  return {
+    applied: true,
+    reason: needsExtend ? "extended" : "origin-shifted",
+    zShift: needsShift ? -zOrigin : 0,
+    originDiameter: geo.originDiameter,
+    taperHeightMm: geo.taperHeightMm,
+    measuredOriginDiameter: 2 * cone.r0,
+    specKey: geo.specKey,
+  };
+}
+
+/** 긴 헥스에 원뿔을 붙인 뒤, 짧은 원뿔은 스펙 원점·끝까지 맞춘다. */
+export function applyConnectionTaper(mesh, options = {}) {
+  const added = addMissingConnectionTaper(mesh, options);
+  const ensured = ensureConnectionTaperSpec(mesh, options);
+  const zShift = (added.zShift || 0) + (ensured.zShift || 0);
+  return {
+    applied: Boolean(added.applied || ensured.applied),
+    reason: ensured.applied ? ensured.reason : added.reason,
+    zShift: zShift || undefined,
+    added,
+    ensured,
+    specKey: ensured.specKey || added.specKey || null,
   };
 }

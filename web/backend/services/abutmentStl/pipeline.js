@@ -4,11 +4,11 @@
 // - web/backend/services/abutmentStl/pipeline.worker.js
 //
 // Rhino 없이 1-stl → 2-filled를 만든다. 순서는 process_abutment_stl.main과 같다:
-// import → align → 11° 커넥션 추가 → finishline → 스크류홀 패치 → 직경 → fill_steps → export → 메타.
+// import → align → 11° 커넥션 추가·짧은 원뿔 연장·원점 재정렬 → finishline → 스크류홀 패치 → 직경 → fill_steps → export → 메타.
 // preflight는 필레 검사만 한다. 마진 코너 정점은 옮기지 않는다.
 // 커프·포스트 다듬기는 제조사 준비에서만 한다. 이미 보정된 STL(surfacePrepared)은 정렬만 한다.
 import { Mesh, writeBinaryStl, parseStl, identity, multiply, translation } from "./meshCore.js";
-import { addMissingConnectionTaper } from "./connectionTaperFill.js";
+import { applyConnectionTaper } from "./connectionTaperFill.js";
 import { alignMeshToOrigin, ALIGN_MODULE_VERSION, JS_ALIGN_PORT_VERSION } from "./align.js";
 import { detectFinishLine, finishlineZExtrema, sanitizeFinishlinePoints } from "./finishline.js";
 import { buildScrewholePatch, SCREWHOLE_PARAMS } from "./fillScrewholes.js";
@@ -24,7 +24,7 @@ import { runCuffBlendJob } from "./cuffBlendJob.js";
 import { resolveCuffConnectionSpec } from "./cuffConnectionSpecs.js";
 import { POST_SMOOTH_PATCH_ATTRIBUTE } from "./postSmooth.js";
 
-export const ABUTMENT_STL_JS_VERSION = `abutment-stl-js-1+align-${ALIGN_MODULE_VERSION}+${JS_ALIGN_PORT_VERSION}+conn-taper-1`;
+export const ABUTMENT_STL_JS_VERSION = `abutment-stl-js-1+align-${ALIGN_MODULE_VERSION}+${JS_ALIGN_PORT_VERSION}+conn-taper-2`;
 
 /**
  * align이 mesh.transform으로 쌓는 행렬. aligned = M * original.
@@ -215,7 +215,7 @@ function prepareSharpMeshLikeManufacturer({ mesh, finishLine, alignMatrix, impla
   let matrix = alignMatrix;
   let fl = finishLine;
   try {
-    const connectionTaper = addMissingConnectionTaper(mesh, { implantProfile, connection, log });
+    const connectionTaper = applyConnectionTaper(mesh, { implantProfile, connection, log });
     if (connectionTaper?.applied && connectionTaper.zShift && fl?.points?.length) {
       const dz = connectionTaper.zShift;
       matrix = multiply(translation(0, 0, dz), matrix);
@@ -397,7 +397,7 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
   if (!options.preflight && !options.correctDesign && !options.surfacePrepared) {
     t0 = performance.now();
     try {
-      connectionTaper = addMissingConnectionTaper(mesh, {
+      connectionTaper = applyConnectionTaper(mesh, {
         implantProfile,
         connection: options.connection,
         log,

@@ -2,7 +2,11 @@
 // - web/backend/services/abutmentStl/connectionTaperFill.js
 import { describe, expect, it } from "@jest/globals";
 import { Mesh, meshZSection, writeBinaryStl } from "../../services/abutmentStl/meshCore.js";
-import { addMissingConnectionTaper } from "../../services/abutmentStl/connectionTaperFill.js";
+import {
+  addMissingConnectionTaper,
+  applyConnectionTaper,
+  ensureConnectionTaperSpec,
+} from "../../services/abutmentStl/connectionTaperFill.js";
 import { TAPER_SLOPE } from "../../services/abutmentStl/cuffConnectionSpecs.js";
 import { runAbutmentStlPipeline } from "../../services/abutmentStl/pipeline.js";
 
@@ -67,6 +71,21 @@ function longHexSoup() {
     [-0.5, 2.2],
     [1.6, 2.8],
     [6, 3.2],
+  ]);
+}
+
+/** 11°가 원점 직경 3.35에 못 미치고 끝난 어벗. */
+function shortConeSoup() {
+  const short = 3.292 / 2;
+  const coneAt = (z) => short + TAPER_SLOPE * z;
+  return solidOf([
+    [-2.4, hexRadius],
+    [-1.192, hexRadius],
+    [-1.192, coneAt(-1.192)],
+    [0, short],
+    [0.02, 2.2],
+    [3, 3.2],
+    [7, 3.2],
   ]);
 }
 
@@ -212,6 +231,31 @@ describe("connectionTaperFill", () => {
     const atOrigin = outerMetrics(mesh, 0);
     expect(atOrigin.rMean * 2).toBeCloseTo(3.35, 2);
     expect(atOrigin.hexRatio).toBeLessThan(1.04);
+  });
+
+  it("짧은 11° 원뿔을 스펙 끝까지 연장하고 원점 직경을 Z=0에 둔다", () => {
+    const mesh = Mesh.fromTriangleSoup(shortConeSoup());
+    const before = outerMetrics(mesh, 0);
+    expect(before.rMean * 2).toBeCloseTo(3.292, 2);
+    const result = ensureConnectionTaperSpec(mesh, { implantProfile: PROFILE });
+    expect(result.applied).toBe(true);
+    expect(result.reason).toBe("extended");
+    const atOrigin = outerMetrics(mesh, 0);
+    expect(atOrigin.rMean * 2).toBeCloseTo(3.35, 2);
+    expect(atOrigin.hexRatio).toBeLessThan(1.04);
+    const atTop = outerMetrics(mesh, 0.2);
+    expect(atTop.rMean * 2).toBeCloseTo(3.35 + 2 * TAPER_SLOPE * 0.2, 2);
+    expect(edgeUse(mesh)).toEqual({ naked: 0, nonManifold: 0 });
+  });
+
+  it("스펙 원뿔이 이미 있으면 원점을 다시 옮기지 않는다", () => {
+    const mesh = Mesh.fromTriangleSoup(designedSoup());
+    const faces = mesh.faceCount;
+    const result = applyConnectionTaper(mesh, { implantProfile: PROFILE });
+    expect(result.applied).toBe(false);
+    expect(result.ensured.reason).toBe("already-spec");
+    expect(mesh.faceCount).toBe(faces);
+    expect(outerMetrics(mesh, 0).rMean * 2).toBeCloseTo(3.35, 2);
   });
 
   it("11° 원뿔이 이미 있으면 메시를 바꾸지 않는다", () => {
