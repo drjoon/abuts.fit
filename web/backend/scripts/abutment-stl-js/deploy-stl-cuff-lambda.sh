@@ -3,6 +3,8 @@
 # 제한 시간 60초. 웹은 CUFF_BLEND_TIMEOUT_MS+10초까지 기다리고, 호출 자체가 실패하면 EBS 워커로 돌린다.
 #
 #   cd web/backend && ./scripts/abutment-stl-js/deploy-stl-cuff-lambda.sh [test|prod]
+#   web/eb.sh 가 백엔드 배포 직전에 --with-eb 로 같은 스크립트를 부른다.
+#   --with-eb: prod 확인은 eb.sh에 맡긴다. 함수 이름이 EB에 이미 같으면 setenv(환경 재시작)는 어느 경로든 하지 않는다.
 #
 # AWS 프로필: web/.elasticbeanstalk/config.yml global.profile (기본 abuts.fit)
 set -euo pipefail
@@ -14,6 +16,10 @@ DIST_DIR="$BACKEND_DIR/dist/stl-cuff-lambda"
 ZIP_PATH="$BACKEND_DIR/dist/stl-cuff-lambda.zip"
 
 ENV_MODE="${1:-test}"
+WITH_EB=0
+if [[ "${2:-}" == "--with-eb" ]]; then
+  WITH_EB=1
+fi
 FUNCTION_NAME="${ABUTMENT_STL_CUFF_LAMBDA_NAME:-abuts-stl-cuff}"
 ROLE_NAME="${ABUTMENT_STL_CUFF_LAMBDA_ROLE:-abuts-stl-cuff-lambda}"
 MEMORY_MB=2048
@@ -44,7 +50,7 @@ info() { echo -e "\033[1;34m[INFO]\033[0m $1"; }
 warn() { echo -e "\033[1;33m[WARN]\033[0m $1"; }
 error() { echo -e "\033[1;31m[ERROR]\033[0m $1" >&2; exit 1; }
 
-if [[ "$ENV_MODE" == "prod" ]]; then
+if [[ "$ENV_MODE" == "prod" && "$WITH_EB" != "1" ]]; then
   warn "prod EB env에 ABUTMENT_STL_CUFF_LAMBDA를 설정합니다."
   read -r -p "계속? (y/N): " confirm
   [[ "$confirm" == "y" || "$confirm" == "Y" ]] || exit 0
@@ -207,7 +213,23 @@ fi
 if [[ -n "$EB_ENV" ]]; then
   EB_CMD="/Users/joonholee/miniforge3/bin/eb"
   [[ -x "$EB_CMD" ]] || EB_CMD="$(command -v eb || true)"
+  current_lambda=""
   if [[ -n "$EB_CMD" ]]; then
+    current_lambda="$(
+      (cd "$WEB_DIR" && "$EB_CMD" printenv "$EB_ENV" 2>/dev/null || true) | awk -F'=' '
+        {
+          key=$1
+          val=$2
+          gsub(/^[ \t]+|[ \t]+$/, "", key)
+          gsub(/^[ \t]+|[ \t]+$/, "", val)
+          if (key == "ABUTMENT_STL_CUFF_LAMBDA") { print val; exit }
+        }
+      '
+    )"
+  fi
+  if [[ "$current_lambda" == "$FUNCTION_NAME" ]]; then
+    info "EB 환경변수 유지: ABUTMENT_STL_CUFF_LAMBDA=$FUNCTION_NAME ($EB_ENV)"
+  elif [[ -n "$EB_CMD" ]]; then
     info "EB setenv: ABUTMENT_STL_CUFF_LAMBDA=$FUNCTION_NAME ($EB_ENV)"
     (cd "$WEB_DIR" && "$EB_CMD" setenv "ABUTMENT_STL_CUFF_LAMBDA=$FUNCTION_NAME" --environment "$EB_ENV")
   fi

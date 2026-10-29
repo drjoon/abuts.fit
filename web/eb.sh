@@ -377,6 +377,11 @@ else
   fi
 fi
 
+# 커프 보정은 EBS가 아니라 람다 zip을 실행한다. 웹 배포와 같이 코드를 갱신한다.
+# node_modules 이동 전에 빌드해야 esbuild를 쓸 수 있다. 함수 이름이 이미 같으면 setenv는 하지 않는다.
+info "커프 보정 람다 배포 ($ENV_MODE)"
+"$BACKEND_DIR/scripts/abutment-stl-js/deploy-stl-cuff-lambda.sh" "$ENV_MODE" --with-eb || error "커프 보정 람다 배포 실패"
+
 # 1. 앱 배포 (predeploy 훅에서 npm install 실행됨)
 ensure_immutable_deploy_options "$EB_ENV_NAME"
 
