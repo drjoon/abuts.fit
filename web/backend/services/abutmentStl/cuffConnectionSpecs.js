@@ -11,7 +11,9 @@
 // - 원점 = 브랜드별 원점 직경(originDiameter, 자체검사 diameterRef)이 되는 높이. 정렬 단계가 그 높이를 Z=0으로 둔다.
 // - 모든 브랜드 테이퍼는 11°. 원점에서 taperHeightMm 위까지가 스펙 원뿔 끝(Z_a)이다.
 // - STL·PRC가 같이 깎는 11° 면은 Z_a가 아니라 prcConeHeightMm.
-//   Regular RH는 원점 직경(Z=0) 직상방. 덴티움 0.33, 덴티스·메가젠 0.4, 그 외 PRC_CONE_TOP_MM(0.3). 미니는 Z_a+0.1.
+//   Regular RH는 원점 직경(Z=0) 직상방. 덴티움 0.33, 덴티스·메가젠 0.4, 그 외 PRC_CONE_TOP_MM(0.3).
+//   미니·내로우 11° 면은 아직 Regular처럼 안 맞췄다. 스펙이 있으면 임시로 Z_a+0.1.
+//   샘플이 spec-pending이면 준비 카드에 「PRC와 STL 11° 콘 설정을 다시 하세요」가 뜬다.
 //   짧은 원뿔은 connectionTaperFill이 이 높이까지 잇고, 그보다 긴 11°는 그 면에서 잘라 낸다.
 //   커프 이음은 그 면에서 2°로 출발한다.
 // - 형상 검증에 쓰는 테이퍼 끝 직경 = originDiameter + 2·tan(11°)·taperHeightMm (스펙 Z_a).
@@ -21,7 +23,8 @@
 // 1) 여기 CUFF_CONNECTION_SPECS에 originDiameter·taperHeightMm을 등록한다(샘플 규칙: cuff-connection-spec.mdc).
 // 2) Regular RH의 PRC 11° 상단은 브랜드 원점 직경 기준.
 //    덴티움 0.33, 덴티스 SQ·One-Q와 메가젠 AnyOne 0.4, 그 외 0.3.
-// 3) 면을 다른 높이로 쓰려면 PRC_CONE_TOP_MM과 AcroDent/2_Connection Regular RH Finish 면을 같이 바꾼다.
+// 3) 면을 다른 높이로 쓰려면 PRC_CONE_TOP_MM(또는 브랜드 prcConeTopMm)과 AcroDent/2_Connection Finish 면을 같이 바꾼다.
+// 4) 미니·내로우는 샘플이 모일 때까지 3)을 보류한다. spec-pending 카드에 콘 재설정 안내가 뜬다.
 //
 // [PRC 변경]
 // - 헥스·컷오프·페이스 드릴 Z를 STL 원점과 따로 올리지 말 것. 2026-10-29 0.203mm 단축은 스크류홀·헥스가 어긋나 되돌렸다.
@@ -32,6 +35,7 @@
 // [스펙 미등록 — 샘플 올라오면 여기 채운다]
 // 아래 키로 들어온 의뢰는 cuffBlend.status="spec-pending"이 되고,
 // 제조사 준비 탭 의뢰카드에 빨간 테두리 +「개발팀 확인 필요」가 뜬다.
+// 미니·내로우이면 「PRC와 STL 11° 콘 설정을 다시 하세요」를 같이 띄운다.
 // 개발팀이 해당 filled STL의 테이퍼 끝 높이를 재서 CUFF_CONNECTION_SPECS에 추가하고, 이 목록에서 뺀다.
 // 측정: scripts/abutment-stl-js/measure-cuff-connection.js --pending (턱 있는 샘플 3건 이상이 ±0.03mm로 모일 때만 등록).
 // PRC(AcroDent/2_Connection)는 있는데 테이퍼 값이 없는 커넥션 (2026-10-20 Test DB 기준):
@@ -50,7 +54,7 @@ export const TAPER_SLOPE = Math.tan((TAPER_ANGLE_DEG * Math.PI) / 180);
  */
 export const PRC_CONE_TOP_MM = 0.3;
 
-/** prcConeTopMm이 없는 커넥션(미니)의 PRC 면. Z_a + 이 값. */
+/** prcConeTopMm이 없는 커넥션(미니·내로우)의 임시 PRC 면. Z_a + 이 값. Regular처럼 브랜드별로 맞추기 전. */
 export const PRC_FACE_ABOVE_ZA_MM = 0.1;
 
 /** 원점 → PRC 11° 면. Regular RH는 덴티움 0.33, 덴티스·메가젠 0.4, 그 외 0.3mm. */

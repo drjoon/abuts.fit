@@ -9,6 +9,7 @@
 // - 2026-10-10: JS 실패는 준비 카드 «JS 실패» 뱃지. 오버레이는 engine=rhino일 때만 «Rhino 작업중».
 // - 2026-09-17: 공정 탭과 중복되는 단계 뱃지 숨김. 세척·패킹(이후) NC 뱃지 숨김(가공 이후 당연).
 // - 2026-09-17: 의뢰카드 썸네일을 absolute→flex 본문으로 — 좌우 px-3 대칭·환자폭↑.
+// - 2026-10-30: 미니·내로우 spec-pending은 PRC·STL 11° 콘 재설정 안내를 같이 띄운다.
 // - 2026-09-28: 커프 이음부 보정 — 안전검사 실패「커프 확인」뱃지, 커넥션 스펙 미등록은 빨간 테두리+개발팀 확인 문구(준비·가공 전).
 // - 2026-09-17: 의뢰카드 CardContent p-6 잔존 제거(p-0+px-3) — 좌여백=썸네일 right-3.
 // - 2026-09-17: 세척·패킹에도 FL 썸네일. 스크류 뱃지 nowrap·레일 폭 가변으로 1줄 유지.
@@ -101,6 +102,7 @@ import {
   isCuffBlendManualReview,
   isCuffProposalPending,
   isCuffSpecPending,
+  isMiniNarrowCuffFamily,
   resolveCuffBlend,
 } from "../utils/cuffBlendStatus";
 import { RequestInfoSummary } from "./RequestInfoSummary";
@@ -1400,6 +1402,16 @@ export const WorksheetCardGrid = ({
                       <br />
                       개발팀이 스펙을 등록하고 코드를 리팩터링해야 합니다.
                     </div>
+                    {isMiniNarrowCuffFamily({
+                      specKey: cuffBlend?.specKey,
+                      implantFamily: caseInfos.implantFamily,
+                    }) && (
+                      <div className="font-bold">
+                        미니·내로우입니다.
+                        <br />
+                        PRC와 STL 11° 콘 설정을 다시 하세요.
+                      </div>
+                    )}
                     {cuffBlend?.specSuggestion?.status === "ready" && (
                       <div className="font-semibold">
                         샘플 {cuffBlend.specSuggestion.sampleCount}건 분석 완료 — 원뿔 끝 높이 {cuffBlend.specSuggestion.taperHeightMm}mm 제안

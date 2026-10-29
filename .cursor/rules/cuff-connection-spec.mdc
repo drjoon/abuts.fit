@@ -30,7 +30,8 @@ alwaysApply: false
 ## 임플란트 종류 추가 · PRC 변경 (같은 단차가 나지 않게)
 
 - **STL 11° 목표 높이 = `prcConeHeightMm`**. Regular RH는 원점 직경(Z=0) 위 `PRC_CONE_TOP_MM`(0.3). 스펙 Z_a에서 멈추면 커넥션 PRC Finish 면과 단이 난다. `ensureConnectionTaperSpec`과 BlendCuff가 이 값을 같이 쓴다.
-- Regular RH 11° 면은 원점 위 덴티움 0.33, 덴티스 SQ·One-Q·메가젠 AnyOne 0.4, 그 외 0.3(`prcConeTopMm`)이다. 면을 바꾸면 `AcroDent/2_Connection` Regular RH Finish 11° 상단을 같이 바꾼다. 미니는 `taperHeightMm + PRC_FACE_ABOVE_ZA_MM`.
+- Regular RH 11° 면은 원점 위 덴티움 0.33, 덴티스 SQ·One-Q·메가젠 AnyOne 0.4, 그 외 0.3(`prcConeTopMm`)이다. 면을 바꾸면 `AcroDent/2_Connection` Regular RH Finish 11° 상단을 같이 바꾼다.
+- **미니·내로우 11° 면은 아직 Regular처럼 안 맞췄다.** 스펙이 있으면 임시로 `taperHeightMm + PRC_FACE_ABOVE_ZA_MM`(Z_a+0.1). 샘플이 들어와 spec-pending으로 처리할 때 준비 카드에 「PRC와 STL 11° 콘 설정을 다시 하세요」가 뜬다. 그때 `prcConeTopMm`과 `AcroDent/2_Connection` Finish 11° 상단을 Regular와 같이 브랜드별로 맞춘다. 대상: DIO UF Narrow, MEGAGEN AnyOne Mini·MiNi Internal, NEOBIOTECH IS Small Narrow, DENTIS SQ·One-Q Mini·Narrow. TS3 Mini는 스펙만 있고 면도 Z_a+0.1이다.
 - 가공 PRC는 `bg/pc1/esprit-addin/AcroDent/`만 고친다. `.archive/cam/Acrodent/타사 커스텀 nc 참고용`은 참고 자료라 수정하지 않는다.
 - 헥스·컷오프·페이스 드릴 Z를 STL 원점과 따로 옮기지 않는다. 2026-10-29에 넣었던 0.203mm 단축은 스크류홀·헥스가 어긋나 **되돌렸다**(커밋 `89f47c532`).
 - git `bg/pc1/esprit-addin/AcroDent/` PRC는 운영 PC 애드인 `AcroDent` 폴더에 **복사**해야 반영된다. Esprit은 저장소를 읽지 않는다.
@@ -41,7 +42,8 @@ alwaysApply: false
 1. `cd web/backend && ENV_FILE=local.env NODE_ENV=test node scripts/abutment-stl-js/measure-cuff-connection.js --pending`
 2. 같은 키에서 턱 있는 샘플(`stepAboveTopMm>0.015`) 3건 이상의 `taperTopZ`가 ±0.03mm로 모이면 `CUFF_CONNECTION_SPECS`에 추가하고, 파일 상단 「스펙 미등록」 목록에서 뺀다. 혼재하면 더 모은다. outlier(기공소가 원뿔을 더 길게·짧게 그린 파일)를 뺀 다수 군집의 값을 쓴다(2026-10-20 결정, TS3 Mini 0.74처럼). 제조사 도면 등 더 확실한 정보가 오면 그 값으로 바꾼다.
    - 자동 분석: `jobs/cuffSpecSuggestWorker.js`가 스펙 미등록 샘플이 제조사 준비에 새로 들어올 때마다(주기 실행 없음, 15초 지연·합치기) 미등록 specKey 전체를 확인한다. specKey별로 서로 다른 filled STL을 센다. 5건 이상이면 원뿔 끝 높이를 재서 다수 군집(±0.03mm, 과반·3건 이상) 중앙값을 `caseInfos.cuffBlend.specSuggestion`에 기록하고, 준비 카드 빨간 박스에 「샘플 N건 분석 완료 — 원뿔 끝 높이 X mm 제안」(또는 수집 중 k/5·한 값으로 안 모임)을 띄운다. 스펙표는 자동으로 고치지 않는다. 개발팀이 등록한다. 끄기: `CUFF_SPEC_SUGGEST_DISABLED=true`.
-3. 해당 의뢰는 filled STL 재생성(또는 Re)으로 다시 보정된다.
+3. 미니·내로우이면 카드에 「PRC와 STL 11° 콘 설정을 다시 하세요」가 같이 뜬다. Regular 0.3~0.4가 아니다. `prcConeTopMm`과 PRC Finish를 같이 맞춘 뒤에만 스펙표에서 뺀다.
+4. 해당 의뢰는 filled STL 재생성(또는 Re)으로 다시 보정된다.
 
 ## Do / Don't
 

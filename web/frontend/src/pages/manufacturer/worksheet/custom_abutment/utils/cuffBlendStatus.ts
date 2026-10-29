@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/services/abutmentStl/cuffBlend.service.js (caseInfos.cuffBlend 기록)
 // - web/backend/services/abutmentStl/cuffConnectionSpecs.js (spec-pending 시 개발팀이 채울 스펙표)
+// - .cursor/rules/cuff-connection-spec.mdc (미니·내로우 11° 면은 샘플 후 PRC·STL 콘을 다시 맞춤)
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 
@@ -46,4 +47,19 @@ export function isCuffProposalPending(caseInfos: unknown): boolean {
 /** 커넥션 스펙 미등록·형상 불일치 — 개발팀이 스펙표를 갱신해야 한다. */
 export function isCuffSpecPending(rec: CuffBlendRecord | null): boolean {
   return rec?.status === "spec-pending";
+}
+
+const tokenFamily = (value?: string | null) =>
+  String(value ?? "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+
+/** 미니·내로우·스몰내로우. Regular RH 0.3~0.4와 달리 11° 면이 아직 브랜드별로 안 맞춰졌다. */
+export function isMiniNarrowCuffFamily(input: {
+  specKey?: string | null;
+  implantFamily?: string | null;
+}): boolean {
+  const fromKey = tokenFamily(String(input.specKey || "").split("|")[2]);
+  const family = fromKey || tokenFamily(input.implantFamily);
+  return family === "MINI" || family === "SMALL" || family === "NARROW" || family === "SMALLNARROW" || family === "SN";
 }

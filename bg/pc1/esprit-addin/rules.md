@@ -406,7 +406,8 @@
 - **경로**: 고치는 파일은 `bg/pc1/esprit-addin/AcroDent/` 만. `.archive/cam/Acrodent/타사 커스텀 nc 참고용` 은 참고 자료라 수정하지 않는다.
 - **복사**: Esprit은 운영 PC 애드인 `AcroDent`만 읽는다. git을 바꿔도 이 폴더를 운영 PC에 복사하기 전에는 NC에 안 들어간다.
 - **금지**: 헥스·컷오프·페이스 드릴 Z를 STL 원점과 따로 올리기. 전체 길이를 줄이려면 원점·스크류홀·헥스·드릴을 같이 검증한다. 2026-10-29 0.203mm 단축은 스크류홀 끝이 어긋나 되돌렸다.
-- **임플란트 추가**: `web/backend/services/abutmentStl/cuffConnectionSpecs.js`에 `originDiameter`·`taperHeightMm`·`prcConeTopMm: 0.3`을 등록하고, 이 PRC의 11° 상단이 원점 직경 위 0.3mm인지 확인한다.
+- **임플란트 추가**: `web/backend/services/abutmentStl/cuffConnectionSpecs.js`에 `originDiameter`·`taperHeightMm`·`prcConeTopMm`을 등록하고, 이 PRC의 11° 상단이 그 높이와 같은지 확인한다. Regular RH는 덴티움 0.33, 덴티스·메가젠 0.4, 그 외 0.3.
+- **미니·내로우**: 11° 면은 아직 Regular처럼 안 맞췄다. 스펙이 있으면 임시로 Z_a+0.1. 샘플이 들어와 spec-pending으로 처리할 때 준비 카드에 「PRC와 STL 11° 콘 설정을 다시 하세요」가 뜬다. 그때 Finish 상단과 STL `prcConeTopMm`을 같이 맞춘다.
 
 ## 성능 측정 (PERF)
 
