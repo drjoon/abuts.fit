@@ -10,7 +10,7 @@
 // - redesign(Re): 70°보다 누운(접시형) 커프를 피니시라인-0.2mm ~ Z_a 사이 G2 곡면으로 교체(의뢰자 제안·제조사 Re 버튼)
 // 제조사 커넥션(Z_a 아래)과 피니시라인 아래 0.2mm 위쪽은 정점 하나도 옮기지 않는다.
 // 11°는 스펙 Z_a가 아니라 PRC 면(prcConeHeightMm, Regular RH는 덴티움 0.33·덴티스·메가젠 0.4·그 외 0.3)까지다. 메시가 이미 그 높이면 이음은 2°로 출발하고,
-// 아직 짧으면 프로파일이 11°를 그 면까지 채운다. 원본 커프 옆모습은 높이마다 둘레를 고른 뒤, 아래는 원형 평균 퍼짐만 쓰고 타원은 위쪽에서 넣는다.
+// 아직 짧으면 프로파일이 11°를 그 면까지 채운다. 원본 커프 옆모습은 높이마다 둘레를 고른 뒤 완만한 S커브(최대 65° 이내)로 맞춘다.
 // 임플란트 추가·PRC 면 높이: cuffConnectionSpecs.js 상단 주석.
 import { parseStl, writeBinaryStl } from "../../utils/screwHoleFill.js";
 import {
@@ -767,15 +767,6 @@ const EMERGENCE_BONE_MM = 1.35;
 const EMERGENCE_FLARE_MAX_SLOPE = Math.tan((75 * Math.PI) / 180);
 /** 11° 연장선에 섞을 원본 커프 옆모습 표본 수(원뿔 끝~이음 위 끝 등간격). */
 const EMERGENCE_ORIG_SAMPLES = 48;
-/**
- * 에머전스에 넣는 원본 반경은 높이마다 둘레 4차(타원)까지 남기고 8차부터 지운다.
- * 아래 ORIG_OVAL_FADE_START 비율은 둘레 평균(원형 퍼짐)만 쓰고, 그 위에서 타원을 5차식으로 넣는다.
- * 타원·3Shape 결이 원뿔 바로 위부터 세로선으로 남는 것을 막는다. 마진 이음은 기존 32/64차를 쓴다.
- */
-const ORIG_GRID_PASS_HARMONICS = 4;
-const ORIG_GRID_STOP_HARMONICS = 8;
-const ORIG_GRID_Z_STEP_MM = 0.05;
-const ORIG_OVAL_FADE_START = 0.45;
 const LONG_BAND_MM = 2;
 /** 띠 면 평균: 반폭(약 ±30°)과 위쪽 보존 지수(t^p). */
 const BAND_SMOOTH_HALF_COLUMNS = columnsForDeg(30);
@@ -942,23 +933,6 @@ export function verticalEmergenceProfile(ra, coneSlope, rTop, h, endSlope = null
   };
 }
 
-/** 3×3 연립방정식(부분 피벗 가우스 소거). 특이하면 null. */
-function solve3(A, B) {
-  const m = A.map((row, i) => [...row, B[i]]);
-  for (let c = 0; c < 3; c += 1) {
-    let p = c;
-    for (let r = c + 1; r < 3; r += 1) if (Math.abs(m[r][c]) > Math.abs(m[p][c])) p = r;
-    if (Math.abs(m[p][c]) < 1e-12) return null;
-    [m[c], m[p]] = [m[p], m[c]];
-    for (let r = 0; r < 3; r += 1) {
-      if (r === c) continue;
-      const f = m[r][c] / m[c][c];
-      for (let k = c; k < 4; k += 1) m[r][k] -= f * m[c][k];
-    }
-  }
-  return [m[0][3] / m[0][0], m[1][3] / m[1][1], m[2][3] / m[2][2]];
-}
-
 /**
  * 커넥션 PRC Finish 면은 원점 위 Z_a+이 값. SSOT는 cuffConnectionSpecs.PRC_FACE_ABOVE_ZA_MM.
  * 이음 프로파일의 11° 채움 길이와 같다. 면 높이를 바꾸면 스펙 상수·Connection PRC Finish·ensureConnectionTaperSpec을 같이 바꾼다.
@@ -1018,51 +992,6 @@ function originalProfileOf(orig) {
  * @param {ArrayLike<number>} values 열(0..2π 등간격) 값
  * @param {number} [outN] 돌려줄 등간격 열 수
  */
-/**
- * 원본 커프 광선 반경을 같은 높이에서 둘레 저역 통과한 뒤 보간한다.
- * 열마다 rayRadius를 그대로 쓰면 3Shape 다각형 현이 열마다 다른 4차 맞춤이 되어 세로 주름이 된다.
- */
-function buildSmoothedOrigRadiusAt(probe, thetas, zLo, zHi) {
-  const n = thetas.length;
-  const zs = [];
-  const rows = [];
-  if (!(zHi > zLo)) return () => NaN;
-  for (let z = zLo; z <= zHi + 1e-9; z += ORIG_GRID_Z_STEP_MM) {
-    const raw = thetas.map((theta) => probe.rayRadius(theta, z));
-    const filled = fillMissingCircular(raw);
-    const lp = filled
-      ? angularLowPass(filled, n, ORIG_GRID_PASS_HARMONICS, ORIG_GRID_STOP_HARMONICS)
-      : null;
-    const row = lp || raw;
-    const finite = row.filter(Number.isFinite);
-    const mean = finite.length ? finite.reduce((s, v) => s + v, 0) / finite.length : NaN;
-    const t = (z - zLo) / Math.max(zHi - zLo, 1e-9);
-    const u = (t - ORIG_OVAL_FADE_START) / (1 - ORIG_OVAL_FADE_START);
-    const w =
-      u <= 0 ? 0 : u >= 1 ? 1 : u * u * u * (10 - 15 * u + 6 * u * u);
-    zs.push(z);
-    rows.push(
-      Number.isFinite(mean) && w < 1 - 1e-9
-        ? row.map((r) => (Number.isFinite(r) ? mean + w * (r - mean) : r))
-        : row,
-    );
-  }
-  return (j, z) => {
-    if (!(j >= 0 && j < n)) return NaN;
-    if (z <= zs[0]) return rows[0][j];
-    const last = zs.length - 1;
-    if (z >= zs[last]) return rows[last][j];
-    let i = 0;
-    while (i + 1 < last && zs[i + 1] < z) i += 1;
-    const span = zs[i + 1] - zs[i];
-    const u = span > 1e-12 ? (z - zs[i]) / span : 0;
-    const a = rows[i][j];
-    const b = rows[i + 1][j];
-    if (!Number.isFinite(a) || !Number.isFinite(b)) return Number.isFinite(a) ? a : b;
-    return a + u * (b - a);
-  };
-}
-
 function angularLowPass(values, outN = values?.length, pass = ANGULAR_PASS_HARMONICS, stop = ANGULAR_STOP_HARMONICS) {
   if (!values) return null;
   for (let i = 0; i < values.length; i += 1) if (!Number.isFinite(values[i])) return null;
@@ -2464,7 +2393,7 @@ function seamRows({
       const w = ws[j];
       const wCrease = wsRaw[j] * (1 - (seamBlendScale ? seamBlendScale[j] : 1));
       const drTop = rawCreaseR && Number.isFinite(rawCreaseR[j]) ? (rawCreaseR[j] - radiusAt(j, 1)) * wCrease : 0;
-      const dzTop = rawHeights ? (rawHeights[j] - heights[j]) * wCrease : 0;
+      const dzTop = rawCreaseR && rawHeights ? (rawHeights[j] - heights[j]) * wCrease : 0;
       if (!vOrig || !(w > 0)) {
         rad[j] = (rOrig && w > 0 ? rc[j] * (1 - w) + rOrig[j] * w : rc[j]) + drTop;
         z[j] = zc[j] + dzTop;
@@ -2782,27 +2711,31 @@ function replaceBand(
   const rawTopLoop = loops[1];
   const topEdgeSub = new Map();
   const topLoop = [];
-  for (let i = 0; i < rawTopLoop.length; i += 1) {
-    const a = rawTopLoop[i];
-    const b = rawTopLoop[(i + 1) % rawTopLoop.length];
-    topLoop.push(a);
-    let da = Math.abs(angleOf(verts[b * 3], verts[b * 3 + 1]) - angleOf(verts[a * 3], verts[a * 3 + 1]));
-    if (da > Math.PI) da = TWO_PI - da;
-    const steps = Math.ceil(da / BOTTOM_EDGE_MAX_RAD);
-    if (steps <= 1) continue;
-    const mids = [];
-    for (let s = 1; s < steps; s += 1) {
-      const u = s / steps;
-      const idx = verts.length / 3;
-      verts.push(
-        verts[a * 3] + u * (verts[b * 3] - verts[a * 3]),
-        verts[a * 3 + 1] + u * (verts[b * 3 + 1] - verts[a * 3 + 1]),
-        verts[a * 3 + 2] + u * (verts[b * 3 + 2] - verts[a * 3 + 2]),
-      );
-      mids.push(idx);
-      topLoop.push(idx);
+  if (crease) {
+    topLoop.push(...rawTopLoop);
+  } else {
+    for (let i = 0; i < rawTopLoop.length; i += 1) {
+      const a = rawTopLoop[i];
+      const b = rawTopLoop[(i + 1) % rawTopLoop.length];
+      topLoop.push(a);
+      let da = Math.abs(angleOf(verts[b * 3], verts[b * 3 + 1]) - angleOf(verts[a * 3], verts[a * 3 + 1]));
+      if (da > Math.PI) da = TWO_PI - da;
+      const steps = Math.ceil(da / BOTTOM_EDGE_MAX_RAD);
+      if (steps <= 1) continue;
+      const mids = [];
+      for (let s = 1; s < steps; s += 1) {
+        const u = s / steps;
+        const idx = verts.length / 3;
+        verts.push(
+          verts[a * 3] + u * (verts[b * 3] - verts[a * 3]),
+          verts[a * 3 + 1] + u * (verts[b * 3 + 1] - verts[a * 3 + 1]),
+          verts[a * 3 + 2] + u * (verts[b * 3 + 2] - verts[a * 3 + 2]),
+        );
+        mids.push(idx);
+        topLoop.push(idx);
+      }
+      topEdgeSub.set(`${a}_${b}`, [a, ...mids, b]);
     }
-    topEdgeSub.set(`${a}_${b}`, [a, ...mids, b]);
   }
   const top = angularRow(topLoop, verts);
   if (!bottom || !top) {
@@ -2818,7 +2751,9 @@ function replaceBand(
   // 위 끝 높이(마진 모서리 꼭짓점을 직선으로 이은 곡선)도 원본 열마다 꺾여 있다. 띠 행은 매끈한 높이를 따르되
   // 위 끝을 넘지 않는다. 이음 행(가장 위가 0.06mm 아래)이 있으면 HEIGHT_SMOOTH_OVERSHOOT_MM까지는 넘어도 된다.
   const overshoot = origProbe ? HEIGHT_SMOOTH_OVERSHOOT_MM : 0;
-  const heights = (angularLowPass(rawHeights) || rawHeights).map((h, j) => Math.min(h, rawHeights[j] + overshoot));
+  const heights = (
+    angularLowPass(rawHeights, STRIP_COLUMNS, PROFILE_INNER_PASS_HARMONICS, PROFILE_INNER_STOP_HARMONICS) || rawHeights
+  ).map((h, j) => Math.min(h, rawHeights[j] + overshoot));
   // 면이 쭈글하지 않도록, 아래쪽 행일수록 각도 방향으로 반경·높이를 평균한다.
   // 위쪽 행(피니시라인·원본 곡면과 만나는 곳)은 평균하지 않고 그대로 둔다.
   const smoothHeights = circularSmooth(heights, BAND_SMOOTH_HALF_COLUMNS);
@@ -3320,7 +3255,9 @@ export function blendCuffJunction(buffer, options = {}) {
       : tops.map((t, j) => t.r + Math.max(-SMOOTH_MAX_SHIFT_MM, Math.min(SMOOTH_MAX_SHIFT_MM, r1avg[j] - t.r)));
     const rawCreaseR = crease && offsetMm === 0 ? thetas.map((theta) => crease.rOf(theta)) : null;
     const smoothCreaseR =
-      rawCreaseR && rawCreaseR.every(Number.isFinite) ? angularLowPass(rawCreaseR, STRIP_COLUMNS) : null;
+      rawCreaseR && rawCreaseR.every(Number.isFinite)
+        ? angularLowPass(rawCreaseR, STRIP_COLUMNS, PROFILE_INNER_PASS_HARMONICS, PROFILE_INNER_STOP_HARMONICS)
+        : null;
     // 낮은 피니시라인(불완전 가공에 가까운 케이스)에서만: 마진 아래 원본 기울기가 가파른 곳(70° 초과 턱 등)은 원본 턱으로 섞지 않고 70° 이하 볼록 변형 곡선을 마진까지 바로 잇는다.
     const seamOrigScale = convexCuffDeform
       ? (() => {
@@ -3376,51 +3313,73 @@ export function blendCuffJunction(buffer, options = {}) {
       return smoothCreaseR[j] * w + Math.max(r, smoothCreaseR[j]) * (1 - w);
     });
     const blendedCols = new Uint8Array(thetas.length);
-    const origRadiusAt = buildSmoothedOrigRadiusAt(probe, thetas, zA, zTopMax);
-    // 원본 커프 옆모습(원뿔 끝~이음 위 끝)을 위 끝 반경·기울기를 고정한 4차식으로 맞춘다.
-    // 둘레를 먼저 고른 반경을 쓴다. 열마다 광선을 그대로 쓰면 3Shape 면 꺾임이 세로 주름으로 남는다.
+    const ext = coneExtendMm ?? CUFF_CONNECTION_CONE_EXTEND_MM;
+    const faceZ = zA + ext;
+    const rFace = ra + coneSlope * ext;
+    // 원본 커프 둘레 중앙값이 2° 출발선에서 0.05mm 이상 벌어지기 시작하는 높이(단일 스칼라).
+    // 열마다 따로 잡으면 열 경계에 볼록한 불룩함이 생기므로 둘레 중앙값 하나로 잡는다.
+    const cuffDepartZ = (() => {
+      let dep = faceZ;
+      for (let z = faceZ + 0.05; z <= flMin - 0.5; z += 0.05) {
+        const bins = Array.from(probe.bins(z, MEASURE_BINS))
+          .filter((r) => Number.isFinite(r) && r > rCut)
+          .sort((a, b) => a - b);
+        if (!bins.length) continue;
+        const rMed = bins[bins.length >> 1];
+        if (rMed <= rFace + CUFF_EMERGENCE_START_SLOPE * (z - faceZ) + 0.05) dep = z;
+        else break;
+      }
+      return dep;
+    })();
+    // 11° 원뿔 상단(PRC 면)에서 2°·곡률 0으로 출발해 커넥션 근처에서는 2°로 올라가 뼈에 걸리지 않게 하고,
+    // 그 위에서 볼록한 배나 꺾임 없는 단일 S커브로 마진 반경·기울기(65° 이내)에 닿는다.
     const origColumnOf = (j, hb, rTop, eSlope) => {
       const n = EMERGENCE_ORIG_SAMPLES;
-      const pts = [];
-      for (let i = 0; i <= n; i += 1) {
-        const z = zA + (i / n) * hb;
-        let r = origRadiusAt(j, z);
-        if (!Number.isFinite(r)) continue;
-        // PRC 면 위로 이어진 11°는 커프가 아니다. 그 반경을 목표로 두면 길었던 원뿔이 다시 그려진다.
-        const faceZ = zA + (coneExtendMm ?? 0);
-        const coneR = ra + coneSlope * (z - zA);
-        if (z > faceZ + 0.015 && Math.abs(r - coneR) <= 0.02) {
-          r = ra + coneSlope * (faceZ - zA) + CUFF_EMERGENCE_START_SLOPE * (z - faceZ);
-        }
-        pts.push([i / n, r]);
-      }
-      if (pts.length < n * 0.75) return null;
-      const sT = (Number.isFinite(eSlope) ? Math.max(0, eSlope) : (rTop - pts[0][1]) / hb) * hb;
-      // r(t) = rTop + sT·(t−1) + (t−1)²·(a + b·t + c·t²)
-      const A = [
-        [0, 0, 0],
-        [0, 0, 0],
-        [0, 0, 0],
-      ];
-      const B = [0, 0, 0];
-      for (const [t, r] of pts) {
-        const q = (t - 1) * (t - 1);
-        const basis = [q, q * t, q * t * t];
-        const y = r - rTop - sT * (t - 1);
-        for (let a = 0; a < 3; a += 1) {
-          B[a] += basis[a] * y;
-          for (let b = 0; b < 3; b += 1) A[a][b] += basis[a] * basis[b];
-        }
-      }
-      const coef = solve3(A, B);
-      if (!coef) return null;
+      const t0 = Math.max(0, Math.min(0.5, ext / hb));
+      const span = Math.max(1e-4, 1 - t0);
+      const H = hb * span;
+      const dR = rTop - rFace;
+      if (!(dR > 1e-5) || !(H > 1e-4)) return null;
+      const avgSlope = dR / H;
+      const s0 = Math.min(CUFF_EMERGENCE_START_SLOPE, Math.max(0, avgSlope * 0.5));
+      const D = Math.max(0, dR - s0 * H);
+      // 위쪽 S커브가 65°(CORNER_MAX_END_SLOPE) 이내이고 오목 곡률 반경 기준을 만족하는 최소 높이.
+      const minFlareH = Math.min(
+        H,
+        Math.max(
+          1.2,
+          (2.05 * D) / Math.max(0.1, CORNER_MAX_END_SLOPE - s0),
+          Math.sqrt(3.2 * D * CUFF_MIN_CONCAVE_RADIUS_MM),
+        ),
+      );
+      const holdH = Math.max(0, Math.min(cuffDepartZ - faceZ - 0.35, H - minFlareH, 0.45 * H));
+      const u0 = holdH / H;
+      const flareSpan = Math.max(1e-4, 1 - u0);
+      const spreadSlope = D / (H * flareSpan);
+      // 최대 커프 각도가 65°(CORNER_MAX_END_SLOPE)를 넘지 않게 하고, 중간 볼록 배가 안 생기도록 β∈[0.65, 1.15]에서 고른다.
+      const maxEndSlope = Math.min(CORNER_MAX_END_SLOPE, s0 + 2.15 * spreadSlope);
+      const minEndSlope = Math.min(maxEndSlope, s0 + 1.65 * spreadSlope);
+      const rawEndSlope = Number.isFinite(eSlope) ? Math.max(s0, eSlope) : s0 + 1.9 * spreadSlope;
+      const clampedEnd = Math.max(minEndSlope, Math.min(maxEndSlope, rawEndSlope));
+      const beta =
+        spreadSlope > 1e-6
+          ? Math.max(0.65, Math.min(1.15, (clampedEnd - s0) / spreadSlope - 1))
+          : 1.0;
+      // blendTurnedConeWithOriginal이 바깥에서 w(u)를 한 번 곱하므로, u0 위에서 w(ξ)·((1-β)ξ + βξ²)가 되도록 orig 배열을 넘긴다.
       return Array.from({ length: n + 1 }, (_, i) => {
         const t = i / n;
-        return rTop + sT * (t - 1) + (t - 1) * (t - 1) * (coef[0] + coef[1] * t + coef[2] * t * t);
+        if (t <= t0) return ra + coneSlope * t * hb;
+        const u = Math.max(0, Math.min(1, (t - t0) / span));
+        if (u <= u0 || !(u > 1e-6)) return rFace + s0 * H * u;
+        const xi = Math.max(0, Math.min(1, (u - u0) / flareSpan));
+        const wU = u * u * u * (10 - 15 * u + 6 * u * u);
+        const wXi = xi * xi * xi * (10 - 15 * xi + 6 * xi * xi);
+        const shape = (wXi * ((1 - beta) * xi + beta * xi * xi)) / Math.max(wU, 1e-9);
+        return rFace + s0 * H * u + D * Math.min(1.2, shape);
       });
     };
     const legacyConcaveOf = (rTop, eSlope, hb, relax = 0, j = -1) => {
-      // 마진까지 높이가 있는 열: Z_a+CUFF_CONNECTION_CONE_EXTEND_MM까지 11° 원형(커넥션 PRC), 그 위는 2°로 서서 원본 커프에 맞춘다.
+      // 마진까지 높이가 있는 열: Z_a+CUFF_CONNECTION_CONE_EXTEND_MM까지 11° 원형(커넥션 PRC), 그 위는 2°로 서서 완만한 S커브로 맞춘다.
       if (hb >= 0.8) {
         const orig = j >= 0 ? origColumnOf(j, hb, rTop, eSlope) : null;
         const blended = orig
@@ -3554,7 +3513,7 @@ export function blendCuffJunction(buffer, options = {}) {
       ra,
       topZOf,
       radiusAt: (j, t) => profiles[j](t),
-      rawCreaseR: crease && offsetMm === 0 ? rawCreaseR : null,
+      rawCreaseR: convexCuffDeform && crease && offsetMm === 0 ? rawCreaseR : null,
       rCut,
       origProbe: probe,
       crease: crease && offsetMm === 0 ? crease : null,
