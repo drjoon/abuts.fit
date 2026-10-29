@@ -19,6 +19,7 @@ function implantProfileOf(ci) {
     implantBrand: String(ci?.implantBrand || "").trim(),
     implantFamily: String(ci?.implantFamily || "").trim(),
     implantType: String(ci?.implantType || "").trim(),
+    connectionPrcFileName: String(ci?.connectionPrcFileName || "").trim(),
   };
 }
 
@@ -42,12 +43,16 @@ export async function resolveAbutmentStlInputs(caseInfos) {
   const cacheKey = inputsCacheKey(ci);
   const cached = inputsCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) return cached.value;
-  const [targetFromDb, connection] = await Promise.all([
+  const [targetFromDb, connection, resolvedPrc] = await Promise.all([
     resolveTargetDiameter(ci),
     resolveHexConnection(ci),
+    resolveConnectionPrcFileName(ci),
   ]);
   let targetDiameter = targetFromDb;
-  const profile = implantProfileOf(ci);
+  const profile = {
+    ...implantProfileOf(ci),
+    connectionPrcFileName: resolvedPrc || String(ci.connectionPrcFileName || "").trim(),
+  };
   if (!(Number(targetDiameter) > 0)) {
     const key = [
       profile.implantManufacturer,
@@ -66,16 +71,18 @@ export async function resolveAbutmentStlInputs(caseInfos) {
   return value;
 }
 
-async function resolveTargetDiameter(ci) {
-  let connectionPrcFileName = String(ci.connectionPrcFileName || "").trim();
-  if (!connectionPrcFileName) {
-    try {
-      connectionPrcFileName =
-        (await resolvePrcFileNames(ci))?.connectionPrcFileName || "";
-    } catch {
-      connectionPrcFileName = "";
-    }
+async function resolveConnectionPrcFileName(ci) {
+  const named = String(ci.connectionPrcFileName || "").trim();
+  if (named) return named;
+  try {
+    return (await resolvePrcFileNames(ci))?.connectionPrcFileName || "";
+  } catch {
+    return "";
   }
+}
+
+async function resolveTargetDiameter(ci) {
+  const connectionPrcFileName = await resolveConnectionPrcFileName(ci);
   try {
     return await resolveConnectionTargetDiameter(ci, {
       connectionPrcFileName,

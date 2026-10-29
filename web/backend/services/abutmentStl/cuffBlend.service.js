@@ -144,7 +144,18 @@ export async function applyCuffBlendToFilledStl({
     };
   } else {
     const source = sourceBuffer?.length ? sourceBuffer : await getObjectBufferFromS3(s3Key);
-    result = await runCuffBlendInWorker(source, mode, { ...blendOptions, spec, specKey: key, finishLine }, { queueTimeoutMs });
+    result = await runCuffBlendInWorker(
+      source,
+      mode,
+      {
+        ...blendOptions,
+        spec,
+        specKey: key,
+        finishLine,
+        connectionPrcFileName: ci.connectionPrcFileName || blendOptions.connectionPrcFileName || "",
+      },
+      { queueTimeoutMs },
+    );
   }
   // 스펙 미등록 샘플이 들어왔다. 미등록 스펙 전체를 다시 분석한다(결과는 호출부가 record를 저장한 뒤 읽히도록 워커가 지연한다).
   if (!spec && result.status === "spec-pending") {
@@ -223,6 +234,7 @@ export async function proposeCuffRedesignForRequest(requestMongoId) {
     spec,
     specKey: key,
     finishLine: request.caseInfos?.finishLine || null,
+    connectionPrcFileName: request.caseInfos?.connectionPrcFileName || "",
   });
   if (!result.ok) {
     console.log("[cuff-proposal] none", { requestId: request.requestId, status: result.status, reason: result.reason });

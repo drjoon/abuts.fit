@@ -18,6 +18,7 @@ import {
   splitByLevel,
   zipperRows,
 } from "./cuffBlend.js";
+import { resolveConnectionPrcCone } from "./connectionPrcCone.js";
 
 export const CONNECTION_TAPER_SMOOTH_VERSION = "conn-taper-smooth-3";
 /** 이 attribute의 삼각형은 커넥션 원뿔 다듬기로 다시 만든 면이다. */
@@ -167,11 +168,22 @@ function rebuildConeBand(mesh, coneAt, zLo, zHi) {
  * @param {Buffer} buffer filled STL (원점=커넥션 원점, 축=Z)
  * @returns {{ ok: boolean, status: string, reason?: string, buffer?: Buffer|null, detail?: object }}
  */
-export function smoothConnectionTaper(buffer) {
+export function smoothConnectionTaper(buffer, options = {}) {
   try {
     const { mesh, probe, triCount } = prepareCuffMesh(buffer);
-    const taper = measureConnectionTaper(probe);
-    if (!taper) return { ok: false, status: "skipped", reason: "11° 원뿔 없음", buffer: null };
+    const measured = measureConnectionTaper(probe);
+    if (!measured) return { ok: false, status: "skipped", reason: "11° 원뿔 없음", buffer: null };
+    const prc = resolveConnectionPrcCone(options);
+    const nearPrc = prc && Math.abs(measured.coneAt(0) - prc.coneAt(0)) <= 0.03;
+    const taper = nearPrc
+      ? {
+          ...measured,
+          r0: prc.coneAt(0),
+          originDiameter: 2 * prc.coneAt(0),
+          slope: prc.slope,
+          coneAt: prc.coneAt,
+        }
+      : measured;
     const zTop = taper.departZ > 0 ? taper.departZ : taper.measuredTopZ - 0.02;
     const zBottom = coneBottomZ(probe, taper.coneAt);
     const verts = Array.from(mesh.verts);

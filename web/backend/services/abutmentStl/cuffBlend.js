@@ -1,4 +1,5 @@
 // related files:
+// - web/backend/services/abutmentStl/connectionPrcCone.js (PRC Finish Connection 면 → STL 원뿔)
 // - web/backend/services/abutmentStl/cuffConnectionSpecs.js (Z_a 스펙 SSOT)
 // - web/backend/services/abutmentStl/cuffBlend.service.js (S3·DB·worker)
 // - web/backend/utils/screwHoleFill.js (parseStl / writeBinaryStl)
@@ -8,11 +9,13 @@
 // filled STL(정렬 완료, 원점=커넥션 원점 직경, 축=Z)의 커넥션 상단 ~ 커프 하단 이음새를 다시 만든다.
 // - auto: 커넥션 상단 Z_a ~ 단차가 끝난 Z_b 사이를 곡률까지 이어지는(G2) 곡면으로 교체
 // - redesign(Re): 70°보다 누운(접시형) 커프를 피니시라인-0.2mm ~ Z_a 사이 G2 곡면으로 교체(의뢰자 제안·제조사 Re 버튼)
-// 제조사 커넥션(Z_a 아래)과 피니시라인 아래 0.2mm 위쪽은 정점 하나도 옮기지 않는다.
+// 피니시라인 아래 0.2mm 위쪽은 정점 하나도 옮기지 않는다.
+// Z_a 아래 11° 원뿔은 커넥션 PRC Finish Connection 면(파일별 면 Z·직경)에 맞춰 반경만 옮긴다.
 import { parseStl, writeBinaryStl } from "../../utils/screwHoleFill.js";
 import { TAPER_SLOPE, taperTopDiameterOf, CUFF_CONNECTION_SPECS } from "./cuffConnectionSpecs.js";
+import { resolveConnectionPrcCone } from "./connectionPrcCone.js";
 
-export const CUFF_BLEND_VERSION = "cuff-blend-1";
+export const CUFF_BLEND_VERSION = "cuff-blend-2";
 /** 이 attribute의 삼각형은 커프 보정 곡면이다. */
 export const CUFF_BLEND_PATCH_ATTRIBUTE = 0x4342;
 
@@ -514,6 +517,41 @@ function coneDepartZ(probe, coneAt, top) {
     } else if (++miss > 1) break;
   }
   return Math.max(0, last - 0.01);
+}
+
+/** Finish_Back이 끝나는 Z=0에서 PRC 원뿔과 맞도록, 측정 원뿔 위 꼭짓점만 반경을 옮긴다. */
+const PRC_CONE_SNAP_TOL_MM = 0.12;
+const PRC_CONE_Z_LO_MM = -4;
+
+function snapMeshToPrcCone(mesh, meshConeAt, prcConeAt, zHi) {
+  const verts = mesh.verts;
+  const nv = verts.length / 3;
+  let moved = 0;
+  let maxUm = 0;
+  for (let v = 0; v < nv; v += 1) {
+    const z = verts[v * 3 + 2];
+    if (z < PRC_CONE_Z_LO_MM || z > zHi + 0.02) continue;
+    const x = verts[v * 3];
+    const y = verts[v * 3 + 1];
+    const r = Math.hypot(x, y);
+    if (r < 1e-6) continue;
+    if (Math.abs(r - meshConeAt(z)) > PRC_CONE_SNAP_TOL_MM) continue;
+    const rNew = prcConeAt(z);
+    const s = rNew / r;
+    verts[v * 3] = x * s;
+    verts[v * 3 + 1] = y * s;
+    moved += 1;
+    maxUm = Math.max(maxUm, Math.abs(rNew - r) * 1000);
+  }
+  return { moved, maxUm };
+}
+
+function rebuildMainProbe(mesh) {
+  const mainFaces = [];
+  for (let f = 0; f < mesh.faceMain.length; f += 1) {
+    if (mesh.faceMain[f]) mainFaces.push(mesh.faces[f * 3], mesh.faces[f * 3 + 1], mesh.faces[f * 3 + 2]);
+  }
+  return new RadialProbe(mesh.verts, mainFaces);
 }
 
 /**
@@ -3072,18 +3110,26 @@ function marginCrestZByAngle(probe, flZ) {
   );
 }
 
-function setup(buffer, { spec, specKey }) {
+function setup(buffer, options) {
+  const { spec, specKey } = options;
   if (!spec) {
     fail("spec-pending", `커넥션 스펙이 등록되지 않은 임플란트입니다(${specKey || "스펙 없음"}). 개발팀 확인이 필요합니다.`);
   }
-  const { mesh, probe, triCount } = prepare(buffer);
+  const { mesh, probe: preparedProbe, triCount } = prepare(buffer);
+  let probe = preparedProbe;
   const taper = measureConnectionTaper(probe);
   try {
     if (!taper) fail("manual-review", "원점 아래 11° 커넥션 테이퍼를 찾지 못했습니다.");
     const top = resolveConnectionTop(taper, spec, specKey);
     // 스펙 Z_a보다 원뿔이 먼저 벌어지면 벌어지기 전에서 잇는다. 그 사이 원본 커프를 남기면 이음이 11°로 다시 출발해 어깨가 진다.
-    const zA = taper.departZ > 0 ? Math.min(top.zA, taper.departZ) : top.zA;
-    return { mesh, probe, triCount, taper, ...top, zA };
+    let zA = taper.departZ > 0 ? Math.min(top.zA, taper.departZ) : top.zA;
+    const prc = applyPrcConeMatch(mesh, taper, zA, options);
+    if (prc.taper) {
+      probe = rebuildMainProbe(mesh);
+      zA = prc.taper.departZ > 0 ? Math.min(top.zA, prc.taper.departZ) : top.zA;
+      return { mesh, probe, triCount, taper: prc.taper, ...top, zA, prcCone: prc.detail };
+    }
+    return { mesh, probe, triCount, taper, ...top, zA, prcCone: prc.detail };
   } catch (error) {
     // 기공소가 11° 원뿔을 스펙보다 짧게 끝내고 수직 구간(fill_steps 포함)을 둔 설계: 첫 계단 바로 아래에서 잇는다.
     const stepTaper = error instanceof CuffBlendError ? measureConnectionStepTop(probe) : null;
@@ -3096,8 +3142,39 @@ function setup(buffer, { spec, specKey }) {
       zA: stepTaper.measuredTopZ,
       matchedKey: specKey,
       warning: "11° 원뿔이 스펙보다 짧아 첫 계단 아래에서 이었습니다.",
+      prcCone: null,
     };
   }
+}
+
+function applyPrcConeMatch(mesh, taper, zA, options) {
+  const prc = resolveConnectionPrcCone(options);
+  if (!prc || taper.fromStep) return { taper: null, detail: null };
+  const snap = snapMeshToPrcCone(mesh, taper.coneAt, prc.coneAt, zA);
+  if (!snap.moved) {
+    return {
+      taper: null,
+      detail: { fileName: prc.fileName, faceStlZ: prc.faceStlZ, faceDiameter: prc.faceDiameter, movedVertices: 0 },
+    };
+  }
+  const remesured = measureConnectionTaper(rebuildMainProbe(mesh));
+  const nextTaper = remesured || {
+    ...taper,
+    r0: prc.coneAt(0),
+    originDiameter: 2 * prc.coneAt(0),
+    coneAt: prc.coneAt,
+    slope: prc.slope,
+  };
+  return {
+    taper: nextTaper,
+    detail: {
+      fileName: prc.fileName,
+      faceStlZ: prc.faceStlZ,
+      faceDiameter: prc.faceDiameter,
+      movedVertices: snap.moved,
+      maxMovedUm: Math.round(snap.maxUm * 10) / 10,
+    },
+  };
 }
 
 /** 보정으로 새로 생긴 꼭짓점 중 피니시라인 곡선과의 최소 여유(mm). 음수면 피니시라인을 넘은 것. */
@@ -3138,12 +3215,12 @@ function wrapResult(fn) {
 
 /**
  * @param {Buffer} buffer filled STL
- * @param {{ spec: object|null, specKey: string, finishLine: object|null }} options
+ * @param {{ spec: object|null, specKey: string, finishLine: object|null, connectionPrcFileName?: string }} options
  */
 export function blendCuffJunction(buffer, options = {}) {
   return wrapResult(() => {
     const prepared = setup(buffer, options);
-    const { taper, zA, matchedKey, warning } = prepared;
+    const { taper, zA, matchedKey, warning, prcCone } = prepared;
     let { mesh, probe } = prepared;
     const flMin = finishLineMinZ(options.finishLine);
     if (!Number.isFinite(flMin)) fail("manual-review", "피니시라인이 없어 커프 보호 범위를 정할 수 없습니다.");
@@ -3472,6 +3549,7 @@ export function blendCuffJunction(buffer, options = {}) {
       buffer: out.buffer,
       detail: {
         matchedSpecKey: matchedKey,
+        prcCone: prcCone || null,
         zA: round3(zA),
         zB: round3(zTopMax),
         followsFinishLine: true,

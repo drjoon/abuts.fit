@@ -82,9 +82,9 @@ function applyPostSmooth(result, source, finishLine) {
 }
 
 /** 커넥션 원뿔 다듬기도 실패하면 앞 단계 결과를 그대로 쓴다. */
-function applyTaperSmooth(result, fallbackInput) {
+function applyTaperSmooth(result, fallbackInput, options = {}) {
   const source = result.buffer || fallbackInput;
-  const t = smoothConnectionTaper(source);
+  const t = smoothConnectionTaper(source, options);
   const taperSmooth = { status: t.status, reason: t.reason || null, ...(t.detail || {}) };
   return {
     ...result,
@@ -107,7 +107,7 @@ export function runCuffBlendJob(input, mode = "auto", options = {}) {
   } else if (!options.skipPostSmooth && !cuffBuffer && POST_ON_INPUT_MODES.has(mode)) {
     result = applyPostSmooth({ ...result, buffer: null }, input, options.finishLine || null);
   }
-  if (mode !== "propose" && mode !== "measure") result = applyTaperSmooth(result, input);
+  if (mode !== "propose" && mode !== "measure") result = applyTaperSmooth(result, input, options);
   if (result.buffer?.length) {
     const cleaned = dropDegenerateTriangles(result.buffer);
     if (cleaned.dropped > 0) {

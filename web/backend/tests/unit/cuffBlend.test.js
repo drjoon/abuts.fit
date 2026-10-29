@@ -15,6 +15,7 @@ import {
   _smoothProfilesAcrossColumns,
 } from "../../services/abutmentStl/cuffBlend.js";
 import { resolveCuffConnectionSpec, TAPER_SLOPE } from "../../services/abutmentStl/cuffConnectionSpecs.js";
+import { resolveConnectionPrcCone } from "../../services/abutmentStl/connectionPrcCone.js";
 import { parseStl, writeBinaryStl } from "../../utils/screwHoleFill.js";
 
 const SEG = 180;
@@ -263,6 +264,20 @@ describe("verticalEmergenceProfile", () => {
   });
 });
 
+describe("resolveConnectionPrcCone", () => {
+  it("reads the Finish Connection face of each Regular RH file, not a shared 0.26 mm offset", () => {
+    const ts = resolveConnectionPrcCone({ connectionPrcFileName: "오스템_TS_RH_Connection.prc" });
+    const neo = resolveConnectionPrcCone({ connectionPrcFileName: "네오_IS_RH_Connection.prc" });
+    expect(ts.faceStlZ).toBeCloseTo(0.038, 6);
+    expect(ts.faceDiameter).toBeCloseTo(3.467, 6);
+    expect(ts.coneAt(0) * 2).toBeCloseTo(3.452, 2);
+    expect(neo.faceStlZ).toBeCloseTo(0.008, 6);
+    expect(neo.faceDiameter).toBeCloseTo(3.455, 6);
+    expect(neo.faceStlZ).not.toBeCloseTo(ts.faceStlZ, 3);
+    expect(resolveConnectionPrcCone({})).toBeNull();
+  });
+});
+
 describe("blendTurnedConeWithOriginal", () => {
   it("keeps the 11° cone up to the connection face, then rises at 2° and meets the original cuff", () => {
     const h = 2;
@@ -307,6 +322,24 @@ describe("blendCuffJunction", () => {
     expect(untouchedOutside(input, res.buffer, res.detail.zA, 3.001)).toBe(true);
     const { attributes } = parseStl(res.buffer);
     expect(attributes.some((a) => a === CUFF_BLEND_PATCH_ATTRIBUTE)).toBe(true);
+  });
+
+  it("matches the STL cone to the connection PRC cone through Finish_Back Z=0", () => {
+    const input = steppedAbutment();
+    const prc = resolveConnectionPrcCone({ connectionPrcFileName: "오스템_TS_RH_Connection.prc" });
+    const res = blendCuffJunction(input, {
+      ...osstem,
+      specKey: osstem.key,
+      finishLine: ringFinishLine(2.3, 3.0),
+      connectionPrcFileName: "오스템_TS_RH_Connection.prc",
+    });
+    expect(res.ok).toBe(true);
+    expect(res.detail.prcCone.fileName).toBe("오스템_TS_RH_Connection.prc");
+    expect(res.detail.prcCone.movedVertices).toBeGreaterThan(0);
+    const probe = _prepare(res.buffer).probe;
+    expect(probe.rayRadius(0.1, 0)).toBeCloseTo(prc.coneAt(0), 2);
+    expect(probe.rayRadius(0.1, 0.2)).toBeCloseTo(prc.coneAt(0.2), 2);
+    expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
   });
 
   it("keeps the blended cuff inside the original outline (no outward move below the margin)", () => {
