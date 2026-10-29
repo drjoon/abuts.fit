@@ -4,11 +4,11 @@
 // - web/backend/tests/unit/connectionTaperSmooth.test.js
 //
 // 커넥션 11° 원뿔 면의 세로 결을 없앤다. 형상(치수)은 그대로다.
-// - 원뿔(측정된 r0 + slope·z) 위 꼭짓점을 원뿔 면으로 정확히 옮긴다. Z는 그대로, 반경만 바뀐다.
-// - 원뿔 띠 가운데는 둘레 1° 간격의 가벼운 띠로 다시 만든다. 원뿔은 직선 면이라 위·아래 두 줄이면 된다.
-//   기공소 메시의 다각형(예: 46각) 면을 그대로 두면 면 하나하나가 평평해 결이 남고, 쪼개면 파일이 커진다.
-// - 원뿔에서 허용치(CONE_SNAP_TOL_MM)보다 벗어난 꼭짓점(헥스·단차·커프·스크류 채널)과 그 면은 건드리지 않는다.
-// - 원뿔이 끝나는 높이 바로 아래에서 옮기는 양을 0으로 줄여 위쪽 이음과 단차가 생기지 않게 한다.
+// - 헥스 어깨 바로 위부터, 면이 11°를 떠나는 높이(PRC 면까지 늘린 0.1mm 포함)까지 원뿔 전체를 다시 만든다.
+// - 둘레는 커프와 같이 1°. 원뿔은 직선 면이라 높이 방향은 위·아래 두 줄이면 된다.
+//   기공소 메시의 다각형(예: 46각)이나 연장 로프트(72각)를 그대로 두면 면이 평평해 결이 남는다.
+// - 잘린 경계의 긴 변은 현 그대로 두지 않고 1.25°로 나누어 원뿔 면에 올린다. 맞닿은 커프·헥스 면도 같이 나눈다.
+// - 원뿔에서 허용치(CONE_SNAP_TOL_MM)보다 벗어난 꼭짓점(헥스·단차·2° 커프·스크류 채널)과 그 면은 건드리지 않는다.
 import { writeBinaryStl } from "../../utils/screwHoleFill.js";
 import {
   angularRow,
@@ -19,7 +19,7 @@ import {
   zipperRows,
 } from "./cuffBlend.js";
 
-export const CONNECTION_TAPER_SMOOTH_VERSION = "conn-taper-smooth-3";
+export const CONNECTION_TAPER_SMOOTH_VERSION = "conn-taper-smooth-4";
 /** 이 attribute의 삼각형은 커넥션 원뿔 다듬기로 다시 만든 면이다. */
 export const CONNECTION_TAPER_SMOOTH_ATTRIBUTE = 0x4354;
 
@@ -30,14 +30,16 @@ const CONE_FIT_TOL_MM = 0.012;
 const CONE_BINS = 72;
 /** 원뿔 면에서 이 안에 있는 꼭짓점만 옮긴다(헥스·단차는 한참 멀다). */
 const CONE_SNAP_TOL_MM = 0.02;
-/** 원뿔 끝 높이 아래 이 구간에서 옮기는 양을 1 → 0으로 줄인다. */
+/** 띠를 못 만들 때, 원뿔 끝 아래 이 구간에서 옮기는 양을 1 → 0으로 줄인다. */
 const TOP_RAMP_MM = 0.04;
-/** 다시 만드는 띠는 원뿔 아래 끝·옮김 전환 구간에서 이만큼 떨어진다. */
+/** 헥스 어깨와 겹치지 않게 원뿔 아래 끝에서 이만큼 위에서 자른다. */
 const BAND_INSET_MM = 0.02;
 const BAND_MIN_HEIGHT_MM = 0.05;
-/** 새 띠 둘레 칸 수(1°). */
+/** 새 띠 둘레 칸 수(1°). 커프 이음 열과 같다. */
 const BAND_COLUMNS = 360;
-/** 기존 경계(다각형)와 새 1° 줄 사이 높이. 얇을수록 경계 부채꼴이 안 보인다. */
+/** 경계 변을 이 각도보다 잘게 나눈다. 커프 하단 경계(BOTTOM_EDGE_MAX_RAD)와 같다. */
+const EDGE_MAX_RAD = (1.25 * Math.PI) / 180;
+/** 기존 경계와 새 1° 줄 사이 높이. 얇을수록 경계 부채꼴이 안 보인다. */
 const BAND_EDGE_ROW_MM = 0.01;
 
 const TWO_PI = Math.PI * 2;
@@ -46,6 +48,19 @@ const smooth01 = (t) => {
   const x = Math.min(1, Math.max(0, t));
   return x * x * (3 - 2 * x);
 };
+
+function angleDelta(verts, a, b) {
+  const a0 = Math.atan2(verts[a * 3 + 1], verts[a * 3]);
+  const a1 = Math.atan2(verts[b * 3 + 1], verts[b * 3]);
+  let d = Math.abs(a1 - a0);
+  if (d > Math.PI) d = TWO_PI - d;
+  return d;
+}
+
+/** 경계 꼭짓점을 원뿔 면으로 올린다. 원뿔에서 멀면(헥스 모서리·2° 커프) 그대로 둔다. */
+function snapBoundaryVertex(verts, v, coneAt) {
+  snapToCone(verts, v, coneAt, 1);
+}
 
 /** 원점에서 아래로 내려가며 둘레 80% 이상이 원뿔에 맞는 마지막 높이. */
 function coneBottomZ(probe, coneAt) {
@@ -77,8 +92,67 @@ function snapToCone(verts, v, coneAt, w = 1) {
 }
 
 /**
+ * 경계 루프의 긴 변(다각형 현)을 1.25°로 나누고, 새 점은 원뿔 면에 올린다.
+ * 맞닿은 면(커프·헥스)도 같은 점으로 나누어 경계가 어긋나지 않게 한다.
+ * @returns {number[] | null}
+ */
+function refineBoundaryLoop(loop, verts, faces, faceAttr, removed, coneAt) {
+  const edgeFace = new Map();
+  const fc = removed.length;
+  for (let f = 0; f < fc; f += 1) {
+    if (removed[f]) continue;
+    for (let k = 0; k < 3; k += 1) {
+      edgeFace.set(`${faces[f * 3 + k]}_${faces[f * 3 + ((k + 1) % 3)]}`, f);
+    }
+  }
+  const out = [];
+  for (let i = 0; i < loop.length; i += 1) {
+    const a = loop[i];
+    const b = loop[(i + 1) % loop.length];
+    snapBoundaryVertex(verts, a, coneAt);
+    out.push(a);
+    const steps = Math.ceil(angleDelta(verts, a, b) / EDGE_MAX_RAD);
+    if (steps <= 1) continue;
+    const face = edgeFace.get(`${a}_${b}`);
+    const tri = face == null ? null : [faces[face * 3], faces[face * 3 + 1], faces[face * 3 + 2]];
+    const ia = tri ? tri.indexOf(a) : -1;
+    // 맞닿은 면을 같이 나누지 못하면 그 변은 그대로 둔다. 점만 넣으면 경계가 벌어진다.
+    if (ia < 0 || tri[(ia + 1) % 3] !== b) continue;
+    const c = tri[(ia + 2) % 3];
+    const mids = [];
+    for (let s = 1; s < steps; s += 1) {
+      const u = s / steps;
+      const x = verts[a * 3] + u * (verts[b * 3] - verts[a * 3]);
+      const y = verts[a * 3 + 1] + u * (verts[b * 3 + 1] - verts[a * 3 + 1]);
+      const z = verts[a * 3 + 2] + u * (verts[b * 3 + 2] - verts[a * 3 + 2]);
+      const idx = verts.length / 3;
+      const r = Math.hypot(x, y);
+      const target = coneAt(z);
+      if (r > 1e-6 && Math.abs(target - r) <= CONE_SNAP_TOL_MM) {
+        verts.push((x / r) * target, (y / r) * target, z);
+      } else {
+        verts.push(x, y, z);
+      }
+      mids.push(idx);
+      out.push(idx);
+    }
+    const chain = [a, ...mids, b];
+    const attr = faceAttr[face] || 0;
+    faces[face * 3] = chain[0];
+    faces[face * 3 + 1] = chain[1];
+    faces[face * 3 + 2] = c;
+    for (let k = 1; k < chain.length - 1; k += 1) {
+      faces.push(chain[k], chain[k + 1], c);
+      faceAttr.push(attr);
+    }
+  }
+  snapBoundaryVertex(verts, loop[0], coneAt);
+  return out;
+}
+
+/**
  * zLo~zHi 사이 원뿔 면을 지우고 둘레 1° 띠로 다시 잇는다. 경계가 한 바퀴 루프 2개가 아니면 null(원본 유지).
- * @returns {{ faces: number[], faceAttr: number[], newFaceStart: number } | null}
+ * @returns {{ verts, faces: number[], faceAttr: number[], newFaceStart: number } | null}
  */
 function rebuildConeBand(mesh, coneAt, zLo, zHi) {
   let cut = splitByLevel(mesh, (x, y, z) => z - zLo);
@@ -118,10 +192,13 @@ function rebuildConeBand(mesh, coneAt, zLo, zHi) {
   if (!loops || loops.length !== 2) return null;
   const meanZ = (loop) => loop.reduce((s, v) => s + verts[v * 3 + 2], 0) / loop.length;
   loops.sort((p, q) => meanZ(p) - meanZ(q));
-  const bottom = angularRow(loops[0], verts);
-  const top = angularRow(loops[1], verts);
+  if (Math.abs(meanZ(loops[0]) - zLo) > 1e-4 || Math.abs(meanZ(loops[1]) - zHi) > 1e-4) return null;
+  const bottomLoop = refineBoundaryLoop(loops[0], verts, faces, faceAttr, removed, coneAt);
+  const topLoop = refineBoundaryLoop(loops[1], verts, faces, faceAttr, removed, coneAt);
+  if (!bottomLoop || !topLoop) return null;
+  const bottom = angularRow(bottomLoop, verts);
+  const top = angularRow(topLoop, verts);
   if (!bottom || !top) return null;
-  if (Math.abs(meanZ(loops[0]) - zLo) > 1e-6 || Math.abs(meanZ(loops[1]) - zHi) > 1e-6) return null;
 
   const edgeRow = Math.min(BAND_EDGE_ROW_MM, (zHi - zLo) / 4);
   const ring = (z) => {
@@ -138,8 +215,9 @@ function rebuildConeBand(mesh, coneAt, zLo, zHi) {
 
   const outFaces = [];
   const outAttr = [];
-  for (let f = 0; f < fc; f += 1) {
-    if (removed[f]) continue;
+  const faceCount = faces.length / 3;
+  for (let f = 0; f < faceCount; f += 1) {
+    if (f < fc && removed[f]) continue;
     outFaces.push(faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2]);
     outAttr.push(faceAttr[f] || 0);
   }
@@ -172,12 +250,15 @@ export function smoothConnectionTaper(buffer) {
     const { mesh, probe, triCount } = prepareCuffMesh(buffer);
     const taper = measureConnectionTaper(probe);
     if (!taper) return { ok: false, status: "skipped", reason: "11° 원뿔 없음", buffer: null };
+    // 11°가 실제로 끝나는 높이. 그 위 2° 커프는 원뿔로 되돌리지 않는다.
     const zTop = taper.departZ > 0 ? taper.departZ : taper.measuredTopZ - 0.02;
     const zBottom = coneBottomZ(probe, taper.coneAt);
     const verts = Array.from(mesh.verts);
     const nv = verts.length / 3;
     let moved = 0;
     let maxUm = 0;
+    // 띠가 실패하면 이 스냅만 남는다. 끝 0.04mm는 커프와 단차가 나지 않게 양을 줄인다.
+    // 띠가 되면 이 구간 면은 지워지고, 경계는 refineBoundaryLoop가 원뿔 면에 올린다.
     for (let v = 0; v < nv; v += 1) {
       const z = verts[v * 3 + 2];
       if (z < zBottom || z > zTop) continue;
@@ -190,7 +271,7 @@ export function smoothConnectionTaper(buffer) {
     }
     const snapped = { ...mesh, verts, faceAttr: Array.from(mesh.faceAttr) };
     const zLo = zBottom + BAND_INSET_MM;
-    const zHi = zTop - TOP_RAMP_MM - BAND_INSET_MM / 4;
+    const zHi = zTop;
     const band = zHi - zLo >= BAND_MIN_HEIGHT_MM ? rebuildConeBand(snapped, taper.coneAt, zLo, zHi) : null;
     if (!moved && !band) return { ok: false, status: "skipped", reason: "다듬을 원뿔 면 없음", buffer: null };
     const out = band || { verts, faces: mesh.faces, faceAttr: snapped.faceAttr };
