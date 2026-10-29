@@ -8,8 +8,8 @@ import {
   proposeCuffRedesign,
   redesignCuffBowl,
   verticalEmergenceProfile,
-  verticalHoldProfile,
-  blendEmergenceWithOriginal,
+  blendTurnedConeWithOriginal,
+  CUFF_CONNECTION_CONE_EXTEND_MM,
   CUFF_BLEND_PATCH_ATTRIBUTE,
   _prepare,
   _smoothProfilesAcrossColumns,
@@ -263,22 +263,33 @@ describe("verticalEmergenceProfile", () => {
   });
 });
 
-describe("blendEmergenceWithOriginal", () => {
-  it("rises near-vertically off the cone and meets the original cuff at the margin", () => {
+describe("blendTurnedConeWithOriginal", () => {
+  it("keeps the 11° cone up to the connection face, then rises at 2° and meets the original cuff", () => {
     const h = 2;
     const ra = 1.7;
     const orig = Array.from({ length: 49 }, (_, i) => ra + 0.55 * (i / 48) * h);
-    const hold = verticalHoldProfile(ra, TAPER_SLOPE, h);
-    const fn = blendEmergenceWithOriginal(hold, orig);
-    expect(fn(0)).toBeCloseTo(ra, 6);
+    const fn = blendTurnedConeWithOriginal(ra, TAPER_SLOPE, h, orig);
+    const line = (t) => ra + TAPER_SLOPE * t * h;
+    const t0 = CUFF_CONNECTION_CONE_EXTEND_MM / h;
+    for (const t of [0, t0 / 2, t0]) expect(fn(t)).toBeCloseTo(line(t), 9);
     expect(fn(1)).toBeCloseTo(orig[48], 6);
-    expect((fn(1e-4) - fn(0)) / 1e-4 / h).toBeCloseTo(TAPER_SLOPE, 2);
     expect((fn(1) - fn(1 - 1e-4)) / 1e-4 / h).toBeCloseTo(0.55, 2);
-    // 픽스처 직상방은 11° 안쪽, 중간은 4° 상승선과 원본 사이.
-    expect(fn(0.5 / h) - ra).toBeLessThan(0.5 * TAPER_SLOPE);
-    for (const t of [0.3, 0.5, 0.7]) {
-      expect(fn(t)).toBeGreaterThan(hold(t));
-      expect(fn(t)).toBeLessThan(ra + 0.55 * t * h);
+
+    // 커넥션 면 바로 위: 2°·곡률 0으로 출발한다.
+    const dt = 1e-3;
+    const slope2 = Math.tan((2 * Math.PI) / 180);
+    const slopeAbove = (fn(t0 + 2 * dt) - fn(t0 + dt)) / dt / h;
+    expect(slopeAbove).toBeCloseTo(slope2, 3);
+    const curv = (fn(t0 + 3 * dt) - 2 * fn(t0 + 2 * dt) + fn(t0 + dt)) / (dt * h) ** 2;
+    expect(Math.abs(curv)).toBeLessThan(0.05);
+
+    // 그 위는 2° 출발선과 원본 사이에 있고, 2°보다 눕지 않는다.
+    for (let i = 1; i < 100; i += 1) {
+      const t = t0 + ((1 - t0) * i) / 100;
+      const base = line(t0) + slope2 * (t - t0) * h;
+      expect(fn(t)).toBeGreaterThanOrEqual(base - 1e-9);
+      expect(fn(t)).toBeLessThanOrEqual(ra + 0.55 * t * h + 1e-9);
+      expect((fn(t + 1e-4) - fn(t)) / 1e-4 / h).toBeGreaterThanOrEqual(slope2 - 1e-4);
     }
   });
 });
@@ -314,18 +325,19 @@ describe("blendCuffJunction", () => {
     }
   });
 
-  it("eases off the 11° cone into a more vertical emergence without a shoulder", () => {
+  it("keeps the 11° cone up to the connection face, then rises steeply without a second kink", () => {
     const input = earlyFlareAbutment();
     const res = blendCuffJunction(input, { ...osstem, specKey: osstem.key, finishLine: ringFinishLine(2.3, 3.0) });
     expect(res.ok).toBe(true);
     expect(res.detail.zA).toBeLessThanOrEqual(0.15);
     const probe = _prepare(res.buffer).probe;
     const step = 0.02;
+    const degAt = (z) => (Math.atan((probe.rayRadius(0.1, z + step) - probe.rayRadius(0.1, z)) / step) * 180) / Math.PI;
+    const zFace = res.detail.zA + CUFF_CONNECTION_CONE_EXTEND_MM;
+    expect(degAt(res.detail.zA + 0.02)).toBeCloseTo(11, 0);
     const degs = [];
-    for (let z = 0.1; z <= 0.6; z += step) {
-      degs.push((Math.atan((probe.rayRadius(0.1, z + step) - probe.rayRadius(0.1, z)) / step) * 180) / Math.PI);
-    }
-    expect(degs[0]).toBeCloseTo(11, 0);
+    for (let z = zFace + 0.02; z <= zFace + 0.6; z += step) degs.push(degAt(z));
+    expect(degs[0]).toBeLessThan(5);
     for (let i = 1; i < degs.length; i += 1) expect(Math.abs(degs[i] - degs[i - 1])).toBeLessThan(3);
     expect(degs[degs.length - 1]).toBeLessThan(9);
     const zBone = res.detail.zA + 1;

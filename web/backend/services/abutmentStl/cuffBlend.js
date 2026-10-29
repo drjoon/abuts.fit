@@ -751,7 +751,7 @@ const EMERGENCE_EASE_MM = 0.5;
 const EMERGENCE_BONE_MM = 1.35;
 /** 이보다 가파라야 마진에 닿으면 수직 구간을 줄인다. 그래도 모자라면 위쪽만 더 세운다. */
 const EMERGENCE_FLARE_MAX_SLOPE = Math.tan((75 * Math.PI) / 180);
-/** 4° 상승선에 섞을 원본 커프 옆모습 표본 수(원뿔 끝~이음 위 끝 등간격). */
+/** 11° 연장선에 섞을 원본 커프 옆모습 표본 수(원뿔 끝~이음 위 끝 등간격). */
 const EMERGENCE_ORIG_SAMPLES = 48;
 const LONG_BAND_MM = 2;
 /** 띠 면 평균: 반폭(약 ±30°)과 위쪽 보존 지수(t^p). */
@@ -937,33 +937,43 @@ function solve3(A, B) {
 }
 
 /**
- * 원뿔 끝에서 기울기 coneSlope·곡률 0으로 떠나 4°로 곧게 올라가는 선(마진까지 넓히지 않음). t∈[0,1] → 반경.
- * @returns {(t: number) => number}
+ * 커넥션 PRC(`AcroDent/2_Connection`, Rough U·Finish Connection·Final Deburr)는 11° 원뿔을 Z_a보다 이만큼 위에서
+ * 면 직경으로 들어가 깎는다. 이음 곡선도 Z_a~Z_a+이 값을 11° 원형으로 두어 PRC 면과 같게 한다. 두 값은 같이 바꾼다.
  */
-export function verticalHoldProfile(ra, coneSlope, h) {
+export const CUFF_CONNECTION_CONE_EXTEND_MM = 0.1;
+/** 커넥션 면 바로 위 커프 출발 기울기. 11°로 이어 넓히면 픽스처 직상방 뼈에 걸린다. */
+const CUFF_EMERGENCE_START_SLOPE = Math.tan((2 * Math.PI) / 180);
+
+/**
+ * Z_a ~ Z_a+extendMm은 11° 원뿔 연장선(원형, 커넥션 PRC가 선삭), 그 위는 2° 출발선과 원본 커프 옆모습을
+ * 0 → 1 비중(양 끝 기울기·곡률 0인 5차식)으로 섞는다. 커넥션 면에서 2°·곡률 0으로 출발하고,
+ * 위 끝은 원본 반경·접선이다. 중간에 기울기를 다시 세우는 구간이 없다.
+ * @param {ArrayLike<number>} orig t=0..1 등간격 원본 반경(2개 이상)
+ * @returns {((t: number) => number) | null}
+ */
+export function blendTurnedConeWithOriginal(ra, coneSlope, h, orig, extendMm = CUFF_CONNECTION_CONE_EXTEND_MM) {
+  const n = orig?.length - 1;
+  if (!(h > 1e-4) || !(n >= 1)) return null;
   const m0 = Math.max(0, coneSlope);
-  const se = Math.min(EMERGENCE_HOLD_SLOPE, m0);
-  const e = Math.min(EMERGENCE_EASE_MM, Math.max(0.15, h * 0.34), h);
-  const rEase = ra + (e * (m0 + se)) / 2;
+  const s0 = Math.min(CUFF_EMERGENCE_START_SLOPE, m0);
+  const t0 = Math.max(0, Math.min(0.5, extendMm / h));
+  const r1 = ra + m0 * t0 * h;
+  const origAt = originalProfileOf(orig);
   return (t) => {
-    const z = Math.max(0, Math.min(1, t)) * h;
-    if (z <= e) return ra + m0 * z + (se - m0) * e * integrateSmoother(e > 1e-9 ? z / e : 1);
-    return rEase + se * (z - e);
+    const x = Math.max(0, Math.min(1, t));
+    if (x <= t0) return ra + m0 * x * h;
+    const base = r1 + s0 * (x - t0) * h;
+    const u = (x - t0) / (1 - t0);
+    const w = u * u * u * (10 - 15 * u + 6 * u * u);
+    return base + w * (origAt(x) - base);
   };
 }
 
-/**
- * 4° 수직 상승선과 원본 커프 옆모습을 원뿔 끝 0 → 위 끝 1 비중(양 끝 기울기·곡률 0인 5차식)으로 섞는다.
- * 픽스처 직상방은 수직에 가깝게 서고 마진 아래는 원본처럼 벌어진다. 원뿔 끝 G2 출발과 위 끝 원본 접선은 그대로다.
- * 4°로 세웠다가 남은 높이에서 한꺼번에 눕히면 무릎 곡률 반경이 공구 반경보다 작은 접시 모양이 된다.
- * @param {(t: number) => number} hold
- * @param {ArrayLike<number>} orig t=0..1 등간격 원본 반경(2개 이상)
- */
-export function blendEmergenceWithOriginal(hold, orig) {
+/** t=0..1 등간격 원본 반경을 3차 에르미트로 잇는다. */
+function originalProfileOf(orig) {
   const n = orig.length - 1;
-  if (!hold || !(n >= 1)) return hold;
   const s = (i) => orig[Math.max(0, Math.min(n, i))];
-  const origAt = (t) => {
+  return (t) => {
     const x = t * n;
     const i = Math.min(n - 1, Math.floor(x));
     const u = x - i;
@@ -974,12 +984,6 @@ export function blendEmergenceWithOriginal(hold, orig) {
     const u2 = u * u;
     const u3 = u2 * u;
     return (2 * u3 - 3 * u2 + 1) * p0 + (u3 - 2 * u2 + u) * m0 + (-2 * u3 + 3 * u2) * p1 + (u3 - u2) * m1;
-  };
-  return (t) => {
-    const u = Math.max(0, Math.min(1, t));
-    const v = hold(u);
-    const w = u * u * u * (10 - 15 * u + 6 * u * u);
-    return v + w * (origAt(u) - v);
   };
 }
 
@@ -3208,9 +3212,8 @@ export function blendCuffJunction(buffer, options = {}) {
           TOP_SLOPE_SMOOTH_COLUMNS,
         )
       : null;
-    // 볼록(부푼) 구간은 뼈에 걸린다. 이음 높이가 0.8mm 이상이면 원뿔 끝에서 곡률 0으로 떠나 4°로 서는 선을
-    // 위로 갈수록 원본 커프 옆모습으로 섞는다(blendEmergenceWithOriginal). 원본을 못 읽은 열만 verticalEmergenceProfile.
-    // 11°를 이어 넓히면 픽스처 직상방 뼈에 걸린다. 둘째 제어점 간격을 줄여 경계에서 바로 꺾지 않는다.
+    // 이음 높이가 0.8mm 이상이면 Z_a+CUFF_CONNECTION_CONE_EXTEND_MM까지 11° 원형으로 두고, 그 위는 2°로 서서
+    // 원본 커프 옆모습에 섞는다(blendTurnedConeWithOriginal). 원본을 못 읽은 열만 verticalEmergenceProfile.
     // 0.8mm보다 짧은 띠만 기존 4차 오목 곡선을 쓴다. 단차 직경은 따르지 않는다.
     // 열마다 들쭉날쭉하면 면에 주름이 생기므로, 위 끝 반경은 저주파 성분만 남겨 매끈하게 한다.
     // 평균값이 원본 반경에서 ±SMOOTH_MAX_SHIFT_MM 넘게 벗어나면 위 끝에 단차가 생기므로 그 안으로 제한한다.
@@ -3311,12 +3314,12 @@ export function blendCuffJunction(buffer, options = {}) {
       });
     };
     const legacyConcaveOf = (rTop, eSlope, hb, relax = 0, j = -1) => {
-      // 마진까지 높이가 있는 열은 11°를 이어 넓히지 않는다. 픽스처 직상방을 4°로 올리고, 위로 갈수록 원본 커프에 맞춘다.
+      // 마진까지 높이가 있는 열: Z_a+CUFF_CONNECTION_CONE_EXTEND_MM까지 11° 원형(커넥션 PRC), 그 위는 2°로 서서 원본 커프에 맞춘다.
       if (hb >= 0.8) {
         const orig = j >= 0 ? origColumnOf(j, hb, rTop, eSlope) : null;
-        if (orig) {
+        const blended = orig ? blendTurnedConeWithOriginal(ra, coneSlope, hb, orig) : null;
+        if (blended) {
           blendedCols[j] = 1;
-          const blended = blendEmergenceWithOriginal(verticalHoldProfile(ra, coneSlope, hb), orig);
           return relaxMeridianConcavity(blended, hb, CUFF_MIN_CONCAVE_RADIUS_MM * RELAX_TARGET_MARGIN);
         }
         const emerged = verticalEmergenceProfile(ra, coneSlope, rTop, hb, eSlope);
