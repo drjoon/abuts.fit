@@ -6,7 +6,7 @@
 // 커프 보정(+포스트 다듬기·커넥션 원뿔 다듬기) 람다 엔트리. 메모리 2048MB, 타임아웃 60초, arm64.
 // 이벤트: { bucket, inKey, outKey, resultKey, errKey, mode, options }
 //
-// 이 함수가 쓰는 cuffBlend.js는 11°를 PRC 면(Z_a+0.1, prcConeHeightMm)까지 맞춘 뒤 2°로 출발한다.
+// 이 함수가 쓰는 cuffBlend.js는 11°를 PRC 면(prcConeHeightMm, Regular RH는 덴티움 0.33·덴티스·메가젠 0.4·그 외 0.3)까지 맞춘 뒤 2°로 출발한다.
 // 테스트·프로덕션은 execution.js가 람다를 부르므로, 스펙/이음 로직을 바꾸면
 // scripts/abutment-stl-js/deploy-stl-cuff-lambda.sh 로 이 함수도 같이 갱신한다. 백엔드만 올리면 준비 재생성에 옛 코드가 남는다.
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";

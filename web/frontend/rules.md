@@ -423,7 +423,7 @@ Notes:
 - 제조사 워크시트 커프 확인 · Re(커프 재디자인):
   - `caseInfos.cuffBlend.status`(서버 auto 보정 결과)를 `utils/cuffBlendStatus.ts`로만 판정합니다. 준비·가공 전(`request`/`cam`) 카드에서만 표시합니다.
   - `manual-review`/`failed`: FL 불량과 같은 링 + 썸네일 위「커프 확인」뱃지(사유는 title). 프리뷰 `Re` 버튼이 빨간 강조.
-  - `spec-pending`: 카드 빨간 테두리 +「개발팀 확인 필요 — 커넥션 스펙 미등록」문구. 개발팀이 `web/backend/services/abutmentStl/cuffConnectionSpecs.js`를 채운다(`.cursor/rules/cuff-connection-spec.mdc`). 새 임플란트는 originDiameter·taperHeightMm만 넣고, 11° 면 높이는 항상 Z_a+0.1(`prcConeHeightMm`)이다.
+  - `spec-pending`: 카드 빨간 테두리 +「개발팀 확인 필요 — 커넥션 스펙 미등록」문구. 개발팀이 `web/backend/services/abutmentStl/cuffConnectionSpecs.js`를 채운다(`.cursor/rules/cuff-connection-spec.mdc`). 새 임플란트는 originDiameter·taperHeightMm을 넣고, Regular RH 11° 면은 `prcConeHeightMm`(덴티움 0.33, 덴티스·메가젠 0.4, 그 외 0.3)이다.
   - 프리뷰 `Re`는 FL 바로 왼쪽(HF · Re · FL). 70°보다 누운 커프를 피니시라인-0.2mm ~ 커넥션 상단 G2 곡선(70° 이내)으로 바꾸는 기공소 디자인 변경이라 자동 실행하지 않습니다. 실패 사유(납작하지 않음·높이 부족 등)는 토스트로 보여 줍니다.
   - 의뢰자가 결정을 기다리는 제안(`cuffProposal.status=proposed`)은 카드「형상 제안중」.
 - 의뢰자 커프 형상 수정 제안:

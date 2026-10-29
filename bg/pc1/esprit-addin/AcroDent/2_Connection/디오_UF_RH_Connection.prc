@@ -80,7 +80,7 @@ BEGIN_OPERATION; 316; [10.0MM_����]DIO_Connection; 0;
    CustomSetting6; 636; 0;  CAPTION; ����� ���� ���� 6; SOURCE; 1; TECHCODETYPE; 2;
    Comment; 7; ;  CAPTION; �ּ�; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 7;;
-		:11deg Finish face = origin@Z0 + Za+0.1 (STL prcConeHeightMm). Do not shift hex/cutoff Z alone. 0.203 revert 2026-10-29. Copy to op PC.
+		:11deg Finish face = origin diameter @ Z=0 + 0.3mm (STL prcConeHeightMm). Do not shift hex/cutoff Z alone. 0.203 revert 2026-10-29. Copy to op PC.
 	END_STRING
    4424; 4424; 27;  SOURCE; 0; TECHCODETYPE; 2;
    CustomSettingStr7; 1806; ;  CAPTION; ����� ���� ���ڿ� 7; SOURCE; 1; TECHCODETYPE; 3;
@@ -137,7 +137,7 @@ BEGIN_OPERATION; 316; [10.0MM_����]DIO_Connection; 0;
    Text; 513; ;  CAPTION; ����; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 513;;
     :
-    :(NOTE 2026-10-29) Finish 11deg face = origin Z=0 + Za+0.1mm = STL prcConeHeightMm. No solo hex/cutoff Z shift. Copy to operating PC.
+    :(NOTE 2026-10-29) Finish 11deg face = origin diameter @ Z=0 + 0.3mm = STL prcConeHeightMm. No solo hex/cutoff Z shift. Copy to operating PC.
     :G00G99G40G18G80T0
     :(Deburr Step drill)
 		:M88

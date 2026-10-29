@@ -7,9 +7,9 @@
 // 기공소가 11° 커넥션을 생략하고 헥스만 길게 넘기면, 제조사 준비 파이프라인이
 // 헥스를 L2 길이로 남기고 그 위에 스펙 11° 원뿔을 붙인다.
 // 원뿔이 짧아 브랜드 원점 직경(자체검사 diameterRef)이 메시 위에 없으면
-// 11°를 PRC 면 높이(originDiameter @ Z=0 → prcConeHeightMm = Z_a+0.1)까지 연장하고,
+// 11°를 PRC 면 높이(originDiameter @ Z=0 → prcConeHeightMm, Regular RH는 0.3mm)까지 연장하고,
 // 그 원점 직경이 되는 높이를 Z=0으로 옮긴다. 스펙 Z_a(taperHeightMm)에서 멈추면
-// 커넥션 PRC Finish 면(Z_a+0.1)과 단이 난다. 접수 검사(preflight)·의뢰 전 보정 STL에서는 호출하지 않는다.
+// 커넥션 PRC Finish 면(Regular RH는 덴티움 0.33·덴티스·메가젠 0.4·그 외 0.3)과 단이 난다. 접수 검사(preflight)·의뢰 전 보정 STL에서는 호출하지 않는다.
 // 임플란트 추가·PRC 면 높이 변경: cuffConnectionSpecs.js 상단 주석.
 import { Mesh, meshZSection } from "./meshCore.js";
 import { CONNECTIONS_SEED } from "../../scripts/db/data/connections.seed.js";
@@ -31,6 +31,8 @@ const CONE_EXTEND_TOL_MM = 0.008;
 const Z_ORIGIN_MAX_MM = 2.5;
 const CONE_SNAP_TOL_MM = 0.06;
 const SCREW_CHANNEL_R = 1.15;
+/** 커프가 11° 면에서 떠나는 기울기. cuffBlend CUFF_EMERGENCE_START_SLOPE(2°)와 같다. */
+const FACE_EMERGENCE_SLOPE = Math.tan((2 * Math.PI) / 180);
 
 const BRAND_ALIAS = {
   OSSTEM: { TS: "TS3" },
@@ -75,6 +77,7 @@ function resolveGeometry(options) {
   return {
     originDiameter: num(passed.originDiameter) || num(spec?.originDiameter),
     taperHeightMm: num(passed.taperHeightMm) || num(spec?.taperHeightMm),
+    prcConeTopMm: num(passed.prcConeTopMm) || num(spec?.prcConeTopMm),
     hexSize: num(passed.hexSize) || num(seed?.hexSize),
     l2: num(passed.l2) || num(seed?.l2),
     specKey: spec?.key || null,
@@ -549,7 +552,7 @@ export function addMissingConnectionTaper(mesh, options = {}) {
   }
 
   log(
-    `[connection-taper] 긴 헥스 ${hexLen.toFixed(2)}mm → 헥스 ${canonicalHexLen.toFixed(2)}mm + 11° 원뿔 ${geo.taperHeightMm.toFixed(2)}mm`,
+    `[connection-taper] 긴 헥스 ${hexLen.toFixed(2)}mm → 헥스 ${canonicalHexLen.toFixed(2)}mm + 11° 원뿔 ${(prcConeHeightMm(geo) ?? geo.taperHeightMm).toFixed(2)}mm`,
   );
   return {
     applied: true,
@@ -624,7 +627,38 @@ function measureExistingCone(mesh, originR) {
   return { r0: found.r0, slope: TAPER_SLOPE, measuredTopZ: top, bottomZ: found.bottomZ };
 }
 
-function replaceOuterBandWithCone(mesh, zLo, zHi, radiusAt, rSplit) {
+/** 단면이 살짝 찌그러져 hexRatio에 걸려도, 평균 반경이 11°에 있으면 그 끝까지 본다. */
+function looseConeTop(mesh, r0, fromZ) {
+  let top = fromZ;
+  let miss = 0;
+  for (let z = fromZ; z <= fromZ + 1.5; z += 0.01) {
+    const m = metricsAt(mesh, z);
+    if (!m) break;
+    const on = Math.abs(m.rMean - (r0 + TAPER_SLOPE * z)) <= CONE_FIT_TOL_MM && m.hexRatio < 1.2;
+    if (on) {
+      top = z;
+      miss = 0;
+    } else if (++miss > 3) break;
+  }
+  return top;
+}
+
+/**
+ * PRC 면(zLo) 반경에서 2°·곡률 0으로 출발해 위 끝 반경까지 잇는다.
+ * 비중은 양 끝 기울기·곡률이 0인 5차식. 11°로 곧장 이어 가면 길었던 원뿔이 그대로 남는다.
+ */
+function faceContinuationRadius(z, zLo, zHi, ra, rTop) {
+  const h = zHi - zLo;
+  if (!(h > 1e-6)) return ra;
+  const x = Math.max(0, Math.min(1, (z - zLo) / h));
+  const s0 = Math.min(FACE_EMERGENCE_SLOPE, TAPER_SLOPE);
+  const base = ra + s0 * (z - zLo);
+  const orig = ra + (rTop - ra) * x;
+  const w = x * x * x * (10 - 15 * x + 6 * x * x);
+  return base + w * (orig - base);
+}
+
+function replaceOuterBandWithCone(mesh, zLo, zHi, radiusAt, rSplit, emerge = false) {
   const snapshot = mesh.toTriangleSoup();
   try {
     const kept = [];
@@ -656,11 +690,15 @@ function replaceOuterBandWithCone(mesh, zLo, zHi, radiusAt, rSplit) {
     if (!bottom || !upper) {
       throw new Error(`extend-boundary zLo=${zLo.toFixed(3)} zHi=${zHi.toFixed(3)}`);
     }
+    const rTop = emerge ? meanR(upper) : null;
+    const ra = radiusAt(zLo);
+    const bandRadius = emerge ? (z) => faceContinuationRadius(z, zLo, zHi, ra, rTop) : radiusAt;
+    const row = emerge ? 0.01 : CONE_ROW_MM;
     const rings = [asCcw(bottom)];
-    for (let z = zLo + CONE_ROW_MM; z < zHi - 1e-4; z += CONE_ROW_MM) {
-      rings.push(circleRing(z, radiusAt(z), 72));
+    for (let z = zLo + row; z < zHi - 1e-4; z += row) {
+      rings.push(circleRing(z, bandRadius(z), 72));
     }
-    rings.push(circleRing(zHi, radiusAt(zHi), 72));
+    rings.push(circleRing(zHi, bandRadius(zHi), 72));
     if (upper) rings.push(asCcw(upper));
     let loft = [];
     for (let i = 0; i < rings.length - 1; i += 1) loft.push(...stitch(rings[i], rings[i + 1]));
@@ -696,7 +734,7 @@ function snapConeVertices(mesh, originR, zLo, zHi) {
 
 /**
  * 짧은 11° 원뿔을 PRC 면 높이까지 연장하고, 브랜드 원점 직경이 되는 높이를 Z=0으로 둔다.
- * 원뿔이 이미 PRC 높이와 같으면 메시를 바꾸지 않는다. 더 긴 원뿔은 자르지 않는다(커프 이음이 PRC 면부터 덮는다).
+ * 그보다 긴 11°는 PRC 면에서 잘라 내고, 그 위는 2°로 이어 붙인다.
  */
 export function ensureConnectionTaperSpec(mesh, options = {}) {
   const log = options.log || (() => {});
@@ -717,19 +755,64 @@ export function ensureConnectionTaperSpec(mesh, options = {}) {
     log(`[connection-taper] 원점 높이 ${zOrigin} 가 범위를 넘습니다.`);
     return { applied: false, reason: "origin-out-of-range" };
   }
-  const topAfter = cone.measuredTopZ - zOrigin;
+  const topAfter = Math.max(cone.measuredTopZ, looseConeTop(mesh, cone.r0, cone.measuredTopZ)) - zOrigin;
   const needsShift = Math.abs(zOrigin) > ORIGIN_SHIFT_TOL_MM;
   const needsExtend = topAfter < targetHeight - CONE_EXTEND_TOL_MM;
-  if (!needsShift && !needsExtend) {
+  const needsTrim = topAfter > targetHeight + CONE_EXTEND_TOL_MM;
+  if (!needsShift && !needsExtend && !needsTrim) {
     log("[connection-taper] 원점·11° 길이가 PRC 면과 같습니다.");
     return { applied: false, reason: "already-spec" };
   }
 
   const snapshot = mesh.toTriangleSoup();
   let extended = false;
+  let trimmed = false;
+  let trimHi = null;
   try {
     if (needsShift) mesh.translate(0, 0, -zOrigin);
-    if (needsExtend) {
+    if (needsTrim) {
+      const zLo = targetHeight;
+      // 11°가 끝나는 점이 아니라, 반경이 원뿔을 벗어나 커프가 시작되는 높이까지 지운다.
+      // 원뿔 끝 반경에 다시 붙이면 길었던 11°가 그대로 남는다.
+      let zCuff = null;
+      let lastOn = zLo;
+      const zLimit = topAfter + 0.4;
+      for (let z = zLo + 0.02; z <= zLimit; z += 0.01) {
+        const m = metricsAt(mesh, z);
+        if (!m) break;
+        const coneR = originR + TAPER_SLOPE * z;
+        const onCone = Math.abs(m.rMean - coneR) <= CONE_FIT_TOL_MM && m.hexRatio < 1.2;
+        if (onCone) {
+          lastOn = z;
+          continue;
+        }
+        zCuff = z;
+        break;
+      }
+      const zHi = zCuff ?? (lastOn > zLo + CONE_EXTEND_TOL_MM ? lastOn : null);
+      try {
+        if (!(zHi > zLo + CONE_EXTEND_TOL_MM)) throw new Error("trim-span");
+        const channel = channelRadius(mesh, Math.min(-0.4, zLo), Math.max(0.6, zHi));
+        const rSplit =
+          channel && channel < originR - 0.2 ? (channel + originR) / 2 : Math.max(SCREW_CHANNEL_R, originR * 0.72);
+        const ok = replaceOuterBandWithCone(
+          mesh,
+          zLo,
+          zHi,
+          (z) => originR + TAPER_SLOPE * z,
+          rSplit,
+          true,
+        );
+        if (!ok) throw new Error("trim-failed");
+        trimmed = true;
+        trimHi = zHi;
+      } catch (error) {
+        replaceMesh(mesh, snapshot);
+        if (needsShift) mesh.translate(0, 0, -zOrigin);
+        log(`[connection-taper] 긴 원뿔은 자르지 못했습니다(${error?.message || error}).`);
+        if (!needsShift) throw error;
+      }
+    } else if (needsExtend) {
       const shifted = mesh.toTriangleSoup();
       try {
         // 원뿔이 원점 직경 전에 끊겨도, 헥스 아래로는 내려가지 않고 PRC 면까지만 잇는다.
@@ -771,11 +854,12 @@ export function ensureConnectionTaperSpec(mesh, options = {}) {
   log(
     `[connection-taper] 원점 직경 ${geo.originDiameter.toFixed(3)}mm` +
       `${needsShift ? ` Z${(-zOrigin).toFixed(3)}` : ""}` +
-      `${extended ? ` · 11°를 z=${targetHeight.toFixed(2)}(Ø${(2 * (originR + TAPER_SLOPE * targetHeight)).toFixed(3)})까지 연장` : ""}`,
+      `${extended ? ` · 11°를 z=${targetHeight.toFixed(2)}(Ø${(2 * (originR + TAPER_SLOPE * targetHeight)).toFixed(3)})까지 연장` : ""}` +
+      `${trimmed ? ` · z=${targetHeight.toFixed(2)}~${trimHi.toFixed(2)} 11°를 지우고 2°로 이음` : ""}`,
   );
   return {
     applied: true,
-    reason: extended ? "extended" : "origin-shifted",
+    reason: trimmed ? "trimmed" : extended ? "extended" : "origin-shifted",
     zShift: needsShift ? -zOrigin : 0,
     originDiameter: geo.originDiameter,
     taperHeightMm: geo.taperHeightMm,

@@ -1,0 +1,24 @@
+---
+description: 커넥션·페이스홀 NC는 AcroDent만 고친다. 타사 참고용 아카이브는 읽기만 한다.
+globs: bg/pc1/esprit-addin/**/*,.archive/cam/**/*
+alwaysApply: true
+---
+
+# 가공 코드는 AcroDent, 아카이브는 참고만
+
+Esprit이 읽는 커넥션·페이스홀 PRC의 수정 위치는 `bg/pc1/esprit-addin/AcroDent/` 이다.
+
+`.archive/cam/Acrodent/타사 커스텀 nc 참고용` 은 쓰지 않는 참고 자료다. 수치를 맞추거나 고치지 않는다.
+
+## Do / Don't
+
+```text
+# ❌ BAD — 참고용 NC를 가공 프로그램처럼 수정
+.archive/cam/Acrodent/타사 커스텀 nc 참고용/2_Connection
+
+# ✅ GOOD — 운영에 들어가는 애드인 원본
+bg/pc1/esprit-addin/AcroDent/2_Connection
+bg/pc1/esprit-addin/AcroDent/1_Face Hole
+```
+
+운영 PC 애드인은 이 git 폴더를 복사해야 NC에 반영된다. Esprit은 저장소를 읽지 않는다.

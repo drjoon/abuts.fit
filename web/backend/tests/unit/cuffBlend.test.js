@@ -14,7 +14,7 @@ import {
   _prepare,
   _smoothProfilesAcrossColumns,
 } from "../../services/abutmentStl/cuffBlend.js";
-import { resolveCuffConnectionSpec, TAPER_SLOPE } from "../../services/abutmentStl/cuffConnectionSpecs.js";
+import { prcConeHeightMm, resolveCuffConnectionSpec, TAPER_SLOPE } from "../../services/abutmentStl/cuffConnectionSpecs.js";
 import { parseStl, writeBinaryStl } from "../../utils/screwHoleFill.js";
 
 const SEG = 180;
@@ -227,6 +227,8 @@ const megagen = resolveCuffConnectionSpec({
 describe("resolveCuffConnectionSpec", () => {
   it("matches aliases and leaves unconfirmed brands empty", () => {
     expect(osstem.spec?.taperHeightMm).toBe(0.2);
+    expect(prcConeHeightMm(osstem.spec)).toBe(0.3);
+    expect(prcConeHeightMm(megagen.spec)).toBe(0.4);
     expect(
       resolveCuffConnectionSpec({ implantManufacturer: "NEOBIOTECH", implantBrand: "IS2", implantFamily: "Regular" })
         .spec?.key,

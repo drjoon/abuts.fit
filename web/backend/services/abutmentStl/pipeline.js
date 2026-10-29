@@ -4,7 +4,7 @@
 // - web/backend/services/abutmentStl/pipeline.worker.js
 //
 // Rhino 없이 1-stl → 2-filled를 만든다. 순서는 process_abutment_stl.main과 같다:
-// import → align → 11° 커넥션 추가·짧은 원뿔을 PRC 면(Z_a+0.1)까지 연장·원점 재정렬 → finishline → 스크류홀 패치 → 직경 → fill_steps → export → 메타.
+// import → align → 11° 커넥션 추가·짧은 원뿔을 PRC 면(Regular RH는 덴티움 0.33·덴티스·메가젠 0.4·그 외 0.3)까지 연장·원점 재정렬 → finishline → 스크류홀 패치 → 직경 → fill_steps → export → 메타.
 // 원뿔 목표 높이는 cuffConnectionSpecs.prcConeHeightMm. 스펙 Z_a에서 멈추면 커넥션 PRC Finish 면과 단이 난다.
 // preflight는 필레 검사만 한다. 마진 코너 정점은 옮기지 않는다.
 // 커프·포스트 다듬기는 제조사 준비에서만 한다. 이미 보정된 STL(surfacePrepared)은 정렬만 한다.

@@ -9,7 +9,7 @@
 // - auto: 커넥션 상단 Z_a ~ 단차가 끝난 Z_b 사이를 곡률까지 이어지는(G2) 곡면으로 교체
 // - redesign(Re): 70°보다 누운(접시형) 커프를 피니시라인-0.2mm ~ Z_a 사이 G2 곡면으로 교체(의뢰자 제안·제조사 Re 버튼)
 // 제조사 커넥션(Z_a 아래)과 피니시라인 아래 0.2mm 위쪽은 정점 하나도 옮기지 않는다.
-// 11°는 스펙 Z_a가 아니라 PRC 면(prcConeHeightMm = Z_a+0.1)까지다. 메시가 이미 그 높이면 이음은 2°로 출발하고,
+// 11°는 스펙 Z_a가 아니라 PRC 면(prcConeHeightMm, Regular RH는 덴티움 0.33·덴티스·메가젠 0.4·그 외 0.3)까지다. 메시가 이미 그 높이면 이음은 2°로 출발하고,
 // 아직 짧으면 프로파일이 11°를 그 면까지 채운다. 임플란트 추가·PRC 면 높이: cuffConnectionSpecs.js 상단 주석.
 import { parseStl, writeBinaryStl } from "../../utils/screwHoleFill.js";
 import {
@@ -574,8 +574,8 @@ export function resolveConnectionTop(taper, spec, specKey) {
     return { zA: Math.min(zA, top - 0.01), matchedKey: specKey, warning: null };
   }
   if (Number.isFinite(prcH) && top >= prcH - TAPER_MATCH_BELOW_MM) {
-    // 11°를 PRC 면까지 맞춘 메시(또는 그보다 김). 이음은 PRC 면에서 시작한다.
-    return { zA, matchedKey: specKey, warning: null };
+    // 11°가 PRC 면에 닿거나 그보다 길다. 그 면에서 자르고, 길었던 구간은 이음 띠가 지운 뒤 2°로 잇는다.
+    return { zA: prcH, matchedKey: specKey, warning: null };
   }
   if (spec.labExtendsTaper && top > zA) {
     return { zA, matchedKey: specKey, warning: null };
@@ -3095,7 +3095,7 @@ function setup(buffer, { spec, specKey }) {
     if (!taper) fail("manual-review", "원점 아래 11° 커넥션 테이퍼를 찾지 못했습니다.");
     const top = resolveConnectionTop(taper, spec, specKey);
     const prcH = prcConeHeightMm(spec);
-    // 이음 절단은 제조사 원뿔(또는 그보다 짧은 실측 끝). 11°는 프로파일에서 PRC 면까지 채운다.
+    // 이음 절단은 PRC 면, 또는 그보다 짧은 실측 끝. 짧은 11°만 프로파일이 PRC 면까지 채운다.
     const zA = taper.departZ > 0 ? Math.min(top.zA, taper.departZ) : top.zA;
     const coneExtendMm = Number.isFinite(prcH)
       ? Math.max(0, prcH - zA)
@@ -3305,8 +3305,16 @@ export function blendCuffJunction(buffer, options = {}) {
       const n = EMERGENCE_ORIG_SAMPLES;
       const pts = [];
       for (let i = 0; i <= n; i += 1) {
-        const r = probe.rayRadius(thetas[j], zA + (i / n) * hb);
-        if (Number.isFinite(r)) pts.push([i / n, r]);
+        const z = zA + (i / n) * hb;
+        let r = probe.rayRadius(thetas[j], z);
+        if (!Number.isFinite(r)) continue;
+        // PRC 면 위로 이어진 11°는 커프가 아니다. 그 반경을 목표로 두면 길었던 원뿔이 다시 그려진다.
+        const faceZ = zA + (coneExtendMm ?? 0);
+        const coneR = ra + coneSlope * (z - zA);
+        if (z > faceZ + 0.015 && Math.abs(r - coneR) <= 0.02) {
+          r = ra + coneSlope * (faceZ - zA) + CUFF_EMERGENCE_START_SLOPE * (z - faceZ);
+        }
+        pts.push([i / n, r]);
       }
       if (pts.length < n * 0.75) return null;
       const sT = (Number.isFinite(eSlope) ? Math.max(0, eSlope) : (rTop - pts[0][1]) / hb) * hb;

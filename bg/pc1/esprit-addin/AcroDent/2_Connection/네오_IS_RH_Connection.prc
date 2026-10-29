@@ -73,7 +73,7 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
    CustomSetting6; 636; 0;  CAPTION; ����� ���� ���� 6; SOURCE; 1; TECHCODETYPE; 2;
    Comment; 7; ;  CAPTION; �ּ�; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 7;;
-		:11deg Finish face = origin@Z0 + Za+0.1 (STL prcConeHeightMm). Do not shift hex/cutoff Z alone. 0.203 revert 2026-10-29. Copy to op PC.
+		:11deg Finish face = origin diameter @ Z=0 + 0.3mm (STL prcConeHeightMm). Do not shift hex/cutoff Z alone. 0.203 revert 2026-10-29. Copy to op PC.
 	END_STRING
    4424; 4424; 57;  SOURCE; 0; TECHCODETYPE; 2;
    CustomSettingStr7; 1806; ;  CAPTION; ����� ���� ���ڿ� 7; SOURCE; 1; TECHCODETYPE; 3;
@@ -129,7 +129,7 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
    Text; 513; ;  CAPTION; ����; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 513;;
     :
-    :(NOTE 2026-10-29) Finish 11deg face = origin Z=0 + Za+0.1mm = STL prcConeHeightMm. No solo hex/cutoff Z shift. Copy to operating PC.
+    :(NOTE 2026-10-29) Finish 11deg face = origin diameter @ Z=0 + 0.3mm = STL prcConeHeightMm. Hex, drill, cutoff, and the cone hex end move with this face. Copy to operating PC.
     :G00G99G40G18G80T0
     :(Deburr Step drill)
 		:M88
@@ -138,7 +138,7 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:G4 U0.2
 		:G1 Z0.0 F0.1
 		:G1 Z4.5 F0.04
-		:G83 Z[#520+#523+3.85] Q1000 P5 F0.025
+		:G83 Z[#520+#523+3.820] Q1000 P5 F0.025
     :G80
 		:G0 Z-1.5
     :G0 T0
@@ -148,10 +148,10 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:
     :(Connection Rough Turn/NR0.4)
 		:M3 S3000 T0202
-		:G0 X[#521+1.8] Z[#520+#523+0.092]
+		:G0 X[#521+1.8] Z[#520+#523+0.062]
 		:G1 X5.8 F0.1
 		:G1 X4.9 F0.03
-		:G1 Z[#520+#523+3.55] F0.015
+		:G1 Z[#520+#523+3.520] F0.015
 		:G1 X[#521+0.8] W2.2
 		:G1 U0.1 W1.0 F0.05
 		:G0 X40.0 Z[#520-0.4]
@@ -160,10 +160,10 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:
 		:(Rough U0.1)
     :M3 S3500 T0303 (B-Turn/NR0.05)
-    :G99G0 X[#521+1.8] Z[#520+#523-0.003]
+    :G99G0 X[#521+1.8] Z[#520+#523-0.033]
     :G1 X4.5 F0.1
-    :G1 X3.555 F0.01
-    :G1 X3.03 W1.350
+    :G1 X3.567 F0.01
+    :G1 X3.042 W1.350
 		:G1 W0.882
 		:G1 X2.604 W0.213
 		:G4 U0.2
@@ -182,7 +182,7 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:M50
 		:G28H0
 		:M23 S5500
-		:G0 X[#521+1.0] Y2.0 Z[#520+#523+2.07] C0.0
+		:G0 X[#521+1.0] Y2.0 Z[#520+#523+2.040] C0.0
 		:G98 G1X2.51 F3000
 		:G1 Y-2.0 F200
 		:G0 H60.0
@@ -210,7 +210,7 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:M50
 		:G28H0
 		:M23 S1000
-		:G98 G0 X[#521+1.8] Z[#520+#523+1.6]Y0.6C0.0
+		:G98 G0 X[#521+1.8] Z[#520+#523+1.570]Y0.6C0.0
 		:G4 U0.05
     :G1 X4.0 F2000
 		:G1 X3.45 F500
@@ -233,10 +233,10 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:
     :(Finish Connection)
     :M3 S3500 T0303(B-Turn/NR0.05)
-    :G99 G0 X[#521+1.8] Z[#520+#523-0.008]
+    :G99 G0 X[#521+1.8] Z[#520+#523-0.038]
     :G1 X4.3 F0.1
-    :G1 X3.455 F0.01
-		:G1 X2.93 W1.350
+    :G1 X3.467 F0.01
+		:G1 X2.942 W1.350
 		:G1 W0.866
 		:G1 X2.512 W0.209
 		:G4 U0.2
@@ -253,7 +253,7 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:M50
 		:G28H0.0
 		:M23 S5500
-		:G0 X[#521+1.0] Y2.0 Z[#520+#523+2.07] C0.0
+		:G0 X[#521+1.0] Y2.0 Z[#520+#523+2.040] C0.0
 		:G98 G1X2.51 F3000
 		:G1 Y-2.0F300
 		:G0 H60.0
@@ -280,7 +280,7 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:M50
 		:G28H0
 		:M23S2000
-		:G98G0X[#521+1.8]Z[#520+#523+1.6]Y0.6C0.0
+		:G98G0X[#521+1.8]Z[#520+#523+1.570]Y0.6C0.0
 		:G1X4.0F2000
 		:G1X3.45F500
 		:G4 U0.2
@@ -304,7 +304,7 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:M50
 		:G28H0
 		:M23 S5500 
-		:G0 X[#521+1.0] Y2.0 Z[#520+#523+2.07] C0.0
+		:G0 X[#521+1.0] Y2.0 Z[#520+#523+2.040] C0.0
 		:G98 G1 X2.51 F3000
 		:G1Y-2.0 F500
 		:G0H60.0
@@ -329,10 +329,10 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:
     :(Final Deburr)
     :M3 S3500 T0303(B-Turn/NR0.05)
-    :G99 G0 X[#521+1.8] Z[#520+#523-0.008]
+    :G99 G0 X[#521+1.8] Z[#520+#523-0.038]
     :G1 X4.3 F0.1
-    :G1 X3.455 F0.01
-		:G1 X2.93 W1.350
+    :G1 X3.467 F0.01
+		:G1 X2.942 W1.350
 		:G1 W0.866
 		:G1 X2.512 W0.209
 		:G4 U0.2
@@ -350,7 +350,7 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:T0101 (UT-L T1.5)
 		:M3 S3000
 		:M12
-		:G0X[#521+1.8]Z[#520+#523+2.82]
+		:G0X[#521+1.8]Z[#520+#523+2.790]
 		:G1X[#521+1.2]F0.1
 		:M511 
 		:M512 

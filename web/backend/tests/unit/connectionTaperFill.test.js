@@ -331,7 +331,7 @@ describe("connectionTaperFill", () => {
     );
   });
 
-  it("스펙보다 긴 원뿔은 자르지 않고 원점만 그 회사 직경에 맞춘다", () => {
+  it("0.3mm보다 긴 원뿔은 그 위를 지우고 0.3mm에서 2°로 잇는다", () => {
     const spec = CUFF_CONNECTION_SPECS.find((row) => row.key === "DENTIUM|SUPERLINE|REGULAR");
     const r0 = spec.originDiameter / 2 - 0.025;
     const at = (z) => r0 + TAPER_SLOPE * z;
@@ -347,13 +347,16 @@ describe("connectionTaperFill", () => {
       ]),
     );
     const result = ensureConnectionTaperSpec(mesh, { implantProfile: profileOf(spec) });
-    expect(result.reason).toBe("origin-shifted");
+    expect(result.reason).toBe("trimmed");
     expect(outerMetrics(mesh, 0).rMean * 2).toBeCloseTo(spec.originDiameter, 2);
-    const stillCone = spec.taperHeightMm + 0.2;
-    expect(outerMetrics(mesh, stillCone).rMean * 2).toBeCloseTo(
-      spec.originDiameter + 2 * TAPER_SLOPE * stillCone,
-      2,
-    );
+    const prcH = prcConeHeightMm(spec);
+    const faceR = outerMetrics(mesh, prcH).rMean;
+    expect(faceR * 2).toBeCloseTo(spec.originDiameter + 2 * TAPER_SLOPE * prcH, 2);
+    const dz = 0.01;
+    const slope = (outerMetrics(mesh, prcH + dz).rMean - faceR) / dz;
+    expect(slope).toBeGreaterThan(Math.tan((2 * Math.PI) / 180) * 0.5);
+    expect(slope).toBeLessThan(TAPER_SLOPE * 0.5);
+    expect(edgeUse(mesh)).toEqual({ naked: 0, nonManifold: 0 });
   });
 
   it("짧은 11° 원뿔을 스펙 끝까지 연장하고 원점 직경을 Z=0에 둔다", () => {

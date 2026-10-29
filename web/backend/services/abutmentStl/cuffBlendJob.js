@@ -5,7 +5,7 @@
 // - web/backend/services/abutmentStl/connectionTaperSmooth.js (마지막에 커넥션 11° 원뿔 면 다듬기)
 //
 // 커프 보정 한 건. 워커와 람다가 같은 함수를 쓴다.
-// 11° 목표 높이는 cuffConnectionSpecs.prcConeHeightMm(Z_a+0.1). 람다 패키지가 이 파일을 그대로 묶는다.
+// 11° 목표 높이는 cuffConnectionSpecs.prcConeHeightMm(Regular RH는 덴티움 0.33·덴티스·메가젠 0.4·그 외 0.3). 람다 패키지가 이 파일을 그대로 묶는다.
 import { blendCuffJunction, measureCuffConnection, proposeCuffRedesign, redesignCuffBowl } from "./cuffBlend.js";
 import { smoothPostAboveFinishLine } from "./postSmooth.js";
 import { smoothConnectionTaper } from "./connectionTaperSmooth.js";
