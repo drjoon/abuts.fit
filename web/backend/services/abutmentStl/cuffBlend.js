@@ -10,7 +10,8 @@
 // - redesign(Re): 70°보다 누운(접시형) 커프를 피니시라인-0.2mm ~ Z_a 사이 G2 곡면으로 교체(의뢰자 제안·제조사 Re 버튼)
 // 제조사 커넥션(Z_a 아래)과 피니시라인 아래 0.2mm 위쪽은 정점 하나도 옮기지 않는다.
 // 11°는 스펙 Z_a가 아니라 PRC 면(prcConeHeightMm, Regular RH는 덴티움 0.33·덴티스·메가젠 0.4·그 외 0.3)까지다. 메시가 이미 그 높이면 이음은 2°로 출발하고,
-// 아직 짧으면 프로파일이 11°를 그 면까지 채운다. 임플란트 추가·PRC 면 높이: cuffConnectionSpecs.js 상단 주석.
+// 아직 짧으면 프로파일이 11°를 그 면까지 채운다. 원본 커프 옆모습은 높이마다 둘레를 고른 뒤, 아래는 원형 평균 퍼짐만 쓰고 타원은 위쪽에서 넣는다.
+// 임플란트 추가·PRC 면 높이: cuffConnectionSpecs.js 상단 주석.
 import { parseStl, writeBinaryStl } from "../../utils/screwHoleFill.js";
 import {
   TAPER_SLOPE,
@@ -766,6 +767,15 @@ const EMERGENCE_BONE_MM = 1.35;
 const EMERGENCE_FLARE_MAX_SLOPE = Math.tan((75 * Math.PI) / 180);
 /** 11° 연장선에 섞을 원본 커프 옆모습 표본 수(원뿔 끝~이음 위 끝 등간격). */
 const EMERGENCE_ORIG_SAMPLES = 48;
+/**
+ * 에머전스에 넣는 원본 반경은 높이마다 둘레 4차(타원)까지 남기고 8차부터 지운다.
+ * 아래 ORIG_OVAL_FADE_START 비율은 둘레 평균(원형 퍼짐)만 쓰고, 그 위에서 타원을 5차식으로 넣는다.
+ * 타원·3Shape 결이 원뿔 바로 위부터 세로선으로 남는 것을 막는다. 마진 이음은 기존 32/64차를 쓴다.
+ */
+const ORIG_GRID_PASS_HARMONICS = 4;
+const ORIG_GRID_STOP_HARMONICS = 8;
+const ORIG_GRID_Z_STEP_MM = 0.05;
+const ORIG_OVAL_FADE_START = 0.45;
 const LONG_BAND_MM = 2;
 /** 띠 면 평균: 반폭(약 ±30°)과 위쪽 보존 지수(t^p). */
 const BAND_SMOOTH_HALF_COLUMNS = columnsForDeg(30);
@@ -1008,14 +1018,59 @@ function originalProfileOf(orig) {
  * @param {ArrayLike<number>} values 열(0..2π 등간격) 값
  * @param {number} [outN] 돌려줄 등간격 열 수
  */
-function angularLowPass(values, outN = values?.length) {
+/**
+ * 원본 커프 광선 반경을 같은 높이에서 둘레 저역 통과한 뒤 보간한다.
+ * 열마다 rayRadius를 그대로 쓰면 3Shape 다각형 현이 열마다 다른 4차 맞춤이 되어 세로 주름이 된다.
+ */
+function buildSmoothedOrigRadiusAt(probe, thetas, zLo, zHi) {
+  const n = thetas.length;
+  const zs = [];
+  const rows = [];
+  if (!(zHi > zLo)) return () => NaN;
+  for (let z = zLo; z <= zHi + 1e-9; z += ORIG_GRID_Z_STEP_MM) {
+    const raw = thetas.map((theta) => probe.rayRadius(theta, z));
+    const filled = fillMissingCircular(raw);
+    const lp = filled
+      ? angularLowPass(filled, n, ORIG_GRID_PASS_HARMONICS, ORIG_GRID_STOP_HARMONICS)
+      : null;
+    const row = lp || raw;
+    const finite = row.filter(Number.isFinite);
+    const mean = finite.length ? finite.reduce((s, v) => s + v, 0) / finite.length : NaN;
+    const t = (z - zLo) / Math.max(zHi - zLo, 1e-9);
+    const u = (t - ORIG_OVAL_FADE_START) / (1 - ORIG_OVAL_FADE_START);
+    const w =
+      u <= 0 ? 0 : u >= 1 ? 1 : u * u * u * (10 - 15 * u + 6 * u * u);
+    zs.push(z);
+    rows.push(
+      Number.isFinite(mean) && w < 1 - 1e-9
+        ? row.map((r) => (Number.isFinite(r) ? mean + w * (r - mean) : r))
+        : row,
+    );
+  }
+  return (j, z) => {
+    if (!(j >= 0 && j < n)) return NaN;
+    if (z <= zs[0]) return rows[0][j];
+    const last = zs.length - 1;
+    if (z >= zs[last]) return rows[last][j];
+    let i = 0;
+    while (i + 1 < last && zs[i + 1] < z) i += 1;
+    const span = zs[i + 1] - zs[i];
+    const u = span > 1e-12 ? (z - zs[i]) / span : 0;
+    const a = rows[i][j];
+    const b = rows[i + 1][j];
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return Number.isFinite(a) ? a : b;
+    return a + u * (b - a);
+  };
+}
+
+function angularLowPass(values, outN = values?.length, pass = ANGULAR_PASS_HARMONICS, stop = ANGULAR_STOP_HARMONICS) {
   if (!values) return null;
   for (let i = 0; i < values.length; i += 1) if (!Number.isFinite(values[i])) return null;
-  const span = ANGULAR_STOP_HARMONICS - ANGULAR_PASS_HARMONICS;
+  const span = stop - pass;
   return fourierLowPass(
     values,
-    ANGULAR_STOP_HARMONICS - 1,
-    (k) => (k <= ANGULAR_PASS_HARMONICS ? 1 : 0.5 + 0.5 * Math.cos((Math.PI * (k - ANGULAR_PASS_HARMONICS)) / span)),
+    stop - 1,
+    (k) => (k <= pass ? 1 : 0.5 + 0.5 * Math.cos((Math.PI * (k - pass)) / span)),
     outN,
   );
 }
@@ -1439,6 +1494,13 @@ function enforceMinToolRadiusOnCtrl(ctrl, hs, zA, canLiftD0, tailWeights, meridi
 
 /** 이음 프로파일 둘레 평활에 쓰는 t 단계 수(사이는 3차 보간). */
 const PROFILE_SMOOTH_LEVELS = 128;
+/**
+ * 이음 안쪽(위 끝 SEAM_BLEND_DEPTH_MM 아래)은 16차(22°)까지만 남긴다(32차부터 0).
+ * 위 끝 반경은 원본 모서리에 맞춰 32~64차까지 남기는데, 그 성분이 기준 곡선(t³)을 타고 띠 전체로 번지면
+ * 기공소 메시 열(약 4°)이 만든 8° 안팎 물결(±2µm)이 커프에 세로 주름으로 보인다.
+ */
+const PROFILE_INNER_PASS_HARMONICS = 16;
+const PROFILE_INNER_STOP_HARMONICS = 32;
 const PROFILE_START_SLOPE_EPS = 1e-4;
 
 /**
@@ -1449,7 +1511,7 @@ const PROFILE_START_SLOPE_EPS = 1e-4;
  * 원뿔 끝 G2 출발과 위 끝 반경은 바뀌지 않는다.
  * @param {((t: number) => number)[]} profiles 등간격 열의 t∈[0,1] 반경 함수
  */
-function smoothProfilesAcrossColumns(profiles) {
+function smoothProfilesAcrossColumns(profiles, heights = null) {
   const ends = profiles.map((p) => {
     const r0 = p(0);
     return { r0, r1: p(1), s0: (p(PROFILE_START_SLOPE_EPS) - r0) / PROFILE_START_SLOPE_EPS };
@@ -1466,12 +1528,27 @@ function smoothProfilesAcrossColumns(profiles) {
     return r0 + s0 * t + (r1 - r0 - s0) * t * t * t;
   };
   const L = PROFILE_SMOOTH_LEVELS;
+  const n = profiles.length;
+  // 위 끝 SEAM_BLEND_DEPTH_MM만 원본 모서리 반경 쪽 평활을 쓰고, 그 아래는 기준 곡선째 더 세게 고른다.
+  const topKeep = heights
+    ? heights.map((h) => (Number.isFinite(h) && h > 0 ? Math.min(1, SEAM_BLEND_DEPTH_MM / h) : 1))
+    : null;
   const levels = [];
   for (let i = 0; i <= L; i += 1) {
     const t = i / L;
     const q = profiles.map((p, j) => p(t) - base(j, t));
     const lp = angularLowPass(q);
     if (!lp) return profiles;
+    if (topKeep) {
+      const full = profiles.map((p, j) => base(j, t) + lp[j]);
+      const inner = angularLowPass(full, n, PROFILE_INNER_PASS_HARMONICS, PROFILE_INNER_STOP_HARMONICS);
+      if (!inner) return profiles;
+      for (let j = 0; j < n; j += 1) {
+        const x = Math.max(0, Math.min(1, (t - (1 - topKeep[j])) / topKeep[j]));
+        const w = x * x * x * (10 - 15 * x + 6 * x * x);
+        lp[j] = inner[j] - base(j, t) + w * (full[j] - inner[j]);
+      }
+    }
     levels.push(lp);
   }
   return profiles.map((_, j) => (t) => {
@@ -3299,14 +3376,15 @@ export function blendCuffJunction(buffer, options = {}) {
       return smoothCreaseR[j] * w + Math.max(r, smoothCreaseR[j]) * (1 - w);
     });
     const blendedCols = new Uint8Array(thetas.length);
+    const origRadiusAt = buildSmoothedOrigRadiusAt(probe, thetas, zA, zTopMax);
     // 원본 커프 옆모습(원뿔 끝~이음 위 끝)을 위 끝 반경·기울기를 고정한 4차식으로 맞춘다.
-    // 광선 값을 그대로 쓰면 기공소 메시 면 꺾임이 곡률 튐으로 남는다. 광선이 많이 빗나가면 null.
+    // 둘레를 먼저 고른 반경을 쓴다. 열마다 광선을 그대로 쓰면 3Shape 면 꺾임이 세로 주름으로 남는다.
     const origColumnOf = (j, hb, rTop, eSlope) => {
       const n = EMERGENCE_ORIG_SAMPLES;
       const pts = [];
       for (let i = 0; i <= n; i += 1) {
         const z = zA + (i / n) * hb;
-        let r = probe.rayRadius(thetas[j], z);
+        let r = origRadiusAt(j, z);
         if (!Number.isFinite(r)) continue;
         // PRC 면 위로 이어진 11°는 커프가 아니다. 그 반경을 목표로 두면 길었던 원뿔이 다시 그려진다.
         const faceZ = zA + (coneExtendMm ?? 0);
@@ -3439,7 +3517,7 @@ export function blendCuffJunction(buffer, options = {}) {
         ).map((w, j) => (bowls[j].floorBase ? w : 0))
       : null;
     const enforcedProfiles = enforceMinToolRadiusOnProfiles(
-      smoothProfilesAcrossColumns(bowls.map((b) => b.fn)),
+      smoothProfilesAcrossColumns(bowls.map((b) => b.fn), hs),
       hs,
       zA,
       false,
