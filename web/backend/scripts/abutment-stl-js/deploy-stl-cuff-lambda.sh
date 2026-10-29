@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 커프 보정(포스트·커넥션 원뿔 다듬기 포함) Lambda 생성·코드 갱신·EBS invoke 권한·EB env(ABUTMENT_STL_CUFF_LAMBDA).
 # 제한 시간 60초. 웹은 CUFF_BLEND_TIMEOUT_MS+10초까지 기다리고, 호출 자체가 실패하면 EBS 워커로 돌린다.
+# 이음은 PRC 면(Z_a+0.1)에서 2°로 출발한다. cuffBlend/스펙을 바꾸면 이 스크립트로 람다도 갱신한다.
 #
 #   cd web/backend && ./scripts/abutment-stl-js/deploy-stl-cuff-lambda.sh [test|prod]
 #   web/eb.sh 가 백엔드 배포 직전에 --with-eb 로 같은 스크립트를 부른다.

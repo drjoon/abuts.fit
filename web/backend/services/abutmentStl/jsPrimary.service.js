@@ -14,6 +14,8 @@
 // JS가 정상이면 Rhino는 호출하지 않는다. 문제가 나면 productionSchedule.stlJsFallback에
 // 사유를 남기고 stlPreload를 FAILED로 둔다. 준비 카드는 «JS 실패»와 사유 문구를 보여 준다.
 // 계산 실행 위치는 execution.js가 정한다(람다 60초. 로컬만 워커, 테스트·프로덕션은 람다).
+// filled 람다가 짧은 11°를 PRC 면(Z_a+0.1)까지 잇고, cuff 람다가 그 면에서 이음을 시작한다.
+// 이 규칙을 바꾸면 filled·cuff 람다를 같이 배포한다.
 import path from "path";
 import Request from "../../models/request.model.js";
 import { getObjectBufferFromS3, uploadFileToS3 } from "../../utils/s3.utils.js";

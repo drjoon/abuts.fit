@@ -9,8 +9,16 @@
 // - auto: 커넥션 상단 Z_a ~ 단차가 끝난 Z_b 사이를 곡률까지 이어지는(G2) 곡면으로 교체
 // - redesign(Re): 70°보다 누운(접시형) 커프를 피니시라인-0.2mm ~ Z_a 사이 G2 곡면으로 교체(의뢰자 제안·제조사 Re 버튼)
 // 제조사 커넥션(Z_a 아래)과 피니시라인 아래 0.2mm 위쪽은 정점 하나도 옮기지 않는다.
+// 11°는 스펙 Z_a가 아니라 PRC 면(prcConeHeightMm = Z_a+0.1)까지다. 메시가 이미 그 높이면 이음은 2°로 출발하고,
+// 아직 짧으면 프로파일이 11°를 그 면까지 채운다. 임플란트 추가·PRC 면 높이: cuffConnectionSpecs.js 상단 주석.
 import { parseStl, writeBinaryStl } from "../../utils/screwHoleFill.js";
-import { TAPER_SLOPE, taperTopDiameterOf, CUFF_CONNECTION_SPECS } from "./cuffConnectionSpecs.js";
+import {
+  TAPER_SLOPE,
+  taperTopDiameterOf,
+  CUFF_CONNECTION_SPECS,
+  PRC_FACE_ABOVE_ZA_MM,
+  prcConeHeightMm,
+} from "./cuffConnectionSpecs.js";
 
 export const CUFF_BLEND_VERSION = "cuff-blend-1";
 /** 이 attribute의 삼각형은 커프 보정 곡면이다. */
@@ -560,9 +568,14 @@ function measureConnectionStepTop(probe) {
 export function resolveConnectionTop(taper, spec, specKey) {
   const zA = spec.taperHeightMm;
   const top = taper.measuredTopZ;
+  const prcH = prcConeHeightMm(spec);
   if (top >= zA - TAPER_MATCH_BELOW_MM && top <= zA + TAPER_MATCH_ABOVE_MM) {
     // 스펙보다 원뿔이 먼저 끝나면(기공소 턱이 스펙 Z_a 아래) 원뿔이 끝난 곳에서 잇는다
     return { zA: Math.min(zA, top - 0.01), matchedKey: specKey, warning: null };
+  }
+  if (Number.isFinite(prcH) && top >= prcH - TAPER_MATCH_BELOW_MM) {
+    // 11°를 PRC 면까지 맞춘 메시(또는 그보다 김). 이음은 PRC 면에서 시작한다.
+    return { zA, matchedKey: specKey, warning: null };
   }
   if (spec.labExtendsTaper && top > zA) {
     return { zA, matchedKey: specKey, warning: null };
@@ -937,10 +950,10 @@ function solve3(A, B) {
 }
 
 /**
- * 커넥션 PRC(`AcroDent/2_Connection`, Rough U·Finish Connection·Final Deburr)는 11° 원뿔을 Z_a보다 이만큼 위에서
- * 면 직경으로 들어가 깎는다. 이음 곡선도 Z_a~Z_a+이 값을 11° 원형으로 두어 PRC 면과 같게 한다. 두 값은 같이 바꾼다.
+ * 커넥션 PRC Finish 면은 원점 위 Z_a+이 값. SSOT는 cuffConnectionSpecs.PRC_FACE_ABOVE_ZA_MM.
+ * 이음 프로파일의 11° 채움 길이와 같다. 면 높이를 바꾸면 스펙 상수·Connection PRC Finish·ensureConnectionTaperSpec을 같이 바꾼다.
  */
-export const CUFF_CONNECTION_CONE_EXTEND_MM = 0.1;
+export const CUFF_CONNECTION_CONE_EXTEND_MM = PRC_FACE_ABOVE_ZA_MM;
 /** 커넥션 면 바로 위 커프 출발 기울기. 11°로 이어 넓히면 픽스처 직상방 뼈에 걸린다. */
 const CUFF_EMERGENCE_START_SLOPE = Math.tan((2 * Math.PI) / 180);
 
@@ -3081,19 +3094,26 @@ function setup(buffer, { spec, specKey }) {
   try {
     if (!taper) fail("manual-review", "원점 아래 11° 커넥션 테이퍼를 찾지 못했습니다.");
     const top = resolveConnectionTop(taper, spec, specKey);
-    // 스펙 Z_a보다 원뿔이 먼저 벌어지면 벌어지기 전에서 잇는다. 그 사이 원본 커프를 남기면 이음이 11°로 다시 출발해 어깨가 진다.
+    const prcH = prcConeHeightMm(spec);
+    // 이음 절단은 제조사 원뿔(또는 그보다 짧은 실측 끝). 11°는 프로파일에서 PRC 면까지 채운다.
     const zA = taper.departZ > 0 ? Math.min(top.zA, taper.departZ) : top.zA;
-    return { mesh, probe, triCount, taper, ...top, zA };
+    const coneExtendMm = Number.isFinite(prcH)
+      ? Math.max(0, prcH - zA)
+      : CUFF_CONNECTION_CONE_EXTEND_MM;
+    return { mesh, probe, triCount, taper, ...top, zA, coneExtendMm };
   } catch (error) {
     // 기공소가 11° 원뿔을 스펙보다 짧게 끝내고 수직 구간(fill_steps 포함)을 둔 설계: 첫 계단 바로 아래에서 잇는다.
     const stepTaper = error instanceof CuffBlendError ? measureConnectionStepTop(probe) : null;
     if (!stepTaper) throw error;
+    const stepPrcH = prcConeHeightMm(spec);
+    const stepZa = stepTaper.measuredTopZ;
     return {
       mesh,
       probe,
       triCount,
       taper: stepTaper,
-      zA: stepTaper.measuredTopZ,
+      zA: stepZa,
+      coneExtendMm: Number.isFinite(stepPrcH) ? Math.max(0, stepPrcH - stepZa) : CUFF_CONNECTION_CONE_EXTEND_MM,
       matchedKey: specKey,
       warning: "11° 원뿔이 스펙보다 짧아 첫 계단 아래에서 이었습니다.",
     };
@@ -3143,7 +3163,7 @@ function wrapResult(fn) {
 export function blendCuffJunction(buffer, options = {}) {
   return wrapResult(() => {
     const prepared = setup(buffer, options);
-    const { taper, zA, matchedKey, warning } = prepared;
+    const { taper, zA, coneExtendMm, matchedKey, warning } = prepared;
     let { mesh, probe } = prepared;
     const flMin = finishLineMinZ(options.finishLine);
     if (!Number.isFinite(flMin)) fail("manual-review", "피니시라인이 없어 커프 보호 범위를 정할 수 없습니다.");
@@ -3317,7 +3337,15 @@ export function blendCuffJunction(buffer, options = {}) {
       // 마진까지 높이가 있는 열: Z_a+CUFF_CONNECTION_CONE_EXTEND_MM까지 11° 원형(커넥션 PRC), 그 위는 2°로 서서 원본 커프에 맞춘다.
       if (hb >= 0.8) {
         const orig = j >= 0 ? origColumnOf(j, hb, rTop, eSlope) : null;
-        const blended = orig ? blendTurnedConeWithOriginal(ra, coneSlope, hb, orig) : null;
+        const blended = orig
+          ? blendTurnedConeWithOriginal(
+              ra,
+              coneSlope,
+              hb,
+              orig,
+              coneExtendMm ?? CUFF_CONNECTION_CONE_EXTEND_MM,
+            )
+          : null;
         if (blended) {
           blendedCols[j] = 1;
           return relaxMeridianConcavity(blended, hb, CUFF_MIN_CONCAVE_RADIUS_MM * RELAX_TARGET_MARGIN);
@@ -3473,6 +3501,8 @@ export function blendCuffJunction(buffer, options = {}) {
       detail: {
         matchedSpecKey: matchedKey,
         zA: round3(zA),
+        coneExtendMm: round3(coneExtendMm ?? 0),
+        prcFaceZ: round3(zA + (coneExtendMm ?? 0)),
         zB: round3(zTopMax),
         followsFinishLine: true,
         seam: crease && offsetMm === 0 ? "crease" : "finish-line-offset",

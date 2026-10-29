@@ -7,12 +7,15 @@
 // 기공소가 11° 커넥션을 생략하고 헥스만 길게 넘기면, 제조사 준비 파이프라인이
 // 헥스를 L2 길이로 남기고 그 위에 스펙 11° 원뿔을 붙인다.
 // 원뿔이 짧아 브랜드 원점 직경(자체검사 diameterRef)이 메시 위에 없으면
-// 11°를 스펙 끝(originDiameter + 2·tan(11°)·taperHeightMm)까지 연장하고,
-// 그 원점 직경이 되는 높이를 Z=0으로 옮긴다. 접수 검사(preflight)·의뢰 전 보정 STL에서는 호출하지 않는다.
+// 11°를 PRC 면 높이(originDiameter @ Z=0 → prcConeHeightMm = Z_a+0.1)까지 연장하고,
+// 그 원점 직경이 되는 높이를 Z=0으로 옮긴다. 스펙 Z_a(taperHeightMm)에서 멈추면
+// 커넥션 PRC Finish 면(Z_a+0.1)과 단이 난다. 접수 검사(preflight)·의뢰 전 보정 STL에서는 호출하지 않는다.
+// 임플란트 추가·PRC 면 높이 변경: cuffConnectionSpecs.js 상단 주석.
 import { Mesh, meshZSection } from "./meshCore.js";
 import { CONNECTIONS_SEED } from "../../scripts/db/data/connections.seed.js";
 import {
   TAPER_SLOPE,
+  prcConeHeightMm,
   resolveCuffConnectionSpec,
 } from "./cuffConnectionSpecs.js";
 
@@ -481,7 +484,7 @@ export function addMissingConnectionTaper(mesh, options = {}) {
 
   const zCut = hexBottom + canonicalHexLen;
   const originZ = hexBottom + geo.l2;
-  const zTop = originZ + geo.taperHeightMm;
+  const zTop = originZ + (prcConeHeightMm(geo) ?? geo.taperHeightMm);
   const zLab = found.next ? found.next.z : hexTop;
   const zShift = -originZ;
   const outerMin = Math.min(...found.run.map((s) => s.m.rMin));
@@ -692,8 +695,8 @@ function snapConeVertices(mesh, originR, zLo, zHi) {
 }
 
 /**
- * 짧은 11° 원뿔을 스펙 끝까지 연장하고, 브랜드 원점 직경이 되는 높이를 Z=0으로 둔다.
- * 원뿔이 이미 스펙이면 메시를 바꾸지 않는다.
+ * 짧은 11° 원뿔을 PRC 면 높이까지 연장하고, 브랜드 원점 직경이 되는 높이를 Z=0으로 둔다.
+ * 원뿔이 이미 PRC 높이와 같으면 메시를 바꾸지 않는다. 더 긴 원뿔은 자르지 않는다(커프 이음이 PRC 면부터 덮는다).
  */
 export function ensureConnectionTaperSpec(mesh, options = {}) {
   const log = options.log || (() => {});
@@ -703,6 +706,7 @@ export function ensureConnectionTaperSpec(mesh, options = {}) {
     return { applied: false, reason: "no-spec" };
   }
   const originR = geo.originDiameter / 2;
+  const targetHeight = prcConeHeightMm(geo) ?? geo.taperHeightMm;
   const cone = measureExistingCone(mesh, originR);
   if (!cone) {
     log("[connection-taper] 11° 원뿔을 찾지 못해 원점 재정렬을 건너뜁니다.");
@@ -715,9 +719,9 @@ export function ensureConnectionTaperSpec(mesh, options = {}) {
   }
   const topAfter = cone.measuredTopZ - zOrigin;
   const needsShift = Math.abs(zOrigin) > ORIGIN_SHIFT_TOL_MM;
-  const needsExtend = topAfter < geo.taperHeightMm - CONE_EXTEND_TOL_MM;
+  const needsExtend = topAfter < targetHeight - CONE_EXTEND_TOL_MM;
   if (!needsShift && !needsExtend) {
-    log("[connection-taper] 원점·11° 길이가 스펙과 같습니다.");
+    log("[connection-taper] 원점·11° 길이가 PRC 면과 같습니다.");
     return { applied: false, reason: "already-spec" };
   }
 
@@ -728,13 +732,13 @@ export function ensureConnectionTaperSpec(mesh, options = {}) {
     if (needsExtend) {
       const shifted = mesh.toTriangleSoup();
       try {
-        // 원뿔이 원점 직경 전에 끊겨도, 헥스 아래로는 내려가지 않고 스펙 끝까지만 잇는다.
+        // 원뿔이 원점 직경 전에 끊겨도, 헥스 아래로는 내려가지 않고 PRC 면까지만 잇는다.
         const coneBottomAfter = cone.bottomZ - (needsShift ? zOrigin : 0);
         const zLo = Math.max(
           coneBottomAfter + 0.02,
-          Math.min(topAfter - 0.01, geo.taperHeightMm - 0.02),
+          Math.min(topAfter - 0.01, targetHeight - 0.02),
         );
-        const zHi = geo.taperHeightMm;
+        const zHi = targetHeight;
         const channel = channelRadius(mesh, Math.min(-0.4, zLo), Math.max(0.6, zHi));
         const rSplit =
           channel && channel < originR - 0.2 ? (channel + originR) / 2 : Math.max(SCREW_CHANNEL_R, originR * 0.72);
@@ -753,7 +757,7 @@ export function ensureConnectionTaperSpec(mesh, options = {}) {
         log(`[connection-taper] 11° 연장은 건너뛰고 원점만 맞춥니다(${error?.message || error}).`);
       }
     }
-    snapConeVertices(mesh, originR, cone.bottomZ - zOrigin, geo.taperHeightMm);
+    snapConeVertices(mesh, originR, cone.bottomZ - zOrigin, targetHeight);
     const atOrigin = metricsAt(mesh, 0);
     if (!atOrigin || Math.abs(atOrigin.rMean * 2 - geo.originDiameter) > 0.05) {
       throw new Error("origin-diameter");
@@ -767,7 +771,7 @@ export function ensureConnectionTaperSpec(mesh, options = {}) {
   log(
     `[connection-taper] 원점 직경 ${geo.originDiameter.toFixed(3)}mm` +
       `${needsShift ? ` Z${(-zOrigin).toFixed(3)}` : ""}` +
-      `${extended ? ` · 11°를 z=${geo.taperHeightMm.toFixed(2)}(Ø${(2 * (originR + TAPER_SLOPE * geo.taperHeightMm)).toFixed(3)})까지 연장` : ""}`,
+      `${extended ? ` · 11°를 z=${targetHeight.toFixed(2)}(Ø${(2 * (originR + TAPER_SLOPE * targetHeight)).toFixed(3)})까지 연장` : ""}`,
   );
   return {
     applied: true,
@@ -775,6 +779,7 @@ export function ensureConnectionTaperSpec(mesh, options = {}) {
     zShift: needsShift ? -zOrigin : 0,
     originDiameter: geo.originDiameter,
     taperHeightMm: geo.taperHeightMm,
+    prcConeHeightMm: targetHeight,
     measuredOriginDiameter: 2 * cone.r0,
     specKey: geo.specKey,
   };

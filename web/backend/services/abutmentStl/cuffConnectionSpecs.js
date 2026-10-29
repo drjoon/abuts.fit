@@ -9,9 +9,20 @@
 // 커넥션 11° 테이퍼 스펙 SSOT. 커프 이음부 G2 보정과 Re(커프 재디자인)가 보호하는 제조사 영역의 상단(Z_a)을 정한다.
 //
 // - 원점 = 브랜드별 원점 직경(originDiameter, 자체검사 diameterRef)이 되는 높이. 정렬 단계가 그 높이를 Z=0으로 둔다.
-// - 모든 브랜드 테이퍼는 11°. 원점에서 taperHeightMm 위까지가 제조사 커넥션이다(Z_a = taperHeightMm).
-// - 형상 검증에 쓰는 테이퍼 끝 직경 = originDiameter + 2·tan(11°)·taperHeightMm.
+// - 모든 브랜드 테이퍼는 11°. 원점에서 taperHeightMm 위까지가 스펙 원뿔 끝(Z_a)이다.
+// - STL·PRC가 같이 깎는 11° 면은 Z_a가 아니라 prcConeHeightMm = Z_a + PRC_FACE_ABOVE_ZA_MM(0.1).
+//   짧은 원뿔은 connectionTaperFill이 이 높이까지 잇고, 커프 이음은 그 면에서 2°로 출발한다.
+// - 형상 검증에 쓰는 테이퍼 끝 직경 = originDiameter + 2·tan(11°)·taperHeightMm (스펙 Z_a).
 // - 매칭은 입력된 임플란트 스펙(제조사|브랜드|규격) 기준. STL 형상으로 브랜드를 추정하지 않는다.
+//
+// [임플란트 종류 추가]
+// 1) 여기 CUFF_CONNECTION_SPECS에 originDiameter·taperHeightMm을 등록한다(샘플 규칙: cuff-connection-spec.mdc).
+// 2) PRC 11° 면 높이는 브랜드마다 새로 정하지 않는다. 원점@Z=0 기준 항상 Z_a+0.1.
+// 3) 면을 다른 높이로 쓰려면 PRC_FACE_ABOVE_ZA_MM과 AcroDent/2_Connection Regular RH Finish 면을 같이 바꾼다.
+//
+// [PRC 변경]
+// - 헥스·컷오프·페이스 드릴 Z를 STL 원점과 따로 올리지 말 것. 2026-10-29 0.203mm 단축은 스크류홀·헥스가 어긋나 되돌렸다.
+// - git의 AcroDent PRC는 운영 PC 애드인 폴더에 복사해야 반영된다. Esprit은 저장소가 아니라 로컬 AcroDent를 읽는다.
 //
 // 값 출처: 2026-09-28 Test DB filled STL 131건 역측정(브랜드별 최대 12건, 불량·메타 오류 샘플 제외).
 //
@@ -30,6 +41,14 @@
 
 export const TAPER_ANGLE_DEG = 11;
 export const TAPER_SLOPE = Math.tan((TAPER_ANGLE_DEG * Math.PI) / 180);
+/** 커넥션 PRC Finish 면은 원점(originDiameter @ Z=0) 위 이 높이에서 11°로 들어간다. Z_a + 이 값 = PRC 원뿔 높이. 바꾸면 Regular RH Connection Finish와 같이. */
+export const PRC_FACE_ABOVE_ZA_MM = 0.1;
+
+/** 원점 → PRC 11° 면. 브랜드 originDiameter가 Z=0일 때 STL 원뿔을 여기까지 맞춘다. */
+export function prcConeHeightMm(spec) {
+  const za = Number(spec?.taperHeightMm);
+  return Number.isFinite(za) ? za + PRC_FACE_ABOVE_ZA_MM : null;
+}
 
 /**
  * @typedef {{

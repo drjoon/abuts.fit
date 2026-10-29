@@ -1,142 +1,143 @@
-BEGIN_PROCESS; °øÁ¤ ÀÌ¸§; 4;
-BEGIN_OPERATION; 316; [10.0MM_±âÁØ]DIO_Connection; 0;
+BEGIN_PROCESS; ï¿½ï¿½ï¿½ï¿½ ï¿½Ì¸ï¿½; 4;
+BEGIN_OPERATION; 316; [10.0MM_ï¿½ï¿½ï¿½ï¿½]DIO_Connection; 0;
    4437; 4437; 0;  SOURCE; 0; TECHCODETYPE; 2;
    4420; 4420; 2017;  SOURCE; 0; TECHCODETYPE; 2;
-   CustomSettingStr3; 1802; ;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¹®ÀÚ¿­ 3; SOURCE; 1; TECHCODETYPE; 3;
+   CustomSettingStr3; 1802; ;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ú¿ï¿½ 3; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1802;;
 		:
 	END_STRING
-   CustomSetting33; 663; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 33; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting16; 646; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 16; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting33; 663; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 33; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting16; 646; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 16; SOURCE; 1; TECHCODETYPE; 2;
    4910; 4910; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4910;;
 		:2.2.8
 	END_STRING
-   CustomSetting30; 660; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 30; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting13; 643; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 13; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting30; 660; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 30; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting13; 643; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 13; SOURCE; 1; TECHCODETYPE; 2;
    4907; 4907; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4907;;
 		:
 	END_STRING
-   SpindleID; 793; 1;  CAPTION; ½ºÇÉµé ÀÌ¸§; SOURCE; 2; TECHCODETYPE; 1;
-   CustomSetting27; 657; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 27; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting10; 640; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 10; SOURCE; 1; TECHCODETYPE; 2;
+   SpindleID; 793; 1;  CAPTION; ï¿½ï¿½ï¿½Éµï¿½ ï¿½Ì¸ï¿½; SOURCE; 2; TECHCODETYPE; 1;
+   CustomSetting27; 657; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 27; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting10; 640; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 10; SOURCE; 1; TECHCODETYPE; 2;
    4904; 4904; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4904;;
 		:
 	END_STRING
    4411; 4411; 29815;  SOURCE; 0; TECHCODETYPE; 2;
    4003; 4003; 61;  SOURCE; 0; TECHCODETYPE; 1;
-   CustomSetting24; 654; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 24; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting7; 637; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 7; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting24; 654; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 24; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting7; 637; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 7; SOURCE; 1; TECHCODETYPE; 2;
    4425; 4425; 15;  SOURCE; 0; TECHCODETYPE; 2;
-   CustomSettingStr8; 1807; ;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¹®ÀÚ¿­ 8; SOURCE; 1; TECHCODETYPE; 3;
+   CustomSettingStr8; 1807; ;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ú¿ï¿½ 8; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1807;;
 		:
 	END_STRING
-   CustomSetting38; 668; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 38; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting21; 651; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 21; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting4; 634; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 4; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting38; 668; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 38; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting21; 651; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 21; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting4; 634; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 4; SOURCE; 1; TECHCODETYPE; 2;
    4422; 4422; 18;  SOURCE; 0; TECHCODETYPE; 2;
-   CustomSettingStr5; 1804; ;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¹®ÀÚ¿­ 5; SOURCE; 1; TECHCODETYPE; 3;
+   CustomSettingStr5; 1804; ;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ú¿ï¿½ 5; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1804;;
 		:
 	END_STRING
-   CustomSetting35; 665; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 35; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting18; 648; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 18; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting1; 631; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 1; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting35; 665; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 35; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting18; 648; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 18; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting1; 631; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 1; SOURCE; 1; TECHCODETYPE; 2;
    4436; 4436; 9;  SOURCE; 0; TECHCODETYPE; 1;
-   CustomSettingStr2; 1801; ;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¹®ÀÚ¿­ 2; SOURCE; 1; TECHCODETYPE; 3;
+   CustomSettingStr2; 1801; ;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ú¿ï¿½ 2; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1801;;
 		:
 	END_STRING
-   CustomSetting32; 662; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 32; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting15; 645; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 15; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting32; 662; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 32; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting15; 645; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 15; SOURCE; 1; TECHCODETYPE; 2;
    4909; 4909; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4909;;
 		:
 	END_STRING
-   CustomSetting29; 659; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 29; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting12; 642; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 12; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting29; 659; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 29; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting12; 642; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 12; SOURCE; 1; TECHCODETYPE; 2;
    4906; 4906; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4906;;
 		:Evan
 	END_STRING
    4413; 4413; 4;  SOURCE; 0; TECHCODETYPE; 2;
-   TurretID; 792; 1;  CAPTION; ÅÍ·¿ ÀÌ¸§; SOURCE; 2; TECHCODETYPE; 1;
-   CustomSetting26; 656; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 26; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting9; 639; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 9; SOURCE; 1; TECHCODETYPE; 2;
+   TurretID; 792; 1;  CAPTION; ï¿½Í·ï¿½ ï¿½Ì¸ï¿½; SOURCE; 2; TECHCODETYPE; 1;
+   CustomSetting26; 656; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 26; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting9; 639; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 9; SOURCE; 1; TECHCODETYPE; 2;
    4903; 4903; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4903;;
 		:
 	END_STRING
    4410; 4410; 3366;  SOURCE; 0; TECHCODETYPE; 2;
-   CustomSettingStr10; 1809; ;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¹®ÀÚ¿­ 10; SOURCE; 1; TECHCODETYPE; 3;
+   CustomSettingStr10; 1809; ;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ú¿ï¿½ 10; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1809;;
 		:
 	END_STRING
-   CustomSetting40; 670; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 40; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting23; 653; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 23; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting6; 636; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 6; SOURCE; 1; TECHCODETYPE; 2;
-   Comment; 7; ;  CAPTION; ÁÖ¼®; SOURCE; 1; TECHCODETYPE; 3;
+   CustomSetting40; 670; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 40; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting23; 653; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 23; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting6; 636; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 6; SOURCE; 1; TECHCODETYPE; 2;
+   Comment; 7; ;  CAPTION; ï¿½Ö¼ï¿½; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 7;;
-		:
+		:11deg Finish face = origin@Z0 + Za+0.1 (STL prcConeHeightMm). Do not shift hex/cutoff Z alone. 0.203 revert 2026-10-29. Copy to op PC.
 	END_STRING
    4424; 4424; 27;  SOURCE; 0; TECHCODETYPE; 2;
-   CustomSettingStr7; 1806; ;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¹®ÀÚ¿­ 7; SOURCE; 1; TECHCODETYPE; 3;
+   CustomSettingStr7; 1806; ;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ú¿ï¿½ 7; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1806;;
 		:
 	END_STRING
-   CustomSetting37; 667; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 37; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting20; 650; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 20; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting3; 633; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 3; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting37; 667; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 37; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting20; 650; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 20; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting3; 633; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 3; SOURCE; 1; TECHCODETYPE; 2;
    4438; 4438; 0;  SOURCE; 0; TECHCODETYPE; 2;
    4421; 4421; 4;  SOURCE; 0; TECHCODETYPE; 2;
-   OperationName; 613; ;  CAPTION; ÀÛ¾÷ ÀÌ¸§; SOURCE; 2; TECHCODETYPE; 3;
+   OperationName; 613; ;  CAPTION; ï¿½Û¾ï¿½ ï¿½Ì¸ï¿½; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 613;;
 		:DIO_UF_RH_Connection
 	END_STRING
-   CustomSettingStr4; 1803; ;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¹®ÀÚ¿­ 4; SOURCE; 1; TECHCODETYPE; 3;
+   CustomSettingStr4; 1803; ;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ú¿ï¿½ 4; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1803;;
 		:
 	END_STRING
-   CustomSetting34; 664; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 34; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting17; 647; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 17; SOURCE; 1; TECHCODETYPE; 2;
-   HeadID; 797; 1;  CAPTION; Çìµå ID; SOURCE; 2; TECHCODETYPE; 1;
-   CustomSettingStr1; 1800; ;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¹®ÀÚ¿­ 1; SOURCE; 1; TECHCODETYPE; 3;
+   CustomSetting34; 664; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 34; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting17; 647; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 17; SOURCE; 1; TECHCODETYPE; 2;
+   HeadID; 797; 1;  CAPTION; ï¿½ï¿½ï¿½ ID; SOURCE; 2; TECHCODETYPE; 1;
+   CustomSettingStr1; 1800; ;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ú¿ï¿½ 1; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1800;;
 		:
 	END_STRING
-   CustomSetting31; 661; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 31; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting14; 644; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 14; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting31; 661; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 31; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting14; 644; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 14; SOURCE; 1; TECHCODETYPE; 2;
    4908; 4908; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4908;;
 		:
 	END_STRING
-   CustomSetting28; 658; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 28; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting11; 641; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 11; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting28; 658; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 28; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting11; 641; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 11; SOURCE; 1; TECHCODETYPE; 2;
    4905; 4905; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4905;;
 		:
 	END_STRING
    4412; 4412; 2;  SOURCE; 0; TECHCODETYPE; 2;
-   CustomSetting25; 655; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 25; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting8; 638; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 8; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting25; 655; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 25; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting8; 638; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 8; SOURCE; 1; TECHCODETYPE; 2;
    4902; 4902; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4902;;
 		:
 	END_STRING
-   CustomSettingStr9; 1808; ;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¹®ÀÚ¿­ 9; SOURCE; 1; TECHCODETYPE; 3;
+   CustomSettingStr9; 1808; ;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ú¿ï¿½ 9; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1808;;
 		:
 	END_STRING
-   CustomSetting39; 669; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 39; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting22; 652; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 22; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting5; 635; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 5; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting39; 669; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 39; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting22; 652; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 22; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting5; 635; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 5; SOURCE; 1; TECHCODETYPE; 2;
    4423; 4423; 19;  SOURCE; 0; TECHCODETYPE; 2;
-   Text; 513; ;  CAPTION; ¹®ÀÚ; SOURCE; 2; TECHCODETYPE; 3;
+   Text; 513; ;  CAPTION; ï¿½ï¿½ï¿½ï¿½; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 513;;
     :
+    :(NOTE 2026-10-29) Finish 11deg face = origin Z=0 + Za+0.1mm = STL prcConeHeightMm. No solo hex/cutoff Z shift. Copy to operating PC.
     :G00G99G40G18G80T0
     :(Deburr Step drill)
 		:M88
@@ -387,13 +388,13 @@ BEGIN_OPERATION; 316; [10.0MM_±âÁØ]DIO_Connection; 0;
 		:M599
 		: 
 	END_STRING
-   CustomSettingStr6; 1805; ;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¹®ÀÚ¿­ 6; SOURCE; 1; TECHCODETYPE; 3;
+   CustomSettingStr6; 1805; ;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ú¿ï¿½ 6; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1805;;
 		:
 	END_STRING
-   CustomSetting36; 666; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 36; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting19; 649; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 19; SOURCE; 1; TECHCODETYPE; 2;
-   CustomSetting2; 632; 0;  CAPTION; »ç¿ëÀÚ Á¤ÀÇ ¼³Á¤ 2; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting36; 666; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 36; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting19; 649; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 19; SOURCE; 1; TECHCODETYPE; 2;
+   CustomSetting2; 632; 0;  CAPTION; ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 2; SOURCE; 1; TECHCODETYPE; 2;
    BEGIN_EXPRESSION
    END_EXPRESSION
 	BEGIN_ATTRIBUTES

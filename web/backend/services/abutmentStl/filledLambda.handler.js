@@ -5,6 +5,9 @@
 // Filled STL JS 람다 엔트리. 메모리 2048MB(vCPU 1), 타임아웃 60초, 아키텍처 arm64.
 // 60초를 넘기면 함수가 중단되고, 웹이 준비 카드에 시간 초과를 남긴다.
 // 이벤트: { bucket, inKey, outKey, resultKey, errKey, targetDiameter, implantProfile, connection, finishLinePoints, designAlreadyCorrected }
+//
+// pipeline.applyConnectionTaper가 짧은 11°를 PRC 면(prcConeHeightMm = Z_a+0.1)까지 연장한다.
+// 커프 이음은 별도 cuff 람다. 원뿔 길이·원점 규칙을 바꾸면 deploy-stl-filled-lambda.sh 도 같이 갱신한다.
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { runAbutmentStlPipeline } from "./pipeline.js";
 

@@ -333,7 +333,7 @@ describe("blendCuffJunction", () => {
     const probe = _prepare(res.buffer).probe;
     const step = 0.02;
     const degAt = (z) => (Math.atan((probe.rayRadius(0.1, z + step) - probe.rayRadius(0.1, z)) / step) * 180) / Math.PI;
-    const zFace = res.detail.zA + CUFF_CONNECTION_CONE_EXTEND_MM;
+    const zFace = res.detail.prcFaceZ ?? res.detail.zA + CUFF_CONNECTION_CONE_EXTEND_MM;
     expect(degAt(res.detail.zA + 0.02)).toBeCloseTo(11, 0);
     const degs = [];
     for (let z = zFace + 0.02; z <= zFace + 0.6; z += step) degs.push(degAt(z));

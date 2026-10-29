@@ -10,6 +10,7 @@ import {
 import {
   CUFF_CONNECTION_SPECS,
   TAPER_SLOPE,
+  prcConeHeightMm,
   taperTopDiameterOf,
 } from "../../services/abutmentStl/cuffConnectionSpecs.js";
 import { runAbutmentStlPipeline } from "../../services/abutmentStl/pipeline.js";
@@ -102,7 +103,7 @@ function designedSoup() {
     [-1.192, hexRadius],
     [-1.192, corner],
     [0, origin],
-    [0.2, origin + TAPER_SLOPE * 0.2],
+    [0.3, origin + TAPER_SLOPE * 0.3],
     [3, 3.2],
     [7, 3.2],
   ]);
@@ -262,16 +263,21 @@ describe("connectionTaperFill", () => {
       [spec.key, ...(spec.aliases || [])].map((key) => [key, spec]),
     ),
   )(
-    "%s 원점을 그 회사 직경에 두고 짧은 원뿔은 스펙 끝까지 연장한다",
+    "%s 원점을 그 회사 직경에 두고 짧은 원뿔은 PRC 면까지 연장한다",
     (key, spec) => {
       const mesh = Mesh.fromTriangleSoup(shortConeFor(spec));
       const result = ensureConnectionTaperSpec(mesh, { implantProfile: profileOf({ key }) });
+      const prcH = prcConeHeightMm(spec);
       expect(result.applied).toBe(true);
       expect(result.reason).toBe("extended");
       expect(result.originDiameter).toBe(spec.originDiameter);
       expect(result.taperHeightMm).toBe(spec.taperHeightMm);
       expect(outerMetrics(mesh, 0).rMean * 2).toBeCloseTo(spec.originDiameter, 2);
       expect(outerMetrics(mesh, spec.taperHeightMm).rMean * 2).toBeCloseTo(taperTopDiameterOf(spec), 2);
+      expect(outerMetrics(mesh, prcH).rMean * 2).toBeCloseTo(
+        spec.originDiameter + 2 * TAPER_SLOPE * prcH,
+        2,
+      );
       expect(edgeUse(mesh)).toEqual({ naked: 0, nonManifold: 0 });
     },
   );
@@ -295,6 +301,7 @@ describe("connectionTaperFill", () => {
     expect(result.reason).toBe("extended");
     expect(outerMetrics(mesh, 0).rMean * 2).toBeCloseTo(3.35, 2);
     expect(outerMetrics(mesh, 0.2).rMean * 2).toBeCloseTo(3.35 + 2 * TAPER_SLOPE * 0.2, 2);
+    expect(outerMetrics(mesh, 0.3).rMean * 2).toBeCloseTo(3.35 + 2 * TAPER_SLOPE * 0.3, 2);
     expect(edgeUse(mesh)).toEqual({ naked: 0, nonManifold: 0 });
   });
 
@@ -317,6 +324,11 @@ describe("connectionTaperFill", () => {
     expect(result.reason).toBe("extended");
     expect(outerMetrics(mesh, 0).rMean * 2).toBeCloseTo(spec.originDiameter, 2);
     expect(outerMetrics(mesh, spec.taperHeightMm).rMean * 2).toBeCloseTo(taperTopDiameterOf(spec), 2);
+    const prcH = prcConeHeightMm(spec);
+    expect(outerMetrics(mesh, prcH).rMean * 2).toBeCloseTo(
+      spec.originDiameter + 2 * TAPER_SLOPE * prcH,
+      2,
+    );
   });
 
   it("스펙보다 긴 원뿔은 자르지 않고 원점만 그 회사 직경에 맞춘다", () => {
@@ -354,8 +366,8 @@ describe("connectionTaperFill", () => {
     const atOrigin = outerMetrics(mesh, 0);
     expect(atOrigin.rMean * 2).toBeCloseTo(3.35, 2);
     expect(atOrigin.hexRatio).toBeLessThan(1.04);
-    const atTop = outerMetrics(mesh, 0.2);
-    expect(atTop.rMean * 2).toBeCloseTo(3.35 + 2 * TAPER_SLOPE * 0.2, 2);
+    const atTop = outerMetrics(mesh, 0.3);
+    expect(atTop.rMean * 2).toBeCloseTo(3.35 + 2 * TAPER_SLOPE * 0.3, 2);
     expect(edgeUse(mesh)).toEqual({ naked: 0, nonManifold: 0 });
   });
 

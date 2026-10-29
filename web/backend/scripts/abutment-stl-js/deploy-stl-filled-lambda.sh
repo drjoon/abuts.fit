@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Filled STL JS Lambda 생성·코드 갱신·EBS invoke 권한·EB env(ABUTMENT_STL_FILLED_LAMBDA).
 # 제한 시간 60초. 넘기면 함수가 끊기고 준비 카드에 사유가 남는다.
+# 짧은 11° 원뿔을 PRC 면(Z_a+0.1)까지 잇는 connectionTaperFill이 이 패키지에 들어간다.
+# 원뿔 높이·원점 규칙을 바꾸면 백엔드만 올리지 말고 이 스크립트로 람다도 갱신한다.
 #
 #   cd web/backend && ./scripts/abutment-stl-js/deploy-stl-filled-lambda.sh [test|prod]
 #

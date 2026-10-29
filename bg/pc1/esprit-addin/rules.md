@@ -398,6 +398,15 @@
   - `TurnRgn*` / `3DMilling_0Degree` / `3DMilling_FrontFace` / `3DRoughMilling_*`
 
 
+## 7. 커넥션 PRC ↔ STL 원뿔 (2026-10-29)
+
+레귤러 RH `AcroDent/2_Connection` Finish 면과 `1_Face Hole` 드릴은 git에 있는 값이 **0.203mm 단축 이전**(커밋 `89f47c532`)이다.
+
+- **11° 면**: 원점 직경(`originDiameter`, STL Z=0) 위 `taperHeightMm + 0.1mm`. 백엔드 `prcConeHeightMm`과 같다. 브랜드마다 면 높이를 새로 두지 않는다.
+- **복사**: Esprit은 운영 PC 애드인 `AcroDent`만 읽는다. git을 바꿔도 이 폴더를 운영 PC에 복사하기 전에는 NC에 안 들어간다.
+- **금지**: 헥스·컷오프·페이스 드릴 Z를 STL 원점과 따로 올리기. 전체 길이를 줄이려면 원점·스크류홀·헥스·드릴을 같이 검증한다. 2026-10-29 0.203mm 단축은 스크류홀 끝이 어긋나 되돌렸다.
+- **임플란트 추가**: `web/backend/services/abutmentStl/cuffConnectionSpecs.js`에 `originDiameter`·`taperHeightMm`을 등록하고, 이 PRC의 11° 면이 그 Z_a+0.1에 있는지 확인한다.
+
 ## 성능 측정 (PERF)
 
 - 로그 타임스탬프는 `yyyy-MM-dd HH:mm:ss.fff` (ms).
