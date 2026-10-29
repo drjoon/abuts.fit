@@ -282,6 +282,23 @@ describe("connectionTaperFill", () => {
     },
   );
 
+  it("연장한 11° 상단(PRC 면)에서 단차 없이 2°로 출발해 기공소 커프로 이어진다", () => {
+    const spec = CUFF_CONNECTION_SPECS.find((s) => s.key === "OSSTEM|TS3|REGULAR");
+    const prcH = prcConeHeightMm(spec);
+    const mesh = Mesh.fromTriangleSoup(shortConeFor(spec));
+    const result = ensureConnectionTaperSpec(mesh, { implantProfile: profileOf(spec) });
+    expect(result.reason).toBe("extended");
+    const rAt = (z) => outerMetrics(mesh, z).rMean;
+    const twoDeg = Math.tan((2 * Math.PI) / 180);
+    // 상단 바로 위 0.01mm: 반경이 2° 기울기 안에서만 늘어난다(평평한 턱·역단차 없음).
+    for (const dz of [0.005, 0.01]) {
+      const dr = rAt(prcH + dz) - rAt(prcH);
+      expect(dr).toBeGreaterThanOrEqual(-1e-4);
+      expect(dr).toBeLessThanOrEqual(twoDeg * dz * 1.5 + 1e-4);
+    }
+    expect(edgeUse(mesh)).toEqual({ naked: 0, nonManifold: 0 });
+  });
+
   it("11°가 아닌 테이퍼도 그 회사 직경을 원점으로 두고 스펙 높이까지 11°로 잇는다", () => {
     const slope = Math.tan((15 * Math.PI) / 180);
     const r0 = 3.344 / 2;

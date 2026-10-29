@@ -9,7 +9,8 @@
 // 원뿔이 짧아 브랜드 원점 직경(자체검사 diameterRef)이 메시 위에 없으면
 // 11°를 PRC 면 높이(originDiameter @ Z=0 → prcConeHeightMm, Regular RH는 0.3mm)까지 연장하고,
 // 그 원점 직경이 되는 높이를 Z=0으로 옮긴다. 스펙 Z_a(taperHeightMm)에서 멈추면
-// 커넥션 PRC Finish 면(Regular RH는 덴티움 0.33·덴티스·메가젠 0.4·그 외 0.3)과 단이 난다. 접수 검사(preflight)·의뢰 전 보정 STL에서는 호출하지 않는다.
+// 커넥션 PRC Finish 면(Regular RH는 덴티움 0.33·덴티스·메가젠 0.4·그 외 0.3)과 단이 난다.
+// 연장한 11° 상단은 평평한 턱을 남기지 않고, 그 끝점에서 2°·곡률 0으로 출발해 FACE_BLEND_MM 위의 기공소 커프 둘레 모양으로 5차식 섞는다. BlendCuff(cuffBlend.js)도 이 끝점에서 시작한다. 접수 검사(preflight)·의뢰 전 보정 STL에서는 호출하지 않는다.
 // 임플란트 추가·PRC 면 높이 변경: cuffConnectionSpecs.js 상단 주석.
 import { Mesh, meshZSection } from "./meshCore.js";
 import { CONNECTIONS_SEED } from "../../scripts/db/data/connections.seed.js";
@@ -33,6 +34,12 @@ const CONE_SNAP_TOL_MM = 0.06;
 const SCREW_CHANNEL_R = 1.15;
 /** 커프가 11° 면에서 떠나는 기울기. cuffBlend CUFF_EMERGENCE_START_SLOPE(2°)와 같다. */
 const FACE_EMERGENCE_SLOPE = Math.tan((2 * Math.PI) / 180);
+/** 11° 상단(PRC 면)에서 기공소 커프 면으로 단차 없이 이어 붙이는 높이. */
+const FACE_BLEND_MM = 0.2;
+/** 이음 띠 둘레 칸 수(2°). 기공소 메시 둘레 모양을 따라가기 위해 원뿔 로프트(72)보다 촘촘하다. */
+const BLEND_RING_POINTS = 180;
+/** 이음 띠 높이 간격. */
+const BLEND_ROW_MM = 0.01;
 
 const BRAND_ALIAS = {
   OSSTEM: { TS: "TS3" },
@@ -658,7 +665,49 @@ function faceContinuationRadius(z, zLo, zHi, ra, rTop) {
   return base + w * (orig - base);
 }
 
-function replaceOuterBandWithCone(mesh, zLo, zHi, radiusAt, rSplit, emerge = false) {
+/** 닫힌 고리의 각도별 반경. 각도 사이는 선형 보간한다. */
+function polarRadiusOf(loop) {
+  const pts = loop
+    .map((p) => [Math.atan2(p[1], p[0]), radiusOf(p)])
+    .sort((p, q) => p[0] - q[0]);
+  const n = pts.length;
+  return (theta) => {
+    let t = theta;
+    while (t < pts[0][0]) t += Math.PI * 2;
+    while (t >= pts[0][0] + Math.PI * 2) t -= Math.PI * 2;
+    let lo = n - 1;
+    for (let i = 0; i < n; i += 1) {
+      if (pts[i][0] <= t) lo = i;
+      else break;
+    }
+    const hi = (lo + 1) % n;
+    const a0 = pts[lo][0];
+    let a1 = pts[hi][0];
+    if (a1 <= a0) a1 += Math.PI * 2;
+    let tt = t;
+    if (tt < a0) tt += Math.PI * 2;
+    const u = a1 - a0 < 1e-9 ? 0 : (tt - a0) / (a1 - a0);
+    return pts[lo][1] + u * (pts[hi][1] - pts[lo][1]);
+  };
+}
+
+function polarRing(z, radiusOfTheta, n) {
+  const pts = [];
+  for (let i = 0; i < n; i += 1) {
+    const a = -Math.PI + ((i + 0.5) * 2 * Math.PI) / n;
+    const r = radiusOfTheta(a);
+    pts.push([r * Math.cos(a), r * Math.sin(a), z]);
+  }
+  return pts;
+}
+
+/**
+ * zLo~zHi 바깥 띠를 지우고 새 면으로 잇는다.
+ * emerge가 아니면 radiusAt 원뿔로만 채운다.
+ * emerge면 zFace까지는 원뿔, 그 위는 원뿔 끝점(zFace)에서 2°·곡률 0으로 출발해 zHi의 기공소 커프 반경(각도별)으로 5차식으로 섞는다.
+ * 위 끝은 기공소 메시를 각도별로 그대로 따라가므로 평평한 턱이 남지 않는다.
+ */
+function replaceOuterBandWithCone(mesh, zLo, zHi, radiusAt, rSplit, emerge = false, zFace = zLo) {
   const snapshot = mesh.toTriangleSoup();
   try {
     const kept = [];
@@ -690,16 +739,29 @@ function replaceOuterBandWithCone(mesh, zLo, zHi, radiusAt, rSplit, emerge = fal
     if (!bottom || !upper) {
       throw new Error(`extend-boundary zLo=${zLo.toFixed(3)} zHi=${zHi.toFixed(3)}`);
     }
-    const rTop = emerge ? meanR(upper) : null;
-    const ra = radiusAt(zLo);
-    const bandRadius = emerge ? (z) => faceContinuationRadius(z, zLo, zHi, ra, rTop) : radiusAt;
-    const row = emerge ? 0.01 : CONE_ROW_MM;
     const rings = [asCcw(bottom)];
-    for (let z = zLo + row; z < zHi - 1e-4; z += row) {
-      rings.push(circleRing(z, bandRadius(z), 72));
+    if (emerge) {
+      const ra = radiusAt(zFace);
+      const rTopAt = polarRadiusOf(upper);
+      const radiusOfTheta = (z) => {
+        if (z <= zFace + 1e-9) return () => radiusAt(z);
+        return (theta) => faceContinuationRadius(z, zFace, zHi, ra, rTopAt(theta));
+      };
+      const zs = [];
+      if (zFace > zLo + 1e-4) {
+        for (let z = zLo + CONE_ROW_MM; z < zFace - 1e-4; z += CONE_ROW_MM) zs.push(z);
+        zs.push(zFace);
+      }
+      for (let z = zFace + BLEND_ROW_MM; z < zHi - BLEND_ROW_MM * 0.5; z += BLEND_ROW_MM) zs.push(z);
+      for (const z of zs) rings.push(polarRing(z, radiusOfTheta(z), BLEND_RING_POINTS));
+      rings.push(asCcw(upper));
+    } else {
+      for (let z = zLo + CONE_ROW_MM; z < zHi - 1e-4; z += CONE_ROW_MM) {
+        rings.push(circleRing(z, radiusAt(z), 72));
+      }
+      rings.push(circleRing(zHi, radiusAt(zHi), 72));
+      rings.push(asCcw(upper));
     }
-    rings.push(circleRing(zHi, bandRadius(zHi), 72));
-    if (upper) rings.push(asCcw(upper));
     let loft = [];
     for (let i = 0; i < rings.length - 1; i += 1) loft.push(...stitch(rings[i], rings[i + 1]));
     loft = ensureOutward(loft);
@@ -825,14 +887,15 @@ export function ensureConnectionTaperSpec(mesh, options = {}) {
         const channel = channelRadius(mesh, Math.min(-0.4, zLo), Math.max(0.6, zHi));
         const rSplit =
           channel && channel < originR - 0.2 ? (channel + originR) / 2 : Math.max(SCREW_CHANNEL_R, originR * 0.72);
-        const ok = replaceOuterBandWithCone(
-          mesh,
-          zLo,
-          zHi,
-          (z) => originR + TAPER_SLOPE * z,
-          rSplit,
-        );
-        if (!ok) throw new Error("extend-failed");
+        const radiusAt = (z) => originR + TAPER_SLOPE * z;
+        try {
+          // 11° 상단(PRC 면)에서 2°로 출발해 기공소 커프로 단차 없이 이어 붙인다. BlendCuff도 이 끝점에서 시작한다.
+          replaceOuterBandWithCone(mesh, zLo, zHi + FACE_BLEND_MM, radiusAt, rSplit, true, zHi);
+        } catch (error) {
+          replaceMesh(mesh, shifted);
+          log(`[connection-taper] 상단 이음 띠 없이 11°만 연장합니다(${error?.message || error}).`);
+          replaceOuterBandWithCone(mesh, zLo, zHi, radiusAt, rSplit);
+        }
         extended = true;
       } catch (error) {
         replaceMesh(mesh, shifted);
