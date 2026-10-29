@@ -248,7 +248,6 @@ function prepareSharpMeshLikeManufacturer({ mesh, finishLine, alignMatrix, impla
       spec,
       specKey: key,
       finishLine: fl,
-      connectionPrcFileName: implantProfile?.connectionPrcFileName || "",
     });
     const post = blended?.detail?.postSmooth;
     log(

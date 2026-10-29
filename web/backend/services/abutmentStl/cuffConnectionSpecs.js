@@ -1,5 +1,4 @@
 // related files:
-// - web/backend/services/abutmentStl/connectionPrcCone.js
 // - web/backend/services/abutmentStl/cuffBlend.js
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/SelfInspectionReportModal.tsx (원점 직경 diameterRef)
 // - web/backend/rules.md (커프 이음부 G2 보정)
