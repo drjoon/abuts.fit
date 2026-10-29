@@ -7,7 +7,11 @@ import {
   applyConnectionTaper,
   ensureConnectionTaperSpec,
 } from "../../services/abutmentStl/connectionTaperFill.js";
-import { TAPER_SLOPE } from "../../services/abutmentStl/cuffConnectionSpecs.js";
+import {
+  CUFF_CONNECTION_SPECS,
+  TAPER_SLOPE,
+  taperTopDiameterOf,
+} from "../../services/abutmentStl/cuffConnectionSpecs.js";
 import { runAbutmentStlPipeline } from "../../services/abutmentStl/pipeline.js";
 
 const N = 64;
@@ -231,6 +235,113 @@ describe("connectionTaperFill", () => {
     const atOrigin = outerMetrics(mesh, 0);
     expect(atOrigin.rMean * 2).toBeCloseTo(3.35, 2);
     expect(atOrigin.hexRatio).toBeLessThan(1.04);
+  });
+
+  function profileOf(spec) {
+    const [implantManufacturer, implantBrand, implantFamily] = spec.key.split("|");
+    return { implantManufacturer, implantBrand, implantFamily, implantType: "Hex" };
+  }
+
+  /** 원점 직경보다 0.06mm 가늘고, 스펙 높이의 1/3에서 끊긴 11° 원뿔. */
+  function shortConeFor(spec) {
+    const r0 = spec.originDiameter / 2 - 0.03;
+    const at = (z) => r0 + TAPER_SLOPE * z;
+    const end = Math.min(spec.taperHeightMm * 0.35, spec.taperHeightMm - 0.05);
+    return solidOf([
+      [-2.2, hexRadius],
+      [-1.05, hexRadius],
+      [-1.05, at(-1.05)],
+      [end, at(end)],
+      [end + 0.04, at(end) + 0.2],
+      [5, Math.max(3.2, spec.originDiameter / 2 + 1.2)],
+    ]);
+  }
+
+  it.each(
+    CUFF_CONNECTION_SPECS.flatMap((spec) =>
+      [spec.key, ...(spec.aliases || [])].map((key) => [key, spec]),
+    ),
+  )(
+    "%s 원점을 그 회사 직경에 두고 짧은 원뿔은 스펙 끝까지 연장한다",
+    (key, spec) => {
+      const mesh = Mesh.fromTriangleSoup(shortConeFor(spec));
+      const result = ensureConnectionTaperSpec(mesh, { implantProfile: profileOf({ key }) });
+      expect(result.applied).toBe(true);
+      expect(result.reason).toBe("extended");
+      expect(result.originDiameter).toBe(spec.originDiameter);
+      expect(result.taperHeightMm).toBe(spec.taperHeightMm);
+      expect(outerMetrics(mesh, 0).rMean * 2).toBeCloseTo(spec.originDiameter, 2);
+      expect(outerMetrics(mesh, spec.taperHeightMm).rMean * 2).toBeCloseTo(taperTopDiameterOf(spec), 2);
+      expect(edgeUse(mesh)).toEqual({ naked: 0, nonManifold: 0 });
+    },
+  );
+
+  it("11°가 아닌 테이퍼도 그 회사 직경을 원점으로 두고 스펙 높이까지 11°로 잇는다", () => {
+    const slope = Math.tan((15 * Math.PI) / 180);
+    const r0 = 3.344 / 2;
+    const at = (z) => r0 + slope * z;
+    const mesh = Mesh.fromTriangleSoup(
+      solidOf([
+        [-2.2, hexRadius],
+        [-1.05, hexRadius],
+        [-1.05, at(-1.05)],
+        [0.12, at(0.12)],
+        [0.18, at(0.12) + 0.15],
+        [5, 3.4],
+      ]),
+    );
+    const result = ensureConnectionTaperSpec(mesh, { implantProfile: PROFILE });
+    expect(result.applied).toBe(true);
+    expect(result.reason).toBe("extended");
+    expect(outerMetrics(mesh, 0).rMean * 2).toBeCloseTo(3.35, 2);
+    expect(outerMetrics(mesh, 0.2).rMean * 2).toBeCloseTo(3.35 + 2 * TAPER_SLOPE * 0.2, 2);
+    expect(edgeUse(mesh)).toEqual({ naked: 0, nonManifold: 0 });
+  });
+
+  it("원점 직경까지 닿지 않은 원뿔도 스펙 끝까지 연장한다", () => {
+    const spec = CUFF_CONNECTION_SPECS.find((row) => row.key === "MEGAGEN|ANYONE|REGULAR");
+    const r0 = spec.originDiameter / 2 - 0.08;
+    const at = (z) => r0 + TAPER_SLOPE * z;
+    const mesh = Mesh.fromTriangleSoup(
+      solidOf([
+        [-2.2, hexRadius],
+        [-1.1, hexRadius],
+        [-1.1, at(-1.1)],
+        [-0.15, at(-0.15)],
+        [-0.1, at(-0.15) + 0.35],
+        [5, 3.4],
+      ]),
+    );
+    const result = ensureConnectionTaperSpec(mesh, { implantProfile: profileOf(spec) });
+    expect(result.applied).toBe(true);
+    expect(result.reason).toBe("extended");
+    expect(outerMetrics(mesh, 0).rMean * 2).toBeCloseTo(spec.originDiameter, 2);
+    expect(outerMetrics(mesh, spec.taperHeightMm).rMean * 2).toBeCloseTo(taperTopDiameterOf(spec), 2);
+  });
+
+  it("스펙보다 긴 원뿔은 자르지 않고 원점만 그 회사 직경에 맞춘다", () => {
+    const spec = CUFF_CONNECTION_SPECS.find((row) => row.key === "DENTIUM|SUPERLINE|REGULAR");
+    const r0 = spec.originDiameter / 2 - 0.025;
+    const at = (z) => r0 + TAPER_SLOPE * z;
+    const past = spec.taperHeightMm + 0.35;
+    const mesh = Mesh.fromTriangleSoup(
+      solidOf([
+        [-2.2, hexRadius],
+        [-1.05, hexRadius],
+        [-1.05, at(-1.05)],
+        [past, at(past)],
+        [past + 0.05, at(past) + 0.25],
+        [5, 3.6],
+      ]),
+    );
+    const result = ensureConnectionTaperSpec(mesh, { implantProfile: profileOf(spec) });
+    expect(result.reason).toBe("origin-shifted");
+    expect(outerMetrics(mesh, 0).rMean * 2).toBeCloseTo(spec.originDiameter, 2);
+    const stillCone = spec.taperHeightMm + 0.2;
+    expect(outerMetrics(mesh, stillCone).rMean * 2).toBeCloseTo(
+      spec.originDiameter + 2 * TAPER_SLOPE * stillCone,
+      2,
+    );
   });
 
   it("짧은 11° 원뿔을 스펙 끝까지 연장하고 원점 직경을 Z=0에 둔다", () => {

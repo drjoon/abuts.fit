@@ -24,7 +24,7 @@ const TAPER_MATCH_MM = 0.12;
 const FLAT_TOL_MM = 0.2;
 const CONE_FIT_TOL_MM = 0.015;
 const ORIGIN_SHIFT_TOL_MM = 0.015;
-const CONE_EXTEND_TOL_MM = 0.02;
+const CONE_EXTEND_TOL_MM = 0.008;
 const Z_ORIGIN_MAX_MM = 2.5;
 const CONE_SNAP_TOL_MM = 0.06;
 const SCREW_CHANNEL_R = 1.15;
@@ -559,8 +559,43 @@ export function addMissingConnectionTaper(mesh, options = {}) {
   };
 }
 
+/** 이어진 11° 구간. 원점 직경이 그 구간 근처에 있는 쪽을 고른다. */
+function pickConeRun(samples, originR) {
+  const runs = [];
+  for (let i = 0; i < samples.length; i += 1) {
+    const run = [samples[i]];
+    for (let j = i + 1; j < samples.length; j += 1) {
+      if (samples[j].z - run[run.length - 1].z > SAMPLE_STEP_MM + 0.02) break;
+      const trial = run.concat(samples[j]);
+      const trialR0 = median(trial.map((s) => s.r - TAPER_SLOPE * s.z));
+      const ok = trial.every((s) => Math.abs(s.r - (trialR0 + TAPER_SLOPE * s.z)) <= CONE_FIT_TOL_MM);
+      if (!ok) break;
+      run.push(samples[j]);
+    }
+    if (run.length < 5) continue;
+    const r0 = median(run.map((s) => s.r - TAPER_SLOPE * s.z));
+    const bottomZ = run[0].z;
+    const measuredTopZ = run[run.length - 1].z;
+    const zOrigin = (originR - r0) / TAPER_SLOPE;
+    runs.push({
+      r0,
+      bottomZ,
+      measuredTopZ,
+      zOrigin,
+      length: run.length,
+      originNear: zOrigin >= bottomZ - 0.05 && zOrigin <= measuredTopZ + 1,
+    });
+  }
+  runs.sort((a, b) => {
+    if (a.originNear !== b.originNear) return a.originNear ? -1 : 1;
+    if (a.length !== b.length) return b.length - a.length;
+    return b.measuredTopZ - a.measuredTopZ;
+  });
+  return runs[0] || null;
+}
+
 /** 정렬된 메시에서 11° 원뿔(절편 r0, 실측 상단)을 잰다. */
-function measureExistingCone(mesh) {
+function measureExistingCone(mesh, originR) {
   const { min, max } = mesh.bbox();
   const samples = [];
   const z0 = Math.max(min[2], -3);
@@ -570,25 +605,20 @@ function measureExistingCone(mesh) {
     if (!m || m.hexRatio >= 1.06) continue;
     samples.push({ z, r: m.rMean });
   }
-  if (samples.length < 5) return null;
-  const below = samples.filter((s) => s.z >= -1.2 && s.z <= -0.05);
-  const pool = below.length >= 5 ? below : samples.filter((s) => s.z <= 0.05);
-  if (pool.length < 5) return null;
-  const r0 = median(pool.map((s) => s.r - TAPER_SLOPE * s.z));
-  if (!(r0 > 0.8)) return null;
-  const onCone = (z, r) => Math.abs(r - (r0 + TAPER_SLOPE * z)) <= CONE_FIT_TOL_MM;
-  const fitted = samples.filter((s) => onCone(s.z, s.r));
-  if (fitted.length < 5) return null;
-  let top = fitted[fitted.length - 1].z;
+  const found = samples.length >= 5 && originR > 0 ? pickConeRun(samples, originR) : null;
+  if (!found) return null;
+  if (!(found.r0 > 0.8)) return null;
+  const onCone = (z, r) => Math.abs(r - (found.r0 + TAPER_SLOPE * z)) <= CONE_FIT_TOL_MM;
+  let top = found.measuredTopZ;
   let miss = 0;
   for (let z = top + 0.01; z <= top + 1.2; z += 0.01) {
     const m = metricsAt(mesh, z);
-    if (m && onCone(z, m.rMean)) {
+    if (m && m.hexRatio < 1.06 && onCone(z, m.rMean)) {
       top = z;
       miss = 0;
     } else if (++miss > 2) break;
   }
-  return { r0, slope: TAPER_SLOPE, measuredTopZ: top, bottomZ: fitted[0].z };
+  return { r0: found.r0, slope: TAPER_SLOPE, measuredTopZ: top, bottomZ: found.bottomZ };
 }
 
 function replaceOuterBandWithCone(mesh, zLo, zHi, radiusAt, rSplit) {
@@ -614,13 +644,15 @@ function replaceOuterBandWithCone(mesh, zLo, zHi, radiusAt, rSplit) {
     const loops = boundaryLoops(mesh)
       .map((idx) => loopPoints(mesh, idx))
       .filter((pts) => pts.length >= 6 && meanR(pts) > rSplit);
-    const bottom = loops
-      .filter((pts) => Math.abs(meanZ(pts) - zLo) < 0.08)
-      .sort((a, b) => meanR(b) - meanR(a))[0];
-    const upper = loops
-      .filter((pts) => Math.abs(meanZ(pts) - zHi) < 0.08)
-      .sort((a, b) => meanR(b) - meanR(a))[0];
-    if (!bottom) throw new Error("extend-boundary");
+    const near = (z) =>
+      loops
+        .filter((pts) => Math.abs(meanZ(pts) - z) < 0.15)
+        .sort((a, b) => Math.abs(meanZ(a) - z) - Math.abs(meanZ(b) - z) || meanR(b) - meanR(a))[0];
+    const bottom = near(zLo);
+    const upper = near(zHi);
+    if (!bottom || !upper) {
+      throw new Error(`extend-boundary zLo=${zLo.toFixed(3)} zHi=${zHi.toFixed(3)}`);
+    }
     const rings = [asCcw(bottom)];
     for (let z = zLo + CONE_ROW_MM; z < zHi - 1e-4; z += CONE_ROW_MM) {
       rings.push(circleRing(z, radiusAt(z), 72));
@@ -634,9 +666,9 @@ function replaceOuterBandWithCone(mesh, zLo, zHi, radiusAt, rSplit) {
     for (const [a, b, c] of loft) pushTri(soup, a, b, c);
     replaceMesh(mesh, Float64Array.from(soup));
     return true;
-  } catch {
+  } catch (error) {
     replaceMesh(mesh, snapshot);
-    return false;
+    throw error;
   }
 }
 
@@ -670,12 +702,12 @@ export function ensureConnectionTaperSpec(mesh, options = {}) {
     log("[connection-taper] 원점 스펙 없음. 짧은 원뿔은 연장하지 않습니다.");
     return { applied: false, reason: "no-spec" };
   }
-  const cone = measureExistingCone(mesh);
+  const originR = geo.originDiameter / 2;
+  const cone = measureExistingCone(mesh, originR);
   if (!cone) {
     log("[connection-taper] 11° 원뿔을 찾지 못해 원점 재정렬을 건너뜁니다.");
     return { applied: false, reason: "no-cone" };
   }
-  const originR = geo.originDiameter / 2;
   const zOrigin = (originR - cone.r0) / TAPER_SLOPE;
   if (!Number.isFinite(zOrigin) || Math.abs(zOrigin) > Z_ORIGIN_MAX_MM) {
     log(`[connection-taper] 원점 높이 ${zOrigin} 가 범위를 넘습니다.`);
@@ -690,24 +722,42 @@ export function ensureConnectionTaperSpec(mesh, options = {}) {
   }
 
   const snapshot = mesh.toTriangleSoup();
+  let extended = false;
   try {
     if (needsShift) mesh.translate(0, 0, -zOrigin);
     if (needsExtend) {
-      const zLo = Math.min(topAfter - 0.01, geo.taperHeightMm - 0.02);
-      const zHi = geo.taperHeightMm;
-      const channel = channelRadius(mesh, Math.min(-0.4, zLo), Math.max(0.6, zHi));
-      const rSplit =
-        channel && channel < originR - 0.2 ? (channel + originR) / 2 : Math.max(SCREW_CHANNEL_R, originR * 0.72);
-      const ok = replaceOuterBandWithCone(
-        mesh,
-        zLo,
-        zHi,
-        (z) => originR + TAPER_SLOPE * z,
-        rSplit,
-      );
-      if (!ok) throw new Error("extend-failed");
+      const shifted = mesh.toTriangleSoup();
+      try {
+        // 원뿔이 원점 직경 전에 끊겨도, 헥스 아래로는 내려가지 않고 스펙 끝까지만 잇는다.
+        const coneBottomAfter = cone.bottomZ - (needsShift ? zOrigin : 0);
+        const zLo = Math.max(
+          coneBottomAfter + 0.02,
+          Math.min(topAfter - 0.01, geo.taperHeightMm - 0.02),
+        );
+        const zHi = geo.taperHeightMm;
+        const channel = channelRadius(mesh, Math.min(-0.4, zLo), Math.max(0.6, zHi));
+        const rSplit =
+          channel && channel < originR - 0.2 ? (channel + originR) / 2 : Math.max(SCREW_CHANNEL_R, originR * 0.72);
+        const ok = replaceOuterBandWithCone(
+          mesh,
+          zLo,
+          zHi,
+          (z) => originR + TAPER_SLOPE * z,
+          rSplit,
+        );
+        if (!ok) throw new Error("extend-failed");
+        extended = true;
+      } catch (error) {
+        replaceMesh(mesh, shifted);
+        if (!needsShift) throw error;
+        log(`[connection-taper] 11° 연장은 건너뛰고 원점만 맞춥니다(${error?.message || error}).`);
+      }
     }
     snapConeVertices(mesh, originR, cone.bottomZ - zOrigin, geo.taperHeightMm);
+    const atOrigin = metricsAt(mesh, 0);
+    if (!atOrigin || Math.abs(atOrigin.rMean * 2 - geo.originDiameter) > 0.05) {
+      throw new Error("origin-diameter");
+    }
   } catch (error) {
     replaceMesh(mesh, snapshot);
     log(`[connection-taper] 원점 재정렬 실패(${error?.message || error}). 원본 형상을 유지합니다.`);
@@ -717,11 +767,11 @@ export function ensureConnectionTaperSpec(mesh, options = {}) {
   log(
     `[connection-taper] 원점 직경 ${geo.originDiameter.toFixed(3)}mm` +
       `${needsShift ? ` Z${(-zOrigin).toFixed(3)}` : ""}` +
-      `${needsExtend ? ` · 11°를 z=${geo.taperHeightMm.toFixed(2)}(Ø${(2 * (originR + TAPER_SLOPE * geo.taperHeightMm)).toFixed(3)})까지 연장` : ""}`,
+      `${extended ? ` · 11°를 z=${geo.taperHeightMm.toFixed(2)}(Ø${(2 * (originR + TAPER_SLOPE * geo.taperHeightMm)).toFixed(3)})까지 연장` : ""}`,
   );
   return {
     applied: true,
-    reason: needsExtend ? "extended" : "origin-shifted",
+    reason: extended ? "extended" : "origin-shifted",
     zShift: needsShift ? -zOrigin : 0,
     originDiameter: geo.originDiameter,
     taperHeightMm: geo.taperHeightMm,
