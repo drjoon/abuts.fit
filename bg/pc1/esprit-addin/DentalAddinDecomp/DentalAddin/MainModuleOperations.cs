@@ -1882,18 +1882,13 @@ namespace DentalAddin
                 // Tech_Default_Path.xml Exit angle(80)은 이 3-stage 구간 체인에서 쓰지 않는다.
                 double exitTopY = (Document?.LatheMachineSetup?.BarDiameter ?? 0.0) / 2.0;
                 double[] lastPt = region[region.Count - 1];
-                // 11° 핸드오프가 있으면 면 반경 수평을 헥스 쪽으로 잇지 않는다.
-                // 그 수평은 Ø면 그대로 테이퍼 축 구간을 지나고, 두 번째 CAM에서도 수평끝=(11.702,1.714)로 남았다.
-                // 핸드오프에서 바로 45도로 벌어지면 반경이 원뿔보다 빨리 커져 테이퍼를 깎지 않는다.
-                bool leaveAtTaperFace = !double.IsNaN(taperStartX);
-                if (!leaveAtTaperFace && maxX - lastPt[0] > 1e-4)
+                // 11° 핸드오프가 있으면 last Y는 면 반경이다. 그 반경으로 maxX(BackPointX+R+0.5)까지
+                // 수평을 이어 황삭 공구 반경(D4 → 2.0)이 미선삭 소재와 간섭하지 않게 한 뒤 45도로 올라간다.
+                // 핸드오프에서 바로 45도로 빼면 그 여유가 없다. LowerY(프로파일 끝)로 내리지도 않는다.
+                if (maxX - lastPt[0] > 1e-4)
                 {
                     region.Add(new[] { maxX, lastPt[1], lastPt[2] });
                     lastPt = region[region.Count - 1];
-                }
-                else if (leaveAtTaperFace)
-                {
-                    DentalLogger.Log($"BuildTurningRangeChain - 11° 구간 수평 생략, ({lastPt[0]:0.###},{lastPt[1]:0.###})에서 45도 퇴출");
                 }
                 DentalLogger.Log($"BuildTurningRangeChain - '{newName}' 끝 형상: profileEnd=({EndXValue:0.###},{LowerY:0.###}), 수평끝=({lastPt[0]:0.###},{lastPt[1]:0.###}), 45도→({lastPt[0] + Math.Max(0.0, exitTopY - lastPt[1]):0.###},{exitTopY:0.###})");
                 double risePast = exitTopY - lastPt[1];
