@@ -888,7 +888,7 @@ namespace DentalAddin
                 runB = true;
             }
 
-            // One Pass: Front_Finish는 만들지 않고, Back_Finish가 팁~BackPointX+0.20을 한 번에 깎는다.
+            // One Pass: Front_Finish는 만들지 않고, Back_Finish가 팁~BackPointX-0.20을 한 번에 깎는다.
             bool finishOnePass = IsFinishOnePassEnabled();
             if (finishOnePass && explicitAPhase)
             {
@@ -1003,9 +1003,9 @@ namespace DentalAddin
             //            마진 띠는 Back만 깎는다. 1피치는 각 유지홈 StepIncrement.
             // Finish는 Front/Back만. safe split의 Xk는 Turn/Rough 전용이라 Finish 경계를 자르지 않는다.
             double finishOverlapMm = ResolveFinishSeamOverlapMm(opA, runB ? opB : null);
-            // Back_Turn이 BackPointX+0.3까지면 Finish_Back은 +0.20까지 가서 약 1피치만 겹친다.
-            // 예전 0.0은 원점(BackPointX)까지라 커넥션 원뿔을 Finish가 다시 깎았다.
-            const double compositeEndOffsetFromBackPointMm = 0.20;
+            // 기계 X는 팁(Front) < 헥스(Back). +offset은 헥스 쪽으로 늘어난다.
+            // Finish_Back 커넥션 끝은 BackPointX-0.20(팁 쪽). 백터닝이 원점~+0.3을 깎으면 겹침은 약 1피치.
+            const double compositeEndOffsetFromBackPointMm = -0.20;
 
             double finishFrontEndX = splitX;
             string finishFrontEndSource = "Splitline_2-fallback";
@@ -1031,7 +1031,7 @@ namespace DentalAddin
             }
             if (finishOnePass && runB)
             {
-                // Front_Finish 시작(FirstPassPercent=0, env override 있으면 그 값)부터 BackPointX+0.20까지.
+                // Front_Finish 시작(FirstPassPercent=0, env override 있으면 그 값)부터 BackPointX-0.20까지.
                 double onePassStartPercent = firstPassPercentOverride ?? 0.0;
                 finishBackStartX = onePassStartPercent / 100.0 * StartEndScaleMm;
                 finishBackEndX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
@@ -1055,7 +1055,7 @@ namespace DentalAddin
             }
             DentalLogger.Log($"Composite2SplitLine2 - Finish seam 확정: Front.end%={opA.LastPassPercent:F2} (X={finishFrontEndX:F3}, {finishFrontEndSource}), Back.start%={(runB && opB != null ? opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")} (X={finishBackStartX:F3}, {finishBackStartSource}), overlapMm={finishOverlapMm:F3}, guardWarn={startEndBFirstGuardApplied}");
 
-            // 정책: Finish_Back 종료 기준점은 BackPointX + 0.20mm (백터닝 +0.3과 1피치 겹침)
+            // 정책: Finish_Back 종료 기준점은 BackPointX - 0.20mm (헥스에서 팁 쪽으로 한 피치)
             double compositeEndTargetX = finishBackEndX;
             double compositeEndPassPercent = XToPassPercentByStartEndScale(compositeEndTargetX, 0.0, 100.0);
             if (runB && opB != null)
@@ -1894,7 +1894,7 @@ namespace DentalAddin
         //   Back   (region BACK2) : Back_Turn [Xk ~ xMax+exit] (기존 Back_Turn 끝 형상 유지)
         //                           Back_Rough [Xk-roughR ~ BackPointX]
         //   Finish                : none/deep Front [팁 ~ Splitline_2−0.5]
-        //                           none/deep Back [Splitline_2−0.5−1피치 ~ BackPointX+0.20], 스텝은 커넥션 → 포스트 팁
+        //                           none/deep Back [Splitline_2−0.5−1피치 ~ BackPointX-0.20], 스텝은 커넥션 → 포스트 팁
         //   Xk = (BackPointX - FL min_z) + 0.2  (Turn/Rough 경계. Finish seam은 피니시라인)
         // Middle_Turn 끝이 BackPointX + 1.5를 넘으면(커프가 짧음) Xk를 마진 쪽으로 당기지 않고 분할을 포기한다.
         private const string SafeSplitEnableEnv = "ABUTS_SAFE_SPLIT_ENABLE";
@@ -1904,7 +1904,7 @@ namespace DentalAddin
         // = D1.0 직경의 2/3 ≈ 0.67.
         //   none/deep Front_Finish  끝 = Splitline_2 − 0.5 (팁, X-)
         //   none/deep Back_Finish   팁쪽 끝 = (Splitline_2−0.5) − 1피치. 스텝은 커넥션 → 팁
-        //   Back_Finish   커넥션쪽 = BackPointX + 0.20 (백터닝 BackPointX+0.3과 1피치 겹침)
+        //   Back_Finish   커넥션쪽 = BackPointX - 0.20 (헥스에서 팁 쪽 1피치. +는 헥스로 늘어남)
         //   스텝오버: 커넥션(끝) → 포스트 팁(시작). ReverseStepOverDirection.
         private const double FinishPastSplitline2TowardTipMm = 0.5;
         private const double FinishAdjacentOverlapMm = CompositeFinishCommonToolDiameterMm * 2.0 / 3.0;

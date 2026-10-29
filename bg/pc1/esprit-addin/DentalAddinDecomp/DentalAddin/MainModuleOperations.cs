@@ -116,8 +116,8 @@ namespace DentalAddin
                 }
 
                 // Front_Finish는 Front Face 다음에 생성한다.
-                // One Pass(ABUTS_FINISH_ONE_PASS=1): Front_Finish는 만들지 않고 Back_Finish가 팁~BackPointX+0.20을 한 번에 깎는다.
-                // safe split이면 Back_Finish는 B2. none/deep은 Splitline_2−0.5−1피치 ~ BackPointX+0.20.
+                // One Pass(ABUTS_FINISH_ONE_PASS=1): Front_Finish는 만들지 않고 Back_Finish가 팁~BackPointX-0.20을 한 번에 깎는다.
+                // safe split이면 Back_Finish는 B2. none/deep은 Splitline_2−0.5−1피치 ~ BackPointX-0.20.
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
                 try
                 {

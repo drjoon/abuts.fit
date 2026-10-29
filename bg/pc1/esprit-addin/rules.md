@@ -108,7 +108,7 @@
   - 내부 region 코드는 Middle=`BACK`, Back=`BACK2`(T05·레이어·경계 로직 공유). 표시명만 바뀐다.
   - Middle_Rough 끝 `Xk+0.5`, Middle_Turn 끝 = Rough 끝 + D4 반경 + 보정 (황삭 끝+D4 반경 2.0+보정 0.5)
   - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX]`(경계 `RoughBoundryBack2`)
-  - none/deep Back_Finish `[Splitline_2−0.5−1피치 ~ BackPointX+0.20]`, Front 끝 = Splitline_2−0.5(팁). 스텝오버는 커넥션에서 포스트 팁 쪽 (`ReverseStepOverDirection`). 백터닝이 BackPointX+0.3이면 겹침은 약 1피치.
+  - none/deep Back_Finish `[Splitline_2−0.5−1피치 ~ BackPointX-0.20]`, Front 끝 = Splitline_2−0.5(팁). 스텝오버는 커넥션에서 포스트 팁 쪽 (`ReverseStepOverDirection`). 기계 X는 팁 < 헥스라 `-0.20`이 헥스에서 팁 쪽 1피치.
 - Middle_Turn 끝(`Xk+3.0`)은 **클램프하지 않는다**. 줄이면 D4 러프가 원소재를 물고, Xk를 당기면 seam이 마진으로 들어간다.
 - 포기 조건(기존 단일 Back 유지): FL min_z 없음, `Xk < Splitline_2+1.5`, Middle_Turn 끝 > `BackPointX+1.5` (= 치은 파트 FL min_z < 1.7mm). 로그 `SafeSplit[...]`.
 - 원칙: Turn은 Rough 끝보다 D4 반경+보정(2.5) 이상 더 깎는다. 선행 3D 황삭은 Finish seam보다 0.5mm 더 깎아 D1.0이 미황삭을 물지 않게 한다.
@@ -276,7 +276,7 @@
 - 구간별 끝점 (R = 황삭 공구 반경, D4 → 2.0 / ROUGH_20 D2 → 1.0):
   - Front: Finish 끝 = Rough 끝 = `Splitline_2 + 0.5`, Turn 끝 = Rough 끝 + R
   - Middle: Finish 끝 = Rough 끝 = `Xk`, Turn 끝 = `Xk + R`. **Turn 끝이 `BackPointX`를 넘으면 Middle 제거 → Front/Back 2단** (`TryResolveSafeSplitBackZoneX`: `Xk ≤ BackPointX - R`)
-  - Back: Finish 끝 = `BackPointX + 0.20`(백터닝 `BackPointX+0.3`과 1피치 겹침). Rough 끝 = `BackPointX`. Turn 체인 수평 끝 = `BackPointX + R + 0.5 + ZStock`
+  - Back: Finish 끝 = `BackPointX - 0.20`(헥스에서 팁 쪽 1피치. `+`는 헥스로 늘어남). Rough 끝 = `BackPointX`. Turn 체인 수평 끝 = `BackPointX + R + 0.5 + ZStock`
     - 체인은 트림된 프로파일 끝(`EndXValue`, `LowerY`)까지만 쓰고 `ExtendTurning` 꼬리(EndX+Extend 수평, Exit angle 80 상승)는 버린다.
     - `Turning.prc` ZStock(0.3)만큼 툴패스 45도 모서리가 tip 쪽으로 당겨지므로 체인에 더한다. 0.5는 Back_Rough 툴패스가 BackPointX를 조금 넘는 몫.
 - Finish 겹침 (2026-10-20): Front_Finish 끝 = 경계(max_z 또는 Splitline_2). Back_Finish 시작 = 경계 − 1피치. safe split의 `Xk − overlap`은 Turn/Rough만.
