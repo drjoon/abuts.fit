@@ -279,6 +279,7 @@
   - Back: Finish 끝 = Rough 끝 = `BackPointX`, Turn 체인 수평 끝 = `BackPointX + R + 0.5 + ZStock`
     - 체인은 트림된 프로파일 끝(`EndXValue`, `LowerY`)까지만 쓰고 `ExtendTurning` 꼬리(EndX+Extend 수평, Exit angle 80 상승)는 버린다.
     - `Turning.prc` ZStock(0.3)만큼 툴패스 45도 모서리가 tip 쪽으로 당겨지므로 체인에 더한다. 0.5는 Back_Rough 툴패스가 BackPointX를 조금 넘는 몫.
+    - 11° 테이퍼 보호(2026-10-29): 로드된 커넥션 PRC `Finish Connection`의 `G1 X… F0.01` 다음 `G1 X… W…`가 11°(±0.5°)일 때만 Back_Turn을 막는다. 면 직경은 파일마다 다르다. Regular 기준 오스템 3.428, 디오 3.428, 네오 3.416, 덴티움 3.416, 메가젠 3.417, 덴티스 3.465. 미니·내로우도 같은 파서다. 프로파일은 그 면 직경을 지나는 11°(±3°) 세그먼트에서 끊고, 그 점에서 바로 45도 퇴출한다. `BackPointX+R`까지 면 반경 수평을 잇지 않는다. 그 수평은 테이퍼 축 구간을 Ø면으로 지난다. 이음은 `Back_Finish`, 원뿔은 커넥션 사이클.
 - Finish 겹침 (2026-10-20): Front_Finish 끝 = 경계(max_z 또는 Splitline_2). Back_Finish 시작 = 경계 − 1피치. safe split의 `Xk − overlap`은 Turn/Rough만.
 - 퇴출: Front/Middle/Back 모두 Turn 끝에서 45도로 올라가 소재 반경(topY)에 닿은 뒤 90도(수직)로 빠진다 (`BuildTurningRangeChain`).
 - `Tech_Default_Path.xml` Turning Extend(NumData[5])·Exit angle(80)은 3-stage Turn 끝점에 쓰지 않는다. XML 값은 2.0으로 두고 주석으로 기록.
