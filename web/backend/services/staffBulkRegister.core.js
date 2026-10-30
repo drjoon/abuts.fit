@@ -158,18 +158,77 @@ export function finalizeStaffBulkDrafts(drafts, { takenLoginIds, takenEmails }) 
     }
     usedLogin.add(loginId);
     usedEmail.add(email);
+    const departmentIds = collectDraftDepartmentIds(draft);
+    const departmentNames = collectDraftDepartmentNames(draft);
     ready.push({
       line: draft.lineNo,
       name: draft.name,
       loginId,
       email,
       login: loginId,
-      departmentId: draft.departmentId || null,
-      departmentName: draft.departmentName || "",
+      departmentId: departmentIds[0] || null,
+      departmentIds,
+      departmentName: departmentNames.join(" · "),
+      departmentNames,
     });
   }
 
   return { ready, failed };
+}
+
+function collectDraftDepartmentIds(draft) {
+  if (Array.isArray(draft?.departmentIds) && draft.departmentIds.length) {
+    return [...new Set(draft.departmentIds.filter(Boolean))];
+  }
+  return draft?.departmentId ? [draft.departmentId] : [];
+}
+
+function collectDraftDepartmentNames(draft) {
+  if (Array.isArray(draft?.departmentNames) && draft.departmentNames.length) {
+    return [...new Set(draft.departmentNames.map((name) => String(name || "").trim()).filter(Boolean))];
+  }
+  const name = String(draft?.departmentName || "").trim();
+  return name ? [name] : [];
+}
+
+/** 부서 칸마다 같은 순번의 같은 이름은 한 사람·여러 부서(OR)로 합친다. */
+export function mergeStaffDraftsByDepartmentOccurrence(drafts) {
+  const perDepartment = new Map();
+  for (const draft of Array.isArray(drafts) ? drafts : []) {
+    const key = String(draft?.departmentId || "");
+    if (!perDepartment.has(key)) perDepartment.set(key, []);
+    perDepartment.get(key).push(draft);
+  }
+
+  const merged = new Map();
+  for (const list of perDepartment.values()) {
+    const occurrence = new Map();
+    for (const draft of list) {
+      const name = loginIdBaseFromName(draft.name) || String(draft.name || "");
+      const index = occurrence.get(name) || 0;
+      occurrence.set(name, index + 1);
+      const mergeKey = `${name}#${index}`;
+      const existing = merged.get(mergeKey);
+      const departmentIds = collectDraftDepartmentIds(draft);
+      const departmentNames = collectDraftDepartmentNames(draft);
+      if (existing) {
+        existing.departmentIds = [
+          ...new Set([...existing.departmentIds, ...departmentIds]),
+        ];
+        existing.departmentNames = [
+          ...new Set([...existing.departmentNames, ...departmentNames]),
+        ];
+        if (draft.error && !existing.error) existing.error = draft.error;
+        continue;
+      }
+      merged.set(mergeKey, {
+        ...draft,
+        departmentIds,
+        departmentNames,
+      });
+    }
+  }
+  return [...merged.values()];
 }
 
 export function toStaffListFields(member) {

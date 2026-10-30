@@ -615,8 +615,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 기공의뢰서: `practiceTransferAuth.middleware.js` — 발신 practice, 수신 lab
   - 생산의뢰: `paidRequestor.middleware.js` — `POST /api/requests`, `/from-draft`, `/bulk`
   - 공개 가입: `POST /api/auth/register`. 발신 프로필: `practiceProfile` → `ensureRequestorOrgAnchor`.
-  - 대표 직원 일괄 등록: `POST /api/businesses/staff/bulk`. 대표(`resolveOwnedBusiness`)만. 한 줄에 한글 이름. 아이디는 그 이름(`loginId`). 다른 회사 포함 같은 이름이 있으면 `1`, `2`를 붙인다. 이메일은 받지 않는다. 저장 메일은 아이디로 만든 `@staff.abuts.fit` 내부 주소이고, 화면에는 아이디만 보인다. 처음 비밀번호는 묶음당 영문 소문자 6자리(`abcdef`). `mustChangePassword`. 소개 귀속·환영 크레딧 없음. `subRole=staff`, 같은 role·`requestorKind`, 온보딩·가이드투어 생략, `members`에 넣는다. 비밀번호 분실은 `POST /api/businesses/staff/:userId/password`(같은 6자리). 로그인은 `loginId`.
-  - 기본 부서: 경영팀(`management`)+실무팀. 치과=`진료팀`, 기공소·어벗츠기공소=`기공팀`, 제조사=`생산팀`, 딜러·영업본부=`영업팀`, 개발운영=`개발팀`. 대표는 둘 다. 복수 소속은 `User.internalDepartmentIds`(OR). 경영팀만 정산(`canAccessSettlement`). 관리자 작업영역 부서(플랫폼관리부/마케팅영업부/기공사업부)는 유지. SSOT `utils/internalDepartments.util.js`.
+  - 대표 직원 일괄 등록: `POST /api/businesses/staff/bulk`. 경영팀만. 한 줄에 한글 이름. 부서는 `departmentIds` 여러 개(OR). 레거시 `groups`는 같은 순번의 같은 이름을 한 사람으로 합친다. 아이디는 그 이름(`loginId`). 다른 회사 포함 같은 이름이 있으면 `1`, `2`를 붙인다. 이메일은 받지 않는다. 저장 메일은 아이디로 만든 `@staff.abuts.fit` 내부 주소이고, 화면에는 아이디만 보인다. 처음 비밀번호는 묶음당 영문 소문자 6자리(`abcdef`). `mustChangePassword`. 소개 귀속·환영 크레딧 없음. `subRole=staff`, 같은 role·`requestorKind`, 온보딩·가이드투어 생략, `members`에 넣는다. 비밀번호 분실은 `POST /api/businesses/staff/:userId/password`(같은 6자리). 로그인은 `loginId`.
+  - 기본 부서: 경영팀(`management`)+실무팀. 치과=`진료팀`, 기공소·어벗츠기공소=`기공팀`, 제조사=`생산팀`, 딜러·영업본부=`영업팀`, 개발운영=`개발팀`. 대표는 둘 다. 복수 소속은 `User.internalDepartmentIds`(OR). 경영팀만 정산(`canAccessSettlement`)과 부서·직원 관리. 관리자 작업영역 부서(플랫폼관리부/마케팅영업부/기공사업부)는 유지. SSOT `utils/internalDepartments.util.js`.
   - 백필: `scripts/db/backfill-requestor-capabilities.js` (`--apply`)
   - 크레딧/정산: 유료(paid+verified)만. synthetic BN 환영 크레딧 없음.
     기공소 가입환영 크레딧은 실사업자번호 등록 시 **7만 원** 1회(`가입환영 크레딧 지급`). 치과는 제외. 관리자 수동 무료크레딧 override는 유지.

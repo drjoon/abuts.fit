@@ -18,12 +18,17 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
+import {
+  departmentKey,
+  isOperationsDepartmentKey,
+} from "@/shared/business/departmentAccess";
 
 type CreatedStaff = {
   userId: string;
   name: string;
   login: string;
   departmentName?: string;
+  departmentNames?: string[];
 };
 
 type FailedStaff = {
@@ -45,11 +50,18 @@ function countNames(value: string) {
     .filter((line) => line && !line.startsWith("#")).length;
 }
 
+function createdDepartmentLabel(row: CreatedStaff) {
+  if (Array.isArray(row.departmentNames) && row.departmentNames.length) {
+    return row.departmentNames.join(" · ");
+  }
+  return String(row.departmentName || "").trim();
+}
+
 function groupCreated(rows: CreatedStaff[]) {
   const order: string[] = [];
   const map = new Map<string, CreatedStaff[]>();
   for (const row of rows) {
-    const key = String(row.departmentName || "").trim();
+    const key = createdDepartmentLabel(row);
     if (!map.has(key)) {
       map.set(key, []);
       order.push(key);
@@ -130,21 +142,25 @@ export function StaffBulkRegisterDialog({
 }: StaffBulkRegisterDialogProps) {
   const { toast } = useToast();
   const [text, setText] = useState("");
-  const [namesByDepartment, setNamesByDepartment] = useState<Record<string, string>>({});
+  const [selectedDepartmentIds, setSelectedDepartmentIds] = useState<string[]>([]);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(true);
   const [saving, setSaving] = useState(false);
   const [created, setCreated] = useState<CreatedStaff[]>([]);
   const [failed, setFailed] = useState<FailedStaff[]>([]);
 
-  const multiDepartment = departments.length > 1;
-  const effectiveDepartmentId = departments.length === 1 ? departments[0]._id : "";
-  const nameCount = multiDepartment
-    ? departments.reduce(
-        (sum, row) => sum + countNames(namesByDepartment[row._id] || ""),
-        0,
-      )
-    : countNames(text);
+  const nameCount = countNames(text);
+  const selected = new Set(selectedDepartmentIds);
+  const managementHint = departments.some(
+    (dept) => selected.has(dept._id) && departmentKey(dept) === "management",
+  )
+    ? "정산을 볼 수 있습니다"
+    : departments.some(
+          (dept) =>
+            selected.has(dept._id) && isOperationsDepartmentKey(departmentKey(dept)),
+        )
+      ? "정산을 볼 수 없습니다"
+      : "";
 
   const copyText = useMemo(() => {
     if (!created.length) return "";
@@ -167,7 +183,7 @@ export function StaffBulkRegisterDialog({
 
   const resetForm = () => {
     setText("");
-    setNamesByDepartment({});
+    setSelectedDepartmentIds([]);
     setPassword("");
     setShowPassword(true);
     setCreated([]);
@@ -199,23 +215,12 @@ export function StaffBulkRegisterDialog({
         )}`,
         method: "POST",
         token,
-        jsonBody: multiDepartment
-          ? {
-              businessType,
-              password,
-              groups: departments
-                .map((row) => ({
-                  departmentId: row._id,
-                  text: namesByDepartment[row._id] || "",
-                }))
-                .filter((row) => row.text.trim()),
-            }
-          : {
-              businessType,
-              text,
-              password,
-              departmentId: effectiveDepartmentId || undefined,
-            },
+        jsonBody: {
+          businessType,
+          text,
+          password,
+          departmentIds: selectedDepartmentIds,
+        },
       });
       const body = res.data;
       const nextCreated = Array.isArray(body?.data?.created) ? body.data.created : [];
@@ -258,23 +263,20 @@ export function StaffBulkRegisterDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent
-        className={cn(
-          "max-h-[calc(100dvh-2rem)] overflow-y-auto",
-          multiDepartment ? "sm:max-w-2xl" : "sm:max-w-md",
-        )}
-      >
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>직원 등록</DialogTitle>
           {created.length ? null : (
             <DialogDescription>
-              {multiDepartment
-                ? "부서마다 이름을 한 줄에 하나씩 적습니다."
-                : "이름을 한 줄에 하나씩 적습니다."}
+              이름을 한 줄에 하나씩 적습니다.
               <br />
-              동명이인은 그 숫자만큼 같은 이름을 반복해서 기입합니다.
-              <br />
-              자동으로 1, 2, ..가 붙습니다.
+              동명이인은 같은 이름을 반복해 적습니다.
+              {departments.length > 1 ? (
+                <>
+                  <br />
+                  부서는 여러 개 고를 수 있습니다.
+                </>
+              ) : null}
             </DialogDescription>
           )}
         </DialogHeader>
@@ -382,63 +384,54 @@ export function StaffBulkRegisterDialog({
                 첫 로그인 후 본인 비밀번호로 바꿉니다.
               </p>
             </div>
-            {multiDepartment ? (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {departments.map((row) => {
-                  const value = namesByDepartment[row._id] || "";
-                  const count = countNames(value);
-                  return (
-                    <div
-                      key={row._id}
-                      className={cn(
-                        "rounded-xl border bg-slate-50/80 p-2",
-                        count > 0 ? "border-primary/40" : "border-slate-200",
-                      )}
-                    >
-                      <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
-                        <label
-                          htmlFor={`staff-bulk-dept-${row._id}`}
-                          className="min-w-0 truncate text-sm font-semibold text-slate-900"
-                        >
-                          {row.name}
-                        </label>
-                        {count > 0 ? (
-                          <span className="shrink-0 text-xs font-medium tabular-nums text-primary-strong">
-                            {count}명
-                          </span>
-                        ) : null}
-                      </div>
-                      <Textarea
-                        id={`staff-bulk-dept-${row._id}`}
-                        value={value}
-                        onChange={(event) =>
-                          setNamesByDepartment((prev) => ({
-                            ...prev,
-                            [row._id]: event.target.value,
-                          }))
-                        }
-                        placeholder="이름"
-                        rows={3}
+            {departments.length ? (
+              <div className="space-y-1.5">
+                <Label>부서</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {departments.map((dept) => {
+                    const active = selected.has(dept._id);
+                    return (
+                      <button
+                        key={dept._id}
+                        type="button"
                         disabled={saving}
-                        className="min-h-[4.75rem] bg-white"
-                      />
-                    </div>
-                  );
-                })}
+                        onClick={() =>
+                          setSelectedDepartmentIds((prev) =>
+                            active
+                              ? prev.filter((id) => id !== dept._id)
+                              : [...prev, dept._id],
+                          )
+                        }
+                        className={cn(
+                          "inline-flex h-7 items-center rounded-full px-2.5 text-xs font-medium ring-1 transition-colors",
+                          active
+                            ? "bg-primary-soft text-primary-strong ring-primary/20"
+                            : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50",
+                        )}
+                      >
+                        {dept.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                {managementHint ? (
+                  <p className="text-[11px] leading-4 text-muted-foreground">
+                    {managementHint}
+                  </p>
+                ) : null}
               </div>
-            ) : (
-              <div className="space-y-2">
-                <Label htmlFor="staff-bulk-text">이름</Label>
-                <Textarea
-                  id="staff-bulk-text"
-                  value={text}
-                  onChange={(event) => setText(event.target.value)}
-                  placeholder={"김영희\n홍길동"}
-                  rows={6}
-                  disabled={saving}
-                />
-              </div>
-            )}
+            ) : null}
+            <div className="space-y-2">
+              <Label htmlFor="staff-bulk-text">이름</Label>
+              <Textarea
+                id="staff-bulk-text"
+                value={text}
+                onChange={(event) => setText(event.target.value)}
+                placeholder={"김영희\n홍길동"}
+                rows={6}
+                disabled={saving}
+              />
+            </div>
             {failed.length ? (
               <div className="space-y-1 text-xs text-destructive">
                 {failed.map((row, index) => (

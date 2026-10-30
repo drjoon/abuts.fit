@@ -16,6 +16,7 @@ import {
   enrichMemberWithDepartment,
   loadAnchorDepartmentsForStaff,
   resolveApprovedDepartmentId,
+  resolveApprovedDepartmentIds,
 } from "./business.department.controller.js";
 import {
   createOwnerStaffAccounts,
@@ -28,6 +29,7 @@ import {
   collectMemberDepartmentIds,
   ensureDefaultDepartments,
   getDefaultDepartmentSpecs,
+  rejectUnlessStaffDirectoryManager,
   setUserDepartmentIds,
 } from "../../utils/internalDepartments.util.js";
 
@@ -625,6 +627,9 @@ export async function removeMember(req, res) {
         message: "소속된 사업자가 없습니다.",
       });
     }
+    if (rejectUnlessStaffDirectoryManager(res, req.user, anchor)) {
+      return;
+    }
 
     const userId = String(req.params.userId || "").trim();
     if (!Types.ObjectId.isValid(userId)) {
@@ -705,6 +710,9 @@ export async function bulkCreateStaff(req, res) {
         message: "소속된 사업자가 없습니다.",
       });
     }
+    if (rejectUnlessStaffDirectoryManager(res, req.user, anchor)) {
+      return;
+    }
 
     const owner = await User.findById(req.user._id)
       .select({
@@ -725,6 +733,8 @@ export async function bulkCreateStaff(req, res) {
     const rawGroups = Array.isArray(req.body?.groups) ? req.body.groups : null;
     let groups = null;
     let departmentId = null;
+    let departmentIds = [];
+    let departmentNames = [];
     let text = String(req.body?.text || "");
 
     if (rawGroups) {
@@ -765,9 +775,14 @@ export async function bulkCreateStaff(req, res) {
       }
       text = "";
     } else if (deptContext.usesDepartments) {
-      const deptResolved = await resolveApprovedDepartmentId(
+      const requestedIds = Array.isArray(req.body?.departmentIds)
+        ? req.body.departmentIds
+        : req.body?.departmentId == null || req.body?.departmentId === ""
+          ? []
+          : [req.body.departmentId];
+      const deptResolved = await resolveApprovedDepartmentIds(
         anchor._id,
-        req.body?.departmentId,
+        requestedIds,
       );
       if (deptResolved.error) {
         return res.status(400).json({
@@ -778,7 +793,9 @@ export async function bulkCreateStaff(req, res) {
               : deptResolved.error,
         });
       }
-      departmentId = deptResolved.departmentId || null;
+      departmentIds = deptResolved.departmentIds || [];
+      departmentNames = deptResolved.departmentNames || [];
+      departmentId = departmentIds[0] || null;
     }
 
     const result = await createOwnerStaffAccounts({
@@ -787,6 +804,8 @@ export async function bulkCreateStaff(req, res) {
       password: String(req.body?.password || ""),
       text,
       departmentId,
+      departmentIds,
+      departmentNames,
       groups,
     });
 
@@ -819,6 +838,9 @@ export async function resetStaffPassword(req, res) {
         success: false,
         message: "소속된 사업자가 없습니다.",
       });
+    }
+    if (rejectUnlessStaffDirectoryManager(res, req.user, anchor)) {
+      return;
     }
 
     const result = await resetOwnedStaffPassword({

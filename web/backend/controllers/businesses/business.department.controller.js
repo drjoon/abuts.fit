@@ -16,6 +16,7 @@ import {
   findDepartmentById,
   INTERNAL_DEPARTMENT_BUSINESS_TYPES,
   normalizeDepartmentName,
+  rejectUnlessStaffDirectoryManager,
   serializeDepartments,
   setUserDepartmentIds,
   supportsInternalDepartments,
@@ -90,6 +91,9 @@ export async function createDepartment(req, res) {
         success: false,
         message: resolved.error,
       });
+    }
+    if (rejectUnlessStaffDirectoryManager(res, req.user, resolved.anchor)) {
+      return;
     }
 
     const name = normalizeDepartmentName(req.body?.name);
@@ -169,6 +173,9 @@ export async function updateDepartment(req, res) {
         message: resolved.error,
       });
     }
+    if (rejectUnlessStaffDirectoryManager(res, req.user, resolved.anchor)) {
+      return;
+    }
 
     const name = normalizeDepartmentName(req.body?.name);
     if (!name) {
@@ -245,6 +252,9 @@ export async function deleteDepartment(req, res) {
         message: resolved.error,
       });
     }
+    if (rejectUnlessStaffDirectoryManager(res, req.user, resolved.anchor)) {
+      return;
+    }
 
     const anchor = resolved.anchor;
     const exists = findDepartmentById(anchor, departmentId);
@@ -308,6 +318,9 @@ export async function assignStaffDepartment(req, res) {
         success: false,
         message: resolved.error,
       });
+    }
+    if (rejectUnlessStaffDirectoryManager(res, req.user, resolved.anchor)) {
+      return;
     }
 
     const rawIds = Array.isArray(req.body?.departmentIds)
@@ -468,4 +481,25 @@ export async function resolveApprovedDepartmentId(anchorId, requestedDepartmentI
       findDepartmentById(anchor, departmentIdStr)?.name,
     ),
   };
+}
+
+export async function resolveApprovedDepartmentIds(anchorId, requestedIds) {
+  const unique = [
+    ...new Set(
+      (Array.isArray(requestedIds) ? requestedIds : [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  const departmentIds = [];
+  const departmentNames = [];
+  for (const id of unique) {
+    const one = await resolveApprovedDepartmentId(anchorId, id);
+    if (one.error) return { error: one.error };
+    if (one.departmentId) {
+      departmentIds.push(one.departmentId);
+      if (one.departmentName) departmentNames.push(one.departmentName);
+    }
+  }
+  return { departmentIds, departmentNames };
 }

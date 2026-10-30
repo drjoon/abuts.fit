@@ -31,6 +31,7 @@ import {
 } from "@/features/settings/tabs/StaffBulkRegisterDialog";
 import { cn } from "@/shared/ui/cn";
 import {
+  canAccessSettlement,
   collectDepartmentIds,
   departmentKey,
   departmentSettlementHint,
@@ -172,7 +173,9 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     businessType,
   });
   const membership = membershipMgmt.membership;
-  const canManage = membership === "owner" || membership === "member";
+  const canManage =
+    (membership === "owner" || membership === "member") &&
+    canAccessSettlement(user);
   const showDirectory = membership === "owner" || membership === "member";
 
   const businessSearch = useBusinessSearch({
@@ -758,29 +761,29 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
           </div>
         ) : (
           <>
-            {!canManage && membership === "none" ? (
-              <BusinessSearchSection
-                businessType={businessType}
-                businessSearch={businessSearch.businessSearch}
-                setBusinessSearch={businessSearch.setBusinessSearch}
-                businessSearchResults={businessSearch.businessSearchResults}
-                selectedBusiness={businessSearch.selectedBusiness}
-                setSelectedBusiness={businessSearch.setSelectedBusiness}
-                businessOpen={businessSearch.businessOpen}
-                setBusinessOpen={businessSearch.setBusinessOpen}
-                joinLoading={membershipMgmt.joinLoading}
-                onJoinRequest={() => void handleJoinRequest()}
-              />
-            ) : null}
-            {!canManage ? (
-              <JoinRequestsSection
-                myJoinRequests={membershipMgmt.myJoinRequests || []}
-                cancelLoadingBusinessId={membershipMgmt.cancelLoadingBusinessId}
-                onCancelJoinRequest={(businessId) =>
-                  void handleCancelJoinRequest(businessId)
-                }
-                onLeaveBusiness={(businessId) => void handleLeaveBusiness(businessId)}
-              />
+            {!showDirectory ? (
+              <>
+                <BusinessSearchSection
+                  businessType={businessType}
+                  businessSearch={businessSearch.businessSearch}
+                  setBusinessSearch={businessSearch.setBusinessSearch}
+                  businessSearchResults={businessSearch.businessSearchResults}
+                  selectedBusiness={businessSearch.selectedBusiness}
+                  setSelectedBusiness={businessSearch.setSelectedBusiness}
+                  businessOpen={businessSearch.businessOpen}
+                  setBusinessOpen={businessSearch.setBusinessOpen}
+                  joinLoading={membershipMgmt.joinLoading}
+                  onJoinRequest={() => void handleJoinRequest()}
+                />
+                <JoinRequestsSection
+                  myJoinRequests={membershipMgmt.myJoinRequests || []}
+                  cancelLoadingBusinessId={membershipMgmt.cancelLoadingBusinessId}
+                  onCancelJoinRequest={(businessId) =>
+                    void handleCancelJoinRequest(businessId)
+                  }
+                  onLeaveBusiness={(businessId) => void handleLeaveBusiness(businessId)}
+                />
+              </>
             ) : null}
           </>
         )}

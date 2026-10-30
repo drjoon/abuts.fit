@@ -1,4 +1,5 @@
 import {
+  actorCanManageStaffDirectory,
   collectMemberDepartmentIds,
   departmentGrantsSettlement,
   getDefaultDepartmentNames,
@@ -163,6 +164,37 @@ describe("memberCanAccessSettlement", () => {
   test("경영팀 이름은 key가 없어도 정산을 연다", () => {
     expect(
       departmentGrantsSettlement({ name: "경영팀", key: "" }),
+    ).toBe(true);
+  });
+});
+
+describe("actorCanManageStaffDirectory", () => {
+  const manufacturerAnchor = {
+    businessType: "manufacturer",
+    internalDepartments: [
+      { _id: "m1", name: "경영팀", key: "management" },
+      { _id: "p1", name: "생산팀", key: "production" },
+    ],
+  };
+
+  test("경영팀만 부서와 직원을 관리한다", () => {
+    expect(
+      actorCanManageStaffDirectory(
+        { internalDepartmentIds: ["m1"] },
+        manufacturerAnchor,
+      ),
+    ).toBe(true);
+    expect(
+      actorCanManageStaffDirectory(
+        { internalDepartmentIds: ["p1"] },
+        manufacturerAnchor,
+      ),
+    ).toBe(false);
+  });
+
+  test("관리자는 제한하지 않는다", () => {
+    expect(
+      actorCanManageStaffDirectory({ role: "admin" }, manufacturerAnchor),
     ).toBe(true);
   });
 });

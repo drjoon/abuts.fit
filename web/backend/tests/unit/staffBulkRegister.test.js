@@ -4,6 +4,7 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
   finalizeStaffBulkDrafts,
   loginIdBaseFromName,
+  mergeStaffDraftsByDepartmentOccurrence,
   parseStaffBulkText,
 } from "../../services/staffBulkRegister.core.js";
 import {
@@ -55,6 +56,20 @@ describe("staff bulk register parsing", () => {
     expect(latinPlanned.ready).toEqual([]);
     expect(latinPlanned.failed[0].message).toMatch(/한글/);
     expect(parseStaffBulkText("  \n# 메모").fatal).toMatch(/이름/);
+  });
+
+  test("같은 순번의 같은 이름은 여러 부서로 합친다", () => {
+    const merged = mergeStaffDraftsByDepartmentOccurrence([
+      { lineNo: 1, name: "이준호", departmentId: "m1", departmentName: "경영팀" },
+      { lineNo: 1, name: "이준호", departmentId: "c1", departmentName: "진료팀" },
+      { lineNo: 2, name: "김영희", departmentId: "c1", departmentName: "진료팀" },
+    ]);
+    expect(
+      merged.map((row) => [row.name, row.departmentNames.join(" · ")]),
+    ).toEqual([
+      ["이준호", "경영팀 · 진료팀"],
+      ["김영희", "진료팀"],
+    ]);
   });
 });
 
@@ -169,14 +184,16 @@ describe("staff bulk register persistence", () => {
     expect(
       result.created.map((row) => [row.login, row.departmentName]),
     ).toEqual([
-      ["이준호", "마케팅영업부"],
-      ["이준호1", "플랫폼관리부"],
+      ["이준호", "마케팅영업부 · 플랫폼관리부"],
       ["김영희", "플랫폼관리부"],
     ]);
 
-    const second = await User.findOne({ loginId: "이준호1" });
-    expect(String(second.internalDepartmentId)).toBe(String(platform));
     const first = await User.findOne({ loginId: "이준호" });
-    expect(String(first.internalDepartmentId)).toBe(String(marketing));
+    expect(first.internalDepartmentIds.map(String)).toEqual([
+      String(marketing),
+      String(platform),
+    ]);
+    const onlyClinical = await User.findOne({ loginId: "김영희" });
+    expect(String(onlyClinical.internalDepartmentId)).toBe(String(platform));
   });
 });

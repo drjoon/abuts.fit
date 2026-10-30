@@ -15,9 +15,11 @@ import {
   isReservedStaffLoginEmail,
   loginIdBaseFromName,
   loginIdLookupClauses,
+  mergeStaffDraftsByDepartmentOccurrence,
   parseStaffBulkText,
   STAFF_BULK_MAX,
 } from "./staffBulkRegister.core.js";
+import { toDepartmentObjectIds } from "../utils/internalDepartments.util.js";
 
 function ownerMirror(owner) {
   const mirror = {};
@@ -62,15 +64,41 @@ async function loadTakenIdentities(drafts) {
   return { takenLoginIds, takenEmails };
 }
 
-function resolveStaffGroups({ text, departmentId, groups }) {
-  if (Array.isArray(groups) && groups.length) return groups;
-  return [
-    {
-      departmentId: departmentId || null,
-      departmentName: "",
-      text,
-    },
-  ];
+function collectSharedDepartmentIds({ departmentId, departmentIds }) {
+  if (Array.isArray(departmentIds) && departmentIds.length) {
+    return departmentIds.filter(Boolean);
+  }
+  return departmentId ? [departmentId] : [];
+}
+
+function buildStaffDrafts({ text, departmentId, departmentIds, departmentNames, groups }) {
+  if (Array.isArray(groups) && groups.length) {
+    const flattened = [];
+    for (const group of groups) {
+      const parsed = parseStaffBulkText(group.text, { limit: false });
+      if (parsed.fatal) continue;
+      for (const draft of parsed.drafts) {
+        flattened.push({
+          ...draft,
+          departmentId: group.departmentId || null,
+          departmentName: String(group.departmentName || "").trim(),
+        });
+      }
+    }
+    return mergeStaffDraftsByDepartmentOccurrence(flattened);
+  }
+
+  const parsed = parseStaffBulkText(text, { limit: false });
+  if (parsed.fatal) return [];
+  const ids = collectSharedDepartmentIds({ departmentId, departmentIds });
+  const names = Array.isArray(departmentNames)
+    ? departmentNames.map((name) => String(name || "").trim()).filter(Boolean)
+    : [];
+  return parsed.drafts.map((draft) => ({
+    ...draft,
+    departmentIds: ids,
+    departmentNames: names,
+  }));
 }
 
 export async function createOwnerStaffAccounts({
@@ -79,6 +107,8 @@ export async function createOwnerStaffAccounts({
   password,
   text,
   departmentId,
+  departmentIds,
+  departmentNames,
   groups,
 }) {
   if (!isStaffInitialPassword(password)) {
@@ -90,18 +120,13 @@ export async function createOwnerStaffAccounts({
     };
   }
 
-  const drafts = [];
-  for (const group of resolveStaffGroups({ text, departmentId, groups })) {
-    const parsed = parseStaffBulkText(group.text, { limit: false });
-    if (parsed.fatal) continue;
-    for (const draft of parsed.drafts) {
-      drafts.push({
-        ...draft,
-        departmentId: group.departmentId || null,
-        departmentName: String(group.departmentName || "").trim(),
-      });
-    }
-  }
+  const drafts = buildStaffDrafts({
+    text,
+    departmentId,
+    departmentIds,
+    departmentNames,
+    groups,
+  });
   if (!drafts.length) {
     return {
       status: 400,
@@ -157,9 +182,16 @@ export async function createOwnerStaffAccounts({
         ...mirror,
       };
       if (row.loginId) doc.loginId = row.loginId;
-      if (row.departmentId) {
-        doc.internalDepartmentId = row.departmentId;
-        doc.internalDepartmentIds = [row.departmentId];
+      const assignedIds = toDepartmentObjectIds(
+        Array.isArray(row.departmentIds)
+          ? row.departmentIds
+          : row.departmentId
+            ? [row.departmentId]
+            : [],
+      );
+      if (assignedIds.length) {
+        doc.internalDepartmentId = assignedIds[0];
+        doc.internalDepartmentIds = assignedIds;
       }
       const user = await User.create(doc);
       createdUsers.push(user);
@@ -169,8 +201,10 @@ export async function createOwnerStaffAccounts({
         loginId: row.loginId || "",
         email: row.loginId ? "" : row.email,
         login: row.login,
-        departmentId: row.departmentId ? String(row.departmentId) : "",
+        departmentId: assignedIds[0] ? String(assignedIds[0]) : "",
+        departmentIds: assignedIds.map((id) => String(id)),
         departmentName: row.departmentName || "",
+        departmentNames: Array.isArray(row.departmentNames) ? row.departmentNames : [],
       });
     } catch (error) {
       const duplicate = Number(error?.code) === 11000;

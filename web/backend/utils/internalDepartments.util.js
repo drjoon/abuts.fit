@@ -180,6 +180,22 @@ export function memberCanAccessSettlement(member, anchor) {
   );
 }
 
+export function actorCanManageStaffDirectory(actor, anchor) {
+  if (!actor) return false;
+  if (String(actor.accountRole || "") === "admin") return true;
+  if (String(actor.role || "") === "admin") return true;
+  return memberCanAccessSettlement(actor, anchor);
+}
+
+export function rejectUnlessStaffDirectoryManager(res, actor, anchor) {
+  if (actorCanManageStaffDirectory(actor, anchor)) return false;
+  res.status(403).json({
+    success: false,
+    message: "경영팀만 부서와 직원을 관리할 수 있습니다.",
+  });
+  return true;
+}
+
 export function memberAssignedToDepartment(member, departmentId) {
   const id = String(departmentId || "").trim();
   if (!id) return false;
