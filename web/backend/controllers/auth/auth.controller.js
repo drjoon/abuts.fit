@@ -13,7 +13,9 @@ import User from "../../models/user.model.js";
 import SignupVerification from "../../models/signupVerification.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
+  applyRequestorDepartmentAccess,
   anchorUsesInternalDepartments,
+  collectMemberDepartmentIds,
   ensureDefaultDepartments,
   resolveDepartmentLabel,
   supportsInternalDepartments,
@@ -311,8 +313,9 @@ const sendLoginSuccessResponse = async ({
   const plainUser = user.toObject();
   delete plainUser.password;
   const workspaceUser = await applyAdminDepartmentWorkspace(plainUser);
-  voidRecordUserAccessDay({ userId: user._id, role: workspaceUser?.role });
-  const userWithoutPassword = applyGuideTourAlwaysOnToUserPayload(workspaceUser);
+  const accessUser = await applyRequestorDepartmentAccess(workspaceUser);
+  voidRecordUserAccessDay({ userId: user._id, role: accessUser?.role });
+  const userWithoutPassword = applyGuideTourAlwaysOnToUserPayload(accessUser);
 
   res.status(200).json({
     success: true,
@@ -1341,10 +1344,11 @@ async function getCurrentUser(req, res) {
     const dbVersion = getDbVersion();
 
     const workspaceUser = await applyAdminDepartmentWorkspace(freshUser);
+    const accessUser = await applyRequestorDepartmentAccess(workspaceUser);
     res.status(200).json({
       success: true,
       data: {
-        ...applyGuideTourAlwaysOnToUserPayload(workspaceUser),
+        ...applyGuideTourAlwaysOnToUserPayload(accessUser),
         dbVersion,
       },
     });
@@ -1817,14 +1821,16 @@ async function listColleagues(req, res) {
     }
 
     const usesDepartments = anchorUsesInternalDepartments(anchor);
-    const myDepartmentId = req.user?.internalDepartmentId
-      ? String(req.user.internalDepartmentId)
-      : "";
+    const myDepartmentIds = collectMemberDepartmentIds(req.user);
+    const myDepartmentId = myDepartmentIds[0] || "";
     const myDepartmentName = usesDepartments
-      ? resolveDepartmentLabel(anchor, myDepartmentId)
+      ? myDepartmentIds
+          .map((id) => resolveDepartmentLabel(anchor, id))
+          .filter(Boolean)
+          .join(" · ")
       : "";
 
-    if (usesDepartments && !myDepartmentId) {
+    if (usesDepartments && myDepartmentIds.length === 0) {
       return res.status(200).json({
         success: true,
         data: {
@@ -1841,8 +1847,14 @@ async function listColleagues(req, res) {
       active: true,
       approvedAt: { $ne: null },
     };
-    if (usesDepartments && myDepartmentId) {
-      query.internalDepartmentId = new Types.ObjectId(myDepartmentId);
+    if (usesDepartments && myDepartmentIds.length > 0) {
+      const objectIds = myDepartmentIds
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+      query.$or = [
+        { internalDepartmentId: { $in: objectIds } },
+        { internalDepartmentIds: { $in: objectIds } },
+      ];
     }
 
     const rows = await User.find(query)
@@ -1855,6 +1867,7 @@ async function listColleagues(req, res) {
         profileImage: 1,
         business: 1,
         internalDepartmentId: 1,
+        internalDepartmentIds: 1,
       })
       .sort({ subRole: 1, name: 1 })
       .lean();
@@ -1871,11 +1884,13 @@ async function listColleagues(req, res) {
         profileImage:
           typeof row.profileImage === "string" ? row.profileImage : null,
         companyName: String(row.business || ""),
-        internalDepartmentId: row.internalDepartmentId
-          ? String(row.internalDepartmentId)
-          : null,
+        internalDepartmentId: collectMemberDepartmentIds(row)[0] || null,
+        internalDepartmentIds: collectMemberDepartmentIds(row),
         departmentName: usesDepartments
-          ? resolveDepartmentLabel(anchor, row.internalDepartmentId)
+          ? collectMemberDepartmentIds(row)
+              .map((id) => resolveDepartmentLabel(anchor, id))
+              .filter(Boolean)
+              .join(" · ")
           : "",
       };
     });
@@ -1994,17 +2009,14 @@ async function switchAccount(req, res) {
       anchor = await ensureDefaultDepartments(anchor);
     }
     if (anchorUsesInternalDepartments(anchor)) {
-      const myDepartmentId = req.user?.internalDepartmentId
-        ? String(req.user.internalDepartmentId)
-        : "";
-      const targetDepartmentId = target.internalDepartmentId
-        ? String(target.internalDepartmentId)
-        : "";
-      if (
-        !myDepartmentId ||
-        !targetDepartmentId ||
-        myDepartmentId !== targetDepartmentId
-      ) {
+      const myDepartmentIds = collectMemberDepartmentIds(req.user);
+      const targetDepartmentIds = collectMemberDepartmentIds(target);
+      const myDepartmentId = myDepartmentIds[0] || "";
+      const targetDepartmentId = targetDepartmentIds[0] || "";
+      const sharesDepartment = myDepartmentIds.some((id) =>
+        targetDepartmentIds.includes(id),
+      );
+      if (!sharesDepartment) {
         await logSecurityEvent({
           userId: req.user._id,
           action: "ACCOUNT_SWITCH_FAILED_DIFFERENT_DEPARTMENT",

@@ -9,6 +9,7 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import { Types } from "mongoose";
 import { resolveDesignAccessForUser } from "../utils/designAccess.js";
 import { applyAdminDepartmentWorkspace } from "../utils/adminDepartmentWorkspace.js";
+import { applyRequestorDepartmentAccess } from "../utils/internalDepartments.util.js";
 import { voidRecordUserAccessDay } from "../services/userAccess.service.js";
 import { getTtlMapValue, setTtlMapValue } from "../utils/boundedTtlMap.js";
 
@@ -33,7 +34,8 @@ const loadAuthUser = async (userId) => {
   if (!user) return null;
   if (user._id != null) user.id = String(user._id);
   // 어벗츠 임직원은 부서 화면(영업팀·기공사업부·관리자)으로 요청을 처리한다.
-  return applyAdminDepartmentWorkspace(user);
+  const workspaceUser = await applyAdminDepartmentWorkspace(user);
+  return applyRequestorDepartmentAccess(workspaceUser);
 };
 
 /** 계정 상태 변경 직후 즉시 반영이 필요할 때 호출 */
@@ -171,6 +173,16 @@ export const authenticateOptional = async (req, res, next) => {
   }
   return next();
 };
+
+export function requireSettlementAccess(req, res, next) {
+  if (req.user?.canAccessSettlement === false) {
+    return res.status(403).json({
+      success: false,
+      message: "경영팀만 정산을 볼 수 있습니다.",
+    });
+  }
+  return next();
+}
 
 /**
  * 권한 확인 미들웨어

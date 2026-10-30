@@ -1131,6 +1131,8 @@ const businessAnchorSchema = new mongoose.Schema(
       type: [
         {
           name: { type: String, required: true, trim: true },
+          /** management | clinical | lab. 커스텀 부서는 비움. */
+          key: { type: String, trim: true, default: "" },
           sortOrder: { type: Number, default: 0 },
           createdAt: { type: Date, default: Date.now },
         },

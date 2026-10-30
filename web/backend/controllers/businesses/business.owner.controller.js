@@ -24,6 +24,12 @@ import {
 import { toStaffListFields } from "../../services/staffBulkRegister.core.js";
 import { invalidateAuthUserCache } from "../../middlewares/auth.middleware.js";
 import { emitAppEventToUser } from "../../socket.js";
+import {
+  collectMemberDepartmentIds,
+  ensureDefaultDepartments,
+  getDefaultDepartmentSpecs,
+  setUserDepartmentIds,
+} from "../../utils/internalDepartments.util.js";
 
 export async function getPendingJoinRequestsForOwner(req, res) {
   try {
@@ -93,12 +99,12 @@ export async function getRepresentatives(req, res) {
     const full = await BusinessAnchor.findById(anchor._id)
       .populate({
         path: "primaryContactUserId",
-        select: "name email loginId internalDepartmentId",
+        select: "name email loginId internalDepartmentId internalDepartmentIds",
         match: { deletedAt: null },
       })
       .populate({
         path: "owners",
-        select: "name email loginId internalDepartmentId",
+        select: "name email loginId internalDepartmentId internalDepartmentIds",
         match: { deletedAt: null },
       })
       .select({ name: 1, primaryContactUserId: 1, owners: 1, businessType: 1 })
@@ -249,6 +255,28 @@ export async function addOwner(req, res) {
       },
     });
     await seedUserRequestSettingsFromAnchor(targetId, anchor);
+    const ensured = await ensureDefaultDepartments(anchor);
+    const specs = getDefaultDepartmentSpecs(ensured).filter((row) => row.key);
+    if (specs.length > 0) {
+      const defaultIds = specs
+        .map((spec) =>
+          (ensured.internalDepartments || []).find(
+            (row) =>
+              String(row?.key || "") === spec.key ||
+              String(row?.name || "").trim() === spec.name,
+          ),
+        )
+        .map((row) => row?._id)
+        .filter(Boolean);
+      const target = await User.findById(targetId).select({
+        internalDepartmentId: 1,
+        internalDepartmentIds: 1,
+      });
+      if (target && collectMemberDepartmentIds(target).length === 0 && defaultIds.length) {
+        await setUserDepartmentIds(targetId, defaultIds);
+        invalidateAuthUserCache(targetId);
+      }
+    }
 
     return res.status(201).json({ success: true, data: { added: true } });
   } catch (error) {
@@ -324,17 +352,17 @@ export async function getMyStaffMembers(req, res) {
     const anchor = await BusinessAnchor.findById(anchorDoc._id)
       .populate({
         path: "members",
-        select: "name email loginId internalDepartmentId",
+        select: "name email loginId internalDepartmentId internalDepartmentIds",
         match: { deletedAt: null },
       })
       .populate({
         path: "primaryContactUserId",
-        select: "name email loginId internalDepartmentId",
+        select: "name email loginId internalDepartmentId internalDepartmentIds",
         match: { deletedAt: null },
       })
       .populate({
         path: "owners",
-        select: "name email loginId internalDepartmentId",
+        select: "name email loginId internalDepartmentId internalDepartmentIds",
         match: { deletedAt: null },
       })
       .select({
@@ -512,6 +540,7 @@ export async function approveJoinRequest(req, res) {
     };
     if (departmentId) {
       userUpdate.internalDepartmentId = departmentId;
+      userUpdate.internalDepartmentIds = [departmentId];
     }
 
     // 직원으로 승인 및 온보딩 완료 처리

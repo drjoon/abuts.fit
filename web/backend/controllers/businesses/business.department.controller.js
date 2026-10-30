@@ -11,11 +11,13 @@ import { assertBusinessRole } from "./businessRole.util.js";
 import { toStaffListFields } from "../../services/staffBulkRegister.core.js";
 import { invalidateAuthUserCache } from "../../middlewares/auth.middleware.js";
 import {
+  collectMemberDepartmentIds,
   ensureDefaultDepartments,
   findDepartmentById,
   INTERNAL_DEPARTMENT_BUSINESS_TYPES,
   normalizeDepartmentName,
   serializeDepartments,
+  setUserDepartmentIds,
   supportsInternalDepartments,
 } from "../../utils/internalDepartments.util.js";
 
@@ -255,8 +257,11 @@ export async function deleteDepartment(req, res) {
 
     const assignedCount = await User.countDocuments({
       businessAnchorId: anchor._id,
-      internalDepartmentId: new Types.ObjectId(departmentId),
       deletedAt: null,
+      $or: [
+        { internalDepartmentId: new Types.ObjectId(departmentId) },
+        { internalDepartmentIds: new Types.ObjectId(departmentId) },
+      ],
     });
     if (assignedCount > 0) {
       return res.status(409).json({
@@ -305,14 +310,17 @@ export async function assignStaffDepartment(req, res) {
       });
     }
 
-    const departmentIdRaw = req.body?.departmentId;
-    const departmentId =
-      departmentIdRaw == null || departmentIdRaw === ""
-        ? ""
-        : String(departmentIdRaw).trim();
+    const rawIds = Array.isArray(req.body?.departmentIds)
+      ? req.body.departmentIds
+      : req.body?.departmentId == null || req.body?.departmentId === ""
+        ? []
+        : [req.body.departmentId];
+    const departmentIds = rawIds
+      .map((id) => String(id || "").trim())
+      .filter(Boolean);
 
     const anchor = resolved.anchor;
-    if (departmentId) {
+    for (const departmentId of departmentIds) {
       if (!Types.ObjectId.isValid(departmentId)) {
         return res.status(400).json({
           success: false,
@@ -344,23 +352,21 @@ export async function assignStaffDepartment(req, res) {
       });
     }
 
-    await User.findByIdAndUpdate(userId, {
-      $set: {
-        internalDepartmentId: departmentId
-          ? new Types.ObjectId(departmentId)
-          : null,
-      },
-    });
+    const savedIds = await setUserDepartmentIds(userId, departmentIds);
     invalidateAuthUserCache(userId);
 
     return res.json({
       success: true,
       data: {
         userId,
-        departmentId: departmentId || null,
-        departmentName: departmentId
-          ? findDepartmentById(anchor, departmentId)?.name || ""
+        departmentId: savedIds[0] || null,
+        departmentIds: savedIds,
+        departmentName: savedIds[0]
+          ? findDepartmentById(anchor, savedIds[0])?.name || ""
           : "",
+        departmentNames: savedIds
+          .map((id) => normalizeDepartmentName(findDepartmentById(anchor, id)?.name))
+          .filter(Boolean),
       },
     });
   } catch (error) {
@@ -405,23 +411,26 @@ export async function loadAnchorDepartmentsForStaff(anchorId) {
 }
 
 export function enrichMemberWithDepartment(member, departmentMap) {
-  let deptId = member?.internalDepartmentId
-    ? String(member.internalDepartmentId)
-    : "";
-  if (departmentMap.size === 1) {
+  let deptIds = collectMemberDepartmentIds(member).filter((id) =>
+    departmentMap.has(id),
+  );
+  if (departmentMap.size === 1 && deptIds.length === 0) {
     const onlyId = String(departmentMap.keys().next().value || "");
-    if (!deptId || !departmentMap.has(deptId)) deptId = onlyId;
-  } else if (deptId && !departmentMap.has(deptId)) {
-    deptId = "";
+    if (onlyId) deptIds = [onlyId];
   }
   const identity = toStaffListFields(member);
+  const names = deptIds
+    .map((id) => departmentMap.get(id) || "")
+    .filter(Boolean);
   return {
     _id: String(member._id || member.id || ""),
     name: String(member.name || ""),
     email: identity.email,
     loginId: identity.loginId,
-    internalDepartmentId: deptId || null,
-    departmentName: deptId ? departmentMap.get(deptId) || "" : "",
+    internalDepartmentId: deptIds[0] || null,
+    internalDepartmentIds: deptIds,
+    departmentName: names[0] || "",
+    departmentNames: names,
   };
 }
 

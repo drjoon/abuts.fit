@@ -2,6 +2,9 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/business/departmentAccess.ts
+// - web/backend/utils/internalDepartments.util.js
+// - web/backend/controllers/businesses/business.department.controller.js
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,13 +29,13 @@ import {
   StaffBulkRegisterDialog,
   StaffPasswordResetDialog,
 } from "@/features/settings/tabs/StaffBulkRegisterDialog";
+import { cn } from "@/shared/ui/cn";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  collectDepartmentIds,
+  departmentKey,
+  departmentSettlementHint,
+  isOperationsDepartmentKey,
+} from "@/shared/business/departmentAccess";
 
 type StaffMember = {
   _id: string;
@@ -40,7 +43,9 @@ type StaffMember = {
   email?: string;
   loginId?: string;
   internalDepartmentId?: string | null;
+  internalDepartmentIds?: string[];
   departmentName?: string;
+  departmentNames?: string[];
 };
 
 function memberLoginLabel(member: { email?: string; loginId?: string }) {
@@ -60,8 +65,46 @@ function memberConfirmLabel(member: { _id: string; name?: string; email?: string
 type DepartmentOption = {
   _id: string;
   name: string;
+  key?: string;
+  grantsSettlement?: boolean;
   sortOrder?: number;
 };
+
+function mapDepartment(row: any): DepartmentOption {
+  return {
+    _id: String(row._id),
+    name: String(row.name || ""),
+    key: String(row.key || ""),
+    grantsSettlement: Boolean(row.grantsSettlement),
+    sortOrder: Number(row.sortOrder ?? 0),
+  };
+}
+
+function mapMember(row: any): StaffMember {
+  const ids = collectDepartmentIds({
+    internalDepartmentId: row.internalDepartmentId
+      ? String(row.internalDepartmentId)
+      : null,
+    internalDepartmentIds: Array.isArray(row.internalDepartmentIds)
+      ? row.internalDepartmentIds.map((id: unknown) => String(id || ""))
+      : [],
+  });
+  const names = Array.isArray(row.departmentNames)
+    ? row.departmentNames.map((name: unknown) => String(name || "")).filter(Boolean)
+    : row.departmentName
+      ? [String(row.departmentName)]
+      : [];
+  return {
+    _id: String(row._id),
+    name: row.name,
+    email: row.email,
+    loginId: row.loginId ? String(row.loginId) : "",
+    internalDepartmentId: ids[0] || null,
+    internalDepartmentIds: ids,
+    departmentName: names[0] || "",
+    departmentNames: names,
+  };
+}
 
 type DirectoryMember = StaffMember & {
   kind: "representative" | "staff";
@@ -167,16 +210,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
       setRepresentatives(
         data.representatives
           .filter((r: any) => Boolean(r && r._id))
-          .map((r: any) => ({
-            _id: String(r._id),
-            name: r.name,
-            email: r.email,
-            loginId: r.loginId ? String(r.loginId) : "",
-            internalDepartmentId: r.internalDepartmentId
-              ? String(r.internalDepartmentId)
-              : null,
-            departmentName: r.departmentName ? String(r.departmentName) : "",
-          })),
+          .map(mapMember),
       );
       setUsesDepartments(Boolean(data?.usesDepartments));
       return;
@@ -205,11 +239,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     const data = body.data || body;
     setDepartments(
       Array.isArray(data?.departments)
-        ? data.departments.map((row: any) => ({
-            _id: String(row._id),
-            name: String(row.name || ""),
-            sortOrder: Number(row.sortOrder ?? 0),
-          }))
+        ? data.departments.map(mapDepartment)
         : [],
     );
     setUsesDepartments(
@@ -233,16 +263,14 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     }
     const body: any = res.data || {};
     const data = body.data || body;
-    setStaff(Array.isArray(data?.staffMembers) ? data.staffMembers : []);
+    setStaff(
+      Array.isArray(data?.staffMembers)
+        ? data.staffMembers.filter((row: any) => row && row._id).map(mapMember)
+        : [],
+    );
     setUsesDepartments(Boolean(data?.usesDepartments));
     if (Array.isArray(data?.departments) && data.departments.length > 0) {
-      setDepartments(
-        data.departments.map((row: any) => ({
-          _id: String(row._id),
-          name: String(row.name || ""),
-          sortOrder: Number(row.sortOrder ?? 0),
-        })),
-      );
+      setDepartments(data.departments.map(mapDepartment));
     }
   }, [mockHeaders, businessType, token]);
 
@@ -270,9 +298,9 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     token,
   ]);
 
-  const handleAssignDepartment = async (
+  const handleAssignDepartments = async (
     userId: string,
-    departmentId: string,
+    departmentIds: string[],
   ) => {
     try {
       if (!token || !userId) return;
@@ -283,7 +311,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
         )}`,
         method: "PATCH",
         token,
-        jsonBody: { departmentId, businessType },
+        jsonBody: { departmentIds, businessType },
       });
       if (!res.ok) {
         const message = String((res.data as any)?.message || "").trim();
@@ -297,6 +325,9 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
       }
       toast({ title: "부서가 변경되었습니다" });
       await Promise.all([refreshStaff(), refreshRepresentatives()]);
+      if (user?.id === userId) {
+        await useAuthStore.getState().loginWithToken(token);
+      }
     } finally {
       setActionUserId("");
     }
@@ -304,28 +335,54 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
 
   const renderDepartmentControl = (
     memberId: string,
-    currentDepartmentId?: string | null,
-    compact = false,
+    currentDepartmentIds?: string[] | null,
   ) => {
     if (!supportsDepartments || departments.length === 0) return null;
-    const value = currentDepartmentId ? String(currentDepartmentId) : "";
+    const selected = new Set(currentDepartmentIds || []);
+    const managementHint = sortedDepartments.some(
+      (dept) => selected.has(dept._id) && departmentKey(dept) === "management",
+    )
+      ? "정산을 볼 수 있습니다"
+      : sortedDepartments.some(
+            (dept) =>
+              selected.has(dept._id) &&
+              isOperationsDepartmentKey(departmentKey(dept)),
+          )
+        ? "정산을 볼 수 없습니다"
+        : "";
+
     return (
-      <Select
-        value={value || undefined}
-        disabled={actionUserId === memberId}
-        onValueChange={(next) => void handleAssignDepartment(memberId, next)}
-      >
-        <SelectTrigger className={compact ? "h-8 text-xs" : "h-9"}>
-          <SelectValue placeholder="부서 선택" />
-        </SelectTrigger>
-        <SelectContent>
-          {sortedDepartments.map((dept) => (
-            <SelectItem key={dept._id} value={dept._id}>
-              {dept.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <div className="space-y-1.5">
+        <div className="flex flex-wrap gap-1.5">
+          {sortedDepartments.map((dept) => {
+            const active = selected.has(dept._id);
+            const nextIds = active
+              ? [...selected].filter((id) => id !== dept._id)
+              : [...selected, dept._id];
+            return (
+              <button
+                key={dept._id}
+                type="button"
+                disabled={actionUserId === memberId}
+                onClick={() => void handleAssignDepartments(memberId, nextIds)}
+                className={cn(
+                  "inline-flex h-7 items-center rounded-full px-2.5 text-xs font-medium ring-1 transition-colors",
+                  active
+                    ? "bg-primary-soft text-primary-strong ring-primary/20"
+                    : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50",
+                )}
+              >
+                {dept.name}
+              </button>
+            );
+          })}
+        </div>
+        {managementHint ? (
+          <p className="text-[11px] leading-4 text-muted-foreground">
+            {managementHint}
+          </p>
+        ) : null}
+      </div>
     );
   };
 
@@ -516,15 +573,15 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     if (!groupedByDepartment) return directoryMembers;
     const ids = new Set(sortedDepartments.map((row) => row._id));
     return directoryMembers.filter((member) => {
-      const id = String(member.internalDepartmentId || "");
-      return !id || !ids.has(id);
+      const memberIds = collectDepartmentIds(member);
+      return memberIds.length === 0 || memberIds.every((id) => !ids.has(id));
     });
   }, [directoryMembers, groupedByDepartment, sortedDepartments]);
 
   const membersForDepartment = useCallback(
     (departmentId: string) =>
-      directoryMembers.filter(
-        (member) => String(member.internalDepartmentId || "") === departmentId,
+      directoryMembers.filter((member) =>
+        collectDepartmentIds(member).includes(departmentId),
       ),
     [directoryMembers],
   );
@@ -538,8 +595,10 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     const login = memberLoginLabel(member);
     const loginParts = login ? loginIdDisplay(name, login) : null;
     const departmentLabel =
-      !hideDepartmentName && member.departmentName && !allowMove
-        ? member.departmentName
+      !hideDepartmentName && !allowMove
+        ? (member.departmentNames?.length
+            ? member.departmentNames.join(" · ")
+            : member.departmentName) || ""
         : "";
     const busy = member.kind === "staff" && actionUserId === member._id;
     const body = (
@@ -576,58 +635,43 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
           <div className="mt-2 truncate text-xs text-muted-foreground">{departmentLabel}</div>
         ) : null}
         {busy ? <div className="mt-2 text-xs text-muted-foreground">처리 중...</div> : null}
-        {canManage && (member.kind === "staff" || allowMove) ? (
+        {canManage && member.kind === "staff" ? (
           <div className="mt-3 flex items-center gap-2">
-            {member.kind === "staff" ? (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 shrink-0 rounded-lg px-2.5 text-xs"
-                  disabled={busy}
-                  onClick={() => setResetStaff(member)}
-                >
-                  비밀번호
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 shrink-0 rounded-lg px-2.5 text-xs"
-                  disabled={busy}
-                  onClick={() => setRemoveStaff(member)}
-                >
-                  삭제
-                </Button>
-              </>
-            ) : null}
-            {allowMove ? (
-              <div className="min-w-0 flex-1">
-                {renderDepartmentControl(member._id, member.internalDepartmentId, true)}
-              </div>
-            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 shrink-0 rounded-lg px-2.5 text-xs"
+              disabled={busy}
+              onClick={() => setResetStaff(member)}
+            >
+              비밀번호
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 shrink-0 rounded-lg px-2.5 text-xs"
+              disabled={busy}
+              onClick={() => setRemoveStaff(member)}
+            >
+              삭제
+            </Button>
+          </div>
+        ) : null}
+        {canManage && allowMove ? (
+          <div className="mt-3">
+            {renderDepartmentControl(
+              member._id,
+              collectDepartmentIds(member),
+            )}
           </div>
         ) : null}
       </div>
     );
 
-    if (member.kind === "representative") {
-      return (
-        <div
-          key={member._id}
-          className="overflow-hidden rounded-xl border border-slate-200 bg-white"
-        >
-          {body}
-        </div>
-      );
-    }
-
     return (
-      <div
-        key={member._id}
-        className="overflow-hidden rounded-xl border border-slate-200 bg-white"
-      >
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         {body}
       </div>
     );
@@ -647,9 +691,11 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
     }
     return (
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {members.map((member) =>
-          renderMemberCard(member, allowMove, hideDepartmentName),
-        )}
+        {members.map((member) => (
+          <div key={member._id}>
+            {renderMemberCard(member, allowMove, hideDepartmentName)}
+          </div>
+        ))}
       </div>
     );
   };
@@ -752,7 +798,7 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                       <Input
                         value={newDepartmentName}
                         onChange={(event) => setNewDepartmentName(event.target.value)}
-                        placeholder="예: 진료팀"
+                        placeholder="예: 상담팀"
                         disabled={creatingDepartment}
                         onKeyDown={(event) => {
                           if (event.key === "Enter") {
@@ -801,7 +847,8 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                   <>
                     {sortedDepartments.map((row) => {
                       const isEditing = editingDepartmentId === row._id;
-                      const canMove = canManage && sortedDepartments.length > 1;
+                      const canMove = canManage && sortedDepartments.length > 0;
+                      const settlementHint = departmentSettlementHint(row);
                       return (
                         <div
                           key={row._id}
@@ -875,6 +922,20 @@ export const StaffTab = ({ userData, businessTypeOverride }: StaffTabProps) => {
                                   {row.name}
                                 </div>
                               )}
+                              {settlementHint && !isEditing ? (
+                                <span
+                                  className={cn(
+                                    "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                                    departmentKey(row) === "management"
+                                      ? "bg-primary-soft text-primary-strong"
+                                      : "bg-slate-100 text-slate-500",
+                                  )}
+                                >
+                                  {departmentKey(row) === "management"
+                                    ? "정산"
+                                    : "정산 없음"}
+                                </span>
+                              ) : null}
                               {canManage ? (
                                 <div className="ml-auto flex shrink-0 items-center">
                                   {isEditing ? null : (

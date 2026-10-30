@@ -3,7 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 import { Router } from "express";
-import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
+import { authenticate, authorize, requireSettlementAccess } from "../../middlewares/auth.middleware.js";
 import {
   getSalesmanDashboard,
   getSalesmanLedger,
@@ -21,7 +21,7 @@ router.use(authorize(["salesman", "devops", "salesTeam"]));
 
 router.get("/dashboard", getSalesmanDashboard);
 router.get("/no-order-alerts", getSalesmanNoOrderAlerts);
-router.get("/ledger", getSalesmanLedger);
+router.get("/ledger", requireSettlementAccess, getSalesmanLedger);
 router.get("/platform-pitch", getPlatformPitch);
 router.get("/customer-prices", getMyCustomerUnitPrices);
 router.put("/customer-prices/:anchorId", setMyCustomerUnitPrice);

@@ -245,6 +245,7 @@ import {
   type DashboardSidebarSection,
 } from "@/features/layout/DashboardSidebarNav";
 import { PRACTICE_STORE_OPEN } from "@/shared/store/practiceStoreAccess";
+import { canAccessSettlement, SETTLEMENT_SIDEBAR_PATHS } from "@/shared/business/departmentAccess";
 
 /** DashboardLayout StrictMode remount에도 토큰당 unread 시드 API 1회만 */
 const practiceUnreadSeededTokens = new Set<string>();
@@ -936,11 +937,16 @@ export const DashboardLayout = () => {
   const userId = user?.id;
   const userRole = user?.role;
   const userBusinessAnchorId = user?.businessAnchorId;
+  const userCanAccessSettlement = canAccessSettlement(user);
 
   const fetchCreditBalance = useCallback(async () => {
     if (!token) return;
     if (!userId) return;
-    if (isPracticeUser || (userRole !== "requestor" && userRole !== "internalLab")) {
+    if (
+      isPracticeUser ||
+      (userRole !== "requestor" && userRole !== "internalLab") ||
+      !userCanAccessSettlement
+    ) {
       setCreditBalance(null);
       setPaidCredit(null);
       setFreeCredit(null);
@@ -998,7 +1004,7 @@ export const DashboardLayout = () => {
         setLoadingCreditBalance(false);
       }
     }
-  }, [isPracticeUser, token, userBusinessAnchorId, userId, userRole]);
+  }, [isPracticeUser, token, userBusinessAnchorId, userCanAccessSettlement, userId, userRole]);
 
   useEffect(() => {
     fetchCreditBalance();
@@ -1266,13 +1272,21 @@ export const DashboardLayout = () => {
   const baseMenuItems = (sidebarItems[effectiveSidebarRole] ||
     []) as unknown as SidebarItem[];
   const menuItems = (() => {
-    if (user.role !== "requestor") return baseMenuItems;
-    return buildRequestorSidebarItems(sidebarRequestorKind, {
-      hidePracticeAbutment: practiceHidesAbutmentSidebar(
-        sidebarRequestorKind,
-        sidebarPracticeHasInHouseLab,
-      ),
-    });
+    const items =
+      user.role !== "requestor"
+        ? baseMenuItems
+        : buildRequestorSidebarItems(sidebarRequestorKind, {
+            hidePracticeAbutment: practiceHidesAbutmentSidebar(
+              sidebarRequestorKind,
+              sidebarPracticeHasInHouseLab,
+            ),
+          });
+    if (!canAccessSettlement(user)) {
+      return items.filter(
+        (item) => !SETTLEMENT_SIDEBAR_PATHS.has(sidebarItemPath(item.href)),
+      );
+    }
+    return items;
   })();
 
   const isCreditLow =

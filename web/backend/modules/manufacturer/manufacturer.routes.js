@@ -3,7 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 import { Router } from "express";
-import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
+import { authenticate, authorize, requireSettlementAccess } from "../../middlewares/auth.middleware.js";
 import {
   recordManufacturerPayment,
   listManufacturerPayments,
@@ -39,6 +39,7 @@ router.get(
 router.post(
   "/payments",
   authorize(["manufacturer", "admin"], { subRoles: ["owner"] }),
+  requireSettlementAccess,
   recordManufacturerPayment,
 );
 // 조회는 staff 가능
@@ -47,6 +48,7 @@ router.get(
   authorize(["manufacturer", "admin"], {
     subRoles: ["owner", "staff"],
   }),
+  requireSettlementAccess,
   listManufacturerPayments,
 );
 
@@ -56,6 +58,7 @@ router.get(
   authorize(["manufacturer", "admin"], {
     subRoles: ["owner", "staff"],
   }),
+  requireSettlementAccess,
   getManufacturerCreditLedger,
 );
 
@@ -65,6 +68,7 @@ router.get(
   authorize(["manufacturer", "admin"], {
     subRoles: ["owner", "staff"],
   }),
+  requireSettlementAccess,
   getManufacturerCreditDailySummary,
 );
 
@@ -74,6 +78,7 @@ router.get(
   authorize(["manufacturer", "admin"], {
     subRoles: ["owner", "staff"],
   }),
+  requireSettlementAccess,
   getManufacturerDailySettlementSnapshots,
 );
 
@@ -83,6 +88,7 @@ router.get(
   authorize(["manufacturer", "admin"], {
     subRoles: ["owner", "staff"],
   }),
+  requireSettlementAccess,
   getManufacturerDailySettlementSnapshotStatus,
 );
 router.post(
@@ -90,6 +96,7 @@ router.post(
   authorize(["manufacturer", "admin"], {
     subRoles: ["owner", "staff"],
   }),
+  requireSettlementAccess,
   triggerManufacturerDailySettlementSnapshotRecalc,
 );
 

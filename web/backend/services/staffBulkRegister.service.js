@@ -157,7 +157,10 @@ export async function createOwnerStaffAccounts({
         ...mirror,
       };
       if (row.loginId) doc.loginId = row.loginId;
-      if (row.departmentId) doc.internalDepartmentId = row.departmentId;
+      if (row.departmentId) {
+        doc.internalDepartmentId = row.departmentId;
+        doc.internalDepartmentIds = [row.departmentId];
+      }
       const user = await User.create(doc);
       createdUsers.push(user);
       created.push({

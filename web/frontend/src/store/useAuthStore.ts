@@ -80,6 +80,11 @@ export interface User {
   mockUserId?: string | null;
   businessAnchorId?: string | null;
   internalDepartmentId?: string | null;
+  internalDepartmentIds?: string[];
+  /** 관리자 작업영역. DB role은 admin */
+  accountRole?: UserRole | null;
+  /** 경영팀이 아니면 false. 관리자 작업영역은 true */
+  canAccessSettlement?: boolean;
   businessVerified?: boolean;
   onboardingWizardCompleted?: boolean;
   /** 치과·기공소 플랫폼 가이드투어 */
@@ -152,6 +157,7 @@ const normalizeApiUser = (u: unknown): User | null => {
     loginId: row.loginId ? String(row.loginId) : "",
     mustChangePassword: Boolean(row.mustChangePassword),
     role: row.role as UserRole,
+    accountRole: row.accountRole ? (row.accountRole as UserRole) : null,
     subRole: row.subRole ? String(row.subRole) : null,
     profileImage:
       typeof row.profileImage === "string" ? row.profileImage : undefined,
@@ -165,6 +171,12 @@ const normalizeApiUser = (u: unknown): User | null => {
     internalDepartmentId: row.internalDepartmentId
       ? String(row.internalDepartmentId)
       : null,
+    internalDepartmentIds: Array.isArray(row.internalDepartmentIds)
+      ? row.internalDepartmentIds.map((id) => String(id || "")).filter(Boolean)
+      : row.internalDepartmentId
+        ? [String(row.internalDepartmentId)]
+        : [],
+    canAccessSettlement: row.canAccessSettlement !== false,
     businessVerified: Boolean(row.businessVerified),
     onboardingWizardCompleted: Boolean(row.onboardingWizardCompleted),
     guideTour: (() => {

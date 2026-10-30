@@ -173,6 +173,12 @@ const userSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    /** 복수 부서(OR). 없으면 internalDepartmentId만 본다. */
+    internalDepartmentIds: {
+      type: [mongoose.Schema.Types.ObjectId],
+      default: undefined,
+      index: true,
+    },
     profileImage: {
       type: String,
       default: "",

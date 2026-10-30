@@ -173,6 +173,7 @@ import SalesTeamPaymentsPage from "@/pages/salesTeam/SalesTeamPaymentsPage";
 import DevopsPaymentsPage from "@/pages/devops/DevopsPaymentsPage";
 import { coalesceRequestorKind } from "@/shared/business/requestorCapabilities";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { canAccessSettlement } from "@/shared/business/departmentAccess";
 import { RequestorCreditsPageSkeleton } from "@/shared/ui/skeletons/RequestorCreditsPageSkeleton";
 const CncDashboardPage = lazy(() =>
   import("./pages/manufacturer/equipment/EquipmentPage").then((m) => ({
@@ -344,13 +345,16 @@ const PaymentsRoute = () => {
   const { kind, loading: accessLoading } = useRequestorBusinessAccess();
 
   if (!user) return <Navigate to="/dashboard" replace />;
+  if (user.role === "admin") {
+    return <Navigate to="/dashboard/finance?tab=payments" replace />;
+  }
+  if (!canAccessSettlement(user)) {
+    return <Navigate to="/dashboard" replace />;
+  }
   if (user.role === "manufacturer") return <ManufacturerPaymentPage />;
   if (user.role === "salesman") return <SalesmanPaymentsPage />;
   if (user.role === "salesTeam") return <SalesTeamPaymentsPage />;
   if (user.role === "devops") return <DevopsPaymentsPage />;
-  if (user.role === "admin") {
-    return <Navigate to="/dashboard/finance?tab=payments" replace />;
-  }
   // 기공소·어벗츠기공소 지급은 크레딧「지급」탭. 구 /payments·정산 북마크 호환.
   if (user.role === "internalLab") {
     return <Navigate to="/dashboard/credits?tab=payout" replace />;
@@ -380,6 +384,9 @@ const CreditsRoute = () => {
   if (!user) return <Navigate to="/dashboard" replace />;
   if (user.role === "admin") {
     return <Navigate to="/dashboard/finance" replace />;
+  }
+  if (!canAccessSettlement(user)) {
+    return <Navigate to="/dashboard" replace />;
   }
   if (user.role === "requestor" || user.role === "internalLab") {
     return <RequestorCreditsPage />;
