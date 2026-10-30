@@ -165,13 +165,13 @@
 
 - Front Face 시작/종료점 정책(현행 SSOT):
   - 시작: `Face.StartX = 0` (원점). TopZ는 FACE.prc 유지
-  - 끝: `Face.RightX = FrontPointX` (PointA). 기본 `L = 0`
+  - 끝: `Face.RightX = max(FrontPointX, 0.5)` (PointA, 하한 0.5mm). 기본 `L = 0`
   - 클램프: 항상 `Face.RightX ≤ Splitline_2` (= **FinishLine top 상방 0.5mm**)
     - `Splitline_2 = finishLineTopX - 0.5`, margin 0 → FL top − 0.5
   - `L` 산출 (`GetFrontFaceEndOffsetFromFrontMm`):
     - env `ABUTS_FRONT_FACE_END_OFFSET_MM` 강제값 우선
-    - 기본 `L = 0`. Face는 FrontPoint(PointA)에서 끊는다 (2026-10-30, 기존 Finish 진입 여유 0.7·1.0 하한 폐기)
-    - 구간 길이 = `FrontPointX`이다. 포인트가 내려올수록 Face가 길어진다
+    - 기본 `L = 0`. Face는 FrontPoint(PointA)에서 끊는다. FrontPoint가 0.5보다 짧으면 0.5mm (2026-10-30)
+    - 구간 길이 = `max(FrontPointX, 0.5)`이다. 포인트가 내려올수록 Face가 길어진다
   - `LastAppliedFrontFaceDepthMm = 0.5mm`
   - 구현: `ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2` / `TryApplyFaceRightEndGuard`
 

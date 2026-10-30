@@ -1830,12 +1830,14 @@ namespace DentalAddin
         private const double FrontFaceFixedDepthMm = 0.5;
         private static double LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm;
 
-        // Front Face 종료점: Face.RightX = FrontPointX (PointA). L=0.
+        // Front Face 종료점: Face.RightX = max(FrontPointX, 0.5). L=0.
         // 삽입축이 Z에서 기울수록 FrontPoint가 팁(원점) 아래로 내려가고, 구간도 그만큼 길어진다.
         private const string FrontFaceEndOffsetEnv = "ABUTS_FRONT_FACE_END_OFFSET_MM";
         private const double FrontFaceEndOffsetMm = 0.0;
         private const double FrontFaceTipClearanceMm = 1.0;
         private const double FrontFaceEndOffsetFromFrontLegacyCapMm = 3.0;
+        // Face.RightX 하한. FrontPoint가 팁 근처여도 0.5mm는 깎는다.
+        private const double FrontFaceShortPastFrontMm = 0.5;
 
         /// <summary>
         /// tip 구간 하한 = 원점 0 (레거시). tipMesh+0.3 밀기 없음.
@@ -2144,7 +2146,7 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// Front Face tip 시작 X = 원점 0. RightX 끝은 FrontPointX (PointA).
+        /// Front Face tip 시작 X = 원점 0. RightX 끝은 max(FrontPointX, 0.5).
         /// </summary>
         private static double ResolveFrontFaceStartX(out double frontX)
         {
@@ -2230,9 +2232,9 @@ namespace DentalAddin
 
 
         /// <summary>
-        /// Front Face(ParallelPlanes): tip 시작 원점 0, 끝은 FrontPointX(PointA).
+        /// Front Face(ParallelPlanes): tip 시작 원점 0, 끝은 max(FrontPointX, 0.5).
         /// - 시작: Face.StartX = 0 (원점). TopZ는 FACE.prc 유지(1.0)
-        /// - 끝: Face.RightX = FrontPointX. 상한: Face.RightX ≤ Splitline_2 (= FL top 상방 0.5mm)
+        /// - 끝: Face.RightX = FrontPointX. 하한 0.5. 상한: Face.RightX ≤ Splitline_2 (= FL top 상방 0.5mm)
         /// - LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm(0.5mm)
         /// </summary>
         private static void ApplyFrontFaceFixedDepth(TechLatheMoldParallelPlanes faceOp, string context)
@@ -2252,6 +2254,11 @@ namespace DentalAddin
                 double faceStartX = ResolveFrontFaceStartX(out double frontX);
                 double faceEndOffsetMm = GetFrontFaceEndOffsetFromFrontMm();
                 double requestedFaceRightX = frontX + faceEndOffsetMm;
+                if (requestedFaceRightX < FrontFaceShortPastFrontMm)
+                {
+                    DentalLogger.Log($"FrontFaceDepth[{context}] - RightX를 하한까지 확장: request={requestedFaceRightX:F3} -> {FrontFaceShortPastFrontMm:F3}");
+                    requestedFaceRightX = FrontFaceShortPastFrontMm;
+                }
                 double appliedFaceRightX = ClampFaceRightXBelowSplitline2(requestedFaceRightX, out double splitline2Used, out bool splitline2ClampApplied);
 
                 if (faceStartX >= appliedFaceRightX - 1e-6)
