@@ -1005,7 +1005,7 @@ namespace DentalAddin
             double finishOverlapMm = ResolveFinishSeamOverlapMm(opA, runB ? opB : null);
             // 기계 X는 팁(Front) < 헥스(Back). +offset은 헥스 쪽으로 늘어난다.
             // Finish_Back 커넥션 끝은 BackPointX(헥스). 예전 -0.20은 헥스에서 팁 쪽 1피치라 커넥션 직전에서 끊겼다.
-            // 이 값은 기계 X다. Connection·Face Hole 원점 Z(Z[#520+#523±N]) 묶음(11° 원뿔·시리얼·Rough·헥스·컷오프·드릴)과 별개. rules.md §7.
+            // 이 값은 기계 X다. 원뿔 복합체(원뿔 형상 · prcConeTopMm · 헥스 · 시리얼 · 컷오프 · 페이스 드릴 · Face Hole)와 별개. rules.md §7.
             const double compositeEndOffsetFromBackPointMm = 0.00;
 
             double finishFrontEndX = splitX;

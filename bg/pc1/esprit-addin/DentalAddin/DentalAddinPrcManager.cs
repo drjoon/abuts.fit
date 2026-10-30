@@ -13,8 +13,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
 {
     /// <summary>
     /// DentalAddin PRC 파일 경로 관리 및 설정.
-    /// Connection(2_Connection)과 Face Hole(1_Face Hole)의 원점 Z(Z[#520+#523±N])는 한 묶음이다.
-    /// 11° 원뿔·Face Hole/시리얼 오프셋·Rough·헥스·컷오프·페이스 드릴을 바꿀 때 같은 Δ로 한꺼번에 옮긴다.
+    /// 원뿔 복합체 = 원뿔 형상 · prcConeTopMm · 헥스 · 시리얼 · 컷오프 · 페이스 드릴 · Face Hole.
+    /// Connection(2_Connection)과 Face Hole(1_Face Hole)의 원점 Z(Z[#520+#523±N])는 원뿔 복합체다.
+    /// 하나를 바꿀 때 나머지도 같은 Δ로 한꺼번에 옮긴다. 백터닝 시작 11° 리드인은 원뿔 복합체 밖.
     /// PRC 파일에는 주석을 달지 않는다. SSOT: rules.md §7.
     /// </summary>
     public class DentalAddinPrcManager

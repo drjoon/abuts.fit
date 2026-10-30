@@ -277,8 +277,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 // CNC는 #521= 8 같은 정수 매크로를 거부할 수 있다. FormatNcNumber("0.000")로 소수점을 강제한다.
                 // "0" / "0.###" 포맷으로 바꾸지 말 것.
                 // #520=STL bbox top, #523=DefaultStlShift. 커넥션 원점 = #520+#523.
-                // Connection·Face Hole PRC의 Z[#520+#523±N]은 한 묶음(11° 원뿔·시리얼·Rough·헥스·컷오프·드릴).
-                // 오프셋을 여기가 아니라 PRC에서 바꿀 때 묶음 전체를 같은 Δ로 옮긴다. rules.md §7.
+                // 원뿔 복합체 = 원뿔 형상 · prcConeTopMm · 헥스 · 시리얼 · 컷오프 · 페이스 드릴 · Face Hole.
+                // Connection·Face Hole Z[#520+#523±N]은 원뿔 복합체. PRC에서 바꿀 때 같이 옮긴다. rules.md §7.
                 headerBlock.Add($"#523= {FormatNcNumber(AppConfig.DefaultStlShift, "0.000")}");
                 headerBlock.Add($"#522= {FormatNcNumber(backturnClearance, "0.000")}");
                 headerBlock.Add($"#521= {FormatNcNumber(stockDiameter, "0.000")}");

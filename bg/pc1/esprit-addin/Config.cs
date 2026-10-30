@@ -119,8 +119,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         public const double DefaultStlShift = 0.05;  // #523: 탑과 포스트 상단 사이 거리
         // #520=STL bbox top, #523=이 값. 커넥션 원점 = #520+#523.
-        // 원점 Z(Z[#520+#523±N])를 바꾸면 11° 원뿔·Face Hole/시리얼·Rough·헥스·컷오프·페이스 드릴을 같은 Δ로 한꺼번에 옮긴다.
-        // Face Hole 센터드릴 Z[#523+1.33]은 #520이 없어 묶음 밖. PRC에는 주석 금지. SSOT: rules.md §7.
+        // 원뿔 복합체 = 원뿔 형상 · prcConeTopMm · 헥스 · 시리얼 · 컷오프 · 페이스 드릴 · Face Hole.
+        // 원점 Z(Z[#520+#523±N])를 바꾸면 원뿔 복합체를 같은 Δ로 한꺼번에 옮긴다.
+        // 백터닝 시작 11° 리드인·Face Hole 센터드릴 Z[#523+1.33]은 원뿔 복합체 밖. PRC 주석 금지. SSOT: rules.md §7.
 
         public const int DefaultRoughfreeformSplitEnable = 0;
 

@@ -24,13 +24,14 @@
 // 2) Regular RH의 PRC 11° 상단은 브랜드 원점 직경 기준.
 //    덴티움 0.33, 덴티스 SQ·One-Q와 메가젠 AnyOne 0.4, 그 외 0.3.
 // 3) 면을 다른 높이로 쓰려면 PRC_CONE_TOP_MM(또는 브랜드 prcConeTopMm)과
-//    AcroDent/2_Connection·1_Face Hole 원점 Z 묶음(11° 원뿔·Face Hole·시리얼·Rough·헥스·컷오프·페이스 드릴)을 같은 Δ로 같이 바꾼다.
+//    원뿔 복합체(원뿔 형상 · prcConeTopMm · 헥스 · 시리얼 · 컷오프 · 페이스 드릴 · Face Hole)를 같은 Δ로 같이 바꾼다.
 //    PRC에는 주석을 달지 않는다. SSOT: bg/pc1/esprit-addin/rules.md §7.
 // 4) 미니·내로우는 샘플이 모일 때까지 3)을 보류한다. spec-pending 카드에 콘 재설정 안내가 뜬다.
 //
 // [PRC 변경]
-// - Z[#520+#523±N]은 한 묶음이다. 11° 원뿔·Face Hole 스텝 드릴·시리얼·Rough·헥스·컷오프·페이스 드릴을 같은 Δ로 한꺼번에 옮긴다.
-//   원뿔만 올리면 헥스가 픽스쳐에 걸린다. PRC에는 주석 금지. 센터드릴 Z[#523+1.33]은 묶음 밖.
+// - 원뿔 복합체 = 원뿔 형상 · prcConeTopMm · 헥스 · 시리얼 · 컷오프 · 페이스 드릴 · Face Hole.
+//   Z[#520+#523±N]을 바꾸면 원뿔 복합체를 같은 Δ로 한꺼번에 옮긴다.
+//   원뿔만 올리면 헥스가 픽스쳐에 걸린다. PRC에는 주석 금지. 센터드릴 Z[#523+1.33]·백터닝 시작 11° 리드인은 원뿔 복합체 밖.
 // - git의 AcroDent PRC는 운영 PC 애드인 폴더에 복사해야 반영된다. Esprit은 저장소가 아니라 로컬 AcroDent를 읽는다.
 //
 // 값 출처: 2026-09-28 Test DB filled STL 131건 역측정(브랜드별 최대 12건, 불량·메타 오류 샘플 제외).
@@ -49,6 +50,7 @@
 // - MEGAGEN ARi·ARO : PRC 없음
 // - NEOBIOTECH IS2 중 테이퍼가 더 긴 변형(끝 직경 약 3.45) : IS 스펙과 안 맞으면 spec-pending으로 뜬다
 
+/** 편측 11°(축 기준). 양측 22°. X가 직경이면 ΔX = 2·ΔZ·tan(11°). */
 export const TAPER_ANGLE_DEG = 11;
 export const TAPER_SLOPE = Math.tan((TAPER_ANGLE_DEG * Math.PI) / 180);
 /**
@@ -56,6 +58,17 @@ export const TAPER_SLOPE = Math.tan((TAPER_ANGLE_DEG * Math.PI) / 180);
  * 덴티움은 0.33, 덴티스 SQ·One-Q와 메가젠 AnyOne은 0.4, 그 외 Regular RH는 0.3.
  */
 export const PRC_CONE_TOP_MM = 0.3;
+
+/** 원뿔 복합체. 이 말을 쓰면 이 목록. 원점 Z와 같이 옮긴다. 백터닝 시작 11° 리드인은 여기 없다. */
+export const CONE_COMPOSITE_PARTS = Object.freeze([
+  "원뿔 형상",
+  "prcConeTopMm",
+  "헥스",
+  "시리얼",
+  "컷오프",
+  "페이스 드릴",
+  "Face Hole",
+]);
 
 /** prcConeTopMm이 없는 커넥션(미니·내로우)의 임시 PRC 면. Z_a + 이 값. Regular처럼 브랜드별로 맞추기 전. */
 export const PRC_FACE_ABOVE_ZA_MM = 0.1;

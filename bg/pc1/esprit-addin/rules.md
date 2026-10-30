@@ -400,19 +400,22 @@
 
 ## 7. 커넥션 PRC ↔ STL 원뿔 (2026-10-29, Z 일괄 2026-10-30)
 
-레귤러 RH `AcroDent/2_Connection`과 `1_Face Hole`의 원점 기준 Z(`Z[#520+#523±N]`)는 **한 묶음**이다. 하나를 바꾸면 아래를 **같은 Δ**로 한꺼번에 옮긴다. PRC 파일에는 주석을 달지 않는다(NC로 나가 BG10900이 된다).
+**원뿔 복합체** = 원뿔 형상 · `prcConeTopMm` · 헥스 · 시리얼 · 컷오프 · 페이스 드릴 · Face Hole. 이 말을 쓰면 이 목록이다.
 
-- **묶음**: 11° 원뿔(Finish·Final Deburr 시작) · Face Hole 스텝 드릴(`1_Face Hole` G83) · Connection 스텝 드릴 · 시리얼 · Rough(Connection Rough·Rough U0.1) · 헥스(1st·Deburr·Deburr2) · 컷오프 · 페이스 드릴(Connection G83, Face Hole G83과 동일 값)
+레귤러 RH `AcroDent/2_Connection`과 `1_Face Hole`의 원점 기준 Z(`Z[#520+#523±N]`)는 원뿔 복합체다. 하나를 바꾸면 나머지도 **같은 Δ**로 한꺼번에 옮긴다. PRC 파일에는 주석을 달지 않는다(NC로 나가 BG10900이 된다).
+
+- **원뿔 복합체**: 원뿔 형상 · `prcConeTopMm` · 헥스(1st·Deburr·Deburr2) · 시리얼 · 컷오프 · 페이스 드릴(Connection G83, Face Hole G83과 동일) · Face Hole 스텝 드릴
 - **금지**: 원뿔 상단만 올리거나 11° `W` 구간만 끼워 헥스 Z를 남기기. 원뿔만 올리면 헥스가 픽스쳐에 걸린다. 2026-10-29 0.203mm만 맞춘 단축은 스크류홀이 어긋나 되돌렸다(`89f47c532`).
-- **묶음 밖**: Face Hole 센터드릴 `Z[#523+1.33]`(#520 없음, 다른 기준). 퇴피 `Z[#520-0.4]`. Finish_Back X(`BackPointX`, 아래).
+- **원뿔 복합체 밖**: Face Hole 센터드릴 `Z[#523+1.33]`(#520 없음). 퇴피 `Z[#520-0.4]`. Finish_Back X(`BackPointX`). 백터닝 시작 11° 리드인(아래). Connection Rough(T0202).
 - **11° 면**: 원점 직경(`originDiameter`, STL Z=0) 직상방. 덴티움 0.33, 덴티스 SQ·One-Q·메가젠 AnyOne 0.4, 그 외 Regular RH 0.3. STL `prcConeHeightMm`과 같다.
-- **Finish 시작 (Regular RH 선삭)**: 원점−`prcConeTopMm`. DIO·오스템 TS·네오 `−0.3`, 덴티움 `−0.33`, 덴티스·메가젠 `−0.4`. 예전 시작(−0.038/−0.067/−0.137/−0.138)은 11° 면을 비워 턱이 남았다. 2026-10-30 일괄: DIO·오스템·네오·메가젠 Δ=−0.262, 덴티움·덴티스 Δ=−0.263. 끼워 넣었던 11° `W0.262`는 뺐다.
+- **Finish 시작 (Regular RH 선삭)**: 11° 원뿔 진입은 원점−`prcConeTopMm`. DIO·오스템 TS·네오 `−0.3`, 덴티움 `−0.33`, 덴티스·메가젠 `−0.4`. 예전 시작(−0.038/−0.067/−0.137/−0.138)은 11° 면을 비워 턱이 남았다. 2026-10-30 일괄: DIO·오스템·네오·메가젠 Δ=−0.262, 덴티움·덴티스 Δ=−0.263. 끼워 넣었던 11° `W0.262`는 뺐다.
+- **백터닝 시작 11° 리드인 (2026-10-30)**: T0303/T0404 B-Turn(Rough U0.1·Finish·Final Deburr)은 팁→헥스(+W). 시작만 원점−`prcConeTopMm`−0.2(팁)로 올리고 11°는 유지. 원뿔 복합체는 그대로. **편측 11°**(축 기준, 양측 22° 아님). X는 직경. `ΔX=2×ΔZ×tan(11°)`, `ΔZ=0.2` → `ΔX≈0.078`. `G1 X{면+0.078}` 뒤 `G1 X{면} W0.2`. Face Hole PRC에는 11° 백터닝이 없다(페이스 선삭·센터드릴·스텝 드릴만). 미니·내로우도 같은 Δ.
 - **경로**: 고치는 파일은 `bg/pc1/esprit-addin/AcroDent/` 만. `.archive/cam/Acrodent/타사 커스텀 nc 참고용` 은 참고 자료라 수정하지 않는다.
 - **복사**: Esprit은 운영 PC 애드인 `AcroDent`만 읽는다. git을 바꿔도 이 폴더를 운영 PC에 복사하기 전에는 NC에 안 들어간다.
 - **NC 주석**: 장비로 나가는 주석은 한 쌍의 `()` 안, ASCII, 한 줄 80자 이내. FANUC i는 한 블록 약 128자라 긴 NOTE가 BG10900 FORMAT이 된다.
-- **Finish_Back**: 커넥션 끝 = `BackPointX`(헥스). 예전 `−0.20`은 헥스에서 팁 쪽 1피치라 커넥션 직전에서 끊겼다. 이건 기계 X이고 PRC Z 묶음과 별개다.
-- **임플란트 추가**: `web/backend/services/abutmentStl/cuffConnectionSpecs.js`에 `originDiameter`·`taperHeightMm`·`prcConeTopMm`을 등록하고, 이 PRC의 11° 상단이 그 높이와 같은지 확인한다. Regular RH는 덴티움 0.33, 덴티스·메가젠 0.4, 그 외 0.3. Z를 바꾸면 위 묶음을 같이 검증한다.
-- **미니·내로우**: 11° 면은 아직 Regular처럼 안 맞췄다. 스펙이 있으면 임시로 Z_a+0.1. 샘플이 들어와 spec-pending으로 처리할 때 준비 카드에 「PRC와 STL 11° 콘 설정을 다시 하세요」가 뜬다. 그때 Finish 상단과 STL `prcConeTopMm`을 같이 맞추고, 맞추면 위 묶음 Z도 같은 Δ로 옮긴다.
+- **Finish_Back**: 커넥션 끝 = `BackPointX`(헥스). 예전 `−0.20`은 헥스에서 팁 쪽 1피치라 커넥션 직전에서 끊겼다. 이건 기계 X이고 원뿔 복합체와 별개다.
+- **임플란트 추가**: `web/backend/services/abutmentStl/cuffConnectionSpecs.js`에 `originDiameter`·`taperHeightMm`·`prcConeTopMm`을 등록하고, 이 PRC의 11° 상단이 그 높이와 같은지 확인한다. Regular RH는 덴티움 0.33, 덴티스·메가젠 0.4, 그 외 0.3. Z를 바꾸면 원뿔 복합체를 같이 검증한다.
+- **미니·내로우**: 11° 면은 아직 Regular처럼 안 맞췄다. 스펙이 있으면 임시로 Z_a+0.1. 샘플이 들어와 spec-pending으로 처리할 때 준비 카드에 「PRC와 STL 11° 콘 설정을 다시 하세요」가 뜬다. 그때 Finish 상단과 STL `prcConeTopMm`을 같이 맞추고, 맞추면 원뿔 복합체 Z도 같은 Δ로 옮긴다.
 
 ## 성능 측정 (PERF)
 

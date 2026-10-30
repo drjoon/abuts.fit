@@ -619,8 +619,9 @@ namespace DentalAddin
             return source;
         }
 
-        // Face Hole PRC (1_Face Hole). 스텝 드릴 Z[#520+#523+…]는 Connection 원점 Z 묶음이다.
-        // 11° 원뿔·시리얼·Rough·헥스·컷오프·페이스 드릴과 같은 Δ로만 옮긴다. 센터드릴 Z[#523+1.33]은 묶음 밖.
+        // Face Hole PRC (1_Face Hole). 스텝 드릴 Z[#520+#523+…]는 원뿔 복합체다.
+        // 원뿔 복합체 = 원뿔 형상 · prcConeTopMm · 헥스 · 시리얼 · 컷오프 · 페이스 드릴 · Face Hole.
+        // 같은 Δ로만 옮긴다. 센터드릴 Z[#523+1.33]·백터닝 시작 11° 리드인은 원뿔 복합체 밖.
         // PRC에는 주석 금지. SSOT: rules.md §7.
         public static void CustomCycle()
         {
@@ -669,7 +670,7 @@ namespace DentalAddin
             }
         }
 
-        // Connection PRC (2_Connection). 11° 원뿔·시리얼·Rough·헥스·컷오프·페이스 드릴 Z[#520+#523±N]은 한 묶음.
+        // Connection PRC (2_Connection). Z[#520+#523±N]은 원뿔 복합체(원뿔 형상 · prcConeTopMm · 헥스 · 시리얼 · 컷오프 · 페이스 드릴 · Face Hole).
         // Face Hole 스텝 드릴과 같은 Δ. PRC에는 주석 금지. SSOT: rules.md §7.
         public static void CustomCycle2()
         {
