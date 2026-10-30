@@ -116,8 +116,8 @@ namespace DentalAddin
                 }
 
                 // Front_Finish는 Front Face 다음에 생성한다.
-                // One Pass(ABUTS_FINISH_ONE_PASS=1): Front_Finish는 만들지 않고 Back_Finish가 팁~BackPointX-0.20을 한 번에 깎는다.
-                // safe split이면 Back_Finish는 B2. none/deep은 Splitline_2−0.5−1피치 ~ BackPointX-0.20.
+                // One Pass(ABUTS_FINISH_ONE_PASS=1): Front_Finish는 만들지 않고 Back_Finish가 팁~BackPointX를 한 번에 깎는다.
+                // safe split이면 Back_Finish는 B2. none/deep은 Splitline_2−0.5−1피치 ~ BackPointX.
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
                 try
                 {
@@ -619,6 +619,9 @@ namespace DentalAddin
             return source;
         }
 
+        // Face Hole PRC (1_Face Hole). 스텝 드릴 Z[#520+#523+…]는 Connection 원점 Z 묶음이다.
+        // 11° 원뿔·시리얼·Rough·헥스·컷오프·페이스 드릴과 같은 Δ로만 옮긴다. 센터드릴 Z[#523+1.33]은 묶음 밖.
+        // PRC에는 주석 금지. SSOT: rules.md §7.
         public static void CustomCycle()
         {
             try
@@ -666,6 +669,8 @@ namespace DentalAddin
             }
         }
 
+        // Connection PRC (2_Connection). 11° 원뿔·시리얼·Rough·헥스·컷오프·페이스 드릴 Z[#520+#523±N]은 한 묶음.
+        // Face Hole 스텝 드릴과 같은 Δ. PRC에는 주석 금지. SSOT: rules.md §7.
         public static void CustomCycle2()
         {
             try

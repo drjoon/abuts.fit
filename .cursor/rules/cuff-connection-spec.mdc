@@ -30,10 +30,10 @@ alwaysApply: false
 ## 임플란트 종류 추가 · PRC 변경 (같은 단차가 나지 않게)
 
 - **STL 11° 목표 높이 = `prcConeHeightMm`**. Regular RH는 원점 직경(Z=0) 위 `PRC_CONE_TOP_MM`(0.3). 스펙 Z_a에서 멈추면 커넥션 PRC Finish 면과 단이 난다. `ensureConnectionTaperSpec`과 BlendCuff가 이 값을 같이 쓴다.
-- Regular RH 11° 면은 원점 위 덴티움 0.33, 덴티스 SQ·One-Q·메가젠 AnyOne 0.4, 그 외 0.3(`prcConeTopMm`)이다. 면을 바꾸면 `AcroDent/2_Connection` Regular RH Finish 11° 상단을 같이 바꾼다.
+- Regular RH 11° 면은 원점 위 덴티움 0.33, 덴티스 SQ·One-Q·메가젠 AnyOne 0.4, 그 외 0.3(`prcConeTopMm`)이다. 면을 바꾸면 `AcroDent/2_Connection`·`1_Face Hole`의 원점 Z 묶음을 같은 Δ로 같이 바꾼다(아래 PRC 변경).
 - **미니·내로우 11° 면은 아직 Regular처럼 안 맞췄다.** 스펙이 있으면 임시로 `taperHeightMm + PRC_FACE_ABOVE_ZA_MM`(Z_a+0.1). 샘플이 들어와 spec-pending으로 처리할 때 준비 카드에 「PRC와 STL 11° 콘 설정을 다시 하세요」가 뜬다. 그때 `prcConeTopMm`과 `AcroDent/2_Connection` Finish 11° 상단을 Regular와 같이 브랜드별로 맞춘다. 대상: DIO UF Narrow, MEGAGEN AnyOne Mini·MiNi Internal, NEOBIOTECH IS Small Narrow, DENTIS SQ·One-Q Mini·Narrow. TS3 Mini는 스펙만 있고 면도 Z_a+0.1이다.
 - 가공 PRC는 `bg/pc1/esprit-addin/AcroDent/`만 고친다. `.archive/cam/Acrodent/타사 커스텀 nc 참고용`은 참고 자료라 수정하지 않는다.
-- 헥스·컷오프·페이스 드릴 Z를 STL 원점과 따로 옮기지 않는다. 2026-10-29에 넣었던 0.203mm 단축은 스크류홀·헥스가 어긋나 **되돌렸다**(커밋 `89f47c532`).
+- **원점 Z 일괄**: `Z[#520+#523±N]`을 바꾸면 11° 원뿔(Finish·Final Deburr) · Face Hole·Connection 스텝 드릴 · 시리얼 · Rough · 헥스 · 컷오프 · 페이스 드릴을 **같은 Δ**로 한꺼번에 옮긴다. 원뿔만 올리면 헥스가 픽스쳐에 걸린다. PRC에는 주석을 달지 않는다. Face Hole 센터드릴 `Z[#523+1.33]`은 묶음 밖. SSOT: `bg/pc1/esprit-addin/rules.md` §7.
 - git `bg/pc1/esprit-addin/AcroDent/` PRC는 운영 PC 애드인 `AcroDent` 폴더에 **복사**해야 반영된다. Esprit은 저장소를 읽지 않는다.
 - 테스트·프로덕션 재생성이 람다를 쓰므로, 이 로직을 바꾸면 filled·cuff 람다도 같이 배포한다(`deploy-stl-filled-lambda.sh`, `deploy-stl-cuff-lambda.sh`).
 

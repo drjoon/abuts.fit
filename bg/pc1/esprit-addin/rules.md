@@ -108,7 +108,7 @@
   - 내부 region 코드는 Middle=`BACK`, Back=`BACK2`(T05·레이어·경계 로직 공유). 표시명만 바뀐다.
   - Middle_Rough 끝 `Xk+0.5`, Middle_Turn 끝 = Rough 끝 + D4 반경 + 보정 (황삭 끝+D4 반경 2.0+보정 0.5)
   - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX]`(경계 `RoughBoundryBack2`)
-  - none/deep Back_Finish `[Splitline_2−0.5−1피치 ~ BackPointX-0.20]`, Front 끝 = Splitline_2−0.5(팁). 스텝오버는 커넥션에서 포스트 팁 쪽 (`ReverseStepOverDirection`). 기계 X는 팁 < 헥스라 `-0.20`이 헥스에서 팁 쪽 1피치.
+  - none/deep Back_Finish `[Splitline_2−0.5−1피치 ~ BackPointX]`, Front 끝 = Splitline_2−0.5(팁). 스텝오버는 커넥션에서 포스트 팁 쪽 (`ReverseStepOverDirection`). 기계 X는 팁 < 헥스. 예전 `-0.20`은 헥스에서 팁 쪽 1피치라 커넥션 직전에서 끊겼다.
 - Middle_Turn 끝(`Xk+3.0`)은 **클램프하지 않는다**. 줄이면 D4 러프가 원소재를 물고, Xk를 당기면 seam이 마진으로 들어간다.
 - 포기 조건(기존 단일 Back 유지): FL min_z 없음, `Xk < Splitline_2+1.5`, Middle_Turn 끝 > `BackPointX+1.5` (= 치은 파트 FL min_z < 1.7mm). 로그 `SafeSplit[...]`.
 - 원칙: Turn은 Rough 끝보다 D4 반경+보정(2.5) 이상 더 깎는다. 선행 3D 황삭은 Finish seam보다 0.5mm 더 깎아 D1.0이 미황삭을 물지 않게 한다.
@@ -276,7 +276,7 @@
 - 구간별 끝점 (R = 황삭 공구 반경, D4 → 2.0 / ROUGH_20 D2 → 1.0):
   - Front: Finish 끝 = Rough 끝 = `Splitline_2 + 0.5`, Turn 끝 = Rough 끝 + R
   - Middle: Finish 끝 = Rough 끝 = `Xk`, Turn 끝 = `Xk + R`. **Turn 끝이 `BackPointX`를 넘으면 Middle 제거 → Front/Back 2단** (`TryResolveSafeSplitBackZoneX`: `Xk ≤ BackPointX - R`)
-  - Back: Finish 끝 = `BackPointX - 0.20`(헥스에서 팁 쪽 1피치. `+`는 헥스로 늘어남). Rough 끝 = `BackPointX`. Turn 체인 수평 끝 = `BackPointX + R + 0.5 + ZStock`
+  - Back: Finish 끝 = `BackPointX`(헥스). Rough 끝 = `BackPointX`. Turn 체인 수평 끝 = `BackPointX + R + 0.5 + ZStock`
     - 체인은 트림된 프로파일 끝(`EndXValue`, `LowerY`)까지만 쓰고 `ExtendTurning` 꼬리(EndX+Extend 수평, Exit angle 80 상승)는 버린다.
     - `Turning.prc` ZStock(0.3)만큼 툴패스 45도 모서리가 tip 쪽으로 당겨지므로 체인에 더한다. 0.5는 Back_Rough 툴패스가 BackPointX를 조금 넘는 몫.
 - Finish 겹침 (2026-10-20): Front_Finish 끝 = 경계(max_z 또는 Splitline_2). Back_Finish 시작 = 경계 − 1피치. safe split의 `Xk − overlap`은 Turn/Rough만.
@@ -398,18 +398,21 @@
   - `TurnRgn*` / `3DMilling_0Degree` / `3DMilling_FrontFace` / `3DRoughMilling_*`
 
 
-## 7. 커넥션 PRC ↔ STL 원뿔 (2026-10-29)
+## 7. 커넥션 PRC ↔ STL 원뿔 (2026-10-29, Z 일괄 2026-10-30)
 
-레귤러 RH `AcroDent/2_Connection` Finish 면과 `1_Face Hole` 드릴은 git에 있는 값이 **0.203mm 단축 이전**(커밋 `89f47c532`)이다.
+레귤러 RH `AcroDent/2_Connection`과 `1_Face Hole`의 원점 기준 Z(`Z[#520+#523±N]`)는 **한 묶음**이다. 하나를 바꾸면 아래를 **같은 Δ**로 한꺼번에 옮긴다. PRC 파일에는 주석을 달지 않는다(NC로 나가 BG10900이 된다).
 
-- **11° 면**: 원점 직경(`originDiameter`, STL Z=0) 직상방. 덴티움 0.33, 덴티스 SQ·One-Q·메가젠 AnyOne 0.4, 그 외 Regular RH 0.3. STL `prcConeHeightMm`과 같다. 프로그램 분해능 0.001mm라 가공 직경은 그 높이에 1µm 안쪽으로 붙는다.
-- **Finish 시작 (Regular RH 선삭)**: 원점−`prcConeTopMm`. DIO·오스템 TS·네오 `−0.3`, 덴티움 `−0.33`, 덴티스·메가젠 `−0.4`. 예전 시작(−0.038/−0.067/−0.137/−0.138)은 11° 면을 비워 턱이 남았다. 시작만 올리면 헥스 쪽 끝이 밀리므로, 면 직경 다음에 11° 구간을 넣어 헥스·컷오프·페이스 드릴 Z는 그대로 둔다.
+- **묶음**: 11° 원뿔(Finish·Final Deburr 시작) · Face Hole 스텝 드릴(`1_Face Hole` G83) · Connection 스텝 드릴 · 시리얼 · Rough(Connection Rough·Rough U0.1) · 헥스(1st·Deburr·Deburr2) · 컷오프 · 페이스 드릴(Connection G83, Face Hole G83과 동일 값)
+- **금지**: 원뿔 상단만 올리거나 11° `W` 구간만 끼워 헥스 Z를 남기기. 원뿔만 올리면 헥스가 픽스쳐에 걸린다. 2026-10-29 0.203mm만 맞춘 단축은 스크류홀이 어긋나 되돌렸다(`89f47c532`).
+- **묶음 밖**: Face Hole 센터드릴 `Z[#523+1.33]`(#520 없음, 다른 기준). 퇴피 `Z[#520-0.4]`. Finish_Back X(`BackPointX`, 아래).
+- **11° 면**: 원점 직경(`originDiameter`, STL Z=0) 직상방. 덴티움 0.33, 덴티스 SQ·One-Q·메가젠 AnyOne 0.4, 그 외 Regular RH 0.3. STL `prcConeHeightMm`과 같다.
+- **Finish 시작 (Regular RH 선삭)**: 원점−`prcConeTopMm`. DIO·오스템 TS·네오 `−0.3`, 덴티움 `−0.33`, 덴티스·메가젠 `−0.4`. 예전 시작(−0.038/−0.067/−0.137/−0.138)은 11° 면을 비워 턱이 남았다. 2026-10-30 일괄: DIO·오스템·네오·메가젠 Δ=−0.262, 덴티움·덴티스 Δ=−0.263. 끼워 넣었던 11° `W0.262`는 뺐다.
 - **경로**: 고치는 파일은 `bg/pc1/esprit-addin/AcroDent/` 만. `.archive/cam/Acrodent/타사 커스텀 nc 참고용` 은 참고 자료라 수정하지 않는다.
 - **복사**: Esprit은 운영 PC 애드인 `AcroDent`만 읽는다. git을 바꿔도 이 폴더를 운영 PC에 복사하기 전에는 NC에 안 들어간다.
-- **NC 주석**: 장비로 나가는 주석은 한 쌍의 `()` 안, ASCII, 한 줄 80자 이내. 0.203 revert·Copy to op PC 같은 개발 메모는 NC에 넣지 않는다. FANUC i는 한 블록 약 128자라 긴 NOTE가 BG10900 FORMAT이 된다.
-- **금지**: 헥스·컷오프·페이스 드릴 Z를 STL 원점과 따로 올리기. 전체 길이를 줄이려면 원점·스크류홀·헥스·드릴을 같이 검증한다. 2026-10-29 0.203mm 단축은 스크류홀 끝이 어긋나 되돌렸다.
-- **임플란트 추가**: `web/backend/services/abutmentStl/cuffConnectionSpecs.js`에 `originDiameter`·`taperHeightMm`·`prcConeTopMm`을 등록하고, 이 PRC의 11° 상단이 그 높이와 같은지 확인한다. Regular RH는 덴티움 0.33, 덴티스·메가젠 0.4, 그 외 0.3.
-- **미니·내로우**: 11° 면은 아직 Regular처럼 안 맞췄다. 스펙이 있으면 임시로 Z_a+0.1. 샘플이 들어와 spec-pending으로 처리할 때 준비 카드에 「PRC와 STL 11° 콘 설정을 다시 하세요」가 뜬다. 그때 Finish 상단과 STL `prcConeTopMm`을 같이 맞춘다.
+- **NC 주석**: 장비로 나가는 주석은 한 쌍의 `()` 안, ASCII, 한 줄 80자 이내. FANUC i는 한 블록 약 128자라 긴 NOTE가 BG10900 FORMAT이 된다.
+- **Finish_Back**: 커넥션 끝 = `BackPointX`(헥스). 예전 `−0.20`은 헥스에서 팁 쪽 1피치라 커넥션 직전에서 끊겼다. 이건 기계 X이고 PRC Z 묶음과 별개다.
+- **임플란트 추가**: `web/backend/services/abutmentStl/cuffConnectionSpecs.js`에 `originDiameter`·`taperHeightMm`·`prcConeTopMm`을 등록하고, 이 PRC의 11° 상단이 그 높이와 같은지 확인한다. Regular RH는 덴티움 0.33, 덴티스·메가젠 0.4, 그 외 0.3. Z를 바꾸면 위 묶음을 같이 검증한다.
+- **미니·내로우**: 11° 면은 아직 Regular처럼 안 맞췄다. 스펙이 있으면 임시로 Z_a+0.1. 샘플이 들어와 spec-pending으로 처리할 때 준비 카드에 「PRC와 STL 11° 콘 설정을 다시 하세요」가 뜬다. 그때 Finish 상단과 STL `prcConeTopMm`을 같이 맞추고, 맞추면 위 묶음 Z도 같은 Δ로 옮긴다.
 
 ## 성능 측정 (PERF)
 
