@@ -3,6 +3,7 @@
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/cnc/production.js
 // change-log:
+// - 2026-10-30: 자동가공 시작 대기를 줄인다. Cycle Start(status=Run)도 시작으로 보고, S3는 edit/delete와 겹친다. 종료 후 settle(~3초)은 그대로 둔다.
 // - 2026-10-27: CAM 재생성은 같은 s3Key에 덮어쓴다. 의뢰건은 업로드 직전 nc-file-meta uploadedAt이 마지막 업로드보다 새로우면 캐시를 버리고 다시 받는다.
 // - 2026-10-22: 의뢰건 NC는 가공마다 S3(백엔드 presign)에서 새로 받는다. batchContinue·동일 jobId 연속(qty)만 로컬 캐시 재사용.
 // - 2026-10-19: 수량 반복(batchContinue)은 완료 직후 120초 중복 차단을 한 번 통과해 다음 개를 큐에 넣는다.
@@ -593,6 +594,29 @@ private static readonly Dictionary<string, MachineState> MachineStates
 = new Dictionary<string, MachineState>(StringComparer.OrdinalIgnoreCase);
 private static Timer _timer;
 private static int _tickRunning = 0;
+private const int TickIntervalIdleMs = 3000;
+private const int TickIntervalActiveMs = 400;
+private const int ModeSettleMs = 80;
+private static int _tickIntervalMs = TickIntervalIdleMs;
+private static readonly HashSet<string> PrefetchedNcJobIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+private static bool IsNcPrefetched(CncJobItem job)
+{
+    var jid = (job?.id ?? string.Empty).Trim();
+    if (string.IsNullOrEmpty(jid)) return false;
+    lock (StateLock)
+    {
+        return PrefetchedNcJobIds.Contains(jid);
+    }
+}
+private static void MarkNcPrefetched(CncJobItem job)
+{
+    var jid = (job?.id ?? string.Empty).Trim();
+    if (string.IsNullOrEmpty(jid)) return;
+    lock (StateLock)
+    {
+        PrefetchedNcJobIds.Add(jid);
+    }
+}
 public static void ResetStartBackoff(string machineId)
 {
 if (string.IsNullOrWhiteSpace(machineId)) return;
@@ -646,6 +670,39 @@ Console.WriteLine("[CncMachining] immediate process trigger failed machine={0} e
 }
 });
 }
+private static bool NeedsFastTickLocked()
+{
+    foreach (var kv in MachineStates)
+    {
+        var s = kv.Value;
+        if (s == null) continue;
+        // 시작 대기만 빠르게 본다. 완료 후 settle은 기존 3초 tick을 유지한다.
+        if (s.AwaitingStart) return true;
+    }
+    return false;
+}
+private static void RefreshTickCadence()
+{
+    try
+    {
+        var timer = _timer;
+        if (timer == null) return;
+        bool needFast;
+        lock (StateLock)
+        {
+            needFast = NeedsFastTickLocked();
+        }
+        var nextMs = needFast ? TickIntervalActiveMs : TickIntervalIdleMs;
+        if (nextMs == _tickIntervalMs) return;
+        _tickIntervalMs = nextMs;
+        timer.Change(TimeSpan.FromMilliseconds(nextMs), TimeSpan.FromMilliseconds(nextMs));
+        Console.WriteLine("[CncMachining] tick cadence {0}ms", nextMs);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("[CncMachining] tick cadence failed err={0}", ex.Message);
+    }
+}
 public static void Start()
 {
 if (_timer != null) return;
@@ -655,8 +712,8 @@ _ = Task.Run(async () =>
 {
 await InitialSyncFromBackendOnce();
 });
-_timer = new Timer(async _ => await Tick(), null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
-Console.WriteLine("[CncMachining] started (3s interval)");
+_timer = new Timer(async _ => await Tick(), null, TimeSpan.FromMilliseconds(TickIntervalIdleMs), TimeSpan.FromMilliseconds(TickIntervalIdleMs));
+Console.WriteLine("[CncMachining] started (idle={0}ms active={1}ms)", TickIntervalIdleMs, TickIntervalActiveMs);
 }
 private static async Task InitialSyncFromBackendOnce()
 {
@@ -828,6 +885,7 @@ Console.WriteLine("[CncMachining] tick error: {0}", ex);
 finally
 {
 Interlocked.Exchange(ref _tickRunning, 0);
+RefreshTickCadence();
 }
 }
 private static async Task ProcessMachine(string machineId)
@@ -1025,32 +1083,10 @@ Console.WriteLine(
 }
 catch { }
 
-// ── 시작 감지: IO_R_YELLOW=0(isBusy=True) → 절삭 개시 확인 ──────────────────
-// 스타트 신호 전송 후 장비가 프로그램을 실행하면 IO_R_YELLOW가 0으로 떨어짐.
-// isBusy=True(=IO_R_YELLOW=0) 감지 시 AwaitingStart→IsRunning 전환.
-if (TryGetMachineBusy(machineId, out var awaitingBusy) && awaitingBusy)
+// 시작 감지: Cycle Start(status=Run) 또는 IO_R_YELLOW=0(isBusy).
+// Run이 노란불보다 먼저 올라오면 그 시점에 RUNNING으로 올린다. SawBusy는 노란불을 본 뒤에만 켠다.
+if (TryPromoteAwaitingStartToRunning(machineId, state, awaitingSinceMs, lastStartSignalAgoMs))
 {
-var prodCountBefore = 0;
-var hasProdCountBefore = TryGetProductCount(machineId, out prodCountBefore);
-if (!hasProdCountBefore)
-{
-Console.WriteLine("[CncMachining] start count read failed machine={0} jobId={1}", machineId, state.CurrentJob?.id);
-}
-Console.WriteLine("[CncMachining] start busy detected machine={0} jobId={1} slot=O{2} awaitingElapsedMs={3} lastStartSignalAgoMs={4}", machineId, state.CurrentJob?.id, state.CurrentSlot, awaitingSinceMs, lastStartSignalAgoMs);
-Console.WriteLine("[CncMachining] start count baseline machine={0} jobId={1} before={2} readOk={3}", machineId, state.CurrentJob?.id, prodCountBefore, hasProdCountBefore);
-lock (StateLock)
-{
-state.IsRunning = true;
-state.AwaitingStart = false;
-state.StartedAtUtc = DateTime.UtcNow;
-state.ProductCountBefore = prodCountBefore;
-state.SawBusy = true;  // IO_R_YELLOW=0(절삭 중) 이미 확인됐으므로 SawBusy=True 초기화
-state.AwaitingStartSinceUtc = DateTime.MinValue;
-state.LastAwaitingStartSignalUtc = DateTime.MinValue;
-state.HasLastObservedStatus = false;
-}
-Console.WriteLine("[CncMachining] detected start machine={0} jobId={1} slot=O{2} awaitingElapsedMs={3} lastStartSignalAgoMs={4}", machineId, state.CurrentJob?.id, state.CurrentSlot, awaitingSinceMs, lastStartSignalAgoMs);
-_ = Task.Run(() => NotifyMachiningStarted(state.CurrentJob, machineId));
 return;
 }
 
@@ -1153,10 +1189,9 @@ return;
 
 // ──────────────────────────────────────────────────────────────────────────
 // [settle] 가공 완료 후 다음 건 시작 전 안전 확인:
-// - 완료 후 6초(CNC_POST_COMPLETE_MIN_SETTLE_SECONDS, 기본 6) 동안은 무조건 대기
-// - 6초 경과 후부터 매 tick(~3초)마다 busy/alarm/status를 체크
-// - !busy(IO_R_YELLOW=1 대기) + alarm=0 + status≠Alarm 충족 시 즉시 다음 건 진행
-// - busy 판단: IO_R_YELLOW=0 가공 중(음), IO_R_YELLOW=1 사이클 완료/대기(양). CncMachineSignalUtils 참고.
+// - 완료 후 minSettle(기본 2초) 동안은 무조건 대기. 실제로는 다음 tick(~3초)에서 본다.
+// - 장비가 아직 HOME/척 처리 중이면 바로 다음 건을 넣지 않는다.
+// - !busy(IO_R_YELLOW=1 대기) + alarm=0 + status≠Alarm 충족 시 다음 건 진행
 // - 조건 미충족 시 계속 대기 (최대 CNC_POST_COMPLETE_MAX_SETTLE_SECONDS=60초)
 // ──────────────────────────────────────────────────────────────────────────
 if (state.LastCompletedAtUtc != DateTime.MinValue && !Config.MockCncMachining)
@@ -1345,6 +1380,96 @@ else
     }
 }
 }
+private static bool TryPromoteAwaitingStartToRunning(string machineId, MachineState state, int awaitingSinceMs, int lastStartSignalAgoMs)
+{
+    if (state == null || state.CurrentJob == null || !state.AwaitingStart) return false;
+
+    var via = (string)null;
+    var statusOk = Mode1Api.TryGetMachineStatus(machineId, out var status, out _);
+    if (statusOk && status == MachineStatusType.Run)
+    {
+        via = "status-run";
+    }
+    else if (TryGetMachineBusy(machineId, out var awaitingBusy) && awaitingBusy)
+    {
+        via = "busy";
+    }
+    if (via == null) return false;
+
+    var sawBusyNow = string.Equals(via, "busy", StringComparison.Ordinal);
+    var prodCountBefore = 0;
+    var hasProdCountBefore = TryGetProductCount(machineId, out prodCountBefore);
+    if (!hasProdCountBefore)
+    {
+        Console.WriteLine("[CncMachining] start count read failed machine={0} jobId={1}", machineId, state.CurrentJob?.id);
+    }
+    lock (StateLock)
+    {
+        if (!state.AwaitingStart || state.CurrentJob == null) return false;
+        state.IsRunning = true;
+        state.AwaitingStart = false;
+        state.StartedAtUtc = DateTime.UtcNow;
+        state.ProductCountBefore = prodCountBefore;
+        // status=Run만 본 경우에는 아직 IO_R_YELLOW=0을 못 봤으므로 SawBusy를 켜지 않는다.
+        // 켜면 노란불이 대기(1)인 채로 완료 후보가 되어 오완료된다.
+        state.SawBusy = sawBusyNow;
+        state.AwaitingStartSinceUtc = DateTime.MinValue;
+        state.LastAwaitingStartSignalUtc = DateTime.MinValue;
+        state.HasLastObservedStatus = statusOk;
+        if (statusOk) state.LastObservedStatus = status;
+    }
+    if (sawBusyNow)
+    {
+        Console.WriteLine("[CncMachining] start busy detected machine={0} jobId={1} slot=O{2} awaitingElapsedMs={3} lastStartSignalAgoMs={4}", machineId, state.CurrentJob?.id, state.CurrentSlot, awaitingSinceMs, lastStartSignalAgoMs);
+    }
+    else
+    {
+        Console.WriteLine("[CncMachining] start status-run detected machine={0} jobId={1} slot=O{2} awaitingElapsedMs={3} lastStartSignalAgoMs={4}", machineId, state.CurrentJob?.id, state.CurrentSlot, awaitingSinceMs, lastStartSignalAgoMs);
+    }
+    Console.WriteLine("[CncMachining] start count baseline machine={0} jobId={1} before={2} readOk={3}", machineId, state.CurrentJob?.id, prodCountBefore, hasProdCountBefore);
+    Console.WriteLine("[CncMachining] detected start machine={0} jobId={1} slot=O{2} via={3} awaitingElapsedMs={4} lastStartSignalAgoMs={5}", machineId, state.CurrentJob?.id, state.CurrentSlot, via, awaitingSinceMs, lastStartSignalAgoMs);
+    _ = Task.Run(() => NotifyMachiningStarted(state.CurrentJob, machineId));
+    RefreshTickCadence();
+    return true;
+}
+private static void StartAwaitingStartWatch(string machineId)
+{
+    var mid = (machineId ?? string.Empty).Trim();
+    if (string.IsNullOrEmpty(mid)) return;
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            // start 직후 15초는 200ms로 status=Run/busy를 본다. 3초 tick만 쓰면 10초를 놓친다.
+            for (var i = 0; i < 75; i++)
+            {
+                await Task.Delay(200);
+                MachineState state;
+                lock (StateLock)
+                {
+                    if (!MachineStates.TryGetValue(mid, out state) || state == null || !state.AwaitingStart || state.CurrentJob == null)
+                    {
+                        return;
+                    }
+                }
+                var awaitingSinceMs = state.AwaitingStartSinceUtc == DateTime.MinValue
+                    ? -1
+                    : (int)Math.Max(0, (DateTime.UtcNow - state.AwaitingStartSinceUtc).TotalMilliseconds);
+                var lastStartSignalAgoMs = state.LastAwaitingStartSignalUtc == DateTime.MinValue
+                    ? -1
+                    : (int)Math.Max(0, (DateTime.UtcNow - state.LastAwaitingStartSignalUtc).TotalMilliseconds);
+                if (TryPromoteAwaitingStartToRunning(mid, state, awaitingSinceMs, lastStartSignalAgoMs))
+                {
+                    return;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("[CncMachining] awaiting-start watch failed machine={0} err={1}", mid, ex.Message);
+        }
+    });
+}
 private static async Task<bool> CheckJobCompleted(string machineId, MachineState state)
 {
 try
@@ -1429,6 +1554,9 @@ var uploadSlot = SLOT_A;
 Console.WriteLine("[CncMachining] starting new job machine={0} jobId={1} file={2} slot=O{3}",
 machineId, job?.id, job?.fileName, uploadSlot);
 
+// S3 수신은 DLL 작업(edit/delete)과 겹친다. 업로드 직전에만 기다린다.
+var prefetchTask = TryPrefetchJobNcFile(machineId, job);
+
 // 1. Edit 모드 전환 (Idle에서만)
 if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var modeErr))
 {
@@ -1449,9 +1577,9 @@ if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var modeErr))
     }
     return false;
 }
-Console.WriteLine("[CncMachining] edit mode ok machine={0} jobId={1} settleMs=300", machineId, job?.id);
+Console.WriteLine("[CncMachining] edit mode ok machine={0} jobId={1} settleMs={2}", machineId, job?.id, ModeSettleMs);
 
-await Task.Delay(300);
+await Task.Delay(ModeSettleMs);
 Mode1HandleStore.Invalidate(machineId);
 // 2. 대상 슬롯에 기존 프로그램 삭제 후 업로드
 try
@@ -1469,6 +1597,14 @@ Console.WriteLine("[CncMachining] delete before upload ok machine={0} jobId={1} 
 }
 }
 catch { }
+try
+{
+    await prefetchTask;
+}
+catch (Exception prefetchEx)
+{
+    Console.WriteLine("[CncMachining] nc prefetch await failed machine={0} jobId={1} err={2}", machineId, job?.id, prefetchEx.Message);
+}
 var (uploaded, uploadErr) = await UploadProgramToSlot(machineId, job, uploadSlot);
 if (!uploaded)
 {
@@ -1562,8 +1698,8 @@ if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var modeErr2))
 Console.WriteLine("[CncMachining] auto mode failed machine={0} err={1}", machineId, modeErr2);
 return false;
 }
-Console.WriteLine("[CncMachining] auto mode ok machine={0} jobId={1} settleMs=300", machineId, job?.id);
-await Task.Delay(300);
+Console.WriteLine("[CncMachining] auto mode ok machine={0} jobId={1} settleMs={2}", machineId, job?.id, ModeSettleMs);
+await Task.Delay(ModeSettleMs);
 Console.WriteLine("[CncMachining] waiting active program ready machine={0} jobId={1} timeoutMs=5000 expectedMain={2} expectedSub={3}", machineId, job?.id, activateProgNo, expectedSubProgramNo);
 if (!WaitForActiveProgramState(machineId, activateProgNo, expectedSubProgramNo, 5000, out var programReadyErr))
 {
@@ -1608,11 +1744,17 @@ state.LastAwaitingStartSignalUtc = DateTime.MinValue;
             state.LastAwaitingStartSignalUtc = DateTime.UtcNow;
         }
         Console.WriteLine("[CncMachining] start signal sent machine={0}", machineId);
+        var immediateAwaitingMs = state.AwaitingStartSinceUtc == DateTime.MinValue
+            ? -1
+            : (int)Math.Max(0, (DateTime.UtcNow - state.AwaitingStartSinceUtc).TotalMilliseconds);
+        TryPromoteAwaitingStartToRunning(machineId, state, immediateAwaitingMs, 0);
     }
     else if (!allowAutoStart)
     {
         Console.WriteLine("[CncMachining] auto-start blocked (allowAutoStart=false) machine={0} jobId={1}", machineId, job?.id);
     }
+StartAwaitingStartWatch(machineId);
+RefreshTickCadence();
 Console.WriteLine("[CncMachining] start ready machine={0} slot=O{1}",
 machineId, state.CurrentSlot);
 return true;
@@ -2168,6 +2310,67 @@ private static async Task<NcMetaRefresh> TryRefreshJobNcMetaFromBackend(CncJobIt
     }
 }
 
+private static async Task TryPrefetchJobNcFile(string machineId, CncJobItem job)
+{
+    try
+    {
+        if (job == null || job.kind == CncJobKind.Dummy || IsNcPrefetched(job)) return;
+        MachineState uploadState = null;
+        lock (StateLock)
+        {
+            MachineStates.TryGetValue(machineId, out uploadState);
+        }
+        var reuseCachedNc = ShouldReuseCachedNcProgram(job, uploadState);
+        var isRequestJob = IsRequestMachiningJob(job);
+        if (isRequestJob && !job.batchContinue)
+        {
+            var previousKey = (job.s3Key ?? string.Empty).Trim();
+            var meta = await TryRefreshJobNcMetaFromBackend(job);
+            if (reuseCachedNc && meta.Found)
+            {
+                var keyChanged = !string.Equals(previousKey, (job.s3Key ?? string.Empty).Trim(), StringComparison.Ordinal);
+                var lastAt = uploadState?.LastNcUploadedAtUtc ?? DateTime.MinValue;
+                var newerNc = meta.UploadedAtUtc.HasValue && meta.UploadedAtUtc.Value > lastAt;
+                if (keyChanged || newerNc)
+                {
+                    reuseCachedNc = false;
+                }
+            }
+        }
+        if (!TryResolveJobFilePath(job, out var fullPath, out _))
+        {
+            return;
+        }
+        var hasS3Key = !string.IsNullOrEmpty((job.s3Key ?? string.Empty).Trim());
+        if (reuseCachedNc && File.Exists(fullPath))
+        {
+            MarkNcPrefetched(job);
+            return;
+        }
+        if (hasS3Key && (!File.Exists(fullPath) || (isRequestJob && !reuseCachedNc)))
+        {
+            if (isRequestJob && !reuseCachedNc)
+            {
+                TryDeleteFile(fullPath);
+            }
+            if (await TryDownloadAndCacheFromS3(machineId, job, fullPath) && File.Exists(fullPath))
+            {
+                MarkNcPrefetched(job);
+                Console.WriteLine("[CncMachining] nc prefetch ready machine={0} jobId={1}", machineId, job?.id);
+            }
+            return;
+        }
+        if (File.Exists(fullPath))
+        {
+            MarkNcPrefetched(job);
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("[CncMachining] nc prefetch failed machine={0} jobId={1} err={2}", machineId, job?.id, ex.Message);
+    }
+}
+
 private static async Task<(bool Success, string Error)> UploadProgramToSlot(string machineId, CncJobItem job, int slotNo)
 {
     string error = null;
@@ -2228,7 +2431,7 @@ private static async Task<(bool Success, string Error)> UploadProgramToSlot(stri
         }
 
         var hasS3Key = !string.IsNullOrEmpty((job?.s3Key ?? string.Empty).Trim());
-        if (isRequestJob && hasS3Key && !reuseCachedNc)
+        if (isRequestJob && hasS3Key && !reuseCachedNc && !IsNcPrefetched(job))
         {
             TryDeleteFile(fullPath);
             var refreshed = await TryDownloadAndCacheFromS3(machineId, job, fullPath);
@@ -2765,12 +2968,11 @@ return Config.BridgeStoreRoot;
 private static bool TryStartSignal(string machineId, out string error)
 {
 error = null;
-if (!Mode1Api.TryGetMachineInfo(machineId, out var machineInfo, out var infoError))
+if (!CncMachineSignalUtils.TryGetPanelType(machineId, out var panelType, out var infoError))
 {
     error = infoError;
     return false;
 }
-var panelType = machineInfo.panelType;
 
 if (Mode1Api.TryGetMachineAllOPInfo(machineId, panelType, out var panelList, out var panelError))
 {

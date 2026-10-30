@@ -65,16 +65,25 @@
 - status 읽기 실패(`-16` 등)는 RUNNING 을 유지한다. 통신 복구 후 알람/완료/사용자 중단으로만 종료.
 - 정상 완료는 여전히 **busy 해제 + count+1** 이 우선이다. Stop 만으로 완료·실패 처리하지 않는다.
 
+### 시작 감지 (`CncContinuousMachining.cs`)
+
+자동 Start 이후 실제 가공 진입:
+
+- `GetMachineStatus == Run` 이면 바로 RUNNING (Cycle Start). IO_R_YELLOW보다 먼저 올라오는 경우가 많다.
+- 아니면 기존처럼 `IO_R_YELLOW=0` (`isBusy=True`) 으로 감지.
+- `status=Run`만 본 경우에는 `SawBusy`를 켜지 않는다. 노란불이 아직 대기(1)인데 완료로 오인하는 것을 막는다.
+- start 직후 15초는 200ms 워치로 보고, 시작 대기 중 tick은 400ms.
+
 ### settle-check 로직 (`CncContinuousMachining.cs`)
 
-완료 후 다음 건 시작 전 안전 확인:
+완료 후 다음 건 시작 전 안전 확인. HOME/척 처리가 끝나기 전에 다음 건을 넣으면 장비가 튕긴다.
 
-- `minSettleSec`(기본 6초) 동안 무조건 대기
-- 이후 tick마다 `!isBusy && !hasAlarm && isNotAlarm` 충족 시 즉시 통과 (settle-pass)
-- IO_R_YELLOW=1(대기) 상태 → `isBusy=False` → `!isBusy=True` → 알람 없으면 즉시 통과 ✓
+- `minSettleSec`(기본 2초) 동안 무조건 대기
+- 이후 기존 tick(~3초)마다 `!isBusy && !hasAlarm && isNotAlarm` 충족 시 통과 (settle-pass)
+- IO_R_YELLOW=1(대기) 상태 → `isBusy=False` → 알람 없으면 통과
 - 조건 미충족 시 최대 `maxSettleSec`(기본 60초) 후 강제 진행 (settle-timeout)
 
-**예상 인터벌**: minSettleSec(6초) + 다음 tick(~3초) ≈ 약 9초
+**예상 인터벌**: 완료 후 약 3초. 이 간격은 유지한다.
 
 ## 4. Hi-Link DLL 에러 코드 처리 정책
 

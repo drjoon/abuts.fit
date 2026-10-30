@@ -16,6 +16,43 @@ namespace HiLinkBridgeWebApi48
         private static readonly HashSet<string> PanelIoDumpedMachines = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object BusyReadLogLock = new object();
         private static readonly Dictionary<string, bool> LastBusyReadState = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object PanelTypeCacheLock = new object();
+        private static readonly Dictionary<string, short> PanelTypeByMachine = new Dictionary<string, short>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, DateTime> PanelTypeCachedAtUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private const int PanelTypeCacheTtlSeconds = 60;
+
+        internal static bool TryGetPanelType(string machineId, out short panelType, out string error)
+        {
+            panelType = 0;
+            error = null;
+            var mid = (machineId ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(mid))
+            {
+                error = "empty machineId";
+                return false;
+            }
+            lock (PanelTypeCacheLock)
+            {
+                DateTime cachedAt;
+                if (PanelTypeByMachine.TryGetValue(mid, out panelType)
+                    && PanelTypeCachedAtUtc.TryGetValue(mid, out cachedAt)
+                    && (DateTime.UtcNow - cachedAt).TotalSeconds < PanelTypeCacheTtlSeconds)
+                {
+                    return true;
+                }
+            }
+            if (!Mode1Api.TryGetMachineInfo(mid, out var machineInfo, out error))
+            {
+                return false;
+            }
+            panelType = machineInfo.panelType;
+            lock (PanelTypeCacheLock)
+            {
+                PanelTypeByMachine[mid] = panelType;
+                PanelTypeCachedAtUtc[mid] = DateTime.UtcNow;
+            }
+            return true;
+        }
 
         internal static void DumpPanelIoSnapshotAtStartup()
         {
@@ -78,13 +115,11 @@ namespace HiLinkBridgeWebApi48
                 var busyIoUid = Config.CncBusyIoUid;
                 if (busyIoUid < 0) return false;
 
-                if (!Mode1Api.TryGetMachineInfo(machineId, out var machineInfo, out var infoError))
+                if (!TryGetPanelType(machineId, out var panelType, out var infoError))
                 {
                     Console.WriteLine("[CncSignal] busy read failed machine={0} err={1}", (machineId ?? string.Empty).Trim(), infoError);
                     return false;
                 }
-
-                var panelType = machineInfo.panelType;
                 if (!Mode1Api.TryGetMachineAllOPInfo(machineId, panelType, out var panelList, out var error))
                 {
                     Console.WriteLine("[CncSignal] busy read failed machine={0} panelType={1} err={2}", (machineId ?? string.Empty).Trim(), panelType, error);
