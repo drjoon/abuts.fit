@@ -299,6 +299,44 @@ describe("connectionTaperFill", () => {
     expect(edgeUse(mesh)).toEqual({ naked: 0, nonManifold: 0 });
   });
 
+  it("스크류 채널에 닿는 면이 있어도 짧은 11° 연장 구간에 구멍이 나지 않는다", () => {
+    const spec = CUFF_CONNECTION_SPECS.find((s) => s.key === "NEOBIOTECH|IS|REGULAR");
+    const r0 = spec.originDiameter / 2 - 0.03;
+    const at = (z) => r0 + TAPER_SLOPE * z;
+    const end = Math.min(spec.taperHeightMm * 0.35, spec.taperHeightMm - 0.05);
+    const innerR = 1.05;
+    const outerLevels = [
+      [-2.2, hexRadius],
+      [-1.05, hexRadius],
+      [-1.05, at(-1.05)],
+      [end, at(end)],
+      [end + 0.04, at(end) + 0.2],
+      [5, 3.2],
+    ];
+    const tris = [];
+    const rings = outerLevels.map(([z, r]) => ring(z, r));
+    for (let i = 0; i < rings.length - 1; i += 1) loft(tris, rings[i], rings[i + 1]);
+    const innerLo = ring(outerLevels[0][0], innerR);
+    const innerHi = ring(outerLevels[outerLevels.length - 1][0], innerR);
+    loft(tris, innerHi, innerLo);
+    loft(tris, rings[0], innerLo);
+    loft(tris, innerHi, rings[rings.length - 1]);
+    loft(tris, rings[3], ring(end, innerR));
+    const soup = new Float64Array(tris.length * 9);
+    tris.forEach((t, i) => t.forEach((p, k) => soup.set(p, i * 9 + k * 3)));
+    const mesh = Mesh.fromTriangleSoup(soup);
+    const result = ensureConnectionTaperSpec(mesh, { implantProfile: profileOf(spec) });
+    expect(result.reason).toBe("extended");
+    const prcH = prcConeHeightMm(spec);
+    for (let z = end + 0.02; z < prcH - 0.01; z += 0.03) {
+      const m = outerMetrics(mesh, z);
+      const coneR = spec.originDiameter / 2 + TAPER_SLOPE * z;
+      expect(m.rMean).toBeGreaterThan(coneR - 0.04);
+      expect(m.rMean).toBeLessThan(coneR + 0.08);
+    }
+    expect(edgeUse(mesh).nonManifold).toBe(0);
+  });
+
   it("11°가 아닌 테이퍼도 그 회사 직경을 원점으로 두고 스펙 높이까지 11°로 잇는다", () => {
     const slope = Math.tan((15 * Math.PI) / 180);
     const r0 = 3.344 / 2;

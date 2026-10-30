@@ -10,7 +10,8 @@
 // 11°를 PRC 면 높이(originDiameter @ Z=0 → prcConeHeightMm, Regular RH는 0.3mm)까지 연장하고,
 // 그 원점 직경이 되는 높이를 Z=0으로 옮긴다. 스펙 Z_a(taperHeightMm)에서 멈추면
 // 커넥션 PRC Finish 면(Regular RH는 덴티움 0.33·덴티스·메가젠 0.4·그 외 0.3)과 단이 난다.
-// 연장한 11° 상단은 평평한 턱을 남기지 않고, 그 끝점에서 2°·곡률 0으로 출발해 FACE_BLEND_MM 위의 기공소 커프 둘레 모양으로 5차식 섞는다. BlendCuff(cuffBlend.js)도 이 끝점에서 시작한다. 접수 검사(preflight)·의뢰 전 보정 STL에서는 호출하지 않는다.
+// 연장한 11° 상단은 평평한 턱을 남기지 않고, 그 끝점에서 2°·곡률 0으로 출발해 FACE_BLEND_MM 위의 기공소 커프 둘레 모양으로 5차식 섞는다. BlendCuff(cuffBlend.js)도 이 끝점에서 시작한다.
+// 바깥 띠를 지를 때 채널에 닿는 면도 평면에서 가른다. 통째로 남기면 이음 루프가 헥스까지 이어져 커프 중간에 구멍이 난다(박영옥-17). 접수 검사(preflight)·의뢰 전 보정 STL에서는 호출하지 않는다.
 // 임플란트 추가·PRC 면 높이 변경: cuffConnectionSpecs.js 상단 주석.
 import { Mesh, meshZSection } from "./meshCore.js";
 import { CONNECTIONS_SEED } from "../../scripts/db/data/connections.seed.js";
@@ -40,6 +41,11 @@ const FACE_BLEND_MM = 0.2;
 const BLEND_RING_POINTS = 180;
 /** 이음 띠 높이 간격. */
 const BLEND_ROW_MM = 0.01;
+/** 연장 원뿔(zLo~zFace) 행 간격. CONE_ROW_MM(0.15)면 짧은 연장에서 한 칸이 비어 구멍이 난다. */
+const EMERGE_CONE_ROW_MM = 0.02;
+/** 이음 경계로 쓸 루프는 이 높이 안에 모여 있어야 한다. 채널까지 이어진 큰 루프는 버린다. */
+const LOOP_Z_SPAN_MM = 0.08;
+const LOOP_Z_TOL_MM = 0.08;
 
 const BRAND_ALIAS = {
   OSSTEM: { TS: "TS3" },
@@ -249,6 +255,54 @@ function pushTri(out, a, b, c) {
 
 function fan(poly, out) {
   for (let i = 1; i < poly.length - 1; i += 1) pushTri(out, poly[0], poly[i], poly[i + 1]);
+}
+
+function intersectRadius(a, b, rMax) {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const dz = b[2] - a[2];
+  const A = dx * dx + dy * dy;
+  const B = 2 * (a[0] * dx + a[1] * dy);
+  const C = a[0] * a[0] + a[1] * a[1] - rMax * rMax;
+  if (A < 1e-16) return a.slice();
+  const disc = B * B - 4 * A * C;
+  if (disc < 0) return a.slice();
+  const s = Math.sqrt(disc);
+  const ts = [(-B - s) / (2 * A), (-B + s) / (2 * A)]
+    .filter((t) => t >= -1e-8 && t <= 1 + 1e-8)
+    .sort((p, q) => p - q);
+  const t = ts.length ? ts[0] : 0.5;
+  const u = Math.max(0, Math.min(1, t));
+  return [a[0] + u * dx, a[1] + u * dy, a[2] + u * dz];
+}
+
+/** 원기둥 r≤rMax 안쪽만 남긴다. 채널 벽은 두고 바깥 띠만 지운다. */
+function clipInsideRadius(poly, rMax) {
+  const inside = (p) => radiusOf(p) <= rMax + 1e-8;
+  const out = [];
+  for (let i = 0; i < poly.length; i += 1) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const ain = inside(a);
+    const bin = inside(b);
+    if (ain && bin) out.push(b);
+    else if (ain && !bin) out.push(intersectRadius(a, b, rMax));
+    else if (!ain && bin) {
+      out.push(intersectRadius(a, b, rMax));
+      out.push(b);
+    }
+  }
+  return out;
+}
+
+function loopZSpan(pts) {
+  let zMin = Infinity;
+  let zMax = -Infinity;
+  for (const p of pts) {
+    if (p[2] < zMin) zMin = p[2];
+    if (p[2] > zMax) zMax = p[2];
+  }
+  return zMax - zMin;
 }
 
 function replaceMesh(mesh, positions) {
@@ -718,13 +772,12 @@ function replaceOuterBandWithCone(mesh, zLo, zHi, radiusAt, rSplit, emerge = fal
         const o = f[i * 3 + k] * 3;
         return [v[o], v[o + 1], v[o + 2]];
       });
-      const outer = tri.every((p) => radiusOf(p) > rSplit);
-      if (!outer) {
-        pushTri(kept, tri[0], tri[1], tri[2]);
-        continue;
-      }
+      // 채널에 닿는 면도 평면에서 가른다. 통째로 남기면 바깥 자른 자리가 채널·헥스까지 이어져
+      // 이음 루프가 수평이 아니게 되고, 그 루프에 새 원뿔을 붙이면 커프 중간에 구멍이 난다.
       fan(clipHalf(tri, zLo, true), kept);
       fan(clipHalf(tri, zHi, false), kept);
+      const mid = clipHalf(clipHalf(tri, zLo, false), zHi, true);
+      if (mid.length >= 3) fan(clipInsideRadius(mid, rSplit), kept);
     }
     replaceMesh(mesh, Float64Array.from(kept));
     const loops = boundaryLoops(mesh)
@@ -732,7 +785,9 @@ function replaceOuterBandWithCone(mesh, zLo, zHi, radiusAt, rSplit, emerge = fal
       .filter((pts) => pts.length >= 6 && meanR(pts) > rSplit);
     const near = (z) =>
       loops
-        .filter((pts) => Math.abs(meanZ(pts) - z) < 0.15)
+        .filter(
+          (pts) => loopZSpan(pts) < LOOP_Z_SPAN_MM && Math.abs(meanZ(pts) - z) < LOOP_Z_TOL_MM,
+        )
         .sort((a, b) => Math.abs(meanZ(a) - z) - Math.abs(meanZ(b) - z) || meanR(b) - meanR(a))[0];
     const bottom = near(zLo);
     const upper = near(zHi);
@@ -749,7 +804,7 @@ function replaceOuterBandWithCone(mesh, zLo, zHi, radiusAt, rSplit, emerge = fal
       };
       const zs = [];
       if (zFace > zLo + 1e-4) {
-        for (let z = zLo + CONE_ROW_MM; z < zFace - 1e-4; z += CONE_ROW_MM) zs.push(z);
+        for (let z = zLo + EMERGE_CONE_ROW_MM; z < zFace - 1e-4; z += EMERGE_CONE_ROW_MM) zs.push(z);
         zs.push(zFace);
       }
       for (let z = zFace + BLEND_ROW_MM; z < zHi - BLEND_ROW_MM * 0.5; z += BLEND_ROW_MM) zs.push(z);
