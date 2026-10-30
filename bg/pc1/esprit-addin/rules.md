@@ -403,6 +403,7 @@
 레귤러 RH `AcroDent/2_Connection` Finish 면과 `1_Face Hole` 드릴은 git에 있는 값이 **0.203mm 단축 이전**(커밋 `89f47c532`)이다.
 
 - **11° 면**: 원점 직경(`originDiameter`, STL Z=0) 직상방. 덴티움 0.33, 덴티스 SQ·One-Q·메가젠 AnyOne 0.4, 그 외 Regular RH 0.3. STL `prcConeHeightMm`과 같다. 프로그램 분해능 0.001mm라 가공 직경은 그 높이에 1µm 안쪽으로 붙는다.
+- **Finish 시작 (DIO·오스템 TS·네오 Regular)**: `Z[#520+#523-0.3]`. 예전 `-0.038`은 원점 위 0.3mm 면을 비워 턱이 남았다. 시작만 올리면 헥스 쪽 끝이 밀리므로, `X3.467` 다음에 11° `X3.365 W0.262`를 넣어 헥스·컷오프 Z는 그대로 둔다.
 - **경로**: 고치는 파일은 `bg/pc1/esprit-addin/AcroDent/` 만. `.archive/cam/Acrodent/타사 커스텀 nc 참고용` 은 참고 자료라 수정하지 않는다.
 - **복사**: Esprit은 운영 PC 애드인 `AcroDent`만 읽는다. git을 바꿔도 이 폴더를 운영 PC에 복사하기 전에는 NC에 안 들어간다.
 - **NC 주석**: 장비로 나가는 주석은 한 쌍의 `()` 안, ASCII, 한 줄 80자 이내. 0.203 revert·Copy to op PC 같은 개발 메모는 NC에 넣지 않는다. FANUC i는 한 블록 약 128자라 긴 NOTE가 BG10900 FORMAT이 된다.
