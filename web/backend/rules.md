@@ -298,6 +298,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 큐 조회: `getAllProductionQueues` / `getProductionQueues` (`controllers/cnc/production.js`)
 - 승인·배정: `common.review.controller.js`, `services/reviewApprovalQueue.service.js`
 - 자동 Next: `controllers/cnc/machiningBridge.js` `fetchPendingForAutoNext`
+  - 자동가공 ON + Now Playing 비어 있으면 Next Up 가능 건을 즉시 시작 (`controllers/cnc/idleAutoMachining.js` `kickIdleAutoMachiningIfNeeded`). 더미 enqueue·NC 수신·CAM 후처리·장비 스위치 ON도 같은 킥을 쓴다.
+  - 오류(ALARM/FAILED)·아노다이징 X·NC 이상 플래그 건은 자동으로 집지 않고 Next Up에 남긴다. 작업자가 확인 후 수동 가공한다.
   - 호환 SSOT: 장착 소재 직경 ≥ `caseInfos.maxDiameter` (D6 의뢰 → D8/D10 장비 허용; 그룹 exact-match 금지)
   - 공유 헬퍼: `distribution.utils.js` `isRequestDiameterCompatibleWithMachineMaterial`
 - 재배정: `controllers/cnc/production.js` redistribute — 소재≥maxDiameter 커버 + 최소 소재 우선 (`rankCoveringMachinesForRequest`; diameterGroup exact-match 금지) + express rebalance
@@ -459,7 +461,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 승인 트랜잭션에서 `chooseMachineForCamMachining(requireCeil=true)`를 사용해 `caseInfos.maxDiameter` 기준 호환 장비를 선택하고
     `productionSchedule.assignedMachine/queuePosition`에 즉시 반영합니다.
   - 성능 규칙: `review-status` 승인 경로에서 "호환성 검사"와 "실제 배정"은 동일 선택 결과를 재사용해 장비 선택 쿼리를 1회로 유지합니다(중복 호출 금지).
-  - 가공 진입 후처리 큐(`CAM_STAGE_APPROVED`)는 Now Playing 즉시 시작을 하지 않으며, Next Up(대기열) 반영/로트 보정만 담당합니다.
+  - 가공 진입 후처리 큐(`CAM_STAGE_APPROVED`)는 Next Up 반영/로트 보정 후, 장비가 비어 있고 `allowAutoMachining`이면 `kickIdleAutoMachiningIfNeeded`로 Now Playing을 바로 시작한다. 가공 중인 장비는 건너뛴다.
   - `manufacturerStage` 저장값으로 `CAM`을 쓰지 않습니다. 레거시 `CAM` 문서는 가공으로 취급/이관합니다.
 
 - 준비→가공 자동 승인 게이트(야간 무인 가공):
@@ -483,7 +485,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - Stage-file 롤백 성능 규칙:
   - `DELETE /api/requests/:id/stage-file?stage=...&rollbackOnly=1` 경로는 최소 필드 select를 사용해 문서 로딩 비용을 줄입니다.
   - 롤백/삭제 완료 시 elapsed(ms) 로그(`STAGE_FILE_ROLLBACK completed`, `STAGE_FILE_DELETE completed`)를 남겨 회귀를 관찰합니다.
-  - Now Playing 시작은 `allowAutoMachining` OFF→ON 전환(장비 설정 저장) 또는 가공 완료/실패 후 auto-next 트리거 시점에서만 수행합니다.
+  - Now Playing 시작은 장비 `allowAutoMachining`이 켜져 있고 Now Playing이 비어 있을 때 Next Up 가능 건을 즉시 집는다. 스위치 ON·완료/실패 auto-next·더미 enqueue·NC 수신·CAM 후처리 idle kick이 같은 경로다.
 
 - 제조사 헥스 회전 모드(`manufacturerHexRotation`)는 백엔드에서 fallback 기본값으로 보정하지 않습니다.
   - 허용값: canonical `STL모델대로` / `헥스30도회전` / `STL모델+` / `헥스30+`

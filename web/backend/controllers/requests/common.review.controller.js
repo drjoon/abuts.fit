@@ -355,7 +355,7 @@ function clearStageFileMeta(request, stage) {
  * CAM 단계 승인 후처리를 큐에 등록한다.
  * 기존 직접 실행 방식에서 reviewApprovalQueue 기반 직렬 처리로 전환.
  * 큐 워커는 장비/로트 보정 후처리만 담당하며, Now Playing 즉시 시작은 수행하지 않는다.
- * (Now Playing 시작은 allowAutoMachining OFF->ON 전환 또는 가공 완료/실패 후 auto-next 트리거에서만 수행)
+ * (Now Playing 시작은 장비가 비어 있고 allowAutoMachining이면 idle kick / auto-next가 수행)
  */
 function runCamApprovePostProcessingInBackground({
   requestMongoId,

@@ -490,6 +490,8 @@ Notes:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
   - 가공 보드 표기 정책:
     - 실제 RUNNING/PROCESSING(또는 nowPlayingHint) 항목이 없으면 `Now Playing`은 비워두고, 큐 맨 앞 항목을 `Next Up`으로 표시합니다.
+    - 장비 자동가공이 켜져 있고 Now Playing이 비어 있으면, Next Up의 가공 가능 건을 바로 Now Playing으로 넘긴다. 오류·아노다이징 X·NC 이상 건은 Next Up에 남겨 뱃지·다른 테두리로 표시하고 관리자가 수동 가공한다.
+    - `src/pages/manufacturer/worksheet/custom_abutment/machining/utils/autoMachiningHold.ts`
     - `src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachineQueueCard.tsx`
     - Complete/Now Playing/Next Up·예약(재생)목록 라벨에 의뢰자명(`businessName`)을 치과명 앞에 표시합니다.
       - API: 큐 `GET /api/cnc-machines/queues`, last-completed `GET /api/cnc-machines/machining/last-completed?includeRequests=true`

@@ -3,8 +3,10 @@
 // - web/backend/models/request.model.js
 // - web/backend/modules/cnc/cncMachine.routes.js
 // - web/backend/controllers/requests/production.utils.js
+// - web/backend/controllers/cnc/idleAutoMachining.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/DummyMachiningModal.tsx
 // change-log:
+// - 2026-10-31: Next Up에 넣은 뒤 장비가 비어 있으면 자동가공을 바로 시작한다.
 // - 2026-10-22: 더미 검색은 로트·환자·치과·치아·임플란트·기공소.
 // - 2026-10-22: 더미 의뢰의 filled STL·CAM 재생성 상태를 카드에 내려준다.
 // - 2026-10-22: 더미를 바꾸면 filled STL·CAM 재생성 여부를 받아 더미 복사본에서 시작한다.
@@ -38,6 +40,7 @@ import {
   normalizeDiameterGroupValue,
 } from "./distribution.utils.js";
 import { compareMachiningQueueOrder } from "../requests/production.utils.js";
+import { kickIdleAutoMachiningIfNeeded } from "./idleAutoMachining.js";
 import {
   pickFilledStlFileForClone,
   resolveFilledStlFile,
@@ -1287,6 +1290,13 @@ async function finishDummyEnqueue(
   if (previousMachineId && previousMachineId !== machineId) {
     await renumberMachineQueue(previousMachineId);
   }
+
+  void kickIdleAutoMachiningIfNeeded({ machineId }).catch((error) => {
+    console.warn(
+      "[dummy-enqueue] idle auto-machining kick failed",
+      error?.message || error,
+    );
+  });
 
   return res.json({
     success: true,

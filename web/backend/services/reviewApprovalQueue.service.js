@@ -4,6 +4,7 @@
 // - web/backend/models/jobLock.model.js
 // - web/backend/utils/distributedJobLock.js
 // - web/backend/controllers/cnc/machiningBridge.js
+// - web/backend/controllers/cnc/idleAutoMachining.js
 // - web/backend/socket.js
 // - web/frontend/src/shared/hooks/useSocket.ts
 /**
@@ -41,6 +42,7 @@ import {
 import { resolveEffectiveShippingMode } from "../controllers/requests/shippingPriority.utils.js";
 import { isMachiningInProgress } from "../controllers/cnc/distribution.utils.js";
 import { pickFilledStlFileForClone } from "../utils/filledStlFile.js";
+import { kickIdleAutoMachiningIfNeeded } from "../controllers/cnc/idleAutoMachining.js";
 
 // 워커 폴링 간격 (ms). 환경변수로 조정 가능.
 const WORKER_POLL_INTERVAL_MS = Number(
@@ -592,9 +594,18 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
     }
   }
 
-  // 정책: CAM 승인 후에는 Next Up(대기열)까지만 반영한다.
-  // Now Playing 시작은 allowAutoMachining OFF->ON 전환(또는 완료/실패 후 auto-next)에서만 진행한다.
-  console.log("[ReviewApprovalQueue] CAM task: queued only (no immediate auto-start)", {
+  // Next Up에 올린 뒤 장비가 비어 있고 자동가공이 켜져 있으면 바로 시작한다.
+  // 가공 중인 장비가 있으면 kickIdle이 건너뛴다.
+  void kickIdleAutoMachiningIfNeeded({
+    machineId: selectedMachineId,
+  }).catch((error) => {
+    console.warn("[ReviewApprovalQueue] idle auto-machining kick failed", {
+      requestId,
+      machineId: selectedMachineId,
+      message: error?.message || String(error || ""),
+    });
+  });
+  console.log("[ReviewApprovalQueue] CAM task: queued + idle auto-start kick", {
     requestId,
     machineId: selectedMachineId,
   });

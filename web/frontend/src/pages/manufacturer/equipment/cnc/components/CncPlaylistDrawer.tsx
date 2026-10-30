@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-31: 자동가공 보류 건은 테두리·뱃지로 남기고 수동 확인한다.
 // - 2026-10-17: 예약 관리 수량 라벨·스피너를 한 줄 배치.
 // - 2026-10-17: 예약 관리 행에 가공 수량 스피너(onChangeQty) 추가.
 // - 2026-09-13: 예약 관리 CAM 오버레이 — Next Up·준비와 동일「CAM 생성 중지」단일 버튼.
@@ -59,6 +60,10 @@ export interface PlaylistJobItem {
   lotPart?: string;
   lotShortCode?: string;
   ridSuffix?: string;
+  autoMachiningHold?: {
+    kind: "error" | "anodizing_off" | "nc_invalid";
+    label: string;
+  } | null;
 }
 
 interface CncPlaylistDrawerProps {
@@ -251,11 +256,18 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
               Boolean(onCancelCamGeneration) &&
               camRegenPending &&
               !isCancelling;
+            const hold = job.autoMachiningHold || null;
+            const holdBorder =
+              hold?.kind === "error"
+                ? "border-destructive bg-destructive-soft"
+                : hold
+                  ? "border-amber-400 bg-amber-50"
+                  : "border-slate-200 bg-white";
 
             return (
               <div
                 key={job.id}
-                className={`relative flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 ${
+                className={`relative flex items-center gap-2 rounded-xl border px-2.5 py-2 ${holdBorder} ${
                   camRegenPending ? "overflow-hidden" : ""
                 }`}
                 draggable={!readOnly && !camRegenPending}
@@ -344,9 +356,24 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                         {badge}
                       </span>
                     ) : null}
-                    {job.anodizingEnabled === false ? (
+                    {hold?.kind === "error" ? (
                       <span
-                        className={`${chipSm} border-destructive-muted bg-destructive-soft text-destructive`}
+                        className={`${chipSm} border-destructive-muted bg-destructive text-white`}
+                      >
+                        {hold.label}
+                      </span>
+                    ) : null}
+                    {hold?.kind === "nc_invalid" ? (
+                      <span
+                        className={`${chipSm} border-amber-300 bg-amber-100 text-amber-900`}
+                      >
+                        {hold.label}
+                      </span>
+                    ) : null}
+                    {job.anodizingEnabled === false ||
+                    hold?.kind === "anodizing_off" ? (
+                      <span
+                        className={`${chipSm} border-amber-300 bg-amber-100 text-amber-900`}
                       >
                         아노 X
                       </span>

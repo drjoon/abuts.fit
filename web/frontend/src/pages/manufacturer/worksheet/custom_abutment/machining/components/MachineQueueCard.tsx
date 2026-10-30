@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-31: 자동가공 보류 건(오류·아노 X·NC 확인)은 Next Up에 두고 테두리·뱃지로 표시한다.
 // - 2026-10-13: Next Up 가공 오류 건에 빨간 오류 뱃지를 단다.
 // - 2026-10-13: 가공 오류 건도 예약 관리와 같이 Next Up에 남긴다.
 // - 2026-10-10: HOLD 카드 제거. 가공 오류 알람은 카드 안에 둔다.
@@ -45,7 +46,10 @@ import {
 import type { MachineQueueCardProps, QueueItem } from "../types";
 import { buildLabelExtraProps, formatMachiningLabel, isMachiningSampleSlot } from "../utils/label";
 import { MachiningRequestLabel } from "./MachiningRequestLabel";
-import { humanAlarmText } from "../machiningAlertIncident";
+import {
+  autoMachiningHoldCardClass,
+  resolveAutoMachiningHold,
+} from "../utils/autoMachiningHold";
 import { getMachineStatusLabel } from "@/pages/manufacturer/equipment/cnc/lib/machineStatus";
 import { isCamGenerationOverlayPending } from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
 import { WorkRegenerationOverlayButton } from "../../components/WorkRegenerationOverlayButton";
@@ -283,19 +287,15 @@ export const MachineQueueCard = ({
     : machineStatus?.nextProgram
       ? String(machineStatus.nextProgram)
       : "없음";
+  const nextUpHold = resolveAutoMachiningHold(nextSlot);
+  const nextUpHoldClass = autoMachiningHoldCardClass(nextUpHold);
   const nextUpAnodizingOff =
     (nextSlot as { caseInfos?: { anodizingEnabled?: boolean } } | null)
       ?.caseInfos?.anodizingEnabled === false;
-  const nextUpError = nextSlot?.machiningError || null;
-  const nextUpErrorReason = humanAlarmText([
-    nextUpError?.message,
-    nextUpError?.errorCode,
-  ]);
-  const nextUpErrorLabel = !nextUpError
-    ? ""
-    : !nextUpErrorReason || nextUpErrorReason === "가공 오류"
-      ? "오류"
-      : `오류 · ${nextUpErrorReason}`;
+  const nextUpErrorLabel =
+    nextUpHold?.kind === "error" ? nextUpHold.label : "";
+  const nextUpNcHoldLabel =
+    nextUpHold?.kind === "nc_invalid" ? nextUpHold.label : "";
 
   const elapsedLabel = (() => {
     // 실제 Now Playing 슬롯이 없으면 타이머를 숨긴다.
@@ -1152,14 +1152,16 @@ export const MachineQueueCard = ({
             } ${
               nextUpDropActive
                 ? "border-primary bg-primary-soft/40 ring-1 ring-primary/30"
-                : nextUpErrorLabel
-                  ? "border-destructive bg-destructive-soft"
+                : nextUpHold
+                  ? nextUpHoldClass
                   : "border-slate-200"
             } ${
               !nextSlot && !nextUpDropActive
                 ? "bg-white text-slate-400"
-                : nextUpErrorLabel && !nextUpDropActive
-                  ? "hover:bg-destructive-soft"
+                : nextUpHold && !nextUpDropActive
+                  ? nextUpHold.kind === "error"
+                    ? "hover:bg-destructive-soft"
+                    : "hover:bg-amber-50"
                   : "bg-white hover:bg-slate-50"
             } ${canDragNextUp ? "cursor-grab active:cursor-grabbing" : nextSlot && !nextUpCamRegenPending ? "cursor-pointer" : "cursor-default"}`}
             draggable={canDragNextUp}
@@ -1324,9 +1326,16 @@ export const MachineQueueCard = ({
                 </span>
                 {nextUpAnodizingOff ? (
                   <span
-                    className={`${chipSm} border-destructive-muted bg-destructive-soft text-destructive`}
+                    className={`${chipSm} border-amber-300 bg-amber-100 text-amber-900`}
                   >
                     아노 X
+                  </span>
+                ) : null}
+                {nextUpNcHoldLabel ? (
+                  <span
+                    className={`${chipSm} border-amber-300 bg-amber-100 text-amber-900`}
+                  >
+                    {nextUpNcHoldLabel}
                   </span>
                 ) : null}
               </div>

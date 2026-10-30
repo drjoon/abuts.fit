@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-10-31: 자동가공 ON + Now Playing 비면 Next Up 가능 건을 바로 시작한다.
 // - 2026-10-20: 예약 관리 목록에서 Now Playing(가공중) 건을 제외해 Next Up과 맞춘다.
 // - 2026-10-13: 장비 알람 지우기는 같은 가공 오류의 재표시를 막는다.
 // - 2026-10-13: 같은 가공 중단의 tick·fail·alarm 알림은 한 건으로 합친다.
@@ -70,6 +71,10 @@ import type {
   MachineStatus,
 } from "../types";
 import { formatMachiningLabel } from "../utils/label";
+import {
+  isQueueItemAutoStartEligible,
+  resolveAutoMachiningHold,
+} from "../utils/autoMachiningHold";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 import { useCncDashboardMaterials } from "@/pages/manufacturer/equipment/cnc/hooks/useCncDashboardMaterials";
 import {
@@ -157,6 +162,7 @@ const EXPRESS_REBALANCE_ALERT_DISMISSED_KEY =
 const EXPRESS_REBALANCE_ALERT_DISMISSED_LIMIT = 30;
 const GHOST_HINT_CLEAR_GRACE_SECONDS = 8;
 const GHOST_HINT_SWEEP_INTERVAL_MS = 2000;
+const AUTO_IDLE_KICK_COOLDOWN_MS = 4000;
 const QUEUE_RECONCILE_INTERVAL_MS = 8000;
 const LIVE_MACHINING_PHASES = new Set(["RUNNING", "STARTED", "PROCESSING"]);
 
@@ -757,6 +763,60 @@ export const useMachiningBoard = ({
   useEffect(() => {
     nowPlayingHintMapRef.current = nowPlayingHintMap;
   }, [nowPlayingHintMap]);
+
+  const autoIdleKickAtRef = useRef<Record<string, number>>({});
+  const autoIdleKickInFlightRef = useRef<Set<string>>(new Set());
+
+  const kickIdleAutoMachining = useCallback(
+    async (machineId: string) => {
+      if (!token) return;
+      const mid = String(machineId || "").trim();
+      if (!mid) return;
+      const now = Date.now();
+      if (autoIdleKickInFlightRef.current.has(mid)) return;
+      if ((autoIdleKickAtRef.current[mid] || 0) + AUTO_IDLE_KICK_COOLDOWN_MS > now) {
+        return;
+      }
+      autoIdleKickInFlightRef.current.add(mid);
+      autoIdleKickAtRef.current[mid] = now;
+      try {
+        await fetch(
+          `/api/cnc-machines/machining/auto-trigger/${encodeURIComponent(mid)}`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          },
+        );
+      } catch {
+        // 백엔드 유휴 킥이 본선. 화면 감시는 재시도만 하면 된다.
+      } finally {
+        autoIdleKickInFlightRef.current.delete(mid);
+      }
+    },
+    [token],
+  );
+
+  useEffect(() => {
+    if (!token) return;
+    const list = Array.isArray(machines) ? machines : [];
+    for (const machine of list) {
+      if (machine.allowAutoMachining !== true) continue;
+      const mid = String(machine.uid || "").trim();
+      if (!mid) continue;
+      const raw = Array.isArray(queueMap?.[mid]) ? queueMap[mid] : [];
+      const machining = raw.filter((item) => isMachiningStatus(item.status));
+      const hint = nowPlayingHintMap?.[mid] ?? null;
+      if (findNowPlayingQueueIndex(machining, hint) >= 0) continue;
+      const hasEligible = machining.some((item) =>
+        isQueueItemAutoStartEligible(item),
+      );
+      if (!hasEligible) continue;
+      void kickIdleAutoMachining(mid);
+    }
+  }, [kickIdleAutoMachining, machines, nowPlayingHintMap, queueMap, token]);
 
   const reconcileMachiningTimersFromQueues = useCallback((map: QueueMap) => {
     const nextBases: Record<string, number> = {};
@@ -1458,6 +1518,7 @@ export const useMachiningBoard = ({
           lotPart: lotPart || undefined,
           lotShortCode: lotShortCode || undefined,
           ridSuffix: ridSuffix || undefined,
+          autoMachiningHold: resolveAutoMachiningHold(q),
         } satisfies PlaylistJobItem;
         })
         .filter(Boolean) as PlaylistJobItem[];

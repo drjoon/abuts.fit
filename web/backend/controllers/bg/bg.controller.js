@@ -572,15 +572,10 @@ async function kickIdleAutoMachiningAfterNc(request) {
       "",
   ).trim();
   if (!machineId) return;
-  const running = await Request.exists({
-    "productionSchedule.assignedMachine": machineId,
-    "productionSchedule.machiningProgress.phase": "STARTED",
-  });
-  if (running) return;
-  const { triggerNextAutoMachiningAfterComplete } = await import(
-    "../cnc/machiningBridge.js"
+  const { kickIdleAutoMachiningIfNeeded } = await import(
+    "../cnc/idleAutoMachining.js"
   );
-  await triggerNextAutoMachiningAfterComplete({
+  await kickIdleAutoMachiningIfNeeded({
     machineId,
     completedRequestId: "",
   });
