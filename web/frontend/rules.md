@@ -778,6 +778,7 @@ Notes:
     - 생산의뢰: `useNewRequestPage` 첨부 직후 `preUploadFiles`. 파일카드 프로그레스바·%(업로드 중)·「업로드됨」(완료, 파란 바). 제출은 `ensureFilesUploaded` 재사용 (`useNewRequestSubmitV2`). `POST /api/requests/from-draft`는 S3를 다시 올리지 않고, 「의뢰 접수중」토스트 지연은 서버 생성(가격·스케줄·크레딧 보류) 경로다. 제출 시작 시 초안 PATCH debounce는 멈춘다(`suspendDraftPatches`).
       치과는 제출 후 같은 `/dashboard/new-request`에 잔류하므로, 성공 시 로컬 초안을 `setFiles([])`보다 먼저 지우고 입력 중 `check-duplicate`는 generation으로 무효화한다(성공 토스트와 중복 모달이 동시에 뜨지 않게).
       헤더 [출고예정]/[진행중]은 `RequestorAbutmentPageHeader`가 `request:stage-changed`·`credit:balance-updated`를 구독해 `requestor-bulk-shipping` / `requestor-dashboard-cards-summary`를 재조회한다.
+      출고예정 모달은 택배/딜리버리 뱃지와 송장번호·현재위치·배송현황을 표시한다. `GET /api/requests/my/bulk-shipping`이 DeliveryInfo를 붙여 준다.
     - 채팅 첨부: `useBackgroundTempUpload` + `BackgroundUploadList`
       (첨부 즉시 백그라운드 업로드, 칩 프로그레스바. 전송 시 `ensureUploaded` 재사용)
       - 지원 채팅: `ChatComposer` / `NewChatWidget` / `AdminChatManagement`

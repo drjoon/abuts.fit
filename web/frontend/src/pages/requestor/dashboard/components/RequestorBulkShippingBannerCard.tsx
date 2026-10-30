@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-10-30: 출고예정 모달 — 택배/딜리버리 송장번호·현재위치·배송현황.
 // - 2026-10-13: 출고 안내 — 택배(기본)·딜리버리(월 100건).
 // - 2026-08-21: 출고예정 모달에 기공의뢰(PTX) 뱃지.
 // - 2026-08-19: 출고예정 모달 — 진행중과 같은 가로폭, 신속 포함, 상태·출고·케이스 뱃지. 리드타임 안내 문구 제거.
@@ -17,6 +18,8 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/components/RequestorAbutmentPageHeader.tsx
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
+// - web/frontend/src/shared/shipping/hanjinTrackingLabel.ts
+// - web/frontend/src/pages/requestor/store/storeOrderUi.tsx
 // - web/frontend/src/features/requestSettings/RequestCaseMetaBadges.tsx
 // - web/frontend/src/shared/components/PastRequestsModal.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -47,6 +50,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import {
+  getDeliveryCurrentLocation,
+  getRequestorShippingStatusLabel,
+  practiceAbutmentProgressBadgeClassName,
+} from "@/shared/shipping/hanjinTrackingLabel";
+import { buildCourierTrackingUrl } from "@/pages/requestor/store/storeOrderUi";
+import type { DeliveryInfoSummary } from "@/types/request";
 import { RequestCaseMetaBadges } from "@/features/requestSettings/RequestCaseMetaBadges";
 import { resolveCaseScrewType } from "@/shared/practice/screwSupply";
 import { formatImplantDisplay } from "@/utils/implant";
@@ -252,7 +262,79 @@ type ShippingItemApi = {
   originalEstimatedShipYmd?: string | null;
   nextEstimatedShipYmd?: string | null;
   createdAt?: string | Date | null;
+  delivery?: DeliveryInfoSummary | null;
 };
+
+const carrierDisplayLabel = (
+  carrier?: string | null,
+  shippingMode?: string | null,
+) => {
+  const raw = String(carrier || "").trim();
+  if (!raw) return shippingMode === "express" ? "딜리버리" : "한진";
+  if (raw.toLowerCase() === "hanjin") return "한진";
+  return raw;
+};
+
+function BulkShippingDeliveryCells({ item }: { item: ShippingItemApi }) {
+  const di = item.delivery || null;
+  const trackingNumber = String(di?.trackingNumber || "").trim();
+  const location = getDeliveryCurrentLocation(di);
+  const statusLabel = getRequestorShippingStatusLabel(di);
+  const trackUrl = trackingNumber
+    ? buildCourierTrackingUrl(di?.carrier || "hanjin", trackingNumber)
+    : null;
+  const carrier = trackingNumber
+    ? carrierDisplayLabel(di?.carrier, item.shippingMode)
+    : "";
+
+  return (
+    <>
+      <TableCell className="text-xs text-slate-700">
+        {trackingNumber ? (
+          <div className="space-y-0.5">
+            {carrier ? (
+              <div className="text-[10px] text-slate-500">{carrier}</div>
+            ) : null}
+            {trackUrl ? (
+              <a
+                href={trackUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-primary-strong underline-offset-2 hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {trackingNumber}
+              </a>
+            ) : (
+              <span className="font-mono">{trackingNumber}</span>
+            )}
+          </div>
+        ) : (
+          <span className="text-slate-400">-</span>
+        )}
+      </TableCell>
+      <TableCell className="text-xs text-slate-700">
+        {location || statusLabel ? (
+          <div className="space-y-0.5">
+            {location ? (
+              <div className="font-medium text-slate-800">{location}</div>
+            ) : null}
+            {statusLabel ? (
+              <span
+                className={practiceAbutmentProgressBadgeClassName(statusLabel)}
+                title={statusLabel}
+              >
+                {statusLabel}
+              </span>
+            ) : null}
+          </div>
+        ) : (
+          <span className="text-slate-400">-</span>
+        )}
+      </TableCell>
+    </>
+  );
+}
 
 const STAGE_BADGE_BASE =
   "text-[10px] h-5 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
@@ -973,6 +1055,8 @@ export const RequestorBulkShippingBannerCard = ({
                         <TableRow className="hover:bg-transparent">
                           <TableHead className="w-[90px]">상태</TableHead>
                           <TableHead className="w-[88px]">출고</TableHead>
+                          <TableHead className="w-[140px]">송장번호</TableHead>
+                          <TableHead className="w-[150px]">현재위치</TableHead>
                           <TableHead className="w-[92px]">유형</TableHead>
                           <TableHead className="min-w-[240px]">케이스</TableHead>
                           <TableHead className="min-w-[220px]">임플란트</TableHead>
@@ -1017,6 +1101,7 @@ export const RequestorBulkShippingBannerCard = ({
                                   size="sm"
                                 />
                               </TableCell>
+                              <BulkShippingDeliveryCells item={item} />
                               <TableCell>
                                 {productMode ? (
                                   <Badge

@@ -6,7 +6,9 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/models/bulkShippingSnapshot.model.js
+// - web/backend/models/deliveryInfo.model.js
 // change-log:
+// - 2026-10-30: 출고예정 GET — DeliveryInfo(송장·위치·현황)를 스냅샷 항목에 붙인다.
 // - 2026-08-23: 기존 shippingPackage 합류 시 businessAnchorId가 다르면 거부(칸 재사용 오염 방지).
 // - 2026-08-22: 집하 전 패키지 합류 조회에 작업용 샘플(requestCategory) 포함.
 // - 2026-08-21: 출고예정 스냅샷에 기공의뢰(PTX) 연동 플래그.
@@ -14,6 +16,7 @@
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
+import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import { Types } from "mongoose";
 import {
   buildRequestorOrgScopeFilter,
@@ -790,4 +793,106 @@ async function buildBulkShippingCandidatesByFilter({ requestFilter }) {
   }
 
   return { pre, post, waiting };
+}
+
+const slimDeliveryInfo = (di) => {
+  if (!di) return null;
+  const events = Array.isArray(di.events)
+    ? di.events
+        .map((event) => ({
+          statusCode: event?.statusCode || "",
+          statusText: event?.statusText || "",
+          occurredAt: event?.occurredAt || null,
+          location: event?.location || "",
+        }))
+        .filter(
+          (event) =>
+            event.statusCode ||
+            event.statusText ||
+            event.location ||
+            event.occurredAt,
+        )
+    : [];
+  return {
+    trackingNumber: String(di.trackingNumber || "").trim() || null,
+    carrier: String(di.carrier || "").trim() || null,
+    shippedAt: di.shippedAt || null,
+    pickedUpAt: di.pickedUpAt || null,
+    deliveredAt: di.deliveredAt || null,
+    tracking: {
+      lastStatusCode: di.tracking?.lastStatusCode || null,
+      lastStatusText: di.tracking?.lastStatusText || null,
+      lastLocation: di.tracking?.lastLocation || null,
+      lastEventAt: di.tracking?.lastEventAt || null,
+    },
+    events,
+  };
+};
+
+/**
+ * 출고예정 스냅샷에 실시간 송장·위치를 붙인다.
+ * 스냅샷은 공정 단위라 한진 폴링 직후 위치가 비어 있을 수 있다.
+ */
+export async function attachDeliveryInfoToBulkShippingItems(data) {
+  const lists = ["pre", "post", "waiting"];
+  const rows = lists.flatMap((key) =>
+    Array.isArray(data?.[key]) ? data[key] : [],
+  );
+  const mongoIds = [
+    ...new Set(
+      rows
+        .map((row) => String(row?.mongoId || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id)),
+    ),
+  ];
+  if (!mongoIds.length) return data || { pre: [], post: [], waiting: [] };
+
+  const requests = await Request.find({ _id: { $in: mongoIds } })
+    .select({ deliveryInfoRef: 1 })
+    .lean();
+  const deliveryIds = [
+    ...new Set(
+      requests
+        .map((row) => String(row?.deliveryInfoRef || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id)),
+    ),
+  ];
+  const deliveries = deliveryIds.length
+    ? await DeliveryInfo.find({ _id: { $in: deliveryIds } })
+        .select(
+          "request trackingNumber carrier shippedAt pickedUpAt deliveredAt tracking events.statusCode events.statusText events.occurredAt events.location",
+        )
+        .lean()
+    : [];
+  const deliveryById = new Map(
+    deliveries.map((di) => [String(di._id), slimDeliveryInfo(di)]),
+  );
+  const deliveryByRequestId = new Map(
+    deliveries.map((di) => [String(di.request || ""), slimDeliveryInfo(di)]),
+  );
+  const deliveryRefByRequestId = new Map(
+    requests.map((row) => [
+      String(row._id),
+      String(row.deliveryInfoRef || "").trim(),
+    ]),
+  );
+
+  const attach = (list) =>
+    (Array.isArray(list) ? list : []).map((item) => {
+      const mongoId = String(item?.mongoId || "").trim();
+      const refId = deliveryRefByRequestId.get(mongoId) || "";
+      const delivery =
+        deliveryByRequestId.get(mongoId) ||
+        deliveryById.get(refId) ||
+        item.delivery ||
+        null;
+      return { ...item, delivery };
+    });
+
+  return {
+    ...data,
+    pre: attach(data?.pre),
+    post: attach(data?.post),
+    waiting: attach(data?.waiting),
+  };
 }

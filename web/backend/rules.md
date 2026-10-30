@@ -339,6 +339,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 의뢰 취소/삭제 시 `triggerDashboardSummaryRefreshForAnchorId`가 카드 요약과
       출고예정(`bulkShippingSnapshot`)을 함께 재계산. `GET /api/requests/my/bulk-shipping`은
       `waitForBulkShippingSnapshotRefreshForAnchorId` 후 스냅샷을 반환(당일 예전 건수 재캐시 금지).
+      응답에는 실시간 DeliveryInfo(송장·현재위치)를 붙인다(`attachDeliveryInfoToBulkShippingItems`).
   - 관리자 대시보드 진입: `controllers/admin/admin.dashboard.controller.js`
   - 신규 회원: `GET /api/admin/new-members`. 공개 가입(의뢰자·딜러, 직원 계정 제외)은 `createdAt`부터 7일(168시간) 동안 대시보드 「신규 회원」 카드에 남긴다. SSOT `services/adminNewMembers.core.js`.
   - 대시보드 공지: `models/dashboardNotice.model.js` + `controllers/dashboardNotice.controller.js`

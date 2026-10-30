@@ -1,9 +1,11 @@
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
 // - web/frontend/src/shared/components/PastRequestsModal.tsx
+// - web/frontend/src/pages/requestor/dashboard/components/RequestorBulkShippingBannerCard.tsx
 // - web/frontend/src/shared/practice/practiceSenderTransferDetailModel.ts
 // - web/frontend/src/types/request.ts
 // change-log:
+// - 2026-10-30: 출고예정 모달 — 현재위치·배송현황 헬퍼(택배 한진·딜리버리).
 // - 2026-09-29: 케이스 채팅 한 줄 — 커스텀어벗 배송: {한진 현황}. 생산 공정 단계는 제외.
 // - 2026-08-29: 기공의뢰 CA — 제목「어벗 진행상황」, 제조 공정(준비·가공·세척·패킹 등) 그대로 표시(생산 중 합침 제거).
 // - 2026-08-21: 한진 운송중 뱃지 라벨(예: 여수 SUB 도착) SSOT. 기공의뢰 CA 배송 단계 문구 포함.
@@ -95,6 +97,38 @@ export const getHanjinDeliveryStatusLabel = (
   if (!di) return null;
   if (di.deliveredAt) return "배송완료";
   return getHanjinInTransitBadgeLabel(di, { requirePickedUpColumn: true });
+};
+
+/** 마지막 트래킹 이벤트의 현재 위치. 없으면 tracking.lastLocation. */
+export const getDeliveryCurrentLocation = (
+  di?: DeliveryInfoSummary | null,
+): string | null => {
+  if (!di) return null;
+  const events = Array.isArray(di?.events)
+    ? (di.events as TrackingEventLike[])
+    : [];
+  const lastEvent = pickLatestEvent(events);
+  const location = String(
+    lastEvent?.location || (di?.tracking as { lastLocation?: string })?.lastLocation || "",
+  ).trim();
+  return location || null;
+};
+
+/**
+ * 출고예정 모달 배송현황. 한진 현황이 있으면 그걸 쓰고,
+ * 딜리버리·기타 택배는 상태문구·발송접수로 폴백.
+ */
+export const getRequestorShippingStatusLabel = (
+  di?: DeliveryInfoSummary | null,
+): string | null => {
+  if (!di) return null;
+  if (di.deliveredAt) return "배송완료";
+  const hanjin = getHanjinDeliveryStatusLabel(di);
+  if (hanjin) return hanjin;
+  const text = String(di?.tracking?.lastStatusText || "").trim();
+  if (text) return text;
+  if (di.shippedAt || String(di.trackingNumber || "").trim()) return "발송접수";
+  return null;
 };
 
 export type PracticeAbutmentDeliveryInfo = DeliveryInfoSummary & {
