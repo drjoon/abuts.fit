@@ -119,7 +119,7 @@ BEGIN_OPERATION; 507; Front_Finish; 0;
 		:
 	END_STRING
    ReferenceAxis; 3255; 1;  CAPTION; 참조 축; SOURCE; 1; TECHCODETYPE; 417;
-   FeedratePT; 416; 1.5;  CAPTION; 피드값 PT|피드값 PM, PT; SOURCE; 3; TECHCODETYPE; 2;
+   FeedratePT; 416; 1;  CAPTION; 피드값 PT|피드값 PM, PT; SOURCE; 3; TECHCODETYPE; 2;
    4901; 4901; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4901;;
 		:3DMilling_0Degree
@@ -128,7 +128,7 @@ BEGIN_OPERATION; 507; Front_Finish; 0;
    EndTangentPassPercent; 6635; 100;  HIDDEN; CAPTION; 끝 경로 퍼센트; SOURCE; 1; TECHCODETYPE; 2;
    SmoothingDistance; 3405; 0;  HIDDEN; CAPTION; 스무딩 거리; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting4; 634; 0;  CAPTION; 사용자 정의 설정 4; SOURCE; 1; TECHCODETYPE; 2;
-   IncrementalDepth; 175; 0.29999999999999999;  HIDDEN; CAPTION; 증분 깊이; SOURCE; 1; TECHCODETYPE; 2;
+   IncrementalDepth; 175; 0.25;  HIDDEN; CAPTION; 증분 깊이; SOURCE; 1; TECHCODETYPE; 2;
    ToolID; 498; ;  CAPTION; 공구 ID; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 498;;
 		:BM_D1.0
@@ -184,7 +184,7 @@ BEGIN_OPERATION; 507; Front_Finish; 0;
    END_SUB_TECHNOLOGY;
    EnableSmoothing; 3365; 0;  HIDDEN; CAPTION; 스무딩 사용; SOURCE; 0; TECHCODETYPE; 522;
    ReverseCuttingDirection; 3229; 0;  CAPTION; 리버스 절삭 방향; SOURCE; 2; TECHCODETYPE; 67;
-   OrientationStrategy; 3246; 0;  CAPTION; 위치 확정 방법; SOURCE; 0; TECHCODETYPE; 414;
+   OrientationStrategy; 3246; 5;  CAPTION; 위치 확정 방법; SOURCE; 0; TECHCODETYPE; 414;
    EntryMovesPointZ; 3263; 0;  HIDDEN; CAPTION; 접근 포인트 Z |접근 포인트 X,Y,Z; SOURCE; 1; TECHCODETYPE; 2;
    4909; 4909; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4909;;
@@ -194,7 +194,7 @@ BEGIN_OPERATION; 507; Front_Finish; 0;
    CuttingStrategy; 1390; 0;  HIDDEN; CAPTION; 절삭 단계 설정; SOURCE; 1; TECHCODETYPE; 185;
    TiltReferenceAxis; 3413; 1;  HIDDEN; CAPTION; 참조축; SOURCE; 1; TECHCODETYPE; 417;
    UseApproachPoint; 3260; 0;  HIDDEN; CAPTION; 접근 포인트 사용; SOURCE; 0; TECHCODETYPE; 67;
-   StepIncrement; 217; 0.07;  CAPTION; 스텝 간격; SOURCE; 2; TECHCODETYPE; 2;
+   StepIncrement; 217; 0.20000000000000001;  CAPTION; 스텝 간격; SOURCE; 2; TECHCODETYPE; 2;
    SpineEndPointX; 3243; 0;  HIDDEN; CAPTION; 끝 포인트 X|끝 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
    LoopAroundCorners; 3209; 0;  HIDDEN; CAPTION; 코너 주변으로 루프; SOURCE; 1; TECHCODETYPE; 67;
    4430; 4430; 5;  SOURCE; 0; TECHCODETYPE; 2;
@@ -233,7 +233,7 @@ BEGIN_OPERATION; 507; Front_Finish; 0;
    CustomSetting3; 633; 0;  CAPTION; 사용자 정의 설정 3; SOURCE; 1; TECHCODETYPE; 2;
    PassPosition; 718; 2;  CAPTION; 패스 위치; SOURCE; 2; TECHCODETYPE; 501;
    PlaneStartPointX; 3234; 0;  HIDDEN; CAPTION; 시작 지점 X|시작 지점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
-   FeedratePM; 191; 15000;  CAPTION; 피드값 PM|피드값 PM, PT; SOURCE; 3; TECHCODETYPE; 2;
+   FeedratePM; 191; 10000;  CAPTION; 피드값 PM|피드값 PM, PT; SOURCE; 2; TECHCODETYPE; 2;
    EnableRTCP; 3200; 0;  CAPTION; RTCP 사용하기; SOURCE; 0; TECHCODETYPE; 67;
    4438; 4438; 0;  SOURCE; 0; TECHCODETYPE; 2;
    4421; 4421; 1;  SOURCE; 0; TECHCODETYPE; 2;
@@ -246,7 +246,7 @@ BEGIN_OPERATION; 507; Front_Finish; 0;
    PassMovement; 1361; 0;  CAPTION; 패스 이동; SOURCE; 3; TECHCODETYPE; 415;
    OrientationProfile; 3265; ;  HIDDEN; CAPTION; 오리엔테이션 프로파일; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 3265;;
-		:6,6
+		:6,7
 	END_STRING
    OperationName; 613; ;  CAPTION; 작업 이름; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 613;;
@@ -337,7 +337,7 @@ BEGIN_OPERATION; 507; Front_Finish; 0;
 	BEGIN_STRING; 4908;;
 		:
 	END_STRING
-   LastPassPercent; 3463; 20.367785956295748;  CAPTION; 마지막 패스 퍼센트; SOURCE; 2; TECHCODETYPE; 2;
+   LastPassPercent; 3463; 15.7222266040568;  CAPTION; 마지막 패스 퍼센트; SOURCE; 2; TECHCODETYPE; 2;
    ShankClearance; 3225; 0;  CAPTION; 섕크 여유; SOURCE; 1; TECHCODETYPE; 2;
    MaximumTiltAngle; 3412; 20;  HIDDEN; CAPTION; 최대 기울기 각도; SOURCE; 1; TECHCODETYPE; 2;
    SpineStartPointZ; 3242; 0;  HIDDEN; CAPTION; 시작 지점 Z|시작 지점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;

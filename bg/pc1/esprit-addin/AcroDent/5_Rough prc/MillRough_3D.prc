@@ -1,18 +1,18 @@
 ﻿BEGIN_PROCESS; 공정 이름; 4;
-BEGIN_OPERATION; 553; Rough Mill 3D; 0;
-   4420; 4420; 2026;  SOURCE; 0; TECHCODETYPE; 2;
+BEGIN_OPERATION; 553; Front_Rough; 0;
    4437; 4437; 0;  SOURCE; 0; TECHCODETYPE; 2;
+   4420; 4420; 2026;  SOURCE; 0; TECHCODETYPE; 2;
    Rough5SeamPointX; 6664; 0;  HIDDEN; CAPTION; 실린더 이음 점 Y|실린더 이음 점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
    LimitAngleBetweenPoints; 6511; 0;  HIDDEN; CAPTION; 두점사이 각도 제한; SOURCE; 1; TECHCODETYPE; 67;
    CollisionDetection; 6630; 0;  CAPTION; 충돌 감지; SOURCE; 1; TECHCODETYPE; 520;
    ReferenceDepthOfCut; 1768; 0.20000000000000001;  HIDDEN; CAPTION; 참조 가공 깊이; SOURCE; 1; TECHCODETYPE; 2;
-   StockAllowanceFloors; 272; 0.10;  CAPTION; 바닥 가공 여유; SOURCE; 2; TECHCODETYPE; 2;
+   StockAllowanceFloors; 272; 0.10000000000000001;  CAPTION; 바닥 가공 여유; SOURCE; 2; TECHCODETYPE; 2;
    PreFinish; 1394; 0;  CAPTION; 사전-정삭; SOURCE; 1; TECHCODETYPE; 67;
+   4434; 4434; 0;  SOURCE; 0; TECHCODETYPE; 2;
    4910; 4910; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4910;;
 		:22.5.8
 	END_STRING
-   4434; 4434; 0;  SOURCE; 0; TECHCODETYPE; 2;
    Rough5RevolutionCurve; 6678; ;  HIDDEN; CAPTION; 레볼루션 프로파일; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 6678;;
 		:
@@ -89,11 +89,11 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
    END_SUB_TECHNOLOGY;
    RoundAllCorners; 3329; 1;  CAPTION; 모든 코너에 라운드; SOURCE; 1; TECHCODETYPE; 451;
    MaximumIncrementalDepth; 3380; 1;  HIDDEN; CAPTION; 최대 증분 깊이; SOURCE; 1; TECHCODETYPE; 2;
+   4431; 4431; 2;  SOURCE; 0; TECHCODETYPE; 2;
    4907; 4907; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4907;;
 		:
 	END_STRING
-   4431; 4431; 2;  SOURCE; 0; TECHCODETYPE; 2;
    SpindleID; 793; 1;  CAPTION; 스핀들 이름; SOURCE; 1; TECHCODETYPE; 1;
    Rough5AxisStartPointX; 6658; 0;  HIDDEN; CAPTION; 축 시작 점 y | 축 시작 점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
    MaximumFeedratePT; 419; 0;  CAPTION; 최대 피드값 PT|최대 피드값 PM, PT; SOURCE; 3; TECHCODETYPE; 2;
@@ -103,22 +103,22 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
    PositionOnBoundaryProfile; 3275; 4;  CAPTION; 경계선 프로파일에 위치; SOURCE; 2; TECHCODETYPE; 453;
    TrochoidalStrategy; 3326; 0;  CAPTION; 트로코이드 단계설정; SOURCE; 1; TECHCODETYPE; 67;
    DepthCalculation; 1422; 1;  CAPTION; 깊이 계산; SOURCE; 1; TECHCODETYPE; 449;
-   4411; 4411; 554606;  SOURCE; 0; TECHCODETYPE; 2;
-   OriginalKey; 4003; 6;  SOURCE; 0; TECHCODETYPE; 1;
    4904; 4904; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4904;;
 		:
 	END_STRING
+   OriginalKey; 4003; 3;  SOURCE; 0; TECHCODETYPE; 1;
+   4411; 4411; 554606;  SOURCE; 0; TECHCODETYPE; 2;
    BottomZLimitRemapped; 6876; 0;  HIDDEN; CAPTION; 바닥 Z 리미트; SOURCE; 1; TECHCODETYPE; 2;
    MaxTrochoidWidthRatio; 7216; 400;  CAPTION; 최대. 트로코이달 폭 % | 최대. 트로코이달 폭,%; SOURCE; 1; TECHCODETYPE; 2;
    OptimizationMode; 3323; 1;  HIDDEN; CAPTION; 최적화 켜기; SOURCE; 3; TECHCODETYPE; 496;
    CustomSetting7; 637; 0;  CAPTION; 사용자 정의 설정 7; SOURCE; 1; TECHCODETYPE; 2;
    FeedratePT; 416; 0.10000000000000001;  CAPTION; 피드값 PT|피드값 PM, PT; SOURCE; 3; TECHCODETYPE; 2;
-   4425; 4425; 12;  SOURCE; 0; TECHCODETYPE; 2;
    4901; 4901; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4901;;
 		:3DRoughMilling_0Degree
 	END_STRING
+   4425; 4425; 12;  SOURCE; 0; TECHCODETYPE; 2;
    RoughReverseSurfaceNormal; 6686; 0;  CAPTION; 면방향 반전; SOURCE; 1; TECHCODETYPE; 567;
    ProfitMillingSpindleSpeedRPM; 6720; 0;  CAPTION; 절삭 속도 RPM|절삭 속도RPM, SPM; SOURCE; 1; TECHCODETYPE; 1;
    AlternateCutDirection; 1705; 0;  CAPTION; 대안적인 절삭 사용; SOURCE; 1; TECHCODETYPE; 67;
@@ -129,7 +129,7 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
 	BEGIN_STRING; 498;;
 		:BM_D4
 	END_STRING
-   IncrementalDepth; 175; 0.4;  CAPTION; 증분 깊이; SOURCE; 2; TECHCODETYPE; 2;
+   IncrementalDepth; 175; 0.40000000000000002;  CAPTION; 증분 깊이; SOURCE; 2; TECHCODETYPE; 2;
    4422; 4422; 5;  SOURCE; 0; TECHCODETYPE; 2;
    Rough5SeamPointZ; 6666; 0;  HIDDEN; CAPTION; 실린더 심 포인트 Z | 실린더 심 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
    MinimumCornerRadius; 6615; 1.6000000000000001;  CAPTION; 최소 모서리 반경; SOURCE; 1; TECHCODETYPE; 2;
@@ -188,12 +188,12 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
    Rough5AxisStartPointZ; 6660; 0;  HIDDEN; CAPTION; 축 끝 점 X| 축 끝 점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
    ContactCornerRadius; 3328; 0.5;  HIDDEN; CAPTION; 코너 반경에 접촉; SOURCE; 1; TECHCODETYPE; 2;
    StepOver; 217; 1;  CAPTION; 스텝 오버|스텝 오버, 직경의 %값; SOURCE; 2; TECHCODETYPE; 2;
-   4413; 4413; 4;  SOURCE; 0; TECHCODETYPE; 2;
+   4430; 4430; 2;  SOURCE; 0; TECHCODETYPE; 2;
    4906; 4906; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4906;;
 		:user
 	END_STRING
-   4430; 4430; 2;  SOURCE; 0; TECHCODETYPE; 2;
+   4413; 4413; 4;  SOURCE; 0; TECHCODETYPE; 2;
    TurretID; 792; 1;  CAPTION; 터렛 이름; SOURCE; 1; TECHCODETYPE; 1;
    ZLevelEnableRTCP; 6844; 1;  CAPTION; RTCP 사용하기; SOURCE; 1; TECHCODETYPE; 67;
    HSO_CuttingStrategy; 6657; 0;  CAPTION; 절삭 단계 설정; SOURCE; 1; TECHCODETYPE; 185;
@@ -202,18 +202,18 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
    SpindleSpeedSPM; 418; 75;  CAPTION; 절삭 속도 SPM|절삭 속도 RPM, SPM; SOURCE; 3; TECHCODETYPE; 1;
    BoundaryProfiles; 3274; ;  CAPTION; 경계선 프로파일; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 3274;;
-		:6,3
+		:6,4
 	END_STRING
    MachiningPriority; 1387; 0;  CAPTION; 가공 우선 순위; SOURCE; 1; TECHCODETYPE; 221;
    PassPositionZ; 3325; 0;  HIDDEN; CAPTION; 경로 위치 Z; SOURCE; 1; TECHCODETYPE; 2;
-   4410; 4410; 3293;  SOURCE; 0; TECHCODETYPE; 2;
    4903; 4903; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4903;;
 		:
 	END_STRING
+   4410; 4410; 3293;  SOURCE; 0; TECHCODETYPE; 2;
    TopZLimitRemapped; 6875; 0;  HIDDEN; CAPTION; 상단 Z 리미트; SOURCE; 1; TECHCODETYPE; 2;
    MaxTrochoidWidth; 7215; 16;  CAPTION; 최대. 트로코이달 폭 | 최대. 트로코이달 폭,%; SOURCE; 3; TECHCODETYPE; 2;
-   ProfitMillingIncrementalDepth; 6722; 0.3;  CAPTION; 증분 깊이; SOURCE; 1; TECHCODETYPE; 2;
+   ProfitMillingIncrementalDepth; 6722; 0.40000000000000002;  CAPTION; 증분 깊이; SOURCE; 1; TECHCODETYPE; 2;
    MaxDistanceBetweenPoints; 3322; 0.10000000000000001;  HIDDEN; CAPTION; 포인트 사이의 최대 거리; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting6; 636; 0;  CAPTION; 사용자 정의 설정 6; SOURCE; 1; TECHCODETYPE; 2;
    RetractOptimization; 3203; 2;  CAPTION; 복귀 최적화; SOURCE; 1; TECHCODETYPE; 456;
@@ -237,8 +237,8 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
    EnableRTCP; 3200; 0;  CAPTION; RTCP 사용하기; SOURCE; 3; TECHCODETYPE; 67;
    CustomSetting3; 633; 0;  CAPTION; 사용자 정의 설정 3; SOURCE; 1; TECHCODETYPE; 2;
    FeedratePM; 191; 1200;  CAPTION; 피드값 PM|피드값 PM, PT; SOURCE; 2; TECHCODETYPE; 2;
-   4421; 4421; 1;  SOURCE; 0; TECHCODETYPE; 2;
    4438; 4438; 0;  SOURCE; 0; TECHCODETYPE; 2;
+   4421; 4421; 1;  SOURCE; 0; TECHCODETYPE; 2;
    Rough5SeamPointY; 6665; 0;  HIDDEN; CAPTION; 실린더 이음 점Z|실린더 이음 점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
    MaxAngleBetweenPoints; 6512; 1;  HIDDEN; CAPTION; 점 사이의 최대 각도; SOURCE; 1; TECHCODETYPE; 2;
    EngagementAngle; 1769; 60.000000000000007;  CAPTION; 접촉 각도; SOURCE; 3; TECHCODETYPE; 2;
@@ -246,7 +246,7 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
    FullClearance; 443; 10;  CAPTION; 전체 여유; SOURCE; 2; TECHCODETYPE; 2;
    OperationName; 613; ;  CAPTION; 작업 이름; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 613;;
-		:Rough Mill 3D
+		:Front_Rough
 	END_STRING
    CuttingStrategy; 1361; 2;  CAPTION; 절삭 단계 설정; SOURCE; 1; TECHCODETYPE; 450;
    TopZLimit; 1293; 100;  CAPTION; 상단 Z 리미트; SOURCE; 1; TECHCODETYPE; 2;
@@ -265,13 +265,13 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
    Rough5AxisStartPointY; 6659; 0;  HIDDEN; CAPTION; 축 시작 점 Z| 축 시작 점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
    ShankClearance; 3225; 0;  HIDDEN; CAPTION; 생크 공차; SOURCE; 3; TECHCODETYPE; 2;
    MaximumTiltAngle; 3412; 20;  HIDDEN; CAPTION; 최대 기울기 각도; SOURCE; 1; TECHCODETYPE; 2;
-   StockAllowanceWalls; 233; 0.10;  CAPTION; 벽면 가공 여유; SOURCE; 2; TECHCODETYPE; 2;
+   StockAllowanceWalls; 233; 0.10000000000000001;  CAPTION; 벽면 가공 여유; SOURCE; 2; TECHCODETYPE; 2;
    RoundContactCorners; 3327; 0;  CAPTION; 접촉 코너에 라운드; SOURCE; 1; TECHCODETYPE; 67;
-   4412; 4412; 1;  SOURCE; 0; TECHCODETYPE; 2;
    4905; 4905; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4905;;
 		:
 	END_STRING
+   4412; 4412; 1;  SOURCE; 0; TECHCODETYPE; 2;
    MinimumTrochoidRadiusMM; 6843; 1.6000000000000001;  CAPTION; 최소. 트로코이달반경 | 최소. 트로코이달반경, %; SOURCE; 3; TECHCODETYPE; 2;
    CustomSetting8; 638; 0;  CAPTION; 사용자 정의 설정 8; SOURCE; 1; TECHCODETYPE; 2;
    Tolerance; 1046; 0.02;  CAPTION; 공차; SOURCE; 2; TECHCODETYPE; 2;
