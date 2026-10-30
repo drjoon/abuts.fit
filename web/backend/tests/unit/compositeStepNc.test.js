@@ -3,7 +3,7 @@ import {
   compositeStepsMatch,
   ncOwnerRequestId,
   resolveEffectiveCompositeSteps,
-  resolveOnePassEnabled,
+  // [legacy One Pass] resolveOnePassEnabled,
   stampCompositeStepsOnNcFile,
 } from "../../utils/compositeStepIncrement.js";
 
@@ -39,22 +39,15 @@ describe("composite step NC ownership", () => {
     ).toBe("20261017-COPY0001");
   });
 
-  it("One Pass는 항상 비활성(2–3단 Finish)", () => {
-    expect(
-      resolveOnePassEnabled({
-        onePassEnabled: true,
-        retentionGroove: "none",
-      }),
-    ).toBe(false);
-    expect(
-      resolveOnePassEnabled({
-        onePassEnabled: true,
-        retentionGroove: "deep",
-        compositeStepIncrementPostOverrideMm: 0.1,
-        compositeStepIncrementGingivaOverrideMm: 0.1,
-      }),
-    ).toBe(false);
-  });
+  // [legacy One Pass] PreviewModal 토글 제거. Finish는 항상 2–3단.
+  // it("One Pass는 항상 비활성(2–3단 Finish)", () => {
+  //   expect(
+  //     resolveOnePassEnabled({
+  //       onePassEnabled: true,
+  //       retentionGroove: "none",
+  //     }),
+  //   ).toBe(false);
+  // });
 
   it("복사한 NC에는 원본 피치를 찍는다", () => {
     const stamped = stampCompositeStepsOnNcFile(

@@ -338,23 +338,24 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                             AppLogger.Log("StlFileProcessor: safeSplitEnabled=false 무시, Wide Split 항상 ON");
                         }
                         Environment.SetEnvironmentVariable("ABUTS_SAFE_SPLIT_ENABLE", "1");
-                        bool onePassRequested = requestMeta.onePassEnabled == true;
-                        double onePassPostMm = _backendCompositeStepPostOverrideMm
-                            ?? (string.Equals(_backendRetentionGroove, "deep", StringComparison.OrdinalIgnoreCase)
-                                ? 0.2
-                                : GetDefaultCompositeFrontStepIncrementMm());
-                        double onePassGingivaMm = _backendCompositeStepGingivaOverrideMm
-                            ?? GetDefaultCompositeBackStepIncrementMm();
-                        bool onePassStepsMatch = Math.Abs(onePassPostMm - onePassGingivaMm) < 1e-6;
-                        bool onePassEnabled = onePassRequested && onePassStepsMatch;
-                        if (onePassRequested && !onePassStepsMatch)
-                        {
-                            AppLogger.Log(
-                                $"StlFileProcessor: One Pass 생략 - 포스트 {onePassPostMm.ToString("0.###", CultureInfo.InvariantCulture)} != 치은 {onePassGingivaMm.ToString("0.###", CultureInfo.InvariantCulture)}, 2-3단 Finish");
-                        }
-                        Environment.SetEnvironmentVariable(
-                            "ABUTS_FINISH_ONE_PASS",
-                            onePassEnabled ? "1" : "0");
+                        // [legacy One Pass] request-meta.onePassEnabled / ABUTS_FINISH_ONE_PASS. 제품 정책상 항상 2–3단 Finish.
+                        // bool onePassRequested = requestMeta.onePassEnabled == true;
+                        // double onePassPostMm = _backendCompositeStepPostOverrideMm
+                        //     ?? (string.Equals(_backendRetentionGroove, "deep", StringComparison.OrdinalIgnoreCase)
+                        //         ? 0.2
+                        //         : GetDefaultCompositeFrontStepIncrementMm());
+                        // double onePassGingivaMm = _backendCompositeStepGingivaOverrideMm
+                        //     ?? GetDefaultCompositeBackStepIncrementMm();
+                        // bool onePassStepsMatch = Math.Abs(onePassPostMm - onePassGingivaMm) < 1e-6;
+                        // bool onePassEnabled = onePassRequested && onePassStepsMatch;
+                        // if (onePassRequested && !onePassStepsMatch)
+                        // {
+                        //     AppLogger.Log(
+                        //         $"StlFileProcessor: One Pass 생략 - 포스트 {onePassPostMm.ToString("0.###", CultureInfo.InvariantCulture)} != 치은 {onePassGingivaMm.ToString("0.###", CultureInfo.InvariantCulture)}, 2-3단 Finish");
+                        // }
+                        // Environment.SetEnvironmentVariable(
+                        //     "ABUTS_FINISH_ONE_PASS",
+                        //     onePassEnabled ? "1" : "0");
                         // hex mode는 payload SSOT — request-meta에서 덮어쓰지 않는다.
                         // Rhino telemetry(appliedDeg)는 payload에 없을 때만 request-meta에서 보조 로드한다.
                         if (!_backendHexRotationAppliedDeg.HasValue)
@@ -373,7 +374,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                                 "ABUTS_MAX_DIAMETER",
                                 requestMeta.maxDiameter.ToString("0.###", CultureInfo.InvariantCulture));
                         }
-                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, CamDia={requestMeta.camDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}, SafeSplit={(safeSplitEnabled ? "1" : "0")}, OnePass={(onePassEnabled ? "1" : "0")}, ManufacturerHexRotation(mode)={(_backendManufacturerHexRotation ?? "<null>")}, HexAppliedDeg={(_backendHexRotationAppliedDeg.HasValue ? _backendHexRotationAppliedDeg.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
+                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, CamDia={requestMeta.camDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}, SafeSplit={(safeSplitEnabled ? "1" : "0")}, ManufacturerHexRotation(mode)={(_backendManufacturerHexRotation ?? "<null>")}, HexAppliedDeg={(_backendHexRotationAppliedDeg.HasValue ? _backendHexRotationAppliedDeg.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
                         AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, minZ={(finishLineMinZ.HasValue ? finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, TwoPhase={twoPhase}");
                         if (!_prcManager.ApplyBackendPrcNames((BackendApiClient.RequestMetaCaseInfos)requestMeta, requestId, _backendImplantLabel))
                         {

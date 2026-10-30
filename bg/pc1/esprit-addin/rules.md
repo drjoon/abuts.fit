@@ -91,6 +91,7 @@
     - 후행 Rough 시작 = 선행 Rough 끝 − 2.0 (`GetRoughAdjacentOverlapMm`)
     - none/deep Front_Finish 끝은 Splitline_2−0.5(팁)
   - Finish (2026-10-21):
+    - Front 시작 = `FrontPointX − 0.3`(팁, X−)
     - none/deep: Front 끝 = `Splitline_2 − 0.5`(팁, X−). Back 팁쪽 끝 = 그 X − 1피치. 스텝은 커넥션 → 팁. 마진 띠는 Back만. 1피치는 각 유지홈 StepIncrement
     - safe split이어도 Finish는 `Xk`로 나누지 않는다. `Xk`는 Turn/Rough만.
     - `GetFinishAdjacentOverlapMm()` = D1.0 직경의 2/3(약 0.67) — StepIncrement 해석 실패 시 Back 시작 fallback만

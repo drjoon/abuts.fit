@@ -81,8 +81,8 @@ export interface RequestCaseInfos {
   anodizingEnabled?: boolean;
   /** PreviewModal「Wide Split」: Back/Back2 분할 가공(떨림 방지). 기본 ON. false만 꺼짐. */
   safeSplitEnabled?: boolean;
-  /** PreviewModal「One Pass」: 포스트·치은 스텝이 같을 때만 마지막 Back_Finish 한 번에. 기본 OFF. 준비 단계에서만 변경. */
-  onePassEnabled?: boolean;
+  // [legacy One Pass] PreviewModal 토글 제거. Finish는 항상 2–3단.
+  // onePassEnabled?: boolean;
   /** Finish Composite StepIncrement(mm) override. null=의뢰자설정. */
   compositeStepIncrementPostOverrideMm?: number | null;
   compositeStepIncrementGingivaOverrideMm?: number | null;

@@ -208,16 +208,16 @@ const requestSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
-      // PreviewModal「Wide Split」: 피니시라인 하단에서 끊어 Front/Middle/Back 3구간 가공(떨림 방지). 기본 ON. 헤더 토글은 One Pass로 교체.
+      // PreviewModal「Wide Split」: 피니시라인 하단에서 끊어 Front/Middle/Back 3구간 가공(떨림 방지). 기본 ON.
       safeSplitEnabled: {
         type: Boolean,
         default: true,
       },
-      // PreviewModal「One Pass」: 포스트·치은 스텝이 같을 때만 마지막 Back_Finish 한 번에. 다르면 2–3단. 기본 OFF.
-      onePassEnabled: {
-        type: Boolean,
-        default: false,
-      },
+      // [legacy One Pass] PreviewModal 토글 제거. Finish는 항상 2–3단. 기존 DB 값만 남음.
+      // onePassEnabled: {
+      //   type: Boolean,
+      //   default: false,
+      // },
       // 유지홈(retentionGroove) 옵션 — 현재 UI 정책은 없음/있음(2단계).
       // legacy shallow 데이터는 none으로 정규화해 사용한다.
       // esprit-addin StepIncrement 매핑의 SSOT 필드.

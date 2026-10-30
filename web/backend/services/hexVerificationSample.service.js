@@ -745,7 +745,7 @@ export async function copyFilledStlToHexVerificationSamples(sourceRequest) {
 
   const updated = [];
   for (const sample of samples) {
-    // One Pass·스텝·아노다이징은 샘플 문서 값이다. 원본 caseInfos 통째 저장으로 덮지 않는다.
+    // 스텝·아노다이징은 샘플 문서 값이다. 원본 caseInfos 통째 저장으로 덮지 않는다.
     const $set = {
       ...mongoSetFilledStlFile(cloneJson(filledStl)),
     };

@@ -888,19 +888,19 @@ namespace DentalAddin
                 runB = true;
             }
 
-            // One Pass: Front_Finish는 만들지 않고, Back_Finish가 팁~BackPointX를 한 번에 깎는다.
-            bool finishOnePass = IsFinishOnePassEnabled();
-            if (finishOnePass && explicitAPhase)
-            {
-                DentalLogger.Log("Composite2SplitLine2 - One Pass: Front_Finish 툴패스 생략");
-                return true;
-            }
-            if (finishOnePass)
-            {
-                runA = false;
-                runB = true;
-                DentalLogger.Log($"Composite2SplitLine2 - One Pass: Back_Finish에서 Finish 전체 (phase='{phaseMode}')");
-            }
+            // [legacy One Pass] Front_Finish 생략 + Back_Finish 전체. 제품 정책상 항상 Front/Back 2단.
+            // bool finishOnePass = IsFinishOnePassEnabled();
+            // if (finishOnePass && explicitAPhase)
+            // {
+            //     DentalLogger.Log("Composite2SplitLine2 - One Pass: Front_Finish 툴패스 생략");
+            //     return true;
+            // }
+            // if (finishOnePass)
+            // {
+            //     runA = false;
+            //     runB = true;
+            //     DentalLogger.Log($"Composite2SplitLine2 - One Pass: Back_Finish에서 Finish 전체 (phase='{phaseMode}')");
+            // }
 
             double safeSplitBackZoneX = 0.0;
             bool safeSplitBack = (explicitBPhase || explicitB2Phase)
@@ -967,9 +967,7 @@ namespace DentalAddin
                 opB.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
             }
             double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
-            // Finish_Front 시작점: FirstPassPercent=0 (요청 SSOT).
-            const double finishFrontStartOffsetFromStlMinMm = 0.0;
-
+            // Finish_Front 시작점: FrontPointX보다 팁 쪽(X-) 0.3mm.
             double splitline1X = MoveSTL_Module.FrontPointX;
             double stlStartX = Math.Min(0.0, Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX));
             bool splitlineResolved = TryGetThreeStageSplitConfig(out double resolvedSplitline1, out _, out double resolvedXMin, out _);
@@ -979,12 +977,12 @@ namespace DentalAddin
                 stlStartX = resolvedXMin;
             }
 
-            double requestedAStartX = stlStartX + finishFrontStartOffsetFromStlMinMm;
-            double appliedAStartX = requestedAStartX;
+            double requestedAStartX = MoveSTL_Module.FrontPointX - FinishFrontStartTowardTipFromFrontMm;
+            double appliedAStartX = Math.Max(stlStartX, requestedAStartX);
 
-            double baseAFirstPercentByStlMinX = XToPassPercentByStartEndScale(appliedAStartX, 0.0, splitPercent);
+            double baseAFirstPercentByFrontX = XToPassPercentByStartEndScale(appliedAStartX, 0.0, splitPercent);
             double minAFirstPercentByStlStart = XToPassPercentByStartEndScale(stlStartX, 0.0, splitPercent);
-            double baseAFirstPercent = Clamp(baseAFirstPercentByStlMinX, minAFirstPercentByStlStart, splitPercent);
+            double baseAFirstPercent = Clamp(baseAFirstPercentByFrontX, minAFirstPercentByStlStart, splitPercent);
             bool overrideGuardApplied = false;
             if (firstPassPercentOverride.HasValue)
             {
@@ -996,7 +994,7 @@ namespace DentalAddin
                 baseAFirstPercent = overridePercent;
             }
 
-            DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, splitline1X={splitline1X:F3}, stlStartX={stlStartX:F3}, requestedStartX(stlMin+{finishFrontStartOffsetFromStlMinMm:F3})={requestedAStartX:F3}, appliedStartX={appliedAStartX:F3}, minFirst%={minAFirstPercentByStlStart:F2}, overrideGuardApplied={overrideGuardApplied}");
+            DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, FrontPointX={MoveSTL_Module.FrontPointX:F3}, splitline1X={splitline1X:F3}, stlStartX={stlStartX:F3}, requestedStartX(Front-{FinishFrontStartTowardTipFromFrontMm:F3})={requestedAStartX:F3}, appliedStartX={appliedAStartX:F3}, first%={baseAFirstPercent:F2}, minFirst%={minAFirstPercentByStlStart:F2}, overrideGuardApplied={overrideGuardApplied}");
 
             // Finish seam. Back 스텝은 커넥션 → 팁이라, 팁쪽 끝은 FirstPass(X−)다.
             // none/deep: Front 끝 = Splitline_2 − 0.5mm (팁). Back 끝 = 그 X − 1피치.
@@ -1030,14 +1028,14 @@ namespace DentalAddin
             {
                 DentalLogger.Log($"Composite2SplitLine2 - safe split Finish는 Front/Back 유지 (Xk={safeSplitBackZoneX:F3}는 Turn/Rough만). Back X[{finishBackStartX:F3}~{finishBackEndX:F3}]");
             }
-            if (finishOnePass && runB)
-            {
-                // Front_Finish 시작(FirstPassPercent=0, env override 있으면 그 값)부터 BackPointX까지.
-                double onePassStartPercent = firstPassPercentOverride ?? 0.0;
-                finishBackStartX = onePassStartPercent / 100.0 * StartEndScaleMm;
-                finishBackEndX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
-                DentalLogger.Log($"Composite2SplitLine2 - One Pass Back_Finish 전체: X[{finishBackStartX:F3}~{finishBackEndX:F3}] (start%={onePassStartPercent:F2} ~ BackPointX{compositeEndOffsetFromBackPointMm:+#.##;-#.##;+0}mm)");
-            }
+            // [legacy One Pass] Back_Finish가 팁~BackPointX를 한 번에 깎던 구간.
+            // if (finishOnePass && runB)
+            // {
+            //     double onePassStartPercent = firstPassPercentOverride ?? baseAFirstPercent;
+            //     finishBackStartX = onePassStartPercent / 100.0 * StartEndScaleMm;
+            //     finishBackEndX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
+            //     DentalLogger.Log($"Composite2SplitLine2 - One Pass Back_Finish 전체: X[{finishBackStartX:F3}~{finishBackEndX:F3}] (start%={onePassStartPercent:F2} ~ BackPointX{compositeEndOffsetFromBackPointMm:+#.##;-#.##;+0}mm)");
+            // }
             double requestedALastPass = XToPassPercentByStartEndScale(finishFrontEndX, firstPercent, effectiveLastPercent);
             double requestedBFirstPass = XToPassPercentByStartEndScale(finishBackStartX, firstPercent, effectiveLastPercent);
 
@@ -1065,10 +1063,9 @@ namespace DentalAddin
             }
 
             // Finish_Front 시작점 정책:
-            // - 기본값: FirstPassPercent=0
+            // - 기본값: FrontPointX보다 팁 쪽(X-) 0.3mm
             // - env(ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A) 지정 시 env(퍼센트) 우선
-            // - X 기반 baseAFirstPercent는 로그/가드용; 기본 적용값은 0
-            double requestedAFirstPass = firstPassPercentOverride ?? 0.0;
+            double requestedAFirstPass = firstPassPercentOverride ?? baseAFirstPercent;
             opA.FirstPassPercent = Clamp(requestedAFirstPass, 0.0, opA.LastPassPercent);
 
             // 극단적으로 A 구간이 거의 사라질 때만 최소 폭(1.0%) 보정한다.
@@ -1084,11 +1081,11 @@ namespace DentalAddin
                 opA.FirstPassPercent = fallbackFirst;
                 aWindowPercent = opA.LastPassPercent - opA.FirstPassPercent;
                 aFirstPassFallbackApplied = true;
-                DentalLogger.Log($"Composite2SplitLine2 - A 시작점 최소폭 보정 적용: requested={requestedAFirstPass:F2}, stlMinBased={baseAFirstPercentByStlMinX:F2}, envOverride={(firstPassPercentOverride.HasValue ? firstPassPercentOverride.Value.ToString("F2", CultureInfo.InvariantCulture) : "none")}, applied={before:F2}->{opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2} (<{minAWindowPercent:F2})");
+                DentalLogger.Log($"Composite2SplitLine2 - A 시작점 최소폭 보정 적용: requested={requestedAFirstPass:F2}, frontBased={baseAFirstPercentByFrontX:F2}, envOverride={(firstPassPercentOverride.HasValue ? firstPassPercentOverride.Value.ToString("F2", CultureInfo.InvariantCulture) : "none")}, applied={before:F2}->{opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2} (<{minAWindowPercent:F2})");
             }
             else
             {
-                DentalLogger.Log($"Composite2SplitLine2 - A 시작점 적용: Requested={requestedAFirstPass:F2}, stlMinBased={baseAFirstPercentByStlMinX:F2}, envOverride={(firstPassPercentOverride.HasValue ? firstPassPercentOverride.Value.ToString("F2", CultureInfo.InvariantCulture) : "none")}, Applied={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2}");
+                DentalLogger.Log($"Composite2SplitLine2 - A 시작점 적용: Requested={requestedAFirstPass:F2}, frontBased={baseAFirstPercentByFrontX:F2}, envOverride={(firstPassPercentOverride.HasValue ? firstPassPercentOverride.Value.ToString("F2", CultureInfo.InvariantCulture) : "none")}, Applied={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2}");
             }
 
             // 정책 변경: Finish_All 단일 패스는 사용하지 않는다(항상 Front/Back 2단).
@@ -1099,7 +1096,7 @@ namespace DentalAddin
             if (runB && opB != null)
             {
                 opB.FirstPassPercent = XToPassPercentByStartEndScale(finishBackStartX, firstPercent, effectiveLastPercent);
-                if (!finishOnePass && !explicitB2Phase && opB.FirstPassPercent > opA.LastPassPercent)
+                if (!explicitB2Phase && opB.FirstPassPercent > opA.LastPassPercent)
                 {
                     // Front 끝이 줄어든 극단 케이스에서만 Back 시작을 Front 끝 이하로 맞춤
                     opB.FirstPassPercent = opA.LastPassPercent;
@@ -1130,7 +1127,7 @@ namespace DentalAddin
             // (기본 SurfaceNumber는 생성 실패 시에만 fallback)
             int dedicatedAKey = 0;
             int dedicatedBKey = 0;
-            bool onePassFullBack = finishOnePass && runB;
+            // [legacy One Pass] bool onePassFullBack = finishOnePass && runB;
             // Finish 표시는 항상 Back. safe split Middle은 Turn/Rough만.
             string finishBZone = "BACK";
             bool dedicatedAReady = runA && TryCreateDedicatedCompositeDriveSurface("Composite2SplitLine2", "FINISH_FRONT", out dedicatedAKey);
@@ -1216,7 +1213,7 @@ namespace DentalAddin
             }
             if (runB && opB != null)
             {
-                TryApplyCompositeOrientationProfileFromEnv(opB, onePassFullBack ? "OnePass" : "B");
+                TryApplyCompositeOrientationProfileFromEnv(opB, "B");
             }
 
             // [중요] StockAllowance 적용 범위
@@ -1900,58 +1897,54 @@ namespace DentalAddin
 
         // Finish seam pitch 겹침 fallback(mm). finishline 이 없어 Splitline_2 로 내릴 때만 사용.
         // = D1.0 직경의 2/3 ≈ 0.67.
+        //   Front_Finish 시작 = FrontPointX − 0.3 (팁, X-)
         //   none/deep Front_Finish  끝 = Splitline_2 − 0.5 (팁, X-)
         //   none/deep Back_Finish   팁쪽 끝 = (Splitline_2−0.5) − 1피치. 스텝은 커넥션 → 팁
         //   Back_Finish   커넥션쪽 = BackPointX (헥스. 예전 -0.20은 팁 쪽 1피치)
         //   스텝오버: 커넥션(끝) → 포스트 팁(시작). ReverseStepOverDirection.
+        private const double FinishFrontStartTowardTipFromFrontMm = 0.3;
         private const double FinishPastSplitline2TowardTipMm = 0.5;
         private const double FinishAdjacentOverlapMm = CompositeFinishCommonToolDiameterMm * 2.0 / 3.0;
         private const double SafeSplitMinBackZoneMm = 1.5;
         // Middle_Turn 끝(Xk+황삭반경)이 BackPointX를 넘으면 Middle 제거 → Front/Back 2단.
         private const double SafeSplitMaxTurnPastBackPointMm = 0.0;
 
-        private const string FinishOnePassEnv = "ABUTS_FINISH_ONE_PASS";
-
-        // PreviewModal「One Pass」. 미수신·0은 OFF.
-        // 포스트·치은 StepIncrement가 같을 때만 마지막 Back_Finish 한 공정. 다르면 Front/Back 2단.
-        private static bool IsFinishOnePassEnabled()
-        {
-            string raw = GetEnvString(FinishOnePassEnv);
-            bool requested = string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase);
-            if (!requested)
-            {
-                return false;
-            }
-            if (!CompositeFinishStepsMatchForOnePass())
-            {
-                DentalLogger.Log("Composite2SplitLine2 - One Pass 생략: 포스트·치은 StepIncrement가 달라 Front/Back Finish");
-                return false;
-            }
-            return true;
-        }
-
-        // env A/B가 없으면 UI와 같이 포스트 none=0.05·deep=0.20, 치은=0.05.
-        private static bool CompositeFinishStepsMatchForOnePass()
-        {
-            double postMm = 0.05;
-            string groove = (GetEnvString("ABUTS_RETENTION_GROOVE") ?? string.Empty).Trim().ToLowerInvariant();
-            if (groove == "없음") groove = "none";
-            if (groove == "있음") groove = "deep";
-            if (groove == "deep") postMm = 0.2;
-            if (TryGetCompositeStepIncrementFromEnv(AppConfig.CompositeStepIncrementAEnv, out double stepA))
-            {
-                postMm = stepA;
-            }
-
-            double gingivaMm = 0.05;
-            if (TryGetCompositeStepIncrementFromEnv(AppConfig.CompositeStepIncrementBEnv, out double stepB))
-            {
-                gingivaMm = stepB;
-            }
-
-            return Math.Abs(postMm - gingivaMm) < 1e-6;
-        }
+        // [legacy One Pass] PreviewModal 토글 제거. Finish는 항상 Front/Back 2단.
+        // private const string FinishOnePassEnv = "ABUTS_FINISH_ONE_PASS";
+        // private static bool IsFinishOnePassEnabled()
+        // {
+        //     string raw = GetEnvString(FinishOnePassEnv);
+        //     bool requested = string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase)
+        //         || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase);
+        //     if (!requested)
+        //     {
+        //         return false;
+        //     }
+        //     if (!CompositeFinishStepsMatchForOnePass())
+        //     {
+        //         DentalLogger.Log("Composite2SplitLine2 - One Pass 생략: 포스트·치은 StepIncrement가 달라 Front/Back Finish");
+        //         return false;
+        //     }
+        //     return true;
+        // }
+        // private static bool CompositeFinishStepsMatchForOnePass()
+        // {
+        //     double postMm = 0.05;
+        //     string groove = (GetEnvString("ABUTS_RETENTION_GROOVE") ?? string.Empty).Trim().ToLowerInvariant();
+        //     if (groove == "없음") groove = "none";
+        //     if (groove == "있음") groove = "deep";
+        //     if (groove == "deep") postMm = 0.2;
+        //     if (TryGetCompositeStepIncrementFromEnv(AppConfig.CompositeStepIncrementAEnv, out double stepA))
+        //     {
+        //         postMm = stepA;
+        //     }
+        //     double gingivaMm = 0.05;
+        //     if (TryGetCompositeStepIncrementFromEnv(AppConfig.CompositeStepIncrementBEnv, out double stepB))
+        //     {
+        //         gingivaMm = stepB;
+        //     }
+        //     return Math.Abs(postMm - gingivaMm) < 1e-6;
+        // }
 
         private static bool _loggedSafeSplitAlwaysOn;
 
@@ -3108,6 +3101,7 @@ namespace DentalAddin
         // 3-stage 분할 기준
         // - Splitline_1: FrontPointX
         // - Splitline_2 / TwoPhaseSplitLine = SharedFinishSplitX (finishLineTopX - 0.5mm, tip 쪽)
+        //   Finish_Front 시작 = FrontPointX − 0.3 (팁).
         //   none/deep Finish_Front 끝은 Splitline_2−0.5(팁).
         // - 인접 툴패스:
         //   Rough: 선행 끝=경계+GetRoughPastFinishSeamMm(0.5), 후행(Back) 시작=경계 tip쪽(X-) 공구반경

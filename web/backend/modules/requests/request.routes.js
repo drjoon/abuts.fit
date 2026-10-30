@@ -556,12 +556,13 @@ router.patch(
   requestController.updateRequestSafeSplitOverride,
 );
 
-router.patch(
-  "/:id/one-pass-override",
-  authenticate,
-  authorizeManufacturerOrDesignPartner(),
-  requestController.updateRequestOnePassOverride,
-);
+// [legacy One Pass] PreviewModal 토글 제거. Finish는 항상 2–3단.
+// router.patch(
+//   "/:id/one-pass-override",
+//   authenticate,
+//   authorizeManufacturerOrDesignPartner(),
+//   requestController.updateRequestOnePassOverride,
+// );
 
 router.patch(
   "/:id/composite-step-increment-override",

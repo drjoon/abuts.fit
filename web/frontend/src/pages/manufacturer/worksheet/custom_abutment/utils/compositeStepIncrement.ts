@@ -93,10 +93,10 @@ export function resolveEffectiveCompositeSteps(caseInfos?: {
   };
 }
 
-/** NC·ESPRIT One Pass — 제품 정책상 항상 OFF(2–3단 Finish). 레거시 caseInfos.onePassEnabled는 무시. */
-export function resolveOnePassEnabled(_caseInfos?: unknown): boolean {
-  return false;
-}
+// [legacy One Pass] PreviewModal 토글 제거. Finish는 항상 2–3단.
+// export function resolveOnePassEnabled(_caseInfos?: unknown): boolean {
+//   return false;
+// }
 
 export function displayedCompositeStepMm(
   draft: CompositeFinishStepDraft,

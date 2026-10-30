@@ -32,7 +32,7 @@ export const {
   updateRndHexRotation,
   updateRequestAnodizingOverride,
   updateRequestSafeSplitOverride,
-  updateRequestOnePassOverride,
+  // [legacy One Pass] updateRequestOnePassOverride,
   updateRequestCompositeStepIncrementOverride,
   updateRequestLotEngravingTargetOverride,
   continueRndUnmachinableByRequestor,

@@ -118,7 +118,7 @@ import {
   compositeStepsMatch,
   normalizeCompositeFinishStepOverrideMm,
   resolveEffectiveCompositeSteps,
-  resolveOnePassEnabled,
+  // [legacy One Pass] resolveOnePassEnabled,
   stampCompositeStepsOnNcFile,
   ncOwnerRequestId,
 } from "../../utils/compositeStepIncrement.js";
@@ -1753,7 +1753,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.manufacturerHexRotation",
       "caseInfos.anodizingEnabled",
       "caseInfos.screwSupply",
-      "caseInfos.onePassEnabled",
+      // [legacy One Pass] "caseInfos.onePassEnabled",
       "caseInfos.retentionGroove",
       "caseInfos.compositeStepIncrementPostOverrideMm",
       "caseInfos.compositeStepIncrementGingivaOverrideMm",
@@ -1910,7 +1910,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.screwSupply",
       "caseInfos.manufacturerHexRotation",
       "caseInfos.anodizingEnabled",
-      "caseInfos.onePassEnabled",
+      // [legacy One Pass] "caseInfos.onePassEnabled",
       "caseInfos.retentionGroove",
       "caseInfos.connectionDiameter",
       "caseInfos.requestorHexRotation",
@@ -3855,7 +3855,7 @@ export const updateRequestSafeSplitOverride = asyncHandler(async (req, res) => {
   }
 });
 
-// PreviewModal「One Pass」= caseInfos.onePassEnabled. 가공 적용은 포스트·치은 스텝이 같을 때만.
+/* [legacy One Pass] PreviewModal 토글 제거. Finish는 항상 2–3단.
 export const updateRequestOnePassOverride = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const hasOnePassEnabled = Object.prototype.hasOwnProperty.call(
@@ -4017,6 +4017,7 @@ export const updateRequestOnePassOverride = asyncHandler(async (req, res) => {
     });
   }
 });
+*/
 
 export const updateRequestLotEngravingTargetOverride = asyncHandler(
   async (req, res) => {

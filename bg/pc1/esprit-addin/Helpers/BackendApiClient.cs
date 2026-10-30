@@ -416,8 +416,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             // PreviewModal「Wide Split」: FL 하단에서 끊어 Front/Middle/Back 3구간. 미수신(null) 시 OFF.
             // DataContractJsonSerializer는 누락 bool을 false로 채우므로 nullable로 받는다.
             [DataMember(EmitDefaultValue = false)] public bool? safeSplitEnabled { get; set; }
-            // PreviewModal「One Pass」: Front/Middle Finish 생략, Back_Finish가 전체. 미수신(null) 시 OFF.
-            [DataMember(EmitDefaultValue = false)] public bool? onePassEnabled { get; set; }
+            // [legacy One Pass] PreviewModal 토글 제거. Finish는 항상 2–3단.
+            // [DataMember(EmitDefaultValue = false)] public bool? onePassEnabled { get; set; }
 
             // Composite 경사축 벡터(백엔드 필드명 변형 대응)
             // 우선순위는 StlFileProcessor.TryApplyCompositeOrientationVectorEnv 참고.
