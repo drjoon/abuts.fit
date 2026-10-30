@@ -80,7 +80,7 @@ BEGIN_OPERATION; 316; FACE DRILL; 0;
    CustomSetting6; 636; 0;  CAPTION; ����� ���� ���� 6; SOURCE; 2; TECHCODETYPE; 2;
    Comment; 7; ;  CAPTION; �ּ�; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 7;;
-		:DO NOT shift face-drill Z alone. 2026-10-29 reverted 0.203mm shorten. Copy PRC to op PC. STL origin+hex must move together.
+		:
 	END_STRING
    4424; 4424; 57;  SOURCE; 2; TECHCODETYPE; 2;
    CustomSettingStr7; 1806; ;  CAPTION; ����� ���� ���ڿ� 7; SOURCE; 2; TECHCODETYPE; 3;
@@ -137,7 +137,6 @@ BEGIN_OPERATION; 316; FACE DRILL; 0;
    Text; 513; ;  CAPTION; ����; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 513;;
     :
-    :(NOTE 2026-10-29 G83 depth is pre-0.203 restore. Do not raise drill Z without STL origin+hex. Copy this PRC to operating PC AcroDent.)
 		:(FOR DIO UF Regular)
     :M93001
     :

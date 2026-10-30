@@ -73,7 +73,7 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
    CustomSetting6; 636; 0;  CAPTION; 사용자 정의 설정 6; SOURCE; 2; TECHCODETYPE; 2;
    Comment; 7; ;  CAPTION; 주석; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 7;;
-		:11deg Finish face = origin diameter @ Z=0 + 0.3mm = STL prcConeHeightMm. Do not shift hex/cutoff Z alone. 0.203 revert 2026-10-29. Copy to op PC.
+		:
 	END_STRING
    4424; 4424; 57;  SOURCE; 2; TECHCODETYPE; 2;
    CustomSettingStr7; 1806; ;  CAPTION; 사용자 정의 문자열 7; SOURCE; 2; TECHCODETYPE; 3;
@@ -129,7 +129,6 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
    Text; 513; ;  CAPTION; 문자; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 513;;
 		:
-    :(NOTE 2026-10-29 Finish 11deg face = origin diameter @ Z=0 + 0.3mm = STL prcConeHeightMm. No solo hex/cutoff Z shift. Copy to operating PC.)
     :G00G99G40G18G80T0
     :(Deburr Step drill)
 		:M88
