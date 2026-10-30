@@ -154,6 +154,26 @@ const formatRange = (
   return `${max}~${min}`;
 };
 
+const toFiniteNumber = (value: unknown): number | undefined => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+};
+
+/**
+ * 자주검사 L1 = 전체길이 − L2.
+ * metadata.l1 은 filled 원점 재정렬 이후 bbox.max.z 라서, L2를 더하면 전체길이와 안 맞는다.
+ */
+function resolveInspectionL1(input: {
+  totalLength?: unknown;
+  l2?: unknown;
+  fallbackL1?: unknown;
+}): number | undefined {
+  const totalLength = toFiniteNumber(input.totalLength);
+  const l2 = toFiniteNumber(input.l2);
+  if (totalLength != null && l2 != null) return totalLength - l2;
+  return toFiniteNumber(input.fallbackL1);
+}
+
 const SPEC_PRESETS: InspectionSpecPreset[] = [
   // Osstem / TS3
   {
@@ -631,20 +651,13 @@ export function SelfInspectionReportModal({
 
     const preset = resolveSpecPreset(connectionSpec);
 
-    // L1 = 모델 원점에서 최대 Z (totalLength)
     const totalLength = metadata?.totalLength ?? summaryTotalLength;
     const l2Reference = connectionSpec?.l2 ?? metadata?.l2;
-    // 우선 metadata.l1를 사용, 없으면 totalLength - L2로 계산
-    let l1ReferenceNum: number | undefined = undefined;
-    if (Number.isFinite(Number(metadata?.l1))) {
-      l1ReferenceNum = Number(metadata?.l1);
-    } else if (
-      Number.isFinite(Number(totalLength)) &&
-      Number.isFinite(Number(l2Reference))
-    ) {
-      l1ReferenceNum = Number(totalLength) - Number(l2Reference);
-    }
-    const l1Reference = l1ReferenceNum ?? undefined;
+    const l1Reference = resolveInspectionL1({
+      totalLength,
+      l2: l2Reference,
+      fallbackL1: summaryL1 ?? metadata?.l1,
+    });
     const diameterReference =
       preset?.diameterRef ??
       connectionSpec?.diameter ??
