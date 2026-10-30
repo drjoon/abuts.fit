@@ -137,7 +137,7 @@ BEGIN_OPERATION; 316; FACE DRILL; 0;
    Text; 513; ;  CAPTION; ����; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 513;;
     :
-    :(NOTE 2026-10-29) G83 depth is pre-0.203 restore. Do not raise drill Z without STL origin+hex. Copy this PRC to operating PC AcroDent.
+    :(NOTE 2026-10-29 G83 depth is pre-0.203 restore. Do not raise drill Z without STL origin+hex. Copy this PRC to operating PC AcroDent.)
 		:(FOR MEGAGEN AnyOne Regular)
     :M93001
     :
