@@ -165,15 +165,13 @@
 
 - Front Face 시작/종료점 정책(현행 SSOT):
   - 시작: `Face.StartX = 0` (원점). TopZ는 FACE.prc 유지
-  - 끝: `Face.RightX = FrontPointX + L`
+  - 끝: `Face.RightX = FrontPointX` (PointA). 기본 `L = 0`
   - 클램프: 항상 `Face.RightX ≤ Splitline_2` (= **FinishLine top 상방 0.5mm**)
     - `Splitline_2 = finishLineTopX - 0.5`, margin 0 → FL top − 0.5
   - `L` 산출 (`GetFrontFaceEndOffsetFromFrontMm`):
     - env `ABUTS_FRONT_FACE_END_OFFSET_MM` 강제값 우선
-    - 삽입축이 Z에서 기울수록 FrontPoint가 팁(원점) 아래로 내려간다. 구치는 위에 가깝고, 전치는 더 아래인 편이다. 내려온 거리 = `max(0, FrontPointX)`
-    - `L = 0.7` = Front_Finish 볼 반경 0.5 + 여유 0.2. Front_Finish가 팁부터 전체를 깎으므로 Face는 Finish 진입 자리만 비운다 (2026-10-19, 기존 동적 1.0~2.5 폐기)
-    - 구간 길이 = `FrontPointX + L` 이라, 포인트가 내려올수록 Face가 길어진다
-    - `Face.RightX` 하한은 1.0 (FACE.prc `BM_D2` 반경, 팁 코너). 이보다 짧으면 팁 미가공으로 D1.0이 부러진다
+    - 기본 `L = 0`. Face는 FrontPoint(PointA)에서 끊는다 (2026-10-30, 기존 Finish 진입 여유 0.7·1.0 하한 폐기)
+    - 구간 길이 = `FrontPointX`이다. 포인트가 내려올수록 Face가 길어진다
   - `LastAppliedFrontFaceDepthMm = 0.5mm`
   - 구현: `ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2` / `TryApplyFaceRightEndGuard`
 
