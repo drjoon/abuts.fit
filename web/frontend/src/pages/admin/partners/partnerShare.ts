@@ -70,7 +70,7 @@ export type BusinessAreaState = {
 };
 
 export const DEFAULT_ABUTMENT_UNITS = {
-  /** 제조사 건당 장부 공급가(설정 매입가 부가세 포함 8,800 ÷1.1). */
+  /** 제조사 건당 장부 공급가(레거시 표시. 신규 분배는 포함 5,000). */
   manufacturer: 8000,
   devops: 1000,
   salesman: 3000,

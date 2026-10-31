@@ -50,15 +50,16 @@ export const PARCEL_IS_DEFAULT_LINE = "택배는 기본입니다.";
 /** 딜리버리 적용 조건. 카드 제목이 이미 딜리버리일 때는 DELIVERY_CONDITION_LINE만 쓴다. */
 export const DELIVERY_APPLY_LINE = `딜리버리는 월 ${DELIVERY_MIN_MONTHLY_REQUESTS}건 이상이면 적용합니다.`;
 
-/** 딜러 정산. 택배비는 적립에서 박스당 차감한다. */
+/** 판매자 정산. 제조사(애크로덴트)가 택배를 대납하고, 월 정산 때 판매자 몫에서 상계한다. */
 export const PARCEL_DEALER_DEDUCT_LINE =
-  "택배는 박스당 택배비를 적립에서 차감합니다.";
+  "택배는 제조사가 대납한 뒤, 월 정산 때 판매자 몫에서 상계합니다.";
 
 /** 딜리버리는 적립을 깎지 않는다. */
 export const DELIVERY_DEALER_FULL_PAYOUT_LINE = "딜리버리는 적립을 전액 지급합니다.";
 
-/** 딜러·정책 화면. 적립에서는 빼지 않고, 딜러사가 딜리버리 회사에 직접 입금한다. */
-export const DELIVERY_MONTHLY_PAYER_LINE = "딜러사가 딜리버리 회사에 직접 입금합니다.";
+/** 딜러·정책 화면. 판매자와 딜리버리사가 직접 계약한다. 어벗츠는 관여하지 않는다. */
+export const DELIVERY_MONTHLY_PAYER_LINE =
+  "딜리버리는 판매자와 딜리버리사가 직접 계약합니다. 어벗츠는 관여하지 않습니다.";
 
 /** 건별 신속(express) 모드 선택 비활성. 묶음 폐지로 UI 선택지는 없고 내부 모드만 남는다. */
 export const EXPRESS_MODE_PER_FILE_ENABLED = false;

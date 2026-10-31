@@ -69,6 +69,7 @@ import {
   DELIVERY_MONTHLY_PAYER_LINE,
   PARCEL_DEALER_DEDUCT_LINE,
 } from "@/shared/shipping/shippingPolicyCopy";
+import { REQUESTOR_UNIT_PRICE_MANUFACTURER_COST } from "@/shared/pricing/requestorUnitPricePolicy";
 
 const HISTORY_MONTHS = 6;
 
@@ -1252,7 +1253,7 @@ export default function AdminPaymentsPage({
                         hintTooltip={`어벗 ${Number(
                           customAbut?.manufacturerRequestUnitPrice ??
                             manufacturerSummary?.manufacturerRequestUnitPrice ??
-                            8800,
+                            REQUESTOR_UNIT_PRICE_MANUFACTURER_COST,
                         ).toLocaleString()}원 · 박스 ${Number(
                           customAbut?.manufacturerShippingUnitPrice ??
                             manufacturerSummary?.manufacturerShippingUnitPrice ??

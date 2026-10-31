@@ -14,8 +14,8 @@ export const REQUESTOR_UNIT_PRICE_MIN = 12_000;
 export const REQUESTOR_UNIT_PRICE_STEP = 500;
 /** 어벗츠 → 딜러 공급가(원, 부가세 포함). 딜러 수수료 = 판매가 − 공급가. */
 export const REQUESTOR_UNIT_PRICE_DEALER_SUPPLY = 10_000;
-/** 제조사 매입가(원, 부가세 포함). */
-export const REQUESTOR_UNIT_PRICE_MANUFACTURER_COST = 5_500;
+/** 제조사 몫(원, 부가세 포함). 어벗츠 1만원의 50%. */
+export const REQUESTOR_UNIT_PRICE_MANUFACTURER_COST = 5_000;
 /** 딜리버리 월정액(원, 부가세 포함). 거래처 1곳당. */
 export const DELIVERY_MONTHLY_FEE = 55_000;
 /** 월 의뢰가 이 건수 이하인 거래처는 배송업체가 무료로 처리한다(딜러·어벗츠 부담 없음). */

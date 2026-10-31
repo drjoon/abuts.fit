@@ -62,6 +62,7 @@ import {
 import AdminSalesmanCreditsOverviewSnapshot from "../../models/adminSalesmanCreditsOverviewSnapshot.model.js";
 import { buildSalesmanReferralAggregation } from "./adminCredit.salesmanAggregation.js";
 import { buildOccurredAtFromPeriodQuery } from "../../utils/kstQueryBounds.js";
+import { REQUESTOR_UNIT_PRICE_MANUFACTURER_COST } from "../../utils/requestorUnitPricePolicy.js";
 
 const REFERRAL_LEADER_ROLES = ["salesman", "devops"];
 
@@ -2667,7 +2668,7 @@ export async function adminGetManufacturerSummary(req, res) {
         periodRequestCount,
         periodShippingCount,
         manufacturerRequestUnitPrice: Number(
-          creditSettings.manufacturerRequestUnitPrice || 8800,
+          REQUESTOR_UNIT_PRICE_MANUFACTURER_COST,
         ),
         manufacturerShippingUnitPrice: Number(
           creditSettings.manufacturerShippingUnitPrice || 3500,
@@ -3150,9 +3151,7 @@ export async function adminGetSettlementBusinessOverview(req, res) {
       manufacturerPaidEarn: normalizeNumber(mfgPaidRequest + mfgPaidShipping),
       manufacturerPaidRequest: mfgPaidRequest,
       manufacturerPaidShipping: mfgPaidShipping,
-      manufacturerRequestUnitPrice: Number(
-        creditSettings.manufacturerRequestUnitPrice || 8800,
-      ),
+      manufacturerRequestUnitPrice: REQUESTOR_UNIT_PRICE_MANUFACTURER_COST,
       manufacturerShippingUnitPrice: Number(
         creditSettings.manufacturerShippingUnitPrice || 3500,
       ),

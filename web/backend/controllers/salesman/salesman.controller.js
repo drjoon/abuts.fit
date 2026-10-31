@@ -774,7 +774,7 @@ export async function getSalesmanDashboard(req, res) {
         },
       ]);
 
-    // 택배 배송 박스의 택배비는 딜러 적립에서 차감한다(장부 DEALER_PARCEL_SHIPPING_COST).
+    // 택배 배송 박스의 택배비는 판매자 적립에서 차감한다(장부 DEALER_PARCEL_SHIPPING_COST).
     const parcelRows = isDevops
       ? []
       : await LedgerLine.aggregate([

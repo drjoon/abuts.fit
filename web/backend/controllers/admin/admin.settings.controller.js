@@ -11,7 +11,7 @@
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 // - web/backend/services/practiceTransferBilling.service.js
 // - 2026-08-18: 기공소 공급 어벗 전역 단가 PATCH.
-// - 2026-09-09: manufacturerRemakeUnitPrice(리메이크 매입가, 기본 6,600) 저장 허용.
+// - 2026-10-31: manufacturerRemakeUnitPrice는 제조 5,000과 동일. 할당은 저장값을 읽지 않음.
 import SystemSettings from "../../models/systemSettings.model.js";
 import { CORP_FEE_FIXED_ONLY } from "../../constants/abutsLabSettlement.js";
 import { getAutoGateConfig } from "../../services/autoMachiningGate.service.js";

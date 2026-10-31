@@ -4,6 +4,7 @@
 // change-log:
 // - 2026-10-13: 딜러 배송비 — 딜러사가 딜리버리 회사에 직접 입금.
 // - 2026-10-09: 딜러 표 아래 부가세·수수료 안내 삭제.
+// - 2026-10-31: 분배표 — 제조 5,000 · 개발운영 1,000 · 어벗츠 4,000 · 나머지 판매자(부가세 포함).
 // - 2026-10-08: 누적 구간표 폐지. 거래처 판매가(1.2~1.5만)별 고정 분배표(제조 5,500 · 개발운영 1,000 · 어벗츠 3,500 · 나머지 딜러, 부가세 포함).
 import { cn } from "@/shared/ui/cn";
 import {
@@ -16,7 +17,7 @@ import {
 } from "@/shared/pricing/requestorUnitPricePolicy";
 
 const DEVOPS_WON = 1_000;
-const ABUTS_WON = 3_500;
+const ABUTS_WON = 4_000;
 const STEP = 500;
 
 type Party = "dealer" | "manufacturer" | "abuts" | "devops";

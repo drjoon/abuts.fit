@@ -252,11 +252,12 @@ export const ServicePage = () => {
                   </div>
                   <ul className="list-disc list-inside space-y-2 ml-4">
                     <li>
-                      커스텀어벗 의뢰비는 15,000원 단일가입니다.
+                      커스텀어벗 의뢰비는 어벗 1개당 15,000원 단일가입니다.
                     </li>
                     <li>
-                      소개 딜러·영업팀이 거래처별로 12,000~15,000원 안에서
-                      가격을 정할 수 있으며, 해당 회원에게만 표시됩니다.
+                      판매자(소개 딜러 또는 어벗츠)가 거래처별로
+                      12,000~15,000원 안에서 가격을 정할 수 있으며, 해당
+                      회원에게만 표시됩니다.
                     </li>
                     <li>
                       {DEALER_CODE_REGISTER_WINDOW_LINE}

@@ -179,7 +179,7 @@ const systemSettingsSchema = new mongoose.Schema(
       labRoundBarProductionPrice: { type: Number, default: 15000 },
       labRoundBarDesignAndProductionPrice: { type: Number, default: 25000 },
       // 의뢰자 BA별 커스텀어벗 판매가 오버라이드. 없으면 플랫폼 판매가.
-      // productionPrice=amount(레거시). 매입가는 이 판매가의 50%로 산출.
+      // productionPrice=amount(레거시). 제조 몫은 고정 5,000.
       specialRequestorPrices: {
         type: [
           {
@@ -207,10 +207,9 @@ const systemSettingsSchema = new mongoose.Schema(
         default: [],
       },
       shippingFee: { type: Number, default: 3500 },
-      // 제조사(일반과세) 하청 매입가. 저장값과 무관하게 로드 시 판매가의 50%(부가세 포함).
-      manufacturerRequestUnitPrice: { type: Number, default: 7500 },
-      // 레거시 저장 필드. 정산은 리메이크 구분 없이 판매가의 50%.
-      manufacturerRemakeUnitPrice: { type: Number, default: 7500 },
+      // 제조사(일반과세) 하청 매입가. 할당은 REQUESTOR_UNIT_PRICE_MANUFACTURER_COST(5,000).
+      manufacturerRequestUnitPrice: { type: Number, default: 5000 },
+      manufacturerRemakeUnitPrice: { type: Number, default: 5000 },
       // 개발운영사 어벗 생산 외주 공급가(1어벗당). 장부=포함가(지급 재가산 없음).
       devopsRequestUnitPrice: { type: Number, default: 775 },
       // 딜러사(salesman BA) 어벗 생산 수수료(1어벗당). 장부=포함가. 없으면 어벗츠 귀속.

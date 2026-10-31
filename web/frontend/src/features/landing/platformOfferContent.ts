@@ -342,8 +342,8 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
     eyebrow: "ONE CREDIT",
     title: "충전은 한 번, 결제·정산은 어벗츠에서.",
     lead: [
-      "기공·커스텀어벗·스토어를 하나의 크레딧으로 결제합니다.",
-      "선결제금은 어벗츠 계좌로 입금되고, 정산·계산서도 한곳에서 처리됩니다.",
+      "커스텀어벗은 선불 크레딧으로 주문합니다.",
+      "치과 기공료·스토어는 후불이며, 정산·계산서는 어벗츠에서 처리합니다.",
     ],
     hubLabel: "크레딧",
     hubNote: "거래 선수금",
@@ -375,8 +375,8 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
         icon: "settle",
         title: "기공소는 정산과 상계",
         body: [
-          "치과별 정산·계산서 발행까지 자동으로 처리됩니다.",
-          "정산으로 쌓인 기공크레딧으로 어벗 주문도 결제할 수 있습니다.",
+          "치과 기공료는 월말에 어벗츠로 입금됩니다.",
+          "확인되면 그 치과와 거래한 기공소로 전달합니다.",
         ],
       },
     ],
@@ -405,7 +405,7 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
       },
       {
         term: "크레딧",
-        line: "기공·커스텀어벗·스토어를 함께 결제하는 거래 선수금이에요. 선결제금은 어벗츠 계좌로 입금돼요.",
+        line: "커스텀어벗 주문용 거래 선수금이에요. 치과 기공료·스토어는 후불입니다.",
       },
       {
         term: "애크로덴트",
@@ -454,7 +454,10 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
       },
       {
         q: "월말 기공료를 모아 입금하나요?",
-        a: ["한 달 거래 내역을 다음 달 초에 입금합니다."],
+        a: [
+          "치과가 한 달 기공료를 다음 달 초에 어벗츠 계좌로 입금합니다.",
+          "입금이 확인되면 어벗츠가 그 치과와 거래한 기공소에 전달합니다.",
+        ],
       },
       {
         q: "커스텀어벗은 어떻게 만들어지나요?",

@@ -372,9 +372,9 @@ export const PricingPolicyDialog = ({
           ) : variant === 'devops' ? (
             <div className={GUIDE_FACT_GRID_CLASS}>
               <SettlementPolicyFact label='분배 구조'>
-                어벗 1개당 제조 5,500 · 개발운영 1,000 · 어벗츠 3,500원입니다.
+                어벗 1개당 제조 5,000 · 개발운영 1,000 · 어벗츠 4,000원입니다.
                 <br />
-                나머지는 딜러(판매가 − 1만원)이며, 부가세 포함입니다.
+                나머지는 판매자(판매가 − 1만원)이며, 부가세 포함입니다.
               </SettlementPolicyFact>
               <SettlementPolicyFact label='딜러 없음'>
                 딜러가 없으면 딜러 몫은 어벗츠가 가져갑니다.

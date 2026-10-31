@@ -109,7 +109,7 @@ export function AbutmentBusinessTab() {
         <SectionHeader
           icon={Hexagon}
           title="어벗사업"
-          description="판매가(배송비 제외)에서 건당 몫을 떼고 나머지는 어벗츠. 제조사·개발운영사·딜러사는 +VAT. 제조사 입력값은 장부 공급가(매입 포함가 8,800의 공급 8,000)."
+          description="레거시 표시입니다. 신규 분배는 어벗츠 1만원 = 제조 5,000 · 개발운영 1,000 · 어벗츠 4,000(부가세 포함)입니다."
           trailing={
             <div className="relative w-36">
               <Input

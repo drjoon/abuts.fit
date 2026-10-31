@@ -103,7 +103,7 @@
 - (2026-10-13 개정) 배송은 택배(기본)/딜리버리 두 방식. 거래처별 `shippingPolicy.defaultShippingMode`가 SSOT, 지정은 딜러·영업팀·관리자만(`services/requestorShipping.service.js`). 택배는 요일 정렬 없이 다음 영업일 16:00 발송(`weeklyBatchDays` 무시).
   - 서버는 입력 모드와 무관하게 `shippingMode="express"`로 저장(`expressSelectable.utils.js` `resolveSelectableShippingMode`). 일정은 express 경로로 계산하며 `weeklyBatchDays`는 쓰지 않는다. 과거 `normal` 건은 표시용으로만 남는다.
   - `expressFee`·`express_surcharge`: 모든 계산 경로(생성·견적·hold·대시보드)가 0, `creditSettings.expressFee`도 0으로 읽는다. 과거 `express_surcharge` 저널·`price.expressFee`는 원장 표시용 레거시.
-  - (2026-10-13 개정) 택배 배송 박스마다 택배비(`manufacturerShippingUnitPrice`, VAT 포함)를 딜러 적립(`REV_SALESMAN`)에서 차감하고 제조사에 환입한다(`DEALER_PARCEL_SHIPPING_COST`, `postDealerParcelShippingDeduction`, 포장.발송 진입, 멱등키=박스). 2026-10-13 이후 접수된 유료 의뢰만, 딜러 거래처만. 딜리버리는 적립 전액 지급이고 딜러가 딜리버리사에 직접 지급한다. 딜리버리 월정액 원가 저널은 중단(`processDeliveryMonthlyCosts` 비활성).
+  - (2026-10-31 개정) 택배 배송 박스마다 택배비(`manufacturerShippingUnitPrice`, VAT 포함)를 판매자 적립에서 차감하고 제조사에 환입한다(`DEALER_PARCEL_SHIPPING_COST`, `postDealerParcelShippingDeduction`, 포장.발송 진입, 멱등키=박스). 판매자=딜러(`REV_SALESMAN`) 또는 직판 어벗츠(`REV_ADMIN`). 2026-10-13 이후 접수된 유료 의뢰만. 딜리버리는 판매자와 딜리버리사가 직접 계약하고 어벗츠는 관여하지 않는다. 딜리버리 월정액 원가 저널은 중단(`processDeliveryMonthlyCosts` 비활성).
   - 영업팀 거래처 가격은 `BusinessAnchor.dealerPriceApproval`(select:false)로 승인 대기 → `/api/admin/price-approvals`. 대기 중에는 `checkCreditLock`이 의뢰를 막는다.
   - 디자인+생산 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
     - 공식: `(생산 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능
@@ -1041,7 +1041,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - **커스텀어벗**: 의뢰자 유료 소비 + 제조사 하청 + 잔여(`REV_SALESMAN`/`REV_DEVOPS`/`REV_ADMIN`, 생산 `REQUEST_SPEND_COMMIT`만) + `shareRates.customAbut`.
     - **기공사업부**: `internalLab` `LAB_SETTLEMENT_CREDIT` + `shareRates.labDivision`·planned 몫. 레거시 `autoMatchFee`/`internalLab` 키는 호환용.
   - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.
-  - **제조사(하청)**: 고정 매입가(부가세 포함) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800, **어벗 1개당**)·`manufacturerRemakeUnitPrice`(기본 6,600, 리메이크)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 장부·미정산·지급=포함가(재가산 없음)·세금계산서(÷1.1). 리메이크도 제조사 지급(6,600). 그 외(무료 크레딧 결제 포함)는 약정 단가 전액 지급. 월중 미정산 적립 → **익월 초 (세금)계산서 발행 후 지급**. 제조사=일반과세사업자.
+  - **제조사(하청)**: 고정 몫(부가세 포함) — `REQUESTOR_UNIT_PRICE_MANUFACTURER_COST`(5,000, 어벗 1개당, 어벗츠 1만원의 50%). `creditSettings.manufacturerRequestUnitPrice`(8,800)·`manufacturerRemakeUnitPrice`(6,600)는 레거시 표시·할당 미사용. 택배 박스당 `manufacturerShippingUnitPrice`(기본 3,500)는 판매자 몫에서 환입. 장부·미정산·지급=포함가(재가산 없음)·세금계산서(÷1.1). 리메이크도 같은 5,000. 월중 미정산 적립 → **익월 초 (세금)계산서 발행 후 지급**. 제조사=일반과세사업자.
   - **딜러사·개발운영사**: 장부 적립·미정산=포함가(`affiliateVatRate`로 earn 시 VAT 기록). 지급=잔액 그대로·세금계산서(÷1.1). 구현: `services/settlement.service.js`(`TAXABLE_SETTLEMENT_ROLES` / `resolveSettlementPayoutAmounts` / `postSettlementPayoutJournal`). 배치 항목 `amount`=입금=잔액, `supplyAmount`/`vatAmount`=포함가 분해.
   - **어벗츠·기공소**: 정산 지급(PAYOUT)은 유료 수익만(면세 계산서). `EARN/ADJUST`는 `creditKind=PAID|null`만 포함.
   - **제조사**: 정산 지급(PAYOUT)은 유료·무료 수익 전액(과세·세금계산서). `computeAffiliateSettlementBalance`가 manufacturer는 creditKind를 가리지 않음.
@@ -1224,12 +1224,12 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   (`db:seed-data`는 core shared 데이터만 시딩)
 - 추후 샘플 데이터가 필요하면 별도 opt-in 스크립트로 분리합니다.
 
-## 의뢰비·딜러·배송 정책 변경 (2026-10-08, 최우선)
+## 의뢰비·딜러·배송 정책 변경 (2026-10-31, 최우선)
 
-- **의뢰비·딜러·배송 SSOT (2026-10-08, 이전 기술과 충돌하면 이 항목이 우선)**:
-  - 건당 의뢰비는 치과·기공소 모두 **15,000원 단일가**. 딜러·영업팀이 거래처(`BusinessAnchor.dealerUnitPrice`, `select:false`)별로 **12,000~15,000원**을 정할 수 있고 거래처 본인에게만 보인다(외부 비공개). 서버·FE 모두 12,000 미만/15,000 초과 거절(`validateDealerUnitPrice`). 그룹할인·가입 90일 1만원·주문량 할인·런칭 이벤트 단가는 폐지. 영업팀 입력가는 `dealerPriceApproval.status=pending` → 본사 `POST /api/admin/price-approvals/:anchorId` 승인 전까지 `checkCreditLock`이 의뢰를 막는다. devops는 소개 거래처 없이 고정 분배. 딜러 대시보드 거래처 행 `unitPrice`는 그 판매가(없으면 15,000).
-  - 분배(어벗 1개당, 부가세 포함): 제조사 **5,500** · 개발운영 **1,000** · 어벗츠 **3,500** · 나머지 **딜러(판매가 − 10,000)**. 딜러 없음(직판·영업팀 소개)이면 딜러 몫은 어벗츠. 어벗츠가 거래처에 직접 공급(면세)하고 딜러에게는 수수료를 부가세 포함으로 지급. 구현 `resolveRevenueOwnerBaseAllocation` (`creditRevenuePolicy.service.js`).
-  - 배송은 **딜리버리 익일 도착만**. 택배 묶음 출고·월 가입 폐지, 거래처 배송비 없음. 딜러 거래처의 딜리버리 월정액 55,000원(VAT 포함)은 적립에서 빼지 않는다. 적립 총액을 입금하고, 딜러사가 딜리버리 회사에 직접 입금한다. 딜러가 없으면 어벗츠 부담(`REV_ADMIN`). 직전 달 의뢰가 **3건 이상**인 직판 거래처마다 월 1회 `DELIVERY_MONTHLY_COST` 저널(`deliveryMonthlyCost.service.js`, 멱등키 거래처+월). 이미 딜러 적립에서 뺀 저널은 워커가 삭제한다. 2건 이하는 배송업체 무료(`DELIVERY_FREE_MAX_MONTHLY_REQUESTS`)라 저널 없음.
+- **의뢰비·딜러·배송 SSOT (2026-10-31, 이전 기술과 충돌하면 이 항목이 우선)**:
+  - 의뢰비는 치과·기공소 모두 **어벗 1개당 15,000원 단일가**. 판매자(딜러·어벗츠, 영업팀 승인가)가 거래처(`BusinessAnchor.dealerUnitPrice`, `select:false`)별로 **12,000~15,000원**을 정할 수 있고 거래처 본인에게만 보인다(외부 비공개). 서버·FE 모두 12,000 미만/15,000 초과 거절(`validateDealerUnitPrice`). 그룹할인·가입 90일 1만원·주문량 할인·런칭 이벤트 단가는 폐지. 영업팀 입력가는 `dealerPriceApproval.status=pending` → 본사 `POST /api/admin/price-approvals/:anchorId` 승인 전까지 `checkCreditLock`이 의뢰를 막는다. devops는 소개 거래처 없이 고정 분배. 딜러 대시보드 거래처 행 `unitPrice`는 그 판매가(없으면 15,000).
+  - 분배(어벗 1개당, 부가세 포함): 어벗츠 몫 **10,000** = 제조 **5,000**(50%) · 개발운영 **1,000**(10%) · 어벗츠 **4,000**(40%). 나머지 **판매자(판매가 − 10,000)**. 딜러 없음(직판·영업팀 소개)이면 판매자 몫은 어벗츠. 어벗츠가 거래처에 직접 공급(면세)하고 딜러·제조·개발운영에게는 부가세 포함으로 지급. 구현 `resolveRevenueOwnerBaseAllocation` (`creditRevenuePolicy.service.js`).
+  - 배송은 **택배(기본)와 딜리버리**. 거래처 배송비 없음. 택배는 제조사가 대납하고 포장.발송 때 판매자 장부에서 박스당 택배비를 빼 제조사에 환입한다(`DEALER_PARCEL_SHIPPING_COST`). 딜러 없으면 어벗츠(`REV_ADMIN`). 딜리버리는 판매자와 딜리버리사가 직접 계약하고 어벗츠는 관여하지 않는다. 월정액 원가 저널은 중단(`deliveryMonthlyCost.service.js` reason `disabled`).
   - 위 항목과 충돌하는 이전 서술(자정 스냅샷 단가·할인그룹·택배 묶음 출고 박스당 배송비·딜러 10~20% 누적 구간·제조 49.5%·런칭 이벤트 단가)은 폐지된 정책이다.
   - FE: `src/shared/pricing/requestorUnitPricePolicy.ts`(검증·상수), `src/shared/sales/CustomerPriceDialog.tsx`(딜러 「거래처 가격」), `NewRequestShippingSection.tsx`(딜리버리 단일 카드). 할인그룹 페이지·`DeliverySubscribeDialog` 삭제, `/dashboard/discount-group`은 대시보드로 리다이렉트.
 - **치과 기공료 수기 후불 + 기공소 선불 + 대형 치과 보증금 SSOT (2026-10-24)**:

@@ -53,7 +53,7 @@ export const CREDIT_LEDGER_FREE_NOTICE_BODY =
 
 /** 내역 탭 — 기공 카드 툴팁(기공소). */
 export const CREDIT_LEDGER_SETTLEMENT_NOTICE_BODY =
-  "작업완료되면 적립됩니다. 주문에 쓰면 지급에서 빠집니다.";
+  "작업완료되면 적립됩니다. 커스텀어벗 주문에는 쓰지 않습니다.";
 
 export const CREDIT_PREPAID_BALANCE_LABEL = "보유 크레딧(거래 선수금)";
 

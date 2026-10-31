@@ -89,5 +89,5 @@ export const SETTLEMENT_VAT_POLICY = {
   devopsPayout:
     "어벗 1개당 1,000원입니다. 지급은 잔액 그대로입니다.",
   adminExempt:
-    "어벗츠 커스텀어벗 순몫은 면세입니다. 개발운영 5%를 뺀 뒤 계산서를 발행합니다.",
+    "어벗츠 커스텀어벗 순몫은 면세입니다. 어벗츠 1만원의 40%(4,000원)입니다.",
 } as const;

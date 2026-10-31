@@ -11,9 +11,9 @@
 // - 2026-10-01: 정책 안내 취소선은 의뢰자 특별가와 분리한 플랫폼 정상가(listProductionPrice).
 // - 2026-10-01: 런칭 이벤트 1.3만 / 정상가 1.5만.
 // - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만 · FM덴탈 월정액 배송 설정.
-// - 2026-09-20: 의뢰자 BA 판매가 오버라이드. 없으면 플랫폼 판매가. 매입가=그 판매가의 50%.
-// - 2026-09-20: 제조사 매입가(포함가) = 커스텀어벗 판매가의 50%.
-// - 2026-08-22: 제조사 고정단가(8,800) 선차감 후 잔여 비중 분배(딜러 30:개발 10:어벗츠 40 / 없으면 20:80).
+// - 2026-10-31: 제조 몫 고정 5,000. 판매가 50%·8,800·리메이크 6,600 제거.
+// - 2026-09-20: 의뢰자 BA 판매가 오버라이드. 없으면 플랫폼 판매가.
+// - 2026-08-22: 제조사 고정단가 선차감 후 잔여 비중 분배.
 // - 2026-08-22: 치과 멤버십/일반 청구 이중가 제거. membership* 단일 고시. pricingTier 분기 삭제.
 // - 2026-08-19: 기공소 오버레이 미설정 폴백을 고시(membership*)로.
 // - 2026-08-17: practiceRushFeeMultiplier(기공의뢰 신속처리 할증) 추가.
@@ -38,7 +38,6 @@ import {
 import { REQUESTOR_UNIT_PRICE_MANUFACTURER_COST } from "./requestorUnitPricePolicy.js";
 import { resolveRequestorUnitPriceForAnchorId } from "../services/requestorUnitPrice.service.js";
 import {
-  manufacturerPurchaseFromSale,
   buildDealershipRateChangeApplyPatch,
   buildDevopsShareChangeApplyPatch,
   buildManufacturerShareChangeApplyPatch,
@@ -98,8 +97,6 @@ const REGULAR_RESIDUAL_SHARE_PERCENTS = {
   abuts: 95,
 };
 
-const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 8800;
-const DEFAULT_MANUFACTURER_REMAKE_UNIT_PRICE = 6600;
 
 function readResidualSharePercents(
   creditSettings = {},
@@ -211,7 +208,7 @@ function allocateRevenueByFixedManufacturerAndResidualShares(
 function allocateRevenueByPercent(
   revenue,
   shares,
-  manufacturerUnitPrice = DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE,
+  manufacturerUnitPrice = REQUESTOR_UNIT_PRICE_MANUFACTURER_COST,
 ) {
   return allocateRevenueByFixedManufacturerAndResidualShares(
     revenue,
@@ -242,7 +239,7 @@ function buildNormalizedTierPartyFields(creditSettings = {}, schemaDefaults = {}
     Math.round(
       Number(
         merged.manufacturerRequestUnitPrice ??
-          DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE,
+          REQUESTOR_UNIT_PRICE_MANUFACTURER_COST,
       ) || 0,
     ),
   );
@@ -467,7 +464,7 @@ export function normalizeSpecialRequestorPrice(item = {}, fallback = {}) {
       Number(
         fallback.manufacturerRequestUnitPrice ??
           SCHEMA_DEFAULTS.manufacturerRequestUnitPrice ??
-          DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE,
+          REQUESTOR_UNIT_PRICE_MANUFACTURER_COST,
       ) || 0,
     ),
   );
@@ -628,7 +625,7 @@ export function applySpecialRequestorPricesToCreditSettings(
 
 /**
  * 플랫폼 판매가를 한 금액으로 맞춘다. 관리자 가격 카드와 같은 필드.
- * 매입가(부가세 포함)는 판매가 × 제조사 비율(manufacturerSharePercent, 기본 50%).
+ * 제조 몫은 고정 5,000원(부가세 포함). 판매가 0이면 0.
  */
 export function overlayCustomAbutmentSalePrice(
   creditSettings,
@@ -640,12 +637,9 @@ export function overlayCustomAbutmentSalePrice(
   const purchase =
     Number.isFinite(fixedPurchase) && fixedPurchase > 0
       ? fixedPurchase
-      : manufacturerPurchaseFromSale(
-          sale,
-          options?.manufacturerSharePercent != null
-            ? { manufacturerSharePercent: options.manufacturerSharePercent }
-            : creditSettings,
-        );
+      : sale > 0
+        ? REQUESTOR_UNIT_PRICE_MANUFACTURER_COST
+        : 0;
   const overlaid = {
     ...creditSettings,
     labProductionPrice: sale,
@@ -713,9 +707,7 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
     return 0;
   })();
   const derivedPurchase =
-    salePrice > 0
-      ? manufacturerPurchaseFromSale(salePrice, creditSettings)
-      : null;
+    salePrice > 0 ? REQUESTOR_UNIT_PRICE_MANUFACTURER_COST : null;
   const partySource =
     derivedPurchase == null
       ? creditSettings
@@ -803,7 +795,7 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
     manufacturerRemakeUnitPrice: Number(
       creditSettings.manufacturerRemakeUnitPrice ??
         SCHEMA_DEFAULTS.manufacturerRemakeUnitPrice ??
-        DEFAULT_MANUFACTURER_REMAKE_UNIT_PRICE,
+        REQUESTOR_UNIT_PRICE_MANUFACTURER_COST,
     ),
     devopsRequestUnitPrice: Number(
       withRoundBar.membershipProductionDevopsUnitPrice ??
@@ -1304,7 +1296,7 @@ export async function loadCreditSettingsDefaults(options = {}) {
   // 관리자 BA 특별가가 없으면 오늘 건당 의뢰비(자정 30일 주문량 스냅샷)를 판매가로 쓴다.
   let requestorUnitPrice = null;
   let overridden = specialOverridden;
-  // 치과·기공소 공통: 기본 1.5만, 딜러가 정한 거래처가(1.2~1.5만). 제조사 매입 5,500원 고정.
+  // 치과·기공소 공통: 기본 1.5만, 딜러가 정한 거래처가(1.2~1.5만). 제조사 몫 5,000원(부가세 포함).
   if (
     specialOverridden === priced &&
     options?.applyRequestorUnitPrice !== false
@@ -1323,7 +1315,7 @@ export async function loadCreditSettingsDefaults(options = {}) {
     }
   }
   // 치과 멤버십 폐지 — 청구·의뢰비는 플랫폼 고시(membership*) 단일가.
-  // 의뢰자 BA 오버라이드가 있으면 그 판매가. 매입가는 적용 판매가의 50%.
+  // 의뢰자 BA 오버라이드가 있으면 그 판매가. 제조 몫은 고정 5,000.
   const picked = pickAbutsAbutmentCreditPrices(overridden);
   return {
     ...overridden,

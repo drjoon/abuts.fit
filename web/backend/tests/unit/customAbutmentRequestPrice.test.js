@@ -59,7 +59,7 @@ describe("custom abutment request unit price", () => {
     ).toEqual({ tier: "regular", price: 13000 });
   });
 
-  test("의뢰자 BA 오버라이드 판매가가 기본 판매가보다 우선하고 매입가는 50%", () => {
+  test("의뢰자 BA 오버라이드 판매가가 기본 판매가보다 우선하고 제조 몫은 5,000", () => {
     const next = applyRequestorCustomAbutmentSaleOverride(
       {
         labProductionPrice: 13000,
@@ -75,7 +75,7 @@ describe("custom abutment request unit price", () => {
     expect(next.labProductionPrice).toBe(12000);
     expect(next.membershipProductionPrice).toBe(12000);
     expect(next.minCreditForRequest).toBe(12000);
-    expect(next.manufacturerRequestUnitPrice).toBe(6000);
+    expect(next.manufacturerRequestUnitPrice).toBe(5000);
     expect(next.customAbutmentSaleLocked).toBe(true);
     expect(resolveCustomAbutmentRequestUnitPrice(next)).toBe(12000);
   });

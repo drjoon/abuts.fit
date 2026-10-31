@@ -10,6 +10,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { REQUESTOR_UNIT_PRICE_MANUFACTURER_COST } from "@/shared/pricing/requestorUnitPricePolicy";
 import {
   ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
@@ -31,7 +32,7 @@ export interface CreditSettings {
   minCreditForRequest: number;
   shippingFee: number;
   manufacturerRequestUnitPrice: number;
-  /** 리메이크 생산 매입가(부가세 포함). 기본 6,600 */
+  /** 리메이크도 제조 5,000. 할당은 REQUESTOR_UNIT_PRICE_MANUFACTURER_COST. */
   manufacturerRemakeUnitPrice: number;
   devopsRequestUnitPrice: number;
   salesmanRequestUnitPrice: number;
@@ -92,8 +93,8 @@ export interface CreditSettings {
 export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   minCreditForRequest: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   shippingFee: 3500,
-  manufacturerRequestUnitPrice: 7500,
-  manufacturerRemakeUnitPrice: 7500,
+  manufacturerRequestUnitPrice: REQUESTOR_UNIT_PRICE_MANUFACTURER_COST,
+  manufacturerRemakeUnitPrice: REQUESTOR_UNIT_PRICE_MANUFACTURER_COST,
   devopsRequestUnitPrice: 775,
   salesmanRequestUnitPrice: 2325,
   manufacturerShippingUnitPrice: 3500,

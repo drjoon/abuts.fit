@@ -10,10 +10,9 @@
 // - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/controllers/requests/shipping.Tracking.helpers.js
 // change-log:
+// - 2026-10-31: 리메이크도 제조 5,000. 판매가 50%·리메이크 6,600 제거.
 // - 2026-09-20: 비거래처 선불은 가공 차감 스킵 유지(보류에 소매가 있음, 이중 청구).
-// - 2026-09-20: 리메이크도 일반 매입가(판매가의 50%). 리메이크 매입가 설정 미사용.
 // - 2026-09-20: PTX CA 가공 차감 후 치과→기공소 정산(디자인 STL·생산비 지급 게이트).
-// - 2026-09-09: 리메이크 제조사 지급 6,600원(포함가). applyManufacturerUnit + remake 단가.
 // - 2026-09-06: 딜러·개발운영 earn에 affiliateVatRate VAT(포함가 장부). REV_ADMIN은 면세.
 // - 2026-08-23: 리메이크·무료크레딧 결제는 제조사 무료 생산.
 // - 2026-08-21: 가공→준비 롤백 후 의뢰비 hold 복원. hold 전환 시 convertedAt 표시.
@@ -271,8 +270,8 @@ async function resolveRoleOwnerAnchors({ request, businessAnchorId, session }) {
 const DEALER_PARCEL_COST_START = new Date("2026-10-13T00:00:00+09:00");
 
 /**
- * 택배 배송(normal) 박스의 택배비를 딜러 적립에서 차감하고 택배를 보내는 제조사에 환입한다.
- * 딜리버리 배송·직판(딜러 없음)·무료 체험·PTX 어벗 배송은 대상 아님. 멱등키=박스.
+ * 택배 배송(normal) 박스의 택배비를 판매자 적립에서 차감하고 택배를 보내는 제조사에 환입한다.
+ * 판매자=딜러(`REV_SALESMAN`) 또는 직판 어벗츠(`REV_ADMIN`). 딜리버리·무료 체험·PTX 어벗 배송은 대상 아님. 멱등키=박스.
  */
 export async function postDealerParcelShippingDeduction({
   pkg,
@@ -298,7 +297,20 @@ export async function postDealerParcelShippingDeduction({
     businessAnchorId: payerAnchorId,
     session,
   });
-  if (!owners?.salesmanAnchorId) return { skipped: true, reason: "no_dealer" };
+  const sellerOwner = owners?.salesmanAnchorId
+    ? {
+        accountCode: "REV_SALESMAN",
+        ownerRole: "salesman",
+        ownerId: owners.salesmanAnchorId,
+      }
+    : owners?.adminAnchorId
+      ? {
+          accountCode: "REV_ADMIN",
+          ownerRole: "admin",
+          ownerId: owners.adminAnchorId,
+        }
+      : null;
+  if (!sellerOwner) return { skipped: true, reason: "no_seller" };
 
   const { loadCreditSettingsDefaults } = await import(
     "../../utils/creditSettingsDefaults.js"
@@ -313,13 +325,17 @@ export async function postDealerParcelShippingDeduction({
     ? { accountCode: "REV_MANUFACTURER", ownerRole: "manufacturer", ownerId: owners.manufacturerAnchorId }
     : { accountCode: "REV_ADMIN", ownerRole: "admin", ownerId: owners.adminAnchorId };
   if (!receiverOwner.ownerId) return { skipped: true, reason: "no_receiver" };
+  if (String(sellerOwner.ownerId) === String(receiverOwner.ownerId)) {
+    return { skipped: true, reason: "seller_is_receiver" };
+  }
 
   const refId = String(pkg._id);
   const meta = {
-    displayKind: "dealer_parcel_shipping",
+    displayKind: "seller_parcel_shipping",
     displayLabel: "택배비",
     shippingPackageId: refId,
     customerAnchorId: String(payerAnchorId),
+    sellerRole: sellerOwner.ownerRole,
   };
   const line = (owner, sign) => ({
     accountCode: owner.accountCode,
@@ -337,17 +353,14 @@ export async function postDealerParcelShippingDeduction({
   return postGeneralLedgerJournal({
     idempotencyKey: `gl:shippingPackage:${refId}:dealer_parcel_cost`,
     eventType: "DEALER_PARCEL_SHIPPING_COST",
-    businessAnchorId: owners.salesmanAnchorId,
+    businessAnchorId: sellerOwner.ownerId,
     refType: "SHIPPING_PACKAGE",
     refId,
     occurredAt: occurredAt || new Date(),
     createdBy: actorUserId || null,
     meta,
     lines: [
-      line(
-        { accountCode: "REV_SALESMAN", ownerRole: "salesman", ownerId: owners.salesmanAnchorId },
-        -1,
-      ),
+      line(sellerOwner, -1),
       line(receiverOwner, +1),
     ],
     session,
