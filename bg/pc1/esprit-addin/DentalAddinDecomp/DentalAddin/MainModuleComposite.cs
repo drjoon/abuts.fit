@@ -1828,10 +1828,10 @@ namespace DentalAddin
         private const double FrontFaceFixedDepthMm = 0.5;
         private static double LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm;
 
-        // Front Face 종료점: Face.RightX = max(FrontPointX, 0.5). L=0.
+        // Front Face 종료점: Face.RightX = max(FrontPointX+0.3, 0.5). L=0.3 (헥스쪽 연장).
         // 삽입축이 Z에서 기울수록 FrontPoint가 팁(원점) 아래로 내려가고, 구간도 그만큼 길어진다.
         private const string FrontFaceEndOffsetEnv = "ABUTS_FRONT_FACE_END_OFFSET_MM";
-        private const double FrontFaceEndOffsetMm = 0.0;
+        private const double FrontFaceEndOffsetMm = 0.3;
         private const double FrontFaceTipClearanceMm = 1.0;
         private const double FrontFaceEndOffsetFromFrontLegacyCapMm = 3.0;
         // Face.RightX 하한. FrontPoint가 팁 근처여도 0.5mm는 깎는다.
@@ -1855,7 +1855,7 @@ namespace DentalAddin
 
         /// <summary>
         /// Face 축 끝 오프셋 L. Face.RightX = FrontPointX + L.
-        /// 기본 L=0 (끝 = FrontPoint/PointA). env가 있으면 그 값.
+        /// 기본 L=0.3 (끝 = FrontPoint/PointA + 0.3, 헥스쪽). env가 있으면 그 값.
         /// </summary>
         private static double GetFrontFaceEndOffsetFromFrontMm()
         {
@@ -1871,7 +1871,7 @@ namespace DentalAddin
                 return forced;
             }
 
-            DentalLogger.Log($"FrontFaceOffset - frontX={MoveSTL_Module.FrontPointX:F3} L={FrontFaceEndOffsetMm:F3} (RightX=FrontPoint/PointA)");
+            DentalLogger.Log($"FrontFaceOffset - frontX={MoveSTL_Module.FrontPointX:F3} L={FrontFaceEndOffsetMm:F3} (RightX=FrontPoint+0.3)");
             return FrontFaceEndOffsetMm;
         }
 
@@ -2140,7 +2140,7 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// Front Face tip 시작 X = 원점 0. RightX 끝은 max(FrontPointX, 0.5).
+        /// Front Face tip 시작 X = 원점 0. RightX 끝은 max(FrontPointX+0.3, 0.5).
         /// 면 전체를 항상 깎는다. 홀 베벨은 Face Hole 센터드릴 Z[#523+1.33]에 맡긴다.
         /// </summary>
         private static double ResolveFrontFaceStartX(out double frontX)
@@ -2227,9 +2227,9 @@ namespace DentalAddin
 
 
         /// <summary>
-        /// Front Face(ParallelPlanes): tip 시작 원점 0, 끝은 max(FrontPointX, 0.5). 면 전체를 항상 깎는다.
+        /// Front Face(ParallelPlanes): tip 시작 원점 0, 끝은 max(FrontPointX+0.3, 0.5). 면 전체를 항상 깎는다.
         /// - 시작: Face.StartX = 0 (원점). TopZ는 FACE.prc 유지(1.0)
-        /// - 끝: Face.RightX = FrontPointX. 하한 0.5. 상한: Face.RightX ≤ Splitline_2 (= FL top 상방 0.5mm)
+        /// - 끝: Face.RightX = FrontPointX+0.3. 하한 0.5. 상한: Face.RightX ≤ Splitline_2 (= FL top 상방 0.5mm)
         /// - LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm(0.5mm)
         /// </summary>
         private static void ApplyFrontFaceFixedDepth(TechLatheMoldParallelPlanes faceOp, string context)

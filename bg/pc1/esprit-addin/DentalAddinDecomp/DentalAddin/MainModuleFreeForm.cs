@@ -125,7 +125,7 @@ namespace DentalAddin
                         return false;
                     }
 
-                    // Front Face 끝점: RightX = max(FrontPointX, 0.5). 시작은 원점. Splitline_2 클램프.
+                    // Front Face 끝점: RightX = max(FrontPointX+0.3, 0.5). 시작은 원점. Splitline_2 클램프.
                     ApplyFrontFaceFixedDepth(faceOp, "TryRunFreeFormMillSafe:FrontFace");
 
                     ZH = Math.Abs(MoveSTL_Module.FrontPointX);
