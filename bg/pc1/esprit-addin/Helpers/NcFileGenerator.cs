@@ -277,10 +277,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 // CNC는 #521= 8 같은 정수 매크로를 거부할 수 있다. FormatNcNumber("0.000")로 소수점을 강제한다.
                 // "0" / "0.###" 포맷으로 바꾸지 말 것.
                 // #520=STL bbox top, #523=DefaultStlShift. 커넥션 원점 = #520+#523.
-                // #524=Front Face CAD 재절삭 깊이. Face Hole 센터드릴 Z[#523+1.33+#524].
                 // 원뿔 복합체 = 원뿔 형상 · prcConeTopMm · 헥스 · 시리얼 · 컷오프 · 페이스 드릴 · Face Hole.
                 // Connection·Face Hole Z[#520+#523±N]은 원뿔 복합체. PRC에서 바꿀 때 같이 옮긴다. rules.md §7.
-                headerBlock.Add($"#524= {FormatNcNumber(AppConfig.FaceHoleCenterDrillFrontFaceExtraMm, "0.000")}");
+                // Face Hole 센터드릴은 Z[#523+1.33] 고정(D6.0*A90). #524 가산 없음.
                 headerBlock.Add($"#523= {FormatNcNumber(AppConfig.DefaultStlShift, "0.000")}");
                 headerBlock.Add($"#522= {FormatNcNumber(backturnClearance, "0.000")}");
                 headerBlock.Add($"#521= {FormatNcNumber(stockDiameter, "0.000")}");
@@ -304,7 +303,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 }
 
                 File.WriteAllLines(ncFilePath, rebuilt.ToArray());
-                AppLogger.Log($"NcFileGenerator: NC 헤더 수정 완료 - hexComment={(hexComment ?? "<null>")}, #520:{FormatNcNumber(stlBoundingTopZ)}, #521:{FormatNcNumber(stockDiameter)}, #522:{FormatNcNumber(backturnClearance)}, #524:{FormatNcNumber(AppConfig.FaceHoleCenterDrillFrontFaceExtraMm)}");
+                AppLogger.Log($"NcFileGenerator: NC 헤더 수정 완료 - hexComment={(hexComment ?? "<null>")}, #520:{FormatNcNumber(stlBoundingTopZ)}, #521:{FormatNcNumber(stockDiameter)}, #522:{FormatNcNumber(backturnClearance)}");
             }
             catch (Exception ex)
             {
@@ -331,6 +330,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 trimmed.StartsWith("#521", StringComparison.OrdinalIgnoreCase) ||
                 trimmed.StartsWith("#522", StringComparison.OrdinalIgnoreCase) ||
                 trimmed.StartsWith("#523", StringComparison.OrdinalIgnoreCase) ||
+                // #524는 예전 센터드릴 가산 헤더. 신규 NC에는 안 쓴다. 잔여분만 스킵.
                 trimmed.StartsWith("#524", StringComparison.OrdinalIgnoreCase))
             {
                 return true;

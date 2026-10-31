@@ -621,7 +621,7 @@ namespace DentalAddin
 
         // Face Hole PRC (1_Face Hole). 스텝 드릴 Z[#520+#523+…]는 원뿔 복합체다.
         // 원뿔 복합체 = 원뿔 형상 · prcConeTopMm · 헥스 · 시리얼 · 컷오프 · 페이스 드릴 · Face Hole.
-        // 같은 Δ로만 옮긴다. 센터드릴 Z[#523+1.33+#524]·백터닝 시작 11° 리드인은 원뿔 복합체 밖.
+        // 같은 Δ로만 옮긴다. 센터드릴 Z[#523+1.33]·백터닝 시작 11° 리드인은 원뿔 복합체 밖.
         // PRC에는 주석 금지. SSOT: rules.md §7.
         public static void CustomCycle()
         {

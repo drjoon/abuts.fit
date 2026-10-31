@@ -173,7 +173,7 @@
     - env `ABUTS_FRONT_FACE_END_OFFSET_MM` 강제값 우선
     - 기본 `L = 0`. Face는 FrontPoint(PointA)에서 끊는다. FrontPoint가 0.5보다 짧으면 0.5mm (2026-10-30)
     - 구간 길이 = `max(FrontPointX, 0.5)`이다. 포인트가 내려올수록 Face가 길어진다
-  - `LastAppliedFrontFaceDepthMm = 0.5mm` (= NC `#524`. Face Hole 센터드릴이 CAD 면 아래로 이만큼 더 들어간다)
+  - `LastAppliedFrontFaceDepthMm = 0.5mm`
   - 구현: `ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2` / `TryApplyFaceRightEndGuard`
 
 - Back Turn 시작점/퇴출 정책(현행 SSOT):
@@ -405,7 +405,7 @@
 
 - **원뿔 복합체**: 원뿔 형상 · `prcConeTopMm` · 헥스(1st·Deburr·Deburr2) · 시리얼 · 컷오프 · 페이스 드릴(Connection G83, Face Hole G83과 동일) · Face Hole 스텝 드릴
 - **금지**: 원뿔 상단만 올리거나 11° `W` 구간만 끼워 헥스 Z를 남기기. 원뿔만 올리면 헥스가 픽스쳐에 걸린다. 2026-10-29 0.203mm만 맞춘 단축은 스크류홀이 어긋나 되돌렸다(`89f47c532`).
-- **원뿔 복합체 밖**: Face Hole 센터드릴 `Z[#523+1.33+#524]`(#520 없음). `#524`=Front Face CAD 재절삭 깊이(0.5). 퇴피 `Z[#520-0.4]`. Finish_Back X(`BackPointX`). 백터닝 시작 11° 리드인(아래). Connection Rough(T0202).
+- **원뿔 복합체 밖**: Face Hole 센터드릴 `Z[#523+1.33]`(#520 없음). T41=`D6.0*A90`. 이 깊이만 쓴다. 더 넣으면 90° 콘 때문에 베벨 폭이 같이 커진다. Front Face용 가산(`#524`) 금지. 퇴피 `Z[#520-0.4]`. Finish_Back X(`BackPointX`). 백터닝 시작 11° 리드인(아래). Connection Rough(T0202).
 - **11° 면**: 원점 직경(`originDiameter`, STL Z=0) 직상방. 덴티움 0.33, 덴티스 SQ·One-Q·메가젠 AnyOne 0.4, 그 외 Regular RH 0.3. STL `prcConeHeightMm`과 같다.
 - **Finish 시작 (Regular RH 선삭)**: 11° 원뿔 진입은 원점−`prcConeTopMm`. DIO·오스템 TS·네오 `−0.3`, 덴티움 `−0.33`, 덴티스·메가젠 `−0.4`. 예전 시작(−0.038/−0.067/−0.137/−0.138)은 11° 면을 비워 턱이 남았다. 2026-10-30 일괄: DIO·오스템·네오·메가젠 Δ=−0.262, 덴티움·덴티스 Δ=−0.263. 끼워 넣었던 11° `W0.262`는 뺐다.
 - **백터닝 시작 11° 리드인 (2026-10-30)**: T0303/T0404 B-Turn(Rough U0.1·Finish·Final Deburr)은 팁→헥스(+W). 시작만 원점−`prcConeTopMm`−0.2(팁)로 올리고 11°는 유지. 원뿔 복합체는 그대로. **편측 11°**(축 기준, 양측 22° 아님). X는 직경. `ΔX=2×ΔZ×tan(11°)`, `ΔZ=0.2` → `ΔX≈0.078`. `G1 X{면+0.078}` 뒤 `G1 X{면} W0.2`. Face Hole PRC에는 11° 백터닝이 없다(페이스 선삭·센터드릴·스텝 드릴만). 미니·내로우도 같은 Δ.

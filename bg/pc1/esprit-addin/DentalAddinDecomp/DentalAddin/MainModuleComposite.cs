@@ -1824,7 +1824,7 @@ namespace DentalAddin
 
 
         // Front Face 기본 절삭 깊이(mm) — LastAppliedFrontFaceDepthMm SSOT
-        // Face Hole 센터드릴 #524와 같다. Front Face가 CAD 면까지 다시 깎아도 홀 베벨이 남게 한다.
+        // 홀 베벨 깊이와 묶지 않는다. 센터드릴은 Z[#523+1.33] 고정(D6.0*A90).
         private const double FrontFaceFixedDepthMm = 0.5;
         private static double LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm;
 
@@ -2141,7 +2141,7 @@ namespace DentalAddin
 
         /// <summary>
         /// Front Face tip 시작 X = 원점 0. RightX 끝은 max(FrontPointX, 0.5).
-        /// 면 전체를 항상 깎는다. 홀 베벨은 센터드릴 #524에 맡긴다.
+        /// 면 전체를 항상 깎는다. 홀 베벨은 Face Hole 센터드릴 Z[#523+1.33]에 맡긴다.
         /// </summary>
         private static double ResolveFrontFaceStartX(out double frontX)
         {
@@ -2230,7 +2230,7 @@ namespace DentalAddin
         /// Front Face(ParallelPlanes): tip 시작 원점 0, 끝은 max(FrontPointX, 0.5). 면 전체를 항상 깎는다.
         /// - 시작: Face.StartX = 0 (원점). TopZ는 FACE.prc 유지(1.0)
         /// - 끝: Face.RightX = FrontPointX. 하한 0.5. 상한: Face.RightX ≤ Splitline_2 (= FL top 상방 0.5mm)
-        /// - LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm(0.5mm) = #524
+        /// - LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm(0.5mm)
         /// </summary>
         private static void ApplyFrontFaceFixedDepth(TechLatheMoldParallelPlanes faceOp, string context)
         {
