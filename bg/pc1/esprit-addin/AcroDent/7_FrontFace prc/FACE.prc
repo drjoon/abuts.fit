@@ -61,7 +61,7 @@ BEGIN_OPERATION; 552; Front_Face; 0;
    4003; 4003; 5;  SOURCE; 0; TECHCODETYPE; 1;
    OptimizationMode; 3323; 0;  HIDDEN; CAPTION; 최적화 켜기; SOURCE; 1; TECHCODETYPE; 496;
    CustomSetting7; 637; 0;  CAPTION; 사용자 정의 설정 7; SOURCE; 1; TECHCODETYPE; 2;
-   FeedratePT; 416; 0.10000000000000001;  CAPTION; 피드값 PT|피드값 PM, PT; SOURCE; 3; TECHCODETYPE; 2;
+   FeedratePT; 416; 0.14999999999999999;  CAPTION; 피드값 PT|피드값 PM, PT; SOURCE; 3; TECHCODETYPE; 2;
    PositionOnCheckSurface; 3272; 0;  CAPTION; 체크 서페이스에 위치; SOURCE; 2; TECHCODETYPE; 457;
    WallAngleLimit; 3340; 60;  HIDDEN; CAPTION; 벽면 각도 리미트; SOURCE; 1; TECHCODETYPE; 2;
    4901; 4901; ;  SOURCE; 0; TECHCODETYPE; 3;
@@ -77,7 +77,7 @@ BEGIN_OPERATION; 552; Front_Face; 0;
 		:BM_D2
 	END_STRING
    IncrementalDepth; 175; 0.5;  HIDDEN; CAPTION; 증분 깊이; SOURCE; 1; TECHCODETYPE; 2;
-   AlternateCutDirection; 1705; 1;  CAPTION; 대안적인 절삭 사용; SOURCE; 1; TECHCODETYPE; 67;
+   AlternateCutDirection; 1705; 1;  CAPTION; 대안적인 절삭 사용; SOURCE; 2; TECHCODETYPE; 67;
    MaximumSlopeAngle; 3337; 90;  CAPTION; 최대 슬로프 각도; SOURCE; 1; TECHCODETYPE; 2;
    4422; 4422; 6;  SOURCE; 0; TECHCODETYPE; 2;
    TrimCollisionReorganize; 6632; 0;  HIDDEN; CAPTION; 트림 공구 경로 재구성; SOURCE; 0; TECHCODETYPE; 521;
@@ -85,7 +85,7 @@ BEGIN_OPERATION; 552; Front_Face; 0;
    CustomSetting1; 631; 0;  CAPTION; 사용자 정의 설정 1; SOURCE; 1; TECHCODETYPE; 2;
    Clearance; 172; 1;  CAPTION; 여유; SOURCE; 2; TECHCODETYPE; 2;
    PositionOnModelLimit; 1022; 2;  CAPTION; 모델리미트에 위치; SOURCE; 3; TECHCODETYPE; 452;
-   BottomZLimit; 1294; -0.5;  CAPTION; 바닥 Z 리미트; SOURCE; 2; TECHCODETYPE; 2;
+   BottomZLimit; 1294; -1.6009724356039436;  CAPTION; 바닥 Z 리미트; SOURCE; 2; TECHCODETYPE; 2;
    StepPercentOfDiameter; 444; 2;  CAPTION; 스텝 직경의 % 값|스텝 오버, 직경의 %값; SOURCE; 3; TECHCODETYPE; 1;
    4436; 4436; 9;  SOURCE; 0; TECHCODETYPE; 1;
    BEGIN_SUB_TECHNOLOGY; 6833; 714; CAPTION; 5 축 나가기 이동; SOURCE; 2; TECHCODETYPE; 410;
@@ -165,7 +165,7 @@ BEGIN_OPERATION; 552; Front_Face; 0;
 		:
 	END_STRING
    ApproachInsideBoundary; 3277; 1;  CAPTION; 내부 경계; SOURCE; 1; TECHCODETYPE; 67;
-   StepOver; 217; 0.040000000000000001;  CAPTION; 스텝 오버|스텝 오버, 직경의 %값; SOURCE; 2; TECHCODETYPE; 2;
+   StepOver; 217; 0.050000000000000003;  CAPTION; 스텝 오버|스텝 오버, 직경의 %값; SOURCE; 2; TECHCODETYPE; 2;
    4430; 4430; 7;  SOURCE; 0; TECHCODETYPE; 2;
    4906; 4906; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4906;;
@@ -202,7 +202,7 @@ BEGIN_OPERATION; 552; Front_Face; 0;
    EnableRTCP; 3200; 0;  CAPTION; RTCP 사용하기; SOURCE; 3; TECHCODETYPE; 67;
    RapidOver; 1364; 0;  CAPTION; 위로 급속; SOURCE; 1; TECHCODETYPE; 67;
    CustomSetting3; 633; 0;  CAPTION; 사용자 정의 설정 3; SOURCE; 1; TECHCODETYPE; 2;
-   FeedratePM; 191; 1000;  CAPTION; 피드값 PM|피드값 PM, PT; SOURCE; 2; TECHCODETYPE; 2;
+   FeedratePM; 191; 1500;  CAPTION; 피드값 PM|피드값 PM, PT; SOURCE; 2; TECHCODETYPE; 2;
    MinimumSlopeAngle; 3336; 0;  CAPTION; 최소 슬로프 각도; SOURCE; 1; TECHCODETYPE; 2;
    4438; 4438; 0;  SOURCE; 0; TECHCODETYPE; 2;
    4421; 4421; 1;  SOURCE; 0; TECHCODETYPE; 2;
@@ -328,7 +328,7 @@ BEGIN_OPERATION; 552; Front_Face; 0;
 	BEGIN_ATTRIBUTES
 	END_ATTRIBUTES
    END_SUB_TECHNOLOGY;
-   MachiningStrategy; 1361; 1;  CAPTION; 머시닝 방식; SOURCE; 1; TECHCODETYPE; 455;
+   MachiningStrategy; 1361; 1;  CAPTION; 머시닝 방식; SOURCE; 2; TECHCODETYPE; 455;
    TopZLimit; 1293; 1;  CAPTION; 상단 Z 리미트; SOURCE; 2; TECHCODETYPE; 2;
    StartPointY; 3333; 2.0300000000000002;  CAPTION; 시작 지점 Y|시작 지점 X, Y; SOURCE; 2; TECHCODETYPE; 2;
    ScallopHeight; 392; 0.10000000000000001;  HIDDEN; CAPTION; 스캘럽 높이; SOURCE; 1; TECHCODETYPE; 2;
@@ -360,7 +360,7 @@ BEGIN_OPERATION; 552; Front_Face; 0;
    LimitDistanceBetweenPoints; 3321; 0;  CAPTION; 지점 사이의 거리 리미트; SOURCE; 1; TECHCODETYPE; 67;
    CustomSetting5; 635; 0;  CAPTION; 사용자 정의 설정 5; SOURCE; 1; TECHCODETYPE; 2;
    PlungeFeedRatePercent; 3202; 10;  CAPTION; 플런지 피드값%; SOURCE; 2; TECHCODETYPE; 2;
-   IncrementDepthLimit; 1213; 0;  CAPTION; 황삭 설정; SOURCE; 1; TECHCODETYPE; 67;
+   IncrementDepthLimit; 1213; 0;  CAPTION; 황삭 설정; SOURCE; 2; TECHCODETYPE; 67;
    SlopeLimitOffset; 3338; 0.20000000000000001;  CAPTION; 슬로프 리미트 오프셋; SOURCE; 1; TECHCODETYPE; 2;
    4423; 4423; 16;  SOURCE; 0; TECHCODETYPE; 2;
    EnableCheckCollisionsWithStock; 6633; 0;  HIDDEN; CAPTION; 스톡 재확인; SOURCE; 0; TECHCODETYPE; 67;

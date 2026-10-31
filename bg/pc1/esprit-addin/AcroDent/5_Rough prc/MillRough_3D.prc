@@ -129,7 +129,7 @@ BEGIN_OPERATION; 553; Front_Rough; 0;
 	BEGIN_STRING; 498;;
 		:BM_D4
 	END_STRING
-   IncrementalDepth; 175; 0.40000000000000002;  CAPTION; 증분 깊이; SOURCE; 2; TECHCODETYPE; 2;
+   IncrementalDepth; 175; 0.5;  CAPTION; 증분 깊이; SOURCE; 2; TECHCODETYPE; 2;
    4422; 4422; 5;  SOURCE; 0; TECHCODETYPE; 2;
    Rough5SeamPointZ; 6666; 0;  HIDDEN; CAPTION; 실린더 심 포인트 Z | 실린더 심 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
    MinimumCornerRadius; 6615; 1.6000000000000001;  CAPTION; 최소 모서리 반경; SOURCE; 1; TECHCODETYPE; 2;
@@ -202,7 +202,7 @@ BEGIN_OPERATION; 553; Front_Rough; 0;
    SpindleSpeedSPM; 418; 75;  CAPTION; 절삭 속도 SPM|절삭 속도 RPM, SPM; SOURCE; 3; TECHCODETYPE; 1;
    BoundaryProfiles; 3274; ;  CAPTION; 경계선 프로파일; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 3274;;
-		:6,4
+		:6,3
 	END_STRING
    MachiningPriority; 1387; 0;  CAPTION; 가공 우선 순위; SOURCE; 1; TECHCODETYPE; 221;
    PassPositionZ; 3325; 0;  HIDDEN; CAPTION; 경로 위치 Z; SOURCE; 1; TECHCODETYPE; 2;
@@ -274,7 +274,7 @@ BEGIN_OPERATION; 553; Front_Rough; 0;
    4412; 4412; 1;  SOURCE; 0; TECHCODETYPE; 2;
    MinimumTrochoidRadiusMM; 6843; 1.6000000000000001;  CAPTION; 최소. 트로코이달반경 | 최소. 트로코이달반경, %; SOURCE; 3; TECHCODETYPE; 2;
    CustomSetting8; 638; 0;  CAPTION; 사용자 정의 설정 8; SOURCE; 1; TECHCODETYPE; 2;
-   Tolerance; 1046; 0.02;  CAPTION; 공차; SOURCE; 2; TECHCODETYPE; 2;
+   Tolerance; 1046; 0.01;  CAPTION; 공차; SOURCE; 2; TECHCODETYPE; 2;
    4902; 4902; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4902;;
 		:
