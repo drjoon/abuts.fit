@@ -165,7 +165,7 @@
 ### 4.6 Front Face/Back Turn 경계 보정 (2026-07-01, Face offset tip-2 이식 2026-08-30)
 
 - Front Face 시작/종료점 정책(현행 SSOT):
-  - 시작: Face가 홀+베벨보다 길면 `Face.StartX = 1.5` (센터드릴 베벨 유지). 짧으면 원점 0. TopZ는 FACE.prc 유지
+  - 시작: `Face.StartX = 0` (원점). 면 전체를 항상 깎는다. TopZ는 FACE.prc 유지
   - 끝: `Face.RightX = max(FrontPointX, 0.5)` (PointA, 하한 0.5mm). 기본 `L = 0`
   - 클램프: 항상 `Face.RightX ≤ Splitline_2` (= **FinishLine top 상방 0.5mm**)
     - `Splitline_2 = finishLineTopX - 0.5`, margin 0 → FL top − 0.5
