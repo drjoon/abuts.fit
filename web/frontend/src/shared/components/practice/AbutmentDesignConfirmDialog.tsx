@@ -5,6 +5,7 @@
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
 // - 2026-09-20: 아노다이징 기본값·계정 저장(유지홈과 동일).
+// - 2026-11-03: 핸드오프 카탈로그는 CNC 표만(공개 환봉 US·ARi 제외).
 // - 2026-09-04: 카탈로그 불일치 시 폴백 금지·확인 차단·관리자 alert. CNC 표 병합·미도입 환봉 제외.
 // - 2026-09-04: 핸드오프 카탈로그에 CNC 표 병합·미도입 환봉 제외. 임플란트 선택 오염(TS3→US) 방지.
 // - 2026-09-02: 확인 라벨「확인」/「다음」(사전 S3 업로드 완료 전제). 업로드 중 확인 버튼 비활성.
@@ -128,9 +129,9 @@ export function AbutmentDesignConfirmDialog({
   const [implantFamily, setImplantFamilyState] = useState("");
   const [implantType, setImplantTypeState] = useState("");
 
-  /** CNC 표 + API. 미도입(도입중) 환봉/공개 스펙은 제외 — 핸드오프에서 TS3→US 오염 방지. */
+  /** CNC 가공 가능 표만. 공개·미지원 환봉(US·ARi)은 핸드오프 카탈로그에 넣지 않는다. */
   const handoffConnections = useMemo((): Connection[] => {
-    const cncActive = mergeCncImplantSpecs(connections).map((row) => ({
+    return mergeCncImplantSpecs(connections).map((row) => ({
       manufacturer: row.manufacturer,
       brand: row.brand,
       family: row.family,
@@ -140,32 +141,6 @@ export function AbutmentDesignConfirmDialog({
       displayFamily: row.displayFamily,
       displayType: row.type,
     }));
-    const fromApi = connections.filter((row) => {
-      const pendingPublic =
-        (Boolean(row.roundBar) || Boolean(row.isPublic)) &&
-        row.adopted !== true;
-      return !pendingPublic;
-    });
-    const seen = new Set<string>();
-    const out: Connection[] = [];
-    for (const row of [...cncActive, ...fromApi]) {
-      const manufacturer = String(row.manufacturer || "").trim();
-      const brand = String(row.brand || "").trim();
-      const family = String(row.family || "").trim();
-      const type = String(row.type || "Hex").trim() || "Hex";
-      if (!manufacturer || !brand) continue;
-      const key = `${manufacturer}|${brand}|${family}|${type}`.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({
-        ...row,
-        manufacturer,
-        brand,
-        family,
-        type,
-      });
-    }
-    return out;
   }, [connections]);
 
   useEffect(() => {

@@ -3,14 +3,22 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/shared/practice/implantPresetsCache.ts
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// change-log:
+// - 2026-11-03: 카탈로그 캐시는 보여준 뒤 서버 버전과 비교해 갱신(로그인 세션 유지).
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
+import { ROUND_BAR_REQUEST_UPDATED_EVENT } from "@/shared/practice/roundBarAbutment";
+import {
+  clearImplantPresetsCache,
+  parseImplantPresetsServerUpdatedAt,
+  readImplantPresetsCache,
+  shouldReplaceImplantPresetsCache,
+  writeImplantPresetsCache,
+} from "@/shared/practice/implantPresetsCache";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import type { Connection } from "./newRequestTypes";
-
-// v6: 2026-07-10 스크류 정보 정정(NEOBIOTECH Small Narrow) 반영 캐시 키
-const IMPLANT_PRESETS_STORAGE_KEY = "abutsfit:implant-presets:v6";
-const IMPLANT_PRESETS_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1년
 
 export type UseNewRequestImplantParams = {
   token: string | null;
@@ -34,70 +42,66 @@ export const useNewRequestImplant = ({
   const [implantBrand, setImplantBrand] = useState("");
   const [implantFamily, setImplantFamily] = useState("");
   const [implantType, setImplantType] = useState("");
+  const [reloadNonce, setReloadNonce] = useState(0);
 
-  // implant preset 목록은 토큰 기준으로 한 번만 조회
+  useAppEventDebouncedReload({
+    enabled: Boolean(token),
+    eventTypes: [ROUND_BAR_REQUEST_UPDATED_EVENT],
+    delayMs: 0,
+    deferWhenEditing: false,
+    onMatch: () => {
+      clearImplantPresetsCache();
+      setReloadNonce((value) => value + 1);
+    },
+  });
+
+  // 캐시를 먼저 보여 주고, 서버 카탈로그 버전이 바뀌면 localStorage만 갱신한다(세션 유지).
   useEffect(() => {
-    const loadImplantPresets = async () => {
-      try {
-        // 1) localStorage 캐시 확인
-        if (typeof window !== "undefined") {
-          try {
-            const stored = window.localStorage.getItem(
-              IMPLANT_PRESETS_STORAGE_KEY,
-            );
-            if (stored) {
-              const parsed = JSON.parse(stored) as {
-                data: any[];
-                serverUpdatedAt?: number | null;
-                cachedAt: number;
-              };
-              const age = Date.now() - parsed.cachedAt;
-              if (
-                age <= IMPLANT_PRESETS_TTL_MS &&
-                Array.isArray(parsed.data) &&
-                parsed.data.length > 0
-              ) {
-                setConnections(parsed.data as Connection[]);
-                return;
-              }
-            }
-          } catch {}
-        }
+    let cancelled = false;
 
-        // 2) 캐시가 없거나 만료된 경우 서버에서 조회 후 캐시 저장
-        const res = await apiFetch<any>({
+    const loadImplantPresets = async () => {
+      const cached = readImplantPresetsCache<Connection>();
+      if (cached?.data?.length && !cancelled) {
+        setConnections(cached.data);
+      }
+
+      try {
+        const res = await apiFetch<{
+          data?: Connection[];
+          serverUpdatedAt?: number | null;
+        }>({
           path: "/api/implant-presets",
           method: "GET",
           token,
+          skipCache: true,
         });
-        if (!res.ok) return;
-        const connBody = res.data || {};
-        const list: Connection[] = Array.isArray(connBody.data)
-          ? (connBody.data as Connection[])
+        if (!res.ok || cancelled) return;
+        const list: Connection[] = Array.isArray(res.data?.data)
+          ? (res.data.data as Connection[])
           : [];
-        setConnections(list);
+        if (list.length === 0) return;
 
-        if (typeof window !== "undefined") {
-          try {
-            const payload = {
-              data: list,
-              serverUpdatedAt:
-                typeof (connBody as any).serverUpdatedAt === "number"
-                  ? (connBody as any).serverUpdatedAt
-                  : null,
-              cachedAt: Date.now(),
-            };
-            window.localStorage.setItem(
-              IMPLANT_PRESETS_STORAGE_KEY,
-              JSON.stringify(payload),
-            );
-          } catch {}
+        const serverUpdatedAt = parseImplantPresetsServerUpdatedAt(
+          res.data?.serverUpdatedAt,
+        );
+        const shouldReplace = shouldReplaceImplantPresetsCache(
+          cached?.serverUpdatedAt,
+          serverUpdatedAt,
+        );
+        if (shouldReplace || !cached?.data?.length) {
+          setConnections(list);
+          writeImplantPresetsCache(list, serverUpdatedAt);
         }
-      } catch {}
+      } catch {
+        // ignore — 캐시가 있으면 그대로 둔다
+      }
     };
 
-    loadImplantPresets();
-  }, [token]);
+    void loadImplantPresets();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, reloadNonce]);
 
   // clinicName 입력 시 Family(Regular)와 Type(Hex)만 초기값으로 설정
   // Manufacturer와 Brand는 사용자가 선택하도록 함

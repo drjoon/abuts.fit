@@ -4,6 +4,7 @@
 // - web/backend/server.js
 // - web/backend/controllers/practiceTransfers/roundBarAbutmentRequest.controller.js
 // change-log:
+// - 2026-11-03: serverUpdatedAt에 공개·도입 환봉도 포함(FE 카탈로그 캐시 무효화).
 // - 2026-08-26: AnyOne Mini API 응답 제외·Regular 표기 SSOT.
 // - 2026-08-26: isPublic만으로 전체 치과 카탈로그 노출(도입과 독립).
 // - 2026-08-26: 도입 스펙 brand/family/type OR 값을 카탈로그 조합으로 전개.
@@ -117,6 +118,13 @@ function getBusinessAnchorId(req) {
   return String(req.user?.businessAnchorId || "").trim();
 }
 
+function maxUpdatedAtMs(rows) {
+  return (Array.isArray(rows) ? rows : []).reduce((max, row) => {
+    const updated = row?.updatedAt ? new Date(row.updatedAt).getTime() : 0;
+    return Number.isFinite(updated) && updated > max ? updated : max;
+  }, 0);
+}
+
 async function loadAdoptedRoundBarConnections(businessAnchorId) {
   // 공개·도입은 독립: 공개만 되어도 전체 카탈로그에 포함.
   const or = [{ isPublic: true }];
@@ -124,7 +132,15 @@ async function loadAdoptedRoundBarConnections(businessAnchorId) {
     or.push({ practiceAnchorId: businessAnchorId, adopted: true });
   }
   const requests = await RoundBarAbutmentRequest.find({ $or: or })
-    .select({ manufacturer: 1, brand: 1, family: 1, type: 1, adopted: 1, isPublic: 1 })
+    .select({
+      manufacturer: 1,
+      brand: 1,
+      family: 1,
+      type: 1,
+      adopted: 1,
+      isPublic: 1,
+      updatedAt: 1,
+    })
     .lean();
   const out = [];
   const seen = new Set();
@@ -167,7 +183,7 @@ async function loadAdoptedRoundBarConnections(businessAnchorId) {
       });
     }
   }
-  return out;
+  return { rows: out, updatedAtMs: maxUpdatedAtMs(requests) };
 }
 
 export async function getImplantPresets(req, res) {
@@ -267,16 +283,17 @@ export async function getImplantPresets(req, res) {
         return a.type.localeCompare(b.type);
       });
 
-    const serverUpdatedAt = all.reduce((max, c) => {
-      const updated = c.updatedAt ? new Date(c.updatedAt).getTime() : 0;
-      return updated > max ? updated : max;
-    }, 0);
-
+    const connectionUpdatedAt = maxUpdatedAtMs(all);
     const adopted = await loadAdoptedRoundBarConnections(businessAnchorId);
+    // FE 로컬 캐시 무효화용. 커넥션 표·공개/도입 환봉이 바뀌면 함께 올라간다(세션은 유지).
+    const serverUpdatedAt = Math.max(
+      connectionUpdatedAt,
+      Number(adopted.updatedAtMs) || 0,
+    );
 
     res.json({
       success: true,
-      data: sanitizeCncImplantConnections([...adopted, ...sorted]),
+      data: sanitizeCncImplantConnections([...adopted.rows, ...sorted]),
       serverUpdatedAt: serverUpdatedAt || null,
     });
   } catch (error) {

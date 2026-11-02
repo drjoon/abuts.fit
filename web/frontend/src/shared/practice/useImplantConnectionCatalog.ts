@@ -1,8 +1,10 @@
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestImplant.ts
+// - web/frontend/src/shared/practice/implantPresetsCache.ts
 // - web/backend/controllers/presets/implantPreset.controller.js
 // change-log:
+// - 2026-11-03: 카탈로그 serverUpdatedAt 변경 시 캐시만 갱신(로그인 세션 유지).
 // - 2026-08-26: AnyOne Mini 캐시(v9) 무효화·API 응답 sanitize.
 // - 2026-08-26: 어벗 추가/공개·삭제 이벤트 시 캐시 무효화 후 카탈로그 재조회.
 // - 2026-08-14: 캐시를 보여준 뒤 서버를 다시 불러 도입 스펙이 빠지지 않게 한다.
@@ -10,6 +12,13 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { ROUND_BAR_REQUEST_UPDATED_EVENT } from "@/shared/practice/roundBarAbutment";
 import { sanitizeCncImplantConnections } from "@/shared/practice/cncImplantCatalog";
+import {
+  clearImplantPresetsCache,
+  parseImplantPresetsServerUpdatedAt,
+  readImplantPresetsCache,
+  shouldReplaceImplantPresetsCache,
+  writeImplantPresetsCache,
+} from "@/shared/practice/implantPresetsCache";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 
 export type ImplantConnection = {
@@ -31,9 +40,6 @@ export type ImplantConnection = {
   isPublic?: boolean;
 };
 
-const IMPLANT_PRESETS_STORAGE_KEY = "abutsfit:implant-presets:v9";
-const IMPLANT_PRESETS_TTL_MS = 365 * 24 * 60 * 60 * 1000;
-
 export const useImplantConnectionCatalog = (token: string | null) => {
   const [connections, setConnections] = useState<ImplantConnection[]>([]);
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -44,13 +50,7 @@ export const useImplantConnectionCatalog = (token: string | null) => {
     delayMs: 0,
     deferWhenEditing: false,
     onMatch: () => {
-      if (typeof window !== "undefined") {
-        try {
-          window.localStorage.removeItem(IMPLANT_PRESETS_STORAGE_KEY);
-        } catch {
-          // ignore
-        }
-      }
+      clearImplantPresetsCache();
       setReloadNonce((value) => value + 1);
     },
   });
@@ -58,35 +58,17 @@ export const useImplantConnectionCatalog = (token: string | null) => {
   useEffect(() => {
     let cancelled = false;
 
-    const readCache = () => {
-      if (typeof window === "undefined") return [];
-      try {
-        const stored = window.localStorage.getItem(IMPLANT_PRESETS_STORAGE_KEY);
-        if (!stored) return [];
-        const parsed = JSON.parse(stored) as {
-          data: ImplantConnection[];
-          cachedAt: number;
-        };
-        const age = Date.now() - Number(parsed.cachedAt || 0);
-        if (
-          age <= IMPLANT_PRESETS_TTL_MS &&
-          Array.isArray(parsed.data) &&
-          parsed.data.length > 0
-        ) {
-          return sanitizeCncImplantConnections(parsed.data);
-        }
-      } catch {
-        // ignore cache read errors
-      }
-      return [];
-    };
-
     const load = async () => {
-      const cached = readCache();
-      if (cached.length > 0 && !cancelled) setConnections(cached);
+      const cached = readImplantPresetsCache<ImplantConnection>();
+      if (cached?.data?.length && !cancelled) {
+        setConnections(sanitizeCncImplantConnections(cached.data));
+      }
 
       try {
-        const res = await apiFetch<{ data?: ImplantConnection[] }>({
+        const res = await apiFetch<{
+          data?: ImplantConnection[];
+          serverUpdatedAt?: number | null;
+        }>({
           path: "/api/implant-presets",
           method: "GET",
           token,
@@ -96,20 +78,21 @@ export const useImplantConnectionCatalog = (token: string | null) => {
         const list = sanitizeCncImplantConnections(
           Array.isArray(res.data?.data) ? res.data.data : [],
         );
-        if (list.length > 0) setConnections(list);
+        if (list.length === 0) return;
 
-        if (typeof window !== "undefined" && list.length > 0) {
-          try {
-            window.localStorage.setItem(
-              IMPLANT_PRESETS_STORAGE_KEY,
-              JSON.stringify({ data: list, cachedAt: Date.now() }),
-            );
-          } catch {
-            // ignore
-          }
+        const serverUpdatedAt = parseImplantPresetsServerUpdatedAt(
+          res.data?.serverUpdatedAt,
+        );
+        const shouldReplace = shouldReplaceImplantPresetsCache(
+          cached?.serverUpdatedAt,
+          serverUpdatedAt,
+        );
+        if (shouldReplace || !cached?.data?.length) {
+          setConnections(list);
+          writeImplantPresetsCache(list, serverUpdatedAt);
         }
       } catch {
-        // ignore
+        // ignore — 캐시가 있으면 그대로 둔다
       }
     };
 

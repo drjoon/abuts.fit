@@ -2,6 +2,7 @@
 // - web/backend/scripts/db/data/connections.seed.js
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 // change-log:
+// - 2026-11-03: 공개·미도입 환봉(US·ARi 등)은 CNC 카탈로그 병합에서 제외.
 // - 2026-09-14: 임플란트 칩 기본 프리셋 SSOT(6메이저). listImplantChipOptionsWithCatalog에서 병합.
 // - 2026-08-26: AnyOne Mini API/캐시 유입 차단·Regular 표기 SSOT.
 // - 2026-08-26: AnyOne Internal Mini 제거 — D3.5도 Regular( RH PRC ).
@@ -151,6 +152,14 @@ const catalogKey = (row: {
     .join("|");
 
 /** connections API 행과 첨1 표를 합친 CNC 스펙(중복 제거, 표 우선 표시명). */
+/** 공개·미도입 환봉(US·ARi 등). CNC 「카탈로그에서 선택」에 넣지 않는다. */
+const isUnsupportedRoundBarCatalogRow = (row: {
+  roundBar?: boolean;
+  isPublic?: boolean;
+  adopted?: boolean;
+}) =>
+  (Boolean(row.roundBar) || Boolean(row.isPublic)) && row.adopted !== true;
+
 export const mergeCncImplantSpecs = <
   T extends {
     manufacturer: string;
@@ -160,6 +169,9 @@ export const mergeCncImplantSpecs = <
     displayManufacturer?: string | null;
     displayBrand?: string | null;
     displayFamily?: string | null;
+    roundBar?: boolean;
+    isPublic?: boolean;
+    adopted?: boolean;
   },
 >(
   connections: T[],
@@ -223,6 +235,10 @@ export const mergeCncImplantSpecs = <
     });
   }
   for (const row of sanitizeCncImplantConnections(connections)) {
+    // 아직 가공 지원 안 하는 공개 환봉은 표에 섞지 않는다.
+    if (isUnsupportedRoundBarCatalogRow(row)) continue;
+    // 도입된 환봉도 CNC 표(첨1)에 없으면 카탈로그 선택에 올리지 않는다.
+    if (Boolean(row.roundBar) || Boolean(row.isPublic)) continue;
     push({
       manufacturer: row.manufacturer,
       brand: String(row.brand || "").trim(),

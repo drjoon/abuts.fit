@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // change-log:
+// - 2026-11-03: 확인창 카탈로그는 CNC 표만. 공개 환봉(US·ARi 등) 미표시.
 // - 2026-10-24: 환자 한 줄 — 치아번호 칸을 더 줄이고 치과명 폭을 넓힌다.
 // - 2026-10-24: 환자 한 줄 — 치과명 폭을 넓히고 치아번호 칸은 좁힌다.
 // - 2026-10-24: 3D 확인 모달 — 환자 제목은 카드 밖, 치과·환자·치아는 한 줄.
@@ -28,6 +29,7 @@ import {
 import LabeledAutocompleteField from "@/shared/ui/forms/LabeledAutocompleteField";
 import { cn } from "@/shared/ui/cn";
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
+import { mergeCncImplantSpecs } from "@/shared/practice/cncImplantCatalog";
 
 type Option = { id: string; label: string };
 
@@ -203,23 +205,18 @@ export function NewRequestPatientImplantFields({
       ? caseInfos?.implantType || ""
       : implantType;
 
-  const connectionOptions = useMemo(() => {
-    return connections
-      .filter(
-        (c) =>
-          typeof c.manufacturer === "string" &&
-          typeof c.brand === "string" &&
-          c.manufacturer.trim() &&
-          c.brand.trim(),
-      )
-      .sort((a, b) => {
-        const manufacturerCompare = a.manufacturer.localeCompare(
-          b.manufacturer,
-          "ko",
-        );
-        if (manufacturerCompare !== 0) return manufacturerCompare;
-        return a.brand!.localeCompare(b.brand!, "ko");
-      });
+  /** 「카탈로그에서 선택」= CNC 가공 가능 표만. 공개·미지원 환봉(US·ARi)은 넣지 않는다. */
+  const connectionOptions = useMemo((): Connection[] => {
+    return mergeCncImplantSpecs(connections).map((row) => ({
+      manufacturer: row.manufacturer,
+      brand: row.brand,
+      family: row.family,
+      type: row.type,
+      displayManufacturer: row.displayManufacturer,
+      displayBrand: row.displayBrand,
+      displayFamily: row.displayFamily,
+      displayType: row.type,
+    }));
   }, [connections]);
 
   const currentTypeOptions = useMemo(() => {
@@ -350,22 +347,14 @@ export function NewRequestPatientImplantFields({
     return regular || pickFirst(families);
   };
 
-  const getBrands = (manufacturer: string): string[] => {
-    const rows = connectionOptions.filter((c) =>
-      sameManufacturer(c.manufacturer, manufacturer),
-    );
-    const cncFirst = [
-      ...rows.filter((c) => !c.roundBar && !c.isPublic),
-      ...rows.filter((c) => c.roundBar || c.isPublic),
-    ];
-    return [
-      ...new Set(
-        cncFirst
-          .map((c) => (typeof c.brand === "string" ? c.brand.trim() : ""))
-          .filter(Boolean),
-      ),
-    ];
-  };
+  const getBrands = (manufacturer: string): string[] => [
+    ...new Set(
+      connectionOptions
+        .filter((c) => sameManufacturer(c.manufacturer, manufacturer))
+        .map((c) => (typeof c.brand === "string" ? c.brand.trim() : ""))
+        .filter(Boolean),
+    ),
+  ];
 
   const getFamilies = (manufacturer: string, brand: string): string[] => [
     ...new Set(

@@ -4,13 +4,14 @@
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 //
 // 마진 코너(어깨↔벽)에서 D1.2 볼 엔드밀(실제 직경 1.0mm, 반경 0.5mm) 미삭제 구간을
-// finish line 따라 검사하고, 피니시라인 바로 위 마진↔축면 경계의 fillet R을 재고,
+// finish line 따라 검사하고, 피니시라인 위쪽 마진↔축면 경계의 fillet R을 재고,
+// 피니시라인 날(아래 커프와 만나는 모서리)은 코너로 보지 않는다.
 // R<0.5mm이면 같은 반경의 필렛 보정면을 만든다. 검출·보정에 추가 여유는 두지 않는다.
 // 보정 솔리드는 원본과 별개로 메타데이터에 담긴다. filled STL·CAM은 원본 그대로 두고,
 // 뷰어에서 토글을 켰을 때만 원본 위에 빨갛게 덧입혀 보여준다.
 import { Mesh, cross, meshAxisPlaneSection, normalize } from "./meshCore.js";
 
-export const TIGHT_CORNER_VERSION = 8;
+export const TIGHT_CORNER_VERSION = 9;
 /** D1.2 볼엔드밀의 실제 절삭 직경(mm). 호칭은 1.2이고, 검출·보정 기준 반경은 0.5mm. */
 export const FINISH_BALL_DIAMETER_MM = 1.0;
 export const FINISH_BALL_RADIUS_MM = FINISH_BALL_DIAMETER_MM / 2;
@@ -680,6 +681,24 @@ function sectionWalkAboveFl(mesh, fl, radial, axis, n) {
     }
     return out;
   };
+  // 시작 모서리(피니시라인)를 빼고 0.3~1.2mm 사이 높이를 본다.
+  // 바로 앞 1mm만 보면 날카로운 피니시라인에서 위·아래가 비슷해, 커프(아래)로 내려가는 쪽이 골라지고 R이 0이 된다.
+  const climb = (seq) => {
+    let traveled = 0;
+    let best = -Infinity;
+    for (let i = 1; i < seq.length; i += 1) {
+      traveled += Math.hypot(seq[i].u - seq[i - 1].u, seq[i].w - seq[i - 1].w);
+      if (traveled < 0.3) continue;
+      best = Math.max(best, seq[i].w);
+      if (traveled >= 1.2) break;
+    }
+    return best;
+  };
+  const fwd = walk(1);
+  const bwd = walk(-1);
+  const up = climb(fwd);
+  const down = climb(bwd);
+  if (up !== down) return up > down ? fwd : bwd;
   const rise = (seq) => {
     let mx = -Infinity;
     for (const p of seq) {
@@ -688,8 +707,6 @@ function sectionWalkAboveFl(mesh, fl, radial, axis, n) {
     }
     return mx;
   };
-  const fwd = walk(1);
-  const bwd = walk(-1);
   return rise(fwd) >= rise(bwd) ? fwd : bwd;
 }
 
@@ -769,18 +786,31 @@ function measureFilletStation(mesh, fl, axis, rawOverride) {
   }
   if (!segs.length || !(segs[0].deg >= -5 && segs[0].deg <= MARGIN_FIT_MAX_DEG)) return null;
 
+  const wFl = pts[0].w;
   let wallStart = -1;
   for (let i = 1; i < segs.length && wallStart < 0; i += 1) {
+    // 피니시라인 아래 커프 경사면은 축면이 아니다.
+    if (segs[i].a.w < wFl - 0.05) continue;
     if (segs[i].deg < WALL_MIN_DEG) continue;
     let span = 0;
-    for (let j = i; j < segs.length && segs[j].deg >= WALL_MIN_DEG; j += 1) span += segs[j].len;
+    for (
+      let j = i;
+      j < segs.length && segs[j].deg >= WALL_MIN_DEG && segs[j].a.w >= wFl - 0.05;
+      j += 1
+    ) {
+      span += segs[j].len;
+    }
     if (span >= WALL_MIN_SPAN_MM) wallStart = i;
   }
   if (wallStart < 0) return null;
-  const wFl = pts[0].w;
   const wallSegs = segs
     .slice(wallStart)
-    .filter((s) => s.deg >= WALL_MIN_DEG && s.a.w <= wFl + STATION_WALL_REACH_MM);
+    .filter(
+      (s) =>
+        s.deg >= WALL_MIN_DEG &&
+        s.a.w >= wFl - 0.05 &&
+        s.a.w <= wFl + STATION_WALL_REACH_MM,
+    );
   if (!wallSegs.length) return null;
   const maxWallDeg = Math.max(...wallSegs.map((s) => s.deg));
   const straightWall = wallSegs.filter((s) => s.deg >= maxWallDeg - STATION_WALL_STRAIGHT_DEG);
@@ -821,6 +851,8 @@ function measureFilletStation(mesh, fl, axis, rawOverride) {
     dMin = Math.min(dMin, pointSegDist(corner, pts[i], pts[i + 1]));
   }
   const dist = (p) => Math.hypot(p.u - corner.u, p.w - corner.w);
+  // 가상 코너가 피니시라인 꼭짓점 자체면 날카로운 마진선을 잰 것이다. 더 안쪽 이음은 프로파일 폴백에 맡긴다.
+  if (dist(pts[0]) < 0.08 && dMin < 0.02) return null;
   return {
     axis,
     radial,
@@ -952,6 +984,10 @@ function measureProfileFilletStation(mesh, fl, axis, onSkip, rawOverride) {
     dMin = Math.min(dMin, pointSegDist(corner, pts[i], pts[i + 1]));
   }
   const dist = (p) => Math.hypot(p.u - corner.u, p.w - corner.w);
+  if (dist(pts[0]) < 0.08 && dMin < 0.02) {
+    onSkip?.("finish-line-crease");
+    return null;
+  }
   const wallFitStart = pts[Math.min(pts.length - 1, iw + excl)];
   return {
     axis,
