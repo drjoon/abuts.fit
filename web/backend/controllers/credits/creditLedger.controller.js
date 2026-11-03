@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-03: 월 로드 — CA 게이트는 숨김 후보만·기간 한정 pipeline·PTX files 슬림.
 // - 2026-11-03: pageSize 상한 500(월 단위 dense 한 번에 로드).
 // - 2026-11-03: includePeriodSummary=0이면 기간 요약 skip. toothWorks→toothNumbers enrich.
 // - 2026-11-03: 기간 요약을 enrich와 병렬(page1 지연 축소).
@@ -54,7 +55,10 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
 import LedgerJournal from "../../models/ledgerJournal.model.js";
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
-import { buildFeeQuotesForTransferDocs, listPracticeTransferIdsBlockedFromSettlement } from "../../services/practiceTransferBilling.service.js";
+import {
+  buildLedgerListFeeQuotesForTransferDocs,
+  listPracticeTransferIdsBlockedFromSettlement,
+} from "../../services/practiceTransferBilling.service.js";
 import { scheduleHealMissingExpressSurchargesForBusiness } from "../requests/common.review.helpers.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { isCustomAbutmentLabFeeLineType } from "../../utils/labFeeSchedule.js";
@@ -90,14 +94,25 @@ import {
   parseCreditUsageScope,
   resolveCreditLedgerRequestorKind,
   shouldHideBlockedPracticeTransferLedgerRow,
+  ledgerRowMayNeedSettlementBlockCheck,
 } from "./creditLedger.utils.js";
 
 
-async function resolveRequestorKindForAnchor(businessAnchorId, fallbackKind) {
+async function resolveRequestorKindAndDemoMode(businessAnchorId, fallbackKind) {
   const anchor = await BusinessAnchor.findById(businessAnchorId)
-    .select({ requestorKind: 1, businessType: 1 })
+    .select({ requestorKind: 1, businessType: 1, demoMode: 1 })
     .lean();
-  return resolveCreditLedgerRequestorKind(anchor, fallbackKind);
+  return {
+    requestorKind: resolveCreditLedgerRequestorKind(anchor, fallbackKind),
+    demoMode: Boolean(anchor?.demoMode),
+  };
+}
+
+function ledgerRowNeedsAbutmentBoxMeta(row) {
+  const share = String(row?.holdShare || "").trim();
+  if (share === "abuts_shipping" || share === "lab_shipping") return true;
+  const label = String(row?.displayLabel || "");
+  return label.includes("기공소→어벗츠");
 }
 
 function buildCurrentBalanceSnapshot(
@@ -387,14 +402,10 @@ export async function listMyCreditLedger(req, res) {
     applyOnYmdToOccurredAt(onYmdRaw, occurredAt);
   }
 
-  const requestorKind = await resolveRequestorKindForAnchor(
+  const { requestorKind, demoMode } = await resolveRequestorKindAndDemoMode(
     anchorObjectId,
     req.user?.requestorKind,
   );
-  const demoModeAnchor = await BusinessAnchor.findById(anchorObjectId)
-    .select({ demoMode: 1 })
-    .lean();
-  const demoMode = Boolean(demoModeAnchor?.demoMode);
 
   let refIdIn = null;
   if (partnerNameRaw) {
@@ -565,40 +576,28 @@ export async function listMyCreditLedger(req, res) {
     .toLowerCase();
   const includePeriodSummary =
     includePeriodSummaryRaw !== "0" && includePeriodSummaryRaw !== "false";
-  const blockedSettlementIdsPromise =
-    requestorKind === "practice" || requestorKind === "lab"
-      ? listPracticeTransferIdsBlockedFromSettlement({
-          practiceAnchorId:
-            requestorKind === "practice" ? anchorObjectId : null,
-          labAnchorId: requestorKind === "lab" ? anchorObjectId : null,
-        })
-      : Promise.resolve(new Set());
-
-  const [balanceSnapshot, facetRaw, blockedSettlementIds] = await Promise.all([
-    getBusinessCreditBalanceSnapshot({
-      businessAnchorId: anchorObjectId,
-      upsertIfMissing: true,
-    }),
-    LedgerLine.aggregate(pipeline),
-    blockedSettlementIdsPromise,
-  ]);
-  // 기간 요약은 enrich와 무관 — 병렬로 돌려 page1 대기 시간을 줄인다.
-  const periodLedgerSummaryPromise =
+  const needPeriodSummary =
     page === 1 &&
     includePeriodSummary &&
-    (requestorKind === "practice" || requestorKind === "lab")
-      ? aggregateRequestorPeriodLedgerSummary({
-          ownerObjectId: anchorObjectId,
-          occurredAt: periodOccurredAt,
-          journalCollectionName: LedgerJournal.collection.name,
-          // 정산 적립 카드=확정만. 적립 보류는 잔액 미반영·별도 필드로만 노출.
-          includePendingLabSettlement: false,
-          settlementEarnPendingBreakdown: requestorKind === "lab",
-          usageScope,
-          practiceDemoMode,
-          excludeRefIds: blockedSettlementIds,
-        })
-      : Promise.resolve(null);
+    (requestorKind === "practice" || requestorKind === "lab");
+  // 기간 요약이 필요할 때만 전수 CA 게이트. 월 dense(요약 skip)는 페이지 후보만.
+  const fullBlockedPromise = needPeriodSummary
+    ? listPracticeTransferIdsBlockedFromSettlement({
+        practiceAnchorId:
+          requestorKind === "practice" ? anchorObjectId : null,
+        labAnchorId: requestorKind === "lab" ? anchorObjectId : null,
+      })
+    : Promise.resolve(null);
+
+  const [balanceSnapshot, facetRaw, fullBlockedSettlementIds] =
+    await Promise.all([
+      getBusinessCreditBalanceSnapshot({
+        businessAnchorId: anchorObjectId,
+        upsertIfMissing: true,
+      }),
+      LedgerLine.aggregate(pipeline),
+      fullBlockedPromise,
+    ]);
   const currentBalance = Number(balanceSnapshot?.balance || 0);
   const currentSettlementCredit = Number(balanceSnapshot?.settlementCredit || 0);
 
@@ -622,6 +621,43 @@ export async function listMyCreditLedger(req, res) {
     skippedSum = merged.skippedSum;
     skippedDemoSum = Number(merged.skippedDemoSum || 0);
   }
+
+  let blockedSettlementIds = fullBlockedSettlementIds;
+  if (!blockedSettlementIds) {
+    const hideCandidateIds = [
+      ...new Set(
+        pageRows
+          .filter((row) =>
+            ledgerRowMayNeedSettlementBlockCheck(row, requestorKind),
+          )
+          .map((row) => String(row?.refId || "").trim())
+          .filter(Boolean),
+      ),
+    ];
+    blockedSettlementIds = hideCandidateIds.length
+      ? await listPracticeTransferIdsBlockedFromSettlement({
+          practiceAnchorId:
+            requestorKind === "practice" ? anchorObjectId : null,
+          labAnchorId: requestorKind === "lab" ? anchorObjectId : null,
+          transferIds: hideCandidateIds,
+        })
+      : new Set();
+  }
+
+  // 기간 요약은 enrich와 무관 — 병렬로 돌려 page1 대기 시간을 줄인다.
+  const periodLedgerSummaryPromise = needPeriodSummary
+    ? aggregateRequestorPeriodLedgerSummary({
+        ownerObjectId: anchorObjectId,
+        occurredAt: periodOccurredAt,
+        journalCollectionName: LedgerJournal.collection.name,
+        // 정산 적립 카드=확정만. 적립 보류는 잔액 미반영·별도 필드로만 노출.
+        includePendingLabSettlement: false,
+        settlementEarnPendingBreakdown: requestorKind === "lab",
+        usageScope,
+        practiceDemoMode,
+        excludeRefIds: blockedSettlementIds,
+      })
+    : Promise.resolve(null);
 
   if (blockedSettlementIds?.size) {
     pageRows = pageRows.filter(
@@ -737,6 +773,9 @@ export async function listMyCreditLedger(req, res) {
   const toObjectIds = (ids) =>
     ids.map((id) => new mongoose.Types.ObjectId(id));
 
+  const needsAbutmentBoxMeta = items.some((row) =>
+    ledgerRowNeedsAbutmentBoxMeta(row),
+  );
   const [requestDocs, packageDocs, transferDocs, grants, ptxCaRequestDocs] =
     await Promise.all([
       requestRefIds.length
@@ -767,7 +806,7 @@ export async function listMyCreditLedger(req, res) {
               practiceBusinessAnchorId: 1,
               matchingMode: 1,
               transferMemo: 1,
-              files: 1,
+              "files.patientName": 1,
               toothWorks: 1,
               billing: 1,
               remakeCharges: 1,
@@ -783,8 +822,8 @@ export async function listMyCreditLedger(req, res) {
             .select({ _id: 1, type: 1, source: 1, overrideReason: 1 })
             .lean()
         : Promise.resolve([]),
-      // PTX→어벗츠 배송 박스키용 CA Request(출고일)
-      practiceTransferRefIds.length
+      // PTX→어벗츠 배송 박스키용 CA Request(출고일) — 해당 hold가 있을 때만
+      needsAbutmentBoxMeta && practiceTransferRefIds.length
         ? Request.find({
             "partnerBilling.relatedPracticeTransferId": {
               $in: toObjectIds(practiceTransferRefIds),
@@ -833,7 +872,7 @@ export async function listMyCreditLedger(req, res) {
           .lean()
       : Promise.resolve([]),
     (transferDocs || []).length
-      ? buildFeeQuotesForTransferDocs({
+      ? buildLedgerListFeeQuotesForTransferDocs({
           docs: transferDocs,
           viewingLabAnchorId:
             String(requestorKind || "").trim() === "lab"

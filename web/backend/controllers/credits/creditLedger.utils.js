@@ -8,6 +8,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-11-03: 월 조회 pipeline overfetch 제거. CA 숨김 후보 판별 헬퍼.
 // - 2026-09-27: 원청 장부 거래내역 — 협력·하청으로 지급한 기공소명.
 // - 2026-09-27: 어벗츠 원청 — 매출·하청/협력 지급을 따로 집계. internalLab은 기공소 장부.
 // - 2026-09-20: 기간 소비 완료/보류 — PTX는 billing.settledAt(장부 결제상태와 동일). Request만 convertedAt.
@@ -164,6 +165,30 @@ export function isPendingLabSettlementMirrorRow(row) {
  * - 치과: 결제 보류·소비(HOLD/ADJUST/COMMIT)는 유지. 정산 적립만 가림(보통 아직 없음).
  * - 기공소: 확정 적립 등 원장 행은 가림. 적립 보류 미러는 노출(확정·payout만 STL·생산비 후).
  */
+/**
+ * CA 게이트로 숨길 수 있는 행인지(blocked id 조회 전에).
+ * 치과 월 내역처럼 SPEND_HOLD만이면 false → 전수 held PTX 스캔을 건너뛴다.
+ */
+export function ledgerRowMayNeedSettlementBlockCheck(row, requestorKind) {
+  const refType = String(row?.refType || "").trim().toUpperCase();
+  const refId = String(row?.refId || "").trim();
+  if (refType !== "PRACTICE_TRANSFER" || !refId) return false;
+  const kind = String(requestorKind || "").trim().toLowerCase();
+  if (kind !== "practice") {
+    return !isPendingLabSettlementMirrorRow(row);
+  }
+  if (isPracticeTransferPaymentHoldLedgerRow(row)) return false;
+  const et = String(row?.eventType || "").trim().toUpperCase();
+  if (
+    et === "PRACTICE_TRANSFER_SPEND_HOLD" ||
+    et === "PRACTICE_TRANSFER_HOLD_ADJUST" ||
+    et === "PRACTICE_TRANSFER_SPEND_COMMIT"
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export function shouldHideBlockedPracticeTransferLedgerRow({
   row,
   requestorKind,
@@ -178,27 +203,9 @@ export function shouldHideBlockedPracticeTransferLedgerRow({
             .filter(Boolean),
         );
   if (!blocked.size) return false;
-  const refType = String(row?.refType || "").trim().toUpperCase();
   const refId = String(row?.refId || "").trim();
-  if (refType !== "PRACTICE_TRANSFER" || !refId || !blocked.has(refId)) {
-    return false;
-  }
-  const kind = String(requestorKind || "").trim().toLowerCase();
-  if (kind !== "practice") {
-    // 기공소: 적립 보류 미러는 작업시작(hold)부터 보이게 둔다.
-    if (isPendingLabSettlementMirrorRow(row)) return false;
-    return true;
-  }
-  if (isPracticeTransferPaymentHoldLedgerRow(row)) return false;
-  const et = String(row?.eventType || "").trim().toUpperCase();
-  if (
-    et === "PRACTICE_TRANSFER_SPEND_HOLD" ||
-    et === "PRACTICE_TRANSFER_HOLD_ADJUST" ||
-    et === "PRACTICE_TRANSFER_SPEND_COMMIT"
-  ) {
-    return false;
-  }
-  return true;
+  if (!refId || !blocked.has(refId)) return false;
+  return ledgerRowMayNeedSettlementBlockCheck(row, requestorKind);
 }
 
 /** Mongo $expr — creditLedgerStatsCategoryExpr / 드릴다운과 공유 */
@@ -1600,6 +1607,19 @@ export function buildRequestorCreditLedgerPipeline({
         startIdx: skip,
         pageSize: limit,
         extra: 1,
+      }),
+    );
+  } else if (occurredAt && Object.keys(occurredAt).length) {
+    // 월·기간 조회: 구간 전체를 그룹(과다 overfetch 불필요).
+    pipeline.push(
+      { $sort: { occurredAt: -1, _id: -1 } },
+      lineGroupStage(),
+      { $sort: { occurredAt: -1, _id: -1 } },
+      pagingFacet({
+        startIdx: skip,
+        pageSize: limit,
+        extra: 1,
+        itemStages: lookupStages,
       }),
     );
   } else {

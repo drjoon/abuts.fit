@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-11-03: 장부 목록 견적=billing 스냅샷. CA 게이트는 designFiles.tooth·transferIds 스코프.
 // - 2026-10-11: 데모 가상 잔고는 기공비만. 커스텀어벗(디자인+생산 소매)은 충전 잔액 필요.
 // - 2026-10-07: remakeFeeQuote — 어벗츠로부터 리메이크=무료(월 3건 유료 구간 폐지).
 // - 2026-10-05: 플랫폼 사용료·하청 수수료 미부과. 스냅샷이 있어도 차감 0.
@@ -3340,11 +3341,24 @@ export async function selectPracticeTransferIdsBlockedFromSettlement(
 export async function listPracticeTransferIdsBlockedFromSettlement({
   practiceAnchorId = null,
   labAnchorId = null,
+  /** 지정 시 해당 PTX만 검사(장부 페이지 후보). 기간 요약은 생략하고 전수. */
+  transferIds = null,
   session = null,
 } = {}) {
   const practiceId = String(practiceAnchorId || "").trim();
   const labId = String(labAnchorId || "").trim();
+  const scopedIds = [
+    ...new Set(
+      (Array.isArray(transferIds) ? transferIds : [])
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id)),
+    ),
+  ];
+  if (Array.isArray(transferIds) && scopedIds.length === 0) {
+    return new Set();
+  }
   if (
+    !scopedIds.length &&
     (!practiceId || !Types.ObjectId.isValid(practiceId)) &&
     (!labId || !Types.ObjectId.isValid(labId))
   ) {
@@ -3368,6 +3382,11 @@ export async function listPracticeTransferIdsBlockedFromSettlement({
       $or: [{ workCanceledAt: null }, { workCanceledAt: { $exists: false } }],
     },
   ];
+  if (scopedIds.length) {
+    and.push({
+      _id: { $in: scopedIds.map((id) => new Types.ObjectId(id)) },
+    });
+  }
   if (practiceId && Types.ObjectId.isValid(practiceId)) {
     and.push({
       practiceBusinessAnchorId: new Types.ObjectId(practiceId),
@@ -3383,11 +3402,12 @@ export async function listPracticeTransferIdsBlockedFromSettlement({
     .select({
       toothWorks: 1,
       billing: 1,
-      "production.designFiles": 1,
+      // 길이만 필요 — file(URL) 전체 로드 금지
+      "production.designFiles.tooth": 1,
       "production.designFileCount": 1,
       "production.relatedRequestIds": 1,
     })
-    .limit(1000)
+    .limit(scopedIds.length ? Math.min(1000, scopedIds.length) : 1000)
     .session(session || null)
     .lean();
   return selectPracticeTransferIdsBlockedFromSettlement(docs, { session });
@@ -6782,6 +6802,81 @@ export async function loadPracticeTransferQuoteContext({
     setRequestPerfCacheValue(cacheKey, context, QUOTE_LOOKUP_CACHE_TTL_MS);
     return context;
   });
+}
+
+/**
+ * 장부 목록용 — billing 스냅샷이 있으면 수가 재계산 없이 견적.
+ * 스냅 없는 건만 buildFeeQuotesForTransferDocs(풀 경로).
+ * remakeFeeQuote는 생략(장부는 remakeCharges 행으로 분리).
+ */
+export async function buildLedgerListFeeQuotesForTransferDocs({
+  docs,
+  viewingLabAnchorId = null,
+}) {
+  const list = Array.isArray(docs) ? docs : [];
+  if (!list.length) return new Map();
+
+  const out = new Map();
+  const needLive = [];
+  for (const doc of list) {
+    const docId = String(doc?._id || "");
+    if (!docId) continue;
+    const billing =
+      doc?.billing && typeof doc.billing === "object" ? doc.billing : null;
+    const hasSnap =
+      Boolean(billing?.heldAt || billing?.billedAt) &&
+      (Math.round(Number(billing?.labFeeTotal || 0)) > 0 ||
+        Math.round(Number(billing?.heldTotal || 0)) > 0 ||
+        Math.round(Number(billing?.total || 0)) > 0);
+    if (!hasSnap) {
+      needLive.push(doc);
+      continue;
+    }
+    const remakeLabFee = sumRemakeChargeLabFeeTotals(doc?.remakeCharges);
+    const billingForQuote =
+      remakeLabFee > 0
+        ? {
+            ...billing,
+            labFeeTotal: Math.max(
+              0,
+              Math.round(Number(billing.labFeeTotal || 0)) - remakeLabFee,
+            ),
+            total: Math.max(
+              0,
+              Math.round(Number(billing.total || 0)) - remakeLabFee,
+            ),
+            labSettlementAmount: Math.max(
+              0,
+              Math.round(Number(billing.labSettlementAmount || 0)) -
+                remakeLabFee,
+            ),
+            heldTotal: Math.max(
+              0,
+              Math.round(Number(billing.heldTotal || 0)) - remakeLabFee,
+            ),
+            heldLabTotal: Math.max(
+              0,
+              Math.round(Number(billing.heldLabTotal || 0)) - remakeLabFee,
+            ),
+          }
+        : billing;
+    out.set(
+      docId,
+      feeQuoteFromBillingDoc(billingForQuote, {
+        lines: [],
+        billed: Boolean(billing?.billedAt),
+      }),
+    );
+  }
+
+  if (needLive.length) {
+    const live = await buildFeeQuotesForTransferDocs({
+      docs: needLive,
+      viewingLabAnchorId,
+    });
+    for (const [id, quote] of live) out.set(id, quote);
+  }
+  return out;
 }
 
 /**
