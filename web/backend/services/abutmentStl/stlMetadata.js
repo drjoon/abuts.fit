@@ -261,17 +261,24 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox, {
     y: axisCenter.y,
     z: (bbox.min.z + bbox.max.z) / 2,
   };
-  // 12방향이 같은 Z. 피니시라인 바로 위 축면만 잰다.
-  // 위쪽까지 올리면 경사진 교합면이 방향별 최대 반경에 섞이고, 그 큰 각이 삽입축 평균을 잡아당긴다.
-  const bandStartFrac = 0.1;
-  const bandEndFrac = 0.36;
-  const postStartZ = finishLineTopZ + postSpanAboveFl * bandStartFrac;
+  // 12방향이 같은 Z. 피니시라인 위 축면만 잰다.
+  // 아래를 마진에 붙이면 필렛·숄더 반경이 섞여 각이 뉘고, 위까지 올리면 교합면 기울기가 평균을 잡아당긴다.
+  const bandStartFrac = 0.18;
+  const bandEndFrac = 0.42;
+  // 공구 R0.5 마진 필렛 위로 축면에 올라선 뒤 잰다(짧은 포스트는 높이 비율로 줄임).
+  const marginAxialClearanceMm = Math.min(0.75, postSpanAboveFl * 0.3);
+  const postStartZ =
+    finishLineTopZ +
+    Math.max(postSpanAboveFl * bandStartFrac, marginAxialClearanceMm);
   let postEndZ = finishLineTopZ + postSpanAboveFl * bandEndFrac;
   if (postEndZ - postStartZ < 0.18) {
     postEndZ = Math.min(
-      finishLineTopZ + postSpanAboveFl * 0.5,
-      postStartZ + 0.18,
+      finishLineTopZ + postSpanAboveFl * 0.55,
+      postStartZ + 0.22,
     );
+  }
+  if (!(postEndZ > postStartZ + 0.12)) {
+    return null;
   }
   const postHeight = postEndZ - postStartZ;
   const wedgeRad = (14 * Math.PI) / 180;

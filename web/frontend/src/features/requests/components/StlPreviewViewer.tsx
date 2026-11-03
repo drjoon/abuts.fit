@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-03: 삽입축 측정선 아래점을 마진(피니시라인)이 아니라 축면에 둔다.
 // - 2026-11-03: tightCorner v9 미만(피니시라인 날 R0 오검사) 오버레이·칩을 그리지 않는다.
 // - 2026-10-27: 공구 R 표시는 실제 절삭 반경 0.5mm. 예전 메타의 호칭 직경 1.2는 0.6으로 나누지 않는다.
 // - 2026-10-17: 프론트포인트(녹색점)를 finishLineVisible(또는 frontPointVisible)과 함께 on/off.
@@ -2181,15 +2182,15 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
         // false일 때(의뢰자 페이지)는 AAA 값과 관련된 가이드만 그립니다.
         // 원본 STL은 오버레이 표시 안함, filled STL만 표시
         if (taperGuide && isFilled) {
-          const guideHeight = Math.max(taperGuide.zEnd - taperGuide.zStart, 1);
-          // 포스트 축면 외측 둘레 — 측정 밴드 대부분을 표시
-          const renderStartZ = taperGuide.zStart + guideHeight * 0.05;
-          const renderEndZ = taperGuide.zStart + guideHeight * 0.95;
+          // 포스트 축면만. 마진(피니시라인)에 아래점을 두면 각이 누워 보인다.
+          const guideSpan = Math.max(taperGuide.zEnd - taperGuide.zStart, 0.2);
+          const renderStartZ = taperGuide.zStart + guideSpan * 0.05;
+          const renderEndZ = taperGuide.zStart + guideSpan * 0.95;
+          /** 마진 필렛·숄더 위로 축면에 올린 최소 여유(mm). */
+          const marginAxialClearanceMm = 0.75;
           // filled STL은 이미 원점 정렬되어 있으므로 center.z를 빼지 않음
           const effectiveCenter =
             centerRef.current || new THREE.Vector3(0, 0, 0);
-          const zStartCentered = renderStartZ - effectiveCenter.z;
-          const zEndCentered = renderEndZ - effectiveCenter.z;
 
           // 의뢰자 페이지(showOverlay=false)에서는 중심축을 숨김
           // 제조사 페이지에서도 녹색 중심축 표시 제거
@@ -2263,13 +2264,28 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
                 return;
               }
 
+              const sampleLo = Number(guide.sampleStartZ);
+              const sampleHi = Number(guide.sampleEndZ);
+              const dirFlZ = Number(guide.dirFinishLineZ);
+              let zLo = Number.isFinite(sampleLo) ? sampleLo : renderStartZ;
+              let zHi = Number.isFinite(sampleHi) ? sampleHi : renderEndZ;
+              zLo = Math.max(zLo, renderStartZ);
+              zHi = Math.min(zHi, renderEndZ);
+              // 아래점은 로컬 마진(피니시라인) 위 축면에만 둔다.
+              if (Number.isFinite(dirFlZ)) {
+                zLo = Math.max(zLo, dirFlZ + marginAxialClearanceMm);
+              }
+              if (!(zHi > zLo + 0.12)) {
+                zHi = zLo + 0.2;
+              }
+
               const guideAngleRad = (guideAngleDeg * Math.PI) / 180;
               const dirX = Math.cos(guideAngleRad);
               const dirY = Math.sin(guideAngleRad);
               // filled STL의 임플란트 축은 XY 원점. slope·intercept 반지름도 그 축 기준이다.
               const centeredPoints: Array<{ x: number; y: number; z: number }> =
                 [];
-              for (const worldZ of [renderStartZ, renderEndZ]) {
+              for (const worldZ of [zLo, zHi]) {
                 const radius = slope * worldZ + intercept;
                 if (!Number.isFinite(radius)) continue;
                 centeredPoints.push({
