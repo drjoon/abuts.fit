@@ -1,9 +1,7 @@
 // related files:
-// - bg/pc1/rhino-server/stl-metadata/index.js (원본, 동작 SSOT — 계산부 사본)
 // - web/backend/services/abutmentStl/pipeline.js
 //
-// stl-metadata/index.js의 계산부를 모듈로 옮긴 사본이다. CLI·파일 읽기만 버퍼 입력으로 바꿨다.
-// 원본 계산을 고치면 이 파일도 같이 고친다.
+// STL 메타(테이퍼·삽입축·프론트포인트) 계산 SSOT. 라이노 stl-metadata는 레거시로 더 이상 맞추지 않는다.
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
@@ -434,49 +432,120 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox, {
       }
     }
 
-    for (let d = 0; d < angleCount; d += 1) {
-      const samples = dirSamples[d];
-      if (samples.length < 6) continue;
-      const dirN = samples.length;
-      const dirSumZ = samples.reduce((acc, cur) => acc + cur.z, 0);
-      const dirSumR = samples.reduce((acc, cur) => acc + cur.radius, 0);
-      const dirMeanZ = dirSumZ / dirN;
-      const dirMeanR = dirSumR / dirN;
-      let dirNum = 0;
-      let dirDenom = 0;
-      for (const sample of samples) {
-        const dz = sample.z - dirMeanZ;
-        dirNum += dz * (sample.radius - dirMeanR);
-        dirDenom += dz * dz;
+    // 같은 Z에서 이웃 방향보다 안쪽으로 패인 점 = 유지홈. 축면 회귀·삽입축에서 뺀다.
+    const GROOVE_DIP_MM = 0.12;
+    const zMatchTol = Math.max(postHeight / sliceCount, 1e-3) * 1.1;
+    const radiusNearZ = (samples, z) => {
+      let best = null;
+      let bestDz = Infinity;
+      for (let i = 0; i < samples.length; i += 1) {
+        const dz = Math.abs(samples[i].z - z);
+        if (dz <= zMatchTol && dz < bestDz) {
+          bestDz = dz;
+          best = samples[i].radius;
+        }
       }
-      if (!(dirDenom > 1e-8)) continue;
-      const dirSlope = dirNum / dirDenom;
-      const dirIntercept = dirMeanR - dirSlope * dirMeanZ;
+      return best;
+    };
+    const fitRadiusLine = (pts) => {
+      if (pts.length < 6) return null;
+      const n = pts.length;
+      let sumZ = 0;
+      let sumR = 0;
+      for (let i = 0; i < n; i += 1) {
+        sumZ += pts[i].z;
+        sumR += pts[i].radius;
+      }
+      const meanZ = sumZ / n;
+      const meanR = sumR / n;
+      let num = 0;
+      let den = 0;
+      for (let i = 0; i < n; i += 1) {
+        const dz = pts[i].z - meanZ;
+        num += dz * (pts[i].radius - meanR);
+        den += dz * dz;
+      }
+      if (!(den > 1e-8)) return null;
+      const slope = num / den;
+      const intercept = meanR - slope * meanZ;
       let ssRes = 0;
       let ssTot = 0;
-      for (const sample of samples) {
-        const predicted = dirSlope * sample.z + dirIntercept;
-        const residual = sample.radius - predicted;
+      for (let i = 0; i < n; i += 1) {
+        const residual = pts[i].radius - (slope * pts[i].z + intercept);
         ssRes += residual * residual;
-        const totalDev = sample.radius - dirMeanR;
+        const totalDev = pts[i].radius - meanR;
         ssTot += totalDev * totalDev;
       }
-      const residualRms = Math.sqrt(ssRes / dirN);
+      const residualRms = Math.sqrt(ssRes / n);
+      const rSquared = ssTot > 1e-8 ? 1 - ssRes / ssTot : 1;
+      return { slope, intercept, residualRms, rSquared };
+    };
+
+    for (let d = 0; d < angleCount; d += 1) {
+      const raw = dirSamples[d];
+      if (raw.length < 6) continue;
+      const left = dirSamples[(d + angleCount - 1) % angleCount];
+      const right = dirSamples[(d + 1) % angleCount];
+      const wallSamples = [];
+      const wallSurface = [];
+      for (let i = 0; i < raw.length; i += 1) {
+        const sample = raw[i];
+        const rL = radiusNearZ(left, sample.z);
+        const rR = radiusNearZ(right, sample.z);
+        let neighMax = -Infinity;
+        if (rL != null) neighMax = Math.max(neighMax, rL);
+        if (rR != null) neighMax = Math.max(neighMax, rR);
+        if (Number.isFinite(neighMax) && sample.radius < neighMax - GROOVE_DIP_MM) {
+          continue;
+        }
+        wallSamples.push(sample);
+        wallSurface.push(surfacePoints[d][i]);
+      }
+      // 유지홈 슬라이스가 많으면 이 방향 전체를 버린다(잘못된 큰 각이 삽입축을 기울임).
+      const grooveHits = raw.length - wallSamples.length;
+      if (grooveHits >= Math.max(3, Math.ceil(raw.length * 0.25))) {
+        continue;
+      }
+
+      let samples = wallSamples;
+      let keptSurface = wallSurface;
+      let fit = fitRadiusLine(samples);
+      if (!fit) continue;
+      // 회귀선보다 안쪽으로 남은 유지홈 잔여점도 한 번 더 제거
+      if (samples.length >= 8) {
+        const refined = [];
+        const refinedSurface = [];
+        for (let i = 0; i < samples.length; i += 1) {
+          const pred = fit.slope * samples[i].z + fit.intercept;
+          if (samples[i].radius >= pred - GROOVE_DIP_MM) {
+            refined.push(samples[i]);
+            refinedSurface.push(keptSurface[i]);
+          }
+        }
+        if (refined.length >= 6 && refined.length < samples.length) {
+          const refinedFit = fitRadiusLine(refined);
+          if (refinedFit) {
+            samples = refined;
+            keptSurface = refinedSurface;
+            fit = refinedFit;
+          }
+        }
+      }
+
       // 수직 축면은 반지름이 거의 일정해 ssTot≈0 이다. 그때 R²를 0으로 두면 방향이 전부 버려지고
       // 교합 림 앞점까지 계산하지 않는다. 잔차가 작으면 기울기 0인 직선으로 본다.
-      const rSquared = ssTot > 1e-8 ? 1 - ssRes / ssTot : 1;
-      if (!(rSquared > 0.65 || residualRms <= 0.12)) continue;
+      if (!(fit.rSquared > 0.65 || fit.residualRms <= 0.12)) continue;
       directions.push({
         angle: angles[d],
-        slope: dirSlope,
-        intercept: dirIntercept,
-        taperAngle: Math.atan(dirSlope) * (180 / Math.PI),
-        rSquared,
+        slope: fit.slope,
+        intercept: fit.intercept,
+        taperAngle: Math.atan(fit.slope) * (180 / Math.PI),
+        rSquared: fit.rSquared,
         dirFinishLineZ: dirFinishLineZ[d],
         dirAvailableHeight: postSpanAboveFl,
         sampleStartZ: postStartZ,
         sampleEndZ: postEndZ,
-        surfacePoints: surfacePoints[d],
+        surfacePoints: keptSurface,
       });
     }
   }
