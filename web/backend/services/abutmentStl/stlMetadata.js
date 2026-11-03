@@ -260,18 +260,20 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox, {
     z: (bbox.min.z + bbox.max.z) / 2,
   };
   // 12방향이 같은 Z. 피니시라인 위 축면만 잰다.
-  // 아래를 마진에 붙이면 필렛·숄더 반경이 섞여 각이 뉘고, 위까지 올리면 교합면 기울기가 평균을 잡아당긴다.
-  const bandStartFrac = 0.18;
-  const bandEndFrac = 0.42;
-  // 공구 R0.5 마진 필렛 위로 축면에 올라선 뒤 잰다(짧은 포스트는 높이 비율로 줄임).
-  const marginAxialClearanceMm = Math.min(0.75, postSpanAboveFl * 0.3);
+  // 스캘럽 마진의 높은 쪽은 이머전스·필렛이 더 위로 남아, 밴드를 낮게 잡으면
+  // 그 방향만 반경이 빨리 줄어든 것처럼 보여 삽입축이 기운다. 축면 중·상단을 잰다.
+  // 너무 올리면 교합면 기울기가 섞이므로 상한은 포스트 중반에 둔다.
+  const bandStartFrac = 0.3;
+  const bandEndFrac = 0.55;
+  // 공구 R0.5 마진 필렛·이머전스 위로 축면에 올라선 뒤 잰다(짧은 포스트는 높이 비율로 줄임).
+  const marginAxialClearanceMm = Math.min(1.15, postSpanAboveFl * 0.4);
   const postStartZ =
     finishLineTopZ +
     Math.max(postSpanAboveFl * bandStartFrac, marginAxialClearanceMm);
   let postEndZ = finishLineTopZ + postSpanAboveFl * bandEndFrac;
   if (postEndZ - postStartZ < 0.18) {
     postEndZ = Math.min(
-      finishLineTopZ + postSpanAboveFl * 0.55,
+      finishLineTopZ + postSpanAboveFl * 0.7,
       postStartZ + 0.22,
     );
   }
@@ -427,6 +429,8 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox, {
       }
       for (let d = 0; d < angleCount; d += 1) {
         if (!(maxRadius[d] > -10) || !bestHit[d]) continue;
+        // 방향별 마진 바로 위는 이머전스라 축면에서 뺀다.
+        if (targetZ < dirFinishLineZ[d] + marginAxialClearanceMm) continue;
         dirSamples[d].push({ z: targetZ, radius: maxRadius[d] });
         surfacePoints[d].push({ x: bestX[d], y: bestY[d], z: bestZ[d] });
       }
@@ -579,25 +583,47 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox, {
   if (pairedAverages.length > 0) {
     taperAngle = Math.max(...pairedAverages);
 
-    // 둘레 12방향 축면 각 → 크라운 삽입축(가중 평균)
-    let sumX = 0;
-    let sumY = 0;
-    let sumZ = 0;
-    let weightSum = 0;
+    // 둘레 12방향 축면 각 → 크라운 삽입축.
+    // |기울기| 가중은 오염된 큰 각 쌍이 축을 잡아당긴다. R²로 두고, 중앙값에서 벗어난 쌍은 버린다.
+    const pairTilts = [];
     for (let baseAngle = 0; baseAngle < 180; baseAngle += 30) {
       const oppositeAngle = baseAngle + 180;
       const baseGuide = directions.find((g) => g.angle === baseAngle);
       const oppositeGuide = directions.find((g) => g.angle === oppositeAngle);
       if (!baseGuide || !oppositeGuide) continue;
+      pairTilts.push({
+        baseAngle,
+        trueTilt: baseGuide.taperAngle,
+        r2: Math.min(baseGuide.rSquared || 0, oppositeGuide.rSquared || 0),
+      });
+    }
+    const absSorted = pairTilts
+      .map((p) => Math.abs(p.trueTilt))
+      .sort((a, b) => a - b);
+    const medianAbs =
+      absSorted.length > 0 ? absSorted[Math.floor(absSorted.length / 2)] : 0;
+    const tiltLimit = Math.max(medianAbs * 2.5, medianAbs + 1.5, 0.5);
+    const keptPairs = pairTilts.filter(
+      (p) => Math.abs(p.trueTilt) <= tiltLimit,
+    );
+    const axisPairs = keptPairs.length > 0 ? keptPairs : pairTilts;
 
-      const trueTilt = baseGuide.taperAngle;
+    let sumX = 0;
+    let sumY = 0;
+    let sumZ = 0;
+    let weightSum = 0;
+    for (const pair of axisPairs) {
+      const trueTilt = pair.trueTilt;
       const absTilt = Math.abs(trueTilt);
-      if (absTilt < 1e-4) continue;
-
-      const rad = baseAngle * (Math.PI / 180);
+      const w = Math.max(pair.r2, 0.05);
+      if (absTilt < 1e-4) {
+        sumZ += w;
+        weightSum += w;
+        continue;
+      }
+      const rad = pair.baseAngle * (Math.PI / 180);
       const tiltRad = absTilt * (Math.PI / 180);
       const directionAngle = trueTilt >= 0 ? rad : rad + Math.PI;
-      const w = absTilt;
       sumX += w * Math.sin(tiltRad) * Math.cos(directionAngle);
       sumY += w * Math.sin(tiltRad) * Math.sin(directionAngle);
       sumZ += w * Math.cos(tiltRad);
