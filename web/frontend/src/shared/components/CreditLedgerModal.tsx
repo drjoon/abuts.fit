@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-11-03: dense 기본=도착일·날짜 오름차순(1→말일). 뱃지「주문」「도착」(기공의뢰와 동일).
+// - 2026-11-03: dense — 기공소(상대) 카드는 가나다 고정. 날짜·환자 정렬은 카드 안만.
 // - 2026-11-03: dense 필터 — 주문일/도착일 뱃지·dateKey. 표 날짜=최종 일자.
 // - 2026-11-03: dense 날짜 — API orderDate(주문일) 우선 표시.
 // - 2026-11-03: dense 헤더 — 날짜 라벨 줄바꿈 방지(열 폭·nowrap).
@@ -1784,7 +1786,7 @@ const toDisplayPart = (item: CreditLedgerItem): LedgerDisplayPart => ({
 
 const resolveLedgerItemDisplayYmd = (
   item: CreditLedgerItem,
-  dateKey: LabReceiveCalendarDateKey = "orderDate",
+  dateKey: LabReceiveCalendarDateKey = "arrivalDate",
 ) => {
   const orderYmd = String(item.orderDate || "").trim();
   const arrivalYmd = String(item.arrivalDate || "").trim();
@@ -1799,7 +1801,7 @@ const groupLedgerItemsForDisplay = (
   items: CreditLedgerItem[],
   labShareOnly = false,
   isLabViewer = false,
-  dateKey: LabReceiveCalendarDateKey = "orderDate",
+  dateKey: LabReceiveCalendarDateKey = "arrivalDate",
 ): LedgerDisplayRow[] => {
   const groupOpts = { isLabViewer };
   const ptxMap = new Map<string, CreditLedgerItem[]>();
@@ -2705,9 +2707,9 @@ export const CreditLedgerModal = ({
     : null;
 
   const [ledgerYm, setLedgerYm] = useState(initialEmbeddedYm);
-  /** dense 내역 — 주문일|도착일(최종). 기본 주문일 */
+  /** dense 내역 — 주문일|도착일(최종). 기본 도착일(기공의뢰 캘린더와 동일) */
   const [ledgerDateKey, setLedgerDateKey] =
-    useState<LabReceiveCalendarDateKey>("orderDate");
+    useState<LabReceiveCalendarDateKey>("arrivalDate");
   const [period, setPeriod] = useState<PeriodFilterValue>(
     () => initialResolvedFilters.period,
   );
@@ -2816,7 +2818,8 @@ export const CreditLedgerModal = ({
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<{ key: LedgerSortKey; direction: SortDirection }>({
     key: "createdAt",
-    direction: "desc",
+    // dense·기공의뢰 목록과 같이 1일(위)→말일(아래)
+    direction: "asc",
   });
   const [selectedDetail, setSelectedDetail] =
     useState<RequestDetailDialogRequest | null>(null);
@@ -3226,8 +3229,7 @@ export const CreditLedgerModal = ({
         ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
         : {
             key,
-            direction:
-              key === "createdAt" || key === "amount" ? "desc" : "asc",
+            direction: key === "amount" ? "desc" : "asc",
           },
     );
   };
@@ -3323,12 +3325,15 @@ export const CreditLedgerModal = ({
       if (rows) rows.push(row);
       else groups.set(label, [row]);
     }
-    return [...groups.entries()].map(([label, rows]) => ({
-      key: label,
-      label,
-      rows,
-      total: rows.reduce((sum, row) => sum + Number(row.amount || 0), 0),
-    }));
+    // 카드(기공소·치과) 위치는 정렬과 무관하게 가나다 고정. 행 정렬만 카드 안에 반영.
+    return [...groups.entries()]
+      .sort(([a], [b]) => a.localeCompare(b, "ko"))
+      .map(([label, rows]) => ({
+        key: label,
+        label,
+        rows,
+        total: rows.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+      }));
   }, [denseLedgerUi, isLabViewer, sortedRows]);
 
   const toggleDenseGroup = (key: string) => {
@@ -3975,8 +3980,8 @@ export const CreditLedgerModal = ({
                 <button
                   type="button"
                   className="rounded-full"
-                  title="주문일"
-                  aria-label="주문일"
+                  title="치과주문일"
+                  aria-label="치과주문일"
                   onClick={() => setLedgerDateKey("orderDate")}
                 >
                   <Badge
@@ -3989,14 +3994,14 @@ export const CreditLedgerModal = ({
                     )}
                   >
                     <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                    <span>주문일</span>
+                    <span>주문</span>
                   </Badge>
                 </button>
                 <button
                   type="button"
                   className="rounded-full"
-                  title="도착일"
-                  aria-label="도착일"
+                  title="치과도착일"
+                  aria-label="치과도착일"
                   onClick={() => setLedgerDateKey("arrivalDate")}
                 >
                   <Badge
@@ -4012,7 +4017,7 @@ export const CreditLedgerModal = ({
                       className="h-3.5 w-3.5 shrink-0"
                       aria-hidden
                     />
-                    <span>도착일</span>
+                    <span>도착</span>
                   </Badge>
                 </button>
               </div>

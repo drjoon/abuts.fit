@@ -1273,13 +1273,13 @@ export async function listMyCreditLedger(req, res) {
   })
     .filter(Boolean);
 
-  // 주문일 기간 조회: 표 날짜(=주문일) 기준으로 정렬
+  // 기간 조회: 표 날짜(dateKey) 1일→말일 오름차순(기공의뢰 목록과 동일)
   const enrichedItems = orderDateRange
     ? [...enrichedItemsRaw].sort((a, b) => {
         const at = new Date(a?.createdAt || 0).getTime();
         const bt = new Date(b?.createdAt || 0).getTime();
-        if (bt !== at) return bt - at;
-        return String(b?._id || "").localeCompare(String(a?._id || ""));
+        if (at !== bt) return at - bt;
+        return String(a?._id || "").localeCompare(String(b?._id || ""));
       })
     : enrichedItemsRaw;
 

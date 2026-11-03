@@ -1519,8 +1519,8 @@ export function creditLedgerStatsCategoryExpr() {
 
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** 장부 기본 날짜키 — 캘린더(도착일)와 달리 주문일 */
-export const DEFAULT_CREDIT_LEDGER_DATE_KEY = "orderDate";
+/** 장부 기본 날짜키 — 기공의뢰 캘린더와 동일(치과도착일) */
+export const DEFAULT_CREDIT_LEDGER_DATE_KEY = "arrivalDate";
 
 export function normalizeCreditLedgerDateKey(raw) {
   const value = String(raw || "").trim();

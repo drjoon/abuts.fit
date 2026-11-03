@@ -11,30 +11,30 @@ import {
 } from "../../controllers/credits/creditLedger.utils.js";
 
 describe("resolveCreditLedgerOrderDateRangeFromQuery", () => {
-  it("parses from/to YMD with default orderDate", () => {
+  it("parses from/to YMD with default arrivalDate", () => {
     expect(
       resolveCreditLedgerOrderDateRangeFromQuery({
         from: "2026-10-01",
         to: "2026-10-31",
-      }),
-    ).toEqual({
-      fromYmd: "2026-10-01",
-      toYmd: "2026-10-31",
-      dateKey: "orderDate",
-    });
-  });
-
-  it("accepts dateKey=arrivalDate", () => {
-    expect(
-      resolveCreditLedgerOrderDateRangeFromQuery({
-        from: "2026-10-01",
-        to: "2026-10-31",
-        dateKey: "arrivalDate",
       }),
     ).toEqual({
       fromYmd: "2026-10-01",
       toYmd: "2026-10-31",
       dateKey: "arrivalDate",
+    });
+  });
+
+  it("accepts dateKey=orderDate", () => {
+    expect(
+      resolveCreditLedgerOrderDateRangeFromQuery({
+        from: "2026-10-01",
+        to: "2026-10-31",
+        dateKey: "orderDate",
+      }),
+    ).toEqual({
+      fromYmd: "2026-10-01",
+      toYmd: "2026-10-31",
+      dateKey: "orderDate",
     });
   });
 
@@ -44,7 +44,7 @@ describe("resolveCreditLedgerOrderDateRangeFromQuery", () => {
     ).toEqual({
       fromYmd: "2026-11-03",
       toYmd: "2026-11-03",
-      dateKey: "orderDate",
+      dateKey: "arrivalDate",
     });
   });
 
