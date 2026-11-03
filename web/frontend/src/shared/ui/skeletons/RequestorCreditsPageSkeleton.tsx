@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-03: dense 스켈레톤 — 날짜/환자명/금액/치아번호 열 비율.
 // - 2026-11-03: 내역 dense — 년/월·검색만, 요약카드 없이 4칸 2~3열 스켈레톤.
 // - 2026-11-03: 내역 dense — 요약카드 없이 년/월 필터·4칸 2~3열 스켈레톤.
 // - 2026-10-04: 내역 요약 스켈레톤 — 카드 11.5rem·연산 부호 폭 실 UI와 맞춤.
@@ -138,21 +139,21 @@ export const CreditLedgerTableSkeleton = ({
               key={`dense-col-${col}`}
               className="overflow-hidden rounded-xl border border-slate-200/80"
             >
-              <div className="grid grid-cols-[3.25rem_6.25rem_minmax(0,1.35fr)_minmax(0,0.9fr)] gap-x-2 border-b border-slate-200/80 px-2.5 py-2">
+              <div className="grid grid-cols-[2.75rem_minmax(3.25rem,0.9fr)_5.5rem_minmax(5rem,1.35fr)] gap-x-1.5 border-b border-slate-200/80 px-2 py-1.5">
                 <Skeleton className="h-3 w-8" />
-                <Skeleton className="ml-auto h-3 w-10" />
-                <Skeleton className="h-3 w-14" />
                 <Skeleton className="h-3 w-12" />
+                <Skeleton className="ml-auto h-3 w-10" />
+                <Skeleton className="h-3 w-16" />
               </div>
               {repeat(Math.max(4, Math.ceil(rows / 3))).map((key) => (
                 <div
                   key={`dense-row-${col}-${key}`}
-                  className="grid grid-cols-[3.25rem_6.25rem_minmax(0,1.35fr)_minmax(0,0.9fr)] gap-x-2 border-b border-slate-100 px-2.5 py-1.5 last:border-b-0"
+                  className="grid grid-cols-[2.75rem_minmax(3.25rem,0.9fr)_5.5rem_minmax(5rem,1.35fr)] gap-x-1.5 border-b border-slate-100 px-2 py-1.5 last:border-b-0"
                 >
                   <Skeleton className="h-3 w-8" />
+                  <Skeleton className="h-3 w-14" />
                   <Skeleton className="ml-auto h-3 w-14" />
                   <Skeleton className="h-3 w-20" />
-                  <Skeleton className="h-3 w-12" />
                 </div>
               ))}
             </div>

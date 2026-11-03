@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-11-03: includePeriodSummary=0이면 기간 요약 skip. toothWorks→toothNumbers enrich.
+// - 2026-11-03: 기간 요약을 enrich와 병렬(page1 지연 축소).
 // - 2026-10-04: DEMO_CONVERSION 행 — meta.practiceAnchorId로 치과명 enrich(기공소 실사용 전환 한 줄).
 // - 2026-09-27: 원청 PTX 거래내역 — 지급한 협력·하청 기공소명(payoutLabName).
 // - 2026-09-23: PTX 거래내역 labName — 협력은「어벗츠 · 파트너」(원청 target만 쓰지 않음). 기공소는 치과명.
@@ -61,6 +63,7 @@ import {
   formatAbutsCooperationLabLabel,
   redactAutoMatchLabIdentity,
 } from "../../utils/practiceTransferAutoMatch.js";
+import { collectToothNumbersFromToothWorks } from "../../utils/practiceTransferSimilarCase.js";
 import {
   attachCreditLedgerRequestFields,
   buildAbutmentBoxGroupKey,
@@ -550,6 +553,13 @@ export async function listMyCreditLedger(req, res) {
 
   const periodOccurredAt =
     Object.keys(occurredAt).length ? occurredAt : null;
+  const includePeriodSummaryRaw = String(
+    req.query.includePeriodSummary ?? "1",
+  )
+    .trim()
+    .toLowerCase();
+  const includePeriodSummary =
+    includePeriodSummaryRaw !== "0" && includePeriodSummaryRaw !== "false";
   const blockedSettlementIdsPromise =
     requestorKind === "practice" || requestorKind === "lab"
       ? listPracticeTransferIdsBlockedFromSettlement({
@@ -567,9 +577,12 @@ export async function listMyCreditLedger(req, res) {
     LedgerLine.aggregate(pipeline),
     blockedSettlementIdsPromise,
   ]);
-  const periodLedgerSummary =
-    page === 1 && (requestorKind === "practice" || requestorKind === "lab")
-      ? await aggregateRequestorPeriodLedgerSummary({
+  // 기간 요약은 enrich와 무관 — 병렬로 돌려 page1 대기 시간을 줄인다.
+  const periodLedgerSummaryPromise =
+    page === 1 &&
+    includePeriodSummary &&
+    (requestorKind === "practice" || requestorKind === "lab")
+      ? aggregateRequestorPeriodLedgerSummary({
           ownerObjectId: anchorObjectId,
           occurredAt: periodOccurredAt,
           journalCollectionName: LedgerJournal.collection.name,
@@ -580,7 +593,7 @@ export async function listMyCreditLedger(req, res) {
           practiceDemoMode,
           excludeRefIds: blockedSettlementIds,
         })
-      : null;
+      : Promise.resolve(null);
   const currentBalance = Number(balanceSnapshot?.balance || 0);
   const currentSettlementCredit = Number(balanceSnapshot?.settlementCredit || 0);
 
@@ -800,7 +813,8 @@ export async function listMyCreditLedger(req, res) {
       !refRequestSummaryById.has(id) && mongoose.Types.ObjectId.isValid(id),
   );
 
-  const [extraDocs, deliveryInfos, quotesById] = await Promise.all([
+  const [extraDocs, deliveryInfos, quotesById, periodLedgerSummary] =
+    await Promise.all([
     missingRequestIds.length
       ? Request.find({ _id: { $in: toObjectIds(missingRequestIds) } })
           .select(CREDIT_LEDGER_REQUEST_SELECT)
@@ -822,6 +836,8 @@ export async function listMyCreditLedger(req, res) {
               : null,
         })
       : Promise.resolve(new Map()),
+    // facet 직후부터 돌린 기간 요약 — 견적 enrich와 끝까지 겹친다.
+    periodLedgerSummaryPromise,
   ]);
 
   for (const doc of extraDocs || []) {
@@ -921,6 +937,7 @@ export async function listMyCreditLedger(req, res) {
     const labName = formatAbutsCooperationLabLabel(labIdentity.targetLabName);
     const payoutLab = resolvePrimePayoutLabForLedger(doc, viewerLabAnchorId);
     practiceTransferIdById.set(id, String(doc.transferId || ""));
+    const toothNumbers = collectToothNumbersFromToothWorks(doc?.toothWorks);
     practiceTransferMetaById.set(id, {
       patientName: memoPatient || filePatient,
       // 치과 거래내역: 협력「어벗츠 · 파트너」·하청은 원청만(실명 비공개)
@@ -950,6 +967,7 @@ export async function listMyCreditLedger(req, res) {
         : Array.isArray(doc?.remakeCharges)
           ? doc.remakeCharges
           : [],
+      toothNumbers,
       skipJig: !(
         skipJigRaw === false ||
         skipJigRaw === "false" ||
@@ -1088,6 +1106,12 @@ export async function listMyCreditLedger(req, res) {
         remakeCharges: Array.isArray(meta?.remakeCharges)
           ? meta.remakeCharges
           : [],
+        toothNumbers: Array.isArray(meta?.toothNumbers)
+          ? meta.toothNumbers
+          : [],
+        tooth: Array.isArray(meta?.toothNumbers) && meta.toothNumbers.length
+          ? meta.toothNumbers.join(",")
+          : "",
         skipJig: meta?.skipJig !== false,
         rushProcessing: Boolean(meta?.rushProcessing),
         ...(isAbutsShippingHold

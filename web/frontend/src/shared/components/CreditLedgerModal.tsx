@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-03: dense — 날짜/환자명/금액/치아 순·치아 폭·pageSize 80·기간요약 skip.
 // - 2026-11-03: 내역 dense — 필터를 년/월·검색만, 기공소 정렬, 월 선택 클리핑·표 여백 정리.
 // - 2026-11-03: 내역(embedded) — 요약카드 제거·년/월 필터·날짜·금액·기공소·거래내역 4칸 2~3열.
 // - 2026-10-24: 내역 카드 안내를 한 사실로 줄임.
@@ -362,6 +363,8 @@ type CreditLedgerItem = {
   skipJig?: boolean;
   rushProcessing?: boolean;
   tooth?: string;
+  /** 기공의뢰 toothWorks에서 뽑은 치아번호 */
+  toothNumbers?: string[];
   clinicName?: string;
   manufacturerStage?: string;
   shippingMode?: ShippingMode | string | null;
@@ -473,6 +476,10 @@ export type CreditLedgerModalProps = {
 };
 
 const PAGE_SIZE = 10;
+/** 내역 탭(embedded) — pageSize=10이면 월 조회가 10회+ 왕복(각 1~2s) */
+const DENSE_PAGE_SIZE = 80;
+const DENSE_ROW_GRID_CLASS =
+  "grid grid-cols-[2.75rem_minmax(3.25rem,0.9fr)_5.5rem_minmax(5rem,1.35fr)] gap-x-1.5";
 
 type SortDirection = "asc" | "desc";
 type LedgerSortKey =
@@ -2143,14 +2150,42 @@ const resolveDenseDetailText = (
   return row.displayLabel || refTypeLabel(refType) || "—";
 };
 
+/** dense 표 「환자명」열 — 치아·상대처는 제외 */
+const resolveDensePatientName = (
+  row: LedgerDisplayRow,
+  isLabViewer: boolean,
+) => {
+  if (row.isAbutmentDesign) {
+    return `${row.requestCount}건`;
+  }
+  const item = row.item;
+  const refType = String(item.refType || "");
+  if (refType === "PRACTICE_TRANSFER") {
+    return String(item.patientName || "").trim() || "—";
+  }
+  if (refType === "REQUEST") {
+    return (
+      String(
+        item.refRequestSummary?.patientName || item.patientName || "",
+      ).trim() || "—"
+    );
+  }
+  return resolveDenseDetailText(row, isLabViewer);
+};
+
 const resolveDenseToothNumbers = (row: LedgerDisplayRow) => {
   const item = row.item;
   const teeth = new Set<string>();
   const add = (value: unknown) => {
-    const tooth = String(value || "").trim();
-    if (tooth) teeth.add(tooth);
+    const raw = String(value || "").trim();
+    if (!raw) return;
+    for (const part of raw.split(/[,·|\s]+/)) {
+      const tooth = part.replace(/^#/, "").trim();
+      if (tooth) teeth.add(tooth);
+    }
   };
 
+  for (const tooth of item.toothNumbers || []) add(tooth);
   add(item.caseInfos?.tooth);
   add(item.refRequestSummary?.tooth);
   add(item.tooth);
@@ -2164,6 +2199,7 @@ const resolveDenseToothNumbers = (row: LedgerDisplayRow) => {
     for (const tooth of charge.toothNumbers || []) add(tooth);
   }
   for (const member of row.members || []) {
+    for (const tooth of member.toothNumbers || []) add(tooth);
     add(member.caseInfos?.tooth);
     add(member.refRequestSummary?.tooth);
     add(member.tooth);
@@ -2172,7 +2208,7 @@ const resolveDenseToothNumbers = (row: LedgerDisplayRow) => {
   return [...teeth]
     .sort((a, b) => Number(a) - Number(b) || a.localeCompare(b, "ko"))
     .map((tooth) => `#${tooth}`)
-    .join(" · ") || "—";
+    .join(",") || "—";
 };
 
 const renderTransactionDetail = ({
@@ -2855,7 +2891,14 @@ export const CreditLedgerModal = ({
       if (onYmd.trim()) params.set("onYmd", onYmd.trim());
     }
     params.set("page", String(pageNum));
-    params.set("pageSize", String(PAGE_SIZE));
+    params.set(
+      "pageSize",
+      String(denseLedgerUi ? DENSE_PAGE_SIZE : PAGE_SIZE),
+    );
+    // 목록 응답의 기간 요약은 수식 카드가 별도 API를 쓰거나(equation)·미표시(dense).
+    if (mode === "ledger") {
+      params.set("includePeriodSummary", "0");
+    }
 
     if (businessAnchorId) {
       return `/api/admin/credits/businesses/${businessAnchorId}/ledger?${params.toString()}`;
@@ -3157,8 +3200,8 @@ export const CreditLedgerModal = ({
           : bv.localeCompare(av, "ko");
       }
       if (sort.key === "detail") {
-        const av = resolveDenseDetailText(a, isLabViewer);
-        const bv = resolveDenseDetailText(b, isLabViewer);
+        const av = resolveDensePatientName(a, isLabViewer);
+        const bv = resolveDensePatientName(b, isLabViewer);
         return sort.direction === "asc"
           ? av.localeCompare(bv, "ko")
           : bv.localeCompare(av, "ko");
@@ -3224,7 +3267,8 @@ export const CreditLedgerModal = ({
   useEffect(() => {
     if (!isOpen || payoutStatus === "all") return;
     if (loadingRef.current || !hasMoreRef.current) return;
-    if (filteredRows.length >= PAGE_SIZE) return;
+    const pageSize = denseLedgerUi ? DENSE_PAGE_SIZE : PAGE_SIZE;
+    if (filteredRows.length >= pageSize) return;
     const nextPage = pageRef.current + 1;
     setPage(nextPage);
     void load(nextPage, false);
@@ -3232,6 +3276,7 @@ export const CreditLedgerModal = ({
   }, [
     isOpen,
     payoutStatus,
+    denseLedgerUi,
     filteredRows.length,
     hasMore,
     items.length,
@@ -4039,7 +4084,12 @@ export const CreditLedgerModal = ({
                         </button>
                         {!collapsedDenseGroups.has(group.key) ? (
                           <>
-                            <div className="grid grid-cols-[3.25rem_6.25rem_3.25rem_minmax(0,1fr)] gap-x-2 border-b border-slate-200/80 bg-white px-2.5 py-2 text-[11px] font-semibold tracking-tight text-slate-600">
+                            <div
+                              className={cn(
+                                DENSE_ROW_GRID_CLASS,
+                                "border-b border-slate-200/80 bg-white px-2 py-1.5 text-[11px] font-semibold tracking-tight text-slate-600",
+                              )}
+                            >
                               <button
                                 type="button"
                                 className="inline-flex items-center gap-0.5 text-left hover:text-slate-900"
@@ -4050,26 +4100,31 @@ export const CreditLedgerModal = ({
                               </button>
                               <button
                                 type="button"
+                                className="inline-flex min-w-0 items-center gap-0.5 truncate text-left hover:text-slate-900"
+                                onClick={() => toggleSort("detail")}
+                              >
+                                <span className="truncate">환자명</span>
+                                {renderSortIcon(sort.key === "detail", sort.direction)}
+                              </button>
+                              <button
+                                type="button"
                                 className="inline-flex items-center justify-end gap-0.5 hover:text-slate-900"
                                 onClick={() => toggleSort("amount")}
                               >
                                 금액
                                 {renderSortIcon(sort.key === "amount", sort.direction)}
                               </button>
-                              <span>치아</span>
-                              <button
-                                type="button"
-                                className="inline-flex min-w-0 items-center gap-0.5 truncate text-left hover:text-slate-900"
-                                onClick={() => toggleSort("detail")}
-                              >
-                                <span className="truncate">거래내역</span>
-                                {renderSortIcon(sort.key === "detail", sort.direction)}
-                              </button>
+                              <span>치아번호</span>
                             </div>
-                            <ul className="divide-y divide-slate-100">
+                            <ul className="divide-y divide-slate-100 px-0.5 py-0.5">
                               {group.rows.map((r) => {
                             const amount = Number(r.amount || 0);
                             const isMinus = amount < 0;
+                            const patientName = resolveDensePatientName(
+                              r,
+                              isLabViewer,
+                            );
+                            const toothLabel = resolveDenseToothNumbers(r);
                             const canOpen =
                               Boolean(r.isAbutmentDesign) ||
                               Boolean(
@@ -4093,7 +4148,8 @@ export const CreditLedgerModal = ({
                                   disabled={!canOpen}
                                   onClick={() => openLedgerRowDetail(r)}
                                   className={cn(
-                                    "grid w-full grid-cols-[3.25rem_6.25rem_3.25rem_minmax(0,1fr)] gap-x-2 px-2.5 py-1.5 text-left text-xs leading-5",
+                                    DENSE_ROW_GRID_CLASS,
+                                    "w-full px-2 py-1.5 text-left text-xs leading-snug",
                                     canOpen
                                       ? "cursor-pointer hover:bg-sky-50/70"
                                       : "cursor-default",
@@ -4102,6 +4158,12 @@ export const CreditLedgerModal = ({
                                 >
                                   <span className="whitespace-nowrap tabular-nums text-slate-600">
                                     {formatDateOnly(String(r.createdAt || ""))}
+                                  </span>
+                                  <span
+                                    className="min-w-0 truncate text-slate-800"
+                                    title={patientName}
+                                  >
+                                    {patientName}
                                   </span>
                                   <span
                                     className={cn(
@@ -4118,19 +4180,10 @@ export const CreditLedgerModal = ({
                                       : formatSignedWon(amount)}
                                   </span>
                                   <span
-                                    className="min-w-0 truncate font-medium text-slate-700"
-                                    title={resolveDenseToothNumbers(r)}
+                                    className="min-w-0 whitespace-normal break-words font-medium leading-snug text-slate-700"
+                                    title={toothLabel}
                                   >
-                                    {resolveDenseToothNumbers(r)}
-                                  </span>
-                                  <span
-                                    className="min-w-0 truncate text-slate-500"
-                                    title={resolveDenseDetailText(
-                                      r,
-                                      isLabViewer,
-                                    )}
-                                  >
-                                    {resolveDenseDetailText(r, isLabViewer)}
+                                    {toothLabel}
                                   </span>
                                 </button>
                               </li>
