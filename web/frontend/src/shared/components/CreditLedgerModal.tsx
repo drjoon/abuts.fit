@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-03: dense 필터 — 주문일/도착일 뱃지·dateKey. 표 날짜=최종 일자.
 // - 2026-11-03: dense 날짜 — API orderDate(주문일) 우선 표시.
 // - 2026-11-03: dense 헤더 — 날짜 라벨 줄바꿈 방지(열 폭·nowrap).
 // - 2026-11-03: dense — 같은 날짜 묶음 표시·날짜↔환자·금액↔치아 여백.
@@ -142,12 +143,16 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  CalendarCheck,
+  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
   CreditCard,
 } from "lucide-react";
+import type { LabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
+import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import {
   Table,
   TableBody,
@@ -338,8 +343,10 @@ type CreditLedgerItem = {
   clinicName?: string;
   /** 기공의뢰 원본 메모(메타 포함) — 상세 모달 주문일·도착일·메모 파싱용 */
   transferMemo?: string | null;
-  /** 기공의뢰 주문일(KST YMD) — 내역 표 날짜·기간 필터 SSOT */
+  /** 기공의뢰 주문일(KST YMD, 최종) — 내역 표·기간 필터 */
   orderDate?: string | null;
+  /** 기공의뢰 도착일(KST YMD, 최종 — 리메이크·재도착 포함) */
+  arrivalDate?: string | null;
   /** 기공의뢰 CA 디자인비 저널이 가리키는 PTX */
   relatedPracticeTransferId?: string | null;
   ledgerSource?: string | null;
@@ -1775,11 +1782,24 @@ const toDisplayPart = (item: CreditLedgerItem): LedgerDisplayPart => ({
   spentFreeAmount: Number(item.spentFreeAmount || 0),
 });
 
+const resolveLedgerItemDisplayYmd = (
+  item: CreditLedgerItem,
+  dateKey: LabReceiveCalendarDateKey = "orderDate",
+) => {
+  const orderYmd = String(item.orderDate || "").trim();
+  const arrivalYmd = String(item.arrivalDate || "").trim();
+  if (dateKey === "arrivalDate") {
+    return arrivalYmd || orderYmd;
+  }
+  return orderYmd || arrivalYmd;
+};
+
 /** 동일 기공의뢰(PTX)와 어벗디자인(수신자 박스) 원장을 한 행으로 묶는다. */
 const groupLedgerItemsForDisplay = (
   items: CreditLedgerItem[],
   labShareOnly = false,
   isLabViewer = false,
+  dateKey: LabReceiveCalendarDateKey = "orderDate",
 ): LedgerDisplayRow[] => {
   const groupOpts = { isLabViewer };
   const ptxMap = new Map<string, CreditLedgerItem[]>();
@@ -1864,16 +1884,14 @@ const groupLedgerItemsForDisplay = (
         if (at < bestAt) return best;
         return items.indexOf(member) < items.indexOf(best) ? member : best;
       }, members[0]);
-      const orderYmd = String(
-        representative.orderDate || newest.orderDate || "",
-      ).trim();
-      const orderAtIso = /^\d{4}-\d{2}-\d{2}$/.test(orderYmd)
-        ? `${orderYmd}T12:00:00+09:00`
+      const displayYmd = resolveLedgerItemDisplayYmd(representative, dateKey);
+      const displayAtIso = /^\d{4}-\d{2}-\d{2}$/.test(displayYmd)
+        ? `${displayYmd}T12:00:00+09:00`
         : "";
       out.push({
         key: ptxKey,
         createdAt:
-          orderAtIso || String(newest.createdAt || latest.createdAt || ""),
+          displayAtIso || String(newest.createdAt || latest.createdAt || ""),
         amount,
         balanceAfter: newest.balanceAfter,
         spentPaidAmount,
@@ -1957,12 +1975,13 @@ const groupLedgerItemsForDisplay = (
       continue;
     }
 
-    const orderYmd = String(item.orderDate || "").trim();
-    const orderAtIso =
-      /^\d{4}-\d{2}-\d{2}$/.test(orderYmd) ? `${orderYmd}T12:00:00+09:00` : "";
+    const displayYmd = resolveLedgerItemDisplayYmd(item, dateKey);
+    const displayAtIso = /^\d{4}-\d{2}-\d{2}$/.test(displayYmd)
+      ? `${displayYmd}T12:00:00+09:00`
+      : "";
     out.push({
       key: String(item._id || item.uniqueKey),
-      createdAt: orderAtIso || String(item.createdAt || ""),
+      createdAt: displayAtIso || String(item.createdAt || ""),
       amount: Number(item.amount || 0),
       balanceAfter: item.balanceAfter,
       spentPaidAmount: Number(item.spentPaidAmount || 0),
@@ -2686,6 +2705,9 @@ export const CreditLedgerModal = ({
     : null;
 
   const [ledgerYm, setLedgerYm] = useState(initialEmbeddedYm);
+  /** dense 내역 — 주문일|도착일(최종). 기본 주문일 */
+  const [ledgerDateKey, setLedgerDateKey] =
+    useState<LabReceiveCalendarDateKey>("orderDate");
   const [period, setPeriod] = useState<PeriodFilterValue>(
     () => initialResolvedFilters.period,
   );
@@ -2931,6 +2953,12 @@ export const CreditLedgerModal = ({
     // 목록 응답의 기간 요약은 수식 카드가 별도 API를 쓰거나(equation)·미표시(dense).
     if (mode === "ledger") {
       params.set("includePeriodSummary", "0");
+      if (denseLedgerUi) {
+        params.set(
+          "dateKey",
+          normalizeLabReceiveCalendarDateKey(ledgerDateKey),
+        );
+      }
     }
 
     if (businessAnchorId) {
@@ -3068,6 +3096,7 @@ export const CreditLedgerModal = ({
     businessAnchorId,
     initialFiltersKey,
     equationLedgerUi,
+    ledgerDateKey,
   ]);
 
   useEffect(() => {
@@ -3150,8 +3179,9 @@ export const CreditLedgerModal = ({
         Array.isArray(items) ? items : [],
         isLabViewer,
         isLabViewer,
+        ledgerDateKey,
       ),
-    [items, isLabViewer],
+    [items, isLabViewer, ledgerDateKey],
   );
 
   const matchesPayoutStatusFilter = (
@@ -3643,7 +3673,9 @@ export const CreditLedgerModal = ({
         orderDate: String(
           r.item.orderDate || memoMeta.orderDate || "",
         ).trim(),
-        arrivalDate: String(memoMeta.arrivalDate || "").trim(),
+        arrivalDate: String(
+          r.item.arrivalDate || memoMeta.arrivalDate || "",
+        ).trim(),
         memo: String(memoMeta.memo || "").trim(),
         settlementShippingLines: [],
         settlementSide: r.settlementSide,
@@ -3688,7 +3720,9 @@ export const CreditLedgerModal = ({
           )
         : "",
       orderDate: String(r.item.orderDate || memoMeta.orderDate || "").trim(),
-      arrivalDate: String(memoMeta.arrivalDate || "").trim(),
+      arrivalDate: String(
+        r.item.arrivalDate || memoMeta.arrivalDate || "",
+      ).trim(),
       memo: String(memoMeta.memo || "").trim(),
       settlementShippingLines,
       settlementSide: r.settlementSide,
@@ -3935,6 +3969,52 @@ export const CreditLedgerModal = ({
                     이번달
                   </Button>
                 ) : null}
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  className="rounded-full"
+                  title="주문일"
+                  aria-label="주문일"
+                  onClick={() => setLedgerDateKey("orderDate")}
+                >
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "inline-flex h-7 cursor-pointer items-center gap-1 px-2 leading-snug tracking-normal",
+                      ledgerDateKey === "orderDate"
+                        ? "border-primary/70 bg-primary-soft text-primary-strong"
+                        : "hover:bg-muted/40",
+                    )}
+                  >
+                    <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    <span>주문일</span>
+                  </Badge>
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full"
+                  title="도착일"
+                  aria-label="도착일"
+                  onClick={() => setLedgerDateKey("arrivalDate")}
+                >
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "inline-flex h-7 cursor-pointer items-center gap-1 px-2 leading-snug tracking-normal",
+                      ledgerDateKey === "arrivalDate"
+                        ? "border-primary/70 bg-primary-soft text-primary-strong"
+                        : "hover:bg-muted/40",
+                    )}
+                  >
+                    <CalendarCheck
+                      className="h-3.5 w-3.5 shrink-0"
+                      aria-hidden
+                    />
+                    <span>도착일</span>
+                  </Badge>
+                </button>
               </div>
 
               <ImeSafeInput

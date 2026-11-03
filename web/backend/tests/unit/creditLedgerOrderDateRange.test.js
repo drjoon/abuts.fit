@@ -4,12 +4,14 @@ import mongoose from "mongoose";
 import {
   buildRequestorCreditLedgerPipeline,
   creditLedgerDateFromOrderYmd,
+  practiceTransferCurrentDateInCreditLedgerRange,
+  resolveCreditLedgerArrivalYmdFromTransfer,
   resolveCreditLedgerOrderDateRangeFromQuery,
   resolveCreditLedgerOrderYmdFromTransfer,
 } from "../../controllers/credits/creditLedger.utils.js";
 
 describe("resolveCreditLedgerOrderDateRangeFromQuery", () => {
-  it("parses from/to YMD as orderDate range", () => {
+  it("parses from/to YMD with default orderDate", () => {
     expect(
       resolveCreditLedgerOrderDateRangeFromQuery({
         from: "2026-10-01",
@@ -19,6 +21,20 @@ describe("resolveCreditLedgerOrderDateRangeFromQuery", () => {
       fromYmd: "2026-10-01",
       toYmd: "2026-10-31",
       dateKey: "orderDate",
+    });
+  });
+
+  it("accepts dateKey=arrivalDate", () => {
+    expect(
+      resolveCreditLedgerOrderDateRangeFromQuery({
+        from: "2026-10-01",
+        to: "2026-10-31",
+        dateKey: "arrivalDate",
+      }),
+    ).toEqual({
+      fromYmd: "2026-10-01",
+      toYmd: "2026-10-31",
+      dateKey: "arrivalDate",
     });
   });
 
@@ -56,6 +72,59 @@ describe("resolveCreditLedgerOrderYmdFromTransfer", () => {
         transferMemo: "[주문일: 2026-08-20]\n메모",
       }),
     ).toBe("2026-08-20");
+  });
+});
+
+describe("resolveCreditLedgerArrivalYmdFromTransfer / remake last arrival", () => {
+  it("uses last arrivalDates for remake/re-arrival", () => {
+    expect(
+      resolveCreditLedgerArrivalYmdFromTransfer({
+        arrivalDates: ["2026-09-10", "2026-09-20", "2026-10-05"],
+        transferMemo: "[도착일: 2026-09-10]",
+      }),
+    ).toBe("2026-10-05");
+  });
+});
+
+describe("practiceTransferCurrentDateInCreditLedgerRange", () => {
+  const remakeDoc = {
+    orderDates: ["2026-09-01", "2026-09-15"],
+    arrivalDates: ["2026-09-10", "2026-10-05"],
+    transferMemo: "",
+  };
+
+  it("orderDate mode matches only the last order day", () => {
+    expect(
+      practiceTransferCurrentDateInCreditLedgerRange(remakeDoc, {
+        fromYmd: "2026-09-01",
+        toYmd: "2026-09-30",
+        dateKey: "orderDate",
+      }),
+    ).toBe(true);
+    expect(
+      practiceTransferCurrentDateInCreditLedgerRange(remakeDoc, {
+        fromYmd: "2026-10-01",
+        toYmd: "2026-10-31",
+        dateKey: "orderDate",
+      }),
+    ).toBe(false);
+  });
+
+  it("arrivalDate mode matches only the last arrival day", () => {
+    expect(
+      practiceTransferCurrentDateInCreditLedgerRange(remakeDoc, {
+        fromYmd: "2026-09-01",
+        toYmd: "2026-09-30",
+        dateKey: "arrivalDate",
+      }),
+    ).toBe(false);
+    expect(
+      practiceTransferCurrentDateInCreditLedgerRange(remakeDoc, {
+        fromYmd: "2026-10-01",
+        toYmd: "2026-10-31",
+        dateKey: "arrivalDate",
+      }),
+    ).toBe(true);
   });
 });
 

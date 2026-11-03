@@ -8,6 +8,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-11-03: 기간 dateKey(주문일|도착일). 리메이크·재도착은 최종(마지막) 일자만.
 // - 2026-11-03: 기간 조회 — PRACTICE_TRANSFER는 주문일(orderDates) 기준, 그 외는 occurredAt.
 // - 2026-11-03: 월 조회 pipeline overfetch 제거. CA 숨김 후보 판별 헬퍼.
 // - 2026-09-27: 원청 장부 거래내역 — 협력·하청으로 지급한 기공소명.
@@ -57,10 +58,12 @@ import {
 import { isLabAiTrainingConsentAllowed } from "../../utils/practiceTransferAiTraining.js";
 import {
   buildPracticeTransferCalendarDateRangeFilter,
-  filterTransferDocsToCalendarRange,
 } from "../../utils/practiceTransferCalendarRange.util.js";
+import { normalizeLabReceiveCalendarDateKey } from "../../utils/labReceiveCalendarDateKey.util.js";
 import {
+  resolveCurrentArrivalYmd,
   resolveCurrentOrderYmd,
+  resolvePracticeArrivalDates,
   resolvePracticeOrderDates,
 } from "../../utils/practiceTransferArrivalDates.js";
 // - 2026-08-17: PTX 디자인비(+지그) 원장을 기공의뢰(PRACTICE_TRANSFER)로 승격·묶음.
@@ -1516,25 +1519,81 @@ export function creditLedgerStatsCategoryExpr() {
 
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** 장부 기본 날짜키 — 캘린더(도착일)와 달리 주문일 */
+export const DEFAULT_CREDIT_LEDGER_DATE_KEY = "orderDate";
+
+export function normalizeCreditLedgerDateKey(raw) {
+  const value = String(raw || "").trim();
+  if (value === "orderDate" || value === "arrivalDate") return value;
+  return DEFAULT_CREDIT_LEDGER_DATE_KEY;
+}
+
 /**
- * 장부 기간 쿼리 → 주문일(YMD) 구간.
+ * 장부 기간 쿼리 → from/to + dateKey(주문일|도착일).
  * from/to·onYmd가 있을 때만 쓴다(프리셋 period만 있으면 null → occurredAt 유지).
+ * 리메이크·재도착은 최종(배열 끝) 일자만 매칭한다.
  */
 export function resolveCreditLedgerOrderDateRangeFromQuery(query = {}) {
   const fromRaw = String(query.from || query.fromYmd || "").trim();
   const toRaw = String(query.to || query.toYmd || "").trim();
   const onYmd = String(query.onYmd || "").trim();
+  const dateKey = normalizeCreditLedgerDateKey(
+    query.dateKey || DEFAULT_CREDIT_LEDGER_DATE_KEY,
+  );
   if (YMD_RE.test(fromRaw) && YMD_RE.test(toRaw) && fromRaw <= toRaw) {
-    return { fromYmd: fromRaw, toYmd: toRaw, dateKey: "orderDate" };
+    return { fromYmd: fromRaw, toYmd: toRaw, dateKey };
   }
   if (YMD_RE.test(onYmd)) {
-    return { fromYmd: onYmd, toYmd: onYmd, dateKey: "orderDate" };
+    return { fromYmd: onYmd, toYmd: onYmd, dateKey };
   }
   return null;
 }
 
+/** PTX 문서 → 장부 표시용 주문일(KST YMD, 최종) */
+export function resolveCreditLedgerOrderYmdFromTransfer(doc) {
+  return resolveCurrentOrderYmd(resolvePracticeOrderDates(doc)) || "";
+}
+
+/** PTX 문서 → 장부 표시용 도착일(KST YMD, 최종 — 리메이크·재도착 포함) */
+export function resolveCreditLedgerArrivalYmdFromTransfer(doc) {
+  return resolveCurrentArrivalYmd(resolvePracticeArrivalDates(doc)) || "";
+}
+
 /**
- * 사업자 범위에서 주문일이 구간에 걸리는 PRACTICE_TRANSFER _id 목록.
+ * dateKey에 따른 최종(현재) 일자만. 이력 중간일은 장부 월 필터에 넣지 않는다.
+ */
+export function resolveCreditLedgerCurrentYmdFromTransfer(doc, dateKey) {
+  const key = normalizeCreditLedgerDateKey(dateKey);
+  if (key === "arrivalDate") {
+    return resolveCreditLedgerArrivalYmdFromTransfer(doc);
+  }
+  return resolveCreditLedgerOrderYmdFromTransfer(doc);
+}
+
+/**
+ * 장부용 — 최종 주문일/도착일만 구간에 들어가는지.
+ * (캘린더 intersects와 달리 이력 중간일·다중 칩은 제외)
+ */
+export function practiceTransferCurrentDateInCreditLedgerRange(doc, range) {
+  const fromYmd = String(range?.fromYmd || "").trim();
+  const toYmd = String(range?.toYmd || "").trim();
+  if (!YMD_RE.test(fromYmd) || !YMD_RE.test(toYmd)) return false;
+  const current = resolveCreditLedgerCurrentYmdFromTransfer(doc, range?.dateKey);
+  if (current) return current >= fromYmd && current <= toYmd;
+  // 레거시: 일자 배열·메모 없으면 createdAt KST
+  const created = doc?.createdAt
+    ? new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date(doc.createdAt))
+    : "";
+  return Boolean(created && created >= fromYmd && created <= toYmd);
+}
+
+/**
+ * 사업자 범위에서 dateKey 최종 일자가 구간에 걸리는 PRACTICE_TRANSFER _id 목록.
  */
 export async function resolvePracticeTransferIdsForCreditLedgerOrderDateRange({
   anchorObjectId,
@@ -1544,7 +1603,14 @@ export async function resolvePracticeTransferIdsForCreditLedgerOrderDateRange({
 } = {}) {
   const range = orderDateRange;
   if (!range?.fromYmd || !range?.toYmd || !anchorObjectId) return [];
-  const dateFilter = buildPracticeTransferCalendarDateRangeFilter(range);
+  const normalizedRange = {
+    fromYmd: range.fromYmd,
+    toYmd: range.toYmd,
+    dateKey: normalizeLabReceiveCalendarDateKey(
+      range.dateKey || DEFAULT_CREDIT_LEDGER_DATE_KEY,
+    ),
+  };
+  const dateFilter = buildPracticeTransferCalendarDateRangeFilter(normalizedRange);
   if (!dateFilter) return [];
 
   const oid =
@@ -1562,24 +1628,25 @@ export async function resolvePracticeTransferIdsForCreditLedgerOrderDateRange({
   const docs = await PracticeTransfer.find({
     $and: [scope, dateFilter, practiceTransferNotDeletedMongoFilter()],
   })
-    .select({ _id: 1, orderDates: 1, transferMemo: 1, createdAt: 1 })
+    .select({
+      _id: 1,
+      orderDates: 1,
+      arrivalDates: 1,
+      transferMemo: 1,
+      createdAt: 1,
+    })
     .limit(Math.max(1, Math.min(5000, Number(limit) || 3000)))
     .lean();
 
-  return filterTransferDocsToCalendarRange(docs, range)
+  return docs
+    .filter((doc) =>
+      practiceTransferCurrentDateInCreditLedgerRange(doc, normalizedRange),
+    )
     .map((doc) => doc?._id)
     .filter(Boolean);
 }
 
-/** PTX 문서 → 장부 표시용 주문일(KST YMD) */
-export function resolveCreditLedgerOrderYmdFromTransfer(doc) {
-  return (
-    resolveCurrentOrderYmd(resolvePracticeOrderDates(doc)) ||
-    ""
-  );
-}
-
-/** 주문일 YMD → 장부 createdAt/occurredAt 표시용 Date(정오 KST) */
+/** 주문/도착 YMD → 장부 createdAt 표시용 Date(정오 KST) */
 export function creditLedgerDateFromOrderYmd(orderYmd) {
   const ymd = String(orderYmd || "").trim();
   if (!YMD_RE.test(ymd)) return null;
@@ -2220,12 +2287,16 @@ export async function listPendingLabSettlementLedgerRows({
   const useOrderDateRange = Boolean(
     orderDateRange?.fromYmd && orderDateRange?.toYmd,
   );
-  if (useOrderDateRange) {
-    const dateFilter = buildPracticeTransferCalendarDateRangeFilter({
-      fromYmd: orderDateRange.fromYmd,
-      toYmd: orderDateRange.toYmd,
-      dateKey: "orderDate",
-    });
+  const pendingDateRange = useOrderDateRange
+    ? {
+        fromYmd: orderDateRange.fromYmd,
+        toYmd: orderDateRange.toYmd,
+        dateKey: normalizeCreditLedgerDateKey(orderDateRange.dateKey),
+      }
+    : null;
+  if (pendingDateRange) {
+    const dateFilter =
+      buildPracticeTransferCalendarDateRangeFilter(pendingDateRange);
     if (dateFilter) ptxMatch.$and.push(dateFilter);
   } else if (occurredAt && typeof occurredAt === "object") {
     const heldAt = {};
@@ -2261,6 +2332,7 @@ export async function listPendingLabSettlementLedgerRows({
       toothWorks: 1,
       createdAt: 1,
       orderDates: 1,
+      arrivalDates: 1,
       transferMemo: 1,
       "production.designFiles": 1,
       "production.designFileCount": 1,
@@ -2273,12 +2345,11 @@ export async function listPendingLabSettlementLedgerRows({
 
   // CA settlement gate(STL·생산비)는 확정 적립·payout만 막는다.
   // 적립 보류 미러는 hold 중이면 보철만과 같이 노출(작업시작 후에도 CA 업로드 전 표시).
-  const visibleTransfers = useOrderDateRange
-    ? filterTransferDocsToCalendarRange(transfers, {
-        fromYmd: orderDateRange.fromYmd,
-        toYmd: orderDateRange.toYmd,
-        dateKey: "orderDate",
-      })
+  // 리메이크·재도착: 최종 주문/도착일만(이력 중간일 제외).
+  const visibleTransfers = pendingDateRange
+    ? transfers.filter((doc) =>
+        practiceTransferCurrentDateInCreditLedgerRange(doc, pendingDateRange),
+      )
     : transfers;
   if (!visibleTransfers.length) return [];
 
@@ -2501,9 +2572,16 @@ export async function listPendingLabSettlementLedgerRows({
     }
 
     const orderYmd = resolveCreditLedgerOrderYmdFromTransfer(doc);
-    const orderAt = creditLedgerDateFromOrderYmd(orderYmd);
+    const arrivalYmd = resolveCreditLedgerArrivalYmdFromTransfer(doc);
+    const displayYmd = pendingDateRange
+      ? resolveCreditLedgerCurrentYmdFromTransfer(
+          doc,
+          pendingDateRange.dateKey,
+        )
+      : orderYmd || arrivalYmd;
+    const displayAt = creditLedgerDateFromOrderYmd(displayYmd);
     const occurredAtVal =
-      orderAt ||
+      displayAt ||
       billing.heldAt ||
       holdMeta.occurredAt ||
       billing.billedAt ||
@@ -2531,6 +2609,7 @@ export async function listPendingLabSettlementLedgerRows({
       occurredAt: occurredAtVal,
       createdAt: occurredAtVal,
       orderDate: orderYmd || "",
+      arrivalDate: arrivalYmd || "",
       meta: {
         holdShare: "lab",
         displayLabel: "기공크레딧 적립",

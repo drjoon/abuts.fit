@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-03: 기간 dateKey(주문일|도착일) + 리메이크·재도착은 최종 일자만.
 // - 2026-11-03: 기간 조회 — PTX는 주문일(orderDates) 기준 로드·표시(occurredAt≠주문일 정합).
 // - 2026-11-03: 월 로드 — CA 게이트는 숨김 후보만·기간 한정 pipeline·PTX files 슬림.
 // - 2026-11-03: pageSize 상한 500(월 단위 dense 한 번에 로드).
@@ -99,7 +100,10 @@ import {
   resolveCreditLedgerOrderDateRangeFromQuery,
   resolvePracticeTransferIdsForCreditLedgerOrderDateRange,
   resolveCreditLedgerOrderYmdFromTransfer,
+  resolveCreditLedgerArrivalYmdFromTransfer,
   creditLedgerDateFromOrderYmd,
+  normalizeCreditLedgerDateKey,
+  DEFAULT_CREDIT_LEDGER_DATE_KEY,
 } from "./creditLedger.utils.js";
 
 
@@ -412,13 +416,18 @@ export async function listMyCreditLedger(req, res) {
     req.user?.requestorKind,
   );
 
-  // 년/월·from/to·onYmd: PTX는 주문일(orderDates)로 기간을 가른다.
+  // 년/월·from/to·onYmd: PTX는 dateKey(주문일|도착일) 최종 일자로 기간을 가른다.
   const orderDateRange = resolveCreditLedgerOrderDateRangeFromQuery(req.query);
+  const ledgerDateKey = normalizeCreditLedgerDateKey(
+    orderDateRange?.dateKey ||
+      req.query.dateKey ||
+      DEFAULT_CREDIT_LEDGER_DATE_KEY,
+  );
   const practiceTransferOrderDateRefIds = orderDateRange
     ? await resolvePracticeTransferIdsForCreditLedgerOrderDateRange({
         anchorObjectId,
         requestorKind,
-        orderDateRange,
+        orderDateRange: { ...orderDateRange, dateKey: ledgerDateKey },
       })
     : null;
 
@@ -558,7 +567,9 @@ export async function listMyCreditLedger(req, res) {
           searchOrs: searchOrs.length ? searchOrs : null,
           refIdIn,
           usageScope,
-          orderDateRange,
+          orderDateRange: orderDateRange
+            ? { ...orderDateRange, dateKey: ledgerDateKey }
+            : null,
         })
       : Promise.resolve([]);
 
@@ -824,6 +835,7 @@ export async function listMyCreditLedger(req, res) {
               matchingMode: 1,
               transferMemo: 1,
               orderDates: 1,
+              arrivalDates: 1,
               "files.patientName": 1,
               toothWorks: 1,
               billing: 1,
@@ -1001,6 +1013,7 @@ export async function listMyCreditLedger(req, res) {
     practiceTransferIdById.set(id, String(doc.transferId || ""));
     const toothNumbers = collectToothNumbersFromToothWorks(doc?.toothWorks);
     const orderDate = resolveCreditLedgerOrderYmdFromTransfer(doc);
+    const arrivalDate = resolveCreditLedgerArrivalYmdFromTransfer(doc);
     practiceTransferMetaById.set(id, {
       patientName: memoPatient || filePatient,
       // 치과 거래내역: 협력「어벗츠 · 파트너」·하청은 원청만(실명 비공개)
@@ -1012,6 +1025,7 @@ export async function listMyCreditLedger(req, res) {
       practiceBusinessAnchorId: String(doc.practiceBusinessAnchorId || "").trim(),
       transferMemo: memo,
       orderDate,
+      arrivalDate,
       practiceTransferCanceled,
       practiceTransferPending:
         !practiceTransferCanceled && Boolean(heldAt) && !fullySettled,
@@ -1150,7 +1164,12 @@ export async function listMyCreditLedger(req, res) {
           "기공소→어벗츠",
         );
       const orderDate = String(meta?.orderDate || "").trim();
-      const orderAt = creditLedgerDateFromOrderYmd(orderDate);
+      const arrivalDate = String(meta?.arrivalDate || "").trim();
+      const displayYmd =
+        ledgerDateKey === "arrivalDate"
+          ? arrivalDate || orderDate
+          : orderDate || arrivalDate;
+      const displayAt = creditLedgerDateFromOrderYmd(displayYmd);
       return {
         ...base,
         refPracticeTransferId: ptxLookupId
@@ -1164,8 +1183,9 @@ export async function listMyCreditLedger(req, res) {
         practiceName: meta?.practiceName || "",
         transferMemo: meta?.transferMemo || "",
         orderDate,
-        // 표 「날짜」·정렬 키 — 장부 occurredAt이 아니라 주문일
-        ...(orderAt ? { createdAt: orderAt } : {}),
+        arrivalDate,
+        // 표 「날짜」·정렬 키 — dateKey(주문일|최종 도착일)
+        ...(displayAt ? { createdAt: displayAt } : {}),
         practiceTransferPending: Boolean(meta?.practiceTransferPending),
         practiceTransferLabPending: Boolean(meta?.practiceTransferLabPending),
         practiceTransferAbutmentPending: Boolean(
