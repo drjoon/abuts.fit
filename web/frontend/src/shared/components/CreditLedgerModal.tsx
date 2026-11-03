@@ -137,6 +137,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
@@ -2087,15 +2088,6 @@ const buildYmOptions = (anchorYm: string) => {
   return out;
 };
 
-const chunkRows = <T,>(items: T[], cols: number): T[][] => {
-  const n = Math.max(1, Math.floor(cols) || 1);
-  if (n <= 1) return [items];
-  const size = Math.ceil(items.length / n);
-  return Array.from({ length: n }, (_, i) =>
-    items.slice(i * size, (i + 1) * size),
-  ).filter((chunk) => chunk.length > 0);
-};
-
 const resolveDensePartnerLabel = (
   row: LedgerDisplayRow,
   isLabViewer: boolean,
@@ -2149,6 +2141,38 @@ const resolveDenseDetailText = (
     return String(item.freeReason || "").trim() || refTypeLabel(refType);
   }
   return row.displayLabel || refTypeLabel(refType) || "—";
+};
+
+const resolveDenseToothNumbers = (row: LedgerDisplayRow) => {
+  const item = row.item;
+  const teeth = new Set<string>();
+  const add = (value: unknown) => {
+    const tooth = String(value || "").trim();
+    if (tooth) teeth.add(tooth);
+  };
+
+  add(item.caseInfos?.tooth);
+  add(item.refRequestSummary?.tooth);
+  add(item.tooth);
+
+  for (const line of parsePracticeTransferFeeQuote(item.feeQuote)?.lines || []) {
+    if (!isFeeQuoteShippingLine(String(line.prosthesisType || ""))) {
+      add(line.toothNumber);
+    }
+  }
+  for (const charge of item.remakeCharges || []) {
+    for (const tooth of charge.toothNumbers || []) add(tooth);
+  }
+  for (const member of row.members || []) {
+    add(member.caseInfos?.tooth);
+    add(member.refRequestSummary?.tooth);
+    add(member.tooth);
+  }
+
+  return [...teeth]
+    .sort((a, b) => Number(a) - Number(b) || a.localeCompare(b, "ko"))
+    .map((tooth) => `#${tooth}`)
+    .join(" · ") || "—";
 };
 
 const renderTransactionDetail = ({
@@ -3166,29 +3190,35 @@ export const CreditLedgerModal = ({
     return [...pending, ...settled, ...other];
   }, [denseLedgerUi, filteredRows, isLabViewer, sort]);
 
-  const [denseColCount, setDenseColCount] = useState(1);
-  useEffect(() => {
-    if (!denseLedgerUi) return;
-    const mq2 = window.matchMedia("(min-width: 1024px)");
-    const mq3 = window.matchMedia("(min-width: 1536px)");
-    const apply = () =>
-      setDenseColCount(mq3.matches ? 3 : mq2.matches ? 2 : 1);
-    apply();
-    mq2.addEventListener("change", apply);
-    mq3.addEventListener("change", apply);
-    return () => {
-      mq2.removeEventListener("change", apply);
-      mq3.removeEventListener("change", apply);
-    };
-  }, [denseLedgerUi]);
-
-  const denseRowChunks = useMemo(
-    () => (denseLedgerUi ? chunkRows(sortedRows, denseColCount) : []),
-    [denseColCount, denseLedgerUi, sortedRows],
-  );
-
   const ymOptions = useMemo(() => buildYmOptions(currentKstYm()), []);
-  const partnerColumnLabel = isLabViewer ? "치과" : "기공소";
+  const [collapsedDenseGroups, setCollapsedDenseGroups] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const densePartnerGroups = useMemo(() => {
+    if (!denseLedgerUi) return [];
+    const groups = new Map<string, LedgerDisplayRow[]>();
+    for (const row of sortedRows) {
+      const label = resolveDensePartnerLabel(row, isLabViewer);
+      const rows = groups.get(label);
+      if (rows) rows.push(row);
+      else groups.set(label, [row]);
+    }
+    return [...groups.entries()].map(([label, rows]) => ({
+      key: label,
+      label,
+      rows,
+      total: rows.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+    }));
+  }, [denseLedgerUi, isLabViewer, sortedRows]);
+
+  const toggleDenseGroup = (key: string) => {
+    setCollapsedDenseGroups((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   // 결제·적립 상태 필터 시 페이지가 비면 다음 페이지를 이어서 채운다.
   useEffect(() => {
@@ -3980,67 +4010,64 @@ export const CreditLedgerModal = ({
                   </div>
                 ) : (
                   <div
-                    className={cn(
-                      "grid grid-cols-1 gap-3",
-                      denseColCount >= 2 && "lg:grid-cols-2",
-                      denseColCount >= 3 && "2xl:grid-cols-3",
-                    )}
+                    className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3"
                   >
-                    {denseRowChunks.map((chunk, chunkIndex) => (
+                    {densePartnerGroups.map((group) => (
                       <div
-                        key={`dense-col-${chunkIndex}`}
-                        className="min-w-0 overflow-hidden rounded-lg border border-slate-200/90 bg-white shadow-sm"
+                        key={group.key}
+                        className="min-w-0 overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm"
                       >
-                        <div className="grid grid-cols-[3.25rem_6.25rem_minmax(0,1.35fr)_minmax(0,0.9fr)] gap-x-2 border-b border-slate-200/80 bg-slate-50 px-2.5 py-2 text-[11px] font-semibold tracking-tight text-slate-600">
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-0.5 text-left hover:text-slate-900"
-                            onClick={() => toggleSort("createdAt")}
-                          >
-                            날짜
-                            {renderSortIcon(
-                              sort.key === "createdAt",
-                              sort.direction,
+                        <button
+                          type="button"
+                          aria-expanded={!collapsedDenseGroups.has(group.key)}
+                          onClick={() => toggleDenseGroup(group.key)}
+                          className="flex w-full items-center gap-2 border-b border-slate-200/80 bg-slate-50 px-3 py-2.5 text-left transition hover:bg-slate-100/80"
+                        >
+                          <ChevronDown
+                            className={cn(
+                              "h-4 w-4 shrink-0 text-slate-500 transition-transform",
+                              collapsedDenseGroups.has(group.key) && "-rotate-90",
                             )}
-                          </button>
-                          <button
-                            type="button"
-                            className="inline-flex items-center justify-end gap-0.5 hover:text-slate-900"
-                            onClick={() => toggleSort("amount")}
-                          >
-                            금액
-                            {renderSortIcon(
-                              sort.key === "amount",
-                              sort.direction,
-                            )}
-                          </button>
-                          <button
-                            type="button"
-                            className="inline-flex min-w-0 items-center gap-0.5 truncate text-left hover:text-slate-900"
-                            onClick={() => toggleSort("partner")}
-                          >
-                            <span className="truncate">
-                              {partnerColumnLabel}
-                            </span>
-                            {renderSortIcon(
-                              sort.key === "partner",
-                              sort.direction,
-                            )}
-                          </button>
-                          <button
-                            type="button"
-                            className="inline-flex min-w-0 items-center gap-0.5 truncate text-left hover:text-slate-900"
-                            onClick={() => toggleSort("detail")}
-                          >
-                            <span className="truncate">거래내역</span>
-                            {renderSortIcon(
-                              sort.key === "detail",
-                              sort.direction,
-                            )}
-                          </button>
-                        </div>
-                        <ul className="divide-y divide-slate-100">
-                          {chunk.map((r) => {
+                            aria-hidden
+                          />
+                          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">
+                            {group.label}
+                          </span>
+                          <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
+                            {group.rows.length}건 · {formatSignedWon(group.total)}
+                          </span>
+                        </button>
+                        {!collapsedDenseGroups.has(group.key) ? (
+                          <>
+                            <div className="grid grid-cols-[3.25rem_6.25rem_3.25rem_minmax(0,1fr)] gap-x-2 border-b border-slate-200/80 bg-white px-2.5 py-2 text-[11px] font-semibold tracking-tight text-slate-600">
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-0.5 text-left hover:text-slate-900"
+                                onClick={() => toggleSort("createdAt")}
+                              >
+                                날짜
+                                {renderSortIcon(sort.key === "createdAt", sort.direction)}
+                              </button>
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-end gap-0.5 hover:text-slate-900"
+                                onClick={() => toggleSort("amount")}
+                              >
+                                금액
+                                {renderSortIcon(sort.key === "amount", sort.direction)}
+                              </button>
+                              <span>치아</span>
+                              <button
+                                type="button"
+                                className="inline-flex min-w-0 items-center gap-0.5 truncate text-left hover:text-slate-900"
+                                onClick={() => toggleSort("detail")}
+                              >
+                                <span className="truncate">거래내역</span>
+                                {renderSortIcon(sort.key === "detail", sort.direction)}
+                              </button>
+                            </div>
+                            <ul className="divide-y divide-slate-100">
+                              {group.rows.map((r) => {
                             const amount = Number(r.amount || 0);
                             const isMinus = amount < 0;
                             const canOpen =
@@ -4066,7 +4093,7 @@ export const CreditLedgerModal = ({
                                   disabled={!canOpen}
                                   onClick={() => openLedgerRowDetail(r)}
                                   className={cn(
-                                    "grid w-full grid-cols-[3.25rem_6.25rem_minmax(0,1.35fr)_minmax(0,0.9fr)] gap-x-2 px-2.5 py-1.5 text-left text-xs leading-5",
+                                    "grid w-full grid-cols-[3.25rem_6.25rem_3.25rem_minmax(0,1fr)] gap-x-2 px-2.5 py-1.5 text-left text-xs leading-5",
                                     canOpen
                                       ? "cursor-pointer hover:bg-sky-50/70"
                                       : "cursor-default",
@@ -4091,13 +4118,10 @@ export const CreditLedgerModal = ({
                                       : formatSignedWon(amount)}
                                   </span>
                                   <span
-                                    className="min-w-0 truncate text-slate-800"
-                                    title={resolveDensePartnerLabel(
-                                      r,
-                                      isLabViewer,
-                                    )}
+                                    className="min-w-0 truncate font-medium text-slate-700"
+                                    title={resolveDenseToothNumbers(r)}
                                   >
-                                    {resolveDensePartnerLabel(r, isLabViewer)}
+                                    {resolveDenseToothNumbers(r)}
                                   </span>
                                   <span
                                     className="min-w-0 truncate text-slate-500"
@@ -4111,8 +4135,10 @@ export const CreditLedgerModal = ({
                                 </button>
                               </li>
                             );
-                          })}
-                        </ul>
+                              })}
+                            </ul>
+                          </>
+                        ) : null}
                       </div>
                     ))}
                   </div>
