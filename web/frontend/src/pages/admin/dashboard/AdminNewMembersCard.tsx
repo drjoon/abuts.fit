@@ -94,7 +94,7 @@ export function AdminNewMembersCard({
         tone={count > 0 ? "warn" : "default"}
         onClick={count > 0 ? () => setOpen(true) : undefined}
       >
-        <div className="flex h-full flex-col justify-end gap-0.5">
+        <div className="flex min-h-full flex-col justify-end gap-0.5">
           <DashBigNumber value={count.toLocaleString("ko-KR")} unit="명" />
           <p className="truncate text-[11px] text-muted-foreground">
             {lead

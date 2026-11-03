@@ -43,7 +43,7 @@ export function NoOrderAlertBanner({
           className={className}
           onClick={hasAlert ? () => setOpen(true) : undefined}
         >
-          <div className="flex h-full flex-col justify-end gap-0.5">
+          <div className="flex min-h-full flex-col justify-end gap-0.5">
             <DashBigNumber
               value={loading && !data ? "—" : total.toLocaleString()}
               unit="곳"

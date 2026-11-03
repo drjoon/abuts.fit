@@ -145,7 +145,7 @@ export function HeldSmsCard({ enabled = true, className }: Props) {
           setOpen(true);
         }}
       >
-        <div className="flex h-full flex-col justify-end gap-0.5">
+        <div className="flex min-h-full flex-col justify-end gap-0.5">
           <DashBigNumber value={pending.toLocaleString()} unit="묶음" />
           <p className="truncate text-[11px] text-muted-foreground">
             {pending > 0

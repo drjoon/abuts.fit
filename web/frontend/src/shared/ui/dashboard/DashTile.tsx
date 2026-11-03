@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // change-log:
+// - 2026-11-03: body 기본 overflow-y-auto·안쪽 여백. 넘치는 카드는 타일 안에서 스크롤.
 // - 2026-10-21: 행 6.75rem·c12. 1행 숫자+두 줄이 잘리지 않게 하고, 전폭 타일을 둔다.
 // - 2026-10-14: grid-flow-dense·c8r2·c6r3 — 중요도별 span 조정 시 빈 칸을 메운다.
 // - 2026-10-08: 관리자 대시보드 타일(벤토) 공통. 높이는 행 단위로 고정하고 내용은 타일 안에서만 스크롤한다.
@@ -91,7 +92,15 @@ export function DashTile({
         </span>
         {extra ?? icon}
       </div>
-      <div className={cn("min-h-0 flex-1", bodyClassName)}>{children}</div>
+      <div
+        className={cn(
+          // 행 높이 고정 → 본문이 넘치면 타일 안에서만 스크롤. 안쪽 여백은 경계 잘림 방지.
+          "min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 py-1.5",
+          bodyClassName,
+        )}
+      >
+        {children}
+      </div>
     </div>
   );
 }

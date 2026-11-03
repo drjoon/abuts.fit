@@ -129,7 +129,7 @@ export function AdminPopbillPointCard({ enabled = true, className }: Props) {
       }
       tone={shortage ? "danger" : low ? "warn" : "default"}
     >
-      <div className="flex h-full flex-col justify-end gap-1">
+      <div className="flex min-h-full flex-col justify-end gap-1">
         <div className="flex items-end gap-2 whitespace-nowrap">
           <span className="text-2xl font-bold tabular-nums leading-none">{balanceText}</span>
           <span className="mb-0.5 text-sm font-medium leading-none text-muted-foreground">P</span>

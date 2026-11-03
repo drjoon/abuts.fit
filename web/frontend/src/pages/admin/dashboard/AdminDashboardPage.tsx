@@ -550,7 +550,7 @@ function KpiTile({
 }) {
   return (
     <DashTile className={className} title={title} icon={icon} onClick={onClick}>
-      <div className="flex h-full flex-col justify-end gap-0.5">
+      <div className="flex min-h-full flex-col justify-end gap-0.5">
         <div className="truncate text-2xl font-bold leading-none">{value}</div>
         {sub ? <p className="truncate text-[11px] text-muted-foreground">{sub}</p> : null}
       </div>
@@ -2210,7 +2210,7 @@ export const AdminDashboardPage = () => {
                 title="진행 / 완료"
                 icon={<FileText className="h-4 w-4 text-muted-foreground" />}
               >
-                <div className="flex h-full flex-col justify-between gap-2">
+                <div className="flex min-h-full flex-col justify-between gap-2">
                   <DashBigNumber
                     value={inProgressRequestCount.toLocaleString()}
                     unit="건 진행 중"
@@ -2261,7 +2261,7 @@ export const AdminDashboardPage = () => {
                   setNewConnectionRequestOpen(true);
                 }}
               >
-                <div className="flex h-full flex-col justify-center gap-1">
+                <div className="flex min-h-full flex-col justify-center gap-1">
                   <div
                     className={
                       newConnectionRequestTotal > 0
@@ -2294,7 +2294,7 @@ export const AdminDashboardPage = () => {
                 icon={<AlertCircle className="h-4 w-4 text-muted-foreground" />}
                 onClick={() => setRiskSummaryDialogOpen(true)}
               >
-                <div className="grid h-full grid-cols-2 content-center gap-2">
+                <div className="grid min-h-full grid-cols-2 content-center gap-2">
                   <DashStat
                     label="지연 가능"
                     value={`${riskWarningCount.toLocaleString()}건`}
@@ -2352,7 +2352,7 @@ export const AdminDashboardPage = () => {
                 icon={<RotateCw className="h-4 w-4 text-muted-foreground" />}
                 onClick={() => setHexVerificationDialogOpen(true)}
               >
-                <div className="flex h-full flex-col justify-end gap-0.5">
+                <div className="flex min-h-full flex-col justify-end gap-0.5">
                   <DashBigNumber value={hexCallCount.toLocaleString()} unit="전화" />
                   <p className="truncate text-[11px] text-muted-foreground">
                     {hexCallCount > 0
@@ -2373,7 +2373,7 @@ export const AdminDashboardPage = () => {
                   setProsthesisFeeItemRequestDialogOpen(true);
                 }}
               >
-                <div className="flex h-full flex-col justify-end gap-0.5">
+                <div className="flex min-h-full flex-col justify-end gap-0.5">
                   <DashBigNumber
                     value={prosthesisFeeItemRequestPending.toLocaleString()}
                     unit="대기"
@@ -2396,7 +2396,7 @@ export const AdminDashboardPage = () => {
                   setHappyCallDialogOpen(true);
                 }}
               >
-                <div className="flex h-full flex-col justify-end gap-0.5">
+                <div className="flex min-h-full flex-col justify-end gap-0.5">
                   <DashBigNumber
                     value={Number(happyCallSummary?.totalRequestorCount || 0).toLocaleString()}
                     unit="개 대상"
@@ -2456,7 +2456,7 @@ export const AdminDashboardPage = () => {
                 bodyClassName="overflow-y-auto px-1.5 py-1.5"
               >
                 {data.systemAlerts.length === 0 ? (
-                  <div className="flex h-full items-center text-xs text-muted-foreground">
+                  <div className="flex min-h-full items-center text-xs text-muted-foreground">
                     이상 알림이 없습니다.
                   </div>
                 ) : (
@@ -2485,7 +2485,7 @@ export const AdminDashboardPage = () => {
                 title="거래금액"
                 icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
               >
-                <div className="flex h-full flex-col justify-between gap-1.5">
+                <div className="flex min-h-full flex-col justify-between gap-1.5">
                   <div className="grid grid-cols-2 gap-2 border-b border-slate-100 pb-1.5">
                     <button
                       type="button"
@@ -2563,7 +2563,7 @@ export const AdminDashboardPage = () => {
                 icon={<UploadCloud className="h-4 w-4 text-muted-foreground" />}
                 onClick={() => setPracticeTransferStatsDialogOpen(true)}
               >
-                <div className="grid h-full grid-cols-4 items-end gap-2">
+                <div className="grid min-h-full grid-cols-4 items-end gap-2">
                   <DashStat label="전송" value={practiceTransferTotal.toLocaleString()} />
                   <DashStat label="파일" value={practiceTransferTotalFiles.toLocaleString()} />
                   <DashStat
@@ -2589,7 +2589,7 @@ export const AdminDashboardPage = () => {
                   setDesignSoftwareStatsDialogOpen(true);
                 }}
               >
-                <div className="flex h-full min-h-0 flex-col justify-between gap-1.5">
+                <div className="flex min-h-full flex-col justify-between gap-1.5">
                   {designSoftwareStatRows.map((row) => {
                     const ratio = Math.max(0, Math.min(1, row.count / designSoftwareMaxCount));
                     const tone = getDesignSoftwareToneClasses(row.key);
@@ -2624,7 +2624,7 @@ export const AdminDashboardPage = () => {
                   setUnsupportedAbutmentStatsDialogOpen(true);
                 }}
               >
-                <div className="flex h-full min-h-0 flex-col justify-between gap-1.5">
+                <div className="flex min-h-full flex-col justify-between gap-1.5">
                   {unsupportedAbutmentStatRows.map((row) => {
                     const ratio = Math.max(
                       0,
@@ -2661,7 +2661,7 @@ export const AdminDashboardPage = () => {
                 icon={<FileText className="h-4 w-4 text-muted-foreground" />}
                 onClick={() => navigate("/dashboard/ops-report")}
               >
-                <div className="flex h-full flex-col justify-end gap-0.5">
+                <div className="flex min-h-full flex-col justify-end gap-0.5">
                   <p className="truncate text-[11px] text-muted-foreground">월간 · 인쇄</p>
                 </div>
               </DashTile>
@@ -2671,7 +2671,7 @@ export const AdminDashboardPage = () => {
                 icon={<BarChart3 className="h-4 w-4 text-muted-foreground" />}
                 onClick={() => setMachiningStatsDialogOpen(true)}
               >
-                <div className="flex h-full flex-col justify-end gap-0.5">
+                <div className="flex min-h-full flex-col justify-end gap-0.5">
                   <div className="truncate text-sm font-semibold text-slate-800">
                     직경별 제작 · 소요시간
                   </div>

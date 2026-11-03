@@ -233,7 +233,7 @@ export function AdminPracticeDelinquencyCard({
         icon={<Wallet className="h-4 w-4 text-muted-foreground" />}
         onClick={() => setOpen(true)}
       >
-        <div className="grid h-full grid-cols-3 content-center gap-1.5">
+        <div className="grid min-h-full grid-cols-3 content-center gap-1.5">
           <DashStat
             label="미납 지속"
             value={loading ? "…" : `${ongoingCount.toLocaleString("ko-KR")}곳`}

@@ -66,7 +66,7 @@ export function IndirectAbutmentCard({ className }: { className?: string }) {
         className={className}
         onClick={() => setOpen(true)}
       >
-        <div className="flex h-full flex-col justify-end gap-0.5">
+        <div className="flex min-h-full flex-col justify-end gap-0.5">
           <DashBigNumber
             value={rows.length.toLocaleString()}
             unit="종"

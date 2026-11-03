@@ -208,7 +208,7 @@ export function DirectAbutmentSettingsCard({ className }: { className?: string }
         className={className}
         onClick={() => setOpen(true)}
       >
-        <div className="flex h-full flex-col justify-end gap-0.5">
+        <div className="flex min-h-full flex-col justify-end gap-0.5">
           <DashBigNumber value={loaded ? templates.length.toLocaleString() : "—"} unit="심플어벗" />
           <p className="truncate text-[11px] text-muted-foreground">3DM · STL</p>
         </div>

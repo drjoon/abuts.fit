@@ -133,7 +133,7 @@ export function AdminPopbillBankCard({ enabled = true, className }: Props) {
       }
       tone={failed && !busy ? "danger" : "default"}
     >
-      <div className="flex h-full min-h-0 flex-col justify-between gap-0.5">
+      <div className="flex min-h-full flex-col justify-between gap-0.5">
         <div className="flex shrink-0 items-end gap-1 whitespace-nowrap">
           <span className="text-2xl font-bold tabular-nums leading-none">{balanceText}</span>
           <span className="mb-0.5 text-sm font-medium leading-none text-muted-foreground">원</span>

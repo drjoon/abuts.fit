@@ -115,7 +115,7 @@ export function LowFinishLineWatchCard({ className }: { className?: string }) {
         icon={<Ruler className="h-4 w-4 text-muted-foreground" />}
         onClick={() => setOpen(true)}
       >
-        <div className="flex h-full flex-col justify-end gap-1">
+        <div className="flex min-h-full flex-col justify-end gap-1">
           <DashBigNumber
             value={query.isLoading ? "…" : `${success.toLocaleString("ko-KR")}/${target}`}
             unit="통과"
