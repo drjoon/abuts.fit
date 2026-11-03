@@ -68,12 +68,12 @@ Notes:
   - **클릭 → 관련 상세 내역 모달** (`CreditLedgerModal` + `initialFilters` + `hideBalanceSummary`).
   - 카드 위·사이 **수식·설명 문단 상시 노출 금지** (`현재 잔액 = …` 한 줄, `· 기간 …` 보조 문구 등).
   - 연산 부호(`=`, `+`, `−`)는 카드 사이 시각만. 설명은 필요 시 카드 **툴팁**만.
-  - 내역: `현재 잔액 = 충전 [+ 정산 적립] − 소비`(「무료 충전」카드 없음).
+  - **내역 탭**에는 요약 카드를 두지 않는다(년/월·밀집 4칸 표). 통계 탭만 수식 카드.
   - 통계(치과): `충전 − 소비 | 의뢰건수`.
   - 통계(기공소): `치과의뢰 수신하기`=`정산 적립 | 의뢰건수`, `커스텀어벗 의뢰하기`=`충전 − 소비 | 의뢰건수`.
   - **[폐지 2026-10-17] 치과 데모 모드는 폐지되었다.** 신규 가입은 `demoMode`를 켜지 않고, 데모 게이트(만료·전환 대기 차단, 가상 잔고 overdraft, 예약분 제외)와 치과 전환 UI(`/me/exit-demo`, 뱃지·안내 모달)를 제거했다. 기공의뢰는 OB 후불, 커스텀어벗은 선불 크레딧이다. 기존 플래그는 `scripts/db/clear-practice-demo-mode.js`로 해제한다. 아래 데모 서술은 이력이며, 기공소 전환 정산(`demoConversion`·`labDemoCredit`)·장부 라벨은 레거시 데이터용으로만 남아 있다.
   - 데모/실사용 `usageScope`·2줄 집계는 쓰지 않는다(단일 장부). 데모 모드는 뱃지·잔고 힌트만.
-  - 가로폭은 작업영역을 나누지 않는다. `SETTLEMENT_STAT_CARD_WIDTH_CLASS`(선호 11.5rem, 최소 sm 10.5rem) + `SETTLEMENT_STAT_ROW_CLASS`(가운데 묶음). 최소폭 미만일 때만 가로 스크롤. 기공소 지급·제조사·관리자·딜러·개발운영·내역·통계 공통.
+  - 가로폭은 작업영역을 나누지 않는다. `SETTLEMENT_STAT_CARD_WIDTH_CLASS`(선호 11.5rem, 최소 sm 10.5rem) + `SETTLEMENT_STAT_ROW_CLASS`(가운데 묶음). 최소폭 미만일 때만 가로 스크롤. 기공소 지급·제조사·관리자·딜러·개발운영·통계 공통.
   - SSOT: `src/shared/settlement/settlementUi.tsx`, `CreditLedgerModal.tsx`,
     `CreditStatisticsTab.tsx`, `.cursor/rules/ui-summary-cards.mdc`.
 - Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.
@@ -209,7 +209,7 @@ Notes:
   - `src/pages/admin/credits/hooks/useAdminCreditPage.ts`
   - `src/pages/admin/credits/components/RequestorCreditTab.tsx`
   - `src/pages/admin/credits/components/RequestorOrganizationsTab.tsx`
-  - `src/shared/components/CreditLedgerModal.tsx` (내역: 잔액 카드 + rounded-2xl 테이블)
+  - `src/shared/components/CreditLedgerModal.tsx` (내역 embedded: 년/월·4칸 2~3열 / Dialog·통계 드릴다운은 상세 표)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee·생산만·디자인+생산 전역 설정 UI)
   - `src/pages/admin/system/AdminPlatformSettingsPage.tsx` (크레딧 · 커스텀어벗 · 인증 기공소 · 어벗츠 수가 · 기공소 수가. 수수료율=`GET|PATCH /api/admin/settings/platform-fees`. 기공소 신규 기공비는 어벗츠 수가 탭 배지·하이라이트)
   - `src/pages/admin/partners/AdminPartnersPage.tsx` (사이드「사업영역」. 탭당 한 카드: 기공사업 · 어벗사업 · 플랫폼사업. 주체는 role Select(`RoleSelect`). 팀원 검색은 해당 주체 role만. 기공=기공팀·영업팀·개발운영사. 어벗=제조사·개발운영사·딜러사·어벗츠. 플랫폼=어벗츠·개발운영사. 구성원 분배액은 카드 안에서 수정. 분배는 매출에서 배송비를 먼저 차감한 잔여만(배송은 여기 미기재). 기공=내부기공소(기공사업부) 배당 건만 배송비 공통 지출 차감 후 내부 기공팀·영업팀 인센티브(면세)+개발운영사(+VAT). 어벗사업 카드는 레거시 표시. 신규 분배는 어벗츠 1만원 = 제조 5,000 / 개발운영 1,000 / 어벗츠 4,000(부가세 포함). 의뢰서 소개코드(딜러사) 있으면 딜러사·없으면 어벗츠. 플랫폼=사용료·하청 수수료 미부과(재원 0) · 분배비율만 어벗츠/개발운영사
@@ -362,8 +362,7 @@ Notes:
   - 치과향 지정 기공소 표시: **기공소 실명**(`formatPracticeTargetLabLabel`·`resolvePracticeTransferLabDisplayLabel`). 하청만 「어벗츠기공소 · 인증 협력 기공소에서 처리」. 채팅 `기공소「{수행 기공소}」`.
   - 기공소 사이드 설정과 계정 팝업 사이: 가입 이유 배너. 커스텀어벗 의뢰하기 상단은 생산 현황 헤더(`[정책 안내]`·진행중·출고예정·완료·불완전가공).
   - 크레딧 잔액·장부 UI(`CreditLedgerModal` / 의뢰자 크레딧 페이지):
-    - 내역 상단 요약은 **수식 카드**(`현재 잔액 = 충전 [+ 정산 적립] − 소비`). 「무료 충전」카드 없음. 연산 부호만 카드 사이, 설명은 툴팁.
-    - **요약 카드 클릭 → `CreditLedgerModal` 상세(필터 프리셋)**. 카드 위·사이 수식·설명 문단 상시 노출 금지. `.cursor/rules/ui-summary-cards.mdc`.
+    - 내역 탭(embedded)은 요약 카드 없이 년/월 필터 + 날짜·금액·기공소(치과)·거래내역 4칸을 2~3열로 표시. 통계 탭 요약 카드 클릭 → `CreditLedgerModal` 상세. `.cursor/rules/ui-summary-cards.mdc`.
     - 테이블·필터·관리자 모달도 rounded-2xl·slate border 톤으로 통일.
     - **치과**: 유료크레딧만 표시(잔여 무료>0일 때만 보조). `기공크레딧` 잔액 행·정산 필터 숨김. **기간 합계**·드릴다운은 필터 줄 **오른쪽** `PeriodFilter`(기간 전용 state). 내역 테이블은 기간 무관. API `from`/`to`는 `appendPeriodQueryParams`(KST YMD SSOT). 충전 카드 라벨「충전」. **소비** 카드 하단 `완료/보류`(결제 HOLD). 데모 모드면 잔고 힌트·뱃지「데모 N일 남음」.
     - **기공소**: 치과와 동일 수식 카드 + **정산 적립**(카드 금액=확정 · 하단 `완료/보류`). 소비 카드에는 완료/보류를 붙이지 않음(적립 보류와 혼동 방지). 기간 필터는 카드만(테이블 기간 무관). 버킷 필터(유료/무료/기공)·동작(충전/소비/조정) 유지. `SPEND_SETTLEMENT`=기공크레딧 주문 사용.

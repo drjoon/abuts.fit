@@ -10,14 +10,12 @@ alwaysApply: false
 
 - 정산·크레딧 **요약 카드** 가로는 `SETTLEMENT_STAT_CARD_WIDTH_CLASS`(선호 11.5rem, 최소 sm 10.5rem / 모바일 9.5rem). 행은 `SETTLEMENT_STAT_ROW_CLASS`(가운데 묶음). 가용 폭이 줄면 최소폭까지 줄이고, 그보다 좁을 때만 가로 스크롤. `grid-cols-2`로 작업영역을 반으로 나누지 않는다. 기공소 지급·제조사·관리자·딜러·개발운영·내역·통계 공통.
 - 정산·크레딧 **요약 카드**(`SettlementStatCard` 등)는 **클릭 시 관련 상세 내역 모달**을 열어야 한다.
-  - 통계 탭·장부 상단 카드 → `CreditLedgerModal` + `initialFilters` + `hideBalanceSummary` + `detailTitle`.
+  - 통계 탭 카드 → `CreditLedgerModal` + `initialFilters` + `hideBalanceSummary` + `detailTitle`.
+- **내역 탭**(의뢰자 `/dashboard/credits?tab=ledger`, `CreditLedgerModal` embedded)에는 요약 카드를 두지 않는다. 년/월 필터 + 날짜·금액·기공소(또는 치과)·거래내역 4칸을 2~3열로 표시한다.
 - 카드 위·사이에 **수식·설명 문단**을 상시 노출하지 않는다.
   - 예: `현재 잔액 = 충전 + …` 한 줄 안내, `· 기간 소비는 …` 보조 문구 **금지**.
   - 연산 부호(`=`, `+`, `−`)는 카드 사이 시각 요소로만 쓴다.
 - 부가 설명이 필요하면 **툴팁**(`SettlementStatCard` `hint` + `hintTooltip`, 앱 기본 600ms 지연).
-  - **내역 탭 수식**(치과·기공소): `현재 잔액 = 충전 [+ 정산 적립] − 소비`.
-  - 기공소만 `정산 적립`(카드 금액=확정 · 하단 완료/보류). 소비 카드의 완료/보류는 **치과만**(결제 HOLD).
-  - 치과 `소비`는 결제 보류(잔액 차감 HOLD)를 포함 — PTX는 COMMIT이 REQ_*를 추가 차감하지 않음.
   - 「무료 충전」요약 카드는 쓰지 않는다(가입환영 크레딧은 장부 행으로만 표시. 관리자 수동 지급·장부 행 FREE 필터는 유지).
   - 데모/실사용 2줄 집계·`usageScope` 필터는 쓰지 않는다(단일 금액).
 - **통계 탭 수식**:
@@ -25,6 +23,8 @@ alwaysApply: false
   - 기공소: **두 구역**(사이드바와 동일 라벨) —
     `치과의뢰 수신하기`=`정산 적립 | 의뢰건수`,
     `커스텀어벗 의뢰하기`=`충전 − 소비 | 의뢰건수`.
+  - 기공소 `정산 적립`(카드 금액=확정 · 하단 완료/보류). 소비 카드의 완료/보류는 **치과만**(결제 HOLD).
+  - 치과 `소비`는 결제 보류(잔액 차감 HOLD)를 포함 — PTX는 COMMIT이 REQ_*를 추가 차감하지 않음.
 
 ## SSOT
 

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-03: 내역 dense — 요약카드 없이 년/월 필터·4칸 2~3열 스켈레톤.
 // - 2026-10-04: 내역 요약 스켈레톤 — 카드 11.5rem·연산 부호 폭 실 UI와 맞춤.
 // - 2026-10-04: 내역 필터 스켈레톤 — 결제(적립) 완료/보류 토글 버튼 2칸.
 // - 2026-09-20: 내역/지급 스켈레톤 — overflow 바깥 여백으로 카드 경계 클리핑 방지.
@@ -81,28 +82,33 @@ const BalanceCardSkeleton = () => (
 export const CreditLedgerTableSkeleton = ({
   rows = 8,
   showSettlement = false,
+  dense = false,
 }: {
   rows?: number;
   showSettlement?: boolean;
+  /** 의뢰자 내역 탭 — 요약카드 없음·4칸 2~3열 */
+  dense?: boolean;
 }) => (
   <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
-    <div className="px-1 py-1.5 sm:px-1.5">
-      <div className="scroll-x-bar-top">
-        <div className="flex w-full min-w-0 items-stretch justify-center gap-1 p-1 sm:gap-1.5">
-        <BalanceCardSkeleton />
-        <EquationOperatorSkeleton />
-        <BalanceCardSkeleton />
-        {showSettlement ? (
-          <>
+    {dense ? null : (
+      <div className="px-1 py-1.5 sm:px-1.5">
+        <div className="scroll-x-bar-top">
+          <div className="flex w-full min-w-0 items-stretch justify-center gap-1 p-1 sm:gap-1.5">
+            <BalanceCardSkeleton />
             <EquationOperatorSkeleton />
             <BalanceCardSkeleton />
-          </>
-        ) : null}
-        <EquationOperatorSkeleton />
-        <BalanceCardSkeleton />
+            {showSettlement ? (
+              <>
+                <EquationOperatorSkeleton />
+                <BalanceCardSkeleton />
+              </>
+            ) : null}
+            <EquationOperatorSkeleton />
+            <BalanceCardSkeleton />
+          </div>
         </div>
       </div>
-    </div>
+    )}
     <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
       <Skeleton className="h-9 w-full rounded-xl sm:w-[130px]" />
       <Skeleton className="h-9 w-full rounded-xl sm:w-[130px]" />
@@ -113,33 +119,64 @@ export const CreditLedgerTableSkeleton = ({
       <Skeleton className="h-9 w-full rounded-xl sm:w-[280px]" />
       <Skeleton className="ml-auto h-9 w-full rounded-xl sm:w-56" />
     </div>
-    <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm">
-      <div className="border-b border-slate-100 px-3 py-2.5">
-        <div className="grid grid-cols-6 gap-3">
-          <Skeleton className="mx-auto h-4 w-10" />
-          <Skeleton className="mx-auto h-4 w-10" />
-          <Skeleton className="mx-auto h-4 w-10" />
-          <Skeleton className="mx-auto h-4 w-10" />
-          <Skeleton className="mx-auto h-4 w-10" />
-          <Skeleton className="mx-auto h-4 w-16" />
+    {dense ? (
+      <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm">
+        <div className="grid grid-cols-1 gap-2 p-2 lg:grid-cols-2 2xl:grid-cols-3">
+          {repeat(3).map((col) => (
+            <div
+              key={`dense-col-${col}`}
+              className="overflow-hidden rounded-xl border border-slate-200/80"
+            >
+              <div className="grid grid-cols-4 gap-1 border-b border-slate-100 px-2 py-1.5">
+                <Skeleton className="h-3 w-8" />
+                <Skeleton className="ml-auto h-3 w-8" />
+                <Skeleton className="h-3 w-10" />
+                <Skeleton className="h-3 w-12" />
+              </div>
+              {repeat(Math.max(4, Math.ceil(rows / 3))).map((key) => (
+                <div
+                  key={`dense-row-${col}-${key}`}
+                  className="grid grid-cols-4 gap-1 border-b border-slate-100 px-2 py-1.5 last:border-b-0"
+                >
+                  <Skeleton className="h-3 w-10" />
+                  <Skeleton className="ml-auto h-3 w-12" />
+                  <Skeleton className="h-3 w-14" />
+                  <Skeleton className="h-3 w-16" />
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
       </div>
-      <div className="space-y-0">
-        {repeat(rows).map((key) => (
-          <div
-            key={`ledger-row-${key}`}
-            className="grid grid-cols-6 gap-3 border-b border-slate-100 px-3 py-3 last:border-b-0"
-          >
-            <Skeleton className="mx-auto h-4 w-28" />
+    ) : (
+      <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm">
+        <div className="border-b border-slate-100 px-3 py-2.5">
+          <div className="grid grid-cols-6 gap-3">
+            <Skeleton className="mx-auto h-4 w-10" />
+            <Skeleton className="mx-auto h-4 w-10" />
+            <Skeleton className="mx-auto h-4 w-10" />
+            <Skeleton className="mx-auto h-4 w-10" />
+            <Skeleton className="mx-auto h-4 w-10" />
             <Skeleton className="mx-auto h-4 w-16" />
-            <Skeleton className="mx-auto h-4 w-14" />
-            <Skeleton className="mx-auto h-4 w-20" />
-            <Skeleton className="mx-auto h-4 w-20" />
-            <Skeleton className="mx-auto h-4 w-36" />
           </div>
-        ))}
+        </div>
+        <div className="space-y-0">
+          {repeat(rows).map((key) => (
+            <div
+              key={`ledger-row-${key}`}
+              className="grid grid-cols-6 gap-3 border-b border-slate-100 px-3 py-3 last:border-b-0"
+            >
+              <Skeleton className="mx-auto h-4 w-28" />
+              <Skeleton className="mx-auto h-4 w-16" />
+              <Skeleton className="mx-auto h-4 w-14" />
+              <Skeleton className="mx-auto h-4 w-20" />
+              <Skeleton className="mx-auto h-4 w-20" />
+              <Skeleton className="mx-auto h-4 w-36" />
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
+    )}
   </div>
 );
 

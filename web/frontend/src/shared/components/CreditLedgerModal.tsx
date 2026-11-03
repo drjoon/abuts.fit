@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-03: 내역(embedded) — 요약카드 제거·년/월 필터·날짜·금액·기공소·거래내역 4칸 2~3열.
 // - 2026-10-24: 내역 카드 안내를 한 사실로 줄임.
 // - 2026-10-05: 플랫폼 사용료·하청 수수료 행 숨김(미부과).
 // - 2026-10-04: 적립(결제) 완료/보류 필터 — 셀렉트 대신 토글 버튼 2개(둘 다 켜면 보류↑·완료↓).
@@ -131,7 +132,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowDown, ArrowUp, ArrowUpDown, CircleHelp, CreditCard } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleHelp,
+  CreditCard,
+} from "lucide-react";
 import {
   Table,
   TableBody,
@@ -196,7 +205,12 @@ import {
 import { parsePracticeTransferMemoMeta } from "@/shared/practice/transferMemo";
 import { formatAbutsCooperationLabLabel, normalizePracticePartnerLabCoreName } from "@/shared/practice/practiceLabRating";
 import { compactRemakeSummaryLabel } from "@/features/chat/components/chatRemakeParts";
-import { formatKstYmdToKo } from "@/shared/date/kst";
+import {
+  formatKstYmdToKo,
+  kstAddCivilMonths,
+  kstEndOfMonth,
+  toKstYmd,
+} from "@/shared/date/kst";
 import {
   CREDIT_FREE_BUCKET_HINT,
   CREDIT_LEDGER_FREE_NOTICE_BODY,
@@ -2023,6 +2037,108 @@ const formatPrimePayoutLabLedgerLabel = (
   return role ? `${role} · ${core}` : core;
 };
 
+/** 내역 밀집 표 — 날짜만(시간 제외, KST) */
+const formatDateOnly = (iso: string) => {
+  const ymd = toKstYmd(iso);
+  return ymd ? formatKstYmdToKo(ymd) : "";
+};
+
+const currentKstYm = () => {
+  const ymd = toKstYmd(new Date()) || "";
+  return /^\d{4}-\d{2}/.test(ymd) ? ymd.slice(0, 7) : "";
+};
+
+const shiftYm = (ym: string, delta: number) => {
+  const next = kstAddCivilMonths(`${ym}-01`, delta);
+  return next ? next.slice(0, 7) : ym;
+};
+
+const ymMonthBounds = (ym: string) => {
+  const start = `${ym}-01`;
+  const end = kstEndOfMonth(start) || start;
+  return { start, end };
+};
+
+const formatYmLabel = (ym: string) => {
+  const [y, m] = String(ym || "").split("-").map(Number);
+  if (!y || !m) return ym;
+  return `${y}년 ${m}월`;
+};
+
+const buildYmOptions = (anchorYm: string) => {
+  const anchor = /^\d{4}-\d{2}$/.test(anchorYm) ? anchorYm : currentKstYm();
+  const out: string[] = [];
+  for (let i = 0; i < 36; i += 1) {
+    const ym = shiftYm(anchor, -i);
+    if (ym) out.push(ym);
+  }
+  return out;
+};
+
+const chunkRows = <T,>(items: T[], cols: number): T[][] => {
+  const n = Math.max(1, Math.floor(cols) || 1);
+  if (n <= 1) return [items];
+  const size = Math.ceil(items.length / n);
+  return Array.from({ length: n }, (_, i) =>
+    items.slice(i * size, (i + 1) * size),
+  ).filter((chunk) => chunk.length > 0);
+};
+
+const resolveDensePartnerLabel = (
+  row: LedgerDisplayRow,
+  isLabViewer: boolean,
+) => {
+  if (row.isAbutmentDesign) {
+    return String(row.recipientName || "").trim() || "—";
+  }
+  const item = row.item;
+  if (isLabViewer) {
+    return String(item.practiceName || item.clinicName || "").trim() || "—";
+  }
+  return formatAbutsCooperationLabLabel(item.labName) || "—";
+};
+
+const resolveDenseDetailText = (
+  row: LedgerDisplayRow,
+  isLabViewer: boolean,
+) => {
+  if (row.isAbutmentDesign) {
+    return `${row.requestCount}건`;
+  }
+  const item = row.item;
+  const refType = String(item.refType || "");
+  if (refType === "PRACTICE_TRANSFER") {
+    const patient = String(item.patientName || "").trim();
+    const paidLab = isLabViewer
+      ? formatPrimePayoutLabLedgerLabel(item.payoutLabKind, item.payoutLabName)
+      : "";
+    if (patient && paidLab) return `${patient} · ${paidLab}`;
+    return patient || paidLab || row.displayLabel || "—";
+  }
+  if (refType === "REQUEST") {
+    const patient =
+      item.refRequestSummary?.patientName || item.patientName || "";
+    const tooth = item.refRequestSummary?.tooth || item.tooth || "";
+    const parts = [String(patient || "").trim(), String(tooth || "").trim()].filter(
+      Boolean,
+    );
+    return parts.length > 0 ? parts.join(" · ") : "—";
+  }
+  if (refType === "SHIPPING_PACKAGE") {
+    return `송장 ${formatTrackingNumbers(item.trackingNumbers)}`;
+  }
+  if (isDemoConversionLedgerItem(item)) {
+    return isLabViewer ? "기공소 지급" : "실사용 전환";
+  }
+  if (
+    item.type === "CHARGE_FREE_REQUEST" ||
+    item.type === "CHARGE_FREE_SHIPPING"
+  ) {
+    return String(item.freeReason || "").trim() || refTypeLabel(refType);
+  }
+  return row.displayLabel || refTypeLabel(refType) || "—";
+};
+
 const renderTransactionDetail = ({
   item,
   safeRef,
@@ -2450,14 +2566,32 @@ export const CreditLedgerModal = ({
     navigate(chargeNavPath);
   };
 
+  const initialResolvedFilters = resolveLedgerFilters(initialFilters);
+  const initialEmbeddedYm = (() => {
+    if (!embedded) return currentKstYm();
+    const custom = String(initialResolvedFilters.customStartDate || "").trim();
+    if (/^\d{4}-\d{2}/.test(custom)) return custom.slice(0, 7);
+    if (initialResolvedFilters.period === "lastMonth") {
+      return shiftYm(currentKstYm(), -1);
+    }
+    return currentKstYm();
+  })();
+  const initialEmbeddedBounds = embedded
+    ? ymMonthBounds(initialEmbeddedYm)
+    : null;
+
+  const [ledgerYm, setLedgerYm] = useState(initialEmbeddedYm);
   const [period, setPeriod] = useState<PeriodFilterValue>(
-    () => resolveLedgerFilters(initialFilters).period,
+    () => initialResolvedFilters.period,
   );
   const [customStartDate, setCustomStartDate] = useState(
-    () => resolveLedgerFilters(initialFilters).customStartDate,
+    () =>
+      initialEmbeddedBounds?.start ??
+      initialResolvedFilters.customStartDate,
   );
   const [customEndDate, setCustomEndDate] = useState(
-    () => resolveLedgerFilters(initialFilters).customEndDate,
+    () =>
+      initialEmbeddedBounds?.end ?? initialResolvedFilters.customEndDate,
   );
   const [spendPeriod, setSpendPeriod] = useState<PeriodFilterValue>(
     () => resolveLedgerFilters(initialFilters).period,
@@ -2506,8 +2640,21 @@ export const CreditLedgerModal = ({
     if (!initialFilters || (!isOpen && !embedded)) return;
     const next = resolveLedgerFilters(initialFilters);
     setPeriod(next.period);
-    setCustomStartDate(next.customStartDate);
-    setCustomEndDate(next.customEndDate);
+    if (embedded) {
+      const custom = String(next.customStartDate || "").trim();
+      const ym = /^\d{4}-\d{2}/.test(custom)
+        ? custom.slice(0, 7)
+        : next.period === "lastMonth"
+          ? shiftYm(currentKstYm(), -1)
+          : currentKstYm();
+      const bounds = ymMonthBounds(ym);
+      setLedgerYm(ym);
+      setCustomStartDate(bounds.start);
+      setCustomEndDate(bounds.end);
+    } else {
+      setCustomStartDate(next.customStartDate);
+      setCustomEndDate(next.customEndDate);
+    }
     setSpendPeriod(next.period);
     setSpendCustomStartDate(next.customStartDate);
     setSpendCustomEndDate(next.customEndDate);
@@ -2522,6 +2669,13 @@ export const CreditLedgerModal = ({
     setStatsCategories(next.statsCategories);
     setOnYmd(next.onYmd);
   }, [embedded, initialFilters, initialFiltersKey, isOpen]);
+
+  useEffect(() => {
+    if (!embedded) return;
+    const bounds = ymMonthBounds(ledgerYm);
+    setCustomStartDate(bounds.start);
+    setCustomEndDate(bounds.end);
+  }, [embedded, ledgerYm]);
 
   useEffect(() => {
     const next = q.trim().normalize("NFC");
@@ -2575,9 +2729,12 @@ export const CreditLedgerModal = ({
     currentBalanceSnapshot?.requestorKind,
   ]);
 
-  /** 치과·기공소 내역 상단 — 기간 합계 수식 카드(= + −). 테이블은 기간 무관. */
+  /** 치과·기공소 Dialog 상단 수식 카드. embedded 내역 탭은 카드 없이 년/월로 표 필터. */
   const equationLedgerUi =
-    !hideBalanceSummary && (isPracticeViewer || showSettlementCredit);
+    !embedded &&
+    !hideBalanceSummary &&
+    (isPracticeViewer || showSettlementCredit);
+  const denseLedgerUi = embedded;
 
   const summaryFilterBase = useMemo(
     (): CreditLedgerInitialFilters =>
@@ -2976,6 +3133,30 @@ export const CreditLedgerModal = ({
     return [...pending, ...settled, ...other];
   }, [filteredRows, isLabViewer, sort]);
 
+  const [denseColCount, setDenseColCount] = useState(1);
+  useEffect(() => {
+    if (!denseLedgerUi) return;
+    const mq2 = window.matchMedia("(min-width: 1024px)");
+    const mq3 = window.matchMedia("(min-width: 1536px)");
+    const apply = () =>
+      setDenseColCount(mq3.matches ? 3 : mq2.matches ? 2 : 1);
+    apply();
+    mq2.addEventListener("change", apply);
+    mq3.addEventListener("change", apply);
+    return () => {
+      mq2.removeEventListener("change", apply);
+      mq3.removeEventListener("change", apply);
+    };
+  }, [denseLedgerUi]);
+
+  const denseRowChunks = useMemo(
+    () => (denseLedgerUi ? chunkRows(sortedRows, denseColCount) : []),
+    [denseColCount, denseLedgerUi, sortedRows],
+  );
+
+  const ymOptions = useMemo(() => buildYmOptions(currentKstYm()), []);
+  const partnerColumnLabel = isLabViewer ? "치과" : "기공소";
+
   // 결제·적립 상태 필터 시 페이지가 비면 다음 페이지를 이어서 채운다.
   useEffect(() => {
     if (!isOpen || payoutStatus === "all") return;
@@ -3242,18 +3423,141 @@ export const CreditLedgerModal = ({
     </div>
   );
 
+  const openLedgerRowDetail = (r: LedgerDisplayRow) => {
+    if (r.isAbutmentDesign) {
+      setAbutmentDetail(toAbutmentDetail(r));
+      return;
+    }
+    const isRemakeChargeRow = isPracticeTransferRemakeChargeLedgerItem(r.item);
+    const canOpenFeeQuote = Boolean(
+      r.isPracticeTransfer &&
+        (isRemakeChargeRow
+          ? parsePracticeTransferFeeQuote(r.item.feeQuote) ||
+            resolveRemakeChargeForLedgerItem(r.item) ||
+            Number(r.amount || 0) > 0
+          : parsePracticeTransferFeeQuote(r.item.feeQuote)),
+    );
+    if (!canOpenFeeQuote) return;
+    const memoMeta = parsePracticeTransferMemoMeta(
+      String(r.item.transferMemo || ""),
+    );
+    const creditLabHoldPending = resolvePracticeTransferPending(r.item, "lab");
+    const creditAbutmentHoldPending = resolvePracticeTransferPending(
+      r.item,
+      "abuts",
+    );
+
+    if (isRemakeChargeRow) {
+      const charge = resolveRemakeChargeForLedgerItem(r.item);
+      const remakeQuote = charge
+        ? buildRemakeChargeFeeQuote(charge, Number(r.amount || 0))
+        : buildRemakeChargeFeeQuote(
+            {
+              summaryLabel: "리메이크",
+              billingDelta: {
+                labFeeTotal: Math.max(0, Math.round(Number(r.amount || 0))),
+                total: Math.max(0, Math.round(Number(r.amount || 0))),
+              },
+            },
+            Number(r.amount || 0),
+          );
+      const originalQuote = parsePracticeTransferFeeQuote(r.item.feeQuote);
+      setFeeQuoteDetail({
+        quote: remakeQuote,
+        originalQuote,
+        remakeSummaryLabel: String(charge?.summaryLabel || "").trim() || null,
+        remakeChargedAt:
+          String(charge?.chargedAt || r.createdAt || "").trim() || null,
+        skipJig: r.item.skipJig !== false,
+        rushProcessing: Boolean(r.item.rushProcessing),
+        title: LAB_REMAKE_CHARGE_TYPE_LABEL,
+        creditLabHoldPending: false,
+        creditAbutmentHoldPending: false,
+        patientName:
+          String(r.item.patientName || "").trim() ||
+          String(memoMeta.patientName || "").trim(),
+        labName: isLabViewer
+          ? String(r.item.practiceName || r.item.clinicName || "").trim()
+          : formatAbutsCooperationLabLabel(r.item.labName),
+        payoutLabLabel: isLabViewer
+          ? formatPrimePayoutLabLedgerLabel(
+              r.item.payoutLabKind,
+              r.item.payoutLabName,
+            )
+          : "",
+        orderDate: String(memoMeta.orderDate || "").trim(),
+        arrivalDate: String(memoMeta.arrivalDate || "").trim(),
+        memo: String(memoMeta.memo || "").trim(),
+        settlementShippingLines: [],
+        settlementSide: r.settlementSide,
+        payoutStatus: r.practiceTransferPayoutStatus,
+        forwardGross: r.forwardAmounts?.gross ?? null,
+        forwardPayout: r.forwardAmounts?.payout ?? null,
+        ledgerAmount: Number(r.amount || 0),
+      });
+      return;
+    }
+
+    const quote = parsePracticeTransferFeeQuote(r.item.feeQuote);
+    if (!quote) return;
+    const parts =
+      r.parts && r.parts.length > 0 ? r.parts : r.members.map(toDisplayPart);
+    const settlementShippingLines = toSettlementShippingLines(
+      parts,
+      creditLabHoldPending,
+      creditAbutmentHoldPending,
+      quote,
+    );
+    setFeeQuoteDetail({
+      quote: quoteForCreditSettlementDetail(quote, settlementShippingLines),
+      originalQuote: null,
+      remakeSummaryLabel: null,
+      remakeChargedAt: null,
+      skipJig: r.item.skipJig !== false,
+      rushProcessing: Boolean(r.item.rushProcessing),
+      title: r.displayLabel || resolvePracticeTransferTypeLabel(isLabViewer),
+      creditLabHoldPending,
+      creditAbutmentHoldPending,
+      patientName:
+        String(r.item.patientName || "").trim() ||
+        String(memoMeta.patientName || "").trim(),
+      labName: isLabViewer
+        ? String(r.item.practiceName || r.item.clinicName || "").trim()
+        : formatAbutsCooperationLabLabel(r.item.labName),
+      payoutLabLabel: isLabViewer
+        ? formatPrimePayoutLabLedgerLabel(
+            r.item.payoutLabKind,
+            r.item.payoutLabName,
+          )
+        : "",
+      orderDate: String(memoMeta.orderDate || "").trim(),
+      arrivalDate: String(memoMeta.arrivalDate || "").trim(),
+      memo: String(memoMeta.memo || "").trim(),
+      settlementShippingLines,
+      settlementSide: r.settlementSide,
+      payoutStatus: r.practiceTransferPayoutStatus,
+      forwardGross: r.forwardAmounts?.gross ?? null,
+      forwardPayout: r.forwardAmounts?.payout ?? null,
+      ledgerAmount: Number(r.amount || 0),
+    });
+  };
+
   const body = (
     <div
       className={cn(
         "flex min-h-0 flex-1 flex-col gap-4",
+        denseLedgerUi && "gap-3",
         !embedded && "max-h-[min(58vh,640px)]",
       )}
     >
       {loading && items.length === 0 ? (
-        <CreditLedgerTableSkeleton showSettlement={showSettlementCredit} />
+        <CreditLedgerTableSkeleton
+          showSettlement={showSettlementCredit}
+          dense={denseLedgerUi}
+        />
       ) : (
         <>
-          {currentBalanceSnapshot && !hideBalanceSummary ? (
+          {currentBalanceSnapshot && !hideBalanceSummary && !denseLedgerUi ? (
             showPeriodSpendCard ? (
               <div className="px-1 py-1.5 sm:px-1.5">
                 {/* padding은 overflow(scroll-x-bar-top) 바깥 — 카드 border/shadow 클리핑 방지 */}
@@ -3519,7 +3823,51 @@ export const CreditLedgerModal = ({
             ) : null}
 
             <div className="ml-auto w-full min-w-0 shrink-0 sm:w-auto">
-              {equationLedgerUi ? (
+              {denseLedgerUi ? (
+                <div className="inline-flex h-9 w-full items-center gap-1 sm:w-auto">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 shrink-0 rounded-xl border-slate-200"
+                    aria-label="이전 달"
+                    onClick={() => setLedgerYm((ym) => shiftYm(ym, -1))}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Select
+                    value={ledgerYm}
+                    onValueChange={(v) => setLedgerYm(v)}
+                  >
+                    <SelectTrigger className="h-9 min-w-[8.5rem] rounded-xl border-slate-200">
+                      <SelectValue placeholder="년/월" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ymOptions.map((ym) => (
+                        <SelectItem key={ym} value={ym}>
+                          {formatYmLabel(ym)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 shrink-0 rounded-xl border-slate-200"
+                    aria-label="다음 달"
+                    disabled={ledgerYm >= currentKstYm()}
+                    onClick={() =>
+                      setLedgerYm((ym) => {
+                        const next = shiftYm(ym, 1);
+                        return next > currentKstYm() ? ym : next;
+                      })
+                    }
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : equationLedgerUi ? (
                 <PeriodFilter
                   value={spendPeriod}
                   onChange={setSpendPeriod}
@@ -3561,6 +3909,131 @@ export const CreditLedgerModal = ({
             ref={scrollRef}
             className="min-h-[min(50dvh,24rem)] flex-1 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm md:min-h-0"
           >
+            {denseLedgerUi ? (
+              <div className="px-1.5 py-1.5 sm:px-2 sm:py-2">
+                {!loading && sortedRows.length === 0 ? (
+                  <div className="py-10 text-center text-sm text-muted-foreground">
+                    조회 결과가 없습니다.
+                  </div>
+                ) : (
+                  <div
+                    className={cn(
+                      "grid grid-cols-1 gap-2",
+                      denseColCount >= 2 && "lg:grid-cols-2",
+                      denseColCount >= 3 && "2xl:grid-cols-3",
+                    )}
+                  >
+                    {denseRowChunks.map((chunk, chunkIndex) => (
+                      <div
+                        key={`dense-col-${chunkIndex}`}
+                        className="min-w-0 overflow-hidden rounded-xl border border-slate-200/80 bg-white"
+                      >
+                        <div className="grid grid-cols-[4.25rem_5.25rem_minmax(0,1fr)_minmax(0,1.25fr)] gap-1 border-b border-slate-100 bg-slate-50/90 px-2 py-1.5 text-[11px] font-medium text-slate-600">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-0.5 text-left"
+                            onClick={() => toggleSort("createdAt")}
+                          >
+                            날짜
+                            {renderSortIcon(
+                              sort.key === "createdAt",
+                              sort.direction,
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-end gap-0.5"
+                            onClick={() => toggleSort("amount")}
+                          >
+                            금액
+                            {renderSortIcon(
+                              sort.key === "amount",
+                              sort.direction,
+                            )}
+                          </button>
+                          <span className="truncate">{partnerColumnLabel}</span>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-0.5 text-left"
+                            onClick={() => toggleSort("detail")}
+                          >
+                            거래내역
+                            {renderSortIcon(
+                              sort.key === "detail",
+                              sort.direction,
+                            )}
+                          </button>
+                        </div>
+                        <ul className="divide-y divide-slate-100">
+                          {chunk.map((r) => {
+                            const amount = Number(r.amount || 0);
+                            const isMinus = amount < 0;
+                            const canOpen =
+                              Boolean(r.isAbutmentDesign) ||
+                              Boolean(
+                                r.isPracticeTransfer &&
+                                  (isPracticeTransferRemakeChargeLedgerItem(
+                                    r.item,
+                                  )
+                                    ? parsePracticeTransferFeeQuote(
+                                        r.item.feeQuote,
+                                      ) ||
+                                      resolveRemakeChargeForLedgerItem(r.item) ||
+                                      Number(r.amount || 0) > 0
+                                    : parsePracticeTransferFeeQuote(
+                                        r.item.feeQuote,
+                                      )),
+                              );
+                            return (
+                              <li key={r.key}>
+                                <button
+                                  type="button"
+                                  disabled={!canOpen}
+                                  onClick={() => openLedgerRowDetail(r)}
+                                  className={cn(
+                                    "grid w-full grid-cols-[4.25rem_5.25rem_minmax(0,1fr)_minmax(0,1.25fr)] gap-1 px-2 py-1 text-left text-[11px] leading-snug",
+                                    canOpen
+                                      ? "cursor-pointer hover:bg-slate-50/90"
+                                      : "cursor-default",
+                                  )}
+                                >
+                                  <span className="whitespace-nowrap tabular-nums text-slate-700">
+                                    {formatDateOnly(String(r.createdAt || ""))}
+                                  </span>
+                                  <span
+                                    className={cn(
+                                      "text-right font-medium tabular-nums",
+                                      isMinus
+                                        ? "text-destructive"
+                                        : "text-primary-strong",
+                                    )}
+                                  >
+                                    {r.forwardAmounts
+                                      ? formatSignedWon(r.forwardAmounts.payout)
+                                      : formatSignedWon(amount)}
+                                  </span>
+                                  <span className="min-w-0 truncate text-slate-800">
+                                    {resolveDensePartnerLabel(r, isLabViewer)}
+                                  </span>
+                                  <span className="min-w-0 truncate text-slate-600">
+                                    {resolveDenseDetailText(r, isLabViewer)}
+                                  </span>
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {loading && rows.length > 0 ? (
+                  <div className="py-3 text-center text-sm text-muted-foreground">
+                    불러오는 중…
+                  </div>
+                ) : null}
+              </div>
+            ) : (
             <div className={RESPONSIVE.tableShell}>
               <Table className={RESPONSIVE.tableMinExtraWide}>
               <TableHeader>
@@ -3682,141 +4155,7 @@ export const CreditLedgerModal = ({
                           ? "cursor-pointer hover:bg-slate-50/80"
                           : undefined,
                       )}
-                      onClick={() => {
-                        if (canOpenAbutmentDetail) {
-                          setAbutmentDetail(toAbutmentDetail(r));
-                          return;
-                        }
-                        if (!canOpenFeeQuote) return;
-                        const memoMeta = parsePracticeTransferMemoMeta(
-                          String(r.item.transferMemo || ""),
-                        );
-                        const creditLabHoldPending =
-                          resolvePracticeTransferPending(r.item, "lab");
-                        const creditAbutmentHoldPending =
-                          resolvePracticeTransferPending(r.item, "abuts");
-
-                        if (isRemakeChargeRow) {
-                          const charge = resolveRemakeChargeForLedgerItem(r.item);
-                          const remakeQuote = charge
-                            ? buildRemakeChargeFeeQuote(
-                                charge,
-                                Number(r.amount || 0),
-                              )
-                            : buildRemakeChargeFeeQuote(
-                                {
-                                  summaryLabel: "리메이크",
-                                  billingDelta: {
-                                    labFeeTotal: Math.max(
-                                      0,
-                                      Math.round(Number(r.amount || 0)),
-                                    ),
-                                    total: Math.max(
-                                      0,
-                                      Math.round(Number(r.amount || 0)),
-                                    ),
-                                  },
-                                },
-                                Number(r.amount || 0),
-                              );
-                          const originalQuote = parsePracticeTransferFeeQuote(
-                            r.item.feeQuote,
-                          );
-                          setFeeQuoteDetail({
-                            quote: remakeQuote,
-                            originalQuote,
-                            remakeSummaryLabel:
-                              String(charge?.summaryLabel || "").trim() || null,
-                            remakeChargedAt:
-                              String(charge?.chargedAt || r.createdAt || "").trim() ||
-                              null,
-                            skipJig: r.item.skipJig !== false,
-                            rushProcessing: Boolean(r.item.rushProcessing),
-                            title: LAB_REMAKE_CHARGE_TYPE_LABEL,
-                            creditLabHoldPending: false,
-                            creditAbutmentHoldPending: false,
-                            patientName:
-                              String(r.item.patientName || "").trim() ||
-                              String(memoMeta.patientName || "").trim(),
-                            labName: isLabViewer
-                              ? String(
-                                  r.item.practiceName || r.item.clinicName || "",
-                                ).trim()
-                              : formatAbutsCooperationLabLabel(r.item.labName),
-                            payoutLabLabel: isLabViewer
-                              ? formatPrimePayoutLabLedgerLabel(
-                                  r.item.payoutLabKind,
-                                  r.item.payoutLabName,
-                                )
-                              : "",
-                            orderDate: String(memoMeta.orderDate || "").trim(),
-                            arrivalDate: String(memoMeta.arrivalDate || "").trim(),
-                            memo: String(memoMeta.memo || "").trim(),
-                            settlementShippingLines: [],
-                            settlementSide: r.settlementSide,
-                            payoutStatus: r.practiceTransferPayoutStatus,
-                            forwardGross: r.forwardAmounts?.gross ?? null,
-                            forwardPayout: r.forwardAmounts?.payout ?? null,
-                            ledgerAmount: Number(r.amount || 0),
-                          });
-                          return;
-                        }
-
-                        const quote = parsePracticeTransferFeeQuote(
-                          r.item.feeQuote,
-                        );
-                        if (!quote) return;
-                        const parts =
-                          r.parts && r.parts.length > 0
-                            ? r.parts
-                            : r.members.map(toDisplayPart);
-                        const settlementShippingLines =
-                          toSettlementShippingLines(
-                            parts,
-                            creditLabHoldPending,
-                            creditAbutmentHoldPending,
-                            quote,
-                          );
-                        setFeeQuoteDetail({
-                          quote: quoteForCreditSettlementDetail(
-                            quote,
-                            settlementShippingLines,
-                          ),
-                          originalQuote: null,
-                          remakeSummaryLabel: null,
-                          remakeChargedAt: null,
-                          skipJig: r.item.skipJig !== false,
-                          rushProcessing: Boolean(r.item.rushProcessing),
-                          title:
-                            r.displayLabel ||
-                            resolvePracticeTransferTypeLabel(isLabViewer),
-                          creditLabHoldPending,
-                          creditAbutmentHoldPending,
-                          patientName:
-                            String(r.item.patientName || "").trim() ||
-                            String(memoMeta.patientName || "").trim(),
-                          labName: isLabViewer
-                            ? String(
-                                r.item.practiceName || r.item.clinicName || "",
-                              ).trim()
-                            : formatAbutsCooperationLabLabel(r.item.labName),
-                          payoutLabLabel: isLabViewer
-                            ? formatPrimePayoutLabLedgerLabel(
-                                r.item.payoutLabKind,
-                                r.item.payoutLabName,
-                              )
-                            : "",
-                          orderDate: String(memoMeta.orderDate || "").trim(),
-                          arrivalDate: String(memoMeta.arrivalDate || "").trim(),
-                          memo: String(memoMeta.memo || "").trim(),
-                          settlementShippingLines,
-                          settlementSide: r.settlementSide,
-                          payoutStatus: r.practiceTransferPayoutStatus,
-                          forwardGross: r.forwardAmounts?.gross ?? null,
-                          forwardPayout: r.forwardAmounts?.payout ?? null,
-                          ledgerAmount: Number(r.amount || 0),
-                        });
-                      }}
+                      onClick={() => openLedgerRowDetail(r)}
                     >
                       <TableCell className="whitespace-nowrap text-center align-middle text-xs">
                         {formatDate(String(r.createdAt || ""))}
@@ -3990,6 +4329,7 @@ export const CreditLedgerModal = ({
               </TableBody>
               </Table>
             </div>
+            )}
 
             {hasMore ? (
               <div ref={sentinelRef} className="h-8" aria-hidden="true" />
