@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-11-03: dense 헤더 — 날짜 라벨 줄바꿈 방지(열 폭·nowrap).
+// - 2026-11-03: dense — 같은 날짜 묶음 표시·날짜↔환자·금액↔치아 여백.
+// - 2026-11-03: dense — 월 전체 pageSize 500·3~4열·환자명/금액 밀집·OB 마커 숨김.
 // - 2026-11-03: dense — 날짜/환자명/금액/치아 순·치아 폭·pageSize 80·기간요약 skip.
 // - 2026-11-03: 내역 dense — 필터를 년/월·검색만, 기공소 정렬, 월 선택 클리핑·표 여백 정리.
 // - 2026-11-03: 내역(embedded) — 요약카드 제거·년/월 필터·날짜·금액·기공소·거래내역 4칸 2~3열.
@@ -476,10 +479,19 @@ export type CreditLedgerModalProps = {
 };
 
 const PAGE_SIZE = 10;
-/** 내역 탭(embedded) — pageSize=10이면 월 조회가 10회+ 왕복(각 1~2s) */
-const DENSE_PAGE_SIZE = 80;
+/** 내역 탭(embedded) — 월 단위로 한 번에 로드(백엔드 상한 500) */
+const DENSE_PAGE_SIZE = 500;
+/**
+ * 날짜 | 환자 | 금액 | 치아
+ * - 환자↔금액은 가깝게(gap 최소)
+ * - 날짜↔환자·금액↔치아는 셀 패딩으로 여백
+ */
 const DENSE_ROW_GRID_CLASS =
-  "grid grid-cols-[2.75rem_minmax(3.25rem,0.9fr)_5.5rem_minmax(5rem,1.35fr)] gap-x-1.5";
+  "grid grid-cols-[3.75rem_minmax(2.25rem,4.25rem)_5.5rem_minmax(3rem,1fr)] gap-x-0.5";
+const DENSE_PARTNER_GRID_CLASS =
+  "grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3 min-[1800px]:grid-cols-4";
+const DENSE_HEADER_BTN_CLASS =
+  "inline-flex items-center gap-0.5 whitespace-nowrap text-left hover:text-slate-900";
 
 type SortDirection = "asc" | "desc";
 type LedgerSortKey =
@@ -2150,6 +2162,14 @@ const resolveDenseDetailText = (
   return row.displayLabel || refTypeLabel(refType) || "—";
 };
 
+/** 월 정산 완료 마커(0원) — 기공소 그룹에 「어벗츠기공소」로 붙지 않게 dense에서 숨김 */
+const isDenseHiddenLedgerItem = (item: CreditLedgerItem) => {
+  const refType = String(item.refType || "").trim();
+  if (refType === "PRACTICE_MONTHLY_SETTLEMENT") return true;
+  const label = String(item.displayLabel || "").trim();
+  return label.includes("오픈뱅킹") && label.includes("일괄정산");
+};
+
 /** dense 표 「환자명」열 — 치아·상대처는 제외 */
 const resolveDensePatientName = (
   row: LedgerDisplayRow,
@@ -3050,8 +3070,19 @@ export const CreditLedgerModal = ({
     businessAnchorId,
   ]);
 
-  // 무한 스크롤
+  // dense 월 조회: 남은 페이지가 있으면 스크롤 기다리지 않고 이어서 채운다.
   useEffect(() => {
+    if (!isOpen || !denseLedgerUi || !hasMore) return;
+    if (loading || loadingRef.current || !hasMoreRef.current) return;
+    const nextPage = pageRef.current + 1;
+    setPage(nextPage);
+    void load(nextPage, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, denseLedgerUi, hasMore, items.length, loading]);
+
+  // 무한 스크롤(모달·비 dense)
+  useEffect(() => {
+    if (denseLedgerUi) return;
     const sentinel = sentinelRef.current;
     const root = scrollRef.current;
     if (!sentinel || !root || !isOpen || !hasMore) return;
@@ -3069,7 +3100,7 @@ export const CreditLedgerModal = ({
     io.observe(sentinel);
     return () => io.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, hasMore, items.length]);
+  }, [denseLedgerUi, isOpen, hasMore, items.length]);
 
   // 웹소켓 실시간 업데이트: 모달이 열린 상태를 유지한 채
   // 동일 모달 내 데이터(목록/잔액 스냅샷)만 갱신한다.
@@ -3137,11 +3168,14 @@ export const CreditLedgerModal = ({
   };
 
   const filteredRows = useMemo(() => {
-    if (payoutStatus === "all") return rows;
-    return rows.filter((r) =>
+    const base = denseLedgerUi
+      ? rows.filter((r) => !isDenseHiddenLedgerItem(r.item))
+      : rows;
+    if (payoutStatus === "all") return base;
+    return base.filter((r) =>
       matchesPayoutStatusFilter(r.practiceTransferPayoutStatus, payoutStatus),
     );
-  }, [rows, payoutStatus]);
+  }, [denseLedgerUi, rows, payoutStatus]);
 
   const toggleSort = (key: LedgerSortKey) => {
     setSort((prev) =>
@@ -4054,9 +4088,7 @@ export const CreditLedgerModal = ({
                     조회 결과가 없습니다.
                   </div>
                 ) : (
-                  <div
-                    className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3"
-                  >
+                  <div className={DENSE_PARTNER_GRID_CLASS}>
                     {densePartnerGroups.map((group) => (
                       <div
                         key={group.key}
@@ -4092,7 +4124,7 @@ export const CreditLedgerModal = ({
                             >
                               <button
                                 type="button"
-                                className="inline-flex items-center gap-0.5 text-left hover:text-slate-900"
+                                className={cn(DENSE_HEADER_BTN_CLASS, "pr-2")}
                                 onClick={() => toggleSort("createdAt")}
                               >
                                 날짜
@@ -4100,7 +4132,7 @@ export const CreditLedgerModal = ({
                               </button>
                               <button
                                 type="button"
-                                className="inline-flex min-w-0 items-center gap-0.5 truncate text-left hover:text-slate-900"
+                                className={cn(DENSE_HEADER_BTN_CLASS, "min-w-0 pl-0.5")}
                                 onClick={() => toggleSort("detail")}
                               >
                                 <span className="truncate">환자명</span>
@@ -4108,16 +4140,21 @@ export const CreditLedgerModal = ({
                               </button>
                               <button
                                 type="button"
-                                className="inline-flex items-center justify-end gap-0.5 hover:text-slate-900"
+                                className={cn(
+                                  DENSE_HEADER_BTN_CLASS,
+                                  "justify-end pr-2",
+                                )}
                                 onClick={() => toggleSort("amount")}
                               >
                                 금액
                                 {renderSortIcon(sort.key === "amount", sort.direction)}
                               </button>
-                              <span>치아번호</span>
+                              <span className="whitespace-nowrap pl-0.5">
+                                치아번호
+                              </span>
                             </div>
-                            <ul className="divide-y divide-slate-100 px-0.5 py-0.5">
-                              {group.rows.map((r) => {
+                            <ul className="px-0.5 py-0.5">
+                              {group.rows.map((r, rowIndex) => {
                             const amount = Number(r.amount || 0);
                             const isMinus = amount < 0;
                             const patientName = resolveDensePatientName(
@@ -4125,6 +4162,19 @@ export const CreditLedgerModal = ({
                               isLabViewer,
                             );
                             const toothLabel = resolveDenseToothNumbers(r);
+                            const dateLabel = formatDateOnly(
+                              String(r.createdAt || ""),
+                            );
+                            const prevDateLabel =
+                              rowIndex > 0
+                                ? formatDateOnly(
+                                    String(
+                                      group.rows[rowIndex - 1]?.createdAt || "",
+                                    ),
+                                  )
+                                : "";
+                            const showDate =
+                              Boolean(dateLabel) && dateLabel !== prevDateLabel;
                             const canOpen =
                               Boolean(r.isAbutmentDesign) ||
                               Boolean(
@@ -4142,7 +4192,13 @@ export const CreditLedgerModal = ({
                                       )),
                               );
                             return (
-                              <li key={r.key}>
+                              <li
+                                key={r.key}
+                                className={cn(
+                                  "border-b border-slate-100 last:border-b-0",
+                                  showDate && rowIndex > 0 && "border-t border-slate-200/80",
+                                )}
+                              >
                                 <button
                                   type="button"
                                   disabled={!canOpen}
@@ -4156,18 +4212,26 @@ export const CreditLedgerModal = ({
                                     "disabled:opacity-100",
                                   )}
                                 >
-                                  <span className="whitespace-nowrap tabular-nums text-slate-600">
-                                    {formatDateOnly(String(r.createdAt || ""))}
+                                  <span
+                                    className={cn(
+                                      "pr-2 whitespace-nowrap tabular-nums",
+                                      showDate
+                                        ? "font-medium text-slate-700"
+                                        : "text-transparent",
+                                    )}
+                                    aria-hidden={!showDate}
+                                  >
+                                    {showDate ? dateLabel : dateLabel || "··"}
                                   </span>
                                   <span
-                                    className="min-w-0 truncate text-slate-800"
+                                    className="min-w-0 truncate pl-0.5 text-slate-800"
                                     title={patientName}
                                   >
                                     {patientName}
                                   </span>
                                   <span
                                     className={cn(
-                                      "text-right font-medium tabular-nums",
+                                      "pr-2 text-right font-medium tabular-nums",
                                       isMinus
                                         ? "text-rose-600"
                                         : amount === 0
@@ -4180,7 +4244,7 @@ export const CreditLedgerModal = ({
                                       : formatSignedWon(amount)}
                                   </span>
                                   <span
-                                    className="min-w-0 whitespace-normal break-words font-medium leading-snug text-slate-700"
+                                    className="min-w-0 whitespace-normal break-words pl-0.5 font-medium leading-snug text-slate-700"
                                     title={toothLabel}
                                   >
                                     {toothLabel}

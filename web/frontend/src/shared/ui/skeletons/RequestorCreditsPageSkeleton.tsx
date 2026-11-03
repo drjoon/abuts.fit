@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-03: dense 스켈레톤 — 3~4열·환자명/금액 밀집 열 비율.
 // - 2026-11-03: dense 스켈레톤 — 날짜/환자명/금액/치아번호 열 비율.
 // - 2026-11-03: 내역 dense — 년/월·검색만, 요약카드 없이 4칸 2~3열 스켈레톤.
 // - 2026-11-03: 내역 dense — 요약카드 없이 년/월 필터·4칸 2~3열 스켈레톤.
@@ -133,27 +134,27 @@ export const CreditLedgerTableSkeleton = ({
     )}
     {dense ? (
       <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm">
-        <div className="grid grid-cols-1 gap-2 p-2 lg:grid-cols-2 2xl:grid-cols-3">
-          {repeat(3).map((col) => (
+        <div className="grid grid-cols-1 gap-2 p-2 sm:grid-cols-2 xl:grid-cols-3 min-[1800px]:grid-cols-4">
+          {repeat(4).map((col) => (
             <div
               key={`dense-col-${col}`}
               className="overflow-hidden rounded-xl border border-slate-200/80"
             >
-              <div className="grid grid-cols-[2.75rem_minmax(3.25rem,0.9fr)_5.5rem_minmax(5rem,1.35fr)] gap-x-1.5 border-b border-slate-200/80 px-2 py-1.5">
-                <Skeleton className="h-3 w-8" />
-                <Skeleton className="h-3 w-12" />
+              <div className="grid grid-cols-[3.75rem_minmax(2.25rem,4.25rem)_5.5rem_minmax(3rem,1fr)] gap-x-0.5 border-b border-slate-200/80 px-2 py-1.5">
+                <Skeleton className="h-3 w-10" />
+                <Skeleton className="h-3 w-10" />
                 <Skeleton className="ml-auto h-3 w-10" />
-                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-3 w-14" />
               </div>
-              {repeat(Math.max(4, Math.ceil(rows / 3))).map((key) => (
+              {repeat(Math.max(4, Math.ceil(rows / 4))).map((key) => (
                 <div
                   key={`dense-row-${col}-${key}`}
-                  className="grid grid-cols-[2.75rem_minmax(3.25rem,0.9fr)_5.5rem_minmax(5rem,1.35fr)] gap-x-1.5 border-b border-slate-100 px-2 py-1.5 last:border-b-0"
+                  className="grid grid-cols-[3.75rem_minmax(2.25rem,4.25rem)_5.5rem_minmax(3rem,1fr)] gap-x-0.5 border-b border-slate-100 px-2 py-1.5 last:border-b-0"
                 >
-                  <Skeleton className="h-3 w-8" />
-                  <Skeleton className="h-3 w-14" />
-                  <Skeleton className="ml-auto h-3 w-14" />
-                  <Skeleton className="h-3 w-20" />
+                  <Skeleton className="h-3 w-7" />
+                  <Skeleton className="h-3 w-10" />
+                  <Skeleton className="ml-auto h-3 w-12" />
+                  <Skeleton className="h-3 w-16" />
                 </div>
               ))}
             </div>

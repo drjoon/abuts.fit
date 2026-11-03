@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-03: pageSize 상한 500(월 단위 dense 한 번에 로드).
 // - 2026-11-03: includePeriodSummary=0이면 기간 요약 skip. toothWorks→toothNumbers enrich.
 // - 2026-11-03: 기간 요약을 enrich와 병렬(page1 지연 축소).
 // - 2026-10-04: DEMO_CONVERSION 행 — meta.practiceAnchorId로 치과명 enrich(기공소 실사용 전환 한 줄).
@@ -366,7 +367,11 @@ export async function listMyCreditLedger(req, res) {
   const statsCategories = parseStatsCategoriesQuery(req.query);
 
   const page = Math.max(1, Number(req.query.page || 1) || 1);
-  const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize || 10) || 10));
+  // dense 월 조회는 한 요청에 모은다(상한 500).
+  const pageSize = Math.min(
+    500,
+    Math.max(1, Number(req.query.pageSize || 10) || 10),
+  );
 
   // 신속비 누락 보정은 읽기 경로를 막지 않는다. 실제 차감 시 소켓으로 목록 재조회.
   scheduleHealMissingExpressSurchargesForBusiness({
