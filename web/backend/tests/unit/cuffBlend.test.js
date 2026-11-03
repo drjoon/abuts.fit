@@ -506,7 +506,7 @@ describe("blendCuffJunction", () => {
     expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
   });
 
-  it("lifts the mid-cuff early and makes the emergence less horizontal below the finish line on a wide flare above z=1.6mm (20261103-ANNAWRAG)", () => {
+  it("keeps the cuff purely concave-to-straight (no convex bulge) while making the emergence less horizontal below the finish line on a wide flare above z=1.6mm (20261103-ANNAWRAG / CEWBUDCG)", () => {
     const input = wideFlareAboveOneMmAbutment();
     const res = blendCuffJunction(input, {
       ...osstem,
@@ -515,15 +515,18 @@ describe("blendCuffJunction", () => {
     });
     expect(res).toMatchObject({ ok: true, status: "applied" });
     expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
-    // 수평 완화 전에는 78.8~79.8° 처마가 생겼으나 조기 상승으로 최대 각도가 74.5° 이하로 낮아진다.
-    expect(res.detail.maxAngleDeg).toBeLessThan(74.5);
-    const preProbe = _prepare(input).probe;
+    // 기존 7차 S커브에서는 78.8~79.8° 처마가 생겼으나, C4 순수 오목 테이퍼로 최대 각도가 75.5° 이하로 낮아진다.
+    expect(res.detail.maxAngleDeg).toBeLessThan(75.5);
     const postProbe = _prepare(res.buffer).probe;
-    // 중간단(z=1.1mm)은 오목하게 꺼진 원본보다 바깥으로 받쳐 올라가고, 피니시라인 하방(z=1.35~1.65mm)은 72° 이하로 선다.
-    expect(postProbe.rayRadius(0.1, 1.1)).toBeGreaterThan(preProbe.rayRadius(0.1, 1.1) + 0.15);
-    for (let z = 1.35; z <= 1.62; z += 0.05) {
-      const deg = (Math.atan((postProbe.rayRadius(0.1, z + 0.05) - postProbe.rayRadius(0.1, z)) / 0.05) * 180) / Math.PI;
-      expect(deg).toBeLessThan(72);
+    // 전 구간(z=0.4~1.6mm)에서 기울기가 단조 비감소(d²r/dz² >= 0)여야 볼록한 배(convex bulge)가 보이지 않는다.
+    let prevDeg = 0;
+    for (let z = 0.35; z <= 1.6; z += 0.05) {
+      const r0 = postProbe.rayRadius(0.1, z);
+      const r1 = postProbe.rayRadius(0.1, z + 0.05);
+      const deg = (Math.atan((r1 - r0) / 0.05) * 180) / Math.PI;
+      expect(deg).toBeGreaterThanOrEqual(prevDeg - 0.15);
+      expect(deg).toBeLessThan(75.5);
+      prevDeg = deg;
     }
   });
 
