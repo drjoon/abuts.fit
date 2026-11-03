@@ -1054,17 +1054,14 @@ function buildSmoothedOrigRadiusAt(probe, thetas, zLo, zHi, topZ = null) {
     const row = lp || raw;
     const finite = row.filter(Number.isFinite);
     const mean = finite.length ? finite.reduce((s, v) => s + v, 0) / finite.length : NaN;
+    const zRefSpan = topZ ? Math.max(0.4, Math.min(...topZ.filter(Number.isFinite)) - zLo) : Math.max(0.4, zHi - zLo);
+    const tOval = (z - zLo) / zRefSpan;
+    const uOval = (tOval - 0.1) / 0.55;
+    const wOval = uOval <= 0 ? 0 : uOval >= 1 ? 1 : uOval * uOval * uOval * (10 - 15 * uOval + 6 * uOval * uOval);
     zs.push(z);
     rows.push(
-      Number.isFinite(mean)
-        ? row.map((r, j) => {
-            if (!Number.isFinite(r)) return r;
-            const zTopJ = topZ && Number.isFinite(topZ[j]) ? topZ[j] : zHi;
-            const t = (z - zLo) / Math.max(zTopJ - zLo, 0.2);
-            const u = (t - ORIG_OVAL_FADE_START) / (1 - ORIG_OVAL_FADE_START);
-            const w = u <= 0 ? 0 : u >= 1 ? 1 : u * u * u * (10 - 15 * u + 6 * u * u);
-            return mean + w * (r - mean);
-          })
+      Number.isFinite(mean) && wOval < 1 - 1e-9
+        ? row.map((r) => (Number.isFinite(r) ? mean + wOval * (r - mean) : r))
         : row,
     );
   }
@@ -1613,6 +1610,9 @@ const PROFILE_SMOOTH_LEVELS = 128;
  */
 const PROFILE_INNER_PASS_HARMONICS = 16;
 const PROFILE_INNER_STOP_HARMONICS = 32;
+/** 커프 몸통(마진 아래 SEAM_BLEND_DEPTH_MM 하방)은 4~10차(36~90°) 광역 저역 통과로 고른다. 16~32차만 쓰면 낮은 마진(310°) 근처 40° 폭만 국소적으로 볼록하게 남는다(20261103-CEWBUDCG). */
+const PROFILE_BODY_PASS_HARMONICS = 4;
+const PROFILE_BODY_STOP_HARMONICS = 10;
 const PROFILE_START_SLOPE_EPS = 1e-4;
 
 /**
@@ -1653,7 +1653,7 @@ function smoothProfilesAcrossColumns(profiles, heights = null) {
     if (!lp) return profiles;
     if (topKeep) {
       const full = profiles.map((p, j) => base(j, t) + lp[j]);
-      const inner = angularLowPass(full, n, PROFILE_INNER_PASS_HARMONICS, PROFILE_INNER_STOP_HARMONICS);
+      const inner = angularLowPass(full, n, PROFILE_BODY_PASS_HARMONICS, PROFILE_BODY_STOP_HARMONICS);
       if (!inner) return profiles;
       for (let j = 0; j < n; j += 1) {
         const x = Math.max(0, Math.min(1, (t - (1 - topKeep[j])) / topKeep[j]));
@@ -3581,13 +3581,16 @@ export function blendCuffJunction(buffer, options = {}) {
       const holdH = Math.max(0, Math.min(cuffDepartZ - faceZ - 0.35, H - minFlareH, 0.45 * H));
       const u0 = holdH / H;
       const flareSpan = Math.max(1e-4, 1 - u0);
-      const uc = CONCAVE_TAPER_CURVE_END_U;
+      // 스캘럽 마진에서 낮은 마진 열(310°) 근처만 좁게 올라오지 않도록, 오목 가속 구간이 끝나는 실제 높이 대역을
+      // 커프 최소 높이(minHAll) 기준으로 맞춰 주변의 높은 마진 열(240~295°, 340~50°)도 같은 높이 대역에서 함께 넓게 퍼져 올라오게 한다.
+      const minHAll = Math.max(0.4, Math.min(...hs) - ext);
+      const uc = Math.max(0.42, Math.min(CONCAVE_TAPER_CURVE_END_U, (CONCAVE_TAPER_CURVE_END_U * minHAll) / H));
       const cBar = 1 / 3;
       const gamma = 1 / (1 - cBar * uc);
       const fitted = fittedOrigOf(j, hb, rTop, eSlope);
       // blendTurnedConeWithOriginal이 바깥에서 base + w(u)·(origAt(t) - base)를 계산한다.
-      // orig 배열 값을 [base, rTop] 안의 4차 맞춤 원본(fitted)과 C4 순수 오목 테이퍼(rSOrig) 중 큰 쪽으로 두면
-      // 볼록한 배(d²r/dz² < 0)가 전혀 생기지 않으면서도 중간단이 채워져 상부가 수평 처마로 눕지 않는다.
+      // rTop 클립은 wU로 나누기 전 실제 반경(rSActual)에 걸어야 하며, wU로 나눈 뒤(rSOrig/targetOrig)에 rTop 클립을 걸면
+      // 바깥에서 wU가 곱해질 때 base + wU·(rTop - base)에서 꺾여 커프 중간(z≈1.1mm)에 볼록 능선(d²r/dz² = -7)이 생긴다.
       return Array.from({ length: n + 1 }, (_, i) => {
         const t = i / n;
         if (t <= t0) return ra + coneSlope * t * hb;
@@ -3602,13 +3605,13 @@ export function blendCuffJunction(buffer, options = {}) {
           const v = Math.min(1, xi / uc);
           const g3 = v - (2 - (1 - v) ** 5 * (2 + 4 * v)) / 6;
           const fConcave = xi <= uc ? gamma * uc * g3 : gamma * (xi - cBar * uc);
-          const shape = fConcave / Math.max(wU, 1e-9);
-          rSOrig = Math.min(rTop, base + D * shape);
+          const rSActual = Math.min(rTop, base + D * fConcave);
+          rSOrig = base + (rSActual - base) / Math.max(wU, 1e-9);
         }
-        if (!fitted || !(ORIG_MID_LIFT > 1e-6)) return Math.max(base, Math.min(rTop, rSOrig));
+        if (!fitted || !(ORIG_MID_LIFT > 1e-6)) return Math.max(base, rSOrig);
         const fVal = Math.max(base, Math.min(rTop, fitted(t)));
         const targetOrig = Math.max(rSOrig, rSOrig + ORIG_MID_LIFT * (fVal - rSOrig));
-        return Math.max(base, Math.min(rTop, targetOrig));
+        return Math.max(base, targetOrig);
       });
     };
     const legacyConcaveOf = (rTop, eSlope, hb, relax = 0, j = -1) => {
