@@ -4,11 +4,16 @@
 // - web/frontend/src/shared/chat/chatSoundPlayer.ts
 // - web/frontend/src/shared/practice/openPracticeTransferChat.ts
 // change-log:
+// - 2026-11-03: 보기 — pointerdown에서도 열어 토스트 닫힘과 클릭 경합을 줄인다.
 // - 2026-10-04: 포커스 없으면 헬퍼 OS 토스트(옆 창·다른 앱). 포커스만 in-app.
 // - 2026-10-04: 포커스 토스트 = 전역 공통 default(두꺼운 primary 테두리). alert 변형 폐기.
 // - 2026-10-04: 백그라운드·다른 사이트는 헬퍼 OS 토스트만. 포커스 중은 in-app 토스트(보기).
 
-import { createElement } from "react";
+import {
+  createElement,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { ToastAction } from "@/components/ui/toast";
 import { toast } from "@/shared/hooks/use-toast";
 import { playChatNotifySound } from "@/shared/chat/chatSoundPlayer";
@@ -57,8 +62,10 @@ export const notifyPracticeTransferAlert = ({
     accountId || resolvePracticeTransferAlertAccountId(),
   ).trim();
   const href = id ? practiceTransferAlertHref(id, mode, ba) : "";
+  let opened = false;
   const open = () => {
-    if (!id) return;
+    if (!id || opened) return;
+    opened = true;
     openPracticeTransferAlert(id, mode, ba);
   };
 
@@ -77,7 +84,13 @@ export const notifyPracticeTransferAlert = ({
           ToastAction,
           {
             altText: "보기",
-            onClick: (e) => {
+            onPointerDown: (e: ReactPointerEvent<HTMLButtonElement>) => {
+              // 토스트 dismiss와 click 경합 전에 연다(한 번만).
+              if (e.button !== 0) return;
+              e.stopPropagation();
+              open();
+            },
+            onClick: (e: ReactMouseEvent<HTMLButtonElement>) => {
               e.stopPropagation();
               open();
             },

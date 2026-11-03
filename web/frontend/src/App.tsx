@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppLayout } from "@/features/layout/AppLayout";
 import { CookieConsentBanner } from "@/features/layout/CookieConsentBanner";
 import { ScrollToTop } from "@/features/layout/ScrollToTop";
+import { AppNavigateBridge } from "@/shared/navigation/AppNavigateBridge";
 import { EventVisitRouteTracker } from "@/shared/events/useEventPageVisit";
 import { LoadingScreen } from "@/shared/ui/feedback/LoadingScreen";
 import {
@@ -44,6 +45,7 @@ import { PRACTICE_STORE_OPEN } from "@/shared/store/practiceStoreAccess";
 // - web/frontend/src/pages/admin/AdminFinancePage.tsx
 // - web/frontend/src/pages/admin/AdminSettingsHubPage.tsx
 // change-log:
+// - 2026-11-03: AppNavigateBridge — 알림 보기 SPA 이동(openPracticeTransferChat).
 // - 2026-10-26: 치과 스토어 비공개 — `/dashboard/store`는 대시보드로 이동.
 // - 2026-10-17: 치과 스토어 복원 — 결제는 OB 후불(기공소는 선수금 유지).
 // - 2026-10-08: 할인그룹 폐지 — `/dashboard/discount-group`은 대시보드로 이동.
@@ -634,6 +636,7 @@ const App = () => {
       <TooltipProvider delayDuration={600} skipDelayDuration={0}>
         <BrowserRouter>
           <ScrollToTop />
+          <AppNavigateBridge />
           <EventVisitRouteTracker />
           <Toaster />
           <Sonner />

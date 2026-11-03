@@ -3,7 +3,9 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
+// - web/frontend/src/shared/navigation/appNavigate.ts
 // change-log:
+// - 2026-11-03: 보기 — pushState 대신 appNavigate(RR). 클릭한 창에서 바로 연다(헬퍼 선행 제거).
 // - 2026-10-21: 목록 페이지가 아니면 다른 브라우저 창(최소화 포함)의 수신함을 헬퍼로 앞으로 올려 연다.
 // - 2026-10-21: 다른 페이지(작업현황 등)에서 보기 — location.assign 대신 pushState+popstate(SPA 이동).
 // - 2026-10-21: 보기 — 클릭한 창에서 연다. 다른 창 ack의 window.focus()는 채팅을 앞으로 못 가져옴.
@@ -18,6 +20,7 @@
 
 import { useAuthStore } from "@/store/useAuthStore";
 import { openLabHelperHref } from "@/shared/files/labHelperClient";
+import { appNavigate } from "@/shared/navigation/appNavigate";
 
 export const OPEN_PRACTICE_TRANSFER_CHAT_EVENT =
   "abuts:practice-transfer:open" as const;
@@ -210,6 +213,10 @@ const focusThisWindow = () => {
   }
 };
 
+const isPracticeTransferListPath = (pathname: string): boolean =>
+  pathname.startsWith("/dashboard/practice-transfers") ||
+  pathname.startsWith("/practice/dashboard");
+
 const applyOpenHere = (
   transferId: string,
   mode: PracticeTransferAlertMode,
@@ -221,26 +228,17 @@ const applyOpenHere = (
   if (ba && myBa && ba !== myBa) return;
   focusThisWindow();
   const path = practiceTransferAlertPath(transferId, mode, ba);
-  const onList =
-    window.location.pathname.startsWith("/dashboard/practice-transfers") ||
-    window.location.pathname.startsWith("/practice/dashboard");
+  if (!path) return;
+  const onList = isPracticeTransferListPath(window.location.pathname || "");
   if (onList) {
-    const url = new URL(window.location.href);
-    url.searchParams.set("mode", mode);
-    url.searchParams.set("openTransfer", transferId);
-    if (ba) url.searchParams.set("ba", ba);
-    window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+    // 즉시 채팅 오픈 + RR search 동기화(openTransfer effect 백업).
+    // replaceState만 쓰면 Router가 openTransfer를 못 봐 백업 effect가 안 돈다.
     requestOpenPracticeTransferChat(transferId, { panel: "chat" });
+    appNavigate(path, { replace: true });
     return;
   }
-  if (!path) return;
-  // 전체 새로고침 대신 SPA 이동 — 재로딩 중 토큰·목록 경쟁으로 채팅이 안 열리는 문제 방지.
-  try {
-    window.history.pushState({}, "", path);
-    window.dispatchEvent(new PopStateEvent("popstate", { state: {} }));
-  } catch {
-    window.location.assign(path);
-  }
+  // SPA 이동 — openTransfer 쿼리로 목록 마운트 후 채팅 오픈.
+  appNavigate(path);
 };
 
 /**
@@ -306,13 +304,9 @@ export const openPracticeTransferAlert = (
   if (!id || !path) return;
   const localFallback = options?.localFallback !== false;
   const myBa = resolvePracticeTransferAlertAccountId();
-  // 이 창이 이미 기공의뢰 목록이면 여기서 바로 연다.
-  // 그 외(작업현황 등)는 다른 브라우저 창의 수신함/발신함 탭이 열려 있으면 그쪽을 연다.
-  // 최소화된 창은 window.focus()가 안 되므로 헬퍼가 앞으로 올린다. 못 찾으면 이 창에서 연다.
-  const onList =
-    window.location.pathname.startsWith("/dashboard/practice-transfers") ||
-    window.location.pathname.startsWith("/practice/dashboard");
-  if (localFallback && onList && (!ba || !myBa || ba === myBa)) {
+  // 보기 클릭 창에서 연다. 다른 창·헬퍼를 먼저 기다리면 토스트만 닫히고
+  // 채팅이 안 보이는 경우가 있다(헬퍼 focused 오탐·최소화 창).
+  if (localFallback && (!ba || !myBa || ba === myBa)) {
     applyOpenHere(id, mode, ba);
     return;
   }
@@ -341,8 +335,7 @@ export const openPracticeTransferAlert = (
     ch?.close();
   };
 
-  // 포커스된 다른 탭이 열었으면 그 창이 사용자 앞에 있다.
-  // 백그라운드 ack는 window.focus()가 막혀 채팅이 안 보이므로 헬퍼로 창을 앞으로 올린다.
+  // 역할이 다른 창: 포커스된 수신함/발신함 탭·헬퍼로만 넘긴다(이 창 URL 유지).
   window.setTimeout(() => {
     if (ackFocused) {
       cleanup();
@@ -352,8 +345,6 @@ export const openPracticeTransferAlert = (
       window.setTimeout(() => {
         cleanup();
         if (ackFocused || focused) return;
-        if (!localFallback) return;
-        applyOpenHere(id, mode, ba);
       }, 120);
     });
   }, 80);
