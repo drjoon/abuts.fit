@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-03: 내역 dense — 년/월·검색만, 요약카드 없이 4칸 2~3열 스켈레톤.
 // - 2026-11-03: 내역 dense — 요약카드 없이 년/월 필터·4칸 2~3열 스켈레톤.
 // - 2026-10-04: 내역 요약 스켈레톤 — 카드 11.5rem·연산 부호 폭 실 UI와 맞춤.
 // - 2026-10-04: 내역 필터 스켈레톤 — 결제(적립) 완료/보류 토글 버튼 2칸.
@@ -109,6 +110,15 @@ export const CreditLedgerTableSkeleton = ({
         </div>
       </div>
     )}
+    {dense ? (
+      <div className="flex w-full min-w-0 flex-wrap items-center gap-2 px-0.5 py-1.5">
+        <Skeleton className="h-9 w-9 rounded-xl" />
+        <Skeleton className="h-9 w-36 rounded-xl" />
+        <Skeleton className="h-9 w-9 rounded-xl" />
+        <Skeleton className="h-9 min-w-0 flex-1 rounded-xl sm:max-w-xs" />
+        <Skeleton className="ml-auto h-4 w-10" />
+      </div>
+    ) : (
     <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
       <Skeleton className="h-9 w-full rounded-xl sm:w-[130px]" />
       <Skeleton className="h-9 w-full rounded-xl sm:w-[130px]" />
@@ -119,6 +129,7 @@ export const CreditLedgerTableSkeleton = ({
       <Skeleton className="h-9 w-full rounded-xl sm:w-[280px]" />
       <Skeleton className="ml-auto h-9 w-full rounded-xl sm:w-56" />
     </div>
+    )}
     {dense ? (
       <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm">
         <div className="grid grid-cols-1 gap-2 p-2 lg:grid-cols-2 2xl:grid-cols-3">
@@ -127,21 +138,21 @@ export const CreditLedgerTableSkeleton = ({
               key={`dense-col-${col}`}
               className="overflow-hidden rounded-xl border border-slate-200/80"
             >
-              <div className="grid grid-cols-4 gap-1 border-b border-slate-100 px-2 py-1.5">
+              <div className="grid grid-cols-[3.25rem_6.25rem_minmax(0,1.35fr)_minmax(0,0.9fr)] gap-x-2 border-b border-slate-200/80 px-2.5 py-2">
                 <Skeleton className="h-3 w-8" />
-                <Skeleton className="ml-auto h-3 w-8" />
-                <Skeleton className="h-3 w-10" />
+                <Skeleton className="ml-auto h-3 w-10" />
+                <Skeleton className="h-3 w-14" />
                 <Skeleton className="h-3 w-12" />
               </div>
               {repeat(Math.max(4, Math.ceil(rows / 3))).map((key) => (
                 <div
                   key={`dense-row-${col}-${key}`}
-                  className="grid grid-cols-4 gap-1 border-b border-slate-100 px-2 py-1.5 last:border-b-0"
+                  className="grid grid-cols-[3.25rem_6.25rem_minmax(0,1.35fr)_minmax(0,0.9fr)] gap-x-2 border-b border-slate-100 px-2.5 py-1.5 last:border-b-0"
                 >
-                  <Skeleton className="h-3 w-10" />
-                  <Skeleton className="ml-auto h-3 w-12" />
-                  <Skeleton className="h-3 w-14" />
-                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="h-3 w-8" />
+                  <Skeleton className="ml-auto h-3 w-14" />
+                  <Skeleton className="h-3 w-20" />
+                  <Skeleton className="h-3 w-12" />
                 </div>
               ))}
             </div>

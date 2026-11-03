@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-03: 내역 dense — 필터를 년/월·검색만, 기공소 정렬, 월 선택 클리핑·표 여백 정리.
 // - 2026-11-03: 내역(embedded) — 요약카드 제거·년/월 필터·날짜·금액·기공소·거래내역 4칸 2~3열.
 // - 2026-10-24: 내역 카드 안내를 한 사실로 줄임.
 // - 2026-10-05: 플랫폼 사용료·하청 수수료 행 숨김(미부과).
@@ -473,7 +474,13 @@ export type CreditLedgerModalProps = {
 const PAGE_SIZE = 10;
 
 type SortDirection = "asc" | "desc";
-type LedgerSortKey = "createdAt" | "type" | "amount" | "balanceAfter" | "detail";
+type LedgerSortKey =
+  | "createdAt"
+  | "type"
+  | "amount"
+  | "balanceAfter"
+  | "detail"
+  | "partner";
 
 const typeLabel = (t: CreditLedgerType) => {
   if (t === "CHARGE_PAID") return "유료충전(선입금)";
@@ -2037,10 +2044,15 @@ const formatPrimePayoutLabLedgerLabel = (
   return role ? `${role} · ${core}` : core;
 };
 
-/** 내역 밀집 표 — 날짜만(시간 제외, KST) */
+/** 내역 밀집 표 — 날짜만(시간 제외, KST). 월 필터 안이라 월·일만. */
 const formatDateOnly = (iso: string) => {
   const ymd = toKstYmd(iso);
-  return ymd ? formatKstYmdToKo(ymd) : "";
+  if (!ymd) return "";
+  const parts = ymd.split("-").map(Number);
+  const m = parts[1];
+  const d = parts[2];
+  if (!m || !d) return formatKstYmdToKo(ymd);
+  return `${m}.${String(d).padStart(2, "0")}`;
 };
 
 const currentKstYm = () => {
@@ -3068,16 +3080,24 @@ export const CreditLedgerModal = ({
     setSort((prev) =>
       prev.key === key
         ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
-        : { key, direction: key === "createdAt" ? "desc" : "asc" },
+        : {
+            key,
+            direction:
+              key === "createdAt" || key === "amount" ? "desc" : "asc",
+          },
     );
   };
 
   const renderSortIcon = (active: boolean, direction: SortDirection) => {
-    if (!active) return <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />;
+    if (!active) {
+      return (
+        <ArrowUpDown className="h-3 w-3 shrink-0 text-slate-400" aria-hidden />
+      );
+    }
     return direction === "asc" ? (
-      <ArrowUp className="h-3.5 w-3.5 text-foreground" />
+      <ArrowUp className="h-3 w-3 shrink-0 text-slate-700" aria-hidden />
     ) : (
-      <ArrowDown className="h-3.5 w-3.5 text-foreground" />
+      <ArrowDown className="h-3 w-3 shrink-0 text-slate-700" aria-hidden />
     );
   };
 
@@ -3105,6 +3125,20 @@ export const CreditLedgerModal = ({
         const bv = Number(b.balanceAfter ?? Number.NEGATIVE_INFINITY);
         return sort.direction === "asc" ? av - bv : bv - av;
       }
+      if (sort.key === "partner") {
+        const av = resolveDensePartnerLabel(a, isLabViewer);
+        const bv = resolveDensePartnerLabel(b, isLabViewer);
+        return sort.direction === "asc"
+          ? av.localeCompare(bv, "ko")
+          : bv.localeCompare(av, "ko");
+      }
+      if (sort.key === "detail") {
+        const av = resolveDenseDetailText(a, isLabViewer);
+        const bv = resolveDenseDetailText(b, isLabViewer);
+        return sort.direction === "asc"
+          ? av.localeCompare(bv, "ko")
+          : bv.localeCompare(av, "ko");
+      }
       const av = `${String(a.item.refType || "")} ${String(
         a.item.refRequestId || a.item.refPracticeTransferId || a.item.refId || "",
       )}`;
@@ -3117,9 +3151,8 @@ export const CreditLedgerModal = ({
     };
 
     const sorted = [...filteredRows].sort(compare);
-    // 기공소: 적립 보류·완료가 날짜순으로 섞이면 구분선이 여러 번 생긴다.
-    // 상태 그룹(보류→완료)으로 묶고 그룹 안에서만 정렬한다.
-    if (!isLabViewer) return sorted;
+    // 기공소 Dialog: 적립 보류·완료 구분선용 그룹. dense 내역은 정렬 그대로.
+    if (denseLedgerUi || !isLabViewer) return sorted;
     const pending = sorted.filter(
       (row) =>
         row.practiceTransferPayoutStatus != null &&
@@ -3131,7 +3164,7 @@ export const CreditLedgerModal = ({
     const other = sorted.filter((row) => row.practiceTransferPayoutStatus == null);
     if (pending.length === 0 || settled.length === 0) return sorted;
     return [...pending, ...settled, ...other];
-  }, [filteredRows, isLabViewer, sort]);
+  }, [denseLedgerUi, filteredRows, isLabViewer, sort]);
 
   const [denseColCount, setDenseColCount] = useState(1);
   useEffect(() => {
@@ -3546,7 +3579,7 @@ export const CreditLedgerModal = ({
     <div
       className={cn(
         "flex min-h-0 flex-1 flex-col gap-4",
-        denseLedgerUi && "gap-3",
+        denseLedgerUi && "gap-2",
         !embedded && "max-h-[min(58vh,640px)]",
       )}
     >
@@ -3722,6 +3755,79 @@ export const CreditLedgerModal = ({
             )
           ) : null}
 
+          {denseLedgerUi ? (
+            // overflow 안쪽 여백 — 월 선택 border/ring 클리핑 방지
+            <div className="flex w-full min-w-0 shrink-0 flex-wrap items-center gap-2 px-0.5 py-1.5">
+              <div className="inline-flex h-9 items-center gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 rounded-xl border-slate-200 bg-white"
+                  aria-label="이전 달"
+                  onClick={() => setLedgerYm((ym) => shiftYm(ym, -1))}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Select
+                  value={ledgerYm}
+                  onValueChange={(v) => setLedgerYm(v)}
+                >
+                  <SelectTrigger className="h-9 min-w-[9rem] rounded-xl border-slate-200 bg-white">
+                    <SelectValue placeholder="년/월" />
+                  </SelectTrigger>
+                  <SelectContent position="popper" className="z-[420]">
+                    {ymOptions.map((ym) => (
+                      <SelectItem key={ym} value={ym}>
+                        {formatYmLabel(ym)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 rounded-xl border-slate-200 bg-white"
+                  aria-label="다음 달"
+                  disabled={ledgerYm >= currentKstYm()}
+                  onClick={() =>
+                    setLedgerYm((ym) => {
+                      const next = shiftYm(ym, 1);
+                      return next > currentKstYm() ? ym : next;
+                    })
+                  }
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                {ledgerYm !== currentKstYm() ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-9 rounded-xl px-2.5 text-xs text-slate-600"
+                    onClick={() => setLedgerYm(currentKstYm())}
+                  >
+                    이번달
+                  </Button>
+                ) : null}
+              </div>
+
+              <ImeSafeInput
+                value={q}
+                onChange={setQ}
+                placeholder="검색 (기공소·환자)"
+                className="h-9 min-w-0 flex-1 rounded-xl border-slate-200 bg-white sm:max-w-xs"
+              />
+
+              <span className="ml-auto text-xs tabular-nums text-slate-500">
+                {loading && items.length === 0
+                  ? "…"
+                  : `${sortedRows.length.toLocaleString("ko-KR")}건`}
+                {hasMore ? "+" : ""}
+              </span>
+            </div>
+          ) : (
           <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
             <div className="w-full min-w-0 sm:w-[130px]">
               <Select
@@ -3823,51 +3929,7 @@ export const CreditLedgerModal = ({
             ) : null}
 
             <div className="ml-auto w-full min-w-0 shrink-0 sm:w-auto">
-              {denseLedgerUi ? (
-                <div className="inline-flex h-9 w-full items-center gap-1 sm:w-auto">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="h-9 w-9 shrink-0 rounded-xl border-slate-200"
-                    aria-label="이전 달"
-                    onClick={() => setLedgerYm((ym) => shiftYm(ym, -1))}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Select
-                    value={ledgerYm}
-                    onValueChange={(v) => setLedgerYm(v)}
-                  >
-                    <SelectTrigger className="h-9 min-w-[8.5rem] rounded-xl border-slate-200">
-                      <SelectValue placeholder="년/월" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ymOptions.map((ym) => (
-                        <SelectItem key={ym} value={ym}>
-                          {formatYmLabel(ym)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="h-9 w-9 shrink-0 rounded-xl border-slate-200"
-                    aria-label="다음 달"
-                    disabled={ledgerYm >= currentKstYm()}
-                    onClick={() =>
-                      setLedgerYm((ym) => {
-                        const next = shiftYm(ym, 1);
-                        return next > currentKstYm() ? ym : next;
-                      })
-                    }
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              ) : equationLedgerUi ? (
+              {equationLedgerUi ? (
                 <PeriodFilter
                   value={spendPeriod}
                   onChange={setSpendPeriod}
@@ -3904,13 +3966,14 @@ export const CreditLedgerModal = ({
               )}
             </div>
           </div>
+          )}
 
           <div
             ref={scrollRef}
             className="min-h-[min(50dvh,24rem)] flex-1 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm md:min-h-0"
           >
             {denseLedgerUi ? (
-              <div className="px-1.5 py-1.5 sm:px-2 sm:py-2">
+              <div className="px-2 py-2 sm:px-2.5 sm:py-2.5">
                 {!loading && sortedRows.length === 0 ? (
                   <div className="py-10 text-center text-sm text-muted-foreground">
                     조회 결과가 없습니다.
@@ -3918,7 +3981,7 @@ export const CreditLedgerModal = ({
                 ) : (
                   <div
                     className={cn(
-                      "grid grid-cols-1 gap-2",
+                      "grid grid-cols-1 gap-3",
                       denseColCount >= 2 && "lg:grid-cols-2",
                       denseColCount >= 3 && "2xl:grid-cols-3",
                     )}
@@ -3926,12 +3989,12 @@ export const CreditLedgerModal = ({
                     {denseRowChunks.map((chunk, chunkIndex) => (
                       <div
                         key={`dense-col-${chunkIndex}`}
-                        className="min-w-0 overflow-hidden rounded-xl border border-slate-200/80 bg-white"
+                        className="min-w-0 overflow-hidden rounded-lg border border-slate-200/90 bg-white shadow-sm"
                       >
-                        <div className="grid grid-cols-[4.25rem_5.25rem_minmax(0,1fr)_minmax(0,1.25fr)] gap-1 border-b border-slate-100 bg-slate-50/90 px-2 py-1.5 text-[11px] font-medium text-slate-600">
+                        <div className="grid grid-cols-[3.25rem_6.25rem_minmax(0,1.35fr)_minmax(0,0.9fr)] gap-x-2 border-b border-slate-200/80 bg-slate-50 px-2.5 py-2 text-[11px] font-semibold tracking-tight text-slate-600">
                           <button
                             type="button"
-                            className="inline-flex items-center gap-0.5 text-left"
+                            className="inline-flex items-center gap-0.5 text-left hover:text-slate-900"
                             onClick={() => toggleSort("createdAt")}
                           >
                             날짜
@@ -3942,7 +4005,7 @@ export const CreditLedgerModal = ({
                           </button>
                           <button
                             type="button"
-                            className="inline-flex items-center justify-end gap-0.5"
+                            className="inline-flex items-center justify-end gap-0.5 hover:text-slate-900"
                             onClick={() => toggleSort("amount")}
                           >
                             금액
@@ -3951,13 +4014,25 @@ export const CreditLedgerModal = ({
                               sort.direction,
                             )}
                           </button>
-                          <span className="truncate">{partnerColumnLabel}</span>
                           <button
                             type="button"
-                            className="inline-flex items-center gap-0.5 text-left"
+                            className="inline-flex min-w-0 items-center gap-0.5 truncate text-left hover:text-slate-900"
+                            onClick={() => toggleSort("partner")}
+                          >
+                            <span className="truncate">
+                              {partnerColumnLabel}
+                            </span>
+                            {renderSortIcon(
+                              sort.key === "partner",
+                              sort.direction,
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex min-w-0 items-center gap-0.5 truncate text-left hover:text-slate-900"
                             onClick={() => toggleSort("detail")}
                           >
-                            거래내역
+                            <span className="truncate">거래내역</span>
                             {renderSortIcon(
                               sort.key === "detail",
                               sort.direction,
@@ -3991,31 +4066,46 @@ export const CreditLedgerModal = ({
                                   disabled={!canOpen}
                                   onClick={() => openLedgerRowDetail(r)}
                                   className={cn(
-                                    "grid w-full grid-cols-[4.25rem_5.25rem_minmax(0,1fr)_minmax(0,1.25fr)] gap-1 px-2 py-1 text-left text-[11px] leading-snug",
+                                    "grid w-full grid-cols-[3.25rem_6.25rem_minmax(0,1.35fr)_minmax(0,0.9fr)] gap-x-2 px-2.5 py-1.5 text-left text-xs leading-5",
                                     canOpen
-                                      ? "cursor-pointer hover:bg-slate-50/90"
+                                      ? "cursor-pointer hover:bg-sky-50/70"
                                       : "cursor-default",
+                                    "disabled:opacity-100",
                                   )}
                                 >
-                                  <span className="whitespace-nowrap tabular-nums text-slate-700">
+                                  <span className="whitespace-nowrap tabular-nums text-slate-600">
                                     {formatDateOnly(String(r.createdAt || ""))}
                                   </span>
                                   <span
                                     className={cn(
                                       "text-right font-medium tabular-nums",
                                       isMinus
-                                        ? "text-destructive"
-                                        : "text-primary-strong",
+                                        ? "text-rose-600"
+                                        : amount === 0
+                                          ? "text-slate-500"
+                                          : "text-emerald-700",
                                     )}
                                   >
                                     {r.forwardAmounts
                                       ? formatSignedWon(r.forwardAmounts.payout)
                                       : formatSignedWon(amount)}
                                   </span>
-                                  <span className="min-w-0 truncate text-slate-800">
+                                  <span
+                                    className="min-w-0 truncate text-slate-800"
+                                    title={resolveDensePartnerLabel(
+                                      r,
+                                      isLabViewer,
+                                    )}
+                                  >
                                     {resolveDensePartnerLabel(r, isLabViewer)}
                                   </span>
-                                  <span className="min-w-0 truncate text-slate-600">
+                                  <span
+                                    className="min-w-0 truncate text-slate-500"
+                                    title={resolveDenseDetailText(
+                                      r,
+                                      isLabViewer,
+                                    )}
+                                  >
                                     {resolveDenseDetailText(r, isLabViewer)}
                                   </span>
                                 </button>
@@ -4345,7 +4435,7 @@ export const CreditLedgerModal = ({
       {embedded ? (
         <div
           className={cn(
-            "flex h-full min-h-0 flex-col gap-3 overflow-hidden px-1.5 sm:px-2",
+            "flex h-full min-h-0 flex-col gap-2 overflow-hidden px-1.5 pt-1.5 sm:px-2 sm:pt-2",
             className,
           )}
         >
