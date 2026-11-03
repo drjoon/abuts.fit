@@ -130,6 +130,25 @@ function wideStepAbutment() {
   ]);
 }
 
+/**
+ * 20261103-ANNAWRAG(CA261103-BVP, 평온치과 송용원 27) 재현:
+ * 피니시라인 z≈1.70mm(>1.0mm)인데 마진 반경이 r≈5.65mm로 넓고 중간단이 오목해
+ * 피니시라인 하방 원본이 76~77°로 누운 커프.
+ */
+function wideFlareAboveOneMmAbutment() {
+  return revolve([
+    ...coneRows(-1.2, 0.3),
+    [1.88, 0.4],
+    [2.30, 0.5],
+    [2.87, 0.8],
+    [3.27, 1.0],
+    [3.76, 1.2],
+    [4.42, 1.4],
+    [5.65, 1.7],
+    [5.20, 3.0],
+  ]);
+}
+
 /** 마진이 높이 있고 하부 수직 벽 위에서 상부만 벌어져 전체 벌어짐이 11° 연장보다 작은 열이다. */
 function tallModestFlareAbutment() {
   const rTop = cone(0.2) + 1.05;
@@ -485,6 +504,27 @@ describe("blendCuffJunction", () => {
     expect(res.detail.maxAngleDeg).toBeGreaterThan(70);
     expect(res.detail.patchTriangles).toBeGreaterThan(0);
     expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
+  });
+
+  it("lifts the mid-cuff early and makes the emergence less horizontal below the finish line on a wide flare above z=1.6mm (20261103-ANNAWRAG)", () => {
+    const input = wideFlareAboveOneMmAbutment();
+    const res = blendCuffJunction(input, {
+      ...osstem,
+      specKey: osstem.key,
+      finishLine: ringFinishLine(5.65, 1.7),
+    });
+    expect(res).toMatchObject({ ok: true, status: "applied" });
+    expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
+    // 수평 완화 전에는 78.8~79.8° 처마가 생겼으나 조기 상승으로 최대 각도가 74.5° 이하로 낮아진다.
+    expect(res.detail.maxAngleDeg).toBeLessThan(74.5);
+    const preProbe = _prepare(input).probe;
+    const postProbe = _prepare(res.buffer).probe;
+    // 중간단(z=1.1mm)은 오목하게 꺼진 원본보다 바깥으로 받쳐 올라가고, 피니시라인 하방(z=1.35~1.65mm)은 72° 이하로 선다.
+    expect(postProbe.rayRadius(0.1, 1.1)).toBeGreaterThan(preProbe.rayRadius(0.1, 1.1) + 0.15);
+    for (let z = 1.35; z <= 1.62; z += 0.05) {
+      const deg = (Math.atan((postProbe.rayRadius(0.1, z + 0.05) - postProbe.rayRadius(0.1, z)) / 0.05) * 180) / Math.PI;
+      expect(deg).toBeLessThan(72);
+    }
   });
 
   it("builds the seam on a tall modest flare without a step below the finish line", () => {

@@ -783,6 +783,19 @@ const ORIG_MID_LIFT = 1;
 /** 커넥션 면 위 이 높이(mm)에 걸쳐 2° 출발선에서 4차 맞춤 원본으로 smootherstep 전환한다(열 높이 H가 아니라 절대 mm 기준이어야 높은 마진 열이 안으로 안 꺼진다). */
 const ORIG_MID_LIFT_BONE_MM = 0.12;
 const ORIG_MID_LIFT_RAMP_MM = 0.65;
+/**
+ * 이머전스 수평 완화(Anti-Horizontal Emergence, 20261103-ANNAWRAG / CA261103-BVP 평온치과 송용원 27):
+ * 피니시라인 min_z(1.62mm)가 1.0mm보다 높아도 마진 반경(r≈5.66mm)이 넓어 열 평균 기울기(dR/H≈70.3°)나
+ * 마진 아래 원본 기울기(≈77°)가 큰 경우, 하부~중간단이 오목하게 안으로 꺼지면 피니시라인 하방이
+ * 78~80° 수평 처마로 누워 D1.0 볼엔드밀(Finish_Back, AutoTilt=0·OrientationStrategy=0)이 진입하지 못하고
+ * 선반 가공면만 매끈하게 남는 미삭제가 생긴다.
+ * 급경사 열(wFlat>0)은 커넥션 면 위 출발 완화 구간(EMERGENCE_ANTI_FLAT_EASE_MM) 직후부터 일찍 퍼져 올라가
+ * 중간단을 받쳐 주고, 피니시라인 하방에서는 기울기를 오히려 세워(EMERGENCE_ANTI_FLAT_TOP_EASE) 수평이 덜 되도록 한다.
+ */
+const EMERGENCE_ANTI_FLAT_START_SLOPE = Math.tan((48 * Math.PI) / 180);
+const EMERGENCE_ANTI_FLAT_FULL_SLOPE = Math.tan((62 * Math.PI) / 180);
+const EMERGENCE_ANTI_FLAT_EASE_MM = 0.32;
+const EMERGENCE_ANTI_FLAT_TOP_EASE = 0.22;
 const LONG_BAND_MM = 2;
 /** 띠 면 평균: 반폭(약 ±30°)과 위쪽 보존 지수(t^p). */
 const BAND_SMOOTH_HALF_COLUMNS = columnsForDeg(30);
@@ -1106,11 +1119,12 @@ const QUARTIC_FIT_MAX_RESIDUAL_MM = 0.02;
 const MERIDIAN_CHECK_SKIP_TOP_MM = 0.1;
 
 /** 이음 프로파일(t∈[0,1] → 반경, 높이 h)의 가장 작은 오목 자오선 곡률 반경(mm). 오목한 곳이 없으면 Infinity. */
-function minConcaveMeridianRadius(fn, h, samples = 200, skipTopMm = 0) {
+function minConcaveMeridianRadius(fn, h, samples = 200, skipTopMm = 0, skipBotMm = 0) {
   const dz = h / samples;
+  const first = Math.max(1, Math.ceil(skipBotMm / dz));
   const last = Math.min(samples - 1, Math.floor((h - skipTopMm) / dz));
   let kMax = 0;
-  for (let i = 1; i <= last; i += 1) {
+  for (let i = first; i <= last; i += 1) {
     const rm = fn((i - 1) / samples);
     const r = fn(i / samples);
     const rp = fn((i + 1) / samples);
@@ -1134,8 +1148,8 @@ const RELAX_TARGET_MARGIN = 1.08;
  * 볼엔드밀이 실제로 남기는 면과 같아 최소로만 바깥으로 나간다. 4차 제어 다각형 보정은 같은 곡선을 0.2mm 넘게 메워 원본 밖으로 부푼다.
  * 끝 밖은 끝 기울기 직선으로 잇고, 위 끝 MERIDIAN_CHECK_SKIP_TOP_MM 안에서는 메운 양을 0으로 줄여 위 끝 반경·기울기를 지킨다.
  */
-function relaxMeridianConcavity(fn, h, R) {
-  if (minConcaveMeridianRadius(fn, h, 200, MERIDIAN_CHECK_SKIP_TOP_MM) >= R) return fn;
+function relaxMeridianConcavity(fn, h, R, skipBotMm = 0) {
+  if (minConcaveMeridianRadius(fn, h, 200, MERIDIAN_CHECK_SKIP_TOP_MM, skipBotMm) >= R) return fn;
   const n = RELAX_SAMPLES;
   const dz = h / n;
   const ext = Math.ceil(R / dz);
@@ -1177,7 +1191,10 @@ function relaxMeridianConcavity(fn, h, R) {
     const zTop = h - i * dz;
     const u = Math.max(0, Math.min(1, zTop / MERIDIAN_CHECK_SKIP_TOP_MM));
     const keepTop = u * u * u * (10 - 15 * u + 6 * u * u);
-    return f[i + ext] + keepTop * (acc / wSum);
+    const zBot = i * dz;
+    const ub = skipBotMm > 1e-6 ? Math.max(0, Math.min(1, zBot / skipBotMm)) : 1;
+    const keepBot = ub * ub * ub * (10 - 15 * ub + 6 * ub * ub);
+    return f[i + ext] + keepTop * keepBot * (acc / wSum);
   });
   return (t) => {
     const x = Math.max(0, Math.min(1, t)) * n;
@@ -1283,12 +1300,14 @@ function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tai
     );
     for (let j = 0; j < n; j += 1) deltas[j][k] = sm[j];
   }
-  return profiles.map((fn, j) => {
+    return profiles.map((fn, j) => {
     const [e1, e2, e3] = deltas[j];
     if (Math.abs(e1) + Math.abs(e2) + Math.abs(e3) < 1e-9) return fn;
+    const rCap = ctrl0[j][4];
     return (t) => {
       const u = 1 - t;
-      return fn(t) + 4 * e1 * u ** 3 * t + 6 * e2 * u ** 2 * t ** 2 + 4 * e3 * u * t ** 3;
+      const val = fn(t) + 4 * e1 * u ** 3 * t + 6 * e2 * u ** 2 * t ** 2 + 4 * e3 * u * t ** 3;
+      return meridianOk?.[j] ? Math.min(rCap, val) : val;
     };
   });
 }
@@ -3504,8 +3523,30 @@ export function blendCuffJunction(buffer, options = {}) {
     // 커프 최대 높이가 0.8mm 이상이고 모든 열이 PRC 면 위로 여유가 있으면 둘레 전체가 같은 프로파일 패밀리를 쓴다.
     const useTurnedConeEmergence =
       Math.max(...hs) >= 0.8 && Math.min(...hs) >= ext + 0.15;
+    // 이머전스 수평 완화 비중(wFlat ∈ [0,1]): 열 평균 기울기(dR/H)나 마진 아래 원본 기울기가 가파른 열(예: 20261103-ANNAWRAG 310° 열)을 둘레로 매끈하게 찾는다.
+    const flatWeights = circularSmooth(
+      thetas.map((_, j) => {
+        const hb = hs[j];
+        const t0 = Math.max(0, Math.min(0.5, ext / hb));
+        const H = Math.max(1e-4, hb * (1 - t0));
+        const dR = r1s[j] - rFace;
+        const avgSlope = dR / H;
+        const eSlope = belowSlopes ? belowSlopes[j] : NaN;
+        const effSlope = Number.isFinite(eSlope) ? Math.max(avgSlope, 0.85 * eSlope) : avgSlope;
+        if (!(effSlope > EMERGENCE_ANTI_FLAT_START_SLOPE)) return 0;
+        const u = Math.min(
+          1,
+          (effSlope - EMERGENCE_ANTI_FLAT_START_SLOPE) /
+            (EMERGENCE_ANTI_FLAT_FULL_SLOPE - EMERGENCE_ANTI_FLAT_START_SLOPE),
+        );
+        return u * u * (3 - 2 * u);
+      }),
+      TOP_SLOPE_SMOOTH_COLUMNS,
+    ).map((w) => Math.max(0, Math.min(1, w)));
+    const relaxSkipBotOf = (j) =>
+      flatWeights[j] > 1e-3 ? (ext + EMERGENCE_ANTI_FLAT_EASE_MM * 1.15) * flatWeights[j] : 0;
     /** 위 끝 고정 4차 맞춤 원본. 단차 무릎을 둥글게 편 목표 곡선. */
-    const fittedOrigOf = (j, hb, rTop, eSlope) => {
+    const fittedOrigOf = (j, hb, rTop, eSlope, wFlat = 0) => {
       const n = EMERGENCE_ORIG_SAMPLES;
       const pts = [];
       for (let i = 0; i <= n; i += 1) {
@@ -3520,7 +3561,12 @@ export function blendCuffJunction(buffer, options = {}) {
         pts.push([t, Math.min(r, rTop + 1e-6)]);
       }
       if (pts.length < n * 0.75) return null;
-      const sT = (Number.isFinite(eSlope) ? Math.max(0, eSlope) : (rTop - pts[0][1]) / hb) * hb;
+      const avgS = (rTop - pts[0][1]) / hb;
+      const maxFitSlope = Math.max(CORNER_MAX_END_SLOPE, avgS * 0.95);
+      const effESlope = Number.isFinite(eSlope)
+        ? Math.max(0, eSlope * (1 - wFlat) + Math.min(eSlope, maxFitSlope) * wFlat)
+        : avgS;
+      const sT = effESlope * hb;
       const A = [
         [0, 0, 0],
         [0, 0, 0],
@@ -3543,6 +3589,8 @@ export function blendCuffJunction(buffer, options = {}) {
     };
     // 11° 원뿔 상단(PRC 면)에서 2°·곡률 0으로 출발해 커넥션 근처에서는 2°로 올라가 뼈에 걸리지 않게 하고,
     // 그 위에서는 S커브 기준선과 둘레 평활된 4차 맞춤 원본을 매끈하게 섞어 단차·꺾임과 중간단 움푹 패임을 동시에 없앤다.
+    // 급경사 열(wFlat>0, 예: 20261103-ANNAWRAG)에서는 조기 상승 수평 완화 곡선(earlyRise)으로 하부~중간단을 일찍 받쳐 올려
+    // 피니시라인 하방이 78~80° 수평 처마로 눕지 않게 한다.
     const origColumnOf = (j, hb, rTop, eSlope) => {
       const n = EMERGENCE_ORIG_SAMPLES;
       const t0 = Math.max(0, Math.min(0.5, ext / hb));
@@ -3550,6 +3598,7 @@ export function blendCuffJunction(buffer, options = {}) {
       const H = hb * span;
       const dR = rTop - rFace;
       if (!(dR > 1e-5) || !(H > 1e-4)) return null;
+      const wFlat = flatWeights[j] ?? 0;
       const avgSlope = dR / H;
       const s0 = Math.min(CUFF_EMERGENCE_START_SLOPE, Math.max(0, avgSlope * 0.5));
       const D = Math.max(0, dR - s0 * H);
@@ -3562,7 +3611,7 @@ export function blendCuffJunction(buffer, options = {}) {
           Math.sqrt(3.2 * D * CUFF_MIN_CONCAVE_RADIUS_MM),
         ),
       );
-      const holdH = Math.max(0, Math.min(cuffDepartZ - faceZ - 0.35, H - minFlareH, 0.45 * H));
+      const holdH = Math.max(0, Math.min(cuffDepartZ - faceZ - 0.35, H - minFlareH, 0.45 * H)) * (1 - wFlat);
       const u0 = holdH / H;
       const flareSpan = Math.max(1e-4, 1 - u0);
       const spreadSlope = D / (H * flareSpan);
@@ -3575,7 +3624,7 @@ export function blendCuffJunction(buffer, options = {}) {
         spreadSlope > 1e-6
           ? Math.max(0.65, Math.min(1.15, (clampedEnd - s0) / spreadSlope - 1))
           : 1.0;
-      const fitted = fittedOrigOf(j, hb, rTop, eSlope);
+      const fitted = fittedOrigOf(j, hb, rTop, eSlope, wFlat);
       // blendTurnedConeWithOriginal이 바깥에서 base + w(u)·(origAt(t) - base)를 계산한다.
       // orig 배열 값을 [base, rTop] 안의 4차 맞춤 원본(fitted)과 S커브 중 큰 쪽으로 두면 볼록 무릎 없이 중간단이 채워진다.
       return Array.from({ length: n + 1 }, (_, i) => {
@@ -3599,6 +3648,36 @@ export function blendCuffJunction(buffer, options = {}) {
         return Math.max(base, Math.min(rTop, targetOrig));
       });
     };
+    // 급경사 열(wFlat>0)의 조기 상승 수평 완화 곡선: PRC 면에서 2°·곡률 0(G2)으로 출발해
+    // EMERGENCE_ANTI_FLAT_EASE_MM 안에서 일찍 퍼져 올라가고, 피니시라인 하방에서는 기울기를 오히려 세워(alpha)
+    // 78~80° 수평 처마와 볼엔드밀 미삭제를 막는다(20261103-ANNAWRAG).
+    const withAntiFlatEmergence = (fn, j, hb, rTop) => {
+      const wFlat = j >= 0 ? (flatWeights[j] ?? 0) : 0;
+      if (!fn || !(wFlat > 1e-4)) return fn;
+      const t0 = Math.max(0, Math.min(0.5, ext / hb));
+      const span = Math.max(1e-4, 1 - t0);
+      const H = hb * span;
+      const dR = rTop - rFace;
+      if (!(dR > 1e-5) || !(H > 1e-4)) return fn;
+      const avgSlope = dR / H;
+      const s0 = Math.min(CUFF_EMERGENCE_START_SLOPE, Math.max(0, avgSlope * 0.5));
+      const D = Math.max(0, dR - s0 * H);
+      const ue = Math.min(0.28, Math.max(0.14, EMERGENCE_ANTI_FLAT_EASE_MM / H));
+      const alpha = EMERGENCE_ANTI_FLAT_TOP_EASE * wFlat;
+      const cEarly = 1 / Math.max(1e-4, 1 - 0.5 * ue - 0.5 * alpha * (1 - ue));
+      return (t) => {
+        const rBase = fn(t);
+        if (t <= t0) return rBase;
+        const u = Math.max(0, Math.min(1, (t - t0) / span));
+        const base = rFace + s0 * u * H;
+        const eUnit =
+          u <= ue
+            ? cEarly * ue * integrateSmoother(u / ue)
+            : cEarly * (0.5 * ue + (u - ue) - alpha * (1 - ue) * integrateSmoother((u - ue) / (1 - ue)));
+        const rEarly = Math.min(rTop, base + D * eUnit);
+        return rBase * (1 - wFlat) + Math.max(rBase, rEarly) * wFlat;
+      };
+    };
     const legacyConcaveOf = (rTop, eSlope, hb, relax = 0, j = -1) => {
       // 마진까지 높이가 있는 커프: Z_a+CUFF_CONNECTION_CONE_EXTEND_MM까지 11° 원형(커넥션 PRC), 그 위는 2°로 서서 완만한 S커브로 맞춘다.
       if (useTurnedConeEmergence || hb >= 0.8) {
@@ -3614,7 +3693,13 @@ export function blendCuffJunction(buffer, options = {}) {
           : null;
         if (blended) {
           blendedCols[j] = 1;
-          return relaxMeridianConcavity(blended, hb, CUFF_MIN_CONCAVE_RADIUS_MM * RELAX_TARGET_MARGIN);
+          const lifted = withAntiFlatEmergence(blended, j, hb, rTop);
+          return relaxMeridianConcavity(
+            lifted,
+            hb,
+            CUFF_MIN_CONCAVE_RADIUS_MM * RELAX_TARGET_MARGIN,
+            relaxSkipBotOf(j),
+          );
         }
         const emerged = verticalEmergenceProfile(ra, coneSlope, rTop, hb, eSlope);
         if (emerged) return emerged;
@@ -3697,7 +3782,14 @@ export function blendCuffJunction(buffer, options = {}) {
         ).map((w, j) => (bowls[j].floorBase ? w : 0))
       : null;
     const smoothedProfiles = smoothProfilesAcrossColumns(bowls.map((b) => b.fn), hs).map((fn, j) =>
-      blendedCols[j] ? relaxMeridianConcavity(fn, hs[j], CUFF_MIN_CONCAVE_RADIUS_MM * RELAX_TARGET_MARGIN) : fn,
+      blendedCols[j]
+        ? relaxMeridianConcavity(
+            fn,
+            hs[j],
+            CUFF_MIN_CONCAVE_RADIUS_MM * RELAX_TARGET_MARGIN,
+            relaxSkipBotOf(j),
+          )
+        : fn,
     );
     const enforcedProfiles = enforceMinToolRadiusOnProfiles(
       smoothedProfiles,
@@ -3721,7 +3813,15 @@ export function blendCuffJunction(buffer, options = {}) {
       let prev = profiles[j](0);
       for (let i = 1; i <= 50; i += 1) {
         const r = profiles[j](i / 50);
-        if (r < lo || r > hi) fail("manual-review", "이음 곡면이 커넥션·커프 범위를 벗어납니다.");
+        if (r < lo || r > hi) {
+          fail("manual-review", "이음 곡면이 커넥션·커프 범위를 벗어납니다.", {
+            j,
+            t: i / 50,
+            r: round3(r),
+            lo: round3(lo),
+            hi: round3(hi),
+          });
+        }
         const slope = Math.abs(r - prev) / (h / 50);
         maxSlope = Math.max(maxSlope, slope);
         // 벽 두께는 같은 높이의 채널 반경과 비교한다(채널이 위에서 벌어져도 아래 원뿔 벽은 영향 없음).
@@ -3732,6 +3832,9 @@ export function blendCuffJunction(buffer, options = {}) {
     if (rCh > 0 && minWall < MIN_WALL_MM) {
       fail("manual-review", "이음부 벽 두께가 스크류 채널 대비 너무 얇아집니다.");
     }
+    const bandSmoothScale = flatWeights.some((w) => w > 1e-3)
+      ? thetas.map((_, j) => (seamOrigScale ? seamOrigScale[j] : 1) * (1 - flatWeights[j]))
+      : seamOrigScale;
     const out = replaceBand(mesh, {
       zA,
       ra,
@@ -3741,7 +3844,7 @@ export function blendCuffJunction(buffer, options = {}) {
       rCut,
       origProbe: probe,
       crease: crease && offsetMm === 0 ? crease : null,
-      seamOrigScale,
+      seamOrigScale: bandSmoothScale,
       seamBlendScale: finalSeamOrigScale,
       convexCuffDeform,
     });
