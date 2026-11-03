@@ -771,17 +771,18 @@ const EMERGENCE_ORIG_SAMPLES = 48;
  * 원본 커프 반경 그리드. 아래 ORIG_OVAL_FADE_START 비율은 둘레 평균(원형 퍼짐)만 쓰고,
  * 그 위에서 타원을 5차식으로 넣는다. 열마다 rayRadius를 그대로 쓰면 3Shape 현이 세로 주름이 된다.
  */
-const ORIG_GRID_PASS_HARMONICS = 4;
-const ORIG_GRID_STOP_HARMONICS = 8;
+const ORIG_GRID_PASS_HARMONICS = 12;
+const ORIG_GRID_STOP_HARMONICS = 24;
 const ORIG_GRID_Z_STEP_MM = 0.05;
-const ORIG_OVAL_FADE_START = 0.45;
+const ORIG_OVAL_FADE_START = 0.2;
 /**
  * S커브 중간단을 원본(4차 맞춤) 쪽으로 올리는 비중.
  * 1이면 맞춤 원본, 0이면 순수 S커브. 순수 S커브만 쓰면 단차는 사라지나 중간단이 움푹 팬다(WTQCFRCC).
  */
 const ORIG_MID_LIFT = 1;
-/** 커넥션 면 위 이 높이까지는 중간단 리프트를 쓰지 않는다(뼈·2°). */
-const ORIG_MID_LIFT_BONE_MM = 0.3;
+/** 커넥션 면 위 이 높이(mm)에 걸쳐 2° 출발선에서 4차 맞춤 원본으로 smootherstep 전환한다(열 높이 H가 아니라 절대 mm 기준이어야 높은 마진 열이 안으로 안 꺼진다). */
+const ORIG_MID_LIFT_BONE_MM = 0.12;
+const ORIG_MID_LIFT_RAMP_MM = 0.65;
 const LONG_BAND_MM = 2;
 /** 띠 면 평균: 반폭(약 ±30°)과 위쪽 보존 지수(t^p). */
 const BAND_SMOOTH_HALF_COLUMNS = columnsForDeg(30);
@@ -1017,15 +1018,25 @@ function solve3(A, B) {
 
 /**
  * 원본 커프 광선 반경을 같은 높이에서 둘레 저역 통과한 뒤 보간한다.
- * 열마다 rayRadius를 그대로 쓰면 3Shape 다각형 현이 열마다 다른 4차 맞춤이 되어 세로 주름이 된다.
+ * 이미 마진 위로 넘어간 열(z > topZ[j])은 포스트라 안쪽으로 좁아지므로 그 열의 마진 아래 반경을 유지해 높은 커프 열이 안으로 끌리지 않게 한다.
  */
-function buildSmoothedOrigRadiusAt(probe, thetas, zLo, zHi) {
+function buildSmoothedOrigRadiusAt(probe, thetas, zLo, zHi, topZ = null) {
   const n = thetas.length;
   const zs = [];
   const rows = [];
   if (!(zHi > zLo)) return () => NaN;
+  const capR = topZ
+    ? thetas.map((theta, j) =>
+        Number.isFinite(topZ[j]) ? probe.rayRadius(theta, Math.max(zLo, topZ[j] - 0.02)) : NaN,
+      )
+    : null;
   for (let z = zLo; z <= zHi + 1e-9; z += ORIG_GRID_Z_STEP_MM) {
-    const raw = thetas.map((theta) => probe.rayRadius(theta, z));
+    const raw = thetas.map((theta, j) => {
+      if (topZ && Number.isFinite(topZ[j]) && z > topZ[j] - 0.02 && Number.isFinite(capR[j])) {
+        return capR[j];
+      }
+      return probe.rayRadius(theta, z);
+    });
     const filled = fillMissingCircular(raw);
     const lp = filled
       ? angularLowPass(filled, n, ORIG_GRID_PASS_HARMONICS, ORIG_GRID_STOP_HARMONICS)
@@ -1033,13 +1044,17 @@ function buildSmoothedOrigRadiusAt(probe, thetas, zLo, zHi) {
     const row = lp || raw;
     const finite = row.filter(Number.isFinite);
     const mean = finite.length ? finite.reduce((s, v) => s + v, 0) / finite.length : NaN;
-    const t = (z - zLo) / Math.max(zHi - zLo, 1e-9);
-    const u = (t - ORIG_OVAL_FADE_START) / (1 - ORIG_OVAL_FADE_START);
-    const w = u <= 0 ? 0 : u >= 1 ? 1 : u * u * u * (10 - 15 * u + 6 * u * u);
     zs.push(z);
     rows.push(
-      Number.isFinite(mean) && w < 1 - 1e-9
-        ? row.map((r) => (Number.isFinite(r) ? mean + w * (r - mean) : r))
+      Number.isFinite(mean)
+        ? row.map((r, j) => {
+            if (!Number.isFinite(r)) return r;
+            const zTopJ = topZ && Number.isFinite(topZ[j]) ? topZ[j] : zHi;
+            const t = (z - zLo) / Math.max(zTopJ - zLo, 0.2);
+            const u = (t - ORIG_OVAL_FADE_START) / (1 - ORIG_OVAL_FADE_START);
+            const w = u <= 0 ? 0 : u >= 1 ? 1 : u * u * u * (10 - 15 * u + 6 * u * u);
+            return mean + w * (r - mean);
+          })
         : row,
     );
   }
@@ -1203,11 +1218,7 @@ function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tai
   const n = profiles.length;
   // 4차 제어 다각형 검사는 실제 곡선보다 보수적이다. 4차로 설계하지 않은 열은 실제 자오선 곡률로 보고, 이미 넉넉하면 자오선은 메우지 않는다.
   const meridianOk = measuredMeridian
-    ? profiles.map(
-        (fn, j) =>
-          Boolean(measuredMeridian[j]) &&
-          minConcaveMeridianRadius(fn, hs[j], 200, MERIDIAN_CHECK_SKIP_TOP_MM) >= CUFF_MIN_CONCAVE_RADIUS_MM,
-      )
+    ? profiles.map((fn, j) => Boolean(measuredMeridian[j]))
     : null;
   // 4차 베지어 제어점은 양 끝과 t=¼·½·¾ 세 점으로 푼다. 끝 미분을 차분으로 재면 둘레 평활(3차 보간)된 곡선에서 어긋난다.
   const ctrl0 = profiles.map((fn) => {
@@ -1227,7 +1238,7 @@ function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tai
   let changed = false;
   for (let round = 0; round < MIN_RADIUS_ROUNDS; round += 1) {
     const next = cur.map((c) => c.slice());
-    if (!enforceMinToolRadiusOnCtrl(next, hs, zA, canLiftD0, tailWeights, meridianOk)) break;
+    if (!enforceMinToolRadiusOnCtrl(next, hs, zA, canLiftD0, tailWeights, meridianOk, profiles, ctrl0)) break;
     changed = true;
     for (let k = 1; k <= 3; k += 1) {
       const step = circularSmooth(
@@ -1241,19 +1252,26 @@ function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tai
     }
   }
   if (!changed) return profiles;
-  // 4차 맞춤이 나쁜 열은 보정 비중을 줄인다. 예전에 잔차>0.02면 통째로 빼 이웃(적용)과 세로 절벽이 났다(WTQCFRCC 6°·331°).
-  // 비중을 줄인 뒤 보정량을 다시 둘레로 고르면 경계가 수 °에 걸쳐 사라진다.
   const deltas = profiles.map((fn, j) => {
     let e1 = cur[j][1] - ctrl0[j][1];
     let e2 = cur[j][2] - ctrl0[j][2];
     let e3 = cur[j][3] - ctrl0[j][3];
-    const residual = quarticFitResidual(ctrl0[j], fn);
-    let w = 1;
-    if (residual > QUARTIC_FIT_MAX_RESIDUAL_MM) {
-      const u = Math.min(1, (residual - QUARTIC_FIT_MAX_RESIDUAL_MM) / QUARTIC_FIT_MAX_RESIDUAL_MM);
-      w = 1 - u * u * (3 - 2 * u);
+    // 자오선 곡률을 실제 곡선으로 이미 맞춘 열(blendedCols)은 안쪽으로 깎지 않고 자오선 4차 잔차로 둘레 보정을 줄이지도 않는다.
+    if (meridianOk?.[j]) {
+      e1 = Math.max(0, e1);
+      e2 = Math.max(0, e2);
+      e3 = Math.max(0, e3);
+    } else {
+      const residual = quarticFitResidual(ctrl0[j], fn);
+      if (residual > QUARTIC_FIT_MAX_RESIDUAL_MM) {
+        const u = Math.min(1, (residual - QUARTIC_FIT_MAX_RESIDUAL_MM) / QUARTIC_FIT_MAX_RESIDUAL_MM);
+        const w = 1 - u * u * (3 - 2 * u);
+        e1 *= w;
+        e2 *= w;
+        e3 *= w;
+      }
     }
-    return [e1 * w, e2 * w, e3 * w];
+    return [e1, e2, e3];
   });
   for (let k = 0; k < 3; k += 1) {
     const sm = circularSmooth(
@@ -1276,7 +1294,16 @@ function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tai
 }
 
 /** enforceMinToolRadiusOnProfiles 한 회: 열별 4차 베지어 제어점(ctrl)을 제자리에서 고친다. 고친 열이 있으면 true. */
-function enforceMinToolRadiusOnCtrl(ctrl, hs, zA, canLiftD0, tailWeights, meridianOk = null) {
+function enforceMinToolRadiusOnCtrl(
+  ctrl,
+  hs,
+  zA,
+  canLiftD0,
+  tailWeights,
+  meridianOk = null,
+  profiles = null,
+  ctrl0 = null,
+) {
   const n = ctrl.length;
   const modified = new Uint8Array(n);
   const dMaxs = hs.map((h) => (PROFILE_MAX_SLOPE * h) / 4);
@@ -1371,6 +1398,23 @@ function enforceMinToolRadiusOnCtrl(ctrl, hs, zA, canLiftD0, tailWeights, meridi
         const b3 = 4 * u * t3;
         const b4 = t4;
         const norm = b1 * b1 + b2 * b2 + b3 * b3 + 1e-6;
+        let baseR = null;
+        let baseRz = null;
+        let baseRzz = null;
+        if (profiles && ctrl0) {
+          const fn = profiles[j];
+          const dt = Math.min(1e-3, 0.25 * Math.min(t, 1 - t));
+          if (dt > 1e-6) {
+            const rm = fn(t - dt);
+            const r0 = fn(t);
+            const rp = fn(t + dt);
+            baseR = r0;
+            baseRz = ((rp - rm) / (2 * dt)) * invH;
+            baseRzz = ((rp - 2 * r0 + rm) / (dt * dt)) * invH2;
+          } else {
+            baseR = fn(t);
+          }
+        }
         return {
           b0,
           b1: 4 * u3 * t,
@@ -1389,6 +1433,9 @@ function enforceMinToolRadiusOnCtrl(ctrl, hs, zA, canLiftD0, tailWeights, meridi
           w1: b1 / norm,
           w2: b2 / norm,
           w3: b3 / norm,
+          baseR,
+          baseRz,
+          baseRzz,
         };
       });
     });
@@ -1415,12 +1462,25 @@ function enforceMinToolRadiusOnCtrl(ctrl, hs, zA, canLiftD0, tailWeights, meridi
             continue;
           }
           const c = ctrl[j];
-          const d0 = c[1] - c[0];
-          const d1 = c[2] - c[1];
-          const d2 = c[3] - c[2];
-          const d3 = c[4] - c[3];
-          rs[j] = a.b0 * c[0] + a.b1 * c[1] + a.b2 * c[2] + a.b3 * c[3] + a.b4 * c[4];
-          rzs[j] = a.s1 * (a.u3 * d0 + a.u2t * d1 + a.ut2 * d2 + a.t3 * d3);
+          if (a.baseR != null && a.baseRz != null && ctrl0) {
+            const c0 = ctrl0[j];
+            const e1 = c[1] - c0[1];
+            const e2 = c[2] - c0[2];
+            const e3 = c[3] - c0[3];
+            const de0 = e1;
+            const de1 = e2 - e1;
+            const de2 = e3 - e2;
+            const de3 = -e3;
+            rs[j] = a.baseR + a.b1 * e1 + a.b2 * e2 + a.b3 * e3;
+            rzs[j] = a.baseRz + a.s1 * (a.u3 * de0 + a.u2t * de1 + a.ut2 * de2 + a.t3 * de3);
+          } else {
+            const d0 = c[1] - c[0];
+            const d1 = c[2] - c[1];
+            const d2 = c[3] - c[2];
+            const d3 = c[4] - c[3];
+            rs[j] = a.b0 * c[0] + a.b1 * c[1] + a.b2 * c[2] + a.b3 * c[3] + a.b4 * c[4];
+            rzs[j] = a.s1 * (a.u3 * d0 + a.u2t * d1 + a.ut2 * d2 + a.t3 * d3);
+          }
         }
         for (let j = 0; j < n; j += 1) {
           const a = row[j];
@@ -1448,7 +1508,18 @@ function enforceMinToolRadiusOnCtrl(ctrl, hs, zA, canLiftD0, tailWeights, meridi
           const M = (r * rThz - rTh * rz) / W;
           // 자오선 오목(N)도 넣은 최대 주곡률. 둘레만 보면 두 방향이 같이 오목한 곳(커넥션 바로 위 골)을 놓친다.
           const c = ctrl[j];
-          const rzz = a.s2 * (a.u2 * (c[2] - 2 * c[1] + c[0]) + a.ut * (c[3] - 2 * c[2] + c[1]) + a.t2 * (c[4] - 2 * c[3] + c[2]));
+          let rzz;
+          if (a.baseRzz != null && ctrl0) {
+            const c0 = ctrl0[j];
+            const e1 = c[1] - c0[1];
+            const e2 = c[2] - c0[2];
+            const e3 = c[3] - c0[3];
+            rzz = a.baseRzz + a.s2 * (a.u2 * (e2 - 2 * e1) + a.ut * (e3 - 2 * e2 + e1) + a.t2 * (-2 * e3 + e2));
+          } else {
+            rzz =
+              a.s2 *
+              (a.u2 * (c[2] - 2 * c[1] + c[0]) + a.ut * (c[3] - 2 * c[2] + c[1]) + a.t2 * (c[4] - 2 * c[3] + c[2]));
+          }
           const N = (r * rzz) / W;
           const Hc = (E * N - 2 * F * M + G * L) / (2 * W2);
           const Kc = (L * N - M * M) / W2;
@@ -1475,41 +1546,43 @@ function enforceMinToolRadiusOnCtrl(ctrl, hs, zA, canLiftD0, tailWeights, meridi
         const c = ctrl[j];
         const dMax = dMaxs[j];
         const h = hs[j];
-        c[1] = Math.min(c[0] + dMax, c[1] + 0.5 * dc1[j]);
-        c[2] = Math.min(c[1] + dMax, c[2] + 0.5 * dc2[j]);
-        c[3] = Math.min(c[2] + dMax, c[4], c[3] + 0.5 * dc3[j]);
-        let d0 = c[1] - c[0];
-        let d1 = c[2] - c[1];
-        let d2 = c[3] - c[2];
-        let d3 = c[4] - c[3];
-        for (let pass = 0; pass < 6; pass += 1) {
-          const lim23 = stepLim(h, d2, d3);
-          if (d3 - d2 > lim23) {
-            const ex = d3 - d2 - lim23;
-            d3 -= 0.5 * ex;
-            d2 += 0.5 * ex;
-          }
-          const lim12 = stepLim(h, d1, d2);
-          if (d2 - d1 > lim12) {
-            const ex = d2 - d1 - lim12;
-            d2 -= 0.5 * ex;
-            d1 += 0.5 * ex;
-          }
-          const lim01 = stepLim(h, d0, d1);
-          if (d1 - d0 > lim01) {
-            const ex = d1 - d0 - lim01;
-            if (canLiftD0) {
-              d1 -= 0.5 * ex;
-              d0 += 0.5 * ex;
-            } else {
-              d1 -= ex;
-              d2 = Math.min(dMax, d2 + ex);
+        c[1] = Math.min(Math.max(c[1], c[0] + dMax), c[1] + 0.5 * dc1[j]);
+        c[2] = Math.min(Math.max(c[2], c[1] + dMax), c[2] + 0.5 * dc2[j]);
+        c[3] = Math.min(Math.max(c[3], Math.min(c[2] + dMax, c[4])), c[3] + 0.5 * dc3[j]);
+        if (!meridianOk?.[j]) {
+          let d0 = c[1] - c[0];
+          let d1 = c[2] - c[1];
+          let d2 = c[3] - c[2];
+          let d3 = c[4] - c[3];
+          for (let pass = 0; pass < 6; pass += 1) {
+            const lim23 = stepLim(h, d2, d3);
+            if (d3 - d2 > lim23) {
+              const ex = d3 - d2 - lim23;
+              d3 -= 0.5 * ex;
+              d2 += 0.5 * ex;
+            }
+            const lim12 = stepLim(h, d1, d2);
+            if (d2 - d1 > lim12) {
+              const ex = d2 - d1 - lim12;
+              d2 -= 0.5 * ex;
+              d1 += 0.5 * ex;
+            }
+            const lim01 = stepLim(h, d0, d1);
+            if (d1 - d0 > lim01) {
+              const ex = d1 - d0 - lim01;
+              if (canLiftD0) {
+                d1 -= 0.5 * ex;
+                d0 += 0.5 * ex;
+              } else {
+                d1 -= ex;
+                d2 = Math.min(dMax, d2 + ex);
+              }
             }
           }
+          c[1] = c[0] + d0;
+          c[2] = c[1] + d1;
+          c[3] = c[2] + d2;
         }
-        c[1] = c[0] + d0;
-        c[2] = c[1] + d1;
-        c[3] = c[2] + d2;
       }
     }
   }
@@ -3426,56 +3499,12 @@ export function blendCuffJunction(buffer, options = {}) {
       }
       return dep;
     })();
-    const origRadiusAt = buildSmoothedOrigRadiusAt(probe, thetas, zA, zTopMax);
-    // 11° 원뿔 상단(PRC 면)에서 2°·곡률 0으로 출발해 커넥션 근처에서는 2°로 올라가 뼈에 걸리지 않게 하고,
-    // 그 위 S커브 중간단은 둘레를 고른 원본(위 끝 반경·기울기 고정 4차 맞춤) 쪽으로만 올려 움푹 패임을 메운다.
-    // 리프트는 blend 이후 실제 반경에 건다(미리 올리면 w(u) 보정이 깨져 오히려 안으로 들어간다).
-    const origColumnOf = (j, hb, rTop, eSlope) => {
-      const n = EMERGENCE_ORIG_SAMPLES;
-      const t0 = Math.max(0, Math.min(0.5, ext / hb));
-      const span = Math.max(1e-4, 1 - t0);
-      const H = hb * span;
-      const dR = rTop - rFace;
-      if (!(dR > 1e-5) || !(H > 1e-4)) return null;
-      const avgSlope = dR / H;
-      const s0 = Math.min(CUFF_EMERGENCE_START_SLOPE, Math.max(0, avgSlope * 0.5));
-      const D = Math.max(0, dR - s0 * H);
-      // 위쪽 S커브가 65°(CORNER_MAX_END_SLOPE) 이내이고 오목 곡률 반경 기준을 만족하는 최소 높이.
-      const minFlareH = Math.min(
-        H,
-        Math.max(
-          1.2,
-          (2.05 * D) / Math.max(0.1, CORNER_MAX_END_SLOPE - s0),
-          Math.sqrt(3.2 * D * CUFF_MIN_CONCAVE_RADIUS_MM),
-        ),
-      );
-      const holdH = Math.max(0, Math.min(cuffDepartZ - faceZ - 0.35, H - minFlareH, 0.45 * H));
-      const u0 = holdH / H;
-      const flareSpan = Math.max(1e-4, 1 - u0);
-      const spreadSlope = D / (H * flareSpan);
-      // 최대 커프 각도가 65°(CORNER_MAX_END_SLOPE)를 넘지 않게 하고, 중간 볼록 배가 안 생기도록 β∈[0.65, 1.15]에서 고른다.
-      const maxEndSlope = Math.min(CORNER_MAX_END_SLOPE, s0 + 2.15 * spreadSlope);
-      const minEndSlope = Math.min(maxEndSlope, s0 + 1.65 * spreadSlope);
-      const rawEndSlope = Number.isFinite(eSlope) ? Math.max(s0, eSlope) : s0 + 1.9 * spreadSlope;
-      const clampedEnd = Math.max(minEndSlope, Math.min(maxEndSlope, rawEndSlope));
-      const beta =
-        spreadSlope > 1e-6
-          ? Math.max(0.65, Math.min(1.15, (clampedEnd - s0) / spreadSlope - 1))
-          : 1.0;
-      // blendTurnedConeWithOriginal이 바깥에서 w(u)를 한 번 곱하므로, u0 위에서 w(ξ)·((1-β)ξ + βξ²)가 되도록 orig 배열을 넘긴다.
-      return Array.from({ length: n + 1 }, (_, i) => {
-        const t = i / n;
-        if (t <= t0) return ra + coneSlope * t * hb;
-        const u = Math.max(0, Math.min(1, (t - t0) / span));
-        if (u <= u0 || !(u > 1e-6)) return rFace + s0 * H * u;
-        const xi = Math.max(0, Math.min(1, (u - u0) / flareSpan));
-        const wU = u * u * u * (10 - 15 * u + 6 * u * u);
-        const wXi = xi * xi * xi * (10 - 15 * xi + 6 * xi * xi);
-        const shape = (wXi * ((1 - beta) * xi + beta * xi * xi)) / Math.max(wU, 1e-9);
-        return rFace + s0 * H * u + D * Math.min(1.2, shape);
-      });
-    };
-    /** 위 끝 고정 4차 맞춤 원본. 단차 무릎을 둥글게 편 중간단 리프트 목표. */
+    const origRadiusAt = buildSmoothedOrigRadiusAt(probe, thetas, zA, zTopMax, topZ);
+    // 한 어버트먼트 안에서 일부 열(hb < 0.8)만 4차 베지어로 빠지면 그 경계(예: WTQCFRCC 225°, hb=0.794mm)가 움푹 패인다.
+    // 커프 최대 높이가 0.8mm 이상이고 모든 열이 PRC 면 위로 여유가 있으면 둘레 전체가 같은 프로파일 패밀리를 쓴다.
+    const useTurnedConeEmergence =
+      Math.max(...hs) >= 0.8 && Math.min(...hs) >= ext + 0.15;
+    /** 위 끝 고정 4차 맞춤 원본. 단차 무릎을 둥글게 편 목표 곡선. */
     const fittedOrigOf = (j, hb, rTop, eSlope) => {
       const n = EMERGENCE_ORIG_SAMPLES;
       const pts = [];
@@ -3512,37 +3541,67 @@ export function blendCuffJunction(buffer, options = {}) {
       return (t) =>
         rTop + sT * (t - 1) + (t - 1) * (t - 1) * (coef[0] + coef[1] * t + coef[2] * t * t);
     };
-    const liftMidTowardOrig = (fn, j, hb, rTop, eSlope) => {
-      if (!fn || j < 0 || ORIG_MID_LIFT <= 1e-6) return fn;
-      const fitted = fittedOrigOf(j, hb, rTop, eSlope);
-      if (!fitted) return fn;
+    // 11° 원뿔 상단(PRC 면)에서 2°·곡률 0으로 출발해 커넥션 근처에서는 2°로 올라가 뼈에 걸리지 않게 하고,
+    // 그 위에서는 S커브 기준선과 둘레 평활된 4차 맞춤 원본을 매끈하게 섞어 단차·꺾임과 중간단 움푹 패임을 동시에 없앤다.
+    const origColumnOf = (j, hb, rTop, eSlope) => {
+      const n = EMERGENCE_ORIG_SAMPLES;
       const t0 = Math.max(0, Math.min(0.5, ext / hb));
       const span = Math.max(1e-4, 1 - t0);
       const H = hb * span;
-      const boneU = Math.max(0, Math.min(0.55, ORIG_MID_LIFT_BONE_MM / H));
-      return (t) => {
-        const r0 = fn(t);
-        if (!(t > t0)) return r0;
+      const dR = rTop - rFace;
+      if (!(dR > 1e-5) || !(H > 1e-4)) return null;
+      const avgSlope = dR / H;
+      const s0 = Math.min(CUFF_EMERGENCE_START_SLOPE, Math.max(0, avgSlope * 0.5));
+      const D = Math.max(0, dR - s0 * H);
+      // 위쪽 S커브가 65°(CORNER_MAX_END_SLOPE) 이내이고 오목 곡률 반경 기준을 만족하는 최소 높이.
+      const minFlareH = Math.min(
+        H,
+        Math.max(
+          1.2,
+          (2.05 * D) / Math.max(0.1, CORNER_MAX_END_SLOPE - s0),
+          Math.sqrt(3.2 * D * CUFF_MIN_CONCAVE_RADIUS_MM),
+        ),
+      );
+      const holdH = Math.max(0, Math.min(cuffDepartZ - faceZ - 0.35, H - minFlareH, 0.45 * H));
+      const u0 = holdH / H;
+      const flareSpan = Math.max(1e-4, 1 - u0);
+      const spreadSlope = D / (H * flareSpan);
+      // 최대 커프 각도가 65°(CORNER_MAX_END_SLOPE)를 넘지 않게 하고, 중간 볼록 배가 안 생기도록 β∈[0.65, 1.15]에서 고른다.
+      const maxEndSlope = Math.min(CORNER_MAX_END_SLOPE, s0 + 2.15 * spreadSlope);
+      const minEndSlope = Math.min(maxEndSlope, s0 + 1.65 * spreadSlope);
+      const rawEndSlope = Number.isFinite(eSlope) ? Math.max(s0, eSlope) : s0 + 1.9 * spreadSlope;
+      const clampedEnd = Math.max(minEndSlope, Math.min(maxEndSlope, rawEndSlope));
+      const beta =
+        spreadSlope > 1e-6
+          ? Math.max(0.65, Math.min(1.15, (clampedEnd - s0) / spreadSlope - 1))
+          : 1.0;
+      const fitted = fittedOrigOf(j, hb, rTop, eSlope);
+      // blendTurnedConeWithOriginal이 바깥에서 base + w(u)·(origAt(t) - base)를 계산한다.
+      // orig 배열 값을 [base, rTop] 안의 4차 맞춤 원본(fitted)과 S커브 중 큰 쪽으로 두면 볼록 무릎 없이 중간단이 채워진다.
+      return Array.from({ length: n + 1 }, (_, i) => {
+        const t = i / n;
+        if (t <= t0) return ra + coneSlope * t * hb;
         const u = Math.max(0, Math.min(1, (t - t0) / span));
-        if (u <= boneU) return r0;
-        const v = (u - boneU) / Math.max(1e-6, 1 - boneU);
-        const wLift = ORIG_MID_LIFT * (v * v * (3 - 2 * v));
-        const z = zA + t * hb;
-        const rFit = fitted(t);
-        const rSmooth = origRadiusAt(j, z);
-        const rRaw = probe.rayRadius(thetas[j], z);
-        // 저역 통과·4차 맞춤이 원본보다 바깥이면 실제 광선으로 막는다(원본 밖 금지).
-        let target = rFit;
-        if (Number.isFinite(rSmooth)) target = Math.min(target, rSmooth);
-        if (Number.isFinite(rRaw)) target = Math.min(target, rRaw);
-        target = Math.min(target, rTop + 1e-6);
-        if (!(target > r0)) return r0;
-        return r0 + wLift * (target - r0);
-      };
+        const zAboveFace = u * H;
+        const base = rFace + s0 * zAboveFace;
+        if (!(u > 1e-6)) return base;
+        const wU = u * u * u * (10 - 15 * u + 6 * u * u);
+        let rSOrig = base;
+        if (u > u0) {
+          const xi = Math.max(0, Math.min(1, (u - u0) / flareSpan));
+          const wXi = xi * xi * xi * (10 - 15 * xi + 6 * xi * xi);
+          const shape = (wXi * ((1 - beta) * xi + beta * xi * xi)) / Math.max(wU, 1e-9);
+          rSOrig = base + D * Math.min(1.2, shape);
+        }
+        if (!fitted || !(ORIG_MID_LIFT > 1e-6)) return Math.max(base, Math.min(rTop, rSOrig));
+        const fVal = Math.max(base, Math.min(rTop, fitted(t)));
+        const targetOrig = Math.max(rSOrig, rSOrig + ORIG_MID_LIFT * (fVal - rSOrig));
+        return Math.max(base, Math.min(rTop, targetOrig));
+      });
     };
     const legacyConcaveOf = (rTop, eSlope, hb, relax = 0, j = -1) => {
-      // 마진까지 높이가 있는 열: Z_a+CUFF_CONNECTION_CONE_EXTEND_MM까지 11° 원형(커넥션 PRC), 그 위는 2°로 서서 완만한 S커브로 맞춘다.
-      if (hb >= 0.8) {
+      // 마진까지 높이가 있는 커프: Z_a+CUFF_CONNECTION_CONE_EXTEND_MM까지 11° 원형(커넥션 PRC), 그 위는 2°로 서서 완만한 S커브로 맞춘다.
+      if (useTurnedConeEmergence || hb >= 0.8) {
         const orig = j >= 0 ? origColumnOf(j, hb, rTop, eSlope) : null;
         const blended = orig
           ? blendTurnedConeWithOriginal(
@@ -3637,7 +3696,9 @@ export function blendCuffJunction(buffer, options = {}) {
           TOP_SLOPE_SMOOTH_COLUMNS,
         ).map((w, j) => (bowls[j].floorBase ? w : 0))
       : null;
-    const smoothedProfiles = smoothProfilesAcrossColumns(bowls.map((b) => b.fn), hs);
+    const smoothedProfiles = smoothProfilesAcrossColumns(bowls.map((b) => b.fn), hs).map((fn, j) =>
+      blendedCols[j] ? relaxMeridianConcavity(fn, hs[j], CUFF_MIN_CONCAVE_RADIUS_MM * RELAX_TARGET_MARGIN) : fn,
+    );
     const enforcedProfiles = enforceMinToolRadiusOnProfiles(
       smoothedProfiles,
       hs,
@@ -3646,13 +3707,9 @@ export function blendCuffJunction(buffer, options = {}) {
       tailWeights,
       blendedCols,
     );
-    const flooredProfiles = floorKeep
+    const profiles = floorKeep
       ? enforcedProfiles.map((fn, j) => withDeformFloor(fn, bowls[j].floorBase, floorKeep[j], hs[j]))
       : enforcedProfiles;
-    // 공구·둘레 보정 뒤에 중간단만 원본(4차 맞춤) 쪽으로 올린다. 앞에서 올리면 보정·평활이 다시 안으로 민다.
-    const profiles = flooredProfiles.map((fn, j) =>
-      liftMidTowardOrig(fn, j, hs[j], r1s[j], belowSlopes ? belowSlopes[j] : null),
-    );
     let maxSlope = 0;
     let minWall = Infinity;
     const chAtZ = channelRadiusByZ(mesh, zA - 0.3, zTopMax + 0.3, ra);
