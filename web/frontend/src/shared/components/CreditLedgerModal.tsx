@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-03: dense 날짜 — API orderDate(주문일) 우선 표시.
 // - 2026-11-03: dense 헤더 — 날짜 라벨 줄바꿈 방지(열 폭·nowrap).
 // - 2026-11-03: dense — 같은 날짜 묶음 표시·날짜↔환자·금액↔치아 여백.
 // - 2026-11-03: dense — 월 전체 pageSize 500·3~4열·환자명/금액 밀집·OB 마커 숨김.
@@ -337,6 +338,8 @@ type CreditLedgerItem = {
   clinicName?: string;
   /** 기공의뢰 원본 메모(메타 포함) — 상세 모달 주문일·도착일·메모 파싱용 */
   transferMemo?: string | null;
+  /** 기공의뢰 주문일(KST YMD) — 내역 표 날짜·기간 필터 SSOT */
+  orderDate?: string | null;
   /** 기공의뢰 CA 디자인비 저널이 가리키는 PTX */
   relatedPracticeTransferId?: string | null;
   ledgerSource?: string | null;
@@ -1861,9 +1864,16 @@ const groupLedgerItemsForDisplay = (
         if (at < bestAt) return best;
         return items.indexOf(member) < items.indexOf(best) ? member : best;
       }, members[0]);
+      const orderYmd = String(
+        representative.orderDate || newest.orderDate || "",
+      ).trim();
+      const orderAtIso = /^\d{4}-\d{2}-\d{2}$/.test(orderYmd)
+        ? `${orderYmd}T12:00:00+09:00`
+        : "";
       out.push({
         key: ptxKey,
-        createdAt: String(newest.createdAt || latest.createdAt || ""),
+        createdAt:
+          orderAtIso || String(newest.createdAt || latest.createdAt || ""),
         amount,
         balanceAfter: newest.balanceAfter,
         spentPaidAmount,
@@ -1947,9 +1957,12 @@ const groupLedgerItemsForDisplay = (
       continue;
     }
 
+    const orderYmd = String(item.orderDate || "").trim();
+    const orderAtIso =
+      /^\d{4}-\d{2}-\d{2}$/.test(orderYmd) ? `${orderYmd}T12:00:00+09:00` : "";
     out.push({
       key: String(item._id || item.uniqueKey),
-      createdAt: String(item.createdAt || ""),
+      createdAt: orderAtIso || String(item.createdAt || ""),
       amount: Number(item.amount || 0),
       balanceAfter: item.balanceAfter,
       spentPaidAmount: Number(item.spentPaidAmount || 0),
@@ -3627,7 +3640,9 @@ export const CreditLedgerModal = ({
               r.item.payoutLabName,
             )
           : "",
-        orderDate: String(memoMeta.orderDate || "").trim(),
+        orderDate: String(
+          r.item.orderDate || memoMeta.orderDate || "",
+        ).trim(),
         arrivalDate: String(memoMeta.arrivalDate || "").trim(),
         memo: String(memoMeta.memo || "").trim(),
         settlementShippingLines: [],
@@ -3672,7 +3687,7 @@ export const CreditLedgerModal = ({
             r.item.payoutLabName,
           )
         : "",
-      orderDate: String(memoMeta.orderDate || "").trim(),
+      orderDate: String(r.item.orderDate || memoMeta.orderDate || "").trim(),
       arrivalDate: String(memoMeta.arrivalDate || "").trim(),
       memo: String(memoMeta.memo || "").trim(),
       settlementShippingLines,

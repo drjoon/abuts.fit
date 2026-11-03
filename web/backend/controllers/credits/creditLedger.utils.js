@@ -8,6 +8,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-11-03: 기간 조회 — PRACTICE_TRANSFER는 주문일(orderDates) 기준, 그 외는 occurredAt.
 // - 2026-11-03: 월 조회 pipeline overfetch 제거. CA 숨김 후보 판별 헬퍼.
 // - 2026-09-27: 원청 장부 거래내역 — 협력·하청으로 지급한 기공소명.
 // - 2026-09-27: 어벗츠 원청 — 매출·하청/협력 지급을 따로 집계. internalLab은 기공소 장부.
@@ -54,6 +55,14 @@ import {
   resolvePerformingLabAnchorId,
 } from "../../utils/practiceTransferAutoMatchCore.js";
 import { isLabAiTrainingConsentAllowed } from "../../utils/practiceTransferAiTraining.js";
+import {
+  buildPracticeTransferCalendarDateRangeFilter,
+  filterTransferDocsToCalendarRange,
+} from "../../utils/practiceTransferCalendarRange.util.js";
+import {
+  resolveCurrentOrderYmd,
+  resolvePracticeOrderDates,
+} from "../../utils/practiceTransferArrivalDates.js";
 // - 2026-08-17: PTX 디자인비(+지그) 원장을 기공의뢰(PRACTICE_TRANSFER)로 승격·묶음.
 // - 2026-08-15: 행 시점 잔액 = 유료+무료+기공 합산 러닝(버킷 분리 시 잔액이 리셋되어 보임).
 
@@ -1505,9 +1514,82 @@ export function creditLedgerStatsCategoryExpr() {
   };
 }
 
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * 장부 기간 쿼리 → 주문일(YMD) 구간.
+ * from/to·onYmd가 있을 때만 쓴다(프리셋 period만 있으면 null → occurredAt 유지).
+ */
+export function resolveCreditLedgerOrderDateRangeFromQuery(query = {}) {
+  const fromRaw = String(query.from || query.fromYmd || "").trim();
+  const toRaw = String(query.to || query.toYmd || "").trim();
+  const onYmd = String(query.onYmd || "").trim();
+  if (YMD_RE.test(fromRaw) && YMD_RE.test(toRaw) && fromRaw <= toRaw) {
+    return { fromYmd: fromRaw, toYmd: toRaw, dateKey: "orderDate" };
+  }
+  if (YMD_RE.test(onYmd)) {
+    return { fromYmd: onYmd, toYmd: onYmd, dateKey: "orderDate" };
+  }
+  return null;
+}
+
+/**
+ * 사업자 범위에서 주문일이 구간에 걸리는 PRACTICE_TRANSFER _id 목록.
+ */
+export async function resolvePracticeTransferIdsForCreditLedgerOrderDateRange({
+  anchorObjectId,
+  requestorKind,
+  orderDateRange,
+  limit = 3000,
+} = {}) {
+  const range = orderDateRange;
+  if (!range?.fromYmd || !range?.toYmd || !anchorObjectId) return [];
+  const dateFilter = buildPracticeTransferCalendarDateRangeFilter(range);
+  if (!dateFilter) return [];
+
+  const oid =
+    anchorObjectId instanceof mongoose.Types.ObjectId
+      ? anchorObjectId
+      : new mongoose.Types.ObjectId(String(anchorObjectId));
+  const kind = String(requestorKind || "").trim();
+  const scope =
+    kind === "lab"
+      ? {
+          $or: [{ assigneeLabAnchorId: oid }, { targetLabAnchorId: oid }],
+        }
+      : { practiceBusinessAnchorId: oid };
+
+  const docs = await PracticeTransfer.find({
+    $and: [scope, dateFilter, practiceTransferNotDeletedMongoFilter()],
+  })
+    .select({ _id: 1, orderDates: 1, transferMemo: 1, createdAt: 1 })
+    .limit(Math.max(1, Math.min(5000, Number(limit) || 3000)))
+    .lean();
+
+  return filterTransferDocsToCalendarRange(docs, range)
+    .map((doc) => doc?._id)
+    .filter(Boolean);
+}
+
+/** PTX 문서 → 장부 표시용 주문일(KST YMD) */
+export function resolveCreditLedgerOrderYmdFromTransfer(doc) {
+  return (
+    resolveCurrentOrderYmd(resolvePracticeOrderDates(doc)) ||
+    ""
+  );
+}
+
+/** 주문일 YMD → 장부 createdAt/occurredAt 표시용 Date(정오 KST) */
+export function creditLedgerDateFromOrderYmd(orderYmd) {
+  const ymd = String(orderYmd || "").trim();
+  if (!YMD_RE.test(ymd)) return null;
+  return new Date(`${ymd}T12:00:00+09:00`);
+}
+
 /**
  * 의뢰자 원장: 기본 조회는 최근 라인만 잘라 저널 10건(+1)만 lookup.
  * 유형/검색 필터가 있을 때만 기간 전체를 저널에 붙인다.
+ * practiceTransferOrderDateRefIds가 배열이면 PTX는 주문일 매칭 id, 그 외는 occurredAt.
  */
 export function buildRequestorCreditLedgerPipeline({
   ownerId,
@@ -1521,13 +1603,39 @@ export function buildRequestorCreditLedgerPipeline({
   pageSize,
   usageScope = "all",
   practiceDemoMode = false,
+  practiceTransferOrderDateRefIds = null,
 }) {
   const match = {
     ownerRole: "requestor",
     ownerId,
     accountCode: { $in: REQUESTOR_CREDIT_ACCOUNT_CODES },
   };
-  if (occurredAt && Object.keys(occurredAt).length) {
+  const useOrderDatePtxFilter = Array.isArray(practiceTransferOrderDateRefIds);
+  if (useOrderDatePtxFilter) {
+    const ptxIds = practiceTransferOrderDateRefIds.filter(Boolean);
+    const nonPtxMatch = {
+      $or: [
+        { refType: { $exists: false } },
+        { refType: null },
+        { refType: "" },
+        { refType: { $nin: ["PRACTICE_TRANSFER"] } },
+      ],
+    };
+    const orBranches = [
+      {
+        refType: "PRACTICE_TRANSFER",
+        refId: { $in: ptxIds },
+      },
+    ];
+    if (occurredAt && Object.keys(occurredAt).length) {
+      orBranches.push({
+        $and: [nonPtxMatch, { occurredAt }],
+      });
+    } else {
+      orBranches.push(nonPtxMatch);
+    }
+    match.$or = orBranches;
+  } else if (occurredAt && Object.keys(occurredAt).length) {
     match.occurredAt = occurredAt;
   }
 
@@ -1609,8 +1717,11 @@ export function buildRequestorCreditLedgerPipeline({
         extra: 1,
       }),
     );
-  } else if (occurredAt && Object.keys(occurredAt).length) {
-    // 월·기간 조회: 구간 전체를 그룹(과다 overfetch 불필요).
+  } else if (
+    useOrderDatePtxFilter ||
+    (occurredAt && Object.keys(occurredAt).length)
+  ) {
+    // 월·기간 조회(주문일 PTX 포함): 구간 전체를 그룹(과다 overfetch 불필요).
     pipeline.push(
       { $sort: { occurredAt: -1, _id: -1 } },
       lineGroupStage(),
@@ -2072,6 +2183,8 @@ export async function listPendingLabSettlementLedgerRows({
   refIdIn = null,
   usageScope = "all",
   limit = 200,
+  /** 있으면 heldAt 기간 대신 주문일(orderDates)로 기간을 가른다 */
+  orderDateRange = null,
 } = {}) {
   const labOid = labAnchorId
     ? new mongoose.Types.ObjectId(String(labAnchorId))
@@ -2104,7 +2217,17 @@ export async function listPendingLabSettlementLedgerRows({
       },
     ],
   };
-  if (occurredAt && typeof occurredAt === "object") {
+  const useOrderDateRange = Boolean(
+    orderDateRange?.fromYmd && orderDateRange?.toYmd,
+  );
+  if (useOrderDateRange) {
+    const dateFilter = buildPracticeTransferCalendarDateRangeFilter({
+      fromYmd: orderDateRange.fromYmd,
+      toYmd: orderDateRange.toYmd,
+      dateKey: "orderDate",
+    });
+    if (dateFilter) ptxMatch.$and.push(dateFilter);
+  } else if (occurredAt && typeof occurredAt === "object") {
     const heldAt = {};
     if (occurredAt.$gte) heldAt.$gte = occurredAt.$gte;
     if (occurredAt.$lte) heldAt.$lte = occurredAt.$lte;
@@ -2137,6 +2260,8 @@ export async function listPendingLabSettlementLedgerRows({
       billing: 1,
       toothWorks: 1,
       createdAt: 1,
+      orderDates: 1,
+      transferMemo: 1,
       "production.designFiles": 1,
       "production.designFileCount": 1,
       "production.relatedRequestIds": 1,
@@ -2148,7 +2273,14 @@ export async function listPendingLabSettlementLedgerRows({
 
   // CA settlement gate(STL·생산비)는 확정 적립·payout만 막는다.
   // 적립 보류 미러는 hold 중이면 보철만과 같이 노출(작업시작 후에도 CA 업로드 전 표시).
-  const visibleTransfers = transfers;
+  const visibleTransfers = useOrderDateRange
+    ? filterTransferDocsToCalendarRange(transfers, {
+        fromYmd: orderDateRange.fromYmd,
+        toYmd: orderDateRange.toYmd,
+        dateKey: "orderDate",
+      })
+    : transfers;
+  if (!visibleTransfers.length) return [];
 
   const transferIds = visibleTransfers.map((t) => t._id);
   const practiceIds = [
@@ -2368,7 +2500,10 @@ export async function listPendingLabSettlementLedgerRows({
       continue;
     }
 
+    const orderYmd = resolveCreditLedgerOrderYmdFromTransfer(doc);
+    const orderAt = creditLedgerDateFromOrderYmd(orderYmd);
     const occurredAtVal =
+      orderAt ||
       billing.heldAt ||
       holdMeta.occurredAt ||
       billing.billedAt ||
@@ -2395,6 +2530,7 @@ export async function listPendingLabSettlementLedgerRows({
       holdShare: "lab",
       occurredAt: occurredAtVal,
       createdAt: occurredAtVal,
+      orderDate: orderYmd || "",
       meta: {
         holdShare: "lab",
         displayLabel: "기공크레딧 적립",
