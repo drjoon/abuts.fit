@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/chat/chatSoundPlayer.ts
 // - web/frontend/src/shared/practice/openPracticeTransferChat.ts
 // change-log:
+// - 2026-11-03: 보기 — 이 창 역할 mode로 연다(잘못된 receive/send로 언마운트 방지).
 // - 2026-11-03: 보기 — pointerdown에서도 열어 토스트 닫힘과 클릭 경합을 줄인다.
 // - 2026-10-04: 포커스 없으면 헬퍼 OS 토스트(옆 창·다른 앱). 포커스만 in-app.
 // - 2026-10-04: 포커스 토스트 = 전역 공통 default(두꺼운 primary 테두리). alert 변형 폐기.
@@ -21,6 +22,7 @@ import {
   openPracticeTransferAlert,
   practiceTransferAlertHref,
   resolvePracticeTransferAlertAccountId,
+  resolvePracticeTransferAlertModeForAccount,
   type PracticeTransferAlertMode,
 } from "@/shared/practice/openPracticeTransferChat";
 
@@ -61,12 +63,17 @@ export const notifyPracticeTransferAlert = ({
   const ba = String(
     accountId || resolvePracticeTransferAlertAccountId(),
   ).trim();
+  // OS·헬퍼 href는 알림 원래 mode, 이 창에서 열 때는 역할에 맞는 mode.
   const href = id ? practiceTransferAlertHref(id, mode, ba) : "";
   let opened = false;
   const open = () => {
     if (!id || opened) return;
     opened = true;
-    openPracticeTransferAlert(id, mode, ba);
+    openPracticeTransferAlert(
+      id,
+      resolvePracticeTransferAlertModeForAccount(mode),
+      ba,
+    );
   };
 
   playChatNotifySound({ title, body, href });

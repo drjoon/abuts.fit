@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
 // - web/frontend/src/shared/navigation/appNavigate.ts
 // change-log:
+// - 2026-11-03: 보기 — 이 창 역할(send/receive)로 mode를 맞춤. 잘못된 mode는 스켈레톤 언마운트로 채팅이 사라짐.
 // - 2026-11-03: 보기 — pushState 대신 appNavigate(RR). 클릭한 창에서 바로 연다(헬퍼 선행 제거).
 // - 2026-10-21: 목록 페이지가 아니면 다른 브라우저 창(최소화 포함)의 수신함을 헬퍼로 앞으로 올려 연다.
 // - 2026-10-21: 다른 페이지(작업현황 등)에서 보기 — location.assign 대신 pushState+popstate(SPA 이동).
@@ -19,6 +20,7 @@
 // - 2026-09-07: 채팅 의뢰ID 클릭 → 작업현황(채팅) 열기 이벤트.
 
 import { useAuthStore } from "@/store/useAuthStore";
+import { normalizeRequestorKind } from "@/shared/business/requestorCapabilities";
 import { openLabHelperHref } from "@/shared/files/labHelperClient";
 import { appNavigate } from "@/shared/navigation/appNavigate";
 
@@ -217,6 +219,29 @@ const isPracticeTransferListPath = (pathname: string): boolean =>
   pathname.startsWith("/dashboard/practice-transfers") ||
   pathname.startsWith("/practice/dashboard");
 
+/**
+ * 이 로그인 계정이 열 수 있는 mode.
+ * 토스트·URL의 mode가 역할과 다르면 RequestorPracticePage가 스켈레톤으로
+ * 자식(채팅 리스너)을 언마운트해 보기가 무시된 것처럼 보인다.
+ */
+export const resolvePracticeTransferAlertModeForAccount = (
+  requested?: PracticeTransferAlertMode | null,
+): PracticeTransferAlertMode => {
+  const user = useAuthStore.getState().user as {
+    role?: string | null;
+    requestorKind?: string | null;
+  } | null;
+  const role = String(user?.role || "").trim();
+  if (role === "practice") return "send";
+  if (role === "internalLab") return "receive";
+  if (role === "requestor") {
+    const kind = normalizeRequestorKind(user?.requestorKind);
+    if (kind === "lab") return "receive";
+    if (kind === "practice") return "send";
+  }
+  return requested === "receive" || requested === "send" ? requested : "send";
+};
+
 const applyOpenHere = (
   transferId: string,
   mode: PracticeTransferAlertMode,
@@ -227,7 +252,9 @@ const applyOpenHere = (
   // 다른 계정 URL이 이 창에 떨어지면 채팅을 열지 않음
   if (ba && myBa && ba !== myBa) return;
   focusThisWindow();
-  const path = practiceTransferAlertPath(transferId, mode, ba);
+  // 이 창 역할에 맞는 mode로만 연다(잘못된 mode → 언마운트·채팅 소실 방지).
+  const modeHere = resolvePracticeTransferAlertModeForAccount(mode);
+  const path = practiceTransferAlertPath(transferId, modeHere, ba);
   if (!path) return;
   const onList = isPracticeTransferListPath(window.location.pathname || "");
   if (onList) {

@@ -7,6 +7,7 @@
  * - 하단: 스캔 전송 섹션이 남은 영역을 채움
  * - 최근 전송 카드 클릭 시 의뢰 정보 + 기공소 채팅 모달 제공
  * - 2026-10-27: 신규의뢰 드롭존 — ExoCAD(.dentalProject)·3Shape(.3ox·.3oxz·.dcm) 안내.
+ * - 2026-11-03: 알림 보기 — 주문 변경 등 상위 모달을 닫아 채팅이 가려지지 않게.
  * - 2026-11-03: 알림 보기 openTransferWorkStatusById — handleOpenTransferDialog deps 누락 보정.
  * - 2026-10-04: 수신(mode=receive)·다른 계정 ba의 openTransfer는 무시(기공소 탭으로).
  * - 2026-10-03: 알림 보기 — 목록에 없어도 의뢰를 불러 채팅을 연다.
@@ -5938,6 +5939,13 @@ export const PracticeFileTransferPage = ({
     if (keep !== "compose") setComposeOpen(false);
     if (keep !== "drafts") setDraftsOpen(false);
     if (keep !== "trash") setTrashOpen(false);
+    // 주문 변경(z-320)이 채팅(z-300) 위에 남으면 알림 보기가 무시된 것처럼 보인다.
+    setFollowUpDialogOpen(false);
+    setFollowUpDialogMode("create");
+    setFollowUpPreferredArrivalYmd(null);
+    if (keep === "chat" || keep === null) {
+      setLabRejectedReselectTarget(null);
+    }
   };
 
   const handleAdoptDraftTransfer = useCallback(
