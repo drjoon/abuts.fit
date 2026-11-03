@@ -6681,6 +6681,7 @@ export async function quoteProsthesisFollowUpFees({
   toothWorks,
   sourceToothWorks = null,
   transferDoc = null,
+  remake = false,
 }) {
   const feeScheduleLabId = transferDoc
     ? resolveFeeScheduleLabAnchorId(transferDoc) || labAnchorId
@@ -6688,13 +6689,14 @@ export async function quoteProsthesisFollowUpFees({
   const multiplierLabId = transferDoc
     ? resolveLabFeeMultiplierLabAnchorId(transferDoc) || feeScheduleLabId
     : labAnchorId;
+  const remakePricing = Boolean(remake);
   const quote = await buildPracticeTransferQuote({
     practiceAnchorId,
     labAnchorId: feeScheduleLabId,
     labFeeMultiplierLabAnchorId: multiplierLabId,
     toothWorks,
     skipAbutmentFees: true,
-    remake: false,
+    remake: remakePricing,
     matchingMode: "direct",
     rushFeeMultiplier: rushFeeMultiplierFromTransfer(transferDoc),
     feeSnapshot: frozenPracticeTransferFeeSnapshot(transferDoc?.billing),
@@ -6710,7 +6712,8 @@ export async function quoteProsthesisFollowUpFees({
   );
 
   let tempCreditLabFeeTotal = 0;
-  if (tempRows.length > 0) {
+  // 리메이크 무료면 원 단계 차감 불필요(이미 0).
+  if (!remakePricing && tempRows.length > 0) {
     const tempQuote = await buildPracticeTransferQuote({
       practiceAnchorId,
       labAnchorId: feeScheduleLabId,

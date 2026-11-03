@@ -1168,6 +1168,7 @@ const serializeProsthesisFollowUpsForApi = (followUps) =>
       ? row.toothNumbers.map((t) => String(t || "").trim()).filter(Boolean)
       : [],
     billingDelta: row?.billingDelta || null,
+    isRemake: Boolean(row?.isRemake),
     followUpIndex:
       row?.followUpIndex != null ? Math.max(0, Math.floor(Number(row.followUpIndex))) : 0,
     previousArrivalYmd: String(row?.previousArrivalYmd || "").trim(),
@@ -5253,10 +5254,15 @@ export async function appendPracticeTransferProsthesis(req, res) {
       Array.isArray(req.body?.toothWorks) && req.body.toothWorks.length > 0
         ? req.body.toothWorks
         : buildFollowUpToothWorksDraft(sourceToothWorks);
+    const isRemakeRequest = Boolean(
+      req.body?.isRemake === true ||
+        String(req.body?.isRemake || "").trim() === "true",
+    );
 
     const validated = validateFollowUpToothWorksAgainstSource(
       sourceToothWorks,
       requestedRows,
+      { isRemake: isRemakeRequest },
     );
     if (!validated.ok) {
       return res.status(400).json({
@@ -5268,6 +5274,9 @@ export async function appendPracticeTransferProsthesis(req, res) {
     const followUpRows = validated.rows;
     const followUpKind =
       validated.followUpKind === "typeChange" ? "typeChange" : "temp";
+    // 주문 변경 리메이크만 무료. 임시치아→지르는 단계 최고가 청구 유지.
+    const isRemakeFollowUp =
+      isRemakeRequest && followUpKind === "typeChange";
     try {
       assertAbutmentPresetsComplete(followUpRows);
     } catch (presetErr) {
@@ -5293,6 +5302,7 @@ export async function appendPracticeTransferProsthesis(req, res) {
       toothWorks: followUpRows,
       sourceToothWorks,
       transferDoc: doc,
+      remake: isRemakeFollowUp,
     });
     const deltaFees = feeQuote?.fees || {};
     const billingDelta = feeQuote?.billingDelta || {
@@ -5318,7 +5328,8 @@ export async function appendPracticeTransferProsthesis(req, res) {
       ),
     );
 
-    if (finalLabFee <= 0) {
+    // 리메이크 무료(LAB_FEE_REMAKE_FREE)는 finalLabFee=0이 정상.
+    if (finalLabFee <= 0 && !isRemakeFollowUp) {
       return res.status(409).json({
         success: false,
         message: "기공소 수가가 설정되지 않아 후속 보철을 추가할 수 없습니다.",
@@ -5453,6 +5464,7 @@ export async function appendPracticeTransferProsthesis(req, res) {
           billingDelta.lines || feeQuote?.grossFees?.lines,
         ),
       },
+      ...(isRemakeFollowUp ? { isRemake: true } : {}),
       followUpIndex,
       previousArrivalYmd: String(appended.previousYmd || "").trim(),
       previousOrderYmd: String(appended.previousOrderYmd || "").trim(),
@@ -5608,7 +5620,11 @@ export async function appendPracticeTransferProsthesis(req, res) {
 
     const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
     const chatTitle =
-      followUpKind === "typeChange" ? "주문 변경" : "후속 보철 추가";
+      followUpKind === "typeChange"
+        ? isRemakeFollowUp
+          ? "주문 변경 · 리메이크"
+          : "주문 변경"
+        : "후속 보철 추가";
     const typeChangeFromBySpanKey =
       followUpKind === "typeChange"
         ? buildTypeChangeFromBySpanKeyOnAppend(sourceToothWorks, followUpRows)
@@ -5629,6 +5645,7 @@ export async function appendPracticeTransferProsthesis(req, res) {
           arrivalYmd: rawYmd,
           followUpIndex,
           followUpKind,
+          ...(isRemakeFollowUp ? { isRemake: true } : {}),
           stageKey: zirconiaProsthesisFeeStageKey(followUpIndex),
           billingDelta: followUpRecord.billingDelta || null,
           toothWorks: serializeFollowUpToothWorksForChatPayload(followUpRows),
@@ -5642,6 +5659,7 @@ export async function appendPracticeTransferProsthesis(req, res) {
             ? "prosthesis-type-change"
             : "prosthesis-follow-up",
         followUpKind,
+        ...(isRemakeFollowUp ? { isRemake: true } : {}),
         transferId: String(updated.transferId || "").trim(),
         transferMongoId: String(updated._id || ""),
         targetLabAnchorId: targetLabAnchorIdText || null,

@@ -517,11 +517,14 @@ export function PracticeTransferSystemChatBody({
       ? "typeChange"
       : "temp";
     const followUpKind = followUpKindFromPayload || followUpKindFromContent;
+    const followUpIsRemake = Boolean(payload?.isRemake);
     const followUpChatTitle =
       followUpKind === "typeChange"
         ? isTypeChangeFollowUpUpdate
           ? "주문 변경 수정"
-          : "주문 변경"
+          : followUpIsRemake
+            ? "주문 변경 · 리메이크"
+            : "주문 변경"
         : "후속 보철 추가";
     // 표시는 추가 지르만. 견적·부분후속 판별은 전체 toothWorks(남은 임시치아 포함).
     const feeToothWorks =

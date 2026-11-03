@@ -649,6 +649,8 @@ export type ProsthesisFollowUpRecord = {
   orderYmd?: string | null;
   toothNumbers?: string[];
   followUpIndex?: number;
+  /** 주문 변경 리메이크 — 기공비 무료 */
+  isRemake?: boolean;
   previousArrivalYmd?: string | null;
   previousOrderYmd?: string | null;
   labAcceptedAt?: string | null;

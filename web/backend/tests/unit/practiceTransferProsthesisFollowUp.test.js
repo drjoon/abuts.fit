@@ -259,6 +259,27 @@ describe("practiceTransferProsthesisFollowUp", () => {
     expect(validated.ok).toBe(false);
   });
 
+  test("type-change allows identical order when isRemake", () => {
+    const source = [
+      { toothNumber: "46", prosthesisType: "크라운", bridgeLinkedTeeth: ["46"] },
+    ];
+    const same = [
+      {
+        toothNumber: "46",
+        prosthesisType: "크라운",
+        prosthesisPhase: "followUp",
+        bridgeLinkedTeeth: ["46"],
+      },
+    ];
+    const rejected = validateFollowUpToothWorksAgainstSource(source, same);
+    expect(rejected.ok).toBe(false);
+    const validated = validateFollowUpToothWorksAgainstSource(source, same, {
+      isRemake: true,
+    });
+    expect(validated.ok).toBe(true);
+    expect(validated.followUpKind).toBe("typeChange");
+  });
+
   test("type-change remake allows same type when abutment or shade changes", () => {
     const source = [
       {

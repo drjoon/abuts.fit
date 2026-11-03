@@ -23,9 +23,10 @@
  * - 2026-09-15: 제작 의뢰 시 도착일 팝오버를 먼저 열어 확정하게 함.
  * - 2026-09-15: 제작 변경 — pending 후속 지르 표시(단계 포커스 필터 없음).
  * - 2026-09-15: 지르 제작·변경 모달 — 이번 단계 견적만(최종 기공비 숨김).
+ * - 2026-11-03: 주문 변경 — 리메이크 체크(기공비 무료·동일 스펙 허용).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock } from "lucide-react";
+import { CalendarClock, Repeat } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -35,11 +36,13 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { cn } from "@/shared/ui/cn";
 import {
   PracticeCustomAbutmentSpecsDialog,
   prepareCustomAbutmentSpecsOpenRow,
@@ -105,6 +108,8 @@ type Props = {
   onConfirm: (payload: {
     arrivalYmd: string;
     toothWorks: FollowUpRow[];
+    /** 주문 변경 리메이크 — 기공비 무료 */
+    isRemake?: boolean;
   }) => void | Promise<void>;
   implantConnections?: ImplantConnection[];
   implantFavorites?: PracticeImplantFavorite[];
@@ -238,6 +243,7 @@ export function PracticeProsthesisFollowUpDialog({
   );
   const [arrivalPickerOpen, setArrivalPickerOpen] = useState(false);
   const [arrivalDraft, setArrivalDraft] = useState<Date | undefined>(undefined);
+  const [isRemake, setIsRemake] = useState(false);
 
   const todayYmd = useMemo(() => toKstYmd(new Date()) || "", []);
   const orderYmd = String(orderDate || "").trim() || todayYmd;
@@ -267,16 +273,27 @@ export function PracticeProsthesisFollowUpDialog({
       const sourceRow = sourceRowBySpan.get(key);
       const nextType = String(row.prosthesisType || "").trim();
       if (!isFinalProsthesisType(nextType)) return false;
-      // create만: 원본과 완전 동일하면 거부. edit는 도착일만 변경 OK.
-      if (!isEdit && !hasToothWorkOrderChange(sourceRow, row)) return false;
+      // create만: 원본과 완전 동일하면 거부(리메이크면 허용). edit는 도착일만 변경 OK.
+      if (!isEdit && !isRemake && !hasToothWorkOrderChange(sourceRow, row)) {
+        return false;
+      }
       return true;
     });
-  }, [isEdit, isTypeChange, selectedRows, sourceRowBySpan]);
+  }, [isEdit, isRemake, isTypeChange, selectedRows, sourceRowBySpan]);
+
+  const creditToothWorksForFee = useMemo(() => {
+    if (!isTypeChange || isRemake) return null;
+    const rows = Array.from(sourceRowBySpan.values()).filter(
+      (row) => String(row?.toothNumber || "").trim(),
+    );
+    return rows.length > 0 ? (rows as ToothWorkSelection[]) : null;
+  }, [isRemake, isTypeChange, sourceRowBySpan]);
 
   useEffect(() => {
     if (!open) return;
     setArrivalDate(String(defaultArrivalYmd || "").trim());
     setArrivalPickerOpen(!isEdit);
+    setIsRemake(false);
     const nextMap = new Map<string, FollowUpRow>();
     for (const row of draftRows) {
       nextMap.set(followUpRowSpanKey(row), row);
@@ -653,6 +670,41 @@ export function PracticeProsthesisFollowUpDialog({
               </dl>
             </section>
 
+            {!isEdit && isTypeChange ? (
+              <div
+                className={cn(
+                  "rounded-lg border px-3 py-2.5",
+                  isRemake
+                    ? "border-amber-300 bg-amber-50/80"
+                    : "border-slate-200 bg-slate-50/60",
+                )}
+              >
+                <label className="flex cursor-pointer items-start gap-2.5">
+                  <Checkbox
+                    checked={isRemake}
+                    disabled={busy}
+                    onCheckedChange={(next) => setIsRemake(next === true)}
+                    className="mt-0.5"
+                    aria-label="리메이크"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <p className="text-xs leading-snug text-muted-foreground">
+                      <Repeat
+                        className="mr-1 inline h-3.5 w-3.5 shrink-0 -translate-y-px text-amber-700"
+                        aria-hidden
+                      />
+                      <span className="font-semibold text-slate-900">
+                        리메이크.
+                      </span>{" "}
+                      {isRemake
+                        ? "기공비는 무료입니다. 같은 스펙이어도 의뢰할 수 있습니다."
+                        : "이전에 받은 보철을 다시 제작할 때 선택하세요."}
+                    </p>
+                  </span>
+                </label>
+              </div>
+            ) : null}
+
             <div className="space-y-2 overflow-visible pb-1">
               {availableRows.length > 0 ? (
                 <>
@@ -662,6 +714,8 @@ export function PracticeProsthesisFollowUpDialog({
                     labAnchorId={labAnchorId}
                     feeViewer="practice"
                     skipAbutmentFees
+                    creditToothWorks={creditToothWorksForFee}
+                    remake={isRemake && isTypeChange}
                     embedded
                     selectable={!isEdit}
                     selectedSpanKeys={selectedSpanKeys}
@@ -690,7 +744,9 @@ export function PracticeProsthesisFollowUpDialog({
                   !orderChangeValid &&
                   selectedRows.length > 0 ? (
                     <p className="text-[12px] text-amber-700">
-                      보철물 카드에서 변경할 항목을 수정해 주세요.
+                      보철물 카드에서 변경할 항목을 수정하거나
+                      <br />
+                      리메이크를 선택해 주세요.
                     </p>
                   ) : null}
                 </>
@@ -723,6 +779,7 @@ export function PracticeProsthesisFollowUpDialog({
               void onConfirm({
                 arrivalYmd: String(arrivalDate || "").trim(),
                 toothWorks: selectedRows,
+                ...(isTypeChange && isRemake ? { isRemake: true } : {}),
               })
             }
           >
@@ -731,7 +788,9 @@ export function PracticeProsthesisFollowUpDialog({
               : isEdit
                 ? "변경 적용"
                 : isTypeChange
-                  ? "주문 변경 의뢰"
+                  ? isRemake
+                    ? "리메이크 의뢰"
+                    : "주문 변경 의뢰"
                   : "지르 제작 의뢰"}
           </Button>
         </DialogFooter>

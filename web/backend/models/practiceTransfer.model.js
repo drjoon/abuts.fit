@@ -484,6 +484,8 @@ const practiceTransferSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.Mixed,
             default: undefined,
           },
+          /** 주문 변경 리메이크 — 치과의뢰 수신하기 기공비 무료 */
+          isRemake: { type: Boolean, default: false },
           followUpIndex: { type: Number, default: 0 },
           previousArrivalYmd: { type: String, default: "", trim: true },
           previousOrderYmd: { type: String, default: "", trim: true },

@@ -5083,6 +5083,7 @@ export const PracticeFileTransferPage = ({
     async (payload: {
       arrivalYmd: string;
       toothWorks: ToothWorkSelection[];
+      isRemake?: boolean;
     }) => {
       if (!authToken || !selectedTransfer) return;
       const transferId = String(selectedTransfer.transferId || "").trim();
@@ -5094,6 +5095,7 @@ export const PracticeFileTransferPage = ({
         });
         return;
       }
+      const isRemakeAppend = Boolean(payload.isRemake);
       setAppendProsthesisBusy(true);
       try {
         const res = await apiFetch<{
@@ -5116,12 +5118,13 @@ export const PracticeFileTransferPage = ({
           jsonBody: {
             arrivalYmd: payload.arrivalYmd,
             toothWorks: payload.toothWorks,
+            ...(isRemakeAppend ? { isRemake: true } : {}),
           },
         });
         if (!res.ok) {
           const body = res.data && typeof res.data === "object" ? res.data : {};
           toast({
-            title: "최종 보철 제작 실패",
+            title: isRemakeAppend ? "리메이크 의뢰 실패" : "최종 보철 제작 실패",
             description:
               String((body as { message?: string }).message || "").trim() ||
               "다시 시도해주세요.",
@@ -5133,10 +5136,12 @@ export const PracticeFileTransferPage = ({
         setFollowUpDialogOpen(false);
         setFollowUpDialogMode("create");
         toast({
-          title: "최종 보철 제작",
+          title: isRemakeAppend ? "리메이크 의뢰" : "최종 보철 제작",
           description:
             res.data?.message ||
-            "같은 의뢰 건에 최종 보철 제작을 의뢰했습니다.",
+            (isRemakeAppend
+              ? "같은 의뢰 건에 리메이크를 의뢰했습니다. 기공비는 무료입니다."
+              : "같은 의뢰 건에 최종 보철 제작을 의뢰했습니다."),
         });
         setSelectedTransfer((prev) => {
           if (!prev) return prev;
@@ -5416,7 +5421,11 @@ export const PracticeFileTransferPage = ({
   );
 
   const handleFollowUpDialogConfirm = useCallback(
-    async (payload: { arrivalYmd: string; toothWorks: ToothWorkSelection[] }) => {
+    async (payload: {
+      arrivalYmd: string;
+      toothWorks: ToothWorkSelection[];
+      isRemake?: boolean;
+    }) => {
       if (followUpDialogMode === "edit") {
         await handleUpdateProsthesisFollowUp({
           arrivalYmd: payload.arrivalYmd,

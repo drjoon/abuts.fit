@@ -12,6 +12,7 @@
 // - 2026-09-01: 임시치아 배송 후 동일 건에 크라운/브리지 후속 추가(어벗 재청구 없음).
 // - 2026-09-21: 보철 종류 변경 리메이크(인레이→크라운 등) — 임시치아→지르와 동일, 단계 최고가만 청구.
 // - 2026-09-23: 주문 변경 — 동일 종류라도 어벗·쉐이드·임플란트 스펙 차이면 허용.
+// - 2026-11-03: 주문 변경 isRemake — 동일 스펙도 허용, 기공비 무료(LAB_FEE_REMAKE_FREE).
 // - 2026-09-28: buildToothWorkDisplayByTooth — FE와 같이 후속 스팬 연결치는 원 행이 있어도 후속 형태.
 // - 2026-09-28: 차트 CA·스펙은 원 입력만(9/22 후속 CA 우선 철회). 치아별 후속 행이 겹쳐도 원 행 기준.
 import { isPracticeTransferDeletedStatus } from "./practiceTransferStage.js";
@@ -682,7 +683,9 @@ export const canAppendProsthesisFollowUp = (
 export const validateFollowUpToothWorksAgainstSource = (
   sourceToothWorks,
   followUpRows,
+  options = {},
 ) => {
+  const allowIdenticalRemake = Boolean(options?.isRemake);
   const pending = listPendingFollowUpSourceSpans(sourceToothWorks);
   const pendingByKey = new Map(
     pending.map((span) => [spanKey(span.teeth), span]),
@@ -721,10 +724,13 @@ export const validateFollowUpToothWorksAgainstSource = (
           message: "변경할 보철 종류는 인레이·크라운·브리지만 가능합니다.",
         };
       }
-      if (!hasToothWorkOrderChange(sourceSpan.sourceRow, row)) {
+      if (
+        !allowIdenticalRemake &&
+        !hasToothWorkOrderChange(sourceSpan.sourceRow, row)
+      ) {
         return {
           ok: false,
-          message: `${linked.join(", ")}은(는) 변경 사항이 없습니다. 형태·어벗·쉐이드 등을 바꾸거나 일반 리메이크를 이용하세요.`,
+          message: `${linked.join(", ")}은(는) 변경 사항이 없습니다. 형태·어벗·쉐이드 등을 바꾸거나 리메이크를 선택하세요.`,
         };
       }
     }

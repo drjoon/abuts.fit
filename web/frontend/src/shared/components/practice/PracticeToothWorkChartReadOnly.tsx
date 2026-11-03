@@ -26,6 +26,7 @@
 // - 2026-09-15: 최종 기공비 — toothWorksForFinalProsthesisFeeQuote(followUp CA 스킵 우회).
 // - 2026-09-27: compact 보철 카드·견적을 가로 가운데. 넘치면 공통 가로 스크롤.
 // - 2026-10-27: 하악만 있는 차트 — 견적을 카드 아래로. embedded는 금액 blur 해제.
+// - 2026-11-03: remake prop — 주문 변경 리메이크 기공비 무료 견적.
 // - 2026-10-27: 브리지 이음 — 연결 마크를 다음 카드 위로. 맞닿은 면 테두리·링을 없앤다.
 // - 2026-09-02: byTooth가 연결치에 첫 행을 덮어 13-12-11 브리지에서 11 연결·스펙이 끊기던 버그 수정.
 import { useMemo, useState, useRef, useEffect, type PointerEvent as ReactPointerEvent } from "react";
@@ -218,6 +219,8 @@ type PracticeToothWorkChartReadOnlyProps = {
   skipAbutmentFees?: boolean;
   /** 후속 제작 — 원 임시치아 기공비 차감 */
   creditToothWorks?: ToothWorkSelection[] | null;
+  /** 주문 변경 리메이크 — 기공비 무료 견적 */
+  remake?: boolean;
   /** 상단「보철물 (N개)」헤더 */
   showHeader?: boolean;
   /** 모달 등 좁은 영역 — 카드 클립·이중 테두리 완화 */
@@ -285,6 +288,7 @@ export const PracticeToothWorkChartReadOnly = ({
   skipJig = false,
   skipAbutmentFees = false,
   creditToothWorks = null,
+  remake: remakeProp = false,
   showHeader = true,
   embedded = false,
   enlargeOverlayClassName,
@@ -672,6 +676,7 @@ export const PracticeToothWorkChartReadOnly = ({
   const storedLinesEmpty =
     !Array.isArray(storedFeeQuote?.lines) || storedFeeQuote.lines.length === 0;
   const storedIsRemakeQuote = Boolean(storedFeeQuote?.isRemake);
+  const remakeQuote = Boolean(remakeProp || storedIsRemakeQuote);
   const hasStoredFeeStages =
     Array.isArray(prosthesisFeeStages) &&
     prosthesisFeeStages.some(
@@ -685,7 +690,7 @@ export const PracticeToothWorkChartReadOnly = ({
     enabled:
       !storedFeeQuote ||
       storedFeeQuote.labFeeConfigured === false ||
-      (storedFeeQuote.total <= 0 && !storedIsRemakeQuote) ||
+      (storedFeeQuote.total <= 0 && !remakeQuote) ||
       // 확정 금액만 있고 내역 lines가 비면 live 재계산으로 툴팁을 채운다.
       (storedFeeQuote.total > 0 && storedLinesEmpty) ||
       // 단계 스냅샷이 없으면 live로 임시/지르 섹션을 재구성한다.
@@ -698,7 +703,7 @@ export const PracticeToothWorkChartReadOnly = ({
     storedQuote: storedFeeQuote,
     skipAbutmentFees,
     creditToothWorks,
-    remake: storedIsRemakeQuote,
+    remake: remakeQuote,
   });
   const feeStages = useMemo((): PracticeFeeStageSection[] | null => {
     if (hasStoredFeeStages) {
