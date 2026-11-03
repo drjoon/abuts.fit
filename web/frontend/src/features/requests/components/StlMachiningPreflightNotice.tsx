@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-03: 마진 fillet·공구 R 문구/수치를 marginFilletInspection 공통 SSOT로 맞춤(제조사 PreviewModal과 동일).
 // - 2026-10-27: 공구 R이 예전 0.60으로 오면 실제 절삭 반경 0.50으로 보여 준다.
 // - 2026-10-24: 가공 경고 — 수치와 안내를 위아래로 나눠 한 줄에 읽히게.
 // - 2026-10-24: 가공 검사 결과에 포스트 길이(max_z→포스트 탑)를 싣는다.
@@ -12,13 +13,15 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useStlMachiningPreflight.ts
 // - web/backend/services/abutmentStl/preflight.service.js
 // - web/frontend/src/shared/components/practice/AbutmentModelConfirmDialog.tsx
+// - web/frontend/src/features/requests/utils/marginFilletInspection.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 import type { StlMetadata } from "@/features/requests/hooks/useStlMetadata";
 import {
-  FINISH_TOOL_RADIUS_MM,
-  displayFinishToolRadiusMm,
-} from "@/features/requests/utils/finishToolRadius";
+  MARGIN_FILLET_TIGHT_NOTES,
+  formatToolRadiusMm,
+} from "@/features/requests/utils/marginFilletInspection";
 
 export type StlMachiningPreflight = {
   status: "checking" | "tight" | "ok" | "unknown";
@@ -35,10 +38,6 @@ export type StlMachiningPreflight = {
   /** 피니시라인 max_z에서 포스트 탑까지(mm). 피니시라인이 없으면 null. */
   postLengthMm?: number | null;
 };
-
-function formatToolRadiusMm(toolRadiusMm?: number | null) {
-  return displayFinishToolRadiusMm(toolRadiusMm).toFixed(2);
-}
 
 const dockShell = "overflow-hidden rounded-xl border";
 
@@ -97,9 +96,9 @@ export function StlMachiningPreflightNotice({
               </p>
             ) : null}
             <p className={cn("text-sm leading-relaxed", showFilletMetric && "mt-1")}>
-              마진 코너가 깊게 패입니다.
+              {MARGIN_FILLET_TIGHT_NOTES[0]}
               <br />
-              반경 {FINISH_TOOL_RADIUS_MM.toFixed(1)}mm 이상으로 둥글게 디자인해 주세요.
+              {MARGIN_FILLET_TIGHT_NOTES[1]}
             </p>
           </div>
         </div>

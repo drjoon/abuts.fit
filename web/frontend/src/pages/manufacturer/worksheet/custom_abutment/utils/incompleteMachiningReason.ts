@@ -1,24 +1,22 @@
 // 불완전 뱃지가 붙은 이유를 문장으로 만든다. 카드 툴팁과 프리뷰 하단이 같은 문장을 쓴다.
+// 마진 fillet·공구 R 수치/문구는 features/requests/utils/marginFilletInspection SSOT.
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/tightCornerReview.ts
+// - web/frontend/src/features/requests/utils/marginFilletInspection.ts
 
 import {
-  FINISH_TOOL_RADIUS_MM,
-  finishToolRadiusMm,
-} from "@/features/requests/utils/finishToolRadius";
+  MARGIN_FILLET_TIGHT_NOTES,
+  minFilletRadiusMm,
+  pickPreferredTightCorner,
+  toolRadiusMmFromTightCorner,
+  usableTightCornerMeta,
+  type MarginFilletTightCorner,
+} from "@/features/requests/utils/marginFilletInspection";
 import { isTightCornerCorrectionRequired } from "./tightCornerReview";
 
-export type IncompleteMachiningTightCorner = {
-  tightCount?: number;
-  needsCorrectionReview?: boolean;
-  averageFilletRadiusMm?: number | null;
-  toolDiameterMm?: number | null;
-  samples?: Array<{ filletRadiusMm?: number | null }> | null;
-  correctionSolid?: { positions?: number[] } | null;
-  reliefOverlay?: { positions?: number[] } | null;
-};
+export type IncompleteMachiningTightCorner = MarginFilletTightCorner;
 
 function finite(value: unknown): number | null {
   const n = Number(value);
@@ -29,50 +27,12 @@ function mm(value: number): string {
   return value.toFixed(2);
 }
 
-function toolRadiusMm(toolDiameterMm: unknown): number {
-  return finishToolRadiusMm(finite(toolDiameterMm));
-}
-
-function minFilletRadiusMm(
-  samples: IncompleteMachiningTightCorner["samples"],
-): number | null {
-  if (!Array.isArray(samples) || samples.length === 0) return null;
-  let min: number | null = null;
-  for (const sample of samples) {
-    const radius = finite(sample?.filletRadiusMm);
-    if (radius == null) continue;
-    if (min == null || radius < min) min = radius;
-  }
-  return min;
-}
-
-/** 목록 응답은 건수만 있고, STL 메타는 평균·샘플을 가진다. 있는 숫자를 남긴다. */
+/** 목록 응답은 건수만 있고, STL 메타는 평균·샘플을 가진다. 있는 숫자를 남긴다. 버전 높은 쪽을 고른다. */
 export function mergeTightCornerDetail(
   primary?: IncompleteMachiningTightCorner | null,
   fallback?: IncompleteMachiningTightCorner | null,
 ): IncompleteMachiningTightCorner | null {
-  if (!primary) return fallback ?? null;
-  if (!fallback) return primary;
-  const primarySamples =
-    Array.isArray(primary.samples) && primary.samples.length > 0
-      ? primary.samples
-      : null;
-  return {
-    ...fallback,
-    ...primary,
-    averageFilletRadiusMm:
-      finite(primary.averageFilletRadiusMm) ?? fallback.averageFilletRadiusMm,
-    toolDiameterMm:
-      finite(primary.toolDiameterMm) != null && Number(primary.toolDiameterMm) > 0
-        ? primary.toolDiameterMm
-        : fallback.toolDiameterMm,
-    tightCount: finite(primary.tightCount) ?? fallback.tightCount,
-    samples: primarySamples ?? fallback.samples,
-    needsCorrectionReview:
-      typeof primary.needsCorrectionReview === "boolean"
-        ? primary.needsCorrectionReview
-        : fallback.needsCorrectionReview,
-  };
+  return pickPreferredTightCorner(primary, fallback);
 }
 
 export type IncompleteMachiningReasonStat = {
@@ -88,7 +48,7 @@ export type IncompleteMachiningReasonCard = {
 function tightCornerCard(
   tightCorner: IncompleteMachiningTightCorner,
 ): IncompleteMachiningReasonCard {
-  const tool = toolRadiusMm(tightCorner.toolDiameterMm);
+  const tool = toolRadiusMmFromTightCorner(tightCorner);
   const average = finite(tightCorner.averageFilletRadiusMm);
   const narrowest = minFilletRadiusMm(tightCorner.samples);
   const count = finite(tightCorner.tightCount);
@@ -103,10 +63,7 @@ function tightCornerCard(
 
   return {
     stats,
-    notes: [
-      "마진 코너가 깊게 패입니다.",
-      `반경 ${FINISH_TOOL_RADIUS_MM.toFixed(1)}mm 이상으로 둥글게 디자인해 주세요.`,
-    ],
+    notes: [...MARGIN_FILLET_TIGHT_NOTES],
   };
 }
 
@@ -138,9 +95,10 @@ export function incompleteMachiningReasonCard(input: {
 }): IncompleteMachiningReasonCard {
   const stats: IncompleteMachiningReasonStat[] = [];
   const notes: string[] = [];
-  const tight = isTightCornerCorrectionRequired(input.tightCorner);
-  if (tight && input.tightCorner) {
-    const tightCard = tightCornerCard(input.tightCorner);
+  const usable = usableTightCornerMeta(input.tightCorner);
+  const tight = isTightCornerCorrectionRequired(usable);
+  if (tight && usable) {
+    const tightCard = tightCornerCard(usable);
     stats.push(...tightCard.stats);
     notes.push(...tightCard.notes);
   }
@@ -172,8 +130,9 @@ export function incompleteMachiningReasonLines(input: {
   unmachinable?: boolean;
   unmachinableReason?: string | null;
 }): string[] {
-  const card = incompleteMachiningReasonCard(input);
-  const tight = isTightCornerCorrectionRequired(input.tightCorner);
+  const usable = usableTightCornerMeta(input.tightCorner);
+  const card = incompleteMachiningReasonCard({ ...input, tightCorner: usable });
+  const tight = isTightCornerCorrectionRequired(usable);
   const lines = tight ? tightCornerLines(card) : [];
   for (const note of card.notes) {
     if (!lines.includes(note)) lines.push(note);

@@ -1,17 +1,21 @@
 // related files:
 // - web/backend/utils/tightCornerReview.js
 // - web/frontend/src/features/requests/hooks/useStlMetadata.ts
+// - web/frontend/src/features/requests/utils/marginFilletInspection.ts
 
-/** fillet R < 공구 R(0.5mm) — 보정 솔리드가 메타에 담긴 경우 */
+import { isCurrentTightCornerMeta } from "@/features/requests/utils/marginFilletInspection";
+
+/** fillet R < 공구 R(0.5mm) — 보정 솔리드가 메타에 담긴 경우. 구버전(v9 미만)은 오검사라 무시. */
 export function isTightCornerCorrectionRequired(
   tightCorner: {
+    version?: number | null;
     tightCount?: number;
     needsCorrectionReview?: boolean;
     correctionSolid?: { positions?: number[] } | null;
     reliefOverlay?: { positions?: number[] } | null;
   } | null | undefined,
 ): boolean {
-  if (!tightCorner || typeof tightCorner !== "object") return false;
+  if (!isCurrentTightCornerMeta(tightCorner)) return false;
   if (typeof tightCorner.needsCorrectionReview === "boolean") {
     return tightCorner.needsCorrectionReview;
   }

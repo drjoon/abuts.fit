@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-03: tightCorner v9 미만(피니시라인 날 R0 오검사) 오버레이·칩을 그리지 않는다.
 // - 2026-10-27: 공구 R 표시는 실제 절삭 반경 0.5mm. 예전 메타의 호칭 직경 1.2는 0.6으로 나누지 않는다.
 // - 2026-10-17: 프론트포인트(녹색점)를 finishLineVisible(또는 frontPointVisible)과 함께 on/off.
 // - 2026-10-14: 캔버스 픽셀 비율을 화면 칸에 맞춰 원이 타원이 되지 않게.
@@ -62,6 +63,10 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { cn } from "@/shared/ui/cn";
 import { finishToolRadiusMm } from "@/features/requests/utils/finishToolRadius";
+import {
+  formatToolRadiusMm,
+  isCurrentTightCornerMeta,
+} from "@/features/requests/utils/marginFilletInspection";
 import { PreviewColorMappingToggle } from "@/shared/components/PreviewAnnotateActions";
 import {
   createModelPreviewMaterial,
@@ -2484,7 +2489,9 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
         const tightCornerMeta = latestMetadata?.tightCorner;
         const tightOnFilled =
           showOverlay && isFilled && hasFinishLine && Boolean(finishLinePoints);
+        // v9 미만은 피니시라인 날 R0 오검사라 라벨·솔리드를 그리지 않는다(의뢰자 preflight와 동일).
         if (
+          isCurrentTightCornerMeta(tightCornerMeta) &&
           tightCornerMeta &&
           (tightCornerMeta.tightCount ?? 0) > 0 &&
           (tightOnFilled || showTightCorner)
@@ -3341,11 +3348,14 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     isFilledFile,
   ]);
 
-  const tightRSamples = (resolvedMetadata?.tightCorner?.samples ?? [])
+  const usableTightCorner = isCurrentTightCornerMeta(resolvedMetadata?.tightCorner)
+    ? resolvedMetadata?.tightCorner
+    : null;
+  const tightRSamples = (usableTightCorner?.samples ?? [])
     .map((s) => Number(s?.filletRadiusMm))
     .filter((v) => Number.isFinite(v));
   const averageFilletRadiusMm =
-    resolvedMetadata?.tightCorner?.averageFilletRadiusMm ??
+    usableTightCorner?.averageFilletRadiusMm ??
     (tightRSamples.length
       ? tightRSamples.reduce((a, b) => a + b, 0) / tightRSamples.length
       : null);
@@ -3374,7 +3384,10 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           <div className="text-sm font-bold leading-tight tabular-nums text-red-600">
             {averageFilletRadiusMm.toFixed(2)} mm
             <span className="ml-1 text-[10px] font-medium text-slate-400">
-              / 공구 R {finishToolRadiusMm(resolvedMetadata?.tightCorner?.toolDiameterMm).toFixed(2)}
+              / 공구 R{" "}
+              {formatToolRadiusMm(
+                finishToolRadiusMm(usableTightCorner?.toolDiameterMm),
+              )}
             </span>
           </div>
         </div>

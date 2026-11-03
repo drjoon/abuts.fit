@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-10-27: 보정 솔리드 안내를 실제 절삭 반경 R0.5로. 호칭 Ø1.2의 예전 R0.6은 쓰지 않는다.
 // - 2026-10-25: 코너 필레 정보 카드 on/off. 그리드·안내와 같이 저장.
+// - 2026-11-03: 공구R·마진 fillet 안내는 의뢰자 StlMachiningPreflightNotice 공통. 구버전 R0 메타는 숨김.
 // - 2026-10-24: 마진 필레만 약한 건은 불완전가공 확인 뱃지에서 뺀다.
 // - 2026-10-23: 불완전 사유 카드는 오른쪽 STL 우하단. 전체 평균 fillet 칩은 숨김.
 // - 2026-10-22: body 포털 토스트 클릭 시 outside dismiss 막음(keepOpenOnToastInteract).
@@ -149,6 +150,11 @@ import {
 } from "../utils/incompleteMachiningReason";
 import { IncompleteMachiningReasonCardView } from "./IncompleteMachiningReasonCard";
 import { isTightCornerCorrectionRequired } from "../utils/tightCornerReview";
+import { StlMachiningPreflightNotice } from "@/features/requests/components/StlMachiningPreflightNotice";
+import {
+  tightCornerToMarginFilletInspection,
+  usableTightCornerMeta,
+} from "@/features/requests/utils/marginFilletInspection";
 import {
   LOW_FINISH_LINE_Z_MM,
   useLowFinishLineWarning,
@@ -1365,9 +1371,17 @@ export const PreviewModal = ({
     toValidFrontPoint(activeReq?.caseInfos?.frontPoint) ??
     toValidFrontPoint(stlMetadata?.frontPoint);
 
+  // 구버전 tightCorner(v9 미만)는 피니시라인 날 R0 오검사라 뷰어·카드에 넘기지 않는다.
+  const preferredTightCorner = usableTightCornerMeta(
+    mergeTightCornerDetail(
+      (activeReq as any)?.caseInfos?.tightCorner,
+      stlMetadata?.tightCorner,
+    ),
+  );
   const viewerStlMetadata = stlMetadata
     ? {
         ...stlMetadata,
+        tightCorner: preferredTightCorner,
         ...(effectiveFrontPoint ? { frontPoint: effectiveFrontPoint } : null),
         ...(overrideFinishLineMeta ||
         guidedFinishLineOverridePoints ||
@@ -1389,8 +1403,12 @@ export const PreviewModal = ({
     : effectiveFrontPoint ||
         overrideFinishLineMeta ||
         guidedFinishLineOverridePoints ||
-        semiAutoPendingPoints
+        semiAutoPendingPoints ||
+        preferredTightCorner
       ? {
+          ...(preferredTightCorner
+            ? { tightCorner: preferredTightCorner }
+            : null),
           ...(effectiveFrontPoint ? { frontPoint: effectiveFrontPoint } : null),
           ...(overrideFinishLineMeta ||
           guidedFinishLineOverridePoints ||
@@ -1447,9 +1465,9 @@ export const PreviewModal = ({
     Number.isFinite(finishLineMinZ) &&
     Number(finishLineMinZ) < LOW_FINISH_LINE_Z_MM;
   const isFinishLineCaptureBad = isFinishLineDefective(finishLinePoints);
-  const isTightCornerCorrectionNeeded = isTightCornerCorrectionRequired(
-    (activeReq as any)?.caseInfos?.tightCorner ?? viewerStlMetadata?.tightCorner,
-  );
+  const isTightCornerCorrectionNeeded =
+    isTightCornerCorrectionRequired(preferredTightCorner);
+  const filletInspection = tightCornerToMarginFilletInspection(preferredTightCorner);
   const isUnmachinable = Boolean((activeReq as any)?.rnd?.unmachinableAt);
   const shouldShowUnmachinableWarning = isFinishLineMinZRisky && !isUnmachinable;
   const requestorContinueAt = String(
@@ -1477,13 +1495,11 @@ export const PreviewModal = ({
         requestorContinueAtMs >= unmachinableEventAtMs));
   const shouldShowUnmachinableBadge =
     (shouldShowUnmachinableWarning || isUnmachinable) && !showLatestContinueBadge;
+  // fillet 안내는 의뢰자와 같은 StlMachiningPreflightNotice. 여기 카드는 FL·불완전 등 나머지.
   const incompleteReasonCard = showLatestContinueBadge
     ? null
     : incompleteMachiningReasonCard({
-        tightCorner: mergeTightCornerDetail(
-          (activeReq as any)?.caseInfos?.tightCorner,
-          viewerStlMetadata?.tightCorner,
-        ),
+        tightCorner: null,
         filletOvercutAllowed:
           (activeReq as any)?.caseInfos?.filletOvercutAllowed === true,
         lowFinishLine: isFinishLineMinZRisky,
@@ -1492,19 +1508,30 @@ export const PreviewModal = ({
         unmachinable: isUnmachinable,
         unmachinableReason: (activeReq as any)?.rnd?.unmachinableReason,
       });
-  const hasFilletInfoCard = Boolean(
+  const canShowFilletInspection = filletInspection?.status === "tight";
+  const showFilletInspectionNotice = filletInfoOn && canShowFilletInspection;
+  const hasOtherIncompleteCard = Boolean(
     incompleteReasonCard &&
       (incompleteReasonCard.stats.length > 0 || incompleteReasonCard.notes.length > 0),
   );
+  const hasFilletInfoCard = canShowFilletInspection || hasOtherIncompleteCard;
   const incompleteReasonOverlay =
-    filletInfoOn && hasFilletInfoCard && incompleteReasonCard ? (
+    filletInfoOn && hasFilletInfoCard ? (
       <div
         className={cn(
-          "pointer-events-none absolute right-2 z-20 max-w-[calc(100%-1rem)]",
+          "pointer-events-none absolute right-2 z-20 flex max-w-[calc(100%-1rem)] flex-col items-end gap-2",
           metaOn ? "bottom-[8.5rem]" : "bottom-2",
         )}
       >
-        <IncompleteMachiningReasonCardView card={incompleteReasonCard} />
+        {showFilletInspectionNotice ? (
+          <StlMachiningPreflightNotice
+            preflight={filletInspection}
+            className="pointer-events-none shadow-sm"
+          />
+        ) : null}
+        {hasOtherIncompleteCard && incompleteReasonCard ? (
+          <IncompleteMachiningReasonCardView card={incompleteReasonCard} />
+        ) : null}
       </div>
     ) : null;
 

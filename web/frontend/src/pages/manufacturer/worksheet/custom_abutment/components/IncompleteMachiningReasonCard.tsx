@@ -1,7 +1,9 @@
-// 오른쪽 STL 우하단 — 불완전 사유를 숫자 칸과 짧은 문장으로 나눈 작은 카드.
+// 오른쪽 STL 우하단 — FL·불완전 등 비-fillet 사유 카드.
+// 마진 fillet·공구 R은 StlMachiningPreflightNotice(공통)를 쓴다.
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/incompleteMachiningReason.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/features/requests/components/StlMachiningPreflightNotice.tsx
 
 import type { IncompleteMachiningReasonCard } from "../utils/incompleteMachiningReason";
 

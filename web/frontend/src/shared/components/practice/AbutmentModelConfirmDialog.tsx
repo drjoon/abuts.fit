@@ -75,6 +75,7 @@ import {
   StlMachiningPreflightNotice,
   type StlMachiningPreflight,
 } from "@/features/requests/components/StlMachiningPreflightNotice";
+import { isCurrentTightCornerMeta } from "@/features/requests/utils/marginFilletInspection";
 import {
   NEW_IMPLANT_DEVELOPMENT_ENTRY_HINT_MESSAGES,
   NEW_IMPLANT_DEVELOPMENT_REQUEST_MESSAGE,
@@ -709,19 +710,23 @@ export function AbutmentModelConfirmDialog({
                       showGrid={false}
                       showColorMappingToggle={false}
                       showFilletStatsOverlay={false}
-                      showTightCorner={Boolean(machiningPreflight?.overlay)}
-                      correctionSolidVisible={Boolean(machiningPreflight?.overlay)}
-                      metadata={
-                        machiningPreflight?.overlay
-                          ? {
-                              tightCorner: {
-                                ...machiningPreflight.overlay,
-                                correctionSolid: null,
-                                reliefOverlay: null,
-                              },
-                            }
-                          : undefined
-                      }
+                      showTightCorner={isCurrentTightCornerMeta(
+                        machiningPreflight?.overlay,
+                      )}
+                      correctionSolidVisible={isCurrentTightCornerMeta(
+                        machiningPreflight?.overlay,
+                      )}
+                      metadata={(() => {
+                        const overlay = machiningPreflight?.overlay;
+                        if (!isCurrentTightCornerMeta(overlay)) return undefined;
+                        return {
+                          tightCorner: {
+                            ...overlay,
+                            correctionSolid: null,
+                            reliefOverlay: null,
+                          },
+                        };
+                      })()}
                       className="absolute inset-0 h-full w-full min-h-0 md:min-h-0"
                       onDiameterComputed={handleDiameterComputed}
                     />
