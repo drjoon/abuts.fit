@@ -2051,8 +2051,8 @@ namespace DentalAddin
                 double finishLineBottomX = backX - finishLineMinZ;
                 double rawZoneX = finishLineBottomX + SafeSplitBackZonePastFinishLineMinMm;
                 double lo = splitline2 + SafeSplitMinBackZoneMm;
-                // Middle_Turn 끝 = Xk + R + 0.2 (short-cuff extra 없음)
-                double turnPastSeamMm = GetTurnPastRoughEndMm() + FrontMiddleTurnPastRadiusAllowanceMm;
+                // Middle_Turn 끝 = Middle_Rough 끝(Xk+0.5) + R + 0.2 (short-cuff extra 없음)
+                double turnPastSeamMm = GetFrontMiddleTurnPastSeamMm();
                 double hi = backX + SafeSplitMaxTurnPastBackPointMm - turnPastSeamMm;
                 if (rawZoneX > hi)
                 {
@@ -3195,15 +3195,14 @@ namespace DentalAddin
             return 0.0;
         }
 
-        // Front/Middle_Turn 끝 = Finish seam + 황삭 연장 + D4 반경 + 칩.
-        // [SSOT 2026-10-12] Turn 끝 = 같은 구간 Rough 끝 + 황삭 공구 반경(D4 → 2.0).
-        // Rough 끝 = Finish 끝 (Front: Splitline_2+0.5, Middle: Xk+0.5, Back: BackPointX).
+        // Front/Middle_Turn이 Rough 끝보다 더 깎는 양 = 황삭 공구 반경(D4 → 2.0).
+        // Rough 끝 = seam + 0.5 (Front: Splitline_2, Middle: Xk). Back: BackPointX.
         private static double GetTurnPastRoughEndMm()
         {
             return GetActiveRoughToolRadiusMm();
         }
 
-        // Front_Turn 끝 = Splitline_2 + (Front_Rough 끝 오프셋 0.5) + 황삭 공구 반경
+        // Front_Turn 끝 = Splitline_2 + Rough연장 0.5 + R. 여유 0.2는 GetFrontMiddleTurnPastSeamMm.
         private static double GetTurnPastFinishSeamMm()
         {
             return GetRoughPastFinishSeamMm() + GetTurnPastRoughEndMm();

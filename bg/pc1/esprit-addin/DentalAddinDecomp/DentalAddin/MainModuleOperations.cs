@@ -1607,11 +1607,11 @@ namespace DentalAddin
                 {
                     case "FRONT":
                         rangeMinX = xMin;
-                        // Front_Turn 끝 = Splitline_2 + 황삭 공구R + 0.2. short-cuff extra 없음.
+                        // Front_Turn 끝 = Front_Rough 끝(Splitline_2+0.5) + R + 0.2. short-cuff extra 없음.
                         rangeMaxX = Math.Min(xMax, splitline2 + GetFrontMiddleTurnPastSeamMm());
                         break;
                     case "BACK" when TryResolveSafeSplitBackZoneX("TurningOp BACK", out double safeZoneEndX):
-                        // Safe split(Middle_Turn): Xk + 황삭 공구R + 0.2. short-cuff extra는 BACK2(Back_Turn)만.
+                        // Safe split(Middle_Turn): Middle_Rough 끝(Xk+0.5) + R + 0.2. short-cuff extra는 BACK2(Back_Turn)만.
                         rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
                         rangeMaxX = safeZoneEndX + GetFrontMiddleTurnPastSeamMm();
                         break;
@@ -1650,7 +1650,7 @@ namespace DentalAddin
                 bool logBackShort = string.Equals(normalized, "BACK", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(normalized, "BACK2", StringComparison.OrdinalIgnoreCase);
                 DentalLogger.Log($"TurningOp 3-Stage - region={region}, range=[{rangeMinX:0.###},{rangeMaxX:0.###}], split1={splitline1:0.###}, split2={splitline2:0.###}" +
-                    (normalized == "FRONT" || normalized == "BACK" ? $", pastSeam=R+{FrontMiddleTurnPastRadiusAllowanceMm:0.###}(extra 없음)" : string.Empty) +
+                    (normalized == "FRONT" || normalized == "BACK" ? $", pastSeam=Rough+0.5+R+{FrontMiddleTurnPastRadiusAllowanceMm:0.###}(extra 없음)" : string.Empty) +
                     (logBackShort && normalized != "BACK" ? $", shortCuffMinZ={(IsShortFinishLineMinZ() ? "1" : "0")}, backExtra={GetShortFinishLineCuffExtraPastSeamMm():0.###}" : string.Empty));
                 return true;
             }
@@ -1664,18 +1664,17 @@ namespace DentalAddin
         // Back_Turn 수평 끝(툴패스 기준) = Back_Rough 끝(BackPointX) + 황삭 공구 반경(D4 → 2.0) + 여유. (2026-10-12)
         // Rough 툴패스 초과분과 ZStock 모서리 당김은 아래 공정별 보정값에 실측으로 흡수한다.
         // Tech_Default_Path.xml Turning Extend·Exit angle(80)은 이 구간 계산에서 무시한다.
-        // 실측(ESPRIT 화면 X, Rough 끝 대비 Turn 끝 간격): 체인 +R일 때 Front 1.73 / Middle 1.69 / Back 1.90.
-        // 공통 +0.5 → 2.23 / 2.19 / 2.40-0.3=2.10. 공구 파손 방지로 2.0 미만이 되면 안 되므로 전 공정 같은 여유를 둔다.
-        // Front/Middle_Turn이 seam(Splitline_2 / Xk)을 넘는 양 = 황삭 공구 반경 + 이 여유.
-        // D4 → 2.0+0.2. short-cuff extra(3−minZ)는 Back_Turn/Back_Rough만.
+        // Front/Middle_Turn 끝 = 같은 구간 Rough 끝 + 황삭 공구 반경 + 여유 0.2.
+        // Rough 끝 = seam + 0.5 → past seam = 0.5 + R + 0.2 (D4 → 2.7). short-cuff extra(3−minZ)는 Back만.
         private const double FrontMiddleTurnPastRadiusAllowanceMm = 0.2;
         private const double BackTurnPastRoughCompMm = 0.5;
         private static double s_activeTurningZStockMm;
 
         private static double GetFrontMiddleTurnPastSeamMm()
         {
-            double past = GetTurnPastRoughEndMm() + FrontMiddleTurnPastRadiusAllowanceMm;
-            DentalLogger.Log($"TurningOp FRONT/MIDDLE - seam+R{GetTurnPastRoughEndMm():0.###}+{FrontMiddleTurnPastRadiusAllowanceMm:0.###} = +{past:0.###} (short-cuff extra 없음)");
+            // Turn 끝 = Rough 끝 + R + 0.2. Rough 끝 = seam(+Xk/Splitline_2) + 0.5.
+            double past = GetRoughPastFinishSeamMm() + GetTurnPastRoughEndMm() + FrontMiddleTurnPastRadiusAllowanceMm;
+            DentalLogger.Log($"TurningOp FRONT/MIDDLE - seam+Rough{GetRoughPastFinishSeamMm():0.###}+R{GetTurnPastRoughEndMm():0.###}+{FrontMiddleTurnPastRadiusAllowanceMm:0.###} = +{past:0.###} (short-cuff extra 없음)");
             return past;
         }
 
