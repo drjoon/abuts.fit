@@ -1618,9 +1618,9 @@ const PROFILE_SMOOTH_LEVELS = 128;
  */
 const PROFILE_INNER_PASS_HARMONICS = 16;
 const PROFILE_INNER_STOP_HARMONICS = 32;
-/** 커프 몸통(마진 아래 SEAM_BLEND_DEPTH_MM 하방)은 4~10차(36~90°) 광역 저역 통과로 고른다. 16~32차만 쓰면 낮은 마진(310°) 근처 40° 폭만 국소적으로 볼록하게 남는다(20261103-CEWBUDCG). */
-const PROFILE_BODY_PASS_HARMONICS = 4;
-const PROFILE_BODY_STOP_HARMONICS = 10;
+/** 커프 몸통(마진 아래 SEAM_BLEND_DEPTH_MM 하방) 저역 통과 차수. 위 끝(smoothCreaseR 16~32차)과 맞추어 topKeep 경계에서 주름이 안 생기게 한다. */
+const PROFILE_BODY_PASS_HARMONICS = 16;
+const PROFILE_BODY_STOP_HARMONICS = 32;
 const PROFILE_START_SLOPE_EPS = 1e-4;
 
 /**
@@ -3528,6 +3528,70 @@ export function blendCuffJunction(buffer, options = {}) {
     // 커프 최대 높이가 0.8mm 이상이고 모든 열이 PRC 면 위로 여유가 있으면 둘레 전체가 같은 프로파일 패밀리를 쓴다.
     const useTurnedConeEmergence =
       Math.max(...hs) >= 0.8 && Math.min(...hs) >= ext + 0.15;
+    const minHAll = Math.max(0.4, Math.min(...hs) - ext);
+    // 급경사 플레어 어버트먼트(20261103-ANNAWRAG / 20261104-SNXZVBBV 등)에서는 특정 각도만 볼록하게 하면 경계에 세로 주름이 생기므로,
+    // 어버트먼트 전체 단일 가중치(wThickGlobal)로 360° 전 둘레를 동일한 물리 가속 높이(zAccel)에서 함께 볼록하게 올려
+    // 전체 커프가 주름 없이 매끈하게 볼록해지면서 피니시라인 하방 각도가 70° 이내로 들어오게 한다.
+    const wThickGlobal = (() => {
+      if (!useTurnedConeEmergence) return 0;
+      const cBar = 1 / 3;
+      let maxPureSlope = 0;
+      for (let j = 0; j < thetas.length; j += 1) {
+        const hb = hs[j];
+        const t0 = Math.max(0, Math.min(0.5, ext / hb));
+        const H = Math.max(1e-4, hb * (1 - t0));
+        const dR = r1s[j] - rFace;
+        if (!(dR > 1e-5)) continue;
+        const avgSlope = dR / H;
+        const s0 = Math.min(CUFF_EMERGENCE_START_SLOPE, Math.max(0, avgSlope * 0.5));
+        const D = Math.max(0, dR - s0 * H);
+        const uc0 = Math.max(0.42, Math.min(CONCAVE_TAPER_CURVE_END_U, (CONCAVE_TAPER_CURVE_END_U * minHAll) / H));
+        const gamma0 = 1 / (1 - cBar * uc0);
+        maxPureSlope = Math.max(maxPureSlope, s0 + (D / H) * gamma0);
+      }
+      const overRaw = Math.max(
+        0,
+        Math.min(
+          1,
+          (maxPureSlope - UPPER_CUFF_THICK_START_SLOPE) /
+            Math.max(1e-4, UPPER_CUFF_THICK_FULL_SLOPE - UPPER_CUFF_THICK_START_SLOPE),
+        ),
+      );
+      return overRaw * overRaw * (3 - 2 * overRaw);
+    })();
+    const globalZAccelMm = 0.22 * minHAll;
+    for (let j = 0; j < thetas.length; j += 1) {
+      relaxSkipBotMm[j] = wThickGlobal > 1e-4 ? (ext + globalZAccelMm) * wThickGlobal : 0;
+    }
+    const convexThickProfileOf = (hb, rTop) => {
+      const t0 = Math.max(0, Math.min(0.5, ext / hb));
+      const span = Math.max(1e-4, 1 - t0);
+      const H = hb * span;
+      const dR = rTop - rFace;
+      if (!(dR > 1e-5) || !(H > 1e-4)) return null;
+      const avgSlope = dR / H;
+      const s0 = Math.min(CUFF_EMERGENCE_START_SLOPE, Math.max(0, avgSlope * 0.5));
+      const D = Math.max(0, dR - s0 * H);
+      const spreadSlope = D / H;
+      const uc = Math.max(0.1, Math.min(0.35, globalZAccelMm / H));
+      const Ld = Math.max(1e-4, 1 - uc);
+      const targetEndSlope =
+        UPPER_CUFF_THICK_START_SLOPE * (1 - wThickGlobal) + UPPER_CUFF_THICK_END_SLOPE * wThickGlobal;
+      const mEndCap = spreadSlope > 1e-6 ? Math.max(0.28, (targetEndSlope - s0) / spreadSlope) : 0.68;
+      const mEnd = Math.max(0.28, Math.min(0.68 * (minHAll / H) ** 0.75, mEndCap));
+      const mPeak = (1 - (2 / 3) * Ld * mEnd) / ((1 + uc) / 3);
+      const c4Ramp = (v) => v - (2 - (1 - v) ** 5 * (2 + 4 * v)) / 6;
+      return (t) => {
+        const x = Math.max(0, Math.min(1, t));
+        if (x <= t0) return ra + coneSlope * x * hb;
+        const u = Math.max(0, Math.min(1, (x - t0) / span));
+        const f =
+          u <= uc
+            ? mPeak * uc * c4Ramp(u / uc)
+            : mPeak * (u - uc / 3) + Ld * (mEnd - mPeak) * c4Ramp(Math.min(1, (u - uc) / Ld));
+        return Math.min(rTop, rFace + s0 * u * H + D * f);
+      };
+    };
     /** 위 끝 고정 4차 맞춤 원본. 단차 무릎을 둥글게 편 목표 곡선. */
     const fittedOrigOf = (j, hb, rTop, eSlope) => {
       const n = EMERGENCE_ORIG_SAMPLES;
@@ -3591,35 +3655,6 @@ export function blendCuffJunction(buffer, options = {}) {
       const u0 = holdH / H;
       const flareSpan = Math.max(1e-4, 1 - u0);
       const spreadSlope = D / Math.max(1e-4, H * flareSpan);
-      // 스캘럽 마진에서 낮은 마진 열(310°) 근처만 좁게 올라오지 않도록, 오목 가속 구간이 끝나는 실제 높이 대역을
-      // 커프 최소 높이(minHAll) 기준으로 맞춰 주변의 높은 마진 열(240~295°, 340~50°)도 같은 높이 대역에서 함께 넓게 퍼져 올라오게 한다.
-      // 또한 순수 오목 테이퍼 끝 기울기(pureEndSlope)가 UPPER_CUFF_THICK_START_SLOPE(65°)를 넘는 급경사 열은
-      // 하단 오목 가속을 일찍 마치고(uc 축소) 상부(ξ ≥ ud)에서 C4 감속(볼록 두꺼워짐, d²r/dz² ≤ 0)으로 마진 하방을 두껍게 받쳐
-      // 선반·밀링 중 얇은 마진 날개가 휘어 깎여 나가지 않고 피니시라인 하방 커프 각도가 70° 이내(약 64~68°)로 들어오게 한다.
-      const minHAll = Math.max(0.4, Math.min(...hs) - ext);
-      const ucBase = Math.max(0.42, Math.min(CONCAVE_TAPER_CURVE_END_U, (CONCAVE_TAPER_CURVE_END_U * minHAll) / H));
-      const cBar = 1 / 3;
-      const gammaBase = 1 / (1 - cBar * ucBase);
-      const pureEndSlope = s0 + spreadSlope * gammaBase;
-      const overRaw = Math.max(
-        0,
-        Math.min(
-          1,
-          (pureEndSlope - UPPER_CUFF_THICK_START_SLOPE) /
-            Math.max(1e-4, UPPER_CUFF_THICK_FULL_SLOPE - UPPER_CUFF_THICK_START_SLOPE),
-        ),
-      );
-      const wThick = overRaw * overRaw * (3 - 2 * overRaw);
-      const ucSteep = Math.max(0.22, Math.min(0.40, (0.25 * minHAll) / H));
-      const uc = ucBase * (1 - wThick) + ucSteep * wThick;
-      relaxSkipBotMm[j] = wThick > 1e-4 ? (ext + uc * H * 0.9) * wThick : 0;
-      const ud = Math.min(0.85, Math.max(uc + 0.04, 0.36));
-      const Ld = Math.max(1e-4, 1 - ud);
-      const gamma = 1 / (1 - cBar * uc);
-      const targetEndSlope = UPPER_CUFF_THICK_START_SLOPE * (1 - wThick) + UPPER_CUFF_THICK_END_SLOPE * wThick;
-      const mEndCap = spreadSlope > 1e-6 ? Math.max(0.4, (targetEndSlope - s0) / spreadSlope) : gamma;
-      const mEnd = wThick > 1e-6 ? Math.min(gamma, mEndCap) : gamma;
-      const mPeak = (1 - (2 / 3) * Ld * mEnd) / Math.max(1e-4, 1 - cBar * uc - (2 / 3) * Ld);
       const maxEndSlope = Math.min(CORNER_MAX_END_SLOPE, s0 + 2.15 * spreadSlope);
       const minEndSlope = Math.min(maxEndSlope, s0 + 1.65 * spreadSlope);
       const rawEndSlope = Number.isFinite(eSlope) ? Math.max(s0, eSlope) : s0 + 1.9 * spreadSlope;
@@ -3628,15 +3663,7 @@ export function blendCuffJunction(buffer, options = {}) {
         spreadSlope > 1e-6
           ? Math.max(0.65, Math.min(1.15, (clampedEnd - s0) / spreadSlope - 1))
           : 1.0;
-      const effESlope =
-        wThick > 1e-4 && Number.isFinite(eSlope)
-          ? Math.min(eSlope, UPPER_CUFF_THICK_END_SLOPE * wThick + eSlope * (1 - wThick))
-          : eSlope;
-      const fitted = fittedOrigOf(j, hb, rTop, effESlope);
-      const c4Ramp = (v) => v - (2 - (1 - v) ** 5 * (2 + 4 * v)) / 6;
-      // blendTurnedConeWithOriginal이 바깥에서 base + w(u)·(origAt(t) - base)를 계산한다.
-      // rTop 클립은 wU로 나누기 전 실제 반경(rSActual)에 걸어야 하며, wU로 나눈 뒤(rSOrig/targetOrig)에 rTop 클립을 걸면
-      // 바깥에서 wU가 곱해질 때 base + wU·(rTop - base)에서 꺾여 커프 중간(z≈1.1mm)에 볼록 능선(d²r/dz² = -7)이 생긴다.
+      const fitted = fittedOrigOf(j, hb, rTop, eSlope);
       return Array.from({ length: n + 1 }, (_, i) => {
         const t = i / n;
         if (t <= t0) return ra + coneSlope * t * hb;
@@ -3650,19 +3677,7 @@ export function blendCuffJunction(buffer, options = {}) {
           const xi = Math.max(0, Math.min(1, (u - u0) / flareSpan));
           const wXi = xi * xi * xi * (10 - 15 * xi + 6 * xi * xi);
           const sCurveShape = (wXi * ((1 - beta) * xi + beta * xi * xi)) / Math.max(wU, 1e-9);
-          const rSCurveOrig = Math.min(rTop, base + D * Math.min(1.2, sCurveShape));
-          let fProfile;
-          if (xi <= uc) {
-            fProfile = mPeak * uc * c4Ramp(xi / uc);
-          } else if (xi <= ud) {
-            fProfile = mPeak * (xi - cBar * uc);
-          } else {
-            const w = Math.min(1, (xi - ud) / Ld);
-            fProfile = mPeak * (xi - cBar * uc) + Ld * (mEnd - mPeak) * c4Ramp(w);
-          }
-          const rSActual = Math.min(rTop, base + D * fProfile);
-          const rSC4Orig = base + (rSActual - base) / Math.max(wU, 1e-9);
-          rSOrig = rSCurveOrig * (1 - wThick) + rSC4Orig * wThick;
+          rSOrig = Math.min(rTop, base + D * Math.min(1.2, sCurveShape));
         }
         if (!fitted || !(ORIG_MID_LIFT > 1e-6)) return Math.max(base, rSOrig);
         const fVal = Math.max(base, Math.min(rTop, fitted(t)));
@@ -3673,6 +3688,11 @@ export function blendCuffJunction(buffer, options = {}) {
     const legacyConcaveOf = (rTop, eSlope, hb, relax = 0, j = -1) => {
       // 마진까지 높이가 있는 커프: Z_a+CUFF_CONNECTION_CONE_EXTEND_MM까지 11° 원형(커넥션 PRC), 그 위는 2°로 서서 완만한 S커브로 맞춘다.
       if (useTurnedConeEmergence || hb >= 0.8) {
+        const thickFn = wThickGlobal > 1e-4 ? convexThickProfileOf(hb, rTop) : null;
+        if (thickFn && wThickGlobal >= 1 - 1e-4) {
+          blendedCols[j] = 1;
+          return thickFn;
+        }
         const orig = j >= 0 ? origColumnOf(j, hb, rTop, eSlope) : null;
         const blended = orig
           ? blendTurnedConeWithOriginal(
@@ -3685,8 +3705,11 @@ export function blendCuffJunction(buffer, options = {}) {
           : null;
         if (blended) {
           blendedCols[j] = 1;
+          const combined = thickFn
+            ? (t) => blended(t) * (1 - wThickGlobal) + thickFn(t) * wThickGlobal
+            : blended;
           return relaxMeridianConcavity(
-            blended,
+            combined,
             hb,
             CUFF_MIN_CONCAVE_RADIUS_MM * RELAX_TARGET_MARGIN,
             relaxSkipBotMm[j],
