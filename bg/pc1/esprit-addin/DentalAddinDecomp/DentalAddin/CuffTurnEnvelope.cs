@@ -20,10 +20,17 @@ namespace DentalAddin
 
         public const double BinMm = 0.1;
 
-        public const double WindowMm = 0.25;
-
         /// <summary>피니시라인 최고점보다 팁쪽으로 포락선을 적용하는 길이. Splitline_2 와 같다.</summary>
         public const double TipBufferMm = 0.5;
+
+        /// <summary>최대 반지름 밖으로 더 띄우는 양. 피크에 바짝 붙지 않게 한다.</summary>
+        public const double RadialClearanceMm = 0.3;
+
+        /// <summary>축 방향 대비 반지름이 내려가는 최대 기울기. 계단 대신 이 경사로 잇는다.</summary>
+        public const double RampAngleDeg = 15.0;
+
+        /// <summary>구간 경계에서 경사를 바깥으로 이어 급격한 단차가 나지 않게 하는 길이.</summary>
+        public const double BoundaryFeatherMm = 3.0;
 
         public const double MinRadiusMm = 0.2;
 
@@ -85,9 +92,43 @@ namespace DentalAddin
         }
 
         /// <summary>
+        /// 포락선에 여유를 더하고, 피크 사이를 최대 기울기 경사로 채운다.
+        /// 창 최대값으로 평탄을 만들면 툴패스가 계단이 된다.
+        /// </summary>
+        public static void ApplySmoothClearance(double[] z, double[] r)
+        {
+            if (z == null || r == null || z.Length == 0 || z.Length != r.Length) return;
+            double slope = Math.Tan(RampAngleDeg * Math.PI / 180.0);
+            for (int i = 0; i < r.Length; i++) r[i] += RadialClearanceMm;
+            for (int i = 1; i < r.Length; i++)
+            {
+                double dz = z[i] - z[i - 1];
+                if (dz < 1e-9)
+                {
+                    if (r[i - 1] > r[i]) r[i] = r[i - 1];
+                    continue;
+                }
+                double allow = r[i - 1] - slope * dz;
+                if (allow > r[i]) r[i] = allow;
+            }
+            for (int i = r.Length - 2; i >= 0; i--)
+            {
+                double dz = z[i + 1] - z[i];
+                if (dz < 1e-9)
+                {
+                    if (r[i + 1] > r[i]) r[i] = r[i + 1];
+                    continue;
+                }
+                double allow = r[i + 1] - slope * dz;
+                if (allow > r[i]) r[i] = allow;
+            }
+        }
+
+        /// <summary>
         /// points[i] = { axialX, radiusY, z }.
         /// machineX = backPointX - sourceZ.
-        /// X가 [xLo, xHi] 이고 반지름이 그 근처 포락선보다 작으면 포락선까지 올린다.
+        /// X가 [xLo, xHi] 이면 완만한 포락선 아래로 두지 않는다.
+        /// 경계 밖 3mm는 같은 경사로 이어 단차를 없앤다.
         /// </summary>
         public static int Raise(List<double[]> points, double[] z, double[] r, double backPointX, double xLo, double xHi)
         {
@@ -96,15 +137,34 @@ namespace DentalAddin
             if (double.IsNaN(xLo) || double.IsNaN(xHi)) return 0;
             double lo = Math.Min(xLo, xHi);
             double hi = Math.Max(xLo, xHi);
+            double[] smooth = (double[])r.Clone();
+            ApplySmoothClearance(z, smooth);
+            double slope = Math.Tan(RampAngleDeg * Math.PI / 180.0);
+            double edgeLo = InterpolateFloor(z, smooth, backPointX - lo);
+            double edgeHi = InterpolateFloor(z, smooth, backPointX - hi);
             int raised = 0;
             for (int i = 0; i < points.Count; i++)
             {
                 double[] p = points[i];
                 if (p == null || p.Length < 2) continue;
-                if (p[0] < lo - 1e-6 || p[0] > hi + 1e-6) continue;
                 if (p[1] < 0.0) continue;
-                double sourceZ = backPointX - p[0];
-                double floor = MaxInWindow(z, r, sourceZ, WindowMm);
+                double floor;
+                if (p[0] >= lo - 1e-6 && p[0] <= hi + 1e-6)
+                {
+                    floor = InterpolateFloor(z, smooth, backPointX - p[0]);
+                }
+                else if (p[0] < lo && lo - p[0] <= BoundaryFeatherMm)
+                {
+                    floor = edgeLo - slope * (lo - p[0]);
+                }
+                else if (p[0] > hi && p[0] - hi <= BoundaryFeatherMm)
+                {
+                    floor = edgeHi - slope * (p[0] - hi);
+                }
+                else
+                {
+                    continue;
+                }
                 if (floor < MinRadiusMm) continue;
                 if (p[1] + 1e-6 < floor)
                 {
@@ -115,18 +175,20 @@ namespace DentalAddin
             return raised;
         }
 
-        private static double MaxInWindow(double[] z, double[] r, double sourceZ, double window)
+        private static double InterpolateFloor(double[] z, double[] r, double sourceZ)
         {
-            double z0 = sourceZ - window;
-            int i = Array.BinarySearch(z, z0);
-            if (i < 0) i = ~i;
-            double best = -1.0;
-            double z1 = sourceZ + window;
-            for (; i < z.Length && z[i] <= z1 + 1e-9; i++)
-            {
-                if (r[i] > best) best = r[i];
-            }
-            return best;
+            if (sourceZ <= z[0]) return r[0];
+            int last = z.Length - 1;
+            if (sourceZ >= z[last]) return r[last];
+            int i = Array.BinarySearch(z, sourceZ);
+            if (i >= 0) return r[i];
+            i = ~i;
+            if (i <= 0) return r[0];
+            if (i > last) return r[last];
+            double dz = z[i] - z[i - 1];
+            if (dz < 1e-9) return Math.Max(r[i - 1], r[i]);
+            double t = (sourceZ - z[i - 1]) / dz;
+            return r[i - 1] + t * (r[i] - r[i - 1]);
         }
     }
 }
