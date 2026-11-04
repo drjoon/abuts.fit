@@ -5,6 +5,7 @@ import {
   ASSIGNEE_KIND_SUBCONTRACT,
   formatAbutsCooperationLabLabel,
   formatPracticeTransferWorkCanceledChat,
+  formatPracticeTransferWorkCompletedChat,
   formatPracticeTransferWorkStartedChat,
   isCooperationAssignee,
   isSubcontractAssignee,
@@ -64,6 +65,9 @@ describe("assigneeKind cooperation vs subcontract", () => {
     expect(formatPracticeTransferWorkStartedChat(t)).toBe(
       "기공소「테스트기공소」이(가) 작업을 시작했습니다.",
     );
+    expect(formatPracticeTransferWorkCompletedChat(t)).toBe(
+      "기공소「테스트기공소」이(가) 작업을 완료했습니다.",
+    );
     expect(formatPracticeTransferWorkCanceledChat(t)).toContain(
       "기공소「테스트기공소」",
     );
@@ -79,6 +83,9 @@ describe("assigneeKind cooperation vs subcontract", () => {
     };
     expect(formatPracticeTransferWorkStartedChat(t)).toBe(
       "기공소「테스트기공소」이(가) 작업을 시작했습니다.",
+    );
+    expect(formatPracticeTransferWorkCompletedChat(t)).toBe(
+      "기공소「테스트기공소」이(가) 작업을 완료했습니다.",
     );
   });
 

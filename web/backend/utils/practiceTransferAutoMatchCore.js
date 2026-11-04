@@ -102,6 +102,9 @@ export const formatPracticeTransferChatActorPhrase = (transfer) => {
 export const formatPracticeTransferWorkStartedChat = (transfer) =>
   `${formatPracticeTransferChatActorPhrase(transfer)}이(가) 작업을 시작했습니다.`;
 
+export const formatPracticeTransferWorkCompletedChat = (transfer) =>
+  `${formatPracticeTransferChatActorPhrase(transfer)}이(가) 작업을 완료했습니다.`;
+
 export const formatPracticeTransferWorkCanceledChat = (transfer) =>
   `${formatPracticeTransferChatActorPhrase(transfer)}이(가) 작업을 취소했습니다. 다른 기공소를 지정하거나 휴지통으로 옮길 수 있습니다.`;
 

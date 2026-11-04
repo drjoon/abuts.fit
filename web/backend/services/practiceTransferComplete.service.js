@@ -3,6 +3,7 @@
 // - web/backend/jobs/practiceTransferArrivalAutoCompleteWorker.js
 // - web/backend/utils/practiceTransferArrivalDates.js
 // change-log:
+// - 2026-11-05: 보철 업로드·수동 작업완료에도 work_complete 시스템 채팅. 도착일 자동완료는 기존 문구 유지.
 // - 2026-09-28: 작업완료 정산을 settlePracticeToLabShareIfReady로(보철 업로드 게이트·이연 후속 정산 포함).
 // - 2026-09-26: 치과 컨펌 없이 보철 업로드=작업완료. 학습 쌍 준비는 응답 뒤.
 // - 2026-09-26: 보철 슬롯이 남으면 작업완료 거절. 파일에 prosthesisType을 남긴다.
@@ -24,6 +25,7 @@ import { postPracticeTransferSystemChatMessage } from "./chatSystemMessage.servi
 import { isLabProsthesisUploadRequired } from "../utils/practiceProsthesisUploadRequirement.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../utils/creditRealtime.js";
 import {
+  formatPracticeTransferWorkCompletedChat,
   isAutoMatchCompleted,
   isAutoMatchMode,
   toAutoMatchApiFields,
@@ -363,6 +365,29 @@ export async function completePracticeTransferWork({
     ...toAutoMatchApiFields(doc, labAnchorId),
   };
 
+  // 채팅은 응답 전 필수가 아님 — 부수 효과로 남긴다.
+  const chatSenderId =
+    String(actorUserId || "").trim() ||
+    String(doc.requestorDownloadedBy || "").trim() ||
+    String(doc.autoMatch?.completedBy || "").trim();
+  if (chatSenderId) {
+    const isArrivalAuto = reason === "arrival_auto";
+    void postPracticeTransferSystemChatMessage({
+      transferMongoId: doc._id,
+      senderUserId: chatSenderId,
+      content: isArrivalAuto
+        ? "치과도착일이 지나 작업이 자동 완료되었습니다."
+        : formatPracticeTransferWorkCompletedChat(doc),
+      systemEvent: isArrivalAuto ? "arrival_auto_completed" : "work_complete",
+    }).catch((err) => {
+      console.warn(
+        "[practiceTransferComplete] work_complete chat failed",
+        String(doc?._id || ""),
+        err?.message || err,
+      );
+    });
+  }
+
   if (emitRealtime) {
     const emitJobs = [];
     try {
@@ -384,17 +409,6 @@ export async function completePracticeTransferWork({
       }
     } catch {
       // best-effort
-    }
-
-    if (reason === "arrival_auto") {
-      emitJobs.push(
-        postPracticeTransferSystemChatMessage({
-          transferMongoId: doc._id,
-          senderUserId: actorUserId,
-          content: "치과도착일이 지나 작업이 자동 완료되었습니다.",
-          systemEvent: "arrival_auto_completed",
-        }),
-      );
     }
 
     if (releaseResult?.released) {
