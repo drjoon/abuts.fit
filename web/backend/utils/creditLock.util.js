@@ -11,6 +11,7 @@ import {
   isPracticeObLaunchBetaActive,
   refreshPracticeLaunchMode,
 } from "./practiceObBeta.util.js";
+import { isPracticeMonthlySettlementCollectionEnabled } from "./practiceSettlementCollection.util.js";
 
 export async function checkCreditLock(businessAnchorId, now = new Date()) {
   const lockedOrder = await ChargeOrder.findOne({
@@ -68,12 +69,16 @@ export function practiceSettlementPauseReason(yearMonth) {
 /**
  * 기공의뢰(PTX) 신규 생성 전용. 커스텀어벗(Request)에는 적용하지 않는다.
  * 2차 입금일 다음 날 09:00(KST)가 지났는데 입금 확인이 없으면 신규만 멈춘다.
- * 런칭 베타 중에는 미납이어도 막지 않는다. 실사용 전환 뒤에만 적용한다.
+ * 월 기공료 입금 수집이 중단이거나 런칭 베타 중에는 미납이어도 막지 않는다.
+ * 수집 재개 + 실사용 전환 뒤에만 적용한다.
  */
 export async function checkPracticeSettlementLock(
   practiceAnchorId,
   now = new Date(),
 ) {
+  if (!isPracticeMonthlySettlementCollectionEnabled()) {
+    return { isLocked: false };
+  }
   await refreshPracticeLaunchMode({ force: true });
   if (isPracticeObLaunchBetaActive()) return { isLocked: false };
   if (!practiceAnchorId) return { isLocked: false };

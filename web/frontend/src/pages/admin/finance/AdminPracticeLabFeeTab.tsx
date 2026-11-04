@@ -171,19 +171,11 @@ export function AdminPracticeLabFeeTab() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-1.5 py-3">
       <p className="text-xs leading-relaxed text-slate-500">
-        계좌 이체는 여기서 나가지 않습니다.
+        월 기공료 입금·안내 문자는 당분간 중단입니다.
         <br />
-        전액이 들어온 뒤 입금 확인을 누릅니다.
+        정책이 정해지면 다시 안내합니다.
         <br />
-        그 다음 기공소 계좌로 직접 보낸 뒤 기록합니다.
-        <br />
-        일부만 들어온 금액은 일부 기록에 남깁니다.
-        <br />
-        전액이 아니면 입금 확인을 누르지 않습니다.
-        <br />
-        입금자명은 치과명으로 맞춰 주세요.
-        <br />
-        2차 다음 날 오전 9시 전에 확인하면 새 의뢰는 멈추지 않습니다.
+        수기 확인·기공소 송금 기록은 필요할 때만 씁니다.
       </p>
       {practiceFilter ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">

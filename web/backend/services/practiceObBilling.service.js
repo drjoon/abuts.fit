@@ -34,6 +34,7 @@ import {
   isPracticeObLaunchBetaActive,
   refreshPracticeLaunchMode,
 } from "../utils/practiceObBeta.util.js";
+import { isPracticeMonthlySettlementCollectionEnabled } from "../utils/practiceSettlementCollection.util.js";
 import { sendPopbillXMS } from "../utils/popbill.util.js";
 import { issuePracticeObPaymentInvoices } from "./practiceObPaymentInvoice.service.js";
 import {
@@ -785,7 +786,10 @@ export async function getPracticeObBillingOverview({
 
   const upcoming = resolvePracticeSettlementCalendar(currentYearMonth);
   await refreshPracticeLaunchMode({ force: true });
-  const depositAccount = await getPracticeDepositAccount();
+  const collectionEnabled = isPracticeMonthlySettlementCollectionEnabled();
+  const depositAccount = collectionEnabled
+    ? await getPracticeDepositAccount()
+    : null;
   const consent = anchor.openBankingConsent || {};
   const expiresAt = consent.expiresAt ? new Date(consent.expiresAt) : null;
   const daysUntilReauth = expiresAt
@@ -863,8 +867,14 @@ export async function getPracticeObBillingOverview({
       labPayoutOnYmd: upcoming.labPayoutOnYmd,
     },
     depositAccount,
-    /** 실사용 전환 뒤에만 미납으로 신규 기공의뢰를 막는다. 베타 중에는 false. */
-    unpaidOrderPause: !isPracticeObLaunchBetaActive(),
+    /**
+     * 월 기공료 입금 수집·안내 문자·미납 정지 ON/OFF.
+     * 기본 OFF(중단). PRACTICE_MONTHLY_SETTLEMENT_COLLECTION_ENABLED=true 로 재개.
+     */
+    settlementCollectionActive: collectionEnabled,
+    /** 수집 재개 + 실사용 전환 뒤에만 미납으로 신규 기공의뢰를 막는다. */
+    unpaidOrderPause:
+      collectionEnabled && !isPracticeObLaunchBetaActive(),
     settlements: settlements.map((s) => ({
       id: String(s._id),
       yearMonth: s.yearMonth,
@@ -1060,6 +1070,9 @@ export function buildSettlementSms({ kind, name, yearMonth, amount, account, cal
 }
 
 async function deliverSettlementSms({ anchor, content }) {
+  if (!isPracticeMonthlySettlementCollectionEnabled()) {
+    return { ok: false, skipped: "collection_paused" };
+  }
   const phones = await listPracticeNoticePhones(anchor);
   if (!phones.length) return { ok: false, skipped: "no_phone" };
   await sendPopbillXMS({
@@ -1180,6 +1193,9 @@ async function sendReopenNoticeIfNeeded(row, now) {
 
 /** 안내·재안내 문자를 보낸다. 실패하면 다음 주기에 다시 시도한다. */
 export async function dispatchPracticeSettlementNotices({ now = new Date() } = {}) {
+  if (!isPracticeMonthlySettlementCollectionEnabled()) {
+    return { noticed: 0, reminded: 0 };
+  }
   const rows = await PracticeMonthlySettlement.find({
     status: "CONFIRMED",
     totalAmount: { $gt: 0 },

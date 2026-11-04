@@ -16,6 +16,18 @@ import { isLabCustomAbutmentFreeCreditOnly } from "../../utils/practiceObBeta.ut
 const PAST_DUE = new Date("2026-09-12T00:00:00.000Z");
 
 describe("practiceLaunch 실사용 전환", () => {
+  const prevCollection = process.env.PRACTICE_MONTHLY_SETTLEMENT_COLLECTION_ENABLED;
+  beforeAll(() => {
+    process.env.PRACTICE_MONTHLY_SETTLEMENT_COLLECTION_ENABLED = "true";
+  });
+  afterAll(() => {
+    if (prevCollection === undefined) {
+      delete process.env.PRACTICE_MONTHLY_SETTLEMENT_COLLECTION_ENABLED;
+    } else {
+      process.env.PRACTICE_MONTHLY_SETTLEMENT_COLLECTION_ENABLED = prevCollection;
+    }
+  });
+
   test("베타에서는 미납이어도 신규 기공의뢰를 막지 않고, 전환 후 막으며 할 일을 남긴다", async () => {
     const practice = await BusinessAnchor.create({
       businessNumberNormalized: "9999999020",

@@ -20,7 +20,7 @@ export const PRACTICE_LAUNCH_ADMIN_TASKS = [
   },
   {
     id: "check-popbill-and-account",
-    text: "기공료 안내 문자의 팝빌 포인트와 입금 계좌를 확인합니다.",
+    text: "월 기공료 입금을 다시 켤 때 팝빌 포인트·입금 계좌·PRACTICE_MONTHLY_SETTLEMENT_COLLECTION_ENABLED를 확인합니다.",
   },
   {
     id: "tell-labs-paid-credit",

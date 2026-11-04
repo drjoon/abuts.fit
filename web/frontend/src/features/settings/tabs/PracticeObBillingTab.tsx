@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-04: 월 기공료 입금 수집 중단 시 계좌·기한 숨김, 사용분만 표시.
 // - 2026-10-24: 베타 중에는 미납 주문 정지 문구를 숨긴다.
 // - 2026-10-24: 입금할 금액은 하이라이트. 미확인 안내는 두 줄.
 // - 2026-10-24: 충전 페이지처럼 왼쪽 금액은 파란 그라데이션, 계좌번호는 크게.
@@ -53,13 +54,15 @@ type MonthlySettlement = {
 
 type PracticeBillingOverview = {
   practiceName: string;
-  /** 실사용 전환 뒤에만 미납으로 새 기공의뢰를 막는다. */
+  /** 월 기공료 입금 수집·안내 문자 ON. 기본 false(중단). */
+  settlementCollectionActive?: boolean;
+  /** 수집 재개 + 실사용 전환 뒤에만 미납으로 새 기공의뢰를 막는다. */
   unpaidOrderPause?: boolean;
   depositAccount?: {
     bankName: string;
     accountNumber: string;
     holderName: string;
-  };
+  } | null;
   currentMonthEstimate: {
     yearMonth: string;
     totalAmount: number;
@@ -182,7 +185,8 @@ export function PracticeObBillingTab() {
   }
 
   const { currentMonthEstimate, settlements, depositAccount, practiceName } = data;
-  const pauseOrders = data.unpaidOrderPause !== false;
+  const collectionActive = data.settlementCollectionActive === true;
+  const pauseOrders = collectionActive && data.unpaidOrderPause !== false;
   const visiblePhase = (row: MonthlySettlement) => {
     const phase = settlementPhase(row);
     if (!pauseOrders && phase === "paused") return "open";
@@ -191,20 +195,40 @@ export function PracticeObBillingTab() {
   const openBill = settlements.find(
     (row) => visiblePhase(row) !== "received" && row.totalAmount > 0,
   );
-  const paused = openBill ? visiblePhase(openBill) === "paused" : false;
+  const paused =
+    collectionActive && openBill
+      ? visiblePhase(openBill) === "paused"
+      : false;
   const depositAmount = openBill?.totalAmount ?? currentMonthEstimate.totalAmount;
   const monthTotal = currentMonthEstimate.totalAmount;
   const dueMonth = openBill?.yearMonth || currentMonthEstimate.yearMonth;
-  const cue = resolvePracticeDepositCue({
-    todayYmd: toKstYmd(new Date()) || "",
-    usageYearMonth: dueMonth,
-    firstDueYmd: openBill?.firstDueYmd || currentMonthEstimate.firstDueYmd,
-    secondDueYmd: openBill?.secondDueYmd || currentMonthEstimate.secondDueYmd,
-  });
+  const cue = collectionActive
+    ? resolvePracticeDepositCue({
+        todayYmd: toKstYmd(new Date()) || "",
+        usageYearMonth: dueMonth,
+        firstDueYmd: openBill?.firstDueYmd || currentMonthEstimate.firstDueYmd,
+        secondDueYmd:
+          openBill?.secondDueYmd || currentMonthEstimate.secondDueYmd,
+      })
+    : {
+        usageLabel: `${dueMonth} 현재까지 사용분`,
+        dueLabel: "",
+        late: false,
+      };
   const depositorName = practiceName?.trim() || "치과명";
 
   return (
     <div className="mx-auto flex w-full max-w-4xl shrink-0 flex-col gap-3 self-start px-1.5 py-1 pb-2">
+      {!collectionActive ? (
+        <section className="rounded-2xl border border-slate-200/90 bg-slate-50/80 px-4 py-3 text-slate-800 shadow-sm">
+          <p className="text-sm font-medium">
+            월 기공료 입금은 잠시 중단되었습니다.
+            <br />
+            정책이 정해지면 다시 안내합니다.
+          </p>
+        </section>
+      ) : null}
+
       {paused && openBill ? (
         <section className="rounded-2xl border border-amber-200/90 bg-amber-50/80 px-4 py-3 text-amber-950 shadow-sm">
           <p className="text-sm font-medium">
@@ -216,15 +240,18 @@ export function PracticeObBillingTab() {
       ) : null}
 
       <section className="shrink-0 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-        <div className="grid sm:grid-cols-2">
+        <div className={cn("grid", collectionActive && "sm:grid-cols-2")}>
           <div className="bg-gradient-to-b from-primary-soft/80 to-white px-5 py-5 sm:px-6 sm:py-6">
             <p className="text-xs font-medium text-primary-strong">
-              {PRACTICE_OB_BILLING_NOTICE_TITLE}
+              {collectionActive
+                ? PRACTICE_OB_BILLING_NOTICE_TITLE
+                : "이번 달 사용분"}
             </p>
             <p
               className={cn(
                 "mt-2 w-fit text-4xl font-bold tabular-nums tracking-tight text-primary",
-                (paused || Boolean(cue.dueLabel)) &&
+                collectionActive &&
+                  (paused || Boolean(cue.dueLabel)) &&
                   "animate-scroll-halo-blue rounded-xl px-1 motion-reduce:animate-none",
               )}
             >
@@ -232,7 +259,7 @@ export function PracticeObBillingTab() {
               <span className="text-2xl font-semibold">원</span>
             </p>
             <p className="mt-2 text-sm text-slate-600">{cue.usageLabel}</p>
-                {cue.dueLabel && !paused ? (
+            {collectionActive && cue.dueLabel && !paused ? (
               <p
                 className={cn(
                   "mt-2 text-sm font-semibold",
@@ -249,29 +276,31 @@ export function PracticeObBillingTab() {
               </p>
             ) : null}
           </div>
-          <div className="flex flex-col justify-center gap-3 border-t border-slate-200/80 px-5 py-5 sm:border-l sm:border-t-0 sm:px-6">
-            <p className="flex flex-wrap items-baseline gap-x-2">
-              <span className="text-xs text-slate-500">입금자명</span>
-              <span className="text-lg font-bold tracking-tight text-slate-950">
-                {depositorName}
-              </span>
-            </p>
-            <div className="rounded-xl bg-slate-50 px-4 py-3">
-              <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <Landmark className="h-3.5 w-3.5 text-primary" />
-                입금 계좌
+          {collectionActive ? (
+            <div className="flex flex-col justify-center gap-3 border-t border-slate-200/80 px-5 py-5 sm:border-l sm:border-t-0 sm:px-6">
+              <p className="flex flex-wrap items-baseline gap-x-2">
+                <span className="text-xs text-slate-500">입금자명</span>
+                <span className="text-lg font-bold tracking-tight text-slate-950">
+                  {depositorName}
+                </span>
+              </p>
+              <div className="rounded-xl bg-slate-50 px-4 py-3">
+                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <Landmark className="h-3.5 w-3.5 text-primary" />
+                  입금 계좌
+                </div>
+                <p className="mt-1.5 text-xs text-slate-500">
+                  {depositAccount?.bankName || "하나은행"}
+                </p>
+                <p className="truncate text-lg font-semibold tracking-wide text-slate-950">
+                  {depositAccount?.accountNumber || ""}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  예금주 {depositAccount?.holderName || "어벗츠 주식회사"}
+                </p>
               </div>
-              <p className="mt-1.5 text-xs text-slate-500">
-                {depositAccount?.bankName || "하나은행"}
-              </p>
-              <p className="truncate text-lg font-semibold tracking-wide text-slate-950">
-                {depositAccount?.accountNumber || ""}
-              </p>
-              <p className="mt-0.5 text-xs text-slate-500">
-                예금주 {depositAccount?.holderName || "어벗츠 주식회사"}
-              </p>
             </div>
-          </div>
+          ) : null}
         </div>
       </section>
 
@@ -326,12 +355,14 @@ export function PracticeObBillingTab() {
               <Separator className="mb-2" />
               {settlements.map((row) => {
                 const phase = visiblePhase(row);
-                const rowCue = resolvePracticeDepositCue({
-                  todayYmd: toKstYmd(new Date()) || "",
-                  usageYearMonth: row.yearMonth,
-                  firstDueYmd: row.firstDueYmd,
-                  secondDueYmd: row.secondDueYmd,
-                });
+                const rowCue = collectionActive
+                  ? resolvePracticeDepositCue({
+                      todayYmd: toKstYmd(new Date()) || "",
+                      usageYearMonth: row.yearMonth,
+                      firstDueYmd: row.firstDueYmd,
+                      secondDueYmd: row.secondDueYmd,
+                    })
+                  : { usageLabel: "", dueLabel: "", late: false };
                 return (
                   <div
                     key={row.id}
@@ -347,14 +378,18 @@ export function PracticeObBillingTab() {
                             ? "입금 확인"
                             : phase === "paused"
                               ? "확인 중"
-                              : "입금"}
+                              : collectionActive
+                                ? "입금"
+                                : "사용분"}
                         </Badge>
                       </div>
                       <span className="text-sm font-bold tabular-nums text-slate-900">
                         {formatRequestorWon(row.totalAmount)}원
                       </span>
                     </div>
-                    {phase !== "received" && rowCue.dueLabel ? (
+                    {collectionActive &&
+                    phase !== "received" &&
+                    rowCue.dueLabel ? (
                       <p className="mt-1 text-xs text-slate-500">
                         {rowCue.dueLabel}
                         {pauseOrders && rowCue.late ? (

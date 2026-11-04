@@ -7,6 +7,8 @@
 // 익월 1일 09:00 KST 이후: 전월 기공료 정산서 확정 + 안내 문자.
 // 1차 입금 영업일 12:00: 아직 확인되지 않으면 재안내 문자.
 // 계좌 이체는 하지 않는다. 담당자가 입금 확인·기공소 송금을 직접 한다.
+// 월 기공료 입금 수집이 중단된 동안에는 시작하지 않는다
+// (`PRACTICE_MONTHLY_SETTLEMENT_COLLECTION_ENABLED=true` 로만 재개).
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import {
   confirmPracticeMonthlySettlement,
@@ -14,6 +16,7 @@ import {
   resolvePreviousKstYearMonth,
 } from "../services/practiceObBilling.service.js";
 import { resolvePracticeSettlementCalendar } from "../utils/practiceSettlementCalendar.js";
+import { isPracticeMonthlySettlementCollectionEnabled } from "../utils/practiceSettlementCollection.util.js";
 
 let timerHandle = null;
 let running = false;
@@ -73,6 +76,12 @@ async function loop() {
 }
 
 export function startMonthlyPracticeObSettlementWorker() {
+  if (!isPracticeMonthlySettlementCollectionEnabled()) {
+    console.info(
+      "[monthlyPracticeObSettlementWorker] skipped — monthly settlement collection paused",
+    );
+    return;
+  }
   if (
     process.env.PRACTICE_OB_SETTLEMENT_WORKER_ENABLED === "false" ||
     timerHandle
