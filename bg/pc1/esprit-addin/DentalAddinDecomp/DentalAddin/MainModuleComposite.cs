@@ -2051,7 +2051,7 @@ namespace DentalAddin
                 double finishLineBottomX = backX - finishLineMinZ;
                 double rawZoneX = finishLineBottomX + SafeSplitBackZonePastFinishLineMinMm;
                 double lo = splitline2 + SafeSplitMinBackZoneMm;
-                double turnPastSeamMm = GetTurnPastRoughEndMm() + GetRoughPastFinishEndMm();
+                double turnPastSeamMm = GetTurnPastRoughEndMm() + RoughPastFinishEndMm;
                 double hi = backX + SafeSplitMaxTurnPastBackPointMm - turnPastSeamMm;
                 if (rawZoneX > hi)
                 {
@@ -2772,54 +2772,56 @@ namespace DentalAddin
             }
 
             // 인접 겹침 SSOT: 후행 시작=경계 tip쪽 공구반경
-            // 선행 3D 황삭 끝은 Finish seam보다 GetRoughPastFinishSeamMm 더 깎아
+            // 선행 3D 황삭 끝은 Finish seam보다 GetRoughPastFinishSeamMm(0.5) 더 깎아
             // Front/Back_Finish(D1.0)가 미황삭 치은 쪽을 물지 않게 한다.
-            // 기본 past=0.5, 원점 대비 minZ≤2이면 +1(1.5). Rough D4→2.0 (ROUGH_20 D2→1.0).
+            // Rough D4→2.0mm (ROUGH_20 D2→1.0mm). Front/Middle past는 고정.
+            // minZ≤2 short-cuff +2mm는 Back_Rough 끝(BackPointX)에만 가산.
             double roughOverlapMm = GetRoughAdjacentOverlapMm();
             double roughPastFinishSeamMm = GetRoughPastFinishSeamMm();
 
             double frontStart = xMin;
             // Front_Rough 끝점: Splitline_2 + 황삭 연장. Finish 끝(Splitline_2−0.5)과는 별개.
             double frontEnd = Clamp(splitline2 + roughPastFinishSeamMm, xMin + 1e-6, xMax - 1e-6);
-            DentalLogger.Log($"RoughFreeFromMillSplitAB - Front_Rough 끝점=Splitline_2+{roughPastFinishSeamMm:F3}: endX={frontEnd:F3}, shortCuffMinZ={(IsShortFinishLineMinZ() ? "1" : "0")}");
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - Front_Rough 끝점=Splitline_2+{roughPastFinishSeamMm:F3}: endX={frontEnd:F3}");
 
             // [2026-10-13] 후행 시작 = 선행 Rough 끝 - (황삭 반경 + 1.0). 미삭제 띠 방지.
             double backStart = Clamp(frontEnd - roughOverlapMm, xMin + 1e-6, xMax - 1e-6);
             DentalLogger.Log($"RoughFreeFromMillSplitAB - Middle/Back_Rough 시작=Front_Rough끝-{RoughSeamExtraOverlapMm:F1}: startX={backStart:F3}, frontEnd={frontEnd:F3}, overlapMm={roughOverlapMm:F3}, roughDia={GetActiveRoughToolDiameterMm():F1}");
 
-            // 요청 반영:
-            // Back_Rough 끝점은 항상 BackPointX로 고정한다.
+            // Back_Rough 끝 = BackPointX. minZ≤2이면 +2mm(short-cuff). Front/Middle은 기존.
             double backPointX = MoveSTL_Module.BackPointX;
-            double backEnd = backPointX;
+            double backRoughExtraMm = GetShortFinishLineCuffExtraPastSeamMm();
+            double backEnd = backPointX + backRoughExtraMm;
             if (double.TryParse(finishMinZRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out double finishLineMinZ)
                 && !double.IsNaN(finishLineMinZ)
                 && !double.IsInfinity(finishLineMinZ))
             {
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: backPointX={backPointX.ToString("F3", CultureInfo.InvariantCulture)}, finishLineMinZ={finishLineMinZ.ToString("F3", CultureInfo.InvariantCulture)}, appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, rule=BackPointX(fixed)");
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점: backPointX={backPointX.ToString("F3", CultureInfo.InvariantCulture)}, finishLineMinZ={finishLineMinZ.ToString("F3", CultureInfo.InvariantCulture)}, extra={backRoughExtraMm.ToString("0.###", CultureInfo.InvariantCulture)}, appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, shortCuffMinZ={(IsShortFinishLineMinZ() ? "1" : "0")}");
             }
             else
             {
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: ABUTS_FINISHLINE_MIN_Z 해석 실패(raw='{finishMinZRaw ?? ""}'), appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)} (BackPointX fixed)");
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점: ABUTS_FINISHLINE_MIN_Z 해석 실패(raw='{finishMinZRaw ?? ""}'), appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, extra={backRoughExtraMm.ToString("0.###", CultureInfo.InvariantCulture)}");
             }
 
             string region = (GetEnvString("ABUTS_ROUGHFREEFORM_SPLIT_REGION") ?? string.Empty).Trim().ToUpperInvariant();
 
-            // Safe split: region BACK(Middle_Rough) 끝 = Xk+0.5, region BACK2(Back_Rough) = [Xk-roughR ~ BackPointX]
+            // Safe split: region BACK(Middle_Rough) 끝 = Xk+0.5, region BACK2(Back_Rough) = [Xk-roughR ~ BackPointX(+short)]
             // 경계 체인 이름 분리: 같은 이름이면 기존 체인이 재생성돼 Middle_Rough 경계가 사라진다.
             bool safeSplitBack = TryResolveSafeSplitBackZoneX("RoughFreeFromMillSplitAB", out double safeZoneX);
             if (safeSplitBack)
             {
-                // Middle_Rough 끝 = Xk + GetRoughPastFinishEndMm (기본 0.5, minZ≤2이면 +1). Back_Rough 시작 = 그 끝 - 2.0
-                double middleRoughEnd = safeZoneX + GetRoughPastFinishEndMm();
+                // Middle_Rough 끝 = Xk + 0.5 (D1.0 반경, short-cuff 미적용). Back_Rough 시작 = 그 끝 - 2.0
+                double middleRoughEnd = safeZoneX + RoughPastFinishEndMm;
                 double back2Start = Clamp(middleRoughEnd - roughOverlapMm, xMin + 1e-6, xMax - 1e-6);
                 if (string.Equals(region, "BACK2", StringComparison.OrdinalIgnoreCase))
                 {
                     backStart = back2Start;
+                    // BACK2 끝은 위에서 계산한 backEnd(BackPointX[+2]) 유지
                 }
                 else if (string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase))
                 {
-                    // Middle_Rough 끝 = Xk + 0.5 (D1.0 볼 반경)
-                    backEnd = Clamp(middleRoughEnd, backStart + 1e-3, backEnd);
+                    // Middle_Rough 끝 = Xk + 0.5 (D1.0 볼 반경). short-cuff 끝 연장 없음.
+                    backEnd = Clamp(middleRoughEnd, backStart + 1e-3, backPointX);
                 }
                 DentalLogger.Log($"RoughFreeFromMillSplitAB - safe split: region={region}({(region == "BACK2" ? "Back_Rough" : "Middle_Rough")}):[{backStart:F3}~{backEnd:F3}], Xk={safeZoneX:F3}, roughPastSeam={roughPastFinishSeamMm:F3}");
             }
@@ -3128,12 +3130,12 @@ namespace DentalAddin
 
         // Front/Middle 3D 황삭은 Finish 끝보다 D1.0 볼 반경(0.5) 더 깎는다.
         // 끝점 일치면 Finish 경계 직하방에 황삭 단차 벽이 남아 볼이 측방으로 치고 들어가 파손된다.
-        // Back_Rough는 형상이 일정하므로 Finish 끝(BackPointX)과 일치 유지.
-        // 피니시라인 minZ(원점 대비) ≤ 2mm이면 +1mm 더 연장(D4 미진입·Back_Finish D1.0 파손 방지).
+        // Back_Rough 기본 끝 = BackPointX. minZ≤2 short-cuff일 때만 +2mm (Front/Middle 미적용).
         private const double RoughPastFinishEndMm = CompositeFinishCommonToolDiameterMm / 2.0;
 
         /// <summary>
-        /// 원점 대비 피니시라인 minZ ≤ 2mm → 짧은 커프. D4가 언더컷에 못 들어가 Finish D1.0이 잔삭을 물 때.
+        /// 원점 대비 피니시라인 minZ ≤ 2mm → 짧은 커프.
+        /// Back_Turn/Back_Rough만 +2mm. Front/Middle은 기존.
         /// </summary>
         private static bool IsShortFinishLineMinZ()
         {
@@ -3148,15 +3150,10 @@ namespace DentalAddin
             return minZ <= AppConfig.ShortFinishLineMinZMm;
         }
 
+        /// <summary>short-cuff일 때 Back_Turn·Back_Rough 끝 가산(mm). 아니면 0.</summary>
         private static double GetShortFinishLineCuffExtraPastSeamMm()
         {
             return IsShortFinishLineMinZ() ? AppConfig.ShortFinishLineCuffExtraPastSeamMm : 0.0;
-        }
-
-        // Front/Middle Rough가 Finish 끝보다 더 깎는 양. 기본 0.5, minZ≤2이면 1.5.
-        private static double GetRoughPastFinishEndMm()
-        {
-            return RoughPastFinishEndMm + GetShortFinishLineCuffExtraPastSeamMm();
         }
 
         // Finish 인접 겹침 = D1.0 직경 2/3 (약 0.67mm). 다음 Finish 시작만 경계에서 tip 쪽으로 당긴다.
@@ -3168,11 +3165,10 @@ namespace DentalAddin
 
         // 선행 3D 황삭을 Finish seam보다 이만큼(X+) 더 깎는다. Finish 끝은 경계에 두고,
         // D1.0 반경·5축 기울기가 치은 쪽 미황삭을 물지 않게 한다.
-        // Front_Rough 끝 = Splitline_2 + GetRoughPastFinishEndMm (기본 0.5, minZ≤2이면 1.5).
-        // none/deep Front_Finish 끝은 Splitline_2−0.5.
+        // Front_Rough 끝 = Splitline_2 + 0.5. none/deep Front_Finish 끝은 Splitline_2−0.5.
         private static double GetRoughPastFinishSeamMm()
         {
-            return GetFinishFrontEndPastSplitMm() + GetRoughPastFinishEndMm();
+            return GetFinishFrontEndPastSplitMm() + RoughPastFinishEndMm;
         }
 
         // Front_Finish 끝 오프셋(Splitline_2 기준). Rough 연장분은 포함하지 않는다.

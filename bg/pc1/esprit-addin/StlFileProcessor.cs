@@ -1921,7 +1921,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         AppLogger.Log(
                             $"DentalAddin: Back_Rough 각도 정책 적용 - finishLineMinZ:{minZ.ToString("F4", CultureInfo.InvariantCulture)}, "
                             + $"mode:180deg x2(고정), shortCuffMinZ={(shortCuff ? "1" : "0")} "
-                            + $"(≤{AppConfig.ShortFinishLineMinZMm.ToString("0.###", CultureInfo.InvariantCulture)} → Turn/Rough past-seam"
+                            + $"(≤{AppConfig.ShortFinishLineMinZMm.ToString("0.###", CultureInfo.InvariantCulture)} → Back_Turn/Back_Rough만"
                             + $"{(shortCuff ? " +" + AppConfig.ShortFinishLineCuffExtraPastSeamMm.ToString("0.###", CultureInfo.InvariantCulture) + "mm" : " 기존")})");
                     }
                     catch (Exception ex)

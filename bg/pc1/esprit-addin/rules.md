@@ -269,24 +269,24 @@
   - 바닥·벽면 가공 여유: `MillRough_3D.prc` `StockAllowanceFloors/Walls` = `0.10`
   - 구현: `MainModuleComposite.TryRunRoughFreeFromMillSplitAB`
 
-### 4.12.1 짧은 피니시라인(minZ≤2mm) Turn/Rough +1mm (2026-11-04)
+### 4.12.1 짧은 피니시라인(minZ≤2mm) Back_Turn/Back_Rough +2mm (2026-11-04)
 
 - 조건: 원점 대비 `ABUTS_FINISHLINE_MIN_Z` ≤ `2.0` (`AppConfig.ShortFinishLineMinZMm`). **topZ−minZ 밴드 높이 아님.**
 - 이유: 낮은 커프에서 D4 Rough가 언더컷에 못 들어가면 Back_Finish(BM_D1.0)가 잔삭을 물어 파손.
-- 적용(minZ≤2만): Front/Middle `Rough`·`Turn` past-seam **+1.0mm**
-  - 기본 Rough past = `0.5` → 짧은 커프 `1.5`
-  - Front_Turn 끝 = `Splitline_2 + RoughPast + R` (자동 +1)
-  - Middle_Rough/Turn 끝 = `Xk + RoughPast(+1) …`
-- minZ > 2: 기존(0.5) 유지.
-- 구현: `MainModuleComposite.IsShortFinishLineMinZ` / `GetRoughPastFinishEndMm`, `StlFileProcessor.TryApplyBackRoughModeByFinishLineMinZ` 로그.
+- 적용(minZ≤2만): **Back_Turn · Back_Rough만 +2.0mm**. Front/Middle은 기존.
+  - Back_Rough 끝 = `BackPointX + 2.0` (기본은 `BackPointX`)
+  - Back_Turn 수평 끝 = `BackPointX + R + 0.5 + 2.0` (`ResolveBackTurnExitAllowance`)
+  - safe split Middle_Turn/Middle_Rough·Front_* 는 short-cuff 가산 없음
+- minZ > 2: 기존 유지.
+- 구현: `IsShortFinishLineMinZ` / `GetShortFinishLineCuffExtraPastSeamMm`, Back_Rough 끝·`ResolveBackTurnExitAllowance`.
 
 ### 4.12 Turn 끝점 = Rough 끝 + 공구 반경, 45도→90도 퇴출 SSOT (2026-10-12)
 
 - 이유: Rough(D4)가 Turn 미삭제 부위(공구 반경 2mm)에 걸리면 소재가 떨려 공구 파손·미삭제가 생긴다.
 - 구간별 끝점 (R = 황삭 공구 반경, D4 → 2.0 / ROUGH_20 D2 → 1.0):
-  - Front: Finish 끝 = Rough 끝 = `Splitline_2 + GetRoughPastFinishEndMm()`(기본 0.5, minZ≤2이면 1.5), Turn 끝 = Rough 끝 + R
-  - Middle: Rough 끝 = `Xk + GetRoughPastFinishEndMm()`, Turn 끝 = Rough 끝 + R. **Turn 끝이 `BackPointX`를 넘으면 Middle 제거 → Front/Back 2단** (`TryResolveSafeSplitBackZoneX`: `Xk ≤ BackPointX - R`)
-  - Back: Finish 끝 = `BackPointX`(헥스). Rough 끝 = `BackPointX`. Turn 체인 수평 끝 = `BackPointX + R + 0.5 + ZStock`
+  - Front: Finish 끝 = Rough 끝 = `Splitline_2 + 0.5`, Turn 끝 = Rough 끝 + R
+  - Middle: Rough 끝 = `Xk + 0.5`, Turn 끝 = Rough 끝 + R. **Turn 끝이 `BackPointX`를 넘으면 Middle 제거 → Front/Back 2단** (`TryResolveSafeSplitBackZoneX`: `Xk ≤ BackPointX - R`)
+  - Back: Finish 끝 = `BackPointX`(헥스). Rough 끝 = `BackPointX`(+2 if minZ≤2). Turn 체인 수평 끝 = `BackPointX + R + 0.5`(+2 if minZ≤2) + ZStock
     - 체인은 트림된 프로파일 끝(`EndXValue`, `LowerY`)까지만 쓰고 `ExtendTurning` 꼬리(EndX+Extend 수평, Exit angle 80 상승)는 버린다.
     - `Turning.prc` ZStock(0.3)만큼 툴패스 45도 모서리가 tip 쪽으로 당겨지므로 체인에 더한다. 0.5는 Back_Rough 툴패스가 BackPointX를 조금 넘는 몫.
 - Finish 겹침 (2026-10-20): Front_Finish 끝 = 경계(max_z 또는 Splitline_2). Back_Finish 시작 = 경계 − 1피치. safe split의 `Xk − overlap`은 Turn/Rough만.

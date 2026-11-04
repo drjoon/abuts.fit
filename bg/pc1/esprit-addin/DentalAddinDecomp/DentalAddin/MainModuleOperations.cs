@@ -1612,8 +1612,8 @@ namespace DentalAddin
                     case "BACK" when TryResolveSafeSplitBackZoneX("TurningOp BACK", out double safeZoneEndX):
                         // Safe split(Middle_Turn): Middle_Rough 끝(Xk+0.5)보다 D4 반경+보정만큼 더 깎고 퇴출. 헥스 너머 연장·45도 퇴출은 BACK2(Back_Turn)로 미룬다.
                         rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
-                        // Middle_Turn 끝 = Middle_Rough 끝(=Xk+0.5) + 황삭 공구 반경(D4 → 2.0)
-                        rangeMaxX = safeZoneEndX + GetRoughPastFinishEndMm() + GetTurnPastRoughEndMm() + ResolveTurnToolpathCompMm("MIDDLE");
+                        // Middle_Turn 끝 = Middle_Rough 끝(=Xk+0.5) + 황삭 공구 반경(D4 → 2.0). short-cuff 미적용.
+                        rangeMaxX = safeZoneEndX + RoughPastFinishEndMm + GetTurnPastRoughEndMm() + ResolveTurnToolpathCompMm("MIDDLE");
                         break;
                     case "BACK2":
                         if (!TryResolveSafeSplitBackZoneX("TurningOp BACK2", out double safeZoneStartX))
@@ -1632,6 +1632,7 @@ namespace DentalAddin
                         // 2) 끝점은 기존 Back_Turn 형상(수평 extension + 45도 퇴출)을 유지한다.
                         //    - 범위를 xMax로 자르면 퇴출부가 클리핑되어 수평+45 형상이 사라질 수 있다.
                         //    - 따라서 xMax + exitAllowance까지 허용해 기존 퇴출 형상을 보존한다.
+                        // 3) minZ≤2 short-cuff면 ResolveBackTurnExitAllowance에 +2mm.
                         rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
                         rangeMaxX = xMax + ResolveBackTurnExitAllowance();
                         break;
@@ -1646,8 +1647,11 @@ namespace DentalAddin
                     return false;
                 }
 
+                bool logBackShort = string.Equals(normalized, "BACK", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(normalized, "BACK2", StringComparison.OrdinalIgnoreCase);
                 DentalLogger.Log($"TurningOp 3-Stage - region={region}, range=[{rangeMinX:0.###},{rangeMaxX:0.###}], split1={splitline1:0.###}, split2={splitline2:0.###}" +
-                    (normalized == "FRONT" ? $", Front_Turn끝=Splitline_2+{GetTurnPastFinishSeamMm():0.###}, shortCuffMinZ={(IsShortFinishLineMinZ() ? "1" : "0")}" : string.Empty));
+                    (normalized == "FRONT" ? $", Front_Turn끝=Splitline_2+{GetTurnPastFinishSeamMm():0.###}" : string.Empty) +
+                    (logBackShort ? $", shortCuffMinZ={(IsShortFinishLineMinZ() ? "1" : "0")}, backExtra={GetShortFinishLineCuffExtraPastSeamMm():0.###}" : string.Empty));
                 return true;
             }
             catch (Exception ex)
@@ -1675,8 +1679,10 @@ namespace DentalAddin
 
         private static double ResolveBackTurnExitAllowance()
         {
-            double allowance = GetTurnPastRoughEndMm() + BackTurnPastRoughCompMm;
-            DentalLogger.Log($"TurningOp BACK - 수평 끝 = BackPointX + R{GetTurnPastRoughEndMm():0.###} + 보정{BackTurnPastRoughCompMm:0.###} = +{allowance:0.###}");
+            // 기본: BackPointX + R + 0.5. minZ≤2 short-cuff면 +2mm (Back_Turn만, Front/Middle 미적용).
+            double shortExtra = GetShortFinishLineCuffExtraPastSeamMm();
+            double allowance = GetTurnPastRoughEndMm() + BackTurnPastRoughCompMm + shortExtra;
+            DentalLogger.Log($"TurningOp BACK - 수평 끝 = BackPointX + R{GetTurnPastRoughEndMm():0.###} + 보정{BackTurnPastRoughCompMm:0.###} + shortExtra{shortExtra:0.###} = +{allowance:0.###}");
             return allowance;
         }
 
