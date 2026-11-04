@@ -101,6 +101,8 @@ import {
   resolvePracticeTransferIdsForCreditLedgerOrderDateRange,
   resolveCreditLedgerOrderYmdFromTransfer,
   resolveCreditLedgerArrivalYmdFromTransfer,
+  resolveCreditLedgerBillingArrivalYmd,
+  loadLatestActiveRemakeArrivalBySourceIds,
   creditLedgerDateFromOrderYmd,
   normalizeCreditLedgerDateKey,
   DEFAULT_CREDIT_LEDGER_DATE_KEY,
@@ -416,7 +418,7 @@ export async function listMyCreditLedger(req, res) {
     req.user?.requestorKind,
   );
 
-  // 년/월·from/to·onYmd: PTX는 dateKey(주문일|도착일) 최종 일자로 기간을 가른다.
+  // 년/월·from/to·onYmd: PTX는 최종 도착일. dateKey=orderDate는 캘린더·기존 API만.
   const orderDateRange = resolveCreditLedgerOrderDateRangeFromQuery(req.query);
   const ledgerDateKey = normalizeCreditLedgerDateKey(
     orderDateRange?.dateKey ||
@@ -804,8 +806,14 @@ export async function listMyCreditLedger(req, res) {
   const needsAbutmentBoxMeta = items.some((row) =>
     ledgerRowNeedsAbutmentBoxMeta(row),
   );
-  const [requestDocs, packageDocs, transferDocs, grants, ptxCaRequestDocs] =
-    await Promise.all([
+  const [
+    requestDocs,
+    packageDocs,
+    transferDocs,
+    grants,
+    ptxCaRequestDocs,
+    remakeArrivalBySourceId,
+  ] = await Promise.all([
       requestRefIds.length
         ? Request.find({ _id: { $in: toObjectIds(requestRefIds) } })
             .select(CREDIT_LEDGER_REQUEST_SELECT)
@@ -866,6 +874,9 @@ export async function listMyCreditLedger(req, res) {
             })
             .lean()
         : Promise.resolve([]),
+      ledgerDateKey === "arrivalDate" && practiceTransferRefIds.length
+        ? loadLatestActiveRemakeArrivalBySourceIds(practiceTransferRefIds)
+        : Promise.resolve(new Map()),
     ]);
 
   const refRequestIdById = new Map();
@@ -1013,7 +1024,10 @@ export async function listMyCreditLedger(req, res) {
     practiceTransferIdById.set(id, String(doc.transferId || ""));
     const toothNumbers = collectToothNumbersFromToothWorks(doc?.toothWorks);
     const orderDate = resolveCreditLedgerOrderYmdFromTransfer(doc);
-    const arrivalDate = resolveCreditLedgerArrivalYmdFromTransfer(doc);
+    const arrivalDate = resolveCreditLedgerBillingArrivalYmd(
+      resolveCreditLedgerArrivalYmdFromTransfer(doc),
+      remakeArrivalBySourceId.get(id),
+    );
     practiceTransferMetaById.set(id, {
       patientName: memoPatient || filePatient,
       // 치과 거래내역: 협력「어벗츠 · 파트너」·하청은 원청만(실명 비공개)

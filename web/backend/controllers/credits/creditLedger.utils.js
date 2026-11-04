@@ -8,6 +8,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-11-05: 도착 장부 — 활성 리메이크가 있으면 원청구를 리메이크 도착일에 두고, 리메이크 문서는 중복 청구하지 않는다.
 // - 2026-11-03: 기간 dateKey(주문일|도착일). 리메이크·재도착은 최종(마지막) 일자만.
 // - 2026-11-03: 기간 조회 — PRACTICE_TRANSFER는 주문일(orderDates) 기준, 그 외는 occurredAt.
 // - 2026-11-03: 월 조회 pipeline overfetch 제거. CA 숨김 후보 판별 헬퍼.
@@ -1560,6 +1561,167 @@ export function resolveCreditLedgerArrivalYmdFromTransfer(doc) {
 }
 
 /**
+ * 도착 장부의 청구일. 활성 리메이크 도착이 원청구보다 늦으면 그 날.
+ * 리메이크 기공비는 0인 경우가 많아, 금액은 원청구를 그 날짜로 옮긴다.
+ */
+export function resolveCreditLedgerBillingArrivalYmd(ownArrivalYmd, remakeArrivalYmd) {
+  const own = String(ownArrivalYmd || "").trim();
+  const remake = String(remakeArrivalYmd || "").trim();
+  if (!YMD_RE.test(remake)) return own;
+  if (!YMD_RE.test(own)) return remake;
+  return remake > own ? remake : own;
+}
+
+const activeRemakeLedgerFilter = () => ({
+  "billing.isRemake": true,
+  "remake.sourceTransferMongoId": { $ne: null },
+  $or: [{ workCanceledAt: null }, { workCanceledAt: { $exists: false } }],
+});
+
+/** 원청구 _id → 직접 리메이크 중 가장 늦은 도착일 */
+export async function loadLatestActiveRemakeArrivalBySourceIds(sourceIds) {
+  const ids = (Array.isArray(sourceIds) ? sourceIds : [])
+    .map((id) => {
+      const key = String(id || "").trim();
+      return mongoose.Types.ObjectId.isValid(key)
+        ? new mongoose.Types.ObjectId(key)
+        : null;
+    })
+    .filter(Boolean);
+  const map = new Map();
+  if (!ids.length) return map;
+  const docs = await PracticeTransfer.find({
+    $and: [
+      practiceTransferNotDeletedMongoFilter(),
+      activeRemakeLedgerFilter(),
+      { "remake.sourceTransferMongoId": { $in: ids } },
+    ],
+  })
+    .select({
+      "remake.sourceTransferMongoId": 1,
+      arrivalDates: 1,
+      transferMemo: 1,
+      createdAt: 1,
+    })
+    .lean();
+  for (const doc of docs || []) {
+    const sourceId = String(doc?.remake?.sourceTransferMongoId || "").trim();
+    const ymd = resolveCreditLedgerArrivalYmdFromTransfer(doc);
+    if (!sourceId || !YMD_RE.test(ymd)) continue;
+    const prev = map.get(sourceId);
+    if (!prev || ymd > prev) map.set(sourceId, ymd);
+  }
+  return map;
+}
+
+/**
+ * 도착일 장부 id.
+ * 원청구는 리메이크 도착일이 구간에 있을 때만 남기고,
+ * 그 리메이크 문서는 같은 금액을 두 번 청구하지 않도록 뺀다.
+ */
+export async function reconcileCreditLedgerTransferIdsForRemakeArrival({
+  ids,
+  scope,
+  range,
+} = {}) {
+  const fromYmd = String(range?.fromYmd || "").trim();
+  const toYmd = String(range?.toYmd || "").trim();
+  const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
+  if (!YMD_RE.test(fromYmd) || !YMD_RE.test(toYmd)) return list;
+
+  const inRange = (ymd) => YMD_RE.test(ymd) && ymd >= fromYmd && ymd <= toYmd;
+  const remakeArrivalBySource = await loadLatestActiveRemakeArrivalBySourceIds(list);
+  const kept = [];
+  for (const id of list) {
+    const remakeYmd = remakeArrivalBySource.get(String(id));
+    if (remakeYmd && !inRange(remakeYmd)) continue;
+    kept.push(id);
+  }
+
+  const dateFilter = buildPracticeTransferCalendarDateRangeFilter({
+    fromYmd,
+    toYmd,
+    dateKey: "arrivalDate",
+  });
+  const remakeIdsInRange = new Set();
+  const remakeSourceById = new Map();
+  if (dateFilter && scope) {
+    const remakes = await PracticeTransfer.find({
+      $and: [
+        dateFilter,
+        practiceTransferNotDeletedMongoFilter(),
+        activeRemakeLedgerFilter(),
+      ],
+    })
+      .select({
+        _id: 1,
+        "remake.sourceTransferMongoId": 1,
+        arrivalDates: 1,
+        transferMemo: 1,
+        createdAt: 1,
+      })
+      .limit(5000)
+      .lean();
+    const sourceIds = [];
+    for (const doc of remakes || []) {
+      if (
+        !practiceTransferCurrentDateInCreditLedgerRange(doc, {
+          fromYmd,
+          toYmd,
+          dateKey: "arrivalDate",
+        })
+      ) {
+        continue;
+      }
+      const remakeId = String(doc._id);
+      const sourceId = String(doc?.remake?.sourceTransferMongoId || "").trim();
+      remakeIdsInRange.add(remakeId);
+      if (mongoose.Types.ObjectId.isValid(sourceId)) {
+        remakeSourceById.set(remakeId, sourceId);
+        sourceIds.push(sourceId);
+      }
+    }
+    const uniqueSourceIds = [...new Set(sourceIds)];
+    if (uniqueSourceIds.length) {
+      const sources = await PracticeTransfer.find({
+        $and: [
+          scope,
+          {
+            _id: {
+              $in: uniqueSourceIds.map((id) => new mongoose.Types.ObjectId(id)),
+            },
+          },
+          practiceTransferNotDeletedMongoFilter(),
+          {
+            $or: [
+              { workCanceledAt: null },
+              { workCanceledAt: { $exists: false } },
+            ],
+          },
+        ],
+      })
+        .select({ _id: 1 })
+        .lean();
+      const seen = new Set(kept.map((id) => String(id)));
+      for (const source of sources || []) {
+        const key = String(source?._id || "");
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        kept.push(source._id);
+      }
+    }
+  }
+
+  const billed = new Set(kept.map((id) => String(id)));
+  return kept.filter((id) => {
+    const key = String(id);
+    if (!remakeIdsInRange.has(key)) return true;
+    const sourceId = remakeSourceById.get(key);
+    return !sourceId || !billed.has(sourceId);
+  });
+}
+
+/**
  * dateKey에 따른 최종(현재) 일자만. 이력 중간일은 장부 월 필터에 넣지 않는다.
  */
 export function resolveCreditLedgerCurrentYmdFromTransfer(doc, dateKey) {
@@ -1638,12 +1800,18 @@ export async function resolvePracticeTransferIdsForCreditLedgerOrderDateRange({
     .limit(Math.max(1, Math.min(5000, Number(limit) || 3000)))
     .lean();
 
-  return docs
+  const ids = docs
     .filter((doc) =>
       practiceTransferCurrentDateInCreditLedgerRange(doc, normalizedRange),
     )
     .map((doc) => doc?._id)
     .filter(Boolean);
+  if (normalizedRange.dateKey !== "arrivalDate") return ids;
+  return reconcileCreditLedgerTransferIdsForRemakeArrival({
+    ids,
+    scope,
+    range: normalizedRange,
+  });
 }
 
 /** 주문/도착 YMD → 장부 createdAt 표시용 Date(정오 KST) */
@@ -2341,16 +2509,57 @@ export async function listPendingLabSettlementLedgerRows({
     .sort({ "billing.heldAt": -1 })
     .limit(Math.max(1, Math.min(500, Number(limit) || 200)))
     .lean();
-  if (!transfers.length) return [];
+  if (!transfers.length && pendingDateRange?.dateKey !== "arrivalDate") return [];
 
   // CA settlement gate(STL·생산비)는 확정 적립·payout만 막는다.
   // 적립 보류 미러는 hold 중이면 보철만과 같이 노출(작업시작 후에도 CA 업로드 전 표시).
   // 리메이크·재도착: 최종 주문/도착일만(이력 중간일 제외).
-  const visibleTransfers = pendingDateRange
+  // 도착 기준이면 원청구를 리메이크 도착월로 옮긴다.
+  let visibleTransfers = pendingDateRange
     ? transfers.filter((doc) =>
         practiceTransferCurrentDateInCreditLedgerRange(doc, pendingDateRange),
       )
     : transfers;
+  if (pendingDateRange?.dateKey === "arrivalDate") {
+    const reconciledIds = await reconcileCreditLedgerTransferIdsForRemakeArrival({
+      ids: visibleTransfers.map((doc) => doc._id),
+      scope: {
+        $or: [{ assigneeLabAnchorId: labOid }, { targetLabAnchorId: labOid }],
+      },
+      range: pendingDateRange,
+    });
+    const byId = new Map(visibleTransfers.map((doc) => [String(doc._id), doc]));
+    const missing = reconciledIds.filter((id) => !byId.has(String(id)));
+    if (missing.length) {
+      const extra = await PracticeTransfer.find({ _id: { $in: missing } })
+        .select({
+          _id: 1,
+          transferId: 1,
+          practiceBusinessAnchorId: 1,
+          matchingMode: 1,
+          assigneeKind: 1,
+          assigneeLabAnchorId: 1,
+          targetLabAnchorId: 1,
+          requestorDownloadedAt: 1,
+          billing: 1,
+          toothWorks: 1,
+          createdAt: 1,
+          orderDates: 1,
+          arrivalDates: 1,
+          transferMemo: 1,
+          "production.designFiles": 1,
+          "production.designFileCount": 1,
+          "production.relatedRequestIds": 1,
+        })
+        .lean();
+      for (const doc of extra || []) {
+        if (doc?._id) byId.set(String(doc._id), doc);
+      }
+    }
+    visibleTransfers = reconciledIds
+      .map((id) => byId.get(String(id)))
+      .filter(Boolean);
+  }
   if (!visibleTransfers.length) return [];
 
   const transferIds = visibleTransfers.map((t) => t._id);
@@ -2482,6 +2691,13 @@ export async function listPendingLabSettlementLedgerRows({
   }
 
   const rows = [];
+  const remakeArrivalBySourceId =
+    pendingDateRange?.dateKey === "arrivalDate"
+      ? await loadLatestActiveRemakeArrivalBySourceIds(
+          visibleTransfers.map((doc) => doc._id),
+        )
+      : new Map();
+
   for (const doc of visibleTransfers) {
     const id = String(doc._id);
     const billing = doc.billing || {};
@@ -2572,12 +2788,18 @@ export async function listPendingLabSettlementLedgerRows({
     }
 
     const orderYmd = resolveCreditLedgerOrderYmdFromTransfer(doc);
-    const arrivalYmd = resolveCreditLedgerArrivalYmdFromTransfer(doc);
+    const ownArrivalYmd = resolveCreditLedgerArrivalYmdFromTransfer(doc);
+    const arrivalYmd =
+      pendingDateRange?.dateKey === "arrivalDate"
+        ? resolveCreditLedgerBillingArrivalYmd(
+            ownArrivalYmd,
+            remakeArrivalBySourceId.get(String(doc._id)),
+          )
+        : ownArrivalYmd;
     const displayYmd = pendingDateRange
-      ? resolveCreditLedgerCurrentYmdFromTransfer(
-          doc,
-          pendingDateRange.dateKey,
-        )
+      ? pendingDateRange.dateKey === "arrivalDate"
+        ? arrivalYmd
+        : orderYmd
       : orderYmd || arrivalYmd;
     const displayAt = creditLedgerDateFromOrderYmd(displayYmd);
     const occurredAtVal =

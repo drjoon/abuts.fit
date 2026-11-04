@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-05: dense 내역 — 주문/도착 뱃지 제거. 치과·기공소 모두 최종 도착일만.
 // - 2026-11-03: dense 기본=도착일·날짜 오름차순(1→말일). 뱃지「주문」「도착」(기공의뢰와 동일).
 // - 2026-11-03: dense — 기공소(상대) 카드는 가나다 고정. 날짜·환자 정렬은 카드 안만.
 // - 2026-11-03: dense 필터 — 주문일/도착일 뱃지·dateKey. 표 날짜=최종 일자.
@@ -145,8 +146,6 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  CalendarCheck,
-  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -154,7 +153,6 @@ import {
   CreditCard,
 } from "lucide-react";
 import type { LabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
-import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import {
   Table,
   TableBody,
@@ -2707,9 +2705,8 @@ export const CreditLedgerModal = ({
     : null;
 
   const [ledgerYm, setLedgerYm] = useState(initialEmbeddedYm);
-  /** dense 내역 — 주문일|도착일(최종). 기본 도착일(기공의뢰 캘린더와 동일) */
-  const [ledgerDateKey, setLedgerDateKey] =
-    useState<LabReceiveCalendarDateKey>("arrivalDate");
+  /** dense 내역은 최종 치과도착일만. 주문/도착 전환은 두지 않는다. */
+  const ledgerDateKey: LabReceiveCalendarDateKey = "arrivalDate";
   const [period, setPeriod] = useState<PeriodFilterValue>(
     () => initialResolvedFilters.period,
   );
@@ -2957,10 +2954,7 @@ export const CreditLedgerModal = ({
     if (mode === "ledger") {
       params.set("includePeriodSummary", "0");
       if (denseLedgerUi) {
-        params.set(
-          "dateKey",
-          normalizeLabReceiveCalendarDateKey(ledgerDateKey),
-        );
+        params.set("dateKey", "arrivalDate");
       }
     }
 
@@ -3099,7 +3093,6 @@ export const CreditLedgerModal = ({
     businessAnchorId,
     initialFiltersKey,
     equationLedgerUi,
-    ledgerDateKey,
   ]);
 
   useEffect(() => {
@@ -3976,56 +3969,12 @@ export const CreditLedgerModal = ({
                 ) : null}
               </div>
 
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  className="rounded-full"
-                  title="치과주문일"
-                  aria-label="치과주문일"
-                  onClick={() => setLedgerDateKey("orderDate")}
-                >
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "inline-flex h-7 cursor-pointer items-center gap-1 px-2 leading-snug tracking-normal",
-                      ledgerDateKey === "orderDate"
-                        ? "border-primary/70 bg-primary-soft text-primary-strong"
-                        : "hover:bg-muted/40",
-                    )}
-                  >
-                    <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                    <span>주문</span>
-                  </Badge>
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full"
-                  title="치과도착일"
-                  aria-label="치과도착일"
-                  onClick={() => setLedgerDateKey("arrivalDate")}
-                >
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "inline-flex h-7 cursor-pointer items-center gap-1 px-2 leading-snug tracking-normal",
-                      ledgerDateKey === "arrivalDate"
-                        ? "border-primary/70 bg-primary-soft text-primary-strong"
-                        : "hover:bg-muted/40",
-                    )}
-                  >
-                    <CalendarCheck
-                      className="h-3.5 w-3.5 shrink-0"
-                      aria-hidden
-                    />
-                    <span>도착</span>
-                  </Badge>
-                </button>
-              </div>
-
               <ImeSafeInput
                 value={q}
                 onChange={setQ}
-                placeholder="검색 (기공소·환자)"
+                placeholder={
+                  isLabViewer ? "검색 (치과·환자)" : "검색 (기공소·환자)"
+                }
                 className="h-9 min-w-0 flex-1 rounded-xl border-slate-200 bg-white sm:max-w-xs"
               />
 

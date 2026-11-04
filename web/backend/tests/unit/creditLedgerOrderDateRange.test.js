@@ -6,6 +6,7 @@ import {
   creditLedgerDateFromOrderYmd,
   practiceTransferCurrentDateInCreditLedgerRange,
   resolveCreditLedgerArrivalYmdFromTransfer,
+  resolveCreditLedgerBillingArrivalYmd,
   resolveCreditLedgerOrderDateRangeFromQuery,
   resolveCreditLedgerOrderYmdFromTransfer,
 } from "../../controllers/credits/creditLedger.utils.js";
@@ -83,6 +84,26 @@ describe("resolveCreditLedgerArrivalYmdFromTransfer / remake last arrival", () =
         transferMemo: "[도착일: 2026-09-10]",
       }),
     ).toBe("2026-10-05");
+  });
+});
+
+describe("resolveCreditLedgerBillingArrivalYmd", () => {
+  it("moves the source charge to the later remake arrival", () => {
+    expect(
+      resolveCreditLedgerBillingArrivalYmd("2026-10-20", "2026-11-06"),
+    ).toBe("2026-11-06");
+  });
+
+  it("keeps the source arrival when there is no remake", () => {
+    expect(resolveCreditLedgerBillingArrivalYmd("2026-10-20", "")).toBe(
+      "2026-10-20",
+    );
+  });
+
+  it("keeps the later of the two dates", () => {
+    expect(
+      resolveCreditLedgerBillingArrivalYmd("2026-11-06", "2026-10-20"),
+    ).toBe("2026-11-06");
   });
 });
 
