@@ -1918,11 +1918,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, "0");
 
                         bool shortCuff = minZ <= AppConfig.ShortFinishLineMinZMm;
+                        double shortExtra = shortCuff
+                            ? AppConfig.ShortFinishLineBackExtraBiasMm - Math.Max(0.0, minZ)
+                            : 0.0;
                         AppLogger.Log(
                             $"DentalAddin: Back_Rough 각도 정책 적용 - finishLineMinZ:{minZ.ToString("F4", CultureInfo.InvariantCulture)}, "
                             + $"mode:180deg x2(고정), shortCuffMinZ={(shortCuff ? "1" : "0")} "
                             + $"(≤{AppConfig.ShortFinishLineMinZMm.ToString("0.###", CultureInfo.InvariantCulture)} → Back_Turn/Back_Rough만"
-                            + $"{(shortCuff ? " +" + AppConfig.ShortFinishLineCuffExtraPastSeamMm.ToString("0.###", CultureInfo.InvariantCulture) + "mm" : " 기존")})");
+                            + $"{(shortCuff ? " +" + shortExtra.ToString("0.###", CultureInfo.InvariantCulture) + "mm(=bias−minZ)" : " 기존")})");
                     }
                     catch (Exception ex)
                     {

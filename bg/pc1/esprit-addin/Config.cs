@@ -49,12 +49,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         public const string TurningExtendEnv = "ABUTS_TURNING_EXTEND";
 
-        // 피니시라인 minZ(원점 대비 source Z). ≤ ShortFinishLineMinZMm 이면 Back_Turn/Back_Rough만 +2mm.
+        // 피니시라인 minZ(원점 대비 source Z). ≤ ShortFinishLineMinZMm 이면 Back_Turn/Back_Rough만 선형 연장.
         // env SSOT는 기존 ABUTS_FINISHLINE_MIN_Z. Front/Middle은 기존 유지.
+        // Back extra(mm) = ShortFinishLineBackExtraBiasMm − minZ
+        //   minZ 2→+1 / 1.5→+1.5 / 1→+2 / 0.5→+2.5 / 0→+3
         public const double ShortFinishLineMinZMm = 2.0;
 
-        // 짧은 피니시라인(minZ≤2)일 때 Back_Turn 수평 끝·Back_Rough 끝(BackPointX 기준) 추가 연장(mm).
-        public const double ShortFinishLineCuffExtraPastSeamMm = 2.0;
+        // short-cuff Back 끝 가산 식의 bias(mm). extra = bias − minZ (minZ≤ShortFinishLineMinZMm).
+        public const double ShortFinishLineBackExtraBiasMm = 3.0;
 
         public const string RoughfreeformSplitEnableEnv = "ABUTS_ROUGHFREEFORM_SPLIT_ENABLE";
 

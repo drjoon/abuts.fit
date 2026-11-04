@@ -2775,7 +2775,7 @@ namespace DentalAddin
             // 선행 3D 황삭 끝은 Finish seam보다 GetRoughPastFinishSeamMm(0.5) 더 깎아
             // Front/Back_Finish(D1.0)가 미황삭 치은 쪽을 물지 않게 한다.
             // Rough D4→2.0mm (ROUGH_20 D2→1.0mm). Front/Middle past는 고정.
-            // minZ≤2 short-cuff +2mm는 Back_Rough 끝(BackPointX)에만 가산.
+            // minZ≤2 short-cuff는 Back_Rough 끝(BackPointX)에만 선형 가산(extra=3−minZ).
             double roughOverlapMm = GetRoughAdjacentOverlapMm();
             double roughPastFinishSeamMm = GetRoughPastFinishSeamMm();
 
@@ -2788,7 +2788,7 @@ namespace DentalAddin
             double backStart = Clamp(frontEnd - roughOverlapMm, xMin + 1e-6, xMax - 1e-6);
             DentalLogger.Log($"RoughFreeFromMillSplitAB - Middle/Back_Rough 시작=Front_Rough끝-{RoughSeamExtraOverlapMm:F1}: startX={backStart:F3}, frontEnd={frontEnd:F3}, overlapMm={roughOverlapMm:F3}, roughDia={GetActiveRoughToolDiameterMm():F1}");
 
-            // Back_Rough 끝 = BackPointX. minZ≤2이면 +2mm(short-cuff). Front/Middle은 기존.
+            // Back_Rough 끝 = BackPointX. minZ≤2이면 + (3−minZ)mm(short-cuff). Front/Middle은 기존.
             double backPointX = MoveSTL_Module.BackPointX;
             double backRoughExtraMm = GetShortFinishLineCuffExtraPastSeamMm();
             double backEnd = backPointX + backRoughExtraMm;
@@ -2816,7 +2816,7 @@ namespace DentalAddin
                 if (string.Equals(region, "BACK2", StringComparison.OrdinalIgnoreCase))
                 {
                     backStart = back2Start;
-                    // BACK2 끝은 위에서 계산한 backEnd(BackPointX[+2]) 유지
+                    // BACK2 끝은 위에서 계산한 backEnd(BackPointX[+extra]) 유지
                 }
                 else if (string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase))
                 {
@@ -3130,30 +3130,47 @@ namespace DentalAddin
 
         // Front/Middle 3D 황삭은 Finish 끝보다 D1.0 볼 반경(0.5) 더 깎는다.
         // 끝점 일치면 Finish 경계 직하방에 황삭 단차 벽이 남아 볼이 측방으로 치고 들어가 파손된다.
-        // Back_Rough 기본 끝 = BackPointX. minZ≤2 short-cuff일 때만 +2mm (Front/Middle 미적용).
+        // Back_Rough 기본 끝 = BackPointX. minZ≤2 short-cuff일 때만 +(3−minZ)mm (Front/Middle 미적용).
         private const double RoughPastFinishEndMm = CompositeFinishCommonToolDiameterMm / 2.0;
 
-        /// <summary>
-        /// 원점 대비 피니시라인 minZ ≤ 2mm → 짧은 커프.
-        /// Back_Turn/Back_Rough만 +2mm. Front/Middle은 기존.
-        /// </summary>
-        private static bool IsShortFinishLineMinZ()
+        private static bool TryGetFinishLineMinZMm(out double minZ)
         {
+            minZ = 0.0;
             string raw = GetEnvString("ABUTS_FINISHLINE_MIN_Z");
-            if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double minZ)
+            if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out minZ)
                 || double.IsNaN(minZ)
                 || double.IsInfinity(minZ))
             {
+                minZ = 0.0;
                 return false;
             }
 
-            return minZ <= AppConfig.ShortFinishLineMinZMm;
+            return true;
         }
 
-        /// <summary>short-cuff일 때 Back_Turn·Back_Rough 끝 가산(mm). 아니면 0.</summary>
+        /// <summary>
+        /// 원점 대비 피니시라인 minZ ≤ 2mm → 짧은 커프.
+        /// Back_Turn/Back_Rough만 선형 가산. Front/Middle은 기존.
+        /// </summary>
+        private static bool IsShortFinishLineMinZ()
+        {
+            return TryGetFinishLineMinZMm(out double minZ) && minZ <= AppConfig.ShortFinishLineMinZMm;
+        }
+
+        /// <summary>
+        /// short-cuff Back_Turn·Back_Rough 끝 가산(mm).
+        /// minZ≤2: extra = ShortFinishLineBackExtraBiasMm − minZ (3−minZ). 아니면 0.
+        /// </summary>
         private static double GetShortFinishLineCuffExtraPastSeamMm()
         {
-            return IsShortFinishLineMinZ() ? AppConfig.ShortFinishLineCuffExtraPastSeamMm : 0.0;
+            if (!TryGetFinishLineMinZMm(out double minZ) || minZ > AppConfig.ShortFinishLineMinZMm)
+            {
+                return 0.0;
+            }
+
+            // minZ < 0 이면 bias 이상으로 커지지 않게 0으로 클램프.
+            double z = Math.Max(0.0, minZ);
+            return AppConfig.ShortFinishLineBackExtraBiasMm - z;
         }
 
         // Finish 인접 겹침 = D1.0 직경 2/3 (약 0.67mm). 다음 Finish 시작만 경계에서 tip 쪽으로 당긴다.
