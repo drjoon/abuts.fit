@@ -793,6 +793,10 @@ const ORIG_MID_LIFT_RAMP_MM = 0.65;
  *   적용해 전 구간·전 각도에서 볼록 변곡(d²r/dz² < 0)이 전혀 없으면서도 중간단이 일찍 채워져 피니시라인 하방이 덜 수평(≈74.8°)이 되게 한다.
  */
 const CONCAVE_TAPER_CURVE_END_U = 0.72;
+/** 급경사 플레어 커프에서 마진 하방 두께를 확보하기 위해 상부 볼록 감속(convex thickening)을 시작하는 기준(65°)과 상한(63.5°). */
+const UPPER_CUFF_THICK_START_SLOPE = Math.tan((65 * Math.PI) / 180);
+const UPPER_CUFF_THICK_END_SLOPE = Math.tan((63.5 * Math.PI) / 180);
+const UPPER_CUFF_THICK_FULL_SLOPE = Math.tan((73.5 * Math.PI) / 180);
 const LONG_BAND_MM = 2;
 /** 띠 면 평균: 반폭(약 ±30°)과 위쪽 보존 지수(t^p). */
 const BAND_SMOOTH_HALF_COLUMNS = columnsForDeg(30);
@@ -1113,11 +1117,12 @@ const QUARTIC_FIT_MAX_RESIDUAL_MM = 0.02;
 const MERIDIAN_CHECK_SKIP_TOP_MM = 0.1;
 
 /** 이음 프로파일(t∈[0,1] → 반경, 높이 h)의 가장 작은 오목 자오선 곡률 반경(mm). 오목한 곳이 없으면 Infinity. */
-function minConcaveMeridianRadius(fn, h, samples = 200, skipTopMm = 0) {
+function minConcaveMeridianRadius(fn, h, samples = 200, skipTopMm = 0, skipBotMm = 0) {
   const dz = h / samples;
+  const first = Math.max(1, Math.ceil(skipBotMm / dz));
   const last = Math.min(samples - 1, Math.floor((h - skipTopMm) / dz));
   let kMax = 0;
-  for (let i = 1; i <= last; i += 1) {
+  for (let i = first; i <= last; i += 1) {
     const rm = fn((i - 1) / samples);
     const r = fn(i / samples);
     const rp = fn((i + 1) / samples);
@@ -1142,8 +1147,8 @@ const RELAX_TARGET_MARGIN = 1.08;
  * 끝 밖은 끝 기울기 직선으로 잇고, 위 끝 MERIDIAN_CHECK_SKIP_TOP_MM 안에서는 메운 양을 0으로 줄여 위 끝 반경·기울기를 지킨다.
  * 아래 끝(i=0)에 남은 미소 오프셋은 선형 항(botShift·(1-t), 2차 미분=0)으로 빼서 볼록 변곡 없이 원뿔 상단 반경(fn(0))을 정확히 지킨다.
  */
-function relaxMeridianConcavity(fn, h, R) {
-  if (minConcaveMeridianRadius(fn, h, 200, MERIDIAN_CHECK_SKIP_TOP_MM) >= R) return fn;
+function relaxMeridianConcavity(fn, h, R, skipBotMm = 0) {
+  if (minConcaveMeridianRadius(fn, h, 200, MERIDIAN_CHECK_SKIP_TOP_MM, skipBotMm) >= R) return fn;
   const n = RELAX_SAMPLES;
   const dz = h / n;
   const ext = Math.ceil(R / dz);
@@ -1185,7 +1190,10 @@ function relaxMeridianConcavity(fn, h, R) {
     const zTop = h - i * dz;
     const u = Math.max(0, Math.min(1, zTop / MERIDIAN_CHECK_SKIP_TOP_MM));
     const keepTop = u * u * u * (10 - 15 * u + 6 * u * u);
-    return f[i + ext] + keepTop * (acc / wSum);
+    const zBot = i * dz;
+    const ub = skipBotMm > 1e-6 ? Math.max(0, Math.min(1, zBot / skipBotMm)) : 1;
+    const keepBot = ub * ub * ub * (10 - 15 * ub + 6 * ub * ub);
+    return f[i + ext] + keepTop * keepBot * (acc / wSum);
   });
   const botShift = vals[0] - f[ext];
   for (let i = 0; i <= n; i += 1) vals[i] -= botShift * (1 - i / n);
@@ -3496,6 +3504,7 @@ export function blendCuffJunction(buffer, options = {}) {
       return smoothCreaseR[j] * w + Math.max(r, smoothCreaseR[j]) * (1 - w);
     });
     const blendedCols = new Uint8Array(thetas.length);
+    const relaxSkipBotMm = new Float64Array(thetas.length);
     const ext = coneExtendMm ?? CUFF_CONNECTION_CONE_EXTEND_MM;
     const faceZ = zA + ext;
     const rFace = ra + coneSlope * ext;
@@ -3581,13 +3590,50 @@ export function blendCuffJunction(buffer, options = {}) {
       const holdH = Math.max(0, Math.min(cuffDepartZ - faceZ - 0.35, H - minFlareH, 0.45 * H));
       const u0 = holdH / H;
       const flareSpan = Math.max(1e-4, 1 - u0);
+      const spreadSlope = D / Math.max(1e-4, H * flareSpan);
       // 스캘럽 마진에서 낮은 마진 열(310°) 근처만 좁게 올라오지 않도록, 오목 가속 구간이 끝나는 실제 높이 대역을
       // 커프 최소 높이(minHAll) 기준으로 맞춰 주변의 높은 마진 열(240~295°, 340~50°)도 같은 높이 대역에서 함께 넓게 퍼져 올라오게 한다.
+      // 또한 순수 오목 테이퍼 끝 기울기(pureEndSlope)가 UPPER_CUFF_THICK_START_SLOPE(65°)를 넘는 급경사 열은
+      // 하단 오목 가속을 일찍 마치고(uc 축소) 상부(ξ ≥ ud)에서 C4 감속(볼록 두꺼워짐, d²r/dz² ≤ 0)으로 마진 하방을 두껍게 받쳐
+      // 선반·밀링 중 얇은 마진 날개가 휘어 깎여 나가지 않고 피니시라인 하방 커프 각도가 70° 이내(약 64~68°)로 들어오게 한다.
       const minHAll = Math.max(0.4, Math.min(...hs) - ext);
-      const uc = Math.max(0.42, Math.min(CONCAVE_TAPER_CURVE_END_U, (CONCAVE_TAPER_CURVE_END_U * minHAll) / H));
+      const ucBase = Math.max(0.42, Math.min(CONCAVE_TAPER_CURVE_END_U, (CONCAVE_TAPER_CURVE_END_U * minHAll) / H));
       const cBar = 1 / 3;
+      const gammaBase = 1 / (1 - cBar * ucBase);
+      const pureEndSlope = s0 + spreadSlope * gammaBase;
+      const overRaw = Math.max(
+        0,
+        Math.min(
+          1,
+          (pureEndSlope - UPPER_CUFF_THICK_START_SLOPE) /
+            Math.max(1e-4, UPPER_CUFF_THICK_FULL_SLOPE - UPPER_CUFF_THICK_START_SLOPE),
+        ),
+      );
+      const wThick = overRaw * overRaw * (3 - 2 * overRaw);
+      const ucSteep = Math.max(0.22, Math.min(0.40, (0.25 * minHAll) / H));
+      const uc = ucBase * (1 - wThick) + ucSteep * wThick;
+      relaxSkipBotMm[j] = wThick > 1e-4 ? (ext + uc * H * 0.9) * wThick : 0;
+      const ud = Math.min(0.85, Math.max(uc + 0.04, 0.36));
+      const Ld = Math.max(1e-4, 1 - ud);
       const gamma = 1 / (1 - cBar * uc);
-      const fitted = fittedOrigOf(j, hb, rTop, eSlope);
+      const targetEndSlope = UPPER_CUFF_THICK_START_SLOPE * (1 - wThick) + UPPER_CUFF_THICK_END_SLOPE * wThick;
+      const mEndCap = spreadSlope > 1e-6 ? Math.max(0.4, (targetEndSlope - s0) / spreadSlope) : gamma;
+      const mEnd = wThick > 1e-6 ? Math.min(gamma, mEndCap) : gamma;
+      const mPeak = (1 - (2 / 3) * Ld * mEnd) / Math.max(1e-4, 1 - cBar * uc - (2 / 3) * Ld);
+      const maxEndSlope = Math.min(CORNER_MAX_END_SLOPE, s0 + 2.15 * spreadSlope);
+      const minEndSlope = Math.min(maxEndSlope, s0 + 1.65 * spreadSlope);
+      const rawEndSlope = Number.isFinite(eSlope) ? Math.max(s0, eSlope) : s0 + 1.9 * spreadSlope;
+      const clampedEnd = Math.max(minEndSlope, Math.min(maxEndSlope, rawEndSlope));
+      const beta =
+        spreadSlope > 1e-6
+          ? Math.max(0.65, Math.min(1.15, (clampedEnd - s0) / spreadSlope - 1))
+          : 1.0;
+      const effESlope =
+        wThick > 1e-4 && Number.isFinite(eSlope)
+          ? Math.min(eSlope, UPPER_CUFF_THICK_END_SLOPE * wThick + eSlope * (1 - wThick))
+          : eSlope;
+      const fitted = fittedOrigOf(j, hb, rTop, effESlope);
+      const c4Ramp = (v) => v - (2 - (1 - v) ** 5 * (2 + 4 * v)) / 6;
       // blendTurnedConeWithOriginal이 바깥에서 base + w(u)·(origAt(t) - base)를 계산한다.
       // rTop 클립은 wU로 나누기 전 실제 반경(rSActual)에 걸어야 하며, wU로 나눈 뒤(rSOrig/targetOrig)에 rTop 클립을 걸면
       // 바깥에서 wU가 곱해질 때 base + wU·(rTop - base)에서 꺾여 커프 중간(z≈1.1mm)에 볼록 능선(d²r/dz² = -7)이 생긴다.
@@ -3602,11 +3648,21 @@ export function blendCuffJunction(buffer, options = {}) {
         let rSOrig = base;
         if (u > u0) {
           const xi = Math.max(0, Math.min(1, (u - u0) / flareSpan));
-          const v = Math.min(1, xi / uc);
-          const g3 = v - (2 - (1 - v) ** 5 * (2 + 4 * v)) / 6;
-          const fConcave = xi <= uc ? gamma * uc * g3 : gamma * (xi - cBar * uc);
-          const rSActual = Math.min(rTop, base + D * fConcave);
-          rSOrig = base + (rSActual - base) / Math.max(wU, 1e-9);
+          const wXi = xi * xi * xi * (10 - 15 * xi + 6 * xi * xi);
+          const sCurveShape = (wXi * ((1 - beta) * xi + beta * xi * xi)) / Math.max(wU, 1e-9);
+          const rSCurveOrig = Math.min(rTop, base + D * Math.min(1.2, sCurveShape));
+          let fProfile;
+          if (xi <= uc) {
+            fProfile = mPeak * uc * c4Ramp(xi / uc);
+          } else if (xi <= ud) {
+            fProfile = mPeak * (xi - cBar * uc);
+          } else {
+            const w = Math.min(1, (xi - ud) / Ld);
+            fProfile = mPeak * (xi - cBar * uc) + Ld * (mEnd - mPeak) * c4Ramp(w);
+          }
+          const rSActual = Math.min(rTop, base + D * fProfile);
+          const rSC4Orig = base + (rSActual - base) / Math.max(wU, 1e-9);
+          rSOrig = rSCurveOrig * (1 - wThick) + rSC4Orig * wThick;
         }
         if (!fitted || !(ORIG_MID_LIFT > 1e-6)) return Math.max(base, rSOrig);
         const fVal = Math.max(base, Math.min(rTop, fitted(t)));
@@ -3629,7 +3685,12 @@ export function blendCuffJunction(buffer, options = {}) {
           : null;
         if (blended) {
           blendedCols[j] = 1;
-          return relaxMeridianConcavity(blended, hb, CUFF_MIN_CONCAVE_RADIUS_MM * RELAX_TARGET_MARGIN);
+          return relaxMeridianConcavity(
+            blended,
+            hb,
+            CUFF_MIN_CONCAVE_RADIUS_MM * RELAX_TARGET_MARGIN,
+            relaxSkipBotMm[j],
+          );
         }
         const emerged = verticalEmergenceProfile(ra, coneSlope, rTop, hb, eSlope);
         if (emerged) return emerged;
@@ -3712,7 +3773,14 @@ export function blendCuffJunction(buffer, options = {}) {
         ).map((w, j) => (bowls[j].floorBase ? w : 0))
       : null;
     const smoothedProfiles = smoothProfilesAcrossColumns(bowls.map((b) => b.fn), hs).map((fn, j) =>
-      blendedCols[j] ? relaxMeridianConcavity(fn, hs[j], CUFF_MIN_CONCAVE_RADIUS_MM * RELAX_TARGET_MARGIN) : fn,
+      blendedCols[j]
+        ? relaxMeridianConcavity(
+            fn,
+            hs[j],
+            CUFF_MIN_CONCAVE_RADIUS_MM * RELAX_TARGET_MARGIN,
+            relaxSkipBotMm[j],
+          )
+        : fn,
     );
     const enforcedProfiles = enforceMinToolRadiusOnProfiles(
       smoothedProfiles,
