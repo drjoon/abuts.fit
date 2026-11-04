@@ -15,13 +15,29 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
     /// <summary>
     /// Esprit MergeFile 전용 메시 축소. 뷰어/S3 filled STL은 건드리지 않고
     /// 로컬 임시 .cam-decimate.stl 만 만든다. 정점 격자 클러스터링.
+    /// 기본 OFF — 메시 품질(커프·헥스) 깨짐. 켜려면 ABUTS_CAM_DECIMATE=1.
     /// </summary>
     internal static class CamStlDecimator
     {
+        public const string EnableEnv = "ABUTS_CAM_DECIMATE";
         public const int TargetMaxTriangles = 28000;
         public const double StartCellMm = 0.15;
         public const double MaxCellMm = 0.50;
         public const double CellGrow = 1.25;
+
+        private static bool IsEnabled()
+        {
+            try
+            {
+                string raw = Environment.GetEnvironmentVariable(EnableEnv);
+                return string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
         public sealed class Result
         {
@@ -52,6 +68,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 if (string.IsNullOrWhiteSpace(stlPath) || !File.Exists(stlPath))
                 {
                     result.Reason = "missing-src";
+                    result.ElapsedMs = sw.ElapsedMilliseconds;
+                    LogResult(requestId, result, stlPath);
+                    return result;
+                }
+
+                if (!IsEnabled())
+                {
+                    result.Reason = "disabled";
                     result.ElapsedMs = sw.ElapsedMilliseconds;
                     LogResult(requestId, result, stlPath);
                     return result;

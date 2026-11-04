@@ -439,7 +439,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     document.ActiveLayer = stlLayer;
                 }
-                // CAM 전용 메시 축소 — 뷰어 filled는 유지, MergeFile 입력만 가볍게.
+                // CAM 전용 메시 축소 — 기본 OFF(ABUTS_CAM_DECIMATE=1 일 때만). 뷰어 filled는 유지.
                 decimate = CamStlDecimator.PrepareForMerge(stlPath, requestId);
                 string mergeStlPath = string.IsNullOrWhiteSpace(decimate?.MergePath) ? stlPath : decimate.MergePath;
                 var mergeSw = System.Diagnostics.Stopwatch.StartNew();
