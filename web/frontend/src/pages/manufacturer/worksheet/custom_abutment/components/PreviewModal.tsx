@@ -10,6 +10,7 @@
 // - 2026-10-20: 헤더 One Pass 토글 제거. Finish는 항상 2–3단(Back_Finish 분할).
 // - 2026-10-17: 안내 off 시 프론트포인트(녹색점)도 피니시라인과 함께 숨김(FP 편집 중은 유지).
 // - 2026-10-17: 그리드·메타·안내(피니시라인 등) on/off를 localStorage에 저장.
+// - 2026-11-04: 준비 헤더「ESP」토글(caseInfos.espSaveEnabled, 기본 OFF) — ON일 때만 CAM ESP 저장.
 // - 2026-10-16: ESP 버튼은 짧은 주소만 받고, 파일은 브라우저 다운로드로 바로 저장한다.
 // - 2026-10-16: 가공 프리뷰 NC 표시명을 의뢰번호.nc 로 줄이고, ESP 버튼은 NC가 있으면 항상 표시.
 // - 2026-10-13: 더미는 헥스 회전이 없으면 STL모델대로로 보여 준다.
@@ -641,6 +642,10 @@ type PreviewModalProps = {
     req: ManufacturerRequest,
     value: boolean,
   ) => Promise<void>;
+  onSaveEspSaveEnabledOverride?: (
+    req: ManufacturerRequest,
+    value: boolean,
+  ) => Promise<void>;
   onSaveLotEngravingTargetOverride?: (
     req: ManufacturerRequest,
     value: "hex" | "post",
@@ -684,6 +689,7 @@ export const PreviewModal = ({
   onRestoreUnmachinable,
   onSaveManufacturerHexRotation,
   onSaveAnodizingEnabledOverride,
+  onSaveEspSaveEnabledOverride,
   onSaveLotEngravingTargetOverride,
   onOpenNextRequest,
   setSearchParams,
@@ -770,6 +776,8 @@ export const PreviewModal = ({
   } | null>(null);
   const [hexRotationSaving, setHexRotationSaving] = useState(false);
   const [anodizingSaving, setAnodizingSaving] = useState(false);
+  const [espSaveSaving, setEspSaveSaving] = useState(false);
+  const [espSaveEnabledDraft, setEspSaveEnabledDraft] = useState(false);
   const [approving, setApproving] = useState(false);
   const [deleteConfirmKind, setDeleteConfirmKind] = useState<
     null | "filled" | "nc"
@@ -1046,6 +1054,10 @@ export const PreviewModal = ({
     } else {
       setAnodizingEnabledDraft(true);
     }
+
+    setEspSaveEnabledDraft(
+      (req as any)?.caseInfos?.espSaveEnabled === true,
+    );
 
     // 2026-09-18: 포스트면 각인 포기 → 항상 hex (추후 Connection PRC).
     // const caseLotTarget = (req as any)?.caseInfos?.lotEngravingTarget;
@@ -3158,6 +3170,39 @@ export const PreviewModal = ({
     }
   };
 
+  const handleToggleEspSaveEnabled = async (checked: boolean) => {
+    const stageLabel = String(activeReq?.manufacturerStage || "").trim();
+    const prepStages = new Set(["준비", "의뢰", "CAM", "request", "cam"]);
+    if (
+      !onSaveEspSaveEnabledOverride ||
+      espSaveSaving ||
+      approveBusy ||
+      !(currentReviewStageKey === "request" || currentReviewStageKey === "cam") ||
+      !prepStages.has(stageLabel)
+    ) {
+      return;
+    }
+
+    const prev = espSaveEnabledDraft;
+    setEspSaveEnabledDraft(checked);
+    setEspSaveSaving(true);
+    try {
+      await onSaveEspSaveEnabledOverride(activeReq, checked);
+    } catch (error) {
+      setEspSaveEnabledDraft(prev);
+      toast({
+        title: "ESP 저장 설정 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setEspSaveSaving(false);
+    }
+  };
+
   const pickInputId = `right-upload-${activeReq?._id || "pending"}`;
 
   const realtimeBadge = String(activeReq?.realtimeProgress?.badge || "").trim();
@@ -3521,6 +3566,33 @@ export const PreviewModal = ({
                 <span className="whitespace-nowrap">아노다이징</span>
                 <span className="text-[10px] font-semibold text-slate-500">
                   {anodizingEnabledDraft ? "O" : "X"}
+                </span>
+              </label>
+              <label
+                className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${
+                  canOverrideSafeSplit && !approveBusy && !espSaveSaving
+                    ? "border-slate-200 bg-white text-slate-700"
+                    : "border-slate-200 bg-slate-100 text-slate-400"
+                }`}
+                title="ON이면 CAM 완료 후 운영 PC에 ESP를 저장합니다. OFF가 기본(생성 시간 단축)."
+              >
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-slate-300"
+                  checked={Boolean(espSaveEnabledDraft)}
+                  disabled={
+                    !canOverrideSafeSplit ||
+                    approveBusy ||
+                    espSaveSaving ||
+                    !onSaveEspSaveEnabledOverride
+                  }
+                  onChange={(e) => {
+                    void handleToggleEspSaveEnabled(Boolean(e.target.checked));
+                  }}
+                />
+                <span className="whitespace-nowrap">ESP</span>
+                <span className="text-[10px] font-semibold text-slate-500">
+                  {espSaveEnabledDraft ? "O" : "X"}
                 </span>
               </label>
               <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-1">

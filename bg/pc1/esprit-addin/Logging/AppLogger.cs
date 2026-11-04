@@ -9,6 +9,8 @@ using System.Diagnostics;
 
 using System.IO;
 
+using System.Text;
+
 using Abuts.EspritAddIns.ESPRIT2025AddinProject;
 
 
@@ -42,6 +44,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging
         private static string _logsRoot;
 
         private static string _monthFolder;
+
+        private static string _currentRunLogPath;
 
 
 
@@ -207,6 +211,51 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging
 
 
 
+        /// <summary>
+        /// CAM 성능 비교용 JSONL. logs/cam-perf.jsonl 에 한 줄씩 append.
+        /// </summary>
+        public static void LogAnalysisJson(string jsonObjectLine)
+
+        {
+
+            try
+
+            {
+
+                EnsureInitialized();
+
+                if (string.IsNullOrWhiteSpace(jsonObjectLine))
+
+                {
+
+                    return;
+
+                }
+
+                string root = string.IsNullOrWhiteSpace(_logsRoot)
+
+                    ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs")
+
+                    : _logsRoot;
+
+                Directory.CreateDirectory(root);
+
+                string path = Path.Combine(root, "cam-perf.jsonl");
+
+                File.AppendAllText(path, jsonObjectLine.TrimEnd() + Environment.NewLine, Encoding.UTF8);
+
+            }
+
+            catch
+
+            {
+
+            }
+
+        }
+
+
+
         private static void DisposeListeners()
 
         {
@@ -305,6 +354,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging
 
         {
 
+            _currentRunLogPath = logFile;
+
             _timestampWriter = new StreamWriter(logFile, true) { AutoFlush = true };
 
             _latestWriter = new StreamWriter(_latestLogPath, false) { AutoFlush = true };
@@ -324,6 +375,76 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging
             Trace.AutoFlush = true;
 
             Trace.WriteLine($"==== Trace started at {DateTime.Now:O} ====");
+
+        }
+
+
+
+        public static string CurrentRunLogPath
+
+        {
+
+            get
+
+            {
+
+                EnsureInitialized();
+
+                return _currentRunLogPath;
+
+            }
+
+        }
+
+
+
+        public static string AnalysisJsonlPath
+
+        {
+
+            get
+
+            {
+
+                EnsureInitialized();
+
+                string root = string.IsNullOrWhiteSpace(_logsRoot)
+
+                    ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs")
+
+                    : _logsRoot;
+
+                return Path.Combine(root, "cam-perf.jsonl");
+
+            }
+
+        }
+
+
+
+        public static void FlushWriters()
+
+        {
+
+            try
+
+            {
+
+                EnsureInitialized();
+
+                Trace.Flush();
+
+                if (_timestampWriter != null) _timestampWriter.Flush();
+
+                if (_latestWriter != null) _latestWriter.Flush();
+
+            }
+
+            catch
+
+            {
+
+            }
 
         }
 

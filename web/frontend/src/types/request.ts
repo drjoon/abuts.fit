@@ -81,6 +81,23 @@ export interface RequestCaseInfos {
   anodizingEnabled?: boolean;
   /** PreviewModal「Wide Split」: Back/Back2 분할 가공(떨림 방지). 기본 ON. false만 꺼짐. */
   safeSplitEnabled?: boolean;
+  /** PreviewModal「ESP」: CAM 완료 후 운영 PC .esp 저장. 기본 OFF. true일 때만 저장. */
+  espSaveEnabled?: boolean;
+  /** Esprit CAM PERF 런 이력(요약 인라인 + S3 본문). */
+  camPerfRuns?: Array<{
+    fileName?: string;
+    fileSize?: number;
+    s3Key?: string;
+    s3Url?: string;
+    uploadedAt?: string;
+    summary?: {
+      elapsedMs?: number;
+      invokeMs?: number;
+      srcTris?: number;
+      camTris?: number;
+      [key: string]: unknown;
+    };
+  }>;
   // [legacy One Pass] PreviewModal 토글 제거. Finish는 항상 2–3단.
   // onePassEnabled?: boolean;
   /** Finish Composite StepIncrement(mm) override. null=의뢰자설정. */

@@ -131,6 +131,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private string _backendRetentionGroove;
         private double? _backendCompositeStepPostOverrideMm;
         private double? _backendCompositeStepGingivaOverrideMm;
+        // PreviewModal「ESP」: true일 때만 CAM 완료 ESP를 운영 PC에 저장.
+        private bool _backendEspSaveEnabled;
         public string FaceHoleProcessFilePath { get; set; }
         public string ConnectionMachiningProcessFilePath { get; set; }
         private double? _effectiveFrontLimitX;
@@ -215,6 +217,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             double? finishLineMinZ = null;
             double? stlBoundingTopZ = null;
             double? finishLineEspritR = null;
+            CamStlDecimator.Result decimate = null;
+            long mergeElapsedMs = 0;
+            long addinElapsedMs = 0;
+            long ncElapsedMs = 0;
+            long espElapsedMs = 0;
+            bool espSavedOk = false;
             _backendLotNumber = null;
             _backendSerialCode = null;
             _backendLotEngravingSite = null;
@@ -338,6 +346,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                             AppLogger.Log("StlFileProcessor: safeSplitEnabled=false 무시, Wide Split 항상 ON");
                         }
                         Environment.SetEnvironmentVariable("ABUTS_SAFE_SPLIT_ENABLE", "1");
+                        // ESP 저장: PreviewModal 준비 단계 토글. 기본 OFF(미수신/null → false).
+                        _backendEspSaveEnabled = requestMeta.espSaveEnabled == true;
+                        AppLogger.Log($"StlFileProcessor: espSaveEnabled={(_backendEspSaveEnabled ? "1" : "0")}");
                         // [legacy One Pass] request-meta.onePassEnabled / ABUTS_FINISH_ONE_PASS. 제품 정책상 항상 2–3단 Finish.
                         // bool onePassRequested = requestMeta.onePassEnabled == true;
                         // double onePassPostMm = _backendCompositeStepPostOverrideMm
@@ -374,7 +385,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                                 "ABUTS_MAX_DIAMETER",
                                 requestMeta.maxDiameter.ToString("0.###", CultureInfo.InvariantCulture));
                         }
-                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, CamDia={requestMeta.camDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}, SafeSplit={(safeSplitEnabled ? "1" : "0")}, ManufacturerHexRotation(mode)={(_backendManufacturerHexRotation ?? "<null>")}, HexAppliedDeg={(_backendHexRotationAppliedDeg.HasValue ? _backendHexRotationAppliedDeg.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
+                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, CamDia={requestMeta.camDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}, SafeSplit={(safeSplitEnabled ? "1" : "0")}, EspSave={(_backendEspSaveEnabled ? "1" : "0")}, ManufacturerHexRotation(mode)={(_backendManufacturerHexRotation ?? "<null>")}, HexAppliedDeg={(_backendHexRotationAppliedDeg.HasValue ? _backendHexRotationAppliedDeg.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
                         AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, minZ={(finishLineMinZ.HasValue ? finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, TwoPhase={twoPhase}");
                         if (!_prcManager.ApplyBackendPrcNames((BackendApiClient.RequestMetaCaseInfos)requestMeta, requestId, _backendImplantLabel))
                         {
@@ -428,7 +439,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     document.ActiveLayer = stlLayer;
                 }
-                document.MergeFile(stlPath);
+                // CAM 전용 메시 축소 — 뷰어 filled는 유지, MergeFile 입력만 가볍게.
+                decimate = CamStlDecimator.PrepareForMerge(stlPath, requestId);
+                string mergeStlPath = string.IsNullOrWhiteSpace(decimate?.MergePath) ? stlPath : decimate.MergePath;
+                var mergeSw = System.Diagnostics.Stopwatch.StartNew();
+                document.MergeFile(mergeStlPath);
+                mergeSw.Stop();
+                mergeElapsedMs = mergeSw.ElapsedMilliseconds;
+                AppLogger.Log($"[PERF] StlFileProcessor.MergeFile END elapsedMs={mergeElapsedMs} path={Path.GetFileName(mergeStlPath)}");
                 EspritDocumentHelper.LogBoundingBox(document, "AfterMerge");
                 if (prevLayer != null)
                 {
@@ -445,7 +463,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 double? stlFileZMax = null;
                 double? stlFileMinX = null;
                 double? stlFileMaxX = null;
-                if (TryReadStlFileZRange(stlPath, out double fileZMin, out double fileZMax))
+                if (TryReadStlFileZRange(mergeStlPath, out double fileZMin, out double fileZMax))
                 {
                     stlFileZMax = fileZMax;
                     stlFileMinX = -fileZMax;
@@ -455,7 +473,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 stlBoundingTopZ = TryComputeStlBoundingTopZ(document, stlFileZMax);
                 AppLogger.Log($"StlFileProcessor: STL bounding topZ={(stlBoundingTopZ.HasValue ? stlBoundingTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
                 Connect.SetCurrentDocument(document);
-                UpdateLatheBarDiameter(document, stlPath, machineBarDiameter, backendCamDiameter);
+                UpdateLatheBarDiameter(document, mergeStlPath, machineBarDiameter, backendCamDiameter);
                 if (backendCamDiameter.HasValue && backendCamDiameter.Value > 0 && document?.LatheMachineSetup != null)
                 {
                     // CAM 직경을 SSOT로 고정: 이후 공정 필터(턴/러프)가 동일 값을 참조한다.
@@ -515,7 +533,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 NcJobCancellation.ThrowIfCurrentCancelled("before-InvokeDentalAddin");
                 InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ, finishLineMinZ, finishLineEspritR, twoPhase, stlFileMinX, stlFileMaxX);
                 addinSw.Stop();
-                AppLogger.Log($"[PERF] StlFileProcessor.InvokeDentalAddin END elapsedMs={addinSw.ElapsedMilliseconds}");
+                addinElapsedMs = addinSw.ElapsedMilliseconds;
+                AppLogger.Log($"[PERF] StlFileProcessor.InvokeDentalAddin END elapsedMs={addinElapsedMs}");
                 NcJobCancellation.ThrowIfCurrentCancelled("after-InvokeDentalAddin");
                 CaptureNcMetadata(document);
                 NcJobCancellation.ThrowIfCurrentCancelled("before-GenerateNc");
@@ -537,14 +556,29 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     requestId,
                     _backendPostTipStlZ);
                 ncSw.Stop();
+                ncElapsedMs = ncSw.ElapsedMilliseconds;
                 AppLogger.Log($"StlFileProcessor: NC 생성 종료 - path={ncFilePath ?? "<null>"}");
-                AppLogger.Log($"[PERF] StlFileProcessor.GenerateNc END elapsedMs={ncSw.ElapsedMilliseconds}");
+                AppLogger.Log($"[PERF] StlFileProcessor.GenerateNc END elapsedMs={ncElapsedMs}");
                 NcJobCancellation.ThrowIfCurrentCancelled("before-NotifyBackendSuccess");
                 if (!string.IsNullOrWhiteSpace(ncFilePath))
                 {
                     AppLogger.Log($"StlFileProcessor: NC file generated - {ncFilePath}");
-                    // 운영 PC에 CAM 문서를 ESP로 남긴다. 실패해도 NC 등록은 계속한다.
-                    var espSaved = EspFileArchive.TrySave(document, requestId);
+                    EspFileArchive.SavedEsp espSaved = null;
+                    var espSw = System.Diagnostics.Stopwatch.StartNew();
+                    if (_backendEspSaveEnabled)
+                    {
+                        // PreviewModal「ESP」ON — 운영 PC에 CAM 문서 저장. 실패해도 NC 등록은 계속.
+                        espSaved = EspFileArchive.TrySave(document, requestId);
+                        espSavedOk = espSaved != null;
+                    }
+                    else
+                    {
+                        AppLogger.Log("EspFileArchive: 생략 - espSaveEnabled=0 (PreviewModal ESP OFF)");
+                    }
+                    espSw.Stop();
+                    espElapsedMs = espSw.ElapsedMilliseconds;
+                    AppLogger.Log($"[PERF] StlFileProcessor.EspSave END elapsedMs={espElapsedMs} enabled={(_backendEspSaveEnabled ? "1" : "0")} saved={(espSavedOk ? "1" : "0")}");
+                    LogEspSaveAnalysis(requestId, _backendEspSaveEnabled, espSavedOk, espElapsedMs, espSaved?.FileSize ?? 0);
                     BackendApiClient.NotifyBackendSuccess(
                         requestId,
                         stlPath,
@@ -561,6 +595,29 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 processSw.Stop();
                 AppLogger.Log($"StlFileProcessor: 완료 - {stlPath}");
                 AppLogger.Log($"[PERF] StlFileProcessor.Process END elapsedMs={processSw.ElapsedMilliseconds}");
+                LogProcessAnalysis(
+                    requestId,
+                    processSw.ElapsedMilliseconds,
+                    resetSw.ElapsedMilliseconds,
+                    decimate,
+                    mergeElapsedMs,
+                    addinElapsedMs,
+                    ncElapsedMs,
+                    espElapsedMs,
+                    _backendEspSaveEnabled,
+                    espSavedOk);
+                TryUploadCamPerfLog(
+                    requestId,
+                    _backendRequestMongoId,
+                    processSw.ElapsedMilliseconds,
+                    resetSw.ElapsedMilliseconds,
+                    decimate,
+                    mergeElapsedMs,
+                    addinElapsedMs,
+                    ncElapsedMs,
+                    espElapsedMs,
+                    _backendEspSaveEnabled,
+                    espSavedOk);
             }
             catch (OperationCanceledException oce)
             {
@@ -675,6 +732,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendRetentionGroove = null;
             _backendCompositeStepPostOverrideMm = null;
             _backendCompositeStepGingivaOverrideMm = null;
+            _backendEspSaveEnabled = false;
             _effectiveFrontLimitX = null;
             Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
             Environment.SetEnvironmentVariable(AppConfig.TwoPhaseEnableEnv, null);
@@ -853,6 +911,149 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 cutDiameterX = cutX,
             };
         }
+        private static void LogEspSaveAnalysis(string requestId, bool enabled, bool saved, long elapsedMs, long fileSize)
+        {
+            var sb = new StringBuilder(220);
+            sb.Append("{\"ts\":\"").Append(DateTime.Now.ToString("o")).Append("\",");
+            sb.Append("\"kind\":\"esp-save\",");
+            sb.Append("\"requestId\":\"").Append(EscapeJson(requestId)).Append("\",");
+            sb.Append("\"enabled\":").Append(enabled ? "true" : "false").Append(",");
+            sb.Append("\"saved\":").Append(saved ? "true" : "false").Append(",");
+            sb.Append("\"fileSize\":").Append(fileSize).Append(",");
+            sb.Append("\"elapsedMs\":").Append(elapsedMs).Append("}");
+            AppLogger.LogAnalysisJson(sb.ToString());
+        }
+
+        private static void LogProcessAnalysis(
+            string requestId,
+            long processMs,
+            long resetMs,
+            CamStlDecimator.Result decimate,
+            long mergeMs,
+            long addinMs,
+            long ncMs,
+            long espMs,
+            bool espSaveEnabled,
+            bool espSaved)
+        {
+            AppLogger.LogAnalysisJson(BuildProcessSummaryJson(
+                requestId, processMs, resetMs, decimate, mergeMs, addinMs, ncMs, espMs, espSaveEnabled, espSaved));
+        }
+
+        private static string BuildProcessSummaryJson(
+            string requestId,
+            long processMs,
+            long resetMs,
+            CamStlDecimator.Result decimate,
+            long mergeMs,
+            long addinMs,
+            long ncMs,
+            long espMs,
+            bool espSaveEnabled,
+            bool espSaved)
+        {
+            int srcTris = decimate?.SrcTris ?? 0;
+            int camTris = decimate != null
+                ? (decimate.Decimated ? decimate.OutTris : decimate.SrcTris)
+                : 0;
+            long srcBytes = decimate?.SrcBytes ?? 0;
+            long camBytes = decimate != null
+                ? (decimate.Decimated ? decimate.OutBytes : decimate.SrcBytes)
+                : 0;
+            var sb = new StringBuilder(480);
+            sb.Append("{\"ts\":\"").Append(DateTime.Now.ToString("o")).Append("\",");
+            sb.Append("\"kind\":\"process\",");
+            sb.Append("\"requestId\":\"").Append(EscapeJson(requestId)).Append("\",");
+            sb.Append("\"elapsedMs\":").Append(processMs).Append(",");
+            sb.Append("\"resetMs\":").Append(resetMs).Append(",");
+            sb.Append("\"decimateMs\":").Append(decimate?.ElapsedMs ?? 0).Append(",");
+            sb.Append("\"decimated\":").Append(decimate != null && decimate.Decimated ? "true" : "false").Append(",");
+            sb.Append("\"srcTris\":").Append(srcTris).Append(",");
+            sb.Append("\"camTris\":").Append(camTris).Append(",");
+            sb.Append("\"srcBytes\":").Append(srcBytes).Append(",");
+            sb.Append("\"camBytes\":").Append(camBytes).Append(",");
+            sb.Append("\"mergeMs\":").Append(mergeMs).Append(",");
+            sb.Append("\"invokeMs\":").Append(addinMs).Append(",");
+            sb.Append("\"ncMs\":").Append(ncMs).Append(",");
+            sb.Append("\"espMs\":").Append(espMs).Append(",");
+            sb.Append("\"espSaveEnabled\":").Append(espSaveEnabled ? "true" : "false").Append(",");
+            sb.Append("\"espSaved\":").Append(espSaved ? "true" : "false").Append("}");
+            return sb.ToString();
+        }
+
+        private static void TryUploadCamPerfLog(
+            string requestId,
+            string requestMongoId,
+            long processMs,
+            long resetMs,
+            CamStlDecimator.Result decimate,
+            long mergeMs,
+            long addinMs,
+            long ncMs,
+            long espMs,
+            bool espSaveEnabled,
+            bool espSaved)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(requestId))
+                {
+                    return;
+                }
+
+                AppLogger.FlushWriters();
+                string summary = BuildProcessSummaryJson(
+                    requestId, processMs, resetMs, decimate, mergeMs, addinMs, ncMs, espMs, espSaveEnabled, espSaved);
+
+                string runLog = "";
+                try
+                {
+                    string logPath = AppLogger.CurrentRunLogPath;
+                    if (!string.IsNullOrWhiteSpace(logPath) && File.Exists(logPath))
+                    {
+                        using (var fs = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                        using (var reader = new StreamReader(fs, Encoding.UTF8))
+                        {
+                            runLog = reader.ReadToEnd() ?? "";
+                        }
+                        const int maxChars = 400000;
+                        if (runLog.Length > maxChars)
+                        {
+                            runLog = runLog.Substring(runLog.Length - maxChars);
+                        }
+                    }
+                }
+                catch (Exception logEx)
+                {
+                    AppLogger.Log($"StlFileProcessor: cam-perf runLog 읽기 실패 - {logEx.GetType().Name}:{logEx.Message}");
+                }
+
+                var payload = new StringBuilder(runLog.Length + 800);
+                payload.Append("{\"version\":1,");
+                payload.Append("\"requestId\":\"").Append(EscapeJson(requestId)).Append("\",");
+                payload.Append("\"requestMongoId\":\"").Append(EscapeJson(requestMongoId)).Append("\",");
+                payload.Append("\"capturedAt\":\"").Append(DateTime.Now.ToString("o")).Append("\",");
+                payload.Append("\"summary\":").Append(summary).Append(",");
+                payload.Append("\"runLog\":\"").Append(EscapeJson(runLog)).Append("\"}");
+
+                BackendApiClient.UploadAndRegisterCamPerf(
+                    requestId,
+                    requestMongoId,
+                    payload.ToString(),
+                    summary);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"StlFileProcessor: cam-perf 업로드 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private static string EscapeJson(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return "";
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        }
+
         /// <summary>바이너리/ASCII STL 파일에서 정점 Z 최소·최대를 직접 잰다. ESPRIT shadow 폴백용.</summary>
         private static bool TryReadStlFileZRange(string stlPath, out double zMin, out double zMax)
         {

@@ -213,6 +213,12 @@ const requestSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
+      // PreviewModal「ESP」: CAM 완료 후 운영 PC에 .esp 저장. 기본 OFF(속도). ON일 때만 저장.
+      // related: bg/pc1/esprit-addin/Helpers/EspFileArchive.cs, PreviewModal.tsx
+      espSaveEnabled: {
+        type: Boolean,
+        default: false,
+      },
       // [legacy One Pass] PreviewModal 토글 제거. Finish는 항상 2–3단. 기존 DB 값만 남음.
       // onePassEnabled: {
       //   type: Boolean,
@@ -581,6 +587,22 @@ const requestSchema = new mongoose.Schema(
         fileName: String,
         fileSize: Number,
         savedAt: Date,
+      },
+      // Esprit CAM PERF 런 이력. 본문은 S3(cam-perf). 요약은 비교 조회용으로 인라인.
+      // related: bg/pc1/esprit-addin/Helpers/BackendApiClient.cs UploadAndRegisterCamPerf
+      camPerfRuns: {
+        type: [
+          {
+            fileName: String,
+            fileSize: Number,
+            s3Key: String,
+            s3Url: String,
+            uploadedAt: { type: Date, default: Date.now },
+            summary: { type: {}, default: undefined },
+            _id: false,
+          },
+        ],
+        default: undefined,
       },
       // NC 재생성(재처리) 이력: 프론트/백엔드에서 재생성 요청이 발생한 경우 간단한 이력을 남김
       ncRegenerations: {

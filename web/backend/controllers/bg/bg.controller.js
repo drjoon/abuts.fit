@@ -1915,6 +1915,79 @@ export const getPresignedUploadUrl = asyncHandler(async (req, res) => {
     );
 });
 
+const CAM_PERF_RUNS_MAX = 30;
+
+/**
+ * Esprit CAM PERF JSON 등록.
+ * body: { requestId?, requestMongoId?, fileName, s3Key, s3Url?, fileSize?, summary? }
+ * caseInfos.camPerfRuns 에 append (최대 30).
+ */
+export const registerCamPerf = asyncHandler(async (req, res) => {
+  const {
+    requestId,
+    requestMongoId,
+    fileName,
+    s3Key,
+    s3Url,
+    fileSize,
+    summary,
+  } = req.body || {};
+
+  const key = String(s3Key || "").trim();
+  const name = String(fileName || "").trim() || path.basename(key);
+  if (!key) {
+    throw new ApiError(400, "s3Key is required");
+  }
+
+  let request = null;
+  const mongoId = String(requestMongoId || "").trim();
+  if (mongoId && Types.ObjectId.isValid(mongoId)) {
+    request = await Request.findById(mongoId);
+  }
+  if (!request && requestId) {
+    request = await Request.findOne({ requestId: String(requestId).trim() });
+  }
+  if (!request) {
+    throw new ApiError(404, "Request not found for cam-perf");
+  }
+
+  const run = {
+    fileName: name,
+    fileSize: Number.isFinite(Number(fileSize)) ? Number(fileSize) : undefined,
+    s3Key: key,
+    s3Url: String(s3Url || "").trim() || undefined,
+    uploadedAt: new Date(),
+    summary:
+      summary && typeof summary === "object" && !Array.isArray(summary)
+        ? summary
+        : undefined,
+  };
+
+  const prev = Array.isArray(request.caseInfos?.camPerfRuns)
+    ? request.caseInfos.camPerfRuns
+    : [];
+  const next = [...prev, run].slice(-CAM_PERF_RUNS_MAX);
+  request.set("caseInfos.camPerfRuns", next);
+  await request.save();
+
+  console.log(
+    `[BG-Callback] cam-perf registered requestId=${request.requestId} s3Key=${key} runs=${next.length}`,
+  );
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        requestId: request.requestId,
+        requestMongoId: String(request._id),
+        runCount: next.length,
+        run,
+      },
+      "CAM perf registered",
+    ),
+  );
+});
+
 export const getBgStatus = asyncHandler(async (req, res) => {
   // 나중에 BG 프로그램들의 상태를 취합해서 보여주는 로직 추가 가능
   return res.status(200).json(new ApiResponse(200, { ok: true }, "OK"));
@@ -2231,6 +2304,8 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
               ? ci.compositeStepIncrementGingivaOverrideMm
               : null,
           safeSplitEnabled: true,
+          // PreviewModal「ESP」: true일 때만 Esprit가 CAM ESP 저장. 기본 false.
+          espSaveEnabled: ci?.espSaveEnabled === true,
           // [legacy One Pass] PreviewModal 토글 제거. Finish는 항상 2–3단.
           // onePassEnabled: resolveOnePassEnabled(ci),
           lotNumber: lotValue,

@@ -26,7 +26,10 @@ import {
   bumpRollbackCount,
   ensureReviewByStageDefaults,
 } from "./utils.js";
-import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
+import s3Utils, {
+  deleteFileFromS3,
+  getPresignedGetUrl,
+} from "../../utils/s3.utils.js";
 import {
   abortEspritForNc,
   triggerEspritForNc,
@@ -1413,6 +1416,124 @@ export async function deleteNcFileAndRollbackCam(req, res) {
     res.status(status).json({
       success: false,
       message,
+      error: error?.message,
+    });
+  }
+}
+
+function pickCamPerfNumber(summary, key) {
+  const n = Number(summary?.[key]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function buildCamPerfDelta(prevSummary, nextSummary) {
+  const keys = [
+    "elapsedMs",
+    "resetMs",
+    "decimateMs",
+    "mergeMs",
+    "invokeMs",
+    "ncMs",
+    "espMs",
+    "srcTris",
+    "camTris",
+    "srcBytes",
+    "camBytes",
+  ];
+  const delta = {};
+  for (const key of keys) {
+    const a = pickCamPerfNumber(prevSummary, key);
+    const b = pickCamPerfNumber(nextSummary, key);
+    delta[key] = a != null && b != null ? b - a : null;
+  }
+  return delta;
+}
+
+/**
+ * CAM PERF 런 목록 + 최근 2건 비교.
+ * GET /api/requests/:id/cam-perf
+ * query.downloadIndex=N → 해당 런 S3 GET 서명 URL 포함.
+ */
+export async function getCamPerfRuns(req, res) {
+  try {
+    const { id } = req.params;
+    if (!Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
+    }
+    if (!canDownloadEsp(req.user)) {
+      return res
+        .status(403)
+        .json({ success: false, message: "조회 권한이 없습니다." });
+    }
+
+    const request = await Request.findById(id)
+      .select({ requestId: 1, "caseInfos.camPerfRuns": 1 })
+      .lean();
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    const runs = Array.isArray(request?.caseInfos?.camPerfRuns)
+      ? request.caseInfos.camPerfRuns
+      : [];
+
+    let downloadUrl = null;
+    let downloadIndex = null;
+    const rawIdx = req.query?.downloadIndex;
+    if (rawIdx !== undefined && rawIdx !== null && String(rawIdx).trim() !== "") {
+      const idx = Number(rawIdx);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= runs.length) {
+        return res.status(400).json({
+          success: false,
+          message: "downloadIndex가 유효하지 않습니다.",
+        });
+      }
+      const key = String(runs[idx]?.s3Key || "").trim();
+      if (!key) {
+        return res.status(404).json({
+          success: false,
+          message: "해당 런의 S3 키가 없습니다.",
+        });
+      }
+      const signed = await getPresignedGetUrl(key, 600);
+      downloadUrl = signed?.url || null;
+      downloadIndex = idx;
+    }
+
+    const last = runs.length >= 1 ? runs[runs.length - 1] : null;
+    const prev = runs.length >= 2 ? runs[runs.length - 2] : null;
+    const compare =
+      last && prev
+        ? {
+            prevIndex: runs.length - 2,
+            nextIndex: runs.length - 1,
+            prev: prev.summary || null,
+            next: last.summary || null,
+            delta: buildCamPerfDelta(prev.summary, last.summary),
+          }
+        : null;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        requestId: request.requestId,
+        requestMongoId: String(request._id),
+        runCount: runs.length,
+        runs,
+        compare,
+        ...(downloadUrl
+          ? { downloadIndex, downloadUrl, expiresInSec: 600 }
+          : {}),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "CAM PERF 조회 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }

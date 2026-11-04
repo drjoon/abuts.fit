@@ -1122,6 +1122,103 @@ export const MachiningQueueBoard = ({
     ],
   );
 
+  const handleSaveEspSaveEnabledOverrideFromCamPreview = useCallback(
+    async (req: ManufacturerRequest, nextValue: boolean) => {
+      if (!token) return;
+
+      let requestMongoId = String(req?._id || "").trim();
+      const requestId = String(req?.requestId || "").trim();
+
+      if (!requestMongoId && requestId) {
+        const summaryRes = await fetch(
+          `/api/requests/by-request/${encodeURIComponent(requestId)}/summary`,
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        const summaryBody = await summaryRes.json().catch(() => ({}));
+        requestMongoId = String(summaryBody?.data?._id || "").trim();
+      }
+
+      if (!requestMongoId) {
+        throw new Error("의뢰 식별값이 없어 ESP 저장 설정을 바꿀 수 없습니다.");
+      }
+
+      const prevValue =
+        (camPreviewFiles?.request as any)?.caseInfos?.espSaveEnabled === true;
+
+      setCamPreviewFiles((prev) => {
+        const currentReq = prev?.request || null;
+        if (!currentReq) return prev;
+        return {
+          ...prev,
+          request: {
+            ...currentReq,
+            _id: requestMongoId,
+            caseInfos: {
+              ...(currentReq.caseInfos || {}),
+              espSaveEnabled: nextValue,
+            },
+          },
+        };
+      });
+
+      try {
+        const res = await fetch(
+          `/api/requests/${encodeURIComponent(requestMongoId)}/esp-save-override`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ espSaveEnabled: nextValue }),
+          },
+        );
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) {
+          throw new Error(body?.message || "ESP 저장 설정에 실패했습니다.");
+        }
+        const savedValue =
+          typeof body?.data?.espSaveEnabled === "boolean"
+            ? Boolean(body.data.espSaveEnabled)
+            : nextValue;
+        setCamPreviewFiles((prev) => {
+          const currentReq = prev?.request || null;
+          if (!currentReq) return prev;
+          return {
+            ...prev,
+            request: {
+              ...currentReq,
+              caseInfos: {
+                ...(currentReq.caseInfos || {}),
+                espSaveEnabled: savedValue,
+              },
+            },
+          };
+        });
+      } catch (e) {
+        setCamPreviewFiles((prev) => {
+          const currentReq = prev?.request || null;
+          if (!currentReq) return prev;
+          return {
+            ...prev,
+            request: {
+              ...currentReq,
+              caseInfos: {
+                ...(currentReq.caseInfos || {}),
+                espSaveEnabled: prevValue,
+              },
+            },
+          };
+        });
+        throw e;
+      }
+    },
+    [camPreviewFiles?.request, token],
+  );
+
   const handleSaveAnodizingEnabledOverrideFromCamPreview = useCallback(
     async (req: ManufacturerRequest, nextValue: boolean) => {
       if (!token) return;
@@ -2908,6 +3005,9 @@ export const MachiningQueueBoard = ({
         onOpenCodeEditor={handleOpenCodeEditorFromCamPreview}
         onSaveAnodizingEnabledOverride={
           handleSaveAnodizingEnabledOverrideFromCamPreview
+        }
+        onSaveEspSaveEnabledOverride={
+          handleSaveEspSaveEnabledOverrideFromCamPreview
         }
         onSaveLotEngravingTargetOverride={
           handleSaveLotEngravingTargetOverrideFromCamPreview

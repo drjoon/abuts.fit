@@ -71,6 +71,12 @@ router.post(
   bgController.getPresignedUploadUrl,
 );
 router.post(
+  "/register-cam-perf",
+  requireBridgeIpAllowlist,
+  requireBgWorkerSecret,
+  bgController.registerCamPerf,
+);
+router.post(
   "/runtime-status",
   requireBridgeIpAllowlist,
   requireBgWorkerSecret,

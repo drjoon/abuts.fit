@@ -550,6 +550,13 @@ router.patch(
 );
 
 router.patch(
+  "/:id/esp-save-override",
+  authenticate,
+  authorizeManufacturerOrDesignPartner(),
+  requestController.updateRequestEspSaveOverride,
+);
+
+router.patch(
   "/:id/safe-split-override",
   authenticate,
   authorizeManufacturerOrDesignPartner(),
@@ -756,6 +763,12 @@ router.get(
   authenticate,
   authorizeManufacturerOrDesignPartner(),
   requestController.getEspFileUrl,
+);
+router.get(
+  "/:id/cam-perf",
+  authenticate,
+  authorizeManufacturerOrDesignPartner(),
+  requestController.getCamPerfRuns,
 );
 router.get(
   "/:id/esp-file",

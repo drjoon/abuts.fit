@@ -420,7 +420,12 @@
 
 - 로그 타임스탬프는 `yyyy-MM-dd HH:mm:ss.fff` (ms).
 - `[PERF] name START/END elapsedMs=...` 또는 `DentalLogger.Measure("name")` 구간으로 before/after 비교.
-- 핵심 구간: `StlFileProcessor.Process`, `ResetDocument`, `InvokeDentalAddin`, `OperationSeq.*`, `MainFree`, `Composite2SplitLine2`, `TryAddOperation:*`, `GenerateNc`.
+- 핵심 구간: `StlFileProcessor.Process`, `ResetDocument`, `CamStlDecimator`, `MergeFile`, `InvokeDentalAddin`, `OperationSeq.*`, `MainFree`, `Composite2SplitLine2`, `TryAddOperation:*`, `GenerateNc`, `EspSave`.
+- **분석 JSONL**: 운영 PC `logs/cam-perf.jsonl` (`kind=cam-decimate|esp-save|process`). 런별 `[PERF]` 텍스트 로그와 함께 비교.
+- **S3 + Mongo**: CAM 성공 시 런 JSON(`summary`+`runLog`)을 `requests/{id}/cam-perf/…`에 올리고 `caseInfos.camPerfRuns`에 요약·s3Key 기록(최대 30).
+- **조회**: `GET /api/requests/:id/cam-perf` — runs + 최근 2건 `compare.delta`. `?downloadIndex=N` 이면 해당 런 S3 GET URL.
+- **CAM 전용 decimate**: MergeFile 전에만 삼각형 상한(~28k). 뷰어 filled는 그대로. `Helpers/CamStlDecimator.cs`.
+- **ESP 저장**: PreviewModal 준비 헤더「ESP」ON일 때만 (`caseInfos.espSaveEnabled`, 기본 OFF). `request-meta.espSaveEnabled`.
 - 기준 샘플(2026-08-23 KJAWMLCS): 총 ~39s. 병목 = Finish_A Add(~10s), Rough Add, 문서 리셋(~4s), NC(~4s), 중복 MainFree/실패 Composite.
 - 개선: Middle 제거(로컬 반영), MainFree 2회차 스킵, FinishingMethod==1 시 legacy Composite 스킵, B_PHASE A OrientationProfile 스킵.
-- 비교: 로그에서 `[PERF]` / `DentalLogger.Measure` END 줄의 `elapsedMs` 합산. `TryAddOperation:* elapsedMs`가 ESPRIT 툴패스 계산 시간.
+- 비교: `GET …/cam-perf`의 `compare.delta`(elapsedMs·invokeMs·srcTris·camTris). 로컬은 `[PERF]`/`cam-perf.jsonl`도 유지.

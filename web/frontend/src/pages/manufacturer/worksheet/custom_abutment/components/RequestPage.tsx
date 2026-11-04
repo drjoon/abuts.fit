@@ -2064,6 +2064,98 @@ export const RequestPage = ({
     [pageState, toast, token],
   );
 
+  const handleSaveEspSaveEnabledOverride = useCallback(
+    async (req: ManufacturerRequest, nextValue: boolean) => {
+      if (!req?._id) return;
+      const requestMongoId = String(req._id || "").trim();
+      if (!requestMongoId) return;
+
+      const stageLabel = String(req.manufacturerStage || "").trim();
+      if (!["준비", "의뢰", "CAM"].includes(stageLabel)) {
+        toast({
+          title: "변경 불가",
+          description: "ESP 저장 설정은 준비 단계에서만 변경할 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const prevValue =
+        typeof (req.caseInfos as { espSaveEnabled?: boolean } | undefined)
+          ?.espSaveEnabled === "boolean"
+          ? Boolean(
+              (req.caseInfos as { espSaveEnabled?: boolean }).espSaveEnabled,
+            )
+          : false;
+
+      pageState.setRequests((prev) =>
+        prev.map((item) => {
+          if (String(item?._id || "").trim() !== requestMongoId) return item;
+          return {
+            ...item,
+            caseInfos: {
+              ...(item.caseInfos || {}),
+              espSaveEnabled: nextValue,
+            },
+          };
+        }),
+      );
+
+      try {
+        const res = await fetch(`/api/requests/${req._id}/esp-save-override`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ espSaveEnabled: nextValue }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "ESP 저장 설정에 실패했습니다.");
+        }
+
+        const savedValue =
+          typeof data?.data?.espSaveEnabled === "boolean"
+            ? Boolean(data.data.espSaveEnabled)
+            : nextValue;
+
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            return {
+              ...item,
+              caseInfos: {
+                ...(item.caseInfos || {}),
+                espSaveEnabled: savedValue,
+              },
+            };
+          }),
+        );
+      } catch (e: any) {
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            return {
+              ...item,
+              caseInfos: {
+                ...(item.caseInfos || {}),
+                espSaveEnabled: prevValue,
+              },
+            };
+          }),
+        );
+        toast({
+          title: "ESP 저장 설정 실패",
+          description: e?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+        throw e;
+      }
+    },
+    [pageState, toast, token],
+  );
+
   const handleSaveAnodizingEnabledOverride = useCallback(
     async (req: ManufacturerRequest, nextValue: boolean) => {
       if (!req?._id) return;
@@ -3741,6 +3833,7 @@ export const RequestPage = ({
           onRestoreUnmachinable={handleRestoreUnmachinable}
           onSaveManufacturerHexRotation={handleSaveManufacturerHexRotation}
           onSaveAnodizingEnabledOverride={handleSaveAnodizingEnabledOverride}
+          onSaveEspSaveEnabledOverride={handleSaveEspSaveEnabledOverride}
           onSaveLotEngravingTargetOverride={
             handleSaveLotEngravingTargetOverride
           }

@@ -105,7 +105,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 }
 
                 var fi = new FileInfo(ncPath);
-                var upload = UploadNcViaPresign(fi, requestId);
+                var upload = UploadViaPresign(fi, requestId, "3-nc");
                 if (!upload.ok)
                 {
                     AppLogger.Log($"BackendApiClient: presign upload failed: {upload.error} (fallback register only)");
@@ -201,7 +201,90 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             }
         }
 
-        private static (bool ok, string s3Key, string s3Url, long fileSize, string error) UploadNcViaPresign(FileInfo fi, string requestId)
+        /// <summary>
+        /// CAM PERF JSON을 S3에 올리고 Mongo 메타(caseInfos.camPerfRuns)에 등록한다.
+        /// NC 등록과 별개 — 실패해도 NC 성공을 되돌리지 않는다.
+        /// </summary>
+        public static void UploadAndRegisterCamPerf(
+            string requestId,
+            string requestMongoId,
+            string jsonPayload,
+            string summaryJsonObject)
+        {
+            string tempPath = null;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(requestId) || string.IsNullOrWhiteSpace(jsonPayload))
+                {
+                    AppLogger.Log("BackendApiClient: cam-perf skip (missing requestId/payload)");
+                    return;
+                }
+
+                string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                string safeId = EspFileArchive.SanitizeRequestId(requestId) ?? "unknown";
+                string fileName = $"{safeId}-{stamp}.cam-perf.json";
+                tempPath = Path.Combine(Path.GetTempPath(), "abuts-esprit-cam-perf", fileName);
+                Directory.CreateDirectory(Path.GetDirectoryName(tempPath) ?? Path.GetTempPath());
+                File.WriteAllText(tempPath, jsonPayload, Encoding.UTF8);
+
+                var fi = new FileInfo(tempPath);
+                var upload = UploadViaPresign(fi, requestId, "cam-perf");
+                if (!upload.ok)
+                {
+                    AppLogger.Log($"BackendApiClient: cam-perf S3 upload failed: {upload.error}");
+                    return;
+                }
+
+                string baseUrl = (AppConfig.GetBackendUrl() ?? "").TrimEnd('/');
+                string url = $"{baseUrl}/bg/register-cam-perf";
+                string mongoIdJson = string.IsNullOrWhiteSpace(requestMongoId)
+                    ? ""
+                    : $",\"requestMongoId\":\"{EscapeJson(requestMongoId.Trim())}\"";
+                string summaryPart = string.IsNullOrWhiteSpace(summaryJsonObject)
+                    ? "{}"
+                    : summaryJsonObject.Trim();
+                string json =
+                    "{\"requestId\":\"" + EscapeJson(requestId) + "\"" +
+                    mongoIdJson +
+                    ",\"fileName\":\"" + EscapeJson(fileName) + "\"" +
+                    ",\"s3Key\":\"" + EscapeJson(upload.s3Key) + "\"" +
+                    ",\"s3Url\":\"" + EscapeJson(upload.s3Url) + "\"" +
+                    ",\"fileSize\":" + upload.fileSize +
+                    ",\"summary\":" + summaryPart +
+                    "}";
+
+                using (var req = new HttpRequestMessage(HttpMethod.Post, url))
+                {
+                    req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                    string bridgeSecret = AppConfig.GetBridgeSecret();
+                    if (!string.IsNullOrWhiteSpace(bridgeSecret))
+                    {
+                        req.Headers.Add("X-Bridge-Secret", bridgeSecret);
+                    }
+                    var resp = BackendHttp.SendAsync(req).GetAwaiter().GetResult();
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        AppLogger.Log($"BackendApiClient: cam-perf registered requestId={requestId} s3Key={upload.s3Key} size={upload.fileSize}");
+                    }
+                    else
+                    {
+                        string body = string.Empty;
+                        try { body = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult(); } catch { }
+                        AppLogger.Log($"BackendApiClient: cam-perf register failed status={resp.StatusCode} body={body}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"BackendApiClient: cam-perf error - {ex.GetType().Name}:{ex.Message}");
+            }
+            finally
+            {
+                TryDeleteTempFile(tempPath, "cam-perf");
+            }
+        }
+
+        private static (bool ok, string s3Key, string s3Url, long fileSize, string error) UploadViaPresign(FileInfo fi, string requestId, string sourceStep)
         {
             try
             {
@@ -209,9 +292,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 {
                     return (false, null, null, 0, "invalid args");
                 }
+                string step = string.IsNullOrWhiteSpace(sourceStep) ? "3-nc" : sourceStep.Trim();
                 string baseUrl = (AppConfig.GetBackendUrl() ?? "").TrimEnd('/');
                 string presignUrl = $"{baseUrl}/bg/presign-upload";
-                string presignBody = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(fi.Name)}\",\"requestId\":\"{EscapeJson(requestId)}\"}}";
+                string presignBody = $"{{\"sourceStep\":\"{EscapeJson(step)}\",\"fileName\":\"{EscapeJson(fi.Name)}\",\"requestId\":\"{EscapeJson(requestId)}\"}}";
                 HttpResponseMessage presignResp;
                 using (var req = new HttpRequestMessage(HttpMethod.Post, presignUrl))
                 {
@@ -221,7 +305,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                     {
                         req.Headers.Add("X-Bridge-Secret", bridgeSecret);
                     }
-                    presignResp = BackendHttp.SendAsync(req).GetAwaiter().GetResult();
+                    // 큰 PERF JSON도 있으므로 업로드 타임아웃을 넉넉히
+                    using (var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(60)))
+                    {
+                        presignResp = BackendHttp.SendAsync(req, cts.Token).GetAwaiter().GetResult();
+                    }
                 }
                 if (!presignResp.IsSuccessStatusCode)
                 {
@@ -253,7 +341,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 long fileSize = fi.Length;
                 using (var fs = fi.OpenRead())
                 {
-                    using (var putClient = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(30) })
+                    using (var putClient = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(60) })
                     using (var putReq = new HttpRequestMessage(HttpMethod.Put, url))
                     {
                         putReq.Content = new StreamContent(fs);
@@ -416,6 +504,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             // PreviewModal「Wide Split」: FL 하단에서 끊어 Front/Middle/Back 3구간. 미수신(null) 시 OFF.
             // DataContractJsonSerializer는 누락 bool을 false로 채우므로 nullable로 받는다.
             [DataMember(EmitDefaultValue = false)] public bool? safeSplitEnabled { get; set; }
+            // PreviewModal「ESP」: true일 때만 CAM 완료 ESP 저장. 미수신/null → OFF.
+            [DataMember(EmitDefaultValue = false)] public bool? espSaveEnabled { get; set; }
             // [legacy One Pass] PreviewModal 토글 제거. Finish는 항상 2–3단.
             // [DataMember(EmitDefaultValue = false)] public bool? onePassEnabled { get; set; }
 

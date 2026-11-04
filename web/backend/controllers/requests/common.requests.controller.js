@@ -3744,6 +3744,103 @@ export const updateRequestCompositeStepIncrementOverride = asyncHandler(
   },
 );
 
+// PreviewModal「ESP」= caseInfos.espSaveEnabled (CAM 완료 ESP 저장, 기본 OFF).
+export const updateRequestEspSaveOverride = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const hasEspSaveEnabled = Object.prototype.hasOwnProperty.call(
+    req.body || {},
+    "espSaveEnabled",
+  );
+  const espSaveEnabled = req.body?.espSaveEnabled;
+
+  if (!hasEspSaveEnabled || typeof espSaveEnabled !== "boolean") {
+    return res.status(400).json({
+      success: false,
+      message: "espSaveEnabled(boolean) 값이 필요합니다.",
+    });
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({
+      success: false,
+      message: "유효하지 않은 의뢰 ID입니다.",
+    });
+  }
+
+  const request = await Request.findById(id);
+  if (!request) {
+    return res.status(404).json({
+      success: false,
+      message: "의뢰를 찾을 수 없습니다.",
+    });
+  }
+
+  if (req.user.role === "manufacturer") {
+    const orgScope = await buildManufacturerOrgScopeFilter(req);
+    const allowed = await Request.exists({
+      _id: request._id,
+      ...orgScope,
+    });
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: "이 의뢰를 변경할 권한이 없습니다.",
+      });
+    }
+  }
+
+  const currentManufacturerStage = String(request?.manufacturerStage || "").trim();
+  const editableStages = new Set([
+    "준비",
+    "의뢰",
+    "CAM",
+    "request",
+    "cam",
+  ]);
+  if (!editableStages.has(currentManufacturerStage)) {
+    return res.status(409).json({
+      success: false,
+      message: "ESP 저장 설정은 준비 단계에서만 변경할 수 있습니다.",
+    });
+  }
+
+  request.set("caseInfos.espSaveEnabled", espSaveEnabled);
+  await request.save();
+
+  const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
+
+  res.status(200).json({
+    success: true,
+    data: {
+      requestId: request.requestId,
+      manufacturerStage: request.manufacturerStage,
+      espSaveEnabled,
+    },
+  });
+
+  emitAppEventToRoles(
+    REQUEST_HEX_ROTATION_EVENT_ROLES,
+    "request:esp-save-updated",
+    {
+      requestId: request.requestId,
+      requestMongoId: String(request._id || "").trim() || null,
+      requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+      espSaveEnabled,
+      request: {
+        _id: request._id,
+        requestId: request.requestId,
+        manufacturerStage: request.manufacturerStage,
+        businessAnchorId: request.businessAnchorId,
+        requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+        caseInfos: {
+          ...(request.caseInfos || {}),
+          espSaveEnabled,
+        },
+      },
+    },
+  );
+});
+
 // PreviewModal「Wide Split」= caseInfos.safeSplitEnabled (Front/Middle/Back 3구간, 기본 ON).
 export const updateRequestSafeSplitOverride = asyncHandler(async (req, res) => {
   const { id } = req.params;
