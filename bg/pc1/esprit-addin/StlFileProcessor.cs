@@ -292,6 +292,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         {
                             finishLineMinZ = minFinishZ;
                         }
+                        if (finishLineTopZ.HasValue)
+                        {
+                            TryPublishCuffTurnEnvelope(stlPath, finishLineTopZ.Value, finishLinePoints);
+                        }
                     }
                     _backendSerialCode = requestMetaResponse?.data?.serialCode;
                     // 2026-09-18: 포스트면 각인 포기 → 항상 hex. (추후 Connection PRC)
@@ -755,6 +759,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable(CompositeOrientationWAxisDegreesEnv, null);
             Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, null);
             Environment.SetEnvironmentVariable(FinishLineMinZEnv, null);
+            Environment.SetEnvironmentVariable(CuffTurnEnvelope.EnvName, null);
             Environment.SetEnvironmentVariable(CompositeCuffProfileEnv, null);
             Environment.SetEnvironmentVariable(CompositeCuffStartXEnv, null);
             Environment.SetEnvironmentVariable(CompositeCuffEndXEnv, null);
@@ -1052,6 +1057,80 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         {
             if (string.IsNullOrEmpty(value)) return "";
             return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        }
+
+        /// <summary>
+        /// 피니시라인 최고점(+팁 버퍼) 이하 정점의 축별 최대 반지름.
+        /// 선반이 편심 커프를 단면 반지름으로 깎지 않게 BuildTurningRangeChain 이 읽는다.
+        /// </summary>
+        private static void TryPublishCuffTurnEnvelope(string stlPath, double finishLineTopZ, double[][] finishLinePoints)
+        {
+            try
+            {
+                double zCeiling = finishLineTopZ + CuffTurnEnvelope.TipBufferMm;
+                var bins = new Dictionary<int, double>();
+                if (finishLinePoints != null)
+                {
+                    for (int i = 0; i < finishLinePoints.Length; i++)
+                    {
+                        double[] p = finishLinePoints[i];
+                        if (p == null || p.Length < 3) continue;
+                        CuffTurnEnvelope.Add(bins, p[2], p[0], p[1], zCeiling);
+                    }
+                }
+                AccumulateStlRadiiAtOrBelowZ(stlPath, bins, zCeiling);
+                string payload = CuffTurnEnvelope.Format(bins);
+                if (string.IsNullOrEmpty(payload))
+                {
+                    Environment.SetEnvironmentVariable(CuffTurnEnvelope.EnvName, null);
+                    AppLogger.Log("StlFileProcessor: 커프 선반 포락선 없음 — 선반 반지름 보정 생략");
+                    return;
+                }
+                Environment.SetEnvironmentVariable(CuffTurnEnvelope.EnvName, payload);
+                AppLogger.Log($"StlFileProcessor: 커프 선반 포락선 bins={bins.Count}, zCeiling={zCeiling.ToString("0.###", CultureInfo.InvariantCulture)}");
+            }
+            catch (Exception ex)
+            {
+                Environment.SetEnvironmentVariable(CuffTurnEnvelope.EnvName, null);
+                AppLogger.Log($"StlFileProcessor: 커프 선반 포락선 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private static void AccumulateStlRadiiAtOrBelowZ(string stlPath, Dictionary<int, double> bins, double zCeiling)
+        {
+            if (bins == null || string.IsNullOrWhiteSpace(stlPath) || !File.Exists(stlPath)) return;
+            byte[] data = File.ReadAllBytes(stlPath);
+            bool parsed = false;
+            if (data.Length >= 84)
+            {
+                uint triCount = BitConverter.ToUInt32(data, 80);
+                if (triCount > 0 && 84L + (long)triCount * 50L == data.Length)
+                {
+                    parsed = true;
+                    for (long t = 0; t < triCount; t++)
+                    {
+                        long baseOff = 84L + t * 50L + 12;
+                        for (int v = 0; v < 3; v++)
+                        {
+                            long off = baseOff + v * 12L;
+                            float x = BitConverter.ToSingle(data, (int)off);
+                            float y = BitConverter.ToSingle(data, (int)(off + 4));
+                            float z = BitConverter.ToSingle(data, (int)(off + 8));
+                            CuffTurnEnvelope.Add(bins, z, x, y, zCeiling);
+                        }
+                    }
+                }
+            }
+            if (parsed) return;
+            string text = System.Text.Encoding.ASCII.GetString(data);
+            foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
+                text, @"vertex\s+(\S+)\s+(\S+)\s+(\S+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            {
+                if (!double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double x)) continue;
+                if (!double.TryParse(m.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double y)) continue;
+                if (!double.TryParse(m.Groups[3].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double z)) continue;
+                CuffTurnEnvelope.Add(bins, z, x, y, zCeiling);
+            }
         }
 
         /// <summary>바이너리/ASCII STL 파일에서 정점 Z 최소·최대를 직접 잰다. ESPRIT shadow 폴백용.</summary>

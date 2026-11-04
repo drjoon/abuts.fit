@@ -1871,6 +1871,10 @@ namespace DentalAddin
                     return null;
                 }
 
+                // 편심 커프·피니시라인: 단면 프로파일 반지름이 그 축의 최대 반지름보다 안쪽이면 올린다.
+                // 퇴출·수평 연장 전에 해서, 끝 반지름도 포락선을 따른다.
+                TryRaiseTurningChainAboveCuff(region);
+
                 // 퇴출 SSOT (2026-10-12): Front/Middle/Back 모두 끝점에서 45도로 올라가 소재 반경(topY)에 닿은 뒤 90도(수직)로 빠진다.
                 // Tech_Default_Path.xml Exit angle(80)은 이 3-stage 구간 체인에서 쓰지 않는다.
                 double exitTopY = (Document?.LatheMachineSetup?.BarDiameter ?? 0.0) / 2.0;
@@ -1911,6 +1915,50 @@ namespace DentalAddin
             {
                 DentalLogger.Log($"BuildTurningRangeChain 실패: {ex.GetType().Name}:{ex.Message}");
                 return null;
+            }
+        }
+
+        // 피니시라인 팁쪽 0.5mm ~ 헥스끝. 체인 Y를 그 source Z의 최대 반지름 아래로 두지 않는다.
+        private static void TryRaiseTurningChainAboveCuff(List<double[]> region)
+        {
+            try
+            {
+                string raw = Environment.GetEnvironmentVariable(CuffTurnEnvelope.EnvName);
+                if (!CuffTurnEnvelope.TryParse(raw, out double[] zs, out double[] rs))
+                {
+                    return;
+                }
+
+                double finishX = MoveSTL_Module.FinishLineX;
+                double backX = MoveSTL_Module.BackPointX;
+                if (double.IsNaN(finishX) || double.IsInfinity(finishX) || Math.Abs(finishX) <= 1e-6)
+                {
+                    return;
+                }
+                if (double.IsNaN(backX) || double.IsInfinity(backX))
+                {
+                    return;
+                }
+
+                double xLo;
+                double xHi;
+                if (finishX <= backX)
+                {
+                    xLo = finishX - CuffTurnEnvelope.TipBufferMm;
+                    xHi = backX;
+                }
+                else
+                {
+                    xLo = backX;
+                    xHi = finishX + CuffTurnEnvelope.TipBufferMm;
+                }
+
+                int raised = CuffTurnEnvelope.Raise(region, zs, rs, backX, xLo, xHi);
+                DentalLogger.Log($"BuildTurningRangeChain - 커프 포락선 반지름 올림 {raised}점 (X=[{xLo:0.###},{xHi:0.###}], back={backX:0.###}, bins={zs.Length})");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"BuildTurningRangeChain - 커프 포락선 적용 실패: {ex.GetType().Name}:{ex.Message}");
             }
         }
 

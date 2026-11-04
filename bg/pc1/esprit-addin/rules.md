@@ -297,6 +297,15 @@
 - 구현: `GetTurnPastRoughEndMm`, `GetTurnPastFinishSeamMm`, `ResolveBackTurnExitAllowance`, `TryPrepareTurningRegionRange`, `aEndOffsetFromSplitMm`(Front_Finish 끝)
 - §4.8·§4.9·§4.10의 Back_Turn Extend direct 적용, `Middle_Rough 끝 = Xk + 0.5`, `Finish_Front 끝 = SharedFinishSplitX` 서술은 이 절이 우선한다.
 
+### 4.12.2 편심 커프 선반 반지름 (2026-11-04)
+
+- 커프·피니시라인은 회전면이 아니다. 단면 프로파일을 돌리면 튀어나온 마진이 잘리고 마진 폭이 좁아진다. 가공 여유 0.2mm는 그 편심을 대신하지 못한다.
+- 선반 축 구간은 §4.12 그대로다. 구간을 당기면 D4가 원소재를 문다.
+- 반지름만 올린다. 피니시라인 최고점보다 팁쪽 0.5mm ~ `BackPointX`에서, 체인 Y가 그 축 위치의 최대 반지름보다 작으면 그 반지름까지 올린다.
+- 최대 반지름은 STL 정점과 피니시라인 점의 `hypot(x,y)`. source Z ≤ `finishLineTopZ + 0.5`, bin 0.1mm. 창 ±0.25mm.
+- 그 안쪽 살은 `Back_Rough`·`Back_Finish`가 깎는다. 커넥션처럼 축대칭인 구간은 자기 반지름 포락선이라 선반이 그대로 따라간다.
+- 구현: `CuffTurnEnvelope`, `TryPublishCuffTurnEnvelope`, `TryRaiseTurningChainAboveCuff`. env `ABUTS_CUFF_TURN_ENVELOPE`.
+
 ### 4.11 Finish_Cuff Back_Rough 스타일 SSOT (2026-07-11)
 
 - 기본 공정 모드(SSOT):
