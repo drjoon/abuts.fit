@@ -3529,13 +3529,18 @@ export function blendCuffJunction(buffer, options = {}) {
     const useTurnedConeEmergence =
       Math.max(...hs) >= 0.8 && Math.min(...hs) >= ext + 0.15;
     const minHAll = Math.max(0.4, Math.min(...hs) - ext);
-    // 급경사 플레어 어버트먼트(20261103-ANNAWRAG / 20261104-SNXZVBBV 등)에서는 특정 각도만 볼록하게 하면 경계에 세로 주름이 생기므로,
-    // 어버트먼트 전체 단일 가중치(wThickGlobal)로 360° 전 둘레를 동일한 물리 가속 높이(zAccel)에서 함께 볼록하게 올려
-    // 전체 커프가 주름 없이 매끈하게 볼록해지면서 피니시라인 하방 각도가 70° 이내로 들어오게 한다.
-    const wThickGlobal = (() => {
-      if (!useTurnedConeEmergence) return 0;
+    // 급경사 플레어 어버트먼트(20261103-ANNAWRAG / 20261104-SNXZVBBV 등)에서는
+    // (1) 커프 공간 여유가 있는 열(pureEndSlope <= 65°)은 원래대로 오목 S커브를 그리고,
+    // (2) 커프 공간이 부족해 피니시라인 하방이 얇아지는 급경사 구간(pureEndSlope > 65°)만 약간의 볼록함(convexThickProfileOf)을 허용하되,
+    // 전환 구간에 주름이 생기지 않도록 둘레 가중치(wThickCols)를 넓은 코사인 창(±80°)으로 펴고
+    // 하단 가속 구간(ext + globalZAccelMm)은 wThickCols[j] > 0인 모든 열에서 동일하게 볼 닫힘 검사를 건너뛴다.
+    const globalZAccelMm = 0.22 * minHAll;
+    const wThickCols = (() => {
+      const zeros = new Float64Array(thetas.length);
+      if (!useTurnedConeEmergence) return zeros;
       const cBar = 1 / 3;
-      let maxPureSlope = 0;
+      const raw = new Float64Array(thetas.length);
+      let maxRaw = 0;
       for (let j = 0; j < thetas.length; j += 1) {
         const hb = hs[j];
         const t0 = Math.max(0, Math.min(0.5, ext / hb));
@@ -3547,23 +3552,39 @@ export function blendCuffJunction(buffer, options = {}) {
         const D = Math.max(0, dR - s0 * H);
         const uc0 = Math.max(0.42, Math.min(CONCAVE_TAPER_CURVE_END_U, (CONCAVE_TAPER_CURVE_END_U * minHAll) / H));
         const gamma0 = 1 / (1 - cBar * uc0);
-        maxPureSlope = Math.max(maxPureSlope, s0 + (D / H) * gamma0);
+        const pureSlope = s0 + (D / H) * gamma0;
+        const over = Math.max(
+          0,
+          Math.min(
+            1,
+            (pureSlope - UPPER_CUFF_THICK_START_SLOPE) /
+              Math.max(1e-4, UPPER_CUFF_THICK_FULL_SLOPE - UPPER_CUFF_THICK_START_SLOPE),
+          ),
+        );
+        raw[j] = over * over * (3 - 2 * over);
+        if (raw[j] > maxRaw) maxRaw = raw[j];
       }
-      const overRaw = Math.max(
-        0,
-        Math.min(
-          1,
-          (maxPureSlope - UPPER_CUFF_THICK_START_SLOPE) /
-            Math.max(1e-4, UPPER_CUFF_THICK_FULL_SLOPE - UPPER_CUFF_THICK_START_SLOPE),
-        ),
-      );
-      return overRaw * overRaw * (3 - 2 * overRaw);
+      if (!(maxRaw > 1e-4)) return zeros;
+      const halfCols = columnsForDeg(80);
+      const sm = new Float64Array(thetas.length);
+      let peakSm = 0;
+      for (let j = 0; j < thetas.length; j += 1) {
+        let acc = 0;
+        let wSum = 0;
+        for (let k = -halfCols; k <= halfCols; k += 1) {
+          const c = 0.5 * (1 + Math.cos((k / halfCols) * Math.PI));
+          acc += c * raw[(j + k + thetas.length) % thetas.length];
+          wSum += c;
+        }
+        sm[j] = acc / wSum;
+        if (sm[j] > peakSm) peakSm = sm[j];
+      }
+      return sm.map((v) => (peakSm > 1e-6 ? Math.min(1, (v / peakSm) * maxRaw) : 0));
     })();
-    const globalZAccelMm = 0.22 * minHAll;
     for (let j = 0; j < thetas.length; j += 1) {
-      relaxSkipBotMm[j] = wThickGlobal > 1e-4 ? (ext + globalZAccelMm) * wThickGlobal : 0;
+      relaxSkipBotMm[j] = wThickCols[j] > 1e-3 ? ext + globalZAccelMm + 0.08 : 0;
     }
-    const convexThickProfileOf = (hb, rTop) => {
+    const convexThickProfileOf = (hb, rTop, wCol = 1) => {
       const t0 = Math.max(0, Math.min(0.5, ext / hb));
       const span = Math.max(1e-4, 1 - t0);
       const H = hb * span;
@@ -3576,7 +3597,7 @@ export function blendCuffJunction(buffer, options = {}) {
       const uc = Math.max(0.1, Math.min(0.35, globalZAccelMm / H));
       const Ld = Math.max(1e-4, 1 - uc);
       const targetEndSlope =
-        UPPER_CUFF_THICK_START_SLOPE * (1 - wThickGlobal) + UPPER_CUFF_THICK_END_SLOPE * wThickGlobal;
+        UPPER_CUFF_THICK_START_SLOPE * (1 - wCol) + UPPER_CUFF_THICK_END_SLOPE * wCol;
       const mEndCap = spreadSlope > 1e-6 ? Math.max(0.28, (targetEndSlope - s0) / spreadSlope) : 0.68;
       const mEnd = Math.max(0.28, Math.min(0.68 * (minHAll / H) ** 0.75, mEndCap));
       const mPeak = (1 - (2 / 3) * Ld * mEnd) / ((1 + uc) / 3);
@@ -3688,8 +3709,9 @@ export function blendCuffJunction(buffer, options = {}) {
     const legacyConcaveOf = (rTop, eSlope, hb, relax = 0, j = -1) => {
       // 마진까지 높이가 있는 커프: Z_a+CUFF_CONNECTION_CONE_EXTEND_MM까지 11° 원형(커넥션 PRC), 그 위는 2°로 서서 완만한 S커브로 맞춘다.
       if (useTurnedConeEmergence || hb >= 0.8) {
-        const thickFn = wThickGlobal > 1e-4 ? convexThickProfileOf(hb, rTop) : null;
-        if (thickFn && wThickGlobal >= 1 - 1e-4) {
+        const wCol = j >= 0 ? wThickCols[j] : 0;
+        const thickFn = wCol > 1e-4 ? convexThickProfileOf(hb, rTop, wCol) : null;
+        if (thickFn && wCol >= 1 - 1e-4) {
           blendedCols[j] = 1;
           return thickFn;
         }
@@ -3705,15 +3727,12 @@ export function blendCuffJunction(buffer, options = {}) {
           : null;
         if (blended) {
           blendedCols[j] = 1;
-          const combined = thickFn
-            ? (t) => blended(t) * (1 - wThickGlobal) + thickFn(t) * wThickGlobal
-            : blended;
-          return relaxMeridianConcavity(
-            combined,
+          const relaxedS = relaxMeridianConcavity(
+            blended,
             hb,
             CUFF_MIN_CONCAVE_RADIUS_MM * RELAX_TARGET_MARGIN,
-            relaxSkipBotMm[j],
           );
+          return thickFn ? (t) => relaxedS(t) * (1 - wCol) + thickFn(t) * wCol : relaxedS;
         }
         const emerged = verticalEmergenceProfile(ra, coneSlope, rTop, hb, eSlope);
         if (emerged) return emerged;
