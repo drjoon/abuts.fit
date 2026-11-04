@@ -301,10 +301,10 @@
 
 - 커프·피니시라인은 회전면이 아니다. 단면 프로파일을 돌리면 튀어나온 마진이 잘리고 마진 폭이 좁아진다. 가공 여유 0.2mm는 그 편심을 대신하지 못한다.
 - 선반 축 구간은 §4.12 그대로다. 구간을 당기면 D4가 원소재를 문다.
-- 반지름만 올린다. 피니시라인 최고점보다 팁쪽 0.5mm ~ `BackPointX`에서, 체인 Y가 그 축의 완만한 포락선보다 작으면 포락선까지 올린다.
+- 반지름만 올린다. 피니시라인 최고점보다 팁쪽 0.5mm ~ `BackPointX`에서, 체인 Y가 직선 포락선보다 작으면 그 선까지 올린다.
 - 최대 반지름은 STL 정점과 피니시라인 점의 `hypot(x,y)`. source Z ≤ `finishLineTopZ + 0.5`, bin 0.1mm.
-- 포락선은 피크에 바짝 붙이지 않는다. 반지름 `+0.3mm`, 피크 사이는 15° 경사로 잇는다. 구간 경계 밖 3mm도 같은 경사다. 0.25mm 창 최대값으로 평탄을 만들면 툴패스가 계단이 된다.
-- 그 안쪽 살은 `Back_Rough`·`Back_Finish`가 깎는다. 커넥션은 같은 경사를 따라 내려간다.
+- 계단 평탄과 15° 메우기는 쓰지 않는다. 포락선 꼭짓점을 직선으로 잇되, 직선이 중간 최대 반지름보다 0.05mm 넘게 안쪽이면 꼭짓점을 남긴다. 골을 길게 메우면 황삭이 남는다.
+- 그 안쪽 살은 `Back_Rough`·`Back_Finish`가 깎는다.
 - 구현: `CuffTurnEnvelope`, `TryPublishCuffTurnEnvelope`, `TryRaiseTurningChainAboveCuff`. env `ABUTS_CUFF_TURN_ENVELOPE`.
 
 ### 4.11 Finish_Cuff Back_Rough 스타일 SSOT (2026-07-11)
