@@ -2051,7 +2051,8 @@ namespace DentalAddin
                 double finishLineBottomX = backX - finishLineMinZ;
                 double rawZoneX = finishLineBottomX + SafeSplitBackZonePastFinishLineMinMm;
                 double lo = splitline2 + SafeSplitMinBackZoneMm;
-                double turnPastSeamMm = GetTurnPastRoughEndMm() + RoughPastFinishEndMm;
+                // Middle_Turn 끝 = Xk + R + 0.2 (short-cuff extra 없음)
+                double turnPastSeamMm = GetTurnPastRoughEndMm() + FrontMiddleTurnPastRadiusAllowanceMm;
                 double hi = backX + SafeSplitMaxTurnPastBackPointMm - turnPastSeamMm;
                 if (rawZoneX > hi)
                 {

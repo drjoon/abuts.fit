@@ -1607,13 +1607,13 @@ namespace DentalAddin
                 {
                     case "FRONT":
                         rangeMinX = xMin;
-                        rangeMaxX = Math.Min(xMax, splitline2 + GetTurnPastFinishSeamMm() + ResolveTurnToolpathCompMm("FRONT"));
+                        // Front_Turn 끝 = Splitline_2 + 황삭 공구R + 0.2. short-cuff extra 없음.
+                        rangeMaxX = Math.Min(xMax, splitline2 + GetFrontMiddleTurnPastSeamMm());
                         break;
                     case "BACK" when TryResolveSafeSplitBackZoneX("TurningOp BACK", out double safeZoneEndX):
-                        // Safe split(Middle_Turn): Middle_Rough 끝(Xk+0.5)보다 D4 반경+보정만큼 더 깎고 퇴출. 헥스 너머 연장·45도 퇴출은 BACK2(Back_Turn)로 미룬다.
+                        // Safe split(Middle_Turn): Xk + 황삭 공구R + 0.2. short-cuff extra는 BACK2(Back_Turn)만.
                         rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
-                        // Middle_Turn 끝 = Middle_Rough 끝(=Xk+0.5) + 황삭 공구 반경(D4 → 2.0). short-cuff 미적용.
-                        rangeMaxX = safeZoneEndX + RoughPastFinishEndMm + GetTurnPastRoughEndMm() + ResolveTurnToolpathCompMm("MIDDLE");
+                        rangeMaxX = safeZoneEndX + GetFrontMiddleTurnPastSeamMm();
                         break;
                     case "BACK2":
                         if (!TryResolveSafeSplitBackZoneX("TurningOp BACK2", out double safeZoneStartX))
@@ -1650,8 +1650,8 @@ namespace DentalAddin
                 bool logBackShort = string.Equals(normalized, "BACK", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(normalized, "BACK2", StringComparison.OrdinalIgnoreCase);
                 DentalLogger.Log($"TurningOp 3-Stage - region={region}, range=[{rangeMinX:0.###},{rangeMaxX:0.###}], split1={splitline1:0.###}, split2={splitline2:0.###}" +
-                    (normalized == "FRONT" ? $", Front_Turn끝=Splitline_2+{GetTurnPastFinishSeamMm():0.###}" : string.Empty) +
-                    (logBackShort ? $", shortCuffMinZ={(IsShortFinishLineMinZ() ? "1" : "0")}, backExtra={GetShortFinishLineCuffExtraPastSeamMm():0.###}" : string.Empty));
+                    (normalized == "FRONT" || normalized == "BACK" ? $", pastSeam=R+{FrontMiddleTurnPastRadiusAllowanceMm:0.###}(extra 없음)" : string.Empty) +
+                    (logBackShort && normalized != "BACK" ? $", shortCuffMinZ={(IsShortFinishLineMinZ() ? "1" : "0")}, backExtra={GetShortFinishLineCuffExtraPastSeamMm():0.###}" : string.Empty));
                 return true;
             }
             catch (Exception ex)
@@ -1666,15 +1666,17 @@ namespace DentalAddin
         // Tech_Default_Path.xml Turning Extend·Exit angle(80)은 이 구간 계산에서 무시한다.
         // 실측(ESPRIT 화면 X, Rough 끝 대비 Turn 끝 간격): 체인 +R일 때 Front 1.73 / Middle 1.69 / Back 1.90.
         // 공통 +0.5 → 2.23 / 2.19 / 2.40-0.3=2.10. 공구 파손 방지로 2.0 미만이 되면 안 되므로 전 공정 같은 여유를 둔다.
-        private const double TurnPastRoughCompMm = 0.5;
-        private const double BackTurnPastRoughCompMm = TurnPastRoughCompMm;
+        // Front/Middle_Turn이 seam(Splitline_2 / Xk)을 넘는 양 = 황삭 공구 반경 + 이 여유.
+        // D4 → 2.0+0.2. short-cuff extra(3−minZ)는 Back_Turn/Back_Rough만.
+        private const double FrontMiddleTurnPastRadiusAllowanceMm = 0.2;
+        private const double BackTurnPastRoughCompMm = 0.5;
         private static double s_activeTurningZStockMm;
 
-        private static double ResolveTurnToolpathCompMm(string region)
+        private static double GetFrontMiddleTurnPastSeamMm()
         {
-            double comp = TurnPastRoughCompMm;
-            DentalLogger.Log($"TurningOp {region} - Turn 끝 = Rough끝 + R{GetTurnPastRoughEndMm():0.###} + 보정{comp:0.###}");
-            return comp;
+            double past = GetTurnPastRoughEndMm() + FrontMiddleTurnPastRadiusAllowanceMm;
+            DentalLogger.Log($"TurningOp FRONT/MIDDLE - seam+R{GetTurnPastRoughEndMm():0.###}+{FrontMiddleTurnPastRadiusAllowanceMm:0.###} = +{past:0.###} (short-cuff extra 없음)");
+            return past;
         }
 
         private static double ResolveBackTurnExitAllowance()

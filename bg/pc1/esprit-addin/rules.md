@@ -97,7 +97,7 @@
     - `GetFinishAdjacentOverlapMm()` = D1.0 직경의 2/3(약 0.67) — StepIncrement 해석 실패 시 Back 시작 fallback만
     - StepIncrement SSOT: 백엔드 `retentionGroove` (`none`→`5axisComposite_Front.prc` StepIncrement 그대로, `deep`→`0.20`) via `ABUTS_RETENTION_GROOVE`
     - `ABUTS_COMPOSITE_STEP_INCREMENT_A` **미사용**. none/deep 미수신 시 NC 중단 + 프론트 토스트
-  - Turn: **`Front_Turn` 끝 = `Splitline_2 + 3.0mm`** (황삭 연장 0.5 + D4 반경 2.0 + 보정 0.5, Back 방향 X+)
+  - Turn: **`Front_Turn` 끝 = `Splitline_2 + R + 0.2`** (D4 → 2.2). short-cuff extra 없음.
     - 구현: `MainModuleOperations.TryPrepareTurningRegionRange` (`FRONT` → `rangeMaxX`)
 
 ### 4.3.0 Safe split — PreviewModal「Wide Split」(2026-09-30, 기본 ON)
@@ -107,10 +107,10 @@
 - 경계 `Xk = (BackPointX - FL min_z) + 0.2` (Turn/Rough만. Finish seam은 피니시라인).
 - 순서: `Front_Turn → Front_Rough → Front_Face → Front_Finish → Middle_Turn → Middle_Rough → Back_Turn → Back_Rough → Back_Finish → Connection`
   - 내부 region 코드는 Middle=`BACK`, Back=`BACK2`(T05·레이어·경계 로직 공유). 표시명만 바뀐다.
-  - Middle_Rough 끝 `Xk+0.5`, Middle_Turn 끝 = Rough 끝 + D4 반경 + 보정 (황삭 끝+D4 반경 2.0+보정 0.5)
+  - Middle_Rough 끝 `Xk+0.5`, Middle_Turn 끝 = `Xk + R + 0.2` (D4 → 2.2). short-cuff extra 없음.
   - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX]`(경계 `RoughBoundryBack2`)
   - none/deep Back_Finish `[Splitline_2−0.5−1피치 ~ BackPointX]`, Front 끝 = Splitline_2−0.5(팁). 스텝오버는 커넥션에서 포스트 팁 쪽 (`ReverseStepOverDirection`). 기계 X는 팁 < 헥스. 예전 `-0.20`은 헥스에서 팁 쪽 1피치라 커넥션 직전에서 끊겼다.
-- Middle_Turn 끝(`Xk+3.0`)은 **클램프하지 않는다**. 줄이면 D4 러프가 원소재를 물고, Xk를 당기면 seam이 마진으로 들어간다.
+- Middle_Turn 끝(`Xk+R+0.2`)은 **클램프하지 않는다**. 줄이면 D4 러프가 원소재를 물고, Xk를 당기면 seam이 마진으로 들어간다.
 - 포기 조건(기존 단일 Back 유지): FL min_z 없음, `Xk < Splitline_2+1.5`, Middle_Turn 끝 > `BackPointX+1.5` (= 치은 파트 FL min_z < 1.7mm). 로그 `SafeSplit[...]`.
 - 원칙: Turn은 Rough 끝보다 D4 반경+보정(2.5) 이상 더 깎는다. 선행 3D 황삭은 Finish seam보다 0.5mm 더 깎아 D1.0이 미황삭을 물지 않게 한다.
 - 구현: `MainModuleComposite.TryResolveSafeSplitBackZoneX`, `MainModuleOperations.OperationSeq`/`TryPrepareTurningRegionRange(BACK/BACK2)`/`TagNewOperations`.
@@ -286,8 +286,8 @@
 
 - 이유: Rough(D4)가 Turn 미삭제 부위(공구 반경 2mm)에 걸리면 소재가 떨려 공구 파손·미삭제가 생긴다.
 - 구간별 끝점 (R = 황삭 공구 반경, D4 → 2.0 / ROUGH_20 D2 → 1.0):
-  - Front: Finish 끝 = Rough 끝 = `Splitline_2 + 0.5`, Turn 끝 = Rough 끝 + R
-  - Middle: Rough 끝 = `Xk + 0.5`, Turn 끝 = Rough 끝 + R. **Turn 끝이 `BackPointX`를 넘으면 Middle 제거 → Front/Back 2단** (`TryResolveSafeSplitBackZoneX`: `Xk ≤ BackPointX - R`)
+  - Front: Rough 끝 = `Splitline_2 + 0.5`, Turn 끝 = `Splitline_2 + R + 0.2` (short-cuff extra 없음)
+  - Middle: Rough 끝 = `Xk + 0.5`, Turn 끝 = `Xk + R + 0.2`. **Turn 끝이 `BackPointX`를 넘으면 Middle 제거 → Front/Back 2단** (`TryResolveSafeSplitBackZoneX`)
   - Back: Finish 끝 = `BackPointX`(헥스). Rough 끝 = `BackPointX`(+`3−minZ` if minZ≤2). Turn 체인 수평 끝 = `BackPointX + R + 0.5`(+`3−minZ` if minZ≤2) + ZStock
     - 체인은 트림된 프로파일 끝(`EndXValue`, `LowerY`)까지만 쓰고 `ExtendTurning` 꼬리(EndX+Extend 수평, Exit angle 80 상승)는 버린다.
     - `Turning.prc` ZStock(0.3)만큼 툴패스 45도 모서리가 tip 쪽으로 당겨지므로 체인에 더한다. 0.5는 Back_Rough 툴패스가 BackPointX를 조금 넘는 몫.
