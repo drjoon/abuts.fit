@@ -111,6 +111,8 @@ async function main() {
       replyTo: null,
       reactions: [],
       readBy: [{ userId: senderId, readAt: completedAt }],
+      // 조회는 isDeleted:false 고정. raw insert는 스키마 default가 안 붙는다.
+      isDeleted: false,
       createdAt: completedAt,
       updatedAt: completedAt,
     });
