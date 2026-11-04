@@ -797,6 +797,9 @@ const CONCAVE_TAPER_CURVE_END_U = 0.72;
 const UPPER_CUFF_THICK_START_SLOPE = Math.tan((65 * Math.PI) / 180);
 const UPPER_CUFF_THICK_END_SLOPE = Math.tan((63.5 * Math.PI) / 180);
 const UPPER_CUFF_THICK_FULL_SLOPE = Math.tan((73.5 * Math.PI) / 180);
+/** 급경사 플레어 커프에서 BackPointX(Z=0) 기준 2° 테이퍼를 유지하는 목표 높이(0.5mm)와 밥그릇 오목 상승 구간 폭(0.45mm). */
+const STEEP_CUFF_HOLD_Z_MM = 0.5;
+const STEEP_CUFF_BOWL_SPAN_MM = 0.45;
 const LONG_BAND_MM = 2;
 /** 띠 면 평균: 반폭(약 ±30°)과 위쪽 보존 지수(t^p). */
 const BAND_SMOOTH_HALF_COLUMNS = columnsForDeg(30);
@@ -3531,10 +3534,13 @@ export function blendCuffJunction(buffer, options = {}) {
     const minHAll = Math.max(0.4, Math.min(...hs) - ext);
     // 급경사 플레어 어버트먼트(20261103-ANNAWRAG / 20261104-SNXZVBBV 등)에서는
     // (1) 커프 공간 여유가 있는 열(pureEndSlope <= 65°)은 원래대로 오목 S커브를 그리고,
-    // (2) 커프 공간이 부족해 피니시라인 하방이 얇아지는 급경사 구간(pureEndSlope > 65°)만 약간의 볼록함(convexThickProfileOf)을 허용하되,
+    // (2) 커프 공간이 부족해 피니시라인 하방이 얇아지는 급경사 구간(pureEndSlope > 65°)은
+    //     BackPointX(Z=0)에서 +0.5mm(STEEP_CUFF_HOLD_Z_MM)까지 2° 테이퍼로 거의 수직 상승한 뒤
+    //     밥그릇 형태의 완만한 오목 상승(STEEP_CUFF_BOWL_SPAN_MM, gBowl)을 거쳐 상부만 약간 볼록한 커프(convexThickProfileOf)로 이어
+    //     BM_D1.0 볼엔드밀 측면 날 간섭으로 인한 커넥션 상단 미가공을 막고 공구 팁 쪽 날이 절삭하게 하며,
     // 전환 구간에 주름이 생기지 않도록 둘레 가중치(wThickCols)를 넓은 코사인 창(±80°)으로 펴고
-    // 하단 가속 구간(ext + globalZAccelMm)은 wThickCols[j] > 0인 모든 열에서 동일하게 볼 닫힘 검사를 건너뛴다.
-    const globalZAccelMm = 0.22 * minHAll;
+    // 하단 가속 구간(ext + holdAboveFaceMm + STEEP_CUFF_BOWL_SPAN_MM)은 wThickCols[j] > 0인 모든 열에서 동일하게 볼 닫힘 검사를 건너뛴다.
+    const holdAboveFaceMm = Math.max(0.2, STEEP_CUFF_HOLD_Z_MM - faceZ);
     const wThickCols = (() => {
       const zeros = new Float64Array(thetas.length);
       if (!useTurnedConeEmergence) return zeros;
@@ -3582,35 +3588,45 @@ export function blendCuffJunction(buffer, options = {}) {
       return sm.map((v) => (peakSm > 1e-6 ? Math.min(1, (v / peakSm) * maxRaw) : 0));
     })();
     for (let j = 0; j < thetas.length; j += 1) {
-      relaxSkipBotMm[j] = wThickCols[j] > 1e-3 ? ext + globalZAccelMm + 0.08 : 0;
+      relaxSkipBotMm[j] =
+        wThickCols[j] > 1e-3 ? ext + holdAboveFaceMm + STEEP_CUFF_BOWL_SPAN_MM + 0.08 : 0;
     }
     const convexThickProfileOf = (hb, rTop, wCol = 1) => {
       const t0 = Math.max(0, Math.min(0.5, ext / hb));
       const span = Math.max(1e-4, 1 - t0);
-      const H = hb * span;
-      const dR = rTop - rFace;
-      if (!(dR > 1e-5) || !(H > 1e-4)) return null;
-      const avgSlope = dR / H;
-      const s0 = Math.min(CUFF_EMERGENCE_START_SLOPE, Math.max(0, avgSlope * 0.5));
+      const H0 = hb * span;
+      const dR0 = rTop - rFace;
+      if (!(dR0 > 1e-5) || !(H0 > 1e-4)) return null;
+      const s0 = Math.min(CUFF_EMERGENCE_START_SLOPE, Math.max(0, (dR0 / H0) * 0.5));
+      const holdMm = Math.min(holdAboveFaceMm, H0 * 0.45);
+      const uHold = holdMm / H0;
+      const flareSpan = Math.max(1e-4, 1 - uHold);
+      const H = H0 * flareSpan;
+      const rHold = rFace + s0 * holdMm;
+      const dR = rTop - rHold;
       const D = Math.max(0, dR - s0 * H);
       const spreadSlope = D / H;
-      const uc = Math.max(0.1, Math.min(0.35, globalZAccelMm / H));
+      const minHFlare = Math.max(0.3, minHAll - holdAboveFaceMm);
+      const uc = Math.max(0.15, Math.min(0.65, STEEP_CUFF_BOWL_SPAN_MM / H));
       const Ld = Math.max(1e-4, 1 - uc);
       const targetEndSlope =
         UPPER_CUFF_THICK_START_SLOPE * (1 - wCol) + UPPER_CUFF_THICK_END_SLOPE * wCol;
-      const mEndCap = spreadSlope > 1e-6 ? Math.max(0.28, (targetEndSlope - s0) / spreadSlope) : 0.68;
-      const mEnd = Math.max(0.28, Math.min(0.68 * (minHAll / H) ** 0.75, mEndCap));
-      const mPeak = (1 - (2 / 3) * Ld * mEnd) / ((1 + uc) / 3);
+      const mEndCap = spreadSlope > 1e-6 ? Math.max(0.25, (targetEndSlope - s0) / spreadSlope) : 0.68;
+      const mEnd = Math.max(0.25, Math.min(0.68 * (minHFlare / H) ** 0.75, mEndCap));
+      const gBowl = (v) => v * v * v * (1 - 0.5 * v);
       const c4Ramp = (v) => v - (2 - (1 - v) ** 5 * (2 + 4 * v)) / 6;
+      const mPeak = (1 - (2 / 3) * Ld * mEnd) / (0.5 * uc + (1 - 2 / 3) * Ld);
       return (t) => {
         const x = Math.max(0, Math.min(1, t));
         if (x <= t0) return ra + coneSlope * x * hb;
-        const u = Math.max(0, Math.min(1, (x - t0) / span));
+        const u0 = Math.max(0, Math.min(1, (x - t0) / span));
+        if (u0 <= uHold) return rFace + s0 * u0 * H0;
+        const u = Math.max(0, Math.min(1, (u0 - uHold) / flareSpan));
         const f =
           u <= uc
-            ? mPeak * uc * c4Ramp(u / uc)
-            : mPeak * (u - uc / 3) + Ld * (mEnd - mPeak) * c4Ramp(Math.min(1, (u - uc) / Ld));
-        return Math.min(rTop, rFace + s0 * u * H + D * f);
+            ? mPeak * uc * gBowl(u / uc)
+            : mPeak * (0.5 * uc + (u - uc)) + Ld * (mEnd - mPeak) * c4Ramp(Math.min(1, (u - uc) / Ld));
+        return Math.min(rTop, rHold + s0 * u * H + D * f);
       };
     };
     /** 위 끝 고정 4차 맞춤 원본. 단차 무릎을 둥글게 편 목표 곡선. */

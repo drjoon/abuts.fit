@@ -506,7 +506,7 @@ describe("blendCuffJunction", () => {
     expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
   });
 
-  it("thickens the cuff below the finish line and keeps the upper cuff angle <= 70° on a wide flare above z=1.6mm (20261103-ANNAWRAG / SNXZVBBV)", () => {
+  it("rises at 2° up to z=0.5mm (BackPointX+0.5mm), then forms a bowl-to-convex cuff with upper angle <= 70° on a wide flare above z=1.6mm (20261103-ANNAWRAG / SNXZVBBV)", () => {
     const input = wideFlareAboveOneMmAbutment();
     const res = blendCuffJunction(input, {
       ...osstem,
@@ -517,10 +517,16 @@ describe("blendCuffJunction", () => {
     expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
     const preProbe = _prepare(input).probe;
     const postProbe = _prepare(res.buffer).probe;
-    // 커프 중간~마진 하방(z=0.9~1.6mm)이 원본보다 두껍게 받쳐 올라가고, 피니시라인 하방(z=1.20~1.65mm) 각도가 70° 이내로 들어온다.
+    // BackPointX(Z=0)에서 +0.5mm까지는 11° 원뿔(0~0.3mm) 뒤 2° 테이퍼(0.3~0.5mm)로 거의 수직 상승한다.
+    const r03 = postProbe.rayRadius(0.1, 0.3);
+    const r05 = postProbe.rayRadius(0.1, 0.5);
+    const holdDeg = (Math.atan((r05 - r03) / 0.2) * 180) / Math.PI;
+    expect(holdDeg).toBeGreaterThan(1.5);
+    expect(holdDeg).toBeLessThan(3.5);
+    // 그 위는 밥그릇 형태로 수직에 가깝게 올라간 뒤 마진 하방(z=1.2~1.6mm)을 볼록하게 받치고, 상부(z=1.35~1.65mm) 각도가 70° 이내로 들어온다.
     expect(postProbe.rayRadius(0.1, 1.2)).toBeGreaterThan(preProbe.rayRadius(0.1, 1.2) + 0.5);
     expect(postProbe.rayRadius(0.1, 1.5)).toBeGreaterThan(preProbe.rayRadius(0.1, 1.5) + 0.3);
-    for (let z = 1.2; z <= 1.63; z += 0.05) {
+    for (let z = 1.35; z <= 1.63; z += 0.05) {
       const r0 = postProbe.rayRadius(0.1, z);
       const r1 = postProbe.rayRadius(0.1, z + 0.05);
       const deg = (Math.atan((r1 - r0) / 0.05) * 180) / Math.PI;
