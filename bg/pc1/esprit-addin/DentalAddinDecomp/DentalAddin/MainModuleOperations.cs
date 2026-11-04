@@ -1613,7 +1613,7 @@ namespace DentalAddin
                         // Safe split(Middle_Turn): Middle_Rough 끝(Xk+0.5)보다 D4 반경+보정만큼 더 깎고 퇴출. 헥스 너머 연장·45도 퇴출은 BACK2(Back_Turn)로 미룬다.
                         rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
                         // Middle_Turn 끝 = Middle_Rough 끝(=Xk+0.5) + 황삭 공구 반경(D4 → 2.0)
-                        rangeMaxX = safeZoneEndX + RoughPastFinishEndMm + GetTurnPastRoughEndMm() + ResolveTurnToolpathCompMm("MIDDLE");
+                        rangeMaxX = safeZoneEndX + GetRoughPastFinishEndMm() + GetTurnPastRoughEndMm() + ResolveTurnToolpathCompMm("MIDDLE");
                         break;
                     case "BACK2":
                         if (!TryResolveSafeSplitBackZoneX("TurningOp BACK2", out double safeZoneStartX))
@@ -1647,7 +1647,7 @@ namespace DentalAddin
                 }
 
                 DentalLogger.Log($"TurningOp 3-Stage - region={region}, range=[{rangeMinX:0.###},{rangeMaxX:0.###}], split1={splitline1:0.###}, split2={splitline2:0.###}" +
-                    (normalized == "FRONT" ? $", Front_Turn끝=Splitline_2+{GetTurnPastFinishSeamMm():0.###}" : string.Empty));
+                    (normalized == "FRONT" ? $", Front_Turn끝=Splitline_2+{GetTurnPastFinishSeamMm():0.###}, shortCuffMinZ={(IsShortFinishLineMinZ() ? "1" : "0")}" : string.Empty));
                 return true;
             }
             catch (Exception ex)

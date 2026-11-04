@@ -386,7 +386,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                                 requestMeta.maxDiameter.ToString("0.###", CultureInfo.InvariantCulture));
                         }
                         AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, CamDia={requestMeta.camDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}, SafeSplit={(safeSplitEnabled ? "1" : "0")}, EspSave={(_backendEspSaveEnabled ? "1" : "0")}, ManufacturerHexRotation(mode)={(_backendManufacturerHexRotation ?? "<null>")}, HexAppliedDeg={(_backendHexRotationAppliedDeg.HasValue ? _backendHexRotationAppliedDeg.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
-                        AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, minZ={(finishLineMinZ.HasValue ? finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, TwoPhase={twoPhase}");
+                        AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, minZ={(finishLineMinZ.HasValue ? finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, TwoPhase={twoPhase}, shortCuffMinZ={(finishLineMinZ.HasValue && finishLineMinZ.Value <= AppConfig.ShortFinishLineMinZMm ? "1" : "0")}");
                         if (!_prcManager.ApplyBackendPrcNames((BackendApiClient.RequestMetaCaseInfos)requestMeta, requestId, _backendImplantLabel))
                         {
                             AppLogger.Log("StlFileProcessor: 백엔드 PRC 설정 실패로 공정을 중단합니다.");
@@ -1917,7 +1917,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         Environment.SetEnvironmentVariable(FinishLineMinZEnv, minZ.ToString(CultureInfo.InvariantCulture));
                         Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, "0");
 
-                        AppLogger.Log($"DentalAddin: Back_Rough 각도 정책 적용 - finishLineMinZ:{minZ.ToString("F4", CultureInfo.InvariantCulture)}, mode:180deg x2(고정)");
+                        bool shortCuff = minZ <= AppConfig.ShortFinishLineMinZMm;
+                        AppLogger.Log(
+                            $"DentalAddin: Back_Rough 각도 정책 적용 - finishLineMinZ:{minZ.ToString("F4", CultureInfo.InvariantCulture)}, "
+                            + $"mode:180deg x2(고정), shortCuffMinZ={(shortCuff ? "1" : "0")} "
+                            + $"(≤{AppConfig.ShortFinishLineMinZMm.ToString("0.###", CultureInfo.InvariantCulture)} → Turn/Rough past-seam"
+                            + $"{(shortCuff ? " +" + AppConfig.ShortFinishLineCuffExtraPastSeamMm.ToString("0.###", CultureInfo.InvariantCulture) + "mm" : " 기존")})");
                     }
                     catch (Exception ex)
                     {

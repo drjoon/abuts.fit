@@ -2051,7 +2051,7 @@ namespace DentalAddin
                 double finishLineBottomX = backX - finishLineMinZ;
                 double rawZoneX = finishLineBottomX + SafeSplitBackZonePastFinishLineMinMm;
                 double lo = splitline2 + SafeSplitMinBackZoneMm;
-                double turnPastSeamMm = GetTurnPastRoughEndMm() + RoughPastFinishEndMm;
+                double turnPastSeamMm = GetTurnPastRoughEndMm() + GetRoughPastFinishEndMm();
                 double hi = backX + SafeSplitMaxTurnPastBackPointMm - turnPastSeamMm;
                 if (rawZoneX > hi)
                 {
@@ -2772,16 +2772,16 @@ namespace DentalAddin
             }
 
             // 인접 겹침 SSOT: 후행 시작=경계 tip쪽 공구반경
-            // 선행 3D 황삭 끝은 Finish seam보다 GetRoughPastFinishSeamMm(0.5) 더 깎아
+            // 선행 3D 황삭 끝은 Finish seam보다 GetRoughPastFinishSeamMm 더 깎아
             // Front/Back_Finish(D1.0)가 미황삭 치은 쪽을 물지 않게 한다.
-            // Rough D4→2.0mm (ROUGH_20 D2→1.0mm)
+            // 기본 past=0.5, 원점 대비 minZ≤1이면 +1(1.5). Rough D4→2.0 (ROUGH_20 D2→1.0).
             double roughOverlapMm = GetRoughAdjacentOverlapMm();
             double roughPastFinishSeamMm = GetRoughPastFinishSeamMm();
 
             double frontStart = xMin;
             // Front_Rough 끝점: Splitline_2 + 황삭 연장. Finish 끝(Splitline_2−0.5)과는 별개.
             double frontEnd = Clamp(splitline2 + roughPastFinishSeamMm, xMin + 1e-6, xMax - 1e-6);
-            DentalLogger.Log($"RoughFreeFromMillSplitAB - Front_Rough 끝점=Splitline_2+{roughPastFinishSeamMm:F3}: endX={frontEnd:F3}");
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - Front_Rough 끝점=Splitline_2+{roughPastFinishSeamMm:F3}: endX={frontEnd:F3}, shortCuffMinZ={(IsShortFinishLineMinZ() ? "1" : "0")}");
 
             // [2026-10-13] 후행 시작 = 선행 Rough 끝 - (황삭 반경 + 1.0). 미삭제 띠 방지.
             double backStart = Clamp(frontEnd - roughOverlapMm, xMin + 1e-6, xMax - 1e-6);
@@ -2809,8 +2809,8 @@ namespace DentalAddin
             bool safeSplitBack = TryResolveSafeSplitBackZoneX("RoughFreeFromMillSplitAB", out double safeZoneX);
             if (safeSplitBack)
             {
-                // Middle_Rough 끝 = Xk + 0.5 (D1.0 반경). Back_Rough 시작 = 그 끝 - 2.0
-                double middleRoughEnd = safeZoneX + RoughPastFinishEndMm;
+                // Middle_Rough 끝 = Xk + GetRoughPastFinishEndMm (기본 0.5, minZ≤1이면 +1). Back_Rough 시작 = 그 끝 - 2.0
+                double middleRoughEnd = safeZoneX + GetRoughPastFinishEndMm();
                 double back2Start = Clamp(middleRoughEnd - roughOverlapMm, xMin + 1e-6, xMax - 1e-6);
                 if (string.Equals(region, "BACK2", StringComparison.OrdinalIgnoreCase))
                 {
@@ -3129,7 +3129,35 @@ namespace DentalAddin
         // Front/Middle 3D 황삭은 Finish 끝보다 D1.0 볼 반경(0.5) 더 깎는다.
         // 끝점 일치면 Finish 경계 직하방에 황삭 단차 벽이 남아 볼이 측방으로 치고 들어가 파손된다.
         // Back_Rough는 형상이 일정하므로 Finish 끝(BackPointX)과 일치 유지.
+        // 피니시라인 minZ(원점 대비) ≤ 1mm이면 +1mm 더 연장(D4 미진입·Back_Finish D1.0 파손 방지).
         private const double RoughPastFinishEndMm = CompositeFinishCommonToolDiameterMm / 2.0;
+
+        /// <summary>
+        /// 원점 대비 피니시라인 minZ ≤ 1mm → 짧은 커프. D4가 언더컷에 못 들어가 Finish D1.0이 잔삭을 물 때.
+        /// </summary>
+        private static bool IsShortFinishLineMinZ()
+        {
+            string raw = GetEnvString("ABUTS_FINISHLINE_MIN_Z");
+            if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double minZ)
+                || double.IsNaN(minZ)
+                || double.IsInfinity(minZ))
+            {
+                return false;
+            }
+
+            return minZ <= AppConfig.ShortFinishLineMinZMm;
+        }
+
+        private static double GetShortFinishLineCuffExtraPastSeamMm()
+        {
+            return IsShortFinishLineMinZ() ? AppConfig.ShortFinishLineCuffExtraPastSeamMm : 0.0;
+        }
+
+        // Front/Middle Rough가 Finish 끝보다 더 깎는 양. 기본 0.5, minZ≤1이면 1.5.
+        private static double GetRoughPastFinishEndMm()
+        {
+            return RoughPastFinishEndMm + GetShortFinishLineCuffExtraPastSeamMm();
+        }
 
         // Finish 인접 겹침 = D1.0 직경 2/3 (약 0.67mm). 다음 Finish 시작만 경계에서 tip 쪽으로 당긴다.
         // StepIncrement(retentionGroove none=Front PRC, deep=0.20)와 별개다.
@@ -3140,10 +3168,11 @@ namespace DentalAddin
 
         // 선행 3D 황삭을 Finish seam보다 이만큼(X+) 더 깎는다. Finish 끝은 경계에 두고,
         // D1.0 반경·5축 기울기가 치은 쪽 미황삭을 물지 않게 한다.
-        // Front_Rough 끝 = Splitline_2 + 0.5. none/deep Front_Finish 끝은 Splitline_2−0.5.
+        // Front_Rough 끝 = Splitline_2 + GetRoughPastFinishEndMm (기본 0.5, minZ≤1이면 1.5).
+        // none/deep Front_Finish 끝은 Splitline_2−0.5.
         private static double GetRoughPastFinishSeamMm()
         {
-            return GetFinishFrontEndPastSplitMm() + RoughPastFinishEndMm;
+            return GetFinishFrontEndPastSplitMm() + GetRoughPastFinishEndMm();
         }
 
         // Front_Finish 끝 오프셋(Splitline_2 기준). Rough 연장분은 포함하지 않는다.

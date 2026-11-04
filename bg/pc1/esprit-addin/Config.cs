@@ -49,6 +49,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         public const string TurningExtendEnv = "ABUTS_TURNING_EXTEND";
 
+        // 피니시라인 minZ(원점 대비 source Z). ≤ ShortFinishLineMinZMm 이면 Turn/Rough past-seam +1mm.
+        // env SSOT는 기존 ABUTS_FINISHLINE_MIN_Z.
+        public const double ShortFinishLineMinZMm = 1.0;
+
+        // 짧은 피니시라인(minZ≤1)일 때 Front/Middle Turn·Rough가 Finish seam을 더 넘는 양(mm).
+        public const double ShortFinishLineCuffExtraPastSeamMm = 1.0;
+
         public const string RoughfreeformSplitEnableEnv = "ABUTS_ROUGHFREEFORM_SPLIT_ENABLE";
 
         // 2-phase(초기 Turning/Rough 분리) 제어용 env
