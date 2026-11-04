@@ -28,6 +28,7 @@
 // - 2026-10-27: 하악만 있는 차트 — 견적을 카드 아래로. embedded는 금액 blur 해제.
 // - 2026-11-03: remake prop — 주문 변경 리메이크 기공비 무료 견적.
 // - 2026-10-27: 브리지 이음 — 연결 마크를 다음 카드 위로. 맞닿은 면 테두리·링을 없앤다.
+// - 2026-11-04: 브리지 연결 아이콘 — 슬롯 z-30 동일값으로 다음 카드가 가리던 문제. 갭 z만 올린다.
 // - 2026-09-02: byTooth가 연결치에 첫 행을 덮어 13-12-11 브리지에서 11 연결·스펙이 끊기던 버그 수정.
 import { useMemo, useState, useRef, useEffect, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowRight } from "lucide-react";
@@ -103,7 +104,7 @@ const TOOTH_SLOT_FULL_CLASS = "min-w-0 flex-1 basis-0";
 const BRIDGE_GAP_MIDLINE_CLASS = "w-3 shrink-0";
 const BRIDGE_GAP_UNLINKED_CLASS = "w-2 shrink-0";
 const BRIDGE_GAP_LINKED_CLASS =
-  "relative z-20 flex w-1.5 shrink-0 items-center justify-center self-stretch border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white";
+  "relative z-40 flex w-1.5 shrink-0 items-center justify-center self-stretch border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white";
 
 const toToothDecadeSortNumber = (toothNumber: string) => {
   const raw = String(toothNumber || "").trim();
@@ -866,7 +867,7 @@ export const PracticeToothWorkChartReadOnly = ({
             className="pointer-events-none absolute inset-y-0 left-1/2 w-[3px] -translate-x-1/2 bg-primary/70"
           />
           <span
-            className="absolute left-1/2 top-1/2 z-10 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-primary bg-primary text-white ring-2 ring-primary-soft"
+            className="absolute left-1/2 top-1/2 z-40 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-primary bg-primary text-white ring-2 ring-primary-soft"
             title={`${toothNumber}–${chartNext} 연결`}
           >
             <span className="h-0.5 w-2.5 rounded-full bg-white" />
@@ -897,14 +898,14 @@ export const PracticeToothWorkChartReadOnly = ({
 
   const renderMobileSpanBridgeGap = () => (
     <div
-      className="relative z-20 flex w-3 shrink-0 items-center justify-center self-stretch border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white"
+      className="relative z-40 flex w-3 shrink-0 items-center justify-center self-stretch border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white"
       aria-hidden
     >
       <span
         className="pointer-events-none absolute inset-y-0 left-1/2 w-[3px] -translate-x-1/2 bg-primary/70"
       />
       <span
-        className="absolute left-1/2 top-1/2 z-10 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-primary bg-primary text-white ring-2 ring-primary-soft"
+        className="absolute left-1/2 top-1/2 z-40 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-primary bg-primary text-white ring-2 ring-primary-soft"
       >
         <span className="h-0.5 w-2.5 rounded-full bg-white" />
       </span>
@@ -1208,12 +1209,7 @@ export const PracticeToothWorkChartReadOnly = ({
                 <div
                   key={`ro-tooth-slot-${archDisplayLabel || toothNumber}`}
                   className={
-                    fullLayout
-                      ? "contents"
-                      : cn(
-                          "flex shrink-0 items-stretch",
-                          showBridgeConnector && "relative z-30",
-                        )
+                    fullLayout ? "contents" : "flex shrink-0 items-stretch"
                   }
                 >
                   <div className={cn("relative", slotClass)}>
