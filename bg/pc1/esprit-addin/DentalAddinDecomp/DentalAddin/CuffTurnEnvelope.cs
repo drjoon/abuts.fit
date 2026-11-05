@@ -12,6 +12,7 @@ namespace DentalAddin
     /// 커프·피니시라인은 임플란트 축에 대한 원이 아니다.
     /// 선반 프로파일(한 단면)을 그대로 돌리면 튀어나온 마진이 잘린다.
     /// 피니시라인 팁쪽에서 헥스끝까지, 체인 반지름을 그 축 위치의 최대 반지름 아래로 내리지 않는다.
+    /// 골을 직선으로 메우거나 샘플 밖으로 끝 반지름을 밀지 않는다. 원소재 어깨가 남으면 Back_Finish D1.0이 부러진다.
     /// 축 구간은 유지한다. 황삭이 깎지 않은 원소재 벽을 물지 않게 하기 위해서다.
     /// </summary>
     internal static class CuffTurnEnvelope
@@ -25,6 +26,12 @@ namespace DentalAddin
 
         /// <summary>직선이 포락선 아래로 이 값보다 더 들어가면 꼭짓점을 남긴다.</summary>
         public const double StraightToleranceMm = 0.05;
+
+        /// <summary>
+        /// 직선이 그 축의 최대 반지름보다 이 값보다 더 바깥이면 골 꼭짓점을 남긴다.
+        /// 골을 메우면 Back_Rough가 못 지우는 어깨가 남고 Back_Finish D1.0이 물어서 부러진다.
+        /// </summary>
+        public const double ValleyFillMaxMm = 0.10;
 
         public const double MinRadiusMm = 0.2;
 
@@ -86,8 +93,10 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// 포락선 위를 직선으로 잇는다. 중간 점이 직선 아래로 0.05mm보다 더 나오면 꼭짓점으로 남긴다.
-        /// 15°로 골을 메우면 황삭이 원소재에 가깝게 남고, 창 최대값 평탄은 계단이 된다.
+        /// 포락선 위를 직선으로 잇는다.
+        /// 직선이 중간 최대 반지름보다 0.05mm 넘게 안쪽이면 꼭짓점을 남긴다.
+        /// 직선이 중간 최대 반지름보다 0.10mm 넘게 바깥이면 그 골도 남긴다.
+        /// 15도로 골을 메우면 황삭이 원소재에 가깝게 남고, 창 최대값 평탄은 계단이 된다.
         /// </summary>
         public static void SimplifyToUpperLines(double[] z, double[] r, out double[] outZ, out double[] outR)
         {
@@ -120,7 +129,8 @@ namespace DentalAddin
         /// <summary>
         /// points[i] = { axialX, radiusY, z }.
         /// machineX = backPointX - sourceZ.
-        /// X가 [xLo, xHi] 이면 직선 포락선 아래로 두지 않는다.
+        /// X가 [xLo, xHi] 이고 source Z가 포락선 샘플 안이면, 그 축의 최대 반지름 아래로 두지 않는다.
+        /// 샘플 밖(헥스쪽 메시가 없는 구간)은 끝 반지름을 연장하지 않는다.
         /// </summary>
         public static int Raise(List<double[]> points, double[] z, double[] r, double backPointX, double xLo, double xHi)
         {
@@ -137,7 +147,7 @@ namespace DentalAddin
                 if (p == null || p.Length < 2) continue;
                 if (p[1] < 0.0) continue;
                 if (p[0] < lo - 1e-6 || p[0] > hi + 1e-6) continue;
-                double floor = InterpolateFloor(lineZ, lineR, backPointX - p[0]);
+                if (!TryInterpolateFloor(lineZ, lineR, backPointX - p[0], out double floor)) continue;
                 if (floor < MinRadiusMm) continue;
                 if (p[1] + 1e-6 < floor)
                 {
@@ -156,24 +166,44 @@ namespace DentalAddin
                 double t = dz < 1e-9 ? 1.0 : (z[k] - z[i]) / dz;
                 double line = r[i] + t * (r[j] - r[i]);
                 if (line + StraightToleranceMm < r[k]) return false;
+                if (line > r[k] + ValleyFillMaxMm) return false;
             }
             return true;
         }
 
-        private static double InterpolateFloor(double[] z, double[] r, double sourceZ)
+        private static bool TryInterpolateFloor(double[] z, double[] r, double sourceZ, out double floor)
         {
-            if (sourceZ <= z[0]) return r[0];
+            floor = 0.0;
             int last = z.Length - 1;
-            if (sourceZ >= z[last]) return r[last];
+            // 끝 반지름을 샘플 밖으로 밀면 헥스쪽이 넓은 반지름으로 남고, 원소재 어깨가 된다.
+            if (sourceZ < z[0] - 1e-6 || sourceZ > z[last] + 1e-6) return false;
+            if (sourceZ <= z[0])
+            {
+                floor = r[0];
+                return true;
+            }
+            if (sourceZ >= z[last])
+            {
+                floor = r[last];
+                return true;
+            }
             int i = Array.BinarySearch(z, sourceZ);
-            if (i >= 0) return r[i];
+            if (i >= 0)
+            {
+                floor = r[i];
+                return true;
+            }
             i = ~i;
-            if (i <= 0) return r[0];
-            if (i > last) return r[last];
+            if (i <= 0 || i > last) return false;
             double dz = z[i] - z[i - 1];
-            if (dz < 1e-9) return Math.Max(r[i - 1], r[i]);
+            if (dz < 1e-9)
+            {
+                floor = Math.Max(r[i - 1], r[i]);
+                return true;
+            }
             double t = (sourceZ - z[i - 1]) / dz;
-            return r[i - 1] + t * (r[i] - r[i - 1]);
+            floor = r[i - 1] + t * (r[i] - r[i - 1]);
+            return true;
         }
     }
 }
